@@ -11,7 +11,6 @@ import android.util.Log;
 import android.view.KeyEvent;
 import android.webkit.ClientCertRequest;
 import android.webkit.CookieManager;
-import android.webkit.CookieSyncManager;
 import android.webkit.HttpAuthHandler;
 import android.webkit.RenderProcessGoneDetail;
 import android.webkit.SslErrorHandler;
@@ -240,12 +239,11 @@ public class InAppWebViewClientCompat extends WebViewClientCompat {
       inAppBrowserDelegate.didFinishNavigation(url);
     }
 
-    // WebView not storing cookies reliable to local device storage
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-      CookieManager.getInstance().flush();
-    } else {
-      CookieSyncManager.getInstance().sync();
-    }
+    // Fushi patch: no cookie flush here. CookieManager.flush() blocks the UI
+    // thread until Chromium's cookie-store IO thread finishes the write, which
+    // took >5-10 s under memory / IO pressure and caused input-dispatch ANRs on
+    // every page load. Chromium persists cookies on its own; explicit cookie
+    // writes (MyCookieManager.setCookie / delete*) still flush. See PATCHES.md.
 
     String js = JavaScriptBridgeJS.PLATFORM_READY_JS_SOURCE;
 

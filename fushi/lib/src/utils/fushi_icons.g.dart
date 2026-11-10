@@ -1152,6 +1152,18 @@ abstract final class FushiIcons {
     fontFamily: kFushiSymbolsFontFamily,
   );
 
+  /// 字幕遮布（盖住烧进画面的硬字幕）：Symbols `texture`（取代 Icons.texture_outlined / Icons.texture）
+  static const IconData subtitleMask = IconData(
+    0xe421,
+    fontFamily: kFushiSymbolsFontFamily,
+  );
+
+  /// 移动 / 调整位置（四向箭头）：Symbols `open_with`（取代 Icons.open_with_outlined / Icons.open_with）
+  static const IconData move = IconData(
+    0xe89f,
+    fontFamily: kFushiSymbolsFontFamily,
+  );
+
   /// 隐藏副字幕：Symbols `closed_caption_disabled`（取代 Icons.closed_caption_disabled_outlined / Icons.closed_caption_disabled）
   static const IconData captionsOff = IconData(
     0xf1dc,
@@ -1938,6 +1950,8 @@ abstract final class FushiIcons {
     'blur': blur,
     'blurLinear': blurLinear,
     'subtitlesOff': subtitlesOff,
+    'subtitleMask': subtitleMask,
+    'move': move,
     'captionsOff': captionsOff,
     'outline': outline,
     'outlineColor': outlineColor,
@@ -2179,6 +2193,7 @@ abstract final class FushiIcons {
     0xe412: IconData(0xe412, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe413: IconData(0xe413, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe41d: IconData(0xe41d, fontFamily: kFushiSymbolsFilledFontFamily),
+    0xe421: IconData(0xe421, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe425: IconData(0xe425, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe426: IconData(0xe426, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe429: IconData(0xe429, fontFamily: kFushiSymbolsFilledFontFamily),
@@ -2291,6 +2306,7 @@ abstract final class FushiIcons {
       fontFamily: kFushiSymbolsFilledFontFamily,
       matchTextDirection: true,
     ),
+    0xe89f: IconData(0xe89f, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe8af: IconData(0xe8af, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe8b3: IconData(0xe8b3, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe8b8: IconData(0xe8b8, fontFamily: kFushiSymbolsFilledFontFamily),
@@ -2580,6 +2596,7 @@ kFushiSymbolAppleMap = <int, (IconData, IconData)>{
     CupertinoIcons.photo_fill_on_rectangle_fill,
   ),
   0xe41d: (CupertinoIcons.paintbrush, CupertinoIcons.paintbrush_fill),
+  0xe421: (CupertinoIcons.rectangle, CupertinoIcons.rectangle_fill),
   0xe425: (CupertinoIcons.timer, CupertinoIcons.timer_fill),
   0xe426: (CupertinoIcons.stopwatch, CupertinoIcons.stopwatch_fill),
   0xe429: (
@@ -2690,6 +2707,7 @@ kFushiSymbolAppleMap = <int, (IconData, IconData)>{
     CupertinoIcons.arrow_up_right_square,
     CupertinoIcons.arrow_up_right_square,
   ),
+  0xe89f: (CupertinoIcons.move, CupertinoIcons.move),
   0xe8af: (CupertinoIcons.chat_bubble_2, CupertinoIcons.chat_bubble_2_fill),
   0xe8b3: (CupertinoIcons.clock, CupertinoIcons.clock),
   0xe8b8: (CupertinoIcons.gear, CupertinoIcons.gear_solid),

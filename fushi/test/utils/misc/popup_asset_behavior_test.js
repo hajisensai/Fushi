@@ -2991,7 +2991,15 @@ async function testAppExternalManageGestureAlwaysOpensChooser() {
   stubDupesAwareExternalHost(context, calls, true);
   const mineButton = buildMineHeader(context);
   await flush();
-  assert.ok(mineButton.title, 'a mined ✓ advertises the manage gesture in its tooltip');
+  // 反馈 3UHYaFPP8g / BUG-842: the hint is the DOM-drawn .fushi-btn-tip (via
+  // setInlineButtonTip), never the native `title` — on the off-screen WebView2
+  // the native tooltip is positioned in unscaled coordinates and lands over the
+  // previous entry.
+  assert.ok(!mineButton.title, 'a mined ✓ must not use the native title tooltip');
+  assert.ok(!mineButton.hasAttribute('title'), 'a mined ✓ must not carry a title attribute');
+  assert.ok(mineButton.dataset.fushiTip, 'a mined ✓ advertises the manage gesture in its DOM tooltip');
+  assert.equal(mineButton.getAttribute('aria-label'), mineButton.dataset.fushiTip,
+    'the manage hint stays accessible via aria-label');
 
   let prevented = false;
   mineButton.dispatchEvent({
@@ -3073,6 +3081,127 @@ async function testNativeLanePassesOpenChooserIntent() {
     'the menu key hands the host openChooser:true (always the chooser)');
 }
 
+// 反馈 3UHYaFPP8g：✓ / ♪ 的「长按」以前只认 touch / pen，桌面鼠标按住不放什么都不发生，
+// 可提示写的是「右键或长按」。现在长按 / 右键 / 菜单键共用 bindPopupSecondaryActionTriggers，
+// 鼠标主键按住同样打开次级菜单。
+function pointerEvent(type, extra) {
+  return Object.assign({
+    type,
+    pointerType: 'mouse',
+    button: 0,
+    clientX: 10,
+    clientY: 10,
+    preventDefault() {},
+    stopPropagation() {},
+  }, extra || {});
+}
+
+function pendingLongPressTimers(context) {
+  return [...context.__timers.values()].filter(
+    (timer) => !timer.cleared && timer.delay === 450);
+}
+
+function fireLongPressTimer(context) {
+  const timers = pendingLongPressTimers(context);
+  assert.equal(timers.length, 1, 'exactly one long-press timer is armed');
+  timers[0].cleared = true;
+  timers[0].callback();
+}
+
+async function testMouseLongPressOnMinedButtonOpensChooser() {
+  const context = loadPopup();
+  const calls = newCalls();
+  stubDupesAwareExternalHost(context, calls, true);
+  const mineButton = buildMineHeader(context);
+  await flush();
+  assert.equal(mineButton.dataset.mined, '1');
+
+  mineButton.dispatchEvent(pointerEvent('pointerdown'));
+  fireLongPressTimer(context);
+  await flush();
+  await flush();
+
+  assert.equal(calls.findMinedMatches.length, 1,
+    'a mouse long-press on a mined ✓ is the manage gesture');
+  assert.equal(calls.findMinedMatches[0].openChooser, true);
+  assert.ok(context.document.querySelector('.mined-action-panel'),
+    'the mouse long-press opens the overwrite / view chooser');
+
+  // 松手后内核补发的 click 不能再当单击制一张。
+  mineButton.dispatchEvent(pointerEvent('pointerup'));
+  await mineButton.onclick();
+  await flush();
+  assert.equal(calls.findMinedMatches.length, 1, 'the follow-up click is swallowed');
+  assert.equal(calls.mineEntry.length, 0, 'nothing is mined by the release');
+}
+
+async function testMouseLongPressArmingRules() {
+  const context = loadPopup();
+  const calls = newCalls();
+  stubDupesAwareExternalHost(context, calls, true);
+  const mineButton = buildMineHeader(context);
+  await flush();
+
+  // 右键按下不武装长按（右键走 contextmenu）。
+  mineButton.dispatchEvent(pointerEvent('pointerdown', { button: 2 }));
+  assert.equal(pendingLongPressTimers(context).length, 0, 'right button does not arm');
+
+  // 鼠标主键按住后拖出容差 = 框选 / 拖动，不是长按。
+  mineButton.dispatchEvent(pointerEvent('pointerdown'));
+  assert.equal(pendingLongPressTimers(context).length, 1, 'primary mouse button arms');
+  mineButton.dispatchEvent(pointerEvent('pointermove', { clientX: 40 }));
+  assert.equal(pendingLongPressTimers(context).length, 0, 'moving past tolerance cancels');
+
+  // 按住不到时长就松手 = 普通单击。
+  mineButton.dispatchEvent(pointerEvent('pointerdown'));
+  mineButton.dispatchEvent(pointerEvent('pointerup'));
+  assert.equal(pendingLongPressTimers(context).length, 0, 'an early release cancels');
+  await flush();
+  assert.equal(calls.findMinedMatches.length, 0, 'no manage gesture fired');
+}
+
+async function testMouseLongPressIgnoredOnUnminedButton() {
+  const context = loadPopup();
+  context.window.flutter_inappwebview.callHandler = (name) => {
+    if (name === 'duplicateCheck') return Promise.resolve(false);
+    return Promise.resolve(null);
+  };
+  const mineButton = buildMineHeader(context);
+  await flush();
+  assert.equal(mineButton.dataset.mined, '');
+  mineButton.dispatchEvent(pointerEvent('pointerdown'));
+  assert.equal(pendingLongPressTimers(context).length, 0,
+    'a "+" offers no secondary menu, so a long-press never arms');
+}
+
+async function testMouseLongPressOnAudioButtonOpensSourceMenu() {
+  const context = loadPopup();
+  const opened = [];
+  context.openAudioSourceMenu = (button, expression, reading, options) => {
+    opened.push({ expression, focusFirst: options.focusFirst });
+  };
+  const button = context.createAudioButton('刀', '刀', 0);
+
+  button.dispatchEvent(pointerEvent('pointerdown'));
+  fireLongPressTimer(context);
+  assert.deepEqual(JSON.parse(JSON.stringify(opened)),
+    [{ expression: '刀', focusFirst: false }],
+    'a mouse long-press on ♪ opens the source menu');
+  assert.equal(button.dataset.fushiSuppressClick, '1',
+    'the follow-up click must not also play the default source');
+  await button.onclick();
+  assert.equal(button.dataset.fushiSuppressClick, undefined, 'the swallow is one-shot');
+
+  // 右键与菜单键仍走同一入口。
+  button.dispatchEvent(pointerEvent('pointerdown', { button: 2 }));
+  button.dispatchEvent(pointerEvent('contextmenu'));
+  button.dispatchEvent({
+    type: 'keydown', key: 'F10', shiftKey: true,
+    preventDefault() {}, stopPropagation() {},
+  });
+  assert.deepEqual(opened.map((o) => o.focusFirst), [false, false, true]);
+}
+
 // 这几条在旧实现上会卡在「等用户在面板里选」——一个永不 settle 的 promise 不会报错，
 // 进程照样 0 退出。所以记账：退出时还没跑完的一律判红（不让挂起冒充通过）。
 const pendingAllowDupesTests = new Set();
@@ -3086,6 +3215,10 @@ for (const t of [
   testAppExternalManageGestureAlwaysOpensChooser,
   testManageGestureIgnoredOnUnminedButton,
   testNativeLanePassesOpenChooserIntent,
+  testMouseLongPressOnMinedButtonOpensChooser,
+  testMouseLongPressArmingRules,
+  testMouseLongPressIgnoredOnUnminedButton,
+  testMouseLongPressOnAudioButtonOpensSourceMenu,
 ]) {
   pendingAllowDupesTests.add(t.name);
   t().then(() => pendingAllowDupesTests.delete(t.name)).catch((error) => {
@@ -3557,7 +3690,8 @@ async function testQueuedMineStateTracksQueueWithoutAnkiRefresh() {
   assert.equal(button.textContent, '✓');
   assert.ok(button.classList.contains('duplicate'), 'queued mark must hide the CSS plus');
   assert.notEqual(button.dataset.mined, '1', 'queued is not an Anki card');
-  assert.equal(button.title, '已加入制卡队列');
+  assert.equal(button.dataset.fushiTip, '已加入制卡队列');
+  assert.ok(!button.title, 'queued hint is the DOM tooltip, not the native title');
   assert.equal(duplicates, before, 'queue success must not probe Anki');
   await button.onclick();
   assert.equal(mines, 1, 'repeated click must not enqueue again');

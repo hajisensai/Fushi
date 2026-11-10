@@ -30,7 +30,7 @@ import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/video_remote_targets.dart';
 
 export 'package:fushi_engine/srs/srs_remote_store.dart'
-    show SrsRemoteStoreError;
+    show SrsRemoteStoreError, SrsRemoteWireError;
 
 /// 一台互联主机的远程复习库端点。失败抛 [InterconnectHostError]，`message` 是主机的机读码
 /// （[SrsRemoteStoreError] 的常量）或连接层的码（[InterconnectHostError.unreachableCode] 等）。
@@ -74,14 +74,44 @@ class SrsRemoteHostClient extends InterconnectHostClient {
   }
 }
 
-/// 列出此刻提供远程复习库的互联主机。
-Future<List<InterconnectHostTarget>> probeSrsRemoteStoreTargets(
+/// 远程复习库的能力探测。
+Future<bool?> _probeSrsRemoteStore(
   SyncRepository repository,
-) => probeInterconnectHostTargets(
+  FushiClientUrl peer,
+) => SrsRemoteHostClient(
   repository: repository,
-  probe: (SyncRepository repo, FushiClientUrl peer) =>
-      SrsRemoteHostClient(repository: repo, peer: peer).supportsRemoteStore(),
+  peer: peer,
+).supportsRemoteStore();
+
+/// [candidates]（[configuredInterconnectHostTargets] 列出的）里此刻提供远程复习库的那些。
+Future<List<InterconnectHostTarget>> filterSrsRemoteStoreTargets(
+  SyncRepository repository,
+  List<InterconnectHostTarget> candidates,
+) => filterInterconnectHostTargets(
+  repository: repository,
+  candidates: candidates,
+  probe: _probeSrsRemoteStore,
 );
+
+/// 主机的回包不合契约（[SrsRemoteWireError]）：按 [InterconnectHostError] 的形状抛，机读码是
+/// [SrsRemoteStoreError.badResponse]，页面与别的远程失败走同一套文案和重试。[op] 是哪一次调用，
+/// [cause] 带着出错的路径（写进错误日志）。
+class SrsRemoteBadResponse extends InterconnectHostError {
+  const SrsRemoteBadResponse(this.op, this.cause)
+    : super(SrsRemoteStoreError.badResponse, statusCode: 200);
+
+  final String op;
+  final SrsRemoteWireError cause;
+
+  @override
+  String toString() => '${SrsRemoteStoreError.badResponse} ($op): $cause';
+}
+
+/// 一台主机牌组摘要的快照：[decks] 给界面画，[cache] 是落盘格式（[SrsRemoteWire.deckCache]）。
+typedef SrsRemoteDeckSnapshot = ({
+  List<SrsDeckSummary> decks,
+  Map<String, Object?> cache,
+});
 
 /// 握手回包里主机提供的 profile（老主机 / 桌面 host 不带 = 空）。
 List<SrsRemoteServedProfile> srsServedProfilesOf(Map<String, dynamic> hello) {
@@ -120,6 +150,8 @@ Future<String> srsPickRemoteProfile({
 
 /// 主机上的复习库（见文件头）。本类没覆盖的 [SrsDbStore] 成员（导入、同步、备份等库管理）调用时抛
 /// [UnsupportedError]：它们不在复习会话可达的页面里，守卫测试核对可达页面用到的成员都已覆盖。
+///
+/// 回包一律经 [SrsRemoteWire] 的解码器校验（[_call]）：不合契约抛 [SrsRemoteBadResponse]，不漏成 `TypeError`。
 class SrsRemoteStore implements SrsDbStore, SrsRemoteForwarding {
   SrsRemoteStore._(this._client, this.profileUid, {this.prefetchMedia});
 
@@ -136,22 +168,41 @@ class SrsRemoteStore implements SrsDbStore, SrsRemoteForwarding {
     Future<void> Function(Set<String> names)? prefetchMedia,
   }) async {
     Map<String, dynamic> hello = await client.call('hello');
+    final String hostDefault = _parse('hello', () {
+      final Object? p = hello['profile'];
+      if (p is! String) throw const SrsRemoteWireError('profile');
+      return p;
+    });
     final String pick = await srsPickRemoteProfile(
-      hostDefault: hello['profile'] as String,
+      hostDefault: hostDefault,
       served: srsServedProfilesOf(hello),
       preferProfile: preferProfile,
       chooseProfile: chooseProfile,
     );
-    if (pick != hello['profile']) {
+    if (pick != hostDefault) {
       hello = await client.call('hello', profile: pick);
     }
+    final SrsRemoteEnvelope envelope = _parse('hello', () {
+      final SrsRemoteEnvelope e = SrsRemoteWire.envelopeFrom(hello);
+      if (e.profile == null) throw const SrsRemoteWireError('profile');
+      return e;
+    });
     final SrsRemoteStore store = SrsRemoteStore._(
       client,
-      hello['profile'] as String,
+      envelope.profile!,
       prefetchMedia: prefetchMedia,
     );
-    store._absorb(hello);
+    store._absorb(envelope);
     return store;
+  }
+
+  /// 解码失败统一换成 [SrsRemoteBadResponse]（嵌套调用抛出的已经是它，原样穿过）。
+  static T _parse<T>(String op, T Function() decode) {
+    try {
+      return decode();
+    } on SrsRemoteWireError catch (e) {
+      throw SrsRemoteBadResponse(op, e);
+    }
   }
 
   final SrsRemoteHostClient _client;
@@ -171,7 +222,7 @@ class SrsRemoteStore implements SrsDbStore, SrsRemoteForwarding {
   int _clockOffsetMs = 0;
   SrsTimeSource _timeSource = SrsTimeSource.wall;
 
-  ({String tag, SrsDeckTree tree})? _tree;
+  _RemoteTree? _tree;
   ({String fp, SrsDayContext day})? _day;
   final Map<String, ({String tag, SrsNoteTypeView view})> _types =
       <String, ({String tag, SrsNoteTypeView view})>{};
@@ -185,17 +236,17 @@ class SrsRemoteStore implements SrsDbStore, SrsRemoteForwarding {
   @override
   SrsRwkvScheduling? rwkv;
 
-  void _absorb(Map<String, dynamic> envelope) {
-    _revision = envelope['rev'] as int? ?? _revision;
-    _fingerprint = envelope['fp'] as String? ?? _fingerprint;
-    _treeTag = envelope['tt'] as String? ?? _treeTag;
-    _canSchedule = envelope['sched'] == true;
-    _rwkvReady = envelope['rwkv'] == true;
-    _device = envelope['dev'] as String? ?? _device;
-    final Object? now = envelope['now'];
-    if (now is int) {
+  void _absorb(SrsRemoteEnvelope e) {
+    _revision = e.revision ?? _revision;
+    _fingerprint = e.fingerprint ?? _fingerprint;
+    _treeTag = e.treeTag ?? _treeTag;
+    _canSchedule = e.canSchedule;
+    _rwkvReady = e.rwkvReady;
+    _device = e.device ?? _device;
+    final int? now = e.nowMs;
+    if (now != null) {
       _clockOffsetMs = now - DateTime.now().millisecondsSinceEpoch;
-      _timeSource = SrsTimeSource.parse(envelope['ts'] as String?);
+      _timeSource = SrsTimeSource.parse(e.timeSource);
     }
   }
 
@@ -203,18 +254,41 @@ class SrsRemoteStore implements SrsDbStore, SrsRemoteForwarding {
       '${DateTime.now().microsecondsSinceEpoch.toRadixString(36)}-'
       '${_random.nextInt(1 << 32).toRadixString(36)}';
 
-  Future<Object?> _read(String op, [Map<String, Object?>? args]) async {
-    final Map<String, dynamic> env = await _client.call(
+  /// 信封与 `result` 都经校验：先吸收信封（修订号、树标签、时钟），再交 [decode] 解 `result`。
+  /// [decode] 可以再发调用（取牌组树 / 笔记类型），那些调用自己的解码失败已换成 [SrsRemoteBadResponse]。
+  Future<T> _call<T>(
+    String op,
+    Map<String, dynamic> envelope,
+    FutureOr<T> Function(Object? result) decode,
+  ) async {
+    try {
+      _absorb(SrsRemoteWire.envelopeFrom(envelope));
+      return await decode(envelope['result']);
+    } on SrsRemoteWireError catch (e) {
+      throw SrsRemoteBadResponse(op, e);
+    }
+  }
+
+  Future<T> _read<T>(
+    String op,
+    Map<String, Object?>? args,
+    FutureOr<T> Function(Object? result) decode,
+  ) async => _call(
+    op,
+    await _client.call(
       op,
       args: args ?? const <String, Object?>{},
       profile: profileUid,
-    );
-    _absorb(env);
-    return env['result'];
-  }
+    ),
+    decode,
+  );
 
   /// 写操作：请求 id 只生成一次，连接层失败（回包丢了）用同一个 id 重发一次——主机按 id 去重，不会写两遍。
-  Future<Object?> _write(String op, Map<String, Object?> args) async {
+  Future<T> _write<T>(
+    String op,
+    Map<String, Object?> args,
+    FutureOr<T> Function(Object? result) decode,
+  ) async {
     final String request = _newRequestId();
     Map<String, dynamic> env;
     try {
@@ -233,9 +307,10 @@ class SrsRemoteStore implements SrsDbStore, SrsRemoteForwarding {
         request: request,
       );
     }
-    _absorb(env);
-    return env['result'];
+    return _call(op, env, decode);
   }
+
+  static void _ignore(Object? _) {}
 
   // ---------------------------------------------------------------- 同步成员
 
@@ -289,40 +364,40 @@ class SrsRemoteStore implements SrsDbStore, SrsRemoteForwarding {
 
   // ---------------------------------------------------------------- 牌组 / 笔记类型缓存
 
-  Future<SrsDeckTree> _currentTree() async {
-    final ({String tag, SrsDeckTree tree})? cached = _tree;
-    if (cached != null && cached.tag == _treeTag) return cached.tree;
-    final List<SrsEntitySource> sources = <SrsEntitySource>[
-      for (final Object? s in (await _read('deckTree'))! as List<Object?>)
-        SrsRemoteWire.sourceFrom(s),
-    ];
-    final SrsDeckTree tree = SrsRemoteWire.deckTreeFrom(sources);
-    _tree = (tag: _treeTag, tree: tree);
-    return tree;
+  Future<_RemoteTree> _currentEntry() async {
+    final _RemoteTree? cached = _tree;
+    if (cached != null && cached.tag == _treeTag) return cached;
+    final List<SrsEntitySource> sources = await _read(
+      'deckTree',
+      null,
+      SrsRemoteWire.sourcesFrom,
+    );
+    final _RemoteTree entry = _RemoteTree(
+      _treeTag,
+      sources,
+      _parse('deckTree', () => SrsRemoteWire.deckTreeFrom(sources)),
+    );
+    _tree = entry;
+    return entry;
   }
 
+  Future<SrsDeckTree> _currentTree() async => (await _currentEntry()).tree;
+
   /// 按引用 `{id, tag}` 取笔记类型视图：缓存里标签一致的直接用，其余一次搬齐。
-  Future<List<SrsNoteTypeView>> _typesOf(Object? refs) async {
-    final List<({String id, String tag})> list = <({String id, String tag})>[
-      for (final Object? r in (refs as List<Object?>?) ?? const <Object?>[])
-        (id: (r! as Map)['id']! as String, tag: (r as Map)['tag']! as String),
-    ];
+  Future<List<SrsNoteTypeView>> _typesOf(List<SrsRemoteTypeRef> refs) async {
     final List<String> missing = <String>[
-      for (final ({String id, String tag}) r in list)
+      for (final SrsRemoteTypeRef r in refs)
         if (_types[r.id]?.tag != r.tag) r.id,
     ];
     if (missing.isNotEmpty) {
-      final List<SrsEntitySource> sources = <SrsEntitySource>[
-        for (final Object? s
-            in (await _read('noteTypeSources', <String, Object?>{
-                  'ids': missing,
-                }))!
-                as List<Object?>)
-          SrsRemoteWire.sourceFrom(s),
-      ];
-      final List<SrsNoteTypeView> views = SrsRemoteWire.noteTypesFrom(
-        profileUid,
-        sources,
+      final List<SrsEntitySource> sources = await _read(
+        'noteTypeSources',
+        <String, Object?>{'ids': missing},
+        SrsRemoteWire.sourcesFrom,
+      );
+      final List<SrsNoteTypeView> views = _parse(
+        'noteTypeSources',
+        () => SrsRemoteWire.noteTypesFrom(profileUid, sources),
       );
       for (int i = 0; i < sources.length; i++) {
         _types[sources[i].id] = (
@@ -332,28 +407,27 @@ class SrsRemoteStore implements SrsDbStore, SrsRemoteForwarding {
       }
     }
     return <SrsNoteTypeView>[
-      for (final ({String id, String tag}) r in list)
+      for (final SrsRemoteTypeRef r in refs)
         if (_types[r.id] case final ({String tag, SrsNoteTypeView view}) hit)
           hit.view,
     ];
   }
 
-  SrsCardCacheRow? _row(Object? json) {
-    final SrsCardCacheRow? row = SrsRemoteWire.cardRowFrom(json);
+  SrsCardCacheRow? _remember(SrsCardCacheRow? row) {
     if (row != null) _bases[row.id] = row.lastLogId;
     return row;
   }
 
-  List<SrsCardCacheRow> _rows(Object? json) => <SrsCardCacheRow>[
-    for (final Object? r in json! as List<Object?>) _row(r)!,
-  ];
+  List<SrsCardCacheRow> _rows(Object? json) {
+    final List<SrsCardCacheRow> rows = SrsRemoteWire.cardRowsFrom(json);
+    rows.forEach(_remember);
+    return rows;
+  }
 
   Map<String, SrsNoteView?> _notesFrom(Object? json, Iterable<String> ids) {
-    final List<SrsEntitySource> sources = <SrsEntitySource>[
-      for (final Object? s in json! as List<Object?>)
-        SrsRemoteWire.sourceFrom(s),
-    ];
-    final List<SrsNoteView> views = SrsRemoteWire.notesFrom(sources);
+    final List<SrsNoteView> views = SrsRemoteWire.notesFrom(
+      SrsRemoteWire.sourcesFrom(json),
+    );
     final Map<String, SrsNoteView> byId = <String, SrsNoteView>{
       for (final SrsNoteView v in views) v.id: v,
     };
@@ -366,8 +440,10 @@ class SrsRemoteStore implements SrsDbStore, SrsRemoteForwarding {
   Future<SrsDayContext> dayContext() async {
     final ({String fp, SrsDayContext day})? cached = _day;
     if (cached != null && cached.fp == _fingerprint) return cached.day;
-    final SrsDayContext day = SrsRemoteWire.dayContextFrom(
-      await _read('dayContext'),
+    final SrsDayContext day = await _read(
+      'dayContext',
+      null,
+      SrsRemoteWire.dayContextFrom,
     );
     _day = (fp: _fingerprint, day: day);
     return day;
@@ -377,45 +453,51 @@ class SrsRemoteStore implements SrsDbStore, SrsRemoteForwarding {
   Future<SrsDeckTree> deckTree() async {
     // 先问一次主机拿到当前树标签（缓存命中时不再搬树）。
     if (_tree == null) return _currentTree();
-    await _read('hello');
+    await _read('hello', null, _ignore);
     return _currentTree();
   }
 
+  Future<(List<SrsDeckSummary>, _RemoteTree)> _summaries() =>
+      _read('deckSummaries', null, (Object? json) async {
+        final _RemoteTree entry = await _currentEntry();
+        return (SrsRemoteWire.summariesFrom(json, entry.tree), entry);
+      });
+
   @override
-  Future<List<SrsDeckSummary>> deckSummaries() async {
-    final Object? json = await _read('deckSummaries');
-    final SrsDeckTree tree = await _currentTree();
-    return <SrsDeckSummary>[
-      for (final Object? s in json! as List<Object?>)
-        if (SrsRemoteWire.summaryFrom(s, tree) case final SrsDeckSummary d) d,
-    ];
+  Future<List<SrsDeckSummary>> deckSummaries() async => (await _summaries()).$1;
+
+  /// 牌组摘要 + 解码它们用的那份牌组树（同一次读出）：复习首页据此落盘缓存。
+  Future<SrsRemoteDeckSnapshot> deckSnapshot() async {
+    final (List<SrsDeckSummary> decks, _RemoteTree entry) = await _summaries();
+    return (decks: decks, cache: SrsRemoteWire.deckCache(entry.sources, decks));
   }
 
   @override
-  Future<SrsTodayReviewSummary> todayReviewSummary() async =>
-      SrsRemoteWire.todayReviewsFrom(await _read('todayReviewSummary'));
+  Future<SrsTodayReviewSummary> todayReviewSummary() =>
+      _read('todayReviewSummary', null, SrsRemoteWire.todayReviewsFrom);
 
   @override
-  Future<SrsDeckSummary?> deckSummary(String deckId) async {
-    final Object? json = await _read('deckSummary', <String, Object?>{
-      'deck': deckId,
-    });
-    return SrsRemoteWire.summaryFrom(json, await _currentTree());
-  }
+  Future<SrsDeckSummary?> deckSummary(String deckId) => _read(
+    'deckSummary',
+    <String, Object?>{'deck': deckId},
+    (Object? json) async =>
+        SrsRemoteWire.summaryFrom(json, await _currentTree()),
+  );
 
   @override
   Future<SrsStudyState?> studyState(
     String deckId, {
     Set<String> exclude = const <String>{},
     SrsCustomStudy? custom,
-  }) async {
-    final Object? json = await _read('studyState', <String, Object?>{
+  }) => _read(
+    'studyState',
+    <String, Object?>{
       'deck': deckId,
       'exclude': exclude.toList(),
       'custom': SrsRemoteWire.customStudy(custom),
-    });
-    return SrsRemoteWire.studyFrom(json, await _currentTree());
-  }
+    },
+    (Object? json) async => SrsRemoteWire.studyFrom(json, await _currentTree()),
+  );
 
   @override
   Future<String?> nextCard(
@@ -426,52 +508,56 @@ class SrsRemoteStore implements SrsDbStore, SrsRemoteForwarding {
       (await studyState(deckId, exclude: exclude, custom: custom))?.next;
 
   @override
-  Future<SrsCardCacheRow?> cardRow(String cardId) async =>
-      _row(await _read('cardRow', <String, Object?>{'card': cardId}));
+  Future<SrsCardCacheRow?> cardRow(String cardId) => _read(
+    'cardRow',
+    <String, Object?>{'card': cardId},
+    (Object? json) => _remember(SrsRemoteWire.cardRowFrom(json)),
+  );
 
   @override
-  Future<List<SrsCardCacheRow>> cardRows(Iterable<String> cardIds) async =>
-      _rows(
-        await _read('cardRows', <String, Object?>{'cards': cardIds.toList()}),
+  Future<List<SrsCardCacheRow>> cardRows(Iterable<String> cardIds) =>
+      _read('cardRows', <String, Object?>{'cards': cardIds.toList()}, _rows);
+
+  @override
+  Future<List<SrsCardCacheRow>> cardsOfNote(String noteId) =>
+      _read('cardsOfNote', <String, Object?>{'note': noteId}, _rows);
+
+  @override
+  Future<SrsCardDetail?> cardDetail(String cardId) => _read(
+    'cardDetail',
+    <String, Object?>{'card': cardId},
+    (Object? json) async {
+      final SrsRemoteCardDetail? d = SrsRemoteWire.cardDetailFrom(json);
+      if (d == null) return null;
+      _remember(d.card);
+      final SrsNoteView note = SrsRemoteWire.notesFrom(<SrsEntitySource>[
+        d.note,
+      ]).single;
+      final List<SrsNoteTypeView> types = await _typesOf(<SrsRemoteTypeRef>[
+        d.type,
+      ]);
+      if (types.isEmpty) return null;
+      final SrsNoteTypeView type = types.single;
+      return SrsCardDetail(
+        card: d.card,
+        note: note,
+        noteType: type,
+        template: type.templates
+            .where((SrsTemplateDef t) => t.id == d.templateId)
+            .firstOrNull,
+        deckName: d.deckName,
       );
-
-  @override
-  Future<List<SrsCardCacheRow>> cardsOfNote(String noteId) async =>
-      _rows(await _read('cardsOfNote', <String, Object?>{'note': noteId}));
-
-  @override
-  Future<SrsCardDetail?> cardDetail(String cardId) async {
-    final Object? json = await _read('cardDetail', <String, Object?>{
-      'card': cardId,
-    });
-    if (json == null) return null;
-    final Map<String, Object?> m = (json as Map).cast<String, Object?>();
-    final SrsCardCacheRow card = _row(m['card'])!;
-    final SrsNoteView note = SrsRemoteWire.notesFrom(<SrsEntitySource>[
-      SrsRemoteWire.sourceFrom(m['note']),
-    ]).single;
-    final List<SrsNoteTypeView> types = await _typesOf(<Object?>[m['type']]);
-    if (types.isEmpty) return null;
-    final SrsNoteTypeView type = types.single;
-    return SrsCardDetail(
-      card: card,
-      note: note,
-      noteType: type,
-      template: type.templates
-          .where((SrsTemplateDef t) => t.id == m['tpl'])
-          .firstOrNull,
-      deckName: m['deckName']! as String,
-    );
-  }
+    },
+  );
 
   @override
   Future<SrsRenderedCard?> renderCard(
     String cardId, {
     SrsCardDetail? detail,
   }) async {
-    final SrsRenderedCard? r = SrsRemoteWire.renderedFrom(
-      await _read('renderCard', <String, Object?>{'card': cardId}),
-    );
+    final SrsRenderedCard? r = await _read('renderCard', <String, Object?>{
+      'card': cardId,
+    }, SrsRemoteWire.renderedFrom);
     final Future<void> Function(Set<String>)? prefetch = prefetchMedia;
     if (r != null && prefetch != null) {
       await prefetch(<String>{
@@ -487,21 +573,21 @@ class SrsRemoteStore implements SrsDbStore, SrsRemoteForwarding {
   }
 
   @override
-  Future<SrsAnswerPreview> preview(String cardId) async =>
-      SrsRemoteWire.previewFrom(
-        await _read('preview', <String, Object?>{'card': cardId}),
-      );
+  Future<SrsAnswerPreview> preview(String cardId) => _read(
+    'preview',
+    <String, Object?>{'card': cardId},
+    SrsRemoteWire.previewFrom,
+  );
 
   @override
   Future<SrsNoteView?> note(String id) async => (await notes(<String>[id]))[id];
 
   @override
-  Future<Map<String, SrsNoteView?>> notes(Iterable<String> ids) async {
+  Future<Map<String, SrsNoteView?>> notes(Iterable<String> ids) {
     final List<String> list = ids.toSet().toList();
-    return _notesFrom(
-      await _read('notes', <String, Object?>{'ids': list}),
-      list,
-    );
+    return _read('notes', <String, Object?>{
+      'ids': list,
+    }, (Object? json) => _notesFrom(json, list));
   }
 
   @override
@@ -509,107 +595,82 @@ class SrsRemoteStore implements SrsDbStore, SrsRemoteForwarding {
       (await noteTypesById(<String>[id]))[id];
 
   @override
-  Future<Map<String, SrsNoteTypeView?>> noteTypesById(
-    Iterable<String> ids,
-  ) async {
+  Future<Map<String, SrsNoteTypeView?>> noteTypesById(Iterable<String> ids) {
     final List<String> list = ids.toSet().toList();
-    final List<SrsNoteTypeView> views = await _typesOf(
-      await _read('noteTypeRefs', <String, Object?>{'ids': list}),
-    );
-    final Map<String, SrsNoteTypeView> byId = <String, SrsNoteTypeView>{
-      for (final SrsNoteTypeView v in views) v.id: v,
-    };
-    return <String, SrsNoteTypeView?>{
-      for (final String id in list) id: byId[id],
-    };
+    return _read('noteTypeRefs', <String, Object?>{'ids': list}, (
+      Object? json,
+    ) async {
+      final List<SrsNoteTypeView> views = await _typesOf(
+        SrsRemoteWire.typeRefsFrom(json),
+      );
+      final Map<String, SrsNoteTypeView> byId = <String, SrsNoteTypeView>{
+        for (final SrsNoteTypeView v in views) v.id: v,
+      };
+      return <String, SrsNoteTypeView?>{
+        for (final String id in list) id: byId[id],
+      };
+    });
   }
 
   @override
-  Future<List<SrsNoteTypeView>> noteTypes() async =>
-      _typesOf(await _read('allNoteTypeRefs'));
+  Future<List<SrsNoteTypeView>> noteTypes() => _read(
+    'allNoteTypeRefs',
+    null,
+    (Object? json) => _typesOf(SrsRemoteWire.typeRefsFrom(json)),
+  );
 
   @override
-  Future<SrsCardHistory> history(String cardId) async =>
-      SrsCardHistory.fromWire(
-        ((await _read('history', <String, Object?>{'card': cardId}))! as Map)
-            .cast<String, Object?>(),
-      );
+  Future<SrsCardHistory> history(String cardId) => _read(
+    'history',
+    <String, Object?>{'card': cardId},
+    SrsRemoteWire.historyFrom,
+  );
 
   @override
-  Future<SrsEntityEdits> entityEdits(SrsEntityKind kind, String id) async =>
-      SrsRemoteWire.entityEditsFrom(
-        await _read('entityEdits', <String, Object?>{
-          'kind': kind.wire,
-          'id': id,
-        }),
-      );
+  Future<SrsEntityEdits> entityEdits(SrsEntityKind kind, String id) => _read(
+    'entityEdits',
+    <String, Object?>{'kind': kind.wire, 'id': id},
+    SrsRemoteWire.entityEditsFrom,
+  );
 
   @override
   Future<Map<String, String>> expandFields(
     Map<String, String> fields, {
     bool dropMissing = false,
-  }) async =>
-      ((await _read('expandFields', <String, Object?>{
-                'fields': fields,
-                'dropMissing': dropMissing,
-              }))!
-              as Map)
-          .cast<String, String>();
+  }) => _read('expandFields', <String, Object?>{
+    'fields': fields,
+    'dropMissing': dropMissing,
+  }, SrsRemoteWire.stringMapFrom);
 
   @override
   Future<List<(SrsEntityKind, String, SrsRegister)>> syncConflicts({
     ({SrsEntityKind kind, String id})? entity,
-  }) async {
-    final Map<String, Object?> m =
-        ((await _read('syncConflicts', <String, Object?>{
-                  if (entity != null) 'entityKind': entity.kind.wire,
-                  if (entity != null) 'entityId': entity.id,
-                }))!
-                as Map)
-            .cast<String, Object?>();
-    final Map<String, Object?> rawEdits = (m['edits']! as Map)
-        .cast<String, Object?>();
-    final Map<String, SrsEntityEdits> edits = <String, SrsEntityEdits>{
-      for (final MapEntry<String, Object?> e in rawEdits.entries)
-        e.key: SrsRemoteWire.entityEditsFrom(e.value),
-    };
-    return <(SrsEntityKind, String, SrsRegister)>[
-      for (final Object? item in m['items']! as List<Object?>)
-        if (item case [final String kind, final String id, final String key])
-          if (edits['$kind/$id']?[key] case final SrsRegister reg)
-            (SrsRemoteWire.kindFrom(kind), id, reg),
-    ];
-  }
+  }) => _read('syncConflicts', <String, Object?>{
+    if (entity != null) 'entityKind': entity.kind.wire,
+    if (entity != null) 'entityId': entity.id,
+  }, SrsRemoteWire.syncConflictsFrom);
 
   @override
-  Future<Set<String>?> instantDueCardIds() async {
-    final Object? json = await _read('instantDueCardIds');
-    return json == null
-        ? null
-        : <String>{
-            for (final Object? id in json as List<Object?>) id! as String,
-          };
-  }
+  Future<Set<String>?> instantDueCardIds() => _read(
+    'instantDueCardIds',
+    null,
+    (Object? json) =>
+        json == null ? null : SrsRemoteWire.stringsFrom(json).toSet(),
+  );
 
   @override
-  Future<SrsSync2Result> browseCommand(Map<String, Object?> request) async =>
-      SrsRemoteWire.sync2ResultFrom(
-        await _read('browseCommand', <String, Object?>{'request': request}),
-      );
+  Future<SrsSync2Result> browseCommand(Map<String, Object?> request) => _read(
+    'browseCommand',
+    <String, Object?>{'request': request},
+    SrsRemoteWire.sync2ResultFrom,
+  );
 
   @override
-  Future<List<String>> remoteNoteIdsOfType(
-    String noteTypeId, {
-    int? limit,
-  }) async => <String>[
-    for (final Object? id
-        in (await _read('noteIdsOfType', <String, Object?>{
-              'type': noteTypeId,
-              'limit': limit,
-            }))!
-            as List<Object?>)
-      id! as String,
-  ];
+  Future<List<String>> remoteNoteIdsOfType(String noteTypeId, {int? limit}) =>
+      _read('noteIdsOfType', <String, Object?>{
+        'type': noteTypeId,
+        'limit': limit,
+      }, SrsRemoteWire.stringsFrom);
 
   @override
   Future<SrsNoteTypeChangePreview> remotePreviewNoteTypeChange({
@@ -617,59 +678,43 @@ class SrsRemoteStore implements SrsDbStore, SrsRemoteForwarding {
     required String targetTypeId,
     required Map<String, String?> fieldMap,
     required Map<String, String?> templateMap,
-  }) async {
-    final Map<String, Object?> m =
-        ((await _read('previewNoteTypeChange', <String, Object?>{
-                  'notes': noteIds,
-                  'target': targetTypeId,
-                  'fieldMap': fieldMap,
-                  'templateMap': templateMap,
-                }))!
-                as Map)
-            .cast<String, Object?>();
-    final List<SrsNoteTypeView> types = await _typesOf(<Object?>[
-      m['from'],
-      m['to'],
-    ]);
-    return SrsNoteTypeChangePreview(
-      from: types[0],
-      to: types[1],
-      plans: <SrsNoteTypeChangePlan>[
-        for (final Object? x in m['plans']! as List<Object?>)
-          if (x case {
-            'note': final String note,
-            'fields': final Map<Object?, Object?> fields,
-            'links': final Map<Object?, Object?> links,
-            'dropped': final List<Object?> dropped,
-          })
-            SrsNoteTypeChangePlan(
-              noteId: note,
-              fieldValues: fields.cast<String, String>(),
-              cardLinks: links.cast<String, String>(),
-              droppedCards: dropped.cast<String>(),
-            ),
-      ],
-    );
-  }
+  }) => _read(
+    'previewNoteTypeChange',
+    <String, Object?>{
+      'notes': noteIds,
+      'target': targetTypeId,
+      'fieldMap': fieldMap,
+      'templateMap': templateMap,
+    },
+    (Object? json) async {
+      final SrsRemoteNoteTypeChange c = SrsRemoteWire.noteTypeChangeFrom(json);
+      final List<SrsNoteTypeView> types = await _typesOf(<SrsRemoteTypeRef>[
+        c.from,
+        c.to,
+      ]);
+      if (types.length != 2) {
+        throw const SrsRemoteWireError('previewNoteTypeChange.from/to');
+      }
+      return SrsNoteTypeChangePreview(
+        from: types[0],
+        to: types[1],
+        plans: c.plans,
+      );
+    },
+  );
 
   @override
   Future<List<SrsHistoryEntry>> remoteEditHistory(
     SrsEntityKind kind,
     String entityId,
-  ) async => <SrsHistoryEntry>[
-    for (final Object? e
-        in (await _read('editHistory', <String, Object?>{
-                  'kind': kind.wire,
-                  'id': entityId,
-                })
-                as List<Object?>?) ??
-            const <Object?>[])
-      if (e is Map) SrsHistoryEntry.fromJson(e.cast<String, Object?>()),
-  ];
+  ) => _read('editHistory', <String, Object?>{
+    'kind': kind.wire,
+    'id': entityId,
+  }, SrsRemoteWire.historyEntriesFrom);
 
   @override
-  Future<Map<String, String>> remoteDeviceNames() async =>
-      ((await _read('deviceNames'))! as Map).cast<String, String>();
+  Future<Map<String, String>> remoteDeviceNames() =>
+      _read('deviceNames', null, SrsRemoteWire.stringMapFrom);
 
   // ---------------------------------------------------------------- 写
 
@@ -684,20 +729,18 @@ class SrsRemoteStore implements SrsDbStore, SrsRemoteForwarding {
     'target': targetTypeId,
     'fieldMap': fieldMap,
     'templateMap': templateMap,
-  });
+  }, _ignore);
 
   @override
   Future<int> remoteMigrateLegacyLapis(
     String sourceTypeId, {
     List<String>? noteIds,
     String? targetDeckId,
-  }) async =>
-      (await _write('migrateLegacyLapis', <String, Object?>{
-            'source': sourceTypeId,
-            'notes': noteIds,
-            'deck': targetDeckId,
-          }))!
-          as int;
+  }) => _write('migrateLegacyLapis', <String, Object?>{
+    'source': sourceTypeId,
+    'notes': noteIds,
+    'deck': targetDeckId,
+  }, SrsRemoteWire.intFrom);
 
   @override
   Future<SrsAnswerOutcome> answerAndStudy(
@@ -719,7 +762,10 @@ class SrsRemoteStore implements SrsDbStore, SrsRemoteForwarding {
         'custom': SrsRemoteWire.customStudy(custom),
         if (known) 'checkBase': true,
         if (known) 'base': base,
-      });
+      }, (Object? json) => json);
+    } on SrsRemoteBadResponse {
+      // 信封不合契约：主机已经处理了这次作答，基线作废（同 stale）。
+      rethrow;
     } on InterconnectHostError catch (e) {
       // 出题之后卡在主机上变了：基线作废（不然重新出这张卡也永远 stale），交给复习页跳过重排。
       if (e.message == SrsRemoteStoreError.stale) {
@@ -729,30 +775,30 @@ class SrsRemoteStore implements SrsDbStore, SrsRemoteForwarding {
       if (known) _bases[cardId] = base;
       rethrow;
     }
-    final Map<String, Object?> m = (result! as Map).cast<String, Object?>();
-    return SrsAnswerOutcome(
-      SrsRemoteWire.logFrom(m['log']),
-      SrsRemoteWire.studyFrom(m['study'], await _currentTree()),
+    // 作答已落在主机上；这里解码失败同样不恢复基线。
+    final SrsDeckTree tree = await _currentTree();
+    return _parse(
+      'answerAndStudy',
+      () => SrsRemoteWire.answerFrom(result, tree),
     );
   }
 
   @override
-  Future<bool> undo(String cardId, String logId) async {
+  Future<bool> undo(String cardId, String logId) {
     _bases.remove(cardId);
-    return (await _write('undo', <String, Object?>{
-          'card': cardId,
-          'log': logId,
-        })) ==
-        true;
+    return _write('undo', <String, Object?>{
+      'card': cardId,
+      'log': logId,
+    }, (Object? json) => json == true);
   }
 
   Future<void> _cardWrite(
     String op,
     String cardId, [
     Map<String, Object?> args = const <String, Object?>{},
-  ]) async {
+  ]) {
     _bases.remove(cardId);
-    await _write(op, <String, Object?>{'card': cardId, ...args});
+    return _write(op, <String, Object?>{'card': cardId, ...args}, _ignore);
   }
 
   @override
@@ -775,43 +821,39 @@ class SrsRemoteStore implements SrsDbStore, SrsRemoteForwarding {
       _cardWrite('moveCard', cardId, <String, Object?>{'deck': deckId});
 
   @override
-  Future<List<SrsReviewLog>> resetCards(Iterable<String> cardIds) async {
+  Future<List<SrsReviewLog>> resetCards(Iterable<String> cardIds) {
     final List<String> ids = cardIds.toList();
     ids.forEach(_bases.remove);
-    return SrsRemoteWire.logsFrom(
-      await _write('resetCards', <String, Object?>{'cards': ids}),
-    );
+    return _write('resetCards', <String, Object?>{
+      'cards': ids,
+    }, SrsRemoteWire.logsFrom);
   }
 
   @override
-  Future<List<SrsReviewLog>> setDueDays(Map<String, int> dueDays) async {
+  Future<List<SrsReviewLog>> setDueDays(Map<String, int> dueDays) {
     dueDays.keys.forEach(_bases.remove);
-    return SrsRemoteWire.logsFrom(
-      await _write('setDueDays', <String, Object?>{'days': dueDays}),
-    );
+    return _write('setDueDays', <String, Object?>{
+      'days': dueDays,
+    }, SrsRemoteWire.logsFrom);
   }
 
   @override
-  Future<int> rescheduleDeck(String deckId) async =>
-      (await _write('rescheduleDeck', <String, Object?>{'deck': deckId}))!
-          as int;
+  Future<int> rescheduleDeck(String deckId) => _write(
+    'rescheduleDeck',
+    <String, Object?>{'deck': deckId},
+    SrsRemoteWire.intFrom,
+  );
 
   @override
   Future<({int newCards, int reviews})> extendTodayLimits(
     String deckId, {
     int newCards = 0,
     int reviews = 0,
-  }) async {
-    final Map<String, Object?> m =
-        ((await _write('extendTodayLimits', <String, Object?>{
-                  'deck': deckId,
-                  'newCards': newCards,
-                  'reviews': reviews,
-                }))!
-                as Map)
-            .cast<String, Object?>();
-    return (newCards: m['n']! as int, reviews: m['r']! as int);
-  }
+  }) => _write('extendTodayLimits', <String, Object?>{
+    'deck': deckId,
+    'newCards': newCards,
+    'reviews': reviews,
+  }, SrsRemoteWire.extendedLimitsFrom);
 
   @override
   Future<String> createNote({
@@ -822,17 +864,15 @@ class SrsRemoteStore implements SrsDbStore, SrsRemoteForwarding {
     SrsSourceRef? source,
     String? guid,
     int? createdAt,
-  }) async =>
-      (await _write('createNote', <String, Object?>{
-            'type': noteTypeId,
-            'fields': fieldsById,
-            'deck': deckId,
-            'tags': tags,
-            'source': source?.toJson(),
-            'guid': guid,
-            'createdAt': createdAt,
-          }))!
-          as String;
+  }) => _write('createNote', <String, Object?>{
+    'type': noteTypeId,
+    'fields': fieldsById,
+    'deck': deckId,
+    'tags': tags,
+    'source': source?.toJson(),
+    'guid': guid,
+    'createdAt': createdAt,
+  }, SrsRemoteWire.stringFrom);
 
   @override
   Future<void> updateNote(
@@ -843,15 +883,15 @@ class SrsRemoteStore implements SrsDbStore, SrsRemoteForwarding {
     'note': noteId,
     'fields': fieldsById,
     'tags': tags,
-  });
+  }, _ignore);
 
   @override
   Future<void> deleteNote(String noteId) =>
-      _write('deleteNote', <String, Object?>{'note': noteId});
+      _write('deleteNote', <String, Object?>{'note': noteId}, _ignore);
 
   @override
   Future<void> restoreNote(String noteId) =>
-      _write('restoreNote', <String, Object?>{'note': noteId});
+      _write('restoreNote', <String, Object?>{'note': noteId}, _ignore);
 
   @override
   Future<SrsFieldEdit?> editField(
@@ -870,51 +910,51 @@ class SrsRemoteStore implements SrsDbStore, SrsRemoteForwarding {
     String entityId,
     Map<String, Object?> values, {
     bool machine = false,
-  }) async {
+  }) {
     if (kind == SrsEntityKind.card) _bases.remove(entityId);
-    final Object? json = await _write('editFields', <String, Object?>{
+    return _write('editFields', <String, Object?>{
       'kind': kind.wire,
       'id': entityId,
       'values': values,
       'machine': machine,
-    });
-    return json == null ? null : SrsRemoteWire.editsFrom(json);
+    }, (Object? json) => json == null ? null : SrsRemoteWire.editsFrom(json));
   }
 
   @override
-  Future<List<SrsFieldEdit>> editFieldsBatch(
-    List<SrsFieldChange> changes,
-  ) async {
+  Future<List<SrsFieldEdit>> editFieldsBatch(List<SrsFieldChange> changes) {
     for (final SrsFieldChange c in changes) {
       if (c.kind == SrsEntityKind.card) _bases.remove(c.entityId);
     }
-    return SrsRemoteWire.editsFrom(
-      await _write('editFieldsBatch', <String, Object?>{
-        'changes': SrsRemoteWire.editSpecs(<SrsEditSpec>[
-          for (final SrsFieldChange c in changes)
-            SrsEditSpec(c.kind, c.entityId, c.key, c.value),
-        ]),
-      }),
-    );
+    return _write('editFieldsBatch', <String, Object?>{
+      'changes': SrsRemoteWire.editSpecs(<SrsEditSpec>[
+        for (final SrsFieldChange c in changes)
+          SrsEditSpec(c.kind, c.entityId, c.key, c.value),
+      ]),
+    }, SrsRemoteWire.editsFrom);
   }
 
   @override
   Future<List<SrsFieldEdit>> writeEdits(
     List<SrsEditSpec> specs, {
     List<SrsEntityRecord> records = const <SrsEntityRecord>[],
-  }) async {
+  }) {
     for (final SrsEditSpec s in specs) {
       if (s.kind == SrsEntityKind.card) _bases.remove(s.entityId);
     }
-    return SrsRemoteWire.editsFrom(
-      await _write('writeEdits', <String, Object?>{
-        'specs': SrsRemoteWire.editSpecs(specs),
-        'records': <Object?>[
-          for (final SrsEntityRecord r in records) r.toJson(),
-        ],
-      }),
-    );
+    return _write('writeEdits', <String, Object?>{
+      'specs': SrsRemoteWire.editSpecs(specs),
+      'records': <Object?>[for (final SrsEntityRecord r in records) r.toJson()],
+    }, SrsRemoteWire.editsFrom);
   }
+}
+
+/// 缓存的主机牌组树：按树标签失效；[sources] 留着给首页落盘（[SrsRemoteStore.deckSnapshot]）。
+class _RemoteTree {
+  const _RemoteTree(this.tag, this.sources, this.tree);
+
+  final String tag;
+  final List<SrsEntitySource> sources;
+  final SrsDeckTree tree;
 }
 
 /// 远程复习的卡面媒体缓存：卡面照旧经 [SrsMediaStore] 读本地文件，缺的从主机按名字补拉。

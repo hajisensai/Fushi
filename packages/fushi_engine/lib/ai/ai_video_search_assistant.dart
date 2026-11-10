@@ -434,6 +434,7 @@ String buildAiResourceRankUserPrompt({
         'resolution': c.resolution ?? '',
         'release_group': c.releaseGroup ?? '',
         'trusted': c.trusted,
+        'remake': c.remake,
         'published': _isoDate(c.publishedAt),
       }),
     );
