@@ -191,7 +191,9 @@ class _MusicTrackDetailPageState extends ConsumerState<MusicTrackDetailPage> {
             ? ToastSeverity.warning
             : ToastSeverity.success,
       );
-      setState(() => _appearances = _loadAppearances());
+      setState(() {
+        _appearances = _loadAppearances();
+      });
     } finally {
       if (mounted) setState(() => _detecting = false);
     }
@@ -416,7 +418,9 @@ class _MusicTrackDetailPageState extends ConsumerState<MusicTrackDetailPage> {
         database: _db,
         track: track,
         service: ref.read(appProvider).musicScrape,
-        onChanged: () => setState(() => _versions = _loadVersions()),
+        onChanged: () => setState(() {
+          _versions = _loadVersions();
+        }),
       ),
       FutureBuilder<
         ({MusicScrapeMetaRow? meta, Map<String, MusicTrackRow> local})
