@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-10T19:33:26Z",
+ "generatedAt": "2026-11-10T20:10:52Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "f307da3ff2d0738e7be79eb900e4a6e8520c7864",
-  "seq": 26407
+  "sha": "1d268edc8af8b8928b71529e8704e35cbd3c2e00",
+  "seq": 26409
  },
  "builds": [
   {
@@ -106,9 +106,10 @@
   }
  ],
  "pending": {
-  "headSha": "f307da3ff2d0738e7be79eb900e4a6e8520c7864",
-  "headSeq": 26407,
+  "headSha": "1d268edc8af8b8928b71529e8704e35cbd3c2e00",
+  "headSeq": 26409,
   "prs": [
+   3293,
    3223,
    3209,
    3236,
@@ -282,19 +283,19 @@
   "platforms": {
    "android": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/42881963518"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/42888536538"
    },
    "windows": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/42881963371"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/42888536558"
    },
    "macos": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/42881963371"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/42888536558"
    },
    "ios": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/42881963371"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/42888536558"
    }
   }
  },
@@ -1888,6 +1889,15 @@
    "mergedAt": "2026-11-10T18:58:38Z",
    "additions": 45,
    "deletions": 9,
+   "labels": []
+  },
+  "3293": {
+   "number": 3293,
+   "title": "fix(verify): #3244 / #3236 / #3213 合入后的测试红（测试侧缺陷）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T19:45:57Z",
+   "additions": 75,
+   "deletions": 41,
    "labels": []
   }
  }
