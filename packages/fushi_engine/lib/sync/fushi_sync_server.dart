@@ -156,8 +156,8 @@ class FushiPairRequest {
   final String? pin;
 
   /// 来源标识（IP，IPv6 按 /64；隧道按 NodeId；不认自报 deviceId），宿主判「同源重试
-  /// 取代旧审批框」用。只在能区分真实来源时非 null：经本机反代 / 穿透进来的回环对端、
-  /// 带转发头却不是可信代理的对端、查不到 NodeId 的隧道对端都给 null（它们背后的所有
+  /// 取代旧审批框」用。只在能区分真实来源时非 null：经本机反代 / 穿透进来的回环对端
+  /// （未经可信代理解析）、查不到 NodeId 的隧道对端都给 null（它们背后的所有
   /// 人共用一个键，按它判同源会让陌生人顶掉别人的常驻 PIN 框）。null = 宿主按不同源处理。
   final String? sourceKey;
 

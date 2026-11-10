@@ -741,8 +741,7 @@ extension _FushiSyncServerPairing on FushiSyncServer {
     bool evictable(FushiPairSession s) =>
         s.originClass == cls && !s.protectedFromEviction;
 
-    // 1. 每来源限额：只对能区分真实来源的键做（回环未经可信代理、带转发头却不是可信
-    //    代理的对端、`p2p:?` 跳过——
+    // 1. 每来源限额：只对能区分真实来源的键做（回环未经可信代理、`p2p:?` 跳过——
     //    否则经本机反代进来的所有人共用一个名额）。
     if (origin.sourceKeyTrusted && sourceKey != null) {
       while (true) {
@@ -859,9 +858,9 @@ class _RequestOrigin {
   /// 限速与会话分桶用的来源键（步骤 5 消费）；null = 无法识别。
   final String? sourceKey;
 
-  /// [sourceKey] 能否区分不同的真实来源：P2P NodeId、无转发头的非回环 TCP 对端、经
-  /// 可信代理解析出的转发 IP 为 true；回环对端、带转发头却没经可信代理解析的对端
-  /// （它只是转发者，背后可能是任意多人）与 `p2p:?` 为 false。
+  /// [sourceKey] 能否区分不同的真实来源：P2P NodeId、非回环 TCP 对端（不论带不带转发
+  /// 头——头是请求方自填的，不能让它自选降级）、经可信代理解析出的转发 IP 为 true；
+  /// 回环对端（未经可信代理解析）与 `p2p:?` 为 false。
   final bool sourceKeyTrusted;
 
   /// 能区分真实来源时的 [sourceKey]，否则 null：按来源的 PIN 限速 / 锁定与宿主同源
@@ -936,9 +935,11 @@ _RequestOrigin _classifyRequestOrigin(
     originClass: originClass,
     display: forwarded ? '$peerText (proxied)' : peerText,
     sourceKey: fushiRateKeyForAddress(peer),
-    // 带转发头而对端不是可信代理：对端只是转发者（局域网里另一台反代背后可以是任意
-    // 多人），它的 IP 不能区分真实来源（评审 compat-3）。
-    sourceKeyTrusted: !peerIsLoopback && !forwarded,
+    // 非回环的直连对端 IP 是 TCP 层的真实地址、请求方伪造不了：转发头是请求方自填的，
+    // 不能拿它把自己降成不可信键、绕开按来源的锁定与会话限额（评审 recheck-1，回退
+    // compat-3 的 `&& !forwarded`）。局域网反代背后多人共用一个 IP 的部署，要靠
+    // trusted_proxies 把反代登记成可信代理来区分来源。
+    sourceKeyTrusted: !peerIsLoopback,
   );
 }
 

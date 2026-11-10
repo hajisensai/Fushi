@@ -319,24 +319,46 @@ void main() {
     );
   });
 
-  test('例 11：局域网另一台反代（不在可信名单）后的来源不按它的 IP 分桶', () async {
-    // 评审 compat-3：带转发头而对端不是可信代理时，对端 IP 背后可能是任意多人。
-    const Map<String, String> viaLanProxy = <String, String>{
+  test('例 11：直连对端自填转发头不能把自己降成不可信键，第 5 次仍按来源锁定（评审 recheck-1）', () async {
+    // 非回环的 TCP 对端 IP 伪造不了；转发头是请求方自己填的。若带头就不按来源锁，
+    // 单个公网 IP 就能绕开 5 次来源锁定、独自把公网类别预算撞满锁住所有人。
+    const Map<String, String> spoofed = <String, String>{
+      'x-forwarded-for': '1.2.3.4',
+    };
+    for (int i = 1; i <= 4; i++) {
+      expect(
+        await guess('203.0.113.5', headers: spoofed),
+        401,
+        reason: '第 $i 次',
+      );
+    }
+    expect(await guess('203.0.113.5', headers: spoofed), 429);
+    expect(server.pinRateLimitTrackedSourceCount, 1);
+    final (int code, _, _, _) = await open('203.0.113.5', headers: spoofed);
+    expect(code, 429, reason: '锁定期间不再开会话');
+    expect(
+      server.pairingLockouts.keys,
+      isNot(contains(FushiPairOriginClass.public)),
+      reason: '单个 IP 只锁住自己，碰不到类别预算的 10 次',
+    );
+    // 其它公网来源照常能开会话。
+    final (int other, _, _, _) = await open('203.0.113.6');
+    expect(other, 200);
+  });
+
+  test('例 12：直连对端带转发头也受「每来源 4 个会话」限额（评审 recheck-1）', () async {
+    const Map<String, String> spoofed = <String, String>{
       'x-forwarded-for': '198.51.100.50',
     };
-    final List<int> codes = <int>[
-      for (int i = 1; i <= 6; i++)
-        await guess('192.168.1.5', headers: viaLanProxy),
-    ];
-    expect(codes, everyElement(401), reason: '不按代理 IP 做来源锁定');
-    expect(server.pinRateLimitTrackedSourceCount, 0);
-
-    // 也不受「每来源 4 个会话」的限额：代理后一个人挤不掉别人等着 confirm 的会话。
     final int before = server.pendingPairSessionCount;
     for (int i = 0; i < 6; i++) {
-      final (int c, _, _, _) = await open('192.168.1.5', headers: viaLanProxy);
+      final (int c, _, _, _) = await open('192.168.1.5', headers: spoofed);
       expect(c, 200);
     }
-    expect(server.pendingPairSessionCount - before, 6);
+    expect(
+      server.pendingPairSessionCount - before,
+      4,
+      reason: '同一 TCP 对端最多挂 4 个会话，多出来的只挤掉自己的',
+    );
   });
 }

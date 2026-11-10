@@ -204,7 +204,7 @@ void main() {
   });
 
   test('审批请求只带能区分真实来源的 sourceKey（评审 compat-3）', () async {
-    // 宿主拿 sourceKey 判「同源取代常驻 PIN 框」：共用键（回环、不可信转发者、`p2p:?`）
+    // 宿主拿 sourceKey 判「同源取代常驻 PIN 框」：共用键（回环、`p2p:?`）
     // 判成同源会让陌生人顶掉别人的框，必须给 null。
     server.lanRequiresPinProvider = () async => true;
     Future<String?> keyFor({
@@ -224,8 +224,8 @@ void main() {
         peer: '192.168.1.5',
         headers: <String, String>{'x-forwarded-for': '203.0.113.9'},
       ),
-      isNull,
-      reason: '带转发头、不在可信名单的局域网反代',
+      'ip:192.168.1.5',
+      reason: '非回环直连对端带自填转发头：仍按真实 TCP 对端分源（评审 recheck-1）',
     );
     expect(
       await keyFor(
