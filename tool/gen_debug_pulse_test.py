@@ -199,6 +199,33 @@ class PureTest(unittest.TestCase):
                 tags = set(re.findall(r"ROLLING_DEBUG_TAG=([\w.-]+)", f.read()))
             self.assertEqual(tags, {gp.ROLLING_TAG}, wf)
 
+    def test_pulse_jobs_grant_the_scopes_the_generator_uses(self) -> None:
+        # Job-level `permissions:` sets every unlisted scope to none. The pulse
+        # pushes update-manifest (contents: write), lists runs / jobs (actions)
+        # and reads PR metadata over GraphQL (pull-requests: read) -- without
+        # the last one every PR silently degrades to a "#N" placeholder.
+        job_re = re.compile(r"^  ([A-Za-z0-9_-]+):\n", re.MULTILINE)
+        seen = 0
+        for wf in gp.RELEASE_WORKFLOWS:
+            with open(os.path.join(REPO_ROOT, ".github", "workflows", wf), encoding="utf-8") as f:
+                text = f.read()
+            body = text[text.index("\njobs:\n"):]
+            starts = [(m.group(1), m.start()) for m in job_re.finditer(body)]
+            for i, (job, start) in enumerate(starts):
+                end = starts[i + 1][1] if i + 1 < len(starts) else len(body)
+                block = body[start:end]
+                if "tool/publish_debug_pulse.sh" not in block:
+                    continue
+                seen += 1
+                grants = set(re.findall(r"^      ([a-z-]+: (?:read|write))\s*$", block, re.MULTILINE))
+                self.assertIn("contents: write", grants, f"{wf}:{job}")
+                self.assertIn("pull-requests: read", grants, f"{wf}:{job}")
+                self.assertTrue(
+                    {"actions: read", "actions: write"} & grants, f"{wf}:{job}"
+                )
+        # build + publish-android, windows + publish.
+        self.assertEqual(seen, 4)
+
     def test_cached_prs_skips_placeholders_and_other_schema(self) -> None:
         prev = {"schema": 1, "prs": {"1": pr_meta(1), "2": gp.placeholder_pr(2)}}
         self.assertEqual(set(gp.cached_prs(prev)), {1})

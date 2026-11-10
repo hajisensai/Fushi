@@ -158,6 +158,9 @@ jobs:
       contents: write
       # native-artifact-store 按名字查 / 下载本仓历史 run 的产物。
       actions: read
+      # debug pulse（tool/publish_debug_pulse.sh）用 GraphQL 读 PR 标题 / 作者 / 标签；没列出的
+      # scope 会被置 none，缺它 PR 元数据整批退回 #N 占位。
+      pull-requests: read
     steps:
       - uses: actions/checkout@v6
         with:
@@ -3334,6 +3337,8 @@ jobs:
       # publish_update_manifest.sh 推完正式版清单要 `gh workflow run` 唤醒 R2 镜像；
       # job 级 permissions 会把没列出的 scope 置 none，缺 actions: write 则 dispatch 403。
       actions: write
+      # debug pulse（tool/publish_debug_pulse.sh）用 GraphQL 读 PR 元数据，同上（windows job）。
+      pull-requests: read
     steps:
       - uses: actions/checkout@v6
         with:

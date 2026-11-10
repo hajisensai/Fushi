@@ -136,6 +136,9 @@ jobs:
       # publish_update_manifest.sh 推完正式版清单要 `gh workflow run` 唤醒 R2 镜像；
       # job 级 permissions 会把没列出的 scope 置 none，缺 actions: write 则 dispatch 403。
       actions: write
+      # debug pulse（tool/publish_debug_pulse.sh）用 GraphQL 读 PR 标题 / 作者 / 标签；没列出的
+      # scope 会被置 none，缺它 PR 元数据整批退回 #N 占位。
+      pull-requests: read
     # 发布步骤已搬到下面的 `publish-android` job（2026-10-17，正式版云端预构建 + 审批门）：
     # 这里只构建、签名、上传 run artifact，绝不对外发布任何东西。
     #
@@ -1518,6 +1521,8 @@ jobs:
       # publish_update_manifest.sh 推完正式版清单要 `gh workflow run` 唤醒 R2 镜像；
       # job 级 permissions 会把没列出的 scope 置 none，缺 actions: write 则 dispatch 403。
       actions: write
+      # debug pulse（tool/publish_debug_pulse.sh）用 GraphQL 读 PR 元数据，同上。
+      pull-requests: read
 
     steps:
     # 完整历史：反馈回填要 `git merge-base --is-ancestor`，main 同步拿工作区当
