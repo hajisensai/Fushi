@@ -388,12 +388,34 @@ void main() {
     );
   });
 
+  test('host 换了字幕 → 清单 contentRevision 变；不带 fresh 的普通下载也拿到新包', () async {
+    Future<String?> listedRevision() async =>
+        (await backend.listRemoteAudiobooks())
+            .singleWhere((RemoteAudiobookInfo a) => a.identity == _bookKey)
+            .contentRevision;
+
+    final String? before = await listedRevision();
+    expect(before, isNotNull);
+    expect(await listedRevision(), before, reason: '什么都没变时版本稳定');
+
+    // 文件修改时刻精度：确保重写后 mtime 一定变。
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    await _retranscribeOnHost(hostDb, hostAudio);
+    final String? after = await listedRevision();
+    expect(after, isNot(before));
+
+    // setUp 里刚导出过 v1 并进了 host 的 15 分钟导出缓存；内容版本变了，缓存不再命中。
+    await clientDownloadAudiobook();
+    expect(await clientCueTexts(), hasLength(3));
+    expect((await clientCueTexts()).last, 'どこで生れたかとんと見当がつかぬ。');
+  });
+
   test('BUG-3098：重新下载整本有声书（fresh）拿到 host 新字幕，不撞 UNIQUE(uid)', () async {
     await _retranscribeOnHost(hostDb, hostAudio);
 
     // 修复前：第二次导入同一个包，upsertSrtBook 按主键 id 判冲突、撞 UNIQUE(uid)
-    // 整个事务回滚——「重新下载有声书」永远失败。fresh 同时绕过 host 15 分钟导出
-    // 缓存：setUp 里刚导出过一次 v1，没有 fresh 拿回来的还是 v1。
+    // 整个事务回滚——「重新下载有声书」永远失败。fresh 同时作废 host 的导出缓存
+    // （内容版本变了缓存本来也不命中，见上一条）。
     await clientDownloadAudiobook(fresh: true);
 
     expect(await clientCueTexts(), hasLength(3));

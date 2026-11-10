@@ -254,12 +254,101 @@ class FfiFsrsEngine implements FsrsBatchEngine {
     return _evaluation(result, 'evaluate');
   }
 
+  /// 时间序列切分的留出预测（复习统计页的校准图）：[items] 按复习时间排好序、带卡 ID；第 k 折只用之前的条目训练，
+  /// 预测这一段每条作答前的可提取度。返回与条目对齐的预测（第一段与数据不够训练的折为 NaN）。阻塞，放后台
+  /// isolate；[control] 的取消 / 进度与参数优化同一套。
+  Float32List predictTimeSeries({
+    required SrsAlgorithm algorithm,
+    required SrsFsrsTrainingSet items,
+    int folds = 5,
+    NativeSrsOptimizerControl? control,
+  }) {
+    final Pointer<Float> out = calloc<Float>(_slots(items.length));
+    try {
+      _fit(
+        <String, Object?>{
+          'algorithm': algorithm.memoryAlgorithm.wire,
+          'folds': folds,
+        },
+        items,
+        control,
+        out,
+      );
+      return Float32List.fromList(out.asTypedListOutOfLine(items.length));
+    } finally {
+      calloc.free(out);
+    }
+  }
+
+  /// 校准图与 UM+（lib.rs `ffsrs_calibration_report`）：样本六列等长（[actual] 1 = 记住，[fsrs] NaN = 没有预测），
+  /// RWKV 回放预测按日志数字 ID 配对，[scopeCards] 为空 = 全部卡。返回原生侧的结果 JSON。
+  Map<String, Object?> calibrationReport({
+    required Int64List cards,
+    required Int64List tags,
+    required Int64List ats,
+    required Int64List elapsed,
+    required Int64List actual,
+    required Float32List fsrs,
+    required Int64List rwkvTags,
+    required Float32List rwkvPreds,
+    required Int64List scopeCards,
+    int? fromMs,
+    int? toMs,
+  }) {
+    final int n = cards.length;
+    final Pointer<Char> req = _encode(<String, Object?>{
+      'from': ?fromMs,
+      'to': ?toMs,
+    }).toNativeUtf8().cast<Char>();
+    final List<Pointer<Int64>> ints = <Pointer<Int64>>[];
+    Pointer<Int64> i64(Int64List v) {
+      final Pointer<Int64> p = calloc<Int64>(_slots(v.length));
+      p.asTypedListOutOfLine(v.length).setAll(0, v);
+      ints.add(p);
+      return p;
+    }
+
+    final Pointer<Float> f = calloc<Float>(_slots(n));
+    final Pointer<Float> rp = calloc<Float>(_slots(rwkvPreds.length));
+    try {
+      f.asTypedListOutOfLine(n).setAll(0, fsrs);
+      rp.asTypedListOutOfLine(rwkvPreds.length).setAll(0, rwkvPreds);
+      final Object? result = _decodeResponse(
+        _b.ffsrs_calibration_report(
+          req,
+          n,
+          i64(cards),
+          i64(tags),
+          i64(ats),
+          i64(elapsed),
+          i64(actual),
+          f,
+          rwkvTags.length,
+          i64(rwkvTags),
+          rp,
+          scopeCards.length,
+          i64(scopeCards),
+        ),
+      );
+      if (result is! Map) {
+        throw SrsFsrsException('bad calibration response: $result');
+      }
+      return result.cast<String, Object?>();
+    } finally {
+      calloc.free(req);
+      calloc.free(f);
+      calloc.free(rp);
+      ints.forEach(calloc.free);
+    }
+  }
+
   /// 一次 `ffsrs_fit`：请求头走 JSON（几十字节），训练集的六段 TypedData 各拷一次进原生内存。
   /// 前缀在原生侧展开，这里只有 O(总评分数) 的数据。
   Object? _fit(
     Map<String, Object?> request,
     SrsFsrsTrainingSet set, [
     NativeSrsOptimizerControl? control,
+    Pointer<Float>? predictions,
   ]) {
     final Pointer<Char> req = _encode(request).toNativeUtf8().cast<Char>();
     final Int64List? ids = set.cardIds;
@@ -283,21 +372,38 @@ class FfiFsrsEngine implements FsrsBatchEngine {
       if (ids != null) cardIds.asTypedListOutOfLine(ids.length).setAll(0, ids);
       itemCards.asTypedListOutOfLine(set.length).setAll(0, set.itemCards);
       itemLengths.asTypedListOutOfLine(set.length).setAll(0, set.itemLengths);
+      // 留出预测（[predictTimeSeries]）与优化 / 评估同一份训练集打包，只是入口与输出缓冲区不同。
       return _decodeResponse(
-        _b.ffsrs_fit(
-          req,
-          ratings,
-          deltas,
-          set.ratings.length,
-          offsets,
-          cardIds,
-          set.cardCount,
-          itemCards,
-          itemLengths,
-          set.length,
-          control?.cancelPointer ?? nullptr,
-          control?.progressPointer ?? nullptr,
-        ),
+        predictions == null
+            ? _b.ffsrs_fit(
+                req,
+                ratings,
+                deltas,
+                set.ratings.length,
+                offsets,
+                cardIds,
+                set.cardCount,
+                itemCards,
+                itemLengths,
+                set.length,
+                control?.cancelPointer ?? nullptr,
+                control?.progressPointer ?? nullptr,
+              )
+            : _b.ffsrs_predict_tss(
+                req,
+                ratings,
+                deltas,
+                set.ratings.length,
+                offsets,
+                cardIds,
+                set.cardCount,
+                itemCards,
+                itemLengths,
+                set.length,
+                predictions,
+                control?.cancelPointer ?? nullptr,
+                control?.progressPointer ?? nullptr,
+              ),
       );
     } finally {
       calloc.free(req);

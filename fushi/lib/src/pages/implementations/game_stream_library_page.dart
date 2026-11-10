@@ -3,6 +3,7 @@ import 'dart:collection';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -14,6 +15,7 @@ import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/game_stream_session_opener.dart';
 import 'package:fushi/src/pages/implementations/game_stream_settings_sheet.dart';
 import 'package:fushi/src/pages/implementations/module_settings_view.dart';
+import 'package:fushi/src/second_screen/second_screen_host.dart';
 import 'package:fushi/src/pages/implementations/stat_shared.dart'
     show formatActivityRelativeTime;
 import 'package:fushi/src/settings/settings_destination_id.dart';
@@ -71,6 +73,7 @@ class GameStreamLibraryServices {
     required this.readSettings,
     required this.writeSettings,
     this.openInterconnectSettings,
+    this.volumeBoostAvailable,
     this.clientId,
     this.launchPollInterval = const Duration(milliseconds: 700),
     this.launchTimeout = const Duration(seconds: 120),
@@ -119,6 +122,7 @@ class GameStreamLibraryServices {
       readSettings: () => prefs.gameStreamVideoSettings,
       writeSettings: prefs.setGameStreamVideoSettings,
       openInterconnectSettings: _pushInterconnectSettings,
+      volumeBoostAvailable: SecondScreenHost.forCurrentPlatform()?.available,
     );
   }
 
@@ -132,6 +136,10 @@ class GameStreamLibraryServices {
 
   /// 空态「去配对」入口；null 时不出按钮。
   final Future<void> Function(BuildContext context)? openInterconnectSettings;
+
+  /// 本机有可用副屏（[SecondScreenHost.available]）时设置弹层才出「串流音量」；
+  /// null 视为单屏。
+  final ValueListenable<bool>? volumeBoostAvailable;
 
   /// 接收端 id；null 用进程级 [gameStreamReceiverClientId]。
   final String? clientId;
@@ -359,6 +367,7 @@ class _GameStreamLibraryPageState extends State<GameStreamLibraryPage> {
     final GameStreamVideoSettings? next = await showGameStreamSettingsSheet(
       context,
       initial: _services.readSettings(),
+      volumeAvailable: _services.volumeBoostAvailable,
     );
     if (next == null) return;
     await _services.writeSettings(next);
