@@ -3224,9 +3224,13 @@ extension _VideoSubtitle on _VideoFushiPageState {
         identical(_controller, controller) &&
         _episodeLoadSeq == loadSeq &&
         _currentVideoPath == videoPath;
-    final String baseName = _isRemote
-        ? (_title ?? _effectiveRemoteInfo?.title ?? 'subtitle')
-        : p.basenameWithoutExtension(videoPath ?? 'subtitle');
+    // 远端片名直接拼进档名：「Re:Zero」这类带 `:` / `/` 的标题在 Windows 上写不出
+    // 文件（或被当成子目录），先按全仓唯一的文件名安全化规则清洗。
+    final String rawBaseName = _isRemote
+        ? (_title ?? _effectiveRemoteInfo?.title ?? '')
+        : p.basenameWithoutExtension(videoPath ?? '');
+    final String safeBaseName = safeWindowsFileName(rawBaseName).trim();
+    final String baseName = safeBaseName.isEmpty ? 'subtitle' : safeBaseName;
     final String videoKey = sha256
         .convert(utf8.encode('$_activeBookUid|$videoPath|$_currentEpisode'))
         .toString()

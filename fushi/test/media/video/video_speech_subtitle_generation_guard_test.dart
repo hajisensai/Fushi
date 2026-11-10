@@ -79,6 +79,8 @@ void main() {
     expect(split, contains('identical(_controller, controller)'));
     expect(split, contains('_episodeLoadSeq == loadSeq'));
     expect(split, contains("'video.subtitleBilingualSplit'"));
+    // 远端片名（「Re:Zero」）拼档名前必须清洗，否则 Windows 上写不出文件。
+    expect(split, contains('safeWindowsFileName(rawBaseName)'));
 
     final String router = source
         .split('Future<void> _openSubtitleGeneration(')[1]
