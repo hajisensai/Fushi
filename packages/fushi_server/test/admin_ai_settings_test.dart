@@ -188,4 +188,36 @@ void main() {
       reason: '没 key 的提供商不可用 → 能力位 no_provider',
     );
   });
+
+  test('设置里带 WebUI 下拉用的选项：预设显示名 + 起点模型、字幕 / 资料语言母语名', () async {
+    final (:AdminApi api, ctx: _) = await build();
+    final ({int status, String text}) r = await call(api, 'GET');
+    expect(r.status, 200);
+    final Map<String, dynamic> json =
+        jsonDecode(r.text) as Map<String, dynamic>;
+
+    final List<dynamic> presets = json['aiPresetOptions'] as List<dynamic>;
+    final Map<String, dynamic> openai = presets
+        .cast<Map<String, dynamic>>()
+        .firstWhere((Map<String, dynamic> o) => o['id'] == 'openai');
+    expect(openai['name'], isNotEmpty);
+    expect(openai['name'], isNot('openai'), reason: '显示名而不是 id');
+    expect(openai.containsKey('model'), isTrue);
+    expect(
+      presets.map((dynamic o) => (o as Map<String, dynamic>)['id']),
+      everyElement(isIn(json['aiPresets'] as List<dynamic>)),
+      reason: '与 aiPresets 同一份清单',
+    );
+
+    final List<dynamic> subs = json['subtitleLanguageOptions'] as List<dynamic>;
+    expect(subs.first, <String, String>{'code': 'ja', 'name': '日本語'});
+
+    final List<dynamic> locales =
+        json['metadataLocaleOptions'] as List<dynamic>;
+    expect(
+      locales.map((dynamic o) => (o as Map<String, dynamic>)['code']),
+      contains(ServerConfig.defaultMetadataLocale),
+      reason: '默认值必须能在下拉里直接选中',
+    );
+  });
 }

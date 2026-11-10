@@ -173,6 +173,7 @@ section.on > :nth-child(2){animation-delay:30ms}section.on > :nth-child(3){anima
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px 16px;margin-top:12px}
 label.f{display:flex;flex-direction:column;gap:6px;font-size:12px;font-weight:500;color:var(--on-surface-variant);min-width:0}
 label.f .muted{font-weight:400}
+label.f .ctl{display:flex;flex-direction:column;gap:8px}
 .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:8px 0}
 .actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:16px}
 .actions .hint{color:var(--on-surface-variant);font-size:12px;flex:1 1 220px}
@@ -236,8 +237,10 @@ input.sw:disabled{opacity:.38;cursor:default}
 .srow{display:flex;align-items:center;gap:16px;padding:14px 20px;min-height:64px}
 .srow + .srow{border-top:1px solid color-mix(in srgb,var(--outline-variant) 60%,transparent)}
 .srow .txt{cursor:default}
-.srow .ctl{width:min(320px,45%);flex:none;display:flex;justify-content:flex-end}
+.srow .ctl{width:min(320px,45%);flex:none;display:flex;justify-content:flex-end;gap:8px}
 .srow.swr .ctl{width:auto}
+.srow .ctl.stack{flex-direction:column;align-items:stretch}
+.srow .ctl .unit{width:96px;flex:none}
 /* 有未保存的更改才浮出的保存条 */
 .savebar{position:sticky;bottom:0;z-index:5;margin:0;padding:10px 12px 10px 20px;border-radius:var(--r-group);background:var(--inverse-surface);color:var(--inverse-on-surface);box-shadow:0 4px 12px rgba(0,0,0,.25);animation:enter .3s var(--ease-decel)}
 .savebar[hidden]{display:none}
@@ -1080,7 +1083,7 @@ async function loadSrs(){
   const servedList = list.filter(p=>p.served);
   $('#srs-mining').innerHTML = `<p class="sup" style="margin:0">${esc(T('已配对设备「制卡到已配对设备」时卡片落到哪。手机可以在自己的设置里另选；没选时，手机当前的配置文件本机有就落进那份，否则落进默认那份。'))}</p>
     <div class="grid"><label class="f">${esc(T('落到'))}<select id="srs-target">${[['auto',T('自动（没配好 Anki 时进复习）')],['review',T('Fushi 复习')],['anki','Anki']].map(([v,l])=>`<option value="${v}" ${cfg.miningTarget===v?'selected':''}>${esc(l)}</option>`).join('')}</select></label>
-    <label class="f">${esc(T('换日时刻（0–23 点）'))}<input type="number" min="0" max="23" id="srs-rollover" value="${cfg.rolloverHour}"></label>
+    <label class="f">${esc(T('换日时刻'))}<select id="srs-rollover">${Array.from({length:24},(_,h)=>`<option value="${h}" ${h===Number(cfg.rolloverHour)?'selected':''}>${String(h).padStart(2,'0')}:00</option>`).join('')}</select></label>
     ${servedList.map(p=>`<label class="f">${esc(T('{0} 的制卡牌组（空 = 默认牌组）', p.name||p.uid))}<input data-srs-deck="${esc(p.uid)}" value="${esc((cfg.miningDecks||{})[p.uid]||'')}"></label>`).join('')}</div>
     <div class="actions"><button class="b" id="btn-srs-save">${esc(T('保存'))}</button></div>`;
   $('#btn-srs-save').onclick = guard(async()=>{
@@ -1092,13 +1095,13 @@ async function loadSrs(){
   const setNote = (isSet) => isSet ? ` <span class="muted">${esc(T('(已设置，留空不改)'))}</span>` : '';
   $('#srs-ankiconnect').innerHTML = `<div class="row" style="margin-top:16px">${swLabel('id="ac-enabled"', ac.enabled, T('开关'))}</div>
     <div class="grid">
-    <label class="f">${esc(T('监听地址（127.0.0.1 = 只限本机）'))}<input id="ac-bind" value="${esc(ac.bind||'127.0.0.1')}"></label>
+    <label class="f">${esc(T('监听地址'))}${choiceCtl('ac-bind', BIND_CHOICES(), ac.bind||'127.0.0.1')}</label>
     <label class="f">${esc(T('端口'))}<input type="number" id="ac-port" value="${ac.port||8765}"></label>
     <label class="f">${esc(T('共用 key（落到默认配置文件）'))}${setNote(ac.apiKeySet)}<input type="password" id="ac-key" value=""></label>
     ${servedList.map(p=>`<label class="f">${esc(T('{0} 专用 key', p.name||p.uid))}${setNote((ac.profileKeysSet||{})[p.uid])}<input type="password" data-ac-key="${esc(p.uid)}" value=""></label>`).join('')}</div>
     <div class="actions"><button class="b" id="btn-ac-save">${esc(T('保存'))}</button>${ac.apiKeySet?`<button class="b text danger" id="btn-ac-clear">${esc(T('清除共用 key'))}</button>`:''}</div>`;
   $('#btn-ac-save').onclick = guard(async()=>{
-    const body = {enabled: $('#ac-enabled').checked, bind: $('#ac-bind').value.trim(), port: parseInt($('#ac-port').value,10)};
+    const body = {enabled: $('#ac-enabled').checked, bind: choiceValue('ac-bind') ?? '', port: parseInt($('#ac-port').value,10)};
     if ($('#ac-key').value) body.apiKey = $('#ac-key').value;
     const profileKeys = {}; document.querySelectorAll('[data-ac-key]').forEach(el=>{ if(el.value) profileKeys[el.dataset.acKey]=el.value; });
     if (Object.keys(profileKeys).length) body.profileKeys = profileKeys;
@@ -1112,15 +1115,15 @@ async function loadSrs(){
 // 每项：[键, 文案, 类型, 分组]。文案里末尾括号部分显示成说明行；分组只管显示，保存时仍是一个请求体。
 const FIELDS = [
   ['language',T('界面语言（Language）'),'seg:en,zh','general'],['deviceName',T('设备名'),'text','general'],
-  ['port',T('互联端口'),'number','network'],['bind',T('绑定地址'),'text','network'],['tls','TLS','bool','network'],['lanRequiresPin',T('局域网配对必须 PIN'),'bool','network'],['adminPort',T('WebUI 端口'),'number','network'],
-  ['subtitleLanguage',T('字幕语言'),'text','media'],['metadataLocale',T('刮削资料语言（BCP-47，如 ja / zh-CN）'),'text','media'],
-  ['scanScrape',T('扫描后自动补刮视频资料'),'bool','media'],['tmdbApiKey',T('TMDB API key（服务端没有内置 key，不填则 TMDB 不可用）'),'secret:tmdbApiKeySet','media'],['scanPrune',T('扫描后清理文件已消失的视频条目'),'bool','media'],['uploadQuotaBytes',T('上传配额（字节）'),'number','media'],
+  ['port',T('互联端口'),'number','network'],['bind',T('绑定地址'),'choice:bind','network'],['tls','TLS','bool','network'],['lanRequiresPin',T('局域网配对必须 PIN'),'bool','network'],['adminPort',T('WebUI 端口'),'number','network'],
+  ['subtitleLanguage',T('字幕语言'),'choice:subtitleLanguage','media'],['metadataLocale',T('刮削资料语言（BCP-47，如 ja / zh-CN）'),'choice:metadataLocale','media'],
+  ['scanScrape',T('扫描后自动补刮视频资料'),'bool','media'],['tmdbApiKey',T('TMDB API key（服务端没有内置 key，不填则 TMDB 不可用）'),'secret:tmdbApiKeySet','media'],['scanPrune',T('扫描后清理文件已消失的视频条目'),'bool','media'],['uploadQuotaBytes',T('上传配额'),'bytes','media'],
   ['profileTransfer',T('允许已配对设备推送 / 拉取配置文件（Profile）'),'bool','access'],['remoteUpdate',T('允许已配对设备远程更新本服务端（仅发布包；装完退出码 10，由服务管理器重启）'),'bool','access'],['leaderboardLink',T('允许「我的设备」跟随本机 Fushi 排行榜账户自动登录'),'bool','access'],['lookupChineseScriptVariants',T('中文查词简繁互查（只管不自带开关的浏览器扩展 / 旧客户端；新版 app 用自己的开关）'),'bool','access'],
   ['ffmpeg',T('ffmpeg 路径（空=PATH）'),'text','tools'],['ffprobe',T('ffprobe 路径（空=PATH）'),'text','tools'],['onnxruntimeLibrary',T('onnxruntime 动态库'),'text','tools'],
   ['torrent.engine',T('torrent 引擎'),'select:auto,embedded,qbittorrent','downloads'],['torrent.library',T('内置引擎库路径（空=随包/系统）'),'text','downloads'],['torrent.listen',T('libtorrent 监听接口'),'text','downloads'],
   ['qbittorrent.url',T('qBittorrent WebUI 地址'),'text','downloads'],['qbittorrent.username',T('qBittorrent 用户名'),'text','downloads'],['qbittorrent.password',T('qBittorrent 密码'),'password','downloads'],
   ['ai.preset',T('AI 提供商（手机「AI 下视频」选本机执行时用；空 = 不用 AI、不发任何 AI 请求）'),'dyn:aiPresets','ai'],['ai.apiKey','AI API key','secret:ai.apiKeySet','ai'],
-  ['ai.model',T('AI 模型（空 = 预设起点模型）'),'text','ai'],['ai.baseUrl',T('AI 接口地址（空 = 预设地址）'),'text','ai'],['ai.protocol',T('AI 协议（空 = 跟随预设）'),'select:,openAiCompatible,anthropicMessages,geminiGenerateContent','ai'],
+  ['ai.model',T('AI 模型（空 = 预设起点模型）'),'aimodel','ai'],['ai.baseUrl',T('AI 接口地址（空 = 预设地址）'),'text','ai'],['ai.protocol',T('AI 协议（空 = 跟随预设）'),'select:,openAiCompatible,anthropicMessages,geminiGenerateContent','ai'],
   ['ai.reasoningEffort',T('AI 推理档位'),'select:none,low,medium,high','ai'],['ai.allowInsecureHttp',T('AI 允许明文 HTTP（本地推理服务）'),'bool','ai'],['ai.webKnowledge',T('AI 联网资料（维基辅助识别作品）'),'bool','ai'],['ai.libraryOrganize',T('扫描入库后自动 AI 整理库（把该在一起的归进合集，按量计费）'),'bool','ai'],
 ];
 const SETTING_GROUPS = [['general',T('通用')],['network',T('网络与配对')],['media',T('媒体与刮削')],['access',T('设备权限')],['tools',T('外部工具')],['downloads',T('下载')],['ai',T('AI 助手')]];
@@ -1129,6 +1132,50 @@ const RESTART = new Set(['port','bind','tls','adminPort','ffmpeg','ffprobe','onn
 const LANGUAGE_NAMES = {en:'English', zh:'中文'};
 const LABEL_SPLIT = new RegExp('^(.+?)\\s*[(' + String.fromCharCode(0xFF08) + '](.+)[)' + String.fromCharCode(0xFF09) + ']$');
 const splitLabel = (l) => { const m = LABEL_SPLIT.exec(l); return m ? [m[1], m[2]] : [l, '']; };
+// 「下拉 + 其他…」型字段的选项：[值, 显示名]。值不在表里时选「其他…」并露出文本框，手填照旧可用。
+const BIND_CHOICES = () => [['0.0.0.0',T('所有网络（0.0.0.0）')],['127.0.0.1',T('仅本机（127.0.0.1）')]];
+const CHOICES = {
+  bind: BIND_CHOICES,
+  subtitleLanguage: (s) => (s.subtitleLanguageOptions||[]).map(o=>[o.code, `${o.name} (${o.code})`]),
+  metadataLocale: (s) => (s.metadataLocaleOptions||[]).map(o=>[o.code, `${o.name} (${o.code})`]),
+};
+const OTHER = '__other';
+// 下拉 + 「其他…」文本框；id 给下拉，文本框是 id-other。
+function choiceCtl(id, opts, v){
+  v = v ?? '';
+  const other = !opts.some(([o])=>o===v);
+  return `<div class="ctl stack"><select id="${id}" data-choice="1">${opts.map(([o,l])=>`<option value="${esc(o)}" ${o===v?'selected':''}>${esc(l)}</option>`).join('')}<option value="${OTHER}" ${other?'selected':''}>${esc(T('其他…'))}</option></select><input type="text" id="${id}-other" value="${esc(other?v:'')}" aria-label="${esc(T('其他…'))}" ${other?'':'hidden'}></div>`;
+}
+function choiceValue(id){
+  const sel=$('#'+id); if(!sel) return null;
+  const v = sel.value===OTHER ? $('#'+id+'-other').value.trim() : sel.value;
+  return v==='' ? null : v;
+}
+// 选了「其他…」才露文本框（设置页与复习页共用，事件委托到 document）。
+document.addEventListener('change', (e)=>{
+  const t=e.target; if(!(t instanceof HTMLSelectElement) || !t.dataset.choice) return;
+  const box=$('#'+t.id+'-other'); if(!box) return;
+  box.hidden = t.value!==OTHER; if(!box.hidden) box.focus();
+});
+// 字节数 ↔ 数字 + 单位：取能整除的最大单位，保存时乘回字节。
+const BYTE_UNITS = [['TB',1024**4],['GB',1024**3],['MB',1024**2]];
+function bytesCtl(id, v){
+  const n = Number(v)||0;
+  const [unit,size] = BYTE_UNITS.find(([,sz])=>n>0 && n%sz===0) || ['MB',1024**2];
+  return `<div class="ctl"><input type="number" min="0" step="any" id="${id}" value="${esc(String(n/size))}"><select id="${id}-unit" class="unit" aria-label="${esc(T('单位'))}">${BYTE_UNITS.map(([u])=>`<option value="${u}" ${u===unit?'selected':''}>${u}</option>`).join('')}</select></div>`;
+}
+function bytesValue(id){
+  const size = (BYTE_UNITS.find(([u])=>u===$('#'+id+'-unit').value)||BYTE_UNITS[2])[1];
+  return Math.round(Number($('#'+id).value)*size);
+}
+// AI 预设下拉的显示名；模型框的建议值跟着当前预设走。
+const aiPresetLabel = (s, o) => o==='' ? T('不用 AI') : o==='custom' ? T('自定义') : ((s.aiPresetOptions||[]).find(x=>x.id===o)||{}).name || o;
+function syncAiModelHint(){
+  const s=settingsCache, sel=$('#f-ai-preset'), box=$('#f-ai-model'), list=$('#ai-model-list');
+  if(!s||!sel||!box||!list) return;
+  const m = ((s.aiPresetOptions||[]).find(x=>x.id===sel.value)||{}).model || '';
+  box.placeholder = m; list.innerHTML = m ? `<option value="${esc(m)}">` : '';
+}
 let settingsCache=null, settingsBaseline=null;
 async function loadSettings(){
   const s = await api('settings'); const first=!settingsCache; settingsCache=s;
@@ -1144,7 +1191,11 @@ async function loadSettings(){
     if(k==='ai.webKnowledge'&&!s.ai) v=true;
     if(k==='ai.preset'&&s.ai) extra = s.ai.status==='ready' ? tag('ok', T('可用')) : tag('warn', T('未配全：{0}', s.ai.problem||''));
     let ctl;
-    if(type.startsWith('dyn:')) ctl = `<select id="${id}">${['',...(s[type.slice(4)]||[])].map(o=>`<option value="${esc(o)}" ${o===(v??'')?'selected':''}>${esc(o)}</option>`).join('')}</select>`;
+    let wrapped = false;
+    if(type.startsWith('dyn:')) ctl = `<select id="${id}">${['',...(s[type.slice(4)]||[])].map(o=>`<option value="${esc(o)}" ${o===(v??'')?'selected':''}>${esc(k==='ai.preset'?aiPresetLabel(s,o):o)}</option>`).join('')}</select>`;
+    else if(type.startsWith('choice:')){ ctl = choiceCtl(id, CHOICES[type.slice(7)](s), v); wrapped = true; }
+    else if(type==='bytes'){ ctl = bytesCtl(id, v); wrapped = true; }
+    else if(type==='aimodel') ctl = `<input type="text" id="${id}" list="ai-model-list" value="${esc(v??'')}" autocomplete="off"><datalist id="ai-model-list"></datalist>`;
     else if(type==='bool') ctl = `<input type="checkbox" class="sw" id="${id}" ${v?'checked':''}>`;
     else if(type.startsWith('seg:')) ctl = `<div class="seg" id="${id}" role="radiogroup">${type.slice(4).split(',').map(o=>`<label><input type="radio" name="${id}" value="${esc(o)}" ${o===v?'checked':''}><span>${esc(LANGUAGE_NAMES[o]||o)}</span></label>`).join('')}</div>`;
     else if(type.startsWith('select:')) ctl = `<select id="${id}">${type.slice(7).split(',').map(o=>`<option value="${esc(o)}" ${o===v?'selected':''}>${esc(k==='language'?LANGUAGE_NAMES[o]:o)}</option>`).join('')}</select>`;
@@ -1152,9 +1203,10 @@ async function loadSettings(){
     else if(type.startsWith('secret:')){ const sk=type.slice(7); const isSet = sk.includes('.') ? (s[sk.split('.')[0]]||{})[sk.split('.')[1]] : s[sk]; extra += setNote(isSet); ctl = `<input type="password" id="${id}" value="" autocomplete="off">`; }
     else ctl = `<input type="${type}" id="${id}" value="${esc(v??'')}">`;
     const [title, sub] = splitLabel(label);
-    return `<div class="srow${type==='bool'?' swr':''}"><label class="txt" for="${id}"><span class="t">${esc(title)}${RESTART.has(k)?tag('warn', T('需重启')):''}${extra}</span>${sub?`<span class="s">${esc(sub)}</span>`:''}</label><div class="ctl">${ctl}</div></div>`;
+    return `<div class="srow${type==='bool'?' swr':''}"><label class="txt" for="${id}"><span class="t">${esc(title)}${RESTART.has(k)?tag('warn', T('需重启')):''}${extra}</span>${sub?`<span class="s">${esc(sub)}</span>`:''}</label>${wrapped?ctl:`<div class="ctl">${ctl}</div>`}</div>`;
   };
   $('#settings-form').innerHTML = SETTING_GROUPS.map(([g,name])=>`<h3 class="sh">${esc(name)}</h3><div class="list" style="margin-top:16px">${FIELDS.filter(f=>f[3]===g).map(field).join('')}</div>`).join('');
+  syncAiModelHint(); const ps=$('#f-ai-preset'); if(ps) ps.addEventListener('change', syncAiModelHint);
   settingsBaseline = FIELDS.map(([k,,type])=>fieldValue(k,type));
   updateDirty();
 }
@@ -1162,6 +1214,8 @@ async function loadSettings(){
 function fieldValue(k, type){
   const id='f-'+k.replace('.','-');
   if(type.startsWith('seg:')) return (document.querySelector(`input[name="${id}"]:checked`)||{}).value;
+  if(type.startsWith('choice:')) return choiceValue(id);
+  if(type==='bytes') return bytesValue(id);
   const el=$('#'+id); let v=el.value;
   if(type==='bool') v=el.checked; else if(type==='number') v=Number(v);
   if(type!=='bool'&&type!=='number'&&v==='') v=null;
