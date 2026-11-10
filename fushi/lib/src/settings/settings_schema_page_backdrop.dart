@@ -353,10 +353,19 @@ Future<void> pickPageBackdropImage(
     final BuildContext pickContext = settingsContext.context;
     if (!pickContext.mounted) return;
     final Size display = pageBackdropDisplaySize(pickContext);
+    // 主图在没单独设竖屏图时横竖屏共用（`PageBackdropSettings.imagePathFor`），
+    // 这时它没有确定的显示朝向，不能锁成横屏比例。
+    final String? portraitImagePath = module == null
+        ? pageBackdropSettings.value.portraitImagePath
+        : pageBackdropModuleOverrides.value[module]?.portraitImagePath;
     final File? cropped = await showCropImageDialog(
       pickContext,
       picked,
-      aspectRatio: pageBackdropCropAspectRatio(display, portrait: portrait),
+      aspectRatio: pageBackdropCropAspectRatio(
+        display,
+        portrait: portrait,
+        sharedAcrossOrientations: !portrait && portraitImagePath == null,
+      ),
       maxDimension: pageBackdropCropMaxDimension(display),
     );
     if (cropped == null) return;
@@ -395,10 +404,18 @@ Size pageBackdropDisplaySize(BuildContext context) {
 ///
 /// 背景层按区域「高 > 宽」选竖屏图、再 [BoxFit.cover] 铺满
 /// （`page_backdrop_layer.dart`），所以按屏幕比例裁出来的图在全屏时不会再被二次
-/// 裁掉，裁剪框里看到的就是最终显示的范围。[display] 是空尺寸时返回 null
-/// （自由裁剪）。
-double? pageBackdropCropAspectRatio(Size display, {required bool portrait}) {
-  if (display.isEmpty) return null;
+/// 裁掉，裁剪框里看到的就是最终显示的范围。
+///
+/// 返回 null（自由裁剪）的情形：[display] 是空尺寸；或 [sharedAcrossOrientations]
+/// ——主图在没单独设竖屏图时横竖屏共用，竖屏手机上显示的正是这张，锁成横屏
+/// 「长边 / 短边」会让竖屏只剩中间一窄条，锁成竖屏比例又反过来坑横屏，
+/// 没有一个比例两边都对，只能交给用户。
+double? pageBackdropCropAspectRatio(
+  Size display, {
+  required bool portrait,
+  required bool sharedAcrossOrientations,
+}) {
+  if (display.isEmpty || sharedAcrossOrientations) return null;
   final double long = math.max(display.width, display.height);
   final double short = math.min(display.width, display.height);
   return portrait ? short / long : long / short;

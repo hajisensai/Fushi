@@ -9,11 +9,19 @@ void main() {
   group('pageBackdropCropAspectRatio', () {
     test('横屏槽取屏幕长边 / 短边，与屏幕方向无关', () {
       expect(
-        pageBackdropCropAspectRatio(const Size(1920, 1080), portrait: false),
+        pageBackdropCropAspectRatio(
+          const Size(1920, 1080),
+          portrait: false,
+          sharedAcrossOrientations: false,
+        ),
         closeTo(1920 / 1080, 1e-9),
       );
       expect(
-        pageBackdropCropAspectRatio(const Size(1080, 2400), portrait: false),
+        pageBackdropCropAspectRatio(
+          const Size(1080, 2400),
+          portrait: false,
+          sharedAcrossOrientations: false,
+        ),
         closeTo(2400 / 1080, 1e-9),
       );
     });
@@ -22,10 +30,12 @@ void main() {
       final double? landscapeDevice = pageBackdropCropAspectRatio(
         const Size(1920, 1080),
         portrait: true,
+        sharedAcrossOrientations: false,
       );
       final double? portraitDevice = pageBackdropCropAspectRatio(
         const Size(1080, 2400),
         portrait: true,
+        sharedAcrossOrientations: false,
       );
       expect(landscapeDevice, closeTo(1080 / 1920, 1e-9));
       expect(portraitDevice, closeTo(1080 / 2400, 1e-9));
@@ -34,12 +44,52 @@ void main() {
     });
 
     test('拿不到屏幕尺寸时自由裁剪', () {
-      expect(pageBackdropCropAspectRatio(Size.zero, portrait: false), isNull);
       expect(
-        pageBackdropCropAspectRatio(const Size(1920, 0), portrait: true),
+        pageBackdropCropAspectRatio(
+          Size.zero,
+          portrait: false,
+          sharedAcrossOrientations: false,
+        ),
+        isNull,
+      );
+      expect(
+        pageBackdropCropAspectRatio(
+          const Size(1920, 0),
+          portrait: true,
+          sharedAcrossOrientations: false,
+        ),
         isNull,
       );
     });
+  });
+
+  test('主图横竖屏共用（没单独设竖屏图）时自由裁剪，不锁横屏比例', () {
+    // 竖屏手机只设主图：这张图就是竖屏显示的那张，锁成 2400:1080 会只剩一窄条。
+    expect(
+      pageBackdropCropAspectRatio(
+        const Size(1080, 2400),
+        portrait: false,
+        sharedAcrossOrientations: true,
+      ),
+      isNull,
+    );
+  });
+
+  test('选图链路按有没有竖屏图决定主图是否共用', () {
+    final String source = File(
+      'lib/src/settings/settings_schema_page_backdrop.dart',
+    ).readAsStringSync().replaceAll('\r\n', '\n');
+    expect(
+      source,
+      contains(
+        'sharedAcrossOrientations: !portrait && portraitImagePath == null',
+      ),
+    );
+    expect(source, contains('pageBackdropSettings.value.portraitImagePath'));
+    expect(
+      source,
+      contains('pageBackdropModuleOverrides.value[module]?.portraitImagePath'),
+    );
   });
 
   group('pageBackdropCropMaxDimension', () {
