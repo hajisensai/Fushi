@@ -80,6 +80,8 @@ import 'package:fushi_engine/sync/tls/fushi_tofu_probe.dart';
 import 'package:fushi/src/sync/sync_activity.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart';
+import 'package:fushi/src/sync/sync_baseline_scope.dart'
+    show signOutSyncBackend;
 import 'package:fushi/src/sync/sync_compare_cli.dart'
     show listSyncCompareForCli;
 import 'package:fushi/src/sync/sync_compare_dialog.dart';

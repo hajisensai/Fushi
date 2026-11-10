@@ -430,7 +430,13 @@ void main() {
       expect(src, contains('on SyncChannelAuthError catch'));
       expect(src, contains('if (shouldSignOutChannelOnAuthError(e)) {'));
       expect(src, contains('return shouldSignOutOnAuthError(e.error);'));
-      expect(src, contains('await backend.signOut(repo: repo)'));
+      // 登出动作本身在共用入口 signOutSyncBackend 里（BUG-4391）。
+      expect(
+        src,
+        contains(
+          'await signOutSyncBackend(appModel.database, e.channel.backend)',
+        ),
+      );
     });
 
     test('登出的对象是**出错那条通道**的后端，不是 getBackendType() 猜的那个', () {

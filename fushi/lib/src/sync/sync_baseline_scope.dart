@@ -135,6 +135,35 @@ String syncRemoteAccountPrefKey(SyncBackendType type) =>
 Future<void> clearSyncRemoteAccount(FushiDatabase db, SyncBackendType type) =>
     db.deletePref(syncRemoteAccountPrefKey(type));
 
+/// 通道 [channel] 对应哪种云后端；互联通道与认不出的后端（测试 fake 的
+/// [SyncChannelScope.unscoped]）→ null。[syncRemoteScopeOf] 与 [signOutSyncBackend]
+/// 共用这一张对照，记账号和忘账号认的是同一批类型。
+SyncBackendType? cloudBackendTypeOfChannel(SyncChannelScope channel) {
+  for (final SyncBackendType type in SyncBackendType.values) {
+    if (type == SyncBackendType.fushiServer) continue;
+    if (channel == SyncChannelScope.forBackendType(type)) return type;
+  }
+  return null;
+}
+
+/// 登出一条同步通道。设置页的「退出登录」和鉴权失效后的自动登出都走这里，登出要
+/// 连带做的事只写这一处：
+/// 1. 忘掉这种云后端记下的账号（[clearSyncRemoteAccount]）。[cloudRemoteScopeOf] 在
+///    邮箱取不到时会沿用记下的账号；登出之后下一次登录可能是另一个账号，不忘的话
+///    邮箱恰好取失败的那一轮会落进旧账号的基线槽（BUG-4391）。放在最前：后面的登出
+///    即使中途抛了，也只是下一轮重新记一次账号。
+/// 2. 后端登出、清它的内存缓存。
+/// 3. 只清**这条通道**那格的目录缓存（BUG-1576 / BUG-1578）。
+Future<void> signOutSyncBackend(FushiDatabase db, SyncBackend backend) async {
+  final SyncChannelScope channel = syncChannelScopeOf(backend);
+  final SyncBackendType? cloud = cloudBackendTypeOfChannel(channel);
+  if (cloud != null) await clearSyncRemoteAccount(db, cloud);
+  final SyncRepository repo = SyncRepository(db);
+  await backend.signOut(repo: repo);
+  backend.clearCache();
+  await repo.clearFolderCache(channel);
+}
+
 /// [backend] 当前连着的远端的基线作用域。解析顺序：
 /// 1. 剥掉 [ObfuscatingSyncBackend]（纯包装，远端是被包着的那个）。
 /// 2. [SyncRemoteIdentified] → 按它报的身份分槽。
@@ -165,16 +194,15 @@ Future<SyncRemoteScope> syncRemoteScopeOf(
       hostPin: scope.pin,
     );
   }
-  final SyncChannelScope channel = syncChannelScopeOf(inner);
-  for (final SyncBackendType type in SyncBackendType.values) {
-    if (type == SyncBackendType.fushiServer) continue;
-    if (channel == SyncChannelScope.forBackendType(type)) {
-      return cloudRemoteScopeOf(
-        db,
-        type,
-        currentEmail: await inner.currentEmail,
-      );
-    }
+  final SyncBackendType? cloud = cloudBackendTypeOfChannel(
+    syncChannelScopeOf(inner),
+  );
+  if (cloud != null) {
+    return cloudRemoteScopeOf(
+      db,
+      cloud,
+      currentEmail: await inner.currentEmail,
+    );
   }
   return const SyncRemoteScope(
     tag: null,

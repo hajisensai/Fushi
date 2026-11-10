@@ -164,6 +164,57 @@ void main() {
       expect(got.hostPin, isNull);
     });
 
+    test('signing a cloud backend out forgets its remembered account '
+        'and clears only its own folder cache', () async {
+      // 登出后下一次登录可能是另一个账号：邮箱恰好取失败时不能再落进旧账号的槽。
+      final FushiDatabase db = _memDb();
+      final SyncRepository repo = SyncRepository(db);
+      final SyncChannelScope dropbox = SyncChannelScope.forBackendType(
+        SyncBackendType.dropbox,
+      );
+      final SyncChannelScope oneDrive = SyncChannelScope.forBackendType(
+        SyncBackendType.oneDrive,
+      );
+      await _cloudDimension(db, SyncBackendType.dropbox, 'A@x.com');
+      await _cloudDimension(db, SyncBackendType.oneDrive, 'B@x.com');
+      await repo.setFolderCache(dropbox, <String, String>{'book': 'id-d'});
+      await repo.setFolderCache(oneDrive, <String, String>{'book': 'id-o'});
+
+      await signOutSyncBackend(db, DropboxSyncBackend.instance);
+
+      expect(
+        cloudRemoteScopeOf(db, SyncBackendType.dropbox, currentEmail: null),
+        throwsA(isA<SyncRemoteIdentityUnavailableError>()),
+      );
+      expect(await repo.getFolderCache(dropbox), isEmpty);
+      // 别的云类型记下的账号与目录缓存都不动。
+      expect(
+        await db.getPref(syncRemoteAccountPrefKey(SyncBackendType.oneDrive)),
+        'b@x.com',
+      );
+      expect(await repo.getFolderCache(oneDrive), <String, String>{
+        'book': 'id-o',
+      });
+    });
+
+    test('signing out a backend with no cloud account slot is a plain '
+        'sign-out', () {
+      expect(
+        cloudBackendTypeOfChannel(
+          SyncChannelScope.forBackendType(SyncBackendType.fushiServer),
+        ),
+        isNull,
+      );
+      expect(cloudBackendTypeOfChannel(SyncChannelScope.unscoped), isNull);
+      for (final SyncBackendType type in SyncBackendType.values) {
+        if (type == SyncBackendType.fushiServer) continue;
+        expect(
+          cloudBackendTypeOfChannel(SyncChannelScope.forBackendType(type)),
+          type,
+        );
+      }
+    });
+
     test('clearSyncRemoteAccount forgets the remembered account', () async {
       final FushiDatabase db = _memDb();
       await _cloudDimension(db, SyncBackendType.dropbox, 'A@x.com');

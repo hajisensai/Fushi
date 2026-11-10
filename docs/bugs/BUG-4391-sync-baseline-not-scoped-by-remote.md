@@ -30,7 +30,7 @@
 - **[x] ② 加自动化测试** — `fushi/test/sync/sync_baseline_remote_scope_test.dart`（作用域工具：邮箱缺失一轮不换槽、从未取到抛错、换账号 / 换 WebDAV 服务器换槽、真 `DropboxSyncBackend` 单例类型识别并回退记下账号、`clearSyncRemoteAccount`、云领养搬走 / 删除、真互联 backend 单 hostId 带后缀 + pin / 无 hostId 不带后缀、自报身份 fake / 普通 fake）；`fushi/test/sync/sync_progress_baseline_remote_scope_test.dart`（SyncManager：A 上一致后换 B 判冲突不导入、回 A 导出、旧 `progress` 行被首个远端领养且判定不变、认不出远端不落地且整段抛出、互联文件箱读远端进度 / 上传时换 host 不导入不写基线；修复前 5 条全红）。
 - **修复提交**：31ab247de2a
 - **备注**：
-  - OAuth 后端登出时清 `sync_remote_account__<type>`（`pkce_oauth_backend_mixin.dart` / `google_drive_auth.dart` 的 signOut 调 `clearSyncRemoteAccount`）归 cloud-backends 包，未接；未接前登出再换账号登录，新账号邮箱若首轮就取不到会回退成旧账号的槽（T12 残留）。
+  - 登出时忘掉 `sync_remote_account__<type>`：已接。没有放进各后端的 `signOut`（它们只拿得到 `SyncRepository`，且每个后端各写一遍会漏），而是把应用里仅有的两处登出（设置页「退出登录」`sync_settings_schema/account.part.dart`、鉴权失效自动登出 `manual_sync_ui.dart`）收成共用入口 `signOutSyncBackend`（`sync_baseline_scope.dart`）：先忘账号，再后端登出、清内存缓存、清该通道目录缓存。记账号与忘账号共用 `cloudBackendTypeOfChannel` 这一张对照。测试：`sync_baseline_remote_scope_test.dart`（真 Dropbox 单例登出后邮箱缺失即抛、只清自己通道的目录缓存与账号）、两条源码守卫改钉共用入口。未运行（重活队列让给别的会话）。
   - `sync_remote_account__<type>` 应列入 `deviceLocalPrefKeys`（归 client-routing，未接；未列入时随备份到新设备只在邮箱缺失时被用作回退）。
   - 同类型下换过账号 / 服务器而持久化状态看不出来的老用户，按「只用过当前云类型」领养，首轮仍可能出现一次旧式导入（T4 残留）。
 
