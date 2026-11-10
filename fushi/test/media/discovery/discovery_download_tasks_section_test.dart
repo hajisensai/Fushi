@@ -426,7 +426,7 @@ void main() {
       );
     });
 
-    // BUG-4346：网关人机验证没过时说「站点要求人机验证」，不甩异常文本 / 403。
+    // BUG-4347：网关人机验证没过时说「站点要求人机验证」，不甩异常文本 / 403。
     test('失败且带挑战 URL → 人机验证文案；普通失败仍显示错误原文', () {
       final DiscoveryDownloadTask challenged =
           task(status: DiscoveryDownloadStatus.failed)

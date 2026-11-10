@@ -341,7 +341,7 @@ class DiscoveryDownloadTasksSection extends ConsumerWidget {
     );
   }
 
-  /// 下载网关要求人机验证（BUG-4346）：交给系统浏览器解题并下载。打不开要出声。
+  /// 下载网关要求人机验证（BUG-4347）：交给系统浏览器解题并下载。打不开要出声。
   Future<void> _openChallenge(BuildContext context, Uri url) async {
     final bool opened =
         await (challengeOpener ?? openDownloadGatewayChallengeInBrowser)(url);
@@ -444,7 +444,7 @@ String discoveryDownloadStatusLabel(
     case DiscoveryDownloadStatus.cancelled:
       return t.download_status_cancelled;
     case DiscoveryDownloadStatus.failed:
-      // 网关人机验证没过（BUG-4346）：说人话，不甩一串异常文本。
+      // 网关人机验证没过（BUG-4347）：说人话，不甩一串异常文本。
       if (task.challengeUrl != null) {
         return '${t.manga_online_failed}: '
             '${t.discovery_download_challenge_required}';
