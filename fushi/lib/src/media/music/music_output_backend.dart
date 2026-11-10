@@ -65,6 +65,7 @@ class MusicPlayItem {
   /// 碟号 / 轨号（判「专辑连续曲目」用，见 `musicTransitionIsBoundary`）。
   final int? discNo;
   final int? trackNo;
+
   /// 曲目本身的时长（元数据；歌词匹配 / 加入曲库 / 历史按它）。试听片段（[isPreview]）
   /// 不是整首，播放进度用 [playbackDuration]。
   final int? durationMs;
