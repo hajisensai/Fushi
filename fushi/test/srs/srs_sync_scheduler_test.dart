@@ -649,6 +649,47 @@ void main() {
     );
   });
 
+  test('冲突弹窗里选了候选但采用失败（位置连不上）：忘掉通知状态，下一轮判出同一个冲突立刻再通知', () async {
+    final _RecordingLinker linker = _RecordingLinker(
+      conflictFor: <String>{kSrsTestProfile},
+    );
+    final SrsSyncScheduler s = SrsSyncScheduler(
+      readStore: () async => store,
+      channels: (Future<void> Function(SyncAssetStore) body) async {
+        await body(LocalDirectoryAssetStore(root));
+        return (ran: 1, errors: const <Object>[]);
+      },
+      directoryKeyOf: (SyncAssetStore b) async => 'local:root',
+      profileLinker: linker,
+      onDataChanged: () {},
+      onNotice: notices.add,
+    );
+    final LocalDirectoryAssetStore dir = LocalDirectoryAssetStore(root);
+    await s.syncWithBackend(dir);
+    Iterable<SrsSyncNotice> conflictNotices() =>
+        notices.where((SrsSyncNotice n) => n == SrsSyncNotice.profileNotLinked);
+    expect(conflictNotices(), hasLength(1));
+    // app 侧弹窗前的重判：冲突仍成立、候选没变，不重复通知。
+    final SrsProfileConflict conflict = (await s.recheckProfileConflict(
+      s.profileConflict!,
+    ))!;
+    expect(conflictNotices(), hasLength(1));
+
+    linker.linkError = const SocketException('unreachable');
+    await expectLater(
+      s.adoptProfile(conflict, conflict.candidates.first.uid),
+      throwsA(isA<SocketException>()),
+    );
+    expect(linker.adopted, isEmpty);
+    linker.linkError = null;
+    await s.syncWithBackend(dir);
+    expect(
+      conflictNotices(),
+      hasLength(2),
+      reason: 'app 侧弹窗时已取走待弹的冲突、采用又失败：下一轮判出来必须再通知，用户才能重试，不能等满复用间隔',
+    );
+  });
+
   test('冲突弹窗选定后并入暂缓：不抛、回调暂缓结果、冲突清掉、之后每轮照样跑 link 续做；暂缓状态经调度器可查、做完消失', () async {
     final _RecordingLinker linker = _RecordingLinker(
       conflictFor: <String>{kSrsTestProfile},

@@ -1300,61 +1300,74 @@ class SrsSyncScheduler {
     SrsProfileAdoptResult? adoptedResult;
     // 候选在某条通道上：在那条通道的锁里重判、并入（并入之前要从它收目标 uid 的数据，BUG-4011）；在本机目录上
     // （互联 host）不拿通道锁。
-    final bool found = await _onLocation(conflict.directoryKey, (
-      SyncAssetStore backend,
-      bool channel,
-    ) async {
-      final SrsDbStore? store = await _readStore();
-      if (store == null || _halted) return;
-      if (store.profileUid != conflict.localUid) {
-        throw StateError(
-          'active SRS profile changed since the conflict was detected '
-          '(${conflict.localUid} -> ${store.profileUid})',
-        );
-      }
-      final SrsDbStore linked = await _link(
-        linker,
-        backend,
-        store,
-        conflict.directoryKey,
-      );
-      final SrsProfileConflict? current = _conflictAt(
-        conflict.directoryKey,
-        conflict.localUid,
-      );
-      // 复核里自动采用 / 续做并入换了 store：本机已经换了 uid，与轮次里一样通知界面重读，再按「已经不成立」交回。
-      if (!identical(linked, store)) _onDataChanged();
-      if (!identical(linked, store) ||
-          current == null ||
-          !current.candidates.any((SrsRemoteProfile c) => c.uid == uid)) {
-        throw SrsProfileConflictStale(current);
-      }
-      final SrsProfileAdoptResult result = await linker.adopt(
-        store,
-        uid,
-        within: channel ? backend : null,
-      );
-      adoptedResult = result;
-      if (result is SrsProfileAdoptDeferred) {
-        // 并入暂缓：本机还按旧 uid 同步，但用户已经选定离开它。马上（还在这把锁里）在冲突所在的位置上发布
-        // `mergingInto`，对方重判时就不再把这个旧 profile 当候选（BUG-4279）；不等之后那轮同步跑完才发布。
-        try {
-          await linker.publish(backend, store, conflict.directoryKey);
-        } catch (e, stack) {
-          // 写失败之后每一轮同步成功后的发布照常再写。
-          ErrorLogService.instance.log(
-            'SrsSyncScheduler.profileInfo',
-            e,
-            stack,
+    bool found = false;
+    try {
+      found = await _onLocation(conflict.directoryKey, (
+        SyncAssetStore backend,
+        bool channel,
+      ) async {
+        final SrsDbStore? store = await _readStore();
+        if (store == null || _halted) return;
+        if (store.profileUid != conflict.localUid) {
+          throw StateError(
+            'active SRS profile changed since the conflict was detected '
+            '(${conflict.localUid} -> ${store.profileUid})',
           );
         }
-      }
-      if (identical(profileConflict, current)) profileConflict = null;
-      // 本机换了（或排上了要换的）uid：之前按旧 uid 记的判定全部作废，之后的轮次重判（暂缓时同样）。
-      _linkDecided.clear();
-      if (result is SrsProfileAdopted) _onDataChanged();
-    });
+        final SrsDbStore linked = await _link(
+          linker,
+          backend,
+          store,
+          conflict.directoryKey,
+        );
+        final SrsProfileConflict? current = _conflictAt(
+          conflict.directoryKey,
+          conflict.localUid,
+        );
+        // 复核里自动采用 / 续做并入换了 store：本机已经换了 uid，与轮次里一样通知界面重读，再按「已经不成立」交回。
+        if (!identical(linked, store)) _onDataChanged();
+        if (!identical(linked, store) ||
+            current == null ||
+            !current.candidates.any((SrsRemoteProfile c) => c.uid == uid)) {
+          throw SrsProfileConflictStale(current);
+        }
+        final SrsProfileAdoptResult result = await linker.adopt(
+          store,
+          uid,
+          within: channel ? backend : null,
+        );
+        adoptedResult = result;
+        if (result is SrsProfileAdoptDeferred) {
+          // 并入暂缓：本机还按旧 uid 同步，但用户已经选定离开它。马上（还在这把锁里）在冲突所在的位置上发布
+          // `mergingInto`，对方重判时就不再把这个旧 profile 当候选（BUG-4279）；不等之后那轮同步跑完才发布。
+          try {
+            await linker.publish(backend, store, conflict.directoryKey);
+          } catch (e, stack) {
+            // 写失败之后每一轮同步成功后的发布照常再写。
+            ErrorLogService.instance.log(
+              'SrsSyncScheduler.profileInfo',
+              e,
+              stack,
+            );
+          }
+        }
+        if (identical(profileConflict, current)) profileConflict = null;
+        // 本机换了（或排上了要换的）uid：之前按旧 uid 记的判定全部作废，之后的轮次重判（暂缓时同样）。
+        _linkDecided.clear();
+        if (result is SrsProfileAdopted) _onDataChanged();
+      });
+    } on SrsProfileConflictStale {
+      // 复核本身判成了（通知状态是这一刻的）：原样交回，app 侧据此提示已解决或按新候选再问。
+      rethrow;
+    } catch (_) {
+      // 复核 / 并入失败（位置连不上、列目录出错、profile 已切走）：app 侧弹窗前已经取走了待弹的冲突，不忘掉通知状态
+      // 的话下一轮判出同一个冲突要等满 [kSrsProfileConflictRecheck] 才再通知，用户在这期间没法重试（与
+      // [recheckProfileConflict] 失败时同一处理）。
+      _linkDecided.remove(_linkKey(conflict.directoryKey, conflict.localUid));
+      rethrow;
+    }
     if (!found) {
+      _linkDecided.remove(_linkKey(conflict.directoryKey, conflict.localUid));
       throw StateError(
         'the sync location of the profile conflict is not available '
         '(${conflict.directoryKey})',
