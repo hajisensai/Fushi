@@ -160,7 +160,7 @@ void main() {
       40000,
     );
 
-    expect(await session.startPositionFor(_videoUid, fallbackMs: 7), 40000);
+    expect(await session.startPositionFor(_videoUid, fallback: () => 7), 40000);
     final int putsAfterStart = host.puts;
 
     await session.report(_videoUid, _pos(45000, now));
@@ -178,7 +178,7 @@ void main() {
     await host.putVideoPosition(_videoUid, 25000, now - 60000);
     await setLocal(_videoUid, 40000, now - 1000);
 
-    expect(await session.startPositionFor(_videoUid, fallbackMs: 7), 40000);
+    expect(await session.startPositionFor(_videoUid, fallback: () => 7), 40000);
     await session.report(_videoUid, _pos(41000, now));
     expect(await hostPos(_videoUid), 25000);
 
@@ -211,7 +211,7 @@ void main() {
       10000,
     );
 
-    expect(await session.startPositionFor(_videoUid, fallbackMs: 7), 30000);
+    expect(await session.startPositionFor(_videoUid, fallback: () => 7), 30000);
     expect((await local(_videoUid)).positionMs, 30000);
     expect(await videoSync().baseline(_videoUid), 30000);
 
@@ -223,7 +223,7 @@ void main() {
   test('合集第二个成员首播：无基线、host 无此位置 → 从回退值起播，之后上报到达 host', () async {
     final int now = DateTime.now().millisecondsSinceEpoch;
 
-    expect(await session.startPositionFor(_memberUid, fallbackMs: 0), 0);
+    expect(await session.startPositionFor(_memberUid, fallback: () => 0), 0);
 
     await setLocal(_memberUid, 12000, now);
     await session.report(_memberUid, _pos(12000, now));
@@ -237,7 +237,38 @@ void main() {
     await server.stop();
     serverRunning = false;
 
-    expect(await session.startPositionFor(_videoUid, fallbackMs: 4321), 4321);
+    expect(
+      await session.startPositionFor(_videoUid, fallback: () => 4321),
+      4321,
+    );
+  });
+
+  // 评审 perf-1：回退值惰性求值——判定读到 host 时不算回退值（播放页的回退值要读库、
+  // 此前还会再问一次 host，离线时两轮超时串行），读 host 失败才算、只算一次。
+  test('回退值只在判定读 host 失败时求值，且只求一次', () async {
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    await host.putVideoPosition(_videoUid, 10000, now - 120000);
+    await videoSync().recordBaseline(_videoUid, 10000);
+    await setLocal(_videoUid, 10000, now - 5000);
+    int fallbackCalls = 0;
+    int countingFallback() {
+      fallbackCalls++;
+      return 4321;
+    }
+
+    expect(
+      await session.startPositionFor(_videoUid, fallback: countingFallback),
+      10000,
+    );
+    expect(fallbackCalls, 0, reason: '判定成功不求回退值');
+
+    await server.stop();
+    serverRunning = false;
+    expect(
+      await session.startPositionFor(_videoUid, fallback: countingFallback),
+      4321,
+    );
+    expect(fallbackCalls, 1);
   });
 
   // 评审 tests-2：applyRemote 判定后本机又写了更新的断点（CAS 未落地）→ 从重读的
@@ -278,7 +309,10 @@ void main() {
         InterconnectRemotePlaybackSession(db: hookDb, backend: backend);
     addTearDown(hookSession.close);
 
-    expect(await hookSession.startPositionFor(_videoUid, fallbackMs: 7), 50000);
+    expect(
+      await hookSession.startPositionFor(_videoUid, fallback: () => 7),
+      50000,
+    );
     expect(hookDb.casCalls, 1);
     expect((await hookSync.localPosition(_videoUid)).positionMs, 50000);
     expect(await hookSync.baseline(_videoUid), 10000, reason: '没落地就不记基线');
@@ -289,13 +323,19 @@ void main() {
   test('开播时会话已换 host：返回回退值，并换绑到新 host，下一次开播照常判定', () async {
     final int now = DateTime.now().millisecondsSinceEpoch;
     // 先绑到当前 host（老条目作用域）。
-    expect(await session.startPositionFor(_memberUid, fallbackMs: 0), 0);
+    expect(await session.startPositionFor(_memberUid, fallback: () => 0), 0);
     backend.debugSwitchHostScope('b');
     await host.putVideoPosition(_videoUid, 30000, now - 60000);
 
-    expect(await session.startPositionFor(_videoUid, fallbackMs: 1234), 1234);
+    expect(
+      await session.startPositionFor(_videoUid, fallback: () => 1234),
+      1234,
+    );
     // 换绑后按新 host（作用域 b，无基线、本机无记录）判定：落地 host 的 30000。
-    expect(await session.startPositionFor(_videoUid, fallbackMs: 1234), 30000);
+    expect(
+      await session.startPositionFor(_videoUid, fallback: () => 1234),
+      30000,
+    );
     expect(
       await clientDb.getSyncBaseline(
         _videoUid,
@@ -316,7 +356,7 @@ void main() {
     await videoSync().recordBaseline(_videoUid, 10000);
     await host.putVideoPosition(_videoUid, 25000, now - 60000);
     await setLocal(_videoUid, 40000, now - 1000);
-    expect(await session.startPositionFor(_videoUid, fallbackMs: 7), 40000);
+    expect(await session.startPositionFor(_videoUid, fallback: () => 7), 40000);
     final int putsHeld = host.puts;
     await session.report(_videoUid, _pos(41000, now));
     expect(host.puts, putsHeld, reason: '同一台 host 上仍 held');

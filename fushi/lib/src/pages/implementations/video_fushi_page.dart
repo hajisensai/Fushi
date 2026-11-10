@@ -4740,12 +4740,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         startIntent: widget.sourceReview == null
             ? EpisodeStartIntent.initialOpen
             : EpisodeStartIntent.explicitCue,
-        initialPositionMsOverride:
-            widget.sourceReview?.startMs ??
-            await _resolveRemoteInitialPositionMs(
-              _remoteMembers[startIndex],
-              startIndex,
-            ),
+        // 开播位置交给 [_loadRemoteEpisode] 定（互联走三方判定，否则 LWW）；只有卡片
+        // 回看带显式起点。这里预先算会在三方判定之外多读一次 host（离线时多等一轮超时）。
+        initialPositionMsOverride: widget.sourceReview?.startMs,
       );
       return;
     }
@@ -4770,10 +4767,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       startIntent: widget.sourceReview == null
           ? EpisodeStartIntent.initialOpen
           : EpisodeStartIntent.explicitCue,
-      // 起播集恢复其按集断点（host 真相 vs 本地 prefs 取较新者）。
-      initialPositionMsOverride:
-          widget.sourceReview?.startMs ??
-          await _resolveRemoteInitialPositionMs(info, startIndex),
+      // 起播集恢复其按集断点：由 [_loadRemoteEpisode] 定（同上，只有卡片回看带显式起点）。
+      initialPositionMsOverride: widget.sourceReview?.startMs,
     );
   }
 
@@ -4848,13 +4843,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 后一集回来——直接 `= await` 会让作废的那一程把它那集的档覆盖到当前集列表上。
     final List<SubtitleSource> restoredLocalSubtitles =
         await _restoreRemoteLocalSubtitleFiles(index);
-    // 换集 / 连播（无 override）与首开同一条判定：本机库断点、清单条目、互联 host
-    // 此刻的断点取较新（BUG-4304）。只读本机断点会让合集下一成员 / 播放列表下一集
-    // 从本机旧断点起播，随后的实时上报（戳 = now）把旧位置写回 host。互联 host 上
-    // sweep 同步的那个键另走下面的三方判定（BUG-4393），这里的值只作它的离线回退。
-    final int resumePositionMs =
-        initialPositionMsOverride ??
-        await _resolveRemoteInitialPositionMs(info, index);
     if (seq != _episodeLoadSeq || !mounted) return;
     _importedSubtitleSources = restoredLocalSubtitles;
     // YouTube 画质档是 per-video 懒解析：新一集起播先复位（下次点开画质菜单再懒解析）。
@@ -4867,9 +4855,15 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // TODO-1213：先置「正在连接视频流…」（远端流须先向 host / 源建流，有网络往返）。
     _setLoadingPhase(_VideoLoadPhase.connecting);
     // BUG-4393：互联 host 的当前集 / 单视频 / 合集成员（sweep 同步的那个键）每一集载入
-    // 时都与 sweep 走同一份三方判定定开播位置（冲突时从本机位置起播、上报 held 到裁决），
-    // 上面的本地 / LWW 值只作离线回退。显式起点（换画质 / 换线路回到当前位置、卡片
-    // 回看）照用调用方给的位置；回看中不碰服务器进度（BUG-3490）。
+    // 时都与 sweep 走同一份三方判定定开播位置（冲突时从本机位置起播、上报 held 到裁决）。
+    // 判定读 host 失败（离线 / 换了 host）才算回退值：本机库断点与清单取较新，不再问
+    // host——判定刚读过一次失败，回退再问只会多等一轮超时。显式起点（换画质 / 换线路
+    // 回到当前位置、卡片回看）照用调用方给的位置；回看中不碰服务器进度（BUG-3490）。
+    //
+    // 其余（非互联 / host-playlist 非首集）：首开与换集 / 连播（无 override）同一条
+    // 判定，本机库断点、清单条目、互联 host 此刻的断点取较新（BUG-4304）。只读本机
+    // 断点会让合集下一成员 / 播放列表下一集从本机旧断点起播，随后的实时上报（戳 =
+    // now）把旧位置写回 host。
     final (String startUid, int startEp) = _remotePositionKeyForIndex(index);
     final int initialPositionMs =
         client is InterconnectSyncBackend &&
@@ -4878,10 +4872,18 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
               intent: startIntent,
               sourceReviewActive: _sourceReviewActive,
             )
-        ? await _remoteSessionFor(
-            client,
-          ).startPositionFor(startUid, fallbackMs: resumePositionMs)
-        : resumePositionMs;
+        ? await _remoteSessionFor(client).startPositionFor(
+            startUid,
+            fallback: () async =>
+                initialPositionMsOverride ??
+                await _resolveRemoteInitialPositionMs(
+                  info,
+                  index,
+                  askHost: false,
+                ),
+          )
+        : initialPositionMsOverride ??
+              await _resolveRemoteInitialPositionMs(info, index);
     if (seq != _episodeLoadSeq || !mounted) return;
     try {
       final RemoteVideoStreamUrls urls = await client.remoteVideoStreamUrls(
@@ -5498,11 +5500,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 不被旧 host 回退。非起播集清单不带进度，只比本地按集断点与互联 host 按集断点。
   /// BUG-4304：本机断点读库（不读 prefsRepo 内存缓存——互联 sweep / 冲突弹窗只写库）、
   /// 互联 host 再读一次此刻断点，见 [resolveRemoteVideoResumeMs]。首开与换集 / 连播
-  /// （[_loadRemoteEpisode] 无 override）都走这里。
+  /// （[_loadRemoteEpisode] 无 override）都走这里。[askHost] 为 false 时不再问互联
+  /// host（三方判定读 host 已失败、只要离线回退值时）。
   Future<int> _resolveRemoteInitialPositionMs(
     RemoteVideoInfo info,
-    int episodeIndex,
-  ) {
+    int episodeIndex, {
+    bool askHost = true,
+  }) {
     // host 的 info.positionMs 是整书/当前集进度，只对 host 的 currentEpisode 那集叠加；
     // 其它集 host 没带进度 → 退本地按集 prefs。
     final bool hostProgressApplies =
@@ -5513,6 +5517,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       client: _effectiveRemoteClient!,
       uid: uid,
       episodeIndex: ep,
+      askHost: askHost,
       listed: hostProgressApplies
           ? (positionMs: info.positionMs, updatedAtMs: info.positionUpdatedAtMs)
           : (positionMs: 0, updatedAtMs: 0),

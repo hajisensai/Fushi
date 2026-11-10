@@ -881,9 +881,14 @@ class InterconnectRemotePlaybackSession {
   ///   的基线上：本次播放不向 host 上报，冲突留给弹窗；sweep / 弹窗裁决改了基线后
   ///   上报自动恢复。
   ///
-  /// 网络失败 / 会话换了 host 时返回 [fallbackMs]（离线照常能播），之后的上报照
-  /// [InterconnectPlaybackPositionSync.reportLive] 的规则走。
-  Future<int> startPositionFor(String key, {required int fallbackMs}) async {
+  /// 网络失败 / 会话换了 host 时才求 [fallback]（离线照常能播），之后的上报照
+  /// [InterconnectPlaybackPositionSync.reportLive] 的规则走。[fallback] 惰性求值：
+  /// 判定成功时不算回退值——播放页的回退值本身要读库 / 清单，不该在每次开播前白算，
+  /// 更不该再问一次 host（离线时多等一轮超时）。
+  Future<int> startPositionFor(
+    String key, {
+    required FutureOr<int> Function() fallback,
+  }) async {
     final InterconnectPlaybackPositionSync sync = _reporter._sync;
     try {
       return await syncResourceLocks.withResources(<String>{
@@ -892,11 +897,10 @@ class InterconnectRemotePlaybackSession {
     } on InterconnectHostChangedException catch (e) {
       _reporter._rebind(sync);
       debugPrint('[sync] remote playback start "$key": $e');
-      return fallbackMs;
     } catch (e) {
       debugPrint('[sync] remote playback start "$key" failed: $e');
-      return fallbackMs;
     }
+    return await fallback();
   }
 
   Future<int> _startPositionLocked(

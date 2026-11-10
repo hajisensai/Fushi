@@ -130,15 +130,31 @@ void main() {
           'Future<void> _initRemote() async {',
           '/// per-book 播放倍速偏好 key',
         );
-        // TODO-653/885：恢复改走 _resolveRemoteInitialPositionMs(info, index)——它在 host
-        // 真相（info.positionMs，随清单带回）与本地按集 prefs 之间取较新者（跨设备同步），
+        // TODO-653/885：恢复由 _loadRemoteEpisode 定（互联走三方判定 BUG-4393，其余
+        // 走 _resolveRemoteInitialPositionMs 的 LWW，见下一条守卫）；首开只带卡片回看的
+        // 显式起点，不预先算一份——预先算会在三方判定之外多读一次 host（评审 perf-1）。
         // 仍绝不硬编码 0（TODO-559 回归守卫保留）。
+        final String initRemoteBody = region(
+          'Future<void> _initRemote() async {',
+          'Future<void> _loadRemoteEpisode(',
+        );
         expect(
-          initRemote.contains('initialPositionMsOverride:') &&
-              initRemote.contains('_resolveRemoteInitialPositionMs('),
-          isTrue,
+          _flat(initRemoteBody)
+              .split(
+                _flat(
+                  'initialPositionMsOverride: widget.sourceReview?.startMs,',
+                ),
+              )
+              .length,
+          3,
           reason:
-              'remote restore must resolve persisted vs host-synced position',
+              'initial open must leave resume resolution to _loadRemoteEpisode '
+              '(collection + single/playlist call sites)',
+        );
+        expect(
+          initRemoteBody.contains('_resolveRemoteInitialPositionMs('),
+          isFalse,
+          reason: 'precomputing the LWW resume reads the host a second time',
         );
         expect(
           initRemote.contains('initialPositionMs: 0'),
@@ -156,16 +172,26 @@ void main() {
         // 下一成员 / 播放列表下一集从本机旧断点起播，实时上报再把旧位置写回 host。
         final String loadEpisode = region(
           'Future<void> _loadRemoteEpisode(',
-          'if (seq != _episodeLoadSeq || !mounted) return;',
+          'final RemoteVideoStreamUrls urls =',
         );
         expect(
           _flat(loadEpisode),
           contains(
             _flat(
-              'initialPositionMsOverride ?? await _resolveRemoteInitialPositionMs(info, index);',
+              ': initialPositionMsOverride ?? await _resolveRemoteInitialPositionMs(info, index);',
             ),
           ),
           reason: 'episode switch must resolve via the shared resume helper',
+        );
+        // 互联三方判定的回退值惰性求值且不再问 host（评审 perf-1）。
+        expect(
+          _flat(loadEpisode),
+          contains(
+            _flat(
+              'fallback: () async => initialPositionMsOverride ?? await _resolveRemoteInitialPositionMs( info, index, askHost: false, ),',
+            ),
+          ),
+          reason: 'three-way start must not read the host again for fallback',
         );
       },
     );

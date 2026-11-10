@@ -9,10 +9,15 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show RemoteVideoInfo, resolvePositionLww, videoRemotePositionPrefKeys;
 
-/// 远端视频断点的唯一判定：本机库断点与一份已知的 host 断点「取较新时间戳」
-/// （[resolvePositionLww]）。开播位置（[resolveRemoteVideoResumeMs]）与库页卡片上的
-/// 「看到 X」（[withLocalRemoteVideoPositions]）都走这里，两处不会各算各的
-/// （BUG-4304 / BUG-4303）。
+/// 远端视频断点的 LWW 判定：本机库断点与一份已知的 host 断点「取较新时间戳」
+/// （[resolvePositionLww]）。库页卡片上的「看到 X」（[withLocalRemoteVideoPositions]）
+/// 与非三方场景的开播位置（[resolveRemoteVideoResumeMs]）都走这里（BUG-4304 /
+/// BUG-4303）。
+///
+/// 互联 host 上 sweep 同步的那个键（当前集 / 单视频 / 合集成员）开播另走与 sweep 同一
+/// 份三方判定（`InterconnectRemotePlaybackSession.startPositionFor`，BUG-4393），这里
+/// 只是它读 host 失败时的离线回退。三方判定冲突（无基线两端不同，或两端都偏离基线）
+/// 时从本机位置起播，卡片仍按 LWW 显示，两者可能不同——冲突留给弹窗裁决。
 PlaybackPosition newestRemoteVideoPosition({
   required PlaybackPosition local,
   required PlaybackPosition host,
@@ -31,6 +36,8 @@ int remoteVideoListedEpisode(RemoteVideoInfo info) =>
 
 /// 远端视频开播位置（TODO-653/885 → BUG-4304）：本机带戳断点、host 清单快照、
 /// 互联 host 此刻的断点三者「取较新时间戳」（[newestRemoteVideoPosition]）。
+/// 用于非三方场景（媒体服务器、host-playlist 非首集），以及互联三方判定
+/// （BUG-4393）读 host 失败时的离线回退（此时 [askHost] 为 false）。
 ///
 /// - 本机断点从库里读（[readLocalRemoteVideoPosition]），与互联 sweep 同一口径。
 ///   此前播放页读 `PreferencesRepository` 的内存缓存：sweep 把 host 的新断点写进库，
@@ -40,6 +47,7 @@ int remoteVideoListedEpisode(RemoteVideoInfo info) =>
 ///   有缓存（`RemoteLibraryCache`）且页面常驻，可能是几分钟前的快照。
 /// - 互联 host 是视频进度的真相端（sweep 的 `remotePosition` 读的就是它），开播
 ///   时再问一次 host 此刻的断点；host 不可达时退回前两者（离线照常能播）。
+///   [askHost] 为 false 时不问（调用方刚读 host 失败，再问只会多等一轮超时）。
 ///
 /// 只读，不写本机也不写 host。
 Future<int> resolveRemoteVideoResumeMs({
@@ -48,6 +56,7 @@ Future<int> resolveRemoteVideoResumeMs({
   required String uid,
   required int episodeIndex,
   required PlaybackPosition listed,
+  bool askHost = true,
 }) async {
   final PlaybackPosition local = await readLocalRemoteVideoPosition(
     db,
@@ -55,7 +64,7 @@ Future<int> resolveRemoteVideoResumeMs({
     episodeIndex: episodeIndex,
   );
   PlaybackPosition host = listed;
-  if (client is InterconnectSyncBackend) {
+  if (askHost && client is InterconnectSyncBackend) {
     try {
       final PlaybackPosition live = await client.remoteVideoPosition(
         uid,
@@ -79,8 +88,9 @@ Future<int> resolveRemoteVideoResumeMs({
 /// 清单是 host 的快照，经 `RemoteLibraryCache`（TTL）缓存，页面又常驻：互联 sweep
 /// 把 host 更新的断点落进本机库、或本机刚看完回来，清单里仍是旧值。开播位置早已
 /// 认本机库断点（[resolveRemoteVideoResumeMs]），卡片却只认清单，两处显示与实际续播
-/// 对不上。这里与开播判定用同一个 [newestRemoteVideoPosition]，本机断点一条前缀
-/// 查询读齐。本机断点不新于清单的条目原样返回（同一对象）。
+/// 对不上。这里与 LWW 开播判定用同一个 [newestRemoteVideoPosition]，本机断点一条前缀
+/// 查询读齐。本机断点不新于清单的条目原样返回（同一对象）。互联三方判定冲突时
+/// 实际开播位置可能与这里不同，见 [newestRemoteVideoPosition]。
 Future<List<RemoteVideoInfo>> withLocalRemoteVideoPositions(
   FushiDatabase db,
   List<RemoteVideoInfo> videos,
