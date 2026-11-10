@@ -69103,6 +69103,39 @@ class $MusicRemoteTracksTable extends MusicRemoteTracks
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _coverRefMeta = const VerificationMeta(
+    'coverRef',
+  );
+  @override
+  late final GeneratedColumn<String> coverRef = GeneratedColumn<String>(
+    'cover_ref',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _albumIdMeta = const VerificationMeta(
+    'albumId',
+  );
+  @override
+  late final GeneratedColumn<String> albumId = GeneratedColumn<String>(
+    'album_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _artistRefsMeta = const VerificationMeta(
+    'artistRefs',
+  );
+  @override
+  late final GeneratedColumn<String> artistRefs = GeneratedColumn<String>(
+    'artist_refs',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _libraryAddedAtMeta = const VerificationMeta(
     'libraryAddedAt',
   );
@@ -69147,6 +69180,9 @@ class $MusicRemoteTracksTable extends MusicRemoteTracks
     album,
     durationMs,
     coverUrl,
+    coverRef,
+    albumId,
+    artistRefs,
     libraryAddedAt,
     createdAt,
     updatedAt,
@@ -69227,6 +69263,24 @@ class $MusicRemoteTracksTable extends MusicRemoteTracks
         coverUrl.isAcceptableOrUnknown(data['cover_url']!, _coverUrlMeta),
       );
     }
+    if (data.containsKey('cover_ref')) {
+      context.handle(
+        _coverRefMeta,
+        coverRef.isAcceptableOrUnknown(data['cover_ref']!, _coverRefMeta),
+      );
+    }
+    if (data.containsKey('album_id')) {
+      context.handle(
+        _albumIdMeta,
+        albumId.isAcceptableOrUnknown(data['album_id']!, _albumIdMeta),
+      );
+    }
+    if (data.containsKey('artist_refs')) {
+      context.handle(
+        _artistRefsMeta,
+        artistRefs.isAcceptableOrUnknown(data['artist_refs']!, _artistRefsMeta),
+      );
+    }
     if (data.containsKey('library_added_at')) {
       context.handle(
         _libraryAddedAtMeta,
@@ -69297,6 +69351,18 @@ class $MusicRemoteTracksTable extends MusicRemoteTracks
         DriftSqlType.string,
         data['${effectivePrefix}cover_url'],
       ),
+      coverRef: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}cover_ref'],
+      ),
+      albumId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}album_id'],
+      ),
+      artistRefs: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}artist_refs'],
+      ),
       libraryAddedAt: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}library_added_at'],
@@ -69322,21 +69388,33 @@ class MusicRemoteTrackRow extends DataClass
     implements Insertable<MusicRemoteTrackRow> {
   final String trackUid;
 
-  /// 来源种类 wire 值（冻结）：`youtube` | `plugin`。
+  /// 来源种类 wire 值（冻结）：`youtube` | `plugin` | `server`（v149）。
   final String kind;
 
-  /// 来源宿主：YouTube 为 `youtube`；插件为插件 id。
+  /// 来源宿主：YouTube 为 `youtube`；插件为插件 id；服务器为服务器配置身份。
   final String sourceKey;
 
-  /// 来源内的条目 id：YouTube videoId / 插件曲目 id。
+  /// 来源内的条目 id：YouTube videoId / 插件曲目 id / 服务器侧曲目 id。
   final String itemId;
   final String title;
   final String? artist;
   final String? album;
   final int? durationMs;
 
-  /// 封面的 http(s) 地址（来源给的缩略图）；没有为 NULL。
+  /// 封面的 http(s) 地址（来源给的缩略图）；没有为 NULL。服务器曲目恒为 NULL（地址带凭据，
+  /// 见 [coverRef]）。
   final String? coverUrl;
+
+  /// 服务器侧封面引用（v149，只有服务器曲目有：Jellyfin 条目 id / Subsonic `coverArt` id），
+  /// 显示时由服务器客户端现算地址。
+  final String? coverRef;
+
+  /// 来源侧专辑 id（v149：插件专辑 id / 服务器专辑 id），「去专辑」跳转与专辑 uid 用。
+  final String? albumId;
+
+  /// 来源侧艺人引用（v149，JSON 数组 `[{"id": "…", "name": "…"}]`，`id` 可缺），「去艺人」
+  /// 跳转用；没有为 NULL。
+  final String? artistRefs;
 
   /// 加入音乐库的时刻（毫秒）；NULL = 不在曲库里（只被歌单引用）。
   final int? libraryAddedAt;
@@ -69354,6 +69432,9 @@ class MusicRemoteTrackRow extends DataClass
     this.album,
     this.durationMs,
     this.coverUrl,
+    this.coverRef,
+    this.albumId,
+    this.artistRefs,
     this.libraryAddedAt,
     required this.createdAt,
     required this.updatedAt,
@@ -69377,6 +69458,15 @@ class MusicRemoteTrackRow extends DataClass
     }
     if (!nullToAbsent || coverUrl != null) {
       map['cover_url'] = Variable<String>(coverUrl);
+    }
+    if (!nullToAbsent || coverRef != null) {
+      map['cover_ref'] = Variable<String>(coverRef);
+    }
+    if (!nullToAbsent || albumId != null) {
+      map['album_id'] = Variable<String>(albumId);
+    }
+    if (!nullToAbsent || artistRefs != null) {
+      map['artist_refs'] = Variable<String>(artistRefs);
     }
     if (!nullToAbsent || libraryAddedAt != null) {
       map['library_added_at'] = Variable<int>(libraryAddedAt);
@@ -69405,6 +69495,15 @@ class MusicRemoteTrackRow extends DataClass
       coverUrl: coverUrl == null && nullToAbsent
           ? const Value.absent()
           : Value(coverUrl),
+      coverRef: coverRef == null && nullToAbsent
+          ? const Value.absent()
+          : Value(coverRef),
+      albumId: albumId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(albumId),
+      artistRefs: artistRefs == null && nullToAbsent
+          ? const Value.absent()
+          : Value(artistRefs),
       libraryAddedAt: libraryAddedAt == null && nullToAbsent
           ? const Value.absent()
           : Value(libraryAddedAt),
@@ -69428,6 +69527,9 @@ class MusicRemoteTrackRow extends DataClass
       album: serializer.fromJson<String?>(json['album']),
       durationMs: serializer.fromJson<int?>(json['durationMs']),
       coverUrl: serializer.fromJson<String?>(json['coverUrl']),
+      coverRef: serializer.fromJson<String?>(json['coverRef']),
+      albumId: serializer.fromJson<String?>(json['albumId']),
+      artistRefs: serializer.fromJson<String?>(json['artistRefs']),
       libraryAddedAt: serializer.fromJson<int?>(json['libraryAddedAt']),
       createdAt: serializer.fromJson<int>(json['createdAt']),
       updatedAt: serializer.fromJson<int>(json['updatedAt']),
@@ -69446,6 +69548,9 @@ class MusicRemoteTrackRow extends DataClass
       'album': serializer.toJson<String?>(album),
       'durationMs': serializer.toJson<int?>(durationMs),
       'coverUrl': serializer.toJson<String?>(coverUrl),
+      'coverRef': serializer.toJson<String?>(coverRef),
+      'albumId': serializer.toJson<String?>(albumId),
+      'artistRefs': serializer.toJson<String?>(artistRefs),
       'libraryAddedAt': serializer.toJson<int?>(libraryAddedAt),
       'createdAt': serializer.toJson<int>(createdAt),
       'updatedAt': serializer.toJson<int>(updatedAt),
@@ -69462,6 +69567,9 @@ class MusicRemoteTrackRow extends DataClass
     Value<String?> album = const Value.absent(),
     Value<int?> durationMs = const Value.absent(),
     Value<String?> coverUrl = const Value.absent(),
+    Value<String?> coverRef = const Value.absent(),
+    Value<String?> albumId = const Value.absent(),
+    Value<String?> artistRefs = const Value.absent(),
     Value<int?> libraryAddedAt = const Value.absent(),
     int? createdAt,
     int? updatedAt,
@@ -69475,6 +69583,9 @@ class MusicRemoteTrackRow extends DataClass
     album: album.present ? album.value : this.album,
     durationMs: durationMs.present ? durationMs.value : this.durationMs,
     coverUrl: coverUrl.present ? coverUrl.value : this.coverUrl,
+    coverRef: coverRef.present ? coverRef.value : this.coverRef,
+    albumId: albumId.present ? albumId.value : this.albumId,
+    artistRefs: artistRefs.present ? artistRefs.value : this.artistRefs,
     libraryAddedAt: libraryAddedAt.present
         ? libraryAddedAt.value
         : this.libraryAddedAt,
@@ -69494,6 +69605,11 @@ class MusicRemoteTrackRow extends DataClass
           ? data.durationMs.value
           : this.durationMs,
       coverUrl: data.coverUrl.present ? data.coverUrl.value : this.coverUrl,
+      coverRef: data.coverRef.present ? data.coverRef.value : this.coverRef,
+      albumId: data.albumId.present ? data.albumId.value : this.albumId,
+      artistRefs: data.artistRefs.present
+          ? data.artistRefs.value
+          : this.artistRefs,
       libraryAddedAt: data.libraryAddedAt.present
           ? data.libraryAddedAt.value
           : this.libraryAddedAt,
@@ -69514,6 +69630,9 @@ class MusicRemoteTrackRow extends DataClass
           ..write('album: $album, ')
           ..write('durationMs: $durationMs, ')
           ..write('coverUrl: $coverUrl, ')
+          ..write('coverRef: $coverRef, ')
+          ..write('albumId: $albumId, ')
+          ..write('artistRefs: $artistRefs, ')
           ..write('libraryAddedAt: $libraryAddedAt, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt')
@@ -69532,6 +69651,9 @@ class MusicRemoteTrackRow extends DataClass
     album,
     durationMs,
     coverUrl,
+    coverRef,
+    albumId,
+    artistRefs,
     libraryAddedAt,
     createdAt,
     updatedAt,
@@ -69549,6 +69671,9 @@ class MusicRemoteTrackRow extends DataClass
           other.album == this.album &&
           other.durationMs == this.durationMs &&
           other.coverUrl == this.coverUrl &&
+          other.coverRef == this.coverRef &&
+          other.albumId == this.albumId &&
+          other.artistRefs == this.artistRefs &&
           other.libraryAddedAt == this.libraryAddedAt &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt);
@@ -69564,6 +69689,9 @@ class MusicRemoteTracksCompanion extends UpdateCompanion<MusicRemoteTrackRow> {
   final Value<String?> album;
   final Value<int?> durationMs;
   final Value<String?> coverUrl;
+  final Value<String?> coverRef;
+  final Value<String?> albumId;
+  final Value<String?> artistRefs;
   final Value<int?> libraryAddedAt;
   final Value<int> createdAt;
   final Value<int> updatedAt;
@@ -69578,6 +69706,9 @@ class MusicRemoteTracksCompanion extends UpdateCompanion<MusicRemoteTrackRow> {
     this.album = const Value.absent(),
     this.durationMs = const Value.absent(),
     this.coverUrl = const Value.absent(),
+    this.coverRef = const Value.absent(),
+    this.albumId = const Value.absent(),
+    this.artistRefs = const Value.absent(),
     this.libraryAddedAt = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
@@ -69593,6 +69724,9 @@ class MusicRemoteTracksCompanion extends UpdateCompanion<MusicRemoteTrackRow> {
     this.album = const Value.absent(),
     this.durationMs = const Value.absent(),
     this.coverUrl = const Value.absent(),
+    this.coverRef = const Value.absent(),
+    this.albumId = const Value.absent(),
+    this.artistRefs = const Value.absent(),
     this.libraryAddedAt = const Value.absent(),
     required int createdAt,
     required int updatedAt,
@@ -69614,6 +69748,9 @@ class MusicRemoteTracksCompanion extends UpdateCompanion<MusicRemoteTrackRow> {
     Expression<String>? album,
     Expression<int>? durationMs,
     Expression<String>? coverUrl,
+    Expression<String>? coverRef,
+    Expression<String>? albumId,
+    Expression<String>? artistRefs,
     Expression<int>? libraryAddedAt,
     Expression<int>? createdAt,
     Expression<int>? updatedAt,
@@ -69629,6 +69766,9 @@ class MusicRemoteTracksCompanion extends UpdateCompanion<MusicRemoteTrackRow> {
       if (album != null) 'album': album,
       if (durationMs != null) 'duration_ms': durationMs,
       if (coverUrl != null) 'cover_url': coverUrl,
+      if (coverRef != null) 'cover_ref': coverRef,
+      if (albumId != null) 'album_id': albumId,
+      if (artistRefs != null) 'artist_refs': artistRefs,
       if (libraryAddedAt != null) 'library_added_at': libraryAddedAt,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
@@ -69646,6 +69786,9 @@ class MusicRemoteTracksCompanion extends UpdateCompanion<MusicRemoteTrackRow> {
     Value<String?>? album,
     Value<int?>? durationMs,
     Value<String?>? coverUrl,
+    Value<String?>? coverRef,
+    Value<String?>? albumId,
+    Value<String?>? artistRefs,
     Value<int?>? libraryAddedAt,
     Value<int>? createdAt,
     Value<int>? updatedAt,
@@ -69661,6 +69804,9 @@ class MusicRemoteTracksCompanion extends UpdateCompanion<MusicRemoteTrackRow> {
       album: album ?? this.album,
       durationMs: durationMs ?? this.durationMs,
       coverUrl: coverUrl ?? this.coverUrl,
+      coverRef: coverRef ?? this.coverRef,
+      albumId: albumId ?? this.albumId,
+      artistRefs: artistRefs ?? this.artistRefs,
       libraryAddedAt: libraryAddedAt ?? this.libraryAddedAt,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
@@ -69698,6 +69844,15 @@ class MusicRemoteTracksCompanion extends UpdateCompanion<MusicRemoteTrackRow> {
     if (coverUrl.present) {
       map['cover_url'] = Variable<String>(coverUrl.value);
     }
+    if (coverRef.present) {
+      map['cover_ref'] = Variable<String>(coverRef.value);
+    }
+    if (albumId.present) {
+      map['album_id'] = Variable<String>(albumId.value);
+    }
+    if (artistRefs.present) {
+      map['artist_refs'] = Variable<String>(artistRefs.value);
+    }
     if (libraryAddedAt.present) {
       map['library_added_at'] = Variable<int>(libraryAddedAt.value);
     }
@@ -69725,6 +69880,9 @@ class MusicRemoteTracksCompanion extends UpdateCompanion<MusicRemoteTrackRow> {
           ..write('album: $album, ')
           ..write('durationMs: $durationMs, ')
           ..write('coverUrl: $coverUrl, ')
+          ..write('coverRef: $coverRef, ')
+          ..write('albumId: $albumId, ')
+          ..write('artistRefs: $artistRefs, ')
           ..write('libraryAddedAt: $libraryAddedAt, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
@@ -125893,6 +126051,9 @@ typedef $$MusicRemoteTracksTableCreateCompanionBuilder =
       Value<String?> album,
       Value<int?> durationMs,
       Value<String?> coverUrl,
+      Value<String?> coverRef,
+      Value<String?> albumId,
+      Value<String?> artistRefs,
       Value<int?> libraryAddedAt,
       required int createdAt,
       required int updatedAt,
@@ -125909,6 +126070,9 @@ typedef $$MusicRemoteTracksTableUpdateCompanionBuilder =
       Value<String?> album,
       Value<int?> durationMs,
       Value<String?> coverUrl,
+      Value<String?> coverRef,
+      Value<String?> albumId,
+      Value<String?> artistRefs,
       Value<int?> libraryAddedAt,
       Value<int> createdAt,
       Value<int> updatedAt,
@@ -125966,6 +126130,21 @@ class $$MusicRemoteTracksTableFilterComposer
 
   ColumnFilters<String> get coverUrl => $composableBuilder(
     column: $table.coverUrl,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get coverRef => $composableBuilder(
+    column: $table.coverRef,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get albumId => $composableBuilder(
+    column: $table.albumId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get artistRefs => $composableBuilder(
+    column: $table.artistRefs,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -126039,6 +126218,21 @@ class $$MusicRemoteTracksTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get coverRef => $composableBuilder(
+    column: $table.coverRef,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get albumId => $composableBuilder(
+    column: $table.albumId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get artistRefs => $composableBuilder(
+    column: $table.artistRefs,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<int> get libraryAddedAt => $composableBuilder(
     column: $table.libraryAddedAt,
     builder: (column) => ColumnOrderings(column),
@@ -126092,6 +126286,17 @@ class $$MusicRemoteTracksTableAnnotationComposer
 
   GeneratedColumn<String> get coverUrl =>
       $composableBuilder(column: $table.coverUrl, builder: (column) => column);
+
+  GeneratedColumn<String> get coverRef =>
+      $composableBuilder(column: $table.coverRef, builder: (column) => column);
+
+  GeneratedColumn<String> get albumId =>
+      $composableBuilder(column: $table.albumId, builder: (column) => column);
+
+  GeneratedColumn<String> get artistRefs => $composableBuilder(
+    column: $table.artistRefs,
+    builder: (column) => column,
+  );
 
   GeneratedColumn<int> get libraryAddedAt => $composableBuilder(
     column: $table.libraryAddedAt,
@@ -126154,6 +126359,9 @@ class $$MusicRemoteTracksTableTableManager
                 Value<String?> album = const Value.absent(),
                 Value<int?> durationMs = const Value.absent(),
                 Value<String?> coverUrl = const Value.absent(),
+                Value<String?> coverRef = const Value.absent(),
+                Value<String?> albumId = const Value.absent(),
+                Value<String?> artistRefs = const Value.absent(),
                 Value<int?> libraryAddedAt = const Value.absent(),
                 Value<int> createdAt = const Value.absent(),
                 Value<int> updatedAt = const Value.absent(),
@@ -126168,6 +126376,9 @@ class $$MusicRemoteTracksTableTableManager
                 album: album,
                 durationMs: durationMs,
                 coverUrl: coverUrl,
+                coverRef: coverRef,
+                albumId: albumId,
+                artistRefs: artistRefs,
                 libraryAddedAt: libraryAddedAt,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
@@ -126184,6 +126395,9 @@ class $$MusicRemoteTracksTableTableManager
                 Value<String?> album = const Value.absent(),
                 Value<int?> durationMs = const Value.absent(),
                 Value<String?> coverUrl = const Value.absent(),
+                Value<String?> coverRef = const Value.absent(),
+                Value<String?> albumId = const Value.absent(),
+                Value<String?> artistRefs = const Value.absent(),
                 Value<int?> libraryAddedAt = const Value.absent(),
                 required int createdAt,
                 required int updatedAt,
@@ -126198,6 +126412,9 @@ class $$MusicRemoteTracksTableTableManager
                 album: album,
                 durationMs: durationMs,
                 coverUrl: coverUrl,
+                coverRef: coverRef,
+                albumId: albumId,
+                artistRefs: artistRefs,
                 libraryAddedAt: libraryAddedAt,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
