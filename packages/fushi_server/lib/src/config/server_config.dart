@@ -11,6 +11,7 @@ import 'package:fushi_server/src/config/server_ai_config.dart';
 import 'package:fushi_server/src/config/server_srs_config.dart';
 import 'package:path/path.dart' as p;
 import 'package:yaml/yaml.dart';
+import 'package:fushi_server/src/server_language.dart';
 
 /// 服务端扫描根支持的 kind：`fushi_server.yaml` 的 `libraries[].kind`、admin API 新增
 /// 库根与 WebUI 选择框共用这一份，与 `LibraryScanner.scanAll` 的分派一一对应。
@@ -39,11 +40,21 @@ class LibraryRootConfig {
 
   factory LibraryRootConfig.fromYaml(Object? raw, int index) {
     if (raw is! Map) {
-      throw FormatException('libraries[$index] 必须是映射（id/path/kind）');
+      throw FormatException(
+        tr(
+          'libraries[$index] 必须是映射（id/path/kind）',
+          'libraries[$index] must be a mapping (id/path/kind)',
+        ),
+      );
     }
     final String? path = raw['path']?.toString();
     if (path == null || path.trim().isEmpty) {
-      throw FormatException('libraries[$index].path 不能为空');
+      throw FormatException(
+        tr(
+          'libraries[$index].path 不能为空',
+          'libraries[$index].path must not be empty',
+        ),
+      );
     }
     final String kind = raw['kind']?.toString() ?? 'video';
     if (!kServerLibraryRootKinds.contains(kind)) {
@@ -90,6 +101,7 @@ class ServerConfig {
     required this.uploadQuotaBytes,
     required this.subtitleLanguage,
     required this.metadataLocale,
+    this.language = defaultLanguage,
     required this.qbittorrentUrl,
     required this.qbittorrentUsername,
     required this.qbittorrentPassword,
@@ -132,6 +144,19 @@ class ServerConfig {
   /// 实际行为（WebUI 本身只有中文），不是把中文当隐含常量——那种写死在引擎里、
   /// 用户无处可改的才是 BUG-2454 修掉的东西。
   static const String defaultMetadataLocale = 'zh-CN';
+
+  /// `language`：WebUI（以及服务端面向人的输出）用的界面语言。
+  static const String languageEnglish = 'en';
+  static const String languageChinese = 'zh';
+  static const List<String> supportedLanguages = <String>[
+    languageEnglish,
+    languageChinese,
+  ];
+  static const String defaultLanguage = languageEnglish;
+
+  /// 已有配置文件里没写 `language` 时用的语言：这些是加这个键之前装的服务端，
+  /// 界面一直是中文，升级后保持中文；新装（`init` 写出的配置）才是 [defaultLanguage]。
+  static const String legacyLanguage = languageChinese;
 
   factory ServerConfig.defaults({required String dataDir}) => ServerConfig(
     dataDir: dataDir,
@@ -183,6 +208,9 @@ class ServerConfig {
   /// 刮削资料语言（BCP-47，如 `ja` / `zh-CN`）：TMDB 文字与海报语言、简介语言
   /// 感知都由它派生。偏好表里显式设过 `video_metadata_locale` 时以偏好为准。
   final String metadataLocale;
+
+  /// 界面语言：[supportedLanguages] 之一（`en` / `zh`），缺省 `en`。
+  final String language;
   final String? qbittorrentUrl;
   final String? qbittorrentUsername;
   final String? qbittorrentPassword;
@@ -274,6 +302,7 @@ class ServerConfig {
     int? uploadQuotaBytes,
     String? subtitleLanguage,
     String? metadataLocale,
+    String? language,
     String? qbittorrentUrl,
     String? qbittorrentUsername,
     String? qbittorrentPassword,
@@ -311,6 +340,7 @@ class ServerConfig {
     uploadQuotaBytes: uploadQuotaBytes ?? this.uploadQuotaBytes,
     subtitleLanguage: subtitleLanguage ?? this.subtitleLanguage,
     metadataLocale: metadataLocale ?? this.metadataLocale,
+    language: language ?? this.language,
     qbittorrentUrl: qbittorrentUrl ?? this.qbittorrentUrl,
     qbittorrentUsername: qbittorrentUsername ?? this.qbittorrentUsername,
     qbittorrentPassword: qbittorrentPassword ?? this.qbittorrentPassword,
@@ -367,7 +397,10 @@ class ServerConfig {
         engine != torrentEngineEmbedded &&
         engine != torrentEngineQbittorrent) {
       throw FormatException(
-        'torrent.engine 只能是 auto / embedded / qbittorrent，实际 "$engine"',
+        tr(
+          'torrent.engine 只能是 auto / embedded / qbittorrent，实际 "$engine"',
+          'torrent.engine must be auto / embedded / qbittorrent, got "$engine"',
+        ),
       );
     }
     return base.copyWith(
@@ -385,6 +418,7 @@ class ServerConfig {
       subtitleLanguage:
           map['subtitle_language']?.toString() ?? base.subtitleLanguage,
       metadataLocale: map['metadata_locale']?.toString() ?? base.metadataLocale,
+      language: parseLanguage(map['language']) ?? legacyLanguage,
       qbittorrentUrl: qbMap['url']?.toString(),
       qbittorrentUsername: qbMap['username']?.toString(),
       qbittorrentPassword: qbMap['password']?.toString(),
@@ -418,11 +452,14 @@ class ServerConfig {
   /// 宽松，不因手写的一条旧值拒绝启动。
   static String? remoteUrlProblem(String url) {
     final Uri? uri = Uri.tryParse(url);
-    if (uri == null) return '不是合法 URL';
+    if (uri == null) return tr('不是合法 URL', 'Not a valid URL');
     if (uri.scheme != 'http' && uri.scheme != 'https') {
-      return '只支持 http:// 或 https://';
+      return tr(
+        '只支持 http:// 或 https://',
+        'Only http:// or https:// is supported',
+      );
     }
-    if (uri.host.isEmpty) return '缺少主机名';
+    if (uri.host.isEmpty) return tr('缺少主机名', 'Missing host name');
     return null;
   }
 
@@ -446,6 +483,7 @@ class ServerConfig {
     b.writeln('bind: ${_q(bind)}');
     b.writeln('tls: $tls');
     b.writeln('device_name: ${_q(deviceName)}');
+    b.writeln('language: ${_q(language)}');
     b.writeln('lan_requires_pin: $lanRequiresPin');
     b.writeln('admin_port: $adminPort');
     b.writeln('admin_bind: ${_q(adminBind)}');
@@ -512,6 +550,18 @@ class ServerConfig {
   }
 
   static int? _int(Object? v) => v is int ? v : int.tryParse('${v ?? ''}');
+
+  /// `language`：缺省 / 空 = null（取默认）；不认识的值报错，不悄悄回落。
+  static String? parseLanguage(Object? v) {
+    final String s = '${v ?? ''}'.trim().toLowerCase();
+    if (s.isEmpty) return null;
+    if (!supportedLanguages.contains(s)) {
+      throw FormatException(
+        'language must be ${supportedLanguages.join(' / ')}, got "$v"',
+      );
+    }
+    return s;
+  }
 
   static bool? _bool(Object? v) {
     if (v is bool) return v;
