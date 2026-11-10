@@ -291,7 +291,7 @@ void main() {
   });
 
   test('已配对但只剩换不出转发口的 p2p://（隧道层没装）→ 仍是不可达，不是未配对', () async {
-    // BUG-4276 审查：选路把换不出转发口的 `p2p://` 去掉后候选为空，不能被当成「未配对」
+    // BUG-4278 审查：选路把换不出转发口的 `p2p://` 去掉后候选为空，不能被当成「未配对」
     // 吞成普通无结果——那样失败冷却与「连不上」提示都失效。
     setInterconnectP2pResolver(null);
     resetInterconnectRaceCache();

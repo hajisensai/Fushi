@@ -132,7 +132,7 @@ class InterconnectPostTransport {
       // 未配对/未启用：不是「设备不可达」，按「无结果」处理。
       // 有已配对地址、但选路后一条可拨的都没剩（只剩 `p2p://` 而隧道层没装 / 起
       // 不来）：host 确实连不上，与「试过、全部传输层失败」同义，照报不可达，
-      // 让调用方的失败冷却 / 「连不上」提示照常生效（BUG-4276 审查）。
+      // 让调用方的失败冷却 / 「连不上」提示照常生效（BUG-4278 审查）。
       return (
         json: null,
         allUnreachable: anyPaired,
@@ -234,7 +234,7 @@ class InterconnectPostTransport {
 
   /// [post] 与 [get] 共用的**唯一**候选来源：已启用条目 → 按 [onlyCandidate] 过滤
   /// 同一台 host（凭据须一致）→ [rankInterconnectCandidates] 组内选路。结果里的
-  /// `p2p://` 已换成本地转发口，直连不通时逐个试到隧道（BUG-4276：GET 曾另写一套
+  /// `p2p://` 已换成本地转发口，直连不通时逐个试到隧道（BUG-4278：GET 曾另写一套
   /// 候选遍历，绕过选路，`p2p://` 从不换转发口）；换不出转发口的 `p2p://` 被去掉，
   /// [anyPaired] 记过滤后、选路前是否还有已配对候选，供 [post] 区分「未配对」与
   /// 「配对了但一条可拨的都没有」。
