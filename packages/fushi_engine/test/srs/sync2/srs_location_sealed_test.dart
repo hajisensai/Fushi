@@ -1,4 +1,4 @@
-// BUG-4297：没有密钥的设备不得向一个已经有加密数据的位置写明文（docs/specs/2026-10-25-srs-sync-v2-design.md §9）。
+// BUG-4299：没有密钥的设备不得向一个已经有加密数据的位置写明文（docs/specs/2026-10-25-srs-sync-v2-design.md §9）。
 //
 // 本机一旦见过「这个位置是加密的」（读到带 kdf 的 meta.json、用密钥收发过、拉段时遇到密封的段）就记进内核
 // （native/fushi_fsrs/src/store/sync2/sealed.rs），之后不论 meta.json 怎么样都不写明文，报错让用户输入口令：
