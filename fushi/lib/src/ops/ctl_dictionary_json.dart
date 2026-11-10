@@ -417,6 +417,8 @@ Map<String, Object?> ctlFlushReportJson(PendingFlushReport report) =>
       'stopError': report.stopOutcome?.errorDetail,
       'failureErrorCode': report.failureOutcome?.errorCode,
       'failureError': report.failureOutcome?.errorDetail,
+      // 送达的卡带回的提示（如「保存到」被主机退回默认，BUG-4287）。
+      'notice': ?report.notice,
     };
 
 /// 词典内容语言覆盖的取值：`auto`（或 `-`）= 恢复自动（null），其余当 BCP-47 码原样用。

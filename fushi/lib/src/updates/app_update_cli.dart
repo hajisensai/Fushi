@@ -35,7 +35,10 @@ class AppUpdateDownloaded {
   const AppUpdateDownloaded({required this.version, required this.file});
 
   final String version;
-  final File file;
+
+  /// 下载好的安装包；null = 包管理器已部署好新版（[PackageManagedUpdater]），
+  /// `update install` 只需重启进新版。
+  final File? file;
 }
 
 /// 测试缝：替换「查版本 / 下载 / 安装」三步（生产 = [HeadlessUpdateFlow] + 本平台
@@ -45,6 +48,7 @@ class AppUpdateCliBackend {
     required this.updater,
     required this.check,
     required this.download,
+    required this.stage,
   });
 
   final PlatformUpdater updater;
@@ -56,6 +60,17 @@ class AppUpdateCliBackend {
     void Function(double progress) onProgress,
   )
   download;
+
+  /// [PackageManagedUpdater] 平台的「下载」= 包管理器拉取并部署（生产 =
+  /// [HeadlessUpdateFlow.stage]，与 [download] 同一把版本级互斥锁、同一个浮层）。
+  final Future<void> Function(
+    AppModel appModel,
+    HeadlessUpdateCheck update,
+    PackageManagedUpdater updater,
+    UpdateDownloadCancellation cancellation,
+    void Function(double progress) onProgress,
+  )
+  stage;
 }
 
 AppUpdateCliBackend _productionBackend() {
@@ -85,6 +100,20 @@ AppUpdateCliBackend _productionBackend() {
           cancellation: cancellation,
           onProgress: onProgress,
         ),
+    stage:
+        (
+          AppModel appModel,
+          HeadlessUpdateCheck update,
+          PackageManagedUpdater managed,
+          UpdateDownloadCancellation cancellation,
+          void Function(double progress) onProgress,
+        ) => HeadlessUpdateFlow.stage(
+          version: update.version,
+          updater: managed,
+          overlay: appModel.navigatorKey.currentState?.overlay,
+          cancellation: cancellation,
+          onProgress: onProgress,
+        ),
   );
 }
 
@@ -103,7 +132,9 @@ void debugSetAppUpdateCliBackend(AppUpdateCliBackend? backend) {
 /// 最近一次 `update download` 下好的包（还在磁盘上才算）。
 AppUpdateDownloaded? get appUpdateDownloadedForCli {
   final AppUpdateDownloaded? done = _downloaded;
-  if (done == null || !done.file.existsSync()) return null;
+  if (done == null) return null;
+  final File? file = done.file;
+  if (file != null && !file.existsSync()) return null;
   return done;
 }
 
@@ -183,6 +214,23 @@ SettingsCliTask startAppUpdateDownloadForCli(
       }
       task.detail['version'] = update.version;
       task.report(phase: 'downloading', progress: 0);
+      final PlatformUpdater updater = backend.updater;
+      if (updater is PackageManagedUpdater) {
+        // Flatpak：「下载」= 包管理器拉取并部署，新版下次启动生效。
+        await backend.stage(
+          appModel,
+          update,
+          updater,
+          cancellation,
+          (double value) => task.report(progress: value),
+        );
+        _downloaded = AppUpdateDownloaded(version: update.version, file: null);
+        return <String, Object?>{
+          'updateAvailable': true,
+          'version': update.version,
+          'staged': true,
+        };
+      }
       final File file = await backend.download(
         appModel,
         update,
@@ -253,7 +301,13 @@ SettingsCliTask installAppUpdateForCli(
       // 先让控制通道把本次应答送出去（同 ctl_server 的 quit），再交给安装器。
       await Future<void>(() {});
       FushiToast.show(msg: t.update_installing, severity: ToastSeverity.info);
-      await backend.updater.apply(done.file, done.version);
+      final PlatformUpdater updater = backend.updater;
+      final File? file = done.file;
+      if (updater is PackageManagedUpdater) {
+        await updater.restartIntoStagedUpdate(done.version);
+      } else {
+        await updater.apply(file!, done.version);
+      }
       return <String, Object?>{
         'version': done.version,
         'restartRequired': restarts,

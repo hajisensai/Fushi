@@ -89,6 +89,11 @@ class SrsProfileStores {
 
   late final SrsExclusiveOuter _outer = _ActiveStoreOuter(this);
 
+  /// 共用写连接的写锁：此刻激活副本的独占区（[_underActive]）。所有副本的写都在它里面（扩展副本经外层锁），
+  /// 持有期间连接上没有别的副本开着的 Drift 事务；直接上写连接的内核命令（采用 uid 时删旧 uid，
+  /// `SrsDbProfileLinker.writeLock`）在这里面跑。随激活副本交接而换，不会去拿已作废副本的锁。
+  SrsExclusiveOuter get writeLock => _outer;
+
   /// 在激活副本的独占区里跑 [body]。还没有激活副本、或它已作废（不会再写这条连接）时直接跑。
   ///
   /// 已在激活副本独占区里（重入，例如交接时在旧激活副本最后一段独占区里打开新副本）直接跑；交接
