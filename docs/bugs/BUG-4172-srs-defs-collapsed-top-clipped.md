@@ -20,3 +20,14 @@
   - 没有偏移的滚动事件（换卡回顶）不报；窗口态（宿主钉位置）不报；
   - 文档偏移、收起框元素内偏移各报一次，字段齐全；同一页不重复报。
 - **备注**：未在 Android 真机复测（本轮无设备）。
+
+### 2026-11-10 复发取证 → 根因定为「解释 1」的视觉视口版（NoerCpP877；同簇 cQFqqg193s）
+
+- **报告**：2026-11-09（开发者反馈 NoerCpP877「前面一张卡往下翻，下一张也被往下翻，而且回不去」、cQFqqg193s「长按复制和实际位置不符，并且缺少按钮」；Android OnePlus CPH2747 363x792@3.5，3.3.0-debug.24790，含 d7a016abd7 与本条取证）。
+- **取证**：`SrsWebCardFace.pageOffset` `…#defs: {"scrollY":0,"scrollHeight":1811,"innerHeight":1811,"body":1811,"reported":1811,"inner":null,"vv":[58.857,58.857,306.29,1]} view=404x1811`。即硬件层（解释 2）已排除、文档 / 元素都没偏移，偏移在**视觉视口**：平台视图与内容等高（1811 lp，远高于屏），Chromium 的视觉视口（306 lp）比布局视口小，在布局视口里面滚了 58.9 lp，卡面整体上移、顶部被切（与截图里少掉的 70–80 lp 同量级）。
+- **根因**（`fushi/lib/src/pages/implementations/srs/srs_card_face.dart`）：卡面所有「回顶」都只调 `window.scrollTo`——换卡 `__fushiSrsSetCard`（`kSrsCardShellScript`，`q.innerHTML = html; window.scrollTo(0, 0);`）与窗口态 `srsPageWindowScript`（:265 起）。`scrollTo` / `scrollY` 只对应布局视口，视觉视口偏移原样留着；外壳页跨卡复用（换卡不重载文档），偏移带到下一张卡；窄版式平台视图不认领纵向拖（`srsCardFaceGestureRecognizers(scrollsInPage: false)`），用户也滚不回来。偏移最可能由长按选词 / 拖选区手柄时 Chromium 的自动跟手滚动产生（cQFqqg193s 同一操作）。
+- **[x] ① 已修复（视觉视口）**：新增 `kSrsVisualViewportPinScript`（外壳页里排在换卡脚本之前装）：卡面页面不变式「未缩放时视觉视口与布局视口原点重合」。偏移 ≥ 1px 时把钉在布局视口原点（按根节点 `zoom` 折算）的隐藏锚点 `scrollIntoView({block:'start',inline:'start',behavior:'instant'})`——scrollIntoView 走根视口（布局 + 视觉两层），布局视口已在锚点上，只剩视觉视口回 0。时机：视觉视口 `scroll` / `resize`、`selectionchange`、换卡、窗口态钉位置。缩放中、选区未收起（拖手柄时让 Chromium 跟手）、焦点在可编辑元素上（软键盘）时不动。
+- **[x] ① 已修复（选区菜单，cQFqqg193s）**：卡面 `InAppWebView` 原来无条件 `disableContextMenu: true`，长按选中后没有任何复制入口。改为 `disableContextMenu: !isMobilePlatform`：Android 混合渲染且不传 `contextMenu` 时 fork 直接走系统 ActionMode（`third_party/flutter_inappwebview_android/.../InAppWebView.java` `startActionMode`），iOS 是系统编辑菜单；桌面照旧关（有 Ctrl/Cmd+C；WebView2 / WKWebView 原生右键菜单带「刷新」，会把外壳页重载成空卡）。没有另做 Fushi 自绘选区工具栏：系统菜单在两套平台上即原生视觉，且不需要和平台视图坐标做映射。
+- **取舍（没做的那条）**：「窄版式释义 WebView 限高到一屏、页内滚动并认领纵向拖」能从结构上让视觉视口不可能比布局视口小，但 BUG-4038 记过这条路：平台视图认领纵向拖后外层滚动交不回去（释义占满屏时标题区 / 页脚够不着），回到嵌套滚动的老问题；本轮按不变式钉视觉视口，不改滚动所有权。
+- **[x] ② 已加自动化测试**：`fushi/test/srs/srs_card_visual_viewport_pin_test.dart`——node 在假 DOM 上真执行复位脚本（现场数值 offsetTop 58.9 → 复位、<1px 不动、缩放不动、选区在时不动且收起后复位、输入框聚焦不动、幂等不重挂、窗口态锚点按 zoom 折算、`srsPageWindowScript` 钉完位置即复位）；换卡脚本在 `scrollTo(0, 0)` 后复位的顺序断言；外壳页装载顺序；`InAppWebViewSettings` 里 `disableContextMenu: !isMobilePlatform` 的源码守卫。测试未在本分支运行，统一在合并后验证。
+- **备注**：未在 Android 真机复测。选区手柄与高亮错位（cQFqqg193s）推测与视觉视口偏移同源（Chromium 按视觉视口偏移画手柄、合成按平台视图位置），本修复落地后需真机复看；仍错位再按「超高平台视图被外层整体平移」（BUG-3982 备注）的坐标映射查。复现时 `SrsWebCardFace.pageOffset` 取证仍保留（每页一次，现在应当只在复位前报出瞬时值）。
