@@ -434,7 +434,7 @@ void main() {
       '{"fontSize":999,"fontWeight":9999,"shadowThickness":999,'
       '"backgroundOpacity":5,"bottomPadding":-10}',
     );
-    expect(s.fontSize, lessThanOrEqualTo(72));
+    expect(s.fontSize, kVideoSubtitleMaxStoredFontSize);
     expect(s.fontWeight, 900);
     expect(s.shadowThickness, 12);
     expect(s.backgroundOpacity, lessThanOrEqualTo(1.0));
@@ -672,6 +672,82 @@ void main() {
       expect(36.0 * bigScreen, greaterThan(36.0 * smallScreen));
       // 同屏下有效字号与基准成正比（改基准 → 有效字号按比例变，手动可调）。
       expect((48.0 * bigScreen) / (24.0 * bigScreen), closeTo(2.0, 1e-9));
+    });
+  });
+
+  group('字幕字号上限随视口（CcT_7VQIQr 高 DPI 屏字号不够大）', () {
+    test('手机参考短边上基准上限仍是历史 48（老用户可调范围不变）', () {
+      expect(videoSubtitleMaxBaseFontSize(const Size(800, 400)), 48);
+      // 比参考短边小的屏也不低于 48。
+      expect(videoSubtitleMaxBaseFontSize(const Size(640, 360)), 48);
+      // 视口未知（无 MediaQuery 的入口）退回 48。
+      expect(videoSubtitleMaxBaseFontSize(Size.zero), 48);
+    });
+
+    test('高 DPI / 大屏全屏：基准上限随逻辑短边放大，不再卡在 48', () {
+      // 4K@200% 或 1080p@100% 全屏：逻辑短边 1080 → 因子 1.6，
+      // 实际上限 1080 × 0.12 = 129.6 → 基准上限 floor(129.6 / 1.6) = 81。
+      expect(videoSubtitleMaxBaseFontSize(const Size(1920, 1080)), 81);
+      // 4K@150%：逻辑短边 1440 → 基准上限 108。
+      expect(videoSubtitleMaxBaseFontSize(const Size(2560, 1440)), 108);
+      // 修复前的实际字号天花板是 48 × 1.6 = 76.8，现在把滑条拉满能到短边的 12%。
+      final double top = videoSubtitleEffectiveFontSize(
+        videoSubtitleMaxBaseFontSize(const Size(1920, 1080)),
+        const Size(1920, 1080),
+      );
+      expect(top, greaterThan(48 * 1.6));
+      expect(top, lessThanOrEqualTo(1080 * kVideoSubtitleMaxScreenFraction));
+    });
+
+    test('拉满时实际字号占短边比例与手机上一致（大屏不再相对变小）', () {
+      double topFraction(Size viewport) =>
+          videoSubtitleEffectiveFontSize(
+            videoSubtitleMaxBaseFontSize(viewport),
+            viewport,
+          ) /
+          viewport.shortestSide;
+      final double phone = topFraction(const Size(800, 400));
+      final double desktop = topFraction(const Size(2560, 1440));
+      expect(phone, closeTo(kVideoSubtitleMaxScreenFraction, 1e-9));
+      expect(desktop, closeTo(phone, 0.01));
+    });
+
+    test('基准 ≤ 48 时实际字号 = 基准 × 因子（历史渲染像素级不变）', () {
+      for (final Size viewport in const <Size>[
+        Size(640, 360),
+        Size(800, 400),
+        Size(1000, 560),
+        Size(1920, 1080),
+        Size(3840, 2160),
+      ]) {
+        for (final double base in const <double>[12, 36, 48]) {
+          expect(
+            videoSubtitleEffectiveFontSize(base, viewport),
+            closeTo(base * subtitleScreenScaleFactor(viewport), 1e-9),
+            reason: 'base=$base viewport=$viewport',
+          );
+        }
+      }
+    });
+
+    test('大窗口里调大的基准拿到小视口上被收在该视口的上限内', () {
+      const Size phone = Size(800, 400);
+      expect(
+        videoSubtitleEffectiveFontSize(108, phone),
+        videoSubtitleMaxEffectiveFontSize(phone),
+      );
+      expect(videoSubtitleMaxEffectiveFontSize(phone), closeTo(48, 1e-9));
+    });
+
+    test('decode 保留超过 48 的基准（不再夹到 72）', () {
+      final VideoSubtitleStyle s = VideoSubtitleStyle.decode(
+        '{"fontSize":108}',
+      );
+      expect(s.fontSize, 108);
+      expect(
+        VideoSubtitleStyle.decode(VideoSubtitleStyle.encode(s)).fontSize,
+        108,
+      );
     });
   });
 }

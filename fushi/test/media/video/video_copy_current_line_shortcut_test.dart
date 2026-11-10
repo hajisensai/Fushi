@@ -26,12 +26,28 @@ AudioCue _cue(String text) => AudioCue()
   ..endMs = 1000
   ..audioFileIndex = 0;
 
+AudioCue _assCue(
+  String text, {
+  required double y,
+  SubtitleCueStyle style = const SubtitleCueStyle(fontName: 'Default'),
+}) {
+  final AudioCue cue = _cue(text);
+  cue.markup = SubtitleMarkup(
+    plainText: text,
+    spans: const <SubtitleSpan>[],
+    posFraction: SubtitlePos(0.5, y),
+    cueStyle: style,
+  );
+  return cue;
+}
+
 void main() {
   group('videoCurrentLineCopyText', () {
     test('复制正在显示的那几句（重叠字幕按显示顺序换行连接）', () {
       expect(
         videoCurrentLineCopyText(
           activeCues: <AudioCue>[_cue(' 一句目 '), _cue('二句目')],
+          cues: const <AudioCue>[],
           fallback: _cue('不该用到'),
         ),
         '一句目\n二句目',
@@ -42,6 +58,7 @@ void main() {
       expect(
         videoCurrentLineCopyText(
           activeCues: <AudioCue>[_cue('   ')],
+          cues: const <AudioCue>[],
           fallback: _cue('刚播完的那句'),
         ),
         '刚播完的那句',
@@ -49,13 +66,51 @@ void main() {
     });
 
     test('都没有可复制的文本时返回 null（不写空剪贴板）', () {
-      expect(videoCurrentLineCopyText(activeCues: const <AudioCue>[]), isNull);
       expect(
         videoCurrentLineCopyText(
           activeCues: const <AudioCue>[],
+          cues: const <AudioCue>[],
+        ),
+        isNull,
+      );
+      expect(
+        videoCurrentLineCopyText(
+          activeCues: const <AudioCue>[],
+          cues: const <AudioCue>[],
           fallback: _cue(''),
         ),
         isNull,
+      );
+    });
+
+    // 反馈 rLCxUJ-2i4：ASS 把一句拆成几条起止相同的 Dialogue（同 Style、各带 \pos）。
+    test('同时显示的同一句多行合成一句，按画面自上而下以空格拼接', () {
+      final AudioCue lower = _assCue('呼び出しをくらった＞', y: 680 / 720);
+      final AudioCue upper = _assCue('＜俺は 浩一に', y: 600 / 720);
+      final AudioCue other = _assCue(
+        '別の句',
+        y: 0.1,
+        style: const SubtitleCueStyle(fontName: 'Sign'),
+      );
+      expect(
+        videoCurrentLineCopyText(
+          activeCues: <AudioCue>[lower, upper, other],
+          cues: <AudioCue>[lower, upper, other],
+        ),
+        '別の句\n＜俺は 浩一に 呼び出しをくらった＞',
+      );
+    });
+
+    test('句间空隙回落到 fallback 时补齐与它同时显示的其它行', () {
+      final AudioCue lower = _assCue('呼び出しをくらった＞', y: 680 / 720);
+      final AudioCue upper = _assCue('＜俺は 浩一に', y: 600 / 720);
+      expect(
+        videoCurrentLineCopyText(
+          activeCues: const <AudioCue>[],
+          cues: <AudioCue>[lower, upper],
+          fallback: lower,
+        ),
+        '＜俺は 浩一に 呼び出しをくらった＞',
       );
     });
   });

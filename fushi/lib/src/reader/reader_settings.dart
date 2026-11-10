@@ -863,13 +863,14 @@ class ReaderSettings {
   Future<void> toggleShowReadingTimer() =>
       _set<bool>('show_reading_timer', !showReadingTimer);
 
-  /// 读数胶囊里的「本次字数」段是否显示（per-reader）。默认 true。
-  bool get showSessionChars => _get<bool>('show_session_chars', true);
+  /// 读数胶囊里的「本次字数」段是否显示（per-reader）。默认 false（反馈 9BZA2runry
+  /// 拍板：字数 / 阅读速度读数做成开关、默认关，想看的人在阅读设置里打开）。
+  bool get showSessionChars => _get<bool>('show_session_chars', false);
   Future<void> toggleShowSessionChars() =>
       _set<bool>('show_session_chars', !showSessionChars);
 
-  /// 读数胶囊里的「本次字每时」段是否显示（per-reader）。默认 true。
-  bool get showCharsPerHour => _get<bool>('show_chars_per_hour', true);
+  /// 读数胶囊里的「本次字每时」段是否显示（per-reader）。默认 false（同上，9BZA2runry）。
+  bool get showCharsPerHour => _get<bool>('show_chars_per_hour', false);
   Future<void> toggleShowCharsPerHour() =>
       _set<bool>('show_chars_per_hour', !showCharsPerHour);
 
@@ -883,6 +884,8 @@ class ReaderSettings {
   bool get keepScreenAwake => _get<bool>('keep_screen_awake', true);
   Future<void> toggleKeepScreenAwake() =>
       _set<bool>('keep_screen_awake', !keepScreenAwake);
+  Future<void> setKeepScreenAwake(bool value) =>
+      _set<bool>('keep_screen_awake', value);
 
   // TODO-728②：有声书底栏是否显示「当前句子」cue 文本（per-reader，每本书各自
   // 记忆）。默认 true = 现状（始终显示）；false = 隐藏 cue 文本但保留布局占位，

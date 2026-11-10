@@ -96,6 +96,13 @@ enum PreviousExitKind {
   /// 用户主动强停（Android `USER_REQUESTED` / `USER_STOPPED`：设置里强行停止等）。
   userStopped,
 
+  /// 被厂商系统按应用结束（ColorOS / OxygenOS / realme UI 的 `o-stop`：Android 记成
+  /// `OTHER` +「`stop <包名> due to o-stop(<码>)`」）。这是 OPlus 框架主动停应用——划掉最近
+  /// 任务、一键清理、后台 / 耗电管理——平台给了明确原因，不是闪退；真崩溃 / ANR 系统另记
+  /// `CRASH*` / `ANR`。否则用户每在最近任务里划掉一次（死时界面还在最上层、importance=100），
+  /// 下次启动都弹「意外退出」（反馈 HqhXJvwgq3）。
+  vendorStopped,
+
   /// 权限变更时被系统按 uid 结束（Android `PERMISSION_CHANGE`：撤销运行时权限；或
   /// `OTHER` + AOSP 框架描述 `[KILL UID] <OP> changed.`：在系统设置里改「所有文件访问
   /// 权限」等 appop）。平台给了明确原因、是系统对用户操作的标准反应，不是闪退——否则
@@ -131,6 +138,7 @@ enum PreviousExitKind {
     nativeCrash || crash || anr || unexpected => true,
     memoryKill => foreground,
     userStopped ||
+    vendorStopped ||
     permissionChanged ||
     appUpdated ||
     systemSessionEnd ||
@@ -573,11 +581,20 @@ final RegExp _aospKillUidOpChanged = RegExp(
   r'^\[KILL UID\] [A-Z][A-Z0-9_]* changed\.?$',
 );
 
+/// OPlus（ColorOS / OxygenOS / realme UI）框架停应用时写下的 `ApplicationExitInfo` 描述：
+/// 原因码 `REASON_OTHER`，描述形如 `[UNKNOWN] stop app.fushi.reader due to o-stop(40)`
+/// （`[...]` 是 `AppExitInfoTracker` 加的子原因前缀，括号里是 OPlus 的停止来源码）。整串
+/// 锚定，只认这一形态。
+final RegExp _oplusAppStop = RegExp(
+  r'^(?:\[[A-Z0-9_ ]+\] )?stop [A-Za-z0-9_.:]+ due to o-stop\(\d+\)$',
+);
+
 /// Android 退出原因 → [PreviousExitKind]；包更新 / 权限变更映射成
 /// [PreviousExitKind.appUpdated] / [PreviousExitKind.permissionChanged]（明确的良性原因，
 /// 要压过会话标记的「疑似闪退」）；不说明问题的原因（自行退出、`SIGNALED`——lmkd 与
 /// `Process.killProcess` 重启都报它，分不清）返回 null，交给会话标记。`OTHER` 只在
-/// [description] 是 AOSP 自己写的 appop 变更杀进程描述时才算权限变更，其它照旧 null。
+/// [description] 是 AOSP 自己写的 appop 变更杀进程描述时才算权限变更、是 OPlus 的
+/// `o-stop` 停应用描述时算厂商停止（[PreviousExitKind.vendorStopped]），其它照旧 null。
 PreviousExitKind? androidExitKind(String reason, {String? description}) =>
     switch (reason) {
       'CRASH_NATIVE' => PreviousExitKind.nativeCrash,
@@ -591,6 +608,10 @@ PreviousExitKind? androidExitKind(String reason, {String? description}) =>
           when description != null &&
               _aospKillUidOpChanged.hasMatch(description.trim()) =>
         PreviousExitKind.permissionChanged,
+      'OTHER'
+          when description != null &&
+              _oplusAppStop.hasMatch(description.trim()) =>
+        PreviousExitKind.vendorStopped,
       _ => null,
     };
 

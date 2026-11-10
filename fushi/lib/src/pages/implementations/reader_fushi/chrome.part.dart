@@ -1435,6 +1435,44 @@ extension _ReaderChrome on _ReaderFushiPageState {
     return true;
   }
 
+  /// 正文「空白单击」的唯一语义：JS 选词判空白回传的 `onTapEmpty`
+  /// （`args` = x, y, 视口宽, 视口高 → [sizeIndex] 2），以及「单击查词」关闭时
+  /// 落到正文上的 `onTap`（`args` = x, y, shift, 视口宽, 视口高 → [sizeIndex] 3，
+  /// GitHub #3088：关掉单击查词后点正文就是点空白，不能被吞掉）。
+  void _handleReaderBlankTap(List<dynamic> args, {required int sizeIndex}) {
+    // TODO-1027：有可见查词弹窗时，这一击是 dismiss barrier 转发的真点击命中空白
+    // （onDismissBarrierTap → _selectTextAt 命中真空白才 fire onTapEmpty）。此时按
+    // barrier 旧语义清整栈（clearDictionaryResult → onAllPopupsDismissed 续播
+    // BUG-072 / 保留热槽 BUG-092），不走下面的隐藏控制栏分支。
+    if (isDictionaryShown) {
+      clearDictionaryResult();
+      return;
+    }
+    // TODO-1366：点空白取消残留的拖选（app 自绘选区 + 起止手柄）。拖选松手弹的
+    // 菜单被 dismiss 后不再清选区（留着让用户拖手柄改选），于是「点空白 = 取消选择」
+    // 成为自然清除路径；无选区时 clearSelection 是空操作，零副作用。
+    unawaited(_clearReaderAppSelection());
+    // indZkg2A0I：点击翻页区域模板认领两侧（或上下）三分之一；中间三分之一与
+    // 关闭模板时落到下面原来的工具栏分支。查词弹窗在场时上面已经 return，
+    // 所以「点空白关弹窗」永远先于翻页。
+    if (args.length >= sizeIndex + 2 &&
+        _turnPageByTapZone(args, 0, sizeIndex: sizeIndex)) {
+      return;
+    }
+    // TODO-975 决策#3：开启「点空白处隐藏控制栏」即底栏悬浮模式。此时点空白
+    // 走悬浮唤出/收起状态机（_handleFloatingChromeReveal，不改预留高、不重锚），
+    // 而非旧的挤压 _toggleChrome。未开启（挤压）时维持旧行为（不响应空白点）。
+    // 顶栏和底栏被关掉时两条分支都被闸门拦下（栏不出来，出口在悬浮球上）。
+    if (_anyChromeFloating) {
+      _handleFloatingChromeReveal();
+    } else if (ReaderFushiSource.instance.tapEmptyToHideChrome) {
+      _toggleChrome();
+    }
+    // Tap on empty space handed OS focus to the WebView; reclaim it so
+    // ESC still exits the book afterward (BUG-136).
+    _focusOwnership.reclaim(FocusReclaimCause.gesture);
+  }
+
   void _handleVnBlankTap() {
     if (_lyricsMode) return;
     // 与 onTapEmpty 同语义：有可见查词弹窗时，本次点击只清弹窗栈（BUG-072 续播 /
@@ -3412,6 +3450,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
           from: AxisDirection.up,
           child: FushiFloatingTopBar(
             excludeFocus: true,
+            // 标题压在正文上：Apple 也垫底（反馈 -JpWlEuH5N）。
+            titleBacking: true,
             leading: leading,
             title: layout.showsTitle ? (_book?.title ?? '') : '',
             // 章名跟着书名这颗槽位开关一起开合；歌词模式下没有「当前章」可言。

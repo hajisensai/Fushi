@@ -1,4 +1,6 @@
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi_engine/mining/immersion_mining_request.dart'
+    show MiningClipFormat;
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
 
 /// 制卡图片 / GIF 清晰度各档的名字（下标 = 档位，低 → 高）。
@@ -50,3 +52,15 @@ String miningAudioQualityTierDetail(int tier) {
       ? t.mining_audio_quality_detail_mono(kbps: kbps)
       : t.mining_audio_quality_detail_stereo(kbps: kbps);
 }
+
+/// 片段格式选项的文案。五端随包的统一 FFmpeg（tool/ffmpeg-unified）都带 libvpx-vp9 +
+/// SVT-AV1 + libopus，三档在各端都编得出；[MiningClipFormat.encodeAttempts] 的降级只给
+/// 用户自带的外部 ffmpeg 兜底。
+///
+/// 全局设置页与游戏详情页「本游戏制卡设置」共用（放在这个不依赖 AppModel 的叶子
+/// 文件里，详情页那一节才不必为一个文案函数 import 整个设置页）。
+String miningClipFormatLabel(MiningClipFormat format) => switch (format) {
+  MiningClipFormat.webmVp9 => t.mining_clip_format_webm_vp9,
+  MiningClipFormat.webmAv1 => t.mining_clip_format_webm_av1,
+  MiningClipFormat.mp4H264 => t.mining_clip_format_mp4_h264,
+};
