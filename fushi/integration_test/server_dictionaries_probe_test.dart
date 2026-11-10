@@ -427,7 +427,9 @@ void main() {
           expect(
             pairing,
             isA<InterconnectLinkPaired>(),
-            reason: '无 PIN 的局域网配对应成功：$pairing',
+            reason:
+                '无 PIN 的局域网配对应成功：'
+                '${pairing is InterconnectLinkPairingFailed ? pairing.reason : pairing}',
           );
           final String pairedName =
               (pairing as InterconnectLinkPaired).deviceName ??
