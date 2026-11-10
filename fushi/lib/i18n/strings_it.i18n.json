@@ -927,7 +927,7 @@
   "anki_sync_client_username_title": "Nome utente",
   "anki_tag_default_section": "Etichette predefinite",
   "anki_tag_include_category": "Aggiungi etichetta categoria di origine",
-  "anki_tag_include_category_hint": "I libri ricevono \"book\", i video \"video\", i giochi \"game\", la musica \"music\"",
+  "anki_tag_include_category_hint": "I libri ricevono \"book\", i video \"video\", i giochi \"game\", la musica \"music\", i manga \"manga\"",
   "anki_tag_include_fushi": "Aggiungi etichetta \"fushi\"",
   "anki_tag_include_fushi_hint": "Contrassegna ogni carta creata con Fushi",
   "anki_tag_nest_title_under_category": "Nest title tags under the category tag",

@@ -282,10 +282,7 @@ void main() {
         ),
         // 反馈 uOanUXUIDt：漫画句卡片打 `manga`（与漫画阅读器手动制卡一致）；
         // 统计口径不变，仍归书籍桶（统计没有漫画桶）。
-        kFavoriteSentenceSourceManga: (
-          AnkiMiningSource.manga,
-          kStatSourceBook,
-        ),
+        kFavoriteSentenceSourceManga: (AnkiMiningSource.manga, kStatSourceBook),
       };
       expected.forEach((String source, (AnkiMiningSource, String) want) {
         final FavoriteMiningItem item = _item(source: source);
