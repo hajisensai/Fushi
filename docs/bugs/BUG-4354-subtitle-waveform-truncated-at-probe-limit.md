@@ -1,4 +1,4 @@
-## BUG-4353 · 波形对轴视图被自动对轴的 20 分钟探测上界截断，24 分钟的一集 20:00 之后无波形、拖不过去
+## BUG-4354 · 波形对轴视图被自动对轴的 20 分钟探测上界截断，24 分钟的一集 20:00 之后无波形、拖不过去
 - **报告**：2026-11-09（开发者自提，应用内反馈 EUvw-RjUE4，Windows 视频：「波形对轴显示不全，后面拉不过去了」，截图停在约 20:17）
 - **真实性**：✅ 真 bug。人工查看的波形视图沿用了自动对轴互相关的性能截断：
   - `fushi/lib/src/media/video/audio_energy_probe.dart:43,51,55-57`：`kSubtitleAutoAlignProbeLimitMs`（本地 20 分钟）/ `kStreamSubtitleAlignProbeLimitMs`（流 3 分钟）/ `subtitleAlignProbeLimitMs()` 是自动对轴的探测上界，注释还要求「波形时间窗必须同取这一个值」；
