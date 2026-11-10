@@ -33,15 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3862 条。点号进各自文件。
+> 共 3864 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4301](bugs/BUG-4301-srs-sync2-device-trust.md) | ✅ | ✅ | srs-sync2-device-trust |
-> 共 3863 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-4305](bugs/BUG-4305-srs-sync2-device-trust.md) | ✅ | ✅ | srs-sync2-device-trust |
 | [BUG-4301](bugs/BUG-4301-bd-pack-without-batch-title-no-full-plan.md) | ✅ | ✅ | 没写 batch / 季号的 BD 整包给不出「全集」下载计划 |
 | [BUG-4300](bugs/BUG-4300-srs-day-rollover-not-synced.md) | ✅ | ✅ | 复习的「今天」日界不随同步、profile 时区字段从没有写入方 |
 | [BUG-4299](bugs/BUG-4299-srs-sync2-plaintext-downgrade.md) | ✅ | ✅ | SRS 同步 v2：没有密钥的设备会往已加密的位置写明文 |
