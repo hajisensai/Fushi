@@ -537,17 +537,20 @@ extension _ReaderChrome on _ReaderFushiPageState {
       onPressed: () => unawaited(_runSelectionAction(action)),
     );
 
-    final List<ReaderSelectionActionItem> actionItems =
-        <ReaderSelectionActionItem>[
-          item(FushiIcons.search, t.search, 'search'),
-          item(FushiIcons.copy, t.copy, 'copy'),
-          if (isAndroidPlatform) item(FushiIcons.share, t.share, 'share'),
-          if (isAndroidPlatform)
-            item(FushiIcons.travelExplore, t.selection_web_search, 'webSearch'),
-          item(FushiIcons.star, t.action_favorite, 'favorite'),
-          if (hasAudio)
-            item(FushiIcons.video, t.audiobook_export_clip, 'export'),
-        ];
+    final List<ReaderSelectionActionItem>
+    actionItems = <ReaderSelectionActionItem>[
+      item(FushiIcons.search, t.search, 'search'),
+      item(FushiIcons.copy, t.copy, 'copy'),
+      if (isAndroidPlatform) item(FushiIcons.share, t.share, 'share'),
+      if (isAndroidPlatform)
+        item(FushiIcons.travelExplore, t.selection_web_search, 'webSearch'),
+      item(FushiIcons.star, t.action_favorite, 'favorite'),
+      // 反馈 C9wcnKaPq_：触屏的「跳到这句播放」入口（鼠标走中键）。排在「收藏」后、
+      // 「导出片段」前；操作条按宽度降级时前 3 颗常驻不受影响。
+      if (hasAudio)
+        item(FushiIcons.playCircle, t.play_from_cue, 'playFromSentence'),
+      if (hasAudio) item(FushiIcons.video, t.audiobook_export_clip, 'export'),
+    ];
 
     // 2026-10 体验优化：原本整条 Row 套 FittedBox(scaleDown)，按钮一多就被等比
     // 缩到 0.5 倍（字和触控目标都太小）。改由 [ReaderSelectionActionBar] 按可用
@@ -660,6 +663,9 @@ extension _ReaderChrome on _ReaderFushiPageState {
         );
         await _clearReaderAppSelection();
         return;
+      case 'playFromSentence':
+        await _playFromSelectionSentence(data);
+        return;
       case 'export':
         // TODO-1366: same backend as desktop (_exportAudiobookClip) but fed from
         // the app-drawn selection payload; clear grips + highlight afterward.
@@ -749,6 +755,43 @@ extension _ReaderChrome on _ReaderFushiPageState {
     return data;
   }
 
+  /// [data] 所在的有声书句子（cue）。三级回退见 [_fillLookupStateFromSelectionData]
+  /// 的注释；查词状态填充与选区操作条「从此句播放」共用这一份解析，两条路径对同一处
+  /// 选区永远认同一句。纯查询，不改任何查词状态。
+  AudioCue? _cueForSelectionData(ReaderSelectionData data) {
+    final List<AudioCue>? allCues = _cachedAllCues;
+    AudioCue? cue = data.audioCuePayload != null && allCues != null
+        ? cueForPointerPayload(data.audioCuePayload!, allCues)
+        : null;
+    cue ??= data.matchableOffset != null
+        ? _findCueForOffset(data.matchableOffset!)
+        : null;
+    if (cue == null && _srtBookUid != null) {
+      cue = _findCueForSentence(data.sentence);
+    }
+    return cue;
+  }
+
+  /// 反馈 C9wcnKaPq_：选区操作条「从此句播放」——触屏上「跳到这句播放」的入口。
+  /// 左键 / 单击只查词（合成书与 EPUB 书一致），鼠标有中键（`onPointerSeek`），触屏没有
+  /// 中键，于是由「长按句子 → 操作条 → 从此句播放」承担；两种书走同一条路。解析不到
+  /// 句子（选区落在无音频的段落）时提示，不静默无反应。
+  Future<void> _playFromSelectionSentence(ReaderSelectionData data) async {
+    final AudiobookPlayerController? controller = _audiobookController;
+    await _clearReaderAppSelection();
+    if (!mounted || controller == null) return;
+    if (!identical(_audiobookController, controller)) return;
+    final AudioCue? cue = _cueForSelectionData(data);
+    if (cue == null) {
+      FushiToast.show(
+        msg: t.audiobook_play_from_selection_no_cue,
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
+    controller.playCueAndContinue(cue);
+  }
+
   /// TODO-1366：把一个已解析的 [ReaderSelectionData]（tap 查词 / 移动端拖选菜单 payload /
   /// 原生选区解析结果同构）填进导出/查词所需的选区状态——currentSentence（非空契约）、
   /// [_lookupCue]、[_cachedSelectionRange]、[_cachedSentenceRange]、[_cachedSentenceOffset]、
@@ -778,18 +821,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
     // ② 没有 payload 的书（DOM 里不带 cue id）退到按**音频坐标** matchableOffset
     //    在本章 cue 的 fragment 区间里反查——比原先按句子文本找精确；
     // ③ 仍无命中再退到句子文本匹配（见下方 _findCueForSentence）。
-    final List<AudioCue>? allCues = _cachedAllCues;
-    if (data.audioCuePayload != null && allCues != null) {
-      _lookupCue = cueForPointerPayload(data.audioCuePayload!, allCues);
-    } else {
-      _lookupCue = null;
-    }
-    _lookupCue ??= data.matchableOffset != null
-        ? _findCueForOffset(data.matchableOffset!)
-        : null;
-    if (_lookupCue == null && _srtBookUid != null) {
-      _lookupCue = _findCueForSentence(data.sentence);
-    }
+    _lookupCue = _cueForSelectionData(data);
     _cachedSelectionRange =
         (data.normalizedOffset != null && data.normalizedLength != null)
         ? (
@@ -3450,6 +3482,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
           from: AxisDirection.up,
           child: FushiFloatingTopBar(
             excludeFocus: true,
+            // 标题压在正文上：Apple 也垫底（反馈 -JpWlEuH5N）。
+            titleBacking: true,
             leading: leading,
             title: layout.showsTitle ? (_book?.title ?? '') : '',
             // 章名跟着书名这颗槽位开关一起开合；歌词模式下没有「当前章」可言。

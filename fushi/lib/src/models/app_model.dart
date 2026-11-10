@@ -510,6 +510,7 @@ import 'package:fushi/src/mining/galgame_add_flow.dart'
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/mining/gal_mining_settings.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
+import 'package:fushi/src/mining/advanced_mining/advanced_mining_layout.dart';
 import 'package:fushi/src/mining/galgame_repository.dart';
 import 'package:fushi/src/mining/immersion_mining_engine.dart';
 import 'package:fushi/src/mining/mining_image_mode_target.dart';
@@ -549,6 +550,8 @@ import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/stats/reader_study_clock_start_mode.dart';
+import 'package:fushi/src/stats/study_goal_period.dart';
+export 'package:fushi/src/stats/study_goal_period.dart' show StudyGoalPeriod;
 
 export 'package:fushi/src/models/local_audio_manager.dart'
     show LocalAudioDbEntry, InvalidLocalAudioDbException;
@@ -11341,6 +11344,12 @@ class AppModel
   Future<void> setAdvancedMiningVisibleFields(List<String> names) =>
       prefsRepo.setAdvancedMiningVisibleFields(names);
 
+  /// 「高级制卡」对话框的分区布局（反馈 aZ99bm9R6K）。
+  AdvancedMiningLayout get advancedMiningLayout =>
+      prefsRepo.advancedMiningLayout;
+  Future<void> setAdvancedMiningLayout(AdvancedMiningLayout layout) =>
+      prefsRepo.setAdvancedMiningLayout(layout);
+
   /// 制卡动图只播放一次（反馈 ZxyIMK-C5V）。
   bool get miningAnimatedPlayOnce => prefsRepo.miningAnimatedPlayOnce;
   Future<void> setMiningAnimatedPlayOnce(bool value) =>
@@ -11517,6 +11526,19 @@ class AppModel
   int get readingGoalDailyChars => prefsRepo.readingGoalDailyChars;
   Future<void> setReadingGoalDailyChars(int value) =>
       prefsRepo.setReadingGoalDailyChars(value);
+  int get readingGoalWeeklyChars => prefsRepo.readingGoalWeeklyChars;
+  Future<void> setReadingGoalWeeklyChars(int value) =>
+      prefsRepo.setReadingGoalWeeklyChars(value);
+
+  /// 字数目标周期（日 / 周二选一，反馈 CjIr9RGSCe）。
+  StudyGoalPeriod get readingGoalPeriod => prefsRepo.readingGoalPeriod;
+  Future<void> setReadingGoalPeriod(StudyGoalPeriod value) =>
+      prefsRepo.setReadingGoalPeriod(value);
+
+  /// 当前周期下生效的字数目标（0 = 未设）。
+  int get readingGoalActiveChars => prefsRepo.readingGoalActiveChars;
+  Future<void> setReadingGoalActiveChars(int value) =>
+      prefsRepo.setReadingGoalActiveChars(value);
 
   // 桌面小组件「目标」卡的其余每日目标（0 = 关，随 Profile）。
   int get studyGoalDailyMinutes => prefsRepo.studyGoalDailyMinutes;
