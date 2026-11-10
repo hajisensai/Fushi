@@ -1,4 +1,4 @@
-## BUG-4357 · 互联远端视频只暴露一条 sidecar 字幕：host 多条外挂字幕菜单只列默认那条
+## BUG-4358 · 互联远端视频只暴露一条 sidecar 字幕：host 多条外挂字幕菜单只列默认那条
 - **报告**：2026-11-07（开发者自提，应用内反馈 -CaVsioFhG：「服务端那边下了好多字幕，怎么只显示一个，而且互联的应该标出来所有的，怎么就默认的标出来的」）
 - **真实性**：✅ 真缺口，已沿代码路径确认。互联协议只有单值字段：`/streamurl` 只回 `subtitleUrl` + `subtitleFileName`（`packages/fushi_engine/lib/sync/fushi_sync_server/video.part.dart` `svc.resolveVideoSubtitle` 挑出的那一条），`GET .../subtitle` 不带参数时也只回这一条；`RemoteVideoStreamUrls`（`packages/fushi_engine/lib/sync/fushi_library_host_service.dart`）没有承载多条外挂字幕的字段。client 侧播放页 `_remoteSubtitlePath` 只放这一条（`video_fushi_page.dart` `_downloadRemoteBackendDefaultSubtitle`），菜单经 `remote_subtitle_catalog.dart` `remoteSubtitleFileEntries(backendDefaultPath:)` 只拼出一行「Fushi 互联服务端字幕」。host 视频旁的其余 sidecar（`movie.zh.ass` / `movie.en.vtt` …）client 根本无从得知。
   - 注：反馈 AI 总结把列表字段归到 `RemoteVideoInfo`（库清单）；实际播放页的字幕信息来自 `/streamurl`（`RemoteVideoStreamUrls`，按集），库清单自 BUG-814 起只给廉价的单值 `hasSubtitle` / `subtitleFileName`，所以列表加在 `/streamurl`。
