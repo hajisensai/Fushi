@@ -1,4 +1,4 @@
-## BUG-4370 · 视频查词弹窗点制卡后弹窗不关、视频停着等制卡完成
+## BUG-4371 · 视频查词弹窗点制卡后弹窗不关、视频停着等制卡完成
 - **报告**：2026-11-07（开发者自提反馈 OeS0m8tLHc，Android 3.3.0-debug.24478：「正在制卡不要暂停我播放，点完制卡关了弹窗就继续播放了」）。修复随 PR #3140 合入 develop（`6b42923cbd`），本条为事后补记。
 - **真实性**：✅ 真问题（视频车道与「查词暂停、制卡即续播」的使用预期冲突；分类原为 decision，用户在 PR #3140 拍板按 bug 收口）。修复前（`6b42923cbd^1`）沿真实代码路径：
   1. 视频页查词弹窗的制卡回调经 `DictionaryPageMixin` 包 `closePopupAfterAcceptedMine`（`fushi/lib/src/pages/implementations/dictionary_page_mixin.dart:1392`，定义 `fushi/lib/src/pages/implementations/dictionary_popup_webview.dart:290`），是否关弹窗只看阅读器偏好 `close_popup_after_mining`，默认关（`fushi/lib/src/media/sources/reader_fushi_source.dart:1693`）；开了也要等 `mine(fields)` 返回 accepted 才关（BUG-2627 为阅读器故意等结果）。弹窗不关 → `_pausedForLookup` 不清（`fushi/lib/src/pages/implementations/video_fushi_page.dart:3153`），视频一直停着。
