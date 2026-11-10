@@ -1039,6 +1039,15 @@ pub(crate) fn sync2_dispatch(
             crate::store::cache_rev::upgrade(conn, profile, &cfg)
         });
     }
+    // 存量样式去重的落库一半（store/repr_rewrite.rs）：改写一批修改记录的表示、刷新这些笔记的缓存行、推进去重游标并写
+    // 本机状态行，一个 SAVEPOINT。回包 `{rewritten, notes, localRevision, cache}`。
+    if op == "edits_rewrite_repr" {
+        let cfg = cache_config_of(c, profile, req)?;
+        let w = c.writer()?;
+        return crate::store::sync2::in_savepoint(&w, |conn| {
+            crate::store::repr_rewrite::command_on(conn, profile, req, &cfg)
+        });
+    }
     // 本机写命令：命令本体、缓存刷新、排队与本机状态行在同一次持写锁、同一个 SAVEPOINT 里（[local_write]）。
     if LOCAL_WRITE_OPS.contains(&op) {
         let cfg = cache_config_of(c, profile, req)?;
@@ -1518,6 +1527,7 @@ const CHANNEL_SETTLES: &[&str] = &[
     "backfill_dupe_norms",
     "backfill_tag_sources",
     "backfill_source_keys",
+    "edits_rewrite_repr",
 ];
 
 const PROJECTING_OPS: &[&str] = &[

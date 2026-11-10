@@ -1203,9 +1203,12 @@ class SrsDbStore implements SrsSync2Host {
     if (st == null) return 0;
     int rewritten = 0;
     while (shouldStop?.call() != true) {
-      // 每批一个独占区：批末存本机状态（含写入者的序号 / 因果上下文），不能夹在别的写入的分配与落库之间。
-      final int done = await runExclusive(
-        () => db.transaction(() async {
+      // 每批一个独占区：样式去重（会写样式文件）在 Dart 算，落库一半交内核（`edits_rewrite_repr`，
+      // native/fushi_fsrs/src/store/repr_rewrite.rs）——改写表示、刷新这些笔记的缓存行、推进游标并写本机状态行在一个
+      // SAVEPOINT 里，不再套 Drift 事务、逐行 UPDATE。
+      final int done = await runExclusive(() async {
+        int n = -1;
+        await _commandOrReload(() async {
           final List<QueryRow> rows = await db
               .customSelect(
                 'SELECT rowid AS rid, id, json FROM srs_field_edits '
@@ -1220,9 +1223,8 @@ class SrsDbStore implements SrsSync2Host {
                 ],
               )
               .get();
-          if (rows.isEmpty) return -1;
-          int n = 0;
-          final Set<String> touched = <String>{};
+          if (rows.isEmpty) return;
+          final List<List<Object>> rewrites = <List<Object>>[];
           for (final QueryRow r in rows) {
             final SrsFieldEdit e = SrsFieldEdit.fromJson(
               (jsonDecode(r.read<String>('json')) as Map)
@@ -1233,28 +1235,23 @@ class SrsDbStore implements SrsSync2Host {
                 ? pending
                 : await pending;
             if (!identical(c, e)) {
-              // `json` 是生成列（srs.db v18，native store/slim.rs）：写去掉与列重复的键的 `jslim`。
-              await db.customUpdate(
-                'UPDATE srs_field_edits SET jslim = srs_edit_pack(?, id, '
-                'profile_uid, entity_kind, entity_id, field_key, writer_id, seq) '
-                'WHERE rowid = ?',
-                variables: <Variable<Object>>[
-                  Variable<String>(c.canonical()),
-                  Variable<int>(r.read<int>('rid')),
-                ],
-                updates: <TableInfo<Table, Object?>>{db.srsFieldEdits},
-              );
-              touched.add(e.entityId);
-              n++;
+              rewrites.add(<Object>[r.read<int>('rid'), c.canonical()]);
             }
-            _styleCursor = r.read<int>('rid');
           }
-          // 只换了字段值的表示：笔记缓存行的媒体引用跟着变（内核重算这几条笔记）。
-          if (touched.isNotEmpty) await _refreshCaches(notes: touched);
-          await _saveLocal();
-          return n;
-        }),
-      );
+          final int cursor = rows.last.read<int>('rid');
+          _absorbLocalWrite(
+            await _sync2(<String, Object?>{
+              'op': 'edits_rewrite_repr',
+              'rows': rewrites,
+              'cursor': cursor,
+              'localState': _localStateArg(),
+            }),
+          );
+          _styleCursor = cursor;
+          n = rewrites.length;
+        });
+        return n;
+      });
       if (done < 0) break;
       rewritten += done;
       // 让出事件循环：迁移在后台跑，不长时间占住数据库连接。
@@ -2072,6 +2069,7 @@ class SrsDbStore implements SrsSync2Host {
     'refresh_caches',
     'rebuild_caches',
     'cache_config_set',
+    'edits_rewrite_repr',
     'backfill_dupe_norms',
   };
 

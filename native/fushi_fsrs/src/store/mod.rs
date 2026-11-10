@@ -38,6 +38,7 @@ mod projections;
 mod projections_scan_tests;
 pub(crate) mod queue;
 mod read_pool;
+pub(crate) mod repr_rewrite;
 pub mod rows;
 pub mod schema;
 pub(crate) mod slim;
