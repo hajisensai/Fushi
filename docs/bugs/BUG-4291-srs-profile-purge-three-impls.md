@@ -1,4 +1,4 @@
-## BUG-4284 · 删 / 换 profile uid 的三份实现不一致，并入与采用后旧 uid 在 srs.db 留残留
+## BUG-4291 · 删 / 换 profile uid 的三份实现不一致，并入与采用后旧 uid 在 srs.db 留残留
 - **报告**：2026-11-10（内部审查：「删掉某个 uid 在 srs.db 里的全部行」有三份实现）
 - **真实性**：✅ 真 bug（新测试 `srs_profile_purge_single_test.dart` 在修复前两条红，实测残留见下）。三份实现：
   1. Rust `native/fushi_fsrs/src/store/profile_data.rs:79` `profile_purge`（删 profile 用）：现查每张带 `profile_uid`

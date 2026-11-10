@@ -548,7 +548,7 @@ class SrsDbProfileLinker implements SrsProfileLinker {
   /// 共用写连接上的写锁：持有期间连接上没有别的 Dart 写入者（任何副本的写都在它里面：app 里是激活副本的
   /// 独占区，扩展副本的独占区套在它里面，见 `SrsProfileStores`；随激活副本交接而换，旧副本作废后拿的是新的
   /// 那把）。采用时删 uid（[srsAdoptProfileUid]）是内核命令、直接在写连接上跑，必须在这把锁里：否则会夹进
-  /// 别的副本开着的 Drift 事务、随它回滚（BUG-4284）。
+  /// 别的副本开着的 Drift 事务、随它回滚（BUG-4291）。
   final SrsExclusiveOuter writeLock;
 
   /// 目录 → 上次发布的说明内容（同一进程里不重复写）。
