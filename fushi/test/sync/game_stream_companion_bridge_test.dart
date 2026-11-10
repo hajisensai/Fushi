@@ -342,7 +342,10 @@ void main() {
       await sender.send(big);
       await sender.send('{"b":2}');
       expect(wire[0], '{"a":1}');
-      expect(wire[1].length, lessThan(big.length));
+      // 线上只走文件引用、不带正文。不比长度：引用里是溢出文件的绝对路径，macOS 的
+      // systemTemp（/var/folders/…/T/）比这 88 个字符的正文还长。
+      expect(wire[1], isNot(contains('猫')));
+      expect(wire[1], contains('${spill.path}${Platform.pathSeparator}host'));
       expect(Directory('${spill.path}/host').listSync(), hasLength(1));
 
       final SecondScreenPipe receiver = SecondScreenPipe(
