@@ -81,6 +81,29 @@ Future<MangaOcrResultState> readMangaOcrResultState(File mangaJson) async {
   }
 }
 
+/// [chapterKeys] 里**已有识别结果**的章（章 `manga.json` 至少一个 block，
+/// [MangaOcrResultState.hasResult]）。章节列表逐章「已识别文字」标识的唯一来源：
+/// 直接读识别结果本身，不另存镜像状态（反馈 wCgL364tgM）。调用方只该传已下载的
+/// 章——没下载的章没有 `manga.json`，读失败会被当作 [MangaOcrResultState.unreadable]
+/// 排除。
+Future<Set<String>> ocrCompletedChapterKeys(
+  String bookDir,
+  Iterable<String> chapterKeys,
+) async {
+  final List<String> keys = chapterKeys.toList(growable: false);
+  final List<MangaOcrResultState> states =
+      await Future.wait(<Future<MangaOcrResultState>>[
+        for (final String key in keys)
+          readMangaOcrResultState(
+            mangaChapterJsonFile(mangaChapterDirectory(bookDir, key)),
+          ),
+      ]);
+  return <String>{
+    for (int i = 0; i < keys.length; i++)
+      if (states[i] == MangaOcrResultState.hasResult) keys[i],
+  };
+}
+
 /// 在线作品某一章的识别目标（章目录约定见 `manga_download_auto_ocr.dart`）。
 MangaOcrTarget mangaChapterOcrTarget({
   required String bookKey,

@@ -7,6 +7,8 @@ import 'package:fushi/src/media/manga/library/manga_chapter_list.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:flutter/gestures.dart' show kSecondaryButton;
 
 /// 章节列表被**两个**界面共用（作品页正文 + 阅读器里的章节弹层）。两处对
 /// 「已读怎么显示、当前章怎么高亮、排序默认哪个方向」的答案必须一致，所以这些
@@ -307,6 +309,135 @@ void main() {
       find.text(t.media_file_location_open),
       findsNothing,
       reason: '没下载的章没有文件可定位',
+    );
+  });
+
+  // 反馈 wCgL364tgM ②③：已读行整体降透明度、「已下载」改成中性描边图标，
+  // 行尾每枚状态图标都有 tooltip。
+  testWidgets('已读行降透明度；状态图标带 tooltip，已下载不再是主题色', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: MangaChapterList(
+              entry: entryWith(chapters),
+              states: <String, MangaChapterStateRow>{
+                '/c/3': _state(chapterKey: '/c/3', readAt: 1),
+              },
+              newestFirst: true,
+              unreadOnly: false,
+              downloadedChapterKeys: const <String>{'/c/2'},
+              ocrCompletedChapterKeys: const <String>{'/c/2'},
+              onChapterTap: (OnlineMangaChapter _) {},
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    double contentOpacity(String title) => tester
+        .widget<AnimatedOpacity>(
+          find.descendant(
+            of: find.ancestor(
+              of: find.text(title),
+              matching: find.byType(MediaDetailItemRow),
+            ),
+            matching: find.byKey(
+              const ValueKey<String>('media-detail-item-content'),
+            ),
+          ),
+        )
+        .opacity;
+    expect(contentOpacity('Chapter 3'), kMediaDetailCompletedOpacity);
+    expect(contentOpacity('Chapter 2'), 1.0);
+
+    expect(find.byTooltip(t.manga_chapter_status_read), findsOneWidget);
+    expect(find.byTooltip(t.media_detail_status_downloaded), findsOneWidget);
+    expect(find.byTooltip(t.manga_chapter_status_ocr_done), findsOneWidget);
+
+    final BuildContext ctx = tester.element(find.byType(MangaChapterList));
+    final ColorScheme cs = Theme.of(ctx).colorScheme;
+    final FushiIcon downloaded = tester.widget<FushiIcon>(
+      find.byKey(const ValueKey<String>('media-detail-item-downloaded')),
+    );
+    expect(downloaded.color, cs.onSurfaceVariant, reason: '已下载是中性状态，不与已读对勾同色');
+    expect(downloaded.color, isNot(cs.primary));
+  });
+
+  testWidgets('正在识别的章不挂「已识别」标识', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: MangaChapterList(
+              entry: entryWith(chapters),
+              states: const <String, MangaChapterStateRow>{},
+              newestFirst: true,
+              unreadOnly: false,
+              downloadedChapterKeys: const <String>{'/c/2'},
+              ocrCompletedChapterKeys: const <String>{'/c/2'},
+              ocrRunningChapterKey: '/c/2',
+              onChapterTap: (OnlineMangaChapter _) {},
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(
+      find.byKey(const ValueKey<String>('manga_chapter_ocr_done')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('多选态：行首勾选标记、收起行尾菜单；长按 / 右键回调选择手势', (WidgetTester tester) async {
+    final List<String> gestures = <String>[];
+    Future<void> pump({Set<String>? selected}) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: MangaChapterList(
+                entry: entryWith(chapters),
+                states: const <String, MangaChapterStateRow>{},
+                newestFirst: true,
+                unreadOnly: false,
+                selectedChapterKeys: selected,
+                onChapterSelectGesture: (OnlineMangaChapter c) =>
+                    gestures.add(c.key),
+                onToggleRead: (OnlineMangaChapter _) {},
+                onChapterTap: (OnlineMangaChapter _) {},
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    await pump();
+    expect(find.byType(FushiOverflowMenu<String>), findsNWidgets(3));
+    await tester.longPress(find.text('Chapter 2'));
+    await tester.pumpAndSettle();
+    expect(gestures, <String>['/c/2']);
+    await tester.tap(find.text('Chapter 1'), buttons: kSecondaryButton);
+    await tester.pumpAndSettle();
+    expect(gestures, <String>['/c/2', '/c/1']);
+
+    await pump(selected: const <String>{'/c/2'});
+    expect(find.byType(FushiOverflowMenu<String>), findsNothing);
+    final Iterable<MediaDetailItemRow> rows = tester
+        .widgetList<MediaDetailItemRow>(find.byType(MediaDetailItemRow));
+    expect(
+      <String, bool?>{
+        for (final MediaDetailItemRow r in rows) r.title: r.selected,
+      },
+      <String, bool?>{
+        'Chapter 3': false,
+        'Chapter 2': true,
+        'Chapter 1': false,
+      },
     );
   });
 

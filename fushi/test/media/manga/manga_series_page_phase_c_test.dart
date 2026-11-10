@@ -663,4 +663,189 @@ void main() {
       findsNothing,
     );
   });
+
+  // 反馈 wCgL364tgM ①：逐章「已识别文字」标识从章 manga.json 的真实识别结果推导。
+  testWidgets('逐章 OCR 标识：只挂在 manga.json 已有识别结果的章上', (
+    WidgetTester tester,
+  ) async {
+    sizeView(tester);
+    final _TestAppModel appModel = _TestAppModel(db, library, root);
+    final _RecordingRegistry registry = _RecordingRegistry();
+
+    await tester.runAsync(() async {
+      final EpubBookRow row = await library.add(_entry());
+      await _writeDownloadedChapter(row.extractDir, '/chapter/1');
+      await _writeDownloadedChapter(
+        row.extractDir,
+        '/chapter/2',
+        withBlocks: true,
+      );
+      await tester.pumpWidget(
+        _harness(appModel, row.bookKey, registry: registry),
+      );
+      await _pumpUntil(
+        tester,
+        find.byKey(const ValueKey<String>('manga_chapter_ocr_done')),
+      );
+      await _settle(tester);
+    });
+
+    final Finder done = find.byKey(
+      const ValueKey<String>('manga_chapter_ocr_done'),
+    );
+    expect(done, findsOneWidget, reason: '只有 blocks 非空的那章算已识别');
+    expect(
+      find.descendant(
+        of: find.ancestor(
+          of: find.text('Chapter 2'),
+          matching: find.byType(MediaDetailItemRow),
+        ),
+        matching: done,
+      ),
+      findsOneWidget,
+    );
+    expect(find.byTooltip(t.manga_chapter_status_ocr_done), findsOneWidget);
+  });
+
+  // 反馈 wCgL364tgM ④：长按进多选，点行切换，底栏批量标已读 / 未读。
+  testWidgets('章节多选：长按进入、点选切换、批量标已读再标未读', (WidgetTester tester) async {
+    sizeView(tester);
+    final _TestAppModel appModel = _TestAppModel(db, library, root);
+    final _RecordingRegistry registry = _RecordingRegistry();
+
+    late EpubBookRow row;
+    await tester.runAsync(() async {
+      row = await library.add(_entry());
+      await tester.pumpWidget(
+        _harness(appModel, row.bookKey, registry: registry),
+      );
+      await _pumpUntil(tester, find.text('Chapter 1'));
+      await _settle(tester);
+    });
+    expect(
+      find.byKey(const ValueKey<String>('manga_chapter_selection_bar')),
+      findsNothing,
+    );
+
+    await tester.runAsync(() async {
+      await tester.longPress(find.text('Chapter 1'));
+      await _settle(tester);
+      await tester.tap(find.text('Chapter 2'));
+      await _settle(tester);
+    });
+    expect(
+      find.byKey(const ValueKey<String>('manga_chapter_selection_bar')),
+      findsOneWidget,
+    );
+    expect(find.text(t.manga_chapter_selection_count(n: 2)), findsOneWidget);
+    expect(
+      find.byType(FushiOverflowMenu<String>),
+      findsNothing,
+      reason: '多选态收起行尾菜单',
+    );
+    expect(appModel.opened, isEmpty, reason: '多选态点行是勾选，不是开读');
+
+    await tester.runAsync(() async {
+      await tester.tap(
+        find.byKey(const ValueKey<String>('manga_chapter_selection_read')),
+      );
+      await _settle(tester);
+    });
+    Map<String, MangaChapterStateRow> states = await db.getMangaChapterStates(
+      row.uid,
+    );
+    expect(
+      <String>{
+        for (final MapEntry<String, MangaChapterStateRow> e in states.entries)
+          if (e.value.readAt != null) e.key,
+      },
+      <String>{'/chapter/1', '/chapter/2'},
+    );
+    expect(
+      find.byKey(const ValueKey<String>('manga_chapter_selection_bar')),
+      findsNothing,
+      reason: '批量动作做完退出多选',
+    );
+
+    await tester.runAsync(() async {
+      await tester.longPress(find.text('Chapter 2'));
+      await _settle(tester);
+      await tester.tap(
+        find.byKey(const ValueKey<String>('manga_chapter_selection_all')),
+      );
+      await _settle(tester);
+    });
+    expect(find.text(t.manga_chapter_selection_count(n: 3)), findsOneWidget);
+    await tester.runAsync(() async {
+      await tester.tap(
+        find.byKey(const ValueKey<String>('manga_chapter_selection_unread')),
+      );
+      await _settle(tester);
+    });
+    states = await db.getMangaChapterStates(row.uid);
+    expect(
+      states.values.where((MangaChapterStateRow s) => s.readAt != null),
+      isEmpty,
+    );
+  });
+
+  testWidgets('章节多选：批量识别只排已下载的章（旧→新），全没下载时提示且不排', (WidgetTester tester) async {
+    sizeView(tester);
+    final _TestAppModel appModel = _TestAppModel(db, library, root);
+    final _RecordingRegistry registry = _RecordingRegistry();
+
+    late String bookDir;
+    await tester.runAsync(() async {
+      final EpubBookRow row = await library.add(_entry());
+      bookDir = row.extractDir;
+      await _writeDownloadedChapter(bookDir, '/chapter/1');
+      await _writeDownloadedChapter(bookDir, '/chapter/2', withBlocks: true);
+      await tester.pumpWidget(
+        _harness(appModel, row.bookKey, registry: registry),
+      );
+      await _pumpUntil(
+        tester,
+        find.byKey(const ValueKey<String>('manga_chapter_download_downloaded')),
+      );
+      await _settle(tester);
+
+      // 只选未下载的第 3 话：没有可识别的章，不排任务、留在多选态。
+      await tester.longPress(find.text('Chapter 3'));
+      await _settle(tester);
+      await tester.tap(
+        find.byKey(const ValueKey<String>('manga_chapter_selection_ocr')),
+      );
+      await _settle(tester);
+    });
+    expect(registry.records, isEmpty);
+    expect(
+      find.byKey(const ValueKey<String>('manga_chapter_selection_bar')),
+      findsOneWidget,
+    );
+
+    await tester.runAsync(() async {
+      await tester.tap(
+        find.byKey(const ValueKey<String>('manga_chapter_selection_all')),
+      );
+      await _settle(tester);
+      await tester.tap(
+        find.byKey(const ValueKey<String>('manga_chapter_selection_ocr')),
+      );
+      await _settle(tester);
+    });
+    expect(
+      registry.records
+          .map((_EnqueueRecord r) => r.managedDirectory)
+          .toList(growable: false),
+      <String>[
+        mangaChapterDirectory(bookDir, '/chapter/1').path,
+        mangaChapterDirectory(bookDir, '/chapter/2').path,
+      ],
+      reason: '已下载的两章按旧→新排队（已识别的第 2 话是重新识别），未下载的第 3 话跳过',
+    );
+    expect(
+      find.byKey(const ValueKey<String>('manga_chapter_selection_bar')),
+      findsNothing,
+    );
+  });
 }
