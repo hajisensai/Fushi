@@ -296,4 +296,33 @@ void main() {
       reason: '空 tag 必须在 Load 步骤就拒绝，不能让 prune / 上传落到 Latest release',
     );
   });
+
+  // PR #3071：Linux Flatpak 的发布步骤（镜像线上 Pages 仓库 + GPG 校验 + docker build）
+  // 失败时，排在它后面、`if:` 里没有状态函数的步骤会被隐式 success() 跳过。Windows /
+  // macOS / iOS 的反馈回填约定「绝不能让发布变红、也不能被别的平台拖掉」，所以 Linux
+  // 段必须排在桌面 publish job 里所有反馈回填之后。
+  test('桌面 publish：Linux Flatpak 步骤排在三个平台的反馈回填之后', () {
+    final String publish = workflows['release-desktop.yml']!['publish']!;
+    int at(String name) {
+      final int i = publish.indexOf('- name: $name\n');
+      expect(i, isNot(-1), reason: '桌面 publish job 找不到步骤「$name」');
+      return i;
+    }
+
+    final int firstLinux = <String>[
+      'Download Flatpak repo commit',
+      'Assemble Flatpak repository',
+      'Upload Flatpak repository to Pages',
+      'Deploy Flatpak repository',
+      'Upload Linux Flatpak to the release',
+      'Publish mirror update manifest (Linux assets)',
+    ].map(at).reduce((int a, int b) => a < b ? a : b);
+    for (final String platform in <String>['Windows', 'macOS', 'iOS']) {
+      expect(
+        at('Backfill feedback fix releases ($platform)'),
+        lessThan(firstLinux),
+        reason: '$platform 反馈回填不能排在 Linux Flatpak 步骤之后（Linux 失败会把它跳过）',
+      );
+    }
+  });
 }
