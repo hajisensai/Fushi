@@ -17,6 +17,10 @@ void main() {
   // TODO-1330 / BUG-617: how many times the host was told "the client has
   // submitted confirm, drop the lingering PIN dialog" (onPairSessionResolved).
   late int sessionResolvedCount;
+  // 收起回调收到的会话 id、供给器被调用的次数、审批请求原样。
+  late List<String> resolvedSessionIds;
+  late int pinGeneratedCount;
+  late List<FushiPairRequest> approvalRequests;
 
   Future<void> startServer({
     required bool lanRequiresPin,
@@ -24,6 +28,9 @@ void main() {
   }) async {
     approvalPinRequired = <bool>[];
     sessionResolvedCount = 0;
+    resolvedSessionIds = <String>[];
+    pinGeneratedCount = 0;
+    approvalRequests = <FushiPairRequest>[];
     tempDir = Directory.systemTemp.createTempSync('fushi_pair_v2_test');
     server =
         FushiSyncServer(
@@ -34,13 +41,18 @@ void main() {
           )
           ..onPairRequest = ((FushiPairRequest r) async {
             approvalPinRequired.add(r.pinRequired);
+            approvalRequests.add(r);
             return approve;
           })
           ..onPairPinGenerated = ((FushiPairSession s) {
+            pinGeneratedCount++;
             shownPin = '482913';
             return shownPin!;
           })
-          ..onPairSessionResolved = (() => sessionResolvedCount++)
+          ..onPairSessionResolved = ((String id) {
+            sessionResolvedCount++;
+            resolvedSessionIds.add(id);
+          })
           ..lanRequiresPinProvider = (() async => lanRequiresPin);
     await server.start();
   }
@@ -265,6 +277,48 @@ void main() {
       1,
       reason: 'client 提交 confirm 后必须收起 host 常驻 PIN 弹窗一次。',
     );
+    expect(resolvedSessionIds, <String>[
+      start['sessionId'] as String,
+    ], reason: '收起回调必须带本会话 id，宿主只收起这一个会话的框。');
+  });
+
+  test('免 PIN 会话不调用 onPairPinGenerated（PIN 不进共享单槽）', () async {
+    await startServer(lanRequiresPin: false);
+    final Map<String, dynamic> start = await startSession('cn-free-gen');
+    final http.Response resp = await http.post(
+      confirmUri(),
+      headers: <String, String>{'Content-Type': 'application/json'},
+      body: jsonEncode(<String, String>{
+        'sessionId': start['sessionId'] as String,
+      }),
+    );
+    expect(resp.statusCode, 200);
+    expect(pinGeneratedCount, 0, reason: '免 PIN 会话没有 PIN 可显示，不得惊动供给器。');
+    expect(approvalRequests.single.pin, isNull);
+    expect(approvalRequests.single.sessionId, start['sessionId']);
+  });
+
+  test('onPairRequest 收到的 pin 就是 confirm 校验用的 PIN', () async {
+    await startServer(lanRequiresPin: true);
+    const String clientNonce = 'cn-pin-carried';
+    final Map<String, dynamic> start = await startSession(clientNonce);
+    final FushiPairRequest req = approvalRequests.single;
+    expect(req.pin, '482913');
+    expect(req.sessionId, start['sessionId']);
+    expect(req.sourceKey, 'ip:127.0.0.1');
+    final http.Response resp = await http.post(
+      confirmUri(),
+      headers: <String, String>{'Content-Type': 'application/json'},
+      body: jsonEncode(<String, String>{
+        'sessionId': start['sessionId'] as String,
+        'pinProof': FushiPairingProtocol.computePinProof(
+          pin: req.pin!,
+          clientNonce: clientNonce,
+          hostNonce: start['hostNonce'] as String,
+        ),
+      }),
+    );
+    expect(resp.statusCode, 200);
   });
 
   test(

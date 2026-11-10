@@ -65,7 +65,11 @@ extension _FushiSyncServerPairing on FushiSyncServer {
       name = reported;
     }
     final bool approved = await approve(
-      FushiPairRequest(deviceName: name, remoteAddress: pairRemote),
+      FushiPairRequest(
+        deviceName: name,
+        remoteAddress: pairRemote,
+        sourceKey: origin.sourceKey,
+      ),
     );
     if (!approved) return _pairDenied('declined');
     return jsonResponse(<String, dynamic>{'token': _token});
@@ -195,9 +199,12 @@ extension _FushiSyncServerPairing on FushiSyncServer {
       protectedFromEviction: protectedFromEviction,
     );
 
-    // host UI 供给器返回真正显示给用户的 PIN（同值用于 confirm 重算比对）。未接线
-    // 时保留随机兜底 PIN——它不显示给任何人，故 pinRequired 会话无法被 confirm（拒）。
-    final String shownPin = onPairPinGenerated?.call(session) ?? session.pin;
+    // 屏显 PIN 只给要 PIN 的会话生成（免 PIN 会话没有 PIN 可显示，也不该惊动宿主的
+    // 供给器）。供给器未接线时用随机兜底 PIN，经 [FushiPairRequest.pin] 交给宿主显示。
+    // PIN 跟着会话走：同值存进本会话、随审批请求传递，宿主不再从共享单槽读。
+    final String shownPin = pinRequired
+        ? (onPairPinGenerated?.call(session) ?? session.pin)
+        : session.pin;
 
     // TODO-1296 / BUG-592: pinRequired（公网 / 跨网段 / host 要求 PIN）会话在 CREATE
     // 阶段就弹 host 审批——审批弹窗会显示本会话 PIN，让 client 被要求输入前 host 屏上
@@ -215,6 +222,9 @@ extension _FushiSyncServerPairing on FushiSyncServer {
           pinRequired: true,
           clientDeviceId: clientDeviceId,
           ownerDeviceGrant: ownerDeviceGrant,
+          sessionId: sessionId,
+          pin: shownPin,
+          sourceKey: origin.sourceKey,
         ),
       );
       if (!approved) return _pairDenied('declined');
@@ -336,11 +346,11 @@ extension _FushiSyncServerPairing on FushiSyncServer {
     // 方向全错。现在过期返回专用 reason='expired'，client 据此说人话。
     final FushiPairSession? found = _pairSessions[sessionId];
     if (found != null &&
-        found.createdAt.isBefore(_now().subtract(_pairSessionTtl))) {
+        found.createdAt.isBefore(_now().subtract(kFushiPairSessionTtl))) {
       _pairSessions.remove(sessionId);
       // 过期会话同样消耗掉它的 PIN：host 屏上那个常驻 PIN 弹窗该收起，
       // 否则用户盯着一个已经没用的 PIN 继续等（对齐 pinRequired 成功路径）。
-      if (found.pinRequired) onPairSessionResolved?.call();
+      if (found.pinRequired) onPairSessionResolved?.call(found.sessionId);
       _prunePairSessions();
       _pinRateLimiter.prune(_now());
       return _pairDenied('expired');
@@ -365,7 +375,7 @@ extension _FushiSyncServerPairing on FushiSyncServer {
     // 分支各自补一遍。免 PIN 会话没有常驻弹窗，不触发。
     // 票据会话没有屏显 PIN 弹窗可收（收了反而会误关同时进行的另一次 PIN 配对）。
     if (session.pinRequired && session.ticketId == null) {
-      onPairSessionResolved?.call();
+      onPairSessionResolved?.call(session.sessionId);
     }
 
     // TODO-961 M3 / BUG-4280：来源标识在建会话时由 [_requestOrigin] 算好存进会话
@@ -433,6 +443,8 @@ extension _FushiSyncServerPairing on FushiSyncServer {
           pinRequired: false,
           clientDeviceId: session.clientDeviceId,
           ownerDeviceGrant: ownerDeviceGrant,
+          sessionId: session.sessionId,
+          sourceKey: session.sourceKey,
         ),
       );
       if (!approved) return _pairDenied('declined');
@@ -679,11 +691,11 @@ extension _FushiSyncServerPairing on FushiSyncServer {
     });
   }
 
-  /// TODO-961 M1：清掉 [_pairSessionTtl] 之前创建的配对会话。对照
+  /// TODO-961 M1：清掉 [kFushiPairSessionTtl] 之前创建的配对会话。对照
   /// [RemoteAudioTokenStore.prune] / [_pruneVideoTokens]：按 createdAt + 注入的 [_now] 判定，
   /// 可单测。在 pair/v2 创建与 confirm 两处调用，使过期会话既不堆积也不可被 confirm。
   void _prunePairSessions() {
-    final DateTime cutoff = _now().subtract(_pairSessionTtl);
+    final DateTime cutoff = _now().subtract(kFushiPairSessionTtl);
     _pairSessions.removeWhere(
       (String _, FushiPairSession s) => s.createdAt.isBefore(cutoff),
     );
@@ -785,11 +797,11 @@ MapEntry<String, FushiPairSession>? _oldestOf(
 
 /// TODO-961 M1（会话 TTL/上限，对照 audio/video token 的 prune 模式）：只发
 /// pair/v2 却不 confirm 的攻击者会留下永久驻留会话（慢速 DoS）。每个会话
-/// [_pairSessionTtl] 后过期；超过分区上限时先 prune 再按 [_enforcePairSessionCap]
+/// [kFushiPairSessionTtl] 后过期；超过分区上限时先 prune 再按 [_enforcePairSessionCap]
 /// 的规则淘汰（BUG-4280）。
 /// TTL 与现有 host 60s 自动 deny（[FushiSyncServerController]）对齐：会话生命周期
 /// 不应长于一次审批窗口（留 90s 余量覆盖审批弹窗 + 用户输 PIN）。
-const Duration _pairSessionTtl = Duration(seconds: 90);
+const Duration kFushiPairSessionTtl = Duration(seconds: 90);
 
 /// 每个来源类别（局域网 / 隧道 / 公网）最多同时挂起的配对会话数（BUG-4280）。
 const int _maxPairSessionsPerClass = 32;

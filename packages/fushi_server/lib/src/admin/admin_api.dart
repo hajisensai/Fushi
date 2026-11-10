@@ -581,7 +581,11 @@ class AdminApi {
   }
 
   Future<shelf.Response> _pairing() async {
-    final PendingPairing? pending = ctx.host.pendingPairing;
+    // 待输入 PIN 按会话各一条（并发配对互不覆盖）；`pending` 保留最新一条兼容旧前端。
+    final List<PendingPairing> pendingList = ctx.host.pendingPairings;
+    final PendingPairing? pending = pendingList.isEmpty
+        ? null
+        : pendingList.last;
     final Map<FushiPairOriginClass, DateTime> lockouts =
         ctx.host.pairingLockouts;
     final List<FushiPairedPeerRow> peers = await ctx.db.getPairedPeers();
@@ -609,6 +613,16 @@ class AdminApi {
               'remoteAddress': pending.remoteAddress,
               'createdAt': pending.createdAt.toIso8601String(),
             },
+      // 不下发 sessionId：WebUI 只需显示，会话 id 留在进程内。
+      'pendingList': <Object?>[
+        for (final PendingPairing p in pendingList)
+          <String, Object?>{
+            'pin': p.pin,
+            'deviceName': p.deviceName,
+            'remoteAddress': p.remoteAddress,
+            'createdAt': p.createdAt.toIso8601String(),
+          },
+      ],
       'peers': <Object?>[
         for (final FushiPairedPeerRow peer in peers)
           <String, Object?>{

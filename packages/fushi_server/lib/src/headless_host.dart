@@ -8,6 +8,7 @@
 library;
 
 import 'dart:async';
+import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 
@@ -85,15 +86,19 @@ import 'package:fushi_server/src/video_scrape_host.dart';
 import 'package:path/path.dart' as p;
 import 'package:fushi_server/src/server_language.dart';
 
-/// 当前待输入的配对 PIN（无头进程的「审批弹窗」：CLI 日志 + WebUI 状态）。
+/// 一条待输入的配对 PIN（无头进程的「审批弹窗」：CLI 日志 + WebUI 状态）。按会话持有，
+/// 并发的配对请求各占一条，互不覆盖。
 class PendingPairing {
   const PendingPairing({
+    required this.sessionId,
     required this.pin,
     required this.deviceName,
     required this.remoteAddress,
     required this.createdAt,
   });
 
+  /// 配对会话 id（只在进程内用来按会话收起，不下发给 WebUI）。
+  final String sessionId;
   final String pin;
   final String? deviceName;
   final String? remoteAddress;
@@ -239,12 +244,30 @@ class HeadlessHost {
   Future<void> _p2pOps = Future<void>.value();
   bool _p2pListening = false;
   String? _p2pLastError;
-  PendingPairing? _pendingPairing;
+
+  /// 按会话持有的待输入 PIN（插入序 = 时间序），上限 [_maxPendingPairings]。
+  final LinkedHashMap<String, PendingPairing> _pendingPairings =
+      LinkedHashMap<String, PendingPairing>();
+  static const int _maxPendingPairings = 8;
   String? _hostFingerprint;
   SecurityContext? _securityContext;
 
-  /// 给 CLI / WebUI 看的状态。
-  PendingPairing? get pendingPairing => _pendingPairing;
+  /// 给 CLI / WebUI 看的状态：最新一条待输入 PIN（兼容单条展示）。
+  PendingPairing? get pendingPairing {
+    final List<PendingPairing> all = pendingPairings;
+    return all.isEmpty ? null : all.last;
+  }
+
+  /// 所有未过期的待输入 PIN（旧→新）。会话过了 [kFushiPairSessionTtl] 就不可能再被
+  /// confirm，读前剔除。
+  List<PendingPairing> get pendingPairings {
+    final DateTime cutoff = DateTime.now().subtract(kFushiPairSessionTtl);
+    _pendingPairings.removeWhere(
+      (String _, PendingPairing p) => p.createdAt.isBefore(cutoff),
+    );
+    return List<PendingPairing>.unmodifiable(_pendingPairings.values);
+  }
+
   String? get hostFingerprint => _hostFingerprint;
 
   /// 互联端口用的 TLS 上下文；admin 端口复用同一份自签证书。
@@ -538,8 +561,8 @@ class HeadlessHost {
             // 路由回 501 unsupported、capabilities 报 `gameStream: false`。
             gameStreamService: null,
           )
+          // 本会话 PIN 由 server 生成，经 [FushiPairRequest.pin] 交给 [_approvePairing] 登记。
           ..onPairRequest = _approvePairing
-          ..onPairPinGenerated = _generatePin
           ..onPairSessionResolved = _clearPendingPairing
           // 这里与下面公网地址的 provider 都读 [config] getter：WebUI 改完即生效。
           ..lanRequiresPinProvider = (() async => config.lanRequiresPin)
@@ -847,32 +870,46 @@ class HeadlessHost {
   /// 服务端日志/WebUI 上的 PIN 谁才配得上）；免 PIN 会话只在配置显式关掉
   /// `lan_requires_pin` 时放行。
   Future<bool> _approvePairing(FushiPairRequest request) async {
-    if (request.pinRequired) return true;
+    if (request.pinRequired) {
+      final String? pin = request.pin;
+      final String? sessionId = request.sessionId;
+      if (pin != null && sessionId != null) {
+        _registerPendingPairing(
+          PendingPairing(
+            sessionId: sessionId,
+            pin: pin,
+            deviceName: request.deviceName,
+            remoteAddress: request.remoteAddress,
+            createdAt: DateTime.now(),
+          ),
+        );
+      }
+      return true;
+    }
     return !config.lanRequiresPin;
   }
 
-  String _generatePin(FushiPairSession session) {
-    final String pin = FushiPairingProtocol.generatePin();
-    final PendingPairing pending = PendingPairing(
-      pin: pin,
-      deviceName: session.deviceName,
-      remoteAddress: session.remoteAddress,
-      createdAt: DateTime.now(),
-    );
-    _pendingPairing = pending;
+  /// 登记一条待输入 PIN：按会话各占一条（并发请求互不覆盖），满了丢最旧。
+  void _registerPendingPairing(PendingPairing pending) {
+    _pendingPairings.remove(pending.sessionId);
+    while (_pendingPairings.length >= _maxPendingPairings) {
+      _pendingPairings.remove(_pendingPairings.keys.first);
+    }
+    _pendingPairings[pending.sessionId] = pending;
     // PIN 是敏感值，但它的存在意义就是给操作服务端的人读：打到 stdout（日志文件
     // 也记，与 app 在屏幕上显示同级）。
     stdout.writeln(
-      '[pair] ${session.deviceName ?? 'unknown device'} '
-      '(${session.remoteAddress ?? '?'}) requests pairing — PIN: $pin',
+      '[pair] ${pending.deviceName ?? 'unknown device'} '
+      '(${pending.remoteAddress ?? '?'}) requests pairing — PIN: ${pending.pin}',
     );
-    pairingEvents.add(pending);
-    return pin;
+    if (!pairingEvents.isClosed) pairingEvents.add(pending);
   }
 
-  void _clearPendingPairing() {
-    _pendingPairing = null;
-    if (!pairingEvents.isClosed) pairingEvents.add(null);
+  /// server 通知某个会话已 confirm / 过期：只删它那一条。表空推 null，否则推最新一条。
+  void _clearPendingPairing(String sessionId) {
+    if (_pendingPairings.remove(sessionId) == null) return;
+    if (pairingEvents.isClosed) return;
+    pairingEvents.add(pendingPairing);
   }
 
   Future<void> _persistPairedPeer(

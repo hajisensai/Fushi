@@ -128,7 +128,22 @@ class FushiPairRequest {
     this.pinRequired = false,
     this.clientDeviceId,
     this.ownerDeviceGrant,
+    this.sessionId,
+    this.pin,
+    this.sourceKey,
   });
+
+  /// BUG：v2 配对会话 id（与 [FushiSyncServer.onPairSessionResolved] 的参数同值），
+  /// 宿主据此只收起**本会话**的常驻 PIN 弹窗 / pending 条目。旧 /api/pair（v1）为 null。
+  final String? sessionId;
+
+  /// 本会话的屏显 PIN：只在 v2 创建阶段的 pinRequired 非票据会话上非 null。PIN 跟着
+  /// 会话走、只在进程内传递，绝不进任何响应——宿主按会话持有它，不放进共享单槽。
+  final String? pin;
+
+  /// 来源标识（IP，IPv6 按 /64；隧道按 NodeId；不认自报 deviceId），宿主判「同源重试
+  /// 取代旧审批框」用。null = 来源无法识别，宿主应按不同源处理。
+  final String? sourceKey;
 
   /// Self-reported name from the client (may be null/empty if not sent).
   final String? deviceName;
@@ -562,8 +577,11 @@ class FushiSyncServer {
 
   /// TODO-961 M1: host 生成 6 位 PIN 并喂给审批弹窗显示的供给器。pair/v2 创建会话时
   /// 调用一次拿到本会话 PIN（同一 PIN 显示给用户、又用于 confirm 时重算比对）。
-  /// null（无 UI 接线）时 server 自行用 [FushiPairingProtocol.generatePin] 兜底，
-  /// 但因 PIN 不显示给任何人，pinRequired=true 的会话将无法被 confirm（安全侧默认拒）。
+  /// null（无 UI 接线）时 server 自行用 [FushiPairingProtocol.generatePin] 兜底。
+  ///
+  /// 只在 pinRequired 的非票据会话上、来源锁定检查之后调用；返回值写进会话并经
+  /// [FushiPairRequest.pin] 交给 [onPairRequest]。它只是**供给器**：宿主不得借它
+  /// 存「当前 PIN」之类的共享状态——并发会话会互相覆盖（BUG：PIN 单槽被他人顶掉）。
   String Function(FushiPairSession session)? onPairPinGenerated;
 
   /// TODO-961 M1: host 偏好「LAN 自动发现也要 PIN」的供给器（默认 false=自家免）。
@@ -590,7 +608,9 @@ class FushiSyncServer {
   /// 弹窗。修的是「host 点允许即关窗抹掉 PIN → client 还没输就看不到 PIN」的时序死锁：
   /// host 点允许后弹窗改为常驻显示 PIN，直到本回调（或用户手动关 / TTL 超时）才收起。
   /// 免 PIN 会话不涉及（本就没有常驻 PIN 弹窗），故仅 pinRequired 分支触发。
-  void Function()? onPairSessionResolved;
+  /// 参数是被解决的会话 id（= [FushiPairRequest.sessionId]）：宿主只收起该会话的
+  /// 弹窗 / pending 条目，别的会话的 confirm / 过期不得收起它。
+  void Function(String sessionId)? onPairSessionResolved;
 
   /// TODO-961 M1b: confirm 成功后把新派发的 per-peer 凭据交给 host 落库（写
   /// `fushi_paired_peers` 表）。注入而非直连 DB，保持 server 存储层无依赖、可单测。

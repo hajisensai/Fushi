@@ -737,8 +737,10 @@ async function loadPairing(){
     ? `<div class="card"><div class="card-head"><div>${locks.map(([k,v])=>`<p class="sup" style="margin:0">${tag('warn', T('来自{0}的配对因多次 PIN 错误暂停至 {1}', lockClass[k]||k, fmtTime(v)))}</p>`).join('')}</div><button class="b" id="btn-pair-unlock">${esc(T('解除'))}</button></div></div>`
     : '';
   if (locks.length) $('#btn-pair-unlock').onclick = guard(async()=>{ await post('pairing/unlock'); toast(T('已解除')); loadPairing(); });
-  $('#pairing-pending').innerHTML = p.pending
-    ? `<div class="pin-card"><div><b><span class="pulse"></span>${esc(T('{0} ({1}) 请求配对，请在该设备输入：', p.pending.deviceName||T('未知设备'), p.pending.remoteAddress||'?'))}</b><p class="sup">${fmtTime(p.pending.createdAt)}</p></div><div class="pin">${esc(p.pending.pin)}</div></div>`
+  // 待输入 PIN 按会话各一条（并发配对互不覆盖）；旧后端只有 pending 时退回单条。
+  const pendings = p.pendingList || (p.pending ? [p.pending] : []);
+  $('#pairing-pending').innerHTML = pendings.length
+    ? pendings.slice().reverse().map(x=>`<div class="pin-card"><div><b><span class="pulse"></span>${esc(T('{0} ({1}) 请求配对，请在该设备输入：', x.deviceName||T('未知设备'), x.remoteAddress||'?'))}</b><p class="sup">${fmtTime(x.createdAt)}</p></div><div class="pin">${esc(x.pin)}</div></div>`).join('')
     : `<div class="list">${empty(T('没有待处理的配对。在 Fushi 里添加互联设备并输入本机地址，PIN 会显示在这里。'), 'pairing')}</div>`;
   $('#peers').innerHTML = p.peers.map(x=>`<div class="lrow"><div class="lead">${icon('device')}</div><div class="txt"><div class="t">${esc(x.deviceName||'—')}${x.ownerDevice?tag('info', T('我的设备')):''}</div><div class="s">${esc([x.lastSeenIp, fmtTime(x.pairedAtMs)].filter(Boolean).join(' · '))}</div><div class="s mono">${esc(x.peerId)}</div></div><div class="trail">${x.deviceKeyVerified ? `<button class="b ${x.ownerDevice?'out':'sec'}" data-owner="${esc(x.peerId)}" data-on="${x.ownerDevice?'1':'0'}">${esc(x.ownerDevice?T('取消我的设备'):T('标为我的设备'))}</button>` : tag('', T('未证明设备钥匙'))}<button class="b text danger" data-revoke="${esc(x.peerId)}">${esc(T('吊销'))}</button></div></div>`).join('') || empty(T('还没有已配对设备'), 'device');
   const lb = p.leaderboardLink || {};
