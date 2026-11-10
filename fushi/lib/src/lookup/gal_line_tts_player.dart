@@ -80,12 +80,14 @@ class _Utterance {
 class GalLineTtsPlayer {
   GalLineTtsPlayer({
     required GalLineTtsSettings Function() settings,
+    GalLineTtsVoiceContext Function()? voiceContext,
     TtsServices Function()? services,
     GalLineTtsSynthesizer? synthesize,
     GalLineTtsPlayToEnd? playToEnd,
     GalLineTtsStopPlayback? stopPlayback,
     int Function(String? presetId)? maxInputLength,
   }) : _settings = settings,
+       _voiceContext = voiceContext ?? (() => const GalLineTtsVoiceContext()),
        _synthesize =
            synthesize ??
            ((
@@ -113,6 +115,10 @@ class GalLineTtsPlayer {
                galLineTtsMaxInputLength(services!(), presetId));
 
   final GalLineTtsSettings Function() _settings;
+
+  /// 这一局的声音上下文（当前游戏 / 内容语言），每次裁决现取：会话中途换了游戏
+  /// 或用户刚改了游戏语言，下一句就用新声音。
+  final GalLineTtsVoiceContext Function() _voiceContext;
   final GalLineTtsSynthesizer _synthesize;
   final GalLineTtsPlayToEnd _playToEnd;
   final GalLineTtsStopPlayback _stopPlayback;
@@ -199,11 +205,13 @@ class GalLineTtsPlayer {
     required bool manual,
   }) {
     final GalLineTtsSettings settings = _settings();
+    final GalLineTtsVoiceContext voiceContext = _voiceContext();
     final GalLineTtsDecision decision = decideGalLineTts(
       settings: settings,
       rawText: line.text,
       evidence: evidence,
       manual: manual,
+      voiceContext: voiceContext,
     );
     switch (decision) {
       case GalLineTtsSkip(:final String reason):
@@ -220,7 +228,7 @@ class GalLineTtsPlayer {
         _prepare(
           utterance,
           text: galLineTtsText(settings, line.text),
-          presetId: settings.presetId,
+          presetId: settings.voiceFor(voiceContext),
         );
       case GalLineTtsSpeak(:final String text, :final String? presetId):
         _settledLineId = line.id;

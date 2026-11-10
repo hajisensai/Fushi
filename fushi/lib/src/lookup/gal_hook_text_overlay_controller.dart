@@ -22,6 +22,8 @@ import 'package:fushi/src/lookup/gal_line_tts.dart';
 import 'package:fushi/src/lookup/gal_line_tts_player.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_ui_text.dart';
+import 'package:fushi_engine/models/content_language.dart'
+    show resolveContentLanguage;
 import 'package:fushi_engine/tts/tts_types.dart';
 import 'package:fushi/src/lookup/overlay_bridge_handlers.dart';
 import 'package:fushi/src/utils/misc/desktop_audio_playback.dart';
@@ -449,8 +451,31 @@ class GalHookTextOverlayController extends ChangeNotifier {
   /// 台词 TTS 播放编排（换句打断 / 等配对证据 / 原声来了就让）。
   late final GalLineTtsPlayer _tts = GalLineTtsPlayer(
     settings: () => _ttsSettings,
+    voiceContext: _lineTtsVoiceContext,
     services: () => TtsServices.of(_appModel!.prefsRepo),
   )..speaking.addListener(_onTtsSpeakingChanged);
+
+  /// 台词 TTS 的声音上下文（按游戏 / 按语言选声音用）。游戏身份取会话的捕获 exe
+  /// （launch 的启动路径或 attach 时 PID 反查的路径，与捕获记忆同一个锚点），反查
+  /// 库条目拿 `galgames.id` 与它声明的内容语言；没声明 / 不在库里时语言落全局默认
+  /// 内容语言——与 [AppModel.enterGameLookupLanguage] 同一套解析。
+  GalLineTtsVoiceContext _lineTtsVoiceContext() {
+    final AppModel? appModel = _appModel;
+    if (appModel == null || !appModel.isInitialised) {
+      return const GalLineTtsVoiceContext();
+    }
+    final String exe = _session.currentCaptureExecutable?.trim() ?? '';
+    final GalgameEntry? game = exe.isEmpty
+        ? null
+        : appModel.galgameRepo.byExePath(exe);
+    return GalLineTtsVoiceContext(
+      gameId: game?.id,
+      language: resolveContentLanguage(
+        explicit: game?.language,
+        globalDefault: appModel.defaultContentLanguage,
+      ),
+    );
+  }
 
   /// 同一个失败原因只提示一次（自动朗读每句都会撞上同一个「没配声音」）。
   String? _lastTtsErrorToast;
