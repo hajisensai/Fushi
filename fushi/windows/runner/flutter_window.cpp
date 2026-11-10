@@ -4803,6 +4803,10 @@ void FlutterWindow::RegisterGameStreamInputChannel() {
             result->Error("bad_args", "Missing muted flag");
             return;
           }
+          if (!*muted) {
+            // 先还原，再看绑定：解除静音不能因为窗口已没了而留着压低。
+            game_stream_host_mute_.Stop();
+          }
           const fushi::GameStreamWindowInfo bound =
               game_stream_input_->InspectBound();
           if (!bound.alive || !bound.process_matches || bound.pid == 0) {
@@ -4815,7 +4819,6 @@ void FlutterWindow::RegisterGameStreamInputChannel() {
               return;
             }
           } else {
-            game_stream_host_mute_.Stop();
             game_stream_host_mute_.RestoreResidual(
                 static_cast<DWORD>(bound.pid));
           }
