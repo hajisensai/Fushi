@@ -13,6 +13,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/dictionary_repository.dart'
@@ -97,6 +98,26 @@ bool _focusInside(FocusDriver driver, Finder target) {
     return true;
   });
   return inside;
+}
+
+/// 焦点节点的可读描述：debugLabel、所在 widget 及其 key、最近的 String ValueKey 祖先。
+String _describeFocus(FocusNode? node) {
+  if (node == null) return 'null';
+  final BuildContext? ctx = node.context;
+  final Widget? w = ctx?.widget;
+  String? keyed;
+  bool inDialog = false;
+  ctx?.visitAncestorElements((Element a) {
+    final Key? k = a.widget.key;
+    if (keyed == null && k is ValueKey<String>) {
+      keyed = '${a.widget.runtimeType}<${k.value}>';
+    }
+    if (a.widget is FushiDialogFrame) inDialog = true;
+    return true;
+  });
+  return 'label=${node.debugLabel} widget=${w?.runtimeType} '
+      'key=${w?.key} keyedAncestor=$keyed inDialog=$inDialog '
+      'hash=${identityHashCode(node)}';
 }
 
 void _printTexts(String step, List<String> texts) {
@@ -369,6 +390,20 @@ void main() {
             isTrue,
             reason: '顶栏应有「Profile · <名字>」副标题',
           );
+          final int hostCount =
+              (await appModel.remoteDictionaryHostSources()).length;
+          final int filterRefresh = find
+              .byKey(const ValueKey<String>('dict-server-refresh'))
+              .evaluate()
+              .length;
+          debugPrint(
+            '$_kTag hosts=$hostCount filter-bar refresh count=$filterRefresh',
+          );
+          expect(
+            filterRefresh,
+            hostCount >= 2 ? 1 : 0,
+            reason: '筛选栏刷新钮只在 ≥2 台 host 时出现',
+          );
           await _shot(tester, 'server-dict-03-list');
 
           // 03b. 来源条：这台 host 的卡片（状态 / 本数 / 用于查词 / 刷新）。
@@ -396,6 +431,38 @@ void main() {
             isTrue,
             reason: '卡片应有「m of n enabled」',
           );
+          final Size cardSize = tester.getSize(hostCard);
+          final Finder cardSwitch = find.byKey(
+            ValueKey<String>('dict-server-source-lookup-$hostId'),
+          );
+          final Finder cardStatus = find.byKey(
+            ValueKey<String>('dict-server-source-status-$hostId'),
+          );
+          final double nameY = tester
+              .getCenter(
+                find.descendant(of: hostCard, matching: find.text(pairedName)),
+              )
+              .dy;
+          final double switchY = tester.getCenter(cardSwitch).dy;
+          final double statusY = tester.getCenter(cardStatus).dy;
+          final bool singleRow =
+              (nameY - switchY).abs() < 8 && (nameY - statusY).abs() < 8;
+          final int perHostRefresh = find
+              .byKey(ValueKey<String>('dict-server-source-refresh-$hostId'))
+              .evaluate()
+              .length;
+          final int lookupOffLine = find
+              .byKey(ValueKey<String>('dict-server-source-lookup-off-$hostId'))
+              .evaluate()
+              .length;
+          debugPrint(
+            '$_kTag host card size=$cardSize nameY=$nameY statusY=$statusY '
+            'switchY=$switchY singleRow=$singleRow '
+            'perHostRefresh=$perHostRefresh lookupOffLine=$lookupOffLine',
+          );
+          if (cardSize.width >= 560) {
+            expect(singleRow, isTrue, reason: '宽 ≥560 时来源卡片应是单行');
+          }
           await _shot(tester, 'server-dict-03b-sources-strip');
 
           // 3a. 「This device」筛选。
@@ -416,6 +483,10 @@ void main() {
             '${tester.widget<FushiChoiceChip>(localFilter).selected}',
           );
           _printManagerEvidence(tester, '03a-filter-local', page);
+          debugPrint(
+            '$_kTag this-device strip count=${strip.evaluate().length}',
+          );
+          expect(strip, findsNothing, reason: '「This device」筛选下不应有来源条');
           await _shot(tester, 'server-dict-03a-filter-local');
 
           // 3b. 来源筛选：焦点移到「Server · <名字>」chip，Enter 选中。
@@ -547,7 +618,58 @@ void main() {
           );
           debugPrint('$_kTag rename button focused=$renameFocused');
           expect(renameFocused, isTrue);
-          await driver.activate();
+          // 焦点取证：Enter 之后逐帧记 primaryFocus，并记下每次焦点变化的调用栈。
+          debugPrint(
+            '$_kTag focus-trace pre-enter: ${_describeFocus(driver.focused)}',
+          );
+          final List<String> focusChanges = <String>[];
+          FocusNode? lastSeen = driver.focused;
+          void onFocusChange() {
+            final FocusNode? now = FocusManager.instance.primaryFocus;
+            if (identical(now, lastSeen)) return;
+            lastSeen = now;
+            final List<String> frames = StackTrace.current
+                .toString()
+                .split('\n')
+                .where(
+                  (String l) =>
+                      l.contains('package:fushi/') ||
+                      l.contains('focus_') ||
+                      l.contains('editable_text') ||
+                      l.contains('text_field') ||
+                      l.contains('dialog') ||
+                      l.contains('routes.dart') ||
+                      l.contains('navigator.dart'),
+                )
+                .take(16)
+                .map((String l) => l.trim())
+                .toList();
+            focusChanges.add(
+              '${_describeFocus(now)}\n      ${frames.join('\n      ')}',
+            );
+          }
+
+          FocusManager.instance.addListener(onFocusChange);
+          final List<String> focusFrames = <String>[];
+          try {
+            await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+            focusFrames.add('f00 ${_describeFocus(driver.focused)}');
+            for (int i = 1; i <= 30; i++) {
+              await tester.pump(const Duration(milliseconds: 16));
+              focusFrames.add(
+                'f${i.toString().padLeft(2, '0')} '
+                '${_describeFocus(driver.focused)}',
+              );
+            }
+          } finally {
+            FocusManager.instance.removeListener(onFocusChange);
+          }
+          for (final String f in focusFrames) {
+            debugPrint('$_kTag focus-trace $f');
+          }
+          for (int i = 0; i < focusChanges.length; i++) {
+            debugPrint('$_kTag focus-change #$i ${focusChanges[i]}');
+          }
           final Finder dialogFrame = find.byType(FushiDialogFrame);
           for (int i = 0; i < 20 && dialogFrame.evaluate().isEmpty; i++) {
             await tester.pump(const Duration(milliseconds: 250));
@@ -796,9 +918,35 @@ void main() {
             'offNotice=$offNotice',
           );
           _printTexts('04e-sources-off', _textsIn(tester, strip));
+          final Finder offLine = find.byKey(
+            ValueKey<String>('dict-server-source-lookup-off-$hostId'),
+          );
+          final Finder offTurnOn = find.byKey(
+            ValueKey<String>('dict-server-source-lookup-turn-on-$hostId'),
+          );
+          final List<String> offLineTexts = offLine.evaluate().isEmpty
+              ? const <String>[]
+              : _textsIn(tester, offLine);
+          debugPrint(
+            '$_kTag host-off card line count=${offLine.evaluate().length} '
+            'turnOn=${offTurnOn.evaluate().length} texts=$offLineTexts',
+          );
           expect(appModel.remoteLookupEnabled, isFalse);
           expect(await hostLookup(), isFalse);
           expect(lookupCardSwitch, findsOneWidget, reason: '关掉后卡片开关仍应在');
+          expect(
+            offNotice,
+            isFalse,
+            reason: '全局关 + 没有 host 开着：不应出现「Remote lookup is off」提示',
+          );
+          expect(offLine, findsOneWidget, reason: 'host 关查词时卡片应有说明行');
+          expect(
+            offLineTexts.any(
+              (String s) => s.startsWith('Not used for lookups'),
+            ),
+            isTrue,
+          );
+          expect(offTurnOn, findsOneWidget, reason: '说明行应带 Turn on');
           await _shot(tester, 'server-dict-06e-sources-lookup-off');
           final bool cardSwitchFocused = await driver.focusUntil(
             () => _focusInside(driver, lookupCardSwitch),
@@ -823,6 +971,20 @@ void main() {
             reason: '打开 host 查词应一并打开全局远端查词',
           );
           _printTexts('04f-sources-on', _textsIn(tester, strip));
+          final int offLineAfter = find
+              .byKey(ValueKey<String>('dict-server-source-lookup-off-$hostId'))
+              .evaluate()
+              .length;
+          final bool offNoticeAfter = find
+              .byKey(const ValueKey<String>('dict-remote-lookup-off'))
+              .evaluate()
+              .isNotEmpty;
+          debugPrint(
+            '$_kTag after strip toggle: cardLine=$offLineAfter '
+            'offNotice=$offNoticeAfter',
+          );
+          expect(offLineAfter, 0, reason: '打开后卡片说明行应消失');
+          expect(offNoticeAfter, isFalse);
           await _shot(tester, 'server-dict-06f-sources-lookup-on');
 
           // 关掉管理页（经 NavigatorState，非坐标点击）。
@@ -933,13 +1095,10 @@ void main() {
           );
 
           // ── 7. 还原 Test Games JA 后查「猫」：本机与服务器结果合并 ─────────
-          final RemoteDictionary? t1 = toggled;
-          if (t1 != null) {
-            final RemoteDictionary cur = appModel.dictRepo.remoteDictionaries
-                .firstWhere((RemoteDictionary r) => r.name == t1.name);
-            if (cur.hidden != t1.hidden) {
-              await appModel.setRemoteDictionaryHidden(cur, t1.hidden);
-            }
+          // 第 4 步已把 Test Games JA 的 hidden 翻过来（before 是翻转前的状态）。
+          final RemoteDictionary cur = find1(before.name);
+          if (cur.hidden != before.hidden) {
+            await appModel.setRemoteDictionaryHidden(cur, before.hidden);
           }
           final DictionarySearchResult neko = await appModel.searchDictionary(
             searchTerm: '猫',
