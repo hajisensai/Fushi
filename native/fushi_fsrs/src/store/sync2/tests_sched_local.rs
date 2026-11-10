@@ -259,6 +259,98 @@ fn explicit_intents_match_the_legacy_inferred_path() {
     assert_eq!(review_logs(&c), review_logs(&b));
 }
 
+/// 本机全部日志操作的载荷原文（还原压缩与配置快照引用后的字节，十六进制），排序。HLC / seq / 设备在载荷外的列上，
+/// 不在比较范围内。
+fn log_payloads(d: &Device) -> Vec<String> {
+    let w = d.core.writer().unwrap();
+    let rows: Vec<(Vec<u8>, Option<String>, Option<i64>, i64)> = w
+        .prepare("SELECT payload, sc, sc_at, pz FROM sync2_ops WHERE kind = ?1")
+        .unwrap()
+        .query_map([crate::sync2::op::KIND_LOG], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+        })
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    let mut out: Vec<String> = rows
+        .into_iter()
+        .map(|(p, sc, at, pz)| {
+            super::snapshots::unpack_payload(&w, p, sc, at, pz)
+                .unwrap()
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect()
+        })
+        .collect();
+    out.sort();
+    out
+}
+
+/// 旧版本读者兼容：同一批操作（作答 / 立即重排 / 改期 / 重置 / 撤销）经显式意图写出的日志操作载荷，与旧路径（同样的
+/// 日志 JSON 交给 `apply`、按结果形状反推意图）写出的逐字节相同——意图码、配置快照、各字段都一样，旧版本解码器与
+/// 重放读到的是同一份字节。结果提示用新路径算出的值（旧 Dart 的立即重排提示经另一套 FSRS 实现算，可能在记忆状态
+/// 的浮点尾数上不同；派生意图的投影只按意图重算、不读提示，见 replay.rs `fold`）。
+#[test]
+fn explicit_intents_write_the_same_op_bytes_as_the_legacy_path() {
+    let (b, deck, cards) = library("bytes-new");
+    let (a, _, _) = library("bytes-old");
+    let at = T0 + 10 * DAY;
+    let today = crate::projection::Day {
+        utc_offset_min: 0,
+        rollover_hour: 4,
+    }
+    .index(at);
+
+    // 作答：新路径在 apply 项上显式声明 answer，旧路径不带、由形状反推。
+    let answer = review("ans", &cards[2], at - 1, 3, "learn");
+    let note = note_of(&b, &cards[2]);
+    dispatch(
+        &b,
+        json!({"op": "apply", "profile": P, "now": at, "caches": caches(&deck)}),
+        Some(json!([{"e": answer, "note": note, "intent": "answer"}]).to_string()),
+    );
+    apply(&a, &deck, at, vec![answer.clone()]);
+
+    let mut hlc = format!("{}:0:{WRITER}", T0 + 5 * DAY);
+    let mut written: Vec<Value> = Vec::new();
+    for items in [
+        json!([{"a": "rescheduleDeck", "deck": deck}]),
+        json!([{"a": "setDue", "card": cards[1], "due": today + 7}]),
+        json!([{"a": "reset", "card": cards[0], "skipNew": true}]),
+    ] {
+        let r = sched(&b, &deck, at, &hlc, items);
+        hlc = r["hlc"].as_str().unwrap().to_owned();
+        written.extend(r["logs"].as_array().unwrap().iter().cloned());
+    }
+    let reset = written.last().unwrap()["id"].as_str().unwrap().to_owned();
+    let r = sched(
+        &b,
+        &deck,
+        at,
+        &hlc,
+        json!([{"a": "undo", "card": cards[0], "log": reset}]),
+    );
+    written.extend(r["logs"].as_array().unwrap().iter().cloned());
+    let kinds: Vec<&str> = written
+        .iter()
+        .map(|l| l["kind"].as_str().unwrap())
+        .collect();
+    for k in ["reschedule", "manual", "undo"] {
+        assert!(kinds.contains(&k), "{k} written: {kinds:?}");
+    }
+    apply(&a, &deck, at, written.iter().map(legacy_event).collect());
+
+    let (pa, pb) = (log_payloads(&a), log_payloads(&b));
+    assert_eq!(
+        pb.len(),
+        6 + 1 + written.len(),
+        "library reviews + answer + sched logs"
+    );
+    assert_eq!(pa, pb);
+    assert_eq!(intents(&a), intents(&b));
+    assert_eq!(review_logs(&a), review_logs(&b));
+}
+
 /// 无条件重置（单卡入口）照写新卡；同一批里后面的项看得见前面写的日志（撤销同批刚写的改期）；HLC 落后于时刻时
 /// 从时刻起算、计数归零。
 #[test]
