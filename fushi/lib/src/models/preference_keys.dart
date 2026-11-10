@@ -42,6 +42,16 @@ const String kAnkiSettingsPrefKey = 'anki_settings';
 /// Profile 快照（ProfileKeys._excludedPrefPrefixes）。
 const String kSectionTabOrderPrefKeyPrefix = 'section_tab_order::';
 
+/// 复习翻日时刻的待写标记（int 0–23，-1 = 没有）：后缀 = profile uid。用户在统计设置里显式改了日界、当时没能写进
+/// 这份配置的复习（模块关着 / 打开失败）时记下，复习库下次激活时补写并清掉（`AppModel.flushPendingDayRollover`）。
+/// 默认值从不记。按 uid 分开记；设备本地（`PrefRedactionPolicy.deviceLocalKeyPrefixes`）：不进 Profile 快照 / 分享、
+/// 不随备份导出、恢复时保留本机值，也不经设置同步离开本机。
+const String kSrsDayRolloverPendingPrefKeyPrefix = 'srs_day_rollover_pending::';
+
+/// 本机最后写下 / 采纳的复习翻日时刻修改记录 ID（String）：后缀 = profile uid。同步拉入后生效记录还是它就不改本机
+/// 统计日界（`AppModel.adoptSyncedDayRollover`）。设备本地，同上。
+const String kSrsDayRolloverSeenPrefKeyPrefix = 'srs_day_rollover_seen::';
+
 /// 库页「手动」排序的顺序（排序模式里拖出来的），后缀 = 库（`book` / `manga` /
 /// `video` / `game`），值是换行分隔的单元 tieKey（`encodeShelfManualOrder`）。
 /// 与页签顺序同族：设备本地，不进 Profile 快照（ProfileKeys._excludedPrefPrefixes）。
@@ -147,6 +157,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // int 秒（15..1800，默认 120）：有声书「返回原位置」跳转距离——显式音频 seek 挪动
   // 至少这么远才进跳转回退历史（反馈 0AwuVqrNFn）。普通偏好，随 Profile / 备份走。
   'audiobook_jump_threshold_sec',
+  // String（'audio' | 'text'，默认 'audio'）：「跟随音频」开着时由谁领读。'text' =
+  // 文字领读：音频播到本屏末句停下、翻屏后从新屏续播，手动翻屏把音频带到该屏
+  // （目前只在 VN 模式生效）。见 media/audiobook/text_leads_page_stop.dart。
+  'audiobook_link_direction',
   // String（JSON 数组）：有声书素材库目录（绝对路径）。库里放按作品身份命名的
   // 字幕/正文文件，下载完成后据此自动配齐「正文 + 字幕 + 音频」。见
   // media/audiobook/audiobook_material_library.dart。
@@ -962,8 +976,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 见 media/video/video_lua_capability.dart（BUG-2032）。
   'video_mpv_lua_capability',
   'video_mpv_shader_dir',
-  // String（[VideoOnlineMiningMode] 的 wireName）：在线视频点制卡后弹窗等不等——
-  // `background` 后台（默认）/ `deferred` 看完再制卡 / `wait` 等整张卡落地。
+  // String（[VideoOnlineMiningMode] 的 wireName）：在线视频点制卡后卡往哪去——
+  // `background` 后台写入（默认）/ `deferred` 看完再制卡。旧值 `wait`（弹窗陪等，
+  // 反馈 OeS0m8tLHc 删除）读出来回退 background。
   'video_online_mining_mode',
   // String（[VideoPauseOcrScope] 的 wireName）：暂停时识别画面文字（OCR 点字查词）
   // 的范围——`all` 所有视频（默认）/ `graphic_subtitles` 只在图形字幕时 / `off`。
@@ -1131,6 +1146,8 @@ const List<String> kKnownPreferenceKeyPrefixes = <String>[
   'media_source_scan_index_',
   kSectionTabOrderPrefKeyPrefix,
   kLibraryManualOrderPrefKeyPrefix,
+  kSrsDayRolloverPendingPrefKeyPrefix,
+  kSrsDayRolloverSeenPrefKeyPrefix,
   'src:',
   // int（毫秒，v101）：`updates_last_check_<UpdateFeedKind.dbValue>`——某个域上次
   // 后台检查完成的时刻。到期判据只读它，失败也照记（否则断网时每个 tick 都重试）。

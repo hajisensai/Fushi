@@ -1360,20 +1360,60 @@ class _OrganizationPass {
 ///   就不算合集包（`正片 + Bonus - 01/02` 仍按电影整理）；
 /// * 至少两个**不同**集号（同一集的两个版本不构成合集）。
 bool looksLikeEpisodicPack(List<String> fileNames) {
+  final VideoPackEpisodeEvidence evidence = videoPackEpisodeEvidence(fileNames);
+  return evidence.unnumbered == 0 && evidence.episodes.length >= 2;
+}
+
+/// 一份种子文件清单里**正片视频**的集号证据，口径与整理器同一份：
+/// * [episodes]：解析得出的不同集号；[numbered] 是解析得出集号的正片文件数；
+/// * [unnumbered]：解析不出集号的正片文件数；
+/// * [movieHinted]：带电影提示（`劇場版` / `Movie` …）的文件数，不计入集号；
+/// * 发布组标出的特典（特典目录 / NCOP / PV / Trailer …）一律不算正片；
+/// * [hasDisc]：清单里有原盘（BDMV / 镜像），盘内 `.m2ts` 的序号不是集号。
+///
+/// [looksLikeEpisodicPack]（整理阶段 movie → 剧集改判）与下载规划的整包证据
+/// （`judgeVideoReleaseScope`）都从这里取数，规划认出的「整包」与落地时整理器
+/// 看到的是同一批正片。
+VideoPackEpisodeEvidence videoPackEpisodeEvidence(List<String> fileNames) {
   final List<String> videos = fileNames
       .where(VideoDownloadOrganizer._isVideo)
       .toList(growable: false);
   final String? sharedRoot = VideoDownloadOrganizer._sharedRootOfNames(videos);
   final Set<int> episodes = <int>{};
+  int numbered = 0;
+  int unnumbered = 0;
+  int movieHinted = 0;
   for (final String name in videos) {
     if (VideoDownloadOrganizer._isExplicitExtra(name, sharedRoot: sharedRoot)) {
       continue;
     }
     final String fileName = VideoDownloadOrganizer._segments(name).last;
-    if (FilenameParser.parse(fileName).isMovieHint) continue;
+    if (FilenameParser.parse(fileName).isMovieHint) {
+      movieHinted++;
+      continue;
+    }
     final int? episode = parseVideoFilename(fileName).episode;
-    if (episode == null) return false;
-    episodes.add(episode);
+    if (episode == null) {
+      unnumbered++;
+    } else {
+      numbered++;
+      episodes.add(episode);
+    }
   }
-  return episodes.length >= 2;
+  return (
+    episodes: episodes,
+    numbered: numbered,
+    unnumbered: unnumbered,
+    movieHinted: movieHinted,
+    hasDisc: planDownloadDiscRoots(fileNames).isNotEmpty,
+  );
 }
+
+/// [videoPackEpisodeEvidence] 的结果。
+typedef VideoPackEpisodeEvidence = ({
+  Set<int> episodes,
+  int numbered,
+  int unnumbered,
+  int movieHinted,
+  bool hasDisc,
+});

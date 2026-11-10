@@ -157,16 +157,27 @@ void main() {
     expect(row.contains('wavy: false'), isTrue);
   });
 
-  test('歌词模式（有声阅读界面）窄屏有左上角返回键，退出走 onClose', () {
+  test('歌词模式（有声阅读界面）窄屏回正文是右上角「书籍模式」键，走 onClose', () {
     for (final String path in <String>[
       'lib/src/media/audiobook/lyrics_player/lyrics_player_md3.dart',
       'lib/src/media/audiobook/lyrics_player/lyrics_player_apple.dart',
     ]) {
       final String src = File(path).readAsStringSync();
-      final int key = src.indexOf("ValueKey<String>('lyrics_player_back')");
-      expect(key, isNonNegative, reason: '$path 缺返回键');
+      // 2026-11-10 用户：左上角返回键改成宽屏同款「书籍模式」键放到右上角。
+      expect(src.contains("'lyrics_player_back'"), isFalse, reason: path);
+      final int bar = src.indexOf(
+        path.endsWith('md3.dart')
+            ? 'class _NarrowTopBar'
+            : 'class _NarrowHeaderRow',
+      );
+      expect(bar, isNonNegative, reason: path);
+      final int key = src.indexOf(
+        "ValueKey<String>('lyrics_return_to_book_button')",
+        bar,
+      );
+      expect(key, isNonNegative, reason: '$path 窄屏缺书籍模式键');
       final String around = src.substring(key, key + 400);
-      expect(around.contains('t.back'), isTrue);
+      expect(around.contains('t.book_mode'), isTrue);
       expect(around.contains('callbacks.onClose'), isTrue);
     }
   });

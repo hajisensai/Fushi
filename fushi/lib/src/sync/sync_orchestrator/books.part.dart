@@ -79,6 +79,8 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
     // ── Push：本端独有 → 重打包并上传 ───────────────────────────────────────
     for (final String key in diff.toPush) {
       final String title = localKeyToTitle[key] ?? key;
+      // 安全检查点：上一项已完整落地，这一项还没开始。
+      _checkpoint();
       _emit(SyncPhase.books, itemIndex: index, itemTotal: total, title: title);
       File? tmp;
       try {
@@ -210,6 +212,8 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
     }
     for (int i = 0; i < localBooks.length; i++) {
       final EpubBookRow book = localBooks[i];
+      // 安全检查点：上一项已完整落地，这一项还没开始。
+      _checkpoint();
       _emit(
         SyncPhase.readingData,
         itemIndex: i,
@@ -241,6 +245,14 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
             snapshot: touched ? null : snapshot,
           );
           if (step.localChanged) report.localBookProgressPulled++;
+          // 摘要计数（BUG-4302）只数位置真的挪动了的：落地了 host 的进度 / 推出了
+          // 本机的进度。只对齐时间戳（synced）不算变化。
+          if (step.action == BookProgressSyncAction.applyRemote &&
+              step.localChanged) {
+            report.bookProgressReceived++;
+          } else if (step.action == BookProgressSyncAction.pushLocal) {
+            report.bookProgressSent++;
+          }
           if (step.action == BookProgressSyncAction.conflict) {
             report.conflicts.add(
               SyncConflict(
@@ -301,6 +313,8 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
     for (int i = 0; i < keys.length; i++) {
       final String key = keys[i];
       // 任务面板要能说出「在同步哪个视频 / 哪本有声书」（反馈 kM-Gb_Xnu-）。
+      // 安全检查点：上一项已完整落地，这一项还没开始。
+      _checkpoint();
       _emit(
         SyncPhase.readingData,
         itemIndex: i,
@@ -329,8 +343,12 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
             await sync.alignSynced(key, local: local, remote: host);
           case BookProgressSyncAction.pushLocal:
             await sync.pushLocal(key, local: local, remote: host);
+            report.notePlaybackPositionMoved(sync.kind, received: false);
           case BookProgressSyncAction.applyRemote:
-            await sync.applyRemote(key, host, local: local);
+            // BUG-3537：判定后本端被改写则不落地，也不计「已拉取」（BUG-4302）。
+            if (await sync.applyRemote(key, host, local: local)) {
+              report.notePlaybackPositionMoved(sync.kind, received: true);
+            }
           case BookProgressSyncAction.conflict:
             report.conflicts.add(
               SyncConflict(

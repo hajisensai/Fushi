@@ -27,6 +27,7 @@ import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_contract.d
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi/src/media/audiobook/book_import_dialog.dart';
+import 'package:fushi/src/media/audiobook/text_leads_page_stop.dart';
 import 'package:fushi/src/media/manga/interconnect/interconnect_manga_source.dart'
     show InterconnectMangaCatalog;
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
@@ -1687,7 +1688,9 @@ class ReaderFushiSource extends ReaderMediaSource {
 
   /// 制卡被收下（成功 / 进待发队列）后关掉整个查词弹窗栈（用户建议 q16Apecgbg：
   /// 「查词框妨碍阅读」）。默认关闭 = 制卡后弹窗照旧留着（既有行为）。接线在
-  /// `closePopupAfterAcceptedMine`（阅读器 / 有声书 / 视频两条弹窗车道共用）。
+  /// `closePopupAfterAcceptedMine`（阅读器 / 有声书 / 走 DictionaryPageMixin 的查词
+  /// 车道共用）。视频播放页不看本开关：制卡后恒关弹窗、续播（反馈 OeS0m8tLHc，见
+  /// `DictionaryPageMixin.closePopupAfterMining` 的覆写）。
   bool get closePopupAfterMining =>
       getPreference<bool>(key: 'close_popup_after_mining', defaultValue: false);
 
@@ -2516,6 +2519,20 @@ class ReaderFushiSource extends ReaderMediaSource {
     await (readerSettings?.setVisualNovelMergeCrossScreenSentenceAudioCues(v) ??
         setPreference<bool>(key: 'vn_merge_cross_screen_cues', value: v));
   }
+
+  /// 「跟随音频」开着时的领读方向：'audio'（音频领读，文字跟着翻）或 'text'（文字
+  /// 领读：音频停在本屏末句、翻屏续播）。全局偏好，默认 'audio'。
+  String get audiobookLinkDirection => getPreference<String>(
+    key: 'audiobook_link_direction',
+    defaultValue: kAudiobookLinkDirectionAudio,
+  );
+
+  Future<void> setAudiobookLinkDirection(String value) async {
+    await setPreference<String>(key: 'audiobook_link_direction', value: value);
+  }
+
+  bool get audiobookTextLeads =>
+      audiobookLinkDirection == kAudiobookLinkDirectionText;
 
   String get readerTheme =>
       readerSettings?.theme ??

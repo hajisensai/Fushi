@@ -40,6 +40,7 @@ import 'package:fushi/src/models/preference_keys.dart'
     show kSrsLapisMigrationReminderPrefKey;
 import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/srs/srs_card_appearance.dart';
+import 'package:fushi/src/srs/srs_device_view.dart';
 import 'package:fushi_engine/srs/srs_media_store.dart';
 import 'package:fushi_engine/srs/srs_mining_target.dart';
 import 'package:fushi/src/srs/srs_profile_stores.dart';
@@ -408,6 +409,12 @@ final FutureProvider<SrsMediaStore?> srsMediaStoreProvider =
 /// 正在显示的复习页数量（复习页 initState +1 / dispose −1）。自动优化据此判断「在复习」，
 /// 进入复习页时取消在跑的优化（见 srs_optimization_scheduler.dart）。
 final ValueNotifier<int> srsActiveReviewSessions = ValueNotifier<int>(0);
+
+/// 复习页登记「正在复习」用的计数：根容器里就是本机 runtime 监听的 [srsActiveReviewSessions]（批量推送、
+/// 自动优化让路，见 srs_app_runtime.dart）。远程复习的作用域（`SrsRemoteCollectionScope`）覆盖成自己的
+/// 计数——在主机的库上复习不该让本机库的推送改成批量、也不该取消本机的参数优化。
+final Provider<ValueNotifier<int>> srsActiveReviewSessionsProvider =
+    Provider<ValueNotifier<int>>((Ref ref) => srsActiveReviewSessions);
 
 /// 本机写操作后的刷新信号（单调递增）。
 final StateProvider<int> srsRevisionProvider = StateProvider<int>(
@@ -778,18 +785,31 @@ final FutureProvider<int> srsConflictCountProvider = FutureProvider<int>((
   return _srsMemoByContent(_conflictCountMemo, store, () async {
     final int conflicts = (await store.syncConflicts()).length;
     final int held = (await store.sync2Conflicts()).length;
-    return conflicts + held + await store.pendingDecisionCount();
+    // 待确认的设备（删除 / 彻底清除扣着等本机确认，store/sync2/trust.rs）与冲突同级进角标。
+    final int untrusted = srsDeviceViewsOf(
+      await store.sync2Status(),
+    ).where((SrsDeviceView d) => d.needsTrust).length;
+    return conflicts + held + untrusted + await store.pendingDecisionCount();
   });
 });
 
-/// 等 store 就绪（页面动作里用）。模块关着 / 打开失败时返回 null。
-Future<SrsDbStore?> readSrsStore(WidgetRef ref) async {
-  try {
-    return await ref.read(srsStoreProvider.future);
-  } catch (e, stack) {
-    ErrorLogService.instance.log('readSrsStore', e, stack);
-    return null;
+/// 等 store 就绪（页面动作里用）。
+///
+/// null 只表示「这里没有复习库」：模块关着，或存储此刻不可用（非主进程在主进程完成首次搬迁之前，见
+/// [srsStorageProvider]）。**打开失败原样抛出**——以前在这里吞掉记日志、返回 null，复习页于是报「排程内核
+/// 不可用」、操作目录报「复习库还没就绪」，真正的错误（库损坏、升级空间不够……）只在日志里。调用方各自
+/// 把它交给错误态 / 失败结果。
+Future<SrsDbStore?> readSrsStore(WidgetRef ref) =>
+    ref.read(srsStoreProvider.future);
+
+/// 错误态「重试」前调：上次打开失败时 [srsStoreProvider]（及它等的 [srsStorageProvider]）缓存着那个错误，
+/// 不作废的话之后的 [readSrsStore] 只会原样拿回同一个失败。只作废失败了的那一层；已经打开好的库不动
+/// （作废会让全 app 重开一遍库）。
+void retrySrsStoreOpen(WidgetRef ref) {
+  if (ref.exists(srsStorageProvider) && ref.read(srsStorageProvider).hasError) {
+    ref.invalidate(srsStorageProvider);
   }
+  if (ref.read(srsStoreProvider).hasError) ref.invalidate(srsStoreProvider);
 }
 
 /// 把一个 Future 交给后台跑并记录失败（按钮回调里用）。

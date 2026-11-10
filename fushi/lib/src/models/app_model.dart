@@ -24,6 +24,8 @@ import 'package:fushi/src/updates/local_update_notifier.dart';
 import 'package:fushi/src/updates/update_check_scheduler.dart';
 import 'package:fushi/src/updates/app_update_check.dart';
 import 'package:fushi/src/updates/usage_heartbeat.dart';
+import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi/src/models/preference_keys.dart';
 import 'package:fushi_engine/srs/srs_miner.dart';
 import 'package:fushi_engine/media/video/media_server/media_server_client_identity.dart'
     show mediaServerClientIdentity, resolveMediaServerClientIdentity;
@@ -1092,6 +1094,9 @@ class AppModel
     // 排行榜服务是 Riverpod 单例（随 Profile 重建），经全局 navigatorKey 的容器现取。
     // 复习远程刷卡：已配对设备在本机复习上出卡 / 作答（复习模块关着时 SrsAppHost.current 为 null）。
     srsRemoteStore: () => SrsAppHost.current?.remoteStore,
+    // 已配对设备一轮复习同步跑完问本机加入了没有（BUG-4320）：与本机目录那一轮的闸门同一个判据
+    // （srs_app_runtime.dart `firstSyncConfirmed`）。
+    srsSync2Joined: () => srsSync2MergeConfirmed,
     leaderboardLinkHost: () => AppLeaderboardLinkHost(
       enabled: () =>
           SyncRepository(database).isInterconnectLeaderboardLinkHostEnabled(),
@@ -4863,9 +4868,13 @@ class AppModel
       // 快照只取一次：[moduleVisibility] 每次读都重新合成一个 Set，而下面这一串
       // 是同一帧里的连续判定，取一次既省分配也保证这一批门读的是同一份真值。
       //
-      // 刻意**只判启动、不 stop**：用户在会话中途关模块时不切断进行中的任务
-      // （正在跑的同步/下载/做种照常跑完），下次启动才不再拉起。
+      // 这里只判启动。会话中途关模块时：同步例外，由 [setModuleEnabled] →
+      // [_applySyncModuleGate] 立刻停（在飞同步协作式取消、定时 / 合集防抖同步不再
+      // 开跑，反馈 SJeJd5EEZO）；下载 / 做种等其它后台任务照常跑完，下次启动才不再
+      // 拉起。
       final ModuleVisibility modules = moduleVisibility;
+      // 同步层的模块门以此为初值（门在 AppModel 装配前默认开，见 [syncModuleGate]）。
+      syncModuleGate.setOpen(modules.isEnabled(ModuleId.sync));
       // Start the LAN sync server now if hosting is enabled, so it runs app-wide
       // for the whole session instead of only while the sync settings page is on
       // screen (BUG-085). Fire-and-forget: a bind failure self-disables + is
@@ -9349,6 +9358,26 @@ class AppModel
           profileView: WorkProfileScope.instance.lookupView,
         );
 
+  /// 控制通道（fushi_cli / AI 助手）替**本机用户**查词：`dict search`、`anki mine`、`video mine`、`game mine`
+  /// （BUG-4321）。与查词页同一条链（[searchDictionary]：远端优先、本机作品级配置），多一个调用方声明的
+  /// [lookupLanguage]（null = 本机当前查词语言，与 [searchDictionary] 完全等价）。
+  ///
+  /// 不能用 [createRemoteLookupService]：那是**替对端 / 浏览器扩展**查词的服务，只查本机词典、不再转问
+  /// 已配对的电脑（否则两台互为 host 的设备会互相转发）。瘦客户端（本机没有词典、开着「远端查词」）经它
+  /// 查词永远是空的，CLI 制卡的释义因此全空。
+  Future<DictionarySearchResult> searchDictionaryForUser({
+    required String searchTerm,
+    required int maximumTerms,
+    bool searchWithWildcards = false,
+    String? lookupLanguage,
+  }) => _searchDictionaryInLanguage(
+    searchTerm: searchTerm,
+    searchWithWildcards: searchWithWildcards,
+    overrideMaximumTerms: maximumTerms,
+    lookupLanguage: lookupLanguage,
+    profileView: WorkProfileScope.instance.lookupView,
+  );
+
   /// [searchDictionary] 的本体，多一个 [lookupLanguage]：替对端查词时传对端声明的查词
   /// 语言（见 [effectiveLookupLanguage]）；本机查词为 null，按本机当前查词语言。
   ///
@@ -10587,7 +10616,28 @@ class AppModel
     // 模块可见性会改变这些树的过滤结果，故翻转开关必须丢弃快照，否则快捷面板会
     // 继续发已被关掉模块的设置项（settings_schema.dart 的 `_SettingsSchemaCache`）。
     resetSettingsSchemaCache();
+    if (module == ModuleId.sync) _applySyncModuleGate();
     notifyListeners();
+  }
+
+  /// 「同步与备份 + 互联」模块会话中途翻转：同步层的门（[syncModuleGate]）跟着开合。
+  ///
+  /// 关：在飞的每一轮同步在下一个安全检查点中止（不打断正在落地的那一项，见
+  /// `sync_module_gate.dart`），首页定时 sweep、退出书 / 切后台单本同步从下一次触发
+  /// 起被门挡下；合集防抖观察者连同未决的防抖定时器一起撤掉。
+  /// 开：门重新放行，首页定时 sweep 在下一个 tick 恢复；合集观察者重新装上（初始化
+  /// 时模块关着就从没装过）。
+  ///
+  /// 互联 host 服务器不在此列：它是让别的设备连本机的常驻服务，启停有端口与发现
+  /// 广播的副作用，仍按「下次启动不再拉起」处理。
+  void _applySyncModuleGate() {
+    final bool open = moduleVisibility.isEnabled(ModuleId.sync);
+    syncModuleGate.setOpen(open);
+    if (!open) {
+      uninstallCollectionsSyncWatcher();
+    } else if (isDatabaseReady) {
+      installCollectionsSyncWatcher(db: database);
+    }
   }
 
   /// 「功能模块」的用户排序（底栏 / 侧栏 tab 顺序，见 [ModuleVisibility.order]）。
@@ -10976,6 +11026,14 @@ class AppModel
     RemoteMiningTarget? target, {
     String? label,
   }) => prefsRepo.setMineToServerTarget(hostId, target, label: label);
+
+  /// 主进程回到前台时重读查词弹窗（`:popup` 进程）会写的偏好行（BUG-4289，见
+  /// [PreferencesRepository.popupWrittenKeys]）。偏好还没装配时什么都不做。
+  Future<void> reloadPopupWrittenPrefs() async {
+    final PreferencesRepository? prefs = _prefsRepo;
+    if (prefs == null || _isDictionaryPopupProcess) return;
+    if (await prefs.reloadPopupWrittenPrefs()) notifyListeners();
+  }
 
   // 复习模块的「挖词目标」（透传 prefsRepo）。与 [mineToServerEnabled] 同理用可空读：
   // `ankiRepositoryProvider` 构建期就会读它。prefs 未装配时按 Anki（此刻不会有制卡，
@@ -11373,6 +11431,120 @@ class AppModel
     await prefsRepo.setStatDayResetHour(value);
     _applyStatDayResetHour();
   }
+
+  /// 用户在设置里改日界：本机统计日界 + 当前配置复习的翻日时刻（profile 字段，随同步 v2 传到别的设备，
+  /// 多设备的「今天」一致，见 `SrsDbStore.dayContext`）。
+  ///
+  /// 只有用户的显式修改走这里；首次开复习时补的默认 4 点（[setStatDayResetHour]）只改本机偏好、不写复习，
+  /// 免得每台设备各自写一条默认值、互相覆盖。此刻写不进复习（模块关着 / 未注入 / 打开失败）时给这份配置记一条
+  /// 待写标记，下次它的复习库激活时补写（[flushPendingDayRollover]）——否则之后同步拉入的旧值会把这次修改改回去。
+  ///
+  /// 与 [flushPendingDayRollover] / [adoptSyncedDayRollover] 串行（[_serialDayRollover]）。
+  Future<void> setStatDayResetHourByUser(int value) =>
+      _serialDayRollover(() => _setStatDayResetHourByUser(value));
+
+  Future<void> _setStatDayResetHourByUser(int value) async {
+    await setStatDayResetHour(value);
+    final int hour = statDayResetHour;
+    final String uid = await database.resolveActiveProfileUid();
+    if (uid.isEmpty) return;
+    final SrsProfileStores Function()? reader = srsProfileStoresReader;
+    SrsDbStore? store;
+    try {
+      store = reader == null
+          ? null
+          : await reader().storeFor(uid, fallbackRolloverHour: () => hour);
+      if (store != null) {
+        await _writeSrsDayRollover(store, hour);
+        srsCardsAddedNotifier?.call();
+        return;
+      }
+    } catch (e, stack) {
+      ErrorLogService.instance.log('setStatDayResetHourByUser', e, stack);
+    }
+    await prefsRepo.setPref(_srsDayRolloverPendingKey(uid), hour);
+  }
+
+  /// 复习库 [store] 激活时补写它那份配置的待写日界（[setStatDayResetHourByUser] 当时没写进去的显式修改）。
+  /// 只补用户改过的值，没有标记什么都不做（默认值从不写进复习）。由 main.dart 挂到 `SrsProfileStores.onActivated`。
+  Future<void> flushPendingDayRollover(SrsDbStore store) =>
+      _serialDayRollover(() => _flushPendingDayRollover(store));
+
+  Future<void> _flushPendingDayRollover(SrsDbStore store) async {
+    final String key = _srsDayRolloverPendingKey(store.profileUid);
+    final Object? pending = prefsRepo.getPref(key);
+    if (pending is! int || pending < 0) return;
+    try {
+      await _writeSrsDayRollover(store, pending);
+      srsCardsAddedNotifier?.call();
+    } catch (e, stack) {
+      ErrorLogService.instance.log('flushPendingDayRollover', e, stack);
+    }
+  }
+
+  /// 同步拉入之后：[profileUid] 复习里生效的翻日时刻 [synced] 是本机没见过的修改（别的设备的用户改了日界）时，
+  /// 本机统计日界跟上，统计中心与复习用同一个「今天」（铁律 G）。
+  ///
+  /// 只认「新来的修改」：生效的修改记录与本机上次写下 / 采纳的是同一条（[_srsDayRolloverSeenKey]）就不动——
+  /// 不拿 profile 里的旧值覆盖本机。这份配置还有待写的显式修改时也不动（它激活时补写、比旧值新）。单向：只改本机
+  /// 偏好、不写回复习，不会来回同步。
+  ///
+  /// 生效值由 [readSynced] 在串行区里现读（通常是 `store.syncedDayRollover`），不接受区外先读好的值：用户正在改
+  /// 日界时排在它后面，读到的就是用户刚写下的那条（已见）；区外先读会拿到用户改之前的修改记录、把本机统计日界
+  /// 改回旧值，而复习字段是用户的新值，两边从此分叉。
+  Future<void> adoptSyncedDayRollover(
+    String profileUid,
+    Future<SrsDayRollover?> Function() readSynced,
+  ) =>
+      _serialDayRollover(() => _adoptSyncedDayRollover(profileUid, readSynced));
+
+  Future<void> _adoptSyncedDayRollover(
+    String profileUid,
+    Future<SrsDayRollover?> Function() readSynced,
+  ) async {
+    if (profileUid != await database.resolveActiveProfileUid()) return;
+    final Object? pending = prefsRepo.getPref(
+      _srsDayRolloverPendingKey(profileUid),
+    );
+    if (pending is int && pending >= 0) return;
+    final SrsDayRollover? synced = await readSynced();
+    if (synced == null) return;
+    final String seenKey = _srsDayRolloverSeenKey(profileUid);
+    if (prefsRepo.getPref(seenKey) == synced.editId) return;
+    await prefsRepo.setPref(seenKey, synced.editId);
+    if (synced.hour != statDayResetHour) {
+      await setStatDayResetHour(synced.hour);
+    }
+  }
+
+  /// 把 [hour] 写成 [store] 那份配置复习的翻日时刻，记下生效的修改记录（之后的拉入不把它当新值），清待写标记。
+  Future<void> _writeSrsDayRollover(SrsDbStore store, int hour) async {
+    final SrsDayRollover? written = await store.setDayRolloverHour(hour);
+    if (written != null) {
+      await prefsRepo.setPref(
+        _srsDayRolloverSeenKey(store.profileUid),
+        written.editId,
+      );
+    }
+    await prefsRepo.setPref(_srsDayRolloverPendingKey(store.profileUid), -1);
+  }
+
+  /// 日界的三个写入口（用户改值 / 激活时补写 / 拉入后采纳）都是「读本机状态 → 写复习或本机偏好 → 记已见 /
+  /// 待写」的多步序列，交错会让本机统计日界与复习字段分叉（例如采纳读到旧修改后、在用户写完之后把偏好改回旧值）。
+  /// 按调用顺序逐个跑；一个失败不挡后面的（错误照常交给它自己的调用方）。
+  Future<void> _dayRolloverTail = Future<void>.value();
+
+  Future<void> _serialDayRollover(Future<void> Function() body) {
+    final Future<void> run = _dayRolloverTail.then((_) => body());
+    _dayRolloverTail = run.then<void>((_) {}, onError: (Object _) {});
+    return run;
+  }
+
+  static String _srsDayRolloverPendingKey(String profileUid) =>
+      '$kSrsDayRolloverPendingPrefKeyPrefix$profileUid';
+
+  static String _srsDayRolloverSeenKey(String profileUid) =>
+      '$kSrsDayRolloverSeenPrefKeyPrefix$profileUid';
 
   /// 把偏好镜像到 [FushiDatabase.statDayResetHour]——dateKey 派生的唯一输入。
   /// 偏好加载后（主进程 / 弹窗进程两条初始化路径）与用户改设置时各调一次。
@@ -12239,7 +12411,7 @@ class AppModel
         openNote: (String noteId) => extensionSrsOpenNote(view, noteId),
       );
 
-  /// 制卡写进激活配置的复习后递增 `srsRevisionProvider`（牌组列表与首页复习条的计数随之重读）。
+  /// 制卡 / 改日界写进激活配置的复习后递增 `srsRevisionProvider`（牌组列表与首页复习条的计数随之重读）。
   /// AppModel 不在 Riverpod 图里，由 main.dart 注入；未注入时不通知。
   void Function()? srsCardsAddedNotifier;
 

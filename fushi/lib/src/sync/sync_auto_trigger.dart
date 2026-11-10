@@ -18,6 +18,7 @@ import 'package:fushi_engine/sync/fushi_library_host_service.dart'
 import 'package:fushi_engine/sync/sync_asset_package_service.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_manager.dart';
+import 'package:fushi/src/sync/sync_module_gate.dart';
 import 'package:fushi/src/sync/sync_orchestrator.dart';
 import 'package:fushi/src/sync/sync_progress.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
@@ -26,6 +27,11 @@ import 'package:fushi/src/sync/sync_task_board.dart';
 import 'package:fushi/src/sync/sync_file_ref.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_core/fushi_core.dart';
+
+// 模块门与取消信号从这里转出：同步入口的消费方（UI 外壳、桌面控制通道、AppModel）
+// 不必另 import。
+export 'package:fushi/src/sync/sync_module_gate.dart'
+    show syncModuleGate, SyncCancelledException, SyncCancellation;
 
 // 三个在飞状态值改由任务表派生（反馈 kM-Gb_Xnu-），从这里转出，既有消费方不用改 import。
 export 'package:fushi/src/sync/sync_task_board.dart'
@@ -68,8 +74,15 @@ final Set<String> _syncingIds = {};
 /// 五条同步路径（开机自动 sweep / 手动全量 / 资产传输 / 合集轻量 / 单本）**必须**经
 /// 这一对 [_beginSyncActivity]、[_endSyncActivity] 维护在飞状态，不得各自手写 notifier
 /// 赋值（那份四处重复正是「合集与单本路径的 finally 漏清 [syncProgress]」的来源）。
-SyncTaskHandle _beginSyncActivity(SyncActivity activity) =>
-    beginSyncTask(activity.kind, title: activity.title);
+///
+/// 也是「同步与备份 + 互联」模块门（[syncModuleGate]）在同步层唯一的入口：门关着
+/// 领不到票，返回 null，调用方不得开跑；领到的票随句柄走，模块途中被关掉时
+/// [SyncTaskHandle.cancellation] 置位（反馈 SJeJd5EEZO）。
+SyncTaskHandle? _beginSyncActivity(SyncActivity activity) {
+  final SyncRunTicket? ticket = syncModuleGate.enter();
+  if (ticket == null) return null;
+  return beginSyncTask(activity.kind, title: activity.title, ticket: ticket);
+}
 
 /// 登记一轮同步结束：先公布结局，再把它移出任务表（监听「在飞」翻转的人读到的结局
 /// 已经是这一轮的）。
@@ -92,6 +105,9 @@ Future<T> _withTaskResources<T>(
     keys,
     () {
       task.granted(wait);
+      // 安全检查点：排队期间模块可能被关掉。此刻还什么都没做，直接收场（抛出后
+      // withResources 的 finally 立刻释放刚拿到的资源）。
+      task.cancellation.throwIfCancelled();
       return body();
     },
     owner: task,
@@ -509,6 +525,7 @@ Future<SyncRunReport?> _runSyncChannel({
   onLocalAudioImported,
   required void Function(SyncProgress) onProgress,
   required void Function(String error) onError,
+  required SyncCancellation cancellation,
 }) async {
   try {
     return await _runSyncChannelInner(
@@ -522,6 +539,7 @@ Future<SyncRunReport?> _runSyncChannel({
       onLocalAudioImported: onLocalAudioImported,
       onProgress: onProgress,
       onError: onError,
+      cancellation: cancellation,
     );
   } on SyncAuthError catch (e) {
     // BUG-1578：给这条错误钉上通道身份再放它出去。上层（手动同步 UI）据此把登出
@@ -543,6 +561,7 @@ Future<SyncRunReport?> _runSyncChannelInner({
   onLocalAudioImported,
   required void Function(SyncProgress) onProgress,
   required void Function(String error) onError,
+  required SyncCancellation cancellation,
 }) async {
   final SyncBackend backend = channel.backend;
   await backend.restoreAuth(repo);
@@ -585,6 +604,7 @@ Future<SyncRunReport?> _runSyncChannelInner({
     onLocalAudioImported: onLocalAudioImported,
     onProgress: onProgress,
     onError: onError,
+    cancellation: cancellation,
   );
   final SyncRunReport report = await orchestrator.run();
   // 编排的阶段到此为止；后置步骤（复习同步可能跑很久）与调用方的库页刷新都不发
@@ -593,7 +613,9 @@ Future<SyncRunReport?> _runSyncChannelInner({
     const SyncProgress(phase: SyncPhase.finishing, itemIndex: 0, itemTotal: 0),
   );
   final SyncChannelPostRunHook? postRun = syncChannelPostRunHook;
-  if (postRun != null) {
+  // 编排已完整跑完（冷却戳已写），报告照常交回；模块此刻已被关掉就不再起后置的
+  // 复习同步（它是这条通道上的又一轮同步，可能跑很久）。
+  if (postRun != null && !cancellation.isCancelled) {
     try {
       await postRun(backend);
     } catch (e, stack) {
@@ -761,12 +783,18 @@ Future<void> _runAutoSyncAll({
   SyncReportCallback? onReport,
   SyncPostRunCallback? onPostRun,
 }) async {
+  // 模块门先于自动开关门：模块关掉时整个同步域不存在，不公布「自动同步已关」。
+  if (!syncModuleGate.isOpen) return;
   if (!await _autoSyncGateOpen(db, SyncActivityKind.fullSweep)) return;
   if (!_syncingIds.add('__all__')) return;
 
-  final SyncTaskHandle task = _beginSyncActivity(
+  final SyncTaskHandle? task = _beginSyncActivity(
     const SyncActivity(SyncActivityKind.fullSweep),
   );
+  if (task == null) {
+    _syncingIds.remove('__all__');
+    return;
+  }
   // 默认 failed：只有走到判定点才会被改写，异常路径原样留下「失败了」这个事实。
   SyncOutcomeReason reason = SyncOutcomeReason.failed;
   int channelsRun = 0;
@@ -821,6 +849,7 @@ Future<void> _runAutoSyncAll({
               // 开机 sweep 期间也显示实时进度条。
               onProgress: task.progress,
               onError: task.error,
+              cancellation: task.cancellation,
             ),
           );
           if (report == null) continue;
@@ -828,6 +857,9 @@ Future<void> _runAutoSyncAll({
           logSyncReportErrors(report);
           await onPostRun?.call(report);
           onReport?.call(report, channel.backend);
+        } on SyncCancelledException {
+          // 模块被关掉：整轮收场，不再跑后面的通道（不是这条通道的失败）。
+          rethrow;
         } catch (e, stack) {
           // 记账不吞事实：这条通道失败了，其余通道继续跑，最终 reason 也据此如实
           // 报「失败」而不是伪装成 completed。
@@ -855,6 +887,8 @@ Future<void> _runAutoSyncAll({
             : SyncOutcomeReason.noChannels;
       }
     });
+  } on SyncCancelledException {
+    reason = SyncOutcomeReason.cancelled;
   } catch (e) {
     developer.log(
       'Auto-sync on app open failed',
@@ -879,7 +913,18 @@ Future<void> _runAutoSyncAll({
 }
 
 /// 手动「立即同步」的结果。
-enum ManualSyncOutcome { completed, notConfigured, busy }
+enum ManualSyncOutcome {
+  completed,
+  notConfigured,
+  busy,
+
+  /// 「同步与备份 + 互联」模块关着（[syncModuleGate]），没有开跑。
+  moduleDisabled,
+
+  /// 模块在本轮途中被关掉，同步在安全检查点中止（已跑完的通道结果仍在报告里，
+  /// 但不再呈现冲突——用户已经把同步关了）。
+  cancelled,
+}
 
 /// 单条同步通道（云备份 or 互联）的报告 + 它自己的后端实例。手动同步冲突对话框按
 /// 通道逐条呈现，用**各自的** backend 去 apply——否则合并报告的冲突可能来自互联
@@ -932,23 +977,27 @@ Future<ManualSyncResult> runManualFullSync({
   SyncProgressCallback? onProgress,
   Set<SyncAssetChannelScope>? onlyChannels,
 }) async {
+  if (!syncModuleGate.isOpen) {
+    return const ManualSyncResult(ManualSyncOutcome.moduleDisabled);
+  }
   if (!_syncingIds.add('__all__')) {
     return const ManualSyncResult(ManualSyncOutcome.busy);
   }
   final SyncTaskHandle task = _beginSyncActivity(
     const SyncActivity(SyncActivityKind.fullSweep),
-  );
+  )!;
   SyncOutcomeReason reason = SyncOutcomeReason.failed;
   int channelsRun = 0;
+  // 已跑完的通道（模块途中被关掉时随 cancelled 一并交回）。
+  final SyncRunReport merged = SyncRunReport();
+  final List<ManualSyncChannelReport> channelReports =
+      <ManualSyncChannelReport>[];
   try {
     return await _inRound(task, () async {
       final repo = SyncRepository(db);
       // option B 双通道：云备份通道 + 互联通道（若启用），互不排斥。合并两条通道的
       // 报告成单一汇总返回；任一通道认证成功即算 completed，两条都未配置才是
       // notConfigured。
-      final SyncRunReport merged = SyncRunReport();
-      final List<ManualSyncChannelReport> channelReports =
-          <ManualSyncChannelReport>[];
       // BUG-1573：手动路径也**逐通道**隔离。BUG-1552 只修了自动 sweep 那个循环；
       // 这里原来整体裸奔——云通道（启用时）恒排第一（见 enabledSyncChannelBackends），它令牌
       // 失效 / WebDAV 不可达时异常直接冒出 runManualFullSync，于是 **已经跑完的通道**
@@ -983,6 +1032,7 @@ Future<ManualSyncResult> runManualFullSync({
                 onProgress?.call(p);
               },
               onError: task.error,
+              cancellation: task.cancellation,
             ),
           );
           if (report == null) continue;
@@ -991,6 +1041,8 @@ Future<ManualSyncResult> runManualFullSync({
           await onPostRun?.call(report);
           merged.mergeFrom(report);
           channelReports.add(ManualSyncChannelReport(channel.backend, report));
+        } on SyncCancelledException {
+          rethrow;
         } catch (e, stack) {
           // 不吞事实：这条通道的失败照样进汇总报告的 errors（鉴权类还会带类型进
           // authFailures，见 SyncRunReport.noteError），「立即同步」的结果提示因此
@@ -1036,6 +1088,13 @@ Future<ManualSyncResult> runManualFullSync({
         channelReports,
       );
     });
+  } on SyncCancelledException {
+    reason = SyncOutcomeReason.cancelled;
+    return ManualSyncResult(
+      ManualSyncOutcome.cancelled,
+      merged,
+      channelReports,
+    );
   } finally {
     _syncingIds.remove('__all__');
     final int finishedAt = DateTime.now().millisecondsSinceEpoch;
@@ -1123,12 +1182,15 @@ Future<ManualSyncResult> runManualAssetTransfer({
   SyncPostRunCallback? onPostRun,
   SyncProgressCallback? onProgress,
 }) async {
+  if (!syncModuleGate.isOpen) {
+    return const ManualSyncResult(ManualSyncOutcome.moduleDisabled);
+  }
   if (!_syncingIds.add('__asset_transfer__')) {
     return const ManualSyncResult(ManualSyncOutcome.busy);
   }
   final SyncTaskHandle task = _beginSyncActivity(
     const SyncActivity(SyncActivityKind.assetTransfer),
-  );
+  )!;
   activeAssetTransfer.value = SyncAssetTransferTarget(kind, scope);
   SyncOutcomeReason reason = SyncOutcomeReason.failed;
   int channelsRun = 0;
@@ -1173,6 +1235,7 @@ Future<ManualSyncResult> runManualAssetTransfer({
                 onProgress?.call(p);
               },
               onError: task.error,
+              cancellation: task.cancellation,
             ),
           );
           if (report == null) continue;
@@ -1181,6 +1244,8 @@ Future<ManualSyncResult> runManualAssetTransfer({
           await onPostRun?.call(report);
           merged.mergeFrom(report);
           channelReports.add(ManualSyncChannelReport(channel.backend, report));
+        } on SyncCancelledException {
+          rethrow;
         } catch (e, stack) {
           firstError ??= e;
           firstStack ??= stack;
@@ -1220,6 +1285,9 @@ Future<ManualSyncResult> runManualAssetTransfer({
         channelReports,
       );
     });
+  } on SyncCancelledException {
+    reason = SyncOutcomeReason.cancelled;
+    return const ManualSyncResult(ManualSyncOutcome.cancelled);
   } finally {
     _syncingIds.remove('__asset_transfer__');
     activeAssetTransfer.value = null;
@@ -1252,6 +1320,7 @@ Future<SyncRunReport?> _runAssetTransferChannel({
   required FontSyncLocal? fontSync,
   required void Function(SyncProgress) onProgress,
   required void Function(String error) onError,
+  required SyncCancellation cancellation,
 }) async {
   try {
     final SyncBackend backend = channel.backend;
@@ -1279,6 +1348,7 @@ Future<SyncRunReport?> _runAssetTransferChannel({
       fontSync: fontSync,
       onProgress: onProgress,
       onError: onError,
+      cancellation: cancellation,
     );
     return await orchestrator.runAssetTransferOnly(
       kind: kind,
@@ -1359,15 +1429,20 @@ Future<void> runCollectionsSyncNow({required FushiDatabase db}) =>
     _runCollectionsSync(db: db);
 
 Future<void> _runCollectionsSync({required FushiDatabase db}) async {
+  if (!syncModuleGate.isOpen) return;
   if (!await _autoSyncGateOpen(db, SyncActivityKind.collections)) return;
   if (_syncingIds.contains('__all__')) {
     _scheduleCollectionsSync(db);
     return;
   }
   if (!_syncingIds.add('__collections__')) return;
-  final SyncTaskHandle task = _beginSyncActivity(
+  final SyncTaskHandle? task = _beginSyncActivity(
     const SyncActivity(SyncActivityKind.collections),
   );
+  if (task == null) {
+    _syncingIds.remove('__collections__');
+    return;
+  }
   SyncOutcomeReason reason = SyncOutcomeReason.failed;
   int channelsRun = 0;
   try {
@@ -1414,6 +1489,7 @@ Future<void> _runCollectionsSync({required FushiDatabase db}) async {
                 syncDictionary: false,
                 localAudioEntries: const <LocalAudioDbEntry>[],
                 onLocalAudioImported: (LocalAudioPackageContents _) async {},
+                cancellation: task.cancellation,
               );
               return orchestrator.runCollectionsOnly();
             },
@@ -1421,6 +1497,8 @@ Future<void> _runCollectionsSync({required FushiDatabase db}) async {
           if (report == null) continue;
           channelsRun++;
           logSyncReportErrors(report);
+        } on SyncCancelledException {
+          rethrow;
         } catch (e, stack) {
           anyChannelFailed = true;
           task.error(
@@ -1445,6 +1523,8 @@ Future<void> _runCollectionsSync({required FushiDatabase db}) async {
             : SyncOutcomeReason.noChannels;
       }
     });
+  } on SyncCancelledException {
+    reason = SyncOutcomeReason.cancelled;
   } catch (e) {
     developer.log(
       'Collections auto-sync failed',
@@ -1540,6 +1620,9 @@ enum _ExitChannelResult {
 
   /// 拿到锁后重读这本书时，它已不在库里。
   bookGone,
+
+  /// 模块在排队期间被关掉，没有开跑（[syncModuleGate]）。
+  cancelled,
 }
 
 /// 退出书同步在飞的（书, 通道）——去重键见 [_exitChannelKey]。
@@ -1608,12 +1691,18 @@ Future<_ExitChannelResult> _syncExitedBookChannel({
           );
         });
     do {
-      result = channel.isInterconnect
-          ? await pass()
-          : await _withTaskResources(task, <String>{
-              syncChannelResource(channel.scope),
-            }, pass);
+      try {
+        result = channel.isInterconnect
+            ? await pass()
+            : await _withTaskResources(task, <String>{
+                syncChannelResource(channel.scope),
+              }, pass);
+      } on SyncCancelledException {
+        // 排队时模块被关掉（[_withTaskResources] 拿到锁即判）：不再重跑。
+        result = _ExitChannelResult.cancelled;
+      }
       if (result == _ExitChannelResult.failed) anyFailed = true;
+      if (result == _ExitChannelResult.cancelled) break;
       // 这里的检查与 finally 里的让位之间没有 await：不会有请求落在两者之间被漏掉。
     } while (_exitChannelReruns.containsKey(key));
   } finally {
@@ -1634,6 +1723,8 @@ Future<_ExitChannelResult> _syncExitedBookChannelOnce({
 }) async {
   final SyncBackend backend = channel.backend;
   String title = bookKey;
+  // 单本的判定 + 落地很短且必须原子：只在开跑前看一眼取消信号，开跑后不打断。
+  if (task.cancellation.isCancelled) return _ExitChannelResult.cancelled;
   try {
     if (!await isChannelAutoSyncEnabled(repo, channel)) {
       return _ExitChannelResult.disabled;
@@ -1683,14 +1774,16 @@ Future<void> _runAutoSync({
 }) async {
   final String? bookKey = ReaderFushiSource.parseBookKey(mediaIdentifier);
   if (bookKey == null || !_bookKeyPattern.hasMatch(mediaIdentifier)) return;
+  if (!syncModuleGate.isOpen) return;
   if (!await _autoSyncGateOpen(db, SyncActivityKind.singleBook)) return;
   // BUG-1569③：整轮 sweep 进行中不再记账、等 sweep 收尾补跑——各通道直接排各自的
   // 资源（见 [_syncExitedBookChannel]），不等整轮结束。同一本书的重复退出按
   // （书, 通道）合并，不丢（见 [_exitChannelsInFlight]）。
 
-  final SyncTaskHandle task = _beginSyncActivity(
+  final SyncTaskHandle? task = _beginSyncActivity(
     const SyncActivity(SyncActivityKind.singleBook),
   );
+  if (task == null) return;
   SyncOutcomeReason reason = SyncOutcomeReason.failed;
   int channelsRun = 0;
   bool merged = false;
@@ -1747,6 +1840,8 @@ Future<void> _runAutoSync({
         .length;
     if (results.contains(_ExitChannelResult.failed)) {
       reason = SyncOutcomeReason.failed;
+    } else if (results.contains(_ExitChannelResult.cancelled)) {
+      reason = SyncOutcomeReason.cancelled;
     } else if (channelsRun > 0) {
       reason = SyncOutcomeReason.completed;
     } else if (results.every(

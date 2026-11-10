@@ -1185,6 +1185,19 @@ target_compile_definitions(fushi_malie_engine_io_test PRIVATE
 add_test(NAME fushi_malie_engine_io_test
   COMMAND fushi_malie_engine_io_test)
 
+# Loaded-image view over a Chromium / Electron-style exe: a PAGE_NOACCESS
+# section (`.retplne`, Characteristics 0) must not be handed to section
+# scanners — the Malie startup fingerprint faulted on it and killed the game.
+add_executable(fushi_loaded_pe_unreadable_section_test
+  "tests/loaded_pe_unreadable_section_test.cpp"
+)
+target_include_directories(fushi_loaded_pe_unreadable_section_test PRIVATE
+  "hook/adapters")
+target_compile_definitions(fushi_loaded_pe_unreadable_section_test PRIVATE
+  UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_loaded_pe_unreadable_section_test
+  COMMAND fushi_loaded_pe_unreadable_section_test)
+
 # Malie message lane + in-game lookup core: RICHTEXT3D draw-method decoding
 # from the class table (glyph records, count, stride, reveal, translation),
 # the segment parser / reveal setter pair, segment cleaning (voice tag, ruby,

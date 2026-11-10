@@ -165,6 +165,7 @@ abstract final class HeadlessUpdateFlow {
   }) async {
     final PlatformUpdater platformUpdater =
         updater ?? updaterForCurrentPlatform();
+    channel = platformUpdater.installedChannel ?? channel;
     final int? localSeq = currentReleaseSequence(
       version: currentVersion,
       buildNumber: currentBuildNumber,
@@ -241,6 +242,19 @@ abstract final class HeadlessUpdateFlow {
       () async {
         final _UpdateDownloadSession session = _UpdateDownloadSession();
         try {
+          if (updater is PackageManagedUpdater) {
+            await _stageInSession(
+              session,
+              version: version,
+              updater: updater,
+              overlay: overlay,
+              onProgress: onProgress,
+            );
+            session.status.value = t.update_installing;
+            onInstalling();
+            await updater.restartIntoStagedUpdate(version);
+            return;
+          }
           final File outFile = await _downloadInSession(
             session,
             asset: asset,
@@ -301,6 +315,62 @@ abstract final class HeadlessUpdateFlow {
       },
     );
     return outFile!;
+  }
+
+  /// 包管理器平台（[PackageManagedUpdater]，Linux Flatpak）的「下载」= 包管理器拉取并
+  /// 部署，新版下次启动生效（控制通道 `update download`）。与 [download] 同一把版本级
+  /// 互斥锁、同一个下载浮层：app 里的更新对话框与控制通道不会对同一版并发发起两次
+  /// portal `Update`（portal 对第二次直接回 "Already installing"）。
+  ///
+  /// [cancellation] 与浮层「取消」共用。已有同版本流在途时抛 [StateError]。
+  static Future<void> stage({
+    required String version,
+    required PackageManagedUpdater updater,
+    OverlayState? overlay,
+    UpdateDownloadCancellation? cancellation,
+    required void Function(double progress) onProgress,
+  }) {
+    if (isActive(version)) {
+      throw StateError('update flow for $version already active');
+    }
+    return UpdateChecker._runExclusiveUpdateFlow(
+      UpdateChecker._updateFlowKey(version),
+      () async {
+        final _UpdateDownloadSession session = _UpdateDownloadSession(
+          cancellation: cancellation,
+        );
+        try {
+          await _stageInSession(
+            session,
+            version: version,
+            updater: updater,
+            overlay: overlay,
+            onProgress: onProgress,
+          );
+        } finally {
+          session.dispose();
+        }
+      },
+    );
+  }
+
+  /// [downloadAndApply] / [stage] 共用的包管理器部署段（浮层、进度接线、取消）。
+  static Future<void> _stageInSession(
+    _UpdateDownloadSession session, {
+    required String version,
+    required PackageManagedUpdater updater,
+    required OverlayState? overlay,
+    required void Function(double progress) onProgress,
+  }) async {
+    if (overlay != null && overlay.mounted) session.showIn(overlay);
+    await updater.stage(
+      version,
+      onProgress: (double value) {
+        session.onProgress(value);
+        onProgress(value);
+      },
+      cancellation: session.cancellation,
+    );
   }
 
   /// [downloadAndApply] / [download] 共用的下载段（浮层、代理、强断、进度接线）。

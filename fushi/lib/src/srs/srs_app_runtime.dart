@@ -101,6 +101,8 @@ srsAppRuntimeProvider = Provider<SrsAppRuntime?>((Ref ref) {
       revisionOrigin.bumpPulled(ref.read(srsRevisionProvider.notifier));
       // BUG-4075 取证：修订号「同步拉入」的一跳（本机写入的一跳在下面 listenSrsLocalWrites 里记）。
       SrsOpLedger.mark('rev:pulled');
+      // 别的设备可能改了复习翻日时刻：本机统计日界跟上（单向，不写回复习）。
+      unawaited(runtime.adoptSyncedDayRollover());
     },
     // 同步前的 profile 关联（铁律 E）：采用目录里已有的 uid 后按新身份重开 store。
     profileLinker: SrsDbProfileLinker(
@@ -113,6 +115,7 @@ srsAppRuntimeProvider = Provider<SrsAppRuntime?>((Ref ref) {
         ref.invalidate(srsStoreProvider);
         return ref.read(srsStoreProvider.future);
       },
+      writeLock: ref.read(srsProfileStoresProvider).writeLock,
       mediaRoot: () async =>
           SrsMediaStore.mediaRootFor(await ref.read(srsSupportRootProvider)()),
       onError: ErrorLogService.instance.log,
@@ -189,6 +192,26 @@ class SrsAppRuntime {
   /// 本机写入（自动优化应用了新参数）：界面重读 + 推给别的设备。
   final void Function() _bumpRevision;
 
+  /// 同步拉入之后：生效的翻日时刻是本机没见过的修改（别的设备的用户改了日界）就让本机统计日界跟上；还是本机
+  /// 写下 / 采纳过的那条就不动（[AppModel.adoptSyncedDayRollover]）。复习自己的「今天」不靠这一步，
+  /// `SrsDbStore.dayContext` 直接读字段。
+  Future<void> adoptSyncedDayRollover() async {
+    try {
+      final SrsDbStore? store = await _readStore();
+      if (store == null) return;
+      await app.adoptSyncedDayRollover(
+        store.profileUid,
+        store.syncedDayRollover,
+      );
+    } catch (e, stack) {
+      ErrorLogService.instance.log(
+        'SrsAppRuntime.adoptSyncedDayRollover',
+        e,
+        stack,
+      );
+    }
+  }
+
   /// 同步拉进了别的设备的变更：界面重读，不再推送（[SrsRevisionOrigin]）。
   final void Function() _bumpPulledRevision;
   final SrsProfileLinker? _profileLinker;
@@ -221,6 +244,8 @@ class SrsAppRuntime {
     autoSyncEnabled: () => SyncRepository(app.database).isSrsAutoSyncEnabled(),
     // 同步与历史页「存储位置」上逐个关掉的通道位置（只停复习同步，通道本身照常）。
     locationDisabled: (String id) => app.srsDisabledLocations.contains(id),
+    // 一轮跑完问通道那头的设备（互联 host）加入复习同步了没有（BUG-4320）：没加入时摘要 / 立即同步不说「已同步」。
+    peerJoined: srsChannelPeerJoined,
   );
 
   /// 互联快速通道（srs_interconnect_watch.dart）：长轮询所连 host，有新数据立刻同步这一条通道。
@@ -575,21 +600,37 @@ class SrsAppRuntime {
 
   /// 有待处理的冲突、用户此刻在复习页（在用复习时才打扰）、没被忽略过：弹窗。[tabEntry] = 用户刚进复习页：
   /// 「稍后」过的冲突只在这时再问，同步后台重判出来时不当场再弹。
+  ///
+  /// [_pendingConflict] 是检出那一刻的快照：之后另一台设备可能已经解决了它（采用了本机的 profile），笔记数也会变。
+  /// 弹窗之前按同步位置的现状重判（[SrsSyncScheduler.recheckProfileConflict]），只问此刻仍成立的冲突、报现在的数。
   void _maybeShowProfileConflict({bool tabEntry = false}) {
-    final SrsProfileConflict? conflict = _pendingConflict;
-    if (conflict == null || _conflictDialogOpen) return;
-    if (_ignoredConflicts().contains(conflict.ignoreKey)) {
+    final SrsProfileConflict? pending = _pendingConflict;
+    if (pending == null || _conflictDialogOpen) return;
+    if (_ignoredConflicts().contains(pending.ignoreKey)) {
       _pendingConflict = null;
       return;
     }
     if (homeShellTabNotifier.value != HomeTab.srs) return;
-    if (!tabEntry && conflict.ignoreKey == _deferredConflictKey) return;
-    final BuildContext? context = app.navigatorKey.currentContext;
-    if (context == null) return;
+    if (!tabEntry && pending.ignoreKey == _deferredConflictKey) return;
+    if (app.navigatorKey.currentContext == null) return;
     _pendingConflict = null;
     _conflictDialogOpen = true;
+    bool askAgain = false;
     unawaited(() async {
       try {
+        final SrsProfileConflict? conflict = await sync.recheckProfileConflict(
+          pending,
+        );
+        // 已经不成立（另一边解决了）、本机切了 profile 或位置此刻连不上：不问；之后判出来会重新通知。
+        if (conflict == null) return;
+        if (_ignoredConflicts().contains(conflict.ignoreKey)) return;
+        final BuildContext? context = app.navigatorKey.currentContext;
+        if (homeShellTabNotifier.value != HomeTab.srs ||
+            context == null ||
+            !context.mounted) {
+          _pendingConflict ??= conflict;
+          return;
+        }
         final SrsProfileConflictChoice? choice =
             await showSrsProfileConflictDialog(context, conflict);
         switch (choice) {
@@ -611,6 +652,15 @@ class SrsAppRuntime {
                 uid,
                 onAdopted: _showProfileAdoptResult,
               );
+            } on SrsProfileConflictStale catch (e) {
+              // 弹窗开着的时候冲突变了：什么都没动。已经解决就告诉用户；换了候选就按新的再问一次。
+              final SrsProfileConflict? current = e.current;
+              if (current == null) {
+                FushiToast.show(msg: t.srs_sync_profile_conflict_resolved);
+              } else {
+                _pendingConflict = current;
+                askAgain = true;
+              }
             } catch (e, stack) {
               ErrorLogService.instance.log(
                 'SrsAppRuntime.adoptProfile',
@@ -627,6 +677,7 @@ class SrsAppRuntime {
         ErrorLogService.instance.log('SrsAppRuntime.profileConflict', e, stack);
       } finally {
         _conflictDialogOpen = false;
+        if (askAgain) _maybeShowProfileConflict(tabEntry: true);
       }
     }());
   }

@@ -33,10 +33,39 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3846 条。点号进各自文件。
+> 共 3868 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4306](bugs/BUG-4306-srs-sync2-device-trust.md) | ✅ | ✅ | srs-sync2-device-trust |
+> 共 3870 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4322](bugs/BUG-4322-manual-address-host-no-device-name.md) | ✅ | ✅ | 手动地址添加的 host 没有设备名：peer ls 不列出、远端复习标题显示 host.docker.internal |
+| [BUG-4321](bugs/BUG-4321-cli-anki-mine-ignores-remote-lookup.md) | ✅ | ✅ | fushi_cli anki mine 在依赖远端查词的客户端上释义为空（只查本地词典） |
+| [BUG-4320](bugs/BUG-4320-srs-sync-v2-host-not-joined-silent.md) | ✅ | ✅ | SRS 同步 v2：host 未点「开始同步」时客户端显示「全部已同步」、什么都没同步且无提示 |
+| [BUG-4305](bugs/BUG-4305-sync-module-off-keeps-syncing.md) | ✅ | ✅ | 关掉同步模块后在飞同步与定时同步仍继续跑 |
+| [BUG-4304](bugs/BUG-4304-interconnect-video-resume-stale-pref-cache.md) | ✅ | ✅ | 互联客户端视频续播用旧断点并写回 host（偏好内存缓存不知道同步写库） |
+| [BUG-4303](bugs/BUG-4303-remote-video-watched-label-stale.md) | ✅ | ✅ | 视频页远端卡「看到 X」只显示 host 清单快照：同步拉到新断点 / 播完返回后不刷新 |
+| [BUG-4302](bugs/BUG-4302-sync-summary-ignores-progress.md) | ✅ | ✅ | 同步完成提示只数内容传输：拉到 / 推出视频断点、书籍与有声书进度仍显示「无变化」 |
+| [BUG-4301](bugs/BUG-4301-bd-pack-without-batch-title-no-full-plan.md) | ✅ | ✅ | 没写 batch / 季号的 BD 整包给不出「全集」下载计划 |
+| [BUG-4300](bugs/BUG-4300-srs-day-rollover-not-synced.md) | ✅ | ✅ | 复习的「今天」日界不随同步、profile 时区字段从没有写入方 |
+| [BUG-4299](bugs/BUG-4299-srs-sync2-plaintext-downgrade.md) | ✅ | ✅ | SRS 同步 v2：没有密钥的设备会往已加密的位置写明文 |
+| [BUG-4298](bugs/BUG-4298-srs-kernel-reads-share-one-connection.md) | ✅ | ✅ | SRS 内核只读命令共用一条读连接：全库统计读着时复习排队等它跑完 |
+| [BUG-4297](bugs/BUG-4297-srs-panic-poisons-writer.md) | ✅ | ✅ | SRS 内核一次 panic 后写连接永久毒化，所有写命令报 srs writer poisoned |
+| [BUG-4296](bugs/BUG-4296-srs-conflict-stale-profile.md) | ✅ | ✅ | 复习同步冲突：一边采用对方 profile 解决后，另一边仍按检出时缓存的旧冲突再问一次（旧候选、旧笔记数），选了会分叉 |
+| [BUG-4295](bugs/BUG-4295-srs-read-store-swallows-open-failure.md) | ✅ | ✅ | readSrsStore 吞掉复习库打开失败：复习页报「排程内核不可用」，操作目录报「复习库还没就绪」 |
+| [BUG-4294](bugs/BUG-4294-srs-review-ignores-external-changes.md) | ✅ | ✅ | 复习页不接收外部变更（同步拉入、操作目录写入、模板编辑器返回），预取命中也认不出笔记 / 模板变化 |
+| [BUG-4293](bugs/BUG-4293-srs-remote-review-bumps-local-sessions.md) | ✅ | ✅ | 远程复习推动本机 runtime 的活跃复习会话计数 |
+| [BUG-4292](bugs/BUG-4292-srs-profile-purge-three-impls.md) | ✅ | ✅ | 删 / 换 profile uid 的三份实现不一致，并入与采用后旧 uid 在 srs.db 留残留 |
+| [BUG-4291](bugs/BUG-4291-electron-game-launch-crash-noaccess-section.md) | ✅ | ✅ | Electron/Chromium 打包游戏经 Fushi 启动即崩（不可读 PE 节被扫描） |
+| [BUG-4290](bugs/BUG-4290-server-backup-config-flag-shadowed.md) | ✅ | ✅ | fushi_server backup: --config <path> after the subcommand is taken as the restore-config flag |
+| [BUG-4289](bugs/BUG-4289-mine-target-reset-stale-main-process.md) | ✅ | ✅ | Save to reset written by the lookup popup process is invisible to the main process |
+| [BUG-4288](bugs/BUG-4288-save-to-default-deck-listed-twice.md) | ✅ | ✅ | 保存到列表里默认牌组出现两次 |
+| [BUG-4287](bugs/BUG-4287-popup-toast-truncated-two-lines.md) | ✅ | ✅ | 「保存到」退回主机默认的提示被截断 / 被结果提示顶掉 |
+| [BUG-4286](bugs/BUG-4286-server-srs-note-count-stale.md) | ✅ | ✅ | 服务端复习状态的笔记数不随写入刷新 |
+| [BUG-4285](bugs/BUG-4285-srs-conflict-dialog-marquee-intrinsic.md) | ✅ | ✅ | SRS 同步冲突弹窗在 debug 下不显示，只剩遮罩挡住复习页（FushiMarquee 的 LayoutBuilder 答不了 intrinsic） |
 | [BUG-4284](bugs/BUG-4284-popup-gutter-observer-loop.md) | ✅ | ✅ | 查词弹窗错误日志反复出现 ResizeObserver loop completed with undelivered notifications（滚动条 gutter 观察者在投递中同步重排） |
 | [BUG-4283](bugs/BUG-4283-cross-process-lookup-count-locked.md) | ✅ | ✅ | Companion / popup lookups not counted: addLookupCount fails with database is locked |
 | [BUG-4282](bugs/BUG-4282-thor-secondary-screen-volume-mutes-stream.md) | 🚧 | 🚧 | AYN Thor: game stream audio near silent while Fushi has a window on the bottom screen |

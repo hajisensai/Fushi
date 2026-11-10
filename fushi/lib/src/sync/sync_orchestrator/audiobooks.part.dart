@@ -253,6 +253,8 @@ extension _SyncOrchestratorAudiobooks on SyncOrchestrator {
     // ── Push：本端独有 → 打包并上传 ─────────────────────────────────────────
     for (final ({String key, SrtBookRow? srt}) item in toPush) {
       final String key = item.key;
+      // 安全检查点：上一项已完整落地，这一项还没开始。
+      _checkpoint();
       _emit(
         SyncPhase.audiobooks,
         itemIndex: index,
@@ -305,6 +307,8 @@ extension _SyncOrchestratorAudiobooks on SyncOrchestrator {
 
     // ── Pull A（场景B）：远端有、本端有书但缺音频 → 下载并解包落盘 ────────────
     for (final String key in toPullAudioOnly) {
+      // 安全检查点：上一项已完整落地，这一项还没开始。
+      _checkpoint();
       _emit(
         SyncPhase.audiobooks,
         itemIndex: index,

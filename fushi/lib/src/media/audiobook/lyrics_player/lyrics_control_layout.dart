@@ -63,7 +63,7 @@ enum LyricsControlItem implements ControlItemSpec<LyricsControlSlot> {
   /// 阅读统计侧栏。
   statistics('statistics'),
 
-  /// 回到书籍模式（正文）。窄屏左上角已有返回键，出厂只在宽屏摆出。
+  /// 回到书籍模式（正文）。窄屏顶栏 × 前固定摆着它，布局里只在宽屏渲染。
   bookMode('bookMode'),
 
   /// 宽屏左右互换（窄屏单栏时不渲染）。
@@ -74,7 +74,11 @@ enum LyricsControlItem implements ControlItemSpec<LyricsControlSlot> {
   positionJump('positionJump'),
 
   /// 「跳转记录」面板（返回 / 前进的完整列表；还没有跳转时置灰）。出厂在「更多」。
-  jumpHistory('jumpHistory');
+  jumpHistory('jumpHistory'),
+
+  /// 音画同步面板：整本偏移 ±50ms / ±1s 步进（反馈 G5xYgLcp4p：在歌词模式里就能
+  /// 调，不必去设置）。出厂宽屏在播放卡工具条、窄屏在「更多」。
+  avSync('avSync');
 
   const LyricsControlItem(this.storageValue);
 
@@ -121,7 +125,7 @@ class LyricsControlLayout {
   ) => LyricsControlLayout._(core);
 
   /// 宽屏出厂布局 = 布局化之前 MD3 宽屏的摆法（睡眠定时换成统计计时键）：播放卡
-  /// 工具条 倍速 / 计时 / 重播 / 遮罩 / Aa / 统计，右上角 书籍模式 / 左右互换，
+  /// 工具条 倍速 / 同步 / 计时 / 重播 / 遮罩 / Aa / 统计，右上角 书籍模式 / 左右互换，
   /// 「更多」里 进度跳转 / 跳转记录（存量布局 JSON 缺这两颗时按此回填）。
   static final LyricsControlLayout defaults = LyricsControlLayout._(
     ControlLayout<LyricsControlSlot, LyricsControlItem>.fromSlots(
@@ -129,6 +133,7 @@ class LyricsControlLayout {
       <LyricsControlSlot, List<LyricsControlItem>>{
         LyricsControlSlot.toolbar: <LyricsControlItem>[
           LyricsControlItem.speed,
+          LyricsControlItem.avSync,
           LyricsControlItem.studyTimer,
           LyricsControlItem.replayCue,
           LyricsControlItem.mask,
@@ -148,7 +153,7 @@ class LyricsControlLayout {
   );
 
   /// 窄屏出厂布局 = 布局化之前 MD3 窄屏的摆法：顶栏胶囊 遮罩 / Aa / 统计，播放卡
-  /// 头行 倍速 / 计时 / 重播。书籍模式（左上角已有返回键）与左右互换（单栏无意义）
+  /// 头行 倍速 / 计时 / 重播。书籍模式（顶栏固定件）与左右互换（单栏无意义）
   /// 出厂移出。
   static final LyricsControlLayout compactDefaults = LyricsControlLayout._(
     ControlLayout<LyricsControlSlot, LyricsControlItem>.fromSlots(
@@ -167,6 +172,8 @@ class LyricsControlLayout {
         LyricsControlSlot.overflow: <LyricsControlItem>[
           LyricsControlItem.positionJump,
           LyricsControlItem.jumpHistory,
+          // 音画同步：窄屏顶栏胶囊与播放卡头行都没有空位，出厂收在「更多」。
+          LyricsControlItem.avSync,
         ],
       },
       removedItems: <LyricsControlItem>{

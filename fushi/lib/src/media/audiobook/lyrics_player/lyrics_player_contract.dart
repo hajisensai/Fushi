@@ -309,7 +309,12 @@ class LyricsPlayerCallbacks {
     this.onCompactControlsExpandedChanged,
     this.onPositionJump,
     this.onOpenJumpHistory,
+    this.onAvSyncPanel,
   });
+
+  /// 打开音画同步面板（锚定在按钮上；整本偏移，与设置 › 有声书「音画同步」同一个
+  /// 偏好）。由页面弹，面板开着期间页面停表。null = 不显示该键。
+  final ValueChanged<LyricsMenuAnchor>? onAvSyncPanel;
 
   /// 进度跳转（按字数 / 百分比）：打开阅读器导航面板的同一段「按字数跳转」，
   /// 歌词模式下落到目标字数所在的那句音频。null = 不显示该键。

@@ -9,6 +9,7 @@ import 'dart:io';
 
 import 'package:drift/drift.dart'
     show ResultSetImplementation, TableUpdate, TableUpdateQuery;
+import 'package:flutter/foundation.dart' show setEquals;
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -26,6 +27,9 @@ import 'package:fushi/src/utils/misc/reveal_in_file_manager.dart'
 import 'package:fushi/src/media/manga/library/online_manga_chapter_updates.dart';
 import 'package:fushi/src/media/display_title.dart';
 import 'package:fushi/src/media/media_item.dart';
+import 'package:fushi/src/media/selection/media_selection_controller.dart';
+import 'package:fushi/src/media/selection/selection_gestures.dart';
+import 'package:fushi/src/utils/components/fushi_bottom_action_bar.dart';
 import 'package:fushi/src/media/online/online_shelf_removal.dart';
 import 'package:fushi/src/media/online/online_source_error_text.dart';
 import 'package:fushi/src/media/online/online_work_detail.dart';
@@ -237,6 +241,16 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
   List<String> _ocrQueued = const <String>[];
   String? _bookDir;
 
+  /// 已有识别结果的章（逐章「已识别文字」标识，反馈 wCgL364tgM）。从磁盘上章
+  /// `manga.json` 推导（[ocrCompletedChapterKeys]），只在已下载集合变了 / 一个
+  /// OCR 任务起止时重读；按代次只认最后一次。
+  Set<String> _ocrDone = const <String>{};
+  int _ocrDoneGeneration = 0;
+
+  /// 章节多选（反馈 wCgL364tgM）：长按 / 右键 / Ctrl·Shift 点击进入，底栏批量
+  /// 识别、标已读、标未读。
+  final MediaSelectionController _selection = MediaSelectionController();
+
   /// 本地卷的阅读位置（`sectionIndex` = 页号，阅读器 `_persistPosition` 写）。
   ReaderPosition? _localPosition;
 
@@ -355,10 +369,13 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
       );
       _ocrEvent = job?.lastEvent;
     }
+    // 任务起止（尤其是跑完）都可能改了某章 manga.json 的识别结果。
+    final bool jobChanged = !identical(job, _ocrJob);
     setState(() {
       _ocrJob = job;
       _ocrQueued = queued;
     });
+    if (jobChanged) unawaited(_refreshOcrDone());
   }
 
   /// 任务目录 → 章节 key（任务只认目录，章节行只认 key）。
@@ -485,12 +502,27 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
       entry.chapters.map((OnlineMangaChapter chapter) => chapter.key),
     );
     if (!mounted) return;
+    final bool downloadedChanged = !setEquals(downloaded, _downloaded);
     setState(() {
       _jobs = jobs;
       _downloaded = downloaded;
       _bookDir = bookDir;
     });
+    if (downloadedChanged) unawaited(_refreshOcrDone());
     _watchOcr(row.bookKey);
+  }
+
+  /// 重读「哪些已下载的章已有识别结果」。
+  Future<void> _refreshOcrDone() async {
+    final String? bookDir = _bookDir;
+    if (bookDir == null) return;
+    final int generation = ++_ocrDoneGeneration;
+    final Set<String> done = await ocrCompletedChapterKeys(
+      bookDir,
+      _downloaded,
+    );
+    if (!mounted || generation != _ocrDoneGeneration) return;
+    setState(() => _ocrDone = done);
   }
 
   Future<void> _enqueueChapter(OnlineMangaChapter chapter) async {
@@ -840,30 +872,46 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
   /// 任务经 `MangaOcrJobRegistry.enqueue` 按 bookKey 排队（BUG-2449 所有权 +
   /// 同书 FIFO），作品页只负责起任务，阅读器按 bookKey + 目录接回进度。
   Future<void> _ocrChapter(OnlineMangaChapter chapter) async {
+    await _ocrChapters(<OnlineMangaChapter>[chapter]);
+  }
+
+  /// 「识别本章」与多选「识别所选章节」共用：[chapters] 里已下载、且没在识别 /
+  /// 排队的章按给定顺序排任务。返回是否至少有一章是可识别的（没有一章可识别时
+  /// 由多选调用方提示「需先下载」）。
+  Future<bool> _ocrChapters(List<OnlineMangaChapter> chapters) async {
     final EpubBookRow? row = _row;
     final OnlineMangaLibraryEntry? entry = _entry;
-    if (row == null || entry == null || _busy) return;
+    if (row == null || entry == null || _busy) return false;
     final String bookDir = await MangaStorage.bookPath(row.bookKey);
-    if (!await isChapterDownloaded(bookDir, chapter.key)) return;
-    // 只有「确实已有识别结果」才丢缓存重跑；没结果或 manga.json 读不出都续跑
-    // ——读不出的坏文件不该被整章重跑悄悄覆盖。
-    final bool onlyMissing =
-        await readMangaOcrResultState(
-          mangaChapterJsonFile(mangaChapterDirectory(bookDir, chapter.key)),
-        ) !=
-        MangaOcrResultState.hasResult;
-    final int queued = await _enqueueChapterOcr(<MangaOcrTarget>[
-      mangaChapterOcrTarget(
-        bookKey: row.bookKey,
-        bookDir: bookDir,
-        entry: entry,
-        chapter: chapter,
-        onlyMissing: onlyMissing,
-      ),
-    ]);
+    final String? running = _ocrRunningChapterKey;
+    final Set<String> queuedKeys = _ocrQueuedChapterKeys;
+    final List<MangaOcrTarget> targets = <MangaOcrTarget>[];
+    for (final OnlineMangaChapter chapter in chapters) {
+      if (chapter.key == running || queuedKeys.contains(chapter.key)) continue;
+      if (!await isChapterDownloaded(bookDir, chapter.key)) continue;
+      // 只有「确实已有识别结果」才丢缓存重跑；没结果或 manga.json 读不出都续跑
+      // ——读不出的坏文件不该被整章重跑悄悄覆盖。
+      final bool onlyMissing =
+          await readMangaOcrResultState(
+            mangaChapterJsonFile(mangaChapterDirectory(bookDir, chapter.key)),
+          ) !=
+          MangaOcrResultState.hasResult;
+      targets.add(
+        mangaChapterOcrTarget(
+          bookKey: row.bookKey,
+          bookDir: bookDir,
+          entry: entry,
+          chapter: chapter,
+          onlyMissing: onlyMissing,
+        ),
+      );
+    }
+    if (targets.isEmpty) return false;
+    final int queued = await _enqueueChapterOcr(targets);
     if (queued > 0 && mounted) {
       FushiToast.show(msg: t.manga_series_ocr_queued);
     }
+    return true;
   }
 
   /// 「识别全部已下载」：已下载且章 `manga.json` 里 blocks 全空的章依次排队。
@@ -1551,29 +1599,177 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
   };
 
   Future<void> _toggleChapterRead(OnlineMangaChapter chapter) async {
-    final String? bookUid = _bookUid;
-    if (bookUid == null) return;
     final MangaChapterStateRow? state = _states[chapter.key];
-    final bool markRead = state?.readAt == null;
-    if (await _markKavitaChapters(<OnlineMangaChapter>[
+    await _setChaptersRead(<OnlineMangaChapter>[
       chapter,
-    ], read: markRead)) {
+    ], read: state?.readAt == null);
+  }
+
+  /// 把 [chapters] 一起标为已读 / 未读（单章菜单与多选底栏共用）。Kavita 条目
+  /// 走 [_markKavitaChapters]（本机先生效再写回服务器）。
+  Future<void> _setChaptersRead(
+    List<OnlineMangaChapter> chapters, {
+    required bool read,
+  }) async {
+    final String? bookUid = _bookUid;
+    if (bookUid == null || chapters.isEmpty) return;
+    if (await _markKavitaChapters(chapters, read: read)) {
       // Kavita：本地状态已由 alignKavitaMangaChapterMark 写好（含页与基线）。
       await _reloadChapterStates();
       return;
     }
-    if (!markRead) {
-      await _appModel.database.clearMangaChapterRead(
-        bookUid: bookUid,
-        chapterKey: chapter.key,
-      );
-    } else {
+    final List<String> keys = <String>[
+      for (final OnlineMangaChapter c in chapters) c.key,
+    ];
+    if (read) {
       await _appModel.database.markMangaChaptersRead(
         bookUid: bookUid,
-        chapterKeys: <String>[chapter.key],
+        chapterKeys: keys,
+      );
+    } else {
+      await _appModel.database.clearMangaChaptersRead(
+        bookUid: bookUid,
+        chapterKeys: keys,
       );
     }
     await _reloadChapterStates();
+  }
+
+  // ── 章节多选 ────────────────────────────────────────────────────────
+
+  bool get _selecting => _selection.active;
+
+  /// 多选只对在库作品开放：标已读要 bookUid，识别要 bookKey。
+  bool get _selectionAvailable => _bookUid != null && _entry != null;
+
+  void _exitSelection() => setState(_selection.exit);
+
+  /// 长按 / 右键一行：没在多选态就进入并选中这一章，已在多选态就切换它。
+  void _onChapterSelectGesture(OnlineMangaChapter chapter) {
+    setState(() => _selection.enterWith(SelectionSlot.loose(chapter.key)));
+  }
+
+  /// 点一行：多选态 = 切换（Shift = 区间扩选）；桌面 Ctrl / ⌘ / Shift 点击 =
+  /// 直接进多选；否则开读。
+  void _onChapterTap(BuildContext context, OnlineMangaChapter chapter) {
+    if (_selecting) {
+      setState(
+        () => _selection.applyTap(
+          SelectionSlot.loose(chapter.key),
+          selectionTapKind(),
+        ),
+      );
+      return;
+    }
+    if (_selectionAvailable && selectionEntryModifierPressed(context)) {
+      _onChapterSelectGesture(chapter);
+      return;
+    }
+    final int index = _entry?.indexOfChapterKey(chapter.key) ?? -1;
+    if (index >= 0) unawaited(_openChapterAt(index));
+  }
+
+  /// 当前选中且可见的章，按源顺序（新→旧）。
+  List<OnlineMangaChapter> get _selectedChapters {
+    final Set<String> keys = _selection.looseKeys;
+    return <OnlineMangaChapter>[
+      for (final OnlineMangaChapter c
+          in _entry?.chapters ?? const <OnlineMangaChapter>[])
+        if (keys.contains(c.key)) c,
+    ];
+  }
+
+  void _selectAllChapters() => setState(
+    () => _selection.selectAll(
+      loose: _selection.visibleLooseKeys,
+      collections: const <int>[],
+    ),
+  );
+
+  Future<void> _markSelectedRead({required bool read}) async {
+    final List<OnlineMangaChapter> targets = _selectedChapters;
+    setState(_selection.exit);
+    await _setChaptersRead(targets, read: read);
+  }
+
+  /// 识别所选：旧→新排队（与「识别全部已下载」同序）。没有一章可识别（都没
+  /// 下载 / 都已在排队）时留在多选态并提示。
+  Future<void> _ocrSelected() async {
+    final List<OnlineMangaChapter> targets = _selectedChapters.reversed.toList(
+      growable: false,
+    );
+    final bool any = await _ocrChapters(targets);
+    if (!mounted) return;
+    if (!any) {
+      FushiToast.show(msg: t.manga_chapter_selection_ocr_none);
+      return;
+    }
+    setState(_selection.exit);
+  }
+
+  /// 多选态底栏：已选数 + 全选 / 识别 / 标已读 / 标未读 / 退出。底部动作条纯
+  /// 图标（文字进 tooltip 与无障碍名称），走共享 [FushiBottomActionBar]（MD3
+  /// 贴底 surfaceContainer 条 / Apple 悬浮玻璃面）；进出带尺寸 + 淡入动效。
+  Widget _buildSelectionBar(BuildContext context) {
+    final bool empty = _selection.isEmpty;
+    final Widget bar = FushiBottomActionBar(
+      key: const ValueKey<String>('manga_chapter_selection_bar'),
+      leading: Text(
+        t.manga_chapter_selection_count(n: _selection.length),
+        key: const ValueKey<String>('manga_chapter_selection_count'),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      actions: <Widget>[
+        FushiIconButtonControl(
+          key: const ValueKey<String>('manga_chapter_selection_all'),
+          tooltip: t.manga_chapter_selection_select_all,
+          onPressed: _selectAllChapters,
+          icon: const FushiIcon(FushiIcons.selectAll),
+        ),
+        if (_bookKey != null)
+          FushiIconButtonControl(
+            key: const ValueKey<String>('manga_chapter_selection_ocr'),
+            tooltip: t.manga_chapter_selection_ocr,
+            onPressed: empty || _busy ? null : () => unawaited(_ocrSelected()),
+            icon: const FushiIcon(FushiIcons.ocr),
+          ),
+        FushiIconButtonControl(
+          key: const ValueKey<String>('manga_chapter_selection_read'),
+          tooltip: t.manga_series_mark_read,
+          onPressed: empty
+              ? null
+              : () => unawaited(_markSelectedRead(read: true)),
+          icon: const FushiIcon(FushiIcons.visibility),
+        ),
+        FushiIconButtonControl(
+          key: const ValueKey<String>('manga_chapter_selection_unread'),
+          tooltip: t.manga_series_mark_unread,
+          onPressed: empty
+              ? null
+              : () => unawaited(_markSelectedRead(read: false)),
+          icon: const FushiIcon(FushiIcons.visibilityOff),
+        ),
+        FushiIconButtonControl(
+          key: const ValueKey<String>('manga_chapter_selection_exit'),
+          tooltip: t.manga_chapter_selection_exit,
+          onPressed: _exitSelection,
+          icon: const FushiIcon(FushiIcons.close),
+        ),
+      ],
+    );
+    return AnimatedSwitcher(
+      duration: fushiMotionDuration(context, FushiMotion.medium),
+      switchInCurve: FushiMotion.enter,
+      switchOutCurve: FushiMotion.exit,
+      transitionBuilder: (Widget child, Animation<double> animation) =>
+          SizeTransition(
+            sizeFactor: animation,
+            axisAlignment: -1,
+            child: FadeTransition(opacity: animation, child: child),
+          ),
+      child: _selecting ? bar : const SizedBox.shrink(),
+    );
   }
 
   /// 标记「这一章及更早的全部」为已读。
@@ -1618,11 +1814,19 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     final String title = _displayTitle;
     // 正文铺到悬浮页头底下（脚手架默认 extendBodyBehindHeader）：封面模糊背景
     // 一直画到窗口顶端，页头只是胶囊。
-    return FushiPageScaffold(
-      // hero 里已有大标题：顶栏标题等它滚出视口再淡入（不同屏重复）。
-      revealTitleAfterScroll: kMediaDetailTitleRevealOffset,
-      title: title,
-      body: _buildBody(context),
+    // 多选态下返回键 / Esc 先退出多选，不直接离开作品页。
+    return PopScope(
+      canPop: !_selecting,
+      onPopInvokedWithResult: (bool didPop, Object? _) {
+        if (!didPop && _selecting) _exitSelection();
+      },
+      child: FushiPageScaffold(
+        // hero 里已有大标题：顶栏标题等它滚出视口再淡入（不同屏重复）。
+        revealTitleAfterScroll: kMediaDetailTitleRevealOffset,
+        title: title,
+        bottomNavigationBar: _buildSelectionBar(context),
+        body: _buildBody(context),
+      ),
     );
   }
 
@@ -1746,6 +1950,26 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
   /// 进行中的反馈落在被刷新的列表上）+ 共享的 [MangaChapterList]（懒建 sliver 形态，
   /// 见 [MangaChapterList.sliver]）。
   Widget _buildChapterList(BuildContext context) {
+    // 区间选 / 全选按可见顺序（排序 + 只看未读之后）；顺序变了锚点作废，底栏
+    // 计数补一帧（与合集详情页同一做法）。
+    final OnlineMangaLibraryEntry? entry = _entry;
+    if (_selection.setVisibleOrder(
+          loose: <String>[
+            for (final OnlineMangaChapter c in MangaChapterList.visibleChapters(
+              chapters: entry?.chapters ?? const <OnlineMangaChapter>[],
+              states: _states,
+              newestFirst: _newestFirst,
+              unreadOnly: _unreadOnly,
+            ))
+              c.key,
+          ],
+          collections: const <int>[],
+        ) &&
+        _selecting) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() {});
+      });
+    }
     return SliverMainAxisGroup(
       slivers: <Widget>[
         if (_refreshing)
@@ -1770,10 +1994,13 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
               ? null
               : () => _jumpToCurrentChapter(context),
           onUnreadOnlyToggled: () => setState(() => _unreadOnly = !_unreadOnly),
-          onChapterTap: (OnlineMangaChapter chapter) {
-            final int index = _entry?.indexOfChapterKey(chapter.key) ?? -1;
-            if (index >= 0) unawaited(_openChapterAt(index));
-          },
+          onChapterTap: (OnlineMangaChapter chapter) =>
+              _onChapterTap(context, chapter),
+          selectedChapterKeys: _selecting ? _selection.looseKeys : null,
+          onChapterSelectGesture: _selectionAvailable
+              ? _onChapterSelectGesture
+              : null,
+          ocrCompletedChapterKeys: _ocrDone,
           onToggleRead: _bookUid == null
               ? null
               : (OnlineMangaChapter chapter) =>

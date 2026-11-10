@@ -104,6 +104,8 @@ import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi/src/media/audiobook/highlight_bridge.dart';
 import 'package:fushi/src/media/audiobook/audiobook_play_bar.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_typography_panel.dart';
+import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_av_sync_panel.dart'
+    show showLyricsAvSyncPanel;
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_speed_panel.dart'
     show showLyricsSpeedPanel;
 import 'package:fushi/src/asr_host/asr_host.dart';
@@ -193,6 +195,7 @@ import 'package:fushi/src/reader/reader_open_trace.dart';
 import 'package:fushi/src/reader/reader_progress_state.dart';
 import 'package:fushi/src/reader/reader_statistics_sheet.dart';
 import 'package:fushi/src/reader/reader_status_footer.dart';
+import 'package:fushi/src/stats/lyrics_read_unit.dart';
 import 'package:fushi/src/stats/read_unit_ledger.dart';
 import 'package:fushi/src/stats/reader_study_clock_start_mode.dart';
 import 'package:fushi/src/stats/study_cover_tracker.dart';
@@ -208,6 +211,7 @@ import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_channel.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_style.dart';
 import 'package:fushi/src/media/audiobook/pointer_seek.dart';
+import 'package:fushi/src/media/audiobook/text_leads_page_stop.dart';
 import 'package:fushi/src/platform/selection_external_actions.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
@@ -2450,6 +2454,14 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   // （_lyricsMode=false，避免直接整页加载歌词 HTML 跳过 EPUB → iOS 白屏），等 EPUB
   // 内容就绪 + 有声书已挂载后再切歌词（等价用户手动切，已知安全）。一次性，恢复后清零。
   bool _pendingLyricsRestore = false;
+
+  /// 歌词模式的阅读位置：当前句所在章 + 章内学习单位偏移（只知道章时偏移为 -1）。
+  /// 歌词模式是独立模式，位置归当前句（`_settleLyricsCue` 每次换句更新），正文的
+  /// `_currentChapter` 停在进歌词那一刻。不在歌词模式时为 null。
+  ({int chapter, int offset})? _lyricsReadingPoint;
+
+  /// 上一次落定过的当前句（`_settleLyricsCue` 去重：同一句只落定一次）。
+  AudioCue? _lyricsSettledCue;
   bool _gamepadALongFired = false;
   // 重入守卫：「调整」面板从点击到 show 之间有 DB 读 await，快速连点会二次进入并
   // 弹出两个面板（BUG-026）。打开期间置 true、关闭后于 finally 复位。
@@ -2493,6 +2505,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       if (!mounted) return;
       // BUG-712 ①：highlightOnTap 是 JS 侧点词门控镜像的另一半，设置热更新时同步。
       _syncTapGateJs();
+      // 「跟随音频的领读方向」是热更新偏好：改完立刻同步给有声书控制器。
+      _syncAudiobookTextLeads();
       setState(() {});
     },
   );
@@ -2515,10 +2529,10 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   List<AudioCue> _lyricsCueList = const [];
 
   // ── 歌词覆盖层（2026-10-04，对齐 Niratan）──────────────────────────────
-  // 歌词模式不再把正文文档换成歌词 HTML：歌词是**盖在阅读器上的一层**，有自己的
-  // WebView（[_lyricsController]）。正文 WebView（[_controller]）在下面照常存活、
-  // 照常跟随音频翻页 / 高亮，阅读统计（账本字数、StudyClock 时长）也照常由正文
-  // 这条路产生——歌词层不写任何统计。
+  // 歌词模式是独立模式（2026-11-10），有自己的 WebView（[_lyricsController]）、
+  // 自己的阅读位置与统计（单元 = 当前句，见 lyrics.part.dart）。正文 WebView
+  // （[_controller]）实例留着但停在进歌词那一刻的位置，不跟随音频、不采样、不记账；
+  // 退出歌词时一次性对齐到当前句。
   //
   // BUG-3913：歌词 WebView 第一次进歌词模式时创建，之后**整页存活期间复用同一个
   // 实例**——退出时不卸载，按 [_lyricsWebViewKey] 停到屏外（[ParkedWebViewSlot]），
@@ -3125,13 +3139,18 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       layoutReload: () {
         if (!mounted) return;
         unawaited(
-          _reloadWithCurrentSettings().catchError((Object e, StackTrace s) {
-            ErrorLogService.instance.log(
-              'ReaderFushi.onLayoutReloadLive',
-              e,
-              s,
-            );
-          }),
+          _reloadWithCurrentSettings()
+              .then((_) {
+                // 切换翻页 / 连续 / VN 后文字领读是否适用跟着变。
+                if (mounted) _syncAudiobookTextLeads();
+              })
+              .catchError((Object e, StackTrace s) {
+                ErrorLogService.instance.log(
+                  'ReaderFushi.onLayoutReloadLive',
+                  e,
+                  s,
+                );
+              }),
         );
       },
       // 纯 Flutter chrome 布局变化（如反转底栏）只需重建一次重读偏好，
@@ -3789,11 +3808,11 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     _stopFollowingScrollDismissPointer();
     _sourceReviewClosed = _sourceReviewActive;
     _sourceReviewSession?.removeListener(_onSourceReviewChanged);
-    // 歌词覆盖层期间本页给控制器挂的「强制跟随」（[_toggleLyricsMode] 进入分支）
+    // 歌词模式期间本页给控制器挂的「正文面脱开」（[_toggleLyricsMode] 进入分支）
     // 必须随页面一起撤：控制器是会话对象，开着后台播放时会比页面活得久，不撤的话
-    // 再开书时用户的「跟随音频=关」会被这个残留覆盖成强制跟随。只在本页确实还在
-    // 歌词层时撤——覆盖层关掉时 [_exitLyricsMode] 已经撤过。
-    if (_lyricsMode) _audiobookController?.setReaderFollowOverride(false);
+    // 再开书时正文不跟随音频、也不跨章。只在本页确实还在歌词模式时撤——退出歌词时
+    // [_exitLyricsMode] 已经撤过。
+    if (_lyricsMode) _audiobookController?.setReaderDetached(false);
     // 可见性是本页喂的；会话比本页活得久，撤掉本页的「后台」判断（BUG-3777 D）。
     _audiobookController?.setReaderVisible(true);
     // 歌词模式插图「弹出停留」挂在控制器上的监听随页面一起摘（控制器比本页活得久）。
@@ -4534,8 +4553,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
                             'floating_ball',
                             _buildReaderFloatingBallScene(),
                           ),
-                          // 歌词覆盖层（盖住正文与顶栏 / 状态行；查词弹层仍在它之上）。
-                          // 正文 WebView 不卸载，照常跟随音频、照常记统计。
+                          // 歌词页（盖住正文与顶栏 / 状态行；查词弹层仍在它之上）。
+                          // 正文 WebView 不卸载（实例复用），歌词模式期间停着不工作。
                           _buildLyricsOverlay(),
                           // BUG-4103：卡片来源回看横幅（含它自己的状态栏那一条），高度与
                           // [_topChromeInset] 同源，正文 / 顶栏 / 弹窗都排在它下沿之下。
