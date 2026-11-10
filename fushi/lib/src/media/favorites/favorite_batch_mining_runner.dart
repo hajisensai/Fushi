@@ -31,6 +31,18 @@ class FavoriteBatchMineOutcome {
   final bool abortBatch;
 }
 
+/// 成功写入的一条在批量列表里附的那句话：音频缺失原因，加上结果带回的提示
+/// （[MineOutcome.notice]，如「保存到」被主机退回默认，BUG-4276）。批量制卡不弹逐张的结果
+/// 提示，这一行就是用户唯一能看到的地方；都没有时 null。
+@visibleForTesting
+String? favoriteBatchAddedMessage(MineOutcome outcome) {
+  final List<String> parts = <String>[
+    for (final String? part in <String?>[outcome.audioWarning, outcome.notice])
+      if (part != null && part.isNotEmpty) part,
+  ];
+  return parts.isEmpty ? null : parts.join('\n');
+}
+
 /// 收藏夹一键制卡的「媒体 + 落卡」执行层：拿到一条收藏和弹窗产出的词典字段后，
 /// 配上句子媒体写进 Anki，并记制卡统计与制卡历史。不碰 UI、不碰 WebView。
 ///
@@ -350,13 +362,12 @@ class FavoriteBatchMiningRunner {
             statTitle: statTitle,
           );
         }
-        final String? warning = outcome.audioWarning;
         return FavoriteBatchMineOutcome(
           FavoriteBatchItemResult(
             status: FavoriteBatchItemStatus.added,
             noteId: outcome.noteId,
             textOnlyReason: textOnlyReason,
-            message: warning == null || warning.isEmpty ? null : warning,
+            message: favoriteBatchAddedMessage(outcome),
           ),
         );
       case MineResult.queued:
