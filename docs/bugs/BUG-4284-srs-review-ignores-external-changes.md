@@ -1,4 +1,4 @@
-## BUG-4276 · 复习页不接收外部变更（同步拉入、操作目录写入、模板编辑器返回），预取命中也认不出笔记 / 模板变化
+## BUG-4284 · 复习页不接收外部变更（同步拉入、操作目录写入、模板编辑器返回），预取命中也认不出笔记 / 模板变化
 - **报告**：2026-11-10（用户：内部审查）
 - **真实性**：✅ 真 bug（沿代码路径核实，widget 测试复现）。打开着的复习页与库不同步：
   - 页面不订阅任何库变化信号。同步拉入只经 `SrsRevisionOrigin.bumpPulled` 推进 `srsRevisionProvider`，操作目录 / AI 写完调 `bumpSrsRevision`（`fushi/lib/src/ops/ctl_srs_routes.dart:51-57` 的注释写着「写完后让打开着的复习页面重读」），但复习页（`fushi/lib/src/pages/implementations/srs/srs_review_page.dart`）全文没有 `ref.listen`，只 watch 显示类偏好。所以别的设备改了当前卡的笔记、AI 改了字段，正在看的卡面一直是旧的。

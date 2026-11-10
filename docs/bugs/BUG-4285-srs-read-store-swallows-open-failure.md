@@ -1,4 +1,4 @@
-## BUG-4277 · readSrsStore 吞掉复习库打开失败：复习页报「排程内核不可用」，操作目录报「复习库还没就绪」
+## BUG-4285 · readSrsStore 吞掉复习库打开失败：复习页报「排程内核不可用」，操作目录报「复习库还没就绪」
 - **报告**：2026-11-10（用户：内部审查）
 - **真实性**：✅ 真 bug，widget 测试已复现。
   - 根因在 `fushi/lib/src/srs/srs_providers.dart` 旧 `:786-793`：`readSrsStore` 捕获 `srsStoreProvider` 的打开异常后只记日志、返回 null。
