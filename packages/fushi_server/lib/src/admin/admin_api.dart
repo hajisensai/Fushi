@@ -336,6 +336,10 @@ class AdminApi {
         );
       case ('GET', '/api/admin/p2p'):
         return _json(ctx.host.p2pStatus());
+      case ('GET', '/api/admin/upload/folders'):
+        return _json(<String, Object?>{
+          'folders': await UploadStore.subfolders(_libraryFor(request)),
+        });
       case ('GET', '/api/admin/upload'):
         return _uploadStatus(request);
       case ('PUT', '/api/admin/upload'):

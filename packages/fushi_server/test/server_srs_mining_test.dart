@@ -9,6 +9,7 @@ import 'package:fushi_server/src/config/server_srs_config.dart';
 import 'package:fushi_server/src/remote_mining_host.dart';
 import 'package:fushi_server/src/server_srs.dart';
 import 'package:path/path.dart' as p;
+import 'package:fushi_server/src/admin/admin_srs.dart';
 import 'package:test/test.dart';
 
 const String kJa = '01928c3e-0000-7000-8000-00000000a0a0';
@@ -252,5 +253,14 @@ void main() {
     await srs.applyConfig();
     expect((await mine('見る'))['result'], 'notConfigured');
     expect(await duplicate('食べる'), isFalse);
+  });
+
+  test('WebUI 牌组建议：AdminSrs.deckNames 给出那份 profile 全部牌组的全名，排序', () async {
+    final SrsDbStore zh = srs.storeFor(kZh)!;
+    final String parent = await zh.createDeck('Mining');
+    await zh.createDeck('Sub', parentId: parent);
+    final List<String> names = await AdminSrs.deckNames(zh);
+    expect(names, containsAll(<String>['Mining', 'Mining::Sub']));
+    expect(names, orderedEquals(<String>[...names]..sort()));
   });
 }

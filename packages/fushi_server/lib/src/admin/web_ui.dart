@@ -444,7 +444,7 @@ table.rt,.rt tbody,.rt tr,.rt td{display:block;width:100%}
 <div class="card"><h2>上传到库</h2>
 <div class="grid">
 <label class="f">库<select id="up-lib"></select></label>
-<label class="f">子目录（可空，如 Season1）<input type="text" id="up-sub"></label>
+<label class="f">子目录（可空，如 Season1）<input type="text" id="up-sub" list="up-sub-list" autocomplete="off"><datalist id="up-sub-list"></datalist></label>
 <label class="f" style="grid-column:1/-1">文件<input type="file" id="up-files" multiple style="height:auto;padding:12px 14px"></label></div>
 <div class="actions"><button class="b" id="btn-up"><svg class="i"><use href="#i-upload"/></svg>开始上传</button><span class="hint">分块 8 MB，可断点续传（同名文件继续）；上传完成后需扫描库。</span></div>
 </div>
@@ -771,7 +771,19 @@ async function loadLibraries(){
   const sel = $('#up-lib'); const cur = sel.value;
   sel.innerHTML = r.libraries.map(l=>`<option value="${esc(l.id)}">${esc(l.id)} — ${esc(l.path)}</option>`).join('');
   if (cur) sel.value = cur;
+  loadUploadFolders();
 }
+// 上传子目录框的建议：所选库根下已有的子目录（取不到就不给建议，照样可手填）。
+async function loadUploadFolders(){
+  const lib = $('#up-lib').value, list = $('#up-sub-list');
+  if (!lib) { list.innerHTML = ''; return; }
+  try {
+    const r = await api('upload/folders?library='+encodeURIComponent(lib));
+    if ($('#up-lib').value !== lib) return;
+    list.innerHTML = (r.folders||[]).map(f=>`<option value="${esc(f)}">`).join('');
+  } catch (e) { list.innerHTML = ''; console.warn('upload folders', e); }
+}
+$('#up-lib').addEventListener('change', loadUploadFolders);
 $('#btn-lib-add').onclick = guard(async()=>{ await post('libraries',{path:$('#lib-path').value, kind:libKind(), id:$('#lib-id').value}); $('#lib-path').value=''; $('#lib-id').value=''; toast(T('已添加')); loadLibraries(); });
 
 // ── 上传 ──
@@ -906,6 +918,14 @@ $('#btn-bt-add').onclick = guard(async()=>{
     renderBtSites(r); renderRiState(r); toast(T('已添加')); loadSubscriptions();
   } finally { $('#btn-bt-add').disabled = false; }
 });
+// Newznab 标准分类里与 Fushi 媒体相关的几个；不在表里的 ID 进「其他」文本框。
+const TORZNAB_CATS = [[2000,T('电影')],[5000,T('剧集')],[5070,T('动画')],[7000,T('书籍')],[7030,T('漫画')],[3030,T('有声书')]];
+function riCatsCtl(cats){
+  const known = new Set(TORZNAB_CATS.map(([id])=>id));
+  const rest = cats.filter(c=>!known.has(Number(c)));
+  return `<div style="grid-column:1/-1"><span class="sup">${esc(T('分类（不选 = 全部）'))}</span><div class="fchips">${TORZNAB_CATS.map(([id,l])=>`<label class="fchip"><input type="checkbox" data-ri-cat="${id}" ${cats.map(Number).includes(id)?'checked':''}><span>${esc(l)} · ${id}</span></label>`).join('')}</div>
+    <label class="f">${esc(T('其他分类 ID（逗号分隔，可空）'))}<input type="text" data-k="categories" value="${esc(rest.join(','))}"></label></div>`;
+}
 function riRow(x){
   const keySet = x.apiKeySet ? ` <span class="muted">${esc(T('(已设置，留空不改)'))}</span>` : '';
   return `<div class="ri-row inset" data-id="${esc(x.id||'')}"><div class="grid" style="margin:0">
@@ -913,7 +933,7 @@ function riRow(x){
     <label class="f">${esc(T('地址（https://…/api；带 ?apikey= 会自动拆进 key 栏）'))}<input type="text" data-k="endpoint" value="${esc(x.endpoint||'')}"></label>
     <label class="f">API key${keySet}<input type="password" data-k="apiKey" value="" autocomplete="off"></label>
     <label class="f">${esc(T('优先级（小的先搜）'))}<input type="number" data-k="priority" value="${esc(x.priority??100)}"></label>
-    <label class="f">${esc(T('分类（逗号分隔，可空）'))}<input type="text" data-k="categories" value="${esc((x.categories||[]).join(','))}"></label></div>
+    ${riCatsCtl(x.categories||[])}</div>
     <div class="row" style="margin-bottom:0">${swLabel('data-k="enabled"', x.enabled!==false, T('启用'))}${swLabel('data-k="allowInsecureHttp"', x.allowInsecureHttp, T('允许明文 HTTP（仅受信任局域网）'))}${x.apiKeySet?swLabel('data-k="clearApiKey"', false, T('清除已存的 key')):''}<span class="sp"></span><button class="b text danger" data-ri-rm>${esc(T('移除'))}</button></div></div>`;
 }
 function bindRiRemove(){ $('#ri-torznab').querySelectorAll('[data-ri-rm]').forEach(b=>b.onclick=()=>b.closest('.ri-row').remove()); }
@@ -933,7 +953,7 @@ $('#btn-ri-save').onclick = guard(async()=>{
     if (pr!=='' && !/^-?\d+$/.test(pr)) throw new Error(T('第 {0} 个 indexer 的优先级必须是整数', i+1));
     const clear = v('clearApiKey');
     return {id: row.dataset.id || undefined, name: v('name').value, endpoint: v('endpoint').value, apiKey: v('apiKey').value, clearApiKey: clear ? clear.checked : false,
-      priority: pr==='' ? undefined : Number(pr), categories: v('categories').value, enabled: v('enabled').checked, allowInsecureHttp: v('allowInsecureHttp').checked};
+      priority: pr==='' ? undefined : Number(pr), categories: [...Array.from(row.querySelectorAll('[data-ri-cat]:checked')).map(c=>c.dataset.riCat), ...v('categories').value.split(',').map(t=>t.trim()).filter(Boolean)].join(','), enabled: v('enabled').checked, allowInsecureHttp: v('allowInsecureHttp').checked};
   });
   $('#btn-ri-save').disabled=true;
   try { const r = await put('resource-indexers', {torznab}); renderIndexers(r); toast(r.applied ? T('已保存并生效') : T('已保存')); loadSubscriptions(); }
@@ -1084,8 +1104,13 @@ async function loadSrs(){
   $('#srs-mining').innerHTML = `<p class="sup" style="margin:0">${esc(T('已配对设备「制卡到已配对设备」时卡片落到哪。手机可以在自己的设置里另选；没选时，手机当前的配置文件本机有就落进那份，否则落进默认那份。'))}</p>
     <div class="grid"><label class="f">${esc(T('落到'))}<select id="srs-target">${[['auto',T('自动（没配好 Anki 时进复习）')],['review',T('Fushi 复习')],['anki','Anki']].map(([v,l])=>`<option value="${v}" ${cfg.miningTarget===v?'selected':''}>${esc(l)}</option>`).join('')}</select></label>
     <label class="f">${esc(T('换日时刻'))}<select id="srs-rollover">${Array.from({length:24},(_,h)=>`<option value="${h}" ${h===Number(cfg.rolloverHour)?'selected':''}>${String(h).padStart(2,'0')}:00</option>`).join('')}</select></label>
-    ${servedList.map(p=>`<label class="f">${esc(T('{0} 的制卡牌组（空 = 默认牌组）', p.name||p.uid))}<input data-srs-deck="${esc(p.uid)}" value="${esc((cfg.miningDecks||{})[p.uid]||'')}"></label>`).join('')}</div>
+    ${servedList.map(p=>`<label class="f">${esc(T('{0} 的制卡牌组（空 = 默认牌组）', p.name||p.uid))}<input data-srs-deck="${esc(p.uid)}" list="srs-decks-${esc(p.uid)}" autocomplete="off" value="${esc((cfg.miningDecks||{})[p.uid]||'')}"><datalist id="srs-decks-${esc(p.uid)}"></datalist></label>`).join('')}</div>
     <div class="actions"><button class="b" id="btn-srs-save">${esc(T('保存'))}</button></div>`;
+  // 牌组框的建议：各份 profile 已有的牌组（取不到就不给建议，照样可手填新牌组名）。
+  servedList.forEach(p=>api('srs/decks?profile='+encodeURIComponent(p.uid)).then(r=>{
+    const dl = document.getElementById('srs-decks-'+p.uid);
+    if (dl) dl.innerHTML = (r.decks||[]).map(d=>`<option value="${esc(d)}">`).join('');
+  }, e=>console.warn('srs decks', e)));
   $('#btn-srs-save').onclick = guard(async()=>{
     const miningDecks = {}; document.querySelectorAll('[data-srs-deck]').forEach(el=>{ if(el.value.trim()) miningDecks[el.dataset.srsDeck]=el.value.trim(); });
     await put('srs', {miningTarget: $('#srs-target').value, rolloverHour: parseInt($('#srs-rollover').value,10), miningDecks});

@@ -7,6 +7,7 @@
 ///                                   那几份，空串 = 删掉那一项）、`ankiConnect: {enabled, bind, port, apiKey,
 ///                                   profileKeys, corsOrigins}`；
 /// - `GET  /api/admin/srs/profiles`  同步目录里能选的 profile（名字、设备、笔记数、是否已提供）；
+/// - `GET  /api/admin/srs/decks?profile=<uid>`  那份已提供 profile 的牌组全名（WebUI 制卡牌组框的建议）；
 /// - `POST /api/admin/srs/sync`      立即同步（正文 `{"profile": uid}` 只同步那份）。
 ///
 /// AnkiConnect 的 key 是凭据：读的时候只报「设没设」，不回显；写的时候空串 = 清掉，不给 = 不动。
@@ -14,8 +15,10 @@ library;
 
 import 'dart:convert';
 
+import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_profile_link.dart';
 import 'package:fushi_server/src/admin/admin_context.dart';
+import 'package:fushi_srs/fushi_srs.dart' show SrsDeckTree, SrsDeckView;
 import 'package:fushi_server/src/config/server_config.dart';
 import 'package:fushi_server/src/config/server_srs_config.dart';
 import 'package:fushi_server/src/server_ankiconnect.dart';
@@ -46,6 +49,12 @@ class AdminSrs {
         return _put(await _body(request));
       case ('GET', '$kAdminSrsPath/profiles'):
         return _json(<String, Object?>{'profiles': await profiles()});
+      case ('GET', '$kAdminSrsPath/decks'):
+        final SrsDbStore? store = ctx.host.srs?.storeFor(
+          request.url.queryParameters['profile'],
+        );
+        if (store == null) return _err(404, 'profile_not_served');
+        return _json(<String, Object?>{'decks': await deckNames(store)});
       case ('POST', '$kAdminSrsPath/sync'):
         final Object? uid = (await _body(request))['profile'];
         final ServerSrs? srs = ctx.host.srs;
@@ -57,6 +66,13 @@ class AdminSrs {
         return _json(status());
     }
     return null;
+  }
+
+  /// [store] 里全部牌组的全名（`父::子`），排序。
+  static Future<List<String>> deckNames(SrsDbStore store) async {
+    final SrsDeckTree tree = await store.deckTree();
+    return <String>[for (final SrsDeckView d in tree.decks) tree.fullName(d.id)]
+      ..sort();
   }
 
   /// `GET /api/admin/srs` 的回包（`ctl srs status` 也用它）。

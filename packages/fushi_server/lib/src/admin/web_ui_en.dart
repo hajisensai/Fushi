@@ -244,7 +244,8 @@ const Map<String, String> kWebUiEnglish = <String, String>{
   '地址（https://…/api；带 ?apikey= 会自动拆进 key 栏）':
       'Address (https://…/api; a ?apikey= part moves into the key field)',
   '优先级（小的先搜）': 'Priority (lower is searched first)',
-  '分类（逗号分隔，可空）': 'Categories (comma-separated, optional)',
+  '分类（不选 = 全部）': 'Categories (none selected = all)',
+  '其他分类 ID（逗号分隔，可空）': 'Other category IDs (comma-separated, optional)',
   '清除已存的 key': 'Clear the stored key',
   // ── 在线字幕来源 ──
   '在线字幕来源': 'Online subtitle sources',
