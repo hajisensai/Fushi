@@ -4,6 +4,7 @@ import 'dart:convert' show jsonDecode;
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter/foundation.dart';
 import 'package:fushi/src/models/dictionary_repository.dart';
+import 'package:fushi/src/profile/remote_dictionary_profile_meta.dart';
 import 'package:fushi/src/sync/interconnect_post_transport.dart';
 import 'package:fushi/src/sync/remote_dictionary_reachability.dart';
 import 'package:fushi/src/sync/sync_backend.dart' show SyncAuthError;
@@ -46,7 +47,8 @@ class RemoteDictionaryCatalogDiff {
 /// 对每台开着「用这台服务器查词典」（[FushiClientUrl.lookupEnabled]）的已配对 host
 /// 拉一次 [kRemoteDictionaryCatalogPath]，与本机目录行对账（[reconcileHost]）：
 /// * 新出现 → 插一行，开关取 host 的默认开关（[RemoteDictionaryInfo.defaultEnabled]，
-///   缺省 = 启用），顺序接在全部已有词典（本机 + 服务器）之后；
+///   缺省 = 启用），顺序接在全部已有词典（本机 + 服务器）之后；激活配置快照里已有
+///   这本、或本机有同名词典时先用它们（优先级见 [reconcileHost]）；
 /// * 消失 → 记 `missingSince`，行与各配置的顺序 / 开关都留着；
 /// * 消失后又回来 → 清 `missingSince`；
 /// * 目录字段（版本 / 显示名 / 语言 …）变化 → 只更新目录列，配置列不动；
@@ -283,10 +285,6 @@ class RemoteDictionaryCatalogService {
     ]..removeWhere((RemoteDictionaryInfo info) => info.name.isEmpty);
   }
 
-  /// 把 [hostId] 的一份完整清单 [infos] 对账进目录表（一个事务），返回差异。
-  ///
-  /// 静态、只碰库：同步编排的词典阶段已经拉了连接中那台 host 的清单，直接交给这里，
-  /// 不用再持有服务实例。真正改了行就 bump [catalogRevision]。
   /// 本机 `dictionary_metadata.hiddenLanguagesJson` 是否含 `ja`（= 本机这本词典已关掉，
   /// 与 `Dictionary.isHidden(JapaneseLanguage.instance)` 同一判据）。坏 JSON 当没关。
   static bool _hiddenLanguagesContainJa(String raw) {
@@ -298,6 +296,17 @@ class RemoteDictionaryCatalogService {
     }
   }
 
+  /// 把 [hostId] 的一份完整清单 [infos] 对账进目录表（一个事务），返回差异。
+  ///
+  /// 静态、只碰库：同步编排的词典阶段已经拉了连接中那台 host 的清单，直接交给这里，
+  /// 不用再持有服务实例。真正改了行就 bump [catalogRevision]。
+  ///
+  /// 新行的顺序 / 开关按优先级取：
+  /// 1. 激活配置快照里的 `<hostId>/<真名>`（BUG-4276）——配置从服务器拉下来 / 恢复 /
+  ///    导入后先应用、目录后到，或配对时配置早已激活，应用那一刻还没有这一行可写；
+  ///    这里补上，配置的选择不必等到下一次切换才生效；
+  /// 2. 本机同名词典（刚推送上去的那本，落在本机行的位置、沿用本机开关）；
+  /// 3. host 的默认开关，顺序接在全部已有词典之后。
   static Future<RemoteDictionaryCatalogDiff> reconcileHost(
     FushiDatabase db, {
     required String hostId,
@@ -322,6 +331,10 @@ class RemoteDictionaryCatalogService {
         if (r.order >= nextOrder) nextOrder = r.order + 1;
         localByName[r.name] = r;
       }
+      // 激活配置的快照只在切走时刷新，可能比 live 行旧（设计如此）；但新行此刻还没有
+      // 任何 live 值，快照就是这本词典在当前配置下最好的信息。已有行绝不按它改。
+      final Map<String, RemoteDictionaryProfileColumns> profileColumns =
+          await activeProfileRemoteDictionaryColumns(db, hostId);
       for (final RemoteDictionaryMetaRow r
           in await db.getAllRemoteDictionaryMetadata()) {
         if (r.order >= nextOrder) nextOrder = r.order + 1;
@@ -333,9 +346,16 @@ class RemoteDictionaryCatalogService {
       for (final RemoteDictionaryInfo info in infos) {
         if (info.name.isEmpty || !seen.add(info.name)) continue;
         final RemoteDictionaryMetaRow? row = existing[info.name];
-        final DictionaryMetaRow? local = row == null
+        final RemoteDictionaryProfileColumns? fromProfile = row == null
+            ? profileColumns[info.name]
+            : null;
+        final DictionaryMetaRow? local = row == null && fromProfile == null
             ? localByName[info.name]
             : null;
+        // 快照给的顺序可能落在末尾之后：之后接在末尾的新行要排在它后面，不撞号。
+        if (fromProfile != null && fromProfile.order >= nextOrder) {
+          nextOrder = fromProfile.order + 1;
+        }
         if (row == null) {
           added.add(info.name);
         } else if (row.missingSince != null) {
@@ -353,16 +373,22 @@ class RemoteDictionaryCatalogService {
             lastSeenAt: Value<int>(now),
             missingSince: const Value<int?>(null),
             // 只在插入新行时生效；已有行的顺序 / 开关属于配置，upsert 不碰。
-            // 本机已有同名词典（刚推送上去的）⇒ 新行沿用本机行的位置；否则接在末尾。
-            order: Value<int>(row?.order ?? local?.order ?? nextOrder++),
-            // 新行的开关：本机有同名词典 ⇒ 沿用本机开关；否则按 host 自己的默认开关
-            // 初始化（host 默认关 ⇒ 本机也先关）；老 host 不发 defaultEnabled ⇒ 启用。
-            // 已有行绝不改。
+            // 激活配置快照有这本 ⇒ 用快照的位置；本机已有同名词典（刚推送上去的）⇒
+            // 沿用本机行的位置；否则接在末尾。
+            order: Value<int>(
+              row?.order ?? fromProfile?.order ?? local?.order ?? nextOrder++,
+            ),
+            // 新行的开关：快照 ⇒ 快照的开关；本机有同名词典 ⇒ 沿用本机开关；否则按
+            // host 自己的默认开关初始化（host 默认关 ⇒ 本机也先关）；老 host 不发
+            // defaultEnabled ⇒ 启用。已有行绝不改。
             hidden: row == null
                 ? Value<bool>(
-                    local != null
-                        ? _hiddenLanguagesContainJa(local.hiddenLanguagesJson)
-                        : info.defaultEnabled == false,
+                    fromProfile?.hidden ??
+                        (local != null
+                            ? _hiddenLanguagesContainJa(
+                                local.hiddenLanguagesJson,
+                              )
+                            : info.defaultEnabled == false),
                   )
                 : const Value<bool>.absent(),
           ),

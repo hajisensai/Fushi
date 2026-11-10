@@ -15,6 +15,7 @@ import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/profile/language_binding.dart';
 import 'package:fushi/src/profile/profile_keys.dart';
 import 'package:fushi/src/profile/profile_settings_view.dart';
+import 'package:fushi/src/profile/remote_dictionary_profile_meta.dart';
 import 'package:fushi/src/sync/backup_path_rebase.dart'
     show rebaseFontCatalogJson, rebaseFontListJson;
 import 'package:fushi/src/sync/pref_redaction_policy.dart';
@@ -27,6 +28,9 @@ import 'package:fushi/src/sync/sync_repository.dart'
 // 分享 JSON 的模型与异常已下沉引擎（服务端共用），这里转出，调用方 import 不变。
 export 'package:fushi_engine/profile/profile_document.dart'
     show ProfileExport, ProfileImportException, ProfileSettingEntry;
+// 服务器词典快照 key 的编解码搬到了独立文件（目录对账也要用，BUG-4276），这里转出。
+export 'package:fushi/src/profile/remote_dictionary_profile_meta.dart'
+    show remoteDictionaryProfileKey, remoteDictionaryHostIdOfProfileKey;
 
 /// 导入模式：新建一个 Profile（默认，重名加后缀），或覆盖一个已有 Profile。
 enum ProfileImportMode { createNew, overwrite }
@@ -198,7 +202,7 @@ class ProfileRepository {
     final Map<String, DictionaryMetadataCompanion> dictMetaMap =
         snapshot.dictMetaMap;
     final bool hasDictMeta = snapshot.hasDictMeta;
-    final Map<String, _RemoteDictionaryProfileColumns> remoteDictMetaMap =
+    final Map<String, RemoteDictionaryProfileColumns> remoteDictMetaMap =
         snapshot.remoteDictMetaMap;
 
     // Wrap DB writes in transaction for consistency
@@ -263,9 +267,13 @@ class ProfileRepository {
         }
       }
       // v149：服务器托管词典只写回**已有**目录行的顺序 / 开关。命中 0 行 = 本机目录
-      // 里没有这本（host 换了 / 配置来自别的设备）：跳过，绝不插行——目录只由刷新建立，
-      // 快照不知道 host 上有什么。快照里没有的目录行保持 live 值（与本机词典同口径）。
-      for (final _RemoteDictionaryProfileColumns columns
+      // 里没有这本（host 换了 / 配置来自别的设备 / 目录还没拉过）：跳过，绝不插行——
+      // 目录只由刷新建立，快照不知道 host 上有什么。这本之后在刷新里第一次出现时，
+      // 对账插行会先读激活配置的这份快照（BUG-4276，见
+      // `RemoteDictionaryCatalogService.reconcileHost`），所以配置的选择不必等到下一次
+      // 切换才生效；之后再应用同一配置写的是同一对值，不会互相打架。快照里没有的
+      // 目录行保持 live 值（与本机词典同口径）。
+      for (final RemoteDictionaryProfileColumns columns
           in remoteDictMetaMap.values) {
         await _db.setRemoteDictionaryProfileColumns(
           hostId: columns.hostId,
@@ -683,8 +691,8 @@ class ProfileRepository {
     final Map<String, DictionaryMetadataCompanion> dictMetaMap =
         <String, DictionaryMetadataCompanion>{};
     bool hasDictMeta = false;
-    final Map<String, _RemoteDictionaryProfileColumns> remoteDictMetaMap =
-        <String, _RemoteDictionaryProfileColumns>{};
+    final Map<String, RemoteDictionaryProfileColumns> remoteDictMetaMap =
+        <String, RemoteDictionaryProfileColumns>{};
     for (final row in rows) {
       switch (row.category) {
         case ProfileKeys.categoryAnki:
@@ -703,8 +711,8 @@ class ProfileRepository {
           if (companion != null) dictMetaMap[row.key] = companion;
         case ProfileKeys.categoryRemoteDictionaryMeta:
           // 坏行跳过（同上），不中断整次应用。
-          final _RemoteDictionaryProfileColumns? columns =
-              _decodeRemoteDictionaryMeta(row.key, row.value);
+          final RemoteDictionaryProfileColumns? columns =
+              decodeRemoteDictionaryProfileColumns(row.key, row.value);
           if (columns != null) remoteDictMetaMap[row.key] = columns;
         // Legacy categories from old snapshots
         case ProfileKeys.categoryDictionary:
@@ -735,32 +743,6 @@ class ProfileRepository {
       dictMetaMap: dictMetaMap,
       hasDictMeta: hasDictMeta,
       remoteDictMetaMap: remoteDictMetaMap,
-    );
-  }
-
-  /// 解码一行 [ProfileKeys.categoryRemoteDictionaryMeta] 快照；key 切不出 host / 真名、
-  /// value 不是 `{order:int, hidden:bool}` 时返回 null（跳过这一行）。
-  static _RemoteDictionaryProfileColumns? _decodeRemoteDictionaryMeta(
-    String key,
-    String value,
-  ) {
-    final String? hostId = remoteDictionaryHostIdOfProfileKey(key);
-    if (hostId == null) return null;
-    final Object? decoded;
-    try {
-      decoded = jsonDecode(value);
-    } on FormatException {
-      return null;
-    }
-    if (decoded is! Map) return null;
-    final Object? order = decoded['order'];
-    final Object? hidden = decoded['hidden'];
-    if (order is! int || hidden is! bool) return null;
-    return (
-      hostId: hostId,
-      name: key.substring(hostId.length + 1),
-      order: order,
-      hidden: hidden,
     );
   }
 
@@ -850,7 +832,7 @@ class ProfileRepository {
   /// [live] 目录行换上快照里配置拥有的顺序 / 开关；快照没有这一行时原样返回。
   static RemoteDictionaryMetaRow _withProfileRemoteDictionaryColumns(
     RemoteDictionaryMetaRow live,
-    _RemoteDictionaryProfileColumns? columns,
+    RemoteDictionaryProfileColumns? columns,
   ) => columns == null
       ? live
       : live.copyWith(order: columns.order, hidden: columns.hidden);
@@ -1020,25 +1002,5 @@ typedef _DecodedProfileSnapshot = ({
   Map<String, String> prefMap,
   Map<String, DictionaryMetadataCompanion> dictMetaMap,
   bool hasDictMeta,
-  Map<String, _RemoteDictionaryProfileColumns> remoteDictMetaMap,
+  Map<String, RemoteDictionaryProfileColumns> remoteDictMetaMap,
 });
-
-/// 一行 [ProfileKeys.categoryRemoteDictionaryMeta] 快照解出的配置列。
-typedef _RemoteDictionaryProfileColumns = ({
-  String hostId,
-  String name,
-  int order,
-  bool hidden,
-});
-
-/// [ProfileKeys.categoryRemoteDictionaryMeta] 快照行的 key：`<hostId>/<真名>`。
-/// 真名是目录名、不含 `/`，解码按最后一个 `/` 切（hostId 可能是带 `/` 的 origin）。
-String remoteDictionaryProfileKey(String hostId, String name) => '$hostId/$name';
-
-/// [remoteDictionaryProfileKey] 的反向：切出 hostId；切不出（无 `/`、host 或真名为空）
-/// 返回 null。
-String? remoteDictionaryHostIdOfProfileKey(String key) {
-  final int slash = key.lastIndexOf('/');
-  if (slash <= 0 || slash == key.length - 1) return null;
-  return key.substring(0, slash);
-}

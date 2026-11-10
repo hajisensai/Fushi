@@ -7,6 +7,8 @@ import 'package:fushi/src/sync/interconnect_post_transport.dart';
 import 'package:fushi/src/sync/remote_dictionary_catalog_service.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/profile/profile_document.dart'
+    show kProfileSettingCategoryRemoteDictionaryMeta;
 import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show RemoteDictionaryInfo;
 import 'package:http/http.dart' as http;
@@ -95,6 +97,108 @@ void main() {
       // 真正的新服务端词典 N：照旧接在全部已有词典之后、默认启用。
       expect(live['h1/N']!.order, 10);
       expect(live['h1/N']!.hidden, isFalse);
+    });
+
+    /// 建一个激活配置，快照里放 [entries]（key `<hostId>/<真名>` → {order, hidden}）。
+    Future<int> activeProfileWith(Map<String, (int, bool)> entries) async {
+      final int profileId = await db.insertProfile(
+        ProfilesCompanion.insert(name: 'P', createdAt: 0, updatedAt: 0),
+      );
+      await db.setPref('active_profile_id', '$profileId');
+      for (final MapEntry<String, (int, bool)> e in entries.entries) {
+        await db.upsertProfileSetting(
+          ProfileSettingsCompanion.insert(
+            profileId: profileId,
+            category: kProfileSettingCategoryRemoteDictionaryMeta,
+            key: e.key,
+            value: jsonEncode(<String, Object>{
+              'order': e.value.$1,
+              'hidden': e.value.$2,
+            }),
+          ),
+        );
+      }
+      return profileId;
+    }
+
+    test('BUG-4276：激活配置快照有这本 ⇒ 新行取快照的顺序与开关（压过本机同名与 host 默认）', () async {
+      await db.upsertDictionaryMeta(
+        const DictionaryMetadataCompanion(
+          name: Value<String>('L'),
+          formatKey: Value<String>('yomichan'),
+          order: Value<int>(3),
+          hiddenLanguagesJson: Value<String>('[]'),
+        ),
+      );
+      final int profileId = await activeProfileWith(<String, (int, bool)>{
+        // 本机同名 L 是 order 3、开着；快照说 order 1、关着 ⇒ 快照赢。
+        'h1/L': (1, true),
+        // host 默认关；快照说开着、排第 0 ⇒ 快照赢。
+        'h1/Off': (0, false),
+        // host 默认开；快照说关着、排在很后面。
+        'h1/On': (20, true),
+        // 别的 host 的同名条目不串。
+        'h2/N': (0, true),
+      });
+      // 坏行跳过。
+      await db.upsertProfileSetting(
+        ProfileSettingsCompanion.insert(
+          profileId: profileId,
+          category: kProfileSettingCategoryRemoteDictionaryMeta,
+          key: 'h1/Bad',
+          value: 'not json',
+        ),
+      );
+      await RemoteDictionaryCatalogService.reconcileHost(
+        db,
+        hostId: 'h1',
+        infos: <RemoteDictionaryInfo>[
+          info('L'),
+          info('Off', defaultEnabled: false),
+          info('On', defaultEnabled: true),
+          info('N'),
+          info('Bad', defaultEnabled: false),
+        ],
+        now: 1,
+      );
+      final Map<String, RemoteDictionaryMetaRow> live = await rows();
+      expect(live['h1/L']!.order, 1);
+      expect(live['h1/L']!.hidden, isTrue);
+      expect(live['h1/Off']!.order, 0);
+      expect(live['h1/Off']!.hidden, isFalse);
+      expect(live['h1/On']!.order, 20);
+      expect(live['h1/On']!.hidden, isTrue);
+      // 快照里没有（只有 h2 的同名）⇒ 照旧：接在末尾（排在快照给的 20 之后）、默认启用。
+      expect(live['h1/N']!.order, 21);
+      expect(live['h1/N']!.hidden, isFalse);
+      // 坏行当没有：按 host 默认关、接在末尾。
+      expect(live['h1/Bad']!.order, 22);
+      expect(live['h1/Bad']!.hidden, isTrue);
+    });
+
+    test('BUG-4276：快照只播种新行，已有行的配置列不被它改', () async {
+      await RemoteDictionaryCatalogService.reconcileHost(
+        db,
+        hostId: 'h1',
+        infos: <RemoteDictionaryInfo>[info('A')],
+        now: 1,
+      );
+      await db.setRemoteDictionaryProfileColumns(
+        hostId: 'h1',
+        name: 'A',
+        order: 7,
+        hidden: false,
+      );
+      await activeProfileWith(<String, (int, bool)>{'h1/A': (0, true)});
+      await RemoteDictionaryCatalogService.reconcileHost(
+        db,
+        hostId: 'h1',
+        infos: <RemoteDictionaryInfo>[info('A')],
+        now: 2,
+      );
+      final RemoteDictionaryMetaRow row = (await rows())['h1/A']!;
+      expect(row.order, 7);
+      expect(row.hidden, isFalse);
     });
 
     test('刷新保留配置列；目录列（版本）照常更新', () async {

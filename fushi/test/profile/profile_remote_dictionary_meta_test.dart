@@ -6,10 +6,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/profile/profile_keys.dart';
 import 'package:fushi/src/profile/profile_repository.dart';
 import 'package:fushi/src/profile/profile_settings_view.dart';
+import 'package:fushi/src/sync/remote_dictionary_catalog_service.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/profile/profile_document.dart'
     show kProfileSettingCategoryRemoteDictionaryMeta;
+import 'package:fushi_engine/sync/fushi_library_host_service.dart'
+    show RemoteDictionaryInfo;
 
 import '../helpers/fake_anki_repository.dart';
 
@@ -232,6 +235,58 @@ void main() {
           .toSet(),
       <String>{'h1/Daijirin', 'h1/Meikyo'},
     );
+  });
+
+  test('BUG-4276：导入的配置在目录拉到之前应用，目录随后对账出的新行就带上它的选择', () async {
+    // 别的设备上的配置：大辞林关、排第 4；明镜开着、排第 0。
+    await setLive('h1', 'Daijirin', 4, true);
+    await setLive('h1', 'Meikyo', 0, false);
+    await repo.snapshotCurrentSettings(profileB);
+    final String json = await repo.exportProfileToJson(profileB);
+
+    // 本机还没拉过 h1 的目录（全新设备 / 刚配对）。
+    await db.deleteRemoteDictionariesForHost('h1');
+    expect(
+      (await rows()).keys.where((String k) => k.startsWith('h1/')),
+      isEmpty,
+    );
+
+    final int imported = await repo.importProfileFromJson(json);
+    await repo.setActiveProfileId(imported);
+    await repo.applyProfile(imported);
+    // 应用不插行（目录只由刷新建立）。
+    expect(
+      (await rows()).keys.where((String k) => k.startsWith('h1/')),
+      isEmpty,
+    );
+
+    // 目录随后到：h1 默认关掉明镜、默认开着大辞林——配置的选择压过 host 默认。
+    await RemoteDictionaryCatalogService.reconcileHost(
+      db,
+      hostId: 'h1',
+      infos: const <RemoteDictionaryInfo>[
+        RemoteDictionaryInfo(name: 'Daijirin', type: 'term'),
+        RemoteDictionaryInfo(
+          name: 'Meikyo',
+          type: 'term',
+          defaultEnabled: false,
+        ),
+      ],
+      now: 2,
+    );
+    Map<String, RemoteDictionaryMetaRow> live = await rows();
+    expect(live['h1/Daijirin']!.order, 4);
+    expect(live['h1/Daijirin']!.hidden, isTrue);
+    expect(live['h1/Meikyo']!.order, 0);
+    expect(live['h1/Meikyo']!.hidden, isFalse);
+
+    // 之后再应用同一配置写的是同一对值，不打架。
+    await repo.applyProfile(imported);
+    live = await rows();
+    expect(live['h1/Daijirin']!.order, 4);
+    expect(live['h1/Daijirin']!.hidden, isTrue);
+    expect(live['h1/Meikyo']!.order, 0);
+    expect(live['h1/Meikyo']!.hidden, isFalse);
   });
 
   test('isRemoteDictionaryPseudoHostId：只有地址形的 id 算伪 id', () {

@@ -1,0 +1,7 @@
+## BUG-4276 · 先应用配置、后拉到服务器词典目录时，配置里的服务器词典顺序 / 开关不生效（要切走再切回才生效）
+- **报告**：2026-11-10（服务端词典按配置分开的分支自查，读代码确认）
+- **真实性**：✅ 真 bug。配置从服务器拉下来 / 从备份恢复 / 导入后，在本机还没拉过那台服务器词典目录时就被应用；或者配对时这份配置早已激活。此时目录里还没有这些行，`ProfileRepository.applyProfile`（原 `fushi/lib/src/profile/profile_repository.dart:269`）按设计只写回**已有**目录行、从不插行；目录随后到时，`RemoteDictionaryCatalogService.reconcileHost`（原 `fushi/lib/src/sync/remote_dictionary_catalog_service.dart:339` 插新行分支、`:357` 定顺序）只看本机同名词典与 host 默认开关，完全不读激活配置的快照。结果新行停在默认值，配置对这些服务器词典的选择只在下一次切到这份配置时才生效，用户不会知道要切走再切回。
+  - **根因**：「新目录行的初始配置列」只有对账一个写入点，而它不知道激活配置；配置快照对一行目录行的唯一作用点是 apply，apply 时行还不存在。
+- **[x] ① 已修复** — `remote_dictionary_meta` 快照的 key / value 编解码与类型下沉到新文件 `fushi/lib/src/profile/remote_dictionary_profile_meta.dart`（`decodeRemoteDictionaryProfileColumns` 为唯一解析点，`ProfileRepository` 改用它并转出 key 助手），新增 `activeProfileRemoteDictionaryColumns(db, hostId)`（经 `FushiDatabase.resolveActiveProfileId` + `getProfileSettings` 读激活配置快照）。`reconcileHost` 插新行时按优先级取顺序 / 开关：激活配置快照 → 本机同名词典（推送后的那本） → host 默认 + 接在末尾；快照给的顺序越过末尾时把后续追加行的起点推到它之后，不撞号。已有行仍绝不按快照改。激活配置的快照只在切走时刷新、可能比 live 旧，但新行此刻没有 live 值，快照就是最好的信息；之后再应用同一配置写的是同一对值，不打架。提交：（待提交）
+- **[x] ② 已加自动化测试** — `fushi/test/sync/remote_dictionary_catalog_service_test.dart`（快照压过本机同名与 host 默认、别的 host 的同名条目不串、坏行当没有、追加行排在快照顺序之后；快照只播种新行、已有行不改）、`fushi/test/profile/profile_remote_dictionary_meta_test.dart`（导入配置 → 目录为空时应用 → 对账：新行带上导入的选择，无需第二次应用；再应用同一配置值不变）。
+- **备注**：推送路径（`runSingleDictionaryTransfer` → `reconcileHost`）在快照没有该条目时行为不变（沿用本机行位置与开关）；快照有该条目（这本以前就在这台 host 上、行被删过）时以配置为准。
