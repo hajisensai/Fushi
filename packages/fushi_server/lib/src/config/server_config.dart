@@ -7,6 +7,7 @@ library;
 
 import 'dart:io';
 
+import 'package:fushi_engine/sync/fushi_sync_server.dart' show FushiListenScope;
 import 'package:fushi_engine/sync/pairing/fushi_pairing_protocol.dart'
     show FushiAddressRangeSet;
 import 'package:fushi_server/src/config/server_ai_config.dart';
@@ -30,6 +31,36 @@ String unsupportedLibraryKindMessage(String kind) => kind == 'music'
     ? 'kind "music" is not supported by fushi_server yet (music libraries are deferred; '
           'see docs/agent/server-parity-gaps.md); supported: ${kServerLibraryRootKinds.join(' / ')}'
     : 'unsupported kind "$kind"; supported: ${kServerLibraryRootKinds.join(' / ')}';
+
+/// `bind` 配置值 → 互联监听范围（互联 host 与 AnkiConnect 监听的「是否只听本机」判据
+/// 都从这里出，只此一份）：
+/// - 空、`0.0.0.0`、`::` → [FushiListenScope.lan]（与升级前逐字相同；`::` 不映射成
+///   双栈，免得明文部署在全局 IPv6 上暴露）；
+/// - `localhost`、`127.0.0.1` → [FushiListenScope.loopbackV4]（`localhost` 不交给系统
+///   解析——部分系统先解析成 `::1`，127.0.0.1 上的反代会断）；
+/// - 其他 IP 字面量（`::1`、`127.0.0.2`、具体网卡地址）→ [FushiListenScope.exact]；
+/// - 其余（主机名）→ [FushiListenScope.lan] 并带 [warning]，由调用方打日志。
+({FushiListenScope scope, String? warning}) parseBindSetting(String bind) {
+  final String value = bind.trim();
+  final String lower = value.toLowerCase();
+  if (value.isEmpty || value == '0.0.0.0' || value == '::') {
+    return (scope: const FushiListenScope.lan(), warning: null);
+  }
+  if (lower == 'localhost' || value == '127.0.0.1') {
+    return (scope: const FushiListenScope.loopbackV4(), warning: null);
+  }
+  final InternetAddress? address = InternetAddress.tryParse(value);
+  if (address != null) {
+    return (scope: FushiListenScope.exact(address), warning: null);
+  }
+  return (
+    scope: const FushiListenScope.lan(),
+    warning: tr(
+      'bind 只接受 IP 字面量或 localhost，`$value` 按 0.0.0.0 处理',
+      'bind only accepts an IP literal or localhost; treating `$value` as 0.0.0.0',
+    ),
+  );
+}
 
 /// 一条扫描根：服务端库的来源目录。
 class LibraryRootConfig {

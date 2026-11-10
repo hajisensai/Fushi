@@ -17,6 +17,8 @@
 /// ```
 library;
 
+import 'package:fushi_server/src/config/server_config.dart'
+    show parseBindSetting;
 import 'package:fushi_server/src/server_language.dart';
 
 /// 互联制卡默认落到哪：[auto] = 选了复习库且没配 Anki 落地时进复习，否则进 Anki（老的 Anki 落地用户不变）。
@@ -166,8 +168,9 @@ class ServerAnkiConnectConfig {
   bool get hasAnyKey =>
       apiKey.isNotEmpty || profileKeys.values.any((String k) => k.isNotEmpty);
 
+  /// 与互联监听同一份判据（[parseBindSetting]）：`::1`、`127.0.0.2` 等回环字面量也算。
   static bool isLoopback(String bind) =>
-      bind == '127.0.0.1' || bind == 'localhost' || bind == '::1';
+      parseBindSetting(bind).scope.isLoopbackOnly;
 
   /// 不能起监听的原因（null = 可以起）：非回环却没有 key / key 重复。
   String? get startProblem {

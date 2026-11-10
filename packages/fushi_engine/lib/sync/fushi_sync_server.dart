@@ -98,7 +98,7 @@ part 'fushi_sync_server/host_update.part.dart';
 ///
 /// SECURITY (HBK-AUDIT-011): transport is plain HTTP and auth is HTTP Basic,
 /// so the bearer token travels in reversible base64 over the wire. This is
-/// acceptable only on a trusted LAN, and is gated behind [_allowLan] — when
+/// acceptable only on a trusted LAN, and is gated behind `allowLan` / [FushiListenScope] — when
 /// false (the default) the server binds to loopback only and is never exposed
 /// to the network. Enabling LAN sync therefore requires an explicit opt-in.
 ///
@@ -415,12 +415,90 @@ Future<File?> _coverFile(String? path) async {
 /// 本文件既有调用方。
 String _guessContentType(String filePath) => mimeTypeForFilePath(filePath);
 
+/// 互联 host 的 TCP 监听范围。引擎此前只收一个 `allowLan` 布尔，无头端把 `bind`
+/// 压成「是不是 127.0.0.1」，写了具体地址 / `::1` 的配置实际全网卡监听；现在边界
+/// 处直接传类型化的范围，「是否只听本机」也只从这里判一次。
+sealed class FushiListenScope {
+  const FushiListenScope();
+
+  /// 只听 127.0.0.1（`allowLan: false`）。
+  const factory FushiListenScope.loopbackV4() = FushiListenLoopbackV4;
+
+  /// `allowLan: true`：明文只听 anyIPv4；TLS 双栈 anyIPv6（`v6Only:false`），
+  /// 绑不上回落 anyIPv4。
+  const factory FushiListenScope.lan() = FushiListenLan;
+
+  /// 精确绑定这一个地址（明文与 TLS 相同）；地址不在本机网卡上时启动失败，
+  /// 不回落全网卡。
+  const factory FushiListenScope.exact(InternetAddress address) =
+      FushiListenExact;
+
+  /// 只在本机回环上可达（不枚举网卡地址、不开 P2P 隧道）。
+  bool get isLoopbackOnly;
+}
+
+/// 见 [FushiListenScope.loopbackV4]。
+final class FushiListenLoopbackV4 extends FushiListenScope {
+  const FushiListenLoopbackV4();
+
+  @override
+  bool get isLoopbackOnly => true;
+}
+
+/// 见 [FushiListenScope.lan]。
+final class FushiListenLan extends FushiListenScope {
+  const FushiListenLan();
+
+  @override
+  bool get isLoopbackOnly => false;
+}
+
+/// 见 [FushiListenScope.exact]。
+final class FushiListenExact extends FushiListenScope {
+  const FushiListenExact(this.address);
+
+  final InternetAddress address;
+
+  @override
+  bool get isLoopbackOnly => address.isLoopback;
+
+  /// [other] 是不是同一个地址（按类型 + 原始字节比，不依赖具体实现类的 `==`）。
+  bool matches(InternetAddress other) =>
+      other.type == address.type &&
+      _sameBytes(other.rawAddress, address.rawAddress);
+
+  static bool _sameBytes(List<int> a, List<int> b) {
+    if (a.length != b.length) return false;
+    for (int i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+}
+
+/// 只保留 [address] 这一条地址的网卡视图（精确监听时公布的地址集）。
+final class _ListenAddressNic implements NetworkInterface {
+  _ListenAddressNic(this._nic, this.addresses);
+
+  final NetworkInterface _nic;
+
+  @override
+  final List<InterfaceAddress> addresses;
+
+  @override
+  String get name => _nic.name;
+
+  @override
+  int get index => _nic.index;
+}
+
 class FushiSyncServer {
   FushiSyncServer({
     required String syncDataDir,
     required int port,
     required String token,
     bool allowLan = false,
+    FushiListenScope? listenScope,
     FushiRemoteLookupService? remoteLookupService,
     FushiRemoteMiningService? miningService,
     FushiRemoteHistoryService? historyService,
@@ -442,11 +520,16 @@ class FushiSyncServer {
     FushiRemoteGameStreamService? gameStreamService,
     VideoRemoteService? videoRemoteService,
     @visibleForTesting BlurayClipRelayPool? blurayClipRelays,
-  }) : syncDataDir = p.join(syncDataDir, 'sync-data'),
+  }) : assert(listenScope == null || !allowLan, 'listenScope 与 allowLan 只给一个'),
+       syncDataDir = p.join(syncDataDir, 'sync-data'),
        _blurayClipRelays = blurayClipRelays ?? BlurayClipRelayPool(),
        _requestedPort = port,
        _token = token,
-       _allowLan = allowLan,
+       _listenScope =
+           listenScope ??
+           (allowLan
+               ? const FushiListenScope.lan()
+               : const FushiListenScope.loopbackV4()),
        _securityContext = securityContext,
        _hostFingerprint = hostFingerprint,
        _deviceName = deviceName,
@@ -470,7 +553,7 @@ class FushiSyncServer {
   final String syncDataDir;
   final int _requestedPort;
   final String _token;
-  final bool _allowLan;
+  final FushiListenScope _listenScope;
 
   /// 非 null 时 server 起 HTTPS（shelf 透传给 HttpServer.bindSecure）；null 时
   /// 走明文 HTTP 老路径，行为零变化（TLS 默认关，Never break userspace）。
@@ -807,10 +890,27 @@ class FushiSyncServer {
               Future<List<String>>.value(const <String>[])),
       extra:
           extraAddressesProvider?.call() ?? const <InterconnectHostAddress>[],
-      interfaceLister: _allowLan
-          ? interfaceLister
+      interfaceLister: listensBeyondLoopback
+          ? _listenedInterfaces
           : () async => const <NetworkInterface>[],
     );
+  }
+
+  /// 网卡地址里真正有监听口的那些：精确监听时只剩那一条地址，其余照常。
+  Future<List<NetworkInterface>> _listenedInterfaces() async {
+    final List<NetworkInterface> nics =
+        await (interfaceLister ??
+            () => NetworkInterface.list(includeLinkLocal: false))();
+    final FushiListenScope scope = _listenScope;
+    if (scope is! FushiListenExact) return nics;
+    return <NetworkInterface>[
+      for (final NetworkInterface nic in nics)
+        if (nic.addresses.any(scope.matches))
+          _ListenAddressNic(nic, <InterfaceAddress>[
+            for (final InterfaceAddress a in nic.addresses)
+              if (scope.matches(a)) a,
+          ]),
+    ];
   }
 
   /// [pairedPeerTokensProvider] 结果的快照缓存（避免每个请求打一次 DB）。null=未加载。
@@ -830,6 +930,12 @@ class FushiSyncServer {
   /// 是否以 HTTPS 对外服务（P2P 地址据此带 `?tls=1`）。
   bool get usesTls => _securityContext != null;
   int get port => _server?.port ?? _requestedPort;
+
+  /// 实际监听的地址（未运行时 null）。启动日志打这个，而不是配置值。
+  InternetAddress? get boundAddress => _server?.address;
+
+  /// 监听口是否在本机回环之外可达（据此公布网卡地址、决定能否开 P2P 隧道）。
+  bool get listensBeyondLoopback => !_listenScope.isLoopbackOnly;
 
   static String generateToken() {
     final random = Random.secure();
@@ -960,7 +1066,7 @@ class FushiSyncServer {
     await server?.close(force: true);
   }
 
-  /// 仅本机 → loopback v4。允许 LAN → IPv6 双栈（`::`、`v6Only:false`，同一个端口
+  /// 仅本机 → loopback v4。精确地址 → 只绑该地址。允许 LAN → IPv6 双栈（`::`、`v6Only:false`，同一个端口
   /// 同时收 v4 与 v6）：国内家宽普遍没有公网 v4 却有公网 v6，只监听 v4 等于把这
   /// 条最便宜的直连路堵死。v4 对端在双栈 socket 上报成 `::ffff:a.b.c.d`，由
   /// [FushiPairingProtocol.unmapIPv4MappedAddress] 还原。
@@ -969,13 +1075,25 @@ class FushiSyncServer {
   /// 边界，回落只监听 v4——行为与升级前一致。端口被占不在此回落：它在 v4 上同样会
   /// 撞，交给调用方报 [SyncServerPortInUseException]。
   Future<HttpServer> _bindListener(shelf.Handler handler) async {
-    if (!_allowLan) {
-      return shelf_io.serve(
-        handler,
-        InternetAddress.loopbackIPv4,
-        _requestedPort,
-        securityContext: _securityContext,
-      );
+    final FushiListenScope scope = _listenScope;
+    switch (scope) {
+      case FushiListenLoopbackV4():
+        return shelf_io.serve(
+          handler,
+          InternetAddress.loopbackIPv4,
+          _requestedPort,
+          securityContext: _securityContext,
+        );
+      case FushiListenExact(:final InternetAddress address):
+        // 精确监听：绑不上（地址不在本机 / 端口被占）照常抛，不回落全网卡。
+        return shelf_io.serve(
+          handler,
+          address,
+          _requestedPort,
+          securityContext: _securityContext,
+        );
+      case FushiListenLan():
+        break;
     }
     // 明文 host 维持升级前的只监听 v4（在 NAT 之后）：双栈会让它在全局 IPv6 上
     // 直接对公网可达，token 与数据明文跑在公网上，用户却没有任何开关。开了 TLS

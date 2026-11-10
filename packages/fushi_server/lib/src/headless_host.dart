@@ -237,7 +237,8 @@ class HeadlessHost {
         prefs.setRaw(ServerProfileHub.pinnedPrefKey, id ?? ''),
   );
 
-  /// [start] 时的绑定地址是否只监听本机（重启前改了 `bind` 也按实际监听判）。
+  /// [start] 时的监听范围是否只在本机回环（重启前改了 `bind` 也按实际监听判；
+  /// 判据只有 [FushiListenScope.isLoopbackOnly] 一份，`::1` / `127.0.0.2` 也算）。
   bool _loopbackOnly = false;
 
   /// P2P 挂载 / 卸载一律串行（见 [_serializeP2p]）。
@@ -487,13 +488,18 @@ class HeadlessHost {
     );
     _ankiConnect = ankiConnect;
 
-    _loopbackOnly = _isLoopbackBind(config.bind);
+    final ({FushiListenScope scope, String? warning}) listen = parseBindSetting(
+      config.bind,
+    );
+    if (listen.warning != null) {
+      engineLog.logDiagnostic('HeadlessHost', listen.warning!);
+    }
     final FushiSyncServer server =
         FushiSyncServer(
             syncDataDir: paths.syncData.path,
             port: config.port,
             token: identity.hostToken,
-            allowLan: !_loopbackOnly,
+            listenScope: listen.scope,
             libraryService: libraryService,
             mangaOcrJobs: ocrJobs,
             // 截屏识字（Steam Deck 游戏内识字插件）：用默认本地模型，常驻会话空闲 5 分钟关。
@@ -616,6 +622,7 @@ class HeadlessHost {
       rethrow;
     }
     _server = server;
+    _loopbackOnly = !server.listensBeyondLoopback;
     // P2P 挂不上只留痕（[_serializeP2p] 吞错并记 lastError）：server 已经起来了，
     // 这里抛出去会让它没有拥有者（泄漏一个在跑的 server，审查问题 12）。
     await _attachP2p(server);
@@ -633,7 +640,7 @@ class HeadlessHost {
     await _advertiser!.start();
     engineLog.logDiagnostic(
       'HeadlessHost',
-      'listening on ${config.bind}:${server.port} '
+      'listening on ${server.boundAddress?.address}:${server.port} '
           '(${securityContext != null ? 'https' : 'http'}, device=${config.deviceName})',
     );
   }
@@ -667,9 +674,6 @@ class HeadlessHost {
       _selfUpdateInstalled.complete();
     }
   }
-
-  static bool _isLoopbackBind(String bind) =>
-      bind == '127.0.0.1' || bind == 'localhost';
 
   // ── P2P 隧道 ──────────────────────────────────────────────────────────
   //
