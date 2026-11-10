@@ -13,7 +13,8 @@
 //! [register]）写 upsert，内核经 [upsert]（同一条 SQL）。内核持有的键的写入方（之后的步骤）直接改这一行里自己的键，
 //! 不经这里。
 //!
-//! 首版白名单为空：这一步只立协议、不交出任何字段（审查 S1：协议完成前不得把字段交给内核持有）。
+//! 首版白名单为空（第 1.5 步只立协议）；第 4 步交出 `cacheRev`（store/cache_rev.rs）。新行（库里还没有这一行）上内核
+//! 持有的键取初值（[held_default]）。
 
 use rusqlite::functions::FunctionFlags;
 use rusqlite::types::ValueRef;
@@ -22,7 +23,16 @@ use serde_json::{Map, Value};
 
 /// 内核持有的本机状态键（见模块文档）。新增一个键 = 把它的所有权交给内核：同时删掉 Dart `_localStateJson` 里的这个键
 /// 的写入（写了也被忽略），读仍可读。
-pub(crate) const KERNEL_HELD_KEYS: &[&str] = &[];
+pub(crate) const KERNEL_HELD_KEYS: &[&str] = &[
+    // 缓存推导口径版本（第 4 步，store/cache_rev.rs）。
+    super::cache_rev::KEY,
+];
+
+/// 内核持有的键在**新行**（库里还没有这一行，或那一行损坏）上的初值。`cacheRev`：还没有本机状态行 = 新设备或覆盖恢复
+/// 备份之后，缓存要么还没有、要么随即整份重建，都按当前规则算（store/cache_rev.rs）。
+fn held_default(key: &str) -> Option<Value> {
+    (key == super::cache_rev::KEY).then(|| Value::from(super::cache_rev::CACHE_REVISION))
+}
 
 #[cfg(test)]
 thread_local! {
@@ -49,6 +59,14 @@ impl Drop for HeldOverride {
     }
 }
 
+fn held_keys() -> Vec<&'static str> {
+    #[cfg(test)]
+    if let Some(held) = HELD_OVERRIDE.with(|h| h.borrow().clone()) {
+        return held;
+    }
+    KERNEL_HELD_KEYS.to_vec()
+}
+
 fn is_held(key: &str) -> bool {
     #[cfg(test)]
     if let Some(held) = HELD_OVERRIDE.with(|h| h.borrow().clone()) {
@@ -70,6 +88,12 @@ pub(crate) fn merge(existing: Option<&str>, incoming: &str) -> Result<String, St
         for (k, v) in old {
             if is_held(&k) {
                 out.insert(k, v);
+            }
+        }
+    } else {
+        for k in held_keys() {
+            if let Some(v) = held_default(k) {
+                out.insert(k.to_owned(), v);
             }
         }
     }

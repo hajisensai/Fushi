@@ -1026,11 +1026,22 @@ pub(crate) fn sync2_dispatch(
         })?;
         return Ok(json!({"filled": n}));
     }
+    // 打开副本时注册本 profile 的缓存配置（之后没带 `caches` 的命令用它；库重开就没了，每次打开都注册），并在同一次
+    // 持写锁、同一个 SAVEPOINT 里把缓存补到当前推导口径（store/cache_rev.rs：版本是内核持有的本机状态键 `cacheRev`）。
+    // 回包 `{from, to, cache}`。
+    if op == "cache_config_set" {
+        let cfg = std::sync::Arc::new(crate::store::caches::CacheConfig::parse(
+            req.get("caches").ok_or("sync2: missing caches")?,
+        )?);
+        c.set_cache_config(profile, cfg.clone())?;
+        let w = c.writer()?;
+        return crate::store::sync2::in_savepoint(&w, |conn| {
+            crate::store::cache_rev::upgrade(conn, profile, &cfg)
+        });
+    }
     // 本机写命令：命令本体、缓存刷新、排队与本机状态行在同一次持写锁、同一个 SAVEPOINT 里（[local_write]）。
     if LOCAL_WRITE_OPS.contains(&op) {
-        let cfg = crate::store::caches::CacheConfig::parse(
-            req.get("caches").ok_or("sync2: missing caches")?,
-        )?;
+        let cfg = cache_config_of(c, profile, req)?;
         return local_write(c, op, profile, req, blobs, &cfg);
     }
     if PROJECTING_OPS.contains(&op)
@@ -1038,9 +1049,7 @@ pub(crate) fn sync2_dispatch(
         || op == "rebuild_caches"
         || op == "backfill_dupe_norms"
     {
-        let cfg = crate::store::caches::CacheConfig::parse(
-            req.get("caches").ok_or("sync2: missing caches")?,
-        )?;
+        let cfg = cache_config_of(c, profile, req)?;
         let mut v = match op {
             "refresh_caches" => json!({}),
             // srs.db v15 的老行补 `dupe_norm`（只改这一列，不算缓存写入：不进 Dart 的缓存变更日志）。
@@ -1053,8 +1062,11 @@ pub(crate) fn sync2_dispatch(
             }
             "rebuild_caches" => {
                 let w = c.writer()?;
+                // 缓存整份按当前规则重建：同一个 SAVEPOINT 里记下当前推导口径（store/cache_rev.rs）。
                 let written = crate::store::sync2::in_savepoint(&w, |conn| {
-                    crate::store::caches::rebuild(conn, profile, &cfg)
+                    let written = crate::store::caches::rebuild(conn, profile, &cfg)?;
+                    crate::store::cache_rev::record(conn, profile)?;
+                    Ok(written)
                 })?;
                 return Ok(json!({"cache": written.to_json()}));
             }
@@ -1073,7 +1085,7 @@ pub(crate) fn sync2_dispatch(
                     now,
                     slice_budget(c, req),
                     local_state,
-                    Some(&cfg),
+                    Some(&*cfg),
                 )?;
                 let mut v: Value = serde_json::from_str(&r).map_err(|e| e.to_string())?;
                 if let Some(m) = v.as_object_mut() {
@@ -1152,6 +1164,23 @@ pub(crate) fn sync2_dispatch(
         return Ok(v);
     }
     sync2_command(c, op, profile, req, blobs, files)
+}
+
+/// 缓存刷新用的配置：请求带了 `caches` 就用带来的，否则用这个 profile 打开时注册的（`cache_config_set`）。两样都没有
+/// 是调用方的 bug（没经 `SrsDbStore.open` 就发投影命令），不跳过刷新。
+fn cache_config_of(
+    c: &SrsCore,
+    profile: &str,
+    req: &serde_json::Value,
+) -> Result<std::sync::Arc<crate::store::caches::CacheConfig>, String> {
+    match req.get("caches") {
+        Some(v) => Ok(std::sync::Arc::new(
+            crate::store::caches::CacheConfig::parse(v)?,
+        )),
+        None => c.cache_config(profile)?.ok_or_else(|| {
+            "sync2: missing caches (no cache_config_set for this profile)".to_owned()
+        }),
+    }
 }
 
 /// 本机写命令（收掉 Dart 写路径第 2 步）：Dart 不再为它们开 Drift 事务。分发器取**一次**写锁，在**一个** SAVEPOINT 里
@@ -1453,6 +1482,7 @@ const CHANNEL_TRANSPARENT: &[&str] = &[
     "open_file",
     "refresh_caches",
     "rebuild_caches",
+    "cache_config_set",
 ];
 
 /// 改投影的 v2 命令（结果带 `marks`）：分发器在同一次调用里刷新缓存行；`ingest_commit` 在投递的事务里自己刷

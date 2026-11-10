@@ -417,9 +417,9 @@ class SrsDbStore implements SrsSync2Host {
     final bool hadLocalState = await s._loadLocal();
     // 老版本存的本机状态没有纪元：当场落盘，否则每次打开都是新纪元、指纹每次都「变了」。
     if (hadLocalState && s._epochMissing) await s._saveLocal();
-    if (hadLocalState && s._cacheRevision < _kCacheRevision) {
-      await s._upgradeCaches();
-    }
+    // 注册本 profile 的缓存配置（库重开后内核里就没了，每次打开都注册），内核顺带把缓存补到当前推导口径
+    // （版本是内核持有的本机状态键，native/fushi_fsrs/src/store/cache_rev.rs）。
+    await s._registerCacheConfig();
     if (!hadLocalState && await s._hasAnyEvent()) {
       // 有事件却没有本机状态：覆盖恢复了备份（本机状态与缓存不进备份，恢复时清空）。重建缓存；同步 v2 的
       // 本机身份同样不进备份，打开时按新设备起步（[_sync2Open]），绝不沿用备份来源设备的身份。
@@ -560,62 +560,10 @@ class SrsDbStore implements SrsSync2Host {
   /// 候选只在那一轮内存里，文件就永远没人回收了。
   final Set<String> _pendingMediaGc = <String>{};
 
-  /// 本机缓存按哪一版推导规则建的（本机状态，不进备份）。缓存加了新的派生列、而存量库里
-  /// 可能已有喂它的修改记录时 +1，并在 [_upgradeCaches] 里补一步定向重算。
-  ///
-  /// 1（v123）：srs_cards_cache.new_position。旧版本设备会照常收下对端同步来的 `newPos`
-  /// 修改记录（修改记录不认键名、原样落库），但它的卡片缓存没有这一列；升级加列时留 NULL，
-  /// 这些卡就一直按创建时刻出、取卡读到的位置也是空的，直到这张卡再被改一次。
-  ///
-  /// 2（srs.db schema v3）：srs_stat_reviews（有效复习投影）。存量库的投影表是新建的空表，升级时按全部
-  /// 卡 + 全部有日志的卡算一遍投影（native/fushi_fsrs/src/store/caches.rs `refresh_stats`）。
-  ///
-  /// 3（srs.db schema v4）：srs_notes_cache.media_refs（笔记引用的媒体）。老库这一列是空的，升级时
-  /// 全部笔记缓存重算一遍。
-  ///
-  /// 4（同步 v2）：已删笔记也存 media_refs（以前写空串）。被删笔记的媒体要保留 90 天、过期后才回收
-  /// （设计 §10.5），两边都靠这一列找到它们；老库已删笔记的这一列是空的，升级时重算一遍。
-  ///
-  /// 5（BUG-3797）：srs_notes_cache.pending_decision 的推导改了——标签 OR-Set 的合成 `tags` 行不再被当成
-  /// 「与删除并发的修改」。老库里每条带标签的已删笔记都被错标成待裁决（挂在冲突中心「等你决定的笔记」里，
-  /// 「确认删除」也消不掉），升级时把标着待裁决的笔记重算一遍。
-  ///
-  /// 6（srs.db schema v8）：srs_cards_cache.freq_rank（笔记词频序字段的名次，新卡按词频出卡用；由内核
-  /// native/fushi_fsrs/src/store/caches.rs 的卡片行计算写出）。老库这一列是空的，升级时全部笔记缓存重算一遍。
-  ///
-  /// 7（srs.db schema v13）：srs_notes_cache.source_kind / source_title（笔记出处，统计页的「制卡来源」由内核直接读，
-  /// 见 store/bulk.rs `stats_bundle`）。老库这两列是空的，升级时全部笔记缓存重算一遍（`anki_id` 由 v13 迁移回填）。
-  ///
-  /// 8（srs.db schema v15）：srs_notes_cache.dupe_norm（首字段的 AnkiConnect 查重规范形，canAddNotes 的库内查重
-  /// 直接按它的索引查，见 store/browse.rs `anki_dupes`）。老行这一列是 NULL，升级时内核只补这一列
-  /// （caches.rs `backfill_dupe_norms`：物化笔记与笔记类型算首字段，不重算整行与卡片——那要读每张卡的血统与
-  /// 日志）。只改这一列、不算缓存写入，不进变更日志。
-  /// 9：没有出处记录的制卡笔记按 Fushi 制卡标签认出处（`fushi` / `hibiki` + `book` / `video` / `anime` /
-  /// `game` / `music`，层级 `<分类>::<作品名>` 给作品名；caches.rs `source_from_tags`，反馈 AhIskigAq3）。
-  /// 老行只补 source_kind / source_title 两列（caches.rs `backfill_tag_sources`，按缓存行自己的 tags_json），
-  /// 不算缓存写入，不进变更日志。
-  /// 10（srs.db schema v25）：srs_notes_cache.source_key（出处寄存器的分组键，与浏览页出处视图同一个键；自定义学习
-  /// 按作品出卡直接按它的索引查，见 store/study.rs `CustomStudy`）。老行这一列是 NULL，升级时内核只补这一列
-  /// （caches.rs `backfill_source_keys`），不算缓存写入，不进变更日志。
-  /// 11（BUG-4218）：卡片历史选取把同一事件的多 ID 副本只算一份、撤销任一份即整组撤销（history.rs `EventKey`）。
-  /// srs_cards_cache 的卡片状态与 srs_stat_reviews 的有效复习投影都是本机按 `select` 从日志算出来的，存量库里带副本的
-  /// 卡（BUG-4217 修好前的 profile 合并写出）仍按旧规则重复计数、撤销一份不回退，要等这张卡再被改一次；哪些卡带副本
-  /// 要逐卡解析日志才知道，所以与修订号 2 / 7 同样整库重算全部笔记缓存与全部投影（同一 srs.db 打开时，Rust 侧 v26
-  /// 迁移已先按新规则重放了带副本的卡的日志投影行，这里读到的 `res` 已是新值）。
-  /// 12（BUG-4254）：同一条 Anki revlog 导入到不同卡上的两份算同一次复习——血统里的两份由选取规则合并（history.rs
-  /// `EventKey` 对 Anki 来源不比卡），没有血统链接的两张卡（删光重导后旧卡隐藏、新卡可见）由有效复习投影按 Anki 事件身份
-  /// 只留一份（caches.rs `refresh_stats`）。存量库的卡片状态与投影是旧规则算的（「从 Anki 迁移」后复习数 ×2），与修订号
-  /// 11 同样整库重算（srs.db v28 迁移已先按新规则重放了带这种副本的卡的日志投影行）。
-  /// 13（反馈 MCJLSBR5Wg）：出处带 `seriesTitle`（系列）的笔记按「系列 → 集」分组——缓存行的 `source_key` 是系列键、
-  /// `source_title` 是系列名（store/browse.rs `source_key`、caches.rs `NoteInfo::of`）。旧版本收到别的设备同步来的带
-  /// 系列的出处时按集算了这两列，升级时只重算出处记录里带 `seriesTitle` 的那些笔记。
-  static const int _kCacheRevision = 13;
-
-  /// 当前缓存修订号（[_kCacheRevision]）。升级测试断言「打开老库后记下的是当前修订号」时用它，
-  /// 不写字面量——每次加一级修订都要去改一串升级测试的魔数，漏改就整批红。
+  /// 这一版内核的缓存推导口径版本（`cache_config_set` 回包的 `current`，native/fushi_fsrs/src/store/cache_rev.rs
+  /// `CACHE_REVISION`）。升级测试断言「打开老库后记下的是当前版本」时读它，不写字面量。
   @visibleForTesting
-  static const int currentCacheRevision = _kCacheRevision;
-  int _cacheRevision = _kCacheRevision;
+  int debugCacheRevision = 0;
 
   /// 库的变化修订号：任何事件真正落库（本机产生或对端来的）+1（见 [changeFingerprint]）。
   int _revision = 0;
@@ -860,10 +808,6 @@ class SrsDbStore implements SrsSync2Host {
         for (final Object? n in (j['mediaGc'] as List?) ?? const <Object?>[])
           if (n is String) n,
       ]);
-    // 没有本机状态（新设备 / 恢复备份后）：缓存要么还没有、要么随即整份重建，按当前规则算。
-    _cacheRevision = row == null
-        ? _kCacheRevision
-        : (j['cacheRev'] as int?) ?? 0;
     _revision = (j['revision'] as int?) ?? 0;
     _epochMissing = j['epoch'] is! String;
     _epoch =
@@ -889,8 +833,8 @@ class SrsDbStore implements SrsSync2Host {
   Hlc _rehome(Hlc h, String writer) => Hlc(h.physical, h.counter, writer);
 
   /// 写本机状态行。和内核共用一条合并 upsert（native/fushi_fsrs/src/store/local_state.rs `UPSERT_SQL`）：交来的整行
-  /// 去掉内核持有的键、保留库里这些键的原值（白名单 `KERNEL_HELD_KEYS`，首版为空），所以 Dart 整行重写不会抹掉内核
-  /// 写下的字段。
+  /// 去掉内核持有的键、保留库里这些键的原值（白名单 `KERNEL_HELD_KEYS`：缓存推导口径版本 `cacheRev`），所以 Dart
+  /// 整行重写不会抹掉内核写下的字段。
   Future<void> _saveLocal() async {
     await db.customInsert(
       kSrsLocalStateUpsertSql,
@@ -923,7 +867,6 @@ class SrsDbStore implements SrsSync2Host {
     'styleCursor': _styleCursor,
     if (_pendingMediaGc.isNotEmpty)
       'mediaGc': (_pendingMediaGc.toList()..sort()),
-    'cacheRev': _cacheRevision,
     'revision': _revision,
     'epoch': _epoch,
     if (_trusted.anchorState case final SrsClockAnchorState a)
@@ -2128,6 +2071,7 @@ class SrsDbStore implements SrsSync2Host {
     'dedup',
     'refresh_caches',
     'rebuild_caches',
+    'cache_config_set',
     'backfill_dupe_norms',
   };
 
@@ -2813,88 +2757,22 @@ class SrsDbStore implements SrsSync2Host {
     return out;
   }
 
-  /// 本机缓存的推导规则比 [_cacheRevision] 新：只重算受新规则影响的那些行（见
-  /// [_kCacheRevision]），记下新版本。一个事务；失败照常抛出（打开失败），下次打开重来。
-  Future<void> _upgradeCaches() => runExclusive(() async {
-    await db.transaction(() async {
-      if (_cacheRevision < 1) {
-        final List<QueryRow> rows = await db
-            .customSelect(
-              'SELECT DISTINCT entity_id FROM srs_field_edits '
-              'WHERE profile_uid = ? AND entity_kind = ? AND field_key = ?',
-              variables: <Variable<Object>>[
-                Variable<String>(profileUid, srsIdType),
-                Variable<String>(SrsEntityKind.card.wire),
-                Variable<String>(SrsFieldKeys.cardNewPosition),
-              ],
-            )
-            .get();
-        await _refreshCaches(
-          cards: rows.map((QueryRow r) => r.read<String>('entity_id')),
-        );
-      }
-      if (_cacheRevision < 2) await _refreshCaches(allStats: true);
-      if (_cacheRevision < 3) await _refreshCaches(allNotes: true);
-      if (_cacheRevision < 5) {
-        await _refreshCaches(
-          notes: <String>[
-            for (final SrsNoteCacheRow n in await notesPendingDecision()) n.id,
-          ],
-        );
-      }
-      if (_cacheRevision < 7) await _refreshCaches(allNotes: true);
-      // 整行重算（上一步）已顺带写好 dupe_norm；这一步补的只是剩下的 NULL 行（没有就是一条 SELECT）。
-      if (_cacheRevision < 8) {
-        await _sync2(const <String, Object?>{'op': 'backfill_dupe_norms'});
-      }
-      // 整行重算已按新规则写好出处；这一步补的只是出处列仍为空、标签认得出的老行。
-      if (_cacheRevision < 9) {
-        await _sync2(const <String, Object?>{'op': 'backfill_tag_sources'});
-      }
-      // srs.db v25 加的出处分组键列（按作品出卡用）：整行重算已写好；这一步只补仍为 NULL 的老行。
-      if (_cacheRevision < 10) {
-        await _sync2(const <String, Object?>{'op': 'backfill_source_keys'});
-      }
-      // BUG-4218 / BUG-4254：选取规则变了（同一事件的副本只算一份；Anki 来源的副本跨卡也算同一事件），卡片状态与
-      // 有效复习投影整库按新规则重算。两级要做的是同一件事，只做一次。
-      if (_cacheRevision < 12) {
-        await _refreshCaches(allNotes: true, allStats: true);
-      } else if (_cacheRevision < 13) {
-        // 整库重算（上一步）已按新规则写好；只有已在 12 的库才需要挑出带系列的出处。按子串粗筛（多挑只是多重算几行），
-        // 真正的分组键由内核按出处 JSON 算。
-        final List<QueryRow> rows = await db
-            .customSelect(
-              'SELECT DISTINCT entity_id FROM srs_field_edits '
-              'WHERE profile_uid = ? AND entity_kind = ? AND field_key = ? '
-              "AND json LIKE '%seriesTitle%'",
-              variables: <Variable<Object>>[
-                Variable<String>(profileUid, srsIdType),
-                Variable<String>(SrsEntityKind.note.wire),
-                Variable<String>(SrsFieldKeys.noteSource),
-              ],
-            )
-            .get();
-        if (rows.isNotEmpty) {
-          await _refreshCaches(
-            notes: rows.map((QueryRow r) => r.read<String>('entity_id')),
-          );
-        }
-      }
-      _cacheRevision = _kCacheRevision;
-      await _saveLocal();
+  /// 注册本 profile 的缓存配置（`cache_config_set`），内核在同一个 SAVEPOINT 里把缓存补到当前推导口径并记下版本
+  /// （native/fushi_fsrs/src/store/cache_rev.rs：版本历史、补哪些行都在那里）。失败照常抛出（打开失败），下次打开重来。
+  Future<void> _registerCacheConfig() => runExclusive(() async {
+    final Map<String, Object?> r = await _sync2(const <String, Object?>{
+      'op': 'cache_config_set',
     });
+    debugCacheRevision = (r['current']! as num).toInt();
+    _absorbCache(r);
   });
 
   /// 丢掉全部缓存（笔记 / 卡片缓存行、有效复习投影），由事件重建（缓存不同步，随时可重建）：内核一次调用删
   /// 掉本 profile 的缓存行、按全部笔记与全部有日志的卡重算（native/fushi_fsrs/src/store/caches.rs `rebuild`）。
+  /// 内核在同一个 SAVEPOINT 里记下当前推导口径（store/cache_rev.rs）。
   Future<void> rebuildCaches() => runExclusive(() async {
-    _cacheRevision = _kCacheRevision;
     _resetCacheJournal();
-    await db.transaction(() async {
-      _absorbCache(
-        await _sync2(const <String, Object?>{'op': 'rebuild_caches'}),
-      );
-    });
+    _absorbCache(await _sync2(const <String, Object?>{'op': 'rebuild_caches'}));
   });
 
   /// 删除时刻不晚于 [deletedBeforeMs] 的已删笔记引用的媒体（过了保留期、可以回收的候选；是否真删由调用方

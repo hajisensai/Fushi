@@ -70,6 +70,8 @@ pub(crate) const DRIFT_TX_POLICY: &[(&str, DriftTxPolicy)] = &[
     // 缓存维护的 Drift 事务（`_upgradeCaches` / `rebuildCaches` / `compactStoredStyles`）与上面各事务里的刷新。
     ("refresh_caches", Join),
     ("rebuild_caches", Join),
+    // 打开副本时注册缓存配置并补到当前推导口径（store/cache_rev.rs；原 `_upgradeCaches` 的 Drift 事务里的那串刷新）。
+    ("cache_config_set", Join),
     ("backfill_dupe_norms", Join),
     ("backfill_tag_sources", Join),
     ("backfill_source_keys", Join),

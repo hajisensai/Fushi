@@ -34,7 +34,7 @@ void main() {
     expect(SrsDbStore.kSrsLocalStateUpsertSql, rust);
   });
 
-  test('白名单为空：整行以 Dart 交来的为准，写本机状态不多发内核命令', () async {
+  test('Dart 持有的键整行以交来的为准、内核持有的 cacheRev 不被抹掉，写本机状态不多发内核命令', () async {
     final SrsStorage storage = await openTestSrsStorage();
     final SrsDbStore s = await SrsDbStore.open(
       db: storage.db,
@@ -71,6 +71,13 @@ void main() {
     expect(after.containsKey('stray'), isFalse);
     expect(after['mediaGc'], unorderedEquals(<Object?>['a.png', 'b.png']));
     expect(s.pendingMediaGc, <String>{'a.png', 'b.png'});
+    // 内核持有的缓存推导口径版本（第 4 步）：新行由合并协议补上当前版本；Dart 整行重写抹不掉库里的值。
+    expect(after['cacheRev'], s.debugCacheRevision);
+    await storage.db.customStatement(
+      r"UPDATE srs_local_state SET json = json_set(json, '$.cacheRev', 5)",
+    );
+    await s.queueMediaGc(<String>['c.png']);
+    expect((await row())['cacheRev'], 5);
   });
 
   test('本机写命令回包缺 localRevision 是契约错误：抛错、不动内存里的修订号', () async {

@@ -18,6 +18,7 @@ import 'package:fushi_engine/srs/srs_note_type_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:test/test.dart';
 
+import 'apkg/apkg_test_support.dart' show FakeFsrsEngine;
 import 'support/srs_bulk_fixture.dart';
 
 typedef _Cost = ({int statements, int core});
@@ -100,6 +101,49 @@ void main() {
       'sched': (statements: 0, core: 1),
       'applyRemote': (statements: 1, core: 1),
       'bulkWrites': (statements: 0, core: 2),
+    });
+  });
+
+  test('打开副本与缓存维护的语句数与内核命令数（第 4 步）', () async {
+    final BulkFixture f = await BulkFixture.open(notes: 6);
+    final SrsDbStore s = f.store;
+    Future<_Cost> openCost() async {
+      SrsRustDelegate.debugStatements = 0;
+      final SrsDbStore r = await SrsDbStore.open(
+        db: f.db,
+        core: s.core,
+        profileUid: kBulkUid,
+        deviceId: 'dev',
+        engine: const FakeFsrsEngine(),
+        trustedClock: fixedTrustedClock(),
+        fallbackRolloverHour: () => 4,
+      );
+      return (
+        statements: SrsRustDelegate.debugStatements,
+        core: r.debugCoreCommands,
+      );
+    }
+
+    await s.rebuildCaches();
+    final Map<String, _Cost> costs = <String, _Cost>{
+      'rebuildCaches': await _cost(s, s.rebuildCaches),
+      'open(current)': await openCost(),
+    };
+    await f.db.customStatement(
+      r"UPDATE srs_local_state SET json = json_set(json, '$.cacheRev', 1)",
+    );
+    costs['open(cacheRev 1)'] = await openCost();
+    for (final MapEntry<String, _Cost> e in costs.entries) {
+      // ignore: avoid_print
+      print(
+        'WRITE_COST ${e.key}: statements=${e.value.statements} '
+        'core=${e.value.core}',
+      );
+    }
+    expect(costs, <String, _Cost>{
+      'rebuildCaches': (statements: 0, core: 1),
+      'open(current)': (statements: -1, core: -1),
+      'open(cacheRev 1)': (statements: -1, core: -1),
     });
   });
 

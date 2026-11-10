@@ -20,6 +20,7 @@
 
 pub(crate) mod browse;
 pub mod bulk;
+pub(crate) mod cache_rev;
 pub(crate) mod caches;
 pub(crate) mod compact;
 pub(crate) mod drift_guard;
@@ -113,6 +114,10 @@ pub struct SrsCore {
     /// 批量写入的嵌套深度与要恢复的写连接 `wal_autocheckpoint`（`bulk_cache` 命令，[SrsCore::bulk_begin]）。按库计数：
     /// 几个 profile 的副本共用这一个写连接，只有最外层改 / 恢复阈值。
     bulk: Mutex<BulkDepth>,
+    /// 各 profile 的缓存配置（内置笔记类型的代码默认值、默认牌组：只有 Dart 知道），Dart 每次打开副本时发
+    /// `cache_config_set` 注册（store/cache_rev.rs）。只在内存：库重开（覆盖恢复会重开）就没了，所以每次打开都注册。
+    /// 投影命令带了 `caches` 的以带来的为准，没带的用这里注册的。
+    cache_configs: Mutex<std::collections::HashMap<String, Arc<caches::CacheConfig>>>,
     /// 写连接页缓存上限的自适应状态（store/mem_budget.rs）：取写连接时按可用内存重算。
     writer_cache: Mutex<mem_budget::WriterCache>,
     /// 库里可能有进行中的新设备收段通道（store/sync2/channel.rs，`sync2_boot` 有行）：打开时按已提交的表置、开通道
@@ -572,6 +577,7 @@ impl SrsCore {
             ingest_holds_cache: AtomicBool::new(false),
             bulk_holds_cache: AtomicBool::new(false),
             bulk: Mutex::new(BulkDepth::default()),
+            cache_configs: Mutex::new(std::collections::HashMap::new()),
             writer_cache: Mutex::new(mem_budget::WriterCache::new()),
             channel_live: AtomicBool::new(channel_live),
             study_hub,
@@ -678,6 +684,26 @@ impl SrsCore {
         merged?;
         restored?;
         Ok(0)
+    }
+
+    /// 注册 [profile] 的缓存配置（`cache_config_set`）。
+    pub(crate) fn set_cache_config(
+        &self,
+        profile: &str,
+        cfg: Arc<caches::CacheConfig>,
+    ) -> Result<(), String> {
+        lock_recovering(&self.cache_configs, |_| Ok(()))?.insert(profile.to_owned(), cfg);
+        Ok(())
+    }
+
+    /// [profile] 注册过的缓存配置。
+    pub(crate) fn cache_config(
+        &self,
+        profile: &str,
+    ) -> Result<Option<Arc<caches::CacheConfig>>, String> {
+        Ok(lock_recovering(&self.cache_configs, |_| Ok(()))?
+            .get(profile)
+            .cloned())
     }
 
     /// 写连接此刻的页缓存上限（KiB），测试 / 诊断用。
