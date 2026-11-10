@@ -13,6 +13,16 @@ import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:material_color_utilities/material_color_utilities.dart'
     show Hct;
 import 'package:fushi_srs/fushi_srs.dart' show srsDayToDate;
+import 'package:fushi_engine/srs/srs_calibration.dart'
+    show
+        SrsCalibrationBin,
+        SrsCalibrationSeries,
+        SrsUmPlusBin,
+        kSrsUmPlusSmallBucket,
+        srsUmPlusDisagreementDomain,
+        srsUmPlusErrorDomain;
+
+part 'srs_calibration_charts.dart';
 
 /// 复习统计（统计中心「复习」分区）的图表件：可点按 / 悬停看数值的柱状图与折线
 /// 图、环形图、日历热力图、百分比堆叠条与图例。

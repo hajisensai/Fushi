@@ -38,6 +38,7 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-4278](bugs/BUG-4278-audiobook-multifile-cues-stay-on-file0.md) | ✅ | ✅ | 服务端 / 发现页 / 书+字幕+音频导入的多文件有声书 cue 全落在第 0 个文件 |
+| [BUG-4278](bugs/BUG-4278-interconnect-host-client-p2p-fallback.md) | ✅ | ✅ | 互联：主机能力探测 / GET 与选路缓存不走 P2P 隧道，直连不通时远程复习找不到主机 |
 | [BUG-4277](bugs/BUG-4277-collection-manage-count-mismatch.md) | ✅ | ✅ | collection-manage-count-mismatch |
 | [BUG-4276](bugs/BUG-4276-lan-devices-duplicate-host.md) | ✅ | ✅ | 互联「局域网设备」列表把同一台 host 列两遍，配对后红屏 `_dependents.isEmpty` |
 | [BUG-4275](bugs/BUG-4275-interconnect-peer-row-shows-url-not-name.md) | ✅ | ✅ | 互联连接列表行标题只显示 URL、不显示对端设备名 |
