@@ -2540,6 +2540,8 @@
   "download_airing_calendar_week_next": "次の週",
   "download_airing_calendar_week_prev": "前の週",
   "download_backend_embedded_hint": "おすすめ。ダウンロードは Fushi の内部で完結し、追加のインストールは不要です。",
+  "download_backend_embedded_service_starting": "Starting the download service...",
+  "download_backend_embedded_service_unavailable": "The download service isn't running. Make sure the Browse module is turned on, then reopen this dialog.",
   "download_backend_embedded_unavailable": "このインストールには内蔵エンジンのランタイムが含まれていません。完全版のパッケージを再インストールするか、外部の qBittorrent をご利用ください。",
   "download_backend_not_configured": "ダウンロードバックエンドがまだ設定されていません。",
   "download_backend_qb_hint": "すでに動かしている qBittorrent WebUI に Fushi を接続します。",

@@ -2540,6 +2540,8 @@
   "download_airing_calendar_week_next": "下一周",
   "download_airing_calendar_week_prev": "上一周",
   "download_backend_embedded_hint": "建議使用。下載在 Fushi 內部完成，毋須另外安裝軟件。",
+  "download_backend_embedded_service_starting": "Starting the download service...",
+  "download_backend_embedded_service_unavailable": "The download service isn't running. Make sure the Browse module is turned on, then reopen this dialog.",
   "download_backend_embedded_unavailable": "今次安裝欠缺內置引擎執行庫。請重新安裝完整安裝包，或改用外接 qBittorrent。",
   "download_backend_not_configured": "請先配置下載後端。",
   "download_backend_qb_hint": "連接到你已經在運行的 qBittorrent WebUI。",
