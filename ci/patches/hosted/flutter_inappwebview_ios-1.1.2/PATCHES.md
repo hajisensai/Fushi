@@ -6,7 +6,7 @@ content-rule-list fix (guard: `fushi/test/build/inappwebview_content_rule_list_p
 
 ## `preventGestureDelay` → `UiKitViewGestureBlockingPolicy.doNotBlockGesture`
 
-Feedback P2jQzOBBag / BUG-4358 (manga paged double-tap zoom on iOS): a double tap
+Feedback P2jQzOBBag / BUG-4360 (manga paged double-tap zoom on iOS): a double tap
 on a blank part of a manga page almost always toggled the reader chrome
 instead of zooming; only fast triple taps zoomed now and then.
 
