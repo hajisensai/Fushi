@@ -100,7 +100,7 @@ import 'package:fushi/src/asr_host/asr_host.dart';
 import 'package:fushi/src/media/audiobook/asr_transcribe_sheet.dart';
 import 'package:fushi/src/media/audiobook/audiobook_import_dialog.dart';
 import 'package:fushi/src/media/audiobook/srt_book_reimport_dialog.dart';
-import 'package:fushi/src/media/import/srt_book_reimport.dart';
+import 'package:fushi_engine/media/audiobook/srt_book_reimport.dart';
 import 'package:fushi/src/media/video/video_exit_flush.dart';
 import 'package:fushi/src/media/audiobook/mining_audio_clip.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.dart';
