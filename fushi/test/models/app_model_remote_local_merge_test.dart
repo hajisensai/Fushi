@@ -112,6 +112,8 @@ void main() {
         databaseDirectory: tmpDir,
       )
       ..wireDatabaseForTesting(db, dictionaryRepository: dictRepo);
+    // 引擎装载（分桶后登记术语桶成员）在单测里不跑：直接登记两本都已装进引擎。
+    dictRepo.noteEngineTermDictionaries(<String>['Jitendex', 'JMdict-local']);
   });
 
   tearDown(() async {
@@ -196,6 +198,43 @@ void main() {
       allowRemoteLookup: false,
     );
     expect(identical(localOnly, local), isTrue);
+  });
+
+  // 审查发现：去重名单以前按「视图里开着」算，可本机引擎只装激活配置开着、目录在且
+  // 已物化的词典。工作配置开着而激活配置关着（或目录缺失 / 未物化）的词典本机查不
+  // 出来，服务器那份却被当成「本机已有」丢掉——整本从弹窗里消失。
+  test('视图开着但本机引擎没装的词典 ⇒ 留服务器那份', () async {
+    // Jitendex 元数据上开着，但不在引擎术语桶里（目录未物化 / 激活配置关着）。
+    dictRepo.noteEngineTermDictionaries(<String>['JMdict-local']);
+    cacheLocal(
+      resultOf(<FushiLookupResult>[
+        row('たべる', <String>['JMdict-local'], side: 'local'),
+      ]),
+    );
+    replyWith(
+      resultOf(<FushiLookupResult>[
+        row('たべる', <String>['Jitendex', '大辞林'], side: 'server'),
+      ]),
+    );
+
+    final DictionarySearchResult merged = await search();
+
+    expect(
+      merged.entries
+          .map((DictionaryEntry e) => '${e.dictionaryName}=${e.meaning}')
+          .toList(),
+      <String>[
+        'Jitendex="server Jitendex"',
+        'JMdict-local="local JMdict-local"',
+        '大辞林="server 大辞林"',
+      ],
+      reason: '本机引擎里没有 Jitendex：服务器那份不被去重',
+    );
+    expect(popupDictionaries(merged), <String>[
+      'Jitendex',
+      'JMdict-local',
+      '大辞林',
+    ]);
   });
 
   // 用户拍板（2026-11-09）：没有全局「远程查词」开关了，总闸由配对 host 的「用这台

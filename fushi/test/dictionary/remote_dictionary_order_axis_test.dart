@@ -386,7 +386,7 @@ void main() {
     });
   });
 
-  group('删本机词典：忘掉 host 上已没有的同名目录行', () {
+  group('删本机词典：同名目录行（各 host）忘掉缺席的、接手还在的', () {
     late FushiDatabase db;
     late DictionaryRepository repo;
 
@@ -396,13 +396,21 @@ void main() {
         '${r.hostId}/${r.name}',
     };
 
+    Future<Map<String, String>> catalogPlacement() async => <String, String>{
+      for (final RemoteDictionaryMetaRow r
+          in await db.getAllRemoteDictionaryMetadata())
+        '${r.hostId}/${r.name}': 'order=${r.order} hidden=${r.hidden}',
+    };
+
     setUp(() async {
       db = FushiDatabase.forTesting(NativeDatabase.memory());
       repo = DictionaryRepository(db);
-      // X：h1 上已消失、h2 上还在；h3 没开「用于查词」、也已消失。Y：h1 上已消失。
+      // X：h1 上已消失、h2 上还在；h3 没开「用于查词」、也已消失；h4 没开「用于
+      // 查词」、还在。Y：h1 上已消失。
       await db.upsertRemoteDictionaryCatalog(_catalogRow('h1', 'X', 1));
       await db.upsertRemoteDictionaryCatalog(_catalogRow('h2', 'X', 2));
       await db.upsertRemoteDictionaryCatalog(_catalogRow('h3', 'X', 3));
+      await db.upsertRemoteDictionaryCatalog(_catalogRow('h4', 'X', 6));
       await db.upsertRemoteDictionaryCatalog(_catalogRow('h1', 'Y', 4));
       await db.markRemoteDictionariesMissing('h1', <String>['X', 'Y'], 5);
       await db.markRemoteDictionariesMissing('h3', <String>['X'], 5);
@@ -419,10 +427,20 @@ void main() {
       await db.close();
     });
 
-    test('只忘掉同名且已缺席的行（各 host，含不查词的）；还在的行留着', () async {
+    Future<void> deleteX() async {
+      final ({String name, int order, bool hidden}) handover =
+          DictionaryRepository.catalogHandoverOf(
+            repo.dictionaries.firstWhere((Dictionary d) => d.name == 'X'),
+          );
       await repo.deleteDictionaryMeta('X');
-      await repo.forgetMissingRemoteDictionariesNamed(<String>['X']);
-      expect(await catalogKeys(), <String>{'h2/X', 'h1/Y'});
+      await repo.releaseCatalogRowsOf(<({String name, int order, bool hidden})>[
+        handover,
+      ]);
+    }
+
+    test('只忘掉同名且已缺席的行（各 host，含不查词的）；还在的行留着', () async {
+      await deleteX();
+      expect(await catalogKeys(), <String>{'h2/X', 'h4/X', 'h1/Y'});
       // 删完 X 只在 h2 上：管理页是一条服务器行，没有「服务器上已没有」的残行。
       expect(
         repo.remoteDictionaries
@@ -430,6 +448,45 @@ void main() {
             .map((RemoteDictionary r) => '${r.key} missing=${r.isMissing}'),
         <String>['h2/X missing=false'],
       );
+    });
+
+    // 审查发现：遮住期间服务器行不参与重编号，序号过时；拖过「两者」行再删本机那份，
+    // 服务器行带着旧序号冒出来并与别的行撞号。
+    test('还在的同名行（含不查词的 host）接手本机行的位置与开关', () async {
+      // 本机 X 被拖到第 8 位、关掉——遮住的服务器行仍是 2 / 6、开着。
+      await repo.persistDictionaries(<Dictionary>[
+        _local('A', 7),
+        _local('X', 8, hidden: true),
+        _local('B', 9),
+      ]);
+      await deleteX();
+      final Map<String, String> placement = await catalogPlacement();
+      expect(placement['h2/X'], 'order=8 hidden=true');
+      expect(placement['h4/X'], 'order=8 hidden=true', reason: '不查词的 host 也接手');
+      expect(placement['h1/Y'], 'order=4 hidden=false', reason: '别的名字不动');
+      final RemoteDictionary x = repo.remoteDictionaries.singleWhere(
+        (RemoteDictionary r) => r.name == 'X',
+      );
+      expect((x.order, x.hidden), (8, true));
+      final List<String> order = repo.lookupFilters.termDictionaryOrder;
+      expect(
+        <int>[order.indexOf('A'), order.indexOf('X'), order.indexOf('B')],
+        orderedEquals(<int>[
+          order.indexOf('A'),
+          order.indexOf('A') + 1,
+          order.indexOf('A') + 2,
+        ]),
+        reason: '服务器行在原位（A 与 B 之间）接手，查词顺序不变：$order',
+      );
+      expect(repo.lookupFilters.hiddenDictionaryNames, contains('X'));
+    });
+
+    test('「两者」行开关镜像写到各 host 的同名行（含不查词的）', () async {
+      await repo.setCatalogRowsHiddenNamed('X', true);
+      final Map<String, String> placement = await catalogPlacement();
+      expect(placement['h2/X'], 'order=2 hidden=true');
+      expect(placement['h4/X'], 'order=6 hidden=true');
+      expect(placement['h1/Y'], 'order=4 hidden=false');
     });
 
     test('AppModel 的删除入口（单本 / 全部）都接上这一步', () {
@@ -444,13 +501,20 @@ void main() {
 
       final String single = body('Future<void> deleteDictionary(Dictionary');
       expect(
-        single.indexOf('forgetMissingRemoteDictionariesNamed('),
-        greaterThan(single.indexOf('dictRepo.deleteDictionaryMeta(')),
+        single.indexOf('catalogHandoverOf('),
+        lessThan(single.indexOf('dictRepo.deleteDictionaryMeta(')),
+        reason: '本机行的位置与开关要在删行之前取',
       );
       expect(
-        body('Future<void> deleteDictionaries() async {'),
-        contains('dictRepo.forgetMissingRemoteDictionariesNamed(deletedNames)'),
+        single.indexOf('releaseCatalogRowsOf('),
+        greaterThan(single.indexOf('dictRepo.deleteDictionaryMeta(')),
       );
+      final String all = body('Future<void> deleteDictionaries() async {');
+      expect(
+        all.indexOf('catalogHandoverOf('),
+        lessThan(all.indexOf('dictRepo.clearDictionaryMetadata()')),
+      );
+      expect(all, contains('dictRepo.releaseCatalogRowsOf(released)'));
     });
   });
 

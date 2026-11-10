@@ -407,6 +407,122 @@ void main() {
     );
   });
 
+  // 审查发现：合并在 UI isolate 上整份编解码两份弹窗文档。大结果搬到后台 isolate，
+  // 结果必须与就地合并逐字段相同（含样式表的实例身份：弹窗靠 identical 判断重发）。
+  group('后台 isolate 合并 = 就地合并', () {
+    String fingerprint(DictionarySearchResult? r) => r == null
+        ? 'null'
+        : jsonEncode(<String, Object?>{
+            'json': r.toJson(),
+            'popup': r.popupJson,
+            'styles': r.remoteDictionaryStyles,
+          });
+
+    final Map<String, String> remoteStyles = <String, String>{
+      '大辞林': '.r{}',
+      'Jitendex': '.remote-j{}',
+    };
+    final Map<String, String> localStyles = <String, String>{
+      'Jitendex': '.local-j{}',
+    };
+    DictionarySearchResult localSide() => side(<FushiLookupResult>[
+      row(
+        expression: '食べる',
+        reading: 'たべる',
+        dicts: <String>['Jitendex', 'JMdict'],
+        frequencies: <FushiFrequencyEntry>[freq('JPDB', 120)],
+      ),
+      row(expression: '食べ', reading: 'たべ', dicts: <String>['JMdict']),
+    ]);
+    DictionarySearchResult remoteSide() => side(<FushiLookupResult>[
+      row(
+        expression: '食べる',
+        reading: 'たべる',
+        dicts: <String>['Jitendex', '大辞林'],
+        frequencies: <FushiFrequencyEntry>[freq('BCCWJ', 300)],
+      ),
+      row(expression: '食', reading: 'しょく', dicts: <String>['大辞林']),
+    ], styles: remoteStyles);
+
+    Future<void> expectSame({
+      DictionarySearchResult? local,
+      DictionarySearchResult? remote,
+    }) async {
+      const List<String> order = <String>['JMdict', 'Jitendex', '大辞林'];
+      const Set<String> names = <String>{'Jitendex', 'JMdict'};
+      final DictionarySearchResult? inline = mergeDictionarySearchResults(
+        local: local,
+        remote: remote,
+        dictionaryOrder: order,
+        localDictionaryNames: names,
+        maximumTerms: 10,
+        localDictionaryStyles: localStyles,
+      );
+      final DictionarySearchResult? offThread =
+          await mergeDictionarySearchResultsAsync(
+            local: local,
+            remote: remote,
+            dictionaryOrder: order,
+            localDictionaryNames: names,
+            maximumTerms: 10,
+            localDictionaryStyles: localStyles,
+            isolateThreshold: 0,
+          );
+      expect(fingerprint(offThread), fingerprint(inline));
+      expect(
+        identical(
+          offThread?.remoteDictionaryStyles,
+          inline?.remoteDictionaryStyles,
+        ),
+        isTrue,
+        reason: '样式表在调用方 isolate 上合并，实例身份与就地合并相同',
+      );
+    }
+
+    test('两边都有结果', () async {
+      await expectSame(local: localSide(), remote: remoteSide());
+    });
+
+    test('只有服务器那份（打 remote 标记）', () async {
+      await expectSame(remote: remoteSide());
+      final DictionarySearchResult remote = remoteSide();
+      final DictionarySearchResult marked =
+          await markRemoteDictionarySearchResultAsync(
+            remote,
+            isolateThreshold: 0,
+          );
+      expect(
+        fingerprint(marked),
+        fingerprint(markRemoteDictionarySearchResult(remote)),
+      );
+      expect(identical(marked.remoteDictionaryStyles, remoteStyles), isTrue);
+    });
+
+    test('popupJson 坏掉退化成拼接；服务器不带样式', () async {
+      final DictionarySearchResult broken = localSide()..popupJson = '{oops';
+      await expectSame(local: broken, remote: remoteSide());
+      await expectSame(
+        local: localSide(),
+        remote: side(<FushiLookupResult>[
+          row(expression: '食べる', reading: 'たべる', dicts: <String>['大辞林']),
+        ]),
+      );
+    });
+
+    test('低于阈值就地合并：返回的就是同步版的结果', () async {
+      final DictionarySearchResult local = localSide();
+      final DictionarySearchResult? result =
+          await mergeDictionarySearchResultsAsync(
+            local: local,
+            remote: null,
+            dictionaryOrder: const <String>[],
+            localDictionaryNames: const <String>{},
+            maximumTerms: 10,
+          );
+      expect(identical(result, local), isTrue);
+    });
+  });
+
   group('popupJson 坏掉时退化成不去重的拼接，绝不抛', () {
     for (final String bad in <String>['{not json', '{"a":1}', '[1]', '[{}]']) {
       test(bad, () {

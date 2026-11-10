@@ -2273,13 +2273,8 @@ class SyncOrchestrator {
           itemTotal: 1,
           onImporting: onImporting,
         );
-        // 包里带的是 host 自己的顺序 / 开关；本机这份接替管理页上那条服务器行的
-        // 位置与开关（在后置钩子重载词典之前写，重载读到的就是最终值）。
-        await DictionaryRepository.adoptCatalogPlacement(
-          _db,
-          hostId: await b.connectedHostIdentity(),
-          name: name,
-        );
+        // 本机这份接替管理页上那条服务器行的位置与开关：在 [_pullLiveDictionary] 里
+        // 做（整轮同步的拉取同一条路径）。
         report.dictionariesImported++;
         outcome = SingleDictionaryTransferOutcome.transferred;
       }

@@ -6,6 +6,7 @@
 library;
 
 import 'dart:convert';
+import 'dart:isolate';
 import 'dart:math';
 
 import '../engine/fushidicts_models.dart' show FushiKanjiResult;
@@ -226,6 +227,126 @@ DictionarySearchResult? mergeDictionarySearchResults({
   result.popupJson = popupJson;
   result.remoteDictionaryStyles = styles;
   return result;
+}
+
+/// 两份 `popupJson` 合计超过这个长度（UTF-16 码元）时，[mergeDictionarySearchResultsAsync]
+/// 把合并搬到后台 isolate：合并要整份解码 / 重编码两份弹窗文档（外加每条词条的
+/// extra），大结果在 UI isolate 上就是十几到几十毫秒——本机查词本身正是为这个量级
+/// 才搬出 UI isolate 的。低于阈值时 isolate 往返（拷贝两份结果 + 起 isolate）比合并
+/// 本身还贵，就地合并。
+const int kMergeSearchResultsIsolateThreshold = 64 * 1024;
+
+/// [mergeDictionarySearchResults] 的异步版：结果与同步版**逐字段相同**，只是两边都有
+/// 结果、且两份 `popupJson` 合计长度 ≥ [isolateThreshold] 时在 `Isolate.run` 里合并。
+///
+/// 后台 isolate 只做纯数据的合并（[DictionarySearchResult] / [DictionaryEntry] /
+/// [FushiKanjiResult] 都是纯 Dart 对象，按值拷贝过边界）；样式表**不**过边界：
+/// 合并样式按输入实例身份缓存（[_mergedStyles]，弹窗靠 identical 判断要不要重发
+/// 样式），拷贝过去的副本没有身份，所以样式在调用方 isolate 上合并，回来后挂到结果上。
+/// 只有服务器一边有结果时（打 `remote` 标记要整份编解码服务器文档）同样按阈值分流。
+Future<DictionarySearchResult?> mergeDictionarySearchResultsAsync({
+  required DictionarySearchResult? local,
+  required DictionarySearchResult? remote,
+  required List<String> dictionaryOrder,
+  required Set<String> localDictionaryNames,
+  required int maximumTerms,
+  Map<String, String>? localDictionaryStyles,
+  int isolateThreshold = kMergeSearchResultsIsolateThreshold,
+}) async {
+  final bool localEmpty = _isEmptyResult(local);
+  final bool remoteEmpty = _isEmptyResult(remote);
+  if (localEmpty && !remoteEmpty) {
+    return markRemoteDictionarySearchResultAsync(
+      remote!,
+      isolateThreshold: isolateThreshold,
+    );
+  }
+  final int size =
+      (local?.popupJson?.length ?? 0) + (remote?.popupJson?.length ?? 0);
+  if (localEmpty || remoteEmpty || size < isolateThreshold) {
+    return mergeDictionarySearchResults(
+      local: local,
+      remote: remote,
+      dictionaryOrder: dictionaryOrder,
+      localDictionaryNames: localDictionaryNames,
+      maximumTerms: maximumTerms,
+      localDictionaryStyles: localDictionaryStyles,
+    );
+  }
+  final Map<String, String>? styles = _mergedStyles(
+    remote!.remoteDictionaryStyles,
+    localDictionaryStyles,
+  );
+  final DictionarySearchResult? merged = await _mergeInIsolate((
+    local: _withoutStyles(local!),
+    remote: _withoutStyles(remote),
+    dictionaryOrder: dictionaryOrder,
+    localDictionaryNames: localDictionaryNames,
+    maximumTerms: maximumTerms,
+  ));
+  merged?.remoteDictionaryStyles = styles;
+  return merged;
+}
+
+/// [markRemoteDictionarySearchResult] 的异步版：`popupJson` 长度 ≥ [isolateThreshold]
+/// 时在后台 isolate 里打标记；样式表原实例挂回结果（同 [mergeDictionarySearchResultsAsync]）。
+Future<DictionarySearchResult> markRemoteDictionarySearchResultAsync(
+  DictionarySearchResult remote, {
+  int isolateThreshold = kMergeSearchResultsIsolateThreshold,
+}) async {
+  if ((remote.popupJson?.length ?? 0) < isolateThreshold) {
+    return markRemoteDictionarySearchResult(remote);
+  }
+  final DictionarySearchResult stripped = _withoutStyles(remote);
+  final DictionarySearchResult marked = await _markInIsolate(stripped);
+  // 打不上标记（popupJson 解析不了）时同步版原样返回输入；这里也返回调用方那份。
+  if (marked.popupJson == stripped.popupJson) return remote;
+  marked.remoteDictionaryStyles = remote.remoteDictionaryStyles;
+  return marked;
+}
+
+typedef _MergeArgs = ({
+  DictionarySearchResult local,
+  DictionarySearchResult remote,
+  List<String> dictionaryOrder,
+  Set<String> localDictionaryNames,
+  int maximumTerms,
+});
+
+// 闭包只捕获 [args]：Isolate.run 拷贝的是闭包的整个上下文，放在独立函数里才不会
+// 把调用方的局部变量（样式表等）一起拷过去。
+Future<DictionarySearchResult?> _mergeInIsolate(_MergeArgs args) =>
+    Isolate.run<DictionarySearchResult?>(
+      () => mergeDictionarySearchResults(
+        local: args.local,
+        remote: args.remote,
+        dictionaryOrder: args.dictionaryOrder,
+        localDictionaryNames: args.localDictionaryNames,
+        maximumTerms: args.maximumTerms,
+      ),
+      debugName: 'mergeDictionarySearchResults',
+    );
+
+Future<DictionarySearchResult> _markInIsolate(DictionarySearchResult remote) =>
+    Isolate.run<DictionarySearchResult>(
+      () => markRemoteDictionarySearchResult(remote),
+      debugName: 'markRemoteDictionarySearchResult',
+    );
+
+/// 去掉样式表的浅拷贝（样式不过 isolate 边界，见 [mergeDictionarySearchResultsAsync]）。
+DictionarySearchResult _withoutStyles(DictionarySearchResult result) {
+  if (result.remoteDictionaryStyles == null) return result;
+  final DictionarySearchResult copy = DictionarySearchResult(
+    searchTerm: result.searchTerm,
+    entries: result.entries,
+    bestLength: result.bestLength,
+    scrollPosition: result.scrollPosition,
+    kanjiResults: result.kanjiResults,
+    truncated: result.truncated,
+    headwordCount: result.headwordCount,
+  );
+  copy.popupJson = result.popupJson;
+  return copy;
 }
 
 /// 弹窗释义对象上「来自服务器」的标记键（值恒为 `true`；本机释义不带）。

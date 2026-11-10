@@ -3844,12 +3844,10 @@ class _DictionaryDialogPageState extends BasePageState {
     }
     await appModel.setDictionaryHidden(dictionary, !enabled);
     // 「两者」行只有一个开关：服务器上同名的目录行跟着走，否则删掉本机那份之后
-    // 目录行会带着旧开关冒出来（推送时关着，之后打开了，回来还是关的）。
-    for (final RemoteDictionary remote in appModel.remoteDictionaries) {
-      if (remote.name == dictionary.name && remote.hidden == enabled) {
-        await appModel.setRemoteDictionaryHidden(remote, !enabled);
-      }
-    }
+    // 目录行会带着旧开关冒出来（推送时关着，之后打开了，回来还是关的）。各 host 都跟，
+    // 含没开「用于查词」的——它们不在 remoteDictionaries 里，但那台 host 重新打开查词
+    // 时同样会带着旧开关出现。
+    await appModel.setCatalogRowsHiddenNamed(dictionary.name, !enabled);
   }
 
   String _labelForType(DictionaryType type) {

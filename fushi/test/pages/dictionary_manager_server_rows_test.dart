@@ -36,7 +36,7 @@ class _FakeAppModel extends AppModel {
   List<RemoteDictionary> remote;
 
   /// 来源条用的全部目录行（含参与查词以外的类型）；null = 与 [remote] 相同。
-  final List<RemoteDictionary>? catalogRows;
+  List<RemoteDictionary>? catalogRows;
   final Map<String, bool> hostLookup = <String, bool>{'h1': true, 'h2': true};
   final List<(String, bool)> hostLookupWrites = <(String, bool)>[];
   final List<String> refreshedHosts = <String>[];
@@ -163,6 +163,23 @@ class _FakeAppModel extends AppModel {
       for (final RemoteDictionary r in remote)
         r.key == dictionary.key ? r.copyWith(hidden: hidden) : r,
     ];
+  }
+
+  /// 「两者」行开关镜像的写入（名字, hidden）：各 host 的同名目录行，含不查词的。
+  final List<(String, bool)> catalogHiddenWrites = <(String, bool)>[];
+
+  @override
+  Future<void> setCatalogRowsHiddenNamed(String name, bool hidden) async {
+    catalogHiddenWrites.add((name, hidden));
+    List<RemoteDictionary> apply(List<RemoteDictionary> rows) =>
+        <RemoteDictionary>[
+          for (final RemoteDictionary r in rows)
+            r.name == name ? r.copyWith(hidden: hidden) : r,
+        ];
+    remote = apply(remote);
+    if (catalogRows case final List<RemoteDictionary> rows) {
+      catalogRows = apply(rows);
+    }
   }
 
   @override
@@ -593,20 +610,58 @@ void main() {
     );
     await _focusInside(tester, toggle);
     await _pressEnter(tester);
-    expect(model.hiddenWrites, <(String, bool)>[('JMdict', true)]);
+    expect(model.catalogHiddenWrites, <(String, bool)>[('JMdict', true)]);
     expect(
       model.remote.firstWhere((RemoteDictionary r) => r.name == 'JMdict').hidden,
       isTrue,
     );
     await _focusInside(tester, toggle);
     await _pressEnter(tester);
-    expect(model.hiddenWrites, <(String, bool)>[
+    expect(model.catalogHiddenWrites, <(String, bool)>[
       ('JMdict', true),
       ('JMdict', false),
     ]);
     expect(
       model.remote.firstWhere((RemoteDictionary r) => r.name == 'JMdict').hidden,
       isFalse,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  // 审查发现：镜像以前只写 remoteDictionaries（参与查词的 host），没开查词的 host 上
+  // 同名行留着旧开关，那台 host 重新打开查词、或本机那份删掉后带着旧开关冒出来。
+  testWidgets('Both row switch mirrors to a lookup-off host too', (
+    WidgetTester tester,
+  ) async {
+    final _FakeAppModel model = await _pumpPage(
+      tester,
+      catalog: <RemoteDictionary>[
+        ..._remote(),
+        const RemoteDictionary(
+          hostId: 'h2',
+          name: 'JMdict',
+          type: DictionaryType.term,
+          order: 8,
+          lastSeenAt: _seenAt,
+        ),
+      ],
+    );
+    model.hostLookup['h2'] = false;
+    DictionaryRepository.remoteDictionariesRevision.value++;
+    await _settle(tester);
+    await _focusInside(
+      tester,
+      find.byKey(const ValueKey<String>('dict-row-switch-JMdict')),
+    );
+    await _pressEnter(tester);
+    expect(model.catalogHiddenWrites, <(String, bool)>[('JMdict', true)]);
+    expect(
+      <String>[
+        for (final RemoteDictionary r in model.catalogRows!)
+          if (r.name == 'JMdict') '${r.hostId} hidden=${r.hidden}',
+      ],
+      <String>['h1 hidden=true', 'h2 hidden=true'],
+      reason: '没开查词的 h2 上的同名行同样跟着关',
     );
     expect(tester.takeException(), isNull);
   });

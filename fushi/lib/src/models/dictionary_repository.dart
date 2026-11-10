@@ -138,6 +138,21 @@ class DictionaryRepository {
   List<DictionarySearchResult> get dictionaryHistory =>
       List.unmodifiable(_dictionaryHistoryResults);
 
+  /// 本进程词典引擎此刻（最近一次排期装载）术语桶里的词典真名，由 `AppModel` 在
+  /// 分桶（`bucketDictPaths`）之后登记（[noteEngineTermDictionaries]）。
+  ///
+  /// 「本机装着且开着」不等于「本机引擎里有」：引擎只装**激活配置**开着、且目录存在
+  /// 并已物化的词典。按非激活配置查词（工作配置的查词视图）、目录缺失 / 未物化时，
+  /// 元数据上开着的词典本机根本查不出来——本机与服务器结果合并去重必须以这份为准，
+  /// 否则服务器那份被当成「本机已有」丢掉，词典整本从弹窗里消失。
+  Set<String> get engineTermDictionaryNames => _engineTermDictionaryNames;
+  Set<String> _engineTermDictionaryNames = const <String>{};
+
+  /// 登记引擎术语桶的成员（见 [engineTermDictionaryNames]）。
+  void noteEngineTermDictionaries(Iterable<String> names) {
+    _engineTermDictionaryNames = Set<String>.unmodifiable(names);
+  }
+
   /// 参与查词的服务器托管词典（见 [_remoteDictionariesCache]），按管理页顺序。
   /// [RemoteDictionary] 不可变，直接外借。
   List<RemoteDictionary> get remoteDictionaries =>
@@ -257,6 +272,12 @@ class DictionaryRepository {
   /// 还没被这样写过的数据上（服务器词典刚刷新进来时 host 给的初始序号、旧版本只给
   /// 本机词典重编号留下的序号等）——本机在前与管理页 `mixDictionaryManagerRows` 的
   /// 归并规则一致，列表顺序仍是查词顺序。
+  ///
+  /// 被本机同名词典遮住的服务器行不参与重编号（[serverOnlySectionRows]），它们的
+  /// `order` 会过时。这不会漏进查词序：遮住期间它们不进这份名单（[_unshadowedRemote]）；
+  /// 遮住它的本机那本一删，[releaseCatalogRowsOf] 先把本机行的 `order` 与开关交给
+  /// 各 host 上同名的目录行，服务器行在同一个位置接手，过时的序号从不重新露面——
+  /// 否则拖过「两者」行、再删本机那份，服务器行会带着旧序号冒出来并与别的行撞号。
   static List<String> _mixedTermOrder(
     List<Dictionary> dictionaries,
     List<RemoteDictionary> remote,
@@ -1050,26 +1071,80 @@ class DictionaryRepository {
         _applyRemoteRows(await _readRemoteSnapshot());
       });
 
-  /// 删掉本机词典 [names] 之后的收尾：忘掉**各 host**（含没开「用于查词」的）上同名、
-  /// 已从 host 目录里消失（`missingSince != null`）的目录行。
+  /// 删掉本机词典 [deleted] 之后的收尾，对**各 host**（含没开「用于查词」的）上同名的
+  /// 目录行：
+  /// * 已从 host 目录里消失（`missingSince != null`）的行忘掉——它们原本被本机那本
+  ///   遮住，本机那本一删就会冒出来成为一条开着开关、只能「忘掉」的「服务器上已没
+  ///   有」行；用户删的是一本词典，不该换来一条它从没在服务器上管理过的残行。
+  /// * host 上还在的行留着（词典就此变成只在服务器上），并接手本机那行的 `order` 与
+  ///   开关：遮住期间它们不参与分区重编号，序号早已过时（见 [_mixedTermOrder]）。
+  ///   接手后管理页上同一个位置从「两者」变成「服务器」，查词顺序与开关不变。
   ///
-  /// 这些行原本被本机那本遮住；本机那本一删，它们就会冒出来成为一条开着开关、只能
-  /// 「忘掉」的「服务器上已没有」行——用户删的是一本词典，不该换来一条它从没在服务器
-  /// 上管理过的残行。host 上还在的同名行留着：词典就此变成只在服务器上。
-  Future<void> forgetMissingRemoteDictionariesNamed(Iterable<String> names) {
-    final Set<String> wanted = names.toSet();
-    if (wanted.isEmpty) return Future<void>.value();
+  /// [deleted] 须在删本机行**之前**取（删完就读不到本机行的位置与开关了）。
+  Future<void> releaseCatalogRowsOf(
+    Iterable<({String name, int order, bool hidden})> deleted,
+  ) {
+    final Map<String, ({String name, int order, bool hidden})> byName =
+        <String, ({String name, int order, bool hidden})>{
+          for (final ({String name, int order, bool hidden}) d in deleted)
+            d.name: d,
+        };
+    if (byName.isEmpty) return Future<void>.value();
     return _writeMetadata(() async {
       bool changed = false;
-      for (final RemoteDictionaryMetaRow r
-          in await _db.getAllRemoteDictionaryMetadata()) {
-        if (r.missingSince == null || !wanted.contains(r.name)) continue;
-        await _db.deleteRemoteDictionary(r.hostId, r.name);
-        changed = true;
-      }
+      await _db.transaction(() async {
+        for (final RemoteDictionaryMetaRow r
+            in await _db.getAllRemoteDictionaryMetadata()) {
+          final ({String name, int order, bool hidden})? local = byName[r.name];
+          if (local == null) continue;
+          if (r.missingSince != null) {
+            await _db.deleteRemoteDictionary(r.hostId, r.name);
+            changed = true;
+          } else if (r.order != local.order || r.hidden != local.hidden) {
+            await _db.setRemoteDictionaryProfileColumns(
+              hostId: r.hostId,
+              name: r.name,
+              order: local.order,
+              hidden: local.hidden,
+            );
+            changed = true;
+          }
+        }
+      });
       if (changed) _applyRemoteRows(await _readRemoteSnapshot());
     });
   }
+
+  /// [releaseCatalogRowsOf] 的输入：本机词典 [dictionary] 此刻的位置与开关。
+  static ({String name, int order, bool hidden}) catalogHandoverOf(
+    Dictionary dictionary,
+  ) => (
+    name: dictionary.name,
+    order: dictionary.order,
+    hidden: dictionary.isHidden(JapaneseLanguage.instance),
+  );
+
+  /// 「两者」行的开关写入后，把同一开关写到**各 host**（含没开「用于查词」的）上同名
+  /// 的目录行：这些行被本机那本遮住、不在 [remoteDictionaries] 里也照样要跟，否则
+  /// 本机那份删掉（或那台 host 重新打开查词）后目录行带着旧开关冒出来。
+  Future<void> setCatalogRowsHiddenNamed(String name, bool hidden) =>
+      _writeMetadata(() async {
+        bool changed = false;
+        await _db.transaction(() async {
+          for (final RemoteDictionaryMetaRow r
+              in await _db.getAllRemoteDictionaryMetadata()) {
+            if (r.name != name || r.hidden == hidden) continue;
+            await _db.setRemoteDictionaryProfileColumns(
+              hostId: r.hostId,
+              name: r.name,
+              order: r.order,
+              hidden: hidden,
+            );
+            changed = true;
+          }
+        });
+        if (changed) _applyRemoteRows(await _readRemoteSnapshot());
+      });
 
   /// 忘掉一台 host 的全部服务器词典目录行（解除配对时选「忘掉设置」）。
   Future<void> forgetRemoteDictionaryHost(String hostId) =>

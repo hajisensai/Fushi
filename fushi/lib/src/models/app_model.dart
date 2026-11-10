@@ -3458,6 +3458,9 @@ class AppModel
       );
     }
     final b = bucketDictPaths(entries);
+    dictRepo.noteEngineTermDictionaries(<String>[
+      for (final String p in b.term) path.basename(p),
+    ]);
     // 排期而不是就地重建：这个回调挂在**每一次**词典元数据写入上（导入每本、
     // 类型自愈每本、隐藏/折叠/语言开关），就地重建会把总代价推成 O(N²)。真正的
     // 装载推迟到下次要用引擎时，批量写入期间的 N 次排期塌成 1 次装载。
@@ -3706,6 +3709,9 @@ class AppModel
         ),
     ];
     final b = bucketDictPaths(entries);
+    dictRepo.noteEngineTermDictionaries(<String>[
+      for (final String p in b.term) path.basename(p),
+    ]);
     FushiDicts.scheduleTyped(
       termPaths: b.term,
       freqPaths: b.freq,
@@ -4053,6 +4059,12 @@ class AppModel
     await dictRepo.setRemoteDictionaryHidden(dictionary, hidden);
     dictionarySearchAgainNotifier.notifyListeners();
   }
+
+  /// 把开关写到**各 host**（含没开「用于查词」的）上名为 [name] 的目录行——「两者」
+  /// 行的开关镜像（[DictionaryRepository.setCatalogRowsHiddenNamed]）。这些行被本机
+  /// 同名词典遮住、不参与查词，不用重查。
+  Future<void> setCatalogRowsHiddenNamed(String name, bool hidden) =>
+      dictRepo.setCatalogRowsHiddenNamed(name, hidden);
 
   /// 忘掉一条服务器上已没有的词典的目录行与设置。
   Future<void> forgetRemoteDictionary(String hostId, String name) =>
@@ -5265,6 +5277,16 @@ class AppModel
       // 的词头语言定语言：现读，词典增删即时生效（BUG-3669）。
       systemTtsDictionaryLanguages = () => installedDictionarySourceLanguages;
       await dictRepo.loadFromDb();
+      // 同主进程：全局「远程查词」并入每台 host 的开关（幂等，主进程先跑过就是
+      // no-op）。更新后第一次查词可能先拉起弹窗进程，不能只靠主进程迁移。
+      if (await prefsRepo.settleRemoteLookupHostSwitches(
+        SyncRepository(_database),
+      )) {
+        await dictRepo.reloadRemoteDictionaries();
+      }
+      // 本进程没有目录服务：后台再探测由查词客户端自己做（BUG-4275），判死的 host
+      // 不在查词路径上重付连接超时。
+      _remoteDictionaryReachability.probe = _probeRemoteDictionaryHost;
 
       mediaHistoryRepo = MediaHistoryRepository(_database);
       await mediaHistoryRepo.loadFromDb();
@@ -9331,15 +9353,19 @@ class AppModel
     try {
       await clearDictionaryHistory();
 
-      final List<String> deletedNames = <String>[
-        for (final Dictionary d in dictRepo.dictionaries) d.name,
-      ];
+      // 删本机行之前取它们的位置与开关，交给同名的服务器目录行接手。
+      final List<({String name, int order, bool hidden})> released =
+          <({String name, int order, bool hidden})>[
+            for (final Dictionary d in dictRepo.dictionaries)
+              DictionaryRepository.catalogHandoverOf(d),
+          ];
       // Commit the deletion before publishing an empty dictionary set and
       // rebuilding the engine. This must precede directory removal so native
       // mmap views are released first (BUG-171 / BUG-1756).
       await dictRepo.clearDictionaryMetadata();
-      // 同 [deleteDictionary]：被删的本机词典遮住的、host 上已没有的目录行一并忘掉。
-      await dictRepo.forgetMissingRemoteDictionariesNamed(deletedNames);
+      // 同 [deleteDictionary]：被删的本机词典遮住的目录行——host 上已没有的忘掉，
+      // 还在的接手本机行的位置与开关。
+      await dictRepo.releaseCatalogRowsOf(released);
 
       // 逐个条目删而不是删掉资源根本身：隔离区（删不掉时的落脚点）建在被删目录的
       // 父级，只有这样它才落在资源根下、被启动清理扫到。根目录保留，省掉 recreate。
@@ -9380,6 +9406,15 @@ class AppModel
   Future<void> deleteDictionary(Dictionary dictionary) async {
     try {
       await clearDictionaryHistory();
+      // 删本机行之前取它此刻的位置与开关（[dictionary] 可能是旧快照），交给同名的
+      // 服务器目录行接手。
+      final ({String name, int order, bool hidden}) released =
+          DictionaryRepository.catalogHandoverOf(
+            dictRepo.dictionaries.firstWhere(
+              (Dictionary d) => d.name == dictionary.name,
+              orElse: () => dictionary,
+            ),
+          );
       // 顺序不可交换（BUG-1756）：撤 meta 必须先于删目录。
       // [DictionaryRepository.deleteDictionaryMeta] 是「移除内存 cache + 触发
       // _onCacheRebuild（= _rebuildDictPathsCache，引擎重载到不含这本的集合，
@@ -9390,12 +9425,13 @@ class AppModel
       // ERROR_USER_MAPPED_FILE → catch 弹「删除失败」，而 cache 移除与引擎重载
       // 全在抛出点之后、永不执行。用户看到的就是「提示删除失败，重启后词典却没了」。
       await dictRepo.deleteDictionaryMeta(dictionary.name);
-      // 本机那本遮住的、host 上也已经没有的同名目录行一并忘掉：否则删完冒出一条
-      // 开着开关、只能「忘掉」的「服务器上已没有」残行。host 上还在的行留着（这本
-      // 词典就此只在服务器上）。
-      await dictRepo.forgetMissingRemoteDictionariesNamed(<String>[
-        dictionary.name,
-      ]);
+      // 本机那本遮住的同名目录行（各 host，含不查词的）：host 上也已经没有的忘掉，
+      // 否则删完冒出一条开着开关、只能「忘掉」的「服务器上已没有」残行；host 上还在
+      // 的留着（这本词典就此只在服务器上），并接手本机行的位置与开关——遮住期间它们
+      // 不参与重编号，序号早已过时（[DictionaryRepository.releaseCatalogRowsOf]）。
+      await dictRepo.releaseCatalogRowsOf(
+        <({String name, int order, bool hidden})>[released],
+      );
 
       await deleteDictionaryDirectory(
         Directory(path.join(dictionaryResourceDirectory.path, dictionary.name)),
@@ -9566,13 +9602,13 @@ class AppModel
           // 本机这份失败不拖垮远端已给出的结果（与以前「远端命中就不看本地」同口径），
           // 但要留痕。
           ErrorLogService.instance.log('localDictionaryLookup', e, stack);
-          return markRemoteDictionarySearchResult(remoteResult);
+          return markRemoteDictionarySearchResultAsync(remoteResult);
         }
         final DictionarySearchResult? localResult = localLookup.result;
         // 本机未命中 / 引擎未就绪：只有远端那份——弹窗释义照样打上服务器来源标记
         // （与合并结果同一口径，popup.js 画服务器小图标）。
         if (localResult == null) {
-          return markRemoteDictionarySearchResult(remoteResult);
+          return markRemoteDictionarySearchResultAsync(remoteResult);
         }
         // 合并结果不进缓存（远端结果本来就不缓存）；本机那份已在
         // [_searchLocalDictionary] 里照旧写进本机缓存。
@@ -9580,18 +9616,28 @@ class AppModel
             filtersOverride ??
             profileView?.lookupFilters ??
             dictRepo.lookupFilters;
-        return mergeDictionarySearchResults(
+        // 去重名单 = 本机这次**真能查出来**的词典：引擎术语桶里的（激活配置开着、
+        // 目录在且已物化，[DictionaryRepository.engineTermDictionaryNames]）∩ 这次
+        // 查词视图开着的。只按视图开关算会把「工作配置开着、激活配置关着」或目录
+        // 缺失 / 未物化的词典也当成本机已有，服务器那份被去重丢掉，整本消失。
+        final Set<String> engineNames = dictRepo.engineTermDictionaryNames;
+        final Set<String> localDictionaryNames = <String>{
+          for (final Dictionary d
+              in profileView?.dictionaries ?? dictRepo.dictionaries)
+            if (!d.isHidden(JapaneseLanguage.instance) &&
+                engineNames.contains(d.name))
+              d.name,
+        };
+        // 大结果的合并（两份弹窗文档整份编解码）在后台 isolate 里做，见
+        // [mergeDictionarySearchResultsAsync]。
+        return (await mergeDictionarySearchResultsAsync(
           local: localResult,
           remote: remoteResult,
           dictionaryOrder: filters.termDictionaryOrder,
-          localDictionaryNames: <String>{
-            for (final Dictionary d
-                in profileView?.dictionaries ?? dictRepo.dictionaries)
-              if (!d.isHidden(JapaneseLanguage.instance)) d.name,
-          },
+          localDictionaryNames: localDictionaryNames,
           maximumTerms: effectiveMaxTerms,
           localDictionaryStyles: FushiDicts.dictionaryStyles,
-        )!;
+        ))!;
       }
     }
 
@@ -9720,8 +9766,8 @@ class AppModel
 
   /// 词典服务器可达性的唯一真相源（BUG-4275）：查词客户端按它跳过判死的 host、把
   /// 每次往返的结局写回去；目录服务（[_remoteDictionaryCatalog]）拉清单的结局也写进
-  /// 同一份，并挂上后台再探测。弹窗进程没有目录服务，退回「间隔内跳过、过了间隔由
-  /// 查词顺带重试」的口径（BUG-1302）。
+  /// 同一份，并挂上后台再探测。弹窗进程没有目录服务，后台再探测由查词客户端承担
+  /// （[_probeRemoteDictionaryHost]），两个进程的查词路径都不在已知死掉的 host 上等。
   final RemoteDictionaryReachability _remoteDictionaryReachability =
       RemoteDictionaryReachability();
 
@@ -9766,6 +9812,12 @@ class AppModel
       onDictionaryHostOutcomes: _remoteDictionaryReachability.record,
     );
   }
+
+  /// 没有目录服务的进程（`:popup` / 悬浮词典 engine）挂给 [_remoteDictionaryReachability]
+  /// 的后台再探测：查词客户端用短预算拉一次目录清单，结局照常记回追踪器。主进程由
+  /// 目录服务的 [RemoteDictionaryCatalogService.probeHost] 承担（探通顺带对账）。
+  Future<void> _probeRemoteDictionaryHost(String hostId) =>
+      _remoteDictionaryLookup.probeDictionaryHost(hostId);
 
   /// 每台 host 最近一次是否套用了本端发去的词典选择（见
   /// [FushiRemoteLookupClient.dictionaryConfigAppliedByHost]），UI 据此提示老 host。
@@ -11173,6 +11225,8 @@ class AppModel
       mediaHistoryRepo.dispose();
     }
     _stopRemoteDictionaryCatalog();
+    // 弹窗进程挂的后台再探测（[_probeRemoteDictionaryHost]）随实例停掉。
+    _remoteDictionaryReachability.dispose();
     _remoteDictionaryCatalogLifecycle?.dispose();
     _remoteDictionaryCatalogLifecycle = null;
     _remoteLookupHttpClient?.close();

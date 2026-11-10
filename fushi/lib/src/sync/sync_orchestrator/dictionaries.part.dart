@@ -73,6 +73,12 @@ extension _SyncOrchestratorDictionaries on SyncOrchestrator {
 
   /// 从互联对端拉一本词典包并导入本机（同步阶段与按 host 的单本下载共用这一份）。
   /// 失败原样抛出，由调用方决定记账还是上屏。
+  ///
+  /// 导入后本机这份接替管理页上那条服务器目录行的位置与开关
+  /// （[DictionaryRepository.adoptCatalogPlacement]）：包里带的是 host 自己词典表的
+  /// `order` / 开关（另一条数轴、另一个配置）。放在这里而不是各调用方，整轮同步的
+  /// 拉取与单本「下载到本机」就不会一条接替、一条照搬。在后置钩子重载词典之前写，
+  /// 重载读到的就是最终值。
   Future<void> _pullLiveDictionary(
     InterconnectSyncBackend backend,
     String name, {
@@ -105,6 +111,11 @@ extension _SyncOrchestratorDictionaries on SyncOrchestrator {
       await _packages.importDictionaryPackage(
         packageFile: tmp,
         dictionaryResourceRoot: _dictionaryResourceRoot,
+      );
+      await DictionaryRepository.adoptCatalogPlacement(
+        _db,
+        hostId: await backend.connectedHostIdentity(),
+        name: name,
       );
     } finally {
       _safeDelete(tmp);
