@@ -1,6 +1,5 @@
 import 'package:fushi_core/fushi_core.dart' show BookFormat, EpubBookRow;
-import 'package:fushi_engine/sync/pdf_sync_package.dart'
-    show pdfBookFilePath;
+import 'package:fushi_engine/sync/pdf_sync_package.dart' show pdfBookFilePath;
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/utils/misc/reveal_in_file_manager.dart';

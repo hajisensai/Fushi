@@ -109,8 +109,9 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
         // 服务端没有 PDF 引擎；这两种对端上 PDF 留在本机（能力边界，不是错误）。
         File? upload;
         if (format == BookFormat.pdf) {
-          hostAcceptsPdf ??= await backend.hostAcceptsPdfBooks();
-          if (!hostAcceptsPdf) {
+          final bool acceptsPdf = hostAcceptsPdf ??= await backend
+              .hostAcceptsPdfBooks();
+          if (!acceptsPdf) {
             index++;
             continue;
           }
