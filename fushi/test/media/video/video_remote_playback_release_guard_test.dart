@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// BUG-4285：远端播放的「释放服务端资源」（互联 host 的流票）与「播放停止上报」
 /// （Jellyfin / Plex 的 Stopped）是两件事，页面在不同边界上调：
