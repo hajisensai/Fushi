@@ -1993,11 +1993,16 @@ extension _VideoSubtitle on _VideoFushiPageState {
   /// 返回 false = 流不是原始容器（转码 HLS 不带轨）/ 轨本来就是外挂文件、不在流里
   /// （[RemoteVideoEmbeddedSubtitleTrack.isExternalFile]）/ 轨未就绪 / 序号越界，调用方
   /// 按下载失败提示。
+  ///
+  /// [remember] = false：起播按「app 偏好 > 服务器默认标记」自动挑中的轨（反馈
+  /// wCQIR4Pvz9）只是本次默认、不写持久化选择——否则服务器抽不出、走 libmpv 回落
+  /// 的那一次会把自动挑选固化成「用户选择」，之后改偏好也不再生效。
   Future<bool> _showRemoteEmbeddedTrackViaPlayer(
     VideoPlayerController controller,
     RemoteVideoEmbeddedSubtitleTrack track, {
     required String source,
     required String label,
+    bool remember = true,
   }) async {
     final int seq = _episodeLoadSeq;
     final bool shown;
@@ -2016,10 +2021,12 @@ extension _VideoSubtitle on _VideoFushiPageState {
     }
     if (!shown || !mounted || seq != _episodeLoadSeq) return shown;
     _rebuild(() => _currentSubtitleSource = source);
-    final (String subUid, int subEp) = _remotePositionKeyForIndex(
-      _currentEpisode,
-    );
-    _rememberRemoteSubtitleSource(subUid, subEp, source);
+    if (remember) {
+      final (String subUid, int subEp) = _remotePositionKeyForIndex(
+        _currentEpisode,
+      );
+      _rememberRemoteSubtitleSource(subUid, subEp, source);
+    }
     _showOsd(t.video_subtitle_remote_player_decoded(label: label));
     return true;
   }

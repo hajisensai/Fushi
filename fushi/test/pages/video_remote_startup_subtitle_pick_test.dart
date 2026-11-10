@@ -267,6 +267,23 @@ void main() {
 
     test('自动挑轨不写持久化选择', () {
       expect(load.contains('setRemoteSubtitleSource('), isFalse);
+      // 服务器抽不出、起播后交 libmpv 回落时，_showRemoteEmbeddedTrackViaPlayer 默认会
+      // 记住选择：起播这一处必须只在重放持久化选择时才记，自动挑中的轨不得被固化。
+      final int fallbackAt = load.indexOf(
+        '? _showRemoteEmbeddedTrackViaPlayer(',
+      );
+      expect(fallbackAt, greaterThan(-1));
+      final int graphicAt = load.indexOf(
+        ': _showRemoteGraphicTrackViaPlayer(',
+        fallbackAt,
+      );
+      expect(graphicAt, greaterThan(fallbackAt));
+      expect(
+        load
+            .substring(fallbackAt, graphicAt)
+            .contains('remember: persistedSub != null'),
+        isTrue,
+      );
     });
   });
 }

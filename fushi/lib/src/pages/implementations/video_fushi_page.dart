@@ -5153,6 +5153,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
                   playerRenderedTrack,
                   source: _remoteEmbeddedSubtitleSource(playerRenderedTrack),
                   label: _remoteEmbeddedSubtitleLabel(playerRenderedTrack),
+                  // 起播自动挑中的轨（wCQIR4Pvz9）走 libmpv 回落时同样不持久化。
+                  remember: persistedSub != null,
                 )
               : _showRemoteGraphicTrackViaPlayer(
                   loadedController,
