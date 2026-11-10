@@ -117,6 +117,7 @@ import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart'
         fushiTitleBarColorsOn;
 import 'package:fushi/src/media/manga/reader/manga_reader_settings_sheet.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_page_grid.dart';
+import 'package:fushi/src/media/manga/reader/manga_page_thumbnail_prefetcher.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_quick_settings_sheet.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_study_stats.dart';
 import 'package:fushi/src/pages/implementations/statistics_center_page.dart';
@@ -6412,12 +6413,27 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   Future<void> _showPageGrid() async {
     final int total = _payload?.images.length ?? 0;
     if (total <= 0 || !mounted) return;
-    final int? page = await showMangaPageGridSheet(
-      context: context,
-      pageCount: total,
-      currentPages: _currentScreenPages(),
-      thumbnail: _pageThumbnail,
-    );
+    // 在线直读章：还没取到的页经阅读器自己的页会话预取（同一份缓存 / 管线 / 并发
+    // 上限），整章都能预览；本地卷 / 已下载章页图本就在盘上，不需要。
+    final MangaReaderSession? session = _pageSession;
+    final OnlineMangaThumbnailPrefetcher? prefetcher =
+        session is OnlineMangaReaderSession && !session.isClosed
+        ? OnlineMangaThumbnailPrefetcher(session)
+        : null;
+    final int? page;
+    try {
+      page = await showMangaPageGridSheet(
+        context: context,
+        pageCount: total,
+        currentPages: _currentScreenPages(),
+        thumbnail: _pageThumbnail,
+        prefetcher: prefetcher,
+      );
+    } finally {
+      // 只停不 dispose：面板退场动画期间格子还挂着监听，卸载时自己摘；停了之后
+      // 不再发新请求，排队的已撤，留下的只有已在飞、落盘后照样给阅读用的页。
+      prefetcher?.stop();
+    }
     if (page != null && mounted) {
       _recordMangaJumpDeparture(source: JumpSource.gallery, targetPage: page);
       await _jumpToPage(page + 1);
