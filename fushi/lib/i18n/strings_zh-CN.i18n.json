@@ -12031,6 +12031,8 @@
   "web_browser_settings_force_dark": "网页深色模式",
   "web_browser_settings_force_dark_hint": "应用为深色时网页也用深色显示",
   "web_browser_settings_manage_search_engines": "管理搜索引擎",
+  "web_browser_settings_pull_to_refresh": "下拉刷新",
+  "web_browser_settings_pull_to_refresh_hint": "手机上在网页顶部往下拉即可刷新；容易误触可以关掉",
   "web_browser_settings_restore_tabs": "恢复上次的标签页",
   "web_browser_settings_restore_tabs_hint": "无痕标签页不会恢复",
   "web_browser_settings_site_settings": "网站设置",
