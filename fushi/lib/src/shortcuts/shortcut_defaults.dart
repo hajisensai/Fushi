@@ -480,6 +480,11 @@ class ShortcutDefaults {
     // 同键（manga scope 内未被占用；与 reader 组分属不同 co-active 组）。手柄留空。
     ShortcutAction.mangaOpenStatistics: _kb([_key(LogicalKeyboardKey.keyI)]),
     ShortcutAction.mangaToggleStudyClock: _kb([_key(LogicalKeyboardKey.keyP)]),
+    // 当前页书签（反馈 FhspOXxPl_）：键盘 B——manga 组内空闲（小说的 B 是
+    // readerOpenAudiobook、视频的 B 是 videoToggleSubtitleBlur，都属别的 co-active
+    // 组）。手柄**不绑**：手柄 B 是 universal 的 globalBack，再在 manga scope 绑会
+    // 遮蔽返回阶梯（见上方翻页注释与 `universal_back_test`）。
+    ShortcutAction.mangaToggleBookmark: _kb([_key(LogicalKeyboardKey.keyB)]),
     ShortcutAction.videoReplayCurrentSubtitle: _kb(
       [_key(LogicalKeyboardKey.keyR)],
       [_gLT],
