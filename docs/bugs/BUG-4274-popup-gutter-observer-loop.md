@@ -1,0 +1,6 @@
+## BUG-4274 · 查词弹窗错误日志反复出现 ResizeObserver loop completed with undelivered notifications（滚动条 gutter 观察者在投递中同步重排）
+- **报告**：2026-11-07（外部 PR #3076，作者 samutw：VN 模式开着 TTS 朗读读日文书，查词约 20–30 次落 2–3 条 `PopupJs.window.onerror: ResizeObserver loop completed with undelivered notifications.`）。
+- **真实性**：✅ 真 bug。`fushi/lib/src/pages/implementations/dictionary_popup_webview.dart` 的 `popupViewportScript`（BUG-4042 加的滚动条 gutter 观察者，修前约 `:906-910`）在 ResizeObserver 回调里**同步**调 `__fushiApplyPopupViewport()`：它改 `#entries-container` 宽度并同步跑 `__fushiRelayoutPopupColumns`。首次渲染出竖向滚动条时容器窄掉一个 gutter，若有行因此折行，被观察的 `documentElement` 在本轮投递里改了尺寸；它是最浅目标，规范只能把变化推到下一帧，Chrome 抛 loop 错误，经 popup 的 `window.onerror` 桥（`__fushiReportJsError` → `logPopupJsError`）落进错误日志。与 BUG-4106（词头元数据观察者）同一机理；popup.js 里其余观察者（内容复报 `__fushiContentResizeObserver`、masonry）已经是 rAF 合帧，唯独这一个是同步写。
+- **[x] ① 已修复** — 外部 PR #3076 `5fdf0b02a1`：回调只读 gutter，变了才排一帧 `requestAnimationFrame`（同一时刻最多一帧），那一帧再核一次 gutter，已被别的重算追平就跳过；写布局不再发生在投递期间。
+- **[x] ② 已加自动化测试** — `fushi/test/pages/popup_viewport_scrollbar_gutter_test.dart`（node 真执行注入脚本）：投递期间不写 `#entries-container` 宽度、重复回调只排一帧、帧后宽度生效、帧前 gutter 已追平则不重复铺。修前红、修后绿。
+- **备注**：代价是 gutter 变化后的宽度重算晚一帧落地（与 BUG-4106 相同取舍）。PR 作者在 Windows 离屏集成环境（多词典、VN 模式、朗读中键盘查词 30 次）实测修前 2 条、修后 0 条；本仓审查未另做真机复测。
