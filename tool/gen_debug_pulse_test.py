@@ -333,11 +333,65 @@ class ReportTest(unittest.TestCase):
         self.assertIsNone(rep["pending"])
         self.assertTrue(side)
 
-    def test_testflight_flag(self) -> None:
+    def test_testflight_without_jobs_is_false(self) -> None:
+        # No jobs data -> nothing proves an upload; never guessed from the seq.
         rep = self.standard()
-        for b in rep["builds"]:
-            has_ios = b["platforms"]["ios"]["state"] == "ok"
-            self.assertEqual(b["testflight"], b["seq"] % 3 == 0 and has_ios)
+        self.assertEqual([b["testflight"] for b in rep["builds"]], [False, False])
+
+    def test_testflight_follows_the_testflight_job(self) -> None:
+        s1, s2 = self.repo.seq(self.b1), self.repo.seq(self.b2)
+        # Pick seqs on both residues so a leftover "% 3" rule cannot pass.
+        self.assertNotEqual(s1 % 3, s2 % 3)
+        runs = [
+            dict(run("release-desktop.yml", self.b1), id=1),
+            dict(run("release-desktop.yml", self.b2), id=2),
+            dict(run("release-desktop.yml", self.b_old), id=3),
+        ]
+        jobs_by_run = {
+            1: [{"name": "ios", "status": "completed", "conclusion": "success", "steps": []},
+                {"name": "testflight", "status": "completed", "conclusion": "success", "steps": []}],
+            2: [{"name": "ios", "status": "completed", "conclusion": "success", "steps": []},
+                {"name": "testflight", "status": "completed", "conclusion": "failure", "steps": []}],
+        }
+        calls: List[int] = []
+
+        def jobs(rid: int) -> List[dict]:
+            calls.append(rid)
+            return jobs_by_run.get(rid, [])
+
+        assets = [asset(s1, "ios", self.b1[:7]), asset(s2, "ios", self.b2[:7])]
+        rep = gp.build_report(
+            repo="o/r", git=self.git, floor=FLOOR, head=self.head,
+            assets=assets, runs=runs, pr_fetcher=self.fetcher, jobs_fetcher=jobs,
+            log=lambda _: None,
+        )
+        tf = {b["seq"]: b["testflight"] for b in rep["builds"]}
+        self.assertEqual(tf, {s1: True, s2: False})
+        self.assertEqual(sorted(calls), [1, 2])
+
+        # Once true it is cached through the previous file: no jobs request.
+        calls.clear()
+        rep2 = gp.build_report(
+            repo="o/r", git=self.git, floor=FLOOR, head=self.head,
+            assets=assets, runs=runs, pr_fetcher=self.fetcher, jobs_fetcher=jobs,
+            previous=rep, log=lambda _: None,
+        )
+        self.assertEqual({b["seq"]: b["testflight"] for b in rep2["builds"]}, tf)
+        self.assertEqual(calls, [2])
+
+    def test_testflight_needs_an_ios_package(self) -> None:
+        s1 = self.repo.seq(self.b1)
+        runs = [dict(run("release-desktop.yml", self.b1), id=1)]
+        rep = gp.build_report(
+            repo="o/r", git=self.git, floor=FLOOR, head=self.head,
+            assets=[asset(s1, "windows", self.b1[:7])], runs=runs,
+            pr_fetcher=self.fetcher,
+            jobs_fetcher=lambda _rid: [
+                {"name": "testflight", "status": "completed", "conclusion": "success", "steps": []}
+            ],
+            log=lambda _: None,
+        )
+        self.assertFalse(rep["builds"][0]["testflight"])
 
     def test_prs_map_and_cache(self) -> None:
         rep = self.standard()

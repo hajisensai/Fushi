@@ -41,7 +41,7 @@
       "sha": "<40>|null",           // 解析不出时 null，此时 prs/direct 为空、unknown=true
       "unknown": false,
       "publishedAt": "ISO",          // 该 seq 资产里最新的 updated_at
-      "testflight": true,            // seq % 3 == 0 且有 iOS 包
+      "testflight": true,            // 有 iOS 包且该 seq 的 release-desktop run 里 testflight job 成功（读实际 job 结果，不复刻上传节律；为 true 后经上一份文件缓存）
       "baseSeq": 25010,              // 内容是相对哪个 seq 算的；null = 找不到前一个
       "prs": [3101, 3100],           // first-parent 链上的 PR，新到旧
       "direct": [{ "sha": "<40>", "subject": "..." }],  // 直推 develop 的提交

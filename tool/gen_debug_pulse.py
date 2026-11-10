@@ -27,6 +27,8 @@ the network:
         "queued / building / built / failed / superseded" state, refined by the
         run's jobs while it is live (the refresh runs INSIDE release runs, see
         tool/publish_debug_pulse.sh, so the current run is always still live);
+      * whether a build reached TestFlight: the ``testflight`` job of its
+        release-desktop run (cached through the previous file once true);
       * PR metadata (title / author / labels / additions / deletions / mergedAt),
         cached through the previous ``debug-pulse-fushi.json`` so a steady-state
         run only asks for PRs merged since the last run.
@@ -83,6 +85,13 @@ PLATFORM_JOBS: Dict[str, Tuple[str, ...]] = {
     "ios": ("ios", "publish"),
 }
 RELEASE_WORKFLOWS: Tuple[str, ...] = ("release.yml", "release-desktop.yml")
+# release-desktop.yml job (key, no `name:`) that uploads the signed IPA to
+# TestFlight. Whether a build reached TestFlight is read from THIS job's outcome,
+# never re-derived from a cadence rule: the cadence already changed once (the
+# 09-16 "seq % 3 == 0" rule was replaced on 2026-11-02 by "every develop push"),
+# and a copied rule silently goes stale.
+TESTFLIGHT_WORKFLOW = "release-desktop.yml"
+TESTFLIGHT_JOB = "testflight"
 
 MAX_BUILDS = 30
 # First-parent commits listed per build / pending before `truncated` is set.
@@ -204,6 +213,16 @@ def jobs_state(jobs: Sequence[dict], names: Sequence[str]) -> Optional[str]:
     if any(j.get("status") in ("in_progress", "completed") for j in rel):
         return "building"
     return "queued"
+
+
+def testflight_uploaded(jobs: Sequence[dict]) -> bool:
+    """The run's TestFlight upload job finished successfully."""
+    return any(
+        j.get("name") == TESTFLIGHT_JOB
+        and j.get("status") == "completed"
+        and j.get("conclusion") == "success"
+        for j in jobs
+    )
 
 
 def platform_entry(has_asset: bool, run: Optional[dict], state: Optional[str] = None) -> dict:
@@ -426,6 +445,18 @@ def placeholder_pr(n: int) -> dict:
     }
 
 
+def cached_testflight(previous: Optional[dict]) -> set:
+    """Seqs the previous file already saw on TestFlight. An upload never
+    un-happens, so those seqs need no jobs request again."""
+    if not isinstance(previous, dict) or previous.get("schema") != SCHEMA:
+        return set()
+    out = set()
+    for b in previous.get("builds") or []:
+        if isinstance(b, dict) and b.get("testflight") is True and isinstance(b.get("seq"), int):
+            out.add(b["seq"])
+    return out
+
+
 def cached_prs(previous: Optional[dict]) -> Dict[int, dict]:
     """Reusable PR entries of the previous file: only merged ones (immutable
     enough); placeholders (mergedAt null) are re-fetched."""
@@ -570,26 +601,44 @@ def build_report(
 
     jobs_cache: Dict[int, Optional[List[dict]]] = {}
 
+    def jobs_of(run: Optional[dict]) -> Optional[List[dict]]:
+        """The run's jobs (one request per run, cached); None = unavailable."""
+        if jobs_fetcher is None or run is None or run.get("id") is None:
+            return None
+        rid = run["id"]
+        if rid not in jobs_cache:
+            try:
+                jobs_cache[rid] = jobs_fetcher(rid)
+            except Exception as err:  # callers fall back to run-level facts
+                log(f"::warning title=Run jobs::run {rid}: {err}")
+                jobs_cache[rid] = None
+        return jobs_cache[rid]
+
     def platform(p: str, has_asset: bool, run: Optional[dict]) -> dict:
         """Asset first; else the run, refined by its jobs while it is live or
-        did not succeed (one jobs request per such run, cached)."""
+        did not succeed."""
         if has_asset or run is None:
             return platform_entry(has_asset, run)
         state = None
         needs_jobs = run.get("status") != "completed" or (
             run.get("conclusion") not in ("success",) and run.get("conclusion") not in SUPERSEDED_CONCLUSIONS
         )
-        if jobs_fetcher is not None and needs_jobs and run.get("id") is not None:
-            rid = run["id"]
-            if rid not in jobs_cache:
-                try:
-                    jobs_cache[rid] = jobs_fetcher(rid)
-                except Exception as err:  # fall back to the run-level state
-                    log(f"::warning title=Run jobs::run {rid}: {err}")
-                    jobs_cache[rid] = None
-            if jobs_cache[rid]:
-                state = jobs_state(jobs_cache[rid], PLATFORM_JOBS[p])
+        jobs = jobs_of(run) if needs_jobs else None
+        if jobs:
+            state = jobs_state(jobs, PLATFORM_JOBS[p])
         return platform_entry(False, run, state)
+
+    tf_cached = cached_testflight(previous)
+
+    def testflight(b: dict) -> bool:
+        """The build's IPA reached TestFlight: its release-desktop run's
+        ``testflight`` job succeeded (no iOS package -> nothing to upload)."""
+        if "ios" not in b["platforms"]:
+            return False
+        if b["seq"] in tf_cached:
+            return True
+        jobs = jobs_of(pick_run(runs_for(b["seq"], TESTFLIGHT_WORKFLOW)))
+        return bool(jobs) and testflight_uploaded(jobs)
 
     # 4. Contents: previous known build, else (oldest build) the newest
     #    successful release run below it -- its predecessor was pruned.
@@ -599,7 +648,7 @@ def build_report(
         entry = {
             "seq": b["seq"], "version": b["version"], "sha": b["sha"],
             "unknown": b["sha"] is None, "publishedAt": b["publishedAt"] or None,
-            "testflight": b["seq"] % 3 == 0 and "ios" in b["platforms"],
+            "testflight": testflight(b),
             "baseSeq": None, "prs": [], "direct": [], "truncated": False,
         }
         if b["sha"]:
