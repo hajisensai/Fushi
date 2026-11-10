@@ -2302,18 +2302,43 @@ SettingsDestination buildVideoDestination() {
           SettingsActionItem(
             id: 'video.library.scrape_records_clear_all',
             title: t.video_source_scrape_clear_all,
-            subtitle: t.video_source_scrape_clear_all_hint,
+            subtitle: t.video_source_scrape_clear_all_summary,
             icon: Icons.delete_sweep_outlined,
             destructive: true,
             cli: SettingsCliAction(
               confirm: true,
+              params: const <SettingsCliParam>[
+                SettingsCliParam(
+                  'files',
+                  help:
+                      'delete（默认）= 同时删除 Fushi 生成且未改动的 NFO 与图片；'
+                      'keep = 只清记录，磁盘文件一个不动',
+                  required: false,
+                ),
+              ],
               run: (SettingsContext c, Map<String, String> args) async {
+                final String files = args['files'] ?? 'delete';
+                if (files != 'delete' && files != 'keep') {
+                  throw ArgumentError.value(
+                    files,
+                    'files',
+                    'expected delete or keep',
+                  );
+                }
                 try {
                   final VideoScrapeCleanupResult result =
-                      await clearAllVideoScrapeRecords(c.appModel.database);
+                      await clearAllVideoScrapeRecords(
+                        c.appModel.database,
+                        mode: videoScrapeCleanupModeFor(
+                          deleteGeneratedFiles: files == 'delete',
+                        ),
+                      );
                   return <String, Object?>{
                     'cleared': true,
+                    'mode': result.mode.name,
                     'preservedFiles': result.preservedFiles,
+                    'deletedGeneratedFiles': result.deletedGeneratedFiles,
+                    'retainedGeneratedFiles': result.retainedGeneratedFiles,
                   };
                 } on VideoScrapeCleanupBusyException {
                   throw StateError(t.video_source_scrape_clear_all_busy);
