@@ -4217,6 +4217,7 @@
   "icon_custom_hint": "แตะไอคอนเพื่อเปลี่ยน หรือเลือกรูปกำหนดเองด้านล่าง",
   "icon_default": "ค่าเริ่มต้น",
   "icon_shortcut_created": "สร้างทางลัดบนหน้าจอหลักแล้ว",
+  "icon_shortcut_failed": "Could not set the home screen icon: ${error}",
   "icon_shortcut_unsupported": "อุปกรณ์นี้ไม่รองรับทางลัด",
   "icon_switch_success": "เปลี่ยนไอคอนแอปสำเร็จ",
   "image_pause": "หยุดเมื่อพบรูปภาพ",
