@@ -16,11 +16,17 @@ import 'package:fushi_audio/fushi_audio.dart';
 //   一句；
 // - 两条都有可读正文（图形字幕时间表 cue、`\p` 绘图 cue 没有正文，不参与）。
 //
-// 组内按**显示顺序**（画面自上而下，[subtitleAuthoredVerticalFraction]）排；竖直位置相同
-// 保持字幕流原顺序（文件序）。组内文本按 `\N` 硬换行同一口径（解析器把 `\N` 落成空格，
-// 见 `SubtitleMarkup.lineBreakGraphemes`）以空格拼接：同一段台词无论作者用 `\N` 断行
-// 还是拆成两条 Dialogue，复制 / 制卡得到的文本一致。组内完全相同的文本（多层同文特效
-// 漏网的重复）只保留一份。
+// 组内按**显示顺序**排：先画面自上而下（[subtitleAuthoredVerticalFraction]），同一竖直
+// 位置再按显式 `\pos` / `\move` 的 x 自左而右，其余保持字幕流原顺序（文件序）。
+// 拼接分两级：
+// - 同一画面行（两条都有显式位置、y 相同）的片段直接相连，不加分隔——逐字 / 逐词各带
+//   `\pos` 拼成一行的事件（与字幕列表 [mergePerCharacterCueGroups] 同一画面语义），
+//   中间加空格会把「手を伸」变成「手 を 伸」；
+// - 不同画面行按 `\N` 硬换行同一口径（解析器把 `\N` 落成空格，见
+//   `SubtitleMarkup.lineBreakGraphemes`）以空格拼接：同一段台词无论作者用 `\N` 断行
+//   还是拆成两条 Dialogue，复制 / 制卡得到的文本一致。
+// 完全相同的画面行（多层同文特效漏网的重复）只保留一份；同一行内的片段不去重（逐字
+// 事件里重复的字是正文）。
 
 /// [a] 与 [b] 在画面上是否属于同一句（判据见文件头）。
 bool cuesShowAsOneSentence(AudioCue a, AudioCue b) {
@@ -83,16 +89,35 @@ double subtitleAuthoredVerticalFraction(SubtitleMarkup? m) {
   }
 }
 
-/// 把 [cues] 按显示顺序（画面自上而下）稳定排序；竖直位置相同保持输入顺序。
+/// 一条 cue 显式写出的水平位置（`\pos` 的 x、`\move` 起点 x）；没有显式位置为 null
+/// （按 `\an` 排版的行由 libass 竖排避让，不与别的行同处一行）。
+double? _explicitHorizontalFraction(SubtitleMarkup? m) {
+  if (m == null) return null;
+  final SubtitlePos? pos = m.posFraction;
+  if (pos != null) return pos.xFraction;
+  return m.move?.x1Fraction;
+}
+
+/// 同一画面行的竖直容差（与字幕列表逐字合并的同行判据同值）。
+const double _kSameRowEps = 0.001;
+
+/// 把 [cues] 按显示顺序稳定排序：先自上而下；竖直位置相同时，有显式水平位置的按 x
+/// 自左而右（排在无显式位置的之后），其余保持输入顺序。
 List<AudioCue> orderCuesTopToBottom(List<AudioCue> cues) {
   if (cues.length < 2) return cues;
   final List<double> ys = <double>[
     for (final AudioCue c in cues) subtitleAuthoredVerticalFraction(c.markup),
   ];
+  final List<double> xs = <double>[
+    for (final AudioCue c in cues)
+      _explicitHorizontalFraction(c.markup) ?? -1.0,
+  ];
   final List<int> idx = List<int>.generate(cues.length, (int i) => i)
     ..sort((int a, int b) {
       final int byY = ys[a].compareTo(ys[b]);
-      return byY != 0 ? byY : a.compareTo(b);
+      if (byY != 0) return byY;
+      final int byX = xs[a].compareTo(xs[b]);
+      return byX != 0 ? byX : a.compareTo(b);
     });
   return <AudioCue>[for (final int i in idx) cues[i]];
 }
@@ -146,16 +171,35 @@ List<AudioCue> simultaneousCueGroup(List<AudioCue> cues, AudioCue anchor) {
   return orderCuesTopToBottom(members);
 }
 
-/// 一句（[group]，已按显示顺序）的文本：逐行 trim、丢空行、去掉重复行，以空格拼接
-/// （与 `\N` 硬换行落成空格同一口径，见文件头）。
+/// 一句（[group]，已按 [orderCuesTopToBottom] 排好）的文本：逐条 trim、丢空条；同一
+/// 画面行（两条都有显式位置且 y 相同）的片段直接相连，不同画面行以空格拼接（与 `\N`
+/// 硬换行落成空格同一口径），完全相同的画面行只留一份（见文件头）。
 String joinSimultaneousCueText(List<AudioCue> group) {
-  final List<String> lines = <String>[];
+  final List<String> rows = <String>[];
+  StringBuffer? row;
+  double? rowY;
   for (final AudioCue cue in group) {
     final String text = cue.text.trim();
-    if (text.isEmpty || lines.contains(text)) continue;
-    lines.add(text);
+    if (text.isEmpty) continue;
+    final bool explicit = _explicitHorizontalFraction(cue.markup) != null;
+    final double y = subtitleAuthoredVerticalFraction(cue.markup);
+    if (row != null &&
+        explicit &&
+        rowY != null &&
+        (y - rowY).abs() <= _kSameRowEps) {
+      row.write(text);
+      continue;
+    }
+    if (row != null) rows.add(row.toString());
+    row = StringBuffer(text);
+    rowY = explicit ? y : null;
   }
-  return lines.join(' ');
+  if (row != null) rows.add(row.toString());
+  final List<String> unique = <String>[];
+  for (final String r in rows) {
+    if (!unique.contains(r)) unique.add(r);
+  }
+  return unique.join(' ');
 }
 
 /// [anchor] 所在那一句的完整文本（复制 / 制卡用）。不与别的行同时显示时就是

@@ -1968,7 +1968,8 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       // 回落光标定位）。
       await GlobalLookupController.instance.lookupText(
         term,
-        sentence: sentence,
+        // 反馈 rLCxUJ-2i4：顶层查词窗口制卡的 sentence 取自这里，与视频页同一判据合整句。
+        sentence: _lookupMiningSentence(sentence),
         autoRead: true,
         miningHandler: _mineFromGlobalLookup,
       );
@@ -1981,6 +1982,19 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       replaceStack: true,
       reuseWarmSlot: true,
       autoRead: true,
+    );
+  }
+
+  /// 顶层查词窗口制卡用的句子：被点的行 [tapped] 与锚点 cue 同属一句（ASS 把一句拆成
+  /// 几条同时显示的 Dialogue）时取整句，否则原样（[videoLookupMiningSentence]）。
+  String _lookupMiningSentence(String tapped) {
+    final AudioCue? anchor = _lastLookupCue;
+    return videoLookupMiningSentence(
+      cues: anchor == null
+          ? const <AudioCue>[]
+          : _controller.cueStreamOwning(anchor),
+      anchor: anchor,
+      tappedSentence: tapped,
     );
   }
 
@@ -2006,7 +2020,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     _lastLookupCue = cue ?? _controller.currentCue;
     await GlobalLookupController.instance.lookupText(
       term,
-      sentence: req.sentence,
+      sentence: _lookupMiningSentence(req.sentence),
       anchorScreenRect: webVideoLookupAnchorScreenRect(req),
       autoRead: true,
       miningHandler: _mineFromGlobalLookup,

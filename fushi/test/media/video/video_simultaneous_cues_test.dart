@@ -25,6 +25,7 @@ AudioCue _ass(
   int startMs = 446000,
   int endMs = 448300,
   double? y,
+  double x = 0.5,
   SubtitleCueStyle? style = _default,
   int layer = 0,
 }) {
@@ -40,7 +41,7 @@ AudioCue _ass(
   cue.markup = SubtitleMarkup(
     plainText: text,
     spans: const <SubtitleSpan>[],
-    posFraction: y == null ? null : SubtitlePos(0.5, y),
+    posFraction: y == null ? null : SubtitlePos(x, y),
     cueStyle: style,
     playResY: 720,
     layer: layer,
@@ -137,6 +138,18 @@ void main() {
       final AudioCue a = _ass('同じ', y: 0.8);
       final AudioCue b = _ass('同じ', y: 0.9);
       expect(simultaneousCueText(<AudioCue>[a, b], a), '同じ');
+    });
+
+    // 逐字 / 逐词各带 \pos 拼成一行的事件（同起止同 Style）：同一画面行按 x 自左而右
+    // 直接相连，不插空格，行内重复的字不去重；换行才以空格分隔。
+    test('同一画面行的片段按 x 直接相连，不同画面行以空格分隔', () {
+      final AudioCue o = _ass('を', y: 0.9, x: 0.5);
+      final AudioCue te = _ass('手', y: 0.9, x: 0.4);
+      final AudioCue nobu = _ass('伸', y: 0.9, x: 0.6);
+      final AudioCue a1 = _ass('あ', y: 0.8, x: 0.4);
+      final AudioCue a2 = _ass('あ', y: 0.8, x: 0.5);
+      final List<AudioCue> cues = <AudioCue>[o, nobu, te, a2, a1];
+      expect(simultaneousCueText(cues, o), 'ああ 手を伸');
     });
 
     test('锚点不在流里时按判据收同组再补进锚点', () {
