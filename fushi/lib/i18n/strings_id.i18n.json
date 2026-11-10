@@ -4964,6 +4964,8 @@
   "manga_ocr_ai_mode_open_settings": "Open AI settings",
   "manga_ocr_ai_mode_pending": "Not decided yet: you'll be asked the first time uncertain text would be sent.",
   "manga_ocr_boxes_toggle": "Tampilkan wilayah teks yang dikenali",
+  "manga_ocr_copy_page_text": "Copy page text",
+  "manga_ocr_copy_text": "Copy text",
   "manga_ocr_ctc_desc": "Membaca setiap kolom teks secara terpisah dengan model PP-OCRv6 yang disetel untuk manga. Unduhan kecil, cepat, dan tetap akurat pada halaman dengan banyak furigana. Model: Kellenok/PP-OCRv6_manga (dilatih dengan Manga109-s dan AnimeText).",
   "manga_ocr_ctc_model": "Manga CTC (cepat)",
   "manga_ocr_default_engine": "Mesin OCR default",

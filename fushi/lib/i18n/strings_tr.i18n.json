@@ -4964,6 +4964,8 @@
   "manga_ocr_ai_mode_open_settings": "Open AI settings",
   "manga_ocr_ai_mode_pending": "Not decided yet: you'll be asked the first time uncertain text would be sent.",
   "manga_ocr_boxes_toggle": "Tanınan metin bölgelerini göster",
+  "manga_ocr_copy_page_text": "Copy page text",
+  "manga_ocr_copy_text": "Copy text",
   "manga_ocr_ctc_desc": "Her metin sütununu mangaya göre ayarlanmış bir PP-OCRv6 modeliyle ayrı ayrı okur. İndirmesi küçük ve hızlıdır; bol furigana içeren sayfalarda da doğrudur. Model: Kellenok/PP-OCRv6_manga (Manga109-s ve AnimeText ile eğitildi).",
   "manga_ocr_ctc_model": "Manga CTC (hızlı)",
   "manga_ocr_default_engine": "Varsayılan OCR motoru",

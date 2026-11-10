@@ -4964,6 +4964,8 @@
   "manga_ocr_ai_mode_open_settings": "Open AI settings",
   "manga_ocr_ai_mode_pending": "Not decided yet: you'll be asked the first time uncertain text would be sent.",
   "manga_ocr_boxes_toggle": "Herkende tekstgebieden tonen",
+  "manga_ocr_copy_page_text": "Copy page text",
+  "manga_ocr_copy_text": "Copy text",
   "manga_ocr_ctc_desc": "Leest elke tekstkolom afzonderlijk met een op manga afgestemd PP-OCRv6-model. Kleine download, snel en nauwkeurig, ook bij veel furigana. Model: Kellenok/PP-OCRv6_manga (getraind met Manga109-s en AnimeText).",
   "manga_ocr_ctc_model": "Manga-CTC (snel)",
   "manga_ocr_default_engine": "Standaard OCR-engine",

@@ -4964,6 +4964,8 @@
   "manga_ocr_ai_mode_open_settings": "Open AI settings",
   "manga_ocr_ai_mode_pending": "Not decided yet: you'll be asked the first time uncertain text would be sent.",
   "manga_ocr_boxes_toggle": "Показать области распознанного текста",
+  "manga_ocr_copy_page_text": "Copy page text",
+  "manga_ocr_copy_text": "Copy text",
   "manga_ocr_ctc_desc": "Распознаёт каждый столбец текста отдельно моделью PP-OCRv6, дообученной на манге. Небольшая загрузка, высокая скорость и точность даже при обилии фуриганы. Модель: Kellenok/PP-OCRv6_manga (обучена на Manga109-s и AnimeText).",
   "manga_ocr_ctc_model": "Манга CTC (быстрый)",
   "manga_ocr_default_engine": "Движок OCR по умолчанию",
