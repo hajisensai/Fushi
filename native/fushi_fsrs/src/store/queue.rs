@@ -244,6 +244,13 @@ impl StudyHub {
         lock(&self.touched).browse.take(profile, true)
     }
 
+    /// 测试：持着会话表的锁 panic（建 / 重读到一半）。
+    #[cfg(test)]
+    pub(crate) fn panic_holding_sessions(&self) {
+        let _sessions = self.sessions.lock().unwrap();
+        panic!("test: injected panic while holding the study sessions");
+    }
+
     /// 测试：取走 [profile] 复习队列待重读的卡 / 日志 id（含未提交的），对拍两条投影路径触发的待重读用。
     #[cfg(test)]
     pub(crate) fn take_study(&self, profile: &str) -> Dirty {
@@ -263,7 +270,14 @@ impl StudyHub {
         _uncommitted: bool,
         f: impl FnOnce(&Session) -> Result<T, String>,
     ) -> Result<T, String> {
-        let mut sessions = lock(&self.sessions);
+        // 建 / 重读到一半 panic（锁被毒化）时会话停在半截、取走的待重读 id 也没用上：整表丢掉、下次整份重建（同重建 /
+        // 重读出错时丢会话，BUG-4276）。
+        let mut sessions = self.sessions.lock().unwrap_or_else(|poisoned| {
+            let mut s = poisoned.into_inner();
+            s.clear();
+            self.sessions.clear_poison();
+            s
+        });
         let dirty = lock(&self.touched).study.take(profile, true);
         let fresh = match sessions.get(profile) {
             Some(s) => s.day != day || s.today != today || dirty.overflow,

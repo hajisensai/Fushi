@@ -1,0 +1,19 @@
+## BUG-4277 · SRS 内核只读命令共用一条读连接：全库统计读着时复习排队等它跑完
+- **报告**：2026-11-10（内部审查：BUG-3961 只给 Drift 事务外的读加了连接池）
+- **真实性**：✅ 真 bug（真实库副本实测复现，数字见备注；基线 develop `94317ab6295`）：
+  - `native/fushi_fsrs/src/store/mod.rs:57` 内核只读命令只有一条 `reader: Mutex<Option<Connection>>`；`read_visible_tx`（`mod.rs:561`–`:575`）在 Drift 事务没开时整条命令持着这把锁读。共用它的有复习排队 `study`（`native/fushi_fsrs/src/store/study.rs:1206`）、浏览 / AnkiConnect（`native/fushi_fsrs/src/store/browse.rs:2754`–`:2756`）、`stats_bundle` / `card_columns` / `anki_*` / `lineages`（`native/fushi_fsrs/src/store/ffi.rs:1268`–`:1296`），以及直接取 `reader()` 的同步对账 / 媒体 / 时间线 / 投影扫描 / 备份 `VACUUM INTO`。
+  - Dart 侧把 `study` 放交互道、`stats_bundle` 放默认道（`packages/fushi_engine/lib/srs/srs_db_store.dart:2005`、`srs_core_workers.dart`），两边在不同 isolate 上同时调进内核，却在这把锁上排队：统计页一次全库 `stats_bundle` 跑多久，复习页的排队就等多久。
+  - 复现：`native/fushi_fsrs/src/store/kernel_reads_tests.rs` `a_running_kernel_read_does_not_hold_up_study` 在基线上 10 s 超时失败。
+- **[x] ① 已修复** — 内核只读命令改走读连接池，复用 `native/fushi_fsrs/src/store/read_pool.rs` 的同一套机制：`SrsCore` 的单条 `reader` 换成第二个 `ReadPool`（`readers`，上限同为 `read_concurrency()` = `clamp(核数 / 2, 2, 4)`、手机上界 3；按需开、空闲 60 s 回收、关闭等借出的放回）。连接种类仍是四种（写连接、两个只读池、写那一路的只读连接；外加只读会话），没有新的连接形态。
+  - `SrsCore::reader()` 改为从这个池借一条（返回 `read_pool::Pooled`），`read_visible_tx` 在 Drift 事务没开时用它；Drift 事务开着时仍在写连接的 SAVEPOINT 里读（看得见未提交的行），这条路径不变。
+  - 不与 Drift 的 `drift_readers` 合用：Dart 查询道的 worker 数等于那个池的上限，几条 Drift 长读（同步冲突扫描）就能把它借满，复习排队若去那里等连接又排在长读后面（同 PR 2771 审查对写那一路的结论）。
+  - 关闭互斥不变：`read_session` / `wal_checkpoint` 开会话时借着一条内核读连接，`close` 先关这个池并等借出的放回，再取会话清单。
+  - 借出的连接放回时还停在读事务里（借用方 panic）就先结束它，见 BUG-4276。
+  - 常驻状态与连接无关，换连接后仍正确：复习队列（`store/queue.rs`）的增量来源是**写连接**上的 TEMP 触发器，记下的待重读 id 与各 profile 的会话都在进程内存（`StudyHub`），读连接上没有 TEMP 表 / 触发器；排队先在 `StudyHub` 的会话锁里取走待重读 id、再在这条连接这次读事务的第一条读开快照（`BEGIN` 是 DEFERRED），并发的两次排队在会话锁上串行，各自的快照都晚于各自取 id 的时刻，口径与以前单条读连接相同。浏览会话（`store/browse.rs`）同理：会话在进程内存，先在浏览锁里取 id 再开快照。
+- **[x] ② 已加自动化测试** — `native/fushi_fsrs/src/store/kernel_reads_tests.rs`：`a_running_kernel_read_does_not_hold_up_study`（一条内核读命令停在读快照里时，`study` 照常返回，基线上超时）；`real_db_study_during_stats_bundle`（手动，`FUSHI_SRS_REAL_DB`，真实库上量数字）。`store/mod.rs` `only_primary_connections_reserve_mmap_address_space_on_32_bit` 随之更新（内核读连接现在是次要连接）。
+- **备注**：真实库副本（1.75 GB，Windows x64 16 逻辑核，`cargo test --release`，`real_db_study_during_stats_bundle`，`stats_bundle` 发出后立即 `study`，五轮）：
+  - 修前（develop `94317ab6295`）：`study` 单独跑中位 43 ms（最大 74 ms）；`stats_bundle` 单独跑中位 1.42 s；`stats_bundle` 跑着时 `study` 954 / 889 / 706 / 1400 / 956 ms（中位 954 ms），每轮都等满 `stats_bundle` 全程（同轮 `stats_bundle` 937 / 877 / 694 / 1369 / 948 ms）。
+  - 上面这组是 15:48 机器较忙时测的。修后在同一份库副本上与基线二进制背靠背重测（同一时段、同一负载，各五轮）：
+    - 基线（`94317ab6295`）：`study` 单独中位 5.7 ms；`stats_bundle` 单独中位 470 ms；`stats_bundle` 跑着时 `study` 504 / 494 / 435 / 451 / 447 ms（中位 451 ms，每轮等满 `stats_bundle` 全程）。
+    - 修后：`study` 单独中位 5.6 ms；`stats_bundle` 单独中位 463 ms；`stats_bundle` 跑着时 `study` 15.9 / 6.6 / 6.5 / 7.3 / 6.1 ms（中位 6.6 ms，与单独跑同量级），`stats_bundle` 自身耗时不变。
+  - 取舍：32 位进程（Android armeabi-v7a）上池里的连接不映射 mmap（BUG-4013 的地址空间预算），内核读命令以前那条常驻读连接是映射的，32 位上读命令改为只用页缓存（64 位含 iOS 不变）。并发的内核读命令超过池上限时仍要等一条放回（默认道上限 4 + 交互道 2 > 池上限 2–4）。

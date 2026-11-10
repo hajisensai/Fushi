@@ -1,11 +1,15 @@
 //! SRS 事件库：Rust 独占的 `srs.db`（docs/specs/2026-10-23-srs-rust-store.md）。
 //!
-//! 一条写连接 + 两条读连接，各在一把 Mutex 里：写命令 = 写连接上的一个事务（这把锁就是 SRS 的
-//! 写锁），读命令走读连接上的 WAL 快照，不被长写挡住；Drift 执行器在事务外的查询走它自己的只读连接池
-//! （[SrsCore::snapshot_select]，store/read_pool.rs：并发的查询各占一条、互不排队），也不与 Rust 的读命令
-//! （备份 `VACUUM INTO`、投影扫描）互相排队。对象可以从任意线程 / isolate 调用。
+//! 一条写连接（在一把 Mutex 里）+ 两个只读连接池：写命令 = 写连接上的一个事务（这把锁就是 SRS 的写锁），
+//! 读命令从内核读连接池（[SrsCore::reader]）借一条连接、在它的 WAL 快照上读，不被长写挡住、读命令之间也不排队
+//! （全库统计读着时复习排队照常，BUG-4277）；Drift 执行器在事务外的查询走它自己的只读连接池
+//! （[SrsCore::snapshot_select]），两边互不占用（store/read_pool.rs）。对象可以从任意线程 / isolate 调用。
 //!
-//! 关闭（[SrsCore::close]）与在途调用互斥：它先后拿读、写两把锁再丢掉连接，所以会等别的线程手上
+//! 一次命令 panic（FFI 接成 -100）之后库自行恢复，不需要重开（BUG-4276）：持着的连接锁被毒化，下一个取这把锁的
+//! 调用先把连接恢复到命令之间应有的状态再清掉毒化标记（[lock_recovering]）——写连接上整笔回滚 panic 留下的事务
+//! （[SrsCore::recover_writer]），读连接结束停在半路的读事务，内存缓存丢掉重建。
+//!
+//! 关闭（[SrsCore::close]）与在途调用互斥：它先关两个读连接池、再拿写锁丢掉写连接，所以会等别的线程手上
 //! 的命令跑完；之后的命令（含另开只读会话 [SrsCore::read_session]）一律报「已关闭」。还没结束的只读
 //! 会话一并失效：在途的那次读跑完后连接随即关掉，之后经它的调用同样报「已关闭」——close 返回时
 //! 本对象打开过的 srs.db 连接一条不剩（Windows 下关库后文件可删可改名）。C ABI 的句柄是
@@ -20,7 +24,11 @@ pub(crate) mod caches;
 pub(crate) mod compact;
 pub mod ffi;
 pub(crate) mod ids;
+#[cfg(test)]
+mod kernel_reads_tests;
 mod mem_budget;
+#[cfg(test)]
+mod panic_recovery_tests;
 mod profile_data;
 mod projections;
 #[cfg(test)]
@@ -47,6 +55,9 @@ const LEGACY_KEY: &str = "legacy_import";
 /// 已关闭的库上任何命令的错误文本（Dart 侧按它认「已关闭」）。
 pub(crate) const CLOSED: &str = "srs store is closed";
 
+/// Drift 事务在 panic 后已被整笔回滚（[SrsCore] `drift_aborted`）时，那笔事务里后续语句的错误文本。
+pub(crate) const DRIFT_TX_ABORTED: &str = "srs: the open transaction was rolled back after a panic; roll it back before running more statements";
+
 /// 备份快照的目标卷空间不够（[SrsCore::snapshot_into]）：错误文本前缀，后面是 `{"need","free"}`。
 pub const SNAPSHOT_NO_SPACE: &str = "srs.db snapshot needs more free disk space: ";
 
@@ -54,7 +65,10 @@ pub struct SrsCore {
     // 字段按声明顺序析构：只读连接先关，写连接最后关。最后一个关闭的连接负责把 WAL 并回主文件
     // 并删掉 -wal；只读连接做不了，让它最后关会把整段 WAL 留在磁盘上（拷库 / 换库时丢数据）。
     // `None` = 已关闭（[SrsCore::close]）。
-    reader: Mutex<Option<Connection>>,
+    /// 内核只读命令的只读连接池（[SrsCore::reader] / [SrsCore::read_visible]）：并发的读命令各借一条，一条全库长读
+    /// 不挡复习排队（BUG-4277）。不与 [SrsCore::drift_readers] 合用：Dart 查询道的 worker 数等于那个池的上限，几条
+    /// Drift 长读（同步冲突扫描）就能把它借满，复习排队若去那里等连接就又排在长读后面。
+    readers: read_pool::ReadPool,
     /// Drift 执行器事务外查询专用的只读连接池（[SrsCore::snapshot_select]）。
     drift_readers: read_pool::ReadPool,
     /// Drift 写那一路（顺序执行器，`ffsrs_store_exec` mode 2）在事务外的查询专用的一条只读连接（[SrsCore::select]）。
@@ -69,10 +83,14 @@ pub struct SrsCore {
     drift_tx: AtomicBool,
     /// 旧库搬迁的事务开着（写连接上挂着一个 BEGIN）：别的写命令一律拒绝。
     legacy_open: AtomicBool,
+    /// Drift 的事务在 panic 后被整笔回滚了（[SrsCore::recover_writer]），Drift 还以为它开着：那笔事务后续的语句（含
+    /// COMMIT）与 Rust 写命令一律报 [DRIFT_TX_ABORTED]，直到 Drift 发来 ROLLBACK（它在出错时本来就发）。只在持写锁时
+    /// 改。
+    drift_aborted: AtomicBool,
     /// 库文件路径（[SrsCore::read_session] 另开只读连接用）。
     path: PathBuf,
-    /// 开过的只读会话（弱引用）：[SrsCore::close] 逐个关掉还没结束的。只在持读锁时登记，close 先拿
-    /// 读锁，所以不会漏掉一个正在开的会话。
+    /// 开过的只读会话（弱引用）：[SrsCore::close] 逐个关掉还没结束的。只在借着一条内核读连接时登记，close
+    /// 先关内核读连接池（等借出的放回），所以不会漏掉一个正在开的会话。
     sessions: Mutex<Vec<Weak<ReadSession>>>,
     /// 分批收段的阶段（[sync2::transport::IngestPhase]：没有 / 会话开着 / 收尾刷缓存中）。只经
     /// [SrsCore::set_ingest_phase] 转换。
@@ -236,11 +254,8 @@ impl DerefMut for Conn<'_> {
 impl ReadSession {
     /// 在会话的读事务里跑一条只读语句；结果编码同 [SrsCore::debug_query]（首行是列名）。
     pub fn query(&self, sql: &str, params: &[Value]) -> Result<Vec<u8>, String> {
-        let conn = Conn::of(
-            self.conn
-                .lock()
-                .map_err(|_| "srs read session poisoned".to_string())?,
-        )?;
+        // 会话的读事务本来就要一直开着；查询只读，panic 不改它：清掉毒化照常用。
+        let conn = Conn::of(lock_recovering(&self.conn, |_| Ok(()))?)?;
         let out = query_rows(&conn, sql, params);
         #[cfg(feature = "id_audit")]
         ids::audit::take(&conn, sql)?;
@@ -320,7 +335,86 @@ impl Drop for SrsCore {
     }
 }
 
-/// [read_pool::ReadPool] 的开连接函数：只读打开、配置同读连接。
+/// 取一把锁；锁被 panic 毒化过（持锁的命令跑到一半 panic，FFI 接成 -100）就先用 [recover] 把锁里的状态恢复到命令
+/// 之间应有的样子，再清掉毒化标记，之后照常可用（BUG-4276）。恢复失败就保持毒化、报错：不在状态不明的连接上跑任何
+/// 命令，下一个取锁的调用再恢复。库里所有连接 / 会话状态的锁都经这里，策略一致：写连接回滚（[SrsCore::recover_writer]），
+/// 读连接结束停在半路的读事务（[end_read_tx_of]），只读会话与纯簿记照常用，收段会话作废。
+pub(crate) fn lock_recovering<T>(
+    m: &Mutex<T>,
+    recover: impl FnOnce(&mut T) -> Result<(), String>,
+) -> Result<MutexGuard<'_, T>, String> {
+    match m.lock() {
+        Ok(g) => Ok(g),
+        Err(poisoned) => {
+            let mut g = poisoned.into_inner();
+            recover(&mut g)?;
+            m.clear_poison();
+            Ok(g)
+        }
+    }
+}
+
+/// 只读连接的恢复：panic 时停在读事务里（`BEGIN` 之后没走到 `ROLLBACK`）就结束它。不结束，这条连接之后每次读都
+/// 读那份旧快照，WAL 也一直并不回主库。
+pub(crate) fn end_read_tx(c: &Connection) -> Result<(), String> {
+    if c.is_autocommit() {
+        return Ok(());
+    }
+    c.execute_batch("ROLLBACK")
+        .map_err(|e| format!("srs: end a read transaction left open by a panic: {e}"))
+}
+
+/// [end_read_tx]，锁里是 `Option<Connection>`（`None` = 已关闭）。
+fn end_read_tx_of(c: &mut Option<Connection>) -> Result<(), String> {
+    c.as_ref().map_or(Ok(()), end_read_tx)
+}
+
+/// [sql] 是不是整笔事务的 ROLLBACK（`ROLLBACK` / `ROLLBACK TRANSACTION`，Drift 用后者；不含 `ROLLBACK TO`）。
+fn is_rollback(sql: &str) -> bool {
+    let words: Vec<String> = sql
+        .trim()
+        .trim_end_matches(';')
+        .split_whitespace()
+        .map(str::to_ascii_uppercase)
+        .collect();
+    matches!(
+        words
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>()
+            .as_slice(),
+        ["ROLLBACK"] | ["ROLLBACK", "TRANSACTION"]
+    )
+}
+
+impl SrsCore {
+    /// 写连接的恢复（一次命令持着写锁 panic，[lock_recovering]）。panic 跳过了那条命令自己的提交 / 回滚
+    /// （`sync2::in_savepoint` 不在 panic 时 `ROLLBACK TO`），连接上可能还挂着它开的事务 / SAVEPOINT。不回滚的话，
+    /// 下一条命令的写入落进这笔半截事务、由它的提交一起交上去。所以整笔回滚：
+    /// - 命令自己开的事务：回到命令之前（与命令报错时一样，什么都没写）。
+    /// - 嵌在 Drift 的事务里（`drift_tx`：Drift 以为事务开着）：Drift 已写的部分与半截命令分不开，整笔一起回滚，并记下
+    ///   `drift_aborted`：那笔事务后续的语句与 Rust 写命令一律拒绝，直到 Drift 发来 ROLLBACK——它在事务体或 COMMIT
+    ///   出错时本来就发；不拦的话后续语句会在 autocommit 下逐条提交。panic 的正是 Drift 开事务那一条时 `drift_tx` 还没
+    ///   置位（[SrsCore::exec] 跑完才记），Drift 收到的是「开事务失败」、不会再发 ROLLBACK，这里也就不进待回滚状态。
+    /// - 旧库搬迁事务（`legacy_open`）：回滚并结束；之后 legacy_page / legacy_commit 报「未开始」，legacy_abort 照常成功。
+    ///
+    /// 复习队列 / 浏览会话的待重读 id 不丢：被回滚的行照样在待重读里，写锁守卫放回时（已回到 autocommit）挪成已提交，
+    /// 下次排队按库里的终态重读（store/queue.rs）。
+    fn recover_writer(&self, c: &Connection) -> Result<(), String> {
+        if !c.is_autocommit() {
+            c.execute_batch("ROLLBACK")
+                .map_err(|e| format!("srs: roll back a write left open by a panic: {e}"))?;
+        }
+        if self.drift_tx.swap(false, Ordering::SeqCst) {
+            self.drift_aborted.store(true, Ordering::SeqCst);
+        }
+        self.legacy_open.store(false, Ordering::SeqCst);
+        Ok(())
+    }
+}
+
+/// [read_pool::ReadPool]（内核读连接池与 Drift 的事务外查询池）的开连接函数：只读打开、配置同读连接（mmap 按次要
+/// 连接，见 [MmapRole]）。
 fn open_drift_reader(path: &Path) -> Result<Connection, String> {
     let conn = Connection::open_with_flags(
         path,
@@ -333,16 +427,17 @@ fn open_drift_reader(path: &Path) -> Result<Connection, String> {
     Ok(conn)
 }
 
-/// 一条连接在 mmap 预算里的角色（BUG-4013）。SQLite 的 mmap 是**每条连接各映射一份**主库文件：写连接 + 读连接
-/// + 读连接池（至多 [read_pool::READERS_MAX] 条）+ 写那一路的只读连接 + 读会话，每条至多 256 MB 的**虚拟地址**（物理
+/// 一条连接在 mmap 预算里的角色（BUG-4013）。SQLite 的 mmap 是**每条连接各映射一份**主库文件：写连接 + 两个
+/// 读连接池（内核读命令、Drift 事务外查询，各至多 [read_pool::READERS_MAX] 条）+ 写那一路的只读连接 + 读会话，每条至多 256 MB 的**虚拟地址**（物理
 /// 页是系统文件缓存，各连接共享、干净可回收，不是每条连接真占 256 MB 内存）。
 ///
 /// 64 位进程（含 iOS，配合 extended-virtual-addressing）地址空间远大于此，全部连接照旧映射：关掉 mmap 反而让每条
 /// 连接把页拷进私有页缓存（cache_size 64 MB/条，真占内存）并多一次拷贝，是负优化。只有 32 位进程（Android
-/// armeabi-v7a，整个进程约 3 GB 地址空间）6–7 × 256 MB 放不下：那里次要连接不映射，只保留写连接与常驻读连接。
+/// armeabi-v7a，整个进程约 3 GB 地址空间）放不下：那里次要连接不映射，只保留写连接（内核读命令以前用的
+/// 常驻读连接也映射，BUG-4277 起读命令改走池子，32 位上读命令不再走 mmap、只用页缓存）。
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum MmapRole {
-    /// 写连接、常驻读连接。
+    /// 写连接。
     Primary,
     /// 读连接池、写那一路的只读连接、读会话、快照整理。
     Secondary,
@@ -435,24 +530,19 @@ impl SrsCore {
             .map_err(|e| e.to_string())?;
         let study_hub = Arc::new(queue::StudyHub::default());
         queue::StudyHub::install(&study_hub, &writer)?;
-        let reader = Connection::open_with_flags(
-            path,
-            OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
-        )
-        .map_err(|e| format!("open reader {}: {e}", path.display()))?;
-        configure_as(&reader, MmapRole::Primary)?;
-        #[cfg(any(test, feature = "id_audit"))]
-        let reader = ids::audit::installed(reader);
+        let readers =
+            read_pool::ReadPool::new(path, read_pool::read_concurrency(), open_drift_reader)?;
         let drift_readers =
             read_pool::ReadPool::new(path, read_pool::read_concurrency(), open_drift_reader)?;
         let drift_write_reader = open_drift_reader(path)?;
         Ok(Self {
             writer: Mutex::new(Some(writer)),
-            reader: Mutex::new(Some(reader)),
+            readers,
             drift_readers,
             drift_write_reader: Mutex::new(Some(drift_write_reader)),
             drift_tx: AtomicBool::new(false),
             legacy_open: AtomicBool::new(false),
+            drift_aborted: AtomicBool::new(false),
             path: path.to_path_buf(),
             sessions: Mutex::new(Vec::new()),
             ingest: Mutex::new(sync2::transport::IngestPhase::Idle),
@@ -471,13 +561,23 @@ impl SrsCore {
         })
     }
 
+    /// 取写连接（持写锁）。Drift 的事务在 panic 后被回滚、还没等到它的 ROLLBACK 时（[SrsCore] `drift_aborted`）报
+    /// [DRIFT_TX_ABORTED]：这时的写命令属于那笔已经没了的事务，不能在 autocommit 下自行提交。
     pub(crate) fn writer(&self) -> Result<Conn<'_>, String> {
-        let mut w = Conn::with_hub(
-            self.writer
-                .lock()
-                .map_err(|_| "srs writer poisoned".to_string())?,
-            Some(&self.study_hub),
-        )?;
+        let w = self.writer_conn()?;
+        if self.drift_aborted.load(Ordering::SeqCst) {
+            return Err(DRIFT_TX_ABORTED.to_string());
+        }
+        Ok(w)
+    }
+
+    /// [SrsCore::writer]，不看 `drift_aborted`（[SrsCore::exec] 自己处理那笔事务的 ROLLBACK）。
+    fn writer_conn(&self) -> Result<Conn<'_>, String> {
+        let guard = lock_recovering(&self.writer, |w| match w.as_ref() {
+            Some(c) => self.recover_writer(c),
+            None => Ok(()),
+        })?;
+        let mut w = Conn::with_hub(guard, Some(&self.study_hub))?;
         w.2 = Some(&self.ingest_holds_cache);
         w.3 = Some(&self.bulk_holds_cache);
         self.tune_writer_cache(&w);
@@ -487,7 +587,8 @@ impl SrsCore {
     /// 写连接页缓存上限按可用内存重算（至多每 [mem_budget::RECHECK] 一次，store/mem_budget.rs）。调低时 SQLite 当场
     /// 还掉超出的页。设不上（库正被关）不影响这次命令。
     fn tune_writer_cache(&self, w: &Connection) {
-        let Ok(mut st) = self.writer_cache.lock() else {
+        // 只是几个数：panic 毒化过照常用。
+        let Ok(mut st) = lock_recovering(&self.writer_cache, |_| Ok(())) else {
             return;
         };
         if let Some(kib) = st.due(std::time::Instant::now(), mem_budget::available_bytes) {
@@ -528,17 +629,19 @@ impl SrsCore {
     pub(crate) fn ingest_phase(
         &self,
     ) -> Result<MutexGuard<'_, sync2::transport::IngestPhase>, String> {
-        self.ingest
-            .lock()
-            .map_err(|_| "ingest session poisoned".to_owned())
+        // panic 时会话停在哪一步不可知（预处理好的批已被取出、这一片的写入随写连接恢复回滚）：同投递出错时一样
+        // 作废会话，Dart 下一轮重新收。
+        lock_recovering(&self.ingest, |phase| {
+            self.set_ingest_phase(phase, sync2::transport::IngestPhase::Idle);
+            Ok(())
+        })
     }
 
-    pub(crate) fn reader(&self) -> Result<Conn<'_>, String> {
-        Conn::of(
-            self.reader
-                .lock()
-                .map_err(|_| "srs reader poisoned".to_string())?,
-        )
+    /// 从内核读连接池借一条只读连接（用完放回；放回时还停在读事务里——命令 panic 在 `BEGIN` 与 `ROLLBACK` 之间——
+    /// 就先结束它，见 store/read_pool.rs）。库已关闭报「已关闭」：关闭先关这个池并等借出的放回，所以持着它的调用
+    /// （[SrsCore::read_session] 登记会话）与关闭互斥。
+    pub(crate) fn reader(&self) -> Result<read_pool::Pooled<'_>, String> {
+        self.readers.get()
     }
 
     /// 写连接上是否挂着跨命令的事务（Drift 的事务或旧库搬迁）：挂着时只读命令也必须在写连接上读，
@@ -548,8 +651,8 @@ impl SrsCore {
     }
 
     /// 只读命令的连接选择：写连接上挂着事务（[SrsCore::writer_tx_open]）时在写连接的 SAVEPOINT 里读（嵌在那笔
-    /// 事务里，看得见未提交的行，结束时 RELEASE 不改动任何东西）；否则在读连接上的一个读事务里读（整段同一份
-    /// 已提交快照，不排写锁）。读连接是只读打开的：[f] 里混进写语句会直接报错，不会悄悄写到别处。
+    /// 事务里，看得见未提交的行，结束时 RELEASE 不改动任何东西）；否则从内核读连接池借一条、在它的一个读事务里读
+    /// （整段同一份已提交快照，不排写锁；读命令之间各占一条连接，不互相排队，BUG-4277）。读连接是只读打开的：[f] 里混进写语句会直接报错，不会悄悄写到别处。
     pub(crate) fn read_visible<T>(
         &self,
         f: impl FnOnce(&Connection) -> Result<T, String>,
@@ -578,9 +681,9 @@ impl SrsCore {
     /// srs.db）。写连接最后关：最后关的连接负责把 WAL 并回主文件并删掉 -wal。之后的命令与会话查询
     /// 一律报「已关闭」。
     pub fn close(&self) {
-        // 先关读连接：此后 read_session 报已关闭，下面拿到的会话清单就是全部。
-        let reader = self.reader.lock().unwrap_or_else(|e| e.into_inner()).take();
-        drop(reader);
+        // 先关内核读连接池（等借出的放回）：此后 read_session 报已关闭，下面拿到的会话清单就是全部。
+        // 下面各把锁被 panic 毒化过也照拿：连接随即丢掉，关闭时 SQLite 回滚连接上没结束的事务。
+        self.readers.close();
         // 等在途的 Drift 事务外查询把连接放回（放回即关）。
         self.drift_readers.close();
         // 写那一路的事务外查询连接：拿锁即等在途的那条查询跑完。
@@ -650,6 +753,8 @@ impl SrsCore {
 
     /// 写一页旧表行（列序 = [schema::TABLES] 里该表的列序）。
     pub fn legacy_page(&self, table: &str, page: &[u8]) -> Result<usize, String> {
+        // 先取写锁再看 `legacy_open`：panic 后的恢复（[SrsCore::recover_writer]）在取锁时才跑，先看标志读到的是旧值。
+        let w = self.writer()?;
         if !self.legacy_open.load(Ordering::SeqCst) {
             return Err("legacy import not started".into());
         }
@@ -661,7 +766,6 @@ impl SrsCore {
                 t.columns.len()
             ));
         }
-        let w = self.writer()?;
         // ID 列编码（store/ids.rs）：旧库搬来的是文本。
         let id_cols = ids::COLUMNS
             .iter()
@@ -697,10 +801,11 @@ impl SrsCore {
 
     /// 写标记并提交。
     pub fn legacy_commit(&self) -> Result<(), String> {
+        // 先取写锁再看标志（同 [SrsCore::legacy_page]）。
+        let w = self.writer()?;
         if !self.legacy_open.load(Ordering::SeqCst) {
             return Err("legacy import not started".into());
         }
-        let w = self.writer()?;
         // 旧表形态没有 v13 的 `anki_id` 列：搬进来的缓存行在同一笔事务里补算。
         let result = schema::backfill_anki_ids(&w)
             .and_then(|_| Self::set_meta(&w, LEGACY_KEY, "1"))
@@ -713,10 +818,11 @@ impl SrsCore {
     }
 
     pub fn legacy_abort(&self) -> Result<(), String> {
+        // 先取写锁再看标志（同 [SrsCore::legacy_page]）：panic 恢复已回滚并结束搬迁时这里照常成功。
+        let w = self.writer()?;
         if !self.legacy_open.swap(false, Ordering::SeqCst) {
             return Ok(());
         }
-        let w = self.writer()?;
         w.execute_batch("ROLLBACK").map_err(|e| e.to_string())
     }
 
@@ -821,11 +927,30 @@ impl SrsCore {
     ///
     /// 返回页：查询 = 首行列名 + 结果行；其它 = 一行 `[变更行数, last_insert_rowid]`。
     pub fn exec(&self, sql: &str, params: &[Value], select: bool) -> Result<Vec<u8>, String> {
+        // 先取写锁再看 `legacy_open`（同 [SrsCore::legacy_page]）：搬迁中 panic 后，恢复在取锁时才结束搬迁。
+        let w = self.writer_conn()?;
         if self.legacy_open.load(Ordering::SeqCst) {
             return Err("legacy import in progress".into());
         }
-        let w = self.writer()?;
+        if self.drift_aborted.load(Ordering::SeqCst) {
+            // Drift 那笔事务在 panic 后已被整笔回滚：只收它的 ROLLBACK（连接上已没有事务，直接算完成），别的语句
+            // （含 COMMIT、嵌套的 ROLLBACK TO）一律拒绝。
+            if !is_rollback(sql) {
+                return Err(DRIFT_TX_ABORTED.into());
+            }
+            self.drift_aborted.store(false, Ordering::SeqCst);
+            return Ok(rows::encode(
+                2,
+                &[vec![
+                    Value::Integer(0),
+                    Value::Integer(w.last_insert_rowid()),
+                ]],
+            ));
+        }
         let out = Self::exec_on(&w, sql, params, select);
+        #[cfg(test)]
+        sync2::test_panic::hit(sync2::test_panic::AFTER_EXEC);
+        // panic 跳过这一句是有意的：drift_tx 记的是 Drift 以为的事务状态，那条语句报了错（-100），Drift 不认它的效果。
         self.drift_tx.store(!w.is_autocommit(), Ordering::SeqCst);
         #[cfg(feature = "id_audit")]
         ids::audit::take(&w, sql)?;
@@ -848,12 +973,13 @@ impl SrsCore {
         if self.legacy_open.load(Ordering::SeqCst) {
             return Err("legacy import in progress".into());
         }
+        // 写那一路的查询属于 Drift 那笔已被回滚的事务：不拿已提交的数据冒充事务里的视图。
+        if self.drift_aborted.load(Ordering::SeqCst) {
+            return Err(DRIFT_TX_ABORTED.into());
+        }
         if !self.writer_tx_open() {
             let done = {
-                let guard = self
-                    .drift_write_reader
-                    .lock()
-                    .map_err(|_| "srs drift write reader poisoned".to_string())?;
+                let guard = lock_recovering(&self.drift_write_reader, end_read_tx_of)?;
                 let r = guard.as_ref().ok_or_else(|| CLOSED.to_string())?;
                 let out = Self::snapshot_on(r, sql, params);
                 // 常驻的这条只读连接和 Conn / 读连接池放回时同一约定：查询之间页缓存收到 IDLE_CACHE_BYTES 以内，
@@ -979,10 +1105,11 @@ impl SrsCore {
         statements: &[&str],
         applications: &[(usize, Vec<Value>)],
     ) -> Result<(), String> {
+        // 先取写锁再看 `legacy_open`（同 [SrsCore::exec]）。
+        let w = self.writer()?;
         if self.legacy_open.load(Ordering::SeqCst) {
             return Err("legacy import in progress".into());
         }
-        let w = self.writer()?;
         let run = || -> Result<(), String> {
             for (index, args) in applications {
                 let sql = statements
@@ -1082,7 +1209,7 @@ impl SrsCore {
     /// 另开一条只读连接、开读事务并先读一次（快照在第一次读时才定下）：返回时快照已定，之后本库的
     /// 新写入都不在里面。备份读快照用（后台 isolate 里分页读二三十秒，不占读 / 写连接）。
     ///
-    /// 开会话期间持读连接的锁：与 [SrsCore::close]（先拿读锁）互斥，库已关闭就报「已关闭」，不会按路径
+    /// 开会话期间借着一条内核读连接：与 [SrsCore::close]（先关内核读连接池、等借出的放回）互斥，库已关闭就报「已关闭」，不会按路径
     /// 把关库后可能已被删换的库文件重新打开。会话开好之后与本对象无关，关库不结束它。
     pub fn read_session(&self) -> Result<Arc<ReadSession>, String> {
         let _open = self.reader()?;
@@ -1102,15 +1229,13 @@ impl SrsCore {
         self.register_session(conn)
     }
 
-    /// 把 [conn] 包成只读会话并登记（[SrsCore::close] 逐个关掉）。调用方持读连接的锁。
+    /// 把 [conn] 包成只读会话并登记（[SrsCore::close] 逐个关掉）。调用方借着一条内核读连接。
     fn register_session(&self, conn: Connection) -> Result<Arc<ReadSession>, String> {
         let session = Arc::new(ReadSession {
             conn: Mutex::new(Some(conn)),
         });
-        let mut sessions = self
-            .sessions
-            .lock()
-            .map_err(|_| "srs sessions poisoned".to_string())?;
+        // 只是一张弱引用表：panic 毒化过照常用。
+        let mut sessions = lock_recovering(&self.sessions, |_| Ok(()))?;
         sessions.retain(|w| w.strong_count() > 0);
         sessions.push(Arc::downgrade(&session));
         Ok(session)
@@ -1133,19 +1258,13 @@ impl SrsCore {
             let session = Arc::new(ReadSession {
                 conn: Mutex::new(Some(conn)),
             });
-            let mut sessions = self
-                .sessions
-                .lock()
-                .map_err(|_| "srs sessions poisoned".to_string())?;
+            let mut sessions = lock_recovering(&self.sessions, |_| Ok(()))?;
             sessions.retain(|w| w.strong_count() > 0);
             sessions.push(Arc::downgrade(&session));
             session
         };
         let out = {
-            let guard = session
-                .conn
-                .lock()
-                .map_err(|_| "srs checkpoint connection poisoned".to_string())?;
+            let guard = lock_recovering(&session.conn, |_| Ok(()))?;
             let conn = guard.as_ref().ok_or(CLOSED)?;
             conn.query_row("PRAGMA wal_checkpoint(PASSIVE)", [], |r| {
                 Ok((
@@ -1754,20 +1873,20 @@ mod read_routing_tests {
         );
     }
 
-    /// BUG-4013：SQLite 每条连接各映射一份主库文件。只有常驻写连接 / 读连接按 [MMAP_BYTES] 映射；读连接池、写那一路
-    /// 的只读连接等次要连接只在 32 位进程上不映射（合计地址占用从 6–7 × 256 MB 收到 2 × 256 MB），64 位（含 iOS）照旧。
+    /// BUG-4013：SQLite 每条连接各映射一份主库文件。只有写连接按 [MMAP_BYTES] 映射；两个读连接池、写那一路的只读连接
+    /// 等次要连接只在 32 位进程上不映射（合计地址占用从 6–7 × 256 MB 收到 1 × 256 MB），64 位（含 iOS）照旧。
     #[test]
     fn only_primary_connections_reserve_mmap_address_space_on_32_bit() {
         let core = open("mmap_roles");
         let mmap =
             |c: &Connection| -> i64 { c.query_row("PRAGMA mmap_size", [], |r| r.get(0)).unwrap() };
         assert_eq!(mmap(&core.writer().unwrap()), MMAP_BYTES);
-        assert_eq!(mmap(&core.reader().unwrap()), MMAP_BYTES);
         let expected_secondary = if cfg!(target_pointer_width = "32") {
             0
         } else {
             MMAP_BYTES
         };
+        assert_eq!(mmap(&core.reader().unwrap()), expected_secondary);
         assert_eq!(mmap_size_for(MmapRole::Secondary), expected_secondary);
         assert_eq!(
             mmap(&open_drift_reader(&core.path).unwrap()),

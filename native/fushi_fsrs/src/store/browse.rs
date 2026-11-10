@@ -24,7 +24,7 @@
 
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
-use std::sync::{Mutex, MutexGuard};
+use std::sync::MutexGuard;
 
 use rusqlite::{Connection, params_from_iter, types::Value as Sql};
 use serde_json::{Value, json};
@@ -39,10 +39,6 @@ use crate::store::sync2::sql;
 const DAY_MS: i64 = 86_400_000;
 /// SQLite 变量上限内的 IN 列表分块。
 const CHUNK: usize = 400;
-
-fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
-    m.lock().unwrap_or_else(|e| e.into_inner())
-}
 
 // ------------------------------------------------------------------ 与 Dart 同口径的小工具
 
@@ -2710,6 +2706,17 @@ fn search_error(e: search::SearchError) -> Value {
 }
 
 impl SrsCore {
+    /// 浏览会话表的锁。建 / 增量更新到一半 panic（锁被毒化）时会话停在半截：丢掉全部会话（持有者登记留着），下次查询
+    /// 整份重建——同建 / 更新出错时丢会话（BUG-4276）。
+    fn browse_sessions(&self) -> MutexGuard<'_, Sessions> {
+        self.browse.lock().unwrap_or_else(|poisoned| {
+            let mut b = poisoned.into_inner();
+            b.live.clear();
+            self.browse.clear_poison();
+            b
+        })
+    }
+
     /// 浏览命令（ffi.rs 的 v2 分发器转来）：`browse_query` / `browse_rows` / `browse_ids` / `browse_targets` /
     /// `browse_close`，以及 AnkiConnect 兼容层的 `anki_find` / `anki_dupes` / `anki_tags`（同一个会话）。读快照（写连接上事务里则在 SAVEPOINT 里，看得见未提交的行）。
     pub(crate) fn browse(
@@ -2722,7 +2729,7 @@ impl SrsCore {
         let owner = req.get("owner").and_then(Value::as_str);
         if op == "browse_close" {
             // 注销 [owner]（没带 = 旧调用方：按唯一持有者算）；没有持有者了才释放会话。
-            let mut b = lock(&self.browse);
+            let mut b = self.browse_sessions();
             let last = match owner {
                 Some(o) => {
                     let set = b.owners.entry(profile.to_owned()).or_default();
@@ -2738,7 +2745,7 @@ impl SrsCore {
             return Ok(json!({"released": last}));
         }
         if op == "browse_stats" {
-            let b = lock(&self.browse);
+            let b = self.browse_sessions();
             let mut owners: Vec<&String> = b.owners.get(profile).into_iter().flatten().collect();
             owners.sort();
             let s = b.live.get(profile);
@@ -2754,7 +2761,7 @@ impl SrsCore {
             return self.read_visible_tx(|c, _| anki_dupes(c, profile, req));
         }
         self.read_visible_tx(|c, uncommitted| {
-            let mut b = lock(&self.browse);
+            let mut b = self.browse_sessions();
             if let Some(o) = owner {
                 b.owners
                     .entry(profile.to_owned())
@@ -3563,7 +3570,7 @@ mod tests {
             120
         );
         assert_eq!(rows.s[n4][10], json!("long.mp3"));
-        let b = super::lock(&d.core.browse);
+        let b = d.core.browse_sessions();
         let s = b.live.get(P).expect("live session");
         for id in [N1, N4] {
             let texts = s.detail.get(id).expect("detail cached after rows").texts();

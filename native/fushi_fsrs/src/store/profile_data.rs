@@ -80,10 +80,11 @@ impl SrsCore {
         if profile.is_empty() {
             return Err("profile_purge: empty profile uid".into());
         }
+        // 先取写锁再看 `legacy_open`（同 [SrsCore::exec]）。
+        let w = self.writer()?;
         if self.legacy_open.load(Ordering::SeqCst) {
             return Err("legacy import in progress".into());
         }
-        let w = self.writer()?;
         let out = in_savepoint(&w, |c| {
             let mut out = footprint(c, profile)?;
             let mut tables = Map::new();
