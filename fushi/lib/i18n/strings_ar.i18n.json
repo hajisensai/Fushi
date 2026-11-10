@@ -10897,6 +10897,8 @@
   "video_online_sources_empty": "لا توجد مصادر فيديو مفعّلة. ثبّت إضافة وفعّلها أولًا.",
   "video_online_sources_hint": "إضافات Aniyomi من جهات خارجية (extensions-lib 14). يأتي المحتوى من موقع كل إضافة ويُشغَّل في المشغّل المدمج.",
   "video_online_stream_none": "لم تُرجع هذه الحلقة أي بث قابل للتشغيل.",
+  "video_online_stream_torrent": "This source returned a torrent (magnet link), which can't be streamed directly. Download it first, then watch.",
+  "video_online_stream_torrent_download": "Download via torrent",
   "video_opensubtitles_app_key_hint": "اتركه فارغًا لاستخدام مفتاح API المضمّن في التطبيق.",
   "video_opensubtitles_endpoint": "نقطة نهاية API",
   "video_opensubtitles_languages_hint": "رموز لغات مفصولة بفواصل، مثلاً zh-CN,en,ja",

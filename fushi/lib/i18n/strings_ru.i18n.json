@@ -10897,6 +10897,8 @@
   "video_online_sources_empty": "Нет включённых источников видео. Сначала установите и включите расширение.",
   "video_online_sources_hint": "Сторонние расширения Aniyomi (extensions-lib 14). Контент берётся с сайта каждого расширения и воспроизводится во встроенном плеере.",
   "video_online_stream_none": "Для этого эпизода не найдено воспроизводимого потока.",
+  "video_online_stream_torrent": "This source returned a torrent (magnet link), which can't be streamed directly. Download it first, then watch.",
+  "video_online_stream_torrent_download": "Download via torrent",
   "video_opensubtitles_app_key_hint": "Оставьте пустым, чтобы использовать встроенный ключ API приложения.",
   "video_opensubtitles_endpoint": "Конечная точка API",
   "video_opensubtitles_languages_hint": "Коды языков через запятую, например zh-CN,en,ja",

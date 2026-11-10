@@ -10897,6 +10897,8 @@
   "video_online_sources_empty": "Nessuna fonte video abilitata. Installa e abilita prima un'estensione.",
   "video_online_sources_hint": "Estensioni Aniyomi di terze parti (extensions-lib 14). I contenuti provengono dal sito di ciascuna estensione e vengono riprodotti nel lettore integrato.",
   "video_online_stream_none": "Questo episodio non ha restituito alcuno stream riproducibile.",
+  "video_online_stream_torrent": "This source returned a torrent (magnet link), which can't be streamed directly. Download it first, then watch.",
+  "video_online_stream_torrent_download": "Download via torrent",
   "video_opensubtitles_app_key_hint": "Lascia vuoto per usare la chiave API inclusa nell’app.",
   "video_opensubtitles_endpoint": "Endpoint API",
   "video_opensubtitles_languages_hint": "Codici lingua separati da virgola, ad esempio zh-CN,en,ja",

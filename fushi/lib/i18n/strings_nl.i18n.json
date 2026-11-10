@@ -10897,6 +10897,8 @@
   "video_online_sources_empty": "Geen ingeschakelde videobronnen. Installeer en schakel eerst een extensie in.",
   "video_online_sources_hint": "Aniyomi-extensies van derden (extensions-lib 14). De inhoud komt van de website van elke extensie en wordt afgespeeld in de ingebouwde speler.",
   "video_online_stream_none": "Deze aflevering leverde geen afspeelbare stream op.",
+  "video_online_stream_torrent": "This source returned a torrent (magnet link), which can't be streamed directly. Download it first, then watch.",
+  "video_online_stream_torrent_download": "Download via torrent",
   "video_opensubtitles_app_key_hint": "Laat leeg om de meegeleverde API-sleutel van de app te gebruiken.",
   "video_opensubtitles_endpoint": "API-eindpunt",
   "video_opensubtitles_languages_hint": "Kommagescheiden taalcodes, bijvoorbeeld zh-CN,en,ja",

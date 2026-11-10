@@ -10897,6 +10897,8 @@
   "video_online_sources_empty": "沒有已啟用的影片源。請先安裝並啟用影片擴展。",
   "video_online_sources_hint": "第三方 Aniyomi 擴展（extensions-lib 14）。內容來自各擴展對應的網站，在內置播放器中播放。",
   "video_online_stream_none": "這一集沒有可播放的串流。",
+  "video_online_stream_torrent": "This source returned a torrent (magnet link), which can't be streamed directly. Download it first, then watch.",
+  "video_online_stream_torrent_download": "Download via torrent",
   "video_opensubtitles_app_key_hint": "留空以使用應用程式內置的 API 金鑰。",
   "video_opensubtitles_endpoint": "API 端點",
   "video_opensubtitles_languages_hint": "用逗號分隔語言代碼，例如 zh-CN,en,ja",
