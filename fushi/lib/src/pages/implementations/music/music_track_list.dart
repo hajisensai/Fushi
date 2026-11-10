@@ -113,49 +113,57 @@ MusicItemMenu musicLocalTrackMenu(
 AppModel _appOf(BuildContext context) =>
     ProviderScope.containerOf(context, listen: false).read(appProvider);
 
-/// 远程曲目（YouTube / 在线插件，v148）在曲库 / 歌单里的菜单：播放 / 移出音乐库（在库时）/
-/// 加入歌单；[extra] 追加在末尾（歌单页的「从这个歌单移除」）。
+/// 远程曲目（YouTube / 在线插件 / 服务器曲目，v148 / v149）在曲库 / 歌单里的菜单：播放（能播
+/// 时）/ 移出音乐库（在库时）/ 加入歌单；[extra] 追加在末尾（歌单页的「从这个歌单移除」）。
+/// 入库 / 加歌单直接用落库的行，不经播放项（服务器曲目的服务器不在时也能移出、整理歌单）。
 MusicItemMenu musicRemoteEntryMenu(
   BuildContext context,
-  MusicRemoteTrackRow track, {
+  MusicRemoteEntry entry, {
   required VoidCallback onPlay,
   List<MusicMenuAction> extra = const <MusicMenuAction>[],
-}) => MusicItemMenu(
-  buttonKey: ValueKey<String>('music-remote-track-menu-${track.trackUid}'),
-  open: (MusicMenuAnchor? anchor) {
-    final AppModel app = _appOf(context);
-    final MusicPlayItem? item = musicPlayItemOfRemote(track);
-    unawaited(
-      showMusicActionMenu(
-        context,
-        anchor: anchor,
-        errorText: (Object e) => t.music_action_failed(error: '$e'),
-        actions: <MusicMenuAction>[
-          MusicMenuAction(
-            id: 'play',
-            label: t.music_play_all,
-            icon: FushiIcons.play,
-            run: (_) async => onPlay(),
-          ),
-          if (app.isDatabaseReady && item != null)
-            ...musicRemoteLibraryActions(
-              app.database,
-              item,
-              inLibrary: track.libraryAddedAt != null,
-            ),
-          ...extra,
-        ],
-      ),
-    );
-  },
-);
+}) {
+  final MusicRemoteTrackRow track = entry.track;
+  return MusicItemMenu(
+    buttonKey: ValueKey<String>('music-remote-track-menu-${track.trackUid}'),
+    open: (MusicMenuAnchor? anchor) {
+      final AppModel app = _appOf(context);
+      unawaited(
+        showMusicActionMenu(
+          context,
+          anchor: anchor,
+          errorText: (Object e) => t.music_action_failed(error: '$e'),
+          actions: <MusicMenuAction>[
+            if (entry.available)
+              MusicMenuAction(
+                id: 'play',
+                label: t.music_play_all,
+                icon: FushiIcons.play,
+                run: (_) async => onPlay(),
+              ),
+            // 条目能列出来就说明这一种在本平台可用（musicRemoteEntriesOf 已按
+            // musicRemoteKindAvailable 滤过）；种类不认识的条目不会到这里。
+            if (app.isDatabaseReady && entry.kind != null)
+              ...musicRemoteTrackLibraryActions(
+                app.database,
+                musicRemoteTrackCompanionOfRow(track),
+                inLibrary: track.libraryAddedAt != null,
+              ),
+            ...extra,
+          ],
+        ),
+      );
+    },
+  );
+}
 
-/// 远程曲目行副标题里的来源名（YouTube / 插件 id）。
-String musicRemoteSourceLabel(MusicRemoteTrackRow track) =>
-    switch (MusicRemoteTrackKind.fromWire(track.kind)) {
-      MusicRemoteTrackKind.youtube => 'YouTube',
-      MusicRemoteTrackKind.plugin || null => track.sourceKey,
-    };
+/// 远程曲目行副标题里的来源名（YouTube / 插件 id / 服务器名）；服务器曲目的服务器在这台
+/// 设备上没配时写明不可用。
+String musicRemoteSourceLabel(MusicRemoteEntry entry) => switch (entry.kind) {
+  MusicRemoteTrackKind.youtube => 'YouTube',
+  MusicRemoteTrackKind.server =>
+    entry.server?.browser.displayName ?? t.music_remote_server_missing,
+  MusicRemoteTrackKind.plugin || null => entry.track.sourceKey,
+};
 
 /// 行尾拖拽把手（48dp 命中区，只从这里起拖；整行仍可点、可右键）。必须放在
 /// [FushiReorderableColumn]（`useDragHandles: true`）的行里。
@@ -293,16 +301,18 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
     if (mounted) setState(() {});
   }
 
-  /// 以整列为队列从第 [index] 条起播。换不成播放项的条目（将来版本写的远程种类）不进队列。
+  /// 以整列为队列从第 [index] 条起播。换不成播放项的条目（将来版本写的远程种类、这台设备
+  /// 没配服务器的服务器曲目）不进队列；点的正是这种条目时不起播。
   void _play(int index) {
     final List<MusicPlayItem> items = <MusicPlayItem>[];
-    int start = 0;
+    int? start;
     for (int i = 0; i < entries.length; i++) {
       final MusicPlayItem? item = entries[i].playItem(widget.albums);
       if (item == null) continue;
       if (i == index) start = items.length;
       items.add(item);
     }
+    if (start == null) return;
     unawaited(
       ref
           .read(appProvider)
@@ -361,12 +371,7 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
           track,
           mode,
         ),
-        MusicRemoteEntry(:final MusicRemoteTrackRow track) => _remoteRow(
-          c,
-          i,
-          track,
-          mode,
-        ),
+        final MusicRemoteEntry entry => _remoteRow(c, i, entry, mode),
       };
 
   @override
@@ -500,9 +505,11 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
   Widget _remoteRow(
     BuildContext c,
     int i,
-    MusicRemoteTrackRow track,
+    MusicRemoteEntry entry,
     MusicResumeMode mode,
   ) {
+    final MusicRemoteTrackRow track = entry.track;
+    final bool available = entry.available;
     final MusicResumePointRow? point = _resume[track.trackUid];
     final Duration? resume = point == null
         ? null
@@ -514,7 +521,7 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
     final Text subtitle = Text(
       <String>[
         track.artist ?? t.music_artist_unknown,
-        musicRemoteSourceLabel(track),
+        musicRemoteSourceLabel(entry),
       ].join(' · '),
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
@@ -522,7 +529,7 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
     void play() => _play(i);
     final MusicItemMenu menu = musicRemoteEntryMenu(
       c,
-      track,
+      entry,
       onPlay: play,
       extra: _playlistActions(i),
     );
@@ -532,10 +539,11 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
           key: ValueKey<String>(_rowKey('music-track', i, track.trackUid)),
           index: i,
           count: entries.length,
-          onTap: play,
+          // 服务器在这台设备上没配：行留着（可移出 / 整理歌单），点了不起播、整行减淡。
+          onTap: available ? play : null,
           child: FushiListItem(
             leading: musicMaterialCover(
-              MusicCover(coverPath: track.coverUrl, size: 40),
+              MusicCover(coverPath: entry.coverUrl, size: 40),
               size: 40,
               compact: true,
             ),
@@ -543,6 +551,9 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
               track.title,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
+              style: available
+                  ? null
+                  : TextStyle(color: Theme.of(c).colorScheme.onSurfaceVariant),
             ),
             subtitle: musicSubtitleWithResume(
               track.trackUid,

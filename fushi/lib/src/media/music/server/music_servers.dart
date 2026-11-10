@@ -24,6 +24,8 @@ import 'package:fushi_engine/media/music/youtube/youtube_music_client.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/music/apple_music/apple_music_account.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
+import 'package:fushi/src/media/music/music_remote_tracks.dart'
+    show MusicServerBinding;
 import 'package:fushi/src/media/music/server/jellyfin_music_client.dart';
 import 'package:fushi/src/media/music/server/youtube_music_gate.dart';
 import 'package:fushi/src/media/video/media_server/media_server_config.dart';
@@ -77,6 +79,35 @@ Future<List<MusicServerBrowser>> loadMusicServerBrowsers(AppModel app) async {
     }
     if (isYoutubeMusicSourceAvailable && app.prefsRepo.musicYoutubeEnabled) {
       out.add(YoutubeMusicClient(displayName: 'YouTube'));
+    }
+  }
+  return out;
+}
+
+/// 曲库 / 本地歌单里的服务器曲目（v149，反馈 se3Fw8HmOX）起播 / 取封面用的服务器：只有
+/// Jellyfin（媒体服务器配置）与启用着的 Subsonic（自配服务器），按当前配置新建客户端、带上
+/// 设置里的码率上限。只拼地址、不发请求；不碰 Apple Music / YouTube（前者读状态要起网页桥）。
+/// `music_remote_tracks.dart` 的 [MusicServerBinding] 经 `AppModel` 装到
+/// `musicServerBindingLoader`。
+Future<Map<String, MusicServerBinding>> loadMusicServerBindings(
+  AppModel app,
+) async {
+  final int? limit = musicServerBitrateLimit(
+    app.isPreferencesReady ? app.prefsRepo.musicServerMaxBitrate : 0,
+  );
+  final Map<String, MusicServerBinding> out = <String, MusicServerBinding>{};
+  void add(MusicServerBrowser b) =>
+      out[b.serverId] = MusicServerBinding(b, maxBitrateKbps: limit);
+  if (app.isDatabaseReady) {
+    for (final MediaServerConfig c in await SyncRepository(
+      app.database,
+    ).getMediaServers()) {
+      if (c is JellyfinServerConfig) add(JellyfinMusicClient(c));
+    }
+  }
+  if (app.isPreferencesReady) {
+    for (final SubsonicServerConfig c in app.prefsRepo.musicSubsonicServers) {
+      if (c.enabled) add(SubsonicMusicClient(c));
     }
   }
   return out;
