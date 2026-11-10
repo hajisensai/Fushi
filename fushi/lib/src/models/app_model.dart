@@ -195,6 +195,7 @@ import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:fushi_engine/srs/sync2/srs_folder_location.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_crypto.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
+import 'package:fushi/src/pdf/pdf_importer.dart';
 import 'package:fushi/src/diagnostics/video_diag_log.dart';
 import 'package:fushi/src/dictionary/dict_resource_materializer.dart';
 import 'package:fushi/src/dictionary/dict_style_rules.dart';
@@ -1175,6 +1176,15 @@ class AppModel
           fileName: path.basename(bookFile.path),
         );
       },
+      // 反馈 Jq1_ujHa4t：对端推来的 PDF 原件（引擎 importBook 已按内容嗅探分好流）。
+      // 接了它本 host 才在 capabilities 宣称 `liveLibrary.pdfBooks`，client 据此推 PDF。
+      importPdfBookFromFile: (File pdfFile, String title) =>
+          PdfImporter.importFromPath(
+            db: database,
+            filePath: pdfFile.path,
+            fileName: '$title.pdf',
+            title: title,
+          ),
       // BUG-2815：现读而非快照——host 服务只在互联启动时构造一次，快照会让之后
       // 新增 / 删除的本地音频库在对端清单与导出里都看不见。
       // BUG-3702：path 归一到本机落点，别的设备带来的库引用才能按本机文件导出。
