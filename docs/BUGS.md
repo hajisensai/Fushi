@@ -38,6 +38,14 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-4323](bugs/BUG-4323-video-seek-tail-unreachable.md) | ✅ | ✅ | 视频进度条显示还有时间（23:39/24:02）但拖不到后面：mkv 容器时长被字幕轨拉长 |
+> 共 3875 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4326](bugs/BUG-4326-android-custom-icon-shortcut-disabled-by-app-shortcuts.md) | ✅ | ✅ | android-custom-icon-shortcut-disabled-by-app-shortcuts |
+| [BUG-4325](bugs/BUG-4325-collection-member-cover-no-tilt.md) | ✅ | ✅ | collection-member-cover-no-tilt |
+| [BUG-4324](bugs/BUG-4324-ext-popup-page-backdrop.md) | ✅ | ✅ | app 外查词 / 悬浮词典浮窗卡片外铺了页面底色和 M3E 形状背景 |
+| [BUG-4323](bugs/BUG-4323-android-exit-permission-kill-misreport.md) | ✅ | ✅ | Android 权限变更导致的系统杀进程被误报为闪退 |
 | [BUG-4322](bugs/BUG-4322-manual-address-host-no-device-name.md) | ✅ | ✅ | 手动地址添加的 host 没有设备名：peer ls 不列出、远端复习标题显示 host.docker.internal |
 | [BUG-4321](bugs/BUG-4321-cli-anki-mine-ignores-remote-lookup.md) | ✅ | ✅ | fushi_cli anki mine 在依赖远端查词的客户端上释义为空（只查本地词典） |
 | [BUG-4320](bugs/BUG-4320-srs-sync-v2-host-not-joined-silent.md) | ✅ | ✅ | SRS 同步 v2：host 未点「开始同步」时客户端显示「全部已同步」、什么都没同步且无提示 |
@@ -175,7 +183,7 @@
 | [BUG-4175](bugs/BUG-4175-pure-audio-in-video-library.md) | ✅ | ✅ | 广播剧 CD 的 mp3/flac 出现在视频库：纯音频改归音乐库 |
 | [BUG-4174](bugs/BUG-4174-settings-segment-hidden-last-row.md) | ✅ | ✅ | 设置分段分组末行没有组尾圆角：空的「待发卡片」行以零尺寸混进组尾 |
 | [BUG-4173](bugs/BUG-4173-gal-two-line-only-second-lookup.md) | 🚧 | 🚧 | 外部窗口挖矿两行台词只有第二行能查（金色ラブリッチェ） |
-| [BUG-4172](bugs/BUG-4172-srs-defs-collapsed-top-clipped.md) | 🚧 | ✅ | 复习卡窄版式背面释义上沿被切（第一条释义的词典卡头 / 词头不在画面里） |
+| [BUG-4172](bugs/BUG-4172-srs-defs-collapsed-top-clipped.md) | ✅ | ✅ | 复习卡窄版式背面释义上沿被切（第一条释义的词典卡头 / 词头不在画面里） |
 | [BUG-4171](bugs/BUG-4171-video-settings-tab-switch-entrance-replay.md) | ✅ | ✅ | video-settings-tab-switch-entrance-replay |
 | [BUG-4132](bugs/BUG-4132-manga-rtl-slider-readout-direction.md) | ✅ | ✅ | 漫画右开本底部进度栏当前页 / 总页数与已读高亮方向反了 |
 | [BUG-4131](bugs/BUG-4131-video-auto-resume-replays-completed.md) | ✅ | ✅ | 视频播完等下一集倒计时期间，自动续播路径把当前视频从头重播 |
