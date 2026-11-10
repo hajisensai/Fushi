@@ -360,10 +360,11 @@ void main() {
       required int importance,
       int timestamp = 5000,
       String reason = 'OTHER',
+      String description = '[UNKNOWN] stop app.fushi.reader due to o-stop(40)',
     }) => <String, Object?>{
       'reason': reason,
       'status': 0,
-      'description': '[UNKNOWN] stop app.fushi.reader due to o-stop(40)',
+      'description': description,
       'importance': importance,
       'pssKb': 0,
       'rssKb': 1194136,
@@ -458,6 +459,116 @@ void main() {
       expect(v!.kind, PreviousExitKind.memoryKill);
       expect(v.foreground, isTrue);
       expect(v.worthReporting, isTrue);
+    });
+
+    // BUG-4323（反馈 DyamYE6bPL）：用户撤销运行时权限，系统以 PERMISSION_CHANGE 结束进程
+    // （importance=100、标记停在 resumed）。旧 androidExitKind 没有这个分支 → null → 回落到
+    // 标记推断「停在前台时没了，疑似闪退」→ 弹闪退报告。
+    test(
+      'PERMISSION_CHANGE + importance=100 + 标记停在 resumed → 权限变更，不弹闪退报告',
+      () async {
+        final PreviousExitVerdict? v = await verdictFor(
+          lifecycle: 'resumed',
+          reasons: <Map<String, Object?>>[
+            record(
+              pid: 19104,
+              importance: 100,
+              reason: 'PERMISSION_CHANGE',
+              description: 'permissions revoked',
+            ),
+          ],
+        );
+        expect(v, isNotNull);
+        expect(v!.kind, PreviousExitKind.permissionChanged);
+        expect(v.worthReporting, isFalse);
+      },
+    );
+
+    // BUG-4323（反馈 g8AEGUyQBU）：在系统设置里改「所有文件访问权限」，AOSP
+    // StorageManagerService 调 killUid，记成 REASON_OTHER +「[KILL UID] MANAGE_EXTERNAL_STORAGE
+    // changed.」。旧实现 OTHER 一律 null → 启动 135ms 后被杀也报成「启动时意外退出」。
+    test(
+      'OTHER +「[KILL UID] MANAGE_EXTERNAL_STORAGE changed.」→ 权限变更，不弹闪退报告',
+      () async {
+        final PreviousExitVerdict? v = await verdictFor(
+          lifecycle: 'resumed',
+          reasons: <Map<String, Object?>>[
+            record(
+              pid: 19104,
+              importance: 100,
+              description: '[KILL UID] MANAGE_EXTERNAL_STORAGE changed.',
+            ),
+          ],
+        );
+        expect(v, isNotNull);
+        expect(v!.kind, PreviousExitKind.permissionChanged);
+        expect(v.worthReporting, isFalse);
+      },
+    );
+
+    test('OTHER + 无关描述 + importance=100 → 照旧回落标记推断（疑似闪退）', () async {
+      final PreviousExitVerdict? v = await verdictFor(
+        lifecycle: 'resumed',
+        reasons: <Map<String, Object?>>[
+          record(pid: 19104, importance: 100, description: 'something else'),
+        ],
+      );
+      expect(v!.kind, PreviousExitKind.unexpected);
+      expect(v.worthReporting, isTrue);
+    });
+
+    test('androidExitKind：OTHER 只认锚定的 AOSP「[KILL UID] <OP> changed」形态', () {
+      expect(
+        androidExitKind('PERMISSION_CHANGE'),
+        PreviousExitKind.permissionChanged,
+      );
+      expect(
+        androidExitKind(
+          'OTHER',
+          description: '[KILL UID] MANAGE_EXTERNAL_STORAGE changed.',
+        ),
+        PreviousExitKind.permissionChanged,
+      );
+      expect(
+        androidExitKind(
+          'OTHER',
+          description: '[KILL UID] SYSTEM_ALERT_WINDOW changed',
+        ),
+        PreviousExitKind.permissionChanged,
+      );
+      expect(androidExitKind('OTHER'), isNull);
+      expect(androidExitKind('OTHER', description: 'OneKeyClean'), isNull);
+      expect(
+        androidExitKind(
+          'OTHER',
+          description: '[UNKNOWN] stop app.fushi.reader due to o-stop(40)',
+        ),
+        isNull,
+      );
+      // 前后缀不锚定的变体不认（避免厂商文本里夹着这段被误判）。
+      expect(
+        androidExitKind(
+          'OTHER',
+          description: 'vendor: [KILL UID] MANAGE_EXTERNAL_STORAGE changed.',
+        ),
+        isNull,
+      );
+      expect(
+        androidExitKind('OTHER', description: '[KILL UID] user cleanup'),
+        isNull,
+      );
+      // 只有 OTHER 看描述：别的原因码带这段文字也不改判。
+      expect(
+        androidExitKind(
+          'SIGNALED',
+          description: '[KILL UID] MANAGE_EXTERNAL_STORAGE changed.',
+        ),
+        isNull,
+      );
+      expect(
+        PreviousExitKind.permissionChanged.worthReporting(foreground: true),
+        isFalse,
+      );
     });
 
     test('androidDiedInForeground：两头是硬事实，101–125 看会话标记，对不上标记按前台', () {
