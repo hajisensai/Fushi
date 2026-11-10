@@ -4848,6 +4848,8 @@ class GalHookSessionController extends ChangeNotifier {
       fallbackReason: timestamp > 0
           ? 'paired_voice_not_found'
           : 'no_engine_timestamp',
+      // 用户定了时长（最长 / 固定），这段长度就是他要的，不再按「单句超长」亮黄。
+      lengthChosenByUser: limit.limitMs != null,
     );
   }
 
@@ -4878,12 +4880,15 @@ class GalHookSessionController extends ChangeNotifier {
     required String backend,
     required String outputExtension,
     required String? fallbackReason,
+    bool lengthChosenByUser = false,
   }) async {
     final int durationMs = (slice.pcm.length * 1000) ~/ slice.format.byteRate;
-    final String? effectiveReason = sliceFallbackReasonFor(
-      durationMs: durationMs,
-      fallbackReason: fallbackReason,
-    );
+    final String? effectiveReason = lengthChosenByUser
+        ? fallbackReason
+        : sliceFallbackReasonFor(
+            durationMs: durationMs,
+            fallbackReason: fallbackReason,
+          );
     if (effectiveReason != fallbackReason) {
       _record(
         GalHookEventSeverity.warning,
