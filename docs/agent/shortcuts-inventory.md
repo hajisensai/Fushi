@@ -171,7 +171,7 @@
 | audiobookPlayPause | Ctrl+Space | L3（手柄） | 播放/暂停 |
 | audiobookNextSentence | Ctrl+→ | —（RB/LB 已被 reader 翻页占用会被遮蔽） | 下一句 |
 | audiobookPrevSentence | Ctrl+← | — | 上一句 |
-| audiobookSeekToClickedSentence | — | 鼠标中键（位置型，走 onPointerSeek） | 点句跳转并播放 |
+| audiobookSeekToClickedSentence | — | 鼠标中键（位置型，走 onPointerSeek） | 点句跳转并播放（EPUB 书与纯转录合成书一致；左键 / 单击只查词。触屏无中键：长按句子 → 选区操作条「从此句播放」） |
 
 > scope 解析顺序的关键约束（`shortcut_action.dart` coactiveScopes）：reader 页按
 > `[reader, audiobook]` 顺序解析，home 页按 `[home, global]`。同一物理键在共活 scope
