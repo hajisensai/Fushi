@@ -24,6 +24,7 @@ void main() {
     String scenario, {
     String setup = '',
     String prelude = '',
+    bool bridgeTwice = false,
   }) async {
     final String harness =
         '''
@@ -92,6 +93,7 @@ h.video = Object.assign(makeEl('video'), { currentTime: 5, paused: false, durati
 function out(x) { console.log(JSON.stringify(x)); }
 $setup
 ${asset(kWebVideoNetflixBridgeAsset)}
+${bridgeTwice ? asset(kWebVideoNetflixBridgeAsset) : ''}
 ${asset(kWebVideoAdaptersAsset)}
 ${asset(kWebVideoProvidersAsset)}
 $prelude
@@ -460,5 +462,23 @@ console.log(JSON.stringify({ ran, global: typeof streamGlobal }));
       ((await probe('hulu.jp'))! as Map<String, dynamic>)['ran'],
       <String>[],
     );
+  }, skip: !hasNode);
+
+  // BUG-4186：bridge 在同一文档被注入两次（扩展 + 播放器注入 / 重复 document-start）时，第二份
+  // 不装：一条 seek 只发一次 player.seek、只回一次 seekDone，诊断记下重复注入。
+  test('netflix-bridge 注入两次：seek 不叠发、回执只一条，诊断带 dup=1', () async {
+    final Object? r = await run('''
+const res = fw.seek(90000, 4);
+out({ res, calls: h.player.calls,
+  done: h.posted.filter((m) => m.type === 'seekDone') });
+''', bridgeTwice: true);
+    final Map<String, dynamic> m = r! as Map<String, dynamic>;
+    expect(m['res'], 'bridge');
+    expect(m['calls'], <String>['seek:90000']);
+    final List<dynamic> done = m['done'] as List<dynamic>;
+    expect(done, hasLength(1));
+    expect(done.single['id'], 4);
+    final String diag = done.single['diag'] as String;
+    expect(diag.split(' '), containsAll(<String>['dup=1', 'videos=1', 'rs=4']));
   }, skip: !hasNode);
 }
