@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-10T17:18:35Z",
+ "generatedAt": "2026-11-10T17:20:21Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "e770544072db07b158583aa1d32722a61bcb441d",
-  "seq": 26350
+  "sha": "cf94ca03b1656ccef3921d68acd9825d9dfe60da",
+  "seq": 26352
  },
  "builds": [
   {
@@ -106,9 +106,10 @@
   }
  ],
  "pending": {
-  "headSha": "e770544072db07b158583aa1d32722a61bcb441d",
-  "headSeq": 26350,
+  "headSha": "cf94ca03b1656ccef3921d68acd9825d9dfe60da",
+  "headSeq": 26352,
   "prs": [
+   3275,
    3238,
    3265,
    3267,
@@ -269,19 +270,19 @@
   "platforms": {
    "android": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/42861447620"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/42863821020"
    },
    "windows": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/42861447751"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/42863821233"
    },
    "macos": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/42861447751"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/42863821233"
    },
    "ios": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/42861447751"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/42863821233"
    }
   }
  },
@@ -1758,6 +1759,15 @@
    "mergedAt": "2026-11-10T16:50:22Z",
    "additions": 4,
    "deletions": 4,
+   "labels": []
+  },
+  "3275": {
+   "number": 3275,
+   "title": "fix(analyze): 清掉 develop 上残留的 analyze 与测试编译问题",
+   "author": "W1ght",
+   "mergedAt": "2026-11-10T17:19:46Z",
+   "additions": 27,
+   "deletions": 8,
    "labels": []
   }
  }
