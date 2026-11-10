@@ -59,16 +59,11 @@ const Map<String, String> kWebUiEnglish = <String, String>{
   '名称（可选）': 'Name (optional)',
   '路径': 'Path',
   '类型': 'Type',
-  '进度': 'Progress',
   '创建': 'Create',
   '已创建': 'Created',
-  '错误': 'Error',
   '标题': 'Title',
   '设备': 'Device',
   '端口': 'Port',
-  '语言': 'Language',
-  '字节': 'Bytes',
-  '更新': 'Updated',
   '默认': 'Default',
   '提供': 'Serve',
   '开关': 'Enabled',
@@ -94,7 +89,6 @@ const Map<String, String> kWebUiEnglish = <String, String>{
   '视频': 'Videos',
   '书': 'Books',
   '已配对': 'Paired devices',
-  '库根': 'Library roots',
   'OCR 模型': 'OCR models',
   '下载后端': 'Download backend',
   '未配置': 'Not configured',
@@ -109,17 +103,13 @@ const Map<String, String> kWebUiEnglish = <String, String>{
   '自动补刮已关闭': 'Automatic metadata fetch is off',
 
   // ── 配对 ──
-  '配对请求': 'Pairing requests',
   '没有待处理的配对。在 Fushi 里添加互联设备并输入本机地址，PIN 会显示在这里。':
       'No pending pairing. In Fushi, add an interconnect device and enter this server\'s address; the PIN shows up here.',
   '{0} ({1}) 请求配对，请在该设备输入：':
       '{0} ({1}) wants to pair. Enter this on that device:',
   '未知设备': 'Unknown device',
   '已配对设备': 'Paired devices',
-  '最近地址': 'Last address',
-  '配对时间': 'Paired at',
   '我的设备': 'My device',
-  '是（取消）': 'Yes (unmark)',
   '标为我的设备': 'Mark as my device',
   '未证明设备钥匙': 'Device key not verified',
   '吊销': 'Revoke',
@@ -136,8 +126,6 @@ const Map<String, String> kWebUiEnglish = <String, String>{
   '配置文件寄存': 'Profile storage',
   '已配对设备在「互联 → 上传配置 / 下载配置」里把配置方案（Profile）推到本机寄存，另一台设备再拉走。本机只寄存、不应用；设备拉取时交出标「分发中」的那一份（缺省为最近收到的）。凭据已由发送端剔除。仅 TLS 下可用。':
       'Paired devices push a settings profile here from "Interconnect → Upload settings / Download settings", and another device pulls it. This server only stores profiles and never applies them; a pull gets the one marked "Shared" (by default the most recent). The sender strips credentials. TLS only.',
-  '设置项': 'Settings',
-  '收到时间': 'Received',
   '已允许': 'Allowed',
   '已允许，但 TLS 关着——端点在明文下拒绝访问':
       'Allowed, but TLS is off; the endpoint refuses plain HTTP',
@@ -154,10 +142,6 @@ const Map<String, String> kWebUiEnglish = <String, String>{
 
   // ── 库 ──
   '扫描根': 'Library roots',
-  'manga (mokuro / cbz / cbr / cb7 / zip / rar / 页图目录)':
-      'manga (mokuro / cbz / cbr / cb7 / zip / rar / image folder)',
-  'audiobook (音频目录，可带 epub / 字幕)':
-      'audiobook (audio folder, optionally with epub / subtitles)',
   'id（可空）': 'id (optional)',
   '加完记得在「状态」页点扫描；服务端进程要能读到该目录。':
       'After adding, run a scan from the Status page. The server process must be able to read the folder.',
@@ -206,8 +190,6 @@ const Map<String, String> kWebUiEnglish = <String, String>{
   '全部立即检查': 'Check all now',
   '搜索词': 'Search term',
   '源': 'Source',
-  '集数': 'Episodes',
-  '最近': 'Last check',
   '后端: {0}；可用来源: {1}': 'Backend: {0}; sources: {1}',
   '下载后端未配置，订阅不可用。': 'No download backend, so subscriptions are unavailable.',
   '没有可用来源': 'No source available',
@@ -270,7 +252,6 @@ const Map<String, String> kWebUiEnglish = <String, String>{
 
   // ── 模型 ──
   'ASR 模型': 'ASR models',
-  '变体 / provider': 'Variant / provider',
   '漫画 OCR 模型': 'Manga OCR models',
   '下载中…': 'Downloading…',
   'OCR 服务不可用': 'OCR service unavailable',
@@ -421,10 +402,6 @@ const Map<String, String> kWebUiEnglish = <String, String>{
   'AI 联网资料（维基辅助识别作品）': 'AI web knowledge (Wikipedia helps identify titles)',
   '扫描入库后自动 AI 整理库（把该在一起的归进合集，按量计费）':
       'Organize the library with AI after scans (groups related items into collections; billed per use)',
-  '（已找到 {0}）': ' (found {0})',
-  '（未找到随包库）': ' (no bundled library found)',
-  '（可用）': ' (ready)',
-  '（未配全：{0}）': ' (incomplete: {0})',
 
   // ── 远程访问 ──
   '远程访问': 'Remote access',
@@ -450,7 +427,6 @@ const Map<String, String> kWebUiEnglish = <String, String>{
   'AI 助手会话': 'AI assistant sessions',
   '已配对设备经互联让本服务端跑的 AI 助手会话（保留 30 天）。这里只读；撤销与续接在发起的那台设备上做。':
       'AI assistant sessions that paired devices ran on this server over interconnect (kept for 30 days). Read-only here; undo and continue on the device that started them.',
-  '发起设备': 'Started from',
   '用户': 'User',
   '操作': 'Action',
   '确认': 'Confirm',
@@ -468,7 +444,6 @@ const Map<String, String> kWebUiEnglish = <String, String>{
   '导入': 'Import',
   'Yomitan 格式的 zip（术语 / 频率 / 音调 / 汉字）。同名词典视为更新，保留排序与隐藏设置。导入完立即生效；也可以在 Fushi 的「词典 · 传输」推送过来。':
       'A Yomitan zip (terms / frequency / pitch / kanji). A dictionary with the same name is treated as an update and keeps its order and hidden setting. Imports take effect immediately; you can also push one from Fushi under "Dictionaries · Transfer".',
-  '顺序': 'Order',
   '顺序决定查词结果里各词典的排列。「隐藏」对应日语查词的隐藏标记（服务端引擎目前只认这一个）：隐藏的词典不装进引擎，查词时不出结果。':
       'The order decides how dictionaries are ranked in lookup results. "Hide" is the Japanese lookup hidden flag (the only one the server engine reads for now): hidden dictionaries are not loaded into the engine and give no results.',
   '试查': 'Try a lookup',
@@ -493,7 +468,6 @@ const Map<String, String> kWebUiEnglish = <String, String>{
   '下移': 'Move down',
   '文件缺失': 'File missing',
   '已隐藏': 'Hidden',
-  '显示': 'Shown',
   '取消隐藏': 'Unhide',
   '隐藏': 'Hide',
   '还没有词典': 'No dictionaries yet',
@@ -513,4 +487,55 @@ const Map<String, String> kWebUiEnglish = <String, String>{
   '最近日志': 'Recent logs',
   '自动刷新': 'Auto refresh',
   '★ 配对 PIN {0} — fushi_server': '★ Pairing PIN {0} — fushi_server',
+  // ── 重设计新增（导航 / 主题 / 空状态 / 设置分组）──
+  '菜单': 'Menu',
+  '主题：跟随系统': 'Theme: system',
+  '主题：浅色': 'Theme: light',
+  '主题：深色': 'Theme: dark',
+  '确定': 'OK',
+  '文件': 'Files',
+  '磁力链接': 'Magnet link',
+  '站点地址': 'Site address',
+  '{0} 个库根': 'Library roots: {0}',
+  '取消我的设备': 'Unmark as my device',
+  '还没有已配对设备': 'No paired devices yet',
+  '已吊销': 'Revoked',
+  '{0} 项设置': '{0} settings',
+  '没有互联任务': 'No jobs',
+  '没有下载任务': 'No downloads',
+  '最近检查 {0}': 'Last checked {0}',
+  '还没有订阅': 'No subscriptions yet',
+  '还没有 AI 助手会话': 'No AI assistant sessions yet',
+  '通用': 'General',
+  '网络与配对': 'Network and pairing',
+  '媒体与刮削': 'Media and metadata',
+  '设备权限': 'Device permissions',
+  '外部工具': 'External tools',
+  '已找到 {0}': 'Found {0}',
+  '未找到随包库': 'No bundled library found',
+  '未配全：{0}': 'Incomplete: {0}',
+  '需重启': 'Restart needed',
+  '需要处理': 'Needs attention',
+  '漫画 OCR 模型缺失': 'Manga OCR models missing',
+  '在「模型」页下载后才能识别漫画文字。':
+      'Download them on the Models page to read text in manga.',
+  '下载后端未配置': 'Download backend not configured',
+  '下载与订阅不可用；在「设置 → 下载」里配置后重启。':
+      'Downloads and subscriptions are unavailable. Set one up in Settings → Downloads, then restart.',
+  '{0} 部作品待指定刮削结果': '{0} titles need a manual metadata pick',
+  '自动刮削拿不准，需要手动指定。':
+      'Automatic metadata matching was unsure; pick the right title manually.',
+  '未配置 TMDB key': 'No TMDB key set',
+  '自动补刮拿不到 TMDB 资料；在「设置 → 媒体与刮削」填写。':
+      "Automatic metadata can't use TMDB. Add a key in Settings → Media and metadata.",
+  '书籍': 'Books',
+  '含漫画与有声书': 'Includes manga and audiobooks',
+  '页图目录': 'image folders',
+  '音频目录，可带 epub / 字幕': 'Audio folder, optionally with an EPUB / subtitles',
+  '更多': 'More',
+  '放弃': 'Discard',
+  '{0} 项未保存': 'Unsaved changes: {0}',
+  '全部': 'All',
+  '仅错误': 'Errors only',
+  '没有错误': 'No errors',
 };
