@@ -38,6 +38,7 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-4279](bugs/BUG-4279-srs-conflict-stale-profile.md) | ✅ | ✅ | 复习同步冲突：一边采用对方 profile 解决后，另一边仍按检出时缓存的旧冲突再问一次（旧候选、旧笔记数），选了会分叉 |
+| [BUG-4279](bugs/BUG-4279-audiobook-multifile-cues-stay-on-file0.md) | ✅ | ✅ | 服务端 / 发现页 / 书+字幕+音频导入的多文件有声书 cue 全落在第 0 个文件 |
 | [BUG-4278](bugs/BUG-4278-interconnect-host-client-p2p-fallback.md) | ✅ | ✅ | 互联：主机能力探测 / GET 与选路缓存不走 P2P 隧道，直连不通时远程复习找不到主机 |
 | [BUG-4277](bugs/BUG-4277-collection-manage-count-mismatch.md) | ✅ | ✅ | collection-manage-count-mismatch |
 | [BUG-4276](bugs/BUG-4276-lan-devices-duplicate-host.md) | ✅ | ✅ | 互联「局域网设备」列表把同一台 host 列两遍，配对后红屏 `_dependents.isEmpty` |
