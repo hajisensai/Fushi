@@ -39,7 +39,7 @@ String summarizeSyncReport(SyncRunReport r) {
       t.sync_now_local_audio_out(count: r.localAudioExported),
     if (r.fontsImported > 0) t.sync_now_fonts_in(count: r.fontsImported),
     if (r.fontsExported > 0) t.sync_now_fonts_out(count: r.fontsExported),
-    // BUG-4281：进度 / 断点也是这一轮的变化，各成一类；否则只同步了进度的一轮
+    // BUG-4292：进度 / 断点也是这一轮的变化，各成一类；否则只同步了进度的一轮
     // 显示「无变化」。
     if (r.bookProgressReceived > 0)
       t.sync_now_book_progress_in(count: r.bookProgressReceived),
