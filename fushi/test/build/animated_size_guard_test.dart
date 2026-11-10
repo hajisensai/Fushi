@@ -164,8 +164,6 @@ const Map<String, int> _legacy = <String, int>{
       1,
   'lib/src/media/online/installed_online_source_row.dart|motion.spatialFast.duration':
       1,
-  'lib/src/media/online/installed_online_source_row.dart|motion.spatialDefault.duration':
-      1,
   'lib/src/media/tags/tag_picker_sheet.dart|fushiMotionDuration(context,FushiMotion.medium)':
       1,
   'lib/src/media/video/video_import_dialog.dart|context.fushiMotion.spatialDefault.duration':

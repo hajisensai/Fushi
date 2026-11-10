@@ -883,6 +883,8 @@ class ReaderSettings {
   bool get keepScreenAwake => _get<bool>('keep_screen_awake', true);
   Future<void> toggleKeepScreenAwake() =>
       _set<bool>('keep_screen_awake', !keepScreenAwake);
+  Future<void> setKeepScreenAwake(bool value) =>
+      _set<bool>('keep_screen_awake', value);
 
   // TODO-728②：有声书底栏是否显示「当前句子」cue 文本（per-reader，每本书各自
   // 记忆）。默认 true = 现状（始终显示）；false = 隐藏 cue 文本但保留布局占位，
