@@ -184,8 +184,9 @@ class _RecordingLinker implements SrsProfileLinker {
   @override
   Future<SrsProfileLinkOutcome> link(
     SyncAssetStore backend,
-    SrsDbStore store,
-  ) async {
+    SrsDbStore store, {
+    String? directoryKey,
+  }) async {
     linkedUids.add(store.profileUid);
     final Object? error = linkError;
     if (error != null) throw error;
@@ -209,6 +210,7 @@ class _RecordingLinker implements SrsProfileLinker {
     SrsDbStore store,
     String uid, {
     SyncAssetStore? within,
+    String? directoryKey,
   }) async {
     adopted.add('${store.profileUid}->$uid');
     deferred ??= deferOnAdopt;
