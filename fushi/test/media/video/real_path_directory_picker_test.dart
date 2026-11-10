@@ -15,9 +15,13 @@ import '../../helpers/scan_scale.dart';
 /// （`pickRealFilePath` / `pickRealFilePaths`），裸子串 `'pickRealFilePath('`
 /// 匹配不到复数版（后面是 `s` 不是 `(`）——回归成 `pickRealFilePaths(...).first`
 /// 会让下面的禁止型断言全部假绿。禁止判据必须逐个名字扫。
+///
+/// `pickRealFilePathDetailed(` 是带出处的同一入口（`pickRealFilePath` 只是丢掉出处的
+/// 薄封装）；裸子串 `'pickRealFilePath('` 同样匹配不到它，故也逐个列出。
 const List<String> kRealPathFileEntries = <String>[
   'pickRealFilePath(',
   'pickRealFilePaths(',
+  'pickRealFilePathDetailed(',
 ];
 
 void main() {
@@ -171,12 +175,19 @@ void main() {
         'Future<void> _pickSubtitle()',
       );
 
+      // 视频本体要长期落库，必须走**带出处**的真实路径入口（HfXM-ECaE8 / BUG-4243：
+      // 出处为临时副本时导入要先挪进持久目录，见 picked_video_copy_adoption_test）。
       expect(
-        pickVideo.contains('pickRealFilePath('),
+        pickVideo.contains('pickRealFilePathDetailed('),
         isTrue,
         reason:
-            '单文件视频选择必须走真实路径入口，'
+            '单文件视频选择必须走真实路径入口 pickRealFilePathDetailed，'
             '而非直接 FilePicker.pickFiles（安卓会复制到 cache、清缓存即失效）',
+      );
+      expect(
+        pickVideo.contains('pickSystemFilePath('),
+        isFalse,
+        reason: '视频本体不得回退成系统文件选择器（board 1112/TODO-949）',
       );
       expect(
         pickVideo.contains('FilePicker.platform.pickFiles'),

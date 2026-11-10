@@ -48,3 +48,35 @@ final Set<String> _windowsReservedDeviceNames = <String>{
     '³',
   ]) ...<String>['COM$n', 'LPT$n'],
 };
+
+/// 每个 Windows 非法文件名字符对应的全角替身（与 [windowsUnsafeFileNameChars]
+/// 同一字符集；控制字符没有可读替身，直接删掉）。
+const Map<String, String> _fullwidthReplacements = <String, String>{
+  r'\': '＼',
+  '/': '／',
+  ':': '：',
+  '*': '＊',
+  '?': '？',
+  '"': '＂',
+  '<': '＜',
+  '>': '＞',
+  '|': '｜',
+};
+
+/// 面向**用户可读文件名**的安全化（视频「整理文件名」，反馈 ZDYNkAP3Ln）：非法
+/// 字符换成全角替身（`Re:` → `Re：`、`?` → `？`），控制字符删掉，再去掉 Windows
+/// 不允许的尾随 `.` / 空格；命中保留设备名时前缀 `_`。
+///
+/// 与 [safeWindowsFileName] 的区别是**语义保真**：`_` 替换会把 `Re:Re:` 变成
+/// `Re_Re_`，标题读不出来了；全角替身在 5 平台都是合法字符，读起来与原标题一致。
+/// 已有产物（下载整理、缓存键）继续用 [safeWindowsFileName]，它们的磁盘名 / 键
+/// 是持久契约，不能因为换替身而改变。结果为空串时返回空串，由调用方决定回退。
+String fullwidthSafeFileName(String value) {
+  String out = value.replaceAllMapped(
+    windowsUnsafeFileNameChars,
+    (Match m) => _fullwidthReplacements[m[0]!] ?? '',
+  );
+  out = out.trim().replaceAll(RegExp(r'[. ]+$'), '');
+  if (out.isNotEmpty && isWindowsReservedFileName(out)) out = '_$out';
+  return out;
+}

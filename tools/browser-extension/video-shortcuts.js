@@ -4,6 +4,7 @@
 //   ↑           回当前句句首重播
 //   Shift+S     打开浏览器原生字幕侧边栏
 //   Shift+H     隐藏/显示字幕（站点原生字幕 + 扩展覆盖层，与 app 内视频页同键）
+//   Shift+B     显示/隐藏字幕遮布（盖住画面里烧录的硬字幕，见 subtitle-mask.js；不需要字幕轨）
 //   Ctrl+Enter  制卡（等同点查词弹窗里的「＋」；判定不在本文件，见 vendor/popup.js）
 //   Ctrl+Shift+←/→/↓  字幕时轴偏移 −100ms / ＋100ms / 重置
 //   Ctrl+Shift+Z      复制当前字幕句到剪贴板（配合 Fushi 剪贴板监看即查词）
@@ -42,6 +43,8 @@
     'replay-cue': 'ArrowUp',
     'toggle-panel': 'Shift+KeyS',
     'toggle-subtitle-hide': 'Shift+KeyH',
+    // 字幕遮布（subtitle-mask.js）：B = blind。与 Shift+H 同指法；YouTube / Netflix / B 站都不占 Shift+B。
+    'toggle-subtitle-mask': 'Shift+KeyB',
     'offset-minus': 'Ctrl+Shift+ArrowLeft',
     'offset-plus': 'Ctrl+Shift+ArrowRight',
     'offset-reset': 'Ctrl+Shift+ArrowDown',
@@ -254,6 +257,7 @@
     'replay-cue': 'videoShortcutReplayCue',
     'toggle-panel': 'videoShortcutTogglePanel',
     'toggle-subtitle-hide': 'videoShortcutToggleSubtitleHide',
+    'toggle-subtitle-mask': 'videoShortcutToggleSubtitleMask',
     'offset-minus': 'videoShortcutOffsetMinus',
     'offset-plus': 'videoShortcutOffsetPlus',
     'offset-reset': 'videoShortcutOffsetReset',
@@ -473,6 +477,11 @@
     else if (decision.action === 'seek-back') handled = seekBy(target, -1);
     else if (decision.action === 'seek-forward') handled = seekBy(target, 1);
     else if (decision.action === 'hold-speed') handled = e.repeat ? false : engageHold(target, e.code);
+    else if (decision.action === 'toggle-subtitle-mask') {
+      // 执行端是 subtitle-mask.js（状态与落盘都归它）；缺席就放行给站点。
+      var mask = window.fushiSubtitleMask;
+      handled = !!(mask && typeof mask.toggle === 'function') && mask.toggle() === true;
+    }
     else if (typeof window.fushiSubtitleShortcut === 'function') {
       handled = window.fushiSubtitleShortcut(decision.action) === true;
     }
