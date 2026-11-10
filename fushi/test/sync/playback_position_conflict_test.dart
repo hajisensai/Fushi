@@ -169,23 +169,34 @@ void main() {
       );
     });
 
-    test('无基线且两端位置不同 → 退回旧 LWW 一次（升级后首轮不批量弹冲突）', () {
+    // BUG-4282：无基线时不再比较两台设备各自的墙钟——时钟偏快的一端会静默盖掉
+    // 另一端；与书籍进度 resolveBookProgressThreeWay 同口径判冲突。
+    test('无基线、两端有戳且位置不同 → 冲突，不比较跨设备墙钟', () {
+      // host 戳更新（修复前 LWW 判 applyRemote）。
       expect(
         resolve(_pos(800, 10), _pos(300, 20)),
-        BookProgressSyncAction.applyRemote,
+        BookProgressSyncAction.conflict,
       );
+      // 本端戳更新（修复前 LWW 判 pushLocal）。
       expect(
         resolve(_pos(800, 30), _pos(300, 20)),
-        BookProgressSyncAction.pushLocal,
+        BookProgressSyncAction.conflict,
       );
-      // 时间戳相等：取较远位置。
+      // 戳相等（修复前取较远位置）。
       expect(
         resolve(_pos(800, 20), _pos(300, 20)),
-        BookProgressSyncAction.pushLocal,
+        BookProgressSyncAction.conflict,
       );
       expect(
         resolve(_pos(300, 20), _pos(800, 20)),
-        BookProgressSyncAction.applyRemote,
+        BookProgressSyncAction.conflict,
+      );
+    });
+
+    test('无基线但位置相同 → 已同步（不判冲突）', () {
+      expect(
+        resolve(_pos(800, 10), _pos(800, 20)),
+        BookProgressSyncAction.synced,
       );
     });
   });

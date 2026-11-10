@@ -14,6 +14,7 @@ import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/video_watched_marks.dart';
+import 'package:fushi/src/sync/interconnect_playback_position_sync.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/sync_orchestrator.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
@@ -89,6 +90,13 @@ void main() {
       _oldPositionMs,
     );
     await localDb.setPrefTyped<int>(videoRemotePositionAtPrefKey(_uid), 5000);
+    // 「上次同步已对齐」要落成位置基线：无基线时两端不等判冲突、不比墙钟
+    // （BUG-4282），标记已看要靠「只一端偏离基线」才能单向收敛。
+    await localDb.setSyncBaseline(
+      _uid,
+      kInterconnectVideoPositionDimension,
+      _oldPositionMs,
+    );
   });
 
   tearDown(() async {
