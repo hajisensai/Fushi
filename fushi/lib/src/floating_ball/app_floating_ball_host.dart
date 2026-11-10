@@ -43,7 +43,12 @@ import 'package:fushi/src/ai/agent/ai_agent_ui_context.dart';
 import 'package:fushi/src/pages/implementations/ai_agent_page.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/media/manga/manga_ocr_provider.dart';
+import 'package:fushi/src/media/manga/ocr/google_lens_disclosure.dart';
+import 'package:fushi/src/media/manga/ocr/google_lens_ocr_service.dart';
+import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
+import 'package:fushi/src/ocr/google_lens_screen_ocr.dart';
 import 'package:fushi/src/ocr/local_screen_ocr.dart';
+import 'package:fushi/src/ocr/screen_ocr_engine.dart';
 import 'package:fushi/src/ocr/screen_ocr_language.dart';
 import 'package:fushi/src/ocr/system_ocr_channel.dart';
 import 'package:fushi/src/ocr/system_ocr_setup_dialog.dart';
@@ -294,17 +299,33 @@ class DesktopSystemBallActionTarget {
   /// 收起覆盖窗里开着的查词卡（截屏前收起，免得它被截进图里；退出冻结层时收起）。
   Future<void> dismissLookup() => GlobalLookupChannel.hide();
 
-  /// 识别一张截图：[engine] 为 null 时走系统 OCR（macOS Vision /
-  /// Windows.Media.Ocr）；Linux 没有系统 OCR，宿主传本机 OCR 模型
-  /// （[LocalScreenOcr]）。[language] 见
-  /// [PreferencesRepository.screenOcrLanguage]。
+  /// 识别一张截图：[engine] 是宿主按截屏识字引擎设置解析出的识别器（本机模型
+  /// [LocalScreenOcr] / 设备自带 / [GoogleLensScreenOcr]，见 [resolveScreenOcrEngine]）；
+  /// null 时走设备自带（macOS Vision / Windows.Media.Ocr，按屏幕截图识别）。
+  /// [language] 见 [PreferencesRepository.screenOcrLanguage]。
   Future<SystemOcrPageResult> recognize(
     Uint8List png, {
     required String language,
     SystemOcrPlatform? engine,
-  }) => (engine ?? const MethodChannelSystemOcr()).recognize(
+  }) => (engine ?? const MethodChannelSystemOcr(screenText: true)).recognize(
     png,
     language: language,
+  );
+
+  /// 本机 OCR 模型此刻能不能识别：截屏识字引擎「跟随全局」时据此在本机模型与设备
+  /// 自带之间选（[resolveScreenOcrEngine]）。
+  /// [localModel] 只在要问时才建（建它要读 OCR 服务 provider）。
+  Future<bool> localModelReady(SystemOcrPlatform Function() localModel) =>
+      localModel().isAvailable();
+
+  /// 本设备是否已同意把截屏发给 Google Lens（[GoogleLensDisclosureScene.desktopScreens]）。
+  Future<bool> hasLensConsent() =>
+      hasGoogleLensDisclosure(scene: GoogleLensDisclosureScene.desktopScreens);
+
+  /// 弹截屏上传 Google Lens 的同意框（在主窗里）。
+  Future<bool> askLensConsent(BuildContext context) => ensureGoogleLensDisclosure(
+    context,
+    scene: GoogleLensDisclosureScene.desktopScreens,
   );
 
   Future<void> bringMainWindowToFront() =>
@@ -526,7 +547,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
   @override
   void dispose() {
     if (identical(_current, this)) _current = null;
-    unawaited(_linuxScreenOcr?.dispose());
+    unawaited(_screenOcrLocal?.dispose());
     WidgetsBinding.instance.removeObserver(this);
     unawaited(_pictureInPictureSub?.cancel());
     _registry.removeListener(_onChanged);
@@ -1003,6 +1024,15 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
             eink: isEinkTheme(context),
           )
         : _systemBallColors;
+    // 反馈 Eemf0HOZhj：截屏识字有自己的引擎设置（默认跟随全局 OCR 引擎），截图前就
+    // 定下来——Lens 要先问上传同意，同意框在主窗里，不能等冻结层盖上屏幕再问。
+    final ScreenOcrEngine engineKind = await _resolveScreenOcrEngine(target);
+    if (!mounted) return;
+    if (engineKind == ScreenOcrEngine.googleLens &&
+        !await target.hasLensConsent()) {
+      await _askScreenOcrLensConsent(target);
+      return;
+    }
     // 开着的查词卡会被截进图里，而且它挡着的字点不到。
     await target.dismissLookup();
     // 反馈 Eemf0HOZhj（macOS 4K 屏截屏识字要一分钟以上才出行框）：分段计时记进
@@ -1053,12 +1083,13 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
       final SystemOcrPageResult result = await target.recognize(
         png,
         language: language,
-        engine: Platform.isLinux ? _localScreenOcr() : null,
+        engine: _screenOcrRecognizer(engineKind),
       );
       lines = result.lines;
       ErrorLogService.instance.logDiagnostic(
         'floating_ball.screen_ocr_timing',
-        'capture=${captureMs}ms recognize=${recognizeClock.elapsedMilliseconds}ms '
+        'engine=${engineKind.name} '
+            'capture=${captureMs}ms recognize=${recognizeClock.elapsedMilliseconds}ms '
             'image=${result.imageWidth}x${result.imageHeight} '
             'png=${png.length}B lines=${result.lines.length}',
       );
@@ -1076,7 +1107,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
           t.floating_ball_ocr_language_pack_missing(
             language: contentLanguageLabelOf(language),
           ),
-        // Linux：本机 OCR 模型还没下载（设置里下载）。
+        // 本机 OCR 模型还没下载（设置里下载）。
         kSystemOcrModelUnavailableReason => t.floating_ball_ocr_model_missing,
         _ => t.floating_ball_ocr_failed,
       };
@@ -1093,20 +1124,79 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     );
   }
 
-  /// Linux 截屏识字的本机 OCR（[LocalScreenOcr]）。用户换了本机模型时服务实例跟着
-  /// 换（[mangaOcrServiceProvider] 按模型键重建），识别器随之重建。
-  LocalScreenOcr? _linuxScreenOcr;
-  MangaOcrService? _linuxScreenOcrService;
+  /// 按截屏识字引擎设置（[PreferencesRepository.screenOcrEngine]，默认跟随全局 OCR
+  /// 引擎偏好）解析这次用哪个引擎。只有「跟随全局」落到本机模型类、且平台有设备
+  /// 自带可选时才去问本机模型是否就绪。
+  Future<ScreenOcrEngine> _resolveScreenOcrEngine(
+    DesktopSystemBallActionTarget target,
+  ) async {
+    final PreferencesRepository? prefs = _prefs;
+    final ScreenOcrEngineSetting setting =
+        prefs?.screenOcrEngine ?? ScreenOcrEngineSetting.followGlobal;
+    final MangaOcrEnginePreference global = MangaOcrEnginePreferenceKey.fromKey(
+      prefs?.mangaOcrEnginePreference ?? kDefaultMangaOcrEnginePreference.key,
+    );
+    final bool systemOcrSupported = screenOcrHasSystemEngine;
+    final ScreenOcrEngine? fromGlobal = screenOcrEngineOfGlobal(
+      global,
+      systemOcrSupported: systemOcrSupported,
+    );
+    final bool needsReadiness =
+        setting == ScreenOcrEngineSetting.followGlobal &&
+        systemOcrSupported &&
+        (fromGlobal == null || fromGlobal == ScreenOcrEngine.localModel);
+    final bool localModelReady =
+        needsReadiness && await target.localModelReady(_localScreenOcr);
+    return resolveScreenOcrEngine(
+      setting: setting,
+      global: global,
+      systemOcrSupported: systemOcrSupported,
+      localModelReady: localModelReady,
+    );
+  }
+
+  /// 解析出的引擎 → 识别器。
+  SystemOcrPlatform _screenOcrRecognizer(ScreenOcrEngine engine) =>
+      switch (engine) {
+        ScreenOcrEngine.localModel => _localScreenOcr(),
+        ScreenOcrEngine.systemOcr => const MethodChannelSystemOcr(
+          screenText: true,
+        ),
+        ScreenOcrEngine.googleLens => GoogleLensScreenOcr(
+          runner: _screenOcrLens,
+          lensLanguage: _prefs?.mangaOcrLensLanguage ?? _ocrLanguage,
+        ),
+      };
+
+  /// 截屏识字的 Lens 客户端（常驻，复用 HTTP 连接）。
+  late final GoogleLensMangaOcrService _screenOcrLens =
+      GoogleLensMangaOcrService();
+
+  /// 截屏识字要用 Lens 但本设备还没同意上传：在主窗里问。不管同意与否这次都不截——
+  /// 同意框在主窗里、主窗此刻在最前，接着截会把主窗截进去；同意后用户回到要识别的
+  /// 画面再点一次。
+  Future<void> _askScreenOcrLensConsent(
+    DesktopSystemBallActionTarget target,
+  ) async {
+    await target.bringMainWindowToFront();
+    if (!mounted) return;
+    await target.askLensConsent(context);
+  }
+
+  /// 截屏识字的本机 OCR（[LocalScreenOcr]）。用户换了本机模型时服务实例跟着换
+  /// （[mangaOcrServiceProvider] 按模型键重建），识别器随之重建。
+  LocalScreenOcr? _screenOcrLocal;
+  MangaOcrService? _screenOcrLocalService;
 
   LocalScreenOcr _localScreenOcr() {
     final MangaOcrService service = ref.read(mangaOcrServiceProvider);
-    final LocalScreenOcr? current = _linuxScreenOcr;
-    if (current != null && identical(service, _linuxScreenOcrService)) {
+    final LocalScreenOcr? current = _screenOcrLocal;
+    if (current != null && identical(service, _screenOcrLocalService)) {
       return current;
     }
     if (current != null) unawaited(current.dispose());
-    _linuxScreenOcrService = service;
-    return _linuxScreenOcr = LocalScreenOcr(service);
+    _screenOcrLocalService = service;
+    return _screenOcrLocal = LocalScreenOcr(service);
   }
 
   /// 冻结层上点了一下（截图像素）：点在字上 → 查从这个字起的后缀，卡锚在这个字
