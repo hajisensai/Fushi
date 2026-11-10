@@ -351,13 +351,21 @@ class ReaderFushiSource extends ReaderMediaSource {
       formatForMediaSourceKey(item.mediaSourceIdentifier)?.supportsAudiobook ??
       false;
 
+  /// 这张书架卡能不能进「有声书工作室」：判据只在
+  /// [BookFormat.supportsAudiobookStudio]（工作室只认 EPUB 正文）。
+  static bool mediaItemSupportsAudiobookStudio(MediaItem item) =>
+      formatForMediaSourceKey(
+        item.mediaSourceIdentifier,
+      )?.supportsAudiobookStudio ??
+      false;
+
   /// 书架上「被有声书配对 SRT 卡顶替、原书卡不再单独出现」的 bookKey 集合
   /// （BUG-728 隐藏规则）。
   ///
-  /// 顶替只对**能挂有声书**的格式成立（[BookFormat.supportsAudiobook]）：反馈
-  /// Ndnxy3mNdG 里 PDF 书被旧版 UI 挂上了有声书，书架按「有 srt_books 行就藏原书卡」
-  /// 把 PDF 卡藏掉、只剩一张写死 EPUB 阅读器的 SRT 卡，用户再也打不开原 PDF。存量
-  /// 的这类配对行不再顶替原卡，原 PDF / 漫画卡照常显示。
+  /// 顶替只对**能挂有声书**的格式成立（[BookFormat.supportsAudiobook]，EPUB / PDF）：
+  /// 顶替原卡的 SRT 卡按配对书 format 派生阅读器（`srtBookMediaSourceKey`），PDF 有声书
+  /// 的 SRT 卡打开的就是 PDF 阅读器（播放 + 文本层高亮）。漫画阅读器不播有声书，漫画
+  /// 书上的配对行（只可能是旧数据）不顶替原卡，漫画卡照常显示。
   ///
   /// [formatOf] 返回 null（书架上没有这本书的行，例如正文还没生成）按 EPUB 处理——
   /// 没有原卡可藏，结果与旧行为一致。书架页 / ctl 书架 / 合集成员可见性 / 副屏书库
