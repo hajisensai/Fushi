@@ -24,6 +24,8 @@ import 'package:fushi_engine/media/discovery/discovery_download_queue.dart'
 import 'package:fushi_engine/media/discovery/import/discovery_engine_importers.dart'
     show audiobookTitleForAudioPaths, discoveryImportFileName;
 import 'package:fushi_engine/media/discovery/import/discovery_import_plan.dart';
+import 'package:fushi/src/asr_host/asr_memory_gate.dart'
+    show MemoryGatedAsrTranscriptionService;
 import 'package:fushi/src/asr_host/shared_model_downloads.dart'
     show asrDownloadKeyFor, sharedModelDownloads;
 import 'package:fushi/src/media/audiobook/audiobook_material_library.dart';
@@ -87,6 +89,11 @@ class AppAudiobookTranscriber implements AudiobookTranscriber {
       preference: _preference,
     );
     if (!plan.modelReady) {
+      // 内存门槛先于下载判（BUG-4367）：这台机器跑不动这个模型时，自动转录
+      // 不该先白下几百 MB 再在 start 被拦——直接以同一句说明失败。
+      if (service is MemoryGatedAsrTranscriptionService) {
+        service.ensureMemoryFor(language, plan.variant);
+      }
       await _downloadModel(service, plan, onProgress, cancel);
       plan = await service.plan(language: language, preference: _preference);
       if (!plan.modelReady) {
