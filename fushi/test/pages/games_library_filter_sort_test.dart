@@ -97,7 +97,11 @@ void main() {
     matching: find.text(title),
   );
 
-  Future<void> pumpPage(WidgetTester tester, AppModel appModel) async {
+  Future<void> pumpPage(
+    WidgetTester tester,
+    AppModel appModel, {
+    bool embedded = false,
+  }) async {
     navKey = GlobalKey<NavigatorState>();
     FushiToast.navigatorKey = navKey;
     await tester.pumpWidget(
@@ -106,7 +110,7 @@ void main() {
         child: TranslationProvider(
           child: MaterialApp(
             navigatorKey: navKey,
-            home: const FushiFocusRoot(child: GamesLibraryPage()),
+            home: FushiFocusRoot(child: GamesLibraryPage(embedded: embedded)),
           ),
         ),
       ),
@@ -242,11 +246,17 @@ void main() {
     final int series = await db.createMediaCollection('series');
     await db.addToCollection(series, MediaKind.game, 'g1');
     await db.addToCollection(series, MediaKind.game, 'g2');
-    await pumpPage(tester, appModel);
+    // 「管理合集」入口在游戏 tab 的单行页头里（embedded），搜索也是页头 🔍。
+    await pumpPage(tester, appModel, embedded: true);
 
     // 只有 alpha 命中：库页合集卡此刻只折进 1 个成员。
+    await tester.tap(
+      find.byKey(const ValueKey<String>('fushi-header-search-button')),
+    );
+    await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), 'alpha');
     await tester.pumpAndSettle();
+    expect(cardTitle('贝塔物语'), findsNothing);
     await tester.tap(
       find.byKey(const ValueKey<String>('library_collection_manage')),
     );
