@@ -18,7 +18,7 @@ void main() {
 
     expect(openSrtBook, contains('await appModel.openMedia('));
     expect(openSrtBook, contains('ref: ref'));
-    // BUG-4323：源按卡上由配对书 format 派生的 mediaSourceIdentifier 取（PDF 配对
+    // BUG-4332：源按卡上由配对书 format 派生的 mediaSourceIdentifier 取（PDF 配对
     // 行走 PDF 阅读器），不再写死 ReaderFushiSource。
     expect(
       openSrtBook,
