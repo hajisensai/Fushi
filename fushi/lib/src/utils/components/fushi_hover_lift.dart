@@ -141,9 +141,8 @@ class FushiHoverLiftHost extends InheritedWidget {
 
   /// 最近一层 [FushiHoverLiftHost] 代收的指针位置（建立依赖：host 换了
   /// notifier 时消费者重新订阅）。
-  static ValueListenable<Offset?>? pointerOf(BuildContext context) => context
-      .dependOnInheritedWidgetOfExactType<FushiHoverLiftHost>()
-      ?.pointer;
+  static ValueListenable<Offset?>? pointerOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<FushiHoverLiftHost>()?.pointer;
 
   @override
   bool updateShouldNotify(FushiHoverLiftHost oldWidget) =>
