@@ -274,12 +274,19 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
   /// 只对 host 也有的键同步（本地独有条目无 host 真相，跳过）；逐条错误以
   /// `[errorLabel] "<key>": <e>` 进 [report.errors] 不中断整体。host 清单的获取
   /// 与两侧空集合的早退仍在各调用方（保持既有网络行为不变）。
+  ///
+  /// 每条「重读本端 → 判定 → 落地」在该条目的位置锁里做（BUG-4279），与播放页实时
+  /// 上报、冲突弹窗互斥。[lockGenerations] 是调用方在**取 host 清单之前**记下的各
+  /// 条目锁代数（[_positionLockGenerations]）：轮到某条时代数变了，说明清单之后它被
+  /// 别的路径同步过（实时上报推进了 host 与基线），清单里的 host 值已过期——重读
+  /// host 再判定，否则旧 host 值配新基线会被判成「对端改了」落回本机，断点倒退。
   Future<void> _syncPositionsLive(
     SyncRunReport report, {
     required InterconnectPlaybackPositionSync sync,
     required String errorLabel,
     required Set<String> localKeys,
     required Set<String> hostKeys,
+    required Map<String, int> lockGenerations,
     required Future<PlaybackPosition> Function(String key) readHost,
     required String Function(String key) titleOf,
     required PlaybackPosition Function(String key) localFromSnapshot,
@@ -309,42 +316,73 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
         itemKind: itemKind,
       );
       try {
-        final PlaybackPosition host = await readHost(key);
+        final PlaybackPosition listed = await readHost(key);
         if (InterconnectPlaybackPositionSync.isSettled(
           local: localFromSnapshot(key),
-          remote: host,
+          remote: listed,
           snapshot: baselines,
           key: key,
         )) {
           continue;
         }
-        final PlaybackPosition local = await sync.localPosition(key);
-        final BookProgressSyncAction action = await sync.decide(
-          key,
-          local: local,
-          remote: host,
-        );
-        switch (action) {
-          case BookProgressSyncAction.synced:
-            await sync.alignSynced(key, local: local, remote: host);
-          case BookProgressSyncAction.pushLocal:
-            await sync.pushLocal(key, local: local, remote: host);
-          case BookProgressSyncAction.applyRemote:
-            await sync.applyRemote(key, host, local: local);
-          case BookProgressSyncAction.conflict:
-            report.conflicts.add(
-              SyncConflict(
-                assetKey: key,
-                dimension: sync.dimension,
-                title: titleOf(key),
-                localVersion: local.updatedAtMs,
-                remoteVersion: host.updatedAtMs,
-              ),
-            );
-        }
+        final String lockKey = syncPlaybackPositionResource(sync.kind, key);
+        await syncResourceLocks.withResources(<String>{lockKey}, () async {
+          final PlaybackPosition host =
+              syncResourceLocks.generationOf(lockKey) != lockGenerations[key]
+              ? await sync.remotePosition(key)
+              : listed;
+          final PlaybackPosition local = await sync.localPosition(key);
+          final BookProgressSyncAction action = await sync.decide(
+            key,
+            local: local,
+            remote: host,
+          );
+          // 前置条件 = 本次判定读到的 host 位置（BUG-4279）。
+          final List<int> expected = <int>[host.positionMs];
+          switch (action) {
+            case BookProgressSyncAction.synced:
+              await sync.alignSynced(
+                key,
+                local: local,
+                remote: host,
+                expectedRemotePositions: expected,
+              );
+            case BookProgressSyncAction.pushLocal:
+              await sync.pushLocal(
+                key,
+                local: local,
+                remote: host,
+                expectedRemotePositions: expected,
+              );
+            case BookProgressSyncAction.applyRemote:
+              await sync.applyRemote(key, host, local: local);
+            case BookProgressSyncAction.conflict:
+              report.conflicts.add(
+                SyncConflict(
+                  assetKey: key,
+                  dimension: sync.dimension,
+                  title: titleOf(key),
+                  localVersion: local.updatedAtMs,
+                  remoteVersion: host.updatedAtMs,
+                ),
+              );
+          }
+        });
       } catch (e) {
         report.noteError('$errorLabel "$key"', e);
       }
     }
   }
+
+  /// [kind] 各条目此刻的位置锁代数（见 [_syncPositionsLive] 的 `lockGenerations`）。
+  /// 必须在取 host 清单**之前**记。
+  Map<String, int> _positionLockGenerations(
+    PlaybackPositionKind kind,
+    Iterable<String> keys,
+  ) => <String, int>{
+    for (final String key in keys)
+      key: syncResourceLocks.generationOf(
+        syncPlaybackPositionResource(kind, key),
+      ),
+  };
 }

@@ -57,6 +57,11 @@ extension _SyncOrchestratorVideos on SyncOrchestrator {
       if (uid != null) localUids.add(uid);
     }
     if (localUids.isEmpty) return;
+    // 取清单之前记锁代数：清单之后被实时上报同步过的条目要重读 host（BUG-4279）。
+    final Map<String, int> lockGenerations = _positionLockGenerations(
+      PlaybackPositionKind.video,
+      localUids,
+    );
 
     // 视频进度是 host-truth 模型：进度端点只对 host DB 里真实存在的视频可用。先取
     // host 视频清单（条目已带 positionMs / positionUpdatedAtMs，省去逐视频 GET），
@@ -79,6 +84,7 @@ extension _SyncOrchestratorVideos on SyncOrchestrator {
       errorLabel: 'live video progress',
       localKeys: localUids,
       hostKeys: hostById.keys.toSet(),
+      lockGenerations: lockGenerations,
       titleOf: (String uid) {
         final String? title = hostById[uid]?.title;
         return title == null || title.isEmpty ? uid : title;

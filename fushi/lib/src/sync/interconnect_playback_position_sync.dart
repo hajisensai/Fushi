@@ -1,4 +1,8 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
+import 'package:fushi/src/sync/sync_resource_locks.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 
@@ -23,6 +27,14 @@ enum LiveReportResult {
 
 /// 互联播放位置的两类条目（BUG-3367）。
 enum PlaybackPositionKind { video, audiobook }
+
+/// 一条播放位置的资源键（[syncResourceLocks]）。同一条目的「读基线 / 本端 → 判定
+/// → 写 host / 本端 → 记基线」必须原子：sweep、播放页实时上报、冲突弹窗与对比弹窗
+/// 各拿各的旧判定交错落地，基线会被旧判定改写（BUG-4279）。
+///
+/// 加锁顺序在「整轮 → 通道 → 书」之后：持有它的一方不再等任何别的资源。
+String syncPlaybackPositionResource(PlaybackPositionKind kind, String key) =>
+    'position:${kind.name}:$key';
 
 /// 互联视频播放位置基线在 `sync_baselines` 里的 dimension（BUG-3367）。值 = 上次
 /// 两端达成一致的位置（毫秒）；assetKey = 视频 uid。与书籍的 `progress_live`
@@ -223,10 +235,16 @@ class InterconnectPlaybackPositionSync {
   /// 结果再截到 [capFutureSyncStamp]——否则 `毒戳 + 1` 会写进本端 `_at_` pref，
   /// host 却把上报戳截成 `now + 余量`，下一轮两端位置相同、本端戳更新 →
   /// [alignSynced] 又 PUT 一次，每轮重复写。
+  ///
+  /// [expectedRemotePositions] 是前置条件：写者「判定时看到的 host 位置」。省略 =
+  /// `[remote.positionMs]`（sweep 判定读到的就是 [remote]）；冲突弹窗传弹窗展示给
+  /// 用户的对端值（BUG-4279）。调用方须持有该条目的
+  /// [syncPlaybackPositionResource] 锁。
   Future<({LivePushStatus status, PlaybackPosition agreed})> pushLocal(
     String key, {
     required PlaybackPosition local,
     required PlaybackPosition remote,
+    List<int>? expectedRemotePositions,
     int? nowMs,
   }) async {
     final int now = nowMs ?? DateTime.now().millisecondsSinceEpoch;
@@ -245,7 +263,7 @@ class InterconnectPlaybackPositionSync {
     final LivePositionPush pushed = await _putLive(
       key,
       agreed,
-      expectedPositionsMs: <int>[remote.positionMs],
+      expectedPositionsMs: expectedRemotePositions ?? <int>[remote.positionMs],
     );
     if (pushed.status != LivePushStatus.confirmed) {
       await _dropPending(key);
@@ -286,7 +304,29 @@ class InterconnectPlaybackPositionSync {
   /// 两者都没有（这一条从未同步过）：现读 host 跑一次 [decide]——`synced` 只记基线，
   /// `pushLocal` 以读到的 host 位置为前置条件推送，`applyRemote` / `conflict` 不写
   /// （播放中不把 host 值落到本端），返回 held。
-  Future<LiveReportResult> reportLive(String key, PlaybackPosition live) async {
+  ///
+  /// 整段在该条目的 [syncPlaybackPositionResource] 锁里（BUG-4279）：锁罩住网络往返，
+  /// host 上的写入顺序与基线的写入顺序一致——否则先确认的写可能后记基线，把基线
+  /// 倒退；sweep / 弹窗也不会拿各自的旧判定与它交错落地。播放页的每秒上报经
+  /// [LivePositionReporter] 合并，积压不超过每条一个在途 + 一个待发。
+  Future<LiveReportResult> reportLive(
+    String key,
+    PlaybackPosition live,
+  ) async => (await _reportLiveLocked(key, live)).result;
+
+  /// [reportLive] 的本体；同时带回锁内最后读到的基线（held 时 [LivePositionReporter]
+  /// 记下它，基线被 sweep / 弹窗改写后才恢复上报）。
+  Future<({LiveReportResult result, int? baseline})> _reportLiveLocked(
+    String key,
+    PlaybackPosition live,
+  ) => syncResourceLocks.withResources(<String>{
+    syncPlaybackPositionResource(kind, key),
+  }, () => _reportLiveUnlocked(key, live));
+
+  Future<({LiveReportResult result, int? baseline})> _reportLiveUnlocked(
+    String key,
+    PlaybackPosition live,
+  ) async {
     final int? base = await baseline(key);
     final int? pending = await _db.getSyncBaseline(key, pendingDimension);
     final List<int> expected = <int>[
@@ -298,12 +338,16 @@ class InterconnectPlaybackPositionSync {
       switch (await decide(key, local: live, remote: remote)) {
         case BookProgressSyncAction.synced:
           await recordBaseline(key, live.positionMs);
-          return LiveReportResult.confirmed;
+          return (
+            result: LiveReportResult.confirmed,
+            baseline: live.positionMs,
+          );
         case BookProgressSyncAction.pushLocal:
           expected.add(remote.positionMs);
         case BookProgressSyncAction.applyRemote:
         case BookProgressSyncAction.conflict:
-          return LiveReportResult.held;
+          // decide 可能刚把「待确认」提升成基线：held 记的是此刻的基线。
+          return (result: LiveReportResult.held, baseline: await baseline(key));
       }
     }
     await _recordPending(key, live.positionMs);
@@ -314,10 +358,10 @@ class InterconnectPlaybackPositionSync {
     );
     if (pushed.status != LivePushStatus.confirmed) {
       await _dropPending(key);
-      return LiveReportResult.held;
+      return (result: LiveReportResult.held, baseline: base);
     }
     await recordBaseline(key, live.positionMs);
-    return LiveReportResult.confirmed;
+    return (result: LiveReportResult.confirmed, baseline: live.positionMs);
   }
 
   /// host 胜出：落回本端，记基线。返回是否真的落地。
@@ -348,10 +392,14 @@ class InterconnectPlaybackPositionSync {
   ///
   /// 比较用 host 的可信戳（[trustedStoredSyncStamp]）：host 上的超限毒戳按 0，
   /// 本端胜出、把本端戳推给 host，本端不会被对齐成毒戳。
+  ///
+  /// [expectedRemotePositions] 同 [pushLocal]（省略 = `[remote.positionMs]`）；调用方
+  /// 须持有该条目的 [syncPlaybackPositionResource] 锁。
   Future<bool> alignSynced(
     String key, {
     required PlaybackPosition local,
     required PlaybackPosition remote,
+    List<int>? expectedRemotePositions,
   }) async {
     final int remoteTs = trustedStoredSyncStamp(
       remote.updatedAtMs,
@@ -364,7 +412,8 @@ class InterconnectPlaybackPositionSync {
       final LivePositionPush pushed = await _putLive(
         key,
         local,
-        expectedPositionsMs: <int>[remote.positionMs],
+        expectedPositionsMs:
+            expectedRemotePositions ?? <int>[remote.positionMs],
       );
       if (pushed.status == LivePushStatus.superseded) {
         await _dropPending(key);
@@ -449,6 +498,98 @@ class InterconnectPlaybackPositionSync {
           audiobookPositionAtPrefKey(key),
           p.updatedAtMs,
         );
+    }
+  }
+}
+
+/// 播放页的 live 位置上报（BUG-4279）：按条目 single-flight，任意时刻每条最多一个
+/// 在途 + 一个待发（只留最新值）。
+///
+/// 播放页每秒节流一次上报；每次上报都要拿条目锁并走网络往返（旧 host 还多两个
+/// GET），慢网下独立发出的上报会排成长队、按旧值逐个打到 host。这里把同一条目的
+/// 上报合并：在途时新值只顶替待发槽，在途结束后发待发槽里最新的那一个。
+///
+/// host 已被别的设备改写（[LiveReportResult.held]）时记下当时的基线：之后的上报先
+/// 读一次本地基线，没变（冲突尚未裁决）就不发网络请求——否则冲突期间每秒一个注定
+/// 被拒的 PUT；sweep 或弹窗裁决后基线变了，自动恢复上报。
+class LivePositionReporter {
+  LivePositionReporter({
+    required FushiDatabase db,
+    required this.backend,
+    required PlaybackPositionKind kind,
+  }) : _sync = InterconnectPlaybackPositionSync(
+         db: db,
+         backend: backend,
+         kind: kind,
+       );
+
+  /// 上报目标；播放页换了远端客户端就换一个上报器。
+  final InterconnectSyncBackend backend;
+  final InterconnectPlaybackPositionSync _sync;
+
+  /// 有上报在途的条目。
+  final Set<String> _inFlight = <String>{};
+
+  /// 条目 → 待发的最新值与它的完成信号。
+  final Map<String, ({PlaybackPosition live, Completer<void> done})> _pending =
+      <String, ({PlaybackPosition live, Completer<void> done})>{};
+
+  /// 条目 → 被 host 拒绝（held）时的基线（可为 null）。
+  final Map<String, int?> _held = <String, int?>{};
+
+  bool _closed = false;
+
+  /// 提交一次上报；返回的 Future 在这一值发送完成、或被更新的值顶替时完成。不抛
+  /// （错误 debugPrint）。[close] 之后的上报直接丢弃。
+  Future<void> report(String key, PlaybackPosition live) {
+    if (_closed) return Future<void>.value();
+    final Completer<void> done = Completer<void>();
+    if (_inFlight.contains(key)) {
+      _pending.remove(key)?.done.complete();
+      _pending[key] = (live: live, done: done);
+      return done.future;
+    }
+    _inFlight.add(key);
+    unawaited(_drain(key, live, done));
+    return done.future;
+  }
+
+  /// 不再接受新上报；待发槽里的最后一个值仍会发出（最多一次请求），保住退出时的
+  /// 断点接力（BUG-3367）。
+  void close() => _closed = true;
+
+  Future<void> _drain(
+    String key,
+    PlaybackPosition first,
+    Completer<void> firstDone,
+  ) async {
+    PlaybackPosition live = first;
+    Completer<void> done = firstDone;
+    while (true) {
+      await _send(key, live);
+      done.complete();
+      final ({PlaybackPosition live, Completer<void> done})? next = _pending
+          .remove(key);
+      if (next == null) break;
+      live = next.live;
+      done = next.done;
+    }
+    _inFlight.remove(key);
+  }
+
+  Future<void> _send(String key, PlaybackPosition live) async {
+    try {
+      if (_held.containsKey(key)) {
+        if (await _sync.baseline(key) == _held[key]) return;
+        _held.remove(key);
+      }
+      final ({LiveReportResult result, int? baseline}) r = await _sync
+          ._reportLiveLocked(key, live);
+      if (r.result == LiveReportResult.held) {
+        _held[key] = r.baseline;
+      }
+    } catch (e) {
+      debugPrint('[sync] live position report "$key" failed: $e');
     }
   }
 }

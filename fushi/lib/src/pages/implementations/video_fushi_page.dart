@@ -2869,6 +2869,15 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   late final SourceReviewRemoteReportGate _remoteReportGate =
       SourceReviewRemoteReportGate(isReview: () => _sourceReviewActive);
 
+  /// 互联 host 的实时位置上报器（BUG-4279）：同一条目最多一个在途 + 一个待发，
+  /// 慢网下每秒的上报不排长队、不按旧值逐个打到 host。首次上报时按当前互联客户端
+  /// 建，客户端换了就换一个。
+  ///
+  /// `dispose` 不关它：退出路径的最后一次落库（[exitAfterPersist] 发起、pop 后才
+  /// 走到上报）可能晚于 `dispose`，关掉就丢了退出瞬间的断点接力（BUG-3367）。它不持
+  /// 有任何资源，在途 / 待发发完即闲置。
+  LivePositionReporter? _liveReporter;
+
   @override
   void recordLookup() {
     if (_sourceReviewActive) return;
@@ -5453,11 +5462,18 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       // 基线——否则顺序接力（本机看完、另一台接着看）会被下轮 sweep 误判成冲突。
       // host-playlist 的非首集（`#ep<n>` 键）sweep 不同步，也就不记基线。
       if (client is InterconnectSyncBackend && episodeIndex <= 0) {
-        await InterconnectPlaybackPositionSync(
-          db: appModel.database,
-          backend: client,
-          kind: PlaybackPositionKind.video,
-        ).reportLive(keyUid, (positionMs: clamped, updatedAtMs: nowMs));
+        if (!identical(_liveReporter?.backend, client)) {
+          _liveReporter?.close();
+          _liveReporter = LivePositionReporter(
+            db: appModel.database,
+            backend: client,
+            kind: PlaybackPositionKind.video,
+          );
+        }
+        await _liveReporter!.report(keyUid, (
+          positionMs: clamped,
+          updatedAtMs: nowMs,
+        ));
       } else {
         await _remoteReportGate.position(
           client,

@@ -228,16 +228,30 @@ class InterconnectBookProgressSync {
     );
     bool localChanged = false;
     bool pushed = false;
+    // 前置条件 = 本次判定读到的 host 进度（BUG-4279）。
+    final List<BookProgressBaseline> expected = <BookProgressBaseline>[
+      BookProgressBaseline.of(remote),
+    ];
     switch (action) {
       case BookProgressSyncAction.synced:
         // BUG-686: a host-newer progress pull lands in reader_positions but
         // writes no book content, so it must still flag the shelf for a
         // refresh — the cached fushiBooksProvider otherwise keeps showing
         // the pre-sync progress bar and the sync looks like it did nothing.
-        localChanged = await alignSynced(book, local: local, remote: remote);
+        localChanged = await alignSynced(
+          book,
+          local: local,
+          remote: remote,
+          expected: expected,
+        );
       case BookProgressSyncAction.pushLocal:
         pushed =
-            (await pushLocal(book, local: local, remote: remote)).status ==
+            (await pushLocal(
+              book,
+              local: local,
+              remote: remote,
+              expected: expected,
+            )).status ==
             LivePushStatus.confirmed;
       case BookProgressSyncAction.applyRemote:
         // BUG-3537：判定后本地被改写则不落地（比较后写入），不计「已拉取」。
@@ -319,10 +333,14 @@ class InterconnectBookProgressSync {
   /// 推送带前置条件「host 仍停在判定时读到的 [remote] 位置」：确认 → 对齐 + 记基线；
   /// rejected / superseded（host 没采纳 / 判定后被第三台设备改写）→ 删「待确认」行，
   /// 不动本端、不记基线；抛异常 → 「待确认」行保留（BUG-3528）。
+  ///
+  /// [expected] 是前置条件：写者「判定时看到的 host 进度」。省略 = `[remote]`；对比
+  /// 弹窗传加载时展示给用户的 host 进度（BUG-4279）。调用方须持有这本书的书锁。
   Future<({LivePushStatus status, RemoteBookProgress agreed})> pushLocal(
     EpubBookRow book, {
     required RemoteBookProgress local,
     required RemoteBookProgress remote,
+    List<BookProgressBaseline>? expected,
     int? nowMs,
   }) async {
     final int now = nowMs ?? DateTime.now().millisecondsSinceEpoch;
@@ -352,7 +370,8 @@ class InterconnectBookProgressSync {
     final LiveBookProgressPush pushed = await _backend.putLiveBookProgress(
       book.bookKey,
       agreed,
-      expected: <BookProgressBaseline>[BookProgressBaseline.of(remote)],
+      expected:
+          expected ?? <BookProgressBaseline>[BookProgressBaseline.of(remote)],
     );
     if (pushed.status != LivePushStatus.confirmed) {
       await _dropPending(book);
@@ -418,10 +437,13 @@ class InterconnectBookProgressSync {
   ///
   /// 比较用 host 的可信戳视图（[withTrustedStoredStamp]）：host 上的超限毒戳按 0，
   /// 本端胜出、把本端戳推给 host，本端不会被对齐成毒戳。
+  ///
+  /// [expected] 同 [pushLocal]（省略 = `[remote]`）。
   Future<bool> alignSynced(
     EpubBookRow book, {
     required RemoteBookProgress local,
     required RemoteBookProgress remote,
+    List<BookProgressBaseline>? expected,
   }) async {
     if (local.updatedAtMs <= 0 && remote.updatedAtMs <= 0) return false;
     final RemoteBookProgress trustedRemote = withTrustedStoredStamp(
@@ -440,7 +462,8 @@ class InterconnectBookProgressSync {
       final LiveBookProgressPush pushed = await _backend.putLiveBookProgress(
         book.bookKey,
         winner,
-        expected: <BookProgressBaseline>[BookProgressBaseline.of(remote)],
+        expected:
+            expected ?? <BookProgressBaseline>[BookProgressBaseline.of(remote)],
       );
       if (pushed.status == LivePushStatus.superseded) {
         await _dropPending(book);

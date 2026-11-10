@@ -30,6 +30,11 @@ extension _SyncOrchestratorAudiobooks on SyncOrchestrator {
       if (bookKey != null) localKeys.add(bookKey);
     }
     if (localKeys.isEmpty) return;
+    // 取清单之前记锁代数：清单之后被同步过的条目要重读 host（BUG-4279）。
+    final Map<String, int> lockGenerations = _positionLockGenerations(
+      PlaybackPositionKind.audiobook,
+      localKeys,
+    );
 
     // 有声书进度是 host-truth 模型：只对 host 也有的有声书同步。先取 host 有声书
     // 清单，只同步两端都有的键；本地独有有声书无 host 真相，跳过。
@@ -63,6 +68,7 @@ extension _SyncOrchestratorAudiobooks on SyncOrchestrator {
       errorLabel: 'live audiobook progress',
       localKeys: localKeys,
       hostKeys: hostById.keys.toSet(),
+      lockGenerations: lockGenerations,
       titleOf: (String identity) {
         final String? title = hostById[identity]?.title;
         return title == null || title.isEmpty ? identity : title;

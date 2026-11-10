@@ -77,6 +77,8 @@ class SyncCompareEntry {
     this.remoteAudioPosSec,
     this.base,
     this.liveAction,
+    this.liveLocalProgress,
+    this.liveRemoteProgress,
     this.localPage,
     this.remotePage,
     this.pageCount,
@@ -137,6 +139,12 @@ class SyncCompareEntry {
   /// 冲突 / 方向 / 应用都按它走：文件箱里 `progress_*.json` 只有 client 自己写、
   /// host 从不读回，对互联通道它描述不了「host 与本机的分歧」。
   final BookProgressSyncAction? liveAction;
+
+  /// 加载时 live 探测读到的本机 / host 书进度（[liveAction] 的判定输入，BUG-4279）。
+  /// 「应用」按用户**在这一行看到的** host 值落地：选本机时它是推送的前置条件，
+  /// 选远端时 host 已不是它就不落地。加载时探测失败为 null。
+  final RemoteBookProgress? liveLocalProgress;
+  final RemoteBookProgress? liveRemoteProgress;
 
   bool get hasLocal => localUpdatedAt != null;
   bool get hasRemote => remoteUpdatedAt != null;
@@ -484,6 +492,8 @@ Future<List<SyncCompareEntry>> _fetchCompareData(
             : remoteData?.audioPosSec,
         base: base,
         liveAction: liveRow?.action,
+        liveLocalProgress: liveRow?.local,
+        liveRemoteProgress: liveRow?.remote,
         localPage: localPage,
         remotePage: remotePage,
         pageCount: pageCount,
@@ -1110,6 +1120,7 @@ Future<SyncApplyOutcome> _applyLiveChoice({
       db: db,
       backend: backend,
       book: book,
+      entry: entry,
       useLocal: useLocal,
     );
   }
@@ -1121,24 +1132,34 @@ Future<SyncApplyOutcome> _applyLiveChoice({
           backend: backend,
           kind: PlaybackPositionKind.audiobook,
         );
-    final PlaybackPosition local = await audio.localPosition(audiobookKey);
-    final PlaybackPosition remote = await audio.remotePosition(audiobookKey);
-    if (useLocal) {
-      if (local.updatedAtMs > 0) {
-        // BUG-4278：host 确认采纳才算写成功。
-        wrote =
-            (await audio.pushLocal(
-                  audiobookKey,
-                  local: local,
-                  remote: remote,
-                )).status ==
-                LivePushStatus.confirmed ||
-            wrote;
-      }
-    } else if (remote.updatedAtMs > 0) {
-      wrote =
-          await audio.applyRemote(audiobookKey, remote, local: local) || wrote;
-    }
+    // 已持有书锁，再拿这条有声书断点的位置锁（书 → 位置，合法顺序，BUG-4279）。
+    final bool audioWrote = await syncResourceLocks.withResources(
+      <String>{
+        syncPlaybackPositionResource(
+          PlaybackPositionKind.audiobook,
+          audiobookKey,
+        ),
+      },
+      () async {
+        final PlaybackPosition local = await audio.localPosition(audiobookKey);
+        final PlaybackPosition remote = await audio.remotePosition(
+          audiobookKey,
+        );
+        if (useLocal) {
+          if (local.updatedAtMs <= 0) return false;
+          // BUG-4278：host 确认采纳才算写成功。
+          return (await audio.pushLocal(
+                audiobookKey,
+                local: local,
+                remote: remote,
+              )).status ==
+              LivePushStatus.confirmed;
+        }
+        if (remote.updatedAtMs <= 0) return false;
+        return audio.applyRemote(audiobookKey, remote, local: local);
+      },
+    );
+    wrote = audioWrote || wrote;
   }
   return wrote ? SyncApplyOutcome.applied : SyncApplyOutcome.noop;
 }
@@ -1147,10 +1168,18 @@ Future<SyncApplyOutcome> _applyLiveChoice({
 /// 抬到严格新于 host，见 [InterconnectBookProgressSync.pushLocal]）；选远端 →
 /// host 进度落回本机。两者都记下新的位置基线，这本书不再以同一分叉重复弹出。
 /// 返回是否真的写了东西（host 无记录且本机也无记录时无事可做）。
+///
+/// 按「用户在这一行看到的 host 值」[SyncCompareEntry.liveRemoteProgress] 落地
+/// （BUG-4279）：选本机 → 推送重读的本机进度（加载后本机又读了也照推，那正是用户
+/// 要保留的一侧），前置条件是看到的 host 值，host 期间又被别的设备改了就不覆盖；
+/// 选远端 → 重读的 host 与看到的位置或戳不同就不落地（用户没见过新值）。加载时
+/// 探测失败（没有看到的值）时退回应用时重读的 host 值作前置条件，只关掉读写之间
+/// 的窗口。调用方持有这本书的书锁。
 Future<bool> _applyLiveProgressChoice({
   required FushiDatabase db,
   required InterconnectSyncBackend backend,
   required EpubBookRow book,
+  required SyncCompareEntry entry,
   required bool useLocal,
 }) async {
   final InterconnectBookProgressSync sync = InterconnectBookProgressSync(
@@ -1159,11 +1188,24 @@ Future<bool> _applyLiveProgressChoice({
   );
   final RemoteBookProgress local = await sync.localProgress(book);
   final RemoteBookProgress remote = await sync.remoteProgress(book);
+  final RemoteBookProgress? seen = entry.liveRemoteProgress;
   if (useLocal) {
     if (local.updatedAtMs <= 0) return false;
     // BUG-4278：host 确认采纳才算写成功。
-    return (await sync.pushLocal(book, local: local, remote: remote)).status ==
+    return (await sync.pushLocal(
+          book,
+          local: local,
+          remote: remote,
+          expected: <BookProgressBaseline>[
+            BookProgressBaseline.of(seen ?? remote),
+          ],
+        )).status ==
         LivePushStatus.confirmed;
+  }
+  if (seen != null &&
+      (!BookProgressBaseline.of(seen).matches(remote) ||
+          seen.updatedAtMs != remote.updatedAtMs)) {
+    return false;
   }
   if (remote.updatedAtMs <= 0) return false;
   return sync.applyRemote(book, remote, local: local);
@@ -1663,6 +1705,8 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
         localAudioPosMs: e.localAudioPosMs,
         remoteAudioPosSec: e.remoteAudioPosSec,
         base: e.base,
+        liveLocalProgress: e.liveLocalProgress,
+        liveRemoteProgress: e.liveRemoteProgress,
         localPage: e.localPage,
         remotePage: e.remotePage,
         pageCount: e.pageCount,

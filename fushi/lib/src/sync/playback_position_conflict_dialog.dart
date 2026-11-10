@@ -3,6 +3,7 @@ import 'package:fushi/src/sync/interconnect_playback_position_sync.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/sync_compare_dialog.dart' show SyncChoice;
 import 'package:fushi/src/sync/sync_orchestrator.dart' show SyncConflict;
+import 'package:fushi/src/sync/sync_resource_locks.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_player.dart'
     show formatFushiPlaybackTime;
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -94,27 +95,56 @@ Future<int> applyPlaybackPositionDecisions(
     final PlaybackPositionConflictView v = views[d.key];
     final String key = v.conflict.assetKey;
     try {
-      switch (d.value) {
-        case SyncChoice.useLocal:
-          // BUG-4278：host 确认采纳才算解决；弹窗展示后 host 被第三台设备改写
-          // （superseded）或拒收时这条仍未解决，下一轮 sweep 按新事实重新判定。
-          final ({LivePushStatus status, PlaybackPosition agreed}) pushed =
-              await v.sync.pushLocal(key, local: v.local, remote: v.remote);
-          if (pushed.status == LivePushStatus.confirmed) applied++;
-        case SyncChoice.useRemote:
-          // BUG-3537：弹窗展示后本端断点又被改写（本机播放 / 对端 PUT）则不落地，
-          // 这条仍算未解决，下一轮 sweep 按新事实重新判定。
-          if (await v.sync.applyRemote(key, v.remote, local: v.local)) {
-            applied++;
-          }
-        case SyncChoice.skip:
-          break;
+      // 每条裁决在该条目的位置锁里落地（BUG-4279），不与 sweep / 实时上报交错。
+      if (await syncResourceLocks.withResources(<String>{
+        syncPlaybackPositionResource(v.kind, key),
+      }, () => _applyPlaybackPositionDecision(v, d.value))) {
+        applied++;
       }
     } catch (e) {
       debugPrint('[sync] apply position decision "$key" failed: $e');
     }
   }
   return applied;
+}
+
+/// 落地一条裁决（调用方持有该条目的位置锁）；返回这条是否真的解决。
+///
+/// 两侧都按「用户在弹窗里看到的对端值」[PlaybackPositionConflictView.remote] 落地
+/// （BUG-4279）：
+/// - 本机：推送的是锁内**重读**的本端（弹窗期间本机播放推进是常态，正是用户要
+///   保留的一侧；拿弹窗快照推会把 host 落到旧位置），前置条件是弹窗展示的对端
+///   位置——对端在弹窗期间又变了就 superseded，host 确认才算解决（BUG-4278）。
+/// - 对端：锁内重读 host，与弹窗展示的位置或戳不同就不落地（用户没见过新值）；
+///   否则照旧比较后写入本端（BUG-3537：本端断点在弹窗期间被改写同样不落地）。
+/// 未解决的条目下一轮 sweep 按新事实重新判定。
+Future<bool> _applyPlaybackPositionDecision(
+  PlaybackPositionConflictView v,
+  SyncChoice choice,
+) async {
+  final String key = v.conflict.assetKey;
+  switch (choice) {
+    case SyncChoice.useLocal:
+      final PlaybackPosition localNow = await v.sync.localPosition(key);
+      final ({LivePushStatus status, PlaybackPosition agreed}) pushed = await v
+          .sync
+          .pushLocal(
+            key,
+            local: localNow,
+            remote: v.remote,
+            expectedRemotePositions: <int>[v.remote.positionMs],
+          );
+      return pushed.status == LivePushStatus.confirmed;
+    case SyncChoice.useRemote:
+      final PlaybackPosition remoteNow = await v.sync.remotePosition(key);
+      if (remoteNow.positionMs != v.remote.positionMs ||
+          remoteNow.updatedAtMs != v.remote.updatedAtMs) {
+        return false;
+      }
+      return v.sync.applyRemote(key, v.remote, local: v.local);
+    case SyncChoice.skip:
+      return false;
+  }
 }
 
 /// 「播放进度冲突」弹窗（BUG-3367）：本机与对端在上次同步后都有了新的播放进度，
