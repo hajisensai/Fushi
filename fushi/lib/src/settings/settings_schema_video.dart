@@ -800,14 +800,21 @@ SettingsDestination buildVideoDestination() {
               order: 70,
               section: t.video_setting_subtitle_appearance,
             ),
-            min: 12,
-            max: 48,
-            divisions: 36,
+            min: kVideoSubtitleMinFontSize,
+            max: kVideoSubtitleBaseMaxFontSize,
+            divisions:
+                (kVideoSubtitleBaseMaxFontSize - kVideoSubtitleMinFontSize)
+                    .round(),
+            // CcT_7VQIQr：上限随视口（逻辑像素，已折算 DPI）放大，高 DPI / 大屏全屏不再
+            // 卡在写死的 48；1 逻辑像素一档。视口取设置宿主所在窗口，与播放页 overlay、
+            // 设置页字幕预览量的是同一个 MediaQuery 尺寸。
+            boundsOf: _videoSubtitleFontSizeBounds,
             label: (double v) => v.round().toString(),
             value: (SettingsContext settingsContext) =>
-                currentVideoSubtitleStyle(
-                  settingsContext,
-                ).fontSize.clamp(12, 48),
+                currentVideoSubtitleStyle(settingsContext).fontSize.clamp(
+                  kVideoSubtitleMinFontSize,
+                  _videoSubtitleFontSizeBounds(settingsContext).max,
+                ),
             onChanged: (SettingsContext settingsContext, double v) {
               previewVideoSubtitleStyle(
                 settingsContext,
@@ -2302,18 +2309,43 @@ SettingsDestination buildVideoDestination() {
           SettingsActionItem(
             id: 'video.library.scrape_records_clear_all',
             title: t.video_source_scrape_clear_all,
-            subtitle: t.video_source_scrape_clear_all_hint,
+            subtitle: t.video_source_scrape_clear_all_summary,
             icon: Icons.delete_sweep_outlined,
             destructive: true,
             cli: SettingsCliAction(
               confirm: true,
+              params: const <SettingsCliParam>[
+                SettingsCliParam(
+                  'files',
+                  help:
+                      'delete（默认）= 同时删除 Fushi 生成且未改动的 NFO 与图片；'
+                      'keep = 只清记录，磁盘文件一个不动',
+                  required: false,
+                ),
+              ],
               run: (SettingsContext c, Map<String, String> args) async {
+                final String files = args['files'] ?? 'delete';
+                if (files != 'delete' && files != 'keep') {
+                  throw ArgumentError.value(
+                    files,
+                    'files',
+                    'expected delete or keep',
+                  );
+                }
                 try {
                   final VideoScrapeCleanupResult result =
-                      await clearAllVideoScrapeRecords(c.appModel.database);
+                      await clearAllVideoScrapeRecords(
+                        c.appModel.database,
+                        mode: videoScrapeCleanupModeFor(
+                          deleteGeneratedFiles: files == 'delete',
+                        ),
+                      );
                   return <String, Object?>{
                     'cleared': true,
+                    'mode': result.mode.name,
                     'preservedFiles': result.preservedFiles,
+                    'deletedGeneratedFiles': result.deletedGeneratedFiles,
+                    'retainedGeneratedFiles': result.retainedGeneratedFiles,
                   };
                 } on VideoScrapeCleanupBusyException {
                   throw StateError(t.video_source_scrape_clear_all_busy);
@@ -2808,6 +2840,22 @@ SettingsSwitchItem _videoMpvSwitchItem({
       );
     },
     defaultValue: read(VideoMpvConfig.defaults),
+  );
+}
+
+/// 视频字幕字号滑条的运行期范围（反馈 CcT_7VQIQr）：上限 =
+/// [videoSubtitleMaxBaseFontSize]（随视口短边），视口未知（无 MediaQuery 的无头
+/// 入口）时退回历史上限 [kVideoSubtitleBaseMaxFontSize]。
+SettingsSliderBounds _videoSubtitleFontSizeBounds(
+  SettingsContext settingsContext,
+) {
+  final Size viewport =
+      MediaQuery.maybeSizeOf(settingsContext.context) ?? Size.zero;
+  final double max = videoSubtitleMaxBaseFontSize(viewport);
+  return (
+    min: kVideoSubtitleMinFontSize,
+    max: max,
+    divisions: (max - kVideoSubtitleMinFontSize).round(),
   );
 }
 

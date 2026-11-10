@@ -101,7 +101,9 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
           }
         }
       }
-      // 分架过滤（互联完整支持批次）：普通书架 = 可下载 EPUB（hasContent）；漫画
+      // 分架过滤（互联完整支持批次）：普通书架 = 可下载 EPUB / PDF 原件
+      // （hasBookShelfContent；PDF 见反馈 Jq1_ujHa4t——此前只认 hasContent，host 上
+      // 的 PDF 在这里整本被滤掉）；漫画
       // 书架 = 可读漫画（format='manga' + hasMangaContent 的单卷漫画包，或
       // hasMangaChapters 的对端在线条目——BUG-2474：后者根目录只有占位 manga.json，
       // 按 hasMangaContent 判永远 false，修复前整体从漫画架消失）。判据与互联漫画源
@@ -114,7 +116,7 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
           : books
                 .where(
                   (RemoteBookInfo book) =>
-                      book.hasContent && !book.isSubtitleBookBody,
+                      book.hasBookShelfContent && !book.isSubtitleBookBody,
                 )
                 .toList();
       // 章节式条目加入本机后是一条 runtime=interconnect 的在线书架行，bookKey 由
@@ -993,12 +995,17 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
           : await appModel.database.getEpubBookByUid(existingUid);
       final bool hasExistingContent =
           existingBook != null &&
-          (existingBook.format == BookFormat.manga.dbValue
-              ? hasExportableMangaContent(existingBook.extractDir)
-              : resolveExtractedEpubRoot(existingBook.extractDir) != null);
+          switch (BookFormat.parseOrEpub(existingBook.format)) {
+            BookFormat.manga => hasExportableMangaContent(
+              existingBook.extractDir,
+            ),
+            BookFormat.pdf => hasExportablePdfContent(existingBook),
+            BookFormat.epub =>
+              resolveExtractedEpubRoot(existingBook.extractDir) != null,
+          };
       final String? localBookKey =
           (hasExistingContent ? existingBook.bookKey : null) ??
-          await _importRemoteBookFile(dest, mangaTitleHint: book.title);
+          await _importRemoteBookFile(dest, title: book.title);
       // BUG-3452：刚从对端落地的书沿用它在对端的入库时刻。书架「最近阅读」对没有
       // 阅读记录的书回落到入库时刻、「导入时间」直接按它排；不改的话入库时刻 = 下载
       // 那一刻，对端没读过的书一下完就顶到最前，和下载前占位卡的位置（同样按 host
@@ -2193,34 +2200,24 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
     return file;
   }
 
-  /// 导入下载到本地的 EPUB，返回本地入库的 bookKey（= `sanitizeTtuFilename`
-  /// 后的存储标题，可能因同名冲突重命名而与远端书名派生 key 不同）。注入的测试
-  /// importer 不返回 key 时返回 null（音频接线据此降级跳过 override 绑定）。
-  Future<String?> _importRemoteBookFile(
-    File file, {
-    String? mangaTitleHint,
-  }) async {
+  /// 导入下载到本地的书包（EPUB / 漫画包 / PDF 原件），返回本地入库的 bookKey
+  /// （= `sanitizeTtuFilename` 后的存储标题，可能因同名冲突重命名而与远端书名派生
+  /// key 不同）。注入的测试 importer 不返回 key 时返回 null（音频接线据此降级跳过
+  /// override 绑定）。
+  Future<String?> _importRemoteBookFile(File file, {String? title}) async {
     final Future<String?> Function(File file)? injected =
         _pageWidget.remoteBookImporter;
     if (injected != null) {
       return injected(file);
     }
-    // 互联完整支持批次：漫画包内容嗅探（zip 根含 manga.json = 书目录整树包）→
-    // 走 MangaImporter 既有两遍式校验落库；否则按 EPUB。与 host 侧
-    // importBookFromFile 的嗅探完全同语义（内容即真相，扩展名不参与判定）。
-    // 标题用 [mangaTitleHint]（远端 raw title——身份键 bookKey 由它派生）而非本地
-    // 临时文件名（`_safeRemoteBookKey` 已把非 ASCII 打成下划线，用它当标题会漂键）。
-    if (await isMangaPackage(file)) {
-      return importMangaPackageFile(
-        db: appModel.database,
-        file: file,
-        title: mangaTitleHint,
-      );
-    }
-    return EpubImporter.importFromPath(
+    // 按内容嗅探分流（PDF / 漫画包 / EPUB），与「同步对比」弹窗下载同一个入口。
+    // 标题用 [title]（远端 raw title——漫画 / PDF 的身份键 bookKey 由它派生）而非
+    // 本地临时文件名（`_safeRemoteBookKey` 已把非 ASCII 打成下划线，会漂键）。
+    return importSyncedBookFile(
       db: appModel.database,
-      filePath: file.path,
-      fileName: p.basename(file.path),
+      file: file,
+      title: title,
+      epubFileName: p.basename(file.path),
     );
   }
 

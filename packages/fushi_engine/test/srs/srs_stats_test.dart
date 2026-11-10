@@ -625,6 +625,52 @@ void main() {
       expect(onlyRwkv.hasDueDateCards, isFalse);
       expect(d.subset(<String>{'f'}).rwkvNow, isNull, reason: '没有按 R 排队的卡');
     });
+
+    test('制卡来源：带系列的出处按系列计（反馈 MCJLSBR5Wg），不带的按集标题', () {
+      SrsStatCard card(String id) => SrsStatCard(
+        id: id,
+        noteId: 'n$id',
+        deckId: 'd',
+        state: SrsStatCardState.young,
+        dueDay: today,
+      );
+      final SrsStatsData d = SrsStatsData(
+        day: kJst,
+        nowMs: nowMs,
+        reviews: const <SrsStatReview>[],
+        cards: <SrsStatCard>[card('a'), card('b'), card('c')],
+        sources: <String, SrsSourceRef?>{
+          'na': SrsSourceRef.media(
+            kind: SrsSourceKind.video,
+            mediaKey: 'e1',
+            startMs: 0,
+            title: 'RWBY - S01E01',
+            seriesTitle: 'RWBY',
+          ),
+          'nb': SrsSourceRef.media(
+            kind: SrsSourceKind.video,
+            mediaKey: 'e2',
+            startMs: 0,
+            title: 'RWBY - S02E01',
+            seriesTitle: 'RWBY',
+          ),
+          'nc': SrsSourceRef.media(
+            kind: SrsSourceKind.video,
+            mediaKey: 'e3',
+            startMs: 0,
+            title: 'Solo',
+          ),
+        },
+      );
+      final List<SrsSourceShare> s = d.sourceShares();
+      expect(
+        s.map((SrsSourceShare x) => (x.kind, x.title, x.notes)).toList(),
+        <(String, String, int)>[
+          (SrsSourceKind.video, 'RWBY', 2),
+          (SrsSourceKind.video, 'Solo', 1),
+        ],
+      );
+    });
   });
 
   group('loadSrsStats（真实库）', () {

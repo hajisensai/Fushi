@@ -51,7 +51,9 @@ void main() {
   group('工具栏统一（消除两套按钮定义）', () {
     test('存在唯一共用构建方法 _buildToolbarActions', () {
       expect(
-        RegExp(r'List<Widget> _buildToolbarActions\(').hasMatch(pageSrc),
+        RegExp(
+          r'List<List<_SessionTool>> _buildToolbarActions\(',
+        ).hasMatch(pageSrc),
         isTrue,
         reason: '必须有共用的工具栏动作构建方法',
       );
@@ -68,9 +70,10 @@ void main() {
     test('嵌入与独立两模式都复用同一构建方法', () {
       // 锚点用跨行正则而不是单行字面量：调用点会被格式化折行（#1093 之后嵌入模式
       // 那处就是三行）。要钉的是「两模式都调同一个方法、且各自传对 embedded」，
-      // 不是这行当天怎么折。
+      // 不是这行当天怎么折。J4GKVdgo2s 之后共用方法只产出工具描述（_SessionTool），
+      // AppBar 摆成图标钮、会话卡交给自适应动作条，定义仍只有这一份。
       bool callsWith(bool embedded) => RegExp(
-        r'_buildToolbarActions\(\s*context,\s*embedded:\s*' +
+        r'_buildToolbarActions\(\s*embedded:\s*' +
             embedded.toString() +
             r'\s*,?\s*\)',
         dotAll: true,

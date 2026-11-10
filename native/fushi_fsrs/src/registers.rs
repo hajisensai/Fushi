@@ -918,6 +918,9 @@ fn deck_view(ent: &Entity<'_, '_>, payload: &Value) -> Result<Value, String> {
         "po": position,
         "ap": *ent.value("autoplay") != Value::Bool(false),
         "no": as_str(ent.value("newOrder"), "newOrder")?,
+        // 复习顺序 / 新卡与复习怎么排（store/study.rs `ReviewOrder` / `NewMix`；`nm` 已被名字占用）。
+        "ro": as_str(ent.value("reviewOrder"), "reviewOrder")?,
+        "mx": as_str(ent.value("newMix"), "newMix")?,
         "rq": *ent.value("replayQuestion") != Value::Bool(false),
         "rw": rwkv_queue,
         "npl": ent.value("newPlan"),

@@ -1723,6 +1723,12 @@ const String kDebugManifestUrl =
 const String kLegacyDebugManifestUrl =
     'https://raw.githubusercontent.com/$kLegacyGitHubRepo/update-manifest/latest-debug$kFushiManifestSuffix.json';
 
+/// 调试版流水线数据（`tool/gen_debug_pulse.py` 推到同一 `update-manifest` 分支，契约见
+/// `docs/specs/2026-11-10-debug-pulse.md`）。走与镜像清单同一条 raw + 镜像通道，国内可达。
+/// 只有 Fushi 族有，没有旧库回退。
+const String kDebugPulseUrl =
+    'https://raw.githubusercontent.com/$kGitHubRepo/update-manifest/debug-pulse$kFushiManifestSuffix.json';
+
 /// stable 通道镜像清单（BUG-846「谁后用谁」）。CI `publish_update_manifest.sh` 的 formal 分支
 /// 已生成 `latest-stable.json`（`merge_update_manifest.py` 写顶层 `releaseSequence`）。客户端读它
 /// 才能拿到正式版 release sequence，与同基预发布按「谁后构建谁赢」比较；读不到（手动 GitHub

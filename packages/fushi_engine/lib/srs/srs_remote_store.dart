@@ -20,6 +20,8 @@ import 'package:fushi_core/fushi_core.dart' show SrsCardCacheRow;
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_edit_history.dart';
+import 'package:fushi_engine/srs/srs_fushi_card_native_media.dart'
+    show SrsCardNativeFallback, SrsCardNativeFallbackCode;
 import 'package:fushi_engine/srs/srs_legacy_lapis_migration.dart';
 import 'package:fushi_engine/srs/srs_note_type_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
@@ -610,6 +612,9 @@ abstract final class SrsRemoteWire {
     'back': <Object?>[
       for (final FushiCardItem x in r.fushiCardBack) x.toJson(),
     ],
+    // 整面 WebView 的原因（反馈 O5YDP27Xko）：客户端据此记诊断、外观页显示原因。
+    if (r.nativeFallback case final SrsCardNativeFallback f)
+      'nfb': <String, Object?>{'code': f.code.name, 'detail': f.detail},
   };
 
   static SrsRenderedCard? renderedFrom(Object? json, [String at = 'result']) {
@@ -630,7 +635,26 @@ abstract final class SrsRemoteWire {
       fushiCardBack: m['back'] == null
           ? kFushiCardDefaultBackItems
           : _layoutFrom(m['back'], '$at.back'),
+      nativeFallback: _nativeFallbackFrom(m['nfb'], '$at.nfb'),
     );
+  }
+
+  /// `nfb`：主机侧没走原生的原因。老主机不发（null，客户端按
+  /// [SrsCardNativeFallbackCode.remoteUnknown]）；更新的主机发了本端不认识的类别时同样按
+  /// remoteUnknown，原类别名并进说明，不丢信息。
+  static SrsCardNativeFallback? _nativeFallbackFrom(Object? json, String at) {
+    if (json == null) return null;
+    final Map<String, Object?> m = _J.map(json, at);
+    final String code = _J.str(m['code'], '$at.code');
+    final String detail = _J.optStr(m['detail'], '$at.detail') ?? '';
+    final SrsCardNativeFallbackCode? known = SrsCardNativeFallbackCode.values
+        .asNameMap()[code];
+    return known != null
+        ? SrsCardNativeFallback(known, detail)
+        : SrsCardNativeFallback(
+            SrsCardNativeFallbackCode.remoteUnknown,
+            detail.isEmpty ? code : '$code: $detail',
+          );
   }
 
   static List<FushiCardItem> _layoutFrom(Object? json, String at) {

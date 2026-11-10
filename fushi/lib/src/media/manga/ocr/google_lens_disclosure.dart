@@ -19,6 +19,12 @@ const String kVideoGoogleLensDisclosurePreferenceKey =
 const String kGameGoogleLensDisclosurePreferenceKey =
     'game_google_lens_disclosure_version';
 
+/// 桌面应用外截屏识字（本机悬浮球冻结层）用 Google Lens 时上传同意的设备本地键
+/// （反馈 Eemf0HOZhj）。与互联设备的游戏截屏分开：那份同意书说的是「Steam Deck 等
+/// 互联设备读到的游戏画面」，不等于同意发本机整块显示器的截图。
+const String kScreenOcrGoogleLensDisclosurePreferenceKey =
+    'screen_ocr_google_lens_disclosure_version';
+
 typedef GoogleLensDisclosureGate = Future<bool> Function(BuildContext context);
 
 /// 要上传给 Google Lens 的是什么。决定同意框文案与同意记录的键。
@@ -30,7 +36,10 @@ enum GoogleLensDisclosureScene {
   videoFrames(kVideoGoogleLensDisclosurePreferenceKey),
 
   /// 互联设备发来的游戏截屏（`/api/ocr/screen`）。
-  gameScreens(kGameGoogleLensDisclosurePreferenceKey);
+  gameScreens(kGameGoogleLensDisclosurePreferenceKey),
+
+  /// 本机桌面应用外截屏识字截的整块显示器。
+  desktopScreens(kScreenOcrGoogleLensDisclosurePreferenceKey);
 
   const GoogleLensDisclosureScene(this.preferenceKey);
 
@@ -44,6 +53,8 @@ enum GoogleLensDisclosureScene {
       t.video_google_lens_disclosure_title,
     GoogleLensDisclosureScene.gameScreens =>
       t.game_google_lens_disclosure_title,
+    GoogleLensDisclosureScene.desktopScreens =>
+      t.screen_ocr_google_lens_disclosure_title,
   };
 
   String get body => switch (this) {
@@ -51,6 +62,8 @@ enum GoogleLensDisclosureScene {
     GoogleLensDisclosureScene.videoFrames =>
       t.video_google_lens_disclosure_body,
     GoogleLensDisclosureScene.gameScreens => t.game_google_lens_disclosure_body,
+    GoogleLensDisclosureScene.desktopScreens =>
+      t.screen_ocr_google_lens_disclosure_body,
   };
 }
 

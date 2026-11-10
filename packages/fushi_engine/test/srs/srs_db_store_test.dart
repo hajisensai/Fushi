@@ -407,6 +407,20 @@ void main() {
       delete: true,
     );
     await syncAll(<SrsDbStore>[a, b]);
+    // B 第一次出现时 A 已有内容，B 在 A 上待确认（BUG-4276）：B 的结论是一条删除，在 A 上扣到确认，
+    // A 的冲突与笔记原样留着（冲突中心顶部同时列出待确认的 B）。B 是全新库首轮认识的 A，A 在 B 上可信。
+    expect((await b.cardsOfNote(noteId)).single.hidden, isTrue);
+    expect((await a.cardsOfNote(noteId)).single.hidden, isFalse);
+    expect((await a.sync2Conflicts()).single['kind'], 'delete_edit');
+    final Map<String, Object?> pending = <Map<String, Object?>>[
+      for (final Object? d
+          in (await a.sync2Status())['devices']! as List<Object?>)
+        d! as Map<String, Object?>,
+    ].singleWhere((Map<String, Object?> d) => d['device'] == b.sync2Device);
+    expect(pending['trust'], 'pending');
+    expect(pending['heldDeletes'], 1);
+    await a.sync2Trust(b.sync2Device!, trust: true);
+    await syncAll(<SrsDbStore>[a, b]);
     for (final SrsDbStore s in <SrsDbStore>[a, b]) {
       expect((await s.cardsOfNote(noteId)).single.hidden, isTrue);
       expect(await s.sync2Conflicts(), isEmpty);

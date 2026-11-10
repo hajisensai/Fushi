@@ -72,6 +72,10 @@ typedef SettingsSwitchChanged =
     FutureOr<void> Function(SettingsContext context, bool value);
 typedef SettingsDoubleFormatter = String Function(double value);
 
+/// 滑条在运行期的取值范围。上限取决于运行环境（如视口尺寸）的滑条经
+/// [SettingsSliderItem.boundsOf] 返回它；record 自带结构相等，渲染签名可直接比较。
+typedef SettingsSliderBounds = ({double min, double max, int? divisions});
+
 class SettingsDestination {
   const SettingsDestination({
     required this.id,
@@ -686,6 +690,7 @@ class SettingsSliderItem extends SettingsItem {
     this.titleReadout = false,
     this.commitOnRelease = false,
     this.defaultValue,
+    this.boundsOf,
   }) : assert(
          !commitOnRelease || onChangeEnd == null,
          'commitOnRelease 滑条松手统一走 onChanged 提交，不得再声明 onChangeEnd',
@@ -715,6 +720,16 @@ class SettingsSliderItem extends SettingsItem {
 
   /// 出厂默认值；语义同 [SettingsSwitchItem.defaultValue]。
   final double? defaultValue;
+
+  /// 运行期取值范围；非 null 时覆盖静态 [min] / [max] / [divisions]。用于上限随
+  /// 运行环境变化的滑条（例：视频字幕字号上限随视口短边放大，反馈 CcT_7VQIQr）。
+  /// 渲染器、设置索引（CLI / AI）与副屏一律经 [resolveBounds] 取范围，不直读
+  /// [min] / [max]——否则同一滑条在不同入口可调范围分叉。
+  final SettingsSliderBounds Function(SettingsContext context)? boundsOf;
+
+  /// 本滑条在 [context] 下的实际取值范围（[boundsOf] 优先，缺省回退静态值）。
+  SettingsSliderBounds resolveBounds(SettingsContext context) =>
+      boundsOf?.call(context) ?? (min: min, max: max, divisions: divisions);
 }
 
 class SettingsStepperItem extends SettingsItem {

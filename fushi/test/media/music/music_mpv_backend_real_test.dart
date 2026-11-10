@@ -1080,4 +1080,234 @@ void main() {
       timeout: const Timeout(Duration(seconds: 60)),
     );
   }
+
+  // 反馈 WY8uvL1Vfy：独占输出下暂停要交还设备（取消选中音轨 → mpv 关 AO），恢复时重新拿。
+  // `ao=null` 不出声；`audio-exclusive=yes` 照常下发，后端据此判断「独占中」。
+  MpvMusicOutputBackend exclusiveBackend() => MpvMusicOutputBackend(
+    configuration: const PlayerConfiguration(
+      vo: 'null',
+      title: 'Fushi Music test',
+      logLevel: MPVLogLevel.error,
+    ),
+    initialProperties: const <String, String>{'ao': 'null'},
+    platform: MusicOutputPlatform.windows,
+  );
+
+  Future<void> pollUntil(
+    Future<bool> Function() ok,
+    String what, {
+    Duration timeout = const Duration(seconds: 10),
+  }) async {
+    final Stopwatch sw = Stopwatch()..start();
+    while (!await ok()) {
+      if (sw.elapsed > timeout) fail('timed out: $what');
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    }
+  }
+
+  test(
+    '独占输出：暂停即交还设备（音轨取消选中、AO 关闭、位置不动、不判播完），恢复后原位接着放',
+    () async {
+      final MpvMusicOutputBackend backend = exclusiveBackend();
+      final _Recorder rec = _Recorder(backend);
+      final NativePlayer native = backend.debugPlayer.platform! as NativePlayer;
+      Future<String> prop(String p) => native.getPropertyAsync(p);
+      try {
+        await backend.applySettings(
+          const MusicOutputSettings(
+            gapless: true,
+            replayGain: MusicReplayGainMode.off,
+            exclusive: true,
+          ),
+        );
+        expect(await prop('audio-exclusive'), 'yes');
+        await backend.openPair(
+          _item('full', full, durationMs: 3000),
+          null,
+          play: true,
+        );
+        await rec.waitFor(
+          () => rec.events.any(
+            (e) =>
+                e.event is MusicBackendPosition &&
+                (e.event as MusicBackendPosition).position >
+                    const Duration(milliseconds: 600),
+          ),
+        );
+        expect(await prop('current-ao'), isNotEmpty);
+
+        await backend.pause();
+        await pollUntil(
+          () async => (await prop('current-ao')).isEmpty,
+          '暂停后 AO 关闭（设备交还）',
+        );
+        expect(backend.debugDeviceReleasedForPause, isTrue);
+        expect(await prop('aid'), 'no');
+        final double pausedAt = double.parse(await prop('time-pos'));
+        await Future<void>.delayed(const Duration(milliseconds: 600));
+        expect(
+          double.parse(await prop('time-pos')),
+          closeTo(pausedAt, 0.05),
+          reason: '交还设备期间位置不能走',
+        );
+        expect(await prop('idle-active'), 'no', reason: '文件不能被卸载');
+        expect(rec.count<MusicBackendCompleted>(), 0, reason: '没有音轨不等于播完');
+
+        final int resumeIdx = rec.events.length;
+        await backend.play();
+        expect(backend.debugDeviceReleasedForPause, isFalse);
+        await pollUntil(
+          () async => (await prop('current-ao')).isNotEmpty,
+          '恢复后重新打开 AO',
+        );
+        expect(int.tryParse(await prop('aid')), isNotNull);
+        await rec.waitFor(
+          () => rec.events
+              .skip(resumeIdx)
+              .any(
+                (e) =>
+                    e.event is MusicBackendPosition &&
+                    (e.event as MusicBackendPosition).position.inMicroseconds /
+                            1e6 >
+                        pausedAt + 0.3,
+              ),
+        );
+        final Duration firstAfter = rec.events
+            .skip(resumeIdx)
+            .map((e) => e.event)
+            .whereType<MusicBackendPosition>()
+            .first
+            .position;
+        expect(
+          firstAfter.inMicroseconds / 1e6,
+          greaterThan(pausedAt - 0.15),
+          reason: '恢复后应从暂停处接着放，不是从头',
+        );
+        await rec.waitFor(() => rec.count<MusicBackendCompleted>() > 0);
+        expect(rec.count<MusicBackendFailed>(), 0);
+      } finally {
+        await rec.cancel();
+        await backend.dispose();
+      }
+    },
+    skip: skip,
+    timeout: const Timeout(Duration(seconds: 60)),
+  );
+
+  test(
+    '共享输出：暂停不动音轨与设备（只有独占才交还）',
+    () async {
+      final MpvMusicOutputBackend backend = exclusiveBackend();
+      final _Recorder rec = _Recorder(backend);
+      final NativePlayer native = backend.debugPlayer.platform! as NativePlayer;
+      Future<String> prop(String p) => native.getPropertyAsync(p);
+      try {
+        await backend.applySettings(
+          const MusicOutputSettings(
+            gapless: true,
+            replayGain: MusicReplayGainMode.off,
+          ),
+        );
+        await backend.openPair(
+          _item('full', full, durationMs: 3000),
+          null,
+          play: true,
+        );
+        await rec.waitFor(
+          () => rec.events.any(
+            (e) =>
+                e.event is MusicBackendPosition &&
+                (e.event as MusicBackendPosition).position >
+                    const Duration(milliseconds: 300),
+          ),
+        );
+        await backend.pause();
+        await Future<void>.delayed(const Duration(milliseconds: 300));
+        expect(backend.debugDeviceReleasedForPause, isFalse);
+        expect(int.tryParse(await prop('aid')), isNotNull);
+        expect(await prop('current-ao'), isNotEmpty);
+      } finally {
+        await rec.cancel();
+        await backend.dispose();
+      }
+    },
+    skip: skip,
+    timeout: const Timeout(Duration(seconds: 60)),
+  );
+
+  for (final ({String name, bool play}) c in <({String name, bool play})>[
+    (name: '不起播的打开（暂停态换曲 / 恢复会话）', play: false),
+    (name: '暂停早于文件加载完成', play: true),
+  ]) {
+    test(
+      '独占输出：${c.name}——加载完成后照样不占设备，按播放后正常出声且不报错',
+      () async {
+        final MpvMusicOutputBackend backend = exclusiveBackend();
+        final _Recorder rec = _Recorder(backend);
+        final NativePlayer native =
+            backend.debugPlayer.platform! as NativePlayer;
+        Future<String> prop(String p) => native.getPropertyAsync(p);
+        try {
+          await backend.applySettings(
+            const MusicOutputSettings(
+              gapless: true,
+              replayGain: MusicReplayGainMode.off,
+              exclusive: true,
+            ),
+          );
+          // 先在暂停中交还一次：下一次 loadfile 不能带着 aid=no（否则「没有可播的流」）。
+          await backend.openPair(
+            _item('a', a, durationMs: 1500),
+            null,
+            play: true,
+          );
+          await pollUntil(
+            () async => (await prop('current-ao')).isNotEmpty,
+            '第一首 AO 打开',
+          );
+          await backend.pause();
+          await pollUntil(
+            () async => backend.debugDeviceReleasedForPause,
+            '第一首暂停后交还',
+          );
+
+          await backend.openPair(
+            _item('full', full, durationMs: 3000),
+            null,
+            play: c.play,
+          );
+          if (c.play) await backend.pause();
+          await pollUntil(
+            () async =>
+                (double.tryParse(await prop('duration')) ?? 0) > 2.5 &&
+                (await prop('idle-active')) == 'no' &&
+                (await prop('current-ao')).isEmpty,
+            '新文件已加载、暂停中不占设备',
+          );
+          await Future<void>.delayed(const Duration(milliseconds: 400));
+          expect(await prop('current-ao'), isEmpty, reason: '暂停中不能重新占住设备');
+
+          final int resumeIdx = rec.events.length;
+          await backend.play();
+          await rec.waitFor(
+            () => rec.events
+                .skip(resumeIdx)
+                .any(
+                  (e) =>
+                      e.event is MusicBackendPosition &&
+                      (e.event as MusicBackendPosition).position >
+                          const Duration(milliseconds: 500),
+                ),
+          );
+          expect(await prop('current-ao'), isNotEmpty);
+          expect(rec.count<MusicBackendFailed>(), 0);
+        } finally {
+          await rec.cancel();
+          await backend.dispose();
+        }
+      },
+      skip: skip,
+      timeout: const Timeout(Duration(seconds: 60)),
+    );
+  }
 }

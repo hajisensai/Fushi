@@ -615,6 +615,9 @@ public class MainActivity extends AudioServiceActivity {
     public void configureFlutterEngine(@NonNull FlutterEngine flutterEngine) {
         super.configureFlutterEngine(flutterEngine);
         FloatingDictService.initEngineGroup(getApplicationContext());
+        // 反馈回复后台检查的排程：纯原生 Worker，不起 Flutter 引擎（反馈 yjn-3h8B-7）。
+        app.fushi.reader.feedback.FeedbackReplyWorkChannel.registerWith(
+                flutterEngine, getApplicationContext());
         SelectionActionChannel.registerWith(flutterEngine, this);
         SystemOcrChannel.registerWith(flutterEngine, this);
         ClipboardImageChannel.registerWith(flutterEngine, getApplicationContext());
@@ -1136,6 +1139,8 @@ public class MainActivity extends AudioServiceActivity {
                 }
             });
 
+        // BUG-4326：旧版长按图标菜单同步会把自定义图标快捷方式误置灰，启动时把它恢复。
+        IconSwitchHelper.restoreCustomShortcut(this);
         new MethodChannel(flutterEngine.getDartExecutor().getBinaryMessenger(), ICON_CHANNEL)
             .setMethodCallHandler((call, result) -> {
                 switch (call.method) {

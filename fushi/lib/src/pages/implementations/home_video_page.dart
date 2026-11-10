@@ -3096,6 +3096,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       folders++;
       final AddLocalFolderResult result = await addLocalFolderAsSource(
         db: appModel.database,
+        // 视频来源不扫书，没有有声书要转录。
+        transcribeAudiobook: null,
         mediaKind: SourceLibraryKind.video.dbValue,
         path: dir,
       );
@@ -9023,8 +9025,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         found != null && found.status != InterconnectDownloadStatus.completed
         ? found
         : null;
-    // 云盘视频：后端能按 Range 读（OneDrive / Dropbox / Google Drive）时多给一个
-    // 「播放（流播）」，不下载直接看；短按卡片仍是下载入库（#4 语义不变）。
+    // 云盘视频：后端能按 Range 读（OneDrive / Dropbox / Google Drive / WebDAV /
+    // SFTP）时多给一个「播放（流播）」，不下载直接看；短按卡片仍是下载入库（#4 语义
+    // 不变）。
     final CloudStreamVideoClient? cloudStream = _cloudRemoteVideoClient
         ?.streamingClient();
     showMediaItemActions<void>(
