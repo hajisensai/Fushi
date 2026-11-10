@@ -11388,6 +11388,7 @@
   "video_shader_tier_ultra_hint_mobile": "Anime4K deblur (M) plus pass pemulihan lembut tambahan, keduanya pada resolusi sumber. Tingkat ponsel terkuat; tetap tanpa upscaling. Turunkan satu tingkat jika frame menurun.",
   "video_shader_url_hint": "Tempel tautan shader .glsl (mis. GitHub)",
   "video_shaders_empty": "Belum ada shader yang diimpor",
+  "video_source_grouping_change_busy": "Another scan or scrape is running. The grouping mode was not changed; try again when it finishes.",
   "video_source_grouping_change_rescan_hint": "Changing this rescans the source right away. Existing collections and metadata are kept.",
   "video_source_grouping_folder": "Berdasarkan folder",
   "video_source_grouping_folder_hint": "Buat satu koleksi untuk setiap subfolder tingkat pertama. File yang berada langsung di folder terpilih dikelompokkan dalam satu koleksi. Pengambilan metadata tidak tersedia dalam mode ini; beralihlah ke Berdasarkan karya untuk mengambilnya.",

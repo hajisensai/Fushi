@@ -11388,6 +11388,7 @@
   "video_shader_tier_ultra_hint_mobile": "Anime4K-deblur (M) plus een extra zachte herstelpass, beide op de bronresolutie. Sterkste telefoonniveau; nog steeds geen upscaling. Kies een niveau lager als er frames wegvallen.",
   "video_shader_url_hint": "Plak een .glsl-shaderlink (bijv. GitHub)",
   "video_shaders_empty": "Nog geen shaders geïmporteerd",
+  "video_source_grouping_change_busy": "Another scan or scrape is running. The grouping mode was not changed; try again when it finishes.",
   "video_source_grouping_change_rescan_hint": "Changing this rescans the source right away. Existing collections and metadata are kept.",
   "video_source_grouping_folder": "Op map",
   "video_source_grouping_folder_hint": "Maak één collectie per submap op het eerste niveau. Bestanden die direct in de geselecteerde map staan, delen een collectie. Metadata ophalen is niet beschikbaar in deze modus; schakel hiervoor over naar Op werk.",

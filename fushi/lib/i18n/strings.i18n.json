@@ -11388,6 +11388,7 @@
   "video_shader_tier_ultra_hint_mobile": "Anime4K deblur (M) plus an extra soft restore pass, both at the source resolution. Strongest phone tier; still no upscaling. Drop a tier if it drops frames.",
   "video_shader_url_hint": "Paste a shader .glsl link (e.g. GitHub)",
   "video_shaders_empty": "No shaders imported yet",
+  "video_source_grouping_change_busy": "Another scan or scrape is running. The grouping mode was not changed; try again when it finishes.",
   "video_source_grouping_change_rescan_hint": "Changing this rescans the source right away. Existing collections and metadata are kept.",
   "video_source_grouping_folder": "By folder",
   "video_source_grouping_folder_hint": "Create one collection per first-level subfolder. Files directly in the selected folder share a collection. Metadata scraping is unavailable in this mode; switch to By work to scrape.",

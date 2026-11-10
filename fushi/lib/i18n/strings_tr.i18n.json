@@ -11388,6 +11388,7 @@
   "video_shader_tier_ultra_hint_mobile": "Kaynak çözünürlükte Anime4K deblur (M) artı ek bir yumuşak geri yükleme geçişi. Telefon için en güçlü seviye; yine büyütme yok. Kare düşürüyorsa bir seviye aşağı inin.",
   "video_shader_url_hint": "Bir shader .glsl bağlantısı yapıştırın (ör. GitHub)",
   "video_shaders_empty": "Henüz shader içe aktarılmadı",
+  "video_source_grouping_change_busy": "Another scan or scrape is running. The grouping mode was not changed; try again when it finishes.",
   "video_source_grouping_change_rescan_hint": "Changing this rescans the source right away. Existing collections and metadata are kept.",
   "video_source_grouping_folder": "Klasöre göre",
   "video_source_grouping_folder_hint": "Birinci düzeydeki her alt klasör için bir koleksiyon oluşturur. Doğrudan seçilen klasörde bulunan dosyalar aynı koleksiyonda toplanır. Bu modda meta veriler alınamaz; almak için Esere göre moduna geçin.",

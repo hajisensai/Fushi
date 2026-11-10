@@ -1472,12 +1472,24 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
   ///
   /// 只写模式、等「下次扫描」再归组，中间这段时间目录合集里的整部剧在「系列」页
   /// 散成每集一张卡，期间刮削还会把每一集当成一部独立作品去识别（反馈 YUH015QaF2，
-  /// BUG-4323）。所以模式与归组必须一起变：写完模式就走同一条扫描管线重扫。
+  /// BUG-4349）。所以模式与归组必须一起变：写完模式就走同一条扫描管线重扫。
+  ///
+  /// [_rescan] 在 [isBusy] 时直接返回；设置对话框开着的期间另一条扫描 / 刮削可能已经
+  /// 开始。此时若照写模式就会重新落进「模式已变、归组没跟」的状态，所以忙时**不改
+  /// 模式**并提示用户稍后再改，保证模式只在能立即重扫时才变。
   Future<void> applyVideoGroupingMode(
     SourceLibraryRow row,
     String groupingMode,
   ) async {
     if (row.mediaKind != 'video' || row.videoGroupingMode == groupingMode) {
+      return;
+    }
+    if (!mounted) return;
+    if (isBusy) {
+      FushiToast.show(
+        msg: t.video_source_grouping_change_busy,
+        severity: ToastSeverity.warning,
+      );
       return;
     }
     await (_db.update(_db.mediaSources)..where((tbl) => tbl.id.equals(row.id)))
