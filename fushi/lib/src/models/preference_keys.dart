@@ -966,8 +966,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 见 media/video/video_lua_capability.dart（BUG-2032）。
   'video_mpv_lua_capability',
   'video_mpv_shader_dir',
-  // String（[VideoOnlineMiningMode] 的 wireName）：在线视频点制卡后弹窗等不等——
-  // `background` 后台（默认）/ `deferred` 看完再制卡 / `wait` 等整张卡落地。
+  // String（[VideoOnlineMiningMode] 的 wireName）：在线视频点制卡后卡往哪去——
+  // `background` 后台写入（默认）/ `deferred` 看完再制卡。旧值 `wait`（弹窗陪等，
+  // 反馈 OeS0m8tLHc 删除）读出来回退 background。
   'video_online_mining_mode',
   // String（[VideoPauseOcrScope] 的 wireName）：暂停时识别画面文字（OCR 点字查词）
   // 的范围——`all` 所有视频（默认）/ `graphic_subtitles` 只在图形字幕时 / `off`。
