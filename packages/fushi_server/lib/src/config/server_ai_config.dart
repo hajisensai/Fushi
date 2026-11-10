@@ -35,6 +35,7 @@ import 'package:fushi_engine/ai/ai_settings.dart';
 import 'package:fushi_engine/ai/web_knowledge.dart';
 import 'package:fushi_engine/ai/web_search.dart';
 import 'package:fushi_engine/media/collections/library_organize/library_organize_service.dart';
+import 'package:fushi_server/src/server_language.dart';
 
 /// 服务端那一家 AI 在引擎提供商清单里的 id（只在进程内用，不落盘）。
 const String kServerAiProviderId = 'server';
@@ -145,8 +146,10 @@ class ServerAiConfig {
   /// 配置本身写错了（未知预设 / 地址非法 / 非 HTTPS 又没放行明文…）；写入口据此
   /// 拒绝整个请求。没错 → null。
   String? invalidReason() {
-    if (preset != kAiCustomPresetId && _preset == null) return '未知预设 "$preset"';
-    if (effectiveBaseUrl.isEmpty) return '缺少 base_url';
+    if (preset != kAiCustomPresetId && _preset == null) {
+      return tr('未知预设 "$preset"', 'Unknown preset "$preset"');
+    }
+    if (effectiveBaseUrl.isEmpty) return tr('缺少 base_url', 'Missing base_url');
     try {
       _build();
     } on ArgumentError catch (e) {
@@ -160,9 +163,9 @@ class ServerAiConfig {
   String? problem() {
     final String? invalid = invalidReason();
     if (invalid != null) return invalid;
-    if (effectiveModel.isEmpty) return '缺少 model';
+    if (effectiveModel.isEmpty) return tr('缺少 model', 'Missing model');
     if ((_preset?.requiresApiKey ?? true) && (apiKey ?? '').isEmpty) {
-      return '缺少 api_key';
+      return tr('缺少 api_key', 'Missing api_key');
     }
     return null;
   }

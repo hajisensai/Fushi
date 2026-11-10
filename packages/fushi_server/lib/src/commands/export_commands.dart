@@ -16,6 +16,7 @@ import 'package:fushi_engine/models/local_audio_db_entry.dart';
 import 'package:fushi_engine/sync/local_audio_library_store.dart';
 import 'package:fushi_engine/sync/sync_asset_package_service.dart';
 import 'package:fushi_server/src/commands/cli_module.dart';
+import 'package:fushi_server/src/server_language.dart';
 import 'package:fushi_server/src/server_runtime.dart';
 import 'package:path/path.dart' as p;
 
@@ -67,7 +68,11 @@ Future<File> exportSyncAsset({
       final bool exists = (await db.getAllDictionaryMetadata()).any(
         (DictionaryMetaRow r) => r.name == key,
       );
-      if (!exists) throw ExportSourceMissing('没有名为「$key」的词典');
+      if (!exists) {
+        throw ExportSourceMissing(
+          tr('没有名为「$key」的词典', 'No dictionary named "$key"'),
+        );
+      }
       return packages.exportDictionaryPackage(
         dictionaryName: key,
         dictionaryResourceRoot: dictionaryResourceRoot,
@@ -78,7 +83,12 @@ Future<File> exportSyncAsset({
       final SrtBookRow? book =
           await db.getSrtBookByUid(key) ?? await db.getSrtBookByBookKey(key);
       if (book == null) {
-        throw ExportSourceMissing('没有 uid 或 bookKey 为「$key」的有声书');
+        throw ExportSourceMissing(
+          tr(
+            '没有 uid 或 bookKey 为「$key」的有声书',
+            'No audiobook with uid or bookKey "$key"',
+          ),
+        );
       }
       return packages.exportAudioDatabasePackage(
         srtBookUid: book.uid,
@@ -89,10 +99,19 @@ Future<File> exportSyncAsset({
       for (final LocalAudioDbEntry e in localAudioEntries()) {
         if (e.displayName == key) entry = e;
       }
-      if (entry == null) throw ExportSourceMissing('没有名为「$key」的本地音频库');
+      if (entry == null) {
+        throw ExportSourceMissing(
+          tr('没有名为「$key」的本地音频库', 'No local audio library named "$key"'),
+        );
+      }
       final File dbFile = File(entry.path);
       if (!await dbFile.exists()) {
-        throw ExportSourceMissing('本地音频库「$key」的数据库文件不在: ${entry.path}');
+        throw ExportSourceMissing(
+          tr(
+            '本地音频库「$key」的数据库文件不在: ${entry.path}',
+            'The database file of local audio library "$key" is missing: ${entry.path}',
+          ),
+        );
       }
       return packages.exportLocalAudioPackage(
         displayName: entry.displayName,
@@ -116,16 +135,30 @@ class ExportModule extends CliModule {
   @override
   void register(ArgParser parser) {
     parser.addCommand('export')
-      ..addOption('out', abbr: 'o', help: '输出文件路径（必填）')
-      ..addFlag('force', negatable: false, help: '覆盖已存在的输出文件')
-      ..addFlag('json', negatable: false, help: '输出 JSON');
+      ..addOption(
+        'out',
+        abbr: 'o',
+        help: tr('输出文件路径（必填）', 'Output file path (required)'),
+      )
+      ..addFlag(
+        'force',
+        negatable: false,
+        help: tr('覆盖已存在的输出文件', 'Overwrite an existing output file'),
+      )
+      ..addFlag('json', negatable: false, help: tr('输出 JSON', 'Output JSON'));
   }
 
   @override
-  String get usage => '''
+  String get usage => tr(
+    '''
 export dictionary|audiobook|local-audio <key> -o <file> [--force] [--json]
     把一项资产打成同步资产包（与互联 / 云同步同一格式）：dictionary <词典名>、
-    audiobook <字幕书 uid 或 bookKey>、local-audio <本地音频库名>''';
+    audiobook <字幕书 uid 或 bookKey>、local-audio <本地音频库名>''',
+    '''
+export dictionary|audiobook|local-audio <key> -o <file> [--force] [--json]
+    Pack one asset into a sync asset bundle (same format as interconnect / cloud sync): dictionary <dictionary name>,
+    audiobook <subtitled book uid or bookKey>, local-audio <local audio library name>''',
+  );
 
   @override
   Future<int> run(String name, ArgResults command, CliContext ctx) async {
@@ -138,12 +171,22 @@ export dictionary|audiobook|local-audio <key> -o <file> [--force] [--json]
         kind == null ||
         outPath == null ||
         outPath.isEmpty) {
-      e.writeln('用法: export dictionary|audiobook|local-audio <key> -o <file>');
+      e.writeln(
+        tr(
+          '用法: export dictionary|audiobook|local-audio <key> -o <file>',
+          'Usage: export dictionary|audiobook|local-audio <key> -o <file>',
+        ),
+      );
       return _exitUsage;
     }
     final File output = File(p.absolute(outPath));
     if (await output.exists() && !(command['force'] as bool)) {
-      e.writeln('已存在: ${output.path}（加 --force 覆盖）');
+      e.writeln(
+        tr(
+          '已存在: ${output.path}（加 --force 覆盖）',
+          'Already exists: ${output.path} (add --force to overwrite)',
+        ),
+      );
       return _exitFailure;
     }
     return ctx.withRuntime((ServerRuntime rt) async {
@@ -181,7 +224,12 @@ export dictionary|audiobook|local-audio <key> -o <file> [--force] [--json]
           }),
         );
       } else {
-        o.writeln('已导出 ${kind.arg} 「${rest[1]}」→ ${written.path}（$bytes 字节）');
+        o.writeln(
+          tr(
+            '已导出 ${kind.arg} 「${rest[1]}」→ ${written.path}（$bytes 字节）',
+            'Exported ${kind.arg} "${rest[1]}" -> ${written.path} ($bytes bytes)',
+          ),
+        );
       }
       return _exitOk;
     });
