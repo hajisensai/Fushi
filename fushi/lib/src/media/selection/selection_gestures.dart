@@ -18,10 +18,15 @@
 library;
 
 import 'package:cupertino_ui/cupertino_ui.dart';
+import 'package:flutter/foundation.dart' show ValueListenable, setEquals;
 import 'package:flutter/gestures.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart'
-    show RenderMetaData, RenderOffstage, SliverMultiBoxAdaptorParentData;
+    show
+        ParentData,
+        RenderMetaData,
+        RenderOffstage,
+        SliverMultiBoxAdaptorParentData;
 import 'package:flutter/services.dart';
 
 import 'package:fushi/src/media/selection/media_selection_controller.dart';
@@ -77,7 +82,6 @@ class SelectionSlotTarget extends StatelessWidget {
   @override
   Widget build(BuildContext context) => MetaData(metaData: slot, child: child);
 }
-
 
 /// 长按扫选 + 鼠标拖动框选的接管区：包在库页滚动体外面，多选态才生效。
 ///
@@ -244,18 +248,17 @@ class _SelectionDragAreaState extends State<SelectionDragArea>
             _BoxSelectGestureRecognizer:
                 GestureRecognizerFactoryWithHandlers<
                   _BoxSelectGestureRecognizer
-                >(
-                  () => _BoxSelectGestureRecognizer(debugOwner: this),
-                  (_BoxSelectGestureRecognizer instance) {
-                    instance
-                      // 框的起点必须是按下处，而不是越过 slop 后的位置。
-                      ..dragStartBehavior = DragStartBehavior.down
-                      ..onStart = _handleBoxStart
-                      ..onUpdate = _handleBoxUpdate
-                      ..onEnd = _handleBoxEnd
-                      ..onCancel = _handleBoxCancel;
-                  },
-                ),
+                >(() => _BoxSelectGestureRecognizer(debugOwner: this), (
+                  _BoxSelectGestureRecognizer instance,
+                ) {
+                  instance
+                    // 框的起点必须是按下处，而不是越过 slop 后的位置。
+                    ..dragStartBehavior = DragStartBehavior.down
+                    ..onStart = _handleBoxStart
+                    ..onUpdate = _handleBoxUpdate
+                    ..onEnd = _handleBoxEnd
+                    ..onCancel = _handleBoxCancel;
+                }),
         },
         child: CustomPaint(
           foregroundPainter: _SelectionBoxPainter(
@@ -263,7 +266,9 @@ class _SelectionDragAreaState extends State<SelectionDragArea>
             opacity: _boxFade,
             color: tint,
           ),
-          child: widget.child,
+          // 选框每帧随鼠标重绘：把库页正文隔成独立图层，重绘只画框、不重放
+          // 整页卡片的绘制。不改布局。
+          child: RepaintBoundary(child: widget.child),
         ),
       ),
     );
@@ -339,12 +344,12 @@ class _SelectionDragAreaState extends State<SelectionDragArea>
       _boxRect.value = null;
       return;
     }
-    _boxFade.animateTo(0, duration: fade, curve: FushiMotion.exit).whenCompleteOrCancel(
-      () {
-        // 淡出途中又起了新框：框归新一轮，不清。
-        if (!_boxing && mounted) _boxRect.value = null;
-      },
-    );
+    _boxFade
+        .animateTo(0, duration: fade, curve: FushiMotion.exit)
+        .whenCompleteOrCancel(() {
+          // 淡出途中又起了新框：框归新一轮，不清。
+          if (!_boxing && mounted) _boxRect.value = null;
+        });
   }
 
   /// 起点 / 终点围成的框，夹在本层边界内（框外的部分本来就看不见，也不该框到
@@ -451,7 +456,10 @@ class _SelectionBoxPainter extends CustomPainter {
     final Rect? box = rect.value;
     final double alpha = opacity.value.clamp(0.0, 1.0).toDouble();
     if (box == null || alpha == 0 || box.isEmpty) return;
-    canvas.drawRect(box, Paint()..color = color.withValues(alpha: 0.16 * alpha));
+    canvas.drawRect(
+      box,
+      Paint()..color = color.withValues(alpha: 0.16 * alpha),
+    );
     canvas.drawRect(
       box.deflate(0.5),
       Paint()

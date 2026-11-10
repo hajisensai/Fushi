@@ -34,6 +34,14 @@ void main() {
             controller.endRangeDrag();
             onChanged();
           },
+          onBoxSelectBegin: () {
+            controller.beginBoxSelect();
+            onChanged();
+          },
+          onBoxSelectUpdate: (Set<SelectionSlot> slots) {
+            controller.updateBoxSelect(slots);
+            onChanged();
+          },
           child: Column(
             children: <Widget>[
               for (int i = 0; i < 5; i++)
@@ -171,6 +179,182 @@ void main() {
     // begin + end 各一次，中间零次 update。
     expect(changes, 2);
     expect(controller.looseKeys, <String>{'card-0'});
+  });
+
+  group('鼠标拖动框选（bFtYB0_Arl）', () {
+    MediaSelectionController seeded() {
+      final MediaSelectionController controller = MediaSelectionController();
+      controller.setVisibleOrder(
+        loose: <String>['card-0', 'card-1', 'card-2', 'card-3', 'card-4'],
+        collections: const <int>[],
+      );
+      return controller;
+    }
+
+    Rect cardRect(WidgetTester tester, int i) =>
+        tester.getRect(find.byKey(ValueKey<String>('card-$i')));
+
+    /// 卡片下方留白处：框选从空白起手（卡片之间 / 之外的空白也要能起框）。
+    Offset blank(WidgetTester tester) =>
+        tester.getCenter(find.byKey(const ValueKey<String>('blank')));
+
+    /// 鼠标左键从 [from] 按下、拖到 [to]（途经 [via]）后松开。
+    Future<void> mouseDrag(
+      WidgetTester tester, {
+      required Offset from,
+      required Offset to,
+      List<Offset> via = const <Offset>[],
+    }) async {
+      final TestGesture gesture = await tester.startGesture(
+        from,
+        kind: PointerDeviceKind.mouse,
+      );
+      for (final Offset point in <Offset>[...via, to]) {
+        await gesture.moveTo(point);
+        await tester.pump();
+      }
+      await gesture.up();
+      await tester.pump();
+    }
+
+    testWidgets('从空白处拖框，框碰到的卡全部选中', (WidgetTester tester) async {
+      final MediaSelectionController controller = seeded();
+      await tester.pumpWidget(
+        buildHarness(controller: controller, enabled: true, onChanged: () {}),
+      );
+
+      // 起点在卡片下方留白，向上拖到 card-2 中部：框住 card-2..card-4。
+      await mouseDrag(
+        tester,
+        from: blank(tester),
+        to: cardRect(tester, 2).center,
+      );
+
+      expect(controller.looseKeys, <String>{'card-2', 'card-3', 'card-4'});
+      expect(controller.isRangeDragging, isFalse);
+    });
+
+    testWidgets('框缩回去，离开框的卡恢复原状；已选的卡不被框选抹掉', (WidgetTester tester) async {
+      final MediaSelectionController controller = seeded()
+        ..toggle(const SelectionSlot.loose('card-0'));
+      await tester.pumpWidget(
+        buildHarness(controller: controller, enabled: true, onChanged: () {}),
+      );
+
+      // 先拖到 card-1（框住 1..4），再缩回 card-4（只框住 4）。
+      await mouseDrag(
+        tester,
+        from: blank(tester),
+        via: <Offset>[cardRect(tester, 1).center],
+        to: cardRect(tester, 4).center,
+      );
+
+      expect(controller.looseKeys, <String>{'card-0', 'card-4'});
+    });
+
+    testWidgets('触屏按下即拖不起框（触屏的拖动归滚动，扫选走长按）', (WidgetTester tester) async {
+      final MediaSelectionController controller = seeded();
+      await tester.pumpWidget(
+        buildHarness(controller: controller, enabled: true, onChanged: () {}),
+      );
+
+      final TestGesture gesture = await tester.startGesture(
+        cardRect(tester, 0).center,
+      );
+      await gesture.moveTo(cardRect(tester, 3).center);
+      await tester.pump();
+      await gesture.up();
+      await tester.pump();
+
+      expect(controller.looseKeys, isEmpty);
+      expect(controller.isRangeDragging, isFalse);
+    });
+
+    testWidgets('点击手抖（小于点击容差）不起框，点击仍归卡片', (WidgetTester tester) async {
+      final MediaSelectionController controller = seeded();
+      int changes = 0;
+      await tester.pumpWidget(
+        buildHarness(
+          controller: controller,
+          enabled: true,
+          onChanged: () => changes++,
+        ),
+      );
+
+      final Offset center = cardRect(tester, 1).center;
+      await mouseDrag(
+        tester,
+        from: center,
+        to: center + const Offset(kTouchSlop - 4, 0),
+      );
+
+      expect(changes, 0, reason: '手抖几像素就被当成拖框，会吃掉取消勾选的点击');
+      expect(controller.looseKeys, isEmpty);
+    });
+
+    testWidgets('非多选态（enabled=false）鼠标拖动不起框', (WidgetTester tester) async {
+      final MediaSelectionController controller = seeded();
+      await tester.pumpWidget(
+        buildHarness(controller: controller, enabled: false, onChanged: () {}),
+      );
+
+      await mouseDrag(
+        tester,
+        from: blank(tester),
+        to: cardRect(tester, 0).center,
+      );
+
+      expect(controller.looseKeys, isEmpty);
+    });
+
+    testWidgets('框内命中每次集合变化才回调一次', (WidgetTester tester) async {
+      final MediaSelectionController controller = seeded();
+      int changes = 0;
+      await tester.pumpWidget(
+        buildHarness(
+          controller: controller,
+          enabled: true,
+          onChanged: () => changes++,
+        ),
+      );
+
+      final Rect last = cardRect(tester, 4);
+      // 三次移动都只框住 card-4：begin + 一次 update + end。
+      await mouseDrag(
+        tester,
+        from: blank(tester),
+        via: <Offset>[
+          Offset(last.center.dx, last.bottom - 10),
+          Offset(last.center.dx, last.bottom - 15),
+        ],
+        to: Offset(last.center.dx, last.bottom - 20),
+      );
+
+      expect(changes, 3);
+      expect(controller.looseKeys, <String>{'card-4'});
+    });
+
+    testWidgets('松手后选框淡出并清掉（不残留在画面上）', (WidgetTester tester) async {
+      final MediaSelectionController controller = seeded();
+      await tester.pumpWidget(
+        buildHarness(controller: controller, enabled: true, onChanged: () {}),
+      );
+
+      final Color fill = Theme.of(
+        tester.element(find.byType(SelectionDragArea)),
+      ).colorScheme.primary.withValues(alpha: 0.16);
+      final TestGesture gesture = await tester.startGesture(
+        blank(tester),
+        kind: PointerDeviceKind.mouse,
+      );
+      await gesture.moveTo(cardRect(tester, 2).center);
+      await tester.pump();
+      // 拖动中：前景层画着选框（卡片自身也是 drawRect，按选框填充色区分）。
+      expect(find.byType(SelectionDragArea), paints..rect(color: fill));
+      await gesture.up();
+      await tester.pumpAndSettle();
+      expect(find.byType(SelectionDragArea), isNot(paints..rect(color: fill)));
+    });
   });
 
   group('修饰键判定', () {
