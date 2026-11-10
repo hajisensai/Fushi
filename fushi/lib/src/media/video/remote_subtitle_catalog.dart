@@ -3,6 +3,8 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi_engine/media/video/video_subtitle_source.dart'
     show SubtitleSource, sameExternalSubtitlePathForMenu, sameSubtitleFilePath;
+import 'package:fushi_engine/sync/fushi_library_host_service.dart'
+    show RemoteVideoSidecarSubtitle;
 
 /// 远端视频的「后端默认外挂字幕」从哪个后端来（Xt3RCTPKhX）。
 ///
@@ -22,6 +24,31 @@ enum RemoteSubtitleFileKind {
 
   /// 本机落盘的字幕档（在线下载 / 手动导入，`video_subtitles/`）：可长按删除。
   localFile,
+
+  /// 互联 host 上这一集的另一条外挂字幕（`sidecarSubtitles`，反馈 -CaVsioFhG）：
+  /// 选中时才按文件名下载，不可删。[RemoteSubtitleFileEntry.path] 是它的选择编码
+  /// （[remoteHostSidecarSubtitleSource]），不是本机文件路径。
+  hostSidecar,
+}
+
+/// host 外挂字幕 [fileName] 的远端选择编码（持久化 / 选中态比对用）。
+String remoteHostSidecarSubtitleSource(String fileName) =>
+    '${SubtitleSource.hostSidecarPrefix}$fileName';
+
+/// 按选择编码 [source] 在 [sidecars] 里找回那一条 host 外挂字幕；不是该编码 /
+/// host 这一集已没有它时返回 null。
+RemoteVideoSidecarSubtitle? remoteHostSidecarForSource(
+  String? source,
+  List<RemoteVideoSidecarSubtitle> sidecars,
+) {
+  if (!SubtitleSource.isHostSidecarPersisted(source)) return null;
+  final String name = source!.substring(
+    SubtitleSource.hostSidecarPrefix.length,
+  );
+  for (final RemoteVideoSidecarSubtitle sidecar in sidecars) {
+    if (sidecar.fileName == name) return sidecar;
+  }
+  return null;
 }
 
 /// 远端字幕文件的一行：主字幕菜单、副字幕菜单、手机遥控字幕列表共用。
@@ -32,8 +59,11 @@ class RemoteSubtitleFileEntry {
     required this.label,
     required this.kind,
     this.local,
+    this.hostSidecar,
   });
 
+  /// 文件行是本机文件路径；[RemoteSubtitleFileKind.hostSidecar] 行是选择编码
+  /// （[remoteHostSidecarSubtitleSource]），选中态与持久化都按它比对。
   final String path;
 
   /// 文件名（行副标题 / 遥控列表标签）。
@@ -43,13 +73,22 @@ class RemoteSubtitleFileEntry {
   /// [RemoteSubtitleFileKind.localFile] 时是它的 [SubtitleSource]（删除菜单用）。
   final SubtitleSource? local;
 
+  /// [RemoteSubtitleFileKind.hostSidecar] 时是 host 报的那一条（选中时按它下载）。
+  final RemoteVideoSidecarSubtitle? hostSidecar;
+
+  /// 这一行来自后端（互联 host 的默认字幕或其它外挂字幕），按后端来源标注。
+  bool get fromBackend => kind != RemoteSubtitleFileKind.localFile;
+
   bool get deletable => kind == RemoteSubtitleFileKind.localFile;
 }
 
 /// 远端字幕文件行的**唯一**拼法（Xt3RCTPKhX）。
 ///
-/// 两份互不覆盖的真相：
+/// 三份互不覆盖的真相：
 /// - [backendDefaultPath]：后端下发的默认外挂字幕（`_remoteSubtitlePath`，只放这一种）；
+/// - [hostSidecars]：互联 host 报的这一集**全部**外挂字幕（反馈 -CaVsioFhG；老 host
+///   / 其它来源为空）。默认那条（[RemoteVideoSidecarSubtitle.isDefault]）已由
+///   [backendDefaultPath] 下到本地时不重复成行；其余每条一行，选中时才下载；
 /// - [localFiles]：本机落盘的字幕档（按集持久化，重进 / 换集回来据此重建）。
 ///
 /// 本机档总是成行且可删；后端默认与某条本机档是同一路径时只留本机那行（此前
@@ -57,6 +96,8 @@ class RemoteSubtitleFileEntry {
 List<RemoteSubtitleFileEntry> remoteSubtitleFileEntries({
   required String? backendDefaultPath,
   required List<SubtitleSource> localFiles,
+  List<RemoteVideoSidecarSubtitle> hostSidecars =
+      const <RemoteVideoSidecarSubtitle>[],
 }) {
   final List<RemoteSubtitleFileEntry> entries = <RemoteSubtitleFileEntry>[];
   final String? backend = backendDefaultPath;
@@ -69,6 +110,17 @@ List<RemoteSubtitleFileEntry> remoteSubtitleFileEntries({
         path: backend,
         label: p.basename(backend),
         kind: RemoteSubtitleFileKind.backendDefault,
+      ),
+    );
+  }
+  for (final RemoteVideoSidecarSubtitle sidecar in hostSidecars) {
+    if (sidecar.isDefault && backend != null) continue;
+    entries.add(
+      RemoteSubtitleFileEntry._(
+        path: remoteHostSidecarSubtitleSource(sidecar.fileName),
+        label: sidecar.fileName,
+        kind: RemoteSubtitleFileKind.hostSidecar,
+        hostSidecar: sidecar,
       ),
     );
   }
