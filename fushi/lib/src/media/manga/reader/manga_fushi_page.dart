@@ -97,6 +97,15 @@ import 'package:fushi/src/media/manga/reader/manga_control_layout.dart';
 import 'package:fushi/src/media/manga/reader/manga_control_layout_editor.dart'
     show showMangaControlLayoutEditorSheet;
 import 'package:fushi/src/media/manga/reader/manga_reader_bookmarks.dart';
+import 'package:fushi/src/media/manga/reader/manga_companion_hook.dart';
+import 'package:fushi/src/media/media_item.dart';
+import 'package:fushi/src/media/media_source.dart' show MediaItemAppLookup;
+import 'package:fushi/src/second_screen/companion/companion_cover_files.dart';
+import 'package:fushi/src/second_screen/companion/companion_lookup_routing.dart';
+import 'package:fushi/src/second_screen/input/controller_lookup_mode.dart';
+import 'package:fushi/src/second_screen/input/controller_lookup_target.dart';
+import 'package:fushi/src/media/manga/manga_controller_cursor_scripts.dart';
+import 'package:fushi/src/media/shared/controller_lookup_steps.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
     show FushiToolbarFab, FushiToolbarItem;
@@ -197,6 +206,8 @@ import 'package:fushi_engine/media/kavita/kavita_models.dart'
     show KavitaProgress;
 
 part 'manga_jump_history.part.dart';
+part 'manga_fushi/companion.part.dart';
+part 'manga_fushi/controller_lookup.part.dart';
 part 'manga_fushi/kavita.part.dart';
 part 'manga_fushi/page_curl.part.dart';
 part 'manga_fushi/read_aloud.part.dart';
@@ -1567,6 +1578,16 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
 
   /// 在线直读章的边看边识别（[MangaStreamPageOcr]）；只在直读章、自动触发时有。
   MangaStreamPageOcr? _streamOcr;
+
+  /// Dual-screen companion (claim, snapshot, panel commands); idle while the
+  /// companion is not up.
+  late final MangaCompanionHook _companion = MangaCompanionHook(
+    reader: _MangaCompanionReader(this),
+  );
+
+  /// Controller lookup mode adapter (S6, hold L1 / Select; see
+  /// `manga_fushi/controller_lookup.part.dart`).
+  _MangaControllerLookupTarget? _controllerLookupTarget;
   bool _streamOcrStarting = false;
 
   /// 漫画朗读（read_aloud.part.dart）：宿主实现、页文字等待者与会话。
@@ -1756,6 +1777,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       (_) => _syncVolumeOcrJob(),
     );
     _pageNotifier.addListener(_onReaderPageChanged);
+    _attachControllerLookup();
     _volumeKeyPagingController = MangaVolumeKeyPagingController(
       onPrevious: () => _executeReaderInputAction(
         MangaReaderInputAction.previous,
@@ -1828,6 +1850,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   void didChangeDependencies() {
     super.didChangeDependencies();
     _studyClockGate.attach(ModalRoute.of(context));
+    _syncCompanionClaim();
     // 系统「减弱动态效果」/ 墨水屏主题切换要立即传到 WebView（翻页动画降成无）。
     final bool motionEnabled = pageTurnMotionEnabledOf(context, eink: false);
     if (motionEnabled != _motionEnabled) {
@@ -1896,6 +1919,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       );
     }
     readerSessionRemotes.unregister(_sessionRemote);
+    _detachControllerLookup();
+    _companion.dispose();
     _disposedDuringSourceReview = _sourceReviewActive;
     _sourceReviewSession?.removeListener(_onSourceReviewChanged);
     if (Platform.isWindows || Platform.isLinux) {
@@ -2516,6 +2541,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     });
     _resetPanelNavigation();
     _pageNotifier.value = _currentPage;
+    // A chapter switch can land on the same page index (no notifier event).
+    _syncCompanionClaim();
+    _companion.publishNow();
     // 首屏页成为当前单元：开书直接停在恢复位置时不会再有 _recordProgress，
     // 翻走时才入账（存档页不预置，续读也计一次）。
     _noteVisiblePages();
@@ -4689,6 +4717,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   void _onReaderPageChanged() {
     _observedOcrJob?.focusPage(_pageNotifier.value);
     _streamOcr?.focus(_pageNotifier.value);
+    _companion.publishNow();
+    _controllerLookupTarget?.onPageChanged();
     _readAloud.onPageChanged(_pageNotifier.value);
   }
 
@@ -4805,6 +4835,19 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         pageIndex >= current.images.length) {
       return;
     }
+    _putRecognizedPage(pageIndex, page);
+  }
+
+  /// Hot-swaps one page's recognised text into the payload and its overlay
+  /// without rebuilding the WebView document (streaming page OCR, the
+  /// companion's "OCR this page").
+  void _putRecognizedPage(int pageIndex, MokuroImage page) {
+    final MokuroPayload? current = _payload;
+    if (current == null ||
+        pageIndex < 0 ||
+        pageIndex >= current.images.length) {
+      return;
+    }
     final MokuroImage existing = current.images[pageIndex];
     // url 保留直读占位那份（WebView 按它取图）；尺寸取识别时的真实像素，框坐标
     // 就在这个坐标系里。
@@ -4820,6 +4863,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     });
     _readAloud._pageTextArrived(pageIndex, merged);
     unawaited(_replacePageOcrOverlay(pageIndex, merged));
+    _companion.publishNow();
   }
 
   void _onStreamOcrError(Object error, StackTrace stack) {
@@ -5111,6 +5155,11 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         );
       },
       search: (String term, Rect selectionRect, bool verticalWriting) async {
+        // Dual-screen: the companion's Lookup tab shows it when it is up.
+        if (await routeCompanionLookup(text: term, sentence: _lastSentence)) {
+          return;
+        }
+        if (!mounted) return;
         _popupVerticalWriting = verticalWriting;
         prunePopupStack(0);
         final int highlightCount = await searchDictionaryResult(

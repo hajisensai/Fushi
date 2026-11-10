@@ -71,7 +71,7 @@ void main() {
   test('BUG-1329: 导入外挂字幕后把新档就地并入字幕轨列表', () {
     final String body = region(
       'Future<void> _importExternalSubtitleInner(',
-      'void _showSubtitleLoadingOverlay() {',
+      'void _showSubtitleLoadingOverlay({',
     );
     expect(
       body.contains('_registerImportedSubtitleSource(dest)'),
