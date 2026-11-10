@@ -146,6 +146,21 @@ import 'package:fushi/src/media/video/subtitle/app_video_subtitle_service.dart'
         AppVideoSubtitleTarget,
         AppVideoSubtitleTargetNotFound,
         appVideoSubtitleService;
+import 'package:fushi/src/media/video/subtitle/video_subtitle_studio_sheet.dart'
+    show
+        VideoSubtitleStudioActions,
+        VideoSubtitleStudioReference,
+        showVideoSubtitleStudioSheet;
+import 'package:fushi_engine/media/video/subtitle/bilingual_subtitle_split.dart'
+    show
+        BilingualSplitResult,
+        SubtitleTextCue,
+        extractJapaneseFromBilingual,
+        subtitleTextCuesToSrt;
+import 'package:fushi_engine/media/video/subtitle/subtitle_content_language.dart'
+    show SubtitleContentLanguage, detectSubtitleContentLanguage;
+import 'package:fushi_engine/utils/misc/safe_file_name.dart'
+    show safeWindowsFileName;
 import 'package:fushi/src/media/video/subtitle/video_subtitle_generate_sheet.dart'
     show
         PrefsRepoVideoSubtitleGeneratePrefs,
