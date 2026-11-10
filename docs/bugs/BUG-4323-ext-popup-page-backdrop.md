@@ -1,0 +1,6 @@
+## BUG-4323 · app 外查词 / 悬浮词典浮窗卡片外铺了页面底色和 M3E 形状背景
+- **报告**：2026-11-09（开发者自提，反馈 jDuyvS-Hly，OnePlus CPH2747 / Android 16 / debug 24790：「app外查词底下有多余的背景，他应该是透明的」）
+- **真实性**：✅ 真 bug。截图里查词卡片上下整窗铺着页面底色，角落画着 M3E 形状。根因：`fushi/lib/popup_main.dart`（改前 :237 起的 `MaterialApp`）直接用 `appModel.theme` / `darkTheme`，主题转场（`fushi/lib/src/models/theme_notifier.dart:3091` 起）给每个平台都套了 `FushiBackdropPageTransitionsBuilder`，它（`fushi/lib/src/utils/adaptive/fushi_page_backdrop.dart:293`）给 `home` 路由也垫上 `FushiPageBackdrop`；后者在 `fushi_page_backdrop.dart:126` 的 `ColoredBox` 铺 `scaffoldBackgroundColor`，再画 `LibraryShapeBackdrop` 形状。2026-10-25「背景整个应用都加」上线后，透明浮窗也一起被铺满。Android 窗口层没问题：`PopupDictTheme` 的 windowBackground 透明 + translucent，`PopupDictFlutterActivity` 用 `BackgroundMode.transparent`；`PopupDictionaryPage` 的 `FushiOverlayScaffold` 背景也是透明。悬浮词典 `fushi/lib/floating_dict_main.dart` 是同一条路径。
+- **[x] ① 已修复** — 新增 `withoutFushiPageBackdrop(ThemeData)`（`fushi_page_backdrop.dart:243`），把转场里的背景层 builder 还原成内层 builder，转场和返回手势不变。`popup_main.dart` 和 `floating_dict_main.dart` 的用户主题、暗色主题、兜底主题都经过它。主题配色、组件和墨水屏设置照旧跟用户走。修复提交见 PR。
+- **[x] ② 已加自动化测试** — `fushi/test/widgets/overlay_window_no_page_backdrop_test.dart`：覆盖 unwrap 语义、真实兜底主题、相等性（避免主题动画抖动）、widget 层对照（有背景层的主题会出现 `FushiPageBackdrop`，去掉后不出现），并用源码守卫要求两个透明浮窗入口的所有主题都经过 `withoutFushiPageBackdrop`。
+- **备注**：测试未在本分支运行，统一在合并后验证。没有真机复测原始失败路径（本批次不做真机验证），待补。
