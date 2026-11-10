@@ -1,4 +1,4 @@
-## BUG-4365 · ColorOS / OnePlus 的 o-stop 停应用被误报为闪退
+## BUG-4370 · ColorOS / OnePlus 的 o-stop 停应用被误报为闪退
 - **报告**：2026-11-10（应用内崩溃报告：反馈 HqhXJvwgq3；用户已拍板「o-stop 不再报成闪退」）
 - **真实性**：✅ 真 bug，沿代码路径确认。HqhXJvwgq3（OnePlus PLK110，ColorOS，SDK 37）：同一 pid 14300 的 `ApplicationExitInfo` 是 `reason=OTHER importance=100 description: [UNKNOWN] stop app.fushi.reader due to o-stop(40)`，会话标记停在 `inactive` 0.7 s 后进程被停（典型的在最近任务里划掉）。这是 OPlus 框架主动停应用，不是闪退，却弹了「意外退出」报告。
   - 根因：`fushi/lib/src/diagnostics/previous_exit_log.dart:598` `androidExitKind` 的 `OTHER` 只认 AOSP `[KILL UID] <OP> changed.` 权限描述，其余（含 OPlus `o-stop`）返回 null；条目没有种类 → `classifyPreviousExit` 只剩会话标记推断（importance=100 判前台）→ `PreviousExitKind.unexpected` → `worthReporting` 为 true → 上报。

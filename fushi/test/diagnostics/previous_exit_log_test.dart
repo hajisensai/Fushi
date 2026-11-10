@@ -358,7 +358,7 @@ void main() {
   // 崩溃分诊 e1_jaKAeiF：realme 后台管理 `o-stop(40)` 在 app 进入后台的瞬间杀进程
   // （ApplicationExitInfo importance=400），会话标记还停在 `inactive`，旧判定只看标记 →
   // 「停在前台时没了，疑似闪退」→ 弹闪退报告。同一 pid 的平台记录必须压过标记推断。
-  // （`o-stop` 本身后来按厂商停止单独分类（BUG-4365），这里的重要性用例改用不说明原因的
+  // （`o-stop` 本身后来按厂商停止单独分类（BUG-4370），这里的重要性用例改用不说明原因的
   // OTHER 描述，只测前后台判定。）
   group('Android：同一 pid 的死时重要性压过会话标记的前后台推断', () {
     const MethodChannel channel = MethodChannel('test/process_exit_importance');
@@ -569,7 +569,7 @@ void main() {
       expect(v.worthReporting, isTrue);
     });
 
-    // BUG-4365（反馈 HqhXJvwgq3）：OnePlus（ColorOS）在最近任务里划掉 app，OPlus 框架以
+    // BUG-4370（反馈 HqhXJvwgq3）：OnePlus（ColorOS）在最近任务里划掉 app，OPlus 框架以
     // OTHER +「[UNKNOWN] stop app.fushi.reader due to o-stop(40)」停掉进程；死时界面还在最上层
     // （importance=100）、标记停在 inactive。旧实现 OTHER 只认 AOSP 权限描述 → null → 回落
     // 标记推断「停在前台时没了，疑似闪退」→ 弹闪退报告。
