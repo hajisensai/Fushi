@@ -3,6 +3,7 @@
 import 'dart:async';
 
 import 'package:fake_async/fake_async.dart';
+import 'package:fushi_engine/sync/srs_change_feed.dart' show SrsChangePoll;
 import 'package:test/test.dart';
 import 'package:fushi/src/srs/srs_interconnect_watch.dart';
 
@@ -20,9 +21,9 @@ void main() {
         if (replies.isEmpty) {
           w.stop();
           if (!done.isCompleted) done.complete();
-          return after;
+          return after == null ? null : SrsChangePoll(after);
         }
-        return replies.removeAt(0);
+        return SrsChangePoll(replies.removeAt(0));
       },
       onChange: () async => changes++,
     );
@@ -42,17 +43,48 @@ void main() {
       maxBackoff: const Duration(milliseconds: 5),
       wait: (int? after) async {
         calls++;
-        if (calls == 1) return 1;
+        if (calls == 1) return const SrsChangePoll(1);
         if (calls == 2) throw const SocketExceptionStub();
         w.stop();
         if (!done.isCompleted) done.complete();
-        return 1;
+        return const SrsChangePoll(1);
       },
       onChange: () async => changes++,
     );
     w.start();
     await done.future;
     expect(changes, 1, reason: '有过基线的连接断了：重连前先补一轮');
+  });
+
+  // BUG-4370：本机写完 head，host 推进令牌也叫醒本机自己的长轮询；以前照样空跑一轮，「立即同步」报完「已同步」后
+  // 同步状态行又从「准备」走一遍。
+  test('令牌推进全是本机自己写的（ownOnly）：只记新令牌、不同步；之后别人写的照常同步', () async {
+    final List<int?> asked = <int?>[];
+    final List<SrsChangePoll> replies = <SrsChangePoll>[
+      const SrsChangePoll(5),
+      const SrsChangePoll(7, ownOnly: true),
+      const SrsChangePoll(8),
+    ];
+    int changes = 0;
+    final Completer<void> done = Completer<void>();
+    late SrsInterconnectWatcher w;
+    w = SrsInterconnectWatcher(
+      ready: () async => true,
+      wait: (int? after) async {
+        asked.add(after);
+        if (replies.isEmpty) {
+          w.stop();
+          if (!done.isCompleted) done.complete();
+          return after == null ? null : SrsChangePoll(after);
+        }
+        return replies.removeAt(0);
+      },
+      onChange: () async => changes++,
+    );
+    w.start();
+    await done.future;
+    expect(asked, <int?>[null, 5, 7, 8], reason: '自己写的那段也要把令牌往前挪');
+    expect(changes, 1, reason: '只有别人写的那次（8）同步');
   });
 
   test('老 host 不支持：不同步，按长间隔重查', () async {
@@ -81,7 +113,7 @@ void main() {
       idleRecheck: const Duration(hours: 1),
       wait: (int? after) async {
         calls++;
-        return 1;
+        return const SrsChangePoll(1);
       },
       onChange: () async {},
     );
@@ -215,6 +247,120 @@ void main() {
       fa.elapse(const Duration(seconds: 2));
       expect(at.length, before + 2);
       push.dispose();
+    });
+  });
+
+  // BUG-4370：「立即同步」报完「已同步」后，排着的推送去抖到期又各跑一轮空同步，同步状态行在提示后继续走。
+  group('srsSyncSupersedingPushes（立即同步带上排着的推送）', () {
+    test('排着的推送被这一轮带上：同步成功后不再单独推；之后的新变动照常推', () {
+      fakeAsync((FakeAsync fa) {
+        int pushes = 0;
+        final SrsLocalPush push = SrsLocalPush(
+          push: () async {
+            pushes++;
+            return true;
+          },
+          debounce: const Duration(seconds: 10),
+        );
+        push.trigger();
+        fa.elapse(const Duration(seconds: 3));
+        bool ok = false;
+        unawaited(
+          srsSyncSupersedingPushes<bool>(
+            <SrsLocalPush>[push],
+            () async => true,
+            synced: (bool r) => r,
+          ).then((bool r) => ok = r),
+        );
+        fa.flushMicrotasks();
+        expect(ok, isTrue);
+        expect(push.pending, isFalse);
+        fa.elapse(const Duration(minutes: 1));
+        expect(pushes, 0, reason: '立即同步已经带上了，不再空跑一轮');
+        push.trigger();
+        fa.elapse(const Duration(seconds: 11));
+        expect(pushes, 1);
+        push.dispose();
+      });
+    });
+
+    test('这一轮没同步成功（有错 / 抛错）：撤掉的推送排回去；原本没排着的不凭空加一轮', () {
+      fakeAsync((FakeAsync fa) {
+        int pushesA = 0;
+        int pushesB = 0;
+        final SrsLocalPush a = SrsLocalPush(
+          push: () async {
+            pushesA++;
+            return true;
+          },
+          debounce: const Duration(seconds: 10),
+        );
+        final SrsLocalPush b = SrsLocalPush(
+          push: () async {
+            pushesB++;
+            return true;
+          },
+          debounce: const Duration(seconds: 10),
+        );
+        a.trigger();
+        unawaited(
+          srsSyncSupersedingPushes<bool>(
+            <SrsLocalPush>[a, b],
+            () async => false,
+            synced: (bool r) => r,
+          ),
+        );
+        fa.flushMicrotasks();
+        expect(a.pending, isTrue);
+        expect(b.pending, isFalse);
+        fa.elapse(const Duration(seconds: 11));
+        expect(pushesA, 1);
+        expect(pushesB, 0);
+
+        a.trigger();
+        Object? thrown;
+        unawaited(
+          srsSyncSupersedingPushes<bool>(
+            <SrsLocalPush>[a, b],
+            () async => throw StateError('offline'),
+            synced: (bool r) => r,
+          ).catchError((Object e) {
+            thrown = e;
+            return false;
+          }),
+        );
+        fa.flushMicrotasks();
+        expect(thrown, isA<StateError>(), reason: '错误原样抛给调用方');
+        expect(a.pending, isTrue);
+        fa.elapse(const Duration(seconds: 11));
+        expect(pushesA, 2);
+        a.dispose();
+        b.dispose();
+      });
+    });
+
+    test('清掉推送的失败退避（用户明说「现在就同步」）', () {
+      fakeAsync((FakeAsync fa) {
+        final SrsLocalPush push = SrsLocalPush(
+          push: () async => false,
+          debounce: const Duration(seconds: 1),
+          clock: () => DateTime(2026).add(fa.elapsed),
+        );
+        push.trigger();
+        fa.elapse(const Duration(seconds: 2));
+        expect(push.blockedUntil, isNotNull);
+        unawaited(
+          srsSyncSupersedingPushes<bool>(
+            <SrsLocalPush>[push],
+            () async => true,
+            synced: (bool r) => r,
+          ),
+        );
+        fa.flushMicrotasks();
+        expect(push.failures, 0);
+        expect(push.blockedUntil, isNull);
+        push.dispose();
+      });
     });
   });
 

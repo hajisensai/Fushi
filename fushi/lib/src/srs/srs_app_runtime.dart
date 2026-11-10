@@ -547,11 +547,15 @@ class SrsAppRuntime {
 
   /// 牌组列表「立即同步」：对所有已认证通道跑一轮（结果区分没配置 / 失败 / 成功）。
   /// 用户手动同步也清掉推送的失败退避（用户明说「现在就同步」）。
-  Future<SrsSyncNowResult> syncNow() {
-    localPush.resetBackoff();
-    cloudPush.resetBackoff();
-    return sync.syncNow();
-  }
+  ///
+  /// 这一轮跑遍全部通道与本机目录，是两条推送的超集：此刻排着的推送由它带上、撤掉（[SrsLocalPush.takePending]，
+  /// BUG-4370）。以前排着的推送在「已同步」提示之后去抖到期又各跑一轮空同步，同步状态行在提示后继续走。这一轮
+  /// 没同步成功（有错 / 抛错）就把撤掉的推送排回去，本机改动照常等推送补上。
+  Future<SrsSyncNowResult> syncNow() => srsSyncSupersedingPushes(
+    <SrsLocalPush>[localPush, cloudPush],
+    sync.syncNow,
+    synced: (SrsSyncNowResult r) => r.errors.isEmpty,
+  );
 
   void _onHomeTabChanged() {
     if (homeShellTabNotifier.value != HomeTab.srs) return;
