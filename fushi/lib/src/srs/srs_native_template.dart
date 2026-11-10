@@ -162,24 +162,48 @@ SrsForcedNativeCard srsForcedNativeHtmlCard({
     _memo[key] = hit;
     return hit;
   }
-  final List<String> reasons = <String>[];
-  String usedCss = css;
-  String lead = '';
-  final String? cssReason = _probe('', css, languageCode);
-  if (cssReason != null) {
-    reasons.add(cssReason);
-    usedCss = '';
-    lead = srsNativeNoticeHtml(notice(cssReason));
+
+  /// 按样式表 [usedCss] 改写两面并在明暗两种主题下排一遍；排不出来抛 [SrsHtmlUnsupported]。
+  /// 空样式表下一定排得出来：改写结果要么是逐块探过的正文，要么只剩提示块（内联样式只用原生
+  /// 子集）。
+  SrsForcedNativeCard build(String usedCss, String lead, List<String> reasons) {
+    SrsHtmlCardFace face(String body) => SrsHtmlCardFace.parse(
+      '$lead${_nativeFace(body, usedCss, languageCode, notice, reasons)}',
+      usedCss,
+      languageCode: languageCode,
+    );
+    final SrsHtmlCard card = SrsHtmlCard(face(question), face(answer));
+    for (final SrsHtmlCardFace f in <SrsHtmlCardFace>[
+      card.question,
+      card.answer,
+    ]) {
+      f.layout(dark: false, foreground: 0xFF000000);
+      f.layout(dark: true, foreground: 0xFFFFFFFF);
+    }
+    return SrsForcedNativeCard(
+      card,
+      List<String>.unmodifiable(<String>{...reasons}),
+    );
   }
-  SrsHtmlCardFace face(String body) => SrsHtmlCardFace.parse(
-    '$lead${_nativeFace(body, usedCss, languageCode, notice, reasons)}',
-    usedCss,
-    languageCode: languageCode,
-  );
-  final SrsForcedNativeCard result = SrsForcedNativeCard(
-    SrsHtmlCard(face(question), face(answer)),
-    List<String>.unmodifiable(<String>{...reasons}),
-  );
+
+  /// 样式表画不了：两面不用它，最前面提示一句。
+  SrsForcedNativeCard withoutCss(String cssReason) =>
+      build('', srsNativeNoticeHtml(notice(cssReason)), <String>[cssReason]);
+
+  // 空正文探样式表只能发现「本身」画不了的规则（at-rule、坏声明 …）；只命中某些元素的规则
+  // （如 `div div { height: 2em }`）可能恰好命中换进来的提示块，所以改写后的两面要再排一遍，
+  // 排不出来同样按样式表画不了处理——卡面一定排得出来，复习页 build 里不会抛。
+  final String? cssReason = _probe('', css, languageCode);
+  SrsForcedNativeCard result;
+  if (cssReason != null) {
+    result = withoutCss(cssReason);
+  } else {
+    try {
+      result = build(css, '', <String>[]);
+    } on SrsHtmlUnsupported catch (e) {
+      result = withoutCss(e.reason);
+    }
+  }
   _memo[key] = result;
   if (_memo.length > 12) _memo.remove(_memo.keys.first);
   return result;

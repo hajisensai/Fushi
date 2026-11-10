@@ -159,6 +159,30 @@ void main() {
       expect(text, contains('猫'));
     });
 
+    test('样式表只对部分元素画不了（会命中提示块）：两面不用它，卡面一定排得出来', () {
+      // 空正文探不出来（`#qa` 的父元素是 body），但正文里的 div 与换进来的提示块都会命中。
+      const String q = '$kSrsNativeTemplateMarker\n<div>猫</div>\n$table';
+      const String css = 'div div { height: 2em; }';
+      final SrsForcedNativeCard forced = srsForcedNativeHtmlCard(
+        question: q,
+        answer: q,
+        css: css,
+        notice: _notice,
+      );
+      expect(forced.reasons.first, 'css: height on <div>');
+      for (final SrsHtmlCardFace f in <SrsHtmlCardFace>[
+        forced.card.question,
+        forced.card.answer,
+      ]) {
+        f.layout(dark: false, foreground: 0xFF000000);
+        f.layout(dark: true, foreground: 0xFFFFFFFF);
+      }
+      final String text = _textOf(forced.card.question);
+      expect(text, startsWith('NATIVE-NO[css: height on <div>]'));
+      expect(text, contains('猫'));
+      expect(text, contains('NATIVE-NO[html: <table>]'));
+    });
+
     test('标了标记且两面画得全：原样画、没有提示', () {
       const String q = '$kSrsNativeTemplateMarker\n<div>猫</div>';
       final SrsForcedNativeCard forced = srsForcedNativeHtmlCard(
