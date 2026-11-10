@@ -2,6 +2,7 @@ import 'package:drift/native.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/audiobook/text_leads_page_stop.dart';
 import 'package:fushi/src/media/media_source.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -161,4 +162,64 @@ void main() {
     expect(sentenceCount.isVisible(settingsContext), isFalse);
     expect(preserveDialogue.isVisible(settingsContext), isFalse);
   });
+
+  testWidgets(
+    'audio-at-end-of-page persists the link direction and forces merged '
+    'cross-screen sentences when switching to text leads',
+    (WidgetTester tester) async {
+      await pumpContext(tester);
+      await readerSettings.setViewMode('vn');
+      int settingsChanges = 0;
+      ReaderFushiSource.onSettingsChangedLive = () => settingsChanges++;
+      addTearDown(() => ReaderFushiSource.onSettingsChangedLive = null);
+
+      final SettingsSegmentedItem<String> pageEnd =
+          item('listening.page_end_audio') as SettingsSegmentedItem<String>;
+      expect(pageEnd.isVisible(settingsContext), isTrue);
+      expect(
+        ReaderFushiSource.instance.audiobookLinkDirection,
+        kAudiobookLinkDirectionAudio,
+      );
+      expect(
+        readerSettings.visualNovelMergeCrossScreenSentenceAudioCues,
+        isFalse,
+      );
+
+      // 选「暂停」（文字领读）：写穿偏好，并顺带打开「合并跨屏朗读句」——后者改的
+      // 是 VN 分屏，所以走布局重载而不是热更新。
+      await pageEnd.onChanged(settingsContext, kAudiobookLinkDirectionText);
+      expect(
+        ReaderFushiSource.instance.audiobookLinkDirection,
+        kAudiobookLinkDirectionText,
+      );
+      expect(ReaderFushiSource.instance.audiobookTextLeads, isTrue);
+      expect(
+        readerSettings.visualNovelMergeCrossScreenSentenceAudioCues,
+        isTrue,
+      );
+      expect(layoutReloads, 1);
+      expect(settingsChanges, 0);
+
+      // 切回「继续播放」：只写偏好 + 热更新，不动合并开关、不重载布局。
+      await pageEnd.onChanged(settingsContext, kAudiobookLinkDirectionAudio);
+      expect(
+        ReaderFushiSource.instance.audiobookLinkDirection,
+        kAudiobookLinkDirectionAudio,
+      );
+      expect(
+        readerSettings.visualNovelMergeCrossScreenSentenceAudioCues,
+        isTrue,
+      );
+      expect(layoutReloads, 1);
+      expect(settingsChanges, 1);
+
+      // 合并已开着时再选「暂停」：不再重载布局，只热更新。
+      await pageEnd.onChanged(settingsContext, kAudiobookLinkDirectionText);
+      expect(layoutReloads, 1);
+      expect(settingsChanges, 2);
+
+      await readerSettings.setViewMode('continuous');
+      expect(pageEnd.isVisible(settingsContext), isFalse);
+    },
+  );
 }
