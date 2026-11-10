@@ -43,7 +43,20 @@ void main() {
       contains("button.dataset.mined === '1' && button.dataset.mining !== '1'"),
       reason: 'popup.js 改了拦截判据时，宿主选择器要一起改',
     );
-    expect(body, contains("addEventListener('contextmenu'"));
+    // 手势本身（含 contextmenu）在共享的 bindPopupSecondaryActionTriggers 里，
+    // ✓ 只给出判据；判据经 isActive 也管右键拦不拦。
+    expect(body, contains('bindPopupSecondaryActionTriggers(button'));
+    final int helper = js.indexOf(
+      'function bindPopupSecondaryActionTriggers(',
+    );
+    expect(helper, greaterThanOrEqualTo(0));
+    final String helperBody = js.substring(
+      helper,
+      js.indexOf('
+function ', helper + 1),
+    );
+    expect(helperBody, contains("addEventListener('contextmenu'"));
+    expect(helperBody, contains('if (!active()) return;'));
   });
 
   test('命中脚本嵌入整条选择器并带坐标', () {
