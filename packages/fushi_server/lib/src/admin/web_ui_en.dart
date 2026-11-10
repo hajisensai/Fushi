@@ -522,12 +522,26 @@ const Map<String, String> kWebUiEnglish = <String, String>{
   '引擎运行中': 'Engine running',
   '已装载 {0} 本': '{0} loaded',
   '引擎不可用': 'Engine unavailable',
-  '服务端还没有词典。在 Fushi app 的词典管理里推送到服务器，或用 fushi_server dict import 导入。':
-      'No dictionaries on the server yet. Push them from dictionary management in the Fushi app, or import them with fushi_server dict import.',
+  '服务端还没有词典。点「导入词典」上传词典包，或在 Fushi app 的词典管理里推送到服务器。':
+      'No dictionaries on the server yet. Click "Import dictionary" to upload a dictionary package, or push one from dictionary management in the Fushi app.',
   '已默认启用': 'Now enabled by default',
   '已默认停用': 'Now disabled by default',
   '语言标签无效：{0}': 'Invalid language tag: {0}',
   '删除词典「{0}」？会删掉服务端的词典文件，已配置它的设备将查不到它。':
       'Delete dictionary "{0}"? This deletes its files on the server, and devices that use it will no longer find it.',
   '已重新装载，{0} 本': 'Reloaded, {0} dictionaries',
+  '导入词典': 'Import dictionary',
+  '导入支持 Fushi app 导出的 .fushidict 词典包，以及 Yomitan（.zip）、MDX、DSL 词典；同名词典视为更新，保留排序与设置。导入后立即生效，计入上传配额。':
+      'You can import .fushidict packages exported from the Fushi app, as well as Yomitan (.zip), MDX and DSL dictionaries. A dictionary with the same name counts as an update and keeps its order and settings. Imports take effect immediately and count toward the upload quota.',
+  '网络错误': 'Network error',
+  '导入中…': 'Importing…',
+  '上传中 {0} / {1}': 'Uploading {0} / {1}',
+  '已导入词典「{0}」': 'Imported dictionary "{0}"',
+  '已更新词典「{0}」': 'Updated dictionary "{0}"',
+  '修改显示名': 'Rename',
+  '显示名': 'Display name',
+  '回车保存，Esc 取消，留空恢复原名':
+      'Enter to save, Esc to cancel, leave empty to restore the original name',
+  '显示名已改为「{0}」': 'Display name changed to "{0}"',
+  '已恢复原名': 'Original name restored',
 };

@@ -41,12 +41,15 @@ import 'package:fushi_engine/sync/subscriptions/host_subscription_host.dart';
 import 'package:fushi_engine/sync/subscriptions/host_subscription_routes.dart'
     show HostSubscriptionRejected;
 import 'package:fushi_server/src/admin/admin_backups.dart';
+import 'package:fushi_server/src/admin/admin_dictionary_import.dart';
 import 'package:fushi_server/src/admin/admin_srs.dart';
 import 'package:fushi_server/src/admin/admin_context.dart';
 import 'package:fushi_server/src/admin/resource_indexer_settings.dart';
 import 'package:fushi_server/src/anki_landing.dart';
 import 'package:fushi_server/src/admin/upload_store.dart';
 import 'package:fushi_server/src/config/server_ai_config.dart';
+import 'package:fushi_server/src/commands/dict_commands.dart'
+    show DictArchiveImporter;
 import 'package:fushi_server/src/config/server_config.dart';
 import 'package:fushi_server/src/dictionary_host.dart';
 import 'package:fushi_server/src/download_host.dart';
@@ -81,12 +84,16 @@ Future<Map<String, dynamic>> _body(shelf.Request request) async {
 }
 
 class AdminApi {
-  AdminApi(this.ctx, {http.Client Function()? btSiteProbeClient})
-    : uploads = UploadStore(
-        ledgerFile: File(p.join(ctx.paths.support.path, 'upload_ledger.json')),
-        quotaBytes: ctx.config.uploadQuotaBytes,
-      ),
-      _btSiteProbeClient = btSiteProbeClient ?? createAppHttpIoClient;
+  AdminApi(
+    this.ctx, {
+    http.Client Function()? btSiteProbeClient,
+    DictArchiveImporter? dictionaryImporter,
+  }) : uploads = UploadStore(
+         ledgerFile: File(p.join(ctx.paths.support.path, 'upload_ledger.json')),
+         quotaBytes: ctx.config.uploadQuotaBytes,
+       ),
+       _btSiteProbeClient = btSiteProbeClient ?? createAppHttpIoClient,
+       _dictionaryImporter = dictionaryImporter;
 
   final AdminContext ctx;
   final UploadStore uploads;
@@ -94,6 +101,16 @@ class AdminApi {
   /// 添加 / 重新检测 BT 站时探测用的 HTTP client 工厂（每次探测建一个、用完关）。
   /// 生产走全应用代理装配；测试注入假站点。
   final http.Client Function() _btSiteProbeClient;
+
+  /// 词典导入的原生导入器（null = 真原生库）；测试注入假的。
+  final DictArchiveImporter? _dictionaryImporter;
+
+  /// 词典导入端点（`POST /api/admin/dictionaries/import`，见 admin_dictionary_import.dart）。
+  late final AdminDictionaryImport dictionaryImport = AdminDictionaryImport(
+    ctx: ctx,
+    uploads: uploads,
+    importer: _dictionaryImporter,
+  );
 
   Future<shelf.Response> handle(shelf.Request request) async {
     final String method = request.method.toUpperCase();
@@ -376,6 +393,8 @@ class AdminApi {
         return _dictionaries();
       case ('POST', '/api/admin/dictionaries/reload'):
         return _reloadDictionaries();
+      case ('POST', '/api/admin/dictionaries/import'):
+        return _importDictionary(request);
       case ('PUT', _) when path.startsWith(_dictionariesPrefix):
         return _updateDictionary(
           Uri.decodeComponent(path.substring(_dictionariesPrefix.length)),
@@ -809,6 +828,28 @@ class AdminApi {
     }
     await ctx.host.buildLibraryService().deleteDictionary(name);
     return _json(const <String, Object?>{'ok': true});
+  }
+
+  /// `POST /api/admin/dictionaries/import?filename=<文件名>`，请求体 = 文件原始字节：
+  /// 导入一个词典包（app 导出的 `.fushidict` 或 Yomitan / MDX / DSL 原始包），导入完
+  /// 引擎即看到。返回 `{name, format, type, termCount, kanjiCount, replaced, language,
+  /// dictionary}`（`format` 是 `fushidict` / `archive`；`.fushidict` 不带词条数，两个
+  /// count 为 null；`dictionary` 是同 `GET` 的清单条目）。拒收走 [UploadRejected]：
+  /// 400 文件名缺失 / 空文件 / 认不出的包，413 超上传配额，415 扩展名不收，422 原生
+  /// 导入器报错，503 词典引擎不可用。协议细节见 [AdminDictionaryImport]。
+  Future<shelf.Response> _importDictionary(shelf.Request request) async {
+    final AdminDictionaryImportOutcome r = await dictionaryImport.run(request);
+    final DictionaryMetaRow? row = await _dictionaryRow(r.name);
+    return _json(<String, Object?>{
+      'name': r.name,
+      'format': r.format,
+      'type': r.type,
+      'termCount': r.termCount,
+      'kanjiCount': r.kanjiCount,
+      'replaced': r.replaced,
+      'language': r.language,
+      'dictionary': row == null ? null : await _dictionaryEntry(row),
+    });
   }
 
   /// `POST /api/admin/dictionaries/reload`：按 DB 重载引擎（手工改过资源目录后用）。

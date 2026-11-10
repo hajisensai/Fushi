@@ -6,7 +6,8 @@
 /// `<dictionaryResources>/<词典名>/` + `dictionary_metadata` 一行。
 ///
 /// 正在跑的 `serve` 不会自动看到离线改动：导入 / 删除后重启 serve 才进引擎
-/// （经互联推送的词典则即时生效）。
+/// （经互联推送、或在 WebUI「词典」页导入的词典则即时生效——后者在 serve 进程内跑
+/// 同一个 [importDictionaryArchive]，带上 `reloadEngine`，见 admin_api.dart）。
 library;
 
 import 'dart:convert';
@@ -17,6 +18,7 @@ import 'package:args/args.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary_core.dart';
+import 'package:fushi_engine/dictionary/dictionary_engine_hooks.dart';
 import 'package:fushi_engine/models/dictionary_directory.dart';
 import 'package:fushi_server/src/commands/cli_module.dart';
 import 'package:fushi_server/src/dictionary_host.dart';
@@ -31,6 +33,7 @@ typedef DictImportOutcome = ({
   int termCount,
   int kanjiCount,
   bool replaced,
+  String? language,
 });
 
 /// 词典导入失败（导入器报错 / 包里没有标题）。
@@ -51,15 +54,31 @@ typedef DictArchiveImporter =
 ///
 /// 同名词典视为更新：替换资源目录，保留原有的排序与用户设置（隐藏 / 折叠 / 语言覆盖 /
 /// 显示名），与 app 重导同名词典的继承口径一致；新词典排在最后。
+///
+/// 两种调用方：
+/// - 离线 CLI（`dict add`）：没有引擎在跑，[reloadEngine] 留空。
+/// - serve 进程内（WebUI 导入）：调用方在库互斥锁里调用，并传 [reloadEngine]（按 DB
+///   重载引擎）。原生导入写的是暂存目录，不碰引擎；「删旧目录 → 搬入 → 写 DB」整段
+///   在 [withDictionaryMappingsReleased] 作用域里（同名覆盖时旧目录正被引擎映射，
+///   BUG-1756），收尾无论成败都 [reloadEngine]，引擎不会停在释放后的空状态。
+///
+/// [stagingParent]：原生导入的输出暂存目录建在哪（默认系统临时目录）。serve 传数据目录
+/// 的 `tmp/`，与资源目录同盘，搬入是一次改名而不是逐文件复制。
 Future<DictImportOutcome> importDictionaryArchive({
   required FushiDatabase db,
   required Directory resourceRoot,
   required File archive,
   DictArchiveImporter? importer,
+  Directory? stagingParent,
+  Future<void> Function()? reloadEngine,
 }) async {
-  final Directory staging = await Directory.systemTemp.createTemp(
-    'fushi_dict_import_',
-  );
+  final Directory staging;
+  if (stagingParent != null) {
+    await stagingParent.create(recursive: true);
+    staging = await stagingParent.createTemp('fushi_dict_import_');
+  } else {
+    staging = await Directory.systemTemp.createTemp('fushi_dict_import_');
+  }
   try {
     final FushiImportResult result =
         await (importer ?? FushiDicts.importDictionary)(
@@ -81,64 +100,107 @@ Future<DictImportOutcome> importDictionaryArchive({
     final Directory source = inner.existsSync() ? inner : staging;
     final Directory target = Directory(p.join(resourceRoot.path, name));
     await resourceRoot.create(recursive: true);
-    await deleteDictionaryDirectory(target, reloadEngine: () {});
-    await _moveDirectory(source, target);
-    final int order =
-        previous?.order ??
-        (rows.isEmpty
-            ? 0
-            : rows
-                      .map((DictionaryMetaRow r) => r.order)
-                      .reduce((int a, int b) => a > b ? a : b) +
-                  1);
     final String type = switch (result.detectedType) {
       'frequency' || 'pitch' || 'kanji' => result.detectedType,
       _ => 'term',
     };
-    await db.upsertDictionaryMeta(
-      DictionaryMetadataCompanion.insert(
+    Future<String?> publish() async {
+      // 引擎在作用域结束后由调用方的 reloadEngine 统一装回（作用域内不装，免得把
+      // 正要覆盖的目录又映射上）。
+      await deleteDictionaryDirectory(target, reloadEngine: () {});
+      await _moveDirectory(source, target);
+      return _writeImportedMetadata(
+        db: db,
+        rows: rows,
+        previous: previous,
         name: name,
-        formatKey: 'yomichan',
-        order: order,
-        type: Value<String>(type),
-        metadataJson: Value<String>(
-          jsonEncode(<String, String>{
-            // 来源与内容语言（revision / sourceLanguage / …），见该函数注释。
-            ...await readImportedSourceMetadata(
-              importedDir: target,
-              archive: archive,
-            ),
-            if (result.kanjiCount > 0) kDictHasKanjiKey: 'true',
-            // 混合词典汉字部分的开关 / 位置是用户设置，同名重导继承（与 app 同口径）。
-            if (result.kanjiCount > 0 && previous != null)
-              ...kanjiPartSettingsIn(_decodeMetadata(previous.metadataJson)),
-            // 导入时原生侧已数过 term / kanji 记录，等于类型探测刚做完（与 app 同一标记）。
-            'typeProbe': '1',
-          }),
-        ),
-        hiddenLanguagesJson: Value<String>(
-          previous?.hiddenLanguagesJson ?? '[]',
-        ),
-        collapsedLanguagesJson: Value<String>(
-          previous?.collapsedLanguagesJson ?? '[]',
-        ),
-        expandedLanguagesJson: Value<String>(
-          previous?.expandedLanguagesJson ?? '[]',
-        ),
-        languageOverride: Value<String?>(previous?.languageOverride),
-        displayName: Value<String?>(previous?.displayName),
-      ),
-    );
+        type: type,
+        result: result,
+        target: target,
+        archive: archive,
+      );
+    }
+
+    final String? language;
+    if (reloadEngine == null) {
+      language = await publish();
+    } else {
+      try {
+        language = await withDictionaryMappingsReleased(publish);
+      } finally {
+        await reloadEngine();
+      }
+    }
     return (
       name: name,
       type: type,
       termCount: result.termCount,
       kanjiCount: result.kanjiCount,
       replaced: previous != null,
+      language: language,
     );
   } finally {
     if (staging.existsSync()) await staging.delete(recursive: true);
   }
+}
+
+/// 写（或按同名更新）导入词典的 `dictionary_metadata` 行，返回生效的词头语言（手动
+/// 指定优先，其次包内声明）。
+Future<String?> _writeImportedMetadata({
+  required FushiDatabase db,
+  required List<DictionaryMetaRow> rows,
+  required DictionaryMetaRow? previous,
+  required String name,
+  required String type,
+  required FushiImportResult result,
+  required Directory target,
+  required File archive,
+}) async {
+  final int order =
+      previous?.order ??
+      (rows.isEmpty
+          ? 0
+          : rows
+                    .map((DictionaryMetaRow r) => r.order)
+                    .reduce((int a, int b) => a > b ? a : b) +
+                1);
+  final Map<String, String> source = await readImportedSourceMetadata(
+    importedDir: target,
+    archive: archive,
+  );
+  await db.upsertDictionaryMeta(
+    DictionaryMetadataCompanion.insert(
+      name: name,
+      formatKey: 'yomichan',
+      order: order,
+      type: Value<String>(type),
+      metadataJson: Value<String>(
+        jsonEncode(<String, String>{
+          // 来源与内容语言（revision / sourceLanguage / …），见该函数注释。
+          ...source,
+          if (result.kanjiCount > 0) kDictHasKanjiKey: 'true',
+          // 混合词典汉字部分的开关 / 位置是用户设置，同名重导继承（与 app 同口径）。
+          if (result.kanjiCount > 0 && previous != null)
+            ...kanjiPartSettingsIn(_decodeMetadata(previous.metadataJson)),
+          // 导入时原生侧已数过 term / kanji 记录，等于类型探测刚做完（与 app 同一标记）。
+          'typeProbe': '1',
+        }),
+      ),
+      hiddenLanguagesJson: Value<String>(previous?.hiddenLanguagesJson ?? '[]'),
+      collapsedLanguagesJson: Value<String>(
+        previous?.collapsedLanguagesJson ?? '[]',
+      ),
+      expandedLanguagesJson: Value<String>(
+        previous?.expandedLanguagesJson ?? '[]',
+      ),
+      languageOverride: Value<String?>(previous?.languageOverride),
+      displayName: Value<String?>(previous?.displayName),
+    ),
+  );
+  final String? override = previous?.languageOverride?.trim();
+  return (override != null && override.isNotEmpty)
+      ? override
+      : source['sourceLanguage'];
 }
 
 /// 这本词典来自 `index.json` 的来源与内容语言 metadata，键与取值规范和 app 导入一致
@@ -419,6 +481,7 @@ Dictionaries (offline; changes reach the engine after serve restarts):
           'termCount': r.termCount,
           'kanjiCount': r.kanjiCount,
           'replaced': r.replaced,
+          'language': r.language,
         }),
       );
     } else {
