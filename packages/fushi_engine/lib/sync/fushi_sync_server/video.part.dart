@@ -1344,6 +1344,11 @@ String? _extractBareVideoId(String reqPath) {
   final String id = reqPath.substring(prefix.length);
   if (id.isEmpty) return null;
   if (id.contains('..') || id.contains('\\')) return null;
+  // 以免鉴权流子路径结尾的不是裸 id（那条路径归 token 鉴权的流 handler），显式拒，
+  // 不靠分支顺序保护。
+  for (final String suffix in _kVideoStreamSuffixes) {
+    if (reqPath.endsWith(suffix)) return null;
+  }
   return id;
 }
 

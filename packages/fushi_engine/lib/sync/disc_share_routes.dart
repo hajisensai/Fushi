@@ -24,7 +24,7 @@ import 'package:fushi_engine/sync/fushi_sync_server.dart'
     show serveFileWithRange;
 import 'package:shelf/shelf.dart' as shelf;
 
-/// 共享会话路由前缀（不含前导 `/` 的形式见 [isDiscShareSessionPath]）。
+/// 共享会话路由前缀（规范化路径形态，带前导 `/`；判据见 [isDiscShareSessionPath]）。
 const String kDiscShareRoutePrefix = '/api/library/disc/';
 
 /// 签发端点挂在视频路由下的后缀：`/api/library/videos/<id>/disc`。
@@ -127,10 +127,11 @@ class DiscShareTokenStore {
   void clear() => _sessions.clear();
 }
 
-/// [urlPath]（`request.url.path`，无前导 `/`）是不是共享会话路径——鉴权中间件据此
-/// 豁免 Basic（门在 handler 里校验 token）。
-bool isDiscShareSessionPath(String urlPath) =>
-    urlPath.startsWith(kDiscShareRoutePrefix.substring(1));
+/// 规范化路径 [path]（`canonicalRequestPath`：已解码、带前导 `/`）是不是共享会话
+/// 路径——鉴权中间件据此豁免 Basic（门在 handler 里校验 token）。与路由分发
+/// （`reqPath.startsWith(kDiscShareRoutePrefix)`）是同一个判据。
+bool isDiscShareSessionPath(String path) =>
+    path.startsWith(kDiscShareRoutePrefix);
 
 /// 签发：`GET /api/library/videos/<id>/disc` 的响应体。[baseUrl] 以 `/` 结尾，
 /// client 在其后拼 `manifest.json` / `files/<路径>`。

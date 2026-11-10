@@ -128,14 +128,14 @@ void main() {
   );
 
   test('server _validateAuth 仍双接受：共享 _token + 任一 per-peer token', () {
-    // B3 拆分后 _validateAuth / _peerTokens 在 auth.part.dart；读合并语料
+    // B3 拆分后 _validateAuth / _credentialSnapshot 在 auth.part.dart；读合并语料
     // （已归一成 LF）。
     final String s = readFushiSyncServerSource();
     final int start = s.indexOf(
       'Future<bool> _validateAuth(String header) async {',
     );
     expect(start, greaterThanOrEqualTo(0), reason: '_validateAuth 丢失');
-    final int end = s.indexOf('Future<Set<String>> _peerTokens()', start);
+    final int end = s.indexOf('Future<bool> _validatePeerAuth(', start);
     expect(end, greaterThan(start));
     final String body = compactCode(s.substring(start, end));
     expect(
@@ -144,7 +144,7 @@ void main() {
       reason: '_validateAuth 丢了共享令牌兼容路径（Never break userspace）。',
     );
     expect(
-      has(body, '_peerTokens()'),
+      has(body, '_credentialSnapshot()'),
       isTrue,
       reason: '_validateAuth 丢了 per-peer token 受理——UI 澄清不得连带砍掉双接受。',
     );

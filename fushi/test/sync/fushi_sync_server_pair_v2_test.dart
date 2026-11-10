@@ -406,10 +406,18 @@ void main() {
     },
   );
 
-  test('GET pair v2 yields 405', () async {
+  test('GET pair v2 is not exempt from auth (401); with Basic 405', () async {
     await startServer(lanRequiresPin: false);
     final http.Response resp = await http.get(v2Uri());
-    expect(resp.statusCode, 405);
+    expect(resp.statusCode, 401);
+    final http.Response authed = await http.get(
+      v2Uri(),
+      headers: <String, String>{
+        'authorization':
+            'Basic ${base64Encode(utf8.encode('hibiki:super-secret-token'))}',
+      },
+    );
+    expect(authed.statusCode, 405);
   });
 
   test('capabilities exposes pairing v2 plus tls subobject', () async {

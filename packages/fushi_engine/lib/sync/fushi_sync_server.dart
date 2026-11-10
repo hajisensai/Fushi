@@ -220,6 +220,11 @@ bool isAddressInUseError(SocketException e) {
       message.contains('shared flag to bind');
 }
 
+/// 互联 host 唯一的请求路径形态：已 URL 解码、带前导 `/`。路由分发与鉴权中间件的
+/// 豁免判定都只用它，两边不会对同一个请求看出两条不同的路径（`%2F` 等编码）。
+String canonicalRequestPath(shelf.Request r) =>
+    Uri.decodeFull('/${r.url.path}');
+
 /// TODO-1215: dictionary media endpoint accepts these query token param
 /// names (aligned with yomitan-api server). A browser <img> GET carries no
 /// Authorization header, so it authenticates via ?token= instead.
@@ -959,7 +964,7 @@ class FushiSyncServer {
 
   Future<shelf.Response> _handleRequest(shelf.Request request) async {
     final method = request.method.toUpperCase();
-    final reqPath = Uri.decodeFull('/${request.url.path}');
+    final String reqPath = canonicalRequestPath(request);
     if (reqPath == '/api/pair') {
       return _handlePair(request);
     }

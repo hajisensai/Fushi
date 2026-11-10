@@ -144,14 +144,25 @@ void main() {
     c.close();
   });
 
-  test('POST /api/media/dictionary returns 405 (GET/HEAD only)', () async {
+  test('POST /api/media/dictionary: query token is not an exemption for '
+      'non-GET/HEAD (401); with Basic the handler answers 405', () async {
     final HttpClient c = HttpClient();
     final HttpClientRequest req = await c.postUrl(
       Uri.parse(mediaUrl('明鏡', 'gaiji/foo.svg', tok: token)),
     );
     final HttpClientResponse res = await req.close();
-    expect(res.statusCode, 405);
+    expect(res.statusCode, 401);
     await res.drain<void>();
+    final HttpClientRequest authed = await c.postUrl(
+      Uri.parse(mediaUrl('明鏡', 'gaiji/foo.svg')),
+    );
+    authed.headers.set(
+      'authorization',
+      'Basic ${base64Encode(utf8.encode('hibiki:$token'))}',
+    );
+    final HttpClientResponse authedRes = await authed.close();
+    expect(authedRes.statusCode, 405);
+    await authedRes.drain<void>();
     c.close();
   });
 

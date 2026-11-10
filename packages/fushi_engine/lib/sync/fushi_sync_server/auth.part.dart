@@ -7,47 +7,33 @@ extension _FushiSyncServerAuth on FushiSyncServer {
   shelf.Middleware _authMiddleware() {
     return (shelf.Handler innerHandler) {
       return (shelf.Request request) async {
+        // CORS 预检不带凭据，照旧直接放行。
         if (request.method == 'OPTIONS') return innerHandler(request);
-        // Pairing is the one unauthenticated route: the client has no token
-        // yet — that is exactly what it is fetching. Gating is done by the
-        // pairing window inside _handlePair, not by Basic auth.
-        if (request.url.path == 'api/pair') return innerHandler(request);
-        // TODO-961 M1: v2 配对（含 confirm）同样无 token——这正是 client 在获取的
-        // 东西。门控由 PIN proof + host 人工确认完成，不靠 Basic auth。
-        if (request.url.path == 'api/pair/v2' ||
-            request.url.path == 'api/pair/v2/confirm') {
-          return innerHandler(request);
+        // 豁免判定与路由分发看同一份规范化路径（[canonicalRequestPath]），且只对
+        // [_kPublicRoutes] 里登记的方法豁免；路径命中但方法不在表里的请求照常走 Basic。
+        // 解不出规范化路径（`%FF` 这类非法 UTF-8 转义）的请求无从路由，也无从判豁免：
+        // 在这里统一回 400，不让它在鉴权前变成 500、也不进路由。
+        final String path;
+        try {
+          path = canonicalRequestPath(request);
+        } on FormatException {
+          return shelf.Response(400, body: 'Malformed request path');
         }
-        // TODO-963 M2: /api/ping 是无鉴权的轻量探测端点——手动输入 IP 的 client 在
-        // 配对前（还没有 token）用它确认地址可达 + 取 host 能力/指纹做 TOFU。只读、
-        // 不泄漏数据，与 /api/pair 同属配对前公开面。
-        if (request.url.path == 'api/ping') return innerHandler(request);
-        // Video stream paths are exempted from Basic auth to allow media_kit
-        // to play via a plain URL. Token validation happens inside the handler.
-        // Only the /stream sub-path is exempted; /streamurl, /subtitle, and the
-        // video list still require Basic auth.
-        if (_isVideoStreamPath(request.url.path)) return innerHandler(request);
-        // 远端原盘的盘目录：libbluray / libdvdnav 在 libmpv 里直接取文件，带不了
-        // Authorization；门是路径里的会话 token（handler 内校验、按空闲过期）。
-        if (isDiscShareSessionPath(request.url.path)) {
-          return innerHandler(request);
-        }
-        // Remote lookup audio file URLs are handed to platform audio players,
-        // which issue a bare GET without Authorization. The lookup endpoint
-        // stays authenticated; the file endpoint is guarded by an opaque,
-        // short-lived in-memory id in RemoteLookupRoutes.handleAudioFile.
-        if (_isLookupAudioFilePath(request.url.path)) {
-          return innerHandler(request);
-        }
-        // TODO-1215: the dictionary media endpoint is fetched by a web page
-        // <img src> GET, which carries no Authorization header (same as
-        // /api/lookup/audio/file). It authenticates via a ?token= query
-        // param instead; a valid token passes here, an invalid/absent one
-        // falls through to the Basic check below (in-app / Basic clients
-        // still work) and ultimately 401s.
-        if (_isDictionaryMediaPath(request.url.path) &&
-            _dictionaryMediaTokenValid(request)) {
-          return innerHandler(request);
+        final String method = request.method.toUpperCase();
+        for (final _PublicRoute route in _kPublicRoutes) {
+          if (!route.matches(path) || !route.methods.contains(method)) {
+            continue;
+          }
+          switch (route.gate) {
+            case _PublicGate.none:
+              return innerHandler(request);
+            case _PublicGate.dictionaryMediaQuery:
+              // 无效 / 缺省的 query token 落到下方 Basic（app 内 / Basic 客户端照常用）。
+              if (_dictionaryMediaTokenValid(request)) {
+                return innerHandler(request);
+              }
+          }
+          break;
         }
         final auth = request.headers['authorization'];
         if (auth == null || !await _validateAuth(auth)) {
@@ -155,20 +141,75 @@ extension _FushiSyncServerAuth on FushiSyncServer {
 // ── 本域私有的顶层 helper（原 FushiSyncServer 的 private static；extension 体内看不到
 //    宿主类的 static，故提到库顶层）。
 
-/// 判断 [urlPath]（即 request.url.path，不含前导 `/`）是否为视频流路径
-/// （`api/library/videos/<id>/<stream|hls.m3u8|hlsseg.ts>`，id 非空，id 可含 `/`）。
+/// 公开路由放行前还要过的额外门。
+enum _PublicGate {
+  /// 无额外门：handler 自己校验（配对窗口 / 流 token / 会话 token / 短时 id），或本就公开。
+  none,
+
+  /// query 里带有效的词典媒体凭据才放行，否则落到 Basic。
+  dictionaryMediaQuery,
+}
+
+/// 「免 Basic」路由表的一条：规范化路径（[canonicalRequestPath]，带前导 `/`、已解码）
+/// 命中 [matches] **且**方法在 [methods] 里才豁免；方法集与对应 handler 受理的方法一致，
+/// 别的方法照常要 Basic。
+class _PublicRoute {
+  const _PublicRoute(
+    this.methods,
+    this.matches, [
+    this.gate = _PublicGate.none,
+  ]);
+
+  /// 豁免的方法（大写）。
+  final Set<String> methods;
+  final bool Function(String canonicalPath) matches;
+  final _PublicGate gate;
+}
+
+/// 互联 host 唯一的「免 Basic」路由表。新增一条就是新开一个不带 Authorization 也能进
+/// handler 的面：handler 必须自己有门（token / 配对窗口），方法集只写 handler 受理的。
+const List<_PublicRoute> _kPublicRoutes = <_PublicRoute>[
+  // 配对：client 还没有 token——这正是它在获取的东西。门是 handler 里的配对窗口 /
+  // PIN proof + host 人工确认（TODO-961 M1）。
+  _PublicRoute(<String>{'POST'}, _isPairPath),
+  // TODO-963 M2：无鉴权轻量探测（配对前确认地址可达 + 取能力 / 指纹做 TOFU），只读。
+  _PublicRoute(<String>{'GET'}, _isPingPath),
+  // 视频流 / HLS / 蓝光码流：media_kit 拿裸 URL 播放，门是 URL 里的短时 token。
+  _PublicRoute(<String>{'GET'}, _isVideoStreamPath),
+  // 远端原盘的盘目录：libbluray / libdvdnav 在 libmpv 里直接取文件，带不了
+  // Authorization；门是路径里的会话 token（handler 内校验、按空闲过期）。
+  _PublicRoute(<String>{'GET'}, isDiscShareSessionPath),
+  // 查词音频文件交给平台播放器裸 GET；门是 RemoteLookupRoutes 里的短时不透明 id。
+  _PublicRoute(<String>{'GET', 'HEAD'}, _isLookupAudioFilePath),
+  // TODO-1215：词典媒体由网页 <img src> 取，带不了 Authorization，改用 query 凭据。
+  _PublicRoute(
+    <String>{'GET', 'HEAD'},
+    _isDictionaryMediaPath,
+    _PublicGate.dictionaryMediaQuery,
+  ),
+];
+
+bool _isPairPath(String path) =>
+    path == '/api/pair' ||
+    path == '/api/pair/v2' ||
+    path == '/api/pair/v2/confirm';
+
+bool _isPingPath(String path) => path == '/api/ping';
+
+/// 判断规范化路径 [path] 是否为视频流路径
+/// （`/api/library/videos/<id>/<stream|hls.m3u8|hlsseg.ts|bdclip.m2ts>`，id 非空，id 可含 `/`）。
 ///
 /// 两条 hls 子路径与 `/stream` 同待遇：播放器拿到 playlist 后会自己去取每个分段，
 /// 那些请求同样是裸 GET，不带 Authorization。它们的门是 URL 里的短时 token
 /// （handler 内校验），与 `/stream` 是同一套。
-bool _isVideoStreamPath(String urlPath) {
-  const String prefix = 'api/library/videos/';
-  if (!urlPath.startsWith(prefix)) return false;
+bool _isVideoStreamPath(String path) {
+  const String prefix = '/api/library/videos/';
+  if (!path.startsWith(prefix)) return false;
   for (final String suffix in _kVideoStreamSuffixes) {
-    if (!urlPath.endsWith(suffix)) continue;
-    final String idPart = urlPath.substring(
+    if (!path.endsWith(suffix)) continue;
+    final String idPart = path.substring(
       prefix.length,
-      urlPath.length - suffix.length,
+      path.length - suffix.length,
     );
     if (idPart.isNotEmpty) return true;
   }
@@ -184,8 +225,7 @@ const List<String> _kVideoStreamSuffixes = <String>[
   '/$kBlurayClipPathSuffix',
 ];
 
-bool _isLookupAudioFilePath(String urlPath) =>
-    urlPath == 'api/lookup/audio/file';
+bool _isLookupAudioFilePath(String path) => path == '/api/lookup/audio/file';
 
 String? _basicPassword(String header) {
   if (!header.startsWith('Basic ')) return null;
@@ -200,5 +240,4 @@ String? _basicPassword(String header) {
   }
 }
 
-bool _isDictionaryMediaPath(String urlPath) =>
-    urlPath == 'api/media/dictionary';
+bool _isDictionaryMediaPath(String path) => path == '/api/media/dictionary';
