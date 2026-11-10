@@ -66,7 +66,7 @@ Future<SrsSync2Report> srsSync2PullOnly({
   final Object? kdf = meta['kdf'];
   String? keyHex;
   if (kdf is Map) {
-    // 见过加密就记下（BUG-4293：之后 meta 上的 kdf 不见了也不往这里写明文）。
+    // 见过加密就记下（BUG-4299：之后 meta 上的 kdf 不见了也不往这里写明文）。
     SrsKdf? parsed;
     try {
       parsed = SrsKdf.fromJson(kdf.cast<String, Object?>());

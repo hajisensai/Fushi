@@ -52,7 +52,14 @@ pub(crate) fn in_savepoint<T>(
     f: impl FnOnce(&Connection) -> Result<T, String>,
 ) -> Result<T, String> {
     conn.execute_batch("SAVEPOINT sync2").map_err(sql)?;
-    match f(conn) {
+    // panic 时这里不 ROLLBACK TO：SAVEPOINT 留在写连接上，由取写锁时的恢复整笔回滚（store/mod.rs
+    // `SrsCore::recover_writer`，BUG-4297）。
+    let out = f(conn);
+    #[cfg(test)]
+    if out.is_ok() {
+        test_panic::hit(test_panic::BEFORE_RELEASE);
+    }
+    match out {
         Ok(v) => match conn.execute_batch("RELEASE sync2") {
             Ok(()) => Ok(v),
             // 没有外层事务时 RELEASE 就是 COMMIT：提交失败不能把事务挂在写连接上（之后的写入都会落进这笔、
@@ -65,6 +72,36 @@ pub(crate) fn in_savepoint<T>(
         Err(e) => {
             let _ = conn.execute_batch("ROLLBACK TO sync2; RELEASE sync2");
             Err(e)
+        }
+    }
+}
+
+/// 测试用的 panic 注入点（BUG-4297）：[arm] 之后，本线程下一次走到同名注入点时 panic 一次。
+#[cfg(test)]
+pub(crate) mod test_panic {
+    use std::cell::Cell;
+
+    /// [super::in_savepoint]：写完、RELEASE 之前。
+    pub(crate) const BEFORE_RELEASE: &str = "in_savepoint.before_release";
+    /// `SrsCore::exec`：语句跑完、记下 Drift 事务状态之前。
+    pub(crate) const AFTER_EXEC: &str = "exec.after_statement";
+
+    thread_local! {
+        static ARMED: Cell<Option<&'static str>> = const { Cell::new(None) };
+    }
+
+    pub(crate) fn arm(site: &'static str) {
+        ARMED.with(|a| a.set(Some(site)));
+    }
+
+    pub(crate) fn armed() -> bool {
+        ARMED.with(|a| a.get().is_some())
+    }
+
+    pub(crate) fn hit(site: &'static str) {
+        if ARMED.with(|a| a.get() == Some(site)) {
+            ARMED.with(|a| a.set(None));
+            panic!("test: injected panic at {site}");
         }
     }
 }

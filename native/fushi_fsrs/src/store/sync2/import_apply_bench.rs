@@ -74,7 +74,7 @@ fn import_apply_bench() {
     let mut n = 0usize;
     let mut calls = 0usize;
     let mut ffi_ms = 0f64;
-    let mut flush = |batch: &mut Vec<Value>, now: i64, ffi_ms: &mut f64, calls: &mut usize| {
+    let flush = |batch: &mut Vec<Value>, now: i64, ffi_ms: &mut f64, calls: &mut usize| {
         if batch.is_empty() {
             return;
         }

@@ -1,4 +1,4 @@
-## BUG-4293 · SRS 同步 v2：没有密钥的设备会往已加密的位置写明文
+## BUG-4299 · SRS 同步 v2：没有密钥的设备会往已加密的位置写明文
 - **报告**：2026-11-10（安全审查：存储位置端到端加密，设计 docs/specs/2026-10-25-srs-sync-v2-design.md §9）
 - **真实性**：✅ 真 bug（沿真实代码路径确认，行号为修复前 `94317ab6295`）。握手只看这一刻的 `meta.json`，而它是多设备可改写的单文件：
   - (a) `meta.json` 被旧版本 / 别的设备整份重写丢了 `kdf`：`packages/fushi_engine/lib/srs/sync2/srs_location_crypto.dart:283` `if (key == null) return h;` 把无密钥设备放成明文轮次 → `srs_sync2_round.dart:258` `beforeUpload(null)`（明文媒体）、`:263-280` `outbox` 不带 key（明文段）、`:298` 转发不带 key、`:363-365` 写 head。拉到的密文段在内核只报 `Undecryptable`（`native/fushi_fsrs/src/sync2/segment.rs:650`），Dart 侧当非致命错误收下（`srs_sync2_round.dart:489-491`，字段定义 `:142-143`），不挡发件。**会**。
