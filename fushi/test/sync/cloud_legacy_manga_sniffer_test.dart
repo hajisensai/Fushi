@@ -290,4 +290,76 @@ void main() {
       expect(store.saved.keys, <String>['m']);
     },
   );
+
+  // 反馈 toPvLQcpex：WebDAV / SFTP 也能区间读之后的两条口径。
+  test('a server that ignores Range stops sniffing for this listing and caches '
+      'nothing (no whole-package fallback)', () async {
+    final _MemoryRangeReader reader = _MemoryRangeReader(<String, Uint8List>{
+      'm': _mangaZip,
+      'e': _epubZip,
+    })..failWith = const SyncAssetRangeUnsupported('HTTP 200');
+    final _MemoryCacheStore store = _MemoryCacheStore();
+    final CloudLegacyMangaSniffer sniffer = await _sniffer(reader, store);
+
+    expect(
+      await sniffer.kindOf(folderId: 'fm', content: _asset('m', _mangaZip)),
+      isNull,
+    );
+    expect(
+      await sniffer.kindOf(folderId: 'fe', content: _asset('e', _epubZip)),
+      isNull,
+    );
+    expect(reader.requests, hasLength(1), reason: '确认不支持后不再逐本试探');
+    expect(reader.bytesServed, 0);
+    await sniffer.persist(<String>{'fm', 'fe'});
+    expect(store.saved, isEmpty, reason: '不判型就不入缓存，下次列举再试');
+  });
+
+  test('SFTP assets (no revision) are keyed by server mtime + size and sniffed '
+      'once', () async {
+    final _MemoryRangeReader reader = _MemoryRangeReader(<String, Uint8List>{
+      'm': _mangaZip,
+    });
+    final _MemoryCacheStore store = _MemoryCacheStore();
+    AssetEntry sftpAsset(Uint8List bytes, int mtimeMs) => AssetEntry(
+      id: 'm',
+      name: 'Book.epub',
+      sizeBytes: bytes.length,
+      modifiedAt: mtimeMs,
+    );
+
+    expect(
+      CloudLegacyMangaSniffer.cacheValidatorOf(sftpAsset(_mangaZip, 1000)),
+      'mtime:1000',
+    );
+    expect(
+      CloudLegacyMangaSniffer.cacheValidatorOf(
+        const AssetEntry(id: 'x', name: 'Book.epub', modifiedAt: 1000),
+      ),
+      isNull,
+      reason: '没有大小拼不成校验值',
+    );
+
+    final CloudLegacyMangaSniffer first = await _sniffer(reader, store);
+    expect(
+      await first.kindOf(folderId: 'fm', content: sftpAsset(_mangaZip, 1000)),
+      CloudBookContentKind.manga,
+    );
+    await first.persist(<String>{'fm'});
+    reader.requests.clear();
+
+    final CloudLegacyMangaSniffer second = await _sniffer(reader, store);
+    expect(
+      await second.kindOf(folderId: 'fm', content: sftpAsset(_mangaZip, 1000)),
+      CloudBookContentKind.manga,
+    );
+    expect(reader.requests, isEmpty, reason: '同 mtime + 大小命中缓存');
+
+    reader.assets['m'] = _epubZip;
+    expect(
+      await second.kindOf(folderId: 'fm', content: sftpAsset(_epubZip, 2000)),
+      CloudBookContentKind.epub,
+    );
+    expect(reader.requests, isNotEmpty, reason: '换了内容（mtime 变）重新判型');
+  });
 }
