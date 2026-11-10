@@ -274,6 +274,10 @@ fushi_server ctl <action> [args] --interconnect https://127.0.0.1:38765 --passwo
   subscriptions [ls] | add '<json>' | check [id] | enable|disable|rm <id>
   models [ls] | pull <language tag|ocr|ocr:key>
   settings [get] | set '<json>'
+  settings subtitle-key opensubtitles|subdl|jimaku [clear]
+                                           Store / clear an online subtitle source key (read from
+                                           stdin or FUSHI_<SOURCE>_API_KEY, never argv; not echoed)
+  settings subtitle-source opensubtitles|subdl|jimaku on|off
   resource-indexers [get] | set '<json>'
   anki [status] | sync | refresh | run | retry | landing on|off | config '<json>'
        login --user u [--endpoint e] [--accept-ankiweb]   Password is read from stdin or FUSHI_ANKI_PASSWORD
@@ -949,7 +953,12 @@ _CtlRequest? _parseAction(
             final String key = (readSecret(_kCtlSubtitleKeyEnv[id]!) ?? '')
                 .trim();
             if (key.isEmpty) {
-              err.writeln('没有读到 key：经 stdin 传入，或设置 ${_kCtlSubtitleKeyEnv[id]}');
+              err.writeln(
+                tr(
+                  '没有读到 key：经 stdin 传入，或设置 ${_kCtlSubtitleKeyEnv[id]}',
+                  'No key read: pipe it through stdin, or set ${_kCtlSubtitleKeyEnv[id]}',
+                ),
+              );
               return null;
             }
             change = <String, Object?>{'apiKey': key};

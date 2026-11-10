@@ -555,10 +555,11 @@ table.rt,.rt tbody,.rt tr,.rt td{display:block;width:100%}
 <p class="sup" id="rr-state"></p>
 <div class="actions"><button class="b" id="btn-rr-save">保存</button><span class="hint">这三项保存即生效，无需重启。</span></div>
 </div>
-<div class="card"><h2>在线字幕来源</h2>
-<p class="small muted">代下载配字幕与补字幕用。与 app 同一份设置；key 不回显，留空不改。设了 FUSHI_* 环境变量时，环境变量里的 key 优先。</p>
+<h3 class="sh">在线字幕来源</h3>
+<div class="card">
+<p class="sup" style="margin:0">代下载配字幕与补字幕用。与 app 同一份设置；key 不回显，留空不改。设了 FUSHI_* 环境变量时，环境变量里的 key 优先。</p>
 <div id="subs-form"></div>
-<div class="row"><button class="b" id="btn-subs-save">保存</button><span class="small muted">保存即生效：下一个下载任务的字幕阶段就用新设置。</span></div>
+<div class="actions"><button class="b" id="btn-subs-save">保存</button><span class="hint">保存即生效：下一个下载任务的字幕阶段就用新设置。</span></div>
 </div>
 </section>
 
@@ -1192,21 +1193,21 @@ $('#btn-settings-save').onclick = guard(async()=>{
 });
 
 // ── 在线字幕来源（偏好表，保存即生效；key / 密码只报「设过没有」）──
-const SUBS = [['opensubtitles','OpenSubtitles（不填 key 时用 app 内置 key）',true],['subdl','SubDL',false],['jimaku','Jimaku',false]];
+const SUBS = [['opensubtitles',T('OpenSubtitles（不填 key 时用 app 内置 key）'),true],['subdl','SubDL',false],['jimaku','Jimaku',false]];
 function renderSubtitleProviders(sp){
   sp = sp||{};
+  const setNote = (isSet) => isSet ? ` <span class="muted">${esc(T('(已设置，留空不改)'))}</span>` : '';
   $('#subs-form').innerHTML = SUBS.map(([id,label,login])=>{ const x=sp[id]||{};
-    const st = x.active ? '<span class="tag ok">生效中</span>' : '<span class="tag">未生效</span>';
-    return `<div data-subs="${id}" style="margin:10px 0"><div class="row"><b>${esc(label)}</b> ${st}${x.apiKeyFromEnv?' <span class="small muted">（环境变量里的 key 优先于这里存的）</span>':''}</div>
-    <div class="grid"><label class="f">启用<select data-k="enabled"><option value="true" ${x.enabled!==false?'selected':''}>开</option><option value="false" ${x.enabled===false?'selected':''}>关</option></select></label>
-    <label class="f">API key ${x.apiKeySet?'<span class="muted">(已设置，留空不改)</span>':''}<input type="password" data-k="apiKey" value="" autocomplete="off"></label>
-    ${login?`<label class="f">用户名（可选）<input type="text" data-k="username" value="${esc(x.username||'')}"></label><label class="f">密码 ${x.passwordSet?'<span class="muted">(已设置，留空不改)</span>':''}<input type="password" data-k="password" value="" autocomplete="off"></label>`:''}</div>
-    <div class="row">${x.apiKeySet?'<label><input type="checkbox" data-k="clearApiKey"> 清除已存的 key</label>':''}${login&&x.passwordSet?'<label><input type="checkbox" data-k="clearPassword"> 清除已存的密码</label>':''}</div></div>`; }).join('');
+    const st = x.active ? tag('ok', T('生效中')) : tag('', T('未生效'));
+    return `<div class="inset" data-subs="${esc(id)}" style="margin:12px 0"><div class="row" style="margin-top:0"><b>${esc(label)}</b> ${st}${x.apiKeyFromEnv?` <span class="small muted">${esc(T('（环境变量里的 key 优先于这里存的）'))}</span>`:''}</div>
+    <div class="grid" style="margin:0"><label class="f">API key${setNote(x.apiKeySet)}<input type="password" data-k="apiKey" value="" autocomplete="off"></label>
+    ${login?`<label class="f">${esc(T('用户名（可选）'))}<input type="text" data-k="username" value="${esc(x.username||'')}"></label><label class="f">${esc(T('密码'))}${setNote(x.passwordSet)}<input type="password" data-k="password" value="" autocomplete="off"></label>`:''}</div>
+    <div class="row" style="margin-bottom:0">${swLabel('data-k="enabled"', x.enabled!==false, T('启用'))}${x.apiKeySet?swLabel('data-k="clearApiKey"', false, T('清除已存的 key')):''}${login&&x.passwordSet?swLabel('data-k="clearPassword"', false, T('清除已存的密码')):''}</div></div>`; }).join('');
 }
 $('#btn-subs-save').onclick = guard(async()=>{
   const body={};
   for(const card of document.querySelectorAll('[data-subs]')){
-    const v=(k)=>card.querySelector(`[data-k="${k}"]`); const o={enabled: v('enabled').value==='true'};
+    const v=(k)=>card.querySelector(`[data-k="${k}"]`); const o={enabled: v('enabled').checked};
     if(v('apiKey').value) o.apiKey=v('apiKey').value;
     const ck=v('clearApiKey'); if(ck&&ck.checked) o.clearApiKey=true;
     const u=v('username'); if(u) o.username=u.value;
@@ -1214,7 +1215,7 @@ $('#btn-subs-save').onclick = guard(async()=>{
     const cp=v('clearPassword'); if(cp&&cp.checked) o.clearPassword=true;
     body[card.dataset.subs]=o;
   }
-  const s = await put('settings',{subtitleProviders:body}); settingsCache=s; renderSubtitleProviders(s.subtitleProviders); toast('已保存并生效');
+  const s = await put('settings',{subtitleProviders:body}); settingsCache=s; renderSubtitleProviders(s.subtitleProviders); toast(T('已保存并生效'));
 });
 
 // ── 远程访问（公网地址 / P2P / 自建中继：保存即生效）──
