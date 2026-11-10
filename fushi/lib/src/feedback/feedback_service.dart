@@ -9,7 +9,8 @@
 //
 // 附件没传上去（网络中断等）时字节落盘到 FeedbackPendingStore，详情页可「重试上传」；
 // 服务端 24 小时内允许补传空闲槽位（与 PR #2090 的待传重试是同一机制）。视频（槽位 v0，
-// ≤ 50 MB）先在本机转码成 720p / 1080p H.264（feedback_video.dart），从待传区的文件流式上传。
+// ≤ 100 MB）默认原件上传，超限 / 格式不收或用户选了 720p / 1080p 档时在本机转码成 H.264
+// （feedback_video.dart），从待传区的文件流式上传。
 //
 // 「我的反馈」= 本机回执 ∪ 账户列表：已登录排行榜账户时另拉 GET /v1/feedback/mine
 // （别的设备带账户提交的也在里面），按 id 去重、本机回执优先；账户列表里的条目没有 ticket
@@ -125,15 +126,15 @@ class FeedbackRetryResult {
   final int dropped;
 }
 
-/// 一次视频准备的选项：压缩档位、取消、选 1080p 却退回 720p 时的通知。
+/// 一次视频准备的选项：档位（默认原件）、取消、选 1080p 却退回 720p 时的通知。
 class FeedbackVideoPrepareOptions {
   const FeedbackVideoPrepareOptions({
-    this.quality = FeedbackVideoQuality.p720,
+    this.mode = FeedbackVideoMode.original,
     this.cancel,
     this.onDowngraded,
   });
 
-  final FeedbackVideoQuality quality;
+  final FeedbackVideoMode mode;
 
   /// 完成即中止压缩（强杀 ffmpeg、删半成品），准备函数抛 [FeedbackVideoCancelledException]。
   final Future<void>? cancel;
@@ -159,7 +160,7 @@ Future<PreparedFeedbackVideo> _defaultPrepareVideo(
   source,
   workDir: workDir,
   onProgress: onProgress,
-  quality: options.quality,
+  mode: options.mode,
   cancel: options.cancel,
   onDowngraded: options.onDowngraded,
 );

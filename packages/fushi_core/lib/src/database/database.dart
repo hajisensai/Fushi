@@ -924,7 +924,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 148;
+  int get schemaVersion => 149;
 
   /// v125–v128 四步的产物（全部幂等）：SRS 写路径索引、
   /// `collection_member_tombstones.published_at`、`bookmarks.char_offset` /
@@ -2948,6 +2948,23 @@ class FushiDatabase extends _$FushiDatabase
         // 加入音乐库与本地歌单（反馈 0tRY-D2JgG）。纯新增、无回填；幂等守卫同 v146。
         if (!await _tableExists('music_remote_tracks')) {
           await m.createTable(musicRemoteTracks);
+        }
+      }
+      if (from < 149) {
+        // v149（反馈 se3Fw8HmOX）：music_remote_tracks 收 Jellyfin / Subsonic 服务器曲目
+        // （kind = 'server'，只存服务器配置身份 + 服务器侧条目 id + 元数据，不存带凭据的
+        // 地址），并补插件曲目的艺人引用与专辑 id。三列都是可空新增、无回填。幂等守卫同
+        // v145：v148 步按当前定义建表时已带这些列，跳过。
+        if (await _tableExists('music_remote_tracks')) {
+          for (final GeneratedColumn<Object> c in <GeneratedColumn<Object>>[
+            musicRemoteTracks.coverRef,
+            musicRemoteTracks.albumId,
+            musicRemoteTracks.artistRefs,
+          ]) {
+            if (!await _columnExists('music_remote_tracks', c.name)) {
+              await m.addColumn(musicRemoteTracks, c);
+            }
+          }
         }
       }
     },
