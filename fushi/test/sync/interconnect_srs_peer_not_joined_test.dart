@@ -232,6 +232,43 @@ void main() {
     );
   });
 
+  test('取消配对（通道没了）：下一轮全部通道跑完后提示随之消失，不为已不存在的对端继续警告', () async {
+    server.srsSync2Joined = () => false;
+    final SyncRepository repo = SyncRepository(clientAppDb);
+    final InterconnectSyncBackend backend = await connectClient(repo);
+    final SrsDbStore phone = await device('phone');
+    await addNote(phone, '霧');
+    final List<SyncAssetStore> paired = <SyncAssetStore>[backend];
+    final SrsSyncScheduler phoneSync = SrsSyncScheduler(
+      readStore: () async => phone,
+      channels: (Future<void> Function(SyncAssetStore) body) async {
+        for (final SyncAssetStore b in paired) {
+          await body(b);
+        }
+        return (ran: paired.length, errors: const <Object>[]);
+      },
+      directoryKeyOf: (SyncAssetStore b) => srsDirectoryKeyOf(b, repo),
+      peerJoined: srsChannelPeerJoined,
+      onDataChanged: () {},
+      onNotice: (_) {},
+    );
+    addTearDown(phoneSync.dispose);
+    final String? phoneKey = await srsDirectoryKeyOf(backend, repo);
+    expect(phoneKey, isNotNull);
+
+    expect((await phoneSync.syncNow()).peersNotJoined, 1);
+    expect(phoneSync.peersNotJoined.value, <String>{phoneKey!});
+
+    paired.clear();
+    final SrsSyncNowResult unpaired = await phoneSync.syncNow();
+    expect(unpaired.peersNotJoined, 0);
+    expect(
+      phoneSync.peersNotJoined.value,
+      isEmpty,
+      reason: '那条通道已经不在了，摘要不该还说「已配对设备还没开启复习同步」',
+    );
+  });
+
   test('没有首次确认这一步的 host（无头服务端 / 老 host）：端点 404，客户端按「不报告」处理', () async {
     // 未注入 srsSync2Joined。
     final InterconnectSyncBackend backend = await connectClient(

@@ -1194,6 +1194,14 @@ class SrsSyncScheduler {
     }
   }
 
+  /// [peersNotJoined] 只留 [live] 里的位置（一轮全部通道跑完后调，见 [_syncAll]）。
+  void _retainPeersNotJoined(Set<String> live) {
+    final Set<String> next = _peersNotJoined.value.intersection(live);
+    if (!setEquals(next, _peersNotJoined.value)) {
+      _peersNotJoined.value = Set<String>.unmodifiable(next);
+    }
+  }
+
   /// 用户在冲突弹窗里选了 [uid]（[conflict] 的候选）：本机 profile 改用它（本机有笔记时并入，见
   /// [SrsProfileLinker.adopt]），之后跑一轮「立即同步」把两边的数据收发齐。与同步串行（同一个 store）。
   ///
@@ -1296,9 +1304,14 @@ class SrsSyncScheduler {
     int notSynced = 0;
     int peersNotJoined = 0;
     final List<Object> errors = <Object>[];
+    // 这一轮还在的通道位置：[peersNotJoined] 只为它们留着（只有通道会报告「对端没加入」）。
+    final Set<String> liveChannels = <String>{};
     final ({int ran, List<Object> errors}) channels = await _channels((
       SyncAssetStore backend,
     ) async {
+      // 不把 key 传给 syncWithBackend：排队合并按 (backend, directoryKey) 认，自动轮次传的是 null，传了就合并不上。
+      final String? key = await _directoryKeyOf(backend);
+      if (key != null) liveChannels.add(key);
       final SrsSync2Report report = await syncWithBackend(backend);
       final String? error = report.error;
       if (error != null) {
@@ -1311,6 +1324,9 @@ class SrsSyncScheduler {
       }
     });
     errors.addAll(channels.errors);
+    // 取消配对 / 删掉的通道不会再跑它那一轮，记下的「对端没加入」也就没人去掉：不在这一轮通道里的位置一并移除，
+    // 摘要不为已经不存在的对端继续警告。
+    _retainPeersNotJoined(liveChannels);
     final SrsSyncNowResult local = await syncLocalDirectories();
     errors.addAll(local.errors);
     final SrsSyncNowResult folders = await syncFolderLocations();
