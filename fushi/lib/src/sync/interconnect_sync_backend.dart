@@ -452,6 +452,11 @@ class InterconnectSyncBackend extends SyncBackend
   /// 同步核对 [pin] 仍是当前会话的作用域（hostId 相同且期间没换过 host），否则抛
   /// [InterconnectHostChangedException]。live 读写在 `_ensureResolved` 之后、发请求
   /// 之前调它，两步之间没有 `await`，核对与发出用的是同一个连接句柄。测试替身可覆写。
+  ///
+  /// 文件箱（WebDAV 面）调用约定：文件箱请求本身不带 pin，由调用方（`SyncManager`
+  /// 经 `progressBaselineStorageFor` 取到的 `hostPin`）在每本书「读完远端进度、判定
+  /// 之前」「导入落地之前」「上传之后、写基线之前」各调一次；抛出时这本书不落地、
+  /// 不写基线，本轮文件箱进度阶段结束。
   void checkHostPin(InterconnectHostPin pin) {
     if (pin.serial != _hostScopeSerial || pin.hostId != _scopeHostId) {
       throw InterconnectHostChangedException(

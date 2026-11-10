@@ -5,8 +5,13 @@
 /// 用的那个）不变，只有落库的「存储维度」不同。
 library;
 
-import 'package:fushi/src/sync/interconnect_sync_backend.dart'
-    show LegacyBaselineAdoption;
+import 'package:fushi/src/sync/interconnect_sync_backend.dart';
+import 'package:fushi/src/sync/obfuscating_sync_backend.dart';
+import 'package:fushi/src/sync/sync_backend.dart';
+import 'package:fushi/src/sync/sync_manager.dart'
+    show progressBaselineDimensionOf;
+import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi/src/sync/webdav_ops.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/sync/sync_channel_scope.dart';
 
@@ -70,3 +75,175 @@ Future<void> _adoptOne(
     await db.deleteSyncBaseline(row.key, source);
   }
 });
+
+// ── 文件箱进度基线的远端作用域（BUG-4281 步骤 8）────────────────────────────
+
+/// 能自己报出远端身份的后端（测试 fake；云后端将来需要比「类型 + 账号 + 服务器」
+/// 更细的身份时实现，改了身份公式要自己负责旧槽迁移）。
+abstract interface class SyncRemoteIdentified {
+  /// 远端身份（任意稳定字符串，只经 [syncRemoteTag] 落库，不存明文）。
+  Future<String> syncRemoteIdentity();
+}
+
+/// 云后端的账号这一轮拿不到、本机也从没记下过（OAuth 邮箱取失败且从未成功过）。
+/// 认不出远端就不能挑基线槽：本轮文件箱进度判定报错跳过，不换槽、不写基线。
+class SyncRemoteIdentityUnavailableError extends SyncBackendError {
+  SyncRemoteIdentityUnavailableError(this.type)
+    : super('Sync remote account unavailable for ${type.name}');
+
+  final SyncBackendType type;
+}
+
+/// 一个后端实例当前连着的远端在基线表里的作用域。
+class SyncRemoteScope {
+  const SyncRemoteScope({
+    required this.tag,
+    required this.adoption,
+    this.hostPin,
+  });
+
+  /// 远端标签（[syncRemoteTag]）；null = 不分槽（认不出的后端、互联老条目），
+  /// 存储维度就是逻辑维度本身。
+  final String? tag;
+
+  /// 升级前无后缀旧行怎么处理（见 [ensureBaselinesAdopted]）。
+  final LegacyBaselineAdoption adoption;
+
+  /// 互联时非空：本次作用域钉住的 host。落地 / 写基线前用
+  /// [InterconnectSyncBackend.checkHostPin] 核对，会话中途换了 host 就放弃。
+  final InterconnectHostPin? hostPin;
+}
+
+/// 偏好键：某云后端最近一次取到的账号（规整后的小写邮箱 / 用户名）。设备本地。
+/// OAuth 后端的 `currentEmail` 只作展示、可临时为空（`fetchUserEmail` 失败不抛），
+/// 身份不能直接取它——取不到时回退到这里记下的值，基线才不会一轮一换槽。
+String syncRemoteAccountPrefKey(SyncBackendType type) =>
+    SyncChannelScope.forBackendType(type).key('sync_remote_account');
+
+/// 登出时清掉 [type] 记下的账号（下一次登录的账号重新记）。
+Future<void> clearSyncRemoteAccount(FushiDatabase db, SyncBackendType type) =>
+    db.deletePref(syncRemoteAccountPrefKey(type));
+
+/// [backend] 当前连着的远端的基线作用域。解析顺序：
+/// 1. 剥掉 [ObfuscatingSyncBackend]（纯包装，远端是被包着的那个）。
+/// 2. [SyncRemoteIdentified] → 按它报的身份分槽。
+/// 3. 互联 → 会话所连 host 的作用域（[InterconnectSyncBackend.liveHostScope]；老
+///    条目无 hostId 时不分槽）。
+/// 4. 认得出的云后端 → `类型 + 账号 + 服务器`（见 [cloudRemoteScopeOf]）。
+/// 5. 其余（测试 fake）→ 不分槽、不领养。
+Future<SyncRemoteScope> syncRemoteScopeOf(
+  SyncBackend backend,
+  FushiDatabase db,
+) async {
+  final SyncBackend inner = backend is ObfuscatingSyncBackend
+      ? backend.inner
+      : backend;
+  if (inner is SyncRemoteIdentified) {
+    final String identity = await (inner as SyncRemoteIdentified)
+        .syncRemoteIdentity();
+    return SyncRemoteScope(
+      tag: syncRemoteTag(identity),
+      adoption: LegacyBaselineAdoption.move,
+    );
+  }
+  if (inner is InterconnectSyncBackend) {
+    final InterconnectHostScope scope = await inner.liveHostScope();
+    return SyncRemoteScope(
+      tag: scope.pin.tag,
+      adoption: scope.adoption,
+      hostPin: scope.pin,
+    );
+  }
+  final SyncChannelScope channel = syncChannelScopeOf(inner);
+  for (final SyncBackendType type in SyncBackendType.values) {
+    if (type == SyncBackendType.fushiServer) continue;
+    if (channel == SyncChannelScope.forBackendType(type)) {
+      return cloudRemoteScopeOf(
+        db,
+        type,
+        currentEmail: await inner.currentEmail,
+      );
+    }
+  }
+  return const SyncRemoteScope(
+    tag: null,
+    adoption: LegacyBaselineAdoption.keep,
+  );
+}
+
+/// 云后端 [type] 的作用域：`syncRemoteTag('<type>\n<账号>\n<服务器>')`。
+///
+/// - 账号：[currentEmail] 规整（trim + 小写）后非空就用它，与记下的值不同时更新
+///   偏好；为空则回退到上次记下的值；都没有 → [SyncRemoteIdentityUnavailableError]。
+/// - 服务器：WebDAV 取规整后的 URL，FTP 取主机名；其余为空（SFTP 的 `currentEmail`
+///   已含主机，OAuth 云盘只有一个服务器）。
+/// - 领养：其它云类型都没有自己槽位的同步冷却戳（本机自 BUG-1576 分槽以来只用过
+///   当前云类型）→ 无后缀旧行归当前远端；否则旧行来源混杂，删掉。
+///
+/// 后端实例的识别在 [syncRemoteScopeOf]；这里只吃 [currentEmail]，测试直接驱动。
+Future<SyncRemoteScope> cloudRemoteScopeOf(
+  FushiDatabase db,
+  SyncBackendType type, {
+  required String? currentEmail,
+}) async {
+  final String prefKey = syncRemoteAccountPrefKey(type);
+  final String fresh = (currentEmail ?? '').trim().toLowerCase();
+  final String account;
+  if (fresh.isNotEmpty) {
+    account = fresh;
+    if (await db.getPref(prefKey) != fresh) await db.setPref(prefKey, fresh);
+  } else {
+    final String? remembered = await db.getPref(prefKey);
+    if (remembered == null || remembered.isEmpty) {
+      throw SyncRemoteIdentityUnavailableError(type);
+    }
+    account = remembered;
+  }
+  final SyncRepository repo = SyncRepository(db);
+  final String server = switch (type) {
+    SyncBackendType.webDav => WebDavOps.normalizeUrl(
+      await repo.getWebDavUrl() ?? '',
+    ),
+    SyncBackendType.ftp => await repo.getFtpHost() ?? '',
+    _ => '',
+  };
+  bool otherCloudUsed = false;
+  for (final SyncBackendType other in SyncBackendType.values) {
+    if (other == type || other == SyncBackendType.fushiServer) continue;
+    // 只看带槽位后缀的键：[SyncRepository.getLastSyncMs] 会回退无后缀全局键，
+    // 那个键说明不了用过哪种云。
+    final String key = SyncChannelScope.forBackendType(
+      other,
+    ).key('sync_last_sync_ms');
+    if (await db.getPref(key) != null) {
+      otherCloudUsed = true;
+      break;
+    }
+  }
+  return SyncRemoteScope(
+    tag: syncRemoteTag('${type.name}\n$account\n$server'),
+    adoption: otherCloudUsed
+        ? LegacyBaselineAdoption.discard
+        : LegacyBaselineAdoption.move,
+  );
+}
+
+/// 文件箱（`progress_*.json`）进度基线的存储维度：逻辑维度
+/// [progressBaselineDimensionOf] 挂到 [backend] 当前远端名下，并完成旧无后缀行的
+/// 领养。[hostPin] 非空（互联）时，调用方在判定前 / 落地前 / 写基线前用
+/// [InterconnectSyncBackend.checkHostPin] 核对。
+Future<({String storageDimension, InterconnectHostPin? hostPin})>
+progressBaselineStorageFor(FushiDatabase db, SyncBackend backend) async {
+  final String logical = progressBaselineDimensionOf(backend);
+  final SyncRemoteScope scope = await syncRemoteScopeOf(backend, db);
+  await ensureBaselinesAdopted(
+    db,
+    logicalDimensions: <String>[logical],
+    tag: scope.tag,
+    adoption: scope.adoption,
+  );
+  return (
+    storageDimension: baselineStorageDimension(logical, scope.tag),
+    hostPin: scope.hostPin,
+  );
+}

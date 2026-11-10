@@ -25,6 +25,8 @@ import 'package:fushi_engine/sync/sync_asset_package_service.dart';
 import 'package:fushi_engine/sync/sync_asset_store.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_error_messages.dart';
+import 'package:fushi/src/sync/sync_baseline_scope.dart'
+    show SyncRemoteIdentityUnavailableError, progressBaselineStorageFor;
 import 'package:fushi/src/sync/sync_manager.dart';
 import 'package:fushi/src/sync/sync_message_dialog.dart';
 import 'package:fushi/src/sync/sync_orchestrator.dart';
@@ -388,6 +390,19 @@ Future<List<SyncCompareEntry>> _fetchCompareData(
       ? await _fetchLiveCompareExtras(backend, localBooks)
       : null;
 
+  // 文件箱进度基线的存储维度（BUG-4281）：挂在当前远端名下，与 SyncManager 读写
+  // 的是同一行。认不出远端账号（[SyncRemoteIdentityUnavailableError]）时没有可用
+  // 的共同祖先，按无基线展示（时间戳不等即冲突），不挑别人的槽。
+  String? fileBoxBaseDimension;
+  try {
+    fileBoxBaseDimension = (await progressBaselineStorageFor(
+      db,
+      backend,
+    )).storageDimension;
+  } on SyncRemoteIdentityUnavailableError {
+    fileBoxBaseDimension = null;
+  }
+
   final entries = <SyncCompareEntry>[];
 
   for (final title in allTitles) {
@@ -471,11 +486,13 @@ Future<List<SyncCompareEntry>> _fetchCompareData(
 
     // 跨设备资产身份与 SyncManager 一致：sanitizeTtuFilename(title)。读共同祖先
     // 基线，让「时间戳不等」收紧为「真分叉」冲突判定。基线行按通道分槽
-    // （[progressBaselineDimensionOf]），与 SyncManager 读写的是同一行。
-    final int? base = await db.getSyncBaseline(
-      sanitizeTtuFilename(title),
-      progressBaselineDimensionOf(backend),
-    );
+    // 并挂在远端名下（见上方 fileBoxBaseDimension），与 SyncManager 读写的是同一行。
+    final int? base = fileBoxBaseDimension == null
+        ? null
+        : await db.getSyncBaseline(
+            sanitizeTtuFilename(title),
+            fileBoxBaseDimension,
+          );
 
     // 互联 live 行：远端进度 / 时间戳换成 host DB 的（BUG-2506）；host 无记录时
     // 远端显示「无数据」而不是文件箱里 client 自己上次导出的旧值。
