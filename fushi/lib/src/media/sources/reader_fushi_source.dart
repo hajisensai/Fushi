@@ -75,7 +75,7 @@ final _srtBookUidsProvider = StreamProvider<List<String>>((ref) {
       .distinct(listEquals);
 });
 
-/// BUG-4349：在线漫画「已读章」集合的响应式来源。书架在线漫画进度按章 readAt
+/// BUG-4355：在线漫画「已读章」集合的响应式来源。书架在线漫画进度按章 readAt
 /// 算，而标记已读 / 未读（作品页单章、多选、「此章及更早」、Kavita 对齐）只写
 /// `manga_chapter_states`、不碰书行，[_epubBookKeysProvider] 感知不到。
 final _mangaChapterReadKeysProvider = StreamProvider<List<String>>((ref) {
@@ -92,7 +92,7 @@ final fushiBooksProvider = FutureProvider.family<List<MediaItem>, Language>((
 ) {
   // BUG-793：订阅 EPUB 书集合变化，任意导入路径落库后自动重算书架。
   ref.watch(_epubBookKeysProvider);
-  // BUG-4349：章已读集合一变（任一标记已读入口），在线漫画进度即时重算。
+  // BUG-4355：章已读集合一变（任一标记已读入口），在线漫画进度即时重算。
   ref.watch(_mangaChapterReadKeysProvider);
   return ReaderFushiSource.instance.getBooksFromDb(
     appModel: ref.watch(appProvider),
@@ -672,7 +672,7 @@ class ReaderFushiSource extends ReaderMediaSource {
     final Map<String, ReaderPosition> positions =
         await ReaderPositionRepository(db).findAllByBookUid();
     // 在线漫画的章状态同样一次整表取完（书 uid → 章 key → 行），进度按章
-    // readAt 算（BUG-4349，[onlineMangaShelfProgress]）。
+    // readAt 算（BUG-4355，[onlineMangaShelfProgress]）。
     final Map<String, Map<String, MangaChapterStateRow>> chapterStates =
         await db.getAllMangaChapterStatesByBook();
 
@@ -717,7 +717,7 @@ class ReaderFushiSource extends ReaderMediaSource {
   /// concurrently with sibling books (HBK-AUDIT-128). [pos] is the book's
   /// reader position (already keyed by uid by the caller; null = never read).
   /// [chapterStates] is the book's `manga_chapter_states` (chapterKey → row);
-  /// only online manga read it (BUG-4349).
+  /// only online manga read it (BUG-4355).
   Future<MediaItem> _bookToMediaItem(
     EpubBookRow book,
     ReaderPosition? pos, {

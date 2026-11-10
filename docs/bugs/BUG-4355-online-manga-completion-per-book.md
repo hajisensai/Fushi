@@ -1,4 +1,4 @@
-## BUG-4349 · online-manga-completion-per-book
+## BUG-4355 · online-manga-completion-per-book
 - **报告**：2026-11-08（用户：应用内反馈 8VgLlmIezE，Windows）在线漫画详情里仍在读，书架却显示「读完」、出现「取消已读完」、不进继续阅读；「标记此章及更早为已读」后书架仍显示未读 / 没有百分比。
 - **真实性**：✅ 真 bug（沿 origin/develop 704f8c6bd9 代码路径验证）。
   - ① `fushi/lib/src/media/manga/reader/manga_fushi_page.dart:5777-5785`：`_persistPosition` 用 `_payload.images.length`（**当前载荷**页数）判末页，再对整本 `markEpubBookCompletedIfUnset(widget.bookKey)`。本地卷一个载荷 = 整本，没问题；书架在线条目按章装载（`_shelfChapterKey`），读到**任一章**末页就写整本 completedAt。
