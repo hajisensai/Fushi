@@ -5797,6 +5797,13 @@ $liveConfigJs
       clearDictionaryResult();
       return;
     }
+    // GitHub #3088：「单击查词」关闭时单击正文不查词，弹窗外的这一击就是「点空白关
+    // 弹窗」——不转给 _selectTextAt（那会命中词就换词）。歌词覆盖层的单击另有语义
+    // （查词 + 跳句），不受本开关管辖。
+    if (!_lyricsMode && !ReaderFushiSource.instance.highlightOnTap) {
+      clearDictionaryResult();
+      return;
+    }
     // 与 onDismissBarrierHover 同口径：逻辑像素与 CSS 像素同尺度，不乘 DPR。
     final Offset local = obj.globalToLocal(globalPos);
     // 真点击路径（fromHover:false）：命中词走查词，命中空白 fire onTapEmpty。
