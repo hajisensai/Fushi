@@ -924,7 +924,6 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
   }
 }
 
-/// 各类目占比的逐元素插值（长度恒为类目数，顺序固定）。
 /// 一键清缓存确认框正文：说明 + 逐类目列出名称与大小，类目下逐条列出明细
 /// （超过 [_kMaxEntriesPerCategory] 条折成「另 N 项」）。内容可能很长（iOS 的
 /// `Library/Caches` 下几十个子目录），限高滚动，不把对话框撑出屏幕。
@@ -1033,6 +1032,7 @@ class _PlanLine extends StatelessWidget {
   }
 }
 
+/// 各类目占比的逐元素插值（长度恒为类目数，顺序固定）。
 class _FractionsTween extends Tween<List<double>> {
   _FractionsTween({required super.begin, required super.end});
 
