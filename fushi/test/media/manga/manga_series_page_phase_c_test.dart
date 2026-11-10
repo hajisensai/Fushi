@@ -727,8 +727,10 @@ void main() {
       findsNothing,
     );
 
+    // 长按识别器的计时器必须跑在假时钟里：longPress 不能放进 runAsync。
+    await tester.longPress(find.text('Chapter 1'));
+    await tester.pump();
     await tester.runAsync(() async {
-      await tester.longPress(find.text('Chapter 1'));
       await _settle(tester);
       await tester.tap(find.text('Chapter 2'));
       await _settle(tester);
@@ -767,8 +769,9 @@ void main() {
       reason: '批量动作做完退出多选',
     );
 
+    await tester.longPress(find.text('Chapter 2'));
+    await tester.pump();
     await tester.runAsync(() async {
-      await tester.longPress(find.text('Chapter 2'));
       await _settle(tester);
       await tester.tap(
         find.byKey(const ValueKey<String>('manga_chapter_selection_all')),
@@ -808,9 +811,13 @@ void main() {
         find.byKey(const ValueKey<String>('manga_chapter_download_downloaded')),
       );
       await _settle(tester);
+    });
 
-      // 只选未下载的第 3 话：没有可识别的章，不排任务、留在多选态。
-      await tester.longPress(find.text('Chapter 3'));
+    // 只选未下载的第 3 话：没有可识别的章，不排任务、留在多选态。
+    // 长按识别器的计时器必须跑在假时钟里：longPress 不能放进 runAsync。
+    await tester.longPress(find.text('Chapter 3'));
+    await tester.pump();
+    await tester.runAsync(() async {
       await _settle(tester);
       await tester.tap(
         find.byKey(const ValueKey<String>('manga_chapter_selection_ocr')),
