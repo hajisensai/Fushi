@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3834 条。点号进各自文件。
+> 共 3835 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4273](bugs/BUG-4273-media-server-unnumbered-episode.md) | ✅ | ✅ | 媒体服务器缺集号的集被显示成列表位置并排到最前 |
 | [BUG-4272](bugs/BUG-4272-yomitan-per-dict-frequency-unmappable.md) | ✅ | ✅ | yomitan-per-dict-frequency-unmappable |
 | [BUG-4271](bugs/BUG-4271-background-engine-kills-flutter-logs-startup-hang.md) | ✅ | ✅ | 后台被 WorkManager 拉起后打开白屏、启动耗时超出预期（flutter_logs 静态 channel 被后台引擎销毁时清掉） |
 | [BUG-4270](bugs/BUG-4270-video-enqueue-duplicate-torrent-opaque-drift-error.md) | ✅ | ✅ | 重复入队同一种子报不透明的 DriftRemoteException，诊断日志无记录 |
