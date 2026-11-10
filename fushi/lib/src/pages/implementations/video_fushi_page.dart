@@ -359,6 +359,7 @@ import 'package:fushi/src/media/video/remote_video_resume.dart';
 import 'package:fushi/src/media/video/subtitle/remote_online_subtitle_search.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_search_seed.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_series_season.dart';
+import 'package:fushi/src/media/video/subtitle/video_subtitle_folder_memory.dart';
 import 'package:fushi/src/pages/implementations/subtitle_workbench_page.dart';
 import 'package:fushi/src/media/video/video_quick_settings_host.dart';
 import 'package:fushi/src/media/video/video_quick_settings_sheet.dart';
@@ -384,6 +385,7 @@ import 'package:fushi_engine/media/video/video_subtitle_source.dart';
 import 'package:crypto/crypto.dart' show sha256;
 import 'package:fushi_engine/media/video/subtitle/embedded_reference_subtitle_sync.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_alignment_backup.dart';
+import 'package:fushi_engine/media/video/subtitle/subtitle_directory_match.dart';
 import 'package:fushi_asr_subtitles/asr_subtitles.dart'
     show SubtitleSyncDecision, SubtitleSyncDecisionKind;
 import 'package:fushi_engine/media/video/video_duration_probe.dart'
@@ -5759,6 +5761,16 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           externalSub = sidecar.path;
         }
       }
+      // ②b 同目录没有同名字幕：本系列记住了字幕文件夹（反馈 0PZAhFd1RO）就去里面按
+      // 集号认领本集字幕。排在内封轨自动加载（③）前面——文件夹是用户亲手指定的。
+      if (cues.isEmpty) {
+        final ({String path, List<AudioCue> cues})? fromFolder =
+            await _detectSubtitleFolderMatch(paths.videoPath, _activeBookUid);
+        if (fromFolder != null) {
+          cues = fromFolder.cues;
+          externalSub = fromFolder.path;
+        }
+      }
       // ③ 还是空：别拿一个恢复不出任何内容的外挂源去挡住播放器的内封轨自动加载
       // （`VideoPlayerController.load` 只在「无外挂路径 + 无 cue」时才后台抽内封文本轨）。
       // 只影响本次加载，**不回写 DB**——用户选过的源仍在库里，下次仍会先试它。
@@ -5998,6 +6010,29 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       debugPrint('[VideoFushiPage] sidecar parse failed: $e');
       return null;
     }
+  }
+
+  /// 反馈 0PZAhFd1RO：本系列（[videoSubtitleFolderSeriesKey]）记住了字幕文件夹时，在
+  /// 里面按集号认领 [videoPath] 这一集的字幕并解析为 cue。没记文件夹、认不出 / 找不到 /
+  /// 分不出唯一一份、或解析为空时返回 null（调用方继续往下兜底，用户可手选）。
+  Future<({String path, List<AudioCue> cues})?> _detectSubtitleFolderMatch(
+    String videoPath,
+    String bookUid,
+  ) async {
+    final VideoSubtitleFolder? folder = appModel.prefsRepo.videoSubtitleFolder(
+      _subtitleFolderSeriesKey(videoPath),
+    );
+    if (folder == null) return null;
+    final SubtitleDirectoryMatch? match = await _matchSubtitleFolder(
+      folder,
+      videoPath,
+    );
+    final String? name = match?.fileName;
+    if (name == null) return null;
+    final String path = p.join(folder.directory, name);
+    final List<AudioCue> cues = await _loadExternalSubtitleCues(path, bookUid);
+    if (cues.isEmpty) return null;
+    return (path: path, cues: cues);
   }
 
   Future<List<AudioCue>> _loadExternalSubtitleCues(

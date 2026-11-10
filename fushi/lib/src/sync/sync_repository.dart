@@ -2048,6 +2048,9 @@ class SyncRepository {
     'library_organize_consented',
     'video_subtitle_segmenter',
     'video_subtitle_moss_backend',
+    // 按系列记住的字幕文件夹（0PZAhFd1RO）：值是这台机器上的外部绝对路径，系列键里
+    // 是本库自增的合集 id——换台设备路径不存在、id 指向别的合集。
+    'video_subtitle_series_dirs',
     // 已删除的「查词自动按句意挑词条」开关（2026-10-09 移除）：存量值仍是
     // 设备本地的计费同意，留在清单里免得旧备份把它漂到别的设备。
     'lookup_ai_context_auto',

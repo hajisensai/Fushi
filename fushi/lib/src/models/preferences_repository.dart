@@ -49,6 +49,7 @@ import 'package:fushi/src/media/discovery/alist_site_config.dart';
 import 'package:fushi/src/media/discovery/audiobookshelf_server_config.dart';
 import 'package:fushi/src/media/discovery/opds_server_config.dart';
 import 'package:fushi/src/media/kavita/kavita_server_config.dart';
+import 'package:fushi/src/media/video/subtitle/video_subtitle_folder_memory.dart';
 import 'package:fushi/src/utils/misc/jump_history.dart'
     show migrateLegacyJumpPillAutoHide;
 import 'package:fushi/src/models/module_id.dart';
@@ -3721,6 +3722,47 @@ class PreferencesRepository extends ChangeNotifier
       map[key] = List<String>.of(paths);
     }
     await setPref('video_remote_subtitle_files', jsonEncode(map));
+  }
+
+  /// 反馈 0PZAhFd1RO：按系列记住的字幕文件夹（系列键见
+  /// [videoSubtitleFolderSeriesKey]）。坏值记诊断后当空表。
+  Map<String, VideoSubtitleFolder> get _videoSubtitleFolders {
+    final String raw =
+        getPref('video_subtitle_series_dirs', defaultValue: '') as String;
+    try {
+      return decodeVideoSubtitleFolders(raw);
+    } catch (e, stack) {
+      ErrorLogService.instance.log(
+        'PreferencesRepository.videoSubtitleFolders.decode',
+        e,
+        stack,
+      );
+      return <String, VideoSubtitleFolder>{};
+    }
+  }
+
+  /// 读系列 [seriesKey] 记住的字幕文件夹；没记过返回 null。
+  VideoSubtitleFolder? videoSubtitleFolder(String seriesKey) =>
+      _videoSubtitleFolders[seriesKey];
+
+  /// 记住 / 清除（[folder] 为 null）系列 [seriesKey] 的字幕文件夹（读改写整 map）。
+  Future<void> setVideoSubtitleFolder(
+    String seriesKey,
+    VideoSubtitleFolder? folder,
+  ) async {
+    final Map<String, VideoSubtitleFolder> map = _videoSubtitleFolders;
+    if (folder == null) {
+      if (!map.containsKey(seriesKey)) return;
+      map.remove(seriesKey);
+    } else {
+      if (map[seriesKey] == folder) return;
+      map[seriesKey] = folder;
+    }
+    await setPref(
+      'video_subtitle_series_dirs',
+      encodeVideoSubtitleFolders(map),
+    );
+    notifyListeners();
   }
 
   // ── tags & card export ───────────────────────────────────────────────

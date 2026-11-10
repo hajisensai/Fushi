@@ -1066,6 +1066,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'video_subtitle_save_beside_video',
   // string（默认 auto）：生成日语字幕的分段方式 auto/moss/window；设备本地。
   'video_subtitle_segmenter',
+  // JSON map `{系列键: {dir, template?}}`：按系列记住的字幕文件夹（反馈 0PZAhFd1RO），
+  // 之后各集在里面按集号匹配字幕。dir 是用户外部目录、系列键含本库合集 id：设备本地。
+  'video_subtitle_series_dirs',
   'video_subtitle_style',
   // string：SubDL（subdl.com）API key（用户在站点 panel 免费生成）。搜索必须带 key。
   'video_subtitle_subdl_api_key',
