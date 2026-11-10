@@ -341,6 +341,75 @@ void main() {
     });
   });
 
+  group('换档事务（失败回滚）', () {
+    test('reload 返回 false → 共享档回到原值', () async {
+      int? shared = 2;
+      final bool ok = await runAdaptiveQualitySwitch(
+        read: () => shared,
+        write: (int? v) => shared = v,
+        targetIndex: 4,
+        reload: () async {
+          expect(shared, 4, reason: '取流协商要读到目标档，必须先写');
+          return false;
+        },
+      );
+      expect(ok, isFalse);
+      expect(shared, 2);
+    });
+
+    test('reload 抛错 → 共享档回到原值并重新抛出', () async {
+      int? shared = 2;
+      await expectLater(
+        runAdaptiveQualitySwitch(
+          read: () => shared,
+          write: (int? v) => shared = v,
+          targetIndex: 4,
+          reload: () async => throw StateError('streamurl failed'),
+        ),
+        throwsStateError,
+      );
+      expect(shared, 2);
+    });
+
+    test('reload 返回 true → 保持目标档', () async {
+      int? shared = 2;
+      final bool ok = await runAdaptiveQualitySwitch(
+        read: () => shared,
+        write: (int? v) => shared = v,
+        targetIndex: 4,
+        reload: () async => true,
+      );
+      expect(ok, isTrue);
+      expect(shared, 4);
+    });
+
+    test('reload 期间外部改了共享档 → 失败也不覆盖外部的值', () async {
+      int? shared = 2;
+      final bool ok = await runAdaptiveQualitySwitch(
+        read: () => shared,
+        write: (int? v) => shared = v,
+        targetIndex: 4,
+        reload: () async {
+          shared = null; // 换源 / 用户手动选档清空了自适应档。
+          return false;
+        },
+      );
+      expect(ok, isFalse);
+      expect(shared, isNull);
+    });
+
+    test('原值是 null（还没定档）时回滚回 null', () async {
+      int? shared;
+      await runAdaptiveQualitySwitch(
+        read: () => shared,
+        write: (int? v) => shared = v,
+        targetIndex: 3,
+        reload: () async => false,
+      );
+      expect(shared, isNull);
+    });
+  });
+
   group('起点判据（局域网 vs 公网）', () {
     test('局域网 / 本机 → 原画直传', () {
       for (final String url in <String>[

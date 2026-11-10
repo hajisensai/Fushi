@@ -413,22 +413,40 @@ extension _VideoQuality on _VideoFushiPageState {
     _adaptiveQualitySwitching = true;
     try {
       final int posMs = _controller?.resumePositionMs ?? 0;
-      client.adaptiveQualityIndex = decision.targetIndex;
-      await _reportRemotePlaybackStopped(
-        info: _effectiveRemoteInfo,
-        client: _effectiveRemoteClient,
-        positionMs: posMs,
-        generation: _remotePlaybackGeneration,
+      // 写入 → 重载 → 失败回滚（BUG-4284）：取流 / 起播没立起来时，共享的
+      // `adaptiveQualityIndex` 回到原档，页面重试与下一次同 scope 起播不会沿用
+      // 一个没起来的档。只覆盖取流 / 起播阶段；起播之后播放器异步暴露的失败
+      // （转码分段出错）走页面既有的播放失败路径。
+      final bool ok = await runAdaptiveQualitySwitch(
+        read: () => client.adaptiveQualityIndex,
+        write: (int? index) => client.adaptiveQualityIndex = index,
+        targetIndex: decision.targetIndex,
+        reload: () async {
+          await _reportRemotePlaybackStopped(
+            info: _effectiveRemoteInfo,
+            client: _effectiveRemoteClient,
+            positionMs: posMs,
+            generation: _remotePlaybackGeneration,
+          );
+          if (!mounted) return false;
+          await _loadRemoteEpisode(
+            _currentEpisode < 0 ? 0 : _currentEpisode,
+            // 与手动换档同理：必须是 explicitCue，否则 near-end 判据会把「快看完时
+            // 换档」直接归零回片头。
+            startIntent: EpisodeStartIntent.explicitCue,
+            initialPositionMsOverride: posMs,
+          );
+          // `_loadRemoteEpisode` 的失败只落在 `_failed`（自适应只在播放中采样，
+          // 进来时它是 false）。
+          return mounted && !_failed;
+        },
       );
       if (!mounted) return;
-      await _loadRemoteEpisode(
-        _currentEpisode < 0 ? 0 : _currentEpisode,
-        // 与手动换档同理：必须是 explicitCue，否则 near-end 判据会把「快看完时换档」
-        // 直接归零回片头。
-        startIntent: EpisodeStartIntent.explicitCue,
-        initialPositionMsOverride: posMs,
-      );
-      if (!mounted) return;
+      if (!ok) {
+        // 没换成：不报「已自动调整」，观察窗从头来，别拿失败前的拍再判一次。
+        _adaptiveQuality.reset();
+        return;
+      }
       // `qualityPresets` 在 host 不支持转码时是空表，而 `_hostTranscodeAvailable`
       // 正由上一行 `_loadRemoteEpisode` 内部的 /streamurl 响应重新赋值——换档期间
       // host 用户关掉「为对端转码视频」就足以让表变空。调用点是 unawaited，越界会

@@ -122,6 +122,32 @@ class _WindowTick {
   final int? graceSeekSerial;
 }
 
+/// 自适应换档事务：写入目标档 → 重载 → 没立起来就回滚（BUG-4284）。
+///
+/// 取流协商要读 [write] 写进去的目标档，所以必须先写；[reload] 没把新流立起来
+/// （返回 false 或抛错）时把共享档回滚到原值——否则共享状态停在一个没起来的档上，
+/// 页面「重试」与进程级单例 backend 的下一次同 scope 起播都会沿用它。只在共享档
+/// 此刻仍是我们写的那个目标时回滚：换档途中用户手动选档、换源 / 换链路让 backend
+/// 重新定了起点，都不能被一个过期的原值覆盖。
+///
+/// 返回新流是否立起来；[reload] 抛的错回滚后原样重新抛出。
+Future<bool> runAdaptiveQualitySwitch({
+  required int? Function() read,
+  required void Function(int? index) write,
+  required int targetIndex,
+  required Future<bool> Function() reload,
+}) async {
+  final int? previous = read();
+  write(targetIndex);
+  bool ok = false;
+  try {
+    ok = await reload();
+    return ok;
+  } finally {
+    if (!ok && read() == targetIndex) write(previous);
+  }
+}
+
 /// 「自动」档的自适应控制器。
 ///
 /// 只在用户选了「自动」时才该被喂采样；用户显式选了某一档就是选定了，不该被自动
