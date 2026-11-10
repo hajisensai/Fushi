@@ -30,6 +30,7 @@ class AnkiChannelHandlerThreadingTest {
             "checkForDuplicates",
             "findNotesByContent",
             "findNotesBySourceId",
+            "listFirstFields",
             "addNote",
             "notesInfo",
             "updateNoteFields",

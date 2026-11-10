@@ -1343,6 +1343,15 @@ class _Importer {
     // 音频两项随参数继承（只写在 own 牌组上）；与缺省值相同时不写，不产生多余记录。
     if (!p.autoplay) v[SrsFieldKeys.deckAutoplay] = false;
     if (!p.replayQuestion) v[SrsFieldKeys.deckReplayQuestion] = false;
+    // 出卡顺序（srs_apkg_common.dart 的映射）同样随参数继承；映射后与缺省相同、或 Fushi 没有的顺序都不写。
+    final SrsNewCardMix? mix = srsNewCardMixOfAnki(p.newMix);
+    if (mix != null && mix != SrsNewCardMix.afterReviews) {
+      v[SrsFieldKeys.deckNewMix] = mix.wire;
+    }
+    final SrsReviewCardOrder? order = srsReviewCardOrderOfAnki(p.reviewOrder);
+    if (order != null && order != SrsReviewCardOrder.retrievability) {
+      v[SrsFieldKeys.deckReviewOrder] = order.wire;
+    }
     if (p.desiredRetention > 0 && p.desiredRetention < 1) {
       v[SrsFieldKeys.deckRetention] = p.desiredRetention;
     }

@@ -35,6 +35,14 @@ const Duration kMusicResumeWriteStep = Duration(seconds: 5);
 /// 断点写入节流：没在播（暂停 / 播完 / 暂停时拖动）时，位置变了这么多就写。
 const Duration kMusicResumeIdleWriteStep = Duration(seconds: 1);
 
+/// 系统媒体卡片（通知栏 / 锁屏 / SMTC）进度条用的时长，与应用内进度条同一个口径：
+/// 普通曲目 = [MusicPlayItem.playbackDuration]；试听片段不拿整首的元数据时长画
+/// 0:30 / 4:00，用引擎拿到的媒体实际长度（[engineDuration]，报出前为 null，反馈 okvRZINcQU）。
+Duration? musicMediaSessionDuration(
+  MusicPlayItem item,
+  Duration? engineDuration,
+) => item.isPreview ? engineDuration : item.playbackDuration;
+
 /// 播放失败的提示文字。
 String musicPlaybackFailureText(MusicBackendFailed failure) =>
     switch (failure.reason) {
@@ -555,9 +563,7 @@ class MusicSession extends ChangeNotifier {
     handler.setMediaItemInfo(
       title: item.title,
       artist: item.artist,
-      duration: item.durationMs == null
-          ? null
-          : Duration(milliseconds: item.durationMs!),
+      duration: musicMediaSessionDuration(item, engine.duration),
       // 服务器曲库的封面是 http(s) 地址（audio_service 自己下载），本地封面是文件。
       artUri: cover == null
           ? null

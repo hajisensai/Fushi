@@ -67,6 +67,8 @@ Future<bool> importAudioCdIfPresent(
   // 一张盘就是一张专辑：抓轨目录只有这一层，不递归。
   final SourceScanSummary? summary = await importLocalFolderOnceAt(
     db: db,
+    // 音乐来源不扫书，没有有声书要转录。
+    transcribeAudiobook: null,
     mediaKind: SourceLibraryKind.music.dbValue,
     path: ripped,
     recursive: false,

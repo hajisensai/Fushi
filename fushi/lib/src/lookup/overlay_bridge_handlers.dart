@@ -268,6 +268,8 @@ Future<void> _handleAudioBridge(
       // resolveWordAudio / queryLocalAudio -> the configured-source URL.
       final String expression = data['expression']?.toString() ?? '';
       final String reading = data['reading']?.toString() ?? '';
+      // 查词命中原文（反馈 WJFhjUGaTn）：词头带替换写法时 TTS 兜底念它。
+      final String matched = data['matched']?.toString() ?? '';
       // Diagnostic: which audio sources are configured/enabled? A null reply
       // with 0 enabled sources = nothing to query (config), not a wiring bug.
       glog(
@@ -277,7 +279,12 @@ Future<void> _handleAudioBridge(
       );
       reply = expression.isEmpty
           ? null
-          : await resolveWordAudioWebViewUrl(model, expression, reading);
+          : await resolveWordAudioWebViewUrl(
+              model,
+              expression,
+              reading,
+              matched: matched,
+            );
     }
   } catch (e, st) {
     glog('audio: EXCEPTION $e\n$st');
@@ -304,8 +311,14 @@ Future<void> _handleAudioListBridge(
     final Map<Object?, Object?> data = _firstMapArg(message);
     final String expression = data['expression']?.toString() ?? '';
     final String reading = data['reading']?.toString() ?? '';
+    final String matched = data['matched']?.toString() ?? '';
     if (model != null && expression.isNotEmpty) {
-      reply = await listWordAudioWebViewChoices(model, expression, reading);
+      reply = await listWordAudioWebViewChoices(
+        model,
+        expression,
+        reading,
+        matched: matched,
+      );
     }
   } catch (e, st) {
     glog('audio list: EXCEPTION $e $st');
