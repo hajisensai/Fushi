@@ -48,7 +48,7 @@ class VideoOutputManager {
                     double target_peak_nits,
                     std::function<void(bool)> on_done);
 
-  // Destroys the |VideoOutput| with given handle. FUSHI FORK (BUG-4332):
+  // Destroys the |VideoOutput| with given handle. FUSHI FORK (BUG-4333):
   // |on_done| runs (on a background thread) only after the |VideoOutput| is
   // fully gone, i.e. after |mpv_render_context_free| returned. The Dart side
   // awaits the method-channel reply sent from it before |Player.dispose| goes

@@ -186,7 +186,7 @@ void ANGLESurfaceManager::CleanUp(bool release_context) {
     glDeleteProgram(encode_program_);
     encode_program_ = 0;
   }
-  // FUSHI FORK (BUG-4332): unbind and delete the texture bound to |surface_|
+  // FUSHI FORK (BUG-4333): unbind and delete the texture bound to |surface_|
   // before the surface goes (both paths), with the context current.
   if (bound_texture_ != 0) {
     if (display_ != EGL_NO_DISPLAY && surface_ != EGL_NO_SURFACE) {
@@ -196,7 +196,7 @@ void ANGLESurfaceManager::CleanUp(bool release_context) {
     bound_texture_ = 0;
   }
   if (release_context) {
-    // FUSHI FORK (BUG-4332): a context (and its surface) that is still current
+    // FUSHI FORK (BUG-4333): a context (and its surface) that is still current
     // on this thread is only marked for deletion by eglDestroyContext /
     // eglDestroySurface; release it first so both are really freed now.
     if (display_ != EGL_NO_DISPLAY) {
@@ -590,7 +590,7 @@ bool ANGLESurfaceManager::CreateAndBindEGLSurface() {
   if (surface_ == EGL_NO_SURFACE) {
     FAIL("eglCreatePbufferFromClientBuffer");
   }
-  // FUSHI FORK (BUG-4332): generate / bind the texture in *this* context.
+  // FUSHI FORK (BUG-4333): generate / bind the texture in *this* context.
   // |CleanUp| deletes |bound_texture_| with |context_| current; on the first
   // |Create| (from the constructor) whatever context the render thread last
   // left current -- another |VideoOutput|'s, which its constructor / resize

@@ -175,7 +175,7 @@ void MediaKitVideoPlugin::HandleMethodCall(
     auto handle =
         std::get<std::string>(arguments[flutter::EncodableValue("handle")]);
     auto handle_value = static_cast<int64_t>(std::stoll(handle.c_str()));
-    // FUSHI FORK (BUG-4332): reply only once the |VideoOutput| (and with it
+    // FUSHI FORK (BUG-4333): reply only once the |VideoOutput| (and with it
     // libmpv's render context) is gone. |Player.dispose| awaits this reply
     // before it schedules |mpv_terminate_destroy|; replying up front left the
     // order to a 5 s timer, and libmpv aborts the process when the core is

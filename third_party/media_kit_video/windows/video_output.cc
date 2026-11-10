@@ -128,7 +128,7 @@ VideoOutput::VideoOutput(int64_t handle,
   future.wait();
 }
 
-// FUSHI FORK (BUG-4332): teardown order.
+// FUSHI FORK (BUG-4333): teardown order.
 //
 // Upstream unregistered the texture, destroyed |ANGLESurfaceManager| (the
 // EGLContext libmpv renders with and -- for the last instance -- the shared
@@ -214,7 +214,7 @@ void VideoOutput::NotifyRender() {
 }
 
 void VideoOutput::Render() {
-  // FUSHI FORK (BUG-4332): tasks queued before |~VideoOutput| started.
+  // FUSHI FORK (BUG-4333): tasks queued before |~VideoOutput| started.
   if (destroyed_) {
     return;
   }
@@ -360,7 +360,7 @@ void VideoOutput::SetHdrOutput(bool enabled,
 }
 
 void VideoOutput::CheckAndResize() {
-  // FUSHI FORK (BUG-4332): never register a new texture once teardown began;
+  // FUSHI FORK (BUG-4333): never register a new texture once teardown began;
   // it would outlive this object in Flutter's registrar.
   if (destroyed_) {
     return;

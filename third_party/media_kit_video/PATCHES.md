@@ -999,7 +999,7 @@ its own `CopyResource` out of the texture into an engine-owned copy (it never
 samples the shared texture), so the wait is bounded by one copy call. On a
 stock engine nothing changes: legacy shared texture, `CopyResource` + `Flush`.
 
-## BUG-4332: Windows `VideoOutput` teardown order
+## BUG-4333: Windows `VideoOutput` teardown order
 
 `windows/video_output.{h,cc}`, `windows/video_output_manager.{h,cc}`,
 `windows/media_kit_video_plugin.cc`, `windows/angle_surface_manager.{h,cc}`.
