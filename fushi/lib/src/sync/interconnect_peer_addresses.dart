@@ -267,6 +267,9 @@ Future<List<FushiClientUrl>> _rankGroup(
       if (u.url == cached.$1) winner = u;
     }
   }
+  // 命中缓存不续期：TTL 从那次真正选路算起，到期必重选。命中就续期的话，持续
+  // 有请求时缓存永不过期——直连恢复后仍一直走隧道 / 中继（BUG-4273 审查）。
+  final bool fromCache = winner != null;
   if (winner == null) {
     // 直连地址（LAN / IPv6 / 组网 / 公网）先并发选；全部不通才探 P2P 隧道——
     // 否则每次选路都会经中继建一次隧道（docs/specs/2026-09-28-interconnect-remote-reach.md §5）。
@@ -302,7 +305,7 @@ Future<List<FushiClientUrl>> _rankGroup(
       interconnectPersistedUrl(ordered.first.url) != first.url) {
     // 胜出的 `p2p://` 这次换不出转发口（隧道层停了）：不缓存它。
     _raceCache.remove(hostId);
-  } else {
+  } else if (!fromCache) {
     _raceCache[hostId] = (first.url, now());
   }
   return ordered;
