@@ -1342,10 +1342,13 @@ class MangaOcrProgressBadge extends StatelessWidget {
           ),
           if (value != null) ...<Widget>[
             const SizedBox(height: 4),
+            // 贴边标签只有短读数那么宽：用平直细条（wavy: false 高度恰为线宽），
+            // 波浪的上下振幅余量在这么窄的标签里只会把它撑高。
             FushiLinearProgressIndicator(
               value: value.clamp(0.0, 1.0),
               color: fg,
               backgroundColor: fg.withValues(alpha: 0.22),
+              wavy: false,
             ),
           ],
         ],
