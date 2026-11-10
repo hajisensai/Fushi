@@ -100,6 +100,21 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 入口。[_stopPlaybackOnce] 因此改为「先止声、后落库」，让 stop 成为解锁者。
   Future<void> _playActivationTail = Future<void>.value();
 
+  /// 还没收尾的那一次激活（[_activateMainPlayer] 的 operation）；收尾后置回 null。
+  ///
+  /// 「播放」是一个**状态请求**（要它在播），不是一条要逐个执行的命令。在 Android /
+  /// Darwin 后端上一次激活要挂到**下一次暂停**才收尾（见 [_playActivationTail]），所以
+  /// 在播期间再来的 play 请求若排到它后面，就会在下一次暂停（查词暂停、屏末停、单句
+  /// 试听到点停……）**之后**才执行，把刚停下的播放立刻顶回去（BUG-4349：查词弹窗顶栏
+  /// 按过播放后，关弹窗的续播请求排在按钮那次激活后面，下一次查词暂停被它顶掉）。
+  /// 因此在播 / 将要播期间的新请求一律并入这一次（见 [_activateMainPlayer]）。
+  Future<void>? _outstandingActivation;
+
+  /// [_outstandingActivation] 是否已经向播放器发出了 `play()`。发出之前它一定会起播，
+  /// 新请求并入即可；发出之后只有播放器仍在播才算满足新请求——已经停了（收尾还在
+  /// 途）的话新请求必须另起一次。
+  bool _outstandingActivationIssued = false;
+
   /// 位置写入串行尾。周期写、后台 flush、最终 stop flush 共用一条队列，确保旧写入
   /// 不会在最终位置之后完成并反向覆盖数据库/缓存。
   Future<void> _positionWriteTail = Future<void>.value();
@@ -1562,18 +1577,39 @@ class AudiobookPlayerController extends ChangeNotifier {
 
   Future<void> _activateMainPlayer() {
     if (_stopRequested) return Future<void>.value();
-    final Future<void> operation = _playActivationTail.then<void>((_) async {
+    // BUG-4349：已有一次激活在途、且它还没发出 play（必然会起播）或播放器正在播，
+    // 这次请求已经被满足——并入它，不排到它后面。排到后面的话，它要等那次激活收尾
+    // （= 下一次暂停）才执行，把那次暂停立刻顶回播放。
+    final Future<void>? outstanding = _outstandingActivation;
+    if (outstanding != null &&
+        (!_outstandingActivationIssued || _player.playing)) {
+      return outstanding;
+    }
+    late final Future<void> operation;
+    operation = _playActivationTail.then<void>((_) async {
       // BUG-3430：开书慢时（Windows 尤甚）用户按播放可能早于「恢复上次播放位置」的
       // seek 落定；此刻起播，播放器先从 0 报位置，当前句跳到全书第一句再跳回。等载入
       // （含恢复 seek）完成再起播，与 [seekMs] 同一道门；从未载入时它本就已完成。
       await _loadReady.future;
       if (_stopRequested) return;
       _armActivationRestoreGuard();
+      if (identical(_outstandingActivation, operation)) {
+        _outstandingActivationIssued = true;
+      }
       await playActivationSettled(_player.play(), _player.playingStream);
     });
+    _outstandingActivation = operation;
+    _outstandingActivationIssued = false;
+    void settle() {
+      if (identical(_outstandingActivation, operation)) {
+        _outstandingActivation = null;
+        _outstandingActivationIssued = false;
+      }
+    }
+
     _playActivationTail = operation.then<void>(
-      (_) {},
-      onError: (Object _, StackTrace __) {},
+      (_) => settle(),
+      onError: (Object _, StackTrace __) => settle(),
     );
     return operation;
   }
