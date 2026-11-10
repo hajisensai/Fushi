@@ -12,3 +12,5 @@
   - i18n 新增 `download_remote_jobs_stale`。
 - **[x] ② 已加自动化测试** — `fushi/test/pages/remote_download_tasks_section_test.dart`（widget test：内存 DB 三台 host + 计数 MockClient 驱动真实 `InterconnectDownloadClient` / 通道）：多 host 都列出 + manga 域 + createdAt=100 + 执行设备排第一；第二拍 500 → 保留任务并显示过期文案；401 → attention 条目带 auth_rejected 原因、轮询不重探、点重试重探后恢复；首轮请求挂起时下一拍不叠加、挂起中 dispose 无异常无残留 Timer。修复前 4 条全红（断言失败 3 条 + 残留 Timer 1 条）。
 - **备注**：计划写的是过期文案放卡片 details，但 `DownloadTaskCard` 的 details 默认收起，放那里用户看不到，改放常显的 summary。HTTP 错误（5xx 等）的能力探测失败也按瞬时失败每拍重探（计划只写了 unreachable）。真设备截图（Windows host + Android client，两台 host / 断网 stale / 配对失效）未做。
+- **[x] ① 评审修正（2026-11-11）** — `838ad0ef7c7`：步骤 9 让每一台 Unavailable 的 host 都出常驻 attention 条目（`remote_download_tasks_section.dart` `build`），没宣告 downloads（iOS、没配下载后端、只用来查词）、未配对、关机这些常态也挂红卡、点重试也消不掉。改为 `_RemoteHostState.showsFailure`：在用的 host（「下载执行设备」那台，或本段生命周期里宣告过 downloads）什么原因都说；其余 host 只说配对已坏（凭据被拒 / 证书不符），其余静默。
+- **[x] ② 评审修正测试** — `fushi/test/pages/remote_download_tasks_section_test.dart` 新增「不提供代下载 / 连不上的 host 不出条目」与「下载执行设备不提供代下载照样出 attention」两条；未运行。
