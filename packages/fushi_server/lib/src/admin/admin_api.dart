@@ -40,6 +40,7 @@ import 'package:fushi_engine/sync/subscriptions/host_subscription_routes.dart'
 import 'package:fushi_server/src/admin/admin_backups.dart';
 import 'package:fushi_server/src/admin/admin_srs.dart';
 import 'package:fushi_server/src/admin/admin_context.dart';
+import 'package:fushi_server/src/admin/admin_dictionaries.dart';
 import 'package:fushi_server/src/admin/resource_indexer_settings.dart';
 import 'package:fushi_server/src/admin/subtitle_provider_settings.dart';
 import 'package:fushi_server/src/anki_landing.dart';
@@ -122,6 +123,9 @@ class AdminApi {
   /// 复习（SRS）端点（`/api/admin/srs*`，见 admin_srs.dart）。
   late final AdminSrs srs = AdminSrs(ctx);
 
+  /// 词典端点（`/api/admin/dictionaries*`，见 admin_dictionaries.dart）。
+  late final AdminDictionaries dictionaries = AdminDictionaries(ctx);
+
   Future<shelf.Response> _route(
     String method,
     String path,
@@ -133,6 +137,11 @@ class AdminApi {
     }
     if (path == kAdminSrsPath || path.startsWith('$kAdminSrsPath/')) {
       final shelf.Response? r = await srs.route(method, path, request);
+      if (r != null) return r;
+    }
+    if (path == kAdminDictionariesPath ||
+        path.startsWith('$kAdminDictionariesPath/')) {
+      final shelf.Response? r = await dictionaries.route(method, path, request);
       if (r != null) return r;
     }
     switch ((method, path)) {

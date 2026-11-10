@@ -137,6 +137,7 @@ class ServerDictionaryHost {
     hidden: <String>{},
   );
   int _loadedCount = 0;
+  bool _transformsLoaded = false;
 
   /// 引擎是否可用（原生库加载成功）。不可用时互联的查词 / 词典媒体路由不接线。
   bool get available => _available;
@@ -149,6 +150,12 @@ class ServerDictionaryHost {
 
   /// 实际使用的原生库路径（null = 按平台默认裸名加载）。
   String? get libraryPath => _libraryPath;
+
+  /// 去屈折变形表目录（null = 没找到，查词只匹配原形）。
+  String? get transformsPath => _transformsDir?.path;
+
+  /// 变形表是否已预载进引擎（给 WebUI 状态行：没装时「食べた」查不到「食べる」）。
+  bool get transformsLoaded => _transformsLoaded;
 
   /// 加载原生库、预载变形表、按 DB 装载词典。原生库加载不了返回 false 并记下原因，
   /// 服务端照常起（词典只是存储中转，查词不可用）。
@@ -188,6 +195,7 @@ class ServerDictionaryHost {
       // 资源键形如 `assets/transforms/<file>`，只取文件名，落到目录内。
       return File(p.join(dir.path, p.basename(assetKey))).readAsString();
     });
+    _transformsLoaded = true;
   }
 
   /// 按 DB 当前的词典元数据重载引擎（导入 / 删除词典后由库服务回调）。
