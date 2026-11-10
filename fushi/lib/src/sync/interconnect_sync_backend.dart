@@ -226,6 +226,7 @@ class InterconnectSyncBackend extends SyncBackend
         RemoteBookClient,
         RemoteVideoClient,
         RemoteVideoGraphicSubtitleTrackFetch,
+        RemoteVideoSidecarSubtitleFetch,
         RemoteVideoPlaybackSync,
         RemoteVideoQualityLimit,
         RemoteVideoDanmakuKeyFetch,
@@ -2987,6 +2988,35 @@ class InterconnectSyncBackend extends SyncBackend
     final Uri uri = Uri.parse(
       '$_apiBase/api/library/videos/${_encodeVideoId(id)}/subtitle',
     ).replace(queryParameters: query.isEmpty ? null : query);
+    await downloadContentFile(
+      fileId: uri.toString(),
+      destination: dest,
+      onProgress: syncTransferFractionOnly(onProgress),
+    );
+  }
+
+  /// 下载 host 上这一集名为 [fileName] 的外挂字幕（`GET .../subtitle?sidecar=`，
+  /// 反馈 -CaVsioFhG）。[fileName] 来自 `/streamurl` 的 `sidecarSubtitles`——只有
+  /// 下发了这份列表的 host 认得这个参数（老 host 会忽略它回默认字幕，所以调用方
+  /// 只对列表里的条目调用）。
+  @override
+  Future<void> getRemoteVideoSidecarSubtitle(
+    String id,
+    File dest, {
+    required String fileName,
+    int episodeIndex = 0,
+    void Function(double progress)? onProgress,
+  }) async {
+    await _ensureResolved();
+    final Uri uri =
+        Uri.parse(
+          '$_apiBase/api/library/videos/${_encodeVideoId(id)}/subtitle',
+        ).replace(
+          queryParameters: <String, String>{
+            kVideoSidecarSubtitleQueryParam: fileName,
+            if (episodeIndex > 0) 'episode': '$episodeIndex',
+          },
+        );
     await downloadContentFile(
       fileId: uri.toString(),
       destination: dest,

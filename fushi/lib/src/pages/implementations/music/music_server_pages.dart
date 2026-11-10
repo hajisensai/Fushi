@@ -1375,23 +1375,42 @@ class _MusicServerPlaylistsViewState extends State<MusicServerPlaylistsView> {
   }
 }
 
-/// 能改歌单的服务器（Jellyfin / Emby）曲目的菜单：加入歌单（含新建）。Apple Music 走自己的
-/// 菜单（[appleMusicTrackMenu]），其它来源回 null（行尾不留空位）。
+/// 能改歌单的服务器（Jellyfin / Emby）曲目的菜单：加入服务器歌单（含新建），以及加入 /
+/// 移出本机音乐库、加入本地歌单（v149，[musicServerTrackLibraryActions]）。Apple Music 走
+/// 自己的菜单（[appleMusicTrackMenu]），不能改歌单的来源回 null（由
+/// [musicServerTrackLibraryMenu] 出入库菜单）。
 MusicItemMenu? musicServerTrackMenu(
   BuildContext context,
   MusicServerBrowser browser,
-  MusicServerTrack track,
-) {
+  MusicServerTrack track, {
+  String? albumTitle,
+}) {
   final MusicServerPlaylistEditor? editor = MusicServerPlaylistEditor.of(
     browser,
   );
   if (editor == null) return null;
+  final AppModel app = ProviderScope.containerOf(
+    context,
+    listen: false,
+  ).read(appProvider);
   return MusicItemMenu(
     buttonKey: ValueKey<String>('music-server-track-menu-${track.id}'),
-    open: (MusicMenuAnchor? anchor) => unawaited(
-      showMusicActionMenu(
+    open: (MusicMenuAnchor? anchor) => unawaited(() async {
+      // 右键坐标只在同步派发期间可读：第一个 await 之前取好。
+      final MusicMenuAnchor? at = anchor ?? musicContextMenuAnchor();
+      final List<MusicMenuAction> library = app.isDatabaseReady
+          ? await musicServerTrackLibraryActions(
+              app.database,
+              browser,
+              track,
+              albumTitle: albumTitle,
+              playlistLabel: t.music_action_add_to_local_playlist,
+            )
+          : const <MusicMenuAction>[];
+      if (!context.mounted) return;
+      await showMusicActionMenu(
         context,
-        anchor: anchor,
+        anchor: at,
         errorText: musicPlaylistErrorText,
         actions: <MusicMenuAction>[
           MusicMenuAction(
@@ -1401,9 +1420,10 @@ MusicItemMenu? musicServerTrackMenu(
             run: (BuildContext c) =>
                 musicAddToPlaylist(c, editor, <String>[track.id]),
           ),
+          ...library,
         ],
-      ),
-    ),
+      );
+    }()),
   );
 }
 
