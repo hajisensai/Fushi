@@ -336,11 +336,15 @@ const Map<String, String> _fieldNameSynonyms = <String, String>{
   '截图': '{card-image}',
   '图像': '{card-image}',
   '画像': '{card-image}',
-  // 来源
-  'source': '{source-link}',
-  '来源': '{source-link}',
-  '出典': '{source-link}',
-  '出处': '{source-link}',
+  // 来源（MiscInfo 等价字段）：与 Anki 侧预设 / 通用默认映射共用同一个值——作品标题
+  // 回跳链接 + 片段时间窗（反馈 GNiu1BuCKw：视频卡要带文件名和时间点）。`source` /
+  // `miscinfo` 已经由上面的 Fushi 卡片 / Lapis 默认表命中，这里只补非英文写法。
+  '来源': FushiCardFields.sourceDefaultMapping,
+  '來源': FushiCardFields.sourceDefaultMapping,
+  '出典': FushiCardFields.sourceDefaultMapping,
+  '出处': FushiCardFields.sourceDefaultMapping,
+  '出處': FushiCardFields.sourceDefaultMapping,
+  '출처': FushiCardFields.sourceDefaultMapping,
 };
 
 /// 按字段名猜一个制卡内容槽：Lapis 同名字段（大小写 / 分隔符不敏感）→ Lapis 默认；
@@ -498,6 +502,17 @@ class SrsMiner with AnkiNoteComposer {
 
   bool _isLapis(SrsNoteTypeView? type) =>
       type == null || type.id == store.lapisNoteTypeId;
+
+  /// [type] 对外的笔记类型名：内置 Lapis 一律叫 [LapisNoteType.modelName]（与
+  /// [_renderFor] 交给渲染的名字同一口径），其余用它自己的名字。
+  String _noteTypeNameOf(SrsNoteTypeView type) =>
+      _isLapis(type) ? LapisNoteType.modelName : type.name;
+
+  /// 现存笔记的笔记类型名（覆写字段选择按它记，反馈 nWWjBp3Clo）；不存在 / 已删为 null。
+  Future<String?> noteTypeNameOf(String noteId) async {
+    final (SrsNoteView, SrsNoteTypeView)? live = await _live(noteId);
+    return live == null ? null : _noteTypeNameOf(live.$2);
+  }
 
   /// [type] 制卡时实际用的字段映射（fieldId → 制卡占位符），同 [_mappingFor]。
   Map<String, String> miningFieldMappingsFor(SrsNoteTypeView type) =>
@@ -687,6 +702,9 @@ class SrsMiner with AnkiNoteComposer {
 
   /// 覆写一条现存笔记：按**它自己的**笔记类型用同一套渲染重写全部字段（没映射到的
   /// 字段写空，与 Anki 覆写同口径，BUG-2606），标签只增不减，牌组与排程不动。
+  ///
+  /// 反馈 nWWjBp3Clo：用户给这种笔记类型选了「只覆写这些字段」
+  /// （[AnkiSettings.overwriteFieldsFor]）时只写选中的字段，其余字段原样保留。
   Future<MineOutcome> overwrite({
     required String noteId,
     required AnkiSettings settings,
@@ -714,15 +732,25 @@ class SrsMiner with AnkiNoteComposer {
         noteType: _isLapis(type) ? null : type,
         keepEmpty: true,
       );
+      final Set<String>? onlyFields = settings.overwriteFieldsFor(
+        _noteTypeNameOf(type),
+      );
       final Map<String, String> fields = <String, String>{
         for (final SrsFieldDef f in type.fields)
-          f.id: rendered.fields[f.id] ?? '',
+          if (onlyFields == null || onlyFields.contains(f.name))
+            f.id: rendered.fields[f.id] ?? '',
       };
       if (fields.values.every((String v) => v.trim().isEmpty)) {
-        return MineOutcome.failure(
-          'All fields are empty — refusing to clear an existing card.',
-          errorCode: AnkiErrorCode.allFieldsEmpty,
-        );
+        return onlyFields == null
+            ? MineOutcome.failure(
+                'All fields are empty — refusing to clear an existing card.',
+                errorCode: AnkiErrorCode.allFieldsEmpty,
+              )
+            : MineOutcome.failure(
+                'The fields chosen for overwriting are all empty for this '
+                'card — nothing was changed.',
+                errorCode: AnkiErrorCode.overwriteFieldsEmpty,
+              );
       }
       await store.updateNote(
         noteId,

@@ -7,6 +7,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi_audio/fushi_audio.dart'
     show kDefaultReadingIdleTimeout, kStudyIdleTimeoutPrefKey;
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/mining/gal_mining_settings.dart';
 import 'package:fushi/src/profile/work_profile_scope.dart';
 import 'package:fushi_engine/ai/ai_settings.dart';
 import 'package:fushi_engine/srs/sync2/srs_folder_location.dart';
@@ -48,6 +49,7 @@ import 'package:fushi/src/media/discovery/alist_site_config.dart';
 import 'package:fushi/src/media/discovery/audiobookshelf_server_config.dart';
 import 'package:fushi/src/media/discovery/opds_server_config.dart';
 import 'package:fushi/src/media/kavita/kavita_server_config.dart';
+import 'package:fushi/src/media/video/subtitle/video_subtitle_folder_memory.dart';
 import 'package:fushi/src/utils/misc/jump_history.dart'
     show migrateLegacyJumpPillAutoHide;
 import 'package:fushi/src/models/module_id.dart';
@@ -3722,6 +3724,47 @@ class PreferencesRepository extends ChangeNotifier
     await setPref('video_remote_subtitle_files', jsonEncode(map));
   }
 
+  /// 反馈 0PZAhFd1RO：按系列记住的字幕文件夹（系列键见
+  /// [videoSubtitleFolderSeriesKey]）。坏值记诊断后当空表。
+  Map<String, VideoSubtitleFolder> get _videoSubtitleFolders {
+    final String raw =
+        getPref('video_subtitle_series_dirs', defaultValue: '') as String;
+    try {
+      return decodeVideoSubtitleFolders(raw);
+    } catch (e, stack) {
+      ErrorLogService.instance.log(
+        'PreferencesRepository.videoSubtitleFolders.decode',
+        e,
+        stack,
+      );
+      return <String, VideoSubtitleFolder>{};
+    }
+  }
+
+  /// 读系列 [seriesKey] 记住的字幕文件夹；没记过返回 null。
+  VideoSubtitleFolder? videoSubtitleFolder(String seriesKey) =>
+      _videoSubtitleFolders[seriesKey];
+
+  /// 记住 / 清除（[folder] 为 null）系列 [seriesKey] 的字幕文件夹（读改写整 map）。
+  Future<void> setVideoSubtitleFolder(
+    String seriesKey,
+    VideoSubtitleFolder? folder,
+  ) async {
+    final Map<String, VideoSubtitleFolder> map = _videoSubtitleFolders;
+    if (folder == null) {
+      if (!map.containsKey(seriesKey)) return;
+      map.remove(seriesKey);
+    } else {
+      if (map[seriesKey] == folder) return;
+      map[seriesKey] = folder;
+    }
+    await setPref(
+      'video_subtitle_series_dirs',
+      encodeVideoSubtitleFolders(map),
+    );
+    notifyListeners();
+  }
+
   // ── tags & card export ───────────────────────────────────────────────
 
   String get savedTags => getPref('saved_tags', defaultValue: '') as String;
@@ -4529,6 +4572,55 @@ class PreferencesRepository extends ChangeNotifier
 
   void setGalMiningClipFormat(MiningClipFormat format) async {
     await setPref('gal_mining_clip_format', format.wireName);
+    notifyListeners();
+  }
+
+  // galgame 制卡句子音频长度策略（反馈 II3jOBIhT5）：无配音游戏的兜底链只能截到
+  // 整机混音，停在一句上越久卡里的 BGM 越长。全局默认；单游戏可在游戏详情页覆盖
+  // （[galMiningOverrides]）。默认 auto = 现状（按捕获窗口原样入卡）。
+  GalMiningAudioMode get galMiningAudioMode =>
+      GalMiningAudioMode.tryParse(
+        getPref('gal_mining_audio_mode', defaultValue: null) as String?,
+      ) ??
+      GalMiningAudioMode.auto;
+
+  Future<void> setGalMiningAudioMode(GalMiningAudioMode mode) async {
+    await setPref('gal_mining_audio_mode', mode.wireName);
+    notifyListeners();
+  }
+
+  /// 最长 / 固定时长两档共用的秒数（int，默认 [kGalMiningAudioSecondsDefault]）。
+  int get galMiningAudioSeconds {
+    final Object? raw = getPref(
+      'gal_mining_audio_seconds',
+      defaultValue: kGalMiningAudioSecondsDefault,
+    );
+    return clampGalMiningAudioSeconds(
+      raw is num ? raw.round() : kGalMiningAudioSecondsDefault,
+    );
+  }
+
+  Future<void> setGalMiningAudioSeconds(int seconds) async {
+    await setPref(
+      'gal_mining_audio_seconds',
+      clampGalMiningAudioSeconds(seconds),
+    );
+    notifyListeners();
+  }
+
+  /// 单个游戏的 gal 制卡设置覆盖层（反馈 3dRZdakRdJ）；没设过 = 全部跟随全局。
+  /// 键 `gal_mining_overrides::<galgames.id>`，值是 [GalGameMiningOverrides] 的 JSON。
+  GalGameMiningOverrides galMiningOverrides(String gameId) =>
+      GalGameMiningOverrides.decode(
+        getPref(galMiningOverridesPrefKey(gameId), defaultValue: ''),
+      );
+
+  /// 写回覆盖层；全部清空时写空串（= 这个游戏完全跟随全局）。
+  Future<void> setGalMiningOverrides(
+    String gameId,
+    GalGameMiningOverrides overrides,
+  ) async {
+    await setPref(galMiningOverridesPrefKey(gameId), overrides.encode());
     notifyListeners();
   }
 
@@ -6329,6 +6421,21 @@ class PreferencesRepository extends ChangeNotifier
     required bool value,
   }) async {
     await setPref('audiobook_auto_transcribe_without_text', value);
+    notifyListeners();
+  }
+
+  /// 子开关：书架「导入文件夹」/ 本地来源扫描时，书配上了有声书音频但找不到字幕，
+  /// 就把音频排进转录队列、转完对齐到这本书（默认关：一本书几个小时的推理，要用户
+  /// 明确要）。只在总开关 [audiobookAutoTranscribe] 开时生效。设备本地：本机有没有
+  /// 算力跑转录是这台设备的事（见 `SyncRepository.deviceLocalPrefKeys`）。
+  static const String audiobookFolderImportTranscribeKey =
+      'audiobook_folder_import_transcribe';
+
+  bool get audiobookFolderImportTranscribe =>
+      getPref(audiobookFolderImportTranscribeKey, defaultValue: false) as bool;
+
+  Future<void> setAudiobookFolderImportTranscribe({required bool value}) async {
+    await setPref(audiobookFolderImportTranscribeKey, value);
     notifyListeners();
   }
 

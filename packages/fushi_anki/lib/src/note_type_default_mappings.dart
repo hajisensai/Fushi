@@ -1,4 +1,5 @@
 import 'anki_models.dart';
+import 'fushi_card_fields.dart';
 
 /// 任意笔记类型（非 Lapis）的默认字段映射：按字段名认出常见用途，认不出的首字段兜底。
 ///
@@ -115,5 +116,14 @@ const Map<String, String> _aliasMarkers = <String, String>{
   // 其它
   'frequency': '{frequencies}',
   'frequencies': '{frequencies}',
-  'source': '{source-link}',
+  // 来源（MiscInfo 等价字段，见 [FushiCardFields.sourceDefaultMapping]）：作品标题
+  // 回跳链接 + 片段时间窗，与 Lapis / Fushi 卡片 / Senren 预设共用同一个值。
+  'source': FushiCardFields.sourceDefaultMapping,
+  'miscinfo': FushiCardFields.sourceDefaultMapping,
+  '来源': FushiCardFields.sourceDefaultMapping,
+  '來源': FushiCardFields.sourceDefaultMapping,
+  '出处': FushiCardFields.sourceDefaultMapping,
+  '出處': FushiCardFields.sourceDefaultMapping,
+  '出典': FushiCardFields.sourceDefaultMapping,
+  '출처': FushiCardFields.sourceDefaultMapping,
 };
