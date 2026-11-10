@@ -10,7 +10,7 @@ import 'package:fushi_core/fushi_core.dart';
 
 import '../../helpers/source_guard.dart';
 
-/// BUG-4348（反馈 8VgLlmIezE）：在线漫画读完任意一章末页整本被标「读完」；
+/// BUG-4349（反馈 8VgLlmIezE）：在线漫画读完任意一章末页整本被标「读完」；
 /// 「标记此章及更早为已读」不影响书架进度。
 ///
 /// ① 整本 completedAt 只在读完阅读顺序上的最后一话时写（[mangaChapterCompletesSeries]）；

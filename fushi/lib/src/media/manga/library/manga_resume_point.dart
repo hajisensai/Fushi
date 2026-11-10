@@ -56,7 +56,7 @@ const int kMangaShelfUnitsPerChapter = 100;
 ///   算「在读」（position>0 进「继续阅读」），没读完就绝不凑成一整章；页数未知
 ///   （还没落过章状态）按 1 个单位记「已打开」。
 ///
-/// BUG-4348：此前只看 `currentChapterIndex`，按「从最旧数到当前章」算位置——
+/// BUG-4349：此前只看 `currentChapterIndex`，按「从最旧数到当前章」算位置——
 /// 标记章节已读完全不影响书架，而打开过最新一话（下标 0）就直接是 total/total
 /// 「读完」。
 ({int position, int duration}) onlineMangaShelfProgress(
