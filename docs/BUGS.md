@@ -38,6 +38,7 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-4301](bugs/BUG-4301-sync-module-off-keeps-syncing.md) | ✅ | ✅ | 关掉同步模块后在飞同步与定时同步仍继续跑 |
+| [BUG-4301](bugs/BUG-4301-bd-pack-without-batch-title-no-full-plan.md) | ✅ | ✅ | 没写 batch / 季号的 BD 整包给不出「全集」下载计划 |
 | [BUG-4300](bugs/BUG-4300-srs-day-rollover-not-synced.md) | ✅ | ✅ | 复习的「今天」日界不随同步、profile 时区字段从没有写入方 |
 | [BUG-4299](bugs/BUG-4299-srs-sync2-plaintext-downgrade.md) | ✅ | ✅ | SRS 同步 v2：没有密钥的设备会往已加密的位置写明文 |
 | [BUG-4298](bugs/BUG-4298-srs-kernel-reads-share-one-connection.md) | ✅ | ✅ | SRS 内核只读命令共用一条读连接：全库统计读着时复习排队等它跑完 |
