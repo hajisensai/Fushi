@@ -479,6 +479,9 @@ out({ res, calls: h.player.calls,
     expect(done, hasLength(1));
     expect(done.single['id'], 4);
     final String diag = done.single['diag'] as String;
-    expect(diag.split(' '), containsAll(<String>['dup=1', 'videos=1', 'rs=4']));
+    expect(
+      diag.split(' '),
+      containsAll(<String>['dup=1', 'videos=1', 'rs=4', 'nfSessions=1/1']),
+    );
   }, skip: !hasNode);
 }

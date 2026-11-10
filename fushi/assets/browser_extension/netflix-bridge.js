@@ -564,6 +564,13 @@
         }
       }
     } catch (_) {}
+    // Netflix 播放器会话：总数 / 其中 watch 会话数（sSLXGfcQWH「跳转时旧会话是不是没关」直接看这里）。
+    try {
+      var sids = window.netflix.appContext.state.playerApp.getAPI().videoPlayer.getAllPlayerSessionIds() || [];
+      var watchN = 0;
+      for (var si = 0; si < sids.length; si++) if (String(sids[si]).indexOf('watch') === 0) watchN++;
+      parts.push('nfSessions=' + sids.length + '/' + watchN);
+    } catch (_) {}
     parts.push('keySessions=' + (keySessions.created - keySessions.closed) + '/' + keySessions.created);
     try {
       var mem = typeof performance !== 'undefined' && performance.memory;

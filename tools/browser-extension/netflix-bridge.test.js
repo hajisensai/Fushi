@@ -796,7 +796,7 @@ test('BUG-4186 seek 回执带页面诊断：<video> 数与状态、丢帧、未�
   const done = sendSeek(h, 61000, 7);
   const diag = done[0].diag;
   for (const part of ['videos=2', 'rs=4', 'ns=2', 'seeking=0', 'paused=0', 'size=1920x1080',
-    'frames=12/3400', 'keySessions=1/2', 'heapMB=300']) {
+    'frames=12/3400', 'nfSessions=2/1', 'keySessions=1/2', 'heapMB=300']) {
     assert.ok(diag.split(' ').includes(part), `诊断缺 ${part}: ${diag}`);
   }
   assert.match(diag, /(^| )bridge=\S+/);
