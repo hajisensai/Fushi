@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3842 条。点号进各自文件。
+> 共 3843 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4281](bugs/BUG-4281-pairing-pin-shared-slot-overwritten.md) | ✅ | ✅ | 配对 PIN 存在全局单槽，另一个配对请求会把审批框上的 PIN 换成别人的 |
 | [BUG-4280](bugs/BUG-4280-pairing-pin-bruteforce-spoofable-source.md) | ✅ | ✅ | PIN 防爆破按可伪造的自报设备 id 分桶且无总量预算，无头端可被无人值守穷举 |
 | [BUG-4279](bugs/BUG-4279-pairing-proxied-request-treated-as-lan.md) | ✅ | ✅ | 经反向代理 / 内网穿透进来的公网配对请求被当成局域网免 PIN |
 | [BUG-4278](bugs/BUG-4278-interconnect-auth-exemption-path-method.md) | ✅ | ✅ | 互联鉴权豁免按编码路径且不看方法，与路由分发的路径形态不一致 |
