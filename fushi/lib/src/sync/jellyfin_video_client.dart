@@ -31,6 +31,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:collection/collection.dart' show mergeSort;
 import 'package:crypto/crypto.dart' show sha1;
 import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
 import 'package:http/http.dart' as http;
@@ -2932,7 +2933,7 @@ class JellyfinVideoClient
     ];
     // 服务器已按季号给出；回退路径按 SortName 来的也统一按季号排（特典 / 未编号
     // 的季放最后），页面不用再管来源。
-    seasons.sort(_bySeasonThenEpisode);
+    mergeSort<MediaServerItem>(seasons, compare: _bySeasonThenEpisode);
     return seasons;
   }
 
@@ -2975,7 +2976,8 @@ class JellyfinVideoClient
     final List<MediaServerItem> episodes = <MediaServerItem>[
       for (final MediaServerItem e in out.items)
         if (e.type == MediaServerItemType.episode) e,
-    ]..sort(_bySeasonThenEpisode);
+    ];
+    mergeSort<MediaServerItem>(episodes, compare: _bySeasonThenEpisode);
     return MediaServerPage(
       items: episodes,
       totalCount: out.totalCount,
@@ -2984,7 +2986,9 @@ class JellyfinVideoClient
     );
   }
 
-  /// 季集号升序；缺号的排最后（保持稳定，别让特典插到正片中间）。
+  /// 季集号升序；缺号的排最后（别让特典插到正片中间）。比较器对同号 / 都缺号
+  /// 的条目返回 0，调用方必须用稳定排序（[mergeSort]）保住服务器原序——Dart
+  /// 的 [List.sort] 超过 32 个元素走不稳定的快排，会把无集号的整季打乱（BUG-4257）。
   static int _bySeasonThenEpisode(MediaServerItem a, MediaServerItem b) {
     final int sa = a.seasonNumber ?? 1 << 30;
     final int sb = b.seasonNumber ?? 1 << 30;

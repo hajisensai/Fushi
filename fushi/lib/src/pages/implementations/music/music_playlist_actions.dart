@@ -1,5 +1,6 @@
-/// 本地歌单与服务器（Jellyfin / Emby）歌单共用的编辑动作：加歌（[MusicPlaylistEditor] 的两个
-/// 实现）、改名、删除、导入播放列表文件、导出 `.m3u8`。
+/// 本地歌单与服务器（Jellyfin / Emby）歌单共用的编辑动作：服务器歌单的加歌
+/// （[MusicServerPlaylistEditor]；本地歌单的是 music_local_playlist_actions.dart 的
+/// `MusicLocalPlaylistEditor`）、改名、删除、导入播放列表文件、导出 `.m3u8`。
 ///
 /// 选歌单 / 新建歌单的流程与菜单外观仍在 music_track_actions.dart，这里只回答「本地 / 服务器
 /// 各自怎么做」。
@@ -21,6 +22,8 @@ import 'package:share_plus/share_plus.dart' show XFile;
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/music/music_local_playlists.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/music/music_local_playlist_actions.dart'
+    show MusicLocalPlaylistEditor;
 import 'package:fushi/src/pages/implementations/music/music_track_actions.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -37,49 +40,6 @@ int _now() => DateTime.now().millisecondsSinceEpoch;
 // -------------------------------------------------------------------------
 // 加歌：本地 / 服务器
 // -------------------------------------------------------------------------
-
-/// 本地歌单当作「可加歌的歌单来源」（曲目 id = 曲库 `trackUid`）。
-class LocalMusicPlaylistEditor implements MusicPlaylistEditor {
-  LocalMusicPlaylistEditor(this.db);
-
-  final FushiDatabase db;
-
-  @override
-  Future<List<MusicPlaylistTarget>> editablePlaylists() async {
-    final Map<String, int> counts = await db.musicPlaylistEntryCounts();
-    return <MusicPlaylistTarget>[
-      for (final MusicPlaylistRow p in await db.listMusicPlaylists())
-        MusicPlaylistTarget(
-          id: p.playlistUid,
-          title: p.name,
-          trackCount: counts[p.playlistUid] ?? 0,
-        ),
-    ];
-  }
-
-  @override
-  Future<MusicPlaylistTarget> createPlaylist(
-    String name, {
-    List<String> trackIds = const <String>[],
-  }) async {
-    final String uid = newMusicPlaylistUid();
-    await db.createMusicPlaylist(
-      playlistUid: uid,
-      name: name,
-      trackUids: trackIds,
-      now: _now(),
-    );
-    return MusicPlaylistTarget(
-      id: uid,
-      title: name,
-      trackCount: trackIds.length,
-    );
-  }
-
-  @override
-  Future<void> addToPlaylist(String playlistId, List<String> trackIds) =>
-      db.appendMusicPlaylistTracks(playlistId, trackIds, now: _now());
-}
 
 /// 能改歌单的服务器（[MusicServerPlaylistEditing]）当作「可加歌的歌单来源」。
 class MusicServerPlaylistEditor implements MusicPlaylistEditor {
@@ -139,7 +99,7 @@ Future<void> musicAddLocalTracksToPlaylist(
     listen: false,
   ).read(appProvider).database;
   try {
-    await musicAddToPlaylist(context, LocalMusicPlaylistEditor(db), trackUids);
+    await musicAddToPlaylist(context, MusicLocalPlaylistEditor(db), trackUids);
   } on Object catch (e) {
     FushiToast.show(
       msg: musicPlaylistErrorText(e),

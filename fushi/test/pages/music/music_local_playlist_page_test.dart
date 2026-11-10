@@ -3,8 +3,7 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
-import 'package:flutter/gestures.dart'
-    show PointerDeviceKind, kSecondaryMouseButton;
+import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -15,6 +14,9 @@ import 'package:fushi/src/media/music/music_signal_path.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/music/music_local_playlist_page.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/pages/implementations/music/music_track_list.dart'
+    show MusicPlaylistDragHandle;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -112,6 +114,7 @@ void main() {
   late Directory dir;
   late _AppModel app;
   late ProviderContainer container;
+  late MusicPlaylistRow playlist;
 
   setUp(() async {
     db = FushiDatabase.forTesting(NativeDatabase.memory());
@@ -128,12 +131,11 @@ void main() {
         _track('b'),
       ]);
     });
-    // 「missing」不在曲库（文件暂时不在）：不显示，底部注明。
-    await db.createMusicPlaylist(
-      playlistUid: 'p',
-      name: 'Road trip',
+    // 「missing」不在这台设备的曲库里：页面上不显示，重排时按原相对顺序留在最后。
+    playlist = await db.createMusicPlaylist(
+      'Road trip',
+      at: 1,
       trackUids: <String>['a', 'b', 'missing', 'a'],
-      now: 1,
     );
   });
 
@@ -145,6 +147,8 @@ void main() {
 
   Future<void> pumpPage(WidgetTester tester) async {
     LocaleSettings.setLocale(AppLocale.en);
+    await tester.binding.setSurfaceSize(const Size(1000, 1400));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(
       UncontrolledProviderScope(
         container: container,
@@ -155,7 +159,7 @@ void main() {
               data: MediaQuery.of(context).copyWith(disableAnimations: true),
               child: child!,
             ),
-            home: const MusicLocalPlaylistPage(playlistUid: 'p'),
+            home: MusicLocalPlaylistPage(playlist: playlist),
           ),
         ),
       ),
@@ -164,63 +168,49 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  Finder rowsOf() => find.byWidgetPredicate(
-    (Widget w) =>
-        w.key is ValueKey<String> &&
-        (w.key! as ValueKey<String>).value.startsWith('music-playlist-row-') &&
-        !(w.key! as ValueKey<String>).value.contains('menu'),
-  );
+  Future<List<String>> order(WidgetTester tester) async => <String>[
+    for (final MusicPlaylistEntryRow e
+        in await tester.runAsync(
+              () => db.listMusicPlaylistEntries(playlist.playlistUid),
+            )
+            as List<MusicPlaylistEntryRow>)
+      e.trackUid,
+  ];
 
-  testWidgets('列出在库条目（同一首两次是两行），缺失的注明条数；整单播放按歌单顺序', (
+  testWidgets('每行行尾有拖拽把手；把第一行拖到第二行之后，库里的顺序跟着改，解析不到的条目留在最后', (
     WidgetTester tester,
   ) async {
     await pumpPage(tester);
-    expect(find.text('Road trip'), findsWidgets);
-    expect(rowsOf(), findsNWidgets(3));
-    expect(
-      find.byKey(const ValueKey<String>('music_local_playlist_missing')),
-      findsOneWidget,
-    );
+    final Finder handles = find.byType(MusicPlaylistDragHandle);
+    expect(handles, findsNWidgets(3));
 
-    await tester.tap(
-      find.byKey(const ValueKey<String>('music_local_playlist_play')),
+    final Offset start = tester.getCenter(handles.at(0));
+    final Offset next = tester.getCenter(handles.at(1));
+    final TestGesture gesture = await tester.startGesture(
+      start,
+      kind: PointerDeviceKind.mouse,
     );
+    await tester.pump();
+    await gesture.moveTo(Offset.lerp(start, next, 0.6)!);
+    await tester.pump();
+    await gesture.moveTo(next + const Offset(0, 8));
+    await tester.pump();
+    await gesture.up();
+    await tester.runAsync(() => Future<void>.delayed(Duration.zero));
     await tester.pumpAndSettle();
-    final MusicPlayerEngine engine = app.musicSession.engine;
-    expect(engine.current?.title, 'Title a');
-    expect(engine.queue.map((MusicPlayItem i) => i.trackUid), <String>[
-      'a',
-      'b',
-      'a',
-    ]);
+
+    expect(tester.takeException(), isNull);
+    expect(await order(tester), <String>['b', 'a', 'a', 'missing']);
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
-  testWidgets('右键一行「从歌单移除」只删那一条', (WidgetTester tester) async {
+  testWidgets('有曲目时「导出 .m3u8」可点', (WidgetTester tester) async {
     await pumpPage(tester);
-    final List<MusicPlaylistEntryRow> before =
-        await tester.runAsync(() => db.listMusicPlaylistEntries('p'))
-            as List<MusicPlaylistEntryRow>;
-    final int lastA = before.last.id;
-    await tester.tap(
-      find.byKey(ValueKey<String>('music-playlist-row-$lastA')),
-      buttons: kSecondaryMouseButton,
-      kind: PointerDeviceKind.mouse,
+    final Finder export = find.byKey(
+      const ValueKey<String>('music_local_playlist_export'),
     );
-    await tester.pumpAndSettle();
-    await tester.tap(
-      find.byKey(const ValueKey<String>('music-menu-action-remove')),
-    );
-    await tester.runAsync(() => Future<void>.delayed(Duration.zero));
-    await tester.pumpAndSettle();
-    final List<MusicPlaylistEntryRow> after =
-        await tester.runAsync(() => db.listMusicPlaylistEntries('p'))
-            as List<MusicPlaylistEntryRow>;
-    expect(after.map((MusicPlaylistEntryRow e) => e.trackUid), <String>[
-      'a',
-      'b',
-      'missing',
-    ]);
+    expect(export, findsOneWidget);
+    expect(tester.widget<FushiFilledButton>(export).onPressed, isNotNull);
     await tester.pumpWidget(const SizedBox.shrink());
   });
 }

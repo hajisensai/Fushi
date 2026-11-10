@@ -23,11 +23,12 @@ import 'package:fushi/src/media/music/music_player_engine.dart';
 import 'package:fushi/src/media/music/server/music_servers.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/music/music_apple_music_pages.dart';
+import 'package:fushi/src/pages/implementations/music/music_local_playlist_actions.dart';
 import 'package:fushi/src/pages/implementations/music/music_track_actions.dart';
 import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart'
     show MusicFloatingBarHost;
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
-import 'package:fushi/src/pages/implementations/music/music_local_playlist_page.dart'
+import 'package:fushi/src/pages/implementations/music/music_playlist_track_column.dart'
     show MusicPlaylistTrackColumn, MusicPlaylistTrackRowData;
 import 'package:fushi/src/pages/implementations/music/music_playlist_actions.dart';
 import 'package:fushi/src/media/music/music_local_playlists.dart'
@@ -1104,7 +1105,8 @@ class MusicServerTrackTile extends StatelessWidget {
     ].join(' · ');
     final MusicItemMenu? menu =
         appleMusicTrackMenu(context, browser, track) ??
-        musicServerTrackMenu(context, browser, track);
+        musicServerTrackMenu(context, browser, track) ??
+        musicServerTrackLibraryMenu(context, browser, track);
     return musicWithContextMenu(
       menu,
       FushiPressScale(

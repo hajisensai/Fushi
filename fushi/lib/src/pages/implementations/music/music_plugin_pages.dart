@@ -8,7 +8,12 @@ import 'dart:math' as math;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_core/fushi_core.dart'
-    show FushiDatabase, MusicAlbumRow, MusicPlaylistRow, MusicTrackRow;
+    show
+        FushiDatabase,
+        MusicAlbumRow,
+        MusicPlaylistRow,
+        MusicRemoteTrackRow,
+        MusicTrackRow;
 import 'package:fushi_music/fushi_music.dart';
 import 'package:intl/intl.dart' show Intl, NumberFormat;
 import 'package:material_ui/material_ui.dart';
@@ -25,11 +30,15 @@ import 'package:fushi/src/media/music/plugin/music_plugins.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/music/music_album_page.dart';
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
-import 'package:fushi/src/pages/implementations/music/music_local_playlist_page.dart';
 import 'package:fushi/src/pages/implementations/music/music_mv_page.dart';
 import 'package:fushi/src/pages/implementations/music/music_plugin_login.dart';
 import 'package:fushi/src/pages/implementations/music/music_plugin_settings.dart';
 import 'package:fushi/src/pages/implementations/music/music_server_pages.dart';
+import 'package:fushi/src/pages/implementations/music/music_local_playlist_actions.dart';
+import 'package:fushi/src/pages/implementations/music/music_local_playlist_page.dart'
+    show openMusicLocalPlaylist;
+import 'package:fushi/src/media/music/music_remote_tracks.dart'
+    show musicRemoteTracksAvailable;
 import 'package:fushi/src/pages/implementations/music/music_track_actions.dart';
 import 'package:fushi/src/pages/implementations/music/music_track_list.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
@@ -1766,18 +1775,13 @@ class _RecentPlaysState extends ConsumerState<_RecentPlays> {
         if (!mounted) return;
         await _push(context, MusicAlbumPage(album: album, tracks: tracks));
       case MusicPlaySourceKind.playlist:
-        final MusicPlaylistRow? pl = await ref
+        // 本地歌单（v148 起可建可播）：删了的歌单不再能点回去。
+        final MusicPlaylistRow? playlist = await ref
             .read(appProvider)
             .database
             .getMusicPlaylist(src.id);
-        if (pl == null || pl.deletedAt != null || !mounted) return;
-        await _push(
-          context,
-          MusicLocalPlaylistPage(
-            playlistUid: pl.playlistUid,
-            initialTitle: pl.name,
-          ),
-        );
+        if (playlist == null || !mounted) return;
+        openMusicLocalPlaylist(context, playlist);
       case MusicPlaySourceKind.pluginAlbum ||
           MusicPlaySourceKind.pluginPlaylist:
         final ({String hostId, String itemId})? ref_ = src.hostRef;

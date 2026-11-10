@@ -329,6 +329,21 @@ void main() {
   });
 
   group('leave：显式跳句；关书三条路不碰账本（BUG-2264）', () {
+    test('无缝衔接软换章在第一个 await 之前 leave（与 _beginNavigation 同一采样点）', () {
+      final String body = maskComments(
+        methodBody(corpus, 'Future<void> _onSeamlessChapterActivated({'),
+      );
+      final int leave = body.indexOf('_readLedger.leave();');
+      final int switched = body.indexOf('_currentChapter = to;');
+      final int firstAwait = body.indexOf(
+        'await controller.evaluateJavascript(',
+      );
+      expect(leave, isNonNegative);
+      expect(switched, greaterThan(leave), reason: '先结算旧章再换章号');
+      expect(firstAwait, greaterThan(switched));
+      expect('_readLedger.leave('.allMatches(body), hasLength(1));
+    });
+
     test('_handleExplicitCueJump 体内只 leave', () {
       final String body = methodBody(
         corpus,
@@ -420,13 +435,15 @@ void main() {
       expect(containsCodeLine(body, 'await _studyClock?.flushNow();'), isTrue);
     });
 
-    test('leave 恰七处：跳句 + _beginNavigation + 五个同章跳转入口；'
+    test('leave 恰八处：跳句 + _beginNavigation + 五个同章跳转入口 + 无缝衔接换章；'
         '关书三条路（dispose / onSourcePagePop / 进程退出）零账本动作', () {
       // 2026-10-04 歌词覆盖层：进歌词不再换掉正文文档，正文仍站在当前页并继续跟随，
       // 所以进歌词**不**结算正文页（旧 BUG-2597 的第六处 leave 随之删除）。
       // 五个同章跳转入口：进度条 / 收藏 / 脚注，加上书签（#2485）与跳回历史
       // （#2486）——后两处同章分支同样绕过 _beginNavigation，见上面的逐方法断言。
-      expect('_readLedger.leave('.allMatches(masked), hasLength(7));
+      // 第八处：连续模式章节无缝衔接的软换章（反馈 R7k887yaJI ③）不走
+      // _beginNavigation，在离开那章的那一刻（第一个 await 之前）自己 leave。
+      expect('_readLedger.leave('.allMatches(masked), hasLength(8));
       expect(
         containsIdentifier(
           methodBody(corpus, 'Future<void> _toggleLyricsMode()'),

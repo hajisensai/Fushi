@@ -33,10 +33,10 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/music/music_album_page.dart';
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
 import 'package:fushi/src/pages/implementations/music/music_disc_actions.dart';
+import 'package:fushi/src/pages/implementations/music/music_local_playlist_actions.dart';
 import 'package:fushi/src/pages/implementations/music/music_local_playlist_page.dart';
-import 'package:fushi/src/pages/implementations/music/music_playlist_actions.dart';
-import 'package:fushi/src/pages/implementations/music/music_track_actions.dart'
-    show MusicPlaylistTarget, musicCreatePlaylist;
+import 'package:fushi/src/pages/implementations/music/music_playlist_actions.dart'
+    show musicImportPlaylistFile;
 import 'package:fushi/src/pages/implementations/music/music_plugin_pages.dart';
 import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart'
     show MusicBarReserve, MusicFloatingBarHost;
@@ -48,6 +48,8 @@ import 'package:fushi/src/pages/implementations/music/music_sources_page.dart';
 import 'package:fushi/src/pages/implementations/music/music_sources_recommend.dart';
 import 'package:fushi/src/media/music/music_online_sources.dart';
 import 'package:fushi/src/media/music/server/music_servers.dart';
+import 'package:fushi/src/pages/implementations/music/music_track_actions.dart'
+    show MusicPlaylistTarget, musicCreatePlaylist;
 import 'package:fushi/src/pages/implementations/music/music_track_list.dart';
 import 'package:fushi/src/pages/implementations/music/music_unified_search.dart';
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
@@ -351,6 +353,7 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
                 db.musicAlbums,
                 db.musicPlaylists,
                 db.musicPlaylistEntries,
+                db.musicRemoteTracks,
                 db.musicDiscSources,
                 db.musicPlayEvents,
               ],
@@ -967,9 +970,10 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
         artists: snap.artists,
         onOpen: (MusicArtistRow a) => unawaited(_openArtist(a)),
       ),
+      // 本地曲目在前，加入音乐库的远程曲目（YouTube / 在线插件，v148）随后，同一条队列。
       MusicLibrarySection.songs ||
-      MusicLibrarySection.recommend => MusicTrackList(
-        tracks: snap.tracks,
+      MusicLibrarySection.recommend => MusicTrackList.entries(
+        entries: snap.songEntries,
         albums: snap.albumByUid,
         context: MusicQueueContext.mixed,
       ),
@@ -1021,19 +1025,14 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
           manifest: m,
         ),
       _groupTitle(context, t.music_playlists_local),
-      const Align(
-        alignment: Alignment.centerLeft,
-        child: _LocalPlaylistActions(),
-      ),
-      if (local.isEmpty)
-        Text(t.music_playlists_empty, style: context.fushiType.bodySmall)
-      else
-        _PlaylistList(
-          playlists: local,
-          counts: localCounts,
-          shrinkWrap: true,
-          showActions: false,
+      if (local.isEmpty) ...<Widget>[
+        Text(t.music_playlists_empty, style: context.fushiType.bodySmall),
+        const Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: _LocalPlaylistActions(),
         ),
+      ] else
+        _PlaylistList(playlists: local, counts: localCounts, shrinkWrap: true),
     ];
     return FushiEntranceScope(
       child: ListView.builder(
@@ -1266,73 +1265,57 @@ class _ArtistList extends StatelessWidget {
   }
 }
 
-/// 打开一个本地歌单。
-void _openLocalPlaylist(BuildContext context, String uid, {String? title}) =>
-    unawaited(
-      Navigator.of(context).push<void>(
-        adaptivePageRoute<void>(
-          context: context,
-          builder: (_) =>
-              MusicLocalPlaylistPage(playlistUid: uid, initialTitle: title),
-        ),
-      ),
-    );
+/// 按 uid 打开一个本地歌单（导入后用）；歌单已不在（被删）时不动。
+Future<void> _openLocalPlaylistByUid(
+  BuildContext context,
+  FushiDatabase db,
+  String uid,
+) async {
+  final MusicPlaylistRow? p = await db.getMusicPlaylist(uid);
+  if (p == null || !context.mounted) return;
+  openMusicLocalPlaylist(context, p);
+}
 
-/// 本地歌单的「新建歌单」「导入歌单文件」：建好 / 导入后直接打开（曲库页跟着表变更流刷新）。
-class _LocalPlaylistActions extends ConsumerWidget {
+/// 本地歌单的「新建歌单」「导入歌单文件」（`.m3u` / `.m3u8`，导入后直接打开）。
+class _LocalPlaylistActions extends StatelessWidget {
   const _LocalPlaylistActions();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final FushiDatabase db = ref.read(appProvider).database;
     return Wrap(
       spacing: tokens.spacing.gap,
       runSpacing: tokens.spacing.gap,
-      children: <Widget>[
-        FushiPressScale(
-          child: FushiFilledButton.tonalIcon(
-            key: const ValueKey<String>('music-local-playlist-new'),
-            size: FushiButtonSize.s,
-            onPressed: () async {
-              try {
-                final MusicPlaylistTarget? p = await musicCreatePlaylist(
-                  context,
-                  LocalMusicPlaylistEditor(db),
-                );
-                if (p == null || !context.mounted) return;
-                FushiToast.show(
-                  msg: t.music_action_playlist_created(name: p.title),
-                  severity: ToastSeverity.success,
-                );
-                _openLocalPlaylist(context, p.id, title: p.title);
-              } on Object catch (e) {
-                FushiToast.show(
-                  msg: musicPlaylistErrorText(e),
-                  severity: ToastSeverity.error,
-                );
-              }
-            },
-            icon: const FushiIcon(FushiIcons.add),
-            label: Text(t.music_action_new_playlist),
-          ),
-        ),
-        FushiPressScale(
-          child: FushiFilledButton.tonalIcon(
-            key: const ValueKey<String>('music-local-playlist-import'),
-            size: FushiButtonSize.s,
-            onPressed: () async {
-              final String? uid = await musicImportPlaylistFile(db);
-              if (uid == null || !context.mounted) return;
-              _openLocalPlaylist(context, uid);
-            },
-            icon: const FushiIcon(FushiIcons.folderOpen),
-            label: Text(t.music_action_import_playlist),
-          ),
-        ),
+      children: const <Widget>[
+        _NewLocalPlaylistButton(),
+        _ImportLocalPlaylistButton(),
       ],
     );
   }
+}
+
+/// 「导入歌单文件」：选一个 `.m3u` / `.m3u8`，条目对曲库后建成本地歌单并打开。
+class _ImportLocalPlaylistButton extends ConsumerWidget {
+  const _ImportLocalPlaylistButton();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) => FushiPressScale(
+    child: FushiFilledButton.tonalIcon(
+      key: const ValueKey<String>('music_import_local_playlist'),
+      onPressed: () {
+        final AppModel app = ref.read(appProvider);
+        if (!app.isDatabaseReady) return;
+        final FushiDatabase db = app.database;
+        unawaited(() async {
+          final String? uid = await musicImportPlaylistFile(db);
+          if (uid == null || !context.mounted) return;
+          await _openLocalPlaylistByUid(context, db, uid);
+        }());
+      },
+      icon: const FushiIcon(FushiIcons.folderOpen),
+      label: Text(t.music_action_import_playlist),
+    ),
+  );
 }
 
 class _PlaylistList extends StatelessWidget {
@@ -1340,20 +1323,17 @@ class _PlaylistList extends StatelessWidget {
     required this.playlists,
     required this.counts,
     this.shrinkWrap = false,
-    this.showActions = true,
   });
 
   final List<MusicPlaylistRow> playlists;
+
+  /// 各歌单条目数（歌单 uid → 条数）。
   final Map<String, int> counts;
   final bool shrinkWrap;
-
-  /// 列表顶部放「新建 / 导入」（和账号歌单混排时由外层放，这里不放）。
-  final bool showActions;
 
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final int head = showActions ? 1 : 0;
     return FushiEntranceScope(
       child: ListView.builder(
         shrinkWrap: shrinkWrap,
@@ -1370,26 +1350,25 @@ class _PlaylistList extends StatelessWidget {
                   tokens.spacing.section,
                 ),
               ),
-        itemCount: playlists.length + head,
-        itemBuilder: fushiStaggeredItemBuilder((BuildContext context, int j) {
-          if (j < head) {
+        // 首行是「新建歌单 / 导入歌单文件」，其后每行一个本地歌单（点开 = 本地歌单页）。
+        itemCount: playlists.length + 1,
+        itemBuilder: fushiStaggeredItemBuilder((BuildContext context, int i) {
+          if (i == 0) {
             return Padding(
               padding: EdgeInsets.only(bottom: tokens.spacing.gap),
               child: const Align(
-                alignment: Alignment.centerLeft,
+                alignment: AlignmentDirectional.centerStart,
                 child: _LocalPlaylistActions(),
               ),
             );
           }
-          final int i = j - head;
-          final MusicPlaylistRow p = playlists[i];
+          final MusicPlaylistRow p = playlists[i - 1];
           return FushiPressScale(
             child: FushiGroupedListItem(
               key: ValueKey<String>('music-playlist-${p.playlistUid}'),
-              index: i,
+              index: i - 1,
               count: playlists.length,
-              onTap: () =>
-                  _openLocalPlaylist(context, p.playlistUid, title: p.name),
+              onTap: () => openMusicLocalPlaylist(context, p),
               child: FushiListItem(
                 leading: const FushiListLeadingIcon(FushiIcons.playlist),
                 title: Text(p.name),
@@ -1404,6 +1383,35 @@ class _PlaylistList extends StatelessWidget {
       ),
     );
   }
+}
+
+/// 「新建歌单」：问名字建一个空的本地歌单（歌曲在曲目菜单「加入歌单」里加）。
+class _NewLocalPlaylistButton extends ConsumerWidget {
+  const _NewLocalPlaylistButton();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) => FushiPressScale(
+    child: FushiFilledButton.tonalIcon(
+      key: const ValueKey<String>('music_new_local_playlist'),
+      onPressed: () {
+        final AppModel app = ref.read(appProvider);
+        if (!app.isDatabaseReady) return;
+        unawaited(() async {
+          final MusicPlaylistTarget? created = await musicCreatePlaylist(
+            context,
+            MusicLocalPlaylistEditor(app.database),
+          );
+          if (created == null) return;
+          FushiToast.show(
+            msg: t.music_action_playlist_created(name: created.title),
+            severity: ToastSeverity.success,
+          );
+        }());
+      },
+      icon: const FushiIcon(FushiIcons.add),
+      label: Text(t.music_action_new_playlist),
+    ),
+  );
 }
 
 /// 二级搜索页（宽窄屏同一套，曲库页右上角搜索按钮推入）：顶栏是带返回的搜索框（自动聚焦），正文是统一搜索的综合结果，段标题

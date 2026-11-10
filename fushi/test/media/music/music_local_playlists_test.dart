@@ -111,7 +111,6 @@ void main() {
       importedMusicPlaylistUid('/m/other.m3u8', context: _posix),
       isNot(a),
     );
-    expect(newMusicPlaylistUid(), isNot(newMusicPlaylistUid()));
   });
 
   test('列表显示名：#PLAYLIST 优先，否则文件名', () {
@@ -193,52 +192,54 @@ void main() {
     Future<int> updatedAtOf(String uid) async =>
         (await db.getMusicPlaylist(uid))!.updatedAt;
 
-    test('新建 / 追加 / 删条目 / 重排 / 改名 / 软删，每步推进 updatedAt', () async {
+    test('导入建歌单：uid 被占用（含软删墓碑）时不建；重排只动列出的条目', () async {
       expect(
-        await db.createMusicPlaylist(
+        await db.createImportedMusicPlaylist(
           playlistUid: 'p',
           name: 'P',
-          trackUids: <String>['a', 'b'],
-          now: 1,
+          trackUids: <String>['a', 'b', 'c'],
+          at: 1,
         ),
         isTrue,
       );
       expect(
-        await db.createMusicPlaylist(playlistUid: 'p', name: 'again', now: 2),
+        await db.createImportedMusicPlaylist(
+          playlistUid: 'p',
+          name: 'again',
+          trackUids: const <String>[],
+          at: 2,
+        ),
         isFalse,
       );
-      await db.appendMusicPlaylistTracks('p', <String>['c', 'a'], now: 3);
-      expect(await trackUidsOf('p'), <String>['a', 'b', 'c', 'a']);
-      expect(await updatedAtOf('p'), 3);
-      expect((await db.musicPlaylistEntryCounts())['p'], 4);
-
       final List<MusicPlaylistEntryRow> entries = await db
           .listMusicPlaylistEntries('p');
-      // 删第二个 'a'（同一首放两次只删指定那条）。
-      await db.removeMusicPlaylistEntries('p', <int>{entries[3].id}, now: 4);
-      expect(await trackUidsOf('p'), <String>['a', 'b', 'c']);
+      // 只列出部分条目：没列出的按原顺序排在后面；外来 id 忽略。
+      await db.reorderMusicPlaylist('p', <int>[
+        entries[2].id,
+        999,
+        entries[0].id,
+      ], at: 5);
+      expect(await trackUidsOf('p'), <String>['c', 'a', 'b']);
       expect(
         (await db.listMusicPlaylistEntries(
           'p',
         )).map((MusicPlaylistEntryRow e) => e.position),
         <int>[0, 1, 2],
       );
-
-      // 只列出部分条目：没列出的按原顺序排在后面；外来 id 忽略。
-      await db.reorderMusicPlaylist('p', <int>[
-        entries[2].id,
-        999,
-        entries[0].id,
-      ], now: 5);
-      expect(await trackUidsOf('p'), <String>['c', 'a', 'b']);
       expect(await updatedAtOf('p'), 5);
 
-      await db.renameMusicPlaylist('p', 'Renamed', now: 6);
-      expect((await db.getMusicPlaylist('p'))!.name, 'Renamed');
-
-      await db.softDeleteMusicPlaylist('p', now: 7);
+      await db.deleteMusicPlaylist('p', at: 7);
       expect(await db.listMusicPlaylists(), isEmpty);
-      expect((await db.getMusicPlaylist('p'))!.deletedAt, 7);
+      expect(await db.musicPlaylistUidTaken('p'), isTrue);
+      expect(
+        await db.createImportedMusicPlaylist(
+          playlistUid: 'p',
+          name: 'back',
+          trackUids: <String>['a'],
+          at: 8,
+        ),
+        isFalse,
+      );
     });
 
     test('导入：对上的曲目建歌单；同一文件不再导入（删掉之后也不）；手动导入可再建一份', () async {
@@ -264,7 +265,7 @@ void main() {
       expect(await trackUidsOf(r1.playlistUid), <String>['b', 'a']);
       expect((await db.getMusicPlaylist(r1.playlistUid))!.name, 'List');
 
-      await db.softDeleteMusicPlaylist(r1.playlistUid, now: 2);
+      await db.deleteMusicPlaylist(r1.playlistUid, at: 2);
       final r2 = await importMusicPlaylistFile(
         db,
         path: '/music/list.m3u8',

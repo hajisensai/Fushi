@@ -139,8 +139,8 @@ void main() {
     final MusicPlaylistRow legacy = rows.firstWhere(
       (MusicPlaylistRow r) => r.name == 'legacy',
     );
-    await db.softDeleteMusicPlaylist(mix.playlistUid, now: 5);
-    await db.renameMusicPlaylist(legacy.playlistUid, 'Mine now', now: 5);
+    await db.deleteMusicPlaylist(mix.playlistUid, at: 5);
+    await db.renameMusicPlaylist(legacy.playlistUid, 'Mine now', at: 5);
     File(
       p.join(lists, 'legacy.m3u'),
     ).writeAsStringSync('../Album A/02 Second Song.mp3\n');

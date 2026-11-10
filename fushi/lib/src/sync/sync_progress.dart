@@ -66,6 +66,23 @@ enum SyncPhase {
   finishing,
 }
 
+/// 一个进度 tick 正在同步的**条目种类**（反馈 kM-Gb_Xnu-：任务面板要说清「在同步
+/// 哪一项」）。同一个阶段可能跨好几种条目——互联的 [SyncPhase.readingData] 依次
+/// 跑书进度、视频断点、有声书断点——所以种类随 tick 走，不从阶段反推。
+enum SyncItemKind { book, video, audiobook, dictionary, localAudio, font }
+
+/// 阶段本身就只含一种条目时的默认种类；跨种类的阶段（[SyncPhase.readingData]）与
+/// 没有条目的收尾阶段返回 null，由 tick 自己带 [SyncProgress.itemKind]。
+SyncItemKind? syncItemKindOfPhase(SyncPhase phase) => switch (phase) {
+  SyncPhase.books => SyncItemKind.book,
+  SyncPhase.dictionaries => SyncItemKind.dictionary,
+  SyncPhase.localAudio => SyncItemKind.localAudio,
+  SyncPhase.audiobooks => SyncItemKind.audiobook,
+  SyncPhase.videos => SyncItemKind.video,
+  SyncPhase.fonts => SyncItemKind.font,
+  _ => null,
+};
+
 /// One progress tick within a sync phase.
 ///
 /// [itemIndex] is the number of items already completed in this phase (0-based
@@ -80,9 +97,15 @@ class SyncProgress {
     this.title,
     this.fileFraction,
     this.bytesPerSecond,
-  });
+    SyncItemKind? itemKind,
+  }) : _itemKind = itemKind;
 
   final SyncPhase phase;
+
+  final SyncItemKind? _itemKind;
+
+  /// 当前条目的种类：tick 显式带的优先，否则取阶段的默认种类（可能为 null）。
+  SyncItemKind? get itemKind => _itemKind ?? syncItemKindOfPhase(phase);
   final int itemIndex;
   final int itemTotal;
   final String? title;

@@ -1,8 +1,8 @@
-/// 本地歌单的身份、播放列表文件（`.m3u` / `.m3u8`）导入与导出。
+/// 播放列表文件（`.m3u` / `.m3u8`）导入本地歌单与歌单导出 `.m3u8`。
 ///
-/// 导入的歌单是**独立副本**（用户 2026-11-07 拍板）：导入后在 Fushi 里怎么改都不写回文件，
-/// 文件之后的改动也不同步进来。同一个文件只导入一次：歌单 uid 由文件路径派生
-/// （[importedMusicPlaylistUid]），已有这个 uid（哪怕被用户删了、软删行还在）就不再导入。
+/// 导入的歌单是**独立副本**：导入后在 Fushi 里怎么改都不写回文件，文件之后的改动也不同步
+/// 进来。同一个文件只导入一次：歌单 uid 由文件路径派生（[importedMusicPlaylistUid]），已有
+/// 这个 uid（哪怕被用户删了、软删墓碑还在）就不再导入。
 ///
 /// 条目对曲库：先按路径键精确对（[musicTrackPathKey]），对不上的再按路径尾段对（别的机器
 /// 写的列表，音乐库挪过盘符 / 目录）。指向 CUE 整轨文件的条目展开成该文件的全部虚拟
@@ -15,16 +15,6 @@ import 'package:crypto/crypto.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_music/fushi_music.dart';
 import 'package:path/path.dart' as p;
-
-/// 新建歌单的 uid（随机，跨设备不撞）。
-String newMusicPlaylistUid([Random? random]) {
-  final Random r = random ?? Random.secure();
-  final StringBuffer b = StringBuffer('pl-');
-  for (int i = 0; i < 16; i++) {
-    b.write(r.nextInt(256).toRadixString(16).padLeft(2, '0'));
-  }
-  return b.toString();
-}
 
 /// 从播放列表文件导入的歌单 uid：按文件的路径键派生（同一个文件 = 同一个 uid，换设备
 /// 也一样，备份合并不会出两份）。
@@ -139,7 +129,7 @@ enum MusicPlaylistImportOutcome {
 
 /// 导入一份解析好的列表文件。[libraryTracks] 是在库曲目（一次扫描导入多份列表时由调用方
 /// 查一次传进来）；不传则现查。[forceNewCopy] 用于用户手动导入：文件导入过、但那份歌单
-/// 已被删掉时，用新 uid 再建一份（自动导入不这么做）。
+/// 已被删掉时，按普通歌单再建一份（新 uid；自动导入不这么做）。
 Future<({MusicPlaylistImportOutcome outcome, String playlistUid, int matched})>
 importMusicPlaylistFile(
   FushiDatabase db, {
@@ -150,17 +140,18 @@ importMusicPlaylistFile(
   bool forceNewCopy = false,
   p.Context? context,
 }) async {
-  String uid = importedMusicPlaylistUid(path, context: context);
-  final MusicPlaylistRow? existing = await db.getMusicPlaylist(uid);
-  if (existing != null) {
-    if (!forceNewCopy || existing.deletedAt == null) {
+  final String uid = importedMusicPlaylistUid(path, context: context);
+  bool asNewCopy = false;
+  if (await db.musicPlaylistUidTaken(uid)) {
+    // 歌单还在（getMusicPlaylist 不回软删的），或自动导入：都不再导入。
+    if (!forceNewCopy || await db.getMusicPlaylist(uid) != null) {
       return (
         outcome: MusicPlaylistImportOutcome.alreadyImported,
         playlistUid: uid,
         matched: 0,
       );
     }
-    uid = newMusicPlaylistUid();
+    asNewCopy = true;
   }
   final List<String> trackUids = matchMusicPlaylistEntries(
     file.entries,
@@ -174,11 +165,24 @@ importMusicPlaylistFile(
       matched: 0,
     );
   }
-  final bool created = await db.createMusicPlaylist(
+  final String name = musicPlaylistFileTitle(path, file, context: context);
+  if (asNewCopy) {
+    final MusicPlaylistRow copy = await db.createMusicPlaylist(
+      name,
+      at: now,
+      trackUids: trackUids,
+    );
+    return (
+      outcome: MusicPlaylistImportOutcome.imported,
+      playlistUid: copy.playlistUid,
+      matched: trackUids.length,
+    );
+  }
+  final bool created = await db.createImportedMusicPlaylist(
     playlistUid: uid,
-    name: musicPlaylistFileTitle(path, file, context: context),
+    name: name,
     trackUids: trackUids,
-    now: now,
+    at: now,
   );
   return (
     outcome: created

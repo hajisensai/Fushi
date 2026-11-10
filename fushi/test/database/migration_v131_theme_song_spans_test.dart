@@ -49,12 +49,12 @@ void main() {
       path,
       isMainProcess: false,
     );
-    expect(migrated.schemaVersion, 147);
+    expect(migrated.schemaVersion, 148);
     await migrated.upsertThemeSongSpan(row(start: 1000, end: 91000));
     await migrated.close();
 
     final sqlite.Database probe = sqlite.sqlite3.open(path);
-    expect(probe.select('PRAGMA user_version').first.values.first, 147);
+    expect(probe.select('PRAGMA user_version').first.values.first, 148);
     expect(tableExists(probe, 'video_theme_song_spans'), isTrue);
     expect(
       probe.select('PRAGMA foreign_key_list(video_theme_song_spans)'),
