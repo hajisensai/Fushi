@@ -2478,6 +2478,7 @@
   "discovery_hero_next": "Next",
   "discovery_hero_page_indicator": "Item ${index} of ${count}",
   "discovery_hero_previous": "Previous",
+  "discovery_hidden_irrelevant_count": "${n} likely unrelated hidden",
   "discovery_hidden_show": "Tonen",
   "discovery_hidden_suspected_manga_count": "${n} vermoedelijke manga verborgen",
   "discovery_hidden_zero_seeders_count": "${n} zonder seeders verborgen",
