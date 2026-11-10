@@ -437,7 +437,7 @@ void main() {
             stopped3 && idx(c.currentCue) == 5,
             '7a stopped at end of chapter 0 last screen (${describe()})',
           );
-          await c.play(); // 停在屏末按播放 = 翻下一屏
+          await c.play(); // 停在屏末按播放 = 往下播，音频播进第 1 章后正文跟过去
           final bool crossed = await _poll(
             tester,
             () =>

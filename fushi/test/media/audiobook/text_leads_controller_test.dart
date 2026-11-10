@@ -9,7 +9,8 @@ import 'package:fushi_audio/fushi_audio.dart';
 import 'package:just_audio_platform_interface/just_audio_platform_interface.dart';
 
 /// 文字领读在真实控制器上的行为（假的 just_audio 平台）：屏末停播、翻屏续播、
-/// 显式跳句不误停、停在屏末按播放 = 翻屏、关掉跟随即撤销。
+/// 显式跳句不误停、停在屏末按播放 = 往下播且正文跟过去、音频离开本屏时正文跟随、
+/// 关掉跟随即撤销。
 ///
 /// 位置轮询周期设成 1 小时：平台位置流不会自己插进来，tick 全由
 /// [AudiobookPlayerController.textLeadsPageStopTickForTesting] 手动驱动。
@@ -141,28 +142,92 @@ void main() {
     expect(c.pausedAtPageEnd, isFalse);
   });
 
-  test('停在屏末时按播放 = 请 reader 翻到下一屏（续播由新屏上报驱动）', () async {
-    final (AudiobookPlayerController c, _) = await setUpPlaying();
-    int advances = 0;
-    c.onTextLeadsAdvancePage = () {
-      advances++;
-      return true;
-    };
+  test('停在屏末时按播放 = 直接往下播；播进下一屏的句子后正文跟过去', () async {
+    final (AudiobookPlayerController c, _HangingAudioPlayer player) =
+        await setUpPlaying();
     await c.onReaderPageBounds(page1);
-    c.textLeadsPageStopTickForTesting(400);
+    c.positionTickForTesting(400);
+    expect(c.currentCue, same(cues[0]));
     c.textLeadsPageStopTickForTesting(1520);
+    expect(c.pausedAtPageEnd, isTrue);
+    // 平台位置停在本屏末句句末之后（与真实停播一致），先让在途事件落定。
+    player.emitPosition(0, const Duration(milliseconds: 1520));
+    await pumpEventQueue();
+    final int seeksBefore = player.seeks.length;
 
     await c.play();
-    expect(advances, 1);
-    expect(c.isPlaying, isFalse, reason: '等新屏上报再播');
-    expect(c.pausedAtPageEnd, isTrue);
+    expect(c.isPlaying, isTrue, reason: '不经 reader 翻页：全书最后一屏 / 后台也能续播');
+    expect(c.pausedAtPageEnd, isFalse);
+    expect(
+      player.seeks.length,
+      seeksBefore,
+      reason:
+          '原地续播不 seek：'
+          '${player.seeks.map((SeekRequest r) => r.position).toList()}',
+    );
+    expect(c.shouldRevealCurrentCue, isFalse, reason: '当前句仍在本屏');
+
+    // 越过屏末后不再停（这次越过不是从屏内播到屏末）：播进下一屏首句。
+    c.positionTickForTesting(2100);
+    expect(c.isPlaying, isTrue);
+    expect(c.currentCue, same(cues[2]));
+    expect(c.shouldRevealCurrentCue, isTrue, reason: '音频已离开本屏：正文跟到音频所在屏');
+
+    // reader 跟过去后上报新屏：音频在新屏 → 不动，恢复「屏内不被动翻屏」。
+    await c.onReaderPageBounds(page2);
+    expect(c.isPlaying, isTrue);
+    expect(player.seeks.length, seeksBefore);
+    expect(c.shouldRevealCurrentCue, isFalse);
   });
 
-  test('文字领读下音频从不被动翻屏（shouldRevealCurrentCue 恒假）', () async {
+  test('拖进度条把音频带离本屏 → 正文跟到音频所在屏，而不是音频在别处一路播下去', () async {
     final (AudiobookPlayerController c, _) = await setUpPlaying();
+    await c.onReaderPageBounds(page1);
+    c.positionTickForTesting(400);
+    expect(c.shouldRevealCurrentCue, isFalse);
+
+    // 假平台的文件时长是 2 s：拖到 page2 首句 2000 ms。
+    await c.seekMs(2000);
+    c.positionTickForTesting(2100);
+    expect(c.isPlaying, isTrue, reason: '越过屏末判定已被 seek 复位，不误停');
+    expect(c.currentCue, same(cues[2]));
+    expect(c.shouldRevealCurrentCue, isTrue);
+  });
+
+  test('文字领读：屏内不被动翻屏；还没收到屏范围时照音频领读跟随', () async {
+    final (AudiobookPlayerController c, _) = await setUpPlaying();
+    expect(c.shouldRevealCurrentCue, isTrue, reason: '没有屏可守');
+    await c.onReaderPageBounds(page1);
+    c.positionTickForTesting(400);
     expect(c.shouldRevealCurrentCue, isFalse);
     c.setTextLeadsRequested(false);
     expect(c.shouldRevealCurrentCue, isTrue, reason: '音频领读照旧跟随');
+  });
+
+  test('刚生效的补报只登记屏范围，不把音频拽到这一屏', () async {
+    final (AudiobookPlayerController c, _HangingAudioPlayer player) =
+        await setUpPlaying();
+    await c.onReaderPageBounds(page2, adoptOnly: true);
+    // 音频在 page1 那句（例如打开跟随开关时正文还停在用户手翻到的 page2）。
+    c.positionTickForTesting(400);
+    final int seeksBefore = player.seeks.length;
+    await c.onReaderPageBounds(page1, adoptOnly: true);
+    await c.onReaderPageBounds(page2, adoptOnly: true);
+    expect(player.seeks.length, seeksBefore, reason: 'adopt 不 seek');
+    expect(c.isPlaying, isTrue);
+    expect(c.pageBoundsForTesting, same(page2));
+    expect(c.shouldRevealCurrentCue, isTrue, reason: '正文去找音频');
+  });
+
+  test('插图屏（无句子）上报不清掉上一屏范围：音频照旧停在那一屏屏末', () async {
+    final (AudiobookPlayerController c, _) = await setUpPlaying();
+    await c.onReaderPageBounds(page1);
+    c.positionTickForTesting(400);
+    await c.onReaderPageBounds(null);
+    expect(c.pageBoundsForTesting, same(page1));
+    expect(c.shouldRevealCurrentCue, isFalse, reason: '不把用户从插图屏拽走');
+    expect(c.textLeadsPageStopTickForTesting(1520), isTrue);
+    expect(c.pausedAtPageEnd, isTrue);
   });
 
   test('关掉跟随音频 → 文字领读撤销、屏末状态清空；重新打开会请求补报当前屏', () async {

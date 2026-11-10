@@ -101,6 +101,30 @@ bool textLeadsAudioOnPage({
   );
 }
 
+/// 句子 [cue] 是否属于这一屏：句首落在 `[first 句首, last 句首]` 之间（按播放顺序）。
+///
+/// 与 [textLeadsAudioOnPage] 的区别：这里判的是**当前句**而不是播放位置，用于
+/// 「音频已经不在显示的这一屏」的判定（拖进度条 / ±N 秒 / 停在屏末后按播放播进了
+/// 下一屏）——那时正文要跟到音频所在的屏，文字领读才有可停的屏末。
+bool textLeadsCueOnPage({
+  required AudioCue cue,
+  required TextLeadsPageBounds bounds,
+}) =>
+    comparePlaybackPosition(
+          fileA: cue.audioFileIndex,
+          msA: cue.startMs,
+          fileB: bounds.first.audioFileIndex,
+          msB: bounds.first.startMs,
+        ) >=
+        0 &&
+    comparePlaybackPosition(
+          fileA: cue.audioFileIndex,
+          msA: cue.startMs,
+          fileB: bounds.last.audioFileIndex,
+          msB: bounds.last.startMs,
+        ) <=
+        0;
+
 /// 新的一屏上报后该做什么。
 enum TextLeadsPageAction {
   /// 不动（音频已在本屏且没有停在屏末等续播，或用户自己暂停着且音频已在本屏）。

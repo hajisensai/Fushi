@@ -161,10 +161,14 @@ class AudiobookPlayerController extends ChangeNotifier {
     lyricsOverlay: _readerFollowOverride,
   );
 
-  /// 文字领读刚变成生效：reader 据此让 VN 引擎强制补报一次当前屏范围。
+  /// 文字领读刚变成生效：reader 据此让 VN 引擎补报一次当前屏范围。这次补报只
+  /// **登记**屏范围（[onReaderPageBounds] 的 `adoptOnly`），不当成「用户翻屏」去挪
+  /// 音频——生效的那一刻屏幕不是用户刚翻到的（打开跟随开关时 reader 还正被拉向
+  /// 音频所在屏）。
   VoidCallback? onTextLeadsActivated;
 
-  /// reader 最近一次上报的当前屏句子范围；null = 未知 / 本屏没有句子。
+  /// reader 最近一次上报的有句子的屏的范围；null = 还没收到过（刚生效 / 换书）。
+  /// 插图屏（没有句子）的上报不覆盖它：音频照旧停在上一屏有字处的屏末。
   TextLeadsPageBounds? _pageBounds;
 
   /// 音频是被「播到屏末」停下的（而不是用户暂停）：翻屏 / 按播放时据此续播。
@@ -178,11 +182,6 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 临近屏末时按剩余时长精确停播的一次性计时器：位置轮询每 125 ms 一次，单靠
   /// 轮询会漏出最多一个周期的下一句开头。
   Timer? _pageStopTimer;
-
-  /// 停在屏末时用户按播放（播放条 / 锁屏 / 耳机键）：请 reader 翻到下一屏，续播
-  /// 由新屏的范围上报驱动。返回 false = 翻不动（已是全书最后一屏等），控制器就
-  /// 直接往下播。
-  bool Function()? onTextLeadsAdvancePage;
 
   /// load() 完成前为未完成状态；seek 方法先 await 此 Completer 以避免
   /// 在音频源尚未就绪时 seek 导致位置归零。
@@ -1538,13 +1537,12 @@ class AudiobookPlayerController extends ChangeNotifier {
     // 就把 reader 拉到音频章。
     _hasPlayedOnce = true;
     _manualReaderOverrideCue = null;
-    // 文字领读：停在屏末时按播放（播放条 / 锁屏 / 耳机键）= 翻到下一屏再续播，续播
-    // 由新屏的范围上报（[onReaderPageBounds]）驱动。翻不动（全书最后一屏）就直接往下播。
-    if (_textLeads && _pausedAtPageEnd) {
-      final bool Function()? advance = onTextLeadsAdvancePage;
-      if (advance != null && advance()) return;
-      _pausedAtPageEnd = false;
-    }
+    // 文字领读：停在屏末时按播放（播放条 / 锁屏 / 耳机键）= 接着往下播。音频一播进
+    // 下一屏的句子就「不在显示的这一屏」，被动跟随（[shouldRevealCurrentCue] /
+    // [_maybeEmitCrossChapter]）把正文带过去（跨章同样），新屏上报后照常在它的屏末
+    // 停。不经 reader 翻页：全书最后一屏翻不动、后台 WebView 不跑 JS 时按播放都不会
+    // 卡死在「停在屏末」。
+    _pausedAtPageEnd = false;
     // 用户在图片自动暂停窗口内手动播放：取消待恢复计时器并把视口从插图拉回当前
     // cue（否则计时器到点见已在播放而跳过 snap，视口卡在插图上直到下次 cue 推进）。
     // 手动按播放是显式“继续听书”手势，仍 snap；只复位 BUG-890 的窗口内翻页标志。
@@ -2386,11 +2384,14 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 显式跳句的那一次 reveal 另走 [consumeExplicitNavigationReveal]，不改这里——
   /// 它还决定「当前句拥有阅读位置」，暂停中放宽会让用户手翻的位置不落库。
   ///
-  /// 文字领读时恒为 false：音频从不自己翻屏（屏由用户翻，音频停在屏末）；显式跳句
-  /// 的那一次 reveal 仍经 [consumeExplicitNavigationReveal] 照常翻过去。
+  /// 文字领读时只在「音频不在显示的这一屏」时为真（[_textLeadsAudioLeftPage]）：
+  /// 屏内播放从不自己翻屏（播到屏末就停），但音频被拖进度条 / ±N 秒带离本屏、或
+  /// 停在屏末后按播放播进了下一屏时，正文必须跟到音频所在屏——否则音频在别处一路
+  /// 播下去、本屏的屏末永远等不到，屏末停播与跟随同时失效。显式跳句的那一次 reveal
+  /// 仍经 [consumeExplicitNavigationReveal] 照常翻过去。
   bool get shouldRevealCurrentCue =>
       _effectiveFollowAudio &&
-      !_textLeads &&
+      (!_textLeads || _textLeadsAudioLeftPage(_currentCue)) &&
       _hasPlayedOnce &&
       _player.playing &&
       _stopAtPositionMs == null;
@@ -2435,8 +2436,9 @@ class AudiobookPlayerController extends ChangeNotifier {
     }
     if (_crossChapterHeldForCallerSeek) return;
     if (cue == null) return;
-    // 文字领读：被动播放从不替用户翻章（显式跳句 / 跟随开关重新打开走 bypass 照常）。
-    if (_textLeads && !bypassPlayGuard) return;
+    // 文字领读：音频还在显示的这一屏时，被动播放不替用户翻章（显式跳句 / 跟随开关
+    // 重新打开走 bypass 照常）；音频已播出本屏（停在章末屏末后按播放）才跟过去。
+    if (_textLeads && !bypassPlayGuard && !_textLeadsAudioLeftPage(cue)) return;
     if (!bypassPlayGuard && _isManualReaderOverrideCue(cue)) return;
     final SubtitleRematchFragment? frag = SubtitleRematchCodec.tryDecode(
       cue.textFragmentId,
@@ -2688,21 +2690,43 @@ class AudiobookPlayerController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 文字领读下「音频已不在显示的这一屏」：[cue]（当前句）不属于最近上报的屏。
+  ///
+  /// * 还没收到过屏范围（刚生效、换书）→ 真：没有屏可守，照音频领读跟随，等第一次
+  ///   上报落定。
+  /// * 显式 seek 在途 → 假：翻屏驱动的 [skipToCue] 已先登记了新屏范围、当前句还是
+  ///   旧屏那句，这段窗口里的任何通知都不得把正文拽回旧屏。
+  bool _textLeadsAudioLeftPage(AudioCue? cue) {
+    final TextLeadsPageBounds? bounds = _pageBounds;
+    if (bounds == null) return true;
+    if (_explicitSeekInFlight || cue == null) return false;
+    return !textLeadsCueOnPage(cue: cue, bounds: bounds);
+  }
+
   /// reader 每次换屏（以及同屏重建）上报当前屏的句子范围；[bounds] 为 null = 本屏
   /// 没有句子（插图屏）或解析不到。音频怎么跟由 [decideTextLeadsPageChange] 决定。
-  Future<void> onReaderPageBounds(TextLeadsPageBounds? bounds) async {
+  ///
+  /// [adoptOnly]：只登记范围、不做翻屏决策（[onTextLeadsActivated] 那次补报——
+  /// 屏幕不是用户翻到的）。音频若不在这一屏且正在播，通知一次让 reader 按
+  /// [shouldRevealCurrentCue] 把正文带到音频所在屏，而不是把音频拽到这一屏。
+  Future<void> onReaderPageBounds(
+    TextLeadsPageBounds? bounds, {
+    bool adoptOnly = false,
+  }) async {
     if (!_textLeads) return;
-    if (bounds == null) {
-      // 插图屏：没有可停的句末。停在屏末的保持停着，等用户翻到下一屏有字的地方。
-      _pageBounds = null;
-      _resetTextLeadsCrossing();
-      return;
-    }
+    // 插图屏：没有可停的句末。保留上一屏有字处的范围——正在播的照旧停在那一屏的
+    // 屏末、停着的保持停着，等用户翻到下一屏有字的地方再续播。清空的话音频在插图屏
+    // 上一路播下去不停，也会被当成「还没上报」退回音频领读把正文拽走。
+    if (bounds == null) return;
     // 同一屏重复上报（重排 / 换样式）：范围没变就什么都不做——否则停在屏末的位置
     // 会被当成「不在本屏」而重播这一屏。
     if (bounds.sameRangeAs(_pageBounds)) return;
     _pageBounds = bounds;
     _resetTextLeadsCrossing();
+    if (adoptOnly) {
+      notifyListeners();
+      return;
+    }
     final ({int fileIndex, int positionMs}) at = _effectiveFilePosition;
     final TextLeadsPageDecision decision = decideTextLeadsPageChange(
       audioOnPage: textLeadsAudioOnPage(
@@ -2809,6 +2833,11 @@ class AudiobookPlayerController extends ChangeNotifier {
   @visibleForTesting
   bool textLeadsPageStopTickForTesting(int posMs) =>
       _textLeadsPageStopTick(posMs);
+
+  /// 测试钩子：以指定位置跑一次完整的位置 tick（屏末判定 + cue 推进 + 跨章判定），
+  /// 不经平台位置流。
+  @visibleForTesting
+  void positionTickForTesting(int posMs) => _updateCurrentCue(posMs);
 
   void setFollowAudio(bool value) {
     if (followAudio.value == value) return;

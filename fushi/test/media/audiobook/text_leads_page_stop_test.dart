@@ -107,6 +107,22 @@ void main() {
         reason: '末句已播完：停在本屏屏末的位置不再算「在本屏」',
       );
     });
+
+    test('当前句是否属于本屏按句首落在首尾两句句首之间判', () {
+      expect(textLeadsCueOnPage(cue: bounds.first, bounds: bounds), isTrue);
+      expect(textLeadsCueOnPage(cue: bounds.last, bounds: bounds), isTrue);
+      expect(textLeadsCueOnPage(cue: _cue(1900, 1990), bounds: bounds), isTrue);
+      expect(
+        textLeadsCueOnPage(cue: _cue(3000, 3500), bounds: bounds),
+        isFalse,
+        reason: '下一屏的句子',
+      );
+      expect(
+        textLeadsCueOnPage(cue: _cue(0, 900), bounds: bounds),
+        isFalse,
+        reason: '上一屏的句子',
+      );
+    });
   });
 
   group('decideTextLeadsPageChange', () {

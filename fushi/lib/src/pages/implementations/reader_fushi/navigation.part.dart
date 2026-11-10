@@ -119,7 +119,7 @@ extension _ReaderNavigation on _ReaderFushiPageState {
     // 文字领读：恢复期间的换屏上报被丢弃（见 _onTextLeadsScreenCues），落定后补报
     // 最终停住的那一屏。
     if (_audiobookController?.textLeads ?? false) {
-      _requestTextLeadsScreenReport();
+      _requestTextLeadsScreenReport(adopt: false);
     }
 
     if (!_readerContentReady) {

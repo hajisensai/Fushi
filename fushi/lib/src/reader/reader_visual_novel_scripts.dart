@@ -3479,7 +3479,8 @@ $sharedInitViewport
   // 退回「与本屏相交」。载荷与 cueIdAtPoint 同一身份约定：Sasayaki cue 报
   // `{type:'frag'}`（id = textFragmentId），SRT/VTT/LRC 合成书的 `[data-cue-id]` 报
   // `{type:'sid'}`（id = sentenceIndex）；插图屏 / 无句子报 `{type:'none'}`。
-  // 同一屏同一范围不重复报（force 除外：宿主刚打开文字领读时要一份当前值）。
+  // 同一屏同一范围不重复报（force 除外：宿主刚打开文字领读 / 恢复落定时要一份当前
+  // 值）。adopt = 宿主只登记范围、不当成用户翻屏（文字领读刚生效的那次补报）。
   if (typeof vn.textLeadsScreenCues !== 'function') {
     vn.textLeadsScreenCues = function() {
       var index = this.currentScreenIndex;
@@ -3538,7 +3539,7 @@ $sharedInitViewport
     };
   }
   if (typeof vn.reportTextLeadsScreenCues !== 'function') {
-    vn.reportTextLeadsScreenCues = function(force) {
+    vn.reportTextLeadsScreenCues = function(force, adopt) {
       if (!window.flutter_inappwebview || !window.flutter_inappwebview.callHandler) return;
       var payload;
       try {
@@ -3549,7 +3550,7 @@ $sharedInitViewport
       var key = this.currentScreenIndex + '|' + payload;
       if (!force && key === this.lastTextLeadsReportKey) return;
       this.lastTextLeadsReportKey = key;
-      window.flutter_inappwebview.callHandler('onTextLeadsScreenCues', payload);
+      window.flutter_inappwebview.callHandler('onTextLeadsScreenCues', payload, adopt ? 'adopt' : 'change');
     };
   }
   // 中键「跳到点击句」反查（Dart `_seekToClickedSentence` 调 cueIdAtPoint，查词载荷的

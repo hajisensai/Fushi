@@ -2244,13 +2244,12 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
   // ── 文字领读（media/audiobook/text_leads_page_stop.dart）────────────────────
 
   /// 把 reader 侧条件（偏好选了「文字领读」+ 当前渲染的是 VN 模式）同步给控制器，
-  /// 并挂上「停在屏末按播放 → 翻屏」与「刚生效 → 补报当前屏」两个回调。控制器
-  /// 绑定、设置热更新、布局重载后各调一次；跟随开关 / 歌词覆盖层由控制器自己算。
+  /// 并挂上「刚生效 → 补报当前屏」回调。控制器绑定、设置热更新、布局重载后各调
+  /// 一次；跟随开关 / 歌词覆盖层由控制器自己算。
   void _syncAudiobookTextLeads() {
     final AudiobookPlayerController? ctrl = _audiobookController;
     if (ctrl == null) return;
-    ctrl.onTextLeadsAdvancePage = _textLeadsAdvancePage;
-    ctrl.onTextLeadsActivated = _requestTextLeadsScreenReport;
+    ctrl.onTextLeadsActivated = _adoptTextLeadsScreen;
     ctrl.setTextLeadsRequested(
       textLeadsRequestedFor(
         linkDirection: ReaderFushiSource.instance.audiobookLinkDirection,
@@ -2261,18 +2260,17 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
 
   /// 本页与控制器解绑（控制器是会话对象，比页面活得久）：撤掉回调并关掉文字领读。
   void _detachAudiobookTextLeads(AudiobookPlayerController ctrl) {
-    ctrl.onTextLeadsAdvancePage = null;
     ctrl.onTextLeadsActivated = null;
     ctrl.setTextLeadsRequested(false);
   }
 
-  bool _textLeadsAdvancePage() {
-    if (_controller == null || !mounted) return false;
-    unawaited(_paginate(ReaderNavigationDirection.forward));
-    return true;
-  }
+  /// 文字领读刚生效：补报当前屏，只登记范围（屏幕不是用户翻到的，不挪音频）。
+  void _adoptTextLeadsScreen() => _requestTextLeadsScreenReport(adopt: true);
 
-  void _requestTextLeadsScreenReport() {
+  /// 让 VN 引擎强制补报一次当前屏。[adopt] = 只登记范围（见
+  /// [AudiobookPlayerController.onReaderPageBounds] 的 `adoptOnly`）；恢复 / 跨章落定
+  /// 的补报不是 adopt——那一屏是用户翻章 / 跳章落到的，音频要跟过去。
+  void _requestTextLeadsScreenReport({required bool adopt}) {
     final InAppWebViewController? controller = _controller;
     if (controller == null) return;
     unawaited(
@@ -2281,7 +2279,7 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
             source:
                 'if(window.fushiReader&&typeof window.fushiReader'
                 '.reportTextLeadsScreenCues==="function")'
-                'window.fushiReader.reportTextLeadsScreenCues(true);',
+                'window.fushiReader.reportTextLeadsScreenCues(true,$adopt);',
           )
           .catchError((Object e, StackTrace s) {
             ErrorLogService.instance.log('ReaderFushi.textLeadsReport', e, s);
@@ -2301,7 +2299,8 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
       args[0]?.toString() ?? '',
       _cachedAllCues ?? const <AudioCue>[],
     );
-    unawaited(ctrl.onReaderPageBounds(bounds));
+    final bool adoptOnly = args.length > 1 && args[1] == 'adopt';
+    unawaited(ctrl.onReaderPageBounds(bounds, adoptOnly: adoptOnly));
   }
 }
 
