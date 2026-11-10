@@ -201,6 +201,8 @@ VideoPlayerShortcutActions _actions(List<String> log) {
     alignSubtitleToPrev: noop,
     alignSubtitleToNext: noop,
     enterCaret: noop,
+    openStudyStatistics: noop,
+    toggleStudyClock: noop,
     escape: noop,
   );
 }
