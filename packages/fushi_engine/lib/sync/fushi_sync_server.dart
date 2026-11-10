@@ -96,17 +96,26 @@ part 'fushi_sync_server/host_update.part.dart';
 
 /// Embedded WebDAV-style server used for device-to-device LAN sync.
 ///
-/// SECURITY (HBK-AUDIT-011): transport is plain HTTP and auth is HTTP Basic,
-/// so the bearer token travels in reversible base64 over the wire. This is
-/// acceptable only on a trusted LAN, and is gated behind `allowLan` / [FushiListenScope] — when
-/// false (the default) the server binds to loopback only and is never exposed
-/// to the network. Enabling LAN sync therefore requires an explicit opt-in.
+/// SECURITY（现状，H11 订正）：
+/// - 传输：装配方传入 `securityContext` 时走 TLS（host 自签证书），配对成功响应回传
+///   证书 SHA-256 指纹供 client 钉扎（扫码 / 链接配对的指纹走带外通道）。未开 TLS 时是明文
+///   HTTP + Basic，token 以可逆 base64 过线。全网卡（局域网）监听时 TLS 双栈
+///   （`v6Only:false`），明文只听 IPv4（NAT 之后），不在全局 IPv6 上暴露。
+/// - 监听范围：由 [FushiListenScope] 决定（默认只听回环；局域网要显式打开；无头端
+///   `bind` 写具体地址时只听该地址），见 [FushiSyncServer.start]。
+/// - 凭据：已配对设备各持一枚可单独吊销的 per-peer token；没有稳定 deviceId 的配对
+///   （v1、不带 `clientDeviceId` 的 v2）拿 [kFushiLegacyPeerIdPrefix] 前缀的 legacy
+///   token，同样可单独吊销，但只过普通鉴权、不过敏感服务门；共享 host token 只为
+///   升级前已配对的老设备保留兼容。视频流 / 原盘 / 查词音频等派生凭据记签发凭据，
+///   签发凭据被吊销即连带作废。
+/// - 免 Basic 的路由只有 auth.part 里的「规范化路径 + 方法」单表 `_kPublicRoutes`，
+///   每条 handler 自带门（token / 配对窗口）。
+/// - 配对请求来源（局域网 / P2P / 公网含反代）由 pairing.part 的 `_RequestOrigin`
+///   一处分类：带转发头的请求不算局域网；PIN 失败按来源类别计预算。
+/// - 请求体一律有界读取，超限回 413。
 ///
-/// The proper hardening (TLS with a token-pinned self-signed certificate, or
-/// an HMAC challenge-response so the raw token is never transmitted) is a
-/// coordinated server+client+discovery protocol change that must be designed
-/// and verified on real devices; it is intentionally NOT bolted on here. Until
-/// then, treat LAN sync as unencrypted and only use it on a network you trust.
+/// SECURITY 历史（HBK-AUDIT-011）：本类最初是纯明文 HTTP + Basic，只靠「默认只听
+/// 回环、局域网显式开启」限制暴露面；上面的 TLS / 指纹钉扎即是当时列出的加固方向。
 
 /// 请求上下文里标记信任区的键：P2P 隧道监听口进来的请求为 `'p2p'`。
 const String kFushiRequestZone = 'fushi.zone';
@@ -801,9 +810,11 @@ class FushiSyncServer {
       aiRelaySettings != null && readInterconnectAiRelayEnabled(_prefs);
 
   /// 本 host 的稳定设备 id（与 LAN 广播 TXT `id=` 同值）。非 null 时
-  /// `/api/capabilities` 公布 `hostId` + `addresses`，client 据此把同一台 host 的
-  /// 多条地址归为一组、自动学习新地址（docs/specs/2026-09-28-interconnect-remote-reach.md
-  /// §1）。null（老调用方 / 单测）→ 不公布，client 行为同升级前。
+  /// `/api/ping`（无鉴权）回传 `hostId` 供 client 选路时核对身份；地址集走需鉴权的
+  /// `/api/host/addresses`（`{hostId, addresses}`），不进 capabilities。client 据此把
+  /// 同一台 host 的多条地址归为一组、自动学习新地址
+  /// （docs/specs/2026-09-28-interconnect-remote-reach.md §1）。null（老调用方 /
+  /// 单测）→ 不回传、`/api/host/addresses` 404，client 行为同升级前。
   String? hostId;
 
   /// 「立即给这个视频补字幕」（`POST /api/library/videos/<id>/subtitle/backfill`）。
@@ -828,10 +839,10 @@ class FushiSyncServer {
     now: _now,
   );
 
-  /// 用户在 host 上填的公网 / 反代 / DDNS 地址（每次 capabilities 实时读）。
+  /// 用户在 host 上填的公网 / 反代 / DDNS 地址（每次 `/api/host/addresses` 实时读）。
   Future<List<String>> Function()? publicUrlsProvider;
 
-  /// 网卡之外的附加地址（P2P 节点等），每次 capabilities 实时读。
+  /// 网卡之外的附加地址（P2P 节点等），每次 `/api/host/addresses` 实时读。
   List<InterconnectHostAddress> Function()? extraAddressesProvider;
 
   /// 测试缝：替换网卡枚举。
@@ -1460,8 +1471,9 @@ class FushiSyncServer {
     // 大小写折叠——同一本书在 Windows host 落成小写、在 Linux/Android host 保留原
     // 大小写，跨平台同步身份就此错位。故真实文件操作绝不能用 canonicalize 的结果。
     final fsPath = p.normalize(p.join(syncDataDir, reqPath.substring(1)));
-    // 路径穿越围栏：canonicalize 的大小写折叠/符号链接解析只用于"是否逃出根目录"
-    // 的判定，不参与真实读写，故对身份大小写无影响。
+    // 路径穿越围栏：p.canonicalize 只做词法规整与大小写折叠，**不解析符号链接**；
+    // 它只用于"是否逃出根目录"的判定，不参与真实读写，故对身份大小写无影响。同步根
+    // 里的符号链接只能由 host 本机用户创建（WebDAV 没有创建链接的方法），故不在此防。
     final canonicalFsPath = p.canonicalize(fsPath);
     final canonicalRoot = p.canonicalize(syncDataDir);
     if (canonicalFsPath != canonicalRoot &&
