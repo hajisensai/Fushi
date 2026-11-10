@@ -16,7 +16,7 @@ void main() {
     final String manifest = read('android/app/src/main/AndroidManifest.xml');
     // <application> 默认图标应指向 squircle（不透明白，任意壁纸可见）。
     final RegExp appIcon = RegExp(
-      r'android:name="\$\{applicationName\}"[\s\S]*?android:icon="@mipmap/launcher_icon_squircle"',
+      r'android:name="\.FushiApplication"[\s\S]*?android:icon="@mipmap/launcher_icon_squircle"',
     );
     expect(
       appIcon.hasMatch(manifest),
