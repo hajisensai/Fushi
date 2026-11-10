@@ -46,7 +46,9 @@ import 'package:fushi/src/second_screen/companion/companion_context.dart'
 import 'package:fushi/src/second_screen/second_screen_approval_host.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/srs/srs_app_host.dart' show srsPushProfileNoteEditor;
-import 'package:fushi/src/srs/srs_app_runtime.dart' show installSrsAppRuntime;
+import 'package:fushi/src/srs/srs_app_runtime.dart'
+    show SrsAppRuntime, installSrsAppRuntime, srsAppRuntimeProvider;
+import 'package:fushi/src/srs/srs_sync_scheduler.dart' show SrsCollectionJoin;
 import 'package:fushi/src/srs/srs_memory_probe.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart' show SrsDbStore;
 import 'package:fushi_engine/srs/srs_miner.dart' show SrsMiner;
@@ -792,8 +794,23 @@ void main([List<String> args = const <String>[]]) {
       appModel.srsProfileStoresReader = () =>
           container.read(srsProfileStoresProvider);
       // 复习模块关着时用户改的日界：这份配置的复习库下次激活时补写（AppModel.flushPendingDayRollover）。
-      container.read(srsProfileStoresProvider).onActivated = (SrsDbStore s) =>
-          unawaited(appModel.flushPendingDayRollover(s));
+      // 先加入、后写入：还没定下集合的新设备在复习库激活时（用户写入之前）就有时限地先关联一遍同步位置上已有的集合
+      // （SrsSyncScheduler.joinExistingCollection；首次同步没确认时什么都不做，不挡写入）。
+      container.read(srsProfileStoresProvider).onActivated = (SrsDbStore s) {
+        unawaited(appModel.flushPendingDayRollover(s));
+        final SrsAppRuntime? runtime = container.read(srsAppRuntimeProvider);
+        if (runtime != null) {
+          unawaited(
+            runtime.sync.joinExistingCollection().catchError((
+              Object e,
+              StackTrace stack,
+            ) {
+              ErrorLogService.instance.log('SrsJoinFirst.activated', e, stack);
+              return SrsCollectionJoin.unavailable;
+            }),
+          );
+        }
+      };
       appModel.srsProfileNoteOpener = (SrsMiner miner, String noteId) =>
           srsPushProfileNoteEditor(
             appModel.navigatorKey.currentState,

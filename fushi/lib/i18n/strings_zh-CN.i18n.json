@@ -9313,6 +9313,7 @@
   "srs_sync_directory_unidentified": "暂时认不出同步目录（账号或地址还没就绪）",
   "srs_sync_done": "复习数据已同步",
   "srs_sync_failed": "复习数据同步失败：$reason",
+  "srs_sync_join_provisional_hint": "这台设备还没加入同步位置上已有的复习数据。照常使用即可，下次同步连上时会自动合并。",
   "srs_sync_location_meta_unavailable": "暂时读不到这个位置的设置文件，下次同步时再试。",
   "srs_sync_no_backend": "还没有配置同步服务",
   "srs_sync_now": "立即同步",

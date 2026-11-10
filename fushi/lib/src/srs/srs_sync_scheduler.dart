@@ -47,6 +47,7 @@ import 'package:fushi/src/sync/obfuscating_sync_backend.dart';
 import 'package:fushi/src/sync/sync_module_gate.dart'
     show SyncRunTicket, syncModuleGate;
 import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi_engine/srs/srs_collection_binding.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/sync2/srs_folder_location.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_crypto.dart';
@@ -407,9 +408,11 @@ class SrsSyncScheduler {
     bool Function(String locationId)? locationDisabled,
     Duration migratePullBudget = kSrsPullBeforeMigrateBudget,
     Future<bool?> Function(SyncAssetStore backend)? peerJoined,
+    Duration joinBudget = kSrsPullBeforeMigrateBudget,
   }) : _profileLinker = profileLinker,
        _peerJoined = peerJoined,
        _migratePullBudget = migratePullBudget,
+       _joinBudget = joinBudget,
        _locationDisabled = locationDisabled,
        _autoSyncEnabled = autoSyncEnabled,
        _locationKey = locationKey,
@@ -652,6 +655,12 @@ class SrsSyncScheduler {
 
   /// 旧库迁移之前那轮只拉不发最多等多久（[ensureMigrated]）。
   final Duration _migratePullBudget;
+
+  /// 先加入已有集合（[joinExistingCollection]）最多等多久。
+  final Duration _joinBudget;
+
+  /// 正在做的 [joinExistingCollection]（几个入口同时撞上只跑一遍）。
+  Future<SrsCollectionJoin>? _joining;
 
   /// 正在做的 [ensureMigrated]，按 store、再按**拉取范围**（[_SrsMigrateScope]）：同一范围的几条入口同时撞上只拉、
   /// 只迁移一次。范围是 future 身份的一部分，因为它决定这个 future 要等哪些锁：收全部通道的那份（[_syncAll] 开头，
@@ -1159,6 +1168,21 @@ class SrsSyncScheduler {
     if (report.error == null && !_halted) {
       report.peerNotJoined = await _notePeerJoined(backend, key);
     }
+    if (linker != null &&
+        report.error == null &&
+        !_halted &&
+        _conflictAt(key, store.profileUid) == null) {
+      // 在这个位置上同步成功、没有待用户选的冲突：集合定下了（只进不退，已定下的不改，见 [SrsCollectionBinding]）。
+      // 之后在别的位置上看到别的集合只交给用户选；这个位置上照常按规则收敛。
+      try {
+        await store.setCollectionBinding(
+          SrsCollectionBindingState.settled,
+          via: key,
+        );
+      } catch (e, stack) {
+        ErrorLogService.instance.log('SrsSyncScheduler.binding', e, stack);
+      }
+    }
     if (linker != null && report.error == null && !_halted) {
       try {
         await linker.publish(backend, store, key);
@@ -1552,6 +1576,106 @@ class SrsSyncScheduler {
   /// 用户明确要求的一轮（「立即同步」、AnkiConnect `sync`）：媒体全量对账、冲突判定重做，不复用上次结论。
   Future<SrsSyncNowResult> syncNow() => _syncAll(fullMediaReconcile: true);
 
+  /// 先加入、后写入（集合身份定稿：新设备在写下用户数据之前先加入同步位置上已有的集合，而不是先各写各的、事后
+  /// 合并）。软约束：只是有时限地先关联一遍，**从不挡写入**，离线照常用。
+  ///
+  /// - 首次同步还没确认（[kSrsSyncAwaitingConfirm]）：什么都不做、不列目录（BUG-4011：确认前不迁移也不拉）；
+  /// - 已经定下（`settled`）或本机已有用户数据（[SrsDbStore.hasUserData]，隐式已定：之后的关联交给用户选、合并兜底）：
+  ///   不做；
+  /// - 否则在每条通道（拿通道锁）与本机目录上只跑关联（[SrsProfileLinker.link]，不迁移、不上传），关联上的位置由
+  ///   linker 定为 `settled`。[_joinBudget] 内没跑完、或有位置连不上 / 出错时记为 `provisional`（照常写入，之后的
+  ///   同步轮次照常关联、合并兜底）；到点没跑完的那一遍不取消，在锁里接着跑完。
+  ///
+  /// 由 [_syncAll] 在迁移之前调（确认后的第一轮就是这里）；app 在复习库激活时也调一次（写入之前尽早加入）。
+  Future<SrsCollectionJoin> joinExistingCollection() {
+    final Future<SrsCollectionJoin>? running = _joining;
+    if (running != null) return running;
+    final Future<SrsCollectionJoin> join = _joinExistingCollection();
+    _joining = join;
+    return join.whenComplete(() {
+      if (identical(_joining, join)) _joining = null;
+    });
+  }
+
+  Future<SrsCollectionJoin> _joinExistingCollection() async {
+    final SrsProfileLinker? linker = _profileLinker;
+    if (linker == null || _halted) return SrsCollectionJoin.unavailable;
+    if (!_firstSyncConfirmed()) return SrsCollectionJoin.awaitingConfirm;
+    final SrsDbStore? store = await _readStore();
+    if (store == null || _halted) return SrsCollectionJoin.unavailable;
+    if ((await store.collectionBinding())?.settled ?? false) {
+      return SrsCollectionJoin.settled;
+    }
+    if (await store.hasUserData()) return SrsCollectionJoin.hasData;
+    String? lastKey;
+    bool failed = false;
+    Future<void> linkAt(SyncAssetStore backend, String? known) async {
+      final String? key = known ?? await _directoryKeyOf(backend);
+      if (key == null || _isLocationDisabled(key) || _halted) return;
+      lastKey = key;
+      await _serially(() async {
+        final SrsDbStore? current = await _readStore();
+        if (current == null || _halted) return;
+        if ((await current.collectionBinding())?.settledElsewhere(key) ??
+            false) {
+          // 前面的位置已经定下：这里的判定交给常规轮次（只会判保持 / 交给用户选）。
+          return;
+        }
+        final SrsDbStore linked = await _link(linker, backend, current, key);
+        if (!identical(linked, current)) _onDataChanged();
+      });
+    }
+
+    Future<void> pass() async {
+      final ({int ran, List<Object> errors}) channels = await _channels(
+        (SyncAssetStore backend) => linkAt(backend, null),
+      );
+      if (channels.errors.isNotEmpty) failed = true;
+      for (final Object e in channels.errors) {
+        ErrorLogService.instance.log(
+          'SrsSyncScheduler.join',
+          e,
+          StackTrace.current,
+        );
+      }
+      final Future<List<SrsLocalDirectory>> Function()? local =
+          _localDirectories;
+      if (local == null || _halted) return;
+      for (final SrsLocalDirectory d in await local()) {
+        try {
+          await linkAt(d.store, d.directoryKey);
+        } catch (e, stack) {
+          failed = true;
+          ErrorLogService.instance.log('SrsSyncScheduler.join', e, stack);
+        }
+      }
+    }
+
+    bool timedOut = false;
+    await pass().timeout(
+      _joinBudget,
+      onTimeout: () {
+        timedOut = true;
+      },
+    );
+    final SrsDbStore? after = await _readStore();
+    if (after == null || _halted) return SrsCollectionJoin.unavailable;
+    if ((await after.collectionBinding())?.settled ?? false) {
+      return SrsCollectionJoin.joined;
+    }
+    if (!timedOut && !failed) return SrsCollectionJoin.alone;
+    // 没赶上：记成暂定，照常写入（不挡），之后的同步轮次照常关联。
+    try {
+      await after.setCollectionBinding(
+        SrsCollectionBindingState.provisional,
+        via: lastKey ?? '',
+      );
+    } catch (e, stack) {
+      ErrorLogService.instance.log('SrsSyncScheduler.join', e, stack);
+    }
+    return SrsCollectionJoin.provisional;
+  }
+
   /// 跑一轮全部通道。[fullMediaReconcile] = 不复用上次媒体对账的结论（只有用户手动「立即同步」）；否则媒体对账照
   /// 内容指纹门控（[_mediaReconciledContent] / [kSrsMediaReconcileInterval]），没变就不重做（审查 S-11：以前进复习
   /// 页的节流同步也清空对账时刻，每次进页都把几万个媒体整套对一遍）。
@@ -1560,6 +1684,8 @@ class SrsSyncScheduler {
     // 首次同步确认之后（复习页弹框「开始同步」接着就是这一轮）：旧库在任何一轮上传之前并成操作，迁移前从全部
     // 位置先收一轮（这里还没拿通道锁、也不在 [_serially] 里，可以走 [_channels]；见 [ensureMigrated]）。
     if (_firstSyncConfirmed()) {
+      // 先加入、后写入：还没定下集合的新设备在迁移 / 上传任何东西之前，逐个位置先只关联一遍（[joinExistingCollection]）。
+      await joinExistingCollection();
       final SrsDbStore? store = await _readStore();
       if (store != null && !_halted) await ensureMigrated(store);
     }
@@ -1946,4 +2072,28 @@ class SrsSyncScheduler {
   void _noticeOnce(SrsSyncNotice notice) {
     if (_noticed.add(notice)) _onNotice(notice);
   }
+}
+
+/// [SrsSyncScheduler.joinExistingCollection] 的结果。
+enum SrsCollectionJoin {
+  /// 调度器卸下 / 库关着 / 没有 profile 关联（测试装配）：什么都没做。
+  unavailable,
+
+  /// 首次同步还没确认：不列目录（BUG-4011）。
+  awaitingConfirm,
+
+  /// 已经定下集合，不用再加入。
+  settled,
+
+  /// 本机已有用户数据：不再先加入（关联照常在同步轮次里做，有冲突交给用户选、合并兜底）。
+  hasData,
+
+  /// 在某个位置上关联上了（加入了已有集合，或已有别的设备在本机集合里）：集合定下。
+  joined,
+
+  /// 每个位置都跑完了关联，没有可加入的集合：保持本机集合（第一轮同步成功后定下）。
+  alone,
+
+  /// 到点没跑完、或有位置连不上 / 出错：记为暂定，照常写入，之后由同步轮次关联、合并兜底。
+  provisional,
 }
