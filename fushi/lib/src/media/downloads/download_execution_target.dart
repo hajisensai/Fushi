@@ -27,10 +27,23 @@ class DownloadExecutionLocal extends DownloadExecutionResolution {
 
 /// 偏好指向的 host 在线且宣告代下载能力。
 class DownloadExecutionRemote extends DownloadExecutionResolution {
-  const DownloadExecutionRemote({required this.target, required this.client});
+  const DownloadExecutionRemote({
+    required this.target,
+    required this.client,
+    this.ownsClient = false,
+  });
 
   final HostDownloadTarget target;
   final InterconnectDownloadClient client;
+
+  /// [client] 是 [resolveDownloadExecution] 自建的：用完由拿到本结果的一方
+  /// [release]。调用方自己传入的 client 归调用方，这里不关。
+  final bool ownsClient;
+
+  /// 用完即调（`try/finally`）：关掉自建 client 的通道与连接。
+  void release() {
+    if (ownsClient) client.close();
+  }
 }
 
 /// 偏好指向的 host 不在配对清单里 / 已停用 / 探不到 / 没宣告代下载能力。
@@ -50,6 +63,9 @@ Future<DownloadExecutionResolution> resolveDownloadExecution(
   final String url = appModel.prefsRepo.downloadExecutionHostUrl;
   if (url.isEmpty) return const DownloadExecutionLocal();
   final SyncRepository repo = SyncRepository(appModel.database);
+  // 传入的 client 归调用方；自建的走 Local / Unreachable 前关掉，走 Remote 时
+  // 交给结果（[DownloadExecutionRemote.release]）。
+  final bool owns = client == null;
   final InterconnectDownloadClient resolved =
       client ?? InterconnectDownloadClient(repo: repo);
   // 「这台设备还在不在配对清单里」要先于「能不能探到」判：偏好里存的是一个 URL，
@@ -64,7 +80,10 @@ Future<DownloadExecutionResolution> resolveDownloadExecution(
     await repo.getFushiClientUrls(),
     url,
   );
-  if (paired == null) return const DownloadExecutionLocal();
+  if (paired == null) {
+    if (owns) resolved.close();
+    return const DownloadExecutionLocal();
+  }
   final String? deviceName = paired.deviceName;
   HostDownloadTarget? target;
   try {
@@ -73,8 +92,13 @@ Future<DownloadExecutionResolution> resolveDownloadExecution(
     target = null;
   }
   if (target != null) {
-    return DownloadExecutionRemote(target: target, client: resolved);
+    return DownloadExecutionRemote(
+      target: target,
+      client: resolved,
+      ownsClient: owns,
+    );
   }
+  if (owns) resolved.close();
   return DownloadExecutionUnreachable(url: url, deviceName: deviceName);
 }
 

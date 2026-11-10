@@ -55,7 +55,12 @@ class CtlDownloadDeviceRemote extends CtlDownloadDevice {
   const CtlDownloadDeviceRemote(this.target, this.client);
 
   final HostDownloadTarget target;
+
+  /// 由 [resolveCtlDownloadDevice] 自建、归本结果所有：用完 [release]。
   final InterconnectDownloadClient client;
+
+  /// 用完即调（`try/finally`）：关掉 [client] 的通道与连接。
+  void release() => client.close();
 }
 
 /// `--device`：缺省按「下载执行设备」偏好（与下载页添加任务同一解析，偏好指向的
@@ -69,6 +74,28 @@ Future<CtlDownloadDevice> resolveCtlDownloadDevice(
   final InterconnectDownloadClient client = InterconnectDownloadClient(
     repo: repo,
   );
+  // 走 Remote 时 client 交给结果（调用方 release）；其余出口在这里关掉。
+  try {
+    final CtlDownloadDevice device = await _resolveCtlDownloadDeviceWith(
+      appModel,
+      repo,
+      client,
+      selector,
+    );
+    if (device is! CtlDownloadDeviceRemote) client.close();
+    return device;
+  } on Object {
+    client.close();
+    rethrow;
+  }
+}
+
+Future<CtlDownloadDevice> _resolveCtlDownloadDeviceWith(
+  AppModel appModel,
+  SyncRepository repo,
+  InterconnectDownloadClient client,
+  String? selector,
+) async {
   if (selector == null) {
     final DownloadExecutionResolution execution =
         await resolveDownloadExecution(appModel, client: client);
@@ -206,13 +233,17 @@ Future<Map<String, Object?>> addCtlTorrentDownload({
       :final HostDownloadTarget target,
       :final InterconnectDownloadClient client,
     ):
-      return _addRemote(
-        request: request,
-        target: target,
-        client: client,
-        sourceId: sourceId,
-        priority: priority,
-      );
+      try {
+        return await _addRemote(
+          request: request,
+          target: target,
+          client: client,
+          sourceId: sourceId,
+          priority: priority,
+        );
+      } finally {
+        device.release();
+      }
     case CtlDownloadDeviceLocal():
       return _addLocal(
         appModel: appModel,
@@ -366,9 +397,15 @@ Future<Map<String, Object?>> ctlDownloadTargets(AppModel appModel) async {
       ? preferred
       : sources.firstOrNull?.id;
   final String executionUrl = appModel.prefsRepo.downloadExecutionHostUrl;
-  final List<HostDownloadTarget> hosts = await InterconnectDownloadClient(
+  final InterconnectDownloadClient client = InterconnectDownloadClient(
     repo: repo,
-  ).probeAll();
+  );
+  final List<HostDownloadTarget> hosts;
+  try {
+    hosts = await client.probeAll();
+  } finally {
+    client.close();
+  }
   return <String, Object?>{
     'localBackend': appModel.readyVideoDownloadBackend ?? 'none',
     'executionDevice': executionUrl.isEmpty ? 'local' : executionUrl,

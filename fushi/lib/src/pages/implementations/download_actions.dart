@@ -104,25 +104,29 @@ Future<GenericPushOutcome> pushGenericMagnet({
   );
   switch (execution) {
     case DownloadExecutionRemote(target: final target, client: final client):
-      final String? kindName = discoveryKind?.name;
-      if (!target.supportsKind(kindName)) {
-        return GenericPushOutcome.remoteKindUnsupported;
-      }
-      final String trimmed = magnet.trim();
-      if (parseMagnetInfoHash(trimmed) == null) {
-        return GenericPushOutcome.invalidMagnet;
-      }
       try {
-        await client.addMagnet(
-          target,
-          magnetUri: trimmed,
-          title: parseMagnetDisplayName(trimmed) ?? trimmed,
-          discoveryKind: kindName,
-        );
-        return GenericPushOutcome.remoteQueued;
-      } on Object catch (error, stack) {
-        ErrorLogService.instance.log('GenericMagnet.remote', error, stack);
-        return GenericPushOutcome.pushFailed;
+        final String? kindName = discoveryKind?.name;
+        if (!target.supportsKind(kindName)) {
+          return GenericPushOutcome.remoteKindUnsupported;
+        }
+        final String trimmed = magnet.trim();
+        if (parseMagnetInfoHash(trimmed) == null) {
+          return GenericPushOutcome.invalidMagnet;
+        }
+        try {
+          await client.addMagnet(
+            target,
+            magnetUri: trimmed,
+            title: parseMagnetDisplayName(trimmed) ?? trimmed,
+            discoveryKind: kindName,
+          );
+          return GenericPushOutcome.remoteQueued;
+        } on Object catch (error, stack) {
+          ErrorLogService.instance.log('GenericMagnet.remote', error, stack);
+          return GenericPushOutcome.pushFailed;
+        }
+      } finally {
+        execution.release();
       }
     case DownloadExecutionUnreachable():
       return GenericPushOutcome.remoteUnreachable;

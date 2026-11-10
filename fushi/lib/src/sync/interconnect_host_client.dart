@@ -3,10 +3,15 @@ import 'dart:convert';
 
 import 'package:fushi/src/sync/interconnect_peer_addresses.dart'
     show interconnectPersistedUrl;
+import 'package:fushi/src/sync/interconnect_host_channel.dart'
+    show InterconnectPinRefused;
 import 'package:fushi/src/sync/interconnect_post_transport.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:http/http.dart' as http;
 import 'package:fushi_engine/sync/tls/fushi_pinning_http.dart';
+
+export 'package:fushi/src/sync/interconnect_host_channel.dart'
+    show InterconnectPinRefused;
 
 /// A failure talking to the selected host. [message] is the host's
 /// machine-readable error code (or a client-side code such as
@@ -26,13 +31,6 @@ class InterconnectHostError implements Exception {
   static const String certificateMismatchCode = 'certificate_mismatch';
   @override
   String toString() => message;
-}
-
-/// A request was refused locally because it would bypass the host's pin.
-class InterconnectPinRefused implements Exception {
-  const InterconnectPinRefused();
-  @override
-  String toString() => InterconnectHostError.certificateMismatchCode;
 }
 
 /// Requests bound to one paired host (video remote control, SRS remote review),

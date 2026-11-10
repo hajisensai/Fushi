@@ -2821,88 +2821,95 @@ class _HomePageState extends BasePageState<HomePage>
         InterconnectDownloadClient(
           repo: SyncRepository(appModelNoUpdate.database),
         );
-    final List<HostDownloadTarget> remoteTargets = await downloadClient
-        .probeAll();
-    if (!context.mounted) return;
-    if (registry == null || (pipeline == null && remoteTargets.isEmpty)) {
-      unawaited(_promptDownloadBackendSetup(context));
-      return;
-    }
-    // 本机没有管线时「本机」这一档根本提交不了：不列本地落地源，下拉只剩 host。
-    final List<MediaSourceRow> sources = pipeline == null
-        ? const <MediaSourceRow>[]
-        : remoteTargets.isEmpty
-        ? await _managedVideoDownloadSourcesOrPrompt(context)
-        : await appModelNoUpdate.getManagedVideoDownloadSources();
-    // PR #1021 把「后端 runtime 是否可用」延后到真正提交下载时（target 在
-    // onSubmit 里取），后端没配好也能先搜资源。但「有没有受管视频来源」是另一
-    // 回事：没有落地文件夹时来源下拉是空的、提交按钮永远灰着，所以 BUG-1872 的
-    // 引导必须留在打开页面之前。两个原因本来就是两条分支，别再合成一条。
-    // 有 host 可用时例外：落点在 host，没有本地来源也能下。
-    if (!context.mounted || (sources.isEmpty && remoteTargets.isEmpty)) return;
-    await Navigator.of(context).push<void>(
-      MaterialPageRoute<void>(
-        builder: (_) => VideoDiscoveryResourceSearchPage(
-          item: item,
-          registry: registry,
-          sources: sources,
-          defaultSourceId:
-              appModelNoUpdate.prefsRepo.videoDownloadTargetSourceId,
-          // 后端 runtime 的可用性延后到提交时才判（见上），所以「后端没配好」这条
-          // 失败必然发生在页面里。页面自己拿不到 AppModel，把配置引导按端口注入，
-          // 失败态那句话才有一颗能真正解决它的按钮。
-          onConfigureBackend: _promptDownloadBackendSetup,
-          resolveAliases: _videoDiscoveryItemWithSearchAliases,
-          remoteTargets: remoteTargets,
-          defaultRemoteTargetUrl:
-              appModelNoUpdate.prefsRepo.downloadExecutionHostUrl,
-          onRemoteSubmit:
-              (VideoDiscoveryRemoteDownloadSelection selection) async {
-                final VideoResourceCandidate resource = selection.resource;
-                // host 只收磁链：索引器没给现成磁链就用 infoHash 造一条；两者都没有
-                // （Torznab 只给 .torrent 地址）的候选投不了远端，如实报。
-                final String? infoHash = resource.infoHash;
-                final String? magnet =
-                    resource.magnetUri ??
-                    (infoHash == null
-                        ? null
-                        : magnetUriFromInfoHash(
-                            infoHash,
-                            displayName: resource.title,
-                          ));
-                if (magnet == null) {
-                  throw const HostDownloadException('magnet_only');
-                }
-                await downloadClient.addMagnet(
-                  selection.target,
-                  magnetUri: magnet,
-                  title: resource.title,
-                  mediaKind:
-                      selection.media.mediaKind == VideoMetadataMediaKind.tv
-                      ? 'tv'
-                      : 'movie',
+    // client 被 onRemoteSubmit 闭包捕获：页面关掉（push 返回）或提前 return 时关。
+    try {
+      final List<HostDownloadTarget> remoteTargets = await downloadClient
+          .probeAll();
+      if (!context.mounted) return;
+      if (registry == null || (pipeline == null && remoteTargets.isEmpty)) {
+        unawaited(_promptDownloadBackendSetup(context));
+        return;
+      }
+      // 本机没有管线时「本机」这一档根本提交不了：不列本地落地源，下拉只剩 host。
+      final List<MediaSourceRow> sources = pipeline == null
+          ? const <MediaSourceRow>[]
+          : remoteTargets.isEmpty
+          ? await _managedVideoDownloadSourcesOrPrompt(context)
+          : await appModelNoUpdate.getManagedVideoDownloadSources();
+      // PR #1021 把「后端 runtime 是否可用」延后到真正提交下载时（target 在
+      // onSubmit 里取），后端没配好也能先搜资源。但「有没有受管视频来源」是另一
+      // 回事：没有落地文件夹时来源下拉是空的、提交按钮永远灰着，所以 BUG-1872 的
+      // 引导必须留在打开页面之前。两个原因本来就是两条分支，别再合成一条。
+      // 有 host 可用时例外：落点在 host，没有本地来源也能下。
+      if (!context.mounted || (sources.isEmpty && remoteTargets.isEmpty)) {
+        return;
+      }
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute<void>(
+          builder: (_) => VideoDiscoveryResourceSearchPage(
+            item: item,
+            registry: registry,
+            sources: sources,
+            defaultSourceId:
+                appModelNoUpdate.prefsRepo.videoDownloadTargetSourceId,
+            // 后端 runtime 的可用性延后到提交时才判（见上），所以「后端没配好」这条
+            // 失败必然发生在页面里。页面自己拿不到 AppModel，把配置引导按端口注入，
+            // 失败态那句话才有一颗能真正解决它的按钮。
+            onConfigureBackend: _promptDownloadBackendSetup,
+            resolveAliases: _videoDiscoveryItemWithSearchAliases,
+            remoteTargets: remoteTargets,
+            defaultRemoteTargetUrl:
+                appModelNoUpdate.prefsRepo.downloadExecutionHostUrl,
+            onRemoteSubmit:
+                (VideoDiscoveryRemoteDownloadSelection selection) async {
+                  final VideoResourceCandidate resource = selection.resource;
+                  // host 只收磁链：索引器没给现成磁链就用 infoHash 造一条；两者都没有
+                  // （Torznab 只给 .torrent 地址）的候选投不了远端，如实报。
+                  final String? infoHash = resource.infoHash;
+                  final String? magnet =
+                      resource.magnetUri ??
+                      (infoHash == null
+                          ? null
+                          : magnetUriFromInfoHash(
+                              infoHash,
+                              displayName: resource.title,
+                            ));
+                  if (magnet == null) {
+                    throw const HostDownloadException('magnet_only');
+                  }
+                  await downloadClient.addMagnet(
+                    selection.target,
+                    magnetUri: magnet,
+                    title: resource.title,
+                    mediaKind:
+                        selection.media.mediaKind == VideoMetadataMediaKind.tv
+                        ? 'tv'
+                        : 'movie',
+                  );
+                },
+            onSubmit: (VideoDiscoveryDownloadSelection selection) async {
+              if (pipeline == null) {
+                // 本机没有管线时 sources 为空、「本机」档不渲染，这里到不了；留
+                // 一道硬门免得日后有人把 sources 接回来。
+                throw const VideoDownloadPipelineActionRequired(
+                  'no local download pipeline',
                 );
-              },
-          onSubmit: (VideoDiscoveryDownloadSelection selection) async {
-            if (pipeline == null) {
-              // 本机没有管线时 sources 为空、「本机」档不渲染，这里到不了；留
-              // 一道硬门免得日后有人把 sources 接回来。
-              throw const VideoDownloadPipelineActionRequired(
-                'no local download pipeline',
+              }
+              final VideoDownloadBackendTarget target = await appModelNoUpdate
+                  .currentVideoDownloadBackendTarget();
+              await enqueueLocalVideoDownload(
+                pipeline: pipeline,
+                coverUrl: item.posterUrl,
+                selection: selection,
+                target: target,
               );
-            }
-            final VideoDownloadBackendTarget target = await appModelNoUpdate
-                .currentVideoDownloadBackendTarget();
-            await enqueueLocalVideoDownload(
-              pipeline: pipeline,
-              coverUrl: item.posterUrl,
-              selection: selection,
-              target: target,
-            );
-          },
+            },
+          ),
         ),
-      ),
-    );
+      );
+    } finally {
+      downloadClient.close();
+    }
   }
 
   Future<void> _openVideoDiscoverySubscription(
@@ -3060,6 +3067,8 @@ class _HomePageState extends BasePageState<HomePage>
     // 连不上 / 不支持时如实报，不悄悄退回本机——与四个下载入口同一口径。
     final DownloadExecutionResolution execution =
         await resolveDownloadExecution(appModelNoUpdate);
+    // 远端分支只用到 host 的地址（整场对话交给那台电脑），探测用的 client 立即释放。
+    if (execution is DownloadExecutionRemote) execution.release();
     if (!context.mounted) return;
     switch (execution) {
       case DownloadExecutionUnreachable():
