@@ -3520,9 +3520,14 @@ class VideoDownloadPipelineService {
           targetRelativePath: Value<String?>(file.targetRelativePath),
           finalAbsolutePath: Value<String?>(file.finalLocalPath),
           // 同包并列作品也是 `video`，靠「无集号」区分（见
-          // [isVideoDownloadSiblingWorkRow]）。
+          // [isVideoDownloadSiblingWorkRow]）。蓝光原盘的成员（含盘内 m2ts）是
+          // `other`：它们不是一个个可入库的视频，导入阶段按落位后的盘树整盘
+          // 入库（[_importBlurayDiscs]），字幕 / 刮削也不逐文件处理。
           kind: Value<String>(
-            file.targetRelativePath.contains('/Extras/') && !file.siblingWork
+            file.blurayDiscRoot != null
+                ? 'other'
+                : file.targetRelativePath.contains('/Extras/') &&
+                      !file.siblingWork
                 ? 'extra'
                 : 'video',
           ),

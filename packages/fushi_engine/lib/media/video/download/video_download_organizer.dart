@@ -105,6 +105,7 @@ class VideoOrganizationFilePlan {
     this.seasonNumber,
     this.episodeNumber,
     this.siblingWork = false,
+    this.blurayDiscRoot,
   });
 
   final int backendFileIndex;
@@ -113,6 +114,15 @@ class VideoOrganizationFilePlan {
   final String finalLocalPath;
   final int? seasonNumber;
   final int? episodeNumber;
+
+  /// 该文件属于一张蓝光原盘时，盘根（含 `BDMV` 的那一层）在整理后的相对路径
+  /// （`作品 (年份)/BD`；盘在种子根时就是作品目录本身）；普通文件为 null。
+  ///
+  /// 原盘成员整棵树原样落位（原名、原相对结构，[VideoDownloadOrganizer.plan]），
+  /// 不改名、不进 Season / Extras：盘的播放列表（`PLAYLIST/*.mpls`）按片段号引用
+  /// `STREAM/*.m2ts`、`CLIPINF/*.clpi`，任何一个成员改了名或换了位置，这张盘就
+  /// 不再是盘。导入阶段按原盘入库（与来源库扫描器同一套识别），不逐个 m2ts 入库。
+  final String? blurayDiscRoot;
 
   /// 合集包里**另一部作品**的正片（kg41f2PGdC）：与任务作品同目录结构并列、季号
   /// 判不出、集号与任务作品重叠的续作目录（`Yama no Susume Next Summit [..]/[01]`）。
@@ -189,10 +199,33 @@ class VideoDownloadOrganizer {
       );
     }
 
+    // 蓝光原盘先认（BDMV 树）：盘内的 m2ts 不是一集一集的视频，盘的其余文件
+    // （index.bdmv / MPLS / CLPI / META …）也不是可以丢在原地的附件——修前它们
+    // 被当散装视频，最大的 m2ts 被改名成正片、其余进 Extras、非视频文件留在
+    // 原路径，整张盘被拆散（BUG 见 [_planBlurayDiscFiles]）。盘认领的文件不再
+    // 进下面的剧集 / 电影排布。
+    final Map<int, List<String>> discOwners = _blurayDiscOwners(files);
+    final List<VideoOrganizationFilePlan> discPlans = _planBlurayDiscFiles(
+      request,
+      files,
+      discOwners,
+      displayRoot: displayRoot,
+    );
     final List<TorrentFileEntry> videoFiles = files
-        .where((TorrentFileEntry file) => _isVideo(file.name))
+        .where(
+          (TorrentFileEntry file) =>
+              !discOwners.containsKey(file.index) && _isVideo(file.name),
+        )
         .toList(growable: false);
     if (videoFiles.isEmpty) {
+      if (discPlans.isNotEmpty) {
+        // 纯原盘种子：没有散装视频要按集 / 正片排布，任务形态照请求不变。
+        return VideoOrganizationPlan(
+          remoteSourceRoot: remoteRoot,
+          kind: request.kind,
+          files: _uniqueTargets(discPlans),
+        );
+      }
       throw const FormatException('torrent has no supported video files');
     }
     // 身份说是电影、种子却是一整套分集（BUG-2760：TMDB 电影身份配上 12 集合集
@@ -311,8 +344,169 @@ class VideoDownloadOrganizer {
     return VideoOrganizationPlan(
       remoteSourceRoot: remoteRoot,
       kind: kind,
-      files: pass.files,
+      files: _uniqueTargets(<VideoOrganizationFilePlan>[
+        ...pass.files,
+        ...discPlans,
+      ]),
     );
+  }
+
+  /// 种子里每个属于蓝光原盘的文件 → 它所在盘根的种子内路径段（种子根即盘根时
+  /// 为空列表）。
+  ///
+  /// 盘根的识别与来源库扫描器（[planBlurayDiscRoots] / `blurayDiscRootForFile`）
+  /// 同一形状：`<盘根>/BDMV/index.bdmv`（或 `MovieObject.bdmv`）、或
+  /// `<盘根>/BDMV/PLAYLIST/*.mpls`。种子路径是 `/` 或 `\` 分隔的相对路径，所以
+  /// 这里按段比较，不走平台 `p.split`。
+  ///
+  /// 归属：文件取**最深**的那个包含它的盘根（盘套盘时各归各盘），并且
+  /// * 在盘根下的蓝光标准目录（`BDMV` / `CERTIFICATE` / `AACS` / `BDSVM`）里的
+  ///   一律归盘；
+  /// * 盘根不是种子根时，盘根下的**非视频**文件（盘目录里的扫图 / nfo）也随盘走，
+  ///   免得盘被搬走后留下一个只剩零碎的空壳目录；盘根下标准目录之外的散装视频仍按
+  ///   普通视频排布；
+  /// * 盘根就是种子根时，只认标准目录——种子根的其它文件与盘无关。
+  static Map<int, List<String>> _blurayDiscOwners(
+    List<TorrentFileEntry> files,
+  ) {
+    final List<List<String>> roots = <List<String>>[];
+    final Set<String> seen = <String>{};
+    for (final TorrentFileEntry file in files) {
+      final List<String>? root = _blurayDiscRootOfManifest(
+        _segments(file.name),
+      );
+      if (root != null && seen.add(root.join('/'))) roots.add(root);
+    }
+    if (roots.isEmpty) return const <int, List<String>>{};
+    // 最深的盘根优先匹配。
+    roots.sort((List<String> a, List<String> b) => b.length - a.length);
+    final Map<int, List<String>> owners = <int, List<String>>{};
+    for (final TorrentFileEntry file in files) {
+      final List<String> segments = _segments(file.name);
+      for (final List<String> root in roots) {
+        if (segments.length <= root.length) continue;
+        if (!_startsWithSegments(segments, root)) continue;
+        final bool inStandardDirectory =
+            segments.length > root.length + 1 &&
+            _blurayStandardDirectories.contains(
+              segments[root.length].toUpperCase(),
+            );
+        if (inStandardDirectory || (root.isNotEmpty && !_isVideo(file.name))) {
+          owners[file.index] = root;
+        }
+        break;
+      }
+    }
+    return owners;
+  }
+
+  /// 蓝光盘根下的标准顶层目录（BD-ROM 规格）。
+  static const Set<String> _blurayStandardDirectories = <String>{
+    'BDMV',
+    'CERTIFICATE',
+    'AACS',
+    'BDSVM',
+  };
+
+  /// [segments] 是盘的清单文件（`BDMV/index.bdmv` / `BDMV/MovieObject.bdmv` /
+  /// `BDMV/PLAYLIST/*.mpls`）时返回盘根路径段，否则 null。
+  static List<String>? _blurayDiscRootOfManifest(List<String> segments) {
+    final int n = segments.length;
+    if (n >= 2 && segments[n - 2].toUpperCase() == 'BDMV') {
+      final String name = segments[n - 1].toUpperCase();
+      if (name == 'INDEX.BDMV' || name == 'MOVIEOBJECT.BDMV') {
+        return segments.sublist(0, n - 2);
+      }
+    }
+    if (n >= 3 &&
+        segments[n - 2].toUpperCase() == 'PLAYLIST' &&
+        segments[n - 3].toUpperCase() == 'BDMV' &&
+        p.extension(segments[n - 1]).toLowerCase() == '.mpls') {
+      return segments.sublist(0, n - 3);
+    }
+    return null;
+  }
+
+  static bool _startsWithSegments(List<String> value, List<String> prefix) {
+    if (value.length < prefix.length) return false;
+    for (var i = 0; i < prefix.length; i++) {
+      if (value[i] != prefix[i]) return false;
+    }
+    return true;
+  }
+
+  /// 原盘成员的排布：整棵盘树原样落到作品目录下（BUG：蓝光原盘被拆散）。
+  ///
+  /// 盘根本身的位置镜像种子内目录结构（剥掉全种子共享的发布根，与 Extras 镜像
+  /// 同口径，路径段过 [_safeSegment]）：`[发布组] 作品/BD/BDMV/…` →
+  /// `作品 (年份)/BD/BDMV/…`，多卷 `DISC1` / `DISC2`（或 `S1/DISC1` /
+  /// `S2/DISC1`）各自一个目录，源路径唯一 ⇒ 目标唯一。盘根就是发布根时保留它的
+  /// 名字（`作品/盘名/BDMV`）；盘根就是种子根（`BDMV/…` 在最外层）时作品目录本身
+  /// 就是盘根。盘根以下**一个字节都不改**：原名、原大小写、原相对结构。
+  static List<VideoOrganizationFilePlan> _planBlurayDiscFiles(
+    VideoOrganizationRequest request,
+    List<TorrentFileEntry> files,
+    Map<int, List<String>> owners, {
+    required String displayRoot,
+  }) {
+    if (owners.isEmpty) return const <VideoOrganizationFilePlan>[];
+    final String? sharedRoot = _sharedRootOfNames(
+      files.map((TorrentFileEntry file) => file.name).toList(growable: false),
+    );
+    final List<VideoOrganizationFilePlan> planned =
+        <VideoOrganizationFilePlan>[];
+    for (final TorrentFileEntry file in files) {
+      final List<String>? root = owners[file.index];
+      if (root == null) continue;
+      final List<String> segments = _segments(file.name);
+      // 剥共享发布根；盘根恰好就是发布根时保留它（否则盘目录名就没了）。
+      final List<String> mirroredRoot =
+          root.length > 1 && root.first == sharedRoot ? root.sublist(1) : root;
+      final List<String> discRoot = <String>[
+        displayRoot,
+        for (final String segment in mirroredRoot)
+          _safeSegment(segment, legacy: request.legacyUnderscoreNames),
+      ];
+      final String relative = _portableJoin(<String>[
+        ...discRoot,
+        ...segments.sublist(root.length),
+      ]);
+      planned.add(
+        VideoOrganizationFilePlan(
+          backendFileIndex: file.index,
+          originalRelativePath: file.name,
+          targetRelativePath: relative,
+          finalLocalPath: p.normalize(
+            p.joinAll(<String>[request.sourceRoot, ...relative.split('/')]),
+          ),
+          blurayDiscRoot: _portableJoin(discRoot),
+        ),
+      );
+    }
+    return planned;
+  }
+
+  /// 全计划的目标路径唯一性闸：两个源文件落到同一目标就显式失败并点名两者，
+  /// 绝不让后一个覆盖前一个（原盘树与散装视频分两路排布，只能在合流处查）。
+  static List<VideoOrganizationFilePlan> _uniqueTargets(
+    List<VideoOrganizationFilePlan> files,
+  ) {
+    final Map<String, String> claimed = <String, String>{};
+    for (final VideoOrganizationFilePlan file in files) {
+      final String key = Platform.isWindows
+          ? file.targetRelativePath.toLowerCase()
+          : file.targetRelativePath;
+      final String? claimedBy = claimed[key];
+      if (claimedBy != null) {
+        throw FormatException(
+          'organization target collision: ${file.targetRelativePath} '
+          '(claimed by "$claimedBy", also matched by '
+          '"${file.originalRelativePath}")',
+        );
+      }
+      claimed[key] = file.originalRelativePath;
+    }
+    return files;
   }
 
   /// 单趟排布：把每个视频文件映射到目标相对路径，并记账认出了多少集正片。
@@ -1038,15 +1232,21 @@ bool isVideoDownloadVideoFile(String relativePath) =>
 /// 第一段目录；平铺种子返回 null。与 [VideoDownloadOrganizer.plan] 同一算法——
 /// 调用方拿整个种子的文件列表调它，再把结果传给 [isVideoDownloadExtraFile]，
 /// 判出来的才与整理阶段一致（发布根名恰好叫 `Extras` / `PV` 时不会被当特典目录）。
-String? videoDownloadSharedRoot(List<TorrentFileEntry> files) =>
-    VideoDownloadOrganizer._sharedRootSegment(
-      files
-          .where(
-            (TorrentFileEntry file) =>
-                VideoDownloadOrganizer._isVideo(file.name),
-          )
-          .toList(growable: false),
-    );
+///
+/// 蓝光原盘的成员不算（与 [VideoDownloadOrganizer.plan] 一样先把盘摘出去）。
+String? videoDownloadSharedRoot(List<TorrentFileEntry> files) {
+  final Map<int, List<String>> discOwners =
+      VideoDownloadOrganizer._blurayDiscOwners(files);
+  return VideoDownloadOrganizer._sharedRootSegment(
+    files
+        .where(
+          (TorrentFileEntry file) =>
+              !discOwners.containsKey(file.index) &&
+              VideoDownloadOrganizer._isVideo(file.name),
+        )
+        .toList(growable: false),
+  );
+}
 
 /// 种子内某个文件是不是整理器会当「特典」处理的附件：躺在发布组划的特典目录
 /// （`SPs/` `PV/` `Menu/` `特典/` …）里，或文件名本身是 NCOP / NCED / PV /
