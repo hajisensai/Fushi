@@ -793,9 +793,13 @@ class _HomePageState extends BasePageState<HomePage>
       // 首帧同步之后挂定时轮询，让静止不动的设备也能周期性拉到远端改动（见
       // [_periodicSyncInterval] 注释）。dispose 时 cancel。排行榜书架同步挂在同一个
       // 定时器上（它自己有 30 分钟节流），所以定时器不再只随同步模块开启。
-      final bool periodicAutoSync = startupModules.isEnabled(ModuleId.sync);
+      //
+      // 每个 tick 都交给同步入口，由同步层的模块门（`syncModuleGate`）决定跑不跑：
+      // 会话中途关掉「同步与备份 + 互联」模块，下一个 tick 起就不再开跑；重新打开，
+      // 下一个 tick 起恢复（反馈 SJeJd5EEZO）。此前这里在启动时把模块开关抄成一个
+      // 常量，中途关掉照跑、启动时关着的中途打开也永远不跑。
       _periodicSyncTimer = Timer.periodic(_periodicSyncInterval, (_) {
-        if (periodicAutoSync) _triggerFullAutoSync();
+        _triggerFullAutoSync();
         _maybeSyncLeaderboard();
       });
 

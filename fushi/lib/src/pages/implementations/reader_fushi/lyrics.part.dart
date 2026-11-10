@@ -829,6 +829,10 @@ extension _ReaderLyrics on _ReaderFushiPageState {
       onToggleStatsTimer: _toggleStudyClockManualPause,
       onSpeedPanel: (LyricsMenuAnchor anchor) =>
           unawaited(_showLyricsSpeedPanel(ctrl, anchor)),
+      // 音画同步面板：整本偏移，与设置 › 有声书「音画同步」同一个偏好（反馈
+      // G5xYgLcp4p：不必离开歌词模式去设置调）。
+      onAvSyncPanel: (LyricsMenuAnchor anchor) =>
+          unawaited(_showLyricsAvSyncPanel(ctrl, anchor)),
       onOpenIllustration: (int index, {required bool returnToCover}) =>
           unawaited(
             _openLyricsIllustrationViewer(index, returnToCover: returnToCover),
@@ -895,6 +899,25 @@ extension _ReaderLyrics on _ReaderFushiPageState {
         anchorContext: anchor.context,
         speed: ctrl.speed,
         onChanged: (double speed) => unawaited(ctrl.setSpeed(speed)),
+      ),
+    );
+  }
+
+  /// 音画同步面板（反馈 G5xYgLcp4p）：与普通阅读模式快捷设置同一个步进器，回调
+  /// 同一个 [AudiobookPlayerController.setDelayMs]（夹取 + 立即重查高亮 + 写同一个
+  /// 偏好，不另存），偏移即时作用于高亮 / 点句跳转 / 单句试听 / 上下句（BUG-4243
+  /// 修好的那条路径）。只调整本偏移，不做逐行偏移（功能黑名单）。面板压着歌词页
+  /// 期间停表（BUG-2208），从按钮 context 弹、跟随歌词模式主题。
+  Future<void> _showLyricsAvSyncPanel(
+    AudiobookPlayerController ctrl,
+    LyricsMenuAnchor anchor,
+  ) async {
+    if (!mounted || !anchor.context.mounted) return;
+    await _withStudyClockPaused(
+      () => showLyricsAvSyncPanel(
+        anchorContext: anchor.context,
+        delayMs: ctrl.delayMs,
+        onChanged: ctrl.setDelayMs,
       ),
     );
   }
@@ -1005,6 +1028,12 @@ extension _ReaderLyrics on _ReaderFushiPageState {
           onPressed: _jumpHistory.isEmpty
               ? null
               : () => unawaited(_openJumpHistoryPanel()),
+        );
+      case LyricsControlItem.avSync:
+        return ReaderHeaderAction(
+          icon: icon,
+          label: label,
+          onPressed: () => unawaited(_showLyricsAvSyncPanel(ctrl, anchor)),
         );
     }
   }

@@ -38,6 +38,14 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-4305](bugs/BUG-4305-srs-sync2-device-trust.md) | ✅ | ✅ | srs-sync2-device-trust |
+> 共 3867 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4305](bugs/BUG-4305-sync-module-off-keeps-syncing.md) | ✅ | ✅ | 关掉同步模块后在飞同步与定时同步仍继续跑 |
+| [BUG-4304](bugs/BUG-4304-interconnect-video-resume-stale-pref-cache.md) | ✅ | ✅ | 互联客户端视频续播用旧断点并写回 host（偏好内存缓存不知道同步写库） |
+| [BUG-4303](bugs/BUG-4303-remote-video-watched-label-stale.md) | ✅ | ✅ | 视频页远端卡「看到 X」只显示 host 清单快照：同步拉到新断点 / 播完返回后不刷新 |
+| [BUG-4302](bugs/BUG-4302-sync-summary-ignores-progress.md) | ✅ | ✅ | 同步完成提示只数内容传输：拉到 / 推出视频断点、书籍与有声书进度仍显示「无变化」 |
 | [BUG-4301](bugs/BUG-4301-bd-pack-without-batch-title-no-full-plan.md) | ✅ | ✅ | 没写 batch / 季号的 BD 整包给不出「全集」下载计划 |
 | [BUG-4300](bugs/BUG-4300-srs-day-rollover-not-synced.md) | ✅ | ✅ | 复习的「今天」日界不随同步、profile 时区字段从没有写入方 |
 | [BUG-4299](bugs/BUG-4299-srs-sync2-plaintext-downgrade.md) | ✅ | ✅ | SRS 同步 v2：没有密钥的设备会往已加密的位置写明文 |

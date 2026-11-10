@@ -300,10 +300,62 @@ class SyncManager {
     // 没有整树快照时，把「每本书列一次文件夹」从串行改成有界并发的预取：请求数不变
     // （仍是每本一次），但不再一本接一本地排队等往返（jHQpTfjrNB：36 本书 ×
     // 一次 PROPFIND 串行就是十几秒）。
+    //
+    // 循环一旦提前退出（鉴权失效 / 同步模块被关掉的取消检查点抛出），预取 worker 不得
+    // 再领新活：此时调用方马上要放掉这条通道的后端锁，别的同步随即接手这个无锁单例，
+    // 被丢下的 worker 若还在发列举请求就是在锁外用它。
+    bool loopExited = false;
     final Map<String, Future<SyncFileTrio?>> prefetched = listing == null
-        ? await _prefetchSyncFileLists(books, skipBookKeys)
+        ? await _prefetchSyncFileLists(
+            books,
+            skipBookKeys,
+            stopped: () => loopExited,
+          )
         : const <String, Future<SyncFileTrio?>>{};
     final results = <SyncBookResult>[];
+    try {
+      await _syncBooksInOrder(
+        books: books,
+        results: results,
+        prefetched: prefetched,
+        syncStats: syncStats,
+        statsSyncMode: statsSyncMode,
+        syncAudioBook: syncAudioBook,
+        syncContent: syncContent,
+        syncMangaContent: syncMangaContent,
+        importOnly: importOnly,
+        listing: listing,
+        observations: observations,
+        skipBookKeys: skipBookKeys,
+        onBookProgress: onBookProgress,
+      );
+    } finally {
+      loopExited = true;
+    }
+    // TODO-1332: 不在此（书阶段末尾 / 整轮 sweep 中途）记录同步冷却时间戳。整轮 sweep
+    // 还有词典 / 本地音频 / 有声书 / live 进度 / 聚合等后续阶段；若在这里记 lastSyncMs，
+    // 书阶段后被中断（app 退出 / 进程被杀 / 异常）的残缺同步会误记冷却、压制下次
+    // app-open 重试。改由 SyncOrchestrator.run() 在整轮完成后记录（见其结尾 TODO-1332）。
+    await _persistDriveCache();
+    return results;
+  }
+
+  /// [syncAllBooks] 的逐本循环：按顺序同步每本书，结果追加进 [results]。
+  Future<void> _syncBooksInOrder({
+    required List<EpubBookRow> books,
+    required List<SyncBookResult> results,
+    required Map<String, Future<SyncFileTrio?>> prefetched,
+    required bool syncStats,
+    required StatisticsSyncMode statsSyncMode,
+    required bool syncAudioBook,
+    required bool syncContent,
+    required bool syncMangaContent,
+    required bool importOnly,
+    required RemoteListingSnapshot? listing,
+    required BookFolderListingObservations? observations,
+    required Set<String> skipBookKeys,
+    required void Function(int done, int total, String title)? onBookProgress,
+  }) async {
     for (int i = 0; i < books.length; i++) {
       final book = books[i];
       onBookProgress?.call(i, books.length, book.title);
@@ -338,12 +390,6 @@ class SyncManager {
       );
       results.add(result);
     }
-    // TODO-1332: 不在此（书阶段末尾 / 整轮 sweep 中途）记录同步冷却时间戳。整轮 sweep
-    // 还有词典 / 本地音频 / 有声书 / live 进度 / 聚合等后续阶段；若在这里记 lastSyncMs，
-    // 书阶段后被中断（app 退出 / 进程被杀 / 异常）的残缺同步会误记冷却、压制下次
-    // app-open 重试。改由 SyncOrchestrator.run() 在整轮完成后记录（见其结尾 TODO-1332）。
-    await _persistDriveCache();
-    return results;
   }
 
   /// 逐本列举预取的并发上限。只是把同样多的请求叠起来发，不改变请求数；取小值是为了
@@ -362,10 +408,13 @@ class SyncManager {
   ///
   /// 预取失败的那本得到 null，轮到它时走与改动前完全相同的现列路径——错误在那里照常
   /// 抛出、照常进重试 / 失败结果，不会被这里吞掉。
+  ///
+  /// [stopped] 为 true 后 worker 不再领新活（[syncAllBooks] 的循环已提前退出，见那里）。
   Future<Map<String, Future<SyncFileTrio?>>> _prefetchSyncFileLists(
     List<EpubBookRow> books,
-    Set<String> skipBookKeys,
-  ) async {
+    Set<String> skipBookKeys, {
+    required bool Function() stopped,
+  }) async {
     final Map<String, String> cached = _backend.cachedFolderIds;
     if (cached.isEmpty) return const <String, Future<SyncFileTrio?>>{};
     final Map<String, int> booksPerFolder = <String, int>{};
@@ -401,7 +450,7 @@ class SyncManager {
         };
     final Iterator<String> pending = slots.keys.iterator;
     Future<void> worker() async {
-      while (pending.moveNext()) {
+      while (!stopped() && pending.moveNext()) {
         final String id = pending.current;
         try {
           slots[id]!.complete(await _backend.listSyncFiles(id));
