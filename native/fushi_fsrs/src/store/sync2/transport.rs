@@ -3262,9 +3262,12 @@ impl SrsCore {
                 }
                 _ => false,
             };
+            let is_self = dev == local.device.0.to_vec();
+            // 对端的派生规则版本（摘要前缀，digest.rs）与本机不同：两边摘要永远不比，状态页提示「对方规则 vN」。
+            let rules = digest.as_deref().and_then(super::digest::derive_rules_of);
             let mut row = json!({
                 "device": hex_id(&dev),
-                "self": dev == local.device.0.to_vec(),
+                "self": is_self,
                 "applied": applied,
                 "behind": (head_seq - applied).max(0),
                 "seenAt": x.get::<_, Option<i64>>(3).map_err(sql)?,
@@ -3273,6 +3276,16 @@ impl SrsCore {
                 "warning": x.get::<_, Option<String>>(7).map_err(sql)?,
                 "digestMismatch": same_vv_mismatch,
             });
+            if let (false, Some(theirs), Some(m)) = (
+                is_self,
+                rules.filter(|r| *r != super::digest::DERIVE_RULES),
+                row.as_object_mut(),
+            ) {
+                m.insert(
+                    "rules".to_owned(),
+                    json!({"theirs": theirs, "mine": super::digest::DERIVE_RULES}),
+                );
+            }
             if let (Some(m), Some(Value::Object(x))) =
                 (row.as_object_mut(), extras.get(&hex_id(&dev)))
             {
