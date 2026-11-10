@@ -884,6 +884,56 @@ void main() {
     });
   }
 
+  // 回归（反馈 kd7syQrdFd，iOS）：手机旋转在竖屏底栏壳与横屏顶栏 / 侧边栏壳之间
+  // 切换，曾经两套壳是结构不同的两棵树，标签页的父链一变 WebBrowserTabView 的
+  // State 被销毁重建——真机上 InAppWebView 重建、网页重载、YouTube 播放中断。
+  for (final Size wide in <Size>[const Size(844, 390), const Size(1280, 800)]) {
+    testWidgets(
+      '旋转（窄 ↔ 宽 ${wide.width.toInt()}×${wide.height.toInt()}）不重建标签页 State',
+      (WidgetTester tester) async {
+        FushiWebBrowserPage.debugTabViewBuilder =
+            (BuildContext _, WebBrowserTab tab) => _TabViewStateProbe(
+              key: const ValueKey<String>('stub-webview'),
+              label: 'page ${tab.url}',
+            );
+        const Size narrow = Size(390, 844);
+        await pumpBrowser(tester, narrow);
+        expect(
+          byKey('web-browser-tab-count'),
+          findsOneWidget,
+          reason: '前提：竖屏底栏壳',
+        );
+        final State<StatefulWidget> before = tester.state(
+          byKey('stub-webview'),
+        );
+
+        tester.view.physicalSize = wide;
+        await tester.pumpAndSettle();
+        expect(
+          byKey('web-browser-tab-count'),
+          findsNothing,
+          reason: '前提：已切到宽屏壳',
+        );
+        expect(byKey('web-browser-toolbar'), findsOneWidget);
+        expect(
+          identical(tester.state(byKey('stub-webview')), before),
+          isTrue,
+          reason: '窄 → 宽：标签页是同一个 State，WebView 没有被销毁重建',
+        );
+
+        tester.view.physicalSize = narrow;
+        await tester.pumpAndSettle();
+        expect(byKey('web-browser-tab-count'), findsOneWidget);
+        expect(
+          identical(tester.state(byKey('stub-webview')), before),
+          isTrue,
+          reason: '宽 → 窄：标签页仍是同一个 State',
+        );
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
   testWidgets('标签页网格有普通「新标签页」按钮（Android 不支持无痕时也能新建）', (
     WidgetTester tester,
   ) async {
@@ -977,4 +1027,21 @@ void main() {
     expect(MediaQuery.sizeOf(pageContext).width, closeTo(411, 0.01));
     expect(tester.takeException(), isNull);
   });
+}
+
+/// 代替 WebBrowserTabView 的有状态桩：State 被销毁重建就换成新实例（真机上即
+/// InAppWebView 重建、网页重载）。
+class _TabViewStateProbe extends StatefulWidget {
+  const _TabViewStateProbe({super.key, required this.label});
+
+  final String label;
+
+  @override
+  State<_TabViewStateProbe> createState() => _TabViewStateProbeState();
+}
+
+class _TabViewStateProbeState extends State<_TabViewStateProbe> {
+  @override
+  Widget build(BuildContext context) =>
+      ColoredBox(color: Colors.white, child: Text(widget.label));
 }
