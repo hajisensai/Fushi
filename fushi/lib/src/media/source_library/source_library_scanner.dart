@@ -1062,8 +1062,7 @@ class SourceLibraryScanner {
         scanError = e.toString();
         debugPrint(
           'SourceLibraryScanner: game scan failed for source '
-          '${source.id} (${source.rootPath}): $e
-$stack',
+          '${source.id} (${source.rootPath}): $e\n$stack',
         );
       }
     }
