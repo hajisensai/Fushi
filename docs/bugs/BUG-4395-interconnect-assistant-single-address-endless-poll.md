@@ -13,3 +13,9 @@
   - `ai_video_acquisition_page.dart` 的 `_failureText` 把三个新码映射到 `interconnect_host_failure_*`；`home_page.dart` 与 `ai_agent_page.dart` 改用 `probeUrlOutcome`，非 unreachable 的失败说出具体原因，各失败路径释放 client；AI 助手复用判断改为 `hostRef` 相等。
 - **[x] ② 已加自动化测试** — `fushi/test/sync/app_assistant_host_test.dart`（真 `FushiSyncServer` + `VideoAcquisitionAssistantHost`，行 hostId 与服务器一致）：V-B3 死地址排第一时 `probeUrl(死地址)` 仍探到并能开会话；R5b 会话中途 host 吊销 per-peer 口令 → 401 后会话读不再增长、记录末条为 `remote_auth_rejected`、之后的动作不发请求；会话开在可拔掉的转发地址上，拔掉并停用后下一次动作改走同组另一条地址。修复前 3 条全红（1 条断言失败、2 条等待超时）。
 - **备注**：计划写的 client 生命周期方法名是 `close()`，但 `close(target, id)` 早就是「关 host 上的会话」请求，同名冲突，改叫 `dispose()`。halted 之后的动作计划写「一律 `_markUnavailable`」，实现为直接返回（进入 halted 时已插过一条具体提示，再插会重复）。`remote_ai_agent_session.dart`（AI 助手远端会话）的同类状态机与 dispose 关 client 归 remote-tasks 包。真设备切网 / 吊销复测未做。
+- **[x] ① remote-tasks 步骤 14：AI 助手远端会话（2026-11-11）** — `a53eb435151`：
+  - 根因（基准 94317ab6295）：`fushi/lib/src/ai/agent/remote_ai_agent_session.dart:481` `_onError` 只在 `sessionGone` 时置 `_lost`，`:427` `_pollLoop` 对其余错误（含 401、证书不符）每 `_retryDelay`（3 秒）无限重试；`:515` `dispose` 从不释放会话接管的 `InterconnectAssistantClient`（`ai_agent_page.dart` 每次开会话新建一个交给会话）。
+  - `_onError` 把 `HostAssistantException.permanent` 与 `sessionGone` 同等处理：置 `_lost`，停轮询、`isUsable` 为 false（入口下次重新探测并经 `probeUrlOutcome` 说出具体原因）、dispose 不再发关会话请求。
+  - `dispose` 关完 host 会话（`_lost` 时不发）、并等换场时仍在途的关旧会话请求发完后调用 `_client.dispose()`。
+- **[x] ② remote-tasks 步骤 14 测试** — `fushi/test/sync/app_agent_assistant_host_test.dart`：会话中途 host 删掉 per-peer 口令并清缓存（同 `FushiServerController.revokePeer`）→ 401 后长轮询 GET 计数不再增长、`isUsable == false`、断线提示只一条、dispose 不发 DELETE 且释放 client（修复前计数持续增长，红）；正常 dispose 先发 DELETE 再释放 client、之后请求以 `cancelled` 收尾。重活队列让给别的会话，**未运行**，修复前红未实跑确认。
+- **备注（步骤 14）**：计划写 `_client.close()` 与「计数的 client 工厂」；真实接口里 client 释放叫 `dispose()`（`close(target, id)` 是关会话请求），且 `InterconnectAssistantClient` 只收借用的 `httpClient`、没有明文 client 工厂，测试改用借用的计数 client + 覆写 `dispose()` 记录释放时刻。
