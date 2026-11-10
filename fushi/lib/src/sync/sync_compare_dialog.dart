@@ -79,6 +79,8 @@ class SyncCompareEntry {
     this.liveAction,
     this.liveLocalProgress,
     this.liveRemoteProgress,
+    this.liveLocalAudio,
+    this.liveRemoteAudio,
     this.localPage,
     this.remotePage,
     this.pageCount,
@@ -145,6 +147,13 @@ class SyncCompareEntry {
   /// 选远端时 host 已不是它就不落地。加载时探测失败为 null。
   final RemoteBookProgress? liveLocalProgress;
   final RemoteBookProgress? liveRemoteProgress;
+
+  /// 加载时读到的本机 / host 有声书断点（带时间戳，只在互联通道填）。有声书断点
+  /// 有自己的三方判定，「应用」不把书的选择直接套给它：只有真分叉、且 host 仍是
+  /// 用户在这一行看到的 [liveRemoteAudio] 时才按这一行的选择落地。host 没有这本书
+  /// 的有声书或从没记过断点时为 null。
+  final PlaybackPosition? liveLocalAudio;
+  final PlaybackPosition? liveRemoteAudio;
 
   bool get hasLocal => localUpdatedAt != null;
   bool get hasRemote => remoteUpdatedAt != null;
@@ -368,6 +377,7 @@ Future<List<SyncCompareEntry>> _fetchCompareData(
     int? localUpdatedAt;
     int? localStatsCount;
     int? localAudioMs;
+    PlaybackPosition? liveLocalAudio;
 
     if (local != null) {
       try {
@@ -393,7 +403,19 @@ Future<List<SyncCompareEntry>> _fetchCompareData(
           localUpdatedAt = pos.updatedAt;
         }
         localStatsCount = statCountByTitle[title];
-        localAudioMs = await repo.getAudiobookPosition(local.bookKey);
+        final String? liveAudioKey =
+            liveExtras?.audiobookKeyByBookKey[local.bookKey];
+        if (liveAudioKey != null) {
+          // 互联：带时间戳读，「应用」按有声书自己的三方判定落地要用它。
+          liveLocalAudio = await InterconnectPlaybackPositionSync(
+            db: db,
+            backend: backend as InterconnectSyncBackend,
+            kind: PlaybackPositionKind.audiobook,
+          ).localPosition(liveAudioKey);
+          localAudioMs = liveLocalAudio.positionMs;
+        } else {
+          localAudioMs = await repo.getAudiobookPosition(local.bookKey);
+        }
         if (localAudioMs == 0) localAudioMs = null;
       } catch (e) {
         developer.log(
@@ -494,6 +516,10 @@ Future<List<SyncCompareEntry>> _fetchCompareData(
         liveAction: liveRow?.action,
         liveLocalProgress: liveRow?.local,
         liveRemoteProgress: liveRow?.remote,
+        liveLocalAudio: liveLocalAudio,
+        liveRemoteAudio: local == null
+            ? null
+            : liveExtras?.audioPositionByBookKey[local.bookKey],
         localPage: localPage,
         remotePage: remotePage,
         pageCount: pageCount,
@@ -522,6 +548,7 @@ class _LiveCompareExtras {
     required this.statCountByTitle,
     required this.audiobookKeyByBookKey,
     required this.audioPosSecByBookKey,
+    required this.audioPositionByBookKey,
   });
 
   /// 书名 → host `reading_statistics` 里这本书的行数（与本机列同口径：按天一行）。
@@ -533,6 +560,10 @@ class _LiveCompareExtras {
 
   /// 本机 bookKey → host 有声书断点（秒）。host 有有声书但从没记过断点时不在表里。
   final Map<String, double> audioPosSecByBookKey;
+
+  /// 本机 bookKey → host 有声书断点（带时间戳），与 [audioPosSecByBookKey] 同口径
+  /// 同条目；「应用」以它为用户看到的 host 值（[SyncCompareEntry.liveRemoteAudio]）。
+  final Map<String, PlaybackPosition> audioPositionByBookKey;
 }
 
 /// 取 host 的统计与有声书断点。两样各自容错：一样取不到只让那一列显示「无数据」，
@@ -561,6 +592,8 @@ Future<_LiveCompareExtras> _fetchLiveCompareExtras(
 
   final Map<String, String> audiobookKeyByBookKey = <String, String>{};
   final Map<String, double> audioPosSecByBookKey = <String, double>{};
+  final Map<String, PlaybackPosition> audioPositionByBookKey =
+      <String, PlaybackPosition>{};
   try {
     final Map<String, RemoteAudiobookInfo> hostById =
         <String, RemoteAudiobookInfo>{
@@ -575,6 +608,10 @@ Future<_LiveCompareExtras> _fetchLiveCompareExtras(
       audiobookKeyByBookKey[book.bookKey] = info.identity;
       if (info.positionUpdatedAtMs > 0) {
         audioPosSecByBookKey[book.bookKey] = info.positionMs / 1000;
+        audioPositionByBookKey[book.bookKey] = (
+          positionMs: info.positionMs,
+          updatedAtMs: info.positionUpdatedAtMs,
+        );
       } else {
         // 老 host 的清单不内联断点：逐本问（与 sweep 的回落同口径）。
         needsGet.add(book.bookKey);
@@ -593,6 +630,7 @@ Future<_LiveCompareExtras> _fetchLiveCompareExtras(
       for (int j = 0; j < batch.length; j++) {
         if (positions[j].updatedAtMs > 0) {
           audioPosSecByBookKey[batch[j]] = positions[j].positionMs / 1000;
+          audioPositionByBookKey[batch[j]] = positions[j];
         }
       }
     }
@@ -607,6 +645,7 @@ Future<_LiveCompareExtras> _fetchLiveCompareExtras(
     statCountByTitle: statCountByTitle,
     audiobookKeyByBookKey: audiobookKeyByBookKey,
     audioPosSecByBookKey: audioPosSecByBookKey,
+    audioPositionByBookKey: audioPositionByBookKey,
   );
 }
 
@@ -1100,7 +1139,8 @@ Future<SyncCompareApplyResult> applySyncCompareChoices({
   });
 }
 
-/// 互联通道上应用一本书的选择：书进度与有声书断点按选择经 live 端点落地。
+/// 互联通道上应用一本书的选择：书进度按选择经 live 端点落地；有声书断点走它自己的
+/// 三方判定（[_applyLiveAudioChoice]，BUG-4280），不跟随书的选择。
 ///
 /// 书进度的门槛是「host 有这本书」（[SyncCompareEntry.remoteLiveTitle]），不是
 /// 「加载期那次 live 探测成功」（[SyncCompareEntry.liveAction]）：一次 GET 失败会让
@@ -1140,28 +1180,75 @@ Future<SyncApplyOutcome> _applyLiveChoice({
           audiobookKey,
         ),
       },
-      () async {
-        final PlaybackPosition local = await audio.localPosition(audiobookKey);
-        final PlaybackPosition remote = await audio.remotePosition(
-          audiobookKey,
-        );
-        if (useLocal) {
-          if (local.updatedAtMs <= 0) return false;
-          // BUG-4278：host 确认采纳才算写成功。
-          return (await audio.pushLocal(
-                audiobookKey,
-                local: local,
-                remote: remote,
-              )).status ==
-              LivePushStatus.confirmed;
-        }
-        if (remote.updatedAtMs <= 0) return false;
-        return audio.applyRemote(audiobookKey, remote, local: local);
-      },
+      () => _applyLiveAudioChoice(
+        audio: audio,
+        audiobookKey: audiobookKey,
+        seenRemote: entry.liveRemoteAudio,
+        useLocal: useLocal,
+      ),
     );
     wrote = audioWrote || wrote;
   }
   return wrote ? SyncApplyOutcome.applied : SyncApplyOutcome.noop;
+}
+
+/// 有声书断点在对比弹窗「应用」时走它自己的三方判定（BUG-4280），不跟随用户对
+/// 书进度的选择：书与有声书是两个维度，各自的基线、各自的分叉。
+///
+/// - 单边变化（[BookProgressSyncAction.pushLocal] / [BookProgressSyncAction.applyRemote]
+///   / [BookProgressSyncAction.synced]）按三方结论落地，与这一行的选择无关——与
+///   sweep 同一结论，前置条件是这次重读的 host 值。
+/// - 真分叉：只有重读的 host 值仍是用户在这一行看到的 [seenRemote] 时才按这一行的
+///   选择落地；host 期间又变了（或加载时没读到 host 断点）就两端都不动、基线不动，
+///   交给播放位置冲突弹窗按新事实再问。
+///
+/// 返回是否真的写了东西（host 确认的推送 / 本端被改写）。调用方持有这条断点的
+/// [syncPlaybackPositionResource] 锁。
+Future<bool> _applyLiveAudioChoice({
+  required InterconnectPlaybackPositionSync audio,
+  required String audiobookKey,
+  required PlaybackPosition? seenRemote,
+  required bool useLocal,
+}) async {
+  final PlaybackPosition local = await audio.localPosition(audiobookKey);
+  final PlaybackPosition remote = await audio.remotePosition(audiobookKey);
+  final BookProgressSyncAction action = await audio.decide(
+    audiobookKey,
+    local: local,
+    remote: remote,
+  );
+  switch (action) {
+    case BookProgressSyncAction.synced:
+      return audio.alignSynced(
+        audiobookKey,
+        local: local,
+        remote: remote,
+        expectedRemotePositions: <int>[remote.positionMs],
+      );
+    case BookProgressSyncAction.pushLocal:
+      // BUG-4278：host 确认采纳才算写成功。
+      return (await audio.pushLocal(
+            audiobookKey,
+            local: local,
+            remote: remote,
+            expectedRemotePositions: <int>[remote.positionMs],
+          )).status ==
+          LivePushStatus.confirmed;
+    case BookProgressSyncAction.applyRemote:
+      return audio.applyRemote(audiobookKey, remote, local: local);
+    case BookProgressSyncAction.conflict:
+      if (seenRemote == null || seenRemote != remote) return false;
+      if (useLocal) {
+        return (await audio.pushLocal(
+              audiobookKey,
+              local: local,
+              remote: remote,
+              expectedRemotePositions: <int>[seenRemote.positionMs],
+            )).status ==
+            LivePushStatus.confirmed;
+      }
+      return audio.applyRemote(audiobookKey, remote, local: local);
+  }
 }
 
 /// 互联 live 行的书进度按用户选择落地（BUG-2506）：选本机 → 推给 host（时间戳
@@ -1707,6 +1794,8 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
         base: e.base,
         liveLocalProgress: e.liveLocalProgress,
         liveRemoteProgress: e.liveRemoteProgress,
+        liveLocalAudio: e.liveLocalAudio,
+        liveRemoteAudio: e.liveRemoteAudio,
         localPage: e.localPage,
         remotePage: e.remotePage,
         pageCount: e.pageCount,
