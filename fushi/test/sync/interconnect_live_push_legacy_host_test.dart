@@ -10,6 +10,7 @@ import 'dart:io';
 import 'package:drift/drift.dart' show DatabaseConnection;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/sync/interconnect_playback_position_sync.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -127,7 +128,10 @@ void main() {
 
   final int now = DateTime.now().millisecondsSinceEpoch;
 
-  test('旧 host 存了更新戳、位置在期望集合里：GET, PUT, GET 后判 rejected', () async {
+  // 评审 correctness-1：前置 GET 核对过 host 停在期望位置，兼容层像新 host 一样
+  // 不按戳拒收——上报戳不新于 host 已存戳时抬到「已存戳 + 1」再 PUT。修复前旧 host
+  // 按 LWW 拒收（rejected），时钟偏慢的设备整场上报 held。
+  test('旧 host 存了更新戳、位置在期望集合里：抬戳到已存戳 + 1，GET, PUT, GET 后判 confirmed', () async {
     host
       ..positionMs = 5000
       ..updatedAtMs = now + 60000;
@@ -137,9 +141,57 @@ void main() {
       now,
       expectedPositionsMs: <int>[5000],
     );
-    expect(r.status, LivePushStatus.rejected);
+    expect(r.status, LivePushStatus.confirmed);
+    expect(host.requests, <String>['GET', 'PUT', 'GET']);
+    expect(host.positionMs, 7000);
+    expect(host.updatedAtMs, now + 60001);
+    expect(r.hostNow, (positionMs: 7000, updatedAtMs: now + 60001));
+  });
+
+  test('旧 host 存的是超限毒戳：按 0 比较，上报戳原样发出', () async {
+    host
+      ..positionMs = 5000
+      ..updatedAtMs = now + kSyncFutureStampToleranceMs * 10;
+    await backend.putLiveVideoPosition(
+      'v1',
+      7000,
+      now,
+      expectedPositionsMs: <int>[5000],
+    );
+    // 毒戳不抬（否则 `毒戳 + 1` 会再被截成 now + 余量，进而写进 host）；旧 host
+    // 自己按 LWW 拒收，host 不动。
     expect(host.requests, <String>['GET', 'PUT', 'GET']);
     expect(host.positionMs, 5000);
+  });
+
+  test('旧 host 上时钟偏慢的设备：实时上报不被戳拒收，基线推进，后续上报照常发出', () async {
+    // 设备 B（时钟快 3 秒）刚把 host 推到 600；本机基线 = 600（开播已对齐）。
+    host
+      ..positionMs = 600
+      ..updatedAtMs = now + 3000;
+    final InterconnectPlaybackPositionSync sync =
+        InterconnectPlaybackPositionSync(
+          db: db,
+          backend: backend,
+          kind: PlaybackPositionKind.video,
+        );
+    await sync.recordBaseline('v1', 600);
+
+    expect(
+      await sync.reportLive('v1', (positionMs: 610, updatedAtMs: now + 1000)),
+      LiveReportResult.confirmed,
+    );
+    expect(host.positionMs, 610);
+    expect(await sync.baseline('v1'), 610);
+
+    host.requests.clear();
+    expect(
+      await sync.reportLive('v1', (positionMs: 620, updatedAtMs: now + 2000)),
+      LiveReportResult.confirmed,
+    );
+    expect(host.requests, <String>['GET', 'PUT', 'GET']);
+    expect(host.positionMs, 620);
+    expect(await sync.baseline('v1'), 620);
   });
 
   test('旧 host 位置不在期望集合里：只 GET，判 superseded，不发 PUT', () async {

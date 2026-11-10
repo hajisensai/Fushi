@@ -986,6 +986,10 @@ class SyncOrchestrator {
             );
       } on SyncAuthError {
         rethrow;
+      } on SyncBooksIncompleteError catch (e) {
+        // 云后端这一轮认不出账号：书阶段已照常跑完能判的书，结果照收，只记一条错。
+        bookResults = e.results;
+        report.errors.add('books: ${e.cause}');
       } catch (e) {
         report.errors.add('books: $e');
       }

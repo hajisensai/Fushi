@@ -96,6 +96,17 @@ void main() {
       expect(d2, d1);
     });
 
+    // 评审 correctness-2：记下的账号是这台设备的登录事实，不随备份 / 设置同步走。
+    test('remembered account keys are device-local for every backend type', () {
+      for (final SyncBackendType type in SyncBackendType.values) {
+        expect(
+          SyncRepository.deviceLocalPrefKeys,
+          contains(syncRemoteAccountPrefKey(type)),
+          reason: type.name,
+        );
+      }
+    });
+
     test('no account now and never seen before → identity unavailable', () {
       final FushiDatabase db = _memDb();
       expect(

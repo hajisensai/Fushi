@@ -13,4 +13,7 @@ mixin LegacyInterconnectHostScope on InterconnectSyncBackend {
 
   @override
   void checkHostPin(InterconnectHostPin pin) {}
+
+  @override
+  Future<void> verifyHostPin(InterconnectHostPin pin) async {}
 }

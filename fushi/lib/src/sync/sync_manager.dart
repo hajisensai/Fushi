@@ -20,7 +20,7 @@ import 'package:fushi/src/sync/interconnect_sync_backend.dart'
 import 'package:fushi/src/sync/obfuscating_sync_backend.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_baseline_scope.dart'
-    show progressBaselineStorageFor;
+    show SyncRemoteIdentityUnavailableError, progressBaselineStorageFor;
 import 'package:fushi/src/sync/sync_remote_listing.dart';
 import 'package:fushi/src/sync/paged_book_sync_position.dart';
 import 'package:fushi/src/sync/sync_progress_resolver.dart';
@@ -122,6 +122,19 @@ class SyncBookResult {
   );
 }
 
+/// [SyncManager.syncAllBooks] 整段跑完、但云后端这一轮认不出账号（评审 compat-2）：
+/// 需要共同祖先才判得了的书被跳过、其余书照常同步，也没有写任何进度基线。带着
+/// 本段的逐本结果抛出，调用方照常收冲突 / 内容错误，再把 [cause] 记成一条错误。
+class SyncBooksIncompleteError implements Exception {
+  const SyncBooksIncompleteError({required this.results, required this.cause});
+
+  final List<SyncBookResult> results;
+  final SyncRemoteIdentityUnavailableError cause;
+
+  @override
+  String toString() => cause.toString();
+}
+
 /// 本书生效的「上传文件」开关：漫画（[BookFormat.manga]）看 [syncMangaContent]，
 /// 其它格式看 [syncContent]（所有者 2026-10-21：书籍和漫画分开）。云盘补缺路径与互联
 /// live 上传共用这一个判据。
@@ -192,6 +205,24 @@ class SyncManager {
           Error.throwWithStackTrace(e, st);
         },
       );
+
+  /// 云后端这一轮认不出账号（[SyncRemoteIdentityUnavailableError]）时的那个错误；
+  /// [_progressBaselineIfKnown] 记下，[syncAllBooks] 收尾时整段报一次。
+  SyncRemoteIdentityUnavailableError? _identityUnavailable;
+
+  /// [_progressBaseline]，但认不出远端时返回 null（记进 [_identityUnavailable]）
+  /// 而不是抛出（评审 compat-2）：挑不出基线槽只影响「需要共同祖先」的那部分
+  /// 判定（两端都有戳且不同）与基线写入；单边变化、两端一致的书照常同步，书内容 /
+  /// 统计 / 有声书断点跟着方向照常传，不因一次取邮箱失败整段跳过。
+  Future<({String storageDimension, InterconnectHostPin? hostPin})?>
+  _progressBaselineIfKnown() async {
+    try {
+      return await _progressBaseline();
+    } on SyncRemoteIdentityUnavailableError catch (e) {
+      _identityUnavailable = e;
+      return null;
+    }
+  }
 
   /// 互联文件箱钉住的 host 仍是会话当前的 host（[InterconnectSyncBackend
   /// .checkHostPin]，同步、零往返）；换了就抛 [InterconnectHostChangedException]，
@@ -336,8 +367,10 @@ class SyncManager {
     // rootFolderId 同样会失去回写机会），下一轮就得重新解析所有文件夹。
     await _restoreDriveCache();
     // BUG-4281：开轮先钉住远端作用域（互联：本轮的 host；云：账号 + 服务器）。
-    // 认不出远端（[SyncRemoteIdentityUnavailableError]）就整段报错跳过，不换槽。
-    await _progressBaseline();
+    // 认不出远端（[SyncRemoteIdentityUnavailableError]）不换槽：需要共同祖先才判得
+    // 了的书本轮跳过，其余照常（见 [_progressBaselineIfKnown]），收尾整段报一次错。
+    _identityUnavailable = null;
+    await _progressBaselineIfKnown();
 
     final books = await _db.getAllEpubBooks();
     // 没有整树快照时，把「每本书列一次文件夹」从串行改成有界并发的预取：请求数不变
@@ -394,6 +427,11 @@ class SyncManager {
     // 书阶段后被中断（app 退出 / 进程被杀 / 异常）的残缺同步会误记冷却、压制下次
     // app-open 重试。改由 SyncOrchestrator.run() 在整轮完成后记录（见其结尾 TODO-1332）。
     await _persistDriveCache();
+    final SyncRemoteIdentityUnavailableError? unidentified =
+        _identityUnavailable;
+    if (unidentified != null) {
+      throw SyncBooksIncompleteError(results: results, cause: unidentified);
+    }
     return results;
   }
 
@@ -612,10 +650,14 @@ class SyncManager {
         : null;
 
     // BUG-4281：基线挂在当前远端名下；互联读完远端文件箱、判定之前核对 host 没换。
-    final ({String storageDimension, InterconnectHostPin? hostPin}) storage =
-        await _progressBaseline();
-    final String progressDimension = storage.storageDimension;
-    _checkHostPin(storage.hostPin);
+    // 手动路径（对比弹窗）落地后必写基线，认不出远端就整本失败；自动路径认不出
+    // 远端时 storage 为 null：只判不需要共同祖先的情形，不读不写基线（评审 compat-2）。
+    final ({String storageDimension, InterconnectHostPin? hostPin})? storage =
+        direction != null
+        ? await _progressBaseline()
+        : await _progressBaselineIfKnown();
+    final String? progressDimension = storage?.storageDimension;
+    if (storage != null) _checkHostPin(storage.hostPin);
 
     final SyncDirection syncDir;
     // 自动路径读到的共同祖先；手动路径不读（null），落基线时照旧无条件写。
@@ -630,13 +672,26 @@ class SyncManager {
       // Auto path: gate on the common-ancestor baseline. A genuine fork
       // (both sides moved off base) must surface as a conflict instead of
       // silently last-write-wins clobbering one side.
-      final int? base = await _db.getSyncBaseline(assetKey, progressDimension);
+      final int? base = progressDimension == null
+          ? null
+          : await _db.getSyncBaseline(assetKey, progressDimension);
       autoBase = base;
       ProgressResolution res = resolveProgressSync(
         local: localPosition?.updatedAt,
         remote: remoteTimestamp,
         base: base,
       );
+      final SyncRemoteIdentityUnavailableError? unidentified =
+          _identityUnavailable;
+      if (res.isConflict && progressDimension == null && unidentified != null) {
+        // 两端都有戳且不同，判不了谁动过（不知道该读哪个远端的共同祖先）：这本书
+        // 本轮跳过，不报冲突（基线槽找到后可能根本不是冲突），不落地。
+        return SyncBookResult(
+          direction: SyncResult.skipped,
+          title: book.title,
+          error: unidentified.message,
+        );
+      }
       if (res.isConflict && base == null && _fileBoxIsClientOwned) {
         // 互联通道的文件箱 `progress_*.json` 只有 client 自己写、host 从不读回
         // （[SyncCompareEntry.liveAction]）：这里的「远端」永远是本 client 上一次
@@ -683,9 +738,11 @@ class SyncManager {
       // jHQpTfjrNB：自动路径上基线已经等于这个时间戳（两端都没动过的书——每轮绝大
       // 多数书都是这样）时不再重写同一个值：旧实现每本未变的书每轮都落一次库。
       final int? agreed = localPosition?.updatedAt;
-      if (agreed != null && (direction != null || autoBase != agreed)) {
+      if (agreed != null &&
+          storage != null &&
+          (direction != null || autoBase != agreed)) {
         _checkHostPin(storage.hostPin);
-        await _db.setSyncBaseline(assetKey, progressDimension, agreed);
+        await _db.setSyncBaseline(assetKey, storage.storageDimension, agreed);
       }
       return SyncBookResult(direction: SyncResult.synced, title: book.title);
     }
@@ -895,10 +952,11 @@ class SyncManager {
     if (remoteProgress == null) {
       return SyncBookResult(direction: SyncResult.skipped, title: book.title);
     }
-    final ({String storageDimension, InterconnectHostPin? hostPin}) storage =
-        await _progressBaseline();
+    // 认不出远端（评审 compat-2）时为 null：照常落地，不写基线（云通道没有 pin）。
+    final ({String storageDimension, InterconnectHostPin? hostPin})? storage =
+        await _progressBaselineIfKnown();
     // BUG-4281：导入落地之前核对 host 没换（读到的可能是另一台 host 的文件箱）。
-    _checkHostPin(storage.hostPin);
+    if (storage != null) _checkHostPin(storage.hostPin);
 
     // Import progress → (sectionIndex, normCharOffset)。BUG-162: 不再缓存精确
     // exploredCharCount（ttuCharOffset 列已删）；下次导出由 normCharOffset 重算。
@@ -945,11 +1003,13 @@ class SyncManager {
     // to that, instead of spanning every trailing remote call. Written on both
     // the auto path and the manual (compare useRemote→import) path so a
     // user-resolved conflict's new ancestor is also persisted here.
-    await _db.setSyncBaseline(
-      assetKey,
-      storage.storageDimension,
-      remoteProgress.lastBookmarkModified,
-    );
+    if (storage != null) {
+      await _db.setSyncBaseline(
+        assetKey,
+        storage.storageDimension,
+        remoteProgress.lastBookmarkModified,
+      );
+    }
 
     // Import statistics
     if (syncStats && statsFileId != null) {
@@ -1050,14 +1110,16 @@ class SyncManager {
       // the manual (compare useLocal→export) path so a user-resolved conflict's
       // new ancestor is also recorded.
       // BUG-4281：上传之后、写基线之前核对 host 没换——换了就不记这条共同祖先。
-      final ({String storageDimension, InterconnectHostPin? hostPin}) storage =
-          await _progressBaseline();
-      _checkHostPin(storage.hostPin);
-      await _db.setSyncBaseline(
-        assetKey,
-        storage.storageDimension,
-        timestampMs,
-      );
+      final ({String storageDimension, InterconnectHostPin? hostPin})? storage =
+          await _progressBaselineIfKnown();
+      if (storage != null) {
+        _checkHostPin(storage.hostPin);
+        await _db.setSyncBaseline(
+          assetKey,
+          storage.storageDimension,
+          timestampMs,
+        );
+      }
 
       // Export statistics
       if (syncStats) {

@@ -518,16 +518,16 @@ void main() {
       expect((await _positionOf(db, 'BookM'))!.sectionIndex, 2);
     });
 
-    test('混配（一台带 hostId + 一条老条目）：旧行保留给老条目，hostId 作用域为空', () async {
+    test('混配（一台带 hostId + 一条认不出的老条目）：旧行保留给老条目，hostId 作用域为空', () async {
       final FushiDatabase db = _memDb();
       addTearDown(db.close);
       await db.setSyncBaseline('v1', dim, 10);
-      final InterconnectSyncBackend backend = await _buildBackend(
-        <FushiClientUrl>[
-          FushiClientUrl(url: hostA.base, hostId: 'a'),
-          FushiClientUrl(url: hostB.base),
-        ],
-      );
+      // 老条目拿的是另一份凭据（另一台 host 签发的），认不出是 a。
+      final InterconnectSyncBackend backend =
+          await _buildBackend(<FushiClientUrl>[
+            FushiClientUrl(url: hostA.base, hostId: 'a'),
+            FushiClientUrl(url: hostB.base, token: 'issued-by-b'),
+          ]);
       final InterconnectPlaybackPositionSync sync = videoSync(db, backend);
       await sync.bind();
       expect(sync.pin!.hostId, 'a');
@@ -537,20 +537,31 @@ void main() {
       expect(await db.getSyncBaselinesForDimension(_scoped(dim, 'a')), isEmpty);
     });
 
-    test('降级后再升级：旧版本写的无后缀行覆盖该 host 的行', () async {
+    // 评审 correctness-3：目标槽已有行时，无后缀旧行与它谁新不可考（降级期间写的
+    // 更新，曾认不出 host 的老条目作用域写的可能更旧），不再拿旧行覆盖。
+    test('目标槽已有不同的行：两行都删（首轮无基线），相同的行保留', () async {
       final FushiDatabase db = _memDb();
       addTearDown(db.close);
       await db.setSyncBaseline('v1', _scoped(dim, 'a'), 111);
       await db.setSyncBaseline('v1', dim, 222);
+      await db.setSyncBaseline('v2', _scoped(dim, 'a'), 500);
+      await db.setSyncBaseline('v2', dim, 500);
+      await db.setSyncBaseline('v3', dim, 30);
       final InterconnectSyncBackend backend = await _buildBackend(
         <FushiClientUrl>[FushiClientUrl(url: hostA.base, hostId: 'a')],
       );
       final InterconnectPlaybackPositionSync sync = videoSync(db, backend);
-      expect(await sync.baseline('v1'), 222);
+      expect(await sync.baseline('v1'), isNull);
+      expect(await sync.baseline('v2'), 500);
+      expect(await sync.baseline('v3'), 30);
       expect(await db.getSyncBaselinesForDimension(dim), isEmpty);
     });
 
-    test('并发绑定：领养只做一次，先绑完的写入不被倒退', () async {
+    // 评审 tests-1：领养读的是无后缀行，第一次跑完它就空了，之后重跑也读到空集，
+    // 所以单看「并发绑定后基线没倒退」测不出按 (db, 存储维度) 只做一次的缓存。这里
+    // 在第一次领养后再放一条无后缀行：缓存在时后续绑定不再领养，它原样留着、已推进
+    // 的基线不受影响；缓存被拿掉（每次 bind 都领养）时这条会被搬动 / 冲掉基线 → 红。
+    test('领养每个进程按存储维度只做一次：并发绑定共用一次，之后出现的无后缀行不再搬动', () async {
       final FushiDatabase db = _memDb();
       addTearDown(db.close);
       await db.setSyncBaseline('v1', dim, 10);
@@ -565,12 +576,134 @@ void main() {
       await s1.recordBaseline('v1', 30);
       await b2;
       expect(await s2.baseline('v1'), 30);
-      expect(await s1.baseline('v1'), 30);
+      expect(await db.getSyncBaselinesForDimension(dim), isEmpty);
+
+      await db.setSyncBaseline('v1', dim, 10);
+      final InterconnectPlaybackPositionSync s3 = videoSync(db, backend);
+      await s3.bind();
+      expect(await s3.baseline('v1'), 30);
       expect(
         await db.getSyncBaselinesForDimension(_scoped(dim, 'a')),
         <String, int>{'v1': 30},
       );
+      expect(await db.getSyncBaselinesForDimension(dim), <String, int>{
+        'v1': 10,
+      });
+    });
+
+    // 评审 compat-1 / correctness-3：同一台 host 一条地址带 hostId、一条手输的老条目
+    // （同一份配对凭据）。修复前老条目落无后缀槽：两条地址各用一份基线，故障切换
+    // 被当成换 host；adoption 恒为 keep。
+    test('同一台 host 的混配（老条目与带 hostId 的地址同一份凭据）：归入同一作用域并领养旧行', () async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      await db.setSyncBaseline('v1', dim, 10);
+      final String alt = 'http://localhost:${hostA.server.port}';
+      final InterconnectSyncBackend backend = await _buildBackend(
+        <FushiClientUrl>[
+          FushiClientUrl(url: hostA.base, hostId: 'a'),
+          FushiClientUrl(url: alt),
+        ],
+      );
+      final InterconnectPlaybackPositionSync before = videoSync(db, backend);
+      await before.bind();
+      expect(before.pin!.hostId, 'a');
+      expect(await before.storageDimensionForTest(), _scoped(dim, 'a'));
+      expect(await before.baseline('v1'), 10);
       expect(await db.getSyncBaselinesForDimension(dim), isEmpty);
+      await before.recordBaseline('v1', 500);
+
+      _down.add(hostA.base);
+      await backend.probeHostReachability();
+      expect(backend.resolvedHostBaseUrl, alt);
+      final InterconnectPlaybackPositionSync after = videoSync(db, backend);
+      await after.bind();
+      expect(after.pin, before.pin, reason: '同一台 host 的两条地址之间切换不算换 host');
+      expect(await after.storageDimensionForTest(), _scoped(dim, 'a'));
+      expect(await after.baseline('v1'), 500);
+    });
+  });
+
+  group('interconnectScopeHostIdOf', () {
+    const String fpA = 'aa:bb:cc';
+    const String fpB = 'dd:ee:ff';
+
+    test('自带 hostId 的候选就用它', () {
+      final FushiClientUrl c = FushiClientUrl(url: 'http://x', hostId: 'h');
+      expect(
+        interconnectScopeHostIdOf(c, <FushiClientUrl>[c], fallbackToken: 't'),
+        'h',
+      );
+    });
+
+    test('老条目回落全局凭据、与带 hostId 的地址同一份 → 认领那台', () {
+      final FushiClientUrl a = FushiClientUrl(
+        url: 'http://lan',
+        hostId: 'a',
+        token: 't',
+      );
+      final FushiClientUrl legacy = FushiClientUrl(url: 'http://ddns');
+      expect(
+        interconnectScopeHostIdOf(legacy, <FushiClientUrl>[
+          a,
+          legacy,
+        ], fallbackToken: 't'),
+        'a',
+      );
+    });
+
+    test('凭据不同 → 认不出', () {
+      final FushiClientUrl a = FushiClientUrl(
+        url: 'http://lan',
+        hostId: 'a',
+        token: 't',
+      );
+      final FushiClientUrl legacy = FushiClientUrl(
+        url: 'http://other',
+        token: 'u',
+      );
+      expect(
+        interconnectScopeHostIdOf(legacy, <FushiClientUrl>[
+          a,
+          legacy,
+        ], fallbackToken: 't'),
+        isNull,
+      );
+    });
+
+    test('两边都钉了指纹：指纹不同即使凭据相同也不认，指纹相同即使凭据不同也认', () {
+      final FushiClientUrl a = FushiClientUrl(
+        url: 'https://lan',
+        hostId: 'a',
+        token: 't',
+        fingerprintSha256: fpA,
+      );
+      final FushiClientUrl other = FushiClientUrl(
+        url: 'https://other',
+        fingerprintSha256: fpB,
+      );
+      final FushiClientUrl same = FushiClientUrl(
+        url: 'https://ddns',
+        token: 'stale',
+        fingerprintSha256: fpA.toUpperCase(),
+      );
+      final List<FushiClientUrl> all = <FushiClientUrl>[a, other, same];
+      expect(interconnectScopeHostIdOf(other, all, fallbackToken: 't'), isNull);
+      expect(interconnectScopeHostIdOf(same, all, fallbackToken: 't'), 'a');
+    });
+
+    test('与两台 host 都对得上 → 来源不可考，认不出', () {
+      final FushiClientUrl a = FushiClientUrl(url: 'http://a', hostId: 'a');
+      final FushiClientUrl b = FushiClientUrl(url: 'http://b', hostId: 'b');
+      final FushiClientUrl legacy = FushiClientUrl(url: 'http://c');
+      expect(
+        interconnectScopeHostIdOf(legacy, <FushiClientUrl>[
+          a,
+          b,
+          legacy,
+        ], fallbackToken: 't'),
+        isNull,
+      );
     });
   });
 }

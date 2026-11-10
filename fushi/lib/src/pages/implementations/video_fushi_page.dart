@@ -4812,9 +4812,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     final (String startUid, int startEp) = _remotePositionKeyForIndex(index);
     final int initialPositionMs =
         client is InterconnectSyncBackend &&
-            startEp <= 0 &&
-            startIntent != EpisodeStartIntent.explicitCue &&
-            !_sourceReviewActive
+            remoteEpisodeStartUsesThreeWay(
+              episodeIndex: startEp,
+              intent: startIntent,
+              sourceReviewActive: _sourceReviewActive,
+            )
         ? await _remoteSessionFor(
             client,
           ).startPositionFor(startUid, fallbackMs: resumePositionMs)

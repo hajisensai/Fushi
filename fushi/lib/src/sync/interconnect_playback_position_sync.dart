@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
+import 'package:fushi/src/media/video/video_episode_start_policy.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/sync_baseline_scope.dart';
 import 'package:fushi/src/sync/sync_resource_locks.dart';
@@ -252,6 +253,13 @@ class InterconnectPlaybackPositionSync {
 
   /// 「已发出、尚未确认」推送位置的逻辑 dimension（BUG-3528）。
   String get pendingDimension => '${dimension}_pending';
+
+  /// 会话仍连着绑定的 host（[InterconnectSyncBackend.verifyHostPin]），否则抛
+  /// [InterconnectHostChangedException]。会话已解析时不发请求。
+  Future<void> verifyBoundHost() async {
+    await bind();
+    await _backend.verifyHostPin(_pin!);
+  }
 
   /// 与绑定的 host 上次达成一致的位置（毫秒）；没有基线返回 null。
   Future<int?> baseline(String key) async {
@@ -649,8 +657,9 @@ class InterconnectPlaybackPositionSync {
 /// 上报合并：在途时新值只顶替待发槽，在途结束后发待发槽里最新的那一个。
 ///
 /// host 已被别的设备改写（[LiveReportResult.held]）时记下当时的基线：之后的上报先
-/// 读一次本地基线，没变（冲突尚未裁决）就不发网络请求——否则冲突期间每秒一个注定
-/// 被拒的 PUT；sweep 或弹窗裁决后基线变了，自动恢复上报。
+/// 核对会话仍连着绑定的 host（不发请求），再读一次本地基线，没变（冲突尚未裁决）就
+/// 不发网络请求——否则冲突期间每秒一个注定被拒的 PUT；sweep 或弹窗裁决后基线变了，
+/// 自动恢复上报；会话换了 host 则换绑、作废 held。
 class LivePositionReporter {
   LivePositionReporter({
     required FushiDatabase db,
@@ -758,6 +767,10 @@ class LivePositionReporter {
     PlaybackPosition live,
   ) async {
     if (_held.containsKey(key)) {
+      // held 时不发请求，所以要主动核对会话还在不在绑定的 host 上（评审 compat-3）：
+      // 换了 host 就在这里抛 [InterconnectHostChangedException]，[_send] 换绑到新
+      // host、作废旧 host 的 held，按新 host 的基线重新判定这个值。
+      await sync.verifyBoundHost();
       if (await sync.baseline(key) == _held[key]) return;
       _held.remove(key);
     }
@@ -768,6 +781,25 @@ class LivePositionReporter {
     }
   }
 }
+
+/// 互联远端视频这一集的开播位置是否经 [InterconnectRemotePlaybackSession.startPositionFor]
+/// 走三方判定（BUG-4283；播放页只在互联客户端上调它）。纯函数。
+///
+/// - [episodeIndex] > 0（host-playlist 非首集）：那一集的位置不在 sweep 同步的键上，
+///   照用本地值；
+/// - [EpisodeStartIntent.explicitCue]（换画质 / 换线路回到当前位置）：调用方给的就是
+///   此刻的播放位置，不重新判定；
+/// - [sourceReviewActive]（卡片回看）：不碰服务器进度（BUG-3490）。
+///
+/// 其余（首开、合集切成员、换集、自动连播）都判。
+bool remoteEpisodeStartUsesThreeWay({
+  required int episodeIndex,
+  required EpisodeStartIntent intent,
+  required bool sourceReviewActive,
+}) =>
+    episodeIndex <= 0 &&
+    intent != EpisodeStartIntent.explicitCue &&
+    !sourceReviewActive;
 
 /// 一个互联远端视频播放会话（BUG-4283）：每一集载入时的开播判定 + 实时上报。
 ///

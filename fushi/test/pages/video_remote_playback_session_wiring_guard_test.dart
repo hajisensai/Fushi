@@ -41,8 +41,17 @@ void main() {
     );
     expect(load, contains('.startPositionFor('));
     expect(load, contains('isInterconnectSyncBackend'));
-    // 显式起点（换画质 / 换线路回到当前位置、卡片回看）不经三方判定。
-    expect(load, contains('EpisodeStartIntent.explicitCue'));
+    // 显式起点（换画质 / 换线路回到当前位置、卡片回看）不经三方判定：判据只在纯
+    // 函数 remoteEpisodeStartUsesThreeWay 一处，行为由
+    // test/sync/interconnect_remote_playback_session_test.dart 钉住（评审 tests-2）。
+    expect(
+      load,
+      contains(
+        'isInterconnectSyncBackend&&remoteEpisodeStartUsesThreeWay('
+        'episodeIndex:startEp,intent:startIntent,'
+        'sourceReviewActive:_sourceReviewActive)?await_remoteSessionFor(',
+      ),
+    );
   });
 
   test('互联分支的实时上报经同一个远端播放会话', () {

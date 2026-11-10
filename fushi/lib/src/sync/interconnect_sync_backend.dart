@@ -411,21 +411,22 @@ class InterconnectSyncBackend extends SyncBackend
 
   // ── 基线作用域（BUG-4281）──────────────────────────────────────────────────
 
-  /// 会话所连 host 的基线作用域 id：选中候选的 hostId；老条目（无 hostId）为 null，
-  /// 全部共用无后缀的旧维度（URL 不是 host 身份，见取舍 T6）。
+  /// 会话所连 host 的基线作用域 id（[interconnectScopeHostIdOf]）：选中候选的
+  /// hostId；老条目（无 hostId）认得出是哪台带 hostId 的 host 时取那台的，认不出为
+  /// null，共用无后缀的旧维度（URL 不是 host 身份，见取舍 T6）。
   String? _scopeHostId;
 
   /// [_scopeHostId] 每变一次（含首次解析）自增。[InterconnectHostPin] 记下取 pin 时
   /// 的值：同一 hostId 来回切换（a → b → a）也认得出中途换过 host。
   int _hostScopeSerial = 0;
 
-  static String? _scopeHostIdOf(FushiClientUrl candidate) {
-    final String? id = candidate.hostId;
-    return (id == null || id.isEmpty) ? null : id;
-  }
+  String? _scopeHostIdOf(FushiClientUrl candidate) =>
+      interconnectScopeHostIdOf(candidate, _candidates, fallbackToken: _token);
 
   /// 先 [_ensureResolved]，再给出当前会话的基线作用域与旧无后缀基线的领养决定。
-  /// 不发额外请求（只读内存里的候选与已解析会话）。测试替身可覆写。
+  /// 候选按 [interconnectScopeHostIdOf] 归到 host：认得出是哪台的老条目与那台的
+  /// 带 hostId 地址算同一台，只有认不出的老条目才让旧行保留（keep）。不发额外请求
+  /// （只读内存里的候选与已解析会话）。测试替身可覆写。
   Future<InterconnectHostScope> liveHostScope() async {
     await _ensureResolved();
     final Set<String> hostIds = <String>{};
@@ -464,6 +465,15 @@ class InterconnectSyncBackend extends SyncBackend
         actualHostId: _scopeHostId,
       );
     }
+  }
+
+  /// [checkHostPin] 的「先确认会话仍落在某台 host 上」版：会话被掉线置脏时先按
+  /// 选路重新解析（可能落到另一台 host），再核对 [pin]。会话已解析时不发任何请求。
+  /// 给不发网络请求、却要知道钉住的 host 还在不在的调用方（held 中的实时上报，评审
+  /// compat-3）。测试替身可覆写。
+  Future<void> verifyHostPin(InterconnectHostPin pin) async {
+    await _ensureResolved();
+    checkHostPin(pin);
   }
 
   /// 测试入口：模拟会话故障切换到 [hostId] 所在的 host（null = 老条目作用域）。
@@ -3654,10 +3664,10 @@ class InterconnectSyncBackend extends SyncBackend
         expectedHit: (LivePosition now) =>
             expectedPositionsMs.contains(now.positionMs),
         landed: (LivePosition now) => now.positionMs == positionMs,
-        legacyPut: () => putRemoteVideoPosition(
+        legacyPut: (LivePosition pre) => putRemoteVideoPosition(
           id,
           positionMs,
-          updatedAtMs,
+          _legacyLiveStamp(updatedAtMs, storedAtMs: pre.updatedAtMs),
           episodeIndex: episodeIndex,
         ),
         path: () => '/api/library/videos/${_encodeVideoId(id)}/position$query',
@@ -3686,8 +3696,11 @@ class InterconnectSyncBackend extends SyncBackend
       expectedHit: (LivePosition now) =>
           expectedPositionsMs.contains(now.positionMs),
       landed: (LivePosition now) => now.positionMs == positionMs,
-      legacyPut: () =>
-          putRemoteAudiobookPosition(identity, positionMs, updatedAtMs),
+      legacyPut: (LivePosition pre) => putRemoteAudiobookPosition(
+        identity,
+        positionMs,
+        _legacyLiveStamp(updatedAtMs, storedAtMs: pre.updatedAtMs),
+      ),
       path: () =>
           '/api/library/audiobooks/${Uri.encodeComponent(identity)}/position',
       body: <String, Object?>{
@@ -3714,7 +3727,18 @@ class InterconnectSyncBackend extends SyncBackend
       expectedHit: (RemoteBookProgress now) =>
           expected.any((BookProgressBaseline b) => b.matches(now)),
       landed: (RemoteBookProgress now) => sameBookPosition(now, progress),
-      legacyPut: () => putRemoteBookProgress(bookKey, progress),
+      legacyPut: (RemoteBookProgress pre) => putRemoteBookProgress(
+        bookKey,
+        RemoteBookProgress(
+          sectionIndex: progress.sectionIndex,
+          normCharOffset: progress.normCharOffset,
+          charOffset: progress.charOffset,
+          updatedAtMs: _legacyLiveStamp(
+            progress.updatedAtMs,
+            storedAtMs: pre.updatedAtMs,
+          ),
+        ),
+      ),
       path: () => '/api/library/books/${Uri.encodeComponent(bookKey)}/progress',
       body: <String, Object?>{
         ...progress.toJson(),
@@ -3747,6 +3771,20 @@ class InterconnectSyncBackend extends SyncBackend
           );
   }
 
+  /// 兼容层发给旧 host 的上报戳：模拟新 host「前置条件命中就不按戳拒收」的口径
+  /// （[resolveLivePositionWrite]）——前置 GET 已核对 host 停在期望位置上，上报戳
+  /// 不新于 host 已存可信戳（[trustedStoredSyncStamp]）时抬到「已存戳 + 1」，再截到
+  /// [capFutureSyncStamp]。不抬的话旧 host 按 LWW 拒收时钟偏慢设备的每一次上报，
+  /// 实时上报整场 held（BUG-4278 评审 correctness-1）。
+  static int _legacyLiveStamp(int reportedAtMs, {required int storedAtMs}) {
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    final int stored = trustedStoredSyncStamp(storedAtMs, nowMs: now);
+    return capFutureSyncStamp(
+      reportedAtMs > stored ? reportedAtMs : stored + 1,
+      nowMs: now,
+    );
+  }
+
   /// live 写入的唯一流程（BUG-4278）。[read] / [legacyPut] 是既有的 GET / PUT
   /// 方法，[path] / [body] 是带前置条件的新式 PUT。
   ///
@@ -3757,7 +3795,8 @@ class InterconnectSyncBackend extends SyncBackend
   ///   `missing` → rejected；`preconditionFailed`（409）→ superseded；回执解析不了 →
   ///   rejected 并记诊断。200 空体 = host 已降级：清掉能力缓存，按兼容层再 [read]
   ///   一次确认。
-  /// - 兼容层（旧 host）：[legacyPut] 后再 [read]，host 停在上报位置才 confirmed。
+  /// - 兼容层（旧 host）：[legacyPut]（收到前置 GET 读到的值，据此抬戳，见
+  ///   [_legacyLiveStamp]）后再 [read]，host 停在上报位置才 confirmed。
   ///   外部限制：旧 host 只有按时间戳的 LWW，前置 GET 与 PUT 之间仍有被第三台设备
   ///   写入覆盖的窗口；清理条件：最低支持的 host 版本都发 [kLiveWriteHeader] 后删掉
   ///   兼容层分支。
@@ -3766,7 +3805,7 @@ class InterconnectSyncBackend extends SyncBackend
     required Future<T> Function() read,
     required bool Function(T now) expectedHit,
     required bool Function(T now) landed,
-    required Future<void> Function() legacyPut,
+    required Future<void> Function(T precheck) legacyPut,
     required String Function() path,
     required Map<String, Object?> body,
     required String label,
@@ -3789,7 +3828,7 @@ class InterconnectSyncBackend extends SyncBackend
         return (status: LivePushStatus.superseded, hostNow: now);
       }
       if (!_liveWriteKnownSupported) {
-        await legacyPut();
+        await legacyPut(now);
         return confirmByRead();
       }
     }
@@ -3955,6 +3994,53 @@ class InterconnectSyncBackend extends SyncBackend
   }
 }
 
+/// 候选 [candidate] 的基线作用域 id（BUG-4281）：它自己的 hostId；老条目（无
+/// hostId）按「是否与某条带 hostId 的候选同一台 host」认领那台的 hostId，认不出 →
+/// null（无后缀的老条目作用域）。纯函数。
+///
+/// 同一台 host 常常一条地址带 hostId（配对 / 学习的锚点）、一条没有（手输的 DDNS
+/// 等 host 不公布的名字）。只看候选自己的 hostId 会把同一台 host 的基线拆成两槽：
+/// 换网走另一条地址就拿另一槽的旧基线判定，两端都「偏离基线」而反复判冲突、实时
+/// 上报 held；两条地址之间故障切换还被当成换 host（评审 compat-1 / correctness-3）。
+///
+/// 认领判据（都只用本机已存的配对事实，不发请求）：
+/// - 两边都钉了证书指纹：相等 → 同一台（指纹 = host 私钥）；不等 → 不是同一台，
+///   不再看凭据。
+/// - 否则看实际使用的凭据（[interconnectTokenFor]，行内 token 优先、回落全局键）：
+///   相等 → 同一台。token 是 host 按设备签发的随机值，另一台 host 不认，所以会话能
+///   用这份凭据同步的老条目只可能是签发它的那台。残留：用户给两台 host 手动配了
+///   同一个 token 且都没钉指纹时，会被当成同一台。
+/// - 认领到的 hostId 必须唯一；与多台 host 都对得上（来源不可考）→ null。
+String? interconnectScopeHostIdOf(
+  FushiClientUrl candidate,
+  List<FushiClientUrl> candidates, {
+  required String? fallbackToken,
+}) {
+  String? idOf(FushiClientUrl c) {
+    final String? id = c.hostId;
+    return (id == null || id.isEmpty) ? null : id;
+  }
+
+  final String? own = idOf(candidate);
+  if (own != null) return own;
+  final String? fp = candidate.fingerprintSha256;
+  final String? token = interconnectTokenFor(candidate, fallbackToken);
+  final Set<String> matched = <String>{};
+  for (final FushiClientUrl c in candidates) {
+    final String? id = idOf(c);
+    if (id == null) continue;
+    final String? cFp = c.fingerprintSha256;
+    if (fp != null && fp.isNotEmpty && cFp != null && cFp.isNotEmpty) {
+      if (fingerprintEquals(fp, cFp)) matched.add(id);
+      continue;
+    }
+    if (token != null && interconnectTokenFor(c, fallbackToken) == token) {
+      matched.add(id);
+    }
+  }
+  return matched.length == 1 ? matched.single : null;
+}
+
 /// 一个互联会话所连 host 的基线作用域（BUG-4281）。
 ///
 /// [hostId] == null 表示老条目（配对时没记 hostId）：全部老条目共用无后缀维度，地址
@@ -3991,7 +4077,8 @@ enum LegacyBaselineAdoption {
   /// 候选有多台带 hostId 的 host：旧行属于哪台不可考，删掉，不领养。
   discard,
 
-  /// 候选里有无 hostId 的老条目：旧行是老条目作用域正在用的基线，不动。
+  /// 候选里有认不出属于哪台 host 的老条目（[interconnectScopeHostIdOf] 为 null）：
+  /// 旧行是老条目作用域正在用的基线，不动。
   keep,
 }
 

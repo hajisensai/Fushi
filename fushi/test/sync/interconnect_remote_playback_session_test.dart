@@ -11,6 +11,7 @@ import 'dart:io';
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/video/video_episode_start_policy.dart';
 import 'package:fushi/src/sync/interconnect_playback_position_sync.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
@@ -19,6 +20,7 @@ import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi_engine/sync/local_library_host_service.dart';
 import 'package:fushi_engine/sync/sync_asset_package_service.dart';
+import 'package:fushi_engine/sync/sync_channel_scope.dart';
 import 'package:path/path.dart' as p;
 
 FushiDatabase _memDb() =>
@@ -237,4 +239,184 @@ void main() {
 
     expect(await session.startPositionFor(_videoUid, fallbackMs: 4321), 4321);
   });
+
+  // 评审 tests-2：applyRemote 判定后本机又写了更新的断点（CAS 未落地）→ 从重读的
+  // 本机位置起播，不拿 host 的旧值把本机刚写的断点回退。
+  test('单边判成落地 host、但判定后本机断点被改写（CAS 未落地）→ 从重读的本机位置起播', () async {
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    final _CasHookDb hookDb = _CasHookDb();
+    addTearDown(hookDb.close);
+    final InterconnectPlaybackPositionSync hookSync =
+        InterconnectPlaybackPositionSync(
+          db: hookDb,
+          backend: backend,
+          kind: PlaybackPositionKind.video,
+        );
+    await host.putVideoPosition(_videoUid, 10000, now - 120000);
+    await hookSync.recordBaseline(_videoUid, 10000);
+    await hookDb.setPrefTyped<int>(
+      videoRemotePositionPrefKey(_videoUid),
+      10000,
+    );
+    await hookDb.setPrefTyped<int>(
+      videoRemotePositionAtPrefKey(_videoUid),
+      now - 5000,
+    );
+    await host.putVideoPosition(_videoUid, 30000, now - 60000);
+    // 本机播放器恰在落地前写进 50000（比较后写入的那一刻）。
+    hookDb.beforeCas = () async {
+      await hookDb.setPrefTyped<int>(
+        videoRemotePositionPrefKey(_videoUid),
+        50000,
+      );
+      await hookDb.setPrefTyped<int>(
+        videoRemotePositionAtPrefKey(_videoUid),
+        now,
+      );
+    };
+    final InterconnectRemotePlaybackSession hookSession =
+        InterconnectRemotePlaybackSession(db: hookDb, backend: backend);
+    addTearDown(hookSession.close);
+
+    expect(await hookSession.startPositionFor(_videoUid, fallbackMs: 7), 50000);
+    expect(hookDb.casCalls, 1);
+    expect((await hookSync.localPosition(_videoUid)).positionMs, 50000);
+    expect(await hookSync.baseline(_videoUid), 10000, reason: '没落地就不记基线');
+  });
+
+  // 评审 tests-2：开播时会话已换 host → 回退值起播，并换绑到新 host（下一次开播按
+  // 新 host 判定，不再拿旧 host 的作用域一直抛）。
+  test('开播时会话已换 host：返回回退值，并换绑到新 host，下一次开播照常判定', () async {
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    // 先绑到当前 host（老条目作用域）。
+    expect(await session.startPositionFor(_memberUid, fallbackMs: 0), 0);
+    backend.debugSwitchHostScope('b');
+    await host.putVideoPosition(_videoUid, 30000, now - 60000);
+
+    expect(await session.startPositionFor(_videoUid, fallbackMs: 1234), 1234);
+    // 换绑后按新 host（作用域 b，无基线、本机无记录）判定：落地 host 的 30000。
+    expect(await session.startPositionFor(_videoUid, fallbackMs: 1234), 30000);
+    expect(
+      await clientDb.getSyncBaseline(
+        _videoUid,
+        remoteScopedKey(
+          kInterconnectVideoPositionDimension,
+          syncRemoteTag('fushiServer\nb'),
+        ),
+      ),
+      30000,
+    );
+  });
+
+  // 评审 compat-3：held 时上报器不发请求，此前也就从不核对 host——会话换了 host
+  // 之后仍拿旧 host 作用域的基线短路，新 host 一直收不到这段播放的位置。
+  test('held 中会话换了 host：上报器换绑，按新 host 的作用域重新判定这次上报', () async {
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    await host.putVideoPosition(_videoUid, 10000, now - 120000);
+    await videoSync().recordBaseline(_videoUid, 10000);
+    await host.putVideoPosition(_videoUid, 25000, now - 60000);
+    await setLocal(_videoUid, 40000, now - 1000);
+    expect(await session.startPositionFor(_videoUid, fallbackMs: 7), 40000);
+    final int putsHeld = host.puts;
+    await session.report(_videoUid, _pos(41000, now));
+    expect(host.puts, putsHeld, reason: '同一台 host 上仍 held');
+
+    // 会话故障切换到 hostId b（新 host 上该视频停在 41000，与本机一致）。
+    backend.debugSwitchHostScope('b');
+    await host.putVideoPosition(_videoUid, 41000, now + 500);
+    await setLocal(_videoUid, 41000, now + 500);
+    await session.report(_videoUid, _pos(41000, now + 500));
+
+    final String scopedB = remoteScopedKey(
+      kInterconnectVideoPositionDimension,
+      syncRemoteTag('fushiServer\nb'),
+    );
+    expect(
+      await clientDb.getSyncBaseline(_videoUid, scopedB),
+      41000,
+      reason: '换绑后按新 host 判定（两端一致 → 记基线），不再被旧 held 短路',
+    );
+    // 旧 host 作用域的基线不动。
+    expect(
+      await clientDb.getSyncBaseline(
+        _videoUid,
+        kInterconnectVideoPositionDimension,
+      ),
+      10000,
+    );
+  });
+
+  group('remoteEpisodeStartUsesThreeWay', () {
+    test('首开 / 换集 / 自动连播 / 合集切成员都判', () {
+      for (final EpisodeStartIntent intent in <EpisodeStartIntent>[
+        EpisodeStartIntent.initialOpen,
+        EpisodeStartIntent.manualPrevious,
+        EpisodeStartIntent.manualNext,
+        EpisodeStartIntent.listSelect,
+        EpisodeStartIntent.autoAdvance,
+      ]) {
+        expect(
+          remoteEpisodeStartUsesThreeWay(
+            episodeIndex: 0,
+            intent: intent,
+            sourceReviewActive: false,
+          ),
+          isTrue,
+          reason: intent.name,
+        );
+      }
+    });
+
+    test('显式起点（换画质 / 换线路）、卡片回看、host-playlist 非首集不判', () {
+      expect(
+        remoteEpisodeStartUsesThreeWay(
+          episodeIndex: 0,
+          intent: EpisodeStartIntent.explicitCue,
+          sourceReviewActive: false,
+        ),
+        isFalse,
+      );
+      expect(
+        remoteEpisodeStartUsesThreeWay(
+          episodeIndex: 0,
+          intent: EpisodeStartIntent.initialOpen,
+          sourceReviewActive: true,
+        ),
+        isFalse,
+      );
+      expect(
+        remoteEpisodeStartUsesThreeWay(
+          episodeIndex: 2,
+          intent: EpisodeStartIntent.initialOpen,
+          sourceReviewActive: false,
+        ),
+        isFalse,
+      );
+    });
+  });
+}
+
+/// 在「比较后写入」之前插一段写入的数据库（模拟本机播放器恰在落地前写断点）。
+class _CasHookDb extends FushiDatabase {
+  _CasHookDb() : super.forTesting(DatabaseConnection(NativeDatabase.memory()));
+
+  Future<void> Function()? beforeCas;
+  int casCalls = 0;
+
+  @override
+  Future<bool> runIfIntPrefUnchanged({
+    required String stampKey,
+    required int expectedStamp,
+    required Future<void> Function() write,
+  }) async {
+    casCalls++;
+    final Future<void> Function()? hook = beforeCas;
+    beforeCas = null;
+    if (hook != null) await hook();
+    return super.runIfIntPrefUnchanged(
+      stampKey: stampKey,
+      expectedStamp: expectedStamp,
+      write: write,
+    );
+  }
 }

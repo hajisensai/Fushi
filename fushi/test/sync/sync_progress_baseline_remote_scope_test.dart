@@ -125,6 +125,10 @@ class _BoxBackend implements SyncBackend, SyncRemoteIdentified {
       throw UnimplementedError('${invocation.memberName}');
 }
 
+/// `sync_baselines` 全表（任意维度）。
+Future<List<SyncBaselineRow>> _allBaselines(FushiDatabase db) =>
+    db.select(db.syncBaselines).get();
+
 Future<EpubBookRow> _seedBook(FushiDatabase db) async {
   await db.insertEpubBook(
     EpubBooksCompanion.insert(
@@ -285,37 +289,91 @@ void main() {
     expect(await db.getSyncBaseline(_assetKey, 'progress'), isNull);
   });
 
-  test('remote identity unavailable → book not synced, nothing written; '
-      'the whole phase reports one error', () async {
+  _BoxBackend unidentified(_Box box) => _BoxBackend(
+    box,
+    identityError: SyncRemoteIdentityUnavailableError(SyncBackendType.dropbox),
+  );
+
+  test('remote identity unavailable, both sides moved → that book is skipped '
+      'with an error, nothing written; the phase finishes and reports one '
+      'error carrying the results', () async {
     final FushiDatabase db = _memDb();
     final EpubBookRow book = await _seedBook(db);
     await _seedPosition(db, book.uid, updatedAt: 200, fraction: 0.6);
     final _Box box = _Box('unused')
       ..timestampMs = 300
       ..fraction = 0.9;
-    final _BoxBackend backend = _BoxBackend(
-      box,
-      identityError: SyncRemoteIdentityUnavailableError(
-        SyncBackendType.dropbox,
-      ),
-    );
+    final _BoxBackend backend = unidentified(box);
 
     final SyncBookResult single = await _sync(db, backend, book);
     expect(single.direction, SyncResult.skipped);
     expect(single.error, isNotNull);
 
-    await expectLater(
-      SyncManager(db: db, backend: backend).syncAllBooks(
+    // 评审 compat-2：不再在开轮直接抛 SyncRemoteIdentityUnavailableError 中断整段，
+    // 逐本跑完后带着结果报一次错。
+    Object? thrown;
+    try {
+      await SyncManager(db: db, backend: backend).syncAllBooks(
         syncStats: false,
         statsSyncMode: StatisticsSyncMode.merge,
         syncAudioBook: false,
-      ),
-      throwsA(isA<SyncRemoteIdentityUnavailableError>()),
-    );
+      );
+    } catch (e) {
+      thrown = e;
+    }
+    expect(thrown, isA<SyncBooksIncompleteError>());
+    final SyncBooksIncompleteError incomplete =
+        thrown! as SyncBooksIncompleteError;
+    expect(incomplete.cause, isA<SyncRemoteIdentityUnavailableError>());
+    expect(incomplete.results.single.direction, SyncResult.skipped);
+    expect(incomplete.results.single.error, isNotNull);
     final ReaderPositionRow pos = (await db.getReaderPosition(book.uid))!;
     expect(pos.updatedAt, 200);
     expect(box.exported, isNull);
-    expect(await db.getSyncBaselinesForDimension('progress'), isEmpty);
+    expect(await _allBaselines(db), isEmpty);
+  });
+
+  // 评审 compat-2：OAuth 邮箱一次取失败（升级后第一次启动还没记过账号）时，不需要
+  // 共同祖先的书照常同步——新导入的书照常导出，只是不写基线（挑不出槽）。修复前开轮
+  // 就抛，整段书都不传。
+  test('remote identity unavailable, single-sided change → still exported, '
+      'no baseline written anywhere', () async {
+    final FushiDatabase db = _memDb();
+    final EpubBookRow book = await _seedBook(db);
+    await _seedPosition(db, book.uid, updatedAt: 200, fraction: 0.6);
+    final _Box box = _Box('unused'); // 远端还没有这本书的进度。
+
+    Object? thrown;
+    try {
+      await SyncManager(db: db, backend: unidentified(box)).syncAllBooks(
+        syncStats: false,
+        statsSyncMode: StatisticsSyncMode.merge,
+        syncAudioBook: false,
+      );
+    } catch (e) {
+      thrown = e;
+    }
+    expect(thrown, isA<SyncBooksIncompleteError>());
+    expect(
+      (thrown! as SyncBooksIncompleteError).results.single.direction,
+      SyncResult.exported,
+    );
+    expect(box.exported!.lastBookmarkModified, 200);
+    expect(await _allBaselines(db), isEmpty);
+  });
+
+  test('remote identity unavailable, remote-only progress → still imported, '
+      'no baseline written anywhere', () async {
+    final FushiDatabase db = _memDb();
+    final EpubBookRow book = await _seedBook(db);
+    final _Box box = _Box('unused')
+      ..timestampMs = 300
+      ..fraction = 0.5;
+
+    final SyncBookResult result = await _sync(db, unidentified(box), book);
+    expect(result.direction, SyncResult.imported);
+    expect((await db.getReaderPosition(book.uid))!.updatedAt, 300);
+    expect(await _allBaselines(db), isEmpty);
   });
 
   group('interconnect file box pinned to the session host', () {

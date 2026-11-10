@@ -27,9 +27,11 @@ final Expando<Map<String, Future<void>>> _adoptions =
 
 /// 把升级前写下的无后缀旧行按 [adoption] 处理到 [tag] 作用域（[tag] 为 null 时什么
 /// 都不做——那个作用域用的就是旧行）：
-/// - [LegacyBaselineAdoption.move]：每个逻辑维度的旧行逐行**覆盖**目标行后删除。
-///   新代码对带标签的作用域从不写无后缀行，所以旧行只可能来自更旧的版本（含降级
-///   期间），一定比目标行新。
+/// - [LegacyBaselineAdoption.move]：每个逻辑维度的旧行逐行搬到目标作用域后删除。
+///   目标行不存在或与旧行相等 → 照搬；目标行已存在且不同 → 两行都删。旧行可能来自
+///   降级期间（比目标行新），也可能来自曾经认不出 host 的老条目作用域（与目标行谁新
+///   不可考，评审 correctness-3）——拿错的那份当共同祖先会把单边改动判错方向、静默
+///   覆盖，宁可这一条首轮无基线（两端不同判冲突，不丢数据）。
 /// - [LegacyBaselineAdoption.discard]：删除旧行（来源不可考）。
 /// - [LegacyBaselineAdoption.keep]：不动（老条目作用域正在用）。不记进程内缓存，
 ///   候选之后变成单 host 时还能领养。
@@ -70,7 +72,12 @@ Future<void> _adoptOne(
   if (legacy.isEmpty) return;
   for (final MapEntry<String, int> row in legacy.entries) {
     if (adoption == LegacyBaselineAdoption.move) {
-      await db.setSyncBaseline(row.key, target, row.value);
+      final int? existing = await db.getSyncBaseline(row.key, target);
+      if (existing == null) {
+        await db.setSyncBaseline(row.key, target, row.value);
+      } else if (existing != row.value) {
+        await db.deleteSyncBaseline(row.key, target);
+      }
     }
     await db.deleteSyncBaseline(row.key, source);
   }
@@ -114,11 +121,15 @@ class SyncRemoteScope {
   final InterconnectHostPin? hostPin;
 }
 
-/// 偏好键：某云后端最近一次取到的账号（规整后的小写邮箱 / 用户名）。设备本地。
+/// 偏好键：某云后端最近一次取到的账号（规整后的小写邮箱 / 用户名）。设备本地
+/// （登记在 [SyncRepository.deviceLocalPrefKeys]：不随备份 / 设置同步带到别的设备，
+/// 否则登着别的账号的设备在邮箱缺失时会回退到外来值、挑错基线槽）。
 /// OAuth 后端的 `currentEmail` 只作展示、可临时为空（`fetchUserEmail` 失败不抛），
 /// 身份不能直接取它——取不到时回退到这里记下的值，基线才不会一轮一换槽。
 String syncRemoteAccountPrefKey(SyncBackendType type) =>
-    SyncChannelScope.forBackendType(type).key('sync_remote_account');
+    SyncChannelScope.forBackendType(
+      type,
+    ).key(SyncRepository.syncRemoteAccountPrefBase);
 
 /// 登出时清掉 [type] 记下的账号（下一次登录的账号重新记）。
 Future<void> clearSyncRemoteAccount(FushiDatabase db, SyncBackendType type) =>
