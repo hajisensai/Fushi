@@ -210,20 +210,33 @@ class LinuxSteamShortcut {
 
   /// Whether any Steam account has Fushi's own entry (one written by
   /// [install]; a hand-added entry does not count).
+  ///
+  /// Runs inside the settings page's `visible` predicates (during build), so
+  /// it answers for what it can read and never throws: a Steam folder or a
+  /// shortcuts.vdf it cannot read or does not understand holds no entry of
+  /// Fushi's that [uninstall] could remove either.
   bool isInstalled() {
     final int id = appId;
-    for (final Directory config in accountConfigDirs()) {
+    final List<Directory> accounts;
+    try {
+      accounts = accountConfigDirs();
+    } on FileSystemException {
+      return false;
+    }
+    for (final Directory config in accounts) {
       final File file = File(p.join(config.path, 'shortcuts.vdf'));
       if (!file.existsSync()) continue;
+      final Object? shortcuts;
       try {
-        final VdfMap? shortcuts =
-            parseBinaryVdf(file.readAsBytesSync())['shortcuts'] as VdfMap?;
-        if (shortcuts != null &&
-            shortcuts.entries.any((VdfEntry e) => _isOurs(e.value, id))) {
-          return true;
-        }
+        shortcuts = parseBinaryVdf(file.readAsBytesSync())['shortcuts'];
       } on FormatException {
         continue;
+      } on FileSystemException {
+        continue;
+      }
+      if (shortcuts is VdfMap &&
+          shortcuts.entries.any((VdfEntry e) => _isOurs(e.value, id))) {
+        return true;
       }
     }
     return false;

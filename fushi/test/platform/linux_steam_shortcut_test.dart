@@ -275,6 +275,18 @@ void main() {
       expect(shortcut.isInstalled(), isTrue);
     });
 
+    // isInstalled() runs inside the appearance page's `visible` predicates,
+    // i.e. during build: a file it cannot read must answer "not installed",
+    // never throw (a throw there takes the whole settings page down).
+    test('a shortcuts.vdf of an unexpected shape reads as not installed', () {
+      vdf.writeAsBytesSync(
+        serializeBinaryVdf(
+          VdfMap(<VdfEntry>[const VdfEntry('shortcuts', 'not a map')]),
+        ),
+      );
+      expect(shortcut.isInstalled(), isFalse);
+    });
+
     test(
       'remove deletes only Fushi\'s own entry, artwork and launcher',
       () async {
