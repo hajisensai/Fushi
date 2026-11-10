@@ -379,6 +379,58 @@ void main() {
     expect(overrides, isEmpty);
   });
 
+  // 反馈 lIoB_rGP7l：「保持屏幕常亮」在全局作用域下必须可改（它的全局值就是
+  // 阅读器全局偏好 keep_screen_awake），不再显示「只能按作品设置」。
+  testWidgets('keep-screen-on is editable in global scope', (
+    WidgetTester tester,
+  ) async {
+    final List<Map<String, Object?>> overrides = <Map<String, Object?>>[];
+    final List<Map<String, Object?>> patches = <Map<String, Object?>>[];
+    await tester.pumpWidget(
+      host(
+        MangaReaderSettingsSheet(
+          globalDefaults: const MangaReaderPreferences(),
+          overrides: const <String, Object?>{},
+          onChanged: (Map<String, Object?> next) async => overrides.add(next),
+          onGlobalChanged: (Map<String, Object?> patch) async =>
+              patches.add(patch),
+          supportedDeviceKeys: const <String>{'fullscreen', 'keepScreenOn'},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Global'));
+    await tester.pumpAndSettle();
+    await tester.tap(tabLabel(1));
+    await tester.pumpAndSettle();
+    final Finder row = find.text('Keep screen on');
+    await tester.scrollUntilVisible(row, 200, scrollable: tabScrollable(1));
+    await tester.pumpAndSettle();
+    // 全屏仍只能按作品设置，常亮不再是。
+    expect(find.text('Can only be set per title'), findsOneWidget);
+    await tester.tap(row);
+    await tester.pumpAndSettle();
+    expect(patches, <Map<String, Object?>>[
+      <String, Object?>{'keepScreenOn': false},
+    ]);
+    expect(overrides, isEmpty);
+  });
+
+  test('global patch routes keepScreenOn to the reader-wide preference', () {
+    final ({Map<String, Object?> mangaPatch, bool? keepScreenAwake}) split =
+        splitMangaGlobalPatch(<String, Object?>{
+          'keepScreenOn': false,
+          'invertColors': true,
+        });
+    expect(split.keepScreenAwake, isFalse);
+    expect(split.mangaPatch, <String, Object?>{'invertColors': true});
+
+    final ({Map<String, Object?> mangaPatch, bool? keepScreenAwake}) plain =
+        splitMangaGlobalPatch(<String, Object?>{'grayscale': true});
+    expect(plain.keepScreenAwake, isNull);
+    expect(plain.mangaPatch, <String, Object?>{'grayscale': true});
+  });
+
   test('old animateTransitions toggle is merged into the page-turn choice', () {
     // 「过渡动画」布尔开关并进了「翻页动画」四选一，不再作为一行露出。
     expect(

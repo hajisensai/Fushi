@@ -6216,10 +6216,22 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         },
         // 面板切到「全局」时的写入：稀疏补丁合进**偏好里的**全局默认（不是上面
         // 那份叠了窗口全屏 / 常亮运行态的副本），再按本书覆盖重应用。
+        // 「保持屏幕常亮」的全局值就是阅读器全局偏好 keep_screen_awake（上面
+        // 副本里填的也是它），分流写过去（反馈 lIoB_rGP7l）。
         onGlobalChanged: (Map<String, Object?> patch) async {
-          await appModel.setMangaReaderPreferences(
-            appModel.mangaReaderPreferences.copyWithJson(patch),
-          );
+          final ({Map<String, Object?> mangaPatch, bool? keepScreenAwake})
+          split = splitMangaGlobalPatch(patch);
+          final bool? keepScreenAwake = split.keepScreenAwake;
+          if (keepScreenAwake != null) {
+            await ReaderFushiSource.instance.setKeepScreenAwake(
+              keepScreenAwake,
+            );
+          }
+          if (split.mangaPatch.isNotEmpty) {
+            await appModel.setMangaReaderPreferences(
+              appModel.mangaReaderPreferences.copyWithJson(split.mangaPatch),
+            );
+          }
           try {
             await _reapplyReaderPreferences();
           } on Object catch (error, stack) {
