@@ -247,6 +247,23 @@ void main() {
   });
 
   group('S01E04 普通命名', () {
+    test('4 位补零集号 S01E0005 / S1E1000 / E0012（BUG-4323）', () {
+      final ParsedMediaName a = FilenameParser.parse('Show.S01E0005.mkv');
+      expect(a.title, 'Show');
+      expect(a.season, 1);
+      expect(a.episode, 5);
+      final ParsedMediaName b = FilenameParser.parse('One Piece S1E1000.mkv');
+      expect(b.title, 'One Piece');
+      expect(b.season, 1);
+      expect(b.episode, 1000);
+      final ParsedMediaName c = FilenameParser.parse('Show E0012.mkv');
+      expect(c.title, 'Show');
+      expect(c.episode, 12);
+      // 反例：5 位数既不是集号，也不得被截成前 4 位。
+      final ParsedMediaName d = FilenameParser.parse('Show.S01E12345.mkv');
+      expect(d.episode, isNot(anyOf(1234, 12345)));
+    });
+
     test('空格分隔的 SxxExx', () {
       final ParsedMediaName p = FilenameParser.parse('Spy x Family S01E04.mkv');
       expect(p.title, 'Spy x Family');
