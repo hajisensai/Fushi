@@ -75,9 +75,9 @@ extension _FushiSyncServerAuth on FushiSyncServer {
       }
       // TODO-961 M1b：再比对任一未吊销的 per-peer token。惰性加载 + 缓存，避免每请求
       // 打库；配对/吊销经 [invalidatePeerTokenCache] 清缓存促重载。
-      final Set<String> peerTokens = await _peerTokens();
+      final _CredentialSnapshot credentials = await _credentialSnapshot();
       final Uint8List pw = Uint8List.fromList(utf8.encode(password));
-      for (final String peerToken in peerTokens) {
+      for (final String peerToken in credentials.peerTokens) {
         if (_constantTimeEquals(
           pw,
           Uint8List.fromList(utf8.encode(peerToken)),
@@ -99,7 +99,8 @@ extension _FushiSyncServerAuth on FushiSyncServer {
     final String? password = _basicPassword(header);
     if (password == null) return false;
     final Uint8List supplied = Uint8List.fromList(utf8.encode(password));
-    for (final String peerToken in await _peerTokens()) {
+    final _CredentialSnapshot credentials = await _credentialSnapshot();
+    for (final String peerToken in credentials.peerTokens) {
       if (_constantTimeEquals(
         supplied,
         Uint8List.fromList(utf8.encode(peerToken)),
@@ -110,15 +111,44 @@ extension _FushiSyncServerAuth on FushiSyncServer {
     return false;
   }
 
-  /// 当前有效 per-peer token 集合（惰性加载 + 缓存）。无 provider 时为空集——只认
-  /// 共享 [_token]。
-  Future<Set<String>> _peerTokens() async {
-    final Set<String>? cached = _cachedPeerTokens;
-    if (cached != null) return cached;
+  /// 当前有效凭据快照（惰性加载 + 缓存 + 单飞）。无 provider 时 peer 集合为空——
+  /// 只认共享 [_token]。
+  ///
+  /// 代际语义：加载期间若发生过 [invalidatePeerTokenCache]，这份结果读于吊销之前，
+  /// 丢弃并按新代际重读；绝不把它写回缓存。加载失败照样抛给本次调用方，且不留在
+  /// 单飞槽里，下一个请求重新读。
+  Future<_CredentialSnapshot> _credentialSnapshot() async {
+    while (true) {
+      final _CredentialSnapshot? cached = _credentials;
+      if (cached != null) return cached;
+      final int gen = _credentialGeneration;
+      final Future<_CredentialSnapshot> loading = _credentialsLoading ??=
+          _loadCredentials();
+      final _CredentialSnapshot loaded;
+      try {
+        loaded = await loading;
+      } catch (_) {
+        if (identical(_credentialsLoading, loading)) _credentialsLoading = null;
+        rethrow;
+      }
+      if (gen == _credentialGeneration) {
+        _credentials = loaded;
+        if (identical(_credentialsLoading, loading)) _credentialsLoading = null;
+        return loaded;
+      }
+    }
+  }
+
+  Future<_CredentialSnapshot> _loadCredentials() async {
     final Future<Set<String>> Function()? provider = pairedPeerTokensProvider;
-    final Set<String> loaded = provider == null ? <String>{} : await provider();
-    _cachedPeerTokens = loaded;
-    return loaded;
+    final Set<String> peerTokens = provider == null
+        ? <String>{}
+        : await provider();
+    return _CredentialSnapshot(
+      sharedToken: _token,
+      peerTokens: peerTokens,
+      legacyPeerTokens: const <String>{},
+    );
   }
 }
 

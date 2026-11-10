@@ -247,6 +247,38 @@ bool _constantTimeEquals(Uint8List a, Uint8List b) {
   return result == 0;
 }
 
+/// host 当前有效凭据的一次性快照。所有鉴权与派生凭据校验都从同一份快照读；
+/// 配对 / 吊销经 [FushiSyncServer.invalidatePeerTokenCache] 推进代际后整体作废。
+class _CredentialSnapshot {
+  _CredentialSnapshot({
+    required String sharedToken,
+    required Set<String> peerTokens,
+    required Set<String> legacyPeerTokens,
+  }) : peerTokens = Set<String>.unmodifiable(peerTokens),
+       legacyPeerTokens = Set<String>.unmodifiable(legacyPeerTokens),
+       fingerprints = Set<String>.unmodifiable(<String>{
+         _credentialFingerprint(sharedToken),
+         for (final String t in peerTokens) _credentialFingerprint(t),
+         for (final String t in legacyPeerTokens) _credentialFingerprint(t),
+       }),
+       dictionaryMediaKeys = const <String>{};
+
+  /// 带稳定 deviceId 配上的设备 token：过 `_validateAuth` 也过 `_validatePeerAuth`。
+  final Set<String> peerTokens;
+
+  /// `legacy-` 行的 token：只过 `_validateAuth`。尚无来源，恒为空集。
+  final Set<String> legacyPeerTokens;
+
+  /// sha256hex(utf8(token))：共享 + peer + legacy。供派生凭据记签发者用。
+  final Set<String> fingerprints;
+
+  /// 词典媒体作用域 key；尚未填充，恒为空集。
+  final Set<String> dictionaryMediaKeys;
+}
+
+String _credentialFingerprint(String token) =>
+    sha256.convert(utf8.encode(token)).toString();
+
 /// 把 [file] 的字节流式交给响应体，流结束（传完 / 对端断开取消订阅）后删它所在的
 /// 临时目录。用 `async*` 的 `finally`：订阅被取消时同样执行。
 Stream<List<int>> _streamThenDeleteDir(File file) async* {
@@ -667,9 +699,17 @@ class FushiSyncServer {
     );
   }
 
-  /// [pairedPeerTokensProvider] 结果的缓存（避免每个请求打一次 DB）。null=未加载。
-  /// 配对新增 / 吊销后经 [invalidatePeerTokenCache] 置 null，下次 auth 重新拉取。
-  Set<String>? _cachedPeerTokens;
+  /// [pairedPeerTokensProvider] 结果的快照缓存（避免每个请求打一次 DB）。null=未加载。
+  /// 配对新增 / 吊销后经 [invalidatePeerTokenCache] 置 null 并推进
+  /// [_credentialGeneration]，下次 auth 重新拉取。
+  _CredentialSnapshot? _credentials;
+
+  /// 凭据代际：每次 invalidate 加一。在飞加载完成时若代际已变，说明结果读于
+  /// 吊销之前，丢弃不写回缓存。
+  int _credentialGeneration = 0;
+
+  /// 单飞加载槽：并发请求共用同一次 provider 调用；失败与过期都不留在槽里。
+  Future<_CredentialSnapshot>? _credentialsLoading;
 
   bool get isRunning => _server != null;
 
@@ -911,7 +951,9 @@ class FushiSyncServer {
   /// 使下一次 [_validateAuth] 从 [pairedPeerTokensProvider] 重新拉取最新集合。
   /// controller 在 upsert / revoke 后调它，保证吊销即时生效、新 token 立即受理。
   void invalidatePeerTokenCache() {
-    _cachedPeerTokens = null;
+    _credentialGeneration++;
+    _credentials = null;
+    _credentialsLoading = null;
   }
 
   Future<shelf.Response> _handleRequest(shelf.Request request) async {
