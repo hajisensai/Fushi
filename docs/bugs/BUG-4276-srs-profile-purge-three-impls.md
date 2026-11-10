@@ -26,7 +26,7 @@
     （多出一份无主备份文件）；meta 键与 `sync2_deps` 用户看不到，是只增不减的死数据（每次并入都留一份旧 uid 独占的
     因果上下文）。
   - Rust 版漏中间带 uid 的键：删 profile 后这些键永远留下（死数据，无功能影响）。
-- **[x] ① 已修复** — 只留 Rust `profile_purge` 一份实现：
+- **[x] ① 已修复**（0968c54cc82）— 只留 Rust `profile_purge` 一份实现：
   - `profile_data.rs` 的 meta 删除补 `instr(key, '/' || uid || '/') > 0`（uid 在中间的键）；表删除顺序依赖（桶表按名字排在
     三张投影表之后）写进注释。
   - `srs_profile_merge.dart`：删掉 `_deleteProfile`，并入收尾在原来的 Drift 事务里调 `srsPurgeProfileRows(core, oldUid)`。
