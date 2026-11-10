@@ -39,9 +39,12 @@
 |---|:--:|:--:|---|
 | [BUG-4274](bugs/BUG-4274-popup-gutter-observer-loop.md) | ✅ | ✅ | 查词弹窗错误日志反复出现 ResizeObserver loop completed with undelivered notifications（滚动条 gutter 观察者在投递中同步重排） |
 > 共 3837 条。点号进各自文件。
+> 共 3839 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4277](bugs/BUG-4277-collection-manage-count-mismatch.md) | ✅ | ✅ | collection-manage-count-mismatch |
+| [BUG-4276](bugs/BUG-4276-lan-devices-duplicate-host.md) | ✅ | ✅ | 互联「局域网设备」列表把同一台 host 列两遍，配对后红屏 `_dependents.isEmpty` |
 | [BUG-4275](bugs/BUG-4275-interconnect-peer-row-shows-url-not-name.md) | ✅ | ✅ | 互联连接列表行标题只显示 URL、不显示对端设备名 |
 | [BUG-4274](bugs/BUG-4274-interconnect-test-all-probes-disabled.md) | ✅ | ✅ | 互联「测试连接」连已停用的地址也测 |
 | [BUG-4273](bugs/BUG-4273-media-server-unnumbered-episode.md) | ✅ | ✅ | 媒体服务器缺集号的集被显示成列表位置并排到最前 |

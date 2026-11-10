@@ -375,8 +375,8 @@ const Map<String, String> kWebUiEnglish = <String, String>{
   '扫描后清理文件已消失的视频条目': 'Remove video items whose files are gone after scans',
   '允许已配对设备推送 / 拉取配置文件（Profile）':
       'Allow paired devices to push / pull settings profiles',
-  '允许已配对设备远程更新本服务端（仅发布包；装完退出码 75，由服务管理器重启）':
-      'Allow paired devices to update this server remotely (release packages only; exits with code 75 for the service manager to restart it)',
+  '允许已配对设备远程更新本服务端（仅发布包；装完退出码 10，由服务管理器重启）':
+      'Allow paired devices to update this server remotely (release packages only; exits with code 10 for the service manager to restart it)',
   '允许「我的设备」跟随本机 Fushi 排行榜账户自动登录':
       'Allow "my devices" to sign in with this server\'s Fushi leaderboard account',
   '中文查词简繁互查（只管不自带开关的浏览器扩展 / 旧客户端；新版 app 用自己的开关）':
