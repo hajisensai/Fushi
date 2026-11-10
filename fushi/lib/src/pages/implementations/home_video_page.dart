@@ -3096,6 +3096,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       folders++;
       final AddLocalFolderResult result = await addLocalFolderAsSource(
         db: appModel.database,
+        // 视频来源不扫书，没有有声书要转录。
+        transcribeAudiobook: null,
         mediaKind: SourceLibraryKind.video.dbValue,
         path: dir,
       );

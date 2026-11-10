@@ -6382,6 +6382,21 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 子开关：书架「导入文件夹」/ 本地来源扫描时，书配上了有声书音频但找不到字幕，
+  /// 就把音频排进转录队列、转完对齐到这本书（默认关：一本书几个小时的推理，要用户
+  /// 明确要）。只在总开关 [audiobookAutoTranscribe] 开时生效。设备本地：本机有没有
+  /// 算力跑转录是这台设备的事（见 `SyncRepository.deviceLocalPrefKeys`）。
+  static const String audiobookFolderImportTranscribeKey =
+      'audiobook_folder_import_transcribe';
+
+  bool get audiobookFolderImportTranscribe =>
+      getPref(audiobookFolderImportTranscribeKey, defaultValue: false) as bool;
+
+  Future<void> setAudiobookFolderImportTranscribe({required bool value}) async {
+    await setPref(audiobookFolderImportTranscribeKey, value);
+    notifyListeners();
+  }
+
   String get mangaSpreadPreference =>
       getPref('manga_spread_preference', defaultValue: 'auto') as String;
 
