@@ -1,0 +1,978 @@
+{
+ "schema": 1,
+ "generatedAt": "2026-11-10T15:06:06Z",
+ "repo": "hajisensai/Fushi",
+ "develop": {
+  "sha": "2f45522b4eb23472396cceff93f626bd323b38de",
+  "seq": 25744
+ },
+ "builds": [
+  {
+   "seq": 25115,
+   "version": "3.3.0",
+   "sha": "4caea310d126102d775b0a1e8ef4f2e217c1f284",
+   "unknown": false,
+   "publishedAt": "2026-11-10T15:00:39Z",
+   "testflight": true,
+   "baseSeq": 25034,
+   "prs": [
+    3087,
+    3083,
+    3097,
+    3119,
+    3098,
+    3082,
+    3094,
+    3101,
+    3100
+   ],
+   "direct": [],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "ok"
+    },
+    "windows": {
+     "state": "ok"
+    },
+    "macos": {
+     "state": "ok"
+    },
+    "ios": {
+     "state": "ok"
+    }
+   }
+  },
+  {
+   "seq": 25034,
+   "version": "3.3.0",
+   "sha": "4760a9fdd9c916eae6679dee524b71bc80c701f4",
+   "unknown": false,
+   "publishedAt": "2026-11-10T04:03:51Z",
+   "testflight": true,
+   "baseSeq": 25010,
+   "prs": [
+    3103,
+    3102,
+    3096,
+    3090,
+    3092,
+    3091,
+    3123
+   ],
+   "direct": [],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "ok"
+    },
+    "windows": {
+     "state": "ok"
+    },
+    "macos": {
+     "state": "ok"
+    },
+    "ios": {
+     "state": "ok"
+    }
+   }
+  },
+  {
+   "seq": 25010,
+   "version": "3.3.0",
+   "sha": "6b11ee4768b7f2360caaa4a584bf23442f7de93b",
+   "unknown": false,
+   "publishedAt": "2026-11-10T03:04:56Z",
+   "testflight": true,
+   "baseSeq": 25005,
+   "prs": [
+    3073
+   ],
+   "direct": [],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "superseded",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/42740863071"
+    },
+    "windows": {
+     "state": "ok"
+    },
+    "macos": {
+     "state": "ok"
+    },
+    "ios": {
+     "state": "ok"
+    }
+   }
+  },
+  {
+   "seq": 25005,
+   "version": "3.3.0",
+   "sha": "d7f923fb4a25c5b4f974492703c52f0c84d84435",
+   "unknown": false,
+   "publishedAt": "2026-11-10T02:39:59Z",
+   "testflight": false,
+   "baseSeq": 24999,
+   "prs": [
+    3124,
+    3125
+   ],
+   "direct": [],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "ok"
+    },
+    "windows": {
+     "state": "superseded",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/42739598671"
+    },
+    "macos": {
+     "state": "superseded",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/42739598671"
+    },
+    "ios": {
+     "state": "superseded",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/42739598671"
+    }
+   }
+  }
+ ],
+ "pending": {
+  "headSha": "2f45522b4eb23472396cceff93f626bd323b38de",
+  "headSeq": 25744,
+  "prs": [
+   3172,
+   3177,
+   3175,
+   3171,
+   3169,
+   3173,
+   3159,
+   3162,
+   3166,
+   3167,
+   3163,
+   3164,
+   3165,
+   3158,
+   3160,
+   3161,
+   3154,
+   3157,
+   3156,
+   3153,
+   3155,
+   3152,
+   3151,
+   3150,
+   3149,
+   3137,
+   3136,
+   3075,
+   3143,
+   3074,
+   3144,
+   3146,
+   3139,
+   3130,
+   3140,
+   3142,
+   3145,
+   3141,
+   3135,
+   3133,
+   3079,
+   3128,
+   3132,
+   3129,
+   3131,
+   3127,
+   3084,
+   3121,
+   3078,
+   3134,
+   3093,
+   3071,
+   3077,
+   3080,
+   3126,
+   3076,
+   3104,
+   3099
+  ],
+  "direct": [
+   {
+    "sha": "86232cd1e4aa91186c96e97afb9844aefcdc88e3",
+    "subject": "chore(bugs): settle BUG number collisions on f5aaf74fe"
+   }
+  ],
+  "truncated": false,
+  "platforms": {
+   "android": {
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/42840665521"
+   },
+   "windows": {
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/42840665014"
+   },
+   "macos": {
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/42840665014"
+   },
+   "ios": {
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/42840665014"
+   }
+  }
+ },
+ "prs": {
+  "3071": {
+   "number": 3071,
+   "title": "feat(linux): Flatpak 应用内自更新 + CI 官方构建发布",
+   "author": "samutw",
+   "mergedAt": "2026-11-10T13:26:14Z",
+   "additions": 2283,
+   "deletions": 243,
+   "labels": [
+    "merge-approved"
+   ]
+  },
+  "3073": {
+   "number": 3073,
+   "title": "feat(reader): option to restart the looked-up sentence after closing the dictionary / 查词后从句首重播",
+   "author": "samutw",
+   "mergedAt": "2026-11-10T02:10:09Z",
+   "additions": 654,
+   "deletions": 2,
+   "labels": []
+  },
+  "3074": {
+   "number": 3074,
+   "title": "fix(interconnect): 远端视频续播不再回写旧断点，同步摘要与「看到」标签跟上真实断点（BUG-4231/4235/4236）",
+   "author": "samutw",
+   "mergedAt": "2026-11-10T13:38:19Z",
+   "additions": 1832,
+   "deletions": 69,
+   "labels": [
+    "merge-approved"
+   ]
+  },
+  "3075": {
+   "number": 3075,
+   "title": "fix(interconnect): 复习同步对端未加入时提示、CLI 查词走远端、手动地址 host 记下设备名（BUG-4232/4233/4234）",
+   "author": "samutw",
+   "mergedAt": "2026-11-10T13:42:07Z",
+   "additions": 1168,
+   "deletions": 105,
+   "labels": [
+    "merge-approved"
+   ]
+  },
+  "3076": {
+   "number": 3076,
+   "title": "fix(popup): 滚动条 gutter 观察者把重排挪出 ResizeObserver 投递",
+   "author": "samutw",
+   "mergedAt": "2026-11-10T13:22:14Z",
+   "additions": 41,
+   "deletions": 5,
+   "labels": [
+    "merge-approved"
+   ]
+  },
+  "3077": {
+   "number": 3077,
+   "title": "fix(ui): FushiMarquee 自答 intrinsic 尺寸，SRS 同步冲突弹窗在 debug 下不再只剩遮罩（BUG-4285）",
+   "author": "samutw",
+   "mergedAt": "2026-11-10T13:24:56Z",
+   "additions": 438,
+   "deletions": 47,
+   "labels": [
+    "merge-approved"
+   ]
+  },
+  "3078": {
+   "number": 3078,
+   "title": "feat(audiobook): VN 模式新增「页末时音频：继续播放 / 暂停」 / Audio at end of page option for VN mode",
+   "author": "samutw",
+   "mergedAt": "2026-11-10T13:27:37Z",
+   "additions": 2146,
+   "deletions": 8,
+   "labels": [
+    "merge-approved"
+   ]
+  },
+  "3079": {
+   "number": 3079,
+   "title": "fix(srs): profile 冲突另一边解决后不再重问已废弃的 profile，选了也不会让两端分裂（BUG-4238）",
+   "author": "samutw",
+   "mergedAt": "2026-11-10T13:32:10Z",
+   "additions": 1018,
+   "deletions": 140,
+   "labels": [
+    "merge-approved"
+   ]
+  },
+  "3080": {
+   "number": 3080,
+   "title": "feat(music): 本地与 Jellyfin 歌单可编辑，自动导入 .m3u/.m3u8、导出 .m3u8 / Editable local + Jellyfin playlists with m3u import and export",
+   "author": "samutw",
+   "mergedAt": "2026-11-10T13:24:17Z",
+   "additions": 3814,
+   "deletions": 170,
+   "labels": [
+    "merge-approved"
+   ]
+  },
+  "3082": {
+   "number": 3082,
+   "title": "fix(server): restore files before opening the DB after an interrupted self-update; e2e test and restart docs",
+   "author": "samutw",
+   "mergedAt": "2026-11-10T13:01:15Z",
+   "additions": 597,
+   "deletions": 60,
+   "labels": [
+    "merge-approved"
+   ]
+  },
+  "3083": {
+   "number": 3083,
+   "title": "fix(interconnect): 能力探测 / GET 与选路缓存走 P2P 隧道，直连不通时远程复习、视频遥控仍能找到主机（BUG-4241）",
+   "author": "samutw",
+   "mergedAt": "2026-11-10T13:05:43Z",
+   "additions": 543,
+   "deletions": 109,
+   "labels": [
+    "merge-approved"
+   ]
+  },
+  "3084": {
+   "number": 3084,
+   "title": "feat(linux): Wayland 全局热键走 XDG GlobalShortcuts portal",
+   "author": "samutw",
+   "mergedAt": "2026-11-10T13:28:44Z",
+   "additions": 4235,
+   "deletions": 179,
+   "labels": [
+    "merge-approved"
+   ]
+  },
+  "3087": {
+   "number": 3087,
+   "title": "feat(srs): 复习统计页新增模型校准与 UM+ 图表",
+   "author": "zitons",
+   "mergedAt": "2026-11-10T13:05:53Z",
+   "additions": 3884,
+   "deletions": 74,
+   "labels": [
+    "merge-approved"
+   ]
+  },
+  "3090": {
+   "number": 3090,
+   "title": "feat(interconnect): desktop host answers Save to (mine targets); missing choices fall back to the host default",
+   "author": "samutw",
+   "mergedAt": "2026-11-10T02:35:51Z",
+   "additions": 1820,
+   "deletions": 124,
+   "labels": [
+    "merge-approved"
+   ]
+  },
+  "3091": {
+   "number": 3091,
+   "title": "i18n: translate the mine-to-paired-device hint and Save to strings in 15 languages",
+   "author": "samutw",
+   "mergedAt": "2026-11-10T02:33:21Z",
+   "additions": 135,
+   "deletions": 135,
+   "labels": [
+    "merge-approved"
+   ]
+  },
+  "3092": {
+   "number": 3092,
+   "title": "feat(server): Fushi review (SRS) ops for the remote AI assistant",
+   "author": "samutw",
+   "mergedAt": "2026-11-10T02:35:48Z",
+   "additions": 818,
+   "deletions": 16,
+   "labels": [
+    "merge-approved"
+   ]
+  },
+  "3093": {
+   "number": 3093,
+   "title": "fix(srs): fixes from the server SRS emulator run — Save to reset, backup --config, note count, notice, deck list",
+   "author": "samutw",
+   "mergedAt": "2026-11-10T13:26:41Z",
+   "additions": 832,
+   "deletions": 77,
+   "labels": [
+    "merge-approved"
+   ]
+  },
+  "3094": {
+   "number": 3094,
+   "title": "fix(interconnect): one LAN-devices row per host address; no red screen after pairing (BUG-4247)",
+   "author": "samutw",
+   "mergedAt": "2026-11-10T13:00:59Z",
+   "additions": 297,
+   "deletions": 5,
+   "labels": [
+    "merge-approved"
+   ]
+  },
+  "3096": {
+   "number": 3096,
+   "title": "fix(server): AI assistant can only change its whitelisted server settings, not credentials or the port",
+   "author": "samutw",
+   "mergedAt": "2026-11-10T02:36:16Z",
+   "additions": 161,
+   "deletions": 0,
+   "labels": [
+    "merge-approved"
+   ]
+  },
+  "3097": {
+   "number": 3097,
+   "title": "feat(server): subtitle providers and languages apply without restart; set subtitle keys from WebUI / admin / ctl",
+   "author": "samutw",
+   "mergedAt": "2026-11-10T13:05:09Z",
+   "additions": 1845,
+   "deletions": 84,
+   "labels": [
+    "merge-approved"
+   ]
+  },
+  "3098": {
+   "number": 3098,
+   "title": "feat(linux): Steam Deck Game Mode screen OCR over the game, and Add to Steam",
+   "author": "samutw",
+   "mergedAt": "2026-11-10T13:01:34Z",
+   "additions": 2300,
+   "deletions": 21,
+   "labels": [
+    "merge-approved"
+   ]
+  },
+  "3099": {
+   "number": 3099,
+   "title": "fix(server): audiobook rescan updates imported folders in place; peers see an \"Update on peer\" marker",
+   "author": "samutw",
+   "mergedAt": "2026-11-10T13:08:44Z",
+   "additions": 3089,
+   "deletions": 153,
+   "labels": [
+    "merge-approved"
+   ]
+  },
+  "3100": {
+   "number": 3100,
+   "title": "feat(server): English WebUI, CLI and logs, selected by a new `language` setting",
+   "author": "samutw",
+   "mergedAt": "2026-11-10T03:32:16Z",
+   "additions": 4940,
+   "deletions": 1088,
+   "labels": [
+    "merge-approved"
+   ]
+  },
+  "3101": {
+   "number": 3101,
+   "title": "feat(server): redesign the admin WebUI to match the Fushi app",
+   "author": "samutw",
+   "mergedAt": "2026-11-10T03:42:35Z",
+   "additions": 830,
+   "deletions": 285,
+   "labels": [
+    "merge-approved"
+   ]
+  },
+  "3102": {
+   "number": 3102,
+   "title": "feat(server): WebUI dictionaries tab / WebUI 词典页",
+   "author": "samutw",
+   "mergedAt": "2026-11-10T02:37:08Z",
+   "additions": 770,
+   "deletions": 49,
+   "labels": [
+    "merge-approved"
+   ]
+  },
+  "3103": {
+   "number": 3103,
+   "title": "fix(interconnect): show peer device name in connection rows; test only enabled peers",
+   "author": "samutw",
+   "mergedAt": "2026-11-10T02:44:37Z",
+   "additions": 244,
+   "deletions": 6,
+   "labels": [
+    "merge-approved"
+   ]
+  },
+  "3104": {
+   "number": 3104,
+   "title": "feat(second-screen): dual-screen companion for Android second displays / 安卓双屏伴侣",
+   "author": "samutw",
+   "mergedAt": "2026-11-10T13:11:15Z",
+   "additions": 48050,
+   "deletions": 2084,
+   "labels": [
+    "merge-approved"
+   ]
+  },
+  "3119": {
+   "number": 3119,
+   "title": "fix(collections): 管理合集页成员数与库页合集卡对齐（BUG-4277）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-10T13:03:42Z",
+   "additions": 432,
+   "deletions": 137,
+   "labels": []
+  },
+  "3121": {
+   "number": 3121,
+   "title": "fix(galhook): Electron 游戏启动即崩 + TyranoScript 引擎级内嵌查词（DOM/CDP）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T13:28:31Z",
+   "additions": 7629,
+   "deletions": 89,
+   "labels": []
+  },
+  "3123": {
+   "number": 3123,
+   "title": "fix(webview): 界面隐藏时在后台线程 flush WebView cookie（#3111 遗留）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T02:29:20Z",
+   "additions": 241,
+   "deletions": 13,
+   "labels": []
+  },
+  "3124": {
+   "number": 3124,
+   "title": "修复媒体服务器缺集号的集被显示成列表位置并排到最前（BUG-4273）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T01:59:26Z",
+   "additions": 181,
+   "deletions": 17,
+   "labels": []
+  },
+  "3125": {
+   "number": 3125,
+   "title": "fix(popup): 已制卡 ✓ / ♪ 次级菜单支持鼠标长按，手势收进共享绑定",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T01:56:17Z",
+   "additions": 360,
+   "deletions": 219,
+   "labels": []
+  },
+  "3126": {
+   "number": 3126,
+   "title": "chore(claude): 子代理协作约定进代理定义，补派工清单与模型表一致性测试",
+   "author": "W1ght",
+   "mergedAt": "2026-11-10T13:23:15Z",
+   "additions": 101,
+   "deletions": 7,
+   "labels": []
+  },
+  "3127": {
+   "number": 3127,
+   "title": "fix(srs): 删 / 换 profile uid 只留 Rust profile_purge 一份实现（BUG-4292）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-10T13:29:48Z",
+   "additions": 436,
+   "deletions": 87,
+   "labels": []
+  },
+  "3128": {
+   "number": 3128,
+   "title": "SRS 同步 v2：见过加密的位置不再写明文（BUG-4293）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-10T13:31:58Z",
+   "additions": 717,
+   "deletions": 5,
+   "labels": []
+  },
+  "3129": {
+   "number": 3129,
+   "title": "fix(srs): 复习页与库的外部变化对齐；readSrsStore 不吞打开失败；远程复习不推本机活跃会话计数",
+   "author": "W1ght",
+   "mergedAt": "2026-11-10T13:30:47Z",
+   "additions": 1478,
+   "deletions": 99,
+   "labels": []
+  },
+  "3130": {
+   "number": 3130,
+   "title": "fix(srs): 复习日界随 profile 同步、时区恒用本机（BUG-4276）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-10T13:36:22Z",
+   "additions": 872,
+   "deletions": 53,
+   "labels": []
+  },
+  "3131": {
+   "number": 3131,
+   "title": "SRS：本机重置 / 改期 / 撤销 / 立即重排改为内核显式意图命令，删除 Dart 排程副本",
+   "author": "W1ght",
+   "mergedAt": "2026-11-10T13:30:03Z",
+   "additions": 1068,
+   "deletions": 955,
+   "labels": []
+  },
+  "3132": {
+   "number": 3132,
+   "title": "feat(reader): 歌词模式改为独立模式，按句统计",
+   "author": "W1ght",
+   "mergedAt": "2026-11-10T13:31:38Z",
+   "additions": 943,
+   "deletions": 227,
+   "labels": []
+  },
+  "3133": {
+   "number": 3133,
+   "title": "歌词模式窄屏回正文键移到右上角；阅读设置「翻页 / 滚动」改名阅读模式",
+   "author": "W1ght",
+   "mergedAt": "2026-11-10T13:32:32Z",
+   "additions": 191,
+   "deletions": 95,
+   "labels": []
+  },
+  "3134": {
+   "number": 3134,
+   "title": "test(popup): popup_secondary_action_triggers_guard_test 改用 package:test",
+   "author": "W1ght",
+   "mergedAt": "2026-11-10T13:27:34Z",
+   "additions": 1,
+   "deletions": 1,
+   "labels": []
+  },
+  "3135": {
+   "number": 3135,
+   "title": "fix(srs): panic 后内核自行恢复锁与事务；内核只读命令走读连接池（BUG-4297/4298）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-10T13:33:31Z",
+   "additions": 821,
+   "deletions": 92,
+   "labels": []
+  },
+  "3136": {
+   "number": 3136,
+   "title": "复习同步 v2：新设备的删除与彻底清除扣到本机确认后生效（BUG-4276）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-10T13:44:05Z",
+   "additions": 1500,
+   "deletions": 14,
+   "labels": []
+  },
+  "3137": {
+   "number": 3137,
+   "title": "feat(updates): debug build pipeline in the updates center",
+   "author": "W1ght",
+   "mergedAt": "2026-11-10T13:47:12Z",
+   "additions": 3796,
+   "deletions": 21,
+   "labels": []
+  },
+  "3139": {
+   "number": 3139,
+   "title": "fix(video): 没写 batch 的 BD 整包按种子文件列表证成整包，给出「全集」计划",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T13:36:52Z",
+   "additions": 1287,
+   "deletions": 84,
+   "labels": []
+  },
+  "3140": {
+   "number": 3140,
+   "title": "feat(video): 查词弹窗点制卡立刻关弹窗续播，制卡在后台完成，失败可重试",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T13:35:56Z",
+   "additions": 374,
+   "deletions": 128,
+   "labels": []
+  },
+  "3141": {
+   "number": 3141,
+   "title": "feat(manga): 在线直读「全部页面」缩略图预取没加载的页",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T13:34:01Z",
+   "additions": 798,
+   "deletions": 43,
+   "labels": []
+  },
+  "3142": {
+   "number": 3142,
+   "title": "feat(manga): 章节列表逐章 OCR 标识、已读区分、状态 tooltip 与多选批量操作",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T13:35:00Z",
+   "additions": 1077,
+   "deletions": 110,
+   "labels": []
+  },
+  "3143": {
+   "number": 3143,
+   "title": "fix(sync): 关闭同步模块立刻停掉同步，悬浮球与 ctl 同步接上同一道模块门",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T13:40:05Z",
+   "additions": 999,
+   "deletions": 68,
+   "labels": []
+  },
+  "3144": {
+   "number": 3144,
+   "title": "feat(audiobook): 歌词模式内加音画同步（整本偏移）面板",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T13:38:06Z",
+   "additions": 814,
+   "deletions": 182,
+   "labels": []
+  },
+  "3145": {
+   "number": 3145,
+   "title": "docs(bugs): #3128 的 BUG 撞号改为 BUG-4299",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T13:34:42Z",
+   "additions": 14,
+   "deletions": 14,
+   "labels": []
+  },
+  "3146": {
+   "number": 3146,
+   "title": "docs(bugs): settle BUG-4300 撞号 -> BUG-4301",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T13:37:39Z",
+   "additions": 3,
+   "deletions": 3,
+   "labels": []
+  },
+  "3149": {
+   "number": 3149,
+   "title": "fix(diagnostics): Android 权限变更杀进程不再误报闪退",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T14:39:49Z",
+   "additions": 162,
+   "deletions": 15,
+   "labels": []
+  },
+  "3150": {
+   "number": 3150,
+   "title": "fix(popup): app 外查词 / 悬浮词典浮窗不再铺页面底色和形状背景",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T14:41:47Z",
+   "additions": 195,
+   "deletions": 9,
+   "labels": []
+  },
+  "3151": {
+   "number": 3151,
+   "title": "fix(collections): 合集成员卡 / 视频集卡补上 3D 倾斜视差",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T14:44:12Z",
+   "additions": 473,
+   "deletions": 146,
+   "labels": []
+  },
+  "3152": {
+   "number": 3152,
+   "title": "fix(android): 自定义图标快捷方式不再被长按菜单同步禁用 (BUG-4323)",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T14:45:12Z",
+   "additions": 331,
+   "deletions": 20,
+   "labels": []
+  },
+  "3153": {
+   "number": 3153,
+   "title": "fix(android): 链式 UncaughtExceptionHandler 落盘 Java 崩溃栈并并入下次退出报告",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T14:46:36Z",
+   "additions": 763,
+   "deletions": 5,
+   "labels": []
+  },
+  "3154": {
+   "number": 3154,
+   "title": "fix(collections): 连字符卷号归组、改名参与归组、mokuro.moe slug 卷名规整 (BUG-4323)",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T14:50:34Z",
+   "additions": 345,
+   "deletions": 32,
+   "labels": []
+  },
+  "3155": {
+   "number": 3155,
+   "title": "fix(srs): 复习卡释义视觉视口偏移复位 + 触屏端恢复系统选区菜单（BUG-4172）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T14:45:50Z",
+   "additions": 372,
+   "deletions": 3,
+   "labels": []
+  },
+  "3156": {
+   "number": 3156,
+   "title": "fix(video): 容器时长被字幕轨拉长时按音视频轨 DURATION 修正总时长（BUG-4328）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T14:48:08Z",
+   "additions": 642,
+   "deletions": 1,
+   "labels": []
+  },
+  "3157": {
+   "number": 3157,
+   "title": "fix(web-browser): 窄 / 宽壳共用同一棵树，旋转不再重建 WebView",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T14:49:25Z",
+   "additions": 240,
+   "deletions": 131,
+   "labels": []
+  },
+  "3158": {
+   "number": 3158,
+   "title": "feat(a11y): AXTree 失步哨兵记录违约节点的框架现场（BUG-4333，BUG-4073 复发取证）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T14:53:12Z",
+   "additions": 397,
+   "deletions": 11,
+   "labels": []
+  },
+  "3159": {
+   "number": 3159,
+   "title": "fix(media_kit/windows): free libmpv render context before EGL teardown and before Dispose replies (BUG-4339)",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T14:59:19Z",
+   "additions": 376,
+   "deletions": 49,
+   "labels": []
+  },
+  "3160": {
+   "number": 3160,
+   "title": "fix(video): ASS 同起点多条 cue 上/下一句按一次就跳走",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T14:52:16Z",
+   "additions": 230,
+   "deletions": 16,
+   "labels": []
+  },
+  "3161": {
+   "number": 3161,
+   "title": "fix(srs): size dictionary gaiji images to one character on the Fushi card (BUG-4323)",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T14:51:12Z",
+   "additions": 213,
+   "deletions": 1,
+   "labels": []
+  },
+  "3162": {
+   "number": 3162,
+   "title": "fix(shelf): PDF 挂有声书后打开空白——SRT 卡按 format 派生阅读器，PDF 不再提供导入有声书（BUG-4323）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T14:58:45Z",
+   "additions": 381,
+   "deletions": 47,
+   "labels": []
+  },
+  "3163": {
+   "number": 3163,
+   "title": "fix(nav): MD3 悬浮底栏在查词页收起后回不来（BUG-4323）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T14:55:47Z",
+   "additions": 319,
+   "deletions": 8,
+   "labels": []
+  },
+  "3164": {
+   "number": 3164,
+   "title": "fix(parse): 文件名 4 位集号 S01E0005 识别（BUG-4323）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T14:54:58Z",
+   "additions": 81,
+   "deletions": 3,
+   "labels": []
+  },
+  "3165": {
+   "number": 3165,
+   "title": "fix(game): 会话卡工具组与主操作同行内联，去掉浮动胶囊与固定比例切分（BUG-4323）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T14:54:04Z",
+   "additions": 290,
+   "deletions": 86,
+   "labels": []
+  },
+  "3166": {
+   "number": 3166,
+   "title": "fix(discovery): 发现搜索结果统一相关度判据，不相关条目折叠（BUG-4323）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T14:57:31Z",
+   "additions": 651,
+   "deletions": 25,
+   "labels": []
+  },
+  "3167": {
+   "number": 3167,
+   "title": "fix(sync): 在线扩展源漫画同步恒失败且原因不可见 (BUG-4323)",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T14:56:41Z",
+   "additions": 522,
+   "deletions": 44,
+   "labels": []
+  },
+  "3169": {
+   "number": 3169,
+   "title": "fix(srs): 单字重用户字体上卡面强调不再合成假粗体",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T14:59:56Z",
+   "additions": 250,
+   "deletions": 16,
+   "labels": []
+  },
+  "3171": {
+   "number": 3171,
+   "title": "fix(download): 下载后端引导不再把下载服务未启动误报成缺内置引擎运行库 (BUG-4323)",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T15:01:06Z",
+   "additions": 518,
+   "deletions": 47,
+   "labels": []
+  },
+  "3172": {
+   "number": 3172,
+   "title": "feat(game): 游戏库支持「添加来源」扫描目录（SourceLibraryKind.game）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T15:04:56Z",
+   "additions": 1012,
+   "deletions": 20,
+   "labels": []
+  },
+  "3173": {
+   "number": 3173,
+   "title": "fix(lyrics): 插图缩略图新插图提示点看过即消失（BUG-4323）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T14:59:22Z",
+   "additions": 260,
+   "deletions": 21,
+   "labels": []
+  },
+  "3175": {
+   "number": 3175,
+   "title": "fix(subtitle): 字幕文件名完整换行，版本视图与文件视图共用同一组件 (BUG-4323)",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T15:02:41Z",
+   "additions": 153,
+   "deletions": 36,
+   "labels": []
+  },
+  "3177": {
+   "number": 3177,
+   "title": "fix(audiobook): 查词弹窗按过播放后查词暂停失效——在播期间的 play 请求并入在途激活（BUG-4323）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-10T15:03:46Z",
+   "additions": 369,
+   "deletions": 4,
+   "labels": []
+  }
+ }
+}
