@@ -247,8 +247,6 @@ String _ffmpegSeconds(Duration d) =>
 int transcodeSegmentCount(
   int durationMs, {
   int segmentSeconds = kTranscodeSegmentSeconds,
-  String? workKey,
-  bool Function()? isAlive,
 }) {
   if (durationMs <= 0) return 0;
   final int segmentMs = segmentSeconds * 1000;
@@ -260,8 +258,6 @@ int transcodeSegmentCount(
   int index,
   int durationMs, {
   int segmentSeconds = kTranscodeSegmentSeconds,
-  String? workKey,
-  bool Function()? isAlive,
 }) {
   final int segmentMs = segmentSeconds * 1000;
   final int startMs = index * segmentMs;
@@ -283,8 +279,6 @@ String buildTranscodeHlsPlaylist({
   required int durationMs,
   required String Function(int index) segmentUri,
   int segmentSeconds = kTranscodeSegmentSeconds,
-  String? workKey,
-  bool Function()? isAlive,
 }) {
   final int count = transcodeSegmentCount(
     durationMs,
