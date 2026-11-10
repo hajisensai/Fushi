@@ -287,7 +287,7 @@ void main() {
     expect(containsCodeLine(window, '_keyDaysAgo(now, 29)'), isTrue);
     // 本周 = 自然周（周一起，2026-10-09，与范围条「周」同口径）；上周 = 上周同期
     // （上周一 .. 今日-7），与本周已过天数同长、不重叠。
-    expect(containsCodeLine(window, 'weekFromKey = _mondayOf(today),'), isTrue);
+    expect(containsCodeLine(window, 'weekFromKey = mondayOf(today),'), isTrue);
     expect(
       containsCodeLine(
         window,
@@ -479,6 +479,24 @@ void main() {
       ),
       isTrue,
       reason: '统计页目标分子的实参必须是完整日面 _dailyFacts，与首页同口径',
+    );
+    // 周目标（反馈 CjIr9RGSCe）：按周时分子走 studyGoalCharsForWeek，实参同样钉死
+    // 完整日面——否则「按周」档会悄悄退回单域切片，BUG-1993 换个入口复发。
+    expect(
+      containsCodeLine(
+        read('lib/src/pages/implementations/home_dashboard_page.dart'),
+        'StudyGoalPeriod.weekly => studyGoalCharsForWeek(_dailyRows, w),',
+      ),
+      isTrue,
+      reason: '首页周目标分子的实参必须是完整日面 _dailyRows',
+    );
+    expect(
+      containsCodeLine(
+        read('lib/src/pages/implementations/reading_statistics_page.dart'),
+        '_weekStudyChars = studyGoalCharsForWeek(_dailyFacts, w);',
+      ),
+      isTrue,
+      reason: '统计页周目标分子的实参必须是完整日面 _dailyFacts，与首页同口径',
     );
   });
 

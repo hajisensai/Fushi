@@ -545,6 +545,8 @@ import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/stats/reader_study_clock_start_mode.dart';
+import 'package:fushi/src/stats/study_goal_period.dart';
+export 'package:fushi/src/stats/study_goal_period.dart' show StudyGoalPeriod;
 
 export 'package:fushi/src/models/local_audio_manager.dart'
     show LocalAudioDbEntry, InvalidLocalAudioDbException;
@@ -11440,6 +11442,19 @@ class AppModel
   int get readingGoalDailyChars => prefsRepo.readingGoalDailyChars;
   Future<void> setReadingGoalDailyChars(int value) =>
       prefsRepo.setReadingGoalDailyChars(value);
+  int get readingGoalWeeklyChars => prefsRepo.readingGoalWeeklyChars;
+  Future<void> setReadingGoalWeeklyChars(int value) =>
+      prefsRepo.setReadingGoalWeeklyChars(value);
+
+  /// 字数目标周期（日 / 周二选一，反馈 CjIr9RGSCe）。
+  StudyGoalPeriod get readingGoalPeriod => prefsRepo.readingGoalPeriod;
+  Future<void> setReadingGoalPeriod(StudyGoalPeriod value) =>
+      prefsRepo.setReadingGoalPeriod(value);
+
+  /// 当前周期下生效的字数目标（0 = 未设）。
+  int get readingGoalActiveChars => prefsRepo.readingGoalActiveChars;
+  Future<void> setReadingGoalActiveChars(int value) =>
+      prefsRepo.setReadingGoalActiveChars(value);
 
   // 桌面小组件「目标」卡的其余每日目标（0 = 关，随 Profile）。
   int get studyGoalDailyMinutes => prefsRepo.studyGoalDailyMinutes;
