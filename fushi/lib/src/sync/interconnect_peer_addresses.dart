@@ -195,7 +195,7 @@ Future<FushiClientUrl?> raceInterconnectHostAddresses(
 /// 查词这类高频调用每次都多付一轮探测。缓存只决定组内顺序：返回的整组都是可拨的
 /// （`p2p://` 已换成本地转发口），缓存的地址失效时消费方顺序试组内其余地址照样能到；
 /// 消费方用 [reportInterconnectCandidateUnreachable] 报告失败后缓存立即作废，
-/// 不会在 TTL 内一直把死地址排在组首（BUG-4241）。
+/// 不会在 TTL 内一直把死地址排在组首（BUG-4273）。
 final Map<String, (String url, DateTime at)> _raceCache =
     <String, (String, DateTime)>{};
 const Duration _raceCacheTtl = Duration(seconds: 30);

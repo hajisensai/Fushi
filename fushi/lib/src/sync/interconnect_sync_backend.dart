@@ -76,7 +76,7 @@ Future<FushiClientUrl> resolveReachableFushiCandidate(
         reportInterconnectCandidateReached(candidate);
         return candidate;
       }
-      // 连不上：它若是选路缓存的胜出地址就作废，别在 TTL 内继续排组首（BUG-4241）。
+      // 连不上：它若是选路缓存的胜出地址就作废，别在 TTL 内继续排组首（BUG-4273）。
       reportInterconnectCandidateUnreachable(candidate);
     } on SyncAuthError catch (e) {
       // 这台拒了我的凭据 —— 记下原因，继续问下一台。
