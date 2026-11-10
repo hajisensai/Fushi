@@ -15,6 +15,8 @@
 //
 // 环境相关的值一律由 dart-define 给，没有本机缺省值；缺任何一个测试立即失败并点名：
 //   FUSHI_PROBE_PAIR_LINK   测试服务器的配对链接（fushi://pair?...）
+//   FUSHI_PROBE_PAIR_LINK_FILE 或：存着配对链接的文本文件（runner 经 cmd.exe 转发命令行，
+//                           链接里的 & 会被截断，走文件绕开）
 //   FUSHI_PROBE_SCRATCH     工作目录，需含 dicts/（测试词典 zip）、srv/fushi_server.yaml
 //                           （读 admin_token）、gen/stop_server.ps1、gen/restart_server.cmd
 //   FUSHI_PROBE_SERVER_HOST 测试服务器的主机（用于探测端口是否开）
@@ -78,6 +80,16 @@ import 'test_helpers.dart';
 const String _kTag = '[scenario]';
 
 const String _kPairLink = String.fromEnvironment('FUSHI_PROBE_PAIR_LINK');
+const String _kPairLinkFile = String.fromEnvironment(
+  'FUSHI_PROBE_PAIR_LINK_FILE',
+);
+
+/// 配对链接：直接给的 dart-define 优先，否则从 [_kPairLinkFile] 读。两个都没给为空串。
+String _pairLink() => _kPairLink.isNotEmpty
+    ? _kPairLink
+    : _kPairLinkFile.isEmpty
+    ? ''
+    : File(_kPairLinkFile).readAsStringSync().trim();
 
 /// 本机测试素材与服务器配置所在的目录（布局见文件头）。
 const String _kScratch = String.fromEnvironment('FUSHI_PROBE_SCRATCH');
@@ -92,7 +104,8 @@ const int _kServerPort = int.fromEnvironment(
 /// 缺必需的 dart-define 就在启动 app 前失败，消息点名缺哪个。
 void _requireProbeDefines() {
   final List<String> missing = <String>[
-    if (_kPairLink.isEmpty) 'FUSHI_PROBE_PAIR_LINK',
+    if (_pairLink().isEmpty)
+      'FUSHI_PROBE_PAIR_LINK / FUSHI_PROBE_PAIR_LINK_FILE',
     if (_kScratch.isEmpty) 'FUSHI_PROBE_SCRATCH',
     if (_kAdminBase.isEmpty) 'FUSHI_PROBE_ADMIN_BASE',
     if (_kServerHost.isEmpty) 'FUSHI_PROBE_SERVER_HOST',
@@ -713,7 +726,7 @@ Future<bool> _startServer(WidgetTester tester) async {
 // ── 配对 ──────────────────────────────────────────────────────────────────
 
 Future<String> _pair(WidgetTester tester, AppModel appModel) async {
-  final FushiPairLink link = FushiPairLink.tryParse(_kPairLink)!;
+  final FushiPairLink link = FushiPairLink.tryParse(_pairLink())!;
   final InterconnectLinkPairingResult pairing = await _awaitPumping(
     tester,
     (() async => pairWithInterconnectLink(

@@ -12,6 +12,8 @@
 //
 // 环境相关的值一律由 dart-define 给，没有本机缺省值；缺任何一个测试立即失败并点名：
 //   FUSHI_PROBE_PAIR_LINK      测试服务器的配对链接（fushi://pair?...）
+//   FUSHI_PROBE_PAIR_LINK_FILE 或：存着配对链接的文本文件（runner 经 cmd.exe 转发命令行，
+//                           链接里的 & 会被截断，走文件绕开）
 //   FUSHI_PROBE_LOCAL_DICT_DIR 放测试词典 zip 的文件夹
 // 示例（fushi/ 下）：
 //   powershell -ExecutionPolicy Bypass -File tool/run_windows_itest.ps1 `
@@ -59,6 +61,16 @@ import 'test_helpers.dart';
 const String _kTag = '[server-dict-probe]';
 
 const String _kPairLink = String.fromEnvironment('FUSHI_PROBE_PAIR_LINK');
+const String _kPairLinkFile = String.fromEnvironment(
+  'FUSHI_PROBE_PAIR_LINK_FILE',
+);
+
+/// 配对链接：直接给的 dart-define 优先，否则从 [_kPairLinkFile] 读。两个都没给为空串。
+String _pairLink() => _kPairLink.isNotEmpty
+    ? _kPairLink
+    : _kPairLinkFile.isEmpty
+    ? ''
+    : File(_kPairLinkFile).readAsStringSync().trim();
 
 /// [scope] 子树里所有 Text / RichText 的文字（去重、保序），作可 diff 的证据。
 List<String> _textsIn(WidgetTester tester, Finder scope) {
@@ -145,7 +157,8 @@ const String _kLocalDictDir = String.fromEnvironment(
 /// 缺必需的 dart-define 就在启动 app 前失败，消息点名缺哪个。
 void _requireProbeDefines() {
   final List<String> missing = <String>[
-    if (_kPairLink.isEmpty) 'FUSHI_PROBE_PAIR_LINK',
+    if (_pairLink().isEmpty)
+      'FUSHI_PROBE_PAIR_LINK / FUSHI_PROBE_PAIR_LINK_FILE',
     if (_kLocalDictDir.isEmpty) 'FUSHI_PROBE_LOCAL_DICT_DIR',
   ];
   if (missing.isNotEmpty) {
@@ -398,7 +411,7 @@ void main() {
         RemoteDictionary? toggled;
         try {
           // ── 2. 配对 + 打开远端查词 + 等目录对账 ─────────────────────────
-          final FushiPairLink? link = FushiPairLink.tryParse(_kPairLink);
+          final FushiPairLink? link = FushiPairLink.tryParse(_pairLink());
           expect(link, isNotNull, reason: '配对链接应能解析');
           final SyncRepository repo = SyncRepository(appModel.database);
           final InterconnectLinkPairingResult pairing =
