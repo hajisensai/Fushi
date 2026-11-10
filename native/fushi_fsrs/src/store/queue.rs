@@ -271,7 +271,7 @@ impl StudyHub {
         f: impl FnOnce(&Session) -> Result<T, String>,
     ) -> Result<T, String> {
         // 建 / 重读到一半 panic（锁被毒化）时会话停在半截、取走的待重读 id 也没用上：整表丢掉、下次整份重建（同重建 /
-        // 重读出错时丢会话，BUG-4276）。
+        // 重读出错时丢会话，BUG-4284）。
         let mut sessions = self.sessions.lock().unwrap_or_else(|poisoned| {
             let mut s = poisoned.into_inner();
             s.clear();

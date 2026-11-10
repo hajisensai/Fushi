@@ -1,4 +1,4 @@
-//! 一次命令 panic 之后库的状态（BUG-4276）：FFI 把 panic 接成 -100，库要回到一致状态、锁照常可用；panic 留下的
+//! 一次命令 panic 之后库的状态（BUG-4284）：FFI 把 panic 接成 -100，库要回到一致状态、锁照常可用；panic 留下的
 //! 半截事务绝不能被之后的命令提交。
 
 use std::ffi::{CStr, c_char};

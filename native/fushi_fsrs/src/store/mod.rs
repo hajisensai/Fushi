@@ -2,10 +2,10 @@
 //!
 //! 一条写连接（在一把 Mutex 里）+ 两个只读连接池：写命令 = 写连接上的一个事务（这把锁就是 SRS 的写锁），
 //! 读命令从内核读连接池（[SrsCore::reader]）借一条连接、在它的 WAL 快照上读，不被长写挡住、读命令之间也不排队
-//! （全库统计读着时复习排队照常，BUG-4277）；Drift 执行器在事务外的查询走它自己的只读连接池
+//! （全库统计读着时复习排队照常，BUG-4285）；Drift 执行器在事务外的查询走它自己的只读连接池
 //! （[SrsCore::snapshot_select]），两边互不占用（store/read_pool.rs）。对象可以从任意线程 / isolate 调用。
 //!
-//! 一次命令 panic（FFI 接成 -100）之后库自行恢复，不需要重开（BUG-4276）：持着的连接锁被毒化，下一个取这把锁的
+//! 一次命令 panic（FFI 接成 -100）之后库自行恢复，不需要重开（BUG-4284）：持着的连接锁被毒化，下一个取这把锁的
 //! 调用先把连接恢复到命令之间应有的状态再清掉毒化标记（[lock_recovering]）——写连接上整笔回滚 panic 留下的事务
 //! （[SrsCore::recover_writer]），读连接结束停在半路的读事务，内存缓存丢掉重建。
 //!
@@ -66,7 +66,7 @@ pub struct SrsCore {
     // 并删掉 -wal；只读连接做不了，让它最后关会把整段 WAL 留在磁盘上（拷库 / 换库时丢数据）。
     // `None` = 已关闭（[SrsCore::close]）。
     /// 内核只读命令的只读连接池（[SrsCore::reader] / [SrsCore::read_visible]）：并发的读命令各借一条，一条全库长读
-    /// 不挡复习排队（BUG-4277）。不与 [SrsCore::drift_readers] 合用：Dart 查询道的 worker 数等于那个池的上限，几条
+    /// 不挡复习排队（BUG-4285）。不与 [SrsCore::drift_readers] 合用：Dart 查询道的 worker 数等于那个池的上限，几条
     /// Drift 长读（同步冲突扫描）就能把它借满，复习排队若去那里等连接就又排在长读后面。
     readers: read_pool::ReadPool,
     /// Drift 执行器事务外查询专用的只读连接池（[SrsCore::snapshot_select]）。
@@ -336,7 +336,7 @@ impl Drop for SrsCore {
 }
 
 /// 取一把锁；锁被 panic 毒化过（持锁的命令跑到一半 panic，FFI 接成 -100）就先用 [recover] 把锁里的状态恢复到命令
-/// 之间应有的样子，再清掉毒化标记，之后照常可用（BUG-4276）。恢复失败就保持毒化、报错：不在状态不明的连接上跑任何
+/// 之间应有的样子，再清掉毒化标记，之后照常可用（BUG-4284）。恢复失败就保持毒化、报错：不在状态不明的连接上跑任何
 /// 命令，下一个取锁的调用再恢复。库里所有连接 / 会话状态的锁都经这里，策略一致：写连接回滚（[SrsCore::recover_writer]），
 /// 读连接结束停在半路的读事务（[end_read_tx_of]），只读会话与纯簿记照常用，收段会话作废。
 pub(crate) fn lock_recovering<T>(
@@ -434,7 +434,7 @@ fn open_drift_reader(path: &Path) -> Result<Connection, String> {
 /// 64 位进程（含 iOS，配合 extended-virtual-addressing）地址空间远大于此，全部连接照旧映射：关掉 mmap 反而让每条
 /// 连接把页拷进私有页缓存（cache_size 64 MB/条，真占内存）并多一次拷贝，是负优化。只有 32 位进程（Android
 /// armeabi-v7a，整个进程约 3 GB 地址空间）放不下：那里次要连接不映射，只保留写连接（内核读命令以前用的
-/// 常驻读连接也映射，BUG-4277 起读命令改走池子，32 位上读命令不再走 mmap、只用页缓存）。
+/// 常驻读连接也映射，BUG-4285 起读命令改走池子，32 位上读命令不再走 mmap、只用页缓存）。
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum MmapRole {
     /// 写连接。
@@ -652,7 +652,7 @@ impl SrsCore {
 
     /// 只读命令的连接选择：写连接上挂着事务（[SrsCore::writer_tx_open]）时在写连接的 SAVEPOINT 里读（嵌在那笔
     /// 事务里，看得见未提交的行，结束时 RELEASE 不改动任何东西）；否则从内核读连接池借一条、在它的一个读事务里读
-    /// （整段同一份已提交快照，不排写锁；读命令之间各占一条连接，不互相排队，BUG-4277）。读连接是只读打开的：[f] 里混进写语句会直接报错，不会悄悄写到别处。
+    /// （整段同一份已提交快照，不排写锁；读命令之间各占一条连接，不互相排队，BUG-4285）。读连接是只读打开的：[f] 里混进写语句会直接报错，不会悄悄写到别处。
     pub(crate) fn read_visible<T>(
         &self,
         f: impl FnOnce(&Connection) -> Result<T, String>,
