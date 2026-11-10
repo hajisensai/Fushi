@@ -12,7 +12,7 @@
 namespace fushi {
 
 // 行里的一个 OcrWord：在行文本里的位置（UTF-16 码元，与 Dart String 下标同口径）+
-// 词框。点字时按它定位被点的字（BUG-4366），不再按字数等分整行。
+// 词框。点字时按它定位被点的字（BUG-4367），不再按字数等分整行。
 struct SystemOcrWord {
   int start = 0;
   int length = 0;
@@ -43,7 +43,7 @@ struct SystemOcrResult {
   int width = 0;
   int height = 0;
   // 实际送进 OcrEngine 的位图尺寸（超过 MaxImageDimension 时被等比缩小）与当时的上限：
-  // 只进诊断日志，用来分清「识别不出」是不是缩图把字缩没了（BUG-4366）。
+  // 只进诊断日志，用来分清「识别不出」是不是缩图把字缩没了（BUG-4367）。
   int recognized_width = 0;
   int recognized_height = 0;
   int max_image_dimension = 0;
