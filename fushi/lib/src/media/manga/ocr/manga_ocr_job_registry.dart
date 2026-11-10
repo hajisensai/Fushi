@@ -572,7 +572,9 @@ class MangaOcrJobRegistry {
       return false;
     }
     _jobs.remove(bookKey);
-    _paused.add(_PausedJob(rebuild(), running.mangaJsonPath, running.lastEvent));
+    _paused.add(
+      _PausedJob(rebuild(), running.mangaJsonPath, running.lastEvent),
+    );
     _notifyChanged();
     await running.cancel();
     return true;
