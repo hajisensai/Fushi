@@ -26,15 +26,17 @@ class _ReaderCompanionPageAdapter implements ReaderCompanionPage {
     final EpubBook book = s._book!;
     final ReaderSessionSnapshot? snap = s._sessionRemote.snapshot();
     final List<TtuTocEntry> toc = s._buildTtuToc();
+    // 章号 / 目录当前项与章名同源（[_readingChapter]：歌词模式 = 当前句所在章，
+    // 正文停在进歌词那一刻的章）。
     final int? current = resolveCurrentTocEntry(
       toc,
-      s._currentChapter,
-      s._tocCharOffsetFor(s._currentChapter),
+      s._readingChapter,
+      s._readingTocCharOffset,
     );
     final AudiobookPlayerController? audio = s._audiobookController;
     return <String, Object?>{
       ReaderCompanionKeys.chapterTitle: s._currentChapterLabel(),
-      ReaderCompanionKeys.chapterIndex: s._currentChapter,
+      ReaderCompanionKeys.chapterIndex: s._readingChapter,
       ReaderCompanionKeys.chapterCount: book.chapters.length,
       ReaderCompanionKeys.percent: snap?.bookPercent,
       ReaderCompanionKeys.toc: <Map<String, Object?>>[
@@ -63,7 +65,7 @@ class _ReaderCompanionPageAdapter implements ReaderCompanionPage {
     final int to = math.min(cues.length, center + radius + 1);
     return <String, Object?>{
       AudiobookCompanionKeys.chapterTitle: s._currentChapterLabel(),
-      AudiobookCompanionKeys.chapterIndex: s._currentChapter,
+      AudiobookCompanionKeys.chapterIndex: s._readingChapter,
       AudiobookCompanionKeys.chapterCount: s._book?.chapters.length ?? 0,
       AudiobookCompanionKeys.playing: audio?.isPlaying ?? false,
       AudiobookCompanionKeys.speed: audio?.speed ?? 1.0,

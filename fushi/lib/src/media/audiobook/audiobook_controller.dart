@@ -153,12 +153,12 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 上一次算出的生效值，用于识别开 / 关的翻转（见 [_onTextLeadsInputsChanged]）。
   bool _textLeadsWasActive = false;
 
-  /// 文字领读此刻是否生效：reader 条件 + 跟随音频开着 + 不在歌词覆盖层（覆盖层期间
-  /// [_readerFollowOverride] 恒真，正文必须跟着音频走）。
+  /// 文字领读此刻是否生效：reader 条件 + 跟随音频开着 + 不在歌词模式（歌词模式期间
+  /// [_readerDetached] 为真：正文停着不跟随，屏范围与屏末停播都无从谈起）。
   bool get _textLeads => textLeadsActive(
     requested: _textLeadsRequested,
     followAudio: followAudio.value,
-    lyricsOverlay: _readerFollowOverride,
+    lyricsOverlay: _readerDetached,
   );
 
   /// 文字领读刚变成生效：reader 据此让 VN 引擎补报一次当前屏范围。这次补报只
@@ -515,7 +515,7 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 之后的暂停 / 播放切换照旧不动视口。
   ///
   /// 与 [_forceNextReveal] 分开：后者越过「跟随音频」开关（用户刚把开关打开）；这里
-  /// 尊重开关——跟随关时显式跳句也不拽视口，歌词覆盖层「跟随关」的自由滚动也不受影响
+  /// 尊重开关——跟随关时显式跳句也不拽视口，歌词模式「跟随关」的自由滚动也不受影响
   /// （歌词层只读 [consumeForceReveal]）。
   AudioCue? _explicitNavigationRevealCue;
 
@@ -2431,6 +2431,9 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// SMIL/JSON 等非 sasayaki 路径 cue 的 textFragmentId 解码返回 null，
   /// 自然跳过这套逻辑（它们没有跨章同步概念）。
   void _maybeEmitCrossChapter(AudioCue? cue, {bool bypassPlayGuard = false}) {
+    // 正文面脱开（歌词模式）：正文不跟随音频，任何入口（含 bypass 的显式导航 /
+    // 翻「跟随音频」开关）都不请它换章。
+    if (_readerDetached) return;
     if (_chapterTransition) {
       return;
     }
@@ -2632,28 +2635,34 @@ class AudiobookPlayerController extends ChangeNotifier {
   ///   重新拉回当前 cue。
   /// 否则用户手动翻页后再开 Follow 只翻图标，要等下一条 cue 才被动回跳，
   /// 体感是"跳不回去"。
-  /// 歌词覆盖层在场期间的「正文强制跟随」（2026-10-04 覆盖层架构）。
+  /// 正文面脱开（歌词模式在场，2026-11-10 起歌词模式是独立模式）。
   ///
-  /// 歌词模式是盖在阅读器上的一层：阅读器在下面照常翻页 / 高亮，阅读统计（字数、
-  /// 时长）也由阅读器这条路承担——字数来自阅读器滚动回传的页区间。用户关掉「跟随
-  /// 音频」时正文不再跟着音频走，被覆盖的阅读器就会停在原地，整段听歌词字数为 0。
-  /// 覆盖层期间正文看不见，「跟随」开关只管歌词列表自己滚不滚（`__lyricsSetCue` 的
-  /// scroll 参数），正文必须跟随；退出歌词即撤销，恢复用户的开关语义。
+  /// 歌词模式自己拥有阅读位置与统计（单元 = 当前句，由 reader 的歌词分支按句入账），
+  /// 不靠正文在下面跟随音频翻页。脱开期间正文停在进歌词那一刻的位置：
+  /// [shouldRevealCurrentCue] 恒假（不拽正文视口）、不发 [onCrossChapter]（不换正文
+  /// 章）、显式跳句不登记正文 reveal。「跟随音频」开关此时只管歌词列表自己滚不滚
+  /// （reader 直接读 [followAudio]）。退出歌词由 reader 把正文一次性对齐到当前句。
   /// 不持久化、不改 [followAudio] 的值（图标 / 偏好不变）。
-  bool _readerFollowOverride = false;
+  bool _readerDetached = false;
 
-  bool get readerFollowOverride => _readerFollowOverride;
+  bool get readerDetached => _readerDetached;
 
-  /// 正文跟随判据 = 用户开关 || 覆盖层强制。
-  bool get _effectiveFollowAudio => followAudio.value || _readerFollowOverride;
+  /// 正文跟随判据 = 用户开关 && 正文面在场。
+  bool get _effectiveFollowAudio => followAudio.value && !_readerDetached;
 
-  /// 进入 / 退出歌词覆盖层时由阅读器调用。打开时立即把正文对齐到音频（与
-  /// OFF→ON 翻跟随开关同一条 [snapReaderToAudio]），否则要等下一句才跟上。
-  void setReaderFollowOverride(bool value) {
-    if (_readerFollowOverride == value) return;
-    _readerFollowOverride = value;
+  /// 进入 / 退出歌词模式时由 reader 调用。脱开时放掉为正文竖起的跨章守卫与一次性
+  /// reveal 登记——它们等的是正文的落地回执，脱开后不会再有消费者。脱开也是文字
+  /// 领读的输入（[_textLeads]）：歌词模式期间正文停着，不能按正文这一屏停播。
+  void setReaderDetached(bool value) {
+    if (_readerDetached == value) return;
+    _readerDetached = value;
     _onTextLeadsInputsChanged();
-    if (value && !followAudio.value) snapReaderToAudio();
+    if (!value) return;
+    _explicitNavigationRevealCue = null;
+    if (!_imageChapterPauseActive) {
+      _chapterTransition = false;
+      _crossChapterDeferredToReceipt = false;
+    }
   }
 
   // ── 文字领读 ───────────────────────────────────────────────────────────────
@@ -2881,8 +2890,8 @@ class AudiobookPlayerController extends ChangeNotifier {
   ///
   /// 只做「跨章检查 + notify」，**不**置 [_forceNextReveal]：门控已保证
   /// [shouldRevealCurrentCue] 为真，reader 的 `_onCueChanged` 据此就会 reveal；强制
-  /// 旗会越过歌词覆盖层「跟随音频关」的自由滚动（覆盖层下 [shouldRevealCurrentCue]
-  /// 走的是恒真的生效跟随，歌词层自己再看原始开关），把用户滚开的歌词拽回居中。
+  /// 旗是「用户刚把跟随打开」的语义，回前台 / 重锚这类被动重投影不该带它。歌词模式
+  /// 下正文面脱开（[readerDetached]），本方法在第一道门就返回。
   void resyncReaderToAudio() {
     if (!shouldRevealCurrentCue) return;
     if (_manualReaderOverrideCue != null) return;
