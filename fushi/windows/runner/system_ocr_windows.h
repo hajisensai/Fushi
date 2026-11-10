@@ -11,6 +11,17 @@
 // 纯 WRL/ABI（runner 以 _HAS_EXCEPTIONS=0 编译，不能用 C++/WinRT 投影），全程 HRESULT。
 namespace fushi {
 
+// 行里的一个 OcrWord：在行文本里的位置（UTF-16 码元，与 Dart String 下标同口径）+
+// 词框。点字时按它定位被点的字（BUG-4323），不再按字数等分整行。
+struct SystemOcrWord {
+  int start = 0;
+  int length = 0;
+  double left = 0;
+  double top = 0;
+  double right = 0;
+  double bottom = 0;
+};
+
 struct SystemOcrLine {
   std::string text;  // UTF-8
   // 送检图的像素坐标（左上原点）。
@@ -18,6 +29,8 @@ struct SystemOcrLine {
   double top = 0;
   double right = 0;
   double bottom = 0;
+  // 有框的词（同一坐标系），按行内顺序。
+  std::vector<SystemOcrWord> words;
 };
 
 struct SystemOcrResult {
@@ -29,6 +42,11 @@ struct SystemOcrResult {
   // 解码后原图的像素尺寸（坐标的分母）。
   int width = 0;
   int height = 0;
+  // 实际送进 OcrEngine 的位图尺寸（超过 MaxImageDimension 时被等比缩小）与当时的上限：
+  // 只进诊断日志，用来分清「识别不出」是不是缩图把字缩没了（BUG-4323）。
+  int recognized_width = 0;
+  int recognized_height = 0;
+  int max_image_dimension = 0;
   std::vector<SystemOcrLine> lines;
 };
 

@@ -38,6 +38,21 @@ int main() {
     assert(JoinOcrWords({L"\U00020BB7", L"野家"}) == L"\U00020BB7野家");
     // 全角标点也是非 ASCII：「。」与下一句直接相连。
     assert(JoinOcrWords({L"です。", L"次"}) == L"です。次");
+    // 词起点（BUG-4323）：插进去的空格不算进下一个词；空词记 -1。
+    {
+      std::vector<int> offsets;
+      const std::wstring joined = JoinOcrWordsWithOffsets(
+          {L"これは", L"OCR", L"", L"です", L"𠮷"}, &offsets);
+      assert(joined == L"これは OCR です𠮷");
+      assert(offsets.size() == 5);
+      assert(offsets[0] == 0);
+      assert(offsets[1] == 4);
+      assert(offsets[2] == -1);
+      assert(offsets[3] == 8);
+      assert(offsets[4] == 10);
+      // 每个词从起点起逐码元与原词一致（代理对占两个码元）。
+      assert(joined.compare(10, 2, L"𠮷") == 0);
+    }
   }
 
   // ── 行框 = 词框并集 ───────────────────────────────────────────────────
