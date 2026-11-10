@@ -1102,26 +1102,37 @@ mixin _FushiDbContentMisc
     return byBook;
   }
 
-  /// 「哪些章已读」集合的响应式来源（`bookUid` + `\u0000` + `chapterKey`，有序）。
+  /// 「哪些章已读」集合的响应式来源（`bookUid` + U+0000 + `chapterKey`，按
+  /// 书 uid、章 key 排序）。
   ///
   /// 书架在线漫画进度由章 `readAt` 决定（BUG-4323），作品页「标记已读 / 未读」、
   /// Kavita 对齐、阅读器读到章末都只写这张表、不碰书行；书架订阅这条流才能在
   /// 任一写入点之后即时重算，而不靠每个写入点各自记得 invalidate。只投影两列、
   /// 只取已读行：翻页写 lastPage 也会让表级 watch 重跑，结果集不变由消费端
   /// `.distinct` 吞掉。
+  ///
+  /// 两列分别取回、在 Dart 侧拼键：不在 SQL 里 `||` 拼 `Constant('\u0000')`——
+  /// drift 的 [Constant] 会把字符串**内联**进 SQL 文本，SQLite 分词器遇 NUL 即
+  /// 截断字面量，语句直接报 unrecognized token。
   Stream<List<String>> watchMangaChapterReadKeys() {
-    final Expression<String> key =
-        mangaChapterStates.bookUid +
-        const Constant<String>('\u0000') +
-        mangaChapterStates.chapterKey;
     return (selectOnly(mangaChapterStates)
-          ..addColumns(<Expression<Object>>[key])
+          ..addColumns(<Expression<Object>>[
+            mangaChapterStates.bookUid,
+            mangaChapterStates.chapterKey,
+          ])
           ..where(mangaChapterStates.readAt.isNotNull())
-          ..orderBy(<OrderingTerm>[OrderingTerm.asc(key)]))
+          ..orderBy(<OrderingTerm>[
+            OrderingTerm.asc(mangaChapterStates.bookUid),
+            OrderingTerm.asc(mangaChapterStates.chapterKey),
+          ]))
         .watch()
         .map(
           (List<TypedResult> rows) => rows
-              .map((TypedResult row) => row.read(key)!)
+              .map(
+                (TypedResult row) =>
+                    '${row.read(mangaChapterStates.bookUid)!}\u0000'
+                    '${row.read(mangaChapterStates.chapterKey)!}',
+              )
               .toList(growable: false),
         );
   }
