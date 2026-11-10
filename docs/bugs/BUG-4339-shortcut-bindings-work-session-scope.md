@@ -1,4 +1,4 @@
-## BUG-4323 · 作品会话期间改的快捷键重启后失效（GitHub #3089）
+## BUG-4339 · 作品会话期间改的快捷键重启后失效（GitHub #3089）
 - **报告**：2026-11-08（用户：GitHub Parnrok，反馈 e4QDDy1tKZ，Windows 3.3.0+24434）
 - **真实性**：✅ 真 bug。设置页与 CLI 走同一条 `saveShortcutRegistry` → `MediaSource.setPreference`，报告人「界面写另一份存储」的推断不准确；真正分叉在作品会话覆盖层：`fushi/lib/src/profile/work_profile_scope.dart` 的 `isWorkScopedPrefKey` 把 `src:reader_fushi:*` 整个前缀当作品级键（含 `shortcut_bindings_json`）。一部带作品级配置的作品打开时（如从播放器设置面板进快捷键页），`fushi/lib/src/media/media_source.dart` `setPreference` 见 `overrides(dbKey)` 为真，把绑定写进**绑定配置**的 `profile_settings` 快照、不写 `preferences`；启动时 `fushi/lib/src/shortcuts/shortcut_preferences.dart` `loadShortcutRegistry` 读全局 `preferences`，读回旧值。
 - **[x] ① 已修复** — `WorkProfileScope.appLevelReaderPrefKeys` 列出阅读器命名空间里不属于作品的键（快捷键绑定 JSON、手柄按钮图品牌、歌词模式一次性提示标记），`isWorkScopedPrefKey` 对它们返回 false：会话期间读写直达全局 `preferences`。它们仍随**激活配置**快照（`refreshPrefCache` 切配置重载快捷键的既有设计不变）。短键常量收进 `fushi_engine/media/media_pref_keys.dart`，调用点不再写字面量。存量持久化名不变。
