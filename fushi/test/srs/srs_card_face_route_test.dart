@@ -2,6 +2,8 @@
 // 只经 srsCardFaceRoute 判「原生 Fushi / 原生 HTML / 整面 WebView（带原因）」。
 import 'dart:io';
 
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, debugDefaultTargetPlatformOverride;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/srs/srs_card_face_route.dart';
 import 'package:fushi_anki/fushi_anki_core.dart';
@@ -103,6 +105,80 @@ void main() {
         SrsCardNativeFallbackCode.html,
       );
     });
+  });
+
+  // 反馈 O5YDP27Xko：同一张卡 Android 整面 WebView、桌面原生。判据只按卡片数据判，不随平台
+  // 变：同一份数据在每个平台下路线与原因都相同。
+  test('同一卡片数据在各平台下路线与原因一致', () {
+    final List<(SrsRenderedCard, bool)> cards = <(SrsRenderedCard, bool)>[
+      (_fushi(), true),
+      (
+        _fushi(
+          back: <FushiCardItem>[
+            const FushiCardHtmlItem('<script>alert(1)</script>'),
+          ],
+        ),
+        true,
+      ),
+      (
+        _fushi(
+          native: false,
+          fallback: const SrsCardNativeFallback(
+            SrsCardNativeFallbackCode.backTemplate,
+            '<div class="x">',
+          ),
+        ),
+        true,
+      ),
+      (
+        const SrsRenderedCard(
+          question: '<div>front</div>',
+          answer: '<div>back</div>',
+          css: '.card { color: black; }',
+          isEmpty: false,
+        ),
+        false,
+      ),
+    ];
+    String describe(SrsCardFaceRoute r) => switch (r) {
+      SrsCardFaceFushiNative() => 'fushi',
+      SrsCardFaceHtmlNative() => 'html',
+      SrsCardFaceWeb(:final SrsCardNativeFallback fallback) => 'web $fallback',
+    };
+    List<String> routes() => <String>[
+      for (final (SrsRenderedCard card, bool fushiCard) in cards)
+        describe(
+          srsCardFaceRoute(card, fushiCard: fushiCard, languageCode: 'ja'),
+        ),
+    ];
+    final List<String> baseline = routes();
+    try {
+      for (final TargetPlatform p in TargetPlatform.values) {
+        debugDefaultTargetPlatformOverride = p;
+        expect(routes(), baseline, reason: '$p');
+      }
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
+
+  // 守卫：卡面判据（app 侧路线、区块 / HTML 子集，引擎侧内置模板认定）不得按平台分支。
+  test('卡面判据源码不按平台分支', () {
+    final RegExp platform = RegExp(
+      r'\b(Platform\.is|defaultTargetPlatform|TargetPlatform\.|kIsWeb)',
+    );
+    final List<String> offenders = <String>[
+      for (final String path in <String>[
+        'lib/src/srs/srs_card_face_route.dart',
+        'lib/src/srs/srs_fushi_card_items.dart',
+        'lib/src/srs/srs_html_card.dart',
+        '../packages/fushi_engine/lib/srs/srs_fushi_card_native_media.dart',
+        '../packages/fushi_anki/lib/src/fushi_card_blocks.dart',
+        '../packages/fushi_anki/lib/src/fushi_card_template_history.dart',
+      ])
+        if (platform.hasMatch(File(path).readAsStringSync())) path,
+    ];
+    expect(offenders, isEmpty);
   });
 
   // 守卫：卡面路线只在 srs_card_face_route.dart 判一次。页面里再各拼一份原生判据（以前的
