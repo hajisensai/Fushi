@@ -935,7 +935,8 @@ class _VideoPagePlaybackRemote
     final List<_VideoOsdMessage> osd = <_VideoOsdMessage>[];
     final MinePopupResult result = await _collectingOsd(
       osd,
-      () => _state._onMineEntryImpl(payload),
+      // 手机要拿到真实结局（成功 / 失败原因）：本地视频等卡落地再回。
+      () => _state._onMineEntryImpl(payload, awaitLocalLanding: true),
     );
     if (!result.accepted && !result.duplicate) {
       throw VideoRemoteFailure('failed', _failureText(osd, '制卡没有成功'));

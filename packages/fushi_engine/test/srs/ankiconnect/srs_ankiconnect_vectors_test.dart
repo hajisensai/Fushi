@@ -102,12 +102,15 @@ Future<SrsDbStore> _build(void Function(int) setNow, int Function() now) async {
   final SrsDbStore s = await openTestStore(
     profileUid: kAcVecProfile,
     deviceId: 'v',
+    localOffsetMin: () => 540,
     now: now,
   );
   await s.editField(
     SrsEntityKind.profile,
     kAcVecProfile,
-    SrsFieldKeys.utcOffsetMin,
+    // 旧版声明过、从没有写入方的 profile 键：现在不读（时区恒为本机，由打开时的 localOffsetMin 钉住），
+    // 留着这条写入让写入序号与生成向量时一致。
+    'utcOffsetMin',
     540,
   );
   await s.editField(
@@ -298,6 +301,7 @@ void main() {
         bootId: 'boot-v',
       ),
       fallbackRolloverHour: () => 4,
+      localOffsetMin: () => 540,
     );
     final SrsAnkiConnectHandler h = _handler(s);
     final Map<String, Object?> produced = <String, Object?>{};
