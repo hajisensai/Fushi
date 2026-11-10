@@ -21,7 +21,7 @@ void main() {
   late String path;
 
   setUp(() async {
-    tmp = await Directory.systemTemp.createTemp('fushi_bug4240_');
+    tmp = await Directory.systemTemp.createTemp('fushi_bug4275_');
     path = p.join(tmp.path, 'fushi.db');
     db = FushiDatabase.atFile(path);
   });
@@ -42,7 +42,7 @@ void main() {
     outsider.execute('BEGIN IMMEDIATE');
     outsider.execute(
       'INSERT OR REPLACE INTO preferences (key, value, updated_at) '
-      "VALUES ('bug4240.outsider', '1', 0)",
+      "VALUES ('bug4275.outsider', '1', 0)",
     );
     await Future<void>.delayed(hold);
     outsider.execute('COMMIT');
