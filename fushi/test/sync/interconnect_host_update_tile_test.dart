@@ -6,6 +6,7 @@ import 'package:fushi/src/updates/host_self_update_service.dart'
     show kHostUpdateErrorCancelled;
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi_engine/sync/host_update/host_update_protocol.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -340,6 +341,45 @@ void main() {
 
       await confirmTrigger(tester);
       expect(remote.triggeredNonces, hasLength(2), reason: '可以再触发一次');
+    },
+  );
+
+  testWidgets(
+    'BUG host-update-tracking-null-loops: host answering 404 mid-tracking '
+    'ends tracking instead of polling every 2 s forever',
+    (WidgetTester tester) async {
+      final _FakeRemote remote = _FakeRemote()
+        ..statuses.addAll(<Object?>[
+          _status(nonce: 'stale'),
+          _status(nonce: 'fresh'),
+          _status(phase: HostUpdatePhase.downloading, progress: 0.3),
+          // host 回来了却不再认 /api/host/update（降级 / 换成无头服务端）：之后一直 404。
+          null,
+        ])
+        ..triggerResult = _status(
+          phase: HostUpdatePhase.downloading,
+          progress: 0,
+        );
+      await pumpTile(tester, remote);
+      await confirmTrigger(tester);
+
+      await pollOnce(tester);
+      expect(
+        find.text(t.interconnect_host_update_downloading(percent: 30)),
+        findsOneWidget,
+      );
+
+      await pollOnce(tester);
+      await pollOnce(tester);
+      final int calls = remote.refreshFlags.length;
+      await tester.pump(const Duration(seconds: 10));
+      await tester.pump(const Duration(seconds: 1));
+      expect(remote.refreshFlags.length, calls, reason: '404 后不再轮询');
+      expect(find.byType(FushiCircularProgressIndicator), findsNothing);
+      expect(
+        find.text(t.interconnect_host_update_reason_unavailable),
+        findsOneWidget,
+      );
     },
   );
 

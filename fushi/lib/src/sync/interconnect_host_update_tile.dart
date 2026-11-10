@@ -234,7 +234,18 @@ class _InterconnectHostUpdateTileState
     _polling = true;
     try {
       final HostUpdateStatus? status = await widget.remote.status();
-      if (!mounted || status == null) return;
+      if (!mounted) return;
+      if (status == null) {
+        // host 回了 404：它回来了，却不再提供远程更新（降级 / 换成无头服务端 /
+        // 解析到了另一台）。这是明确应答、等下去不会变：结束这一轮跟踪，如实显示
+        // 「主机不提供远程更新」，不当断连进重连窗。
+        _stopTracking(null);
+        setState(() {
+          _status = null;
+          _hostLacksFeature = true;
+        });
+        return;
+      }
       if (status.currentVersion != from) {
         // host 重启回来、版本变了：这一轮结束。
         _stopTracking(
