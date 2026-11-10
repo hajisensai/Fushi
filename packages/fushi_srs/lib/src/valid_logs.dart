@@ -161,9 +161,6 @@ class SrsCardHistory {
   String get scheduler =>
       _schedulerFrom?.result!.scheduler ?? SrsScheduler.fushi;
 
-  /// 协议只允许撤销「该卡当前最后一条有效日志」。
-  bool canUndo(String logId) => lastEffective?.id == logId;
-
   /// 进统计 / 优化器训练集的评分日志（被撤销、被判等价的都已排除）。
   List<SrsReviewLog> get effectiveRatings => <SrsReviewLog>[
     for (final SrsReviewLog l in effective)
@@ -354,39 +351,4 @@ String _takeError(FushiFsrs lib, Pointer<Pointer<Char>> error) {
   } finally {
     lib.bindings.ffsrs_free_string(p);
   }
-}
-
-/// 用 [engine] 把输入算成当前记忆状态（新卡返回 null）。
-SrsMemory? srsComputeMemory(
-  SrsMemoryInput input, {
-  required FsrsEngine engine,
-  required SrsAlgorithm algorithm,
-  required List<double> params,
-  double sm2Retention = 0.9,
-}) {
-  algorithm = algorithm.memoryAlgorithm;
-  SrsMemory? starting = input.starting;
-  final ({double ease, double intervalDays})? sm2 = input.sm2Start;
-  if (starting == null && sm2 != null) {
-    starting = engine.memoryStateFromSm2(
-      algorithm: algorithm,
-      params: params,
-      easeFactor: sm2.ease,
-      intervalDays: sm2.intervalDays,
-      sm2Retention: sm2Retention,
-    );
-  }
-  if (input.reviews.isEmpty) return starting;
-  final List<SrsFsrsReview> reviews = starting == null
-      ? <SrsFsrsReview>[
-          SrsFsrsReview(rating: input.reviews.first.rating, deltaDays: 0),
-          ...input.reviews.skip(1),
-        ]
-      : input.reviews;
-  return engine.memoryState(
-    algorithm: algorithm,
-    params: params,
-    reviews: reviews,
-    starting: starting,
-  );
 }

@@ -176,7 +176,9 @@ void main() {
     final (BulkFixture ref, BulkFixture bulk) = await twins();
     final SrsDbStore r = ref.store;
     final List<SrsReviewLog> refResets = <SrsReviewLog>[];
-    for (final SrsCardCacheRow c in await r.cardRows(await allCards(r))) {
+    // 批量命令按传入顺序逐张处理（HLC 也按这个顺序推进），参照侧同序。
+    for (final String id in await allCards(r)) {
+      final SrsCardCacheRow c = (await r.cardRow(id))!;
       if (c.queue == SrsQueue.newCard.wire) continue;
       await r.resetCard(c.id);
       final String logId = (await r.cardRow(c.id))!.lastLogId!;
@@ -207,34 +209,131 @@ void main() {
     await expectSame(bulk, ref);
   });
 
-  test('立即重排整组 = 逐张读历史 + 读牌组设置算 reschedule', () async {
+  // 重置 / 改期 / 撤销 / 立即重排改成内核显式意图命令（`sched`）之后，与旧路径落出同样的库：旧路径 = Dart
+  // 组好日志（同样的键、同样的 HLC 推进、结果只是提示）交给 `apply`，内核按结果形状反推意图、重放重算结果。
+  // 两边的日志行（重放写回的结果、配置快照）、本机状态（时钟、修订号）、缓存逐字节相同 = 意图相同、重放结果相同。
+  // 旧路径给的结果提示故意写成错的：落库的结果只由意图 + 重放决定。
+  test('重置 / 改期 / 撤销 / 立即重排：显式意图命令 = 旧路径（Dart 组日志、按结果形状反推意图）', () async {
     final (BulkFixture ref, BulkFixture bulk) = await twins();
     final SrsDbStore r = ref.store;
     final String lang = await deckId(r, 'Lang');
     final SrsDeckTree tree = await r.deckTree();
-    final List<SrsReviewLog> logs = <SrsReviewLog>[];
-    for (final SrsCardCacheRow c
-        in await (r.db.select(r.db.srsCardsCache)..where(
-              (c) =>
-                  c.deckId.isIn(tree.subtree(lang)) &
-                  c.queue.equals(SrsQueue.review.wire),
-            ))
-            .get()) {
-      final SrsReviewLog? l = SrsCardOps(engine: r.engine!).reschedule(
-        cardId: c.id,
-        history: await r.history(c.id),
-        config: await r.schedulingConfigFor(c.deckId),
-        ctx: await r.logContext(),
+    final SrsDayContext day = await r.dayContext();
+    final int today = day.dayIndexOf(r.now().$1);
+    final SrsLogContext ctx = await r.logContext();
+    SrsReviewLog legacy(
+      String card,
+      String kind,
+      String reviewType, {
+      SrsScheduleResult? hint,
+      String? revokes,
+    }) {
+      final (int nowMs, SrsTimeSource source) = ctx.now();
+      return SrsReviewLog(
+        id: ctx.newId(nowMs),
+        profileUid: ctx.profileUid,
+        cardId: card,
+        kind: kind,
+        revokesId: revokes,
+        hlc: ctx.clock.tick(nowMs),
+        occurredAt: nowMs,
+        timeSource: source,
+        origin: SrsLogOrigin.fushi,
+        reviewType: reviewType,
+        utcOffsetMin: ctx.day.utcOffsetMin,
+        dayRolloverHour: ctx.day.rolloverHour,
+        result: hint,
       );
-      if (l != null) logs.add(l);
     }
-    await r.appendLocalLogs(logs);
 
-    final int n = await bulk.store.rescheduleDeck(
-      await deckId(bulk.store, 'Lang'),
+    const SrsScheduleResult wrong = SrsScheduleResult(
+      queue: SrsQueue.review,
+      dueDay: 1,
     );
-    expect(n, logs.length);
+    // 立即重排：子树里的复习卡按 ID 序（内核的写出顺序）。
+    final List<String> review = <String>[
+      for (final SrsCardCacheRow c
+          in await (r.db.select(r.db.srsCardsCache)..where(
+                (c) =>
+                    c.deckId.isIn(tree.subtree(lang)) &
+                    c.queue.equals(SrsQueue.review.wire),
+              ))
+              .get())
+        c.id,
+    ]..sort();
+    await r.appendLocalLogs(<SrsReviewLog>[
+      for (final String id in review)
+        legacy(
+          id,
+          SrsLogKind.reschedule,
+          SrsReviewType.rescheduled,
+          hint: wrong,
+        ),
+    ]);
+    final List<String> cards = await allCards(r);
+    // 忘记前 8 张（已是新卡的跳过）。
+    final Set<String> learned = <String>{
+      for (final SrsCardCacheRow c in await r.cardRows(cards.take(8)))
+        if (c.queue != SrsQueue.newCard.wire) c.id,
+    };
+    final List<SrsReviewLog> resets = <SrsReviewLog>[
+      for (final String id in cards.take(8))
+        if (learned.contains(id))
+          legacy(
+            id,
+            SrsLogKind.manual,
+            SrsReviewType.manual,
+            hint: const SrsScheduleResult(queue: SrsQueue.newCard),
+          ),
+    ];
+    await r.appendLocalLogs(resets);
+    // 撤销其中两条，再加一条撤不了的（已不是最后一条有效日志）：旧路径根本不写它。
+    await r.appendLocalLogs(<SrsReviewLog>[
+      for (final SrsReviewLog l in resets.take(2))
+        legacy(l.cardId, SrsLogKind.undo, SrsReviewType.manual, revokes: l.id),
+    ]);
+    // 改期后 6 张。
+    await r.appendLocalLogs(<SrsReviewLog>[
+      for (final String id in cards.skip(cards.length - 6))
+        legacy(
+          id,
+          SrsLogKind.manual,
+          SrsReviewType.manual,
+          hint: SrsScheduleResult(queue: SrsQueue.review, dueDay: today + 5),
+        ),
+    ]);
+
+    final SrsDbStore b = bulk.store;
+    final List<String> bCards = await allCards(b);
+    expect(bCards, cards);
+    final int n = await b.rescheduleDeck(await deckId(b, 'Lang'));
+    expect(n, review.length);
     expect(n, greaterThan(0));
+    final List<SrsReviewLog> bResets = await b.resetCards(bCards.take(8));
+    expect(bResets.length, resets.length);
+    expect(bResets.length, greaterThan(2));
+    expect(
+      bResets.every(
+        (SrsReviewLog l) =>
+            l.result?.queue == SrsQueue.newCard && l.result?.reps == 0,
+      ),
+      isTrue,
+      reason: 'the kernel hands back the logs as stored, with its own result',
+    );
+    final String stale = (await b.history(bCards.last)).all.first.id;
+    expect(
+      await b.undoLogs(<(String, String)>[
+        for (final SrsReviewLog l in bResets.take(2)) (l.cardId, l.id),
+        (bCards.last, stale),
+      ]),
+      1,
+    );
+    final List<SrsReviewLog> dues = await b.setDueDays(<String, int>{
+      for (final String id in bCards.skip(bCards.length - 6)) id: today + 5,
+    });
+    expect(dues.map((SrsReviewLog l) => l.result?.dueDay).toSet(), <int?>{
+      today + 5,
+    });
     await expectSame(bulk, ref);
   });
 
