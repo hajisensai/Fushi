@@ -1,6 +1,6 @@
-import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/stats/lyrics_read_unit.dart';
 import 'package:fushi/src/stats/read_unit_ledger.dart';
+import 'package:test/test.dart';
 
 /// 歌词模式的统计口径（2026-11-10 所有者拍板：歌词模式是独立模式，单独一套统计，
 /// 尽量贴近阅读器）：单元 = 当前句，账本与正文是同一本 `ReadUnitLedger`。
