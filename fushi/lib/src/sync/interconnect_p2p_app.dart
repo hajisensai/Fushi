@@ -1,5 +1,11 @@
+import 'dart:async';
+import 'dart:io' show Platform;
+
+import 'package:flutter/widgets.dart'
+    show AppLifecycleListener, AppLifecycleState;
 import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi/src/utils/misc/channel_constants.dart';
 import 'package:fushi_engine/sync/interconnect_p2p.dart';
 import 'package:meta/meta.dart';
 
@@ -26,10 +32,13 @@ InterconnectP2pRuntime appInterconnectP2pRuntime(SyncRepository repo) {
   return created;
 }
 
-/// 启动时调一次：原生库可用才让 client 收 `p2p://` 地址并装上选路里的隧道解析。
+/// 启动时调一次：原生库可用才让 client 收 `p2p://` 地址、装上选路里的隧道解析，
+/// 并把系统网络变化接到端点（[installInterconnectP2pNetworkWatch]）。
 void installInterconnectP2pClient(SyncRepository repo) {
   if (!InterconnectP2pRuntime.isAvailable) return;
-  bindInterconnectP2pClient(appInterconnectP2pRuntime(repo));
+  final InterconnectP2pRuntime runtime = appInterconnectP2pRuntime(repo);
+  bindInterconnectP2pClient(runtime);
+  installInterconnectP2pNetworkWatch(runtime);
 }
 
 /// 把 [runtime] 装成本进程的 P2P 运行时，并装上选路里的隧道解析（不查原生库
@@ -64,9 +73,79 @@ void bindInterconnectP2pClient(InterconnectP2pRuntime runtime) {
   });
 }
 
-/// 测试装置：撤掉 [bindInterconnectP2pClient] 装上的一切。
+/// [installInterconnectP2pNetworkWatch] 挂着的订阅（重复装配先撤旧的）。
+final List<StreamSubscription<void>> _networkWatch =
+    <StreamSubscription<void>>[];
+
+/// 把「系统默认网络变了」接到 [runtime]（iroh 端点）：每次变化通知一次
+/// `fp2p_network_change`，让隧道在连接没断、路径已失效时也能及时换路。
+///
+/// - [changes]：平台信号，默认取 [FushiChannels.networkChange]（只在 Android /
+///   iOS 订阅——Android 上 netwatch 不做路由监视、移动端睡眠检测一小时才轮询
+///   一次；桌面与无头服务端由 iroh 自己检测，用空流）。
+/// - [lifecycle]：回到前台（`resumed`）也算一次信号，补 iOS 唤醒后的缺口；默认
+///   同样只在 Android / iOS 上订阅 [AppLifecycleListener]。
+///
+/// 重复调用会先撤掉上一份订阅。端点没启动时信号什么也不做（不为此建端点）。
+void installInterconnectP2pNetworkWatch(
+  InterconnectP2pRuntime runtime, {
+  Stream<void>? changes,
+  Stream<AppLifecycleState>? lifecycle,
+}) {
+  _cancelNetworkWatch();
+  final bool mobile = Platform.isAndroid || Platform.isIOS;
+  final Stream<void> platformChanges =
+      changes ??
+      (mobile
+          ? FushiChannels.networkChange.receiveBroadcastStream().map(
+              (Object? _) {},
+            )
+          : const Stream<void>.empty());
+  final Stream<AppLifecycleState> states =
+      lifecycle ??
+      (mobile
+          ? _appLifecycleStates()
+          : const Stream<AppLifecycleState>.empty());
+  _networkWatch
+    ..add(bindInterconnectP2pNetworkSignals(runtime, platformChanges))
+    ..add(
+      bindInterconnectP2pNetworkSignals(
+        runtime,
+        states
+            .where((AppLifecycleState s) => s == AppLifecycleState.resumed)
+            .map((AppLifecycleState _) {}),
+      ),
+    );
+}
+
+/// app 生命周期状态流：有人订阅时才挂 [AppLifecycleListener]，取消即撤。
+Stream<AppLifecycleState> _appLifecycleStates() {
+  AppLifecycleListener? listener;
+  late final StreamController<AppLifecycleState> controller;
+  controller = StreamController<AppLifecycleState>(
+    onListen: () {
+      listener = AppLifecycleListener(onStateChange: controller.add);
+    },
+    onCancel: () {
+      listener?.dispose();
+      listener = null;
+    },
+  );
+  return controller.stream;
+}
+
+void _cancelNetworkWatch() {
+  for (final StreamSubscription<void> sub in _networkWatch) {
+    unawaited(sub.cancel());
+  }
+  _networkWatch.clear();
+}
+
+/// 测试装置：撤掉 [bindInterconnectP2pClient] 与
+/// [installInterconnectP2pNetworkWatch] 装上的一切。
 @visibleForTesting
 void debugResetAppInterconnectP2p() {
+  _cancelNetworkWatch();
   _runtime = null;
   setInterconnectP2pResolver(null);
   setInterconnectAcceptsP2pAddresses(false);

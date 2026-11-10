@@ -128,6 +128,9 @@ abstract interface class InterconnectP2pEndpointPort {
   void hostListen(int port);
   void hostStop();
   String? hostPeer(int port);
+
+  /// 系统默认网络变了，让 iroh 重新探测路径。原生库没有这项能力 → false。
+  bool networkChange();
   Future<void> closeAsync();
 }
 
@@ -164,6 +167,9 @@ final class _FfiEndpointPort implements InterconnectP2pEndpointPort {
 
   @override
   String? hostPeer(int port) => _endpoint.hostPeer(port);
+
+  @override
+  bool networkChange() => _endpoint.networkChange();
 
   @override
   Future<void> closeAsync() => _endpoint.closeAsync();
@@ -246,6 +252,11 @@ class InterconnectP2pNode {
   FushiP2pConnStatus? status(String remoteNodeId) =>
       _closed ? null : _endpoint.status(remoteNodeId);
 
+  /// 系统默认网络变了：通知 iroh 重新探测本机地址与到各对端的路径（连接没断、
+  /// 路径已失效时只有它能让隧道换路）。已关闭 → 不调原生，返回 false；原生库
+  /// 没有这项能力也是 false。原生调用失败照旧抛 [FushiP2pException]。
+  bool networkChange() => _closed ? false : _endpoint.networkChange();
+
   Future<void> close() async {
     if (_closed) return;
     _closed = true;
@@ -325,6 +336,19 @@ class InterconnectP2pRuntime {
 
   Future<void> dispose() => restart();
 
+  /// 系统默认网络变了（平台信号 / 回到前台）。端点没启动就什么都不做——不为此
+  /// 建端点，之后建的端点本来就从当前网络起步。原生失败只留痕：这是尽力而为的
+  /// 提示，iroh 自己的周期探测仍在。
+  void notifyNetworkChange() {
+    final InterconnectP2pNode? node = _node;
+    if (node == null) return;
+    try {
+      node.networkChange();
+    } on Object catch (e, st) {
+      engineLog.log('InterconnectP2p.networkChange', e, st);
+    }
+  }
+
   /// host 地址集里本机的 P2P 地址（端点未启动 / 还没有任何可用拨号提示 → 空）。
   List<InterconnectHostAddress> hostAddresses({required bool tls}) {
     final InterconnectP2pNode? node = _node;
@@ -347,6 +371,18 @@ class InterconnectP2pRuntime {
     ];
   }
 }
+
+/// 把平台的「默认网络变了」信号流接到 [runtime]：每个事件转成一次
+/// [InterconnectP2pRuntime.notifyNetworkChange]。取消返回的订阅即解绑。
+/// 信号流报错（例如平台侧没注册这条通道）只留痕、订阅不断，之后的信号照常转。
+StreamSubscription<void> bindInterconnectP2pNetworkSignals(
+  InterconnectP2pRuntime runtime,
+  Stream<void> signals,
+) => signals.listen(
+  (void _) => runtime.notifyNetworkChange(),
+  onError: (Object e, StackTrace st) =>
+      engineLog.log('InterconnectP2p.networkSignals', e, st),
+);
 
 /// host 该不该公布、公布成什么样的 `p2p://` 地址（纯函数，便于单测）。
 ///

@@ -301,5 +301,8 @@ final class _FakePort implements InterconnectP2pEndpointPort {
   String? hostPeer(int port) => null;
 
   @override
+  bool networkChange() => false;
+
+  @override
   Future<void> closeAsync() async {}
 }

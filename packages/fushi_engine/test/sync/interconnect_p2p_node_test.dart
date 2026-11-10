@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:fushi_engine/sync/interconnect_p2p.dart';
 import 'package:test/test.dart';
 
@@ -72,6 +74,69 @@ void main() {
     expect(isInterconnectTunnelOrigin('127.0.0.1', c), isFalse);
     expect(port.closed, isTrue);
   });
+
+  group('网络变化通知', () {
+    late int secretLoads;
+    late InterconnectP2pRuntime runtime;
+
+    setUp(() {
+      secretLoads = 0;
+      runtime = InterconnectP2pRuntime(
+        loadSecret: () async {
+          secretLoads++;
+          return null;
+        },
+        saveSecret: (String _) async {},
+        loadRelayUrls: () async => const <String>[],
+      );
+    });
+
+    test('端点未启动：不为此建端点，也不调原生', () {
+      runtime.notifyNetworkChange();
+      expect(runtime.current, isNull);
+      expect(secretLoads, 0);
+      expect(port.networkChanges, 0);
+    });
+
+    test('装了节点：每次通知转给端点一次', () {
+      runtime.debugInstall(node);
+      runtime.notifyNetworkChange();
+      expect(port.networkChanges, 1);
+    });
+
+    test('节点已关闭：不再调原生', () async {
+      runtime.debugInstall(node);
+      await node.close();
+      runtime.notifyNetworkChange();
+      expect(port.networkChanges, 0);
+    });
+
+    test('原生抛异常：留痕不外抛，下一次照常送达', () {
+      runtime.debugInstall(node);
+      port.throwOnNetworkChange = true;
+      expect(runtime.notifyNetworkChange, returnsNormally);
+      port.throwOnNetworkChange = false;
+      runtime.notifyNetworkChange();
+      expect(port.networkChanges, 2);
+    });
+
+    test('信号流每个事件转成一次通知，取消订阅后不再转', () async {
+      runtime.debugInstall(node);
+      final StreamController<void> signals = StreamController<void>();
+      final StreamSubscription<void> sub = bindInterconnectP2pNetworkSignals(
+        runtime,
+        signals.stream,
+      );
+      signals
+        ..add(null)
+        ..add(null);
+      await Future<void>.delayed(Duration.zero);
+      expect(port.networkChanges, 2);
+      await sub.cancel();
+      expect(signals.hasListener, isFalse);
+      await signals.close();
+    });
+  });
 }
 
 final class _FakePort implements InterconnectP2pEndpointPort {
@@ -106,6 +171,16 @@ final class _FakePort implements InterconnectP2pEndpointPort {
 
   @override
   String? hostPeer(int port) => null;
+
+  int networkChanges = 0;
+  bool throwOnNetworkChange = false;
+
+  @override
+  bool networkChange() {
+    networkChanges++;
+    if (throwOnNetworkChange) throw const FushiP2pException('boom');
+    return true;
+  }
 
   @override
   Future<void> closeAsync() async => closed = true;
