@@ -51,6 +51,7 @@ import 'package:fushi/src/pages/implementations/music/music_apple_music_pages.da
 import 'package:fushi/src/pages/implementations/music/music_local_playlist_actions.dart';
 import 'package:fushi/src/pages/implementations/music/music_track_actions.dart';
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
+import 'package:fushi/src/pages/implementations/music/music_preview_badge.dart';
 import 'package:fushi/src/pages/implementations/music/music_plugin_pages.dart';
 import 'package:fushi/src/pages/implementations/music/music_plugin_settings.dart';
 import 'package:fushi/src/pages/implementations/music/music_server_pages.dart';
@@ -411,6 +412,8 @@ class _SongTile extends ConsumerWidget {
     // 行尾「⋯」只给在线曲目（喜欢 / 加歌单等在触屏上只有这一个入口）。本地曲目的菜单
     // 只是「播放 / 曲目详情」，点按与长按已经各管一项，只接右键，与本地曲目列表一致。
     bool menuButton = true;
+    // 只能放试听片段的来源（未接整曲的 Apple Music）：行尾挂「试听」角标。
+    bool preview = false;
     switch (track) {
       case MusicTrackRow r:
         final String badge = musicFormatBadge(
@@ -462,6 +465,7 @@ class _SongTile extends ConsumerWidget {
           bitrateKbps: s.bitrateKbps,
         );
         id = 'server-${browser.serverId}-${s.id}';
+        preview = musicServerPreviewOnly(browser);
         menu =
             appleMusicTrackMenu(context, browser, s) ??
             musicServerTrackLibraryMenu(context, browser, s);
@@ -511,6 +515,7 @@ class _SongTile extends ConsumerWidget {
                 spacing: FushiDesignTokens.of(context).spacing.gap,
                 children: <Widget>[
                   if (source != null) _SourceTag(label: source),
+                  if (preview) const MusicPreviewBadge(),
                   Text(
                     formatMusicDuration(durationMs),
                     style: context.fushiType.bodySmall,
