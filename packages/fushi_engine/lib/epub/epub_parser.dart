@@ -1175,7 +1175,8 @@ class EpubParser {
   /// 返回（解释交给 [BookOriginalLayout.resolve]），没声明为 null。
   static String? _parsePrimaryWritingMode(XmlDocument opf) {
     for (final XmlElement meta in _elements(opf, 'meta')) {
-      final String? value = meta.getAttribute('property') == 'primary-writing-mode'
+      final String? value =
+          meta.getAttribute('property') == 'primary-writing-mode'
           ? meta.innerText
           : meta.getAttribute('name') == 'primary-writing-mode'
           ? meta.getAttribute('content')
