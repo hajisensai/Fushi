@@ -1036,7 +1036,7 @@ class InterconnectSyncBackend extends SyncBackend
 
   /// 复习同步快速通道（设计 §6.3）：长轮询 host 的 `GET /api/srs/changes?after=<令牌>`，host 那边有新的复习数据
   /// 落地（别的设备写了 head / host 自己发布了）就立刻返回新令牌，否则最多挂 25 s 回原令牌。老 host 没有这个
-  /// 端点（404）返回 null，调用方退回只靠定时同步。回答里的 `own`（BUG-4370）：这段推进全是本机自己写 head 引起的；
+  /// 端点（404）返回 null，调用方退回只靠定时同步。回答里的 `own`（BUG-4378）：这段推进全是本机自己写 head 引起的；
   /// 老 host 不给就按 false（照常同步）。
   Future<SrsChangePoll?> waitSrsChanges(int? after) async {
     await _ensureResolved();

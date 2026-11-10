@@ -33,15 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3913 条。点号进各自文件。
+> 共 3921 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4370](bugs/BUG-4370-srs-sync-now-trailing-rounds.md) | ✅ | ✅ | 复习「立即同步」报完已同步后同步状态行仍空跑几轮（推送残留 + host 长轮询叫醒写者自己） |
-> 共 3920 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-4378](bugs/BUG-4378-srs-sync-now-trailing-rounds.md) | ✅ | ✅ | 复习「立即同步」报完已同步后同步状态行仍空跑几轮（推送残留 + host 长轮询叫醒写者自己） |
 | [BUG-4376](bugs/BUG-4376-ai-agent-landscape-sheet-too-short.md) | ✅ | ✅ | 横屏打开 AI 助手只剩标题和输入框 |
 | [BUG-4375](bugs/BUG-4375-manga-image-epub-folder-import.md) | ✅ | ✅ | 漫画导入框选纯图 EPUB 文件夹识别不到；批量导入不归合集 |
 | [BUG-4374](bugs/BUG-4374-srs-conflicts-bulk-dropped.md) | 🚧 | 🚧 | 同步冲突页批量处理被删成只剩逐条 |
