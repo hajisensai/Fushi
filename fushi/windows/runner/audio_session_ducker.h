@@ -97,6 +97,8 @@ class DuckedTreeProbe {
   void Open(DWORD root);
   void Refresh();
   bool Ducked() const;
+  // 释放全部 COM 引用（须在 CoUninitialize 之前、同一线程上调用）。
+  void Close();
 
  private:
   DWORD root_ = 0;

@@ -223,4 +223,10 @@ bool DuckedTreeProbe::Ducked() const {
   return false;
 }
 
+void DuckedTreeProbe::Close() {
+  volumes_.clear();
+  managers_.clear();
+  root_ = 0;
+}
+
 }  // namespace fushi
