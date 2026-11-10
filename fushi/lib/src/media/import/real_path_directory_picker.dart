@@ -399,6 +399,30 @@ Future<String?> pickSystemFilePath({
   Set<String>? allowedExtensions,
 }) => _fallbackPickFile(context: context, allowedExtensions: allowedExtensions);
 
+/// [pickSystemFilePath] 的带出处版本：选择器与交互完全相同（board 1360 的系统选择器），
+/// 只是把「这条路径是不是用户原始位置」随路径一起交回（判据同
+/// [pickRealFilePathDetailed] 的 file_picker 分支：桌面交回原路径；安卓 file_picker 交回
+/// app cache 副本，iOS 交回 import 模式的临时副本，同级兄弟都不在）。
+///
+/// 给「当场消费，但还想顺带记住它所在目录」的调用方用（视频字幕文件夹记忆，反馈
+/// 0PZAhFd1RO）：副本所在的缓存目录不是用户的文件夹，不能记。
+Future<PickedFilePath?> pickSystemFilePathDetailed({
+  required BuildContext context,
+  Set<String>? allowedExtensions,
+}) async {
+  final String? path = await _fallbackPickFile(
+    context: context,
+    allowedExtensions: allowedExtensions,
+  );
+  if (path == null) return null;
+  return PickedFilePath(
+    path: path,
+    isRealPath:
+        defaultTargetPlatform != TargetPlatform.android &&
+        defaultTargetPlatform != TargetPlatform.iOS,
+  );
+}
+
 /// [pickSystemFilePath] 的多选版：同为「当场消费」语义（选中即读进 app 存储 / 经
 /// FFI 导入，与原路径脱钩），因此不申请全文件访问、不走 SAF 真实路径解析——与
 /// [pickRealFilePaths] 的分工同 [pickSystemFilePath] vs [pickRealFilePath]。

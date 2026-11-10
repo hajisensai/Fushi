@@ -4,7 +4,8 @@ import 'package:fushi_engine/media/video/subtitle/subtitle_directory_match.dart'
 
 /// 反馈 0PZAhFd1RO：记住的字幕文件夹里按集号给当前视频挑字幕。
 void main() {
-  const String video12 = '/videos/Title/[SubGroup] Title - 12 [1080p][x264].mkv';
+  const String video12 =
+      '/videos/Title/[SubGroup] Title - 12 [1080p][x264].mkv';
 
   SubtitleDirectoryMatch match(
     String videoPath,
@@ -91,21 +92,19 @@ void main() {
   });
 
   test('有模板（上次选的那份）时按同一套命名挑出', () {
-    final SubtitleDirectoryMatch m = match(
-      video12,
-      <String>['[A] Title - 12.ass', '[B] Title - 12.ass'],
-      template: '[B] Title - 01.ass',
-    );
+    final SubtitleDirectoryMatch m = match(video12, <String>[
+      '[A] Title - 12.ass',
+      '[B] Title - 12.ass',
+    ], template: '[B] Title - 01.ass');
     expect(m.status, SubtitleDirectoryMatchStatus.matched);
     expect(m.fileName, '[B] Title - 12.ass');
   });
 
   test('模板的语言标记优先于学习语言', () {
-    final SubtitleDirectoryMatch m = match(
-      video12,
-      <String>['[A] Title - 12.ja.ass', '[A] Title - 12.zh.ass'],
-      template: '[B] Other Name 01.zh.srt',
-    );
+    final SubtitleDirectoryMatch m = match(video12, <String>[
+      '[A] Title - 12.ja.ass',
+      '[A] Title - 12.zh.ass',
+    ], template: '[B] Other Name 01.zh.srt');
     expect(m.fileName, '[A] Title - 12.zh.ass');
   });
 
@@ -130,12 +129,27 @@ void main() {
     expect(m.fileName, 'Title.S02E05.srt');
   });
 
+  test('subtitleDirectoryEpisodeCount 数不同集号（多语言同集只算一次）', () {
+    expect(subtitleDirectoryEpisodeCount(const <String>[]), 0);
+    expect(
+      subtitleDirectoryEpisodeCount(const <String>['[A] Title - 12.ass']),
+      1,
+    );
+    expect(
+      subtitleDirectoryEpisodeCount(const <String>[
+        '[A] Title - 11.ja.ass',
+        '[A] Title - 11.zh.ass',
+        '[A] Title - 12.ja.ass',
+        'notes.txt',
+      ]),
+      2,
+    );
+  });
+
   test('不补零的整季命名靠兄弟差分定号（BUG-2369 同一判据）', () {
     final SubtitleDirectoryMatch m = match(
       '/videos/[SubGroup] Show - 03 [1080p].mkv',
-      <String>[
-        for (int i = 1; i <= 12; i++) 'Show $i.srt',
-      ],
+      <String>[for (int i = 1; i <= 12; i++) 'Show $i.srt'],
     );
     expect(m.status, SubtitleDirectoryMatchStatus.matched);
     expect(m.fileName, 'Show 3.srt');

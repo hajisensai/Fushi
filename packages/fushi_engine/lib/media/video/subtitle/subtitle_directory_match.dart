@@ -129,6 +129,49 @@ bool _tagMatchesLanguage(String? tag, String langCode) {
   return lower.split(RegExp(r'[-_&]')).any(aliases.contains);
 }
 
+List<_SubtitleName> _subtitleNames(List<String> fileNames) => <_SubtitleName>[
+  for (final String raw in fileNames)
+    if (_splitSubtitleName(raw) case final _SubtitleName s
+        when s.stem.isNotEmpty)
+      s,
+];
+
+/// 逐个 stem 解析集号 / 季号。同一 stem（多语言 / 多格式）只解析一次；兄弟差分要求
+/// stem 两两不同。统一挂 `.mkv` 后缀交给视频文件名规则引擎，免得它把 stem 里的
+/// `.S01E02` 当扩展名剥掉。
+({Map<String, int?> episodeOf, Map<String, int?> seasonOf}) _parseStems(
+  List<_SubtitleName> subs,
+) {
+  final List<String> uniqueStems = <String>{
+    for (final _SubtitleName s in subs) s.stem,
+  }.toList();
+  final List<String> parseNames = <String>[
+    for (final String stem in uniqueStems) '$stem.mkv',
+  ];
+  final List<int?> stemEpisodes = parsedEpisodeNumbersOf(parseNames);
+  return (
+    episodeOf: <String, int?>{
+      for (int i = 0; i < uniqueStems.length; i++)
+        uniqueStems[i]: stemEpisodes[i],
+    },
+    seasonOf: <String, int?>{
+      for (int i = 0; i < uniqueStems.length; i++)
+        uniqueStems[i]: parseVideoFilename(parseNames[i]).season,
+    },
+  );
+}
+
+/// [fileNames] 里的字幕一共覆盖了几个不同的集号。用来判断一个文件夹像不像「整季
+/// 字幕文件夹」：只有一集字幕的文件夹（如下载目录里随手一份）不值得记住。
+int subtitleDirectoryEpisodeCount(List<String> fileNames) {
+  final List<_SubtitleName> subs = _subtitleNames(fileNames);
+  if (subs.isEmpty) return 0;
+  return <int>{
+    for (final int? episode in _parseStems(subs).episodeOf.values)
+      if (episode != null && episode > 0) episode,
+  }.length;
+}
+
 /// 在字幕文件夹的文件名列表 [fileNames] 里，给视频 [videoPath] 挑这一集的字幕。
 ///
 /// 规则：
@@ -154,30 +197,12 @@ SubtitleDirectoryMatch matchEpisodeSubtitleInDirectory({
     return const SubtitleDirectoryMatch.noEpisodeNumber();
   }
 
-  final List<_SubtitleName> subs = <_SubtitleName>[
-    for (final String raw in fileNames)
-      if (_splitSubtitleName(raw) case final _SubtitleName s
-          when s.stem.isNotEmpty)
-        s,
-  ];
+  final List<_SubtitleName> subs = _subtitleNames(fileNames);
   if (subs.isEmpty) return const SubtitleDirectoryMatch.notFound();
-
-  // 同一 stem（多语言 / 多格式）只解析一次；兄弟差分要求 stem 两两不同。统一挂
-  // `.mkv` 后缀交给视频文件名规则引擎，免得它把 stem 里的 `.S01E02` 当扩展名剥掉。
-  final List<String> uniqueStems = <String>{
-    for (final _SubtitleName s in subs) s.stem,
-  }.toList();
-  final List<String> parseNames = <String>[
-    for (final String stem in uniqueStems) '$stem.mkv',
-  ];
-  final List<int?> stemEpisodes = parsedEpisodeNumbersOf(parseNames);
-  final Map<String, int?> episodeOf = <String, int?>{
-    for (int i = 0; i < uniqueStems.length; i++) uniqueStems[i]: stemEpisodes[i],
-  };
-  final Map<String, int?> seasonOf = <String, int?>{
-    for (int i = 0; i < uniqueStems.length; i++)
-      uniqueStems[i]: parseVideoFilename(parseNames[i]).season,
-  };
+  final ({Map<String, int?> episodeOf, Map<String, int?> seasonOf}) parsed =
+      _parseStems(subs);
+  final Map<String, int?> episodeOf = parsed.episodeOf;
+  final Map<String, int?> seasonOf = parsed.seasonOf;
 
   final int? videoSeason = video.season;
   final List<_SubtitleName> candidates = <_SubtitleName>[
