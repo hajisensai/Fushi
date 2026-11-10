@@ -257,7 +257,7 @@ class InstalledOnlineSourceRow extends StatelessWidget {
   final Key? menuKey;
   final List<OnlineSourceMenuAction> menuActions;
 
-  /// 行尾显示拖拽把手（组内可拖时）。手势由外层 [FushiReorderableColumn] 负责：
+  /// 行尾显示拖拽把手（组内可拖时）。手势由外层 [FushiSliverReorderableList] 负责：
   /// 鼠标按下即拖、触摸长按再拖。
   final bool dragEnabled;
 

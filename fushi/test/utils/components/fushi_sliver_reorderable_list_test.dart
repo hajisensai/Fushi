@@ -77,6 +77,39 @@ void main() {
     expect(reorders, isEmpty);
   });
 
+  testWidgets('指针停在下边缘带、没越过中线：仍主动排帧把自动滚动跑起来', (WidgetTester tester) async {
+    // 默认视口 800×600，行高 56 + 间距 4：Row 8 中线 508、Row 9 中线 568；
+    // 下边缘带从 600 − 64 = 536 起。拖 Row 8 到 560：进了边缘带，又没越过
+    // Row 9 中线 → 不换位、不 setState。此前帧回调挂上了却没人排帧，自动滚动不起步。
+    final List<(int, int)> reorders = await pumpList(tester, 50);
+    final Offset start = tester.getCenter(find.text('Row 8'));
+    expect(start.dy, 508);
+    final TestGesture gesture = await tester.startGesture(
+      start,
+      kind: PointerDeviceKind.mouse,
+    );
+    await gesture.moveTo(start + const Offset(0, 12));
+    // 让抬起动效走完，帧队列回到空闲。
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump(const Duration(seconds: 1));
+    await gesture.moveTo(const Offset(400, 560));
+    expect(
+      tester.binding.hasScheduledFrame,
+      isTrue,
+      reason: '进入边缘带后必须有一帧来跑自动滚动的帧回调',
+    );
+    for (int i = 0; i < 5; i++) {
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    final ScrollableState scrollable = tester.state<ScrollableState>(
+      find.byType(Scrollable),
+    );
+    expect(scrollable.position.pixels, greaterThan(0));
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(reorders, isNot(isEmpty), reason: '自动滚动带着被拖行往下换位');
+  });
+
   testWidgets('触摸快速滑动交给滚动，不起拖', (WidgetTester tester) async {
     final List<(int, int)> reorders = await pumpList(tester, 50);
     await tester.drag(find.text('Row 2'), const Offset(0, -200));

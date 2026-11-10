@@ -277,7 +277,12 @@ class _FushiSliverReorderableListState
     _autoScrollStepSigned = step;
     if (step != 0 && !_autoScrollScheduled) {
       _autoScrollScheduled = true;
-      WidgetsBinding.instance.addPostFrameCallback(_autoScrollTick);
+      // 帧回调只在有帧时才跑：与 [FushiReorderableColumn]（每次 update 都 setState
+      // 让浮层跟手）不同，这里没越过中线就不 setState，指针停在边缘带、下一行又在
+      // 视口外时没有任何东西排帧，自动滚动就卡住不起步。主动排一帧。
+      WidgetsBinding.instance
+        ..addPostFrameCallback(_autoScrollTick)
+        ..scheduleFrame();
     }
   }
 
