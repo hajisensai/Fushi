@@ -33,12 +33,26 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
+> 共 3922 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4378](bugs/BUG-4378-srs-card-remote-tts-audio.md) | ✅ | ✅ | eggrolls 卡组例句在线 TTS 键点了没声音（WebKit 播不了不支持 Range 的远程音频） |
+| [BUG-4377](bugs/BUG-4377-remote-cover-cache-dir-deleted-at-runtime.md) | ✅ | ✅ | 远端封面磁盘缓存：运行中缓存目录被删（存储页清缓存 / iOS 系统清理）后写入静默失败到重启 |
+| [BUG-4376](bugs/BUG-4376-ai-agent-landscape-sheet-too-short.md) | ✅ | ✅ | 横屏打开 AI 助手只剩标题和输入框 |
+| [BUG-4375](bugs/BUG-4375-manga-image-epub-folder-import.md) | ✅ | ✅ | 漫画导入框选纯图 EPUB 文件夹识别不到；批量导入不归合集 |
+| [BUG-4374](bugs/BUG-4374-srs-conflicts-bulk-dropped.md) | 🚧 | 🚧 | 同步冲突页批量处理被删成只剩逐条 |
+| [BUG-4373](bugs/BUG-4373-manga-command-keys-dead-under-webview-focus.md) | ✅ | ✅ | 漫画：WebView2 持键盘焦点时切换界面 / 统计 / 计时（及新书签）快捷键收不到，改键也不生效 |
+| [BUG-4372](bugs/BUG-4372-android-asr-memory-gate.md) | ✅ | ✅ | Android 低内存机跑 ASR 被系统杀（无内存门槛） |
+| [BUG-4371](bugs/BUG-4371-video-mine-popup-blocks-playback.md) | ✅ | ✅ | 视频查词弹窗点制卡后弹窗不关、视频停着等制卡完成 |
+| [BUG-4370](bugs/BUG-4370-coloros-ostop-exit-misreport.md) | ✅ | ✅ | ColorOS / OnePlus 的 o-stop 停应用被误报为闪退 |
 > 共 3913 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-4370](bugs/BUG-4370-jellyfin-default-embedded-sub.md) | ✅ | ✅ | Jellyfin 服务器标为默认的内嵌字幕起播不显示 |
 | [BUG-4369](bugs/BUG-4369-lyrics-illustration-seen-dot.md) | ✅ | ✅ | 歌词模式插图缩略图的新插图红点看过也不消失 |
+| [BUG-4368](bugs/BUG-4368-reader-tap-lookup-off-swallows-taps.md) | ✅ | ✅ | 关闭单击查词后单击正文被吞（悬浮栏唤不出、VN 不前进、弹窗外点词照查） |
 | [BUG-4367](bugs/BUG-4367-windows-screen-ocr-forensics-and-word-hit.md) | ✅ | ✅ | Windows 应用外截屏识字「基本识别不出或错位」：点字按整行等分错位 + 无几何取证 |
 | [BUG-4366](bugs/BUG-4366-srs-fushi-card-native-fallback-frozen-template.md) | ✅ | ✅ | Fushi 卡片冻住的旧版内置模板让复习卡静默回退整面 WebView |
 | [BUG-4365](bugs/BUG-4365-srs-autopush-skips-cloud-channel.md) | ✅ | ✅ | 答卡后的去抖推送不覆盖云盘通道，背完卡云盘不自动同步 |

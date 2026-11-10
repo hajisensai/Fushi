@@ -136,6 +136,36 @@ void main() {
     expect(job.error, isNull);
   });
 
+  test('findJobForAudio 查得到已结束的 failed / cancelled 任务', () async {
+    final AudiobookTranscribeImportQueue queue = newQueue();
+    expect(queue.findJobForAudio(<String>['/a/01.mp3']), isNull);
+    final AudiobookTranscribeJob failed = await queue.enqueue(
+      audioPaths: <String>['/a/01.mp3'],
+      targetBookKey: 'book-a',
+      title: 'A',
+    );
+    await _until(() => transcriber.pending.containsKey('A'));
+    transcriber.pending.remove('A')!.completeError(StateError('boom'));
+    await _until(() => failed.isTerminal);
+    final AudiobookTranscribeJob cancelled = await queue.enqueue(
+      audioPaths: <String>['/b/01.mp3', '/b/02.mp3'],
+      title: 'B',
+    );
+    await _until(() => transcriber.pending.containsKey('B'));
+    await queue.cancel(cancelled.id);
+    await _until(() => cancelled.isTerminal);
+    await queue.close();
+
+    expect(failed.status, AudiobookTranscribeJobStatus.failed);
+    expect(cancelled.status, AudiobookTranscribeJobStatus.cancelled);
+    expect(queue.findJobForAudio(<String>['/a/01.mp3']), same(failed));
+    expect(
+      queue.findJobForAudio(<String>['/b/01.mp3', '/b/02.mp3']),
+      same(cancelled),
+    );
+    expect(queue.findJobForAudio(<String>['/b/01.mp3']), isNull);
+  });
+
   test('取消正在跑的任务 → cancelled,不入库', () async {
     final AudiobookTranscribeImportQueue queue = newQueue();
     final AudiobookTranscribeJob job = await queue.enqueue(

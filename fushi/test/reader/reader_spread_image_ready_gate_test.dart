@@ -121,7 +121,7 @@ void main() {
       final int handlerIdx = source.indexOf("handlerName: 'spreadReady'");
       expect(handlerIdx, greaterThan(0));
       final int handlerEnd = source.indexOf(
-        "handlerName: 'onCueTap'",
+        "handlerName: 'onPointerSeek'",
         handlerIdx,
       );
       expect(handlerEnd, greaterThan(handlerIdx));
