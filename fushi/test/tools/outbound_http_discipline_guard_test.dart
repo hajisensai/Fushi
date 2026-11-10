@@ -128,6 +128,9 @@ const Map<String, String> kBareOutboundRegistry = <String, String>{
       '互联内容订阅客户端：目标恒为已配对 host，与 manga-OCR 客户端同一理由。',
   'fushi/lib/src/sync/interconnect_assistant_client.dart':
       '互联 AI 助手会话客户端（手机把一句话交给电脑办）：目标恒为已配对 host，与 manga-OCR 客户端同一理由。',
+  'fushi/lib/src/sync/interconnect_host_channel.dart':
+      '互联共享 host 通道（各互联 client 的传输层：明文 client 与按指纹钉扎的 IOClient）：'
+      '目标恒为已配对 host 的某条地址（含 P2P 本地转发口），与 manga-OCR 客户端同一理由。',
   'packages/fushi_server/lib/src/commands/sync_commands.dart':
       '`fushi_server sync push|pull` 聚合同步：目标恒为用户给出的已配对互联 host'
       '（https 走指纹钉扎，http 需显式允许），与 interconnect_sync_backend 同一理由。',
@@ -148,7 +151,7 @@ const Map<String, String> kBareOutboundRegistry = <String, String>{
 
 /// 登记在案的文件总数（装配点 + 豁免）。**这是自校验用的哨兵**：改清单必须同步改这个数，
 /// 光靠「新增未登记即红」挡不住「悄悄多登记一条」。
-const int kRegisteredOutboundFileCount = 31;
+const int kRegisteredOutboundFileCount = 32;
 
 /// 裸出站构造的判据。
 ///
