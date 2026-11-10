@@ -10491,7 +10491,7 @@
   "video_online_library_removed": "動画ライブラリから削除しました",
   "video_online_mining_mode": "オンライン動画のカード作成",
   "video_online_mining_mode_background": "バックグラウンドで作成",
-  "video_online_mining_mode_background_hint": "ポップアップはすぐに追加済みになり、動画はそのまま再生されます。メディアはバックグラウンドで準備して Anki に追加します。",
+  "video_online_mining_mode_background_hint": "カード作成を押すとポップアップはすぐ閉じ、動画はそのまま再生されます。メディアはバックグラウンドで準備して Anki に追加します。",
   "video_online_mining_mode_deferred": "見終わってから作成",
   "video_online_mining_mode_deferred_hint": "メディアを準備してリストに保留し、プレーヤーを閉じたときか「すべて追加」を押したときにまとめて Anki に追加します。追加前に不要なものを削除できます。",
   "video_online_services_setup_description": "任意のアカウントや API キーを設定すると、動画の識別や字幕検索を強化できます。基本的な再生には不要です。",

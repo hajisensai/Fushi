@@ -10491,7 +10491,7 @@
   "video_online_library_removed": "Removed from the video library",
   "video_online_mining_mode": "Online video mining",
   "video_online_mining_mode_background": "In the background",
-  "video_online_mining_mode_background_hint": "The popup marks the card as added right away and keeps the video going; the clip is prepared and sent to Anki in the background.",
+  "video_online_mining_mode_background_hint": "After you tap Add, the popup closes and the video keeps playing; the clip is prepared and sent to Anki in the background.",
   "video_online_mining_mode_deferred": "After watching",
   "video_online_mining_mode_deferred_hint": "Cards are prepared in the background and kept in a list; they go to Anki when you leave the player or tap Add all. Remove any you don't want first.",
   "video_online_services_setup_description": "Optional accounts and API keys can improve video identification and subtitle search. Basic playback works without them.",

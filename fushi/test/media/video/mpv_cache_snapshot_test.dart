@@ -133,21 +133,21 @@ void main() {
     });
 
     test('查词弹窗制卡：本地文件 / 无源也走后台，弹窗不等卡落地', () {
-      expect(resolve(r'D:nime.mkv'), VideoMineDispatch.background);
+      expect(resolve(r'D:\anime\01.mkv'), VideoMineDispatch.background);
       expect(resolve('file:///anime/01.mkv'), VideoMineDispatch.background);
       expect(resolve(null), VideoMineDispatch.background);
     });
 
     test('本地视频不吃「看完再制卡」偏好（那档只管在线视频）', () {
       expect(
-        resolve(r'D:nime.mkv', preferred: VideoOnlineMiningMode.deferred),
+        resolve(r'D:\anime\01.mkv', preferred: VideoOnlineMiningMode.deferred),
         VideoMineDispatch.background,
       );
     });
 
     test('遥控制卡（要真实结局）：本地等落地，网络流仍按偏好', () {
       expect(
-        resolve(r'D:nime.mkv', awaitLocal: true),
+        resolve(r'D:\anime\01.mkv', awaitLocal: true),
         VideoMineDispatch.awaitLanding,
       );
       expect(
@@ -166,7 +166,7 @@ void main() {
         VideoMineDispatch.awaitLanding,
       );
       expect(
-        resolve(r'D:nime.mkv', overwrite: true),
+        resolve(r'D:\anime\01.mkv', overwrite: true),
         VideoMineDispatch.awaitLanding,
       );
     });
