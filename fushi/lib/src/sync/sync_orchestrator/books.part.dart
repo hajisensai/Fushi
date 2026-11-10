@@ -407,42 +407,22 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
       }
       final String lockKey = syncPlaybackPositionResource(sync.kind, key);
       await syncResourceLocks.withResources(<String>{lockKey}, () async {
-        final PlaybackPosition host = await sync.remotePosition(key);
-        final PlaybackPosition local = await sync.localPosition(key);
-        final BookProgressSyncAction action = await sync.decide(
+        // 判定与落地与播放页开播共用同一份（BUG-4283）；前置条件 = 本次判定读到
+        // 的 host 位置（BUG-4279）。
+        final PlaybackPositionSyncStep step = await sync.syncOne(
           key,
-          local: local,
-          remote: host,
+          remote: await sync.remotePosition(key),
         );
-        // 前置条件 = 本次判定读到的 host 位置（BUG-4279）。
-        final List<int> expected = <int>[host.positionMs];
-        switch (action) {
-          case BookProgressSyncAction.synced:
-            await sync.alignSynced(
-              key,
-              local: local,
-              remote: host,
-              expectedRemotePositions: expected,
-            );
-          case BookProgressSyncAction.pushLocal:
-            await sync.pushLocal(
-              key,
-              local: local,
-              remote: host,
-              expectedRemotePositions: expected,
-            );
-          case BookProgressSyncAction.applyRemote:
-            await sync.applyRemote(key, host, local: local);
-          case BookProgressSyncAction.conflict:
-            report.conflicts.add(
-              SyncConflict(
-                assetKey: key,
-                dimension: sync.dimension,
-                title: titleOf(key),
-                localVersion: local.updatedAtMs,
-                remoteVersion: host.updatedAtMs,
-              ),
-            );
+        if (step.action == BookProgressSyncAction.conflict) {
+          report.conflicts.add(
+            SyncConflict(
+              assetKey: key,
+              dimension: sync.dimension,
+              title: titleOf(key),
+              localVersion: step.local.updatedAtMs,
+              remoteVersion: step.remote.updatedAtMs,
+            ),
+          );
         }
       });
     } on InterconnectHostChangedException {

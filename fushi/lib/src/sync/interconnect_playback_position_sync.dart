@@ -26,6 +26,18 @@ enum LiveReportResult {
   held,
 }
 
+/// 一条播放位置走完一次 live 三方同步的结局（[InterconnectPlaybackPositionSync.syncOne]）。
+///
+/// [local] / [remote] 是判定用的两端值；[localChanged] = 本端是否被改写（落地
+/// host 值或对齐时间戳）；[push] = 推送了本端时的 host 结论（未推送为 null）。
+typedef PlaybackPositionSyncStep = ({
+  BookProgressSyncAction action,
+  PlaybackPosition local,
+  PlaybackPosition remote,
+  bool localChanged,
+  LivePushStatus? push,
+});
+
 /// 互联播放位置的两类条目（BUG-3367）。
 enum PlaybackPositionKind { video, audiobook }
 
@@ -270,6 +282,55 @@ class InterconnectPlaybackPositionSync {
       local: local,
       remote: remote,
       basePositionMs: base,
+    );
+  }
+
+  /// 一条的完整 live 三方同步：重读本端 → [decide] → 推送 / 落地 / 对齐（BUG-4283）。
+  ///
+  /// sweep（`SyncOrchestrator._syncPositionsLive`）与播放页开播
+  /// （[InterconnectRemotePlaybackSession.startPositionFor]）共用这一份，开播不再另走
+  /// 一套 LWW。[remote] 是调用方刚从绑定的 host 读到的值，同时作推送的前置条件
+  /// （BUG-4279）。冲突时两端都不写，由调用方上报。调用方须已持有该条目的
+  /// [syncPlaybackPositionResource] 锁。
+  Future<PlaybackPositionSyncStep> syncOne(
+    String key, {
+    required PlaybackPosition remote,
+  }) async {
+    final PlaybackPosition local = await localPosition(key);
+    final BookProgressSyncAction action = await decide(
+      key,
+      local: local,
+      remote: remote,
+    );
+    final List<int> expected = <int>[remote.positionMs];
+    bool localChanged = false;
+    LivePushStatus? push;
+    switch (action) {
+      case BookProgressSyncAction.synced:
+        localChanged = await alignSynced(
+          key,
+          local: local,
+          remote: remote,
+          expectedRemotePositions: expected,
+        );
+      case BookProgressSyncAction.pushLocal:
+        push = (await pushLocal(
+          key,
+          local: local,
+          remote: remote,
+          expectedRemotePositions: expected,
+        )).status;
+      case BookProgressSyncAction.applyRemote:
+        localChanged = await applyRemote(key, remote, local: local);
+      case BookProgressSyncAction.conflict:
+        break;
+    }
+    return (
+      action: action,
+      local: local,
+      remote: remote,
+      localChanged: localChanged,
+      push: push,
     );
   }
 
@@ -667,16 +728,8 @@ class LivePositionReporter {
       await _sendWith(bound, key, live);
     } on InterconnectHostChangedException {
       // 会话换了 host（BUG-4281）：抛出点在发请求之前，这个值没到任何 host。换一个
-      // 绑到新 host 的实例（held 记的是旧 host 的基线，一并作废），按新 host 的基线
-      // 把这个值重新判定一次。
-      if (identical(_sync, bound)) {
-        _sync = InterconnectPlaybackPositionSync(
-          db: _db,
-          backend: backend,
-          kind: _kind,
-        );
-        _held.clear();
-      }
+      // 绑到新 host 的实例，按新 host 的基线把这个值重新判定一次。
+      _rebind(bound);
       try {
         await _sendWith(_sync, key, live);
       } catch (e) {
@@ -685,6 +738,18 @@ class LivePositionReporter {
     } catch (e) {
       debugPrint('[sync] live position report "$key" failed: $e');
     }
+  }
+
+  /// [bound] 绑的 host 已不是会话所连的 host（BUG-4281）：换一个新实例（下次用到时
+  /// 绑到新 host）。held 记的是旧 host 的基线，一并作废。
+  void _rebind(InterconnectPlaybackPositionSync bound) {
+    if (!identical(_sync, bound)) return;
+    _sync = InterconnectPlaybackPositionSync(
+      db: _db,
+      backend: backend,
+      kind: _kind,
+    );
+    _held.clear();
   }
 
   Future<void> _sendWith(
@@ -702,4 +767,90 @@ class LivePositionReporter {
       _held[key] = r.baseline;
     }
   }
+}
+
+/// 一个互联远端视频播放会话（BUG-4283）：每一集载入时的开播判定 + 实时上报。
+///
+/// 此前播放页开播用本地 prefs 与 host 清单值做「取较新时间戳」（LWW），不读基线、
+/// 不判冲突；合集切成员 / 换集只读本地 prefs。之后的实时上报把这次未经三方判定的
+/// 选择当作两端一致的起点。这里让每一集载入（首开、合集切成员、单视频重载）都在
+/// 该条位置锁里现读钉住的 host、跑与 sweep 同一份
+/// [InterconnectPlaybackPositionSync.syncOne]，开播位置按三方结论取。
+///
+/// 开播与上报共用 [LivePositionReporter] 里绑定的同一个同步实例：两者落同一台 host
+/// 的基线作用域，开播判成冲突时上报器据此 held（见 [startPositionFor]）。
+class InterconnectRemotePlaybackSession {
+  InterconnectRemotePlaybackSession({
+    required FushiDatabase db,
+    required this.backend,
+  }) : _reporter = LivePositionReporter(
+         db: db,
+         backend: backend,
+         kind: PlaybackPositionKind.video,
+       );
+
+  /// 会话所用的互联客户端；播放页换了远端客户端就换一个会话。
+  final InterconnectSyncBackend backend;
+  final LivePositionReporter _reporter;
+
+  /// 第 [key] 条（视频 uid / 合集成员 id）载入时的开播位置。
+  ///
+  /// 在该条位置锁内用带 pin 的 GET 现读 host，跑 [InterconnectPlaybackPositionSync.syncOne]：
+  /// - `applyRemote` 且落地 → host 位置；本端在判定后被改写（CAS 未落地）→ 重读本端；
+  /// - `pushLocal` / `synced` → 本端位置；
+  /// - `conflict` → 本端位置（本机断点不被播放器覆盖），并让上报器对该条 held 在当时
+  ///   的基线上：本次播放不向 host 上报，冲突留给弹窗；sweep / 弹窗裁决改了基线后
+  ///   上报自动恢复。
+  ///
+  /// 网络失败 / 会话换了 host 时返回 [fallbackMs]（离线照常能播），之后的上报照
+  /// [InterconnectPlaybackPositionSync.reportLive] 的规则走。
+  Future<int> startPositionFor(String key, {required int fallbackMs}) async {
+    final InterconnectPlaybackPositionSync sync = _reporter._sync;
+    try {
+      return await syncResourceLocks.withResources(<String>{
+        syncPlaybackPositionResource(sync.kind, key),
+      }, () => _startPositionLocked(sync, key));
+    } on InterconnectHostChangedException catch (e) {
+      _reporter._rebind(sync);
+      debugPrint('[sync] remote playback start "$key": $e');
+      return fallbackMs;
+    } catch (e) {
+      debugPrint('[sync] remote playback start "$key" failed: $e');
+      return fallbackMs;
+    }
+  }
+
+  Future<int> _startPositionLocked(
+    InterconnectPlaybackPositionSync sync,
+    String key,
+  ) async {
+    final PlaybackPosition remote = await sync.remotePosition(key);
+    final PlaybackPositionSyncStep step = await sync.syncOne(
+      key,
+      remote: remote,
+    );
+    final int start;
+    switch (step.action) {
+      case BookProgressSyncAction.applyRemote:
+        start = step.localChanged
+            ? remote.positionMs
+            : (await sync.localPosition(key)).positionMs;
+      case BookProgressSyncAction.pushLocal:
+      case BookProgressSyncAction.synced:
+        start = step.local.positionMs;
+      case BookProgressSyncAction.conflict:
+        _reporter._held[key] = await sync.baseline(key);
+        return step.local.positionMs < 0 ? 0 : step.local.positionMs;
+    }
+    // 这一条已按三方结论收敛：此前（同一会话里上一次载入）的 held 作废。
+    _reporter._held.remove(key);
+    return start < 0 ? 0 : start;
+  }
+
+  /// 实时上报（播放页节流回调）；语义见 [LivePositionReporter.report]。
+  Future<void> report(String key, PlaybackPosition live) =>
+      _reporter.report(key, live);
+
+  /// 不再接受新上报；语义见 [LivePositionReporter.close]。
+  void close() => _reporter.close();
 }
