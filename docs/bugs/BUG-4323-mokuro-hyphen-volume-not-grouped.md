@@ -1,0 +1,12 @@
+## BUG-4323 · mokuro.moe 连字符卷号不归组、本地改名不参与归组
+- **报告**：2026-11-09（应用内反馈 vECncM6f8Y，macOS 3.3.0-debug.24997）
+- **真实性**：✅ 真 bug，沿代码路径确认，两个独立根因：
+  - 连字符卷号不认：mokuro.moe 内置下载的卷名是连字符 slug（`Karakai-Jouzu-Takagi-san-02`），`fushi/lib/src/media/manga/online/mokuro_moe_volume_downloader.dart:138-144` `volumeTitle` 在卷名不含系列名时拼成 `Karakai Jouzu no Takagi-san Karakai-Jouzu-Takagi-san-02`。`packages/fushi_engine/lib/media/collections/book_series_key.dart:36-41` `_volumeSuffix` 的卷号分隔只有空白 / `第` / `vol` / `v` / `#` / `(` / 非 ASCII 后贴数字，单独一个 `-` 后跟数字一项都不匹配，整串当系列名，每卷系列键各不相同，`BookSeriesGrouper` 不归组。
+  - 改名不参与归组：书架「重命名」写的是显示名覆盖层（偏好 `override_title://…`，`MediaSource.setOverrideTitleFromMediaItem`），`epub_books.title` 不变；`packages/fushi_engine/lib/media/collections/book_series_grouper.dart` `_loadVolumes` 只读 `book.title` 原名，所以用户改成 `… 2` 之后重载 / 重启都不归组。
+  - 「本地改名不改网盘目录名」不是 bug：目录名就是书的身份 key（由原书名经 `sanitizeTtuFilename` 得来，冻结），改名只是覆盖显示名。
+- **[x] ① 已修复** —
+  - `_volumeSuffix` 加一种卷号分隔：紧跟在字母、`)` / `]` 或非 ASCII 字符后的一个 `-` / `_`（`…-02`、`Series_02`、`志乃と恋-4`）；数字后的 `-`（`2-02`）、字母贴数字（`Catch22`）、纯数字（`86`）照旧不当卷号。`Spider-Man-2099` 会读成第 2099 卷，与原来就会这样读的 `Spider-Man 2099` 一致；归组要求同系列 ≥2 卷，单本不受影响。
+  - `BookSeriesGrouper._loadVolumes` 按「改名覆盖 ?? 原名」解析系列（`readOverrideTitlesByBookKey`，与互联 host 下发显示名同一份查询），合集名、卷序都按书架上看到的名字。
+  - `MokuroMoeVolumeDownloader.volumeTitle`：卷名只是系列名的 slug + 卷号（前缀每个拉丁词都在系列名里）时规整成 `<系列> <卷号>`（`Karakai Jouzu no Takagi-san 02`）；其余照旧口径。书名就是身份 key，已入库的卷不改名：`legacyVolumeTitle` 保留旧口径，下载器导入前先认旧名（已在库 → `skippedExisting`），目录页「已在库」也认新旧两种 key（`volumeTitleCandidates`）。
+- **[x] ② 已加自动化测试** — `fushi/test/media/collections/book_series_grouper_test.dart`（连字符卷号正反例、两卷 mokuro 旧口径标题归组 + 单本 `Spider-Man-2099` 不建合集、改名覆盖参与归组）；`fushi/test/media/manga/online/mokuro_moe_downloader_test.dart`（`volumeTitle` 规整 / 不规整、旧口径已在库不重复入库、新卷按规整名入库）。
+- **备注**：测试未在本分支运行，统一在合并后验证。已按旧口径入库的卷书名不变，靠第一条根因的修复归组（合集名会带 slug，`Karakai Jouzu no Takagi-san Karakai-Jouzu-Takagi-san`），用户可改合集名或给各卷改名（第二条修复让改名生效）。
