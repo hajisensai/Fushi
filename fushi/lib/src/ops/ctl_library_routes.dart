@@ -933,8 +933,8 @@ class _LibraryCtlHandlers {
         SourceLibraryKind.book => _kindVisible(LibraryCtlKind.book),
         SourceLibraryKind.video => _kindVisible(LibraryCtlKind.video),
         SourceLibraryKind.manga => _kindVisible(LibraryCtlKind.manga),
-        // ctl 没有音乐库命令（见 ctl_library_manage_routes 的加来源分支），不列出。
-        SourceLibraryKind.music || null => false,
+        // ctl 没有音乐 / 游戏库命令（见 ctl_library_manage_routes 的加来源分支），不列出。
+        SourceLibraryKind.music || SourceLibraryKind.game || null => false,
       };
 
   Future<List<MediaSourceRow>> _sources(CtlCall call) async {
