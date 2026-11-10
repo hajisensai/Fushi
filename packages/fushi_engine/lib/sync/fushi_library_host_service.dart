@@ -617,6 +617,7 @@ class RemoteBookInfo {
     this.format = 'epub',
     this.hasMangaContent = false,
     this.hasMangaChapters = false,
+    this.hasPdfContent = false,
     this.mangaReadingMode,
     this.mangaReaderOverrides = const <String, Object?>{},
     this.mangaReaderOverrideUpdatedAt = 0,
@@ -642,6 +643,18 @@ class RemoteBookInfo {
   /// 识就当 false（行为与从前一致），新 client 据此把它当多章在线作品加进本机书架，
   /// 章节表走 `/api/library/manga/<bookKey>/manifest` 的 `chapters`。
   final bool hasMangaChapters;
+
+  /// PDF 原件可下载（format=='pdf' 且 host 书目录里的 PDF 文件在盘上，判据
+  /// `hasExportablePdfContent`，见 pdf_sync_package.dart；反馈 Jq1_ujHa4t）。与 [hasContent] **分键**的理由同
+  /// [hasMangaContent]：旧 client 只认 hasContent、会拿 EpubImporter 吃下载到的
+  /// 字节，所以 PDF 对它保持 false（看不到即不出错）；新 client 据此在书架渲染远端
+  /// 占位卡，走同一 books 端点下载 PDF 原件、按内容嗅探交 PDF 导入器落库。
+  /// additive 键 `hasPdfContent`：旧 host 不发 → false（行为与从前一致）。
+  final bool hasPdfContent;
+
+  /// 书架（非漫画架）上能以占位卡出现并下载落地的书：EPUB 内容树或 PDF 原件。
+  /// 书架远端列表、首页「继续」、同步对比弹窗共用这一条判据（一处漏判 = 死路卡）。
+  bool get hasBookShelfContent => hasContent || hasPdfContent;
 
   /// host 端该漫画的按本阅读模式（`EpubBooks.mangaReadingMode`；null = 跟随自动
   /// 判定）。additive；下载落地时作为初始值带过来（无持续 LWW——列无时间戳，
@@ -767,6 +780,7 @@ class RemoteBookInfo {
     if (format != 'epub') 'format': format,
     if (hasMangaContent) 'hasMangaContent': true,
     if (hasMangaChapters) 'hasMangaChapters': true,
+    if (hasPdfContent) 'hasPdfContent': true,
     if (_isNonEmpty(mangaReadingMode)) 'mangaReadingMode': mangaReadingMode,
     if (mangaReaderOverrides.isNotEmpty || mangaReaderOverrideDeleted)
       'mangaReaderOverrides': mangaReaderOverrides,
@@ -795,6 +809,7 @@ class RemoteBookInfo {
     String? format,
     bool? hasMangaContent,
     bool? hasMangaChapters,
+    bool? hasPdfContent,
     String? mangaReadingMode,
     Map<String, Object?>? mangaReaderOverrides,
     int? mangaReaderOverrideUpdatedAt,
@@ -821,6 +836,7 @@ class RemoteBookInfo {
     format: format ?? this.format,
     hasMangaContent: hasMangaContent ?? this.hasMangaContent,
     hasMangaChapters: hasMangaChapters ?? this.hasMangaChapters,
+    hasPdfContent: hasPdfContent ?? this.hasPdfContent,
     mangaReadingMode: mangaReadingMode ?? this.mangaReadingMode,
     mangaReaderOverrides: mangaReaderOverrides ?? this.mangaReaderOverrides,
     mangaReaderOverrideUpdatedAt:
@@ -866,6 +882,7 @@ class RemoteBookInfo {
       format: _jsonString(json['format']) ?? 'epub',
       hasMangaContent: json['hasMangaContent'] == true,
       hasMangaChapters: json['hasMangaChapters'] == true,
+      hasPdfContent: json['hasPdfContent'] == true,
       mangaReadingMode: _jsonString(json['mangaReadingMode']),
       mangaReaderOverrides: _jsonObjectMap(json['mangaReaderOverrides']),
       mangaReaderOverrideUpdatedAt: _jsonNonNegativeInt(
@@ -3268,6 +3285,18 @@ abstract interface class TagSyncHost {
 
   /// 把 client 上报的标签清单按 LWW 并入 host DB，返回并入后的 host 清单。
   Future<TagManifest> mergeTagManifest(TagManifest incoming);
+}
+
+/// host 端「能否收下对端推来的 PDF 书」的**可选**能力（反馈 Jq1_ujHa4t）。
+///
+/// 与 [TagSyncHost] 同范式（server 用 `is` 探测、不扩大主接口），但多一层运行时
+/// 判断：同一个 `LocalLibraryHostService` 在 app 里接了 PDF 导入器（pdfrx 量页数 /
+/// 渲染封面），在无头服务端则没有——能力位 `liveLibrary.pdfBooks` 取
+/// [acceptsPdfBooks]。client 只在它为 true 时才推 PDF，否则 PDF 留在本机，不往收不
+/// 下的 host 白传一遍再收 500。
+abstract interface class PdfBookImportHost {
+  /// 这台 host 能否把推来的 PDF 原件导入书库。
+  bool get acceptsPdfBooks;
 }
 
 /// host 端「作品图谱清单」的**可选**能力（互联作品图谱同步，`media_link_sync.dart`）。
