@@ -158,6 +158,7 @@ abstract class _LocalLibraryHostBase
         AudiobookContentRevisionHost,
         VideoSubtitleDefaultHost,
         VideoSubtitleClearHost,
+        VideoSidecarSubtitleListHost,
         InterconnectServiceConfigHost,
         InterconnectProfileHost,
         VideoMetadataHost,
