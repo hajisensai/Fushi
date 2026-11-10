@@ -12,9 +12,13 @@
 /// [discoveryDownloadProgress]），两处说法逐字一致。
 library;
 
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/media/discovery/discovery_download_tasks_section.dart'
     show discoveryDownloadProgress, discoveryDownloadStatusLabel;
+import 'package:fushi/src/media/discovery/download_gateway_challenge_page.dart'
+    show openDownloadGatewayChallengeInBrowser;
 import 'package:fushi/src/models/app_model.dart' show appProvider;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -138,6 +142,17 @@ class _InlineStatus extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
+              if (failed && task.challengeUrl != null)
+                FushiIconButton(
+                  key: const ValueKey<String>(
+                    'discovery-inline-status-challenge-browser',
+                  ),
+                  icon: Icons.open_in_browser,
+                  tooltip: t.discovery_download_challenge_open_browser,
+                  onTap: () => unawaited(
+                    openDownloadGatewayChallengeInBrowser(task.challengeUrl!),
+                  ),
+                ),
               if (failed)
                 FushiIconButton(
                   key: const ValueKey<String>('discovery-inline-status-retry'),
