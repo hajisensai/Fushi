@@ -8,10 +8,12 @@
 /// manifest.json                 格式标记、创建时间、数据库 schema、是否含 documents/
 /// config/fushi_server.yaml      配置文件（含 admin_token / 凭据——备份文件要当密钥保管）
 /// data/support/fushi.db         数据库：`VACUUM INTO` 出的一致快照（serve 在跑也安全）
+/// data/support/srs.db           复习库（有才带）：Rust `VACUUM INTO` 的一致快照，设备本地表照留
+///                               （整机还原是同一台设备，同步游标 / 设备 id 要原样回来）
 /// data/<其余数据目录文件>        互联身份 / TLS / 配对、词典、任务、寄存的配置方案……
 /// ```
 ///
-/// 不进包：`tmp/`、`logs/`、`backups/`（备份自己）、数据目录锁文件、主库的
+/// 不进包：`tmp/`、`logs/`、`backups/`（备份自己）、数据目录锁文件、主库与复习库的
 /// `-wal` / `-shm` / `-journal`（快照已含）。`documents/`（书 / 封面 / 有声书 / 下载）
 /// 体积大，可用 `includeDocuments: false` 跳过——只剩设置与状态，还原后库里的条目会
 /// 指向缺失的文件，需要重新扫描 / 下载。
@@ -28,9 +30,11 @@ import 'dart:isolate';
 import 'package:archive/archive_io.dart';
 import 'package:drift/native.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/srs/srs_storage.dart' show kSrsDatabaseFileName;
 import 'package:fushi_engine/utils/archive/native_zip.dart';
 import 'package:fushi_server/src/config/server_config.dart';
 import 'package:fushi_server/src/server_data_lock.dart';
+import 'package:fushi_srs/fushi_srs.dart' show SrsCore;
 import 'package:path/path.dart' as p;
 
 /// manifest 里的格式标记。
@@ -54,13 +58,26 @@ const Set<String> _excludedTopLevel = <String>{
 /// 数据目录下存放 admin API 生成的备份的子目录。
 const String kServerBackupDirName = 'backups';
 
-/// 主库及其伴生文件（快照替代它们）。
+/// 主库、复习库及其伴生文件（快照替代它们）。
 final Set<String> _liveDbFiles = <String>{
-  fushiDatabaseFileName,
-  '$fushiDatabaseFileName-wal',
-  '$fushiDatabaseFileName-shm',
-  '$fushiDatabaseFileName-journal',
+  for (final String db in <String>[fushiDatabaseFileName, kSrsDatabaseFileName])
+    for (final String suffix in <String>['', '-wal', '-shm', '-journal'])
+      '$db$suffix',
 };
+
+/// 把复习库一致地快照到 [path]（必须不存在）。serve 在跑时由 `ServerSrs.snapshotInto` 走它那份打开的连接。
+typedef ServerSrsSnapshot = Future<void> Function(String path);
+
+/// 没有在跑的复习库连接时（离线 `backup create`）：临时打开 srs.db 快照完就关。
+Future<void> _snapshotSrsOffline(String source, String path) =>
+    Isolate.run<void>(() {
+      final SrsCore core = SrsCore.open(source);
+      try {
+        core.snapshotInto(path, stripDeviceLocal: false);
+      } finally {
+        core.close();
+      }
+    });
 
 class ServerBackupException implements Exception {
   const ServerBackupException(this.message);
@@ -134,13 +151,15 @@ int currentServerSchemaVersion() {
 /// 生成一份备份到 [output]（先写 `.partial`，成功后改名）。返回写出的文件。
 ///
 /// [db] 是正在用的库（serve 在跑时就是它那份连接）：`VACUUM INTO` 在它上面跑，
-/// 得到一致快照，不用停服。
+/// 得到一致快照，不用停服。复习库同理：[snapshotSrs] 给了（serve 在跑、复习库开着）就走那份连接，
+/// 否则 `support/srs.db` 存在时临时打开它出快照。
 Future<File> createServerBackup({
   required FushiDatabase db,
   required String dataDir,
   required File? configFile,
   required File output,
   bool includeDocuments = true,
+  ServerSrsSnapshot? snapshotSrs,
   DateTime? now,
 }) async {
   final Directory data = Directory(dataDir);
@@ -149,13 +168,25 @@ Future<File> createServerBackup({
   final File snapshot = File(
     p.join(scratch.path, 'backup-${DateTime.now().microsecondsSinceEpoch}.db'),
   );
+  final File srsSnapshot = File('${snapshot.path}.srs');
+  final File liveSrs = File(p.join(dataDir, 'support', kSrsDatabaseFileName));
   final File partial = File('${output.path}.partial');
   try {
     await db.customStatement(
       "VACUUM INTO '${snapshot.path.replaceAll("'", "''")}'",
     );
+    bool hasSrs = false;
+    if (snapshotSrs != null) {
+      await snapshotSrs(srsSnapshot.path);
+      hasSrs = true;
+    } else if (liveSrs.existsSync()) {
+      await _snapshotSrsOffline(liveSrs.path, srsSnapshot.path);
+      hasSrs = true;
+    }
     final Map<String, String> entries = <String, String>{
       '${_dataPrefix}support/$fushiDatabaseFileName': snapshot.path,
+      if (hasSrs)
+        '${_dataPrefix}support/$kSrsDatabaseFileName': srsSnapshot.path,
       for (final MapEntry<String, String> e in _dataFiles(
         data,
         includeDocuments: includeDocuments,
@@ -185,6 +216,7 @@ Future<File> createServerBackup({
     return await partial.rename(output.path);
   } finally {
     if (snapshot.existsSync()) await snapshot.delete();
+    if (srsSnapshot.existsSync()) await srsSnapshot.delete();
     if (partial.existsSync()) await partial.delete();
   }
 }

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # 下载 RWKV-Instant 权重到 native/fushi_rwkv/model/ 并校验 SHA-256。
 #   大模型 RWKV_trained_on_5000_10000.bin（~11 MB，AGPL，见 UPSTREAM.md）
-#   小模型发布包 sm56-package.zip（~5.6 MB：weights.int8.bin / weights.f32.bin / 黄金测试向量；
-#   许可尚未声明，见 README.md「小模型」）
+#   小模型 sm72e25（无泄漏 SM72、第 25 轮起降温）：int8 / f32 权重、architecture.json、黄金测试向量
+#   （共 ~2.1 MB，钉 JSchoreels/anki 的提交，AGPL；见 README.md「小模型」）
 # 都不入库。
 #
 # 用法: fetch_model.sh [目标目录]
@@ -56,6 +56,14 @@ fetch_pinned "$BIG" 749ad1ad18d5b6ef8c4185802fa0c1e4a14e67cd7874f3efeaae355fffb1
   "https://raw.githubusercontent.com/Pedrubik2000/kuma3-anki-core/c639bcec696f2317f9bb9a736d433b9d6c0d9c56/qt/aqt/rwkv_inference/$BIG" \
   "https://raw.githubusercontent.com/JSchoreels/anki/0dd75c5f8fa4ea3543f5a3559870e8aea047bf80/qt/aqt/rwkv_inference/$BIG"
 
-# 小模型：GitHub release 资产；SHA-256 同 src/lib.rs 的 SMALL_MODEL_PACKAGE_SHA256。
-fetch_pinned sm56-package.zip 7b1790f49fdabf1279510247cc9bc3bf3ac461b67cf0135ab8e51589b5efe71a \
-  "https://github.com/JSchoreels/anki-rwkv/releases/download/small-model-sm56-2026-10-24/sm56-package.zip"
+# 小模型 sm72e25：钉 JSchoreels/anki 的提交（同 src/lib.rs 的 SMALL_MODEL_SOURCE_SHA）；
+# SHA-256 同 src/lib.rs 的 SMALL_MODEL_*_SHA256（与该提交的 manifest.json 一致）。
+SMALL="https://raw.githubusercontent.com/JSchoreels/anki/986963d23e7ec9f22771c38998ef9042214c2b98"
+fetch_pinned sm72e25_weights.int8.bin ff626af2e974346ed282615d190500148b22cfe05cbfd081b1e70d5a1dfa3cd9 \
+  "$SMALL/qt/aqt/rwkv_inference/sm72e25/weights.int8.bin"
+fetch_pinned sm72e25_weights.f32.bin 42b79e35ad78bf291817cb48979f48fd105b39fc43b6a5ca954938d3f25cf261 \
+  "$SMALL/qt/aqt/rwkv_inference/sm72e25/weights.f32.bin"
+fetch_pinned sm72e25_architecture.json 9bd41f1189dc0113277d371223ce805612aaec07101804160fe86312eed15de3 \
+  "$SMALL/qt/aqt/rwkv_inference/sm72e25/architecture.json"
+fetch_pinned sm72e25-vectors.json.gz db54656bc41a22a175d2b905304d45e6ae6b0bb4efd1af8dfce9185f40ee1a01 \
+  "$SMALL/rslib/src/rwkv/testdata/sm72e25-vectors.json.gz"

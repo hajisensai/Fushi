@@ -38,6 +38,7 @@ import 'package:fushi_engine/sync/subscriptions/host_subscription_host.dart';
 import 'package:fushi_engine/sync/subscriptions/host_subscription_routes.dart'
     show HostSubscriptionRejected;
 import 'package:fushi_server/src/admin/admin_backups.dart';
+import 'package:fushi_server/src/admin/admin_srs.dart';
 import 'package:fushi_server/src/admin/admin_context.dart';
 import 'package:fushi_server/src/admin/resource_indexer_settings.dart';
 import 'package:fushi_server/src/anki_landing.dart';
@@ -117,6 +118,9 @@ class AdminApi {
   /// 整机备份端点（`/api/admin/backups*`，见 admin_backups.dart）。
   late final AdminBackups backups = AdminBackups(ctx);
 
+  /// 复习（SRS）端点（`/api/admin/srs*`，见 admin_srs.dart）。
+  late final AdminSrs srs = AdminSrs(ctx);
+
   Future<shelf.Response> _route(
     String method,
     String path,
@@ -124,6 +128,10 @@ class AdminApi {
   ) async {
     if (path.startsWith(kAdminBackupsPath)) {
       final shelf.Response? r = await backups.route(method, path, request);
+      if (r != null) return r;
+    }
+    if (path == kAdminSrsPath || path.startsWith('$kAdminSrsPath/')) {
+      final shelf.Response? r = await srs.route(method, path, request);
       if (r != null) return r;
     }
     switch ((method, path)) {
@@ -1366,6 +1374,8 @@ class AdminApi {
     'profileTransfer': ctx.config.profileTransfer,
     'remoteUpdate': ctx.config.remoteUpdate,
     'leaderboardLink': ctx.config.leaderboardLink,
+    // 简繁互查：只管没自带开关的请求方（浏览器扩展 / 旧客户端）；保存即生效。
+    'lookupChineseScriptVariants': ctx.config.lookupChineseScriptVariants,
     // 与 qBittorrent 密码同样只报「设过没有」，不回显明文。
     'tmdbApiKeySet': (ctx.config.tmdbApiKey ?? '').isNotEmpty,
     'ffmpeg': ctx.config.ffmpegPath,
@@ -1441,6 +1451,7 @@ class AdminApi {
       'profileTransfer',
       'remoteUpdate',
       'leaderboardLink',
+      'lookupChineseScriptVariants',
     ]) {
       if (body[key] != null && body[key] is! bool) {
         throw FormatException('$key must be a boolean');
@@ -1494,6 +1505,7 @@ class AdminApi {
       profileTransfer: body['profileTransfer'] as bool?,
       remoteUpdate: body['remoteUpdate'] as bool?,
       leaderboardLink: body['leaderboardLink'] as bool?,
+      lookupChineseScriptVariants: body['lookupChineseScriptVariants'] as bool?,
       // 空串 = 不改（与 qBittorrent 密码同口径：表单不回显旧值）。
       tmdbApiKey: (body['tmdbApiKey'] ?? '').toString().trim().isEmpty
           ? null

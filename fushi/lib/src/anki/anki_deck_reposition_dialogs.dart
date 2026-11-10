@@ -81,6 +81,8 @@ class _RepositionDialogState extends State<_RepositionDialog> {
 
   AnkiDeckRepositionRunner get _runner => widget.viewModel.deckRepositionRunner;
 
+  bool get _srsTarget => widget.viewModel.repositionTargetsSrs;
+
   @override
   void initState() {
     super.initState();
@@ -220,7 +222,12 @@ class _RepositionDialogState extends State<_RepositionDialog> {
                   ? null
                   : (bool v) => setState(() => _rareFirst = v),
             ),
-            Text(t.anki_reposition_gather_order_hint, style: hintStyle),
+            Text(
+              _srsTarget
+                  ? t.anki_reposition_srs_order_hint
+                  : t.anki_reposition_gather_order_hint,
+              style: hintStyle,
+            ),
             if (_snapshot != null) ...<Widget>[
               const FushiDividerControl(height: 24),
               AdaptiveSettingsRow(
@@ -334,6 +341,7 @@ class _RepositionDialogState extends State<_RepositionDialog> {
       final AnkiRepositionPlan? plan =
           await runAnkiRepositionWithProgress<AnkiRepositionPlan?>(
             context,
+            srsTarget: _srsTarget,
             (
               AnkiRepositionOnProgress onProgress,
               bool Function() shouldCancel,
@@ -366,6 +374,7 @@ class _RepositionDialogState extends State<_RepositionDialog> {
       final AnkiRepositionOutcome? outcome =
           await runAnkiRepositionWithProgress<AnkiRepositionOutcome>(
             context,
+            srsTarget: _srsTarget,
             (AnkiRepositionOnProgress onProgress, bool Function() _) =>
                 _runner.apply(plan, onProgress: onProgress),
             cancellable: false,
@@ -421,6 +430,7 @@ class _RepositionDialogState extends State<_RepositionDialog> {
       final AnkiRepositionUndoOutcome? outcome =
           await runAnkiRepositionWithProgress<AnkiRepositionUndoOutcome>(
             context,
+            srsTarget: _srsTarget,
             (AnkiRepositionOnProgress onProgress, bool Function() _) {
               onProgress(
                 const AnkiRepositionProgress(stage: AnkiRepositionStage.write),
@@ -471,6 +481,7 @@ Future<T?> runAnkiRepositionWithProgress<T>(
   )
   task, {
   bool cancellable = true,
+  bool srsTarget = false,
 }) async {
   final ValueNotifier<AnkiRepositionProgress?> progress =
       ValueNotifier<AnkiRepositionProgress?>(null);
@@ -490,7 +501,10 @@ Future<T?> runAnkiRepositionWithProgress<T>(
             title: Text(t.anki_reposition_progress_title),
             content: SizedBox(
               width: 360,
-              child: _RepositionProgressBody(progress: progress),
+              child: _RepositionProgressBody(
+                progress: progress,
+                srsTarget: srsTarget,
+              ),
             ),
             actions: <Widget>[
               if (cancellable)
@@ -543,9 +557,13 @@ Future<T?> runAnkiRepositionWithProgress<T>(
 }
 
 class _RepositionProgressBody extends StatelessWidget {
-  const _RepositionProgressBody({required this.progress});
+  const _RepositionProgressBody({
+    required this.progress,
+    required this.srsTarget,
+  });
 
   final ValueNotifier<AnkiRepositionProgress?> progress;
+  final bool srsTarget;
 
   @override
   Widget build(BuildContext context) {
@@ -554,14 +572,10 @@ class _RepositionProgressBody extends StatelessWidget {
       builder: (BuildContext context, AnkiRepositionProgress? p, Widget? _) {
         final bool determinate =
             p != null && p.stage == AnkiRepositionStage.rank && p.total > 0;
-        final String label = switch (p?.stage) {
-          null || AnkiRepositionStage.fetch => t.anki_reposition_progress_fetch,
-          AnkiRepositionStage.rank => t.anki_reposition_progress_rank(
-            done: p!.done,
-            total: p.total,
-          ),
-          AnkiRepositionStage.write => t.anki_reposition_progress_write,
-        };
+        final String label = ankiRepositionProgressLabel(
+          p,
+          srsTarget: srsTarget,
+        );
         return Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -577,6 +591,22 @@ class _RepositionProgressBody extends StatelessWidget {
     );
   }
 }
+
+/// 进度弹窗的阶段文案。[srsTarget] = 重排的是 Fushi 复习的牌组（没有 Anki 参与）。
+String ankiRepositionProgressLabel(
+  AnkiRepositionProgress? p, {
+  required bool srsTarget,
+}) => switch (p?.stage) {
+  null || AnkiRepositionStage.fetch =>
+    srsTarget
+        ? t.anki_reposition_progress_fetch_srs
+        : t.anki_reposition_progress_fetch,
+  AnkiRepositionStage.rank => t.anki_reposition_progress_rank(
+    done: p!.done,
+    total: p.total,
+  ),
+  AnkiRepositionStage.write => t.anki_reposition_progress_write,
+};
 
 /// 预览：汇总 + 前若干条（位置 / 表达式 / rank）。返回 true = 用户点了执行。
 Future<bool> showAnkiRepositionPreviewDialog(

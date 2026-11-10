@@ -30,7 +30,8 @@
 # libtorrent 的 .so；Windows 是 vcpkg 出的 DLL + 3 个运行时 DLL）、onnxruntime 1.22.0
 # CPU 版、互联 P2P 隧道 fushi_p2p（Rust/iroh，只依赖 libc）、SRS 排程内核 fushi_fsrs
 # （Rust/fsrs-rs，只依赖 libc）、计算内核 fushi_compute（Rust，只依赖 libc，硬依赖）、RWKV-Instant
-# 排程推理 fushi_rwkv（Rust，只依赖 libc，硬依赖，AGPL-3.0-or-later）。目标机不需要任何
+# 排程推理 fushi_rwkv（Rust，只依赖 libc，硬依赖，AGPL-3.0-or-later）、词典引擎 fushidicts
+# （C++；两个平台都随包，变形表放 share/fushi/transforms）。目标机不需要任何
 # libtorrent / ssl 运行库（README「安装」）。
 name: release-server
 
@@ -602,6 +603,41 @@ jobs:
           Expand-Archive -Path $zip -DestinationPath "$env:RUNNER_TEMP/ort" -Force
           Copy-Item "$env:RUNNER_TEMP/ort/onnxruntime-win-x64-$env:ORT_VERSION/lib/onnxruntime.dll" $lib -Force
           Get-ChildItem build/fushi_server_win/bundle -Recurse | Select-Object FullName, Length
+      # 词典引擎 fushidicts_ffi.dll：同 linux job，服务端查词按 bin/../lib/ 定位、变形表按
+      # bin/../share/fushi/transforms 定位。此前 Windows 包漏了这一步，互联查词在 Windows
+      # 服务端上不可用（启动日志「fushidicts 原生库加载失败 … error code: 126」）。
+      # 编法同 native-fushidicts-gate.yml 的 ctest-msvc：VS 生成器（不用先 source vcvars），
+      # 构建目录放 RUNNER_TEMP 短路径（深路径撞 CMAKE_OBJECT_PATH_MAX）。运行库同 torrent
+      # DLL / app：动态 MSVC 运行库（VC++ 运行库）。失败即 job 失败，不发缺查词能力的包。
+      - name: Build and bundle fushidicts (Windows x64)
+        shell: pwsh
+        run: |
+          $build = "$env:RUNNER_TEMP\fushidicts"
+          cmake -S native/fushidicts -B $build -G "Visual Studio 17 2022" -A x64
+          if ($LASTEXITCODE -ne 0) { throw "fushidicts cmake configure failed ($LASTEXITCODE)" }
+          cmake --build $build --config Release --target fushidicts_ffi
+          if ($LASTEXITCODE -ne 0) { throw "fushidicts cmake build failed ($LASTEXITCODE)" }
+          $lib = "build/fushi_server_win/bundle/lib/fushidicts_ffi.dll"
+          Copy-Item "$build/Release/fushidicts_ffi.dll" $lib -Force
+          $env:DICTS_LIB = (Resolve-Path $lib).Path
+          @'
+          import ctypes
+          import os
+          lib = ctypes.CDLL(os.environ["DICTS_LIB"])
+          lib.fushidicts_create.restype = ctypes.c_void_p
+          lib.fushidicts_destroy.argtypes = [ctypes.c_void_p]
+          handle = lib.fushidicts_create()
+          if not handle:
+              raise SystemExit("fushidicts_create returned null")
+          lib.fushidicts_destroy(handle)
+          print("fushidicts .dll smoke ok")
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { throw "fushidicts .dll smoke failed ($LASTEXITCODE)" }
+          $share = "build/fushi_server_win/bundle/share/fushi"
+          New-Item -ItemType Directory -Force $share | Out-Null
+          if (Test-Path "$share/transforms") { Remove-Item -Recurse -Force "$share/transforms" }
+          Copy-Item fushi/assets/transforms "$share/transforms" -Recurse
+          if (-not (Test-Path "$share/transforms/manifest.json")) { throw "transforms/manifest.json missing from bundle" }
       # fushi-anki-sync：同 linux job，放 bundle\bin\ 与 fushi_server.exe 同级。
       - name: Set up fushi-anki-sync toolchain
         uses: ./.github/actions/setup-fushi-anki-sync

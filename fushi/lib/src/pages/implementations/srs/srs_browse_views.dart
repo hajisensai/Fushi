@@ -25,7 +25,7 @@ import 'package:fushi/src/pages/implementations/srs/srs_browse_dialogs.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart'
     show srsSoundPlayerProvider;
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
-import 'package:fushi/src/srs/srs_media_store.dart';
+import 'package:fushi_engine/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
@@ -68,6 +68,9 @@ enum SrsBrowseTableColumn {
   lapses,
   deck,
   noteType,
+
+  /// 卡片类型（模板名）：笔记类型有多个卡片类型时区分同一个词的几张卡。
+  cardType,
   tags,
   added,
   modified,
@@ -124,6 +127,7 @@ String srsBrowseColumnLabel(SrsBrowseTableColumn c) => switch (c) {
   SrsBrowseTableColumn.lapses => t.srs_browse_sort_lapses,
   SrsBrowseTableColumn.deck => t.srs_key_deck,
   SrsBrowseTableColumn.noteType => t.srs_note_type,
+  SrsBrowseTableColumn.cardType => t.srs_browse_col_card_type,
   SrsBrowseTableColumn.tags => t.srs_browse_edit_tags,
   SrsBrowseTableColumn.added => t.srs_browse_sort_created,
   SrsBrowseTableColumn.modified => t.srs_browse_sort_modified,
@@ -185,6 +189,7 @@ int _flexOf(SrsBrowseTableColumn c) => switch (c) {
   SrsBrowseTableColumn.field1 || SrsBrowseTableColumn.field2 => 4,
   SrsBrowseTableColumn.deck ||
   SrsBrowseTableColumn.noteType ||
+  SrsBrowseTableColumn.cardType ||
   SrsBrowseTableColumn.tags ||
   SrsBrowseTableColumn.source => 3,
   _ => 2,
@@ -217,6 +222,7 @@ String srsBrowseCellText(
   SrsBrowseTableColumn.lapses => '${r.lapses}',
   SrsBrowseTableColumn.deck => r.deckName,
   SrsBrowseTableColumn.noteType => r.noteTypeName,
+  SrsBrowseTableColumn.cardType => r.templateName,
   SrsBrowseTableColumn.tags => r.tags.join(' '),
   SrsBrowseTableColumn.added => _date(context, r.addedAt),
   SrsBrowseTableColumn.modified => _date(context, r.modifiedAt),

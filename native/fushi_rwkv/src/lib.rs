@@ -2,7 +2,7 @@
 // License: GNU AGPL, version 3 or later; http://www.gnu.org/licenses/agpl.html
 //
 //! Fushi RWKV 排程原生推理库：上游 RWKV 调度（kuma3-anki-core 的
-//! `rslib/src/rwkv`，AGPL-3.0-or-later）推理核心的薄封装 + SM56 小模型 + C ABI。
+//! `rslib/src/rwkv`，AGPL-3.0-or-later）推理核心的薄封装 + 小模型（sm72e25）+ C ABI。
 //!
 //! 设计：
 //! - 整段复习历史按时间顺序回放（[RwkvRuntime::replay]）进模型，维护 card / note / deck /
@@ -88,11 +88,22 @@ pub const UPSTREAM_REPO: &str = "https://github.com/Pedrubik2000/kuma3-anki-core
 pub const UPSTREAM_SHA: &str = "c639bcec696f2317f9bb9a736d433b9d6c0d9c56";
 /// 通用预训练权重（`RWKV_trained_on_5000_10000.bin`，11,082,637 字节）的 SHA-256。
 pub const MODEL_SHA256: &str = "749ad1ad18d5b6ef8c4185802fa0c1e4a14e67cd7874f3efeaae355fffb1b9ec";
-/// 小模型 SM56 发布包 `sm56-package.zip`（JSchoreels/anki-rwkv release
-/// `small-model-sm56-2026-10-24`，5,581,795 字节）的 SHA-256。权重是包里的
-/// `sm56/weights.int8.bin`（推荐，436,391 字节）或 `sm56/weights.f32.bin`。
-pub const SMALL_MODEL_PACKAGE_SHA256: &str =
-    "7b1790f49fdabf1279510247cc9bc3bf3ac461b67cf0135ab8e51589b5efe71a";
+/// 小模型 sm72e25（无泄漏 SM72、第 25 轮起降温）的来源：JSchoreels/anki 在此提交的
+/// `qt/aqt/rwkv_inference/sm72e25/` 与 `rslib/src/rwkv/testdata/sm72e25-vectors.json.gz`
+/// （该提交的 manifest.json 记的哈希与下面一致）。`fetch_model.*` 按这个提交钉 URL 下载。
+pub const SMALL_MODEL_SOURCE_SHA: &str = "986963d23e7ec9f22771c38998ef9042214c2b98";
+/// `weights.int8.bin`（运行时用，436,391 字节）的 SHA-256。
+pub const SMALL_MODEL_INT8_SHA256: &str =
+    "ff626af2e974346ed282615d190500148b22cfe05cbfd081b1e70d5a1dfa3cd9";
+/// `weights.f32.bin`（1,351,553 字节，测试对拍用）的 SHA-256。
+pub const SMALL_MODEL_F32_SHA256: &str =
+    "42b79e35ad78bf291817cb48979f48fd105b39fc43b6a5ca954938d3f25cf261";
+/// `architecture.json`（与 SM56 / SM72 的导出逐字节相同）的 SHA-256。
+pub const SMALL_MODEL_ARCHITECTURE_SHA256: &str =
+    "9bd41f1189dc0113277d371223ce805612aaec07101804160fe86312eed15de3";
+/// 黄金向量 `sm72e25-vectors.json.gz`（两位用户各 500 行，NumPy 参考实现、无泄漏输入）的 SHA-256。
+pub const SMALL_MODEL_VECTORS_SHA256: &str =
+    "db54656bc41a22a175d2b905304d45e6ae6b0bb4efd1af8dfce9185f40ee1a01";
 
 // ---------------------------------------------------------------------------
 // Rust API
@@ -103,7 +114,7 @@ pub const SMALL_MODEL_PACKAGE_SHA256: &str =
 pub enum ModelKind {
     /// 2,762,884 参数的上游模型（质量优先）。
     Large,
-    /// 331,511 参数的 SM56 小模型（省内存；作者 723 个留出用户上 LogLoss 比大模型高 0.34% / 0.47%）。
+    /// 331,511 参数的小模型（sm72e25；部署路径 295 个封存用户上 LogLoss 比 SM56 低 0.39%）。
     Small,
 }
 
@@ -1115,6 +1126,38 @@ impl FrwkvReview {
             current_elapsed_days: self.field(FRWKV_HAS_ELAPSED_DAYS, self.elapsed_days),
             current_elapsed_seconds: self.field(FRWKV_HAS_ELAPSED_SECONDS, self.elapsed_seconds),
         })
+    }
+
+    /// 解析一段 `FrwkvReview` 行（80 字节一行，小端，与 C 结构体同布局；评测 / 诊断 example 读
+    /// `.bin` 历史用）。长度不是 80 的倍数时报错。`reserved` 一律置 0。
+    pub fn parse_rows(bytes: &[u8]) -> io::Result<Vec<Self>> {
+        let size = std::mem::size_of::<Self>();
+        if !bytes.len().is_multiple_of(size) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("{} bytes is not a multiple of {size}", bytes.len()),
+            ));
+        }
+        Ok(bytes
+            .chunks_exact(size)
+            .map(|b| {
+                let i = |k: usize| i64::from_le_bytes(b[8 * k..8 * k + 8].try_into().unwrap());
+                Self {
+                    card_id: i(0),
+                    note_id: i(1),
+                    deck_id: i(2),
+                    preset_id: i(3),
+                    duration_millis: i(4),
+                    card_type: i(5),
+                    day_offset: i(6),
+                    elapsed_days: i(7),
+                    elapsed_seconds: i(8),
+                    present: u32::from_le_bytes(b[72..76].try_into().unwrap()),
+                    ease: b[76],
+                    reserved: [0; 3],
+                }
+            })
+            .collect())
     }
 
     /// [Self::to_input] 的反向（测试与 Rust 调用方构造用）。

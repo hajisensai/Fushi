@@ -620,84 +620,21 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
   }
 
   Future<void> _importTheme() async {
-    final controller = TextEditingController();
-    try {
-      await showAppDialog(
-        context: context,
-        builder: (ctx) {
-          final FushiDesignTokens tokens = FushiDesignTokens.of(ctx);
-          return FushiDialogFrame(
-            maxWidth: 480,
-            maxHeightFactor: 0.78,
-            scrollable: false,
-            child: FushiModalSheetFrame(
-              title: t.import_theme,
-              leadingIcon: FushiIcons.importFile,
-              bodyPadding: EdgeInsets.fromLTRB(
-                tokens.spacing.card,
-                0,
-                tokens.spacing.card,
-                tokens.spacing.gap,
-              ),
-              footerPadding: EdgeInsets.fromLTRB(
-                tokens.spacing.card,
-                tokens.spacing.gap,
-                tokens.spacing.card,
-                tokens.spacing.card,
-              ),
-              body: FushiTextField(
-                controller: controller,
-                hintText: t.import_theme_hint,
-                autofocus: true,
-              ),
-              footer: Wrap(
-                alignment: WrapAlignment.end,
-                spacing: tokens.spacing.gap,
-                runSpacing: tokens.spacing.gap,
-                children: [
-                  adaptiveDialogAction(
-                    context: ctx,
-                    onPressed: () => Navigator.pop(ctx),
-                    child: Text(t.dialog_close),
-                  ),
-                  adaptiveDialogAction(
-                    context: ctx,
-                    isDefaultAction: true,
-                    onPressed: () {
-                      final CustomThemeEntry? result = _decodeTheme(
-                        controller.text,
-                      );
-                      if (result == null) {
-                        FushiToast.show(
-                          msg: t.import_theme_invalid,
-                          severity: ToastSeverity.error,
-                        );
-                        return;
-                      }
-                      Navigator.pop(ctx);
-                      _applyImportedTheme(
-                        result,
-                        audioHighlight:
-                            result.sentenceAudioHighlightColor != null
-                            ? Color(result.sentenceAudioHighlightColor!)
-                            : null,
-                      );
-                      FushiToast.show(
-                        msg: t.import_theme_success,
-                        severity: ToastSeverity.success,
-                      );
-                    },
-                    child: Text(t.dialog_import),
-                  ),
-                ],
-              ),
-            ),
-          );
-        },
-      );
-    } finally {
-      controller.dispose();
-    }
+    final CustomThemeEntry? result = await showAppDialog<CustomThemeEntry>(
+      context: context,
+      builder: (BuildContext _) => _ThemeImportDialog(decode: _decodeTheme),
+    );
+    if (result == null || !mounted) return;
+    _applyImportedTheme(
+      result,
+      audioHighlight: result.sentenceAudioHighlightColor != null
+          ? Color(result.sentenceAudioHighlightColor!)
+          : null,
+    );
+    FushiToast.show(
+      msg: t.import_theme_success,
+      severity: ToastSeverity.success,
+    );
   }
 
   // ── AI 生成 ──
@@ -2788,6 +2725,91 @@ class _ThemeColorPickerState extends State<_ThemeColorPicker> {
           ),
         ],
       ],
+    );
+  }
+}
+
+/// 粘贴主题 JSON 的导入弹窗。返回 null = 关闭；否则返回解析好的主题。
+///
+/// BUG-4221：输入框控制器归本 State 持有、路由移除时才释放；调用方在
+/// `await showAppDialog` 结束后立刻释放会撞上关窗动画里输入框的重建。
+class _ThemeImportDialog extends StatefulWidget {
+  const _ThemeImportDialog({required this.decode});
+
+  /// 解析粘贴的文本；不是合法主题返回 null。
+  final CustomThemeEntry? Function(String raw) decode;
+
+  @override
+  State<_ThemeImportDialog> createState() => _ThemeImportDialogState();
+}
+
+class _ThemeImportDialogState extends State<_ThemeImportDialog> {
+  final TextEditingController _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return FushiDialogFrame(
+      maxWidth: 480,
+      maxHeightFactor: 0.78,
+      scrollable: false,
+      child: FushiModalSheetFrame(
+        title: t.import_theme,
+        leadingIcon: FushiIcons.importFile,
+        bodyPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          0,
+          tokens.spacing.card,
+          tokens.spacing.gap,
+        ),
+        footerPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          tokens.spacing.gap,
+          tokens.spacing.card,
+          tokens.spacing.card,
+        ),
+        body: FushiTextField(
+          controller: _controller,
+          hintText: t.import_theme_hint,
+          autofocus: true,
+        ),
+        footer: Wrap(
+          alignment: WrapAlignment.end,
+          spacing: tokens.spacing.gap,
+          runSpacing: tokens.spacing.gap,
+          children: <Widget>[
+            adaptiveDialogAction(
+              context: context,
+              onPressed: () => Navigator.pop(context),
+              child: Text(t.dialog_close),
+            ),
+            adaptiveDialogAction(
+              context: context,
+              isDefaultAction: true,
+              onPressed: () {
+                final CustomThemeEntry? result = widget.decode(
+                  _controller.text,
+                );
+                if (result == null) {
+                  FushiToast.show(
+                    msg: t.import_theme_invalid,
+                    severity: ToastSeverity.error,
+                  );
+                  return;
+                }
+                Navigator.pop(context, result);
+              },
+              child: Text(t.dialog_import),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

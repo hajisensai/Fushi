@@ -7,10 +7,11 @@ import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/custom_fonts_page.dart';
 import 'package:fushi/src/pages/implementations/highlight_style_page.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart';
+import 'package:fushi/src/reader/continuous_chapter_turn_resistance.dart';
 import 'package:fushi/src/reader/page_turn_animation.dart';
 import 'package:fushi/src/reader/reader_tap_zones.dart';
 import 'package:fushi/src/reader/reader_control_layout.dart';
-import 'package:fushi/src/reader/reader_content_styles.dart';
+import 'package:fushi/src/reader/reader_page_spread.dart';
 import 'package:fushi/src/reader/reader_control_layout_editor.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
@@ -29,36 +30,23 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 SettingsDestination buildReadingDestination() {
   bool isVertical(SettingsContext c) =>
       c.readerSource.readerWritingMode.startsWith('vertical');
-  // 「每页列数」(pageColumns) 只在翻页(paginated)模式生效：CSS multicol 列模型只
-  // 存在于 _paginatedLayoutCss，连续(continuous)滚动与 VN 模式的布局根本不含
-  // column-count / 子列宽（reader_content_styles.dart 只把 columnsCss 传给
-  // _paginatedLayoutCss）。故非翻页模式下把该项隐藏，避免用户改了没反应、误判「功能坏了」。
+  // 「单双页」只在翻页(paginated)模式生效：CSS multicol 列模型只存在于
+  // _paginatedLayoutCss，连续(continuous)滚动与 VN 模式恒单页（resolveReaderSpreadLayout）。
+  // 故非翻页模式下把该项隐藏，避免用户改了没反应、误判「功能坏了」。
   bool isPaginated(SettingsContext c) =>
       c.readerSource.readerViewMode == 'paginated';
-  // 「中缝折痕」只在翻页且本次排版实际恰好两栏时有效果（与 CSS 生成同一判据
-  // ReaderContentStyles.pageCreaseApplies）。「自动」列数在折叠屏书本姿态下会被解析
-  // 成两栏，所以要把当前窗口的折叠状态算进去（读 MediaQuery，姿态变化时宿主重建）。
+  // 「中缝折痕」只在本次排版实际一屏两页时有效果（与正文 CSS 同一判据
+  // resolveReaderSpreadLayout）。「自动」看窗口尺寸与折叠状态，所以把当前窗口算进去
+  // （读 MediaQuery，姿态 / 尺寸变化时宿主重建）。
   bool pageCreaseApplies(SettingsContext c) {
     final ReaderFushiSource source = c.readerSource;
-    final bool bookPosture = FushiFoldState.of(c.context).isBook;
-    final int effectiveColumns =
-        ReaderContentStyles.foldPageColumnsOverrideFor(
-          bookPosture: bookPosture,
-          viewMode: source.readerViewMode,
-          writingMode: source.readerWritingMode,
-          pageColumns: source.readerPageColumns,
-        ) ??
-        source.readerPageColumns;
-    return ReaderContentStyles.pageCreaseApplies(
+    return resolveReaderSpreadLayout(
+      preference: source.readerPageSpread,
       viewMode: source.readerViewMode,
-      effectivePageColumns: effectiveColumns,
-      verticalSpread: ReaderContentStyles.foldVerticalSpreadFor(
-        bookPosture: bookPosture,
-        viewMode: source.readerViewMode,
-        writingMode: source.readerWritingMode,
-        pageColumns: source.readerPageColumns,
-      ),
-    );
+      writingMode: source.readerWritingMode,
+      hasFoldSpine: FushiFoldState.of(c.context).hasSpine,
+      window: MediaQuery.sizeOf(c.context),
+    ).isDouble;
   }
 
   bool isContinuous(SettingsContext c) =>
@@ -530,27 +518,38 @@ SettingsDestination buildReadingDestination() {
               notifyReaderSettingsChanged(c);
             },
           ),
-          // 「每页列数」移到边距之前（先定列、再定边距）：仅翻页模式生效（isPaginated
-          // 门控）。id / 持久化 key / ReaderPlacement 不变，只调组内相对位置。
-          SettingsStepperItem(
+          // 「单双页」在边距之前（先定页、再定边距）：仅翻页模式生效（isPaginated
+          // 门控）。id / 持久化 key（page_columns）/ ReaderPlacement 沿用旧「每页列数」。
+          SettingsSegmentedItem<ReaderPageSpread>(
             id: 'reading_display.page_columns',
-            title: t.columns_per_page,
+            title: t.reader_page_spread,
+            subtitle: t.reader_page_spread_subtitle,
             icon: FushiIcons.viewColumn,
             visible: isPaginated,
-            min: 0,
-            max: 4,
-            step: 1,
+            controlBelow: true,
             reader: const ReaderPlacement(group: ReaderGroup.layout, order: 8),
-            value: (SettingsContext c) =>
-                c.readerSource.readerPageColumns.toDouble(),
-            format: (double v) =>
-                v.round() == 0 ? t.reader_page_columns_auto : '${v.round()}',
-            onChanged: (SettingsContext c, double v) async {
-              await c.readerSource.setReaderPageColumns(v.round());
+            defaultValue: ReaderPageSpread.auto,
+            options: <SettingsSegmentOption<ReaderPageSpread>>[
+              SettingsSegmentOption<ReaderPageSpread>(
+                value: ReaderPageSpread.auto,
+                label: t.reader_page_spread_auto,
+              ),
+              SettingsSegmentOption<ReaderPageSpread>(
+                value: ReaderPageSpread.single,
+                label: t.reader_page_spread_single,
+              ),
+              SettingsSegmentOption<ReaderPageSpread>(
+                value: ReaderPageSpread.double,
+                label: t.reader_page_spread_double,
+              ),
+            ],
+            selected: (SettingsContext c) => c.readerSource.readerPageSpread,
+            onChanged: (SettingsContext c, ReaderPageSpread v) async {
+              await c.readerSource.setReaderPageSpread(v);
               notifyReaderLayoutChanged(c);
             },
           ),
-          // 中缝折痕：一屏两栏（每页列数 = 2，或折叠屏书本姿态下的自动 2 栏）时在两页
+          // 中缝折痕：一屏两页（单双页 = 双页，或「自动」解析成双页）时在两页
           // 之间画书脊阴影。纯 CSS，热下发不重排。只在真能生效时露出（pageCreaseApplies）。
           SettingsSwitchItem(
             id: 'reading_display.page_crease',
@@ -726,6 +725,66 @@ SettingsDestination buildReadingDestination() {
                 value,
               );
               notifyReaderSettingsChanged(settingsContext);
+            },
+          ),
+          // 反馈 R7k887yaJI：滚动模式拉过章首 / 章末切章的阻尼。只在滚动模式有意义
+          // （翻页 / VN 没有「拉过边界」这回事），其它模式不显示。改值经
+          // notifyReaderSettingsChanged → updateLive 热下发，不重载正文。
+          SettingsSegmentedItem<ContinuousChapterTurnResistance>(
+            id: 'reading_controls.continuous_chapter_turn_resistance',
+            title: t.reader_continuous_turn_resistance,
+            subtitle: t.reader_continuous_turn_resistance_description,
+            icon: FushiIcons.swipe,
+            visible: isContinuous,
+            defaultValue: ContinuousChapterTurnResistance.standard,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 16,
+            ),
+            options: <SettingsSegmentOption<ContinuousChapterTurnResistance>>[
+              SettingsSegmentOption<ContinuousChapterTurnResistance>(
+                value: ContinuousChapterTurnResistance.low,
+                label: t.reader_continuous_turn_resistance_low,
+              ),
+              SettingsSegmentOption<ContinuousChapterTurnResistance>(
+                value: ContinuousChapterTurnResistance.standard,
+                label: t.reader_continuous_turn_resistance_standard,
+              ),
+              SettingsSegmentOption<ContinuousChapterTurnResistance>(
+                value: ContinuousChapterTurnResistance.high,
+                label: t.reader_continuous_turn_resistance_high,
+              ),
+            ],
+            selected: (SettingsContext c) =>
+                c.readerSource.continuousChapterTurnResistance,
+            onChanged:
+                (
+                  SettingsContext c,
+                  ContinuousChapterTurnResistance value,
+                ) async {
+                  await c.readerSource.setContinuousChapterTurnResistance(
+                    value,
+                  );
+                  notifyReaderSettingsChanged(c);
+                },
+          ),
+          // 反馈 R7k887yaJI ③：滚动模式章节无缝衔接（默认关）。前后章挂在同一文档里一起
+          // 滚动；改值要重建文档（挂 / 卸邻章），走 notifyReaderLayoutChanged 整章重载。
+          SettingsSwitchItem(
+            id: 'reading_controls.continuous_seamless_chapters',
+            title: t.reader_continuous_seamless_chapters,
+            subtitle: t.reader_continuous_seamless_chapters_description,
+            icon: FushiIcons.link,
+            visible: isContinuous,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 17,
+            ),
+            value: (SettingsContext c) =>
+                c.readerSource.continuousSeamlessChapters,
+            onChanged: (SettingsContext c, bool v) async {
+              await c.readerSource.setContinuousSeamlessChapters(v);
+              notifyReaderLayoutChanged(c);
             },
           ),
           // 翻页动画（View Transitions 快照翻页，见 reader_page_turn_script.dart）。只在
@@ -976,6 +1035,66 @@ SettingsDestination buildReadingDestination() {
               notifyReaderChromeReanchored(settingsContext);
             },
           ),
+          // 读数胶囊（底部右下角）的各段开关 + 常驻开关。开关段数会改变读数是否整条
+          // 不画（四段都关时回收预留），常驻会改变悬浮态预留 → 都走重锚通道。
+          SettingsSwitchItem(
+            id: 'reading_controls.show_reading_timer',
+            title: t.reader_timer_show,
+            icon: FushiIcons.timer,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 26,
+            ),
+            value: (SettingsContext c) => c.readerSource.showReadingTimer,
+            onChanged: (SettingsContext c, bool value) {
+              c.readerSource.toggleShowReadingTimer();
+              notifyReaderChromeReanchored(c);
+            },
+          ),
+          SettingsSwitchItem(
+            id: 'reading_controls.show_session_chars',
+            title: t.reader_status_show_session_chars,
+            icon: FushiIcons.textFields,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 27,
+            ),
+            value: (SettingsContext c) => c.readerSource.showSessionChars,
+            onChanged: (SettingsContext c, bool value) {
+              c.readerSource.toggleShowSessionChars();
+              notifyReaderChromeReanchored(c);
+            },
+          ),
+          SettingsSwitchItem(
+            id: 'reading_controls.show_chars_per_hour',
+            title: t.reader_status_show_chars_per_hour,
+            icon: FushiIcons.speed,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 28,
+            ),
+            value: (SettingsContext c) => c.readerSource.showCharsPerHour,
+            onChanged: (SettingsContext c, bool value) {
+              c.readerSource.toggleShowCharsPerHour();
+              notifyReaderChromeReanchored(c);
+            },
+          ),
+          SettingsSwitchItem(
+            id: 'reading_controls.status_footer_persistent',
+            title: t.reader_status_persistent,
+            subtitle: t.reader_status_persistent_subtitle,
+            icon: FushiIcons.pin,
+            visible: (SettingsContext c) => c.readerSource.tapEmptyToHideChrome,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 29,
+            ),
+            value: (SettingsContext c) => c.readerSource.statusFooterPersistent,
+            onChanged: (SettingsContext c, bool value) {
+              c.readerSource.toggleStatusFooterPersistent();
+              notifyReaderChromeReanchored(c);
+            },
+          ),
           // TODO-975 决策#2：顶部进度悬浮开关（点击唤出 + 自动收起 + 不占正文位置）。
           // 仅当进度本身开启时显示。切换改变预留高 → 走重锚通道。
           // TODO-1029：「悬浮控制栏」开关（原「点击空白处隐藏控制栏」）紧挨「悬浮阅读
@@ -1160,8 +1279,8 @@ SettingsDestination buildReadingDestination() {
           // 悬浮球不在这里：唯一入口是 设置 → 悬浮球（阅读器场景的按钮在那里勾选）。
         ],
       ),
-      // v92 统计域：阅读空闲门。只对阅读面生效（视频以播放态为准，用户拍板）；
-      // 下次打开书生效（时钟在建书时读一次）。
+      // v92 统计域：学习空闲门。小说 / PDF / 漫画 / 视频共用（2026-11-07 起视频
+      // 也走墙钟 + 空闲门，播放中由采集器喂门、始终计时）；运行中的时钟随设置刷新。
       SettingsSection(
         id: 'reading.section.statistics',
         presentation: SettingsSectionPresentation.alwaysExpanded,

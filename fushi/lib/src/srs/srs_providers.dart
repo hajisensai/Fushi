@@ -23,6 +23,7 @@ import 'package:flutter/foundation.dart'
     show ChangeNotifier, ValueListenable, ValueNotifier;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
+import 'package:fushi_engine/srs/srs_miner.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_legacy_lapis_migration.dart';
 import 'package:fushi_engine/srs/srs_purge.dart';
@@ -39,9 +40,8 @@ import 'package:fushi/src/models/preference_keys.dart'
     show kSrsLapisMigrationReminderPrefKey;
 import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/srs/srs_card_appearance.dart';
-import 'package:fushi/src/srs/srs_media_store.dart';
-import 'package:fushi/src/srs/srs_mining.dart';
-import 'package:fushi/src/srs/srs_mining_target.dart';
+import 'package:fushi_engine/srs/srs_media_store.dart';
+import 'package:fushi_engine/srs/srs_mining_target.dart';
 import 'package:fushi/src/srs/srs_profile_stores.dart';
 import 'package:fushi/src/srs/srs_review_gestures.dart';
 import 'package:fushi/src/srs/srs_review_layout.dart';

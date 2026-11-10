@@ -12,6 +12,7 @@ import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_legacy_lapis_migration.dart';
 import 'package:fushi_engine/srs/srs_note_type_store.dart';
+import 'package:fushi_engine/srs/srs_template_duplicates.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi/src/pages/implementations/srs/srs_card_appearance_page.dart';
@@ -347,7 +348,32 @@ class _SrsNoteTypesPageState extends ConsumerState<SrsNoteTypesPage> {
     }
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final SrsDbStore store = _store!;
+    // 有重复卡片模板（正面相同 = 同一道题考两遍）的类型：顶部提示，点进去在编辑页一键删除重复模板。
+    final List<SrsNoteTypeView> duplicated = <SrsNoteTypeView>[
+      for (final SrsNoteTypeView x in _types)
+        if (srsDuplicateFrontGroups(x).isNotEmpty) x,
+    ];
     final List<Widget> items = <Widget>[
+      if (duplicated.isNotEmpty)
+        Padding(
+          padding: EdgeInsets.only(bottom: tokens.spacing.gap * 1.5),
+          child: FushiCard(
+            key: const ValueKey<String>('srs-note-types-duplicates'),
+            tone: FushiCardTone.error,
+            padding: EdgeInsets.zero,
+            onTap: () => srsRunLogged(
+              'SrsNoteTypes.duplicates',
+              () => _open(duplicated.first),
+            ),
+            child: FushiListItem(
+              leading: const FushiListLeadingIcon(FushiIcons.warning),
+              title: Text(
+                t.srs_note_types_duplicate_list_banner(n: duplicated.length),
+              ),
+              trailing: const FushiIcon(FushiIcons.chevronRight),
+            ),
+          ),
+        ),
       if (_lapisPending > 0)
         Padding(
           padding: EdgeInsets.only(bottom: tokens.spacing.gap * 1.5),
@@ -465,6 +491,12 @@ class _TypeRow extends StatelessWidget {
                 FushiTooltip(
                   message: t.srs_note_types_conflict,
                   child: const FushiIcon(FushiIcons.warning),
+                ),
+              if (srsDuplicateFrontGroups(type).isNotEmpty)
+                FushiTooltip(
+                  key: ValueKey<String>('srs-note-types-duplicate-${type.id}'),
+                  message: t.srs_note_types_duplicate_hint,
+                  child: const FushiIcon(FushiIcons.merge),
                 ),
               FushiPopupMenuButton<_TypeAction>(
                 tooltip: t.srs_deck_menu,

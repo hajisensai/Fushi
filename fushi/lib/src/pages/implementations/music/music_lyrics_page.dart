@@ -59,6 +59,8 @@ import 'package:fushi/src/media/music/plugin/music_plugins.dart'
     show MusicPluginStreamResolver, resolveMusicPluginStream;
 import 'package:fushi/src/media/playback_route_marks.dart';
 import 'package:fushi/src/media/shared/lyrics_shell/lyrics_shell_layout.dart';
+import 'package:fushi/src/mining/immersion_mining_engine.dart'
+    show RemoteAudioMaterializer;
 import 'package:fushi/src/models/theme_notifier.dart'
     show rethemeFushiWithScheme;
 import 'package:fushi/src/pages/base_source_page.dart';
@@ -69,8 +71,11 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
 import 'package:fushi/src/pages/implementations/music/music_item_links.dart';
 import 'package:fushi/src/pages/implementations/music/music_lyrics_backdrop.dart';
+import 'package:fushi/src/pages/implementations/music/music_queue_panel.dart';
 import 'package:fushi/src/pages/implementations/music/music_shortcuts.dart';
+import 'package:fushi/src/pages/implementations/music/music_audio_effects_page.dart';
 import 'package:fushi/src/pages/implementations/music/music_signal_path_panel.dart';
+import 'package:fushi/src/pages/implementations/music/music_quality_sheet.dart';
 import 'package:fushi/src/pages/implementations/music/music_subtitle_actions.dart';
 import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart'
     show MusicEngineClock, MusicVolumeButton, musicPlayModeButton;
@@ -248,6 +253,11 @@ MusicLyricsClipExtractor musicLyricsClipExtractor = _ffmpegClip;
 @visibleForTesting
 MusicPluginStreamResolver? musicLyricsClipPluginResolver;
 
+/// 制卡截音频前远端流的物化（null = [materializeMusicClipSource] 的缺省 range 分片下载）；
+/// widget 测试注入替身。
+@visibleForTesting
+RemoteAudioMaterializer? musicLyricsClipMaterializer;
+
 class MusicLyricsPage extends BaseSourcePage {
   const MusicLyricsPage({super.key, this.startWithLyrics = true})
     : super(item: null);
@@ -298,6 +308,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
   /// 封面主题之下的一个节点：页内弹出的对话框 / 浮窗用它的 context 打开，
   /// [showDialog] 会把这里的主题捕获进弹窗路由。
   final GlobalKey _themedKey = GlobalKey();
+
   BuildContext get _themedContext => _themedKey.currentContext ?? context;
 
   /// build 里调：封面或明暗变了才重新取色。
@@ -580,10 +591,26 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
         tempDir = await Directory.systemTemp.createTemp(
           'fushi_music_mine_audio_',
         );
+        // googlevideo 流先整段物化到本地再裁（远端 -ss 会被限速卡到超时）；下载失败带原因报失败。
+        final MusicClipSource cutSource;
+        try {
+          cutSource = await materializeMusicClipSource(
+            source,
+            workDir: tempDir.path,
+            materializer: musicLyricsClipMaterializer,
+          );
+        } on MusicClipSourceUnavailable catch (e, st) {
+          final String reason = 'sentence audio export failed: ${e.message}';
+          ErrorLogService.instance.log('MusicLyricsPage.mineAudio', e, st);
+          return MinePopupResult.failed(
+            MineOutcome(MineResult.error, errorDetail: reason),
+            message: reason,
+          );
+        }
         String? failure;
         audioPath = await musicLyricsClipExtractor(
-          inputPath: source.inputPath,
-          httpHeaders: source.httpHeaders,
+          inputPath: cutSource.inputPath,
+          httpHeaders: cutSource.httpHeaders,
           startMs: clip.startMs,
           endMs: clip.endMs,
           outputPath: p.join(
@@ -1067,7 +1094,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
                               const SizedBox(height: 12),
                               _buildTransport(context),
                               const SizedBox(height: 4),
-                              _buildTools(context),
+                              _buildTools(context, actions: true),
                             ],
                           ),
                         ),
@@ -1173,7 +1200,11 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
             child: Column(
               mainAxisSize: MainAxisSize.min,
-              children: <Widget>[_buildSeek(), _buildTransport(context)],
+              children: <Widget>[
+                _buildSeek(),
+                _buildTransport(context),
+                _buildTools(context, actions: true),
+              ],
             ),
           ),
       ],
@@ -1224,7 +1255,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
               _buildMeta(context, item),
               _buildSeek(),
               Center(child: _buildTransport(context)),
-              _buildTools(context),
+              _buildTools(context, actions: true),
             ],
           ),
         ),
@@ -1433,6 +1464,12 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
     );
   }
 
+  Future<void> _openEffects() async {
+    await showMusicAudioEffectsPanel(_themedContext, appModelNoUpdate);
+    // 关掉后功能图标的高亮 / 预设名跟着刷新。
+    if (mounted) setState(() {});
+  }
+
   /// 波浪进度（自带位置监听与拖动，不随整页重建）。
   Widget _buildSeek() => FushiWavySeekBar(
     key: const ValueKey<String>('music_lyrics_seek'),
@@ -1444,6 +1481,57 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
     strokeWidth: 4,
     barHeight: 20,
     debugLabel: 'music-lyrics-seek',
+  );
+
+  /// 功能图标（音质 / 音效 / 队列）：与偏移、AB 循环同款的裸图标按钮，无底色无文字，
+  /// 说明放 tooltip（用户 2026-11-08「有点突兀，无底色和其他选项并列」「无文字」）。
+  Widget _buildActionRow(BuildContext context) => ListenableBuilder(
+    listenable: Listenable.merge(<Listenable>[
+      _engine,
+      appModelNoUpdate.prefsRepo,
+    ]),
+    builder: (BuildContext context, _) {
+      final MusicPlayItem? item = _engine.current;
+      final String? quality = item != null && musicItemQualitySelectable(item)
+          ? musicPluginQualityLabel(
+              appModelNoUpdate.musicPluginQualityFor(item.path),
+            )
+          : null;
+      final String effects = appModelNoUpdate.musicAudioEffects.enabled
+          ? '${t.music_effects_title} · '
+                '${musicEqPresetLabel(appModelNoUpdate.musicEqPreset)}'
+          : '${t.music_effects_title} · ${t.music_eq_off}';
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          // 音质（在线插件曲目才有）：点开换档、原位重取。
+          if (quality != null)
+            FushiIconButtonControl(
+              key: const ValueKey<String>('music_lyrics_quality'),
+              icon: const FushiIcon(FushiIcons.highQuality),
+              tooltip: t.music_quality_chip_semantics(quality: quality),
+              onPressed: () => unawaited(
+                showMusicQualitySheet(_themedContext, appModelNoUpdate),
+              ),
+            ),
+          // 音效（能处理信号的后端才有）：处理中时高亮。
+          if (_engine.capabilities.signalPath)
+            FushiIconButtonControl(
+              key: const ValueKey<String>('music_lyrics_effects'),
+              icon: const FushiIcon(FushiIcons.barChart),
+              isSelected: appModelNoUpdate.musicAudioEffects.isActive,
+              tooltip: effects,
+              onPressed: () => unawaited(_openEffects()),
+            ),
+          FushiIconButtonControl(
+            key: const ValueKey<String>('music_lyrics_queue'),
+            icon: const FushiIcon(FushiIcons.playlist),
+            tooltip: t.music_queue_button_count(count: _engine.queue.length),
+            onPressed: () => unawaited(showMusicQueue(_themedContext, _engine)),
+          ),
+        ],
+      );
+    },
   );
 
   /// 播放器按钮行（用户 2026-10-29 参考图）：播放模式 · 上一首 · 播放 · 下一首 ·
@@ -1592,10 +1680,15 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
     }
   }
 
-  /// 小工具：偏移 ± 与 AB 循环（只有带时间轴的歌词才有）。
-  Widget _buildTools(BuildContext context) {
+  /// 偏移 ± / AB 循环（有逐行时间轴才有）；[actions] 时同一行后面接功能图标
+  /// （[_buildActionRow]）。
+  Widget _buildTools(BuildContext context, {bool actions = false}) {
     final bool synced = _lyrics?.timeline.isSynced ?? false;
-    if (!synced) return const SizedBox.shrink();
+    if (!synced) {
+      return actions
+          ? Center(child: _buildActionRow(context))
+          : const SizedBox.shrink();
+    }
     return Wrap(
       alignment: WrapAlignment.center,
       crossAxisAlignment: WrapCrossAlignment.center,
@@ -1639,6 +1732,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
                   onPressed: () => unawaited(_extendLoop()),
                 ),
         ),
+        if (actions) _buildActionRow(context),
       ],
     );
   }
@@ -1681,7 +1775,14 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
                       ),
                     ),
                     _buildTransport(context),
-                    const Expanded(child: SizedBox.shrink()),
+                    // 右侧放功能行（设计稿 W1：底栏右边是音效 / 队列）。
+                    Expanded(
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: AlignmentDirectional.centerEnd,
+                        child: _buildActionRow(context),
+                      ),
+                    ),
                   ],
                 ),
               ],
@@ -1801,6 +1902,13 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
             label: t.music_signal_path_title,
             icon: FushiIcons.highQuality,
           ),
+        // 音效：与信号路径同一道能力门（托管播放的后端拿不到信号）。
+        if (_engine.capabilities.signalPath)
+          FushiChoiceOption<int>(
+            value: 6,
+            label: t.music_effects_title,
+            icon: FushiIcons.barChart,
+          ),
         if (_canGenerateSubtitles)
           FushiChoiceOption<int>(
             value: 5,
@@ -1824,6 +1932,8 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
         }
       case 5:
         if (mounted) await _generateSubtitles();
+      case 6:
+        if (mounted) await _openEffects();
       default:
     }
   }
@@ -1831,27 +1941,12 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
   Widget _buildLyricsArea(BuildContext context, MusicPlayItem? item) {
     final MusicLyricsResolution? r = _lyrics;
     if (r == null || r.timeline.lines.isEmpty) {
-      // A / B 遇到没歌词的歌切到唱片态（与 C 同一个唱片），不再一行字挂在空处。
+      // 没歌词时歌词区只留提示与找歌词（用户 2026-11-08：歌词区再画一张唱片不合理，
+      // 封面已在左半 / 封面面）。
       if (_loading) {
         return const Center(child: FushiCircularProgressIndicator());
       }
-      return LayoutBuilder(
-        builder: (BuildContext context, BoxConstraints c) => Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            _SpinningDisc(
-              coverPath: item?.coverPath,
-              size: (math.min(c.maxWidth, c.maxHeight) * 0.5).clamp(
-                140.0,
-                360.0,
-              ),
-              spinning: _engine.isPlaying,
-            ),
-            const SizedBox(height: 24),
-            _buildNoLyrics(context),
-          ],
-        ),
-      );
+      return Center(child: _buildNoLyrics(context));
     }
     final Widget view = KaraokeLyricsView(
       key: ValueKey<String>('karaoke_${_loadedUid}_${r.source}'),

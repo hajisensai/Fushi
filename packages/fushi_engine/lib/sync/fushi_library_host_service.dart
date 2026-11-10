@@ -1205,6 +1205,28 @@ class MangaInterconnectUnsupported implements Exception {
       'MangaInterconnectUnsupported: the paired peer does not serve manga pages';
 }
 
+/// 整库书籍进度一次取齐的端点路径（反馈 kM-Gb_Xnu-）。
+///
+/// 刻意不挂在 `/api/library/books/` 下：老 host 会把 `books/<x>` 当书名去导出 EPUB，
+/// 恰好有一本叫这个名字的书时会回一整本书。挂在新路径上，老 host 落进 WebDAV 文件
+/// 分支、回 404，client 据此回落逐本 `GET /books/<bookKey>/progress`。
+const String kBookProgressBatchPath = '/api/library/book-progress';
+
+/// 「一次交出 host 上全部书的阅读进度」的 host 能力（**可选**，[MangaLibraryHost]
+/// 同一范式：server 用 `is` 协商，不实现的 host 让 [kBookProgressBatchPath] 落 404）。
+///
+/// 反馈 kM-Gb_Xnu-：互联 sweep 的书进度阶段原本每本书一次 `GET /progress`，100 本书
+/// 就是 100 次往返，绝大多数书两端早已一致、只是来问一句。这里把读一侧压成一次；
+/// 写一侧照旧逐本 `PUT`，只发给真的需要推送的书。
+abstract interface class BookProgressBatchHost {
+  /// host 书库里**每一本有阅读进度**的书：wire `bookKey` → 进度。
+  ///
+  /// 与逐本 [FushiLibraryHostService.getBookProgress] 逐字同口径：书不在库、或没有
+  /// `reader_positions` 行的书不出现在结果里（逐本端点对它们回
+  /// [RemoteBookProgress.empty]），所以 client 把「不在表里」读成 empty 不改变任何判定。
+  Future<Map<String, RemoteBookProgress>> getAllBookProgress();
+}
+
 /// 互联漫画源的 host 能力（**可选**，与 [FushiLibraryHostService] 分开声明）。
 ///
 /// 分开是本仓对可选能力的既定范式（`AudiobookDelayHost` / `InterconnectServiceConfigHost`

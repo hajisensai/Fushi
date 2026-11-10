@@ -47,9 +47,6 @@ const String kSectionTabOrderPrefKeyPrefix = 'section_tab_order::';
 /// 与页签顺序同族：设备本地，不进 Profile 快照（ProfileKeys._excludedPrefPrefixes）。
 const String kLibraryManualOrderPrefKeyPrefix = 'library_manual_order::';
 
-/// 查词弹窗「我库里的例句」开关（bool，默认 true：全在本机、不上传，所有者 D-L2）。
-const String kLibrarySentencesEnabledPrefKey = 'lookup_library_sentences';
-
 /// 「联网搜索抓前几页网页交给 AI」的一次性确认（String：`''` 没问过 /
 /// [kAiWebSearchPageFetchAllow] / [kAiWebSearchPageFetchDeny]）。跟着 `ai_web_search`
 /// 设备本地：同意的是这台设备上配的那个后端。
@@ -81,6 +78,12 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // reason}}`。指纹是 sha256(providerId + key) 的前 16 位，不含 key 本身，非凭据；
   // 但描述的是本机配的 key 的健康，跟着 ai_providers 设备本地（deviceLocalPrefKeys）。
   'ai_key_health',
+  // String（JSON 列表）：AI 助手接入的外部 MCP server（spec
+  // docs/specs/2026-11-05-ai-mcp-client-design.md），编解码见 fushi_engine
+  // `mcp_client_config.dart`。请求头 / 环境变量值以 base64 存（可能是 token）→
+  // 同时登记在 kCredentialPreferenceKeys、PrefRedactionPolicy.sensitiveKeys 与
+  // deviceLocalPrefKeys；本地程序（stdio）的命令只对这台机器成立。
+  'ai_mcp_client_servers',
   // bool（默认 false）：外部 AI 访问（MCP）。打开后本机 MCP 客户端凭配对令牌可调
   // 操作目录；授权只对点它的这台设备成立（设备本地）。
   'ai_mcp_enabled',
@@ -379,8 +382,13 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // bool（默认 false）：已删除的「查词时让 AI 按句意挑词条」开关（2026-10-09
   // 所有者拍板移除）。存量键冻结、不再读写；留在这里只为键名不被别的功能复用。
   'lookup_ai_context_auto',
-  // bool（默认 true，D-L2）：查词弹窗「我库里的例句」区块（作品图谱 L4）。关掉时弹窗不渲染、
-  // 也不再往语料库喂入（索引留在本机，再开时增量补齐）。常量 [kLibrarySentencesEnabledPrefKey]。
+  // bool（默认 false）：中文查词时简体 ↔ 繁體双向互查（查 这个 也出 這個 的词条）。开发者
+  // 要求默认关：只查原文字形。随 Profile 走；服务端读同名键。常量在 fushi_engine
+  // `kLookupChineseScriptVariantsPrefKey`。
+  'lookup_chinese_script_variants',
+  // bool（默认 true）：已删除的查词弹窗「我库里的例句」开关（2026-11-07 按反馈 4S2_J80DfK
+  // 移除整个功能，书 / 视频 / 游戏语料文档启动时清掉）。存量键冻结、不再读写；留在这里只为
+  // 键名不被别的功能复用。
   'lookup_library_sentences',
   // bool（默认 true = 原行为）：进入查词页（导航点「查词」）以及清空查询后自动
   // 聚焦搜索框、弹出软键盘（反馈 cczhbM7ZOI）。关掉后只有用户点搜索框才弹。
@@ -459,6 +467,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // （反馈 zNuGKLIhmT：阅读时挡住正文）。
   'mine_notice_success',
   'mine_to_server',
+  // JSON `{<hostId>: {kind?, profile?, deck?}}`：「制卡到已配对设备」每台主机的「保存到」
+  // （缺省 = 主机默认，docs/specs/2026-11-05-server-srs-design.md §4.8）。设备本地。
+  'mine_to_server_targets',
   // bool（默认 false = 循环）：制卡动图（视频 cue / galgame 窗口，GIF·WebP·AVIF）只播放
   // 一次（反馈 ZxyIMK-C5V）。经 `miningAnimatedPlayOnceReader` 交给 ffmpeg 的 `-loop`。
   'mining_animated_play_once',
@@ -510,10 +521,27 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'music_desktop_lyrics',
   // int（默认 176400）：DSD → PCM 目标采样率 Hz（设计 §7.1）。
   'music_dsd_pcm_rate',
-  // bool（默认 false）：图示均衡器开关（P5，可选；开且不平直即非 bit-perfect）。
+  // 音效（P5，均衡之外的各项；总开关仍是 music_eq_enabled）：低音 / 高音搁架增益 double
+  // dB（默认 0）与转折频率 int Hz（默认 100 / 8000），声道平衡 double（−1…1，默认 0），
+  // 立体声宽度 double（0…2，默认 1），单声道 / 左右互换 / 限幅器 bool（默认 false）。
+  'music_effects_balance',
+  'music_effects_bass_db',
+  'music_effects_bass_hz',
+  'music_effects_limiter',
+  'music_effects_mono',
+  'music_effects_swap_channels',
+  'music_effects_treble_db',
+  'music_effects_treble_hz',
+  'music_effects_width',
+  // bool（默认 false）：音效总开关（P5，可选；开且不全部中性即非 bit-perfect）。键名沿用
+  // 图示均衡器时代，冻结。
   'music_eq_enabled',
   // String（逗号分隔 10 段 dB，默认 '' = 平直）：图示均衡器各段增益（31 Hz … 16 kHz）。
   'music_eq_gains',
+  // double（默认 0）：音效前级 dB（±12）。
+  'music_eq_preamp_db',
+  // String（默认 '' = 没选过）：选中的均衡预设（MusicEqPreset.wire）。
+  'music_eq_preset',
   // bool（默认 false）：独占 / bit-perfect 输出（设计 §7.4；设备本地）。
   'music_exclusive_output',
   'music_gapless',
@@ -546,6 +574,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // String（JSON 数组 [{id, enabled}]）：音乐在线来源（插件 `plugin:<id>` / 服务器
   // `server:<serverId>` / `apple-music`）的顺序与「推荐 / 搜索里显示」开关。
   'music_online_sources',
+  // String（MusicPluginQuality.wire：standard / high / lossless / hires；缺省 = 没单独
+  // 设过，由 music_server_max_bitrate 反推）：在线插件取流音质档。跨设备。
+  'music_plugin_quality',
   'music_replaygain',
   // double（默认 0）：ReplayGain 预放大 dB（设计 §7.3）。
   'music_replaygain_preamp_db',
@@ -567,6 +598,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'music_vgmdb_enabled',
   // double（默认 100）：音乐软件音量（100 = 不改样本）。
   'music_volume',
+  // bool（默认 false）：在线来源里显示 YouTube 内置音源（反馈 0tRY-D2JgG，显式 opt-in；
+  // iOS 上整类不存在，合规门 isYoutubeMusicSourceAvailable）。
+  'music_youtube_enabled',
   // bool（默认 true）：MD3 悬浮底栏图标下是否显示标签。
   'nav_bar_labels_visible',
   // String（默认 '' = AdaptiveNavBarStyle.defaultStyle，2026-10-23 起 mode_strip）：
@@ -706,6 +740,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'srs_card_appearance',
   // int（0 = 关）：每日复习张数目标（小组件「目标」卡；只对内置 SRS 有意义）。
   'srs_goal_daily_reviews',
+  // String（JSON）：复习首页「已配对设备」的落盘缓存——每台主机上次读到的牌组摘要（远程复习线格式）、
+  // 读到的时刻与能力探测时刻（kSrsHomePairedCachePrefKey，srs_remote_review_page.dart）。设备本地，不含凭据。
+  'srs_home_paired_cache',
   'srs_import_anki_options',
   // bool（默认 true）：复习页顶部旧 Lapis 迁移横幅，「不再提醒」写 false。设备本地：
   // 不进 Profile 快照（ProfileKeys._excludedPrefKeys），否则切 Profile 会把它删掉。
@@ -971,6 +1008,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // （手机上列表旁的查词弹窗太扁，多数人只拿列表跳转，群反馈 GbN9MoKDCQ）。
   'video_subtitle_list_tap_lookup',
   'video_subtitle_list_width',
+  // string（JSON，默认空 = 关）：字幕遮布（盖住烧进画面的硬字幕），见
+  // VideoSubtitleMaskConfig：开关 + 画面比例矩形 + 外观 + 强度。
+  'video_subtitle_mask',
   // string（默认 auto）：生成日语字幕的 MOSS 后端 auto/cuda/vulkan/cpu；设备本地。
   'video_subtitle_moss_backend',
   'video_subtitle_obscure_hide',
@@ -981,6 +1021,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // string（默认空）：主字幕轨默认语言偏好（反馈 Fz9HXThdSW，参考 PotPlayer）：逗号 /
   // 空白分隔，按顺序挑第一条命中的内封轨，见 parseSubtitleLanguagePreferences。
   'video_subtitle_preferred_languages',
+  // bool（默认 true）：视频页「生成字幕」是否把字幕文件写到视频旁边（开 = 生成字幕
+  // 管线；关 = 只在 Fushi 里转录使用），见 PreferencesRepository.videoSubtitleSaveBesideVideo。
+  'video_subtitle_save_beside_video',
   // string（默认 auto）：生成日语字幕的分段方式 auto/moss/window；设备本地。
   'video_subtitle_segmenter',
   'video_subtitle_style',
@@ -1107,6 +1150,8 @@ const Set<String> kCredentialPreferenceKeys = <String>{
   'ai_providers',
   // 联网搜索配置 JSON 里的 Brave API key。
   'ai_web_search',
+  // 外部 MCP server 清单里 base64 的请求头 / 环境变量值（可能是 token）。
+  'ai_mcp_client_servers',
   // AnkiSettings JSON 里的 AnkiConnect apiKey（明文）。
   kAnkiSettingsPrefKey,
   // 每条 AList / OpenList 站点记录里带 base64 的 passwordB64。

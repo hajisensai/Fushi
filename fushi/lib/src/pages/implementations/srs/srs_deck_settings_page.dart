@@ -16,7 +16,7 @@ import 'package:fushi_engine/srs/srs_optimizer.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi/src/srs/srs_app_runtime.dart';
-import 'package:fushi/src/srs/srs_optimization_scheduler.dart';
+import 'package:fushi_engine/srs/srs_optimization_scheduler.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_rwkv_panel.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
@@ -33,7 +33,7 @@ import 'package:fushi/src/utils/components/fushi_loading_view.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
-import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_load_error.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
@@ -175,6 +175,14 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
     super.dispose();
   }
 
+  void _retryLoad() {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    unawaited(_load());
+  }
+
   Future<void> _load() async {
     try {
       final SrsDbStore? store = await readSrsStore(ref);
@@ -245,6 +253,10 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
   SrsAlgorithm get _stepsAlgorithm => (_ownParams || !_hasParent)
       ? _algorithm
       : (_parentOwnerAlgorithm ?? _algorithm);
+
+  /// 保存后按 RWKV 排程（与内核 `DeckTree::uses_rwkv` 同一口径：参数归属祖先的算法）：「按复习量自动调整新卡」
+  /// 不生效（内核恒给每日新卡上限），开关禁用、预算 / 多出两项收起。
+  bool get _newPlanUnderRwkv => _stepsAlgorithm.usesRwkv;
 
   /// 不改步长、按 [_stepsAlgorithm] 保存后实际生效的学习 / 重学步长。
   List<double> get _baselineLearn => _deck!.learnStepsFor(_stepsAlgorithm);
@@ -803,16 +815,10 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
     }
     final SrsDeckView? deck = _deck;
     if (_error != null || deck == null) {
-      return SafeArea(
-        bottom: false,
-        child: Center(
-          child: FushiPlaceholderMessage(
-            icon: FushiIcons.error,
-            tone: FushiPlaceholderTone.error,
-            message: t.error_load_failed,
-            detail: _error == null ? null : '$_error',
-          ),
-        ),
+      return SrsLoadErrorView(
+        error: _error,
+        retryKey: const ValueKey<String>('srs-deck-settings-load-retry'),
+        onRetry: _retryLoad,
       );
     }
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
@@ -1093,10 +1099,18 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
           key: const ValueKey<String>('srs-settings-new-load-auto'),
           title: t.srs_settings_new_load_auto,
           subtitle: t.srs_settings_new_load_auto_hint,
-          value: _newLoadAuto,
-          onChanged: (bool v) => setState(() => _newLoadAuto = v),
+          // RWKV 下显示实际生效值（关）并禁用；`_newLoadAuto` 照存，切回 FSRS 恢复、保存也不改写。
+          value: _newPlanUnderRwkv ? false : _newLoadAuto,
+          onChanged: _newPlanUnderRwkv
+              ? null
+              : (bool v) => setState(() => _newLoadAuto = v),
         ),
-        if (_newLoadAuto) ...<Widget?>[
+        if (_newPlanUnderRwkv)
+          Text(
+            t.srs_settings_new_load_rwkv_note,
+            style: context.fushiType.bodySmall,
+          ),
+        if (_newLoadAuto && !_newPlanUnderRwkv) ...<Widget?>[
           _numberField(
             _newLoadBudget,
             t.srs_settings_new_load_budget,

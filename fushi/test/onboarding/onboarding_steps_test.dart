@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/onboarding/onboarding_steps.dart';
-import 'package:fushi/src/srs/srs_mining_target.dart';
+import 'package:fushi_engine/srs/srs_mining_target.dart';
 
 /// 默认按「复习方式选 Anki」取序列：本文件的既有用例钉的是原 Anki 流程；Fushi 复习
 /// 路径见下面的 `review method` 组。

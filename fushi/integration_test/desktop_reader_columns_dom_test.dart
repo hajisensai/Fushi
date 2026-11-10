@@ -9,6 +9,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:integration_test/integration_test.dart';
 
 import 'package:fushi/src/reader/reader_content_styles.dart';
+import 'package:fushi/src/reader/reader_page_spread.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 
 /// TODO-1285 (third recheck) -- real WebView2 column + image geometry probe.
@@ -209,7 +210,9 @@ void main() {
   }) async {
     await settings.setViewMode('paginated');
     await settings.setWritingMode(writingMode);
-    await settings.setPageColumns(pageColumns);
+    await settings.setPageSpread(
+      pageColumns >= 2 ? ReaderPageSpread.double : ReaderPageSpread.single,
+    );
     await applyCss(controller, settings);
     await tester.pump(const Duration(milliseconds: 400));
     final Object? raw = await controller.evaluateJavascript(source: probeJs);
@@ -249,9 +252,10 @@ void main() {
   }
 
   testWidgets(
-    'TODO-1285: pageColumns renders N distinct column bands per page in the '
-    'real WebView2 engine (horizontal + vertical), and JS pageStep matches '
-    'the true page advance',
+    'TODO-1285: horizontal single / two-page renders 1 / 2 distinct column '
+    'bands per page in the real WebView2 engine (vertical single = 1 band; '
+    'vertical two-page is the spread geometry, not stacked bands), and JS '
+    'pageStep matches the true page advance',
     (WidgetTester tester) async {
       final FushiDatabase db = FushiDatabase.forTesting(
         NativeDatabase.memory(),
@@ -263,12 +267,15 @@ void main() {
       await controller.evaluateJavascript(source: buildProbeBodyJs);
 
       final List<String> modes = <String>['horizontal-tb', 'vertical-rl'];
-      final List<int> columnCounts = <int>[1, 2, 3];
+      // 单双页（2026-11-07）：横排只有 1 / 2 栏；竖排双页是对开（column-wrap），不再
+      // 上下叠成 N 段，这里只量竖排单页。
+      List<int> columnCountsFor(String mode) =>
+          mode == 'horizontal-tb' ? <int>[1, 2] : <int>[1];
       final Map<String, Map<String, dynamic>> results =
           <String, Map<String, dynamic>>{};
 
       for (final String mode in modes) {
-        for (final int n in columnCounts) {
+        for (final int n in columnCountsFor(mode)) {
           final Map<String, dynamic> m = await measure(
             controller: controller,
             settings: settings,
@@ -282,7 +289,7 @@ void main() {
       }
 
       for (final String mode in modes) {
-        for (final int n in columnCounts) {
+        for (final int n in columnCountsFor(mode)) {
           final Map<String, dynamic> m = results['$mode/N=$n']!;
           final int bands = (m['columnBandsFirstPage'] as num?)?.toInt() ?? -1;
           expect(
@@ -309,6 +316,34 @@ void main() {
           }
         }
       }
+
+      // 竖排双页 = 对开（column-wrap，Chromium 145+）；不支持的引擎（WebKit）整段
+      // @supports 不生效、退回竖排单页。两种情况都不许出现旧版「上下叠两段」。
+      final Map<String, dynamic> vd = await measure(
+        controller: controller,
+        settings: settings,
+        writingMode: 'vertical-rl',
+        pageColumns: 2,
+        tester: tester,
+      );
+      final Object? wrapRaw = await controller.evaluateJavascript(
+        source:
+            '(function(){try{return String(getComputedStyle(document.body)'
+            ".columnWrap);}catch(e){return 'error';}})();",
+      );
+      final String columnWrap = wrapRaw?.toString() ?? 'null';
+      debugPrint(
+        '[cols-dom] vertical-rl/double columnWrap=$columnWrap => '
+        '${jsonEncode(vd)}',
+      );
+      final int vdBands = (vd['columnBandsFirstPage'] as num?)?.toInt() ?? -1;
+      expect(
+        vdBands,
+        1,
+        reason:
+            'vertical two-page must be the spread (column-wrap=$columnWrap) '
+            'or fall back to one band, never stacked bands; measured $vdBands',
+      );
     },
   );
 
@@ -325,7 +360,7 @@ void main() {
       await settings.refreshFromDb();
       await settings.setViewMode('paginated');
       await settings.setWritingMode('horizontal-tb');
-      await settings.setPageColumns(2);
+      await settings.setPageSpread(ReaderPageSpread.double);
 
       final InAppWebViewController controller = await bootWebView(tester);
 

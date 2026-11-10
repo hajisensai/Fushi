@@ -54,7 +54,7 @@ import 'package:fushi/src/srs/srs_card_dict_style.dart';
 import 'package:fushi/src/srs/srs_card_media.dart';
 import 'package:fushi/src/srs/srs_card_tokens.dart';
 import 'package:fushi/src/srs/srs_card_translation_blur.dart';
-import 'package:fushi/src/srs/srs_media_store.dart';
+import 'package:fushi_engine/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/srs/srs_review_gestures.dart';
 import 'package:fushi/src/utils/misc/desktop_audio_playback.dart';

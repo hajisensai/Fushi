@@ -76,6 +76,7 @@ class _RubyOnlyLookup
     required int maximumTerms,
     required List<FushiRubySpan> rubySpans,
     String? language,
+    bool? chineseScriptVariants,
   }) async {
     calls.add('full-ruby');
     spans.add(rubySpans);
@@ -90,6 +91,7 @@ class _RubyOnlyLookup
     required int maximumTerms,
     required List<FushiRubySpan> rubySpans,
     String? language,
+    bool? chineseScriptVariants,
     RemoteDictionaryPopupTiming? timing,
   }) async {
     calls.add('popup-ruby');

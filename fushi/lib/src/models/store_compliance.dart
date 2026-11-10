@@ -53,6 +53,10 @@ enum StoreRestrictedCapability {
   /// 在线音源插件宿主：用户安装的 JS 插件接入第三方音乐平台（搜索 / 取流 / 歌词）。同一条
   /// 合规理由——运行时加载并执行第三方代码、接入未授权来源的媒体；iOS 伞形静态库也不编入
   /// JS 引擎。iOS 只保留本地曲库与用户自配的服务器曲库（docs/specs/2026-10-28-music-plugins.md）。
+  ///
+  /// 同一个值也覆盖音乐模块的 **YouTube 内置音源**（反馈 0tRY-D2JgG）：它虽是原生 Dart 实现、
+  /// 不加载第三方代码，但同样是「从未授权的第三方平台串流媒体」（审核指南 5.2.3 点名
+  /// YouTube），理由与插件音源的后半条相同。消费端问 `youtube_music_gate.dart`。
   onlineMusicSource,
 
   /// 统一下载中心（torrent / 磁力 / 任意直链队列），含外接 qBittorrent 后端。

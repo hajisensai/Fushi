@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
@@ -16,18 +17,28 @@ import 'package:flutter/widgets.dart';
 /// 叠层每格要画 3–4 张完整的面；把这些关掉后直接落到空 app 的 0.6–0.7 ms 地板。
 /// 动效本身不贵，贵的是它们逼出来的每一帧都要把整页静态内容再画一遍。
 ///
-/// Impeller 没有 raster cache，这里就是手动的那一份。三条不变式保证观感与实时
-/// 绘制逐像素一致：
+/// Impeller 没有 raster cache，这里就是手动的那一份。不变式：
 /// - **内容变了就实时画。** 本节点是 repaint boundary：子树任何重绘都会走到本节点
 ///   的 [RenderObject.paint]，于是「paint 被调到 = 内容变了」，这一帧照常实时绘制。
-///   正在动的内容（封面淡入、加载圈）因此一直实时绘制，不会被烘焙成过时快照。
-/// - **只在屏幕位置可 1:1 贴图时才用纹理。** 纹理按本节点的真实全局变换（缩放 +
-///   亚像素相位）烘焙、边界对齐到物理像素，贴回去不经任何重采样。每帧结束检查
-///   一次全局变换：滚动、进场动画、悬停放大、3D 倾斜让它变了（相位变化或出现
-///   旋转 / 透视），下一帧就回到实时绘制——悬停中的那张卡是实时画的，烘焙的只有
-///   静止的卡。变换刚出现的那一帧（帧末才看得到）仍贴纹理，双线性采样，与动画
-///   本身逐帧插值的观感相同。
-/// - **内容与位置都连续一整帧没变才烘焙。**
+///   正在动的内容（封面淡入、加载圈、抬升投影）因此一直实时绘制，不会被烘焙成过时
+///   快照。
+/// - **轴对齐（均匀缩放 + 平移）的位置只用 1:1 纹理。** 纹理按本节点的真实全局变换
+///   （缩放 + 亚像素相位）烘焙、边界对齐到物理像素，贴回去不经任何重采样，与实时
+///   绘制逐像素一致。滚动、进场动画、悬停放大让相位 / 倍数变了，下一帧回实时绘制，
+///   停稳一帧后重新烘焙。
+/// - **带旋转 / 斜切 / 透视的位置贴重采样纹理。** 这类变换下不存在 1:1 贴图，实时
+///   绘制本身也是把封面图重采样一遍，于是改按「本节点在屏幕上的最大放大倍数」向上
+///   取整到设备像素比的 1/4 档烘焙一张（[_resampledRatio]），贴图时双线性采样；只要
+///   内容不变、倍数没超过纹理分辨率，变换怎么变都贴同一张，不再重放子树。
+///
+///   这一条是 BUG-4222 的根因修复：扇形合集卡后面几本**常驻**旋转，悬停中的整摞
+///   又带 3D 倾斜透视——此前「只认 1:1」，这些面永远烘焙不了：页面上只要有东西在
+///   出帧，每张合集卡的 3 本后层都整套实时重画（模糊投影 + 圆角裁切 + 封面图 + 多层
+///   光泽），悬停中的合集卡再加 4 本透视下的实时面。实测（独立 profile 包复刻同一
+///   套面、RTX 4070 Ti、Impeller OpenGLES、1440×852 窗口、24 格其中 12 张合集卡、
+///   悬停倾斜持续出帧，FrameTiming raster 均值）：旧逻辑悬停单本 5.3–6.3 ms、悬停
+///   合集 7.1–7.4 ms；本逻辑两者都是 0.7–0.8 ms。
+/// - **内容（轴对齐时连同位置）连续一整帧没变才烘焙。**
 ///
 /// 子树里嵌套 repaint boundary 时不烘焙：烘焙态下它的层不在场景里，它自己重绘时
 /// Flutter 不会通知到本节点（`_skippedPaintingOnLayer` 停在第一个已挂载的祖先层），
@@ -110,8 +121,12 @@ class RenderBakedSurface extends RenderRepaintBoundary {
   /// 尺寸取，否则整张图被压缩约 1 像素。
   Rect _imageSource = Rect.zero;
 
-  /// 烘焙时的全局位置；之后位置不再等价就回实时绘制。
+  /// 1:1 纹理烘焙时的全局位置（null = 重采样纹理或未烘焙）；轴对齐的位置不再与它
+  /// 等价就回实时绘制。
   _Placement? _bakedPlacement;
+
+  /// 纹理分辨率：本节点每个逻辑单位对应的纹理像素数（0 = 未烘焙）。
+  double _bakedRatio = 0;
 
   /// 刚烘焙完、下一次 paint 要改画纹理（而不是把它当成「内容变了」）。
   bool _showBake = false;
@@ -131,6 +146,9 @@ class RenderBakedSurface extends RenderRepaintBoundary {
 
   /// 是否处于烘焙态（测试 / 诊断用）。
   bool get debugIsBaked => _image != null;
+
+  /// 当前纹理分辨率（每逻辑单位的纹理像素数；未烘焙为 0，测试 / 诊断用）。
+  double get debugBakedPixelRatio => _bakedRatio;
 
   @override
   void markNeedsPaint() {
@@ -169,12 +187,10 @@ class RenderBakedSurface extends RenderRepaintBoundary {
 
   /// 帧末检查（每帧对所有在场的烘焙面跑一次）。
   void _endOfFrame() {
-    final _Placement? now = _Placement.of(_physicalTransform());
+    final Matrix4 transform = _physicalTransform();
+    final _Placement? now = _Placement.of(transform);
     if (_image != null) {
-      final _Placement? baked = _bakedPlacement;
-      if (now == null || baked == null || !now.pixelEquivalent(baked)) {
-        _unbake();
-      }
+      if (!_textureFits(transform, now)) _unbake();
       return;
     }
     if (_dirty) return; // 已经标脏，下一帧会实时画。
@@ -184,25 +200,91 @@ class RenderBakedSurface extends RenderRepaintBoundary {
         now != null && seen != null && now.pixelEquivalent(seen);
     _seenSerial = _liveSerial;
     _seenPlacement = now;
-    if (contentStable && placementStable) {
-      _bake(now);
-    } else if (now != null) {
-      // 还差一帧确认；没有别的东西在出帧时自己要一帧。
-      SchedulerBinding.instance.ensureVisualUpdate();
+    if (now != null) {
+      if (contentStable && placementStable) {
+        _bake(now);
+        return;
+      }
+    } else {
+      final double? ratio = _resampledRatio(transform);
+      // 退化变换（缩到 0、翻到视点背后）或放大过头：不烘焙，也不必自己要帧。
+      if (ratio == null) return;
+      if (contentStable) {
+        _bakeResampled(ratio);
+        return;
+      }
     }
+    // 还差一帧确认；没有别的东西在出帧时自己要一帧。
+    SchedulerBinding.instance.ensureVisualUpdate();
+  }
+
+  /// 现有纹理在当前变换下还能不能直接贴。
+  ///
+  /// 轴对齐：只认与烘焙位置像素等价的 1:1 纹理（重采样纹理也要回实时绘制、停稳后
+  /// 重烘一张 1:1 的，静止的卡才逐像素等于实时绘制）。带旋转 / 透视：任何纹理只要
+  /// 分辨率不低于屏幕上的最大放大倍数就照贴（1:1 纹理在变换刚出现时也就地沿用）。
+  bool _textureFits(Matrix4 transform, _Placement? now) {
+    if (now != null) {
+      final _Placement? baked = _bakedPlacement;
+      return baked != null && now.pixelEquivalent(baked);
+    }
+    final double? need = _screenScale(transform);
+    return need != null && need <= _bakedRatio * (1 + 1e-3);
+  }
+
+  /// 本节点盒子在屏幕上的最大放大倍数（物理像素 / 逻辑单位）：四条边映射后的长度
+  /// 与原长之比取最大（含透视除法，近端那条边最长）。有角落翻到视点背后、或结果
+  /// 不是有限正数时返回 null。
+  double? _screenScale(Matrix4 transform) {
+    final double w = size.width;
+    final double h = size.height;
+    if (w <= 0 || h <= 0) return null;
+    final Float64List s = transform.storage;
+    final List<Offset> corners = <Offset>[];
+    for (final Offset local in <Offset>[
+      Offset.zero,
+      Offset(w, 0),
+      Offset(w, h),
+      Offset(0, h),
+    ]) {
+      final double cw = s[3] * local.dx + s[7] * local.dy + s[15];
+      if (cw <= 0) return null;
+      corners.add(MatrixUtils.transformPoint(transform, local));
+    }
+    final double scale = <double>[
+      (corners[1] - corners[0]).distance / w,
+      (corners[2] - corners[3]).distance / w,
+      (corners[3] - corners[0]).distance / h,
+      (corners[2] - corners[1]).distance / h,
+    ].reduce(math.max);
+    return scale.isFinite && scale > 0 ? scale : null;
+  }
+
+  /// 重采样纹理的分辨率：屏幕最大放大倍数按设备像素比的 1/4 档向上取整（悬停放大
+  /// 1.05 与倾斜透视落在同一档里，倾斜中一直贴同一张，不逐帧重烘）。超过设备像素比
+  /// 两倍（被缩放手势放得很大）就不烘焙——纹理面积随倍数平方涨。
+  double? _resampledRatio(Matrix4 transform) {
+    final double? need = _screenScale(transform);
+    if (need == null) return null;
+    final double dpr = _devicePixelRatio();
+    if (need > dpr * 2) return null;
+    final double step = dpr / 4;
+    return math.max(1, (need / step - 1e-3).ceil()) * step;
   }
 
   /// 本节点坐标 → 物理像素：[getTransformTo] 只到根 [RenderView] 的逻辑坐标，
   /// 还要乘上视图的设备像素比（纹理按物理像素烘焙，否则高 DPI 屏上发糊）。
   Matrix4 _physicalTransform() {
+    final double dpr = _devicePixelRatio();
+    return Matrix4.diagonal3Values(dpr, dpr, 1)..multiply(getTransformTo(null));
+  }
+
+  double _devicePixelRatio() {
     RenderObject root = this;
     while (root.parent != null) {
       root = root.parent!;
     }
-    final double dpr = root is RenderView
-        ? root.configuration.devicePixelRatio
-        : 1.0;
-    return Matrix4.diagonal3Values(dpr, dpr, 1)..multiply(getTransformTo(null));
+    return root is RenderView ? root.configuration.devicePixelRatio : 1.0;
   }
 
   void _bake(_Placement p) {
@@ -229,6 +311,35 @@ class RenderBakedSurface extends RenderRepaintBoundary {
     _imageBounds = bounds;
     _imageSource = Rect.fromLTWH(0, 0, rightPx - leftPx, bottomPx - topPx);
     _bakedPlacement = p;
+    _bakedRatio = p.scale;
+    _showBake = true;
+    _selfMarking = true;
+    markNeedsPaint();
+    _selfMarking = false;
+  }
+
+  /// 带旋转 / 透视时的烘焙：在本节点自己的坐标系里按 [ratio] 倍分辨率烘焙（边界
+  /// 对齐到纹理像素格），之后在任意祖先变换下都贴这一张（见 [_textureFits]）。
+  /// [OffsetLayer.toImageSync] 只渲染本层子树、不含祖先变换，所以倾斜中也能烘焙。
+  void _bakeResampled(double ratio) {
+    if (!attached || size.isEmpty || _hasNestedBoundary()) return;
+    final Rect r = _overflow.inflateRect(Offset.zero & size);
+    final double leftPx = (r.left * ratio).floorToDouble();
+    final double topPx = (r.top * ratio).floorToDouble();
+    final double rightPx = (r.right * ratio).ceilToDouble();
+    final double bottomPx = (r.bottom * ratio).ceilToDouble();
+    final Rect bounds = Rect.fromLTRB(
+      leftPx / ratio,
+      topPx / ratio,
+      rightPx / ratio,
+      bottomPx / ratio,
+    );
+    final OffsetLayer layer = this.layer! as OffsetLayer;
+    _image = layer.toImageSync(bounds, pixelRatio: ratio);
+    _imageBounds = bounds;
+    _imageSource = Rect.fromLTWH(0, 0, rightPx - leftPx, bottomPx - topPx);
+    _bakedPlacement = null;
+    _bakedRatio = ratio;
     _showBake = true;
     _selfMarking = true;
     markNeedsPaint();
@@ -263,6 +374,7 @@ class RenderBakedSurface extends RenderRepaintBoundary {
   void _dropBake() {
     _showBake = false;
     _bakedPlacement = null;
+    _bakedRatio = 0;
     _image?.dispose();
     _image = null;
   }

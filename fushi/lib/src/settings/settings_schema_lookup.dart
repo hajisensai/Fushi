@@ -7,7 +7,6 @@ import 'package:fushi/src/pages/implementations/dictionary_dialog_page.dart';
 import 'package:fushi/src/pages/implementations/dictionary_settings_dialog_page.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart';
 import 'package:fushi/src/pages/implementations/local_audio_sources_dialog.dart';
-import 'package:fushi/src/corpus/library_corpus_settings.dart';
 import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:fushi/src/lookup/effective_lookup_size.dart'
     show
@@ -212,14 +211,24 @@ SettingsDestination buildLookupDestination() {
               );
             },
           ),
+          // 中文查词简体 ↔ 繁體双向互查（查 这个 也出 這個 的词条）。开发者要求默认关：只查
+          // 原文字形。始终显示：瘦客户端本机没有中文词典也要能开（开关随远端查词发给 host）。
+          SettingsSwitchItem(
+            id: 'lookup.chinese_script_variants',
+            title: t.lookup_chinese_script_variants,
+            subtitle: t.lookup_chinese_script_variants_hint,
+            icon: FushiIcons.language,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.lookupChineseScriptVariants,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setLookupChineseScriptVariants(
+                value,
+              );
+              settingsContext.refresh();
+            },
+            defaultValue: false,
+          ),
         ],
-      ),
-      // 「我库里的例句」（作品图谱 L4，D-L2 默认开）：开关 + 重建索引。
-      SettingsSection(
-        id: 'lookup.section.library_sentences',
-        presentation: SettingsSectionPresentation.alwaysExpanded,
-        title: t.lookup_library_sentences_enabled,
-        items: librarySentencesSettingsItems(),
       ),
       // 原「查词行为」19+ 项平铺长列表，按职责拆为四组：查词触发 / 外部集成 /
       // 朗读与反馈 / 弹窗窗口。纯展示重组：item id、持久化 key、

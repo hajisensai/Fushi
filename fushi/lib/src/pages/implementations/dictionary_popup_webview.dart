@@ -12,7 +12,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_anki/fushi_anki.dart'
     show AnkiOpenWordOutcome, MineOutcome, MineResult, MiningRequestOverrides;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
-import 'package:fushi/src/corpus/library_sentences_bridge.dart';
 import 'package:fushi/src/anki/anki_view_model.dart'
     show ankiRepositoryChainLabel, ankiRepositoryProvider;
 import 'package:fushi/src/anki/mine_failure_notice.dart';
@@ -76,6 +75,30 @@ const bool kSentenceContextPickerEnabled = false;
 const Duration kPopupNativeSelectLongPressDuration = Duration(
   milliseconds: 250,
 );
+
+/// 弹窗 popup.js **自己接管右键（contextmenu）** 的元素——Windows 宿主右键菜单
+/// （[DictionaryPopupWebViewState] 的搜索 / 复制 showMenu）命中它们时必须让位，否则两张
+/// 菜单叠在一起、宿主那张还抢在前面（反馈 3UHYaFPP8g：右键已制卡 ✓ 弹出的是「搜索 /
+/// 复制」而不是覆写 / 查看选择单）。与 popup.js 的 contextmenu 处理器一一对应：
+///   - `.audio-button` / `.fushi-audio-menu`：`bindAudioSourceMenuTriggers` 弹选源菜单，
+///     菜单本身吞 contextmenu；
+///   - 已制卡的 `.mine-button`：`bindMinedCardManageTriggers` 只在
+///     `data-mined === '1' && data-mining !== '1'` 时拦截（未制卡 + 不拦，宿主菜单照常），
+///     选择器按同一判据收窄。
+/// popup.js 新增自管右键的元素时同步这里。
+const String kPopupOwnedContextMenuSelector =
+    '.audio-button, .fushi-audio-menu, '
+    '.mine-button[data-mined="1"]:not([data-mining="1"])';
+
+/// 在 WebView 视口 CSS px 坐标 ([dx], [dy]) 处做命中测试的脚本：命中
+/// [kPopupOwnedContextMenuSelector] 任一元素（或其后代）返回 true。
+@visibleForTesting
+String popupOwnedContextMenuHitTestJs(double dx, double dy) =>
+    '(function(){var e=document.elementFromPoint('
+    '${dx.toStringAsFixed(1)},${dy.toStringAsFixed(1)});'
+    'return !!(e&&e.closest&&e.closest('
+    '${jsonEncode(kPopupOwnedContextMenuSelector)}));'
+    '})()';
 
 /// BUG-2790 根因修复（Android）：查词 WebView 是否走老式 Hybrid Composition。
 ///
@@ -3559,31 +3582,6 @@ JSON.stringify((function(){
           ),
         );
 
-        // 「我库里的例句」（popup.js createLibrarySentencesSection，作品图谱 L4）。同上：
-        // 所有挂本 WebView 的表面在这里一次接上。开关关着时注入的
-        // __fushiLibrarySentencesEnabled=false 已让 JS 不发这两根桥，这里照样秒回 null / false。
-        controller.addJavaScriptHandler(
-          handlerName: 'librarySentences',
-          callback: (args) => _guardJsBridge<Map<String, Object?>?>(
-            'DictPopupWebview.librarySentences',
-            null,
-            ErrorLogService.instance,
-            () => librarySentencesHandleBridge(
-              args,
-              ref.read(appProvider).moduleVisibility,
-            ),
-          ),
-        );
-        controller.addJavaScriptHandler(
-          handlerName: 'librarySentenceOpen',
-          callback: (args) => _guardJsBridge<bool>(
-            'DictPopupWebview.librarySentenceOpen',
-            false,
-            ErrorLogService.instance,
-            () => librarySentenceOpenHandleBridge(args),
-          ),
-        );
-
         // TODO-614：覆写范围=「全部」时，popup.js 在 lookup-time 探测到已制卡且不是
         // 本会话最近一张时调本处理器，按与查重同一条件反查一张可覆写的已存在 note id
         // （多张取最近一张）。回 null（默认 latest / 无匹配 / 后端拿不到 id）时 popup.js
@@ -4158,21 +4156,18 @@ JSON.stringify((function(){
   /// WebView2 原生项，禁原生后自补 [Clipboard.setData]）。BUG-802：选区读取从早年的
   /// `getSelectedText`（桌面 fork 未实现 + 只读顶层文档）改为穿透同源 iframe 的
   /// [_selectedTextAcrossFrames]，否则复制/搜索拿到空串永远无效。
-  /// [globalPosition] 处是不是弹窗里的音频按钮 ♪（或已打开的音频源菜单）。WebView
+  /// [globalPosition] 处是不是弹窗自管右键的元素（[kPopupOwnedContextMenuSelector]：
+  /// 音频按钮 ♪ / 已打开的音频源菜单 / 已制卡 ✓）。WebView
   /// 视口 CSS px 与本 widget 的本地逻辑坐标一一对应（缩放已由 globalToLocal 吃掉），
   /// 直接 `elementFromPoint`。WebView 未就绪 / 脚本失败一律按「不是」处理，宿主菜单照旧。
-  Future<bool> _secondaryClickHitsAudioButton(Offset globalPosition) async {
+  Future<bool> _secondaryClickHitsPopupOwnedMenu(Offset globalPosition) async {
     final InAppWebViewController? controller = _controller;
     final RenderObject? box = context.findRenderObject();
     if (controller == null || box is! RenderBox || !box.hasSize) return false;
     final Offset p = box.globalToLocal(globalPosition);
     try {
       final Object? hit = await controller.evaluateJavascript(
-        source:
-            '(function(){var e=document.elementFromPoint('
-            '${p.dx.toStringAsFixed(1)},${p.dy.toStringAsFixed(1)});'
-            "return !!(e&&e.closest&&e.closest('.audio-button, .fushi-audio-menu'));"
-            '})()',
+        source: popupOwnedContextMenuHitTestJs(p.dx, p.dy),
       );
       return hit == true;
     } catch (_) {
@@ -4190,12 +4185,12 @@ JSON.stringify((function(){
     // 是「菜单关闭那一刻」的状态而非「用户右键那一刻」的状态，任一环变动就拿空串，
     // 再被 `if (text.isEmpty) return` 静默吞掉 —— 用户看到的就是「菜单弹了、点复制没反应」。
     // 正确的数据流是在**事件源头**取快照：右键按下即发起读取，菜单只是选择动作的 UI。
-    // 右键落在 ♪ 上：popup.js 收到 DOM contextmenu 会自己弹「选择音频源」菜单，
-    // 宿主的搜索 / 复制菜单让位（否则两张菜单叠在一起）。按下即判，不等 DOM 事件
+    // 右键落在 ♪ / 已制卡 ✓ 上：popup.js 收到 DOM contextmenu 会自己弹「选择音频源」
+    // 菜单 / 覆写·查看选择单，宿主的搜索 / 复制菜单让位（否则两张菜单叠在一起）。按下即判，不等 DOM 事件
     // ——fork 把指针转给 WebView2 是异步的，此刻 DOM 还没见到这次按下。
     // 选区快照仍在最前发起（BUG-1451），再判让位。
     final Future<String> selectionAtRightClick = _selectedTextAcrossFrames();
-    if (await _secondaryClickHitsAudioButton(globalPosition)) return;
+    if (await _secondaryClickHitsPopupOwnedMenu(globalPosition)) return;
     if (!mounted || !context.mounted) return;
     final RenderObject? overlayObject = Overlay.of(
       context,

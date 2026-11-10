@@ -44,12 +44,18 @@ final class MusicServerOnlineSource extends MusicOnlineSource {
 /// Apple Music 在排序偏好里的固定 id。
 const String kAppleMusicSourceKey = 'apple-music';
 
+/// YouTube 内置音源在排序偏好里的固定 id。
+const String kYoutubeMusicSourceKey = 'youtube';
+
 String musicPluginSourceKey(String pluginId) => 'plugin:$pluginId';
 
 String musicServerSourceKey(MusicServerBrowser browser) =>
-    browser.kind == MusicServerKind.appleMusic
-    ? kAppleMusicSourceKey
-    : 'server:${browser.serverId}';
+    switch (browser.kind) {
+      MusicServerKind.appleMusic => kAppleMusicSourceKey,
+      MusicServerKind.youtube => kYoutubeMusicSourceKey,
+      MusicServerKind.jellyfin ||
+      MusicServerKind.subsonic => 'server:${browser.serverId}',
+    };
 
 /// 一个来源连同它在「推荐 / 搜索」里是否显示。
 typedef MusicOrderedSource = ({MusicOnlineSource source, bool enabled});

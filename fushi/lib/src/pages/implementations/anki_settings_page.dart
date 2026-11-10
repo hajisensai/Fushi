@@ -24,6 +24,7 @@ import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_srs/fushi_srs.dart' show SrsFieldDef, SrsNoteTypeView;
+import 'package:fushi_engine/srs/srs_miner.dart';
 import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi/src/anki/anki_backup_word_reader.dart';
 import 'package:fushi/src/anki/anki_deck_reposition_dialogs.dart';
@@ -69,8 +70,7 @@ import 'package:fushi_engine/srs/srs_builtin.dart'
 import 'package:fushi/src/pages/implementations/srs/srs_card_appearance_page.dart'
     show openSrsCardAppearancePage;
 import 'package:fushi/src/pages/implementations/srs/srs_note_type_editor_page.dart';
-import 'package:fushi/src/srs/srs_mining.dart';
-import 'package:fushi/src/srs/srs_mining_target.dart';
+import 'package:fushi_engine/srs/srs_mining_target.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 
 enum AnkiSettingsPanel { connection, lapis, maintenance, fields, media }
@@ -2451,6 +2451,9 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
     // 隐藏没被用到的旧别名；当前字段正用着的旧别名仍会出现（并标「已弃用」）。
     final options = AnkiHandlebarOptions.optionsForField(
       dictionaryNames: dictionaryNames,
+      frequencyDictionaryNames: appModel.dictRepo.freqDictionaries
+          .map((d) => d.name)
+          .toList(),
       currentValue: currentValue,
     );
 

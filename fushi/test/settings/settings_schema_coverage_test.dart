@@ -88,6 +88,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // （gapless-audio / prefetch-playlist / replaygain），harness 里没有在播的 mpv。
   // 设置值 → 引擎输出设置 → mpv 属性这条链由 music_player_engine_test 咬住。
   'music/Gapless playback': 'test/media/music/music_player_engine_test.dart',
+  // 在线插件音质：生效点是插件曲目在 mpv 后端打开时经 musicPluginPlaybackHost.quality 取档，
+  // harness 里没有插件也没有在播的 mpv。设置值 → 持久化 → 取流装配点拿到新档、清掉「只对这首」
+  // 由 app_model_music_plugin_quality_test 咬住；只重开插件曲目 / 只重排下一首由
+  // music_engine_reopen_current_test 咬住。
+  'music/Online plugin quality':
+      'test/models/app_model_music_plugin_quality_test.dart + test/media/music/music_engine_reopen_current_test.dart',
   // 逐曲断点续播：行为型偏好（只影响之后打开的曲目从哪开始放，无渲染树效果）。
   'music/Resume playback':
       'test/media/music/music_resume_test.dart + test/media/music/music_resume_session_test.dart',
@@ -122,30 +128,35 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/media/music/metadata/music_scrape_service_test.dart',
   // 开关值由 loadMusicServerBrowsers 读：开 = 来源清单里加 AppleMusicCatalogClient（带设置的
   // storefront），关 = 不加、不发请求。
-  'music/Apple Music catalog': 'test/media/music/server/music_server_test.dart',
+  // （服务器曲库 2026-11-07 起住 设置 › 在线服务 › 媒体服务器，所以记在 services 名下。）
+  'services/Apple Music catalog':
+      'test/media/music/server/music_server_test.dart',
   // storefront 同一条测试咬住：开着时 catalog 客户端用的就是设置里的区域。
-  'music/Storefront': 'test/media/music/server/music_server_test.dart',
+  'services/Storefront': 'test/media/music/server/music_server_test.dart',
   'music/Pause while looking up words':
       'test/media/music/lyrics/music_lyrics_page_logic_test.dart',
   // 服务器曲库的码率上限：生效点是播放服务器曲目时向服务器要的流（直出 / 转码），harness
   // 里没有服务器。设置值 → musicServerBitrateLimit → streamFor 的直出 / 转码与信号路径源
   // 属性由 music_server_test 咬住。
-  'music/Server streaming quality':
+  'services/Server streaming quality':
       'test/media/music/server/music_server_test.dart',
-  // 图示均衡器：生效点是音乐 libmpv 实例的 `af`，harness 里没有在播的 mpv。偏好串 → 均衡
-  // 设置 → `af` 链由 music_equalizer_test 咬住；真 libmpv 上的增益 / 关时逐样本不变 /
-  // 与交叉淡入同链在 music_equalizer_real_test。
-  'music/Enable equalizer': 'test/media/music/music_equalizer_test.dart',
-  'music/31 Hz': 'test/media/music/music_equalizer_test.dart',
-  'music/62 Hz': 'test/media/music/music_equalizer_test.dart',
-  'music/125 Hz': 'test/media/music/music_equalizer_test.dart',
-  'music/250 Hz': 'test/media/music/music_equalizer_test.dart',
-  'music/500 Hz': 'test/media/music/music_equalizer_test.dart',
-  'music/1 kHz': 'test/media/music/music_equalizer_test.dart',
-  'music/2 kHz': 'test/media/music/music_equalizer_test.dart',
-  'music/4 kHz': 'test/media/music/music_equalizer_test.dart',
-  'music/8 kHz': 'test/media/music/music_equalizer_test.dart',
-  'music/16 kHz': 'test/media/music/music_equalizer_test.dart',
+  // 音效（原图示均衡器）：body 逃生口页（曲线 / 竖推子 / 宽屏双栏），生效点是音乐 libmpv
+  // 实例的 `af`，harness 里没有在播的 mpv。偏好 → 设置 → `af` 链由 music_audio_effects_test 咬住，真 libmpv 上的增益 / 关与全部
+  // 中性时逐样本不变 / 与交叉淡入同链在 music_audio_effects_real_test，页面交互在
+  // music_audio_effects_page_test。
+  'music/Enable audio effects':
+      'test/media/music/music_audio_effects_test.dart',
+  'music/Bass': 'test/media/music/music_audio_effects_test.dart',
+  'music/Bass turnover': 'test/media/music/music_audio_effects_test.dart',
+  'music/Treble': 'test/media/music/music_audio_effects_test.dart',
+  'music/Treble turnover': 'test/media/music/music_audio_effects_test.dart',
+  'music/Balance': 'test/media/music/music_audio_effects_test.dart',
+  'music/Stereo width': 'test/media/music/music_audio_effects_test.dart',
+  'music/Mono': 'test/media/music/music_audio_effects_test.dart',
+  'music/Swap left and right': 'test/media/music/music_audio_effects_test.dart',
+  'music/Anti-clipping limiter':
+      'test/media/music/music_audio_effects_test.dart',
+  'music/Preamp': 'test/media/music/music_audio_effects_test.dart',
   // ASS 卡拉 OK 字幕默认显示：生效点是卡拉 OK 字幕页打开时选哪种叠加
   // （musicKaraokeDefaultOverlay），harness 设置页没有在播的曲目与 mpv；设置值 → 默认
   // 叠加的判据由 karaoke_stage_plan_test 咬住。
@@ -194,6 +205,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // popup_dict_unified_style_test 咬住。
   'lookup/Unify dictionary styles':
       'test/pages/popup_dict_unified_style_test.dart',
+  // 简繁互查开关：生效点是引擎 flag（中文查词多出另一种字形的变体），harness 没有装
+  // 中文词典。开关→判据由 app_model_search_pure_logic_test 咬住，远端接线由
+  // remote_lookup_request_language_test，引擎 flag 关/开由
+  // native/fushidicts/tests/chinese_simp_trad_lookup_test.cpp。
+  'lookup/Match simplified and traditional Chinese':
+      'test/models/app_model_search_pure_logic_test.dart + test/sync/remote_lookup_request_language_test.dart',
   // v101 更新提醒的五个开关：写 prefsRepo（changed=true），生效点在
   // UpdateFeedService.publishBatch——关掉的域整批丢弃（不投递/不红点/不通知）、
   // 系统通知总开关只掐通知不掐红点。harness 里没有投递方（订阅检查、漫画刷新、
@@ -617,6 +634,15 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 沉浸锁定 + 字幕遮蔽中点画面显示当前句：生效点在播放页点画面抬起（要真播放器与
   // 沉浸锁），harness 无适用探针。判据纯函数与 overlay 显形句柄由专项测试咬住，页面
   // 接线由源码守卫咬住。
+  // 字幕遮布（开关 / 外观 / 强度）：写 prefsRepo 的 JSON 偏好，生效点在播放页画面上的
+  // VideoSubtitleMaskLayer（要真播放器的画面尺寸），harness 无适用探针；由专项 widget
+  // 测试咬住「关 = 不画、模糊 / 纯色按外观出层、位置按画面内容区（含黑边）映射」。
+  'video/Subtitle mask':
+      'test/media/video/video_subtitle_mask_test.dart（关闭不画 / 开启按内容区落位）',
+  'video/Mask look':
+      'test/media/video/video_subtitle_mask_test.dart（模糊 / 纯色两种外观各出各的层）',
+  'video/Mask strength':
+      'test/media/video/video_subtitle_mask_test.dart（强度 → 纯色不透明度）',
   'video/Tap picture to show subtitles':
       'test/media/video/video_immersive_tap_reveal_test.dart'
       '（判据四条件 + 句柄显示 / 遮回 / 换句遮回）；页面接线见 '
@@ -732,13 +758,14 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'appearance/Design system': 'test/models/theme_notifier_test.dart',
   'appearance/UI size': 'test/models/theme_notifier_test.dart',
   'reading/Spread mode': 'test/epub/epub_spread_map_test.dart',
-  // 阶段 G 重排后，「模式」分区（含 view_mode）在设置页排在「排版」分区（含
-  // page_columns）之前，覆盖 harness 焦点遍历会先把 view_mode 从 paginated 切走，
-  // 随后驱动 page_columns 时 reader 已非翻页态、T1 reader CSS 探针看不到 column-count
-  // 变化（多列模型只在 _paginatedLayoutCss）。page_columns 的 CSS 生效（翻页态发
-  // column-count、连续/VN 态不发）与 paginated-only 可见性由专项测试咬住。
-  'reading/Columns per page':
-      'test/settings/page_columns_paginated_only_test.dart',
+  // 「单双页」（reading_display.page_columns，旧「每页列数」改三档，id / 持久化键沿用）。
+  // 阶段 G 重排后，「模式」分区（含 view_mode）在设置页排在「排版」分区之前，覆盖
+  // harness 焦点遍历会先把 view_mode 从 paginated 切走，随后驱动单双页时 reader 已非
+  // 翻页态、T1 reader CSS 探针看不到 column-count 变化（多列模型只在
+  // _paginatedLayoutCss）。单双页的 CSS 生效（翻页态双页发 column-count、连续/VN 态
+  // 不发）与 paginated-only 可见性由专项测试咬住；「自动」按窗口 / 折痕的解析由
+  // reader_page_spread_test 咬住。
+  'reading/Page spread': 'test/settings/page_columns_paginated_only_test.dart',
   // 中缝折痕（reading_display.page_crease）：纯 CSS 键，只在翻页且一屏恰好两栏时发
   // （harness 默认单栏，渲染输入不变属预期）。发 / 不发的全部组合与书本姿态自动两栏
   // 由专项纯函数测试咬住。
@@ -810,10 +837,6 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 关闭后自动恢复三态：生效点是宿主处理「关闭」与回到前台。
   'floatingBall/Auto-restore floating ball':
       'test/floating_ball/app_floating_ball_host_test.dart: 自动恢复含应用内 / 不自动恢复 / 桌面应用外球「应用内外」三条',
-  // 「我库里的例句」开关：生效点是弹窗注入 window.__fushiLibrarySentencesEnabled（popup.js
-  // 据此不渲染 / 不发桥）与语料喂入门（LibraryCorpusService.enabled）。
-  'lookup/Sentences from your library':
-      'test/pages/popup_settings_injection_memo_test.dart',
   'lookup/Popup max width': 'test/pages/dictionary_popup_layer_test.dart',
   // 查词页两个开关（反馈 3D-JH966Kr / cczhbM7ZOI）：生效点在 HomeDictionaryPage
   // （结果顶部下拉是否清空、导航点进 / 清空后是否聚焦搜索框），开 / 关两态都有
@@ -1311,6 +1334,22 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 连同 28px 底部预留一起消失），既不进 reader CSS 也不进主题树，harness 的渲染输入
   // 观测不到；由专项纯函数真值表 + widget 行为用例覆盖。默认 true=保持现状。
   'reading/Show reading timer': 'test/reader/reader_status_footer_test.dart',
+  // 读数胶囊的另两段「本次字数」「字每时」：与「阅读计时器」同一生效点——状态行组件
+  // 的 showChars / showSpeed 门控，以及 readerStatusFooterEnabled 的四段门控（计时 /
+  // 字数 / 字每时 / 进度都关时整条行连同底部预留一起消失）；不进 reader CSS 也不进
+  // 主题树，harness 的渲染输入观测不到。由专项纯函数真值表 + 「session readouts」
+  // widget 用例覆盖。
+  'reading/Show characters read this session':
+      'test/reader/reader_status_footer_test.dart',
+  'reading/Show characters per hour':
+      'test/reader/reader_status_footer_test.dart',
+  // 「收起控制栏时保留读数」：生效点在悬浮态下 readerStatusFooterReserve /
+  // readerStatusFooterVisible / readerStatusFooterResting 的 persistent 分支（常驻时
+  // 按挤压式占预留、控制栏收起后胶囊仍画、转静息态），同样只作用于状态行组件与
+  // 预留高，harness 观测不到；由这三个纯函数的 persistent 真值表 + 静息胶囊 widget
+  // 用例覆盖。
+  'reading/Keep readouts when controls hide':
+      'test/reader/reader_status_footer_test.dart',
   // 视觉小说模式的六个控件：只在 view_mode=vn 时显示——本 harness 驱动「翻页 /
   // 滚动」时会走到 VN，于是它们进入遍历。生效点在 VN 引擎（WebView 分屏 /
   // 逐字显现 / 点空白推进），reader CSS 探针看不到；仅 VN 可见性、每项写穿与

@@ -5,6 +5,7 @@ import 'package:fushi_dictionary/fushi_dictionary_core.dart';
 
 import 'package:fushi_engine/sync/forwarded_mine_payload.dart';
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
+import 'package:fushi_engine/sync/remote_mining_target.dart';
 import 'package:fushi_engine/sync/immersion_mine_payload.dart';
 import 'package:fushi_engine/sync/remote_source_note.dart';
 
@@ -210,12 +211,19 @@ Future<Map<String, dynamic>> buildRemoteDictionaryLookupResponse(
   // 请求方的查词语言（可选）：中文 → host 开简体 → 繁體回落。缺省 = 旧行为，按 host
   // 本机当前查词语言；旧 host 不认该字段，同样是旧行为。
   final String? language = remoteLookupLanguageOf(body);
+  // 请求方用户的简繁互查开关（可选 bool）。缺省 = host 用自己的开关。
+  final bool? chineseScriptVariants = remoteLookupChineseScriptVariantsOf(body);
   // 原文自带振假名（可选，`[{s, e, r}]` 以 term 为坐标系）：认识它的 host 让引擎按读音
   // 一致度排同长度候选；缺省 / 旧 host = 旧排序。
   final List<FushiRubySpan> rubySpans = remoteLookupRubySpansOf(body);
   if (popupOnly &&
       !record &&
-      hasPopupFastPath(lookup, language: language, rubySpans: rubySpans)) {
+      hasPopupFastPath(
+        lookup,
+        language: language,
+        chineseScriptVariants: chineseScriptVariants,
+        rubySpans: rubySpans,
+      )) {
     final RemoteDictionaryPopupLookup? popup =
         await searchRemoteDictionaryPopupForRequest(
           lookup,
@@ -223,6 +231,7 @@ Future<Map<String, dynamic>> buildRemoteDictionaryLookupResponse(
           wildcards: wildcards,
           maximumTerms: maximumTerms,
           language: language,
+          chineseScriptVariants: chineseScriptVariants,
           timing: popupTiming,
           rubySpans: rubySpans,
         );
@@ -241,6 +250,7 @@ Future<Map<String, dynamic>> buildRemoteDictionaryLookupResponse(
     wildcards: wildcards,
     maximumTerms: maximumTerms,
     language: language,
+    chineseScriptVariants: chineseScriptVariants,
     rubySpans: rubySpans,
   );
   if (result != null && history != null && record) {
@@ -341,13 +351,33 @@ Future<Map<String, dynamic>> buildRemoteMineResponse(
   // TODO-1303：结果不再是裸字符串——摊开诊断（失败原因 / 音频落空警告）到响应体，
   // 让扩展 content.js 能 toast 显因、区分「真成功」与「卡建了但没音频」。返回类型仍是
   // Map（未改契约），只是多了可选 message/detail 字段（向后兼容：旧扩展忽略即可）。
-  final RemoteMineResult r = payload.isImmersion
-      ? await mining.mineImmersion(payload)
-      : await mining.mineEntry(
-          fields: payload.fields,
-          sentence: payload.sentence,
-        );
+  // §4.8：主机让手机挑落点时把请求里的 `target` 交进去，回包带实际落点。
+  final RemoteMiningTarget? target = RemoteMiningTarget.fromJson(
+    body['target'],
+  );
+  RemoteMiningTarget? landed;
+  bool targetUnavailable = false;
+  final RemoteMineResult r;
+  if (payload.isImmersion) {
+    r = await mining.mineImmersion(payload);
+  } else if (mining case final FushiRemoteMiningTargetService targeted) {
+    final RemoteMineLanding l = await targeted.mineEntryTo(
+      fields: payload.fields,
+      sentence: payload.sentence,
+      target: target,
+    );
+    r = l.result;
+    landed = l.landed;
+    targetUnavailable = l.targetUnavailable;
+  } else {
+    r = await mining.mineEntry(
+      fields: payload.fields,
+      sentence: payload.sentence,
+    );
+  }
   return <String, dynamic>{
+    if (landed != null) 'landed': landed.toJson(),
+    if (targetUnavailable) 'targetUnavailable': true,
     'result': r.result,
     if (r.message != null) 'message': r.message,
     if (r.detail != null) 'detail': r.detail,
@@ -407,8 +437,23 @@ Future<Map<String, dynamic>> buildForwardedMineResponse(
   required FushiRemoteMiningService mining,
 }) async {
   final ForwardedMinePayload payload = ForwardedMinePayload.fromJson(body);
-  final RemoteMineResult r = await mining.mineForwarded(payload);
+  RemoteMiningTarget? landed;
+  bool targetUnavailable = false;
+  final RemoteMineResult r;
+  if (mining case final FushiRemoteMiningTargetService targeted) {
+    final RemoteMineLanding l = await targeted.mineForwardedTo(
+      payload,
+      target: RemoteMiningTarget.fromJson(body['target']),
+    );
+    r = l.result;
+    landed = l.landed;
+    targetUnavailable = l.targetUnavailable;
+  } else {
+    r = await mining.mineForwarded(payload);
+  }
   return <String, dynamic>{
+    if (landed != null) 'landed': landed.toJson(),
+    if (targetUnavailable) 'targetUnavailable': true,
     'result': r.result,
     if (r.message != null) 'message': r.message,
     if (r.detail != null) 'detail': r.detail,
@@ -433,10 +478,16 @@ Future<Map<String, dynamic>> buildRemoteDuplicateResponse(
   if (expression.trim().isEmpty) {
     return <String, dynamic>{'duplicate': false};
   }
-  final bool duplicate = await mining.isDuplicate(
-    expression: expression,
-    reading: reading,
-  );
+  final bool duplicate = switch (mining) {
+    // §4.8：「已经有卡」按卡要去的那个地方判。
+    final FushiRemoteMiningTargetService targeted =>
+      await targeted.isDuplicateIn(
+        expression: expression,
+        reading: reading,
+        target: RemoteMiningTarget.fromJson(body['target']),
+      ),
+    _ => await mining.isDuplicate(expression: expression, reading: reading),
+  };
   // 反馈 E0sdqm4h-F：扩展单击已制卡 ✓ 的判据（「允许重复」）随查重一起回，见
   // [FushiRemoteDuplicatePolicyService]。不支持的 service 不带这个位（扩展照旧问用户）。
   return <String, dynamic>{

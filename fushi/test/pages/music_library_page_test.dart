@@ -179,6 +179,26 @@ void main() {
     );
     expect(importButton.tooltip, t.library_view_import);
     expect(importButton.selected, isFalse, reason: '音乐没有导入页，导入钮恒不选中、点开是菜单');
+    // 导入菜单只管导入：管理已有文件夹属于来源管理，只走顶栏「来源」页（与视频 / 书的
+    // 导入页不放来源管理一致，Feedback 983broef-P 后续）。
+    await tester.tap(
+      find.byKey(const ValueKey<String>('music-library-view-import')),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey<String>('music_add_folder')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('music_add_disc')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('music_manage_sources')),
+      findsNothing,
+    );
+    await tester.tapAt(Offset.zero);
+    await tester.pumpAndSettle();
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpAndSettle();

@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io' show Platform;
 import 'dart:ui' show PlatformDispatcher;
 
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi_audio/fushi_audio.dart'
     show kDefaultReadingIdleTimeout, kStudyIdleTimeoutPrefKey;
@@ -10,11 +11,16 @@ import 'package:fushi/src/profile/work_profile_scope.dart';
 import 'package:fushi_engine/ai/ai_settings.dart';
 import 'package:fushi_engine/srs/sync2/srs_folder_location.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_crypto.dart';
+import 'package:fushi_engine/sync/remote_mining_target.dart'
+    show RemoteMiningTarget;
 import 'package:fushi_engine/profile/profile_document.dart'
     show kProfileSettingCategoryPref;
 import 'package:fushi_engine/media/video/acquisition/video_acquisition_prefs.dart';
+import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart'
+    show kLookupChineseScriptVariantsPrefKey;
 import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
+import 'package:fushi_engine/ai/mcp_client/mcp_client_config.dart';
 import 'package:fushi_engine/ai/web_search.dart' show WebSearchConfig;
 import 'package:fushi_engine/ai/web_knowledge.dart'
     show
@@ -104,6 +110,8 @@ import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.da
     show normalizeAdvancedMiningAudioNudgeStepMs;
 import 'package:fushi_engine/mining/sentence_audio_source.dart'
     show SentenceAudioSourcePick;
+import 'package:fushi/src/media/video/video_subtitle_mask_config.dart';
+import 'package:fushi/src/utils/derived_value_listenable.dart';
 import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
 import 'package:fushi/src/media/video/video_pause_ocr_scope.dart';
 import 'package:fushi/src/media/audiobook/mining_audio_clip.dart'
@@ -1748,6 +1756,17 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 中文查词时是否简体 ↔ 繁體双向互查（键 [kLookupChineseScriptVariantsPrefKey]）。默认
+  /// OFF：只查原文字形；打开后查 这个 也会出按 這個 建索引的词条（反之亦然）。只在查词
+  /// 按中文处理时生效，判据见 `lookupUsesChineseScriptVariants`。
+  bool get lookupChineseScriptVariants =>
+      getPref(kLookupChineseScriptVariantsPrefKey, defaultValue: false) as bool;
+
+  Future<void> setLookupChineseScriptVariants(bool value) async {
+    await setPref(kLookupChineseScriptVariantsPrefKey, value);
+    notifyListeners();
+  }
+
   /// 查词结果滚到顶后继续下拉 = 清空查询、回到搜索历史。默认 ON（原行为）；用户
   /// 往上翻结果时常顶到头被甩回历史（反馈 3D-JH966Kr），关掉后下拉什么都不做。
   bool get lookupPagePullToClear =>
@@ -2088,6 +2107,26 @@ class PreferencesRepository extends ChangeNotifier
     await setPref('video_subtitle_obscure_reveal', value);
     notifyListeners();
   }
+
+  /// 字幕遮布（盖住烧进画面的硬字幕，见 [VideoSubtitleMaskConfig]）。低频设置，
+  /// setter 照常广播：播放页遮布层与设置面板回显无条件同步。
+  VideoSubtitleMaskConfig get videoSubtitleMask =>
+      VideoSubtitleMaskConfig.fromJson(
+        getPref('video_subtitle_mask', defaultValue: '') as String?,
+      );
+
+  Future<void> setVideoSubtitleMask(VideoSubtitleMaskConfig value) async {
+    await setPref('video_subtitle_mask', value.toJson());
+    notifyListeners();
+  }
+
+  /// [videoSubtitleMask] 的精确订阅：播放页的遮布层 / 编辑层据此跟随设置面板、控制
+  /// 通道（`mask_adjust`）与作品级配置切换，只在遮布配置真的变了时才重建。
+  late final ValueListenable<VideoSubtitleMaskConfig>
+  videoSubtitleMaskListenable = DerivedValueListenable<VideoSubtitleMaskConfig>(
+    this,
+    () => videoSubtitleMask,
+  );
 
   /// 副字幕的「临时显形」开关（用户要求主 / 副分开配置）。**未写过时继承主字幕的
   /// 值**：拆分前这是主副共用的一个总闸，关过它的老用户副字幕也得继续保持遮蔽。
@@ -3416,6 +3455,17 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 视频页「生成字幕」是否把字幕文件写到视频旁边（反馈 6Tj3ECtB0Q 合并两个入口后
+  /// 的选项）：开 = 走生成字幕管线（`<视频名>.<语言>.srt` 写在视频旁、可选专名表 AI
+  /// 校对）；关 = 只在 Fushi 里转录使用（转录弹层，语言 / 引擎更多，可再导出）。默认开。
+  bool get videoSubtitleSaveBesideVideo =>
+      getPref('video_subtitle_save_beside_video', defaultValue: true) as bool;
+
+  Future<void> setVideoSubtitleSaveBesideVideo(bool enabled) async {
+    await setPref('video_subtitle_save_beside_video', enabled);
+    notifyListeners();
+  }
+
   /// 用户是否已看过并同意「AI 校对会发送什么」的说明（首次开启 AI 校对时弹一次；
   /// CLI 用 `--consent-ai` 写同一个键）。设备本地，理由同上。
   bool get videoSubtitleAiConsented =>
@@ -3720,6 +3770,67 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setMineToServer(bool value) async {
     await setPref('mine_to_server', value);
+    notifyListeners();
+  }
+
+  /// 「制卡到已配对设备」每台主机的「保存到」（按 hostId；没有条目 = 主机默认）。设备本地
+  /// （`SyncRepository.deviceLocalPrefKeys`）。值：`{<hostId>: {kind?, profile?, deck?, label?}}`，
+  /// `label` 是选的时候拼好的显示名（设置行副标题用，不必为它连主机）。
+  static const String mineToServerTargetsKey = 'mine_to_server_targets';
+
+  Map<String, Map<Object?, Object?>> _mineToServerTargetsRaw() {
+    final Object? raw = getPref(mineToServerTargetsKey, defaultValue: '');
+    if (raw is! String || raw.isEmpty) {
+      return const <String, Map<Object?, Object?>>{};
+    }
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(raw);
+    } on FormatException {
+      return const <String, Map<Object?, Object?>>{};
+    }
+    if (decoded is! Map) return const <String, Map<Object?, Object?>>{};
+    return <String, Map<Object?, Object?>>{
+      for (final MapEntry<Object?, Object?> e in decoded.entries)
+        if (e.key case final String host)
+          if (e.value case final Map<Object?, Object?> v) host: v,
+    };
+  }
+
+  Map<String, RemoteMiningTarget> get mineToServerTargets =>
+      <String, RemoteMiningTarget>{
+        for (final MapEntry<String, Map<Object?, Object?>> e
+            in _mineToServerTargetsRaw().entries)
+          if (RemoteMiningTarget.fromJson(e.value)
+              case final RemoteMiningTarget t)
+            e.key: t,
+      };
+
+  /// 选的时候存下的显示名（hostId → 名字）。
+  Map<String, String> get mineToServerTargetLabels => <String, String>{
+    for (final MapEntry<String, Map<Object?, Object?>> e
+        in _mineToServerTargetsRaw().entries)
+      if (e.value['label'] case final String label when label.isNotEmpty)
+        e.key: label,
+  };
+
+  /// [target] 为 null = 这台主机回到主机默认。
+  Future<void> setMineToServerTarget(
+    String hostId,
+    RemoteMiningTarget? target, {
+    String? label,
+  }) async {
+    final Map<String, Map<Object?, Object?>> next =
+        Map<String, Map<Object?, Object?>>.of(_mineToServerTargetsRaw());
+    if (target == null || target.isEmpty) {
+      next.remove(hostId);
+    } else {
+      next[hostId] = <String, Object?>{
+        ...target.toJson(),
+        if (label != null && label.isNotEmpty) 'label': label,
+      };
+    }
+    await setPref(mineToServerTargetsKey, next.isEmpty ? '' : jsonEncode(next));
     notifyListeners();
   }
 
@@ -5175,6 +5286,105 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 选中的均衡预设（`MusicEqPreset.wire`；空 = 没选过，按增益认）。
+  String get musicEqPreset =>
+      (getPref('music_eq_preset', defaultValue: '') as String?) ?? '';
+
+  Future<void> setMusicEqPreset(String value) async {
+    await setPref('music_eq_preset', value);
+    notifyListeners();
+  }
+
+  /// 音效前级（dB，±12）。
+  double get musicEqPreampDb =>
+      (getPref('music_eq_preamp_db', defaultValue: 0.0) as num).toDouble();
+
+  Future<void> setMusicEqPreampDb(double value) async {
+    await setPref('music_eq_preamp_db', value);
+    notifyListeners();
+  }
+
+  /// 低音搁架增益（dB，±12）。
+  double get musicEffectsBassDb =>
+      (getPref('music_effects_bass_db', defaultValue: 0.0) as num).toDouble();
+
+  Future<void> setMusicEffectsBassDb(double value) async {
+    await setPref('music_effects_bass_db', value);
+    notifyListeners();
+  }
+
+  /// 低音搁架转折频率（Hz）。
+  int get musicEffectsBassHz =>
+      (getPref('music_effects_bass_hz', defaultValue: 100) as num).toInt();
+
+  Future<void> setMusicEffectsBassHz(int value) async {
+    await setPref('music_effects_bass_hz', value);
+    notifyListeners();
+  }
+
+  /// 高音搁架增益（dB，±12）。
+  double get musicEffectsTrebleDb =>
+      (getPref('music_effects_treble_db', defaultValue: 0.0) as num).toDouble();
+
+  Future<void> setMusicEffectsTrebleDb(double value) async {
+    await setPref('music_effects_treble_db', value);
+    notifyListeners();
+  }
+
+  /// 高音搁架转折频率（Hz）。
+  int get musicEffectsTrebleHz =>
+      (getPref('music_effects_treble_hz', defaultValue: 8000) as num).toInt();
+
+  Future<void> setMusicEffectsTrebleHz(int value) async {
+    await setPref('music_effects_treble_hz', value);
+    notifyListeners();
+  }
+
+  /// 声道平衡（−1 左 … 0 居中 … 1 右）。
+  double get musicEffectsBalance =>
+      (getPref('music_effects_balance', defaultValue: 0.0) as num).toDouble();
+
+  Future<void> setMusicEffectsBalance(double value) async {
+    await setPref('music_effects_balance', value);
+    notifyListeners();
+  }
+
+  /// 立体声宽度（0 … 2，1 = 原样）。
+  double get musicEffectsWidth =>
+      (getPref('music_effects_width', defaultValue: 1.0) as num).toDouble();
+
+  Future<void> setMusicEffectsWidth(double value) async {
+    await setPref('music_effects_width', value);
+    notifyListeners();
+  }
+
+  /// 单声道下混。
+  bool get musicEffectsMono =>
+      getPref('music_effects_mono', defaultValue: false) == true;
+
+  Future<void> setMusicEffectsMono(bool value) async {
+    await setPref('music_effects_mono', value);
+    notifyListeners();
+  }
+
+  /// 左右声道互换。
+  bool get musicEffectsSwapChannels =>
+      getPref('music_effects_swap_channels', defaultValue: false) == true;
+
+  Future<void> setMusicEffectsSwapChannels(bool value) async {
+    await setPref('music_effects_swap_channels', value);
+    notifyListeners();
+  }
+
+  /// 音效防削波限幅器。
+  bool get musicEffectsLimiter =>
+      getPref('music_effects_limiter', defaultValue: false) == true;
+
+  Future<void> setMusicEffectsLimiter(bool value) async {
+    await setPref('music_effects_limiter', value);
+    notifyListeners();
+  }
+
   /// 用户自配的 OpenSubsonic 服务器清单（服务器曲库，音乐方案 §13 P5；设备本地，条目里
   /// 带 base64 的密码 / API key）。坏条目逐条丢弃（`decodeSubsonicServerConfigs`）。
   List<SubsonicServerConfig> get musicSubsonicServers {
@@ -5240,6 +5450,18 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 在线插件取流音质档（`MusicPluginQuality.wire`：standard / high / lossless / hires）。
+  /// null = 没单独设过，由 [musicServerMaxBitrate] 反推（两者以前共用一个设置）。
+  String? get musicPluginQualityWire {
+    final Object? raw = getPref('music_plugin_quality', defaultValue: null);
+    return raw is String && raw.isNotEmpty ? raw : null;
+  }
+
+  Future<void> setMusicPluginQualityWire(String wire) async {
+    await setPref('music_plugin_quality', wire);
+    notifyListeners();
+  }
+
   /// 服务器曲库里显示 Apple Music catalog 来源（只浏览 + 30 秒试听）。默认关（显式 opt-in：
   /// 开了才会向 Worker 取 developer token、向 Apple 发请求）。
   bool get musicAppleMusicEnabled =>
@@ -5247,6 +5469,16 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setMusicAppleMusicEnabled(bool value) async {
     await setPref('music_apple_music_enabled', value);
+    notifyListeners();
+  }
+
+  /// 在线来源里显示 YouTube 内置音源（反馈 0tRY-D2JgG）。默认关（显式 opt-in：开了统一搜索才会
+  /// 向 YouTube 发请求）；iOS 上不论取值都不存在（合规门 `isYoutubeMusicSourceAvailable`）。
+  bool get musicYoutubeEnabled =>
+      getPref('music_youtube_enabled', defaultValue: false) == true;
+
+  Future<void> setMusicYoutubeEnabled(bool value) async {
+    await setPref('music_youtube_enabled', value);
     notifyListeners();
   }
 
@@ -6489,6 +6721,30 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setAiMcpEnabled(bool value) async {
     await setPref('ai_mcp_enabled', value);
+    notifyListeners();
+  }
+
+  /// AI 助手接入的外部 MCP server（spec
+  /// `docs/specs/2026-11-05-ai-mcp-client-design.md`；设备本地，请求头 / 环境变量值
+  /// base64）。逐条容错在 [decodeMcpServerConfigs] 里；整串坏掉记日志并当空列表。
+  List<McpServerConfig> get aiMcpClientServers {
+    final String raw =
+        getPref('ai_mcp_client_servers', defaultValue: '') as String;
+    if (raw.trim().isEmpty) return const <McpServerConfig>[];
+    try {
+      return decodeMcpServerConfigs(raw);
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log(
+        'PreferencesRepository.aiMcpClientServers.decode',
+        error,
+        stack,
+      );
+      return const <McpServerConfig>[];
+    }
+  }
+
+  Future<void> setAiMcpClientServers(Iterable<McpServerConfig> servers) async {
+    await setPref('ai_mcp_client_servers', encodeMcpServerConfigs(servers));
     notifyListeners();
   }
 

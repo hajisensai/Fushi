@@ -24,7 +24,7 @@ import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_deck_list_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_import_tasks_bar.dart';
 import 'package:fushi/src/srs/srs_import_task.dart';
-import 'package:fushi/src/srs/srs_media_store.dart';
+import 'package:fushi_engine/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';

@@ -19,7 +19,6 @@ import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
-import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
@@ -221,36 +220,16 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView>
   /// **直链优先**：先试用户粘的链接本身，跑不通才回退 jsDelivr/ghfast 镜像（中国可达），
   /// 内容校验防 404/HTML 占位。
   Future<void> _downloadFromUrl() async {
-    final TextEditingController urlController = TextEditingController();
-    final String? url = await showAppDialog<String>(
+    // BUG-4221：用自带控制器生命周期的标准输入框；关窗动画期间输入框仍在重建，
+    // 调用方自己建的控制器不能在 await 返回后立刻释放。
+    final String? url = await showFushiTextInputDialog(
       context: context,
-      builder: (BuildContext ctx) => FushiAlertDialog(
-        icon: const FushiIcon(FushiIcons.link),
-        title: Text(t.video_shader_download_url),
-        content: FushiTextFieldControl(
-          controller: urlController,
-          autofocus: true,
-          keyboardType: TextInputType.url,
-          decoration: InputDecoration(
-            hintText: t.video_shader_url_hint,
-            prefixIcon: const FushiIcon(FushiIcons.download),
-          ),
-          onSubmitted: (String v) => Navigator.pop(ctx, v),
-        ),
-        actions: <Widget>[
-          FushiDialogAction(
-            label: t.dialog_cancel,
-            onPressed: () => Navigator.pop(ctx),
-          ),
-          FushiDialogAction(
-            label: t.dialog_save,
-            kind: FushiDialogActionKind.primary,
-            onPressed: () => Navigator.pop(ctx, urlController.text),
-          ),
-        ],
-      ),
+      title: t.video_shader_download_url,
+      hintText: t.video_shader_url_hint,
+      icon: FushiIcons.link,
+      keyboardType: TextInputType.url,
+      confirmLabel: t.dialog_save,
     );
-    urlController.dispose();
     final String? trimmed = url?.trim();
     if (trimmed == null || trimmed.isEmpty || !mounted) return;
     final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);

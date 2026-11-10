@@ -3,7 +3,6 @@
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:archive/archive.dart';
 import 'package:fushi_rwkv/fushi_rwkv.dart';
 import 'package:test/test.dart';
 
@@ -27,17 +26,8 @@ File _modelFile(String name) {
   return file;
 }
 
-/// 小模型 int8 权重：从发布包里解出来落到临时文件（worker 按路径加载）。
-File _smallWeights() {
-  final Archive zip = ZipDecoder().decodeBytes(
-    _modelFile('sm56-package.zip').readAsBytesSync(),
-  );
-  final ArchiveFile entry = zip.findFile('sm56/weights.int8.bin')!;
-  final File out = File(
-    '${Directory.systemTemp.createTempSync('fushi_rwkv').path}/sm56.int8.bin',
-  )..writeAsBytesSync(entry.content as List<int>);
-  return out;
-}
+/// 小模型（sm72e25）int8 权重（worker 按路径加载）。
+File _smallWeights() => _modelFile('sm72e25_weights.int8.bin');
 
 /// 确定性小历史：40 张卡（两卡一笔记）、60 天；返回回放行与「今天」的作答行。
 (RwkvRows, RwkvRows) _history() {
@@ -113,9 +103,7 @@ void main() {
         final File weights = which == 'small'
             ? _smallWeights()
             : _modelFile('RWKV_trained_on_5000_10000.bin');
-        if (which == 'small') {
-          addTearDown(() => weights.parent.deleteSync(recursive: true));
-        }
+        // 两种权重都是 native/fushi_rwkv/model/ 下的真文件（只读），测试不清理它们。
         final RwkvNativeModel model = RwkvNativeModel.load(
           weights.readAsBytesSync(),
         );

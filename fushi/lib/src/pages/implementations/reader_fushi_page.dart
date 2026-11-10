@@ -144,6 +144,7 @@ import 'package:fushi/src/reader/reader_script_compactor.dart';
 import 'package:fushi/src/reader/reader_chrome_scaler.dart';
 import 'package:fushi/src/reader/reader_lyrics_caret_scripts.dart';
 import 'package:fushi/src/reader/reader_content_styles.dart';
+import 'package:fushi/src/reader/reader_page_spread.dart';
 import 'package:fushi/src/reader/image_reveal_key.dart';
 import 'package:fushi/src/reader/reader_resource_sanitizer.dart';
 import 'package:fushi/src/reader/reader_exit_flush.dart';
@@ -283,6 +284,7 @@ part 'reader_fushi/session_remote.part.dart';
 part 'reader_fushi/jump_history.part.dart';
 part 'reader_fushi/kavita.part.dart';
 part 'reader_fushi/page_curl.part.dart';
+part 'reader_fushi/seamless.part.dart';
 
 /// TODO-904: native WebView2 实例创建失败时，fork 经 onReceivedError 合成的
 /// [WebResourceError] 描述里携带的 sentinel 前缀（须与
@@ -2061,55 +2063,52 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// 上次写进正文 CSS 的 `fushiMotionEnabled`（didChangeDependencies 维护）。
   bool _readerMotionEnabled = true;
 
-  /// 折叠屏书本姿态（竖向折痕半开 / 双屏铰链，见 [FushiFoldState]）。翻页且每页列数为
-  /// 「自动」时据此一屏排两页：横排两栏（[ReaderContentStyles.foldPageColumnsOverride]）、
-  /// 竖排对开（[ReaderContentStyles.foldVerticalSpread]），折痕落在两页之间；只影响本次
-  /// 排版，不写回偏好。
-  bool _foldBookPosture = false;
-
-  /// 最近一次 [didChangeDependencies] 看到的折叠状态与窗口宽。
+  /// 最近一次 [didChangeDependencies] 看到的折叠状态与窗口尺寸：单双页「自动」看它们
+  /// （[resolveReaderSpreadLayout]），只影响本次排版，不写回偏好。
   FushiFoldState _foldState = FushiFoldState.flat;
-  double _foldWindowWidth = 0;
+  Size _foldWindowSize = Size.zero;
 
-  /// 书本姿态下两页之间要让出的铰链缝（逻辑像素，`fushiHingeGutterPx`）；非书本姿态 0。
-  /// 按正文 content-box 中线现算：WebView 铺满窗口，左右页边距是窗口宽的百分比，改
-  /// 边距（样式热下发）时缝跟着重算。
-  double get _foldHingeGutterPx {
-    final ReaderSettings? settings = _settings;
-    if (settings == null || !_foldState.isBook) return 0;
-    final double width = _foldWindowWidth;
-    final double marginLeftPx = width * math.max(0, settings.marginLeft) / 100;
-    final double marginRightPx =
-        width * math.max(0, settings.marginRight) / 100;
-    return fushiHingeGutterPx(
-      fold: _foldState,
-      contentCenterX: marginLeftPx + (width - marginLeftPx - marginRightPx) / 2,
+  /// 本次排版实际的单双页（偏好 + 视图模式 + 横竖排 + 窗口 + 竖向折痕）。正文 CSS、
+  /// 铰链缝、卷页纸面都按它，判据只此一份。
+  ReaderSpreadLayout get _spreadLayout {
+    final ReaderSettings settings = _settings!;
+    return resolveReaderSpreadLayout(
+      preference: settings.pageSpread,
+      viewMode: settings.viewMode,
+      writingMode: settings.writingMode,
+      hasFoldSpine: _foldState.hasSpine,
+      window: _foldWindowSize,
     );
   }
 
-  /// 本次排版实际的每页列数覆盖与栏间隙覆盖（都由折叠状态 + 当前设置推出）。
-  int? get _foldPageColumns => ReaderContentStyles.foldPageColumnsOverride(
-    bookPosture: _foldBookPosture,
-    settings: _settings!,
-  );
+  /// 两页之间的中缝在窗口里的 x（逻辑像素）：正文 content-box 的中线。WebView 铺满
+  /// 窗口，左右页边距是窗口宽的百分比，改边距（样式热下发）时跟着变。
+  double get _spreadSpineX {
+    final ReaderSettings settings = _settings!;
+    final double width = _foldWindowSize.width;
+    final double marginLeftPx = width * math.max(0, settings.marginLeft) / 100;
+    final double marginRightPx =
+        width * math.max(0, settings.marginRight) / 100;
+    return marginLeftPx + (width - marginLeftPx - marginRightPx) / 2;
+  }
+
+  /// 窗口有竖向折痕时两页之间要让出的铰链缝（逻辑像素，`fushiHingeGutterPx`）；
+  /// 没有折痕为 0。按正文 content-box 中线现算。
+  double get _foldHingeGutterPx {
+    if (_settings == null || !_foldState.hasSpine) return 0;
+    return fushiHingeGutterPx(fold: _foldState, contentCenterX: _spreadSpineX);
+  }
 
   /// 图片跨页文档（[buildSpreadPageHtml]，两半各占半屏、以窗口中线为界）的铰链缝。
   double get _foldSpreadGutterPx => fushiHingeGutterPx(
     fold: _foldState,
-    contentCenterX: _foldWindowWidth / 2,
+    contentCenterX: _foldWindowSize.width / 2,
   );
 
-  /// 竖排对开（一屏右页 + 左页）；与 [_foldPageColumns] 互斥（一个只管横排、一个只管竖排）。
-  bool get _foldVerticalSpread => ReaderContentStyles.foldVerticalSpread(
-    bookPosture: _foldBookPosture,
-    settings: _settings!,
-  );
-
+  /// 本次排版的两页间隙覆盖（盖住铰链；单页 / 无折痕为 null）。
   int? get _foldColumnGap => ReaderContentStyles.foldColumnGapPx(
     hingeGutterPx: _foldHingeGutterPx,
-    effectivePageColumns: _foldPageColumns ?? _settings!.pageColumns,
-    settings: _settings!,
-    verticalSpread: _foldVerticalSpread,
+    layout: _spreadLayout,
   );
   double _stableBottomInset = 0;
 
@@ -2750,7 +2749,13 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     lyricsMode: false,
     showTimer: ReaderFushiSource.instance.showReadingTimer,
     showProgress: ReaderFushiSource.instance.showTopProgressBar,
+    showChars: ReaderFushiSource.instance.showSessionChars,
+    showSpeed: ReaderFushiSource.instance.showCharsPerHour,
   );
+
+  /// 悬浮控制栏收起后读数胶囊是否常驻（「收起控制栏时保留读数」）。
+  bool get _statusFooterPersistent =>
+      ReaderFushiSource.instance.statusFooterPersistent;
 
   /// 状态行的底部预留高（挤压式：视觉高度 == 预留高度，正文永不压到它下面）。
   /// 预留从初始 HTML 起就含它；只有**绘制**才等首次冷加载完成（[_buildStatusFooter]）。
@@ -2761,10 +2766,15 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// 会重下 chrome insets，不引入额外 reflow。
   double get _statusFooterReserve => readerStatusFooterReserve(
     enabled: _statusFooterEnabled,
-    footerHeight: kReaderStatusFooterHeight,
+    // 挤压态照旧 28；悬浮态只在读数常驻时才占，按胶囊**画出来**的带高（含离窗底
+    // 的外边距）预留，视觉 == 预留。
+    footerHeight: _bottomBarFloating
+        ? readerStatusFooterPaintedHeight(floating: _floatingToolbars)
+        : kReaderStatusFooterHeight,
     absorbedByBar: _statusFooterAbsorbedByBar,
-    // 悬浮态状态行随控制栏显隐、不占预留（2026-09-13）。
+    // 悬浮态状态行随控制栏显隐、不占预留（2026-09-13）；读数常驻时照占。
     floating: _bottomBarFloating,
+    persistent: _statusFooterPersistent,
   );
 
   /// 状态行是否被底栏吸收（既不画也不占预留），单一真相源
@@ -2786,6 +2796,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     absorbedByBar: _statusFooterAbsorbedByBar,
     floating: _bottomBarFloating,
     transientVisible: _chromeTransientVisible,
+    persistent: _statusFooterPersistent,
   );
 
   /// 状态行**画出来**占的底部带高（悬浮态唤出时 28px，收起时 0），是底栏在窄屏
@@ -4178,30 +4189,29 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
         unawaited(_applyStylesLive());
       }
     }
-    // 折叠屏姿态变化（半开成书本 / 展平）：只有实际生效的列数变了才重排——列数是结构性
-    // 布局键（与改「每页列数」同走 _reloadWithCurrentSettings，保留阅读位置）。
+    // 折叠屏姿态 / 窗口尺寸变化（半开成书本、展开内屏、旋转、拖窗口）：只有实际生效的
+    // 单双页或铰链缝变了才重排——单双页是结构性布局键（与改「单双页」设置同走
+    // _reloadWithCurrentSettings，保留阅读位置）。
     final FushiFoldState fold = FushiFoldState.of(context);
-    final double windowWidth = MediaQuery.sizeOf(context).width;
-    if (fold != _foldState || windowWidth != _foldWindowWidth) {
+    final Size windowSize = MediaQuery.sizeOf(context);
+    if (fold != _foldState || windowSize != _foldWindowSize) {
       final ReaderSettings? settings = _settings;
-      final int? beforeColumns = settings == null ? null : _foldPageColumns;
+      final ReaderSpreadLayout? beforeLayout = settings == null
+          ? null
+          : _spreadLayout;
       final int? beforeGap = settings == null ? null : _foldColumnGap;
-      final bool beforeVerticalSpread = settings != null && _foldVerticalSpread;
       final double beforeSpreadGutter = _foldSpreadGutterPx;
       _foldState = fold;
-      _foldWindowWidth = windowWidth;
-      _foldBookPosture = fold.isBook;
-      final int? afterColumns = settings == null ? null : _foldPageColumns;
+      _foldWindowSize = windowSize;
+      final ReaderSpreadLayout? afterLayout = settings == null
+          ? null
+          : _spreadLayout;
       final int? afterGap = settings == null ? null : _foldColumnGap;
-      final bool afterVerticalSpread = settings != null && _foldVerticalSpread;
       // 当前是图片跨页文档时，铰链缝变了也要重挂（同走 _reloadWithCurrentSettings）。
       final bool spreadChanged =
           _spreadDocumentLoaded && beforeSpreadGutter != _foldSpreadGutterPx;
       final bool changed =
-          beforeColumns != afterColumns ||
-          beforeGap != afterGap ||
-          beforeVerticalSpread != afterVerticalSpread ||
-          spreadChanged;
+          beforeLayout != afterLayout || beforeGap != afterGap || spreadChanged;
       if (settings != null && changed && _controller != null) {
         unawaited(
           _reloadWithCurrentSettings().catchError((Object e, StackTrace s) {
@@ -4720,9 +4730,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       // 高亮笔触的落笔动画开关与节奏只认 Dart 侧 fushiMotionEnabled（减弱动态效果 / 墨水屏
       // 归零）；切换时 didChangeDependencies 重下发样式表。
       motionEnabled: _readerMotionEnabled,
-      pageColumnsOverride: _foldPageColumns,
+      spreadLayout: _spreadLayout,
       columnGapOverridePx: _foldColumnGap,
-      verticalSpread: _foldVerticalSpread,
     );
   }
 

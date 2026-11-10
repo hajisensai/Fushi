@@ -42,7 +42,7 @@ import 'package:fushi/src/pages/implementations/srs/srs_note_preview.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/srs/srs_change_note_type.dart';
 import 'package:fushi/src/srs/srs_field_catalog.dart' as catalog;
-import 'package:fushi/src/srs/srs_mining.dart';
+import 'package:fushi_engine/srs/srs_miner.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -54,7 +54,7 @@ import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_loading_view.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
-import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_load_error.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_chips.dart';
@@ -114,6 +114,14 @@ class _SrsNoteEditorPageState extends ConsumerState<SrsNoteEditorPage> {
     }
     _tags.dispose();
     super.dispose();
+  }
+
+  void _retryLoad() {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    unawaited(_load());
   }
 
   Future<void> _load() async {
@@ -580,16 +588,10 @@ class _SrsNoteEditorPageState extends ConsumerState<SrsNoteEditorPage> {
     final Object? error = _error;
     final SrsNoteTypeView? type = _type;
     if (error != null || type == null) {
-      return SafeArea(
-        bottom: false,
-        child: Center(
-          child: FushiPlaceholderMessage(
-            icon: FushiIcons.error,
-            tone: FushiPlaceholderTone.error,
-            message: t.error_load_failed,
-            detail: error == null ? null : '$error',
-          ),
-        ),
+      return SrsLoadErrorView(
+        error: error,
+        retryKey: const ValueKey<String>('srs-note-editor-load-retry'),
+        onRetry: _retryLoad,
       );
     }
     final (List<_FieldGroup> primary, List<_FieldGroup> rest) = _splitFields(

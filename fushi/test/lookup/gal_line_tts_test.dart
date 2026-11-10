@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi_engine/tts/tts_text_split.dart';
 import 'package:fushi_engine/tts/tts_types.dart';
 
 import 'package:fushi/src/lookup/gal_line_tts.dart';
@@ -271,12 +272,15 @@ void main() {
   });
 
   test('按引擎上限切句', () {
-    expect(splitGalLineTtsText('あいう。えお。', maxLength: 4), <String>[
+    expect(splitTtsTextForInputLimit('あいう。えお。', maxLength: 4), <String>[
       'あいう。',
       'えお。',
     ]);
-    expect(splitGalLineTtsText('あいうえおか', maxLength: 4), <String>['あいうえ', 'おか']);
-    expect(splitGalLineTtsText('短い', maxLength: 140), <String>['短い']);
+    expect(splitTtsTextForInputLimit('あいうえおか', maxLength: 4), <String>[
+      'あいうえ',
+      'おか',
+    ]);
+    expect(splitTtsTextForInputLimit('短い', maxLength: 140), <String>['短い']);
   });
 
   group('GalLineTtsPlayer', () {

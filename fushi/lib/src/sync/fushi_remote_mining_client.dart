@@ -1,9 +1,11 @@
 import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:fushi_engine/sync/forwarded_mine_payload.dart';
 import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
 import 'package:fushi/src/sync/interconnect_post_transport.dart';
+import 'package:fushi_engine/sync/remote_mining_target.dart';
 import 'package:fushi_engine/sync/remote_source_note.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
@@ -96,6 +98,20 @@ String legacySourcePeerPairingIdentity(FushiClientUrl peer) {
       .toString();
 }
 
+/// 一台主机 `POST /api/mine/targets` 的回包（§4.8），连同回话的那台主机。
+class RemoteMiningTargetsReply {
+  const RemoteMiningTargetsReply({
+    required this.hostId,
+    required this.hostUrl,
+    required this.json,
+  });
+
+  /// 回话主机的稳定 id（老条目没学到 hostId 时为 null：这时「保存到」无处可记）。
+  final String? hostId;
+  final String hostUrl;
+  final Map<String, dynamic> json;
+}
+
 /// 转发制卡的结果未知：对端回过话（非 2xx / 坏 JSON）但没给出结果，或请求发出后
 /// 等应答超时。主机可能已经落了卡，所以不能当「没送到」去入队重发。
 class RemoteMineOutcomeUnknown implements Exception {
@@ -165,7 +181,14 @@ class FushiRemoteMiningClient
     Duration duplicateTimeout = const Duration(seconds: 5),
     Duration noteTypeTimeout = const Duration(seconds: 15),
     Duration mediaDedupTimeout = const Duration(minutes: 30),
+    Future<String?> Function()? activeProfileUid,
+    RemoteMiningTarget? Function(String hostId)? chosenTarget,
+    void Function(String hostId, RemoteMiningTarget? landed)?
+    onTargetUnavailable,
   }) : _repo = repo,
+       _activeProfileUid = activeProfileUid,
+       _chosenTarget = chosenTarget,
+       _onTargetUnavailable = onTargetUnavailable,
        _transport = InterconnectPostTransport(
          repo: repo,
          httpClient: httpClient,
@@ -178,6 +201,17 @@ class FushiRemoteMiningClient
 
   final SyncRepository _repo;
   final InterconnectPostTransport _transport;
+
+  /// 本机当前 profile 的 uid：「主机默认」也带上它，主机服务同一份 profile 时卡落进那份（§4.1）。
+  final Future<String?> Function()? _activeProfileUid;
+
+  /// 用户给这台主机选的「保存到」（null = 主机默认）。
+  final RemoteMiningTarget? Function(String hostId)? _chosenTarget;
+
+  /// 主机说所选的落点它没有、卡落到了它的默认（回包 `targetUnavailable`）：调用方把这台主机的
+  /// 「保存到」退回主机默认并提示。
+  final void Function(String hostId, RemoteMiningTarget? landed)?
+  _onTargetUnavailable;
   final Duration _mineTimeout;
   final Duration _duplicateTimeout;
   final Map<String, FushiClientUrl> _sourcePeers = <String, FushiClientUrl>{};
@@ -373,13 +407,25 @@ class FushiRemoteMiningClient
   Future<Map<String, dynamic>?> mineForward(
     ForwardedMinePayload payload,
   ) async {
+    final Map<String, dynamic> body = payload.toJson();
     final InterconnectPostOutcome outcome = await _transport.post(
       path: '/api/mine/forward',
-      body: payload.toJson(),
+      body: body,
       timeout: _mineTimeout,
       authErrorMessage: 'Fushi server rejected remote mining token',
+      bodyFor: await _targetedBody(body),
     );
-    if (outcome.json != null) return outcome.json;
+    final Map<String, dynamic>? json = outcome.json;
+    if (json != null) {
+      final String? hostId = outcome.candidate?.hostId;
+      if (json['targetUnavailable'] == true && hostId != null) {
+        _onTargetUnavailable?.call(
+          hostId,
+          RemoteMiningTarget.fromJson(json['landed']),
+        );
+      }
+      return json;
+    }
     // null 在契约里 = 「确定没送到」（调用方据此允许入队重发）。对端回过话（非 2xx /
     // 坏 JSON）或请求发出后超时，主机可能已经落了卡——这不是「没送到」，重发会造
     // 重复卡，必须报成结果未知。
@@ -399,11 +445,18 @@ class FushiRemoteMiningClient
     required String reading,
   }) async {
     try {
-      final Map<String, dynamic>? json = await _post(
+      final Map<String, dynamic> body = <String, dynamic>{
+        'expression': expression,
+        'reading': reading,
+      };
+      // 查重用制卡同一个落点：「已在牌组里」= 在卡要去的那份收藏里（§4.8）。
+      final Map<String, dynamic>? json = (await _transport.post(
         path: '/api/duplicate',
-        body: <String, dynamic>{'expression': expression, 'reading': reading},
+        body: body,
         timeout: _duplicateTimeout,
-      );
+        authErrorMessage: 'Fushi server rejected remote mining token',
+        bodyFor: await _targetedBody(body),
+      )).json;
       return json?['duplicate'] == true
           ? RemoteDuplicateCheck.duplicate
           : RemoteDuplicateCheck.notDuplicate;
@@ -412,6 +465,59 @@ class FushiRemoteMiningClient
     } catch (_) {
       return RemoteDuplicateCheck.notDuplicate;
     }
+  }
+
+  /// 发给 [candidate] 那台主机的 `target`（§4.8）：用户给它选过就用所选；否则只带本机 profile uid
+  /// （= 主机默认，主机服务这份 profile 时落进这份）。都没有 = 不带（老行为）。
+  @visibleForTesting
+  RemoteMiningTarget? targetFor(FushiClientUrl candidate, String? profileUid) {
+    final String? hostId = candidate.hostId;
+    final RemoteMiningTarget? chosen = hostId == null
+        ? null
+        : _chosenTarget?.call(hostId);
+    if (chosen != null && !chosen.isEmpty) return chosen;
+    return profileUid == null ? null : RemoteMiningTarget(profile: profileUid);
+  }
+
+  Future<Map<String, dynamic>? Function(FushiClientUrl)?> _targetedBody(
+    Map<String, dynamic> body,
+  ) async {
+    if (_activeProfileUid == null && _chosenTarget == null) return null;
+    String? uid;
+    try {
+      uid = await _activeProfileUid?.call();
+    } catch (_) {
+      // 读不到本机 profile：照样发卡，只是不带 uid（落主机默认 profile）。
+      uid = null;
+    }
+    return (FushiClientUrl candidate) {
+      final RemoteMiningTarget? target = targetFor(candidate, uid);
+      return target == null
+          ? null
+          : <String, dynamic>{...body, 'target': target.toJson()};
+    };
+  }
+
+  /// 主机能让手机挑的落点（`POST /api/mine/targets`）。主机不支持（老主机 / 桌面 host）或都不可达 → null。
+  /// [only] 限定问哪台主机（同一 hostId 的任一地址都行）。
+  Future<RemoteMiningTargetsReply?> miningTargets({
+    FushiClientUrl? only,
+  }) async {
+    final InterconnectPostOutcome outcome = await _transport.post(
+      path: '/api/mine/targets',
+      body: const <String, dynamic>{},
+      timeout: _noteTypeTimeout,
+      authErrorMessage: 'Fushi server rejected remote mining token',
+      onlyCandidate: only,
+    );
+    final Map<String, dynamic>? json = outcome.json;
+    final FushiClientUrl? candidate = outcome.candidate;
+    if (json == null || candidate == null) return null;
+    return RemoteMiningTargetsReply(
+      hostId: candidate.hostId,
+      hostUrl: candidate.url,
+      json: json,
+    );
   }
 
   /// 主机端 Lapis note type 读取。null 的三种来源统一表示「主机侧没有可用定义」：
@@ -496,22 +602,6 @@ class FushiRemoteMiningClient
         'No Fushi Interconnect server is reachable for Lapis template editing.',
       );
     }
-    return outcome.json;
-  }
-
-  /// 制卡侧不消费 `allUnreachable`（没有失败冷却机制），只取响应体——「全不可达」
-  /// 与「可达但无结果」在这里都是 null，与抽出共享传输层之前逐字一致。
-  Future<Map<String, dynamic>?> _post({
-    required String path,
-    required Map<String, dynamic> body,
-    required Duration timeout,
-  }) async {
-    final InterconnectPostOutcome outcome = await _transport.post(
-      path: path,
-      body: body,
-      timeout: timeout,
-      authErrorMessage: 'Fushi server rejected remote mining token',
-    );
     return outcome.json;
   }
 }

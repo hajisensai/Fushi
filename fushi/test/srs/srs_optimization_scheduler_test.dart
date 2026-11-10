@@ -3,7 +3,7 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/srs/srs_optimization_scheduler.dart';
+import 'package:fushi_engine/srs/srs_optimization_scheduler.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';

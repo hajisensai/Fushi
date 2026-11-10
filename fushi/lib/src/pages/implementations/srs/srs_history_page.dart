@@ -15,6 +15,8 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_profile_link.dart'
+    show SrsDeferredProfileMerge;
 import 'package:fushi_engine/srs/sync2/srs_folder_location.dart';
 import 'package:fushi_engine/srs/sync2/srs_fushisrs.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_crypto.dart';
@@ -31,7 +33,7 @@ import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/srs/srs_app_runtime.dart';
 import 'package:fushi/src/srs/srs_device_view.dart';
-import 'package:fushi/src/srs/srs_media_store.dart';
+import 'package:fushi_engine/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_sync_progress.dart';
 import 'package:fushi/src/srs/srs_sync_progress_ui.dart';
 import 'package:fushi/src/srs/srs_sync_scheduler.dart';
@@ -166,6 +168,10 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
   Map<String, Object?> _status = const <String, Object?>{};
   List<SrsCheckpointView> _checkpoints = const <SrsCheckpointView>[];
 
+  /// 当前 profile 正在暂缓的 profile 合并（引擎 linker 持有，[srsDeferredProfileMergeReaderProvider]）；没有为 null。
+  /// 随每轮同步后的重读更新：合并做完就回到 null，状态行自动消失。
+  SrsDeferredProfileMerge? _deferredMerge;
+
   /// 本机设备 ID 与已连 host 的名字（按 hostId）：互联位置的 ID 是 host 设备 ID，显示时换成人读名
   /// （[srsChannelLocationTitle]）。
   String? _ownDeviceId;
@@ -211,6 +217,12 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
         ErrorLogService.instance.log('SrsHistoryPage.reload', e, stack);
       }
     }
+    SrsDeferredProfileMerge? deferredMerge;
+    try {
+      deferredMerge = await ref.read(srsDeferredProfileMergeReaderProvider)();
+    } catch (e, stack) {
+      ErrorLogService.instance.log('SrsHistoryPage.deferredMerge', e, stack);
+    }
     String? ownDeviceId;
     final Map<String, String> hostNames = <String, String>{};
     final AppModel app = ref.read(appProvider);
@@ -230,6 +242,7 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
       _hostNames = hostNames;
       _status = status;
       _checkpoints = checkpoints;
+      _deferredMerge = deferredMerge;
       _loading = false;
     });
   }
@@ -891,6 +904,7 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
     final int unpublished = (_status['unpublished'] as num?)?.toInt() ?? 0;
     final int pending = (_status['pending'] as num?)?.toInt() ?? 0;
     final int ops = (_status['ops'] as num?)?.toInt() ?? 0;
+    final SrsDeferredProfileMerge? deferred = _deferredMerge;
     // 状态数字是上次重读时的快照；同步在跑时它们正在变，不能说「都已同步」，
     // 摘要行换成进行中的阶段与进度，对端行的「没收到」换成「正在接收」。
     return ValueListenableBuilder<SrsSyncProgress?>(
@@ -921,6 +935,18 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
                   title: t.srs_timeline_waiting(n: pending),
                   subtitle: t.srs_timeline_waiting_hint,
                   icon: FushiIcons.schedule,
+                  showIcon: true,
+                ),
+              if (deferred != null)
+                AdaptiveSettingsRow(
+                  key: const ValueKey<String>(
+                    'srs_timeline_status_merge_deferred',
+                  ),
+                  title: t.srs_timeline_merge_deferred,
+                  subtitle: t.srs_timeline_merge_deferred_hint(
+                    n: deferred.missingRevoked.length,
+                  ),
+                  icon: FushiIcons.merge,
                   showIcon: true,
                 ),
             ],
@@ -1027,7 +1053,8 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
           modules: ref.watch(appProvider).moduleVisibility,
         ),
       ),
-      if (_status['enabled'] == true) _buildStatus(context),
+      if (_status['enabled'] == true || _deferredMerge != null)
+        _buildStatus(context),
       if (_status['enabled'] == true && _devices.isNotEmpty)
         _buildDevices(context),
       _buildLocations(context),

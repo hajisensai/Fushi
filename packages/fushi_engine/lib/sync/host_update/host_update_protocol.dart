@@ -8,9 +8,12 @@
 ///
 /// 安全边界（端点在 `FushiSyncServer` 的 `/api/host/update`）：
 ///   * 只认**已配对 peer token**（共享 server token 一律拒，同 service-config）；
-///   * 触发（POST）只接受局域网信任区：P2P 隧道 / 公网来源一律拒；
-///   * 触发要带 GET 刚签发的一次性 nonce（绑定发起者的 token，单次消费、短 TTL），
-///     捕获的请求不能重放，也没有「凭一条 URL / 表单就能触发」的 CSRF 面；
+///   * 不按来源网络区分（反馈 d639PMD5mS）：局域网、组网、公网、P2P 隧道进来的
+///     已配对设备权限相同——专属 token 只在配对时发（P2P / 公网配对强制 PIN 或票据），
+///     门由 token + 下面的开关与 nonce 组成；
+///   * 触发要带 GET 刚签发的一次性 nonce（绑定发起者的 token，单次消费、短 TTL，
+///     每个 peer 同时只有最新一张有效），捕获的请求不能重放，也没有「凭一条 URL /
+///     表单就能触发」的 CSRF 面；
 ///   * host 用户开关「允许已配对设备远程更新本机」默认关，关着回 403 + 明确原因；
 ///   * 每次触发 / 拒绝都留痕（engineLog 诊断）。
 library;
@@ -240,7 +243,9 @@ abstract interface class HostSelfUpdater {
 /// 一次性触发 nonce 的签发与核销。纯内存，server 重启即清空（半截请求作废，安全侧）。
 ///
 /// nonce 绑定发起 GET 的 peer（[peerKey] = 它 token 的摘要），别的 peer 拿到也用不了；
-/// 核销即作废（无论后续是否成功），过期的不收；同时在途数有上限，超了先淘汰最旧的。
+/// 核销即作废（无论后续是否成功），过期的不收。每个 peer 同时只有最新签发的一张
+/// 有效：client 本就在触发前现取一张，一台设备攒不出多张票去并发触发，也挤不掉
+/// 别的 peer 手里的票；peer 数超过 [capacity] 时先淘汰最旧的。
 class HostUpdateNonceStore {
   HostUpdateNonceStore({
     DateTime Function()? now,
@@ -261,6 +266,10 @@ class HostUpdateNonceStore {
   /// 给 [peerKey] 签发一个新 nonce。
   String issue(String peerKey) {
     _prune();
+    _issued.removeWhere(
+      (String _, ({String peerKey, DateTime expiresAt}) e) =>
+          e.peerKey == peerKey,
+    );
     while (_issued.length >= capacity) {
       _issued.remove(_issued.keys.first);
     }

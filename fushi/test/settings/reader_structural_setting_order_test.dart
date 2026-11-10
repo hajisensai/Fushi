@@ -32,7 +32,7 @@ void main() {
     ('reading_display.writing_mode', 'setReaderWritingMode'),
     ('reading_display.spread_mode', 'setReaderSpreadMode'),
     ('reading_display.spread_direction', 'setReaderSpreadDirection'),
-    ('reading_display.page_columns', 'setReaderPageColumns'),
+    ('reading_display.page_columns', 'setReaderPageSpread'),
     (
       'reading_display.prioritize_reader_styles',
       'setReaderPrioritizeReaderStyles',

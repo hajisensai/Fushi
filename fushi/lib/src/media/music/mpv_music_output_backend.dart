@@ -43,6 +43,8 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:fushi_engine/media/music/disc/music_disc_media.dart';
+import 'package:fushi_engine/media/music/youtube/youtube_music_client.dart'
+    show youtubeMusicVideoIdFromPath;
 import 'package:fushi_music/fushi_music.dart' show MusicPluginStream;
 import 'package:fushi_engine/media/music/server/subsonic_music_client.dart'
     show redactSubsonicCredentials;
@@ -50,12 +52,13 @@ import 'package:media_kit/media_kit.dart';
 
 import 'package:fushi/src/media/music/disc/music_audio_cd.dart';
 import 'package:fushi/src/media/music/music_crossfade.dart';
-import 'package:fushi/src/media/music/music_equalizer.dart';
+import 'package:fushi/src/media/music/music_audio_effects.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_platform_output.dart';
 import 'package:fushi/src/media/music/music_remote_media.dart';
 import 'package:fushi/src/media/music/music_signal_path.dart';
 import 'package:fushi/src/media/music/plugin/music_plugins.dart';
+import 'package:fushi/src/media/music/server/youtube_music_gate.dart';
 
 /// 纯函数：整轨文件里的一段 → mpv EDL URI。路径按 UTF-8 字节数加 `%len%` 前缀，
 /// 路径里的逗号 / 等号不会被当成 EDL 分隔符。[endMs] 为 null = 播到文件尾。
@@ -145,12 +148,26 @@ bool musicCddaContinues(MusicPlayItem from, MusicPlayItem to) =>
 ///
 /// 在线音源插件曲目（`fushi-music-plugin://`）此时才向插件取流（[pluginResolver]，缺省
 /// [resolveMusicPluginStream]），取不到抛 [MusicPluginStreamUnavailable]。
+///
+/// YouTube 内置音源曲目（`fushi-music-youtube://`）同理此时才取 audio-only 直链
+/// （[youtubeResolver]，缺省 [resolveMusicYoutubeStream]），过期时刻取自直链的 `expire`。
 Future<MusicResolvedMedia> resolveMusicMedia(
   MusicPlayItem item, {
   MusicPlayItem? playThrough,
   MusicPluginStreamResolver? pluginResolver,
   MusicRemoteMediaResolver? remoteResolver,
+  MusicYoutubeStreamResolver? youtubeResolver,
 }) async {
+  final String? youtubeId = youtubeMusicVideoIdFromPath(item.path);
+  if (youtubeId != null) {
+    final MusicYoutubeStream s =
+        await (youtubeResolver ?? resolveMusicYoutubeStream)(youtubeId);
+    return (
+      media: Media(s.url, httpHeaders: s.headers.isEmpty ? null : s.headers),
+      fileLocal: const <String, String>{},
+      expiresAt: s.expiresAt,
+    );
+  }
   if (isMusicPluginPath(item.path)) {
     final MusicPluginStream s =
         await (pluginResolver ?? resolveMusicPluginStream)(item.path);
@@ -463,11 +480,11 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
       await _setIfChanged(e.key, e.value);
     }
     await _applyGain(_audible);
-    // 均衡器（P5）：没装交叉淡入滤镜时挂在全局 `af` 上（关 / 平直 = 空，bit-perfect 不动）；
+    // 音效（P5）：没装交叉淡入滤镜时挂在全局 `af` 上（关 / 全部中性 = 空，bit-perfect 不动）；
     // 装了交叉淡入时由 on_load 钩子与淡入淡出拼进同一条逐文件链（逐文件 `af` 整体替换全局
-    // 的，单挂全局会在淡入淡出的那几首上丢掉均衡）。
+    // 的，单挂全局会在淡入淡出的那几首上丢掉音效）。
     if (!_crossfadeFilters) {
-      await _setIfChanged('af', musicEqualizerAf(settings.equalizer) ?? '');
+      await _setIfChanged('af', musicAudioEffectsAf(settings.effects) ?? '');
     }
     if (_platform == MusicOutputPlatform.android) {
       if (exclusiveTurnedOff) {
@@ -513,7 +530,7 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
       await native.setProperty(
         'file-local-options/af',
         musicComposeAf(<String?>[
-          musicEqualizerAf(_settings.equalizer),
+          musicAudioEffectsAf(_settings.effects),
           musicCrossfadeAf(
             fadeIn: fadeIn ?? Duration.zero,
             originSeconds: _originSeconds(item),
@@ -1449,10 +1466,10 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
       muted: await read('mute') == 'yes',
       speed: readDouble(await read('speed'), 1),
       pitchCorrection: await read('audio-pitch-correction') == 'yes',
-      userFilters: musicStripEqualizerFilters(
+      userFilters: musicStripAudioEffectsFilters(
         musicStripCrossfadeFilters(rawAf),
       ),
-      equalizer: musicAfHasEqualizer(rawAf),
+      effects: musicAfHasAudioEffects(rawAf),
       crossfade: item != null && _filteredUids.contains(item.trackUid),
       crossfadeAvailability: musicCrossfadeAvailability(
         _settings,

@@ -12,10 +12,10 @@ import 'package:flutter/services.dart';
 import 'package:fushi/src/anki/mined_card_tap_policy.dart';
 import 'package:fushi/src/anki/mined_card_undo.dart';
 import 'package:fushi/src/corpus/library_corpus_service.dart';
-import 'package:fushi/src/models/preference_keys.dart'
-    show kLibrarySentencesEnabledPrefKey;
 import 'package:fushi/src/leaderboard/leaderboard_paired_login.dart';
 import 'package:fushi/src/media/source_library/source_folder_access.dart';
+import 'package:fushi/src/media/source_library/source_library_scanner.dart'
+    show applyBlurayDiscCollectionArtwork;
 import 'package:fushi/src/models/asset_licenses.dart';
 import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:fushi/src/utils/adaptive/nav_bar_style.dart';
@@ -24,6 +24,7 @@ import 'package:fushi/src/updates/local_update_notifier.dart';
 import 'package:fushi/src/updates/update_check_scheduler.dart';
 import 'package:fushi/src/updates/app_update_check.dart';
 import 'package:fushi/src/updates/usage_heartbeat.dart';
+import 'package:fushi_engine/srs/srs_miner.dart';
 import 'package:fushi_engine/media/video/media_server/media_server_client_identity.dart'
     show mediaServerClientIdentity, resolveMediaServerClientIdentity;
 import 'package:fushi_engine/media/video/video_member_file.dart';
@@ -150,7 +151,7 @@ import 'package:fushi/src/onboarding/recommended_pack_tutorial_state.dart';
 import 'package:fushi/src/srs/srs_app_host.dart';
 import 'package:fushi/src/srs/srs_card_appearance.dart';
 import 'package:fushi/src/srs/srs_mining.dart';
-import 'package:fushi/src/srs/srs_mining_target.dart';
+import 'package:fushi_engine/srs/srs_mining_target.dart';
 import 'package:fushi/src/srs/srs_profile_stores.dart';
 import 'package:fushi/src/srs/srs_storage_host.dart';
 import 'package:fushi/src/srs/srs_review_gestures.dart';
@@ -261,7 +262,7 @@ import 'package:fushi_engine/media/torrent/qb_torrent_backend.dart';
 import 'package:fushi_engine/media/torrent/qbittorrent_client.dart';
 import 'package:fushi_engine/media/torrent/torrent_backend.dart';
 import 'package:fushi_engine/media/torrent/torrent_fast_resume.dart'
-    show kEmbeddedTorrentFastResumeDirName;
+    show kEmbeddedTorrentFastResumeDirName, kEmbeddedTorrentFastResumeExtension;
 import 'package:fushi_engine/media/torrent/tracker_subscription.dart';
 import 'package:fushi_engine/media/torrent/torrent_network_diagnosis.dart';
 import 'package:fushi_engine/media/torrent/public_trackers.dart';
@@ -335,12 +336,17 @@ import 'package:fushi_engine/media/video/metadata/video_source_scrape_coordinato
 import 'package:fushi_engine/media/video/subtitle/embedded_reference_subtitle_sync.dart';
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
+import 'package:fushi_engine/media/video/organize/video_filename_organize_service.dart'
+    show
+        VideoFilenameOrganizeService,
+        videoFilenameOrganizeShouldConsultBackend;
 import 'package:fushi_engine/media/video/video_path_migration.dart'
     show DownloadRelocation;
 import 'package:fushi/src/media/video/video_danmaku_model.dart';
 import 'package:fushi/src/media/video/video_control_customization.dart';
 import 'package:fushi/src/media/video/video_custom_action_bindings.dart';
 import 'package:fushi/src/media/video/video_immersive_control_layout.dart';
+import 'package:fushi/src/media/video/video_subtitle_mask_config.dart';
 import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
 import 'package:fushi_engine/media/tracking/media_tracking_repository.dart';
 import 'package:fushi_engine/media/tracking/media_tracking_service.dart';
@@ -425,9 +431,12 @@ import 'package:fushi/src/media/music/apple_music/apple_music_output_backend.dar
     show appleMusicBackendRoute;
 import 'package:fushi/src/media/music/music_crossfade.dart';
 import 'package:fushi/src/media/music/music_routing_backend.dart';
-import 'package:fushi/src/media/music/music_equalizer.dart';
+import 'package:fushi/src/media/music/music_audio_effects.dart';
+import 'package:fushi/src/media/music/music_audio_effects_host.dart';
+import 'package:fushi/src/media/music/music_audio_effects_prefs.dart';
 import 'package:fushi/src/media/music/music_study_tracker.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
+import 'package:fushi/src/media/music/music_plugin_quality_host.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_library_scanner.dart'
     show onMusicSourceScanned;
@@ -440,7 +449,7 @@ import 'package:fushi/src/media/music/music_resume.dart';
 import 'package:fushi/src/media/music/music_session.dart';
 import 'package:fushi/src/media/music/mpv_music_output_backend.dart';
 import 'package:fushi_music/fushi_music.dart'
-    show InstalledMusicPlugin, MusicPluginManager;
+    show InstalledMusicPlugin, MusicPluginManager, MusicPluginQuality;
 import 'package:fushi/src/media/music/plugin/music_plugin_gate.dart';
 import 'package:fushi/src/media/favorites/web_video_favorite.dart'
     show ExtensionVideoFavoriteRequest, handleExtensionVideoFavorite;
@@ -474,6 +483,8 @@ import 'package:fushi/src/lookup/lookup_audio_playback.dart';
 import 'package:fushi_engine/media/video/video_cover_extractor.dart'
     show extractVideoCover;
 import 'package:fushi_engine/sync/forwarded_mine_payload.dart';
+import 'package:fushi_engine/sync/remote_mining_target.dart'
+    show RemoteMiningTarget;
 import 'package:fushi/src/anki/forwarded_mine_codec.dart';
 import 'package:fushi_engine/sync/immersion_mine_payload.dart';
 import 'package:fushi/src/mining/bilibili_clip_miner.dart';
@@ -692,11 +703,16 @@ String buildSearchCacheKey({
 ///   语言未知时查词集合里的中文词典就是「这次可能是中文」的唯一可读证据；App 里
 ///   不存在「学习语言 / Profile 目标语言」这一设置（`targetLanguage` 已于 2026-07-26
 ///   删除，Profile 的语言绑定是「内容语言 → 打开哪个 Profile」的反向映射）。
+///
+/// * 用户开关 [enabled]（`lookup_chinese_script_variants`，默认关）关着时一律 false：
+///   开发者要求默认只查原文字形，简繁互查由用户自己打开。
 @visibleForTesting
 bool lookupUsesChineseScriptVariants({
+  required bool enabled,
   required String? lookupLanguage,
   required DictionaryLookupFilters filters,
 }) {
+  if (!enabled) return false;
   if (lookupLanguage != null && lookupLanguage.trim().isNotEmpty) {
     return isChineseLanguageTag(lookupLanguage);
   }
@@ -817,7 +833,9 @@ class HomeDictionaryTabRequest {
 /// A scoped model for parameters that affect the entire application.
 /// RiverPod is used for global state management across multiple layers,
 /// especially for preferences that persist across application restarts.
-class AppModel with ChangeNotifier {
+class AppModel
+    with ChangeNotifier
+    implements MusicAudioEffectsHost, MusicPluginQualityHost {
   /// Platform-specific service implementations, injected at construction.
   final PlatformServices platformServices;
 
@@ -1540,13 +1558,6 @@ class AppModel with ChangeNotifier {
   PreferencesRepository? _prefsRepo;
   PreferencesRepository get prefsRepo => _prefsRepo!;
 
-  /// 查词弹窗「我库里的例句」开关（D-L2 默认开）。偏好还没装好（独立弹窗 entry point /
-  /// 测试替身没跑 initialise）时按默认值，不抛——判据放在这个 getter 自己身上，弹窗注入等
-  /// 读它的地方不各自判空。
-  bool get librarySentencesEnabled =>
-      _prefsRepo?.getPref(kLibrarySentencesEnabledPrefKey, defaultValue: true)
-          as bool? ??
-      true;
   bool get isPreferencesReady => _prefsRepo != null;
 
   /// v101 统一更新提醒。懒建：四个投递方（番剧订阅检查、漫画库刷新、扩展检查、
@@ -1815,12 +1826,6 @@ class AppModel with ChangeNotifier {
   /// 启动）；app 外查词（剪贴板/扩展）保持 null → 落到全局默认。
   String? currentLookupLanguage;
 
-  /// 当前查词是否按中文处理（引擎额外试简体 ↔ 繁體双向变体，见 `FushiDicts.lookup` 的
-  /// `chineseSimpToTrad`）。语言取查词来源语言 [currentLookupLanguage]，缺省落到
-  /// 全局默认内容语言——与词头字体链同一套解析（[resolveContentLanguage]）。
-  /// 语言未知时看启用的词典里有没有中文词典（[lookupUsesChineseScriptVariants]）。
-  bool get lookupChineseSimpToTrad => lookupChineseSimpToTradFor(null);
-
   /// 本次查词实际按哪种语言处理：[requested]（远端请求方声明的查词语言，非空时优先）→
   /// 查词来源语言 [currentLookupLanguage] → 全局默认内容语言；全空为 null（语言未知）。
   /// 本机发给对端的查词也带这个值（[_searchRemoteDictionary]），对端据此判是否中文。
@@ -1843,14 +1848,23 @@ class AppModel with ChangeNotifier {
   ///
   /// [filters]：按哪份词典过滤快照判「有没有中文词典」；null = App 当前生效的词典
   /// （浏览器扩展所选非激活配置传它的 `lookupFilters`，与查词用的过滤同一份）。
+  ///
+  /// [requestedScriptVariants]：对端请求里带的**对端用户的开关**（`zhScriptVariants`），
+  /// 非 null 时代替本机开关；null（本机查词 / 浏览器扩展 / 旧客户端）用 [prefs]（缺省
+  /// 本机生效偏好）的开关。语言 / 词典判据一律在本机跑。
   bool lookupChineseSimpToTradFor(
     String? requested, {
     PreferencesRepository? prefs,
     DictionaryLookupFilters? filters,
+    bool? requestedScriptVariants,
   }) {
     final DictionaryLookupFilters? effectiveFilters =
         filters ?? (_dictionaryRepoReady ? dictRepo.lookupFilters : null);
     return lookupUsesChineseScriptVariants(
+      enabled:
+          requestedScriptVariants ??
+          (prefs ?? _prefsRepo)?.lookupChineseScriptVariants ??
+          false,
       lookupLanguage: effectiveLookupLanguage(
         requested: requested,
         prefs: prefs,
@@ -1991,9 +2005,9 @@ class AppModel with ChangeNotifier {
     if (isMusicPluginSourcesAvailable) {
       musicPluginPlaybackHost = MusicPluginPlaybackHost(
         manager: () => musicPluginManager,
-        quality: () => musicPluginQualityForBitrate(
-          isPreferencesReady ? prefsRepo.musicServerMaxBitrate : 320,
-        ),
+        quality: (String path) => isPreferencesReady
+            ? musicPluginQualityFor(path)
+            : MusicPluginQuality.high,
       );
     }
     // 网络音乐来源（SFTP / WebDAV / AList）的曲目同样在打开时取流；解析器按来源缓存在
@@ -2352,10 +2366,87 @@ class AppModel with ChangeNotifier {
       ),
       crossfade: Duration(milliseconds: prefsRepo.musicCrossfadeMs),
       crossfadeContinuous: prefsRepo.musicCrossfadeContinuous,
-      equalizer: MusicEqualizerSettings(
-        enabled: prefsRepo.musicEqEnabled,
-        gainsDb: MusicEqualizerSettings.parseGains(prefsRepo.musicEqGains),
-      ),
+      effects: musicAudioEffects,
+    );
+  }
+
+  @override
+  Listenable get musicAudioEffectsChanges => prefsRepo;
+
+  @override
+  bool get musicAudioEffectsSupported =>
+      musicSession.engine.capabilities.signalPath;
+
+  /// 音效设置（偏好 → 值对象；库没开时为默认 = 关）。
+  @override
+  MusicAudioEffects get musicAudioEffects => isPreferencesReady
+      ? readMusicAudioEffectsPrefs(prefsRepo)
+      : const MusicAudioEffects();
+
+  /// 当前显示的均衡预设（存的预设 + 当前增益，见 [MusicEqPreset.resolve]）。
+  @override
+  MusicEqPreset get musicEqPreset => isPreferencesReady
+      ? readMusicEqPresetPref(prefsRepo)
+      : MusicEqPreset.flat;
+
+  /// 写音效设置（只写变了的偏好），然后重新下发到引擎。[preset] 给了就一并记下（选预设 /
+  /// 手动拖推子落到自定义 / 复位回平直）。
+  @override
+  Future<void> setMusicAudioEffects(
+    MusicAudioEffects next, {
+    MusicEqPreset? preset,
+  }) async {
+    await writeMusicAudioEffectsPrefs(prefsRepo, next, preset: preset);
+    await musicSession.engine.reapplySettings();
+  }
+
+  @override
+  MusicPlayerEngine get musicPlayerEngine => musicSession.engine;
+
+  /// 在线插件默认取流音质。没单独设过时沿用旧行为：由服务器码率上限反推。
+  @override
+  MusicPluginQuality get musicPluginQuality {
+    final String? wire = prefsRepo.musicPluginQualityWire;
+    return wire == null
+        ? musicPluginQualityForBitrate(prefsRepo.musicServerMaxBitrate)
+        : MusicPluginQuality.fromWire(wire);
+  }
+
+  /// 播放器里「只对这首」选的音质（插件占位路径 → 档位）。只活在本次进程里：它是一次性的
+  /// 试听选择，不是设置；改默认档时一并清掉（默认档说了算）。
+  final Map<String, MusicPluginQuality> _musicPluginQualityOverrides =
+      <String, MusicPluginQuality>{};
+
+  /// 这首插件曲目实际按哪一档取流。
+  @override
+  MusicPluginQuality musicPluginQualityFor(String path) =>
+      _musicPluginQualityOverrides[path] ?? musicPluginQuality;
+
+  /// 改默认音质；正在放的插件曲目按新档原位重取（进度、暂停态不变），当前曲不是插件曲目
+  /// 而预排的下一首是时只重排下一首。非插件的远程曲目不受影响。
+  @override
+  Future<void> setMusicPluginQuality(MusicPluginQuality quality) async {
+    _musicPluginQualityOverrides.clear();
+    await prefsRepo.setMusicPluginQualityWire(quality.wire);
+    await musicSession.engine.reopenCurrent(
+      where: (MusicPlayItem item) => isMusicPluginPath(item.path),
+    );
+  }
+
+  /// 只对 [path] 这首换档（不改默认）；它正在放就原位重取，是预排的下一首就重排下一首。
+  @override
+  Future<void> setMusicPluginQualityOverride(
+    String path,
+    MusicPluginQuality quality,
+  ) async {
+    if (quality == musicPluginQuality) {
+      _musicPluginQualityOverrides.remove(path);
+    } else {
+      _musicPluginQualityOverrides[path] = quality;
+    }
+    notifyListeners();
+    await musicSession.engine.reopenCurrent(
+      where: (MusicPlayItem item) => item.path == path,
     );
   }
 
@@ -2941,9 +3032,16 @@ class AppModel with ChangeNotifier {
     }
   }
 
+  /// 中文查词是否简体 ↔ 繁體双向互查（见 [PreferencesRepository.lookupChineseScriptVariants]）。
+  /// 偏好未装好时按默认值（关）。
+  bool get lookupChineseScriptVariants =>
+      _prefsRepo?.lookupChineseScriptVariants ?? false;
+  Future<void> setLookupChineseScriptVariants(bool value) =>
+      prefsRepo.setLookupChineseScriptVariants(value);
+
   /// 查词结果顶部下拉是否清空查询（见 [PreferencesRepository.lookupPagePullToClear]）。
-  /// 偏好还没装好（测试替身没跑 initialise）时按默认值——与
-  /// [librarySentencesEnabled] 同一纪律，判据放在 getter 自己身上。
+  /// 偏好还没装好（测试替身没跑 initialise）时按默认值，不抛——判据放在 getter
+  /// 自己身上，读它的地方不各自判空。
   bool get lookupPagePullToClear => _prefsRepo?.lookupPagePullToClear ?? true;
   Future<void> setLookupPagePullToClear(bool value) =>
       prefsRepo.setLookupPagePullToClear(value);
@@ -4681,11 +4779,11 @@ class AppModel with ChangeNotifier {
       );
       unawaited(_warmUpSearchAfterFirstFrame());
       unawaited(_migrateDictionaryRedirectFlags());
-      // 「我库里的例句」（作品图谱 L4）：延后打开本机语料库并对账、订阅来源表做增量。
+      // 曲库歌词搜索的本机语料库：延后打开、清掉已下架「我库里的例句」留下的书 / 视频 /
+      // 游戏文档（反馈 4S2_J80DfK），再对账歌词、订阅歌词表做增量。
       LibraryCorpusService.instance.start(
         database: _database,
         directory: LibraryCorpusService.directoryUnder(_databaseDirectory.path),
-        isEnabled: () => librarySentencesEnabled,
       );
       // 已下架的本机 OCR 模型（约 10 GB 的 CUDA 档）留在磁盘上的目录：设置页与
       // 存储页都没有它的入口了，不清就永远占着空间。幂等、失败只记日志。
@@ -5559,8 +5657,8 @@ class AppModel with ChangeNotifier {
   double get appUiScale => themeNotifier.appUiScale;
 
   /// 查词弹窗独立缩放系数（偏好 `popup_ui_scale`，反馈 2jGkpD-iD6）。偏好还没装好
-  /// （独立弹窗 entry point 首帧 / 测试替身没跑 initialise）时按默认 1.0，与
-  /// [librarySentencesEnabled] 同律——判据放在 getter 自身，弹窗宿主不各自判空。
+  /// （独立弹窗 entry point 首帧 / 测试替身没跑 initialise）时按默认 1.0——判据放在
+  /// getter 自身，弹窗宿主不各自判空。
   double get popupUiScaleFactor =>
       _prefsRepo?.popupUiScale ?? kPopupUiScaleDefault;
   Future<void> setPopupUiScaleFactor(double factor) =>
@@ -5841,6 +5939,16 @@ class AppModel with ChangeNotifier {
 
   Future<void> setVideoSubtitleObscureReveal(bool value) =>
       prefsRepo.setVideoSubtitleObscureReveal(value);
+
+  /// 字幕遮布。见 [PreferencesRepository.videoSubtitleMask]。
+  VideoSubtitleMaskConfig get videoSubtitleMask => prefsRepo.videoSubtitleMask;
+
+  /// 字幕遮布配置的精确订阅。见 [PreferencesRepository.videoSubtitleMaskListenable]。
+  ValueListenable<VideoSubtitleMaskConfig> get videoSubtitleMaskListenable =>
+      prefsRepo.videoSubtitleMaskListenable;
+
+  Future<void> setVideoSubtitleMask(VideoSubtitleMaskConfig value) =>
+      prefsRepo.setVideoSubtitleMask(value);
 
   /// 副字幕的「临时显形」开关。见
   /// [PreferencesRepository.videoSecondarySubtitleObscureReveal]。
@@ -7660,6 +7768,13 @@ class AppModel with ChangeNotifier {
       updateFeed: updateFeedService,
       // 目标来源被删的任务重试时改绑到默认下载来源（BUG-2755）。
       defaultTargetSourceId: _defaultVideoDownloadSourceId,
+      // 下载的原盘入库后补盘面图，与扫描导入同一份（BUG-4245）。
+      onDiscCollectionImported: (int collectionId, String discRootPath) =>
+          applyBlurayDiscCollectionArtwork(
+            database,
+            collectionId,
+            discRootPath,
+          ),
     )..start();
     _videoDownloadPipelineService = pipeline;
     // 上次没跑完的「转录后入库」任务从断点续跑（转录进度落在 ASR 服务自己的
@@ -7845,6 +7960,56 @@ class AppModel with ChangeNotifier {
         applyRelocation: (DownloadRelocation relocation) =>
             VideoBookRepository(database).applyDownloadRelocation(relocation),
       );
+
+  /// 视频库「整理文件名」（反馈 ZDYNkAP3Ln）：按刮削资料改文件名，做种的文件
+  /// 走同一个下载后端（[_torrentBackendFor]）在引擎侧改名，路径映射与
+  /// [downloadRelocateService] 同一份契约。确定不可能有种子时不接后端（判据见
+  /// [videoFilenameOrganizeShouldConsultBackend]：商店合规无下载中心、内置引擎
+  /// 一个种子都没有、外接 qb 没配地址）。
+  VideoFilenameOrganizeService get videoFilenameOrganizeService {
+    final QbConnectionConfig config = effectiveTorrentConfig(
+      prefsRepo.qbConnectionConfig,
+    );
+    final bool consult = videoFilenameOrganizeShouldConsultBackend(
+      downloadsAvailable: StoreRestrictedCapability.downloads.isAvailable,
+      embeddedSelected:
+          config.resolveBackend(
+            embeddedSupported: _supportsEmbeddedTorrent(),
+          ) ==
+          QbConnectionConfig.backendEmbedded,
+      embeddedSessionAlive: _embeddedTorrentHost != null,
+      embeddedHasResumeFiles: _embeddedTorrentHasResumeFiles(),
+      qbBaseUrl: config.baseUrl,
+    );
+    return VideoFilenameOrganizeService(
+      database: database,
+      backendFactory: consult ? () => _torrentBackendFor(config) : null,
+      pathMappings: () async {
+        final VideoDownloadBackendIdentity identity =
+            await _currentVideoDownloadBackendIdentity(
+              effectiveTorrentConfig(prefsRepo.qbConnectionConfig),
+            );
+        return downloadPathMappingsForProfile(identity.profileId);
+      },
+    );
+  }
+
+  /// 内置引擎的 fast-resume 目录里有没有种子（同步、只看文件名，不建 session）。
+  bool _embeddedTorrentHasResumeFiles() {
+    final String? resumeDir = _embeddedTorrentResumeDir;
+    if (resumeDir == null) return false;
+    try {
+      return Directory(resumeDir)
+          .listSync(followLinks: false)
+          .any(
+            (FileSystemEntity e) =>
+                e is File &&
+                e.path.endsWith(kEmbeddedTorrentFastResumeExtension),
+          );
+    } on FileSystemException {
+      return false;
+    }
+  }
 
   /// 后端配置档 [profileId]（任务行 `backendProfileId`）的显式下载路径映射。
   /// 任务的后端坐标只能用它**自己那台后端**的映射解释，不能用当前设置的。
@@ -9146,6 +9311,7 @@ class AppModel with ChangeNotifier {
     bool useCache = true,
     bool allowRemoteLookup = true,
     String? lookupLanguage,
+    bool? requestedScriptVariants,
     List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
     ProfileSettingsView? profileView,
   }) async {
@@ -9179,6 +9345,7 @@ class AppModel with ChangeNotifier {
             maximumTerms: effectiveMaxTerms,
             lookupLanguage: lookupLanguage,
             rubySpans: rubySpans,
+            profileView: profileView,
           )
         : null;
     final Future<_LocalDictionaryLookup> local = _searchLocalDictionary(
@@ -9186,6 +9353,7 @@ class AppModel with ChangeNotifier {
       effectiveMaxTerms: effectiveMaxTerms,
       useCache: useCache,
       lookupLanguage: lookupLanguage,
+      requestedScriptVariants: requestedScriptVariants,
       rubySpans: rubySpans,
       profileView: profileView,
     );
@@ -9214,6 +9382,7 @@ class AppModel with ChangeNotifier {
             maximumTerms: effectiveMaxTerms,
             lookupLanguage: lookupLanguage,
             rubySpans: rubySpans,
+            profileView: profileView,
           );
       if (remoteResult != null) {
         return remoteResult;
@@ -9245,6 +9414,7 @@ class AppModel with ChangeNotifier {
     required int effectiveMaxTerms,
     required bool useCache,
     String? lookupLanguage,
+    bool? requestedScriptVariants,
     List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
     ProfileSettingsView? profileView,
   }) async {
@@ -9254,6 +9424,7 @@ class AppModel with ChangeNotifier {
       lookupLanguage,
       prefs: profileView?.prefs,
       filters: profileView?.lookupFilters,
+      requestedScriptVariants: requestedScriptVariants,
     );
     // 原文振假名改变同长度候选的先后：带 ruby 的查询单独成键（无 ruby 时后缀为空，
     // 键与此前逐字相同）。
@@ -9347,6 +9518,7 @@ class AppModel with ChangeNotifier {
     required int maximumTerms,
     String? lookupLanguage,
     List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
+    ProfileSettingsView? profileView,
   }) async {
     if (!remoteLookupEnabled) return null;
     // 配对设备被证实不可达后的冷却窗内直接短路（BUG-1302）。远端查词排在本地
@@ -9372,6 +9544,10 @@ class AppModel with ChangeNotifier {
             wildcards: searchWithWildcards,
             maximumTerms: maximumTerms,
             language: effectiveLookupLanguage(requested: lookupLanguage),
+            // 本机用户的简繁互查开关（不是最终结论）：对端用它代替自己的开关，语言未知时
+            // 看对端的词典——瘦客户端本机可能一本中文词典都没有。
+            chineseScriptVariants:
+                (profileView?.prefs ?? prefsRepo).lookupChineseScriptVariants,
             // 原文振假名（已对齐到清洗后的 searchTerm）；空时不发字段。
             rubySpans: rubySpans,
           );
@@ -10740,6 +10916,17 @@ class AppModel with ChangeNotifier {
   bool get mineToServerEnabled => _prefsRepo?.mineToServer ?? false;
   Future<void> setMineToServer(bool value) => prefsRepo.setMineToServer(value);
 
+  /// 「制卡到已配对设备」每台主机的「保存到」（hostId → 目标；没有条目 = 主机默认，§4.8）。
+  Map<String, RemoteMiningTarget> get mineToServerTargets =>
+      _prefsRepo?.mineToServerTargets ?? const <String, RemoteMiningTarget>{};
+  Map<String, String> get mineToServerTargetLabels =>
+      _prefsRepo?.mineToServerTargetLabels ?? const <String, String>{};
+  Future<void> setMineToServerTarget(
+    String hostId,
+    RemoteMiningTarget? target, {
+    String? label,
+  }) => prefsRepo.setMineToServerTarget(hostId, target, label: label);
+
   // 复习模块的「挖词目标」（透传 prefsRepo）。与 [mineToServerEnabled] 同理用可空读：
   // `ankiRepositoryProvider` 构建期就会读它。prefs 未装配时按 Anki（此刻不会有制卡，
   // 万一有，宁可照旧发 Anki）；装配后没设过取本安装的出厂默认（新装 srs / 老用户 anki）。
@@ -11690,10 +11877,23 @@ class AppModel with ChangeNotifier {
   /// 构造互联「制卡到服务端」的客户端发送器（供 [ankiRepositoryProvider] 在开关开启时包装
   /// [RemoteMiningAnkiRepository]）。复用与远程查词同一 keep-alive http client + 同一配对目标
   /// （enabled 的 FushiClientUrls），明文 http 候选走复用连接、https 带指纹候选走钉扎 client。
-  FushiRemoteMiningClient createRemoteMiningClient() {
+  ///
+  /// 卡落到主机的哪里（§4.8）：每台主机按用户的「保存到」，没选过 = 主机默认（带上本机当前 profile
+  /// 的 uid）。主机说所选的它没有时，这台主机的「保存到」退回主机默认，再交给 [onTargetUnavailable] 提示。
+  FushiRemoteMiningClient createRemoteMiningClient({
+    void Function(RemoteMiningTarget? landed)? onTargetUnavailable,
+  }) {
     return FushiRemoteMiningClient(
       repo: SyncRepository(_database),
       httpClient: _remoteLookupClient,
+      activeProfileUid: () async =>
+          _database.profileUidOf(await _database.resolveActiveProfileId()),
+      chosenTarget: (String hostId) => mineToServerTargets[hostId],
+      onTargetUnavailable: (String hostId, RemoteMiningTarget? landed) {
+        if (mineToServerTargets[hostId] == null) return;
+        unawaited(setMineToServerTarget(hostId, null));
+        onTargetUnavailable?.call(landed);
+      },
     );
   }
 
@@ -11750,6 +11950,8 @@ class AppModel with ChangeNotifier {
   BrowserVideoStudyBridge _ensureBrowserVideoStudyBridge() =>
       _browserVideoStudyBridge ??= BrowserVideoStudyBridge(
         database: () => database,
+        // 暂停且在场时的空闲门：与阅读面 / app 内视频同一设置。
+        studyIdleTimeout: () => readingIdleTimeout,
       );
 
   /// 复习模块（SRS）的 AnkiConnect v6 兼容端点：模块开着时由 `srs_app_runtime.dart`
@@ -13522,12 +13724,14 @@ class _AppModelRemoteLookupService
     required String term,
     required bool wildcards,
     required int maximumTerms,
-    required String language,
+    required String? language,
+    bool? chineseScriptVariants,
   }) => _searchDictionary(
     term: term,
     wildcards: wildcards,
     maximumTerms: maximumTerms,
     language: language,
+    chineseScriptVariants: chineseScriptVariants,
   );
 
   @override
@@ -13537,15 +13741,18 @@ class _AppModelRemoteLookupService
     required int maximumTerms,
     required List<FushiRubySpan> rubySpans,
     String? language,
+    bool? chineseScriptVariants,
   }) => _searchDictionary(
     term: term,
     wildcards: wildcards,
     maximumTerms: maximumTerms,
     language: language,
+    chineseScriptVariants: chineseScriptVariants,
     rubySpans: rubySpans,
   );
 
   /// [language]：请求方声明的查词语言；null = 旧请求，按本机当前查词语言。
+  /// [chineseScriptVariants]：请求方用户的简繁互查开关；null = 用本机开关。
   /// [rubySpans]：请求方原文自带的振假名（以 [term] 为坐标系）；对齐与 ruby 缓存键由
   /// [AppModel._searchDictionaryInLanguage] 负责。
   Future<DictionarySearchResult?> _searchDictionary({
@@ -13553,6 +13760,7 @@ class _AppModelRemoteLookupService
     required bool wildcards,
     required int maximumTerms,
     String? language,
+    bool? chineseScriptVariants,
     List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
   }) async {
     // 浏览器 Shift 与 Side Panel 都会在同一词上反复落点。禁用结果缓存会在 FFI
@@ -13570,6 +13778,7 @@ class _AppModelRemoteLookupService
           useCache: true,
           allowRemoteLookup: false,
           lookupLanguage: language,
+          requestedScriptVariants: chineseScriptVariants,
           rubySpans: rubySpans,
           profileView: _view,
         );
@@ -13618,7 +13827,8 @@ class _AppModelRemoteLookupService
     required String term,
     required bool wildcards,
     required int maximumTerms,
-    required String language,
+    required String? language,
+    bool? chineseScriptVariants,
     RemoteDictionaryPopupTiming? timing,
   }) => _searchDictionaryPopup(
     term: term,
@@ -13626,6 +13836,7 @@ class _AppModelRemoteLookupService
     maximumTerms: maximumTerms,
     timing: timing,
     language: language,
+    chineseScriptVariants: chineseScriptVariants,
   );
 
   @override
@@ -13635,6 +13846,7 @@ class _AppModelRemoteLookupService
     required int maximumTerms,
     required List<FushiRubySpan> rubySpans,
     String? language,
+    bool? chineseScriptVariants,
     RemoteDictionaryPopupTiming? timing,
   }) => _searchDictionaryPopup(
     term: term,
@@ -13642,16 +13854,18 @@ class _AppModelRemoteLookupService
     maximumTerms: maximumTerms,
     timing: timing,
     language: language,
+    chineseScriptVariants: chineseScriptVariants,
     rubySpans: rubySpans,
   );
 
-  /// [language] / [rubySpans] 同 [_searchDictionary]。
+  /// [language] / [chineseScriptVariants] / [rubySpans] 同 [_searchDictionary]。
   Future<RemoteDictionaryPopupLookup?> _searchDictionaryPopup({
     required String term,
     required bool wildcards,
     required int maximumTerms,
     RemoteDictionaryPopupTiming? timing,
     String? language,
+    bool? chineseScriptVariants,
     List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
   }) async {
     timing?.reset();
@@ -13692,6 +13906,7 @@ class _AppModelRemoteLookupService
         language,
         prefs: view?.prefs,
         filters: view?.lookupFilters,
+        requestedScriptVariants: chineseScriptVariants,
       );
       // 与 _searchLocalDictionary 同键：带 ruby 的查询单独成键（无 ruby 后缀为空）；
       // 按配置视图查时带它的命名空间（App 自己的键不变）。

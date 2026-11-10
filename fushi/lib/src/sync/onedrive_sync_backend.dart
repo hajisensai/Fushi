@@ -624,7 +624,7 @@ class OneDriveSyncBackend extends SyncBackend
     if (resp.statusCode >= 400) {
       throw SyncBackendError('Download failed: HTTP ${resp.statusCode}');
     }
-    return jsonDecode(resp.body);
+    return decodeSyncJsonFileBody(resp);
   }
 
   Future<void> _uploadJson(
@@ -632,7 +632,19 @@ class OneDriveSyncBackend extends SyncBackend
     String fileName,
     dynamic data,
   ) async {
-    final bytes = utf8.encode(jsonEncode(data));
+    final Uint8List bytes = utf8.encode(jsonEncode(data));
+    if (bytes.length > kOneDriveSimpleUploadMaxBytes) {
+      // 单请求 `PUT :/content` 对大 JSON（聚合快照）会被 Graph 以
+      // 「IO error during request payload read」拒掉，与内容文件同一个 10 MiB
+      // 门槛走上传会话（反馈 UHkG_OhDxQ）。
+      final String uploadUrl = await _createUploadSession(folderId, fileName);
+      await uploadBytesToOneDriveSession(
+        client: await obtainSyncHttpClient(),
+        uploadUrl: Uri.parse(uploadUrl),
+        bytes: bytes,
+      );
+      return;
+    }
     await _graphPut(
       '/me/drive/items/$folderId:/${Uri.encodeComponent(fileName)}:/content',
       bytes,
