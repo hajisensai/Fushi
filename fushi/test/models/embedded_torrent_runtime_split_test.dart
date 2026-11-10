@@ -43,8 +43,14 @@ class _RuntimeAppModel extends AppModel {
   @override
   bool probeEmbeddedTorrentRuntime() => dllLoads;
 
+  /// 启动已成功落地（镜像真实实现的 `_animeDownloadService != null` 幂等短路）。
+  bool _started = false;
+
   @override
   Future<void> startAnimeDownloadService() async {
+    // 与真实实现一样幂等：模块开关发出的那次启动可能在测试再调入口之前就已落地、
+    // 在飞 future 已清空，此时再调必须是 no-op，否则计数取决于 microtask 次序。
+    if (_started) return;
     serviceStarts++;
     final Completer<void>? pending = gate;
     if (pending != null) await pending.future;
@@ -53,6 +59,7 @@ class _RuntimeAppModel extends AppModel {
       nextStartError = null;
       throw error;
     }
+    _started = true;
   }
 }
 
