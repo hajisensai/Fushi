@@ -29,6 +29,7 @@ void main() {
 
   for (final (String id, String setter) in <(String, String)>[
     ('reading_display.view_mode', 'setReaderViewMode'),
+    ('reading_display.follow_book_layout', 'setReaderFollowBookLayout'),
     ('reading_display.writing_mode', 'setReaderWritingMode'),
     ('reading_display.spread_mode', 'setReaderSpreadMode'),
     ('reading_display.spread_direction', 'setReaderSpreadDirection'),

@@ -388,14 +388,17 @@ AudioPlaybackRange? mergeMiningAudioRanges(List<AudioPlaybackRange?> ranges) {
 /// 就是相邻的 cue，不必去正文 DOM 里按句读点重新切句。到列表两端自然封顶（返回条数
 /// 不再增长，高级制卡对话框据此禁用对应的「加一句」）。[anchorIndex] 越界时两侧都
 /// 返回空列表——宿主据此清空上下文，而不是拿错位的句子凑数。纯函数，可单测。
-({List<AudioCue> prev, List<AudioCue> next}) cueContextNeighbors({
-  required List<AudioCue> cues,
+///
+/// 元素类型泛型：视频把同时显示的多行（ASS 一句拆多条 Dialogue）先合成一句
+/// （`groupSimultaneousCues`，元素是 `List<AudioCue>`）再用同一个切法。
+({List<T> prev, List<T> next}) cueContextNeighbors<T>({
+  required List<T> cues,
   required int anchorIndex,
   required int prevCount,
   required int nextCount,
 }) {
   if (anchorIndex < 0 || anchorIndex >= cues.length) {
-    return (prev: const <AudioCue>[], next: const <AudioCue>[]);
+    return (prev: <T>[], next: <T>[]);
   }
   final int safePrev = prevCount < 0 ? 0 : prevCount;
   final int safeNext = nextCount < 0 ? 0 : nextCount;

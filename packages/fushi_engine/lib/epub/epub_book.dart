@@ -13,6 +13,7 @@ import 'package:fushi_core/fushi_core.dart' show mimeTypeForFilePath;
 import 'package:html/parser.dart' as html_parser;
 import 'package:html/dom.dart' as html_dom;
 import 'package:path/path.dart' as p;
+import 'package:fushi_engine/epub/book_original_layout.dart';
 import 'package:fushi_engine/epub/epub_series.dart';
 import 'package:fushi_engine/epub/reader_resource_host.dart';
 
@@ -28,6 +29,8 @@ class EpubBook {
     this.language,
     this.isbn,
     this.renditionSpread,
+    this.pageProgressionDirection,
+    this.primaryWritingMode,
     this.series,
   });
 
@@ -42,6 +45,21 @@ class EpubBook {
   /// Book-level `rendition:spread` value: `landscape`, `both`, `portrait`,
   /// `none`, or `null` when the OPF does not declare one.
   final String? renditionSpread;
+
+  /// OPF `<spine page-progression-direction>`：`rtl` / `ltr`；`default` 或没写为
+  /// null（反馈 sYPkmtitOM「跟随原书」的翻页方向来源）。
+  final String? pageProgressionDirection;
+
+  /// OPF `primary-writing-mode` 元数据原值（小写），如 `vertical-rl` /
+  /// `horizontal-lr` / `horizontal-rl`；没声明为 null。
+  final String? primaryWritingMode;
+
+  /// 书本自身声明的排版方向 / 翻页方向，见 [BookOriginalLayout.resolve]。
+  BookOriginalLayout get originalLayout => BookOriginalLayout.resolve(
+    pageProgressionDirection: pageProgressionDirection,
+    primaryWritingMode: primaryWritingMode,
+    language: language,
+  );
 
   /// OPF 声明的系列（`belongs-to-collection` / `calibre:series`），没有为 null。
   final EpubSeries? series;

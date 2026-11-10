@@ -195,6 +195,7 @@ class GameStreamVideoSettings {
     this.inputFocus = GameStreamInputFocus.background,
     this.audio = true,
     this.volumePercent = 100,
+    this.muteHost = false,
   });
 
   factory GameStreamVideoSettings.fromJson(Object? raw) {
@@ -221,6 +222,7 @@ class GameStreamVideoSettings {
           defaults.inputFocus,
       audio: boolean(raw['audio'], defaults.audio),
       volumePercent: integer(raw['volumePercent'], defaults.volumePercent),
+      muteHost: boolean(raw['muteHost'], defaults.muteHost),
     ).clamped();
   }
 
@@ -263,6 +265,11 @@ class GameStreamVideoSettings {
   /// (WebRTC accepts 0–10, so 5.0 is in range).
   double get volumeGain => volumePercent / 100;
 
+  /// Host-side: silence the game on the host PC's speakers while it streams.
+  /// The stream keeps full volume (the host undoes its own duck on capture).
+  /// Part of the wire form; an older host ignores it.
+  final bool muteHost;
+
   /// The gain a receiver actually applies: [volumeGain] only where the boost
   /// is offered ([boostAllowed], decided by the app), unity everywhere else,
   /// so a stored / synced value cannot boost a device that hides the slider.
@@ -282,6 +289,7 @@ class GameStreamVideoSettings {
     inputFocus: inputFocus,
     audio: audio,
     volumePercent: volumePercent.clamp(minVolumePercent, maxVolumePercent),
+    muteHost: muteHost,
   );
 
   GameStreamVideoSettings copyWith({
@@ -294,6 +302,7 @@ class GameStreamVideoSettings {
     GameStreamInputFocus? inputFocus,
     bool? audio,
     int? volumePercent,
+    bool? muteHost,
   }) => GameStreamVideoSettings(
     maxHeight: maxHeight ?? this.maxHeight,
     maxFps: maxFps ?? this.maxFps,
@@ -304,6 +313,7 @@ class GameStreamVideoSettings {
     inputFocus: inputFocus ?? this.inputFocus,
     audio: audio ?? this.audio,
     volumePercent: volumePercent ?? this.volumePercent,
+    muteHost: muteHost ?? this.muteHost,
   ).clamped();
 
   /// Moonlight-like default bitrate for [maxHeight] × [maxFps].
@@ -335,6 +345,7 @@ class GameStreamVideoSettings {
     'codec': codec.name,
     'inputFocus': inputFocus.name,
     'audio': audio,
+    'muteHost': muteHost,
   };
 
   /// Only the fields that differ from the defaults, for local persistence.
@@ -372,7 +383,8 @@ class GameStreamVideoSettings {
       other.codec == codec &&
       other.inputFocus == inputFocus &&
       other.audio == audio &&
-      other.volumePercent == volumePercent;
+      other.volumePercent == volumePercent &&
+      other.muteHost == muteHost;
 
   @override
   int get hashCode => Object.hash(
@@ -385,6 +397,7 @@ class GameStreamVideoSettings {
     inputFocus,
     audio,
     volumePercent,
+    muteHost,
   );
 }
 

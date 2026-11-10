@@ -147,9 +147,12 @@ void main() {
 }
 
 // ↓ 由旧 Dart 实现生成（临时对拍装置，未入库；2026-10-18）。
-const int _filenameDigest = -463071794031697267;
+// _filenameDigest / _candidatesDigest 于 2026-11-11 随 BUG-4323（S01E0005 / E0012 四位集号）
+// 有意改变后重算：用改动前的 media_name.rs 编出的库逐条对比，2 万条语料里只有 2 条带
+// 四位 E 集号的名字结果不同，其余逐位一致（旧库跑本文件全绿）。
+const int _filenameDigest = -8058556222822450411;
 const int _trailingDigest = -6484963035296573127;
-const int _candidatesDigest = 291537107996254609;
+const int _candidatesDigest = -5970001603805273694;
 const int _subtitleDigest = 314982625092058234;
 const int _fribbDigest = -2399658920168417481;
 
