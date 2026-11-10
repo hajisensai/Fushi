@@ -292,9 +292,12 @@ void main() {
       1700000500000,
       reason: 'completedAt 镜像 host 值，已看完角标不丢',
     );
-    expect(client.coverFetches, <String>[
+    // 远端卡片本身也经 RemoteCoverImage 显示 host 封面（同一 URL；widget 测试的假异步里
+    // 磁盘读盘缓存落不了地，重绘会再拉），所以不钉次数：登记路径拉的是 host 封面，
+    // 由下面「落盘字节 = host 下发字节」（而不是抽帧）钉住。
+    expect(client.coverFetches.toSet(), <String>{
       'http://x/videos/remote-clip/cover',
-    ], reason: 'host 有 coverUrl 时先拉 host 封面');
+    }, reason: 'host 有 coverUrl 时先拉 host 封面');
     expect(row.coverPath, isNotNull);
     expect(File(row.coverPath!).readAsBytesSync(), fakeJpegBytes(fill: 0xE0));
   });
