@@ -26,6 +26,8 @@ import 'package:fushi/src/lookup/global_lookup_layout.dart';
 import 'package:fushi/src/lookup/global_lookup_log.dart';
 import 'package:fushi/src/lookup/global_lookup_render.dart';
 import 'package:fushi/src/lookup/global_lookup_stack.dart';
+import 'package:fushi/src/floating_ball/floating_ball_config.dart'
+    show linuxSessionIsX11;
 import 'package:fushi/src/lookup/linux_lookup_card.dart';
 import 'package:fushi/src/lookup/overlay_bridge_handlers.dart';
 import 'package:fushi/src/lookup/overlay_stat_source.dart';
@@ -46,6 +48,7 @@ import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/swipe_dismiss_threshold.dart'
     show swipeDismissThreshold;
 import 'package:fushi/src/shortcuts/global_external_lookup_route.dart';
+import 'package:fushi/src/shortcuts/fallback_global_hotkey_backend.dart';
 import 'package:fushi/src/shortcuts/global_hotkey_backend.dart';
 import 'package:fushi/src/shortcuts/global_hotkey_chords.dart';
 import 'package:fushi/src/shortcuts/global_shortcuts_portal.dart';
@@ -648,16 +651,28 @@ class GlobalLookupController {
     final GlobalHotKeyBackend backend =
         hotKeyBackendOverride?.call() ??
         switch (platformHotKeyBackendKind) {
-          GlobalHotKeyBackendKind.portal => PortalGlobalHotKeyBackend(
-            portal: DBusGlobalShortcutsPortal(log: glog),
-            appId: kFushiLinuxApplicationId,
-            log: glog,
-            onError: (String context, Object error, StackTrace? stack) =>
-                ErrorLogService.instance.log(
-                  'GlobalLookupController.$context',
-                  error,
-                  stack ?? StackTrace.current,
+          // No GlobalShortcuts on this desktop but GTK on XWayland (Flatpak,
+          // Steam Game Mode launcher): keep the X11 grab it had before the
+          // portal backend, instead of reporting "not supported".
+          GlobalHotKeyBackendKind.portal => FallbackGlobalHotKeyBackend(
+            primary: PortalGlobalHotKeyBackend(
+              portal: DBusGlobalShortcutsPortal(log: glog),
+              appId: kFushiLinuxApplicationId,
+              log: glog,
+              onError: (String context, Object error, StackTrace? stack) =>
+                  ErrorLogService.instance.log(
+                    'GlobalLookupController.$context',
+                    error,
+                    stack ?? StackTrace.current,
+                  ),
+            ),
+            createFallback: NativeGlobalHotKeyBackend.new,
+            shouldFallBack: (GlobalHotKeyStatus status) =>
+                portalShouldFallBackToX11Grab(
+                  status,
+                  gtkDrawsOnX11: linuxSessionIsX11(Platform.environment),
                 ),
+            log: glog,
           ),
           _ => NativeGlobalHotKeyBackend(),
         };

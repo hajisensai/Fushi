@@ -18,7 +18,11 @@
 >   崩溃 / 重启时，未应答的 Request 以 `PortalFailure.aborted` 结束、该进程的会话按「已关闭」上报（旧进程不会发
 >   `Closed`），之后只认新属主的信号；退出时 `dispose` 先 `abortPendingRequests()` 结束挂着的绑定对话框请求，再关会话
 >   与连接，不让退出步骤卡到超时。
-> - 守卫 / 测试：`test/shortcuts/portal_global_hotkey_backend_test.dart`、`global_shortcuts_portal_dbus_test.dart`（仅 Linux）、
+> - portal 缺 GlobalShortcuts（GNOME < 48、wlroots、Gamescope）而 GTK 跑在 XWayland 上（Flatpak、Steam 游戏模式启动脚本
+>   都钉 `GDK_BACKEND=x11`）时，`FallbackGlobalHotKeyBackend` 把热键交回 X11 keybinder（`portalShouldFallBackToX11Grab`）：
+>   X11 客户端（XWayland / Gamescope 下的游戏）有焦点时照样能触发，这是 portal 后端出现前这些会话本来就有的能力，不报
+>   「不支持」。设置页跟随实际后端：回落后键盘视图回到应用内录键。原生 Wayland GTK 上 X11 抓键看不到任何按键，不回落。
+> - 守卫 / 测试：`test/shortcuts/portal_global_hotkey_backend_test.dart`、`fallback_global_hotkey_backend_test.dart`、`global_shortcuts_portal_dbus_test.dart`（仅 Linux）、
 >   `test/lookup/global_hotkey_backend_wiring_test.dart`、`test/pages/global_hotkey_portal_panel_test.dart`。
 
 > **2026-11-01 增补（焦点导航进快捷键体系，反馈 bjPjRHsaUy）：**

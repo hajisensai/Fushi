@@ -104,13 +104,41 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
   /// nothing.
   bool _gameInputUnavailable = false;
 
+  /// Which mechanism carries the app-outside keys right now. Starts as the
+  /// platform's choice and follows the controller: on a Wayland desktop
+  /// without GlobalShortcuts but with GTK on XWayland the portal hands over to
+  /// the X11 grab, and then the regular in-app recorder applies again.
+  GlobalHotKeyBackendKind? _hotKeyBackendKind;
+
+  void _onHotKeyStatusChanged() {
+    final GlobalHotKeyBackendKind? kind =
+        GlobalLookupController.instance.hotKeyStatus.value?.kind ??
+        GlobalLookupController.platformHotKeyBackendKind;
+    if (kind == _hotKeyBackendKind || !mounted) return;
+    setState(() => _hotKeyBackendKind = kind);
+  }
+
   @override
   void initState() {
     super.initState();
+    _hotKeyBackendKind =
+        GlobalLookupController.instance.hotKeyStatus.value?.kind ??
+        GlobalLookupController.platformHotKeyBackendKind;
+    GlobalLookupController.instance.hotKeyStatus.addListener(
+      _onHotKeyStatusChanged,
+    );
     _gamepadBrand = ReaderFushiSource.instance.gamepadGlyphBrand;
     // Surface the hint only on a gamepad-related surface (this settings page),
     // never as a startup popup — a mouse/keyboard-only user is not nagged.
     unawaited(_checkGameInputAvailability());
+  }
+
+  @override
+  void dispose() {
+    GlobalLookupController.instance.hotKeyStatus.removeListener(
+      _onHotKeyStatusChanged,
+    );
+    super.dispose();
   }
 
   /// TODO-1223: asks the platform whether the controller backend is available
@@ -620,8 +648,7 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
     // stay the regular rows: those triggers are Fushi's own.
     if (scope == ShortcutScope.globalExternal &&
         device == ShortcutInputDevice.keyboard &&
-        GlobalLookupController.platformHotKeyBackendKind ==
-            GlobalHotKeyBackendKind.portal) {
+        _hotKeyBackendKind == GlobalHotKeyBackendKind.portal) {
       final GlobalLookupController controller = GlobalLookupController.instance;
       return GlobalHotKeyPortalPanel(
         status: controller.hotKeyStatus,
