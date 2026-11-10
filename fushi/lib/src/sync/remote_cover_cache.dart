@@ -82,6 +82,22 @@ class RemoteCoverCache {
     }
   }
 
+  /// [key] 的缓存文件（与 [read] 同一命中规则：存在、非空、未超龄），否则 null。
+  /// 给只能按路径读图的调用方用（副屏面板在另一个进程，按文件路径显示封面）。
+  static Future<File?> cachedFile(String key) async {
+    try {
+      final Directory dir = await _dir();
+      final File f = File(p.join(dir.path, fileNameFor(key)));
+      if (!await f.exists()) return null;
+      final FileStat stat = await f.stat();
+      if (stat.size <= 0) return null;
+      if (DateTime.now().difference(stat.modified) > maxEntryAge) return null;
+      return f;
+    } on FileSystemException {
+      return null;
+    }
+  }
+
   /// 落盘（尽力而为，异常吞掉不影响显示）。空字节不写。写后概率性修剪容量。
   static Future<void> write(String key, Uint8List bytes) async {
     if (bytes.isEmpty) return;

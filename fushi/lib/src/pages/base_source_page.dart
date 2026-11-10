@@ -1936,6 +1936,16 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     }
   }
 
+  /// Counts one lookup made on the dual-screen companion's Lookup tab for this
+  /// page, through the same counter its in-page popup uses
+  /// ([_recordLookupCounter]: per-book identity, source type, source review
+  /// skip). Pages pass it as their companion claim's `onLookupCounted`
+  /// (public, not `@protected`: the claim adapters of the pages call it).
+  void recordCompanionLookup() {
+    if (!mounted) return;
+    _recordLookupCounter();
+  }
+
   /// TODO-948②：弹窗右部「收藏」按钮回调（阅读器 EPUB 走本基类的 [_buildPopupLayer]，
   /// 不经 [DictionaryPageMixin]，曾因这里漏接线导致点击无反应）。切换收藏当前词条：
   /// 已收藏则取消（返回 false），否则按 [dictionarySourceType] 落 DB（返回 true）。

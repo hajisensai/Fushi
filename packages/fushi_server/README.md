@@ -203,7 +203,7 @@ libraries:
     enabled: true
   - id: "audiobooks"
     path: "/srv/media/audiobooks"
-    kind: "audiobook"         # 每个含音频的目录一本（CD1 / Disc 2 分碟子目录并进上一层），可带 EPUB / 字幕；只有音频的不导入（不自动转录）；音频原地引用、不拷贝
+    kind: "audiobook"         # 每个含音频的目录一本（CD1 / Disc 2 分碟子目录并进上一层），可带 EPUB / 字幕；只有音频的不导入（不自动转录）；音频原地引用、不拷贝；已导入的目录重扫时按音频清单 / 字幕变化就地更新（补章节、换字幕）
     enabled: true
 ```
 
@@ -424,13 +424,24 @@ client 首次连接的 TOFU，其它主机名 / 端口的坏证书照样拒绝�
 （`lib/src/server_subtitle_providers.dart`，`subs` 命令也用它）：OpenSubtitles / SubDL / Jimaku。
 
 - 凭据：环境变量 `FUSHI_OPENSUBTITLES_API_KEY`（+ `_USERNAME` / `_PASSWORD`）、`FUSHI_SUBDL_API_KEY`、
-  `FUSHI_JIMAKU_API_KEY`，其次是与 app 同名的偏好键（经互联「服务账号」同步过来的那份）。
+  `FUSHI_JIMAKU_API_KEY`，其次是与 app 同名的偏好键。**环境变量给了 key 就压过偏好里存的 key**（偏好里的开关仍作数）。
+- 偏好键在这几处存（同一个接口 `PUT /api/admin/settings` 的 `subtitleProviders`，保存即生效）：
+  - WebUI「设置 → 在线字幕来源」：每家一个开关 + key（OpenSubtitles 另有用户名 / 密码）；
+  - `fushi_server ctl settings subtitle-key opensubtitles|subdl|jimaku`：key 从 stdin 或同名 `FUSHI_*_API_KEY`
+    环境变量读，不进 argv；末尾加 `clear` 清掉；`ctl settings subtitle-source <来源> on|off` 开关；
+  - `ctl settings set '{"subtitleProviders":{"jimaku":{"apiKey":"…"}}}'`（会进 shell 历史，能用上面那条就别用这条）。
+
+  规则与 TMDB key 同：key / 密码永不回显，`GET /api/admin/settings` 只报 `apiKeySet` / `passwordSet`，
+  外加 `active`（下一轮字幕阶段会不会用这一家）与 `apiKeyFromEnv`（存的 key 此刻被环境变量盖住）；
+  提交时留空 = 不改，`clearApiKey: true` / `clearPassword: true` 才清空；整批先校验，有一项不对就 400、什么都不写。
+  AI 助手的设置操作（`server.settings.set`）只能改字幕语言等几项白名单，碰不到任何凭据。
 - 无人值守路径只用**偏好开关开着且有 key** 的来源：偏好里关掉的来源，设了环境变量也不自动用
   （环境变量只在 `subs` 命令里临时启用）。一家都没有时下载的字幕阶段跳过（`required` 的任务报 needsAttention），
   补字幕回 `unavailable`。
-- 下载管线的来源在管线（重）建时读一次（启动 / 资源索引器保存后）；补字幕每次请求现读。
+- 来源按当前偏好每次现读：下载管线每个任务进字幕阶段时读一次（运行中改了 key / 开关，下一个任务就用新的，
+  不用重启；正在跑的那一轮用到结束），补字幕每次请求读一次。
 - 语言：`subtitle_language` 是显式字幕语言（硬过滤）；每系列记忆（`jimaku_pref_langs`）与默认内容语言
-  （`default_content_language`）按 app 同一判据参与；写盘前按内嵌字幕轨对时间轴（`subtitle_reference_sync_enabled`，默认开）。
+  （`default_content_language`）按 app 同一判据参与（这两项与来源一样每轮字幕阶段现读，WebUI 改完下一个任务生效）；写盘前按内嵌字幕轨对时间轴（`subtitle_reference_sync_enabled`，默认开）。
 - Jimaku 与 app 用同一个 provider：按刮削身份里的 AniList id（真人剧按 TMDB id）直查条目，标题只是回退词，
   整季压缩包按集号解包。AJATT 只在 app 里有。
 - 自动获取字幕（偏好 `video_subtitle_backfill_after_scrape`，与 app 同名，默认开；关了下面两条都不跑，
