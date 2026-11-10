@@ -77,11 +77,9 @@ void main() {
         dirs.map((GameDirectoryCandidate d) => d.directoryPath).toList(),
         <String>[p.join(tmp.path, 'ATRI'), p.join(tmp.path, 'Brand', 'GameB')],
       );
-      expect(
-        dirs.first.exePaths.keys,
-        <String>[p.join(tmp.path, 'ATRI', 'atri.exe')],
-        reason: '游戏自带 tools/ 里的 exe 属于这个游戏，不另成一条',
-      );
+      expect(dirs.first.exePaths.keys, <String>[
+        p.join(tmp.path, 'ATRI', 'atri.exe'),
+      ], reason: '游戏自带 tools/ 里的 exe 属于这个游戏，不另成一条');
     });
 
     test('「含子文件夹」关闭：只看根与根的直接子目录', () async {
@@ -360,11 +358,7 @@ void main() {
     final PreferencesRepository prefs = PreferencesRepository(db);
     await prefs.loadFromDb();
 
-    await removeSourceLibrary(
-      database: db,
-      prefs: prefs,
-      sourceId: sourceId,
-    );
+    await removeSourceLibrary(database: db, prefs: prefs, sourceId: sourceId);
 
     expect(await db.getMediaSourceById(sourceId), isNull);
     expect(await db.getAllGalgames(), hasLength(1));

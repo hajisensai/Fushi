@@ -499,8 +499,7 @@ bool isGameExePath(String path) =>
 String? pickGameDirectoryExe(String dirName, Map<String, int?> exes) {
   if (exes.isEmpty) return null;
   final String dirKey = dirName.trim().toLowerCase();
-  String stemOf(String path) =>
-      galgameNameFromExe(path).trim().toLowerCase();
+  String stemOf(String path) => galgameNameFromExe(path).trim().toLowerCase();
   int rank(String path) {
     final String stem = stemOf(path);
     if (dirKey.isNotEmpty && stem == dirKey) return 0;
