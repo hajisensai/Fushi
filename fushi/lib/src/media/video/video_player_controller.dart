@@ -4014,7 +4014,10 @@ class VideoPlayerController extends ChangeNotifier
     _syncBufferingIndicator(player);
     // 位置推送源（positionMsListenable）：跟 libmpv time-pos 事件，不另起定时器。
     _positionSub = player.stream.position.listen((_) {
-      if (_isCurrentLoad(player, loadToken)) _publishPosition();
+      if (!_isCurrentLoad(player, loadToken)) return;
+      _publishPosition();
+      // 渲染活动集跟着时钟走，不等 125ms tick（BUG-4352）。
+      _syncRenderActivityToClock();
     });
     _publishPosition();
 
@@ -4517,13 +4520,10 @@ class VideoPlayerController extends ChangeNotifier
     playback?.finish(reason);
   }
 
-  void _syncCueForPosition(int posMs, {required bool persistPosition}) {
-    if (isBlurayNavigationSession && !discTitleReady) return;
-    if (persistPosition) {
-      _maybeSavePosition(posMs);
-    }
-    final int effectiveMs = effectiveSubtitlePositionMs(posMs, _delayMs);
-
+  /// 副字幕对白 / 主副 `\p` 绘图三条**纯渲染**流的活动集按 [posMs]（原始轴）重算；
+  /// [effectiveMs] 是主轨调轴后的位置。有变化返回 true（调用方负责通知）。只改活动集、
+  /// 无副作用（不存进度、不动 seek 在途状态），125ms tick 与逐次位置更新共用。
+  bool _syncAuxRenderActivity(int posMs, int effectiveMs) {
     // TODO-1312：副字幕活动集（与主字幕独立求；空副字幕恒空集）。TODO-2837：副字幕
     // 用**自己的生效调轴**（[effectiveSecondaryDelayMs]，未单独设置时 == _delayMs，
     // 等价旧「同一 effective 位置」行为）求活动集——主副字幕轴不同源时各调各的。
@@ -4569,6 +4569,48 @@ class VideoPlayerController extends ChangeNotifier
       _activeSecondaryDrawingIndices = nextSecondaryDrawing;
       changed = true;
     }
+    return changed;
+  }
+
+  /// 渲染活动集跟**播放时钟的每次位置更新**走（BUG-4352「字幕刷新率」）。
+  ///
+  /// 活动集原先只由 125ms tick 重算，而 overlay 的 `\fad` / `\move` / `\t` / `\k`
+  /// 动画逐帧读时钟：卡拉 OK 特效常把一句拆成几十毫秒一条的逐音节 / 逐帧事件，按 8 Hz
+  /// 取样时新事件最多晚 125ms 才上屏、已结束的事件最多多留 125ms（按超出时长的进度
+  /// 定格画着）——就是用户看到的「刷新率低」与光晕残影。这里在 libmpv 每次推位置时按
+  /// [subtitleClockMs]（seek 在途时已调和成跳转目标，与动画同一个时钟、无副作用）重算
+  /// 渲染活动集；代表 cue、句尾暂停、循环、进度保存、seek 落地宽限仍归 tick 管
+  /// （它们按拍计数，不能被位置事件加速）。
+  void _syncRenderActivityToClock() {
+    if (isBlurayNavigationSession) return;
+    final int? clock = subtitleClockMs;
+    if (clock == null) return;
+    final int effectiveMs = effectiveSubtitlePositionMs(clock, _delayMs);
+    bool changed = _syncAuxRenderActivity(clock, effectiveMs);
+    if (_cues.isNotEmpty) {
+      final List<int> nextActive = _activeRenderIndices(
+        _currentCueIndex,
+        effectiveMs,
+      );
+      if (!_intListEquals(nextActive, _activeCueIndices)) {
+        _activeCueIndices = nextActive;
+        changed = true;
+      }
+    } else if (_activeCueIndices.isNotEmpty) {
+      _activeCueIndices = const <int>[];
+      changed = true;
+    }
+    if (changed) notifyListeners();
+  }
+
+  void _syncCueForPosition(int posMs, {required bool persistPosition}) {
+    if (isBlurayNavigationSession && !discTitleReady) return;
+    if (persistPosition) {
+      _maybeSavePosition(posMs);
+    }
+    final int effectiveMs = effectiveSubtitlePositionMs(posMs, _delayMs);
+
+    bool changed = _syncAuxRenderActivity(posMs, effectiveMs);
 
     if (_cues.isEmpty) {
       // 无主 cue：清主字幕代表 cue + 活动集残留，据 changed（含副字幕变化）决定是否通知。
@@ -4988,6 +5030,11 @@ class VideoPlayerController extends ChangeNotifier
 
   @visibleForTesting
   void debugUpdateCueForPosition(int posMs) => updateCueForPosition(posMs);
+
+  /// 测试入口：模拟 libmpv 推来一次位置更新（[_syncRenderActivityToClock]，BUG-4352），
+  /// 位置取 [positionMs]（测试里用 [debugSetPositionForTesting] 注入）。
+  @visibleForTesting
+  void debugSyncRenderActivityToClock() => _syncRenderActivityToClock();
 
   @visibleForTesting
   void debugSyncInitialCueForPosition(int posMs) =>
