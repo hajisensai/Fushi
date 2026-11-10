@@ -129,6 +129,7 @@ void main() {
         'q': '',
         'a': '',
         'css': '',
+        'fields': <String, Object?>{},
         'nfb': <String, Object?>{'code': 'futureCode', 'detail': 'x'},
       })!;
       expect(
@@ -146,6 +147,7 @@ void main() {
           'q': '',
           'a': '',
           'css': '',
+          'fields': <String, Object?>{},
           'nfb': <String, Object?>{'code': 3},
         }),
         throwsA(

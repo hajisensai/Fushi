@@ -189,6 +189,7 @@ class _RecordingLinker implements SrsProfileLinker {
   }) async {
     linkedUids.add(store.profileUid);
     final Object? error = linkError;
+    // ignore: only_throw_errors
     if (error != null) throw error;
     final SrsDbStore? relinked = relinkTo;
     if (relinked != null) return SrsProfileLinkOutcome(relinked, linked: true);
@@ -1499,9 +1500,11 @@ void main() {
       );
       expect(src, contains('ready: () => runExclusiveWithSync('));
       expect(src, contains('onReachable: () => localPush.resetBackoff()'));
+      // 「立即同步」清两条推送的退避（BUG-4370 起由 srsSyncSupersedingPushes 统一做：先撤掉
+      // 排着的推送、清退避，这轮没成就排回去；行为见 srs_interconnect_watch_test）。
       expect(
         RegExp(
-          r'Future<SrsSyncNowResult> syncNow\(\) \{\s*localPush\.resetBackoff\(\);\s*cloudPush\.resetBackoff\(\);',
+          r'Future<SrsSyncNowResult> syncNow\(\) => srsSyncSupersedingPushes\(\s*<SrsLocalPush>\[localPush, cloudPush\],',
         ).hasMatch(src),
         isTrue,
       );

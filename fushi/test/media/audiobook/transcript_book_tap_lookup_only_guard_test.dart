@@ -87,7 +87,7 @@ void main() {
         bar,
         matches(
           RegExp(
-            r"if \(hasAudio\)\s*item\(\s*FushiIcons\.playCircle,\s*"
+            r'if \(hasAudio\)\s*item\(\s*FushiIcons\.playCircle,\s*'
             r"t\.play_from_cue,\s*'playFromSentence',?\s*\)",
           ),
         ),

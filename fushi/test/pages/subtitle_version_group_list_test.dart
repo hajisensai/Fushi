@@ -170,7 +170,16 @@ void main() {
       expect(paragraph.maxLines, isNull, reason: '文件名不应设行数上限');
       expect(paragraph.didExceedMaxLines, isFalse, reason: '区分版本的末尾段不能被截掉');
       expect(
-        paragraph.computeLineMetrics().length,
+        paragraph
+            .getBoxesForSelection(
+              TextSelection(
+                baseOffset: 0,
+                extentOffset: paragraph.text.toPlainText().length,
+              ),
+            )
+            .map((TextBox box) => box.top)
+            .toSet()
+            .length,
         greaterThan(2),
         reason: '这么长的文件名在横屏手机宽度下应超过旧上限 2 行，证明没被截断',
       );
