@@ -1,6 +1,6 @@
 // TODO-1087：自动配置默认值。app 安装助手在解压时把当前 server 真值写进 fushi-defaults.js，
 // 于是加载已解压扩展后无需手填。用户仍可在 options 手动覆盖（chrome.storage.local 优先于默认）。
-try { importScripts('fushi-defaults.js', 'auto-config.js', 'locales/en.js', 'i18n.js', 'connection-diagnostics.js', 'mine-outcome.js', 'self-update.js', 'site-cookie-export.js', 'profile-selection.js'); } catch (_) { /* 缺省文件时回落硬编码默认 */ }
+try { importScripts('fushi-defaults.js', 'auto-config.js', 'locales/en.js', 'i18n.js', 'connection-diagnostics.js', 'mine-outcome.js', 'self-update.js', 'site-cookie-export.js', 'dict-media-key.js', 'profile-selection.js'); } catch (_) { /* 缺省文件时回落硬编码默认 */ }
 const FUSHI_DEFAULTS =
     (self.FUSHI_DEFAULTS) || { host: '127.0.0.1', port: 19633, token: '' };
 // 自动配置的连接三元组。初值 = SW 启动时 importScripts 读到的 fushi-defaults.js；app 改密钥 /
@@ -258,6 +258,49 @@ function statusRequestBody() {
 }
 
 let connectionCache = null;
+
+// BUG-4283：词典媒体 query 凭据的能力位缓存。host 在 /api/extension/status 里报
+// dictionaryMediaKey（'fmk1'）时，dictMediaConfig 回由 token 派生的作用域 key
+// （dict-media-key.js），不再把 token 原值拼进 <img> URL；没报（旧 host / FushiApiServer）
+// 回原 token。connKey = base + '|' + token：与当前 cfg() 不一致（换 host / 端口 / 密钥）即视为
+// 未命中；SW 回收后内存清空同样未命中。
+let dictMediaCapability = { connKey: null, scheme: null };
+let dictMediaCapabilityInflight = null;
+function rememberDictMediaCapability(base, token, status) {
+  const scheme = status && typeof status.dictionaryMediaKey === 'string'
+    ? status.dictionaryMediaKey : null;
+  dictMediaCapability = { connKey: base + '|' + token, scheme };
+}
+// 未命中时单飞地查一次 status；查询失败（非 2xx / 网络错误）返回 null、不写缓存。
+// send 把「给定连接 → fetch」工厂发出去并返回 fetchWithAutoConfigRetry 形状的
+// { response, base, token }；本函数返回 { base, token, scheme } 或 null。
+function lookupDictMediaCapability(send) {
+  if (!dictMediaCapabilityInflight) {
+    dictMediaCapabilityInflight = (async () => {
+      try {
+        const out = await send(({ base, token }) => fetch(base + '/api/extension/status', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
+          body: statusRequestBody(),
+        }));
+        if (!out.response.ok) return null;
+        const status = await responseJson(out.response);
+        rememberDictMediaCapability(out.base, out.token, status);
+        return { base: out.base, token: out.token, scheme: dictMediaCapability.scheme };
+      } catch (_) {
+        return null;
+      }
+    })().finally(() => { dictMediaCapabilityInflight = null; });
+  }
+  return dictMediaCapabilityInflight;
+}
+// dictMediaConfig 回给 content script 的 query 凭据：能力位是 fmk1 时派生 key，否则原 token。
+async function dictMediaQueryToken(scheme, token) {
+  if (scheme === 'fmk1' && self.FUSHI_DICT_MEDIA_KEY) {
+    return self.FUSHI_DICT_MEDIA_KEY.derive(token);
+  }
+  return token;
+}
 // 扩展主题（options 的 extensionTheme，见 theme.js）。显式 light/dark 时查词请求带
 // colorScheme 提示，app 按该明暗生成弹窗 --md-* 配色；auto 不带（app 按自己当前明暗）。
 // SW 里没有 matchMedia，「跟随系统」只能由各页面自己决议，这里只关心显式值。
@@ -670,13 +713,14 @@ async function checkVersionOnStartup() {
     // BUG-1079：请求体自报 build/version（不再写死 '{}'），app 端据此显示「浏览器中
     // 实际加载的版本」并在与内置指纹不一致时给出更新提示。心跳每分钟走这里一次，
     // 401 / 连不上时顺带重读自动配置——app 改密钥 / 端口后 ≤1 分钟自愈。
-    const { response: r } = await fushiFetch(({ base, token }) => fetch(base + '/api/extension/status', {
+    const { response: r, base, token } = await fushiFetch(({ base, token }) => fetch(base + '/api/extension/status', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
       body: statusRequestBody(),
     }));
     if (!r.ok) return;
     const status = await responseJson(r);
+    rememberDictMediaCapability(base, token, status);
     if (status) await maybeSelfReload(status);
   } catch (_) { /* server 未开 / 离线：启动检查静默失败，下次查词仍会兜底比对 */ }
 }
@@ -719,13 +763,15 @@ async function fetchCookieImportRequest() {
   if (!api) return null;
   const conn = await cfg();
   try {
-    const { response: r } = await fetchWithAutoConfigRetry(conn, ({ base, token }) => fetch(base + '/api/extension/status', {
+    const { response: r, base, token } = await fetchWithAutoConfigRetry(conn, ({ base, token }) => fetch(base + '/api/extension/status', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
       body: statusRequestBody(),
     }));
     if (!r.ok) return null;
-    return api.parseImportRequest(await responseJson(r));
+    const status = await responseJson(r);
+    rememberDictMediaCapability(base, token, status);
+    return api.parseImportRequest(status);
   } catch (_) {
     return null;
   }
@@ -1422,6 +1468,22 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         // TODO-1215: content-script dict media image rewrite needs the server
         // base URL + token to build GET /api/media/dictionary. Same source as
         // lookup/mine (cfg()): installer-injected defaults or options override.
+        // BUG-4283：host 报了 fmk1 能力位时，token 换成派生的作用域 key（见
+        // dictMediaQueryToken）；能力位未知时单飞地查一次 status，查不到本次回原 token。
+        let scheme = null;
+        if (dictMediaCapability.connKey === base + '|' + token) {
+          scheme = dictMediaCapability.scheme;
+        } else {
+          // 401 / 连不上时随自动配置重读换连接（同 fushiRequest）；回包的 base / token 是
+          // 实际用上的那份，并发的同条消息共用同一次查询的结果。
+          const looked = await lookupDictMediaCapability(
+            (request) => fetchWithAutoConfigRetry({ base, token }, request));
+          if (looked) {
+            ({ base, token } = looked);
+            scheme = looked.scheme;
+          }
+        }
+        token = await dictMediaQueryToken(scheme, token);
         sendResponse({ ok: true, base, token });
       } else if (msg.type === 'subtitleFonts') {
         // 字幕外观的字体下拉 + 覆盖层 @font-face：字体真源在 app（自定义字体目录）。

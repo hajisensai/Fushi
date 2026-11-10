@@ -152,17 +152,36 @@ extension _FushiSyncServerLookup on FushiSyncServer {
     });
   }
 
-  /// Validates that [request]'s query token (?token= etc.) equals [_token].
-  /// Used to admit the dictionary media endpoint without Basic auth (a web
-  /// page <img> GET has no Authorization header). Constant-time comparison.
-  bool _dictionaryMediaTokenValid(shelf.Request request) {
+  /// 词典媒体端点的 query 凭据（?token= 等）能否免 Basic 放行（网页 `<img>` GET 带不了
+  /// Authorization 头）。常量时间比较。
+  ///
+  /// BUG-4283：以 `fmk1.` 开头的值是从某个有效凭据派生的作用域 key
+  /// （[dictionaryMediaKeyFor]），对照当前凭据快照——签发凭据被吊销即失效；其余值只与
+  /// 共享 [_token] 原值比（旧扩展兼容，取舍 T6）。peer token 原值不进 query，仍须 Basic。
+  Future<bool> _dictionaryMediaTokenValid(shelf.Request request) async {
+    const String scopedPrefix = '$kDictionaryMediaKeyScheme.';
     for (final String name in _kDictionaryMediaTokenParams) {
       final String? value = request.url.queryParameters[name];
-      if (value != null &&
-          _constantTimeEquals(
-            Uint8List.fromList(utf8.encode(value)),
-            Uint8List.fromList(utf8.encode(_token)),
-          )) {
+      if (value == null) continue;
+      final Uint8List presented = Uint8List.fromList(utf8.encode(value));
+      if (value.startsWith(scopedPrefix)) {
+        final List<Uint8List> keys;
+        try {
+          keys = (await _credentialSnapshot()).dictionaryMediaKeys;
+        } catch (_) {
+          // 凭据快照读不出来：与 `_validateAuth` 同样按不认处理，落到下方 Basic。
+          return false;
+        }
+        bool match = false;
+        for (final Uint8List key in keys) {
+          // 不提前退出：比对次数与命中哪一把无关。
+          if (_constantTimeEquals(presented, key)) match = true;
+        }
+        if (match) return true;
+      } else if (_constantTimeEquals(
+        presented,
+        Uint8List.fromList(utf8.encode(_token)),
+      )) {
         return true;
       }
     }

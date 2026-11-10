@@ -29,7 +29,7 @@ extension _FushiSyncServerAuth on FushiSyncServer {
               return innerHandler(request);
             case _PublicGate.dictionaryMediaQuery:
               // 无效 / 缺省的 query token 落到下方 Basic（app 内 / Basic 客户端照常用）。
-              if (_dictionaryMediaTokenValid(request)) {
+              if (await _dictionaryMediaTokenValid(request)) {
                 return innerHandler(request);
               }
           }

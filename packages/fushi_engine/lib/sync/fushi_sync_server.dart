@@ -286,7 +286,14 @@ class _CredentialSnapshot {
          for (final String t in peerTokens) _credentialFingerprint(t),
          for (final String t in legacyPeerTokens) _credentialFingerprint(t),
        }),
-       dictionaryMediaKeys = const <String>{};
+       dictionaryMediaKeys = List<Uint8List>.unmodifiable(<Uint8List>[
+         for (final String t in <String>{
+           sharedToken,
+           ...peerTokens,
+           ...legacyPeerTokens,
+         })
+           Uint8List.fromList(utf8.encode(dictionaryMediaKeyFor(t))),
+       ]);
 
   /// 带稳定 deviceId 配上的设备 token：过 `_validateAuth` 也过 `_validatePeerAuth`。
   final Set<String> peerTokens;
@@ -298,12 +305,34 @@ class _CredentialSnapshot {
   /// sha256hex(utf8(token))：共享 + peer + legacy。供派生凭据记签发者用。
   final Set<String> fingerprints;
 
-  /// 词典媒体作用域 key；尚未填充，恒为空集。
-  final Set<String> dictionaryMediaKeys;
+  /// 词典媒体作用域 key（[dictionaryMediaKeyFor]，utf8 字节）：共享 + peer + legacy
+  /// 各一份。`/api/media/dictionary` 的 query 凭据以 `fmk1.` 开头时逐个常量时间比对。
+  final List<Uint8List> dictionaryMediaKeys;
 }
 
 String _credentialFingerprint(String token) =>
     sha256.convert(utf8.encode(token)).toString();
+
+/// 词典媒体作用域 key 的方案名：`/api/extension/status` 以 `dictionaryMediaKey` 字段
+/// 公布，扩展见到它才改发 [dictionaryMediaKeyFor] 派生的 key（BUG-4283）。
+const String kDictionaryMediaKeyScheme = 'fmk1';
+
+const String _kDictionaryMediaKeyLabel = 'fushi-dictionary-media-v1';
+
+/// 由 [credential]（共享 token / 已配对设备 token）派生的词典媒体作用域 key：
+/// `'fmk1.' + base64url(无填充)(HMAC-SHA256(key: utf8(credential), msg: utf8('fushi-dictionary-media-v1')))`。
+///
+/// 只换得到 `GET|HEAD /api/media/dictionary` 的 query 免 Basic 入口；签发凭据被吊销后，
+/// 它不在当前凭据快照里，key 随之失效。扩展端同一定义在
+/// `tools/browser-extension/dict-media-key.js`，两边逐字节一致。
+String dictionaryMediaKeyFor(String credential) {
+  final Digest mac = Hmac(
+    sha256,
+    utf8.encode(credential),
+  ).convert(utf8.encode(_kDictionaryMediaKeyLabel));
+  return '$kDictionaryMediaKeyScheme.'
+      '${base64Url.encode(mac.bytes).replaceAll('=', '')}';
+}
 
 /// 把 [file] 的字节流式交给响应体，流结束（传完 / 对端断开取消订阅）后删它所在的
 /// 临时目录。用 `async*` 的 `finally`：订阅被取消时同样执行。
@@ -1111,6 +1140,8 @@ class FushiSyncServer {
         'app': 'fushi',
         'ready': true,
         'port': port,
+        // BUG-4283：能力位——扩展见到它才把词典图片 URL 的 token 换成派生 key。
+        'dictionaryMediaKey': kDictionaryMediaKeyScheme,
       });
     }
     if (reqPath == '/api/ping') {
