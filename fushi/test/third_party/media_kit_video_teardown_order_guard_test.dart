@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import '../helpers/source_guard.dart' show maskComments;
 
-/// BUG-4333 source-scan guard: the Windows `VideoOutput` teardown order of the
+/// BUG-4334 source-scan guard: the Windows `VideoOutput` teardown order of the
 /// vendored media_kit_video.
 ///
 /// Field crashes (3.3.0, Windows): `libmpv-2.dll` abort (0x40000015) after the
