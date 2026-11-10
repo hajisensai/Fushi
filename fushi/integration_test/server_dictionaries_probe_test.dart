@@ -11,21 +11,28 @@
 //   6. 查词「猫舌」走远端优先，结果里的词典名来自服务器。
 // 一律焦点驱动（Tab 遍历 + Enter），不用 tester.tap / 坐标。
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/dictionary_repository.dart'
-    show RemoteDictionary;
+    show RemoteDictionary, RemoteDictionaryHostSource;
+import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
+import 'package:fushi/src/pages/implementations/home_dictionary_page.dart';
 import 'package:fushi/src/pages/implementations/dictionary_dialog_page.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart'
+    show FushiAdjustableSegmented;
 import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/sync/interconnect_link_pairing.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/sync_settings_schema.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart'
+    show FushiDialogFrame;
 import 'package:fushi/src/utils/components/glass/fushi_glass_chips.dart'
     show FushiChoiceChip;
 import 'package:fushi_dictionary/fushi_dictionary.dart'
-    show DictionaryEntry, DictionarySearchResult;
+    show Dictionary, DictionaryEntry, DictionarySearchResult, DictionaryType;
 import 'package:fushi_engine/sync/interconnect_device_name.dart'
     show resolveInterconnectDeviceName;
 import 'package:fushi_engine/sync/pairing/fushi_pair_link.dart';
@@ -107,6 +114,100 @@ String _remoteSummary(List<RemoteDictionary> rows) => rows
           'lang=${r.sourceLanguage},missing=${r.isMissing})',
     )
     .join('; ');
+
+const String _kLocalDictDir = String.fromEnvironment(
+  'FUSHI_PROBE_LOCAL_DICT_DIR',
+  defaultValue:
+      r'C:\path\to\scratchpad'
+      r'\4e8f59fc-55e1-4bdc-b213-29367b0a75e3\scratchpad\dicts',
+);
+
+List<String> _keyedTexts(WidgetTester tester, Finder scope, String prefix) {
+  final List<String> out = <String>[];
+  final Finder found = find.descendant(
+    of: scope,
+    matching: find.byWidgetPredicate((Widget w) {
+      final Key? k = w.key;
+      return k is ValueKey<String> && k.value.startsWith(prefix);
+    }),
+  );
+  for (final Element e in found.evaluate()) {
+    final String key = (e.widget.key! as ValueKey<String>).value.substring(
+      prefix.length,
+    );
+    final List<String> texts = _textsIn(tester, find.byWidget(e.widget));
+    out.add('$key => ${texts.join(' / ')}');
+  }
+  return out;
+}
+
+void _printManagerEvidence(WidgetTester tester, String step, Finder page) {
+  _printTexts(step, _textsIn(tester, page));
+  for (final String h in _keyedTexts(tester, page, 'dict-language-group-')) {
+    debugPrint('$_kTag $step group-header | $h');
+  }
+  for (final String c in _keyedTexts(tester, page, 'dict-row-source-')) {
+    debugPrint('$_kTag $step row-chip | $c');
+  }
+  final int glyphs = find
+      .descendant(
+        of: page,
+        matching: find.byKey(const ValueKey<String>('dict-row-server-glyph')),
+      )
+      .evaluate()
+      .length;
+  debugPrint(
+    '$_kTag $step server-glyphs=$glyphs summary=${_summaryText(tester, page)}',
+  );
+}
+
+String _summaryText(WidgetTester tester, Finder page) => _textsIn(
+  tester,
+  find.descendant(
+    of: page,
+    matching: find.byKey(const ValueKey<String>('dict-list-summary')),
+  ),
+).join(' / ');
+
+Future<void> _importLocalDict(
+  WidgetTester tester,
+  AppModel appModel,
+  String fileName,
+  String title,
+) async {
+  final File file = File('$_kLocalDictDir${Platform.pathSeparator}$fileName');
+  expect(file.existsSync(), isTrue, reason: '本地词典包应存在：${file.path}');
+  final ValueNotifier<String> progress = ValueNotifier<String>('');
+  bool ok = false;
+  try {
+    final Future<void> job = appModel.importDictionary(
+      file: file,
+      progressNotifier: progress,
+      onImportSuccess: () => ok = true,
+    );
+    bool done = false;
+    unawaited(job.whenComplete(() => done = true));
+    for (int i = 0; i < 240 && !done; i++) {
+      await tester.pump(const Duration(milliseconds: 250));
+    }
+    await job;
+  } finally {
+    progress.dispose();
+  }
+  bool present() =>
+      appModel.dictRepo.dictionaries.any((Dictionary d) => d.name == title);
+  for (int i = 0; i < 40 && !present(); i++) {
+    await tester.pump(const Duration(milliseconds: 250));
+  }
+  final List<String> local = <String>[
+    for (final Dictionary d in appModel.dictRepo.dictionaries)
+      '${d.name}(type=${d.type.name},lang=${d.sourceLanguage})',
+  ];
+  debugPrint(
+    '$_kTag import $fileName ok=$ok present=${present()} local=$local',
+  );
+  expect(present(), isTrue, reason: '$title 应已导入 dictRepo.dictionaries');
+}
 
 Future<void> _pumpFor(WidgetTester tester, Duration total) async {
   final int steps = total.inMilliseconds ~/ 250;
@@ -214,6 +315,20 @@ void main() {
           debugPrint('$_kTag hostId=$hostId');
           await _shot(tester, 'server-dict-02-paired');
 
+          // ── 2b. 导入两本本机词典：一本与服务器同名（→「Both」），一本只在本机 ──
+          await _importLocalDict(
+            tester,
+            appModel,
+            'TestGeneralJA.zip',
+            'Test General JA',
+          );
+          await _importLocalDict(
+            tester,
+            appModel,
+            'TestLocalJA.zip',
+            'Test Local JA',
+          );
+
           // ── 3. 词典管理页 ────────────────────────────────────────────────
           HomePage.debugSelectTab?.call(HomeTab.books);
           await tester.pump(const Duration(seconds: 1));
@@ -224,7 +339,7 @@ void main() {
           }
           expect(page, findsOneWidget, reason: '词典管理页应已打开');
           await _pumpFor(tester, const Duration(seconds: 2));
-          _printTexts('03-list', _textsIn(tester, page));
+          _printManagerEvidence(tester, '03-list-all', page);
           final Finder chips = find.descendant(
             of: page,
             matching: find.text('Server · $pairedName'),
@@ -238,7 +353,70 @@ void main() {
             findsWidgets,
             reason: '服务器行应带来源标签 Server · $pairedName',
           );
+          // 顶栏副标题「Profile · <名字>」。
+          final Finder subtitle = find.byKey(
+            const ValueKey<String>('dict-profile-subtitle'),
+          );
+          for (int i = 0; i < 20 && subtitle.evaluate().isEmpty; i++) {
+            await tester.pump(const Duration(milliseconds: 250));
+          }
+          final List<String> subtitleTexts = subtitle.evaluate().isEmpty
+              ? const <String>[]
+              : _textsIn(tester, subtitle);
+          debugPrint('$_kTag profile subtitle=$subtitleTexts');
+          expect(
+            subtitleTexts.any((String s) => s.startsWith('Profile · ')),
+            isTrue,
+            reason: '顶栏应有「Profile · <名字>」副标题',
+          );
           await _shot(tester, 'server-dict-03-list');
+
+          // 03b. 来源条：这台 host 的卡片（状态 / 本数 / 用于查词 / 刷新）。
+          final Finder strip = find.byKey(
+            const ValueKey<String>('dict-server-sources'),
+          );
+          final Finder hostCard = find.byKey(
+            ValueKey<String>('dict-server-source-$hostId'),
+          );
+          expect(strip, findsOneWidget, reason: '列表上方应有来源条');
+          expect(hostCard, findsOneWidget, reason: '来源条应有该 host 的卡片');
+          await tester.ensureVisible(hostCard);
+          await _pumpFor(tester, const Duration(seconds: 1));
+          final List<String> cardTexts = _textsIn(tester, hostCard);
+          _printTexts('03b-sources-strip', _textsIn(tester, strip));
+          expect(cardTexts, contains(pairedName), reason: '卡片标题应是设备名');
+          expect(
+            cardTexts.any((String s) => s.contains('Use for lookups')),
+            isTrue,
+          );
+          expect(
+            cardTexts.any(
+              (String s) => RegExp(r'^\d+ of \d+ enabled$').hasMatch(s),
+            ),
+            isTrue,
+            reason: '卡片应有「m of n enabled」',
+          );
+          await _shot(tester, 'server-dict-03b-sources-strip');
+
+          // 3a. 「This device」筛选。
+          final Finder localFilter = find.byKey(
+            const ValueKey<String>('dict-source-filter-thisDevice'),
+          );
+          expect(localFilter, findsOneWidget, reason: '应有 This device 筛选 chip');
+          final bool localFocused = await driver.focusWidget(
+            localFilter,
+            maxSteps: 120,
+          );
+          debugPrint('$_kTag this-device chip focused=$localFocused');
+          expect(localFocused, isTrue);
+          await driver.activate();
+          await _pumpFor(tester, const Duration(seconds: 1));
+          debugPrint(
+            '$_kTag this-device chip selected='
+            '${tester.widget<FushiChoiceChip>(localFilter).selected}',
+          );
+          _printManagerEvidence(tester, '03a-filter-local', page);
+          await _shot(tester, 'server-dict-03a-filter-local');
 
           // 3b. 来源筛选：焦点移到「Server · <名字>」chip，Enter 选中。
           final Finder serverFilter = find.byKey(
@@ -258,7 +436,7 @@ void main() {
               .selected;
           debugPrint('$_kTag filter chip selected=$filterSelected');
           expect(filterSelected, isTrue, reason: 'Enter 后服务器筛选应被选中');
-          _printTexts('03b-filter', _textsIn(tester, page));
+          _printManagerEvidence(tester, '03b-filter-server', page);
           await _shot(tester, 'server-dict-04-filter-server');
 
           // 3c. 详情侧板：焦点到 Test General JA 这一行，Enter 打开。
@@ -275,18 +453,181 @@ void main() {
           expect(rowFocused, isTrue, reason: 'Test General JA 行应可经 Tab 到达');
           await driver.activate();
           await _pumpFor(tester, const Duration(seconds: 1));
-          final Finder detailSwitch = find.byKey(
-            ValueKey<String>(
-              'dict-detail-enabled-server:$hostId/Test General JA',
-            ),
+          // 本机也装了 Test General JA：这一行是「Both」，详情走本机词典详情。
+          final Finder bothDetail = find.byKey(
+            const ValueKey<String>('dict-detail-Test General JA'),
           );
           debugPrint(
-            '$_kTag detail panel switch present='
-            '${detailSwitch.evaluate().isNotEmpty}',
+            '$_kTag both-row detail present=${bothDetail.evaluate().isNotEmpty}',
           );
-          _printTexts('03c-detail', _textsIn(tester, page));
-          expect(detailSwitch, findsOneWidget, reason: '详情侧板应显示该服务器词典');
-          await _shot(tester, 'server-dict-05-detail');
+          _printTexts(
+            '03c-detail-both',
+            bothDetail.evaluate().isNotEmpty
+                ? _textsIn(tester, bothDetail)
+                : _textsIn(tester, page),
+          );
+          expect(bothDetail, findsOneWidget, reason: '详情侧板应显示 Both 行');
+          final Finder serverCopy = find.byKey(
+            const ValueKey<String>('dict-detail-server-copy-Test General JA'),
+          );
+          if (serverCopy.evaluate().isNotEmpty) {
+            await tester.ensureVisible(serverCopy);
+            await _pumpFor(tester, const Duration(milliseconds: 750));
+          }
+          final List<String> copyTexts = serverCopy.evaluate().isEmpty
+              ? const <String>[]
+              : _textsIn(tester, serverCopy);
+          _printTexts('03c-server-copy', copyTexts);
+          expect(
+            serverCopy,
+            findsOneWidget,
+            reason: 'Both 详情应有 Server copy 分组',
+          );
+          expect(copyTexts, contains('Version on server'));
+          expect(copyTexts, contains('Version on this device'));
+          await _shot(tester, 'server-dict-05-detail-both');
+
+          // 3d. 只在服务器上的一行（Test Games JA）的详情。
+          final Finder gamesTitle = find.descendant(
+            of: page,
+            matching: find.text('Test Games JA'),
+          );
+          expect(gamesTitle, findsWidgets);
+          final bool gamesFocused = await driver.focusWidget(
+            gamesTitle.first,
+            maxSteps: 120,
+          );
+          debugPrint('$_kTag games row focused=$gamesFocused');
+          expect(gamesFocused, isTrue);
+          await driver.activate();
+          await _pumpFor(tester, const Duration(seconds: 1));
+          final Finder serverDetail = find.byKey(
+            ValueKey<String>('dict-detail-server:$hostId/Test Games JA'),
+          );
+          debugPrint(
+            '$_kTag server-row detail present='
+            '${serverDetail.evaluate().isNotEmpty}',
+          );
+          _printTexts(
+            '03d-detail-server',
+            serverDetail.evaluate().isNotEmpty
+                ? _textsIn(tester, serverDetail)
+                : _textsIn(tester, page),
+          );
+          expect(serverDetail, findsOneWidget, reason: '详情侧板应显示服务器行');
+          final List<String> serverDetailTexts = _textsIn(tester, serverDetail);
+          expect(
+            serverDetailTexts,
+            contains('Source'),
+            reason: '服务器行详情应有「Source」标签',
+          );
+          await _shot(tester, 'server-dict-05b-detail-server');
+
+          // 3e. 改名：Test KO（只在服务器上）→「My KO」，走详情的 Rename 对话框。
+          final Finder koTitle = find.descendant(
+            of: page,
+            matching: find.text('Test KO'),
+          );
+          expect(koTitle, findsWidgets);
+          final bool koFocused = await driver.focusWidget(
+            koTitle.first,
+            maxSteps: 120,
+          );
+          debugPrint('$_kTag KO row focused=$koFocused');
+          expect(koFocused, isTrue);
+          await driver.activate();
+          await _pumpFor(tester, const Duration(seconds: 1));
+          final Finder renameBtn = find.byKey(
+            ValueKey<String>('dict-detail-rename-server:$hostId/Test KO'),
+          );
+          expect(renameBtn, findsOneWidget, reason: '服务器行详情应有 Rename');
+          final bool renameFocused = await driver.focusUntil(
+            () => _focusInside(driver, renameBtn),
+            maxSteps: 120,
+          );
+          debugPrint('$_kTag rename button focused=$renameFocused');
+          expect(renameFocused, isTrue);
+          await driver.activate();
+          final Finder dialogFrame = find.byType(FushiDialogFrame);
+          for (int i = 0; i < 20 && dialogFrame.evaluate().isEmpty; i++) {
+            await tester.pump(const Duration(milliseconds: 250));
+          }
+          debugPrint(
+            '$_kTag rename dialog open=${dialogFrame.evaluate().isNotEmpty}',
+          );
+          expect(dialogFrame, findsOneWidget, reason: 'Enter 应打开改名对话框');
+          await _pumpFor(tester, const Duration(seconds: 1));
+          // 集成测试 binding 下没有 TestTextInput：按 IME 的 TextInputClient 契约把
+          // 新名字交给自动聚焦的输入框，再发 done（等同回车提交）。
+          final Finder editable = find.descendant(
+            of: dialogFrame,
+            matching: find.byType(EditableText),
+          );
+          final EditableTextState? fieldState = editable.evaluate().isEmpty
+              ? null
+              : tester.state<EditableTextState>(editable.last);
+          debugPrint(
+            '$_kTag rename dialog fields=${editable.evaluate().length} '
+            'fieldFocused=${fieldState?.widget.focusNode.hasFocus}',
+          );
+          expect(fieldState, isNotNull, reason: '改名对话框应有输入框');
+          await _pumpFor(tester, const Duration(seconds: 1));
+          final FocusNode? holder = driver.focused;
+          debugPrint(
+            '$_kTag rename dialog after 2s: '
+            'fieldFocused=${fieldState!.widget.focusNode.hasFocus} '
+            'primaryFocus=$holder '
+            'holderWidget=${holder?.context?.widget.runtimeType} '
+            'holderInsideRenameBtn=${_focusInside(driver, renameBtn)}',
+          );
+          if (!fieldState.widget.focusNode.hasFocus) {
+            debugPrint(
+              '$_kTag FINDING: rename dialog TextField (autofocus: true) did '
+              'not receive focus; moving focus into it with Tab',
+            );
+            final bool fieldFocused = await driver.focusUntil(
+              () => fieldState.widget.focusNode.hasFocus,
+              maxSteps: 20,
+            );
+            debugPrint('$_kTag rename field focused via Tab=$fieldFocused');
+          }
+          expect(
+            fieldState.widget.focusNode.hasFocus,
+            isTrue,
+            reason: '改名框应可聚焦',
+          );
+          fieldState.updateEditingValue(
+            const TextEditingValue(
+              text: 'My KO',
+              selection: TextSelection.collapsed(offset: 5),
+            ),
+          );
+          await tester.pump(const Duration(milliseconds: 300));
+          fieldState.performAction(TextInputAction.done);
+          String koName() => appModel.dictRepo.remoteDictionaries
+              .firstWhere((RemoteDictionary r) => r.name == 'Test KO')
+              .effectiveDisplayName;
+          for (int i = 0; i < 20 && koName() != 'My KO'; i++) {
+            await tester.pump(const Duration(milliseconds: 250));
+          }
+          await _pumpFor(tester, const Duration(seconds: 1));
+          debugPrint('$_kTag KO effectiveDisplayName=${koName()}');
+          expect(koName(), 'My KO', reason: '改名应写入 local_display_name');
+          final Finder koDetail = find.byKey(
+            ValueKey<String>('dict-detail-server:$hostId/Test KO'),
+          );
+          _printTexts(
+            '03e-detail-renamed',
+            koDetail.evaluate().isNotEmpty
+                ? _textsIn(tester, koDetail)
+                : _textsIn(tester, page),
+          );
+          expect(
+            find.descendant(of: page, matching: find.text('My KO')),
+            findsWidgets,
+            reason: '列表 / 详情应显示新名字',
+          );
+          await _shot(tester, 'server-dict-05c-detail-server-renamed');
 
           // ── 4. 焦点 + Enter 关掉 Test Games JA 的行内开关 ───────────────
           RemoteDictionary find1(String name) => appModel
@@ -322,6 +663,167 @@ void main() {
           await _pumpFor(tester, const Duration(seconds: 1));
           _printTexts('04-toggled', _textsIn(tester, page));
           await _shot(tester, 'server-dict-06-toggled');
+
+          // 4b. 回到「All」，切到「Frequency」段（焦点进分段外壳 + 方向键）。
+          final Finder allFilter = find.byKey(
+            const ValueKey<String>('dict-source-filter-all'),
+          );
+          final bool allFocused = await driver.focusWidget(
+            allFilter,
+            maxSteps: 120,
+          );
+          debugPrint('$_kTag all chip focused=$allFocused');
+          expect(allFocused, isTrue);
+          await driver.activate();
+          await _pumpFor(tester, const Duration(seconds: 1));
+          final Finder typeSegmented = find.byWidgetPredicate(
+            (Widget w) => w is FushiAdjustableSegmented<DictionaryType>,
+          );
+          expect(typeSegmented, findsOneWidget, reason: '应有词典类型分段');
+          final bool segFocused = await driver.focusWidget(
+            typeSegmented,
+            maxSteps: 120,
+          );
+          debugPrint('$_kTag type segmented focused=$segFocused');
+          expect(segFocused, isTrue);
+          await driver.adjust(steps: 2);
+          await _pumpFor(tester, const Duration(seconds: 1));
+          final DictionaryType segNow = tester
+              .widget<FushiAdjustableSegmented<DictionaryType>>(typeSegmented)
+              .selected;
+          debugPrint('$_kTag type segment now=$segNow');
+          expect(segNow, DictionaryType.frequency);
+          _printManagerEvidence(tester, '04b-frequency', page);
+          expect(
+            find.descendant(of: page, matching: find.text('Test Freq JA')),
+            findsWidgets,
+            reason: '频率段应列出服务器的 Test Freq JA',
+          );
+          await _shot(tester, 'server-dict-06b-frequency');
+
+          // 4c. 「Kanji」分区（Frequency 往左一段）与服务器汉字词典提示。
+          expect(
+            await driver.focusWidget(typeSegmented, maxSteps: 120),
+            isTrue,
+          );
+          await driver.adjust(steps: -1);
+          await _pumpFor(tester, const Duration(seconds: 1));
+          final DictionaryType segKanji = tester
+              .widget<FushiAdjustableSegmented<DictionaryType>>(typeSegmented)
+              .selected;
+          debugPrint('$_kTag type segment now=$segKanji');
+          expect(segKanji, DictionaryType.kanji);
+          _printManagerEvidence(tester, '04c-kanji', page);
+          final Finder kanjiNote = find.byKey(
+            ValueKey<String>('dict-kanji-server-note-$hostId'),
+          );
+          final List<RemoteDictionaryHostSource> srcs = await appModel
+              .remoteDictionaryHostSources();
+          final int catalogKanji = srcs
+              .expand((RemoteDictionaryHostSource h) => h.catalog)
+              .where((RemoteDictionary r) => r.type == DictionaryType.kanji)
+              .length;
+          final String noteTexts = kanjiNote.evaluate().isEmpty
+              ? '-'
+              : _textsIn(tester, kanjiNote).join(' / ');
+          debugPrint(
+            '$_kTag kanji note present=${kanjiNote.evaluate().isNotEmpty} '
+            'catalogKanji=$catalogKanji texts=$noteTexts',
+          );
+          if (catalogKanji > 0) {
+            expect(kanjiNote, findsOneWidget, reason: '服务器有汉字词典时应有提示');
+          } else {
+            debugPrint(
+              '$_kTag FINDING: test server catalog has no kanji dictionary; '
+              'the kanji note is (by design) not rendered',
+            );
+            expect(kanjiNote, findsNothing);
+          }
+          await _shot(tester, 'server-dict-06c-kanji-note');
+
+          // 4d. 回 Term，选「This device」：分组头「N of M shown」。
+          expect(
+            await driver.focusWidget(typeSegmented, maxSteps: 120),
+            isTrue,
+          );
+          await driver.adjust(steps: -1);
+          await _pumpFor(tester, const Duration(seconds: 1));
+          expect(
+            tester
+                .widget<FushiAdjustableSegmented<DictionaryType>>(typeSegmented)
+                .selected,
+            DictionaryType.term,
+          );
+          expect(await driver.focusWidget(localFilter, maxSteps: 120), isTrue);
+          await driver.activate();
+          await _pumpFor(tester, const Duration(seconds: 1));
+          final String filteredSummary = _summaryText(tester, page);
+          _printManagerEvidence(tester, '04d-filtered-header', page);
+          debugPrint('$_kTag filtered summary="$filteredSummary"');
+          expect(
+            RegExp(r'^\d+ of \d+ shown').hasMatch(filteredSummary),
+            isTrue,
+            reason: '筛选时分组头应为「N of M shown」',
+          );
+          await _shot(tester, 'server-dict-06d-filtered-header');
+
+          // 4e. 来源条「Use for lookups」：先经偏好把 host 与全局远端查词都关掉，
+          // 再焦点 + Enter 打开卡片开关，读回全局 remoteLookupEnabled 也被打开。
+          expect(await driver.focusWidget(allFilter, maxSteps: 120), isTrue);
+          await driver.activate();
+          await _pumpFor(tester, const Duration(seconds: 1));
+          await appModel.setRemoteDictionaryHostLookupEnabled(hostId, false);
+          await appModel.setRemoteLookupEnabled(false);
+          await _pumpFor(tester, const Duration(seconds: 2));
+          final Finder lookupCardSwitch = find.byKey(
+            ValueKey<String>('dict-server-source-lookup-$hostId'),
+          );
+          Future<bool> hostLookup() async =>
+              (await appModel.remoteDictionaryHostSources())
+                  .firstWhere(
+                    (RemoteDictionaryHostSource h) => h.hostId == hostId,
+                  )
+                  .lookupEnabled;
+          final bool offNotice = find
+              .byKey(const ValueKey<String>('dict-remote-lookup-off'))
+              .evaluate()
+              .isNotEmpty;
+          debugPrint(
+            '$_kTag before strip toggle: '
+            'remoteLookup=${appModel.remoteLookupEnabled} '
+            'hostLookup=${await hostLookup()} '
+            'switchPresent=${lookupCardSwitch.evaluate().isNotEmpty} '
+            'offNotice=$offNotice',
+          );
+          _printTexts('04e-sources-off', _textsIn(tester, strip));
+          expect(appModel.remoteLookupEnabled, isFalse);
+          expect(await hostLookup(), isFalse);
+          expect(lookupCardSwitch, findsOneWidget, reason: '关掉后卡片开关仍应在');
+          await _shot(tester, 'server-dict-06e-sources-lookup-off');
+          final bool cardSwitchFocused = await driver.focusUntil(
+            () => _focusInside(driver, lookupCardSwitch),
+            maxSteps: 150,
+          );
+          debugPrint('$_kTag strip lookup switch focused=$cardSwitchFocused');
+          expect(cardSwitchFocused, isTrue);
+          await driver.activate();
+          for (int i = 0; i < 20 && !appModel.remoteLookupEnabled; i++) {
+            await tester.pump(const Duration(milliseconds: 250));
+          }
+          await _pumpFor(tester, const Duration(seconds: 2));
+          final bool hostAfter = await hostLookup();
+          debugPrint(
+            '$_kTag after strip toggle: '
+            'remoteLookup=${appModel.remoteLookupEnabled} hostLookup=$hostAfter',
+          );
+          expect(hostAfter, isTrue, reason: 'Enter 应打开这台 host 的查词');
+          expect(
+            appModel.remoteLookupEnabled,
+            isTrue,
+            reason: '打开 host 查词应一并打开全局远端查词',
+          );
+          _printTexts('04f-sources-on', _textsIn(tester, strip));
+          await _shot(tester, 'server-dict-06f-sources-lookup-on');
 
           // 关掉管理页（经 NavigatorState，非坐标点击）。
           Navigator.of(tester.element(page)).pop();
@@ -429,6 +931,85 @@ void main() {
             isNot(contains('Test Games JA')),
             reason: 'Test Games JA 已被本配置关掉，不应出现在结果里',
           );
+
+          // ── 7. 还原 Test Games JA 后查「猫」：本机与服务器结果合并 ─────────
+          final RemoteDictionary? t1 = toggled;
+          if (t1 != null) {
+            final RemoteDictionary cur = appModel.dictRepo.remoteDictionaries
+                .firstWhere((RemoteDictionary r) => r.name == t1.name);
+            if (cur.hidden != t1.hidden) {
+              await appModel.setRemoteDictionaryHidden(cur, t1.hidden);
+            }
+          }
+          final DictionarySearchResult neko = await appModel.searchDictionary(
+            searchTerm: '猫',
+            searchWithWildcards: false,
+            useCache: false,
+          );
+          final List<String> nekoDicts = <String>[];
+          for (final DictionaryEntry e in neko.entries) {
+            if (!nekoDicts.contains(e.dictionaryName)) {
+              nekoDicts.add(e.dictionaryName);
+            }
+          }
+          debugPrint(
+            '$_kTag search 猫: entries=${neko.entries.length} '
+            'dictionaryOrder=$nekoDicts',
+          );
+          for (final DictionaryEntry e in neko.entries) {
+            debugPrint(
+              '$_kTag search 猫 | ${e.dictionaryName} | ${e.word} '
+              '${e.reading} | ${e.meaning}',
+            );
+          }
+
+          // ── 8. 查词页的 WebView 结果区（与浮层同一个 popup.js）查「猫」 ──────
+          HomePage.debugSelectTab?.call(HomeTab.dictionaries);
+          await _pumpFor(tester, const Duration(seconds: 2));
+          final Finder dictPage = find.byType(HomeDictionaryPage);
+          expect(dictPage, findsOneWidget, reason: '查词页应已打开');
+          final HomeDictionarySearchDebug searchDebug =
+              tester.state(dictPage) as HomeDictionarySearchDebug;
+          await searchDebug.debugSearch('猫', writeHistory: false);
+          await _pumpFor(tester, const Duration(seconds: 3));
+          final Finder popupWeb = find.byWidgetPredicate(
+            (Widget w) =>
+                w is DictionaryPopupWebView &&
+                w.result.searchTerm == '猫' &&
+                w.result.entries.isNotEmpty,
+          );
+          debugPrint('$_kTag popup webviews=${popupWeb.evaluate().length}');
+          expect(popupWeb, findsWidgets, reason: '查词结果区应有 WebView');
+          final DictionaryPopupWebViewState webState = tester.state(
+            popupWeb.first,
+          );
+          Object? dom;
+          for (int i = 0; i < 60; i++) {
+            await tester.pump(const Duration(milliseconds: 250));
+            dom = await webState.debugEval(
+              'JSON.stringify({glyphs: '
+              "document.querySelectorAll('.dict-remote-glyph').length, "
+              "text: (document.getElementById('entries-container')"
+              '||document.body).innerText.slice(0, 800)})',
+            );
+            if (dom is String && dom.contains('猫')) break;
+          }
+          debugPrint('$_kTag popup dom=$dom');
+          await _shot(tester, 'server-dict-08-popup-shell');
+          final List<int>? px = await webState.debugCaptureWebView();
+          if (px == null || px.isEmpty) {
+            debugPrint(
+              '$_kTag FINDING: popup WebView takeScreenshot returned nothing',
+            );
+          } else {
+            final File f = File(
+              '${observeScreenshotDir().path}/server-dict-08-popup.png',
+            );
+            await f.writeAsBytes(px, flush: true);
+            debugPrint(
+              '$_kTag shot server-dict-08-popup -> ${f.path} bytes=${px.length}',
+            );
+          }
         } finally {
           final RemoteDictionary? t0 = toggled;
           if (t0 != null) {
