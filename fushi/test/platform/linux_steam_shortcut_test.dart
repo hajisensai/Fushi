@@ -312,6 +312,37 @@ void main() {
         expect(File(shortcut.launcherPath).existsSync(), isFalse);
       },
     );
+
+    // The launcher is shared by every account's entry: an account whose
+    // shortcuts.vdf could not be read may still hold one, so removal keeps it.
+    test(
+      'remove keeps the launcher while an account could not be read',
+      () async {
+        vdf.writeAsBytesSync(_shortcutsFile(<VdfMap>[_otherGame()]));
+        await shortcut.install(iconPng: _iconPng());
+        final Directory other = Directory(
+          p.join(
+            home.path,
+            '.local',
+            'share',
+            'Steam',
+            'userdata',
+            '6',
+            'config',
+          ),
+        )..createSync(recursive: true);
+        final File unreadable = File(p.join(other.path, 'shortcuts.vdf'))
+          ..writeAsBytesSync(Uint8List.fromList(<int>[0x05, 0x41, 0x00]));
+
+        final SteamShortcutReport report = await shortcut.uninstall();
+
+        expect(report.outcome, SteamShortcutOutcome.removed);
+        expect(report.accounts, 1);
+        expect(report.failures.single, startsWith('6:'));
+        expect(unreadable.readAsBytesSync(), <int>[0x05, 0x41, 0x00]);
+        expect(File(shortcut.launcherPath).existsSync(), isTrue);
+      },
+    );
   });
 
   group('launcher script', () {

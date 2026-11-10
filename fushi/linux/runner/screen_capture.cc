@@ -137,18 +137,26 @@ void CaptureX11(GdkMonitor* monitor, CaptureDone done) {
 constexpr GstClockTime kGamescopeFrameTimeout = 2 * GST_SECOND;
 
 // Copies an RGB sample into a new pixbuf; nullptr when it cannot be read.
+// gst_video_frame_map takes the plane layout from the buffer's GstVideoMeta
+// when there is one (the caps' default stride is only a guess) and refuses a
+// buffer too small for the frame, so the rows below never read past it.
 GdkPixbuf* CopyRgbFrame(GstSample* sample) {
   GstVideoInfo info;
   GstBuffer* buffer = gst_sample_get_buffer(sample);
   if (buffer == nullptr ||
-      !gst_video_info_from_caps(&info, gst_sample_get_caps(sample))) {
+      !gst_video_info_from_caps(&info, gst_sample_get_caps(sample)) ||
+      GST_VIDEO_INFO_FORMAT(&info) != GST_VIDEO_FORMAT_RGB) {
     return nullptr;
   }
-  GstMapInfo map;
-  if (!gst_buffer_map(buffer, &map, GST_MAP_READ)) return nullptr;
-  const int width = GST_VIDEO_INFO_WIDTH(&info);
-  const int height = GST_VIDEO_INFO_HEIGHT(&info);
-  const int stride = GST_VIDEO_INFO_PLANE_STRIDE(&info, 0);
+  GstVideoFrame frame;
+  if (!gst_video_frame_map(&frame, &info, buffer, GST_MAP_READ)) {
+    return nullptr;
+  }
+  const int width = GST_VIDEO_FRAME_WIDTH(&frame);
+  const int height = GST_VIDEO_FRAME_HEIGHT(&frame);
+  const int stride = GST_VIDEO_FRAME_PLANE_STRIDE(&frame, 0);
+  const auto* in =
+      static_cast<const guchar*>(GST_VIDEO_FRAME_PLANE_DATA(&frame, 0));
   GdkPixbuf* pixbuf =
       gdk_pixbuf_new(GDK_COLORSPACE_RGB, FALSE, 8, width, height);
   if (pixbuf != nullptr) {
@@ -156,11 +164,11 @@ GdkPixbuf* CopyRgbFrame(GstSample* sample) {
     const int out_stride = gdk_pixbuf_get_rowstride(pixbuf);
     for (int y = 0; y < height; ++y) {
       std::memcpy(out + static_cast<size_t>(y) * out_stride,
-                  map.data + static_cast<size_t>(y) * stride,
+                  in + static_cast<size_t>(y) * stride,
                   static_cast<size_t>(width) * 3);
     }
   }
-  gst_buffer_unmap(buffer, &map);
+  gst_video_frame_unmap(&frame);
   return pixbuf;
 }
 

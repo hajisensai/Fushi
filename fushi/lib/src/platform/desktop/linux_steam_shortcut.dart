@@ -279,8 +279,13 @@ class LinuxSteamShortcut {
         failures.add('${p.basename(p.dirname(config.path))}: $error');
       }
     }
-    final Directory launcher = File(launcherPath).parent;
-    if (launcher.existsSync()) await launcher.delete(recursive: true);
+    // Every account's entry starts the same launcher (and shows its icon). An
+    // account that could not be read may still hold Fushi's entry: keep the
+    // launcher for it rather than leave a library entry that cannot start.
+    if (failures.isEmpty) {
+      final Directory launcher = File(launcherPath).parent;
+      if (launcher.existsSync()) await launcher.delete(recursive: true);
+    }
     if (removed == 0 && failures.isNotEmpty) {
       return SteamShortcutReport(
         outcome: SteamShortcutOutcome.failed,
