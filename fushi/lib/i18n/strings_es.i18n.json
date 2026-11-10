@@ -11821,6 +11821,7 @@
   "video_subtitle_waveform_open": "Alineación de forma de onda",
   "video_subtitle_waveform_open_hint": "Toque para ampliar y alinear",
   "video_subtitle_waveform_scroll_hint": "Arrastre para recorrer la línea de tiempo; use los controles de abajo para alinear",
+  "video_subtitle_waveform_segment_loading": "Loading waveform…",
   "video_subtitle_waveform_unavailable": "Forma de onda no disponible en este dispositivo",
   "video_subtitle_waveform_zoom_in": "Ampliar",
   "video_subtitle_waveform_zoom_out": "Reducir",
