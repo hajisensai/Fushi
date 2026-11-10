@@ -345,6 +345,7 @@ class _SrsAnkiMigrationPageState extends ConsumerState<SrsAnkiMigrationPage>
       return;
     }
     final SrsMediaStore lockedMedia = media;
+    final SrsDbStore lockedStore = store;
     final AppModel app = ref.read(appProvider);
     // 迁移完成后切卡片去向：任务可能在本页关掉之后才结束，偏好写入口在入队时就绑好。
     final SrsCardTargetSwitch cardTargetSwitch = SrsCardTargetSwitch(
@@ -360,7 +361,7 @@ class _SrsAnkiMigrationPageState extends ConsumerState<SrsAnkiMigrationPage>
                 void Function(double progress) onProgress,
                 bool Function() shouldStop,
               ) => runSrsAnkiMigration(
-                store: store,
+                store: lockedStore,
                 media: lockedMedia,
                 source: source,
                 settings: settings,

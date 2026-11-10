@@ -52,6 +52,8 @@ import 'package:fushi/src/srs/srs_card_autoplay.dart'
 import 'package:fushi/src/srs/srs_card_design_skin.dart';
 import 'package:fushi/src/srs/srs_card_dict_style.dart';
 import 'package:fushi/src/srs/srs_card_media.dart';
+import 'package:fushi/src/srs/srs_card_remote_audio.dart';
+import 'package:fushi_engine/utils/net/app_http.dart' show createAppHttpClient;
 import 'package:fushi/src/srs/srs_card_tokens.dart';
 import 'package:fushi/src/srs/srs_card_translation_blur.dart';
 import 'package:fushi_engine/srs/srs_media_store.dart';
@@ -1217,7 +1219,9 @@ String srsCardShellHtml({
       '<style>$kSrsCardMediaCss</style>'
       '<script>$kSrsCardMediaScript</script>'
       '<script>$kSrsCardVisibleSoundsScript</script>'
-      // 自动播放闸门要在卡片内容与卡片脚本之前装好（BUG-3546）。
+      // 自动播放闸门要在卡片内容与卡片脚本之前装好（BUG-3546）；远程音频的取回助手
+      // 由闸门的 play() 包装调用（反馈 ffWC0TPq1I）。
+      '<script>$kSrsCardRemoteAudioScript</script>'
       '<script>$kSrsCardAutoplayGateScript</script>'
       '<style>$kSrsTypeAnswerCss</style>'
       '<script>$kSrsTypeAnswerScript</script>'
@@ -2765,6 +2769,26 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
                 }
               }
               return null;
+            },
+          );
+          // 卡面页面里源是公网 http(s) 的 <audio>（模板自造的在线 TTS 键等）：宿主走应用代理
+          // 取回，页面换成 blob: 再播（srs_card_remote_audio.dart，反馈 ffWC0TPq1I）。
+          controller.addJavaScriptHandler(
+            handlerName: kSrsFetchRemoteAudioHandler,
+            callback: (List<dynamic> arguments) async {
+              final Map<String, Object?> reply =
+                  await srsRemoteAudioBridgeReply(
+                    arguments,
+                    clientFactory: createAppHttpClient,
+                  );
+              final Object? error = reply['error'];
+              if (error != null) {
+                ErrorLogService.instance.logDiagnostic(
+                  'SrsWebCardFace.remoteAudio',
+                  error,
+                );
+              }
+              return reply;
             },
           );
           // 这一面看得见的发音键（[SrsCardFace.onVisibleSounds]）：只认当前这一面的上报。

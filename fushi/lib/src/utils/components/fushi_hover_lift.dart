@@ -215,6 +215,15 @@ const double kFushiHoverLiftScale = 1.05;
 /// 「跳」）。只替换默认值；调用方显式传了别的 scale 时照用。
 const double kFushiAppleHoverLiftScale = 1.03;
 
+/// 宽卡 / 大卡的悬停放大：卡比库页封面宽得多时，按 [kFushiHoverLiftScale] 放大
+/// 单侧溢出就超过网格间距、压到邻卡（900 宽的集卡 ×1.05 每侧 22px，网格间距只
+/// 有 12px），但 1.01 又几乎看不出「抬起」（用户 2026-10-31）。取 1.025 配合投影 /
+/// 扫光读出抬升：宽 ≤ 960 的卡每侧溢出不超过 12px 间距。两套设计系统同一个值
+/// （它本就比 Apple 默认的 [kFushiAppleHoverLiftScale] 轻）。
+///
+/// 用在：继续观看剧照主卡、合集 / 媒体服务器详情的 hayase 式宽集卡。
+const double kFushiWideCardHoverLiftScale = 1.025;
+
 /// 默认倍数放大后每侧多出的比例（尺寸 × 它 = 单侧溢出）。行 / 视口给悬停放大
 /// 留余量时一律按**卡片实际尺寸**乘它，取两套设计系统里较大的倍数。
 const double kFushiHoverLiftOverflow = (kFushiHoverLiftScale - 1) / 2;

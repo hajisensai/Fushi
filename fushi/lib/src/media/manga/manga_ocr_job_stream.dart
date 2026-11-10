@@ -83,7 +83,46 @@ class MangaOcrJobSpec {
   /// 读者当前页：运行中跟着读者改道（本地 / Lens / 系统 OCR；远端与外部 CLI
   /// 不按页序处理，忽略）。阅读器经 `MangaOcrRunningJob.focusPage` 写入。
   final MangaOcrPageFocus? focus;
+
+  /// 暂停后继续用的同目录 spec：只补缺页（[onlyMissing] 恒为 true——重新识别的
+  /// 任务开跑时已丢过旧缓存，续跑时缓存里的都是本轮新结果），改道通道换一个新的
+  /// （旧的随旧任务一起结束）。
+  MangaOcrJobSpec resumed() => MangaOcrJobSpec(
+    engine: engine,
+    engines: engines,
+    imageDirPath: imageDirPath,
+    lensLanguage: lensLanguage,
+    startPage: startPage,
+    volumeTitle: volumeTitle,
+    remoteTarget: remoteTarget,
+    focus: focus == null ? null : MangaOcrPageFocus(),
+  );
 }
+
+/// 事件流构造口（测试注入；生产是 [mangaOcrBackgroundEvents]）。
+typedef MangaOcrEventsBuilder =
+    Stream<MangaOcrBackgroundEvent> Function(MangaOcrJobSpec spec);
+
+/// 由 [spec] 构造交给注册表的后台任务（唯一装配点）：事件流、改道通道、跟随步骤、
+/// 显示名与「暂停后继续」的重建口都从同一个 spec 来，入口之间不会抄漏某一项。
+MangaOcrBackgroundJob mangaOcrBackgroundJob({
+  required String bookKey,
+  required MangaOcrJobSpec spec,
+  MangaOcrEventsBuilder buildEvents = mangaOcrBackgroundEvents,
+}) => MangaOcrBackgroundJob(
+  bookKey: bookKey,
+  managedDirectory: spec.imageDirPath,
+  engine: spec.engine,
+  events: buildEvents(spec),
+  focus: spec.focus,
+  follower: mangaOcrJobFollower(spec),
+  title: spec.volumeTitle,
+  resume: () => mangaOcrBackgroundJob(
+    bookKey: bookKey,
+    spec: spec.resumed(),
+    buildEvents: buildEvents,
+  ),
+);
 
 /// 重新识别前丢掉某个引擎签名下的逐页缓存目录（不存在则无事）。
 ///

@@ -200,14 +200,16 @@ class ServerSelfUpdater implements HostSelfUpdater {
       onInstalled();
     } catch (e, stack) {
       engineLog.log('ServerSelfUpdate.run', e, stack);
-      _phase = HostUpdatePhase.failed;
-      _progress = null;
-      _error = e is ServerUpdateException ? e.code : '$e';
+      // 先清暂存、再报 failed：phase 一离开 busy，调用方就能再次 startUpdate，新一轮会在
+      // 同一个暂存目录里建档；若清理还在途，旧的递归删除会把新下载一起删掉。
       try {
         if (staging.existsSync()) await staging.delete(recursive: true);
       } on FileSystemException {
         // 下次启动的 cleanupAfterServerUpdate 再删。
       }
+      _phase = HostUpdatePhase.failed;
+      _progress = null;
+      _error = e is ServerUpdateException ? e.code : '$e';
     }
   }
 
