@@ -34,6 +34,8 @@ import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_loading_view.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_load_error.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
@@ -127,9 +129,45 @@ class _SrsConflictsPageState extends ConsumerState<SrsConflictsPage> {
     unawaited(_reload());
   }
 
+  /// 读失败（复习库打开失败原样抛出、或读的途中出错）：页面显示错误态 + 重试，不停在转圈、不变成未处理异常。
+  Object? _loadError;
+
   Future<void> _reload() async {
+    try {
+      await _load();
+    } catch (e, stack) {
+      ErrorLogService.instance.log('SrsConflictsPage.reload', e, stack);
+      if (mounted) {
+        setState(() {
+          _loadError = e;
+          _loading = false;
+        });
+      }
+    }
+  }
+
+  /// 错误态的「重试」：作废缓存着失败的复习库 provider 再重读。
+  void _retryLoad() {
+    retrySrsStoreOpen(ref);
+    setState(() {
+      _loadError = null;
+      _loading = true;
+    });
+    unawaited(_reload());
+  }
+
+  Future<void> _load() async {
     final SrsDbStore? store = await readSrsStore(ref);
-    if (store == null) return;
+    if (store == null) {
+      // 这里没有复习库（模块关着 / 存储此刻不可用）：说明原因，不停在转圈。
+      if (mounted) {
+        setState(() {
+          _loadError = t.module_disabled_hint;
+          _loading = false;
+        });
+      }
+      return;
+    }
     final SrsDeckTree tree = await store.deckTree();
     final List<_Conflict> conflicts = <_Conflict>[];
     Map<String, String>? typeNames;
@@ -216,6 +254,7 @@ class _SrsConflictsPageState extends ConsumerState<SrsConflictsPage> {
       _pending = pending;
       _held = held;
       _duplicates = duplicates;
+      _loadError = null;
       _loading = false;
     });
   }
@@ -432,6 +471,14 @@ class _SrsConflictsPageState extends ConsumerState<SrsConflictsPage> {
   Widget _buildBody(BuildContext context) {
     if (_loading) {
       return const SafeArea(bottom: false, child: FushiLoadingView());
+    }
+    final Object? loadError = _loadError;
+    if (loadError != null) {
+      return SrsLoadErrorView(
+        error: loadError,
+        retryKey: const ValueKey<String>('srs-conflicts-load-retry'),
+        onRetry: _retryLoad,
+      );
     }
     if (_conflicts.isEmpty &&
         _pending.isEmpty &&

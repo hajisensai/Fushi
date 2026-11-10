@@ -1768,6 +1768,8 @@ flutter::EncodableMap AttachedSnapshotMap(
        flutter::EncodableValue(snapshot.reason)},
       {flutter::EncodableValue("surfaceVisible"),
        flutter::EncodableValue(snapshot.surface_visible)},
+      {flutter::EncodableValue("layoutSource"),
+       flutter::EncodableValue(snapshot.layout_source)},
       {flutter::EncodableValue("riskAccepted"),
        flutter::EncodableValue(snapshot.risk_accepted)},
       {flutter::EncodableValue("textGeneration"),
@@ -1794,6 +1796,10 @@ flutter::EncodableMap AttachedSnapshotMap(
       {flutter::EncodableValue("shield"),
        flutter::EncodableValue(std::move(shield))},
   };
+  if (!snapshot.measured_source.empty()) {
+    result[flutter::EncodableValue("measuredSource")] =
+        flutter::EncodableValue(snapshot.measured_source);
+  }
   if (snapshot.probe_start_observed_index >= 0) {
     result[flutter::EncodableValue("probeStartObservedIndex")] =
         flutter::EncodableValue(snapshot.probe_start_observed_index);
@@ -3047,7 +3053,9 @@ void FlutterWindow::RegisterGalHookTextChannel() {
             method == "attachedCalibrationCommit" ||
             method == "attachedCalibrationCancel" ||
             method == "attachedConfigure" ||
+            method == "attachedConfigureMeasured" ||
             method == "attachedUpdateText" ||
+            method == "attachedUpdateMeasuredText" ||
             method == "attachedUpdateStyle" ||
             method == "attachedSuspendForCapture" ||
             method == "attachedRestoreAfterCapture" ||
@@ -3135,6 +3143,33 @@ void FlutterWindow::RegisterGalHookTextChannel() {
                    BoolFromValue(args, "riskAccepted", false),
                    StringFromValue(args, "inputMode", ""),
                    StringFromValue(args, "mode", "attachedOnly"), &error);
+            }
+          } else if (method == "attachedConfigureMeasured") {
+            request = attached_text_surface_window_->ConfigureMeasured(
+                epoch, target_pid, target_hwnd,
+                StringFromValue(args, "measuredSource", std::string()),
+                StringFromValue(args, "inputMode", ""), &error);
+          } else if (method == "attachedUpdateMeasuredText") {
+            // glyphs: Int32List [start, length, left, top, right, bottom] * n
+            // in source-client physical pixels (see attached_measured_layout.h).
+            const flutter::EncodableValue* glyphs_value = nullptr;
+            if (args != nullptr) {
+              const auto it = args->find(flutter::EncodableValue("glyphs"));
+              if (it != args->end()) glyphs_value = &it->second;
+            }
+            const auto* glyph_words =
+                glyphs_value != nullptr
+                    ? std::get_if<std::vector<int32_t>>(glyphs_value)
+                    : nullptr;
+            if (glyph_words == nullptr) {
+              error = "measured_glyphs_malformed";
+            } else {
+              request = attached_text_surface_window_->UpdateMeasuredText(
+                  epoch, target_pid, target_hwnd,
+                  WideFromValue(args, "sourceText", L""),
+                  Int64FromValue(args, "textGeneration", 0), *glyph_words,
+                  IntFromValue(args, "clientWidth", 0),
+                  IntFromValue(args, "clientHeight", 0), &error);
             }
           } else if (method == "attachedUpdateText") {
             request = attached_text_surface_window_->UpdateText(

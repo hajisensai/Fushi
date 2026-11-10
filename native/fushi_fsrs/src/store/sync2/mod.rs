@@ -17,7 +17,9 @@ pub mod digest;
 pub mod media;
 pub(crate) mod mvr;
 pub mod relay;
+pub(crate) mod sched_local;
 pub mod schema;
+pub(crate) mod sealed;
 pub(crate) mod semantics;
 pub(crate) mod snapshots;
 pub mod timeline;
@@ -50,7 +52,14 @@ pub(crate) fn in_savepoint<T>(
     f: impl FnOnce(&Connection) -> Result<T, String>,
 ) -> Result<T, String> {
     conn.execute_batch("SAVEPOINT sync2").map_err(sql)?;
-    match f(conn) {
+    // panic 时这里不 ROLLBACK TO：SAVEPOINT 留在写连接上，由取写锁时的恢复整笔回滚（store/mod.rs
+    // `SrsCore::recover_writer`，BUG-4297）。
+    let out = f(conn);
+    #[cfg(test)]
+    if out.is_ok() {
+        test_panic::hit(test_panic::BEFORE_RELEASE);
+    }
+    match out {
         Ok(v) => match conn.execute_batch("RELEASE sync2") {
             Ok(()) => Ok(v),
             // 没有外层事务时 RELEASE 就是 COMMIT：提交失败不能把事务挂在写连接上（之后的写入都会落进这笔、
@@ -63,6 +72,36 @@ pub(crate) fn in_savepoint<T>(
         Err(e) => {
             let _ = conn.execute_batch("ROLLBACK TO sync2; RELEASE sync2");
             Err(e)
+        }
+    }
+}
+
+/// 测试用的 panic 注入点（BUG-4297）：[arm] 之后，本线程下一次走到同名注入点时 panic 一次。
+#[cfg(test)]
+pub(crate) mod test_panic {
+    use std::cell::Cell;
+
+    /// [super::in_savepoint]：写完、RELEASE 之前。
+    pub(crate) const BEFORE_RELEASE: &str = "in_savepoint.before_release";
+    /// `SrsCore::exec`：语句跑完、记下 Drift 事务状态之前。
+    pub(crate) const AFTER_EXEC: &str = "exec.after_statement";
+
+    thread_local! {
+        static ARMED: Cell<Option<&'static str>> = const { Cell::new(None) };
+    }
+
+    pub(crate) fn arm(site: &'static str) {
+        ARMED.with(|a| a.set(Some(site)));
+    }
+
+    pub(crate) fn armed() -> bool {
+        ARMED.with(|a| a.get().is_some())
+    }
+
+    pub(crate) fn hit(site: &'static str) {
+        if ARMED.with(|a| a.get() == Some(site)) {
+            ARMED.with(|a| a.set(None));
+            panic!("test: injected panic at {site}");
         }
     }
 }
@@ -2112,7 +2151,7 @@ impl SrsCore {
     }
 
     /// 本机写入（设计 §6.2 第 1 步之前：复习立即本地落盘）。[input] 是 JSON 数组，每项
-    /// `{"e": <SrsEvent JSON>, "note": <日志卡片的笔记 ID | null>}`。返回
+    /// `{"e": <SrsEvent JSON>, "note": <日志卡片的笔记 ID | null>, "intent"?: "answer"}`。返回
     /// `{"marks":{..见 [Marks::to_json]}, "landed":[每项是否落了], "replayed":[...]}`。
     pub fn sync2_apply_local(
         &self,
@@ -2145,6 +2184,16 @@ impl SrsCore {
                     stamped,
                     it["server"].as_i64(),
                 )?;
+                // 本机作答显式声明意图（Dart `answerAndStudy`），不从日志形状反推；不带的（导入、恢复、并入的旧形态
+                // 日志）照旧按 [infer_intent]。手动排程操作走 `sched`（sched_local.rs）。
+                let body = match (body, it["intent"].as_str()) {
+                    (Body::Log(mut l), Some("answer")) => {
+                        l.intent = Intent::Answer;
+                        Body::Log(l)
+                    }
+                    (_, Some(other)) => return Err(format!("apply: unknown intent {other}")),
+                    (b, None) => b,
+                };
                 let body = stamp_local_config(c, profile, body, stamped, &mut tree)?;
                 let before = t.marks.landed;
                 let bodies = expand_tags(c, profile, body)?;
@@ -2532,10 +2581,12 @@ mod tests_perf;
 #[cfg(test)]
 mod tests_replay_pending;
 #[cfg(test)]
+mod tests_sched_local;
+#[cfg(test)]
 mod tests_synthetic_ctx;
 
 impl SrsCore {
-    /// 评分预览（Dart `SrsCardOps.preview` 的 v2 实现）：在这张卡的归属组重放到此刻的状态上，用当前牌组配置与
+    /// 评分预览（原 Dart `SrsCardOps.preview` 的 v2 实现）：在这张卡的归属组重放到此刻的状态上，用当前牌组配置与
     /// 确定性 FSRS 算四个按钮的结果。[note] = 卡所属笔记（新卡没有日志时据它找牌组）。日界用调用方此刻的口径
     /// （与写进日志的 utcOff / rollover 相同）。
     ///

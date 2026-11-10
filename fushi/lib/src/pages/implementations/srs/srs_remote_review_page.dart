@@ -198,6 +198,10 @@ class SrsRemoteCollectionScope extends StatelessWidget {
       srsAppRuntimeProvider.overrideWith((Ref ref) => null),
       srsRevisionProvider.overrideWith((Ref ref) => 0),
       srsLocalWriteProvider.overrideWith((Ref ref) => 0),
+      // 「正在复习」的计数也是作用域自己的：本机 runtime 只按本机的复习页批量推送、给参数优化让路。
+      srsActiveReviewSessionsProvider.overrideWith(
+        (Ref ref) => ValueNotifier<int>(0),
+      ),
     ],
     child: child,
   );
