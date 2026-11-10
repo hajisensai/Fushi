@@ -572,9 +572,16 @@ class AiAgentSidePanelFrame extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final double keyboard = MediaQuery.viewInsetsOf(context).bottom;
+    // 对话框路由不套 SafeArea：横屏手机 / iPhone 的刘海、挖孔与 Home 指示条落在
+    // 侧栏所在的尾侧与底边，外边距要叠上系统安全区，否则输入栏被遮。软键盘弹起时
+    // paddingOf 的底边已归零，与 viewInsets 不重复。
+    final EdgeInsets safe = MediaQuery.paddingOf(context);
+    final Size window = MediaQuery.sizeOf(context);
     final Widget sized = SizedBox(
       key: kAiAgentSidePanelKey,
-      width: aiAgentSidePanelWidth(MediaQuery.sizeOf(context)),
+      width: aiAgentSidePanelWidth(
+        Size(window.width - safe.horizontal, window.height),
+      ),
       height: double.infinity,
       child: child,
     );
@@ -597,6 +604,7 @@ class AiAgentSidePanelFrame extends StatelessWidget {
         curve: FushiMotion.standard,
         padding:
             const EdgeInsets.all(kAiAgentSidePanelMargin) +
+            safe +
             EdgeInsets.only(bottom: keyboard),
         child: surface,
       ),

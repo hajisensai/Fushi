@@ -114,5 +114,33 @@ void main() {
         apple ? findsOneWidget : findsNothing,
       );
     });
+
+    testWidgets('$ds：横屏刘海 / Home 指示条安全区不压住侧栏', (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(844, 390);
+      tester.view.devicePixelRatio = 1;
+      tester.view.padding = const FakeViewPadding(
+        left: 47,
+        right: 47,
+        bottom: 21,
+      );
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        MaterialApp(
+          debugShowCheckedModeBanner: false,
+          theme: theme(apple: apple),
+          builder: (BuildContext context, Widget? child) =>
+              FushiGlassScope(child: child!),
+          home: const Scaffold(
+            body: AiAgentSidePanelFrame(child: SizedBox.expand()),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final Rect panel = tester.getRect(find.byKey(kAiAgentSidePanelKey));
+      expect(panel.right, 844 - 47 - kAiAgentSidePanelMargin);
+      expect(panel.bottom, 390 - 21 - kAiAgentSidePanelMargin);
+      expect(panel.height, greaterThan(kAiAgentTightHeight));
+    });
   }
 }
