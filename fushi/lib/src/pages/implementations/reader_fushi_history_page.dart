@@ -1956,7 +1956,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   /// 书架显示单元折叠：本地 SRT / EPUB 卡 + 远端占位卡 → [groupByCollections]
   /// 的合集组与散卡组（未排序）。主网格吃筛选后的输入，「管理合集」页的成员数
   /// （[_collectionDisplayCounts]）吃未筛选的全量输入——两处同一份折叠规则，
-  /// 卡片「N 卷」与管理页「共 N 项」在无筛选时逐个相等（BUG-4273）。
+  /// 卡片「N 卷」与管理页「共 N 项」在无筛选时逐个相等（BUG-4276）。
   List<CollectionGroup<_ShelfBookSlot>> _foldShelfUnits({
     required List<SrtBook> srtBooks,
     required List<MediaItem> epubBooks,
@@ -2202,7 +2202,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       remoteBooks: remoteBooks,
       remoteSrtBooks: remoteSrtBooks,
     );
-    // 「管理合集」页的成员数（BUG-4273）：管理页列的是本域全部合集、不随书架
+    // 「管理合集」页的成员数（BUG-4276）：管理页列的是本域全部合集、不随书架
     // 搜索 / 标签 / 阅读状态筛选变，成员数也就只能取**未筛选**全量的折叠结果——
     // 吃上面筛选后的 shelfGroups，搜索一下其它合集在管理页就全成「0 项」，旁边
     // 还挂着删除。全量输入 = 本书架全部 EPUB（去掉以 SRT 卡出现的有声书）+ 全部

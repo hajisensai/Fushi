@@ -913,7 +913,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
         .watch(filteredGameIdsProvider)
         .valueOrNull;
     final List<GalgameEntry> visible = _visibleFor(allowedIds);
-    // 「管理合集」页的成员数（BUG-4273）：管理页列的是全部游戏合集、不随搜索 /
+    // 「管理合集」页的成员数（BUG-4276）：管理页列的是全部游戏合集、不随搜索 /
     // 筛选变，成员数取全库折叠结果；放在 build 顶层，空库 / 筛选空态（不建网格）
     // 也照常发布，不会留着上一次的旧数。
     _collectionDisplayCounts.publish<GalgameEntry>(_foldGameUnits(_games));
@@ -1861,7 +1861,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
 
   /// 游戏显示单元折叠：游戏 → [groupByCollections] 的合集组与散卡组（未排序）。
   /// 网格吃筛选后的 [visible]，「管理合集」页的成员数（[_collectionDisplayCounts]）
-  /// 吃全库 [_games]，两处同一份折叠规则（BUG-4273）。
+  /// 吃全库 [_games]，两处同一份折叠规则（BUG-4276）。
   List<CollectionGroup<GalgameEntry>> _foldGameUnits(
     List<GalgameEntry> games,
   ) => groupByCollections<GalgameEntry>(
