@@ -1,4 +1,4 @@
-## BUG-4334 · 在线（扩展源）漫画同步恒失败：按字符表解析在线漫画的章节清单抛 TypeError，且对比弹窗失败原因不可见
+## BUG-4335 · 在线（扩展源）漫画同步恒失败：按字符表解析在线漫画的章节清单抛 TypeError，且对比弹窗失败原因不可见
 - **报告**：2026-11-08（应用内反馈 tHFnpAFrX9，Windows 3.3.0：Keiyoushi 扩展 Rawkuma 源的 Mieruko-chan 不同步；对比弹窗本地 Page 2、远端 No data，「Sync now (1)」点了没有任何效果和错误）
 - **真实性**：✅ 真 bug（沿代码路径定位；反馈日志里没有同步错误，与「失败只进 developer.log」一致）。
   - 根因①：`fushi/lib/src/sync/sync_manager.dart` `_syncBookProgress`（原 :600）不分格式 `parseChaptersJson(book.chaptersJson)`。在线扩展源漫画（`OnlineMangaLibraryService.add`，`online_manga_library_service.dart:166` 写 `_chaptersJson(entry.chapters)`）的 `chaptersJson` 是**章节清单**（`OnlineMangaChapter.toJson`：key / name / raw，无 `characters`），`position_converter.dart:21` 的 `m['characters'] as int` 抛 TypeError → 每本在线漫画在云通道（自动 sweep 与对比弹窗「立即同步」）恒失败。页式书的位置换算本就只走页码，用不到字符表。

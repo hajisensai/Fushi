@@ -927,7 +927,7 @@ class SyncCompareApplyResult {
   final List<String> errors;
 
   /// 失败书名 → 失败原因（拿得到原因的才有）。对比弹窗把它原样显示给用户，不能
-  /// 只报书名（BUG-4334：扩展源漫画「立即同步」失败时用户看不到任何原因）。
+  /// 只报书名（BUG-4335：扩展源漫画「立即同步」失败时用户看不到任何原因）。
   final Map<String, String> failureReasons;
 
   /// 给用户看的失败明细：每本一行「书名: 原因」，没有原因的只列书名。
@@ -1546,7 +1546,7 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
       );
       if (mounted) {
         if (result.errors.isNotEmpty) {
-          // BUG-4334：失败不再「提示一下就关框」——SnackBar 只有书名、没有原因，
+          // BUG-4335：失败不再「提示一下就关框」——SnackBar 只有书名、没有原因，
           // 关框后用户看到的就是「点了没反应」。弹窗留着，把每本的失败原因显示在框里。
           setState(() {
             _applying = false;
