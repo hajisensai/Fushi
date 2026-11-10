@@ -1136,6 +1136,8 @@ public class MainActivity extends AudioServiceActivity {
                 }
             });
 
+        // BUG-4323：旧版长按图标菜单同步会把自定义图标快捷方式误置灰，启动时把它恢复。
+        IconSwitchHelper.restoreCustomShortcut(this);
         new MethodChannel(flutterEngine.getDartExecutor().getBinaryMessenger(), ICON_CHANNEL)
             .setMethodCallHandler((call, result) -> {
                 switch (call.method) {

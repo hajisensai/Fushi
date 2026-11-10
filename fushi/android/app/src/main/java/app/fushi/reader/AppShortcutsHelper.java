@@ -79,6 +79,10 @@ public final class AppShortcutsHelper {
     /// 关闭的显示 [disabledMessage]，已下线的用启动器默认文案（传 null）——「设置」
     /// 不是模块，游戏库模块也可能开着，说「模块已关闭」是错的。Dart 侧
     /// `runAppShortcut` / `AppShortcut.tryParse` 另有兜底。
+    ///
+    /// pinned 列表是全 app 共用的命名空间：只处置归长按图标菜单所有的 id（判定在
+    /// [AppShortcutOwnership.classifyPinned]），自定义应用图标等其它模块的固定快捷
+    /// 方式不碰（BUG-4323）。
     private static void disableRemovedPinned(
         Context context,
         Set<String> offered,
@@ -90,11 +94,15 @@ public final class AppShortcutsHelper {
             for (ShortcutInfoCompat pinned :
                 ShortcutManagerCompat.getShortcuts(context, ShortcutManagerCompat.FLAG_MATCH_PINNED)) {
                 String id = pinned.getId();
-                if (offered.contains(id)) continue;
-                if (moduleDisabled.contains(id)) {
-                    moduleOff.add(id);
-                } else {
-                    retired.add(id);
+                switch (AppShortcutOwnership.classifyPinned(id, offered, moduleDisabled)) {
+                    case DISABLE_MODULE_OFF:
+                        moduleOff.add(id);
+                        break;
+                    case DISABLE_RETIRED:
+                        retired.add(id);
+                        break;
+                    case KEEP:
+                        break;
                 }
             }
             if (!moduleOff.isEmpty()) {
