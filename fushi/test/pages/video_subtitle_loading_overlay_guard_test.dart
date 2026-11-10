@@ -23,7 +23,7 @@ void main() {
 
   test('定义了配对的加载遮罩 show/hide 方法', () {
     expect(
-      src.contains('void _showSubtitleLoadingOverlay()'),
+      src.contains('void _showSubtitleLoadingOverlay({'),
       isTrue,
       reason: '应有弹出字幕抽取加载遮罩的方法',
     );
@@ -68,7 +68,9 @@ void main() {
     );
     expect(loadAt, greaterThan(-1), reason: '缺 loadSubtitleCueResult 抽取调用');
 
-    final int showAt = method.indexOf('_showSubtitleLoadingOverlay();');
+    final int showAt = method.indexOf(
+      '_showSubtitleLoadingOverlay(origin: origin);',
+    );
     expect(showAt, greaterThan(-1), reason: '缺遮罩 show 调用');
     expect(showAt, lessThan(loadAt), reason: '遮罩必须在抽取开始前弹出');
 
