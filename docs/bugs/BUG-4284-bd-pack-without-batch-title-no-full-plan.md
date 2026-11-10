@@ -1,7 +1,7 @@
-## BUG-4273 · 没写 batch / 季号的 BD 整包给不出「全集」下载计划
+## BUG-4284 · 没写 batch / 季号的 BD 整包给不出「全集」下载计划
 - **报告**：2026-11-08（用户：应用内反馈 rCT8Ms0AIe，PR #3085 / BUG-4246 / BUG-4243 遗留）
 - **真实性**：✅ 真 bug。nyaa「[喵萌Production&LoliHouse] BanG Dream! 少女乐团派对!☆PICO～大盛～ / Garupa☆PICO～OHMORI～ [BDRip 1080p HEVC-10bit FLAC]」、「[Moozzi2] BanG Dream! Ave Mujica (BD …) - TV + SP」这类 BD 整包标题里既没有 batch / complete / 集数区间，也没有季号。下载规划判「整包」只看标题（`packages/fushi_engine/lib/media/video/download/subscription_release_scope.dart:36` `looksLikeBatchVideoRelease`，经 `video_acquisition_resource_picker.dart` `_planEpisodesDownload` 的 All 分支调用），它故意保守——这类标题与「Show Special」这类无集号单条特典从标题上分不开。于是整包卡给不出「全集」计划：单作品路径 `no_plannable_version`，整套下载路径这一部 `noResource`。根因不在阈值，而在**判据只有标题这一种证据**：种子里实际装了什么从来没进过规划。
-- **[x] ① 已修复** — 待提交（见提交记录）：
+- **[x] ① 已修复** — 见 PR（分支 claude/batch-release-evidence）：
   - 新增引擎纯函数证据模型 `packages/fushi_engine/lib/media/video/download/video_release_scope_evidence.dart`：`judgeVideoReleaseScope(title, manifest:)` 先看标题（写明合集 → 整包；带集号 → 单条），标题判不出时看种子文件列表——正片 ≥2 个不同集号且带集号的正片占多数 → 整包；正片只有一个视频 → 单条；原盘（BDMV / 镜像）或编号不全 → 仍判不出（规划按「不是整包」处理）。正片 / 特典划分复用整理器口径（`video_download_organizer.dart` 新增 `videoPackEpisodeEvidence`，`looksLikeEpisodicPack` 改为基于它），另把文件名写明 `SP01` / `Special 2` / `OVA 1` / `特典` 的视频排出集号，防止「两集特典」被当成整季。
   - 体积只作反证：同清晰度、标题带集号的单集发布给出单集参考体积（中位数），不到 1.5 倍的发布不值得取列表（`videoReleaseManifestTargets`）；不能单独证成整包（剧场版长度的 Remux 特典可以是 WebRip 单集的十几倍）。索引器类别：现有 Nyaa 式站点 / apibay / Knaben / Torznab 都没有「整季合集」类别，不进判据。
   - 证据随版本卡带着：`buildVideoResourceVersionGroups(manifests:)`，`VideoResourceVersionGroup.scopeOf / isSeasonPack` 成为规划层「是不是整包」的唯一出口（全集计划、电影身份下的合集判断、每集体积估算都改走它）。
