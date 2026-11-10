@@ -148,15 +148,128 @@ void main() {
         list,
         probe: probe,
       );
+      // lan:1 是明文、核对没通过：扣下（V-B4），不再当后备候选。
       expect(ranked.map((FushiClientUrl u) => u.url), <String>[
         'http://v6:1',
-        'http://lan:1',
         'http://other:1',
       ]);
       expect(probes, 2);
 
       await rankInterconnectCandidates(list, probe: probe);
       expect(probes, 2, reason: '30 秒内复用上次胜出地址');
+    });
+  });
+
+  group('V-B4：明文地址拿凭据前必须当场核对 hostId', () {
+    final String p2pUrl = 'p2p://${'a' * 64}';
+    tearDown(() => setInterconnectP2pResolver(null));
+
+    List<String> urlsOf(List<FushiClientUrl> list) =>
+        list.map((FushiClientUrl u) => u.url).toList();
+
+    test('单条明文组核对失败：扣下，不原样返回', () async {
+      final ({List<FushiClientUrl> ranked, int withheld}) result =
+          await rankInterconnectCandidatesDetailed(<FushiClientUrl>[
+            url('http://lan:1', host: 'H'),
+          ], probe: (FushiClientUrl c, String? hostId) async => false);
+      expect(result.ranked, isEmpty);
+      expect(result.withheld, 1);
+    });
+
+    test('明文核对失败、https 钉扎成功：只留 https', () async {
+      final List<FushiClientUrl> ranked = await rankInterconnectCandidates(
+        <FushiClientUrl>[
+          url('http://lan:1', host: 'H'),
+          const FushiClientUrl(
+            url: 'https://wan:1',
+            hostId: 'H',
+            fingerprintSha256: 'ab',
+          ),
+        ],
+        probe: (FushiClientUrl c, String? hostId) async =>
+            c.url == 'https://wan:1',
+      );
+      expect(urlsOf(ranked), <String>['https://wan:1']);
+    });
+
+    test('单条明文组核对通过：保留', () async {
+      final ({List<FushiClientUrl> ranked, int withheld}) result =
+          await rankInterconnectCandidatesDetailed(<FushiClientUrl>[
+            url('http://lan:1', host: 'H'),
+          ], probe: (FushiClientUrl c, String? hostId) async => hostId == 'H');
+      expect(urlsOf(result.ranked), <String>['http://lan:1']);
+      expect(result.withheld, 0);
+    });
+
+    test('缓存窗口内沿用本轮核对通过的明文地址集', () async {
+      bool lanOk = true;
+      int probes = 0;
+      Future<bool> probe(FushiClientUrl c, String? hostId) async {
+        probes++;
+        if (c.url == 'http://lan:1') {
+          // LAN 稍后才回、但在宽限期内：仍按优先级胜出，VPN 也已核对通过。
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+          return lanOk;
+        }
+        return true;
+      }
+
+      final List<FushiClientUrl> list = <FushiClientUrl>[
+        url('http://lan:1', host: 'H'),
+        url('http://vpn:1', host: 'H'),
+      ];
+      expect(
+        urlsOf(await rankInterconnectCandidates(list, probe: probe)),
+        <String>['http://lan:1', 'http://vpn:1'],
+      );
+      lanOk = false;
+      final List<String> second = urlsOf(
+        await rankInterconnectCandidates(list, probe: probe),
+      );
+      expect(probes, 2, reason: '30 秒内命中缓存，不再探测');
+      expect(second, contains('http://vpn:1'));
+    });
+
+    test('死明文 LAN + P2P 隧道：转发口在竞速与缓存命中时都保留', () async {
+      setInterconnectP2pResolver(
+        (FushiClientUrl c) async => FushiClientUrl(
+          url: 'http://127.0.0.1:5001',
+          hostId: c.hostId,
+          token: c.token,
+        ),
+      );
+      Future<bool> probe(FushiClientUrl c, String? hostId) async =>
+          c.url == 'http://127.0.0.1:5001';
+      final List<FushiClientUrl> list = <FushiClientUrl>[
+        url('http://lan:1', host: 'H'),
+        url(p2pUrl, host: 'H'),
+      ];
+
+      final ({List<FushiClientUrl> ranked, int withheld}) first =
+          await rankInterconnectCandidatesDetailed(list, probe: probe);
+      expect(urlsOf(first.ranked), <String>['http://127.0.0.1:5001']);
+      expect(first.withheld, 1);
+      expect(interconnectPersistedUrl('http://127.0.0.1:5001'), p2pUrl);
+
+      final ({List<FushiClientUrl> ranked, int withheld}) cached =
+          await rankInterconnectCandidatesDetailed(list, probe: probe);
+      expect(urlsOf(cached.ranked), <String>['http://127.0.0.1:5001']);
+      expect(cached.withheld, 1);
+    });
+
+    test('老条目（无 hostId）语义不变：不探测、不扣', () async {
+      int probes = 0;
+      final ({List<FushiClientUrl> ranked, int withheld}) result =
+          await rankInterconnectCandidatesDetailed(
+            <FushiClientUrl>[url('http://old:1')],
+            probe: (FushiClientUrl c, String? hostId) async {
+              probes++;
+              return false;
+            },
+          );
+      expect(urlsOf(result.ranked), <String>['http://old:1']);
+      expect(result.withheld, 0);
+      expect(probes, 0);
     });
   });
 

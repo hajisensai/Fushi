@@ -69,11 +69,16 @@ class InterconnectPostTransport {
     required SyncRepository repo,
     http.Client? httpClient,
     http.Client Function(String expectedFingerprint)? pinnedClientFactory,
+    InterconnectAddressProbe? probe,
   }) : _repo = repo,
        _httpClient = httpClient ?? http.Client(),
-       _pinnedClientFactory = pinnedClientFactory ?? _defaultPinnedClient;
+       _pinnedClientFactory = pinnedClientFactory ?? _defaultPinnedClient,
+       _probe = probe ?? defaultInterconnectAddressProbe;
 
   final SyncRepository _repo;
+
+  /// 选路时核对地址身份的探测（默认真 `/api/ping`）。
+  final InterconnectAddressProbe _probe;
 
   /// 明文 http 候选共用的 client（生产由 AppModel 注入 keep-alive client 复用连接，
   /// TODO-744）。**绝不**用于带指纹的 https 候选——那必须走钉扎 client
@@ -101,8 +106,9 @@ class InterconnectPostTransport {
   /// - 其它非 2xx、响应体不是 JSON 对象 → 换下一个候选。
   /// - 传输层失败（连接拒绝 / 超时 / DNS）→ 换下一个候选。
   ///
-  /// 返回的 `allUnreachable` 仅当「至少发起过一次请求，且所有候选都没拿到**任何**
-  /// HTTP 响应」时为 true——未配对 / 无 token / 候选 URL 全畸形都**不**算不可达。
+  /// 返回的 `allUnreachable` 仅当「至少发起过一次请求，或有候选因明文地址身份核对
+  /// 失败被扣下，且所有候选都没拿到**任何** HTTP 响应」时为 true——未配对 / 无
+  /// token / 候选 URL 全畸形都**不**算不可达。
   /// 这条区分是音频源失败冷却（BUG-575）的依据：设备可达但没这个词 ≠ 设备死了。
   /// [onlyCandidate] limits a source-edit continuation to the exact URL, pin and
   /// effective credential used for the original read. Revocation/re-pairing
@@ -149,8 +155,11 @@ class InterconnectPostTransport {
         candidate: null,
       );
     }
-    // 同一台 host 的多条地址组内并发选路，可达者排到组首（§2）。
-    candidates = await rankInterconnectCandidates(candidates);
+    // 同一台 host 的多条地址组内并发选路，可达者排到组首（§2）；明文地址没当场
+    // 核对过 hostId 的被扣下，不拿凭据（V-B4）。
+    final InterconnectRankedCandidates ranked =
+        await rankInterconnectCandidatesDetailed(candidates, probe: _probe);
+    candidates = ranked.ranked;
 
     bool attempted = false;
     bool anyResponse = false;
@@ -231,10 +240,11 @@ class InterconnectPostTransport {
     // 401 语义还给调用方——它们据此区分「没查成」与「查过了没有」（BUG-1185）。
     if (authError != null) throw authError;
     // 只有「试过且一个响应都没拿到」才算全部不可达（传输层失败），可达但无结果
-    // 仍是普通 null。
+    // 仍是普通 null。候选因身份核对失败被扣下也是「设备不可达」：查词失败冷却
+    // （BUG-575 / BUG-1302）与排行榜的 unreachable 分支照常生效。
     return (
       json: null,
-      allUnreachable: attempted && !anyResponse,
+      allUnreachable: !anyResponse && (attempted || ranked.withheld > 0),
       mayHaveDelivered: anyResponse || anyTimedOut,
       candidate: null,
     );

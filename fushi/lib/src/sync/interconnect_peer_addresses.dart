@@ -120,6 +120,8 @@ Future<bool> defaultInterconnectAddressProbe(
   FushiClientUrl candidate,
   String? expectedHostId,
 ) async {
+  final InterconnectAddressProbe? override = _probeOverride;
+  if (override != null) return override(candidate, expectedHostId);
   final Uri? uri = Uri.tryParse(candidate.url);
   if (uri == null || (uri.scheme != 'http' && uri.scheme != 'https')) {
     return false;
@@ -135,6 +137,15 @@ Future<bool> defaultInterconnectAddressProbe(
   return result.hostId == expectedHostId;
 }
 
+InterconnectAddressProbe? _probeOverride;
+
+/// 测试缝：替换 [defaultInterconnectAddressProbe] 的真实 ping。只在测试的 `setUp`
+/// 里设、`tearDown` 里清空（null）。
+@visibleForTesting
+set debugInterconnectAddressProbeOverride(InterconnectAddressProbe? probe) {
+  _probeOverride = probe;
+}
+
 /// 在同一台 host 的多条地址里选出最优的可达地址（null = 全不可达）。
 ///
 /// 全部同时探测，但**按优先级（列表顺序）裁决**：排在前面的一旦成功立即胜出；
@@ -143,11 +154,15 @@ Future<bool> defaultInterconnectAddressProbe(
 /// 「死地址个数 × 超时」。
 ///
 /// 只用于**同一台 host** 的地址：跨 host 抢先会把用户换到另一个媒体库。
+///
+/// [onResult] 在每条探测结果落地时回调——包括胜者已决出之后才回来的结果；它不
+/// 影响裁决，只用来记下「哪些地址核对通过」。
 Future<FushiClientUrl?> raceInterconnectHostAddresses(
   List<FushiClientUrl> addresses, {
   String? hostId,
   InterconnectAddressProbe probe = defaultInterconnectAddressProbe,
   Duration grace = const Duration(milliseconds: 300),
+  void Function(FushiClientUrl candidate, bool ok)? onResult,
 }) {
   if (addresses.isEmpty) return Future<FushiClientUrl?>.value();
   final List<bool?> results = List<bool?>.filled(addresses.length, null);
@@ -188,11 +203,13 @@ Future<FushiClientUrl?> raceInterconnectHostAddresses(
     probe(addresses[index], hostId).then(
       (bool ok) {
         results[index] = ok;
+        onResult?.call(addresses[index], ok);
         evaluate();
       },
       onError: (Object e, StackTrace st) {
         engineLog.logDiagnostic('InterconnectRace:${addresses[index].url}', e);
         results[index] = false;
+        onResult?.call(addresses[index], false);
         evaluate();
       },
     );
@@ -200,18 +217,41 @@ Future<FushiClientUrl?> raceInterconnectHostAddresses(
   return done.future;
 }
 
-/// 最近一次选路结果（hostId → 胜出地址），[_raceCacheTtl] 内直接复用，免得查词
-/// 这类高频调用每次都多付一轮探测。缓存的地址失效时消费方会顺序试组内其余地址，
-/// 不会因为缓存而连不上。
-final Map<String, (String url, DateTime at)> _raceCache =
-    <String, (String, DateTime)>{};
+/// 最近一次选路结果（hostId → 胜出地址 + 本轮核对通过的明文地址集），
+/// [_raceCacheTtl] 内直接复用，免得查词这类高频调用每次都多付一轮探测。缓存的
+/// 地址失效时消费方会顺序试组内其余地址，不会因为缓存而连不上。
+///
+/// `verifiedPlain` 是可变集合：本轮竞速开始前建好并写进缓存项，胜者决出之后才回来
+/// 的明文探测结果（`onResult(ok=true)`）照样加进来，缓存窗口内就能用上。
+final Map<String, (String url, DateTime at, Set<String> verifiedPlain)>
+_raceCache = <String, (String, DateTime, Set<String>)>{};
 const Duration _raceCacheTtl = Duration(seconds: 30);
 
 @visibleForTesting
 void resetInterconnectRaceCache() => _raceCache.clear();
 
+/// 地址本身带密码学身份：https 且钉了指纹，或持久地址是 `p2p://`（含本进程的
+/// 转发口——按 [interconnectPersistedUrl] 换回 `p2p://` 判）。其余（明文 http、
+/// 未钉扎的 https）只有当场 ping 核对 hostId 通过才可以拿凭据。
+bool _credentialSafe(FushiClientUrl u) {
+  if (_isP2pUrl(interconnectPersistedUrl(u.url))) return true;
+  return u.url.toLowerCase().startsWith('https://') &&
+      (u.fingerprintSha256?.isNotEmpty ?? false);
+}
+
+/// 选路结果：[ranked] 是可以拿凭据去请求的候选（按 host 重排）；[withheld] 是因为
+/// 明文地址当场核对 hostId 没通过（或没机会核对）而被扣下的地址数。
+typedef InterconnectRankedCandidates = ({
+  List<FushiClientUrl> ranked,
+  int withheld,
+});
+
 /// 把候选列表按 host 重排：每台 host 的可达地址排到组首，组内其余保持原序；组
-/// 与组之间保持首次出现的顺序。单地址组（含全部老条目）原样不探测。
+/// 与组之间保持首次出现的顺序。老条目（无 hostId）原样不探测。
+///
+/// 带 hostId 的组里只要有明文成员（含单地址组），就必须当场 ping 核对：没核对
+/// 通过的明文地址从结果里扣掉（V-B4）——它可能已经指向另一台 Fushi host，带着
+/// 本组 token 的 Basic 请求不能发过去。
 ///
 /// 各消费方的「逐个试候选」循环结构不用改，只把数据源换成本函数的结果。
 Future<List<FushiClientUrl>> rankInterconnectCandidates(
@@ -219,57 +259,110 @@ Future<List<FushiClientUrl>> rankInterconnectCandidates(
   InterconnectAddressProbe probe = defaultInterconnectAddressProbe,
   Duration grace = const Duration(milliseconds: 300),
   DateTime Function() now = DateTime.now,
+}) async => (await rankInterconnectCandidatesDetailed(
+  candidates,
+  probe: probe,
+  grace: grace,
+  now: now,
+)).ranked;
+
+/// [rankInterconnectCandidates] 的详细版：同时给出被扣下的地址数，消费方据此把
+/// 「候选全被扣下」报成不可达（而不是「未配对」）。
+Future<InterconnectRankedCandidates> rankInterconnectCandidatesDetailed(
+  List<FushiClientUrl> candidates, {
+  InterconnectAddressProbe probe = defaultInterconnectAddressProbe,
+  Duration grace = const Duration(milliseconds: 300),
+  DateTime Function() now = DateTime.now,
 }) async {
   final List<List<FushiClientUrl>> groups = groupInterconnectPeers(candidates);
-  final List<List<FushiClientUrl>> ranked =
-      await Future.wait(<Future<List<FushiClientUrl>>>[
+  final List<InterconnectRankedCandidates> ranked =
+      await Future.wait(<Future<InterconnectRankedCandidates>>[
         for (final List<FushiClientUrl> g in groups)
           _rankGroup(g, probe: probe, grace: grace, now: now),
       ]);
-  return <FushiClientUrl>[for (final List<FushiClientUrl> g in ranked) ...g];
+  return (
+    ranked: <FushiClientUrl>[
+      for (final InterconnectRankedCandidates g in ranked) ...g.ranked,
+    ],
+    withheld: ranked.fold<int>(
+      0,
+      (int sum, InterconnectRankedCandidates g) => sum + g.withheld,
+    ),
+  );
 }
 
-Future<List<FushiClientUrl>> _rankGroup(
+Future<InterconnectRankedCandidates> _rankGroup(
   List<FushiClientUrl> group, {
   required InterconnectAddressProbe probe,
   required Duration grace,
   required DateTime Function() now,
 }) async {
   final String? hostId = group.first.hostId;
-  if (group.length < 2 || hostId == null) return group;
+  // 老条目（无 hostId）没有可核对的身份，语义与升级前一致。
+  if (hostId == null) return (ranked: group, withheld: 0);
+  final bool hasPlain = group.any((FushiClientUrl u) => !_credentialSafe(u));
+  // 全员自带密码学身份的单地址组不必探测。
+  if (!hasPlain && group.length < 2) return (ranked: group, withheld: 0);
 
-  final (String, DateTime)? cached = _raceCache[hostId];
+  final (String, DateTime, Set<String>)? cached = _raceCache[hostId];
   FushiClientUrl? winner;
+  Set<String>? verified;
   if (cached != null && now().difference(cached.$2) < _raceCacheTtl) {
     for (final FushiClientUrl u in group) {
       if (u.url == cached.$1) winner = await _resolveTransport(u);
     }
+    if (winner != null) verified = cached.$3;
   }
-  // 直连地址（LAN / IPv6 / 组网 / 公网）先并发选；全部不通才建 P2P 隧道——
-  // 否则每次选路都会去连一次中继（docs/specs/2026-09-28-interconnect-remote-reach.md §5）。
-  winner ??= await raceInterconnectHostAddresses(
-    <FushiClientUrl>[
-      for (final FushiClientUrl u in group)
-        if (!_isP2pUrl(u.url)) u,
-    ],
-    hostId: hostId,
-    probe: probe,
-    grace: grace,
-  );
-  winner ??= await _raceP2p(group, hostId: hostId, probe: probe, grace: grace);
   if (winner == null) {
-    _raceCache.remove(hostId);
-    return group;
+    final Set<String> fresh = <String>{};
+    verified = fresh;
+    // 直连地址（LAN / IPv6 / 组网 / 公网）先并发选；全部不通才建 P2P 隧道——
+    // 否则每次选路都会去连一次中继（docs/specs/2026-09-28-interconnect-remote-reach.md §5）。
+    // 隧道成员按 [_credentialSafe] 判定，不需要记核对结果。
+    winner = await raceInterconnectHostAddresses(
+      <FushiClientUrl>[
+        for (final FushiClientUrl u in group)
+          if (!_isP2pUrl(u.url)) u,
+      ],
+      hostId: hostId,
+      probe: probe,
+      grace: grace,
+      onResult: (FushiClientUrl c, bool ok) {
+        if (ok && !_credentialSafe(c)) fresh.add(c.url);
+      },
+    );
+    winner ??= await _raceP2p(
+      group,
+      hostId: hostId,
+      probe: probe,
+      grace: grace,
+    );
+    if (winner != null) {
+      // 缓存记的是持久地址（P2P 是 `p2p://`，不是本次的本地转发口）。
+      _raceCache[hostId] = (interconnectPersistedUrl(winner.url), now(), fresh);
+    }
   }
-  // 缓存记的是持久地址（P2P 是 `p2p://`，不是本次的本地转发口）。
-  final FushiClientUrl first = winner;
-  final String persistedUrl = _p2pOrigins[first.url] ?? first.url;
-  _raceCache[hostId] = (persistedUrl, now());
-  return <FushiClientUrl>[
-    first,
+  if (winner == null) {
+    // 全不可达：带密码学身份的地址照常交给消费方去试，明文地址一律扣下。
+    _raceCache.remove(hostId);
+    final List<FushiClientUrl> safe = <FushiClientUrl>[
+      for (final FushiClientUrl u in group)
+        if (_credentialSafe(u)) u,
+    ];
+    return (ranked: safe, withheld: group.length - safe.length);
+  }
+  final Set<String> verifiedPlain = verified!;
+  final String persistedUrl = interconnectPersistedUrl(winner.url);
+  final List<FushiClientUrl> ordered = <FushiClientUrl>[
+    winner,
     for (final FushiClientUrl u in group)
       if (u.url != persistedUrl) u,
   ];
+  final List<FushiClientUrl> ranked = <FushiClientUrl>[
+    for (final FushiClientUrl u in ordered)
+      if (_credentialSafe(u) || verifiedPlain.contains(u.url)) u,
+  ];
+  return (ranked: ranked, withheld: ordered.length - ranked.length);
 }
 
 Future<FushiClientUrl?> _raceP2p(
