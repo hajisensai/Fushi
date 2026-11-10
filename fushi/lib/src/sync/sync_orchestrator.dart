@@ -51,6 +51,7 @@ import 'package:fushi_engine/sync/sync_asset_store.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_remote_listing.dart';
 import 'package:fushi/src/sync/sync_manager.dart';
+import 'package:fushi/src/sync/sync_module_gate.dart';
 import 'package:fushi/src/sync/settings_sync.dart';
 import 'package:fushi/src/sync/sync_progress.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
@@ -691,6 +692,7 @@ class SyncOrchestrator {
     this.onProgress,
     this.onError,
     this.pendingMineRelay,
+    this.cancellation = SyncCancellation.never,
     AggregatePeerSnapshotCache? remoteManifestMirror,
   }) : _db = db,
        _manifestMirror =
@@ -764,6 +766,19 @@ class SyncOrchestrator {
   /// 待发制卡的跨设备中转（见 [PendingMineRelay]）。null = 本轮不跑（轻量路径、
   /// 测试构造）。
   final PendingMineRelay? pendingMineRelay;
+
+  /// 本轮的取消信号（「同步与备份 + 互联」模块途中被关掉，`sync_module_gate.dart`）。
+  final SyncCancellation cancellation;
+
+  /// 安全检查点：已取消则抛 [SyncCancelledException]。
+  ///
+  /// 只放在「上一项已完整落地、下一项还没开始」的位置——阶段之间、逐项循环的循环头
+  /// （在逐项 try 之外，不会被逐项 catch 吞掉）。中止留下的状态与网络失败在同一处
+  /// 抛错同形：锁与临时文件由各自的 finally 收拾，冷却戳 `lastSyncMs` 只在整轮
+  /// 跑完才写。整段 try/catch 吞错的阶段在 catch 前先放行它（`on
+  /// SyncCancelledException { rethrow; }`），否则取消会被记成一条阶段错误、流水线
+  /// 接着往下跑。
+  void _checkpoint() => cancellation.throwIfCancelled();
 
   /// 收藏词 / 收藏句是否参与聚合同步。互联通道由「共享收藏夹」开关驱动，与
   /// [syncStats] 互相独立；云通道两者同源（见 [ChannelSyncFlags.syncFavorites]）。
@@ -897,6 +912,7 @@ class SyncOrchestrator {
     // 逐本问。每本书之后走的判定逻辑一字未改，也没有任何「快照说没变所以跳过」的
     // 中间结论——跳过是单边不安全的操作，一旦所依赖的结论与远端实情不符，漏掉的
     // 那次对端更新会被本地 LWW 覆盖掉，那是丢数据而不是慢。
+    _checkpoint();
     _emitPhaseStart(SyncPhase.remoteListing);
     final String root = await _backend.findOrCreateRootFolder();
     final SyncBackend backend = _backend;
@@ -918,10 +934,12 @@ class SyncOrchestrator {
     // sweep so a spilled `progress_*` in the root can't be mistaken for a book's
     // remote state.
     mark('resolve+listing');
+    _checkpoint();
     await pruneRootSpill(root, report);
     mark('pruneRootSpill');
 
     if (isInterconnect) {
+      _checkpoint();
       await _syncServiceConfigLive(report, b);
       // 互联内容（EPUB / 漫画包）走 live 端点，书籍或漫画任一开关开时执行，进去后
       // 按格式各看各的开关。
@@ -929,6 +947,7 @@ class SyncOrchestrator {
         await _syncBooksContentLive(report, b);
       }
       mark('serviceConfig+booksContentLive');
+      _checkpoint();
       // 书进度 live 紧跟书内容之后（反馈 kM-Gb_Xnu-）：它只依赖上一步把本机独有书
       // 推成 host 书（host 的 putBookProgress 对不在库的书是 no-op），与有声书 /
       // 视频**文件**上传毫无关系。此前它排在那两段大文件上传之后，视频一多，读完
@@ -949,6 +968,7 @@ class SyncOrchestrator {
     CloudDeletionTombstoneScan? cloudTombstoneScan;
     Set<String> cloudVetoedBookKeys = const <String>{};
     if (!isInterconnect) {
+      _checkpoint();
       cloudTombstoneScan = await _scanCloudDeletionTombstones(report);
       if (cloudTombstoneScan != null) {
         cloudVetoedBookKeys = await _cloudPushVetoedBookKeys(
@@ -1018,6 +1038,9 @@ class SyncOrchestrator {
               observations: bookFolderNames,
               skipBookKeys: cloudVetoedBookKeys,
               onBookProgress: (int done, int itemTotal, String title) {
+                // 安全检查点：在 [SyncManager.syncAllBooks] 的循环头、拿这本书的
+                // 锁之前回调，上一本已整本落地。
+                _checkpoint();
                 settleReadingBook();
                 readingBookStartMs = total.elapsedMilliseconds;
                 readingDone = done;
@@ -1033,6 +1056,8 @@ class SyncOrchestrator {
               },
             );
       } on SyncAuthError {
+        rethrow;
+      } on SyncCancelledException {
         rethrow;
       } catch (e) {
         report.errors.add('books: $e');
@@ -1052,6 +1077,7 @@ class SyncOrchestrator {
     // 生产侧的自动 sweep 恒传 [syncDictionary]=false（两条通道的词典都改由设置页的
     // 显式上传 / 下载驱动，见 [runAssetTransferOnly]，BUG-2762）；这里只剩编排器自身
     // 能力。
+    _checkpoint();
     if (syncDictionary) {
       await syncDictionaries(report, direction: SyncAssetDirection.both);
       mark('dictionaries');
@@ -1081,6 +1107,7 @@ class SyncOrchestrator {
       if (syncVideoFiles) await syncVideoAssets(report);
     }
     mark('audiobook+videoFiles');
+    _checkpoint();
 
     // 互联视频 + 有声书进度走 live 端点双向同步（TODO-767；书籍进度见上，紧跟书
     // 内容阶段）。
@@ -1120,6 +1147,7 @@ class SyncOrchestrator {
       await _syncAggregate(report);
     }
     mark('aggregate');
+    _checkpoint();
 
     // 可移植设置（反馈 AWp-0BtDDv）：云与互联同走资产层 `__settings__/` 按设备分文件。
     if (syncSettings && deviceId.isNotEmpty) {
@@ -1135,6 +1163,7 @@ class SyncOrchestrator {
     //   __collections__ 资产（互联 backend 的资产层是 live 端点适配，语义不同）。
     // 两条通道调用同一 CollectionSyncEngine.merge / applyCollectionLocalChanges，
     // 成员并集 + 移出/删除墓碑 + 手动序整合集 LWW，仅通道不同。
+    _checkpoint();
     _emitPhaseStart(SyncPhase.collections);
     if (isInterconnect) {
       await _syncCollectionsLive(report, b);
@@ -1153,6 +1182,7 @@ class SyncOrchestrator {
     // 删除传播墓碑（显式确认式）：发布本机未发布删除标记 + 消费远端标记算 deleteLocal
     // 候选（塞 report，UI 弹逐条确认）。放合集之后、冷却戳之前：本地在库键此刻最稳定，
     // 且中断则下轮重跑。基线不在此推进（见 syncDeletionTombstones 文档）。
+    _checkpoint();
     _emitPhaseStart(SyncPhase.deletions);
     if (isInterconnect) {
       await _syncDeletionTombstonesLive(report, b);
@@ -1168,6 +1198,7 @@ class SyncOrchestrator {
     // 错误，不打断本轮——卡都还在各自设备的本地队列里，下一轮再传。阶段名只在中转
     // 真要碰远端时才公布：本机没认领落地、也没有要中转的卡时它一个请求都不发，
     // 挂出「同步待发制卡」只会让用户以为每轮都在传卡。
+    _checkpoint();
     final PendingMineRelay? relay = pendingMineRelay;
     if (relay != null) {
       try {
@@ -1188,6 +1219,9 @@ class SyncOrchestrator {
     // 冷却窗（[_syncCooldownMs]）压制、整轮重试——即「同步没完成就丢弃中间态、下次
     // 启动再同步」。此前该时间戳写在 SyncManager.syncAllBooks 书阶段末尾（sweep 中途），
     // 书阶段后被打断的残缺同步会误记冷却、错误地压制下次重试。
+    // 模块途中被关掉的一轮不算跑完：最后一道检查点必须在写冷却戳之前（上面的
+    // 待发制卡中转会吞掉自己阶段里的错误，取消信号到这里才兑现）。
+    _checkpoint();
     await SyncRepository(
       _db,
     ).setLastSyncMs(_scope, DateTime.now().millisecondsSinceEpoch);
@@ -1248,6 +1282,7 @@ class SyncOrchestrator {
   Future<SyncRunReport> runCollectionsOnly() async {
     final SyncRunReport report = SyncRunReport(onError: onError);
     final SyncBackend b = _backend;
+    _checkpoint();
     if (b is InterconnectSyncBackend) {
       // 合集防抖轻量路径同步合集 + 标签（标签增删同一个观察者触发，见
       // installCollectionsSyncWatcher）；刮削元数据整库拉取留给完整 sweep（审查 #4）。
@@ -1280,9 +1315,11 @@ class SyncOrchestrator {
     // 字体两条通道都走同步根下的 `__fonts__` 命名空间（互联 host 的 WebDAV 存储同样
     // 提供它），所以不论通道都要先解析根；词典 / 本地音频的互联路径直打 live 端点、
     // 不需要根。
+    _checkpoint();
     if (_backend is! InterconnectSyncBackend || kind == SyncAssetKind.fonts) {
       await _backend.findOrCreateRootFolder();
     }
+    _checkpoint();
     switch (kind) {
       case SyncAssetKind.dictionary:
         await syncDictionaries(report, direction: direction);
@@ -2026,6 +2063,8 @@ class SyncOrchestrator {
       int index = 0;
 
       for (final VideoBookRow v in localVideos) {
+        // 安全检查点：上一项已完整落地，这一项还没开始。
+        _checkpoint();
         _emit(
           SyncPhase.videos,
           itemIndex: index,
@@ -2135,6 +2174,8 @@ class SyncOrchestrator {
           merged.toJson(),
         );
       }
+    } on SyncCancelledException {
+      rethrow;
     } catch (e) {
       report.noteError('video assets sync', e);
     }
@@ -2185,6 +2226,8 @@ class SyncOrchestrator {
 
     for (int i = 0; i < total; i++) {
       final SyncFileRef folder = toImport[i];
+      // 安全检查点：上一项已完整落地，这一项还没开始。
+      _checkpoint();
       _emit(
         SyncPhase.books,
         itemIndex: i,
@@ -2333,6 +2376,8 @@ class SyncOrchestrator {
 
     // Push local-only.
     for (final LocalAudioDbEntry d in toPush) {
+      // 安全检查点：上一项已完整落地，这一项还没开始。
+      _checkpoint();
       _emit(
         SyncPhase.localAudio,
         itemIndex: index,
@@ -2374,6 +2419,8 @@ class SyncOrchestrator {
 
     // Pull remote-only.
     for (final AssetEntry e in toPull) {
+      // 安全检查点：上一项已完整落地，这一项还没开始。
+      _checkpoint();
       _emit(
         SyncPhase.localAudio,
         itemIndex: index,
@@ -2446,6 +2493,8 @@ class SyncOrchestrator {
     for (int i = 0; i < total; i++) {
       final EpubBookRow book = work[i].book;
       final SrtBookRow srt = work[i].srt;
+      // 安全检查点：上一项已完整落地，这一项还没开始。
+      _checkpoint();
       _emit(
         SyncPhase.audiobooks,
         itemIndex: i,

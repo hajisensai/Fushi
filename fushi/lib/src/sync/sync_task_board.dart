@@ -11,6 +11,7 @@ library;
 
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:fushi/src/sync/sync_activity.dart';
+import 'package:fushi/src/sync/sync_module_gate.dart';
 import 'package:fushi/src/sync/sync_progress.dart';
 import 'package:fushi_engine/sync/sync_channel_scope.dart';
 import 'package:material_ui/material_ui.dart';
@@ -132,11 +133,17 @@ const int kSyncTaskBoardFinishedKeep = 3;
 /// 一轮同步在任务表里的句柄。同时也是这轮同步在锁表里的 owner（见
 /// `SyncResourceLocks.withResources`）：排队方据此知道自己在等哪一轮。
 class SyncTaskHandle {
-  SyncTaskHandle._(this._board, this.id, this.kind);
+  SyncTaskHandle._(this._board, this.id, this.kind, this._ticket);
 
   final _SyncTaskBoard _board;
   final int id;
   final SyncActivityKind kind;
+
+  /// 这一轮从模块门领到的票（`sync_module_gate.dart`）；不经门的登记为 null。
+  final SyncRunTicket? _ticket;
+
+  /// 这一轮的取消信号：模块被关掉时置位，同步在下一个安全检查点中止。
+  SyncCancellation get cancellation => _ticket ?? SyncCancellation.never;
 
   /// 补上书名（单本同步在入口只有 mediaIdentifier）。
   void setTitle(String? title) {
@@ -204,8 +211,12 @@ class SyncTaskHandle {
     );
   });
 
-  /// 这轮结束。没有错误的直接移出表；有错误的标成已结束、多留一会儿。
-  void finish() => _board._finish(id);
+  /// 这轮结束。没有错误的直接移出表；有错误的标成已结束、多留一会儿。同时把票
+  /// 交还模块门（结束只在这一处，票不会漏还）。
+  void finish() {
+    _ticket?.leave();
+    _board._finish(id);
+  }
 }
 
 class _SyncTaskBoard {
@@ -217,7 +228,11 @@ class _SyncTaskBoard {
   int _nextId = 1;
   int Function() _now = () => DateTime.now().millisecondsSinceEpoch;
 
-  SyncTaskHandle begin(SyncActivityKind kind, {String? title}) {
+  SyncTaskHandle begin(
+    SyncActivityKind kind, {
+    String? title,
+    SyncRunTicket? ticket,
+  }) {
     final int id = _nextId++;
     final int now = _now();
     tasks.value = <SyncTask>[
@@ -231,7 +246,7 @@ class _SyncTaskBoard {
       ),
     ];
     _publish();
-    return SyncTaskHandle._(this, id, kind);
+    return SyncTaskHandle._(this, id, kind, ticket);
   }
 
   void _update(int id, SyncTask Function(SyncTask) change) {
@@ -313,8 +328,12 @@ final _SyncTaskBoard _board = _SyncTaskBoard();
 ValueListenable<List<SyncTask>> get syncTasks => _board.tasks;
 
 /// 登记一轮同步开始，返回它的句柄。每条同步路径必须成对调用 [SyncTaskHandle.finish]。
-SyncTaskHandle beginSyncTask(SyncActivityKind kind, {String? title}) =>
-    _board.begin(kind, title: title);
+/// [ticket] 是这一轮从模块门领到的票，句柄结束时代为交还。
+SyncTaskHandle beginSyncTask(
+  SyncActivityKind kind, {
+  String? title,
+  SyncRunTicket? ticket,
+}) => _board.begin(kind, title: title, ticket: ticket);
 
 /// 测试用：清空任务表（模块级状态在测试间必须可复位）并可注入时钟。
 @visibleForTesting
