@@ -59,10 +59,15 @@ class BackupModule extends CliModule {
           'restore: confirm replacing the current data with the backup (old data is moved to <data_dir>.pre-restore-<time>/)',
         ),
       )
+      // 不能叫 `config`（可取反 flag）：子命令自己的同名项会盖住顶层的 `--config <路径>`，
+      // `backup restore x.zip --yes --config my.yaml` 就成了用法错误。拼写仍是 `--no-config`。
       ..addFlag(
-        'config',
-        defaultsTo: true,
-        help: tr('restore：同时还原配置文件', 'restore: also restore the config file'),
+        'no-config',
+        negatable: false,
+        help: tr(
+          'restore：不还原配置文件，只还原数据',
+          'restore: do not restore the config file, only the data',
+        ),
       )
       ..addFlag('json', negatable: false, help: tr('输出 JSON', 'Output JSON'));
   }
@@ -242,7 +247,7 @@ backup restore <file> --yes [--no-config] [--json]
       final ServerRestoreResult r = await restoreServerBackup(
         backup: backup,
         dataDir: config.dataDir,
-        configFile: (command['config'] as bool) ? ctx.configFile : null,
+        configFile: (command['no-config'] as bool) ? null : ctx.configFile,
       );
       if (command['json'] as bool) {
         o.writeln(
