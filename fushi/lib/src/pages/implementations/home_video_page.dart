@@ -5586,6 +5586,20 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
                   ))
                     if (!mirroredRemote.contains(v.id)) v,
                 ];
+                // 「管理合集」页的成员数（BUG-4273）：管理页列的是本域全部合集、
+                // 不随搜索 / 筛选 / 分区变，成员数也只取未筛选全量（同首页口径）的
+                // 折叠结果。放在分区分支之前：「全部视频」分区不建系列墙，挂在系列
+                // 墙里就永远发布不到。骨架期归属映射还没到，不发布（不是 0）。
+                if (!firstPaintPending) {
+                  _collectionDisplayCounts.publish<_VideoSlot>(
+                    _foldVideoUnits(
+                      homeLocal,
+                      homeRemote,
+                      _primaryCollectionByEntry,
+                      _memberSortIndex,
+                    ),
+                  );
+                }
                 // 下拉刷新：保活后切回不再隐式重拉远端，给用户显式强制刷新入口。
                 // AlwaysScrollableScrollPhysics 保证内容不足一屏时也能下拉触发。
                 // UI v2：散卡网格与合集横排行统一卡宽（用户实报合集卡大一截）——
@@ -7619,9 +7633,37 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// 最近一次已完成合集收养的远端清单（对象身份，见 [_loadRemoteVideos]）。
   List<RemoteVideoInfo>? _adoptedRemoteVideos;
 
-  /// 过滤后视频（本地 + 远端占位 union）→ 合集折叠 + 按当前排序方式排 group。远端占位
-  /// 用 `-1-index` 编码 importedAt（全为负，稳定排在本地条目之后、组内保持目录序）。
+  /// 过滤后视频（本地 + 远端占位 union）→ 合集折叠 + 按当前排序方式排 group。
   List<CollectionGroup<_VideoSlot>> _groupVideos(
+    List<VideoBookRow> books,
+    List<RemoteVideoInfo> remoteVideos,
+    Map<String, int> primaryByEntry,
+    Map<String, int> memberSortIndex,
+  ) {
+    final List<CollectionGroup<_VideoSlot>> groups = _foldVideoUnits(
+      books,
+      remoteVideos,
+      primaryByEntry,
+      memberSortIndex,
+    );
+    groups.sort(
+      (CollectionGroup<_VideoSlot> a, CollectionGroup<_VideoSlot> b) =>
+          compareShelfSortKeys(
+            _groupSortKey(a),
+            _groupSortKey(b),
+            _sortMode,
+            manualRanks: _manualRanks,
+          ),
+    );
+    return groups;
+  }
+
+  /// 视频显示单元折叠：本地视频 + 远端占位 → [groupByCollections] 的合集组与散卡组
+  /// （未排序）。系列墙吃筛选后的输入，「管理合集」页的成员数
+  /// （[_collectionDisplayCounts]）吃未筛选的全量输入，两处同一份折叠规则
+  /// （BUG-4273）。远端占位用 `-1-index` 编码 importedAt（全为负，稳定排在本地条目
+  /// 之后、组内保持目录序）。
+  List<CollectionGroup<_VideoSlot>> _foldVideoUnits(
     List<VideoBookRow> books,
     List<RemoteVideoInfo> remoteVideos,
     Map<String, int> primaryByEntry,
@@ -7650,24 +7692,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         ),
       );
     }
-    final List<CollectionGroup<_VideoSlot>> groups =
-        groupByCollections<_VideoSlot>(
-          items: items,
-          primaryCollectionIdByEntry: primaryByEntry,
-          collectionsById: _collectionsById,
-          memberSortIndex: memberSortIndex,
-        );
-    _collectionDisplayCounts.publish<_VideoSlot>(groups);
-    groups.sort(
-      (CollectionGroup<_VideoSlot> a, CollectionGroup<_VideoSlot> b) =>
-          compareShelfSortKeys(
-            _groupSortKey(a),
-            _groupSortKey(b),
-            _sortMode,
-            manualRanks: _manualRanks,
-          ),
+    return groupByCollections<_VideoSlot>(
+      items: items,
+      primaryCollectionIdByEntry: primaryByEntry,
+      collectionsById: _collectionsById,
+      memberSortIndex: memberSortIndex,
     );
-    return groups;
   }
 
   /// 组级排序键：散卡取条目自身；合集行取成员聚合（recent/imported 取成员 max、

@@ -913,6 +913,10 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
         .watch(filteredGameIdsProvider)
         .valueOrNull;
     final List<GalgameEntry> visible = _visibleFor(allowedIds);
+    // 「管理合集」页的成员数（BUG-4273）：管理页列的是全部游戏合集、不随搜索 /
+    // 筛选变，成员数取全库折叠结果；放在 build 顶层，空库 / 筛选空态（不建网格）
+    // 也照常发布，不会留着上一次的旧数。
+    _collectionDisplayCounts.publish<GalgameEntry>(_foldGameUnits(_games));
     // BUG-1911：**不要**把三元收回来。在途下载占位与「库里有什么 / 筛出了什么」
     // 是两条正交的渲染输入，分支判定整个下沉到 [_buildBody]；这里再挑一次分支就
     // 等于重新把占位关进网格分支里。
@@ -1855,6 +1859,26 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
     );
   }
 
+  /// 游戏显示单元折叠：游戏 → [groupByCollections] 的合集组与散卡组（未排序）。
+  /// 网格吃筛选后的 [visible]，「管理合集」页的成员数（[_collectionDisplayCounts]）
+  /// 吃全库 [_games]，两处同一份折叠规则（BUG-4273）。
+  List<CollectionGroup<GalgameEntry>> _foldGameUnits(
+    List<GalgameEntry> games,
+  ) => groupByCollections<GalgameEntry>(
+    items: <CollectionOrderingItem<GalgameEntry>>[
+      for (final GalgameEntry game in games)
+        CollectionOrderingItem<GalgameEntry>(
+          mediaType: MediaKind.game,
+          entryKey: game.id,
+          importedAt: game.addedAt.millisecondsSinceEpoch,
+          payload: game,
+        ),
+    ],
+    primaryCollectionIdByEntry: _primaryCollectionByEntry,
+    collectionsById: _collectionsById,
+    memberSortIndex: _memberSortIndex,
+  );
+
   /// 游戏卡盒网格 + 合集折叠卡。
   ///
   /// 卡宽目标≈168（ReinaManager 海报宽档），间距 16，卡高按真实行高算
@@ -1872,22 +1896,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
     List<GalgameEntry> visible,
     _GameGridMetrics metrics,
   ) {
-    final List<CollectionGroup<GalgameEntry>> groups =
-        groupByCollections<GalgameEntry>(
-          items: <CollectionOrderingItem<GalgameEntry>>[
-            for (final GalgameEntry game in visible)
-              CollectionOrderingItem<GalgameEntry>(
-                mediaType: MediaKind.game,
-                entryKey: game.id,
-                importedAt: game.addedAt.millisecondsSinceEpoch,
-                payload: game,
-              ),
-          ],
-          primaryCollectionIdByEntry: _primaryCollectionByEntry,
-          collectionsById: _collectionsById,
-          memberSortIndex: _memberSortIndex,
-        );
-    _collectionDisplayCounts.publish<GalgameEntry>(groups);
+    final List<CollectionGroup<GalgameEntry>> groups = _foldGameUnits(visible);
     if (_view.sortField == GalgameSortField.manual) {
       groups.sort(_compareManualUnits);
     }
