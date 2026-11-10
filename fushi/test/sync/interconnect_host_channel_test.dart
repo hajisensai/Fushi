@@ -620,6 +620,52 @@ void main() {
     expect(requests, 0);
   });
 
+  test('选路吃光整段超时、一条地址都没试：unreachable 而非 notPaired（评审 recheck-1）', () async {
+    // 两条都带密码学身份（https 钉扎）→ withheld == 0；选路要竞速，探测比整段
+    // 超时还慢（直连全死后冷启动 P2P 隧道的情形）。
+    await repo.setFushiClientUrls(const <FushiClientUrl>[
+      FushiClientUrl(
+        url: 'https://10.0.0.1:8443',
+        hostId: 'h1',
+        token: 'tok',
+        fingerprintSha256: _fp,
+      ),
+      FushiClientUrl(
+        url: 'https://203.0.113.5:8443',
+        hostId: 'h1',
+        token: 'tok',
+        fingerprintSha256: _fp,
+      ),
+    ]);
+    final InterconnectHostRef host = InterconnectHostRef.ofRow(
+      (await repo.getFushiClientUrls()).first,
+    );
+    int requests = 0;
+    final InterconnectHostChannel ch = InterconnectHostChannel(
+      repo: repo,
+      host: host,
+      pinnedClientFactory: (String fp) => MockClient((http.Request req) async {
+        requests++;
+        return http.Response('{}', 200);
+      }),
+      probe: (FushiClientUrl c, String? hostId) async {
+        await Future<void>.delayed(const Duration(milliseconds: 150));
+        return true;
+      },
+    );
+    await expectLater(
+      ch.send('GET', '/api/x', timeout: const Duration(milliseconds: 50)),
+      throwsA(
+        channelFailure(InterconnectChannelFailure.unreachable).having(
+          (InterconnectChannelException e) => e.kind,
+          'kind（修复前是 notPaired）',
+          isNot(InterconnectChannelFailure.notPaired),
+        ),
+      ),
+    );
+    expect(requests, 0, reason: '超时用完后不应再发请求');
+  });
+
   test('401：全部地址拒绝 → authRejected', () async {
     final InterconnectHostRef host = await twoAddressHost();
     final InterconnectHostChannel ch = channel(

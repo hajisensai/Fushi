@@ -613,8 +613,10 @@ class InterconnectHostChannel {
         InterconnectChannelFailure.certificateMismatch,
       );
     }
-    if (!hadCredential && ranked.withheld == 0) {
-      // 有成员但没有一条带得出凭据 / 拼得出地址：等同未配对。
+    if (!transportFailed && !hadCredential && ranked.withheld == 0) {
+      // 有成员但没有一条带得出凭据 / 拼得出地址：等同未配对。选路吃光了整段
+      // 超时（冷启动 P2P 隧道）时一条都没轮到，说明不了凭据，按 unreachable
+      // （临时失败）处理，不能报成永久的 notPaired。
       throw const InterconnectChannelException(
         InterconnectChannelFailure.notPaired,
       );
