@@ -156,7 +156,7 @@ class MediaSelectionController {
   /// 选择模式下的高亮条目。
   SelectionSlot? get anchor => _anchor;
 
-  /// 是否正在长按扫选。
+  /// 是否正在长按扫选或鼠标框选。
   bool get isRangeDragging => _dragBaseLoose != null;
 
   /// 选中总数（散卡 + 合集），**只数可见的**——底栏「已选 N」必须等于用户屏幕上
@@ -316,7 +316,46 @@ class MediaSelectionController {
     }
   }
 
-  /// 长按扫选结束：丢弃基线，锚点保留（用户接着 Shift 点击可继续延展）。
+  /// 鼠标框选开始：只记基线，不动选中集与锚点。
+  ///
+  /// 与 [beginRangeDrag] 共用基线字段（两者互斥：同一指针要么长按扫选、要么
+  /// 拖动框选），结束同样走 [endRangeDrag]。起手时还没框住任何格，故不像扫选
+  /// 那样先选中起点。
+  void beginBoxSelect() {
+    _dragBaseLoose = Set<String>.of(_looseKeys);
+    _dragBaseCollections = Set<int>.of(_collectionIds);
+  }
+
+  /// 鼠标框选移动：选中集 = 基线 ∪ 当前框住的 [slots]。
+  ///
+  /// 框是几何概念、不按可见顺序成段，所以合集与散卡可以一框同选（不受扫选
+  /// 「不跨区」约束）；框缩回去时离开框的格恢复基线状态。只并入当前可见的格：
+  /// 框住的本来就是屏幕上的卡，这条只是防御渲染树里残留的过期身份。
+  /// 未在框选中时忽略。
+  void updateBoxSelect(Iterable<SelectionSlot> slots) {
+    final Set<String>? baseLoose = _dragBaseLoose;
+    final Set<int>? baseCollections = _dragBaseCollections;
+    if (baseLoose == null || baseCollections == null) return;
+    _looseKeys
+      ..clear()
+      ..addAll(baseLoose);
+    _collectionIds
+      ..clear()
+      ..addAll(baseCollections);
+    for (final SelectionSlot slot in slots) {
+      if (slot.isCollection) {
+        if (_visibleCollectionSet.contains(slot.collectionId)) {
+          _collectionIds.add(slot.collectionId!);
+        }
+      } else if (_visibleLooseSet.contains(slot.looseKey)) {
+        _looseKeys.add(slot.looseKey!);
+      }
+    }
+    _invalidateViews();
+  }
+
+  /// 长按扫选 / 鼠标框选结束：丢弃基线，锚点保留（用户接着 Shift 点击可继续
+  /// 延展）。
   void endRangeDrag() {
     _dragBaseLoose = null;
     _dragBaseCollections = null;

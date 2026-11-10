@@ -5023,6 +5023,8 @@
   "manga_ocr_ai_mode_open_settings": "Open AI settings",
   "manga_ocr_ai_mode_pending": "Not decided yet: you'll be asked the first time uncertain text would be sent.",
   "manga_ocr_boxes_toggle": "แสดงบริเวณข้อความที่จดจำได้",
+  "manga_ocr_copy_page_text": "Copy page text",
+  "manga_ocr_copy_text": "Copy text",
   "manga_ocr_ctc_desc": "อ่านข้อความทีละคอลัมน์ด้วยโมเดล PP-OCRv6 ที่ปรับแต่งสำหรับมังงะ ขนาดดาวน์โหลดเล็ก เร็ว และแม่นยำแม้ในหน้าที่มีฟุริงานะมาก โมเดล: Kellenok/PP-OCRv6_manga (ฝึกด้วย Manga109-s และ AnimeText)",
   "manga_ocr_ctc_model": "มังงะ CTC (เร็ว)",
   "manga_ocr_default_engine": "เอนจิน OCR เริ่มต้น",

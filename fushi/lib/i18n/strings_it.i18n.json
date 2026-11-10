@@ -5023,6 +5023,8 @@
   "manga_ocr_ai_mode_open_settings": "Open AI settings",
   "manga_ocr_ai_mode_pending": "Not decided yet: you'll be asked the first time uncertain text would be sent.",
   "manga_ocr_boxes_toggle": "Mostra le aree di testo riconosciute",
+  "manga_ocr_copy_page_text": "Copy page text",
+  "manga_ocr_copy_text": "Copy text",
   "manga_ocr_ctc_desc": "Legge ogni colonna di testo separatamente con un modello PP-OCRv6 ottimizzato per i manga. Download leggero, veloce e preciso anche con molti furigana. Modello: Kellenok/PP-OCRv6_manga (addestrato con Manga109-s e AnimeText).",
   "manga_ocr_ctc_model": "Manga CTC (veloce)",
   "manga_ocr_default_engine": "Motore OCR predefinito",

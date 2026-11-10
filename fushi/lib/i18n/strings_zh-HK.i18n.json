@@ -5023,6 +5023,8 @@
   "manga_ocr_ai_mode_open_settings": "開啟 AI 設定",
   "manga_ocr_ai_mode_pending": "尚未決定：第一次要傳送沒把握的文字時會詢問。",
   "manga_ocr_boxes_toggle": "顯示識別範圍",
+  "manga_ocr_copy_page_text": "Copy page text",
+  "manga_ocr_copy_text": "Copy text",
   "manga_ocr_ctc_desc": "用漫畫微調的 PP-OCRv6 模型逐列識別：下載體積小、速度快，注音密集的頁面也認得準。模型：Kellenok/PP-OCRv6_manga（以 Manga109-s 與 AnimeText 訓練）。",
   "manga_ocr_ctc_model": "漫畫 CTC（快速）",
   "manga_ocr_default_engine": "預設 OCR 引擎",

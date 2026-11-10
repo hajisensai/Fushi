@@ -4,7 +4,7 @@ publish_to: none
 environment:
   sdk: ">=3.8.0 <4.0.0"
 
-# 成员包按 path 参与统一解析，其中三个的包名就是它们要顶替的上游包名，
+# 成员包按 path 参与统一解析，其中几个的包名就是它们要顶替的上游包名，
 # 因此天然优先于 pub.dev 版本，不需要（也不允许）再写 dependency_overrides：
 #   flutter_inappwebview_windows —— Windows WebView 实现的 fork。
 #   flutter_inappwebview_linux —— Linux WebView（WPE WebKit）实现，上游 beta
@@ -19,6 +19,10 @@ environment:
 #     线程用）、裸 bool 竞态、设备回调注册用的是未初始化野指针。fork 四条全修
 #     （join 后再 release、经 message-only 窗口把事件转回平台线程、原子标志、
 #     值类型回调 token）。等上游修好再撤。
+#   gamepads_ios —— 反馈 2F3oApV21V（#3122）：pub 上的 0.1.3+3 对没有
+#     extendedGamepad 的手柄直接 return（单只 Switch Joy-Con 在 iOS 16+ 就是
+#     这种），整只手柄进不了 Dart。fork 改为退到 physicalInputProfile，按与
+#     extended 路径相同的原始 key 上报。等上游支持再撤。
 workspace:
   - fushi
   - packages/flutter_inappwebview_linux
@@ -42,6 +46,7 @@ workspace:
   - packages/fushi_srs
   - packages/fushi_torrent
   - packages/gamepads_android_stub
+  - packages/gamepads_ios
   - packages/gamepads_windows
 
 dev_dependencies:
@@ -50,7 +55,7 @@ dev_dependencies:
 # 从 fushi/pubspec.yaml 整段搬来：pub workspace 只认根 pubspec 的
 # dependency_overrides，放在成员包里会被 pub 直接拒绝。
 # 注意：flutter_inappwebview_windows / gamepads_android(=packages/
-# gamepads_android_stub) / gamepads_windows 三个 vendored 包**不在**下面。
+# gamepads_android_stub) / gamepads_windows / gamepads_ios 这些 vendored 包**不在**下面。
 # 它们是 workspace 成员，包名就是被替换的上游包名，解析时天然优先于
 # pub.dev 版本；再写一条 override 会让 pub 直接报
 # "Cannot override workspace packages."。vendor 的理由见各自 pubspec 顶部。
