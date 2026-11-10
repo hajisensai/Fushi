@@ -18,4 +18,18 @@
   - 不动 Drift schema；新增的只是带 `@<tag>` 后缀的 `dimension` 取值。
   - 影响范围（升级 / 降级）：单 host 且带 hostId 的用户旧行整体搬到该 host 名下，判定不变；全是老条目（无 hostId）的用户继续用无后缀行，判定不变；多 host 用户旧行被删，各 host 首轮两端有戳且不同的书判一次冲突（播放位置在 BUG 步骤 9「缺基线不再比墙钟」之后同理）。装回旧版后旧代码读无后缀维度：单 host 用户书籍判一次冲突、播放位置走旧 LWW 一次；再升级时按「覆盖后删除」吸收。不丢进度，只多问一次。
   - 残留：无 hostId 的多 host 用户仍共用一份基线（URL 不是 host 身份，取舍 T6），学到 hostId 或重新配对后分槽；单地址组不核对 hostId（V-B4）时同一 URL 上换了 host 会套用旧基线（归 client-routing）。
-  - 云通道 / 互联文件箱的 `progress` 基线分槽是计划步骤 8，不在本条。
+  - 云通道 / 互联文件箱的 `progress` 基线分槽见下方「文件箱进度基线」一节。
+
+### 文件箱进度基线（云通道 + 互联文件箱，计划步骤 8 + 跨包 X3）
+- **真实性**：✅ 真 bug（行号以 7dea39fc846 为准）：`fushi/lib/src/sync/sync_manager.dart:46-51` `progressBaselineDimensionOf` 对全部云后端返回 `'progress'`、互联返回 `'progress__fushiServer'`，不带远端身份；`sync_manager.dart:159,171` 构造时定死，`:576`（读基线）、`:630`（synced 写）、`:886-890`（导入写）、`:990`（导出写）全用它；`fushi/lib/src/sync/sync_compare_dialog.dart:475-478` 同读这一行。换云类型 / 账号 / 服务器后，旧远端上的共同祖先被拿去判新远端：本地 == 基线、新远端 ≠ 基线 → `resolveProgressSync`（`sync_progress_resolver.dart:27-48`）判「只远端动了」→ 新远端的旧进度静默导入（orchestrator-3）。新测试修复前实测：远端 A 同步后换 B（B 是更早的进度），B 作用域不存在、旧维度被 A 的基线占着。
+- **[x] ① 修复** — 31ab247de2a：
+  - `fushi/lib/src/sync/sync_baseline_scope.dart`：`SyncRemoteIdentified`、`SyncRemoteIdentityUnavailableError`（`SyncBackendError` 子类）、`SyncRemoteScope`、`syncRemoteScopeOf`（剥混淆包装 → 自报身份 → 互联 `liveHostScope` → 云「类型 + 账号 + 服务器」→ 认不出不分槽）、`cloudRemoteScopeOf`（账号取 `currentEmail` 规整值并记进设备本地偏好 `sync_remote_account__<type>`，为空回退记下的值，都没有就抛；WebDAV 取规整 URL、FTP 取主机；其它云类型有带后缀冷却戳 → 旧行删除，否则搬走）、`progressBaselineStorageFor`（存储维度 + 领养 + 互联 host pin）、`clearSyncRemoteAccount`。
+  - `sync_manager.dart`（跨包 X3）：`_progressDimension` 改为惰性 memo 的 `progressBaselineStorageFor`；四个读写点用存储维度，`conflictDimension` 仍报逻辑名；`syncAllBooks` 开轮先取作用域（认不出远端整段抛出，编排器记一条 `books:` 错误）；互联文件箱在判定前、synced 写基线前、导入落地前、上传后写基线前各调 `checkHostPin`，`InterconnectHostChangedException` 从 `syncBook` 原样抛、`syncAllBooks` 结束本阶段。
+  - `sync_compare_dialog.dart`：文件箱基线循环外取一次存储维度；认不出远端时按无基线展示。
+  - `interconnect_sync_backend.dart`：`checkHostPin` 文档写明文件箱调用约定。
+- **[x] ② 加自动化测试** — `fushi/test/sync/sync_baseline_remote_scope_test.dart`（作用域工具：邮箱缺失一轮不换槽、从未取到抛错、换账号 / 换 WebDAV 服务器换槽、真 `DropboxSyncBackend` 单例类型识别并回退记下账号、`clearSyncRemoteAccount`、云领养搬走 / 删除、真互联 backend 单 hostId 带后缀 + pin / 无 hostId 不带后缀、自报身份 fake / 普通 fake）；`fushi/test/sync/sync_progress_baseline_remote_scope_test.dart`（SyncManager：A 上一致后换 B 判冲突不导入、回 A 导出、旧 `progress` 行被首个远端领养且判定不变、认不出远端不落地且整段抛出、互联文件箱读远端进度 / 上传时换 host 不导入不写基线；修复前 5 条全红）。
+- **修复提交**：31ab247de2a
+- **备注**：
+  - OAuth 后端登出时清 `sync_remote_account__<type>`（`pkce_oauth_backend_mixin.dart` / `google_drive_auth.dart` 的 signOut 调 `clearSyncRemoteAccount`）归 cloud-backends 包，未接；未接前登出再换账号登录，新账号邮箱若首轮就取不到会回退成旧账号的槽（T12 残留）。
+  - `sync_remote_account__<type>` 应列入 `deviceLocalPrefKeys`（归 client-routing，未接；未列入时随备份到新设备只在邮箱缺失时被用作回退）。
+  - 同类型下换过账号 / 服务器而持久化状态看不出来的老用户，按「只用过当前云类型」领养，首轮仍可能出现一次旧式导入（T4 残留）。
