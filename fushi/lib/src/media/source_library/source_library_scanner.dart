@@ -52,6 +52,9 @@ import 'package:fushi_engine/media/torrent/download_save_root.dart'
 import 'package:fushi_engine/epub/book_title_conflict.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi_engine/media/audiobook/audiobook_alignment_service.dart';
+import 'package:fushi_engine/media/audiobook/book_audiobook_pairing.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart'
+    show kLearningLanguageCode;
 import 'package:fushi/src/media/collections/library_organize_runner.dart'
     show scheduleAutomaticLibraryOrganize;
 import 'package:fushi/src/media/collections/collection_ai_order.dart'
@@ -180,6 +183,12 @@ class ScanBookItem {
   /// 是 `'[]'`、根本没有可配的正文，喂进去只会产出一本空对齐的假有声书。
   bool get isAudiobook =>
       !isPdf && subtitlePath != null && audioPaths.isNotEmpty;
+
+  /// 配上了有声书音频却没有字幕（反馈 z398R0ndAw 的布局 G）：开了「导入文件夹时
+  /// 转录」就排转录、转完对齐，否则计入「缺字幕」提示用户。PDF 恒 false（同
+  /// [isAudiobook]）。
+  bool get hasAudioWithoutSubtitle =>
+      !isPdf && subtitlePath == null && audioPaths.isNotEmpty;
 
   @override
   bool operator ==(Object other) =>
@@ -524,6 +533,8 @@ class ScanPlan {
     this.blurayDiscs = const <ScanBlurayDiscItem>[],
     this.dvdDiscs = const <ScanDvdDiscItem>[],
     this.pureAudioPaths = const <String>[],
+    this.unclaimedAudiobookUnits = const <AudiobookUnit>[],
+    this.ambiguousAudiobookBookPaths = const <String>[],
   });
 
   /// Pending book items (EPUB + optional same-stem subtitle/audio sidecar).
@@ -554,6 +565,13 @@ class ScanPlan {
   /// 音乐库（[MusicAudioIntake.adoptVideoSourceAudio]，反馈 QAondMh4M5）。只在
   /// `collectPureAudio` 开时收集（视频来源）；书籍来源里的音频是 EPUB 的有声书 sidecar。
   final List<String> pureAudioPaths;
+
+  /// 书籍来源里没有被任何书认领的有声书音频单元（R1–R4 之后剩下的），留给导入后按
+  /// EPUB 元数据标题配对（R5，[pairByBookTitles]）。
+  final List<AudiobookUnit> unclaimedAudiobookUnits;
+
+  /// 有声书音频可能属于多本书、因而放弃配对的书（宁可漏配）。
+  final List<String> ambiguousAudiobookBookPaths;
 }
 
 /// 一次来源扫描的可核对摘要。
@@ -571,6 +589,10 @@ class SourceScanSummary {
     this.reusedVideoUids = const <String>[],
     this.createdCollectionIds = const <int>[],
     this.updatedCollectionIds = const <int>[],
+    this.attachedAudiobookCount = 0,
+    this.audiobookMissingSubtitleCount = 0,
+    this.audiobookTranscribeQueuedCount = 0,
+    this.ambiguousAudiobookBookPaths = const <String>[],
     this.error,
   });
 
@@ -582,6 +604,19 @@ class SourceScanSummary {
   final List<String> reusedVideoUids;
   final List<int> createdCollectionIds;
   final List<int> updatedCollectionIds;
+
+  /// 书籍来源：本轮新挂上有声书（字幕 + 音频对齐落库）的书数。
+  final int attachedAudiobookCount;
+
+  /// 书籍来源：配上了有声书音频却没有字幕、也没排转录的书数（开关关 / 网络来源 /
+  /// iOS 书签来源）。
+  final int audiobookMissingSubtitleCount;
+
+  /// 书籍来源：本轮新排进转录队列的书数。
+  final int audiobookTranscribeQueuedCount;
+
+  /// 书籍来源：有声书音频可能属于多本书、放弃配对的书路径。
+  final List<String> ambiguousAudiobookBookPaths;
   final String? error;
 
   bool get succeeded => error == null;
@@ -632,6 +667,7 @@ ScanPlan planScanFromFileList(
   bool detectBlurayDiscs = false,
   bool detectDvdDiscs = false,
   bool collectPureAudio = false,
+  p.Context? bookPathContext,
 }) {
   // 蓝光盘先认：认出来之后，盘的 `BDMV` 树整个从散装视频里摘掉。不摘的话用户会同时
   // 拿到「正片」和一屏叫 `00001`~`00042` 的 m2ts 碎片（正片常被切成好几段，另有菜
@@ -723,6 +759,8 @@ ScanPlan planScanFromFileList(
       );
       final Map<String, String> dirPaths =
           pathByDir[dir] ?? const <String, String>{};
+      // R1（同名 / 同前缀多段）。没配上音频的书，循环后交给 R2–R4
+      // （[_pairBookAudiobooks]）。
       books.add(
         ScanBookItem(
           bookPath: e.path,
@@ -772,8 +810,17 @@ ScanPlan planScanFromFileList(
           context: mangaPathContext,
         );
 
+  // 书籍来源（不是漫画 / 视频来源）：R1 之后的书 ↔ 有声书配对（R2–R4）。视频来源的
+  // 音频归音乐库，漫画来源没有书分支，都不配。
+  final _BookAudiobookPlan bookAudio =
+      mangaRootPath == null && !collectPureAudio
+      ? _pairBookAudiobooks(books, files, context: bookPathContext)
+      : _BookAudiobookPlan(books: books);
+
   return ScanPlan(
-    books: books,
+    books: bookAudio.books,
+    unclaimedAudiobookUnits: bookAudio.unclaimedUnits,
+    ambiguousAudiobookBookPaths: bookAudio.ambiguousBookPaths,
     videos: videos,
     playlists: playlists,
     mangas: mangaPlan == null
@@ -813,6 +860,88 @@ ScanPlan planScanFromFileList(
   );
 }
 
+/// 书籍来源一次扫描的导入结局（[SourceLibraryScanner._importBooks]）。
+class _BookImportTally {
+  _BookImportTally({required this.ambiguous});
+
+  int imported = 0;
+  int attached = 0;
+  int missingSubtitle = 0;
+  int transcribeQueued = 0;
+  final List<String> ambiguous;
+}
+
+class _BookAudiobookPlan {
+  const _BookAudiobookPlan({
+    required this.books,
+    this.unclaimedUnits = const <AudiobookUnit>[],
+    this.ambiguousBookPaths = const <String>[],
+  });
+
+  final List<ScanBookItem> books;
+  final List<AudiobookUnit> unclaimedUnits;
+  final List<String> ambiguousBookPaths;
+}
+
+/// 书 ↔ 有声书的 R2–R4（反馈 z398R0ndAw）：R1（同名 sidecar，[selectSidecarNames]）
+/// 的结果原样保留，只把 R1 没配上音频的非 PDF 书，与 R1 没认领的音频、来源里的
+/// 全部字幕交给引擎 [pairBooksWithAudiobooks]（同名子目录 / 卷号 / 独卷目录）。
+///
+/// 音频口径与 R1 同一条 [isSidecarAudioName]（不收 `.mp4`）；字幕口径同
+/// [defaultSubtitleExts]。[context]：网络来源传 `p.url`，路径原样保留。
+_BookAudiobookPlan _pairBookAudiobooks(
+  List<ScanBookItem> r1,
+  List<SourceFileEntry> files, {
+  p.Context? context,
+}) {
+  final List<String> unpaired = <String>[
+    for (final ScanBookItem item in r1)
+      if (!item.isPdf && item.audioPaths.isEmpty) item.bookPath,
+  ];
+  if (unpaired.isEmpty) return _BookAudiobookPlan(books: r1);
+  final Set<String> claimed = <String>{
+    for (final ScanBookItem item in r1) ...item.audioPaths,
+  };
+  final List<String> audio = <String>[
+    for (final SourceFileEntry e in files)
+      if (!e.isDirectory &&
+          isSidecarAudioName(e.name) &&
+          !claimed.contains(e.path))
+        e.path,
+  ];
+  if (audio.isEmpty) return _BookAudiobookPlan(books: r1);
+  final BookAudiobookPairingPlan plan = pairBooksWithAudiobooks(
+    unpairedBookPaths: unpaired,
+    pairedBookPaths: <String>[
+      for (final ScanBookItem item in r1)
+        if (!item.isPdf && item.audioPaths.isNotEmpty) item.bookPath,
+    ],
+    unclaimedAudioPaths: audio,
+    subtitlePaths: <String>[
+      for (final SourceFileEntry e in files)
+        if (!e.isDirectory && defaultSubtitleExts.contains(_extOf(e.name)))
+          e.path,
+    ],
+    subtitleLangCode: kLearningLanguageCode,
+    context: context,
+  );
+  return _BookAudiobookPlan(
+    books: <ScanBookItem>[
+      for (final ScanBookItem item in r1)
+        if (plan.byBook[item.bookPath] case final BookAudiobookPairing pairing)
+          ScanBookItem(
+            bookPath: item.bookPath,
+            subtitlePath: pairing.subtitlePath,
+            audioPaths: pairing.audioPaths,
+          )
+        else
+          item,
+    ],
+    unclaimedUnits: plan.unclaimedUnits,
+    ambiguousBookPaths: plan.ambiguousBookPaths,
+  );
+}
+
 /// 把扫描根里的纯页图归成可独立导入的卷目录。
 ///
 /// 归组规则（单文件卷各一卷、包旁 sidecar 归包；根有页图 → 根一卷；否则每个含
@@ -847,15 +976,26 @@ MangaFolderPlan _planMangaVolumes({
 class SourceLibraryScanner {
   SourceLibraryScanner(
     this._db, {
+    required BookAudiobookTranscribePort? transcribeAudiobook,
     MangaSevenZipExtractor? mangaSevenZipExtractor,
     SourceFolderAccess? folderAccess,
     MusicAudioIntake? musicAudioIntake,
-  }) : _videoRepo = VideoBookRepository(_db),
+  }) : _transcribeAudiobook = transcribeAudiobook,
+       _videoRepo = VideoBookRepository(_db),
        _mangaSevenZipExtractor = mangaSevenZipExtractor,
        _folderAccess = folderAccess ?? SourceFolderAccess.instance,
        _musicIntakeOverride = musicAudioIntake;
 
   final FushiDatabase _db;
+
+  /// 书籍来源里「配上了有声书音频却没有字幕」的书交给转录队列的端口（反馈
+  /// z398R0ndAw）。null = 不转录（本机没有 ASR / 用户没开 / 调用方是音乐、视频这类
+  /// 不扫书的入口），这类书计入 [SourceScanSummary.audiobookMissingSubtitleCount]。
+  ///
+  /// 构造参数是**必填**的可空参数：每个扫描入口都得显式表态，新增入口不会悄悄丢掉
+  /// 这项能力。非空时扫描器仍只在本地、非 iOS 书签来源上调用它（转录要跑几个小时，
+  /// 网络来源的音频不在本机，书签的访问窗口撑不到那时）。
+  final BookAudiobookTranscribePort? _transcribeAudiobook;
 
   /// 视频来源里的纯音频交给音乐库（测试注入替身）。
   final MusicAudioIntake? _musicIntakeOverride;
@@ -1145,6 +1285,7 @@ class SourceLibraryScanner {
     /// 比「整次扫描中断」轻一级，所以只有在 [scanError] 为空时才顶上去。
     String? partialError;
     List<String> discoveredPaths = const <String>[];
+    _BookImportTally? bookTally;
     VideoFolderGroupSummary grouping = (
       createdVideoUids: const <String>[],
       reusedVideoUids: const <String>[],
@@ -1193,6 +1334,7 @@ class SourceLibraryScanner {
         entries,
         mangaRootPath: kind == SourceLibraryKind.manga ? source.rootPath : null,
         mangaPathContext: files.isLocal ? null : p.url,
+        bookPathContext: files.isLocal ? null : p.url,
         detectBlurayDiscs: files.isLocal && kind == SourceLibraryKind.video,
         detectDvdDiscs: files.isLocal && kind == SourceLibraryKind.video,
         collectPureAudio: kind == SourceLibraryKind.video,
@@ -1213,7 +1355,19 @@ class SourceLibraryScanner {
 
       switch (kind) {
         case SourceLibraryKind.book:
-          mediaCount = await _importBooks(plan, source.id, files);
+          final _BookImportTally books = await _importBooks(
+            plan,
+            source,
+            files,
+            subtitlePaths: <String>[
+              for (final SourceFileEntry e in entries)
+                if (!e.isDirectory &&
+                    defaultSubtitleExts.contains(_extOf(e.name)))
+                  e.path,
+            ],
+          );
+          mediaCount = books.imported;
+          bookTally = books;
           // 与视频分支对称：入库后把分卷按系列持久归组（BUG-3441）。不留到书架页
           // 打开才归——本机作为互联 host / 合集云同步源时，对端拿到的归属来自这里。
           await BookSeriesGrouper(_db).groupAll();
@@ -1405,6 +1559,12 @@ class SourceLibraryScanner {
       reusedVideoUids: grouping.reusedVideoUids,
       createdCollectionIds: grouping.createdCollectionIds,
       updatedCollectionIds: grouping.updatedCollectionIds,
+      attachedAudiobookCount: bookTally?.attached ?? 0,
+      audiobookMissingSubtitleCount: bookTally?.missingSubtitle ?? 0,
+      audiobookTranscribeQueuedCount: bookTally?.transcribeQueued ?? 0,
+      ambiguousAudiobookBookPaths: bookTally == null
+          ? const <String>[]
+          : List<String>.unmodifiable(bookTally.ambiguous),
       error: scanError,
     );
   }
@@ -1420,14 +1580,23 @@ class SourceLibraryScanner {
   /// (not counted, not an error). The within-isolate parse + DB read picks up
   /// books inserted earlier in the same scan, so a same-batch duplicate is also
   /// skipped.
-  Future<int> _importBooks(
+  Future<_BookImportTally> _importBooks(
     ScanPlan plan,
-    int sourceId,
-    SourceFileSystem fs,
-  ) async {
-    int count = 0;
+    SourceLibraryRow source,
+    SourceFileSystem fs, {
+    required List<String> subtitlePaths,
+  }) async {
+    final _BookImportTally tally = _BookImportTally(
+      ambiguous: plan.ambiguousAudiobookBookPaths,
+    );
+    final bool hasBookmark =
+        sourceBookmarkFromConfig(source.configJson) != null;
+    final Set<String> ambiguous = plan.ambiguousAudiobookBookPaths.toSet();
+    // R5 候选：导入（或重复跳过）后仍没配上音频的非 PDF 书 → 它在库里的 bookKey。
+    final Map<String, String> r5BookKeys = <String, String>{};
     Directory? epubTmp;
     for (final ScanBookItem item in plan.books) {
+      String? bookKey;
       try {
         // 网络来源：先把远端书文件下载到临时盘（导入器只吃本地路径）；本地原样。
         String localBook = item.bookPath;
@@ -1443,104 +1612,156 @@ class SourceLibraryScanner {
         // PDF 分流到 [PdfImporter]：同一套 bookKey 身份、同一条 skip 语义、同一张
         // `EpubBooks` 表，差别只在产物（拷 document.pdf + 栅格化首页当封面）。标题
         // 取文件名去扩展名——PDF 元数据里的标题不可靠，与单本导入对话框同口径。
-        final String bookKey = item.isPdf
+        bookKey = item.isPdf
             ? await PdfImporter.importFromPath(
                 db: _db,
                 filePath: localBook,
                 fileName: p.basename(item.bookPath),
                 title: p.basenameWithoutExtension(item.bookPath),
-                sourceId: sourceId,
+                sourceId: source.id,
                 policy: const DuplicatePolicy.skip(),
               )
             : await EpubImporter.importFromPath(
                 db: _db,
                 filePath: localBook,
                 fileName: p.basename(item.bookPath),
-                sourceId: sourceId,
+                sourceId: source.id,
                 policy: const DuplicatePolicy.skip(),
               );
-        count++;
-        // TODO-946：同目录有同名字幕 + 音频 -> 复用对话框抽出的非 UI 落库 service
-        // 把这本 EPUB 升级成有声书（字幕做对齐源 + 音频）。网络来源先把 sidecar
-        // 下到临时盘（[_withLocalSidecars]）：service 会把字幕与音频复制进书自己的
-        // 持久目录，临时文件用完即删，落库产物与本地导入同构。
-        if (item.isAudiobook) {
-          await _withLocalSidecars(
-            item,
-            fs,
-            (String subtitlePath, List<String> audioPaths) =>
-                alignAndPersistAudiobook(
-                  db: _db,
-                  repo: SrtBookRepository(_db),
-                  audiobookRepo: AudiobookRepository(_db),
-                  bookKey: bookKey,
-                  title: p.basenameWithoutExtension(item.bookPath),
-                  subtitlePath: subtitlePath,
-                  audioPaths: audioPaths,
-                ),
-          );
-        }
+        tally.imported++;
       } on DuplicateImportCancelledException catch (e) {
         // TODO-1284：书已导入过。纯重扫时静默跳过是对的（对齐 _importVideos），但若
-        // 首次导入后才把同名字幕+音频放到书旁边（书当初是按纯 EPUB 导入的），重扫必须
-        // 把它补挂成有声书——否则新增的 .srt/.mp3 被静默忽略。仅当该书尚未挂任何有声书
-        // 时才对齐，保证重复重扫幂等、不重跑 matcher、不覆盖用户手动重匹配。
-        await _attachSidecarAudiobookToExisting(item, e.title, fs);
+        // 首次导入后才把字幕+音频放到书旁边（书当初是按纯 EPUB 导入的），重扫必须
+        // 把它补挂成有声书——否则新增的 .srt/.mp3 被静默忽略。[_attachAudiobook] 只在
+        // 该书尚未挂任何有声书时才动手，保证重复重扫幂等、不重跑 matcher、不覆盖
+        // 用户手动重匹配。
+        final String existingKey = sanitizeTtuFilename(e.title);
+        if (await _db.getEpubBook(existingKey) != null) bookKey = existingKey;
         debugPrint(
           'SourceLibraryScanner skip duplicate book '
           '${e.title} (${item.bookPath})',
         );
       }
+      if (bookKey == null) continue;
+      if (item.audioPaths.isEmpty) {
+        if (!item.isPdf && !ambiguous.contains(item.bookPath)) {
+          r5BookKeys[item.bookPath] = bookKey;
+        }
+        continue;
+      }
+      await _attachAudiobook(
+        item,
+        bookKey: bookKey,
+        fs: fs,
+        hasBookmark: hasBookmark,
+        tally: tally,
+      );
     }
+
+    // R5：全部书导入完后统一按 EPUB 元数据标题配一次（结果与处理顺序无关；冲突的
+    // 书全部放弃）。新导入与重复跳过的书同等参与。
+    if (r5BookKeys.isNotEmpty && plan.unclaimedAudiobookUnits.isNotEmpty) {
+      final Map<String, String> titleByBookPath = <String, String>{};
+      for (final MapEntry<String, String> entry in r5BookKeys.entries) {
+        final EpubBookRow? row = await _db.getEpubBook(entry.value);
+        if (row != null) titleByBookPath[entry.key] = row.title;
+      }
+      final Map<String, BookAudiobookPairing> byTitle = pairByBookTitles(
+        titleByBookPath: titleByBookPath,
+        unclaimed: plan.unclaimedAudiobookUnits,
+        subtitlePaths: subtitlePaths,
+        subtitleLangCode: kLearningLanguageCode,
+        context: fs.isLocal ? null : p.url,
+      );
+      final List<String> paired = byTitle.keys.toList()..sort();
+      for (final String bookPath in paired) {
+        final BookAudiobookPairing pairing = byTitle[bookPath]!;
+        await _attachAudiobook(
+          ScanBookItem(
+            bookPath: bookPath,
+            subtitlePath: pairing.subtitlePath,
+            audioPaths: pairing.audioPaths,
+          ),
+          bookKey: r5BookKeys[bookPath]!,
+          fs: fs,
+          hasBookmark: hasBookmark,
+          tally: tally,
+        );
+      }
+    }
+
     if (epubTmp != null) {
       try {
         epubTmp.deleteSync(recursive: true);
       } catch (_) {}
     }
-    return count;
+    return tally;
   }
 
-  /// TODO-1284：重扫时把「首次导入后才新增到书旁的同名字幕+音频」补挂成有声书。
+  /// 把 [item] 配上的有声书挂到库里的 [bookKey] 上。
   ///
-  /// [title] 是 [DuplicateImportCancelledException] 携带的冲突标题，其身份 key
-  /// （[sanitizeTtuFilename]）即已存在书的 bookKey。仅当本次扫描项确有 sidecar
-  /// 字幕+音频（[ScanBookItem.isAudiobook]）、该 bookKey 的书确实在库、且尚未挂任何
-  /// 有声书时才对齐落库；已挂则跳过，保证重扫幂等、不重跑 matcher、不覆盖用户手动
-  /// 重匹配。三项判据都在下载 sidecar 之前，网络来源重扫已挂好的书零音频流量。
-  Future<void> _attachSidecarAudiobookToExisting(
-    ScanBookItem item,
-    String title,
-    SourceFileSystem fs,
-  ) async {
-    if (!item.isAudiobook) return;
-    final String bookKey = sanitizeTtuFilename(title);
-    final EpubBookRow? existingBook = await _db.getEpubBook(bookKey);
-    if (existingBook == null) return;
+  /// - 该书已挂过任何有声书 → 跳过（重扫幂等、不覆盖用户手动重匹配；判据在下载
+  ///   sidecar 之前，网络来源重扫已挂好的书零音频流量）；
+  /// - 字幕 + 音频齐备 → 复用对话框抽出的非 UI 落库 service 对齐落库。网络来源先把
+  ///   sidecar 下到临时盘（[_withLocalSidecars]），service 会把字幕与音频复制进书
+  ///   自己的持久目录，落库产物与本地导入同构；
+  /// - 有音频没字幕 → 端口非空、本地来源、非 iOS 书签来源时交给转录端口（转完对齐到
+  ///   这本书），否则计入「缺字幕」。
+  Future<void> _attachAudiobook(
+    ScanBookItem item, {
+    required String bookKey,
+    required SourceFileSystem fs,
+    required bool hasBookmark,
+    required _BookImportTally tally,
+  }) async {
+    if (!item.isAudiobook && !item.hasAudioWithoutSubtitle) return;
     final AudiobookRepository audiobookRepo = AudiobookRepository(_db);
-    final Audiobook? alreadyAttached = await audiobookRepo.findByBookKey(
-      bookKey,
+    if (await audiobookRepo.findByBookKey(bookKey) != null) return;
+    if (item.isAudiobook) {
+      await _withLocalSidecars(
+        item,
+        fs,
+        (String subtitlePath, List<String> audioPaths) =>
+            alignAndPersistAudiobook(
+              db: _db,
+              repo: SrtBookRepository(_db),
+              audiobookRepo: audiobookRepo,
+              bookKey: bookKey,
+              title: p.basenameWithoutExtension(item.bookPath),
+              subtitlePath: subtitlePath,
+              audioPaths: audioPaths,
+            ),
+      );
+      tally.attached++;
+      return;
+    }
+    final BookAudiobookTranscribePort? transcribe = _transcribeAudiobook;
+    if (transcribe == null ||
+        !folderImportSourceCanTranscribe(
+          isLocalSource: fs.isLocal,
+          hasBookmark: hasBookmark,
+        )) {
+      tally.missingSubtitle++;
+      return;
+    }
+    final BookAudiobookTranscribeResult result = await transcribe(
+      bookKey: bookKey,
+      audioPaths: item.audioPaths,
+      title: p.basenameWithoutExtension(item.bookPath),
     );
-    if (alreadyAttached != null) return;
-    await _withLocalSidecars(
-      item,
-      fs,
-      (String subtitlePath, List<String> audioPaths) =>
-          alignAndPersistAudiobook(
-            db: _db,
-            repo: SrtBookRepository(_db),
-            audiobookRepo: audiobookRepo,
-            bookKey: bookKey,
-            title: p.basenameWithoutExtension(item.bookPath),
-            subtitlePath: subtitlePath,
-            audioPaths: audioPaths,
-          ),
-    );
+    if (result == BookAudiobookTranscribeResult.queued) {
+      tally.transcribeQueued++;
+    }
   }
 
   /// 让 [body] 拿到 [item] 的字幕 / 音频 sidecar 的**本地**路径。
   ///
   /// 本地来源原样透传；网络来源先 [SourceFileSystem.copyToLocal] 到一个临时目录，
-  /// [body] 结束后（无论成败）删掉。同目录 sidecar 文件名天然不重名，平铺即可。
+  /// [body] 结束后（无论成败）删掉。
+  ///
+  /// 每个远端文件各下到自己的子目录 `<tmp>/<序号>/`：分碟布局里 `X/CD1/01.mp3` 与
+  /// `X/CD2/01.mp3` 同名，`copyToLocal` 按 basename 落盘，平铺进同一目录时后下的会
+  /// 覆盖先下的，两条音频路径指向同一个文件（落库的 `_freeDestIn` 防重名来得太晚）。
   static Future<T> _withLocalSidecars<T>(
     ScanBookItem item,
     SourceFileSystem fs,
@@ -1550,14 +1771,17 @@ class SourceLibraryScanner {
     final Directory tmp = Directory.systemTemp.createTempSync(
       'm1c_scan_book_sidecars_',
     );
+    int slot = 0;
+    Future<String> download(String remote) {
+      final Directory dir = Directory(p.join(tmp.path, '${slot++}'))
+        ..createSync();
+      return fs.copyToLocal(remote, dir.path);
+    }
+
     try {
-      final String subtitle = await fs.copyToLocal(
-        item.subtitlePath!,
-        tmp.path,
-      );
+      final String subtitle = await download(item.subtitlePath!);
       final List<String> audio = <String>[
-        for (final String remote in item.audioPaths)
-          await fs.copyToLocal(remote, tmp.path),
+        for (final String remote in item.audioPaths) await download(remote),
       ];
       return await body(subtitle, audio);
     } finally {

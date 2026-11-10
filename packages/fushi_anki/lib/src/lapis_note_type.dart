@@ -7,6 +7,8 @@
 /// Do not hand-edit; re-vendor from the pinned tag when bumping versions.
 library;
 
+import 'fushi_card_fields.dart';
+
 /// A backend-agnostic note-type creation template (name + fields + one card).
 class AnkiNoteTypeTemplate {
   const AnkiNoteTypeTemplate({
@@ -76,7 +78,7 @@ class LapisNoteType {
     'FreqSort': '{frequency-harmonic-rank}',
     // 「来源」中作品标题就是回跳链接；无定位时仍显示标题。时间轴来源保留片段时间，
     // 不另加一个重复的 Fushi 链接。只迁移精确旧默认，用户自定义组合保持不变。
-    'MiscInfo': '{source-link} {clip-timestamp}',
+    'MiscInfo': FushiCardFields.sourceDefaultMapping,
     'IsWordAndSentenceCard': 'x',
   };
 

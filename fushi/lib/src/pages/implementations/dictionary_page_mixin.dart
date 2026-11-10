@@ -408,6 +408,8 @@ mixin DictionaryPageMixin {
           expression: expression.isEmpty ? null : expression,
           deck: deck,
           fields: fields,
+          layout: ref.read(appProvider).advancedMiningLayout,
+          setLayout: ref.read(appProvider).setAdvancedMiningLayout,
           // 单词音频：与弹窗 ♪「选择音频源」同一份候选（读音空时与 ♪ 一样退回原形）。
           wordAudio: expression.isEmpty
               ? null
@@ -416,6 +418,7 @@ mixin DictionaryPageMixin {
                       await webViewKey.currentState?.listWordAudioChoices(
                         expression,
                         reading.isEmpty ? expression : reading,
+                        matched: matched,
                       ) ??
                       const <Map<String, String>>[],
                   refreshSource: (int sourceIndex) async =>
@@ -631,15 +634,20 @@ mixin DictionaryPageMixin {
   /// [autoReadWordUnified]；查词结果来自别的设备时覆写成问那台设备要发音。返回是否
   /// 真的开始播放（去重窗口靠它，BUG-1127）。
   @protected
+  ///
+  /// [matched] 是查词命中原文：词头带替换写法时本机 TTS 兜底念它（反馈 WJFhjUGaTn，
+  /// 见 `wordAudioTtsText`）。
   Future<bool> playPopupWordAudio(
     String expression,
     String reading,
-    DictionaryPopupWebViewState? popupState,
-  ) => autoReadWordUnified(
+    DictionaryPopupWebViewState? popupState, {
+    String matched = '',
+  }) => autoReadWordUnified(
     mixinAppModel,
     expression,
     reading,
     playInWebView: popupState?.playWordAudioUrl,
+    matched: matched,
   );
 
   /// 弹窗词典侧资源（样式 / 媒体 / ♪）的来源，透传给每一层 [DictionaryPopupLayer]。
@@ -792,19 +800,15 @@ mixin DictionaryPageMixin {
     String expression,
     String reading, {
     DictionaryPopupWebViewState? popupState,
+    String matched = '',
   }) async {
     await LookupAutoReadCoordinator.instance.runAutomatic(
       expression: expression,
       reading: reading,
-      play: () => _playAutoReadWord(expression, reading, popupState),
+      play: () =>
+          playPopupWordAudio(expression, reading, popupState, matched: matched),
     );
   }
-
-  Future<bool> _playAutoReadWord(
-    String expression,
-    String reading,
-    DictionaryPopupWebViewState? popupState,
-  ) => playPopupWordAudio(expression, reading, popupState);
 
   /// Checks whether a card for [expression] / [reading] already exists in Anki.
   Future<bool> checkDuplicate(String expression, String reading) async {
@@ -1676,6 +1680,7 @@ mixin DictionaryPageMixin {
             first.word,
             first.reading,
             popupState: entry.webViewKey.currentState,
+            matched: lookupEntryMatchedText(first),
           );
         }
       }
@@ -1800,6 +1805,7 @@ mixin DictionaryPageMixin {
             first.word,
             first.reading,
             popupState: entry.webViewKey.currentState,
+            matched: lookupEntryMatchedText(first),
           );
         }
       }

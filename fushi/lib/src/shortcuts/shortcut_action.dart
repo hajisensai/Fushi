@@ -712,6 +712,11 @@ enum ShortcutAction {
   // 肌肉记忆跨阅读器复用。手柄留空，用户可自绑。
   mangaOpenStatistics(ShortcutScope.manga, 'manga_open_statistics'),
   mangaToggleStudyClock(ShortcutScope.manga, 'manga_toggle_study_clock'),
+  // 当前页书签（反馈 FhspOXxPl_）：屏上没有书签就加一条，有就移除——与书签面板
+  // 顶部「当前页」那一行、浏览器 webBrowserToggleBookmark 同一 toggle 语义，执行体
+  // 与书签面板同一入口 `_toggleBookmarkHere`。默认键盘 B（manga scope 内空闲），
+  // 手柄留空（B 归 universal 返回）。
+  mangaToggleBookmark(ShortcutScope.manga, 'manga_toggle_bookmark'),
 
   // Web browser：app 内浏览器（[ShortcutScope.webBrowser]）。声明顺序 = 设置页展示
   // 顺序：标签页 → 导航 → 页面工具 → 缩放。执行体在 fushi_web_browser_page 的
@@ -853,6 +858,40 @@ enum ShortcutAction {
     'global_external_screen_ocr',
   ),
 
+  // 反馈 uvIcQB5gPG：有声书悬浮字幕的全局快捷键（Fushi 不在前台、用户盯着别的程序
+  // 听书时也能控制）。悬浮字幕窗自己的按钮是「上一句 / 播放暂停 / 下一句 / 关闭」，
+  // 这里把它们连同「显示 / 隐藏悬浮字幕」与「重播当前句」做成 OS 级热键。
+  //
+  // 执行体同样登记在 GlobalLookupController._osHotKeyActions（本 scope 的动作一律由
+  // 它读绑定注册进 hotkey_manager / GlobalShortcuts portal，不经页面派发）；播放控制
+  // 落到 app 级 `AudiobookSession.controller`（悬浮窗按钮走的同一个控制器），显隐落到
+  // `AppModel.setFloatingLyricEnabled`（设置页开关的同一个置位入口，窗与意图 pref
+  // 原子同步）。没有活动的有声书会话时什么都不做（记日志），不偷偷改 pref。
+  //
+  // 键盘-only，理由同 globalExternalOpenLookupPage。桌面默认**不绑键**：OS 级热键
+  // 全系统吞键（Ctrl+Alt+字母在欧洲键盘上就是 AltGr 字符），不听书的用户不该为它
+  // 付这个代价；要用的人在快捷键设置里自己录。
+  globalExternalFloatingLyricToggle(
+    ShortcutScope.globalExternal,
+    'global_external_floating_lyric_toggle',
+  ),
+  globalExternalAudiobookPlayPause(
+    ShortcutScope.globalExternal,
+    'global_external_audiobook_play_pause',
+  ),
+  globalExternalAudiobookPrevSentence(
+    ShortcutScope.globalExternal,
+    'global_external_audiobook_prev_sentence',
+  ),
+  globalExternalAudiobookNextSentence(
+    ShortcutScope.globalExternal,
+    'global_external_audiobook_next_sentence',
+  ),
+  globalExternalAudiobookReplaySentence(
+    ShortcutScope.globalExternal,
+    'global_external_audiobook_replay_sentence',
+  ),
+
   // 查词弹窗「上/下一个词条」（用户请求，Yomitan 的 Next/Previous entry）：一次查询
   // 常返回多个词条（.entry），这两个动作把弹窗的词条级焦点（蓝三角 .entry-current）
   // 移到相邻词条并滚进视口。默认 Alt+滚轮下 / Alt+滚轮上，与 Yomitan 手感一致。
@@ -936,9 +975,13 @@ enum ShortcutAction {
     // `GlobalExternalLookupRoute`。开着它俩就是两条死通道：设置里能录、能保存、
     // 能回显，按下去什么都不发生。
     ShortcutAction.globalExternalOpenLookupPage ||
-    ShortcutAction.globalExternalScreenOcr => const <ShortcutChannel>{
-      ShortcutChannel.keyboard,
-    },
+    ShortcutAction.globalExternalScreenOcr ||
+    ShortcutAction.globalExternalFloatingLyricToggle ||
+    ShortcutAction.globalExternalAudiobookPlayPause ||
+    ShortcutAction.globalExternalAudiobookPrevSentence ||
+    ShortcutAction.globalExternalAudiobookNextSentence ||
+    ShortcutAction.globalExternalAudiobookReplaySentence =>
+      const <ShortcutChannel>{ShortcutChannel.keyboard},
     _ => scope.channels,
   };
 

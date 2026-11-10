@@ -15,7 +15,8 @@ mixin _LocalLibraryHostBooks on _LocalLibraryHostBase, _LocalLibraryHostShared {
       );
 
   /// host 当前书库清单（从 EpubBooks 表读）。
-  /// [RemoteBookInfo.hasContent] 为 true 当且仅当该书存在可导出的 EPUB 根目录。
+  /// [RemoteBookInfo.hasContent] 为 true 当且仅当该书存在可导出的 EPUB 根目录；
+  /// PDF 书的原件在盘上时标 [RemoteBookInfo.hasPdfContent]（反馈 Jq1_ujHa4t）。
   @override
   Future<List<RemoteBookInfo>> listBooks() async {
     // BUG-3441：分卷按系列归组以前只在书架页打开时跑——host 没开过书架（或是无头
@@ -104,6 +105,10 @@ mixin _LocalLibraryHostBooks on _LocalLibraryHostBase, _LocalLibraryHostShared {
         hasMangaContent:
             format == BookFormat.manga &&
             hasExportableMangaContent(r.extractDir),
+        // 反馈 Jq1_ujHa4t：PDF 此前在这里没有任何内容位（hasContent 是 EPUB 判据、
+        // 恒 false），对端书架按内容位过滤 → host 上的 PDF 在对端整本隐形，同步还报
+        // 「无新增」。PDF 原件在盘上即可下载（包 = 原件，见 pdf_sync_package.dart）。
+        hasPdfContent: hasExportablePdfContent(r),
         // BUG-2474：在线书架条目（Mihon / Aidoku）根目录只有占位 manga.json，
         // hasMangaContent 恒 false，但它按章下载的页图就在 <extractDir>/chapters/
         // 下——标 hasMangaChapters，对端以多章在线作品收下、逐章从这里拉。清单级
@@ -252,10 +257,25 @@ mixin _LocalLibraryHostBooks on _LocalLibraryHostBase, _LocalLibraryHostShared {
       }
       return out;
     }
+    // PDF（反馈 Jq1_ujHa4t）：包 = PDF 原件本身（导入时已原样拷进书目录，没有解压
+    // 树、无需重打包）。拷一份到临时目录交给端点——导出缓存会持有并在 TTL 后删除
+    // 返回的文件，不能把书目录里的原件直接交出去。扩展名用 `.pdf`，端点按扩展名给
+    // Content-Type；接收方按内容嗅探分流，不看扩展名。
+    if (format == BookFormat.pdf) {
+      if (!hasExportablePdfContent(row)) {
+        throw StateError('pdf book has no file on disk: $title');
+      }
+      final Directory tmpDir = await Directory.systemTemp.createTemp(
+        'fushi_book_export',
+      );
+      final File out = File(p.join(tmpDir.path, '${row.bookKey}.pdf'));
+      await File(pdfBookFilePath(row)).copy(out.path);
+      return out;
+    }
     if (format != BookFormat.epub ||
         isLnReaderOnlineBookMetadata(row.sourceMetadata) ||
         resolveExtractedEpubRoot(row.extractDir) == null) {
-      // PDF（无互联内容通道）/ EPUB 树缺失：与旧行为一致抛 StateError → 404。
+      // EPUB 树缺失：与旧行为一致抛 StateError → 404。
       throw StateError('book has no exportable EPUB root: $title');
     }
 
@@ -287,6 +307,31 @@ mixin _LocalLibraryHostBooks on _LocalLibraryHostBase, _LocalLibraryHostShared {
     String? displayTitle,
     int displayTitleAt = 0,
   }) async {
+    // 反馈 Jq1_ujHa4t：PDF 原件与 EPUB / 漫画包同端点推来，按内容嗅探分流（tmp 文件
+    // 名恒 `<URL 书名>.epub`，扩展名不可信）。标题 = URL 书名（去扩展名），host 端
+    // bookKey 由它派生，与 EPUB / 漫画包同口径。
+    if (await isPdfFile(epubFile)) {
+      final Future<String?> Function(File, String)? pdfImporter =
+          _importPdfBookFromFile;
+      if (pdfImporter == null) {
+        // 本 host 没有 PDF 引擎（无头服务端），能力位也没宣称——新 client 不会推；
+        // 旧 client 不推 PDF。走到这里只能是协议外的调用，如实拒绝。
+        throw UnsupportedError('this host cannot import PDF books');
+      }
+      String? pdfBookKey;
+      await _runExclusive(() async {
+        pdfBookKey = await pdfImporter(
+          epubFile,
+          p.basenameWithoutExtension(epubFile.path),
+        );
+      });
+      await _adoptPushedDisplayTitle(
+        bookKey: pdfBookKey,
+        displayTitle: displayTitle,
+        displayTitleAt: displayTitleAt,
+      );
+      return;
+    }
     final Future<String?> Function(File)? importer = _importBookFromFile;
     if (importer == null) {
       throw UnsupportedError(

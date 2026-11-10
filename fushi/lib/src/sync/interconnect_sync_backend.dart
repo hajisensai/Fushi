@@ -18,6 +18,8 @@ import 'package:fushi_engine/sync/video_metadata_manifest.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_engine/sync/interconnect_dav_tree_listing.dart';
+import 'package:fushi_engine/sync/pdf_sync_package.dart'
+    show interconnectHostAcceptsPdfBooks;
 import 'package:fushi_engine/sync/interconnect_service_config.dart';
 import 'package:fushi_engine/sync/interconnect_profile_transfer.dart';
 import 'package:fushi_engine/sync/host_update/host_update_protocol.dart';
@@ -720,6 +722,16 @@ class InterconnectSyncBackend extends SyncBackend
       debugPrint('$davLogTag snapshotListing failed, falling back: $e');
       return null;
     }
+  }
+
+  /// 对端 host 能否收下推来的 PDF 书（`liveLibrary.pdfBooks`，反馈 Jq1_ujHa4t）。
+  ///
+  /// 必须显式协商：老 host 会把 PDF 当 EPUB 导入、必然失败；无头服务端没有 PDF 引擎。
+  /// 能力每轮现问、不跨轮缓存（同一地址上的 host 可能被换成老版本 / 服务端）。
+  /// 老 host（无 capabilities 端点）= false；网络 / 鉴权失败照常抛给调用方记错误。
+  Future<bool> hostAcceptsPdfBooks() async {
+    await _ensureResolved();
+    return interconnectHostAcceptsPdfBooks(await _readHostCapabilities());
   }
 
   /// `GET /api/capabilities` 的解码结果；老 host（404 / 405）返回 null。网络 / 鉴权
@@ -1460,7 +1472,8 @@ class InterconnectSyncBackend extends SyncBackend
   Future<List<RemoteBookInfo>> listRemoteBooks() =>
       _listRemote('/api/library/books', RemoteBookInfo.fromJson);
 
-  /// 从对端 host 下载书名为 [title] 的 EPUB 到 [destination] 文件。
+  /// 从对端 host 下载书名为 [title] 的书包（EPUB / 漫画包 / PDF 原件，内容即真相）
+  /// 到 [destination] 文件。
   @override
   Future<void> getRemoteBook(
     String title,
