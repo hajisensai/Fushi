@@ -3,6 +3,7 @@ import 'dart:collection';
 import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
+import 'package:flutter/scheduler.dart' show SchedulerPhase;
 import 'package:fushi/src/focus/focus_geometry.dart';
 import 'package:fushi/src/focus/main_window_focus_gate.dart';
 import 'package:fushi/src/focus/fushi_focus_scroll.dart';
@@ -569,6 +570,22 @@ class FushiFocusController extends ChangeNotifier {
       _repairDeferredWhileBackgrounded = true;
       return;
     }
+    // 先让框架把已排队的焦点请求落地，再判断主焦点（BUG-4273）。
+    //
+    // 框架的焦点变更（含 autofocus）不是即时生效的：`requestFocus` /
+    // `FocusScopeNode.autofocus` 只记账，由 [FocusManager] 排的微任务统一应用；
+    // 而 autofocus 只在其 scope 的 `focusedChild` 仍为空时才生效。EditableText
+    // 的 autofocus 还要再晚一步，在帧后回调里才排队。被动修复若赶在这之前跑，
+    // 看到的 primaryFocus 仍是下层路由刚失去「当前」身份的按钮 → 判不可用 →
+    // 替新路由选了阅读顺序第一个目标并写进 scope 的 focusedChild → 新路由显式
+    // 声明的 autofocus 被框架当成「scope 已有焦点」丢弃。真机：键盘回车打开改名
+    // 对话框，焦点落在输入框的屏幕键盘按钮上，必须先按 Tab 才能打字。
+    // 显式焦点请求永远优先于被动修复：被动修复只修「应用完所有挂起请求之后」
+    // 仍然无主的焦点。构建期不能调（框架断言），那时也不会走到这里。
+    if (WidgetsBinding.instance.schedulerPhase !=
+        SchedulerPhase.persistentCallbacks) {
+      FocusManager.instance.applyFocusChangesIfNeeded();
+    }
     final FocusNode? primary = FocusManager.instance.primaryFocus;
     if (_isUsablePrimary(primary)) {
       _handleFocusChange();
@@ -650,7 +667,10 @@ class FushiFocusController extends ChangeNotifier {
     _repairScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _repairScheduled = false;
-      ensureFocus();
+      // 不在帧后回调里同步修复：同一帧后续的帧后回调可能还要排焦点请求
+      // （EditableText 的 autofocus 就在这里排队）。挪到微任务里，等本帧所有
+      // 帧后回调跑完，[ensureFocus] 开头再把挂起请求一并应用后才判断（BUG-4273）。
+      scheduleRepairBeforeNextFrame();
     });
   }
 

@@ -71,7 +71,7 @@ void main() {
     expect(probe.hasFocus, isTrue);
   });
 
-  testWidgets('关门会让出既有焦点，开门后由焦点控制器补回内容焦点', (WidgetTester tester) async {
+  testWidgets('关门会让出既有焦点，开门后还给关门前的持有者', (WidgetTester tester) async {
     final FocusNode probe = FocusNode(debugLabel: 'probe');
     addTearDown(probe.dispose);
     await tester.pumpWidget(_app(probe));
@@ -93,13 +93,38 @@ void main() {
     mainWindowForegroundNotifier.value = true;
     await tester.pumpAndSettle();
 
-    final FushiFocusController controller = FushiFocusRoot.controllerOf(
-      tester.element(find.text('Row 0')),
-    );
-    // 断言**真实焦点归属**：activeId 只是缓存 id，关门不会清它，拿它断言恒真
-    // （实测：把两条补票路径全删掉这条用例照样绿）。
+    // 断言**真实焦点归属**。开门同一帧里闸门显式把焦点还给关门前的持有者，
+    // 焦点控制器也补排了一次被动修复；显式请求必须赢（BUG-4273）。旧断言要求
+    // 落在受管目标上，只是因为被动修复曾在框架应用闸门的 requestFocus 之前
+    // 抢先判「无主」、覆盖了它——那正是 BUG-4273 的竞态，不是设计。
     expect(
-      controller.primaryFocusIsManagedTarget,
+      probe.hasFocus,
+      isTrue,
+      reason:
+          '开门后焦点必须回到关门前的持有者，否则用户切回主窗整页没有焦点、'
+          '键盘 / 手柄快捷键全不响应（TODO-900 的老症状），或被换到别的控件上',
+    );
+  });
+
+  testWidgets('开门时原持有者已不可聚焦：由焦点控制器补回内容焦点', (WidgetTester tester) async {
+    final FocusNode probe = FocusNode(debugLabel: 'probe');
+    addTearDown(probe.dispose);
+    await tester.pumpWidget(_app(probe));
+    await tester.pumpAndSettle();
+
+    probe.requestFocus();
+    await tester.pumpAndSettle();
+
+    mainWindowForegroundNotifier.value = false;
+    await tester.pumpAndSettle();
+    // 关门期间原持有者变得不可聚焦（控件被禁用 / 拆掉），闸门的归还落空。
+    probe.canRequestFocus = false;
+
+    mainWindowForegroundNotifier.value = true;
+    await tester.pumpAndSettle();
+
+    expect(
+      controllerOf(tester).primaryFocusIsManagedTarget,
       isTrue,
       reason:
           '开门后必须补一次焦点修复，否则用户切回主窗整页没有焦点、'

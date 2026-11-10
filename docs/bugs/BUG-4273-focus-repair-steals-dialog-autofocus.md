@@ -1,0 +1,11 @@
+## BUG-4273 · 键盘回车打开改名对话框，焦点落在输入框的屏幕键盘按钮而非输入框
+- **报告**：2026-11-09（Windows 集成探针 `fushi/integration_test/server_dictionaries_probe_test.dart` 改名步骤两次复现，run win-itest-20261109-201316-7340354e：回车前焦点在 `dict-detail-rename-server` 按钮，下一帧起焦点一次性跳到对话框里的 `fushi-icon-button-<hash>`，2 s 后输入框仍未获焦）
+- **真实性**：✅ 真 bug，根因在被动焦点修复与框架挂起焦点请求的时序：
+  - `fushi/lib/src/focus/fushi_focus_controller.dart:648`（旧 `scheduleRepair`）在**帧后回调里同步**调 `ensureFocus()`；`:571`（旧 `ensureFocus`）直接读 `primaryFocus` 判可用性。
+  - 推对话框那一帧，下层页面里依赖 `ModalRoute` 的子树因 `isCurrent` 变化重建 → 其中 `FushiFocusTarget.didUpdateWidget` 重新 register → `scheduleRepair()` 排一条帧后回调。按构建顺序它排在 `EditableText.autofocus`（Flutter 把 EditableText 的 autofocus 推迟到帧后回调里才调 `FocusScope.autofocus`，见 SDK `editable_text.dart:3366`）与对话框里 `FushiIconButton` 锚点登记之后，但在 `FocusManager.applyFocusChangesIfNeeded` 微任务之前。
+  - 此刻 `primaryFocus` 仍是下层已非当前路由的改名按钮 → `_isUsablePrimary` 判否 → 替对话框选阅读顺序第一个登记目标（输入框后缀的屏幕键盘按钮，`fushi_material_components.dart` `_fushiTextFieldInputSuffix`）并 `requestFocus`，同步写进对话框 scope 的 `focusedChild`；随后框架应用 autofocus 时 `_Autofocus.applyIfValid` 要求 `scope.focusedChild == null`（SDK `focus_manager.dart:170`），输入框的 autofocus 被丢弃。只有一次焦点变化，与真机轨迹一致。
+  - 纯 widget 测试此前没复现，是因为夹具里没有「推路由当帧会重建的下层受管目标」；只有对话框目标自身的锚点登记走 `scheduleRepairBeforeNextFrame` 微任务，排在框架应用微任务之后，autofocus 先赢。
+- **[x] ① 已修复** — 显式焦点请求永远优先于被动修复：`ensureFocus()` 开头先 `FocusManager.instance.applyFocusChangesIfNeeded()`（构建期除外），在框架应用完所有挂起请求（含 autofocus）之后才判断主焦点是否无主；`scheduleRepair()` 的帧后回调不再同步修复，改走 `scheduleRepairBeforeNextFrame()` 微任务，保证本帧所有帧后回调（EditableText 排 autofocus 的那条）都跑完再判。不针对任何对话框做特例。
+- **[x] ② 已加自动化测试** — `fushi/test/focus/dialog_autofocus_beats_repair_test.dart`：真 `showNameInputDialog` + `FushiFocusRoot` 在 Navigator 之上 + Windows 平台 + 下层依赖 `ModalRoute` 的受管目标，键盘回车打开，断言主焦点是输入框的 EditableText 节点；另一用例锁住「新路由无 autofocus 时被动修复照常落到登记目标」。红→绿：去掉修复后第一条用例失败，实际焦点 `fushi-icon-button-<hash>`（与真机轨迹同一目标）。
+- **连带守卫调整**：`fushi/test/focus/main_window_focus_gate_test.dart` 旧用例断言「开门后焦点落在受管目标」，其绿全靠同一竞态（被动修复抢在框架应用闸门的显式 `requestFocus(关门前持有者)` 之前判无主并覆盖）；改为断言焦点还给关门前持有者（闸门设计本意），另加「原持有者已不可聚焦时由控制器补回受管目标」用例保住补票路径。
+- **备注**：真机复测（集成探针改名步骤）待补。
