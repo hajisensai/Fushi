@@ -2,7 +2,7 @@
 /// 模型跑不跑得动，跑不动就抛 [AsrInsufficientMemoryException]（带可读原因与能跑
 /// 的更小模型），而不是开跑后被系统 lowmemorykiller 杀掉整个 app。
 ///
-/// **为什么要有这一层**（反馈 jbTZ4GIEyU，BUG-4367）：ZTE A103ZT（约 4 GB 内存，
+/// **为什么要有这一层**（反馈 jbTZ4GIEyU，BUG-4372）：ZTE A103ZT（约 4 GB 内存，
 /// Android 12）后台转录一本 m4b，进程 malloc 30 秒内从 77 MB 涨到 1390 MB、RSS
 /// 从 540 MB 涨到 1.6 GB，前台被系统按低内存杀掉，连续两次。转录链路
 /// （`AsrTranscriptionService.start` → 后台 isolate 建 ORT 会话 + fbank + 批量

@@ -89,7 +89,7 @@ class AppAudiobookTranscriber implements AudiobookTranscriber {
       preference: _preference,
     );
     if (!plan.modelReady) {
-      // 内存门槛先于下载判（BUG-4367）：这台机器跑不动这个模型时，自动转录
+      // 内存门槛先于下载判（BUG-4372）：这台机器跑不动这个模型时，自动转录
       // 不该先白下几百 MB 再在 start 被拦——直接以同一句说明失败。
       if (service is MemoryGatedAsrTranscriptionService) {
         service.ensureMemoryFor(language, plan.variant);

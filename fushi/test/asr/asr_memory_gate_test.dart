@@ -1,4 +1,4 @@
-// BUG-4367 / 反馈 jbTZ4GIEyU：Android 低内存机跑设备端 ASR 被系统按低内存杀掉。
+// BUG-4372 / 反馈 jbTZ4GIEyU：Android 低内存机跑设备端 ASR 被系统按低内存杀掉。
 // 守的是「开跑前按设备可用内存判门槛，跑不动就抛带原因与更小模型建议的异常，
 // 且在碰模型目录 / 起 isolate 之前就拦下」。
 import 'package:flutter_test/flutter_test.dart';

@@ -33,23 +33,15 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3912 条。点号进各自文件。
+> 共 3916 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4367](bugs/BUG-4367-android-asr-memory-gate.md) | ✅ | ✅ | Android 低内存机跑 ASR 被系统杀（无内存门槛） |
-> 共 3909 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-4368](bugs/BUG-4368-reader-tap-lookup-off-swallows-taps.md) | ✅ | ✅ | 关闭单击查词后单击正文被吞（悬浮栏唤不出、VN 不前进、弹窗外点词照查） |
-> 共 3914 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-4372](bugs/BUG-4372-android-asr-memory-gate.md) | ✅ | ✅ | Android 低内存机跑 ASR 被系统杀（无内存门槛） |
 | [BUG-4371](bugs/BUG-4371-video-mine-popup-blocks-playback.md) | ✅ | ✅ | 视频查词弹窗点制卡后弹窗不关、视频停着等制卡完成 |
 | [BUG-4370](bugs/BUG-4370-coloros-ostop-exit-misreport.md) | ✅ | ✅ | ColorOS / OnePlus 的 o-stop 停应用被误报为闪退 |
 | [BUG-4369](bugs/BUG-4369-lyrics-illustration-seen-dot.md) | ✅ | ✅ | 歌词模式插图缩略图的新插图红点看过也不消失 |
+| [BUG-4368](bugs/BUG-4368-reader-tap-lookup-off-swallows-taps.md) | ✅ | ✅ | 关闭单击查词后单击正文被吞（悬浮栏唤不出、VN 不前进、弹窗外点词照查） |
 | [BUG-4367](bugs/BUG-4367-windows-screen-ocr-forensics-and-word-hit.md) | ✅ | ✅ | Windows 应用外截屏识字「基本识别不出或错位」：点字按整行等分错位 + 无几何取证 |
 | [BUG-4366](bugs/BUG-4366-srs-fushi-card-native-fallback-frozen-template.md) | ✅ | ✅ | Fushi 卡片冻住的旧版内置模板让复习卡静默回退整面 WebView |
 | [BUG-4365](bugs/BUG-4365-srs-autopush-skips-cloud-channel.md) | ✅ | ✅ | 答卡后的去抖推送不覆盖云盘通道，背完卡云盘不自动同步 |
@@ -74,7 +66,6 @@
 | [BUG-4346](bugs/BUG-4346-srs-card-synthetic-bold.md) | ✅ | ✅ | 复习卡词头 / 加粗段在单字重用户字体上被合成假粗体糊字 |
 | [BUG-4345](bugs/BUG-4345-pdf-audiobook-wrong-reader.md) | ✅ | ✅ | PDF 书挂上有声书后打开一片空白（SRT 卡写死 EPUB 阅读器 + PDF 卡露出「导入有声书」） |
 | [BUG-4339](bugs/BUG-4339-windows-video-output-teardown-order.md) | ✅ | ✅ | Windows 视频输出拆除顺序错：mpv 渲染上下文在 GL 上下文/共享显示销毁之后、且晚于 Dispose 回复才释放，卡面视频反复开关内存上涨后 libmpv abort / ANGLE AV |
-| [BUG-4339](bugs/BUG-4339-lyrics-illustration-seen-dot.md) | ✅ | ✅ | 歌词模式插图缩略图的新插图红点看过也不消失 |
 | [BUG-4338](bugs/BUG-4338-discovery-search-irrelevant-results.md) | ✅ | ✅ | 游戏发现页搜索结果混入大量无关条目（真红小站模糊搜索透传） |
 | [BUG-4337](bugs/BUG-4337-online-manga-sync-chapters-json-crash.md) | ✅ | ✅ | 在线（扩展源）漫画同步恒失败：按字符表解析在线漫画的章节清单抛 TypeError，且对比弹窗失败原因不可见 |
 | [BUG-4336](bugs/BUG-4336-md3-floating-bar-stranded-on-lookup.md) | ✅ | ✅ | MD3 悬浮底栏在查词页收起后回不来，用户离不开查词页 |
