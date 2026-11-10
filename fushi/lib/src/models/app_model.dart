@@ -4137,11 +4137,10 @@ class AppModel
     if (_dictionaryRepoReady) await dictRepo.reloadRemoteDictionaries();
   }
 
-  /// 每台 host 本次运行里最近一次拉目录的结果（来源卡片的在线 / 连不上）。
+  /// 每台 host 本次运行里最近一次互联往返的结局（来源卡片的在线 / 连不上）。与查词
+  /// 路径同一份（[_remoteDictionaryReachability]，BUG-4275）。
   Map<String, RemoteDictionaryHostReachability>
-  get remoteDictionaryHostReachability =>
-      _remoteDictionaryCatalog?.hostReachability ??
-      const <String, RemoteDictionaryHostReachability>{};
+  get remoteDictionaryHostReachability => _remoteDictionaryReachability.hosts;
 
   /// 有没有服务器词典目录服务（主进程才有；弹窗进程没有，来源卡片不给刷新钮）。
   bool get canRefreshRemoteDictionaries => _remoteDictionaryCatalog != null;
@@ -9332,10 +9331,15 @@ class AppModel
     try {
       await clearDictionaryHistory();
 
+      final List<String> deletedNames = <String>[
+        for (final Dictionary d in dictRepo.dictionaries) d.name,
+      ];
       // Commit the deletion before publishing an empty dictionary set and
       // rebuilding the engine. This must precede directory removal so native
       // mmap views are released first (BUG-171 / BUG-1756).
       await dictRepo.clearDictionaryMetadata();
+      // 同 [deleteDictionary]：被删的本机词典遮住的、host 上已没有的目录行一并忘掉。
+      await dictRepo.forgetMissingRemoteDictionariesNamed(deletedNames);
 
       // 逐个条目删而不是删掉资源根本身：隔离区（删不掉时的落脚点）建在被删目录的
       // 父级，只有这样它才落在资源根下、被启动清理扫到。根目录保留，省掉 recreate。
@@ -9386,6 +9390,12 @@ class AppModel
       // ERROR_USER_MAPPED_FILE → catch 弹「删除失败」，而 cache 移除与引擎重载
       // 全在抛出点之后、永不执行。用户看到的就是「提示删除失败，重启后词典却没了」。
       await dictRepo.deleteDictionaryMeta(dictionary.name);
+      // 本机那本遮住的、host 上也已经没有的同名目录行一并忘掉：否则删完冒出一条
+      // 开着开关、只能「忘掉」的「服务器上已没有」残行。host 上还在的行留着（这本
+      // 词典就此只在服务器上）。
+      await dictRepo.forgetMissingRemoteDictionariesNamed(<String>[
+        dictionary.name,
+      ]);
 
       await deleteDictionaryDirectory(
         Directory(path.join(dictionaryResourceDirectory.path, dictionary.name)),
@@ -9516,7 +9526,12 @@ class AppModel
     }
 
     final int effectiveMaxTerms = overrideMaximumTerms ?? maximumTerms;
-    final bool tryRemoteFirst = allowRemoteLookup && remoteLookupEnabled;
+    // 全部查词 host 都已判为不可达（BUG-4275）：远端这一路根本不发起，本机结果不等它。
+    // 恢复由后台探测 / 目录刷新发现，下一次查词立刻重新并发远端。
+    final bool tryRemoteFirst =
+        allowRemoteLookup &&
+        remoteLookupEnabled &&
+        !_remoteDictionaryLookupKnownDead;
     // 远端（已配对电脑 / 服务器）与本地**并发**发起，两边都有结果时**合并**成一份
     // （用户 2026-11-09 拍板，[mergeDictionarySearchResults]）：以前远端一给结果就只用
     // 远端，本机装的词典（Jitendex、频率词典…）随之从弹窗里消失。以前是先等远端（最坏
@@ -9703,16 +9718,27 @@ class AppModel
   static String _requesterFiltersNamespace(DictionaryLookupFilters? filters) =>
       filters == null ? '' : 'xrequester:${filters.fingerprint}|';
 
-  /// 远端词典「全部配对候选不可达」后的冷却截止时刻（BUG-1302）；null = 不在冷却中。
-  /// 只被 [_searchRemoteDictionary] 读写，单 isolate 内无并发写。
-  DateTime? _remoteDictionaryUnreachableUntil;
+  /// 词典服务器可达性的唯一真相源（BUG-4275）：查词客户端按它跳过判死的 host、把
+  /// 每次往返的结局写回去；目录服务（[_remoteDictionaryCatalog]）拉清单的结局也写进
+  /// 同一份，并挂上后台再探测。弹窗进程没有目录服务，退回「间隔内跳过、过了间隔由
+  /// 查词顺带重试」的口径（BUG-1302）。
+  final RemoteDictionaryReachability _remoteDictionaryReachability =
+      RemoteDictionaryReachability();
 
-  /// 测试可见：当前是否处于远端词典失败冷却窗内。
+  /// 开着查词的 host 全部判为不可达：远端这一路已知是死的。
+  bool get _remoteDictionaryLookupKnownDead =>
+      _dictionaryRepoReady &&
+      _remoteDictionaryReachability.allSkipped(dictRepo.remoteLookupHostIds);
+
+  /// 测试可见：查词此刻是否因可达性追踪而整路跳过远端。
   @visibleForTesting
-  bool get isRemoteDictionaryInFailureCooldown {
-    final DateTime? until = _remoteDictionaryUnreachableUntil;
-    return until != null && DateTime.now().isBefore(until);
-  }
+  bool get isRemoteDictionaryInFailureCooldown =>
+      _remoteDictionaryLookupKnownDead;
+
+  /// 测试可见：与目录服务共用的可达性追踪（测试拿它构造目录服务，验证两边同一份）。
+  @visibleForTesting
+  RemoteDictionaryReachability get remoteDictionaryReachabilityForTesting =>
+      _remoteDictionaryReachability;
 
   /// 远端查词客户端：跨查词复用同一个实例，host 词典样式按 `stylesRevision` 指纹
   /// 只整表下发一次（BUG-3612，复用 BUG-3425 的门控）。每次查词新建实例的话指纹
@@ -9736,6 +9762,8 @@ class AppModel
       repo: SyncRepository(_database),
       httpClient: _remoteLookupClient,
       trackDictionaryStyles: true,
+      skipDictionaryHost: _remoteDictionaryReachability.shouldSkip,
+      onDictionaryHostOutcomes: _remoteDictionaryReachability.record,
     );
   }
 
@@ -9770,6 +9798,7 @@ class AppModel
             httpClient: _remoteLookupClient,
           ),
           dictionaries: dictRepo,
+          reachability: _remoteDictionaryReachability,
         )..start();
     _remoteDictionaryCatalog = catalog;
     _remoteDictionaryCatalogLifecycle ??= AppLifecycleListener(
@@ -9806,14 +9835,10 @@ class AppModel
     ProfileSettingsView? profileView,
   }) async {
     if (!remoteLookupEnabled) return null;
-    // 配对设备被证实不可达后的冷却窗内直接短路（BUG-1302）。远端查词排在本地
-    // 缓存**之前**，不短路的话设备离线/换网/休眠时每次查词都要重付一遍
-    // 「3s × 候选数」的传输层超时——这是「某些机器上查词 4-5 秒」的主因。
-    final DateTime? until = _remoteDictionaryUnreachableUntil;
-    if (until != null) {
-      if (DateTime.now().isBefore(until)) return null;
-      _remoteDictionaryUnreachableUntil = null;
-    }
+    // 全部查词 host 都已判为不可达时直接短路（BUG-1302 / BUG-4275）：不短路的话设备
+    // 离线/换网/休眠时每次查词都要重付一遍「3s × 候选数」的传输层超时。只有部分 host
+    // 判死时由客户端逐 host 跳过（[RemoteDictionaryReachability.shouldSkip]）。
+    if (_remoteDictionaryLookupKnownDead) return null;
     try {
       // await 必须收进 try：原实现直接 return 未 await 的 Future，catch 只能抓
       // 同步 throw，异步错误全部漏出成 uncaught（音频路径 lookupRemoteAudio 已
@@ -9844,13 +9869,10 @@ class AppModel
                   : dictRepo.filtersForHost(hostId);
             },
           );
-      // 拿到任何 HTTP 响应即证明设备活着（含「可达但无结果」的 null），清冷却。
-      _remoteDictionaryUnreachableUntil = null;
+      // 每台 host 的可达 / 不可达已由客户端逐候选记进 [_remoteDictionaryReachability]。
       return result;
     } on RemoteLookupUnreachableError catch (e, stack) {
-      _remoteDictionaryUnreachableUntil = DateTime.now().add(
-        kRemoteDictionaryFailureCooldown,
-      );
+      // 首次发现全部不可达（之后的查词直接跳过，见上）。
       ErrorLogService.instance.log('remoteDictionaryLookup', e, stack);
       return null;
     } catch (e, stack) {

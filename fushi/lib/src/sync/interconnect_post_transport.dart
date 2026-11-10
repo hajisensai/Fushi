@@ -113,6 +113,9 @@ class InterconnectPostTransport {
   /// [bodyFor] 按候选改写请求体（制卡带每台主机各自的「保存到」，§4.8）；返回 null 用 [body]。
   /// [candidateFilter] 在「已启用」之外再筛一道候选（远端词典查词只发给开着
   /// [FushiClientUrl.lookupEnabled] 的 host）。null = 不筛，与升级前逐字一致。
+  /// [onCandidateOutcome] 观察每个真正发出请求的候选的传输层结局（true = 拿到了任何
+  /// HTTP 响应，false = 连接拒绝 / 超时 / DNS），不改变选路语义——词典服务器可达性
+  /// 追踪（BUG-4275）按它逐 host 记账。
   Future<InterconnectPostOutcome> post({
     required String path,
     required Map<String, dynamic> body,
@@ -123,6 +126,7 @@ class InterconnectPostTransport {
     bool Function(FushiClientUrl candidate)? candidateFilter,
     void Function(int statusCode, Map<String, dynamic>? json)?
     onRejectedResponse,
+    InterconnectCandidateOutcome? onCandidateOutcome,
   }) async {
     final _InterconnectExchange exchange = await _exchange(
       path: path,
@@ -131,6 +135,7 @@ class InterconnectPostTransport {
       onlyCandidate: onlyCandidate,
       candidateFilter: candidateFilter,
       onRejectedResponse: onRejectedResponse,
+      onCandidateOutcome: onCandidateOutcome,
       acceptsJson: (Object? decoded) => decoded is Map<String, dynamic>,
       send:
           (
@@ -164,12 +169,14 @@ class InterconnectPostTransport {
     required Duration timeout,
     required String authErrorMessage,
     bool Function(FushiClientUrl candidate)? candidateFilter,
+    InterconnectCandidateOutcome? onCandidateOutcome,
   }) async {
     final _InterconnectExchange exchange = await _exchange(
       path: path,
       timeout: timeout,
       authErrorMessage: authErrorMessage,
       candidateFilter: candidateFilter,
+      onCandidateOutcome: onCandidateOutcome,
       acceptsJson: (Object? decoded) => decoded != null,
       send:
           (
@@ -204,6 +211,7 @@ class InterconnectPostTransport {
     bool Function(FushiClientUrl candidate)? candidateFilter,
     void Function(int statusCode, Map<String, dynamic>? json)?
     onRejectedResponse,
+    InterconnectCandidateOutcome? onCandidateOutcome,
   }) async {
     List<FushiClientUrl> candidates = (await _repo.getFushiClientUrls())
         .where(
@@ -273,6 +281,7 @@ class InterconnectPostTransport {
         // 拿到任何 HTTP 响应（含 401/404/405/非 2xx/坏 JSON 体）都算「可达」；
         // 传输层失败（连接拒绝/超时/DNS）根本走不到这一行，落在 catch 里。
         anyResponse = true;
+        onCandidateOutcome?.call(candidate, true);
         if (response.statusCode == 401) {
           // BUG-2377：这条通道的凭据只可能是配对 token（地址行自带的 per-peer
           // token，或全局回落键）——本文件从头到尾只服务互联。语义写死成
@@ -303,8 +312,10 @@ class InterconnectPostTransport {
         onRejectedResponse?.call(response.statusCode, null);
       } on TimeoutException {
         anyTimedOut = true;
+        onCandidateOutcome?.call(candidate, false);
         continue;
       } catch (_) {
+        onCandidateOutcome?.call(candidate, false);
         continue;
       } finally {
         // 每候选独立 pinned client 用完即关，所有出口（return/continue/throw）统一
@@ -454,6 +465,11 @@ Object? _responseJson(http.Response response) {
     return null;
   }
 }
+
+/// [InterconnectPostTransport.post] / [InterconnectPostTransport.getJson] 的
+/// `onCandidateOutcome`：[responded] = 这个候选拿到了任何 HTTP 响应。
+typedef InterconnectCandidateOutcome =
+    void Function(FushiClientUrl candidate, bool responded);
 
 /// [InterconnectPostTransport.post] 的结局：`json` 为拿到并解析成功的响应体；
 /// `allUnreachable` 的语义见 [InterconnectPostTransport.post] 的文档。

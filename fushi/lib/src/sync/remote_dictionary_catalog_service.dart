@@ -1,15 +1,20 @@
 import 'dart:async';
+import 'dart:convert' show jsonDecode;
 
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter/foundation.dart';
 import 'package:fushi/src/models/dictionary_repository.dart';
 import 'package:fushi/src/sync/interconnect_post_transport.dart';
+import 'package:fushi/src/sync/remote_dictionary_reachability.dart';
 import 'package:fushi/src/sync/sync_backend.dart' show SyncAuthError;
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show RemoteDictionaryInfo;
+
+export 'package:fushi/src/sync/remote_dictionary_reachability.dart'
+    show RemoteDictionaryHostReachability, RemoteDictionaryReachability;
 
 /// 已配对 host 上托管的词典清单端点（`fushi_library_host_service` 的 `listDictionaries`）。
 const String kRemoteDictionaryCatalogPath = '/api/library/dictionaries';
@@ -53,37 +58,29 @@ class RemoteDictionaryCatalogDiff {
 ///
 /// 写库后经 [catalogRevision] 广播；本实例收到后让 [DictionaryRepository] 重读，
 /// 跨实例写入（同步编排）也走这一条，不靠每个写入点记得通知。
-/// 一台 host 在本进程里最近一次拉目录的结果（词典管理页的来源卡片显示「在线 /
-/// 自某时起连不上」）。只记本次运行看到的：重启后为空，界面退回目录行的
-/// `lastSeenAt`（「最近在线」）。
-@immutable
-class RemoteDictionaryHostReachability {
-  const RemoteDictionaryHostReachability({this.lastOkAt, this.failingSince});
-
-  /// 最近一次成功拉到清单的时刻（ms）。
-  final int? lastOkAt;
-
-  /// 自这一刻起连续拉不到清单（ms）；null = 最近一次是成功的（或还没试过）。
-  final int? failingSince;
-
-  bool get reachable => failingSince == null && lastOkAt != null;
-}
-
+///
+/// 每次拉清单的按 host 传输层结局写进共享的 [RemoteDictionaryReachability]
+/// （BUG-4275：查词路径读的是同一份），并挂上它的后台探测（[probeHost]）：host 判死
+/// 之后按再探测间隔轻量拉一次清单，拉通了查词立刻恢复。
 class RemoteDictionaryCatalogService {
   RemoteDictionaryCatalogService({
     required FushiDatabase db,
     required SyncRepository syncRepository,
     required InterconnectPostTransport transport,
     DictionaryRepository? dictionaries,
+    RemoteDictionaryReachability? reachability,
     DateTime Function() now = DateTime.now,
     Duration timeout = const Duration(seconds: 10),
+    Duration probeTimeout = const Duration(seconds: 3),
     Duration resumeRefreshInterval = const Duration(minutes: 10),
   }) : _db = db,
        _syncRepository = syncRepository,
        _transport = transport,
        _dictionaries = dictionaries,
+       _reachability = reachability ?? RemoteDictionaryReachability(now: now),
        _now = now,
        _timeout = timeout,
+       _probeTimeout = probeTimeout,
        _resumeRefreshInterval = resumeRefreshInterval;
 
   final FushiDatabase _db;
@@ -92,7 +89,14 @@ class RemoteDictionaryCatalogService {
   final DictionaryRepository? _dictionaries;
   final DateTime Function() _now;
   final Duration _timeout;
+
+  /// 后台再探测（[probeHost]）的往返预算：它只回答「host 回来了没有」，不在任何人的
+  /// 关键路径上，但也不该把刷新串行链占上 10s × 地址数。
+  final Duration _probeTimeout;
   final Duration _resumeRefreshInterval;
+
+  /// 词典服务器可达性的唯一真相源（与查词路径共用，BUG-4275）。
+  final RemoteDictionaryReachability _reachability;
 
   /// 目录表的进程内「已变更」广播（[reconcileHost] 每次真正改了行就 +1）。
   static final ValueNotifier<int> catalogRevision = ValueNotifier<int>(0);
@@ -100,28 +104,17 @@ class RemoteDictionaryCatalogService {
   /// 每台 host 上次成功拉到清单的时刻（[refreshOnResume] 节流用）。
   final Map<String, DateTime> _lastFetched = <String, DateTime>{};
 
-  /// 每台 host 最近一次拉目录的结果（见 [hostReachability]）。
-  final Map<String, RemoteDictionaryHostReachability> _reachability =
-      <String, RemoteDictionaryHostReachability>{};
-
   /// [hostReachability] 变了就 +1（词典管理页据此重建来源卡片）。
-  static final ValueNotifier<int> reachabilityRevision = ValueNotifier<int>(0);
+  static ValueNotifier<int> get reachabilityRevision =>
+      RemoteDictionaryReachability.revision;
 
-  /// 每台 host（[remoteDictionaryHostIdOf] 口径）本次运行里最近一次拉目录的结果。
+  /// 每台 host（[remoteDictionaryHostIdOf] 口径）本次运行里最近一次互联往返的结局
+  /// （拉目录、查词、后台探测都算）。
   Map<String, RemoteDictionaryHostReachability> get hostReachability =>
-      Map<String, RemoteDictionaryHostReachability>.unmodifiable(_reachability);
+      _reachability.hosts;
 
-  void _noteReachability(String hostId, {required bool ok}) {
-    final int now = _now().millisecondsSinceEpoch;
-    final RemoteDictionaryHostReachability? previous = _reachability[hostId];
-    _reachability[hostId] = ok
-        ? RemoteDictionaryHostReachability(lastOkAt: now)
-        : RemoteDictionaryHostReachability(
-            lastOkAt: previous?.lastOkAt,
-            failingSince: previous?.failingSince ?? now,
-          );
-    reachabilityRevision.value++;
-  }
+  /// 与查词路径共用的可达性追踪。
+  RemoteDictionaryReachability get reachability => _reachability;
 
   /// [start] 之后看见过的查词 host；配对列表变化时与它比出「新来的」。
   Set<String>? _knownLookupHosts;
@@ -137,6 +130,7 @@ class RemoteDictionaryCatalogService {
     _started = true;
     SyncRepository.fushiClientUrlsRevision.addListener(_onClientUrlsChanged);
     catalogRevision.addListener(_onCatalogChanged);
+    _reachability.probe = probeHost;
     _detached(_serial(_syncLookupHosts));
   }
 
@@ -145,7 +139,13 @@ class RemoteDictionaryCatalogService {
     _started = false;
     SyncRepository.fushiClientUrlsRevision.removeListener(_onClientUrlsChanged);
     catalogRevision.removeListener(_onCatalogChanged);
+    if (_reachability.probe == probeHost) _reachability.probe = null;
   }
+
+  /// 后台再探测一台判死的 host（[RemoteDictionaryReachability] 按间隔调）：用短预算拉
+  /// 一次清单，结局照常记进可达性追踪；拉通了顺带对账（host 回来时目录本来就该刷）。
+  Future<void> probeHost(String hostId) =>
+      _serial(() => _refreshHostNow(hostId, timeout: _probeTimeout));
 
   void _onClientUrlsChanged() => _detached(_serial(_syncLookupHosts));
 
@@ -160,15 +160,21 @@ class RemoteDictionaryCatalogService {
   }
 
   /// 配对列表变了：先让词典仓库按新的查词 host 集合重算（关掉 / 解除配对的 host
-  /// 立刻退出查词过滤），再给新出现的 host 拉一次目录。
+  /// 立刻退出查词过滤），再给新出现的 host 拉一次目录；已知判死的 host 立刻再探一次
+  /// （地址可能刚学到 / 刚改过），不等后台间隔。
   Future<void> _syncLookupHosts() async {
     final Set<String> hosts = await _lookupHostIds();
     final Set<String>? known = _knownLookupHosts;
     _knownLookupHosts = hosts;
+    _reachability.retainHosts(hosts);
     await _dictionaries?.reloadRemoteDictionaries();
     if (known == null) return;
-    for (final String hostId in hosts.difference(known)) {
-      await _refreshHostNow(hostId);
+    for (final String hostId in hosts) {
+      if (!known.contains(hostId)) {
+        await _refreshHostNow(hostId);
+      } else if (_reachability.isUnreachable(hostId)) {
+        await _refreshHostNow(hostId, timeout: _probeTimeout);
+      }
     }
   }
 
@@ -177,7 +183,8 @@ class RemoteDictionaryCatalogService {
   Future<Map<String, RemoteDictionaryCatalogDiff>> refresh() =>
       _serial(() => _refreshAll(force: true));
 
-  /// App 回到前台：刷新距上次成功拉取超过节流间隔的 host。
+  /// App 回到前台：刷新距上次成功拉取超过节流间隔的 host；判死的 host 不受节流，
+  /// 回前台立刻再探（BUG-4275）。
   Future<Map<String, RemoteDictionaryCatalogDiff>> refreshOnResume() =>
       _serial(() => _refreshAll(force: false));
 
@@ -193,12 +200,17 @@ class RemoteDictionaryCatalogService {
     final DateTime now = _now();
     for (final String hostId in await _lookupHostIds()) {
       final DateTime? last = _lastFetched[hostId];
+      final bool unreachable = _reachability.isUnreachable(hostId);
       if (!force &&
+          !unreachable &&
           last != null &&
           now.difference(last) < _resumeRefreshInterval) {
         continue;
       }
-      final RemoteDictionaryCatalogDiff? diff = await _refreshHostNow(hostId);
+      final RemoteDictionaryCatalogDiff? diff = await _refreshHostNow(
+        hostId,
+        timeout: !force && unreachable ? _probeTimeout : null,
+      );
       if (diff != null) out[hostId] = diff;
     }
     return out;
@@ -210,15 +222,14 @@ class RemoteDictionaryCatalogService {
 
   /// 拉 [hostId] 的清单并对账；拉不到（不可达 / 老 host / 凭据被拒 / 回包畸形）返回
   /// null 且不改任何行。
-  Future<RemoteDictionaryCatalogDiff?> _refreshHostNow(String hostId) async {
-    final List<RemoteDictionaryInfo>? infos;
-    try {
-      infos = await _fetch(hostId);
-    } catch (_) {
-      _noteReachability(hostId, ok: false);
-      rethrow;
-    }
-    _noteReachability(hostId, ok: infos != null);
+  Future<RemoteDictionaryCatalogDiff?> _refreshHostNow(
+    String hostId, {
+    Duration? timeout,
+  }) async {
+    final List<RemoteDictionaryInfo>? infos = await _fetch(
+      hostId,
+      timeout: timeout ?? _timeout,
+    );
     if (infos == null) return null;
     _lastFetched[hostId] = _now();
     return reconcileHost(
@@ -229,20 +240,29 @@ class RemoteDictionaryCatalogService {
     );
   }
 
-  Future<List<RemoteDictionaryInfo>?> _fetch(String hostId) async {
+  /// 拉清单。可达性按**传输层**记（拿到任何响应 = 可达，含老 host 的 404 与凭据被拒
+  /// 的 401——对端活着，查词照样该发过去）；清单拿没拿到另由返回值表达。
+  Future<List<RemoteDictionaryInfo>?> _fetch(
+    String hostId, {
+    required Duration timeout,
+  }) async {
+    final RemoteHostOutcomes outcomes = RemoteHostOutcomes();
     final InterconnectGetOutcome outcome;
     try {
       outcome = await _transport.getJson(
         path: kRemoteDictionaryCatalogPath,
-        timeout: _timeout,
+        timeout: timeout,
         authErrorMessage: 'Fushi server rejected dictionary catalog token',
         candidateFilter: (FushiClientUrl candidate) =>
             candidate.isDictionaryLookupCandidate &&
             remoteDictionaryHostIdOf(candidate) == hostId,
+        onCandidateOutcome: outcomes.add,
       );
     } on SyncAuthError catch (e, stack) {
       ErrorLogService.instance.log('remoteDictionaryCatalog.auth', e, stack);
       return null;
+    } finally {
+      _reachability.record(outcomes.reachableByHost);
     }
     return remoteDictionaryInfosFromJson(outcome.json);
   }
@@ -267,6 +287,17 @@ class RemoteDictionaryCatalogService {
   ///
   /// 静态、只碰库：同步编排的词典阶段已经拉了连接中那台 host 的清单，直接交给这里，
   /// 不用再持有服务实例。真正改了行就 bump [catalogRevision]。
+  /// 本机 `dictionary_metadata.hiddenLanguagesJson` 是否含 `ja`（= 本机这本词典已关掉，
+  /// 与 `Dictionary.isHidden(JapaneseLanguage.instance)` 同一判据）。坏 JSON 当没关。
+  static bool _hiddenLanguagesContainJa(String raw) {
+    try {
+      final Object? decoded = jsonDecode(raw);
+      return decoded is List && decoded.contains('ja');
+    } on FormatException {
+      return false;
+    }
+  }
+
   static Future<RemoteDictionaryCatalogDiff> reconcileHost(
     FushiDatabase db, {
     required String hostId,
@@ -281,9 +312,15 @@ class RemoteDictionaryCatalogService {
               if (r.hostId == hostId) r.name: r,
           };
       // 新词典接在**全部**已有词典之后（本机 + 各 host 的服务器词典共用一条数轴）。
+      // 本机同名词典按名字记下：刚推送上去的词典在 host 清单里首次出现时，应落在本机
+      // 行的位置、沿用本机的开关，而不是排到末尾——否则推送一次就把用户排好的优先级
+      // 丢了（场景探针第 1 项的推送半边）。
       int nextOrder = 0;
+      final Map<String, DictionaryMetaRow> localByName =
+          <String, DictionaryMetaRow>{};
       for (final DictionaryMetaRow r in await db.getAllDictionaryMetadata()) {
         if (r.order >= nextOrder) nextOrder = r.order + 1;
+        localByName[r.name] = r;
       }
       for (final RemoteDictionaryMetaRow r
           in await db.getAllRemoteDictionaryMetadata()) {
@@ -296,6 +333,9 @@ class RemoteDictionaryCatalogService {
       for (final RemoteDictionaryInfo info in infos) {
         if (info.name.isEmpty || !seen.add(info.name)) continue;
         final RemoteDictionaryMetaRow? row = existing[info.name];
+        final DictionaryMetaRow? local = row == null
+            ? localByName[info.name]
+            : null;
         if (row == null) {
           added.add(info.name);
         } else if (row.missingSince != null) {
@@ -313,11 +353,17 @@ class RemoteDictionaryCatalogService {
             lastSeenAt: Value<int>(now),
             missingSince: const Value<int?>(null),
             // 只在插入新行时生效；已有行的顺序 / 开关属于配置，upsert 不碰。
-            order: Value<int>(row?.order ?? nextOrder++),
-            // 新行的开关按 host 自己的默认开关初始化（host 默认关 ⇒ 本机也先关）；
-            // 老 host 不发 defaultEnabled ⇒ 启用。已有行绝不改。
+            // 本机已有同名词典（刚推送上去的）⇒ 新行沿用本机行的位置；否则接在末尾。
+            order: Value<int>(row?.order ?? local?.order ?? nextOrder++),
+            // 新行的开关：本机有同名词典 ⇒ 沿用本机开关；否则按 host 自己的默认开关
+            // 初始化（host 默认关 ⇒ 本机也先关）；老 host 不发 defaultEnabled ⇒ 启用。
+            // 已有行绝不改。
             hidden: row == null
-                ? Value<bool>(info.defaultEnabled == false)
+                ? Value<bool>(
+                    local != null
+                        ? _hiddenLanguagesContainJa(local.hiddenLanguagesJson)
+                        : info.defaultEnabled == false,
+                  )
                 : const Value<bool>.absent(),
           ),
         );

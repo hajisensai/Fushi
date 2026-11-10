@@ -66,6 +66,37 @@ void main() {
       expect(live['h1/A']!.missingSince, isNull);
     });
 
+    test('本机已有同名词典（刚推送上去）⇒ 新行沿用本机行的位置与开关，不排到末尾', () async {
+      await db.upsertDictionaryMeta(
+        const DictionaryMetadataCompanion(
+          name: Value<String>('L'),
+          formatKey: Value<String>('yomichan'),
+          order: Value<int>(3),
+          hiddenLanguagesJson: Value<String>('["ja"]'),
+        ),
+      );
+      await db.upsertDictionaryMeta(
+        const DictionaryMetadataCompanion(
+          name: Value<String>('Z'),
+          formatKey: Value<String>('yomichan'),
+          order: Value<int>(9),
+        ),
+      );
+      await RemoteDictionaryCatalogService.reconcileHost(
+        db,
+        hostId: 'h1',
+        infos: <RemoteDictionaryInfo>[info('L'), info('N')],
+        now: 100,
+      );
+      final Map<String, RemoteDictionaryMetaRow> live = await rows();
+      // 推送上去的 L：沿用本机 order 3 与「已关掉」。
+      expect(live['h1/L']!.order, 3);
+      expect(live['h1/L']!.hidden, isTrue);
+      // 真正的新服务端词典 N：照旧接在全部已有词典之后、默认启用。
+      expect(live['h1/N']!.order, 10);
+      expect(live['h1/N']!.hidden, isFalse);
+    });
+
     test('刷新保留配置列；目录列（版本）照常更新', () async {
       await RemoteDictionaryCatalogService.reconcileHost(
         db,
@@ -212,8 +243,9 @@ void main() {
     late Map<String, http.Response Function()> responses;
 
     Future<RemoteDictionaryCatalogService> service(
-      List<FushiClientUrl> urls,
-    ) async {
+      List<FushiClientUrl> urls, {
+      RemoteDictionaryReachability? reachability,
+    }) async {
       final SyncRepository repo = SyncRepository(db);
       await repo.setFushiClientUrls(urls);
       await repo.setFushiClientToken('tok');
@@ -235,6 +267,7 @@ void main() {
             return respond();
           }),
         ),
+        reachability: reachability,
         now: () => DateTime.fromMillisecondsSinceEpoch(1000),
       );
     }
@@ -312,6 +345,104 @@ void main() {
       await catalog.refreshHost('host-3');
       expect(requested.where((Uri u) => u.host == 'h3'), hasLength(2));
       expect((await rows()).keys, <String>['host-3/Meikyo']);
+    });
+
+    // ── BUG-4275：目录服务与查词共用一份可达性 ─────────────────────────────
+    const List<FushiClientUrl> oneHost = <FushiClientUrl>[
+      FushiClientUrl(url: 'http://h1:8765', hostId: 'host-1'),
+    ];
+
+    test('可达性按传输层记：连不上 = 判死；老 host 的 404 = 活着（查词照发）', () async {
+      final RemoteDictionaryReachability reach = RemoteDictionaryReachability();
+      final RemoteDictionaryCatalogService catalog = await service(
+        oneHost,
+        reachability: reach,
+      );
+      expect(identical(catalog.reachability, reach), isTrue);
+      await catalog.refresh();
+      expect(reach.isUnreachable('host-1'), isTrue);
+      expect(catalog.hostReachability['host-1']!.failingSince, isNotNull);
+      responses['h1'] = () => http.Response('not found', 404);
+      await catalog.refresh();
+      expect(reach.isUnreachable('host-1'), isFalse);
+      expect(reach.shouldSkip('host-1'), isFalse);
+    });
+
+    test('判死之后后台按间隔自动再探，host 回来不需要任何人点刷新', () async {
+      final RemoteDictionaryReachability reach = RemoteDictionaryReachability(
+        reprobeInterval: const Duration(milliseconds: 50),
+      );
+      final RemoteDictionaryCatalogService catalog = await service(
+        oneHost,
+        reachability: reach,
+      );
+      catalog.start();
+      addTearDown(catalog.dispose);
+      await catalog.refresh();
+      expect(reach.isUnreachable('host-1'), isTrue);
+      expect(reach.shouldSkip('host-1'), isTrue, reason: '挂着探测：查词一直跳过');
+      final int before = requested.length;
+      responses['h1'] = () => http.Response(
+        jsonEncode(<Object?>[
+          <String, Object?>{'name': 'Daijirin', 'type': 'term'},
+        ]),
+        200,
+      );
+      final Stopwatch sw = Stopwatch()..start();
+      while (reach.isUnreachable('host-1') && sw.elapsed.inSeconds < 5) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      expect(reach.hosts['host-1']!.reachable, isTrue);
+      expect(requested.length, greaterThan(before));
+      // 探通顺带对账了目录。
+      await catalog.refreshHost('host-1');
+      expect((await rows()).keys, <String>['host-1/Daijirin']);
+    });
+
+    test('回前台：判死的 host 不受 10 分钟节流，立刻再探', () async {
+      final RemoteDictionaryReachability reach = RemoteDictionaryReachability(
+        reprobeInterval: const Duration(hours: 1),
+      );
+      final RemoteDictionaryCatalogService catalog = await service(
+        oneHost,
+        reachability: reach,
+      );
+      responses['h1'] = () => http.Response('[]', 200);
+      await catalog.refresh(); // 成功：记下 lastFetched
+      responses.remove('h1');
+      await catalog.refresh(); // 掉线
+      expect(reach.isUnreachable('host-1'), isTrue);
+      responses['h1'] = () => http.Response('[]', 200);
+      final int before = requested.length;
+      await catalog.refreshOnResume();
+      expect(requested.length, before + 1);
+      expect(reach.hosts['host-1']!.reachable, isTrue);
+      // 可达的 host 照旧受节流。
+      await catalog.refreshOnResume();
+      expect(requested.length, before + 1);
+    });
+
+    test('配对列表变化：已知判死的 host 立刻再探', () async {
+      final RemoteDictionaryReachability reach = RemoteDictionaryReachability(
+        reprobeInterval: const Duration(hours: 1),
+      );
+      final RemoteDictionaryCatalogService catalog = await service(
+        oneHost,
+        reachability: reach,
+      );
+      catalog.start();
+      addTearDown(catalog.dispose);
+      await catalog.refresh();
+      expect(reach.isUnreachable('host-1'), isTrue);
+      // 同一台 host 换了地址（单地址，避开组内选路的真网络探测）。
+      responses['h1b'] = () => http.Response('[]', 200);
+      await SyncRepository(db).setFushiClientUrls(const <FushiClientUrl>[
+        FushiClientUrl(url: 'http://h1b:8765', hostId: 'host-1'),
+      ]);
+      // 监听回调排在串行链上：再排一个空任务等它跑完。
+      await catalog.refreshOnResume();
+      expect(requested.map((Uri u) => u.host), contains('h1b'));
+      expect(reach.hosts['host-1']!.reachable, isTrue);
     });
   });
 }

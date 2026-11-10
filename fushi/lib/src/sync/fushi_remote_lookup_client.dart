@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 import 'package:fushi/src/sync/interconnect_post_transport.dart';
+import 'package:fushi/src/sync/remote_dictionary_reachability.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi_engine/dictionary/dictionary_media_types.dart'
@@ -38,14 +39,6 @@ class RemoteLookupUnreachableError implements Exception {
   String toString() => 'RemoteLookupUnreachableError: $message';
 }
 
-/// 远端**词典**查询在「全部配对候选传输层不可达」后的失败冷却窗（BUG-1302）。
-///
-/// 与音频源的 `kRemoteAudioFailureCooldown`（45s，`word_audio_resolver.dart`）同
-/// 量级同语义：设备被证实死了之后，冷却窗内不再重复付「3s × 候选数」的连接超时。
-/// 设备活着时行为完全不变——冷却只由 [RemoteLookupUnreachableError] 触发，
-/// 「可达但无结果」不进冷却。
-const Duration kRemoteDictionaryFailureCooldown = Duration(seconds: 45);
-
 const Duration kRemoteAudioMaterializedCacheTtl = Duration(days: 7);
 const int kRemoteAudioMaterializedCacheMaxBytes = 64 * 1024 * 1024;
 
@@ -59,6 +52,8 @@ class FushiRemoteLookupClient {
     Duration timeout = const Duration(seconds: 3),
     Duration audioTransferTimeout = kInterconnectAssetTransferTimeout,
     bool trackDictionaryStyles = false,
+    bool Function(String hostId)? skipDictionaryHost,
+    void Function(Map<String, bool> reachableByHost)? onDictionaryHostOutcomes,
   }) : _transport = InterconnectPostTransport(
          repo: repo,
          httpClient: httpClient,
@@ -68,6 +63,8 @@ class FushiRemoteLookupClient {
        _timeout = timeout,
        _audioTransferTimeout = audioTransferTimeout,
        _trackDictionaryStyles = trackDictionaryStyles,
+       _skipDictionaryHost = skipDictionaryHost,
+       _onDictionaryHostOutcomes = onDictionaryHostOutcomes,
        _pinnedAudioCacheDirectoryProvider =
            pinnedAudioCacheDirectoryProvider ??
            _defaultPinnedAudioCacheDirectory;
@@ -78,7 +75,22 @@ class FushiRemoteLookupClient {
   final FushiClientUrl? _onlyCandidate;
 
   /// RPC 往返预算：量的是「对端还活着吗」。
+  ///
+  /// 3s 保持不变（BUG-4275 复核过）：它包住的是整个查词往返（host 上的查词本身 +
+  /// 回包，走 Tailscale / 公网时单程就几百 ms），缩短会把慢而活着的 host 误判成死的，
+  /// 造成远端结果时有时无。离线的代价不靠缩短它来降，而是靠可达性追踪只付一次：判死
+  /// 之后查词直接跳过（[_skipDictionaryHost]），恢复由后台探测发现。
   final Duration _timeout;
+
+  /// 词典端点要跳过的 host（[remoteDictionaryHostIdOf] 口径）：可达性追踪判为不可达的
+  /// host 不再发请求（BUG-4275）。全部跳过 = 没有候选 = 「无结果」（返回 null），不抛
+  /// [RemoteLookupUnreachableError]——那只留给真正试过且全失败的那一次。
+  final bool Function(String hostId)? _skipDictionaryHost;
+
+  /// 每次词典端点请求后按 host 报传输层结局（[RemoteHostOutcomes.reachableByHost]），
+  /// 交给共享的可达性追踪（[RemoteDictionaryReachability.record]）。
+  final void Function(Map<String, bool> reachableByHost)?
+  _onDictionaryHostOutcomes;
 
   /// 音频资产整包下载预算：量的是字节传输，与 [_timeout] 不同量纲（BUG-1811 续）。
   final Duration _audioTransferTimeout;
@@ -431,24 +443,42 @@ class FushiRemoteLookupClient {
   /// [dictionaryLookup]：词典端点（查词 / 词典样式 / 词典媒体）只发给开着
   /// [FushiClientUrl.lookupEnabled] 的地址——关掉「用这台服务器查词典」的 host 既不该
   /// 回答查词，样式与外字也不该从它那儿取。音频端点不受这个开关影响。
+  ///
+  /// 词典端点还按共享可达性追踪跳过已知不可达的 host，并把每台 host 这次的传输层
+  /// 结局报回去（BUG-4275）；音频端点两者都不做（它有自己的失败冷却）。
   Future<InterconnectPostOutcome> _postLookup({
     required String path,
     required Map<String, dynamic> body,
     Duration? timeout,
     bool dictionaryLookup = true,
     Map<String, dynamic>? Function(FushiClientUrl candidate)? bodyFor,
-  }) {
-    return _transport.post(
-      path: path,
-      body: body,
-      timeout: timeout ?? _timeout,
-      authErrorMessage: 'Fushi server rejected remote lookup token',
-      onlyCandidate: _onlyCandidate,
-      bodyFor: bodyFor,
-      candidateFilter: dictionaryLookup
-          ? (FushiClientUrl candidate) => candidate.lookupEnabled
-          : null,
-    );
+  }) async {
+    final bool Function(String hostId)? skip = _skipDictionaryHost;
+    final RemoteHostOutcomes? outcomes =
+        dictionaryLookup && _onDictionaryHostOutcomes != null
+        ? RemoteHostOutcomes()
+        : null;
+    try {
+      return await _transport.post(
+        path: path,
+        body: body,
+        timeout: timeout ?? _timeout,
+        authErrorMessage: 'Fushi server rejected remote lookup token',
+        onlyCandidate: _onlyCandidate,
+        bodyFor: bodyFor,
+        candidateFilter: dictionaryLookup
+            ? (FushiClientUrl candidate) =>
+                  candidate.lookupEnabled &&
+                  !(skip?.call(remoteDictionaryHostIdOf(candidate)) ?? false)
+            : null,
+        onCandidateOutcome: outcomes?.add,
+      );
+    } finally {
+      // 凭据被拒（抛 SyncAuthError）也照记：拿到了 401 就说明 host 活着。
+      if (outcomes != null && !outcomes.isEmpty) {
+        _onDictionaryHostOutcomes!(outcomes.reachableByHost);
+      }
+    }
   }
 }
 
