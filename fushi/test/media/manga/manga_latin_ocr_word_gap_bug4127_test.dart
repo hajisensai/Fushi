@@ -179,6 +179,24 @@ void main() {
               'char': charIndexOf(english, visible, 10),
               'expect': 'LONG',
             },
+            // BUG-4323：点词中 / 词尾的字母，词首回退跨字格退回 B，不再查 EEN / EN。
+            <String, Object>{
+              'char': charIndexOf(english, visible, 6),
+              'expect': 'BEEN',
+            },
+            <String, Object>{
+              'char': charIndexOf(english, visible, 7),
+              'expect': 'BEEN',
+            },
+            // 行尾词 SO 的 O：回退停在补的空白缝上，不退进 BEEN。
+            <String, Object>{
+              'char': charIndexOf(english, visible, 9),
+              'expect': 'SO',
+            },
+            <String, Object>{
+              'char': charIndexOf(english, visible, 13),
+              'expect': 'LONG',
+            },
           ],
         },
         <String, Object>{
@@ -189,6 +207,10 @@ void main() {
             <String, Object>{'char': 7, 'expect': 'BEEN'},
             // 阅读器 scanDelimiters 不含 ASCII '?'；引擎 scan_candidates 会在 L 与 ? 之间再切出 WELL。
             <String, Object>{'char': 11, 'expect': 'WELL?'},
+            // BUG-4323（反馈原例）：WELL 点 E → WELL，修复前是 ELL?。
+            <String, Object>{'char': 12, 'expect': 'WELL?'},
+            <String, Object>{'char': 14, 'expect': 'WELL?'},
+            <String, Object>{'char': 5, 'expect': 'YOU'},
           ],
         },
         <String, Object>{
@@ -196,9 +218,50 @@ void main() {
           'items': japanese,
           'cases': <Map<String, Object>>[
             <String, Object>{'char': 0, 'expect': '日本語の勉強です'},
+            // 日文命中不做词首回退（BUG-4323 只动非日文分支）。
+            <String, Object>{'char': 1, 'expect': '本語の勉強です'},
           ],
         },
       ];
+
+      // BUG-4323：词首界（连字符）照样截住跨字格回退。
+      cases.add(<String, Object>{
+        'name': 'hyphen stops cross-glyph back-off',
+        'items': itemsOf(htmlOf(blockOf(<String>['A LET-', 'TER']))),
+        'cases': <Map<String, Object>>[
+          <String, Object>{'char': 6, 'expect': 'TER'},
+          <String, Object>{'char': 2, 'expect': 'LET-TER'},
+        ],
+      });
+      // BUG-4323：相邻两个 OCR 块（两个 <p class="ocr-box">）之间不回退。
+      cases.add(<String, Object>{
+        'name': 'block boundary',
+        'items': <Map<String, Object>>[
+          <String, Object>{'char': 'A'},
+          <String, Object>{'char': 'B'},
+          <String, Object>{'box': true},
+          <String, Object>{'char': 'C'},
+          <String, Object>{'char': 'D'},
+        ],
+        'cases': <Map<String, Object>>[
+          <String, Object>{'char': 3, 'expect': 'CD'},
+        ],
+      });
+      // 阅读器回归：单文本节点内的回退结果不变；行内标签劈开但带空格的词不被粘上。
+      cases.add(<String, Object>{
+        'name': 'reader text nodes',
+        'items': <Map<String, Object>>[
+          <String, Object>{'char': 'HAVE YOU'},
+          <String, Object>{'gap': ' '},
+          <String, Object>{'char': 'BEEN '},
+          <String, Object>{'char': 'WELL'},
+        ],
+        'cases': <Map<String, Object>>[
+          <String, Object>{'char': 0, 'offset': 6, 'expect': 'YOU'},
+          <String, Object>{'char': 0, 'offset': 2, 'expect': 'HAVE YOU'},
+          <String, Object>{'char': 2, 'offset': 1, 'expect': 'WELL'},
+        ],
+      });
 
       final Directory tmp = Directory.systemTemp.createTempSync(
         'fushi_bug4127_',
@@ -226,7 +289,10 @@ void main() {
               'BUG-4179 behavior test failed.\n'
               'stdout:\n${result.stdout}\nstderr:\n${result.stderr}',
         );
-        expect(result.stdout.toString(), contains('all assertions passed (7)'));
+        expect(
+          result.stdout.toString(),
+          contains('all assertions passed (21)'),
+        );
       } finally {
         tmp.deleteSync(recursive: true);
       }

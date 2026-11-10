@@ -7,6 +7,10 @@
 // 空格、各行直接拼接——DOM 正文成了 "BEENSOLONGSINCE…"。阅读器取词从被点的词一路扫过词界，
 // 引擎（word_scan.cpp）不在两个拉丁字母之间切，整串一个候选，查不到。
 //
+// BUG-4323（同一反馈的后续）：点词中的字母（WELL 点 E）只查到 ELL——词首回退只在命中的
+// 字格文本节点内做，退到偏移 0 就停，跨不到前一个字格。修复后回退跨相邻文本节点，
+// 停在词首界 / 补的空白缝 / 块界（<p class="ocr-box">）。
+//
 // 本文件不能单独运行：.dart wrapper（manga_latin_ocr_word_gap_bug4127_test.dart）在它前面
 // 拼上两样东西再交给 node——
 //   MANGA_OCR_CASES：真实 mangaOcrBoxesHtml 输出里 <p class="ocr-box"> 的子节点序列
@@ -96,12 +100,20 @@ function fakeDocument(body) {
 }
 
 /// 按生成器给的子节点序列搭 <body><p class="ocr-box">…</p></body>，返回字格文本节点。
+///
+/// BUG-4323：`{box: true}` 另起一个 <p class="ocr-box">（相邻两个 OCR 块），验证跨字格的
+/// 词首回退不越过块界。
 function mountOcrBox(items) {
   const body = new FakeElement('body', null);
-  const box = new FakeElement('p', body);
+  let box = new FakeElement('p', body);
   body.childNodes.push(box);
   const glyphs = [];
   for (const item of items) {
+    if (item.box) {
+      box = new FakeElement('p', body);
+      body.childNodes.push(box);
+      continue;
+    }
     if (item.char === undefined) {
       box.childNodes.push(new FakeText(item.gap, box));
       continue;
@@ -115,7 +127,7 @@ function mountOcrBox(items) {
   return { body, glyphs };
 }
 
-function tap(items, glyphIndex) {
+function tap(items, glyphIndex, offset) {
   const { body, glyphs } = mountOcrBox(items);
   const window = {
     getComputedStyle: () => ({ display: 'inline', content: 'none' }),
@@ -127,15 +139,16 @@ function tap(items, glyphIndex) {
   // 只看取词串：payload 组装（几何 / 句子）与本 bug 无关。
   selection.fireTextSelected = () => null;
   selection.selection = null;
-  selection.selectFromPosition(glyphs[glyphIndex], 0, 24);
+  // offset：被点字格文本节点内的偏移（漫画宿主恒为 0；阅读器单节点用例给非 0）。
+  selection.selectFromPosition(glyphs[glyphIndex], offset || 0, 24);
   return selection.selection ? selection.selection.text : null;
 }
 
 let executed = 0;
 for (const block of MANGA_OCR_CASES) {
   for (const probe of block.cases) {
-    assert.strictEqual(tap(block.items, probe.char), probe.expect,
-      `${block.name}: tap glyph #${probe.char}`);
+    assert.strictEqual(tap(block.items, probe.char, probe.offset), probe.expect,
+      `${block.name}: tap glyph #${probe.char} offset ${probe.offset || 0}`);
     executed++;
   }
 }
