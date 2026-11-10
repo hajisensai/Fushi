@@ -22,6 +22,7 @@ class _GatedFetcher {
   final List<int> calls = <int>[];
   final Map<int, Completer<Uint8List>> _gates = <int, Completer<Uint8List>>{};
   final Set<int> failing = <int>{};
+  bool _open = false;
   int inFlight = 0;
   int maxInFlight = 0;
 
@@ -34,7 +35,7 @@ class _GatedFetcher {
     inFlight++;
     if (inFlight > maxInFlight) maxInFlight = inFlight;
     try {
-      if (autoComplete) {
+      if (autoComplete || _open) {
         await Future<void>.delayed(const Duration(milliseconds: 1));
       } else {
         await (_gates[index] = Completer<Uint8List>()).future;
@@ -50,10 +51,23 @@ class _GatedFetcher {
 
   void release(int index) => _gates.remove(index)?.complete(png);
 
-  void releaseAll() {
+  /// 放行在等的与之后来的所有请求。
+  void openAll() {
+    _open = true;
     for (final int index in _gates.keys.toList()) {
       release(index);
     }
+  }
+}
+
+/// 取页落盘有真实文件 IO，不能只靠微任务推进：按条件等（带上限），不赌墙钟。
+Future<void> _waitFor(bool Function() condition, String what) async {
+  final Stopwatch watch = Stopwatch()..start();
+  while (!condition()) {
+    if (watch.elapsed > const Duration(seconds: 10)) {
+      fail('timed out waiting for $what');
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 1));
   }
 }
 
@@ -152,17 +166,16 @@ void main() {
           session.backgroundPage(i, owner: owner),
       ];
       final Future<void> foreground = session.page(20);
-      await _settle();
+      await _waitFor(() => fetcher.calls.length >= 2, 'two calls');
       // 并发 2：10、11 在飞，前台 20 插到 12 前面。
       expect(fetcher.calls, <int>[10, 11]);
       fetcher.release(10);
-      await _settle();
+      await _waitFor(() => fetcher.calls.length >= 3, 'third call');
       expect(fetcher.calls, <int>[10, 11, 20]);
-      fetcher.releaseAll();
-      await _settle();
-      fetcher.releaseAll();
+      fetcher.openAll();
       await foreground;
       await Future.wait(background);
+      await session.debugWaitForIdle();
       expect(fetcher.calls, <int>[10, 11, 20, 12]);
       expect(fetcher.maxInFlight, 2);
 
@@ -214,15 +227,14 @@ void main() {
           ),
         );
       }
-      await _settle();
+      await _waitFor(() => fetcher.calls.isNotEmpty, 'first call');
       expect(fetcher.calls, <int>[0]);
       session.retainBackgroundPages(owner, <int>[4, 2]);
-      await _settle();
+      await _waitFor(() => cancelled.length >= 2, 'cancellations');
       expect(cancelled, unorderedEquals(<int>[1, 3]));
-      for (int i = 0; i < 4; i++) {
-        fetcher.releaseAll();
-        await _settle();
-      }
+      fetcher.openAll();
+      await Future.wait(<Future<File>>[futures[0]!, futures[4]!, futures[2]!]);
+      await session.debugWaitForIdle();
       expect(fetcher.calls, <int>[0, 4, 2]);
       await session.close();
     });
@@ -259,21 +271,23 @@ void main() {
       final OnlineMangaThumbnailPrefetcher prefetcher =
           OnlineMangaThumbnailPrefetcher(session);
       prefetcher.requestPages(<int>[0, 1, 2, 3, 4, 5]);
-      await _settle();
+      await _waitFor(() => fetcher.calls.length >= 2, 'two calls');
       expect(fetcher.calls, <int>[0, 1]);
       // 滚到底：0、1 已在飞（不撤，落盘照样给阅读用），2–5 撤单。
       prefetcher.requestPages(<int>[30, 31, 32]);
-      fetcher.releaseAll();
-      await _settle();
+      fetcher
+        ..release(0)
+        ..release(1);
+      await _waitFor(() => fetcher.calls.length >= 4, 'four calls');
       expect(fetcher.calls, <int>[0, 1, 30, 31]);
       prefetcher.stop();
-      for (int i = 0; i < 4; i++) {
-        fetcher.releaseAll();
-        await _settle();
-      }
-      expect(fetcher.calls, <int>[0, 1, 30, 31], reason: '32 在 stop 时撤掉');
-      prefetcher.requestPages(<int>[10, 11]);
+      fetcher.openAll();
+      await session.debugWaitForIdle();
       await _settle();
+      expect(fetcher.calls, <int>[0, 1, 30, 31], reason: '32 在 stop 时撤掉');
+      expect(session.cachedFilePath(0), isNotNull, reason: '在飞的不撤，落盘给阅读用');
+      prefetcher.requestPages(<int>[10, 11]);
+      await session.debugWaitForIdle();
       expect(fetcher.calls, hasLength(4), reason: 'stop 之后不再发请求');
       await session.close();
     });
@@ -316,9 +330,10 @@ void main() {
       final OnlineMangaThumbnailPrefetcher prefetcher =
           OnlineMangaThumbnailPrefetcher(session);
       prefetcher.requestPages(<int>[0, 1, 2, 3]);
-      await _settle();
+      await _waitFor(() => fetcher.calls.length >= 2, 'two calls');
       await session.close();
-      fetcher.releaseAll();
+      fetcher.openAll();
+      await session.debugWaitForIdle();
       await _settle();
       expect(fetcher.calls, <int>[0, 1]);
       expect(prefetcher.halted, isTrue);
