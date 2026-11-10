@@ -1,0 +1,15 @@
+## BUG-4285 · AI 助手只认一条地址、会话期间不换路，凭据失效后仍每 3 秒无限重试
+- **报告**：2026-11-10（用户：互联审查 V-B3、R5b）
+- **真实性**：✅ 真 bug（代码路径核实；新测试 3 条修复前全红）。行号指基准 94317ab6295：
+  - `fushi/lib/src/sync/interconnect_assistant_client.dart:141-147`：`probeUrl` 按 `candidate.url != baseUrl` 精确匹配，不按 host 分组、不选路、不解析 P2P——偏好存的那条地址（如 LAN）不通时，同一台 host 的其它可达地址一概不试，直接报不可达。
+  - `:385-393` `_tokenForBaseUrl` 不经 `interconnectPersistedUrl`、也不看行是否启用；`:359-361` 响应体读取不受超时约束；`:122` 自建 `http.Client` 无关闭路径。
+  - `fushi/lib/src/media/video/acquisition/remote_video_acquisition_session.dart:56`：`_target` 是整场会话固定的单地址，中途不重新选路。
+  - 同文件 `:150-166`：`_pollLoop` 只认 `sessionGone`，其余错误（含 401、证书不符）每隔 `_retryDelay`（3 秒）无限重试，界面只说「连接中断」。
+- **[x] ① 已修复** — `e73995000e6`：
+  - `HostAssistantTarget` 加 `host`（`InterconnectHostRef`）与 `hostRef`；client 产出的 target `baseUrl = host.anchorUrl`、指纹取组内钉扎值、`pairedToken` 按组内代表行判定。
+  - `InterconnectAssistantClient` 传输层改走 `InterconnectHostChannel`（每台 host 一条通道）：新增 `probeUrlOutcome` / `probeHost`（带失败原因；老 host 200 无 `assistant` 仍给 Available + unsupported），`probeUrl` 签名语义不变；`_call` 经通道 send（长轮询 `timeout = requestTimeout + wait`，GET 幂等），通道异常 → `HostAssistantException(e.code)`；删除 `_tokenForBaseUrl` / `_clientFor` / `_headers`；新增 `dispose()` 关闭通道与自建 client。
+  - `HostAssistantException` 加 `permanent`（auth_rejected / certificate_mismatch / no_host / http_401 / http_403）与 `cancelled`。
+  - `RemoteVideoAcquisitionSession` 状态改为 `live / unreachable / gone / halted`：unreachable 继续按节奏轮询（通道每次重新选路）；gone 与 halted 停止轮询、不再发请求；halted 插 `remote_auth_rejected` / `remote_certificate_mismatch` / `remote_not_paired` 提示；cancelled 静默。会话开成后接管 client，`dispose` 关完 host 会话（halted / gone 跳过）再 `client.dispose()`。
+  - `ai_video_acquisition_page.dart` 的 `_failureText` 把三个新码映射到 `interconnect_host_failure_*`；`home_page.dart` 与 `ai_agent_page.dart` 改用 `probeUrlOutcome`，非 unreachable 的失败说出具体原因，各失败路径释放 client；AI 助手复用判断改为 `hostRef` 相等。
+- **[x] ② 已加自动化测试** — `fushi/test/sync/app_assistant_host_test.dart`（真 `FushiSyncServer` + `VideoAcquisitionAssistantHost`，行 hostId 与服务器一致）：V-B3 死地址排第一时 `probeUrl(死地址)` 仍探到并能开会话；R5b 会话中途 host 吊销 per-peer 口令 → 401 后会话读不再增长、记录末条为 `remote_auth_rejected`、之后的动作不发请求；会话开在可拔掉的转发地址上，拔掉并停用后下一次动作改走同组另一条地址。修复前 3 条全红（1 条断言失败、2 条等待超时）。
+- **备注**：计划写的 client 生命周期方法名是 `close()`，但 `close(target, id)` 早就是「关 host 上的会话」请求，同名冲突，改叫 `dispose()`。halted 之后的动作计划写「一律 `_markUnavailable`」，实现为直接返回（进入 halted 时已插过一条具体提示，再插会重复）。`remote_ai_agent_session.dart`（AI 助手远端会话）的同类状态机与 dispose 关 client 归 remote-tasks 包。真设备切网 / 吊销复测未做。

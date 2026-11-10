@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3846 条。点号进各自文件。
+> 共 3847 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4285](bugs/BUG-4285-interconnect-assistant-single-address-endless-poll.md) | ✅ | ✅ | AI 助手只认一条地址、会话期间不换路，凭据失效后仍每 3 秒无限重试 |
 | [BUG-4284](bugs/BUG-4284-remote-download-tasks-single-host-silent-failure.md) | ✅ | ✅ | 下载中心远端任务段只看一台 host、失败无提示、任务域与创建时间写错 |
 | [BUG-4283](bugs/BUG-4283-interconnect-probe-failure-reason-lost.md) | ✅ | ✅ | 互联能力探测把凭据失效、证书不符、老版本、连不上都折成『没有可用主机』 |
 | [BUG-4282](bugs/BUG-4282-interconnect-client-no-shared-host-channel.md) | ✅ | ✅ | 互联功能 client 各自复制传输层：响应体不受超时约束、client 不回收、凭据与选路各处漂移 |
