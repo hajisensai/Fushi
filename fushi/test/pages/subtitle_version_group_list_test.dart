@@ -2,6 +2,7 @@
 // 锁住四条契约：① 聚类后一版本一卡；② 指定集数点卡直接命中该集文件；
 // ③ 解析不出唯一文件时点卡展开文件行；④ 对话框默认版本视图、可切文件视图。
 import 'package:material_ui/material_ui.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fushi/src/media/video/subtitle/subtitle_version_groups.dart';
@@ -98,6 +99,83 @@ void main() {
       findsNothing,
       reason: 'min/max 伪装成连续范围正是 BUG-1986 本体',
     );
+  });
+
+  testWidgets('BUG-4323 版本视图文件行完整显示文件名，末尾的版本差异可见', (WidgetTester tester) async {
+    // 反馈 UMW99yDWTE：横屏手机上同集两个文件都截在「...HEVC-10bit AAC」，区分
+    // 版本的末尾段被 maxLines: 2 吃掉。文件名前缀刻意做得很长且相同，只有末尾不同。
+    const String prefix =
+        '[SweetSub&LoliHouse] Tensei Shitara Slime Datta Ken Season 3 - 05 '
+        '[WebRip 1080p HEVC-10bit AAC]';
+    final List<VideoSubtitleCandidate> sameEpisode = <VideoSubtitleCandidate>[
+      _FakeCandidate(
+        remoteId: '9:a',
+        fileName: '$prefix [Simplified Chinese & Japanese].ass',
+        episode: 5,
+        collectionId: '9',
+        collectionLabel: 'Slime S3',
+      ),
+      _FakeCandidate(
+        remoteId: '9:b',
+        fileName: '$prefix [Traditional Chinese & Japanese].ass',
+        episode: 5,
+        collectionId: '9',
+        collectionLabel: 'Slime S3',
+      ),
+    ];
+    final List<SubtitleVersionGroup> groups = buildSubtitleVersionGroups(
+      sameEpisode,
+    );
+    // 横屏手机的逻辑宽度（反馈设备 window 792x363）；高度给足让文件行都被构建。
+    tester.view.physicalSize = const Size(792, 1600);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData.dark(useMaterial3: true),
+        home: Scaffold(
+          body: SubtitleVersionGroupList(
+            groups: groups,
+            requestedEpisode: null,
+            busyIdentityKey: null,
+            onPickCandidate: (_) {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    // 展开所有版本卡的文件行（不管聚类把两份文件分进一组还是两组）。
+    while (find.byIcon(Icons.expand_more).evaluate().isNotEmpty) {
+      await tester.tap(find.byIcon(Icons.expand_more).first);
+      await tester.pumpAndSettle();
+    }
+
+    for (final VideoSubtitleCandidate candidate in sameEpisode) {
+      final Finder row = find.byKey(
+        ValueKey<String>('subtitle-file-${candidate.identityKey}'),
+      );
+      expect(row, findsOneWidget);
+      final Finder title = find.descendant(
+        of: row,
+        matching: find.byWidgetPredicate(
+          (Widget w) =>
+              w is RichText && w.text.toPlainText() == candidate.fileName,
+        ),
+      );
+      expect(title, findsOneWidget, reason: '文件行标题应是完整文件名');
+      final RenderParagraph paragraph = tester.renderObject<RenderParagraph>(
+        title,
+      );
+      expect(paragraph.maxLines, isNull, reason: '文件名不应设行数上限');
+      expect(paragraph.didExceedMaxLines, isFalse, reason: '区分版本的末尾段不能被截掉');
+      expect(
+        paragraph.computeLineMetrics().length,
+        greaterThan(2),
+        reason: '这么长的文件名在横屏手机宽度下应超过旧上限 2 行，证明没被截断',
+      );
+    }
+    expect(tester.takeException(), isNull, reason: '换行只让行变高，不溢出');
   });
 
   testWidgets('一版本一卡：ass 与 srt 两组各渲染一张卡', (WidgetTester tester) async {

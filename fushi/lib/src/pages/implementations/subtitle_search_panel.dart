@@ -41,6 +41,7 @@ import 'package:fushi_engine/media/video/subtitle/subtitle_archive.dart'
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi/src/pages/fushi_page_placeholders.dart';
 import 'package:fushi/src/pages/implementations/jimaku_api_key_field.dart';
+import 'package:fushi/src/pages/implementations/subtitle_file_name_text.dart';
 import 'package:fushi/src/pages/implementations/subtitle_version_group_list.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
@@ -1741,27 +1742,22 @@ class JimakuCandidateList extends StatelessWidget {
         itemBuilder: fushiStaggeredItemBuilder((BuildContext context, int i) {
           final JimakuCandidate c = shown[i];
           final bool busy = busyName == c.name;
-          // 文件名（含集数，如 第01話/E01）整段可见才能区分是第几集：换行而非单行截断
-          // （TODO-673：番名都一样，区分集数的部分原本被省略号吃掉）。文件名给多行
-          // 软换行，仍给一个上限避免极长名把单条撑满整个列表区，超限再 fade 兜底。
+          // 文件名（含集数，如 第01話/E01）整段可见才能区分是第几集：完整换行、
+          // 不设行数上限（TODO-673 / BUG-4323：番名都一样，区分集数 / 版本的部分
+          // 在末尾，任何上限在窄屏上都会再把它切掉）。与版本视图共用同一组件。
           return FushiGroupedListItem(
             index: i,
             count: shown.length,
             onTap: onDownload == null ? null : () => onDownload!(c),
             child: FushiListItem(
               isThreeLine: true,
-              titleMaxLines: 3,
+              titleMaxLines: null,
               leading: FushiListLeadingIcon(
                 FushiIcons.subtitles,
                 shape: FushiLeadingShape.square,
                 tone: busy ? FushiCardTone.primary : FushiCardTone.secondary,
               ),
-              title: Text(
-                c.name,
-                maxLines: 3,
-                softWrap: true,
-                overflow: TextOverflow.fade,
-              ),
+              title: SubtitleFileNameText(c.name),
               subtitle: Text(
                 switch (c.source) {
                   final VideoSubtitleCandidate source

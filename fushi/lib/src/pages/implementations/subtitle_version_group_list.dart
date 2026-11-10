@@ -8,6 +8,7 @@ import 'package:fushi/src/media/video/subtitle/subtitle_archive_label.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_version_groups.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
+import 'package:fushi/src/pages/implementations/subtitle_file_name_text.dart';
 import 'package:fushi/src/pages/implementations/activity_feed.dart'
     show ActivityRelativeTime, ActivityRelativeUnit, activityRelativeTime;
 import 'package:fushi/i18n/strings.g.dart';
@@ -282,13 +283,9 @@ class _SubtitleVersionGroupListState extends State<SubtitleVersionGroupList> {
       onTap: _busy || widget.onPickCandidate == null
           ? null
           : () => widget.onPickCandidate!(candidate),
-      title: Text(
-        candidate.fileName,
-        maxLines: 2,
-        softWrap: true,
-        overflow: TextOverflow.fade,
-      ),
-      titleMaxLines: 2,
+      // 文件名完整换行（BUG-4323）：区分版本的段在末尾，与文件视图同一规则。
+      title: SubtitleFileNameText(candidate.fileName),
+      titleMaxLines: null,
       subtitle: meta.isEmpty ? null : Text(meta.join(' · ')),
       trailing: busyThis
           ? const SizedBox.square(
