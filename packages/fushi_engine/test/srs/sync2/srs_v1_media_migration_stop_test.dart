@@ -154,7 +154,7 @@ class _CountingLocation implements SrsLocationStore {
   Future<void> delete(String path) => inner.delete(path);
 }
 
-/// 收手的路径上不该碰到本机库（只答「这个位置见没见过加密」：写明文残留之前的只读闸，BUG-4293）。
+/// 收手的路径上不该碰到本机库（只答「这个位置见没见过加密」：写明文残留之前的只读闸，BUG-4296）。
 class _NoHost implements SrsSync2Host {
   @override
   String get profileUid => 'p';
