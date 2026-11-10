@@ -47,6 +47,7 @@ import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/srs/srs_app_host.dart' show srsPushProfileNoteEditor;
 import 'package:fushi/src/srs/srs_app_runtime.dart' show installSrsAppRuntime;
 import 'package:fushi/src/srs/srs_memory_probe.dart';
+import 'package:fushi_engine/srs/srs_db_store.dart' show SrsDbStore;
 import 'package:fushi_engine/srs/srs_miner.dart' show SrsMiner;
 import 'package:fushi/src/srs/srs_providers.dart'
     show srsProfileStoresProvider, srsRevisionProvider;
@@ -788,6 +789,9 @@ void main([List<String> args = const <String>[]]) {
       // uid 取副本（srs_profile_stores.dart），「在复习里打开」的编辑页套那份副本。
       appModel.srsProfileStoresReader = () =>
           container.read(srsProfileStoresProvider);
+      // 复习模块关着时用户改的日界：这份配置的复习库下次激活时补写（AppModel.flushPendingDayRollover）。
+      container.read(srsProfileStoresProvider).onActivated = (SrsDbStore s) =>
+          unawaited(appModel.flushPendingDayRollover(s));
       appModel.srsProfileNoteOpener = (SrsMiner miner, String noteId) =>
           srsPushProfileNoteEditor(
             appModel.navigatorKey.currentState,

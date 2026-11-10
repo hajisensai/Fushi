@@ -151,8 +151,9 @@ abstract final class SrsFieldKeys {
   static const String deckExtendLimits = 'extendLimits';
 
   // profile
+  /// 复习的翻日时刻（int 0–23）：用户改日界时写下，随同步让多设备的「今天」一致（`SrsDbStore.dayContext`）。
+  /// 时区不随 profile 同步，恒用本机偏移（旧版本声明过的 `utcOffsetMin` 键从没有写入方，已删）。
   static const String dayRolloverHour = 'dayRolloverHour';
-  static const String utcOffsetMin = 'utcOffsetMin';
 }
 
 /// 字段类别表（只在这里写一次）。

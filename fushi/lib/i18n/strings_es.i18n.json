@@ -9564,6 +9564,7 @@
   "stat_bookshelf_compare": "Estantería",
   "stat_center_day_reset_hour": "El día empieza a las",
   "stat_center_day_reset_hour_hint": "La lectura, el visionado y el juego anteriores a esta hora cuentan para el día anterior. Afecta a hoy y a los últimos N días en las estadísticas; solo los registros escritos tras el cambio usan el nuevo límite.",
+  "stat_center_day_reset_hour_srs_note": "Reviews start their \"today\" at this time too, and it syncs to your other devices with your review data.",
   "stat_center_profile_scope": "Mostrando solo las estadísticas del perfil \"$name\"",
   "stat_center_settings": "Statistics settings",
   "stat_center_tab_overview": "Resumen",
