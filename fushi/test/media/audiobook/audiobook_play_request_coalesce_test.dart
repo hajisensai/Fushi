@@ -7,7 +7,7 @@ import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:just_audio_platform_interface/just_audio_platform_interface.dart';
 
-/// BUG-4347（反馈 4FX5H_19ei）：有声书阅读页里点查词弹窗顶栏的播放按钮后，之后的
+/// BUG-4349（反馈 4FX5H_19ei）：有声书阅读页里点查词弹窗顶栏的播放按钮后，之后的
 /// 查词不再暂停有声书。
 ///
 /// 根因在控制器的激活串行化：Android（ExoPlayer）/ Darwin 后端上一次 `play()` 激活要

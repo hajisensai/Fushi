@@ -105,7 +105,7 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 「播放」是一个**状态请求**（要它在播），不是一条要逐个执行的命令。在 Android /
   /// Darwin 后端上一次激活要挂到**下一次暂停**才收尾（见 [_playActivationTail]），所以
   /// 在播期间再来的 play 请求若排到它后面，就会在下一次暂停（查词暂停、屏末停、单句
-  /// 试听到点停……）**之后**才执行，把刚停下的播放立刻顶回去（BUG-4347：查词弹窗顶栏
+  /// 试听到点停……）**之后**才执行，把刚停下的播放立刻顶回去（BUG-4349：查词弹窗顶栏
   /// 按过播放后，关弹窗的续播请求排在按钮那次激活后面，下一次查词暂停被它顶掉）。
   /// 因此在播 / 将要播期间的新请求一律并入这一次（见 [_activateMainPlayer]）。
   Future<void>? _outstandingActivation;
@@ -1577,7 +1577,7 @@ class AudiobookPlayerController extends ChangeNotifier {
 
   Future<void> _activateMainPlayer() {
     if (_stopRequested) return Future<void>.value();
-    // BUG-4347：已有一次激活在途、且它还没发出 play（必然会起播）或播放器正在播，
+    // BUG-4349：已有一次激活在途、且它还没发出 play（必然会起播）或播放器正在播，
     // 这次请求已经被满足——并入它，不排到它后面。排到后面的话，它要等那次激活收尾
     // （= 下一次暂停）才执行，把那次暂停立刻顶回播放。
     final Future<void>? outstanding = _outstandingActivation;
