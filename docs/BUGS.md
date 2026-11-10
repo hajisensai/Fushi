@@ -33,15 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3872 条。点号进各自文件。
+> 共 3876 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4323](bugs/BUG-4323-video-seek-tail-unreachable.md) | ✅ | ✅ | 视频进度条显示还有时间（23:39/24:02）但拖不到后面：mkv 容器时长被字幕轨拉长 |
-> 共 3875 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-4327](bugs/BUG-4327-video-seek-tail-unreachable.md) | ✅ | ✅ | 视频进度条显示还有时间（23:39/24:02）但拖不到后面：mkv 容器时长被字幕轨拉长 |
 | [BUG-4326](bugs/BUG-4326-android-custom-icon-shortcut-disabled-by-app-shortcuts.md) | ✅ | ✅ | android-custom-icon-shortcut-disabled-by-app-shortcuts |
 | [BUG-4325](bugs/BUG-4325-collection-member-cover-no-tilt.md) | ✅ | ✅ | collection-member-cover-no-tilt |
 | [BUG-4324](bugs/BUG-4324-ext-popup-page-backdrop.md) | ✅ | ✅ | app 外查词 / 悬浮词典浮窗卡片外铺了页面底色和 M3E 形状背景 |
