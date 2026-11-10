@@ -1,4 +1,4 @@
-// BUG-4323（反馈 Hm3asDcb8b）：复习卡上明鏡的外字（［参考］菱形 SVG）画成 150px 方块。
+// BUG-4329（反馈 Hm3asDcb8b）：复习卡上明鏡的外字（［参考］菱形 SVG）画成 150px 方块。
 //
 // 制卡端把几何写死在字段里：Yomitan 给没有固有尺寸的 SVG（只有 viewBox）填媒体加载器
 // 默认的 150×150，导出成 `font-size:1px;width:150em`；导出又把 gloss-* class 剥掉，卡面上

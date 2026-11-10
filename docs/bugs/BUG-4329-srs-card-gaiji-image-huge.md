@@ -1,4 +1,4 @@
-## BUG-4323 · 复习卡上明鏡的外字 SVG（［参考］菱形）画成 150px 方块
+## BUG-4329 · 复习卡上明鏡的外字 SVG（［参考］菱形）画成 150px 方块
 - **报告**：2026-11-10（开发者自提，反馈 Hm3asDcb8b，iOS 深色：「あざとい」背面明鏡释义里的红色双菱形图标占了半个卡面）
 - **真实性**：✅ **真 bug（截图量尺 + 真词典数据 + headless Chrome 排版取证）**。
   - 那个图标是明鏡的外字 `gaiji/参考2.svg`：词典 JSON 里 `{"tag":"img","path":"gaiji/参考2.svg","data":{"class":"gaiji",…}}`，**没有** width / height / sizeUnits，外层包一个 `span[data-sc-img][data-sc-class="gaiji"]`；SVG 本身只有 `viewBox="0 0 1024 1024"`，没有固有尺寸。
