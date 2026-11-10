@@ -31,11 +31,18 @@ enum ServerUpdateRecovery {
 
 /// 对 [installRoot]（缺省 = 正在运行的发布包根目录；`dart run` / `dart test` / 自建
 /// bundle → 不是发布包，什么都不做）做启动收尾。失败只留痕，不抛。
+///
+/// 留痕写进 [log]（缺省全局 [engineLog]）：`withServerRuntime` 传入已打开的
+/// `ServerLog`，因为此刻宿主装配（`installServerHostBindings`）还没做，全局
+/// [engineLog] 仍是只写 stderr 的默认 sink——「上次更新被还原」这类诊断就进不了
+/// 日志文件和 WebUI 日志页。
 /// [runningExecutable] 是测试缝（缺省当前进程的可执行文件）。
 Future<ServerUpdateRecovery> recoverServerSelfUpdate({
   Directory? installRoot,
   String? runningExecutable,
+  EngineLogSink? log,
 }) async {
+  final EngineLogSink sink = log ?? engineLog;
   final Directory? root =
       installRoot ??
       currentReleaseBundleRoot(executablePath: runningExecutable);
@@ -45,19 +52,19 @@ Future<ServerUpdateRecovery> recoverServerSelfUpdate({
     runningExecutable: runningExecutable,
   );
   if (r.rolledBack) {
-    engineLog.logDiagnostic(
+    sink.logDiagnostic(
       'ServerSelfUpdate',
       'previous update was interrupted mid-swap; restored ${root.path}',
     );
   }
   if (r.failed > 0) {
-    engineLog.logDiagnostic(
+    sink.logDiagnostic(
       'ServerSelfUpdate',
       'cleanup left ${r.failed} item(s) under ${root.path}',
     );
   }
   if (r.restartRequired) {
-    engineLog.logDiagnostic(
+    sink.logDiagnostic(
       'ServerSelfUpdate',
       'running executable was rolled back; exiting for restart '
           'before opening the database',

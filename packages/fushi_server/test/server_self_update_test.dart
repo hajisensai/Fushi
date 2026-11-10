@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 import 'package:fushi_core/fushi_core.dart' show fushiDatabaseFileName;
+import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/sync/host_update/host_update_protocol.dart';
 import 'package:fushi_server/src/cli.dart';
 import 'package:fushi_server/src/config/server_config.dart';
@@ -387,8 +388,12 @@ void main() {
       final File config = File(p.join(tmp.path, 'conf', 'fushi_server.yaml'));
       expect(await runFushiServerCli(<String>['-c', config.path, 'init']), 0);
       final String dataDir = (await ServerConfig.load(config)).dataDir;
-      Future<ServerUpdateRecovery> recover() =>
-          recoverServerSelfUpdate(installRoot: root, runningExecutable: exe);
+      Future<ServerUpdateRecovery> recover(EngineLogSink log) =>
+          recoverServerSelfUpdate(
+            installRoot: root,
+            runningExecutable: exe,
+            log: log,
+          );
       bool opened = false;
 
       final int code = await withServerRuntime(config, false, (
@@ -406,6 +411,13 @@ void main() {
         isFalse,
       );
       expectOldInstall();
+      // 还原的留痕进服务端日志文件（WebUI 日志页同源），不是只落 stderr：此刻宿主
+      // 装配还没做，全局 engineLog 还是默认 sink。
+      final String logText = File(
+        p.join(ServerPaths(dataDir).logs.path, 'fushi_server.log'),
+      ).readAsStringSync();
+      expect(logText, contains('previous update was interrupted mid-swap'));
+      expect(logText, contains('running executable was rolled back'));
 
       // 服务管理器拉起的（已还原的）旧版：无事可做，照常开库；锁已放掉。
       final int next = await withServerRuntime(config, false, (

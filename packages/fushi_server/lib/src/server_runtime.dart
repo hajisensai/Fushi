@@ -75,8 +75,8 @@ Future<int> withServerRuntime(
   Future<int> Function(ServerRuntime rt) body, {
   bool serve = false,
   String? command,
-  Future<ServerUpdateRecovery> Function() recoverSelfUpdate =
-      recoverServerSelfUpdate,
+  Future<ServerUpdateRecovery> Function(EngineLogSink log) recoverSelfUpdate =
+      _recoverRunningBundle,
 }) async {
   if (!await configFile.exists()) {
     stderr.writeln('找不到配置文件 ${configFile.path}；先跑 fushi_server init');
@@ -102,48 +102,61 @@ Future<int> withServerRuntime(
     stderr.writeln(serve ? 'serve 拒绝启动：${e.describe()}' : e.describe());
     return kExitConflict;
   }
+  ServerLog? log;
   try {
-    if (await recoverSelfUpdate() == ServerUpdateRecovery.restartRequired) {
-      stderr.writeln(
+    // 日志先于启动收尾打开：收尾的留痕（还原了中断的换包、旧文件没删掉）要进
+    // 日志文件与 WebUI 日志页（ServerLog.recent），不能只落 stderr。建目录 / 开
+    // 日志文件不碰数据库。
+    final ServerPaths paths = ServerPaths(config.dataDir);
+    await paths.ensureLayout();
+    final ServerLog opened = log = ServerLog(
+      file: File(p.join(paths.logs.path, 'fushi_server.log')),
+      verbose: verbose,
+    );
+    await opened.open();
+    if (await recoverSelfUpdate(opened) ==
+        ServerUpdateRecovery.restartRequired) {
+      opened.info(
         '上次远程更新换包中断，已还原旧版文件；以退出码 $kExitSelfUpdated 退出，'
         '由服务管理器拉起旧版（数据库未改动）',
       );
+      await opened.close();
       await dataLock.release();
       return kExitSelfUpdated;
     }
     return await _withLockedRuntime(
       configFile,
       config,
-      verbose,
       dataLock,
+      paths,
+      opened,
       body,
     );
   } catch (_) {
-    // 运行时还没建起来（dispose 管不到锁）时出错：这里放锁；建起来之后 dispose 放，
-    // release 幂等。
+    // 运行时还没建起来（dispose 管不到锁与日志）时出错：这里放；建起来之后
+    // dispose 放，release / close 都幂等。
+    await log?.close();
     await dataLock.release();
     rethrow;
   }
 }
 
+/// [withServerRuntime] 的缺省启动收尾：正在运行的发布包。
+Future<ServerUpdateRecovery> _recoverRunningBundle(EngineLogSink log) =>
+    recoverServerSelfUpdate(log: log);
+
 Future<int> _withLockedRuntime(
   File configFile,
   ServerConfig config,
-  bool verbose,
   ServerDataLock dataLock,
+  ServerPaths paths,
+  ServerLog log,
   Future<int> Function(ServerRuntime rt) body,
 ) async {
   if (config.adminToken == null) {
     config = config.copyWith(adminToken: FushiSyncServer.generateToken());
     await config.save(configFile);
   }
-  final ServerPaths paths = ServerPaths(config.dataDir);
-  await paths.ensureLayout();
-  final ServerLog log = ServerLog(
-    file: File(p.join(paths.logs.path, 'fushi_server.log')),
-    verbose: verbose,
-  );
-  await log.open();
   installServerHostBindings(config: config, paths: paths, log: log);
   // 与 app 侧 `AppModel.initialise()` 对偶：`createAppHttpClient()` 的 auto 模式
   // 要读这份缓存，不 prime 的话服务端只认 HTTP(S)_PROXY 环境变量，系统代理设置
