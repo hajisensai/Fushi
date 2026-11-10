@@ -17,6 +17,7 @@ import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
+import 'package:fushi_engine/srs/srs_calibration.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:material_ui/material_ui.dart';
@@ -95,6 +96,8 @@ Future<void> _pump(
   required SrsDbStore store,
   required Size size,
   Brightness brightness = Brightness.light,
+  SrsCalibrationLoader? calibrationLoader,
+  SrsCalibrationReporter? calibrationReporter,
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
@@ -122,7 +125,12 @@ Future<void> _pump(
           ),
           builder: (BuildContext context, Widget? child) =>
               FushiGlassScope(child: child!),
-          home: const Scaffold(body: SrsStatisticsTab()),
+          home: Scaffold(
+            body: SrsStatisticsTab(
+              debugCalibrationLoader: calibrationLoader,
+              debugCalibrationReporter: calibrationReporter,
+            ),
+          ),
         ),
       ),
     ),
@@ -260,6 +268,85 @@ void main() {
     await tester.tap(legend);
     await tester.pump();
     expect(find.textContaining('Mature ·'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await _unmount(tester);
+  });
+
+  testWidgets('模型校准：换牌组按新牌组重出报告，不把上一牌组的图标成「复习记录有变化」', (
+    WidgetTester tester,
+  ) async {
+    final SrsTestClock clock = SrsTestClock(
+      DateTime.utc(2026, 7, 1, 1).millisecondsSinceEpoch,
+    );
+    final SrsDbStore store = await _seededStore(tester, clock);
+    await tester.runAsync(() async {
+      final SrsDeckTree tree = await store.deckTree();
+      final List<String> cards = await store.cardIdsInDecks(<String>{
+        for (final SrsDeckView d in tree.decks) d.id,
+      });
+      final String extra = await store.createDeck('Extra');
+      for (final String id in cards.take(6)) {
+        await store.moveCard(id, extra);
+      }
+    });
+    int loads = 0;
+    final List<int?> scopes = <int?>[];
+    await _pump(
+      tester,
+      store: store,
+      size: const Size(1366, 2400),
+      calibrationLoader: (SrsDbStore s, _, _) async {
+        loads++;
+        return SrsCalibrationData.empty();
+      },
+      calibrationReporter:
+          (SrsCalibrationData data, List<String>? scope) async {
+            scopes.add(scope?.length);
+            // 报告条数 = 范围里的卡数（全部 = 999），界面上的「n reviews」就能看出是哪个牌组的。
+            final int n = scope?.length ?? 999;
+            return SrsCalibrationReport(
+              eligible: n,
+              hasRwkv: false,
+              fsrs: SrsCalibrationSeries(
+                count: n,
+                logLoss: 0.5,
+                rmse: 0.05,
+                bins: const <SrsCalibrationBin>[
+                  SrsCalibrationBin(
+                    index: 15,
+                    count: 1,
+                    predicted: 0.85,
+                    actual: 0.8,
+                  ),
+                ],
+              ),
+            );
+          },
+    );
+    final Finder compute = find.byKey(
+      const ValueKey<String>('srs-stats-calibration-compute'),
+    );
+    await tester.ensureVisible(compute);
+    await tester.tap(compute);
+    await _settle(tester);
+    expect(find.textContaining('· 999 reviews'), findsOneWidget);
+
+    final Finder deck = find.byType(DropdownMenu<String>);
+    await tester.ensureVisible(deck);
+    await tester.tap(deck);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Extra').last);
+    await _settle(tester);
+
+    // 原料与牌组无关：换牌组只重做第 3 步（不重跑 FSRS 训练 / RWKV 回放），图跟着新牌组走。
+    expect(loads, 1);
+    expect(scopes, <int?>[null, 6]);
+    expect(find.textContaining('· 6 reviews'), findsOneWidget);
+    expect(find.textContaining('· 999 reviews'), findsNothing);
+    expect(
+      find.byKey(const ValueKey<String>('srs-stats-calibration-stale')),
+      findsNothing,
+    );
     expect(tester.takeException(), isNull);
     await _unmount(tester);
   });

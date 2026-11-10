@@ -42,11 +42,38 @@ import 'package:fushi_srs/fushi_srs.dart';
 /// 保留率（真实 vs 期望 + 成熟卡增长）→ 记忆分布（间隔 / 稳定性 / 难度 / 可提取度）
 /// → 按小时 → 评分按钮 → 新增卡片 → 易忘卡 → 制卡来源。
 class SrsStatisticsTab extends ConsumerStatefulWidget {
-  const SrsStatisticsTab({super.key});
+  const SrsStatisticsTab({
+    super.key,
+    this.debugCalibrationLoader,
+    this.debugCalibrationReporter,
+  });
+
+  /// 测试替身：校准原料（FSRS 留出预测 + RWKV 回放）。null = 真实原生管线。
+  @visibleForTesting
+  final SrsCalibrationLoader? debugCalibrationLoader;
+
+  /// 测试替身：按牌组出一份校准报告。null = 真实原生管线（后台 isolate）。
+  @visibleForTesting
+  final SrsCalibrationReporter? debugCalibrationReporter;
 
   @override
   ConsumerState<SrsStatisticsTab> createState() => _SrsStatisticsTabState();
 }
+
+/// 校准原料（与牌组无关，见 `srs_calibration.dart` 第 1、2 步）。
+typedef SrsCalibrationLoader =
+    Future<SrsCalibrationData> Function(
+      SrsDbStore store,
+      NativeSrsOptimizerControl control,
+      SrsCalibrationProgress onProgress,
+    );
+
+/// 按牌组（[scopeCardIds] null = 全部）出一份校准报告（第 3 步）。
+typedef SrsCalibrationReporter =
+    Future<SrsCalibrationReport> Function(
+      SrsCalibrationData data,
+      List<String>? scopeCardIds,
+    );
 
 /// 两列的最小内容宽度（手机横屏 / 平板竖屏起）。
 const double kSrsStatsTwoColumnMinWidth = 760;
@@ -1412,33 +1439,40 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
       _calibrationControl = control;
     });
     try {
-      final rwkv = await ref.read(srsRwkvServiceProvider.future);
-      final SrsCalibrationData data = await srsCalibrationData(
-        store,
-        rwkv: rwkv,
-        fsrsLibraryPath: srsFsrsLibraryPath(),
-        control: control,
-        onProgress: (SrsCalibrationPhase phase, int done, int total) {
-          if (!mounted) return;
-          setState(() {
-            _calibrationPhase = phase;
-            _calibrationDone = done;
-            _calibrationTotal = total;
-          });
-        },
-      );
-      final FfiFsrsEngine? engine = FfiFsrsEngine.tryCreate(
-        libraryPath: srsFsrsLibraryPath(),
-      );
-      if (engine == null) throw StateError('scheduling engine unavailable');
-      // 范围：整段历史（校准要每张卡的完整复习史，切成 30 天会饿死训练集），牌组跟当前筛选走。
-      final SrsCalibrationReport report = srsCalibrationReport(
-        engine,
-        data,
-        scopeCardIds: _deckId.isEmpty
-            ? null
-            : bundle.index.cardIdsInDeck(_deckId).toList(),
-      );
+      void onProgress(SrsCalibrationPhase phase, int done, int total) {
+        if (!mounted) return;
+        setState(() {
+          _calibrationPhase = phase;
+          _calibrationDone = done;
+          _calibrationTotal = total;
+        });
+      }
+
+      final SrsCalibrationLoader? loader = widget.debugCalibrationLoader;
+      final SrsCalibrationData data = loader != null
+          ? await loader(store, control, onProgress)
+          : await srsCalibrationData(
+              store,
+              rwkv: await ref.read(srsRwkvServiceProvider.future),
+              fsrsLibraryPath: srsFsrsLibraryPath(),
+              control: control,
+              onProgress: onProgress,
+            );
+      final List<String>? scope = _deckId.isEmpty
+          ? null
+          : bundle.index.cardIdsInDeck(_deckId).toList();
+      final SrsCalibrationReporter? reporter = widget.debugCalibrationReporter;
+      final SrsCalibrationReport report;
+      if (reporter != null) {
+        report = await reporter(data, scope);
+      } else {
+        final FfiFsrsEngine? engine = FfiFsrsEngine.tryCreate(
+          libraryPath: srsFsrsLibraryPath(),
+        );
+        if (engine == null) throw StateError('scheduling engine unavailable');
+        // 范围：整段历史（校准要每张卡的完整复习史，切成 30 天会饿死训练集），牌组跟当前筛选走。
+        report = srsCalibrationReport(engine, data, scopeCardIds: scope);
+      }
       if (!mounted) return;
       setState(() {
         _calibration = report;
