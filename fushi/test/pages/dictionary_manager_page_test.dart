@@ -78,6 +78,10 @@ class _FakeAppModel extends AppModel {
     ];
   }
 
+  // 没配服务器：没有同名目录行可镜像（真 AppModel 走 dictRepo，这里未初始化）。
+  @override
+  Future<void> setCatalogRowsHiddenNamed(String name, bool hidden) async {}
+
   @override
   Future<void> setDictionaryCollapseState(
     Dictionary dictionary,
