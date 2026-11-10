@@ -1053,6 +1053,7 @@
   "audiobook_page_end_pause": "Pause",
   "audiobook_page_end_title": "Audio at end of page",
   "audiobook_pick_alignment": "Hizalama dosyası seç",
+  "audiobook_play_from_selection_no_cue": "No audio for this sentence",
   "audiobook_reference_original": "Orijinal dosyalara referans ver",
   "audiobook_reference_original_desc": "Sesi olduğu yerde tut ve orijinal yolundan çal; dosya taşınır veya silinirse kitap bozulur.",
   "audiobook_relocate": "Dosyayı yeniden konumlandır",

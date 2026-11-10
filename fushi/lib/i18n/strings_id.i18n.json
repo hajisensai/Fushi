@@ -1053,6 +1053,7 @@
   "audiobook_page_end_pause": "Pause",
   "audiobook_page_end_title": "Audio at end of page",
   "audiobook_pick_alignment": "Pilih File Penyelarasan",
+  "audiobook_play_from_selection_no_cue": "No audio for this sentence",
   "audiobook_reference_original": "Referensi file asli",
   "audiobook_reference_original_desc": "Biarkan audio di tempatnya dan putar dari jalur aslinya; buku akan rusak jika file dipindah atau dihapus.",
   "audiobook_relocate": "Pindahkan file",

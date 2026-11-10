@@ -1053,6 +1053,7 @@
   "audiobook_page_end_pause": "Pause",
   "audiobook_page_end_title": "Audio at end of page",
   "audiobook_pick_alignment": "اختيار ملف المحاذاة",
+  "audiobook_play_from_selection_no_cue": "No audio for this sentence",
   "audiobook_reference_original": "الإشارة إلى الملفات الأصلية",
   "audiobook_reference_original_desc": "أبقِ الصوت في مكانه وشغّله من مساره الأصلي؛ سيتعطل الكتاب إذا تم نقل الملف أو حذفه.",
   "audiobook_relocate": "نقل الملف",

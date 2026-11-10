@@ -1053,6 +1053,7 @@
   "audiobook_page_end_pause": "Pause",
   "audiobook_page_end_title": "Audio at end of page",
   "audiobook_pick_alignment": "정렬 파일 선택",
+  "audiobook_play_from_selection_no_cue": "No audio for this sentence",
   "audiobook_reference_original": "원본 파일 참조",
   "audiobook_reference_original_desc": "오디오를 원래 위치에 두고 원본 경로에서 재생합니다; 파일을 이동하거나 삭제하면 책이 깨집니다.",
   "audiobook_relocate": "파일 재배치",

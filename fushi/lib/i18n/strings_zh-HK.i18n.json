@@ -1053,6 +1053,7 @@
   "audiobook_page_end_pause": "Pause",
   "audiobook_page_end_title": "Audio at end of page",
   "audiobook_pick_alignment": "選擇對齊檔案",
+  "audiobook_play_from_selection_no_cue": "這句沒有對應的音訊",
   "audiobook_reference_original": "引用原檔案（不復製）",
   "audiobook_reference_original_desc": "音頻保留在原位置、按原路徑播放；原檔案被移動或刪除後這本書會失效。",
   "audiobook_relocate": "重新定位檔案",
