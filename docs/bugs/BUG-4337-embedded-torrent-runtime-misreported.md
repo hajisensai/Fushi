@@ -1,4 +1,4 @@
-## BUG-4323 · 下载后端引导把「下载服务没起」误报成「本次安装缺少内置引擎运行库」
+## BUG-4337 · 下载后端引导把「下载服务没起」误报成「本次安装缺少内置引擎运行库」
 - **报告**：2026-11-08（应用内反馈 cliIUL82nf，Windows 3.3.0 正式版：番剧详情「配置下载后端」选内置引擎提示缺运行库；日志里没有任何引擎 DLL 加载失败记录）
 - **真实性**：✅ 真 bug，已沿代码路径确认（origin/develop `704f8c6bd9`）。
   - 判据混合：`fushi/lib/src/models/app_model.dart` `isEmbeddedTorrentReady`（修复前 :8756-8760）= `_supportsEmbeddedTorrent() && _embeddedTorrentSaveRoots != null && EmbeddedTorrentHost.probeAvailable()`，把「DLL 能否加载」和「下载服务已备好落盘路径」合成一位；服务没起时 `&&` 短路、根本不探测 DLL。`fushi/lib/src/pages/implementations/download_backend_setup_dialog.dart:263-267` 拿这一位显示「本次安装缺少内置引擎运行库」。
