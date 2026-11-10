@@ -34,6 +34,17 @@ void main() {
       expect(containsPdfMagic(<int>[0xEF, 0xBB, 0xBF, ...pdfBytes]), isTrue);
       // zip（EPUB / 漫画包）头。
       expect(containsPdfMagic(<int>[0x50, 0x4B, 0x03, 0x04, 0, 0]), isFalse);
+      // zip 前 1024 字节里的存储条目恰好含 `%PDF-`（如漫画包里未压缩的 json）：仍是 zip。
+      expect(
+        containsPdfMagic(<int>[
+          0x50,
+          0x4B,
+          0x03,
+          0x04,
+          ...utf8.encode('%PDF-1.4'),
+        ]),
+        isFalse,
+      );
       expect(containsPdfMagic(utf8.encode('%PDF')), isFalse);
       expect(containsPdfMagic(const <int>[]), isFalse);
     });

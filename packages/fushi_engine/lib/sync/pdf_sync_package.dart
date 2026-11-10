@@ -59,7 +59,18 @@ Future<bool> isPdfFile(File file) async {
 }
 
 /// [head] 里是否出现 PDF 魔数 `%PDF-`（纯函数，供 [isPdfFile] 与单测用）。
+///
+/// 以 zip 本地文件头（`PK\x03\x04`）开头的一律不是 PDF：同一端点上的 EPUB / 漫画包
+/// 都是 zip，前 1024 字节里有存储（未压缩）条目的文件名 / 内容，恰好含 `%PDF-` 时
+/// 不能被宽限窗口误判成 PDF、交错导入器。
 bool containsPdfMagic(List<int> head) {
+  if (head.length >= 4 &&
+      head[0] == 0x50 &&
+      head[1] == 0x4B &&
+      head[2] == 0x03 &&
+      head[3] == 0x04) {
+    return false;
+  }
   final List<int> magic = _kPdfMagic.codeUnits;
   final int last = head.length - magic.length;
   for (int i = 0; i <= last; i++) {
