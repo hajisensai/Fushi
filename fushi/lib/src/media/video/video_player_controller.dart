@@ -6732,7 +6732,13 @@ class VideoPlayerController extends ChangeNotifier
   /// 句」时，第二次读到的 `positionMs` 正是这个偏前落点，[_floorCueIndexByPosition]
   /// 据 `startMs <= pos` 把当前句反推成**目标句的上一句**，`+1` 又指回刚跳到的目标句
   /// → 表现为「下一句按了不动 / 原地」（与「上一句跳过头」对称）。锚定权威的「刚跳到
-  /// 哪句」消除这层偏移。`anchor + 1` 越界（已是末句）返回 null，保持末句 no-op 边界。
+  /// 哪句」消除这层偏移。下一句越界（已是末句）返回 null，保持末句 no-op 边界。
+  ///
+  /// **「一句」= 同一起点的一组 cue**（反馈 rLCxUJ-2i4）：ASS 常把一句台词拆成两条
+  /// 起止相同、`\pos` 不同的 Dialogue（解析后是两条起点严格相等的 cue）。旧实现按
+  /// 下标 ±1 前进，第一次只落到同组另一条（同一时刻，看着像「回到本句开头」），要按
+  /// 两次才跳走。现在下一句 = 起点**严格大于**当前锚点起点的第一条 cue（下一组的组
+  /// 首），返回值恒为组首下标。按严格相等分组，不设容差：起点差 1ms 也是不同的句。
   static int? nextCueIndexFor({
     required List<AudioCue> cues,
     required int? positionMs,
@@ -6740,14 +6746,15 @@ class VideoPlayerController extends ChangeNotifier
   }) {
     if (cues.isEmpty) return null;
     if (anchorIndex != null && anchorIndex >= 0 && anchorIndex < cues.length) {
-      // 锚定「上次主动跳到的目标句」：下一句严格 = anchor+1，不被 preRoll 偏前落点干扰。
-      final int next = anchorIndex + 1;
-      return next >= cues.length ? null : next;
+      // 锚定「上次主动跳到的目标句」：下一句 = 起点严格晚于锚点句起点的第一条（跳过
+      // 同起点组内其余行），不被 preRoll 偏前落点干扰。
+      return _nextCueGroupStartIndex(cues, cues[anchorIndex].startMs);
     }
     final int floor = _floorCueIndexByPosition(cues, positionMs ?? 0);
-    if (floor < 0) return 0; // 早于首句：下一句 = 首句。
-    if (floor + 1 >= cues.length) return null; // floor 已是末句：无下一句。
-    return floor + 1; // 排除当前句（floor），取下一条。
+    if (floor < 0) return 0; // 早于首句：下一句 = 首句（下标 0 即首组组首）。
+    // floor 是「起点 <= 位置」的最后一条，同起点组必然整组落在 floor 及之前，故按
+    // floor 起点取下一组即排除当前句整组。
+    return _nextCueGroupStartIndex(cues, cues[floor].startMs);
   }
 
   /// 纯函数：「上一句」目标索引（[skipToPrevCue] 决策，与 [nextCueIndexFor] 对称）。
@@ -6770,7 +6777,12 @@ class VideoPlayerController extends ChangeNotifier
   /// 「上一句」时，第二次读到的 `positionMs` 是这个偏前落点，[JsonAlignmentParser.findCueIndex]
   /// 反推命中**目标句的上一句**（落点已退进上一句时间窗），`hit - 1` 于是跳到上上句
   /// → **跳过头**（跳到 N-2 而非相邻 N-1，正是用户报「感觉跳过头了」）。锚定权威的
-  /// 「刚跳到哪句」消除偏移。`anchor - 1 < 0`（已在首句）返回 null，保持首句 no-op 边界。
+  /// 「刚跳到哪句」消除偏移。已在首句（首组）返回 null，保持首句 no-op 边界。
+  ///
+  /// 与 [nextCueIndexFor] 同样按「同一起点的一组 cue = 一句」后退（反馈 rLCxUJ-2i4）：
+  /// 上一句 = 起点**严格小于**当前句起点的最后一组，返回该组组首下标。句中命中时
+  /// [JsonAlignmentParser.findCueIndex] 在同起点组内回的是组尾（重叠区回起点更大 / 下标
+  /// 更大那条），旧实现 `hit - 1` 只退到同组另一行，要按两次才真正后退。
   static int? prevCueIndexFor({
     required List<AudioCue> cues,
     required int? positionMs,
@@ -6778,24 +6790,43 @@ class VideoPlayerController extends ChangeNotifier
   }) {
     if (cues.isEmpty) return null;
     if (anchorIndex != null && anchorIndex >= 0 && anchorIndex < cues.length) {
-      // 锚定「上次主动跳到的目标句」：上一句严格 = anchor-1，不被 preRoll 偏前落点干扰。
-      final int prev = anchorIndex - 1;
-      return prev < 0 ? null : prev;
+      // 锚定「上次主动跳到的目标句」：上一句 = 起点严格早于锚点句起点的最后一组，
+      // 不被 preRoll 偏前落点干扰。
+      return _prevCueGroupStartIndex(cues, cues[anchorIndex].startMs);
     }
     final int pos = positionMs ?? 0;
-    // 句中（命中某句时间窗，含句首）：当前句 = hit，上一句 = hit-1，排除当前句。
+    // 句中（命中某句时间窗，含句首）：当前句 = hit 所在同起点组，上一句 = 更早的
+    // 一组，排除当前句整组；已在首组时无上一句（null）。
     final int hit = JsonAlignmentParser.findCueIndex(
       cues: cues,
       positionMs: pos,
     );
     if (hit >= 0) {
-      return hit == 0 ? null : hit - 1; // 已在首句无上一句。
+      return _prevCueGroupStartIndex(cues, cues[hit].startMs);
     }
     // gap / 早于首句：找起点 < 位置的最后一条（gap 之前刚播完那句）；位置正好压在
     // 某句起点上时由上面 hit 分支处理，这里恒落在 gap，故二分用严格 `<`（lower
-    // bound，inclusive: false）；早于全部 cue 时落首句（索引 0）。
+    // bound，inclusive: false）；早于全部 cue 时落首句（索引 0）。落点取该句所在
+    // 同起点组的组首。
     final int lo = _cueStartMsBinaryBound(cues, pos, inclusive: false);
-    return lo == 0 ? 0 : lo - 1;
+    if (lo == 0) return 0;
+    return _cueStartMsBinaryBound(cues, cues[lo - 1].startMs, inclusive: false);
+  }
+
+  /// 「下一组」组首：起点严格大于 [startMs] 的第一条 cue 下标（upper bound）；无更晚
+  /// 的 cue 时返回 null。同起点的多条 cue（ASS 一句拆多行）视为同一句，被整组跳过。
+  static int? _nextCueGroupStartIndex(List<AudioCue> cues, int startMs) {
+    final int next = _cueStartMsBinaryBound(cues, startMs, inclusive: true);
+    return next >= cues.length ? null : next;
+  }
+
+  /// 「上一组」组首：起点严格小于 [startMs] 的最后一组 cue 的第一条下标；无更早的
+  /// cue 时返回 null。先取 lower bound 左侧最后一条（起点 < startMs），再取其起点的
+  /// lower bound 回到该组组首。
+  static int? _prevCueGroupStartIndex(List<AudioCue> cues, int startMs) {
+    final int lo = _cueStartMsBinaryBound(cues, startMs, inclusive: false);
+    if (lo == 0) return null;
+    return _cueStartMsBinaryBound(cues, cues[lo - 1].startMs, inclusive: false);
   }
 
   /// 纯函数：asbplayer 式「字幕偏移对齐」——把**上一句 / 下一句**字幕的起点整体平移到
