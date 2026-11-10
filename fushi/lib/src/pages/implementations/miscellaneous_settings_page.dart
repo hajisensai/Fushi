@@ -224,7 +224,7 @@ class _MiscellaneousSettingsBodyState
     try {
       ok = await applyCustomAppIcon(iconPath);
     } on AppIconApplyException catch (e) {
-      // 原生侧报错（BUG-4323）：给出可见失败，不漏到 UncaughtZone。
+      // 原生侧报错（BUG-4325）：给出可见失败，不漏到 UncaughtZone。
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         FushiSnackBar(content: Text(t.icon_shortcut_failed(error: e.message))),

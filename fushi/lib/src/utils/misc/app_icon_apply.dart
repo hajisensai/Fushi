@@ -15,7 +15,7 @@ import 'package:fushi/src/utils/window_caption_channel.dart';
 /// 只负责业务，不弹框、不管 SnackBar。
 
 /// 原生侧拒绝换图标（系统 / 启动器抛错）。[message] 是给用户看的失败原因，
-/// [cause] 留原始异常供诊断。调用方必须接住并给出可见提示（BUG-4323：此前
+/// [cause] 留原始异常供诊断。调用方必须接住并给出可见提示（BUG-4325：此前
 /// `PlatformException` 直接漏到 UncaughtZone，用户只看到没反应）。
 class AppIconApplyException implements Exception {
   AppIconApplyException(this.message, {this.cause});

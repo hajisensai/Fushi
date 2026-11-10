@@ -1,4 +1,4 @@
-## BUG-4323 · android-custom-icon-shortcut-disabled-by-app-shortcuts
+## BUG-4325 · android-custom-icon-shortcut-disabled-by-app-shortcuts
 - **报告**：2026-11-10（用户：应用内反馈 QtZEqlZacK，Xiaomi Android 15）
 - **真实性**：✅ 真 bug。自定义图标快捷方式用固定 id `hibiki_custom_icon` requestPinShortcut（`fushi/android/app/src/main/java/app/fushi/reader/IconSwitchHelper.java:174`）；长按图标菜单同步 `AppShortcutsHelper.disableRemovedPinned`（`AppShortcutsHelper.java:82-107`）遍历全部 `FLAG_MATCH_PINNED`，id 不在 Dart 本次下发列表里的一律 `disableShortcuts`，于是自定义图标被置灰（Disabled by app）。再设置时同 id `requestPinShortcut` 抛 `IllegalArgumentException: already exists but disabled`，`app_icon_apply.dart:75` 的 `invokeMethod` 没接住，落到 UncaughtZone。根因是两个模块共用 pinned 命名空间却没有所有权区分。
 - **[x] ① 已修复** — 新增 `AppShortcutOwnership.classifyPinned`：长按图标菜单只处置自己发布过的 id（本次下发 / 模块关闭 / 已下线的 `games`、`settings`），其它模块的 pinned 项一律不碰；`IconSwitchHelper.createCustomShortcut` 在同 id 已固定（含被禁用）时先 `enableShortcuts` 再 `updateShortcuts` 就地换图，否则才 `requestPinShortcut`；`MainActivity` 启动时 `IconSwitchHelper.restoreCustomShortcut` 恢复被旧版误置灰的自定义图标；Dart `requestAndroidCustomIconShortcut` 把 `PlatformException` 转成 `AppIconApplyException`，设置页接住并 SnackBar 提示 `icon_shortcut_failed`。

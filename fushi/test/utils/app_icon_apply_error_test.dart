@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/misc/app_icon_apply.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 
-/// BUG-4323：原生 createCustomShortcut 抛错（如「already exists but disabled」）时，
+/// BUG-4325：原生 createCustomShortcut 抛错（如「already exists but disabled」）时，
 /// Dart 侧要把它转成 [AppIconApplyException] 交给调用方给出可见失败，不能漏成
 /// 未捕获的 PlatformException 落到 UncaughtZone。
 void main() {
