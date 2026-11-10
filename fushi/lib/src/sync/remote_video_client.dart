@@ -216,6 +216,22 @@ abstract interface class RemoteVideoPlaybackStop {
   Future<void> stopRemoteVideoPlayback(String id, int positionMs);
 }
 
+/// 「播放页不再用这次播放的流」的可选能力（BUG-4285）：来源借此释放这次播放在服务端
+/// 占着的资源（互联 host 的流票与它们的转码）。
+///
+/// 与 [RemoteVideoPlaybackStop] 分开：Stop 是「播放结束」的**上报**（Jellyfin / Plex
+/// 据此判已看、发 webhook），自然播完时也要发，而那时页面仍停在本集、播放器开着
+/// （`keep-open`），用户还能回拖或重看——流不能在那时作废。释放只在页面真正丢掉
+/// 这次播放的流时调：退出、换集、换档 / 换线路重载之前。
+///
+/// 契约：实现必须在第一个 await 之前**同步**摘下 [id] 当前播放会话的登记，之后
+/// 再发起的取流属于新会话、不受影响；释放请求本身是尽力而为的后台清理，调用方
+/// 不等它（返回的 Future 只供测试等待，失败也正常完成）。
+abstract interface class RemoteVideoPlaybackRelease {
+  /// 释放视频 [id] 当前播放会话签下的服务端资源。
+  Future<void> releaseRemoteVideoPlayback(String id);
+}
+
 /// 「手动标记已看 / 未看」的可选能力（Jellyfin / Emby 的 PlayedItems 端点）。
 ///
 /// 互联 host 与云盘的「看完」状态归对端自己，没有这个协议，所以单独拆成可选接口，

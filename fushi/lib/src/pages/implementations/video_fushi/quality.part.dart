@@ -422,6 +422,12 @@ extension _VideoQuality on _VideoFushiPageState {
         write: (int? index) => client.adaptiveQualityIndex = index,
         targetIndex: decision.targetIndex,
         reload: () async {
+          // 重载 = 丢掉旧档的流：同步释放（BUG-4285），不等它再取新档。
+          _releaseRemotePlayback(
+            info: _effectiveRemoteInfo,
+            client: _effectiveRemoteClient,
+            generation: _remotePlaybackGeneration,
+          );
           await _reportRemotePlaybackStopped(
             info: _effectiveRemoteInfo,
             client: _effectiveRemoteClient,
@@ -509,6 +515,11 @@ extension _VideoQuality on _VideoFushiPageState {
         server.adaptiveQualityIndex = null;
       }
     }
+    _releaseRemotePlayback(
+      info: _effectiveRemoteInfo,
+      client: _effectiveRemoteClient,
+      generation: _remotePlaybackGeneration,
+    );
     await _reportRemotePlaybackStopped(
       info: _effectiveRemoteInfo,
       client: _effectiveRemoteClient,
@@ -564,6 +575,11 @@ extension _VideoQuality on _VideoFushiPageState {
     client.streamVariantIndex = index;
     // 媒体服务器换版本 = 换一个文件：先报停旧会话（与换档同口径，服务器据此结束
     // 旧版本的转码）；扩展线路没有会话能力，这一步是空操作。
+    _releaseRemotePlayback(
+      info: _effectiveRemoteInfo,
+      client: _effectiveRemoteClient,
+      generation: _remotePlaybackGeneration,
+    );
     await _reportRemotePlaybackStopped(
       info: _effectiveRemoteInfo,
       client: _effectiveRemoteClient,

@@ -3687,6 +3687,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   int _remotePlaybackGeneration = 0;
   final Set<int> _remotePlaybackStopGenerations = <int>{};
 
+  /// 已释放服务端资源的远端播放 generation（[_releaseRemotePlayback]，BUG-4285）。
+  final Set<int> _remotePlaybackReleaseGenerations = <int>{};
+
   /// 有效远端 info/client：合集连播优先返回当前成员 [_activeRemoteMember]（换成员即跟随）；
   /// 否则 LAN 远端书用构造器传入的 widget.remote*，书架流媒体书用 [_init] 重建的
   /// _resolvedStream*。二者互斥、至多一个非空。
@@ -5547,6 +5550,26 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     }
   }
 
+  /// 本页丢掉第 [generation] 次远端播放的流（退出 / 换集 / 换档、换线路重载之前）：
+  /// 让来源释放这次播放在服务端占着的资源（BUG-4285，互联 host 的流票与转码）。
+  ///
+  /// 与 [_reportRemotePlaybackStopped] 分开：停止上报在自然播完时也发，那时页面
+  /// 还开着、可回拖重看，流不能作废。这里**同步**调用、不等结果——来源在第一个
+  /// await 之前就摘下这次会话的登记，紧接着起的新播放（同一视频 id）不受影响；
+  /// 按 generation 去重，晚到的重复调用不会摘掉新会话。回看模式与停止上报同口径
+  /// 不发（票按 TTL 过期）。
+  void _releaseRemotePlayback({
+    required RemoteVideoInfo? info,
+    required RemoteVideoClient? client,
+    required int generation,
+  }) {
+    if (_sourceReviewActive) return;
+    final Object? releaseClient = client;
+    if (info == null || releaseClient is! RemoteVideoPlaybackRelease) return;
+    if (!_remotePlaybackReleaseGenerations.add(generation)) return;
+    unawaited(releaseClient.releaseRemoteVideoPlayback(info.id));
+  }
+
   /// Flush the local position and then report the remote session stop.
   ///
   /// The caller deliberately starts this future without awaiting it so route
@@ -5559,21 +5582,17 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     required int? positionMs,
     required int generation,
   }) async {
-    // 停止上报先于落库**同步发起**（BUG-4285）：互联 backend 按视频 id 释放本次播放
-    // 的流票，若排在落库的 await 之后，同一视频紧接着起的新播放会话会被它一并释放。
-    // [_reportRemotePlaybackStopped] 自己吞掉失败，这里只在最后等它。
-    final Future<void>? stopped = positionMs == null
-        ? null
-        : _reportRemotePlaybackStopped(
-            info: info,
-            client: client,
-            positionMs: positionMs,
-            generation: generation,
-          );
     try {
       await controller?.flushPosition();
     } finally {
-      await stopped;
+      if (positionMs != null) {
+        await _reportRemotePlaybackStopped(
+          info: info,
+          client: client,
+          positionMs: positionMs,
+          generation: generation,
+        );
+      }
     }
   }
 
@@ -5586,18 +5605,15 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     required RemoteVideoClient? client,
     required int generation,
   }) async {
-    // 换集：停止上报必须在新集起播（同一视频 id 的新播放会话）之前同步发起，见
-    // [_flushPositionAndReportRemotePlaybackStopped]（BUG-4285）。
-    final Future<void> stopped = _reportRemotePlaybackStopped(
-      info: info,
-      client: client,
-      positionMs: positionMs,
-      generation: generation,
-    );
     try {
       await _persistRemotePosition(uid, positionMs);
     } finally {
-      await stopped;
+      await _reportRemotePlaybackStopped(
+        info: info,
+        client: client,
+        positionMs: positionMs,
+        generation: generation,
+      );
     }
   }
 
@@ -8353,6 +8369,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     final RemoteVideoInfo? remoteInfo = _effectiveRemoteInfo;
     final RemoteVideoClient? remoteClient = _effectiveRemoteClient;
     final int remoteGeneration = _remotePlaybackGeneration;
+    _releaseRemotePlayback(
+      info: remoteInfo,
+      client: remoteClient,
+      generation: remoteGeneration,
+    );
     exitAfterPersist(
       persist: () => _flushPositionAndReportRemotePlaybackStopped(
         controller: controller,
@@ -8429,6 +8450,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       if (_webWindowFullscreen) await _toggleWebWindowFullscreen();
       if (!mounted) return true;
       if (!route.isCurrent) return false;
+      // 导航到此才确定要关本页：上面任一处取消导航，本页留下且流仍可用（BUG-4285）。
+      _releaseRemotePlayback(
+        info: _effectiveRemoteInfo,
+        client: _effectiveRemoteClient,
+        generation: _remotePlaybackGeneration,
+      );
       await _watchTracker?.stop();
       navigator.pop();
       await route.completed;

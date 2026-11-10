@@ -223,7 +223,7 @@ class InterconnectSyncBackend extends SyncBackend
         RemoteVideoClient,
         RemoteVideoGraphicSubtitleTrackFetch,
         RemoteVideoPlaybackSync,
-        RemoteVideoPlaybackStop,
+        RemoteVideoPlaybackRelease,
         RemoteVideoQualityLimit,
         RemoteVideoDanmakuKeyFetch,
         RemoteVideoWorkMetadataFetch,
@@ -2754,10 +2754,10 @@ class InterconnectSyncBackend extends SyncBackend
   ///
   /// 「自动」档对一个新的源起播时先按链路定起点（[_startAutoQuality]）。
   ///
-  /// 每次调用开一个**播放会话**（BUG-4285）：本次签的流票记在会话名下，页面报播放
-  /// 停止（[stopRemoteVideoPlayback]）时一并释放。会话在入口**同步**登记，不等任何
-  /// await——页面在换集 / 换档 / 退出边界上先同步发起停止、再起新的播放，两者顺序与
-  /// 调用顺序一致。同一 [id] 的新会话顶替旧会话的登记但不释放旧票：旧会话若是另一个
+  /// 每次调用开一个**播放会话**（BUG-4285）：本次签的流票记在会话名下，页面丢掉
+  /// 这次播放的流时（[releaseRemoteVideoPlayback]）一并释放。会话在入口**同步**登记，
+  /// 不等任何 await——页面在换集 / 换档 / 退出边界上先同步发起释放、再起新的播放，
+  /// 两者顺序与调用顺序一致。同一 [id] 的新会话顶替旧会话的登记但不释放旧票：旧会话若是另一个
   /// 仍在播的页面（例如在播放页之上打开同一视频的卡片回看），释放会掐断它的流；没人
   /// 停的旧票按 host 的 TTL 过期，与此前相同。
   @override
@@ -2791,23 +2791,24 @@ class InterconnectSyncBackend extends SyncBackend
   final Map<String, _PlaybackTicketSession> _playbackSessions =
       <String, _PlaybackTicketSession>{};
 
-  /// 播放会话结束（退出 / 换集 / 换档前）：释放这次播放签的流票，host 立刻停掉它们
-  /// 排队与在跑的转码（BUG-4285）。老 host 不回 ticket，这里没有可释放的，什么也不发。
+  /// 页面丢掉这次播放的流（退出 / 换集 / 换档前）：释放这次播放签的流票，host 立刻
+  /// 停掉它们排队与在跑的转码（BUG-4285）。老 host 不回 ticket，这里没有可释放的，
+  /// 什么也不发。自然播完不走这里（页面仍可回拖 / 重看），见 [RemoteVideoPlaybackRelease]。
   ///
-  /// 会话在第一个 await 之前就摘下并标记为已释放：之后才签回来的票（停止时取流还在
-  /// 途中）由 [_fetchPlaybackStreamUrls] 收到即释放。[positionMs] 不用——位置照旧
-  /// 走 [putRemoteVideoPosition]。
+  /// 会话同步摘下并标记为已释放（之后才签回来的票由 [_fetchPlaybackStreamUrls] 收到
+  /// 即释放）；各票的 `/streamrelease` 并发发出，不串行排队——调用方本就不等它。
   @override
-  Future<void> stopRemoteVideoPlayback(String id, int positionMs) async {
+  Future<void> releaseRemoteVideoPlayback(String id) {
     final _PlaybackTicketSession? session = _playbackSessions.remove(id);
-    if (session == null) return;
+    if (session == null) return Future<void>.value();
     session.released = true;
     final List<({String base, String ticket})> tickets =
         List<({String base, String ticket})>.of(session.tickets);
     session.tickets.clear();
-    for (final ({String base, String ticket}) t in tickets) {
-      await _releaseVideoTicket(id, t);
-    }
+    return Future.wait<void>(<Future<void>>[
+      for (final ({String base, String ticket}) t in tickets)
+        _releaseVideoTicket(id, t),
+    ]);
   }
 
   /// 向签发 [t] 的那个 host 基址发 `/streamrelease`。尽力清理：失败只记日志，
