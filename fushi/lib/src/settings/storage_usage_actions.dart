@@ -437,3 +437,128 @@ String storageEntryTitle(StorageEntryUsage entry) => switch (entry.kind) {
   ),
   _ => entry.label,
 };
+
+/// 「一键清除全部缓存」覆盖的类目（反馈 jg3XoDVISk）。
+///
+/// 判据比 [kDeletableEntryCategories]（「删了不留悬空引用」）更严：**只收纯缓存**
+/// ——根下的东西没有任何 DB 行 / 配置 / 用户产物指着，删掉后各自的生产方会按需
+/// 重新生成或重新拉取，系统本身也随时可能清掉它（iOS `Library/Caches`、沙盒 `tmp`）。
+///
+/// 刻意**不含**（它们可删，但删的是用户数据或用户要付出代价才能找回的东西，
+/// 只走存储页逐条删除、各自确认）：
+/// - covers：`video_covers` / `game_covers` 里有用户手动设置的封面（`CoverOrigin.manual`），
+///   `game_covers` 还进备份包——是用户数据，不是缓存；
+/// - web：`browser` 是浏览器登录态 / Cookie，`webArchive` 是用户存档；
+/// - exports：用户导出的文件与待回写 Anki 的卡片草稿；
+/// - backups：本地备份归档，内容就是用户数据的副本；
+/// - ocrModels / shaders：要重新下载几百 MB，`mpv_shaders` 里还混着用户自导入的着色器。
+const Set<StorageCategoryId> kClearAllCacheCategories = <StorageCategoryId>{
+  StorageCategoryId.cache,
+};
+
+/// 一键清缓存的计划：按类目分组的待删明细（确认框据此逐类列出名称与大小）。
+class StorageCacheClearPlan {
+  const StorageCacheClearPlan({required this.categories});
+
+  /// 只含 [kClearAllCacheCategories] 里、且有可删明细的类目，按体积降序。
+  final List<StorageCategoryUsage> categories;
+
+  int get bytes => categories.fold<int>(
+    0,
+    (int sum, StorageCategoryUsage u) =>
+        sum +
+        u.entries.fold<int>(
+          0,
+          (int s, StorageEntryUsage e) => s + e.bytes,
+        ),
+  );
+
+  List<StorageEntryUsage> get entries => <StorageEntryUsage>[
+    for (final StorageCategoryUsage u in categories) ...u.entries,
+  ];
+
+  bool get isEmpty => entries.isEmpty;
+}
+
+/// 从扫描结果里挑出一键清缓存要删的明细。只取
+/// [kDirectlyDeletableEntryKinds] 的明细——即便以后有人往
+/// [kClearAllCacheCategories] 里加了带只读 / 带删除链明细的类目，这里也只会裸删
+/// 「无引用的派生文件」，不会绕过书 / 词典 / 视频各自的删除原语。
+StorageCacheClearPlan buildStorageCacheClearPlan(
+  Iterable<StorageCategoryUsage> usage,
+) {
+  final List<StorageCategoryUsage> categories = <StorageCategoryUsage>[
+    for (final StorageCategoryUsage u in usage)
+      if (kClearAllCacheCategories.contains(u.id))
+        StorageCategoryUsage(
+          id: u.id,
+          bytes: u.bytes,
+          entries: <StorageEntryUsage>[
+            for (final StorageEntryUsage e in u.entries)
+              if (kDirectlyDeletableEntryKinds.contains(e.kind)) e,
+          ],
+        ),
+  ]..removeWhere((StorageCategoryUsage u) => u.entries.isEmpty);
+  categories.sort((StorageCategoryUsage a, StorageCategoryUsage b) {
+    final int byBytes = b.bytes.compareTo(a.bytes);
+    return byBytes != 0 ? byBytes : a.id.index.compareTo(b.id.index);
+  });
+  return StorageCacheClearPlan(categories: categories);
+}
+
+/// 一键清缓存的结果。[failures] 为空 = 全部清掉；[freedBytes] 只算成功删掉的明细。
+class StorageCacheClearOutcome {
+  const StorageCacheClearOutcome({
+    required this.freedBytes,
+    required this.failures,
+    required this.changed,
+  });
+
+  final int freedBytes;
+
+  /// 删不掉的明细（显示名 → 原因）。被占用的临时文件（例如正在进行的导入）
+  /// 删不掉是正常的，逐条报出，不中断其余明细的清理。
+  final Map<String, String> failures;
+
+  /// 磁盘确实变了（至少删掉了一条）→ 调用方需要重扫。
+  final bool changed;
+}
+
+/// 按 [plan] 逐条删除（确认由调用方负责）。每条明细独立：一条删不掉不影响其余，
+/// 失败原因逐条汇总进 [StorageCacheClearOutcome.failures]。
+Future<StorageCacheClearOutcome> clearStorageCache(
+  StorageUsageActions actions,
+  StorageCacheClearPlan plan,
+) async {
+  int freed = 0;
+  bool changed = false;
+  final Map<String, String> failures = <String, String>{};
+  for (final StorageEntryUsage entry in plan.entries) {
+    String? failure;
+    try {
+      failure = await actions.deleteFiles(entry.paths);
+    } on FileSystemException catch (e) {
+      failure = '$e';
+    }
+    if (failure == null) {
+      freed += entry.bytes;
+      changed = true;
+    } else {
+      failures[storageEntryTitle(entry)] = failure;
+    }
+  }
+  return StorageCacheClearOutcome(
+    freedBytes: freed,
+    failures: failures,
+    changed: changed,
+  );
+}
+
+/// 一键清缓存的失败摘要：全成功 → null；否则「第一条: 原因 (+还有几条)」。
+String? storageCacheClearFailureReason(StorageCacheClearOutcome outcome) {
+  if (outcome.failures.isEmpty) return null;
+  final MapEntry<String, String> first = outcome.failures.entries.first;
+  final int rest = outcome.failures.length - 1;
+  final String head = '${first.key}: ${first.value}';
+  return rest > 0 ? '$head (+$rest)' : head;
+}
