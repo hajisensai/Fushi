@@ -4,7 +4,7 @@ import 'package:fushi/src/media/video/video_player_controller.dart';
 import 'package:fushi/src/media/video/video_subtitle_overlay.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 
-/// BUG-4323：ASS 卡拉 OK 歌词作副字幕时顶部多行叠加、光晕残影（反馈 WWUuaXulfG）。
+/// BUG-4349：ASS 卡拉 OK 歌词作副字幕时顶部多行叠加、光晕残影（反馈 WWUuaXulfG）。
 ///
 /// 卡拉 OK 特效把一句拆成同一 `\pos` 上的多条同时事件（整行底字 + 逐音节高亮 / 光晕
 /// 拷贝）。libass 对显式定位事件不做碰撞（`detect_collisions = !explicit`），它们原地
