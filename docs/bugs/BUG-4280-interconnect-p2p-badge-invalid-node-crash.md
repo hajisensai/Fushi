@@ -1,0 +1,14 @@
+## BUG-4280 · p2p 地址不校验 NodeId，路径徽章在定时器里抛未捕获异常
+- **报告**：2026-11-10（用户：互联审查 C11）
+- **真实性**：✅ 真 bug。
+  - `packages/fushi_engine/lib/sync/interconnect_p2p.dart:49-61`（基准 94317ab6295；BUG-4279 后行号未变）`parseInterconnectP2pUrl`：只检查 scheme 与 host 非空，`p2p://xyz` 这类畸形 NodeId 被当成 P2P 地址，一路传到原生 `conn_status` / `client_forward` 的 `EndpointId::from_str`（`native/fushi_p2p/src/lib.rs:227, 261`）才抛。
+  - `fushi/lib/src/sync/interconnect_p2p_path_badge.dart:32-64`：initState 与 `Timer.periodic` 回调里同步调用 `node.status()`，`FushiP2pEndpoint._call` 抛的 `FushiP2pException`（非法 NodeId、端点被 restart 关掉的竞态）没人接：initState 里抛进 build，定时器里成为未捕获异常。
+  - `InterconnectP2pNode.status`（同文件 :233-234）在节点已关闭后仍调原生端点，必抛 `endpoint is closed`，与 `hostPeer` 的「已关闭 → null」口径不一致。
+  - 新测试修复前 8 条中 4 条红：`parseInterconnectP2pUrl('p2p://xyz')` 返回记录而非 null；关闭后 `status` 仍返回 / 调原生；徽章 initState 抛 `FushiP2pException`；`p2p://not-a-node` 仍调用 `status` 4 次。
+- **[x] ① 已修复** — `341985a0cc2`：
+  - engine `interconnect_p2p.dart`：`parseInterconnectP2pUrl` 按 iroh-base 1.2 `decode_base32_hex` 口径校验 NodeId（`^(?:[0-9a-f]{64}|[a-z2-7]{52})$`，`Uri.host` 已小写），不符 → null；`InterconnectP2pNode.status` 改返回 `FushiP2pConnStatus?`，已关闭 → null；导出 `FushiP2pException`。
+  - app `interconnect_p2p_path_badge.dart`：NodeId 非法或没有运行时时不起定时器；首拍用 `Timer(Duration.zero, …)` 移出 initState，之后照旧 periodic；`_poll` 接住 `FushiP2pException` / `StateError`，本拍按无状态显示并继续轮询（runtime 重建后自愈），同一种错误连续出现只经 `ErrorLogService.log('P2pPathBadge', …)` 记一次，成功一拍后清零；url 变化时（`didUpdateWidget`）重置追踪与定时器。
+- **[x] ② 已加自动化测试** —
+  - `fushi/test/sync/interconnect_p2p_path_test.dart`：NodeId 校验纯函数（非法形态 → null；64 hex / 52 base32 可解析、大写转小写）；节点关闭后 `status` 为 null 且不碰端点；徽章 widget 用例（`InterconnectP2pNode.forTesting` + `bindInterconnectP2pClient`）：status 抛 FFI 异常时无未捕获异常、继续轮询、只留痕 1 条、恢复后显示；`p2p://not-a-node` 从不调用 status。
+  - `fushi/test/sync/interconnect_p2p_tunnel_test.dart`、`fushi/test/sync/interconnect_peer_addresses_test.dart`：占位 NodeId（`node` / `nodeabc` / `p2p://node`）换成合法 64 hex 常量。
+- **备注**：Dart 侧校验是必要条件：形态合法但不在 ed25519 曲线上的公钥仍会被原生拒绝，徽章的异常边界兜住这种情况。已存的非法 `p2p://` 行（只可能来自畸形链接）不再被当成 P2P 地址，选路时 resolver 返回 null。纯内存与 UI 行为，无持久数据迁移。
