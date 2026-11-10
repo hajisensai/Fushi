@@ -345,6 +345,17 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  /// 点菜单里的 [label] 一项。曲目菜单项多（「下一首播放」「加入播放队列」排在最上），
+  /// 800×600 测试面上锚点上下都放不下整份菜单时，菜单按 showFushiMenu 的定位规则限高、
+  /// 菜单内滚动；靠下的项要像用户一样先滚进可见区再点。
+  Future<void> tapMenuItem(WidgetTester tester, String label) async {
+    final Finder item = find.text(label);
+    await tester.ensureVisible(item);
+    await tester.pumpAndSettle();
+    await tester.tap(item);
+    await tester.pumpAndSettle();
+  }
+
   testWidgets('自己的歌单：曲目菜单列齐动作，「从这个歌单移除」后重拉', (WidgetTester tester) async {
     await pumpPlaylist(tester, _mine);
     expect(app.manager.log, <String>['playlist:$_mine']);
@@ -360,8 +371,7 @@ void main() {
     ]) {
       expect(find.text(label), findsOneWidget, reason: label);
     }
-    await tester.tap(find.text(t.music_action_remove_from_playlist));
-    await tester.pumpAndSettle();
+    await tapMenuItem(tester, t.music_action_remove_from_playlist);
     expect(app.manager.log, <String>[
       'playlist:$_mine',
       'remove:$_mine:1',
@@ -388,8 +398,7 @@ void main() {
   testWidgets('以这首起电台：按种子取一批并开播、来源记成该电台', (WidgetTester tester) async {
     await pumpPlaylist(tester, _other);
     await openTrackMenu(tester, '1');
-    await tester.tap(find.text(t.music_action_start_station));
-    await tester.pumpAndSettle();
+    await tapMenuItem(tester, t.music_action_start_station);
     expect(app.manager.log, contains('radio:1'));
     final MusicPlayerEngine engine = app.musicSession.engine;
     expect(engine.current?.title, 'Track r1');

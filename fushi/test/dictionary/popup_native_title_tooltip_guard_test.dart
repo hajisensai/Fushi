@@ -96,6 +96,19 @@ void main() {
       );
     });
 
+    test('制卡按钮（已制卡管理提示 / 已入队）改走 setInlineButtonTip（反馈 3UHYaFPP8g）', () {
+      expect(
+        RegExp(r'\bmineButton\.title\s*=').hasMatch(js),
+        isFalse,
+        reason: '制卡按钮不得设原生 title——离屏 WebView2 上会飘到上一个词条上方',
+      );
+      expect(
+        js,
+        contains('setInlineButtonTip(mineButton,'),
+        reason: '制卡按钮的提示走 DOM 自绘 .fushi-btn-tip',
+      );
+    });
+
     test('无音频反馈 showNoAudioHint 不再设原生 title（本就有自绘 .audio-hint）', () {
       final int start = js.indexOf('function showNoAudioHint(');
       expect(start, greaterThanOrEqualTo(0), reason: 'showNoAudioHint 应存在');

@@ -72,6 +72,7 @@ class WindowFullscreenHostPageRoute<T> extends PageRouteBuilder<T> {
     required super.pageBuilder,
     super.transitionDuration,
     super.reverseTransitionDuration,
+    super.settings,
   });
 
   @override

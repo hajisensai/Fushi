@@ -336,7 +336,7 @@ void main() {
     );
   });
 
-  test('⑥ 阅读面切屏暂停（paused/inactive stop、resumed start）；视频面 inactive 不停', () {
+  test('⑥ 阅读面切屏暂停（paused/inactive stop、resumed start）；视频面 inactive 在播不停', () {
     for (final String path in <String>[
       'lib/src/pages/implementations/reader_fushi_page.dart',
       'lib/src/pages/implementations/reader_pdf_page.dart',
@@ -380,17 +380,36 @@ void main() {
     );
     final int inactive = video.indexOf('case AppLifecycleState.inactive:');
     final int paused = video.indexOf('case AppLifecycleState.paused:');
+    final int resumed = video.indexOf('case AppLifecycleState.resumed:');
     expect(inactive, greaterThanOrEqualTo(0));
     expect(paused, greaterThan(inactive));
+    expect(resumed, greaterThan(paused));
+    final String videoInactive = video.substring(inactive, paused);
     expect(
-      video.substring(inactive, paused).contains('_watchTracker?.stop()'),
+      videoInactive.contains('_watchTracker?.stop()'),
       isFalse,
-      reason: '视频切走仍在播就照常计时（用户拍板）：inactive 不得停表',
+      reason: '视频切走仍在播就照常计时（用户拍板）：inactive 不得停采样 / 停表',
     );
+    // 2026-11-07 起视频面也走 StudyClockRunGate：失焦只喂「失焦」，由门按「仍在播放
+    // 才计」裁决（studyClockGateMayRun 的 unfocused + playing）。
     expect(
-      video.substring(paused).contains('_watchTracker?.stop()'),
+      videoInactive.contains('_studyClockGate.setUnfocused(true);'),
+      isTrue,
+      reason: '视频失焦必须喂计时门（停着就停表、在播照计）',
+    );
+    final String videoBg = video.substring(paused, resumed);
+    expect(
+      videoBg.contains('_watchTracker?.stop()') &&
+          videoBg.contains('_studyClockGate.setLifecycleStopped(true);'),
       isTrue,
       reason: '真后台 / 熄屏才停',
+    );
+    final String videoFg = video.substring(resumed);
+    expect(
+      videoFg.contains('_studyClockGate.setUnfocused(false);') &&
+          videoFg.contains('_studyClockGate.setLifecycleStopped(false);'),
+      isTrue,
+      reason: '回前台经计时门续表（仍被盖住 / 手动暂停就不续）',
     );
   });
 

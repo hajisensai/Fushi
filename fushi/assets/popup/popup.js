@@ -2709,12 +2709,20 @@ function renderDefinitionImageToCanvas(canvas, image, usedWidth, invAspectRatio,
 }
 
 // https://github.com/yomidevs/yomitan/blob/c0abb9e98a15aeb6b6f8f6e2d91fe5e54240b54a/ext/js/data/anki-note-data-creator.js#L177-L221
-function getFrequencyHarmonicRank(frequencies) {
+//
+// One number per dictionary, in display order: the first frequency of the first
+// group of each dictionary (later groups of the same dictionary are ignored), its
+// displayValue's leading digits when they parse to > 0, else its numeric value
+// when > 0, else the dictionary contributes nothing. This is the single source for
+// BOTH the harmonic rank ({frequency-harmonic-rank}) and Yomitan's per-dictionary
+// {single-frequency-number-<dict>} (BUG-4272: per-dict frequency could not
+// be mapped), so the two can never disagree about which number a dictionary gave.
+function collectFrequencyNumbers(frequencies) {
+    const numbers = [];
     if (!frequencies || frequencies.length === 0) {
-        return DEFAULT_HARMONIC_RANK;
+        return numbers;
     }
-    
-    const values = [];
+
     const seenDictionaries = new Set();
     frequencies.forEach(freqGroup => {
         const dictionary = freqGroup?.dictionary;
@@ -2724,36 +2732,73 @@ function getFrequencyHarmonicRank(frequencies) {
         if (dictionary) {
             seenDictionaries.add(dictionary);
         }
-        
+
         const firstFreq = freqGroup?.frequencies?.[0];
         if (!firstFreq) {
             return;
         }
-        
+
         const displayValue = firstFreq.displayValue;
         if (displayValue != null) {
             const match = String(displayValue).match(/^\d+/);
             if (match) {
                 const parsed = Number.parseInt(match[0], 10);
                 if (parsed > 0) {
-                    values.push(parsed);
+                    numbers.push({ dictionary, value: parsed });
                     return;
                 }
             }
         }
-        
+
         const val = firstFreq.value;
         if (val && val > 0) {
-            values.push(val);
+            numbers.push({ dictionary, value: val });
         }
     });
-    
+    return numbers;
+}
+
+function getFrequencyHarmonicRank(frequencies) {
+    const values = collectFrequencyNumbers(frequencies).map(n => n.value);
+
     if (values.length === 0) {
         return DEFAULT_HARMONIC_RANK;
     }
-    
+
     const sumOfReciprocals = values.reduce((sum, val) => sum + (1 / val), 0);
     return String(Math.floor(values.length / sumOfReciprocals));
+}
+
+// Yomitan {single-frequency-number-<dict>}: dictionary name -> that dictionary's
+// number (as a string, like freqHarmonicRank). Dictionaries without a usable
+// number are absent, so the Dart renderer yields '' for them (same as Yomitan,
+// whose partial renders nothing when the dictionary has no frequency).
+function constructSingleFrequencyNumbers(frequencies) {
+    const result = {};
+    collectFrequencyNumbers(frequencies).forEach(({ dictionary, value }) => {
+        if (dictionary) {
+            result[dictionary] = String(value);
+        }
+    });
+    return result;
+}
+
+// Yomitan {single-frequency-<dict>}: the {frequencies} list restricted to one
+// dictionary, rendered by the same constructFrequencyHtml so the markup matches.
+function constructSingleFrequenciesHtml(frequencies) {
+    const result = {};
+    if (!frequencies || frequencies.length === 0) {
+        return result;
+    }
+    frequencies.forEach(freqGroup => {
+        const dictionary = freqGroup?.dictionary;
+        if (!dictionary || dictionary in result || !freqGroup?.frequencies?.length) {
+            return;
+        }
+        result[dictionary] = constructFrequencyHtml(
+            frequencies.filter(group => group?.dictionary === dictionary));
+    });
+    return result;
 }
 
 // Builds the Anki field payload for a popup entry. Shared by mineEntry (create)
@@ -2768,6 +2813,8 @@ async function buildMinePayload(expression, reading, frequencies, pitches, rules
     const glossary = constructGlossaryHtml(idx);
     const freqHarmonicRank = getFrequencyHarmonicRank(frequencies);
     const frequenciesHtml = constructFrequencyHtml(frequencies);
+    const singleFrequencyNumbers = constructSingleFrequencyNumbers(frequencies);
+    const singleFrequenciesHtml = constructSingleFrequenciesHtml(frequencies);
     const singleGlossaries = constructSingleGlossaryHtml(idx);
     const dictionaryMedia = currentDictionaryMedia;
     currentDictionaryMedia = null;
@@ -2838,6 +2885,8 @@ async function buildMinePayload(expression, reading, frequencies, pitches, rules
         furiganaPlain,
         frequenciesHtml,
         freqHarmonicRank,
+        singleFrequencyNumbers: JSON.stringify(singleFrequencyNumbers),
+        singleFrequenciesHtml: JSON.stringify(singleFrequenciesHtml),
         glossary,
         glossaryFirst,
         singleGlossaries: JSON.stringify(singleGlossaries),
@@ -3590,10 +3639,29 @@ const DICT_SANDBOX_HELPER_JS = `(function () {
     return (code >= 0x3040 && code <= 0x30ff) || (code >= 0x3400 && code <= 0x9fff) ||
            (code >= 0xf900 && code <= 0xfaff) || (code >= 0xff66 && code <= 0xff9f);
   }
+  function anchorOf(event) {
+    var target = event.target && event.target.nodeType === 3 ? event.target.parentElement : event.target;
+    return target && target.closest ? target.closest('a[href]') : null;
+  }
+  function isSoundLink(anchor) {
+    return /^sound:/i.test((anchor.getAttribute('href') || '').trim());
+  }
+  // sound:// 是 MDict 约定由宿主从 MDD 取字节播放的协议，沙箱里的词典脚本自己播不了
+  // （CSP 不放行网络与相对路径媒体）。词典脚本却常在释义根节点上委托接管 speaker 点击并
+  // return false（LDOCE5++ 的 LM5Switch.js 在桌面 Chrome UA 下改走 ldoceonline 在线发音），
+  // 冒泡阶段的监听因此既收不到、也被 defaultPrevented 挡掉，发音整个哑掉。所以在 window
+  // 捕获阶段先接住：早于词典脚本的任何监听，只阻止默认导航、不拦传播，词典自己的 UI 照跑。
+  window.addEventListener('click', function (event) {
+    var anchor = anchorOf(event);
+    if (!anchor || !isSoundLink(anchor)) return;
+    event.preventDefault();
+    post({ type: 'link', href: anchor.getAttribute('href') || '', text: baseText(anchor),
+           rect: rectOf(event.clientX, event.clientY, anchor) });
+  }, true);
   document.addEventListener('click', function (event) {
     if (event.defaultPrevented) return;
-    var target = event.target && event.target.nodeType === 3 ? event.target.parentElement : event.target;
-    var anchor = target && target.closest ? target.closest('a[href]') : null;
+    var anchor = anchorOf(event);
+    if (anchor && isSoundLink(anchor)) return;
     if (anchor) {
       event.preventDefault();
       post({ type: 'link', href: anchor.getAttribute('href') || '', text: baseText(anchor),
@@ -5626,9 +5694,11 @@ function createEntryHeader(entry, idx) {
         const queued = isEntryQueued();
         mineButton.dataset.queued = queued ? '1' : '';
         // 已制卡的 ✓ 提示「管理」手势（右键 / 长按）在哪——单击在「允许重复」开着时会直接新增。
-        mineButton.title = queued
+        // BUG-842 / 反馈 3UHYaFPP8g：走 DOM 自绘提示，不用原生 title——离屏 WebView2 上
+        // 原生提示按未拉伸坐标定位，会飘到上一个词条上方。
+        setInlineButtonTip(mineButton, queued
             ? (window.i18nMineQueued || '已加入制卡队列')
-            : (isMined ? (window.i18nMinedManageHint || '右键或长按：覆写 / 查看已有卡片') : '');
+            : (isMined ? (window.i18nMinedManageHint || '右键或长按：覆写 / 查看已有卡片') : ''));
         mineButton.classList.toggle('queued', queued);
         // Single source of truth for the button's lookup-time-detected state.
         // The optional second flag is the "latest editable" sub-state; it is only

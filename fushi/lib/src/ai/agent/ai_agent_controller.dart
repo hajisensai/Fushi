@@ -22,7 +22,6 @@ import 'package:fushi/src/ai/mcp_client/ai_mcp_client_runtime.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/ops/app_op_context.dart';
 import 'package:fushi/src/ops/op_context.dart';
-import 'package:fushi/src/ops/op_routes.dart';
 
 /// 「AI 助手」当前可用的提供商；null = 未指派（不发任何请求，引导去设置）。
 AiProviderConfig? resolveAiAgentProvider(AiSettingsSource settings) => settings
@@ -236,7 +235,7 @@ class AiAgentController extends ChangeNotifier
   ValueListenable<int> get sessionsRevision => _sessionsRevision;
 
   AiAgentToolbox get toolbox => _toolbox ??= AiAgentToolbox(
-    invoker: _invoker ??= buildInProcessOpInvoker(
+    invoker: _invoker ??= buildAppInProcessOpInvoker(
       _opContext,
       extra: buildAiAgentInProcessOps(_opContext),
     ),
