@@ -263,6 +263,9 @@ class SrsPageWindowLink {
 }
 
 /// [SrsPageWindowLink] 下发到页面的脚本（幂等；守卫监听只装一次）。
+///
+/// 只能钉住**布局视口**（`window.scrollTo` / `scrollY`）；视觉视口相对布局视口的偏移由
+/// [kSrsVisualViewportPinScript] 管，这里每次钉完位置都让它复位一次。
 @visibleForTesting
 String srsPageWindowScript(double? top) {
   final String t = top == null ? 'null' : top.round().toString();
@@ -270,11 +273,15 @@ String srsPageWindowScript(double? top) {
 (function(t){
   var r = document.documentElement;
   window.__fushiSrsWindowTop = t;
+  var vv = function(){
+    if (typeof window.__fushiSrsPinViewport === 'function') window.__fushiSrsPinViewport();
+  };
   if (!window.__fushiSrsWindowGuard) {
     window.__fushiSrsWindowGuard = true;
     var pin = function(){
       var w = window.__fushiSrsWindowTop;
       if (typeof w === 'number' && Math.abs(window.scrollY - w) >= 1) window.scrollTo(0, w);
+      vv();
     };
     window.addEventListener('scroll', pin, {passive: true});
     if (window.ResizeObserver) new window.ResizeObserver(pin).observe(document.body);
@@ -282,13 +289,76 @@ String srsPageWindowScript(double? top) {
   if (t === null) {
     r.style.overflowY = '';
     window.scrollTo(0, 0);
+    vv();
     return;
   }
   r.style.overflowY = 'hidden';
   window.scrollTo(0, t);
+  vv();
 })($t);
 ''';
 }
+
+/// 视觉视口复位（BUG-4172 / NoerCpP877：复习卡释义上沿被切、跨卡残留、滚不回）。
+///
+/// 现场（`SrsWebCardFace.pageOffset`）：窄版式释义页 `scrollY = 0`、`innerHeight = 1811`，
+/// `visualViewport = {offsetTop: 58.9, height: 306, scale: 1}`——平台视图远高于屏幕时，
+/// Chromium 的视觉视口比布局视口小，长按选词 / 拖选区时它在布局视口**里面**滚了一段，
+/// 卡面整体上移、顶部被切。卡面所有复位（换卡 `__fushiSrsSetCard`、窗口态
+/// [srsPageWindowScript]）都只用 `window.scrollTo`，那只动布局视口，视觉视口的偏移留着；
+/// WebView 跨卡复用，偏移带到下一张卡；窄版式平台视图不认领纵向拖，用户也滚不回来。
+///
+/// 卡面页面的不变式：未缩放（`scale == 1`）时视觉视口与布局视口原点重合。`pin()`：
+/// 偏移 ≥ 1px 时把一个钉在布局视口原点的锚点 `scrollIntoView` 到视觉视口起点——
+/// scrollIntoView 走 Chromium 的根视口（布局 + 视觉两层），布局视口已经在锚点上，只剩视觉
+/// 视口被移回 0。以下情形不动：页面被缩放（用户意图）、选区还在（拖手柄时 Chromium 会
+/// 自动滚视觉视口跟手，选区收起后 `selectionchange` 再复位）、焦点在可编辑元素上（软键盘
+/// 弹出时要让光标可见）。
+///
+/// 时机：视觉视口 `scroll` / `resize`、`selectionchange`、换卡、窗口态钉位置。幂等：外壳里只装
+/// 一次（`window.__fushiSrsPinViewport` 同时是给其它脚本调的入口）。
+@visibleForTesting
+const String kSrsVisualViewportPinScript = r'''
+(function(){
+  if (window.__fushiSrsPinViewport) return;
+  var anchor = null;
+  function editing(){
+    var a = document.activeElement;
+    if (!a || a === document.body || a === document.documentElement) return false;
+    if (a.isContentEditable) return true;
+    var tag = String(a.tagName || '').toLowerCase();
+    return tag === 'input' || tag === 'textarea' || tag === 'select';
+  }
+  function pin(){
+    var vv = window.visualViewport;
+    var root = document.documentElement;
+    if (!vv || !root) return;
+    if (Math.abs(vv.scale - 1) > 0.01) return;
+    if (Math.abs(vv.offsetTop) < 1 && Math.abs(vv.offsetLeft) < 1) return;
+    var sel = window.getSelection ? window.getSelection() : null;
+    if (sel && !sel.isCollapsed) return;
+    if (editing()) return;
+    if (!anchor || !anchor.isConnected) {
+      anchor = document.createElement('div');
+      anchor.setAttribute('aria-hidden', 'true');
+      anchor.style.cssText = 'position:absolute;width:1px;height:1px;margin:0;' +
+        'padding:0;border:0;pointer-events:none;visibility:hidden;';
+      root.appendChild(anchor);
+    }
+    // 锚点 = 布局视口原点（文档坐标）。根节点带 `zoom`（卡面缩放）时 px 要按 zoom 折回。
+    var z = parseFloat(getComputedStyle(root).zoom) || 1;
+    anchor.style.top = (window.scrollY / z) + 'px';
+    anchor.style.left = (window.scrollX / z) + 'px';
+    anchor.scrollIntoView({block: 'start', inline: 'start', behavior: 'instant'});
+  }
+  window.__fushiSrsPinViewport = pin;
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('scroll', pin);
+    window.visualViewport.addEventListener('resize', pin);
+  }
+  document.addEventListener('selectionchange', pin);
+})();
+''';
 
 /// 卡面 WebView 平台视图自己认领的手势（eo2pH56Ont / Z9APuG_imH）：谁渲染谁吃手势，与查词弹窗
 /// （dictionary_popup_webview.dart）同一做法。
@@ -1058,6 +1128,8 @@ const String kSrsCardShellScript = r'''
     if (lang) q.setAttribute('lang', lang); else q.removeAttribute('lang');
     q.innerHTML = html;
     window.scrollTo(0, 0);
+    // scrollTo 只回布局视口；上一张卡留下的视觉视口偏移一并复位（BUG-4172）。
+    if (window.__fushiSrsPinViewport) window.__fushiSrsPinViewport();
     var scripts = Array.prototype.slice.call(q.getElementsByTagName('script'));
     var result = replayFrom(scripts, 0, my);
     if (result && typeof result.then === 'function') {
@@ -1153,6 +1225,7 @@ String srsCardShellHtml({
       // （与它们原本在文档里的先后一致）。
       '<style id="fushi-css-tpl"></style><style id="fushi-css-body"></style>'
       '<script>$kSrsCardDictStyleScript</script>'
+      '<script>$kSrsVisualViewportPinScript</script>'
       '<script>$kSrsCardShellScript</script>'
       '</head><body class="$cls"><div id="fushi-card-root" class="$cls">'
       '<div id="qa"></div></div></body></html>';
@@ -2498,7 +2571,12 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
         initialSettings: InAppWebViewSettings(
           javaScriptEnabled: true,
           supportZoom: false,
-          disableContextMenu: true,
+          // 触屏端用系统选区菜单（复制 / 全选 / 分享…，cQFqqg193s）：长按选词后这是唯一的复制
+          // 入口。Android 混合渲染且不传 contextMenu 时 fork 直接交给系统 ActionMode
+          // （InAppWebView.java startActionMode），iOS 是系统编辑菜单，视觉随平台。桌面端照旧关：
+          // 有 Ctrl/Cmd+C；WebView2 / WKWebView 的原生右键菜单带「返回 / 刷新」，刷新会把外壳页
+          // 重载成空卡。
+          disableContextMenu: !isMobilePlatform,
           // 透明：卡片底色只来自主题 CSS（[srsCardThemeCss]）与卡片 CSS，模板写透明时
           // 透出复习页背景，而不是平台视图自己的白底。
           transparentBackground: true,

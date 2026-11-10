@@ -216,6 +216,7 @@ import 'package:fushi/src/utils/misc/fushi_share.dart';
 import 'package:fushi/src/storage/legacy_support_dir_migration.dart';
 import 'package:fushi/src/engine_bindings.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_cloudflare_challenge.dart';
+import 'package:fushi/src/media/discovery/download_gateway_challenge_page.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime_factory.dart';
 import 'package:fushi/src/utils/system_transparency.dart';
 import 'package:fushi/src/media/media_source.dart';
@@ -1278,6 +1279,8 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     if (MihonRuntimeFactory.isSupported && !Platform.isAndroid) {
       installMihonCloudflareResolver(ref.read(appProvider).navigatorKey);
     }
+    // 发现页直链下载撞上下载网关的人机验证（BUG-4354）时，由宿主弹 WebView 解题。
+    installDownloadGatewayChallengeSolver(ref.read(appProvider).navigatorKey);
 
     if (Platform.isAndroid) {
       WidgetsBinding.instance.addPostFrameCallback((_) async {
