@@ -1,0 +1,9 @@
+# 网关（本机）与 agent（被控端）共用。mcp 固定 1.x：2.x 把 FastMCP 改名为 MCPServer。
+mcp>=1.12,<2
+websockets>=14
+mss>=9
+Pillow>=10
+# 只用于跑测试与打包
+pytest>=8
+pytest-asyncio>=0.23
+pyinstaller>=6

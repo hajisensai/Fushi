@@ -88,6 +88,7 @@
 | 第二块屏（双屏伴屏、游戏串流副屏、手柄查词模式） | [second-screen.md](docs/agent/second-screen.md) |
 | 学习统计域 | [statistics.md](docs/agent/statistics.md) |
 | Galgame Hook | [galgame-hooking.md](docs/agent/galgame-hooking.md) |
+| 远程操作社区志愿者电脑做 galgame 适配（多台并行、MCP 网关、租约） | [remote-adapt.md](docs/agent/remote-adapt.md) |
 | 本机重活租约 | [heavy-lease.md](docs/agent/heavy-lease.md) |
 | 在线源 / 浏览 / 应用内反馈 | [online-sources.md](docs/agent/online-sources.md) |
 | 动画刮削 | [anime-scraping.md](docs/agent/anime-scraping.md) |
