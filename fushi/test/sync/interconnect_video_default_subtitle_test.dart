@@ -720,18 +720,25 @@ void main() {
 
     test('对轴 / 重定时入口不再只认本地视频文件', () {
       expect(part, isNot(contains('!_isRemote && _currentVideoPath != null')));
-      // 波形与自动对轴只看前几分钟，走对轴音源：整集音源优先，媒体服务器流再退到
+      // 自动对轴只看前几分钟，走对轴音源：整集音源优先，媒体服务器流再退到
       // 只裁前 N 分钟（BUG-3290 批次）；ASR 转录要整集，仍只认整集音源。
-      for (final String fn in <String>[
-        'Future<int?> _autoAlignSubtitle(',
-        'Future<List<double>> _loadSubtitleWaveformEnvelope(',
-      ]) {
-        expect(
-          body(part, fn),
-          contains('_resolveSubtitleAlignAudio()'),
-          reason: '$fn 要经统一对轴音源解析，远端才拿得到 host 裁的音轨',
-        );
-      }
+      expect(
+        body(part, 'Future<int?> _autoAlignSubtitle('),
+        contains('_resolveSubtitleAlignAudio()'),
+        reason: '自动对轴要经统一对轴音源解析，远端才拿得到 host 裁的音轨',
+      );
+      // 波形视图是片长全程、按段抽（EUvw-RjUE4）：整集音源同样走整集音源解析（互联
+      // 远端拿 host 裁的整集音轨），流再退到只拉被请求的那一段。
+      final String waveform = body(
+        part,
+        'Future<List<double>> _loadSubtitleWaveformSegment(',
+      );
+      expect(
+        waveform,
+        contains('_resolveSubtitleTimingAudio()'),
+        reason: '波形分段要经整集音源解析，远端才拿得到 host 裁的音轨',
+      );
+      expect(waveform, contains('_streamAlignAudioSource'));
       expect(
         body(part, 'Future<_SubtitleTimingAudio?> _resolveSubtitleAlignAudio('),
         contains('return _resolveSubtitleTimingAudio();'),

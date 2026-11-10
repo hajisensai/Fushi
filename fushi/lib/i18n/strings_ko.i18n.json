@@ -11821,6 +11821,7 @@
   "video_subtitle_waveform_open": "파형 정렬",
   "video_subtitle_waveform_open_hint": "탭하여 확대하고 정렬",
   "video_subtitle_waveform_scroll_hint": "드래그하여 타임라인을 탐색하세요. 아래 컨트롤로 정렬하세요",
+  "video_subtitle_waveform_segment_loading": "Loading waveform…",
   "video_subtitle_waveform_unavailable": "이 기기에서 파형을 사용할 수 없습니다",
   "video_subtitle_waveform_zoom_in": "확대",
   "video_subtitle_waveform_zoom_out": "축소",
