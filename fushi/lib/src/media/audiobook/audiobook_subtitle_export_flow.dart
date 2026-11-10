@@ -72,13 +72,13 @@ Future<bool> runAudiobookSubtitleExport({
       })
       pick =
           saveFilePicker ??
+          // 默认文件名已带 .srt；不传 FileType.custom 扩展名过滤（BUG-2099 的
+          // 选择器纪律，豁免清单只减不增，同 M4B 导出）。
           ({required String fileName, required String? initialDirectory}) =>
               FilePicker.platform.saveFile(
                 dialogTitle: t.audiobook_transcribe_export,
                 fileName: fileName,
                 initialDirectory: initialDirectory,
-                type: FileType.custom,
-                allowedExtensions: const <String>['srt'],
               );
       final String? savePath = await pick(
         fileName: fileName,
@@ -93,7 +93,10 @@ Future<bool> runAudiobookSubtitleExport({
     }
     final Directory staging = await prepareTtsAudiobookShareStagingDir(
       Directory(
-        p.join(Directory.systemTemp.path, kAudiobookSubtitleShareStagingDirName),
+        p.join(
+          Directory.systemTemp.path,
+          kAudiobookSubtitleShareStagingDirName,
+        ),
       ),
     );
     final String path = p.join(staging.path, fileName);
