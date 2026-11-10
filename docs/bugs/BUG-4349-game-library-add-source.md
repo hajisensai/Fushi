@@ -1,4 +1,4 @@
-## BUG-4347 · 游戏库缺少「添加来源」扫描目录（SourceLibraryKind 没有 game）
+## BUG-4349 · 游戏库缺少「添加来源」扫描目录（SourceLibraryKind 没有 game）
 - **报告**：2026-11-09（开发者自提，应用内反馈 9Rm_8JEkGM，Windows：「游戏缺少添加来源的地方」）
 - **真实性**：✅ 真缺口，已沿代码路径确认。来源库种类值域 `packages/fushi_core/lib/src/database/source_library_kind.dart:11-20` 只有 `book / video / manga / music`；游戏「导入」视图 `fushi/lib/src/pages/implementations/home_game_page.dart` `_buildImport` 只有快速导入区（「添加游戏」选单个 exe / 拖 exe，`galgame_add_flow.dart`），书 / 漫画 / 视频 / 音乐「导入」视图都有的「常驻来源」区（区头「添加来源」+ `MediaSourcesView`）在游戏模块缺席，游戏库没法登记扫描目录。
 - **[x] ① 已修复** — 提交见 PR。
