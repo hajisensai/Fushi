@@ -6,6 +6,10 @@
 /// [FushiHoverLift]（桌面悬停上浮）；当前屏上的页用强调色描边圈出。网格在
 /// [FushiEntranceScope] 里经 [fushiStaggeredItemBuilder] 错峰进场（墨水屏 / 减弱
 /// 动态效果下瞬间出现）。打开时滚到当前页附近。
+///
+/// 在线直读章还没取到的页由 [MangaPageGridPrefetcher] 预取（反馈 3VwZimDVBE）：
+/// 网格只负责按滚动位置给出「可见优先」的有序页表、页到了就重画格子，取页本身
+/// （缓存、并发、请求头、取消）全在阅读器的页会话里。
 library;
 
 import 'dart:math' as math;
@@ -21,15 +25,26 @@ import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
 
+/// 网格的页图预取方：网格按滚动位置交给它有序页表（可见行在前），页落盘后它
+/// 通知网格重画；面板关掉时网格调 [stop]。
+abstract interface class MangaPageGridPrefetcher implements Listenable {
+  /// 想要的页（0-based），按优先级排好；不在表里的旧请求由实现方撤掉。
+  void requestPages(List<int> orderedPages);
+
+  /// 面板关了：撤掉所有还在排队的请求，之后的 [requestPages] 不再发请求。
+  void stop();
+}
+
 /// 打开页面网格；返回用户点中的 0-based 页号，关掉返回 null。
 ///
-/// [thumbnail] 只该给已经在盘上的页图（不为了缩略图去发网络请求），返回 null
-/// 的格子画页码占位。
+/// [thumbnail] 只给已经在盘上的页图（同步、不发请求），返回 null 的格子画页码
+/// 占位；要让没取到的页也能预览，传 [prefetcher]，页落盘后格子自动换成页图。
 Future<int?> showMangaPageGridSheet({
   required BuildContext context,
   required int pageCount,
   required Set<int> currentPages,
   required ImageProvider? Function(int pageIndex) thumbnail,
+  MangaPageGridPrefetcher? prefetcher,
 }) {
   return adaptiveModalSheet<int>(
     context: context,
@@ -37,8 +52,51 @@ Future<int?> showMangaPageGridSheet({
       pageCount: pageCount,
       currentPages: currentPages,
       thumbnail: thumbnail,
+      prefetcher: prefetcher,
     ),
   );
+}
+
+/// 可见行之外往下（阅读方向）至少多预取几行；实际取 max(本值, 一屏行数)。
+const int kMangaPageGridPrefetchMinAheadRows = 2;
+
+/// 可见行之外往上多预取几行。
+const int kMangaPageGridPrefetchBehindRows = 1;
+
+/// 纯函数：网格可见行 [firstVisibleRow]..[lastVisibleRow]（含）时要预取的页，
+/// 按优先级排好——可见行从上到下，再往下 [aheadRows] 行，最后往上 [behindRows] 行。
+List<int> mangaPageGridPrefetchOrder({
+  required int pageCount,
+  required int columns,
+  required int firstVisibleRow,
+  required int lastVisibleRow,
+  required int aheadRows,
+  int behindRows = kMangaPageGridPrefetchBehindRows,
+}) {
+  if (pageCount <= 0 || columns <= 0) return const <int>[];
+  final int lastRow = (pageCount - 1) ~/ columns;
+  final int first = firstVisibleRow.clamp(0, lastRow);
+  final int last = lastVisibleRow.clamp(first, lastRow);
+  final List<int> order = <int>[];
+  void addRow(int row) {
+    if (row < 0 || row > lastRow) return;
+    final int start = row * columns;
+    final int end = math.min(start + columns, pageCount);
+    for (int index = start; index < end; index++) {
+      order.add(index);
+    }
+  }
+
+  for (int row = first; row <= last; row++) {
+    addRow(row);
+  }
+  for (int row = last + 1; row <= last + aheadRows; row++) {
+    addRow(row);
+  }
+  for (int row = first - 1; row >= first - behindRows; row--) {
+    addRow(row);
+  }
+  return order;
 }
 
 /// 网格格子的目标宽（逻辑像素）：手机竖屏一行 3–4 格，桌面一行 6–9 格。
@@ -52,6 +110,7 @@ const double kMangaPageGridLabelHeight = 24;
 
 const double _kGridSpacing = 12;
 const double _kGridPadding = 20;
+const double _kGridTopPadding = 4;
 
 class MangaPageGridSheet extends StatefulWidget {
   const MangaPageGridSheet({
@@ -59,11 +118,13 @@ class MangaPageGridSheet extends StatefulWidget {
     required this.pageCount,
     required this.currentPages,
     required this.thumbnail,
+    this.prefetcher,
   });
 
   final int pageCount;
   final Set<int> currentPages;
   final ImageProvider? Function(int pageIndex) thumbnail;
+  final MangaPageGridPrefetcher? prefetcher;
 
   @override
   State<MangaPageGridSheet> createState() => _MangaPageGridSheetState();
@@ -72,11 +133,65 @@ class MangaPageGridSheet extends StatefulWidget {
 class _MangaPageGridSheetState extends State<MangaPageGridSheet> {
   ScrollController? _controller;
   int? _controllerColumns;
+  double _rowExtent = 1;
+
+  /// 上一次交给预取方的可见行区间；没变就不重发。
+  (int, int)? _requestedRows;
+  bool _prefetchScheduled = false;
 
   @override
   void dispose() {
+    widget.prefetcher?.stop();
+    _controller?.removeListener(_requestVisiblePages);
     _controller?.dispose();
     super.dispose();
+  }
+
+  /// 按当前滚动位置算可见行，变了就把「可见优先」的页表交给预取方。
+  void _requestVisiblePages() {
+    final MangaPageGridPrefetcher? prefetcher = widget.prefetcher;
+    final ScrollController? controller = _controller;
+    final int? columns = _controllerColumns;
+    if (prefetcher == null ||
+        controller == null ||
+        columns == null ||
+        !controller.hasClients) {
+      return;
+    }
+    final ScrollPosition position = controller.position;
+    if (!position.hasViewportDimension || !position.hasPixels) return;
+    final double top = position.pixels - _kGridTopPadding;
+    final int firstRow = math.max(0, (top / _rowExtent).floor());
+    final int lastRow = math.max(
+      firstRow,
+      ((top + position.viewportDimension) / _rowExtent).floor(),
+    );
+    final (int, int) rows = (firstRow, lastRow);
+    if (rows == _requestedRows) return;
+    _requestedRows = rows;
+    prefetcher.requestPages(
+      mangaPageGridPrefetchOrder(
+        pageCount: widget.pageCount,
+        columns: columns,
+        firstVisibleRow: firstRow,
+        lastVisibleRow: lastRow,
+        // 往下至少预读一屏。
+        aheadRows: math.max(
+          kMangaPageGridPrefetchMinAheadRows,
+          lastRow - firstRow + 1,
+        ),
+      ),
+    );
+  }
+
+  /// 布局完（有了视口尺寸）再算第一次可见区；列数变了也重算。
+  void _schedulePrefetch() {
+    if (widget.prefetcher == null || _prefetchScheduled) return;
+    _prefetchScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((Duration _) {
+      _prefetchScheduled = false;
+      if (mounted) _requestVisiblePages();
+    });
   }
 
   /// 列数变化（窗口改宽）时重建控制器，初始偏移按新列数重新对准当前页。
@@ -89,9 +204,13 @@ class _MangaPageGridSheetState extends State<MangaPageGridSheet> {
     final int row = current ~/ columns;
     // 当前页所在行上方留半行，让它不贴着网格顶边。
     final double offset = math.max(0, row * rowExtent - rowExtent / 2);
+    existing?.removeListener(_requestVisiblePages);
     existing?.dispose();
     _controllerColumns = columns;
-    return _controller = ScrollController(initialScrollOffset: offset);
+    _requestedRows = null;
+    _schedulePrefetch();
+    return _controller = ScrollController(initialScrollOffset: offset)
+      ..addListener(_requestVisiblePages);
   }
 
   @override
@@ -113,9 +232,10 @@ class _MangaPageGridSheetState extends State<MangaPageGridSheet> {
               (width - (columns - 1) * _kGridSpacing) / columns;
           final double cellHeight =
               cellWidth / kMangaPageGridCoverAspect + kMangaPageGridLabelHeight;
+          _rowExtent = cellHeight + _kGridSpacing;
           final ScrollController controller = _controllerFor(
             columns,
-            cellHeight + _kGridSpacing,
+            _rowExtent,
           );
           return FushiEntranceScope(
             child: GridView.builder(
@@ -124,7 +244,7 @@ class _MangaPageGridSheetState extends State<MangaPageGridSheet> {
               shrinkWrap: true,
               padding: const EdgeInsets.fromLTRB(
                 _kGridPadding,
-                4,
+                _kGridTopPadding,
                 _kGridPadding,
                 _kGridPadding,
               ),
@@ -135,19 +255,28 @@ class _MangaPageGridSheetState extends State<MangaPageGridSheet> {
                 mainAxisExtent: cellHeight,
               ),
               itemCount: widget.pageCount,
-              itemBuilder: fushiStaggeredItemBuilder(
-                (BuildContext context, int index) => _MangaPageGridCell(
-                  key: ValueKey<String>('manga_page_grid_item_$index'),
-                  index: index,
-                  current: widget.currentPages.contains(index),
-                  image: widget.thumbnail(index),
-                  onTap: () => Navigator.of(context).pop(index),
-                ),
-              ),
+              itemBuilder: fushiStaggeredItemBuilder(_buildCell),
             ),
           );
         },
       ),
+    );
+  }
+
+  Widget _buildCell(BuildContext context, int index) {
+    Widget cell(BuildContext context) => _MangaPageGridCell(
+      key: ValueKey<String>('manga_page_grid_item_$index'),
+      index: index,
+      current: widget.currentPages.contains(index),
+      image: widget.thumbnail(index),
+      onTap: () => Navigator.of(context).pop(index),
+    );
+    final MangaPageGridPrefetcher? prefetcher = widget.prefetcher;
+    if (prefetcher == null) return cell(context);
+    // 预取的页落盘后只重画格子，不重建整张网格（不重放错峰进场）。
+    return ListenableBuilder(
+      listenable: prefetcher,
+      builder: (BuildContext context, Widget? _) => cell(context),
     );
   }
 }
@@ -211,19 +340,33 @@ class _MangaPageGridCell extends StatelessWidget {
                     ),
                   ),
                   child: ShelfCoverFrame(
-                    child: provider == null
-                        ? placeholder
-                        : Image(
-                            image: provider,
-                            fit: BoxFit.cover,
-                            gaplessPlayback: true,
-                            errorBuilder:
-                                (
-                                  BuildContext context,
-                                  Object error,
-                                  StackTrace? stack,
-                                ) => placeholder,
-                          ),
+                    // 预取的页到了：占位淡出换成页图。
+                    child: AnimatedSwitcher(
+                      duration: fushiMotionDuration(
+                        context,
+                        FushiMotion.medium,
+                      ),
+                      switchInCurve: FushiMotion.standard,
+                      child: provider == null
+                          ? KeyedSubtree(
+                              key: const ValueKey<String>('placeholder'),
+                              child: placeholder,
+                            )
+                          : Image(
+                              key: const ValueKey<String>('image'),
+                              image: provider,
+                              fit: BoxFit.cover,
+                              width: double.infinity,
+                              height: double.infinity,
+                              gaplessPlayback: true,
+                              errorBuilder:
+                                  (
+                                    BuildContext context,
+                                    Object error,
+                                    StackTrace? stack,
+                                  ) => placeholder,
+                            ),
+                    ),
                   ),
                 ),
               ),

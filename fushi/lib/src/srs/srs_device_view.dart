@@ -186,6 +186,9 @@ class SrsDeviceDirectory {
 
   SrsDeviceView? of(String writerId) => _byKey[srsDeviceKey(writerId)];
 
+  /// 目录里的全部设备（冲突中心从同一份状态里挑出还没信任的，不再另读一次 `sync2_status`）。
+  Iterable<SrsDeviceView> get all => _byKey.values;
+
   /// 写入者的显示名：本机 → [selfLabel]；认识的设备 → [SrsDeviceView.displayName]；不认识 → [fallback]。
   String label(
     String writerId, {

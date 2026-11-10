@@ -669,7 +669,7 @@ mod convergence {
             devs[0].apply(T0, vec![deck_entity(&deck), edit("deck", &deck, "name", json!("Default"))]);
             let mut clock = vec![T0; n];
             let mut k = 0u32;
-            // 每台设备每张卡最后一条自己写的评分（撤销只撤它，Dart 侧的 canUndo 同一约束由界面保证）。
+            // 每台设备每张卡最后一条自己写的评分（撤销只撤它，本机撤销命令 `sched` 判同一约束）。
             let mut last_review: std::collections::HashMap<(usize, u8), String> = std::collections::HashMap::new();
             // 同上，整条日志（副本照抄它、只换 ID）。
             let mut last_log: std::collections::HashMap<(usize, u8), Value> = std::collections::HashMap::new();

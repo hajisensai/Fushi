@@ -723,8 +723,8 @@ class _NarrowChrome extends StatelessWidget {
   }
 }
 
-/// 窄屏页眉：返回 · 插图入口 · 书名与读数 · 跳转记录 · 布局「顶部」区按钮 ·（新版
-/// 的 ⋯）· ×。经典与新版窄屏共用。
+/// 窄屏页眉：插图入口 · 书名与读数 · 跳转记录 · 布局「顶部」区按钮 ·（新版
+/// 的 ⋯）· 书籍模式 · ×。经典与新版窄屏共用。
 class _NarrowHeaderRow extends StatelessWidget {
   const _NarrowHeaderRow({
     required this.data,
@@ -742,18 +742,6 @@ class _NarrowHeaderRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: <Widget>[
-        // 窄屏左上角返回键（iOS 没有系统返回键；此前只有右上角 ×，用户
-        // 认不出它是「返回」，2026-10-09 反馈）。
-        _LyricsIconButton(
-          key: const ValueKey<String>('lyrics_player_back'),
-          icon: CupertinoIcons.chevron_left,
-          diameter: 38,
-          iconSize: 18,
-          color: Colors.white.withValues(alpha: 0.74),
-          tooltip: t.back,
-          onPressed: callbacks.onClose,
-        ),
-        const SizedBox(width: 6),
         _NarrowIllustrationEntry(data: data, callbacks: callbacks),
         Expanded(
           // 书名行也是插图入口（与左侧缩略图同一动作）。
@@ -790,17 +778,30 @@ class _NarrowHeaderRow extends StatelessWidget {
             iconSize: 18,
             color: Colors.white.withValues(alpha: 0.74),
           ),
-        // 左上角返回键回正文；× 直接退书回书架（反馈 QvYpZODImz）。
+        // 出口与宽屏同形（2026-11-10 用户：左上角返回改成横屏同款键、都放
+        // 右上角）：「书籍模式」回正文 + × 退书回书架；没有退书回调时 × 本身
+        // 就是回正文。
         if (callbacks.onExitBook != null)
           _LyricsIconButton(
-            key: const ValueKey<String>('lyrics_close_button'),
-            icon: CupertinoIcons.xmark,
+            key: const ValueKey<String>('lyrics_return_to_book_button'),
+            icon: CupertinoIcons.book,
             diameter: 38,
             iconSize: 18,
             color: Colors.white.withValues(alpha: 0.74),
-            tooltip: t.lyrics_exit_to_library,
-            onPressed: callbacks.onExitBook!,
+            tooltip: t.book_mode,
+            onPressed: callbacks.onClose,
           ),
+        _LyricsIconButton(
+          key: const ValueKey<String>('lyrics_close_button'),
+          icon: CupertinoIcons.xmark,
+          diameter: 38,
+          iconSize: 18,
+          color: Colors.white.withValues(alpha: 0.74),
+          tooltip: callbacks.onExitBook != null
+              ? t.lyrics_exit_to_library
+              : MaterialLocalizations.of(context).closeButtonTooltip,
+          onPressed: callbacks.onExitBook ?? callbacks.onClose,
+        ),
       ],
     );
   }
@@ -1218,8 +1219,9 @@ List<Widget> _appleControlButtons(
           onPressed: callbacks.onOpenStatistics,
         );
       case LyricsControlItem.bookMode:
-        // 没有退书回调时 × 本身就是「回正文」，再摆一颗同义键只是重复。
-        if (callbacks.onExitBook == null) return null;
+        // 没有退书回调时 × 本身就是「回正文」，再摆一颗同义键只是重复；窄屏
+        // 页眉 × 前固定摆着它，布局里再放一颗也是重复。
+        if (callbacks.onExitBook == null || !wide) return null;
         return _LyricsIconButton(
           key: const ValueKey<String>('lyrics_return_to_book_button'),
           icon: CupertinoIcons.book,

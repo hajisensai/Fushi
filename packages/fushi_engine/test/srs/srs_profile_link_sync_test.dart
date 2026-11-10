@@ -49,6 +49,7 @@ class _Device {
       db: db,
       activeProfileId: () async => profileId,
       reopenStore: () async => d.store = await d._openStore(),
+      writeLock: SrsCurrentStoreWriteLock(() => d.store),
     );
     return d;
   }

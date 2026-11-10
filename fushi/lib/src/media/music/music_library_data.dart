@@ -14,6 +14,7 @@ class MusicLibrarySnapshot {
     required this.artists,
     required this.playlists,
     List<MusicDiscSourceRow> discs = const <MusicDiscSourceRow>[],
+    this.playlistTrackCounts = const <String, int>{},
     this.remoteTracks = const <MusicRemoteTrackRow>[],
   }) : albumByUid = <String, MusicAlbumRow>{
          for (final MusicAlbumRow a in albums) a.albumUid: a,
@@ -36,6 +37,9 @@ class MusicLibrarySnapshot {
   final List<MusicTrackRow> tracks;
   final List<MusicArtistRow> artists;
   final List<MusicPlaylistRow> playlists;
+
+  /// 各本地歌单的条目数（歌单 uid → 条数；没有条目的歌单不在里面）。
+  final Map<String, int> playlistTrackCounts;
   final Map<String, MusicAlbumRow> albumByUid;
 
   /// 加入了音乐库的远程曲目（YouTube / 在线插件，最近加入的在前；v148）。合规门没过的平台
@@ -90,6 +94,7 @@ class MusicLibrarySnapshot {
     artists: await db.listMusicArtists(),
     playlists: await db.listMusicPlaylists(),
     discs: await db.listMusicDiscSources(),
+    playlistTrackCounts: await db.countMusicPlaylistEntries(),
     remoteTracks: (remoteAvailable ?? musicRemoteTracksAvailable)
         ? await db.listMusicRemoteLibraryTracks()
         : const <MusicRemoteTrackRow>[],

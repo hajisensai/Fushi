@@ -62,6 +62,17 @@ class HlcClock {
     return _last;
   }
 
+  /// 本机事件由内核按 [tick] 的同一规则接着 [last] 推进过（`sched` 命令，native/fushi_fsrs/src/store/sync2/
+  /// sched_local.rs）：采用它交回的最后一个。不是本写入者的、或不比当前新的不动。
+  void adoptLocalTicks(Hlc advanced) {
+    if (advanced.writerId != writerId) return;
+    if (advanced.physical > _last.physical ||
+        (advanced.physical == _last.physical &&
+            advanced.counter > _last.counter)) {
+      _last = advanced;
+    }
+  }
+
   /// 收到对端事件（第六轮审查第 3 条）：**先钳位再推进**。
   ///
   /// 用 `min(远端物理时间, S(e) + 10 分钟)` 推进；S 未知时只推进到 `本机可信时间 + 10 分钟`。
