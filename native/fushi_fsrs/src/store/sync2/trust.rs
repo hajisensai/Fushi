@@ -108,7 +108,12 @@ fn hold(
 }
 
 /// 投影一条修改之前问：它是不可信设备的删除就扣住（记下、返回 true，调用方不投影、不进索引）。
-pub(crate) fn hold_edit(c: &Connection, profile: &str, op: &Op, e: &EditBody) -> Result<bool, String> {
+pub(crate) fn hold_edit(
+    c: &Connection,
+    profile: &str,
+    op: &Op,
+    e: &EditBody,
+) -> Result<bool, String> {
     if !is_delete(e) {
         return Ok(false);
     }
@@ -217,7 +222,9 @@ pub(crate) fn untrusted(
     profile: &str,
 ) -> Result<Vec<(Id, &'static str, i64, i64, i64)>, String> {
     let rows: Vec<(Vec<u8>, i64, i64)> = c
-        .prepare_cached("SELECT device, state, since FROM sync2_trust WHERE profile_uid = srs_id(?1)")
+        .prepare_cached(
+            "SELECT device, state, since FROM sync2_trust WHERE profile_uid = srs_id(?1)",
+        )
         .map_err(sql)?
         .query_map([profile], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
         .map_err(sql)?
@@ -236,8 +243,18 @@ pub(crate) fn untrusted(
             .query_row(params![profile, d, what], |r| r.get(0))
             .map_err(sql)
         };
-        let label = if st == REJECTED { "rejected" } else { "pending" };
-        out.push((Id(arr), label, since, count(WHAT_DELETE)?, count(WHAT_PURGE)?));
+        let label = if st == REJECTED {
+            "rejected"
+        } else {
+            "pending"
+        };
+        out.push((
+            Id(arr),
+            label,
+            since,
+            count(WHAT_DELETE)?,
+            count(WHAT_PURGE)?,
+        ));
     }
     Ok(out)
 }
@@ -256,7 +273,8 @@ impl crate::store::SrsCore {
         let id = Id::parse(device).ok_or("trust: bad device")?;
         let w = self.writer()?;
         super::in_savepoint(&w, |c| {
-            let local = super::Local::load(c, profile)?.ok_or("sync2 not initialised for this profile")?;
+            let local =
+                super::Local::load(c, profile)?.ok_or("sync2 not initialised for this profile")?;
             if id == local.device {
                 return Err("trust: this device is always trusted".into());
             }

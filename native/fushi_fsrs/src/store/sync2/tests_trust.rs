@@ -57,13 +57,11 @@ fn semantics_tables(d: &Device) -> Vec<Vec<String>> {
     let mut out = d.rows(
         "SELECT srs_idt(id) AS id, kind, entity_kind, srs_idt(entity) AS e, hex(device), seq, other_count FROM sync2_conflicts ORDER BY 1",
     );
-    out.extend(d.rows(
-        "SELECT hex(device), seq, kind, srs_idt(entity) AS e FROM sync2_held ORDER BY 1, 2",
-    ));
+    out.extend(
+        d.rows("SELECT hex(device), seq, kind, srs_idt(entity) AS e FROM sync2_held ORDER BY 1, 2"),
+    );
     out.extend(d.rows("SELECT kind, srs_idt(entity) AS e FROM sync2_purged ORDER BY 1, 2"));
-    out.extend(d.rows(
-        "SELECT hex(device), seq, purged FROM sync2_ops ORDER BY 1, 2",
-    ));
+    out.extend(d.rows("SELECT hex(device), seq, purged FROM sync2_ops ORDER BY 1, 2"));
     out
 }
 
@@ -122,7 +120,10 @@ fn scenario(a: &Device, b: &Device, bucket: &mut Bucket) -> Decks {
     );
     b.core.sync2_purge(P, "deck", &d.purge, T0 + 4).unwrap();
     // A 并发地改 clash（没见过 B 的删除）。
-    a.apply(T0 + 5, vec![edit("deck", &d.clash, "retention", json!(0.95))]);
+    a.apply(
+        T0 + 5,
+        vec![edit("deck", &d.clash, "retention", json!(0.95))],
+    );
     b.sync(bucket, "loc", T0 + 6);
     d
 }
@@ -148,7 +149,10 @@ fn new_device_ordinary_ops_land_but_deletes_and_purges_wait_for_confirmation() {
     assert_eq!(count(&a, "SELECT COUNT(*) FROM sync2_conflicts"), 0);
     let row = row_of(&a, &bid);
     assert_eq!(row["trust"], "pending");
-    assert_eq!(row["heldDeletes"], 3, "gone + clash + the delete that precedes the purge");
+    assert_eq!(
+        row["heldDeletes"], 3,
+        "gone + clash + the delete that precedes the purge"
+    );
     assert_eq!(row["heldPurges"], 1);
     // B 的操作已进日志、版本向量照常推进：没有卡在缓冲里，进度不落后。
     assert_eq!(count(&a, "SELECT COUNT(*) FROM sync2_pending"), 0);
@@ -160,8 +164,16 @@ fn new_device_ordinary_ops_land_but_deletes_and_purges_wait_for_confirmation() {
     assert_eq!(row_of(&a, &bid)["digestMismatch"], false);
     assert_eq!(row_of(&b, &device_id(&a))["digestMismatch"], false);
     // 本机自己永远可信；不能拒绝已可信的设备。
-    assert!(a.core.sync2_trust(P, &device_id(&a), true, T0 + 10).is_err());
-    assert!(b.core.sync2_trust(P, &device_id(&a), false, T0 + 10).is_err());
+    assert!(
+        a.core
+            .sync2_trust(P, &device_id(&a), true, T0 + 10)
+            .is_err()
+    );
+    assert!(
+        b.core
+            .sync2_trust(P, &device_id(&a), false, T0 + 10)
+            .is_err()
+    );
 }
 
 #[test]
@@ -250,7 +262,10 @@ fn devices_known_before_the_upgrade_stay_trusted() {
     let (a, b) = (Device::new("up-a"), Device::new("up-b"));
     let mut bucket = Bucket::default();
     let deck = Id::random().text();
-    a.apply(T0, vec![deck_entity(&deck), edit("deck", &deck, "name", json!("X"))]);
+    a.apply(
+        T0,
+        vec![deck_entity(&deck), edit("deck", &deck, "name", json!("X"))],
+    );
     a.sync(&mut bucket, "loc", T0 + 1);
     b.sync(&mut bucket, "loc", T0 + 2);
     b.apply(T0 + 3, vec![edit("deck", &deck, "retention", json!(0.9))]);
@@ -301,12 +316,18 @@ fn fresh_library_first_sync_is_not_held_but_later_newcomers_are() {
     a.apply(T0, evs);
     a.sync(&mut bucket, "loc", T0 + 1);
     b.sync(&mut bucket, "loc", T0 + 2);
-    b.apply(T0 + 3, vec![edit("deck", &decks[0], "deleted", json!(T0 + 3))]);
+    b.apply(
+        T0 + 3,
+        vec![edit("deck", &decks[0], "deleted", json!(T0 + 3))],
+    );
     b.core.sync2_purge(P, "deck", &decks[1], T0 + 4).unwrap();
     b.sync(&mut bucket, "loc", T0 + 5);
     a.sync(&mut bucket, "loc", T0 + 6);
     a.core.sync2_trust(P, &device_id(&b), true, T0 + 7).unwrap();
-    a.apply(T0 + 8, vec![edit("deck", &decks[2], "deleted", json!(T0 + 8))]);
+    a.apply(
+        T0 + 8,
+        vec![edit("deck", &decks[2], "deleted", json!(T0 + 8))],
+    );
     a.sync(&mut bucket, "loc", T0 + 9);
     b.sync(&mut bucket, "loc", T0 + 10);
     // 新设备 E：全新库，第一次同步认识的 A、B 全部可信，删除与清除全部生效。
@@ -321,7 +342,10 @@ fn fresh_library_first_sync_is_not_held_but_later_newcomers_are() {
     // 之后再出现的新设备 F（E 的库已非空）在 E 上待确认。
     let f = Device::new("fr-f");
     f.sync(&mut bucket, "loc", T0 + 12);
-    f.apply(T0 + 13, vec![edit("deck", &decks[3], "deleted", json!(T0 + 13))]);
+    f.apply(
+        T0 + 13,
+        vec![edit("deck", &decks[3], "deleted", json!(T0 + 13))],
+    );
     f.sync(&mut bucket, "loc", T0 + 14);
     e.sync(&mut bucket, "loc", T0 + 15);
     assert_eq!(row_of(&e, &device_id(&f))["trust"], "pending");
