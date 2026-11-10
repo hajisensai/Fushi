@@ -178,6 +178,19 @@ void main() {
       );
     });
 
+    test('登记前先确认页面仍挂载（解析期间关掉阅读器不能留下死登记）', () {
+      final int enter = page.indexOf(
+        '_settings?.enterBookLayout(this, _book!.originalLayout);',
+      );
+      final int parsed = page.indexOf("_openTrace.mark('parsed');");
+      final String between = page.substring(parsed, enter);
+      expect(
+        between,
+        contains('if (!mounted) return;'),
+        reason: 'dispose 已先跑过 leaveBookLayout，卸载后再登记会永久劫持生效值',
+      );
+    });
+
     test('dispose 时撤销自己的登记', () {
       expect(page, contains('_settings?.leaveBookLayout(this);'));
     });

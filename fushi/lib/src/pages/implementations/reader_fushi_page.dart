@@ -3354,6 +3354,10 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     }
 
     _openTrace.mark('parsed');
+    // 解析在后台 isolate 里跑，期间用户可能已关掉阅读器：dispose 早已执行过
+    // leaveBookLayout，此时再登记会留下一条永不撤销的书本排版（全局生效值被死页面
+    // 劫持、设置页「排版方向」一直置灰）。已卸载就不再往下开书。
+    if (!mounted) return;
     // 反馈 sYPkmtitOM「跟随原书」：书一解析完就登记它自带的排版 / 翻页方向，必须在
     // spread map 与首屏 HTML 读 writingMode / spreadDirection 之前。是否采用由
     // ReaderSettings 按「跟随原书」开关现算，开关拨动后随布局重载即时生效。
