@@ -38,6 +38,7 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-4350](bugs/BUG-4350-shortcut-bindings-work-session-scope.md) | ✅ | ✅ | 作品会话期间改的快捷键重启后失效（GitHub #3089） |
+| [BUG-4350](bugs/BUG-4350-game-library-add-source.md) | ✅ | ✅ | 游戏库缺少「添加来源」扫描目录（SourceLibraryKind 没有 game） |
 | [BUG-4349](bugs/BUG-4349-audiobook-stale-play-resumes-after-lookup-pause.md) | ✅ | ✅ | 弹窗顶栏按过播放后，查词暂停有声书被排队的旧 play 立刻顶回去 |
 | [BUG-4348](bugs/BUG-4348-subtitle-version-filename-truncated.md) | ✅ | ✅ | 字幕版本视图文件名被截断，看不出版本差异 |
 | [BUG-4347](bugs/BUG-4347-embedded-torrent-runtime-misreported.md) | ✅ | ✅ | 下载后端引导把「下载服务没起」误报成「本次安装缺少内置引擎运行库」 |
