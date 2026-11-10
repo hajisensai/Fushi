@@ -521,10 +521,27 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'music_desktop_lyrics',
   // int（默认 176400）：DSD → PCM 目标采样率 Hz（设计 §7.1）。
   'music_dsd_pcm_rate',
-  // bool（默认 false）：图示均衡器开关（P5，可选；开且不平直即非 bit-perfect）。
+  // 音效（P5，均衡之外的各项；总开关仍是 music_eq_enabled）：低音 / 高音搁架增益 double
+  // dB（默认 0）与转折频率 int Hz（默认 100 / 8000），声道平衡 double（−1…1，默认 0），
+  // 立体声宽度 double（0…2，默认 1），单声道 / 左右互换 / 限幅器 bool（默认 false）。
+  'music_effects_balance',
+  'music_effects_bass_db',
+  'music_effects_bass_hz',
+  'music_effects_limiter',
+  'music_effects_mono',
+  'music_effects_swap_channels',
+  'music_effects_treble_db',
+  'music_effects_treble_hz',
+  'music_effects_width',
+  // bool（默认 false）：音效总开关（P5，可选；开且不全部中性即非 bit-perfect）。键名沿用
+  // 图示均衡器时代，冻结。
   'music_eq_enabled',
   // String（逗号分隔 10 段 dB，默认 '' = 平直）：图示均衡器各段增益（31 Hz … 16 kHz）。
   'music_eq_gains',
+  // double（默认 0）：音效前级 dB（±12）。
+  'music_eq_preamp_db',
+  // String（默认 '' = 没选过）：选中的均衡预设（MusicEqPreset.wire）。
+  'music_eq_preset',
   // bool（默认 false）：独占 / bit-perfect 输出（设计 §7.4；设备本地）。
   'music_exclusive_output',
   'music_gapless',
@@ -557,6 +574,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // String（JSON 数组 [{id, enabled}]）：音乐在线来源（插件 `plugin:<id>` / 服务器
   // `server:<serverId>` / `apple-music`）的顺序与「推荐 / 搜索里显示」开关。
   'music_online_sources',
+  // String（MusicPluginQuality.wire：standard / high / lossless / hires；缺省 = 没单独
+  // 设过，由 music_server_max_bitrate 反推）：在线插件取流音质档。跨设备。
+  'music_plugin_quality',
   'music_replaygain',
   // double（默认 0）：ReplayGain 预放大 dB（设计 §7.3）。
   'music_replaygain_preamp_db',
@@ -988,6 +1008,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // （手机上列表旁的查词弹窗太扁，多数人只拿列表跳转，群反馈 GbN9MoKDCQ）。
   'video_subtitle_list_tap_lookup',
   'video_subtitle_list_width',
+  // string（JSON，默认空 = 关）：字幕遮布（盖住烧进画面的硬字幕），见
+  // VideoSubtitleMaskConfig：开关 + 画面比例矩形 + 外观 + 强度。
+  'video_subtitle_mask',
   // string（默认 auto）：生成日语字幕的 MOSS 后端 auto/cuda/vulkan/cpu；设备本地。
   'video_subtitle_moss_backend',
   'video_subtitle_obscure_hide',

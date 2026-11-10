@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/lookup/effective_lookup_size.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/popup_main.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
@@ -60,6 +61,11 @@ class _SourceLineAppModel extends AppModel {
 
   @override
   double get popupMaxWidth => 400;
+
+  // 外部查词卡宽高读「app 外覆盖窗有效最大宽高」（K9YPrjtZE1），本桩没有 prefsRepo。
+  @override
+  LookupSize get overlayLookupEffectiveSize =>
+      LookupSize(popupMaxWidth, kLookupPopupDefaultHeight);
 
   @override
   double get dictionaryFontSize => 16;

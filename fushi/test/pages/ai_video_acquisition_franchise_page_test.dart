@@ -64,7 +64,7 @@ class _Ports {
     decideIdentity: (_) async => null,
     persistPreference: (_, _) async {},
     setSeriesSubtitleLanguage: (_, _) async {},
-    submitDownload: (_) async => 1,
+    submitDownload: (_) async => (queued: 1, alreadyQueued: 0),
     submitSubscription: (_) async {},
   );
 }

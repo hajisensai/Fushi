@@ -25,6 +25,7 @@ import 'package:fushi/src/media/playback_route_marks.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/music/music_lyrics_page.dart';
+import 'package:fushi/src/pages/implementations/music/music_queue_panel.dart';
 import 'package:fushi/src/pages/implementations/music/music_subtitle_actions.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -383,6 +384,45 @@ void main() {
       find.byKey(const ValueKey<String>('music_lyrics_back')),
       findsOneWidget,
     );
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('宽屏：「队列」图标打开右下角浮层卡片（不挤压播放页），点外面收起', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1424, 951);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    await pumpPage(tester);
+    expect(find.byType(MusicQueuePanel), findsNothing);
+
+    await tester.tap(find.byKey(const ValueKey<String>('music_lyrics_queue')));
+    await settle(tester, rounds: 30);
+    final Finder card = find.byKey(
+      const ValueKey<String>('music_queue_floating'),
+    );
+    expect(card, findsOneWidget);
+    expect(tester.getSize(card).width, kMusicQueuePanelWidth);
+    // 停在右下角：卡片右边缘贴近窗口右侧，且在下半屏。
+    final Rect r = tester.getRect(card);
+    expect(r.right, greaterThan(1424 - 80));
+    expect(r.bottom, greaterThan(951 / 2));
+
+    await tester.tapAt(const Offset(40, 40));
+    await settle(tester, rounds: 30);
+    expect(find.byType(MusicQueuePanel), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('窄屏：「队列」图标弹出底部弹层', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(400, 860);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    await pumpPage(tester);
+    await tester.ensureVisible(
+      find.byKey(const ValueKey<String>('music_lyrics_queue')),
+    );
+    await tester.tap(find.byKey(const ValueKey<String>('music_lyrics_queue')));
+    await settle(tester, rounds: 30);
+    expect(find.byType(MusicQueuePanel), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
   });
 

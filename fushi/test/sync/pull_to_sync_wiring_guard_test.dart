@@ -13,6 +13,12 @@ import 'package:test/test.dart';
 /// 页面，冲突就会用错通道的后端去 apply（写错端），或者鉴权失效后卡在无效会话里 ——
 /// 这两个坑不会让编译报错，也不会让别的测试变红，只会在真机上表现成难查的数据错乱。
 ///
+/// 2026-11-09（BUG-4243）：三页下拉不再直调 [runManualSyncWithFeedback]，统一走下拉
+/// 专用入口 `runPullToRefreshSync`（manual_sync_ui.dart，多了同步模块门）。「下拉跑
+/// 共享同步外壳 + 不弹 notConfigured / busy 噪音」两条不变式随之搬进该入口，本守卫分两
+/// 段钉：页面下拉体只调 `runPullToRefreshSync(`，入口函数体里调共享外壳且两个 announce
+/// 开关为 false。模块门本身由 pull_to_refresh_sync_module_gate_test.dart 钉。
+///
 /// 页面运行时表面在 headless 测试里挂不稳（AppModel 未初始化），故用源码扫描锁不变式；
 /// 词典页的实际手势行为另有 widget 测试（home_dictionary_pull_to_sync_test.dart）。
 void main() {
@@ -42,18 +48,43 @@ void main() {
         ),
       };
 
+  /// 下拉专用入口 `runPullToRefreshSync` 的函数体（三页共用，下拉的 announce 口径在这里）。
+  /// 截到顶层函数的闭合 `}` 为止，避免下一个函数里的同名参数让断言误绿。
+  String pullEntryBody() {
+    final String span = bodyAfter(
+      read('lib/src/sync/manual_sync_ui.dart'),
+      'Future<ManualSyncOutcome> runPullToRefreshSync({',
+      span: 1200,
+    );
+    final int end = span.indexOf('\n}\n');
+    expect(end, isNonNegative, reason: '找不到 runPullToRefreshSync 的函数结尾');
+    return span.substring(0, end);
+  }
+
   pullEntries.forEach((String page, ({String file, String signature}) e) {
-    test('$page页下拉刷新调用共享的 runManualSyncWithFeedback', () {
-      final String body = bodyAfter(read(e.file), e.signature);
-      expect(
-        body,
-        contains('runManualSyncWithFeedback('),
-        reason: '$page页下拉必须跑手动同步，而不只是刷列表',
-      );
-    });
+    test(
+      '$page页下拉刷新经 runPullToRefreshSync 调用共享的 runManualSyncWithFeedback',
+      () {
+        expect(
+          bodyAfter(read(e.file), e.signature),
+          contains('runPullToRefreshSync('),
+          reason: '$page页下拉必须跑手动同步（经下拉专用入口），而不只是刷列表',
+        );
+        expect(
+          pullEntryBody(),
+          contains('runManualSyncWithFeedback('),
+          reason: '下拉入口必须落到共享同步外壳，而不是另起一份同步实现',
+        );
+      },
+    );
 
     test('$page页下拉不弹「同步未配置」噪音', () {
-      final String body = bodyAfter(read(e.file), e.signature);
+      expect(
+        bodyAfter(read(e.file), e.signature),
+        contains('runPullToRefreshSync('),
+        reason: '$page页下拉必须走下拉专用入口，静默口径只在那里写一次',
+      );
+      final String body = pullEntryBody();
       expect(
         body,
         contains('announceNotConfigured: false'),

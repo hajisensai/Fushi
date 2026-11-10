@@ -27,6 +27,7 @@ import 'package:fushi_engine/media/video/bluray/bluray_source.dart'
     show isBlurayPlaylistPath;
 import 'package:fushi_engine/media/video/dvd/dvd_disc.dart' show isDvdTitlePath;
 import 'package:fushi_engine/media/video/m3u8_playlist.dart' show PlaylistEntry;
+import 'package:fushi_engine/sync/ttu_filename.dart' show sanitizeTtuFilename;
 import 'package:fushi_engine/media/video/video_sidecar.dart'
     show listSidecarSubtitles;
 
@@ -256,3 +257,47 @@ Set<String> referencedLocalSubtitlePaths(Iterable<VideoBookRow> rows) =>
           if (source != null && isLocalVideoFilePath(source))
             platformPathKey(source.trim()),
     };
+
+/// 把选择器交回的视频路径变成**可长期落库**的路径（反馈 HfXM-ECaE8）。
+///
+/// [isRealPath] = true（桌面 / 安卓 SAF 解析到原始位置 / 拖入）原样返回，不复制。
+/// false = 平台临时副本（iOS import 模式的 `NSTemporaryDirectory()`、安卓 app
+/// cache）：系统清 tmp、词典 / 外部阅读器导入调 `FilePicker.clearTemporaryFiles()`
+/// 都会把它删掉。这里把它**挪**进
+/// `<copiesRoot>/<sanitize(bookUid)>/<原文件名>` 再返回新路径：先 rename（同卷零
+/// 额外空间），跨卷失败才退回 copy + 删源。保留原文件名，标题 / sidecar 派生不变。
+///
+/// 目标目录按 bookUid 归属 app 自有；同名旧文件（重新选择文件、或同 uid 删后重导
+/// 的残留）先删再落。复制成功但删源失败时撤掉新副本再抛，不留两份。
+Future<String> adoptPickedVideoCopy({
+  required String pickedPath,
+  required bool isRealPath,
+  required String bookUid,
+  required Directory copiesRoot,
+}) async {
+  if (isRealPath) return pickedPath;
+  final Directory dir = Directory(
+    p.join(copiesRoot.path, sanitizeTtuFilename(bookUid)),
+  );
+  await dir.create(recursive: true);
+  final String target = p.join(dir.path, p.basename(pickedPath));
+  if (platformPathKey(target) == platformPathKey(pickedPath)) return target;
+  final File existing = File(target);
+  if (await existing.exists()) await existing.delete();
+  final File source = File(pickedPath);
+  try {
+    await source.rename(target);
+    return target;
+  } on FileSystemException {
+    // rename 跨文件系统 / 跨卷会失败（EXDEV）：走 copy + 删源。源文件本身不在
+    // 时 copy 照样抛，真实失败不会被这里吞掉。
+  }
+  final File copied = await source.copy(target);
+  try {
+    await source.delete();
+  } on FileSystemException {
+    await copied.delete();
+    rethrow;
+  }
+  return target;
+}
