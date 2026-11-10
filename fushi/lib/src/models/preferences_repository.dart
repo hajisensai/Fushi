@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io' show Platform;
 import 'dart:ui' show PlatformDispatcher;
 
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi_audio/fushi_audio.dart'
     show kDefaultReadingIdleTimeout, kStudyIdleTimeoutPrefKey;
@@ -19,6 +20,7 @@ import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart'
     show kLookupChineseScriptVariantsPrefKey;
 import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
+import 'package:fushi_engine/ai/mcp_client/mcp_client_config.dart';
 import 'package:fushi_engine/ai/web_search.dart' show WebSearchConfig;
 import 'package:fushi_engine/ai/web_knowledge.dart'
     show
@@ -108,6 +110,8 @@ import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.da
     show normalizeAdvancedMiningAudioNudgeStepMs;
 import 'package:fushi_engine/mining/sentence_audio_source.dart'
     show SentenceAudioSourcePick;
+import 'package:fushi/src/media/video/video_subtitle_mask_config.dart';
+import 'package:fushi/src/utils/derived_value_listenable.dart';
 import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
 import 'package:fushi/src/media/video/video_pause_ocr_scope.dart';
 import 'package:fushi/src/media/audiobook/mining_audio_clip.dart'
@@ -2103,6 +2107,26 @@ class PreferencesRepository extends ChangeNotifier
     await setPref('video_subtitle_obscure_reveal', value);
     notifyListeners();
   }
+
+  /// 字幕遮布（盖住烧进画面的硬字幕，见 [VideoSubtitleMaskConfig]）。低频设置，
+  /// setter 照常广播：播放页遮布层与设置面板回显无条件同步。
+  VideoSubtitleMaskConfig get videoSubtitleMask =>
+      VideoSubtitleMaskConfig.fromJson(
+        getPref('video_subtitle_mask', defaultValue: '') as String?,
+      );
+
+  Future<void> setVideoSubtitleMask(VideoSubtitleMaskConfig value) async {
+    await setPref('video_subtitle_mask', value.toJson());
+    notifyListeners();
+  }
+
+  /// [videoSubtitleMask] 的精确订阅：播放页的遮布层 / 编辑层据此跟随设置面板、控制
+  /// 通道（`mask_adjust`）与作品级配置切换，只在遮布配置真的变了时才重建。
+  late final ValueListenable<VideoSubtitleMaskConfig>
+  videoSubtitleMaskListenable = DerivedValueListenable<VideoSubtitleMaskConfig>(
+    this,
+    () => videoSubtitleMask,
+  );
 
   /// 副字幕的「临时显形」开关（用户要求主 / 副分开配置）。**未写过时继承主字幕的
   /// 值**：拆分前这是主副共用的一个总闸，关过它的老用户副字幕也得继续保持遮蔽。
@@ -5262,6 +5286,105 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 选中的均衡预设（`MusicEqPreset.wire`；空 = 没选过，按增益认）。
+  String get musicEqPreset =>
+      (getPref('music_eq_preset', defaultValue: '') as String?) ?? '';
+
+  Future<void> setMusicEqPreset(String value) async {
+    await setPref('music_eq_preset', value);
+    notifyListeners();
+  }
+
+  /// 音效前级（dB，±12）。
+  double get musicEqPreampDb =>
+      (getPref('music_eq_preamp_db', defaultValue: 0.0) as num).toDouble();
+
+  Future<void> setMusicEqPreampDb(double value) async {
+    await setPref('music_eq_preamp_db', value);
+    notifyListeners();
+  }
+
+  /// 低音搁架增益（dB，±12）。
+  double get musicEffectsBassDb =>
+      (getPref('music_effects_bass_db', defaultValue: 0.0) as num).toDouble();
+
+  Future<void> setMusicEffectsBassDb(double value) async {
+    await setPref('music_effects_bass_db', value);
+    notifyListeners();
+  }
+
+  /// 低音搁架转折频率（Hz）。
+  int get musicEffectsBassHz =>
+      (getPref('music_effects_bass_hz', defaultValue: 100) as num).toInt();
+
+  Future<void> setMusicEffectsBassHz(int value) async {
+    await setPref('music_effects_bass_hz', value);
+    notifyListeners();
+  }
+
+  /// 高音搁架增益（dB，±12）。
+  double get musicEffectsTrebleDb =>
+      (getPref('music_effects_treble_db', defaultValue: 0.0) as num).toDouble();
+
+  Future<void> setMusicEffectsTrebleDb(double value) async {
+    await setPref('music_effects_treble_db', value);
+    notifyListeners();
+  }
+
+  /// 高音搁架转折频率（Hz）。
+  int get musicEffectsTrebleHz =>
+      (getPref('music_effects_treble_hz', defaultValue: 8000) as num).toInt();
+
+  Future<void> setMusicEffectsTrebleHz(int value) async {
+    await setPref('music_effects_treble_hz', value);
+    notifyListeners();
+  }
+
+  /// 声道平衡（−1 左 … 0 居中 … 1 右）。
+  double get musicEffectsBalance =>
+      (getPref('music_effects_balance', defaultValue: 0.0) as num).toDouble();
+
+  Future<void> setMusicEffectsBalance(double value) async {
+    await setPref('music_effects_balance', value);
+    notifyListeners();
+  }
+
+  /// 立体声宽度（0 … 2，1 = 原样）。
+  double get musicEffectsWidth =>
+      (getPref('music_effects_width', defaultValue: 1.0) as num).toDouble();
+
+  Future<void> setMusicEffectsWidth(double value) async {
+    await setPref('music_effects_width', value);
+    notifyListeners();
+  }
+
+  /// 单声道下混。
+  bool get musicEffectsMono =>
+      getPref('music_effects_mono', defaultValue: false) == true;
+
+  Future<void> setMusicEffectsMono(bool value) async {
+    await setPref('music_effects_mono', value);
+    notifyListeners();
+  }
+
+  /// 左右声道互换。
+  bool get musicEffectsSwapChannels =>
+      getPref('music_effects_swap_channels', defaultValue: false) == true;
+
+  Future<void> setMusicEffectsSwapChannels(bool value) async {
+    await setPref('music_effects_swap_channels', value);
+    notifyListeners();
+  }
+
+  /// 音效防削波限幅器。
+  bool get musicEffectsLimiter =>
+      getPref('music_effects_limiter', defaultValue: false) == true;
+
+  Future<void> setMusicEffectsLimiter(bool value) async {
+    await setPref('music_effects_limiter', value);
+    notifyListeners();
+  }
+
   /// 用户自配的 OpenSubsonic 服务器清单（服务器曲库，音乐方案 §13 P5；设备本地，条目里
   /// 带 base64 的密码 / API key）。坏条目逐条丢弃（`decodeSubsonicServerConfigs`）。
   List<SubsonicServerConfig> get musicSubsonicServers {
@@ -5324,6 +5447,18 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setMusicServerMaxBitrate(int kbps) async {
     await setPref('music_server_max_bitrate', kbps < 0 ? 0 : kbps);
+    notifyListeners();
+  }
+
+  /// 在线插件取流音质档（`MusicPluginQuality.wire`：standard / high / lossless / hires）。
+  /// null = 没单独设过，由 [musicServerMaxBitrate] 反推（两者以前共用一个设置）。
+  String? get musicPluginQualityWire {
+    final Object? raw = getPref('music_plugin_quality', defaultValue: null);
+    return raw is String && raw.isNotEmpty ? raw : null;
+  }
+
+  Future<void> setMusicPluginQualityWire(String wire) async {
+    await setPref('music_plugin_quality', wire);
     notifyListeners();
   }
 
@@ -6586,6 +6721,30 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setAiMcpEnabled(bool value) async {
     await setPref('ai_mcp_enabled', value);
+    notifyListeners();
+  }
+
+  /// AI 助手接入的外部 MCP server（spec
+  /// `docs/specs/2026-11-05-ai-mcp-client-design.md`；设备本地，请求头 / 环境变量值
+  /// base64）。逐条容错在 [decodeMcpServerConfigs] 里；整串坏掉记日志并当空列表。
+  List<McpServerConfig> get aiMcpClientServers {
+    final String raw =
+        getPref('ai_mcp_client_servers', defaultValue: '') as String;
+    if (raw.trim().isEmpty) return const <McpServerConfig>[];
+    try {
+      return decodeMcpServerConfigs(raw);
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log(
+        'PreferencesRepository.aiMcpClientServers.decode',
+        error,
+        stack,
+      );
+      return const <McpServerConfig>[];
+    }
+  }
+
+  Future<void> setAiMcpClientServers(Iterable<McpServerConfig> servers) async {
+    await setPref('ai_mcp_client_servers', encodeMcpServerConfigs(servers));
     notifyListeners();
   }
 
