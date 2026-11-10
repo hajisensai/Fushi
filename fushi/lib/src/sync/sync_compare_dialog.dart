@@ -30,6 +30,7 @@ import 'package:fushi_engine/sync/sync_asset_store.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_error_messages.dart';
 import 'package:fushi/src/sync/sync_manager.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/sync/sync_message_dialog.dart';
 import 'package:fushi/src/sync/sync_orchestrator.dart';
 import 'package:fushi/src/sync/sync_progress_resolver.dart';
@@ -913,13 +914,29 @@ seedSyncCompareChoices(
 
 /// [applySyncCompareChoices] 的结果。
 class SyncCompareApplyResult {
-  const SyncCompareApplyResult({required this.applied, required this.errors});
+  const SyncCompareApplyResult({
+    required this.applied,
+    required this.errors,
+    this.failureReasons = const <String, String>{},
+  });
 
   /// 真正写了东西的书数。
   final int applied;
 
   /// 失败的书名。
   final List<String> errors;
+
+  /// 失败书名 → 失败原因（拿得到原因的才有）。对比弹窗把它原样显示给用户，不能
+  /// 只报书名（BUG-4337：扩展源漫画「立即同步」失败时用户看不到任何原因）。
+  final Map<String, String> failureReasons;
+
+  /// 给用户看的失败明细：每本一行「书名: 原因」，没有原因的只列书名。
+  String describeFailures() => errors
+      .map((String title) {
+        final String? reason = failureReasons[title];
+        return reason == null ? title : '$title: $reason';
+      })
+      .join('\n');
 }
 
 /// 按 [choices]（书名 → 选择）应用 [actionable] 里的书：选本地 = 推本机这份过去，
@@ -972,6 +989,7 @@ Future<SyncCompareApplyResult> applySyncCompareChoices({
 
     int applied = 0;
     final errors = <String>[];
+    final Map<String, String> failureReasons = <String, String>{};
     for (final entry in actionable) {
       final choice = choices[entry.title]!;
 
@@ -988,12 +1006,13 @@ Future<SyncCompareApplyResult> applySyncCompareChoices({
           if (imported) applied++;
         } on DuplicateImportCancelledException {
           // 良性：本机已有同名书，跳过。
-        } catch (e) {
+        } catch (e, stack) {
           errors.add(entry.title);
-          developer.log(
-            'Failed to download "${entry.title}"',
-            error: e,
-            name: 'SyncCompare',
+          failureReasons[entry.title] = friendlySyncErrorDetail(e);
+          ErrorLogService.instance.log(
+            'SyncCompare.download',
+            'title="${entry.title}": $e',
+            stack,
           );
         }
         done++;
@@ -1018,6 +1037,9 @@ Future<SyncCompareApplyResult> applySyncCompareChoices({
       decisions?[entry.bookKey!] = choice;
 
       SyncApplyOutcome outcome;
+      // 失败原因：syncBook 把异常收进 [SyncBookResult.error]（它自己已记进 app 日志），
+      // 这里抛出来的（锁 / 互联 live）在下面 catch 里记。
+      String? failureReason;
       try {
         outcome = await syncResourceLocks.withResources(
           <String>{syncBookResource(book.bookKey)},
@@ -1032,25 +1054,27 @@ Future<SyncCompareApplyResult> applySyncCompareChoices({
                 syncAudioBook: syncAudioBook,
               );
             }
-            return classifySyncApply(
-              await manager.syncBook(
-                book: book,
-                direction: direction,
-                syncStats: syncStats,
-                statsSyncMode: StatisticsSyncMode.merge,
-                syncAudioBook: syncAudioBook,
-                syncContent: syncContent,
-                syncMangaContent: syncMangaContent,
-              ),
+            final SyncBookResult bookResult = await manager.syncBook(
+              book: book,
+              direction: direction,
+              syncStats: syncStats,
+              statsSyncMode: StatisticsSyncMode.merge,
+              syncAudioBook: syncAudioBook,
+              syncContent: syncContent,
+              syncMangaContent: syncMangaContent,
             );
+            failureReason = bookResult.error;
+            return classifySyncApply(bookResult);
           },
         );
-      } catch (e) {
+      } catch (e, stack) {
         outcome = SyncApplyOutcome.failed;
-        developer.log(
-          'Failed to sync "${entry.title}"',
-          error: e,
-          name: 'SyncCompare',
+        failureReason = friendlySyncErrorDetail(e);
+        ErrorLogService.instance.log(
+          'SyncCompare.apply',
+          'book=${book.bookKey} source=${syncBookSourceKind(book)} '
+              'title="${entry.title}": $e',
+          stack,
         );
       }
       if (backend is InterconnectSyncBackend) liveBooksTouched = true;
@@ -1059,6 +1083,8 @@ Future<SyncCompareApplyResult> applySyncCompareChoices({
           applied++;
         case SyncApplyOutcome.failed:
           errors.add(entry.title);
+          final String? reason = failureReason;
+          if (reason != null) failureReasons[entry.title] = reason;
         case SyncApplyOutcome.noop:
           // 良性跳过（无可传输内容）：既不计成功也不报错，避免误报「同步错误」。
           break;
@@ -1081,16 +1107,17 @@ Future<SyncCompareApplyResult> applySyncCompareChoices({
           shareFavorites: false,
           shareWebHistory: false,
         );
-      } catch (e) {
+      } catch (e, stack) {
         errors.add(t.sync_statistics);
-        developer.log(
-          'Failed to merge statistics with host',
-          error: e,
-          name: 'SyncCompare',
-        );
+        failureReasons[t.sync_statistics] = friendlySyncErrorDetail(e);
+        ErrorLogService.instance.log('SyncCompare.mergeStatistics', e, stack);
       }
     }
-    return SyncCompareApplyResult(applied: applied, errors: errors);
+    return SyncCompareApplyResult(
+      applied: applied,
+      errors: errors,
+      failureReasons: failureReasons,
+    );
   });
 }
 
@@ -1401,6 +1428,10 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
   double? _progress;
   String? _progressLabel;
 
+  /// 上一次应用里真正写了东西的书数。应用有失败时弹窗不关（失败原因留在框里给用户
+  /// 看），用户再点关闭时把它带回去——[SyncConflictPrompter] 按它判「解决了没有」。
+  int? _appliedCount;
+
   /// 「只看冲突」筛选（C3）：默认模式下用户可开关；冲突解决弹窗
   /// （[SyncCompareDialog.conflictsOnly]）恒为只看冲突。参与渲染 / 计数 / Apply 的
   /// 集合都跟着它走——渲染集 = 应用集，不给「看到的和应用的不一样」留口子。
@@ -1515,10 +1546,16 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
       );
       if (mounted) {
         if (result.errors.isNotEmpty) {
-          showSyncMessage(
-            context,
-            t.sync_error(message: result.errors.join(', ')),
-          );
+          // BUG-4337：失败不再「提示一下就关框」——SnackBar 只有书名、没有原因，
+          // 关框后用户看到的就是「点了没反应」。弹窗留着，把每本的失败原因显示在框里。
+          setState(() {
+            _applying = false;
+            _progress = null;
+            _progressLabel = null;
+            _appliedCount = result.applied;
+            _error = t.sync_error(message: result.describeFailures());
+          });
+          return;
         }
         Navigator.pop(context, result.applied);
       }
@@ -1902,7 +1939,7 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
                 // 由 [SyncConflictPrompter] 自动弹出的那条更严重：用户根本没主动
                 // 进来。关闭只解绑 UI，传输继续在后台跑完（下面每处 setState /
                 // Navigator.pop 都有 mounted 守卫）。
-                onPressed: () => Navigator.pop(context),
+                onPressed: () => Navigator.pop(context, _appliedCount),
                 child: Text(
                   _applying ? t.dialog_background_close : t.sync_compare_close,
                 ),
