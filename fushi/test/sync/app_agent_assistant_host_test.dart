@@ -429,7 +429,7 @@ void main() {
     expect(deleted, <String>['a.mkv']);
   });
 
-  test('BUG-4376：确认作答带卡片 id，晚到的旧卡作答不落到下一张卡上', () async {
+  test('BUG-4402：确认作答带卡片 id，晚到的旧卡作答不落到下一张卡上', () async {
     final (_, String url) = await startHost(
       agentHost(
         turns: <AiChatTurn>[

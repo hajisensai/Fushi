@@ -278,7 +278,7 @@ void main() {
     expect(row.undoPayloadJson, isNull);
   });
 
-  test('BUG-4376：页面带卡片 id 作答；旧卡的晚到作答不落到下一张卡上', () async {
+  test('BUG-4402：页面带卡片 id 作答；旧卡的晚到作答不落到下一张卡上', () async {
     final AiAgentController c = controller(<AiChatTurn>[
       _call('files.delete', <String, Object?>{'name': 'a.epub'}),
       _call('files.delete', <String, Object?>{'name': 'b.epub'}),

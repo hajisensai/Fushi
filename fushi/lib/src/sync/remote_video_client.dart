@@ -234,7 +234,7 @@ abstract interface class RemoteVideoPlaybackStop {
   Future<void> stopRemoteVideoPlayback(String id, int positionMs);
 }
 
-/// 「播放页不再用这次播放的流」的可选能力（BUG-4379）：来源借此释放这次播放在服务端
+/// 「播放页不再用这次播放的流」的可选能力（BUG-4405）：来源借此释放这次播放在服务端
 /// 占着的资源（互联 host 的流票与它们的转码）。
 ///
 /// 与 [RemoteVideoPlaybackStop] 分开：Stop 是「播放结束」的**上报**（Jellyfin / Plex

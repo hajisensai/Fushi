@@ -62,7 +62,7 @@ void main() {
     expect(apply, contains('_mediaServerQualityLabel('));
   });
 
-  test('自适应换档是可回滚事务：失败时共享档位回到原值（BUG-4378）', () {
+  test('自适应换档是可回滚事务：失败时共享档位回到原值（BUG-4404）', () {
     final String apply = methodBody('Future<void> _applyAdaptiveQuality(');
     expect(apply, contains('runAdaptiveQualitySwitch('));
     // 旧写法：先把目标档写进共享状态再重载，重载失败也不回退。

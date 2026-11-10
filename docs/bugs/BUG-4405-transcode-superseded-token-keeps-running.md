@@ -1,4 +1,4 @@
-## BUG-4379 · 播放会话结束 / 换档换集后旧 token 的转码分段照样转完，占满转码名额拖慢新流起播
+## BUG-4405 · 播放会话结束 / 换档换集后旧 token 的转码分段照样转完，占满转码名额拖慢新流起播
 - **报告**：2026-11-10（用户：互联远程长任务审查 R11(c)）
 - **真实性**：✅ 真 bug。`packages/fushi_engine/lib/media/video/live_transcode.dart:377-397`（修复前）的并发闸门（`kMaxConcurrentTranscodes` 个名额 + FIFO `_transcodeQueue`）与 `:437-482` 的 `_spawnSegment` 只受 90 s 单段超时约束，没有任何入口能让「已经不需要的」分段离队或停下；host 侧 `packages/fushi_engine/lib/sync/fushi_sync_server/video.part.dart` 的 `hlsseg.ts` 分支对每个请求 `await _runTranscode(() => transcodeSegment(...))`，转码工作与签发它的 token 没有关联，client 退出 / 换集 / 换档后旧流已请求的分段照样排队、转完，占着名额拖慢新流第一段。
 - **[x] ① 已修复（engine 原语）** — 9bc4512e181：`live_transcode.dart` 新增 `TranscodeCancelled`、`cancelTranscodeWork(String key)`、`pendingTranscodeWorkKeys`（测试用）；`transcodeSegment` / `runGuardedTranscodeForTesting` 加可选 `workKey` / `isAlive`。同一 key 的在途工作登记成一组（最后一个结束或被取消即移出登记表）；登记后同步判一次存活（与调用方同步的「作废 token → 取消」之间无 await，无漏网窗口），排队者被取消直接离队、不占名额不交棒，拿到名额后再判一次存活、不通过即交还，在跑 ffmpeg 被 SIGKILL 并以 `TranscodeCancelled` 结束，两处「回退 PATH ffmpeg」前判存活（被杀进程「非 0 + 无产出」不再误触发回退）。不传 `workKey` / `isAlive` 时行为不变。host / client 接线见下一条。

@@ -298,7 +298,7 @@ void main() {
     expect((cap['echo'] as Map)['ready'], isTrue);
   });
 
-  // BUG-4372：TTL 不能只在进程首次触达时扫一次，被遗弃的 pending/uploading 也要回收。
+  // BUG-4398：TTL 不能只在进程首次触达时扫一次，被遗弃的 pending/uploading 也要回收。
   group('ttl housekeeping', () {
     late DateTime clock;
 

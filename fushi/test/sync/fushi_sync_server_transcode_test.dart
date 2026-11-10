@@ -461,7 +461,7 @@ void main() {
     });
   });
 
-  group('stream release（BUG-4379：播放会话结束即释放流票）', () {
+  group('stream release（BUG-4405：播放会话结束即释放流票）', () {
     Future<int> post(String path, {bool withAuth = true}) async {
       final HttpClientRequest req = await client.postUrl(
         Uri.parse('$base$path'),
