@@ -49,6 +49,8 @@ dependencies:
   liquid_glass_widgets: ^1.8.1
   crop_image: ^1.0.4
   desktop_drop: ^0.5.0
+  # Linux Flatpak self-update talks to org.freedesktop.portal.Flatpak (flatpak_updater.dart).
+  dbus: ^0.7.12
   device_info_plus: ^9.0.0
   dio: ^5.1.1
   # 2.x 起依赖 material_ui：其 ColorScheme 与本仓迁移后的 ColorScheme 同一类型。

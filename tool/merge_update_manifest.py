@@ -131,7 +131,8 @@ def _platform_key(name: str) -> str:
     legacy one instead of both lingering side by side. The *-macos-arm64.dmg
     (website first-install download; the in-app updater only selects the zip)
     joins the same slot so it is replaced together with the zip of its
-    release instead of a stale dmg outliving a newer zip. Unknown shape becomes its own
+    release instead of a stale dmg outliving a newer zip. The Linux Flatpak
+    (*-linux-x86_64.flatpak) has a slot of its own. Unknown shape becomes its own
     singleton slot other:<name> unioned by exact name.
     """
     n = name.lower()
@@ -143,6 +144,8 @@ def _platform_key(name: str) -> str:
         return "macos"
     if n.endswith(".ipa"):
         return "ios"
+    if n.endswith("-linux-x86_64.flatpak"):
+        return "linux"
     return "other:" + name
 
 

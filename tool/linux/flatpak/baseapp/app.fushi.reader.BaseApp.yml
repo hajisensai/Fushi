@@ -1,0 +1,190 @@
+# Libraries of the Fushi Flatpak that SteamOS / Ubuntu do not ship: WPE WebKit
+# (+ libwpe, wpebackend-fdo), libmpv (+ libass, libplacebo), keybinder, zenity.
+# GNOME 49 already provides GTK 3, libsoup 3, libsecret, ffmpeg/ffprobe, parecord.
+#
+# A BaseApp, so the app build (app.fushi.reader.yml, `base:`) never rebuilds WebKit:
+# WebKit takes hours, the app layer minutes. CI builds it only when this file or a
+# patch in this directory changes (release-desktop.yml `flatpak-baseapp` job, named by
+# .github/actions/native-store-names) and every release build reuses that bundle.
+#
+# No debug info (-g0): WebCore's -g objects need ~4 GB per compiler and ~50 GB of
+# ccache, which neither a CI runner nor its cache holds.
+id: app.fushi.reader.BaseApp
+branch: '49'
+runtime: org.gnome.Platform
+runtime-version: '49'
+sdk: org.gnome.Sdk
+build-options:
+  cflags: -g0
+  cxxflags: -g0
+cleanup:
+  - /include
+  - /lib/pkgconfig
+  - /lib/cmake
+  - /share/man
+  - /share/doc
+  - /share/gtk-doc
+  - '*.la'
+  - '*.a'
+modules:
+  - name: unifdef
+    buildsystem: simple
+    build-commands:
+      # unifdef 2.12 names a variable `constexpr`; GCC 15 defaults to C23.
+      - make prefix=/app CFLAGS="-O2 -std=gnu17" install
+    cleanup:
+      - '*'
+    sources:
+      - type: archive
+        url: https://dotat.at/prog/unifdef/unifdef-2.12.tar.xz
+        sha256: 43ce0f02ecdcdc723b2475575563ddb192e988c886d368260bc0a63aee3ac400
+
+  - name: keybinder-3.0
+    config-opts:
+      - --disable-introspection
+      - --disable-gtk-doc
+    sources:
+      - type: archive
+        url: https://github.com/kupferlauncher/keybinder/releases/download/keybinder-3.0-v0.3.2/keybinder-3.0-0.3.2.tar.gz
+        sha256: e6e3de4e1f3b201814a956ab8f16dfc8a262db1937ff1eee4d855365398c6020
+
+  - name: libwpe
+    buildsystem: meson
+    config-opts:
+      - -Dbuild-docs=false
+    sources:
+      - type: archive
+        url: https://wpewebkit.org/releases/libwpe-1.16.3.tar.xz
+        sha256: c880fa8d607b2aa6eadde7d6d6302b1396ebc38368fe2332fa20e193c7ee1420
+
+  - name: wpebackend-fdo
+    buildsystem: meson
+    sources:
+      - type: archive
+        url: https://wpewebkit.org/releases/wpebackend-fdo-1.16.1.tar.xz
+        sha256: 544ae14012f8e7e426b8cb522eb0aaaac831ad7c35601d1cf31d37670e0ebb3b
+
+  # Only the libwpe / wpebackend-fdo API that flutter_inappwebview_linux uses. Video and
+  # Web Audio stay on (GStreamer is in the SDK; WebGL code includes it regardless);
+  # WebRTC, gamepad, a11y and the new WPE Platform API are off to keep deps small.
+  - name: wpewebkit
+    buildsystem: cmake-ninja
+    builddir: true
+    build-options:
+      # WebCore's -g debug info passes 4 GB, overflowing ld's 32-bit DWARF relocations in
+      # libWPEWebKit; drop it at link time (the compile flags, and ccache, stay the same).
+      ldflags: -Wl,--strip-debug
+    config-opts:
+      - -DPORT=WPE
+      - -DCMAKE_BUILD_TYPE=Release
+      - -DENABLE_DOCUMENTATION=OFF
+      - -DENABLE_INTROSPECTION=OFF
+      - -DENABLE_BUBBLEWRAP_SANDBOX=OFF
+      - -DENABLE_WPE_PLATFORM=OFF
+      - -DENABLE_WPE_QT_API=OFF
+      - -DENABLE_MINIBROWSER=OFF
+      - -DENABLE_API_TESTS=OFF
+      - -DENABLE_MEDIA_STREAM=OFF
+      - -DENABLE_WEB_RTC=OFF
+      - -DENABLE_SPEECH_SYNTHESIS=OFF
+      - -DENABLE_GAMEPAD=OFF
+      - -DENABLE_ACCESSIBILITY=OFF
+      - -DENABLE_JOURNALD_LOG=OFF
+      - -DUSE_LIBBACKTRACE=OFF
+      - -DUSE_SYSPROF_CAPTURE=OFF
+      - -DUSE_LIBHYPHEN=OFF
+    sources:
+      - type: archive
+        url: https://wpewebkit.org/releases/wpewebkit-2.52.5.tar.xz
+        sha256: bcfc6c91db7659dcf24f6ff79ad27ac1eae1bc61dca0dbfee154706926740b3b
+      - type: patch
+        path: wpewebkit-cmake4-quote-linked-into.patch
+      - type: patch
+        path: wpewebkit-gcc15-scroll-momentum-ice.patch
+
+  # Video stack after WebKit: flatpak-builder rebuilds every module after a
+  # changed one, so mpv tweaks must not invalidate the multi-hour WebKit build.
+  - name: libass
+    config-opts:
+      - --disable-static
+    sources:
+      - type: archive
+        url: https://github.com/libass/libass/releases/download/0.17.4/libass-0.17.4.tar.xz
+        sha256: 78f1179b838d025e9c26e8fef33f8092f65611444ffa1bfc0cfac6a33511a05a
+
+  - name: libplacebo
+    buildsystem: meson
+    config-opts:
+      - -Dvulkan=disabled
+      - -Dshaderc=disabled
+      - -Dglslang=disabled
+      - -Dopengl=enabled
+      - -Ddemos=false
+      - -Dtests=false
+    sources:
+      - type: git
+        url: https://code.videolan.org/videolan/libplacebo.git
+        tag: v7.351.0
+        commit: 3188549fba13bbdf3a5a98de2a38c2e71f04e21e
+
+  # mpv's DRM support (hence VA-API via /dev/dri/renderD128) needs it; not in the SDK.
+  - name: libdisplay-info
+    buildsystem: meson
+    sources:
+      - type: archive
+        url: https://gitlab.freedesktop.org/-/project/14497/uploads/289d58230e2981b51f23d31faf25bef9/libdisplay-info-0.4.0.tar.xz
+        sha256: 43b180baa143e2035654759d84e2b2f5ee77d5fe817c423838c7fe59c0d68459
+
+  # mpv's X11 support (and with it vaapi-x11) requires xpresent, which the GNOME
+  # SDK does not ship.
+  - name: libXpresent
+    config-opts:
+      - --disable-static
+    cleanup:
+      - /include
+      - /lib/pkgconfig
+      - /share/man
+    sources:
+      - type: archive
+        url: https://xorg.freedesktop.org/archive/individual/lib/libXpresent-1.0.1.tar.xz
+        sha256: b964df9e5a066daa5e08d2dc82692c57ca27d00b8cc257e8e960c9f1cf26231b
+
+  - name: mpv
+    buildsystem: meson
+    config-opts:
+      - -Dlibmpv=true
+      - -Dcplayer=false
+      - -Dlua=disabled
+      - -Djavascript=disabled
+      - -Dmanpage-build=disabled
+      - -Dhtml-build=disabled
+      - -Dvulkan=disabled
+      - -Duchardet=disabled
+      - -Drubberband=disabled
+      - -Dzimg=disabled
+      - -Dlibarchive=disabled
+      # VA-API through the DRM render node: Steam Game Mode runs apps on X11
+      # (gamescope Xwayland), where the Wayland-only VA path cannot open a
+      # device and 1080p fell back to CPU decoding. Fail the build if it is lost.
+      - -Dvaapi=enabled
+      - -Ddrm=enabled
+      - -Dvaapi-drm=enabled
+      # Under X11 media_kit hands mpv the X11 display for hwdec interop; with
+      # vaapi-x11 the decoded frames go to the GPU texture without a CPU copy.
+      - -Dx11=enabled
+      - -Dvaapi-x11=enabled
+    sources:
+      - type: archive
+        url: https://github.com/mpv-player/mpv/archive/refs/tags/v0.41.0.tar.gz
+        sha256: ee21092a5ee427353392360929dc64645c54479aefdb5babc5cfbb5fad626209
+
+  # file_picker's Linux backend shells out to zenity / kdialog / qarma; the GNOME
+  # runtime has none, so every "choose file / folder" button failed in the sandbox.
+  - name: zenity
+    buildsystem: meson
+    config-opts:
+      - -Dmanpage=false
+    sources:
+      - type: archive
+        url: https://download.gnome.org/sources/zenity/4.2/zenity-4.2.2.tar.xz
+        sha256: 019186a996096ef4fc356e21577b5673f5baa3a29ac8e3d608b753371c18018d
