@@ -774,6 +774,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // （harness 默认单栏，渲染输入不变属预期）。发 / 不发的全部组合与书本姿态自动两栏
   // 由专项纯函数测试咬住。
   'reading/Page crease': 'test/reader/reader_page_crease_css_test.dart',
+  // 反馈 sYPkmtitOM「跟随原书排版」（reading_display.follow_book_layout）：只在有打开
+  // 的书登记了书本排版时才改生效值，harness 设置页里没有打开的书，渲染输入不变属
+  // 预期。OPF 元数据解析、覆盖 / 回落 / 多阅读器叠放与设置项置灰由专项测试咬住。
+  "reading/Follow the book's layout":
+      'test/reader/reader_follow_book_layout_test.dart + '
+      'test/epub/epub_original_layout_test.dart',
   // TODO-1128：合并插图页到正文（reading_display.merge_image_pages）。结构性布局键，
   // 焦点遍历能切到并写穿 DB（changed=true），但生效点在 reader 分页布局（
   // notifyReaderLayoutChanged 需活 reader/WebView 重排），无适用 T4 探针；合并语义/
