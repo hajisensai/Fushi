@@ -3388,6 +3388,16 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   List<RemoteVideoEmbeddedSubtitleTrack> _remoteEmbeddedSubtitleTracks =
       const <RemoteVideoEmbeddedSubtitleTrack>[];
 
+  /// 当前远端集互联 host 上的**全部**外挂字幕（[RemoteVideoStreamUrls.sidecarSubtitles]，
+  /// 反馈 -CaVsioFhG）。此前协议只给默认那一条，host 下了日 / 中 / 英多条，菜单里
+  /// 只出现一行。老 host / 非互联来源为空。每集起播先清空、取流后按本集重填。
+  List<RemoteVideoSidecarSubtitle> _remoteSidecarSubtitles =
+      const <RemoteVideoSidecarSubtitle>[];
+
+  /// 本集已下载到临时目录的 host 外挂字幕（文件名 → 本地路径）：同一集里再选
+  /// 同一条不重复下载；与默认字幕同一缓存口径——按集作用域，换集清空。
+  final Map<String, String> _remoteSidecarSubtitlePaths = <String, String>{};
+
   /// BUG-2590：当前远端集的流是否原样送出源容器（来自 [RemoteVideoStreamUrls]）。
   /// 服务器抽不出内嵌文本轨时，决定能否把轨交给 libmpv 自绘（转码 HLS 不带轨）。
   bool _remoteStreamIsOriginalContainer = false;
@@ -4792,6 +4802,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 本地换源在 [_applyLoad] 的 `clipExportSourceChanged` 分支清（远端
     // `_currentVideoPath` 恒 null，走不到那里）。
     _remoteSubtitlePath = null;
+    _remoteSidecarSubtitles = const <RemoteVideoSidecarSubtitle>[];
+    _remoteSidecarSubtitlePaths.clear();
     // 先查完再按集序号落：重建要逐个 `File.exists`，快速连切时较早那集的查询可能晚于
     // 后一集回来——直接 `= await` 会让作废的那一程把它那集的档覆盖到当前集列表上。
     final List<SubtitleSource> restoredLocalSubtitles =
@@ -4819,6 +4831,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         episodeIndex: streamEpisodeIndex,
       );
       _remoteEmbeddedSubtitleTracks = urls.embeddedSubtitleTracks;
+      // host 不支持按名下载时列表留空：列了也选不了。
+      _remoteSidecarSubtitles = client is RemoteVideoSidecarSubtitleFetch
+          ? urls.sidecarSubtitles
+          : const <RemoteVideoSidecarSubtitle>[];
       _remoteStreamIsOriginalContainer = urls.streamIsOriginalContainer;
       _remoteSourceRequiresDolbyVisionReshape =
           urls.sourceRequiresDolbyVisionReshape;
@@ -4847,6 +4863,37 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           // 上次显式关闭 → 保持关闭，不加载 host 默认字幕（尊重用户选择）。
           _currentSubtitleSource = null;
           subtitleResolved = true;
+        } else if (SubtitleSource.isHostSidecarPersisted(persistedSub)) {
+          // 上次选的是互联 host 上的某一条外挂字幕（反馈 -CaVsioFhG）：按文件名
+          // 重新下载。host 这一集已没有它 / 下载或解析失败 → 落回下方后端默认分支。
+          final RemoteVideoSidecarSubtitle? sidecar =
+              remoteHostSidecarForSource(
+                persistedSub,
+                _remoteSidecarSubtitles,
+              );
+          if (sidecar != null) {
+            _setLoadingPhase(_VideoLoadPhase.downloadingSubtitle);
+            try {
+              final File subtitle = await _downloadRemoteHostSidecarSubtitle(
+                client,
+                info,
+                sidecar,
+                index: index,
+                streamEpisodeIndex: streamEpisodeIndex,
+              );
+              cues = await _loadExternalSubtitleCues(subtitle.path, info.id);
+              if (cues.isNotEmpty) {
+                externalSub = subtitle.path;
+                restoredPrimarySource = persistedSub;
+                subtitleResolved = true;
+              }
+            } catch (e) {
+              debugPrint(
+                '[VideoFushiPage] host sidecar subtitle replay failed: $e',
+              );
+            }
+            if (seq != _episodeLoadSeq || !mounted) return;
+          }
         } else if (isExternalSubtitleFilePathForMenu(persistedSub) &&
             await _isRemoteLocalSubtitleFile(persistedSub)) {
           // 本机已下载 / 导入的字幕档（Jimaku / 手动导入落 video_subtitles/）→ 重放成
@@ -6790,6 +6837,43 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       episodeIndex: streamEpisodeIndex,
       onProgress: onProgress,
     );
+    return subtitle;
+  }
+
+  /// 把互联 host 上这一集的外挂字幕 [sidecar] 按文件名下到临时目录（反馈
+  /// -CaVsioFhG）。同一集里已下过且文件还在 → 直接复用（[_remoteSidecarSubtitlePaths]）。
+  /// [streamEpisodeIndex] 与 [_downloadRemoteBackendDefaultSubtitle] 同口径（主机侧集序号）。
+  Future<File> _downloadRemoteHostSidecarSubtitle(
+    RemoteVideoClient client,
+    RemoteVideoInfo info,
+    RemoteVideoSidecarSubtitle sidecar, {
+    required int index,
+    required int streamEpisodeIndex,
+  }) async {
+    if (client is! RemoteVideoSidecarSubtitleFetch) {
+      throw StateError('remote client cannot fetch host sidecar subtitles');
+    }
+    final int seq = _episodeLoadSeq;
+    final String? cached = _remoteSidecarSubtitlePaths[sidecar.fileName];
+    if (cached != null && await File(cached).exists()) return File(cached);
+    final Directory temp = await getTemporaryDirectory();
+    final File subtitle = File(
+      p.join(
+        temp.path,
+        _remoteSubtitleTempFileName('${info.id}_ep${index}_sc', sidecar.fileName),
+      ),
+    );
+    await (client as RemoteVideoSidecarSubtitleFetch)
+        .getRemoteVideoSidecarSubtitle(
+          info.id,
+          subtitle,
+          fileName: sidecar.fileName,
+          episodeIndex: streamEpisodeIndex,
+        );
+    // 换集后才回来的下载不登记进新一集的缓存。
+    if (seq == _episodeLoadSeq) {
+      _remoteSidecarSubtitlePaths[sidecar.fileName] = subtitle.path;
+    }
     return subtitle;
   }
 

@@ -268,7 +268,6 @@ class _VideoPagePlaybackRemote
         in _state._remoteSubtitleFileRows) {
       final SubtitleSource? local = entry.local;
       final String path = entry.path;
-      final String? label = local == null ? null : entry.label;
       rows.add(
         _RemoteSubtitleRow(
           track: VideoRemoteSubtitleTrack(
@@ -285,18 +284,12 @@ class _VideoPagePlaybackRemote
                 : subtitleSourceMatchesPersistedForMenu(local, secondary),
             ocrAvailable: false,
           ),
-          applyPrimary: (VideoSubtitlePickOrigin origin) =>
-              _state._applyRemoteSubtitle(
-                controller,
-                path,
-                label: label,
-                origin: origin,
-              ),
-          applySecondary: () => _state._applyRemoteSecondarySubtitle(
-            controller,
-            path,
-            label: label,
-          ),
+          // host 外挂字幕行（反馈 -CaVsioFhG）的 path 是选择编码，选中时才下载：
+          // 与主 / 副字幕菜单同一条分派。
+          applyPrimary: (VideoSubtitlePickOrigin origin) => _state
+              ._applyRemoteSubtitleFileEntry(controller, entry, origin: origin),
+          applySecondary: () =>
+              _state._applyRemoteSecondarySubtitleFileEntry(controller, entry),
         ),
       );
     }

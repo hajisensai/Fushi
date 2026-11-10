@@ -314,13 +314,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
             selectedColor: selectedFg,
             onTap: _subtitleLoadingShown
                 ? null
-                : () => unawaited(
-                    _applyRemoteSubtitle(
-                      controller,
-                      entry.path,
-                      label: entry.local == null ? null : entry.label,
-                    ),
-                  ),
+                : () => unawaited(_applyRemoteSubtitleFileEntry(controller, entry)),
           ),
       if (_isRemote)
         for (final RemoteVideoEmbeddedSubtitleTrack track
@@ -506,11 +500,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
             onTap: _subtitleLoadingShown
                 ? null
                 : () => unawaited(
-                    _applyRemoteSecondarySubtitle(
-                      controller,
-                      entry.path,
-                      label: entry.local == null ? null : entry.label,
-                    ),
+                    _applyRemoteSecondarySubtitleFileEntry(controller, entry),
                   ),
           ),
         for (final RemoteVideoEmbeddedSubtitleTrack track
@@ -1047,7 +1037,110 @@ extension _VideoSubtitle on _VideoFushiPageState {
       remoteSubtitleFileEntries(
         backendDefaultPath: _remoteSubtitlePath,
         localFiles: _importedSubtitleSources,
+        hostSidecars: _remoteSidecarSubtitles,
       );
+
+  /// 主字幕选中远端字幕文件行：host 外挂字幕行（反馈 -CaVsioFhG）按文件名懒下载，
+  /// 其余行（已下好的后端默认字幕 / 本机档）直接按路径挂。主字幕菜单与手机遥控共用。
+  Future<void> _applyRemoteSubtitleFileEntry(
+    VideoPlayerController controller,
+    RemoteSubtitleFileEntry entry, {
+    VideoSubtitlePickOrigin origin = VideoSubtitlePickOrigin.player,
+  }) async {
+    final RemoteVideoSidecarSubtitle? sidecar = entry.hostSidecar;
+    if (sidecar != null) {
+      await _applyRemoteHostSidecarSubtitle(controller, sidecar, origin: origin);
+      return;
+    }
+    await _applyRemoteSubtitle(
+      controller,
+      entry.path,
+      label: entry.local == null ? null : entry.label,
+      origin: origin,
+    );
+  }
+
+  /// [_applyRemoteSubtitleFileEntry] 的副字幕版。
+  Future<void> _applyRemoteSecondarySubtitleFileEntry(
+    VideoPlayerController controller,
+    RemoteSubtitleFileEntry entry,
+  ) async {
+    final RemoteVideoSidecarSubtitle? sidecar = entry.hostSidecar;
+    if (sidecar != null) {
+      await _applyRemoteHostSidecarSecondarySubtitle(controller, sidecar);
+      return;
+    }
+    await _applyRemoteSecondarySubtitle(
+      controller,
+      entry.path,
+      label: entry.local == null ? null : entry.label,
+    );
+  }
+
+  /// 按文件名下载当前集 host 上的外挂字幕 [sidecar]（失败记日志并提示），返回本地档；
+  /// 失败 / 页面已卸载返回 null。
+  Future<File?> _fetchRemoteHostSidecarSubtitle(
+    RemoteVideoSidecarSubtitle sidecar,
+  ) async {
+    final RemoteVideoClient? client = _effectiveRemoteClient;
+    final RemoteVideoInfo? info = _effectiveRemoteInfo;
+    if (client == null || info == null) return null;
+    // 与内嵌轨同口径：按**当前集**取主机侧集序号（合集连播每个成员恒 0）。
+    final (_, int ep) = _remotePositionKeyForIndex(_currentEpisode);
+    try {
+      return await _downloadRemoteHostSidecarSubtitle(
+        client,
+        info,
+        sidecar,
+        index: _currentEpisode,
+        streamEpisodeIndex: ep,
+      );
+    } catch (e, stack) {
+      ErrorLogService.instance.log('VideoFushi.remoteSubtitle', e, stack);
+      if (mounted) {
+        _showOsd(
+          t.video_subtitle_load_failed(label: sidecar.fileName),
+          severity: ToastSeverity.error,
+        );
+      }
+      return null;
+    }
+  }
+
+  /// 主字幕选中互联 host 上的某一条外挂字幕（反馈 -CaVsioFhG）：按需下载后与其它远端
+  /// 字幕文件同一条挂载链路，选择按 `hostsidecar:<文件名>` 持久化（重进按名重下）。
+  Future<void> _applyRemoteHostSidecarSubtitle(
+    VideoPlayerController controller,
+    RemoteVideoSidecarSubtitle sidecar, {
+    VideoSubtitlePickOrigin origin = VideoSubtitlePickOrigin.player,
+  }) async {
+    final int seq = _episodeLoadSeq;
+    final File? subtitle = await _fetchRemoteHostSidecarSubtitle(sidecar);
+    if (subtitle == null || !mounted || seq != _episodeLoadSeq) return;
+    await _applyRemoteSubtitle(
+      controller,
+      subtitle.path,
+      selectedSource: remoteHostSidecarSubtitleSource(sidecar.fileName),
+      label: sidecar.fileName,
+      origin: origin,
+    );
+  }
+
+  /// [_applyRemoteHostSidecarSubtitle] 的副字幕版。
+  Future<void> _applyRemoteHostSidecarSecondarySubtitle(
+    VideoPlayerController controller,
+    RemoteVideoSidecarSubtitle sidecar,
+  ) async {
+    final int seq = _episodeLoadSeq;
+    final File? subtitle = await _fetchRemoteHostSidecarSubtitle(sidecar);
+    if (subtitle == null || !mounted || seq != _episodeLoadSeq) return;
+    await _applyRemoteSecondarySubtitle(
+      controller,
+      subtitle.path,
+      selectedSource: remoteHostSidecarSubtitleSource(sidecar.fileName),
+      label: sidecar.fileName,
+    );
+  }
 
   /// 远端字幕文件行 → 字幕菜单里的一行。本机档包删除菜单（长按 / 右键删除），
   /// 后端默认字幕不可删。[selected] / [onTap] 由主、副字幕各自给。
@@ -1061,8 +1154,14 @@ extension _VideoSubtitle on _VideoFushiPageState {
   }) {
     final SubtitleSource? local = entry.local;
     if (local == null) {
+      // 后端来的行（默认字幕 + 互联 host 的其余外挂字幕，反馈 -CaVsioFhG）一律按后端
+      // 来源标注标题、文件名作副标题；还没下到本地的 host 外挂字幕用「待下载」图标。
       return FushiListTileControl(
-        leading: const FushiIcon(Icons.cloud_done_outlined),
+        leading: FushiIcon(
+          entry.kind == RemoteSubtitleFileKind.hostSidecar
+              ? Icons.cloud_download_outlined
+              : Icons.cloud_done_outlined,
+        ),
         title: Text(_remoteDefaultSubtitleTitle),
         subtitle: Text(entry.label),
         selected: selected,
@@ -2262,6 +2361,30 @@ extension _VideoSubtitle on _VideoFushiPageState {
         await controller.selectEmbeddedSecondaryTextTrackViaPlayer(
           track.containerTrackOrdinal ?? track.streamIndex,
         );
+        return;
+      }
+    } else if (SubtitleSource.isHostSidecarPersisted(persisted)) {
+      // 互联 host 上的某一条外挂字幕（反馈 -CaVsioFhG）：按文件名重新下载；host
+      // 这一集已没有它 / 下载失败 → 静默保持无副字幕。
+      final RemoteVideoClient? client = _effectiveRemoteClient;
+      final RemoteVideoInfo? info = _effectiveRemoteInfo;
+      final RemoteVideoSidecarSubtitle? sidecar = remoteHostSidecarForSource(
+        persisted,
+        _remoteSidecarSubtitles,
+      );
+      if (client == null || info == null || sidecar == null) return;
+      final (_, int ep) = _remotePositionKeyForIndex(_currentEpisode);
+      try {
+        final File subtitle = await _downloadRemoteHostSidecarSubtitle(
+          client,
+          info,
+          sidecar,
+          index: _currentEpisode,
+          streamEpisodeIndex: ep,
+        );
+        cues = await _loadExternalSubtitleCues(subtitle.path, _activeBookUid);
+      } catch (e) {
+        debugPrint('[VideoFushiPage] secondary host sidecar replay failed: $e');
         return;
       }
     } else if (await File(persisted).exists()) {
