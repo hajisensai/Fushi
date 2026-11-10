@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/collections/collection_detail_layout.dart'
+    show CollectionEpisodeNumberPill;
 import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_detail_view.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_session.dart';
@@ -198,6 +200,53 @@ void main() {
       find.text('Series s1'),
       findsWidgets,
       reason: 'itemDetail 抛时仍用清单那条画',
+    );
+  });
+
+  testWidgets('VF5D4O_Tyx：缺集号的集不画集号胶囊，不拿列表位置冒充集号', (WidgetTester tester) async {
+    useTallView(tester);
+    browser.seasons['s1'] = <MediaServerItem>[seasonOne];
+    browser.episodes['s1|sea1'] = <MediaServerItem>[
+      ...fakeEpisodes(
+        seriesId: 's1',
+        seasonId: 'sea1',
+        seasonNumber: 1,
+        count: 2,
+      ),
+      const MediaServerItem(
+        id: 'sea1-nonum',
+        name: 'Unnumbered special',
+        type: MediaServerItemType.episode,
+        seriesId: 's1',
+        seriesName: 'Series s1',
+        seasonId: 'sea1',
+        seasonNumber: 1,
+      ),
+    ];
+
+    await tester.pumpWidget(harness(series));
+    await tester.pumpAndSettle();
+
+    final Finder pills = find.byType(CollectionEpisodeNumberPill);
+    expect(
+      tester
+          .widgetList<CollectionEpisodeNumberPill>(pills)
+          .map((CollectionEpisodeNumberPill p) => p.number),
+      <String>['1', '2'],
+      reason: '有号的两集照常画集号；缺号那集不能画成列表位置「3」',
+    );
+    final Finder unnumbered = find.byKey(
+      const ValueKey<String>('media-server-episode-sea1-nonum'),
+    );
+    expect(unnumbered, findsOneWidget);
+    expect(find.descendant(of: unnumbered, matching: pills), findsNothing);
+    expect(
+      find.descendant(
+        of: unnumbered,
+        matching: find.text('Unnumbered special'),
+      ),
+      findsOneWidget,
+      reason: '缺号的集靠集名区分',
     );
   });
 
