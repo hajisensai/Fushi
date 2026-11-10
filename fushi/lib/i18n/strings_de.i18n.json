@@ -7883,6 +7883,7 @@
   "shortcut_action_manga_pan_left": "Nach links schwenken",
   "shortcut_action_manga_pan_right": "Nach rechts schwenken",
   "shortcut_action_manga_pan_up": "Nach oben schwenken",
+  "shortcut_action_manga_toggle_bookmark": "Bookmark current page (add / remove)",
   "shortcut_action_manga_toggle_chrome": "Manga-Oberfläche umschalten",
   "shortcut_action_music_next_track": "Next track",
   "shortcut_action_music_previous_track": "Previous track",

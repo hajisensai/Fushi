@@ -7883,6 +7883,7 @@
   "shortcut_action_manga_pan_left": "Сдвиг влево",
   "shortcut_action_manga_pan_right": "Сдвиг вправо",
   "shortcut_action_manga_pan_up": "Сдвиг вверх",
+  "shortcut_action_manga_toggle_bookmark": "Bookmark current page (add / remove)",
   "shortcut_action_manga_toggle_chrome": "Переключить интерфейс манги",
   "shortcut_action_music_next_track": "Next track",
   "shortcut_action_music_previous_track": "Previous track",

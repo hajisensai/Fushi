@@ -7883,6 +7883,7 @@
   "shortcut_action_manga_pan_left": "Pan left",
   "shortcut_action_manga_pan_right": "Pan right",
   "shortcut_action_manga_pan_up": "Pan up",
+  "shortcut_action_manga_toggle_bookmark": "Bookmark current page (add / remove)",
   "shortcut_action_manga_toggle_chrome": "Toggle manga interface",
   "shortcut_action_music_next_track": "Next track",
   "shortcut_action_music_previous_track": "Previous track",

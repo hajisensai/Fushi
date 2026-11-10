@@ -7883,6 +7883,7 @@
   "shortcut_action_manga_pan_left": "تمرير لليسار",
   "shortcut_action_manga_pan_right": "تمرير لليمين",
   "shortcut_action_manga_pan_up": "تمرير لأعلى",
+  "shortcut_action_manga_toggle_bookmark": "Bookmark current page (add / remove)",
   "shortcut_action_manga_toggle_chrome": "تبديل واجهة المانغا",
   "shortcut_action_music_next_track": "Next track",
   "shortcut_action_music_previous_track": "Previous track",
