@@ -130,6 +130,16 @@ abstract class DelegatingAnkiRepository extends BaseAnkiRepository {
   Future<bool> isDuplicate(String expression, String reading) =>
       inner.isDuplicate(expression, reading);
 
+  @override
+  Future<bool?> probeDuplicate(String expression, String reading) =>
+      inner.probeDuplicate(expression, reading);
+
+  @override
+  Future<String?> minedCacheScope() => inner.minedCacheScope();
+
+  @override
+  Future<List<String>?> listMinedFirstFields() => inner.listMinedFirstFields();
+
   /// 不委派的后果不是「少个功能」而是**正确性回归**：装饰器会拿到基类默认 `true`，
   /// 于是开了自动重排的 iOS 用户点 ✓ 时，编排层以为「这个后端能回读 Anki」，把
   /// AnkiMobile 恒空的反查当成「卡已被删」，默默再制一张重复卡。
