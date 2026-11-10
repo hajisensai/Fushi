@@ -132,8 +132,8 @@ void main() {
     final QueryRow version = await db
         .customSelect('PRAGMA user_version')
         .getSingle();
-    expect(version.read<int>('user_version'), 148);
-    expect(db.schemaVersion, 148);
+    expect(version.read<int>('user_version'), 149);
+    expect(db.schemaVersion, 149);
 
     expect(await _prefs(db), <String, String>{
       'theme': 's:dark',

@@ -5,6 +5,8 @@ import 'dart:io';
 import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/foundation.dart';
 import 'package:fushi_engine/sync/sync_asset_store.dart';
+import 'package:fushi/src/sync/sftp_range_read.dart';
+import 'package:fushi/src/sync/sync_asset_range_reader.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_backend_file_trio_mixin.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
@@ -21,9 +23,17 @@ int? sftpMtimeToMs(int? mtimeSeconds) =>
     mtimeSeconds == null ? null : mtimeSeconds * 1000;
 
 class SftpSyncBackend extends SyncBackend
-    with SyncFolderCache, SyncBackendFileTrioMixin, SyncAssetStoreDefaults {
-  SftpSyncBackend._();
+    with SyncFolderCache, SyncBackendFileTrioMixin, SyncAssetStoreDefaults
+    implements SyncAssetRangeReader {
+  SftpSyncBackend._() : _connectOverride = null;
   static final SftpSyncBackend instance = SftpSyncBackend._();
+
+  /// 测试用：连接一律取自 [connect]，不碰真 SSH。
+  @visibleForTesting
+  SftpSyncBackend.withConnection(Future<SftpClient> Function() connect)
+    : _connectOverride = connect;
+
+  final Future<SftpClient> Function()? _connectOverride;
 
   /// Sync root folder, RELATIVE to the SFTP login directory (the user's home),
   /// never the server filesystem root. An absolute '/fushi-data' fails on
@@ -384,6 +394,25 @@ class SftpSyncBackend extends SyncBackend
             .toList();
       });
 
+  // ── SyncAssetRangeReader ─────────────────────────────────────────
+
+  /// 按偏移读资产区间（云端旧名漫画包判型、云盘视频流播），与来源库 SFTP 流播同一份
+  /// 实现（[openSftpFileRange]）。
+  ///
+  /// 只有 `stat`（拿总长、校验区间）在 op 锁里：字节流按需开句柄、可能持续整场播放，
+  /// 若持锁就会把同步的其它操作堵到播放结束。SFTP 在同一条通道上多路复用请求，
+  /// 句柄读与其它操作并发是协议本身支持的。读到一半连接断了，流以原始错误结束；
+  /// 下一次 [_guarded] 操作发现连接已关会重连。
+  @override
+  Future<SyncAssetRange> openAssetRange(
+    String assetId, {
+    required int start,
+    int? end,
+  }) => _guarded(() async {
+    final SftpClient sftp = await _ensureConnected();
+    return openSftpFileRange(sftp, assetId, start: start, end: end);
+  });
+
   @override
   Future<Object?> getJsonAsset(String assetId) async {
     // Delegates to the already-`_guarded` _downloadJson (no re-wrap). A missing
@@ -493,6 +522,8 @@ class SftpSyncBackend extends SyncBackend
   // ── Private: connection management ────────────────────────────────
 
   Future<SftpClient> _ensureConnected() async {
+    final Future<SftpClient> Function()? connectOverride = _connectOverride;
+    if (connectOverride != null) return connectOverride();
     if (_sftpClient != null && _sshClient != null && !_sshClient!.isClosed) {
       return _sftpClient!;
     }
@@ -564,6 +595,9 @@ class SftpSyncBackend extends SyncBackend
       } on SyncAuthError {
         rethrow;
       } on SyncBackendError {
+        rethrow;
+      } on SyncAssetRangeNotSatisfiable {
+        // 区间读的契约结论（起点越过文件尾），不是传输故障：连接照用、原样交出。
         rethrow;
       } on SftpStatusError catch (e) {
         // Per-file failure; the connection is still usable, so keep it.

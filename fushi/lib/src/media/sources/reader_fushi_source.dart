@@ -30,6 +30,8 @@ import 'package:fushi/src/media/audiobook/book_import_dialog.dart';
 import 'package:fushi/src/media/audiobook/text_leads_page_stop.dart';
 import 'package:fushi/src/media/manga/interconnect/interconnect_manga_source.dart'
     show InterconnectMangaCatalog;
+import 'package:fushi/src/media/manga/library/manga_resume_point.dart'
+    show onlineMangaShelfProgress;
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/reader/continuous_chapter_turn_resistance.dart';
 import 'package:fushi/src/reader/page_turn_animation.dart';
@@ -73,12 +75,25 @@ final _srtBookUidsProvider = StreamProvider<List<String>>((ref) {
       .distinct(listEquals);
 });
 
+/// BUG-4356：在线漫画「已读章」集合的响应式来源。书架在线漫画进度按章 readAt
+/// 算，而标记已读 / 未读（作品页单章、多选、「此章及更早」、Kavita 对齐）只写
+/// `manga_chapter_states`、不碰书行，[_epubBookKeysProvider] 感知不到。
+final _mangaChapterReadKeysProvider = StreamProvider<List<String>>((ref) {
+  return ref
+      .watch(appProvider)
+      .database
+      .watchMangaChapterReadKeys()
+      .distinct(listEquals);
+});
+
 final fushiBooksProvider = FutureProvider.family<List<MediaItem>, Language>((
   ref,
   language,
 ) {
   // BUG-793：订阅 EPUB 书集合变化，任意导入路径落库后自动重算书架。
   ref.watch(_epubBookKeysProvider);
+  // BUG-4356：章已读集合一变（任一标记已读入口），在线漫画进度即时重算。
+  ref.watch(_mangaChapterReadKeysProvider);
   return ReaderFushiSource.instance.getBooksFromDb(
     appModel: ref.watch(appProvider),
   );
@@ -316,6 +331,46 @@ class ReaderFushiSource extends ReaderMediaSource {
         return instance.uniqueKey;
     }
   }
+
+  /// [mediaSourceKeyFor] 的逆：书架卡 `MediaItem.mediaSourceIdentifier` → 它的
+  /// [BookFormat]。不是书类源（视频 / 游戏等）返回 null。
+  ///
+  /// 逐个 format 反查 [mediaSourceKeyFor]，而不是另写一张 key→format 表，保证正反
+  /// 两个方向永远是同一份映射。供「手上只有书架卡、不想为画一行菜单去读库」的判据
+  /// 使用（如 [mediaItemSupportsAudiobook]）。
+  static BookFormat? formatForMediaSourceKey(String mediaSourceIdentifier) {
+    for (final BookFormat format in BookFormat.values) {
+      if (mediaSourceKeyFor(format) == mediaSourceIdentifier) return format;
+    }
+    return null;
+  }
+
+  /// 这张书架卡能不能挂有声书：判据只在 [BookFormat.supportsAudiobook]，这里只做
+  /// 卡 → format 的换算。非书类源一律 false。
+  static bool mediaItemSupportsAudiobook(MediaItem item) =>
+      formatForMediaSourceKey(item.mediaSourceIdentifier)?.supportsAudiobook ??
+      false;
+
+  /// 书架上「被有声书配对 SRT 卡顶替、原书卡不再单独出现」的 bookKey 集合
+  /// （BUG-728 隐藏规则）。
+  ///
+  /// 顶替只对**能挂有声书**的格式成立（[BookFormat.supportsAudiobook]）：反馈
+  /// Ndnxy3mNdG 里 PDF 书被旧版 UI 挂上了有声书，书架按「有 srt_books 行就藏原书卡」
+  /// 把 PDF 卡藏掉、只剩一张写死 EPUB 阅读器的 SRT 卡，用户再也打不开原 PDF。存量
+  /// 的这类配对行不再顶替原卡，原 PDF / 漫画卡照常显示。
+  ///
+  /// [formatOf] 返回 null（书架上没有这本书的行，例如正文还没生成）按 EPUB 处理——
+  /// 没有原卡可藏，结果与旧行为一致。书架页 / ctl 书架 / 合集成员可见性 / 副屏书库
+  /// 共用本函数，不各写一份。
+  static Set<String> audiobookShadowedBookKeys(
+    Iterable<SrtBook> srtBooks, {
+    required BookFormat? Function(String bookKey) formatOf,
+  }) => <String>{
+    for (final SrtBook book in srtBooks)
+      if (book.bookKey.isNotEmpty &&
+          (formatOf(book.bookKey) ?? BookFormat.epub).supportsAudiobook)
+        book.bookKey,
+  };
 
   // HBK-AUDIT-127: percent-encode the href when building the URL so it is
   // symmetric with the consumer side, which decodes the whole post-'/epub/'
@@ -616,6 +671,10 @@ class ReaderFushiSource extends ReaderMediaSource {
     // 重叠不了 SQL，书架延迟仍随库大小线性增长（N 次往返 + N 次语句准备）。
     final Map<String, ReaderPosition> positions =
         await ReaderPositionRepository(db).findAllByBookUid();
+    // 在线漫画的章状态同样一次整表取完（书 uid → 章 key → 行），进度按章
+    // readAt 算（BUG-4356，[onlineMangaShelfProgress]）。
+    final Map<String, Map<String, MangaChapterStateRow>> chapterStates =
+        await db.getAllMangaChapterStatesByBook();
 
     // HBK-AUDIT-128: previously this was a serial for-loop where every book
     // awaited up to four File.exists() cover probes one after another, so
@@ -627,6 +686,10 @@ class ReaderFushiSource extends ReaderMediaSource {
         (EpubBookRow book) => _bookToMediaItem(
           book,
           book.uid.isEmpty ? null : positions[book.uid],
+          chapterStates: book.uid.isEmpty
+              ? const <String, MangaChapterStateRow>{}
+              : chapterStates[book.uid] ??
+                    const <String, MangaChapterStateRow>{},
         ),
       ),
     );
@@ -643,32 +706,24 @@ class ReaderFushiSource extends ReaderMediaSource {
     final ReaderPosition? pos = book.uid.isEmpty
         ? null
         : await ReaderPositionRepository(db).findByBookUid(book.uid);
-    return _bookToMediaItem(book, pos);
-  }
-
-  /// 在线漫画的章级进度。
-  ///
-  /// 「读到第几话」= 从**末尾**往回数：源按新→旧返回，列表 0 是最新一话，所以
-  /// 下标越大越旧。没选过章 = 一话都没开始读，position 0。
-  static ({int position, int duration}) _onlineMangaProgress(
-    OnlineMangaLibraryEntry entry,
-  ) {
-    final int total = entry.chapters.length;
-    if (total == 0) return (position: 0, duration: 1);
-    final int? selected = entry.currentChapterIndex;
-    if (selected == null || selected < 0 || selected >= total) {
-      return (position: 0, duration: total);
-    }
-    return (position: (total - selected).clamp(0, total), duration: total);
+    return _bookToMediaItem(
+      book,
+      pos,
+      chapterStates: await db.getMangaChapterStates(book.uid),
+    );
   }
 
   /// Resolve a single [EpubBookRow] into a [MediaItem], probing its cover
   /// concurrently with sibling books (HBK-AUDIT-128). [pos] is the book's
   /// reader position (already keyed by uid by the caller; null = never read).
+  /// [chapterStates] is the book's `manga_chapter_states` (chapterKey → row);
+  /// only online manga read it (BUG-4356).
   Future<MediaItem> _bookToMediaItem(
     EpubBookRow book,
-    ReaderPosition? pos,
-  ) async {
+    ReaderPosition? pos, {
+    Map<String, MangaChapterStateRow> chapterStates =
+        const <String, MangaChapterStateRow>{},
+  }) async {
     int position = 0;
     int duration = 1;
 
@@ -718,7 +773,7 @@ class ReaderFushiSource extends ReaderMediaSource {
         ? OnlineMangaLibraryEntry.tryParse(book.sourceMetadata)
         : null;
     final ({int position, int duration}) prog = onlineEntry != null
-        ? _onlineMangaProgress(onlineEntry)
+        ? onlineMangaShelfProgress(onlineEntry, chapterStates)
         : pageBased
         // PDF Phase 3 / 漫画同款：进度单位是**页**（sectionIndex=当前页 0-based，
         // chapterCount=总页数）。chaptersJson='[]' 无字数，走 computeBookProgress 会恒回
@@ -1427,11 +1482,17 @@ class ReaderFushiSource extends ReaderMediaSource {
   /// 与 binding 序列化完全解耦（[GamepadButton.serialize] 恒定）。以 token 字符串持久化，
   /// 未知/缺省回退 Xbox。
   GamepadBrand get gamepadGlyphBrand => GamepadBrand.fromToken(
-    getPreference<String?>(key: 'gamepad_glyph_brand', defaultValue: null),
+    getPreference<String?>(
+      key: pref_keys.kGamepadGlyphBrandPrefShortKey,
+      defaultValue: null,
+    ),
   );
 
   Future<void> setGamepadGlyphBrand(GamepadBrand brand) async {
-    await setPreference<String>(key: 'gamepad_glyph_brand', value: brand.token);
+    await setPreference<String>(
+      key: pref_keys.kGamepadGlyphBrandPrefShortKey,
+      value: brand.token,
+    );
   }
 
   bool get volumePageTurningEnabled => getPreference<bool>(

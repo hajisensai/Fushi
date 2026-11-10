@@ -770,6 +770,7 @@ class AdminApi {
           force: true,
         );
       case SourceLibraryKind.music:
+      case SourceLibraryKind.game:
       case null:
         throw FormatException(
           'library "${library.id}": ${unsupportedLibraryKindMessage(library.kind)}',
