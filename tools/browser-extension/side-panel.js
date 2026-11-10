@@ -1554,7 +1554,6 @@
     };
     alignCanvas.classList.add('is-dragging');
     try { alignCanvas.setPointerCapture(event.pointerId); } catch (_) {}
-    event.preventDefault();
   });
   alignCanvas.addEventListener('pointermove', function (event) {
     if (!wave.drag || event.pointerId !== wave.drag.id) return;
@@ -1576,22 +1575,21 @@
   }
   alignCanvas.addEventListener('pointerup', function (event) { endWaveDrag(event, true); });
   alignCanvas.addEventListener('pointercancel', function (event) { endWaveDrag(event, false); });
-  // 方向键：每次 0.1 秒（Shift 0.5 秒），与偏移行按钮同一条消息。
+  // 方向键：每次 0.1 秒（Shift 0.5 秒），与偏移行按钮同一条消息。画布在不滚动的头部里，
+  // 方向键 / 滚轮没有要拦的默认滚动；拖动的选区与触屏手势由 CSS（touch-action / user-select）挡住。
   alignCanvas.addEventListener('keydown', async function (event) {
     var step = event.shiftKey ? 500 : 100;
     var delta = event.key === 'ArrowLeft' ? -step : (event.key === 'ArrowRight' ? step : 0);
     if (!delta) return;
-    event.preventDefault();
     var state = await sendToTab({ type: 'fushiSubtitleSidePanelOffset', deltaMs: delta });
     if (state && state.ok) { stateSignature = metadataSignature(state); applyState(state, true); }
   });
   // 滚轮缩放时间窗（向上放大看细节、向下缩小看全局）。
   alignCanvas.addEventListener('wheel', function (event) {
     if (!event.deltaY) return;
-    event.preventDefault();
     var next = wave.span * (event.deltaY > 0 ? 1.25 : 0.8);
     wave.span = Math.max(ALIGN_SPAN_RANGE[0], Math.min(ALIGN_SPAN_RANGE[1], next));
-  }, { passive: false });
+  }, { passive: true });
 
   document.getElementById('load').addEventListener('click', function () { fileEl.click(); });
   fileEl.addEventListener('change', async function () {

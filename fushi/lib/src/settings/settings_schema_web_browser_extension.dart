@@ -631,12 +631,6 @@ SettingsDestination _subtitleStyleDestination() => SettingsDestination(
           onChanged: (SettingsContext c, double v) =>
               _writeStyle(c, 'outlineWidth', v),
         ),
-        _styleColor(
-          'outlineColor',
-          label: 'opt_subtitleStyleOutlineColor',
-          icon: FushiIcons.outlineColor,
-          themed: kWebBrowserSubtitleDefaultOutlineColor,
-        ),
       ],
     ),
     _section(
@@ -704,6 +698,13 @@ SettingsDestination _subtitleStyleDestination() => SettingsDestination(
           selected: (SettingsContext c) => _style(c)['textAlign']! as String,
           onChanged: (SettingsContext c, String v) =>
               _writeStyle(c, 'textAlign', v),
+        ),
+        // 描边颜色与扩展设置页同位：常显区只放描边粗细，颜色进「更多选项」首项。
+        _styleColor(
+          'outlineColor',
+          label: 'opt_subtitleStyleOutlineColor',
+          icon: FushiIcons.outlineColor,
+          themed: kWebBrowserSubtitleDefaultOutlineColor,
         ),
         _styleColor(
           'textColor',

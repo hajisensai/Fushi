@@ -103,6 +103,8 @@ h1 { margin: 0; font-size: 18px; line-height: 1.3; }
   background: var(--surface);
   cursor: grab;
   touch-action: none;
+  user-select: none;
+  overscroll-behavior: contain;
   transition: border-color var(--fushi-dur-short) var(--fushi-ease);
 }
 
