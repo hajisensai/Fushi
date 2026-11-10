@@ -1115,6 +1115,8 @@ const CHANNEL_TRANSPARENT: &[&str] = &[
     "identity",
     "device_info",
     "device_hint",
+    "location_sealed",
+    "location_seal",
     "channel_settle",
     "open_v1",
     "plan",
@@ -1555,6 +1557,16 @@ fn sync2_command(
         // 的设备的补充名（互联 host 认出上传者）。
         "device_info" => c.sync2_device_info(profile, req, i("now")?)?,
         "device_hint" => c.sync2_device_hint(s("device")?, s("hint")?)?,
+        // 位置「见过加密」的本机记账（store/sync2/sealed.rs，BUG-4276）：读；记（带这一刻见到的 kdf，或段 / 转发件的开头字节）。
+        "location_sealed" => c.sync2_location_sealed(profile, s("location")?)?,
+        "location_seal" => c.sync2_location_seal(
+            profile,
+            s("location")?,
+            req.get("kdf").filter(|v| !v.is_null()),
+            req.get("seen").and_then(Value::as_bool).unwrap_or(false),
+            blobs,
+            i("now")?,
+        )?,
         // 停用 / 取消停用一台设备，紧接着投一遍缓冲（因它卡住的操作不再等它），同一次调用里刷新缓存（[PROJECTING_OPS]）。
         "retire" => {
             let retire = req["retire"] != Value::Bool(false);

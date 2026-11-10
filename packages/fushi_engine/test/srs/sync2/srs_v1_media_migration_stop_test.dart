@@ -8,6 +8,7 @@ import 'dart:typed_data';
 import 'package:fushi_engine/srs/sync2/srs_location_migration.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
 import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart';
+import 'package:fushi_srs/fushi_srs.dart' show SrsSync2Result;
 import 'package:test/test.dart';
 
 void main() {
@@ -153,10 +154,23 @@ class _CountingLocation implements SrsLocationStore {
   Future<void> delete(String path) => inner.delete(path);
 }
 
-/// 收手的路径上不该碰到本机库。
+/// 收手的路径上不该碰到本机库（只答「这个位置见没见过加密」：写明文残留之前的只读闸，BUG-4276）。
 class _NoHost implements SrsSync2Host {
   @override
   String get profileUid => 'p';
+
+  @override
+  Future<SrsSync2Result> sync2Command(
+    Map<String, Object?> request, {
+    List<Uint8List> blobs = const <Uint8List>[],
+  }) async {
+    if (request['op'] == 'location_sealed') {
+      return const SrsSync2Result(<String, Object?>{
+        'sealed': false,
+      }, <(String, Uint8List)>[]);
+    }
+    throw UnimplementedError('unexpected ${request['op']}');
+  }
 
   @override
   dynamic noSuchMethod(Invocation invocation) =>

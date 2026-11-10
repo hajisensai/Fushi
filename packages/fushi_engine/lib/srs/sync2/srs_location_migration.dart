@@ -830,6 +830,14 @@ Future<SrsV1MediaReport> srsMigrateV1Media({
     out.error = write.error;
     return out;
   }
+  if (write.keyHex == null) {
+    // 新根的 meta 上没有 kdf，但本机见过这个位置是加密的（BUG-4276）：残留不按明文写进去。
+    final SrsLocationSeal seal = await srsLocationSealed(host, locationId);
+    if (seal.sealed) {
+      out.error = srsSealedRefusal(seal);
+      return out;
+    }
+  }
   final String? readKey = read.error == null ? read.keyHex : null;
   await _MediaMigration(
     host: host,

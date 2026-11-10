@@ -9,6 +9,8 @@
 /// - 开了就不能在这里关：关掉要把全部设备的段重传成明文，等于另起一个位置。**本机开过加密的位置，`meta.json`
 ///   上的 `kdf` 不见了（被删 / 被别的版本整份重写）一律报 [kSrsSync2EncryptionMissing] 停下，绝不降级成明文**；
 ///   `meta.json` 读不到但位置上已经有数据（最终一致的网盘暂时列不到）也不重写它（[kSrsSync2MetaUnavailable]）。
+///   本机没有密钥的设备同样：**本机一旦见过这个位置是加密的**（[SrsLocationSeal]：读到过 `kdf`、用密钥收发过、拉到过
+///   密封的段 / 位置上有密封媒体），之后 `kdf` 不见了、`meta.json` 列不到、密钥被清掉都不再写明文（BUG-4276）。
 /// - 上传进度按「位置 + 密钥指纹」记（[srsLocationProgressId]）：两台设备同时开加密、后写的 `kdf` 胜出时，先开的那台
 ///   换上正确口令后密钥指纹变了，进度归零、全部段按新密钥重传；加密媒体同理按指纹分目录（[SrsMediaCipher.folder]）。
 /// - KDF 参数来自不可信的 `meta.json`：越界（[kSrsKdfMinMemoryKib] 等）报 [kSrsSync2BadKdf]，不派生。
@@ -195,6 +197,95 @@ Future<SrsLocationKey> srsDeriveLocationKey(
   );
 }
 
+/// 本机记下的「这个位置是加密的」（内核 native/fushi_fsrs/src/store/sync2/sealed.rs，BUG-4276）：本机一旦见过就
+/// 持久记住，此后不论位置上的 `meta.json` 怎么样（被整份重写丢了 `kdf` / 暂时读不到 / 本机密钥被清掉），都不向它
+/// 写明文。
+class SrsLocationSeal {
+  const SrsLocationSeal({required this.sealed, this.kdf, this.check});
+
+  /// 本机见过这个位置是加密的。
+  final bool sealed;
+
+  /// 最近见到的 kdf（让没有密钥的设备照它派生口令）；只从段 / 媒体看到时为 null。
+  final SrsKdf? kdf;
+
+  /// 最近见到的密钥校验值（[SrsLocationKey.check]）：位置上的 `kdf` 不见了时，靠它判断输入的口令对不对。
+  final String? check;
+
+  static SrsLocationSeal _of(Map<String, Object?> m) {
+    final Object? k = m['kdf'];
+    SrsKdf? kdf;
+    String? check;
+    if (k is Map) {
+      try {
+        kdf = SrsKdf.fromJson(k.cast<String, Object?>());
+        check = k['check'] as String?;
+      } on FormatException {
+        kdf = null;
+      }
+    }
+    return SrsLocationSeal(
+      sealed: m['sealed'] == true,
+      kdf: kdf,
+      check: kdf == null ? null : check,
+    );
+  }
+}
+
+/// 读本机为 [locationId]（位置的稳定身份，不是带密钥指纹的进度身份）记下的加密事实。
+Future<SrsLocationSeal> srsLocationSealed(
+  SrsSync2Host host,
+  String locationId,
+) async => SrsLocationSeal._of(
+  (await host.sync2Command(<String, Object?>{
+    'op': 'location_sealed',
+    'location': locationId,
+  })).map,
+);
+
+/// 记下 [locationId] 是加密的：[kdf] + [check] = 这一刻见到的加密参数（位置 `meta.json` 上的，或本机密钥的）；
+/// [seen] = 别的旁证（`kdf` 认不出、位置上有密封媒体）；[segmentPrefixes] = 从位置上读到的段 / 转发件（内核看开头几个
+/// 字节判断对这个位置是不是密封的）。没有任何证据时内核什么都不写。返回记下之后的状态。
+Future<SrsLocationSeal> srsNoteLocationSealed(
+  SrsSync2Host host,
+  String locationId, {
+  required int nowMs,
+  SrsKdf? kdf,
+  String? check,
+  bool seen = false,
+  List<Uint8List> segmentPrefixes = const <Uint8List>[],
+}) async => SrsLocationSeal._of(
+  (await host.sync2Command(
+    <String, Object?>{
+      'op': 'location_seal',
+      'location': locationId,
+      'now': nowMs,
+      if (kdf != null)
+        'kdf': <String, Object?>{...kdf.toJson(), 'check': ?check},
+      if (seen) 'seen': true,
+    },
+    blobs: <Uint8List>[
+      for (final Uint8List s in segmentPrefixes)
+        Uint8List.sublistView(s, 0, min(s.length, kSrsSegmentPrefixBytes)),
+    ],
+  )).map,
+);
+
+/// [srsNoteLocationSealed] 交给内核的每个段的开头字节数（段与转发件都是 `魔数[4] | 版本 | flags` 开头）。
+const int kSrsSegmentPrefixBytes = 8;
+
+/// 本机见过加密、而这一刻没有可用的密钥（或位置上的 `kdf` 不见了）时，握手怎么拒绝：记得 kdf 就报
+/// [kSrsSync2NeedsKey] 并交回 kdf（界面照它让用户输入口令）；不记得（只从段 / 媒体看到）就报
+/// [kSrsSync2EncryptionMissing]（界面让用户设口令重新开启加密）。两种都不写明文。
+void _refuseSealed(SrsLocationHandshake h, SrsLocationSeal seal) {
+  h.kdf = seal.kdf;
+  h.error = srsSealedRefusal(seal);
+}
+
+/// 见过加密的位置这一刻没有可用密钥时报的错（见 [_refuseSealed]）。
+String srsSealedRefusal(SrsLocationSeal seal) =>
+    seal.kdf != null ? kSrsSync2NeedsKey : kSrsSync2EncryptionMissing;
+
 /// 一个位置的 `meta.json` 握手结论。
 class SrsLocationHandshake {
   SrsLocationHandshake();
@@ -225,8 +316,15 @@ class SrsLocationHandshake {
 /// - 有 `kdf`：参数检查（越界 [kSrsSync2BadKdf]），本机密钥校验值对得上才用。
 /// - 没有 `kdf`：本机没开加密 = 明文；本机刚开（[SrsLocationKey.pendingEnable]）= 写上 `kdf`；本机已经开过 =
 ///   [kSrsSync2EncryptionMissing] 停下，绝不降级成明文。
+///
+/// 本机见过加密（[SrsLocationSeal]，BUG-4276）是第二道闸：单看这一刻的 `meta.json` 不够——它是多设备可改写的单文件，
+/// 被旧版本整份重写丢了 `kdf`、在最终一致的网盘上暂时读不到、或本机密钥被清掉时，没有密钥的设备会把它当明文位置。
+/// 所以握手读到 `kdf` / 本机用密钥收发时都记下来，此后本机没有可用密钥就一律不写（[_refuseSealed]），`meta.json`
+/// 不见了也不替它重建明文 meta。[locationId] 是位置的稳定身份（记账按它，不按带密钥指纹的进度身份）。
 Future<SrsLocationHandshake> srsLocationHandshake(
   SrsLocationStore location, {
+  required SrsSync2Host host,
+  required String locationId,
   required SrsLocationKey? key,
   required Object? collection,
   required int nowMs,
@@ -239,6 +337,15 @@ Future<SrsLocationHandshake> srsLocationHandshake(
         ...meta,
         'kdf': <String, Object?>{...k.kdf.toJson(), 'check': k.check},
       };
+  // 本机这一轮要用 [k] 收发：记下（密钥的 kdf 与校验值），之后密钥丢了也不会把这里当明文位置。
+  Future<void> noteKey(SrsLocationKey k) => srsNoteLocationSealed(
+    host,
+    locationId,
+    nowMs: nowMs,
+    kdf: k.kdf,
+    check: k.check,
+  );
+  final SrsLocationSeal seal = await srsLocationSealed(host, locationId);
   final Uint8List? bytes = await location.get('meta.json');
   if (bytes == null) {
     final bool hasData =
@@ -246,6 +353,12 @@ Future<SrsLocationHandshake> srsLocationHandshake(
         (await location.list(kSrsSealedMediaFolder)).isNotEmpty;
     if (hasData) {
       h.error = kSrsSync2MetaUnavailable;
+      return h;
+    }
+    if (key == null && seal.sealed) {
+      // 列不到任何东西，但本机见过这里是加密的：可能是最终一致的网盘暂时列空，也可能真被清空了——分不出来，就不建一份
+      // 明文 meta（会盖掉一份其实还在的加密 meta），也不写明文。
+      _refuseSealed(h, seal);
       return h;
     }
     final Map<String, Object?> fresh = <String, Object?>{
@@ -259,6 +372,7 @@ Future<SrsLocationHandshake> srsLocationHandshake(
       utf8.encode(jsonEncode(key == null ? fresh : withKdf(fresh, key))),
     );
     if (key != null) {
+      await noteKey(key);
       h.kdf = key.kdf;
       h.keyHex = key.keyHex;
       h.encryptionEnabled = key.pendingEnable;
@@ -280,15 +394,42 @@ Future<SrsLocationHandshake> srsLocationHandshake(
   }
   final Object? kdfJson = meta['kdf'];
   if (kdfJson == null) {
-    if (key == null) return h;
+    if (key == null) {
+      if (seal.sealed) {
+        // `kdf` 不见了（被别的 / 旧版本整份重写、被删），但本机见过这里是加密的：不降级成明文。
+        _refuseSealed(h, seal);
+        return h;
+      }
+      // 本机从没见过加密，再看位置上有没有密封媒体（只做媒体的位置没有段可看；加密的段在拉段时由
+      // [srsSync2Pull] 看）。
+      if ((await location.list(kSrsSealedMediaFolder)).isNotEmpty) {
+        _refuseSealed(
+          h,
+          await srsNoteLocationSealed(
+            host,
+            locationId,
+            nowMs: nowMs,
+            seen: true,
+          ),
+        );
+        return h;
+      }
+      return h;
+    }
     if (!key.pendingEnable) {
-      h.error = kSrsSync2EncryptionMissing;
+      // 本机记得的校验值与这把密钥对不上（照记下的 kdf 输错了口令）：报口令不对，别拿错的密钥去「恢复加密设置」。
+      final String? check = seal.check;
+      h.kdf = seal.kdf;
+      h.error = check != null && check != key.check
+          ? kSrsSync2WrongKey
+          : kSrsSync2EncryptionMissing;
       return h;
     }
     await location.put(
       'meta.json',
       utf8.encode(jsonEncode(withKdf(meta, key))),
     );
+    await noteKey(key);
     h.kdf = key.kdf;
     h.keyHex = key.keyHex;
     h.encryptionEnabled = true;
@@ -298,14 +439,24 @@ Future<SrsLocationHandshake> srsLocationHandshake(
     if (kdfJson is! Map) throw const FormatException('kdf is not an object');
     h.kdf = SrsKdf.fromJson(kdfJson.cast<String, Object?>());
   } on FormatException {
+    // 认不出参数，但位置声明了加密：同样记下（不派生、不同步）。
+    await srsNoteLocationSealed(host, locationId, nowMs: nowMs, seen: true);
     h.error = kSrsSync2BadKdf;
     return h;
   }
+  final Object? check = kdfJson['check'];
+  await srsNoteLocationSealed(
+    host,
+    locationId,
+    nowMs: nowMs,
+    kdf: h.kdf,
+    check: check is String ? check : null,
+  );
   if (key == null) {
     h.error = kSrsSync2NeedsKey;
     return h;
   }
-  if (kdfJson['check'] != key.check) {
+  if (check != key.check) {
     h.error = kSrsSync2WrongKey;
     return h;
   }

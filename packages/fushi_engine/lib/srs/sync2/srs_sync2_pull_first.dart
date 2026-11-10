@@ -66,6 +66,22 @@ Future<SrsSync2Report> srsSync2PullOnly({
   final Object? kdf = meta['kdf'];
   String? keyHex;
   if (kdf is Map) {
+    // 见过加密就记下（BUG-4276：之后 meta 上的 kdf 不见了也不往这里写明文）。
+    SrsKdf? parsed;
+    try {
+      parsed = SrsKdf.fromJson(kdf.cast<String, Object?>());
+    } on FormatException {
+      parsed = null;
+    }
+    final Object? check = kdf['check'];
+    await srsNoteLocationSealed(
+      host,
+      locationId,
+      nowMs: nowMs(),
+      kdf: parsed,
+      check: check is String ? check : null,
+      seen: parsed == null,
+    );
     if (key == null) return report..error = kSrsSync2NeedsKey;
     if (kdf['check'] != key.check) return report..error = kSrsSync2WrongKey;
     keyHex = key.keyHex;
