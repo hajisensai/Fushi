@@ -1,8 +1,0 @@
-## BUG-4368 · 复习同步关联只看笔记，只建了牌组 / 改了预设的设备被自动采用对方 uid，自建牌组与预设被删
-- **报告**：2026-11-10（SRS 集合身份评审 R3：采用判据只看 `hasUserNotes()`，会删掉非笔记类的用户数据）
-- **真实性**：✅ 真 bug，按下面的操作序列用真库 + 真同步引擎复现。
-  - 操作序列：① 电脑建了笔记、开了同步；② 手机新装，在复习的牌组列表里先建了牌组（`srs_deck_list_page.dart` `_createDeck`，不需要笔记）、改了默认牌组的预设（保留率），还没加笔记；③ 手机开同步。
-  - 根因：关联判定的「本机有数据」只看笔记（`packages/fushi_engine/lib/srs/srs_profile_link.dart:690` 修复前 `store.hasUserNotes()`，只查 `kind = note` 的实体，`srs_db_store.dart:5192`），手机被判成「空的、目录里恰好一个有数据的 profile」→ `SrsProfileLinkAdopt` → `_switchUid(merge: false)` → `srsAdoptProfileUid` 经 `profile_purge` 删掉旧 uid 的全部行，自建牌组与预设一起没了。同一判据还有三处：用户在冲突里选了候选时 `adopt` 的 `merge:`（`srs_profile_link.dart:795`，判成「不并入」同样直接删）、备份恢复改 uid 的 `_canAdoptUid`（`srs_backup_merge.dart:339`，只查笔记）、说明文件里报给别的设备的 `hasNotes`（`publish`：只建了牌组的设备报「没数据」，另一台空设备遇到它时两边都按「双方都空、uid 大的采用 uid 小的」判，它的 uid 较大时就由它采用对方，牌组同样被删）。
-- **[x] ① 已修复** — 「有数据」改成全部用户数据：`srs_db_store.dart` 新增 `srsProfileHasUserData` / `SrsDbStore.hasUserData`（内置 ID 集合之外的任何实体、任何修改记录——没改过的内置定义不写修改记录——、任何复习日志或看不懂的事件）；关联判定、`adopt` 的并入判断、`_canAdoptUid`、说明文件的 `hasNotes` 都改用它。删旧 uid 的行仍只经内核 `profile_purge`（#3127，覆盖 `sync2_ops` / `sync2_self`）。（分支 `pr/srs-identity-adopt-userdata`）
-- **[x] ② 已加自动化测试** — `packages/fushi_engine/test/srs/srs_profile_adopt_user_data_test.dart`：「复现：对方有笔记、本机只建了牌组并改了预设…」按上面的序列跑真库 + 真同步（修复前手机改用了电脑的 uid、「自建」与 0.85 不见；修复后交给用户选，选定后并入、两边都有「自建」）；「对方只建了牌组也报有数据」；`hasUserData` 各类数据的判定；备份恢复不得直接采用；采用后旧 uid 的 `sync2_ops` / `sync2_self` 为 0。
-- **备注**：参数 / 字段名 `localHasNotes`、说明文件键 `hasNotes` 沿用旧名（键是 wire 名，冻结；旧版本读到 true 同样当作有数据），含义改成「有用户数据」。首次同步确认弹框的「没有笔记就不问」（`srs_sync_settings.dart` `ensureSrsFirstSyncConfirmed`）不涉及删数据，没改。

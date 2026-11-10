@@ -7,6 +7,7 @@ import 'package:fushi_engine/srs/apkg/srs_anki_package.dart';
 import 'package:fushi_engine/srs/apkg/srs_apkg_common.dart';
 import 'package:fushi_engine/srs/apkg/srs_apkg_export.dart';
 import 'package:fushi_engine/srs/apkg/srs_apkg_import.dart';
+import 'package:fushi_engine/srs/apkg/srs_export_options.dart';
 import 'package:fushi_engine/srs/apkg/srs_protobuf.dart';
 import 'package:fushi_engine/srs/srs_browse_ops.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
@@ -2297,6 +2298,259 @@ void main() {
       );
       expect(cardDecks(tree, await s.allCardRows()), before);
     }
+  });
+
+  group('牌组出卡顺序（Anki newMix / reviewOrder）', () {
+    test('映射表：导出与导入（Fushi 没有的顺序导入不写）', () {
+      expect(
+        <int>[
+          for (final SrsNewCardMix m in SrsNewCardMix.values)
+            srsAnkiNewMixOf(m),
+        ],
+        <int>[1, 2, 0],
+      );
+      expect(
+        <int>[
+          for (final SrsReviewCardOrder o in SrsReviewCardOrder.values)
+            srsAnkiReviewOrderOf(o),
+        ],
+        <int>[7, 0, 5, 3, 8],
+      );
+      expect(
+        <SrsNewCardMix?>[
+          for (final int v in <int>[0, 1, 2, 3]) srsNewCardMixOfAnki(v),
+        ],
+        <SrsNewCardMix?>[
+          SrsNewCardMix.mixed,
+          SrsNewCardMix.afterReviews,
+          SrsNewCardMix.beforeReviews,
+          null,
+        ],
+      );
+      expect(
+        <SrsReviewCardOrder?>[
+          for (int v = 0; v <= 12; v++) srsReviewCardOrderOfAnki(v),
+        ],
+        <SrsReviewCardOrder?>[
+          SrsReviewCardOrder.dueDate,
+          SrsReviewCardOrder.dueDate,
+          SrsReviewCardOrder.dueDate,
+          SrsReviewCardOrder.intervalAscending,
+          null,
+          SrsReviewCardOrder.difficulty,
+          null,
+          null,
+          SrsReviewCardOrder.random,
+          null,
+          null,
+          null,
+          null,
+        ],
+      );
+      expect(srsReviewCardOrderOfAnki(null), isNull);
+      expect(srsNewCardMixOfAnki(null), isNull);
+    });
+
+    test(
+      '旧格式 JSON：预设的 newMix / reviewOrder 写到 own 牌组，子牌组随继承；缺键 / Fushi 没有的不写',
+      () async {
+        final Map<String, Object?> dconf = legacyDconf();
+        (dconf['2']! as Map<String, Object?>)
+          ..['newMix'] = 2
+          ..['reviewOrder'] = 5;
+        (dconf['1']! as Map<String, Object?>)['reviewOrder'] = 12;
+        final Uint8List pkg = zipOf(<String, List<int>>{
+          'collection.anki21': buildLegacyCollection(
+            crtSecs: crtSecs,
+            conf: <String, Object?>{'rollover': 4, 'localOffset': 0},
+            models: legacyModels(),
+            decks: legacyDecks(),
+            dconf: dconf,
+            notes: fixtureNotes(t),
+          ),
+          'media': utf8.encode('{}'),
+        });
+        final SrsDbStore s = await openTestStore(
+          profileUid: kProfile,
+          deviceId: 'a',
+          now: () => t,
+        );
+        await importInto(s, pkg);
+        final SrsDeckTree tree = await s.deckTree();
+        final String lang = srsImportedDeckId(kProfile, 'Lang');
+        final String jp = srsImportedDeckId(kProfile, 'Lang::JP');
+        expect(tree[lang]!.newCardMix, SrsNewCardMix.beforeReviews);
+        expect(tree[lang]!.reviewCardOrder, SrsReviewCardOrder.difficulty);
+        expect(tree[jp]!.ownParams, isFalse, reason: '同一预设 → 继承');
+        expect(
+          tree.paramsOwner(jp).reviewCardOrder,
+          SrsReviewCardOrder.difficulty,
+        );
+        // 预设 1：newMix 缺键、reviewOrder = 12（相对逾期，Fushi 没有）→ 都不写，走缺省。
+        final SrsEntityEdits def = tree[s.defaultDeckId]!.edits;
+        expect(def[SrsFieldKeys.deckNewMix], isNull);
+        expect(def[SrsFieldKeys.deckReviewOrder], isNull);
+      },
+    );
+
+    test(
+      '新格式 protobuf：new_mix = 30、review_order = 33；缺字段按 0（穿插 / 按到期日）',
+      () async {
+        final Uint8List bytes = buildSqlite((Database db) {
+          db.execute(legacySchema);
+          db.execute(schema18Extra);
+          db.execute(
+            "INSERT INTO col VALUES (1,?,0,0,18,0,0,0,'','','','','')",
+            <Object?>[crtSecs],
+          );
+          db.execute(
+            "INSERT INTO deck_config VALUES (1,'Default',0,0,?)",
+            <Object?>[
+              (PbWriter()..packedFloats(1, <double>[1, 10])).toBytes(),
+            ],
+          );
+          db.execute(
+            "INSERT INTO deck_config VALUES (3,'Ordered',0,0,?)",
+            <Object?>[
+              (PbWriter()
+                    ..varint(30, 2)
+                    ..varint(33, 5))
+                  .toBytes(),
+            ],
+          );
+        });
+        final SrsAnkiCollection col = await SrsAnkiCollection.open(bytes);
+        try {
+          expect(col.presets[1]!.newMix, 0, reason: 'proto3 缺字段 = 0，不是没设置');
+          expect(col.presets[1]!.reviewOrder, 0);
+          expect(
+            srsNewCardMixOfAnki(col.presets[1]!.newMix),
+            SrsNewCardMix.mixed,
+          );
+          expect(
+            srsReviewCardOrderOfAnki(col.presets[1]!.reviewOrder),
+            SrsReviewCardOrder.dueDate,
+          );
+          expect(col.presets[3]!.newMix, 2);
+          expect(col.presets[3]!.reviewOrder, 5);
+        } finally {
+          await col.close();
+        }
+      },
+    );
+
+    Future<SrsAnkiPreset> exportedPreset(Uint8List pkg, String deck) async {
+      final SrsAnkiPackage p = SrsAnkiPackage.open(
+        pkg,
+        zstd: (Uint8List b) => null,
+      );
+      final SrsAnkiCollection col = await SrsAnkiCollection.open(
+        p.collectionBytes,
+      );
+      try {
+        final SrsAnkiDeck d = col.decks.values.singleWhere(
+          (SrsAnkiDeck d) => d.name == deck,
+        );
+        return col.presets[d.configId]!;
+      } finally {
+        await col.close();
+      }
+    }
+
+    test(
+      '导出：缺省写 newMix = 1 / reviewOrder = 7（以前恒写 0 / 0）；FSRS 牌组按设置写，RWKV 牌组复习顺序恒 7',
+      () async {
+        final SrsDbStore s = await openTestStore(
+          profileUid: kProfile,
+          deviceId: 'a',
+          now: () => t,
+        );
+        final String plain = await s.createDeck('Plain');
+        final String fsrs = await s.createDeck('Fsrs');
+        await s.editFields(SrsEntityKind.deck, fsrs, <String, Object?>{
+          SrsFieldKeys.deckAlgorithm: <String, Object?>{
+            'alg': SrsAlgorithm.fsrs6.wire,
+            'auto': true,
+          },
+          SrsFieldKeys.deckNewMix: SrsNewCardMix.mixed.wire,
+          SrsFieldKeys.deckReviewOrder: SrsReviewCardOrder.difficulty.wire,
+        });
+        final String rwkv = await s.createDeck('Rwkv');
+        await s.editFields(SrsEntityKind.deck, rwkv, <String, Object?>{
+          SrsFieldKeys.deckAlgorithm: <String, Object?>{
+            'alg': SrsAlgorithm.rwkv.wire,
+            'auto': true,
+          },
+          SrsFieldKeys.deckNewMix: SrsNewCardMix.beforeReviews.wire,
+          SrsFieldKeys.deckReviewOrder: SrsReviewCardOrder.random.wire,
+        });
+        for (final String d in <String>[plain, fsrs, rwkv]) {
+          await s.createNote(
+            noteTypeId: s.lapisNoteTypeId,
+            deckId: d,
+            fieldsById: <String, String>{
+              srsLapisFieldId(kProfile, 'Expression'): '聞く$d',
+            },
+          );
+        }
+        final Uint8List pkg = await exportAnkiPackage(
+          store: s,
+          options: const SrsAnkiExportOptions(ankiCompatible: true),
+        );
+        final SrsAnkiPreset p0 = await exportedPreset(pkg, 'Plain');
+        expect((p0.newMix, p0.reviewOrder), (1, 7));
+        final SrsAnkiPreset p1 = await exportedPreset(pkg, 'Fsrs');
+        expect((p1.newMix, p1.reviewOrder), (0, 5));
+        final SrsAnkiPreset p2 = await exportedPreset(pkg, 'Rwkv');
+        expect((p2.newMix, p2.reviewOrder), (2, 7));
+
+        // 往返（只走 Anki 预设，不带 fushi-ext）：回导到另一 profile 还原。
+        final SrsDbStore other = await openTestStore(
+          profileUid: kProfile2,
+          deviceId: 'b',
+          now: () => t,
+        );
+        await importInto(other, pkg);
+        final SrsDeckTree back = await other.deckTree();
+        final SrsDeckView f = back[srsImportedDeckId(kProfile2, 'Fsrs')]!;
+        expect(f.newCardMix, SrsNewCardMix.mixed);
+        expect(f.reviewCardOrder, SrsReviewCardOrder.difficulty);
+        final SrsDeckView pl = back[srsImportedDeckId(kProfile2, 'Plain')]!;
+        expect(pl.newCardMix, SrsNewCardMix.afterReviews);
+        expect(pl.reviewCardOrder, SrsReviewCardOrder.retrievability);
+      },
+    );
+
+    test('往返（带 fushi-ext）：寄存器原值无损还原，含 RWKV 牌组存着的复习顺序', () async {
+      final SrsDbStore s = await openTestStore(
+        profileUid: kProfile,
+        deviceId: 'a',
+        now: () => t,
+      );
+      final String rwkv = await s.createDeck('Rwkv');
+      await s.editFields(SrsEntityKind.deck, rwkv, <String, Object?>{
+        SrsFieldKeys.deckNewMix: SrsNewCardMix.beforeReviews.wire,
+        SrsFieldKeys.deckReviewOrder: SrsReviewCardOrder.random.wire,
+      });
+      await s.createNote(
+        noteTypeId: s.lapisNoteTypeId,
+        deckId: rwkv,
+        fieldsById: <String, String>{
+          srsLapisFieldId(kProfile, 'Expression'): '聞く',
+        },
+      );
+      final Uint8List pkg = await exportAnkiPackage(store: s);
+      final SrsDbStore other = await openTestStore(
+        profileUid: kProfile2,
+        deviceId: 'b',
+        now: () => t,
+      );
+      await importInto(other, pkg);
+      final SrsDeckView back = (await other
+          .deckTree())[srsImportedDeckId(kProfile2, 'Rwkv')]!;
+      expect(back.newCardMix, SrsNewCardMix.beforeReviews);
+      expect(back.reviewCardOrder, SrsReviewCardOrder.random);
+    });
   });
 
   group('从 Anki 迁移的复习数据与新卡顺序（Lapis 用户反馈）', () {

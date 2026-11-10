@@ -607,7 +607,10 @@ class SrsDbStore implements SrsSync2Host {
   /// `EventKey` 对 Anki 来源不比卡），没有血统链接的两张卡（删光重导后旧卡隐藏、新卡可见）由有效复习投影按 Anki 事件身份
   /// 只留一份（caches.rs `refresh_stats`）。存量库的卡片状态与投影是旧规则算的（「从 Anki 迁移」后复习数 ×2），与修订号
   /// 11 同样整库重算（srs.db v28 迁移已先按新规则重放了带这种副本的卡的日志投影行）。
-  static const int _kCacheRevision = 12;
+  /// 13（反馈 MCJLSBR5Wg）：出处带 `seriesTitle`（系列）的笔记按「系列 → 集」分组——缓存行的 `source_key` 是系列键、
+  /// `source_title` 是系列名（store/browse.rs `source_key`、caches.rs `NoteInfo::of`）。旧版本收到别的设备同步来的带
+  /// 系列的出处时按集算了这两列，升级时只重算出处记录里带 `seriesTitle` 的那些笔记。
+  static const int _kCacheRevision = 13;
 
   /// 当前缓存修订号（[_kCacheRevision]）。升级测试断言「打开老库后记下的是当前修订号」时用它，
   /// 不写字面量——每次加一级修订都要去改一串升级测试的魔数，漏改就整批红。
@@ -2820,6 +2823,26 @@ class SrsDbStore implements SrsSync2Host {
       // 有效复习投影整库按新规则重算。两级要做的是同一件事，只做一次。
       if (_cacheRevision < 12) {
         await _refreshCaches(allNotes: true, allStats: true);
+      } else if (_cacheRevision < 13) {
+        // 整库重算（上一步）已按新规则写好；只有已在 12 的库才需要挑出带系列的出处。按子串粗筛（多挑只是多重算几行），
+        // 真正的分组键由内核按出处 JSON 算。
+        final List<QueryRow> rows = await db
+            .customSelect(
+              'SELECT DISTINCT entity_id FROM srs_field_edits '
+              'WHERE profile_uid = ? AND entity_kind = ? AND field_key = ? '
+              "AND json LIKE '%seriesTitle%'",
+              variables: <Variable<Object>>[
+                Variable<String>(profileUid, srsIdType),
+                Variable<String>(SrsEntityKind.note.wire),
+                Variable<String>(SrsFieldKeys.noteSource),
+              ],
+            )
+            .get();
+        if (rows.isNotEmpty) {
+          await _refreshCaches(
+            notes: rows.map((QueryRow r) => r.read<String>('entity_id')),
+          );
+        }
       }
       _cacheRevision = _kCacheRevision;
       await _saveLocal();
