@@ -3,7 +3,9 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 
-import { handle as routeHandle, routeAgentInput } from './subagent_model_router.mjs';
+import { readdirSync, readFileSync } from 'node:fs';
+
+import { handle as routeHandle, pinnedModel, routeAgentInput } from './subagent_model_router.mjs';
 import { HELPER, MARKER, handle as wfHandle, rewrite } from './workflow_agent_type_default.mjs';
 
 const SCRIPT = `export const meta = {
@@ -70,6 +72,31 @@ test('rewritten script defaults agentType and pins model by type at runtime', as
     { agentType: 'general', model: 'opus' },
     { agentType: 'general', model: 'opus' },
   ]);
+});
+
+// The type -> model map lives in three places (agent frontmatter, the router sets, the workflow
+// helper literal) and the report contract in four agent bodies; nothing but this test ties them.
+test('agent definitions, router and workflow helper agree', () => {
+  const agentsDir = fileURLToPath(new URL('../../.claude/agents/', import.meta.url));
+  /** @type {Record<string, string>} */
+  const declared = {};
+  for (const file of readdirSync(agentsDir).filter((f) => f.endsWith('.md')).sort()) {
+    const text = readFileSync(`${agentsDir}${file}`, 'utf8');
+    const front = /^---\n([\s\S]*?)\n---\n/.exec(text.replace(/\r\n/g, '\n'));
+    assert.ok(front, `${file}: missing frontmatter`);
+    const field = (/** @type {string} */ key) => new RegExp(`^${key}:\\s*(\\S+)\\s*$`, 'm').exec(front[1])?.[1];
+    const name = field('name');
+    assert.equal(`${name}.md`, file, `${file}: frontmatter name must match the file name`);
+    declared[/** @type {string} */ (name)] = /** @type {string} */ (field('model'));
+    // The dispatcher triages on the first line of every report (docs/agent/fast-workflow.md).
+    assert.ok(text.includes('第一行写状态'), `${file}: report contract (status on the first line) is missing`);
+  }
+  assert.deepEqual(Object.keys(declared), ['general', 'reviewer', 'scout', 'worker']);
+  for (const [name, model] of Object.entries(declared)) {
+    assert.equal(pinnedModel(name), model, `${name}: router pins a different model than its frontmatter`);
+  }
+  const helperMap = JSON.parse(/** @type {RegExpExecArray} */ (/const m = (\{[^}]*\})\[q\.agentType\]/.exec(HELPER))[1]);
+  assert.deepEqual(helperMap, declared);
 });
 
 test('hooks answer on stdin as real processes', () => {

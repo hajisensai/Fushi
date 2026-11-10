@@ -256,7 +256,8 @@ class _VideoPagePlaybackRemote
             secondarySelectable: false,
             language: track.languageCode,
           ),
-          applyPrimary: () =>
+          // YouTube 轨懒下载、不走抽取加载态，来源无关。
+          applyPrimary: (VideoSubtitlePickOrigin _) =>
               _state._applyYoutubeCaptionTrack(controller, track),
         ),
       );
@@ -284,8 +285,13 @@ class _VideoPagePlaybackRemote
                 : subtitleSourceMatchesPersistedForMenu(local, secondary),
             ocrAvailable: false,
           ),
-          applyPrimary: () =>
-              _state._applyRemoteSubtitle(controller, path, label: label),
+          applyPrimary: (VideoSubtitlePickOrigin origin) =>
+              _state._applyRemoteSubtitle(
+                controller,
+                path,
+                label: label,
+                origin: origin,
+              ),
           applySecondary: () => _state._applyRemoteSecondarySubtitle(
             controller,
             path,
@@ -318,7 +324,12 @@ class _VideoPagePlaybackRemote
             codec: track.codec,
           ),
           applyPrimary: selectable
-              ? () => _state._applyRemoteEmbeddedSubtitle(controller, track)
+              ? (VideoSubtitlePickOrigin origin) =>
+                    _state._applyRemoteEmbeddedSubtitle(
+                      controller,
+                      track,
+                      origin: origin,
+                    )
               : null,
           applySecondary: track.isText
               ? () => _state._applyRemoteEmbeddedSecondarySubtitle(
@@ -354,14 +365,33 @@ class _VideoPagePlaybackRemote
     return found;
   }
 
+  /// 遥控 / CLI 的选字幕：播放器侧来源（进度照旧在播放器设置面板里）。
   @override
-  Future<void> selectSubtitle(String source, {required bool secondary}) async {
+  Future<void> selectSubtitle(String source, {required bool secondary}) =>
+      _selectSubtitleFrom(
+        source,
+        secondary: secondary,
+        origin: VideoSubtitlePickOrigin.player,
+      );
+
+  /// 选字幕的共同入口；[origin] 决定抽取进度显示在哪（见
+  /// [VideoSubtitlePickOrigin]）。副字幕只有播放器侧入口。
+  Future<void> _selectSubtitleFrom(
+    String source, {
+    required bool secondary,
+    required VideoSubtitlePickOrigin origin,
+  }) async {
     final VideoPlayerController controller = _requireController();
     if (_state._subtitleLoadingShown) {
       throw const VideoRemoteFailure('busy', '字幕正在加载，稍后再试');
     }
     if (_state._isRemote) {
-      await _selectRemoteSubtitle(controller, source, secondary: secondary);
+      await _selectRemoteSubtitle(
+        controller,
+        source,
+        secondary: secondary,
+        origin: origin,
+      );
       return;
     }
     final SubtitleSource found = await _menuSource(source);
@@ -371,7 +401,7 @@ class _VideoPagePlaybackRemote
       osd,
       () => secondary
           ? _state._selectSecondarySubtitleSource(controller, found)
-          : _state._selectSubtitleSource(controller, found),
+          : _state._selectSubtitleSource(controller, found, origin: origin),
     );
     if (!applied) {
       throw VideoRemoteFailure(
@@ -387,11 +417,16 @@ class _VideoPagePlaybackRemote
     VideoPlayerController controller,
     String source, {
     required bool secondary,
+    required VideoSubtitlePickOrigin origin,
   }) async {
     final _RemoteSubtitleRow row = _remoteRow(controller, source);
+    final Future<void> Function(VideoSubtitlePickOrigin origin)? primary =
+        row.applyPrimary;
     final Future<void> Function()? apply = secondary
         ? row.applySecondary
-        : row.applyPrimary;
+        : primary == null
+        ? null
+        : () => primary(origin);
     if (apply == null) {
       throw VideoRemoteFailure(
         'unsupported',
@@ -993,8 +1028,9 @@ class _RemoteSubtitleRow {
 
   final VideoRemoteSubtitleTrack track;
 
-  /// 选为主 / 副字幕；null = 面板里这一行不可选。
-  final Future<void> Function()? applyPrimary;
+  /// 选为主 / 副字幕；null = 面板里这一行不可选。主字幕带选择来源（第二屏面板
+  /// 选的不弹播放器设置面板，见 [VideoSubtitlePickOrigin]）。
+  final Future<void> Function(VideoSubtitlePickOrigin origin)? applyPrimary;
   final Future<void> Function()? applySecondary;
 
   /// host / 流内封轨（整轨 OCR 要用）；其它类为 null。
