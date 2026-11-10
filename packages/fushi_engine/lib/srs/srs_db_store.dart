@@ -362,14 +362,18 @@ class SrsDbStore implements SrsSync2Host {
     required FsrsEngine? engine,
     required SrsTrustedClock trustedClock,
     required int Function() fallbackRolloverHour,
+    required int Function() localOffsetMin,
     this.styles,
     SrsExclusiveOuter? exclusiveOuter,
   }) : _engine = engine,
        _trusted = trustedClock,
        _fallbackRollover = fallbackRolloverHour,
+       _localOffset = localOffsetMin,
        _exclusiveOuter = exclusiveOuter;
 
   /// 打开（或首次初始化）某 profile 的 SRS 副本。
+  ///
+  /// [localOffsetMin]：本机此刻的 UTC 偏移（分钟），「今天」的时区只取它（见 [dayContext]）；缺省读系统时区。
   ///
   /// [exclusiveOuter]：同一条连接上同时开着别的 profile 的副本（App 当前 profile 的那份）时，本副本的
   /// 独占区要套在它外面的那把锁里（见 [SrsExclusiveOuter]）；null = 只用本副本自己的锁。
@@ -381,6 +385,7 @@ class SrsDbStore implements SrsSync2Host {
     FsrsEngine? engine,
     SrsTrustedClock? trustedClock,
     int Function()? fallbackRolloverHour,
+    int Function()? localOffsetMin,
     SrsStyleStore? styles,
     SrsExclusiveOuter? exclusiveOuter,
     Future<void> Function(SrsDbStore store)? beforeMigrate,
@@ -395,6 +400,7 @@ class SrsDbStore implements SrsSync2Host {
       trustedClock: trustedClock ?? srsProcessTrustedClock(core),
       fallbackRolloverHour:
           fallbackRolloverHour ?? () => SrsDayContext.defaultRolloverHour,
+      localOffsetMin: localOffsetMin ?? SrsDayContext.localOffsetMin,
       styles: styles,
       exclusiveOuter: exclusiveOuter,
     );
@@ -517,6 +523,7 @@ class SrsDbStore implements SrsSync2Host {
   final SrsStyleStore? styles;
   final SrsTrustedClock _trusted;
   int Function() _fallbackRollover;
+  final int Function() _localOffset;
 
   /// 同一个 profile 重新激活时就地换上打开参数（[engine]、统计日界回退），不另开副本：同一个 uid 只该有一份活
   /// 副本，交接会作废在跑的同步 / 维护（srs_profile_stores.dart `activate`）。连接、uid、设备 ID 不在此列——
@@ -949,7 +956,6 @@ class SrsDbStore implements SrsSync2Host {
 
   (int, SrsTimeSource) now() => _trusted.now();
 
-  /// 「今天」的口径：profile 设置里的翻日时刻 / UTC 偏移（同步值），没有则用本机统计页的日界与本机偏移。
   /// [deckTree] 与 profile 修改记录的缓存（作答一次以前要物化牌组树 / 日界 8–10 次）。键是
   /// [_structureKey]：内容修订号覆盖了除复习日志与界面状态外的一切落库、服务器时刻变化、重读
   /// 本机状态与清除；界面状态（牌组收起 / 展开）另由 [_viewRevision] 计。
@@ -958,24 +964,46 @@ class SrsDbStore implements SrsSync2Host {
   int _viewRevision = 0;
   String get _structureKey => '$_epoch:$_contentRevision:$_viewRevision';
 
-  Future<SrsDayContext> dayContext() async {
+  Future<SrsEntityEdits> _profileEdits() async {
     final String key = _structureKey;
     final ({String key, SrsEntityEdits edits})? cached = _profileEditsCache;
-    final SrsEntityEdits p;
-    if (cached != null && cached.key == key) {
-      p = cached.edits;
-    } else {
-      p = await _entityEdits(SrsEntityKind.profile, profileUid);
-      if (_structureKey == key) _profileEditsCache = (key: key, edits: p);
-    }
+    if (cached != null && cached.key == key) return cached.edits;
+    final SrsEntityEdits p = await _entityEdits(
+      SrsEntityKind.profile,
+      profileUid,
+    );
+    if (_structureKey == key) _profileEditsCache = (key: key, edits: p);
+    return p;
+  }
+
+  /// 「今天」的口径。
+  ///
+  /// - 翻日时刻：profile 的 [SrsFieldKeys.dayRolloverHour]（用户改日界时写下、随同步传到别的设备，多设备的「今天」
+  ///   一致）；没写过就用宿主给的回落值（App = 本机统计日界，服务端 / CLI = 各自的配置）。
+  /// - 时区：恒为本机此刻的偏移（[SrsDayContext.localOffsetMin]）。时区不随同步：人带着设备换时区时「今天」跟着
+  ///   本机走；每条复习日志自带作答时的偏移与翻日时刻，重放不读这里。旧版本库里可能有的 profile 键
+  ///   `utcOffsetMin` 从没有写入方，现在也不再读。
+  Future<SrsDayContext> dayContext() async {
     final int rollover =
-        (p.value(SrsFieldKeys.dayRolloverHour) as int?) ?? _fallbackRollover();
-    final int offset =
-        (p.value(SrsFieldKeys.utcOffsetMin) as int?) ??
-        SrsDayContext.localOffsetMin();
-    return SrsDayContext(
-      utcOffsetMin: offset,
-      rolloverHour: rollover.clamp(0, 23),
+        await syncedDayRolloverHour() ?? _fallbackRollover().clamp(0, 23);
+    return SrsDayContext(utcOffsetMin: _localOffset(), rolloverHour: rollover);
+  }
+
+  /// profile 里显式写过的翻日时刻（0–23）；从没写过为 null（[dayContext] 用宿主的回落值）。
+  Future<int?> syncedDayRolloverHour() async {
+    final Object? v = (await _profileEdits()).value(
+      SrsFieldKeys.dayRolloverHour,
+    );
+    return v is int ? v.clamp(0, 23) : null;
+  }
+
+  /// 用户改了日界：写成 profile 的一条普通字段修改（同步 v2 传到别的设备；与现值相同不产生记录）。
+  Future<void> setDayRolloverHour(int hour) async {
+    await editField(
+      SrsEntityKind.profile,
+      profileUid,
+      SrsFieldKeys.dayRolloverHour,
+      hour.clamp(0, 23),
     );
   }
 

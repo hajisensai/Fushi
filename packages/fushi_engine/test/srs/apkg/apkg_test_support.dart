@@ -101,6 +101,7 @@ Future<SrsDbStore> openTestStore({
   required String profileUid,
   required String deviceId,
   required int Function() now,
+  int Function()? localOffsetMin,
 }) async {
   final SrsStorage srsStorage = await openTestSrsStorage();
   return SrsDbStore.open(
@@ -115,6 +116,7 @@ Future<SrsDbStore> openTestStore({
       bootId: 'boot-$deviceId',
     ),
     fallbackRolloverHour: () => 4,
+    localOffsetMin: localOffsetMin,
   );
 }
 

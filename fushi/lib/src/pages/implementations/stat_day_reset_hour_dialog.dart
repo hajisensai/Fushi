@@ -18,8 +18,9 @@ import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 ///
 ///  * 「今日」从几点开始：`FushiDatabase.statDayResetHour`——三域学习段派生 dateKey
 ///    的**唯一**输入，所以是统计中心的设置而不是某一域的（2026-09-18 从「阅读」
-///    设置页挪来）。写穿走 [AppModel.setStatDayResetHour]（偏好 + 镜像到 DB 静态
-///    量），即改即生效；只影响之后写入的段，历史段不重分桶。行本体复用设置页同款
+///    设置页挪来）。写穿走 [AppModel.setStatDayResetHourByUser]（偏好 + 镜像到 DB 静态
+///    量 + 当前配置复习的翻日时刻，后者随同步到别的设备），即改即生效；只影响之后写入的段，
+///    历史段不重分桶。行本体复用设置页同款
 ///    [AdaptiveSettingsStepperRow]（键盘 / 手柄左右键调值）；
 ///  * 清空统计：清当前 tab 那一域（总览 = 三域），先关本弹窗再走调用方的确认流程；
 ///  * 副标题点明当前 Profile（v105 统计按 Profile 隔离，原在页头标题下）。
@@ -49,7 +50,7 @@ class _StatSettingsDialogState extends State<StatSettingsDialog> {
   late int _hour = widget.appModel.statDayResetHour;
 
   Future<void> _onHourChanged(double value) async {
-    await widget.appModel.setStatDayResetHour(value.round());
+    await widget.appModel.setStatDayResetHourByUser(value.round());
     if (!mounted) return;
     setState(() => _hour = widget.appModel.statDayResetHour);
   }

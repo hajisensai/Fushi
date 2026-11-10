@@ -24,6 +24,7 @@ import 'package:fushi/src/updates/local_update_notifier.dart';
 import 'package:fushi/src/updates/update_check_scheduler.dart';
 import 'package:fushi/src/updates/app_update_check.dart';
 import 'package:fushi/src/updates/usage_heartbeat.dart';
+import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_miner.dart';
 import 'package:fushi_engine/media/video/media_server/media_server_client_identity.dart'
     show mediaServerClientIdentity, resolveMediaServerClientIdentity;
@@ -11330,6 +11331,37 @@ class AppModel
     _applyStatDayResetHour();
   }
 
+  /// 用户在设置里改日界：本机统计日界 + 当前配置复习的翻日时刻（profile 字段，随同步 v2 传到别的设备，
+  /// 多设备的「今天」一致，见 `SrsDbStore.dayContext`）。
+  ///
+  /// 只有用户的显式修改走这里；首次开复习时补的默认 4 点（[setStatDayResetHour]）只改本机偏好、不写复习，
+  /// 免得每台设备各自写一条默认值、互相覆盖。复习不可用（模块关着 / 未注入）时只改本机偏好。
+  Future<void> setStatDayResetHourByUser(int value) async {
+    await setStatDayResetHour(value);
+    final SrsProfileStores Function()? reader = srsProfileStoresReader;
+    if (reader == null) return;
+    try {
+      final String uid = await database.resolveActiveProfileUid();
+      if (uid.isEmpty) return;
+      final SrsDbStore? store = await reader().storeFor(
+        uid,
+        fallbackRolloverHour: () => statDayResetHour,
+      );
+      if (store == null) return;
+      await store.setDayRolloverHour(statDayResetHour);
+      srsCardsAddedNotifier?.call();
+    } catch (e, stack) {
+      ErrorLogService.instance.log('setStatDayResetHourByUser', e, stack);
+    }
+  }
+
+  /// 同步从别的设备带来了复习翻日时刻 [hour]：本机统计日界跟上，统计中心与复习用同一个「今天」（铁律 G）。
+  /// 单向：只改本机偏好、不写回复习（值本来就来自复习），不会来回同步。
+  Future<void> adoptSyncedDayRolloverHour(int hour) async {
+    if (hour == statDayResetHour) return;
+    await setStatDayResetHour(hour);
+  }
+
   /// 把偏好镜像到 [FushiDatabase.statDayResetHour]——dateKey 派生的唯一输入。
   /// 偏好加载后（主进程 / 弹窗进程两条初始化路径）与用户改设置时各调一次。
   void _applyStatDayResetHour() {
@@ -12195,7 +12227,7 @@ class AppModel
         openNote: (String noteId) => extensionSrsOpenNote(view, noteId),
       );
 
-  /// 制卡写进激活配置的复习后递增 `srsRevisionProvider`（牌组列表与首页复习条的计数随之重读）。
+  /// 制卡 / 改日界写进激活配置的复习后递增 `srsRevisionProvider`（牌组列表与首页复习条的计数随之重读）。
   /// AppModel 不在 Riverpod 图里，由 main.dart 注入；未注入时不通知。
   void Function()? srsCardsAddedNotifier;
 
