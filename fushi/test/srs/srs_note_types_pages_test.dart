@@ -17,6 +17,8 @@ import 'package:fushi/src/pages/implementations/srs/srs_note_types_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_template_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/srs/srs_field_catalog.dart' show srsFieldDisplayName;
+import 'package:fushi/src/srs/srs_native_template.dart'
+    show kSrsNativeTemplateMarker;
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/srs/srs_visual_template.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
@@ -746,6 +748,88 @@ void main() {
         '{{fld:${v.fields[1].id}}}',
         reason: '模板有错误时不写库',
       );
+      await _unmount(tester);
+    });
+
+    testWidgets('[$ds] 模板编辑器「原生渲染」：标记写进正面，画不了的写法预览仍原生并就地提示，保存落库', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      final String nt = await _db(
+        tester,
+        () => store.createStockNoteType(SrsStockNoteType.basic, 'B'),
+      );
+      final SrsNoteTypeView v = (await _db(tester, () => store.noteType(nt)))!;
+      await _db(
+        tester,
+        () => store.createNote(
+          noteTypeId: nt,
+          fieldsById: <String, String>{
+            v.fields[0].id: '猫',
+            v.fields[1].id: 'cat',
+          },
+        ),
+      );
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: apple,
+        page: SrsTemplateEditorPage(
+          noteTypeId: nt,
+          templateId: v.templates.single.id,
+          initialTab: SrsTemplateEditorTab.front,
+        ),
+      );
+      final Finder toggle = find.byKey(
+        const ValueKey<String>('srs-template-native'),
+      );
+      expect(toggle, findsOneWidget);
+      const String front =
+          '<div>{{Front}}</div><table><tr><td>表格内容</td></tr></table>';
+      await tester.enterText(find.byType(EditableText).first, front);
+      await _settle(tester);
+      expect(_htmlPreview, findsNothing, reason: '没标记：画不了照旧整面网页卡面');
+      expect(
+        find.byKey(const ValueKey<String>('srs-template-native-check')),
+        findsNothing,
+      );
+
+      await tester.ensureVisible(toggle);
+      await tester.tap(toggle);
+      await _settle(tester);
+      expect(_htmlPreview, findsOneWidget, reason: '标了原生：不回退网页卡面');
+      expect(_inHtmlPreview('猫'), findsWidgets);
+      expect(
+        _inHtmlPreview(
+          t.srs_template_native_unsupported(reason: 'html: <table>'),
+        ),
+        findsWidgets,
+        reason: '画不了的块就地提示',
+      );
+      expect(_inHtmlPreview('表格内容'), findsNothing);
+      expect(
+        find.byKey(const ValueKey<String>('srs-template-native-check')),
+        findsOneWidget,
+      );
+      expect(find.textContaining('html: <table>'), findsWidgets);
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('srs_template_save')).first,
+      );
+      await _settle(tester);
+      final String saved = (await _db(
+        tester,
+        () => store.noteType(nt),
+      ))!.templates.single.front;
+      expect(saved, startsWith(kSrsNativeTemplateMarker));
+      expect(saved, contains('{{fld:${v.fields[0].id}}}'));
+
+      // 关掉：标记去掉，模板其余部分不动。
+      await tester.ensureVisible(toggle);
+      await tester.tap(toggle);
+      await _settle(tester);
+      expect(_htmlPreview, findsNothing);
+      expect(find.text(front), findsOneWidget);
       await _unmount(tester);
     });
 
