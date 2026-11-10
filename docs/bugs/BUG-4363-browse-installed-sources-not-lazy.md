@@ -1,4 +1,4 @@
-## BUG-4362 · 浏览页已装在线源整组非懒建：上千行全绘进合成树
+## BUG-4363 · 浏览页已装在线源整组非懒建：上千行全绘进合成树
 - **报告**：2026-11-07（应用内崩溃报告 #E5IZOyVcbm，Android SM-A366B，3.3.0：进程在后台被杀前停在 `HomePage>BrowsePage`，空闲 `frames=0`，合成树 `PictureLayer×6593 OpacityLayer×4395 ClipPathLayer×1098`，rss 1206→1247MB）
 - **真实性**：✅ 真 bug（根因 `fushi/lib/src/media/online/installed_online_source_row.dart` 的 `InstalledSourcesGroup`：整组是 `Column` / `FushiReorderableColumn`（`Stack`+`Flex`），被 `fushi/lib/src/media/manga/mihon/mihon_installed_sources_section.dart:612,623` 与 `fushi/lib/src/media/novel/online/lnreader_installed_sources_section.dart:310,323` 包进 `SliverToBoxAdapter`——视口裁不掉屏外行，每一行都实体化、布局、绘制并留在合成树里）
 - **[x] ① 已修复** — `InstalledSourcesGroup` 改成 sliver（`SliverMainAxisGroup` = 组标题 + 行列表），不可拖时走 `SliverList.builder`，可拖时走新组件 `FushiSliverReorderableList`（`fushi/lib/src/utils/components/fushi_sliver_reorderable_list.dart`：懒建 + 列表 State 持有拖拽识别器 + 按已布局相邻行的屏幕矩形换位 + 边缘自动滚动，不借 Overlay，祖先缩放下零漂移，同 BUG-778 纪律）；两处调用去掉 `SliverToBoxAdapter`。另：内存采样探针加 `lhot=`（合成树扇出点及其归属），以后同类问题日志里直接点名是哪串子树。
