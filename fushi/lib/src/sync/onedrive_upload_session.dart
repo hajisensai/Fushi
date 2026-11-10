@@ -45,84 +45,129 @@ Future<Map<String, dynamic>> uploadFileToOneDriveSession({
 }) async {
   final int total = await file.length();
   final RandomAccessFile raf = await file.open();
+  try {
+    return await _uploadToOneDriveSession(
+      client: client,
+      uploadUrl: uploadUrl,
+      total: total,
+      readChunk: (int offset, int length) async {
+        await raf.setPosition(offset);
+        return raf.read(length);
+      },
+      onProgress: onProgress,
+      chunkBytes: chunkBytes,
+      maxStalledAttempts: maxStalledAttempts,
+      sleep: sleep,
+    );
+  } finally {
+    await raf.close();
+  }
+}
+
+/// [uploadFileToOneDriveSession] 的内存字节版：已在内存里的 JSON 资产（聚合快照等）
+/// 超过 [kOneDriveSimpleUploadMaxBytes] 时走同一套会话协议，不落临时文件。
+Future<Map<String, dynamic>> uploadBytesToOneDriveSession({
+  required http.Client client,
+  required Uri uploadUrl,
+  required Uint8List bytes,
+  SyncTransferProgress? onProgress,
+  int chunkBytes = kOneDriveUploadChunkBytes,
+  int maxStalledAttempts = kOneDriveUploadMaxStalledAttempts,
+  Future<void> Function(Duration delay) sleep = _defaultSleep,
+}) => _uploadToOneDriveSession(
+  client: client,
+  uploadUrl: uploadUrl,
+  total: bytes.length,
+  readChunk: (int offset, int length) async =>
+      Uint8List.sublistView(bytes, offset, offset + length),
+  onProgress: onProgress,
+  chunkBytes: chunkBytes,
+  maxStalledAttempts: maxStalledAttempts,
+  sleep: sleep,
+);
+
+/// 会话上传主循环；字节来源由 [readChunk] 提供（文件 / 内存）。
+Future<Map<String, dynamic>> _uploadToOneDriveSession({
+  required http.Client client,
+  required Uri uploadUrl,
+  required int total,
+  required Future<Uint8List> Function(int offset, int length) readChunk,
+  required SyncTransferProgress? onProgress,
+  required int chunkBytes,
+  required int maxStalledAttempts,
+  required Future<void> Function(Duration delay) sleep,
+}) async {
   int offset = 0;
   int stalled = 0;
   Object? lastError;
-  try {
-    while (true) {
-      final int end = (offset + chunkBytes < total
-          ? offset + chunkBytes
-          : total);
-      final int length = end - offset;
-      _ChunkOutcome outcome;
-      try {
-        await raf.setPosition(offset);
-        final Uint8List bytes = await raf.read(length);
-        if (bytes.length != length) {
-          throw SyncBackendError(
-            'Upload failed reading file: short read at $offset',
-          );
-        }
-        final http.Response resp = await client.put(
-          uploadUrl,
-          headers: <String, String>{
-            'Content-Range': 'bytes $offset-${end - 1}/$total',
-          },
-          body: bytes,
+  while (true) {
+    final int end = (offset + chunkBytes < total ? offset + chunkBytes : total);
+    final int length = end - offset;
+    _ChunkOutcome outcome;
+    try {
+      final Uint8List bytes = await readChunk(offset, length);
+      if (bytes.length != length) {
+        throw SyncBackendError(
+          'Upload failed reading payload: short read at $offset',
         );
-        outcome = _ChunkOutcome.fromResponse(resp);
-      } on SyncBackendError {
-        rethrow;
+      }
+      final http.Response resp = await client.put(
+        uploadUrl,
+        headers: <String, String>{
+          'Content-Range': 'bytes $offset-${end - 1}/$total',
+        },
+        body: bytes,
+      );
+      outcome = _ChunkOutcome.fromResponse(resp);
+    } on SyncBackendError {
+      rethrow;
+    } catch (e) {
+      // 连接层失败（Broken pipe / Connection reset / ClientException）。
+      outcome = _ChunkOutcome.transient(e);
+    }
+
+    if (outcome.completedItem != null) {
+      onProgress?.call(1, total);
+      return outcome.completedItem!;
+    }
+    if (outcome.fatal != null) {
+      await _cancelSession(client, uploadUrl);
+      throw outcome.fatal!;
+    }
+
+    int? next = outcome.nextOffset;
+    if (outcome.transientError != null) {
+      lastError = outcome.transientError;
+      if (outcome.serverError) {
+        // 官方：5xx 用指数退避后再续传。
+        await sleep(Duration(seconds: 1 << (stalled < 5 ? stalled : 5)));
+      }
+      // 问服务端实际收到了哪里，从那里续传。
+      try {
+        next = await _queryNextOffset(client, uploadUrl);
+      } on _SessionGone catch (e) {
+        throw SyncBackendError('Upload failed: upload session expired ($e)');
       } catch (e) {
-        // 连接层失败（Broken pipe / Connection reset / ClientException）。
-        outcome = _ChunkOutcome.transient(e);
-      }
-
-      if (outcome.completedItem != null) {
-        onProgress?.call(1, total);
-        return outcome.completedItem!;
-      }
-      if (outcome.fatal != null) {
-        await _cancelSession(client, uploadUrl);
-        throw outcome.fatal!;
-      }
-
-      int? next = outcome.nextOffset;
-      if (outcome.transientError != null) {
-        lastError = outcome.transientError;
-        if (outcome.serverError) {
-          // 官方：5xx 用指数退避后再续传。
-          await sleep(Duration(seconds: 1 << (stalled < 5 ? stalled : 5)));
-        }
-        // 问服务端实际收到了哪里，从那里续传。
-        try {
-          next = await _queryNextOffset(client, uploadUrl);
-        } on _SessionGone catch (e) {
-          throw SyncBackendError('Upload failed: upload session expired ($e)');
-        } catch (e) {
-          lastError = e;
-          next = null;
-        }
-      }
-
-      if (next != null && next > offset) {
-        offset = next;
-        stalled = 0;
-        onProgress?.call(total > 0 ? offset / total : 0, offset);
-        continue;
-      }
-      if (next != null && next < offset) {
-        // 服务端比本地认为的少收了（上一片没落地）：以服务端为准。
-        offset = next;
-      }
-      stalled++;
-      if (stalled >= maxStalledAttempts) {
-        await _cancelSession(client, uploadUrl);
-        throw SyncBackendError('Upload failed: ${lastError ?? 'no progress'}');
+        lastError = e;
+        next = null;
       }
     }
-  } finally {
-    await raf.close();
+
+    if (next != null && next > offset) {
+      offset = next;
+      stalled = 0;
+      onProgress?.call(total > 0 ? offset / total : 0, offset);
+      continue;
+    }
+    if (next != null && next < offset) {
+      // 服务端比本地认为的少收了（上一片没落地）：以服务端为准。
+      offset = next;
+    }
+    stalled++;
+    if (stalled >= maxStalledAttempts) {
+      await _cancelSession(client, uploadUrl);
+      throw SyncBackendError('Upload failed: ${lastError ?? 'no progress'}');
+    }
   }
 }
 

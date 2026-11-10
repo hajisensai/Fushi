@@ -88,6 +88,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // （gapless-audio / prefetch-playlist / replaygain），harness 里没有在播的 mpv。
   // 设置值 → 引擎输出设置 → mpv 属性这条链由 music_player_engine_test 咬住。
   'music/Gapless playback': 'test/media/music/music_player_engine_test.dart',
+  // 在线插件音质：生效点是插件曲目在 mpv 后端打开时经 musicPluginPlaybackHost.quality 取档，
+  // harness 里没有插件也没有在播的 mpv。设置值 → 持久化 → 取流装配点拿到新档、清掉「只对这首」
+  // 由 app_model_music_plugin_quality_test 咬住；只重开插件曲目 / 只重排下一首由
+  // music_engine_reopen_current_test 咬住。
+  'music/Online plugin quality':
+      'test/models/app_model_music_plugin_quality_test.dart + test/media/music/music_engine_reopen_current_test.dart',
   // 逐曲断点续播：行为型偏好（只影响之后打开的曲目从哪开始放，无渲染树效果）。
   'music/Resume playback':
       'test/media/music/music_resume_test.dart + test/media/music/music_resume_session_test.dart',
@@ -134,20 +140,23 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 属性由 music_server_test 咬住。
   'services/Server streaming quality':
       'test/media/music/server/music_server_test.dart',
-  // 图示均衡器：生效点是音乐 libmpv 实例的 `af`，harness 里没有在播的 mpv。偏好串 → 均衡
-  // 设置 → `af` 链由 music_equalizer_test 咬住；真 libmpv 上的增益 / 关时逐样本不变 /
-  // 与交叉淡入同链在 music_equalizer_real_test。
-  'music/Enable equalizer': 'test/media/music/music_equalizer_test.dart',
-  'music/31 Hz': 'test/media/music/music_equalizer_test.dart',
-  'music/62 Hz': 'test/media/music/music_equalizer_test.dart',
-  'music/125 Hz': 'test/media/music/music_equalizer_test.dart',
-  'music/250 Hz': 'test/media/music/music_equalizer_test.dart',
-  'music/500 Hz': 'test/media/music/music_equalizer_test.dart',
-  'music/1 kHz': 'test/media/music/music_equalizer_test.dart',
-  'music/2 kHz': 'test/media/music/music_equalizer_test.dart',
-  'music/4 kHz': 'test/media/music/music_equalizer_test.dart',
-  'music/8 kHz': 'test/media/music/music_equalizer_test.dart',
-  'music/16 kHz': 'test/media/music/music_equalizer_test.dart',
+  // 音效（原图示均衡器）：body 逃生口页（曲线 / 竖推子 / 宽屏双栏），生效点是音乐 libmpv
+  // 实例的 `af`，harness 里没有在播的 mpv。偏好 → 设置 → `af` 链由 music_audio_effects_test 咬住，真 libmpv 上的增益 / 关与全部
+  // 中性时逐样本不变 / 与交叉淡入同链在 music_audio_effects_real_test，页面交互在
+  // music_audio_effects_page_test。
+  'music/Enable audio effects':
+      'test/media/music/music_audio_effects_test.dart',
+  'music/Bass': 'test/media/music/music_audio_effects_test.dart',
+  'music/Bass turnover': 'test/media/music/music_audio_effects_test.dart',
+  'music/Treble': 'test/media/music/music_audio_effects_test.dart',
+  'music/Treble turnover': 'test/media/music/music_audio_effects_test.dart',
+  'music/Balance': 'test/media/music/music_audio_effects_test.dart',
+  'music/Stereo width': 'test/media/music/music_audio_effects_test.dart',
+  'music/Mono': 'test/media/music/music_audio_effects_test.dart',
+  'music/Swap left and right': 'test/media/music/music_audio_effects_test.dart',
+  'music/Anti-clipping limiter':
+      'test/media/music/music_audio_effects_test.dart',
+  'music/Preamp': 'test/media/music/music_audio_effects_test.dart',
   // ASS 卡拉 OK 字幕默认显示：生效点是卡拉 OK 字幕页打开时选哪种叠加
   // （musicKaraokeDefaultOverlay），harness 设置页没有在播的曲目与 mpv；设置值 → 默认
   // 叠加的判据由 karaoke_stage_plan_test 咬住。
@@ -625,6 +634,15 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 沉浸锁定 + 字幕遮蔽中点画面显示当前句：生效点在播放页点画面抬起（要真播放器与
   // 沉浸锁），harness 无适用探针。判据纯函数与 overlay 显形句柄由专项测试咬住，页面
   // 接线由源码守卫咬住。
+  // 字幕遮布（开关 / 外观 / 强度）：写 prefsRepo 的 JSON 偏好，生效点在播放页画面上的
+  // VideoSubtitleMaskLayer（要真播放器的画面尺寸），harness 无适用探针；由专项 widget
+  // 测试咬住「关 = 不画、模糊 / 纯色按外观出层、位置按画面内容区（含黑边）映射」。
+  'video/Subtitle mask':
+      'test/media/video/video_subtitle_mask_test.dart（关闭不画 / 开启按内容区落位）',
+  'video/Mask look':
+      'test/media/video/video_subtitle_mask_test.dart（模糊 / 纯色两种外观各出各的层）',
+  'video/Mask strength':
+      'test/media/video/video_subtitle_mask_test.dart（强度 → 纯色不透明度）',
   'video/Tap picture to show subtitles':
       'test/media/video/video_immersive_tap_reveal_test.dart'
       '（判据四条件 + 句柄显示 / 遮回 / 换句遮回）；页面接线见 '
@@ -1320,6 +1338,22 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 连同 28px 底部预留一起消失），既不进 reader CSS 也不进主题树，harness 的渲染输入
   // 观测不到；由专项纯函数真值表 + widget 行为用例覆盖。默认 true=保持现状。
   'reading/Show reading timer': 'test/reader/reader_status_footer_test.dart',
+  // 读数胶囊的另两段「本次字数」「字每时」：与「阅读计时器」同一生效点——状态行组件
+  // 的 showChars / showSpeed 门控，以及 readerStatusFooterEnabled 的四段门控（计时 /
+  // 字数 / 字每时 / 进度都关时整条行连同底部预留一起消失）；不进 reader CSS 也不进
+  // 主题树，harness 的渲染输入观测不到。由专项纯函数真值表 + 「session readouts」
+  // widget 用例覆盖。
+  'reading/Show characters read this session':
+      'test/reader/reader_status_footer_test.dart',
+  'reading/Show characters per hour':
+      'test/reader/reader_status_footer_test.dart',
+  // 「收起控制栏时保留读数」：生效点在悬浮态下 readerStatusFooterReserve /
+  // readerStatusFooterVisible / readerStatusFooterResting 的 persistent 分支（常驻时
+  // 按挤压式占预留、控制栏收起后胶囊仍画、转静息态），同样只作用于状态行组件与
+  // 预留高，harness 观测不到；由这三个纯函数的 persistent 真值表 + 静息胶囊 widget
+  // 用例覆盖。
+  'reading/Keep readouts when controls hide':
+      'test/reader/reader_status_footer_test.dart',
   // 视觉小说模式的六个控件：只在 view_mode=vn 时显示——本 harness 驱动「翻页 /
   // 滚动」时会走到 VN，于是它们进入遍历。生效点在 VN 引擎（WebView 分屏 /
   // 逐字显现 / 点空白推进），reader CSS 探针看不到；仅 VN 可见性、每项写穿与

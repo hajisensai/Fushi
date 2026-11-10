@@ -41,6 +41,41 @@
 | [BUG-4244](bugs/BUG-4244-cross-process-lookup-count-locked.md) | ✅ | ✅ | Companion / popup lookups not counted: addLookupCount fails with database is locked |
 | [BUG-4243](bugs/BUG-4243-thor-secondary-screen-volume-mutes-stream.md) | 🚧 | 🚧 | AYN Thor: game stream audio near silent while Fushi has a window on the bottom screen |
 | [BUG-4242](bugs/BUG-4242-game-stream-companion-r1-takes-controller.md) | ✅ | ✅ | Game stream: companion R1 panel drive takes the controller when the stream leaves the second screen to the companion |
+> 共 3834 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4272](bugs/BUG-4272-yomitan-per-dict-frequency-unmappable.md) | ✅ | ✅ | yomitan-per-dict-frequency-unmappable |
+| [BUG-4271](bugs/BUG-4271-background-engine-kills-flutter-logs-startup-hang.md) | ✅ | ✅ | 后台被 WorkManager 拉起后打开白屏、启动耗时超出预期（flutter_logs 静态 channel 被后台引擎销毁时清掉） |
+| [BUG-4270](bugs/BUG-4270-video-enqueue-duplicate-torrent-opaque-drift-error.md) | ✅ | ✅ | 重复入队同一种子报不透明的 DriftRemoteException，诊断日志无记录 |
+| [BUG-4269](bugs/BUG-4269-nyaa-trust-signals-ignored-by-ranking.md) | ✅ | ✅ | 资源排序不看索引器信任标记：Nyaa remake 在 provider 边界丢失、trusted 不参与排序 |
+| [BUG-4268](bugs/BUG-4268-macos-stale-ips-false-crash.md) | ✅ | ✅ | macOS 把别的版本 / 上次会话之前的 .ips 判成上次闪退 |
+| [BUG-4267](bugs/BUG-4267-resource-search-misses-best-batches.md) | ✅ | ✅ | 资源搜索漏掉高种整季包：贴合度只认单一查询词、S01 季包给不出下载计划 |
+| [BUG-4266](bugs/BUG-4266-android-fgs-importance-false-foreground.md) | ✅ | ✅ | Android 死时重要度 125（前台服务）被当成界面在前台，后台被杀判成闪退 |
+| [BUG-4265](bugs/BUG-4265-ios-background-launch-inactive-false-crash.md) | ✅ | ✅ | iOS 后台拉起会话的 headless 标记被初始 inactive 覆盖，后台回收被判启动即闪退 |
+| [BUG-4264](bugs/BUG-4264-popup-mined-button-tip-rightclick.md) | ✅ | ✅ | Windows 查词弹窗已制卡 ✓：提示错位、右键被宿主菜单抢 |
+| [BUG-4263](bugs/BUG-4263-ios-video-import-tmp-copy-lost.md) | ✅ | ✅ | iOS 单个导入的视频过一阵「找不到文件」，重新导入后又失效 |
+| [BUG-4262](bugs/BUG-4262-onedrive-dropbox-json-latin1-decode.md) | ✅ | ✅ | OneDrive/Dropbox 下载 JSON 按 latin1 解码，非 ASCII 每轮多编一层致聚合快照与本地库膨胀 |
+| [BUG-4261](bugs/BUG-4261-webview-page-finished-cookie-flush-anr.md) | ✅ | ✅ | Android WebView 每次页面加载完在 UI 线程同步 CookieManager.flush 致 ANR |
+| [BUG-4260](bugs/BUG-4260-online-manga-grid-thumbnails.md) | ✅ | ✅ | 在线漫画「全部页面」网格不显示缩略图，已看过的页也没有 |
+| [BUG-4259](bugs/BUG-4259-audiobook-delay-not-applied-to-cue-seek.md) | ✅ | ✅ | 有声书音画同步偏移未作用于点句跳转 / 单句试听停止点 / 上下句导航 |
+| [BUG-4258](bugs/BUG-4258-ios-background-launch-inactive-gate-full-init.md) | ✅ | ✅ | iOS 后台拉起时 inactive 被精简入口当成有界面，完整初始化在后台照跑并被判闪退 |
+| [BUG-4257](bugs/BUG-4257-media-server-episode-unstable-sort.md) | ✅ | ✅ | 媒体服务器剧集无集号时 List.sort 不稳定，超过 32 集顺序被打乱 |
+| [BUG-4256](bugs/BUG-4256-continue-hero-side-row-hover-clip.md) | ✅ | ✅ | 首页「继续」并排封面行：方向待探测的视频卡解出横图后悬停放大，左缘被视口裁掉 |
+| [BUG-4255](bugs/BUG-4255-srs-reposition-progress-says-anki.md) | ✅ | ✅ | srs-reposition-progress-says-anki |
+| [BUG-4254](bugs/BUG-4254-srs-anki-revlog-double-count.md) | ✅ | ✅ | 从 Anki 迁移后复习数 ×2（同一条 Anki revlog 落在两张卡上算两次） |
+| [BUG-4253](bugs/BUG-4253-ldoce-mdx-sound-sandbox-swallowed.md) | ✅ | ✅ | LDOCE5++ MDX 内置发音点了不响（沙箱里词典脚本吞掉 sound:// 点击） |
+| [BUG-4252](bugs/BUG-4252-lyrics-unread-symbol-paragraph.md) | ✅ | ✅ | lyrics-unread-symbol-paragraph |
+| [BUG-4251](bugs/BUG-4251-advanced-mining-clear-keeps-audio.md) | ✅ | ✅ | 高级制卡清空前文/后文被当成删句，最外侧那句的音频一起丢 |
+| [BUG-4250](bugs/BUG-4250-video-popover-click-through-and-drag-hide.md) | ✅ | ✅ | 视频音量 / 倍速浮层点空白处下穿到进度条；拖浮层滑条时控制条照样自动隐藏 |
+| [BUG-4249](bugs/BUG-4249-subtitle-list-filter-labels-truncated.md) | ✅ | ✅ | 视频字幕列表 M3E 侧栏「全部 / 收藏」分段文字消失（横屏手机） |
+| [BUG-4248](bugs/BUG-4248-popup-tablet-near-fullscreen.md) | ✅ | ✅ | Android 平板外部查词浮卡近乎全屏、调最大宽高无效 |
+| [BUG-4247](bugs/BUG-4247-galhook-attach-audio-fallback-not-restored.md) | ✅ | ✅ | 附着已运行游戏时不读回该游戏上次的「音频降级」选择 |
+| [BUG-4246](bugs/BUG-4246-resource-search-sibling-work-accepted.md) | ✅ | ✅ | AI 下视频把同系列续作 / 另一季的发布当成所选作品（ガルパ☆ピコ 下成 Fever） |
+| [BUG-4245](bugs/BUG-4245-download-organizer-splits-disc-structure.md) | ✅ | ✅ | 视频下载整理器拆散 BDMV/VIDEO_TS 原盘结构，盘按 m2ts 逐文件改名 |
+| [BUG-4244](bugs/BUG-4244-onedrive-json-asset-upload-session.md) | ✅ | ✅ | OneDrive 大 JSON 资产（聚合快照）不走上传会话，>10MiB 单请求 PUT 一直 400 |
+| [BUG-4243](bugs/BUG-4243-pull-refresh-ignores-sync-module.md) | ✅ | ✅ | 下拉刷新无视「同步与备份」模块开关仍触发同步 |
+| [BUG-4242](bugs/BUG-4242-obfuscating-sync-temp-leak.md) | ✅ | ✅ | iOS 混淆同步上传临时目录 obf_up_* 进程被杀后永久残留（9×603MB） |
 | [BUG-4241](bugs/BUG-4241-sqlite-busy-timeout-collapses-under-sigprof.md) | ✅ | ✅ | Linux 上 Fushi 库的 5s busy 超时被 SIGPROF 压成几十毫秒（并发迁移偶发 database is locked） |
 | [BUG-4240](bugs/BUG-4240-music-plugin-enabled-state-concurrent-load.md) | ✅ | ✅ | 音乐插件启停状态并发首读各得一份副本，停用丢失 |
 | [BUG-4239](bugs/BUG-4239-continuous-diagonal-swipe-dropped.md) | ✅ | ✅ | 滚动模式斜着滑（拇指弧线）正文不动、也不跨章 |

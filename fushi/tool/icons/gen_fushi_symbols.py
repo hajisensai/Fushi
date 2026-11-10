@@ -239,6 +239,8 @@ SYMBOLS: list[tuple[str, str, str | None, str | None, str]] = [
     ("blur", "blur_on", "blur_on", "blur_on", "模糊遮蔽"),
     ("blurLinear", "blur_linear", "blur_linear", "blur_linear", "线性模糊（副字幕遮蔽）"),
     ("subtitlesOff", "subtitles_off", "subtitles_off_outlined", "subtitles_off", "隐藏字幕"),
+    ("subtitleMask", "texture", "texture_outlined", "texture", "字幕遮布（盖住烧进画面的硬字幕）"),
+    ("move", "open_with", "open_with_outlined", "open_with", "移动 / 调整位置（四向箭头）"),
     ("captionsOff", "closed_caption_disabled", "closed_caption_disabled_outlined", "closed_caption_disabled", "隐藏副字幕"),
     ("outline", "border_style", "border_style_outlined", "border_style", "描边 / 描边粗细（字幕）"),
     ("outlineColor", "border_color", "border_color_outlined", "border_color", "描边颜色（字幕）"),
@@ -350,6 +352,7 @@ SYMBOLS: list[tuple[str, str, str | None, str | None, str]] = [
 APPLE_OVERRIDES: dict[str, tuple[str, str]] = {
     "pageBackdrop": ("rectangle_stack", "rectangle_stack_fill"),
     "opacity": ("drop", "drop_fill"),
+    "subtitleMask": ("rectangle", "rectangle_fill"),
     "scrim": ("circle_lefthalf_fill", "circle_lefthalf_fill"),
     "portraitImage": ("device_phone_portrait", "device_phone_portrait"),
     "addImage": ("plus_rectangle_on_rectangle", "plus_rectangle_fill_on_rectangle_fill"),

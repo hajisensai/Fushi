@@ -16,6 +16,7 @@ Anki 能力——一切经本机 Fushi 桌面 App 内置的 Fushi API 服务器�
 | `dict-frame.html/js` | 扩展 iframe | 带 `<script>` 的 MDX 词条沙箱外层中继：扩展页 CSP `frame-src 'self'` 在请求前拦内层自导航；只认 popup.js 交来的 MessageChannel port，内层消息按白名单（height/error/link/select）重建后转出（见 `docs/specs/2026-10-23-dictionary-script-sandbox.md`「浏览器扩展：两层沙箱 frame」） |
 | `dict-sandbox.html` | sandbox 页 | 沙箱内层（manifest `sandbox.pages`，不透明源、`connect-src 'none'`）：只收外层一次 render，`document.write` 渲染词典脚本文档 |
 | `subtitle-panel.js` | 隔离 | 字幕轨状态控制器 + 视频覆盖层（鼠标经左侧拖柄 / 触屏按住整块挪位，位置按视频分数坐标存 `subtitleOverlayPosition`；右下角把手拖拽改底板大小、双击回随内容；点文字查词、鼠标在文字上拖是原生选区可复制；`subtitleOverlayBackground` 关掉只剩描边字）+ 外挂字幕安装 + 全轨时轴偏移 + 快捷键执行端；不渲染网页列表 |
+| `subtitle-mask.js` | 隔离 + options | 字幕遮布：正片上一块盖住烧录硬字幕的矩形（模糊 / 纯色），几何按画面内容区（扣掉 object-fit 黑边）比例存 `subtitleMask`，层级在字幕覆盖层之下、平时不拦指针；编辑模式拖动 / 四角四边缩放；设置页只借纯函数（见「字幕遮布」） |
 | `i18n.js` + `locales/` | 隔离 + 扩展页 + SW | 界面多语言：`locales/en.js` 是源字典（同步装入），其余 16 种 `locales/<tag>.json` 按需 fetch；语言默认跟随 Fushi（见「多语言」） |
 | `theme-palette.js` + `theme.js` + `theme.css` | 隔离 + 扩展页 | 调色板引擎（种子色 → 明暗两套 token、预设、自定义条目）+ 明暗 / 调色板 / 外观风格唯一决议点 + 扩展自有界面的唯一 token 源（颜色 + 风格；见「主题与颜色」） |
 | `subtitle-style.js` | 隔离 + options | 视频上字幕外观设置（字体/大小/字重/间距/行高/对齐/颜色/描边/底板含宽高）→ 覆盖层 `--fushi-sub-*` 变量 + `applyBox` 宽高 + `fitTextInto` 自适应缩放（`--fushi-sub-fit`） |
@@ -222,6 +223,28 @@ CSS/JS 能突破。所以「侧边栏里的查词弹窗被那 ~400px 夹住」�
   `\uXXXX` 转义。
 
 守卫：`subtitle-overlay-drag.test.js` 后半段、`subtitle-style.test.js`、`utf8-shippable.test.js`。
+
+## 字幕遮布（`subtitle-mask.js`）
+
+网页视频常有烧进画面的中文硬字幕，学日语时想挡住它、只看日文字幕或 Fushi 自己的字幕层。
+
+- **几何**：`subtitleMask = {enabled, appearance: 'blur'|'solid', blur(px), opacity(%), left, top, width, height}`，
+  矩形是**画面内容区**的 0..1 比例。内容区 = 视频内容盒（扣 padding/border）按 `object-fit` / `object-position`
+  与 `videoWidth/videoHeight` 算出（`contentRect`，contain 的 letterbox / pillarbox 不算画面；cover 探出盒子的那截
+  `clipTo` 裁掉）。所以窗口缩放、进全屏、换清晰度后仍盖在画面同一处；固有尺寸变化不改视频盒，帧观察看不见，
+  另听 `<video>` 的 `resize` / `loadedmetadata`。整份等于默认就删键（与 `subtitleStyle` 同一纪律）。
+- **层级与挂载**：与字幕覆盖层同一套视频锚定（`fushiVideoAnchor.placeAt`，全屏进 fullscreenElement），z-index
+  2147483636 比覆盖层低一级 → Fushi 字幕永远压在遮布上可读可查词；平时 `pointer-events:none`。编辑态升到
+  2147483638（把手不被字幕挡住）、`pointer-events:auto`，指针事件 `stopPropagation`（站点把点画面当暂停）。
+- **外观**：模糊 = `backdrop-filter: blur(var(--fushi-mask-blur))` + 薄 scrim，只写在玻璃 `@supports` 段里，不支持时
+  停在不透明 `--fushi-scrim-strong`；纯色 = scrim-strong 换 alpha（相对颜色语法，退回 color-mix）。遮挡是功能不是
+  装饰材质，「减少透明度」下不撤模糊。DRM 硬件解码（Netflix Widevine L1 等）下 backdrop-filter 可能采样不到画面，
+  此时请用纯色。
+- **编辑**：播放器 Fushi 菜单「调整字幕遮布」（关着会先打开）→ 整块拖动、四角四边缩放（Pointer Events，鼠标触屏
+  同一路径，监听挂 window + setPointerCapture，与覆盖层拖动同一做法），松手落盘；工具条「重置 / 完成」，Esc = 完成；
+  全屏切换丢弃进行中的手势。设置页「字幕 → 更多选项」有开关 / 外观 / 强度 / 重置位置。
+- 执行端契约 `window.fushiSubtitleMask = {state, toggle, setEnabled, edit, finishEdit, reset}`（player-controls.js
+  菜单、video-shortcuts.js 快捷键只转发）。守卫 `subtitle-mask.test.js`。
 
 ## 主题与颜色
 
@@ -486,6 +509,7 @@ hook 安装；② `manifest.json` 的 stream-bridge matches 加域名；③ 新�
 | ↑ | 回当前句句首重播 |
 | Shift+S | 打开浏览器原生字幕侧边栏（当前视频有 Fushi 字幕轨时） |
 | Shift+H | 隐藏 / 显示字幕（站点原生字幕 + 扩展覆盖层；**不**需要 Fushi 字幕轨） |
+| Shift+B | 显示 / 隐藏字幕遮布（执行端 `subtitle-mask.js`；**不**需要 Fushi 字幕轨） |
 | Ctrl+Shift+← / → / ↓ | 字幕偏移 −100ms / ＋100ms / 重置 |
 | Ctrl+Shift+Z | 复制当前字幕句（配合 Fushi 剪贴板监看即查词） |
 | Ctrl+Shift+[ / ] | 播放速度 −0.25x / ＋0.25x（0.25–4x） |

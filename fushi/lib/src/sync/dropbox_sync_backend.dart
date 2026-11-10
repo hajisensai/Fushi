@@ -632,7 +632,7 @@ class DropboxSyncBackend extends SyncBackend
         'Download failed: HTTP ${resp.statusCode} ${resp.body}',
       );
     }
-    return jsonDecode(resp.body);
+    return decodeSyncJsonFileBody(resp);
   }
 
   Future<void> _uploadJsonFile(
