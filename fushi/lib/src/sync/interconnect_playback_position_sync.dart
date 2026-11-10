@@ -200,7 +200,8 @@ class InterconnectPlaybackPositionSync {
   /// 本端胜出：推给 host（时间戳不新于 host 时抬到 host + 1，见类头），本端只对齐
   /// 时间戳 pref，记基线。返回两端对齐后的位置。
   ///
-  /// 抬戳纪律与书籍版 `InterconnectBookProgressSync.pushLocal` 一致：抬出来的戳
+  /// 抬戳纪律与书籍版 `InterconnectBookProgressSync.pushLocal` 一致（BUG-3367 的
+  /// 书籍版补上了同一套防护）：抬出来的戳
   /// 至少是 [nowMs]；host 已存的超限毒戳（[trustedStoredSyncStamp]）按 0 比较，
   /// 结果再截到 [capFutureSyncStamp]——否则 `毒戳 + 1` 会写进本端 `_at_` pref，
   /// host 却把上报戳截成 `now + 余量`，下一轮两端位置相同、本端戳更新 →
@@ -260,31 +261,41 @@ class InterconnectPlaybackPositionSync {
   /// `InterconnectBookProgressSync.applyRemote` 同纪律）：判定前刚走过一次网络读
   /// host，这期间本机播放器或本机作为互联 host 收到的对端 PUT 可能已写进更新的
   /// 断点；本端时间戳一变就不落地、不记基线，交给下一轮重新判定。
+  ///
+  /// 落到本端的时间戳截到 [capFutureSyncStamp]：host 上的超限毒戳不进本端
+  /// `_at_` pref（视频还会写进 `lastPlayedAt`）。
   Future<bool> applyRemote(
     String key,
     PlaybackPosition remote, {
     required PlaybackPosition local,
   }) async {
-    final bool landed = await _writeLocalIfUnchanged(
-      key,
-      remote,
-      expected: local,
-    );
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    final bool landed = await _writeLocalIfUnchanged(key, (
+      positionMs: remote.positionMs,
+      updatedAtMs: capFutureSyncStamp(remote.updatedAtMs, nowMs: now),
+    ), expected: local);
     if (landed) await recordBaseline(key, remote.positionMs);
     return landed;
   }
 
   /// 两端位置一致、只是时间戳不同：把较新的时间戳对齐到另一端（沿用此前 LWW 路径
   /// 的对齐写法），记基线。返回本端是否被改写。
+  ///
+  /// 比较用 host 的可信戳（[trustedStoredSyncStamp]）：host 上的超限毒戳按 0，
+  /// 本端胜出、把本端戳推给 host，本端不会被对齐成毒戳。
   Future<bool> alignSynced(
     String key, {
     required PlaybackPosition local,
     required PlaybackPosition remote,
   }) async {
+    final int remoteTs = trustedStoredSyncStamp(
+      remote.updatedAtMs,
+      nowMs: DateTime.now().millisecondsSinceEpoch,
+    );
     bool localChanged = false;
-    if (local.updatedAtMs > remote.updatedAtMs) {
+    if (local.updatedAtMs > remoteTs) {
       await _putRemote(key, local);
-    } else if (remote.updatedAtMs > local.updatedAtMs) {
+    } else if (remoteTs > local.updatedAtMs) {
       // 比较后写入（BUG-3537）：判定后本端被改写就不对齐。
       localChanged = await _writeLocalIfUnchanged(key, remote, expected: local);
     }

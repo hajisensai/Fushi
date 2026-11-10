@@ -478,10 +478,22 @@ mixin _LocalLibraryHostBooks on _LocalLibraryHostBase, _LocalLibraryHostShared {
     await _runSyncStateExclusive(
       () => _db.transaction(() async {
         final RemoteBookProgress current = await getBookProgress(bookKey);
-        final RemoteBookProgress winner = resolveBookProgressSync(
-          local: current,
-          remote: incoming,
+        // 未来时间戳防护（与视频 / 有声书 PUT 同口径）：上报戳截到 host 当前时刻 +
+        // 余量；已存的超限毒戳按 0 比较——否则一台时钟走快的设备写下的戳在 LWW 里
+        // 永远胜出，之后任何端的正常上报都被 no-op 掉。
+        final int nowMs = DateTime.now().millisecondsSinceEpoch;
+        final RemoteBookProgress trustedCurrent = withTrustedStoredStamp(
+          current,
+          nowMs: nowMs,
         );
+        final RemoteBookProgress winner = resolveBookProgressSync(
+          local: trustedCurrent,
+          remote: withCappedStamp(incoming, nowMs: nowMs),
+        );
+        // 胜者是 host 已存那份（可信戳视图）就不写：不能把毒戳视图的 0 戳写回库。
+        // 胜者是上报那份时仍与**原始** current 逐字段比较（含原始戳），所以毒戳行
+        // 只要被上报胜过就一定会被覆盖。
+        if (identical(winner, trustedCurrent)) return;
         if (winner.sectionIndex == current.sectionIndex &&
             winner.normCharOffset == current.normCharOffset &&
             winner.charOffset == current.charOffset &&

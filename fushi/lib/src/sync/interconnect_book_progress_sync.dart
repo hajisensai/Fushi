@@ -315,11 +315,16 @@ class InterconnectBookProgressSync {
     int? nowMs,
   }) async {
     final int now = nowMs ?? DateTime.now().millisecondsSinceEpoch;
+    // 未来时间戳防护（与播放位置版同纪律）：host 已存的超限毒戳按 0 比较，抬出来
+    // 的戳至少是 [now]，最后截到 [capFutureSyncStamp]——否则 `毒戳 + 1` 会被推给
+    // host、写进本端 `reader_positions.updatedAt`，扩散到各端。
+    final int remoteTs = trustedStoredSyncStamp(remote.updatedAtMs, nowMs: now);
     int ts = local.updatedAtMs;
-    if (ts <= remote.updatedAtMs) {
-      ts = remote.updatedAtMs + 1;
+    if (ts <= remoteTs) {
+      ts = remoteTs + 1;
       if (now > ts) ts = now;
     }
+    ts = capFutureSyncStamp(ts, nowMs: now);
     final RemoteBookProgress agreed = RemoteBookProgress(
       sectionIndex: local.sectionIndex,
       normCharOffset: local.normCharOffset,
@@ -351,14 +356,19 @@ class InterconnectBookProgressSync {
   /// 阅读器或本机作为互联 host 收到的对端 PUT 写进更新的进度；时间戳一变，这次
   /// 判定作废——不落地、不记基线，交给下一轮按新的本地事实重新判定（届时两端都
   /// 偏离基线就是真分叉，走冲突弹窗），绝不用 host 的旧值盖掉它。
+  ///
+  /// 落到本端的时间戳截到 [capFutureSyncStamp]：host 上的超限毒戳不进本端
+  /// `reader_positions.updatedAt`；之后两端戳不同，下一轮 [alignSynced] 把本端
+  /// 可信戳推回 host，毒戳就此自愈。
   Future<bool> applyRemote(
     EpubBookRow book,
     RemoteBookProgress remote, {
     required RemoteBookProgress local,
   }) async {
+    final int now = DateTime.now().millisecondsSinceEpoch;
     final bool landed = await _upsertLocalIfUnchanged(
       book,
-      remote,
+      withCappedStamp(remote, nowMs: now),
       expected: local,
     );
     if (landed) await recordBaseline(book, remote);
@@ -368,19 +378,26 @@ class InterconnectBookProgressSync {
   /// 两端位置一致、只是时间戳不同：把较新的时间戳对齐到另一端（沿用此前 LWW
   /// 路径的对齐写法），记基线。位置相同时「较新」只决定 charOffset 精确锚与时刻。
   /// 返回本端行是否被改写（调用方据此计入「已拉取」让书架刷新）。
+  ///
+  /// 比较用 host 的可信戳视图（[withTrustedStoredStamp]）：host 上的超限毒戳按 0，
+  /// 本端胜出、把本端戳推给 host，本端不会被对齐成毒戳。
   Future<bool> alignSynced(
     EpubBookRow book, {
     required RemoteBookProgress local,
     required RemoteBookProgress remote,
   }) async {
     if (local.updatedAtMs <= 0 && remote.updatedAtMs <= 0) return false;
+    final RemoteBookProgress trustedRemote = withTrustedStoredStamp(
+      remote,
+      nowMs: DateTime.now().millisecondsSinceEpoch,
+    );
     final RemoteBookProgress winner = resolveBookProgressSync(
       local: local,
-      remote: remote,
+      remote: trustedRemote,
     );
-    if (winner.updatedAtMs > remote.updatedAtMs ||
-        (winner.updatedAtMs == remote.updatedAtMs &&
-            winner.charOffset != remote.charOffset)) {
+    if (winner.updatedAtMs > trustedRemote.updatedAtMs ||
+        (winner.updatedAtMs == trustedRemote.updatedAtMs &&
+            winner.charOffset != trustedRemote.charOffset)) {
       await _backend.putRemoteBookProgress(book.bookKey, winner);
     }
     bool localChanged =

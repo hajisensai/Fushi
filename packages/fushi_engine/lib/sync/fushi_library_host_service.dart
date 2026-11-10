@@ -1988,6 +1988,37 @@ int capFutureSyncStamp(int atMs, {required int nowMs}) {
 int trustedStoredSyncStamp(int storedAtMs, {required int nowMs}) =>
     storedAtMs > nowMs + kSyncFutureStampToleranceMs ? 0 : storedAtMs;
 
+/// 书进度的「可信戳」视图：只把 [RemoteBookProgress.updatedAtMs] 换成
+/// [trustedStoredSyncStamp]（超限毒戳按 0），其余字段原样。戳本来可信时原样返回
+/// 同一个对象。比较前用它，书籍通道才与视频 / 有声书同样能自愈毒戳（BUG-3367 的
+/// 书籍版）。纯函数。
+RemoteBookProgress withTrustedStoredStamp(
+  RemoteBookProgress p, {
+  required int nowMs,
+}) {
+  final int trusted = trustedStoredSyncStamp(p.updatedAtMs, nowMs: nowMs);
+  if (trusted == p.updatedAtMs) return p;
+  return RemoteBookProgress(
+    sectionIndex: p.sectionIndex,
+    normCharOffset: p.normCharOffset,
+    charOffset: p.charOffset,
+    updatedAtMs: trusted,
+  );
+}
+
+/// 书进度的上报戳截到 `nowMs + kSyncFutureStampToleranceMs`（[capFutureSyncStamp]），
+/// 其余字段原样；未超限时原样返回同一个对象。纯函数。
+RemoteBookProgress withCappedStamp(RemoteBookProgress p, {required int nowMs}) {
+  final int capped = capFutureSyncStamp(p.updatedAtMs, nowMs: nowMs);
+  if (capped == p.updatedAtMs) return p;
+  return RemoteBookProgress(
+    sectionIndex: p.sectionIndex,
+    normCharOffset: p.normCharOffset,
+    charOffset: p.charOffset,
+    updatedAtMs: capped,
+  );
+}
+
 /// 互联播放位置（视频 / 有声书）的三方判定（BUG-3367）。纯函数。
 ///
 /// 与书籍进度 [resolveBookProgressThreeWay]（BUG-2506）同口径，只是位置是单维
