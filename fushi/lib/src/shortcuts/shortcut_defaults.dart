@@ -749,6 +749,18 @@ class ShortcutDefaults {
     ShortcutAction.globalExternalScreenOcr: _kb([
       _key(LogicalKeyboardKey.keyO, {ModifierKey.ctrl, ModifierKey.alt}),
     ]),
+    // 反馈 uvIcQB5gPG：有声书悬浮字幕的全局热键，默认**不绑键**（native 后端无绑定
+    // 即不注册，零常驻代价；portal 后端只声明快捷键、由桌面让用户分配）。OS 级热键
+    // 全系统吞键，不听书的用户不该被偷走任何组合键，理由见 ShortcutAction 声明处。
+    ShortcutAction.globalExternalFloatingLyricToggle:
+        const ShortcutBindingSet(),
+    ShortcutAction.globalExternalAudiobookPlayPause: const ShortcutBindingSet(),
+    ShortcutAction.globalExternalAudiobookPrevSentence:
+        const ShortcutBindingSet(),
+    ShortcutAction.globalExternalAudiobookNextSentence:
+        const ShortcutBindingSet(),
+    ShortcutAction.globalExternalAudiobookReplaySentence:
+        const ShortcutBindingSet(),
     // 查词弹窗「上/下一个词条」：默认 Alt+滚轮（Yomitan 的 Next/Previous entry 同款
     // 手感）。裸滚轮永远滚动弹窗内容，故必须带修饰键；Alt 在 WebView 里没有默认滚轮
     // 语义（Ctrl+滚轮是缩放、Shift+滚轮是横向滚动，都不能占）。dictionaryPopup 是独立

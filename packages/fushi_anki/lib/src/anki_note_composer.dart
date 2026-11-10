@@ -752,11 +752,26 @@ mixin AnkiNoteComposer {
   /// 没有的名字原样保留（服务端按名匹配自会丢弃，与 BUG-1900 同口径）。AnkiDroid
   /// 后端在 native `updateNoteFields` 里按位置做同一件事（`clearUnspecified`），
   /// 那边本来就握着整条 note，不必再经通道回读一次。
+  ///
+  /// 反馈 nWWjBp3Clo：[onlyFields] 非 null 时只覆写用户选中的字段——返回值**只含**
+  /// 选中且属于这张 note 的字段（映射到的写渲染值，没映射到的写空串），其余字段一个
+  /// 都不点名，两后端都按「未给出的字段保留旧值」原样留着。[existingFieldNames] 为空
+  /// （手上没有字段真相）时按 [onlyFields] 原样点名，交由后端按名 / 按位置裁决。
   @protected
   static Map<String, String> fieldsForOverwrite({
     required Iterable<String> existingFieldNames,
     required Map<String, String> rendered,
+    Set<String>? onlyFields,
   }) {
+    if (onlyFields != null) {
+      final List<String> known = existingFieldNames.toList();
+      final Iterable<String> targets = known.isEmpty
+          ? onlyFields
+          : known.where(onlyFields.contains);
+      return <String, String>{
+        for (final String name in targets) name: rendered[name] ?? '',
+      };
+    }
     final Map<String, String> out = <String, String>{...rendered};
     for (final String name in existingFieldNames) {
       out.putIfAbsent(name, () => '');

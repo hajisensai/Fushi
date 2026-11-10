@@ -38,6 +38,7 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-4376](bugs/BUG-4376-windows-a11y-engine-tree-never-half-applied.md) | ✅ | ✅ | Windows 无障碍树：引擎在语义更新被 AXTree 拒收后不自愈（半应用、委托悬空），且框架违约更新直接交给 AXTree |
+| [BUG-4376](bugs/BUG-4376-ai-agent-landscape-sheet-too-short.md) | ✅ | ✅ | 横屏打开 AI 助手只剩标题和输入框 |
 | [BUG-4375](bugs/BUG-4375-manga-image-epub-folder-import.md) | ✅ | ✅ | 漫画导入框选纯图 EPUB 文件夹识别不到；批量导入不归合集 |
 | [BUG-4374](bugs/BUG-4374-srs-conflicts-bulk-dropped.md) | 🚧 | 🚧 | 同步冲突页批量处理被删成只剩逐条 |
 | [BUG-4373](bugs/BUG-4373-manga-command-keys-dead-under-webview-focus.md) | ✅ | ✅ | 漫画：WebView2 持键盘焦点时切换界面 / 统计 / 计时（及新书签）快捷键收不到，改键也不生效 |
