@@ -28,6 +28,7 @@ import 'package:fushi/src/media/video/video_m3e_chrome.dart';
 import 'package:fushi/src/media/video/video_m3e_panel_theme.dart';
 import 'package:fushi/src/media/video/video_player_controller.dart';
 import 'package:fushi/src/media/video/video_current_line_copy.dart';
+import 'package:fushi/src/media/video/video_simultaneous_cues.dart';
 import 'package:fushi/src/media/video/video_player_shortcuts.dart';
 import 'package:fushi/src/media/video/video_subtitle_jump_panel.dart';
 import 'package:fushi/src/media/video/video_subtitle_overlay.dart';
@@ -1213,7 +1214,9 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       href: _state?.href.isNotEmpty == true ? _state!.href : row.videoPath,
       cueStartMs: cue.startMs,
       cueEndMs: cue.endMs,
-      sentence: fieldSentence.isEmpty ? cue.text.trim() : fieldSentence,
+      sentence: fieldSentence.isEmpty
+          ? simultaneousCueText(_controller.cueStreamOwning(cue), cue)
+          : fieldSentence,
       cueSentence: cue.text,
       fields: fields,
     );
@@ -1900,7 +1903,11 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
   /// 返回是否真的写了剪贴板（[VideoSubtitleJumpPanel.onCopyCue] 的契约）：空句不算
   /// 成功，面板据此决定要不要把行内按钮切成 ✓。
   bool _copyCue(AudioCue cue) {
-    final String text = cue.text.trim();
+    // 反馈 rLCxUJ-2i4：与这行同时显示的同一句其它行一起复制（与视频页同一判据）。
+    final String text = simultaneousCueText(
+      _controller.cueStreamOwning(cue),
+      cue,
+    );
     if (text.isEmpty) return false;
     _appModel.copyToClipboard(text);
     return true;
@@ -1911,6 +1918,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
   void _copyCurrentSubtitle() {
     final String? text = videoCurrentLineCopyText(
       activeCues: _controller.activeCues,
+      cues: _controller.cues,
       fallback: _controller.currentCue ?? _lastLookupCue,
     );
     if (text == null) return;
