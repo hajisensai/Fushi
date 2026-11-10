@@ -78,10 +78,17 @@ class SrsRemoteHostClient extends InterconnectHostClient {
 Future<bool?> _probeSrsRemoteStore(
   SyncRepository repository,
   FushiClientUrl peer,
-) => SrsRemoteHostClient(
-  repository: repository,
-  peer: peer,
-).supportsRemoteStore();
+) async {
+  final SrsRemoteHostClient client = SrsRemoteHostClient(
+    repository: repository,
+    peer: peer,
+  );
+  try {
+    return await client.supportsRemoteStore();
+  } finally {
+    client.cancelPending();
+  }
+}
 
 /// [candidates]（[configuredInterconnectHostTargets] 列出的）里此刻提供远程复习库的那些。
 Future<List<InterconnectHostTarget>> filterSrsRemoteStoreTargets(

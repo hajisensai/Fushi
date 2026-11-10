@@ -4,6 +4,8 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
+import 'package:fushi/src/sync/interconnect_host_channel.dart'
+    show InterconnectCandidateSelection, interconnectRankedCandidates;
 import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
@@ -43,20 +45,16 @@ Never _throwAssetUnreachable(Uri uri, Object error, StackTrace stack) {
   );
 }
 
-/// 互联客户端的 JSON POST 传输层：**唯一**一份「已启用候选按序 fallback +
-/// `Basic base64(hibiki:token)` 鉴权 + https 带指纹强制走钉扎 client + 每候选独立
-/// 回收」的实现。
+/// 互联客户端**跨 host** 的 JSON POST fallback：已启用候选（经共享的
+/// [interconnectRankedCandidates] 选路）逐台尝试 + `Basic base64(hibiki:token)`
+/// 鉴权 + https 带指纹强制走钉扎 client + 每候选独立回收。查词、制卡这类「哪台
+/// 已配对设备能答就用哪台」的请求走这里。
 ///
-/// **为什么抽出来**——这套逻辑此前被逐行复制过多份：
-/// `fushi_remote_lookup_client.dart` 的 `_postLookup`、
-/// `fushi_remote_mining_client.dart` 的 `_post`（它的类注释自己就写着「传输契约与
-/// [FushiRemoteLookupClient] 完全同构」），
-/// 另有 `interconnect_manga_ocr_client.dart` 的 GET 版 `probe` 和
-/// `InterconnectSyncBackend` 走 `WebDavOps` 的第四份。每加一个互联端点就再抄一遍，
-/// 而钉扎、401 语义、socket 回收这些安全相关的细节一旦有一份抄漏就是真事故
-/// （TODO-961 gap①：注入的 keep-alive client 不得旁路证书钉扎）。
-///
-/// 现在新增一个互联端点 = 调一次 [post]，不再复制传输代码。
+/// 「到**某一台** host」的请求（视频遥控、远程复习、代下载、订阅、AI 助手、任务、
+/// 漫画 OCR…）一律走 `InterconnectHostChannel`（`interconnect_host_channel.dart`），
+/// 不在这里加 `onlyCandidate` 的新用法，也不再复制传输代码：钉扎、401 语义、
+/// socket 回收这些安全相关的细节一旦有一份抄漏就是真事故（TODO-961 gap①：注入的
+/// keep-alive client 不得旁路证书钉扎）。
 ///
 /// 互联请求的**建连**超时。不设时，建连阶段也吃整次请求的超时（制卡 60 s）：对端
 /// 关机 / 走 Tailscale 或公网地址时 SYN 石沉大海，要等满整次超时，而且以
@@ -127,26 +125,16 @@ class InterconnectPostTransport {
     void Function(int statusCode, Map<String, dynamic>? json)?
     onRejectedResponse,
   }) async {
-    List<FushiClientUrl> candidates = (await _repo.getFushiClientUrls())
-        .where((FushiClientUrl u) => u.enabled)
-        .toList();
-    final String? fallbackToken = await _repo.getFushiClientToken();
-    if (onlyCandidate != null) {
-      final String? onlyHost = onlyCandidate.hostId;
-      candidates.removeWhere(
-        (FushiClientUrl candidate) =>
-            // 带 hostId 时「只发给这台」认的是 host（凭据仍须一致）：同一台 host
-            // 的任一地址都行，出门后不会因为当初那条 LAN 地址不通就失败。
-            (onlyHost != null
-                ? candidate.hostId != onlyHost
-                : (candidate.url != onlyCandidate.url ||
-                      candidate.fingerprintSha256 !=
-                          onlyCandidate.fingerprintSha256)) ||
-            interconnectTokenFor(candidate, fallbackToken) !=
-                onlyCandidate.token,
-      );
-    }
-    if (candidates.isEmpty) {
+    // 候选来源与 [InterconnectHostChannel] 共用：启用 → onlyCandidate 过滤 → 组内
+    // 并发选路，可达者排到组首（§2）；明文地址没当场核对过 hostId 的被扣下，
+    // 不拿凭据（V-B4）。
+    final InterconnectCandidateSelection ranked =
+        await interconnectRankedCandidates(
+          _repo,
+          onlyCandidate: onlyCandidate,
+          probe: _probe,
+        );
+    if (ranked.members.isEmpty) {
       // 未配对/未启用：不是「设备不可达」，按「无结果」处理。
       return (
         json: null,
@@ -155,11 +143,8 @@ class InterconnectPostTransport {
         candidate: null,
       );
     }
-    // 同一台 host 的多条地址组内并发选路，可达者排到组首（§2）；明文地址没当场
-    // 核对过 hostId 的被扣下，不拿凭据（V-B4）。
-    final InterconnectRankedCandidates ranked =
-        await rankInterconnectCandidatesDetailed(candidates, probe: _probe);
-    candidates = ranked.ranked;
+    final String? fallbackToken = ranked.fallbackToken;
+    final List<FushiClientUrl> candidates = ranked.ranked;
 
     bool attempted = false;
     bool anyResponse = false;

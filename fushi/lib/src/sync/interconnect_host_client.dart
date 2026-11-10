@@ -1,11 +1,10 @@
-import 'dart:async';
 import 'dart:convert';
 
-import 'package:fushi/src/sync/interconnect_peer_addresses.dart'
-    show interconnectPersistedUrl;
-import 'package:fushi/src/sync/interconnect_host_channel.dart'
-    show InterconnectPinRefused;
-import 'package:fushi/src/sync/interconnect_post_transport.dart';
+import 'package:fushi/src/sync/interconnect_host_channel.dart';
+import 'package:fushi/src/sync/interconnect_post_transport.dart'
+    show kInterconnectConnectTimeout;
+import 'package:fushi/src/sync/sync_backend.dart'
+    show SyncAuthError, SyncAuthFailureKind;
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:http/http.dart' as http;
 import 'package:fushi_engine/sync/tls/fushi_pinning_http.dart';
@@ -36,6 +35,12 @@ class InterconnectHostError implements Exception {
 /// Requests bound to one paired host (video remote control, SRS remote review),
 /// including its credential and pin.
 ///
+/// 传输一律走共享 [InterconnectHostChannel]（选路、per-peer 凭据、钉扎闸、整段
+/// 超时、client 生命周期都在那里），这里只把通道的结局映射成本类的错误形状。
+///
+/// 会话绑定：通道带上 [peer] 的 token 与指纹（[InterconnectHostBinding]）。吊销
+/// 或重新配对（凭据变了、地址改归另一台 host）都让会话失效，绝不换到另一个媒体库。
+///
 /// When [peer] carries a certificate fingerprint, every request must go through
 /// a TLS client pinned to exactly that fingerprint. Addresses of the same host
 /// with another pin, or plaintext addresses (except this process's own P2P
@@ -50,15 +55,26 @@ class InterconnectHostClient {
     http.Client Function(String expectedFingerprint)? pinnedClientFactory,
   }) : _repository = repository,
        _injected = httpClient,
-       _pinnedFactory = pinnedClientFactory ?? _defaultPinnedClient;
+       _injectedPinned = pinnedClientFactory;
   final FushiClientUrl peer;
   final SyncRepository _repository;
+
+  /// 注入的明文 client：通道借用、不关它。null → 通道自建并在
+  /// [cancelPending] 时关掉。
   final http.Client? _injected;
-  final http.Client Function(String expectedFingerprint) _pinnedFactory;
-  final List<http.Client> _clients = <http.Client>[];
-  final Map<String, http.Client> _pinned = <String, http.Client>{};
-  InterconnectPostTransport? _current;
-  int _pinRefusals = 0;
+
+  /// 注入的钉扎工厂。null → 通道用默认钉扎 client（能识别真正的证书不符）。
+  final http.Client Function(String expectedFingerprint)? _injectedPinned;
+
+  late InterconnectHostChannel _channel = _newChannel();
+
+  InterconnectHostChannel _newChannel() => InterconnectHostChannel(
+    repo: _repository,
+    host: InterconnectHostRef.ofRow(peer),
+    binding: (token: peer.token, fingerprint: peer.fingerprintSha256),
+    plainClient: _injected,
+    pinnedClientFactory: _injectedPinned,
+  );
 
   static http.Client _defaultPinnedClient(String expectedFingerprint) =>
       createPinnedHttpPackageClient(
@@ -71,9 +87,12 @@ class InterconnectHostClient {
     return pin == null || pin.isEmpty ? null : pin;
   }
 
-  /// Wraps a plaintext client so it refuses non-tunnel requests to a pinned host.
-  http.Client guardPlaintext(http.Client inner) =>
-      _PinGuardClient(inner, _plaintextAllowed, () => _pinRefusals++);
+  /// Wraps a plaintext client so it refuses non-tunnel requests to a pinned
+  /// host (companion clients bound to the same host, e.g. dictionary lookup).
+  http.Client guardPlaintext(http.Client inner) => _PinGuardClient(
+    inner,
+    (Uri uri) => interconnectPlaintextAllowed(uri, pin: _expectedPin),
+  );
 
   /// Pinned-client factory that only builds clients for the peer's own pin.
   http.Client Function(String expectedFingerprint) guardPinnedFactory(
@@ -81,82 +100,71 @@ class InterconnectHostClient {
   ) => (String pin) {
     final String? expected = _expectedPin;
     if (expected != null && !fingerprintEquals(pin, expected)) {
-      return _PinGuardClient(null, (_) => false, () => _pinRefusals++);
+      return _PinGuardClient(null, (_) => false);
     }
     return inner(pin);
   };
 
-  /// The factory used for this client's own transport, also suitable for a
-  /// companion client (dictionary lookup) bound to the same host.
+  /// Pinned-client factory bound to this peer's pin, for a companion client
+  /// (dictionary lookup) bound to the same host.
   http.Client Function(String expectedFingerprint) get pinnedClientFactory =>
-      guardPinnedFactory(_pinnedFactory);
+      guardPinnedFactory(_injectedPinned ?? _defaultPinnedClient);
 
-  bool _plaintextAllowed(Uri uri) {
-    if (_expectedPin == null) return true;
-    // The P2P forwarding port is loopback plaintext; the tunnel itself
-    // authenticates the host node key learned through the pinned channel.
-    return interconnectPersistedUrl(uri.origin).startsWith('p2p://');
-  }
-
-  InterconnectPostTransport get _transport =>
-      _current ??= InterconnectPostTransport(
-        repo: _repository,
-        httpClient: _own(guardPlaintext(_injected ?? http.Client())),
-        pinnedClientFactory: (String pin) => _BorrowedRemoteClient(
-          _pinned.putIfAbsent(pin, () => _own(pinnedClientFactory(pin))),
-        ),
-      );
-  http.Client _own(http.Client client) {
-    late final _OwnedRemoteClient owned;
-    owned = _OwnedRemoteClient(client, () => _clients.remove(owned));
-    _clients.add(owned);
-    return owned;
-  }
-
+  /// 关掉通道建的全部 client，在途请求立即收尾；之后的请求走一条新通道。
   void cancelPending() {
-    for (final http.Client client in List<http.Client>.from(_clients)) {
-      client.close();
-    }
-    _clients.clear();
-    _pinned.clear();
-    _current = null;
+    _channel.close();
+    _channel = _newChannel();
   }
 
   int _sequence = 0;
   String requestId() =>
       '${DateTime.now().microsecondsSinceEpoch}-${_sequence++}';
 
-  /// `POST` [body] as JSON to [path] on the first address of the selected host
-  /// that answers. A rejection carries the host's `error` / `message` code.
+  /// `POST` [body] as JSON to [path] on the selected host (one attempt: a
+  /// non-idempotent request is never re-sent to another address once it may
+  /// have been delivered). A rejection carries the host's `error` / `message`
+  /// code.
   Future<Map<String, dynamic>> postJson(
     String path, {
     Map<String, dynamic> body = const <String, dynamic>{},
     Duration timeout = const Duration(seconds: 35),
     required String authErrorMessage,
   }) async {
-    InterconnectHostError? rejection;
-    final int refusalsBefore = _pinRefusals;
-    final InterconnectPostOutcome response = await _transport.post(
-      path: path,
-      body: body,
-      timeout: timeout,
-      onlyCandidate: peer,
-      authErrorMessage: authErrorMessage,
-      onRejectedResponse: (int status, Map<String, dynamic>? json) {
-        rejection = InterconnectHostError(
-          (json?['error'] ?? json?['message'] ?? 'HTTP $status').toString(),
-          statusCode: status,
-        );
-      },
-    );
-    if (response.json != null) return response.json!;
-    if (rejection != null) throw rejection!;
-    if (_pinRefusals > refusalsBefore && response.allUnreachable) {
-      throw const InterconnectHostError(
-        InterconnectHostError.certificateMismatchCode,
+    final InterconnectChannelResponse response;
+    try {
+      response = await _channel.send(
+        'POST',
+        path,
+        body: InterconnectRequestBody.json(body),
+        timeout: timeout,
       );
+    } on InterconnectChannelException catch (e) {
+      throw switch (e.kind) {
+        InterconnectChannelFailure.authRejected => SyncAuthError(
+          authErrorMessage,
+          kind: SyncAuthFailureKind.pairingRejected,
+        ),
+        InterconnectChannelFailure.certificateMismatch =>
+          const InterconnectHostError(
+            InterconnectHostError.certificateMismatchCode,
+          ),
+        // 没有候选、谁都没回答、调用方已 cancelPending：都是「没连上」。
+        InterconnectChannelFailure.notPaired ||
+        InterconnectChannelFailure.unreachable ||
+        InterconnectChannelFailure.cancelled => const InterconnectHostError(
+          InterconnectHostError.unreachableCode,
+        ),
+      };
     }
-    throw const InterconnectHostError(InterconnectHostError.unreachableCode);
+    final int status = response.statusCode;
+    final Map<String, dynamic>? json = response.jsonObject;
+    if (status >= 200 && status < 300 && json != null) return json;
+    throw InterconnectHostError(
+      json?['error']?.toString() ??
+          json?['message']?.toString() ??
+          'HTTP $status',
+      statusCode: status,
+    );
   }
 
   /// Whether the selected host declares [capability] on
@@ -178,70 +186,38 @@ class InterconnectHostClient {
     }
   }
 
-  /// `GET` [path] on the first address of the selected host that answers 200
-  /// (same host, credential and pin rules as [postJson]). Null when none did.
+  /// `GET` [path] on the selected host (same routing, credential and pin rules
+  /// as [postJson]). Null when the host answered anything but 200 (404 = the
+  /// host has no such resource) or no address answered.
   Future<http.Response?> getFromHost(
     String path, {
     required Duration timeout,
   }) async {
-    final String? fallbackToken = await _repository.getFushiClientToken();
-    final List<FushiClientUrl> candidates =
-        (await _repository.getFushiClientUrls()).where((FushiClientUrl u) {
-          if (!u.enabled) return false;
-          final bool sameHost = peer.hostId != null
-              ? u.hostId == peer.hostId
-              : u.url == peer.url &&
-                    u.fingerprintSha256 == peer.fingerprintSha256;
-          return sameHost &&
-              interconnectTokenFor(u, fallbackToken) == peer.token;
-        }).toList();
-    for (final FushiClientUrl candidate in candidates) {
-      final Uri? uri = interconnectEndpointUri(candidate.url, path);
-      final String? token = interconnectTokenFor(candidate, fallbackToken);
-      if (uri == null || token == null) continue;
-      final String? pin = candidate.fingerprintSha256;
-      final bool usePinned =
-          uri.isScheme('https') && pin != null && pin.isNotEmpty;
-      final http.Client client = usePinned
-          ? pinnedClientFactory(pin)
-          : guardPlaintext(_injected ?? http.Client());
-      try {
-        final http.Response response = await client
-            .get(
-              uri,
-              headers: <String, String>{
-                'Authorization':
-                    'Basic ${base64Encode(utf8.encode('hibiki:$token'))}',
-              },
-            )
-            .timeout(timeout);
-        // 404 is the host's answer (e.g. no cover), not a bad address: asking
-        // its other addresses would get the same answer, each after a timeout.
-        if (response.statusCode == 404) return null;
-        if (response.statusCode != 200) continue;
-        return response;
-      } catch (_) {
-        continue;
-      } finally {
-        if (usePinned || _injected == null) client.close();
-      }
+    final InterconnectChannelResponse response;
+    try {
+      response = await _channel.send('GET', path, timeout: timeout);
+    } on InterconnectChannelException {
+      return null;
     }
-    return null;
+    if (response.statusCode != 200) return null;
+    return http.Response.bytes(
+      response.bodyBytes,
+      response.statusCode,
+      headers: response.headers,
+    );
   }
 }
 
 /// Refuses requests [allowed] rejects; the refusal surfaces as a transport
 /// failure, so nothing reaches the network.
 class _PinGuardClient extends http.BaseClient {
-  _PinGuardClient(this.inner, this.allowed, this.onRefused);
+  _PinGuardClient(this.inner, this.allowed);
   final http.Client? inner;
   final bool Function(Uri uri) allowed;
-  final void Function() onRefused;
   @override
   Future<http.StreamedResponse> send(http.BaseRequest request) {
     final http.Client? client = inner;
     if (client == null || !allowed(request.url)) {
-      onRefused();
       return Future<http.StreamedResponse>.error(
         const InterconnectPinRefused(),
       );
@@ -251,28 +227,4 @@ class _PinGuardClient extends http.BaseClient {
 
   @override
   void close() => inner?.close();
-}
-
-class _BorrowedRemoteClient extends http.BaseClient {
-  _BorrowedRemoteClient(this.inner);
-  final http.Client inner;
-  @override
-  Future<http.StreamedResponse> send(http.BaseRequest request) =>
-      inner.send(request);
-  @override
-  void close() {}
-}
-
-class _OwnedRemoteClient extends http.BaseClient {
-  _OwnedRemoteClient(this.inner, this.onClosed);
-  final http.Client inner;
-  final void Function() onClosed;
-  @override
-  Future<http.StreamedResponse> send(http.BaseRequest request) =>
-      inner.send(request);
-  @override
-  void close() {
-    inner.close();
-    onClosed();
-  }
 }

@@ -128,6 +128,57 @@ void main() {
     });
   });
 
+  test('InterconnectHostClient 经选路走 P2P 转发口（直连不通时）', () async {
+    final Directory dir = await Directory.systemTemp.createTemp(
+      'fushi_p2p_host_client',
+    );
+    final FushiDatabase db = FushiDatabase(dir.path);
+    addTearDown(() async {
+      debugInterconnectAddressProbeOverride = null;
+      await db.close();
+      await cleanupTempDir(dir);
+    });
+    final SyncRepository repo = SyncRepository(db);
+    final FushiClientUrl tunnelRow = FushiClientUrl(
+      url: p2pUrl(),
+      hostId: 'H',
+      token: 'T',
+      learned: true,
+      addressKind: 'p2p',
+    );
+    await repo.setFushiClientUrls(<FushiClientUrl>[
+      const FushiClientUrl(
+        url: 'http://192.168.1.5:38765',
+        hostId: 'H',
+        token: 'T',
+      ),
+      tunnelRow,
+    ]);
+    debugInterconnectAddressProbeOverride = probe;
+    final List<Uri> reached = <Uri>[];
+    final InterconnectHostClient client = InterconnectHostClient(
+      repository: repo,
+      peer: tunnelRow,
+      httpClient: MockClient((http.Request r) async {
+        reached.add(r.url);
+        if (r.url.host != '127.0.0.1') {
+          throw const SocketException('unreachable');
+        }
+        return http.Response('{"videoRemoteControlV1":true}', 200);
+      }),
+    );
+    addTearDown(client.cancelPending);
+
+    final http.Response? response = await client.getFromHost(
+      '/api/capabilities',
+      timeout: const Duration(seconds: 2),
+    );
+    expect(response?.statusCode, 200);
+    expect(reached, hasLength(1));
+    expect(reached.single.origin, 'http://127.0.0.1:5001');
+    expect(reached.single.path, '/api/capabilities');
+  });
+
   group('学习器按持久 URL 认锚点', () {
     late Directory dir;
     late FushiDatabase db;

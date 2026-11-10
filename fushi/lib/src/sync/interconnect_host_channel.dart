@@ -25,7 +25,7 @@ import 'dart:typed_data';
 
 import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
 import 'package:fushi/src/sync/interconnect_post_transport.dart'
-    show kInterconnectConnectTimeout;
+    show InterconnectPostTransport, kInterconnectConnectTimeout;
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/webdav_ops.dart';
 import 'package:fushi_engine/sync/interconnect_device_name.dart';
@@ -276,6 +276,61 @@ Uri? interconnectRequestUri(
   }
 }
 
+/// [interconnectRankedCandidates] 的结局：[members] 是筛出的已启用成员（选路前），
+/// [ranked] / [withheld] 同 [InterconnectRankedCandidates]，[fallbackToken] 是
+/// 全局回落凭据（取 per-peer token 用）。
+typedef InterconnectCandidateSelection = ({
+  List<FushiClientUrl> members,
+  List<FushiClientUrl> ranked,
+  int withheld,
+  String? fallbackToken,
+});
+
+/// 互联 client 的**唯一**候选来源：已启用地址 → 成员筛选 → 组内选路
+/// （[rankInterconnectCandidatesDetailed]：可达者优先、未核对的明文地址扣下）。
+/// [InterconnectHostChannel]（到某一台 host）与 [InterconnectPostTransport]
+/// （跨 host 逐台 fallback）都从这里取候选，不再各写一份筛选。
+///
+/// - [onlyCandidate]：只留这台 host 的地址（带 hostId 按 host 认，否则按 URL +
+///   指纹认），且有效凭据必须等于它的 token——吊销 / 重新配对让会话失效，绝不
+///   换到另一个媒体库。
+/// - [member]：额外的成员判据（通道按 [InterconnectHostRef] + 会话绑定筛）。
+Future<InterconnectCandidateSelection> interconnectRankedCandidates(
+  SyncRepository repo, {
+  FushiClientUrl? onlyCandidate,
+  bool Function(FushiClientUrl row, String? fallbackToken)? member,
+  InterconnectAddressProbe? probe,
+}) async {
+  final List<FushiClientUrl> rows = await repo.getFushiClientUrls();
+  final String? fallback = await repo.getFushiClientToken();
+  final String? onlyHost = onlyCandidate?.hostId;
+  bool keep(FushiClientUrl u) {
+    if (!u.enabled) return false;
+    if (member != null && !member(u, fallback)) return false;
+    if (onlyCandidate == null) return true;
+    // 带 hostId 时「只发给这台」认的是 host（凭据仍须一致）：同一台 host 的任一
+    // 地址都行，出门后不会因为当初那条 LAN 地址不通就失败。
+    final bool sameHost = onlyHost != null
+        ? u.hostId == onlyHost
+        : u.url == onlyCandidate.url &&
+              u.fingerprintSha256 == onlyCandidate.fingerprintSha256;
+    return sameHost && interconnectTokenFor(u, fallback) == onlyCandidate.token;
+  }
+
+  final List<FushiClientUrl> members = rows.where(keep).toList();
+  final InterconnectRankedCandidates ranked =
+      await rankInterconnectCandidatesDetailed(
+        members,
+        probe: probe ?? defaultInterconnectAddressProbe,
+      );
+  return (
+    members: members,
+    ranked: ranked.ranked,
+    withheld: ranked.withheld,
+    fallbackToken: fallback,
+  );
+}
+
 class InterconnectHostChannel {
   InterconnectHostChannel({
     required SyncRepository repo,
@@ -373,40 +428,39 @@ class InterconnectHostChannel {
     final String upper = method.toUpperCase();
     final bool isIdempotent = idempotent ?? (upper == 'GET' || upper == 'HEAD');
 
-    final List<FushiClientUrl> rows = await _repo.getFushiClientUrls();
-    final String? fallback = await _repo.getFushiClientToken();
-    if (_closed) throw _cancelled;
     final InterconnectHostBinding? binding = _binding;
-    final List<FushiClientUrl> members = <FushiClientUrl>[
-      for (final FushiClientUrl u in rows)
-        if (u.enabled &&
-            host.matches(u) &&
-            (binding == null ||
-                (interconnectTokenFor(u, fallback) == binding.token &&
-                    (host.hostId != null ||
-                        u.fingerprintSha256 == binding.fingerprint))))
-          u,
-    ];
+    final InterconnectCandidateSelection ranked =
+        await interconnectRankedCandidates(
+          _repo,
+          member: (FushiClientUrl u, String? fallback) =>
+              host.matches(u) &&
+              (binding == null ||
+                  (interconnectTokenFor(u, fallback) == binding.token &&
+                      (host.hostId != null ||
+                          u.fingerprintSha256 == binding.fingerprint))),
+          probe: _probe,
+        );
+    if (_closed) throw _cancelled;
+    final List<FushiClientUrl> members = ranked.members;
+    final String? fallback = ranked.fallbackToken;
     if (members.isEmpty) {
       throw const InterconnectChannelException(
         InterconnectChannelFailure.notPaired,
       );
     }
-    String? pin;
-    for (final FushiClientUrl u in members) {
-      final String? fp = u.fingerprintSha256;
-      if (fp != null && fp.isNotEmpty) {
-        pin = fp;
-        break;
+    // 会话绑定了指纹时以它为准（会话开始时配对的那张证书）：同组学到的另一张
+    // 证书的地址一律本地拒绝，不能借选路换掉会话的钉扎。
+    String? pin = binding?.fingerprint;
+    if (pin == null || pin.isEmpty) {
+      pin = null;
+      for (final FushiClientUrl u in members) {
+        final String? fp = u.fingerprintSha256;
+        if (fp != null && fp.isNotEmpty) {
+          pin = fp;
+          break;
+        }
       }
     }
-
-    final InterconnectRankedCandidates ranked =
-        await rankInterconnectCandidatesDetailed(
-          members,
-          probe: _probe ?? defaultInterconnectAddressProbe,
-        );
-    if (_closed) throw _cancelled;
 
     bool hadCredential = false;
     bool authRejected = false;
