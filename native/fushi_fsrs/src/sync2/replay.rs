@@ -42,8 +42,9 @@ pub struct Replayed {
     pub uncomputable: Vec<usize>,
 }
 
-/// 从一条日志（落库形态）推出它的意图。v2 本机新写的日志在创建时就按这一份算好存进操作；迁移进来的
-/// 旧日志在迁移时按它算一次。
+/// 从一条日志（落库形态）的结果形状反推它的意图。只给不带显式意图的日志用：迁移进来的旧日志（迁移时算一次）、
+/// 外来的旧形态日志（备份 / 档案并入、Dart 直接组好的日志事件）。本机发起的重置 / 改期 / 撤销 / 立即重排走
+/// `sched` 命令（store/sync2/sched_local.rs），意图由命令显式给出，不经这里。
 pub fn infer_intent(json: &Value) -> Intent {
     let s = |k: &str| json.get(k).and_then(Value::as_str);
     let res = json.get("res").filter(|v| v.is_object());
@@ -106,7 +107,7 @@ fn outcome_of(s: &Sched) -> Outcome {
     }
 }
 
-/// Dart `srsComputeMemory`（sm2Retention = 0.9）在确定性 FSRS 上的同一流程。
+/// 原 Dart `srsComputeMemory`（sm2Retention = 0.9，已删）在确定性 FSRS 上的同一流程。
 fn compute_memory(
     input: &MemoryInput,
     model: &super::fsrs_det::Model,
@@ -148,7 +149,7 @@ fn compute_memory(
 /// 重放一个归属组。[rows] 顺序任意（排序由选取规则定）；同 ID 的多行按选取规则只认最后一行。派生日志按
 /// 各自的配置快照算（[Config::from_json]），所以结果与「此刻」的牌组配置无关。
 pub fn replay(rows: &[Row<'_>]) -> Result<Replayed, String> {
-    Ok(fold(rows)?.0)
+    Ok(fold(rows)?.replayed)
 }
 
 /// 日志里记下的生效配置快照（`sc`）。
@@ -169,9 +170,9 @@ pub fn preview(
     day: &Day,
 ) -> Result<(Sched, Option<super::fsrs_det::Memory>, [Sched; 4]), String> {
     let model = cfg.model()?;
-    let (r, prefix) = fold(rows)?;
-    let cur = r.state.unwrap_or_else(Sched::initial);
-    let input = memory_input(&prefix, cfg.alg.projection_alg(), day)?;
+    let f = fold(rows)?;
+    let cur = f.replayed.state.unwrap_or_else(Sched::initial);
+    let input = memory_input(&f.prefix, cfg.alg.projection_alg(), day)?;
     let memory = compute_memory(&input, &model);
     let elapsed = sched::elapsed_days(cfg.alg, cur.last_reviewed_at, now, day) as f32;
     let next = model.next_states(memory, cfg.desired_retention as f32, elapsed)?;
@@ -179,7 +180,67 @@ pub fn preview(
     Ok((cur, memory, plan))
 }
 
-fn fold(rows: &[Row<'_>]) -> Result<(Replayed, Vec<EffLog>), String> {
+/// 本机显式意图命令（store/sync2/sched_local.rs）的起点：一个归属组重放到此刻的状态、最后一条有效日志、记忆状态
+/// 输入前缀。命令在它上面按意图算出结果，与之后重放到这条日志时算的是同一段代码（[fold] 里的派生分支）。
+#[derive(Debug, Clone)]
+pub struct Head {
+    /// 重放到此刻的状态（含排程归属；没有有效日志 = 新卡初始状态）。
+    pub state: Sched,
+    /// 最后一条有效日志的 ID（撤销只允许撤它：协议限制，别的设备同步来了更新的复习就撤不了）。
+    pub last_effective: Option<String>,
+    prefix: Vec<EffLog>,
+}
+
+/// [Head]：重放 [rows]（一个归属组的全部日志行）。
+pub fn head(rows: &[Row<'_>]) -> Result<Head, String> {
+    let f = fold(rows)?;
+    Ok(Head {
+        state: f.replayed.state.unwrap_or_else(Sched::initial),
+        last_effective: f.last_effective,
+        prefix: f.prefix,
+    })
+}
+
+impl Head {
+    /// 设为新卡（[Intent::Reset]）。
+    pub fn reset(&self) -> Sched {
+        sched::manual_reset(&self.state)
+    }
+
+    /// 手动改到期日（[Intent::SetDue]）；[at] 是日志时刻，[day] 是日志记下的日界口径。
+    pub fn set_due(&self, due_day: i64, at: i64, day: &Day) -> Sched {
+        sched::manual_set_due(&self.state, due_day, day.index(at))
+    }
+
+    /// 「立即重排」（[Intent::Reschedule]）按 [cfg]（将记进日志的配置快照）重算到期。不是复习卡、没复习过或算不出记忆
+    /// 状态时返回 `None`：这张卡不写日志（与重放里「派生结果 = 原状态」区分开，免得写一条什么都不改的日志）。
+    pub fn reschedule(&self, card: &str, cfg: &Config, day: &Day) -> Result<Option<Sched>, String> {
+        if self.state.queue != Queue::Review || self.state.last_reviewed_at.is_none() {
+            return Ok(None);
+        }
+        let model = cfg.model()?;
+        let input = memory_input(&self.prefix, cfg.alg.projection_alg(), day)?;
+        let Some(memory) = compute_memory(&input, &model) else {
+            return Ok(None);
+        };
+        Ok(Some(sched::reschedule(
+            card,
+            &self.state,
+            Some(memory),
+            &model,
+            cfg,
+            day,
+        )))
+    }
+}
+
+struct Folded {
+    replayed: Replayed,
+    prefix: Vec<EffLog>,
+    last_effective: Option<String>,
+}
+
+fn fold(rows: &[Row<'_>]) -> Result<Folded, String> {
     // 同一归属组的日志几乎总是同一份配置：上一份的模型留着复用。
     let mut models: Option<(Config, super::fsrs_det::Model)> = None;
     let mut values: Vec<Map<String, Value>> = Vec::with_capacity(rows.len());
@@ -320,14 +381,21 @@ fn fold(rows: &[Row<'_>]) -> Result<(Replayed, Vec<EffLog>), String> {
             Sched { scheduler, ..b }
         }
     });
-    Ok((
-        Replayed {
+    let last_effective = sel.last_effective.and_then(|i| {
+        values[i]
+            .get("id")
+            .and_then(Value::as_str)
+            .map(str::to_owned)
+    });
+    Ok(Folded {
+        replayed: Replayed {
             rows: out,
             state,
             uncomputable,
         },
         prefix,
-    ))
+        last_effective,
+    })
 }
 
 #[cfg(test)]
