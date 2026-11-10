@@ -95,7 +95,7 @@ The full plan needs its own design spec under `docs/specs/`. Size: L/XL.
   - Profiles whose sync location is end-to-end encrypted are not served in v1. Serving them
     would need the passphrase on the server.
   - AnkiConnect `getProfiles` reports one profile per key.
-  - No device-trust entry (srs.db v29, BUG-4284, `native/fushi_fsrs/src/store/sync2/trust.rs`).
+  - No device-trust entry (srs.db v29, BUG-4301, `native/fushi_fsrs/src/store/sync2/trust.rs`).
     The server is a full sync v2 replica. A device that first syncs after the server's copy of
     the profile already has data stays "pending" on the server for good: its deletions and
     permanent removals are held there and never reach the server's projection, so remote
