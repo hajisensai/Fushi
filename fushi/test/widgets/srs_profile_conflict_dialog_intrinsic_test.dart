@@ -170,6 +170,31 @@ void main() {
       await tester.pump(const Duration(seconds: 1));
     });
 
+    testWidgets('给了 textScaleFactor 时放得下的静态文字按同一缩放画（量与画一致）', (
+      WidgetTester tester,
+    ) async {
+      const TextStyle style = TextStyle(fontSize: 20);
+      await pumpBox(
+        tester,
+        const DefaultTextStyle(
+          style: style,
+          child: IntrinsicWidth(
+            child: FushiMarquee(
+              key: ValueKey<String>('m'),
+              text: 'Hello',
+              textScaleFactor: 2,
+            ),
+          ),
+        ),
+      );
+      expect(tester.takeException(), isNull);
+      expect(find.byType(Marquee), findsNothing);
+      final Size box = tester.getSize(find.byKey(const ValueKey<String>('m')));
+      final Size painted = tester.getSize(find.text('Hello'));
+      expect(painted.width, moreOrLessEquals(box.width, epsilon: 0.5));
+      expect(painted.height, moreOrLessEquals(box.height, epsilon: 0.5));
+    });
+
     testWidgets('FushiListTile 放进 IntrinsicWidth 不抛错', (
       WidgetTester tester,
     ) async {

@@ -457,7 +457,16 @@ class FushiMarquee extends StatelessWidget {
               alignment: Alignment.centerLeft,
               // 恒为一行高（与滚动版、intrinsic 高一致），不在有界高里撑满。
               heightFactor: 1,
-              child: Text(text, style: style, textAlign: TextAlign.left),
+              // 与量字同一缩放：给了 [textScaleFactor] 就按它画，否则 Text 自取
+              // MediaQuery 缩放（量字时同样取的是它）。
+              child: Text(
+                text,
+                style: style,
+                textAlign: TextAlign.left,
+                textScaler: textScaleFactor == null
+                    ? null
+                    : TextScaler.linear(textScaleFactor!),
+              ),
             ),
           );
         },
