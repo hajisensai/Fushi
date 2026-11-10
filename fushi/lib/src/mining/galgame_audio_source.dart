@@ -859,6 +859,8 @@ List<String> pickPairedVoiceOggs({
     if (isGalNonVoiceBasename(parsed.basename)) {
       continue;
     }
+    // TyranoScript DOM 语音已由引擎状态绑定到某一句 DOM 文本，绝不当时间邻近候选。
+    if (parsed.domVoiceGroup != null) continue;
     final int tick = parsed.tick;
     if (parsed.textEventId != null) {
       // KiriKiri 的资源先于文本，AI6 的 voice.arc 读取晚于文本；两者都由 native
@@ -902,6 +904,11 @@ List<String> pickPairedVoiceOggs({
 ///    等于同时播放）。带事件 ID 的资源在这条分支里被排除：它已被 native 绑给某条具体
 ///    文本，凑巧同 tick 不构成归属。
 ///
+///  - 主资源是 TyranoScript DOM 语音（`<tick>_fushi_domvoice<group>_<basename>`）→
+///    只收同一 group（同一 DOM 句子）的其余 DOM 语音。这些文件是引擎在声明的语音缓冲区
+///    （`stat.map_vo.vobuf`）上播放的原件，是否语音由引擎状态判定，不再套 BGM/SE 文件名
+///    启发式；其它资源一律不是它的伴音，它也不是别人的伴音。
+///
 /// 返回**不含**主语音自身，按文件名升序（目录枚举顺序不保证，排序才让制卡结果可复现）。
 /// 主资源名不可解析、或是 BGM/SE/系统音时返回空。
 List<String> companionVoiceResourceNames({
@@ -910,7 +917,18 @@ List<String> companionVoiceResourceNames({
   int? textTsMs,
 }) {
   final GalVoiceResourceName? primary = parseGalVoiceResourceName(primaryName);
-  if (primary == null || isGalNonVoiceBasename(primary.basename)) {
+  if (primary == null) return const <String>[];
+  final int? domGroup = primary.domVoiceGroup;
+  if (domGroup != null) {
+    final List<String> sameSentence = <String>[
+      for (final String name in candidateNames)
+        if (name != primaryName &&
+            parseGalVoiceResourceName(name)?.domVoiceGroup == domGroup)
+          name,
+    ]..sort();
+    return sameSentence;
+  }
+  if (isGalNonVoiceBasename(primary.basename)) {
     return const <String>[];
   }
   final List<String> companions = <String>[];
@@ -918,6 +936,7 @@ List<String> companionVoiceResourceNames({
     if (name == primaryName) continue;
     final GalVoiceResourceName? other = parseGalVoiceResourceName(name);
     if (other == null || isGalNonVoiceBasename(other.basename)) continue;
+    if (other.domVoiceGroup != null) continue;
     final bool sameEvent =
         primary.textEventId != null &&
         other.textEventId == primary.textEventId &&
@@ -994,6 +1013,8 @@ List<String> pickPairedUnityVoiceWavs({
   for (final String name in wavFileNames) {
     final GalVoiceResourceName? parsed = parseGalVoiceResourceName(name);
     if (parsed == null || isGalNonVoiceBasename(parsed.basename)) continue;
+    // TyranoScript DOM 语音只属于它的 DOM 句子，不参与按时间 / 事件的配对。
+    if (parsed.domVoiceGroup != null) continue;
     final int distance = (parsed.tick - textTsMs).abs();
     if (parsed.textEventId != null &&
         textEventId != null &&
@@ -2731,7 +2752,9 @@ class EngineHookGalAudioSource implements GalAudioSource {
     if (!lower.endsWith('.ogg') &&
         !lower.endsWith('.opus') &&
         !lower.endsWith('.wav') &&
-        !lower.endsWith('.xwma')) {
+        !lower.endsWith('.xwma') &&
+        // TyranoScript DOM 语音的 M4A 原件（签名已校验，见 storeDomVoiceResource）。
+        !lower.endsWith('.m4a')) {
       return null;
     }
     final File file = File(
@@ -2847,6 +2870,43 @@ class EngineHookGalAudioSource implements GalAudioSource {
     } catch (_) {
       // 清理是尽力而为，绝不影响制卡。
     }
+  }
+
+  /// 把 TyranoScript DOM 源从游戏归档里取出的语音原件写进 dump 目录，返回资源 ID
+  /// （= 文件名，可直接作 `updateLineAudio(resourceId:)`）。
+  ///
+  /// [fileName] 必须是 [galDomVoiceResourceName] 造的单段文件名：带
+  /// `fushi_domvoice<group>` 标记，dump 索引据此把它排除在 native 时间 / 事件配对之外，
+  /// [_companionVoiceFiles] 只把同 group 的文件当伴音，[pruneVoiceDump] 照常清理。
+  /// 先写 `.part` 再改名：索引与 [awaitStableVoiceDumpFile] 不会看到半个文件。
+  /// 非 Windows、文件名不合法或写盘失败返回 null（不配对）。
+  Future<String?> storeDomVoiceResource({
+    required String fileName,
+    required Uint8List bytes,
+  }) async {
+    if (!Platform.isWindows ||
+        fileName.isEmpty ||
+        _fileBaseName(fileName) != fileName ||
+        parseGalVoiceResourceName(fileName)?.domVoiceGroup == null) {
+      return null;
+    }
+    final Directory dir = _galVoiceDumpDir();
+    final String target = '${dir.path}${Platform.pathSeparator}$fileName';
+    final File part = File('$target.part');
+    try {
+      await dir.create(recursive: true);
+      await part.writeAsBytes(bytes, flush: true);
+      await part.rename(target);
+    } on FileSystemException {
+      try {
+        if (part.existsSync()) await part.delete();
+      } on FileSystemException {
+        // 残留 .part 由 pruneVoiceDump 按年龄清掉。
+      }
+      return null;
+    }
+    _voiceDumpIndex.requestFreshness();
+    return _voiceFileForResourceId(fileName) == null ? null : fileName;
   }
 
   /// hook DLL dump 语音 OGG 的目录：`<GetTempPath>fushi_gal_voice`（hook DLL 用 `GetTempPathW`

@@ -455,6 +455,7 @@ void AttachedTextSurfaceWindow::AdoptNewEpoch(const Epoch &epoch,
   layout_dirty_ = true;
   input_mode_.clear();
   surface_mode_ = "attachedOnly";
+  ResetMeasuredLayout();
   // A new surface epoch is a new HWND/profile identity transaction even when
   // it belongs to the same game session. Re-resolve and re-fingerprint rather
   // than carrying a possibly reused HWND across the epoch fence.
@@ -855,6 +856,13 @@ AttachedTextSurfaceWindow::StartCalibration(
       AcceptRequest(epoch, target_pid, target_hwnd, true, error);
   if (accepted != RequestResult::kApplied)
     return accepted;
+  if (MeasuredLayoutActive()) {
+    // A measured surface has no body rect to calibrate.  Switching back to the
+    // calibrated route is an explicit attachedConfigure (or a new epoch).
+    if (error != nullptr)
+      *error = "measured_layout_active";
+    return RequestResult::kRejected;
+  }
   if (initial_rect != nullptr && !IsNormalizedRectValid(*initial_rect)) {
     if (error != nullptr)
       *error = "invalid_body_rect";
@@ -1161,6 +1169,14 @@ AttachedTextSurfaceWindow::RequestResult AttachedTextSurfaceWindow::Configure(
     return RequestResult::kRejected;
   }
 
+  if (MeasuredLayoutActive()) {
+    // Leaving measured mode: revoke its catch boxes before the calibrated
+    // layout is installed, exactly like a text change.
+    ClearInteractiveRegion();
+    ResetMeasuredLayout();
+    source_text_.clear();
+    source_text_utf8_.clear();
+  }
   body_rect_ = body_rect;
   configured_reference_client_ = reference_client;
   layout_ = layout;
@@ -1170,6 +1186,63 @@ AttachedTextSurfaceWindow::RequestResult AttachedTextSurfaceWindow::Configure(
   surface_mode_ = requested_surface_mode;
   mode_ = Mode::kConfigured;
   layout_dirty_ = true;
+  return FinishConfigure(error);
+}
+
+AttachedTextSurfaceWindow::RequestResult
+AttachedTextSurfaceWindow::ConfigureMeasured(const Epoch &epoch,
+                                             uint32_t target_pid,
+                                             HWND target_hwnd,
+                                             const std::string &measured_source,
+                                             const std::string &input_mode,
+                                             std::string *error) {
+  const RequestResult accepted =
+      AcceptRequest(epoch, target_pid, target_hwnd, true, error);
+  if (accepted != RequestResult::kApplied)
+    return accepted;
+  if (!fushi::attached_measured_layout::IsSupportedSource(measured_source)) {
+    if (error != nullptr)
+      *error = "unsupported_measured_source";
+    return RequestResult::kRejected;
+  }
+  if (!input_mode.empty() && input_mode != "unsafeLeftClick") {
+    if (error != nullptr)
+      *error = "unsupported_input_mode";
+    return RequestResult::kRejected;
+  }
+  if (mode_ == Mode::kCalibration) {
+    // Never silently abandon a user-visible calibration session.
+    if (error != nullptr)
+      *error = "calibration_in_progress";
+    return RequestResult::kRejected;
+  }
+  const bool source_changed =
+      !MeasuredLayoutActive() || measured_source_ != measured_source;
+  if (source_changed) {
+    // Calibrated text/boxes (or another measured source's) are not valid
+    // measured input; start from an empty line.
+    ClearInteractiveRegion();
+    ResetMeasuredLayout();
+    source_text_.clear();
+    source_text_utf8_.clear();
+  }
+  layout_source_ = LayoutSource::kMeasured;
+  measured_source_ = measured_source;
+  // Measured geometry has no profile: no body rect, reference or layout.
+  body_rect_ = NormalizedRect{};
+  configured_reference_client_ = ReferenceClient{};
+  layout_ = Layout{};
+  input_mode_ = "unsafeLeftClick";
+  // A measured surface is itself the geometry: the injected registry must
+  // keep the attached provider (kind 4 / id 11), never prefer a native one.
+  surface_mode_ = "attachedOnly";
+  mode_ = Mode::kConfigured;
+  layout_dirty_ = true;
+  return FinishConfigure(error);
+}
+
+AttachedTextSurfaceWindow::RequestResult
+AttachedTextSurfaceWindow::FinishConfigure(std::string *error) {
   if (!EnsureWindow(error))
     return RequestResult::kRejected;
   const ShieldHandshakeState handshake = EnsureShieldHandshake();
@@ -1220,6 +1293,12 @@ AttachedTextSurfaceWindow::RequestResult AttachedTextSurfaceWindow::UpdateText(
       AcceptRequest(epoch, target_pid, target_hwnd, true, error);
   if (accepted != RequestResult::kApplied)
     return accepted;
+  if (MeasuredLayoutActive()) {
+    // Text without glyph geometry would have to be laid out by guessing.
+    if (error != nullptr)
+      *error = "measured_layout_active";
+    return RequestResult::kRejected;
+  }
   if (text_generation <= 0) {
     if (error != nullptr)
       *error = "invalid_text_generation";
@@ -1260,6 +1339,106 @@ AttachedTextSurfaceWindow::RequestResult AttachedTextSurfaceWindow::UpdateText(
 }
 
 AttachedTextSurfaceWindow::RequestResult
+AttachedTextSurfaceWindow::UpdateMeasuredText(
+    const Epoch &epoch, uint32_t target_pid, HWND target_hwnd,
+    const std::wstring &source_text, int64_t text_generation,
+    const std::vector<int32_t> &glyph_words, int client_width,
+    int client_height, std::string *error) {
+  const RequestResult accepted =
+      AcceptRequest(epoch, target_pid, target_hwnd, true, error);
+  if (accepted != RequestResult::kApplied)
+    return accepted;
+  if (mode_ != Mode::kConfigured || !MeasuredLayoutActive()) {
+    if (error != nullptr)
+      *error = "measured_layout_not_configured";
+    return RequestResult::kRejected;
+  }
+  if (text_generation <= 0) {
+    if (error != nullptr)
+      *error = "invalid_text_generation";
+    return RequestResult::kRejected;
+  }
+  // Equal generations are accepted: the same line re-measured after a resize
+  // or DOM reflow is exactly the refresh a stale rejection asks for.
+  if (text_generation < text_generation_) {
+    if (error != nullptr)
+      *error = "stale_text_generation";
+    return RequestResult::kStale;
+  }
+  if (source_text.size() > kMaximumSourceTextUnits) {
+    if (error != nullptr)
+      *error = "source_text_too_large";
+    return RequestResult::kRejected;
+  }
+  // From here on the caller has announced this line.  The previous line's
+  // boxes must never stay live, whether or not this measurement is admitted:
+  // every rejection below is fail-closed and keeps the new identity so an
+  // equal-generation refresh is accepted.
+  ClearInteractiveRegion();
+  source_text_ = source_text;
+  source_text_utf8_ = WideToUtf8(source_text);
+  text_generation_ = text_generation;
+  writing_mode_ = "horizontal";
+  layout_dirty_ = true;
+  const auto reject = [&](const std::string &reason) {
+    InvalidateMeasuredGlyphs(reason.c_str());
+    SyncToTarget();
+    if (error != nullptr)
+      *error = reason;
+    return RequestResult::kRejected;
+  };
+
+  std::vector<fushi::attached_measured_layout::MeasuredGlyph> glyphs;
+  std::string decode_error;
+  if (!fushi::attached_measured_layout::DecodeGlyphs(
+          glyph_words.data(), glyph_words.size(), source_text, client_width,
+          client_height, &glyphs, &decode_error)) {
+    return reject(decode_error);
+  }
+  RECT client{};
+  ReferenceClient reference;
+  std::string client_error;
+  if (!source_text.empty() &&
+      !RefreshTargetClient(&client, &reference, &client_error)) {
+    return reject(client_error.empty() ? "target_client_unavailable"
+                                       : client_error);
+  }
+  if (!source_text.empty() &&
+      !fushi::attached_measured_layout::ClientSizeMatches(
+          client_width, client_height,
+          surface_geometry_.source_client_screen)) {
+    // Never stretch: the DOM snapshot belongs to another client size (window
+    // mid-resize or snapshot older than the last resize).
+    return reject("measured_client_size_mismatch");
+  }
+  measured_glyphs_ = std::move(glyphs);
+  measured_client_width_ = client_width;
+  measured_client_height_ = client_height;
+  measured_stale_reason_ = "measured_layout_refresh_required";
+  SyncToTarget();
+  return RequestResult::kApplied;
+}
+
+void AttachedTextSurfaceWindow::InvalidateMeasuredGlyphs(const char *reason) {
+  measured_glyphs_.clear();
+  measured_client_width_ = 0;
+  measured_client_height_ = 0;
+  measured_stale_reason_ =
+      reason != nullptr && reason[0] != '\0'
+          ? reason
+          : "measured_layout_refresh_required";
+}
+
+void AttachedTextSurfaceWindow::ResetMeasuredLayout() {
+  layout_source_ = LayoutSource::kCalibrated;
+  measured_source_.clear();
+  measured_glyphs_.clear();
+  measured_client_width_ = 0;
+  measured_client_height_ = 0;
+  measured_stale_reason_ = "measured_layout_refresh_required";
+}
+
+AttachedTextSurfaceWindow::RequestResult
 AttachedTextSurfaceWindow::UpdateStyle(const Epoch &epoch, uint32_t target_pid,
                                        HWND target_hwnd, const Layout &layout,
                                        std::string *error) {
@@ -1267,6 +1446,11 @@ AttachedTextSurfaceWindow::UpdateStyle(const Epoch &epoch, uint32_t target_pid,
       AcceptRequest(epoch, target_pid, target_hwnd, true, error);
   if (accepted != RequestResult::kApplied)
     return accepted;
+  if (MeasuredLayoutActive()) {
+    if (error != nullptr)
+      *error = "measured_layout_active";
+    return RequestResult::kRejected;
+  }
   if (!fushi::attached_layout_validation::IsLayoutValid(
           layout.font_size_per_client_height,
           layout.letter_spacing_per_client_height, layout.line_height,
@@ -1370,6 +1554,7 @@ AttachedTextSurfaceWindow::Detach(const Epoch &epoch, uint32_t target_pid,
   text_generation_ = 0;
   clusters_.clear();
   text_layout_.Reset();
+  ResetMeasuredLayout();
   calibration_probe_mask_ = 0;
   probe_start_index_ = -1;
   probe_middle_index_ = -1;
@@ -1814,60 +1999,94 @@ void AttachedTextSurfaceWindow::SyncToTarget() {
     return;
   }
 
-  const NormalizedRect &active_body =
-      calibration ? calibration_rect_ : body_rect_;
-  RECT source_body{};
-  if (!fushi::attached_magpie_surface_geometry::ResolveSourceBodyRect(
-          surface_geometry_.source_client_screen, active_body, &source_body)) {
-    source_body_screen_rect_ = RECT{};
-    mapped_body_screen_rect_ = RECT{};
-    HideSurface();
-    SetState("error", "invalidConfiguration", "body_rect_invalid");
-    EmitStateIfChanged();
-    return;
-  }
-  RECT body{};
-  if (!fushi::attached_magpie_surface_geometry::ResolveVisibleBody(
-          surface_geometry_, active_body, &body)) {
+  if (!calibration && MeasuredLayoutActive()) {
+    // Measured route: no body rect.  The measurement is valid only for the
+    // exact source client size it was taken against; anything else is stale
+    // and must be refreshed by the caller, never stretched.
+    if (!fushi::attached_measured_layout::ClientSizeMatches(
+            measured_client_width_, measured_client_height_,
+            surface_geometry_.source_client_screen)) {
+      // A resize invalidates the measurement for good: even if the window
+      // returns to the old size, only a fresh DOM measurement is trusted.
+      if (measured_client_width_ != 0)
+        InvalidateMeasuredGlyphs("measured_client_size_mismatch");
+      HideSurface();
+      ClearInteractiveRegion();
+      layout_dirty_ = true;
+      SetState("suspended", "measuredLayoutStale", measured_stale_reason_);
+      EmitStateIfChanged();
+      return;
+    }
+    if (!SurfaceGeometryEqual(previous_geometry, surface_geometry_))
+      layout_dirty_ = true;
+    source_body_screen_rect_ = surface_geometry_.source_client_screen;
+    mapped_body_screen_rect_ = client;
+    const bool measured_size_changed =
+        client.right - client.left !=
+            surface_screen_rect_.right - surface_screen_rect_.left ||
+        client.bottom - client.top !=
+            surface_screen_rect_.bottom - surface_screen_rect_.top;
+    SetRuntimeClickThrough(true);
+    PositionSurface(client, false);
+    if (measured_size_changed)
+      layout_dirty_ = true;
+  } else {
+    const NormalizedRect &active_body =
+        calibration ? calibration_rect_ : body_rect_;
+    RECT source_body{};
+    if (!fushi::attached_magpie_surface_geometry::ResolveSourceBodyRect(
+            surface_geometry_.source_client_screen, active_body,
+            &source_body)) {
+      source_body_screen_rect_ = RECT{};
+      mapped_body_screen_rect_ = RECT{};
+      HideSurface();
+      SetState("error", "invalidConfiguration", "body_rect_invalid");
+      EmitStateIfChanged();
+      return;
+    }
+    RECT body{};
+    if (!fushi::attached_magpie_surface_geometry::ResolveVisibleBody(
+            surface_geometry_, active_body, &body)) {
+      source_body_screen_rect_ = source_body;
+      mapped_body_screen_rect_ = RECT{};
+      HideSurface();
+      SetState("error", "invalidConfiguration", "body_rect_not_visible");
+      EmitStateIfChanged();
+      return;
+    }
+    if (!SurfaceGeometryEqual(previous_geometry, surface_geometry_) ||
+        !EqualRect(&previous_source_body, &source_body)) {
+      layout_dirty_ = true;
+    }
     source_body_screen_rect_ = source_body;
-    mapped_body_screen_rect_ = RECT{};
-    HideSurface();
-    SetState("error", "invalidConfiguration", "body_rect_not_visible");
-    EmitStateIfChanged();
-    return;
-  }
-  if (!SurfaceGeometryEqual(previous_geometry, surface_geometry_) ||
-      !EqualRect(&previous_source_body, &source_body)) {
-    layout_dirty_ = true;
-  }
-  source_body_screen_rect_ = source_body;
-  mapped_body_screen_rect_ = body;
-  if (body.right - body.left < kMinimumBodyPixels ||
-      body.bottom - body.top < kMinimumBodyPixels) {
-    HideSurface();
-    SetState("error", "invalidConfiguration", "body_rect_too_small");
-    EmitStateIfChanged();
-    return;
-  }
-  // Hard-break grids may have glyphs outside the saved body (right of it, or
-  // rows below it). Keep the overlay click-through and expose only actual
-  // glyph hit regions.
-  const bool hard_break_grid =
-      fushi::attached_text_layout::UsesHookLineBreaks(source_text_, layout_);
-  const RECT surface = calibration || hard_break_grid ? client : body;
-  const bool size_changed =
-      surface.right - surface.left !=
-          surface_screen_rect_.right - surface_screen_rect_.left ||
-      surface.bottom - surface.top !=
-          surface_screen_rect_.bottom - surface_screen_rect_.top ||
-      reference.height_px != previous_reference.height_px ||
-      reference.dpi != previous_reference.dpi;
-  SetRuntimeClickThrough(true);
-  PositionSurface(surface, calibration);
-  if (size_changed) {
-    if (calibration)
-      ResetObservedCalibrationProbes();
-    layout_dirty_ = true;
+    mapped_body_screen_rect_ = body;
+    if (body.right - body.left < kMinimumBodyPixels ||
+        body.bottom - body.top < kMinimumBodyPixels) {
+      HideSurface();
+      SetState("error", "invalidConfiguration", "body_rect_too_small");
+      EmitStateIfChanged();
+      return;
+    }
+    // Hard-break grids may have glyphs outside the saved body (right of it, or
+    // rows below it). Keep the overlay click-through and expose only actual
+    // glyph hit regions.
+    const bool hard_break_grid =
+        fushi::attached_text_layout::UsesHookLineBreaks(source_text_, layout_);
+    const RECT surface = calibration || hard_break_grid ? client : body;
+    const bool size_changed =
+        surface.right - surface.left !=
+            surface_screen_rect_.right - surface_screen_rect_.left ||
+        surface.bottom - surface.top !=
+            surface_screen_rect_.bottom - surface_screen_rect_.top ||
+        reference.height_px != previous_reference.height_px ||
+        reference.dpi != previous_reference.dpi;
+    SetRuntimeClickThrough(true);
+    PositionSurface(surface, calibration);
+    if (size_changed) {
+      if (calibration)
+        ResetObservedCalibrationProbes();
+      layout_dirty_ = true;
+    }
   }
   if (layout_dirty_ && !RebuildClusters()) {
     HideSurface();
@@ -2032,6 +2251,8 @@ bool AttachedTextSurfaceWindow::RebuildClusters() {
   layout_dirty_ = false;
   if (source_text_.empty() || !RectHasArea(surface_screen_rect_))
     return ClusterFailure("empty_text_or_no_surface_rect");
+  if (MeasuredLayoutActive() && mode_ != Mode::kCalibration)
+    return RebuildMeasuredClusters();
   if (dwrite_factory_ == nullptr) {
     HRESULT hr = DWriteCreateFactory(
         DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory),
@@ -2113,6 +2334,26 @@ bool AttachedTextSurfaceWindow::RebuildClusters() {
     return ClusterFailure("mapped_clusters_empty");
   text_layout_ = std::move(result.text_layout);
   clusters_ = std::move(mapped_clusters);
+  last_cluster_failure_.clear();
+  return true;
+}
+
+bool AttachedTextSurfaceWindow::RebuildMeasuredClusters() {
+  // No DirectWrite layout exists in measured mode; text_layout_ stays null and
+  // every consumer (hit test, hover fill, lookup rect) reads ClusterBox only.
+  if (!fushi::attached_measured_layout::ClientSizeMatches(
+          measured_client_width_, measured_client_height_,
+          surface_geometry_.source_client_screen)) {
+    return ClusterFailure("measured_client_size_mismatch");
+  }
+  std::vector<ClusterBox> built;
+  std::string reason;
+  if (!fushi::attached_measured_layout::BuildClusters(
+          surface_geometry_, surface_screen_rect_, measured_glyphs_, &built,
+          &reason)) {
+    return ClusterFailure(reason.c_str());
+  }
+  clusters_ = std::move(built);
   last_cluster_failure_.clear();
   return true;
 }
@@ -3148,6 +3389,8 @@ AttachedTextSurfaceWindow::GetSnapshot() const {
   snapshot.probe_start_observed_index = probe_start_observed_index_;
   snapshot.probe_middle_observed_index = probe_middle_observed_index_;
   snapshot.probe_end_observed_index = probe_end_observed_index_;
+  snapshot.layout_source = MeasuredLayoutActive() ? "measured" : "calibrated";
+  snapshot.measured_source = measured_source_;
   snapshot.provider = provider_status_;
   snapshot.shield = ShieldStatusForSnapshot();
   return snapshot;
@@ -3160,6 +3403,7 @@ void AttachedTextSurfaceWindow::EmitStateIfChanged(bool force) {
          << snapshot.target.pid << ':'
          << reinterpret_cast<uintptr_t>(snapshot.target.hwnd) << ':'
          << snapshot.state << ':' << snapshot.status << ':' << snapshot.reason
+         << ':' << snapshot.layout_source << '/' << snapshot.measured_source
          << ':' << snapshot.surface_visible << ':'
          << snapshot.target.reference_client.width_px << 'x'
          << snapshot.target.reference_client.height_px << '@'
@@ -3197,7 +3441,8 @@ void AttachedTextSurfaceWindow::LogStateTransition(const Snapshot &snapshot) {
   // 相同。held_ms = 上一个状态持续了多久：表面隐藏几十秒的报告据此直接定位到闸门。
   std::ostringstream key;
   key << snapshot.state << '/' << snapshot.status << '/' << snapshot.reason
-      << " visible=" << (snapshot.surface_visible ? 1 : 0);
+      << " visible=" << (snapshot.surface_visible ? 1 : 0)
+      << " layout=" << snapshot.layout_source;
   const std::string transition = key.str();
   if (transition == last_logged_transition_)
     return;
