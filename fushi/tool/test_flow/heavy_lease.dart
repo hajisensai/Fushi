@@ -16,9 +16,16 @@
 //     and kill-on-close (a flutter_tester can no longer outlive its run and
 //     lock sqlite3.dll for the next one).
 //   * Waiters queue first come, first served: each holds a locked ticket under
-//     <state>/queue/ and only the oldest live ticket may take a free slot, so
-//     a run is never starved by later arrivals. A dead waiter's ticket is no
-//     longer locked and is swept by whoever sees it.
+//     <state>/queue/ and the oldest live ticket takes a free slot. A later one
+//     goes first only past waiters whose booking does not fit the budget right
+//     now, and only within the room that leaves the head's booking free
+//     (heavy_budget.dart heavyMayGoAhead), so a run is never starved by later
+//     arrivals. A dead waiter's ticket is no longer locked and is swept by
+//     whoever sees it.
+//   * The same command submitted again from the same directory while the
+//     first still queues takes over its place: the queued one is told through
+//     <ticket>.superseded and leaves (HeavyLeaseSuperseded), so a re-launched
+//     script does not queue the run twice.
 // Nothing ever "runs anyway", and nothing gives up by default: a run waits in
 // the queue until it is admitted (owner's call, 2026-10-03). An explicit wait
 // limit is still honoured: past it the run fails and says why.
@@ -177,6 +184,21 @@ class HeavyLeaseWithdrawn implements Exception {
   String toString() => 'heavy: taken elsewhere while queued here';
 }
 
+/// tool/heavy.dart's exit code for a run that left the queue superseded.
+const int kHeavySupersededExit = 79;
+
+/// Thrown when the same command was submitted again from the same directory
+/// while this run queued: that submission ([byPid]) has this run's place in
+/// the queue. No slot is held; the ticket and worktree lock are gone.
+class HeavyLeaseSuperseded implements Exception {
+  const HeavyLeaseSuperseded(this.byPid);
+  final int byPid;
+  @override
+  String toString() =>
+      'heavy: superseded -- the same command was submitted again from this '
+      'directory (pid $byPid) and has the place this run had in the queue';
+}
+
 /// Slots this process holds. POSIX record locks do not conflict within one
 /// process (and closing any descriptor of the file drops them), so a process
 /// that runs two lanes at once must never reopen a slot it holds.
@@ -190,11 +212,14 @@ Future<void> _admissionChain = Future<void>.value();
 /// [environment] / [readMemory] default to the real ones (tests inject).
 /// With a [rival] the wait ends in [HeavyLeaseWithdrawn] as soon as the rival
 /// took the run, and a slot is only used once [HeavyLeaseRival.claimHere]
-/// said so.
+/// said so. With a [runKey] (heavy_budget.dart heavyRunKey) a queued run of
+/// the same key is superseded: it leaves with [HeavyLeaseSuperseded] and this
+/// one queues in its place.
 Future<HeavyLease> acquireHeavyLease({
   required HeavyNeed need,
   required String label,
   String? worktreeRoot,
+  String? runKey,
   Duration? waitMax,
   HeavyLeaseRival? rival,
   void Function(String line)? log,
@@ -220,6 +245,8 @@ Future<HeavyLease> acquireHeavyLease({
       waitMax,
       say,
       rival,
+      state: dir,
+      runKey: runKey,
     );
   }
   try {
@@ -241,6 +268,7 @@ Future<HeavyLease> acquireHeavyLease({
         readMemory: readMemory,
         poll: poll,
         rival: rival,
+        runKey: runKey,
       );
     }
     final Completer<void> mine = Completer<void>();
@@ -260,6 +288,7 @@ Future<HeavyLease> acquireHeavyLease({
         readMemory: readMemory,
         poll: poll,
         rival: rival,
+        runKey: runKey,
       );
     } finally {
       mine.complete();
@@ -274,9 +303,13 @@ Future<HeavyLease> acquireHeavyLease({
 final Set<String> _heldWorktrees = <String>{};
 
 class _WorktreeLock {
-  _WorktreeLock(this.file, this.key);
+  _WorktreeLock(this.file, this.key, this.inheritedUs);
   final RandomAccessFile file;
   final String key;
+
+  /// When the queued run this one superseded while waiting for the lock had
+  /// queued (its place in the queue is this run's now), else null.
+  final int? inheritedUs;
 
   void release() {
     _heldWorktrees.remove(key);
@@ -290,14 +323,17 @@ Future<_WorktreeLock> _waitWorktreeLock(
   Stopwatch sw,
   Duration? waitMax,
   void Function(String) say,
-  HeavyLeaseRival? rival,
-) async {
+  HeavyLeaseRival? rival, {
+  required Directory state,
+  String? runKey,
+}) async {
   final Directory d = Directory('$root/.codex-test/heavy')
     ..createSync(recursive: true);
   final File info = File('${d.path}/worktree.json');
   final File lockFile = File('${d.path}/worktree.lock');
   final String key = lockFile.absolute.path.toLowerCase();
   bool told = false;
+  int? inheritedUs;
   while (true) {
     if (rival != null && rival.tookIt) throw const HeavyLeaseWithdrawn();
     // Held by this very process (another lane): do not even open the file --
@@ -312,25 +348,92 @@ Future<_WorktreeLock> _waitWorktreeLock(
           'pid': pid,
           'label': label,
           'startedAt': DateTime.now().millisecondsSinceEpoch,
+          if (runKey != null) 'runKey': runKey,
         }),
       );
-      return _WorktreeLock(f, key);
+      return _WorktreeLock(f, key, inheritedUs);
+    }
+    // The holder is this same run, still queued (a re-launched script): it
+    // is told to leave and this one takes its place once the lock is free.
+    if (runKey != null) {
+      inheritedUs ??= _supersedeWorktreeHolder(state, info, runKey, say);
     }
     if (!told) {
       say(
         'heavy: this worktree already has a test/build running '
-        '(${_readText(info)}); waiting for it',
+        '(${_worktreeHolderText(info)}); waiting for it',
       );
       told = true;
     }
     if (waitMax != null && sw.elapsed > waitMax) {
       throw HeavyLeaseTimeout(
         'heavy: worktree still busy after '
-        '${sw.elapsed.inMinutes} min (${_readText(info)})',
+        '${sw.elapsed.inMinutes} min (${_worktreeHolderText(info)})',
       );
     }
     await Future<void>.delayed(const Duration(milliseconds: 500));
   }
+}
+
+/// Marks the queued run that holds a worktree lock ([info] is its
+/// worktree.json) superseded when it is the run [runKey]; returns when it
+/// queued, or null when the holder is another run or already has its slot.
+int? _supersedeWorktreeHolder(
+  Directory state,
+  File info,
+  String runKey,
+  void Function(String) say,
+) {
+  final Object? j;
+  try {
+    j = jsonDecode(info.readAsStringSync());
+  } on Object {
+    return null;
+  }
+  if (j is! Map || j['runKey'] != runKey) return null;
+  final Object? holder = j['pid'];
+  if (holder is! int) return null;
+  return _underGate(state, () {
+    for (final HeavyQueued q in readHeavyQueue(state)) {
+      if (q.pid != holder || q.runKey != runKey) continue;
+      _markSuperseded(state, q.name);
+      say(_takingPlaceOf(q));
+      return q.enqueuedUs;
+    }
+    return null;
+  });
+}
+
+String _takingPlaceOf(HeavyQueued q) =>
+    'heavy: the same command is already queued from this directory '
+    '(pid ${q.pid}); taking its place in the queue, that run leaves';
+
+/// Runs [body] under the machine-wide admission gate. [body] must not await:
+/// the gate is one synchronous block per process (see [_admissionChain]).
+T _underGate<T>(Directory state, T Function() body) {
+  final RandomAccessFile gate = File(
+    '${state.path}/admission.lock',
+  ).openSync(mode: FileMode.append);
+  try {
+    gate.lockSync(FileLock.blockingExclusive);
+    return body();
+  } finally {
+    gate.closeSync();
+  }
+}
+
+/// worktree.json for a message: without the run key (the whole command).
+String _worktreeHolderText(File info) {
+  final String text = _readText(info);
+  try {
+    final Object? j = jsonDecode(text);
+    if (j is Map) {
+      return jsonEncode(Map<Object?, Object?>.of(j)..remove('runKey'));
+    }
+  } on FormatException {
+    // Being written, or empty: shown as it is.
+  }
+  return text;
 }
 
 String _readText(File f) {
@@ -420,6 +523,7 @@ Future<HeavyLease> _waitSlot(
   required MemorySnapshot? Function() readMemory,
   required Duration poll,
   HeavyLeaseRival? rival,
+  String? runKey,
 }) async {
   String? lastReason;
   _Ticket? ticket;
@@ -439,8 +543,12 @@ Future<HeavyLease> _waitSlot(
         gate.lockSync(FileLock.blockingExclusive);
         // A light run (analyze) does not queue: it never takes a regular
         // slot, so a slot waiter at the head has nothing to wait on it for.
-        if (!need.light) ticket ??= _Ticket.take(dir, label);
-        final (HeavyLease? lease, String blocker) = _admitHead(
+        if (!need.light) {
+          ticket ??= _queueUp(dir, need, label, runKey, worktree, say);
+          final int? by = _supersededBy(dir, ticket.name);
+          if (by != null) throw HeavyLeaseSuperseded(by);
+        }
+        final (HeavyLease? lease, String blocker) = _admit(
           dir,
           need,
           ticket,
@@ -474,10 +582,42 @@ Future<HeavyLease> _waitSlot(
   }
 }
 
-/// Under the admission gate: the slot lease for [ticket] if it heads the
-/// queue, a slot is free and [need]'s booking fits the budget, else null and
-/// why not. A light [need] has no ticket and picks among the light slots.
-(HeavyLease?, String) _admitHead(
+/// Under the admission gate: this run's ticket. A queued run of the same
+/// [runKey] is marked superseded and its place taken (the oldest one's, or
+/// the one already taken over while waiting for the worktree lock).
+_Ticket _queueUp(
+  Directory dir,
+  HeavyNeed need,
+  String label,
+  String? runKey,
+  _WorktreeLock? worktree,
+  void Function(String) say,
+) {
+  int? enqueuedUs = worktree?.inheritedUs;
+  if (runKey != null) {
+    for (final HeavyQueued q in readHeavyQueue(dir)) {
+      if (q.runKey != runKey) continue;
+      _markSuperseded(dir, q.name);
+      say(_takingPlaceOf(q));
+      if (enqueuedUs == null || q.enqueuedUs < enqueuedUs) {
+        enqueuedUs = q.enqueuedUs;
+      }
+    }
+  }
+  return _Ticket.take(
+    dir,
+    label,
+    bookedMb: need.bookedMb,
+    runKey: runKey,
+    enqueuedUs: enqueuedUs,
+  );
+}
+
+/// Under the admission gate: the slot lease for [ticket] if a slot is free,
+/// [need]'s booking fits the budget and the ticket heads the queue or may go
+/// ahead of the earlier ones (heavy_budget.dart heavyMayGoAhead), else null
+/// and why not. A light [need] has no ticket and picks among the light slots.
+(HeavyLease?, String) _admit(
   Directory dir,
   HeavyNeed need,
   _Ticket? ticket,
@@ -489,22 +629,36 @@ Future<HeavyLease> _waitSlot(
   required MemorySnapshot? Function() readMemory,
   HeavyLeaseRival? rival,
 }) {
+  final MemorySnapshot? memory = readMemory();
+  final int slots = heavySlotCount(memory, env);
+  final List<HeavyHolder> holders = readHeavyHolders(dir, slots);
+  final int? budget = heavyBudgetMb(memory, env);
+  int passed = 0;
   if (ticket != null) {
     final List<HeavyQueued> queue = readHeavyQueue(dir);
     final int ahead = queue.indexWhere(
       (HeavyQueued q) => q.name == ticket.name,
     );
     if (ahead > 0) {
-      return (
-        null,
-        'queued behind $ahead earlier run(s): '
-            '${queue.take(ahead).map((HeavyQueued q) => q.label).join(', ')}',
+      final bool goAhead = heavyMayGoAhead(
+        needMb: need.bookedMb,
+        earlier: <HeavyEarlier>[
+          for (final HeavyQueued q in queue.take(ahead))
+            (bookedMb: q.bookedMb, enqueuedUs: q.enqueuedUs),
+        ],
+        holders: holders,
+        budgetMb: budget,
       );
+      if (!goAhead) {
+        return (
+          null,
+          'queued behind $ahead earlier run(s): '
+              '${queue.take(ahead).map((HeavyQueued q) => q.label).join(', ')}',
+        );
+      }
+      passed = ahead;
     }
   }
-  final MemorySnapshot? memory = readMemory();
-  final int slots = heavySlotCount(memory, env);
-  final List<HeavyHolder> holders = readHeavyHolders(dir, slots);
   final Set<int> busy = holders.map((HeavyHolder h) => h.slot).toSet();
   final List<int> candidates = need.light
       ? <int>[for (int i = 0; i < kLightSlotCount; i++) kLightSlotBase + i]
@@ -521,7 +675,6 @@ Future<HeavyLease> _waitSlot(
           '${rivals.map((HeavyHolder h) => '${h.label} (pid ${h.pid})').join(', ')}',
     );
   }
-  final int? budget = heavyBudgetMb(memory, env);
   final String? overBudget = budget == null
       ? null
       : heavyBudgetBlocker(
@@ -567,6 +720,12 @@ Future<HeavyLease> _waitSlot(
       lock.closeSync();
       rethrow;
     }
+    if (passed > 0) {
+      say(
+        'heavy: $label goes ahead of $passed earlier run(s) that do not fit '
+        'the memory budget yet (their place in the queue is kept)',
+      );
+    }
     if (sw.elapsed.inSeconds >= 5) {
       say('heavy: $label admitted to slot $i after ${sw.elapsed.inSeconds} s');
     }
@@ -589,21 +748,27 @@ final Set<String> _heldTickets = <String>{};
 int _ticketSeq = 0;
 
 /// A waiter's place in the machine-wide queue: `queue/<enqueued us>-<pid>-<n>`
-/// (`.ticket` holds the lock, `.json` the label for --status). Names sort in
-/// arrival order.
+/// (`.ticket` holds the lock, `.json` the label, booking and run key for
+/// --status and the other waiters, `.superseded` the pid that took its
+/// place). Names sort in arrival order; a run that supersedes a queued one
+/// is named with that one's time.
 class _Ticket {
   _Ticket._(this.dir, this.name, this.lock);
   final Directory dir;
   final String name;
   final RandomAccessFile lock;
 
-  static _Ticket take(Directory state, String label) {
+  static _Ticket take(
+    Directory state,
+    String label, {
+    required int bookedMb,
+    String? runKey,
+    int? enqueuedUs,
+  }) {
     final Directory dir = Directory('${state.path}/queue')
       ..createSync(recursive: true);
-    final String us = '${DateTime.now().microsecondsSinceEpoch}'.padLeft(
-      20,
-      '0',
-    );
+    final String us = '${enqueuedUs ?? DateTime.now().microsecondsSinceEpoch}'
+        .padLeft(20, '0');
     final String name = '$us-$pid-${_ticketSeq++}';
     final RandomAccessFile? lock = _tryLock(File('${dir.path}/$name.ticket'));
     if (lock == null) {
@@ -611,7 +776,12 @@ class _Ticket {
     }
     _heldTickets.add(name);
     File('${dir.path}/$name.json').writeAsStringSync(
-      jsonEncode(<String, Object>{'pid': pid, 'label': label}),
+      jsonEncode(<String, Object>{
+        'pid': pid,
+        'label': label,
+        'bookedMb': bookedMb,
+        if (runKey != null) 'runKey': runKey,
+      }),
     );
     return _Ticket._(dir, name, lock);
   }
@@ -624,12 +794,29 @@ class _Ticket {
 }
 
 void _deleteTicketFiles(Directory dir, String name) {
-  for (final String ext in <String>['ticket', 'json']) {
+  for (final String ext in <String>['ticket', 'json', 'superseded']) {
     try {
       File('${dir.path}/$name.$ext').deleteSync();
     } on FileSystemException {
       // Already gone, or (Windows) still closing: the next sweep retries.
     }
+  }
+}
+
+/// Under the admission gate: tells the live waiter holding ticket [name]
+/// that this process has its place in the queue.
+void _markSuperseded(Directory state, String name) {
+  File('${state.path}/queue/$name.superseded').writeAsStringSync('$pid');
+}
+
+/// The pid that superseded the ticket [name], or null when nobody did.
+int? _supersededBy(Directory state, String name) {
+  final File f = File('${state.path}/queue/$name.superseded');
+  if (!f.existsSync()) return null;
+  try {
+    return int.tryParse(f.readAsStringSync().trim()) ?? 0;
+  } on FileSystemException {
+    return 0;
   }
 }
 
@@ -639,10 +826,21 @@ class HeavyQueued {
     required this.name,
     required this.pid,
     required this.label,
+    this.bookedMb,
+    this.runKey,
   });
   final String name;
   final int pid;
   final String label;
+
+  /// What the run books; null when an older checkout's tool queued it.
+  final int? bookedMb;
+
+  /// heavy_budget.dart heavyRunKey of the run, when its caller gave one.
+  final String? runKey;
+
+  /// When the run queued (the ticket name's leading microseconds).
+  int get enqueuedUs => int.tryParse(name.split('-').first) ?? 0;
 }
 
 /// The live queue, oldest first. Tickets whose lock nobody holds belong to
@@ -652,11 +850,23 @@ class HeavyQueued {
 List<HeavyQueued> readHeavyQueue(Directory state, {bool sweep = true}) {
   final Directory dir = Directory('${state.path}/queue');
   if (!dir.existsSync()) return <HeavyQueued>[];
+  final List<FileSystemEntity> files = dir.listSync();
   final List<String> names = <String>[
-    for (final FileSystemEntity e in dir.listSync())
+    for (final FileSystemEntity e in files)
       if (e is File && e.path.endsWith('.ticket'))
         e.uri.pathSegments.last.replaceAll('.ticket', ''),
   ]..sort();
+  if (sweep) {
+    // A waiter that left on its own just as it was being superseded.
+    for (final FileSystemEntity e in files) {
+      if (e is! File || !e.path.endsWith('.superseded')) continue;
+      final String owner = e.uri.pathSegments.last.replaceAll(
+        '.superseded',
+        '',
+      );
+      if (!names.contains(owner)) _deleteTicketFiles(dir, owner);
+    }
+  }
   final List<HeavyQueued> out = <HeavyQueued>[];
   for (final String name in names) {
     if (!_heldTickets.contains(name)) {
@@ -684,6 +894,8 @@ HeavyQueued _queuedInfo(Directory dir, String name) {
         name: name,
         pid: (j['pid'] as int?) ?? 0,
         label: (j['label'] as String?) ?? '?',
+        bookedMb: j['bookedMb'] is int ? j['bookedMb'] as int : null,
+        runKey: j['runKey'] is String ? j['runKey'] as String : null,
       );
     }
   } on Object {
