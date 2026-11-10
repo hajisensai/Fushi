@@ -24,6 +24,8 @@ import 'package:fushi/src/updates/local_update_notifier.dart';
 import 'package:fushi/src/updates/update_check_scheduler.dart';
 import 'package:fushi/src/updates/app_update_check.dart';
 import 'package:fushi/src/updates/usage_heartbeat.dart';
+import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi/src/models/preference_keys.dart';
 import 'package:fushi_engine/srs/srs_miner.dart';
 import 'package:fushi_engine/media/video/media_server/media_server_client_identity.dart'
     show mediaServerClientIdentity, resolveMediaServerClientIdentity;
@@ -11405,6 +11407,120 @@ class AppModel
     _applyStatDayResetHour();
   }
 
+  /// 用户在设置里改日界：本机统计日界 + 当前配置复习的翻日时刻（profile 字段，随同步 v2 传到别的设备，
+  /// 多设备的「今天」一致，见 `SrsDbStore.dayContext`）。
+  ///
+  /// 只有用户的显式修改走这里；首次开复习时补的默认 4 点（[setStatDayResetHour]）只改本机偏好、不写复习，
+  /// 免得每台设备各自写一条默认值、互相覆盖。此刻写不进复习（模块关着 / 未注入 / 打开失败）时给这份配置记一条
+  /// 待写标记，下次它的复习库激活时补写（[flushPendingDayRollover]）——否则之后同步拉入的旧值会把这次修改改回去。
+  ///
+  /// 与 [flushPendingDayRollover] / [adoptSyncedDayRollover] 串行（[_serialDayRollover]）。
+  Future<void> setStatDayResetHourByUser(int value) =>
+      _serialDayRollover(() => _setStatDayResetHourByUser(value));
+
+  Future<void> _setStatDayResetHourByUser(int value) async {
+    await setStatDayResetHour(value);
+    final int hour = statDayResetHour;
+    final String uid = await database.resolveActiveProfileUid();
+    if (uid.isEmpty) return;
+    final SrsProfileStores Function()? reader = srsProfileStoresReader;
+    SrsDbStore? store;
+    try {
+      store = reader == null
+          ? null
+          : await reader().storeFor(uid, fallbackRolloverHour: () => hour);
+      if (store != null) {
+        await _writeSrsDayRollover(store, hour);
+        srsCardsAddedNotifier?.call();
+        return;
+      }
+    } catch (e, stack) {
+      ErrorLogService.instance.log('setStatDayResetHourByUser', e, stack);
+    }
+    await prefsRepo.setPref(_srsDayRolloverPendingKey(uid), hour);
+  }
+
+  /// 复习库 [store] 激活时补写它那份配置的待写日界（[setStatDayResetHourByUser] 当时没写进去的显式修改）。
+  /// 只补用户改过的值，没有标记什么都不做（默认值从不写进复习）。由 main.dart 挂到 `SrsProfileStores.onActivated`。
+  Future<void> flushPendingDayRollover(SrsDbStore store) =>
+      _serialDayRollover(() => _flushPendingDayRollover(store));
+
+  Future<void> _flushPendingDayRollover(SrsDbStore store) async {
+    final String key = _srsDayRolloverPendingKey(store.profileUid);
+    final Object? pending = prefsRepo.getPref(key);
+    if (pending is! int || pending < 0) return;
+    try {
+      await _writeSrsDayRollover(store, pending);
+      srsCardsAddedNotifier?.call();
+    } catch (e, stack) {
+      ErrorLogService.instance.log('flushPendingDayRollover', e, stack);
+    }
+  }
+
+  /// 同步拉入之后：[profileUid] 复习里生效的翻日时刻 [synced] 是本机没见过的修改（别的设备的用户改了日界）时，
+  /// 本机统计日界跟上，统计中心与复习用同一个「今天」（铁律 G）。
+  ///
+  /// 只认「新来的修改」：生效的修改记录与本机上次写下 / 采纳的是同一条（[_srsDayRolloverSeenKey]）就不动——
+  /// 不拿 profile 里的旧值覆盖本机。这份配置还有待写的显式修改时也不动（它激活时补写、比旧值新）。单向：只改本机
+  /// 偏好、不写回复习，不会来回同步。
+  ///
+  /// 生效值由 [readSynced] 在串行区里现读（通常是 `store.syncedDayRollover`），不接受区外先读好的值：用户正在改
+  /// 日界时排在它后面，读到的就是用户刚写下的那条（已见）；区外先读会拿到用户改之前的修改记录、把本机统计日界
+  /// 改回旧值，而复习字段是用户的新值，两边从此分叉。
+  Future<void> adoptSyncedDayRollover(
+    String profileUid,
+    Future<SrsDayRollover?> Function() readSynced,
+  ) =>
+      _serialDayRollover(() => _adoptSyncedDayRollover(profileUid, readSynced));
+
+  Future<void> _adoptSyncedDayRollover(
+    String profileUid,
+    Future<SrsDayRollover?> Function() readSynced,
+  ) async {
+    if (profileUid != await database.resolveActiveProfileUid()) return;
+    final Object? pending = prefsRepo.getPref(
+      _srsDayRolloverPendingKey(profileUid),
+    );
+    if (pending is int && pending >= 0) return;
+    final SrsDayRollover? synced = await readSynced();
+    if (synced == null) return;
+    final String seenKey = _srsDayRolloverSeenKey(profileUid);
+    if (prefsRepo.getPref(seenKey) == synced.editId) return;
+    await prefsRepo.setPref(seenKey, synced.editId);
+    if (synced.hour != statDayResetHour) {
+      await setStatDayResetHour(synced.hour);
+    }
+  }
+
+  /// 把 [hour] 写成 [store] 那份配置复习的翻日时刻，记下生效的修改记录（之后的拉入不把它当新值），清待写标记。
+  Future<void> _writeSrsDayRollover(SrsDbStore store, int hour) async {
+    final SrsDayRollover? written = await store.setDayRolloverHour(hour);
+    if (written != null) {
+      await prefsRepo.setPref(
+        _srsDayRolloverSeenKey(store.profileUid),
+        written.editId,
+      );
+    }
+    await prefsRepo.setPref(_srsDayRolloverPendingKey(store.profileUid), -1);
+  }
+
+  /// 日界的三个写入口（用户改值 / 激活时补写 / 拉入后采纳）都是「读本机状态 → 写复习或本机偏好 → 记已见 /
+  /// 待写」的多步序列，交错会让本机统计日界与复习字段分叉（例如采纳读到旧修改后、在用户写完之后把偏好改回旧值）。
+  /// 按调用顺序逐个跑；一个失败不挡后面的（错误照常交给它自己的调用方）。
+  Future<void> _dayRolloverTail = Future<void>.value();
+
+  Future<void> _serialDayRollover(Future<void> Function() body) {
+    final Future<void> run = _dayRolloverTail.then((_) => body());
+    _dayRolloverTail = run.then<void>((_) {}, onError: (Object _) {});
+    return run;
+  }
+
+  static String _srsDayRolloverPendingKey(String profileUid) =>
+      '$kSrsDayRolloverPendingPrefKeyPrefix$profileUid';
+
+  static String _srsDayRolloverSeenKey(String profileUid) =>
+      '$kSrsDayRolloverSeenPrefKeyPrefix$profileUid';
+
   /// 把偏好镜像到 [FushiDatabase.statDayResetHour]——dateKey 派生的唯一输入。
   /// 偏好加载后（主进程 / 弹窗进程两条初始化路径）与用户改设置时各调一次。
   void _applyStatDayResetHour() {
@@ -12270,7 +12386,7 @@ class AppModel
         openNote: (String noteId) => extensionSrsOpenNote(view, noteId),
       );
 
-  /// 制卡写进激活配置的复习后递增 `srsRevisionProvider`（牌组列表与首页复习条的计数随之重读）。
+  /// 制卡 / 改日界写进激活配置的复习后递增 `srsRevisionProvider`（牌组列表与首页复习条的计数随之重读）。
   /// AppModel 不在 Riverpod 图里，由 main.dart 注入；未注入时不通知。
   void Function()? srsCardsAddedNotifier;
 

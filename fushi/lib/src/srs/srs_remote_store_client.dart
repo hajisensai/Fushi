@@ -377,6 +377,22 @@ class SrsRemoteStore implements SrsDbStore, SrsRemoteForwarding {
     'collection',
   );
 
+  /// 复习的翻日时刻是本机设置的同步那一份：只由本机激活副本读写（`AppModel.setStatDayResetHourByUser` /
+  /// `adoptSyncedDayRollover`，都走 `SrsProfileStores` 的本地副本）。远程复习库是主机的数据，本机日界设置不读
+  /// 也不改它；远程会话里的「今天」照旧取主机的 [dayContext]。
+  @override
+  Future<SrsDayRollover?> syncedDayRollover() => throw UnsupportedError(
+    'SrsRemoteStore: the day rollover setting is local-only; read it from '
+    'the local active store, not a remote collection',
+  );
+
+  @override
+  Future<SrsDayRollover?> setDayRolloverHour(int hour) =>
+      throw UnsupportedError(
+        'SrsRemoteStore: the day rollover setting is local-only; it is never '
+        'written to a remote collection',
+      );
+
   // ---------------------------------------------------------------- 牌组 / 笔记类型缓存
 
   Future<_RemoteTree> _currentEntry() async {

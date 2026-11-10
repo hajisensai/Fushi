@@ -65,13 +65,8 @@ void main() {
     final SrsDbStore s = await openTestStore(
       profileUid: _profile,
       deviceId: 'day-end',
+      localOffsetMin: () => 0,
       now: () => t,
-    );
-    await s.editField(
-      SrsEntityKind.profile,
-      _profile,
-      SrsFieldKeys.utcOffsetMin,
-      0,
     );
     await s.editField(
       SrsEntityKind.profile,
@@ -143,13 +138,8 @@ void main() {
     final SrsDbStore s = await openTestStore(
       profileUid: _profile,
       deviceId: 'day-end-answered',
+      localOffsetMin: () => 0,
       now: () => t,
-    );
-    await s.editField(
-      SrsEntityKind.profile,
-      _profile,
-      SrsFieldKeys.utcOffsetMin,
-      0,
     );
     await s.editField(
       SrsEntityKind.profile,
