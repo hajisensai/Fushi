@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
+import 'package:fushi/src/focus/fushi_focus_target.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
@@ -157,6 +158,26 @@ Future<void> _pumpFrames(WidgetTester tester) async {
   while (tester.takeException() != null) {}
 }
 
+/// 主焦点是否正停在 [button] 这枚 FushiIconButton 的停靠点上：焦点节点位于离
+/// [button] 最近的 [FushiFocusTarget] 与 [button] 之间（含该 target 自身）。
+bool _focusOn(WidgetTester tester, Finder button) {
+  final BuildContext? focused = FocusManager.instance.primaryFocus?.context;
+  if (focused == null) return false;
+  final Element target = tester.element(
+    find.ancestor(of: button, matching: find.byType(FushiFocusTarget)).first,
+  );
+  if (identical(focused, target)) return true;
+  bool hit = false;
+  tester.element(button).visitAncestorElements((Element e) {
+    if (identical(e, focused)) {
+      hit = true;
+      return false;
+    }
+    return !identical(e, target);
+  });
+  return hit;
+}
+
 String _textOf(WidgetTester tester, String key) =>
     tester.widget<Text>(find.byKey(ValueKey<String>(key))).data!;
 
@@ -280,8 +301,10 @@ void main() {
       findsOneWidget,
     );
 
-    // 焦点驱动：聚焦学到那一行的「上移」按钮、回车 → 它成为这台 host 的首选地址，
-    // 注记跟着列表顺序（= 选路优先级）更新。
+    // 焦点驱动：按 Tab 走到学到那一行的「上移」按钮、回车 → 它成为这台 host 的
+    // 首选地址，注记跟着列表顺序（= 选路优先级）更新。走真实 Tab 路径而不是对按钮
+    // 内部节点 requestFocus：FushiIconButton 的唯一停靠点是外层 FushiFocusTarget，
+    // 内层 IconButton 的焦点节点被 ExcludeFocus 挡出（一个按钮一个 Tab 停靠点）。
     final Finder learnedRow = find.ancestor(
       of: find.byKey(
         const ValueKey<String>('interconnect-peer-title-$_learned'),
@@ -293,13 +316,15 @@ void main() {
       matching: find.byTooltip(t.move_up),
     );
     expect(moveUp, findsOneWidget);
-    final Element leaf = tester.element(
-      find
-          .descendant(of: moveUp, matching: find.byWidgetPredicate((_) => true))
-          .last,
+    for (int i = 0; i < 80 && !_focusOn(tester, moveUp); i++) {
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pump();
+    }
+    expect(
+      _focusOn(tester, moveUp),
+      isTrue,
+      reason: "Tab reaches the learned row's move-up button",
     );
-    Focus.of(leaf).requestFocus();
-    await tester.pump();
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     await _pumpFrames(tester);
 
