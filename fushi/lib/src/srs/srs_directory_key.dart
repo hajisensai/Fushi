@@ -42,7 +42,7 @@ String? srsServerDirectoryKey(String kind, String? server, String? user) {
   return '$kind:$s|${user ?? ''}';
 }
 
-/// [store] 那头自己也跑复习同步的设备加入了没有（BUG-4294）：只有互联 host 报告（[InterconnectSyncBackend.hostSrsSyncJoined]），
+/// [store] 那头自己也跑复习同步的设备加入了没有（BUG-4297）：只有互联 host 报告（[InterconnectSyncBackend.hostSrsSyncJoined]），
 /// 云盘 / WebDAV 等纯存储后端那头没有对端，回 null。
 Future<bool?> srsChannelPeerJoined(SyncAssetStore store) async {
   SyncAssetStore inner = store;
