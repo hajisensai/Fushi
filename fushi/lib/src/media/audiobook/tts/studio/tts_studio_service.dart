@@ -51,7 +51,7 @@ Future<({EpubBookRow row, EpubBook book})?> loadEpubForStudio(
   String bookKey,
 ) async {
   final EpubBookRow? row = await db.getEpubBook(bookKey);
-  if (row == null || BookFormat.parseOrEpub(row.format) != BookFormat.epub) {
+  if (row == null || !BookFormat.parseOrEpub(row.format).supportsAudiobookStudio) {
     return null;
   }
   final String extractDir = row.extractDir;

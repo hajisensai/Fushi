@@ -13,8 +13,9 @@ import 'package:fushi_engine/media/audiobook/audiobook_alignment_service.dart'
     show
         attachAsrCueTokenTiming,
         finalizeAlignedCues,
-        loadEpubSectionsInBackground,
         parseCuesForFormat;
+import 'package:fushi_engine/media/audiobook/book_text_sections.dart'
+    show loadBookTextSections;
 import 'package:fushi_engine/media/audiobook/audiobook_cue_file_split.dart';
 import 'package:fushi_engine/media/audiobook/audiobook_subtitle_formats.dart';
 import 'package:fushi/src/media/import/audiobook_health_summary.dart';
@@ -74,9 +75,10 @@ class AudiobookImportDialog extends StatefulWidget {
   final String bookKey;
   final AudiobookRepository repo;
 
-  /// 已导入 EPUB 的提取目录（`EpubBooks.extractDir`）。非空时走 Sasayaki
-  /// 路径：从提取目录读章节文本 → EpubSrtMatcher 匹配 → 把命中 cue 的偏移
-  /// 编码写回 textFragmentId。standalone（无 EPUB）时为 null。
+  /// 已导入书（EPUB / PDF）的书目录（`EpubBooks.extractDir`）。非空 = 绑定了正文，
+  /// 走 Sasayaki 路径：按书的 format 读正文（EPUB 逐章、PDF 逐页文本层，见引擎
+  /// `loadBookTextSections`）→ EpubSrtMatcher 匹配 → 把命中 cue 的偏移编码写回
+  /// textFragmentId。standalone（无书）时为 null。
   final String? extractDir;
 
   /// When true, only audio files can be imported (alignment row and matcher
@@ -805,7 +807,9 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
       return const <EpubSection>[];
     }
     try {
-      return await loadEpubSectionsInBackground(widget.extractDir!);
+      // 按书的 format 取正文：EPUB 逐章、PDF 逐页文本层（PDF 行的 extractDir 里
+      // 只有 document.pdf，不能当 EPUB 目录解析）。
+      return await loadBookTextSections(widget.repo.database, widget.bookKey);
     } catch (e, stack) {
       ErrorLogService.instance.log('AudiobookImport.loadSections', e, stack);
       debugPrint('[fushi-audiobook] probe loadSections failed: $e');
@@ -1118,7 +1122,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
       final List<EpubSection>? probed = _probedSections;
       final List<EpubSection> sections = probed != null && probed.isNotEmpty
           ? probed
-          : await loadEpubSectionsInBackground(widget.extractDir!);
+          : await loadBookTextSections(widget.repo.database, widget.bookKey);
       if (sections.isEmpty) {
         return AudiobookHealth.failed(reason: 'EPUB has 0 chapters');
       }
