@@ -813,7 +813,7 @@ SettingsDestination buildLookupDestination() {
             id: 'lookup.restart_sentence_after_lookup',
             title: t.lookup_resume_restart_sentence,
             subtitle: t.lookup_resume_restart_sentence_hint,
-            icon: Icons.replay_outlined,
+            icon: FushiIcons.replay,
             visible: (SettingsContext settingsContext) =>
                 settingsContext.readerSource.pauseOnLookup,
             reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 16),
