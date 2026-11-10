@@ -28,6 +28,7 @@ import 'package:fushi/src/media/video/video_m3e_chrome.dart';
 import 'package:fushi/src/media/video/video_m3e_panel_theme.dart';
 import 'package:fushi/src/media/video/video_player_controller.dart';
 import 'package:fushi/src/media/video/video_current_line_copy.dart';
+import 'package:fushi/src/media/video/video_simultaneous_cues.dart';
 import 'package:fushi/src/media/video/video_player_shortcuts.dart';
 import 'package:fushi/src/media/video/video_subtitle_jump_panel.dart';
 import 'package:fushi/src/media/video/video_subtitle_overlay.dart';
@@ -1030,6 +1031,9 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
   int? _seekTargetMs;
   DateTime? _seekTargetAt;
 
+  /// seek 回执写日志的判据与限流状态（与播放器后端同一份，BUG-4186 诊断）。
+  final WebVideoSeekDoneLog _seekDoneLog = WebVideoSeekDoneLog();
+
   /// bridge 单次 seek 最长 4 s 超时，再留一次排队补发的余量。
   static const Duration _kSeekTargetLifetime = Duration(seconds: 9);
 
@@ -1052,12 +1056,8 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
 
   void _onSeekDone(WebVideoSeekDone? done) {
     if (done == null) return;
-    if (!done.ok && done.err != 'superseded') {
-      ErrorLogService.instance.log(
-        'web_video',
-        'seek failed (id=${done.id}): ${done.err}',
-      );
-    }
+    final String? line = _seekDoneLog.lineFor(done);
+    if (line != null) ErrorLogService.instance.log('web_video', line);
     if (done.id == null || done.id == _seekSeq) _dropSeekTarget();
   }
 
@@ -1214,7 +1214,9 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       href: _state?.href.isNotEmpty == true ? _state!.href : row.videoPath,
       cueStartMs: cue.startMs,
       cueEndMs: cue.endMs,
-      sentence: fieldSentence.isEmpty ? cue.text.trim() : fieldSentence,
+      sentence: fieldSentence.isEmpty
+          ? simultaneousCueText(_controller.cueStreamOwning(cue), cue)
+          : fieldSentence,
       cueSentence: cue.text,
       fields: fields,
     );
@@ -1901,7 +1903,11 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
   /// 返回是否真的写了剪贴板（[VideoSubtitleJumpPanel.onCopyCue] 的契约）：空句不算
   /// 成功，面板据此决定要不要把行内按钮切成 ✓。
   bool _copyCue(AudioCue cue) {
-    final String text = cue.text.trim();
+    // 反馈 rLCxUJ-2i4：与这行同时显示的同一句其它行一起复制（与视频页同一判据）。
+    final String text = simultaneousCueText(
+      _controller.cueStreamOwning(cue),
+      cue,
+    );
     if (text.isEmpty) return false;
     _appModel.copyToClipboard(text);
     return true;
@@ -1912,6 +1918,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
   void _copyCurrentSubtitle() {
     final String? text = videoCurrentLineCopyText(
       activeCues: _controller.activeCues,
+      cues: _controller.cues,
       fallback: _controller.currentCue ?? _lastLookupCue,
     );
     if (text == null) return;
@@ -1961,7 +1968,8 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       // 回落光标定位）。
       await GlobalLookupController.instance.lookupText(
         term,
-        sentence: sentence,
+        // 反馈 rLCxUJ-2i4：顶层查词窗口制卡的 sentence 取自这里，与视频页同一判据合整句。
+        sentence: _lookupMiningSentence(sentence),
         autoRead: true,
         miningHandler: _mineFromGlobalLookup,
       );
@@ -1974,6 +1982,19 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       replaceStack: true,
       reuseWarmSlot: true,
       autoRead: true,
+    );
+  }
+
+  /// 顶层查词窗口制卡用的句子：被点的行 [tapped] 与锚点 cue 同属一句（ASS 把一句拆成
+  /// 几条同时显示的 Dialogue）时取整句，否则原样（[videoLookupMiningSentence]）。
+  String _lookupMiningSentence(String tapped) {
+    final AudioCue? anchor = _lastLookupCue;
+    return videoLookupMiningSentence(
+      cues: anchor == null
+          ? const <AudioCue>[]
+          : _controller.cueStreamOwning(anchor),
+      anchor: anchor,
+      tappedSentence: tapped,
     );
   }
 
@@ -1999,7 +2020,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     _lastLookupCue = cue ?? _controller.currentCue;
     await GlobalLookupController.instance.lookupText(
       term,
-      sentence: req.sentence,
+      sentence: _lookupMiningSentence(req.sentence),
       anchorScreenRect: webVideoLookupAnchorScreenRect(req),
       autoRead: true,
       miningHandler: _mineFromGlobalLookup,

@@ -66,6 +66,7 @@ pub(crate) const DRIFT_TX_POLICY: &[(&str, DriftTxPolicy)] = &[
     ("restore", Join),
     ("retire", Join),
     ("dedup", Join),
+    ("trust", Join),
     // 缓存维护的 Drift 事务（`_upgradeCaches` / `rebuildCaches` / `compactStoredStyles`）与上面各事务里的刷新。
     ("refresh_caches", Join),
     ("rebuild_caches", Join),

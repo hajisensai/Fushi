@@ -84,6 +84,9 @@ class WebVideoPlatformPlayer extends PlatformPlayer
   int _seekSeq = 0;
   int? _pendingSeekId;
 
+  /// seek 回执写日志的判据与限流状态（BUG-4186 诊断）。
+  final WebVideoSeekDoneLog _seekDoneLog = WebVideoSeekDoneLog();
+
   /// 在途的播放 / 暂停：要达到的播放态。
   bool? _pendingPlaying;
 
@@ -182,13 +185,10 @@ class WebVideoPlatformPlayer extends PlatformPlayer
   /// 的真实位置照常回灌（seek 没成，进度条回到实际位置才是对的）。
   void applySeekDone(WebVideoSeekDone done) {
     if (_disposed) return;
-    // superseded = 页面把连发的 seek 合并掉了这一次（只发最后一个目标），不是失败。
-    if (!done.ok && done.err != 'superseded') {
-      ErrorLogService.instance.log(
-        'web_video',
-        'seek failed (id=${done.id}): ${done.err}',
-      );
-    }
+    // superseded = 页面把连发的 seek 合并掉了这一次（只发最后一个目标），不是失败；失败带页面
+    // 诊断每次都记，成功的诊断限流（[WebVideoSeekDoneLog]）。
+    final String? line = _seekDoneLog.lineFor(done);
+    if (line != null) ErrorLogService.instance.log('web_video', line);
     if (done.id == null || done.id == _pendingSeekId) _pendingSeekId = null;
   }
 

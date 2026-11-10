@@ -63,6 +63,8 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/epub_book.dart';
 import 'package:fushi_engine/epub/epub_parser.dart';
 import 'package:fushi_engine/epub/epub_image_index_cache.dart';
+import 'package:fushi_engine/media/media_pref_keys.dart'
+    show kLyricsModeHintShownPrefShortKey;
 import 'package:fushi/src/epub/epub_spread_analyzer.dart';
 import 'package:fushi/src/epub/epub_spread_map.dart';
 import 'package:fushi/src/utils/adaptive/fushi_fold_posture.dart';
@@ -110,6 +112,7 @@ import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_speed_panel.dart'
     show showLyricsSpeedPanel;
 import 'package:fushi/src/asr_host/asr_host.dart';
 import 'package:fushi/src/media/audiobook/asr_transcribe_sheet.dart';
+import 'package:fushi/src/media/audiobook/audiobook_subtitle_export_flow.dart';
 import 'package:fushi/src/media/audiobook/audiobook_import_dialog.dart';
 import 'package:fushi/src/media/audiobook/srt_book_reimport_dialog.dart';
 import 'package:fushi_engine/media/audiobook/srt_book_reimport.dart';
@@ -3352,6 +3355,14 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     }
 
     _openTrace.mark('parsed');
+    // 解析在后台 isolate 里跑，期间用户可能已关掉阅读器：dispose 早已执行过
+    // leaveBookLayout，此时再登记会留下一条永不撤销的书本排版（全局生效值被死页面
+    // 劫持、设置页「排版方向」一直置灰）。已卸载就不再往下开书。
+    if (!mounted) return;
+    // 反馈 sYPkmtitOM「跟随原书」：书一解析完就登记它自带的排版 / 翻页方向，必须在
+    // spread map 与首屏 HTML 读 writingMode / spreadDirection 之前。是否采用由
+    // ReaderSettings 按「跟随原书」开关现算，开关拨动后随布局重载即时生效。
+    _settings?.enterBookLayout(this, _book!.originalLayout);
     // 同合集卷上下文与首屏无关，后台装载；失败只记日志（卷切换入口不出现）。
     unawaited(_loadVolumeContext(db));
 
@@ -3801,6 +3812,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     _lyricsMenuDismiss.detach();
     // 反馈 kEFPY4cuKZ：离开这本书 = 撤掉它的作品级配置覆盖层（全局配置从未改动）。
     WorkProfileScope.instance.leave(this);
+    // 离开这本书 = 撤掉它登记的书本排版（全局设置从未被改写）。
+    _settings?.leaveBookLayout(this);
     _studyCoverWatch.dispose();
     _pageCurlDrag = null;
     _pageCurl?.dispose();
@@ -5792,6 +5805,13 @@ $liveConfigJs
         ?.findRenderObject();
     if (obj is! RenderBox || !obj.attached || !obj.hasSize) {
       // WebView 不可用：退回默认「点空白关栈」。
+      clearDictionaryResult();
+      return;
+    }
+    // GitHub #3088：「单击查词」关闭时单击正文不查词，弹窗外的这一击就是「点空白关
+    // 弹窗」——不转给 _selectTextAt（那会命中词就换词）。歌词覆盖层的单击另有语义
+    // （查词 + 跳句），不受本开关管辖。
+    if (!_lyricsMode && !ReaderFushiSource.instance.highlightOnTap) {
       clearDictionaryResult();
       return;
     }

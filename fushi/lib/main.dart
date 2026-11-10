@@ -21,6 +21,7 @@ import 'package:just_audio_media_kit/just_audio_media_kit.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:flutter/foundation.dart' show kDebugMode, visibleForTesting;
+import 'package:flutter/scheduler.dart' show Priority, SchedulerBinding;
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_logs/flutter_logs.dart';
@@ -215,6 +216,7 @@ import 'package:fushi/src/utils/misc/fushi_share.dart';
 import 'package:fushi/src/storage/legacy_support_dir_migration.dart';
 import 'package:fushi/src/engine_bindings.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_cloudflare_challenge.dart';
+import 'package:fushi/src/media/discovery/download_gateway_challenge_page.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime_factory.dart';
 import 'package:fushi/src/utils/system_transparency.dart';
 import 'package:fushi/src/media/media_source.dart';
@@ -838,8 +840,10 @@ void main([List<String> args = const <String>[]]) {
 
       // ── 预热 WebView 引擎 ──────────────────────────────────────────────
       // 用户还在看主页/书架时就把冷启动成本吃掉：~500-1500ms。
-      // 移动端可直接预热；桌面端（WebView2）必须等首帧渲染、Flutter view
-      // 已挂载后再构造 HeadlessInAppWebView，否则会崩 WebView2。
+      // 所有平台都等首帧光栅化 + 主线程空闲后再构造 HeadlessInAppWebView
+      // （runWebViewPrewarmWhenIdle）：桌面 WebView2 需要 Flutter view 已挂载；
+      // Android 插件在主线程同步初始化 chromium，首帧前跑会把首帧堵死、低端机
+      // 8s「no focused window」ANR（反馈 LQhvpnzzkz）。
 
       // Windows/iOS 弹窗内联资产（popup.html/js/css ~300KB）异步预读：把 4 次
       // 同步读盘从「第一次查词」路径挪到启动空闲期（内部平台门控，其它平台 no-op）。
@@ -854,51 +858,56 @@ void main([List<String> args = const <String>[]]) {
         lowMemory: appModel.lowMemoryMode,
       )) {
         unawaited(
-          Future(() async {
-            // 预热持有的是进程级资源（一个 headless WebView = 一个 chromium
-            // renderer 子进程），销毁必须有确定终点，不能只挂在 onLoadStop 这条
-            // 成功路径上：回调不来就是永久泄漏一个 renderer，而 renderer 被 OOM
-            // kill 且 onRenderProcessGone 无人接管时，Android 默认会连整个 app
-            // 进程一起杀（CI Android appSmoke 连续 4 次死于此）。终点交给
-            // WebViewPrewarmSession 收口：载入完成 / 载入失败 / renderer 死亡 /
-            // 超时兜底，先到者胜、只 dispose 一次。
-            late final HeadlessInAppWebView warmup;
-            final WebViewPrewarmSession session = WebViewPrewarmSession(
-              disposeWebView: () => warmup.dispose(),
-              onFinished: (String reason) =>
-                  debugPrint('[Fushi] WebView engine pre-warm ended: $reason'),
-            );
-            try {
-              // 桌面端等首帧，保证 Flutter view 已 attach（WebView2 前提）。
-              if (isDesktopPlatform) {
-                await WidgetsBinding.instance.endOfFrame;
-              }
-              warmup = HeadlessInAppWebView(
-                initialUrlRequest: URLRequest(url: WebUri('about:blank')),
-                onLoadStop: (controller, url) async {
-                  // 100ms 让 onLoadStop 的回调栈先出栈再销毁：这是原实现就有的
-                  // 保守做法（桌面 WebView2 上在回调里同步 dispose 曾不稳），
-                  // 不是等待载入的重试窗口——真正的终点保证在 session 那边。
-                  await Future.delayed(const Duration(milliseconds: 100));
-                  await session.finish('loaded');
-                },
-                onReceivedError: (controller, request, error) =>
-                    session.finish('load error: ${error.type}'),
-                // 接管 renderer 死亡：Android 侧只要注册了这个回调，
-                // InAppWebViewClient 就返回 true，chromium 不再连坐杀 app 进程。
-                onWebContentProcessDidTerminate: (controller) =>
-                    session.finish('webkit content process terminated'),
-                onRenderProcessGone: (controller, detail) => session.finish(
-                  'renderer gone (didCrash=${detail.didCrash})',
+          runWebViewPrewarmWhenIdle(
+            firstFrameRasterized:
+                WidgetsBinding.instance.waitUntilFirstFrameRasterized,
+            whenIdle: () => SchedulerBinding.instance.scheduleTask<void>(
+              () {},
+              Priority.idle,
+            ),
+            prewarm: () async {
+              // 预热持有的是进程级资源（一个 headless WebView = 一个 chromium
+              // renderer 子进程），销毁必须有确定终点，不能只挂在 onLoadStop 这条
+              // 成功路径上：回调不来就是永久泄漏一个 renderer，而 renderer 被 OOM
+              // kill 且 onRenderProcessGone 无人接管时，Android 默认会连整个 app
+              // 进程一起杀（CI Android appSmoke 连续 4 次死于此）。终点交给
+              // WebViewPrewarmSession 收口：载入完成 / 载入失败 / renderer 死亡 /
+              // 超时兜底，先到者胜、只 dispose 一次。
+              late final HeadlessInAppWebView warmup;
+              final WebViewPrewarmSession session = WebViewPrewarmSession(
+                disposeWebView: () => warmup.dispose(),
+                onFinished: (String reason) => debugPrint(
+                  '[Fushi] WebView engine pre-warm ended: $reason',
                 ),
               );
-              await warmup.run();
-              session.armTimeout();
-            } catch (e) {
-              debugPrint('[Fushi] WebView warmup failed (non-fatal): $e');
-              await session.finish('run failed: $e');
-            }
-          }),
+              try {
+                warmup = HeadlessInAppWebView(
+                  initialUrlRequest: URLRequest(url: WebUri('about:blank')),
+                  onLoadStop: (controller, url) async {
+                    // 100ms 让 onLoadStop 的回调栈先出栈再销毁：这是原实现就有的
+                    // 保守做法（桌面 WebView2 上在回调里同步 dispose 曾不稳），
+                    // 不是等待载入的重试窗口——真正的终点保证在 session 那边。
+                    await Future.delayed(const Duration(milliseconds: 100));
+                    await session.finish('loaded');
+                  },
+                  onReceivedError: (controller, request, error) =>
+                      session.finish('load error: ${error.type}'),
+                  // 接管 renderer 死亡：Android 侧只要注册了这个回调，
+                  // InAppWebViewClient 就返回 true，chromium 不再连坐杀 app 进程。
+                  onWebContentProcessDidTerminate: (controller) =>
+                      session.finish('webkit content process terminated'),
+                  onRenderProcessGone: (controller, detail) => session.finish(
+                    'renderer gone (didCrash=${detail.didCrash})',
+                  ),
+                );
+                await warmup.run();
+                session.armTimeout();
+              } catch (e) {
+                debugPrint('[Fushi] WebView warmup failed (non-fatal): $e');
+                await session.finish('run failed: $e');
+              }
+            },
+          ),
         );
       }
 
@@ -1270,6 +1279,8 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     if (MihonRuntimeFactory.isSupported && !Platform.isAndroid) {
       installMihonCloudflareResolver(ref.read(appProvider).navigatorKey);
     }
+    // 发现页直链下载撞上下载网关的人机验证（BUG-4354）时，由宿主弹 WebView 解题。
+    installDownloadGatewayChallengeSolver(ref.read(appProvider).navigatorKey);
 
     if (Platform.isAndroid) {
       WidgetsBinding.instance.addPostFrameCallback((_) async {
@@ -2167,6 +2178,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
           appModel.moduleVisibility.isEnabled(kind.module),
       keepDuplicates: false,
       askOnDuplicate: _askExternalBookDuplicate,
+      folderTranscribeAudiobook: appModel.folderImportTranscribePort,
     ).importAll(<String>[bookPath])).single;
     final String? bookKey = _externalBookKeyOf(result);
     if (bookKey == null) {

@@ -158,7 +158,10 @@ VideoQuickSettingsHost buildTestVideoHost({
     subtitlePositionListenable: subtitlePositionListenable,
     subtitleWaveformCues: subtitleWaveformCues,
     videoDurationMs: videoDurationMs,
-    loadSubtitleWaveform: loadSubtitleWaveform,
+    // 测试只关心「有 / 无波形、抽没抽」：每段都回同一条包络（host 侧按段请求）。
+    loadSubtitleWaveform: loadSubtitleWaveform == null
+        ? null
+        : (int start, int end) => loadSubtitleWaveform(),
     speed: () => s.speed,
     onPreviewSpeed: (double v) async {
       s.speed = v;

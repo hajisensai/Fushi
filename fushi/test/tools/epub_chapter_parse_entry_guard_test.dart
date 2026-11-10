@@ -21,6 +21,9 @@ import '../helpers/source_guard.dart';
 /// 白名单只放两类，且必须写明理由：入口实现本体，以及**本来就在解析真 HTML5 文档**
 /// 的调用点（网页抓取），后者与 XHTML 自闭合语义无关。
 const Map<String, String> kAllowedRawHtmlParseFiles = <String, String>{
+  'lib/src/srs/srs_native_template.dart':
+      '复习卡渲染后的卡面 HTML（模板 + 字段，按 HTML5 文档包进 <body>）拆成原生卡面块，'
+      '不是 EPUB 章节 XHTML；卡面就是交给 WebView 的 HTML5，用 HTML5 解析器才与回退路径同语义。',
   '../packages/fushi_engine/lib/epub/epub_book.dart':
       '入口实现本体：parseChapterHtml 就是「归一化 + html_parser.parse」这一句，'
       '它自己必须调裸解析，否则无处落地。',
