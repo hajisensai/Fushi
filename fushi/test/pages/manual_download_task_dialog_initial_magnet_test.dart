@@ -9,7 +9,7 @@ import 'package:fushi_engine/media/discovery/discovery_models.dart'
 import '../helpers/glass_unwrap.dart';
 import '../helpers/source_guard.dart';
 
-/// BUG-4370（反馈 xAeextyOV1）：视频源扩展（Torrentio）给的是磁链。播放页不再把它当
+/// BUG-4386（反馈 xAeextyOV1）：视频源扩展（Torrentio）给的是磁链。播放页不再把它当
 /// 本地文件交给 libmpv，而是把磁链交给下载管线——入口就是下载中心的「添加任务」框，
 /// 经 `initialMagnet` / `initialTitle` 预填，与用户自己粘贴同一条提交路径。
 void main() {
@@ -121,13 +121,29 @@ void main() {
     });
 
     test('every reset of the failure reason also drops the torrent', () {
-      final int resets = RegExp(
-        r'_failReason\s*=\s*null;',
-      ).allMatches(maskComments(page)).length;
-      final int torrentResets = RegExp(
-        r'_failReason\s*=\s*null;\s*_failTorrentVideo\s*=\s*null;',
-      ).allMatches(maskComments(page)).length;
-      expect(torrentResets, resets);
+      // 播放页的状态散在主文件和 `video_fushi/*.part.dart` 里，part 文件同样写
+      // `_failReason`，守卫必须一起扫，否则 part 里漏清 `_failTorrentVideo` 测不出。
+      final List<File> sources = <File>[
+        File('lib/src/pages/implementations/video_fushi_page.dart'),
+        ...Directory('lib/src/pages/implementations/video_fushi')
+            .listSync()
+            .whereType<File>()
+            .where((File f) => f.path.endsWith('.part.dart')),
+      ];
+      expect(sources.length, greaterThan(1));
+      int totalResets = 0;
+      for (final File source in sources) {
+        final String code = maskComments(source.readAsStringSync());
+        final int resets = RegExp(
+          r'_failReason\s*=\s*null;',
+        ).allMatches(code).length;
+        final int torrentResets = RegExp(
+          r'_failReason\s*=\s*null;\s*_failTorrentVideo\s*=\s*null;',
+        ).allMatches(code).length;
+        expect(torrentResets, resets, reason: source.path);
+        totalResets += resets;
+      }
+      expect(totalResets, greaterThan(0));
     });
   });
 }

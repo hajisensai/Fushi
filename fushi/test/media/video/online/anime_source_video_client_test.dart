@@ -636,7 +636,7 @@ void main() {
   /// 反馈 xAeextyOV1：Torrentio 一类扩展给的候选是 `magnet:` 链接。此前它被原样当
   /// `streamUrl` 交给播放页，`mediaUriForVideoPath` 把非 http(s) 当本地路径包成
   /// file URI（`Temp\magnet:?xt=…`），libmpv 报 Invalid argument、45 秒后判超时。
-  group('种子（磁链）候选走下载管线，不当 URL 用（BUG-4370）', () {
+  group('种子（磁链）候选走下载管线，不当 URL 用（BUG-4386）', () {
     const String magnet =
         'magnet:?xt=urn:btih:72723c6e45267b82cdd8241825425c4f7310cf32'
         '&dn=72723c6e45267b82cdd8241825425c4f7310cf32'

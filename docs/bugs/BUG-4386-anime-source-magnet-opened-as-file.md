@@ -1,4 +1,4 @@
-## BUG-4370 · 视频源扩展（Torrentio）给的磁链被当本地文件打开，无限加载
+## BUG-4386 · 视频源扩展（Torrentio）给的磁链被当本地文件打开，无限加载
 - **报告**：2026-11-09（应用内反馈 xAeextyOV1，Windows 3.3.0+24434）
 - **真实性**：✅ 真 bug。反馈日志：`VideoFushi.playerError Cannot open file '~\AppData\Local\Temp\magnet:?xt=urn:btih:…&index=0': Invalid argument`，随后 `VideoFushi.mediaNeverOpened network stream never opened within 45000ms`。
   根因：Aniyomi 的 Torrentio 扩展给的候选是 `magnet:` 链接（Aniyomi 靠外挂 TorrServer 把它转成本地 http 流，本宿主没有这一层）。
