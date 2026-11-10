@@ -4,7 +4,7 @@
   - 同一条播放位置有四个写者，各拿各的判定快照落地、彼此不互斥：sweep `fushi/lib/src/sync/sync_orchestrator/books.part.dart:277-345` `_syncPositionsLive`（`:312` 用 host 清单里的值判定，不加锁）；播放页 `fushi/lib/src/pages/implementations/video_fushi_page.dart:5456-5460` 每秒 `new InterconnectPlaybackPositionSync(...).reportLive(...)`（由 `video_player_controller.dart` 以 `unawaited` 触发，不加锁、不合并）；冲突弹窗 `fushi/lib/src/sync/playback_position_conflict_dialog.dart:102,107`；对比弹窗 `fushi/lib/src/sync/sync_compare_dialog.dart:1165,1169`。两个写者交错时，后完成的旧判定把 host 写成旧值、把基线改写成旧判定的结论（`interconnect_playback_position_sync.dart:289` `reportLive` 与 sweep 的 `pushLocal` 同时到达 host 已用测试复现：两个 PUT 同时在途）。慢网下播放页的独立上报按旧值逐个排队打到 host。
   - 冲突弹窗「本机」推的是加载时的本端快照 `v.local`（弹窗期间本机继续播放的进度被回退到快照值）；「对端」把加载时的 `v.remote` 落到本机，不核对 host 是否已被第三台设备改写（用户没见过的新值被旧值顶替）。
   - 对比弹窗互联书进度「本地」以**应用时重读**的 host 值作前置条件——用户在这一行看到的是 X，加载后 host 被改成 Z，前置条件仍命中 Z，照样把 Z 覆盖掉；「远端」把用户没见过的 Z 落到本机。
-- **[x] ① 修复** — 提交见下方「修复提交」：
+- **[x] ① 修复** — dc6b52ba92d：
   - `interconnect_playback_position_sync.dart`：新增资源键 `syncPlaybackPositionResource(kind, key)`（加锁顺序在「整轮 → 通道 → 书」之后）；`pushLocal` / `alignSynced` 加 `expectedRemotePositions`（前置条件 = 写者判定时看到的 host 值，省略 = `[remote.positionMs]`）；`reportLive` 整段（读基线 / 待确认 →（都无则 GET + decide）→ 记待确认 → PUT → 按结果记基线）在条目锁里；新增 `LivePositionReporter`：按条目 single-flight，每条最多一个在途 + 一个待发（只留最新值），held 时记下当时基线、基线未变前不再发网络请求，裁决改了基线后自动恢复。
   - `sync_orchestrator/books.part.dart` `_syncPositionsLive`：每条「重读本端 → 判定 → 落地」在条目锁里，并把判定读到的 host 值作前置条件；调用方（`videos.part.dart` / `audiobooks.part.dart`）在取 host 清单**之前**记各条目锁代数，轮到某条时代数变了（清单之后被实时上报同步过）就重读 host 再判定，避免旧清单值配新基线被判成「对端改了」把断点倒退。
   - `playback_position_conflict_dialog.dart`：每条裁决在条目锁里；「本机」推锁内重读的本端、前置条件是弹窗展示的对端值；「对端」锁内重读 host，与展示的位置或戳不同就不落地。
@@ -15,5 +15,5 @@
   - `fushi/test/sync/interconnect_live_position_race_test.dart`（真 `FushiSyncServer` + `LocalLibraryHostService` 子类可挂住 PUT + 真 backend）：D7 旧判定推送 → superseded、host / 基线不回退；sweep 与实时上报互斥（第二个 PUT 不在第一个放行前到达 host）；上报器连报 20 次只发 ≤2 个 PUT、最终值 = 最新、`close` 后不再发；held 期间零网络请求、裁决后恢复；无基线首报推送并记基线。修复前互斥用例红（`Expected: <1> Actual: <2>`，两个 PUT 同时在途），上报器用例编译失败（类型不存在）。
   - `fushi/test/sync/playback_position_conflict_revalidate_test.dart`（真 server）：选本机且弹窗期间本机推进 → host = 推进后的值、解决数 1；选对端且 host 已被改写 → 不落地、解决数 0。修复前两条红（host 2000≠2500；解决数 1≠0）。
   - `fushi/test/sync/sync_compare_live_choice_revalidate_test.dart`（真 server，`fetchCompareDataForTest` → 改 host → `applySyncCompareChoices`）：本地 / 远端两种选择在 host 已被改写时都不写、该行 noop。修复前两条红（applied 1≠0）。
-- **修复提交**：（见下一行补记）
+- **修复提交**：dc6b52ba92d
 - **备注**：计划写「`dispose` 里 `_liveReporter?.close()`」，实现**不在 dispose 关**：退出路径经 `exitAfterPersist` 发起落库后同步 pop，`_persistRemotePosition` 走到上报时页面已 dispose，关掉会丢掉退出瞬间的断点接力（BUG-3367）；上报器不持有资源，在途 / 待发发完即闲置。计划写 `expectedRemotePositions` 为必填，实现为可选、缺省等于 sweep 口径 `[remote]`。冲突弹窗真 host 用例没放进 `playback_position_conflict_test.dart`：该文件有 `testWidgets`，测试绑定把 `HttpClient` 换成恒回 400 的假客户端，真 server 用例只能单独成文件。
