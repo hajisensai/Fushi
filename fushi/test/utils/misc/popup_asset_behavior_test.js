@@ -1578,6 +1578,80 @@ async function testMiningResolvesFreshAudioEvenWhenCacheHoldsSameWord() {
     'the mined card carries the freshly-signed URL, not the stale cached one');
 }
 
+// 反馈 WJFhjUGaTn：词头带替换写法（`quite a/the something`）时 TTS 兜底要念查词命中的
+// 原文，所以 ♪ 单击、「选择音频源」菜单与制卡取音频三条路都要把 matched 交给宿主；
+// 同一下标同一词头换了命中原文时不能复用播放缓存（TTS 念的字不同）。
+async function testWordAudioBridgesCarryMatchedSource() {
+  const context = loadPopup();
+  const resolved = [];
+  const listed = [];
+  const mined = [];
+  context.window.audioSources = ['https://audio.example/?term={term}'];
+  context.window.needsAudio = true;
+  context.window.lookupEntries = [
+    {
+      expression: 'quite a/the something',
+      reading: '',
+      matched: 'quite some',
+      glossaries: [
+        {
+          dictionary: 'dict',
+          content: {tag: 'span', content: 'a large amount'},
+          definitionTags: '',
+          termTags: '',
+        },
+      ],
+    },
+  ];
+  context.window.flutter_inappwebview.callHandler = (name, payload) => {
+    if (name === 'resolveWordAudio') {
+      resolved.push(payload);
+      return Promise.resolve(`audio://${payload.matched}#${resolved.length}`);
+    }
+    if (name === 'listWordAudioSources') {
+      listed.push(payload);
+      return Promise.resolve([]);
+    }
+    if (name === 'mineEntry') {
+      mined.push(payload);
+      return Promise.resolve(true);
+    }
+    return Promise.resolve(true);
+  };
+
+  const headword = 'quite a/the something';
+  const first = await context.resolveCachedAudioUrl(headword, headword, 0, 'quite some');
+  assert.equal(resolved.length, 1);
+  assert.equal(resolved[0].expression, headword);
+  assert.equal(resolved[0].reading, headword);
+  assert.equal(resolved[0].matched, 'quite some',
+    'the play path must hand the matched source text to the host');
+  assert.equal(first, 'audio://quite some#1');
+
+  assert.equal(
+    await context.resolveCachedAudioUrl(headword, headword, 0, 'quite some'),
+    first,
+    'same headword + same matched source reuses the playback cache');
+  assert.equal(resolved.length, 1);
+
+  await context.resolveCachedAudioUrl(headword, headword, 0, 'quite the');
+  assert.equal(resolved.length, 2,
+    'a different matched source at the same index must resolve again');
+  assert.equal(resolved[1].matched, 'quite the');
+
+  await context.fetchAudioSourceChoices(headword, headword, 'quite some');
+  assert.equal(listed.length, 1);
+  assert.equal(listed[0].matched, 'quite some',
+    'the audio-source menu must hand the matched source text to the host');
+
+  await context.mineEntry(headword, '', [], [], [], 'quite some', 0, '');
+  assert.equal(resolved.length, 3, 'mining does a fresh resolve');
+  assert.equal(resolved[2].matched, 'quite some',
+    'the mining audio resolve must hand the matched source text to the host');
+  assert.equal(mined.length, 1);
+  assert.equal(mined[0].audio, 'audio://quite some#3');
+}
+
 // ── TODO-084/087: mine button state is DETECTED AT LOOKUP TIME ─────────────
 // Builds an entry header, finds its mine button, and drives the duplicateCheck
 // handler. The button's 已制卡 ✓ / 可制卡 + state is the real Anki status
@@ -2498,6 +2572,11 @@ testMineEntryDoesNotReuseAudioFromPreviousExpression().catch((error) => {
 });
 
 testMiningResolvesFreshAudioEvenWhenCacheHoldsSameWord().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+
+testWordAudioBridgesCarryMatchedSource().catch((error) => {
   console.error(error);
   process.exitCode = 1;
 });

@@ -1,4 +1,4 @@
-# Flutter 3.47.6 Windows 引擎补丁：合成器内 HDR 输出
+# Flutter 3.47.6 Windows 引擎补丁：合成器内 HDR 输出、无障碍树加固
 
 让 HDR 视频画在 Flutter **自己的**交换链里（R16G16B16A16_FLOAT + scRGB），
 不再需要把 libmpv 的 gpu-next 画进主窗后面的独立宿主窗（该宿主窗已于 2026-10-18 删除）。只改 Windows 嵌入层
@@ -88,6 +88,33 @@ legacy `D3D11_RESOURCE_MISC_SHARED` 资源只靠 OS 隐式串行化，生产端�
   mutex；原版引擎没有这个导出，插件留在 legacy 共享纹理，「补丁引擎与原版引擎都能跑同一份 app」不变。
 - 代价：每个新视频帧在 Flutter 设备上多一次整帧 GPU 拷贝。
 
+### `engine-a11y-tree-hardening.patch`（flutter 仓库根目录，与前四份互不重叠，按序叠在其后；BUG-4380）
+
+Windows 无障碍树加固（Windows 嵌入层与 `shell/platform/common` 的无障碍桥，Dart 侧不变）。原版
+`AccessibilityBridge::CommitUpdates` 把框架的增量语义更新原样交给 `ui::AXTree::Unserialize`；
+AXTree 拒收时**已经改完一部分树**，bridge 只打日志就 return，节点委托映射与树从此脱节，外部 UIA
+客户端（输入法、划词、讲述人）一查询就在 `flutter_windows.dll` 里解引用空委托 / 已释放节点，或在
+下一次重挂时 `CreateRemoveReparentedNodesUpdate` 的 `child_ids.erase(end())` 越界写坏堆（BUG-2337 /
+BUG-2345 / BUG-3796 / BUG-4073 / BUG-4333 都是这一个失步模型）。补丁：
+
+- bridge 保留框架下发过的每个节点的最新数据（`semantics_nodes_`，flags 按值存，不再指向已释放的
+  embedder 缓冲区）和自定义动作（`custom_actions_`）。每次提交先合并 pending，再从根推出目标树
+  （`PlanTree`：子节点必须有数据、每个节点只挂一个父节点且本帧重发的父节点优先、先父后子），与当前
+  AXTree 比对生成两步更新（`ApplyTreePlan`）。框架违约的帧（列出没下发的子节点、孤儿节点、换父节点
+  不重发、同一子节点两个父节点）不再交给 AXTree 拒收；缺的部分在数据到达后自动挂上。保留数据的上限是
+  框架 id 空间（id 在 2^16-1 回绕）。
+- AXTree 仍拒收时整树重建（`RebuildTree`）：先清事件、销毁全部委托（平台节点 `Destroy`，客户端拿到
+  「元素不可用」），再用同一 tree id 新建 AXTree 从目标树重建；重建也失败就留空树。树与委托映射
+  始终一致，绝不半应用。
+- `OnNodeReparented` 重建委托（AXTree 在同一份更新里销毁并重建同 id 节点时只发这个回调）；
+  删掉 release 下无效的 `assert` 与 `CreateRemoveReparentedNodesUpdate`。
+- 委托：`ChildAtIndex` 越界返回 `nullptr`，`HitTestSync` 跳过拿不到委托的子节点。
+- 引擎单测加在 `accessibility_bridge_unittests.cc`（未纳入本仓 CI，编引擎时跑
+  `ninja -C out\host_debug flutter/shell/platform/common:common_cpp_unittests` 一类目标）。
+
+上游没有对应修复（截至 2026-11-10，`main` 上 `accessibility_bridge.cc` 仍是拒收即 return）。
+**删除条件**：上游 bridge 改成拒收后能自愈、且不再依赖 release 下无效的 `assert` 时删掉，或回移上游实现。
+
 ### `angle-scrgb-swapchain.patch`（ANGLE 仓库根目录 `git apply`）
 
 ANGLE 的 D3D11 后端原本**从不设置交换链色彩空间**，也不声明
@@ -110,7 +137,7 @@ tool/flutter_engine/build_patched_engine.ps1 -Root D:\fe -PatchVersion hdr-outpu
 # 本机 VS 缺 ATL 时：-AtlDir '<另一套 VS>\VC\Tools\MSVC\<ver>\atlmfc'
 ```
 
-步骤：sync（clone `.fvmrc` 版本 + `gclient sync`；已有源码树就 fetch 新 tag 切过去再增量 sync）→ patch（四份引擎补丁 + ANGLE 一份，干净树上按序打）→
+步骤：sync（clone `.fvmrc` 版本 + `gclient sync`；已有源码树就 fetch 新 tag 切过去再增量 sync）→ patch（五份引擎补丁 + ANGLE 一份，干净树上按序打）→
 build（`gn --runtime-mode <mode>` + `ninja flutter_windows`，与官方产物同配置）→
 stage（按 `windows-x64{,-profile,-release}` 布局 + `engine-overlay.json`）→
 pack（连同 pdb 打 zip——`flutter build windows` 要求缓存里有 `flutter_windows.dll.pdb`，
@@ -128,7 +155,9 @@ pack（连同 pdb 打 zip——`flutter build windows` 要求缓存里有 `flutt
 2026-11-05 编，含 `engine-hdr-output` + `engine-underlay-composition` + `engine-impeller-hdr` +
 `engine-d3d-keyed-mutex` 四份引擎补丁与 ANGLE 补丁；三种模式 + 匹配的 pdb——`flutter build windows`
 缺 pdb 会在 assemble 失败；tag 不以数字 / `v`+数字开头，app 更新检查与发布 workflow 都不会把它当
-app 版本）。重编后换一个新的 `patchVersion` 发新 release，再改本目录的 `artifacts.json`，旧 release
+app 版本）。**`hdr-output-3` 不含 `engine-a11y-tree-hardening.patch`**（2026-11-10 加入，尚未重编）：
+下一次重编必须带上它（建议 `patchVersion` 取 `hdr-output-4`），发 release 后更新 `artifacts.json`，
+在那之前出的包仍是旧引擎、无障碍树加固不生效。重编后换一个新的 `patchVersion` 发新 release，再改本目录的 `artifacts.json`，旧 release
 留着给旧提交复现用（`hdr-output-2` 是前三份补丁、无 keyed mutex；`hdr-output-1` 只有 Skia 路径的
 HDR、不含 underlay；3.44.0 时代的是 `flutter-engine-3.44.0-hdr-output-2`）。
 

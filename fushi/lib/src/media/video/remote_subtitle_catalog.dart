@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 
+import 'package:fushi_engine/media/video/subtitle/subtitle_language_preference.dart'
+    show pickSubtitleSourceByPreference;
 import 'package:fushi_engine/media/video/video_subtitle_source.dart'
     show
         SubtitleSource,
@@ -8,7 +10,7 @@ import 'package:fushi_engine/media/video/video_subtitle_source.dart'
         sameSubtitleFilePath,
         subtitleSourceMatchesPersistedForMenu;
 import 'package:fushi_engine/sync/fushi_library_host_service.dart'
-    show RemoteVideoSidecarSubtitle;
+    show RemoteVideoEmbeddedSubtitleTrack, RemoteVideoSidecarSubtitle;
 
 /// 远端视频的「后端默认外挂字幕」从哪个后端来（Xt3RCTPKhX）。
 ///
@@ -201,6 +203,60 @@ RemoteBackendDefaultSubtitlePlan planRemoteBackendDefaultSubtitle({
   }
   return RemoteBackendDefaultSubtitlePlan.apply;
 }
+
+/// 纯函数：远端一集**没有持久化字幕选择**时，起播自动挂哪条字幕轨（反馈 wCQIR4Pvz9）。
+///
+/// 优先级（高到低），返回 null = 都不命中，调用方落回后端默认外挂字幕
+/// （`RemoteVideoStreamUrls.subtitleUrl`，[planRemoteBackendDefaultSubtitle]）：
+/// 1. **app 的主字幕语言偏好**（[preferences]，`parseSubtitleLanguagePreferences`
+///    解析过的条目）——与本地视频自动抽内封轨同一套判据
+///    （[pickSubtitleSourceByPreference]），按条目顺序找第一条命中的轨；
+/// 2. **服务器的默认标记**（[RemoteVideoEmbeddedSubtitleTrack.isDefault]，Jellyfin /
+///    Emby `IsDefault`）——此前远端完全不看它，服务器标了默认的内嵌字幕起播也不显示。
+///
+/// 只考虑能转文本的轨（[RemoteVideoEmbeddedSubtitleTrack.isText]）：与本地自动抽取
+/// 只挑文本轨一致，图形轨仍需用户手选。
+RemoteVideoEmbeddedSubtitleTrack? pickRemoteStartupSubtitleTrack(
+  List<RemoteVideoEmbeddedSubtitleTrack> tracks, {
+  required List<String> preferences,
+}) {
+  final List<RemoteVideoEmbeddedSubtitleTrack> text =
+      <RemoteVideoEmbeddedSubtitleTrack>[
+        for (final RemoteVideoEmbeddedSubtitleTrack t in tracks)
+          if (t.isText) t,
+      ];
+  if (text.isEmpty) return null;
+  if (preferences.isNotEmpty) {
+    // 轨序号作 streamIndex 编码进 SubtitleSource，命中后按序号取回原轨（各后端的
+    // streamIndex 语义不同、不保证唯一，不拿它反查）。
+    final List<SubtitleSource> sources = <SubtitleSource>[
+      for (int i = 0; i < text.length; i++)
+        SubtitleSource.embedded(
+          streamIndex: i,
+          label: remoteSubtitleTrackPreferenceLabel(text[i]),
+          language: text[i].language,
+          codec: text[i].codec,
+        ),
+    ];
+    final SubtitleSource? hit = pickSubtitleSourceByPreference(
+      sources,
+      preferences,
+    );
+    if (hit != null) return text[hit.streamIndex!];
+  }
+  for (final RemoteVideoEmbeddedSubtitleTrack t in text) {
+    if (t.isDefault) return t;
+  }
+  return null;
+}
+
+/// 远端轨参与偏好匹配的标签：标题（Jellyfin `DisplayTitle` 等，含语言与说明）+ 语言码。
+@visibleForTesting
+String remoteSubtitleTrackPreferenceLabel(RemoteVideoEmbeddedSubtitleTrack t) =>
+    <String>[
+      if ((t.title ?? '').trim().isNotEmpty) t.title!.trim(),
+      if ((t.language ?? '').trim().isNotEmpty) t.language!.trim(),
+    ].join(' ');
 
 /// 纯函数：持久化的本机档路径列表 → 字幕轨列表里的本机档（只留磁盘上还在的）。
 /// [exists] 由调用方注入（真实 IO / 测试桩）。顺序保持持久化顺序。

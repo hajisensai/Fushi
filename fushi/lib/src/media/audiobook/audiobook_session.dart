@@ -628,7 +628,7 @@ class AudiobookSession extends ChangeNotifier {
       mediaKind: kActivityMediaBook,
       mediaKey: book.studyMediaKey,
       title: book.title,
-      format: BookFormat.epub.dbValue,
+      format: book.format.dbValue,
       onWriteError: (Object e, StackTrace st) =>
           ErrorLogService.instance.log('StudyClock.write(audiobook-bg)', e, st),
       deferWrite: ExitFlushRegistry.instance.defer,
@@ -1069,6 +1069,7 @@ class SessionBookInfo {
     this.author,
     this.coverPath,
     this.statsMediaKey,
+    this.format = BookFormat.epub,
   });
 
   final String bookKey;
@@ -1106,6 +1107,11 @@ class SessionBookInfo {
 
   /// 统计身份，见 [statsMediaKey]。
   String get studyMediaKey => statsMediaKey ?? bookKey;
+
+  /// 正文书的格式（EPUB / PDF）：后台听书时钟按它记 `study_segments.format`，与
+  /// 阅读器那只时钟同一口径（PDF 有声书不能记成 EPUB）。默认 EPUB（TTS 朗读、
+  /// standalone 字幕书的生成正文都是 EPUB）。
+  final BookFormat format;
 }
 
 /// 控制器加载初值（从持久层读出）。

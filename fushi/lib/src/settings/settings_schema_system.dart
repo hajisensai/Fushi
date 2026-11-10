@@ -62,8 +62,12 @@ import 'package:url_launcher/url_launcher.dart';
 /// 首页工具栏（`home_dashboard_page.dart` 的 `_buildFloatingToolbar`）是更新中心、
 /// 统计中心、排行榜、反馈四个页面的常驻入口，其中统计中心与排行榜**只有**这一处
 /// 入口。2026-10-09 首页可关（[ModuleId.home]）之后，关掉首页不能把它们一起关成
-/// 不可达——所以首页关着时这里出现同样四行，打开的是同一个页面、同一个函数。
+/// 不可达——所以首页关着时这里出现对应的行，打开的是同一个页面、同一个函数。
 /// 首页开着时整段隐藏（不在设置里多一份重复入口，也不进搜索）。
+///
+/// 反馈不在这里：它在「通用」分区（关于区）常驻一行 `system.feedback`，首页开关
+/// 都可见（反馈 45e1P7jN98 / cqx_Fv6kUY）。这里再放一行，首页关着时同一页会出现
+/// 两个反馈入口。
 SettingsSection _homeShortcutsSection() {
   return SettingsSection(
     id: 'system.section.home_shortcuts',
@@ -92,14 +96,6 @@ SettingsSection _homeShortcutsSection() {
         icon: FushiIcons.trophy,
         onTap: (SettingsContext c) =>
             pushSettingsPage(c, (_) => const LeaderboardPage()),
-      ),
-      SettingsNavigationItem(
-        id: 'system.home_shortcut_feedback',
-        title: t.feedback_title,
-        icon: FushiIcons.forum,
-        // 从设置里点开时截到的是设置页，没有意义；不预截图。
-        onTap: (SettingsContext c) =>
-            openFeedbackCenter(c.context, captureScreen: false),
       ),
     ],
   );
@@ -403,6 +399,17 @@ SettingsDestination buildSystemDestination() {
             id: 'system.app_version',
             icon: FushiIcons.info,
             builder: _buildRuntimeAppVersionRow,
+          ),
+          // 反馈（反馈 45e1P7jN98 / cqx_Fv6kUY）：关于区常驻入口，与首页工具栏、
+          // 悬浮球的反馈按钮是同一个函数（openFeedbackCenter）。那两处都可以在
+          // 设置里关掉，这一行不随任何模块开关显隐，保证反馈中心永远可达。
+          SettingsNavigationItem(
+            id: 'system.feedback',
+            title: t.feedback_title,
+            icon: FushiIcons.forum,
+            // 从设置里点开时截到的是设置页，没有意义；不预截图。
+            onTap: (SettingsContext c) =>
+                openFeedbackCenter(c.context, captureScreen: false),
           ),
           // 官网。与宽屏侧栏左上角的 app 图标是同一个入口（openOfficialWebsite），
           // URL 只存在 official_links.dart 一处。
