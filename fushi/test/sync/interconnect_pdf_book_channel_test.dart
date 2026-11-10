@@ -11,7 +11,6 @@ import 'package:fushi_engine/sync/local_library_host_service.dart';
 import 'package:fushi_engine/sync/pdf_sync_package.dart';
 import 'package:fushi_engine/sync/sync_asset_package_service.dart';
 import 'package:path/path.dart' as p;
-import 'package:test/fake.dart';
 
 /// 反馈 Jq1_ujHa4t：安卓经互联看不到 Windows 上导入的 PDF。
 ///

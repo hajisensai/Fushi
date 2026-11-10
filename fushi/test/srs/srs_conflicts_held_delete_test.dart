@@ -227,6 +227,19 @@ void main() {
 
         // 结论是普通操作：同步到 A 后 A 的冲突也消失、状态一致。
         await _io(tester, env.syncAll);
+        if (delete) {
+          // B 第一次出现时 A 已有内容，B 在 A 上待确认（BUG-4276）：B 选「删除」的结论在 A 上扣到确认，
+          // A 的冲突还在；A 信任 B 之后才落地。「保留」是普通操作，不受影响。
+          expect(
+            (await _io(tester, env.a.sync2Conflicts)).single['kind'],
+            'delete_edit',
+          );
+          await _io(
+            tester,
+            () => env.a.sync2Trust(env.b.sync2Device!, trust: true),
+          );
+          await _io(tester, env.syncAll);
+        }
         expect(await _io(tester, env.a.sync2Conflicts), isEmpty);
         expect(
           (await _io(
