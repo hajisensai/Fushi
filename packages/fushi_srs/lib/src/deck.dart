@@ -30,6 +30,63 @@ enum SrsNewCardOrder {
   }
 }
 
+/// 复习顺序（牌组设置 [SrsFieldKeys.deckReviewOrder]）。排序规则只在 Rust（`store/study.rs` `ReviewOrder`）：
+/// 除 [retrievability] 外都是一天内不变的静态键，同键按当天哈希断平。随参数继承走 own 祖先；
+/// own 祖先按 RWKV 排程时整棵子树固定按 [retrievability]。
+enum SrsReviewCardOrder {
+  /// 此刻可提取度从低到高（最可能忘的先出；缺省，加这项设置之前的行为）。
+  retrievability('retrievability'),
+
+  /// 到期日从早到晚。
+  dueDate('dueDate'),
+
+  /// 难度从高到低（最难的先出），没有难度的排最后。
+  difficulty('difficulty'),
+
+  /// 间隔从短到长。
+  intervalAscending('intervalAscending'),
+
+  /// 随机（每天换一次）。
+  random('random');
+
+  const SrsReviewCardOrder(this.wire);
+
+  final String wire;
+
+  /// 缺省与不认识的值（更新版本加的新顺序）都按 [retrievability]（与 Rust 同一条回落）。
+  static SrsReviewCardOrder fromWire(String? wire) {
+    for (final SrsReviewCardOrder o in values) {
+      if (o.wire == wire) return o;
+    }
+    return retrievability;
+  }
+}
+
+/// 新卡与复习怎么排（牌组设置 [SrsFieldKeys.deckNewMix]）。规则只在 Rust（`store/study.rs` `NewMix`）；
+/// 三种都是到期的学习卡最先。随参数继承走 own 祖先。
+enum SrsNewCardMix {
+  /// 复习全部出完再出新卡（缺省，加这项设置之前的行为）。
+  afterReviews('afterReviews'),
+
+  /// 新卡先出，新卡上限用完后再出复习。
+  beforeReviews('beforeReviews'),
+
+  /// 按今天的新卡 / 复习总量均匀穿插。
+  mixed('mixed');
+
+  const SrsNewCardMix(this.wire);
+
+  final String wire;
+
+  /// 缺省与不认识的值都按 [afterReviews]（与 Rust 同一条回落）。
+  static SrsNewCardMix fromWire(String? wire) {
+    for (final SrsNewCardMix m in values) {
+      if (m.wire == wire) return m;
+    }
+    return afterReviews;
+  }
+}
+
 /// 一种算法的参数组（整体一个字段键，按铁律 H 设置类合并）。
 class SrsParamSet {
   const SrsParamSet({
@@ -389,6 +446,8 @@ class SrsDeckView {
     this.replayQuestionAudio = true,
     this.rwkvQueue = const SrsRwkvQueueSettings(),
     this.newCardOrder = SrsNewCardOrder.frequency,
+    this.reviewCardOrder = SrsReviewCardOrder.retrievability,
+    this.newCardMix = SrsNewCardMix.afterReviews,
     this.newCardPlan = const SrsNewCardPlan(),
     this.limitExtension,
     required this.optimizeBaselineAt,
@@ -472,6 +531,13 @@ class SrsDeckView {
 
   /// 新卡出卡顺序。只看 own 祖先上的值（[SrsDeckTree.paramsOwner]）。
   final SrsNewCardOrder newCardOrder;
+
+  /// 复习顺序（寄存器里存的值）。只看 own 祖先上的值（[SrsDeckTree.paramsOwner]）；own 祖先按 RWKV 排程时
+  /// 实际按可提取度出卡，这里照存不改。
+  final SrsReviewCardOrder reviewCardOrder;
+
+  /// 新卡与复习怎么排。只看 own 祖先上的值（[SrsDeckTree.paramsOwner]）。
+  final SrsNewCardMix newCardMix;
 
   /// 每周新卡任务与按复习量自动调整。牌组自己的值（同 [newPerDay]）。
   final SrsNewCardPlan newCardPlan;
