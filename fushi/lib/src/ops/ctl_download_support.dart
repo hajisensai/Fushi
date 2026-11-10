@@ -28,6 +28,9 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/ops/ctl_data_wire.dart';
+import 'package:fushi/src/sync/interconnect_host_channel.dart'
+    show InterconnectHostFailure;
+import 'package:fushi/src/sync/interconnect_host_failure_text.dart';
 import 'package:fushi/src/sync/interconnect_download_client.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 
@@ -103,10 +106,15 @@ Future<CtlDownloadDevice> _resolveCtlDownloadDeviceWith(
       DownloadExecutionLocal() => const CtlDownloadDeviceLocal(),
       DownloadExecutionRemote(:final HostDownloadTarget target) =>
         CtlDownloadDeviceRemote(target, client),
-      DownloadExecutionUnreachable(:final String label) =>
+      DownloadExecutionUnreachable(
+        :final String label,
+        :final InterconnectHostFailure failure,
+        :final int? statusCode,
+      ) =>
         throw CtlFailure.conflict(
-          '下载执行设备「$label」连不上或没开代下载；用 --device local 改在本机下，'
-          '或 dl targets 查看可用设备',
+          '下载执行设备「$label」不可用'
+          '（${interconnectHostFailureText(failure, statusCode: statusCode)}）；'
+          '用 --device local 改在本机下，或 dl targets 查看可用设备',
         ),
     };
   }

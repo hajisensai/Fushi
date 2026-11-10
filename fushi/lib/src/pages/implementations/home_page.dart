@@ -56,6 +56,8 @@ import 'package:fushi/src/media/collections/collection_continue.dart';
 import 'package:fushi/src/media/video/video_duration_pref.dart';
 import 'package:fushi/src/sync/interconnect_assistant_client.dart';
 import 'package:fushi/src/sync/interconnect_download_client.dart';
+import 'package:fushi/src/sync/interconnect_host_channel.dart';
+import 'package:fushi/src/sync/interconnect_host_failure_text.dart';
 import 'package:fushi/src/sync/interconnect_subscription_client.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_engine/sync/assistant/video_acquisition_assistant_host.dart';
@@ -2823,9 +2825,21 @@ class _HomePageState extends BasePageState<HomePage>
         );
     // client 被 onRemoteSubmit 闭包捕获：页面关掉（push 返回）或提前 return 时关。
     try {
-      final List<HostDownloadTarget> remoteTargets = await downloadClient
-          .probeAll();
+      final List<InterconnectCapabilityOutcome<HostDownloadTarget>> outcomes =
+          await downloadClient.probeAllOutcomes();
+      final List<HostDownloadTarget> remoteTargets = <HostDownloadTarget>[
+        for (final InterconnectCapabilityOutcome<HostDownloadTarget> o
+            in outcomes)
+          if (o is InterconnectCapabilityAvailable<HostDownloadTarget>)
+            o.target,
+      ];
       if (!context.mounted) return;
+      // 一台可用 host 都没有时，先把能动手解决的原因说出来（重新配对、证书变了、
+      // 版本旧 / 能力没开），而不是只剩一句「去配置下载后端」。
+      if (remoteTargets.isEmpty) {
+        final String? reason = interconnectFirstTellableFailureLine(outcomes);
+        if (reason != null) FushiToast.show(msg: reason);
+      }
       if (registry == null || (pipeline == null && remoteTargets.isEmpty)) {
         unawaited(_promptDownloadBackendSetup(context));
         return;
@@ -2940,94 +2954,114 @@ class _HomePageState extends BasePageState<HomePage>
         InterconnectSubscriptionClient(
           repo: SyncRepository(appModelNoUpdate.database),
         );
-    final List<HostSubscriptionTarget> remoteTargets = await remoteClient
-        .probeAll();
-    if (!context.mounted) return;
-    final bool localRunnable =
-        registry != null &&
-        appModelNoUpdate.videoDownloadPipelineService != null &&
-        appModelNoUpdate.videoDownloadSubscriptionService != null;
-    if (registry == null || (!localRunnable && remoteTargets.isEmpty)) {
-      unawaited(_promptDownloadBackendSetup(context));
-      return;
-    }
-    final List<MediaSourceRow> sources = remoteTargets.isEmpty
-        ? await _managedVideoDownloadSourcesOrPrompt(context)
-        : await appModelNoUpdate.getManagedVideoDownloadSources();
-    // PR #1021 把「后端 runtime 是否可用」延后到真正提交下载时（target 在
-    // onSubmit 里取），后端没配好也能先搜资源。但「有没有受管视频来源」是另一
-    // 回事：没有落地文件夹时来源下拉是空的、提交按钮永远灰着，所以 BUG-1872 的
-    // 引导必须留在打开页面之前。两个原因本来就是两条分支，别再合成一条。
-    // 有 host 可用时例外：落点在 host，没有本地来源也能订阅。
-    if (!context.mounted || (sources.isEmpty && remoteTargets.isEmpty)) return;
-    await Navigator.of(context).push<void>(
-      MaterialPageRoute<void>(
-        builder: (_) => VideoDiscoverySubscriptionPage(
-          item: item,
-          registry: registry,
-          sources: sources,
-          defaultSourceId:
-              appModelNoUpdate.prefsRepo.videoDownloadTargetSourceId,
-          // 同资源搜索页：后端没配好这条失败落在页面里，配置引导按端口注入。
-          onConfigureBackend: _promptDownloadBackendSetup,
-          resolveAliases: _videoDiscoveryItemWithSearchAliases,
-          remoteTargets: remoteTargets,
-          onRemoteSubmit:
-              (VideoDiscoveryRemoteSubscriptionSelection selection) async {
-                final VideoMediaReference reference = selection.media;
-                await remoteClient.create(
-                  selection.target,
-                  HostSubscriptionCreate(
-                    // 与本地订阅同一个稳定 id：同一作品在同一台 host 上重复订阅只 upsert。
-                    subscriptionId: videoDiscoverySubscriptionId(reference),
-                    title: reference.title,
-                    searchQuery: videoResourceSubscriptionSearchQuery(
-                      reference,
+    // client 被 onRemoteSubmit 闭包捕获：页面关掉（push 返回）或提前 return 时关。
+    try {
+      final List<InterconnectCapabilityOutcome<HostSubscriptionTarget>>
+      outcomes = await remoteClient.probeAllOutcomes();
+      final List<HostSubscriptionTarget> remoteTargets =
+          <HostSubscriptionTarget>[
+            for (final InterconnectCapabilityOutcome<HostSubscriptionTarget> o
+                in outcomes)
+              if (o is InterconnectCapabilityAvailable<HostSubscriptionTarget>)
+                o.target,
+          ];
+      if (remoteTargets.isEmpty) {
+        final String? reason = interconnectFirstTellableFailureLine(outcomes);
+        if (reason != null && context.mounted) FushiToast.show(msg: reason);
+      }
+      if (!context.mounted) return;
+      final bool localRunnable =
+          registry != null &&
+          appModelNoUpdate.videoDownloadPipelineService != null &&
+          appModelNoUpdate.videoDownloadSubscriptionService != null;
+      if (registry == null || (!localRunnable && remoteTargets.isEmpty)) {
+        unawaited(_promptDownloadBackendSetup(context));
+        return;
+      }
+      final List<MediaSourceRow> sources = remoteTargets.isEmpty
+          ? await _managedVideoDownloadSourcesOrPrompt(context)
+          : await appModelNoUpdate.getManagedVideoDownloadSources();
+      // PR #1021 把「后端 runtime 是否可用」延后到真正提交下载时（target 在
+      // onSubmit 里取），后端没配好也能先搜资源。但「有没有受管视频来源」是另一
+      // 回事：没有落地文件夹时来源下拉是空的、提交按钮永远灰着，所以 BUG-1872 的
+      // 引导必须留在打开页面之前。两个原因本来就是两条分支，别再合成一条。
+      // 有 host 可用时例外：落点在 host，没有本地来源也能订阅。
+      if (!context.mounted || (sources.isEmpty && remoteTargets.isEmpty)) {
+        return;
+      }
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute<void>(
+          builder: (_) => VideoDiscoverySubscriptionPage(
+            item: item,
+            registry: registry,
+            sources: sources,
+            defaultSourceId:
+                appModelNoUpdate.prefsRepo.videoDownloadTargetSourceId,
+            // 同资源搜索页：后端没配好这条失败落在页面里，配置引导按端口注入。
+            onConfigureBackend: _promptDownloadBackendSetup,
+            resolveAliases: _videoDiscoveryItemWithSearchAliases,
+            remoteTargets: remoteTargets,
+            onRemoteSubmit:
+                (VideoDiscoveryRemoteSubscriptionSelection selection) async {
+                  final VideoMediaReference reference = selection.media;
+                  await remoteClient.create(
+                    selection.target,
+                    HostSubscriptionCreate(
+                      // 与本地订阅同一个稳定 id：同一作品在同一台 host 上重复订阅只 upsert。
+                      subscriptionId: videoDiscoverySubscriptionId(reference),
+                      title: reference.title,
+                      searchQuery: videoResourceSubscriptionSearchQuery(
+                        reference,
+                      ),
+                      mediaKind: reference.mediaKind.name,
+                      // 整包与电影同属「一次下完就结束」：按追更建出来的规则在整包上
+                      // 结构性地永不命中（BUG-2619）。
+                      mode:
+                          selection.batchRelease ||
+                              reference.mediaKind ==
+                                  VideoMetadataMediaKind.movie
+                          ? 'oneShot'
+                          : 'ongoing',
+                      resourceProvider: persistedVideoResourceProviderId(
+                        selection.resource,
+                      ),
+                      identityJson: encodeVideoMediaReference(reference),
+                      metadataProvider: reference.providerId,
+                      externalId: reference.mediaId,
+                      discoveryCategory: reference.discoveryCategory.name,
+                      year: reference.year,
+                      season: reference.season,
+                      coverUrl: item.posterUrl,
+                      filterJson: selection.filter.json,
+                      startAfterEpisode: selection.startAfterEpisode,
+                      subtitlePolicy: selection.subtitlePolicy.name,
                     ),
-                    mediaKind: reference.mediaKind.name,
-                    // 整包与电影同属「一次下完就结束」：按追更建出来的规则在整包上
-                    // 结构性地永不命中（BUG-2619）。
-                    mode:
-                        selection.batchRelease ||
-                            reference.mediaKind == VideoMetadataMediaKind.movie
-                        ? 'oneShot'
-                        : 'ongoing',
-                    resourceProvider: persistedVideoResourceProviderId(
-                      selection.resource,
-                    ),
-                    identityJson: encodeVideoMediaReference(reference),
-                    metadataProvider: reference.providerId,
-                    externalId: reference.mediaId,
-                    discoveryCategory: reference.discoveryCategory.name,
-                    year: reference.year,
-                    season: reference.season,
-                    coverUrl: item.posterUrl,
-                    filterJson: selection.filter.json,
-                    startAfterEpisode: selection.startAfterEpisode,
-                    subtitlePolicy: selection.subtitlePolicy.name,
-                  ),
-                );
-              },
-          onSubmit: (VideoDiscoverySubscriptionSelection selection) async {
-            final VideoDownloadBackendTarget target = await appModelNoUpdate
-                .currentVideoDownloadBackendTarget();
-            await createLocalVideoDownloadSubscription(
-              database: appModelNoUpdate.database,
-              // 身份仍取发现条目；页面补齐的罗马字 / 英文别名（BUG-2794）并进来，
-              // 订阅快照与默认检索词才不会退回只有原名的状态。
-              reference: item.reference.withLeadingAliases(
-                selection.download.media.aliases,
-              ),
-              coverUrl: item.posterUrl,
-              selection: selection,
-              target: target,
-              checkNow: () async =>
-                  appModelNoUpdate.videoDownloadSubscriptionService?.checkNow(),
-            );
-          },
+                  );
+                },
+            onSubmit: (VideoDiscoverySubscriptionSelection selection) async {
+              final VideoDownloadBackendTarget target = await appModelNoUpdate
+                  .currentVideoDownloadBackendTarget();
+              await createLocalVideoDownloadSubscription(
+                database: appModelNoUpdate.database,
+                // 身份仍取发现条目；页面补齐的罗马字 / 英文别名（BUG-2794）并进来，
+                // 订阅快照与默认检索词才不会退回只有原名的状态。
+                reference: item.reference.withLeadingAliases(
+                  selection.download.media.aliases,
+                ),
+                coverUrl: item.posterUrl,
+                selection: selection,
+                target: target,
+                checkNow: () async => appModelNoUpdate
+                    .videoDownloadSubscriptionService
+                    ?.checkNow(),
+              );
+            },
+          ),
         ),
-      ),
-    );
+      );
+    } finally {
+      remoteClient.close();
+    }
   }
 
   /// 「AI 下视频」入口渲染的门：只看本平台允许与否（iOS 合规）。判据只问
@@ -3071,10 +3105,10 @@ class _HomePageState extends BasePageState<HomePage>
     if (execution is DownloadExecutionRemote) execution.release();
     if (!context.mounted) return;
     switch (execution) {
-      case DownloadExecutionUnreachable():
+      case final DownloadExecutionUnreachable unreachable:
         _showVideoDiscoveryMessage(
           context,
-          t.download_execution_host_unreachable,
+          downloadExecutionUnreachableMessage(unreachable),
         );
         return;
       case DownloadExecutionRemote(:final HostDownloadTarget target):

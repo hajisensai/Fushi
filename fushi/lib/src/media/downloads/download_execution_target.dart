@@ -10,10 +10,14 @@
 /// 「在哪台设备下」，手机不需要知道电脑用的是内置引擎还是外接 qBittorrent。
 library;
 
+import 'package:meta/meta.dart';
 import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/sync/interconnect_download_client.dart';
+import 'package:fushi/src/sync/interconnect_host_channel.dart';
+import 'package:fushi/src/sync/interconnect_host_failure_text.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 
 sealed class DownloadExecutionResolution {
@@ -48,10 +52,21 @@ class DownloadExecutionRemote extends DownloadExecutionResolution {
 
 /// 偏好指向的 host 不在配对清单里 / 已停用 / 探不到 / 没宣告代下载能力。
 class DownloadExecutionUnreachable extends DownloadExecutionResolution {
-  const DownloadExecutionUnreachable({required this.url, this.deviceName});
+  const DownloadExecutionUnreachable({
+    required this.url,
+    this.deviceName,
+    this.failure = InterconnectHostFailure.unreachable,
+    this.statusCode,
+  });
 
   final String url;
   final String? deviceName;
+
+  /// 探测失败的原因（凭据失效 / 证书不符 / 版本旧或能力没开 / 连不上…）。
+  final InterconnectHostFailure failure;
+
+  /// [failure] 为 [InterconnectHostFailure.httpError] 时 host 回的状态码。
+  final int? statusCode;
 
   String get label => deviceName ?? url;
 }
@@ -59,15 +74,30 @@ class DownloadExecutionUnreachable extends DownloadExecutionResolution {
 Future<DownloadExecutionResolution> resolveDownloadExecution(
   AppModel appModel, {
   InterconnectDownloadClient? client,
+}) => resolveDownloadExecutionFor(
+  url: appModel.prefsRepo.downloadExecutionHostUrl,
+  repo: SyncRepository(appModel.database),
+  client: client,
+);
+
+InterconnectDownloadClient _defaultDownloadClient(SyncRepository repo) =>
+    InterconnectDownloadClient(repo: repo);
+
+/// [resolveDownloadExecution] 的本体：[url] 是「下载执行设备」偏好。
+/// [createClient] 只在没传 [client] 时用（测试缝）。
+Future<DownloadExecutionResolution> resolveDownloadExecutionFor({
+  required String url,
+  required SyncRepository repo,
+  InterconnectDownloadClient? client,
+  @visibleForTesting
+  InterconnectDownloadClient Function(SyncRepository repo) createClient =
+      _defaultDownloadClient,
 }) async {
-  final String url = appModel.prefsRepo.downloadExecutionHostUrl;
   if (url.isEmpty) return const DownloadExecutionLocal();
-  final SyncRepository repo = SyncRepository(appModel.database);
   // 传入的 client 归调用方；自建的走 Local / Unreachable 前关掉，走 Remote 时
   // 交给结果（[DownloadExecutionRemote.release]）。
   final bool owns = client == null;
-  final InterconnectDownloadClient resolved =
-      client ?? InterconnectDownloadClient(repo: repo);
+  final InterconnectDownloadClient resolved = client ?? createClient(repo);
   // 「这台设备还在不在配对清单里」要先于「能不能探到」判：偏好里存的是一个 URL，
   // 用户解绑那台 host / 禁用那条 client URL 之后，设置页的下拉整块不再渲染
   // （它只在有已配对 host 时出现），偏好就永远停在那个死地址——此后每一次发现页
@@ -85,22 +115,46 @@ Future<DownloadExecutionResolution> resolveDownloadExecution(
     return const DownloadExecutionLocal();
   }
   final String? deviceName = paired.deviceName;
-  HostDownloadTarget? target;
+  // 探「那台 host」（组内选路），带回失败原因：凭据失效、证书变了、版本旧 / 没开
+  // 代下载都要如实说，而不是一律「连不上」。
+  final InterconnectCapabilityOutcome<HostDownloadTarget> outcome;
   try {
-    target = await resolved.probeUrl(url);
-  } catch (_) {
-    target = null;
+    outcome = await resolved.probeHost(InterconnectHostRef.ofRow(paired));
+  } on Object {
+    if (owns) resolved.close();
+    rethrow;
   }
-  if (target != null) {
-    return DownloadExecutionRemote(
-      target: target,
-      client: resolved,
-      ownsClient: owns,
-    );
+  switch (outcome) {
+    case InterconnectCapabilityAvailable<HostDownloadTarget>(:final target):
+      return DownloadExecutionRemote(
+        target: target,
+        client: resolved,
+        ownsClient: owns,
+      );
+    case InterconnectCapabilityUnavailable<HostDownloadTarget>(
+      :final failure,
+      :final statusCode,
+    ):
+      if (owns) resolved.close();
+      return DownloadExecutionUnreachable(
+        url: url,
+        deviceName: deviceName,
+        failure: failure,
+        statusCode: statusCode,
+      );
   }
-  if (owns) resolved.close();
-  return DownloadExecutionUnreachable(url: url, deviceName: deviceName);
 }
+
+/// [DownloadExecutionUnreachable] 的提示：原因是用户能动手解决的（重新配对、证书、
+/// 版本 / 能力）就带设备名说出来，单纯连不上沿用原文案。
+String downloadExecutionUnreachableMessage(DownloadExecutionUnreachable u) =>
+    interconnectHostFailureWorthTelling(u.failure)
+    ? interconnectHostFailureLine(
+        u.failure,
+        device: u.label,
+        statusCode: u.statusCode,
+      )
+    : t.download_execution_host_unreachable;
 
 /// [url] 刚从 [previousHostId] 改归别的 host（地址归属闸里用户确认了「作为新设备
 /// 配对」）：偏好正指向它时改写为旧 host 剩余的代表地址；旧 host 一条地址都不剩

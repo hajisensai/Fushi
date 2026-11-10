@@ -22,6 +22,7 @@ import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/media/downloads/download_execution_target.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/sync/interconnect_download_client.dart';
+import 'package:fushi/src/sync/interconnect_host_failure_text.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/pages/implementations/download_backend_setup_dialog.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -130,6 +131,16 @@ Future<void> _showManualDownloadTaskDialogWith({
   }
   final bool preferRemote = execution is DownloadExecutionRemote;
   if (!context.mounted) return;
+  // 偏好指向的 host 因凭据 / 证书 / 版本这类用户能解决的原因不可用：对话框照开
+  // （可能退到别的 host 或本机），但先把原因说出来，免得用户以为投给了点名的设备。
+  if (execution is DownloadExecutionUnreachable &&
+      interconnectHostFailureWorthTelling(execution.failure)) {
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      FushiSnackBar(
+        content: Text(downloadExecutionUnreachableMessage(execution)),
+      ),
+    );
+  }
   _ManualDownloadBackend resolved = await _resolveBackend(appModel);
   // 远端只收磁链（`_canSubmit` 的远端分支拒绝 `.torrent`）：带种子进来时不走
   // 「仅远端」捷径，否则开出来的框一个都提交不了；照常引导配本机后端。
