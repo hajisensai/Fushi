@@ -16,6 +16,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart'
     show BackgroundIsolateBinaryMessenger, RootIsolateToken;
 
+import 'package:fushi/src/asr_host/asr_memory_gate.dart';
 import 'package:fushi/src/asr_host/asr_model_catalog.dart';
 import 'package:fushi/src/asr_host/gpu_acceleration.dart';
 import 'package:fushi/src/onnx/onnx_inference_ort.dart';
@@ -26,6 +27,8 @@ import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_r
 import 'package:fushi_engine/utils/misc/helper_process_registry.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:fushi_engine/asr/fushi_asr_ffmpeg_backend.dart';
+export 'package:fushi/src/asr_host/asr_memory_gate.dart'
+    show AsrInsufficientMemoryException, MemoryGatedAsrTranscriptionService;
 export 'package:fushi_engine/asr/fushi_asr_ffmpeg_backend.dart'
     show FushiAsrFfmpegBackend;
 export 'package:fushi_engine/media/video/subtitle/asr_proofread/moss_provisioning.dart'
@@ -171,9 +174,13 @@ Future<void> saveAsrModelCatalog(AsrModelCatalog catalog) async {
 ///   门限够用且免掉每 32 ms 一次 ONNX 前向；
 /// - 视频（动画 / 影视 / 带 BGM 的音源）必须传 mixedAudio：日语会换成 Parakeet
 ///   并走无 VAD 滑窗——2026-10-15 在 8 集动画上读音 CER 20.7% → 13.9%。
+///
+/// 返回的是 [MemoryGatedAsrTranscriptionService]：Android 上 `start` 前先按设备
+/// 可用内存判模型跑不跑得动，跑不动抛 [AsrInsufficientMemoryException]（反馈
+/// jbTZ4GIEyU：低内存机转录被系统杀）。所有生产入口都经这里，门槛只此一处。
 asr.AsrTranscriptionService createAsrTranscriptionService({
   asr.AsrAudioProfile audioProfile = asr.AsrAudioProfile.cleanSpeech,
-}) => asr.AsrTranscriptionService(
+}) => MemoryGatedAsrTranscriptionService(
   audioProfile: audioProfile,
   backend: fushiAsrBackend(),
   // 根 isolate 的装载器（plan 探测 EP、进程内路径装载）先确保 GPU 环境已

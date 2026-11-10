@@ -712,6 +712,11 @@ enum ShortcutAction {
   // 肌肉记忆跨阅读器复用。手柄留空，用户可自绑。
   mangaOpenStatistics(ShortcutScope.manga, 'manga_open_statistics'),
   mangaToggleStudyClock(ShortcutScope.manga, 'manga_toggle_study_clock'),
+  // 当前页书签（反馈 FhspOXxPl_）：屏上没有书签就加一条，有就移除——与书签面板
+  // 顶部「当前页」那一行、浏览器 webBrowserToggleBookmark 同一 toggle 语义，执行体
+  // 与书签面板同一入口 `_toggleBookmarkHere`。默认键盘 B（manga scope 内空闲），
+  // 手柄留空（B 归 universal 返回）。
+  mangaToggleBookmark(ShortcutScope.manga, 'manga_toggle_bookmark'),
 
   // Web browser：app 内浏览器（[ShortcutScope.webBrowser]）。声明顺序 = 设置页展示
   // 顺序：标签页 → 导航 → 页面工具 → 缩放。执行体在 fushi_web_browser_page 的

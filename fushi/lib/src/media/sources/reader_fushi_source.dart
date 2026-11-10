@@ -2000,6 +2000,13 @@ class ReaderFushiSource extends ReaderMediaSource {
         setPreference<bool>(key: 'keep_screen_awake', value: !keepScreenAwake));
   }
 
+  /// 把全局「保持屏幕常亮」设成 [value]（漫画设置面板全局作用域的写入口；
+  /// 与 [toggleKeepScreenAwake] 同一个键，可 await 落库）。
+  Future<void> setKeepScreenAwake(bool value) async {
+    await (readerSettings?.setKeepScreenAwake(value) ??
+        setPreference<bool>(key: 'keep_screen_awake', value: value));
+  }
+
   bool get lyricsMode =>
       getPreference<bool>(key: 'lyrics_mode', defaultValue: false);
 
