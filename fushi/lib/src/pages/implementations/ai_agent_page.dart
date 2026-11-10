@@ -79,7 +79,7 @@ const double kAiAgentSidePanelMargin = 12;
 /// 底部半屏面板占窗口高度的比例。
 const double kAiAgentBottomSheetHeightFactor = 0.55;
 
-/// 靠边侧栏的面板（[_AiAgentSidePanelSurface]）的 key，测试按它量尺寸。
+/// [AiAgentSidePanelFrame] 里定尺寸那一层的 key，测试按它量尺寸。
 const ValueKey<String> kAiAgentSidePanelKey = ValueKey<String>(
   'ai-agent-side-panel',
 );
