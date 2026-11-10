@@ -60,4 +60,13 @@ enum BookFormat {
   /// Bangumi 上报章进度)都必须先用它把这两种书排除掉,否则会把页码当章数报出去。
   bool get isPagedImageBook =>
       this == BookFormat.pdf || this == BookFormat.manga;
+
+  /// 这种书能不能挂有声书(音频 + 字幕对齐)——**全仓唯一判据**。
+  ///
+  /// 只有 EPUB 阅读器会播有声书、按字幕高亮正文;PDF 阅读器与漫画阅读器都不接
+  /// 有声书会话。书卡菜单的「导入有声书 / 有声书工作室」入口、ctl `audiobook`
+  /// 挂音频的拒绝分支、书架「有声书配对行顶替原书卡」(BUG-728)的隐藏规则都只认
+  /// 这一个 getter,不各写一份 `format == epub`(反馈 Ndnxy3mNdG:UI 入口按
+  /// `!isManga` 判、ctl 按 `== epub` 判,两份判据漂移,PDF 卡露出导入入口)。
+  bool get supportsAudiobook => this == BookFormat.epub;
 }
