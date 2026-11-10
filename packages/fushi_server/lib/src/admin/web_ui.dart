@@ -462,7 +462,7 @@ table.rt,.rt tbody,.rt tr,.rt td{display:block;width:100%}
 <div class="list" id="dicts"><div class="skel"></div><div class="skel"></div></div>
 <p class="note">顺序决定查词结果里各词典的排列。「隐藏」对应日语查词的隐藏标记（服务端引擎目前只认这一个）：隐藏的词典不装进引擎，查词时不出结果。</p>
 <h3 class="sh">试查</h3>
-<div class="card"><div class="row" style="margin:0"><input type="text" id="dict-q" placeholder="要查的词，如 食べた" style="flex:1 1 200px;width:auto"><button class="b" id="btn-dict-q"><svg class="i"><use href="#i-search"/></svg>查词</button></div></div>
+<div class="card"><div class="row" style="margin:0"><input type="text" id="dict-q" placeholder="食べた" style="flex:1 1 200px;width:auto"><button class="b" id="btn-dict-q"><svg class="i"><use href="#i-search"/></svg>查词</button></div></div>
 <div id="dict-results"></div>
 </section>
 
@@ -1247,9 +1247,9 @@ async function loadDictionaries(){
   if ($('#dicts .more-menu:not([hidden])')) return;
   const e = r.engine || {};
   $('#dict-engine').innerHTML = kvHtml([
-    [T('引擎'), e.available ? tag('ok', T('已加载')) : tag('err', T('不可用')) + (e.reason ? ' ' + esc(e.reason) : ''), true],
+    [T('引擎'), e.available ? tag('ok', T('已加载')) : tag('err', e.reason ? T('不可用：{0}', e.reason) : T('不可用')), true],
     [T('已装载'), e.available ? T('{0} 本', e.loadedCount) : '—'],
-    [T('变形表（去屈折）'), e.transformsLoaded ? tag('ok', T('已加载')) : tag('warn', T('缺失')) + ' ' + esc(T('只能查原形（设 FUSHI_TRANSFORMS_DIR 或随包放 share/fushi/transforms）')), true],
+    [T('变形表（去屈折）'), e.transformsLoaded ? tag('ok', T('已加载')) : `<span style="color:var(--error)">${esc(T('缺失：只能查原形（设 FUSHI_TRANSFORMS_DIR 或随包放 share/fushi/transforms）'))}</span>`, true],
     [T('原生库'), e.libraryPath || T('默认搜索路径')],
   ]);
   const list = r.dictionaries || [];
@@ -1277,9 +1277,9 @@ $('#btn-dict-up').onclick = guard(async()=>{
   const btn=$('#btn-dict-up'), st=$('#dict-up-state'); btn.disabled=true; st.style.color='';
   try{
     const r = await uploadDictionary(f, (p)=>{ st.textContent = p<1 ? T('上传中 {0}%', Math.round(p*100)) : T('导入中…（大词典要几分钟）'); });
-    const what = r.replaced ? T('已更新「{0}」', r.name) : T('已导入「{0}」', r.name);
-    st.textContent = what + ' — ' + [DICT_TYPE[r.type]||r.type, T('{0} 词条', r.termCount), r.kanjiCount ? T('{0} 汉字', r.kanjiCount) : ''].filter(Boolean).join(' · ');
-    toast(what); $('#dict-file').value=''; loadDictionaries();
+    const args = [r.name, DICT_TYPE[r.type]||r.type, r.termCount, r.kanjiCount?T('，{0} 汉字', r.kanjiCount):''];
+    st.textContent = r.replaced ? T('已更新「{0}」（{1}，{2} 词条{3}）', ...args) : T('已导入「{0}」（{1}，{2} 词条{3}）', ...args);
+    toast(st.textContent); $('#dict-file').value=''; loadDictionaries();
   }catch(e){ st.style.color='var(--error)'; st.textContent=T('导入失败：{0}', e.message); throw e; }
   finally{ btn.disabled=false; }
 });

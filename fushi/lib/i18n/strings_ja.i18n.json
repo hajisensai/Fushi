@@ -4314,6 +4314,7 @@
   "interconnect_peer_forget_title": "Forget this device?",
   "interconnect_peer_list_empty": "ピアはまだ追加されていません。下のLANデバイスリストから検出されたデバイスを選んで自動ペアリングするか、ピアアドレスを手動で追加してください。",
   "interconnect_peer_list_title": "追加済みのピア",
+  "interconnect_peer_test_none_enabled": "All peers are turned off. Turn one on to test it.",
   "interconnect_profile_download": "ホストから設定をダウンロード",
   "interconnect_profile_download_desc": "ホストの現在の設定を新しい設定としてダウンロードし、その設定に切り替えます。これまでの設定はプロファイル管理に残ります。",
   "interconnect_profile_downloaded": "ダウンロードして切り替えました：${name}",
