@@ -53,6 +53,7 @@ import 'package:fushi_engine/sync/local_audio_library_store.dart';
 import 'package:fushi_engine/sync/local_library_host_service.dart';
 import 'package:fushi_engine/sync/manga_sync_package.dart';
 import 'package:fushi_engine/sync/override_title_db.dart';
+import 'package:fushi_engine/sync/pairing/fushi_pair_link.dart';
 import 'package:fushi_engine/sync/pairing/fushi_pairing_protocol.dart';
 import 'package:fushi_engine/sync/subscriptions/host_subscription_host.dart';
 import 'package:fushi_engine/sync/sync_asset_package_service.dart';
@@ -97,6 +98,32 @@ class PendingPairing {
   final String? deviceName;
   final String? remoteAddress;
   final DateTime createdAt;
+}
+
+/// 管理员签发配对链接的结果（BUG-4280）：签出 [PairLinkIssued]，或签不出的原因
+/// [PairLinkUnavailable]。
+sealed class PairLinkOutcome {
+  const PairLinkOutcome();
+}
+
+/// 一次性配对链接（`fushi://pair?...&k=<票据>`）及票据失效时刻。
+final class PairLinkIssued extends PairLinkOutcome {
+  const PairLinkIssued({required this.uri, required this.expiresAt});
+
+  final String uri;
+  final DateTime expiresAt;
+}
+
+/// 签不出链接。[reason] 是 admin API 的 wire 值：`not_running`（互联服务没在跑）/
+/// `no_reachable_address`（没有可公布的地址：明文 host 的网卡地址不公布，又没有
+/// HTTPS 公网地址 / P2P，app 解析不出这种链接）。
+final class PairLinkUnavailable extends PairLinkOutcome {
+  const PairLinkUnavailable(this.reason);
+
+  static const String notRunning = 'not_running';
+  static const String noReachableAddress = 'no_reachable_address';
+
+  final String reason;
 }
 
 /// 串行化库变动（对应 app 的 `runExclusiveWithSync`）。
@@ -258,6 +285,25 @@ class HeadlessHost {
 
   /// 管理员解除配对锁定（BUG-4280）。
   void resetPairingLockout() => _server?.resetPairingLockout();
+
+  /// 管理员签发一次性配对链接（BUG-4280）：票据配对凭 192-bit secret，不走 PIN、
+  /// 不进 PIN 失败预算，公网类别被爆破锁住时只能从公网接入的用户仍有路可走。
+  /// 票据 TTL 用引擎默认；再签一张即作废上一张（引擎语义）。链接没有可公布地址时
+  /// 立刻作废票据并报 [PairLinkUnavailable.noReachableAddress]，不发 app 解析不了
+  /// 的废链接。
+  Future<PairLinkOutcome> createPairLink() async {
+    final FushiSyncServer? server = _server;
+    if (server == null) {
+      return const PairLinkUnavailable(PairLinkUnavailable.notRunning);
+    }
+    final FushiPairTicket ticket = server.issuePairTicket();
+    final FushiPairLink link = await server.buildPairLink(ticket: ticket);
+    if (link.addresses.isEmpty) {
+      server.revokePairTicket();
+      return const PairLinkUnavailable(PairLinkUnavailable.noReachableAddress);
+    }
+    return PairLinkIssued(uri: link.toUri(), expiresAt: ticket.expiresAt);
+  }
 
   /// 配对 PIN 出现/消失时的观察者（WebUI SSE、CLI 打印）。
   final StreamController<PendingPairing?> pairingEvents =

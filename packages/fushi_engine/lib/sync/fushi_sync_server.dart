@@ -729,10 +729,12 @@ class FushiSyncServer {
     );
   }
 
-  /// 本 host 当前可公布的地址集。只在 LAN 开放时有意义——仅本机监听时公布网卡
-  /// 地址等于告诉 client 一堆连不上的地址。
+  /// 本 host 当前可公布的地址集。仅本机监听时不枚举网卡——公布网卡地址等于告诉
+  /// client 一堆连不上的地址；但 `publicUrls`（本机反代 / 穿透的对外地址）与
+  /// `extra`（P2P）不经网卡监听口，照样可达，照常公布（BUG-4280：VPS 上
+  /// `bind: 127.0.0.1` + 反代的无头端签发的配对链接否则一个地址都没有）。
   Future<List<InterconnectHostAddress>> _hostAddresses() async {
-    if (!_allowLan || _server == null) return const <InterconnectHostAddress>[];
+    if (_server == null) return const <InterconnectHostAddress>[];
     return listInterconnectHostAddresses(
       port: port,
       tls: _securityContext != null,
@@ -741,7 +743,9 @@ class FushiSyncServer {
               Future<List<String>>.value(const <String>[])),
       extra:
           extraAddressesProvider?.call() ?? const <InterconnectHostAddress>[],
-      interfaceLister: interfaceLister,
+      interfaceLister: _allowLan
+          ? interfaceLister
+          : () async => const <NetworkInterface>[],
     );
   }
 

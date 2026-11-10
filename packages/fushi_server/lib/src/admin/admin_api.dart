@@ -162,6 +162,8 @@ class AdminApi {
         // BUG-4280：解除因 PIN 失败过多的配对暂停（全部来源类别）。
         ctx.host.resetPairingLockout();
         return shelf.Response(204);
+      case ('POST', '/api/admin/pairing/link'):
+        return _createPairLink();
       case ('PUT', _)
           when path.startsWith('/api/admin/pairing/peers/') &&
               path.endsWith('/owner'):
@@ -559,6 +561,24 @@ class AdminApi {
 
   InterconnectOwnerDeviceStore get _ownerDevices =>
       InterconnectOwnerDeviceStore(ctx.db);
+
+  /// BUG-4280：签发一次性配对链接（票据配对不走 PIN 预算）。签不出时 409 + reason。
+  Future<shelf.Response> _createPairLink() async {
+    final PairLinkOutcome outcome = await ctx.host.createPairLink();
+    return switch (outcome) {
+      PairLinkIssued(:final String uri, :final DateTime expiresAt) =>
+        _json(<String, Object?>{
+          'uri': uri,
+          'expiresInSeconds': expiresAt
+              .difference(DateTime.now())
+              .inSeconds
+              .clamp(0, 1 << 31),
+        }),
+      PairLinkUnavailable(:final String reason) => _json(<String, Object?>{
+        'reason': reason,
+      }, status: 409),
+    };
+  }
 
   Future<shelf.Response> _pairing() async {
     final PendingPairing? pending = ctx.host.pendingPairing;

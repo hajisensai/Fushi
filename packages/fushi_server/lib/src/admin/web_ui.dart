@@ -413,6 +413,7 @@ table.rt,.rt tbody,.rt tr,.rt td{display:block;width:100%}
 
 <section id="s-pairing">
 <div id="pairing-lockout"></div>
+<div class="card"><div class="card-head"><div><h2>配对链接</h2><p class="sup" style="margin:0">一次性链接自带票据，配对不用 PIN；来自公网的 PIN 配对被暂停时也能用。</p></div><button class="b sec" id="btn-pair-link">生成配对链接</button></div><div id="pair-link-out" hidden></div></div>
 <div id="pairing-pending"><div class="list"><div class="skel"></div></div></div>
 <h3 class="sh">已配对设备</h3>
 <div class="list" id="peers"><div class="skel"></div><div class="skel"></div></div>
@@ -608,7 +609,7 @@ function ask(msg, danger){
     d.showModal(); $('#dlg-no').focus();
   });
 }
-const REASON_TEXT = {disabled:T('订阅已停用，请先启用'), unrecognized:T('无法识别这个站点'), timedOut:T('站点响应超时'), invalidUrl:T('地址无效'), insecureHttp:T('这是明文 HTTP 地址：请改用 HTTPS，或勾选「允许明文 HTTP」')};
+const REASON_TEXT = {not_running:T('互联服务没在运行'), no_reachable_address:T('没有能放进链接的地址：配对链接只收 HTTPS 地址或 P2P 隧道。请开启 TLS、在「设置 › 远程访问」填写 HTTPS 公网地址，或开启 P2P 隧道'), disabled:T('订阅已停用，请先启用'), unrecognized:T('无法识别这个站点'), timedOut:T('站点响应超时'), invalidUrl:T('地址无效'), insecureHttp:T('这是明文 HTTP 地址：请改用 HTTPS，或勾选「允许明文 HTTP」')};
 async function api(path, opts){
   const r = await fetch('/api/admin/'+path, Object.assign({headers:{'Content-Type':'application/json'}}, opts||{}));
   if (r.status===401){ location.reload(); throw new Error('unauthorized'); }
@@ -713,6 +714,20 @@ $('#btn-scan').onclick = guard(async()=>{ await post('scan'); toast(T('已开始
 
 // ── 配对 ──
 function setPairBadge(pending){ $('#pair-badge').hidden = !pending; }
+// BUG-4280：管理员签发一次性配对链接（票据配对不走 PIN 预算）。再签一张即作废上一张。
+$('#btn-pair-link').onclick = guard(async()=>{
+  const r = await post('pairing/link');
+  const out = $('#pair-link-out');
+  out.innerHTML = `<div class="row"><input id="pair-link-uri" class="mono" readonly value="${esc(r.uri)}"><button class="b sec" id="btn-pair-link-copy">${esc(T('复制'))}</button></div><p class="sup">${esc(T('{0} 分钟内有效，只能用一次。在 Fushi 的互联设置里点「粘贴配对链接」使用。', Math.max(1, Math.round(r.expiresInSeconds/60))))}</p>`;
+  out.hidden = false;
+  $('#btn-pair-link-copy').onclick = guard(async()=>{
+    const input = $('#pair-link-uri');
+    // 明文 http 访问 WebUI 时不是安全上下文，没有 navigator.clipboard，退回选中复制。
+    if (navigator.clipboard && window.isSecureContext) await navigator.clipboard.writeText(input.value);
+    else { input.select(); if (!document.execCommand('copy')) throw new Error(T('浏览器不让复制，请手动选中')); }
+    toast(T('已复制'));
+  });
+});
 async function loadPairing(){
   const p = await api('pairing');
   setPairBadge(p.pending);
