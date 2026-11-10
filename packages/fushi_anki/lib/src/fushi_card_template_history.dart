@@ -189,4 +189,37 @@ kFushiCardTemplateHistory = <FushiCardTemplateVersion>[
       '072345094542c604a65621d22635b9aa329a1de139e0db673281b244a28a7298',
     ),
   ),
+  FushiCardTemplateVersion(
+    commit: 'ea8df37676',
+    cssSha256:
+        'fd2665d7f9bf4b9186d509714e37f15d9aeeef9b7db161ad133ea62d915c43f1',
+    front: FushiCardSideSpec.markers(
+      '02aa6ce886f04ad68f9842fbb47745fc8c46903241096b1ef49b948795203390',
+    ),
+    back: FushiCardSideSpec.markers(
+      '072345094542c604a65621d22635b9aa329a1de139e0db673281b244a28a7298',
+    ),
+  ),
+  FushiCardTemplateVersion(
+    commit: 'df62665026',
+    cssSha256:
+        '77b542f2b8a6645165268515b7eca40d64d814109a395d3f03d8e18f0f9c75cc',
+    front: FushiCardSideSpec.markers(
+      '02aa6ce886f04ad68f9842fbb47745fc8c46903241096b1ef49b948795203390',
+    ),
+    back: FushiCardSideSpec.markers(
+      '072345094542c604a65621d22635b9aa329a1de139e0db673281b244a28a7298',
+    ),
+  ),
+  FushiCardTemplateVersion(
+    commit: 'c06b357e3e',
+    cssSha256:
+        '041b9a63fb3dfab6f916ca2f775a42b587a21c1db29fadcc00e98f1863a566c6',
+    front: FushiCardSideSpec.markers(
+      '02aa6ce886f04ad68f9842fbb47745fc8c46903241096b1ef49b948795203390',
+    ),
+    back: FushiCardSideSpec.markers(
+      '072345094542c604a65621d22635b9aa329a1de139e0db673281b244a28a7298',
+    ),
+  ),
 ];
