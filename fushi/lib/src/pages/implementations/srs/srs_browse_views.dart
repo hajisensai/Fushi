@@ -7,6 +7,7 @@
 ///   分组（分组即按该键排序，表头行插在键变化处）。
 /// - 出处：按作品分组（[SrsBrowseResult.sources] 一条命令算完），组头「今天到期 x / 共 y」+「只看这一作」
 ///   +「只复习这一作」（浏览页开一轮只出这部作品到期卡的自定义学习），组里前几张卡带配图缩略图与原声播放。
+///   带系列的出处是「系列 → 集」两级（反馈 MCJLSBR5Wg）：组是整个系列，组里按集列出，点一集展开它的卡并可「只看这一集」。
 /// - 健康条：问题卡（主字段为空 / Fushi 卡片缺音频）、难卡、疑似重复的计数，点一下换成对应条件；
 ///   「修复」由浏览页确认后执行（可撤销）。
 library;
@@ -39,6 +40,8 @@ import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_loading_view.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart'
+    show FushiCardVariant;
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
@@ -251,7 +254,7 @@ String srsBrowseGroupLabel(
   SrsBrowseTableGroup.source =>
     r.sourceKey == null
         ? t.srs_browse_source_none
-        : srsBrowseSourceTitle(r.source, r.sourceKind),
+        : srsBrowseSourceGroupTitle(r.source, r.sourceKind),
   _ => srsBrowseGroupKey(context, r, g),
 };
 
@@ -803,7 +806,7 @@ List<String> srsTopLevelDecks(SrsDeckTree tree, List<String> deckIds) =>
           c.last,
     }.toList();
 
-/// 出处视图：按作品分组。
+/// 出处视图：按作品分组；带系列的出处按「系列 → 集」两级分组。
 class SrsBrowseSourcesView extends ConsumerStatefulWidget {
   const SrsBrowseSourcesView({
     super.key,
@@ -842,6 +845,9 @@ class _SrsBrowseSourcesViewState extends ConsumerState<SrsBrowseSourcesView> {
   SrsMediaStore? _media;
   int _seq = 0;
 
+  /// 展开着的集（系列下第二级的出处键）。换了结果也保留：同一集再出现时仍展开。
+  final Set<String> _expanded = <String>{};
+
   @override
   void initState() {
     super.initState();
@@ -862,9 +868,12 @@ class _SrsBrowseSourcesViewState extends ConsumerState<SrsBrowseSourcesView> {
     final SrsBrowseResult r = widget.result;
     try {
       final List<SrsBrowseSourceGroup> groups = await r.sources();
-      // 组里预览行一次取齐（按页取，同一页的只取一次）。
+      // 组里（含系列下各集）预览行一次取齐（按页取，同一页的只取一次）。
       for (final SrsBrowseSourceGroup g in groups) {
-        for (final int i in g.preview) {
+        for (final int i in <int>{
+          ...g.preview,
+          for (final SrsBrowseSourceGroup c in g.children) ...c.preview,
+        }) {
           await r.ensure(i, i + 1);
         }
       }
@@ -944,13 +953,20 @@ class _SrsBrowseSourcesViewState extends ConsumerState<SrsBrowseSourcesView> {
         : Theme.of(context).colorScheme.onSurfaceVariant;
     final String title = g.key == null
         ? t.srs_browse_source_none
-        : srsBrowseSourceTitle(g.source, g.kind);
+        : srsBrowseSourceGroupTitle(g.source, g.kind);
     final String sub = g.key == null
         ? t.srs_browse_source_none_hint
-        : '${srsBrowseSourceKindLabel(g.kind)} · ${t.srs_browse_source_due(due: g.due, count: g.count)}';
-    final List<SrsBrowseRow> rows = <SrsBrowseRow>[
-      for (final int i in g.preview) ?widget.result.rowAt(i),
-    ];
+        : <String>[
+            srsBrowseSourceKindLabel(g.kind),
+            if (g.isSeries)
+              t.srs_browse_source_series_episodes(n: g.children.length),
+            t.srs_browse_source_due(due: g.due, count: g.count),
+          ].join(' · ');
+    final List<SrsBrowseRow> rows = g.isSeries
+        ? const <SrsBrowseRow>[]
+        : <SrsBrowseRow>[
+            for (final int i in g.preview) ?widget.result.rowAt(i),
+          ];
     return FushiCard(
       key: ValueKey<String>('srs-browse-source-${g.key ?? 'none'}'),
       pressScale: false,
@@ -1008,18 +1024,126 @@ class _SrsBrowseSourcesViewState extends ConsumerState<SrsBrowseSourcesView> {
                 ),
             ],
           ),
-          for (int k = 0; k < rows.length; k++)
-            _tile(context, rows[k], g.preview[k], muted),
-          if (g.count > rows.length)
-            Align(
-              alignment: AlignmentDirectional.centerStart,
-              child: FushiTextButton(
-                onPressed: () => widget.onOnlySource(g.key),
-                child: Text(t.srs_browse_source_more(n: g.count - rows.length)),
+          if (g.isSeries)
+            for (final SrsBrowseSourceGroup c in g.children)
+              _episode(context, c, muted)
+          else ...<Widget>[
+            for (int k = 0; k < rows.length; k++)
+              _tile(context, rows[k], g.preview[k], muted),
+            if (g.count > rows.length)
+              Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: FushiTextButton(
+                  onPressed: () => widget.onOnlySource(g.key),
+                  child: Text(
+                    t.srs_browse_source_more(n: g.count - rows.length),
+                  ),
+                ),
               ),
-            ),
+          ],
         ],
       ),
+    );
+  }
+
+  /// 系列下的一集：一行「集名 · 今天到期 x / 共 y」，点一下展开 / 收起这一集的前几张卡与「只看这一集」。
+  Widget _episode(BuildContext context, SrsBrowseSourceGroup c, Color muted) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final String key = c.key ?? '';
+    final bool open = _expanded.contains(key);
+    final List<SrsBrowseRow> rows = <SrsBrowseRow>[
+      for (final int i in c.preview) ?widget.result.rowAt(i),
+    ];
+    final Duration duration = fushiMotionDuration(context, FushiMotion.short);
+    return Column(
+      key: ValueKey<String>('srs-browse-source-episode-$key'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      spacing: tokens.spacing.gap / 2,
+      children: <Widget>[
+        Semantics(
+          button: true,
+          expanded: open,
+          child: FushiCard(
+            key: ValueKey<String>('srs-browse-source-episode-toggle-$key'),
+            variant: FushiCardVariant.outlined,
+            padding: EdgeInsets.symmetric(
+              horizontal: tokens.spacing.gap * 1.5,
+              vertical: tokens.spacing.gap,
+            ),
+            onTap: () => setState(() {
+              if (!_expanded.remove(key)) _expanded.add(key);
+            }),
+            child: Row(
+              spacing: tokens.spacing.gap,
+              children: <Widget>[
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        srsBrowseSourceItemTitle(c.source, c.kind),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: context.fushiType.titleSmall,
+                      ),
+                      Text(
+                        t.srs_browse_source_due(due: c.due, count: c.count),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: context.fushiType.bodySmall.copyWith(
+                          color: muted,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                AnimatedRotation(
+                  turns: open ? 0.5 : 0,
+                  duration: duration,
+                  curve: FushiMotion.standard,
+                  child: FushiIcon(FushiIcons.expandMore, color: muted),
+                ),
+              ],
+            ),
+          ),
+        ),
+        FushiAnimatedSize(
+          duration: duration,
+          curve: FushiMotion.standard,
+          alignment: AlignmentDirectional.topStart,
+          child: !open
+              ? const SizedBox(width: double.infinity)
+              : Padding(
+                  padding: EdgeInsetsDirectional.only(
+                    start: tokens.spacing.gap * 1.5,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    spacing: tokens.spacing.gap / 2,
+                    children: <Widget>[
+                      for (int k = 0; k < rows.length; k++)
+                        _tile(context, rows[k], c.preview[k], muted),
+                      Align(
+                        alignment: AlignmentDirectional.centerStart,
+                        child: FushiTextButton(
+                          key: ValueKey<String>(
+                            'srs-browse-source-episode-only-$key',
+                          ),
+                          onPressed: () => widget.onOnlySource(c.key),
+                          child: Text(
+                            c.count > rows.length
+                                ? t.srs_browse_source_more(
+                                    n: c.count - rows.length,
+                                  )
+                                : t.srs_browse_source_only_episode,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+        ),
+      ],
     );
   }
 
