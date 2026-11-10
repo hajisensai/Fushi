@@ -263,14 +263,17 @@ class _QueuedJob {
   String get directory => job.managedDirectory;
 }
 
-/// 用户暂停的任务：[job] 是**尚未订阅**、可直接重新排队的那一个（排队中暂停 =
-/// 原任务；运行中暂停 = [MangaOcrBackgroundJob.resume] 重建的新任务）。
+/// 用户暂停的任务。[job] 只供管理页取身份 / 显示名 / 引擎；继续时由 [take] 给出
+/// **尚未订阅**、可直接重新排队的那一个：排队中暂停 = 原任务原样；运行中暂停 =
+/// 到继续那一刻才经 [MangaOcrBackgroundJob.resume] 重建（重建会现读大模型识别等
+/// 偏好、新建跟随步骤，暂停期间改的设置要在继续时生效，不能在暂停时就冻住）。
 class _PausedJob {
-  _PausedJob(this.job, this.mangaJsonPath, this.lastEvent);
+  _PausedJob(this.job, this.mangaJsonPath, this.lastEvent, this.take);
 
   final MangaOcrBackgroundJob job;
   final String mangaJsonPath;
   final MangaOcrBackgroundEvent? lastEvent;
+  final MangaOcrBackgroundJob Function() take;
 
   String get bookKey => job.bookKey;
   String get directory => job.managedDirectory;
@@ -546,7 +549,7 @@ class MangaOcrJobRegistry {
   ///
   /// - 排队中：从队列摘下（排队链轮到它时发现不在队里就跳过），原任务留着继续用；
   /// - 运行中：真停（各执行器在页边界停、逐页缓存保留），释放全局名额让下一个
-  ///   排队者开跑；记下 [MangaOcrBackgroundJob.resume] 重建的新任务供 [resume]。
+  ///   排队者开跑；记下 [MangaOcrBackgroundJob.resume] 重建口，[resume] 时才重建。
   ///
   /// 本书其它排队的章不受影响。没有匹配的任务、或运行中的任务不支持暂停时返回
   /// false。
@@ -560,7 +563,10 @@ class MangaOcrJobRegistry {
     if (queue != null && queuedIndex >= 0) {
       final _QueuedJob queued = queue.removeAt(queuedIndex);
       if (queue.isEmpty) _queued.remove(bookKey);
-      _paused.add(_PausedJob(queued.job, queued.mangaJsonPath, null));
+      final MangaOcrBackgroundJob original = queued.job;
+      _paused.add(
+        _PausedJob(original, queued.mangaJsonPath, null, () => original),
+      );
       _notifyChanged();
       return true;
     }
@@ -573,7 +579,12 @@ class MangaOcrJobRegistry {
     }
     _jobs.remove(bookKey);
     _paused.add(
-      _PausedJob(rebuild(), running.mangaJsonPath, running.lastEvent),
+      _PausedJob(
+        running.job,
+        running.mangaJsonPath,
+        running.lastEvent,
+        rebuild,
+      ),
     );
     _notifyChanged();
     await running.cancel();
@@ -589,7 +600,7 @@ class MangaOcrJobRegistry {
     );
     if (index < 0) return false;
     final _PausedJob paused = _paused.removeAt(index);
-    unawaited(enqueue(job: paused.job, mangaJsonPath: paused.mangaJsonPath));
+    unawaited(enqueue(job: paused.take(), mangaJsonPath: paused.mangaJsonPath));
     return true;
   }
 

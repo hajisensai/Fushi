@@ -1432,9 +1432,6 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       // 漫画「在线目录」入口已从书架移除（属漫画域，入口收敛到下载页）；
       // mokuro.moe 下载队列监听仍保留在 initState——下载页触发的后台落库
       // 依赖它刷新书架。
-      // 视频导入入口**只属于视频 tab**（HomeVideoPage），书架不放视频导入——
-      // 书架是书的地方。这里保留编译期常量门控（默认关）只为旧调试路径，运行时
-      // 实验开关不再在书架放出视频导入（用户反馈：书架不该有视频导入入口）。
       // 漫画 OCR 任务管理（反馈 iuv4-jWC8S）：全部整卷识别任务的进度与逐项 / 批量
       // 暂停、继续。任务在书架外起（卡菜单、作品页、下载钩子、阅读器），书架是
       // 它们共同的上级入口。
@@ -1444,6 +1441,9 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
           icon: FushiIcons.ocr,
           onTap: () => unawaited(MangaOcrManagerPage.push(context)),
         ),
+      // 视频导入入口**只属于视频 tab**（HomeVideoPage），书架不放视频导入——
+      // 书架是书的地方。这里保留编译期常量门控（默认关）只为旧调试路径，运行时
+      // 实验开关不再在书架放出视频导入（用户反馈：书架不该有视频导入入口）。
       if (kVideoImportEnabled)
         _headerAction(
           tooltip: t.video_import_action,

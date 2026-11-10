@@ -592,7 +592,7 @@ void main() {
 
       expect(await registry.pause('book-a', dirA), isTrue);
       expect(first.cancelled, isTrue, reason: '暂停 = 真停执行器（逐页缓存保留）');
-      expect(rebuilds, 1);
+      expect(rebuilds, 0, reason: '重建推迟到继续时：暂停期间改的偏好要在继续时生效');
       expect(registry.running('book-a'), isNull);
       expect(await startedB, isNotNull, reason: '名额让给排队的下一本');
       final MangaOcrJobEntry paused = registry.entries().singleWhere(
@@ -602,6 +602,7 @@ void main() {
       expect(rebuilt.controller.hasListener, isFalse);
 
       expect(registry.resume('book-a', dirA), isTrue);
+      expect(rebuilds, 1);
       await Future<void>.delayed(Duration.zero);
       expect(rebuilt.controller.hasListener, isFalse, reason: '名额被 B 占着');
       await other.controller.close();

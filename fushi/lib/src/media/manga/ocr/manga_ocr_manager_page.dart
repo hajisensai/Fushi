@@ -64,9 +64,15 @@ class _MangaOcrManagerPageState extends ConsumerState<MangaOcrManagerPage> {
   late final MangaOcrJobRegistry _registry;
   StreamSubscription<void>? _changes;
 
-  /// 运行中任务的进度观察（按 bookKey）；只为触发重绘，不缓存进度。
-  final Map<String, StreamSubscription<MangaOcrBackgroundEvent>> _progress =
-      <String, StreamSubscription<MangaOcrBackgroundEvent>>{};
+  /// 运行中任务的进度观察（按任务对象身份，不按 bookKey：同一本书前一章结束 /
+  /// 被暂停、下一章接着开跑，两次变更可能在同一轮通知里合并，按 bookKey 会让
+  /// 观察者停在已结束的旧任务上）；只为触发重绘，不缓存进度。
+  final Map<MangaOcrRunningJob, StreamSubscription<MangaOcrBackgroundEvent>>
+  _progress =
+      Map<
+        MangaOcrRunningJob,
+        StreamSubscription<MangaOcrBackgroundEvent>
+      >.identity();
   final Map<String, String> _bookTitles = <String, String>{};
   final Set<String> _titleRequested = <String>{};
 
@@ -100,18 +106,16 @@ class _MangaOcrManagerPageState extends ConsumerState<MangaOcrManagerPage> {
 
   /// 让每个运行中的任务都有一个进度观察者；已不在运行集里的观察者释放。
   void _observeRunning() {
-    final Map<String, MangaOcrRunningJob> running =
-        <String, MangaOcrRunningJob>{
-          for (final MangaOcrRunningJob job in _registry.all) job.bookKey: job,
-        };
-    for (final String bookKey in _progress.keys.toList()) {
-      if (!running.containsKey(bookKey)) {
-        unawaited(_progress.remove(bookKey)!.cancel());
+    final Set<MangaOcrRunningJob> running = Set<MangaOcrRunningJob>.identity()
+      ..addAll(_registry.all);
+    for (final MangaOcrRunningJob job in _progress.keys.toList()) {
+      if (!running.contains(job)) {
+        unawaited(_progress.remove(job)!.cancel());
       }
     }
-    for (final MangaOcrRunningJob job in running.values) {
+    for (final MangaOcrRunningJob job in running) {
       _progress.putIfAbsent(
-        job.bookKey,
+        job,
         () => job.events.listen(
           (_) {
             if (mounted) setState(() {});
