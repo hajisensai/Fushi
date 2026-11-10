@@ -43,6 +43,9 @@ bool _isUrl(String entry) {
   return i >= 2;
 }
 
+/// Windows 盘符绝对路径（`C:/…`，分隔符已统一成 `/`）。
+final RegExp _driveAbsolute = RegExp(r'^[A-Za-z]:/');
+
 /// 路径尾段对曲库时最多看几段（`艺人/专辑/文件`）。
 const int _kMaxSuffixSegments = 3;
 
@@ -210,9 +213,14 @@ MusicPlaylistFile resolveRemoteMusicPlaylistEntries(
   // `..` 不越过根：`scheme://host` 是 3 段（`scheme:`、空、`host`），普通路径是首段。
   final int floor = dir.contains('://') ? 3 : 1;
   String resolve(String entry) {
-    if (_isUrl(entry) || entry.startsWith('/')) return entry;
+    if (_isUrl(entry)) return entry;
+    // 先统一分隔符再判绝对：Windows 写的 `\Music\a.flac`、`D:\Music\a.flac`（Rust 在
+    // Windows 上也会把 `/x` 换成 `\x`）都是绝对路径，拼到列表目录后面会变成一条带 scheme 的
+    // 假地址，只按完整路径对、永远对不上。绝对条目原样交回，由匹配按尾段对曲库。
+    final String norm = entry.replaceAll(r'\', '/');
+    if (norm.startsWith('/') || _driveAbsolute.hasMatch(norm)) return entry;
     final List<String> parts = dir.split('/');
-    for (final String seg in entry.replaceAll(r'\', '/').split('/')) {
+    for (final String seg in norm.split('/')) {
       if (seg.isEmpty || seg == '.') continue;
       if (seg == '..') {
         if (parts.length > floor) parts.removeLast();

@@ -190,6 +190,30 @@ void main() {
     ]);
   });
 
+  test('远程列表：绝对条目（/x、\\x、盘符）不拼到列表目录，按尾段对上远程曲目', () {
+    final List<MusicTrackRow> remote = <MusicTrackRow>[
+      _row('r1', 'sftp://nas/music/Album/01.flac'),
+      _row('r2', 'sftp://nas/music/Album/02.flac'),
+      _row('r3', 'sftp://nas/music/Album/03.flac'),
+    ];
+    const List<String> absolute = <String>[
+      '/music/Album/01.flac',
+      // Windows 上 Rust（无 baseDir）把 `/x` 换成 `\x` 交回。
+      r'\music\Album\02.flac',
+      // 别的 Windows 机器写的盘符绝对路径。
+      r'D:\Music\Album\03.flac',
+    ];
+    final MusicPlaylistFile r = resolveRemoteMusicPlaylistEntries(
+      'sftp://nas/music/Lists/a.m3u8',
+      const MusicPlaylistFile(name: null, entries: absolute),
+    );
+    expect(r.entries, absolute);
+    expect(
+      matchMusicPlaylistEntries(r.entries, remote, context: _posix),
+      <String>['r1', 'r2', 'r3'],
+    );
+  });
+
   test('导出 .m3u8：同根本地路径写相对，扩展信息写进 EXTINF', () {
     final String text = encodeMusicPlaylistM3u8(
       name: 'Mix\nTwo',
