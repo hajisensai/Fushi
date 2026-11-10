@@ -166,6 +166,13 @@ class _FakeAppModel extends AppModel {
   }
 
   @override
+  Future<void> setDictionaryHidden(Dictionary dictionary, bool hidden) async {
+    store.firstWhere((Dictionary d) => d.name == dictionary.name)
+      .hiddenLanguages = hidden ? <String>['ja'] : <String>[];
+    dictionary.hiddenLanguages = hidden ? <String>['ja'] : <String>[];
+  }
+
+  @override
   Future<void> forgetRemoteDictionary(String hostId, String name) async {
     forgotten.add((hostId, name));
     remote = <RemoteDictionary>[
@@ -575,6 +582,33 @@ void main() {
     );
     await _pressEnter(tester);
     expect(_rowNames(tester), <String>[_serverKey]);
+  });
+
+  testWidgets('Both row switch mirrors its state to the server copy', (
+    WidgetTester tester,
+  ) async {
+    final _FakeAppModel model = await _pumpPage(tester);
+    final Finder toggle = find.byKey(
+      const ValueKey<String>('dict-row-switch-JMdict'),
+    );
+    await _focusInside(tester, toggle);
+    await _pressEnter(tester);
+    expect(model.hiddenWrites, <(String, bool)>[('JMdict', true)]);
+    expect(
+      model.remote.firstWhere((RemoteDictionary r) => r.name == 'JMdict').hidden,
+      isTrue,
+    );
+    await _focusInside(tester, toggle);
+    await _pressEnter(tester);
+    expect(model.hiddenWrites, <(String, bool)>[
+      ('JMdict', true),
+      ('JMdict', false),
+    ]);
+    expect(
+      model.remote.firstWhere((RemoteDictionary r) => r.name == 'JMdict').hidden,
+      isFalse,
+    );
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('Forget is offered only for rows no longer on the server', (

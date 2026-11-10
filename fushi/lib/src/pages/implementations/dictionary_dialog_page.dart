@@ -3834,10 +3834,23 @@ class _DictionaryDialogPageState extends BasePageState {
       ? !dictionary.isKanjiPartHidden
       : !dictionary.isHidden(JapaneseLanguage.instance);
 
-  Future<void> _writeEnabledInSection(Dictionary dictionary, bool enabled) =>
-      _isKanjiPart(dictionary)
-      ? appModel.setDictionaryKanjiPartHidden(dictionary, !enabled)
-      : appModel.setDictionaryHidden(dictionary, !enabled);
+  Future<void> _writeEnabledInSection(
+    Dictionary dictionary,
+    bool enabled,
+  ) async {
+    if (_isKanjiPart(dictionary)) {
+      await appModel.setDictionaryKanjiPartHidden(dictionary, !enabled);
+      return;
+    }
+    await appModel.setDictionaryHidden(dictionary, !enabled);
+    // 「两者」行只有一个开关：服务器上同名的目录行跟着走，否则删掉本机那份之后
+    // 目录行会带着旧开关冒出来（推送时关着，之后打开了，回来还是关的）。
+    for (final RemoteDictionary remote in appModel.remoteDictionaries) {
+      if (remote.name == dictionary.name && remote.hidden == enabled) {
+        await appModel.setRemoteDictionaryHidden(remote, !enabled);
+      }
+    }
+  }
 
   String _labelForType(DictionaryType type) {
     return switch (type) {
