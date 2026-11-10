@@ -23,6 +23,14 @@ String? debugRealDirectoryPathOverride;
 bool get isRealDirectoryPathOverridden =>
     kDebugMode && debugRealDirectoryPathOverride != null;
 
+/// [pickRealDirectoryPath] 交回的目录能不能被 `dart:io` **原地、反复**列出：桌面 /
+/// 安卓（全文件访问 + 真实路径）能；iOS 交回的是没激活的安全作用域路径，列目录直接
+/// 被拒（BUG-2786），只能走 [pickImportDirectory] 当场整卷拷贝。给「记住一个外部目录、
+/// 之后反复去里面找文件」的入口判断该不该露出来（视频字幕文件夹，反馈 0PZAhFd1RO）。
+bool get canRelistPickedDirectoryInPlace =>
+    defaultTargetPlatform != TargetPlatform.iOS ||
+    isRealDirectoryPathOverridden;
+
 /// 「选一个文件夹并返回它的**真实文件系统绝对路径**」的统一入口。
 ///
 /// 为什么不直接到处调 `FilePicker.getDirectoryPath()`：在安卓上 file_picker 的

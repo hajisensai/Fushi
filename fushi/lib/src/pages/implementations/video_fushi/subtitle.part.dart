@@ -224,8 +224,11 @@ extension _VideoSubtitle on _VideoFushiPageState {
               ),
       ),
       // 反馈 0PZAhFd1RO：本系列的字幕文件夹（整季字幕放在单独文件夹时，之后各集按集号
-      // 自动挂）。远端流没有本机文件夹可匹配，不显示。
-      if (!_isRemote && _currentVideoPath != null)
+      // 自动挂）。远端流没有本机文件夹可匹配，不显示；iOS 选出的文件夹 `dart:io` 读不了
+      // （BUG-2786），露出来只会每次报「读不到」，也不显示。
+      if (!_isRemote &&
+          _currentVideoPath != null &&
+          canRelistPickedDirectoryInPlace)
         _subtitleFolderTile(controller),
       // 生成字幕：原「语音识别生成字幕」与「生成日语字幕」合并成这一个入口（反馈
       // 6Tj3ECtB0Q），两条路由面板里的「保存字幕文件」选项分流，见

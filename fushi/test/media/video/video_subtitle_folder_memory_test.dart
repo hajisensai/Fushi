@@ -125,14 +125,16 @@ void main() {
       expect(body, contains('_rememberSubtitleFolderFromPick('));
     });
 
-    test('字幕面板对本机视频给出「字幕文件夹」入口', () {
+    test('字幕面板对本机视频给出「字幕文件夹」入口（iOS 读不了选出的文件夹，不给）', () {
       final String part = read(
         'lib/src/pages/implementations/video_fushi/subtitle.part.dart',
       );
       expect(
         part,
         contains(
-          'if (!_isRemote && _currentVideoPath != null)\n'
+          'if (!_isRemote &&\n'
+          '          _currentVideoPath != null &&\n'
+          '          canRelistPickedDirectoryInPlace)\n'
           '        _subtitleFolderTile(controller),',
         ),
       );
