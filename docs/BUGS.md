@@ -33,15 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3835 条。点号进各自文件。
+> 共 3838 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4273](bugs/BUG-4273-interconnect-host-client-p2p-fallback.md) | ✅ | ✅ | 互联：主机能力探测 / GET 与选路缓存不走 P2P 隧道，直连不通时远程复习找不到主机 |
-> 共 3837 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-4276](bugs/BUG-4276-interconnect-host-client-p2p-fallback.md) | ✅ | ✅ | 互联：主机能力探测 / GET 与选路缓存不走 P2P 隧道，直连不通时远程复习找不到主机 |
 | [BUG-4275](bugs/BUG-4275-interconnect-peer-row-shows-url-not-name.md) | ✅ | ✅ | 互联连接列表行标题只显示 URL、不显示对端设备名 |
 | [BUG-4274](bugs/BUG-4274-interconnect-test-all-probes-disabled.md) | ✅ | ✅ | 互联「测试连接」连已停用的地址也测 |
 | [BUG-4273](bugs/BUG-4273-media-server-unnumbered-episode.md) | ✅ | ✅ | 媒体服务器缺集号的集被显示成列表位置并排到最前 |

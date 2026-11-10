@@ -196,7 +196,7 @@ Future<FushiClientUrl?> raceInterconnectHostAddresses(
 /// 查词这类高频调用每次都多付一轮探测。缓存只决定组内顺序：返回的整组都是可拨的
 /// （`p2p://` 已换成本地转发口），缓存的地址失效时消费方顺序试组内其余地址照样能到；
 /// 消费方用 [reportInterconnectCandidateUnreachable] 报告失败后缓存立即作废，
-/// 不会在 TTL 内一直把死地址排在组首（BUG-4273）。
+/// 不会在 TTL 内一直把死地址排在组首（BUG-4276）。
 final Map<String, (String url, DateTime at)> _raceCache =
     <String, (String, DateTime)>{};
 const Duration _raceCacheTtl = Duration(seconds: 30);
@@ -269,7 +269,7 @@ Future<List<FushiClientUrl>> _rankGroup(
     }
   }
   // 命中缓存不续期：TTL 从那次真正选路算起，到期必重选。命中就续期的话，持续
-  // 有请求时缓存永不过期——直连恢复后仍一直走隧道 / 中继（BUG-4273 审查）。
+  // 有请求时缓存永不过期——直连恢复后仍一直走隧道 / 中继（BUG-4276 审查）。
   final bool fromCache = winner != null;
   if (winner == null) {
     // 直连地址（LAN / IPv6 / 组网 / 公网）先并发选；全部不通才探 P2P 隧道——

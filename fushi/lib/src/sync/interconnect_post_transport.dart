@@ -226,7 +226,7 @@ class InterconnectPostTransport {
 
   /// [post] 与 [get] 共用的**唯一**候选来源：已启用条目 → 按 [onlyCandidate] 过滤
   /// 同一台 host（凭据须一致）→ [rankInterconnectCandidates] 组内选路。结果里的
-  /// `p2p://` 已换成本地转发口，直连不通时逐个试到隧道（BUG-4273：GET 曾另写一套
+  /// `p2p://` 已换成本地转发口，直连不通时逐个试到隧道（BUG-4276：GET 曾另写一套
   /// 候选遍历，绕过选路，`p2p://` 从不换转发口）。
   Future<({List<FushiClientUrl> candidates, String? fallbackToken})>
   _rankedCandidates(FushiClientUrl? onlyCandidate) async {
