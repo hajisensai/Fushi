@@ -114,7 +114,7 @@ void main() {
     expect(server.srsChanges.token, t1);
   });
 
-  // BUG-4380：写 head 的设备自己的长轮询也被叫醒，空跑一轮（「立即同步」报完「已同步」后同步状态行又走一遍）。
+  // BUG-4381：写 head 的设备自己的长轮询也被叫醒，空跑一轮（「立即同步」报完「已同步」后同步状态行又走一遍）。
   test('已配对设备自己写的 head：它的长轮询回 own=true，别的设备 / 共享口令回 false', () async {
     server.pairedPeerTokensProvider = () async => <String>{
       'phone-tok',
