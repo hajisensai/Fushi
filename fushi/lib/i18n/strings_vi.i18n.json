@@ -4328,6 +4328,8 @@
   "interconnect_profile_uploaded": "Đã tải cấu hình lên: ${name}",
   "interconnect_related_entry": "Tra từ từ xa, nguồn âm thanh & mục từ xa",
   "interconnect_related_entry_hint": "Được cấu hình trong các mục Tra từ và Đồng bộ",
+  "interconnect_remote_job_disconnected": "Lost contact with the host for more than ${minutes} minutes, so the remote task was stopped",
+  "interconnect_remote_job_lost": "This task is no longer on the host (it was removed or the host restarted)",
   "interconnect_section_client": "Kết nối với thiết bị khác",
   "interconnect_section_delegate": "Ủy quyền cho thiết bị đã ghép nối",
   "interconnect_section_related": "Nội dung từ xa & tra cứu",

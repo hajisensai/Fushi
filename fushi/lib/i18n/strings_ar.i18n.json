@@ -4328,6 +4328,8 @@
   "interconnect_profile_uploaded": "تم رفع الإعدادات: ${name}",
   "interconnect_related_entry": "البحث عن بُعد ومصادر الصوت والإدخالات البعيدة",
   "interconnect_related_entry_hint": "يُضبط في فئتي البحث والمزامنة",
+  "interconnect_remote_job_disconnected": "Lost contact with the host for more than ${minutes} minutes, so the remote task was stopped",
+  "interconnect_remote_job_lost": "This task is no longer on the host (it was removed or the host restarted)",
   "interconnect_section_client": "الاتصال بأجهزة أخرى",
   "interconnect_section_delegate": "التفويض إلى الجهاز المقترن",
   "interconnect_section_related": "المحتوى عن بعد والبحث",

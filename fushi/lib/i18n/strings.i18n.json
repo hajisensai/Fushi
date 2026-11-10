@@ -4328,6 +4328,8 @@
   "interconnect_profile_uploaded": "Configuration uploaded: ${name}",
   "interconnect_related_entry": "Remote lookup, audio sources & remote entries",
   "interconnect_related_entry_hint": "Configured in the Lookup and Sync categories",
+  "interconnect_remote_job_disconnected": "Lost contact with the host for more than ${minutes} minutes, so the remote task was stopped",
+  "interconnect_remote_job_lost": "This task is no longer on the host (it was removed or the host restarted)",
   "interconnect_section_client": "Connect to other devices",
   "interconnect_section_delegate": "Delegate to the Fushi Interconnect server",
   "interconnect_section_related": "Remote content & lookup",

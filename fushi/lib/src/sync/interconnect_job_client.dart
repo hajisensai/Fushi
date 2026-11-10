@@ -4,6 +4,13 @@
 /// 与 `interconnect_manga_ocr_client.dart` 同一形状（探测能力位 → 选 host →
 /// create/upload/start/poll/result → 取消即 DELETE），鉴权同样是 per-peer token
 /// 的 Basic + TLS 指纹钉扎。
+///
+/// 一次 [InterconnectJobClient.run] 是显式的三阶段状态机：提交（create → match →
+/// upload → start）、观测（轮询状态）、取回（下载产物）。host 上的任务状态是真相源：
+/// 观测 / 取回中的**传输失败**只说明此刻看不到 host，进断连子状态继续观测
+/// （[RemoteJobLinkWatch]，容忍窗超了才判 `disconnected`）；host 判定的失败、协议错、
+/// 用户取消才 DELETE；任务已不在 host（404）不再 DELETE；取回成功后的 DELETE 是尽力
+/// 清理，失败不影响结果（host TTL 兜底）。每一次交换（含响应体）都有超时上界。
 library;
 
 import 'dart:async';
@@ -11,6 +18,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
 import 'package:fushi/src/sync/interconnect_remote_job_poll.dart';
 import 'package:fushi/src/sync/webdav_ops.dart';
@@ -69,9 +77,16 @@ class HostJobUploading extends HostJobEvent {
 }
 
 class HostJobRunning extends HostJobEvent {
-  const HostJobRunning(this.progress, this.message);
+  const HostJobRunning(
+    this.progress,
+    this.message, {
+    this.reconnecting = false,
+  });
   final double progress;
   final String? message;
+
+  /// 观测链路暂时断了、正在容忍窗内等 host 回来（进度停在最后看到的值）。
+  final bool reconnecting;
 }
 
 class HostJobDone extends HostJobEvent {
@@ -107,6 +122,8 @@ class InterconnectJobClient {
     Duration uploadTimeout = const Duration(minutes: 30),
     Duration Function(int attempt)? pollDelay,
     FileContentHashCache? hashCache,
+    Duration linkLossTolerance = kRemoteJobLinkLossTolerance,
+    DateTime Function()? now,
   }) : _repo = repo,
        _hashCache = hashCache,
        _httpClient = httpClient ?? http.Client(),
@@ -114,7 +131,9 @@ class InterconnectJobClient {
        _probeTimeout = probeTimeout,
        _requestTimeout = requestTimeout,
        _uploadTimeout = uploadTimeout,
-       _pollDelay = pollDelay ?? remoteJobPollDelay;
+       _pollDelay = pollDelay ?? remoteJobPollDelay,
+       _linkLossTolerance = linkLossTolerance,
+       _now = now ?? DateTime.now;
 
   final SyncRepository _repo;
   final http.Client _httpClient;
@@ -123,6 +142,8 @@ class InterconnectJobClient {
   final Duration _requestTimeout;
   final Duration _uploadTimeout;
   final Duration Function(int attempt) _pollDelay;
+  final Duration _linkLossTolerance;
+  final DateTime Function() _now;
 
   /// 本机输入的内容哈希（带持久缓存）；null = 不做「host 已有就不上传」。
   final FileContentHashCache? _hashCache;
@@ -254,16 +275,22 @@ class InterconnectJobClient {
         final Uri? uri = _uri(target.baseUrl, '/api/jobs/$id');
         if (token == null || uri == null) return;
         await c.delete(uri, headers: _headers(token)).timeout(_requestTimeout);
-      } catch (_) {
-        // best-effort
+      } catch (e, stack) {
+        // 尽力清理：失败不影响任务结论，遗留记录由 host 的 TTL 回收。
+        engineLog.log('InterconnectJobClient.cleanupRemote', e, stack);
       } finally {
         if (close) c.close();
       }
     }
 
-    /// 一次完整的 create → (match) → upload → start → poll → result。[reuseHostFiles]
-    /// = 先发内容哈希清单，host 本地已有的那几份不上传。
-    Future<Map<String, File>> attempt(
+    final RemoteJobLinkWatch watch = RemoteJobLinkWatch(
+      tolerance: _linkLossTolerance,
+      now: _now,
+    );
+
+    /// 提交阶段：create → (match) → upload → start，返回 host 上的任务 id。
+    /// [reuseHostFiles] = 先发内容哈希清单，host 本地已有的那几份不上传。
+    Future<String> submit(
       http.Client c,
       String token, {
       required bool reuseHostFiles,
@@ -309,48 +336,116 @@ class InterconnectJobClient {
       }
       if (cancelled) throw const HostJobRemoteException('cancelled');
       await _send(c, token, 'POST', target, '/api/jobs/$id/start');
+      return id;
+    }
+
+    /// 观测 + 取回阶段。返回下载好的产物；任务仍留在 host 上（[jobId] 不清），
+    /// 由调用方在交付结果之后尽力清理。
+    Future<Map<String, File>> observeAndCollect(
+      http.Client c,
+      String token,
+      String id,
+    ) async {
+      double lastProgress = 0;
+      String? lastMessage;
+      bool announcedReconnect = false;
+
+      /// 一次观测 / 取回交换。传输失败且仍在容忍窗内返回 null（调用方按退避再来），
+      /// 超窗抛 `disconnected`；其余异常原样抛（由外层 DELETE + 报错）。
+      Future<T?> exchange<T extends Object>(Future<T> Function() send) async {
+        try {
+          final T value = await send();
+          watch.observed();
+          announcedReconnect = false;
+          return value;
+        } catch (e) {
+          if (!_isTransportFailure(e)) rethrow;
+          if (!watch.lost()) {
+            throw HostJobRemoteException(
+              'disconnected',
+              t.interconnect_remote_job_disconnected(
+                minutes: '${_linkLossTolerance.inMinutes}',
+              ),
+            );
+          }
+          // 同一断连期只报一次「重连中」。
+          if (!announcedReconnect) {
+            announcedReconnect = true;
+            controller.add(
+              HostJobRunning(lastProgress, lastMessage, reconnecting: true),
+            );
+          }
+          return null;
+        }
+      }
+
+      List<String>? outputNames;
+      final Map<String, File> files = <String, File>{};
       int pollAttempt = 0;
       while (true) {
         if (cancelled) throw const HostJobRemoteException('cancelled');
         await Future<void>.delayed(_pollDelay(pollAttempt++));
-        final Map<String, dynamic> status = _json(
-          await _send(c, token, 'GET', target, '/api/jobs/$id'),
-        );
-        final String state = status['state'].toString();
-        final double progress = (status['progress'] as num?)?.toDouble() ?? 0;
-        final String? message = status['message']?.toString();
-        if (state == 'done') {
-          final List<String> outputNames =
+        if (outputNames == null) {
+          final Map<String, dynamic>? status;
+          try {
+            status = await exchange(
+              () async =>
+                  _json(await _send(c, token, 'GET', target, '/api/jobs/$id')),
+            );
+          } on HostJobRemoteException catch (e) {
+            if (e.code != 'http_404') rethrow;
+            // 任务已不在 host（被删 / host 重启后丢了）：没有可清理的，不再 DELETE。
+            jobId = null;
+            throw HostJobRemoteException(
+              'job_lost',
+              t.interconnect_remote_job_lost,
+            );
+          }
+          if (status == null) continue;
+          final String state = status['state'].toString();
+          if (state == 'error') {
+            throw HostJobRemoteException(
+              'remote_error',
+              status['error']?.toString(),
+            );
+          }
+          if (state == 'cancelled') {
+            throw const HostJobRemoteException('cancelled');
+          }
+          if (state != 'done') {
+            lastProgress = (status['progress'] as num?)?.toDouble() ?? 0;
+            lastMessage = status['message']?.toString();
+            controller.add(HostJobRunning(lastProgress, lastMessage));
+            continue;
+          }
+          outputNames =
               (status['outputs'] as List?)?.map((Object? e) => '$e').toList() ??
               const <String>[];
           await outputDir.create(recursive: true);
-          final Map<String, File> files = <String, File>{};
-          for (final String name in outputNames) {
-            final http.Response r = await _send(
+        }
+        // 取回：已下载的保留，断连恢复后从还没拿到的那一份接着下。
+        bool interrupted = false;
+        for (final String name in outputNames) {
+          if (files.containsKey(name)) continue;
+          if (cancelled) throw const HostJobRemoteException('cancelled');
+          final http.Response? r = await exchange(
+            () => _send(
               c,
               token,
               'GET',
               target,
               '/api/jobs/$id/result/${Uri.encodeComponent(name)}',
-            );
-            final File out = File(p.join(outputDir.path, p.basename(name)));
-            await out.writeAsBytes(r.bodyBytes, flush: true);
-            files[name] = out;
-          }
-          jobId = null;
-          await _send(c, token, 'DELETE', target, '/api/jobs/$id');
-          return files;
-        }
-        if (state == 'error') {
-          throw HostJobRemoteException(
-            'remote_error',
-            status['error']?.toString(),
+            ),
           );
+          if (r == null) {
+            interrupted = true;
+            break;
+          }
+          final File out = File(p.join(outputDir.path, p.basename(name)));
+          await out.writeAsBytes(r.bodyBytes, flush: true);
+          files[name] = out;
         }
-        if (state == 'cancelled') {
-          throw const HostJobRemoteException('cancelled');
-        }
-        controller.add(HostJobRunning(progress, message));
+        if (!interrupted) return files;
       }
     }
 
@@ -371,13 +466,16 @@ class InterconnectJobClient {
               target.capability['inputMatch'] == kHostInputMatchAlgorithm;
           while (true) {
             try {
-              final Map<String, File> files = await attempt(
+              final String id = await submit(c, token, reuseHostFiles: reuse);
+              final Map<String, File> files = await observeAndCollect(
                 c,
                 token,
-                reuseHostFiles: reuse,
+                id,
               );
               controller.add(HostJobDone(files));
               await controller.close();
+              // 结果已交付；清理失败只记日志、不改结论（host TTL 兜底）。
+              await cleanupRemote();
               return;
             } on HostJobRemoteException catch (e) {
               // host 上那份文件在排队 / 转录途中被改或删：这次产物作废，整份上传重来，
@@ -481,7 +579,21 @@ class InterconnectJobClient {
       e is IOException ||
       e is FormatException;
 
-  // ── HTTP 助手（与漫画 OCR 客户端同款） ─────────────────────────────
+  /// 传输层失败：对端此刻看不到，不代表任务失败。`TlsException` 暂算传输失败
+  /// （钉扎 client 区分不出证书不符与握手抖动；代价是证书真变了要等容忍窗才报错）。
+  static bool _isTransportFailure(Object e) =>
+      e is TimeoutException ||
+      e is SocketException ||
+      e is HttpException ||
+      e is http.ClientException ||
+      e is TlsException ||
+      (e is HostJobRemoteException &&
+          (e.code == 'http_502' ||
+              e.code == 'http_503' ||
+              e.code == 'http_504'));
+
+  // ── HTTP 助手（退避与断连判定与漫画 OCR 客户端共用
+  // `interconnect_remote_job_poll.dart`） ──────────────────────────────
 
   Future<String?> _tokenForBaseUrl(String baseUrl) async {
     final String? fallbackToken = await _repo.getFushiClientToken();
@@ -528,9 +640,11 @@ class InterconnectJobClient {
       req.headers['Content-Type'] = 'application/json';
       req.body = jsonEncode(jsonBody);
     }
-    final http.Response response = await http.Response.fromStream(
-      await client.send(req).timeout(_requestTimeout),
-    );
+    // 超时覆盖整次交换（含响应体）：对端发完响应头就卡住时也不会永久挂起。
+    final http.Response response = await () async {
+      final http.StreamedResponse streamed = await client.send(req);
+      return http.Response.fromStream(streamed);
+    }().timeout(_requestTimeout);
     if (response.statusCode >= 400) {
       throw HostJobRemoteException(
         'http_${response.statusCode}',
@@ -555,16 +669,17 @@ class InterconnectJobClient {
       ..headers['Content-Type'] = 'application/octet-stream'
       ..contentLength = length;
     unawaited(file.openRead().pipe(req.sink));
-    final http.StreamedResponse res = await client
-        .send(req)
-        .timeout(_uploadTimeout);
-    if (res.statusCode >= 400) {
-      throw HostJobRemoteException(
-        'http_${res.statusCode}',
-        await res.stream.bytesToString(),
-      );
-    }
-    await res.stream.drain<void>();
+    // 超时覆盖发送、读错误体与 drain 整段。
+    await () async {
+      final http.StreamedResponse res = await client.send(req);
+      if (res.statusCode >= 400) {
+        throw HostJobRemoteException(
+          'http_${res.statusCode}',
+          await res.stream.bytesToString(),
+        );
+      }
+      await res.stream.drain<void>();
+    }().timeout(_uploadTimeout);
   }
 
   Map<String, dynamic> _json(http.Response r) {

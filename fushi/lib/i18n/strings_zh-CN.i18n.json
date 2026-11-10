@@ -4328,6 +4328,8 @@
   "interconnect_profile_uploaded": "配置已上传：${name}",
   "interconnect_related_entry": "远端查词、音频源与远端条目",
   "interconnect_related_entry_hint": "在「查词」与「同步」分类里设置",
+  "interconnect_remote_job_disconnected": "与主机失联超过 ${minutes} 分钟，远程任务已停止",
+  "interconnect_remote_job_lost": "主机上已经没有这个任务了（被删除或主机重启过）",
   "interconnect_section_client": "连接到其他设备",
   "interconnect_section_delegate": "交给 Fushi 互联服务端",
   "interconnect_section_related": "远端内容与查词",

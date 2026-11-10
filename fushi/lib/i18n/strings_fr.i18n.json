@@ -4328,6 +4328,8 @@
   "interconnect_profile_uploaded": "Configuration envoyée : ${name}",
   "interconnect_related_entry": "Recherche à distance, sources audio et entrées distantes",
   "interconnect_related_entry_hint": "Configuré dans les catégories Recherche et Synchronisation",
+  "interconnect_remote_job_disconnected": "Lost contact with the host for more than ${minutes} minutes, so the remote task was stopped",
+  "interconnect_remote_job_lost": "This task is no longer on the host (it was removed or the host restarted)",
   "interconnect_section_client": "Se connecter à d'autres appareils",
   "interconnect_section_delegate": "Déléguer à l'appareil apparié",
   "interconnect_section_related": "Contenu et recherche à distance",

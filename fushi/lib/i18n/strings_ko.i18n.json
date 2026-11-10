@@ -4328,6 +4328,8 @@
   "interconnect_profile_uploaded": "설정을 업로드했습니다: ${name}",
   "interconnect_related_entry": "원격 검색, 오디오 소스 및 원격 항목",
   "interconnect_related_entry_hint": "검색 및 동기화 카테고리에서 설정합니다",
+  "interconnect_remote_job_disconnected": "Lost contact with the host for more than ${minutes} minutes, so the remote task was stopped",
+  "interconnect_remote_job_lost": "This task is no longer on the host (it was removed or the host restarted)",
   "interconnect_section_client": "다른 기기에 연결",
   "interconnect_section_delegate": "페어링된 기기에 위임",
   "interconnect_section_related": "원격 콘텐츠 및 검색",

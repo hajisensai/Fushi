@@ -90,6 +90,20 @@ class _HostWire {
   /// 每次匹配应答里的 `pending`。
   final List<bool> matchPending = <bool>[];
 
+  /// 故障注入：每条请求先交给它（[nth] = 同一 method + path 的第几次，从 1 起）。
+  /// 返回非 null 即作为应答、抛异常即模拟传输失败；返回 null 照常进真路由。
+  Future<http.StreamedResponse?> Function(String method, String path, int nth)?
+  fault;
+  final Map<String, int> _nth = <String, int>{};
+  final StreamController<void> _changed = StreamController<void>.broadcast();
+
+  /// 等到 wire 上出现过满足条件的请求（客户端的尽力清理在流结束之后才发）。
+  Future<void> seen(String method, bool Function(String path) where) async {
+    while (count(method, where) == 0) {
+      await _changed.stream.first.timeout(const Duration(seconds: 10));
+    }
+  }
+
   int count(String method, bool Function(String path) where) => requests
       .where(
         (String r) =>
@@ -114,6 +128,22 @@ class _HostWire {
   ) async {
     final String path = request.url.path;
     requests.add('${request.method} $path');
+    _changed.add(null);
+    final String key = '${request.method} $path';
+    final int nth = _nth[key] = (_nth[key] ?? 0) + 1;
+    final Future<http.StreamedResponse?> Function(String, String, int)?
+    injected = fault;
+    if (injected != null) {
+      final http.StreamedResponse? replaced = await injected(
+        request.method,
+        path,
+        nth,
+      );
+      if (replaced != null) {
+        await body.drain<void>();
+        return replaced;
+      }
+    }
     final Future<http.StreamedResponse> Function()? override = matchOverride;
     if (override != null && path.endsWith('/inputs/match')) {
       await body.drain<void>();
@@ -350,8 +380,12 @@ void main() {
     expect(out['out.txt']!.readAsStringSync(), '$cd1Content$cd2Content');
     expect(runner.seenHostInputs.first.length, 2);
     expect(runner.seenHostInputs.last, isEmpty);
-    // 失败的那个任务已在 host 上清理。
-    expect(jobs.list(), isEmpty);
+    // 失败的那个任务在重跑之前已在 host 上清理（成功那个的清理在交付结果之后才尽力发，
+    // 不在这里断言）。
+    expect(
+      jobs.list().map((HostJobRecord r) => r.id),
+      isNot(contains(wire.matchedJobIds.single)),
+    );
   });
 
   test('命中后、开跑前 host 文件被删：开跑前核对发现，回退为上传', () async {
@@ -532,6 +566,135 @@ void main() {
       expect(wire.matches, 1);
       expect(wire.puts, 2);
       expect(out['out.txt']!.readAsStringSync(), '$cd1Content$cd2Content');
+    });
+  });
+
+  group('transient link loss（remote-job-client-lifecycle）', () {
+    /// 状态轮询 `GET /api/jobs/<id>`（不含 result / input 等子路径）。
+    final RegExp statusPath = RegExp(r'^/api/jobs/[^/]+$');
+    bool isResult(String path) => path.contains('/result/');
+
+    /// 跑一次任务，收齐事件与收尾错误；整条流 10 秒内必须结束。
+    Future<(List<HostJobEvent>, Object?)> runEvents({
+      Duration requestTimeout = const Duration(seconds: 30),
+    }) async {
+      final InterconnectJobClient client = InterconnectJobClient(
+        repo: repo,
+        httpClient: wire.client(),
+        requestTimeout: requestTimeout,
+        pollDelay: (int _) => const Duration(milliseconds: 5),
+        hashCache: FileContentHashCache(),
+      );
+      final HostJobTarget target = HostJobTarget(
+        baseUrl: _host,
+        deviceName: 'Desk PC',
+        kinds: const <String>['asr'],
+        capability: await jobs.capability(),
+      );
+      final List<HostJobEvent> events = <HostJobEvent>[];
+      Object? error;
+      final Completer<void> finished = Completer<void>();
+      client
+          .run(
+            target: target,
+            kind: 'asr',
+            params: const <String, Object?>{'language': 'ja'},
+            inputs: <File>[cd1, cd2],
+            outputDir: Directory(p.join(root.path, 'out')),
+          )
+          .listen(
+            events.add,
+            onError: (Object e) => error = e,
+            onDone: finished.complete,
+          );
+      await finished.future.timeout(const Duration(seconds: 10));
+      return (events, error);
+    }
+
+    test('观测途中几次传输失败不删任务：恢复后照常取回，DELETE 恰好一次且在取回之后', () async {
+      final Completer<void> release = Completer<void>();
+      runner.duringFirstRun = () => release.future;
+      wire.fault = (String method, String path, int nth) async {
+        if (method == 'GET' && statusPath.hasMatch(path) && nth <= 3) {
+          if (nth == 3) release.complete();
+          throw const SocketException('link flapped');
+        }
+        return null;
+      };
+
+      final (List<HostJobEvent> events, Object? error) = await runEvents();
+
+      expect(error, isNull);
+      expect(events.last, isA<HostJobDone>());
+      final HostJobDone done = events.last as HostJobDone;
+      expect(
+        done.outputs['out.txt']!.readAsStringSync(),
+        '$cd1Content$cd2Content',
+      );
+      await wire.seen('DELETE', (String _) => true);
+      expect(wire.count('DELETE', (String _) => true), 1);
+      final int lastResult = wire.requests.lastIndexWhere(
+        (String r) => r.startsWith('GET ') && isResult(r),
+      );
+      final int del = wire.requests.indexWhere(
+        (String r) => r.startsWith('DELETE '),
+      );
+      expect(lastResult, greaterThanOrEqualTo(0));
+      expect(del, greaterThan(lastResult));
+    });
+
+    test('任务已不在 host（404）：报错收尾，不再发 DELETE', () async {
+      wire.fault = (String method, String path, int nth) async {
+        if (method == 'GET' && statusPath.hasMatch(path) && nth == 1) {
+          await jobs.delete(path.split('/').last);
+        }
+        return null;
+      };
+
+      final (List<HostJobEvent> events, Object? error) = await runEvents();
+
+      expect(events.whereType<HostJobDone>(), isEmpty);
+      expect(error, isA<HostJobRemoteException>());
+      // 尽力清理在流结束之后才发：给它足够的时间暴露出来再断言「没有」。
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      expect(wire.count('DELETE', (String _) => true), 0);
+    });
+
+    test('取回成功后清理失败（DELETE 回 503）不改结果', () async {
+      wire.fault = (String method, String path, int nth) async {
+        if (method == 'DELETE') {
+          return http.StreamedResponse(
+            Stream<List<int>>.value(utf8.encode('busy')),
+            503,
+          );
+        }
+        return null;
+      };
+
+      final (List<HostJobEvent> events, Object? error) = await runEvents();
+
+      expect(error, isNull);
+      expect(events.last, isA<HostJobDone>());
+      await wire.seen('DELETE', (String _) => true);
+    });
+
+    test('响应体卡住的状态 GET 有上界：超时后继续观测并取回', () async {
+      final StreamController<List<int>> stuck = StreamController<List<int>>();
+      addTearDown(stuck.close);
+      wire.fault = (String method, String path, int nth) async {
+        if (method == 'GET' && statusPath.hasMatch(path) && nth == 1) {
+          // 只发响应头，响应体永远不结束。
+          return http.StreamedResponse(stuck.stream, 200);
+        }
+        return null;
+      };
+
+      final (List<HostJobEvent> events, Object? error) = await runEvents(
+        requestTimeout: const Duration(milliseconds: 500),
+      );
+
+      expect(error, isNull);
+      expect(events.last, isA<HostJobDone>());
     });
   });
 

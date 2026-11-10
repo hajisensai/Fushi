@@ -4328,6 +4328,8 @@
   "interconnect_profile_uploaded": "設定をアップロードしました：${name}",
   "interconnect_related_entry": "リモート検索、音声ソース、リモートエントリ",
   "interconnect_related_entry_hint": "「検索」と「同期」のカテゴリで設定します",
+  "interconnect_remote_job_disconnected": "Lost contact with the host for more than ${minutes} minutes, so the remote task was stopped",
+  "interconnect_remote_job_lost": "This task is no longer on the host (it was removed or the host restarted)",
   "interconnect_section_client": "他のデバイスに接続",
   "interconnect_section_delegate": "ペアリング済みデバイスに委任",
   "interconnect_section_related": "リモートコンテンツと検索",
