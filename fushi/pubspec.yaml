@@ -49,7 +49,9 @@ dependencies:
   liquid_glass_widgets: ^1.8.1
   crop_image: ^1.0.4
   desktop_drop: ^0.5.0
-  # Linux Flatpak self-update talks to org.freedesktop.portal.Flatpak (flatpak_updater.dart).
+  # XDG desktop portals over the session bus: Linux Flatpak self-update
+  # (org.freedesktop.portal.Flatpak, flatpak_updater.dart) and Linux Wayland
+  # global shortcuts (lib/src/shortcuts/global_shortcuts_portal.dart).
   dbus: ^0.7.12
   device_info_plus: ^9.0.0
   dio: ^5.1.1

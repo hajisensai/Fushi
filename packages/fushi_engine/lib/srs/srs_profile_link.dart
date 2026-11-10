@@ -540,6 +540,7 @@ class SrsDbProfileLinker implements SrsProfileLinker {
     required this.db,
     required this.activeProfileId,
     required this.reopenStore,
+    required this.writeLock,
     this.mediaRoot,
     this.onError,
     this.pullBeforeMerge,
@@ -572,6 +573,12 @@ class SrsDbProfileLinker implements SrsProfileLinker {
 
   /// 让当前 profile 的 store 按 profiles 表里的新 uid 重开，返回新 store。
   final Future<SrsDbStore?> Function() reopenStore;
+
+  /// 共用写连接上的写锁：持有期间连接上没有别的 Dart 写入者（任何副本的写都在它里面：app 里是激活副本的
+  /// 独占区，扩展副本的独占区套在它里面，见 `SrsProfileStores`；随激活副本交接而换，旧副本作废后拿的是新的
+  /// 那把）。采用时删 uid（[srsAdoptProfileUid]）是内核命令、直接在写连接上跑，必须在这把锁里：否则会夹进
+  /// 别的副本开着的 Drift 事务、随它回滚（BUG-4292）。
+  final SrsExclusiveOuter writeLock;
 
   /// 目录 → 上次发布的说明内容（同一进程里不重复写）。
   final Map<String, String> _published = <String, String>{};
@@ -944,12 +951,16 @@ class SrsDbProfileLinker implements SrsProfileLinker {
         pullTarget: _pullTarget(within),
       );
     } else {
-      await srsAdoptProfileUid(
-        db,
-        store.db,
-        profileId: profileId,
-        oldUid: oldUid,
-        newUid: uid,
+      // 删旧 uid 是内核命令、直接在共用写连接上跑（一个 savepoint）：在 [writeLock] 里跑，不夹进别的副本开着的
+      // Drift 事务里随之回滚（以前经 Drift 的事务删，由 Drift 的事务锁排队）。
+      await writeLock.run(
+        () => srsAdoptProfileUid(
+          db,
+          store.core,
+          profileId: profileId,
+          oldUid: oldUid,
+          newUid: uid,
+        ),
       );
     }
     // 主库已经改用 [uid]：旧 uid 的数据已在新 uid 下（并入）或本来只有内置行（采用），它在同步目录里的本设备
@@ -965,13 +976,16 @@ class SrsDbProfileLinker implements SrsProfileLinker {
       return reopened;
     } catch (_) {
       if (!merge) {
-        // 采用要么整体成功、要么回到原样（旧 uid 下只有内置行 / 本机状态，重开时重建）。
-        await srsAdoptProfileUid(
-          db,
-          store.db,
-          profileId: profileId,
-          oldUid: uid,
-          newUid: oldUid,
+        // 采用要么整体成功、要么回到原样（旧 uid 下只有内置行 / 本机状态，重开时重建）。[store] 此时可能已在
+        // 重开时交接作废、[uid] 的新副本可能活着：删除在 [writeLock]（此刻有效的那把）里跑，不拿旧副本的锁。
+        await writeLock.run(
+          () => srsAdoptProfileUid(
+            db,
+            store.core,
+            profileId: profileId,
+            oldUid: uid,
+            newUid: oldUid,
+          ),
         );
         await _removeFromMetaSet(store, kSrsRetiredProfileUidsKey, oldUid);
         await reopenStore();
@@ -1027,5 +1041,22 @@ class SrsDbProfileLinker implements SrsProfileLinker {
       }
     }
     return null;
+  }
+}
+
+/// [SrsDbProfileLinker.writeLock] 的简单实现：锁就是 [current] 此刻返回的副本的独占区（单副本的装配与测试用；
+/// app 用 `SrsProfileStores` 的激活副本锁）。已在它的独占区里直接跑；没有可用副本时报错，不在锁外写。
+class SrsCurrentStoreWriteLock implements SrsExclusiveOuter {
+  SrsCurrentStoreWriteLock(this.current);
+
+  final SrsDbStore? Function() current;
+
+  @override
+  Future<T> run<T>(Future<T> Function() body) {
+    final SrsDbStore? store = current();
+    if (store == null || !store.isUsable) {
+      throw StateError('no usable SRS store holds the write lock');
+    }
+    return store.holdsExclusive ? body() : store.runExclusive(body);
   }
 }
