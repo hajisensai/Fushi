@@ -72,7 +72,7 @@ void main() {
     'lib/src/ops/ctl_dictionary_routes.dart':
         '`fushi_cli dict search` 的控制通道 handler：结果以 JSON 回给终端，'
         '本机屏幕上没有查词呈现；要弹窗查词用内置 `lookup` 命令（走浮窗表面，按偏好朗读）。'
-        'anki mine 补字段时的查词同理只为取回制卡字段（两处都走 searchDictionaryForUser，BUG-4301）。',
+        'anki mine 补字段时的查词同理只为取回制卡字段（两处都走 searchDictionaryForUser，BUG-4321）。',
     'lib/src/ops/ctl_video_player_routes.dart':
         '`fushi_cli video mine` 的控制通道 handler：查词只为给当前字幕句制卡补读音 / 释义'
         '等字段，结果以 JSON 回给终端，本机屏幕上没有查词呈现；而且视频正在播放出声，'
@@ -99,7 +99,7 @@ void main() {
   };
 
   /// 收集 lib/ 下所有 `searchDictionary(` / `searchDictionaryForUser(`（控制通道替本机用户查词的同一条链，
-  /// BUG-4301）的**调用**点（排除声明/重写本身）。
+  /// BUG-4321）的**调用**点（排除声明/重写本身）。
   int scannedFiles = 0;
   Set<String> collectCallSiteFiles() {
     final Set<String> hits = <String>{};
@@ -158,7 +158,7 @@ void main() {
       found.length,
       what: 'searchDictionary 调用点所在文件',
       atLeast: 9,
-      // 2026-11-07 BUG-4301：控制通道三处（dict search / anki mine、video mine、game mine）改走
+      // 2026-11-07 BUG-4321：控制通道三处（dict search / anki mine、video mine、game mine）改走
       // searchDictionaryForUser，ctl_dictionary_routes.dart 由此进入扫描面（以前走替对端的
       // searchRemoteDictionaryForRequest，不在面里）。
       measured: 11,

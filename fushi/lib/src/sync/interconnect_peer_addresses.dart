@@ -565,7 +565,7 @@ List<FushiClientUrl> applyIssuedInterconnectToken(
 /// - 新条目继承锚点的 token / 指纹 / 展示名：per-peer token 对这台 host 的所有
 ///   地址都有效，证书也是同一张。指纹只给 https 地址。
 /// - 插入位置：同组内第一个优先级更低的条目之前；手输条目的相对顺序不变。
-/// - [deviceName]（host 自报的展示名，BUG-4302）：同组里还没有名字的条目（含锚点）补上，已有的名字
+/// - [deviceName]（host 自报的展示名，BUG-4322）：同组里还没有名字的条目（含锚点）补上，已有的名字
 ///   不动。升级前用手动地址配对的 host 没记名字，下次学地址时据此补齐。
 List<FushiClientUrl> mergeLearnedHostAddresses(
   List<FushiClientUrl> list, {
@@ -792,7 +792,7 @@ class InterconnectAddressLearner {
       final Object? deviceName = decoded['deviceName'];
       return (
         hostId: hostId,
-        // BUG-4302：host 展示名（老 host 不带）。
+        // BUG-4322：host 展示名（老 host 不带）。
         deviceName: deviceName is String ? deviceName : null,
         addresses: addresses,
       );

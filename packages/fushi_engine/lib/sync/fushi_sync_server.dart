@@ -537,7 +537,7 @@ class FushiSyncServer {
   /// host 自己的复习数据刚发布到本机同步目录（app 侧在本机目录一轮上传了段之后调）。
   void notifySrsChanged() => srsChanges.bump();
 
-  /// host 自己此刻是否已加入复习同步 v2（[kSrsSyncStatusPath]，BUG-4300），每个请求现读。app 装配为「首次 v2 同步已
+  /// host 自己此刻是否已加入复习同步 v2（[kSrsSyncStatusPath]，BUG-4320），每个请求现读。app 装配为「首次 v2 同步已
   /// 确认」；null（无头服务端 / 旧调用方 / 单测：没有首次确认这一步）→ 端点 404，客户端按「不报告」处理。
   bool Function()? srsSync2Joined;
 
@@ -1001,7 +1001,7 @@ class FushiSyncServer {
       );
       return jsonResponse(<String, dynamic>{'token': token});
     }
-    // 复习同步 v2 的参与状态（BUG-4300）：客户端一轮跑完问 host 自己加入了没有。鉴权走上方 middleware。
+    // 复习同步 v2 的参与状态（BUG-4320）：客户端一轮跑完问 host 自己加入了没有。鉴权走上方 middleware。
     if (reqPath == kSrsSyncStatusPath) {
       if (method != 'GET') return shelf.Response(405);
       final bool Function()? joined = srsSync2Joined;

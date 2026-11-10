@@ -20,7 +20,7 @@ const String kHostName = 'Study-PC';
 const String kHostId = 'device-name-host';
 const String kSharedToken = 'device-name-shared-token';
 
-/// BUG-4302：用手动地址（`https://host:38765`）配对的 host 没有设备名——`peer ls` 不列名字、复习 ›「复习已配对
+/// BUG-4322：用手动地址（`https://host:38765`）配对的 host 没有设备名——`peer ls` 不列名字、复习 ›「复习已配对
 /// 设备的卡组」标题显示 URL 主机名。host 在 `/api/ping` 里本来就报了展示名，设置页的配对收尾却写死
 /// `deviceName: null`（扫码 / 深链那条路径照写）。已经这样配过的条目在下次学地址（`/api/host/addresses`）时补名。
 ///

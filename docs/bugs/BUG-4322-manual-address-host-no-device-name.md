@@ -1,4 +1,4 @@
-## BUG-4302 · 手动地址添加的 host 没有设备名：peer ls 不列出、远端复习标题显示 host.docker.internal
+## BUG-4322 · 手动地址添加的 host 没有设备名：peer ls 不列出、远端复习标题显示 host.docker.internal
 - **报告**：2026-11-07（Linux Phase 4 互联测试，第 2 / 6 行；证据为实测截图，未入库）
 - **真实性**：✅ 真 bug，已沿代码路径确认。用手动地址 `https://host.docker.internal:38765` 配对的 host（与配对链接不同）没有 deviceName：`fushi_cli peer ls` 里看不到它的设备名，复习 ›「复习已配对设备的卡组」页标题显示的是 URL 主机名 `host.docker.internal`（`video_remote_targets.dart` `_displayNameOf`：没名字就用 URL 主机名）。
   - 根因：host 在无鉴权的 `/api/ping` 里本来就报展示名（`packages/fushi_engine/lib/sync/fushi_sync_server/pairing.part.dart` `_handlePing` 的 `deviceName`），设置页手动地址配对也读到了它（`_attemptManualPair` → `_runPairingV2(deviceName: ping.deviceName)`，LAN 发现同样传入），但配对成功收尾把它丢掉：`fushi/lib/src/sync/sync_settings_schema/interconnect.part.dart:1074` `_onPairSuccess(baseUrl, token, fingerprint, hostId:)` 不带名字，`:1219` 写死 `addFushiClientUrl(..., deviceName: null)`。扫码 / 深链路径（`fushi/lib/src/sync/interconnect_link_pairing.dart`）自己写了一份落库并带上链接里的名字，两份落库逻辑因此分叉。已经这样配过的条目没有任何途径补名：`/api/host/addresses` 只回 hostId + 地址，学到的地址继承锚点的（空）名字。
