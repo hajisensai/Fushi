@@ -33,15 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3842 条。点号进各自文件。
+> 共 3847 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4280](bugs/BUG-4280-srs-conflict-stale-profile.md) | ✅ | ✅ | 复习同步冲突：一边采用对方 profile 解决后，另一边仍按检出时缓存的旧冲突再问一次（旧候选、旧笔记数），选了会分叉 |
-> 共 3846 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-4285](bugs/BUG-4285-srs-conflict-stale-profile.md) | ✅ | ✅ | 复习同步冲突：一边采用对方 profile 解决后，另一边仍按检出时缓存的旧冲突再问一次（旧候选、旧笔记数），选了会分叉 |
 | [BUG-4284](bugs/BUG-4284-popup-gutter-observer-loop.md) | ✅ | ✅ | 查词弹窗错误日志反复出现 ResizeObserver loop completed with undelivered notifications（滚动条 gutter 观察者在投递中同步重排） |
 | [BUG-4283](bugs/BUG-4283-cross-process-lookup-count-locked.md) | ✅ | ✅ | Companion / popup lookups not counted: addLookupCount fails with database is locked |
 | [BUG-4282](bugs/BUG-4282-thor-secondary-screen-volume-mutes-stream.md) | 🚧 | 🚧 | AYN Thor: game stream audio near silent while Fushi has a window on the bottom screen |
