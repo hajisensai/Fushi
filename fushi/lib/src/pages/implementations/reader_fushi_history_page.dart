@@ -1071,6 +1071,11 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
                       onDragUpdate: (SelectionSlot slot) =>
                           setState(() => _selection.updateRangeDrag(slot)),
                       onDragEnd: () => setState(_selection.endRangeDrag),
+                      // 鼠标按下即拖 = 拉框框选（反馈 bFtYB0_Arl）；触屏仍是长按扫选。
+                      onBoxSelectBegin: () =>
+                          setState(_selection.beginBoxSelect),
+                      onBoxSelectUpdate: (Set<SelectionSlot> slots) =>
+                          setState(() => _selection.updateBoxSelect(slots)),
                       child: books.when(
                         // BUG-3337：书集合一变（下载 / 导入落库）fushiBooksProvider
                         // 就因依赖变化重算，AsyncValue 进 reload 态。默认

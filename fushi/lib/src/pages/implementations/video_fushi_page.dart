@@ -410,6 +410,9 @@ import 'package:fushi/src/media/video/video_volume_pref.dart';
 import 'package:fushi/src/diagnostics/video_diag_log.dart';
 import 'package:fushi/src/diagnostics/video_frame_timing_probe.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/store_compliance.dart';
+import 'package:fushi/src/pages/implementations/manual_download_task_dialog.dart'
+    show showManualDownloadTaskDialog;
 import 'package:fushi/src/models/content_font_chain.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
@@ -2135,6 +2138,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// controller.load 抛异常）在置 [_failed] 时经 [_describeLoadFailure] 从异常派生一句
   /// 友好文案，替代旧的「只有一个红叹号、没有任何说明」。
   String? _failReason;
+
+  /// 加载失败的原因是「视频源给的是种子（磁链）」时的那条磁链（反馈 xAeextyOV1）：
+  /// 失败页据此多给一个「用种子下载」入口，把它交给下载管线。其余失败一律 null；
+  /// 每个清 [_failReason] 的起点（重试 / 起播成功）同步清掉，不让旧按钮挂到新失败上。
+  AnimeSourceTorrentVideoException? _failTorrentVideo;
 
   /// TODO-1213：当前加载阶段（网络流 / 本地共用）。非就绪态时 [_buildScaffold] 的
   /// spinner 分支据此显示带上下文的加载态（标题 + 返回 + 阶段文案）。默认 preparing，
@@ -4199,6 +4207,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       setState(() {
         _failed = false;
         _failReason = null;
+        _failTorrentVideo = null;
       });
     }
     if (_videoReadyToShow) return;
@@ -5216,6 +5225,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         setState(() {
           _failed = true;
           _failReason = _describeLoadFailure(e);
+          _failTorrentVideo = e is AnimeSourceTorrentVideoException ? e : null;
         });
       }
       // 合集换集取流失败：当前成员指针已在上面切到目标集，而 [_currentEpisode] 没推进、
@@ -6173,6 +6183,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       setState(() {
         _failed = false;
         _failReason = null;
+        _failTorrentVideo = null;
         _missingResource = true;
         _missingRow = _bookRow;
         _title = title;
@@ -6346,6 +6357,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       _title = title;
       _failed = false;
       _failReason = null;
+      _failTorrentVideo = null;
       _missingResource = false;
       _missingRow = null;
       _currentVideoPath = videoPath;
@@ -6757,6 +6769,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       _missingRow = null;
       _failed = false;
       _failReason = null;
+      _failTorrentVideo = null;
     });
     _showOsd(t.video_resource_relink_success, severity: ToastSeverity.success);
     await _loadSingle(updated);
@@ -12842,6 +12855,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     if (error is MihonRuntimeException && error.code == 'NO_VIDEOS') {
       return t.video_online_stream_none;
     }
+    // 视频源给的是种子（磁链）：不是网络故障也不是流失效，本宿主不做种子流播——
+    // 原因说清，失败页另给「用种子下载」入口（反馈 xAeextyOV1）。
+    if (error is AnimeSourceTorrentVideoException) {
+      return t.video_online_stream_torrent;
+    }
     // 桥超时有自己的类型化证据，不该掉进下面的裸子串阶梯——它的消息里带「timed out」，
     // 会被网络判据先吃掉报成「网络错误，请检查网络连接」，把用户指向自己的网线。
     if (error is MihonRuntimeException && error.code == 'BRIDGE_TIMEOUT') {
@@ -12905,9 +12923,24 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     setState(() {
       _failed = false;
       _failReason = null;
+      _failTorrentVideo = null;
     });
     _setLoadingPhase(_VideoLoadPhase.connecting);
     unawaited(_init());
+  }
+
+  /// 把视频源给的种子交给下载管线：打开下载中心的「添加任务」框并预填磁链与标题
+  /// （P2P 说明、本机 / 互联 host 落点、目标来源照常由用户确认，与手动粘贴同一路）。
+  Future<void> _downloadTorrentVideo(
+    AnimeSourceTorrentVideoException torrent,
+  ) async {
+    if (!StoreRestrictedCapability.downloads.isAvailable) return;
+    await showManualDownloadTaskDialog(
+      context: context,
+      appModel: appModel,
+      initialMagnet: torrent.magnetUri,
+      initialTitle: torrent.title,
+    );
   }
 
   /// 加载失败态正文（替代旧的「一个居中红叹号、无任何说明」）。图标 + 标题 + 具体
@@ -12921,6 +12954,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         _bookRow?.title ??
         '';
     final String reason = _failReason ?? t.video_load_failed_generic;
+    final AnimeSourceTorrentVideoException? torrent = _failTorrentVideo;
+    // 下载中心在 iOS 上整体缺席（判据只问 store_compliance.dart）：那边只说原因、不给入口。
+    final bool offerTorrentDownload =
+        torrent != null && StoreRestrictedCapability.downloads.isAvailable;
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
@@ -12958,6 +12995,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
               runSpacing: 8,
               alignment: WrapAlignment.center,
               children: <Widget>[
+                if (torrent != null && offerTorrentDownload)
+                  FushiFilledButton.icon(
+                    onPressed: () => unawaited(_downloadTorrentVideo(torrent)),
+                    icon: const FushiIcon(Icons.download_rounded),
+                    label: Text(t.video_online_stream_torrent_download),
+                  ),
                 FushiFilledButton.tonalIcon(
                   onPressed: _retryLoad,
                   icon: const FushiIcon(Icons.refresh),
