@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/rendering.dart' show RenderParagraph;
+import 'package:flutter/rendering.dart' show RenderParagraph, SemanticsNode;
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -13,6 +13,7 @@ import 'package:fushi/src/mining/advanced_mining/advanced_mining_sections.dart'
     show formatAdvancedMiningStepSize;
 import 'package:fushi/src/mining/advanced_mining/manga_crop_selector.dart';
 import 'package:fushi/src/stats/study_cover_tracker.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_floating_page_chrome.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -39,6 +40,7 @@ void main() {
     AdvancedMiningCapabilities caps, {
     Size size = const Size(1400, 900),
     List<NavigatorObserver> observers = const <NavigatorObserver>[],
+    bool glass = false,
   }) async {
     tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1.0;
@@ -49,6 +51,11 @@ void main() {
       MaterialApp(
         navigatorKey: navKey,
         navigatorObservers: observers,
+        theme: ThemeData(
+          extensions: <ThemeExtension<dynamic>>[
+            FushiGlassTheme(FushiGlassMaterial.off, glassDesign: glass),
+          ],
+        ),
         home: Scaffold(
           body: Builder(
             builder: (BuildContext ctx) => Center(
@@ -485,6 +492,132 @@ void main() {
       await tester.tap(find.byTooltip(t.popup_ctx_sentence_remove).first);
       await tester.pumpAndSettle();
       expect(host.setContextCalls.last, <int>[1, 1]);
+    });
+
+    // 反馈 _RLnsVq_QZ：× 是删整句的唯一入口，命中区必须 ≥48（视觉仍 32）。
+    for (final bool glass in <bool>[false, true]) {
+      testWidgets('× 命中区 ≥48，点在按钮边缘也能触发（${glass ? 'Apple' : 'MD3'}）', (
+        WidgetTester tester,
+      ) async {
+        host.prevCount = 2;
+        await open(tester, host.videoPage(), glass: glass);
+        final Finder remove = find.byWidgetPredicate(
+          (Widget w) =>
+              w is FushiIconButtonControl &&
+              w.tooltip == t.popup_ctx_sentence_remove,
+        );
+        expect(remove, findsNWidgets(3));
+        final Size size = tester.getSize(remove.at(1));
+        expect(size.width, greaterThanOrEqualTo(48));
+        expect(size.height, greaterThanOrEqualTo(48));
+        final SemanticsHandle semantics = tester.ensureSemantics();
+        final SemanticsNode node = tester.getSemantics(remove.at(1));
+        expect(
+          node.label == t.popup_ctx_sentence_remove ||
+              node.tooltip == t.popup_ctx_sentence_remove,
+          isTrue,
+          reason: 'label=${node.label} tooltip=${node.tooltip}',
+        );
+        semantics.dispose();
+        await tester.tapAt(
+          tester.getCenter(remove.at(1)) + const Offset(20, 0),
+        );
+        await tester.pumpAndSettle();
+        expect(host.removeCalls.single, <Object>[
+          SentenceContextSlot.prev,
+          1,
+          true,
+        ]);
+        // 桌面主题默认 shrinkWrap 命中区（移动端默认 padded 会掩盖问题），按桌面跑。
+      }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
+    }
+
+    Finder editorWith(String text) => find.byWidgetPredicate(
+      (Widget w) => w is EditableText && w.controller.text == text,
+    );
+
+    testWidgets('清空前文确认 = 只去文字：占位说明、保留音频、不进删除线', (WidgetTester tester) async {
+      await open(tester, host.videoPage());
+      await tester.tap(find.byTooltip(t.popup_ctx_edit_start).first);
+      await tester.pumpAndSettle();
+      expect(find.text(t.popup_ctx_edit_clear_keeps_audio_hint), findsNothing);
+      await tester.enterText(editorWith('まえ0。'), '');
+      // 提示出现会让卡片长高（尺寸动画），等它落定再点确认。
+      await tester.pumpAndSettle();
+      expect(
+        find.text(t.popup_ctx_edit_clear_keeps_audio_hint),
+        findsOneWidget,
+      );
+      await tester.tap(find.text(t.popup_ctx_edit_confirm));
+      await tester.pumpAndSettle();
+      expect(host.editCalls.single, <Object>[SentenceContextSlot.prev, 0, '']);
+      expect(host.removeCalls, isEmpty);
+      expect(find.text(t.popup_ctx_sentence_text_cleared), findsOneWidget);
+      expect(find.byTooltip(t.popup_ctx_sentence_restore), findsNothing);
+    });
+
+    // 旧宿主（不给 prevOriginal/nextOriginal）的 editSentence 把空白当「还原原句」，
+    // 不能提示「清空保留音频」——与「恢复原文」入口同一口径按宿主能力隐藏。
+    testWidgets('旧宿主清空前文：不提示保留音频，也没有恢复原文', (WidgetTester tester) async {
+      host.sendOriginals = false;
+      await open(tester, host.videoPage());
+      await tester.tap(find.byTooltip(t.popup_ctx_edit_start).first);
+      await tester.pumpAndSettle();
+      await tester.enterText(editorWith('まえ0。'), '');
+      await tester.pumpAndSettle();
+      expect(find.text(t.popup_ctx_edit_clear_keeps_audio_hint), findsNothing);
+      expect(find.text(t.popup_ctx_edit_restore_original), findsNothing);
+    });
+
+    // 清空文字与移除正交：清空后再移除中间句，卡片仍显示占位（叠删除线），不能变成
+    // 只剩「恢复」按钮的空白卡。
+    for (final bool glass in <bool>[false, true]) {
+      testWidgets('清空后再移除中间句：占位 + 删除线 + 恢复（${glass ? 'Apple' : 'MD3'}）', (
+        WidgetTester tester,
+      ) async {
+        // Apple 套件的图标按钮不挂 Tooltip 组件，按控件的 tooltip 字段找。
+        Finder action(String tooltip) => find.byWidgetPredicate(
+          (Widget w) => w is FushiIconButtonControl && w.tooltip == tooltip,
+        );
+        host.prevCount = 2;
+        await open(tester, host.videoPage(), glass: glass);
+        await tester.tap(action(t.popup_ctx_edit_start).at(1));
+        await tester.pumpAndSettle();
+        await tester.enterText(editorWith('まえ1。'), '');
+        await tester.pumpAndSettle();
+        await tester.tap(find.text(t.popup_ctx_edit_confirm));
+        await tester.pumpAndSettle();
+        expect(find.text(t.popup_ctx_sentence_text_cleared), findsOneWidget);
+        await tester.tap(action(t.popup_ctx_sentence_remove).at(1));
+        await tester.pumpAndSettle();
+        expect(host.removeCalls.single, <Object>[
+          SentenceContextSlot.prev,
+          1,
+          true,
+        ]);
+        expect(action(t.popup_ctx_sentence_restore), findsOneWidget);
+        final Finder placeholder = find.text(t.popup_ctx_sentence_text_cleared);
+        expect(placeholder, findsOneWidget);
+        expect(
+          tester.widget<Text>(placeholder).style?.decoration,
+          TextDecoration.lineThrough,
+        );
+      });
+    }
+
+    testWidgets('改字后出现「恢复原文」（随输入实时出现），点击回到原句', (WidgetTester tester) async {
+      await open(tester, host.videoPage());
+      await tester.tap(find.byTooltip(t.popup_ctx_edit_start).first);
+      await tester.pumpAndSettle();
+      expect(find.text(t.popup_ctx_edit_restore_original), findsNothing);
+      await tester.enterText(editorWith('まえ0。'), '直した。');
+      await tester.pump();
+      expect(find.text(t.popup_ctx_edit_restore_original), findsOneWidget);
+      await tester.tap(find.text(t.popup_ctx_edit_restore_original));
+      await tester.pump();
+      expect(editorWith('まえ0。'), findsOneWidget);
+      expect(find.text(t.popup_ctx_edit_restore_original), findsNothing);
+      expect(host.editCalls, isEmpty);
     });
 
     testWidgets('编辑态锁住外层：主按钮禁用、快捷键不拦截', (WidgetTester tester) async {

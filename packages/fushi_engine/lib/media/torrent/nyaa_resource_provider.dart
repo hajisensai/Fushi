@@ -277,6 +277,7 @@ class _NyaaResourceCandidate extends VideoResourceCandidate {
         resolution: torrent.resolution,
         releaseGroup: torrent.releaseGroup,
         trusted: torrent.trusted,
+        remake: torrent.remake,
         detailsUrl: torrent.pageUrl,
         magnetUri: torrent.magnet,
       );

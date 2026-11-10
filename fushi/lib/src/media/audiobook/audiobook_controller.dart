@@ -1941,7 +1941,8 @@ class AudiobookPlayerController extends ChangeNotifier {
       audioFileIndex: returnAt.fileIndex,
       positionMs: returnAt.positionMs,
     );
-    _stopAtPositionMs = cue.endMs;
+    // 停止点与起点同在音频时基：cue 在音频里真实结束于 endMs + delay。
+    _stopAtPositionMs = _audioMsForCueMs(cue.endMs);
 
     final int targetMs = _clampToKnownDuration(startPosition.positionMs);
     _beginExplicitSeek(startPosition.audioFileIndex, targetMs);
@@ -1987,7 +1988,7 @@ class AudiobookPlayerController extends ChangeNotifier {
       currentCueIndex: _currentCueIndex,
       currentCue: _currentCue,
       audioFileIndex: _effectiveFilePosition.fileIndex,
-      positionMs: position.inMilliseconds,
+      positionMs: _cueTimePositionMs,
     );
     if (target == null) {
       unawaited(onBoundarySkip?.call(-1));
@@ -2005,7 +2006,7 @@ class AudiobookPlayerController extends ChangeNotifier {
       cues: _chapterCues,
       currentCueIndex: _currentCueIndex,
       audioFileIndex: _effectiveFilePosition.fileIndex,
-      positionMs: position.inMilliseconds,
+      positionMs: _cueTimePositionMs,
     );
     if (target == null) {
       unawaited(onBoundarySkip?.call(1));
@@ -2024,7 +2025,7 @@ class AudiobookPlayerController extends ChangeNotifier {
       cues: _chapterCues,
       currentCueIndex: _currentCueIndex,
       audioFileIndex: _effectiveFilePosition.fileIndex,
-      positionMs: position.inMilliseconds,
+      positionMs: _cueTimePositionMs,
     );
     if (target < 0) return;
     await playCueAndContinue(_chapterCues[target]);
@@ -2071,7 +2072,7 @@ class AudiobookPlayerController extends ChangeNotifier {
       idx = _cueIndexAtFilePosition(
         cues: _chapterCues,
         audioFileIndex: _effectiveFilePosition.fileIndex,
-        positionMs: position.inMilliseconds,
+        positionMs: _cueTimePositionMs,
       );
     }
     final int target = (idx + delta).clamp(0, _chapterCues.length - 1);
@@ -2659,13 +2660,30 @@ class AudiobookPlayerController extends ChangeNotifier {
     }
   }
 
-  /// 将 cue 映射到 just_audio playlist index + 文件内毫秒。
+  /// 将 cue 映射到 just_audio playlist index + 文件内毫秒（音频时基，已含音画
+  /// 偏移：cue 在音频里真实出现于 `startMs + delayMs`，与 tick 侧
+  /// `effectiveMs = pos - delayMs` 互为逆变换）。
   ({int audioFileIndex, int positionMs})? _positionForCue(AudioCue cue) {
-    if (cue.audioFileIndex < 0 || cue.audioFileIndex >= _audioFiles.length) {
-      return null;
-    }
-    return (audioFileIndex: cue.audioFileIndex, positionMs: cue.startMs);
+    final int? positionMs = _positionMsForCue(
+      audioFileIndex: cue.audioFileIndex,
+      startMs: cue.startMs,
+      audioFileCount: _audioFiles.length,
+      delayMs: delayMs.value,
+    );
+    if (positionMs == null) return null;
+    return (audioFileIndex: cue.audioFileIndex, positionMs: positionMs);
   }
+
+  /// cue 时基的毫秒 → 音频时基（加音画偏移，下界 0）。
+  int _audioMsForCueMs(int cueMs) =>
+      _cueMsToAudioMs(cueMs: cueMs, delayMs: delayMs.value);
+
+  static int _cueMsToAudioMs({required int cueMs, required int delayMs}) =>
+      (cueMs + delayMs).clamp(0, 1 << 30);
+
+  /// 当前播放位置换算到 cue 时基（减音画偏移，下界 0），供按位置查句的导航用。
+  int get _cueTimePositionMs =>
+      (position.inMilliseconds - delayMs.value).clamp(0, 1 << 30);
 
   int _clampToKnownDuration(int positionMs) {
     final Duration? dur = _player.duration;
@@ -2683,11 +2701,12 @@ class AudiobookPlayerController extends ChangeNotifier {
     required int audioFileIndex,
     required int startMs,
     required int audioFileCount,
+    required int delayMs,
   }) {
     if (audioFileIndex < 0 || audioFileIndex >= audioFileCount) {
       return null;
     }
-    return startMs;
+    return _cueMsToAudioMs(cueMs: startMs, delayMs: delayMs);
   }
 
   /// [cues] 按 (audioFileIndex, startMs) 排好时，文件 [audioFileIndex] 的 cue 是连续
@@ -2891,13 +2910,19 @@ class AudiobookPlayerController extends ChangeNotifier {
     required int audioFileIndex,
     required int startMs,
     required int audioFileCount,
+    int delayMs = 0,
   }) {
     return _positionMsForCue(
       audioFileIndex: audioFileIndex,
       startMs: startMs,
       audioFileCount: audioFileCount,
+      delayMs: delayMs,
     );
   }
+
+  /// 测试钩子：[playCueOnce] 设的单句试听停止点（音频时基）。
+  @visibleForTesting
+  int? get stopAtPositionMsForTesting => _stopAtPositionMs;
 
   /// 测试钩子：暴露 [_displayCueFor] 纯决策（悬浮字幕/通知/mini bar 显示 cue）。
   @visibleForTesting

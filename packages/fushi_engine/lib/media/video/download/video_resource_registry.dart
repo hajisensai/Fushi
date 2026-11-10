@@ -132,6 +132,13 @@ class VideoResourceRegistry {
         deduplicateVideoResources(merged.items),
         query: request.effectiveQuery,
         season: request.effectiveSeason,
+        workTitles: <String>[
+          if (request.media case final VideoMediaReference media) ...<String>[
+            media.title,
+            ?media.originalTitle,
+            ...media.aliases,
+          ],
+        ],
       ),
       failures: merged.failures,
       successfulProviderCount: merged.successfulProviderCount,
