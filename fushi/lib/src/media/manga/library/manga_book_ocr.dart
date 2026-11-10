@@ -14,6 +14,7 @@ library;
 
 import 'dart:async';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/manga/library/manga_chapter_storage.dart';
@@ -86,11 +87,22 @@ Future<MangaOcrResultState> readMangaOcrResultState(File mangaJson) async {
 /// 直接读识别结果本身，不另存镜像状态（反馈 wCgL364tgM）。调用方只该传已下载的
 /// 章——没下载的章没有 `manga.json`，读失败会被当作 [MangaOcrResultState.unreadable]
 /// 排除。
+///
+/// 每章都要整份解析 `manga.json`（识别过的章带全部 blocks，常见几百 KB 到数
+/// MB），已下载章一多就是几十 ms 以上：放后台 isolate 跑，不卡作品页。
 Future<Set<String>> ocrCompletedChapterKeys(
   String bookDir,
   Iterable<String> chapterKeys,
-) async {
+) {
   final List<String> keys = chapterKeys.toList(growable: false);
+  if (keys.isEmpty) return Future<Set<String>>.value(const <String>{});
+  return Isolate.run(() => _ocrCompletedChapterKeys(bookDir, keys));
+}
+
+Future<Set<String>> _ocrCompletedChapterKeys(
+  String bookDir,
+  List<String> keys,
+) async {
   final List<MangaOcrResultState> states =
       await Future.wait(<Future<MangaOcrResultState>>[
         for (final String key in keys)

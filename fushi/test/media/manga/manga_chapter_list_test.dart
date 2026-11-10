@@ -355,6 +355,16 @@ void main() {
     expect(find.byTooltip(t.manga_chapter_status_read), findsOneWidget);
     expect(find.byTooltip(t.media_detail_status_downloaded), findsOneWidget);
     expect(find.byTooltip(t.manga_chapter_status_ocr_done), findsOneWidget);
+    // 读屏名称：每枚状态图标都有显式语义标签（不只靠 tooltip）。
+    expect(find.bySemanticsLabel(t.manga_chapter_status_read), findsOneWidget);
+    expect(
+      find.bySemanticsLabel(t.media_detail_status_downloaded),
+      findsOneWidget,
+    );
+    expect(
+      find.bySemanticsLabel(t.manga_chapter_status_ocr_done),
+      findsOneWidget,
+    );
 
     final BuildContext ctx = tester.element(find.byType(MangaChapterList));
     final ColorScheme cs = Theme.of(ctx).colorScheme;

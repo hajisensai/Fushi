@@ -1715,8 +1715,20 @@ class MediaDetailItemRow extends StatelessWidget {
   }
 
   /// 一枚带 tooltip 的状态图标：悬停 / 长按出说明，读屏读 [label]。
-  static Widget _labelled(String label, Widget icon, {Key? key}) =>
-      FushiTooltip(key: key, message: label, child: icon);
+  ///
+  /// 无障碍名称显式给成 [Semantics.label]（图标本身没有语义，只靠 tooltip
+  /// 的 `tooltip` 语义属性时部分读屏只报「图像」）；tooltip 自己的语义关掉，
+  /// 免得同一句读两遍。
+  static Widget _labelled(String label, Widget icon, {Key? key}) => Semantics(
+    key: key,
+    label: label,
+    image: true,
+    child: FushiTooltip(
+      message: label,
+      excludeFromSemantics: true,
+      child: ExcludeSemantics(child: icon),
+    ),
+  );
 
   Widget? _buildStatus(BuildContext context, ColorScheme cs, bool hasTrailing) {
     final List<Widget> icons = <Widget>[
