@@ -1513,7 +1513,7 @@ void GlobalLookupWindow::Reveal(int width, int height,
   // reveal(scalar)）都不知道自己最终会走哪条 C++ 路径，而本函数正是「窗口按光标 +
   // 单卡尺寸摆好了」这个事实的发生地。RevealStack 走 commitLayerShift，不经过这里。
   //
-  // BUG-4323 — 直连游戏内卡（RevealOverProcessClient）也借这个函数上屏，但它把窗口放在
+  // BUG-4354 — 直连游戏内卡（RevealOverProcessClient）也借这个函数上屏，但它把窗口放在
   // **已提交几何的 union bbox 原点 + union 尺寸**，图层平移由同一几何的
   // commitLayerShift(bbox) 写好。嵌套 resize 后 Dart 每次都会重投 present，这里若照样
   // 复位，子卡向上 / 向左翻出（bbox 原点为负）时整叠卡被画回 window-local 原点：子卡
@@ -2754,7 +2754,7 @@ bool GlobalLookupWindow::RevealOverProcessClient(
   // consumed. Pass the bound game HWND into the same reveal transaction that
   // makes the popup visible, so there is no first-frame window where the hook
   // is armed with desktop click-through semantics.
-  // BUG-4323 — the HWND lands on the committed union bbox origin (not the legacy
+  // BUG-4354 — the HWND lands on the committed union bbox origin (not the legacy
   // cursor + single-card spot), so the host layer must keep the
   // commitLayerShift(bbox) translation that ResizeStackForGal / the off-screen
   // RevealStack already applied for this exact geometry.

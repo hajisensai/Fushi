@@ -136,7 +136,7 @@ class GlobalLookupWindow {
   //     必须复位到 (0,0)（BUG-2123）。
   //   * kCommittedBBox —— 直连游戏内卡（RevealOverProcessClient）：窗口落在**已提交
   //     几何**的 union bbox 原点、union 尺寸，图层平移正是同一几何的
-  //     commitLayerShift(bbox) 写进去的，绝不能复位（BUG-4323：子卡向上翻出后复位会把
+  //     commitLayerShift(bbox) 写进去的，绝不能复位（BUG-4354：子卡向上翻出后复位会把
   //     整叠卡画回 window-local 原点，两张卡下方各露出一截透明区）。
   enum class RevealLayerOrigin { kCursorSingleCard, kCommittedBBox };
   void Reveal(int width, int height, bool clamp_to_work_area = true,

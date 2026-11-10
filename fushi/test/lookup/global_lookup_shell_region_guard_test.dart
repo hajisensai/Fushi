@@ -337,7 +337,7 @@ void main() {
       reason:
           'game viewport geometry must not be clamped again to desktop rcWork; '
           'the direct reveal transaction also binds its game HWND for click swallowing; '
-          'BUG-4323: the HWND sits on the committed union bbox, so the host layer '
+          'BUG-4354: the HWND sits on the committed union bbox, so the host layer '
           'shift must survive the reveal',
     );
 
@@ -356,7 +356,7 @@ void main() {
     expect(flutterWindow, contains('RevealOverProcessClient('));
   });
 
-  // BUG-4323（反馈 SDbJAx1Db6）— 游戏内卡里再点词、子卡向上翻出后，Dart 每次嵌套
+  // BUG-4354（反馈 SDbJAx1Db6）— 游戏内卡里再点词、子卡向上翻出后，Dart 每次嵌套
   // resize 都重投 present → RevealOverProcessClient → legacy Reveal。旧 Reveal 无条件
   // resetLayerOffsetForLegacyReveal，把 commitLayerShift(bbox) 写好的负向平移清零：
   // HWND 与 HRGN 仍按 union bbox 放，整叠卡却画回 window-local 原点——子卡被窗口顶边
