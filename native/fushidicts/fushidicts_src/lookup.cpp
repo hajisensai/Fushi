@@ -368,7 +368,7 @@ std::vector<LookupResult> Lookup::lookup(const std::string& lookup_string, int m
     case LookupFrequencyOrder::Auto:
       auto_frequency_dictionaries = query_.get_freq_dict_order();
       // 被排除的频率词典不进比较器的词典序（它的条目本来也没被富化进来）。
-      std::erase_if(auto_frequency_dictionaries, [&](const std::string& name) { return is_excluded(name); });
+      std::erase_if(auto_frequency_dictionaries, [&is_excluded](const std::string& name) { return is_excluded(name); });
       break;
     case LookupFrequencyOrder::Ascending:
     case LookupFrequencyOrder::Descending:

@@ -933,7 +933,9 @@ FfiLookupResults fushidicts_lookup_with_exclusions(void* handle, const char* tex
                                                    const int32_t* ruby_bounds, const char* ruby_readings,
                                                    int32_t ruby_count, const char* const* excluded_names,
                                                    int32_t excluded_count) {
-  return ffi_guard("fushidicts_lookup_with_exclusions", [&]() -> FfiLookupResults {
+  return ffi_guard("fushidicts_lookup_with_exclusions", [handle, text, max_results, scan_length, freq_dict, freq_order,
+                                                          primary_reading, flags, ruby_bounds, ruby_readings, ruby_count,
+                                                          excluded_names, excluded_count]() {
     return lookup_with_option_args(handle, text, max_results, scan_length,
                                    LookupOptionArgs{freq_dict, freq_order, primary_reading, flags, ruby_bounds,
                                                     ruby_readings, ruby_count, excluded_names, excluded_count});

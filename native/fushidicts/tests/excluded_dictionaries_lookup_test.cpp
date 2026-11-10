@@ -15,7 +15,9 @@
 //
 // Usage: excluded_dictionaries_lookup_test (no args) -> exit 0 PASS, non-zero FAIL.
 #include <algorithm>
-#include <cstdio>
+#include <format>
+#include <iostream>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -31,7 +33,7 @@ namespace {
 struct Failures {
   int count = 0;
   void fail(std::string_view msg) {
-    std::fprintf(stderr, "FAIL: %.*s\n", static_cast<int>(msg.size()), msg.data());
+    std::cerr << std::format("FAIL: {}\n", msg);
     ++count;
   }
   void expect(bool ok, std::string_view msg) {
@@ -45,24 +47,22 @@ constexpr const char* kFreqExcluded = "ExclFreqGone";
 constexpr const char* kFreqKept = "ExclFreqKept";
 
 std::string index_json(const char* title) {
-  return std::string("{\"title\":\"") + title + "\",\"format\":3,\"revision\":\"test\"}";
+  return std::format(R"({{"title":"{}","format":3,"revision":"test"}})", title);
 }
 
 // 词条行：[expression, reading, defTags, rules, score, [glossary], sequence, termTags]
 std::string term_row(const std::string& expression, const std::string& reading, const std::string& gloss,
                      int score = 0) {
-  return "[\"" + expression + "\",\"" + reading + "\",\"\",\"\"," + std::to_string(score) + ",[\"" + gloss +
-         "\"],0,\"\"]";
+  return std::format(R"(["{}","{}","","",{},["{}"],0,""])", expression, reading, score, gloss);
 }
 
 std::string freq_row(const std::string& expression, const std::string& reading, int value) {
-  return "[\"" + expression + "\",\"freq\",{\"reading\":\"" + reading + "\",\"frequency\":" + std::to_string(value) +
-         "}]";
+  return std::format(R"(["{}","freq",{{"reading":"{}","frequency":{}}}])", expression, reading, value);
 }
 
 std::string pitch_row(const std::string& expression, const std::string& reading, int position) {
-  return "[\"" + expression + "\",\"pitch\",{\"reading\":\"" + reading + "\",\"pitches\":[{\"position\":" +
-         std::to_string(position) + "}]}]";
+  return std::format(R"(["{}","pitch",{{"reading":"{}","pitches":[{{"position":{}}}]}}])", expression, reading,
+                     position);
 }
 
 std::string import_dict(Failures& f, const char* title, const std::string& bank_name, const std::string& bank) {
@@ -83,15 +83,15 @@ const LookupResult* find_result(const std::vector<LookupResult>& rs, std::string
   const auto it = std::ranges::find_if(rs, [&](const LookupResult& r) {
     return r.term.expression == expression && r.term.reading == reading;
   });
-  return it == rs.end() ? nullptr : &*it;
+  return it == rs.end() ? nullptr : std::to_address(it);
 }
 
 // 结果的可比摘要：词头、匹配、glossary 所属词典与正文、频率 / 音调条目。
 std::string digest(const std::vector<LookupResult>& rs) {
   std::string out;
   for (const LookupResult& r : rs) {
-    out += "[" + r.term.expression + "/" + r.term.reading + " m=" + r.matched + " d=" + r.deinflected;
-    for (const GlossaryEntry& g : r.term.glossaries) out += " g:" + g.dict_name + "=" + g.glossary;
+    out += std::format("[{}/{} m={} d={}", r.term.expression, r.term.reading, r.matched, r.deinflected);
+    for (const GlossaryEntry& g : r.term.glossaries) out += std::format(" g:{}={}", g.dict_name, g.glossary);
     for (const FrequencyEntry& fe : r.term.frequencies) {
       out += " f:" + fe.dict_name;
       for (const Frequency& v : fe.frequencies) out += "=" + std::to_string(v.value);
@@ -280,9 +280,9 @@ int main() {
   check_frequency_and_pitch(f);
   check_merged_score(f);
   if (f.count == 0) {
-    std::printf("excluded_dictionaries_lookup_test: PASS\n");
+    std::cout << "excluded_dictionaries_lookup_test: PASS\n";
     return 0;
   }
-  std::fprintf(stderr, "excluded_dictionaries_lookup_test: %d failure(s)\n", f.count);
+  std::cerr << std::format("excluded_dictionaries_lookup_test: {} failure(s)\n", f.count);
   return 1;
 }

@@ -11,9 +11,10 @@
 //   3) 空串 / 非字符串（数字、null）语言当缺席：导入不失败，输出不写该键。
 //
 // Usage: index_language_roundtrip_test (no args) -> exit 0 PASS, non-zero FAIL.
-#include <cstdio>
 #include <filesystem>
+#include <format>
 #include <fstream>
+#include <iostream>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -26,13 +27,13 @@ struct Failures {
   int count = 0;
   void expect(bool ok, std::string_view msg) {
     if (!ok) {
-      std::fprintf(stderr, "FAIL: %.*s\n", static_cast<int>(msg.size()), msg.data());
+      std::cerr << std::format("FAIL: {}\n", msg);
       ++count;
     }
   }
 };
 
-constexpr const char* kTermBank = "[[\"IdxLangTerm\",\"\",\"\",\"\",0,[\"gloss\"],0,\"\"]]";
+constexpr const char* kTermBank = R"([["IdxLangTerm","","","",0,["gloss"],0,""]])";
 
 // 导入只含 [index] 的词典，返回输出 index.json 的全文；失败返回 "" 并记失败。
 std::string import_and_read_index(Failures& f, const std::string& label, const std::string& index) {
@@ -56,7 +57,7 @@ std::string import_and_read_index(Failures& f, const std::string& label, const s
   return ss.str();
 }
 
-bool contains(const std::string& s, std::string_view needle) { return s.find(needle) != std::string::npos; }
+bool contains(std::string_view s, std::string_view needle) { return s.contains(needle); }
 
 }  // namespace
 
@@ -67,50 +68,50 @@ int main() {
   {
     const std::string out = import_and_read_index(
         f, "with",
-        "{\"title\":\"IdxLangWith\",\"format\":3,\"revision\":\"r1\",\"isUpdatable\":true,"
-        "\"indexUrl\":\"https://e.x/i.json\",\"downloadUrl\":\"https://e.x/d.zip\","
-        "\"sourceLanguage\":\"ja\",\"targetLanguage\":\"zh\",\"author\":\"someone\"}");
-    f.expect(contains(out, "\"sourceLanguage\":\"ja\""), "with: sourceLanguage written back (got " + out + ")");
-    f.expect(contains(out, "\"targetLanguage\":\"zh\""), "with: targetLanguage written back (got " + out + ")");
-    f.expect(contains(out, "\"revision\":\"r1\""), "with: revision kept");
-    f.expect(contains(out, "\"isUpdatable\":true"), "with: isUpdatable kept");
-    f.expect(contains(out, "\"indexUrl\":\"https://e.x/i.json\""), "with: indexUrl kept");
-    f.expect(contains(out, "\"downloadUrl\":\"https://e.x/d.zip\""), "with: downloadUrl kept");
+        R"({"title":"IdxLangWith","format":3,"revision":"r1","isUpdatable":true,)"
+        R"("indexUrl":"https://e.x/i.json","downloadUrl":"https://e.x/d.zip",)"
+        R"("sourceLanguage":"ja","targetLanguage":"zh","author":"someone"})");
+    f.expect(contains(out, R"("sourceLanguage":"ja")"), "with: sourceLanguage written back (got " + out + ")");
+    f.expect(contains(out, R"("targetLanguage":"zh")"), "with: targetLanguage written back (got " + out + ")");
+    f.expect(contains(out, R"("revision":"r1")"), "with: revision kept");
+    f.expect(contains(out, R"("isUpdatable":true)"), "with: isUpdatable kept");
+    f.expect(contains(out, R"("indexUrl":"https://e.x/i.json")"), "with: indexUrl kept");
+    f.expect(contains(out, R"("downloadUrl":"https://e.x/d.zip")"), "with: downloadUrl kept");
   }
 
   // 2) 不带语言：无语言键，输出与改动前逐字节一致。
   {
     const std::string out =
-        import_and_read_index(f, "without", "{\"title\":\"IdxLangWithout\",\"format\":3,\"revision\":\"r2\"}");
+        import_and_read_index(f, "without", R"({"title":"IdxLangWithout","format":3,"revision":"r2"})");
     f.expect(!contains(out, "sourceLanguage"), "without: no sourceLanguage key (got " + out + ")");
     f.expect(!contains(out, "targetLanguage"), "without: no targetLanguage key (got " + out + ")");
     const std::string expected =
-        "{\"title\":\"IdxLangWithout\",\"format\":3,\"revision\":\"r2\",\"isUpdatable\":false,"
-        "\"indexUrl\":\"\",\"downloadUrl\":\"\"}";
+        R"({"title":"IdxLangWithout","format":3,"revision":"r2","isUpdatable":false,)"
+        R"("indexUrl":"","downloadUrl":""})";
     f.expect(out == expected, "without: byte-identical to pre-change output (got " + out + ")");
   }
 
   // 3) 空串 / 非字符串：当缺席，导入照常成功。
   {
     const std::string out = import_and_read_index(
-        f, "odd", "{\"title\":\"IdxLangOdd\",\"format\":3,\"revision\":\"r3\",\"sourceLanguage\":\"\","
-                  "\"targetLanguage\":42}");
+        f, "odd", R"({"title":"IdxLangOdd","format":3,"revision":"r3","sourceLanguage":"",)"
+                  R"("targetLanguage":42})");
     f.expect(!out.empty(), "odd: import succeeded");
     f.expect(!contains(out, "sourceLanguage"), "odd: empty sourceLanguage omitted (got " + out + ")");
     f.expect(!contains(out, "targetLanguage"), "odd: numeric targetLanguage omitted (got " + out + ")");
   }
   {
     const std::string out = import_and_read_index(
-        f, "nulls", "{\"title\":\"IdxLangNulls\",\"format\":3,\"revision\":\"r4\",\"sourceLanguage\":null,"
-                    "\"targetLanguage\":\"en\"}");
+        f, "nulls", R"({"title":"IdxLangNulls","format":3,"revision":"r4","sourceLanguage":null,)"
+                    R"("targetLanguage":"en"})");
     f.expect(!contains(out, "sourceLanguage"), "nulls: null sourceLanguage omitted (got " + out + ")");
-    f.expect(contains(out, "\"targetLanguage\":\"en\""), "nulls: targetLanguage written (got " + out + ")");
+    f.expect(contains(out, R"("targetLanguage":"en")"), "nulls: targetLanguage written (got " + out + ")");
   }
 
   if (f.count != 0) {
-    std::fprintf(stderr, "index_language_roundtrip_test: %d failure(s)\n", f.count);
+    std::cerr << std::format("index_language_roundtrip_test: {} failure(s)\n", f.count);
     return 1;
   }
-  std::printf("index_language_roundtrip_test: PASS\n");
+  std::cout << "index_language_roundtrip_test: PASS\n";
   return 0;
 }

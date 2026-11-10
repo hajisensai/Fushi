@@ -6634,7 +6634,7 @@ function createGlossarySection(dictName, contents, dictIdx, entryIdx, totalDicts
     // 释义来自已配对服务器（宿主合并结果时给服务器那份打 `remote: true`）：词典名旁
     // 一枚服务器小图标，悬停说明来源。没有这个标记（本机释义、浏览器扩展、旧宿主）
     // 时什么都不画，渲染与以前逐像素一致。
-    if (Array.isArray(contents) && contents.some(c => c && c.remote === true)) {
+    if (Array.isArray(contents) && contents.some(c => c?.remote === true)) {
         summary.appendChild(__fushiRemoteDictGlyph());
     }
     details.appendChild(summary);

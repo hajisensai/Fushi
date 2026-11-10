@@ -163,8 +163,10 @@ std::optional<std::string> optional_language(std::string_view raw) {
 
 bool yomitan_parser::parse_index(std::string_view content, Index& out) {
   internal::RawIndex raw;
-  auto error = glz::read<glz::opts{.error_on_unknown_keys = false, .error_on_missing_keys = false}>(raw, content);
-  if (error) return false;
+  if (auto error = glz::read<glz::opts{.error_on_unknown_keys = false, .error_on_missing_keys = false}>(raw, content);
+      error) {
+    return false;
+  }
   out.title = raw.title;
   out.format = raw.format;
   out.revision = raw.revision;
