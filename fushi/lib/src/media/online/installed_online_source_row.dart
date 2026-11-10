@@ -8,7 +8,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
-import 'package:fushi/src/utils/components/fushi_reorderable_column.dart';
+import 'package:fushi/src/utils/components/fushi_sliver_reorderable_list.dart';
 import 'package:fushi/src/utils/components/fushi_section_title.dart';
 import 'package:fushi/src/utils/components/fushi_tag.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
@@ -441,15 +441,20 @@ typedef InstalledSourceRowBuilder<T> =
       bool dragEnabled,
     );
 
-/// 一组已装源（置顶组 / 其余组）：可选小标题 + 分段列表，组内拖拽重排。
+/// 一组已装源（置顶组 / 其余组）：可选小标题 + 分段列表，组内拖拽重排。**是 sliver**，
+/// 直接挂进外层 `CustomScrollView` / `SliverMainAxisGroup`。
 ///
-/// [reorderable] 为 true 且多于一行时用 [FushiReorderableColumn]（自实现的重排列，
-/// 在 `FushiAppUiScale` 祖先缩放下不漂移，鼠标按下即拖、触摸长按再拖），只在本组
-/// 内拖；落点后 [onReorder] 收到整组的新顺序，由调用方批量回写。
+/// 🔴 必须懒建（#E5IZOyVcbm）：批量装完一个完整仓库就有一千多行已装源，此前整组是
+/// `SliverToBoxAdapter` 里的一列，视口裁不掉屏外行——每行都布局、绘制、留在合成树里，
+/// 浏览页空闲时合成树堆到 PictureLayer×6593 / OpacityLayer×4395 / ClipPathLayer×1098。
+/// 现在行走 [SliverList.builder] / [FushiSliverReorderableList]，只建可见的那十几行。
+///
+/// [reorderable] 为 true 且多于一行时用 [FushiSliverReorderableList]（自实现的懒建
+/// 重排 sliver，在 `FushiAppUiScale` 祖先缩放下不漂移，鼠标按下即拖、触摸长按再拖），
+/// 只在本组内拖；落点后 [onReorder] 收到整组的新顺序，由调用方批量回写。
 ///
 /// 每行包一层 [FushiStaggeredEntrance]（序号从 [entranceOffset] 起），调用方在外层
-/// 挂 [FushiEntranceScope]；行数变化（置顶 / 取消置顶把行挪到另一组）用 spatial
-/// 弹簧 [AnimatedSize] 过渡。
+/// 挂 [FushiEntranceScope]。
 class InstalledSourcesGroup<T> extends StatelessWidget {
   const InstalledSourcesGroup({
     required this.items,
@@ -464,7 +469,7 @@ class InstalledSourcesGroup<T> extends StatelessWidget {
 
   final List<T> items;
 
-  /// 行身份（拖拽时的稳定 key）。
+  /// 行身份（懒建列表找回元素、拖拽时的稳定 key）。
   final String Function(T item) keyOf;
   final InstalledSourceRowBuilder<T> rowBuilder;
   final bool reorderable;
@@ -476,7 +481,6 @@ class InstalledSourcesGroup<T> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final FushiMotionScheme motion = context.fushiMotion;
     final double gap = fushiGroupedListGap(context);
     final int count = items.length;
     final bool drag = reorderable && count > 1;
@@ -484,54 +488,54 @@ class InstalledSourcesGroup<T> extends StatelessWidget {
       index: entranceOffset + index,
       child: rowBuilder(context, items[index], index, count, drag),
     );
-    final Widget body = drag
-        ? FushiReorderableColumn(
-            itemCount: count,
-            spacing: gap,
-            keyForIndex: (int index) =>
-                ValueKey<String>('online_source_drag_${keyOf(items[index])}'),
-            onReorder: (int from, int to) {
-              final List<T> reordered = List<T>.of(items);
-              final T moved = reordered.removeAt(from);
-              reordered.insert(to, moved);
-              onReorder(reordered);
-            },
-            itemBuilder: row,
-          )
-        : Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              for (int i = 0; i < count; i++) ...<Widget>[
-                if (i > 0) SizedBox(height: gap),
-                KeyedSubtree(
-                  key: ValueKey<String>('online_source_${keyOf(items[i])}'),
-                  child: row(context, i),
-                ),
-              ],
-            ],
-          );
+    final Widget body;
+    if (drag) {
+      body = FushiSliverReorderableList(
+        itemCount: count,
+        spacing: gap,
+        keyForIndex: (int index) =>
+            ValueKey<String>('online_source_drag_${keyOf(items[index])}'),
+        onReorder: (int from, int to) {
+          final List<T> reordered = List<T>.of(items);
+          final T moved = reordered.removeAt(from);
+          reordered.insert(to, moved);
+          onReorder(reordered);
+        },
+        itemBuilder: row,
+      );
+    } else {
+      final Map<String, int> indexOfKey = <String, int>{
+        for (int i = 0; i < count; i++) 'online_source_${keyOf(items[i])}': i,
+      };
+      body = SliverList.builder(
+        itemCount: count,
+        findChildIndexCallback: (Key key) =>
+            key is ValueKey<String> ? indexOfKey[key.value] : null,
+        itemBuilder: (BuildContext context, int i) => KeyedSubtree(
+          key: ValueKey<String>('online_source_${keyOf(items[i])}'),
+          child: Padding(
+            padding: EdgeInsets.only(top: i > 0 ? gap : 0),
+            child: row(context, i),
+          ),
+        ),
+      );
+    }
     final String? title = header;
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
+    return SliverMainAxisGroup(
+      slivers: <Widget>[
         if (title != null)
-          FushiSectionTitle.group(
-            title,
-            trailing: Text(
-              '$count',
-              style: context.fushiType.labelMedium.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
+          SliverToBoxAdapter(
+            child: FushiSectionTitle.group(
+              title,
+              trailing: Text(
+                '$count',
+                style: context.fushiType.labelMedium.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
               ),
             ),
           ),
-        AnimatedSize(
-          duration: motion.spatialDefault.duration,
-          curve: motion.spatialDefault.curve,
-          alignment: Alignment.topCenter,
-          child: body,
-        ),
+        body,
       ],
     );
   }
