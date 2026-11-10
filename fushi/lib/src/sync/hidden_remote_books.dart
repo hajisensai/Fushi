@@ -20,48 +20,6 @@ bool isRemoteBookHidden(
       h.hides(sourceId: sourceId, sourceHost: sourceHost, remoteId: remoteId),
 );
 
-/// 当前互联对端的身份与展示名。
-///
-/// `identity`：与 [baseUrl] 对得上的配对地址行的 hostId（同一台 host 的多条地址共用
-/// 一个），没有就用 [baseUrl] 本身；[baseUrl] 为 null 时也是 null。
-/// `label`：配对时记下的对端名，没有就用地址的主机名。
-({String? identity, String label}) describeInterconnectHost(
-  List<FushiClientUrl> urls,
-  String? baseUrl,
-) {
-  String? hostId;
-  String? name;
-  if (baseUrl != null) {
-    for (final FushiClientUrl url in urls) {
-      if (url.url != baseUrl) continue;
-      final String? id = url.hostId?.trim();
-      final String? n = url.deviceName?.trim();
-      if (hostId == null && id != null && id.isNotEmpty) hostId = id;
-      if (name == null && n != null && n.isNotEmpty) name = n;
-    }
-  }
-  final String? host = baseUrl == null ? null : Uri.tryParse(baseUrl)?.host;
-  return (
-    identity: hostId ?? baseUrl,
-    label: name ?? ((host == null || host.isEmpty) ? (baseUrl ?? '?') : host),
-  );
-}
-
-/// [client] 是互联对端时它的身份（见 [describeInterconnectHost]），否则 null。
-Future<String?> remoteBookSourceHost(
-  FushiDatabase database,
-  RemoteBookClient client,
-) async {
-  if (client.remoteLibrarySourceId != kInterconnectRemoteLibrarySourceId ||
-      client is! InterconnectSyncBackend) {
-    return null;
-  }
-  final List<FushiClientUrl> urls = await SyncRepository(
-    database,
-  ).getFushiClientUrls();
-  return describeInterconnectHost(urls, client.resolvedHostBaseUrl).identity;
-}
-
 /// 书架当前的远端书来源：互联开启且鉴权成功 → 互联对端；否则云盘备份后端；都没有
 /// → null。书架与「已从本机移除的远端书」列表共用这一条判定。
 ///

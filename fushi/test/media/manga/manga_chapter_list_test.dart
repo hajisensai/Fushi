@@ -2,6 +2,8 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
+    show FushiTooltip;
 import 'package:fushi/src/media/detail/media_detail_kit.dart';
 import 'package:fushi/src/media/manga/library/manga_chapter_list.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
@@ -13,6 +15,17 @@ import 'package:flutter/gestures.dart' show kSecondaryButton;
 /// 章节列表被**两个**界面共用（作品页正文 + 阅读器里的章节弹层）。两处对
 /// 「已读怎么显示、当前章怎么高亮、排序默认哪个方向」的答案必须一致，所以这些
 /// 语义钉在组件上而不是各自的宿主页面上。
+
+/// 状态图标的 tooltip（[FushiTooltip]，按 message 找）。
+///
+/// 不用 `find.byTooltip`：状态图标的无障碍名称由外层 `Semantics(label:)` 给出，
+/// tooltip 自己 `excludeFromSemantics: true`；`find.byTooltip` 只认 flutter 自带
+/// `Tooltip` 的 message 或 `RawTooltip` 的语义 tooltip，而这里的气泡是 material_ui 的
+/// `Tooltip`（另一个类），语义又被关掉，于是一枚都找不到。
+Finder _statusTooltip(String message) => find.byWidgetPredicate(
+  (Widget w) => w is FushiTooltip && w.message == message,
+);
+
 void main() {
   const OnlineMangaChapter newest = OnlineMangaChapter(
     key: '/c/3',
@@ -352,9 +365,9 @@ void main() {
     expect(contentOpacity('Chapter 3'), kMediaDetailCompletedOpacity);
     expect(contentOpacity('Chapter 2'), 1.0);
 
-    expect(find.byTooltip(t.manga_chapter_status_read), findsOneWidget);
-    expect(find.byTooltip(t.media_detail_status_downloaded), findsOneWidget);
-    expect(find.byTooltip(t.manga_chapter_status_ocr_done), findsOneWidget);
+    expect(_statusTooltip(t.manga_chapter_status_read), findsOneWidget);
+    expect(_statusTooltip(t.media_detail_status_downloaded), findsOneWidget);
+    expect(_statusTooltip(t.manga_chapter_status_ocr_done), findsOneWidget);
     // 读屏名称：每枚状态图标都有显式语义标签（不只靠 tooltip）。
     expect(find.bySemanticsLabel(t.manga_chapter_status_read), findsOneWidget);
     expect(

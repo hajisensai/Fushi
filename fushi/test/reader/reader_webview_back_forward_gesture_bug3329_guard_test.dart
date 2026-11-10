@@ -43,6 +43,8 @@ void main() {
         '网页小说取页用 HeadlessInAppWebView，不可见、无手势',
     'lib/src/media/manga/cookie/cloudflare_challenge_page.dart':
         '浏览器类页面（站点验证），历史对应真实网页跳转',
+    'lib/src/media/discovery/download_gateway_challenge_page.dart':
+        '浏览器类页面（下载网关人机验证，BUG-4323），历史对应真实网页跳转',
     'lib/src/media/manga/mihon/mihon_web_login_page.dart':
         '浏览器类页面（站点登录），历史对应真实网页跳转',
     'lib/src/pages/implementations/music/music_plugin_login.dart':

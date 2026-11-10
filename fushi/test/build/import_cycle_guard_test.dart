@@ -39,9 +39,18 @@ import 'package:test/test.dart';
 /// 大环。改成 app 根组件经 `registerAppOpContext(buildInProcessInvoker:)` 注入组装
 /// 函数、AI 助手只依赖 `app_op_context.dart` 的窄接口后，最大环降到 636，上限随之下调。
 ///
+/// 2026-11-11 批量合并后实测 643。拆掉两条底层边：曲目入库层
+/// （`music_remote_tracks`，AppModel 建音乐会话就 import）为一个纯函数
+/// `musicServerPlayItem` 反向 import 读 AppModel 的 `music_servers`（挪到
+/// `music_server_play_item.dart`），把音乐会话 / 历史 / 曲库数据四个文件拖进了环；
+/// 有声书版本记录为取对端身份 import `hidden_remote_books`（它要连云盘远端书客户端，
+/// 挪到 `remote_book_source_host.dart`）。剩下 +2 是音乐页簇新增的两个 UI 文件
+/// （`music_playlist_actions` / `music_playlist_track_column`，本就读 AppModel、
+/// 与其它音乐页互相 import），与 2026-11-05 那 4 个 UI 文件同理，上限按实测调到 638。
+///
 /// 红了：新加的 import 把底层模块接到了 UI / AppModel 上。把用到的东西挪到
 /// 更底层的文件，或改用参数 / 回调注入，不要调大上限、不要把文件从目录里豁免。
-const int kMaxCycleFiles = 636;
+const int kMaxCycleFiles = 638;
 
 const String kAppModel = 'lib/src/models/app_model.dart';
 

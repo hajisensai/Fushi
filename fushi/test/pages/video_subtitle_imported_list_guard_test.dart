@@ -374,9 +374,12 @@ void main() {
             '源的档案会继续挂在列表上（BUG-1861）',
       );
 
-      final String remote = region(
-        '_remoteSubtitleUserDismissed = false;',
-        'final int initialPositionMs =',
+      // 取整个 _loadRemoteEpisode：`_remoteSubtitleUserDismissed = false;` 也是字段声明
+      // 的子串（indexOf 先命中声明），而赋值自 BUG-4304 起排在起播位置解析之后
+      // （先过 `_episodeLoadSeq` 作废检查再落），按两句锚点切窗口会把它切掉。
+      final String remote = methodBody(
+        code,
+        'Future<void> _loadRemoteEpisode(',
       );
       // 远端换集：整体替换成本集持久化列表（不是追加），上一集的档因此出局。
       expect(

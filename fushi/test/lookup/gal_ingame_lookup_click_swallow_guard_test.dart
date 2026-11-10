@@ -78,7 +78,12 @@ void main() {
     final String hookHeaderCode = compactCode(hookHeader);
 
     expect(
-      directCode.contains('Reveal(screen_width,screen_height,false,game);'),
+      // BUG-4323 起直连路径还带上 kCommittedBBox（保留 commitLayerShift 的图层平移）；
+      // 本条只钉「游戏 HWND 进同一次 Reveal」。
+      directCode.contains(
+        'Reveal(screen_width,screen_height,false,game,'
+        'RevealLayerOrigin::kCommittedBBox);',
+      ),
       isTrue,
       reason:
           '游戏 HWND 必须随首次 Reveal 一起 Arm；先按桌面模式 Arm、显示后再补绑'
