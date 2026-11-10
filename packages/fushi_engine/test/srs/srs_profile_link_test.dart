@@ -196,7 +196,7 @@ void main() {
       );
     });
 
-    // BUG-4293：对方已经选定把它的 profile 并入别处、只是并入暂缓着（还按旧 uid 同步），说明文件里写着 `mergingInto`。
+    // BUG-4296：对方已经选定把它的 profile 并入别处、只是并入暂缓着（还按旧 uid 同步），说明文件里写着 `mergingInto`。
     // 本机不能再被问要不要并进那个旧 profile——选了就会把本机并进对方正在离开的 profile，两边从此分叉。
     test('对方的写入者已选定并入别处（mergingInto，并入暂缓中）：它的旧 profile 不再是候选', () {
       for (final String into in <String>[
