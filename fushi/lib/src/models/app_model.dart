@@ -4865,9 +4865,13 @@ class AppModel
       // 快照只取一次：[moduleVisibility] 每次读都重新合成一个 Set，而下面这一串
       // 是同一帧里的连续判定，取一次既省分配也保证这一批门读的是同一份真值。
       //
-      // 刻意**只判启动、不 stop**：用户在会话中途关模块时不切断进行中的任务
-      // （正在跑的同步/下载/做种照常跑完），下次启动才不再拉起。
+      // 这里只判启动。会话中途关模块时：同步例外，由 [setModuleEnabled] →
+      // [_applySyncModuleGate] 立刻停（在飞同步协作式取消、定时 / 合集防抖同步不再
+      // 开跑，反馈 SJeJd5EEZO）；下载 / 做种等其它后台任务照常跑完，下次启动才不再
+      // 拉起。
       final ModuleVisibility modules = moduleVisibility;
+      // 同步层的模块门以此为初值（门在 AppModel 装配前默认开，见 [syncModuleGate]）。
+      syncModuleGate.setOpen(modules.isEnabled(ModuleId.sync));
       // Start the LAN sync server now if hosting is enabled, so it runs app-wide
       // for the whole session instead of only while the sync settings page is on
       // screen (BUG-085). Fire-and-forget: a bind failure self-disables + is
@@ -10589,7 +10593,28 @@ class AppModel
     // 模块可见性会改变这些树的过滤结果，故翻转开关必须丢弃快照，否则快捷面板会
     // 继续发已被关掉模块的设置项（settings_schema.dart 的 `_SettingsSchemaCache`）。
     resetSettingsSchemaCache();
+    if (module == ModuleId.sync) _applySyncModuleGate();
     notifyListeners();
+  }
+
+  /// 「同步与备份 + 互联」模块会话中途翻转：同步层的门（[syncModuleGate]）跟着开合。
+  ///
+  /// 关：在飞的每一轮同步在下一个安全检查点中止（不打断正在落地的那一项，见
+  /// `sync_module_gate.dart`），首页定时 sweep、退出书 / 切后台单本同步从下一次触发
+  /// 起被门挡下；合集防抖观察者连同未决的防抖定时器一起撤掉。
+  /// 开：门重新放行，首页定时 sweep 在下一个 tick 恢复；合集观察者重新装上（初始化
+  /// 时模块关着就从没装过）。
+  ///
+  /// 互联 host 服务器不在此列：它是让别的设备连本机的常驻服务，启停有端口与发现
+  /// 广播的副作用，仍按「下次启动不再拉起」处理。
+  void _applySyncModuleGate() {
+    final bool open = moduleVisibility.isEnabled(ModuleId.sync);
+    syncModuleGate.setOpen(open);
+    if (!open) {
+      uninstallCollectionsSyncWatcher();
+    } else if (isDatabaseReady) {
+      installCollectionsSyncWatcher(db: database);
+    }
   }
 
   /// 「功能模块」的用户排序（底栏 / 侧栏 tab 顺序，见 [ModuleVisibility.order]）。

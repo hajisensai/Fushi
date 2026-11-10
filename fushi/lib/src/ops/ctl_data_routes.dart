@@ -59,7 +59,8 @@ import 'package:fushi/src/sync/sync_auto_trigger.dart'
         enabledSyncChannelBackends,
         lastFullSweepOutcome,
         syncAssetChannelScopeOf,
-        syncInProgress;
+        syncInProgress,
+        syncModuleGate;
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/sync_settings_schema.dart'
     show
@@ -450,6 +451,11 @@ List<CtlRoute> _syncRoutes(OpContext context) => <CtlRoute>[
             policy,
             tempDir: context.appModel.temporaryDirectory,
           );
+    // 模块门（同步层唯一真值 [syncModuleGate]）：模块关着不开跑，说清楚原因，而不是
+    // 让 detached 模式回一句 started 再静默以 moduleDisabled 收场。
+    if (!syncModuleGate.isOpen) {
+      throw const CtlFailure.rejected('「同步与备份」模块已关闭，先在设置 → 功能模块里打开');
+    }
     if (syncInProgress.value) {
       throw const CtlFailure.conflict('已有同步在进行中');
     }
