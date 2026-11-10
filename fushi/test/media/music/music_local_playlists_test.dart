@@ -113,6 +113,42 @@ void main() {
     );
   });
 
+  test('导入歌单 uid 按 UTF-8 字节派生：非 ASCII 文件名不与低字节相同的名字撞', () {
+    // U+3042「あ」的 UTF-16 低字节是 0x42 =「B」：按 codeUnits 喂 sha1 会被截成同一串字节，
+    // 两个不同的列表文件派生出同一个 uid，后一个永远被当成「导入过」。
+    expect(
+      importedMusicPlaylistUid('/m/あ.m3u8', context: _posix),
+      isNot(importedMusicPlaylistUid('/m/B.m3u8', context: _posix)),
+    );
+  });
+
+  test('远程来源（sftp:// 等命名空间）的列表条目按完整路径对上曲库', () {
+    final List<MusicTrackRow> remote = <MusicTrackRow>[
+      _row('r1', 'sftp://nas/music/Album/01.flac'),
+      _row('r2', 'https://dav.example.com/music/Album/02.flac'),
+    ];
+    final MusicPlaylistFile resolved = resolveRemoteMusicPlaylistEntries(
+      'sftp://nas/music/Lists/a.m3u8',
+      const MusicPlaylistFile(
+        name: null,
+        entries: <String>['../Album/01.flac'],
+      ),
+    );
+    expect(
+      matchMusicPlaylistEntries(
+        <String>[
+          ...resolved.entries,
+          'https://dav.example.com/music/Album/02.flac',
+          // 曲库里没有的网络地址：不按尾段去猜本地 / 远程曲目。
+          'https://example.com/Album/01.flac',
+        ],
+        remote,
+        context: _posix,
+      ),
+      <String>['r1', 'r2'],
+    );
+  });
+
   test('列表显示名：#PLAYLIST 优先，否则文件名', () {
     expect(
       musicPlaylistFileTitle(

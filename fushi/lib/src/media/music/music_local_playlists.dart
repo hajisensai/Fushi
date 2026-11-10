@@ -6,9 +6,10 @@
 ///
 /// 条目对曲库：先按路径键精确对（[musicTrackPathKey]），对不上的再按路径尾段对（别的机器
 /// 写的列表，音乐库挪过盘符 / 目录）。指向 CUE 整轨文件的条目展开成该文件的全部虚拟
-/// 曲目。网络地址不导入。
+/// 曲目。带 scheme 的条目（远程来源曲目、网络地址）只按完整路径对，曲库里没有的不导入。
 library;
 
+import 'dart:convert';
 import 'dart:math';
 
 import 'package:crypto/crypto.dart';
@@ -17,10 +18,11 @@ import 'package:fushi_music/fushi_music.dart';
 import 'package:path/path.dart' as p;
 
 /// 从播放列表文件导入的歌单 uid：按文件的路径键派生（同一个文件 = 同一个 uid，换设备
-/// 也一样，备份合并不会出两份）。
+/// 也一样，备份合并不会出两份）。摘要喂 UTF-8 字节：`codeUnits` 是 UTF-16 码元，sha1 只取
+/// 低 8 位，非 ASCII 文件名会与低字节相同的别的名字撞成同一个 uid。
 String importedMusicPlaylistUid(String playlistFilePath, {p.Context? context}) {
   final String key = musicTrackPathKey(playlistFilePath, context: context);
-  return 'pl-file-${sha1.convert(key.codeUnits)}';
+  return 'pl-file-${sha1.convert(utf8.encode(key))}';
 }
 
 /// 列表文件的显示名：`#PLAYLIST:` 优先，否则文件名（去扩展名）。
@@ -34,7 +36,8 @@ String musicPlaylistFileTitle(
   return (context ?? p.context).basenameWithoutExtension(playlistFilePath);
 }
 
-/// 条目是不是网络地址（`scheme://`，不含 Windows 盘符）。
+/// 条目是不是带 scheme 的地址（`scheme://`，不含 Windows 盘符）。远程来源（SFTP / WebDAV /
+/// AList）的曲目路径本身就是这种形式，所以这类条目只按完整路径对曲库，不按尾段猜。
 bool _isUrl(String entry) {
   final int i = entry.indexOf('://');
   return i >= 2;
@@ -104,9 +107,12 @@ List<String> matchMusicPlaylistEntries(
 
   final List<String> out = <String>[];
   for (final String entry in entries) {
-    if (_isUrl(entry)) continue;
     final String key = musicTrackPathKey(entry, context: context);
-    final List<MusicTrackRow>? hit = byPath[key] ?? bySuffix(entry);
+    // 带 scheme 的条目只认完整路径：远程曲库曲目（`sftp://…` 等）能对上；曲库里没有的
+    // 网络地址（在线流）丢掉，不按尾段去猜成某首本地 / 远程曲目。
+    final List<MusicTrackRow>? hit = _isUrl(entry)
+        ? byPath[key]
+        : byPath[key] ?? bySuffix(entry);
     if (hit == null) continue;
     for (final MusicTrackRow t in hit) {
       out.add(t.trackUid);
