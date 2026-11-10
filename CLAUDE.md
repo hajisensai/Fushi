@@ -31,11 +31,9 @@
 - 存量持久化名（DB 列 / 偏好键 / 磁盘目录 / wire key，含 `reader_ttu`、`ttu_*`、`Aidoku` 冻结名）**冻结不追改**；新代码遵守 [命名术语表](docs/agent/naming.md)。
 - 旧注释里的 Isar / Hive / TTU 阅读器 / 旧 SRS 同步引擎都已不存在，先查代码再判断。子系统文件位置与现状见 [repo-map.md](docs/agent/repo-map.md)。
 
-## 功能黑名单（不提议、不实现、不写进 spec / brief / 推荐）
+## 功能黑名单
 
-- **自动注音（机器推断读音的振假名 / furigana）——全仓绝对不可**：不 100% 准确会误导学习者。来源自带的 ruby（EPUB `<ruby>`、歌词源文件注音）照常显示。
-- **音乐歌词编辑界面**（改字、编辑翻译 / 注音、单行偏移）。整首偏移、选来源 / 恢复自动来源、导出 TTML 保留。
-- 拍板台定为「永远不做」的另记在 [feature-blacklist.md](docs/agent/feature-blacklist.md)，提议功能前查。
+不提议、不实现、不写进 spec / brief / 推荐的功能全在 [feature-blacklist.md](docs/agent/feature-blacklist.md)；提议功能、写 spec / brief、往拍板台写事项、动注音 / 歌词相关代码前先读。
 
 ## 领域硬边界
 
