@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/pages/implementations/web_browser/web_browser_routes.dart';
-import 'package:fushi/src/pages/implementations/web_browser/web_browser_settings_page.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_destination_id.dart';
@@ -26,12 +25,12 @@ Future<void> _openDataPage(SettingsContext c, WebBrowserDataPage page) =>
       prefs: c.appModel.prefsRepo,
     );
 
-/// 「浏览器设置 › 通用」：标签页样式、滚动收起、搜索引擎、网页深色、默认桌面版、
-/// 恢复标签页、清除浏览数据 / 网站设置入口。全是设备本地偏好（[web_browser_prefs]）。
+/// 「浏览」：标签页样式、滚动收起、搜索引擎、网页深色、默认桌面版、恢复标签页。
+/// 全是设备本地偏好（[web_browser_prefs]）。分区 id 沿用旧「通用」分区。
 SettingsSection buildWebBrowserSection() {
   return SettingsSection(
     id: 'web_browser.section.general',
-    title: t.web_browser_title,
+    title: t.settings_web_browser_section_browse,
     items: <SettingsItem>[
       SettingsSegmentedItem<WebBrowserTabStyle>(
         id: 'system.web_browser_tab_style',
@@ -148,9 +147,21 @@ SettingsSection buildWebBrowserSection() {
           c.refresh();
         },
       ),
+    ],
+  );
+}
+
+/// 「网站与数据」：按站点的权限与浏览数据清理。两行都只是打开浏览器自己的数据
+/// 页，与上面的浏览偏好分开放，免得「清除数据」夹在开关中间被误点。
+SettingsSection buildWebBrowserSiteDataSection() {
+  return SettingsSection(
+    id: 'web_browser.section.site_data',
+    title: t.settings_web_browser_section_site_data,
+    items: <SettingsItem>[
       SettingsNavigationItem(
         id: 'system.web_browser_site_settings',
         title: t.web_browser_settings_site_settings,
+        subtitle: t.settings_web_browser_site_settings_hint,
         icon: FushiIcons.shield,
         onTap: (SettingsContext c) =>
             _openDataPage(c, WebBrowserDataPage.siteSettings),
@@ -158,6 +169,7 @@ SettingsSection buildWebBrowserSection() {
       SettingsNavigationItem(
         id: 'system.web_browser_clear_data',
         title: t.web_browser_settings_clear_data,
+        subtitle: t.settings_web_browser_clear_data_hint,
         icon: FushiIcons.deleteSweep,
         onTap: (SettingsContext c) =>
             _openDataPage(c, WebBrowserDataPage.clearData),
@@ -195,7 +207,10 @@ enum WebBrowserSettingsGroup {
       id: SettingsDestinationId.system,
       title: t.settings_section_general,
       icon: FushiIcons.globe,
-      sections: <SettingsSection>[buildWebBrowserSection()],
+      sections: <SettingsSection>[
+        buildWebBrowserSection(),
+        buildWebBrowserSiteDataSection(),
+      ],
     ),
     adblock => SettingsDestination(
       id: SettingsDestinationId.system,
@@ -239,7 +254,7 @@ IconData webBrowserSettingsGroupIcon(WebBrowserSettingsGroup g) => switch (g) {
 /// 浏览器本身两组用 `child`（行进设置搜索索引、进焦点覆盖遍历，与改版前同一批行）；
 /// 扩展各组的文案来自扩展字典、要异步读入，故不进静态索引——点进去前先读字典。构建本 schema
 /// 不做任何 IO（AI / ctl 路由也会遍历它，那里不一定有 Flutter binding）：字典在打开浏览器设置
-/// （[openWebBrowserSettings]）或点进扩展组时读，组标题在渲染时取。
+/// （openWebBrowserSettings）或点进扩展组时读，组标题在渲染时取。
 /// 复用 `system` 的 id（子页不扩容枚举），必须经 `SettingsDetailPage.subPage` 推。
 SettingsDestination webBrowserSettingsDestination() {
   return SettingsDestination(
@@ -270,52 +285,57 @@ SettingsDestination webBrowserSettingsDestination() {
       SettingsSection(
         id: 'web_browser.section.extension',
         title: t.nav_browser_extension,
-        items: <SettingsItem>[
-          for (final WebBrowserSettingsGroup g
-              in WebBrowserSettingsGroup.values)
-            if (g.extension != null)
-              SettingsNavigationItem(
-                id: 'web_browser.group.${g.name}',
-                // 字典此刻可能还没读完：标题在渲染时取。
-                title: webBrowserSettingsGroupTitle(g),
-                titleBuilder: (SettingsContext _) =>
-                    webBrowserSettingsGroupTitle(g),
-                icon: webBrowserSettingsGroupIcon(g),
-                showIcon: true,
-                onTap: (SettingsContext c) async {
-                  await WebBrowserExtensionStrings.instance.ensureLoaded();
-                  if (!c.context.mounted) return;
-                  await Navigator.of(c.context).push<void>(
-                    adaptivePageRoute<void>(
-                      context: c.context,
-                      builder: (BuildContext _) =>
-                          SettingsDetailPage.subPage(g.destination),
-                    ),
-                  );
-                  c.refresh();
-                },
-              ),
-        ],
+        items: _extensionGroupItems(),
       ),
     ],
   );
 }
 
-/// 「系统」分类里的浏览器入口：一行，点开统一的浏览器设置（宽屏双栏 / 窄屏总览）。
-/// `child` 只给设置搜索与覆盖遍历用（搜到浏览器的行时沿总览 → 分组下钻定位）。
-SettingsSection buildWebBrowserEntrySection() => SettingsSection(
-  id: 'system.section.web_browser',
-  title: t.web_browser_title,
-  items: <SettingsItem>[
-    SettingsNavigationItem(
-      id: 'system.web_browser_settings',
-      title: t.web_browser_menu_settings,
-      icon: FushiIcons.globe,
-      onTap: (SettingsContext c) async {
-        await openWebBrowserSettings(c.context);
-        c.refresh();
-      },
-      child: webBrowserSettingsDestination,
-    ),
-  ],
-);
+/// 浏览器扩展各组的导航行（总览页与浏览器分类共用）。文案来自扩展字典、要异步
+/// 读入，故标题在渲染时取、点进去前先读字典；构建本身不做 IO。
+List<SettingsItem> _extensionGroupItems() => <SettingsItem>[
+  for (final WebBrowserSettingsGroup g in WebBrowserSettingsGroup.values)
+    if (g.extension != null)
+      SettingsNavigationItem(
+        id: 'web_browser.group.${g.name}',
+        // 字典此刻可能还没读完：标题在渲染时取。
+        title: webBrowserSettingsGroupTitle(g),
+        titleBuilder: (SettingsContext _) => webBrowserSettingsGroupTitle(g),
+        icon: webBrowserSettingsGroupIcon(g),
+        showIcon: true,
+        onTap: (SettingsContext c) async {
+          await WebBrowserExtensionStrings.instance.ensureLoaded();
+          if (!c.context.mounted) return;
+          await Navigator.of(c.context).push<void>(
+            adaptivePageRoute<void>(
+              context: c.context,
+              builder: (BuildContext _) =>
+                  SettingsDetailPage.subPage(g.destination),
+            ),
+          );
+          c.refresh();
+        },
+      ),
+];
+
+/// 「浏览器」一级分类：浏览偏好与网站数据平铺，广告拦截是折叠分区，扩展各组
+/// 以导航行收在「网页查词与字幕」。浏览器页自己的设置入口仍走
+/// [webBrowserSettingsDestination]（宽屏双栏 / 窄屏下钻），两处是同一批 schema 行。
+SettingsDestination buildWebBrowserDestination() {
+  return SettingsDestination(
+    id: SettingsDestinationId.webBrowser,
+    title: t.web_browser_title,
+    summary: t.settings_web_browser_summary,
+    icon: FushiIcons.globe,
+    sections: <SettingsSection>[
+      buildWebBrowserSection(),
+      buildWebBrowserSiteDataSection(),
+      buildWebAdblockSection(),
+      SettingsSection(
+        id: 'web_browser.section.lookup_subtitles',
+        title: t.settings_web_browser_section_extension,
+        items: _extensionGroupItems(),
+      ),
+    ],
+  );
+}

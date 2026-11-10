@@ -57,7 +57,7 @@ SettingsDestination buildGameDestination() {
   return SettingsDestination(
     id: SettingsDestinationId.game,
     title: t.nav_game,
-    summary: t.game_home_subtitle,
+    summary: t.settings_destination_game_summary,
     // 图标与底栏 / 侧栏同一真值（homeNavItemFor），不在设置里另写一份。
     icon: homeNavItemFor(HomeTab.games).icon,
     // 本分类的三条导航项与全部配置都属于本机 galgame 库（hook / 捕获工作台 /
@@ -70,11 +70,13 @@ SettingsDestination buildGameDestination() {
         ),
     sections: <SettingsSection>[
       SettingsSection(
+        id: 'game.section.library',
+        title: t.settings_game_library_section_title,
         items: <SettingsItem>[
           SettingsNavigationItem(
             id: 'game.library',
             title: t.game_library,
-            subtitle: t.game_home_subtitle,
+            subtitle: t.settings_game_library_nav_subtitle,
             icon: FushiIcons.game,
             showIcon: true,
             onTap: (SettingsContext settingsContext) {
@@ -85,6 +87,7 @@ SettingsDestination buildGameDestination() {
           SettingsNavigationItem(
             id: 'game.capture_workspace',
             title: t.game_capture_workbench,
+            subtitle: t.settings_game_capture_workbench_subtitle,
             icon: FushiIcons.audio,
             showIcon: true,
             onTap: (SettingsContext settingsContext) {
@@ -95,6 +98,7 @@ SettingsDestination buildGameDestination() {
           SettingsNavigationItem(
             id: 'game.diagnostics',
             title: t.game_diagnostics,
+            subtitle: t.settings_game_diagnostics_subtitle,
             icon: FushiIcons.hub,
             showIcon: true,
             onTap: (SettingsContext settingsContext) {
@@ -104,9 +108,554 @@ SettingsDestination buildGameDestination() {
           ),
         ],
       ),
-      // 台词朗读（TTS）：给没有配音的旁白 / 主角补声音。浮窗工具条上有「朗读」与
+      // 游戏内查词属于**游戏**域，不是查词域：它改变的是「这一局游戏里点字会发生
+      // 什么」，与阅读器/视频/剪贴板那几路查词共用引擎但不共用触发面。放在查词分类
+      // 里，用户要在游戏跑着的时候去另一个分类翻开关，找不到是必然的。
+      SettingsSection(
+        id: 'game.section.ingame_lookup_card',
+        title: t.settings_game_ingame_lookup_card_section_title,
+        // 准入是 hook **异步**报上来的：本分组自己订阅它（副标题原因与「复制
+        // 哈希」行的显隐随之刷新），开着设置页启动游戏也能看到。
+        liveListenable: (_) => GalIngameLookupController.instance.admission,
+        items: <SettingsItem>[
+          // 游戏内查词：命中的字直接在**游戏渲染树内部**弹出词典卡片
+          // （不抢焦点、不 alt-tab、跟随全屏与窗口变换）。传感器按引擎逐个做，
+          // 不是所有引擎都有——本局能不能用由 hook 报上来的准入状态说了算。
+          SettingsSwitchItem(
+            id: 'game.ingame_lookup',
+            title: t.gal_hook_ingame_lookup,
+            subtitle: t.gal_hook_ingame_lookup_hint,
+            // 准入把本局挡住时副标题换成原因；其余状态（含 unknown）回落静态说明。
+            //
+            // 🔴 **不置灰**，哪怕本局明确用不了。这个开关是**全局偏好**（用户意图），
+            // 准入是**当前这一局的能力**，两者正交。拿后者去禁用前者会造出一个很蠢的
+            // 状态：默认值是 true，所以"引擎不支持"时用户看到的是一个被锁死在 ON 上、
+            // 想关也关不掉的开关——而他此刻最可能想做的恰恰是把它关掉。能力信息属于
+            // 副标题，不属于可交互性。
+            subtitleBuilder: (_) => _ingameLookupBlockedReason(),
+            icon: FushiIcons.lookup,
+            defaultValue: PreferencesRepository.galIngameLookupEnabledDefault,
+            visible: (_) => Platform.isWindows,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.galIngameLookupEnabled,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setGalIngameLookupEnabled(value);
+              // 与台词浮窗字号同款纪律：写完 pref 立刻推给编排器，否则开关只落了盘，
+              // 本局游戏里不生效（要退出重进一局）。
+              await GalHookTextOverlayController.instance
+                  .applyIngameLookupEnabledFromPreferences();
+              settingsContext.refresh();
+            },
+          ),
+          // 被挡住时唯一能推进事情的信息：当前游戏 exe 的 SHA-256。用户把它报回来，
+          // 我们才知道该给哪个版本加白名单。摘要优先取注入侧上报的；Leaf / SGRE 那
+          // 类「probe 本身就是 hash 门」的 adapter 在不匹配时压根不参与汇总、没人填
+          // 得了那个字段，此时由 runner 兜底自己算（见 voice_hook_reader.cpp）。
+          SettingsActionItem(
+            id: 'game.ingame_lookup_exe_hash',
+            title: t.gal_hook_ingame_lookup_exe_hash_copy,
+            subtitleBuilder: (_) =>
+                _ingameLookupExeSha256() ??
+                t.gal_hook_ingame_lookup_exe_hash_unavailable,
+            icon: FushiIcons.fingerprint,
+            // 只在真被挡住时出现——平时多一行"复制哈希"是纯噪音。所在分组订阅准入
+            // notifier（liveListenable），所以开着页面启动游戏也会把这一行刷出来。
+            visible: (_) => Platform.isWindows && _isIngameLookupBlocked(),
+            // CLI 直接回报哈希（不经剪贴板）。
+            cli: SettingsCliAction(
+              run: (SettingsContext c, Map<String, String> args) async {
+                final String? sha = _ingameLookupExeSha256();
+                if (sha == null) {
+                  throw StateError(
+                    t.gal_hook_ingame_lookup_exe_hash_unavailable,
+                  );
+                }
+                return <String, Object?>{'sha256': sha};
+              },
+            ),
+            onTap: (SettingsContext settingsContext) async {
+              final String? sha = _ingameLookupExeSha256();
+              if (sha == null) return;
+              await Clipboard.setData(ClipboardData(text: sha));
+              _showGameSettingsSnackBar(
+                settingsContext,
+                t.gal_hook_ingame_lookup_exe_hash_copied,
+              );
+            },
+          ),
+          // 游戏内查词卡的尺寸三件套（独立尺寸开关 + 仅在开启时展示的宽/高滑杆）。
+          // 关闭时跟随 app 内最大宽高（galCardLookupEffectiveSize 解析）。
+          // 与覆盖查词窗（settings_schema_lookup 的 overlay_lookup_*）分开：卡片贴在
+          // 游戏客户区里、要避开正文，浮窗浮在整块桌面上，两者合适尺寸本就不同；共用
+          // 一组键时只能二选一（游戏内过小 / 浮窗过大）。
+          //
+          // 归属：与 #938 把整个 gal_hook_overlay section 从 settings_schema_lookup.dart
+          // 移进本文件同一条理由——这三项只对 galgame 直连覆盖窗（Windows-only 的
+          // 引擎 hook 注入）有意义，留在查词分类里会让 Android/iOS/macOS/Linux 用户在
+          // 「查词 → 弹窗窗口」分区和设置搜索里都看到一个永远不生效的 galgame 设置项。
+          // 这里是 destination 级 + item 级双重 Platform.isWindows 门。
+          SettingsSwitchItem(
+            id: 'game.gal_card_lookup_independent_size',
+            title: t.gal_card_lookup_independent_size,
+            subtitle: t.gal_card_lookup_independent_size_hint,
+            icon: FushiIcons.dashboardCustomize,
+            // 与 PreferencesRepository.galCardLookupIndependentSize 的读取默认一致。
+            defaultValue: false,
+            visible: (_) => Platform.isWindows,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.galCardLookupIndependentSize,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setGalCardLookupIndependentSize(
+                value,
+              );
+              settingsContext.refresh();
+            },
+          ),
+          SettingsSliderItem(
+            id: 'game.gal_card_lookup_max_width',
+            titleReadout: true,
+            title: t.gal_card_lookup_max_width,
+            icon: FushiIcons.swap,
+            // 读取默认 = PreferencesRepository.defaultPopupMaxWidth。
+            defaultValue: kLookupPopupDefaultWidth,
+            min: 250,
+            max: 2000,
+            divisions: 175,
+            visible: (SettingsContext settingsContext) =>
+                Platform.isWindows &&
+                settingsContext.appModel.galCardLookupIndependentSize,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.galCardLookupMaxWidth,
+            label: (double value) => value.round().toString(),
+            onChanged: (SettingsContext settingsContext, double value) {
+              settingsContext.appModel.setGalCardLookupMaxWidth(value);
+              settingsContext.refresh();
+            },
+          ),
+          SettingsSliderItem(
+            id: 'game.gal_card_lookup_max_height',
+            titleReadout: true,
+            title: t.gal_card_lookup_max_height,
+            icon: Icons.height_outlined,
+            // 读取默认 = PreferencesRepository.defaultPopupMaxHeight。
+            defaultValue: kLookupPopupDefaultHeight,
+            min: 200,
+            max: 1600,
+            divisions: 140,
+            visible: (SettingsContext settingsContext) =>
+                Platform.isWindows &&
+                settingsContext.appModel.galCardLookupIndependentSize,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.galCardLookupMaxHeight,
+            label: (double value) => value.round().toString(),
+            onChanged: (SettingsContext settingsContext, double value) {
+              settingsContext.appModel.setGalCardLookupMaxHeight(value);
+              settingsContext.refresh();
+            },
+          ),
+        ],
+      ),
+      SettingsSection(
+        id: 'game.section.overlay_interaction',
+        title: t.settings_game_overlay_interaction_section_title,
+        items: <SettingsItem>[
+          // ── hook 台词浮窗的交互四件套 ───────────────────────────────────
+          // 都走 live setter：设置页一改，正在开着的浮窗立刻跟上，不必退出这一局
+          // 游戏再重开（与字号 applyFontSizeFromPreferences 同款纪律）。
+          SettingsSwitchItem(
+            id: 'game.gal_hook_click_lookup',
+            title: t.gal_hook_click_lookup,
+            subtitle: t.gal_hook_click_lookup_hint,
+            icon: FushiIcons.touch,
+            defaultValue: PreferencesRepository.galHookClickLookupDefault,
+            visible: (_) => Platform.isWindows,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.galHookClickLookup,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setGalHookClickLookup(value);
+              await GalHookTextOverlayChannel.setClickLookupEnabled(value);
+              settingsContext.refresh();
+            },
+          ),
+          SettingsSegmentedItem<int>(
+            id: 'game.gal_hook_lookup_trigger',
+            title: t.gal_hook_lookup_trigger,
+            subtitle: t.gal_hook_lookup_trigger_hint,
+            icon: FushiIcons.mouse,
+            defaultValue: PreferencesRepository.galHookLookupTriggerDefault,
+            dropdown: true,
+            visible: (_) => Platform.isWindows,
+            options: <SettingsSegmentOption<int>>[
+              SettingsSegmentOption<int>(
+                value: 0,
+                label: t.gal_hook_lookup_trigger_left,
+              ),
+              SettingsSegmentOption<int>(
+                value: 1,
+                label: t.gal_hook_lookup_trigger_middle,
+              ),
+              SettingsSegmentOption<int>(
+                value: 2,
+                label: t.gal_hook_lookup_trigger_side,
+              ),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                settingsContext.appModel.galHookLookupTrigger,
+            onChanged: (SettingsContext settingsContext, int value) async {
+              await settingsContext.appModel.setGalHookLookupTrigger(value);
+              await GalHookTextOverlayChannel.setLookupTrigger(value);
+              settingsContext.refresh();
+            },
+          ),
+          SettingsSwitchItem(
+            id: 'game.gal_hook_passthrough_blocks_mouse',
+            title: t.gal_hook_passthrough_blocks_mouse,
+            subtitle: t.gal_hook_passthrough_blocks_mouse_hint,
+            icon: Icons.ads_click_outlined,
+            defaultValue:
+                PreferencesRepository.galHookPassThroughBlocksMouseDefault,
+            visible: (_) => Platform.isWindows,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.galHookPassThroughBlocksMouse,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setGalHookPassThroughBlocksMouse(
+                value,
+              );
+              await GalHookTextOverlayChannel.setPassThroughBlocksMouse(value);
+              settingsContext.refresh();
+            },
+          ),
+          SettingsSwitchItem(
+            id: 'game.gal_hook_toolbar_auto_hide',
+            title: t.gal_hook_toolbar_auto_hide,
+            subtitle: t.gal_hook_toolbar_auto_hide_hint,
+            icon: FushiIcons.visibilityOff,
+            defaultValue: PreferencesRepository.galHookToolbarAutoHideDefault,
+            visible: (_) => Platform.isWindows,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.galHookToolbarAutoHide,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setGalHookToolbarAutoHide(value);
+              await GalHookTextOverlayChannel.setToolbarAutoHide(value);
+              settingsContext.refresh();
+            },
+          ),
+          SettingsSwitchItem(
+            id: 'game.gal_hook_toolbar_labels',
+            title: t.gal_hook_toolbar_labels,
+            subtitle: t.gal_hook_toolbar_labels_hint,
+            icon: FushiIcons.title,
+            defaultValue: PreferencesRepository.galHookToolbarLabelsDefault,
+            visible: (_) => Platform.isWindows,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.galHookToolbarLabels,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setGalHookToolbarLabels(value);
+              await GalHookTextOverlayChannel.setToolbarLabels(value);
+              settingsContext.refresh();
+            },
+          ),
+          // 一句台词被引擎分多次吐出来时折成一条（用户报的 Zato 症状：一段台词
+          // 分多次点击显示，工作台里第二句出现两次、字数被重复统计）。这是文本
+          // **采集**行为，跟浮窗样式无关，但它只作用于台词浮窗里的行，所以归在浮窗交互。
+          SettingsSwitchItem(
+            id: 'game.fold_progressive_lines',
+            title: t.gal_hook_fold_progressive_lines,
+            subtitle: t.gal_hook_fold_progressive_lines_hint,
+            icon: Icons.merge_type,
+            defaultValue:
+                PreferencesRepository.galHookFoldProgressiveLinesDefault,
+            // 与兄弟项 game.ingame_lookup 同门：折叠只对引擎 hook 行生效，而
+            // engineHook 行只由 Windows-only 的 GalHookSessionController 产出。
+            // 在其他平台露出来只会让用户对着一个永远不生效的开关。
+            visible: (_) => Platform.isWindows,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.galHookFoldProgressiveLines,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setGalHookFoldProgressiveLines(
+                value,
+              );
+              settingsContext.refresh();
+            },
+          ),
+        ],
+      ),
+      SettingsSection(
+        id: 'game.section.overlay_text',
+        title: t.settings_section_gal_hook_overlay,
+        visible: (_) => Platform.isWindows,
+        items: <SettingsItem>[
+          SettingsNavigationItem(
+            id: 'game.gal_hook_text_font',
+            title: t.gal_hook_text_font,
+            subtitle: t.gal_hook_text_font_hint,
+            icon: FushiIcons.font,
+            showIcon: true,
+            onTap: (SettingsContext settingsContext) async {
+              await pushSettingsPage(
+                settingsContext,
+                (_) => const CustomFontsPage(target: FontTarget.gameLookup),
+              );
+              await GalHookTextOverlayController.instance
+                  .applyFontFromSettings();
+              settingsContext.refresh();
+            },
+          ),
+          SettingsStepperItem(
+            id: 'game.gal_hook_text_font_size',
+            title: t.gal_hook_text_font_size,
+            subtitle: t.gal_hook_text_font_size_hint,
+            icon: FushiIcons.fontSize,
+            defaultValue: PreferencesRepository.galHookTextFontSizeDefault,
+            min: PreferencesRepository.galHookTextFontSizeMin,
+            max: PreferencesRepository.galHookTextFontSizeMax,
+            step: 1,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.galHookTextFontSize,
+            format: (double value) => '${value.round()} px',
+            onChanged: (SettingsContext settingsContext, double value) =>
+                _commitGalHookAppearance(
+                  settingsContext,
+                  () => settingsContext.appModel.setGalHookTextFontSize(value),
+                ),
+          ),
+          SettingsSliderItem(
+            id: 'game.gal_hook_text_letter_spacing',
+            title: t.gal_hook_text_letter_spacing,
+            subtitle: t.gal_hook_text_letter_spacing_hint,
+            icon: Icons.space_bar,
+            defaultValue: PreferencesRepository.galHookTextLetterSpacingDefault,
+            min: PreferencesRepository.galHookTextLetterSpacingMin,
+            max: PreferencesRepository.galHookTextLetterSpacingMax,
+            divisions: 28,
+            step: 0.5,
+            titleReadout: true,
+            label: (double value) => '${value.toStringAsFixed(1)} px',
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.galHookTextLetterSpacing,
+            onChanged: (SettingsContext settingsContext, double value) =>
+                _commitGalHookAppearance(
+                  settingsContext,
+                  () => settingsContext.appModel.setGalHookTextLetterSpacing(
+                    value,
+                  ),
+                ),
+          ),
+          SettingsSliderItem(
+            id: 'game.gal_hook_text_line_height',
+            title: t.gal_hook_text_line_height,
+            subtitle: t.gal_hook_text_line_height_hint,
+            icon: Icons.format_line_spacing,
+            defaultValue: PreferencesRepository.galHookTextLineHeightDefault,
+            min: PreferencesRepository.galHookTextLineHeightMin,
+            max: PreferencesRepository.galHookTextLineHeightMax,
+            divisions: 24,
+            step: 0.05,
+            titleReadout: true,
+            label: (double value) => '${value.toStringAsFixed(2)}×',
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.galHookTextLineHeight,
+            onChanged: (SettingsContext settingsContext, double value) =>
+                _commitGalHookAppearance(
+                  settingsContext,
+                  () =>
+                      settingsContext.appModel.setGalHookTextLineHeight(value),
+                ),
+          ),
+          SettingsSwitchItem(
+            id: 'game.gal_hook_text_bold',
+            title: t.gal_hook_text_bold,
+            subtitle: t.gal_hook_text_bold_hint,
+            icon: Icons.format_bold,
+            // 与 PreferencesRepository.galHookTextBold 的读取默认一致。
+            defaultValue: true,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.galHookTextBold,
+            onChanged: (SettingsContext settingsContext, bool value) =>
+                _commitGalHookAppearance(
+                  settingsContext,
+                  () => settingsContext.appModel.setGalHookTextBold(value),
+                ),
+          ),
+          SettingsSegmentedItem<String>(
+            id: 'game.gal_hook_text_alignment',
+            title: t.gal_hook_text_alignment,
+            icon: Icons.format_align_center,
+            defaultValue: 'center',
+            options: <SettingsSegmentOption<String>>[
+              SettingsSegmentOption<String>(
+                value: 'center',
+                label: t.gal_hook_text_alignment_center,
+              ),
+              SettingsSegmentOption<String>(
+                value: 'left',
+                label: t.gal_hook_text_alignment_left,
+              ),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                settingsContext.appModel.galHookTextAlignment,
+            onChanged: (SettingsContext settingsContext, String value) =>
+                _commitGalHookAppearance(
+                  settingsContext,
+                  () => settingsContext.appModel.setGalHookTextAlignment(value),
+                ),
+          ),
+          // BUG-1890：垂直对齐单列一项，不与水平对齐合成三选一——两者是正交的两个
+          // 轴，合并会造出「选了顶部就没法同时左对齐」这种假互斥。
+          SettingsSegmentedItem<String>(
+            id: 'game.gal_hook_text_vertical_alignment',
+            title: t.gal_hook_text_vertical_alignment,
+            icon: Icons.vertical_align_center,
+            defaultValue: 'center',
+            options: <SettingsSegmentOption<String>>[
+              SettingsSegmentOption<String>(
+                value: 'center',
+                label: t.gal_hook_text_vertical_alignment_center,
+              ),
+              SettingsSegmentOption<String>(
+                value: 'top',
+                label: t.gal_hook_text_vertical_alignment_top,
+              ),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                settingsContext.appModel.galHookTextVerticalAlignment,
+            onChanged: (SettingsContext settingsContext, String value) =>
+                _commitGalHookAppearance(
+                  settingsContext,
+                  () => settingsContext.appModel
+                      .setGalHookTextVerticalAlignment(value),
+                ),
+          ),
+        ],
+      ),
+      SettingsSection(
+        id: 'game.section.overlay_window',
+        title: t.gal_hook_overlay_legibility_section,
+        visible: (_) => Platform.isWindows,
+        collapsedByDefault: true,
+        items: <SettingsItem>[
+          _galHookColorItem(
+            id: 'game.gal_hook_text_color',
+            title: t.gal_hook_text_color,
+            icon: Icons.format_color_text,
+            defaultColor: PreferencesRepository.galHookTextColorDefault,
+            value: (SettingsContext context) =>
+                context.appModel.galHookTextColor,
+            onChanged: (SettingsContext context, int value) =>
+                context.appModel.setGalHookTextColor(value),
+            themedColor: (GalHookCaptionColors themed) => themed.text,
+          ),
+          _galHookColorItem(
+            id: 'game.gal_hook_text_background_color',
+            title: t.gal_hook_text_background_color,
+            icon: Icons.format_color_fill,
+            defaultColor:
+                PreferencesRepository.galHookTextBackgroundColorDefault,
+            value: (SettingsContext context) =>
+                context.appModel.galHookTextBackgroundColor,
+            onChanged: (SettingsContext context, int value) =>
+                context.appModel.setGalHookTextBackgroundColor(value),
+            themedColor: (GalHookCaptionColors themed) => themed.background,
+          ),
+          SettingsSliderItem(
+            id: 'game.gal_hook_text_background_opacity',
+            title: t.gal_hook_text_background_opacity,
+            subtitle: t.gal_hook_text_background_opacity_hint,
+            icon: Icons.opacity,
+            defaultValue:
+                PreferencesRepository.galHookTextBackgroundOpacityDefault,
+            min: 0,
+            max: 1,
+            divisions: 20,
+            step: 0.05,
+            titleReadout: true,
+            label: (double value) => '${(value * 100).round()}%',
+            value: (SettingsContext context) =>
+                context.appModel.galHookTextBackgroundOpacity,
+            onChanged: (SettingsContext context, double value) =>
+                _commitGalHookAppearance(
+                  context,
+                  () => context.appModel.setGalHookTextBackgroundOpacity(value),
+                ),
+          ),
+          _galHookColorItem(
+            id: 'game.gal_hook_text_outline_color',
+            title: t.gal_hook_text_outline_color,
+            icon: Icons.border_color_outlined,
+            defaultColor: PreferencesRepository.galHookTextOutlineColorDefault,
+            enableAlpha: true,
+            value: (SettingsContext context) =>
+                context.appModel.galHookTextOutlineColor,
+            onChanged: (SettingsContext context, int value) =>
+                context.appModel.setGalHookTextOutlineColor(value),
+            themedColor: (GalHookCaptionColors themed) => themed.outline,
+          ),
+          SettingsSliderItem(
+            id: 'game.gal_hook_text_outline_width',
+            title: t.gal_hook_text_outline_width,
+            subtitle: t.gal_hook_text_outline_width_hint,
+            icon: Icons.line_weight,
+            defaultValue: PreferencesRepository.galHookTextOutlineWidthDefault,
+            min: PreferencesRepository.galHookTextOutlineWidthMin,
+            max: PreferencesRepository.galHookTextOutlineWidthMax,
+            divisions: 24,
+            step: 0.25,
+            titleReadout: true,
+            label: (double value) => '${value.toStringAsFixed(2)} px',
+            value: (SettingsContext context) =>
+                context.appModel.galHookTextOutlineWidth,
+            onChanged: (SettingsContext context, double value) =>
+                _commitGalHookAppearance(
+                  context,
+                  () => context.appModel.setGalHookTextOutlineWidth(value),
+                ),
+          ),
+          SettingsSliderItem(
+            id: 'game.gal_hook_text_padding',
+            title: t.gal_hook_text_padding,
+            subtitle: t.gal_hook_text_padding_hint,
+            icon: Icons.padding,
+            defaultValue: PreferencesRepository.galHookTextPaddingDefault,
+            min: PreferencesRepository.galHookTextPaddingMin,
+            max: PreferencesRepository.galHookTextPaddingMax,
+            divisions: 40,
+            step: 2,
+            titleReadout: true,
+            label: (double value) => '${value.round()} px',
+            value: (SettingsContext context) =>
+                context.appModel.galHookTextPadding,
+            onChanged: (SettingsContext context, double value) =>
+                _commitGalHookAppearance(
+                  context,
+                  () => context.appModel.setGalHookTextPadding(value),
+                ),
+          ),
+          SettingsSliderItem(
+            id: 'game.gal_hook_text_corner_radius',
+            title: t.gal_hook_text_corner_radius,
+            subtitle: t.gal_hook_text_corner_radius_hint,
+            icon: Icons.rounded_corner,
+            defaultValue: PreferencesRepository.galHookTextCornerRadiusDefault,
+            min: PreferencesRepository.galHookTextCornerRadiusMin,
+            max: PreferencesRepository.galHookTextCornerRadiusMax,
+            divisions: 40,
+            step: 1,
+            titleReadout: true,
+            label: (double value) => '${value.round()} px',
+            value: (SettingsContext context) =>
+                context.appModel.galHookTextCornerRadius,
+            onChanged: (SettingsContext context, double value) =>
+                _commitGalHookAppearance(
+                  context,
+                  () => context.appModel.setGalHookTextCornerRadius(value),
+                ),
+          ),
+        ],
+      ),
+      // 台词朗读（TTS）放在页尾：先设置抓词与浮窗，再设置朗读。给没有配音的旁白 / 主角补声音。浮窗工具条上有「朗读」与
       // 「自动朗读」两颗键，这里是它们的全部配置；规则 / 语音修正在子页里。
       SettingsSection(
+        id: 'game.section.line_tts',
         title: t.gal_line_tts_section,
         liveListenable: _lineTtsController,
         items: <SettingsItem>[
@@ -256,540 +805,6 @@ SettingsDestination buildGameDestination() {
               );
               settingsContext.refresh();
             },
-          ),
-        ],
-      ),
-      // 游戏内查词属于**游戏**域，不是查词域：它改变的是「这一局游戏里点字会发生
-      // 什么」，与阅读器/视频/剪贴板那几路查词共用引擎但不共用触发面。放在查词分类
-      // 里，用户要在游戏跑着的时候去另一个分类翻开关，找不到是必然的。
-      SettingsSection(
-        // 准入是 hook **异步**报上来的：本分组自己订阅它（副标题原因与「复制
-        // 哈希」行的显隐随之刷新），开着设置页启动游戏也能看到。
-        liveListenable: (_) => GalIngameLookupController.instance.admission,
-        items: <SettingsItem>[
-          // 游戏内查词：命中的字直接在**游戏渲染树内部**弹出词典卡片
-          // （不抢焦点、不 alt-tab、跟随全屏与窗口变换）。传感器按引擎逐个做，
-          // 不是所有引擎都有——本局能不能用由 hook 报上来的准入状态说了算。
-          SettingsSwitchItem(
-            id: 'game.ingame_lookup',
-            title: t.gal_hook_ingame_lookup,
-            subtitle: t.gal_hook_ingame_lookup_hint,
-            // 准入把本局挡住时副标题换成原因；其余状态（含 unknown）回落静态说明。
-            //
-            // 🔴 **不置灰**，哪怕本局明确用不了。这个开关是**全局偏好**（用户意图），
-            // 准入是**当前这一局的能力**，两者正交。拿后者去禁用前者会造出一个很蠢的
-            // 状态：默认值是 true，所以"引擎不支持"时用户看到的是一个被锁死在 ON 上、
-            // 想关也关不掉的开关——而他此刻最可能想做的恰恰是把它关掉。能力信息属于
-            // 副标题，不属于可交互性。
-            subtitleBuilder: (_) => _ingameLookupBlockedReason(),
-            icon: FushiIcons.lookup,
-            defaultValue: PreferencesRepository.galIngameLookupEnabledDefault,
-            visible: (_) => Platform.isWindows,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.galIngameLookupEnabled,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel.setGalIngameLookupEnabled(value);
-              // 与台词浮窗字号同款纪律：写完 pref 立刻推给编排器，否则开关只落了盘，
-              // 本局游戏里不生效（要退出重进一局）。
-              await GalHookTextOverlayController.instance
-                  .applyIngameLookupEnabledFromPreferences();
-              settingsContext.refresh();
-            },
-          ),
-          // 被挡住时唯一能推进事情的信息：当前游戏 exe 的 SHA-256。用户把它报回来，
-          // 我们才知道该给哪个版本加白名单。摘要优先取注入侧上报的；Leaf / SGRE 那
-          // 类「probe 本身就是 hash 门」的 adapter 在不匹配时压根不参与汇总、没人填
-          // 得了那个字段，此时由 runner 兜底自己算（见 voice_hook_reader.cpp）。
-          SettingsActionItem(
-            id: 'game.ingame_lookup_exe_hash',
-            title: t.gal_hook_ingame_lookup_exe_hash_copy,
-            subtitleBuilder: (_) =>
-                _ingameLookupExeSha256() ??
-                t.gal_hook_ingame_lookup_exe_hash_unavailable,
-            icon: FushiIcons.fingerprint,
-            // 只在真被挡住时出现——平时多一行"复制哈希"是纯噪音。所在分组订阅准入
-            // notifier（liveListenable），所以开着页面启动游戏也会把这一行刷出来。
-            visible: (_) => Platform.isWindows && _isIngameLookupBlocked(),
-            // CLI 直接回报哈希（不经剪贴板）。
-            cli: SettingsCliAction(
-              run: (SettingsContext c, Map<String, String> args) async {
-                final String? sha = _ingameLookupExeSha256();
-                if (sha == null) {
-                  throw StateError(
-                    t.gal_hook_ingame_lookup_exe_hash_unavailable,
-                  );
-                }
-                return <String, Object?>{'sha256': sha};
-              },
-            ),
-            onTap: (SettingsContext settingsContext) async {
-              final String? sha = _ingameLookupExeSha256();
-              if (sha == null) return;
-              await Clipboard.setData(ClipboardData(text: sha));
-              _showGameSettingsSnackBar(
-                settingsContext,
-                t.gal_hook_ingame_lookup_exe_hash_copied,
-              );
-            },
-          ),
-          // 游戏内查词卡的尺寸三件套（独立尺寸开关 + 仅在开启时展示的宽/高滑杆）。
-          // 关闭时跟随 app 内最大宽高（galCardLookupEffectiveSize 解析）。
-          // 与覆盖查词窗（settings_schema_lookup 的 overlay_lookup_*）分开：卡片贴在
-          // 游戏客户区里、要避开正文，浮窗浮在整块桌面上，两者合适尺寸本就不同；共用
-          // 一组键时只能二选一（游戏内过小 / 浮窗过大）。
-          //
-          // 归属：与 #938 把整个 gal_hook_overlay section 从 settings_schema_lookup.dart
-          // 移进本文件同一条理由——这三项只对 galgame 直连覆盖窗（Windows-only 的
-          // 引擎 hook 注入）有意义，留在查词分类里会让 Android/iOS/macOS/Linux 用户在
-          // 「查词 → 弹窗窗口」分区和设置搜索里都看到一个永远不生效的 galgame 设置项。
-          // 这里是 destination 级 + item 级双重 Platform.isWindows 门。
-          SettingsSwitchItem(
-            id: 'game.gal_card_lookup_independent_size',
-            title: t.gal_card_lookup_independent_size,
-            subtitle: t.gal_card_lookup_independent_size_hint,
-            icon: FushiIcons.dashboardCustomize,
-            // 与 PreferencesRepository.galCardLookupIndependentSize 的读取默认一致。
-            defaultValue: false,
-            visible: (_) => Platform.isWindows,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.galCardLookupIndependentSize,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel.setGalCardLookupIndependentSize(
-                value,
-              );
-              settingsContext.refresh();
-            },
-          ),
-          SettingsSliderItem(
-            id: 'game.gal_card_lookup_max_width',
-            titleReadout: true,
-            title: t.gal_card_lookup_max_width,
-            icon: FushiIcons.swap,
-            // 读取默认 = PreferencesRepository.defaultPopupMaxWidth。
-            defaultValue: kLookupPopupDefaultWidth,
-            min: 250,
-            max: 2000,
-            divisions: 175,
-            visible: (SettingsContext settingsContext) =>
-                Platform.isWindows &&
-                settingsContext.appModel.galCardLookupIndependentSize,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.galCardLookupMaxWidth,
-            label: (double value) => value.round().toString(),
-            onChanged: (SettingsContext settingsContext, double value) {
-              settingsContext.appModel.setGalCardLookupMaxWidth(value);
-              settingsContext.refresh();
-            },
-          ),
-          SettingsSliderItem(
-            id: 'game.gal_card_lookup_max_height',
-            titleReadout: true,
-            title: t.gal_card_lookup_max_height,
-            icon: Icons.height_outlined,
-            // 读取默认 = PreferencesRepository.defaultPopupMaxHeight。
-            defaultValue: kLookupPopupDefaultHeight,
-            min: 200,
-            max: 1600,
-            divisions: 140,
-            visible: (SettingsContext settingsContext) =>
-                Platform.isWindows &&
-                settingsContext.appModel.galCardLookupIndependentSize,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.galCardLookupMaxHeight,
-            label: (double value) => value.round().toString(),
-            onChanged: (SettingsContext settingsContext, double value) {
-              settingsContext.appModel.setGalCardLookupMaxHeight(value);
-              settingsContext.refresh();
-            },
-          ),
-          // ── hook 台词浮窗的交互四件套 ───────────────────────────────────
-          // 都走 live setter：设置页一改，正在开着的浮窗立刻跟上，不必退出这一局
-          // 游戏再重开（与字号 applyFontSizeFromPreferences 同款纪律）。
-          SettingsSwitchItem(
-            id: 'game.gal_hook_click_lookup',
-            title: t.gal_hook_click_lookup,
-            subtitle: t.gal_hook_click_lookup_hint,
-            icon: FushiIcons.touch,
-            defaultValue: PreferencesRepository.galHookClickLookupDefault,
-            visible: (_) => Platform.isWindows,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.galHookClickLookup,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel.setGalHookClickLookup(value);
-              await GalHookTextOverlayChannel.setClickLookupEnabled(value);
-              settingsContext.refresh();
-            },
-          ),
-          SettingsSegmentedItem<int>(
-            id: 'game.gal_hook_lookup_trigger',
-            title: t.gal_hook_lookup_trigger,
-            subtitle: t.gal_hook_lookup_trigger_hint,
-            icon: FushiIcons.mouse,
-            defaultValue: PreferencesRepository.galHookLookupTriggerDefault,
-            dropdown: true,
-            visible: (_) => Platform.isWindows,
-            options: <SettingsSegmentOption<int>>[
-              SettingsSegmentOption<int>(
-                value: 0,
-                label: t.gal_hook_lookup_trigger_left,
-              ),
-              SettingsSegmentOption<int>(
-                value: 1,
-                label: t.gal_hook_lookup_trigger_middle,
-              ),
-              SettingsSegmentOption<int>(
-                value: 2,
-                label: t.gal_hook_lookup_trigger_side,
-              ),
-            ],
-            selected: (SettingsContext settingsContext) =>
-                settingsContext.appModel.galHookLookupTrigger,
-            onChanged: (SettingsContext settingsContext, int value) async {
-              await settingsContext.appModel.setGalHookLookupTrigger(value);
-              await GalHookTextOverlayChannel.setLookupTrigger(value);
-              settingsContext.refresh();
-            },
-          ),
-          SettingsSwitchItem(
-            id: 'game.gal_hook_toolbar_auto_hide',
-            title: t.gal_hook_toolbar_auto_hide,
-            subtitle: t.gal_hook_toolbar_auto_hide_hint,
-            icon: FushiIcons.visibilityOff,
-            defaultValue: PreferencesRepository.galHookToolbarAutoHideDefault,
-            visible: (_) => Platform.isWindows,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.galHookToolbarAutoHide,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel.setGalHookToolbarAutoHide(value);
-              await GalHookTextOverlayChannel.setToolbarAutoHide(value);
-              settingsContext.refresh();
-            },
-          ),
-          SettingsSwitchItem(
-            id: 'game.gal_hook_toolbar_labels',
-            title: t.gal_hook_toolbar_labels,
-            subtitle: t.gal_hook_toolbar_labels_hint,
-            icon: FushiIcons.title,
-            defaultValue: PreferencesRepository.galHookToolbarLabelsDefault,
-            visible: (_) => Platform.isWindows,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.galHookToolbarLabels,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel.setGalHookToolbarLabels(value);
-              await GalHookTextOverlayChannel.setToolbarLabels(value);
-              settingsContext.refresh();
-            },
-          ),
-          SettingsSwitchItem(
-            id: 'game.gal_hook_passthrough_blocks_mouse',
-            title: t.gal_hook_passthrough_blocks_mouse,
-            subtitle: t.gal_hook_passthrough_blocks_mouse_hint,
-            icon: Icons.ads_click_outlined,
-            defaultValue:
-                PreferencesRepository.galHookPassThroughBlocksMouseDefault,
-            visible: (_) => Platform.isWindows,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.galHookPassThroughBlocksMouse,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel.setGalHookPassThroughBlocksMouse(
-                value,
-              );
-              await GalHookTextOverlayChannel.setPassThroughBlocksMouse(value);
-              settingsContext.refresh();
-            },
-          ),
-          // 一句台词被引擎分多次吐出来时折成一条（用户报的 Zato 症状：一段台词
-          // 分多次点击显示，工作台里第二句出现两次、字数被重复统计）。这是文本
-          // **采集**行为，跟浮窗样式无关，所以留在采集这一节。
-          SettingsSwitchItem(
-            id: 'game.fold_progressive_lines',
-            title: t.gal_hook_fold_progressive_lines,
-            subtitle: t.gal_hook_fold_progressive_lines_hint,
-            icon: Icons.merge_type,
-            defaultValue:
-                PreferencesRepository.galHookFoldProgressiveLinesDefault,
-            // 与兄弟项 game.ingame_lookup 同门：折叠只对引擎 hook 行生效，而
-            // engineHook 行只由 Windows-only 的 GalHookSessionController 产出。
-            // 在其他平台露出来只会让用户对着一个永远不生效的开关。
-            visible: (_) => Platform.isWindows,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.galHookFoldProgressiveLines,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel.setGalHookFoldProgressiveLines(
-                value,
-              );
-              settingsContext.refresh();
-            },
-          ),
-        ],
-      ),
-      SettingsSection(
-        title: t.settings_section_gal_hook_overlay,
-        visible: (_) => Platform.isWindows,
-        items: <SettingsItem>[
-          SettingsNavigationItem(
-            id: 'game.gal_hook_text_font',
-            title: t.gal_hook_text_font,
-            subtitle: t.gal_hook_text_font_hint,
-            icon: FushiIcons.font,
-            showIcon: true,
-            onTap: (SettingsContext settingsContext) async {
-              await pushSettingsPage(
-                settingsContext,
-                (_) => const CustomFontsPage(target: FontTarget.gameLookup),
-              );
-              await GalHookTextOverlayController.instance
-                  .applyFontFromSettings();
-              settingsContext.refresh();
-            },
-          ),
-          SettingsStepperItem(
-            id: 'game.gal_hook_text_font_size',
-            title: t.gal_hook_text_font_size,
-            subtitle: t.gal_hook_text_font_size_hint,
-            icon: FushiIcons.fontSize,
-            defaultValue: PreferencesRepository.galHookTextFontSizeDefault,
-            min: PreferencesRepository.galHookTextFontSizeMin,
-            max: PreferencesRepository.galHookTextFontSizeMax,
-            step: 1,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.galHookTextFontSize,
-            format: (double value) => '${value.round()} px',
-            onChanged: (SettingsContext settingsContext, double value) =>
-                _commitGalHookAppearance(
-                  settingsContext,
-                  () => settingsContext.appModel.setGalHookTextFontSize(value),
-                ),
-          ),
-          SettingsSliderItem(
-            id: 'game.gal_hook_text_letter_spacing',
-            title: t.gal_hook_text_letter_spacing,
-            subtitle: t.gal_hook_text_letter_spacing_hint,
-            icon: Icons.space_bar,
-            defaultValue: PreferencesRepository.galHookTextLetterSpacingDefault,
-            min: PreferencesRepository.galHookTextLetterSpacingMin,
-            max: PreferencesRepository.galHookTextLetterSpacingMax,
-            divisions: 28,
-            step: 0.5,
-            titleReadout: true,
-            label: (double value) => '${value.toStringAsFixed(1)} px',
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.galHookTextLetterSpacing,
-            onChanged: (SettingsContext settingsContext, double value) =>
-                _commitGalHookAppearance(
-                  settingsContext,
-                  () => settingsContext.appModel.setGalHookTextLetterSpacing(
-                    value,
-                  ),
-                ),
-          ),
-          SettingsSliderItem(
-            id: 'game.gal_hook_text_line_height',
-            title: t.gal_hook_text_line_height,
-            subtitle: t.gal_hook_text_line_height_hint,
-            icon: Icons.format_line_spacing,
-            defaultValue: PreferencesRepository.galHookTextLineHeightDefault,
-            min: PreferencesRepository.galHookTextLineHeightMin,
-            max: PreferencesRepository.galHookTextLineHeightMax,
-            divisions: 24,
-            step: 0.05,
-            titleReadout: true,
-            label: (double value) => '${value.toStringAsFixed(2)}×',
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.galHookTextLineHeight,
-            onChanged: (SettingsContext settingsContext, double value) =>
-                _commitGalHookAppearance(
-                  settingsContext,
-                  () =>
-                      settingsContext.appModel.setGalHookTextLineHeight(value),
-                ),
-          ),
-          SettingsSwitchItem(
-            id: 'game.gal_hook_text_bold',
-            title: t.gal_hook_text_bold,
-            subtitle: t.gal_hook_text_bold_hint,
-            icon: Icons.format_bold,
-            // 与 PreferencesRepository.galHookTextBold 的读取默认一致。
-            defaultValue: true,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.galHookTextBold,
-            onChanged: (SettingsContext settingsContext, bool value) =>
-                _commitGalHookAppearance(
-                  settingsContext,
-                  () => settingsContext.appModel.setGalHookTextBold(value),
-                ),
-          ),
-          SettingsSegmentedItem<String>(
-            id: 'game.gal_hook_text_alignment',
-            title: t.gal_hook_text_alignment,
-            icon: Icons.format_align_center,
-            defaultValue: 'center',
-            options: <SettingsSegmentOption<String>>[
-              SettingsSegmentOption<String>(
-                value: 'center',
-                label: t.gal_hook_text_alignment_center,
-              ),
-              SettingsSegmentOption<String>(
-                value: 'left',
-                label: t.gal_hook_text_alignment_left,
-              ),
-            ],
-            selected: (SettingsContext settingsContext) =>
-                settingsContext.appModel.galHookTextAlignment,
-            onChanged: (SettingsContext settingsContext, String value) =>
-                _commitGalHookAppearance(
-                  settingsContext,
-                  () => settingsContext.appModel.setGalHookTextAlignment(value),
-                ),
-          ),
-          // BUG-1890：垂直对齐单列一项，不与水平对齐合成三选一——两者是正交的两个
-          // 轴，合并会造出「选了顶部就没法同时左对齐」这种假互斥。
-          SettingsSegmentedItem<String>(
-            id: 'game.gal_hook_text_vertical_alignment',
-            title: t.gal_hook_text_vertical_alignment,
-            icon: Icons.vertical_align_center,
-            defaultValue: 'center',
-            options: <SettingsSegmentOption<String>>[
-              SettingsSegmentOption<String>(
-                value: 'center',
-                label: t.gal_hook_text_vertical_alignment_center,
-              ),
-              SettingsSegmentOption<String>(
-                value: 'top',
-                label: t.gal_hook_text_vertical_alignment_top,
-              ),
-            ],
-            selected: (SettingsContext settingsContext) =>
-                settingsContext.appModel.galHookTextVerticalAlignment,
-            onChanged: (SettingsContext settingsContext, String value) =>
-                _commitGalHookAppearance(
-                  settingsContext,
-                  () => settingsContext.appModel
-                      .setGalHookTextVerticalAlignment(value),
-                ),
-          ),
-          _galHookColorItem(
-            id: 'game.gal_hook_text_color',
-            title: t.gal_hook_text_color,
-            icon: Icons.format_color_text,
-            defaultColor: PreferencesRepository.galHookTextColorDefault,
-            value: (SettingsContext context) =>
-                context.appModel.galHookTextColor,
-            onChanged: (SettingsContext context, int value) =>
-                context.appModel.setGalHookTextColor(value),
-            themedColor: (GalHookCaptionColors themed) => themed.text,
-          ),
-        ],
-      ),
-      SettingsSection(
-        title: t.gal_hook_overlay_legibility_section,
-        visible: (_) => Platform.isWindows,
-        collapsedByDefault: true,
-        items: <SettingsItem>[
-          _galHookColorItem(
-            id: 'game.gal_hook_text_background_color',
-            title: t.gal_hook_text_background_color,
-            icon: Icons.format_color_fill,
-            defaultColor:
-                PreferencesRepository.galHookTextBackgroundColorDefault,
-            value: (SettingsContext context) =>
-                context.appModel.galHookTextBackgroundColor,
-            onChanged: (SettingsContext context, int value) =>
-                context.appModel.setGalHookTextBackgroundColor(value),
-            themedColor: (GalHookCaptionColors themed) => themed.background,
-          ),
-          SettingsSliderItem(
-            id: 'game.gal_hook_text_background_opacity',
-            title: t.gal_hook_text_background_opacity,
-            subtitle: t.gal_hook_text_background_opacity_hint,
-            icon: Icons.opacity,
-            defaultValue:
-                PreferencesRepository.galHookTextBackgroundOpacityDefault,
-            min: 0,
-            max: 1,
-            divisions: 20,
-            step: 0.05,
-            titleReadout: true,
-            label: (double value) => '${(value * 100).round()}%',
-            value: (SettingsContext context) =>
-                context.appModel.galHookTextBackgroundOpacity,
-            onChanged: (SettingsContext context, double value) =>
-                _commitGalHookAppearance(
-                  context,
-                  () => context.appModel.setGalHookTextBackgroundOpacity(value),
-                ),
-          ),
-          _galHookColorItem(
-            id: 'game.gal_hook_text_outline_color',
-            title: t.gal_hook_text_outline_color,
-            icon: Icons.border_color_outlined,
-            defaultColor: PreferencesRepository.galHookTextOutlineColorDefault,
-            enableAlpha: true,
-            value: (SettingsContext context) =>
-                context.appModel.galHookTextOutlineColor,
-            onChanged: (SettingsContext context, int value) =>
-                context.appModel.setGalHookTextOutlineColor(value),
-            themedColor: (GalHookCaptionColors themed) => themed.outline,
-          ),
-          SettingsSliderItem(
-            id: 'game.gal_hook_text_outline_width',
-            title: t.gal_hook_text_outline_width,
-            subtitle: t.gal_hook_text_outline_width_hint,
-            icon: Icons.line_weight,
-            defaultValue: PreferencesRepository.galHookTextOutlineWidthDefault,
-            min: PreferencesRepository.galHookTextOutlineWidthMin,
-            max: PreferencesRepository.galHookTextOutlineWidthMax,
-            divisions: 24,
-            step: 0.25,
-            titleReadout: true,
-            label: (double value) => '${value.toStringAsFixed(2)} px',
-            value: (SettingsContext context) =>
-                context.appModel.galHookTextOutlineWidth,
-            onChanged: (SettingsContext context, double value) =>
-                _commitGalHookAppearance(
-                  context,
-                  () => context.appModel.setGalHookTextOutlineWidth(value),
-                ),
-          ),
-          SettingsSliderItem(
-            id: 'game.gal_hook_text_padding',
-            title: t.gal_hook_text_padding,
-            subtitle: t.gal_hook_text_padding_hint,
-            icon: Icons.padding,
-            defaultValue: PreferencesRepository.galHookTextPaddingDefault,
-            min: PreferencesRepository.galHookTextPaddingMin,
-            max: PreferencesRepository.galHookTextPaddingMax,
-            divisions: 40,
-            step: 2,
-            titleReadout: true,
-            label: (double value) => '${value.round()} px',
-            value: (SettingsContext context) =>
-                context.appModel.galHookTextPadding,
-            onChanged: (SettingsContext context, double value) =>
-                _commitGalHookAppearance(
-                  context,
-                  () => context.appModel.setGalHookTextPadding(value),
-                ),
-          ),
-          SettingsSliderItem(
-            id: 'game.gal_hook_text_corner_radius',
-            title: t.gal_hook_text_corner_radius,
-            subtitle: t.gal_hook_text_corner_radius_hint,
-            icon: Icons.rounded_corner,
-            defaultValue: PreferencesRepository.galHookTextCornerRadiusDefault,
-            min: PreferencesRepository.galHookTextCornerRadiusMin,
-            max: PreferencesRepository.galHookTextCornerRadiusMax,
-            divisions: 40,
-            step: 1,
-            titleReadout: true,
-            label: (double value) => '${value.round()} px',
-            value: (SettingsContext context) =>
-                context.appModel.galHookTextCornerRadius,
-            onChanged: (SettingsContext context, double value) =>
-                _commitGalHookAppearance(
-                  context,
-                  () => context.appModel.setGalHookTextCornerRadius(value),
-                ),
           ),
         ],
       ),

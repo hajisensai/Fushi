@@ -27,13 +27,17 @@ import 'package:fushi/src/settings/settings_kit_core.dart';
 /// 到 error 容器，error 角色是固定的红、**不随主题种子色变化**——分类图标用它，
 /// 换主题时就只有那一枚还是红的（2026-10-09 用户截图「视频图标不变色」）。
 SettingsIconTone settingsIconToneFor(SettingsDestinationId id) => switch (id) {
+  SettingsDestinationId.general => SettingsIconTone.blue,
   SettingsDestinationId.appearance => SettingsIconTone.purple,
+  SettingsDestinationId.navigation => SettingsIconTone.teal,
   SettingsDestinationId.floatingBall => SettingsIconTone.pink,
   SettingsDestinationId.reading => SettingsIconTone.blue,
+  SettingsDestinationId.listening => SettingsIconTone.orange,
   SettingsDestinationId.manga => SettingsIconTone.teal,
   SettingsDestinationId.video => SettingsIconTone.pink,
   SettingsDestinationId.music => SettingsIconTone.purple,
   SettingsDestinationId.game => SettingsIconTone.green,
+  SettingsDestinationId.webBrowser => SettingsIconTone.orange,
   SettingsDestinationId.mediaTracking => SettingsIconTone.orange,
   SettingsDestinationId.lookup => SettingsIconTone.orange,
   SettingsDestinationId.cardCreation => SettingsIconTone.green,
@@ -41,7 +45,7 @@ SettingsIconTone settingsIconToneFor(SettingsDestinationId id) => switch (id) {
   SettingsDestinationId.services => SettingsIconTone.blue,
   SettingsDestinationId.localServices => SettingsIconTone.teal,
   SettingsDestinationId.ai => SettingsIconTone.purple,
-  SettingsDestinationId.models => SettingsIconTone.purple,
+  SettingsDestinationId.models => SettingsIconTone.pink,
   SettingsDestinationId.profiles => SettingsIconTone.pink,
   SettingsDestinationId.syncBackup => SettingsIconTone.blue,
   SettingsDestinationId.interconnect => SettingsIconTone.teal,
@@ -57,12 +61,13 @@ SettingsIconTone settingsIconToneFor(SettingsDestinationId id) => switch (id) {
 /// 导航分组的色调（分组标题的小色点、搜索结果分组头用）。
 SettingsIconTone settingsIconToneForGroup(SettingsNavigationGroupId id) =>
     switch (id) {
-      SettingsNavigationGroupId.interface => SettingsIconTone.purple,
+      SettingsNavigationGroupId.general => SettingsIconTone.purple,
       SettingsNavigationGroupId.content => SettingsIconTone.blue,
       SettingsNavigationGroupId.learning => SettingsIconTone.orange,
+      SettingsNavigationGroupId.aiModels => SettingsIconTone.pink,
       SettingsNavigationGroupId.connections => SettingsIconTone.teal,
       SettingsNavigationGroupId.data => SettingsIconTone.green,
-      SettingsNavigationGroupId.app => SettingsIconTone.gray,
+      SettingsNavigationGroupId.system => SettingsIconTone.gray,
     };
 
 // -----------------------------------------------------------------------------

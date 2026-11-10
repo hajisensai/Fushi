@@ -30,7 +30,7 @@ SettingsDestination buildLocalServicesDestination() {
   return SettingsDestination(
     id: SettingsDestinationId.localServices,
     title: t.settings_local_services_title,
-    summary: t.settings_local_services_summary,
+    summary: t.settings_local_services_summary_tools,
     icon: FushiIcons.server,
     sections: <SettingsSection>[
       SettingsSection(
@@ -38,22 +38,6 @@ SettingsDestination buildLocalServicesDestination() {
         presentation: SettingsSectionPresentation.alwaysExpanded,
         title: t.fushi_api_server,
         items: <SettingsItem>[
-          // 浏览器扩展「安装助手」是桌面专属顶层页（BrowserExtensionPage）；扩展就是
-          // 本服务最主要的客户端，入口跟着服务走（审计 K：保留可搜索的导航项）。
-          SettingsNavigationItem(
-            id: 'local_services.browser_extension',
-            title: t.nav_browser_extension,
-            icon: FushiIcons.browserExtension,
-            showIcon: true,
-            visible: (SettingsContext settingsContext) =>
-                DesktopLookupService.isDesktop,
-            onTap: (SettingsContext settingsContext) async {
-              await pushSettingsPage(
-                settingsContext,
-                (_) => const BrowserExtensionPage(),
-              );
-            },
-          ),
           SettingsSwitchItem(
             id: 'local_services.fushi_api_server',
             title: t.fushi_api_server,
@@ -169,6 +153,30 @@ SettingsDestination buildLocalServicesDestination() {
               await settingsContext.appModel.setFushiApiKey(value);
               await _applyConfigChange(settingsContext);
               settingsContext.refresh();
+            },
+          ),
+        ],
+      ),
+      SettingsSection(
+        id: 'local_services.section.tools',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
+        title: t.settings_local_services_tools_title,
+        items: <SettingsItem>[
+          // 浏览器扩展「安装助手」是桌面专属顶层页（BrowserExtensionPage）；扩展就是
+          // 本服务最主要的客户端，与 AnkiConnect 一起归在「接入的工具」，服务本身的开关与访问控制留在上一区。
+          SettingsNavigationItem(
+            id: 'local_services.browser_extension',
+            title: t.nav_browser_extension,
+            subtitle: t.settings_local_services_browser_extension_hint,
+            icon: FushiIcons.browserExtension,
+            showIcon: true,
+            visible: (SettingsContext settingsContext) =>
+                DesktopLookupService.isDesktop,
+            onTap: (SettingsContext settingsContext) async {
+              await pushSettingsPage(
+                settingsContext,
+                (_) => const BrowserExtensionPage(),
+              );
             },
           ),
           // 复习模块（SRS，默认关）开着时，Fushi API 根路径同时是 AnkiConnect v6 兼容

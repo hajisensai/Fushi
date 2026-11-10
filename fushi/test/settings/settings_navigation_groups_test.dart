@@ -28,11 +28,11 @@ void main() {
     expect(
       groups.map((SettingsNavigationGroup group) => group.id),
       <SettingsNavigationGroupId>[
-        SettingsNavigationGroupId.interface,
+        SettingsNavigationGroupId.general,
         SettingsNavigationGroupId.learning,
         SettingsNavigationGroupId.connections,
         SettingsNavigationGroupId.data,
-        SettingsNavigationGroupId.app,
+        SettingsNavigationGroupId.system,
       ],
     );
     expect(
@@ -42,19 +42,73 @@ void main() {
     expect(groupSettingsDestinations(const <SettingsDestination>[]), isEmpty);
   });
 
-  test('tracking stays with content when enabled', () {
+  // 媒体记录只做一件事：把进度记到第三方账号上，所以与其它在线账号同组，
+  // 不混在「内容」里。
+  test('tracking sits with the other online accounts when enabled', () {
     final List<SettingsDestination> visible = <SettingsDestination>[
-      destination(SettingsDestinationId.reading),
-      destination(SettingsDestinationId.manga),
-      destination(SettingsDestinationId.video),
-      destination(SettingsDestinationId.game),
+      destination(SettingsDestinationId.downloads),
+      destination(SettingsDestinationId.services),
       destination(SettingsDestinationId.mediaTracking),
+      destination(SettingsDestinationId.localServices),
     ];
     final List<SettingsNavigationGroup> groups = groupSettingsDestinations(
       visible,
     );
-    expect(groups.single.id, SettingsNavigationGroupId.content);
+    expect(groups.single.id, SettingsNavigationGroupId.connections);
     expect(groups.single.destinations, visible);
     expect(() => groups.single.destinations.clear(), throwsUnsupportedError);
+  });
+
+  test('every first-level destination lands in its documented group', () {
+    const Map<SettingsNavigationGroupId, List<SettingsDestinationId>> expected =
+        <SettingsNavigationGroupId, List<SettingsDestinationId>>{
+          SettingsNavigationGroupId.general: <SettingsDestinationId>[
+            SettingsDestinationId.general,
+            SettingsDestinationId.appearance,
+            SettingsDestinationId.navigation,
+            SettingsDestinationId.floatingBall,
+          ],
+          SettingsNavigationGroupId.content: <SettingsDestinationId>[
+            SettingsDestinationId.reading,
+            SettingsDestinationId.listening,
+            SettingsDestinationId.manga,
+            SettingsDestinationId.video,
+            SettingsDestinationId.music,
+            SettingsDestinationId.game,
+            SettingsDestinationId.webBrowser,
+          ],
+          SettingsNavigationGroupId.learning: <SettingsDestinationId>[
+            SettingsDestinationId.lookup,
+            SettingsDestinationId.cardCreation,
+          ],
+          SettingsNavigationGroupId.aiModels: <SettingsDestinationId>[
+            SettingsDestinationId.ai,
+            SettingsDestinationId.models,
+          ],
+          SettingsNavigationGroupId.connections: <SettingsDestinationId>[
+            SettingsDestinationId.downloads,
+            SettingsDestinationId.services,
+            SettingsDestinationId.mediaTracking,
+            SettingsDestinationId.localServices,
+          ],
+          SettingsNavigationGroupId.data: <SettingsDestinationId>[
+            SettingsDestinationId.profiles,
+            SettingsDestinationId.syncBackup,
+            SettingsDestinationId.interconnect,
+            SettingsDestinationId.storage,
+          ],
+          SettingsNavigationGroupId.system: <SettingsDestinationId>[
+            SettingsDestinationId.widgets,
+            SettingsDestinationId.system,
+          ],
+        };
+    expected.forEach((
+      SettingsNavigationGroupId group,
+      List<SettingsDestinationId> ids,
+    ) {
+      for (final SettingsDestinationId id in ids) {
+        expect(settingsNavigationGroupFor(id), group, reason: id.name);
+      }
+    });
   });
 }

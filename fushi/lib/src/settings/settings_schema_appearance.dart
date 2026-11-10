@@ -39,8 +39,8 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 /// 「功能模块」开关行的 item id。
 ///
 /// **历史前缀 `system.` 冻结不改**：这些 id 是设置搜索的定位锚点，与展示分类本就
-/// 解耦（同款先例见下面 app_shell 里关于 `appearance.startup_default_dictionary_tab`
-/// 的注释），改 id 只会平白动摇锚点。四个后加的模块沿用同一前缀保持一致。
+/// 解耦（同款先例见 settings_schema_system.dart 里 `buildStartupPageItem` 对
+/// `appearance.startup_default_dictionary_tab` 的注释），改 id 只会平白动摇锚点。四个后加的模块沿用同一前缀保持一致。
 String _moduleItemId(ModuleId module) => switch (module) {
   // 2026-10-09 新增，无历史包袱，但仍跟随同一前缀保持一致。
   ModuleId.home => 'system.module_home',
@@ -183,6 +183,7 @@ List<ModuleId> _orderedNavModules(
 SettingsCustomItem _navModuleOrderItem() => SettingsCustomItem(
   id: 'appearance.nav_module_order',
   searchTitle: t.settings_module_nav_order,
+  subtitle: t.settings_navigation_module_order_hint,
   // 合成一个列表后各模块不再是独立的 schema 行；把模块名挂成关键词，搜「视频」
   // 仍能直达这块（结果行露出命中的「视频」）。
   searchKeywords: (SettingsContext settingsContext) => <String>[
@@ -207,9 +208,12 @@ SettingsCustomItem _navModuleOrderItem() => SettingsCustomItem(
 SettingsDestination buildAppearanceDestination() {
   return SettingsDestination(
     id: SettingsDestinationId.appearance,
-    title: t.settings_destination_appearance_interaction,
-    summary: t.design_system_hint,
+    title: t.settings_destination_appearance,
+    summary: t.settings_appearance_summary,
     icon: FushiIcons.appearance,
+    // 本页只管「长什么样」：主题 / 背景与缩放 / 字体 / 应用图标。语言归「通用」，
+    // 功能模块、首页面板、底栏与跳转记录归「导航与首页」——那些项留在本文件
+    // （依赖这里的私有 helper），以顶层 builder 导出给对应分类装配。
     sections: <SettingsSection>[
       SettingsSection(
         id: 'appearance.section.interface',
@@ -235,15 +239,6 @@ SettingsDestination buildAppearanceDestination() {
             icon: Icons.contrast_outlined,
             searchTitle: t.dark_mode,
             builder: buildBrightnessSelector,
-          ),
-          // 「页面背景」子页（2026-10-30）：每一页底下的装饰——形状预设、纯色、
-          // 用户自定义图片（可从图片取色）。
-          SettingsNavigationItem(
-            id: 'appearance.page_backdrop',
-            title: t.page_backdrop_title,
-            subtitle: t.page_backdrop_hint,
-            icon: FushiIcons.pageBackdrop,
-            child: buildPageBackdropDestination,
           ),
           // 「纯黑深色背景」：原「纯黑」预设的语义（2026-10 预设只决定种子色、不再
           // 自带明暗 / 纯黑），改成明暗旁的独立开关；对系统取色 / 预设 / 自定义主题
@@ -312,346 +307,6 @@ SettingsDestination buildAppearanceDestination() {
                     settingsContext.appModel.setGlassMaterial(value),
             defaultValue: FushiGlassMaterial.frosted,
           ),
-          // 「界面大小」滑条：commitOnRelease——本滑条位于受 FushiAppUiScale 的
-          // Transform.scale 缩放的子树内，拖动逐帧提交会让整树立刻按新比例重排、
-          // 滑块在手指下位移、手势断裂（TODO-374 旧 _AppUiScaleSliderRow 注释）。
-          // 渲染层 _CommitOnReleaseSlider 拖动只更新本地预览值（跟手 + 标题读数
-          // 实时），松手才经 onChanged 一次性提交真实缩放；键盘/手柄步进每按即提交。
-          // 一等 schema 项同时带来静止常驻读数（titleReadout）与搜索索引，替代原
-          // 自定义 custom 行双实现。id/持久化路径不变。
-          SettingsSliderItem(
-            id: 'appearance.app_ui_scale',
-            title: t.app_ui_scale,
-            subtitle: t.app_ui_scale_hint,
-            icon: Icons.format_size_outlined,
-            min: FushiAppUiScale.minScale,
-            max: FushiAppUiScale.maxScale,
-            divisions: 27,
-            label: (double value) => '${(value * 100).round()}%',
-            titleReadout: true,
-            commitOnRelease: true,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.appUiScale,
-            onChanged: (SettingsContext settingsContext, double value) async {
-              await settingsContext.appModel.setAppUiScale(value);
-            },
-          ),
-          // 「界面语言」从系统分类归位到这里：它改的是界面呈现语言，与主题/明暗/
-          // 缩放同属界面外观；id/持久化 key 不变（本就带 appearance 前缀）。
-          SettingsCustomItem(
-            id: 'appearance.language',
-            icon: Icons.translate_outlined,
-            searchTitle: t.options_language,
-            builder: buildLanguageSelector,
-          ),
-          // Linux：把 Fushi 作为非 Steam 游戏加进 Steam 库（带库封面），Steam Deck
-          // 游戏模式里从库启动，配合游戏模式截屏识字（gamescope_overlay.h）。
-          // 已加过就换成「从 Steam 移除」（只认 Fushi 自己写的条目）。
-          SettingsActionItem(
-            id: 'appearance.steam_shortcut',
-            title: t.settings_steam_shortcut_add,
-            subtitle: t.settings_steam_shortcut_add_hint,
-            icon: FushiIcons.games,
-            visible: (_) =>
-                Platform.isLinux &&
-                !LinuxSteamShortcut.forThisProcess().isInstalled(),
-            // 写的是 Steam 的配置（Fushi 数据之外），CLI 要带 --yes。
-            cli: const SettingsCliAction.tap(confirm: true),
-            onTap: _addFushiToSteam,
-          ),
-          SettingsActionItem(
-            id: 'appearance.steam_shortcut_remove',
-            title: t.settings_steam_shortcut_remove,
-            subtitle: t.settings_steam_shortcut_remove_hint,
-            icon: FushiIcons.games,
-            visible: (_) =>
-                Platform.isLinux &&
-                LinuxSteamShortcut.forThisProcess().isInstalled(),
-            cli: const SettingsCliAction.tap(confirm: true),
-            onTap: _removeFushiFromSteam,
-          ),
-        ],
-      ),
-      // 「跳转记录」（2026-11-02 浮动胶囊改顶栏图标）：小说 / 漫画 / 视频三页共用。
-      // 顶栏图标关掉照样记录；自动隐藏只藏图标，记录 / 面板 / 刻度保留。三项都
-      // 由页面现读偏好（无双写）。
-      SettingsSection(
-        id: 'appearance.section.jump_history',
-        presentation: SettingsSectionPresentation.alwaysExpanded,
-        title: t.media_jump_history_title,
-        items: <SettingsItem>[
-          SettingsSwitchItem(
-            id: 'appearance.jump_history.toolbar',
-            title: t.media_jump_history_setting_toolbar,
-            subtitle: t.media_jump_history_setting_toolbar_hint,
-            icon: FushiIcons.undo,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.jumpHistoryToolbar,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel.setJumpHistoryToolbar(value);
-            },
-            defaultValue: true,
-          ),
-          SettingsSwitchItem(
-            id: 'appearance.jump_history.progress_marks',
-            title: t.media_jump_history_setting_marks,
-            subtitle: t.media_jump_history_setting_marks_hint,
-            icon: FushiIcons.flag,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.jumpHistoryProgressMarks,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel.setJumpHistoryProgressMarks(value);
-            },
-            defaultValue: true,
-          ),
-          SettingsSegmentedItem<int>(
-            id: 'appearance.jump_history.auto_hide',
-            title: t.media_jump_history_setting_auto_hide,
-            subtitle: t.media_jump_history_setting_auto_hide_hint,
-            icon: FushiIcons.timer,
-            options: <SettingsSegmentOption<int>>[
-              for (final int seconds in kJumpHistoryAutoHideOptions)
-                SettingsSegmentOption<int>(
-                  value: seconds,
-                  label: seconds == 0
-                      ? t.media_jump_history_setting_auto_hide_never
-                      : seconds % 60 == 0
-                      ? t.media_jump_history_setting_auto_hide_minutes(
-                          minutes: seconds ~/ 60,
-                        )
-                      : t.media_jump_history_setting_auto_hide_seconds(
-                          seconds: seconds,
-                        ),
-                ),
-            ],
-            selected: (SettingsContext settingsContext) =>
-                settingsContext.appModel.jumpHistoryAutoHideSeconds,
-            onChanged: (SettingsContext settingsContext, int seconds) async {
-              await settingsContext.appModel.setJumpHistoryAutoHideSeconds(
-                seconds,
-              );
-            },
-            defaultValue: kJumpHistoryAutoHideDefaultSeconds,
-          ),
-        ],
-      ),
-      SettingsSection(
-        id: 'appearance.section.typography',
-        presentation: SettingsSectionPresentation.alwaysExpanded,
-        // 排版分区**不折叠**：改字体是外观页的高频操作（用户显式反馈），折叠让每次
-        // 改字体都多一次展开点击，收益（省一行高度）远小于代价。
-        title: t.section_typography,
-        items: <SettingsItem>[
-          // TODO-231: 全app 只有一个可见字体库；每行字体自己管「用在哪些用途」
-          // （font_catalog / font_targets 两个偏好键）。用途集合 = FontTarget.values
-          // 全量，UI 侧遍历枚举渲染，新增用途不需要改这里。
-          // 不传 target：外观入口是全局作用域，新增字体默认挂 FontTarget.body。
-          SettingsNavigationItem(
-            id: 'appearance.font_catalog',
-            title: t.custom_fonts_catalog_title,
-            icon: FushiIcons.font,
-            onTap: (SettingsContext settingsContext) async {
-              await pushSettingsPage(
-                settingsContext,
-                (_) => const CustomFontsPage(),
-              );
-              notifyReaderSettingsChanged(settingsContext);
-            },
-          ),
-          // 内容语言紧挨字体库：它决定的正是「用哪条字体链渲染内容」，属于同一件事
-          // 的两半（选哪些字体 / 按什么语言挑）。这里设的是**默认值**，书/视频/
-          // 游戏/词典各自的设置压过它，内容自带的声明（EPUB dc:language、词典
-          // index.json、字幕轨 language）也压过它——见 resolveContentLanguage。
-          SettingsNavigationItem(
-            id: 'appearance.content_language',
-            title: t.settings_content_language_title,
-            titleBuilder: (SettingsContext settingsContext) {
-              final String current =
-                  settingsContext.appModel.prefsRepo.defaultContentLanguage;
-              final String label = current.isEmpty
-                  ? t.settings_content_language_unset
-                  : contentLanguageLabelOf(current);
-              return '${t.settings_content_language_title} · $label';
-            },
-            subtitle:
-                '${t.settings_content_language_description} '
-                '${t.settings_content_language_screen_ocr_note}',
-            icon: FushiIcons.language,
-            onTap: (SettingsContext settingsContext) async {
-              final String current =
-                  settingsContext.appModel.prefsRepo.defaultContentLanguage;
-              await showContentLanguagePicker(
-                context: settingsContext.context,
-                title: t.settings_content_language_title,
-                description:
-                    '${t.settings_content_language_description} '
-                    '${t.settings_content_language_screen_ocr_note}',
-                current: current.isEmpty ? null : current,
-                autoDetected: '',
-                autoLabel: t.settings_content_language_unset,
-                onSelected: (String? tag) async {
-                  await settingsContext.appModel.prefsRepo
-                      .setDefaultContentLanguage(tag ?? '');
-                  settingsContext.refresh();
-                  notifyReaderSettingsChanged(settingsContext);
-                },
-              );
-            },
-          ),
-        ],
-      ),
-      // 「功能模块」：14 个模块的总开关，值域与顺序都是 [ModuleId]。
-      //
-      // **本区管的不再只是底栏**。这些开关原来只喂 `homeActiveTabs()`（底栏/侧栏
-      // tab 列表），于是「关掉视频」之后设置页仍列着「视频」「在线服务」，首页活动
-      // 筛选条仍有「观看」，视频后台照跑——用户看到的是「只有底栏变干净了」。现在
-      // 一个开关关掉该模块的**全部入口**：底栏/侧栏 tab、首页 dashboard 的条目与
-      // 筛选、设置一级分类（连带设置搜索索引）、跨页跳转、该域快捷键、外部打开，
-      // 以及它专属后台的下次自启。
-      //
-      // 两条刻意的例外：
-      // - 设置**恒在**，是全部模块关光后的安全回退面，没有 ModuleId。首页
-      //   2026-10-09 起可关（[ModuleId.home]），但导航模块至少留一个
-      //   （[isLastNavigationModule]）。
-      // - 关掉「查词」只关**页面入口**，查词**能力全留**（阅读器划词弹窗、设置 →
-      //   查词 分类里的词典导入管理与音频来源）——用户拍板：纯阅读器仍要能查词。
-      //
-      // 分区住外观而不是系统：它与同分类的「反转导航栏」同域（此前在 系统 ›
-      // 功能模块）。item id 保留 `system.` 历史前缀不动，理由见 [_moduleItemId]。
-      SettingsSection(
-        id: 'appearance.section.modules',
-        presentation: SettingsSectionPresentation.alwaysExpanded,
-        title: t.settings_section_modules,
-        // 有底栏 tab 的模块收进一个可拖拽排序的列表（用户排的顺序就是底栏顺序）；
-        // 没有 tab 的横切模块仍是逐个开关，按枚举顺序。两者都遍历 ModuleId.values
-        // 生成，加模块只加一个 enum 值。平台上不存在的模块各自判掉。
-        items: <SettingsItem>[
-          _navModuleOrderItem(),
-          for (final ModuleId module in ModuleId.values)
-            if (homeTabOfModule(module) == null) _moduleSwitch(module),
-        ],
-      ),
-      // 「首页面板」：首页 dashboard 上按用户情况出现的可选面板
-      // （[HomeDashboardPanel] 注册表），每个面板一行 自动 / 显示 / 隐藏。首页
-      // 模块关着时整段隐藏；面板所属模块关着时那一行隐藏。
-      SettingsSection(
-        id: 'appearance.section.home_panels',
-        presentation: SettingsSectionPresentation.alwaysExpanded,
-        title: t.settings_section_home_panels,
-        visible: (SettingsContext c) =>
-            c.appModel.moduleVisibility.isEnabled(ModuleId.home),
-        items: <SettingsItem>[
-          for (final HomeDashboardPanel panel in HomeDashboardPanel.values)
-            _homePanelModeItem(panel),
-        ],
-      ),
-      SettingsSection(
-        id: 'appearance.section.navigation',
-        presentation: SettingsSectionPresentation.alwaysExpanded,
-        title: t.settings_section_app_shell,
-        items: <SettingsItem>[
-          SettingsNavigationItem(
-            id: 'appearance.app_icon',
-            title: t.app_icon_label,
-            icon: FushiIcons.widgets,
-            visible: (_) => Platform.isAndroid || Platform.isWindows,
-            builder: (_) => const MiscellaneousSettingsPage(),
-          ),
-          // 应用图标 ↔ 主题色的两个开关，紧挨「应用图标」入口，默认都关。
-          // ①「图标跟随主题色」：内置吉祥物 logo（宽屏 rail 品牌位、悬浮球）按
-          // 强调色换色；关 = 始终原图。对用户自定义的图标图片从不换色。
-          SettingsSwitchItem(
-            id: 'appearance.tint_app_logo',
-            title: t.theme_logo_tint_enabled,
-            subtitle: t.theme_logo_tint_hint,
-            icon: FushiIcons.widgets,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.themeNotifier.tintAppLogo,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel.themeNotifier.setTintAppLogo(
-                value,
-              );
-              settingsContext.refresh();
-            },
-            defaultValue: false,
-          ),
-          // ②「主题色跟随图标」：设置了自定义图标图片时才出现；开着时从该图
-          // 取种子色覆盖生效主题（不改写主题偏好，关掉即恢复原主题）。
-          SettingsSwitchItem(
-            id: 'appearance.follow_app_icon_accent',
-            title: t.theme_icon_accent_follow,
-            subtitle: t.theme_icon_accent_hint,
-            icon: FushiIcons.appearance,
-            visible: (_) => currentAppIconSelection.value.usesCustomFile,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.themeNotifier.followAppIconAccent,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel.themeNotifier
-                  .setFollowAppIconAccent(value);
-              notifyReaderSettingsChanged(settingsContext);
-              settingsContext.refresh();
-            },
-            defaultValue: false,
-          ),
-          SettingsSwitchItem(
-            id: 'appearance.reverse_navigation_bar',
-            title: t.reverse_navigation_bar,
-            icon: Icons.swap_horiz_outlined,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.reverseNavigationBar,
-            onChanged: (SettingsContext settingsContext, bool value) {
-              settingsContext.appModel.toggleReverseNavigationBar();
-              settingsContext.refresh();
-            },
-            defaultValue: false,
-          ),
-          // MD3 悬浮底栏（手机竖屏）图标下的标签；默认关 = M3E floating toolbar
-          // 的纯图标形态（标签进 tooltip）。Apple 设计系统的标签栏不读它。
-          SettingsSwitchItem(
-            id: 'appearance.nav_bar_labels',
-            title: t.home_nav_bar_labels,
-            icon: FushiIcons.textFields,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.navBarLabelsVisible,
-            onChanged: (SettingsContext settingsContext, bool value) {
-              unawaited(
-                settingsContext.appModel
-                    .setNavBarLabelsVisible(value)
-                    .then((_) => settingsContext.refresh()),
-              );
-            },
-            defaultValue: false,
-          ),
-          // 手机底栏形态：平铺（放不下收进「更多」）/ 拇指转盘 / 相机模式条
-          // （出厂默认）。分页滑动与圆柱滚筒已于 2026-10-25 删除。
-          SettingsSegmentedItem<AdaptiveNavBarStyle>(
-            id: 'appearance.nav_bar_style',
-            title: t.home_nav_bar_style,
-            icon: FushiIcons.swipe,
-            options: <SettingsSegmentOption<AdaptiveNavBarStyle>>[
-              SettingsSegmentOption<AdaptiveNavBarStyle>(
-                value: AdaptiveNavBarStyle.flat,
-                label: t.home_nav_bar_style_flat,
-              ),
-              SettingsSegmentOption<AdaptiveNavBarStyle>(
-                value: AdaptiveNavBarStyle.dial,
-                label: t.home_nav_bar_style_dial,
-              ),
-              SettingsSegmentOption<AdaptiveNavBarStyle>(
-                value: AdaptiveNavBarStyle.modeStrip,
-                label: t.home_nav_bar_style_mode_strip,
-              ),
-            ],
-            dropdown: true,
-            selected: (SettingsContext settingsContext) =>
-                settingsContext.appModel.navBarStyle,
-            onChanged:
-                (SettingsContext settingsContext, AdaptiveNavBarStyle value) =>
-                    settingsContext.appModel
-                        .setNavBarStyle(value)
-                        .then((_) => settingsContext.refresh()),
-            defaultValue: AdaptiveNavBarStyle.defaultStyle,
-          ),
           // 第二块屏（双屏掌机下屏 / 外接显示器）：只在系统报告有可用副屏时出现。
           SettingsSegmentedItem<SecondScreenMode>(
             id: 'appearance.second_screen_mode',
@@ -711,46 +366,374 @@ SettingsDestination buildAppearanceDestination() {
                 .then((_) => c.refresh()),
             defaultValue: SecondScreenLookupScreen.bottom,
           ),
-          // 手柄查词模式（S6）：按住 L1 / Select 切换 / 关。未设时随副屏伴侣：在用 =
-          // 按住 L1，否则关（单屏手柄行为在用户自己打开前完全不变）。
-          SettingsSegmentedItem<ControllerLookupStyle>(
-            id: 'appearance.controller_lookup_style',
-            title: t.second_screen_controller_lookup_title,
-            subtitle: t.second_screen_controller_lookup_hint,
-            icon: FushiIcons.lookup,
-            options: <SettingsSegmentOption<ControllerLookupStyle>>[
-              SettingsSegmentOption<ControllerLookupStyle>(
-                value: ControllerLookupStyle.holdL1,
-                label: t.second_screen_controller_lookup_hold_l1,
-              ),
-              SettingsSegmentOption<ControllerLookupStyle>(
-                value: ControllerLookupStyle.selectToggle,
-                label: t.second_screen_controller_lookup_select,
-              ),
-              SettingsSegmentOption<ControllerLookupStyle>(
-                value: ControllerLookupStyle.off,
-                label: t.second_screen_controller_lookup_off,
-              ),
-            ],
-            selected: (SettingsContext c) => ControllerLookupStyle.resolve(
-              c.appModel.prefsRepo.getPref(kControllerLookupStylePrefKey),
-              companionActive: c.ref
-                  .read(secondScreenControllerProvider)
-                  .isActive,
-            ),
-            onChanged: (SettingsContext c, ControllerLookupStyle value) => c
-                .appModel
-                .prefsRepo
-                .setPref(kControllerLookupStylePrefKey, value.name)
-                .then((_) => c.refresh()),
-            defaultValue: ControllerLookupStyle.off,
+        ],
+      ),
+      // 「背景与缩放」：页面背景与界面大小都是「整页底下 / 整页尺度」的呈现，
+      // 与配色分开放，主题分区只剩配色相关的选择。
+      SettingsSection(
+        id: 'appearance.section.background',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
+        title: t.settings_appearance_section_background,
+        items: <SettingsItem>[
+          // 「页面背景」子页（2026-10-30）：每一页底下的装饰——形状预设、纯色、
+          // 用户自定义图片（可从图片取色）。
+          SettingsNavigationItem(
+            id: 'appearance.page_backdrop',
+            title: t.page_backdrop_title,
+            subtitle: t.page_backdrop_hint,
+            icon: FushiIcons.pageBackdrop,
+            child: buildPageBackdropDestination,
           ),
-          // 「启动页」(id 'appearance.startup_default_dictionary_tab'，前身是开关
-          // 「启动时打开查词」) 在「系统 · 通用」分区（它管的是启动落地页/导航行为，
-          // 与主题/明暗等外观无关）；id 保持不变（历史命名 appearance 前缀）。
+          // 「界面大小」滑条：commitOnRelease——本滑条位于受 FushiAppUiScale 的
+          // Transform.scale 缩放的子树内，拖动逐帧提交会让整树立刻按新比例重排、
+          // 滑块在手指下位移、手势断裂（TODO-374 旧 _AppUiScaleSliderRow 注释）。
+          // 渲染层 _CommitOnReleaseSlider 拖动只更新本地预览值（跟手 + 标题读数
+          // 实时），松手才经 onChanged 一次性提交真实缩放；键盘/手柄步进每按即提交。
+          // 一等 schema 项同时带来静止常驻读数（titleReadout）与搜索索引，替代原
+          // 自定义 custom 行双实现。id/持久化路径不变。
+          SettingsSliderItem(
+            id: 'appearance.app_ui_scale',
+            title: t.app_ui_scale,
+            subtitle: t.app_ui_scale_hint,
+            icon: Icons.format_size_outlined,
+            min: FushiAppUiScale.minScale,
+            max: FushiAppUiScale.maxScale,
+            divisions: 27,
+            label: (double value) => '${(value * 100).round()}%',
+            titleReadout: true,
+            commitOnRelease: true,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.appUiScale,
+            onChanged: (SettingsContext settingsContext, double value) async {
+              await settingsContext.appModel.setAppUiScale(value);
+            },
+          ),
+        ],
+      ),
+      SettingsSection(
+        id: 'appearance.section.typography',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
+        // 字体分区**不折叠**：改字体是外观页的高频操作（用户显式反馈），折叠让每次
+        // 改字体都多一次展开点击，收益（省一行高度）远小于代价。
+        title: t.font_library_section_fonts,
+        items: <SettingsItem>[
+          // TODO-231: 全app 只有一个可见字体库；每行字体自己管「用在哪些用途」
+          // （font_catalog / font_targets 两个偏好键）。用途集合 = FontTarget.values
+          // 全量，UI 侧遍历枚举渲染，新增用途不需要改这里。
+          // 不传 target：外观入口是全局作用域，新增字体默认挂 FontTarget.body。
+          SettingsNavigationItem(
+            id: 'appearance.font_catalog',
+            title: t.custom_fonts_catalog_title,
+            subtitle: t.settings_appearance_font_catalog_hint,
+            icon: FushiIcons.font,
+            onTap: (SettingsContext settingsContext) async {
+              await pushSettingsPage(
+                settingsContext,
+                (_) => const CustomFontsPage(),
+              );
+              notifyReaderSettingsChanged(settingsContext);
+            },
+          ),
+        ],
+      ),
+      // 「应用图标」：图标入口与图标 ↔ 主题色的两个联动开关。分区 id 沿用旧
+      // 「应用」分区（搜索 / 展开状态按 id 记忆）。
+      SettingsSection(
+        id: 'appearance.section.navigation',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
+        title: t.settings_section_app_shell,
+        items: <SettingsItem>[
+          SettingsNavigationItem(
+            id: 'appearance.app_icon',
+            title: t.app_icon_label,
+            subtitle: t.settings_appearance_app_icon_hint,
+            icon: FushiIcons.widgets,
+            visible: (_) => Platform.isAndroid || Platform.isWindows,
+            builder: (_) => const MiscellaneousSettingsPage(),
+          ),
+          // 应用图标 ↔ 主题色的两个开关，紧挨「应用图标」入口，默认都关。
+          // ①「图标跟随主题色」：内置吉祥物 logo（宽屏 rail 品牌位、悬浮球）按
+          // 强调色换色；关 = 始终原图。对用户自定义的图标图片从不换色。
+          SettingsSwitchItem(
+            id: 'appearance.tint_app_logo',
+            title: t.theme_logo_tint_enabled,
+            subtitle: t.theme_logo_tint_hint,
+            icon: FushiIcons.widgets,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.themeNotifier.tintAppLogo,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.themeNotifier.setTintAppLogo(
+                value,
+              );
+              settingsContext.refresh();
+            },
+            defaultValue: false,
+          ),
+          // ②「主题色跟随图标」：设置了自定义图标图片时才出现；开着时从该图
+          // 取种子色覆盖生效主题（不改写主题偏好，关掉即恢复原主题）。
+          SettingsSwitchItem(
+            id: 'appearance.follow_app_icon_accent',
+            title: t.theme_icon_accent_follow,
+            subtitle: t.theme_icon_accent_hint,
+            icon: FushiIcons.appearance,
+            visible: (_) => currentAppIconSelection.value.usesCustomFile,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.themeNotifier.followAppIconAccent,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.themeNotifier
+                  .setFollowAppIconAccent(value);
+              notifyReaderSettingsChanged(settingsContext);
+              settingsContext.refresh();
+            },
+            defaultValue: false,
+          ),
         ],
       ),
     ],
+  );
+}
+
+/// 「通用 › 语言」的界面语言行。改的是整个界面的呈现语言，与内容语言并列放在
+/// 通用页；id / 持久化 key 不变（历史 appearance 前缀）。
+SettingsItem buildInterfaceLanguageItem() {
+  return SettingsCustomItem(
+    id: 'appearance.language',
+    icon: Icons.translate_outlined,
+    searchTitle: t.options_language,
+    subtitle: t.settings_general_language_hint,
+    builder: buildLanguageSelector,
+  );
+}
+
+/// 「通用 › 语言」的默认内容语言行。这里设的是**默认值**，书/视频/游戏/词典
+/// 各自的设置压过它，内容自带的声明（EPUB dc:language、词典 index.json、字幕轨
+/// language）也压过它——见 resolveContentLanguage。
+SettingsItem buildDefaultContentLanguageItem() {
+  return SettingsNavigationItem(
+    id: 'appearance.content_language',
+    title: t.settings_content_language_title,
+    titleBuilder: (SettingsContext settingsContext) {
+      final String current =
+          settingsContext.appModel.prefsRepo.defaultContentLanguage;
+      final String label = current.isEmpty
+          ? t.settings_content_language_unset
+          : contentLanguageLabelOf(current);
+      return '${t.settings_content_language_title} · $label';
+    },
+    subtitle:
+        '${t.settings_content_language_description} '
+        '${t.settings_content_language_screen_ocr_note}',
+    icon: FushiIcons.language,
+    onTap: (SettingsContext settingsContext) async {
+      final String current =
+          settingsContext.appModel.prefsRepo.defaultContentLanguage;
+      await showContentLanguagePicker(
+        context: settingsContext.context,
+        title: t.settings_content_language_title,
+        description:
+            '${t.settings_content_language_description} '
+            '${t.settings_content_language_screen_ocr_note}',
+        current: current.isEmpty ? null : current,
+        autoDetected: '',
+        autoLabel: t.settings_content_language_unset,
+        onSelected: (String? tag) async {
+          await settingsContext.appModel.prefsRepo.setDefaultContentLanguage(
+            tag ?? '',
+          );
+          settingsContext.refresh();
+          notifyReaderSettingsChanged(settingsContext);
+        },
+      );
+    },
+  );
+}
+
+// 「功能模块」：14 个模块的总开关，值域与顺序都是 [ModuleId]。
+//
+// **本区管的不再只是底栏**。这些开关原来只喂 `homeActiveTabs()`（底栏/侧栏
+// tab 列表），于是「关掉视频」之后设置页仍列着「视频」「在线服务」，首页活动
+// 筛选条仍有「观看」，视频后台照跑——用户看到的是「只有底栏变干净了」。现在
+// 一个开关关掉该模块的**全部入口**：底栏/侧栏 tab、首页 dashboard 的条目与
+// 筛选、设置一级分类（连带设置搜索索引）、跨页跳转、该域快捷键、外部打开，
+// 以及它专属后台的下次自启。
+//
+// 两条刻意的例外：
+// - 设置**恒在**，是全部模块关光后的安全回退面，没有 ModuleId。首页
+//   2026-10-09 起可关（[ModuleId.home]），但导航模块至少留一个
+//   （[isLastNavigationModule]）。
+// - 关掉「查词」只关**页面入口**，查词**能力全留**（阅读器划词弹窗、设置 →
+//   查词 分类里的词典导入管理与音频来源）——用户拍板：纯阅读器仍要能查词。
+//
+// 分区住「导航与首页」：它决定底栏有哪些页、按什么顺序，与底栏样式 / 启动页
+// 同域。item id 保留 `system.` 历史前缀不动，理由见 [_moduleItemId]。
+SettingsSection buildModulesSection() {
+  return SettingsSection(
+    id: 'appearance.section.modules',
+    presentation: SettingsSectionPresentation.alwaysExpanded,
+    title: t.settings_section_modules,
+    footer: t.settings_navigation_modules_footer,
+    // 有底栏 tab 的模块收进一个可拖拽排序的列表（用户排的顺序就是底栏顺序）；
+    // 没有 tab 的横切模块仍是逐个开关，按枚举顺序。两者都遍历 ModuleId.values
+    // 生成，加模块只加一个 enum 值。平台上不存在的模块各自判掉。
+    items: <SettingsItem>[
+      _navModuleOrderItem(),
+      for (final ModuleId module in ModuleId.values)
+        if (homeTabOfModule(module) == null) _moduleSwitch(module),
+    ],
+  );
+}
+
+// 「首页面板」：首页 dashboard 上按用户情况出现的可选面板
+// （[HomeDashboardPanel] 注册表），每个面板一行 自动 / 显示 / 隐藏。首页
+// 模块关着时整段隐藏；面板所属模块关着时那一行隐藏。
+SettingsSection buildHomePanelsSection() {
+  return SettingsSection(
+    id: 'appearance.section.home_panels',
+    presentation: SettingsSectionPresentation.alwaysExpanded,
+    title: t.settings_section_home_panels,
+    visible: (SettingsContext c) =>
+        c.appModel.moduleVisibility.isEnabled(ModuleId.home),
+    items: <SettingsItem>[
+      for (final HomeDashboardPanel panel in HomeDashboardPanel.values)
+        _homePanelModeItem(panel),
+    ],
+  );
+}
+
+/// 「跳转记录」（2026-11-02 浮动胶囊改顶栏图标）：小说 / 漫画 / 视频三页共用。
+/// 顶栏图标关掉照样记录；自动隐藏只藏图标，记录 / 面板 / 刻度保留。三项都
+/// 由页面现读偏好（无双写）。自动隐藏紧跟它所修饰的顶栏图标开关。
+SettingsSection buildJumpHistorySection() {
+  return SettingsSection(
+    id: 'appearance.section.jump_history',
+    presentation: SettingsSectionPresentation.alwaysExpanded,
+    title: t.media_jump_history_title,
+    items: <SettingsItem>[
+      SettingsSwitchItem(
+        id: 'appearance.jump_history.toolbar',
+        title: t.media_jump_history_setting_toolbar,
+        subtitle: t.media_jump_history_setting_toolbar_hint,
+        icon: FushiIcons.undo,
+        value: (SettingsContext settingsContext) =>
+            settingsContext.appModel.jumpHistoryToolbar,
+        onChanged: (SettingsContext settingsContext, bool value) async {
+          await settingsContext.appModel.setJumpHistoryToolbar(value);
+        },
+        defaultValue: true,
+      ),
+      SettingsSegmentedItem<int>(
+        id: 'appearance.jump_history.auto_hide',
+        title: t.media_jump_history_setting_auto_hide,
+        subtitle: t.media_jump_history_setting_auto_hide_hint,
+        icon: FushiIcons.timer,
+        options: <SettingsSegmentOption<int>>[
+          for (final int seconds in kJumpHistoryAutoHideOptions)
+            SettingsSegmentOption<int>(
+              value: seconds,
+              label: seconds == 0
+                  ? t.media_jump_history_setting_auto_hide_never
+                  : seconds % 60 == 0
+                  ? t.media_jump_history_setting_auto_hide_minutes(
+                      minutes: seconds ~/ 60,
+                    )
+                  : t.media_jump_history_setting_auto_hide_seconds(
+                      seconds: seconds,
+                    ),
+            ),
+        ],
+        selected: (SettingsContext settingsContext) =>
+            settingsContext.appModel.jumpHistoryAutoHideSeconds,
+        onChanged: (SettingsContext settingsContext, int seconds) async {
+          await settingsContext.appModel.setJumpHistoryAutoHideSeconds(seconds);
+        },
+        defaultValue: kJumpHistoryAutoHideDefaultSeconds,
+      ),
+      SettingsSwitchItem(
+        id: 'appearance.jump_history.progress_marks',
+        title: t.media_jump_history_setting_marks,
+        subtitle: t.media_jump_history_setting_marks_hint,
+        icon: FushiIcons.flag,
+        value: (SettingsContext settingsContext) =>
+            settingsContext.appModel.jumpHistoryProgressMarks,
+        onChanged: (SettingsContext settingsContext, bool value) async {
+          await settingsContext.appModel.setJumpHistoryProgressMarks(value);
+        },
+        defaultValue: true,
+      ),
+    ],
+  );
+}
+
+/// 「导航与首页 › 启动与底栏」的底栏样式。
+SettingsItem buildNavBarStyleItem() {
+  // 手机底栏形态：平铺（放不下收进「更多」）/ 拇指转盘 / 相机模式条
+  // （出厂默认）。分页滑动与圆柱滚筒已于 2026-10-25 删除。
+  return SettingsSegmentedItem<AdaptiveNavBarStyle>(
+    id: 'appearance.nav_bar_style',
+    title: t.home_nav_bar_style,
+    subtitle: t.settings_navigation_nav_bar_style_hint,
+    icon: FushiIcons.swipe,
+    options: <SettingsSegmentOption<AdaptiveNavBarStyle>>[
+      SettingsSegmentOption<AdaptiveNavBarStyle>(
+        value: AdaptiveNavBarStyle.flat,
+        label: t.home_nav_bar_style_flat,
+      ),
+      SettingsSegmentOption<AdaptiveNavBarStyle>(
+        value: AdaptiveNavBarStyle.dial,
+        label: t.home_nav_bar_style_dial,
+      ),
+      SettingsSegmentOption<AdaptiveNavBarStyle>(
+        value: AdaptiveNavBarStyle.modeStrip,
+        label: t.home_nav_bar_style_mode_strip,
+      ),
+    ],
+    dropdown: true,
+    selected: (SettingsContext settingsContext) =>
+        settingsContext.appModel.navBarStyle,
+    onChanged: (SettingsContext settingsContext, AdaptiveNavBarStyle value) =>
+        settingsContext.appModel
+            .setNavBarStyle(value)
+            .then((_) => settingsContext.refresh()),
+    defaultValue: AdaptiveNavBarStyle.defaultStyle,
+  );
+}
+
+/// 「导航与首页 › 启动与底栏」的底栏文字开关。
+SettingsItem buildNavBarLabelsItem() {
+  // MD3 悬浮底栏（手机竖屏）图标下的标签；默认关 = M3E floating toolbar
+  // 的纯图标形态（标签进 tooltip）。Apple 设计系统的标签栏不读它。
+  return SettingsSwitchItem(
+    id: 'appearance.nav_bar_labels',
+    title: t.home_nav_bar_labels,
+    subtitle: t.settings_navigation_nav_bar_labels_hint,
+    icon: FushiIcons.textFields,
+    value: (SettingsContext settingsContext) =>
+        settingsContext.appModel.navBarLabelsVisible,
+    onChanged: (SettingsContext settingsContext, bool value) {
+      unawaited(
+        settingsContext.appModel
+            .setNavBarLabelsVisible(value)
+            .then((_) => settingsContext.refresh()),
+      );
+    },
+    defaultValue: false,
+  );
+}
+
+/// 「导航与首页 › 启动与底栏」的反转底栏方向。
+SettingsItem buildReverseNavigationBarItem() {
+  return SettingsSwitchItem(
+    id: 'appearance.reverse_navigation_bar',
+    title: t.reverse_navigation_bar,
+    subtitle: t.settings_navigation_reverse_nav_bar_hint,
+    icon: Icons.swap_horiz_outlined,
+    value: (SettingsContext settingsContext) =>
+        settingsContext.appModel.reverseNavigationBar,
+    onChanged: (SettingsContext settingsContext, bool value) {
+      settingsContext.appModel.toggleReverseNavigationBar();
+      settingsContext.refresh();
+    },
+    defaultValue: false,
   );
 }
 
@@ -876,4 +859,74 @@ Future<void> _removeFushiFromSteam(SettingsContext settingsContext) async {
     );
   }
   settingsContext.refresh();
+}
+
+/// 「通用 › 性能与上手」的「添加到 Steam / 从 Steam 移除」两行（只在 Linux 出现，
+/// 二者按是否已加过互斥显示）。是一次性的安装动作，与界面长什么样无关，所以不在
+/// 外观页；留在本文件是因为依赖这里的私有 helper。id 不变（历史 appearance 前缀）。
+List<SettingsItem> buildSteamShortcutItems() {
+  return <SettingsItem>[
+    // Linux：把 Fushi 作为非 Steam 游戏加进 Steam 库（带库封面），Steam Deck
+    // 游戏模式里从库启动，配合游戏模式截屏识字（gamescope_overlay.h）。
+    // 已加过就换成「从 Steam 移除」（只认 Fushi 自己写的条目）。
+    SettingsActionItem(
+      id: 'appearance.steam_shortcut',
+      title: t.settings_steam_shortcut_add,
+      subtitle: t.settings_steam_shortcut_add_hint,
+      icon: FushiIcons.games,
+      visible: (_) =>
+          Platform.isLinux &&
+          !LinuxSteamShortcut.forThisProcess().isInstalled(),
+      // 写的是 Steam 的配置（Fushi 数据之外），CLI 要带 --yes。
+      cli: const SettingsCliAction.tap(confirm: true),
+      onTap: _addFushiToSteam,
+    ),
+    SettingsActionItem(
+      id: 'appearance.steam_shortcut_remove',
+      title: t.settings_steam_shortcut_remove,
+      subtitle: t.settings_steam_shortcut_remove_hint,
+      icon: FushiIcons.games,
+      visible: (_) =>
+          Platform.isLinux && LinuxSteamShortcut.forThisProcess().isInstalled(),
+      cli: const SettingsCliAction.tap(confirm: true),
+      onTap: _removeFushiFromSteam,
+    ),
+  ];
+}
+
+/// 「通用 › 键盘与手柄」的手柄查词模式行。没有第二块屏也能用，是手柄输入方式，
+/// 所以和快捷键、焦点导航放在一起；id 不变（历史 appearance 前缀）。
+SettingsItem buildControllerLookupStyleItem() {
+  // 手柄查词模式（S6）：按住 L1 / Select 切换 / 关。未设时随副屏伴侣：在用 =
+  // 按住 L1，否则关（单屏手柄行为在用户自己打开前完全不变）。
+  return SettingsSegmentedItem<ControllerLookupStyle>(
+    id: 'appearance.controller_lookup_style',
+    title: t.second_screen_controller_lookup_title,
+    subtitle: t.second_screen_controller_lookup_hint,
+    icon: FushiIcons.lookup,
+    options: <SettingsSegmentOption<ControllerLookupStyle>>[
+      SettingsSegmentOption<ControllerLookupStyle>(
+        value: ControllerLookupStyle.holdL1,
+        label: t.second_screen_controller_lookup_hold_l1,
+      ),
+      SettingsSegmentOption<ControllerLookupStyle>(
+        value: ControllerLookupStyle.selectToggle,
+        label: t.second_screen_controller_lookup_select,
+      ),
+      SettingsSegmentOption<ControllerLookupStyle>(
+        value: ControllerLookupStyle.off,
+        label: t.second_screen_controller_lookup_off,
+      ),
+    ],
+    selected: (SettingsContext c) => ControllerLookupStyle.resolve(
+      c.appModel.prefsRepo.getPref(kControllerLookupStylePrefKey),
+      companionActive: c.ref.read(secondScreenControllerProvider).isActive,
+    ),
+    onChanged: (SettingsContext c, ControllerLookupStyle value) => c
+        .appModel
+        .prefsRepo
+        .setPref(kControllerLookupStylePrefKey, value.name)
+        .then((_) => c.refresh()),
+    defaultValue: ControllerLookupStyle.off,
+  );
 }

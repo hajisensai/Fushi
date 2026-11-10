@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_schema_listening.dart';
 import 'package:fushi/src/settings/settings_schema_reading.dart';
 
 /// TODO-725 守卫：阅读器设置面板重新归类/排序。
@@ -44,9 +45,12 @@ void main() {
   }
 
   Map<ReaderGroup, List<SettingsItem>> collected() =>
-      // 听书 2026-08-24 并入阅读：它的分区由 buildReadingDestination 展开，
-      // 不再有独立 destination，这里只取阅读一条即已覆盖两域。
-      collectFrom(<SettingsDestination>[buildReadingDestination()]);
+      // 阅读与听书是两个分类，但快捷面板的 layout / behavior 组由两者共同
+      // 供给（听书的音量键切句也落在 behavior 组），撞号守卫必须两边一起收。
+      collectFrom(<SettingsDestination>[
+        buildReadingDestination(),
+        buildListeningDestination(),
+      ]);
 
   test('advanced global sections keep their reader quick-panel placements', () {
     final SettingsDestination reading = buildReadingDestination();
@@ -56,12 +60,14 @@ void main() {
               s.presentation == SettingsSectionPresentation.collapsed,
         )
         .toList();
+    // 翻页方向分区已并进常显的「翻页与手势」，折叠的只剩高级排版。
     expect(
       advanced.map((SettingsSection s) => s.id),
-      containsAll(<String>[
-        'reading.section.page_turn_direction',
-        'reading.section.advanced_typography',
-      ]),
+      containsAll(<String>['reading.section.advanced_typography']),
+    );
+    expect(
+      reading.sections.map((SettingsSection s) => s.id),
+      isNot(contains('reading.section.page_turn_direction')),
     );
     final Map<ReaderGroup, List<SettingsItem>> quick = collectFrom(
       <SettingsDestination>[reading],

@@ -15,24 +15,20 @@ import 'package:fushi/src/media/audiobook/tts/tts_voice_settings_page.dart';
 import 'package:fushi/src/media/manga/manga_ocr_models_storage_section.dart';
 import 'package:fushi/src/media/manga/manga_ocr_provider.dart';
 import 'package:fushi/src/media/video/subtitle/video_subtitle_settings.dart';
-import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_destination_id.dart';
-import 'package:fushi/src/settings/settings_schema_ai.dart';
 import 'package:fushi/src/settings/settings_schema_manga_ocr.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/playback_speed.dart';
 import 'package:fushi/i18n/strings.g.dart';
 
-/// 「模型」一级设置分类（2026-10-13 用户拍板）：所有「模型」类配置的唯一的家。
+/// 「本机模型」一级设置分类：在这台设备上跑的模型（OCR、语音识别、语音合成）与它们
+/// 的模型文件。云端大模型提供商是独立的「AI」分类，不在这里——它按 AI 模块门控，
+/// 而这里各栏是设备级资源，不属任何模块。
 ///
-/// 外层每类只有一行摘要，默认值够用的用户不必点进去；想单独配的进子页。子页都是
-/// 既有页面原样挂过来（LLM = 原「AI」分类、OCR = 原漫画 OCR 页、语音转录与 OCR
-/// 模型文件 = 原存储页「模型与组件」），持久化键与搜索锚点 id 一律不变。
-///
-/// LLM 子页仍按 [SettingsDestinationId.ai] 走 AI 模块（[ModuleId.ai]）门控：模块关掉时
-/// 这一行与它子页里的设置都不可见、搜不出来；其余各栏是设备级资源，不属任何模块。
+/// 外层每类只有一行摘要，默认值够用的用户不必点进去；想单独配的进子页。持久化键与
+/// 搜索锚点 id 一律沿用。
 ///
 /// **必须零参、返回纯字面量树**（schema 按 locale 缓存，见 `settings_schema.dart`）。
 SettingsDestination buildModelsDestination() {
@@ -46,17 +42,6 @@ SettingsDestination buildModelsDestination() {
         id: 'models.section.kinds',
         presentation: SettingsSectionPresentation.alwaysExpanded,
         items: <SettingsItem>[
-          SettingsNavigationItem(
-            id: 'models.llm',
-            title: t.ai_settings_title,
-            subtitle: t.ai_settings_summary,
-            icon: FushiIcons.aiAssistant,
-            visible: (SettingsContext c) => isSettingsDestinationVisible(
-              SettingsDestinationId.ai,
-              c.appModel.moduleVisibility,
-            ),
-            child: buildAiDestination,
-          ),
           SettingsNavigationItem(
             id: 'models.ocr',
             title: 'OCR',
@@ -88,26 +73,12 @@ SettingsDestination buildModelsDestination() {
       SettingsSection(
         id: 'models.section.files',
         title: t.models_section_files,
-        visible: (SettingsContext c) =>
-            _isMangaOcrLocalSupported ||
-            _isLocalTtsSupported(c) ||
-            _isLocalIrodoriSupported(c),
+        visible: (_) => _isMangaOcrLocalSupported,
         items: <SettingsItem>[
-          // 语音合成的「模型文件」：GPT-SoVITS 整合包（约 19 GB）与 OCR 模型并列管理，
-          // 点进去是同一个本机部署页（下载 / 删除 / 指向已有整合包）。
-          _localGptSovitsItem(
-            id: 'models.files.gpt_sovits',
-            title: t.audiobook_tts_local_package,
-          ),
-          // 本机 Irodori-TTS 的环境与模型（Python / PyTorch / v4.1 模型，同一个专属目录）。
-          _localIrodoriItem(
-            id: 'models.files.irodori',
-            title: t.audiobook_tts_irodori_local_package,
-          ),
           SettingsNavigationItem(
             id: 'storage.ocr_models',
             title: t.manga_ocr_local_model,
-            subtitle: t.storage_ocr_models_hint,
+            subtitle: t.settings_models_ocr_models_hint,
             icon: FushiIcons.ocr,
             visible: (_) => _isMangaOcrLocalSupported,
             child: _buildMangaOcrModelsDestination,
@@ -166,7 +137,7 @@ String? _localTtsStatus(SettingsContext _) {
   return t.audiobook_tts_local_status_installed;
 }
 
-/// 「本机 GPT-SoVITS」入口（语音合成子页与模型文件分区共用一份）。在那边新建了
+/// 「本机 GPT-SoVITS」入口（语音合成子页）。在那边新建了
 /// 声音就直接带到朗读声音页去选参考音频、试听。
 SettingsActionItem _localGptSovitsItem({
   required String id,
@@ -208,7 +179,7 @@ String? _localIrodoriStatus(SettingsContext _) {
   return t.audiobook_tts_local_status_installed;
 }
 
-/// 「本机 Irodori-TTS」入口（语音合成子页与模型文件分区共用一份）。
+/// 「本机 Irodori-TTS」入口（语音合成子页）。
 SettingsActionItem _localIrodoriItem({
   required String id,
   required String title,
@@ -234,9 +205,8 @@ SettingsActionItem _localIrodoriItem({
   },
 );
 
-/// 语音合成：朗读声音（GPT-SoVITS / 在线 / 系统，含本机一键部署）是这里的主入口；
-/// 「制卡发音兜底」选单词音频找不到时用哪个声音合成（系统语音 / 任一朗读声音 /
-/// 不使用）。
+/// 语音合成：朗读声音（GPT-SoVITS / 在线 / 系统，含本机一键部署）。制卡发音兜底
+/// 只服务制卡，见 [buildMiningTtsFallbackSection]（挂在「制卡」页）。
 SettingsDestination _buildTtsDestination() {
   return SettingsDestination(
     id: SettingsDestinationId.models,
@@ -274,22 +244,19 @@ SettingsDestination _buildTtsDestination() {
           ),
         ],
       ),
-      SettingsSection(
-        id: 'models.section.tts',
-        title: t.models_tts_card_fallback_section,
-        items: <SettingsItem>[
-          _miningTtsFallbackVoiceItem(),
-          _ttsFallbackSpeedItem(),
-          SettingsStatusItem(
-            id: 'models.tts_usage',
-            title: t.models_tts_usage_title,
-            subtitle: t.models_tts_usage,
-          ),
-        ],
-      ),
     ],
   );
 }
+
+/// 「发音兜底」分组：单词音频在本地与在线来源都找不到时，用哪个声音、多快的倍速
+/// 合成。用途只有制卡，所以挂在「制卡」页；项留在本文件，因为它们依赖这里的 TTS
+/// 服务与私有 helper。分组 id 沿用，搜索锚点不变。
+SettingsSection buildMiningTtsFallbackSection() => SettingsSection(
+  id: 'models.section.tts',
+  title: t.models_tts_card_fallback_section,
+  footer: t.models_tts_usage,
+  items: <SettingsItem>[_miningTtsFallbackVoiceItem(), _ttsFallbackSpeedItem()],
+);
 
 /// TTS 兜底发音的倍速：查词 ♪ / 自动发音与制卡单词音频一律生效（倍速是 TTS 声音
 /// 本身的属性，不受有声书「句子音频跟随播放倍速」开关影响）。0.25×–3.0×，0.05× 一档。

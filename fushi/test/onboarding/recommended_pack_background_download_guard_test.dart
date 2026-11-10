@@ -13,7 +13,7 @@ import '../helpers/source_guard.dart';
 /// 地方还能看到它。所以这里守三件事：
 /// 1. 向导页自己不再持有取消令牌/下载器（否则「后台下载」随时可能被 dispose 掐断）；
 /// 2. 任务的所有权在 `AppModel` 上的 controller 里；
-/// 3. 存在一个**不依赖向导**的可见入口（设置 → 系统那一行），否则「在后台跑」
+/// 3. 存在一个**不依赖向导**的可见入口（设置 → 通用 › 性能与上手那一行），否则「在后台跑」
 ///    等于没跑。
 void main() {
   String read(String relativePath) =>
@@ -24,6 +24,8 @@ void main() {
   const String appModelPath = 'lib/src/models/app_model.dart';
   const String systemSchemaPath =
       'lib/src/settings/settings_schema_system.dart';
+  const String generalSchemaPath =
+      'lib/src/settings/settings_schema_general.dart';
   const String schemaWidgetsPath =
       'lib/src/settings/settings_schema_widgets.dart';
   const String homePagePath = 'lib/src/pages/implementations/home_page.dart';
@@ -80,13 +82,18 @@ void main() {
     );
     // 下载阶段是异步事件：那一行所在分组经 liveListenable 声明它，分组组件
     // 自己订阅（ListenableBuilder 随组件卸载自动摘掉订阅）。不订阅那一行就停在
-    // 进页面那一刻的旧状态。
+    // 进页面那一刻的旧状态。行的构造在系统 schema 里，挂载它的分组在通用页，
+    // 所以订阅必须出现在**挂这一行的那个分组**里，而不是随便哪个分组。
+    final String general = read(generalSchemaPath);
+    final Match? subscribed = RegExp(
+      r'liveListenable:[^;]*recommendedPackDownloadController\s*\.stage'
+      r'[\s\S]*?items:[^\]]*buildRecommendedPackDownloadItem\(\)',
+    ).firstMatch(general);
+    expect(subscribed, isNotNull, reason: '下载阶段是异步事件，不订阅它那一行就停在进页面那一刻的旧状态');
     expect(
-      RegExp(
-        r'liveListenable:[^;]*recommendedPackDownloadController\s*\.stage',
-      ).hasMatch(schema),
-      isTrue,
-      reason: '下载阶段是异步事件，不订阅它那一行就停在进页面那一刻的旧状态',
+      subscribed!.group(0)!.contains('SettingsSection('),
+      isFalse,
+      reason: '订阅与推荐包那一行必须在同一个分组里',
     );
     final String widgets = read(schemaWidgetsPath);
     expect(

@@ -548,7 +548,7 @@ void main() {
     // 胶囊），不再是 AdaptiveSettingsSection + FushiListItem(pill)。契约不变：
     // 固定分组（组标题）、当前项胶囊选中、行尾没有 chevron。
     expect(find.byType(Md3SettingsNavList), findsOneWidget);
-    expect(find.text(t.settings_group_interface), findsOneWidget);
+    expect(find.text(t.settings_group_general), findsOneWidget);
     expect(find.text(t.settings_group_content), findsOneWidget);
     expect(find.widgetWithText(Md3SettingsNavRow, 'Video'), findsOneWidget);
     final Md3SettingsNavRow selectedRow = tester.widget<Md3SettingsNavRow>(
@@ -763,7 +763,12 @@ void main() {
           id: appearance.id,
           title: appearance.title,
           icon: appearance.icon,
-          sections: <SettingsSection>[appearance.sections.first],
+          // 界面大小滑条住外观的「背景与缩放」分区。
+          sections: <SettingsSection>[
+            appearance.sections.firstWhere(
+              (SettingsSection s) => s.id == 'appearance.section.background',
+            ),
+          ],
         );
         return MaterialSettingsRenderer().buildDetailPage(
           settingsContext: settingsContext,
@@ -963,7 +968,12 @@ void main() {
             id: appearance.id,
             title: appearance.title,
             icon: appearance.icon,
-            sections: <SettingsSection>[appearance.sections.first],
+            // 界面大小滑条住外观的「背景与缩放」分区。
+            sections: <SettingsSection>[
+              appearance.sections.firstWhere(
+                (SettingsSection s) => s.id == 'appearance.section.background',
+              ),
+            ],
           );
           return MaterialSettingsRenderer().buildDetailPage(
             settingsContext: settingsContext,
@@ -1013,7 +1023,12 @@ void main() {
             id: appearance.id,
             title: appearance.title,
             icon: appearance.icon,
-            sections: <SettingsSection>[appearance.sections.first],
+            // 设计系统 / 主题 / 深色模式三条 custom 行住「主题」分区。
+            sections: <SettingsSection>[
+              appearance.sections.firstWhere(
+                (SettingsSection s) => s.id == 'appearance.section.interface',
+              ),
+            ],
           );
 
           return CupertinoSettingsRenderer().buildDetailPage(
@@ -1287,14 +1302,14 @@ void main() {
     );
   }
 
-  // 宽屏设置在**第一帧**就已经选中并渲染了 destinations.first（= 外观）的详情
+  // 宽屏设置在**第一帧**就已经选中并渲染了 destinations.first（= 通用）的详情
   // 面板：settings_home_page.dart 在 _selectedDestinationId 为 null 时无条件落到
   // destinations.first.id，material_settings_renderer 的 `selected:` 也不区分窄/
   // 宽屏。
   //
   // 这条事实是 integration_test/navigation_stability_test.dart 的地雷：任何形如
-  // 「外观这一行被高亮」/「外观的详情面板存在」的等待条件，在 activate() 什么都
-  // 没做的情况下同样成立，整条外观用例会退化成「这一行存在且能聚焦」。那边因此
+  // 「首项这一行被高亮」/「首项的详情面板存在」的等待条件，在 activate() 什么都
+  // 没做的情况下同样成立，以首项为目标的用例会退化成「这一行存在且能聚焦」。那边因此
   // 必须先把选中项挪走、再要求「打开前目标不在显示」。这里把机制钉住：哪天默认
   // 预选被改掉，这条会红，届时那边的 priming 才可以撤。
   testWidgets(
@@ -1326,7 +1341,7 @@ void main() {
       ).first;
       expect(
         first.id,
-        SettingsDestinationId.appearance,
+        SettingsDestinationId.general,
         reason: 'schema 第一项变了的话，下面两条与 itest 的 priming 都要重估',
       );
 

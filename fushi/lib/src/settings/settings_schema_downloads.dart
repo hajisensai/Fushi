@@ -56,7 +56,7 @@ SettingsDestination buildDownloadsDestination() => SettingsDestination(
     context.appModel.moduleVisibility,
   ),
   title: t.nav_downloads,
-  summary: t.download_settings,
+  summary: t.settings_downloads_summary,
   icon: FushiIcons.download,
   bodySearchEntries: <SettingsBodySearchEntry>[
     _entry(

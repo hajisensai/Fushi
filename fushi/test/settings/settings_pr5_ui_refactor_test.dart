@@ -1,11 +1,13 @@
 import 'dart:io';
 
+import 'package:drift/native.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi_anki/fushi_anki.dart';
+import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/settings/settings_context.dart';
@@ -54,6 +56,14 @@ void main() {
       WidgetTester tester, {
       bool configured = true,
     }) async {
+      // 制卡页的「卡片去向」分区挂着交给互联服务端的两项，它们的 visible 读互联
+      // 开关（SyncRepository → AppModel.database）；真实运行时数据库恒已打开，
+      // 替身同样要接一个内存库，展平搜索索引时才能求值这些门控。
+      final FushiDatabase db = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
+      addTearDown(db.close);
+      final AppModel appModel = _TestAppModel()..wireDatabaseForTesting(db);
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
@@ -67,7 +77,7 @@ void main() {
                 ref.watch(ankiViewModelProvider);
                 sctx = SettingsContext(
                   context: context,
-                  appModel: _TestAppModel(),
+                  appModel: appModel,
                   ref: ref,
                   readerSource: ReaderFushiSource.instance,
                   refresh: () {},

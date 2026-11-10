@@ -80,9 +80,6 @@ enum AnkiSettingsPanel { connection, lapis, maintenance, fields, media }
 /// `SettingsCustomItem.rows` 逐行渲染（每行一个 [AnkiSettingsBody]，与同组的子页
 /// 入口行同一分段规则）；哪些行出现由 schema 侧的 `ankiSectionRowsFor` 决定。
 enum AnkiSectionRow {
-  /// 「制卡到 Fushi 互联服务端」：与互联设置里那一项同一个偏好。开着时卡片落在
-  /// 服务端的 Anki，本机的牌组 / 笔记类型不参与——所以排在「Anki」分组第一行。
-  mineToServer,
   profile,
   fetch,
   createLapis,
@@ -302,7 +299,7 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
                 AdaptiveSettingsSection(
-                  title: t.srs_mining_target_title,
+                  title: t.settings_card_creation_section_destination,
                   children: <Widget>[
                     SettingsSearchTarget(
                       id: 'card_creation.anki.srs_mining_target',
@@ -420,21 +417,6 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
   ) {
     final AnkiSettings settings = uiState.settings;
     return switch (row) {
-      // 与互联设置里的同一个开关（id 不同：那边是 interconnect.mine_to_server）。
-      AnkiSectionRow.mineToServer => SettingsSearchTarget(
-        id: 'card_creation.anki.mine_to_server',
-        child: AdaptiveSettingsSwitchRow(
-          icon: FushiIcons.devices,
-          showIcon: true,
-          title: t.anki_mine_to_server,
-          subtitle: t.anki_mine_to_server_hint,
-          value: appModel.mineToServerEnabled,
-          onChanged: (bool value) async {
-            await appModel.setMineToServer(value);
-            if (mounted) setState(() {});
-          },
-        ),
-      ),
       // showIcon 与同组的刷新 / Lapis 行一致，左栏图标对齐。
       AnkiSectionRow.profile => SettingsSearchTarget(
         id: 'card_creation.anki.profile',

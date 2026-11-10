@@ -19,9 +19,11 @@ void main() {
     ];
     expect(titles, isNot(contains(null)));
     expect(titles.where((String? x) => x!.trim().isEmpty), isEmpty);
-    // 首组是播放，紧接输出；识别不再是「第一个有标题的组」。
-    expect(titles.take(2), <String>[
+    // 首组是播放；响度（ReplayGain / 响度测量）单独成组紧随其后，再接输出；
+    // 识别不再是「第一个有标题的组」。
+    expect(titles.take(3), <String>[
       t.music_playback_section,
+      t.settings_music_loudness_section_title,
       t.music_output_section,
     ]);
   });

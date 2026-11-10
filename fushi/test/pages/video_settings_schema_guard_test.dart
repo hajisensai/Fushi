@@ -14,13 +14,21 @@ import 'package:fushi/src/settings/settings_schema_video.dart';
 /// 3) 控制器绑定行全部 host 门控（全局设置页恒隐藏）；
 /// 4) 面板文件真的在消费投影，而不是又长出第二套手写行。
 void main() {
-  /// 展平 schema 里的所有 item（含 host 门控的「播放中专属」section）。
+  /// 展平 schema 里的所有 item（含 host 门控的「播放中专属」section），并递归进
+  /// 画面 / 字幕等子页：子页里的项同样从全局设置可达。
   List<SettingsItem> allItems() {
-    final SettingsDestination destination = buildVideoDestination();
-    return <SettingsItem>[
-      for (final SettingsSection section in destination.sections)
-        ...section.items,
-    ];
+    List<SettingsItem> flatten(SettingsDestination destination) {
+      return <SettingsItem>[
+        for (final SettingsSection section in destination.sections)
+          for (final SettingsItem item in section.items) ...<SettingsItem>[
+            item,
+            if (item is SettingsNavigationItem && item.child != null)
+              ...flatten(item.child!()),
+          ],
+      ];
+    }
+
+    return flatten(buildVideoDestination());
   }
 
   test('TODO-186: global settings has a dedicated video destination', () {
@@ -198,7 +206,15 @@ void main() {
       'video.player.subtitle_outline_color',
       'video.player.subtitle_bg_color',
     };
-    final SettingsSection subtitles = buildVideoDestination().sections
+    // 字幕分区在视频页的字幕子页里（入口 video.subtitle.open）。
+    final SettingsNavigationItem subtitleEntry = buildVideoDestination()
+        .sections
+        .expand((SettingsSection s) => s.items)
+        .whereType<SettingsNavigationItem>()
+        .singleWhere(
+          (SettingsNavigationItem i) => i.id == 'video.subtitle.open',
+        );
+    final SettingsSection subtitles = subtitleEntry.child!().sections
         .singleWhere((SettingsSection s) => s.id == 'video.section.subtitles');
     final Map<String, SettingsItem> byId = <String, SettingsItem>{
       for (final SettingsItem item in subtitles.items) item.id: item,

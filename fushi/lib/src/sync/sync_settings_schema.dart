@@ -24,6 +24,8 @@ import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_destination_id.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart';
+import 'package:fushi/src/settings/settings_schema_ai.dart'
+    show buildAiAgentForPeersItem;
 import 'package:fushi/src/settings/settings_schema_lookup.dart'
     show buildLookupDestination;
 import 'package:fushi/src/settings/settings_search.dart'
@@ -145,7 +147,7 @@ SettingsDestination buildSyncBackupDestination() {
       c.appModel.moduleVisibility,
     ),
     title: t.settings_destination_sync_backup,
-    summary: t.sync_summary,
+    summary: t.settings_sync_summary_cloud_backup,
     icon: FushiIcons.sync,
     sections: <SettingsSection>[
       // ── Group 1: Sync method — the backend + its own auth/config ──────
@@ -222,6 +224,7 @@ SettingsDestination buildSyncBackupDestination() {
           SettingsSwitchItem(
             id: 'sync.statistics',
             title: t.sync_statistics,
+            subtitle: t.settings_sync_statistics_hint,
             icon: FushiIcons.statistics,
             value: (SettingsContext ctx) => _syncSettings(ctx).syncStats,
             onChanged: (SettingsContext ctx, bool value) async {
@@ -229,22 +232,6 @@ SettingsDestination buildSyncBackupDestination() {
               await SyncRepository(
                 ctx.appModel.database,
               ).setSyncStatsEnabled(value);
-            },
-          ),
-          // 设备级「同步浏览历史」（默认关）：云备份与互联两条通道共用，本机作互联
-          // host 时也按它决定发不发 / 收不收历史，所以不设 visible 门控。历史不跟
-          // 「同步统计 / 共享收藏夹」走——浏览轨迹的隐私分量远高于收藏。
-          SettingsSwitchItem(
-            id: 'sync.web_history',
-            title: t.sync_web_history,
-            subtitle: t.sync_web_history_hint,
-            icon: FushiIcons.globe,
-            value: (SettingsContext ctx) => _syncSettings(ctx).syncWebHistory,
-            onChanged: (SettingsContext ctx, bool value) async {
-              _syncSettings(ctx).syncWebHistory = value;
-              await SyncRepository(
-                ctx.appModel.database,
-              ).setWebHistorySyncEnabled(value);
             },
           ),
           // 设备级「同步设置」（反馈 AWp-0BtDDv，默认关）：可移植的偏好设置随云备份与
@@ -262,6 +249,22 @@ SettingsDestination buildSyncBackupDestination() {
               await SyncRepository(
                 ctx.appModel.database,
               ).setSettingsSyncEnabled(value);
+            },
+          ),
+          // 设备级「同步浏览历史」（默认关）：云备份与互联两条通道共用，本机作互联
+          // host 时也按它决定发不发 / 收不收历史，所以不设 visible 门控。历史不跟
+          // 「同步统计 / 共享收藏夹」走——浏览轨迹的隐私分量远高于收藏。
+          SettingsSwitchItem(
+            id: 'sync.web_history',
+            title: t.sync_web_history,
+            subtitle: t.sync_web_history_hint,
+            icon: FushiIcons.globe,
+            value: (SettingsContext ctx) => _syncSettings(ctx).syncWebHistory,
+            onChanged: (SettingsContext ctx, bool value) async {
+              _syncSettings(ctx).syncWebHistory = value;
+              await SyncRepository(
+                ctx.appModel.database,
+              ).setWebHistorySyncEnabled(value);
             },
           ),
           // 「上传X文件」三个开关都是 OUTBOUND：把本机资产推给**云备份**后端。BUG-988
@@ -305,23 +308,6 @@ SettingsDestination buildSyncBackupDestination() {
               ).setSyncMangaContentEnabled(value);
             },
           ),
-          SettingsSwitchItem(
-            id: 'sync.audiobook_files',
-            title: t.sync_audiobook_files,
-            subtitle: t.sync_audiobook_files_warning,
-            icon: FushiIcons.audiobook,
-            visible: (SettingsContext ctx) =>
-                _cloudSyncOn(ctx) &&
-                _syncSettings(ctx).backendType != SyncBackendType.fushiServer,
-            value: (SettingsContext ctx) =>
-                _syncSettings(ctx).syncAudioBookFiles,
-            onChanged: (SettingsContext ctx, bool value) async {
-              _syncSettings(ctx).syncAudioBookFiles = value;
-              await SyncRepository(
-                ctx.appModel.database,
-              ).setSyncAudioBookFilesEnabled(value);
-            },
-          ),
           // 上传视频文件（多端库联合视图 §2.6）：默认关。云后端走 syncVideoAssets 的
           // `__videos__` 伪装资产（run() 非互联分支）；互联（fushiServer）走
           // _syncVideosLive 的 host 上传端点（client→host）。两条通道同为 upload-only
@@ -343,6 +329,32 @@ SettingsDestination buildSyncBackupDestination() {
               ).setSyncVideoFilesEnabled(value);
             },
           ),
+          SettingsSwitchItem(
+            id: 'sync.audiobook_files',
+            title: t.sync_audiobook_files,
+            subtitle: t.sync_audiobook_files_warning,
+            icon: FushiIcons.audiobook,
+            visible: (SettingsContext ctx) =>
+                _cloudSyncOn(ctx) &&
+                _syncSettings(ctx).backendType != SyncBackendType.fushiServer,
+            value: (SettingsContext ctx) =>
+                _syncSettings(ctx).syncAudioBookFiles,
+            onChanged: (SettingsContext ctx, bool value) async {
+              _syncSettings(ctx).syncAudioBookFiles = value;
+              await SyncRepository(
+                ctx.appModel.database,
+              ).setSyncAudioBookFilesEnabled(value);
+            },
+          ),
+        ],
+      ),
+      // 远端占位卡的显示偏好与「同步什么」是两回事（前者管显示、后者管上传），拆成
+      // 独立分区，用户找「为什么书架里有本机没有的书」时不必在上传开关里翻。
+      SettingsSection(
+        id: 'sync.section.remote_entries',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
+        title: t.settings_sync_section_remote_entries,
+        items: <SettingsItem>[
           // 远端占位卡开关抽成共享 builder：同步内容分类与 Fushi 互联分类共享同一份
           // 定义（占位卡渲染的是互联对端的远端条目，逻辑上属互联，故互联分类也提供）。
           buildShowRemoteEntriesItem(),
@@ -403,6 +415,7 @@ SettingsDestination buildSyncBackupDestination() {
           SettingsActionItem(
             id: 'sync.compare',
             title: t.sync_compare,
+            subtitle: t.settings_sync_compare_hint,
             icon: FushiIcons.swap,
             visible: (SettingsContext ctx) => !_cloudOutboundUnavailable(ctx),
             // 列出差异与默认选择；逐条选择后提交走 sync.compare_apply
@@ -718,9 +731,9 @@ SettingsDestination buildInterconnectDestination() {
           ),
         ],
       ),
-      // 连接到其他设备：client 连接配置（URL/token/配对）+ LAN 自动发现，整块挪进
-      // 子页「配对与设备」（C2）——对端列表与 LAN 发现是整页最高的两个 widget，正是
-      // BUG-037 说的高度悬殊来源；主页只留一行带实时摘要的入口。
+      // 设备：client 连接配置（URL/token/配对）+ LAN 自动发现整块在子页「配对与设备」
+      // （对端列表与 LAN 发现是整页最高的两个 widget，主页只留一行带实时摘要的入口），
+      // 「主机服务」入口与它并排——都是「这台设备跟哪些设备怎么连」。
       SettingsSection(
         id: 'interconnect.client.section',
         presentation: SettingsSectionPresentation.alwaysExpanded,
@@ -739,6 +752,29 @@ SettingsDestination buildInterconnectDestination() {
             icon: FushiIcons.devices,
             child: _buildInterconnectDevicesPage,
           ),
+          SettingsNavigationItem(
+            id: 'interconnect.host',
+            title: t.interconnect_host_page,
+            subtitle: t.interconnect_host_hint,
+            subtitleBuilder: (SettingsContext ctx) {
+              final _SyncSettingsState s = _syncSettings(ctx);
+              return s.serverEnabled
+                  ? t.interconnect_host_running(port: s.serverPort)
+                  : t.interconnect_host_off;
+            },
+            icon: FushiIcons.server,
+            child: _buildInterconnectHostPage,
+          ),
+        ],
+      ),
+      // 互联功能：不是配置而是「用互联能做的事」（看下载任务、加入串流），和设备
+      // 配对分开，免得动作行混在连接配置里。
+      SettingsSection(
+        id: 'interconnect.section.features',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
+        title: t.settings_interconnect_section_features,
+        visible: interconnectActive,
+        items: <SettingsItem>[
           // 反馈 _sZllpFQWm / BUG-3698：从配对设备下到本机的任务（暂停 / 继续 / 取消）。
           // 这类任务此前只在「浏览 → 下载」里列出，iOS 没有浏览模块就无处可停；
           // 互联下载不是商店受限能力，这里不挂任何合规门，五端都在。
@@ -759,6 +795,7 @@ SettingsDestination buildInterconnectDestination() {
           SettingsActionItem(
             id: 'interconnect.game_stream',
             title: t.game_stream_join,
+            subtitle: t.settings_interconnect_game_stream_hint,
             icon: FushiIcons.cast,
             cli: const SettingsCliAction.unsupported(
               '加入游戏串流是实时画面接收界面（串流本身只能在 app 里看）；'
@@ -789,120 +826,7 @@ SettingsDestination buildInterconnectDestination() {
           ),
         ],
       ),
-      // BUG-988：上传到互联对端——互联通道专属的「本设备内容要不要上传给对端」分项开关，
-      // 独立于云备份的同名开关（那套只管云通道），也独立于上面的「启用互联」连接开关。
-      // 默认全关：用户开互联只为远端看/读时不会被自动上传裹挟，想传哪类自己勾。与云备份
-      // 上传开关同为 OUTBOUND，host 模式（本机做服务端，client 往它推）无 outbound → 隐藏。
-      SettingsSection(
-        id: 'interconnect.upload.section',
-        presentation: SettingsSectionPresentation.alwaysExpanded,
-        title: t.interconnect_upload_section,
-        footer: t.interconnect_upload_section_footer,
-        visible: (SettingsContext ctx) =>
-            interconnectActive(ctx) && !_isHostingInterconnect(ctx),
-        items: <SettingsItem>[
-          SettingsSwitchItem(
-            id: 'interconnect.upload_content',
-            title: t.interconnect_upload_content,
-            subtitle: t.interconnect_upload_content_hint,
-            icon: FushiIcons.books,
-            value: (SettingsContext ctx) =>
-                _syncSettings(ctx).interconnectSyncContent,
-            onChanged: (SettingsContext ctx, bool value) async {
-              _syncSettings(ctx).interconnectSyncContent = value;
-              await SyncRepository(
-                ctx.appModel.database,
-              ).setInterconnectSyncContentEnabled(value);
-            },
-          ),
-          SettingsSwitchItem(
-            id: 'interconnect.upload_manga_content',
-            title: t.interconnect_upload_manga_content,
-            subtitle: t.interconnect_upload_manga_content_hint,
-            icon: FushiIcons.manga,
-            value: (SettingsContext ctx) =>
-                _syncSettings(ctx).interconnectSyncMangaContent,
-            onChanged: (SettingsContext ctx, bool value) async {
-              _syncSettings(ctx).interconnectSyncMangaContent = value;
-              await SyncRepository(
-                ctx.appModel.database,
-              ).setInterconnectSyncMangaContentEnabled(value);
-            },
-          ),
-          // BUG-2494：互联通道自己一行显式的上传/下载动作，跑在
-          // SyncAssetChannelScope.interconnect 上，只碰互联对端、不碰云盘。
-          // BUG-2762：这一行是互联页词典的**唯一**入口。以前上面还有一个「上传词典」
-          // 自动同步开关，与本行在同一组里并排成两个「词典」，且开关实际驱动的是双向
-          // union、文案却是「上传」；现在与云备份页同形——词典只由显式动作搬。
-          SettingsCustomItem(
-            id: 'interconnect.dictionary_transfer',
-            searchTitle: t.sync_asset_dictionary,
-            icon: FushiIcons.readingMode,
-            builder: (SettingsContext ctx) => _AssetTransferMenuRow(
-              settingsContext: ctx,
-              kind: SyncAssetKind.dictionary,
-              title: t.sync_asset_dictionary,
-              icon: FushiIcons.readingMode,
-              scope: SyncAssetChannelScope.interconnect,
-            ),
-          ),
-          // 反馈 #5mB56tqXHa：本地音频数据库与词典同属显式搬运——互联协议（live 端点）
-          // 早已支持（_syncLocalAudioLive），只是互联页缺这一行入口。
-          SettingsCustomItem(
-            id: 'interconnect.local_audio_transfer',
-            searchTitle: t.sync_asset_local_audio,
-            icon: FushiIcons.audio,
-            builder: (SettingsContext ctx) => _AssetTransferMenuRow(
-              settingsContext: ctx,
-              kind: SyncAssetKind.localAudio,
-              title: t.sync_asset_local_audio,
-              icon: FushiIcons.audio,
-              scope: SyncAssetChannelScope.interconnect,
-            ),
-          ),
-          SettingsCustomItem(
-            id: 'interconnect.fonts_transfer',
-            searchTitle: t.sync_asset_fonts,
-            icon: FushiIcons.font,
-            builder: (SettingsContext ctx) => _AssetTransferMenuRow(
-              settingsContext: ctx,
-              kind: SyncAssetKind.fonts,
-              title: t.sync_asset_fonts,
-              icon: FushiIcons.font,
-              scope: SyncAssetChannelScope.interconnect,
-            ),
-          ),
-          SettingsSwitchItem(
-            id: 'interconnect.upload_audiobook_files',
-            title: t.interconnect_upload_audiobook_files,
-            subtitle: t.interconnect_upload_audiobook_files_hint,
-            icon: FushiIcons.audiobook,
-            value: (SettingsContext ctx) =>
-                _syncSettings(ctx).interconnectSyncAudioBookFiles,
-            onChanged: (SettingsContext ctx, bool value) async {
-              _syncSettings(ctx).interconnectSyncAudioBookFiles = value;
-              await SyncRepository(
-                ctx.appModel.database,
-              ).setInterconnectSyncAudioBookFilesEnabled(value);
-            },
-          ),
-          SettingsSwitchItem(
-            id: 'interconnect.upload_video_files',
-            title: t.interconnect_upload_video_files,
-            subtitle: t.interconnect_upload_video_files_hint,
-            icon: FushiIcons.video,
-            value: (SettingsContext ctx) =>
-                _syncSettings(ctx).interconnectSyncVideoFiles,
-            onChanged: (SettingsContext ctx, bool value) async {
-              _syncSettings(ctx).interconnectSyncVideoFiles = value;
-              await SyncRepository(
-                ctx.appModel.database,
-              ).setInterconnectSyncVideoFilesEnabled(value);
-            },
-          ),
-        ],
-      ),
-      // 与已配对设备共享：统计 + 收藏夹的双向合并开关。刻意**不并进上面的「上传到
+      // 与已配对设备共享：统计 + 收藏夹的双向合并开关。刻意**不并进下面的「上传到
       // 互联对端」区块**——那一区是纯 OUTBOUND 的重内容文件、脚注向用户承诺「默认
       // 全部关闭」；这两项是轻量个人数据、双向合并、且默认开启（拆开关前它们本来就
       // 在跟着云备份的「同步统计」无条件流动，只是用户看不见也关不掉）。混在一起会
@@ -983,12 +907,148 @@ SettingsDestination buildInterconnectDestination() {
           ),
         ],
       ),
-      // 交给已配对设备：本机把某类工作整个甩给对端主机去做。两项都只有 client 角色
-      // 讲得通（host 没有「对端」可交），故与上面的上传区同门控——互联启用且本机不在
-      // host 模式。
-      //   · 制卡到已配对设备：制卡改由主机的 Anki 落卡（原在「制卡」分类，但它的前置
-      //     条件、目标设备、失效条件全由互联决定，互联关掉时在制卡页是个纯死开关）。
-      //   · 用互联做备份后端：把云备份通道也指向对端（详见 _InterconnectBackupBackendWidget）。
+      // BUG-988：上传到互联对端——互联通道专属的「本设备内容要不要上传给对端」分项开关，
+      // 独立于云备份的同名开关（那套只管云通道），也独立于上面的「启用互联」连接开关。
+      // 默认全关：用户开互联只为远端看/读时不会被自动上传裹挟，想传哪类自己勾。与云备份
+      // 上传开关同为 OUTBOUND，host 模式（本机做服务端，client 往它推）无 outbound → 隐藏。
+      SettingsSection(
+        id: 'interconnect.upload.section',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
+        title: t.interconnect_upload_section,
+        footer: t.interconnect_upload_section_footer,
+        visible: (SettingsContext ctx) =>
+            interconnectActive(ctx) && !_isHostingInterconnect(ctx),
+        items: <SettingsItem>[
+          SettingsSwitchItem(
+            id: 'interconnect.upload_content',
+            title: t.interconnect_upload_content,
+            subtitle: t.interconnect_upload_content_hint,
+            icon: FushiIcons.books,
+            value: (SettingsContext ctx) =>
+                _syncSettings(ctx).interconnectSyncContent,
+            onChanged: (SettingsContext ctx, bool value) async {
+              _syncSettings(ctx).interconnectSyncContent = value;
+              await SyncRepository(
+                ctx.appModel.database,
+              ).setInterconnectSyncContentEnabled(value);
+            },
+          ),
+          SettingsSwitchItem(
+            id: 'interconnect.upload_manga_content',
+            title: t.interconnect_upload_manga_content,
+            subtitle: t.interconnect_upload_manga_content_hint,
+            icon: FushiIcons.manga,
+            value: (SettingsContext ctx) =>
+                _syncSettings(ctx).interconnectSyncMangaContent,
+            onChanged: (SettingsContext ctx, bool value) async {
+              _syncSettings(ctx).interconnectSyncMangaContent = value;
+              await SyncRepository(
+                ctx.appModel.database,
+              ).setInterconnectSyncMangaContentEnabled(value);
+            },
+          ),
+          SettingsSwitchItem(
+            id: 'interconnect.upload_audiobook_files',
+            title: t.interconnect_upload_audiobook_files,
+            subtitle: t.interconnect_upload_audiobook_files_hint,
+            icon: FushiIcons.audiobook,
+            value: (SettingsContext ctx) =>
+                _syncSettings(ctx).interconnectSyncAudioBookFiles,
+            onChanged: (SettingsContext ctx, bool value) async {
+              _syncSettings(ctx).interconnectSyncAudioBookFiles = value;
+              await SyncRepository(
+                ctx.appModel.database,
+              ).setInterconnectSyncAudioBookFilesEnabled(value);
+            },
+          ),
+          SettingsSwitchItem(
+            id: 'interconnect.upload_video_files',
+            title: t.interconnect_upload_video_files,
+            subtitle: t.interconnect_upload_video_files_hint,
+            icon: FushiIcons.video,
+            value: (SettingsContext ctx) =>
+                _syncSettings(ctx).interconnectSyncVideoFiles,
+            onChanged: (SettingsContext ctx, bool value) async {
+              _syncSettings(ctx).interconnectSyncVideoFiles = value;
+              await SyncRepository(
+                ctx.appModel.database,
+              ).setInterconnectSyncVideoFilesEnabled(value);
+            },
+          ),
+          // BUG-2494：互联通道自己一行显式的上传/下载动作，跑在
+          // SyncAssetChannelScope.interconnect 上，只碰互联对端、不碰云盘。
+          // BUG-2762：这一行是互联页词典的**唯一**入口。以前上面还有一个「上传词典」
+          // 自动同步开关，与本行在同一组里并排成两个「词典」，且开关实际驱动的是双向
+          // union、文案却是「上传」；现在与云备份页同形——词典只由显式动作搬。
+          SettingsCustomItem(
+            id: 'interconnect.dictionary_transfer',
+            searchTitle: t.sync_asset_dictionary,
+            icon: FushiIcons.readingMode,
+            builder: (SettingsContext ctx) => _AssetTransferMenuRow(
+              settingsContext: ctx,
+              kind: SyncAssetKind.dictionary,
+              title: t.sync_asset_dictionary,
+              icon: FushiIcons.readingMode,
+              scope: SyncAssetChannelScope.interconnect,
+            ),
+          ),
+          // 反馈 #5mB56tqXHa：本地音频数据库与词典同属显式搬运——互联协议（live 端点）
+          // 早已支持（_syncLocalAudioLive），只是互联页缺这一行入口。
+          SettingsCustomItem(
+            id: 'interconnect.local_audio_transfer',
+            searchTitle: t.sync_asset_local_audio,
+            icon: FushiIcons.audio,
+            builder: (SettingsContext ctx) => _AssetTransferMenuRow(
+              settingsContext: ctx,
+              kind: SyncAssetKind.localAudio,
+              title: t.sync_asset_local_audio,
+              icon: FushiIcons.audio,
+              scope: SyncAssetChannelScope.interconnect,
+            ),
+          ),
+          SettingsCustomItem(
+            id: 'interconnect.fonts_transfer',
+            searchTitle: t.sync_asset_fonts,
+            icon: FushiIcons.font,
+            builder: (SettingsContext ctx) => _AssetTransferMenuRow(
+              settingsContext: ctx,
+              kind: SyncAssetKind.fonts,
+              title: t.sync_asset_fonts,
+              icon: FushiIcons.font,
+              scope: SyncAssetChannelScope.interconnect,
+            ),
+          ),
+        ],
+      ),
+      // 互联相关配置（远端词典查询 / 音频来源 / 远端占位卡）散落在查词、同步分类，
+      // 逻辑上都作用于互联对端。此前在这里镜像三行同一 builder；用户拍板（2026-09-06）
+      // 改成一行指路——不再重复渲染开关，点进去落到查词分类并定位到远端查词那一行。
+      SettingsSection(
+        id: 'interconnect.related.section',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
+        title: t.interconnect_section_related,
+        visible: interconnectActive,
+        items: <SettingsItem>[
+          SettingsNavigationItem(
+            id: 'interconnect.related_settings',
+            title: t.interconnect_related_entry,
+            subtitle: t.interconnect_related_entry_hint,
+            icon: FushiIcons.travelExplore,
+            onTap: (SettingsContext ctx) async {
+              SettingsSearchReveal.pendingItemId = 'lookup.remote_lookup';
+              await pushSettingsPage(
+                ctx,
+                (_) =>
+                    SettingsDetailPage(destination: buildLookupDestination()),
+              );
+            },
+          ),
+        ],
+      ),
+      // 使用主机的能力：把某类工作交给对端主机、或从主机拿配置与更新。只有 client 角色
+      // 讲得通（host 没有「对端」可交），故与上传区同门控——互联启用且本机不在 host 模式。
+      // 「制卡到已配对设备」的开关属于制卡的去向，由制卡分类通过 [buildMineToServerItems]
+      // 摆放。
       SettingsSection(
         id: 'interconnect.delegate.section',
         presentation: SettingsSectionPresentation.collapsed,
@@ -996,53 +1056,6 @@ SettingsDestination buildInterconnectDestination() {
         visible: (SettingsContext ctx) =>
             interconnectActive(ctx) && !_isHostingInterconnect(ctx),
         items: <SettingsItem>[
-          SettingsSwitchItem(
-            id: 'interconnect.mine_to_server',
-            title: t.anki_mine_to_server,
-            subtitle: t.anki_mine_to_server_hint,
-            icon: FushiIcons.ankiCard,
-            value: (SettingsContext ctx) => ctx.appModel.mineToServerEnabled,
-            onChanged: (SettingsContext ctx, bool value) =>
-                ctx.appModel.setMineToServer(value),
-          ),
-          // §4.8（所有者 2026-11-06）：手机选卡落到主机的哪里——主机默认（只带本机当前 profile，由主机
-          // 自己的设置决定）/ 主机的某份复习 profile 与牌组 / 主机的 Anki 牌组。按主机存在本机。
-          SettingsActionItem(
-            id: 'interconnect.mine_to_server_target',
-            title: t.anki_mine_to_server_target,
-            icon: FushiIcons.ankiCard,
-            visible: (SettingsContext ctx) => ctx.appModel.mineToServerEnabled,
-            subtitleBuilder: (SettingsContext ctx) =>
-                mineToServerTargetSubtitle(_mineTargetAccess(ctx.appModel)),
-            onTap: (SettingsContext ctx) async {
-              await pickMineToServerTarget(
-                ctx.context,
-                _mineTargetAccess(ctx.appModel),
-              );
-              ctx.refresh();
-            },
-            cli: SettingsCliAction(
-              params: const <SettingsCliParam>[
-                SettingsCliParam('kind', help: 'default | review | anki'),
-                SettingsCliParam(
-                  'profile',
-                  required: false,
-                  help: 'Review profile uid on the paired device (kind=review)',
-                ),
-                SettingsCliParam(
-                  'deck',
-                  required: false,
-                  help:
-                      'Deck name on the paired device (omit = its default deck)',
-                ),
-              ],
-              run: (SettingsContext ctx, Map<String, String> args) =>
-                  setMineToServerTargetFromCli(
-                    _mineTargetAccess(ctx.appModel),
-                    args,
-                  ),
-            ),
-          ),
           SettingsCustomItem(
             id: 'interconnect.backup_backend',
             icon: FushiIcons.backup,
@@ -1126,58 +1139,69 @@ SettingsDestination buildInterconnectDestination() {
           ),
         ],
       ),
-      // 本机作为服务器：host 模式（开关 + 端口 + TLS + token + 已配对列表）整块挪进
-      // 子页「主机服务」（C2）；主页只留一行带运行状态的入口。角色互斥见
-      // _SyncSettingsState 的 roleRevision。
-      SettingsSection(
-        id: 'interconnect.host.section',
-        presentation: SettingsSectionPresentation.alwaysExpanded,
-        title: t.sync_section_host_server,
-        footer: t.sync_section_host_server_footer,
-        visible: interconnectActive,
-        items: <SettingsItem>[
-          SettingsNavigationItem(
-            id: 'interconnect.host',
-            title: t.interconnect_host_page,
-            subtitle: t.interconnect_host_hint,
-            subtitleBuilder: (SettingsContext ctx) {
-              final _SyncSettingsState s = _syncSettings(ctx);
-              return s.serverEnabled
-                  ? t.interconnect_host_running(port: s.serverPort)
-                  : t.interconnect_host_off;
-            },
-            icon: FushiIcons.server,
-            child: _buildInterconnectHostPage,
-          ),
-        ],
-      ),
-      // 互联相关配置（远端词典查询 / 音频来源 / 远端占位卡）散落在查词、同步分类，
-      // 逻辑上都作用于互联对端。此前在这里镜像三行同一 builder；用户拍板（2026-09-06）
-      // 改成一行指路——不再重复渲染开关，点进去落到查词分类并定位到远端查词那一行。
-      SettingsSection(
-        id: 'interconnect.related.section',
-        presentation: SettingsSectionPresentation.alwaysExpanded,
-        title: t.interconnect_section_related,
-        visible: interconnectActive,
-        items: <SettingsItem>[
-          SettingsNavigationItem(
-            id: 'interconnect.related_settings',
-            title: t.interconnect_related_entry,
-            subtitle: t.interconnect_related_entry_hint,
-            icon: FushiIcons.travelExplore,
-            onTap: (SettingsContext ctx) async {
-              SettingsSearchReveal.pendingItemId = 'lookup.remote_lookup';
-              await pushSettingsPage(
-                ctx,
-                (_) =>
-                    SettingsDetailPage(destination: buildLookupDestination()),
-              );
-            },
-          ),
-        ],
-      ),
     ],
   );
+}
+
+/// 「制卡到已配对设备」两项（开关 + 目标）。它们的前置条件、目标设备、失效条件都由
+/// 互联决定，所以定义留在本文件（私有状态与 helper 在此），由制卡分类的「卡片去向」
+/// 摆放。分类 / 分区上原有的门控（互联模块开着、互联已启用、本机不是 host）下放到
+/// 每一项，保证挪走后可见性语义不变。
+List<SettingsItem> buildMineToServerItems() {
+  bool available(SettingsContext ctx) =>
+      isSettingsDestinationVisible(
+        SettingsDestinationId.interconnect,
+        ctx.appModel.moduleVisibility,
+      ) &&
+      _syncSettings(ctx).interconnectEnabled &&
+      !_isHostingInterconnect(ctx);
+  return <SettingsItem>[
+    SettingsSwitchItem(
+      id: 'interconnect.mine_to_server',
+      title: t.anki_mine_to_server,
+      subtitle: t.anki_mine_to_server_hint,
+      icon: FushiIcons.ankiCard,
+      visible: available,
+      value: (SettingsContext ctx) => ctx.appModel.mineToServerEnabled,
+      onChanged: (SettingsContext ctx, bool value) =>
+          ctx.appModel.setMineToServer(value),
+    ),
+    // §4.8（所有者 2026-11-06）：手机选卡落到主机的哪里——主机默认（只带本机当前 profile，由主机
+    // 自己的设置决定）/ 主机的某份复习 profile 与牌组 / 主机的 Anki 牌组。按主机存在本机。
+    SettingsActionItem(
+      id: 'interconnect.mine_to_server_target',
+      title: t.anki_mine_to_server_target,
+      icon: FushiIcons.ankiCard,
+      visible: (SettingsContext ctx) =>
+          available(ctx) && ctx.appModel.mineToServerEnabled,
+      subtitleBuilder: (SettingsContext ctx) =>
+          mineToServerTargetSubtitle(_mineTargetAccess(ctx.appModel)),
+      onTap: (SettingsContext ctx) async {
+        await pickMineToServerTarget(
+          ctx.context,
+          _mineTargetAccess(ctx.appModel),
+        );
+        ctx.refresh();
+      },
+      cli: SettingsCliAction(
+        params: const <SettingsCliParam>[
+          SettingsCliParam('kind', help: 'default | review | anki'),
+          SettingsCliParam(
+            'profile',
+            required: false,
+            help: 'Review profile uid on the paired device (kind=review)',
+          ),
+          SettingsCliParam(
+            'deck',
+            required: false,
+            help: 'Deck name on the paired device (omit = its default deck)',
+          ),
+        ],
+        run: (SettingsContext ctx, Map<String, String> args) =>
+            setMineToServerTargetFromCli(_mineTargetAccess(ctx.appModel), args),
+      ),
+    ),
+  ];
 }
 
 /// 「配对与设备」子页（C2）：client 连接配置（URL/token/配对）+ LAN 自动发现，
@@ -1222,6 +1246,7 @@ SettingsDestination _buildInterconnectHostPage() {
       SettingsSection(
         id: 'interconnect.server_mode.section',
         presentation: SettingsSectionPresentation.alwaysExpanded,
+        title: t.settings_interconnect_host_section_service,
         items: <SettingsItem>[
           SettingsCustomItem(
             id: 'sync.server_mode',
@@ -1229,6 +1254,15 @@ SettingsDestination _buildInterconnectHostPage() {
             builder: (SettingsContext ctx) =>
                 _ServerModeWidget(settingsContext: ctx),
           ),
+        ],
+      ),
+      // 授权开关集中在一处：已配对设备能用本机做什么，不再散在各功能页里。
+      SettingsSection(
+        id: 'interconnect.section.host_permissions',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
+        title: t.settings_interconnect_host_section_permissions,
+        footer: t.settings_interconnect_host_section_permissions_footer,
+        items: <SettingsItem>[
           // 弱网转码：对端在外面用手机网络播本机的片子时，host 按对端选的画质档
           // 切段转码成 HLS。默认开——它是纯按需的，对端不报画质档就一个 ffmpeg
           // 都不会起，行为与从前逐字节相同；关掉它的意愿（「这台机器不想被烤」）
@@ -1261,6 +1295,7 @@ SettingsDestination _buildInterconnectHostPage() {
               await ctx.appModel.prefsRepo.setInterconnectAiRelayEnabled(value);
             },
           ),
+          buildAiAgentForPeersItem(),
           // 游戏串流「从库里启动」许可。默认关：开了就等于允许已配对设备在本机起
           // 游戏进程，必须是主机主人的显式意愿；端点另有 HTTPS + 已配对 peer token
           // 两道门。只在有本地游戏库的 Windows 上出现。

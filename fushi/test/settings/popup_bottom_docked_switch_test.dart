@@ -83,9 +83,17 @@ Widget _harness(FushiDatabase db, AppModel appModel) {
               .firstWhere(
                 (SettingsDestination d) => d.id == SettingsDestinationId.lookup,
               );
+          // 底部停靠开关住在「查词弹窗」子页（入口 lookup.popup.open）的
+          // 「位置」分区，这里直接渲染那张子页。
+          final SettingsNavigationItem popupEntry = lookup.sections
+              .expand((SettingsSection s) => s.items)
+              .whereType<SettingsNavigationItem>()
+              .singleWhere(
+                (SettingsNavigationItem i) => i.id == 'lookup.popup.open',
+              );
           return MaterialSettingsRenderer().buildDetailPage(
             settingsContext: sctx,
-            destination: lookup,
+            destination: popupEntry.child!(),
           );
         },
       ),
@@ -94,11 +102,6 @@ Widget _harness(FushiDatabase db, AppModel appModel) {
 }
 
 void main() {
-  // 「弹窗窗口」section 现在默认折叠，会把行移出树；本测试直查该 section 的行，
-  // 强制全展开还原（见 debugSettingsForceExpandAllSections）。
-  setUp(() => debugSettingsForceExpandAllSections = true);
-  tearDown(() => debugSettingsForceExpandAllSections = false);
-
   testWidgets(
     'lookup settings exposes a Bottom-docked popup switch (default OFF)',
     (WidgetTester tester) async {

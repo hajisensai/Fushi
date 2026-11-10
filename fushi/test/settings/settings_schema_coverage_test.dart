@@ -70,18 +70,18 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       '打开后立即混进来）',
   // app 内浏览器（系统 › 浏览器）：生效点在全屏浏览页 / 标签页 WebView，harness 设置页
   // 没有浏览页。浏览页每次打开现读这些偏好。
-  'system/Tab style':
+  'webBrowser/Tab style':
       'test/pages/fushi_web_browser_shell_test.dart（桌面侧边栏 ↔ 顶部标签栏、偏好写穿）',
-  'system/Hide toolbar while scrolling':
+  'webBrowser/Hide toolbar while scrolling':
       'test/web_browser/web_browser_layout_test.dart（收起状态机 / 可收起判据）+ '
       'test/pages/fushi_web_browser_shell_test.dart（往下滚收成小地址条）',
-  'system/Search engine':
+  'webBrowser/Search engine':
       'test/web_browser/web_browser_search_engines_test.dart（选中引擎决定搜索地址）',
-  'system/Dark mode for web pages':
+  'webBrowser/Dark mode for web pages':
       'test/web_browser/tab_view/web_browser_tab_view_logic_test.dart（forceDark 进 WebView 设置）',
-  'system/Open desktop sites by default':
+  'webBrowser/Open desktop sites by default':
       'test/pages/fushi_web_browser_shell_test.dart（新标签页默认桌面版）',
-  'system/Restore tabs from last time':
+  'webBrowser/Restore tabs from last time':
       'test/web_browser/web_browser_tabs_controller_test.dart（关闭会话持久化时不读不写）+ '
       'test/pages/fushi_web_browser_shell_test.dart（恢复上次的标签页）',
   // 音乐播放（无缝 / ReplayGain）：生效点是音乐引擎下发给独立 libmpv 实例的属性
@@ -172,7 +172,7 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 听歌计入学习（D4）：生效点是 MusicStudyTracker 起停 StudyClock、写 study_segments，
   // harness 没有在播的曲目。开 = 在播即计、关 = 只在学习动作后的空闲窗口内计，由
   // music_study_tracker_test 咬住。
-  'music/Count listening as study time':
+  'general/Count listening as study time':
       'test/media/music/music_study_tracker_test.dart',
   // 歌词页流体背景（动效 / 样式 / 饱和度）：生效点是歌词页的 MusicLyricsBackdrop，
   // harness 设置页没有歌词页。静态只渲染一次 / 样式切换 / 饱和度矩阵由
@@ -185,12 +185,14 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // WebAdblockService 转成命令，由 web_adblock_service_test（开关 / 白名单下一次请求即生效、
   // 订阅集决定下载哪些列表、状态跨实例落盘）与 web_adblock_wiring_test（每次请求都交给策略）
   // 咬住；规则本身在 native/fushi_web_core 的 cargo 单测。
-  'system/Block ads and trackers on web pages':
+  'webBrowser/Block ads and trackers on web pages':
       'test/web_adblock/web_adblock_service_test.dart + test/web_adblock/web_adblock_wiring_test.dart',
-  'system/EasyList': 'test/web_adblock/web_adblock_service_test.dart',
-  'system/EasyPrivacy': 'test/web_adblock/web_adblock_service_test.dart',
-  'system/AdGuard Chinese': 'test/web_adblock/web_adblock_service_test.dart',
-  'system/AdGuard Japanese': 'test/web_adblock/web_adblock_service_test.dart',
+  'webBrowser/EasyList': 'test/web_adblock/web_adblock_service_test.dart',
+  'webBrowser/EasyPrivacy': 'test/web_adblock/web_adblock_service_test.dart',
+  'webBrowser/AdGuard Chinese':
+      'test/web_adblock/web_adblock_service_test.dart',
+  'webBrowser/AdGuard Japanese':
+      'test/web_adblock/web_adblock_service_test.dart',
   // 悬浮球「显示按钮文字」：生效点在悬浮球展开态（应用内球 / 系统球原生面），
   // 设置页 harness 里没有展开的悬浮球。行为由 floating_ball_labels_test 咬住。
   'floatingBall/Show button labels':
@@ -267,7 +269,7 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // StudyClock 时读一次 appModel.readingIdleTimeout——harness 里没有阅读器。
   // 空闲门行为由 study_clock_test「阅读空闲门」用例咬住，接线由
   // statistics_write_convergence_guard_test ⑤ 咬住。
-  'reading/Idle timeout':
+  'general/Idle timeout':
       'test/media/audiobook/study_clock_test.dart（空闲门）+ '
       'test/tools/statistics_write_convergence_guard_test.dart',
   // 「功能模块」里**有底栏 tab 的那些**（首页 / 库页 / 浏览 / 查词 / 浏览器扩展）
@@ -282,13 +284,13 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 也没有 TLS 会话与已配对 peer，探不到。由专项测试逐条咬住：开关默认关、开启后
   // 可用、依赖未接线时即使开着也不可用、以及端点三道门（TLS → peer token → 能力
   // → 本开关）的顺序守卫。
-  'interconnect/Allow paired devices to read/write configuration':
+  "interconnect/Read and write this device's profiles":
       'test/sync/interconnect_profile_transfer_test.dart',
   // 互联「允许已配对设备远程更新本机」（反馈 Pp8XPyve0N，host 侧许可，默认关）。
   // 生效点在 **HTTP 端点** /api/host/update：每次 POST 实时读开关，关着回
   // remote_update_disabled。harness 里没有起 server，探不到；端点门禁（开关 / 平台 /
   // 信任区 / nonce）由专项测试咬住，开关实时读由 host_self_update_service_test 咬住。
-  'interconnect/Allow paired devices to update this device':
+  'interconnect/Update this device remotely':
       'test/sync/fushi_sync_server_host_update_test.dart',
   // 「跟随已配对设备自动登录」（client 侧）与「允许已配对设备自动登录我的账户」
   // （host 侧总闸）：生效点分别在首页后台 tick 的 LeaderboardPairedLogin（开关关 =
@@ -296,7 +298,7 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // disabled）。harness 里没有起 TLS server 与已配对 peer，探不到；由专项测试咬住。
   "interconnect/Sign in with a paired device's account":
       'test/leaderboard/leaderboard_paired_login_test.dart',
-  'interconnect/Let paired devices sign in with my account':
+  'interconnect/Sign in to my account automatically':
       'test/leaderboard/leaderboard_paired_login_test.dart',
   // 互联「为对端转码视频」（host 侧许可，默认开）。写 prefsRepo（changed=true），
   // 生效点同样在 **HTTP 端点**里：host 每次处理 /streamurl 与 /api/capabilities 时
@@ -307,7 +309,7 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 「互联主机」AI 转发（host 侧许可，默认开）。写 prefsRepo（changed=true），生效点在
   // **HTTP 端点**：sync server 每次处理 `/api/capabilities` 与 `/api/ai/relay/*` 都现读
   // 该偏好，关着就不声明 aiRelayV1、转发请求被拒。harness 里没有起 server，探不到。
-  "interconnect/Let paired devices use this device's AI":
+  "interconnect/Use this device's AI providers":
       'packages/fushi_engine/test/ai/ai_relay_host_test.dart（关掉后能力位消失、'
       '转发请求被拒）',
   // 游戏串流「允许远程启动」（host 侧许可，默认关，只在 Windows 出现）。写
@@ -315,24 +317,24 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // `prefsRepo.gameStreamRemoteLaunchEnabled` 实时注入成 host 的
   // `isLaunchEnabled`（app_model），`/api/game-stream/launch` 每次处理都读它，关着就
   // 403 `disabled`、不起进程。harness 里没有起 server，探不到。由专项测试咬住。
-  'interconnect/Allow remote launch':
+  'interconnect/Launch games remotely':
       'packages/fushi_engine/test/game_stream_launch_settings_test.dart',
   // 「功能模块」后加的四个横切开关（听书/制卡/在线服务/同步备份）。它们**没有底栏
   // tab**，homeActiveTabs 那套用例咬不到；写 prefsRepo（changed=true）之后能观测到的
   // 生效点是**设置一级分类整条消失**（列表 + 搜索索引），而 harness 观测的是本行自己
   // 所在的那棵渲染树，看不到「另一条 destination 没了」。由专项测试逐个模块咬住：
   // 关掉它 → 名下分类从可见列表消失、从搜索索引消失，且不波及别的分类。
-  'appearance/Listening': 'test/settings/settings_module_gating_test.dart',
-  'appearance/Card creation': 'test/settings/settings_module_gating_test.dart',
-  'appearance/Online services':
+  'navigation/Listening': 'test/settings/settings_module_gating_test.dart',
+  'navigation/Card creation': 'test/settings/settings_module_gating_test.dart',
+  'navigation/Online services':
       'test/settings/settings_module_gating_test.dart',
-  'appearance/Sync & backup': 'test/settings/settings_module_gating_test.dart',
+  'navigation/Sync & backup': 'test/settings/settings_module_gating_test.dart',
   // AI（2026-10-13 起独立模块）：同上，生效点是「设置 › AI」整条分类消失，另有
   // 运行时投影（每个 AiFeature 解析不到提供商）由 preferences_repository_test 咬住，
   // 各页入口由 test/models/ai_module_gate_guard_test.dart 守。
   // AI 模块的开关行标签取自它的设置分类标题（2026-10-13 起是 LLM 子页的「LLM」，
   // 见 settings_module_labels_match_nav_test）。
-  'appearance/LLM': 'test/settings/settings_module_gating_test.dart',
+  'navigation/AI': 'test/settings/settings_module_gating_test.dart',
   // 漫画观看偏好五项。写 prefsRepo（changed=true），生效点全部在**漫画阅读器的
   // WebView 文档**里——这些值被注入成 CSS 过渡声明 / JS 常量（ZOOM_SENS、
   // TAP_ZONE_PAGING、IS_RTL、PAGE_ANIM），widget harness 里没有 WebView，也就没有
@@ -500,8 +502,7 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 兄弟两项（最大宽/高滑杆）带 visible 门：遍历先把上面的开关切到 ON 时它们会
   // 出现并被驱动——生效点同在直连覆盖窗，由同一份专项测试咬住（gal 组键读写、
   // 与 overlay 组不互串）。
-  'game/Independent in-game card size':
-      'test/lookup/gal_card_size_cap_test.dart',
+  'game/Independent card size': 'test/lookup/gal_card_size_cap_test.dart',
   'game/In-game card max width': 'test/lookup/gal_card_size_cap_test.dart',
   'game/In-game card max height': 'test/lookup/gal_card_size_cap_test.dart',
   // e147b5b：Hook 覆盖窗工具栏按钮下的文字标签。生效点在 runner 自有 Win32
@@ -518,7 +519,7 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 归属：#938 把整个 gal_hook_overlay section 从 settings_schema_lookup.dart 移到
   // settings_schema_game.dart（destination 级 + section 级双重 Platform.isWindows
   // 门控，比原先更严），故登记键的 destId 随之从 lookup 变 game。
-  'game/Galgame caption font size':
+  'game/Font size':
       'test/models/preferences_repository_gal_hook_font_test.dart + '
       'test/lookup/gal_hook_text_overlay_controller_test.dart + '
       'test/build/gal_overlay_font_decoupled_guard_test.dart',
@@ -607,13 +608,13 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       '（VideoThemeSongTracker：开关每次现读，只在刚进段 3 s 内自动跳一次）',
   // 「跳转记录」三项（小说 / 漫画 / 视频共用，生效点在三个媒体页的顶栏与进度条，
   // harness 里没有打开的媒体页）：判据纯函数与按钮行为由专项测试咬住。
-  'appearance/Show back / forward in the top bar':
+  'navigation/Show back / forward in the top bar':
       'test/utils/jump_history_controls_test.dart'
       '（jumpHistoryToolbarVisible：关掉不画图标，历史照记）',
-  'appearance/Mark jump points on progress bars':
+  'navigation/Mark jump points on progress bars':
       'test/utils/jump_history_controls_test.dart'
       '（jumpHistoryMarkFractions / 刻度几何）',
-  'appearance/Auto-hide top bar jump buttons':
+  'navigation/Auto-hide top bar jump buttons':
       'test/utils/jump_history_controls_test.dart'
       '（JumpHistoryAutoHide：单调计时到点收起、改时长即时重排；默认 0 不隐藏、旧视频设置折算）',
   'video/Auto-align downloaded subtitles':
@@ -710,9 +711,10 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 遍历开始能驱动它们。默认字幕语言同上一条专项测试；AJATT 的生效点是
   // configured_subtitle_providers.dart 按开关装不装 AjattVideoSubtitleProvider，
   // 专项测试走设置行写偏好 → 生产装配函数（假 HTTP 客户端）断言装 / 不装。
-  'services/Default subtitle language':
+  'video/Language for subtitle search':
       'test/pages/jimaku_default_language_test.dart',
-  'services/AJATT': 'test/media/video/subtitle/ajatt_setting_effect_test.dart',
+  'services/AJATT subtitle library':
+      'test/media/video/subtitle/ajatt_setting_effect_test.dart',
   // mpv Lua 脚本装载开关。写 prefsRepo（changed=true），生效点在视频播放器创建后
   // 经 libmpv `load-script` 命令装载脚本目录（widget harness 无 libmpv Player，
   // 无可探渲染输入）；由专项测试咬住目录枚举（仅顶层 .lua、排序）、load-script
@@ -750,14 +752,14 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/reader/reader_content_styles_test.dart',
   'reading/VPAL (vertical alt)': 'test/reader/reader_content_styles_test.dart',
   // 首页「AI 助手」条显示档：显隐判据与持久化在专项测试里钉死。
-  'appearance/AI assistant': 'test/pages/home_ai_agent_panel_test.dart',
+  'navigation/AI assistant': 'test/pages/home_ai_agent_panel_test.dart',
   // 首页「媒体库全景」面板显示档：显隐判据在专项测试里钉死。
-  'appearance/Library panorama': 'test/pages/home_panorama_panel_test.dart',
+  'navigation/Library panorama': 'test/pages/home_panorama_panel_test.dart',
   // 悬浮球「AI」按钮：默认勾选 / 平台可用 / 场景上下文在专项测试里钉死。
   'floatingBall/AI': 'test/floating_ball/floating_ball_ai_action_test.dart',
   // 手柄查词模式开启方式（副屏 S6）：偏好的读取与默认（副屏在用 = 按住 L1、否则关）
   // 和按键行为由 ControllerLookupMode 的专项测试钉死（生效点在手柄分派层）。
-  'appearance/Controller lookup mode':
+  'general/Controller lookup mode':
       'test/second_screen/controller_lookup_mode_test.dart',
   'appearance/Design system': 'test/models/theme_notifier_test.dart',
   'appearance/UI size': 'test/models/theme_notifier_test.dart',
@@ -867,7 +869,7 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 并写穿 DB（changed=true），但生效点在 popup WebView 的 CSS grid（--dict-columns 注入 +
   // popup.css grid 渲染，非 reader CSS / 主题树），无适用的 reader/appearance 探针；
   // 由专项 widget 契约 + popup.css/注入源码守卫覆盖。
-  'lookup/Max dictionary columns (auto-fill)':
+  'lookup/Max dictionary columns':
       'test/settings/popup_dictionary_columns_test.dart',
   // 弹窗尺寸精细化（spec 2026-07-13 §3）：app 外覆盖窗 / 浏览器扩展的「独立尺寸」开关
   // （PR#83 新增）。焦点遍历切到 switch 并写穿 DB（changed=true），但生效点在
@@ -1018,12 +1020,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 序列化契约（远端制卡仓库包装 + 转发载荷 + 服务端 handler）。
   // 归属：开关已从「制卡」分类移到「Fushi 互联」→「交给已配对设备」（它的前置条件、
   // 目标设备、失效条件全由互联决定），故登记键的 destId 随之从 cardCreation 变 interconnect。
-  'interconnect/Mine to Fushi Interconnect server':
+  'cardCreation/Mine to Fushi Interconnect server':
       'test/anki/remote_mining_anki_repository_test.dart + '
       'test/sync/forwarded_mine_payload_test.dart + '
       'test/sync/fushi_remote_mining_service_test.dart',
-  'system/Low memory mode': 'test/models/app_model_low_memory_mode_test.dart',
-  'system/Keyboard & gamepad focus navigation':
+  'general/Low memory mode': 'test/models/app_model_low_memory_mode_test.dart',
+  'general/Keyboard & gamepad focus navigation':
       'test/shortcuts/global_space_no_activate_test.dart + main.dart 门控安装 FushiFocusRoot/Ring',
   'lookup/Swipe dismiss sensitivity':
       'test/widgets/swipe_dismiss_wrapper_test.dart',
@@ -1090,7 +1092,7 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 云备份通道总开关：写 sync_cloud_enabled，生效点是 enabledSyncChannelBackends 不再列出
   // 云通道（常规 / 复习同步与资产传输都从这份枚举取通道）；harness 里没有同步在跑，
   // 专项测试咬住「关掉后通道枚举里没有云通道、凭据保留、复习同步入口不调 body」。
-  'syncBackup/Enable cloud backup': 'test/sync/cloud_sync_toggle_test.dart',
+  'syncBackup/Enable cloud sync': 'test/sync/cloud_sync_toggle_test.dart',
   // 复习数据的自动同步（反馈 VNz9dsLeIy）：写 srs_sync_auto，生效点是 SrsSyncScheduler 的几个
   // 自动触发口（常规同步后置步骤 / 互联快速通道 / 本机写入后推送 / host 收到写入）；harness 里没有
   // 复习同步在跑，专项测试咬住「关掉后各自动口不跑、手动与进复习页照跑」。
@@ -1113,7 +1115,7 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'syncBackup/Upload manga files':
       'test/sync/cloud_manga_content_sync_test.dart',
   'syncBackup/Sync dictionaries': 'test/sync/sync_gating_test.dart',
-  'syncBackup/Sync audiobook files': 'test/sync/sync_orchestrator_test.dart',
+  'syncBackup/Upload audiobook files': 'test/sync/sync_orchestrator_test.dart',
   'syncBackup/Sync local audio': 'test/sync/sync_orchestrator_test.dart',
   // TODO-212: video destination items are behavior-heavy; schema coverage proves
   // focus/change/persist/restore here, while these narrower probes guard their
@@ -1386,7 +1388,7 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // reader CSS / 主题渲染输入里）：
   // · 阅读计时起点（f68f88c）：生效点是阅读器 StudyClock 的初始暂停 / 首次翻页
   //   起表，由纯函数真值表 + 页面接线源码守卫覆盖。
-  'reading/Reading timer start':
+  'general/Reading timer start':
       'test/stats/reader_study_clock_start_mode_test.dart + '
       'test/pages/reader_study_clock_start_mode_wiring_guard_static_test.dart',
   // · 阅读器工具栏样式（77a4712）：悬浮 / 贴边。阅读器页要活 WebView，专项测试
@@ -1402,12 +1404,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // · 底栏标签（690c490）：只影响首页 M3E 悬浮底栏的标签显隐，设置页 harness
   //   不挂首页 shell；专项测试走设置行写偏好 → 生产 adaptiveBottomBar 标签画 /
   //   不画（+ 首页接线源码守卫）。
-  'appearance/Show navigation bar labels':
+  'navigation/Show navigation bar labels':
       'test/widgets/nav_bar_labels_setting_effect_test.dart',
   // · 底栏样式（2026-10-15 原型）：同上，只影响首页底栏形态；专项测试走
   //   设置行写偏好 → 生产 adaptiveBottomBar 平铺 / 分页滑动切换（+ 首页接线
   //   源码守卫）。
-  'appearance/Bottom bar style':
+  'navigation/Bottom bar style':
       'test/widgets/nav_bar_style_setting_effect_test.dart',
   // TODO-975: 顶部进度悬浮开关 + 悬浮控件自动隐藏延时。生效点在 reader 页悬浮
   // chrome 状态机（_topProgressReserve/_bottomChromeReserve 派生 + 自动隐藏定时器，
@@ -1501,63 +1503,64 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // test/pages/popup_settings_injection_memo_test.dart 钉住。
   'lookup/Compact glossaries': 'DEVICE: popup.js compact glossaries',
   'lookup/Deduplicate pitch accents': 'DEVICE: popup.js pitch dedup',
-  // 下面这批「有声书 / 悬浮字幕」项的 key 前缀在 2026-08-24 从 `listening/` 变成
-  // `reading/`：听书并入阅读一级分类，本表的 key 是「destination/标题」，归属换了
-  // key 就得跟着换（item id 仍是 `listening.*`，没动）。
+  // 下面这批「有声书 / 悬浮字幕」项住独立的「听书」一级分类，key 前缀是
+  // `listening/`。本表的 key 是「destination/标题」，归属或标题一换 key 就得跟着换。
   //
   // TODO-702: 有声书退出即停（默认）/ 后台续播（可选）。pref-only（门控阅读器
   // dispose 时是否 stop 会话，无渲染树效果）；schema coverage 证 focus/change/
   // persist/restore 经 DB，运行时分流由偏好默认 + dispose 源码守卫覆盖。
-  'reading/Keep playing after exit':
+  'listening/Keep playing after exit':
       'test/models/preferences_repository_test.dart + test/media/audiobook/audiobook_exit_stop_policy_static_test.dart',
-  'reading/Show media notification': 'DEVICE: native AudioHandler notification',
+  'listening/Show media notification':
+      'DEVICE: native AudioHandler notification',
   // TODO-038: now visible on Windows desktop too (no longer Android-only). The
   // strip is a runner-owned Win32 window, so the real overlay needs a desktop;
   // covered by source guards + device backlog.
-  'reading/Floating lyric overlay':
+  'listening/Floating lyric overlay':
       'test/media/audiobook/floating_lyric_click_through_guard_test.dart + test/settings/floating_lyric_settings_visibility_guard_test.dart + DEVICE: native always-on-top strip',
-  'reading/Floating subtitle font size':
+  'listening/Floating subtitle font size':
       'test/media/audiobook/desktop_floating_lyric_test.dart + DEVICE: native strip font size',
   // TODO-370: 文字 / 按钮底色透明度作用于 ARGB alpha 通道，效果由 scaleAlpha 纯函数测试
   // 覆盖；落到原生悬浮窗的实际像素需真机。
-  'reading/Floating subtitle text opacity':
+  'listening/Floating subtitle text opacity':
       'test/media/audiobook/floating_lyric_opacity_test.dart (scaleAlpha) + DEVICE: native strip text alpha',
-  'reading/Floating subtitle button background opacity':
+  'listening/Floating subtitle button background opacity':
       'test/media/audiobook/floating_lyric_opacity_test.dart (scaleAlpha) + DEVICE: native strip button alpha',
   // TODO-576: 条背景透明度（默认 70=更不挡视野）作用于条背景 ARGB alpha；缩放由
   // scaleAlpha 纯函数测试覆盖，落到原生悬浮窗的实际像素需真机。
-  'reading/Floating subtitle background opacity':
+  'listening/Floating subtitle background opacity':
       'test/media/audiobook/floating_lyric_opacity_test.dart (scaleAlpha) + test/settings/floating_lyric_bg_opacity_test.dart + DEVICE: native strip bg alpha',
   // TODO-708 P2: 圆角半径 / 宽度（dp，0=平台原生观感）。偏好往返 + 默认哨兵 + 两个样式
   // 构造点喂入由专项测试覆盖；落到原生悬浮窗的实际圆角/窗宽像素需真机点验。
-  'reading/Floating subtitle corner radius':
+  'listening/Floating subtitle corner radius':
       'test/media/audiobook/floating_lyric_style_dimensions_test.dart + DEVICE: native strip corner radius (Android GradientDrawable / Windows D2D)',
-  'reading/Floating subtitle width':
+  'listening/Floating subtitle width':
       'test/media/audiobook/floating_lyric_style_dimensions_test.dart + DEVICE: native strip window width (Android LayoutParams / Windows SetWindowPos)',
   // TODO-708 P4: 悬浮字幕前后 N 行上下文块（N=0 单行）。偏好往返 + 上下文行区间
   // 构建（当前行 start/length 高亮）由专项测试覆盖；落到原生悬浮窗的多行渲染 +
   // 当前行明暗需真机点验。
-  'reading/Floating subtitle context lines':
+  'listening/Floating subtitle context lines':
       'test/media/audiobook/floating_lyric_context_pref_test.dart + test/media/audiobook/floating_lyric_context_test.dart + DEVICE: native strip multi-line context + current-line highlight (Android FloatingLyricService / Windows floating_lyric_window)',
-  'reading/Tap floating subtitle to look up':
+  'listening/Tap floating subtitle to look up':
       'test/media/audiobook/floating_lyric_click_through_guard_test.dart + DEVICE: native strip tap lookup',
-  'reading/Volume key sentence navigation': 'DEVICE: native volume-key cue nav',
+  'listening/Volume key sentence navigation':
+      'DEVICE: native volume-key cue nav',
   'system/Update channel': 'DEVICE: Android-only UpdateChecker (beta/stable)',
   "system/Don't remind me about updates": 'DEVICE: Android-only UpdateChecker',
   'system/Auto-install updates': 'DEVICE: Android-only UpdateChecker install',
-  'appearance/Reverse navigation bar': 'WIDGET-TODO: HomePage nav order',
-  // 阶段 G 归位：「启动时打开查词」从 appearance 移到 system·通用（item id 不变，
-  // destId 随所属 destination 改为 system）。反馈 #PwEC1evz1E 起泛化为「启动页」
+  'navigation/Reverse navigation bar': 'WIDGET-TODO: HomePage nav order',
+  // 「启动页」住「导航与首页」（item id 的 appearance. 前缀不变，destId 随所属
+  // destination）。反馈 #PwEC1evz1E 起泛化为「启动页」
   // 下拉（只列可见模块）；落点判据 homeInitialTab 由纯函数测试钉住，旧开关迁移由
   // preferences_repository_test 钉住。
-  'system/Startup page':
+  'navigation/Startup page':
       'test/pages/home_page_tabs_test.dart + test/models/preferences_repository_test.dart',
   'reading/Reverse reader bottom bar':
       'DEVICE: reader bottom-bar layout order (like reverse nav bar)',
   // TODO-830: 反转有声书底栏 ⏮⏭ 前进/后退按钮的功能方向（per-reader）。change/
   // persist/restore 经 DB 由本测试守；运行时把 ⏮/⏭ 的 icon+tooltip+onPressed 互换
   // 的功能维度由专项 widget 行为测试覆盖（与 reverse-bottom-bar 的位置镜像正交）。
-  'reading/Invert bottom-bar skip buttons':
+  'listening/Invert bottom-bar skip buttons':
       'test/media/audiobook/audiobook_play_bar_reverse_test.dart',
   // TODO-728: bottom-bar current-sentence toggle. change/persist/restore proven
   // here through the DB; the render effect (cue Text shown/hidden without a
@@ -1586,7 +1589,7 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // ≥18 行），所以这里登记的不是「没验」，而是「写穿已验、渲染生效无探针」。
 
   // 界面语言：pref 写入 + LocaleSettings 真切换 + 顶层 Key 重挂（整树重建才让 t 重算）。
-  'appearance/Language settings':
+  'general/Interface language':
       'test/settings/locale_switch_no_restart_test.dart',
   // HDR/10-bit 输出：storageValue 往返 + shouldUseHdrOutput 三态真值表 + 控制器只走
   // 合成器 HDR 的源码守卫；真实 HDR 片源效果需桌面设备验。
@@ -1739,7 +1742,8 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // TTS 兜底发音倍速（Models › Fallback voice speed）：写设备本地偏好
   // tts_fallback_speed，生效点是查词 / 制卡的 TTS 兜底合成（倍速烧进音频文件），
   // harness 里没有 TTS 引擎。窄测试咬住读写夹范围 + 合成按倍速变速且按倍速分缓存。
-  'models/Fallback voice speed': 'test/creator/mining_tts_fallback_test.dart',
+  'cardCreation/Fallback voice speed':
+      'test/creator/mining_tts_fallback_test.dart',
   'ai/Default quality':
       'test/settings/ai_video_download_settings_test.dart + '
       'test/ai/ai_video_acquisition_preferences_test.dart',
@@ -1767,7 +1771,7 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/media/collections/library_organize_runner_test.dart',
   // 允许已配对设备使用 AI 助手：生效点是互联 host 的 /api/assistant agent 门（harness
   // 里没有互联服务器）。专项测试咬住「关着 → disabled、不建模型」与控制通道写不进去。
-  'ai/Let paired devices use the AI assistant':
+  "interconnect/Use this device's AI assistant":
       'test/sync/app_agent_assistant_host_test.dart + '
       'test/settings/ai_agent_peer_access_setting_test.dart',
   // 外部 AI 访问（MCP）：生效点是 MCP 服务端连上来时的令牌 / 开关门（harness 里没有
@@ -2128,7 +2132,7 @@ void main() {
       // 菜单按键串错行后遍历缩水（此前57行仍能越过>40门）。
       for (final String id in <String>[
         'reading/Reading mode',
-        'reading/Hide furigana',
+        'reading/Furigana display',
       ]) {
         final List<ItemVerdict> rows = verdicts
             .where((ItemVerdict v) => v.id == id)

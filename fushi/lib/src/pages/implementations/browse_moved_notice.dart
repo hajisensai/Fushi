@@ -86,7 +86,7 @@ Future<void> showBrowseMovedNoticeDialog(BuildContext context) {
         t.browse_moved_notice_body(
           browse: browse,
           settings: t.settings,
-          appearance: t.settings_destination_appearance_interaction,
+          appearance: t.settings_navigation_title,
           modules: t.settings_section_modules,
         ),
       ),

@@ -207,9 +207,7 @@ void main() {
     });
   });
 
-  testWidgets('设置项：存在于翻页与手势分组（点击翻页区域之前），非翻页模式置灰并说明', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('设置项：在翻页与手势分组里三项连排，非翻页模式置灰并说明', (WidgetTester tester) async {
     late SettingsContext settingsContext;
     late List<SettingsItem> items;
     await tester.pumpWidget(
@@ -240,15 +238,16 @@ void main() {
     );
 
     final List<String> ids = items.map((SettingsItem i) => i.id).toList();
-    // 翻页动画三项连排；其后是点击翻页区域（indZkg2A0I，三种模式都生效，不置灰）。
+    // 翻页动画三项连排。点击翻页区域（indZkg2A0I，三种模式都生效，不置灰）
+    // 领起整组，不能夹进这三项之间、也不能落到它们后面被误当成分页专属。
     final int first = ids.indexOf('reading_controls.page_turn_animation');
     expect(first, greaterThanOrEqualTo(0));
-    expect(ids.sublist(first), <String>[
+    expect(ids.sublist(first, first + 3), <String>[
       'reading_controls.page_turn_animation',
       'reading_controls.page_turn_animation_speed',
       'reading_controls.page_turn_follow_drag',
-      'reading_controls.tap_zone_layout',
     ]);
+    expect(ids.first, 'reading_controls.tap_zone_layout');
     final SettingsSegmentedItem<Object> effect =
         items[first] as SettingsSegmentedItem<Object>;
     final SettingsSegmentedItem<Object> speed =

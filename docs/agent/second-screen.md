@@ -37,8 +37,8 @@
   （`SyncRepository` 不同步）。
 - `SecondScreenController.isActive` 是唯一真相源：想要伴屏 **且** 当前挂着的面板模式是 `companion`（串流占屏时为 false）。
   重新请求只由屏幕事件 / reset / 策略变化触发，从不由面板事件触发（防崩溃循环）。
-- 设置行 `appearance.second_screen_mode` 与紧随其后的 `appearance.second_screen_lookup_screen`（两者只在有第二块屏时显示）、
-  `appearance.controller_lookup_style`（始终显示）。
+- 设置行 `appearance.second_screen_mode` 与紧随其后的 `appearance.second_screen_lookup_screen`（「外观 › 界面」，两者只在有
+  第二块屏时显示）、`appearance.controller_lookup_style`（「通用 › 键盘与手柄」，始终显示）。
 - 「查词结果显示在」`SecondScreenLookupScreen {bottom, top}`（偏好 `second_screen_lookup_screen`，设备本地，默认 bottom）：
   `SecondScreenController.lookupScreen`，`CompanionBridge` 把它镜像成 `CompanionContextRegistry.lookupsOnCompanion`。
   Top = 主屏查词一律走页内弹窗，伴屏照常显示面板（Now / Library / Settings 照用，Lookup 页签仍可手动打开看历史）。

@@ -31,7 +31,6 @@ import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_destination_id.dart';
-import 'package:fushi/src/settings/settings_schema_web_browser.dart';
 import 'package:fushi/src/diagnostics/video_diag_export.dart';
 import 'package:fushi/src/diagnostics/video_diag_log.dart';
 import 'package:fushi/src/stats/study_diag_export.dart';
@@ -47,6 +46,7 @@ import 'package:fushi/src/utils/misc/crash_dump_locator.dart';
 import 'package:fushi/src/utils/misc/log_exporter.dart';
 import 'package:fushi/src/utils/misc/platform_updater.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/src/utils/misc/debug_log_service.dart';
@@ -69,6 +69,7 @@ SettingsSection _homeShortcutsSection() {
     id: 'system.section.home_shortcuts',
     presentation: SettingsSectionPresentation.alwaysExpanded,
     title: t.settings_section_home_shortcuts,
+    footer: t.settings_system_home_shortcuts_footer,
     visible: (SettingsContext c) =>
         !c.appModel.moduleVisibility.isEnabled(ModuleId.home),
     items: <SettingsItem>[
@@ -154,12 +155,15 @@ SettingsDestination buildSystemDestination() {
     title: t.settings_destination_system_about,
     summary: t.settings_destination_system_summary,
     icon: FushiIcons.system,
+    // 本页只留「应用本身」的事：更新、通知、后台任务、网络、隐私、诊断、关于。
+    // 语言 / 快捷键 / 小内存等日常偏好归「通用」，启动页归「导航与首页」，
+    // 内置浏览器是独立一级分类——它们以顶层 builder 从本文件导出。
     sections: <SettingsSection>[
       _homeShortcutsSection(),
       SettingsSection(
         id: 'system.section.updates',
         presentation: SettingsSectionPresentation.alwaysExpanded,
-        title: t.section_update,
+        title: t.settings_system_section_app_update,
         // 更新分区在所有平台可见（至少能「检查→打开发布页」）；自动安装开关
         // 仅在支持应用内安装的平台显示（platformSupportsInAppInstall，见
         // platform_updater.dart 单一真相源）。
@@ -168,6 +172,7 @@ SettingsDestination buildSystemDestination() {
           SettingsSegmentedItem<String>(
             id: 'system.update_channel',
             title: t.settings_section_update_channel,
+            subtitle: t.settings_system_update_channel_hint,
             icon: Icons.system_update_alt_outlined,
             controlBelow: true,
             options: <SettingsSegmentOption<String>>[
@@ -254,6 +259,7 @@ SettingsDestination buildSystemDestination() {
           SettingsSwitchItem(
             id: 'system.update_never_remind',
             title: t.update_never_remind,
+            subtitle: t.settings_system_update_never_remind_hint,
             icon: Icons.notifications_off_outlined,
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.updateNeverRemind,
@@ -265,6 +271,7 @@ SettingsDestination buildSystemDestination() {
           SettingsSwitchItem(
             id: 'system.update_auto_install',
             title: t.update_auto_install,
+            subtitle: t.settings_system_update_auto_install_hint,
             icon: Icons.download_done_outlined,
             visible: (_) => platformSupportsInAppInstall(),
             value: (SettingsContext settingsContext) =>
@@ -274,216 +281,169 @@ SettingsDestination buildSystemDestination() {
               settingsContext.refresh();
             },
           ),
-          // 安装统计心跳（updates/usage_heartbeat.dart）：iOS 不发，开关也不出现。
+        ],
+      ),
+      // v101 统一更新提醒。四个域各一个开关 + 系统通知总开关。
+      //
+      // 四个域开关**不经 `AppModel.updateFeedService`**，直接读写 pref 键：
+      // service 本身也只是这些键的读写者，走它等于给纯偏好项挂上整条 DB 依赖。
+      // **例外是「系统通知」总开关**：它的显示值要合并系统权限状态、打开时要
+      // 申请权限，这两件事只有 service 知道（BUG-2498）。所以渲染系统页的
+      // widget 测试必须 `wireDatabaseForTesting`——`updateFeedService` 首次访问
+      // 会解引用数据库。
+      SettingsSection(
+        id: 'system.section.update_notifications',
+        title: t.updates_notify_section,
+        items: <SettingsItem>[
+          for (final (
+                UpdateFeedKind kind,
+                String title,
+                String hint,
+                IconData icon,
+              )
+              in <(UpdateFeedKind, String, String, IconData)>[
+                (
+                  UpdateFeedKind.videoEpisode,
+                  t.updates_notify_video_episode,
+                  t.updates_notify_video_episode_hint,
+                  FushiIcons.video,
+                ),
+                (
+                  UpdateFeedKind.mangaChapter,
+                  t.updates_notify_manga_chapter,
+                  t.updates_notify_manga_chapter_hint,
+                  FushiIcons.manga,
+                ),
+                (
+                  UpdateFeedKind.mangaExtension,
+                  t.updates_notify_manga_extension,
+                  t.updates_notify_manga_extension_hint,
+                  FushiIcons.browserExtension,
+                ),
+                (
+                  UpdateFeedKind.animeExtension,
+                  t.updates_notify_anime_extension,
+                  t.updates_notify_anime_extension_hint,
+                  FushiIcons.browserExtension,
+                ),
+                (
+                  UpdateFeedKind.appRelease,
+                  t.updates_notify_app_release,
+                  t.updates_notify_app_release_hint,
+                  Icons.system_update_outlined,
+                ),
+              ])
+            SettingsSwitchItem(
+              id: 'system.updates.${kind.dbValue}',
+              title: title,
+              subtitle: hint,
+              icon: icon,
+              value: (SettingsContext settingsContext) =>
+                  settingsContext.appModel.prefsRepo.getPref(
+                        kind.enabledPrefKey,
+                        defaultValue: true,
+                      )
+                      as bool,
+              onChanged: (SettingsContext settingsContext, bool value) async {
+                await settingsContext.appModel.prefsRepo.setPref(
+                  kind.enabledPrefKey,
+                  value,
+                );
+                settingsContext.refresh();
+              },
+            ),
+          // 显示值 = 偏好开 && 系统已授权；打开 = 唯一会弹系统权限框的地方
+          // （BUG-2498：启动期不再申请，申请只跟着用户这一下）。
           SettingsSwitchItem(
-            id: 'system.usage_stats_enabled',
-            title: t.usage_stats_enabled,
-            subtitle: t.usage_stats_enabled_hint,
-            icon: Icons.query_stats_outlined,
-            visible: (_) => platformSendsUsageHeartbeat(),
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.usageStatsEnabled,
+            id: 'system.updates.system_notifications',
+            title: t.updates_system_notifications,
+            subtitle: t.updates_system_notifications_hint,
+            icon: Icons.notifications_active_outlined,
+            value: (SettingsContext settingsContext) => settingsContext
+                .appModel
+                .updateFeedService
+                .systemNotificationsActive,
             onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel.setUsageStatsEnabled(value);
+              final UpdateFeedService feed =
+                  settingsContext.appModel.updateFeedService;
+              if (value) {
+                await feed.enableSystemNotifications();
+              } else {
+                await feed.disableSystemNotifications();
+              }
+              settingsContext.refresh();
+            },
+          ),
+          // 开发者回复了我提交的反馈：移动端后台检查 / 桌面运行中定时检查 → 系统通知。
+          // 关 = 撤掉后台任务（应用内提示与红点照常）。开的时候若系统还没授权就顺手
+          // 申请——这是用户的显式动作，与上一行同口径（BUG-2498）。
+          SettingsSwitchItem(
+            id: 'system.updates.feedback_replies',
+            title: t.feedback_reply_notify_setting,
+            subtitle: t.feedback_reply_notify_setting_hint,
+            icon: FushiIcons.forum,
+            value: (SettingsContext settingsContext) =>
+                feedbackReplyNotificationsEnabled(
+                  settingsContext.appModel.prefsRepo,
+                ),
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              final FeedbackReplyAlerts alerts = settingsContext.ref.read(
+                feedbackReplyAlertsProvider,
+              );
+              await alerts.setEnabled(value);
+              if (value && await alerts.systemNotifier.ensureReady()) {
+                // 刚授权的话，iOS 远程推送此刻才登记得上（未授权时 sync 不登记）。
+                if (await alerts.systemNotifier.requestPermission()) {
+                  await alerts.syncPush();
+                }
+              }
               settingsContext.refresh();
             },
           ),
         ],
       ),
+      // 「后台任务」：不打扰用户、自己在后台跑的维护动作。与上面的提醒分开——
+      // 关提醒不停补集 / 更新，关这里也不影响提醒。
       SettingsSection(
-        id: 'system.section.general',
+        id: 'system.section.background_tasks',
         presentation: SettingsSectionPresentation.alwaysExpanded,
-        // 文案统一（阶段 F/G）：本 section 原标题与 destination 标题同为「系统」，
-        // 搜索面包屑显示「系统 › 系统」语义重复。改为「通用」——本区聚的是版本 /
-        // 内存 / 手柄导航 / 快捷键 / GitHub 这类通用应用项。框架层另有面包屑去重
-        // （settingsSearchBreadcrumb），双保险消灭整类重复。
-        title: t.settings_section_general,
-        // 「推荐包下载」行随 controller 的阶段实时显隐：本分组自己订阅 stage
-        // （SettingsSection.liveListenable），不再靠宿主页整页重建。
-        liveListenable: (SettingsContext settingsContext) =>
-            settingsContext.appModel.recommendedPackDownloadController.stage,
+        title: t.settings_system_section_background,
         items: <SettingsItem>[
-          // 「界面语言」（id 'appearance.language'）已归位到「外观 · 界面」分区
-          //（与主题/明暗/缩放并列）；id 前缀本就是 appearance，此前放系统分类
-          // 是历史错配。
-          SettingsNavigationItem(
-            id: 'system.keyboard_shortcuts',
-            title: t.shortcut_settings_title,
-            // 「实验性」后缀已摘除（用户决策）：改键/冲突重分配/可视化键盘与
-            // 手柄图/三通道实时录键均已齐备，页面不再是实验功能。
-            icon: FushiIcons.keyboard,
-            onTap: (SettingsContext settingsContext) async {
-              await pushSettingsPage(
-                settingsContext,
-                (_) => const ShortcutSettingsPage(),
-              );
-            },
-          ),
+          // 媒体库在线作品自动补新集（默认开）：与上面的「番剧新集提醒」分开——
+          // 关提醒不停补集，关这里不影响订阅下载的提醒。
           SettingsSwitchItem(
-            id: 'system.focus_navigation',
-            title: t.focus_navigation_enabled,
-            subtitle: t.focus_navigation_enabled_hint,
-            icon: Icons.gamepad_outlined,
+            id: 'system.updates.video_library_auto_update',
+            title: t.updates_video_library_auto_update,
+            subtitle: t.updates_video_library_auto_update_hint,
+            icon: FushiIcons.libraryAdd,
+            defaultValue: true,
             value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.experimentalFocusNavigationEnabled,
+                settingsContext.appModel.prefsRepo.videoLibraryAutoUpdate,
             onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel
-                  .setExperimentalFocusNavigationEnabled(value);
+              await settingsContext.appModel.prefsRepo
+                  .setVideoLibraryAutoUpdate(value);
               settingsContext.refresh();
             },
           ),
-          // 启动页（反馈 #PwEC1evz1E）：取代旧开关「启动时打开查词」，可选任一此刻
-          // 可见、有底栏 tab 的模块（选项随功能模块开关与排序实时变化）。所选模块
-          // 被关掉时这里显示「底栏第一个页面」，与启动时的实际落点（homeInitialTab）
-          // 一致；重新打开该模块后用户原先的选择照旧生效。
-          // item id 沿用旧开关的 'appearance.startup_default_dictionary_tab'（设置
-          // 搜索锚点，历史命名，非持久化 key）；持久化见 ModuleId.startupPrefKey。
-          SettingsSegmentedItem<String>(
-            id: 'appearance.startup_default_dictionary_tab',
-            title: t.startup_module,
-            subtitle: t.startup_module_hint,
-            icon: FushiIcons.home,
-            dropdown: true,
-            defaultValue: _kStartupModuleDefault,
-            options: _startupModuleOptions(null),
-            optionsBuilder: (SettingsContext settingsContext) =>
-                _startupModuleOptions(
-                  settingsContext.appModel.moduleVisibility,
-                ),
-            selected: (SettingsContext settingsContext) =>
-                _startupModuleToken(settingsContext.appModel),
-            onChanged: (SettingsContext settingsContext, String token) async {
-              await settingsContext.appModel.setStartupModule(
-                _startupModuleOfToken(token),
-              );
-              settingsContext.refresh();
-            },
-          ),
-          // 新手引导重开入口（首启由 HomePage 自动弹一次）；引导本身只跳转
-          // 既有配置页面，不写任何功能开关。
-          SettingsNavigationItem(
-            id: 'system.onboarding_wizard',
-            title: t.onboarding_reopen,
-            icon: FushiIcons.flag,
-            onTap: (SettingsContext settingsContext) async {
-              await pushSettingsPage(
-                settingsContext,
-                (_) => const OnboardingWizardPage(),
-              );
-            },
-          ),
-          // 推荐包下载的常驻可见入口（BUG-2097）。下载归 [AppModel] 上的
-          // controller 所有，关掉向导也照跑——那就必须有一个不依赖向导的地方
-          // 看得到它、停得掉它、下完能就地导入。空闲时整行不渲染，设置页不常驻
-          // 一条恒为「无任务」的死行；本行随 controller 的阶段变化实时显隐，靠
-          // 所在分组的 liveListenable 订阅 stage 重建（同 galgame 准入那一行的做法）。
-          SettingsCustomItem(
-            id: 'system.recommended_pack_download',
-            searchTitle: t.onboarding_step_pack_title,
-            subtitle: t.onboarding_pack_intro,
-            visible: (SettingsContext settingsContext) => settingsContext
-                .appModel
-                .recommendedPackDownloadController
-                .isActive,
-            builder: _buildRecommendedPackDownloadRow,
-          ),
+          // 扩展后台自动更新（默认关）：启动时把签名未变的漫画 / 视频扩展装成
+          // 仓库新版；碰过在线源的进程里推迟到下次启动。只在有 Mihon 宿主且
+          // 合规允许在线源的平台出现。
           SettingsSwitchItem(
-            id: 'system.low_memory_mode',
-            title: t.low_memory_mode,
-            subtitle: t.low_memory_mode_hint,
-            icon: Icons.memory_outlined,
+            id: 'system.updates.extension_auto_update',
+            title: t.updates_extension_auto_update,
+            subtitle: t.updates_extension_auto_update_hint,
+            icon: FushiIcons.sync,
+            defaultValue: false,
+            visible: (_) =>
+                MihonRuntimeFactory.isSupported &&
+                (StoreRestrictedCapability.onlineMangaSource.isAvailable ||
+                    StoreRestrictedCapability.onlineVideoSource.isAvailable),
             value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.lowMemoryMode,
+                settingsContext.appModel.mihonExtensionAutoUpdate,
             onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel.setLowMemoryMode(value);
+              await settingsContext.appModel.setMihonExtensionAutoUpdate(value);
               settingsContext.refresh();
             },
-          ),
-          SettingsCustomItem(
-            id: 'system.app_version',
-            icon: FushiIcons.info,
-            builder: _buildRuntimeAppVersionRow,
-          ),
-          // 官网。与宽屏侧栏左上角的 app 图标是同一个入口（openOfficialWebsite），
-          // URL 只存在 official_links.dart 一处。
-          SettingsActionItem(
-            id: 'system.website',
-            title: t.options_website,
-            icon: Icons.language_outlined,
-            cli: const SettingsCliAction.tap(),
-            onTap: (_) async {
-              await openOfficialWebsite();
-            },
-          ),
-          SettingsActionItem(
-            id: 'system.github',
-            title: t.options_github,
-            icon: Icons.public_outlined,
-            cli: const SettingsCliAction.tap(),
-            onTap: (_) async {
-              await launchUrl(
-                Uri.parse('https://github.com/hajisensai/fushi'),
-                mode: LaunchMode.externalApplication,
-              );
-            },
-          ),
-          SettingsActionItem(
-            id: 'system.github_sponsors',
-            title: t.options_github_sponsors,
-            // App Store 3.1.1：iOS 不放外部打赏入口（判据见 store_compliance.dart）。
-            visible: (_) =>
-                StoreRestrictedCapability.externalDonation.isAvailable,
-            icon: FushiIcons.favorite,
-            cli: const SettingsCliAction.tap(),
-            onTap: (_) async {
-              await launchUrl(
-                Uri.parse(kGitHubSponsorsUrl),
-                mode: LaunchMode.externalApplication,
-              );
-            },
-          ),
-          SettingsActionItem(
-            id: 'system.ko_fi',
-            title: t.options_ko_fi,
-            // App Store 3.1.1：iOS 不放外部打赏入口（判据见 store_compliance.dart）。
-            visible: (_) =>
-                StoreRestrictedCapability.externalDonation.isAvailable,
-            icon: FushiIcons.favorite,
-            cli: const SettingsCliAction.tap(),
-            onTap: (_) async {
-              await launchUrl(
-                Uri.parse(kKoFiUrl),
-                mode: LaunchMode.externalApplication,
-              );
-            },
-          ),
-          // TMDB 署名 —— **合约义务，不是可选的致谢**。
-          //
-          // 视频封面/元数据刮削使用 TMDB API（内置 key，见 tmdb_default_key.dart），
-          // 其 Terms of Use 第 3 节要求应用内显著位置展示 TMDB 标识与下面这句原文
-          // 免责声明。声明句**刻意不翻译**：TMDB 要求逐字展示该英文原句，17 种语言
-          // 都用同一份。文案照抄条款当前版本（2023-10-20）的括号占位句，应用场景取
-          // "application"：`This application uses TMDB and the TMDB APIs but is not
-          // endorsed, certified, or otherwise approved by TMDB.` —— 旧措辞
-          // "not endorsed or certified" 少了 "or otherwise approved"，不是原句。
-          //
-          // logo 部分见 [_buildTmdbAttributionRow]：条款同时要求展示 TMDB 标识，
-          // 原图已逐字节入库（assets/attribution/tmdb/，provenance 见该目录
-          // README.md）。文字与 logo 是**一对合约义务**——删 about_tmdb_attribution
-          // 前不要先删 logo，反之亦然；要走一起走（连同内置 key 一并移除时）。
-          SettingsCustomItem(
-            id: 'system.tmdb_attribution',
-            searchTitle: 'TMDB',
-            // 免责声明正文同时挂在 schema 上：custom 行的正文由 builder 自绘
-            //（settings_schema_widgets 的 switch 只调 builder，不读 title/
-            // subtitle/icon），所以这里的 subtitle 是**纯搜索元数据、零渲染影响**
-            // ——filterSettingsEntries 的 haystack 取 `item.subtitle`，不挂就只剩
-            // searchTitle 'TMDB' 可搜，用户搜声明正文里的词（endorsed / certified
-            // / approved）搜不到这一行。同款用法见 settings_search 里
-            // bodySearchEntries 的合成项。
-            subtitle: t.about_tmdb_attribution,
-            icon: FushiIcons.video,
-            builder: _buildTmdbAttributionRow,
           ),
         ],
       ),
@@ -498,6 +458,7 @@ SettingsDestination buildSystemDestination() {
           SettingsSegmentedItem<String>(
             id: 'system.network_proxy_mode',
             title: t.network_proxy_mode_label,
+            subtitle: t.settings_system_proxy_mode_hint,
             icon: FushiIcons.server,
             options: <SettingsSegmentOption<String>>[
               SettingsSegmentOption<String>(
@@ -624,161 +585,33 @@ SettingsDestination buildSystemDestination() {
           ),
         ],
       ),
-      // app 内浏览器：一行入口，进统一的「浏览器设置」（浏览器本身 + 网页广告拦截 +
-      // 浏览器扩展各组；宽屏双栏、窄屏下钻），紧跟网络分组。
-      buildWebBrowserEntrySection(),
-      // v101 统一更新提醒。四个域各一个开关 + 系统通知总开关。
-      //
-      // 四个域开关**不经 `AppModel.updateFeedService`**，直接读写 pref 键：
-      // service 本身也只是这些键的读写者，走它等于给纯偏好项挂上整条 DB 依赖。
-      // **例外是「系统通知」总开关**：它的显示值要合并系统权限状态、打开时要
-      // 申请权限，这两件事只有 service 知道（BUG-2498）。所以渲染系统页的
-      // widget 测试必须 `wireDatabaseForTesting`——`updateFeedService` 首次访问
-      // 会解引用数据库。
+      // 「隐私」：会让数据离开这台设备的开关集中放一处。
       SettingsSection(
-        id: 'system.section.update_notifications',
-        title: t.updates_notify_section,
+        id: 'system.section.privacy',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
+        title: t.settings_system_section_privacy,
         items: <SettingsItem>[
-          for (final (
-                UpdateFeedKind kind,
-                String title,
-                String hint,
-                IconData icon,
-              )
-              in <(UpdateFeedKind, String, String, IconData)>[
-                (
-                  UpdateFeedKind.videoEpisode,
-                  t.updates_notify_video_episode,
-                  t.updates_notify_video_episode_hint,
-                  FushiIcons.video,
-                ),
-                (
-                  UpdateFeedKind.mangaChapter,
-                  t.updates_notify_manga_chapter,
-                  t.updates_notify_manga_chapter_hint,
-                  FushiIcons.manga,
-                ),
-                (
-                  UpdateFeedKind.mangaExtension,
-                  t.updates_notify_manga_extension,
-                  t.updates_notify_manga_extension_hint,
-                  FushiIcons.browserExtension,
-                ),
-                (
-                  UpdateFeedKind.animeExtension,
-                  t.updates_notify_anime_extension,
-                  t.updates_notify_anime_extension_hint,
-                  FushiIcons.browserExtension,
-                ),
-                (
-                  UpdateFeedKind.appRelease,
-                  t.updates_notify_app_release,
-                  t.updates_notify_app_release_hint,
-                  Icons.system_update_outlined,
-                ),
-              ])
-            SettingsSwitchItem(
-              id: 'system.updates.${kind.dbValue}',
-              title: title,
-              subtitle: hint,
-              icon: icon,
-              value: (SettingsContext settingsContext) =>
-                  settingsContext.appModel.prefsRepo.getPref(
-                        kind.enabledPrefKey,
-                        defaultValue: true,
-                      )
-                      as bool,
-              onChanged: (SettingsContext settingsContext, bool value) async {
-                await settingsContext.appModel.prefsRepo.setPref(
-                  kind.enabledPrefKey,
-                  value,
-                );
-                settingsContext.refresh();
-              },
-            ),
-          // 媒体库在线作品自动补新集（默认开）：与上面的「番剧新集提醒」分开——
-          // 关提醒不停补集，关这里不影响订阅下载的提醒。
+          // 安装统计心跳（updates/usage_heartbeat.dart）：iOS 不发，开关也不出现。
           SettingsSwitchItem(
-            id: 'system.updates.video_library_auto_update',
-            title: t.updates_video_library_auto_update,
-            subtitle: t.updates_video_library_auto_update_hint,
-            icon: FushiIcons.libraryAdd,
-            defaultValue: true,
+            id: 'system.usage_stats_enabled',
+            title: t.usage_stats_enabled,
+            subtitle: t.settings_system_usage_stats_hint,
+            icon: Icons.query_stats_outlined,
+            visible: _usageStatsVisible,
             value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.prefsRepo.videoLibraryAutoUpdate,
+                settingsContext.appModel.usageStatsEnabled,
             onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel.prefsRepo
-                  .setVideoLibraryAutoUpdate(value);
+              await settingsContext.appModel.setUsageStatsEnabled(value);
               settingsContext.refresh();
             },
           ),
-          // 扩展后台自动更新（默认关）：启动时把签名未变的漫画 / 视频扩展装成
-          // 仓库新版；碰过在线源的进程里推迟到下次启动。只在有 Mihon 宿主且
-          // 合规允许在线源的平台出现。
-          SettingsSwitchItem(
-            id: 'system.updates.extension_auto_update',
-            title: t.updates_extension_auto_update,
-            subtitle: t.updates_extension_auto_update_hint,
-            icon: FushiIcons.sync,
-            defaultValue: false,
-            visible: (_) =>
-                MihonRuntimeFactory.isSupported &&
-                (StoreRestrictedCapability.onlineMangaSource.isAvailable ||
-                    StoreRestrictedCapability.onlineVideoSource.isAvailable),
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.mihonExtensionAutoUpdate,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel.setMihonExtensionAutoUpdate(value);
-              settingsContext.refresh();
-            },
-          ),
-          // 显示值 = 偏好开 && 系统已授权；打开 = 唯一会弹系统权限框的地方
-          // （BUG-2498：启动期不再申请，申请只跟着用户这一下）。
-          SettingsSwitchItem(
-            id: 'system.updates.system_notifications',
-            title: t.updates_system_notifications,
-            subtitle: t.updates_system_notifications_hint,
-            icon: Icons.notifications_active_outlined,
-            value: (SettingsContext settingsContext) => settingsContext
-                .appModel
-                .updateFeedService
-                .systemNotificationsActive,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              final UpdateFeedService feed =
-                  settingsContext.appModel.updateFeedService;
-              if (value) {
-                await feed.enableSystemNotifications();
-              } else {
-                await feed.disableSystemNotifications();
-              }
-              settingsContext.refresh();
-            },
-          ),
-          // 开发者回复了我提交的反馈：移动端后台检查 / 桌面运行中定时检查 → 系统通知。
-          // 关 = 撤掉后台任务（应用内提示与红点照常）。开的时候若系统还没授权就顺手
-          // 申请——这是用户的显式动作，与上一行同口径（BUG-2498）。
-          SettingsSwitchItem(
-            id: 'system.updates.feedback_replies',
-            title: t.feedback_reply_notify_setting,
-            subtitle: t.feedback_reply_notify_setting_hint,
-            icon: FushiIcons.forum,
-            value: (SettingsContext settingsContext) =>
-                feedbackReplyNotificationsEnabled(
-                  settingsContext.appModel.prefsRepo,
-                ),
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              final FeedbackReplyAlerts alerts = settingsContext.ref.read(
-                feedbackReplyAlertsProvider,
-              );
-              await alerts.setEnabled(value);
-              if (value && await alerts.systemNotifier.ensureReady()) {
-                // 刚授权的话，iOS 远程推送此刻才登记得上（未授权时 sync 不登记）。
-                if (await alerts.systemNotifier.requestPermission()) {
-                  await alerts.syncPush();
-                }
-              }
-              settingsContext.refresh();
-            },
+          // 开关上只放一句短说明；完整的字段清单（原开关描述）点开对话框看。
+          SettingsNavigationItem(
+            id: 'system.usage_stats_fields',
+            title: t.settings_system_usage_stats_fields,
+            icon: FushiIcons.info,
+            visible: _usageStatsVisible,
+            onTap: _showUsageStatsFieldsDialog,
           ),
           // 闪退报告（feedback/crash_report.dart）：默认关；打开 = 以后闪退后下次启动
           // 不再询问、直接把日志发给开发者。开关存在错误日志目录的状态文件里（启动即
@@ -836,16 +669,6 @@ SettingsDestination buildSystemDestination() {
             visible: (_) => Platform.isWindows,
             builder: (_) => const CrashDumpPage(),
           ),
-          SettingsSwitchItem(
-            id: 'diagnostics.debug_log_enabled',
-            title: t.debug_log_toggle,
-            icon: Icons.rule_outlined,
-            value: (_) => DebugLogService.instance.enabled,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await DebugLogService.instance.setEnabled(value);
-              settingsContext.refresh();
-            },
-          ),
           SettingsNavigationItem(
             id: 'diagnostics.debug_log',
             title: t.debug_log_title(count: 0),
@@ -857,6 +680,17 @@ SettingsDestination buildSystemDestination() {
                 DebugLogService.instance.enabled ||
                 DebugLogService.instance.entries.isNotEmpty,
             builder: (_) => const DebugLogPage(),
+          ),
+          SettingsSwitchItem(
+            id: 'diagnostics.debug_log_enabled',
+            title: t.debug_log_toggle,
+            subtitle: t.settings_system_debug_log_hint,
+            icon: Icons.rule_outlined,
+            value: (_) => DebugLogService.instance.enabled,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await DebugLogService.instance.setEnabled(value);
+              settingsContext.refresh();
+            },
           ),
           // 用户 2026-09-12：导出统计诊断日志排查阅读速度异常。正文 = 头信息 +
           // 最近会话快照（字/时一列）+ StudyClock / 阅读器账本 / 有声书恢复流水；
@@ -904,7 +738,258 @@ SettingsDestination buildSystemDestination() {
           ),
         ],
       ),
+      SettingsSection(
+        id: 'system.section.about',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
+        title: t.settings_system_section_about,
+        items: <SettingsItem>[
+          SettingsCustomItem(
+            id: 'system.app_version',
+            icon: FushiIcons.info,
+            builder: _buildRuntimeAppVersionRow,
+          ),
+          // 官网。与宽屏侧栏左上角的 app 图标是同一个入口（openOfficialWebsite），
+          // URL 只存在 official_links.dart 一处。
+          SettingsActionItem(
+            id: 'system.website',
+            title: t.options_website,
+            icon: Icons.language_outlined,
+            cli: const SettingsCliAction.tap(),
+            onTap: (_) async {
+              await openOfficialWebsite();
+            },
+          ),
+          SettingsActionItem(
+            id: 'system.github',
+            title: t.options_github,
+            icon: Icons.public_outlined,
+            cli: const SettingsCliAction.tap(),
+            onTap: (_) async {
+              await launchUrl(
+                Uri.parse('https://github.com/hajisensai/fushi'),
+                mode: LaunchMode.externalApplication,
+              );
+            },
+          ),
+          SettingsActionItem(
+            id: 'system.github_sponsors',
+            title: t.options_github_sponsors,
+            // App Store 3.1.1：iOS 不放外部打赏入口（判据见 store_compliance.dart）。
+            visible: (_) =>
+                StoreRestrictedCapability.externalDonation.isAvailable,
+            icon: FushiIcons.favorite,
+            cli: const SettingsCliAction.tap(),
+            onTap: (_) async {
+              await launchUrl(
+                Uri.parse(kGitHubSponsorsUrl),
+                mode: LaunchMode.externalApplication,
+              );
+            },
+          ),
+          SettingsActionItem(
+            id: 'system.ko_fi',
+            title: t.options_ko_fi,
+            // App Store 3.1.1：iOS 不放外部打赏入口（判据见 store_compliance.dart）。
+            visible: (_) =>
+                StoreRestrictedCapability.externalDonation.isAvailable,
+            icon: FushiIcons.favorite,
+            cli: const SettingsCliAction.tap(),
+            onTap: (_) async {
+              await launchUrl(
+                Uri.parse(kKoFiUrl),
+                mode: LaunchMode.externalApplication,
+              );
+            },
+          ),
+          // 全仓此前没有任何入口能打开依赖许可清单；用框架自带的 LicensePage，
+          // 它读 LicenseRegistry（含 pub 依赖与 assets 里登记的许可）。
+          SettingsNavigationItem(
+            id: 'system.open_source_licenses',
+            title: t.settings_system_open_source_licenses,
+            subtitle: t.settings_system_open_source_licenses_hint,
+            icon: FushiIcons.code,
+            onTap: (SettingsContext c) => pushSettingsPage(
+              c,
+              (_) => LicensePage(
+                applicationName: 'Fushi',
+                applicationVersion: formatAppVersionDisplay(
+                  c.appModel.packageInfo,
+                  runningCodeVersion: fushiRunningCodeVersion,
+                ),
+              ),
+            ),
+          ),
+          // TMDB 署名 —— **合约义务，不是可选的致谢**。
+          //
+          // 视频封面/元数据刮削使用 TMDB API（内置 key，见 tmdb_default_key.dart），
+          // 其 Terms of Use 第 3 节要求应用内显著位置展示 TMDB 标识与下面这句原文
+          // 免责声明。声明句**刻意不翻译**：TMDB 要求逐字展示该英文原句，17 种语言
+          // 都用同一份。文案照抄条款当前版本（2023-10-20）的括号占位句，应用场景取
+          // "application"：`This application uses TMDB and the TMDB APIs but is not
+          // endorsed, certified, or otherwise approved by TMDB.` —— 旧措辞
+          // "not endorsed or certified" 少了 "or otherwise approved"，不是原句。
+          //
+          // logo 部分见 [_buildTmdbAttributionRow]：条款同时要求展示 TMDB 标识，
+          // 原图已逐字节入库（assets/attribution/tmdb/，provenance 见该目录
+          // README.md）。文字与 logo 是**一对合约义务**——删 about_tmdb_attribution
+          // 前不要先删 logo，反之亦然；要走一起走（连同内置 key 一并移除时）。
+          SettingsCustomItem(
+            id: 'system.tmdb_attribution',
+            searchTitle: 'TMDB',
+            // 免责声明正文同时挂在 schema 上：custom 行的正文由 builder 自绘
+            //（settings_schema_widgets 的 switch 只调 builder，不读 title/
+            // subtitle/icon），所以这里的 subtitle 是**纯搜索元数据、零渲染影响**
+            // ——filterSettingsEntries 的 haystack 取 `item.subtitle`，不挂就只剩
+            // searchTitle 'TMDB' 可搜，用户搜声明正文里的词（endorsed / certified
+            // / approved）搜不到这一行。同款用法见 settings_search 里
+            // bodySearchEntries 的合成项。
+            subtitle: t.about_tmdb_attribution,
+            icon: FushiIcons.video,
+            builder: _buildTmdbAttributionRow,
+          ),
+        ],
+      ),
     ],
+  );
+}
+
+/// 安装统计心跳（updates/usage_heartbeat.dart）只在发心跳的平台出现；它原本住在
+/// 「更新」分区、受该分区的 [platformSupportsUpdateCheck] 门控，挪进「隐私」后
+/// 两个条件一起下放到行上（开关与「查看字段」行共用）。
+bool _usageStatsVisible(SettingsContext _) =>
+    platformSupportsUpdateCheck() && platformSendsUsageHeartbeat();
+
+/// 「查看发送的具体字段」：开关描述只留一句短的，完整的字段清单在这里。
+Future<void> _showUsageStatsFieldsDialog(SettingsContext settingsContext) =>
+    showSettingsDialog(
+      settingsContext,
+      (BuildContext dialogContext) => FushiAlertDialog(
+        title: Text(t.usage_stats_enabled),
+        content: SingleChildScrollView(child: Text(t.usage_stats_enabled_hint)),
+        actions: <Widget>[
+          FushiTextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: Text(t.dialog_close),
+          ),
+        ],
+      ),
+    );
+
+/// 「通用 › 键盘与手柄」的快捷键入口。
+SettingsItem buildKeyboardShortcutsItem() {
+  return SettingsNavigationItem(
+    id: 'system.keyboard_shortcuts',
+    title: t.settings_general_shortcuts_title,
+    subtitle: t.settings_general_shortcuts_hint,
+    // 「实验性」后缀已摘除（用户决策）：改键/冲突重分配/可视化键盘与
+    // 手柄图/三通道实时录键均已齐备，页面不再是实验功能。
+    icon: FushiIcons.keyboard,
+    onTap: (SettingsContext settingsContext) async {
+      await pushSettingsPage(
+        settingsContext,
+        (_) => const ShortcutSettingsPage(),
+      );
+    },
+  );
+}
+
+/// 「通用 › 键盘与手柄」的焦点导航开关。
+SettingsItem buildFocusNavigationItem() {
+  return SettingsSwitchItem(
+    id: 'system.focus_navigation',
+    title: t.focus_navigation_enabled,
+    subtitle: t.focus_navigation_enabled_hint,
+    icon: Icons.gamepad_outlined,
+    value: (SettingsContext settingsContext) =>
+        settingsContext.appModel.experimentalFocusNavigationEnabled,
+    onChanged: (SettingsContext settingsContext, bool value) async {
+      await settingsContext.appModel.setExperimentalFocusNavigationEnabled(
+        value,
+      );
+      settingsContext.refresh();
+    },
+  );
+}
+
+/// 「通用 › 性能与上手」的小内存模式。
+SettingsItem buildLowMemoryModeItem() {
+  return SettingsSwitchItem(
+    id: 'system.low_memory_mode',
+    title: t.low_memory_mode,
+    subtitle: t.low_memory_mode_hint,
+    icon: Icons.memory_outlined,
+    value: (SettingsContext settingsContext) =>
+        settingsContext.appModel.lowMemoryMode,
+    onChanged: (SettingsContext settingsContext, bool value) async {
+      await settingsContext.appModel.setLowMemoryMode(value);
+      settingsContext.refresh();
+    },
+  );
+}
+
+/// 「通用 › 性能与上手」的新手引导重开入口。
+SettingsItem buildOnboardingWizardItem() {
+  // 新手引导重开入口（首启由 HomePage 自动弹一次）；引导本身只跳转
+  // 既有配置页面，不写任何功能开关。
+  return SettingsNavigationItem(
+    id: 'system.onboarding_wizard',
+    title: t.onboarding_reopen,
+    subtitle: t.settings_general_onboarding_hint,
+    icon: FushiIcons.flag,
+    onTap: (SettingsContext settingsContext) async {
+      await pushSettingsPage(
+        settingsContext,
+        (_) => const OnboardingWizardPage(),
+      );
+    },
+  );
+}
+
+/// 「通用 › 性能与上手」的推荐包下载行。所在分区必须订阅
+/// `recommendedPackDownloadController.stage`（[SettingsSection.liveListenable]），
+/// 本行才能随下载阶段实时显隐。
+SettingsItem buildRecommendedPackDownloadItem() {
+  // 推荐包下载的常驻可见入口（BUG-2097）。下载归 [AppModel] 上的
+  // controller 所有，关掉向导也照跑——那就必须有一个不依赖向导的地方
+  // 看得到它、停得掉它、下完能就地导入。空闲时整行不渲染，设置页不常驻
+  // 一条恒为「无任务」的死行；本行随 controller 的阶段变化实时显隐，靠
+  // 所在分组的 liveListenable 订阅 stage 重建（同 galgame 准入那一行的做法）。
+  return SettingsCustomItem(
+    id: 'system.recommended_pack_download',
+    searchTitle: t.onboarding_step_pack_title,
+    subtitle: t.onboarding_pack_intro,
+    visible: (SettingsContext settingsContext) =>
+        settingsContext.appModel.recommendedPackDownloadController.isActive,
+    builder: _buildRecommendedPackDownloadRow,
+  );
+}
+
+/// 「导航与首页 › 启动与底栏」的启动页。
+SettingsItem buildStartupPageItem() {
+  // 启动页（反馈 #PwEC1evz1E）：取代旧开关「启动时打开查词」，可选任一此刻
+  // 可见、有底栏 tab 的模块（选项随功能模块开关与排序实时变化）。所选模块
+  // 被关掉时这里显示「底栏第一个页面」，与启动时的实际落点（homeInitialTab）
+  // 一致；重新打开该模块后用户原先的选择照旧生效。
+  // item id 沿用旧开关的 'appearance.startup_default_dictionary_tab'（设置
+  // 搜索锚点，历史命名，非持久化 key）；持久化见 ModuleId.startupPrefKey。
+  return SettingsSegmentedItem<String>(
+    id: 'appearance.startup_default_dictionary_tab',
+    title: t.startup_module,
+    subtitle: t.startup_module_hint,
+    icon: FushiIcons.home,
+    dropdown: true,
+    defaultValue: _kStartupModuleDefault,
+    options: _startupModuleOptions(null),
+    optionsBuilder: (SettingsContext settingsContext) =>
+        _startupModuleOptions(settingsContext.appModel.moduleVisibility),
+    selected: (SettingsContext settingsContext) =>
+        _startupModuleToken(settingsContext.appModel),
+    onChanged: (SettingsContext settingsContext, String token) async {
+      await settingsContext.appModel.setStartupModule(
+        _startupModuleOfToken(token),
+      );
+      settingsContext.refresh();
+    },
   );
 }
 

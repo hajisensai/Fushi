@@ -30,7 +30,7 @@
 > - `ControllerLookupMode`（`lib/src/second_screen/input/`）排在**一切页面分派之前**：桌面在
 >   `GamepadService._dispatchButton`，Android 在 `FocusManager` 早期按键处理器
 >   （`interceptNativeControllerLookupKey`）。不进注册表，开启方式是设备本地偏好
->   `controller_lookup_style`（设置「外观」：按住 L1 / Select 切换 / 关）。**未设时：副屏伴侣在用 =
+>   `controller_lookup_style`（设置「通用 › 键盘与手柄」：按住 L1 / Select 切换 / 关）。**未设时：副屏伴侣在用 =
 >   按住 L1，否则关**——单屏手柄行为在用户自己打开前完全不变。
 > - 查词模式内（阅读器 / 视频字幕 / 漫画 OCR / 歌词页挂了目标时）：十字键 / 左摇杆左右 = 按词（Y 切按字）
 >   移光标，上下 = 上 / 下一行；A 查词（有查词结果时 A = 制卡）；X 发音；RT / LT 下 / 上一词条；右摇杆

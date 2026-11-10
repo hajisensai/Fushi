@@ -73,18 +73,33 @@ void main() {
     );
   });
 
-  test('设置项在阅读设置的统计分组，键名稳定', () {
-    final String schema = File(
+  test('设置项在通用页的学习计时分组，键名稳定', () {
+    // 计时开始方式对阅读 / 听书 / 视频的学习计时都生效，所以项由阅读 schema 的
+    // buildStudyClockItems() 提供，挂在通用页的「学习计时」分组。
+    final String reading = File(
       'lib/src/settings/settings_schema_reading.dart',
     ).readAsStringSync().replaceAll('\r\n', '\n');
-    final int section = schema.indexOf("id: 'reading.section.statistics'");
-    final int item = schema.indexOf("id: 'reading.stats_clock_start_mode'");
+    final int provider = reading.indexOf(
+      'List<SettingsItem> buildStudyClockItems() {',
+    );
+    expect(provider, greaterThanOrEqualTo(0));
+    final int providerEnd = reading.indexOf('\n}\n', provider);
+    final int item = reading.indexOf("id: 'reading.stats_clock_start_mode'");
+    expect(item, greaterThan(provider));
+    expect(item, lessThan(providerEnd), reason: '必须由 buildStudyClockItems 提供');
+
+    final String general = File(
+      'lib/src/settings/settings_schema_general.dart',
+    ).readAsStringSync().replaceAll('\r\n', '\n');
+    final int section = general.indexOf("id: 'general.section.study_clock'");
+    final int use = general.indexOf('...buildStudyClockItems()', section);
     expect(section, greaterThanOrEqualTo(0));
-    expect(item, greaterThan(section));
+    expect(use, greaterThan(section));
+    final int nextSection = general.indexOf('SettingsSection(', section + 1);
     expect(
-      schema.indexOf('SettingsSection(', section + 1),
-      greaterThan(item),
-      reason: '必须落在统计分组内',
+      nextSection == -1 || nextSection > use,
+      isTrue,
+      reason: '必须落在学习计时分组内',
     );
   });
 }

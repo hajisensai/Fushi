@@ -20,18 +20,22 @@ String readNormalizedSource(String path) {
   return maskComments(File(path).readAsStringSync().replaceAll('\r\n', '\n'));
 }
 
-/// TODO-586：settings_schema.dart 已按领域拆成 8 个 destination 文件 + 1 个共享
-/// fields 文件。把主文件与全部领域文件源拼成一份，让原本针对“单文件 schema”的
+/// TODO-586：settings_schema.dart 已按领域拆成多个 destination 文件 + 1 个共享
+/// fields 文件（这里列的是下面契约断言点名到的那些领域）。把主文件与全部领域文件源拼成一份，让原本针对“单文件 schema”的
 /// 整体契约断言（destination id 齐全、无旧 id、无旧弹窗页类名等）继续成立。
 const List<String> kSettingsSchemaDomainFiles = <String>[
   'lib/src/settings/settings_schema.dart',
+  'lib/src/settings/settings_schema_general.dart',
   'lib/src/settings/settings_schema_appearance.dart',
+  'lib/src/settings/settings_schema_navigation.dart',
   'lib/src/settings/settings_schema_profiles.dart',
   'lib/src/settings/settings_schema_reading.dart',
   'lib/src/settings/settings_schema_lookup.dart',
   'lib/src/settings/settings_schema_card_creation.dart',
   'lib/src/settings/settings_schema_video.dart',
   'lib/src/settings/settings_schema_listening.dart',
+  'lib/src/settings/settings_schema_web_browser.dart',
+  'lib/src/settings/settings_schema_ai.dart',
   'lib/src/settings/settings_schema_system.dart',
   'lib/src/settings/settings_schema_fields.dart',
 ];
@@ -98,10 +102,9 @@ void main() {
       'SettingsDestination buildVideoDestination()',
       'SettingsDestinationId.video',
     ],
-    // 听书 2026-08-24 并入阅读：不再是 destination，但仍是自己的领域 library
-    // （返回分区，由 buildReadingDestination 展开）——「一域一文件」契约不变。
     'lib/src/settings/settings_schema_listening.dart': <String>[
-      'List<SettingsSection> buildListeningSections()',
+      'SettingsDestination buildListeningDestination()',
+      'SettingsDestinationId.listening',
       "id: 'listening.audiobook_background_play'",
     ],
     'lib/src/settings/settings_schema_system.dart': <String>[
@@ -305,9 +308,15 @@ void main() {
         '$destinationSource\n$destinationIdSource\n$schemaSource\n$syncSource';
 
     for (final String token in <String>[
+      'SettingsDestinationId.general',
       'SettingsDestinationId.appearance',
+      'SettingsDestinationId.navigation',
       'SettingsDestinationId.profiles',
       'SettingsDestinationId.reading',
+      // 听书重新是独立一级分类（有声书播放、转录与悬浮字幕自成一页）。
+      'SettingsDestinationId.listening',
+      'SettingsDestinationId.webBrowser',
+      'SettingsDestinationId.ai',
       'SettingsDestinationId.lookup',
       'SettingsDestinationId.cardCreation',
       'SettingsDestinationId.syncBackup',
@@ -320,10 +329,8 @@ void main() {
       combined,
       isNot(contains('SettingsDestinationId.dictionaryAndCards')),
     );
+    // 听书分类用的是 listening，旧的 audiobook id 不能复活成第二个入口。
     expect(combined, isNot(contains('SettingsDestinationId.audiobook')));
-    // 听书并入阅读后该 id 被删（无持久化用途）；留着会让「听书是独立一级分类」
-    // 的假设悄悄复活。
-    expect(combined, isNot(contains('SettingsDestinationId.listening')));
     expect(schemaSource, isNot(contains('DictionarySettingsDialogPage')));
   });
 
@@ -424,13 +431,13 @@ void main() {
     final String lookupSource = readNormalizedSource(
       'lib/src/settings/settings_schema_lookup.dart',
     );
-    // 「查词显示」拆成「词条内容 / 弹窗窗口」两组后，popup_instant_scroll 归弹窗
-    // 窗口组；组尾还有带 ReaderPlacement 的滑动关闭手势对（TODO-436/625，本就
-    // 该出现在书内快捷面板），所以既要断言它落在窗口组段内，也要断言它自身不是
+    // 弹窗相关设置住「查词弹窗」子页，popup_instant_scroll 归其中的「滚动」组；
+    // 其后「关闭」组里还有带 ReaderPlacement 的滑动关闭手势对（TODO-436/625，本就
+    // 该出现在书内快捷面板），所以既要断言它落在滚动组段内，也要断言它自身不是
     // reader-only。旧写法用一个跨两个标记的字符窗口同时表达这两件事，item 一长
     // 就会把邻项读进来；现在拆成「顺序」+「item 自身」两条独立判据。
     final int displayStart = lookupSource.indexOf(
-      'title: t.settings_section_lookup_popup_window',
+      'title: t.settings_lookup_section_popup_scroll',
     );
     final int instantScrollStart = lookupSource.indexOf(
       "id: 'lookup.popup_instant_scroll'",
@@ -442,7 +449,7 @@ void main() {
     expect(
       instantScrollStart,
       greaterThan(displayStart),
-      reason: 'popup_instant_scroll 必须落在「弹窗窗口」分组段内',
+      reason: 'popup_instant_scroll 必须落在弹窗子页的「滚动」分组段内',
     );
     expect(swipeStart, greaterThan(instantScrollStart));
 
@@ -453,7 +460,7 @@ void main() {
     expect(itemBody, contains('t.popup_instant_scroll'));
     expect(itemBody, contains('popupInstantScroll'));
     // 它是跨阅读器 / 视频 / 词典页共享的弹窗行为，所以真值只有全局这一份（上面的
-    // 顺序断言钉住它留在「弹窗窗口」组）；ReaderPlacement 只是把同一份真值**投影**
+    // 顺序断言钉住它留在弹窗子页的「滚动」组）；ReaderPlacement 只是把同一份真值**投影**
     // 进书内快捷面板（与同组的滑动关闭对同法）——墨水屏用户是在书里查词时才发现
     // 步长不合手，不该为此退出阅读器去翻全局设置。步长滑杆随开关一起投影。
     expect(

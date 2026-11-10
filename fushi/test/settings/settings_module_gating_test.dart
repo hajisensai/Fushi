@@ -18,7 +18,7 @@ import '../helpers/test_platform_services.dart';
 /// 「功能模块」关掉一个模块之后，**设置页里属于它的一级分类必须整条消失**——
 /// 列表里没有、搜索索引里也没有（用户拍板的隐藏强度：「看不见也到不了」）。
 ///
-/// 这条是四个新模块（听书 / 制卡 / 在线服务 / 同步备份）唯一的落地面证据：它们
+/// 这条是横切模块（听书 / 制卡 / 在线服务 / AI / 同步备份）唯一的落地面证据：它们
 /// **没有底栏 tab**，`homeActiveTabs` 那套用例根本咬不到；开关翻转之后能观测到的
 /// 全部效果就在这里。`settings_schema_coverage_test.dart` 的 `kCoveredElsewhere`
 /// 指向本文件，删了这条会让那边直接红。
@@ -143,19 +143,20 @@ void main() {
   testWidgets('导航模块合进拖拽排序列表后，按模块名仍能搜到（直达那块列表）', (WidgetTester tester) async {
     await pumpContext(tester);
     appModel.enabled = ModuleId.values.toSet();
-    // 只展平「功能模块」这一个分区：桩 AppModel 没有 prefsRepo，外观里别的行
-    // （读偏好的标题闭包）在这里会抛 null check，与本条要咬的东西无关。
-    final SettingsDestination appearance = buildSettingsSchema(sctx).firstWhere(
-      (SettingsDestination d) => d.id == SettingsDestinationId.appearance,
+    // 只展平「功能模块」这一个分区（住「导航与首页」）：桩 AppModel 没有
+    // prefsRepo，同页别的行（读偏好的标题闭包）在这里会抛 null check，与本条要咬的
+    // 东西无关。
+    final SettingsDestination navigation = buildSettingsSchema(sctx).firstWhere(
+      (SettingsDestination d) => d.id == SettingsDestinationId.navigation,
     );
     final List<SettingsSearchEntry> entries = flattenVisibleSettings(
       <SettingsDestination>[
         SettingsDestination(
-          id: appearance.id,
-          title: appearance.title,
-          icon: appearance.icon,
+          id: navigation.id,
+          title: navigation.title,
+          icon: navigation.icon,
           sections: <SettingsSection>[
-            appearance.sections.firstWhere(
+            navigation.sections.firstWhere(
               (SettingsSection s) => s.id == 'appearance.section.modules',
             ),
           ],
@@ -191,20 +192,17 @@ void main() {
     }
   });
 
-  testWidgets('三个横切模块各自真的名下有分类（否则上面三条在空集上恒绿）', (WidgetTester tester) async {
-    // 制卡/在线服务/同步没有底栏 tab，设置分类是它们唯一的可断言落地面。
-    // 归属表一旦被改成 null，上面的循环会在空集上静默通过——先在这里挡住。
-    //
-    // 听书不在这份名单里：2026-08-24 它并入了「阅读」分类（见
-    // buildListeningSections），落地面从「一条一级分类」降到「阅读里的两个分区」。
-    // 上面那三条循环只认 destination 级归属，对听书因此是空集恒绿——真正的门控
-    // 断言挪到下面那条专用用例，别把这里的名单当成全部覆盖。
+  testWidgets('横切模块各自真的名下有分类（否则上面三条在空集上恒绿）', (WidgetTester tester) async {
+    // 听书 / 制卡 / 在线服务 / AI / 同步没有底栏 tab，设置分类是它们唯一的可断言
+    // 落地面。归属表一旦被改成 null，上面的循环会在空集上静默通过——先在这里挡住。
     await pumpContext(tester);
     appModel.enabled = ModuleId.values.toSet();
     final Set<SettingsDestinationId> visible = visibleIds();
     for (final ModuleId module in <ModuleId>[
+      ModuleId.listening,
       ModuleId.cardCreation,
       ModuleId.services,
+      ModuleId.ai,
       ModuleId.sync,
     ]) {
       expect(
@@ -218,87 +216,65 @@ void main() {
     }
   });
 
-  testWidgets('AI 模块的落地面是「模型」里的 LLM 子页入口（行级门控，非分类级）', (
+  testWidgets('AI 模块的落地面是独立的「AI」分类，「本机模型」不再挂 LLM 入口', (
     WidgetTester tester,
   ) async {
-    // 2026-10-13 起原「AI」一级分类降为「模型」分类里的 LLM 子页：AI 模块没有自己的
-    // 可见 destination，上面按 destination 归属的循环对它恒为空集。不变式不变——
-    // 「关掉模块 ⇒ 它的设置看不见也搜不到」——收口点是 models.llm 这一行：它不可见时
-    // 子页（buildAiDestination）不会被展开进搜索索引。
+    // AI 重新是一级分类（buildAiDestination），按 destination 归属被上面的循环
+    // 覆盖；这里点名钉住，并确认「本机模型」里不再残留 models.llm 这条旁路入口
+    // ——它若复活，模型分类不跟 AI 模块走，关掉 AI 仍能从那里进 AI 设置。
     await pumpContext(tester);
 
-    bool llmEntryVisible() {
-      final List<SettingsDestination> models = buildSettingsSchema(sctx)
-          .where(
-            (SettingsDestination d) => d.id == SettingsDestinationId.models,
-          )
-          .toList();
-      expect(models, hasLength(1), reason: '模型分类不见了，下面的断言会在空集上恒绿');
-      final List<SettingsItem> llm = <SettingsItem>[
-        for (final SettingsSection section in models.single.sections)
-          for (final SettingsItem item in section.items)
-            if (item.id == 'models.llm') item,
-      ];
-      expect(llm, hasLength(1), reason: 'models.llm 入口不见了');
-      return llm.single.isVisible(sctx);
-    }
-
     appModel.enabled = ModuleId.values.toSet();
-    expect(llmEntryVisible(), isTrue, reason: 'AI 模块开着却看不到 LLM 子页入口');
+    expect(visibleIds(), contains(SettingsDestinationId.ai));
+    final SettingsDestination models = buildSettingsSchema(sctx).singleWhere(
+      (SettingsDestination d) => d.id == SettingsDestinationId.models,
+    );
+    expect(
+      models.sections
+          .expand((SettingsSection s) => s.items)
+          .map((SettingsItem i) => i.id),
+      isNot(contains('models.llm')),
+    );
 
     appModel.enabled = ModuleId.values.toSet()..remove(ModuleId.ai);
     expect(
-      llmEntryVisible(),
-      isFalse,
-      reason: '关掉 AI 模块后「模型」里仍能进 LLM 子页——降级成子页时把模块门丢了',
+      visibleIds(),
+      isNot(contains(SettingsDestinationId.ai)),
+      reason: '关掉 AI 模块后「AI」分类仍列在设置主页上',
+    );
+    expect(
+      visibleIds(),
+      contains(SettingsDestinationId.models),
+      reason: '本机模型是设备级资源，不能跟着 AI 模块一起消失',
     );
   });
 
-  testWidgets('听书模块的落地面是「阅读」里的两个分区（分区级门控，非分类级）', (WidgetTester tester) async {
-    // 并类之后听书没有自己的 destination，上面按 destination 归属做的三条循环
-    // 对它恒为空集。不变式本身没变——「关掉模块 ⇒ 它的设置行看不见也搜不到」——
-    // 只是粒度降到了分区，所以这里直接按 item id 前缀断言那条不变式。
+  testWidgets('听书模块的落地面是独立的「听书」分类，阅读页不再混入听书分区', (WidgetTester tester) async {
+    // 听书重新是一级分类：模块门挂在 destination 上（上面三条循环覆盖），分区上
+    // 的 listeningModuleOn 门是同一判据的冗余。这里钉住两件事：开关翻转时分类
+    // 进出；阅读页里没有任何 listening.* 分区（否则关掉听书后它们仍会从阅读页漏出来）。
     await pumpContext(tester);
 
-    // 断言落在**分区可见性**上，而不是展平后的行：桩 AppModel 没有 prefsRepo，
-    // 求值 item 的 visible/titleBuilder 会当场抛（上面第三条用例同样靠只展平
-    // 模块名下那几条来绕开）。分区不可见时其下的行本就进不了搜索索引
-    // （SettingsSection.visibleCopy 先过滤分区，flattenVisibleSettings 再展平），
-    // 所以这一层就是「看不见也到不了」的收口点。
-    List<String> visibleListeningSectionIds() {
-      final List<SettingsDestination> reading = buildSettingsSchema(sctx)
-          .where(
-            (SettingsDestination d) => d.id == SettingsDestinationId.reading,
-          )
-          .toList();
-      expect(reading, hasLength(1), reason: '阅读分类不见了，下面的断言会在空集上恒绿');
-      return reading.single.sections
-          .where((SettingsSection s) => s.isVisible(sctx))
+    appModel.enabled = ModuleId.values.toSet();
+    expect(visibleIds(), contains(SettingsDestinationId.listening));
+    final SettingsDestination reading = buildSettingsSchema(sctx).singleWhere(
+      (SettingsDestination d) => d.id == SettingsDestinationId.reading,
+    );
+    expect(
+      reading.sections
           .map((SettingsSection s) => s.id)
           .whereType<String>()
-          .where((String id) => id.startsWith('listening.'))
-          .toList();
-    }
-
-    appModel.enabled = ModuleId.values.toSet();
-    expect(
-      visibleListeningSectionIds(),
-      // 播放 / 悬浮字幕 / 悬浮字幕外观三个分区（外观分区的项全不可见时由
-      // visibleSections 另行过滤，分区门本身只看模块）。
-      hasLength(3),
-      reason:
-          '听书模块开着却看不到那三个分区——并入阅读时把分区门写反了，'
-          '或者分区根本没被展开进 buildReadingDestination',
+          .where((String id) => id.startsWith('listening.')),
+      isEmpty,
     );
 
     appModel.enabled = ModuleId.values.toSet()..remove(ModuleId.listening);
     expect(
-      visibleListeningSectionIds(),
-      isEmpty,
-      reason:
-          '关掉听书模块后 listening.* 分区还在阅读里。并类时模块门原本挂在'
-          'destination 上，下放到分区时漏了哪一个，这条就会红。',
+      visibleIds(),
+      isNot(contains(SettingsDestinationId.listening)),
+      reason: '关掉听书模块后「听书」分类仍列在设置主页上',
     );
+    expect(visibleIds(), contains(SettingsDestinationId.reading));
   });
 }
 

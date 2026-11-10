@@ -67,12 +67,98 @@ SettingsDestination buildAiDestination() {
         const AiProviderSettingsSection(),
     bodyBeforeSections: true,
     sections: <SettingsSection>[
+      // AI 助手（spec 2026-10-26）：打开对话 + 操作记录（过了会话也能撤销）。
+      SettingsSection(
+        id: 'ai.agent',
+        title: t.ai_feature_agent,
+        items: <SettingsItem>[
+          SettingsActionItem(
+            id: 'ai.agent_open',
+            title: t.ai_agent_title,
+            subtitle: t.ai_feature_agent_summary,
+            icon: FushiIcons.aiAssistant,
+            cli: const SettingsCliAction.unsupported(
+              '对话页只在界面里开；命令行用 fushi_cli ai ask "<一句话>"',
+            ),
+            onTap: (SettingsContext c) => pushAiAgentPage(c.context),
+          ),
+          SettingsActionItem(
+            id: 'ai.agent_history',
+            title: t.ai_agent_history_title,
+            subtitle: t.ai_agent_history_summary,
+            icon: FushiIcons.history,
+            cli: const SettingsCliAction.unsupported(
+              '操作记录只在界面里看；命令行用 fushi_cli ai log / fushi_cli ai undo <id>',
+            ),
+            onTap: (SettingsContext c) =>
+                openAiAgentHistoryPage(c.context, c.appModel),
+          ),
+          // 反方向：AI 助手当 MCP 客户端，调用户接入的外部 MCP server（spec
+          // docs/specs/2026-11-05-ai-mcp-client-design.md）。各平台都有（网络地址型
+          // server）；本地程序型只在桌面，由页面自己判断。配置只能在这页亲手改。
+          SettingsActionItem(
+            id: 'ai.mcp_servers',
+            title: t.ai_mcp_client_title,
+            subtitle: t.ai_mcp_client_summary,
+            icon: FushiIcons.hub,
+            cli: const SettingsCliAction.unsupported(
+              'MCP 服务器只在设置页里由用户亲手配置：本地程序型 server 会在本机执行命令，'
+              '不能由控制通道或 AI 自己添加',
+            ),
+            onTap: (SettingsContext c) => openAiMcpServersPage(
+              c.context,
+              c.appModel.prefsRepo,
+              liveStatuses: () =>
+                  AiAgentController.instanceOrNull?.mcpToolbox.statuses ??
+                  const <String, McpServerStatus>{},
+            ),
+          ),
+        ],
+      ),
+      // 外部访问：外部 AI 程序反过来调用本机 Fushi，和「AI 助手」方向相反，单独成组。
+      SettingsSection(
+        id: 'ai.section.external_access',
+        title: t.settings_ai_section_external_access,
+        visible: (_) => isDesktopPlatform,
+        items: <SettingsItem>[
+          // 外部 AI 访问（MCP，docs/mcp-external-ai.md）：只在桌面（挂在本机控制通道
+          // `/mcp` 上）。默认关；授权开关与配对令牌只能在这里亲手操作——AI 自己的
+          // settings.set 写不进开关（userOnly），令牌不经控制通道签发。
+          SettingsSwitchItem(
+            id: 'ai.mcp_access',
+            title: t.ai_mcp_access,
+            subtitle: t.ai_mcp_access_hint,
+            icon: FushiIcons.link,
+            userOnly: true,
+            visible: (_) => isDesktopPlatform,
+            value: (SettingsContext c) => c.appModel.prefsRepo.aiMcpEnabled,
+            onChanged: (SettingsContext c, bool value) =>
+                c.appModel.prefsRepo.setAiMcpEnabled(value),
+            defaultValue: false,
+          ),
+          SettingsActionItem(
+            id: 'ai.mcp_token',
+            title: t.ai_mcp_token,
+            subtitle: t.ai_mcp_token_hint,
+            icon: FushiIcons.key,
+            visible: (SettingsContext c) =>
+                isDesktopPlatform && c.appModel.prefsRepo.aiMcpEnabled,
+            cli: const SettingsCliAction.unsupported(
+              '配对令牌只在设置页里由用户亲手生成：令牌授权的是外部 AI，不能由控制通道或 AI 自己签发',
+            ),
+            onTap: (SettingsContext c) => showAiMcpTokenIssueDialog(
+              c.context,
+              () => issueAiMcpToken(c.appModel.prefsRepo),
+            ),
+          ),
+        ],
+      ),
       // 联网资料：app 自己抓条目正文喂给 AI，与提供商有没有联网工具无关，所以不另设
       // 门控——整页已经过 AI 模块门，这一段跟着页面走。内置站是声明式开关；自定义
       // MediaWiki 站点是可增删的记录列表，走 custom 行（同提供商列表的切法）。
       //
       // 2026-10-08 所有者：AI 页外层只放总配置（提供商 / 默认提供商），各功能的单独
-      // 配置折叠起来。下面两段都是功能级配置，默认折叠，收起时摘要报改过几项。
+      // 配置折叠起来。下面几段都是功能级配置，默认折叠，收起时摘要报改过几项。
       SettingsSection(
         id: 'ai.web_knowledge',
         title: t.ai_web_knowledge_section,
@@ -298,97 +384,6 @@ SettingsDestination buildAiDestination() {
       // 导入后自动整理的开关（设备本地，默认关；副标题就是「会发送什么」的完整说明，
       // 用户亲手打开即同意——不另弹模态框）+ 整理记录（按次 / 按处撤销、允许再次
       // 建议被拒绝的分组）。
-      // AI 助手（spec 2026-10-26）：打开对话 + 操作记录（过了会话也能撤销）。
-      SettingsSection(
-        id: 'ai.agent',
-        title: t.ai_feature_agent,
-        items: <SettingsItem>[
-          SettingsActionItem(
-            id: 'ai.agent_open',
-            title: t.ai_agent_title,
-            subtitle: t.ai_feature_agent_summary,
-            icon: FushiIcons.aiAssistant,
-            cli: const SettingsCliAction.unsupported(
-              '对话页只在界面里开；命令行用 fushi_cli ai ask "<一句话>"',
-            ),
-            onTap: (SettingsContext c) => pushAiAgentPage(c.context),
-          ),
-          SettingsActionItem(
-            id: 'ai.agent_history',
-            title: t.ai_agent_history_title,
-            subtitle: t.ai_agent_history_summary,
-            icon: FushiIcons.history,
-            cli: const SettingsCliAction.unsupported(
-              '操作记录只在界面里看；命令行用 fushi_cli ai log / fushi_cli ai undo <id>',
-            ),
-            onTap: (SettingsContext c) =>
-                openAiAgentHistoryPage(c.context, c.appModel),
-          ),
-          // 本机当互联 host 时远端 AI 助手的门（与服务端 ai.agent_for_peers 同一判据）：
-          // 默认关；授权开关只能在这里亲手拨，控制通道 / AI 自己写不进去（userOnly）。
-          SettingsSwitchItem(
-            id: 'ai.agent_for_peers',
-            title: t.ai_agent_peer_access,
-            subtitle: t.ai_agent_peer_access_hint,
-            icon: FushiIcons.devices,
-            userOnly: true,
-            value: (SettingsContext c) => c.appModel.prefsRepo.aiAgentForPeers,
-            onChanged: (SettingsContext c, bool value) =>
-                c.appModel.prefsRepo.setAiAgentForPeers(value),
-            defaultValue: false,
-          ),
-          // 外部 AI 访问（MCP，docs/mcp-external-ai.md）：只在桌面（挂在本机控制通道
-          // `/mcp` 上）。默认关；授权开关与配对令牌只能在这里亲手操作——AI 自己的
-          // settings.set 写不进开关（userOnly），令牌不经控制通道签发。
-          SettingsSwitchItem(
-            id: 'ai.mcp_access',
-            title: t.ai_mcp_access,
-            subtitle: t.ai_mcp_access_hint,
-            icon: FushiIcons.link,
-            userOnly: true,
-            visible: (_) => isDesktopPlatform,
-            value: (SettingsContext c) => c.appModel.prefsRepo.aiMcpEnabled,
-            onChanged: (SettingsContext c, bool value) =>
-                c.appModel.prefsRepo.setAiMcpEnabled(value),
-            defaultValue: false,
-          ),
-          SettingsActionItem(
-            id: 'ai.mcp_token',
-            title: t.ai_mcp_token,
-            subtitle: t.ai_mcp_token_hint,
-            icon: FushiIcons.key,
-            visible: (SettingsContext c) =>
-                isDesktopPlatform && c.appModel.prefsRepo.aiMcpEnabled,
-            cli: const SettingsCliAction.unsupported(
-              '配对令牌只在设置页里由用户亲手生成：令牌授权的是外部 AI，不能由控制通道或 AI 自己签发',
-            ),
-            onTap: (SettingsContext c) => showAiMcpTokenIssueDialog(
-              c.context,
-              () => issueAiMcpToken(c.appModel.prefsRepo),
-            ),
-          ),
-          // 反方向：AI 助手当 MCP 客户端，调用户接入的外部 MCP server（spec
-          // docs/specs/2026-11-05-ai-mcp-client-design.md）。各平台都有（网络地址型
-          // server）；本地程序型只在桌面，由页面自己判断。配置只能在这页亲手改。
-          SettingsActionItem(
-            id: 'ai.mcp_servers',
-            title: t.ai_mcp_client_title,
-            subtitle: t.ai_mcp_client_summary,
-            icon: FushiIcons.hub,
-            cli: const SettingsCliAction.unsupported(
-              'MCP 服务器只在设置页里由用户亲手配置：本地程序型 server 会在本机执行命令，'
-              '不能由控制通道或 AI 自己添加',
-            ),
-            onTap: (SettingsContext c) => openAiMcpServersPage(
-              c.context,
-              c.appModel.prefsRepo,
-              liveStatuses: () =>
-                  AiAgentController.instanceOrNull?.mcpToolbox.statuses ??
-                  const <String, McpServerStatus>{},
-            ),
-          ),
-        ],
-      ),
       SettingsSection(
         id: 'ai.library_organize',
         title: t.ai_feature_library_organize,
@@ -461,5 +456,27 @@ Future<void> openDownloadExecutionHostSetting(SettingsContext c) async {
   await pushSettingsPage(
     c,
     (_) => SettingsDetailPage(destination: buildDownloadsDestination()),
+  );
+}
+
+/// 「已配对设备可以使用本机的 AI 助手」：本机当互联主机时远端 AI 助手的门（与服务端
+/// ai.agent_for_peers 同一判据）。它是对已配对设备的授权，和别的「允许已配对设备…」
+/// 一起放在「Fushi 互联 › 主机服务」；因为不在 AI 页里了，要自己跟着 AI 模块门控。
+/// 默认关；授权开关只能在设置里亲手拨，控制通道 / AI 自己写不进去（userOnly）。
+SettingsItem buildAiAgentForPeersItem() {
+  return SettingsSwitchItem(
+    id: 'ai.agent_for_peers',
+    title: t.ai_agent_peer_access,
+    subtitle: t.ai_agent_peer_access_hint,
+    icon: FushiIcons.devices,
+    userOnly: true,
+    visible: (SettingsContext c) => isSettingsDestinationVisible(
+      SettingsDestinationId.ai,
+      c.appModel.moduleVisibility,
+    ),
+    value: (SettingsContext c) => c.appModel.prefsRepo.aiAgentForPeers,
+    onChanged: (SettingsContext c, bool value) =>
+        c.appModel.prefsRepo.setAiAgentForPeers(value),
+    defaultValue: false,
   );
 }

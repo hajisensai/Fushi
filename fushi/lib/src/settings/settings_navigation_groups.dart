@@ -5,20 +5,22 @@ import 'package:fushi/src/settings/settings_destination_id.dart';
 
 /// 一级导航分组固定展开，分区内部的展开策略与此无关。
 enum SettingsNavigationGroupId {
-  interface,
+  general,
   content,
   learning,
+  aiModels,
   connections,
   data,
-  app;
+  system;
 
   String title(BuildContext context) => switch (this) {
-    interface => context.t.settings_group_interface,
+    general => context.t.settings_group_general,
     content => context.t.settings_group_content,
     learning => context.t.settings_group_learning,
+    aiModels => context.t.settings_group_ai_models,
     connections => context.t.settings_group_connections,
     data => context.t.settings_group_data,
-    app => context.t.settings_group_app,
+    system => context.t.settings_group_system,
   };
 }
 
@@ -33,21 +35,26 @@ class SettingsNavigationGroup {
 SettingsNavigationGroupId settingsNavigationGroupFor(
   SettingsDestinationId id,
 ) => switch (id) {
+  SettingsDestinationId.general ||
   SettingsDestinationId.appearance ||
-  SettingsDestinationId.floatingBall => SettingsNavigationGroupId.interface,
+  SettingsDestinationId.navigation ||
+  SettingsDestinationId.floatingBall => SettingsNavigationGroupId.general,
   SettingsDestinationId.reading ||
+  SettingsDestinationId.listening ||
   SettingsDestinationId.manga ||
   SettingsDestinationId.video ||
   SettingsDestinationId.music ||
   SettingsDestinationId.game ||
-  SettingsDestinationId.mediaTracking => SettingsNavigationGroupId.content,
+  SettingsDestinationId.webBrowser => SettingsNavigationGroupId.content,
   SettingsDestinationId.lookup ||
-  SettingsDestinationId.cardCreation ||
-  SettingsDestinationId.models => SettingsNavigationGroupId.learning,
+  SettingsDestinationId.cardCreation => SettingsNavigationGroupId.learning,
+  SettingsDestinationId.ai ||
+  SettingsDestinationId.models => SettingsNavigationGroupId.aiModels,
+  // 媒体记录只做一件事：把进度记到第三方账号上，所以与其它在线账号放在一组。
   SettingsDestinationId.downloads ||
   SettingsDestinationId.services ||
-  SettingsDestinationId.localServices ||
-  SettingsDestinationId.ai => SettingsNavigationGroupId.connections,
+  SettingsDestinationId.mediaTracking ||
+  SettingsDestinationId.localServices => SettingsNavigationGroupId.connections,
   SettingsDestinationId.profiles ||
   SettingsDestinationId.syncBackup ||
   SettingsDestinationId.interconnect ||
@@ -57,7 +64,7 @@ SettingsNavigationGroupId settingsNavigationGroupFor(
   SettingsDestinationId.readerQuickSettings ||
   SettingsDestinationId.videoQuickSettings ||
   SettingsDestinationId.appIcon ||
-  SettingsDestinationId.shortcuts => SettingsNavigationGroupId.app,
+  SettingsDestinationId.shortcuts => SettingsNavigationGroupId.system,
 };
 
 /// 接收经过平台和模块门控后的列表，保留 schema 组内顺序，不生成空标题。

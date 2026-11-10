@@ -7,10 +7,13 @@ import 'package:fushi/src/settings/settings_search.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_destination_id.dart';
 import 'package:fushi/src/settings/settings_schema_appearance.dart';
+import 'package:fushi/src/settings/settings_schema_general.dart';
+import 'package:fushi/src/settings/settings_schema_listening.dart';
 import 'package:fushi/src/settings/settings_schema_local_services.dart';
 import 'package:fushi/src/settings/settings_schema_lookup.dart';
 import 'package:fushi/src/settings/settings_schema_manga.dart';
 import 'package:fushi/src/settings/settings_schema_models.dart';
+import 'package:fushi/src/settings/settings_schema_navigation.dart';
 import 'package:fushi/src/settings/settings_schema_profiles.dart';
 import 'package:fushi/src/settings/settings_schema_reading.dart';
 import 'package:fushi/src/settings/settings_schema_storage.dart';
@@ -18,17 +21,30 @@ import 'package:fushi/src/settings/settings_schema_system.dart';
 import 'package:fushi/src/settings/settings_schema_video.dart';
 
 List<SettingsDestination> _destinations() => <SettingsDestination>[
+  buildGeneralDestination(),
   buildAppearanceDestination(),
-  // 听书并入阅读：它的分区由 buildReadingDestination 展开，取阅读一条即已覆盖。
+  buildNavigationDestination(),
   buildReadingDestination(),
+  // 听书是独立分类，分区不再挂在阅读下面。
+  buildListeningDestination(),
   buildMangaDestination(),
   buildVideoDestination(),
+  // 视频画面 / 字幕两组分区住在子页里，唯一性同样要覆盖它们。
+  buildVideoPictureDestination(),
+  buildVideoSubtitleDestination(),
   buildLookupDestination(),
+  _lookupPopupDestination(),
   buildModelsDestination(),
   buildProfilesDestination(),
   buildStorageDestination(),
   buildSystemDestination(),
 ];
+
+/// 查词弹窗子页（构造函数私有，只能经入口行 `lookup.popup.open` 打开）。
+SettingsDestination _lookupPopupDestination() =>
+    (_item(buildLookupDestination(), 'lookup.popup.open')
+            as SettingsNavigationItem)
+        .child!();
 
 SettingsSection _section(SettingsDestination destination, String id) =>
     destination.sections.singleWhere((SettingsSection s) => s.id == id);
@@ -49,43 +65,68 @@ void main() {
   });
 
   test('video groups follow playback, picture, subtitles, audio, controls', () {
-    // 2026-10 重排：播放 → 显示（下接四个折叠的 mpv 画面进阶组）→ 字幕外观 →
-    // 字幕行为与来源 → 音频 → 控制与手势 → 截图与片段 → 弹幕 → 媒体库 →
-    // 高级（Lua）→ 播放中专属。
+    // 视频首页：播放 → 沉浸 → 原盘 → 画面与字幕（两个子页入口）→ 音频 →
+    // 操控与手势 → 弹幕 → 截图与片段 → 媒体库 → 高级（Lua）→ 播放中专属。
     expect(
       buildVideoDestination().sections.map((SettingsSection s) => s.id),
       <String>[
         'video.section.playback',
-        'video.section.display',
-        'video.section.quality',
-        'video.section.hdr',
-        'video.section.geometry',
-        'video.section.color',
-        'video.section.subtitles',
-        'video.section.subtitle_behavior',
+        'video.section.immersive',
+        'video.section.disc',
+        'video.section.picture_subtitle',
         'video.section.audio',
         'video.section.controls',
-        'video.section.capture',
         'video.section.danmaku',
+        'video.section.capture',
         'video.section.library',
         'video.section.advanced',
         'video.section.session',
       ],
     );
     expect(
-      buildVideoDestination().sections
-          .singleWhere((SettingsSection s) => s.id == 'video.section.subtitles')
-          .items
-          .first
-          .id,
+      _section(
+        buildVideoDestination(),
+        'video.section.picture_subtitle',
+      ).items.map((SettingsItem i) => i.id),
+      containsAll(<String>['video.picture.open', 'video.subtitle.open']),
+    );
+    // 画面子页：缩放与比例（含画面几何项）→ 画质 → HDR → 色彩。
+    expect(
+      buildVideoPictureDestination().sections.map((SettingsSection s) => s.id),
+      <String>[
+        'video.section.display',
+        'video.section.quality',
+        'video.section.hdr',
+        'video.section.color',
+      ],
+    );
+    // 字幕子页：外观 → 位置 → 轨道选择 → 听力练习 → 硬字幕 → 获取与对齐。
+    expect(
+      buildVideoSubtitleDestination().sections.map((SettingsSection s) => s.id),
+      <String>[
+        'video.section.subtitles',
+        'video.section.subtitle_position',
+        'video.section.subtitle_tracks',
+        'video.section.subtitle_listening',
+        'video.section.subtitle_hardsub',
+        'video.section.subtitle_behavior',
+      ],
+    );
+    expect(
+      _section(
+        buildVideoSubtitleDestination(),
+        'video.section.subtitles',
+      ).items.first.id,
       'video.subtitle.preview',
       reason: 'The subtitle style preview leads the subtitle group.',
     );
-    for (final SettingsSection section in buildVideoDestination().sections) {
+    // 进阶组折叠：首页的音频与高级；子页本身已是二级入口，里面只有色彩折叠。
+    for (final SettingsSection section in <SettingsSection>[
+      ...buildVideoDestination().sections,
+      ...buildVideoPictureDestination().sections,
+      ...buildVideoSubtitleDestination().sections,
+    ]) {
       final bool advanced = <String>{
-        'video.section.hdr',
-        'video.section.quality',
-        'video.section.geometry',
         'video.section.color',
         'video.section.audio',
         'video.section.advanced',
@@ -95,6 +136,7 @@ void main() {
         advanced
             ? SettingsSectionPresentation.collapsed
             : SettingsSectionPresentation.alwaysExpanded,
+        reason: section.id,
       );
     }
   });
@@ -106,18 +148,25 @@ void main() {
         buildReadingDestination().sections.map((SettingsSection s) => s.id),
         <String>[
           'reading.section.mode',
-          // #1351 的 VN 设置组（本轮重构的基底还没有它），位置紧跟阅读模式：
-          // 它整组只在 VN 模式下可见，排在模式选择之后最自然。
+          'reading.section.pages',
+          // #1351 的 VN 设置组：整组只在 VN 模式下可见，紧跟模式与分页选择。
           'reading.section.visual_novel',
           'reading.section.typography',
+          'reading.section.margins',
+          // 翻页方向并进「翻页与手势」，手势类设置只有这一组。
           'reading.section.page_turn_input',
-          'reading.section.page_turn_direction',
+          'reading.section.toolbar',
           'reading.section.chrome',
-          'reading.section.statistics',
           'reading.section.advanced_typography',
-          // 听书 2026-08-24 并入阅读：两个分区排在阅读各组之后（见
-          // buildListeningSections）。同一本 EPUB 的「读」与「听」从此同分类。
+        ],
+      );
+      // 听书是独立分类：阅读页不再混入 listening.section.*；学习计时归「通用」。
+      expect(
+        buildListeningDestination().sections.map((SettingsSection s) => s.id),
+        <String>[
           'listening.section.playback',
+          'listening.section.tts',
+          'listening.section.materials',
           'listening.section.floating_lyric',
           // 悬浮字幕外观与排版（默认折叠，与 galgame 浮窗「窗口与可读性」同构）。
           'listening.section.floating_lyric_appearance',
@@ -129,7 +178,7 @@ void main() {
   test('optional feature switches remain outside collapsed groups', () {
     for (final (SettingsDestination destination, String sectionId)
         in <(SettingsDestination, String)>[
-          (buildReadingDestination(), 'listening.section.floating_lyric'),
+          (buildListeningDestination(), 'listening.section.floating_lyric'),
           (buildVideoDestination(), 'video.section.danmaku'),
           (buildMangaDestination(), 'manga.section.ocr'),
           (buildLookupDestination(), 'lookup.section.integrations'),
@@ -219,17 +268,27 @@ void main() {
             .map((SettingsNavigationItem i) => i.id),
         isNot(contains('lookup.browser_extension')),
       );
-      // 浏览器扩展入口跟着 Fushi API 服务器搬进「本机服务」；查词页只留指路行。
+      // 浏览器扩展入口跟着 Fushi API 服务器搬进「本机服务」（导航里的独立
+      // 分类）；查词页连指路行 lookup.local_services 也已删除。
       expect(
         _section(
           lookup,
           'lookup.section.integrations',
         ).items.map((SettingsItem i) => i.id),
         allOf(
-          contains('lookup.local_services'),
+          isNot(contains('lookup.local_services')),
           isNot(contains('lookup.fushi_api_server')),
           isNot(contains('lookup.fushi_api_key')),
         ),
+      );
+      // 本机服务页：服务器本身的开关 / 访问范围 / 端口 / 密钥一组，接入它的工具
+      // （浏览器扩展、AnkiConnect 端点）另起「接入的工具」一组。
+      expect(
+        _section(
+          buildLocalServicesDestination(),
+          'local_services.section.tools',
+        ).items.map((SettingsItem i) => i.id),
+        contains('local_services.browser_extension'),
       );
       expect(
         _section(
@@ -237,7 +296,6 @@ void main() {
           'local_services.section.fushi_api',
         ).items.map((SettingsItem i) => i.id),
         containsAll(<String>[
-          'local_services.browser_extension',
           'local_services.fushi_api_server',
           'local_services.fushi_api_access',
           'local_services.fushi_api_port',

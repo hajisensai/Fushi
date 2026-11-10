@@ -63,7 +63,7 @@ SettingsDestination buildServicesDestination() {
       c.appModel.moduleVisibility,
     ),
     title: t.settings_destination_services,
-    summary: t.settings_destination_services_summary,
+    summary: t.settings_services_summary_accounts,
     icon: FushiIcons.cloud,
     sections: <SettingsSection>[
       SettingsSection(
@@ -157,41 +157,17 @@ SettingsDestination buildServicesDestination() {
               ),
             ],
           ),
-          // AJATT 与默认字幕语言：此前是一张自绘卡（开关 + 下拉内嵌、字号层级
-          // 自成一套），现在拆成两条标准分段行，与上面的来源行同一视觉语言。
-          // 读写走与旧卡完全相同的 AppModel 入口，持久化键不变。
+          // 读写走 AppModel 入口，持久化键不变。「搜索字幕的语言」不在本分区：它属于
+          // 视频字幕的使用偏好，见 [buildSubtitleSearchLanguageItem]。
           SettingsSwitchItem(
             id: 'services.subtitle_preferences',
-            // 品牌名，不进 i18n（同 Jimaku / SubDL）。
-            title: 'AJATT',
+            title: t.settings_services_ajatt_title,
             subtitle: t.video_ajatt_enabled_hint,
             icon: FushiIcons.subtitles,
             value: (SettingsContext c) => c.appModel.videoSubtitleAjattEnabled,
             onChanged: (SettingsContext c, bool value) =>
                 c.appModel.setVideoSubtitleAjattEnabled(value),
             defaultValue: true,
-          ),
-          SettingsSegmentedItem<String>(
-            id: 'services.subtitle_default_language',
-            title: t.video_setting_jimaku_default_language,
-            subtitle: t.video_setting_jimaku_default_language_hint,
-            icon: FushiIcons.language,
-            dropdown: true,
-            options: <SettingsSegmentOption<String>>[
-              SettingsSegmentOption<String>(
-                value: '',
-                label: t.video_jimaku_language_follow_video,
-              ),
-              for (final String language in kJimakuLanguageCodes)
-                SettingsSegmentOption<String>(
-                  value: language,
-                  label: jimakuLanguageLabel(language),
-                ),
-            ],
-            selected: (SettingsContext c) => c.appModel.jimakuDefaultLanguage,
-            onChanged: (SettingsContext c, String value) =>
-                c.appModel.setJimakuDefaultLanguage(value),
-            defaultValue: '',
           ),
         ],
       ),
@@ -271,7 +247,7 @@ SettingsDestination buildServicesDestination() {
             },
             child: () => SettingsDestination(
               id: SettingsDestinationId.services,
-              title: t.section_services_metadata,
+              title: 'AniDB',
               icon: FushiIcons.fingerprint,
               sections: <SettingsSection>[
                 SettingsSection(
@@ -572,6 +548,13 @@ SettingsDestination buildServicesDestination() {
             subtitleBuilder: musicServersSettingsStatus,
             child: buildMusicServersDestination,
           ),
+        ],
+      ),
+      // 弹幕服务器与媒体服务器的账号不是一类东西，单独成区更好找。
+      SettingsSection(
+        id: 'services.danmaku',
+        title: t.section_video_danmaku,
+        items: <SettingsItem>[
           SettingsNavigationItem(
             id: 'services.danmaku.configure',
             title: 'Dandanplay',
@@ -616,6 +599,40 @@ SettingsDestination buildServicesDestination() {
         ],
       ),
     ],
+  );
+}
+
+/// 「搜索字幕的语言」：在线字幕检索（Jimaku 等）用的默认语言。
+///
+/// 它决定的是视频字幕的行为而不是哪个账号，所以由「视频 › 字幕」放置；定义留在
+/// 本文件以沿用 Jimaku 语言表。因为离开了在线服务分类，分类级的模块门控要在
+/// 这里补上，保证「在线服务」模块关掉时它仍不出现。
+SettingsItem buildSubtitleSearchLanguageItem() {
+  return SettingsSegmentedItem<String>(
+    id: 'services.subtitle_default_language',
+    title: t.settings_services_subtitle_search_language_title,
+    subtitle: t.video_setting_jimaku_default_language_hint,
+    icon: FushiIcons.language,
+    dropdown: true,
+    visible: (SettingsContext c) => isSettingsDestinationVisible(
+      SettingsDestinationId.services,
+      c.appModel.moduleVisibility,
+    ),
+    options: <SettingsSegmentOption<String>>[
+      SettingsSegmentOption<String>(
+        value: '',
+        label: t.video_jimaku_language_follow_video,
+      ),
+      for (final String language in kJimakuLanguageCodes)
+        SettingsSegmentOption<String>(
+          value: language,
+          label: jimakuLanguageLabel(language),
+        ),
+    ],
+    selected: (SettingsContext c) => c.appModel.jimakuDefaultLanguage,
+    onChanged: (SettingsContext c, String value) =>
+        c.appModel.setJimakuDefaultLanguage(value),
+    defaultValue: '',
   );
 }
 

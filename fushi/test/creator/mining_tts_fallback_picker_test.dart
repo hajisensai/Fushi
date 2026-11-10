@@ -4,6 +4,7 @@ import 'package:fushi/src/creator/mining_tts_fallback.dart';
 import 'package:fushi/src/creator/mining_tts_fallback_picker.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_schema_card_creation.dart';
 import 'package:fushi/src/settings/settings_schema_models.dart';
 import 'package:fushi_engine/foundation/pref_store.dart';
 import 'package:fushi_engine/tts/providers/edge_tts_provider.dart';
@@ -29,20 +30,27 @@ class _MemoryPrefs implements PrefStore {
 }
 
 void main() {
-  test('语音合成子页的「制卡发音兜底」分区：声音选择器 + 用途说明', () {
-    final SettingsDestination models = buildModelsDestination();
-    final SettingsNavigationItem tts = models.sections
-        .expand((SettingsSection s) => s.items)
-        .whereType<SettingsNavigationItem>()
-        .firstWhere((SettingsNavigationItem i) => i.id == 'models.tts');
-    final SettingsSection fallback = tts.child!().sections.firstWhere(
+  test('制卡页的「制卡发音兜底」分区：声音选择器 + 倍速，脚注是用途说明', () {
+    // 用途只有制卡，所以分区挂在制卡页（不在本机模型的语音合成子页）。
+    final SettingsDestination cardCreation = buildCardCreationDestination();
+    final SettingsSection fallback = cardCreation.sections.firstWhere(
       (SettingsSection s) => s.id == 'models.section.tts',
     );
     expect(fallback.items.map((SettingsItem i) => i.id).toList(), <String>[
       'models.tts_fallback_voice',
       'models.tts_fallback_speed',
-      'models.tts_usage',
     ]);
+    expect(fallback.footer, t.models_tts_usage);
+    final SettingsDestination models = buildModelsDestination();
+    final SettingsNavigationItem tts = models.sections
+        .expand((SettingsSection s) => s.items)
+        .whereType<SettingsNavigationItem>()
+        .firstWhere((SettingsNavigationItem i) => i.id == 'models.tts');
+    expect(
+      tts.child!().sections.map((SettingsSection s) => s.id),
+      isNot(contains('models.section.tts')),
+      reason: '兜底分区只出现在制卡页一处',
+    );
     expect(fallback.items.first, isA<SettingsActionItem>());
     expect(
       (fallback.items.first as SettingsActionItem).cli,
