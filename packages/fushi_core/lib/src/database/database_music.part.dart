@@ -548,6 +548,80 @@ mixin _FushiDbMusic on _$FushiDatabase {
             ]))
           .get();
 
+  // ── 播放列表文件导入与重排（`.m3u` / `.m3u8`，music_local_playlists.dart）─────
+  //
+  // 导入的歌单 uid 由列表文件路径派生（同一个文件 = 同一个 uid）。用户删掉的歌单留着软删
+  // 墓碑行（[deleteMusicPlaylist]），所以「uid 已被占用」要连墓碑一起算：下次扫描不会把
+  // 用户删掉的歌单再导回来。
+
+  /// [playlistUid] 是否已有歌单行（含已软删的墓碑）。
+  Future<bool> musicPlaylistUidTaken(String playlistUid) async =>
+      await (select(musicPlaylists)..where(
+            ($MusicPlaylistsTable t) => t.playlistUid.equals(playlistUid),
+          ))
+          .getSingleOrNull() !=
+      null;
+
+  /// 以指定 uid 新建歌单（播放列表文件导入用；[trackUids] 按顺序成为初始条目）。uid 已被
+  /// 占用（含软删墓碑）时什么都不做、回 false：同一个文件只导入一次。
+  Future<bool> createImportedMusicPlaylist({
+    required String playlistUid,
+    required String name,
+    required List<String> trackUids,
+    required int at,
+  }) => transaction(() async {
+    if (await musicPlaylistUidTaken(playlistUid)) return false;
+    await into(musicPlaylists).insert(
+      MusicPlaylistsCompanion.insert(
+        playlistUid: playlistUid,
+        name: name,
+        createdAt: at,
+        updatedAt: at,
+      ),
+    );
+    if (trackUids.isNotEmpty) {
+      await addMusicPlaylistEntries(playlistUid, trackUids, at: at);
+    }
+    return true;
+  });
+
+  /// 按 [orderedEntryIds] 重排歌单，位置重写成 0..n-1。没列出的条目（页面上解析不到、没
+  /// 显示的）保持原相对顺序排在后面；不属于本歌单的 id 忽略。推进歌单 `updated_at`。
+  Future<void> reorderMusicPlaylist(
+    String playlistUid,
+    List<int> orderedEntryIds, {
+    required int at,
+  }) => transaction(() async {
+    final List<int> current = <int>[
+      for (final MusicPlaylistEntryRow e in await listMusicPlaylistEntries(
+        playlistUid,
+      ))
+        e.id,
+    ];
+    final Set<int> known = current.toSet();
+    final List<int> head = <int>[
+      for (final int id in orderedEntryIds)
+        if (known.contains(id)) id,
+    ];
+    final Set<int> placed = head.toSet();
+    final List<int> order = <int>[
+      ...head,
+      for (final int id in current)
+        if (!placed.contains(id)) id,
+    ];
+    await batch((Batch b) {
+      for (int i = 0; i < order.length; i++) {
+        b.update(
+          musicPlaylistEntries,
+          MusicPlaylistEntriesCompanion(position: Value<int>(i)),
+          where: ($MusicPlaylistEntriesTable t) =>
+              t.id.equals(order[i]) & t.playlistUid.equals(playlistUid),
+        );
+      }
+    });
+    await _touchMusicPlaylist(playlistUid, at);
+  });
+
   /// 记一次播放（最近播放流）；返回行 id，播放结束时用 [finishMusicPlayEvent] 补时长。
   /// [snapshot] 是播放项快照 + 播放来源（v139）：在线 / 服务器曲目不进曲库，最近播放
   /// 只能靠它显示与重播。
