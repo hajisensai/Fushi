@@ -324,6 +324,8 @@ class UpdateChecker {
   }) async {
     final PlatformUpdater updater = updaterForCurrentPlatform();
     if (!updater.supportsUpdateCheck) return;
+    // Flatpak：通道由已安装的 branch 决定（portal 只能更新它），覆盖设置。
+    channel = updater.installedChannel ?? channel;
     final bool canInstall = updater.supportsInAppInstall;
     // 不能自装的平台忽略 autoInstall（无意义），但仍可「检查→打开发布页」。
     if (neverRemind && !(canInstall && autoInstall)) return;
@@ -1043,6 +1045,9 @@ class UpdateChecker {
     PlatformUpdater updater, {
     String customProxy = '',
   }) async {
+    if (updater is PackageManagedUpdater) {
+      return _runManagedInstall(context, version, updater);
+    }
     // 下载浮层 + 取消令牌（TODO-683/738）与互联远程触发共用同一个会话，见
     // [_UpdateDownloadSession]（update_checker_headless.dart）。
     final _UpdateDownloadSession session = _UpdateDownloadSession()
@@ -1123,6 +1128,42 @@ class UpdateChecker {
       // 取消路径已 close(force: true)，这里再 close() 幂等无害。
       cancellation.clearAbort();
       client?.close();
+      session.dispose();
+    }
+  }
+
+  /// 包管理器取回 + 部署（Flatpak），同一个下载浮层显示进度、「取消」停止等待；
+  /// 部署完成后启动新版并退出本进程。
+  static Future<void> _runManagedInstall(
+    BuildContext context,
+    String version,
+    PackageManagedUpdater updater,
+  ) async {
+    final _UpdateDownloadSession session = _UpdateDownloadSession();
+    try {
+      await HeadlessUpdateFlow._stageInSession(
+        session,
+        version: version,
+        updater: updater,
+        overlay: Overlay.of(context),
+        onProgress: (_) {},
+      );
+      session.status.value = t.update_installing;
+      await updater.restartIntoStagedUpdate(version);
+    } on UpdateDownloadCancelledException {
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(FushiSnackBar(content: Text(t.update_cancelled)));
+      }
+    } catch (e, stack) {
+      ErrorLogService.instance.log('UpdateChecker.managedInstall', e, stack);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          FushiSnackBar(content: Text(describeManagedInstallFailure(e))),
+        );
+      }
+    } finally {
       session.dispose();
     }
   }
@@ -1681,6 +1722,12 @@ const String kDebugManifestUrl =
     'https://raw.githubusercontent.com/$kGitHubRepo/update-manifest/latest-debug$kFushiManifestSuffix.json';
 const String kLegacyDebugManifestUrl =
     'https://raw.githubusercontent.com/$kLegacyGitHubRepo/update-manifest/latest-debug$kFushiManifestSuffix.json';
+
+/// 调试版流水线数据（`tool/gen_debug_pulse.py` 推到同一 `update-manifest` 分支，契约见
+/// `docs/specs/2026-11-10-debug-pulse.md`）。走与镜像清单同一条 raw + 镜像通道，国内可达。
+/// 只有 Fushi 族有，没有旧库回退。
+const String kDebugPulseUrl =
+    'https://raw.githubusercontent.com/$kGitHubRepo/update-manifest/debug-pulse$kFushiManifestSuffix.json';
 
 /// stable 通道镜像清单（BUG-846「谁后用谁」）。CI `publish_update_manifest.sh` 的 formal 分支
 /// 已生成 `latest-stable.json`（`merge_update_manifest.py` 写顶层 `releaseSequence`）。客户端读它

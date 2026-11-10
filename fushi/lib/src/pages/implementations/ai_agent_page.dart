@@ -72,6 +72,39 @@ import 'package:url_launcher/url_launcher.dart';
 /// 侧栏 / 浮层判宽阈值：宽于它的窗口用靠边侧栏，窄的用底部半屏面板。
 const double kAiAgentSidePanelBreakpoint = 840;
 
+/// 靠边侧栏的宽度（窗口放不下时收到窗口宽减去两侧外边距）。
+const double kAiAgentSidePanelWidth = 440;
+
+/// 靠边侧栏与窗口边缘的外边距。
+const double kAiAgentSidePanelMargin = 12;
+
+/// 底部半屏面板占窗口高度的比例。
+const double kAiAgentBottomSheetHeightFactor = 0.55;
+
+/// [AiAgentSidePanelFrame] 里定尺寸那一层的 key，测试按它量尺寸。
+const ValueKey<String> kAiAgentSidePanelKey = ValueKey<String>(
+  'ai-agent-side-panel',
+);
+
+/// 浮层摆成靠边侧栏（true）还是底部半屏面板（false）。
+///
+/// 宽窗口（≥ [kAiAgentSidePanelBreakpoint]）与**横屏窗口**都用侧栏：底部面板只拿
+/// 窗口高度的 [kAiAgentBottomSheetHeightFactor]，横屏手机（如播视频时的 792×360dp）
+/// 只剩 ~198dp，一打开就低于 [kAiAgentTightHeight]，被压成标题 + 输入框、对话几乎
+/// 看不见；横屏的富余在宽度上，侧栏吃满窗口高度，视频仍露在另一侧（反馈
+/// cP3rFztWT2）。竖屏窄窗口照旧弹底部半屏面板。
+bool aiAgentUsesSidePanel(Size window) =>
+    window.width >= kAiAgentSidePanelBreakpoint || window.width > window.height;
+
+/// 侧栏宽度：[kAiAgentSidePanelWidth]；窄横屏窗口里不超过窗口宽减两侧外边距。
+double aiAgentSidePanelWidth(Size window) {
+  final double available = window.width - kAiAgentSidePanelMargin * 2;
+  if (available <= 0) return 0;
+  return available < kAiAgentSidePanelWidth
+      ? available
+      : kAiAgentSidePanelWidth;
+}
+
 /// 浮层 / 侧栏里对话区可用高度低于它（横屏手机弹出软键盘时只剩 130~175dp）就进
 /// 「紧凑」排版：藏掉标题栏和上下文 chip，只留对话列表 + 输入栏。否则标题栏 + chip
 /// 把高度吃光，输入框被裁掉，用户既输入不了也滚不动。
@@ -89,7 +122,8 @@ final RegExp _kExtensionInstallOp = RegExp(
 /// 打开 AI 助手（悬浮球「AI」、首页卡片、快捷键共用这一个入口）。
 ///
 /// 没指派提供商时不开会话、不发请求：提示并引导去「设置 › 模型 › LLM」
-/// （BUG-2694 的约定）。窄屏弹底部半屏面板，宽屏从右侧滑出侧栏。
+/// （BUG-2694 的约定）。竖屏窄窗口弹底部半屏面板，宽屏 / 横屏从右侧滑出侧栏
+/// （[aiAgentUsesSidePanel]）。
 Future<void> openAiAgent(
   BuildContext context, {
   AgentUiContext? uiContext,
@@ -98,7 +132,7 @@ Future<void> openAiAgent(
     context,
   );
   if (resolution == null || !context.mounted) return;
-  if (MediaQuery.sizeOf(context).width >= kAiAgentSidePanelBreakpoint) {
+  if (aiAgentUsesSidePanel(MediaQuery.sizeOf(context))) {
     await _showSidePanel(context, resolution, uiContext);
     return;
   }
@@ -106,7 +140,9 @@ Future<void> openAiAgent(
     context: context,
     expandable: true,
     builder: (BuildContext sheetContext) => SizedBox(
-      height: MediaQuery.sizeOf(sheetContext).height * 0.55,
+      height:
+          MediaQuery.sizeOf(sheetContext).height *
+          kAiAgentBottomSheetHeightFactor,
       child: _AiAgentExecutorSwitcher(
         initial: resolution,
         builder:
@@ -506,46 +542,25 @@ Future<void> _showSidePanel(
           Animation<double> animation,
           Animation<double> secondaryAnimation,
         ) {
-          final ColorScheme scheme = Theme.of(dialogContext).colorScheme;
-          // 软键盘把面板整块抬到键盘上方（对话框路由不会自己让位）。
-          final double keyboard = MediaQuery.viewInsetsOf(dialogContext).bottom;
-          return Align(
-            alignment: AlignmentDirectional.centerEnd,
-            child: AnimatedPadding(
-              duration: fushiMotionDuration(dialogContext, FushiMotion.short),
-              curve: FushiMotion.standard,
-              padding: EdgeInsets.all(12) + EdgeInsets.only(bottom: keyboard),
-              child: Material(
-                color: scheme.surfaceContainerLow,
-                elevation: 6,
-                borderRadius: FushiBorderRadius.dialog,
-                clipBehavior: Clip.antiAlias,
-                child: SizedBox(
-                  width: 440,
-                  height: double.infinity,
-                  child: _AiAgentExecutorSwitcher(
-                    initial: resolution,
-                    builder:
-                        (
-                          BuildContext _,
-                          AiAgentConversationController controller,
-                          _AiAgentExecutorToggle? toggle,
-                        ) => AiAgentConversation(
-                          controller: controller,
-                          uiContext: uiContext,
-                          compact: true,
-                          onSwitchExecutor: toggle?.onSwitch,
-                          switchExecutorTooltip: toggle?.tooltip,
-                          onExpand: () {
-                            Navigator.of(dialogContext).pop();
-                            unawaited(
-                              pushAiAgentPage(context, uiContext: uiContext),
-                            );
-                          },
-                        ),
+          return AiAgentSidePanelFrame(
+            child: _AiAgentExecutorSwitcher(
+              initial: resolution,
+              builder:
+                  (
+                    BuildContext _,
+                    AiAgentConversationController controller,
+                    _AiAgentExecutorToggle? toggle,
+                  ) => AiAgentConversation(
+                    controller: controller,
+                    uiContext: uiContext,
+                    compact: true,
+                    onSwitchExecutor: toggle?.onSwitch,
+                    switchExecutorTooltip: toggle?.tooltip,
+                    onExpand: () {
+                      Navigator.of(dialogContext).pop();
+                      unawaited(pushAiAgentPage(context, uiContext: uiContext));
+                    },
                   ),
-                ),
-              ),
             ),
           );
         },
@@ -574,6 +589,57 @@ Future<void> _showSidePanel(
           );
         },
   );
+}
+
+/// 靠边侧栏的外框：贴窗口尾侧、吃满窗口高度（减外边距），软键盘弹起时整块抬到
+/// 键盘上方（对话框路由不会自己让位）；宽度按 [aiAgentSidePanelWidth]。表面 MD3 用
+/// surfaceContainerLow 面板，Apple 用 [FushiAppleDialogPanel]。
+class AiAgentSidePanelFrame extends StatelessWidget {
+  const AiAgentSidePanelFrame({required this.child, super.key});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final double keyboard = MediaQuery.viewInsetsOf(context).bottom;
+    // 对话框路由不套 SafeArea：横屏手机 / iPhone 的刘海、挖孔与 Home 指示条落在
+    // 侧栏所在的尾侧与底边，外边距要叠上系统安全区，否则输入栏被遮。软键盘弹起时
+    // paddingOf 的底边已归零，与 viewInsets 不重复。
+    final EdgeInsets safe = MediaQuery.paddingOf(context);
+    final Size window = MediaQuery.sizeOf(context);
+    final Widget sized = SizedBox(
+      key: kAiAgentSidePanelKey,
+      width: aiAgentSidePanelWidth(
+        Size(window.width - safe.horizontal, window.height),
+      ),
+      height: double.infinity,
+      child: child,
+    );
+    final Widget surface;
+    if (isGlassDesign(context)) {
+      surface = FushiAppleDialogPanel(radius: 24, child: sized);
+    } else {
+      surface = Material(
+        color: Theme.of(context).colorScheme.surfaceContainerLow,
+        elevation: 6,
+        borderRadius: FushiBorderRadius.dialog,
+        clipBehavior: Clip.antiAlias,
+        child: sized,
+      );
+    }
+    return Align(
+      alignment: AlignmentDirectional.centerEnd,
+      child: AnimatedPadding(
+        duration: fushiMotionDuration(context, FushiMotion.short),
+        curve: FushiMotion.standard,
+        padding:
+            const EdgeInsets.all(kAiAgentSidePanelMargin) +
+            safe +
+            EdgeInsets.only(bottom: keyboard),
+        child: surface,
+      ),
+    );
+  }
 }
 
 /// 会话列表常驻在整页左侧的宽度（窗口宽于 [kAiAgentSidePanelBreakpoint] 时）。

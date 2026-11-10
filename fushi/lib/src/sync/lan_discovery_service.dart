@@ -301,15 +301,16 @@ class LanDiscoveryService {
       // A service finished resolving: map it and add it (unless it is us — by
       // advertised id, or by host address when the id attribute didn't survive).
       case BonsoirDiscoveryServiceResolvedEvent():
-        final FushiDevice? device = FushiDevice.fromResolvedService(
+        final FushiDevice? resolved = FushiDevice.fromResolvedService(
           event.service,
         );
-        if (device == null ||
-            device.deviceId == deviceId ||
-            _localAddresses.contains(device.host)) {
+        if (resolved == null ||
+            resolved.deviceId == deviceId ||
+            _localAddresses.contains(resolved.host)) {
           return;
         }
         final String serviceName = event.service.name;
+        final FushiDevice device = _withKnownTxtFacts(resolved, event.service);
         final String key = _endpointKey(device);
         // The same service moved to another address / port: its old endpoint
         // is no longer served by it.
@@ -338,6 +339,28 @@ class LanDiscoveryService {
         // Started / stopped / updated / resolve-failed / unknown: no-op.
         break;
     }
+  }
+
+  /// A resolve whose TXT record did not come through (no `id` attribute) only
+  /// lacks information: it must not erase the `id` / `tls` that the same
+  /// `host:port` already advertised. Otherwise the endpoint's single row would
+  /// fall back to the name key and an `http://` URL for a TLS host, which the
+  /// v1 pairing fallback stores as-is (BUG-1693). The newest name still wins.
+  ///
+  /// The entry for the endpoint carries TXT facts when its id is not the
+  /// service-name fallback of [FushiDevice.fromResolvedService]
+  /// (`deviceId != name`).
+  FushiDevice _withKnownTxtFacts(FushiDevice device, BonsoirService service) {
+    if (service.attributes.containsKey(attributeId)) return device;
+    final FushiDevice? known = _discoveredDevices[_endpointKey(device)];
+    if (known == null || known.deviceId == known.name) return device;
+    return FushiDevice(
+      name: device.name,
+      host: device.host,
+      port: device.port,
+      deviceId: known.deviceId,
+      tlsEnabled: known.tlsEnabled,
+    );
   }
 
   Future<void> _resolve(

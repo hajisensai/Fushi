@@ -160,6 +160,31 @@ void main() {
       await rankInterconnectCandidates(list, probe: probe);
       expect(probes, 2, reason: '30 秒内复用上次胜出地址');
     });
+
+    test('命中缓存不续期：TTL 从真正选路那次算起，到期重选', () async {
+      DateTime clock = DateTime(2026, 11, 10, 12);
+      int probes = 0;
+      Future<bool> probe(FushiClientUrl c, String? hostId) async {
+        probes++;
+        return c.url == 'http://v6:1';
+      }
+
+      final List<FushiClientUrl> list = <FushiClientUrl>[
+        url('http://lan:1', host: 'A'),
+        url('http://v6:1', host: 'A', learned: true),
+      ];
+      Future<void> rank() =>
+          rankInterconnectCandidates(list, probe: probe, now: () => clock);
+
+      await rank();
+      expect(probes, 2);
+      clock = clock.add(const Duration(seconds: 20));
+      await rank();
+      expect(probes, 2, reason: '20 秒：命中缓存');
+      clock = clock.add(const Duration(seconds: 20));
+      await rank();
+      expect(probes, 4, reason: '距真正选路 40 秒：缓存已过期必须重选，命中不得把 TTL 续上');
+    });
   });
 
   group('V-B4：明文地址拿凭据前必须当场核对 hostId', () {

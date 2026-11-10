@@ -114,14 +114,24 @@ class _FushiHoverLiftScope extends InheritedWidget {
 /// 详情页拖排网格）：`IgnorePointer` 同时挡掉了命中测试，卡片自己的
 /// [MouseRegion] 永远收不到 enter，悬停抬升 / 封面扫光 / 接触阴影收窄就全没了。
 /// 外层格子自己测悬停再经本组件往下传，卡片照常走同一套悬停动效。
+///
+/// [pointer] 是代收的指针位置（**全局坐标**，不在卡上时为 null）：3D 倾斜视差
+/// （[FushiTilt]）与镜面高光（[FushiTiltGlare]）要跟着指针走，只有悬停位不够——
+/// 卡片自己的 [MouseRegion] 被挡住收不到 `onHover`，倾斜就永远落在平面上
+/// （反馈 bsbJ4OVa8o：合集详情成员卡有抬升 / 扫光却没有倾斜）。一般不直接用本
+/// 组件，用 [FushiHoverLiftRelay]（悬停与指针位置一起代收）。
 class FushiHoverLiftHost extends InheritedWidget {
   const FushiHoverLiftHost({
     required this.hovering,
     required super.child,
+    this.pointer,
     super.key,
   });
 
   final bool hovering;
+
+  /// 代收的指针全局位置；null = 只代收悬停，不代收位置（不倾斜）。
+  final ValueListenable<Offset?>? pointer;
 
   static bool hoveringOf(BuildContext context) =>
       context
@@ -129,9 +139,72 @@ class FushiHoverLiftHost extends InheritedWidget {
           ?.hovering ??
       false;
 
+  /// 最近一层 [FushiHoverLiftHost] 代收的指针位置（建立依赖：host 换了
+  /// notifier 时消费者重新订阅）。
+  static ValueListenable<Offset?>? pointerOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<FushiHoverLiftHost>()?.pointer;
+
   @override
   bool updateShouldNotify(FushiHoverLiftHost oldWidget) =>
-      oldWidget.hovering != hovering;
+      oldWidget.hovering != hovering || oldWidget.pointer != pointer;
+}
+
+/// 外层代收指针的壳：自己用 [MouseRegion] 测悬停与指针位置，经
+/// [FushiHoverLiftHost] 交给子树里的 [FushiHoverLift]——卡片整张包在
+/// `IgnorePointer` 里（手势由外层格子 / 拖排网格统一接管）时，卡片照常走库页
+/// 同一套悬停抬升、扫光、接触阴影**和 3D 倾斜视差 + 镜面高光**。
+///
+/// 合集详情的成员卡（书 / 游戏）与集卡（视频）都经这里，各处同一套逻辑
+/// （反馈 bsbJ4OVa8o）。只代收鼠标：触屏在这些网格上按住即拖排，不做按压倾斜。
+class FushiHoverLiftRelay extends StatefulWidget {
+  const FushiHoverLiftRelay({
+    required this.builder,
+    this.cursor = MouseCursor.defer,
+    super.key,
+  });
+
+  /// 拿到代收的悬停态构建内容（内容自己负责包 `IgnorePointer`）。
+  final Widget Function(BuildContext context, bool hovering) builder;
+
+  final MouseCursor cursor;
+
+  @override
+  State<FushiHoverLiftRelay> createState() => _FushiHoverLiftRelayState();
+}
+
+class _FushiHoverLiftRelayState extends State<FushiHoverLiftRelay> {
+  bool _hovering = false;
+  final ValueNotifier<Offset?> _pointer = ValueNotifier<Offset?>(null);
+
+  @override
+  void dispose() {
+    _pointer.dispose();
+    super.dispose();
+  }
+
+  void _setHover(bool value) {
+    if (_hovering == value) return;
+    setState(() => _hovering = value);
+  }
+
+  @override
+  Widget build(BuildContext context) => MouseRegion(
+    cursor: widget.cursor,
+    onEnter: (PointerEnterEvent e) {
+      _pointer.value = e.position;
+      _setHover(true);
+    },
+    onHover: (PointerHoverEvent e) => _pointer.value = e.position,
+    onExit: (_) {
+      _pointer.value = null;
+      _setHover(false);
+    },
+    child: FushiHoverLiftHost(
+      hovering: _hovering,
+      pointer: _pointer,
+      child: widget.builder(context, _hovering),
+    ),
+  );
 }
 
 /// 悬停缩放倍数：与 `docs/design/galgame-library-reina-visual-parity.md` 里定的
@@ -141,6 +214,15 @@ const double kFushiHoverLiftScale = 1.05;
 /// Apple 设计系统下的悬停放大（macOS 26 的卡片悬停只是轻轻一抬，1.05 读作
 /// 「跳」）。只替换默认值；调用方显式传了别的 scale 时照用。
 const double kFushiAppleHoverLiftScale = 1.03;
+
+/// 宽卡 / 大卡的悬停放大：卡比库页封面宽得多时，按 [kFushiHoverLiftScale] 放大
+/// 单侧溢出就超过网格间距、压到邻卡（900 宽的集卡 ×1.05 每侧 22px，网格间距只
+/// 有 12px），但 1.01 又几乎看不出「抬起」（用户 2026-10-31）。取 1.025 配合投影 /
+/// 扫光读出抬升：宽 ≤ 960 的卡每侧溢出不超过 12px 间距。两套设计系统同一个值
+/// （它本就比 Apple 默认的 [kFushiAppleHoverLiftScale] 轻）。
+///
+/// 用在：继续观看剧照主卡、合集 / 媒体服务器详情的 hayase 式宽集卡。
+const double kFushiWideCardHoverLiftScale = 1.025;
 
 /// 默认倍数放大后每侧多出的比例（尺寸 × 它 = 单侧溢出）。行 / 视口给悬停放大
 /// 留余量时一律按**卡片实际尺寸**乘它，取两套设计系统里较大的倍数。
@@ -158,6 +240,11 @@ class _FushiHoverLiftState extends State<FushiHoverLift>
   bool _hostHovering = false;
 
   bool get _pointerOver => _hovering || _hostHovering;
+
+  /// 外层 [FushiHoverLiftHost] 代收的指针位置（全局坐标）。卡片自己的
+  /// [MouseRegion] 被 `IgnorePointer` 挡住时 [_pointer] 永远是 null，倾斜只能
+  /// 靠它。
+  ValueListenable<Offset?>? _hostPointer;
 
   /// 本帧发生过滚动位移。**这是唯一的压制位**——覆盖三条路径：Flutter 默认滚轮
   /// （同一次事件处理里把 Start/Update/End 全发完）、拖拽滚动、以及
@@ -231,8 +318,10 @@ class _FushiHoverLiftState extends State<FushiHoverLift>
         _animate &&
         !_moved &&
         (_touching || (_pointerOver && _lifted));
-    _tilt.value = on ? _pointer : null;
+    _tilt.value = on ? (_pointer ?? _hostPointer?.value) : null;
   }
+
+  void _onHostPointer() => _syncTilt();
 
   void _trackPointer(Offset global) {
     _pointer = global;
@@ -300,6 +389,14 @@ class _FushiHoverLiftState extends State<FushiHoverLift>
     final bool reduceMotion =
         MediaQuery.maybeDisableAnimationsOf(context) ?? false;
     final bool hostHovering = FushiHoverLiftHost.hoveringOf(context);
+    final ValueListenable<Offset?>? hostPointer = FushiHoverLiftHost.pointerOf(
+      context,
+    );
+    if (!identical(hostPointer, _hostPointer)) {
+      _hostPointer?.removeListener(_onHostPointer);
+      _hostPointer = hostPointer;
+      _hostPointer?.addListener(_onHostPointer);
+    }
     if (hostHovering != _hostHovering) {
       _hostHovering = hostHovering;
       _syncLift();
@@ -332,6 +429,8 @@ class _FushiHoverLiftState extends State<FushiHoverLift>
   void dispose() {
     _scrollObserver?.removeListener(_onScrollNotification);
     _scrollObserver = null;
+    _hostPointer?.removeListener(_onHostPointer);
+    _hostPointer = null;
     _tilt.dispose();
     _curved.dispose();
     _lift.dispose();

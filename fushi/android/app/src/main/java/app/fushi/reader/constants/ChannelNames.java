@@ -53,8 +53,11 @@ public final class ChannelNames {
     // 系统默认网络变了（EventChannel）：互联 P2P 隧道据此通知 iroh 重新探测路径。
     // 实现见 NetworkChangeChannel，Dart 侧 interconnect_p2p_app.dart。
     public static final String NETWORK_CHANGE = PREFIX + "/network_change";
-    // 串流第二块屏上的查词面板：主进程 GameStreamCompanionDisplay 与面板进程
-    // GameStreamCompanionActivity 各自在自己的引擎上注册同名通道，中间由
-    // GameStreamCompanionRelayService 转发。
-    public static final String GAME_STREAM_COMPANION = PREFIX + "/game_stream_companion";
+    // 第二块屏宿主（副屏伴侣 / 串流查词面板）：主进程 SecondScreenDisplay 与面板进程
+    // SecondScreenActivity 各自在自己的引擎上注册同名通道，中间由
+    // SecondScreenRelayService 转发。
+    public static final String SECOND_SCREEN = PREFIX + "/second_screen";
+    // 反馈回复后台检查（反馈 yjn-3h8B-7）：主引擎上排 / 撤纯原生的 FeedbackReplyWorker
+    // （feedback/FeedbackReplyWorkChannel.kt），Dart 门面 feedback_reply_background.dart。
+    public static final String FEEDBACK_REPLY_WORK = PREFIX + "/feedback_reply_work";
 }

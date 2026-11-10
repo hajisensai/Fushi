@@ -1122,6 +1122,7 @@ mixin _PairingV2FlowMixin<T extends StatefulWidget> on State<T> {
             fingerprint,
             hostId: hostId,
             owner: owner,
+            deviceName: deviceName,
           );
         case FushiPairV2Failure(:final String reason):
           // 'cancelled' = 用户在 PIN 输入框点了取消，静默收场不弹提示。
@@ -1291,35 +1292,36 @@ mixin _PairingV2FlowMixin<T extends StatefulWidget> on State<T> {
   /// 配对成功收尾：经 TOFU 记录器把 url+指纹+展示名写进候选列表（指纹变更会抛
   /// [FushiFingerprintMismatchException] → 告警，绝不覆盖），落 token，bump
   /// clientConfigRevision（client-config widget 监听后自动重载，单一真相源）。
+  ///
+  /// [deviceName] 是配对前 `/api/ping` 回报的 host 展示名（BUG-4322：以前这里写死 null，
+  /// 手动地址配对的 host 只剩 URL）。
   Future<String> _onPairSuccess(
     String baseUrl,
     String token,
     String? fingerprint, {
     String? hostId,
     _AddressOwnerDecision owner = const _AddressOwnerDecision.keep(),
+    String? deviceName,
   }) async {
-    try {
-      await _pairRepo.addFushiClientUrl(
-        baseUrl,
-        fingerprint: fingerprint,
-        deviceName: null,
-      );
-    } on FushiFingerprintMismatchException catch (e, stack) {
-      ErrorLogService.instance.log('PairV2.fingerprintChanged', e, stack);
-      return t.sync_pair_fingerprint_changed;
-    }
+    // 与扫码 / 深链配对同一份落库（[recordInterconnectPairing]）：
     // BUG-1550：per-peer token 落在**这条地址**上（同时写全局键作老配置回落）。
     // 只写全局键会让「配对第二台对端」把第一台的凭据覆盖掉，而第一台地址仍排在
     // 候选前列且可达 → 拿着别人的 token 撞 401 → 整个互联瘫痪。
     // 53NT7G_tSO：重新配对会作废本机在这台 host 上的旧 token，新 token 要落到这台
     // host 的全部地址（内网 / 外网 / IPv6 …），否则其余地址一律 401。
     try {
-      await _pairRepo.setFushiClientTokenForUrl(
-        baseUrl,
-        token,
+      await recordInterconnectPairing(
+        _pairRepo,
+        baseUrl: baseUrl,
+        token: token,
+        fingerprint: fingerprint,
+        deviceName: deviceName,
         hostId: hostId,
         reassignOwner: owner.reassign,
       );
+    } on FushiFingerprintMismatchException catch (e, stack) {
+      ErrorLogService.instance.log('PairV2.fingerprintChanged', e, stack);
+      return t.sync_pair_fingerprint_changed;
     } on InterconnectAddressOwnerConflict catch (e, stack) {
       // 只会在确认框与写入之间这条地址被并发改归了别的 host 时出现。
       ErrorLogService.instance.log('PairV2.addressOwnerConflict', e, stack);

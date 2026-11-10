@@ -6,6 +6,7 @@ import 'package:fushi_compute/fushi_compute.dart';
 import 'package:path/path.dart' as p;
 import 'package:xml/xml.dart';
 
+import 'package:fushi_engine/epub/book_original_layout.dart';
 import 'package:fushi_engine/epub/epub_book.dart';
 import 'package:fushi_engine/epub/epub_series.dart';
 import 'package:fushi_engine/epub/isbn.dart';
@@ -215,6 +216,10 @@ class EpubParser {
       extractDir,
     );
     final String? renditionSpread = _parseRenditionSpread(opfXml);
+    final String? pageProgressionDirection = _parsePageProgressionDirection(
+      opfXml,
+    );
+    final String? primaryWritingMode = _parsePrimaryWritingMode(opfXml);
 
     final Map<String, EpubResource> resources = <String, EpubResource>{};
     for (final _ManifestItem item in manifest.values) {
@@ -246,6 +251,8 @@ class EpubParser {
       resources: resources,
       rootDirectory: extractDir,
       renditionSpread: renditionSpread,
+      pageProgressionDirection: pageProgressionDirection,
+      primaryWritingMode: primaryWritingMode,
       series: parseEpubSeries(opfXml),
     );
   }
@@ -1144,6 +1151,38 @@ class EpubParser {
           return value;
         }
       }
+    }
+    return null;
+  }
+
+  /// `<spine page-progression-direction>`：只认 `rtl` / `ltr`（大小写不敏感），
+  /// `default` / 缺省 / 其它取值为 null。属性在规范里落在无命名空间，裸
+  /// `getAttribute` 即可（见 [_attribute] 的说明）。
+  static String? _parsePageProgressionDirection(XmlDocument opf) {
+    for (final XmlElement spine in _elements(opf, 'spine')) {
+      final String value =
+          (spine.getAttribute('page-progression-direction') ?? '')
+              .trim()
+              .toLowerCase();
+      if (value == 'rtl' || value == 'ltr') return value;
+    }
+    return null;
+  }
+
+  /// `primary-writing-mode` 元数据：EPUB 3.0 写成
+  /// `<meta property="primary-writing-mode">vertical-rl</meta>`，Kindle / EPUB 2
+  /// 写成 `<meta name="primary-writing-mode" content="horizontal-rl"/>`。原值小写
+  /// 返回（解释交给 [BookOriginalLayout.resolve]），没声明为 null。
+  static String? _parsePrimaryWritingMode(XmlDocument opf) {
+    for (final XmlElement meta in _elements(opf, 'meta')) {
+      final String? value =
+          meta.getAttribute('property') == 'primary-writing-mode'
+          ? meta.innerText
+          : meta.getAttribute('name') == 'primary-writing-mode'
+          ? meta.getAttribute('content')
+          : null;
+      final String normalized = (value ?? '').trim().toLowerCase();
+      if (normalized.isNotEmpty) return normalized;
     }
     return null;
   }

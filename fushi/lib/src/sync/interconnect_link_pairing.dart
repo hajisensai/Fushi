@@ -45,6 +45,66 @@ final class InterconnectLinkPairingFailed
   final String reason;
 }
 
+/// 一次 v2 配对成功后落库（BUG-4322：设置页手动地址、LAN 发现、扫码 / 深链三条入口共用这一份）：地址 + TOFU
+/// 指纹 + host 展示名，再把 per-peer token 落到这台 host 的全部地址（53NT7G_tSO）。
+///
+/// [deviceName] 是 host 自报的展示名（`/api/ping` 的 `deviceName`，链接里的设备名）。以前设置页那两条入口在
+/// 这里写死 null：手动地址配对的 host 没有名字，`peer ls` 不列名字、远程复习标题只剩 URL 主机名。
+///
+/// 已为这条地址钉扎的指纹与 [fingerprint] 不符时抛 [FushiFingerprintMismatchException]，绝不覆盖（疑似 MITM）。
+///
+/// [reassignOwner]：用户已确认把这条原属另一台 host 的地址改归新 host（V-A2）。此时这一行
+/// 先脱离旧组（清掉旧 host 的展示名 / token）再记新 host 的指纹与展示名，否则旧组那一行
+/// 会先被写上新 host 的名字；指纹在写 token 之前核对，不符就什么都不写。为 false 而这条
+/// 地址已归另一台 host 时抛 [InterconnectAddressOwnerConflict]（确认与写入之间被并发
+/// 改归），凭据不落库。
+Future<void> recordInterconnectPairing(
+  SyncRepository repo, {
+  required String baseUrl,
+  required String token,
+  String? fingerprint,
+  String? deviceName,
+  String? hostId,
+  bool reassignOwner = false,
+}) async {
+  final String? name = (deviceName?.trim().isNotEmpty ?? false)
+      ? deviceName!.trim()
+      : null;
+  if (reassignOwner) {
+    final String? stored = await repo.getFushiClientFingerprint(baseUrl);
+    if (fingerprint != null &&
+        fingerprint.isNotEmpty &&
+        stored != null &&
+        stored.isNotEmpty &&
+        !fingerprintEquals(stored, fingerprint)) {
+      throw FushiFingerprintMismatchException(
+        url: baseUrl,
+        storedFingerprint: stored,
+        incomingFingerprint: fingerprint,
+      );
+    }
+  } else {
+    await repo.addFushiClientUrl(
+      baseUrl,
+      fingerprint: fingerprint,
+      deviceName: name,
+    );
+  }
+  await repo.setFushiClientTokenForUrl(
+    baseUrl,
+    token,
+    hostId: hostId,
+    reassignOwner: reassignOwner,
+  );
+  if (reassignOwner) {
+    await repo.addFushiClientUrl(
+      baseUrl,
+      fingerprint: fingerprint,
+      deviceName: name,
+    );
+  }
+}
+
 /// 链接能否并入已有的同 hostId 组：组不存在 → 能；存在 → 双方都有证书指纹且
 /// 相等才能（指纹 = 那台 host 的私钥，冒名者给不出同一个）。
 bool _linkMayJoinHostGroup(List<FushiClientUrl> urls, FushiPairLink link) {
@@ -143,21 +203,15 @@ Future<InterconnectLinkPairingResult> pairWithInterconnectLink({
     case FushiPairV2Failure(:final String reason):
       return InterconnectLinkPairingFailed(reason);
     case FushiPairV2Success(:final String token):
-      // 改归属时这一行先脱离旧组（清掉旧 host 的展示名 / token），再记新 host 的
-      // 指纹与展示名；否则旧组那一行会先被写上新 host 的名字。
-      if (owner == null) {
-        await repo.addFushiClientUrl(
-          chosen.url,
-          fingerprint: fingerprint,
-          deviceName: link.deviceName,
-        );
-      }
       // 53NT7G_tSO：新 token 同步到这台 host 的全部地址（重新配对作废了旧 token）。
       // 归组判据同下方 merge：指纹对不上就只改这一行。
       try {
-        await repo.setFushiClientTokenForUrl(
-          chosen.url,
-          token,
+        await recordInterconnectPairing(
+          repo,
+          baseUrl: chosen.url,
+          token: token,
+          fingerprint: fingerprint,
+          deviceName: link.deviceName,
           hostId: link.hostId,
           reassignOwner: owner != null,
         );
@@ -165,13 +219,10 @@ Future<InterconnectLinkPairingResult> pairWithInterconnectLink({
         // 确认与写入之间这条地址被并发改归了别的 host：如实报冲突，不写凭据。
         engineLog.logDiagnostic('InterconnectLinkPairing', '$e');
         return const InterconnectLinkPairingFailed('address_owner_conflict');
-      }
-      if (owner != null) {
-        await repo.addFushiClientUrl(
-          chosen.url,
-          fingerprint: fingerprint,
-          deviceName: link.deviceName,
-        );
+      } on FushiFingerprintMismatchException catch (e) {
+        // 上面核对之后这条地址又被钉上了另一张证书：同样不覆盖。
+        engineLog.logDiagnostic('InterconnectLinkPairing', '$e');
+        return const InterconnectLinkPairingFailed('fingerprint_changed');
       }
       await repo.updateFushiClientUrls((List<FushiClientUrl> urls) {
         // hostId 是公开值：链接可以随便声称自己是某台已配对 host。只有证书指纹
@@ -183,6 +234,7 @@ Future<InterconnectLinkPairingResult> pairWithInterconnectLink({
           anchorUrl: chosen.url,
           hostId: link.hostId,
           addresses: link.addresses,
+          deviceName: link.deviceName,
         );
       });
       await repo.setInterconnectEnabled(true);

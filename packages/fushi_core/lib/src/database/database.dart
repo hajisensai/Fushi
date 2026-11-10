@@ -28,6 +28,7 @@ import 'media_source_util.dart' show musicTrackPathKey;
 import 'music_scrape_tables.dart';
 import 'music_tables.dart';
 import 'pref_codec.dart';
+import 'sql_functions.dart';
 import 'sqlite_busy_timeout.dart';
 import 'sync_tombstone_kind.dart';
 import 'tables.dart';
@@ -298,6 +299,9 @@ Future<QueryExecutor> _openWithRecovery(
     installWallClockBusyTimeout(db);
     db.execute('PRAGMA journal_mode=WAL');
     db.execute('PRAGMA foreign_keys = ON');
+    // 「检查数据库」修乱码行用的自定义函数（见 sql_functions.dart）。setup 跑在
+    // drift 后台 isolate，函数体也在那里执行。
+    registerFushiSqlFunctions(db);
   }
 
   // ── Layer 0 — normal path. Probe-open with a raw sqlite3 connection applying
@@ -474,6 +478,8 @@ const String legacyHibikiDatabaseFileName = 'hibiki.db';
 ///   `<主库名>[-wal|-shm].bak.v<旧schema>.<毫秒戳>`；
 /// - `backup_service` 的导入前快照：`<主库名>.pre-restore.bak`
 ///   / `<主库名>.pre-merge.bak`。
+/// - 「检查数据库」动手前的备份：`<主库名>.check-bak-<毫秒戳>.db`
+///   （[databaseCheckBackupFileName]）。
 ///
 /// 黑名单在这里是**危险**的：`backup_service` 把一整族**活控制文件**放在同一个
 /// support 根、且同样以主库名开头 —— `fushi.db.sync-preserve.json`（待恢复标记）、
@@ -502,6 +508,20 @@ bool isDatabaseSnapshotFileName(final String name) =>
 final RegExp _kCorruptBakSuffix = RegExp(
   r'^\.corrupt-bak-\d+\.db(-wal|-shm)?$',
 );
+
+/// 「检查数据库」动手前的整库备份后缀（`.check-bak-<毫秒戳>.db`，`VACUUM INTO`
+/// 产出的单文件，没有侧车）。产出方用 [databaseCheckBackupFileName]，与这里同源。
+final RegExp _kCheckBakSuffix = RegExp(r'^\.check-bak-\d+\.db$');
+
+/// 「检查数据库」备份文件名：`<主库名>.check-bak-<毫秒戳>.db`。命中快照白名单，
+/// 存储页「数据库备份快照」条目会列出它、可一键删除。
+String databaseCheckBackupFileName(final int stampMs) =>
+    '$fushiDatabaseFileName.check-bak-$stampMs.db';
+
+/// [name] 是否「检查数据库」产出的备份（只认 [fushiDatabaseFileName] 名下的）。
+bool isDatabaseCheckBackupFileName(final String name) =>
+    name.startsWith(fushiDatabaseFileName) &&
+    _kCheckBakSuffix.hasMatch(name.substring(fushiDatabaseFileName.length));
 
 /// 旧降级救援副本后缀（`.bak.v<旧schema>.<毫秒戳>`）。
 final RegExp _kLegacyDowngradeBakSuffix = RegExp(r'^\.bak\.v\d+\.\d+$');
@@ -539,6 +559,7 @@ String? databaseSnapshotMainFileName(final String name) {
       if (_kLegacyDowngradeBakSuffix.hasMatch(rest)) return db;
       if (stem == db &&
           (_kCorruptBakSuffix.hasMatch(rest) ||
+              _kCheckBakSuffix.hasMatch(rest) ||
               _kImportBakSuffixes.contains(rest))) {
         return db;
       }
@@ -924,7 +945,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 148;
+  int get schemaVersion => 149;
 
   /// v125–v128 四步的产物（全部幂等）：SRS 写路径索引、
   /// `collection_member_tombstones.published_at`、`bookmarks.char_offset` /
@@ -2948,6 +2969,23 @@ class FushiDatabase extends _$FushiDatabase
         // 加入音乐库与本地歌单（反馈 0tRY-D2JgG）。纯新增、无回填；幂等守卫同 v146。
         if (!await _tableExists('music_remote_tracks')) {
           await m.createTable(musicRemoteTracks);
+        }
+      }
+      if (from < 149) {
+        // v149（反馈 se3Fw8HmOX）：music_remote_tracks 收 Jellyfin / Subsonic 服务器曲目
+        // （kind = 'server'，只存服务器配置身份 + 服务器侧条目 id + 元数据，不存带凭据的
+        // 地址），并补插件曲目的艺人引用与专辑 id。三列都是可空新增、无回填。幂等守卫同
+        // v145：v148 步按当前定义建表时已带这些列，跳过。
+        if (await _tableExists('music_remote_tracks')) {
+          for (final GeneratedColumn<Object> c in <GeneratedColumn<Object>>[
+            musicRemoteTracks.coverRef,
+            musicRemoteTracks.albumId,
+            musicRemoteTracks.artistRefs,
+          ]) {
+            if (!await _columnExists('music_remote_tracks', c.name)) {
+              await m.addColumn(musicRemoteTracks, c);
+            }
+          }
         }
       }
     },

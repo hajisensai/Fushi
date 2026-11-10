@@ -194,6 +194,8 @@ class GameStreamVideoSettings {
     this.codec = GameStreamCodec.auto,
     this.inputFocus = GameStreamInputFocus.background,
     this.audio = true,
+    this.volumePercent = 100,
+    this.muteHost = false,
   });
 
   factory GameStreamVideoSettings.fromJson(Object? raw) {
@@ -219,6 +221,8 @@ class GameStreamVideoSettings {
           GameStreamInputFocus.tryParse(raw['inputFocus']) ??
           defaults.inputFocus,
       audio: boolean(raw['audio'], defaults.audio),
+      volumePercent: integer(raw['volumePercent'], defaults.volumePercent),
+      muteHost: boolean(raw['muteHost'], defaults.muteHost),
     ).clamped();
   }
 
@@ -230,6 +234,9 @@ class GameStreamVideoSettings {
   static const int maxFpsLimit = 120;
   static const int minHeight = 360;
   static const int maxHeightLimit = 2160;
+  static const int minVolumePercent = 100;
+  static const int maxVolumePercent = 500;
+  static const int volumePercentStep = 25;
 
   /// Height cap of the encoded picture; width follows the window aspect.
   final int maxHeight;
@@ -248,6 +255,27 @@ class GameStreamVideoSettings {
   /// Receiver-side playback of the loopback audio track.
   final bool audio;
 
+  /// Receiver-side gain on the loopback audio track, 100–500 %. Process
+  /// loopback captures the game mix before the host's endpoint volume, so the
+  /// decoded stream is often far below full scale. Local only: never part of
+  /// the wire form ([toJson]); [audio] off still silences the track.
+  final int volumePercent;
+
+  /// [volumePercent] as the linear gain WebRTC applies to a remote track
+  /// (WebRTC accepts 0–10, so 5.0 is in range).
+  double get volumeGain => volumePercent / 100;
+
+  /// Host-side: silence the game on the host PC's speakers while it streams.
+  /// The stream keeps full volume (the host undoes its own duck on capture).
+  /// Part of the wire form; an older host ignores it.
+  final bool muteHost;
+
+  /// The gain a receiver actually applies: [volumeGain] only where the boost
+  /// is offered ([boostAllowed], decided by the app), unity everywhere else,
+  /// so a stored / synced value cannot boost a device that hides the slider.
+  double effectiveVolumeGain({required bool boostAllowed}) =>
+      boostAllowed ? volumeGain : 1.0;
+
   /// Width cap matching [maxHeight] at 16:9, rounded to even pixels.
   int get maxWidth => ((maxHeight * 16 / 9) / 2).round() * 2;
 
@@ -260,6 +288,8 @@ class GameStreamVideoSettings {
     codec: codec,
     inputFocus: inputFocus,
     audio: audio,
+    volumePercent: volumePercent.clamp(minVolumePercent, maxVolumePercent),
+    muteHost: muteHost,
   );
 
   GameStreamVideoSettings copyWith({
@@ -271,6 +301,8 @@ class GameStreamVideoSettings {
     GameStreamCodec? codec,
     GameStreamInputFocus? inputFocus,
     bool? audio,
+    int? volumePercent,
+    bool? muteHost,
   }) => GameStreamVideoSettings(
     maxHeight: maxHeight ?? this.maxHeight,
     maxFps: maxFps ?? this.maxFps,
@@ -280,6 +312,8 @@ class GameStreamVideoSettings {
     codec: codec ?? this.codec,
     inputFocus: inputFocus ?? this.inputFocus,
     audio: audio ?? this.audio,
+    volumePercent: volumePercent ?? this.volumePercent,
+    muteHost: muteHost ?? this.muteHost,
   ).clamped();
 
   /// Moonlight-like default bitrate for [maxHeight] × [maxFps].
@@ -300,6 +334,8 @@ class GameStreamVideoSettings {
     );
   }
 
+  /// Wire form sent to the host. Receiver-only fields ([volumePercent]) stay
+  /// out; [toOverridesJson] persists them locally.
   Map<String, Object?> toJson() => <String, Object?>{
     'maxHeight': maxHeight,
     'maxFps': maxFps,
@@ -309,6 +345,7 @@ class GameStreamVideoSettings {
     'codec': codec.name,
     'inputFocus': inputFocus.name,
     'audio': audio,
+    'muteHost': muteHost,
   };
 
   /// Only the fields that differ from the defaults, for local persistence.
@@ -317,12 +354,23 @@ class GameStreamVideoSettings {
   /// field was saved. [fromJson] fills the missing fields back in.
   Map<String, Object?> toOverridesJson() {
     final Map<String, Object?> defaults = const GameStreamVideoSettings()
-        .toJson();
+        ._toLocalJson();
     return <String, Object?>{
-      for (final MapEntry<String, Object?> entry in toJson().entries)
+      for (final MapEntry<String, Object?> entry in _toLocalJson().entries)
         if (defaults[entry.key] != entry.value) entry.key: entry.value,
     };
   }
+
+  Map<String, Object?> _toLocalJson() => <String, Object?>{
+    ...toJson(),
+    'volumePercent': volumePercent,
+  };
+
+  /// Whether [other] asks the host for the same stream. Fields that only
+  /// change local playback ([audio], [volumePercent]) are ignored, so editing
+  /// them needs no new join.
+  bool sameHostParameters(GameStreamVideoSettings other) =>
+      copyWith(audio: other.audio, volumePercent: other.volumePercent) == other;
 
   @override
   bool operator ==(Object other) =>
@@ -334,7 +382,9 @@ class GameStreamVideoSettings {
       other.degradation == degradation &&
       other.codec == codec &&
       other.inputFocus == inputFocus &&
-      other.audio == audio;
+      other.audio == audio &&
+      other.volumePercent == volumePercent &&
+      other.muteHost == muteHost;
 
   @override
   int get hashCode => Object.hash(
@@ -346,6 +396,8 @@ class GameStreamVideoSettings {
     codec,
     inputFocus,
     audio,
+    volumePercent,
+    muteHost,
   );
 }
 

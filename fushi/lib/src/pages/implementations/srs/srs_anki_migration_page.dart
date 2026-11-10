@@ -23,6 +23,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_anki_migration_setup_page.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_load_error.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/srs/srs_anki_migration.dart';
 import 'package:fushi/src/srs/srs_import_entry.dart' show srsImportReportLines;
@@ -311,7 +312,22 @@ class _SrsAnkiMigrationPageState extends ConsumerState<SrsAnkiMigrationPage>
     required SrsAnkiMigrationSettings settings,
     Future<void> Function()? cleanup,
   }) async {
-    final SrsDbStore? store = await readSrsStore(ref);
+    // 库打开失败：两个入口都从 srsRunLogged / 按钮回调起，抛出去只进日志、用户点了没有任何反应。这里记日志、
+    // 清掉已交给本函数的快照临时目录，并把真实原因（[srsLoadErrorDetail]）提示出来。
+    final SrsDbStore? store;
+    try {
+      store = await readSrsStore(ref);
+    } catch (e, stack) {
+      ErrorLogService.instance.log('SrsAnkiMigration.openStore', e, stack);
+      await cleanup?.call();
+      if (mounted) {
+        FushiToast.show(
+          msg: srsLoadErrorDetail(e),
+          severity: ToastSeverity.error,
+        );
+      }
+      return;
+    }
     SrsMediaStore? media;
     try {
       media = await ref.read(srsMediaStoreProvider.future);
@@ -329,6 +345,7 @@ class _SrsAnkiMigrationPageState extends ConsumerState<SrsAnkiMigrationPage>
       return;
     }
     final SrsMediaStore lockedMedia = media;
+    final SrsDbStore lockedStore = store;
     final AppModel app = ref.read(appProvider);
     // 迁移完成后切卡片去向：任务可能在本页关掉之后才结束，偏好写入口在入队时就绑好。
     final SrsCardTargetSwitch cardTargetSwitch = SrsCardTargetSwitch(
@@ -344,7 +361,7 @@ class _SrsAnkiMigrationPageState extends ConsumerState<SrsAnkiMigrationPage>
                 void Function(double progress) onProgress,
                 bool Function() shouldStop,
               ) => runSrsAnkiMigration(
-                store: store,
+                store: lockedStore,
                 media: lockedMedia,
                 source: source,
                 settings: settings,

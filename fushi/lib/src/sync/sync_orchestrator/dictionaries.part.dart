@@ -29,6 +29,8 @@ extension _SyncOrchestratorDictionaries on SyncOrchestrator {
     int index = 0;
 
     for (final String name in pulls) {
+      // 安全检查点：上一项已完整落地，这一项还没开始。
+      _checkpoint();
       _emit(
         SyncPhase.dictionaries,
         itemIndex: index,
@@ -64,6 +66,8 @@ extension _SyncOrchestratorDictionaries on SyncOrchestrator {
     }
 
     for (final String name in pushes) {
+      // 安全检查点：上一项已完整落地，这一项还没开始。
+      _checkpoint();
       _emit(
         SyncPhase.dictionaries,
         itemIndex: index,
@@ -138,6 +142,8 @@ extension _SyncOrchestratorDictionaries on SyncOrchestrator {
 
     // Push local-only dictionaries.
     for (final DictionaryMetaRow d in toPush) {
+      // 安全检查点：上一项已完整落地，这一项还没开始。
+      _checkpoint();
       _emit(
         SyncPhase.dictionaries,
         itemIndex: index,
@@ -181,6 +187,8 @@ extension _SyncOrchestratorDictionaries on SyncOrchestrator {
       // `.fushidict`）suffix, which otherwise surfaces as a "weird" entry in
       // the progress list.
       final String displayName = _stripDictionaryAssetSuffix(e.name);
+      // 安全检查点：上一项已完整落地，这一项还没开始。
+      _checkpoint();
       _emit(
         SyncPhase.dictionaries,
         itemIndex: index,

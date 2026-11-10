@@ -14,6 +14,7 @@
 #include "floating_ball_window.h"
 #include "floating_lyric_window.h"
 #include "global_lookup_window.h"
+#include "game_stream_host_mute.h"
 #include "game_stream_input.h"
 #include "hdr_display_info.h"
 #include "ime_association_guard.h"
@@ -205,6 +206,8 @@ class FlutterWindow : public Win32Window {
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
       game_stream_input_channel_;
   std::unique_ptr<fushi::GameStreamInput> game_stream_input_;
+  // 串流「静音主机」：压低被串游戏进程树的音频会话（串流音频照常）。随 unbind 还原。
+  fushi::GameStreamHostMute game_stream_host_mute_;
   void RegisterGameStreamInputChannel();
 
   // RegisterWindowMessageW(L"MagpieScalingChanged") 拿到的运行时消息号。

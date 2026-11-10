@@ -491,11 +491,6 @@ class InterconnectHostChannel {
     // 流式请求体一旦打开就不再换地址（见 [InterconnectRequestBody.stream]）。
     bool streamOpened = false;
 
-    void forgetRaceWinner() {
-      final String? id = host.hostId;
-      if (id != null) forgetInterconnectRaceWinner(id);
-    }
-
     for (final FushiClientUrl c in ranked.ranked) {
       if (_closed) throw _cancelled;
       final Duration remaining = timeout - clock.elapsed;
@@ -549,7 +544,8 @@ class InterconnectHostChannel {
           if (streamOpened) break;
           continue;
         }
-        forgetRaceWinner();
+        // 传输失败：这条若是选路缓存的胜者就作废，下一次请求重新竞速。
+        reportInterconnectCandidateUnreachable(c);
         if (attempt.bodyStarted) {
           // 请求体已开始写出：host 可能已收到并执行。非幂等请求不重发，流式
           // 请求体不重放。
@@ -574,7 +570,8 @@ class InterconnectHostChannel {
         attempt.abandoned = true;
         if (!attempt.abort.isCompleted) attempt.abort.complete();
         if (_closed) throw _cancelled;
-        forgetRaceWinner();
+        // 传输失败：这条若是选路缓存的胜者就作废，下一次请求重新竞速。
+        reportInterconnectCandidateUnreachable(c);
         // 响应头已经到了：请求已送达。
         if (!isIdempotent || streamOpened) {
           throw const InterconnectChannelException(
@@ -588,6 +585,9 @@ class InterconnectHostChannel {
       }
       attempt.abandoned = true;
       if (_closed) throw _cancelled;
+      // 拿到了 host 的应答（含 401）：缓存刚作废时记它为胜者，后续请求不必再
+      // 探一轮死地址（BUG-4278）。
+      reportInterconnectCandidateReached(c);
 
       if (streamed.statusCode == 401) {
         // 401 在处理器之前就拒绝了：非幂等也可以换下一条（per-peer 凭据）。

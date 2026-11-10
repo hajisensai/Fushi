@@ -78,13 +78,54 @@ User=fushi
 WorkingDirectory=/opt/fushi_server
 ExecStart=/opt/fushi_server/bin/fushi_server serve --config /opt/fushi_server/fushi_server.yaml
 Restart=on-failure
+RestartPreventExitStatus=75
 
 [Install]
 WantedBy=multi-user.target
 ```
 
-`Restart=on-failure` 也覆盖远程更新：装完新版后进程以退出码 75 退出，systemd 据此拉起新版（见下文
-「远程更新」）。Windows 上用 NSSM / WinSW 这类服务管理器托管时同理（退出即重启）。
+两个退出码分工：
+
+- **10 = 远程更新装好了新版，请重启**（`Restart=on-failure` 据此拉起新版，见下文「远程更新」）。
+  别写成 `Restart=no`，也别把 10 列进 `SuccessExitStatus=`／`RestartPreventExitStatus=`，否则更新
+  装完服务就停在那里。
+- **75 = 冲突**：数据目录被另一个 fushi_server（serve 或离线命令）占着、端口被占。重启也解决不了，
+  `RestartPreventExitStatus=75` 让服务停下（`systemctl status` 里是 `status=75/TEMPFAIL`），而不是
+  反复重启直到撞上启动频率上限。解决占用后 `systemctl restart fushi_server`。
+
+`User=` 要对安装目录有写权限（换包是在 `bin/`、`lib/` 里改名）。
+
+### Windows 服务
+
+`fushi_server.exe` 不是原生 Windows 服务，要用服务包装器托管：退出码 **10**（远程更新装完）必须
+自动重启；**75**（冲突：数据目录 / 端口被另一个实例占着）最好不重启，重启也解决不了。安装目录放在服务账户能写的地方（如 `C:\fushi_server`，
+不要放 `Program Files`）。
+
+NSSM（默认 `AppExit` 就是 Restart；可按退出码单独设，75 设成 Exit 就停下）：
+
+```bat
+nssm install fushi_server C:\fushi_server\bin\fushi_server.exe serve --config C:\fushi_server\fushi_server.yaml
+nssm set fushi_server AppDirectory C:\fushi_server
+nssm set fushi_server AppExit Default Restart
+nssm set fushi_server AppExit 75 Exit
+nssm start fushi_server
+```
+
+WinSW（不写 `<onfailure>` 就不重启，必须显式配；它不分退出码，75 也会重启，所以把间隔设长些，
+冲突时看日志处理占用）：
+
+```xml
+<service>
+  <id>fushi_server</id>
+  <name>fushi_server</name>
+  <executable>C:\fushi_server\bin\fushi_server.exe</executable>
+  <arguments>serve --config C:\fushi_server\fushi_server.yaml</arguments>
+  <workingdirectory>C:\fushi_server</workingdirectory>
+  <onfailure action="restart" delay="30 sec"/>
+</service>
+```
+
+直接在终端 / 计划任务里跑的 `serve` 退出后没人拉起，远程更新装完需要手动再起一次。
 
 ## 配置文件 `fushi_server.yaml`
 
@@ -162,7 +203,7 @@ libraries:
     enabled: true
   - id: "audiobooks"
     path: "/srv/media/audiobooks"
-    kind: "audiobook"         # 每个含音频的目录一本（CD1 / Disc 2 分碟子目录并进上一层），可带 EPUB / 字幕；只有音频的不导入（不自动转录）；音频原地引用、不拷贝
+    kind: "audiobook"         # 每个含音频的目录一本（CD1 / Disc 2 分碟子目录并进上一层），可带 EPUB / 字幕；只有音频的不导入（不自动转录）；音频原地引用、不拷贝；已导入的目录重扫时按音频清单 / 字幕变化就地更新（补章节、换字幕）
     enabled: true
 ```
 
@@ -230,7 +271,8 @@ fushi_server ctl sub [ls] | add '<json>' | check [id] | enable|disable|rm <id>
 fushi_server ctl models [ls] | pull <ja|…|ocr|ocr:key>
 fushi_server ctl anki [status] | sync | login --user u（密码读 stdin / FUSHI_ANKI_PASSWORD）| …
 fushi_server ctl srs [status] | profiles | add|remove|default <uid> | off | sync [<uid>]
-fushi_server ctl srs ankiconnect on|off | config '<json>'   复习库（见下文「Fushi 复习」）
+fushi_server ctl srs ankiconnect on|off                  AnkiConnect 监听开关（复习库，见下文「Fushi 复习」）
+fushi_server ctl srs config '<json>'                     其余复习库配置，同 PUT /api/admin/srs，如 '{"ankiConnect":{"bind":"0.0.0.0","apiKey":"…"}}'
 fushi_server ctl upload <文件…> --lib <id> [--path 目录]   分块断点续传（传完 scan）
 fushi_server ctl logs -f                                 跟随日志
 fushi_server ctl raw <METHOD> /api/admin/... ['<json>']   直调任意 admin 接口
@@ -383,13 +425,24 @@ client 首次连接的 TOFU，其它主机名 / 端口的坏证书照样拒绝�
 （`lib/src/server_subtitle_providers.dart`，`subs` 命令也用它）：OpenSubtitles / SubDL / Jimaku。
 
 - 凭据：环境变量 `FUSHI_OPENSUBTITLES_API_KEY`（+ `_USERNAME` / `_PASSWORD`）、`FUSHI_SUBDL_API_KEY`、
-  `FUSHI_JIMAKU_API_KEY`，其次是与 app 同名的偏好键（经互联「服务账号」同步过来的那份）。
+  `FUSHI_JIMAKU_API_KEY`，其次是与 app 同名的偏好键。**环境变量给了 key 就压过偏好里存的 key**（偏好里的开关仍作数）。
+- 偏好键在这几处存（同一个接口 `PUT /api/admin/settings` 的 `subtitleProviders`，保存即生效）：
+  - WebUI「设置 → 在线字幕来源」：每家一个开关 + key（OpenSubtitles 另有用户名 / 密码）；
+  - `fushi_server ctl settings subtitle-key opensubtitles|subdl|jimaku`：key 从 stdin 或同名 `FUSHI_*_API_KEY`
+    环境变量读，不进 argv；末尾加 `clear` 清掉；`ctl settings subtitle-source <来源> on|off` 开关；
+  - `ctl settings set '{"subtitleProviders":{"jimaku":{"apiKey":"…"}}}'`（会进 shell 历史，能用上面那条就别用这条）。
+
+  规则与 TMDB key 同：key / 密码永不回显，`GET /api/admin/settings` 只报 `apiKeySet` / `passwordSet`，
+  外加 `active`（下一轮字幕阶段会不会用这一家）与 `apiKeyFromEnv`（存的 key 此刻被环境变量盖住）；
+  提交时留空 = 不改，`clearApiKey: true` / `clearPassword: true` 才清空；整批先校验，有一项不对就 400、什么都不写。
+  AI 助手的设置操作（`server.settings.set`）只能改字幕语言等几项白名单，碰不到任何凭据。
 - 无人值守路径只用**偏好开关开着且有 key** 的来源：偏好里关掉的来源，设了环境变量也不自动用
   （环境变量只在 `subs` 命令里临时启用）。一家都没有时下载的字幕阶段跳过（`required` 的任务报 needsAttention），
   补字幕回 `unavailable`。
-- 下载管线的来源在管线（重）建时读一次（启动 / 资源索引器保存后）；补字幕每次请求现读。
+- 来源按当前偏好每次现读：下载管线每个任务进字幕阶段时读一次（运行中改了 key / 开关，下一个任务就用新的，
+  不用重启；正在跑的那一轮用到结束），补字幕每次请求读一次。
 - 语言：`subtitle_language` 是显式字幕语言（硬过滤）；每系列记忆（`jimaku_pref_langs`）与默认内容语言
-  （`default_content_language`）按 app 同一判据参与；写盘前按内嵌字幕轨对时间轴（`subtitle_reference_sync_enabled`，默认开）。
+  （`default_content_language`）按 app 同一判据参与（这两项与来源一样每轮字幕阶段现读，WebUI 改完下一个任务生效）；写盘前按内嵌字幕轨对时间轴（`subtitle_reference_sync_enabled`，默认开）。
 - Jimaku 与 app 用同一个 provider：按刮削身份里的 AniList id（真人剧按 TMDB id）直查条目，标题只是回退词，
   整季压缩包按集号解包。AJATT 只在 app 里有。
 - 自动获取字幕（偏好 `video_subtitle_backfill_after_scrape`，与 app 同名，默认开；关了下面两条都不跑，
@@ -464,10 +517,14 @@ host 开关三道门；开关关着回 403，能力位 `liveLibrary.profileTrans
   校验值或对不上一律不装），系统 `tar` 解包（Windows 用自带的 `System32\tar.exe`），然后逐个文件
   换进安装目录：旧文件先改名为 `*.fushi-old`（Windows 允许给运行中的 exe / DLL 改名，不允许
   覆盖），新文件再改名到位；中途失败整体还原。动文件前先写换包日志 `.fushi_update_journal.json`，
-换完才删：换到一半进程被杀 / 断电，下次启动按日志逆序还原（若正在跑的已是没换完的新版可执行文件，
-还原后以退出码 75 退出让服务管理器拉起旧版）。下载正文 60 秒没有新数据即判失败、清掉暂存，可以
-再触发。只动包里有的文件，安装目录里的配置与 `data/` 不碰。
-- **重启**：换完进程以**退出码 75** 退出，由 systemd（`Restart=on-failure`）/ 服务管理器拉起新版；
+换完才删：换到一半进程被杀 / 断电，下次启动（拿到数据目录锁之后、**打开数据库之前**）按日志逆序
+还原；若正在跑的已是没换完的新版可执行文件，还原后不开库、直接以退出码 10 退出，让服务管理器拉起
+旧版（先开库的话新版会把库迁到旧版打不开的 schema）。下载正文 60 秒没有新数据即判失败、清掉暂存，可以
+再触发。只动包里有的文件，安装目录里的配置与 `data/` 不碰；旧版有、新版包里没有的文件留在原处。
+- **只进不退**：新版第一次启动可能把数据库迁到新 schema，之后再手动换回旧版二进制会被拒绝开库
+  （`FushiDatabaseDowngradeException`）。要回退请连 `data/` 一起用更新前的备份。
+- **重启**：换完进程以**退出码 10**（专用，不是冲突的 75）退出，由 systemd（`Restart=on-failure`）/ NSSM / WinSW
+  （`<onfailure action="restart"/>`，见上文「Windows 服务」）拉起新版；
   新版启动时删掉 `*.fushi-old` 与暂存目录。手动在终端里跑的 `serve` 需要自己再起一次。
 - 服务端进程要对安装目录有写权限（systemd 例子里 `User=fushi` 就要拥有 `/opt/fushi_server`）。
 

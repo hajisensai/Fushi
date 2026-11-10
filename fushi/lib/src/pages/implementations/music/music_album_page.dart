@@ -24,6 +24,8 @@ import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart
     show MusicFloatingBarHost;
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
 import 'package:fushi/src/pages/implementations/music/music_disc_actions.dart';
+import 'package:fushi/src/pages/implementations/music/music_playlist_actions.dart'
+    show musicAddLocalTracksToPlaylist;
 import 'package:fushi/src/pages/implementations/music/music_server_pages.dart'
     show musicAlbumDetailCover, kMusicAlbumDetailCoverSize;
 import 'package:fushi/src/pages/implementations/music/music_subtitle_actions.dart';
@@ -280,6 +282,24 @@ class _MusicAlbumPageState extends ConsumerState<MusicAlbumPage> {
                             ),
                       icon: const FushiIcon(FushiIcons.repeat),
                       label: Text(t.music_shuffle_play),
+                    ),
+                  ),
+                  FushiPressScale(
+                    child: FushiFilledButton.tonalIcon(
+                      size: FushiButtonSize.m,
+                      key: const ValueKey<String>(
+                        'music_album_add_to_playlist',
+                      ),
+                      onPressed: tracks.isEmpty
+                          ? null
+                          : () => unawaited(
+                              musicAddLocalTracksToPlaylist(context, <String>[
+                                for (final MusicTrackRow tr in tracks)
+                                  tr.trackUid,
+                              ]),
+                            ),
+                      icon: const FushiIcon(FushiIcons.playlist),
+                      label: Text(t.music_action_add_to_playlist),
                     ),
                   ),
                   // 广播剧 CD 一类整张专辑：一键排队生成日语字幕（已有生成字幕的曲目跳过）。

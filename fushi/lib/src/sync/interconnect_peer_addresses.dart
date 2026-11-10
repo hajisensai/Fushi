@@ -219,9 +219,11 @@ Future<FushiClientUrl?> raceInterconnectHostAddresses(
   return done.future;
 }
 
-/// 最近一次选路结果（hostId → 胜出地址 + 本轮核对通过的明文地址集），
-/// [_raceCacheTtl] 内直接复用，免得查词这类高频调用每次都多付一轮探测。缓存的
-/// 地址失效时消费方会顺序试组内其余地址，不会因为缓存而连不上。
+/// 最近一次选路结果（hostId → 胜出地址的持久 URL + 本轮核对通过的明文地址集），
+/// [_raceCacheTtl] 内直接复用，免得查词这类高频调用每次都多付一轮探测。缓存只决定
+/// 组内顺序：返回的整组都是可拨的（`p2p://` 已换成本地转发口），缓存的地址失效时
+/// 消费方顺序试组内其余地址照样能到；消费方用 [reportInterconnectCandidateUnreachable]
+/// 报告失败后缓存立即作废，不会在 TTL 内一直把死地址排在组首（BUG-4278）。
 ///
 /// `verifiedPlain` 是可变集合：本轮竞速开始前建好并写进缓存项，胜者决出之后才回来
 /// 的明文探测结果（`onResult(ok=true)`）照样加进来，缓存窗口内就能用上。
@@ -232,9 +234,38 @@ const Duration _raceCacheTtl = Duration(seconds: 30);
 @visibleForTesting
 void resetInterconnectRaceCache() => _raceCache.clear();
 
-/// 作废 [hostId] 缓存的选路胜者：消费方刚在某条地址上撞了传输失败（连接被拒 /
-/// 建连超时 / 断开），下一次请求重新竞速，不在缓存窗口内反复先撞那条死地址。
-void forgetInterconnectRaceWinner(String hostId) => _raceCache.remove(hostId);
+/// 消费方对 [candidate]（选路结果里的一条，可以是本地转发口）的请求在传输层失败了
+/// （连接被拒 / 建连超时 / 断开）：它若正是该 host 缓存的胜出地址，作废缓存，下一次
+/// 选路重新竞速，不在缓存窗口内反复先撞那条死地址。
+void reportInterconnectCandidateUnreachable(FushiClientUrl candidate) {
+  final String? hostId = candidate.hostId;
+  if (hostId == null) return;
+  final (String, DateTime, Set<String>)? cached = _raceCache[hostId];
+  if (cached != null && cached.$1 == interconnectPersistedUrl(candidate.url)) {
+    _raceCache.remove(hostId);
+  }
+}
+
+/// 消费方经 [candidate] 拿到了 host 的应答：该 host 没有有效缓存（刚因失败作废）时
+/// 记它为胜出地址，后续请求不必重新探测一轮死地址。已有缓存不覆盖。
+///
+/// 只记自带密码学身份的地址（[_credentialSafe]）：明文地址能否拿凭据要靠选路当场
+/// ping 核对 hostId（V-B4），不能凭一次应答写进缓存绕过核对——明文胜者留给下一次
+/// 选路重新竞速。
+void reportInterconnectCandidateReached(
+  FushiClientUrl candidate, {
+  DateTime Function() now = DateTime.now,
+}) {
+  final String? hostId = candidate.hostId;
+  if (hostId == null || !_credentialSafe(candidate)) return;
+  final (String, DateTime, Set<String>)? cached = _raceCache[hostId];
+  if (cached != null && now().difference(cached.$2) < _raceCacheTtl) return;
+  _raceCache[hostId] = (
+    interconnectPersistedUrl(candidate.url),
+    now(),
+    <String>{},
+  );
+}
 
 /// 地址本身带密码学身份：https 且钉了指纹，或持久地址是 `p2p://`（含本进程的
 /// 转发口——按 [interconnectPersistedUrl] 换回 `p2p://` 判）。其余（明文 http、
@@ -245,8 +276,10 @@ bool _credentialSafe(FushiClientUrl u) {
       (u.fingerprintSha256?.isNotEmpty ?? false);
 }
 
-/// 选路结果：[ranked] 是可以拿凭据去请求的候选（按 host 重排）；[withheld] 是因为
-/// 明文地址当场核对 hostId 没通过（或没机会核对）而被扣下的地址数。
+/// 选路结果：[ranked] 是可以拿凭据去请求、且此刻拨得出去的候选（按 host 重排）；
+/// [withheld] 是此刻用不上的地址数——明文地址当场核对 hostId 没通过（或没机会核对）
+/// 而被扣下，或 `p2p://` 换不出本地转发口（隧道层没装 / 起不来）。消费方据此把
+/// 「有已配对地址但一条都用不上」报成不可达，而不是「未配对」（BUG-4278 审查）。
 typedef InterconnectRankedCandidates = ({
   List<FushiClientUrl> ranked,
   int withheld,
@@ -258,6 +291,10 @@ typedef InterconnectRankedCandidates = ({
 /// 带 hostId 的组里只要有明文成员（含单地址组），就必须当场 ping 核对：没核对
 /// 通过的明文地址从结果里扣掉（V-B4）——它可能已经指向另一台 Fushi host，带着
 /// 本组 token 的 Basic 请求不能发过去。
+///
+/// 返回的每一条都可以直接拨：`p2p://` 已换成本进程的本地转发口（隧道层没装 / 起
+/// 不来的 `p2p://` 去掉、计入 withheld）。换转发口只在本机开一个回环监听口，真正的
+/// 隧道连接在第一次有请求经过时才建。
 ///
 /// 各消费方的「逐个试候选」循环结构不用改，只把数据源换成本函数的结果。
 Future<List<FushiClientUrl>> rankInterconnectCandidates(
@@ -272,7 +309,7 @@ Future<List<FushiClientUrl>> rankInterconnectCandidates(
   now: now,
 )).ranked;
 
-/// [rankInterconnectCandidates] 的详细版：同时给出被扣下的地址数，消费方据此把
+/// [rankInterconnectCandidates] 的详细版：同时给出此刻用不上的地址数，消费方据此把
 /// 「候选全被扣下」报成不可达（而不是「未配对」）。
 Future<InterconnectRankedCandidates> rankInterconnectCandidatesDetailed(
   List<FushiClientUrl> candidates, {
@@ -305,18 +342,21 @@ Future<InterconnectRankedCandidates> _rankGroup(
 }) async {
   final String? hostId = group.first.hostId;
   // 老条目（无 hostId）没有可核对的身份，语义与升级前一致。
-  if (hostId == null) return (ranked: group, withheld: 0);
+  if (hostId == null) return _dialable(group, withheld: 0);
   final bool hasPlain = group.any((FushiClientUrl u) => !_credentialSafe(u));
   // 全员自带密码学身份的单地址组不必探测。
-  if (!hasPlain && group.length < 2) return (ranked: group, withheld: 0);
+  if (!hasPlain && group.length < 2) return _dialable(group, withheld: 0);
 
   final (String, DateTime, Set<String>)? cached = _raceCache[hostId];
   FushiClientUrl? winner;
   Set<String>? verified;
+  // 命中缓存不续期：TTL 从那次真正选路算起，到期必重选。命中就续期的话，持续
+  // 有请求时缓存永不过期——直连恢复后仍一直走隧道 / 中继（BUG-4278 审查）。
   if (cached != null && now().difference(cached.$2) < _raceCacheTtl) {
     for (final FushiClientUrl u in group) {
       if (u.url == cached.$1) winner = await _resolveTransport(u);
     }
+    // 缓存的 `p2p://` 这次换不出转发口（隧道层停了）：winner 仍为 null，重新选路。
     if (winner != null) verified = cached.$3;
   }
   if (winner == null) {
@@ -349,13 +389,14 @@ Future<InterconnectRankedCandidates> _rankGroup(
     }
   }
   if (winner == null) {
-    // 全不可达：带密码学身份的地址照常交给消费方去试，明文地址一律扣下。
+    // 全不可达：带密码学身份的地址照常交给消费方去试（`p2p://` 换成转发口），
+    // 明文地址一律扣下。
     _raceCache.remove(hostId);
     final List<FushiClientUrl> safe = <FushiClientUrl>[
       for (final FushiClientUrl u in group)
         if (_credentialSafe(u)) u,
     ];
-    return (ranked: safe, withheld: group.length - safe.length);
+    return _dialable(safe, withheld: group.length - safe.length);
   }
   final Set<String> verifiedPlain = verified!;
   final String persistedUrl = interconnectPersistedUrl(winner.url);
@@ -368,7 +409,26 @@ Future<InterconnectRankedCandidates> _rankGroup(
     for (final FushiClientUrl u in ordered)
       if (_credentialSafe(u) || verifiedPlain.contains(u.url)) u,
   ];
-  return (ranked: ranked, withheld: ordered.length - ranked.length);
+  // 胜者已是可拨地址；组内其余 `p2p://` 也换成转发口，直连胜者失效时消费方能顺序
+  // 试到隧道（BUG-4278：只换胜者时其余 `p2p://` 原样交出，消费方拼不出地址）。
+  return _dialable(ranked, withheld: ordered.length - ranked.length);
+}
+
+/// [group] 的每条都换成可拨地址（`p2p://` → 本地转发口，换不出的去掉并计入
+/// withheld），顺序不变。
+Future<InterconnectRankedCandidates> _dialable(
+  List<FushiClientUrl> group, {
+  required int withheld,
+}) async {
+  if (!group.any((FushiClientUrl u) => _isP2pUrl(u.url))) {
+    return (ranked: group, withheld: withheld);
+  }
+  final List<FushiClientUrl> out = <FushiClientUrl>[];
+  for (final FushiClientUrl u in group) {
+    final FushiClientUrl? resolved = await _resolveTransport(u);
+    if (resolved != null) out.add(resolved);
+  }
+  return (ranked: out, withheld: withheld + group.length - out.length);
 }
 
 Future<FushiClientUrl?> _raceP2p(
@@ -694,18 +754,30 @@ List<FushiClientUrl> applyIssuedInterconnectToken(
 /// - 新条目继承锚点的 token / 指纹 / 展示名：per-peer token 对这台 host 的所有
 ///   地址都有效，证书也是同一张。指纹只给 https 地址。
 /// - 插入位置：同组内第一个优先级更低的条目之前；手输条目的相对顺序不变。
+/// - [deviceName]（host 自报的展示名，BUG-4322）：同组里还没有名字的条目（含锚点）补上，已有的名字
+///   不动。升级前用手动地址配对的 host 没记名字，下次学地址时据此补齐。
 List<FushiClientUrl> mergeLearnedHostAddresses(
   List<FushiClientUrl> list, {
   required String anchorUrl,
   required String hostId,
   required List<InterconnectHostAddress> addresses,
+  String? deviceName,
 }) {
   final int anchorIndex = list.indexWhere(
     (FushiClientUrl u) => u.url == anchorUrl,
   );
   if (anchorIndex < 0) return list;
   if (!_anchorMayClaimHostId(list, anchorIndex, hostId)) return list;
-  final FushiClientUrl anchor = list[anchorIndex].copyWith(hostId: hostId);
+  final String? hostName = (deviceName?.trim().isNotEmpty ?? false)
+      ? deviceName!.trim()
+      : null;
+  FushiClientUrl named(FushiClientUrl u) =>
+      hostName == null || (u.deviceName?.trim().isNotEmpty ?? false)
+      ? u
+      : u.copyWith(deviceName: hostName);
+  final FushiClientUrl anchor = named(
+    list[anchorIndex].copyWith(hostId: hostId),
+  );
   final List<InterconnectHostAddress> kept = collapseRotatingIpv6Addresses(
     addresses,
     preferUrls: <String>[
@@ -739,10 +811,10 @@ List<FushiClientUrl> mergeLearnedHostAddresses(
       // 手输的同一台机器：归组。只认证书指纹（与锚点并组同一判据）——URL 恰好被
       // 公布不代表这条地址上应答的就是这台 host；明文手输行永不被收编，否则锚点的
       // token 会写给那个 URL 上实际应答的另一台机器（C6）。
-      out.add(withAnchorToken(u.copyWith(hostId: hostId)));
+      out.add(named(withAnchorToken(u.copyWith(hostId: hostId))));
       continue;
     }
-    out.add(u.hostId == hostId ? withAnchorToken(u) : u);
+    out.add(u.hostId == hostId ? named(withAnchorToken(u)) : u);
   }
 
   for (final InterconnectHostAddress a in kept) {
@@ -800,6 +872,13 @@ bool _acceptP2pAddresses = false;
 void setInterconnectAcceptsP2pAddresses(bool accept) {
   _acceptP2pAddresses = accept;
 }
+
+/// host 的 `/api/host/addresses` 回包：身份、展示名（老 host 为 null）与地址集。
+typedef _PublishedHostAddresses = ({
+  String hostId,
+  String? deviceName,
+  List<InterconnectHostAddress> addresses,
+});
 
 /// 从 host 的 `/api/host/addresses` 学习它公布的地址集并合并进候选列表。
 ///
@@ -859,8 +938,10 @@ class InterconnectAddressLearner {
       await _repo.getFushiClientToken(),
     );
     if (token == null) return false;
-    final ({String hostId, List<InterconnectHostAddress> addresses})?
-    published = await _fetchPublished(anchor, token);
+    final _PublishedHostAddresses? published = await _fetchPublished(
+      anchor,
+      token,
+    );
     if (published == null) return false;
 
     bool changed = false;
@@ -870,6 +951,7 @@ class InterconnectAddressLearner {
         anchorUrl: persisted,
         hostId: published.hostId,
         addresses: published.addresses,
+        deviceName: published.deviceName,
       );
       if (_sameList(before, after)) return before;
       changed = true;
@@ -892,8 +974,10 @@ class InterconnectAddressLearner {
     );
   }
 
-  Future<({String hostId, List<InterconnectHostAddress> addresses})?>
-  _fetchPublished(FushiClientUrl anchor, String token) async {
+  Future<_PublishedHostAddresses?> _fetchPublished(
+    FushiClientUrl anchor,
+    String token,
+  ) async {
     final Uri? base = Uri.tryParse(anchor.url);
     if (base == null || (base.scheme != 'http' && base.scheme != 'https')) {
       return null;
@@ -925,7 +1009,13 @@ class InterconnectAddressLearner {
         final InterconnectHostAddress? a = InterconnectHostAddress.fromJson(e);
         if (a != null) addresses.add(a);
       }
-      return (hostId: hostId, addresses: addresses);
+      final Object? deviceName = decoded['deviceName'];
+      return (
+        hostId: hostId,
+        // BUG-4322：host 展示名（老 host 不带）。
+        deviceName: deviceName is String ? deviceName : null,
+        addresses: addresses,
+      );
     } finally {
       client.close();
     }

@@ -293,7 +293,7 @@ public class MainActivity extends AudioServiceActivity {
             floatingDictChannel = null;
         }
         FloatingBallChannel.detach(getFlutterEngine());
-        GameStreamCompanionDisplay.detach();
+        SecondScreenDisplay.detach();
         ioExecutor.shutdownNow();
         super.onDestroy();
     }
@@ -615,6 +615,9 @@ public class MainActivity extends AudioServiceActivity {
     public void configureFlutterEngine(@NonNull FlutterEngine flutterEngine) {
         super.configureFlutterEngine(flutterEngine);
         FloatingDictService.initEngineGroup(getApplicationContext());
+        // 反馈回复后台检查的排程：纯原生 Worker，不起 Flutter 引擎（反馈 yjn-3h8B-7）。
+        app.fushi.reader.feedback.FeedbackReplyWorkChannel.registerWith(
+                flutterEngine, getApplicationContext());
         SelectionActionChannel.registerWith(flutterEngine, this);
         SystemOcrChannel.registerWith(flutterEngine, this);
         ClipboardImageChannel.registerWith(flutterEngine, getApplicationContext());
@@ -628,8 +631,8 @@ public class MainActivity extends AudioServiceActivity {
         // 都要从 Activity 起，不必再补 NEW_TASK。
         FloatingBallChannel.registerWith(flutterEngine, this);
         app.fushi.reader.widgets.WidgetChannel.registerWith(flutterEngine, getApplicationContext());
-        // 串流第二块屏：列显示器、把查词面板拉到另一块屏上并转发消息与手柄键。
-        GameStreamCompanionDisplay.registerWith(flutterEngine, this);
+        // 第二块屏宿主（副屏伴侣 / 串流查词面板）：列显示器、把面板拉到另一块屏上并转发消息与手柄键。
+        SecondScreenDisplay.registerWith(flutterEngine, this);
 
         volumeKeyChannel = new MethodChannel(
                 flutterEngine.getDartExecutor().getBinaryMessenger(), VOLUME_KEY_CHANNEL);
@@ -1137,6 +1140,8 @@ public class MainActivity extends AudioServiceActivity {
                 }
             });
 
+        // BUG-4326：旧版长按图标菜单同步会把自定义图标快捷方式误置灰，启动时把它恢复。
+        IconSwitchHelper.restoreCustomShortcut(this);
         new MethodChannel(flutterEngine.getDartExecutor().getBinaryMessenger(), ICON_CHANNEL)
             .setMethodCallHandler((call, result) -> {
                 switch (call.method) {

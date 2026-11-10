@@ -135,7 +135,9 @@ class InterconnectPostTransport {
           probe: _probe,
         );
     if (ranked.members.isEmpty) {
-      // 未配对/未启用：不是「设备不可达」，按「无结果」处理。
+      // 未配对/未启用：不是「设备不可达」，按「无结果」处理。有已配对地址、但选路
+      // 后一条可拨的都没剩（只剩 `p2p://` 而隧道层没装 / 起不来）不走这里：选路把
+      // 它计进 withheld，落到下面的不可达分支（BUG-4278 审查）。
       return (
         json: null,
         allUnreachable: false,
@@ -182,6 +184,7 @@ class InterconnectPostTransport {
         // 拿到任何 HTTP 响应（含 401/404/405/非 2xx/坏 JSON 体）都算「可达」；
         // 传输层失败（连接拒绝/超时/DNS）根本走不到这一行，落在 catch 里。
         anyResponse = true;
+        reportInterconnectCandidateReached(candidate);
         if (response.statusCode == 401) {
           // BUG-2377：这条通道的凭据只可能是配对 token（地址行自带的 per-peer
           // token，或全局回落键）——本文件从头到尾只服务互联。语义写死成
@@ -212,8 +215,10 @@ class InterconnectPostTransport {
         onRejectedResponse?.call(response.statusCode, null);
       } on TimeoutException {
         anyTimedOut = true;
+        reportInterconnectCandidateUnreachable(candidate);
         continue;
       } catch (_) {
+        reportInterconnectCandidateUnreachable(candidate);
         continue;
       } finally {
         // 每候选独立 pinned client 用完即关，所有出口（return/continue/throw）统一
@@ -225,8 +230,9 @@ class InterconnectPostTransport {
     // 401 语义还给调用方——它们据此区分「没查成」与「查过了没有」（BUG-1185）。
     if (authError != null) throw authError;
     // 只有「试过且一个响应都没拿到」才算全部不可达（传输层失败），可达但无结果
-    // 仍是普通 null。候选因身份核对失败被扣下也是「设备不可达」：查词失败冷却
-    // （BUG-575 / BUG-1302）与排行榜的 unreachable 分支照常生效。
+    // 仍是普通 null。候选因身份核对失败被扣下、或 `p2p://` 换不出转发口（都计入
+    // withheld）也是「设备不可达」：查词失败冷却（BUG-575 / BUG-1302）与排行榜的
+    // unreachable 分支照常生效。
     return (
       json: null,
       allUnreachable: !anyResponse && (attempted || ranked.withheld > 0),

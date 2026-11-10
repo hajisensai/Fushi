@@ -14,6 +14,7 @@
 #include "attached_capture_token.h"
 #include "attached_hover_tracker.h"
 #include "attached_magpie_surface_geometry.h"
+#include "attached_measured_layout.h"
 #include "attached_overlayability.h"
 #include "attached_text_layout.h"
 
@@ -92,6 +93,13 @@ public:
     int64_t probe_start_observed_index = -1;
     int64_t probe_middle_observed_index = -1;
     int64_t probe_end_observed_index = -1;
+    // "calibrated": DirectWrite re-layout inside the calibrated body rect.
+    // "measured": caller-supplied per-glyph client rectangles (no profile).
+    std::string layout_source = "calibrated";
+    // Allow-listed identity of the measured source (e.g. "tyrano_dom");
+    // empty for calibrated.  The injected registry owner stays the attached
+    // provider (kind 4 / id 11) in both cases.
+    std::string measured_source;
     GeometryProviderStatus provider;
     ShieldStatus shield;
   };
@@ -219,6 +227,29 @@ public:
                           const Layout &layout, bool risk_accepted,
                           const std::string &input_mode,
                           const std::string &surface_mode, std::string *error);
+  // Measured-layout mode.  The surface covers the target's (presentation)
+  // client and takes glyph geometry from UpdateMeasuredText instead of a
+  // calibrated body rect + DirectWrite.  Everything else (epoch, target
+  // binding, shield, LL hit snapshot, Magpie, hover, lookup event, capture,
+  // detach) is the same machinery as Configure.  Only allow-listed
+  // |measured_source| values are accepted (see attached_measured_layout.h).
+  RequestResult ConfigureMeasured(const Epoch &epoch, uint32_t target_pid,
+                                  HWND target_hwnd,
+                                  const std::string &measured_source,
+                                  const std::string &input_mode,
+                                  std::string *error);
+  // |glyph_words| is the compact list [start, length, left, top, right,
+  // bottom] * n in source-client physical pixels measured against a client of
+  // exactly |client_width| x |client_height|.  A size different from the live
+  // source client is rejected ("measured_client_size_mismatch") and the
+  // previous line's catch boxes are revoked until a fresh measurement arrives.
+  RequestResult UpdateMeasuredText(const Epoch &epoch, uint32_t target_pid,
+                                   HWND target_hwnd,
+                                   const std::wstring &source_text,
+                                   int64_t text_generation,
+                                   const std::vector<int32_t> &glyph_words,
+                                   int client_width, int client_height,
+                                   std::string *error);
   RequestResult UpdateText(const Epoch &epoch, uint32_t target_pid,
                            HWND target_hwnd, const std::wstring &source_text,
                            int64_t text_generation,
@@ -259,6 +290,11 @@ private:
     kTargetReady,
     kCalibration,
     kConfigured,
+  };
+
+  enum class LayoutSource {
+    kCalibrated,
+    kMeasured,
   };
 
   enum class ShieldHandshakeState {
@@ -303,6 +339,17 @@ private:
   void PositionSurface(const RECT &screen_rect, bool calibration);
 
   bool RebuildClusters();
+  bool RebuildMeasuredClusters();
+  // Shared tail of Configure / ConfigureMeasured: shield handshake, provider
+  // admission and the first SyncToTarget.
+  RequestResult FinishConfigure(std::string *error);
+  void ResetMeasuredLayout();
+  // Drops the stored glyph boxes so nothing is published until a fresh
+  // UpdateMeasuredText; |reason| is reported with measuredLayoutStale.
+  void InvalidateMeasuredGlyphs(const char *reason);
+  bool MeasuredLayoutActive() const {
+    return layout_source_ == LayoutSource::kMeasured;
+  }
   // BUG-2138：记下 RebuildClusters 具体败在哪一点，随 noGlyphClusters 一起上报。
   bool ClusterFailure(const char *reason);
   std::string last_cluster_failure_;
@@ -386,6 +433,15 @@ private:
   Layout layout_;
   std::string input_mode_;
   std::string surface_mode_ = "attachedOnly";
+  LayoutSource layout_source_ = LayoutSource::kCalibrated;
+  std::string measured_source_;
+  std::vector<fushi::attached_measured_layout::MeasuredGlyph> measured_glyphs_;
+  // 0 x 0 means "no valid measurement for the current line": either none was
+  // sent yet or the last one was rejected as stale.  SyncToTarget keeps the
+  // surface hidden (measuredLayoutStale) until UpdateMeasuredText succeeds.
+  int measured_client_width_ = 0;
+  int measured_client_height_ = 0;
+  std::string measured_stale_reason_ = "measured_layout_refresh_required";
 
   std::wstring source_text_;
   std::string source_text_utf8_;

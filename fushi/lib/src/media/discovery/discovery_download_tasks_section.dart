@@ -5,6 +5,7 @@ import 'package:fushi/src/media/downloads/download_source_method.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/media/discovery/discovery_download_queue.dart';
 import 'package:fushi/src/media/discovery/discovery_labels.dart';
+import 'package:fushi/src/media/discovery/download_gateway_challenge_page.dart';
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/media/downloads/download_task_entry.dart';
@@ -40,6 +41,7 @@ class DiscoveryDownloadTasksSection extends ConsumerWidget {
     this.tasksBuilder,
     this.pathRevealer,
     this.revealHostProbe,
+    this.challengeOpener,
   });
 
   /// Parent owns unified filtering, sorting and grouping, including empty queues.
@@ -54,6 +56,9 @@ class DiscoveryDownloadTasksSection extends ConsumerWidget {
   /// 测试注入平台探针（null = [currentRevealHost]）。移动端返回 null → 整条
   /// 「打开文件位置」入口隐藏，不画点了没反应的按钮。
   final RevealHost? Function()? revealHostProbe;
+
+  /// 测试注入「在浏览器中打开」（null = [openDownloadGatewayChallengeInBrowser]）。
+  final Future<bool> Function(Uri url)? challengeOpener;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -293,6 +298,15 @@ class DiscoveryDownloadTasksSection extends ConsumerWidget {
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
+          if (task.challengeUrl case final Uri challengeUrl
+              when task.status == DiscoveryDownloadStatus.failed)
+            FushiIconButton(
+              key: ValueKey<String>('$rowKey-challenge-browser'),
+              tooltip: t.discovery_download_challenge_open_browser,
+              icon: Icons.open_in_browser,
+              size: 20,
+              onTap: () => _openChallenge(context, challengeUrl),
+            ),
           if (revealTarget != null)
             FushiIconButton(
               key: ValueKey<String>('$rowKey-location'),
@@ -324,6 +338,16 @@ class DiscoveryDownloadTasksSection extends ConsumerWidget {
     if (revealed || !context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       FushiSnackBar(content: Text(t.download_task_location_open_failed)),
+    );
+  }
+
+  /// 下载网关要求人机验证（BUG-4354）：交给系统浏览器解题并下载。打不开要出声。
+  Future<void> _openChallenge(BuildContext context, Uri url) async {
+    final bool opened =
+        await (challengeOpener ?? openDownloadGatewayChallengeInBrowser)(url);
+    if (opened || !context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      FushiSnackBar(content: Text(t.collection_web_page_open_failed)),
     );
   }
 
@@ -420,6 +444,11 @@ String discoveryDownloadStatusLabel(
     case DiscoveryDownloadStatus.cancelled:
       return t.download_status_cancelled;
     case DiscoveryDownloadStatus.failed:
+      // 网关人机验证没过（BUG-4354）：说人话，不甩一串异常文本。
+      if (task.challengeUrl != null) {
+        return '${t.manga_online_failed}: '
+            '${t.discovery_download_challenge_required}';
+      }
       return '${t.manga_online_failed}: ${task.error ?? ''}';
     case DiscoveryDownloadStatus.waitingRetry:
       return '${t.manga_online_retry_waiting(attempt: task.autoRetries, total: maxAutoRetries)}: ${task.error ?? ''}';

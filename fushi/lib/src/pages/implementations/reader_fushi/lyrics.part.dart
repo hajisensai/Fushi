@@ -151,9 +151,9 @@ List<ReaderControlItem> lyricsOverlayMenuItems({
       item,
 ];
 
-/// 覆盖层读数的读口：**只读**阅读器现成的数据——StudyClock 的会话累计（时长 /
-/// 字数）与正文进度（全书已读 / 总字数）。歌词层不产生、不写入任何统计，这些数
-/// 全由下面照常跟随音频的正文产生。
+/// 歌词页读数的读口：StudyClock 的会话累计（时长 / 字数）与全书进度（已读 / 总
+/// 字数）。歌词模式期间这些数由歌词模式自己产生——字数按句入账、进度取当前句的
+/// 全书位置（见 `_settleLyricsCue`），正文不参与。
 class _ReaderLyricsClock implements LyricsPlayerClock {
   _ReaderLyricsClock(this._state);
 
@@ -209,11 +209,9 @@ extension _ReaderLyrics on _ReaderFushiPageState {
       );
 
       if (entering) {
-        // 覆盖层架构：正文 WebView 不卸载、不换文档，只在它上面盖一层歌词。进入前
-        // 只需收掉正文上的焦点环（键盘 / 手柄此后作用在歌词层）与正文查词弹窗。
-        // 不再 `_readLedger.leave()`、不再把控制器的章 cue 换成整书 cue——正文照常
-        // 按章跟随音频，阅读账本 / StudyClock 也照常由正文这条路记账（BUG-2597 的
-        // 「歌词单元入账」随之删除：歌词层不写任何统计）。
+        // 歌词模式是独立模式：正文 WebView 不卸载（实例复用，BUG-3913），但从此刻
+        // 起停在原地、不再跟随音频，位置与统计改由歌词模式按句自己记。进入前收掉
+        // 正文上的焦点环（键盘 / 手柄此后作用在歌词层）与正文查词弹窗。
         _exitCaret();
         if (isDictionaryShown) clearDictionaryResult();
         await _resolveAndApplyProfile(
@@ -230,20 +228,30 @@ extension _ReaderLyrics on _ReaderFushiPageState {
             : _audiobookController!.currentCueIdx;
         // 首次进入提示改挂「歌词文档就绪」事件（_onLyricsDocumentReady 消费此旗）。
         _pendingLyricsHintOnReady = true;
-        // 覆盖层期间正文看不见，必须跟着音频走才能替用户记字数——即便用户关了
-        // 「跟随音频」（那个开关在歌词模式只管歌词列表自己滚不滚）。
-        _audiobookController!.setReaderFollowOverride(true);
+        // 离开正文这一页：账本在离开那一刻结算它（与正文任何一次跳走同律），之后
+        // 账本的单元是歌词里的句子。
+        studyDiag('reader', 'enter lyrics mode (leave body page)');
+        _readLedger.leave();
+        // 正文面脱开：控制器不再拽正文视口、不再请正文跨章。「跟随音频」开关在歌词
+        // 模式只管歌词列表自己滚不滚。
+        _audiobookController!.setReaderDetached(true);
+        // 按章装 cue 的书：控制器的当前句改在整书 cue 上解析。
+        _useWholeBookCuesForLyrics(_audiobookController!);
         // 挂上覆盖层。第一次进入：歌词 WebView 在 onWebViewCreated 里装载歌词文档；
         // 之后（BUG-3913）同一个实例从屏外停放位搬回覆盖层，这里直接重装文档。
         // 就绪前透明（_lyricsPageReady），上一轮的旧文档不会露出来。两个字段随下面
         // 这次 _rebuild 一起生效。
         _lyricsWebViewRetained = true;
         _lyricsPageReady = false;
+        _lyricsSettledCue = null;
         _rebuild(() => _lyricsMode = true);
         notifyPopupBodyWebViewChanged();
         // 查词弹窗换成歌词页主题：Apple 深色档当场生效（app 已是深色时宿主主题
         // 不变、不会发布通知）；MD3 封面取色到达后经宿主通知再换一次。
         _syncDictionaryTheme();
+        // 当前句成为歌词模式的第一个阅读单元（此刻不入账，翻走才计）；阅读位置 /
+        // 进度读数随即归它所有。
+        _settleLyricsCue(_audiobookController!);
         if (_lyricsWebViewController != null) unawaited(_loadLyricsPage());
         // 书中插图：后台探测尺寸、筛掉外字 / 装饰小图，装好后封面位才开始换图。
         unawaited(_prepareLyricsIllustrations());
@@ -484,11 +492,11 @@ extension _ReaderLyrics on _ReaderFushiPageState {
   void _showLyricsModeHintIfNeeded() {
     final ReaderFushiSource src = ReaderFushiSource.instance;
     final bool shown = src.getPreference<bool>(
-      key: 'lyrics_mode_hint_shown',
+      key: kLyricsModeHintShownPrefShortKey,
       defaultValue: false,
     );
     if (shown || !mounted) return;
-    src.setPreference<bool>(key: 'lyrics_mode_hint_shown', value: true);
+    src.setPreference<bool>(key: kLyricsModeHintShownPrefShortKey, value: true);
     unawaited(
       _withStudyClockPaused(
         () => showAppDialog<void>(
@@ -501,10 +509,11 @@ extension _ReaderLyrics on _ReaderFushiPageState {
     );
   }
 
-  /// 退出歌词覆盖层。正文一直在下面跟随音频，通常已经站在当前句上，这里只做
-  /// 两件收尾：撤销覆盖层期间的正文强制跟随，并在正文确实落后于音频时（暂停中点行
-  /// 跳转 / 拖进度条后还没播放，正文没有被 cue 推进带过去）把它对齐到当前句——与
-  /// Niratan `exitLyricsMode` 的 `syncBookmarkToCurrentLyricsCue` 同义。
+  /// 退出歌词模式。正文从进歌词那一刻起就停在原地，这里把它一次性对齐到当前句
+  /// （与 Niratan `exitLyricsMode` 的 `syncBookmarkToCurrentLyricsCue` 同义）：账本
+  /// 离开当前句、撤销正文面脱开、还原按章装的 cue，再按当前句的阅读位置落正文——
+  /// 跨章走章节导航（学习单位锚），同章把当前句 reveal 一次。当前句映射不出阅读
+  /// 位置（没匹配上正文的句子）时正文留在原地。
   Future<void> _exitLyricsMode() async {
     ++_lyricsLoadGeneration;
     ++_lyricsIllustrationGeneration;
@@ -524,36 +533,167 @@ extension _ReaderLyrics on _ReaderFushiPageState {
     _lyricsCueIndexOffset = 0;
     _lyricsCueWindowUsesAllBookCues = false;
     _lyricsCueList = const [];
+    // 离开当前句：翻走即计（与正文跳走同律）。此后账本的单元回到正文的页。
+    studyDiag('reader', 'exit lyrics mode (leave current sentence)');
+    _readLedger.leave();
+    final ({int chapter, int offset})? readingPoint = _lyricsReadingPoint;
+    _lyricsReadingPoint = null;
+    _lyricsSettledCue = null;
     final AudiobookPlayerController? ctrl = _audiobookController;
     if (ctrl == null) return;
-    ctrl.setReaderFollowOverride(false);
-    final AudioCue? cue = ctrl.currentCue;
-    if (cue == null) return;
-    final SubtitleRematchFragment? frag = SubtitleRematchCodec.tryDecode(
-      cue.textFragmentId,
-    );
-    if (frag == null || frag.sectionIndex < 0) return;
-    if (frag.sectionIndex != _currentChapter) {
-      // 正文不在音频所在章（暂停中跨章跳句）：按学习单位锚落到那一句。
-      final int? studyOffset = _studyRangeForAudioFragment(frag)?.offset;
-      await _navigateToChapter(frag.sectionIndex, charOffset: studyOffset);
+    final AudioCue? cue = _lyricsReadingCue(ctrl);
+    if (readingPoint != null && readingPoint.chapter != _currentChapter) {
+      // 正文不在音频所在章：按学习单位锚落到那一句。章装载完成时
+      // [_injectAudiobookBridge] 会按新章重灌控制器的章 cue。脱开保持到这次导航
+      // 落定——否则控制器一接回正文面，下一个播放 tick 就会自己再发一次同目标的
+      // 跨章，两条导航抢同一章。
+      try {
+        await _navigateToChapterAndWait(
+          readingPoint.chapter,
+          charOffset: readingPoint.offset >= 0 ? readingPoint.offset : null,
+        );
+      } finally {
+        ctrl.setReaderDetached(_lyricsMode && mounted);
+      }
       return;
     }
-    // 同章：把当前句显式 reveal 一次（滚到那一页），与跟随推进同一条桥。
+    // 同章（或当前句定不出章）：接回正文面，把按章装的 cue 还给控制器，再把当前句
+    // 显式 reveal 一次（滚到那一页），与跟随推进同一条桥。
+    ctrl.setReaderDetached(false);
+    await _primeAudioCuesForCurrentBook();
+    if (!mounted || _lyricsMode) return;
     final InAppWebViewController? controller = _controller;
-    if (controller == null || !_readerContentReady) return;
+    if (controller == null || !_readerContentReady || cue == null) return;
     _reanchorClearedAt = DateTime.now();
     AudiobookBridge.highlight(controller, cue: cue, reveal: true);
     _scheduleReanchorSettleProgressRefresh();
   }
 
-  // ── 歌词覆盖层：歌词 WebView / 外观 / 操作 ─────────────────────────────
+  // ── 歌词模式自己的阅读位置与统计（2026-11-10）────────────────────────────
   //
-  // 架构（2026-10-04，对齐 Niratan）：歌词模式是盖在阅读器上的一层。正文 WebView
-  // 在下面照常存活、照常跟随音频翻页 / 高亮、照常由它的 `_refreshProgress` 给阅读
-  // 账本与 StudyClock 记字数和时长。本节只负责「显示」：歌词 WebView（透明底）、
-  // 设计系统外观（Apple Music / MD3 播放页）与按钮回调；**不写任何统计**——覆盖层
-  // 上的读数是读阅读器现成的数据（[_ReaderLyricsClock]）。
+  // 歌词模式的阅读单元是**当前句**，口径与正文同一本账（[ReadUnitLedger]：入账额 =
+  // 会话翻过的单元并集 ∩ [0, 当前位置)），坐标同为全书绝对学习单位偏移：
+  //   * 翻走即计：音频走到下一句（或用户跳到别的句子）那一刻，上一句入账——字数
+  //     按句流入，读速不再是「攒一整页、翻页时一次跳涨」；
+  //   * 回听撤回：位置退回前面的句子，其后已入账的撤回；再听过去按并集恢复，不
+  //     重复计；
+  //   * 跳过不计：拖进度 / 点行 / 跳章越过的句子从未成为当前单元；
+  //   * 与正文互通：进歌词前在正文翻过的页、歌词里听过的句子在同一个并集里去重。
+  // 时长仍是同一只 StudyClock（墙钟 + 空闲门）：播放态每次换句喂门（见
+  // [_onCueChanged]），暂停着手动翻看歌词也喂门（[_noteLyricsUserActivity]）。
+
+  /// 歌词模式当前所在的句子：与歌词层高亮同源（整书 cue 上的
+  /// [AudiobookPlayerController.lyricsCueAllBookIdx]；没有整书 cue 的书退到控制器的
+  /// 章内当前句）。重开书暂停态下按已恢复的播放位置解析（BUG-872）。
+  AudioCue? _lyricsReadingCue(AudiobookPlayerController controller) {
+    final List<AudioCue> all = controller.allBookCuesSnapshot;
+    if (all.isEmpty) return controller.currentCue;
+    final int index = controller.lyricsCueAllBookIdx;
+    return index >= 0 && index < all.length ? all[index] : null;
+  }
+
+  /// 把当前句落定成歌词模式的阅读位置（cue 推进 / 跳句 / 进歌词时各调一次）：
+  ///  1. 账本 `arrive(句首, 句尾)`，经「计时开始方式」门（与正文翻页同一判据）；
+  ///  2. 全书进度读数取句首的全书位置；
+  ///  3. 阅读存档按当前句落库。
+  /// 句子映射不出正文区间（没匹配上的句子 / 章字数未就绪）时账本与进度保持上一句
+  /// 不动——宁可不计；只知道章时仍更新章名。
+  void _settleLyricsCue(AudiobookPlayerController controller) {
+    final AudioCue? cue = _lyricsReadingCue(controller);
+    // 控制器每次通知都会走到这里（播放态翻转、位置 tick）：同一句只落定一次。
+    if (cue == null || identical(cue, _lyricsSettledCue)) return;
+    _lyricsSettledCue = cue;
+    final ({int chapter, int offset, int length})? unit =
+        _studyUnitForLyricsCue(cue);
+    if (unit == null) {
+      final int chapter = _chapterIndexForCue(cue);
+      if (chapter >= 0) _lyricsReadingPoint = (chapter: chapter, offset: -1);
+      return;
+    }
+    _lyricsReadingPoint = (chapter: unit.chapter, offset: unit.offset);
+    final (int, int)? range = lyricsCueReadUnit(
+      chapterCumulativeChars: _chapterCumulativeChars,
+      chapterCharCounts: _chapterCharCounts,
+      chapter: unit.chapter,
+      offset: unit.offset,
+      length: unit.length,
+    );
+    if (range != null) {
+      _traceArrive(range.$1, range.$2);
+      arriveReadUnitThroughStartGate(
+        gate: _studyClockStartGate,
+        ledger: _readLedger,
+        start: range.$1,
+        end: range.$2,
+        onAutoStart: _onStudyClockAutoStartOnTurn,
+      );
+      _progressCurrentChars = range.$1;
+    }
+    _syncPositionFromCurrentCue();
+  }
+
+  /// 一句 cue 在正文里的学习单位区间（章号 + 章内偏移 + 长度）。
+  /// - `fushi-cue://`：持久化的 matchable 坐标经 [_studyRangeForAudioFragment] 映射
+  ///   （音频 UTF-16 坐标不能直接当学习单位用，BUG-2333）；
+  /// - 独立 SRT 书 / SMIL：章号取 [_srtCueChapterMap] 分桶（与恢复路径同口径）或
+  ///   cue 自带 `chapterHref`，区间按句文本在该章**唯一**命中取
+  ///   （[ReaderAudioPositionIndex.studyRangeForUniqueText]，多处命中不猜）。
+  /// 两条都解不出 → null（不计）。
+  ({int chapter, int offset, int length})? _studyUnitForLyricsCue(
+    AudioCue cue,
+  ) {
+    final SubtitleRematchFragment? frag = SubtitleRematchCodec.tryDecode(
+      cue.textFragmentId,
+    );
+    if (frag != null) {
+      final ({int offset, int length})? range = _studyRangeForAudioFragment(
+        frag,
+      );
+      if (range == null || range.length <= 0) return null;
+      return (
+        chapter: frag.sectionIndex,
+        offset: range.offset,
+        length: range.length,
+      );
+    }
+    final EpubBook? book = _book;
+    if (book == null) return null;
+    int chapter = _srtCueChapterMap?[cue.sentenceIndex] ?? -1;
+    if (chapter < 0) chapter = _chapterIndexForCue(cue);
+    if (chapter < 0 || chapter >= book.chapters.length) return null;
+    final ({int offset, int length})? range = _audioPositionIndexFor(
+      chapter,
+    ).studyRangeForUniqueText(cue.text);
+    if (range == null || range.length <= 0) return null;
+    return (chapter: chapter, offset: range.offset, length: range.length);
+  }
+
+  /// 歌词模式下用户在歌词文档上的输入（手动翻看歌词）：喂时钟的空闲门，与正文滚动
+  /// 回传的 `touch()` 同律——暂停着读歌词也算在读。查词不经这里（查词不喂门，与
+  /// 正文一致）。
+  void _noteLyricsUserActivity() {
+    if (!_lyricsMode) return;
+    _studyClock?.touch();
+  }
+
+  /// 进歌词时：按章装 cue 的书（SMIL 等非整书家族）把控制器的章 cue 换成整书 cue。
+  /// 正文不再换章、不会再按章重灌，控制器的当前句 / 上一句下一句要能越过进歌词时
+  /// 那一章。退出时由 [_exitLyricsMode] 经 [_primeAudioCuesForCurrentBook] / 章装载
+  /// 还原。整书家族两份列表本就等长，不动。
+  void _useWholeBookCuesForLyrics(AudiobookPlayerController controller) {
+    final List<AudioCue> all = controller.allBookCuesSnapshot;
+    if (all.isEmpty) return;
+    if (controller.chapterCuesSnapshot.length == all.length) return;
+    controller.setChapterCues(all);
+  }
+
+  // ── 歌词页：歌词 WebView / 外观 / 操作 ────────────────────────────────
+  //
+  // 架构（2026-11-10 起）：歌词模式是独立模式。歌词页铺满整页、不透明；正文
+  // WebView 实例留着（复用，BUG-3913：Windows 上每新建一个 WebView 都留下一份不
+  // 归还的显存）但停在进歌词那一刻的位置，不跟随、不采样、不记账——同一时刻只有
+  // 一个 WebView 在工作，另一个停着。本节只负责「显示」：歌词 WebView（透明底）、
+  // 设计系统外观（Apple Music / MD3 播放页）与按钮回调；位置与统计见上一节。
 
   /// 覆盖层。不在歌词模式时：歌词 WebView 挂上过就停在屏外（BUG-3913，实例复用），
   /// 否则是一个零尺寸占位——两者都占主 Stack 同一个孩子位，保持孩子数恒定。
@@ -639,7 +779,7 @@ extension _ReaderLyrics on _ReaderFushiPageState {
       jumpMarks: _audioJumpMarks(),
       // 制卡结果小卡按正文行流选上角（竖排落左上，不压首列）。
       verticalText: ReaderFushiSource.instance.lyricsVerticalWriting,
-      // 覆盖层期间正文强制跟随音频，_currentChapter 就是音频所在章。
+      // 章名跟当前句走（正文停在进歌词时的章，不代表音频所在章）。
       chapterLabel: _book == null ? null : _currentChapterLabel(),
       statsTimerPaused: _studyClockManualPause,
       illustrations: _lyricsIllustrations
@@ -689,6 +829,10 @@ extension _ReaderLyrics on _ReaderFushiPageState {
       onToggleStatsTimer: _toggleStudyClockManualPause,
       onSpeedPanel: (LyricsMenuAnchor anchor) =>
           unawaited(_showLyricsSpeedPanel(ctrl, anchor)),
+      // 音画同步面板：整本偏移，与设置 › 有声书「音画同步」同一个偏好（反馈
+      // G5xYgLcp4p：不必离开歌词模式去设置调）。
+      onAvSyncPanel: (LyricsMenuAnchor anchor) =>
+          unawaited(_showLyricsAvSyncPanel(ctrl, anchor)),
       onOpenIllustration: (int index, {required bool returnToCover}) =>
           unawaited(
             _openLyricsIllustrationViewer(index, returnToCover: returnToCover),
@@ -702,6 +846,10 @@ extension _ReaderLyrics on _ReaderFushiPageState {
       onOpenJumpHistory: _jumpHistory.isEmpty
           ? null
           : () => unawaited(_openJumpHistoryPanel()),
+      // 导出当前字幕（反馈 iUtGmIlZiD：转录完直接听，播放页上要能导出字幕）。
+      onExportSubtitle: _canExportLyricsSubtitle
+          ? () => unawaited(_exportLyricsSubtitle(ctrl))
+          : null,
       onTapBackground: () {
         if (isDictionaryShown) clearDictionaryResult();
         _focusOwnership.reclaim(FocusReclaimCause.gesture);
@@ -755,6 +903,25 @@ extension _ReaderLyrics on _ReaderFushiPageState {
         anchorContext: anchor.context,
         speed: ctrl.speed,
         onChanged: (double speed) => unawaited(ctrl.setSpeed(speed)),
+      ),
+    );
+  }
+
+  /// 音画同步面板（反馈 G5xYgLcp4p）：与普通阅读模式快捷设置同一个步进器，回调
+  /// 同一个 [AudiobookPlayerController.setDelayMs]（夹取 + 立即重查高亮 + 写同一个
+  /// 偏好，不另存），偏移即时作用于高亮 / 点句跳转 / 单句试听 / 上下句（BUG-4243
+  /// 修好的那条路径）。只调整本偏移，不做逐行偏移（功能黑名单）。面板压着歌词页
+  /// 期间停表（BUG-2208），从按钮 context 弹、跟随歌词模式主题。
+  Future<void> _showLyricsAvSyncPanel(
+    AudiobookPlayerController ctrl,
+    LyricsMenuAnchor anchor,
+  ) async {
+    if (!mounted || !anchor.context.mounted) return;
+    await _withStudyClockPaused(
+      () => showLyricsAvSyncPanel(
+        anchorContext: anchor.context,
+        delayMs: ctrl.delayMs,
+        onChanged: ctrl.setDelayMs,
       ),
     );
   }
@@ -837,6 +1004,8 @@ extension _ReaderLyrics on _ReaderFushiPageState {
           onPressed: _openReadingStatistics,
         );
       case LyricsControlItem.bookMode:
+        // 窄屏顶栏 × 前固定摆着「书籍模式」，菜单里不再重复。
+        if (!wide) return null;
         return ReaderHeaderAction(
           icon: icon,
           label: label,
@@ -864,7 +1033,40 @@ extension _ReaderLyrics on _ReaderFushiPageState {
               ? null
               : () => unawaited(_openJumpHistoryPanel()),
         );
+      case LyricsControlItem.avSync:
+        return ReaderHeaderAction(
+          icon: icon,
+          label: label,
+          onPressed: () => unawaited(_showLyricsAvSyncPanel(ctrl, anchor)),
+        );
+      case LyricsControlItem.exportSubtitle:
+        if (!_canExportLyricsSubtitle) return null;
+        return ReaderHeaderAction(
+          icon: icon,
+          label: label,
+          onPressed: () => unawaited(_exportLyricsSubtitle(ctrl)),
+        );
     }
+  }
+
+  /// 歌词模式能否「导出当前字幕」：TTS 朗读的 cue 只在会话内存里、没有对应的音频
+  /// 文件可配，不给这个入口。
+  bool get _canExportLyricsSubtitle => _ttsCues == null;
+
+  /// 导出当前字幕（反馈 iUtGmIlZiD）：播放器手上的整本 cue 写成单时间轴 SRT，桌面
+  /// 存盘、移动端分享。保存框 / 分享面板压着歌词页期间停表（BUG-2208 同一口径）。
+  Future<void> _exportLyricsSubtitle(AudiobookPlayerController ctrl) async {
+    final List<AudioCue> cues = List<AudioCue>.of(ctrl.allBookCuesSnapshot);
+    final List<String> audioPaths = <String>[
+      for (final File f in ctrl.audioFiles) f.path,
+    ];
+    await _withStudyClockPaused(
+      () => runAudiobookSubtitleExport(
+        cues: cues,
+        audioPaths: audioPaths,
+        title: _book?.title ?? '',
+      ),
+    );
   }
 
   /// 歌词模式按钮的快捷键执行体（[ShortcutAction.audiobookReplaySentence] 等，
@@ -1422,9 +1624,9 @@ extension _ReaderLyrics on _ReaderFushiPageState {
   }
 
   /// 歌词文档就绪（`onLyricsReady` 桥 / onLoadStop 二选一，幂等 finalize 之后）。
-  /// 原先是 `_onChapterLoadComplete` 的歌词分支；覆盖层架构下正文与歌词是两个
-  /// WebView，歌词就绪与正文就绪互不相干——这里**不**碰 `_readerContentReady`、
-  /// 不建 / 起 StudyClock（统计归正文）。
+  /// 正文与歌词是两个 WebView，歌词就绪与正文就绪互不相干——这里**不**碰
+  /// `_readerContentReady`。时钟在进歌词之前已由正文就绪建好（歌词模式只在正文
+  /// 就绪后进入，见 `_pendingLyricsRestore`），这里不另建。
   Future<void> _onLyricsDocumentReady(
     InAppWebViewController controller, {
     required int generation,
@@ -1696,6 +1898,8 @@ extension _ReaderLyrics on _ReaderFushiPageState {
             final num? view = args[2] is num ? args[2] as num : null;
             if (dir == null || gen == null || view == null) return;
             if (gen.toInt() != _lyricsLoadGeneration) return;
+            // 手动浏览中翻到窗口边缘 = 用户在读歌词。
+            if (_lyricsJsBrowsing) _noteLyricsUserActivity();
             final AudiobookPlayerController? ctrl = _audiobookController;
             if (ctrl == null) return;
             final int viewRel = view.toInt();
@@ -1732,6 +1936,8 @@ extension _ReaderLyrics on _ReaderFushiPageState {
             final bool browsing = args[0] == true;
             if (browsing == _lyricsJsBrowsing) return;
             _lyricsJsBrowsing = browsing;
+            // 进入手动浏览 = 用户自己在翻歌词（喂空闲门）；自动回到跟随不算。
+            if (browsing) _noteLyricsUserActivity();
             if (!browsing) _resyncLyricsOverlayToAudio();
           },
         );

@@ -40,6 +40,8 @@ extension ShortcutActionLabel on ShortcutAction {
         return t.shortcut_action_reader_open_statistics;
       case ShortcutAction.mangaToggleStudyClock:
         return t.shortcut_action_reader_toggle_study_clock;
+      case ShortcutAction.mangaToggleBookmark:
+        return t.shortcut_action_manga_toggle_bookmark;
       case ShortcutAction.readerPageForward:
         return t.shortcut_action_reader_page_forward;
       case ShortcutAction.readerPageBackward:
@@ -202,6 +204,12 @@ extension ShortcutActionLabel on ShortcutAction {
         return t.shortcut_action_video_replay_previous_subtitle;
       case ShortcutAction.videoToggleLoopCurrentSubtitle:
         return t.shortcut_action_video_toggle_loop_current_subtitle;
+      case ShortcutAction.videoReplayCueThenPause:
+        return t.shortcut_action_video_replay_cue_then_pause;
+      case ShortcutAction.videoToggleAutoPauseAtCueEnd:
+        return t.shortcut_action_video_toggle_auto_pause_at_cue_end;
+      case ShortcutAction.videoToggleAbLoop:
+        return t.shortcut_action_video_toggle_ab_loop;
       case ShortcutAction.videoCopyCurrentSubtitle:
         return t.shortcut_action_video_copy_current_subtitle;
       case ShortcutAction.videoCopyCurrentSecondarySubtitle:
@@ -331,6 +339,16 @@ extension ShortcutActionLabel on ShortcutAction {
         return t.shortcut_action_global_external_open_lookup_page;
       case ShortcutAction.globalExternalScreenOcr:
         return t.shortcut_action_global_external_screen_ocr;
+      case ShortcutAction.globalExternalFloatingLyricToggle:
+        return t.shortcut_action_global_external_floating_lyric_toggle;
+      case ShortcutAction.globalExternalAudiobookPlayPause:
+        return t.shortcut_action_global_external_audiobook_play_pause;
+      case ShortcutAction.globalExternalAudiobookPrevSentence:
+        return t.shortcut_action_global_external_audiobook_prev_sentence;
+      case ShortcutAction.globalExternalAudiobookNextSentence:
+        return t.shortcut_action_global_external_audiobook_next_sentence;
+      case ShortcutAction.globalExternalAudiobookReplaySentence:
+        return t.shortcut_action_global_external_audiobook_replay_sentence;
       case ShortcutAction.popupNextEntry:
         return t.shortcut_action_popup_next_entry;
       case ShortcutAction.popupPrevEntry:
@@ -508,6 +526,12 @@ extension ShortcutActionIcon on ShortcutAction {
         return FushiIcons.replay5;
       case ShortcutAction.videoToggleLoopCurrentSubtitle:
         return FushiIcons.repeat;
+      case ShortcutAction.videoReplayCueThenPause:
+        return FushiIcons.replay;
+      case ShortcutAction.videoToggleAutoPauseAtCueEnd:
+        return FushiIcons.pauseCircle;
+      case ShortcutAction.videoToggleAbLoop:
+        return FushiIcons.repeatOne;
       case ShortcutAction.videoCopyCurrentSubtitle:
         return FushiIcons.copy;
       case ShortcutAction.videoCopyCurrentSecondarySubtitle:

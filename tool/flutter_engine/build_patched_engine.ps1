@@ -1,5 +1,6 @@
 # Builds Fushi's patched Flutter Windows engine (HDR output inside the Flutter
-# compositor) and packages it for tool/engine_overlay.ps1.
+# compositor, hardened accessibility tree) and packages it for
+# tool/engine_overlay.ps1.
 #
 # Steps (run any subset, in this order):
 #   sync   clone flutter/flutter at -FlutterVersion into <Root>\flutter and
@@ -150,6 +151,11 @@ if ($Steps -contains 'patch') {
   # Applies on top of all three: keyed-mutex synchronized external textures
   # (ExternalTextureD3d copies under IDXGIKeyedMutex, BUG-3888).
   Invoke-Patch $flutter (Join-Path $patchDir 'engine-d3d-keyed-mutex.patch')
+  # Independent of the four above (touches only the accessibility bridge and
+  # node delegates): the AXTree is derived from the retained framework
+  # semantics and never left half-applied (Windows UIA crashes, BUG-4073 /
+  # BUG-4333 / BUG-3796).
+  Invoke-Patch $flutter (Join-Path $patchDir 'engine-a11y-tree-hardening.patch')
   Invoke-Patch (Join-Path $src 'flutter\third_party\angle') (Join-Path $patchDir 'angle-scrgb-swapchain.patch')
 }
 

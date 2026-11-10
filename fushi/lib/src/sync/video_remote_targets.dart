@@ -36,6 +36,7 @@ typedef InterconnectCapabilityProbe =
 /// 视频遥控的能力探测。
 typedef VideoRemoteCapabilityProbe = InterconnectCapabilityProbe;
 
+/// 一次性 client，探完关掉它的连接。
 Future<bool?> _defaultProbe(
   SyncRepository repository,
   FushiClientUrl peer,

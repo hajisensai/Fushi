@@ -141,6 +141,13 @@ abstract final class SrsFieldKeys {
   /// 新卡出卡顺序（[SrsNewCardOrder.wire]；缺省 = 按词频）。随参数继承走 own 祖先。
   static const String deckNewOrder = 'newOrder';
 
+  /// 复习顺序（[SrsReviewCardOrder.wire]；缺省 = 可提取度从低到高）。随参数继承走 own 祖先；
+  /// own 祖先按 RWKV 排程时整棵子树按可提取度。
+  static const String deckReviewOrder = 'reviewOrder';
+
+  /// 新卡与复习怎么排（[SrsNewCardMix.wire]；缺省 = 复习之后）。随参数继承走 own 祖先。
+  static const String deckNewMix = 'newMix';
+
   /// 新卡计划（Map，见 [SrsNewCardPlan]）：`auto` 按复习量自动调整、
   /// `budget` 复习预算百分比、`boost` 复习少时多出新卡的百分比。一起写、一起合并；
   /// 与 [deckLimits] 一样是牌组自己的值，不随参数继承。
@@ -151,8 +158,9 @@ abstract final class SrsFieldKeys {
   static const String deckExtendLimits = 'extendLimits';
 
   // profile
+  /// 复习的翻日时刻（int 0–23）：用户改日界时写下，随同步让多设备的「今天」一致（`SrsDbStore.dayContext`）。
+  /// 时区不随 profile 同步，恒用本机偏移（旧版本声明过的 `utcOffsetMin` 键从没有写入方，已删）。
   static const String dayRolloverHour = 'dayRolloverHour';
-  static const String utcOffsetMin = 'utcOffsetMin';
 }
 
 /// 字段类别表（只在这里写一次）。

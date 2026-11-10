@@ -1,5 +1,6 @@
 /// 本地歌单页（v148，反馈 0tRY-D2JgG）：歌单里的本地曲目与远程曲目（YouTube / 在线插件）
-/// 排在同一条队列里，可播放 / 随机播放 / 改名 / 删除，每行可「从这个歌单移除」。
+/// 排在同一条队列里，可播放 / 随机播放 / 改名 / 导出 `.m3u8` / 删除，每行可「从这个歌单
+/// 移除」、可从行尾把手拖拽重排。
 ///
 /// 条目解析见 `loadMusicPlaylistItems`（解析不到的条目跳过、不删）；表级变更流驱动重读
 /// （与曲库页同一做法，不订阅 drift `.watch()`）。
@@ -15,10 +16,14 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/music/music_library_data.dart';
+import 'package:fushi/src/media/music/music_local_playlists.dart'
+    show MusicPlaylistExportItem;
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
+import 'package:fushi/src/pages/implementations/music/music_playlist_actions.dart'
+    show musicExportPlaylistM3u8, musicPlaylistErrorText;
 import 'package:fushi/src/pages/implementations/music/music_server_pages.dart'
     show
         kMusicAlbumDetailCoverSize,
@@ -158,6 +163,59 @@ class _MusicLocalPlaylistPageState
     );
   }
 
+  /// 拖拽重排：先在页面上挪好（不等重读，免得松手后跳回原位），再写库。只列出解析得到的
+  /// 条目；解析不到的（别的设备的曲目 / 门没过的远程曲目）按原相对顺序排在后面。
+  Future<void> _reorder(_PlaylistData d, int from, int to) async {
+    if (from == to) return;
+    final List<MusicPlaylistItem> next = List<MusicPlaylistItem>.of(d.items);
+    next.insert(to, next.removeAt(from));
+    final _PlaylistData moved = (
+      playlist: d.playlist,
+      items: next,
+      albums: d.albums,
+    );
+    setState(() {
+      _shown = moved;
+      _data = Future<_PlaylistData>.value(moved);
+    });
+    try {
+      await _app.database.reorderMusicPlaylist(
+        (d.playlist ?? widget.playlist).playlistUid,
+        <int>[for (final MusicPlaylistItem i in next) i.entryId],
+        at: DateTime.now().millisecondsSinceEpoch,
+      );
+    } on Object catch (e) {
+      FushiToast.show(
+        msg: musicPlaylistErrorText(e),
+        severity: ToastSeverity.error,
+      );
+      if (mounted) setState(() => _data = _load());
+    }
+  }
+
+  /// 导出 `.m3u8`：只导本地曲库曲目（文件路径）；远程曲目没有可写进列表文件的地址
+  /// （串流地址会过期、可能带凭据），计入跳过数提示。
+  void _export(_PlaylistData d) {
+    final MusicPlaylistRow p = d.playlist ?? widget.playlist;
+    final List<MusicPlaylistExportItem> items = <MusicPlaylistExportItem>[
+      for (final MusicPlaylistItem i in d.items)
+        if (i.entry case MusicLocalEntry(:final MusicTrackRow track))
+          MusicPlaylistExportItem(
+            location: track.path,
+            title: track.title,
+            artist: track.artistCredit,
+            durationMs: track.durationMs,
+          ),
+    ];
+    unawaited(
+      musicExportPlaylistM3u8(
+        name: p.name,
+        items: items,
+        skipped: d.items.length - items.length,
+      ),
+    );
+  }
+
   Future<void> _rename(MusicPlaylistRow p) async {
     final String? name = await showFushiTextInputDialog(
       context: context,
@@ -211,8 +269,7 @@ class _MusicLocalPlaylistPageState
           final String? cover = <String?>[
             for (final MusicPlaylistItem i in items)
               switch (i.entry) {
-                MusicRemoteEntry(:final MusicRemoteTrackRow track) =>
-                  track.coverUrl,
+                final MusicRemoteEntry e => e.coverUrl,
                 MusicLocalEntry(:final MusicTrackRow track) =>
                   d.albums[track.albumUid]?.coverPath,
               },
@@ -289,6 +346,19 @@ class _MusicLocalPlaylistPageState
                             child: FushiFilledButton.tonalIcon(
                               size: FushiButtonSize.m,
                               key: const ValueKey<String>(
+                                'music_local_playlist_export',
+                              ),
+                              onPressed: items.isEmpty
+                                  ? null
+                                  : () => _export(d),
+                              icon: const FushiIcon(FushiIcons.share),
+                              label: Text(t.music_action_export_playlist),
+                            ),
+                          ),
+                          FushiPressScale(
+                            child: FushiFilledButton.tonalIcon(
+                              size: FushiButtonSize.m,
+                              key: const ValueKey<String>(
                                 'music_local_playlist_delete',
                               ),
                               onPressed: () => unawaited(_delete(p)),
@@ -322,6 +392,9 @@ class _MusicLocalPlaylistPageState
                   entryIds: <int>[
                     for (final MusicPlaylistItem i in items) i.entryId,
                   ],
+                  onReorder: widget.itemsLoader == null
+                      ? (int from, int to) => unawaited(_reorder(d, from, to))
+                      : null,
                 ),
                 source: _source(p),
               ),

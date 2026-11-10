@@ -626,6 +626,11 @@ void main() {
       expect(faces, isNotEmpty);
       final String first = faces.last.cardId;
       expect(faces.last.showingAnswer, isFalse);
+      expect(
+        srsActiveReviewSessions.value,
+        0,
+        reason: '在主机的库上复习不推动本机 runtime 的活跃会话计数（批量推送 / 优化让路）',
+      );
 
       await tester.sendKeyEvent(LogicalKeyboardKey.space);
       await settle(tester, rounds: 6);

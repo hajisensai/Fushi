@@ -75,12 +75,15 @@ Future<SrsDbStore> _build(
   final SrsDbStore s = await openTestStore(
     profileUid: kStatsVecProfile,
     deviceId: 'v',
+    localOffsetMin: () => 540,
     now: clock,
   );
   await s.editField(
     SrsEntityKind.profile,
     kStatsVecProfile,
-    SrsFieldKeys.utcOffsetMin,
+    // 旧版声明过、从没有写入方的 profile 键：现在不读（时区恒为本机，由打开时的 localOffsetMin 钉住），
+    // 留着这条写入让写入序号与生成向量时一致。
+    'utcOffsetMin',
     540,
   );
   await s.editField(
@@ -236,6 +239,7 @@ void main() {
           bootId: 'boot-v',
         ),
         fallbackRolloverHour: () => 4,
+        localOffsetMin: () => 540,
       );
     }
     if (rwkv) s.rwkv = _FakeRwkv();

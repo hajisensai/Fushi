@@ -130,7 +130,7 @@ void main() {
     // 改用 part 内紧随其后的 `_onUpdateEntryImpl` 签名（旧 `TODO-270 D：覆盖` 文案
     // 跟着 onUpdateEntry 瘦转发器留在主壳，位于 start 之前会切片失败）。
     final String mine = region(
-      'Future<MinePopupResult> _onMineEntryImpl(Map<String, String> fields) async {',
+      'Future<MinePopupResult> _onMineEntryImpl(',
       'Future<MinePopupResult> _onUpdateEntryImpl(',
     );
     expect(mine, contains('_resolveVideoMiningRange(controller)'));
