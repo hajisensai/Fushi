@@ -247,7 +247,7 @@ void main() {
   });
 
   group('S01E04 普通命名', () {
-    test('4 位补零集号 S01E0005 / S1E1000 / E0012（BUG-4331）', () {
+    test('4 位补零集号 S01E0005 / S1E1000 / E0012（BUG-4332）', () {
       final ParsedMediaName a = FilenameParser.parse('Show.S01E0005.mkv');
       expect(a.title, 'Show');
       expect(a.season, 1);
