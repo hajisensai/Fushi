@@ -655,9 +655,7 @@ void main() {
     expect(preview['current'], '沈むように');
     expect(preview['next'], <String>['溶けていく']);
     // 合并 [1 s, 12 s) → 留白 [0.5 s, 12.5 s) → 微调 [0.3 s, 12.8 s)。
-    window = await tester.runAsync<AdvancedMiningAudioWindow?>(
-      () => audio.describe(-200, 300),
-    );
+    window = await tester.runAsync(() => audio.describe(-200, 300));
     expect((window!.startMs, window.endMs), (300, 12800));
 
     // 试听与写卡同一段；关窗停试听、播放头回到查词时的位置（打开时没在播：保持暂停）。
@@ -668,7 +666,12 @@ void main() {
     expect(playback, isNotNull);
     expect(backend.log, <String>['seek:300', 'play']);
     await tester.runAsync(() => sections.onClosed!());
-    expect(await playback!.ended, RangePlaybackEnd.interrupted);
+    // ended 的 Completer 是在 runAsync（真实 zone）里建的，在 fake-async 测试体里
+    // 直接 await 它，回调永远排不上队（实测卡满 10 分钟超时）；同样包进 runAsync。
+    expect(
+      await tester.runAsync(() => playback!.ended),
+      RangePlaybackEnd.interrupted,
+    );
     expect(backend.log, <String>['seek:300', 'play', 'pause', 'seek:4200']);
 
     // 确认制卡：覆盖项里的起止微调进片段，句子按「上 → 本行 → 下」合成。

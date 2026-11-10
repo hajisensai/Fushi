@@ -199,8 +199,8 @@ void main() {
       expect(controller.looseKeys, <String>{'a'});
       expect(controller.isRangeDragging, isTrue);
       controller.updateBoxSelect(<SelectionSlot>{
-        SelectionSlot.loose('c'),
-        SelectionSlot.loose('d'),
+        const SelectionSlot.loose('c'),
+        const SelectionSlot.loose('d'),
       });
       controller.endRangeDrag();
       expect(controller.looseKeys, <String>{'a', 'c', 'd'});
@@ -212,22 +212,24 @@ void main() {
       controller.toggle(const SelectionSlot.loose('a'));
       controller.beginBoxSelect();
       controller.updateBoxSelect(<SelectionSlot>{
-        SelectionSlot.loose('a'),
-        SelectionSlot.loose('b'),
-        SelectionSlot.loose('c'),
+        const SelectionSlot.loose('a'),
+        const SelectionSlot.loose('b'),
+        const SelectionSlot.loose('c'),
       });
       expect(controller.looseKeys, <String>{'a', 'b', 'c'});
-      controller.updateBoxSelect(<SelectionSlot>{SelectionSlot.loose('b')});
+      controller.updateBoxSelect(<SelectionSlot>{
+        const SelectionSlot.loose('b'),
+      });
       expect(controller.looseKeys, <String>{'a', 'b'});
-      controller.updateBoxSelect(<SelectionSlot>{});
+      controller.updateBoxSelect(const <SelectionSlot>{});
       expect(controller.looseKeys, <String>{'a'});
     });
 
     test('合集与散卡可以一框同选（框是几何，不受扫选的分区约束）', () {
       controller.beginBoxSelect();
       controller.updateBoxSelect(<SelectionSlot>{
-        SelectionSlot.collection(30),
-        SelectionSlot.loose('a'),
+        const SelectionSlot.collection(30),
+        const SelectionSlot.loose('a'),
       });
       expect(controller.collectionIds, <int>{30});
       expect(controller.looseKeys, <String>{'a'});
@@ -237,25 +239,29 @@ void main() {
     test('不可见的身份不会被框进内部选中集', () {
       controller.beginBoxSelect();
       controller.updateBoxSelect(<SelectionSlot>{
-        SelectionSlot.loose('ghost'),
-        SelectionSlot.collection(99),
-        SelectionSlot.loose('b'),
+        const SelectionSlot.loose('ghost'),
+        const SelectionSlot.collection(99),
+        const SelectionSlot.loose('b'),
       });
       expect(controller.retainedLooseKeys, <String>{'b'});
       expect(controller.retainedCollectionIds, isEmpty);
     });
 
     test('未开始框选时的 update 是 no-op', () {
-      controller.updateBoxSelect(<SelectionSlot>{SelectionSlot.loose('d')});
+      controller.updateBoxSelect(<SelectionSlot>{
+        const SelectionSlot.loose('d'),
+      });
       expect(controller.isEmpty, isTrue);
     });
 
     test('框选更新后派生视图不陈旧', () {
       expect(controller.looseKeys, isEmpty);
       controller.beginBoxSelect();
-      controller.updateBoxSelect(<SelectionSlot>{SelectionSlot.loose('e')});
+      controller.updateBoxSelect(<SelectionSlot>{
+        const SelectionSlot.loose('e'),
+      });
       expect(controller.looseKeys, <String>{'e'});
-      controller.updateBoxSelect(<SelectionSlot>{});
+      controller.updateBoxSelect(const <SelectionSlot>{});
       expect(controller.looseKeys, isEmpty);
     });
   });
