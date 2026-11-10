@@ -11807,6 +11807,7 @@
   "video_subtitle_waveform_open": "波形对轴",
   "video_subtitle_waveform_open_hint": "点击放大查看并对轴",
   "video_subtitle_waveform_scroll_hint": "横向拖动查看时间轴，用下方控件对齐字幕",
+  "video_subtitle_waveform_segment_loading": "正在加载波形…",
   "video_subtitle_waveform_unavailable": "本设备无法生成波形",
   "video_subtitle_waveform_zoom_in": "放大",
   "video_subtitle_waveform_zoom_out": "缩小",

@@ -11807,6 +11807,7 @@
   "video_subtitle_waveform_open": "Dalga formu hizalama",
   "video_subtitle_waveform_open_hint": "Yakınlaştırmak ve hizalamak için dokunun",
   "video_subtitle_waveform_scroll_hint": "Zaman çizelgesini taramak için sürükleyin; hizalamak için aşağıdaki kontrolleri kullanın",
+  "video_subtitle_waveform_segment_loading": "Loading waveform…",
   "video_subtitle_waveform_unavailable": "Dalga formu bu cihazda kullanılamıyor",
   "video_subtitle_waveform_zoom_in": "Yakınlaştır",
   "video_subtitle_waveform_zoom_out": "Uzaklaştır",

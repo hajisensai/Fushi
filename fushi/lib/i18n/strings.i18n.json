@@ -11807,6 +11807,7 @@
   "video_subtitle_waveform_open": "Waveform alignment",
   "video_subtitle_waveform_open_hint": "Tap to zoom in and align",
   "video_subtitle_waveform_scroll_hint": "Drag to scan the timeline; use the controls below to align",
+  "video_subtitle_waveform_segment_loading": "Loading waveform…",
   "video_subtitle_waveform_unavailable": "Waveform unavailable on this device",
   "video_subtitle_waveform_zoom_in": "Zoom in",
   "video_subtitle_waveform_zoom_out": "Zoom out",

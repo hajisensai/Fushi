@@ -6,6 +6,7 @@ import 'package:fushi/src/media/video/audio_energy_probe.dart';
 import 'package:fushi/src/media/video/subtitle_delay_input_debounce.dart';
 import 'package:fushi/src/media/video/subtitle_delay_slider_range.dart';
 import 'package:fushi/src/media/video/subtitle_waveform_painter.dart';
+import 'package:fushi/src/media/video/subtitle_waveform_segments.dart';
 import 'package:fushi/src/media/video/video_m3e_panel_theme.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -14,6 +15,7 @@ import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_focusable.dart';
 import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
@@ -42,11 +44,13 @@ import 'package:fushi_compute/fushi_compute.dart';
 /// 即 [SizedBox.shrink] **把整个入口收起**，弱设备 / 移动端因此「入口没了、进不去」（用户
 /// 报「字幕调轴入口也没了」）；该「探测为空即隐藏入口」行为已废弃，**勿再引入**。
 ///
-/// **懒探测（TODO-1315）**：波形数据来自 [loadWaveform]（页面经 ffmpeg 抽逐帧音频能量，对
-/// 长视频要数十秒）。**只在用户点击入口时**才调 [loadWaveform]，不在挂载时预跑——进字幕
-/// 设置分类不再被 ffmpeg 抽轨拖卡。放大视图关闭后本地不保留包络引用即释放（页面级
-/// `WaveformEnvelopeCache` 仍留一份供秒开）。点击时探测返回空包络（无音轨 /
-/// ffmpeg 不可用 / 超时）就不弹窗、改在入口副标题内联提示「本设备无法生成波形」，入口仍在、可重试。
+/// **懒探测（TODO-1315）**：波形数据来自 [loadWaveformSegment]（页面经 ffmpeg 按段抽逐帧
+/// 音频能量）。**只在用户点击入口时**才抽，不在挂载时预跑——进字幕设置分类不再被 ffmpeg
+/// 抽轨拖卡。点击时先抽播放头所在那一段（[SubtitleWaveformSegments]），其余段在放大视图里
+/// 滚到才抽（反馈 EUvw-RjUE4：时间窗是片长全程，不再截在自动对轴的 20 分钟探测上界）。
+/// 放大视图关闭后分段状态随之释放（页面级 `WaveformEnvelopeCache` 按段留一份供秒开）。
+/// 首段返回空包络（无音轨 / ffmpeg 不可用 / 超时）就不弹窗、改在入口副标题内联提示
+/// 「本设备无法生成波形」，入口仍在、可重试。
 ///
 /// **调轴同源、零第二套状态**：放大视图里的所有调轴都经 [onCommitDelay] 写回上方快速
 /// 设置的权威 `_delayMs`，与顶部滑条 / 步进 / 自动对轴完全同一个延迟值。本面板自身不落
@@ -55,15 +59,14 @@ import 'package:fushi_compute/fushi_compute.dart';
 /// **cue 线随延迟平移**：要平移的延迟经 [initialDelayMs] 从上方权威传入，放大视图打开时
 /// 以它为初值——上方任意手动调轴 / 自动对轴改延迟后，（若打开的）放大视图 cue 线随之平移。
 ///
-/// 不在 paint 里跑 ffmpeg：[loadWaveform] 只在点击时调一次（页面侧带缓存），降采样
+/// 不在 paint 里跑 ffmpeg：[loadWaveformSegment] 只在点击 / 滚到某段时调（页面侧带缓存），降采样
 /// （[downsampleEnergyEnvelope]，纯函数）随目标宽度算，painter 只读 0..1 桶。
 class SubtitleWaveformAlignPanel extends StatefulWidget {
   const SubtitleWaveformAlignPanel({
     required this.initialDelayMs,
     required this.cues,
     required this.durationMs,
-    required this.loadWaveform,
-    this.probeLimitMs = kSubtitleAutoAlignProbeLimitMs,
+    required this.loadWaveformSegment,
     this.onCommitDelay,
     this.onAutoAlign,
     this.onSnapDelayToCue,
@@ -84,17 +87,15 @@ class SubtitleWaveformAlignPanel extends StatefulWidget {
   /// 当前字幕 cue 列表（取 start/end 画边界线）。不可变，面板只读，绝不改 cue 本体。
   final List<AudioCue> cues;
 
-  /// 视频总时长（毫秒）。<=0 时波形时间窗退化到探测上界（降级）。
+  /// 视频总时长（毫秒）= 波形时间窗上界（全程，见 [subtitleWaveformWindowEndMs]）。
+  /// <=0（未知）时用 cue 的最晚结束时间兜底。
   final int durationMs;
 
-  /// 本次探测的时间上界（毫秒）：流音源只拉前几分钟，波形时间窗必须与实际抽到的
-  /// 音频同长（页面的 `_subtitleAlignProbeLimitMs`）。
-  final int probeLimitMs;
-
-  /// 抽音频能量包络（原始逐帧 dB 序列）。由页面提供（经 extractAudioEnergyEnvelope）；
-  /// 返回空列表 = 拿不到波形（降级态，入口内联提示不可用、不隐藏）。TODO-1315 起
-  /// **只在用户点击入口时**才调一次（懒探测），不在挂载时预跑。
-  final Future<List<double>> Function() loadWaveform;
+  /// 抽一段 `[startMs, endMs)` 的音频能量包络（原始逐帧 dB 序列）。由页面提供（经
+  /// extractAudioEnergyEnvelope 的 `-ss`/`-t` 分段抽，流音源只拉该段）；返回空列表 = 该段
+  /// 拿不到波形（首段为空即降级态，入口内联提示不可用、不隐藏）。TODO-1315 起**只在用户
+  /// 点击入口时**才开始抽（懒探测），不在挂载时预跑。
+  final SubtitleWaveformSegmentLoader loadWaveformSegment;
 
   /// 把放大视图里调出的延迟写回上方权威 `_delayMs`（-> `onSetDelay` 落盘 + 实时生效）。
   /// null = 放大视图只读（不显示调轴控件），但仍可查看波形。由 [VideoQuickSettingsSheet]
@@ -146,68 +147,67 @@ class SubtitleWaveformAlignPanel extends StatefulWidget {
 
 class _SubtitleWaveformAlignPanelState
     extends State<SubtitleWaveformAlignPanel> {
-  /// TODO-1315 懒加载：波形探测（ffmpeg 抽逐帧能量包络，对 2h REMUX 要数十秒）只在用户
-  /// **点开放大对轴视图**时触发，不在面板挂载（进字幕设置分类）时预跑——弱设备开设置
-  /// 不再被 ffmpeg 抽轨拖卡。true = 点开后正 await [SubtitleWaveformAlignPanel.loadWaveform]，
-  /// 入口显示 spinner 并防重入。
+  /// TODO-1315 懒加载：波形探测（ffmpeg 抽逐帧能量包络）只在用户**点开放大对轴视图**时
+  /// 触发，不在面板挂载（进字幕设置分类）时预跑——弱设备开设置不再被 ffmpeg 抽轨拖卡。
+  /// true = 点开后正在抽播放头所在那一段，入口显示 spinner 并防重入。
   bool _probing = false;
 
   /// 上次点开探测返回空包络（无音轨 / ffmpeg 不可用 / 超时的降级态）。true 时
   /// 入口副标题改显「本设备无法生成波形」，不弹放大视图（不崩不空白）；再次点击重试时清零。
   bool _probeUnavailable = false;
 
-  /// 波形时间窗上界（毫秒）：与 extractAudioEnergyEnvelope 的探测上界同源
-  /// （前 N 分钟截断），取 min(durationMs, probeLimit)；durationMs 未知时用探测上界。
-  int get _windowEndMs {
-    final int limit = widget.probeLimitMs;
-    if (widget.durationMs <= 0) return limit;
-    return widget.durationMs < limit ? widget.durationMs : limit;
-  }
-
-  /// TODO-1315 懒加载入口：点击才抽波形（[SubtitleWaveformAlignPanel.loadWaveform]，页面侧
-  /// 带缓存，二次点开命中缓存秒开），非空才弹放大视图；空包络（降级）改显不可用提示、不弹
-  /// 窗。放大视图关闭后本地不保留包络引用（`env` 仅在本作用域存活），退出即释放——弱设备
-  /// 内存/绘制零常驻。
+  /// TODO-1315 懒加载入口：点击才抽波形——先抽播放头所在那一段（页面侧按段缓存，二次点开
+  /// 命中缓存秒开），非空才弹放大视图，其余段由视图滚到时再抽；首段为空（降级）改显不可用
+  /// 提示、不弹窗。分段状态的生命周期 = 本次弹窗，关闭即 dispose——弱设备内存/绘制零常驻。
   Future<void> _openZoomView() async {
     if (_probing) return;
     setState(() {
       _probing = true;
       _probeUnavailable = false;
     });
-    List<double> env;
-    try {
-      env = await widget.loadWaveform();
-    } catch (_) {
-      // 抽取失败一律降级：不弹窗、显示不可用提示（不崩不空白）。
-      env = const <double>[];
+    final SubtitleWaveformSegments segments = SubtitleWaveformSegments(
+      durationMs: subtitleWaveformWindowEndMs(
+        durationMs: widget.durationMs,
+        cues: widget.cues,
+      ),
+      loadSegment: widget.loadWaveformSegment,
+    );
+    final int anchorMs = widget.currentPositionMs?.call() ?? 0;
+    final bool ready = await segments.ensureSegmentAt(anchorMs);
+    if (!mounted) {
+      segments.dispose();
+      return;
     }
-    if (!mounted) return;
     setState(() => _probing = false);
-    if (env.isEmpty) {
+    if (!ready) {
+      segments.dispose();
       setState(() => _probeUnavailable = true);
       return;
     }
-    await showAppDialog<void>(
-      context: context,
-      useRootNavigator: true,
-      builder: (BuildContext _) => SubtitleWaveformZoomView(
-        rawEnvelope: env,
-        cues: widget.cues,
-        windowEndMs: _windowEndMs,
-        initialDelayMs: widget.initialDelayMs,
-        onCommitDelay: widget.onCommitDelay,
-        onAutoAlign: widget.onAutoAlign,
-        onSnapDelayToCue: widget.onSnapDelayToCue,
-        onPlayCue: widget.onPlayCue,
-        isPlaying: widget.isPlaying,
-        onTogglePlayPause: widget.onTogglePlayPause,
-        keyboardShortcuts: widget.keyboardShortcuts,
-        onSeek: widget.onSeek,
-        positionListenable: widget.positionListenable,
-        currentPositionMs: widget.currentPositionMs,
-      ),
-    );
-    // 退出释放：env 随本作用域结束回收，面板不常驻波形（页面级缓存仍留一份供秒开）。
+    try {
+      await showAppDialog<void>(
+        context: context,
+        useRootNavigator: true,
+        builder: (BuildContext _) => SubtitleWaveformZoomView(
+          segments: segments,
+          cues: widget.cues,
+          initialDelayMs: widget.initialDelayMs,
+          onCommitDelay: widget.onCommitDelay,
+          onAutoAlign: widget.onAutoAlign,
+          onSnapDelayToCue: widget.onSnapDelayToCue,
+          onPlayCue: widget.onPlayCue,
+          isPlaying: widget.isPlaying,
+          onTogglePlayPause: widget.onTogglePlayPause,
+          keyboardShortcuts: widget.keyboardShortcuts,
+          onSeek: widget.onSeek,
+          positionListenable: widget.positionListenable,
+          currentPositionMs: widget.currentPositionMs,
+        ),
+      );
+    } finally {
+      // 退出释放：分段状态随弹窗结束（页面级缓存仍按段留一份供秒开）。
+      segments.dispose();
+    }
   }
 
   @override
@@ -300,12 +300,35 @@ class _SubtitleWaveformAlignPanelState
   }
 }
 
+/// **纯函数**：波形视口（滚动偏移 [scrollOffset]、视口宽 [viewportWidth]，整条时间轴
+/// `[0, windowEndMs]` 铺在 [contentWidth] 上）对应的时间区间，左右各加半个视口宽的
+/// 预取余量，clamp 到 `[0, windowEndMs]`。分段懒抽按它请求段。
+({int startMs, int endMs}) waveformViewportRangeMs({
+  required double scrollOffset,
+  required double viewportWidth,
+  required double contentWidth,
+  required int windowEndMs,
+}) {
+  if (contentWidth <= 0 || windowEndMs <= 0) {
+    return (startMs: 0, endMs: 0);
+  }
+  final double msPerPx = windowEndMs / contentWidth;
+  final double margin = viewportWidth / 2;
+  final double start = (scrollOffset - margin) * msPerPx;
+  final double end = (scrollOffset + viewportWidth + margin) * msPerPx;
+  return (
+    startMs: start <= 0 ? 0 : start.floor(),
+    endMs: end >= windowEndMs ? windowEndMs : end.ceil(),
+  );
+}
+
 /// 放大的可交互波形对轴视图（TODO-1207）。经 [SubtitleWaveformAlignPanel] 的入口按钮
 /// 弹出（showDialog）。
 ///
 /// **交互模型（平移查看 vs 调轴，物理分离、永不冲突）**：
 /// - **横向拖动上方波形区 = 平移查看**：波形按固定像素密度铺开在一条可横向滚动的时间轴
-///   上，拖动 / 滚轮平移查看不同时间段（默认只抽了前 N 分钟）。可用缩放按钮改密度看细节。
+///   上，拖动 / 滚轮平移查看不同时间段。时间轴是片长全程，包络按段懒抽——滚到哪段抽哪段，
+///   抽取中的段盖一层骨架闪光（反馈 EUvw-RjUE4）。可用缩放按钮改密度看细节。
 /// - **横向拖动波形下方的字幕条 = 直接对轴**：抓住字幕块沿时间轴左右滑，把它对到语音波峰
 ///   即完成对轴（整体延迟平移，cue 线 / 字幕块 / 列表实时跟手，松手落盘）。这与上一条的
 ///   平移查看落在不同 widget、不同拖动手势上，永不冲突——省得为了 ±50ms 滚到底用控件条。
@@ -318,9 +341,8 @@ class _SubtitleWaveformAlignPanelState
 /// **图例**：顶部一行标出「响度包络 / 字幕边界 / 播放头」三层颜色，解决「看不懂」。
 class SubtitleWaveformZoomView extends StatefulWidget {
   const SubtitleWaveformZoomView({
-    required this.rawEnvelope,
+    required this.segments,
     required this.cues,
-    required this.windowEndMs,
     required this.initialDelayMs,
     this.onCommitDelay,
     this.onAutoAlign,
@@ -335,15 +357,14 @@ class SubtitleWaveformZoomView extends StatefulWidget {
     super.key,
   });
 
-  /// 原始逐帧音频能量包络（未降采样）。按放大后的时间轴宽度降采样成波形桶。
-  final List<double> rawEnvelope;
+  /// 分段懒抽的音频能量包络（时间窗 = [SubtitleWaveformSegments.durationMs] = 片长全程）。
+  /// 视图按视口请求段（[SubtitleWaveformSegments.ensureRange]），拼好的整条逐帧包络按放大后
+  /// 的时间轴宽度降采样成波形桶。由打开方创建与 dispose，本视图只监听。
+  final SubtitleWaveformSegments segments;
 
   /// 字幕 cue 列表（TODO-1244）。取 start/end 画边界竖线（painter 内部叠加当前延迟），
   /// 并在波形下方的文本条里按各句时间位置显示句文本 + 逐句播放按钮。只读，绝不改 cue 本体。
   final List<AudioCue> cues;
-
-  /// 波形时间窗上界（毫秒）：与抽取探测上界同源。
-  final int windowEndMs;
 
   /// 打开时的当前延迟（毫秒），本地权威初值。
   final int initialDelayMs;
@@ -508,9 +529,16 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
   /// 原始 cue 下标 -> 列表行位置（自动滚动把当前句滚到居中时用）。
   final Map<int, int> _origToDisplayRow = <int, int>{};
 
+  /// 波形时间窗上界（毫秒）= 片长全程（不是自动对轴的探测上界）。
+  int get _windowEndMs => widget.segments.durationMs;
+
+  /// 本帧末是否已排了一次「按视口请求段」（去重，见 [_scheduleEnsureVisibleSegments]）。
+  bool _ensureSegmentsScheduled = false;
+
   @override
   void initState() {
     super.initState();
+    widget.segments.addListener(_onSegmentsChanged);
     // 横向滚动时重建：文本条按新视口裁剪出可见 cue 片段（[_cullMarginPx] 余量）。
     _scrollController.addListener(_onScroll);
     // 字幕列表展示行（过滤空文本）：cue 弹窗内不变，一次算好。
@@ -535,8 +563,51 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
     }
   }
 
+  @override
+  void didUpdateWidget(SubtitleWaveformZoomView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.segments, widget.segments)) {
+      oldWidget.segments.removeListener(_onSegmentsChanged);
+      widget.segments.addListener(_onSegmentsChanged);
+    }
+  }
+
   void _onScroll() {
     if (mounted) setState(() {});
+  }
+
+  /// 段状态变化（开始抽 / 抽完）：重建以换上新拼的包络与加载遮罩。
+  void _onSegmentsChanged() {
+    if (mounted) setState(() {});
+  }
+
+  /// 每次 build 后（滚动 / 缩放 / 改宽 / 段抽完都会重建）在帧末按当前视口请求段。放帧末
+  /// 而非 build 内：请求会通知监听者，build 期间不能改别的状态；且此时滚动位置已是本帧
+  /// 布局后的真值。同一帧只排一次。
+  void _scheduleEnsureVisibleSegments() {
+    if (_ensureSegmentsScheduled) return;
+    _ensureSegmentsScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((Duration _) {
+      _ensureSegmentsScheduled = false;
+      if (!mounted) return;
+      _ensureVisibleSegments();
+    });
+  }
+
+  /// 把视口（左右各再放半个视口宽的预取余量）换算成时间区间交给
+  /// [SubtitleWaveformSegments.ensureRange]：视口里的段先抽，移出视口的排队请求撤销。
+  void _ensureVisibleSegments() {
+    final int windowEndMs = _windowEndMs;
+    if (windowEndMs <= 0 || !_scrollController.hasClients) return;
+    final ScrollPosition pos = _scrollController.position;
+    if (!pos.hasContentDimensions || !pos.hasViewportDimension) return;
+    final ({int startMs, int endMs}) range = waveformViewportRangeMs(
+      scrollOffset: pos.pixels,
+      viewportWidth: pos.viewportDimension,
+      contentWidth: pos.viewportDimension + pos.maxScrollExtent,
+      windowEndMs: windowEndMs,
+    );
+    widget.segments.ensureRange(range.startMs, range.endMs);
   }
 
   /// 30fps tick：读实时位置，仅在变化时写 [_livePositionMs]（驱动播放头+列表高亮重绘），
@@ -650,7 +721,7 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
     final double x = timeToX(
       timeMs: posMs,
       windowStartMs: 0,
-      windowEndMs: widget.windowEndMs,
+      windowEndMs: _windowEndMs,
       width: contentWidth,
     );
     final double? target = waveformFollowOffset(
@@ -689,7 +760,7 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
   /// 按目标桶数 memo 的降采样波形桶（见 [_cachedBucketCount]）。包络换了（按引用判）就
   /// 重建 [_envelope]、作废桶缓存；dB → 振幅只在重建时算一遍，改宽度只重跑降采样。
   List<double> _bucketsFor(int targetBuckets) {
-    final List<double> raw = widget.rawEnvelope;
+    final List<double> raw = widget.segments.stitchedDb;
     FfcEnergyEnvelope? envelope = _envelope;
     if (envelope == null || !identical(raw, _envelopeSource)) {
       _envelopeSource = raw;
@@ -704,6 +775,7 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
 
   @override
   void dispose() {
+    widget.segments.removeListener(_onSegmentsChanged);
     _delayInput.dispose();
     _positionTicker?.cancel();
     _positionTicker = null;
@@ -918,7 +990,7 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
         final double viewWidth = constraints.maxWidth.isFinite
             ? constraints.maxWidth
             : 600.0;
-        final double naturalWidth = widget.windowEndMs * _basePxPerMs * _zoom;
+        final double naturalWidth = _windowEndMs * _basePxPerMs * _zoom;
         // 内容至少铺满视图宽（短片不留大片空白），否则按时间密度展开可滚动。
         final double contentWidth = naturalWidth < viewWidth
             ? viewWidth
@@ -929,12 +1001,14 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
         );
         final List<double> buckets = _bucketsFor(targetBuckets);
         final List<int> boundaries = _cueBoundariesMs;
+        // 视口滚到哪段抽哪段（帧末按真实滚动位置请求，见方法文档）。
+        _scheduleEnsureVisibleSegments();
 
         SubtitleWaveformPainter buildPainter(int positionMs) {
           return SubtitleWaveformPainter(
             buckets: buckets,
             windowStartMs: 0,
-            windowEndMs: widget.windowEndMs,
+            windowEndMs: _windowEndMs,
             cueBoundariesMs: boundaries,
             previewDelayMs: _dragMs ?? _delayMs,
             currentPositionMs: positionMs,
@@ -967,7 +1041,7 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
         final List<CueStripSlot?> cueSlots = layoutCueStripChips(
           cues: widget.cues,
           delayMs: _dragMs ?? _delayMs,
-          windowEndMs: widget.windowEndMs,
+          windowEndMs: _windowEndMs,
           contentWidth: contentWidth,
           minChipWidth: _minChipWidth,
           maxLanes: _maxCueLanes,
@@ -1030,22 +1104,30 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
                         // 点击波形把播放头 seek 到该 x 对应的时间（横向拖动仍归滚动，
                         // tap≠drag 不冲突）。x/contentWidth 映射回 [0, windowEndMs]。
                         child: widget.onSeek == null
-                            ? painted
+                            ? _withSegmentLoadingOverlays(
+                                painted,
+                                contentWidth: contentWidth,
+                                viewportWidth: viewWidth,
+                              )
                             : GestureDetector(
                                 behavior: HitTestBehavior.opaque,
                                 onTapUp: (TapUpDetails details) {
                                   if (contentWidth <= 0 ||
-                                      widget.windowEndMs <= 0) {
+                                      _windowEndMs <= 0) {
                                     return;
                                   }
                                   final double x = details.localPosition.dx
                                       .clamp(0.0, contentWidth);
                                   final int ms =
-                                      (x / contentWidth * widget.windowEndMs)
+                                      (x / contentWidth * _windowEndMs)
                                           .round();
                                   widget.onSeek!.call(ms < 0 ? 0 : ms);
                                 },
-                                child: painted,
+                                child: _withSegmentLoadingOverlays(
+                                  painted,
+                                  contentWidth: contentWidth,
+                                  viewportWidth: viewWidth,
+                                ),
                               ),
                       ),
                       strip,
@@ -1058,6 +1140,74 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
         );
       },
     );
+  }
+
+  /// 在波形上给「正在抽 / 排队中」的段盖一层骨架闪光 + 「正在加载波形」字样（新 UI 状态
+  /// 带动效：闪光是 [FushiSkeletonShimmer] 的有界扫光，抽完经 [AnimatedSwitcher] 淡出）。
+  /// 遮罩只画在该段与「视口 ± [_cullMarginPx]」的交集上——一段在高缩放下可宽达十万像素，
+  /// 字样要落在用户看得到的那截里。不拦截点击（点击 seek 照常）。
+  Widget _withSegmentLoadingOverlays(
+    Widget painted, {
+    required double contentWidth,
+    required double viewportWidth,
+  }) {
+    final SubtitleWaveformSegments segments = widget.segments;
+    final int windowEndMs = _windowEndMs;
+    if (windowEndMs <= 0 || contentWidth <= 0) return painted;
+    final double viewLeft = _scrollController.hasClients
+        ? _scrollController.offset
+        : 0.0;
+    final double visibleLeft = viewLeft - _cullMarginPx;
+    final double visibleRight = viewLeft + viewportWidth + _cullMarginPx;
+    final Duration fade = fushiMotionDuration(context, FushiMotion.short);
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final List<Widget> overlays = <Widget>[];
+    for (int i = 0; i < segments.segmentCount; i++) {
+      final WaveformSegmentRange range = segments.rangeOf(i);
+      final double segLeft = range.startMs / windowEndMs * contentWidth;
+      final double segRight = range.endMs / windowEndMs * contentWidth;
+      final double rawLeft = segLeft > visibleLeft ? segLeft : visibleLeft;
+      final double left = rawLeft < 0 ? 0 : rawLeft;
+      final double right = segRight < visibleRight ? segRight : visibleRight;
+      if (right <= left) continue;
+      final bool loading = segments.stateOf(i) == WaveformSegmentState.loading;
+      overlays.add(
+        Positioned(
+          key: ValueKey<String>('subtitle-waveform-segment-overlay-$i'),
+          left: left,
+          width: right - left,
+          top: 0,
+          bottom: 0,
+          child: IgnorePointer(
+            child: AnimatedSwitcher(
+              duration: fade,
+              child: loading
+                  ? FushiSkeletonShimmer(
+                      key: ValueKey<String>(
+                        'subtitle-waveform-segment-loading-$i',
+                      ),
+                      child: ColoredBox(
+                        color: fushiSkeletonColor(
+                          context,
+                        ).withValues(alpha: 0.6),
+                        child: Center(
+                          child: Text(
+                            t.video_subtitle_waveform_segment_loading,
+                            style: context.fushiType.bodySmall.copyWith(
+                              color: cs.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                      ),
+                    )
+                  : const SizedBox.expand(),
+            ),
+          ),
+        ),
+      );
+    }
+    if (overlays.isEmpty) return painted;
+    return Stack(children: <Widget>[painted, ...overlays]);
   }
 
   /// TODO-1244：波形下方的 cue 文本条。每句按时间位置（[AudioCue.startMs]/[endMs] 叠加
@@ -1120,12 +1270,12 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
     // 实时生效——与「拖上方波形区 = 平移查看时间轴」物理分离（不同 widget、不同拖动手势），
     // 永不冲突。只在可调轴（[SubtitleWaveformZoomView.onCommitDelay] 非空）且时间窗有效时挂。
     if (widget.onCommitDelay == null ||
-        widget.windowEndMs <= 0 ||
+        _windowEndMs <= 0 ||
         contentWidth <= 0) {
       return stripBody;
     }
     // 像素↔毫秒：整条时间轴 windowEndMs 铺在 contentWidth 上，1 逻辑像素 = 该毫秒数。
-    final double msPerPx = widget.windowEndMs / contentWidth;
+    final double msPerPx = _windowEndMs / contentWidth;
     return MouseRegion(
       cursor: SystemMouseCursors.grab,
       child: GestureDetector(

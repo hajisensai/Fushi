@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import 'package:fushi/src/media/video/audio_energy_probe.dart';
+import 'package:fushi_audio/fushi_audio.dart';
 
 /// 字幕对轴**人工波形视图**的分段懒加载（反馈 EUvw-RjUE4）。
 ///
@@ -59,14 +60,18 @@ class WaveformSegmentRange {
 }
 
 /// **纯函数**：人工波形视图的时间窗上界（毫秒）。片长已知取片长全程（**不**再与自动
-/// 对轴的探测上界取 min）；片长未知（<=0）时用最后一条 cue 的结束时间兜底（cue 升序），
-/// 仍未知返回 0（无可画时间轴）。
+/// 对轴的探测上界取 min）；片长未知（<=0）时用 [cues] 里最晚的结束时间兜底，仍未知
+/// 返回 0（无可画时间轴）。
 int subtitleWaveformWindowEndMs({
   required int durationMs,
-  required int lastCueEndMs,
+  required List<AudioCue> cues,
 }) {
   if (durationMs > 0) return durationMs;
-  return lastCueEndMs > 0 ? lastCueEndMs : 0;
+  int latest = 0;
+  for (final AudioCue cue in cues) {
+    if (cue.endMs > latest) latest = cue.endMs;
+  }
+  return latest;
 }
 
 /// **纯函数**：[durationMs] 按 [segmentMs] 切成几段（末段可不满）。<=0 返回 0。
