@@ -27,7 +27,6 @@ import 'package:fushi/src/pages/implementations/tag_filter_sheet.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi/src/epub/book_file_location.dart';
 import 'package:fushi_engine/epub/epub_book.dart' show EpubImageRef;
-import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi_engine/media/collections/book_series_grouper.dart';
 import 'package:fushi_engine/media/collections/book_series_key.dart'
     show collectionMemberVolumeNumber;
@@ -165,7 +164,11 @@ import 'package:fushi/src/sync/sync_settings_schema.dart' show syncBackendLabel;
 import 'package:fushi/src/sync/remote_library_cache.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi_engine/sync/sync_asset_package_service.dart';
-import 'package:fushi_engine/sync/manga_sync_package.dart';
+import 'package:fushi_engine/sync/manga_sync_package.dart'
+    show hasExportableMangaContent;
+import 'package:fushi_engine/sync/pdf_sync_package.dart'
+    show hasExportablePdfContent;
+import 'package:fushi/src/sync/synced_book_import.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_engine/sync/ttu_filename.dart';
 import 'package:fushi/src/utils/components/section_visibility.dart';
@@ -270,7 +273,7 @@ class ReaderFushiHistoryPage extends HistoryReaderPage {
   final Future<RemoteBookClient?> Function()? remoteBookClientLoader;
   final Future<File> Function(RemoteBookInfo book)?
   remoteBookDownloadDestination;
-  // 返回本地入库的 bookKey（生产路径来自 EpubImporter.importFromPath）。
+  // 返回本地入库的 bookKey（生产路径来自 importSyncedBookFile）。
   final Future<String?> Function(File file)? remoteBookImporter;
 
   /// 测试注入：按远端 bookKey 下载有声书包，返回包文件（绕过真实互联后端）。

@@ -546,6 +546,13 @@ extension _FushiSyncServerPairing on FushiSyncServer {
         // 互联标签同步（`/api/library/tags`）。老 host 无此字段 / false → client
         // 跳过标签维度（下载时搬一次标签的旧行为不受影响）。
         'tags': _libraryService is TagSyncHost,
+        // 能否收下对端推来的 PDF 书（反馈 Jq1_ujHa4t）。app host 接了 PDF 导入器 →
+        // true；无头服务端没有 PDF 渲染引擎 → false。老 host 无此字段 → client
+        // 不推 PDF（老 host 会把 PDF 当 EPUB 导入、必然失败）。
+        kLiveLibraryPdfBooksCapability: switch (_libraryService) {
+          final PdfBookImportHost host => host.acceptsPdfBooks,
+          _ => false,
+        },
         // 互联作品图谱同步（`/api/library/media-links`）。老 host 无此字段 / false
         // → client 跳过作品图谱维度。
         'mediaLinks': _libraryService is MediaLinkSyncHost,

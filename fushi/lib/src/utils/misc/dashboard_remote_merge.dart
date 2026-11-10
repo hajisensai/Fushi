@@ -91,10 +91,11 @@ List<RemoteContinueCandidate> remoteContinueCandidates({
       <String, List<RemoteBookInfo>>{};
   for (final RemoteBookInfo b in remoteBooks) {
     if (localBookKeys.contains(b.downloadId)) continue;
-    // BUG-1638：不可下载条目（hasContent=false——host 在读的漫画/PDF 等无 EPUB
-    // 内容树的行）不进「继续」：书架远端列表早已按 hasContent 过滤，这里漏了 →
-    // 点卡片只会切到书架 tab，而书架上根本没有这张卡（死路卡）。
-    if (!b.hasContent) continue;
+    // BUG-1638：书架上不出卡的条目（host 在读的漫画等无 EPUB 内容树、也无 PDF
+    // 原件的行）不进「继续」：点卡片只会切到书架 tab，而书架上根本没有这张卡
+    // （死路卡）。判据与书架远端列表同一条 [RemoteBookInfo.hasBookShelfContent]
+    // ——PDF 原件可下载后（反馈 Jq1_ujHa4t）书架有它的卡，这里也该有。
+    if (!b.hasBookShelfContent) continue;
     // BUG-4197：独立字幕书的正文不是单独的书（字幕书本身走有声书清单），书架不展示它，
     // 这里出卡同样是死路卡。
     if (b.isSubtitleBookBody) continue;
