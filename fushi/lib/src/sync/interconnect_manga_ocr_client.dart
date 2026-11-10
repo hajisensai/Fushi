@@ -26,17 +26,13 @@ import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart'
         kMangaOcrOutDirName,
         kMangaOcrOutputFileName;
 import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
+import 'package:fushi/src/sync/interconnect_remote_job_poll.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_engine/sync/tls/fushi_pinning_http.dart';
 import 'package:fushi/src/sync/webdav_ops.dart';
 
-/// 轮询退避：500ms 起步 ×1.5 递增，封顶 5s。纯函数便于单测单调性与上限。
-Duration mangaOcrPollDelay(int attempt) {
-  const int baseMs = 500;
-  const int maxMs = 5000;
-  final num scaled = baseMs * pow(1.5, attempt);
-  return Duration(milliseconds: min(scaled.round(), maxMs));
-}
+/// 轮询退避：与通用远端任务共用 [remoteJobPollDelay]（500ms 起 ×1.5，封顶 5s）。
+Duration mangaOcrPollDelay(int attempt) => remoteJobPollDelay(attempt);
 
 /// host 上一个可点名的 OCR 模型（capabilities `mangaOcr.models` 的一项）。
 class MangaOcrRemoteModel {
@@ -229,7 +225,7 @@ class InterconnectMangaOcrClient implements MangaOcrRemoteRunner {
        _probeTimeout = probeTimeout,
        _requestTimeout = requestTimeout,
        _uploadConcurrency = uploadConcurrency,
-       _pollDelay = pollDelay ?? mangaOcrPollDelay;
+       _pollDelay = pollDelay ?? remoteJobPollDelay;
 
   final SyncRepository _repo;
   final http.Client _httpClient;

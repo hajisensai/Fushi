@@ -12,8 +12,7 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
-import 'package:fushi/src/sync/interconnect_manga_ocr_client.dart'
-    show mangaOcrPollDelay;
+import 'package:fushi/src/sync/interconnect_remote_job_poll.dart';
 import 'package:fushi/src/sync/webdav_ops.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
@@ -115,7 +114,7 @@ class InterconnectJobClient {
        _probeTimeout = probeTimeout,
        _requestTimeout = requestTimeout,
        _uploadTimeout = uploadTimeout,
-       _pollDelay = pollDelay ?? mangaOcrPollDelay;
+       _pollDelay = pollDelay ?? remoteJobPollDelay;
 
   final SyncRepository _repo;
   final http.Client _httpClient;
@@ -600,8 +599,3 @@ List<String> hostJobInputNamesFor(List<File> inputs) {
       '${'$i'.padLeft(width, '0')}_${hostJobInputName(p.basename(inputs[i].path))}',
   ];
 }
-
-/// `progress` 缺省时的退避（复用漫画 OCR 的），加个上限防 int 溢出。
-Duration hostJobPollDelay(int attempt) => Duration(
-  milliseconds: min(mangaOcrPollDelay(attempt).inMilliseconds, 5000),
-);

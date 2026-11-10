@@ -516,4 +516,17 @@ void main() {
     expect(mangaOcrPollDelay(0), const Duration(milliseconds: 500));
     expect(mangaOcrPollDelay(29), const Duration(milliseconds: 5000));
   });
+
+  test('poll delay never throws for very large attempts', () {
+    const List<int> expectedMs = <int>[500, 750, 1125, 1688, 2531, 3797, 5000];
+    for (int attempt = 0; attempt < expectedMs.length; attempt++) {
+      expect(
+        mangaOcrPollDelay(attempt),
+        Duration(milliseconds: expectedMs[attempt]),
+      );
+    }
+    for (final int attempt in <int>[1736, 5000, 1 << 40]) {
+      expect(mangaOcrPollDelay(attempt), const Duration(milliseconds: 5000));
+    }
+  });
 }
