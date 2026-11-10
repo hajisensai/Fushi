@@ -46,15 +46,24 @@ class DictImportException implements Exception {
 typedef DictArchiveImporter =
     Future<FushiImportResult> Function(String archivePath, String outputDir);
 
+/// 包住「装进库」那一步（换资源目录 + 写元数据）的钩子。运行中的 serve 用它拿库互斥锁、
+/// 释放引擎映射并在收尾重载引擎（WebUI 导入）；离线命令不传，直接执行。
+typedef DictInstallGuard =
+    Future<void> Function(Future<void> Function() install);
+
 /// 把 [archive]（Yomitan zip 等原生导入器认的格式）导入服务端词典库。
 ///
 /// 同名词典视为更新：替换资源目录，保留原有的排序与用户设置（隐藏 / 折叠 / 语言覆盖 /
 /// 显示名），与 app 重导同名词典的继承口径一致；新词典排在最后。
+///
+/// 原生导入（慢，后台 isolate）先在临时目录里做完，只有装进库的那一小步走
+/// [installGuard]：大词典导入期间引擎照常查词，库锁也不被长时间占着。
 Future<DictImportOutcome> importDictionaryArchive({
   required FushiDatabase db,
   required Directory resourceRoot,
   required File archive,
   DictArchiveImporter? importer,
+  DictInstallGuard? installGuard,
 }) async {
   final Directory staging = await Directory.systemTemp.createTemp(
     'fushi_dict_import_',
@@ -71,61 +80,71 @@ Future<DictImportOutcome> importDictionaryArchive({
       );
     }
     final String name = sanitizeDictionaryTitle(result.title);
-    final List<DictionaryMetaRow> rows = await db.getAllDictionaryMetadata();
-    DictionaryMetaRow? previous;
-    for (final DictionaryMetaRow r in rows) {
-      if (r.name == name) previous = r;
-    }
-    final Directory inner = Directory(p.join(staging.path, name));
-    final Directory source = inner.existsSync() ? inner : staging;
-    final Directory target = Directory(p.join(resourceRoot.path, name));
-    await resourceRoot.create(recursive: true);
-    await deleteDictionaryDirectory(target, reloadEngine: () {});
-    await _moveDirectory(source, target);
-    final int order =
-        previous?.order ??
-        (rows.isEmpty
-            ? 0
-            : rows
-                      .map((DictionaryMetaRow r) => r.order)
-                      .reduce((int a, int b) => a > b ? a : b) +
-                  1);
     final String type = switch (result.detectedType) {
       'frequency' || 'pitch' || 'kanji' => result.detectedType,
       _ => 'term',
     };
-    await db.upsertDictionaryMeta(
-      DictionaryMetadataCompanion.insert(
-        name: name,
-        formatKey: 'yomichan',
-        order: order,
-        type: Value<String>(type),
-        metadataJson: Value<String>(
-          jsonEncode(<String, String>{
-            if (result.kanjiCount > 0) 'hasKanji': 'true',
-            // 导入时原生侧已数过 term / kanji 记录，等于类型探测刚做完（与 app 同一标记）。
-            'typeProbe': '1',
-          }),
+    bool replaced = false;
+    Future<void> install() async {
+      final List<DictionaryMetaRow> rows = await db.getAllDictionaryMetadata();
+      DictionaryMetaRow? previous;
+      for (final DictionaryMetaRow r in rows) {
+        if (r.name == name) previous = r;
+      }
+      replaced = previous != null;
+      final Directory inner = Directory(p.join(staging.path, name));
+      final Directory source = inner.existsSync() ? inner : staging;
+      final Directory target = Directory(p.join(resourceRoot.path, name));
+      await resourceRoot.create(recursive: true);
+      await deleteDictionaryDirectory(target, reloadEngine: () {});
+      await _moveDirectory(source, target);
+      final int order =
+          previous?.order ??
+          (rows.isEmpty
+              ? 0
+              : rows
+                        .map((DictionaryMetaRow r) => r.order)
+                        .reduce((int a, int b) => a > b ? a : b) +
+                    1);
+      await db.upsertDictionaryMeta(
+        DictionaryMetadataCompanion.insert(
+          name: name,
+          formatKey: 'yomichan',
+          order: order,
+          type: Value<String>(type),
+          metadataJson: Value<String>(
+            jsonEncode(<String, String>{
+              if (result.kanjiCount > 0) 'hasKanji': 'true',
+              // 导入时原生侧已数过 term / kanji 记录，等于类型探测刚做完（与 app 同一标记）。
+              'typeProbe': '1',
+            }),
+          ),
+          hiddenLanguagesJson: Value<String>(
+            previous?.hiddenLanguagesJson ?? '[]',
+          ),
+          collapsedLanguagesJson: Value<String>(
+            previous?.collapsedLanguagesJson ?? '[]',
+          ),
+          expandedLanguagesJson: Value<String>(
+            previous?.expandedLanguagesJson ?? '[]',
+          ),
+          languageOverride: Value<String?>(previous?.languageOverride),
+          displayName: Value<String?>(previous?.displayName),
         ),
-        hiddenLanguagesJson: Value<String>(
-          previous?.hiddenLanguagesJson ?? '[]',
-        ),
-        collapsedLanguagesJson: Value<String>(
-          previous?.collapsedLanguagesJson ?? '[]',
-        ),
-        expandedLanguagesJson: Value<String>(
-          previous?.expandedLanguagesJson ?? '[]',
-        ),
-        languageOverride: Value<String?>(previous?.languageOverride),
-        displayName: Value<String?>(previous?.displayName),
-      ),
-    );
+      );
+    }
+
+    if (installGuard == null) {
+      await install();
+    } else {
+      await installGuard(install);
+    }
     return (
       name: name,
       type: type,
       termCount: result.termCount,
       kanjiCount: result.kanjiCount,
-      replaced: previous != null,
+      replaced: replaced,
     );
   } finally {
     if (staging.existsSync()) await staging.delete(recursive: true);

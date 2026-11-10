@@ -13,15 +13,17 @@
 //! - 出卡：学习卡 → 到期复习卡（会话里按块下界取此刻可提取度最低的一张，不扫全部到期卡）→ 新卡（部分索引序
 //!   `LIMIT 1`，命中第一张即停）→ 20 分钟内到期的学习卡；
 //! - RWKV-Instant 的牌组：分数由 Dart 侧的 RWKV 服务给（另一个原生库），是**今天结束时刻**的 R——R 到今天结束
-//!   会降到目标保留率以下的卡就是「今天到期」，与 FSRS 按天到期同一粒度，计数、出卡、新卡负荷都用它；这里只做排队
-//!   规则（目标保留率、同日间隔守卫、每天最少复习数、按 R 升序），与旧 Dart `_instantReviews` 同口径。
+//!   会降到目标保留率以下的卡就是「今天到期」，与 FSRS 按天到期同一粒度，计数、出卡都用它，但**不**当新卡负荷：
+//!   RWKV 牌组不按复习量调整新卡（恒为每日新卡上限），也不计入 FSRS 祖先的负荷；这里只做排队规则（目标保留率、
+//!   同日间隔守卫、每天最少复习数、按 R 升序），与旧 Dart `_instantReviews` 同口径。
 //!
 //! 请求 `{"deck"?: 根牌组, "now", "utcOff", "rollover", "exclude"?: [卡], "pick"?: bool,
 //!        "rwkv"?: {"decks": {牌组: [目标保留率, 每天最少, 间隔次数, 间隔秒数]}, "cands": [[卡, 牌组, 上次作答|null, R]]}}`；
 //! 结果 `{"counts": {牌组: [新, 学习, 到期, 总数, 新卡上限, 新卡配额, 复习预算, 调整原因|null]}, "next", "after", "eligible"}`
 //! （调整原因 = Dart `SrsNewCardBudgetReason` 的名字：reduced / paused / increased）。
 //! 牌组设置里影响计数的「新卡计划」（`newPlan`）与 RWKV 的「忽略每日复习上限」（`rwkvQueue.ignoreLimit`）都从牌组树读
-//! （[NewCardPlan::of] / `DeckTree::ignores_review_limit`）。
+//! （[NewCardPlan::of] / `DeckTree::ignores_review_limit`）；按 RWKV 排程的牌组（`DeckTree::uses_rwkv`，看参数归属
+//! 祖先的算法）新卡计划不生效，复习预算为 0、调整原因为 null。
 //! 没给 `deck` = 全部牌组（牌组列表）；给了但不在树里 = `counts` 为 null。
 
 use std::collections::{HashMap, HashSet};
@@ -49,8 +51,8 @@ struct Tally {
     due: i64,
     new_done: i64,
     review_done: i64,
-    /// 新卡按复习量调节时拿来和预算比的「今天的复习量」（[new_card_budget] 的 `due`）：今天已复习 + 现在剩余到期
-    /// （RWKV 牌组的到期 = 合格的卡），按这个牌组的每日复习上限截断（RWKV 开了「忽略每日复习上限」的不截，见 [run]）。
+    /// 新卡按复习量调节时拿来和预算比的「今天的复习量」（[new_card_budget] 的 `due`）：今天已复习 + 现在剩余到期，
+    /// 按这个牌组的每日复习上限截断；RWKV 牌组恒为 0（合格的卡不是负荷信号，不推高 FSRS 祖先，见 [run]）。
     load: i64,
 }
 
@@ -460,12 +462,18 @@ fn count_tree(
         }
         let view = &ctx.tree.decks[id].view;
         // 新卡计划与每日上限一样只看牌组自己的值（不随参数继承）。
-        let budget = new_card_budget(
-            int(view, "np", 20),
-            sub.load,
-            ctx.logs.last30(),
-            NewCardPlan::of(&view["npl"]),
-        );
+        let plan = NewCardPlan::of(&view["npl"]);
+        // RWKV 的到期 / 合格卡不是负荷信号：按复习量调整对它不生效（寄存器值照存，切回 FSRS 恢复）。算法按参数归属
+        // 祖先判（与 `ignores_review_limit` 同一口径），不看请求里的 `rwkv.decks`（只有装了 RWKV 运行时的宿主才带）。
+        let plan = if ctx.tree.uses_rwkv(id) {
+            NewCardPlan {
+                auto_load: false,
+                ..plan
+            }
+        } else {
+            plan
+        };
+        let budget = new_card_budget(int(view, "np", 20), sub.load, ctx.logs.last30(), plan);
         // 自定义学习「提升今日上限」：只对今天、只加在这个牌组自己这一层（子牌组的上限照旧截）。
         let (ext_new, ext_review) = today_extension(&view["ext"], ctx.today);
         let new_remaining = (budget.allowed + ext_new - sub.new_done).max(0);
@@ -1095,17 +1103,17 @@ fn run(c: &Connection, src: &dyn Source, profile: &str, req: &Value) -> Result<V
             x.review_done += 1;
         }
     }
-    // 新卡负荷（FSRS 与 RWKV 同一口径）：到期数 / 合格的卡是「还剩多少」，随作答减少，单拿它和预算比，复习做到一半
-    // 「暂停」就会自己解除。改按今天实际要做的复习量：已复习 + 剩余到期，不超过这个牌组今天的复习上限（RWKV 开了
-    // 「忽略每日复习上限」的不截）——超出上限的部分今天本来也不会出。
+    // 新卡负荷（只算 FSRS；RWKV 不贡献负荷）：到期数是「还剩多少」，随作答减少，单拿它和预算比，复习做到一半
+    // 「暂停」就会自己解除。改按今天实际要做的复习量：已复习 + 剩余到期，不超过这个牌组今天的复习上限——超出上限的
+    // 部分今天本来也不会出。RWKV 牌组的合格卡不是负荷信号，记 0，免得经子树累加推高 FSRS 祖先的负荷
+    // （「忽略每日复习上限」只有 RWKV 牌组才可能开，所以这里不用再看它）。
     for (d, x) in t.iter_mut() {
+        if ctx.tree.uses_rwkv(d) {
+            x.load = 0;
+            continue;
+        }
         let mut load = x.due + x.review_done;
-        if let Some(node) = ctx
-            .tree
-            .decks
-            .get(d.as_str())
-            .filter(|_| !ctx.tree.ignores_review_limit(d))
-        {
+        if let Some(node) = ctx.tree.decks.get(d.as_str()) {
             let (_, ext_review) = today_extension(&node.view["ext"], ctx.today);
             load = load.min(int(&node.view, "rp", 200) + ext_review);
         }
@@ -2048,7 +2056,7 @@ mod tests {
         let now = 1_760_000_000_000i64;
         let today = day.index(now);
         let mut n = 0i64;
-        let decks = ["IGN", "OLD", "FS", "BOOST", "OFF"];
+        let decks = ["IGN", "OLD", "FS", "BOOST", "OFF", "RBOOST"];
         for d in decks {
             exec(
                 &core,
@@ -2074,6 +2082,17 @@ mod tests {
             json!({"alg": "fsrs7", "auto": false}),
         );
         edit(&core, &mut n, "FS", "rwkvQueue", ignore);
+        // 按复习量调整新卡只对 FSRS 牌组生效：BOOST / OFF 显式设成 FSRS；RBOOST 没写算法 = 缺省 RWKV，写了同样的
+        // 新卡计划也不调整。
+        for d in ["BOOST", "OFF"] {
+            edit(
+                &core,
+                &mut n,
+                d,
+                "algorithm",
+                json!({"alg": "fsrs7", "auto": false}),
+            );
+        }
         edit(
             &core,
             &mut n,
@@ -2087,6 +2106,13 @@ mod tests {
             "OFF",
             "newPlan",
             json!({"auto": false, "budget": 150, "boost": 50}),
+        );
+        edit(
+            &core,
+            &mut n,
+            "RBOOST",
+            "newPlan",
+            json!({"auto": true, "budget": 150, "boost": 50}),
         );
         let mut k = 0;
         let mut card = |deck: &str, queue: &str| {
@@ -2119,7 +2145,7 @@ mod tests {
                 card(d, "review");
             }
         }
-        for d in ["BOOST", "OFF"] {
+        for d in ["BOOST", "OFF", "RBOOST"] {
             for _ in 0..30 {
                 card(d, "new");
             }
@@ -2146,6 +2172,8 @@ mod tests {
             json!([15, 0, 0, 30, 10, 15, 100, "increased"])
         );
         assert_eq!(row("OFF"), json!([10, 0, 0, 30, 10, 10, 0, null]));
+        // RWKV 牌组：寄存器里的 boost 50% 照存，但不按复习量调整——恒为每日新卡上限、复习预算 0、没有原因。
+        assert_eq!(row("RBOOST"), json!([10, 0, 0, 30, 10, 10, 0, null]));
         // 今天已复习过 2 张之后：旧牌组没有剩余额度、不再出复习卡；忽略上限的牌组照出。
         let mut logs = 0i64;
         for d in ["IGN", "OLD"] {
@@ -2209,8 +2237,8 @@ mod tests {
             assert_eq!(got["counts"]["MIX"][2], json!(want_due), "{got}");
             assert_eq!(got["counts"]["MIX"].as_array().unwrap().len(), 8, "{got}");
         }
-        // RWKV 牌组的新卡负荷 = 今天已复习 + 合格，按牌组的每日复习上限截断（开了「忽略每日复习上限」的不截），
-        // 合格的卡超出今天复习上限的部分今天不会出，不算进负荷。新卡上限 1 → 预算 = 10，负荷超过 20 才暂停。
+        // RWKV 牌组不按复习量调整新卡：合格的卡（RWKV 的「今天到期」）不是负荷信号，再多也不缩减 / 暂停新卡。
+        // 新卡上限 1：FSRS 下预算 = 10、负荷超过 20 就暂停；RWKV 下恒为 1、复习预算 0。
         for d in ["OLD", "IGN"] {
             edit(&core, &mut n, d, "limits", json!({"new": 1, "review": 3}));
             for _ in 0..25 {
@@ -2231,17 +2259,19 @@ mod tests {
             got,
             core.read_visible(|c| oracle::study(c, P, &req)).unwrap()
         );
-        // OLD：32 张合格，但今天最多复习 3 张（已复习 2 张）→ 负荷 3，新卡照常 1 张。
+        // OLD：32 张合格，新卡照常 1 张，不算复习预算。
         assert_eq!(got["counts"]["OLD"][5], json!(1), "{got}");
+        assert_eq!(got["counts"]["OLD"][6], json!(0), "{got}");
         assert_eq!(got["counts"]["OLD"][7], Value::Null, "{got}");
-        // IGN 忽略每日复习上限：32 张合格 + 已复习 2 张全算 → 34 > 2 × 10，暂停。
-        assert_eq!(got["counts"]["IGN"][5], json!(0), "{got}");
-        assert_eq!(got["counts"]["IGN"][7], json!("paused"), "{got}");
+        // IGN 忽略每日复习上限：32 张合格 + 已复习 2 张，RWKV 合格卡再多也不暂停新卡。
+        assert_eq!(got["counts"]["IGN"][5], json!(1), "{got}");
+        assert_eq!(got["counts"]["IGN"][6], json!(0), "{got}");
+        assert_eq!(got["counts"]["IGN"][7], Value::Null, "{got}");
         core.close();
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// FSRS 牌组「到期较多暂停出新卡」的负荷 = 今天已复习 + 现在剩余到期，按每日复习上限截断（与 RWKV 同一口径）：
+    /// FSRS 牌组「到期较多暂停出新卡」的负荷 = 今天已复习 + 现在剩余到期，按每日复习上限截断（RWKV 牌组不算负荷）：
     /// - 到期远超今天的复习上限：超出上限的部分今天不会出，不算负荷，新卡照常出（以前按全部到期数比，直接暂停）；
     /// - 复习做到一半：剩余到期减少，但已复习的照算，负荷不降，「暂停」不会在一天里自己解除。
     #[test]
@@ -2351,6 +2381,113 @@ mod tests {
             "{got}"
         );
         assert_eq!(got["counts"]["CAP"][7], Value::Null, "{got}");
+        core.close();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// RWKV 子牌组（自己管参数）挂在 FSRS 父牌组下：RWKV 的合格卡不是负荷信号，也不能经 `Tally::add` 累加进 FSRS
+    /// 祖先的负荷、让父层暂停后再经 `new_remaining` 逐层截住子牌组的新卡；全是 FSRS 的同构子树照旧暂停。
+    #[test]
+    fn rwkv_child_load_not_counted_by_fsrs_ancestor() {
+        let dir = std::env::temp_dir().join(format!(
+            "ffsrs_study_rwkv_child_load_{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("srs.db");
+        let _ = std::fs::remove_file(&path);
+        let core = SrsCore::open(&path).unwrap();
+        let day = Day {
+            utc_offset_min: 0,
+            rollover_hour: 4,
+        };
+        let now = 1_760_000_000_000i64;
+        let today = day.index(now);
+        let mut n = 0i64;
+        // PAR / QAR：FSRS 父牌组，新卡上限 1 → 预算 = 10（没有复习历史），负荷超过 20 就暂停。
+        // RC：PAR 下自己管参数的 RWKV 子牌组（开「忽略每日复习上限」）；QC：QAR 下自己管参数的 FSRS 子牌组（对照）。
+        for d in ["PAR", "RC", "QAR", "QC"] {
+            exec(
+                &core,
+                "INSERT INTO srs_entities (id, profile_uid, kind, payload_json) VALUES (srs_id(?), srs_id(?), 'deck', '{}')",
+                vec![Sql::Text(d.into()), Sql::Text(P.into())],
+            );
+            edit(&core, &mut n, d, "limits", json!({"new": 1, "review": 200}));
+        }
+        for d in ["PAR", "QAR", "QC"] {
+            edit(
+                &core,
+                &mut n,
+                d,
+                "algorithm",
+                json!({"alg": "fsrs7", "auto": false}),
+            );
+        }
+        edit(&core, &mut n, "RC", "parent", json!("PAR"));
+        edit(&core, &mut n, "QC", "parent", json!("QAR"));
+        for d in ["RC", "QC"] {
+            edit(&core, &mut n, d, "paramsMode", json!("own"));
+        }
+        edit(
+            &core,
+            &mut n,
+            "RC",
+            "rwkvQueue",
+            json!({"minReviews": 0, "repeatReviews": 5, "repeatSeconds": 30, "refreshEvery": 1, "ignoreLimit": true}),
+        );
+        let mut k = 0i64;
+        let mut cands: Vec<Value> = Vec::new();
+        for d in ["RC", "QC"] {
+            for _ in 0..40 {
+                k += 1;
+                let id = format!("{d}-{k:03}");
+                exec(
+                    &core,
+                    CARD_UPSERT,
+                    vec![
+                        Sql::Text(id.clone()),
+                        Sql::Text(P.into()),
+                        Sql::Text(d.into()),
+                        Sql::Integer(0),
+                        Sql::Null,
+                        Sql::Integer(0),
+                        Sql::Text("review".into()),
+                        Sql::Integer(today - 1),
+                        Sql::Null,
+                        Sql::Real(2.0),
+                        Sql::Integer(now - 5 * DAY_MS),
+                        Sql::Text("fushi".into()),
+                        Sql::Integer(k),
+                        Sql::Integer(k),
+                        Sql::Null,
+                    ],
+                );
+                if d == "RC" {
+                    cands.push(json!([id, d, null, 0.5]));
+                }
+            }
+        }
+        let req = json!({"now": now, "utcOff": 0, "rollover": 4, "rwkv": {"decks": {"RC": [0.9, 0, 0, 0]}, "cands": cands}});
+        let got = core.study(P, &req).unwrap();
+        assert_eq!(
+            got,
+            core.read_visible(|c| oracle::study(c, P, &req)).unwrap()
+        );
+        // [新, 学习, 到期, 总数, 新卡上限, 新卡配额, 复习预算, 原因]
+        assert_eq!(
+            got["counts"]["RC"][2],
+            json!(40),
+            "RWKV 子牌组 40 张合格：{got}"
+        );
+        assert_eq!(got["counts"]["RC"][5], json!(1), "{got}");
+        assert_eq!(got["counts"]["RC"][7], Value::Null, "{got}");
+        // 修复前：PAR 的负荷 = RC 的 40 张 > 2 × 10 → paused、配额 0。
+        assert_eq!(got["counts"]["PAR"][5], json!(1), "{got}");
+        assert_eq!(got["counts"]["PAR"][7], Value::Null, "{got}");
+        // 对照：FSRS 子树 40 张到期照旧累加进 FSRS 父牌组 → 暂停。
+        assert_eq!(got["counts"]["QC"][7], json!("paused"), "{got}");
+        assert_eq!(got["counts"]["QAR"][5], json!(0), "{got}");
+        assert_eq!(got["counts"]["QAR"][7], json!("paused"), "{got}");
         core.close();
         let _ = std::fs::remove_dir_all(&dir);
     }

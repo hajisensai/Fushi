@@ -12,7 +12,6 @@ import 'package:fushi/src/ai/mcp/ai_mcp_tool_host.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/ops/app_op_context.dart';
 import 'package:fushi/src/ops/op_context.dart';
-import 'package:fushi/src/ops/op_routes.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
@@ -274,7 +273,7 @@ McpHttpEndpoint buildAiMcpHttpEndpoint({
       final OpContext context = appOpContext!;
       return AiAgentToolbox(
         // 与 HTTP 控制通道同一批路由；进程内专有操作（导航）不对外，不并入。
-        invoker: buildInProcessOpInvoker(context),
+        invoker: buildAppInProcessOpInvoker(context),
         database: context.appModel.database,
         skills: const <AiAgentAppSkill>[],
       );
