@@ -1,0 +1,6 @@
+mcp>=2.3,<3
+dxcam>=0.3
+mss>=10
+pillow>=11
+numpy>=2
+uvicorn>=0.30
