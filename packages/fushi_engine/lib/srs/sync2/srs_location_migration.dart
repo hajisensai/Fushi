@@ -831,7 +831,7 @@ Future<SrsV1MediaReport> srsMigrateV1Media({
     return out;
   }
   if (write.keyHex == null) {
-    // 新根的 meta 上没有 kdf，但本机见过这个位置是加密的（BUG-4292）：残留不按明文写进去。
+    // 新根的 meta 上没有 kdf，但本机见过这个位置是加密的（BUG-4293）：残留不按明文写进去。
     final SrsLocationSeal seal = await srsLocationSealed(host, locationId);
     if (seal.sealed) {
       out.error = srsSealedRefusal(seal);
