@@ -3646,11 +3646,14 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     // 逐条按模块过滤：被关掉的模块不留可点位置。
     final ModuleVisibility modules = _moduleVisibility;
     final bool isManga = _isMangaItem(item);
-    // 反馈 Ndnxy3mNdG：「导入有声书 / 有声书工作室」只给能挂有声书的书（EPUB）。
-    // 以前按 `!isManga` 判，PDF 卡也露出入口，挂上后被写死的 EPUB 阅读器打开成白屏；
-    // ctl 挂音频的拒绝分支与这里共用 [BookFormat.supportsAudiobook]。
+    // 「导入有声书」只给能挂有声书的书（EPUB / PDF，PDF 阅读器播放 + 按文本层高亮）；
+    // ctl 挂音频的拒绝分支与这里共用 [BookFormat.supportsAudiobook]。「有声书工作室」
+    // （TTS 合成整本）只认 EPUB 正文，另走 [BookFormat.supportsAudiobookStudio]。
     final bool canAttachAudiobook =
         ReaderFushiSource.mediaItemSupportsAudiobook(item) &&
+        modules.isEnabled(ModuleId.listening);
+    final bool canOpenAudiobookStudio =
+        ReaderFushiSource.mediaItemSupportsAudiobookStudio(item) &&
         modules.isEnabled(ModuleId.listening);
     return <DialogAction>[
       DialogDangerAction(
@@ -3677,7 +3680,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
           icon: Icons.headphones_outlined,
           onPressed: () => _openAudiobookImport(item, bookKey),
         ),
-      if (canAttachAudiobook)
+      if (canOpenAudiobookStudio)
         DialogQuickAction(
           label: t.audiobook_studio_title,
           icon: FushiIcons.voice,

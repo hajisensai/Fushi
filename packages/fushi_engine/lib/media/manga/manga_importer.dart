@@ -96,6 +96,11 @@ class MangaImporter {
   /// Import a folder of naturally sorted page images as an immediately
   /// readable manga. OCR blocks start empty and can be filled by any whole
   /// volume engine later; an OCR failure therefore never removes the book.
+  ///
+  /// [sourceMetadata] 原样写进书行的 `sourceMetadata`。纯图 EPUB 卷经这里落库时由
+  /// [MangaArchiveImporter.importArchive] 传 OPF 系列描述符（`encodeEpubSeriesMetadata`）：
+  /// 页图拷出来后原 EPUB 不在书目录里，存量回填读不到 OPF，导入这一刻是唯一能留下
+  /// 系列声明的时机（iycDWb7ys6：分卷名里没有系列线索时靠它归合集）。
   static Future<String> importFromImageFolder({
     required FushiDatabase db,
     required String imageDirPath,
@@ -103,6 +108,7 @@ class MangaImporter {
     DuplicatePolicy policy = const DuplicatePolicy.suffix(),
     void Function(int done, int total)? onProgress,
     int? sourceId,
+    String? sourceMetadata,
   }) async {
     final Directory root = Directory(imageDirPath);
     final MokuroPayload payload = await payloadFromImageFolder(root);
@@ -117,6 +123,7 @@ class MangaImporter {
       policy: policy,
       onProgress: onProgress,
       sourceId: sourceId,
+      sourceMetadata: sourceMetadata,
     );
   }
 
@@ -380,6 +387,7 @@ class MangaImporter {
     DuplicatePolicy policy = const DuplicatePolicy.suffix(),
     void Function(int done, int total)? onProgress,
     int? sourceId,
+    String? sourceMetadata,
   }) async {
     // 第一遍：规划每页 destRel（sanitize + 保留子目录 + 去重）并校验源图存在 + 防路径穿越。
     // 全部在任何落盘/落库之前完成——校验失败零副作用，无需回滚。
@@ -426,6 +434,9 @@ class MangaImporter {
           format: Value(BookFormat.manga.dbValue),
           // mangaReadingMode 留 absent(null)：跟随阅读器自动判定（P1-L4 契约）。
           sourceId: sourceId != null ? Value(sourceId) : const Value.absent(),
+          sourceMetadata: sourceMetadata != null
+              ? Value(sourceMetadata)
+              : const Value.absent(),
         ),
       );
 
