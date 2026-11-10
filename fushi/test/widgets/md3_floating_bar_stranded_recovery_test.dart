@@ -35,12 +35,17 @@ class _Shell extends StatelessWidget {
     required this.itemCount,
     required this.contentKey,
     required this.taps,
+    required this.nestedRow,
   });
 
   final FushiAppleScrollChrome chrome;
   final ValueNotifier<int> itemCount;
   final ValueNotifier<int> contentKey;
   final List<int> taps;
+
+  /// 非 null 时从这一行起每行都换成内容里嵌套的竖向子列表（shrinkWrap、滚不动），模拟
+  /// 外层下滑时新建出来的嵌套 Scrollable（首次布局只发尺寸通知、恒在顶部）。
+  final ValueNotifier<int?> nestedRow;
 
   @override
   Widget build(BuildContext context) {
@@ -56,12 +61,32 @@ class _Shell extends StatelessWidget {
                   ValueListenableBuilder<int>(
                     valueListenable: itemCount,
                     builder: (BuildContext context, int count, Widget? _) =>
-                        ListView.builder(
-                          key: ValueKey<int>(key),
-                          itemExtent: 60,
-                          itemCount: count,
-                          itemBuilder: (BuildContext context, int index) =>
-                              Text('Row $index'),
+                        ValueListenableBuilder<int?>(
+                          valueListenable: nestedRow,
+                          builder:
+                              (
+                                BuildContext context,
+                                int? nested,
+                                Widget? _,
+                              ) => ListView.builder(
+                                key: ValueKey<int>(key),
+                                itemExtent: 60,
+                                itemCount: count,
+                                itemBuilder:
+                                    (
+                                      BuildContext context,
+                                      int index,
+                                    ) => nested != null && index >= nested
+                                    ? ListView(
+                                        shrinkWrap: true,
+                                        physics:
+                                            const NeverScrollableScrollPhysics(),
+                                        children: const <Widget>[
+                                          Text('Nested'),
+                                        ],
+                                      )
+                                    : Text('Row $index'),
+                              ),
                         ),
                   ),
             ),
@@ -90,6 +115,7 @@ Future<void> _pumpShell(
   required ValueNotifier<int> itemCount,
   required ValueNotifier<int> contentKey,
   required List<int> taps,
+  required ValueNotifier<int?> nestedRow,
 }) async {
   tester.view.physicalSize = const Size(412, 892);
   tester.view.devicePixelRatio = 1;
@@ -100,6 +126,7 @@ Future<void> _pumpShell(
       itemCount: itemCount,
       contentKey: contentKey,
       taps: taps,
+      nestedRow: nestedRow,
     ),
   );
   await tester.pumpAndSettle();
@@ -123,18 +150,21 @@ void main() {
   late ValueNotifier<int> itemCount;
   late ValueNotifier<int> contentKey;
   late List<int> taps;
+  late ValueNotifier<int?> nestedRow;
 
   setUp(() {
     chrome = FushiAppleScrollChrome();
     itemCount = ValueNotifier<int>(80);
     contentKey = ValueNotifier<int>(0);
     taps = <int>[];
+    nestedRow = ValueNotifier<int?>(null);
   });
 
   tearDown(() {
     chrome.dispose();
     itemCount.dispose();
     contentKey.dispose();
+    nestedRow.dispose();
   });
 
   Future<void> collapseOnLookup(WidgetTester tester) async {
@@ -144,6 +174,7 @@ void main() {
       itemCount: itemCount,
       contentKey: contentKey,
       taps: taps,
+      nestedRow: nestedRow,
     );
     expect(_hittableIcon(Icons.home_outlined), findsOneWidget);
     await _scrollDown(tester, 300);
@@ -198,6 +229,20 @@ void main() {
     // 列表变长（懒加载追加）：内容仍可滚、位置不在顶部，保持收起。
     itemCount.value = 120;
     await tester.pumpAndSettle();
+
+    expect(chrome.minimized, isTrue);
+    expect(_hittableIcon(Icons.home_outlined), findsNothing);
+  });
+
+  testWidgets('收起后内容里新建出嵌套竖向子列表（滚不动、在顶部）：不误展开', (WidgetTester tester) async {
+    await collapseOnLookup(tester);
+
+    // 外层列表停在中间，可见区里的行全换成嵌套 shrinkWrap 列表：新
+    // Scrollable 首次布局发尺寸通知（depth 1、maxScrollExtent 0、pixels 0），
+    // 不是收起底栏的那条主列表，不能把底栏弹开。
+    nestedRow.value = 0;
+    await tester.pumpAndSettle();
+    expect(find.text('Nested'), findsWidgets);
 
     expect(chrome.minimized, isTrue);
     expect(_hittableIcon(Icons.home_outlined), findsNothing);
