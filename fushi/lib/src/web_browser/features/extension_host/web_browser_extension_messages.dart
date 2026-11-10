@@ -95,6 +95,18 @@ Future<Map<String, Object?>> routeWebBrowserExtensionMessage(
           'content': _str(message['content']),
         },
       );
+    case 'subtitleAlign':
+      // 反馈 0wkJImhZUp：网页视频自动对轴（扩展 subtitle-align.js 攒的包络 + 当前轨 cue）。
+      return _apiReply(
+        s,
+        FushiExtensionApiCore.subtitleAlignPath,
+        <String, dynamic>{
+          'binMs': message['binMs'],
+          'startMs': message['startMs'],
+          'rmsDb': message['rmsDb'],
+          'cues': message['cues'],
+        },
+      );
     case 'subtitleSearch':
       return _apiReply(
         s,

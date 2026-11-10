@@ -842,6 +842,7 @@ class _ReaderToolbarPreview extends StatelessWidget {
         ? FushiFloatingTopBar(
             leading: _items(ReaderControlSlot.topLeft),
             title: title,
+            titleBacking: true,
             actions: <List<FushiToolbarItem>>[
               _items(ReaderControlSlot.topRight),
             ],

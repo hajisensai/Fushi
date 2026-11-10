@@ -283,7 +283,7 @@ void main() {
       );
       final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
 
-      await SourceLibraryScanner(db).scan(source);
+      await SourceLibraryScanner(db, transcribeAudiobook: null).scan(source);
 
       final List<EpubBookRow> books = await db.getAllEpubBooks();
       expect(books, hasLength(1));
