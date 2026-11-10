@@ -3,7 +3,6 @@ import 'package:fushi/src/anki/mining_media_quality_labels.dart'
     show miningClipFormatLabel;
 import 'package:fushi/src/mining/gal_mining_settings.dart';
 import 'package:fushi/src/mining/gal_mining_settings_text.dart';
-import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_section_title.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
