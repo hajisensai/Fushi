@@ -47,6 +47,17 @@ MusicPluginPlaylist _playlist(int i) =>
     MusicPluginPlaylist(id: 'p$i', title: 'Playlist $i');
 
 final List<MusicPluginHomeSection> _sections = <MusicPluginHomeSection>[
+  // 推荐页第一个曲目段画成主卡（不走栏目头）；后面的曲目段才是带「播放全部」的
+  // 普通栏目，所以这里先垫一个主卡段。
+  MusicPluginHomeSection(
+    id: 'hero-tracks',
+    title: 'For you',
+    kind: MusicPluginHomeKind.tracks,
+    items: <Object>[
+      for (int i = 0; i < 3; i++)
+        MusicPluginTrack(id: 'h$i', title: 'Hero $i', artists: const []),
+    ],
+  ),
   MusicPluginHomeSection(
     id: _trackSectionId,
     title: 'Daily',
@@ -283,28 +294,30 @@ void main() {
 
     testWidgets('歌单 / 专辑栏目有「查看全部」，曲目栏目仍是「播放全部」', (WidgetTester tester) async {
       await pumpRecommend(tester);
+      final Finder recommend = find
+          .descendant(
+            of: find.byKey(const ValueKey<String>('music-plugin-recommend')),
+            matching: find.byType(Scrollable),
+          )
+          .first;
 
-      await tester.scrollUntilVisible(
-        viewAll(_playlistSectionId),
-        200,
-        scrollable: find
-            .descendant(
-              of: find.byKey(const ValueKey<String>('music-plugin-recommend')),
-              matching: find.byType(Scrollable),
-            )
-            .first,
-      );
-      expect(viewAll(_albumSectionId), findsOneWidget);
-      expect(viewAll(_playlistSectionId), findsOneWidget);
-      expect(viewAll(_trackSectionId), findsNothing);
-      expect(
-        find.byKey(
-          const ValueKey<String>(
-            'music-plugin-home-play-$_pluginId-$_trackSectionId',
-          ),
+      // 推荐页是懒建的列表：每个栏目头各自滚到再判，不假设它们同屏。
+      final Finder playAll = find.byKey(
+        const ValueKey<String>(
+          'music-plugin-home-play-$_pluginId-$_trackSectionId',
         ),
-        findsOneWidget,
       );
+      await tester.scrollUntilVisible(playAll, 200, scrollable: recommend);
+      expect(playAll, findsOneWidget);
+      expect(viewAll(_trackSectionId), findsNothing);
+      for (final String id in <String>[_albumSectionId, _playlistSectionId]) {
+        await tester.scrollUntilVisible(
+          viewAll(id),
+          200,
+          scrollable: recommend,
+        );
+        expect(viewAll(id), findsOneWidget, reason: id);
+      }
 
       await tester.pumpWidget(const SizedBox.shrink());
     });
@@ -344,6 +357,10 @@ void main() {
         scrollable: gridScrollable,
       );
       expect(gridCard(lastId), findsOneWidget);
+      // scrollUntilVisible 只滚到卡片被建出来（网格有 cacheExtent，可能还在屏外），
+      // 点之前再滚进视口。
+      await tester.ensureVisible(gridCard(lastId));
+      await tester.pumpAndSettle();
 
       await tester.tap(gridCard(lastId));
       await tester.pumpAndSettle();
