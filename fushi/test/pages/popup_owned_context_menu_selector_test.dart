@@ -46,14 +46,11 @@ void main() {
     // 手势本身（含 contextmenu）在共享的 bindPopupSecondaryActionTriggers 里，
     // ✓ 只给出判据；判据经 isActive 也管右键拦不拦。
     expect(body, contains('bindPopupSecondaryActionTriggers(button'));
-    final int helper = js.indexOf(
-      'function bindPopupSecondaryActionTriggers(',
-    );
+    final int helper = js.indexOf('function bindPopupSecondaryActionTriggers(');
     expect(helper, greaterThanOrEqualTo(0));
     final String helperBody = js.substring(
       helper,
-      js.indexOf('
-function ', helper + 1),
+      js.indexOf('\nfunction ', helper + 1),
     );
     expect(helperBody, contains("addEventListener('contextmenu'"));
     expect(helperBody, contains('if (!active()) return;'));
