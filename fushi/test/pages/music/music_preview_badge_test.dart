@@ -5,6 +5,8 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
+import 'package:fushi/src/media/music/music_session.dart'
+    show musicMediaSessionDuration;
 import 'package:fushi/src/media/music/server/music_servers.dart';
 import 'package:fushi/src/pages/implementations/music/music_preview_badge.dart';
 import 'package:fushi_engine/media/music/apple_music/apple_music_catalog_client.dart';
@@ -92,6 +94,34 @@ void main() {
       final MusicPlayItem item = musicServerPlayItem(catalog, track);
       expect(item.isPreview, isFalse);
       expect(item.playbackDuration, const Duration(seconds: 200));
+    });
+    test('系统媒体卡片的时长：试听用媒体实际长度，普通曲目照旧用曲目时长', () {
+      const MusicPlayItem preview = MusicPlayItem(
+        trackUid: 'p',
+        path: 'https://audio.example/p.m4a',
+        title: 'p',
+        durationMs: 200000,
+        isPreview: true,
+      );
+      expect(
+        musicMediaSessionDuration(preview, null),
+        isNull,
+        reason: '媒体还没报长度前不画 0:30 / 3:20 的进度条',
+      );
+      expect(
+        musicMediaSessionDuration(preview, const Duration(seconds: 30)),
+        const Duration(seconds: 30),
+      );
+      const MusicPlayItem full = MusicPlayItem(
+        trackUid: 'f',
+        path: '/m/f.flac',
+        title: 'f',
+        durationMs: 200000,
+      );
+      expect(
+        musicMediaSessionDuration(full, const Duration(seconds: 199)),
+        const Duration(seconds: 200),
+      );
     });
   });
 
