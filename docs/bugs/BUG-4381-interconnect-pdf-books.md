@@ -1,4 +1,4 @@
-## BUG-4372 · 互联看不到对端导入的 PDF 书（PDF 没有互联内容通道）
+## BUG-4381 · 互联看不到对端导入的 PDF 书（PDF 没有互联内容通道）
 - **报告**：2026-11-09（应用内反馈 Jq1_ujHa4t，安卓经 Fushi 互联连 Windows：Windows 上导入的 PDF 在安卓看不到，同步显示「无新增」）
 - **真实性**：✅ 真 bug。PDF 在互联里整条没有内容通道，四段各自把它挡掉：
   - host 清单 `packages/fushi_engine/lib/sync/local_library_host_service/books.part.dart:99`：`hasContent` 只判 EPUB 内容树（`format == epub`），PDF 恒 false，也没有别的内容位；
