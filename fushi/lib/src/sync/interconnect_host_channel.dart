@@ -15,7 +15,9 @@
 /// - **生命周期**：通道建的 client 归通道所有，[InterconnectHostChannel.close] 一并关掉，
 ///   在途请求以 [InterconnectChannelFailure.cancelled] 收尾。
 /// - **错误分型**：[InterconnectChannelException] 的 kind + `mayHaveDelivered`。
-///   非幂等请求只发一次，传输失败不换地址重发。
+///   client 还没开始读请求体（建连被拒 / 建连超时 / DNS 失败）的失败一个字节都没
+///   发出，任何请求都换同组下一条地址；请求体开始写出之后，非幂等请求与流式上传
+///   不再换地址重发。撞了传输失败就作废这台 host 的选路缓存，下次重新竞速。
 library;
 
 import 'dart:async';
@@ -129,7 +131,8 @@ enum InterconnectChannelFailure {
   /// 能到达的地址全部 401。
   authRejected,
 
-  /// 能到达的地址全部证书不符（或明文地址撞上钉扎），一个请求字节都没发。
+  /// 试过的地址全部证书不符（或明文地址撞上钉扎），一个请求字节都没发。有任何一条
+  /// 地址只是传输失败时不算这一类（报 [unreachable]，过一会儿可能就好）。
   certificateMismatch,
 
   /// 通道已关闭（调用方 dispose）。
@@ -189,7 +192,8 @@ sealed class InterconnectRequestBody {
   }) = _BytesBody;
 
   /// 流式上传：请求体真正开始写出时才调用 [open] 取流。同一次 [InterconnectHostChannel.send]
-  /// 最多调用一次——流一旦打开，通道就不再换地址（大文件上传不重放）。
+  /// 最多调用一次——流一旦打开，通道就不再换地址（大文件上传不重放），幂等与否
+  /// 都一样；没打开就失败的地址（建连被拒 / 握手被拒）照常换下一条。
   const factory InterconnectRequestBody.stream(
     Stream<List<int>> Function() open, {
     int? contentLength,
@@ -257,8 +261,9 @@ bool interconnectPlaintextAllowed(Uri uri, {String? pin}) {
   return interconnectPersistedUrl(uri.origin).startsWith('p2p://');
 }
 
-/// [baseUrl] + [path] + [query] → 请求 URI（同 `interconnectEndpointUri`，但保留
-/// 查询串）。基址畸形或不是 http(s) → null（调用方跳过该候选）。
+/// [baseUrl] 的 scheme / 主机 / 端口 + [path] + [query] → 请求 URI（基址自带的
+/// 路径、查询、片段都丢掉）。[query] 为空时 URI 不带查询串（结尾没有 `?`）。
+/// 基址畸形或不是 http(s) → null（调用方跳过该候选）。
 Uri? interconnectRequestUri(
   String baseUrl,
   String path, [
@@ -267,11 +272,16 @@ Uri? interconnectRequestUri(
   try {
     final Uri base = Uri.parse(WebDavOps.normalizeUrl(baseUrl));
     if (!base.isScheme('http') && !base.isScheme('https')) return null;
-    return base.replace(
+    return Uri(
+      scheme: base.scheme,
+      userInfo: base.userInfo.isEmpty ? null : base.userInfo,
+      host: base.host,
+      port: base.hasPort ? base.port : null,
       path: path,
-      queryParameters: query.isEmpty ? const <String, String>{} : query,
+      queryParameters: query.isEmpty ? null : query,
     );
-  } on FormatException {
+  } catch (_) {
+    // 畸形（FormatException）或非 http(s)（normalizeUrl 抛 SyncBackendError）。
     return null;
   }
 }
@@ -389,7 +399,13 @@ class InterconnectHostChannel {
   static const InterconnectChannelException _cancelled =
       InterconnectChannelException(InterconnectChannelFailure.cancelled);
 
-  http.Client get _plain => _borrowedPlain ?? (_ownedPlain ??= http.Client());
+  /// 自建的明文 client 带建连超时：死地址（丢 SYN）不吃满整段 deadline，留出时间
+  /// 换同组下一条地址。
+  http.Client get _plain =>
+      _borrowedPlain ??
+      (_ownedPlain ??= IOClient(
+        HttpClient()..connectionTimeout = kInterconnectConnectTimeout,
+      ));
 
   http.Client _pinnedClientFor(String fingerprint) {
     final String key = canonicalSha256Fingerprint(fingerprint) ?? fingerprint;
@@ -464,17 +480,29 @@ class InterconnectHostChannel {
 
     bool hadCredential = false;
     bool authRejected = false;
-    bool sentTimedOut = false;
-    bool bodyFailed = false;
+    // 有地址只是传输失败（连不上 / 断开 / 超时 / 没轮到就没时间了）：结局是
+    // unreachable 而不是证书不符——被钉扎闸拒掉的那条说明不了其余地址的情况。
+    bool transportFailed = false;
+    // 幂等请求换过地址：之前某次尝试的请求体已经开始写出。
+    bool mayHaveDelivered = false;
     int certMismatch = 0;
     int localPinRefusal = 0;
+    final bool streaming = body is _StreamBody;
     // 流式请求体一旦打开就不再换地址（见 [InterconnectRequestBody.stream]）。
     bool streamOpened = false;
+
+    void forgetRaceWinner() {
+      final String? id = host.hostId;
+      if (id != null) forgetInterconnectRaceWinner(id);
+    }
 
     for (final FushiClientUrl c in ranked.ranked) {
       if (_closed) throw _cancelled;
       final Duration remaining = timeout - clock.elapsed;
-      if (remaining <= Duration.zero) break;
+      if (remaining <= Duration.zero) {
+        transportFailed = true;
+        break;
+      }
       final Uri? uri = interconnectRequestUri(c.url, path, query);
       final String? token = interconnectTokenFor(c, fallback);
       if (uri == null || token == null) continue;
@@ -497,20 +525,21 @@ class InterconnectHostChannel {
         client = _plain;
       }
 
-      final Completer<void> abort = Completer<void>();
+      final _Attempt attempt = _Attempt(Completer<void>());
       final http.BaseRequest req = _buildRequest(
         upper,
         uri,
         token,
         body,
-        abort.future,
-        onStreamOpened: () => streamOpened = true,
+        attempt,
       );
 
       final http.StreamedResponse streamed;
       try {
-        streamed = await _guard(client.send(req), remaining, abort);
+        streamed = await _guard(client.send(req), remaining, attempt.abort);
       } on Object catch (e) {
+        attempt.abandoned = true;
+        if (streaming && attempt.bodyStarted) streamOpened = true;
         if (_closed) throw _cancelled;
         final String endpoint = '${uri.host}:${uri.port}';
         if (e is InterconnectPinRefused ||
@@ -520,31 +549,44 @@ class InterconnectHostChannel {
           if (streamOpened) break;
           continue;
         }
-        if (!isIdempotent) {
-          throw const InterconnectChannelException(
-            InterconnectChannelFailure.unreachable,
-            mayHaveDelivered: true,
-          );
+        forgetRaceWinner();
+        if (attempt.bodyStarted) {
+          // 请求体已开始写出：host 可能已收到并执行。非幂等请求不重发，流式
+          // 请求体不重放。
+          if (!isIdempotent || streaming) {
+            throw const InterconnectChannelException(
+              InterconnectChannelFailure.unreachable,
+              mayHaveDelivered: true,
+            );
+          }
+          mayHaveDelivered = true;
         }
-        if (e is TimeoutException) sentTimedOut = true;
+        // 没开始写请求体（建连被拒 / 建连超时 / DNS）：确定没送到，换下一条。
+        transportFailed = true;
         continue;
       }
+      if (streaming && attempt.bodyStarted) streamOpened = true;
 
       final Uint8List bytes;
       try {
         bytes = await _readBody(streamed.stream, timeout - clock.elapsed);
       } on Object {
-        if (!abort.isCompleted) abort.complete();
+        attempt.abandoned = true;
+        if (!attempt.abort.isCompleted) attempt.abort.complete();
         if (_closed) throw _cancelled;
-        if (!isIdempotent) {
+        forgetRaceWinner();
+        // 响应头已经到了：请求已送达。
+        if (!isIdempotent || streamOpened) {
           throw const InterconnectChannelException(
             InterconnectChannelFailure.unreachable,
             mayHaveDelivered: true,
           );
         }
-        bodyFailed = true;
+        mayHaveDelivered = true;
+        transportFailed = true;
         continue;
       }
+      attempt.abandoned = true;
       if (_closed) throw _cancelled;
 
       if (streamed.statusCode == 401) {
@@ -566,7 +608,7 @@ class InterconnectHostChannel {
         InterconnectChannelFailure.authRejected,
       );
     }
-    if (certMismatch + localPinRefusal > 0) {
+    if (!transportFailed && certMismatch + localPinRefusal > 0) {
       throw const InterconnectChannelException(
         InterconnectChannelFailure.certificateMismatch,
       );
@@ -579,7 +621,7 @@ class InterconnectHostChannel {
     }
     throw InterconnectChannelException(
       InterconnectChannelFailure.unreachable,
-      mayHaveDelivered: sentTimedOut || bodyFailed,
+      mayHaveDelivered: mayHaveDelivered,
     );
   }
 
@@ -588,44 +630,43 @@ class InterconnectHostChannel {
     Uri uri,
     String token,
     InterconnectRequestBody? body,
-    Future<void> abortTrigger, {
-    required void Function() onStreamOpened,
-  }) {
-    final Map<String, String> headers = <String, String>{
-      'Authorization': 'Basic ${base64Encode(utf8.encode('hibiki:$token'))}',
-    };
+    _Attempt attempt,
+  ) {
+    final Stream<List<int>> Function() open;
+    final int? contentLength;
+    final String? contentType;
     switch (body) {
-      case _StreamBody(:final open, :final contentLength, :final contentType):
-        return _LazyStreamRequest(
-            method,
-            uri,
-            abortTrigger: abortTrigger,
-            open: () {
-              onStreamOpened();
-              return open();
-            },
-          )
+      case _StreamBody(
+        open: final Stream<List<int>> Function() streamOpen,
+        contentLength: final int? length,
+        contentType: final String type,
+      ):
+        open = streamOpen;
+        contentLength = length;
+        contentType = type;
+      case _JsonBody(:final Object? value):
+        final Uint8List bytes = utf8.encode(jsonEncode(value));
+        open = () => Stream<List<int>>.value(bytes);
+        contentLength = bytes.length;
+        // 与 http.Request 设 body 时补的 charset 一致（线上形状不变）。
+        contentType = 'application/json; charset=utf-8';
+      case _BytesBody(:final Uint8List bytes, contentType: final String type):
+        open = () => Stream<List<int>>.value(bytes);
+        contentLength = bytes.length;
+        contentType = type;
+      case null:
+        open = () => const Stream<List<int>>.empty();
+        contentLength = 0;
+        contentType = null;
+    }
+    final _ChannelRequest req =
+        _ChannelRequest(method, uri, attempt: attempt, open: open)
           ..followRedirects = false
           ..contentLength = contentLength
-          ..headers.addAll(headers)
-          ..headers['Content-Type'] = contentType;
-      case _JsonBody(:final value):
-        return http.AbortableRequest(method, uri, abortTrigger: abortTrigger)
-          ..followRedirects = false
-          ..headers.addAll(headers)
-          ..headers['Content-Type'] = 'application/json'
-          ..body = jsonEncode(value);
-      case _BytesBody(:final bytes, :final contentType):
-        return http.AbortableRequest(method, uri, abortTrigger: abortTrigger)
-          ..followRedirects = false
-          ..headers.addAll(headers)
-          ..headers['Content-Type'] = contentType
-          ..bodyBytes = bytes;
-      case null:
-        return http.AbortableRequest(method, uri, abortTrigger: abortTrigger)
-          ..followRedirects = false
-          ..headers.addAll(headers);
-    }
+          ..headers['Authorization'] =
+              'Basic ${base64Encode(utf8.encode('hibiki:$token'))}';
+    if (contentType != null) req.headers['Content-Type'] = contentType;
+    return req;
   }
 
   /// [future] 限时 [remaining]，并与通道关闭赛跑。超时 / 关闭时触发 [abort]
@@ -713,19 +754,38 @@ class InterconnectHostChannel {
   }
 }
 
-/// 请求体在 client 真正开始写出时才调用 [open] 取流（握手被拒的候选不会打开流）。
-final class _LazyStreamRequest extends http.BaseRequest with http.Abortable {
-  _LazyStreamRequest(
+/// 一次尝试（一条地址）的请求体状态。
+final class _Attempt {
+  _Attempt(this.abort);
+
+  /// 超时 / 关闭时触发：支持 Abortable 的 client 会真的中止连接。
+  final Completer<void> abort;
+
+  /// client 开始读请求体：连接已建立，请求可能已到达 host。
+  bool bodyStarted = false;
+
+  /// 通道已放弃这次尝试：之后 client 才来读请求体也不再打开（流不重放）。
+  bool abandoned = false;
+
+  bool get isAbandoned => abandoned || abort.isCompleted;
+}
+
+/// 请求体在 client 真正开始写出时才取流：握手被拒 / 建连失败的尝试不会打开流，
+/// 并据此记下「请求体是否开始写出」（区分「确定没送到」与「可能已送到」）。
+final class _ChannelRequest extends http.BaseRequest with http.Abortable {
+  _ChannelRequest(
     super.method,
     super.url, {
-    required this.abortTrigger,
+    required _Attempt attempt,
     required Stream<List<int>> Function() open,
-  }) : _open = open;
+  }) : _attempt = attempt,
+       _open = open;
+
+  final _Attempt _attempt;
+  final Stream<List<int>> Function() _open;
 
   @override
-  final Future<void>? abortTrigger;
-
-  final Stream<List<int>> Function() _open;
+  Future<void>? get abortTrigger => _attempt.abort.future;
 
   @override
   http.ByteStream finalize() {
@@ -734,6 +794,10 @@ final class _LazyStreamRequest extends http.BaseRequest with http.Abortable {
   }
 
   Stream<List<int>> _deferred() async* {
+    if (_attempt.isAbandoned) {
+      throw http.ClientException('interconnect attempt abandoned', url);
+    }
+    _attempt.bodyStarted = true;
     yield* _open();
   }
 }

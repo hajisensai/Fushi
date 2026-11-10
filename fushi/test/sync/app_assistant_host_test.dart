@@ -401,6 +401,46 @@ void main() {
     expect(ports.parsed, <String>['下 Show']);
   });
 
+  test(
+    '会话中途原地址断开但仍启用（离开 Wi-Fi）→ submitText 换同一台 host 的另一条地址（评审 tests-1）',
+    () async {
+      final _HostPorts ports = _HostPorts();
+      final (FushiSyncServer server, _) = await startGroupedHost(ports.host());
+      final String live = 'http://127.0.0.1:${server.port}';
+      final _Forwarder lan = await _Forwarder.start(server.port);
+      addTearDown(lan.close);
+      final String lanUrl = 'http://127.0.0.1:${lan.port}';
+      await repo.setFushiClientUrls(<FushiClientUrl>[
+        groupedRow(lanUrl),
+        groupedRow(live),
+      ]);
+      final InterconnectAssistantClient c = client();
+      final HostAssistantTarget target = (await c.probeUrl(lanUrl))!;
+      final RemoteVideoAcquisitionSession session =
+          await RemoteVideoAcquisitionSession.open(
+            client: c,
+            target: target,
+            locale: 'zh-CN',
+            retryDelay: const Duration(milliseconds: 50),
+            longPollWait: const Duration(seconds: 1),
+          );
+      addTearDown(session.dispose);
+
+      // 不停用 LAN 那一行：选路缓存在 30 秒窗口里可能还指着它，连接被拒（请求体
+      // 一个字节都没写出）必须换同组下一条，而不是整次 POST 报不可达。
+      await lan.close();
+
+      await session.submitText('下 Show');
+      final VideoAcquisitionView asked = await viewWhere(
+        session,
+        (VideoAcquisitionView v) =>
+            v.stage == VideoAcquisitionStage.awaitingResourceConfirm,
+      );
+      expect(asked.question?.slot, VideoAcquisitionSlot.resource);
+      expect(ports.parsed, <String>['下 Show']);
+    },
+  );
+
   test('会话表：非法动作 400、长轮询无变化等满超时回原 revision、关后 404', () async {
     final _HostPorts ports = _HostPorts();
     final HostAssistantSessions sessions = HostAssistantSessions(

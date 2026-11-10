@@ -175,8 +175,8 @@ void main() {
     );
     expect(response?.statusCode, 200);
     expect(reached, hasLength(1));
-    expect(reached.single.origin, 'http://127.0.0.1:5001');
-    expect(reached.single.path, '/api/capabilities');
+    // 完整 URL：不带查询参数的请求结尾不能多一个 `?`（评审 tests-2）。
+    expect(reached.single.toString(), 'http://127.0.0.1:5001/api/capabilities');
   });
 
   group('学习器按持久 URL 认锚点', () {

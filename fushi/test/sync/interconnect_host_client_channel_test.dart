@@ -83,6 +83,86 @@ void main() {
     expect(clock.elapsed, lessThan(const Duration(milliseconds: 800)));
   });
 
+  test(
+    'postJson：缓存胜者是同组的死 LAN（连接被拒）→ 换到活地址，不再整次失败（评审 compat-1 / tests-1）',
+    () async {
+      // 未钉扎的 host：死 LAN 也核对通过（刚离开家里 Wi-Fi，选路缓存还指着它）。
+      const FushiClientUrl liveUnpinned = FushiClientUrl(
+        url: 'https://h.example:38766',
+        token: 'secret',
+        hostId: 'H',
+      );
+      await repository.setFushiClientUrls(<FushiClientUrl>[
+        deadLan,
+        liveUnpinned,
+      ]);
+      debugInterconnectAddressProbeOverride =
+          (FushiClientUrl c, String? hostId) async => hostId == 'H';
+      final List<String> reached = <String>[];
+      final InterconnectHostClient client = InterconnectHostClient(
+        repository: repository,
+        peer: deadLan,
+        httpClient: _RefusingClient(
+          '192.168.1.5',
+          MockClient((http.Request r) async {
+            reached.add(r.url.host);
+            return http.Response('{"ok":true}', 200);
+          }),
+        ),
+      );
+      addTearDown(client.cancelPending);
+
+      // 先让死 LAN 当上缓存胜者（两条都核对通过，组首胜出）。
+      for (int i = 0; i < 2; i++) {
+        expect(
+          await client.postJson('/api/x', authErrorMessage: 'rejected'),
+          <String, dynamic>{'ok': true},
+          reason: '修复前第一条地址连接被拒就抛 unreachable',
+        );
+      }
+      expect(reached, <String>['h.example', 'h.example']);
+    },
+  );
+
+  test('会话绑定（凭据）：同一台 host 重新配对换了 token，旧会话不再发请求', () async {
+    await repository.setFushiClientUrls(<FushiClientUrl>[liveHttps]);
+    final List<String> reachedTokens = <String>[];
+    final InterconnectHostClient client = InterconnectHostClient(
+      repository: repository,
+      peer: liveHttps,
+      pinnedClientFactory: (String pin) => MockClient((http.Request r) async {
+        reachedTokens.add(r.headers['Authorization'] ?? '');
+        return http.Response('{"ok":true}', 200);
+      }),
+    );
+    addTearDown(client.cancelPending);
+    expect(
+      await client.postJson('/api/x', authErrorMessage: 'rejected'),
+      <String, dynamic>{'ok': true},
+    );
+
+    // hostId 不变、只换凭据：只按 hostId 筛成员挡不住，靠的是通道的会话绑定。
+    await repository.setFushiClientTokenForUrl(
+      liveHttps.url,
+      'rotated',
+      hostId: 'H',
+    );
+    final FushiClientUrl rotated =
+        (await repository.getFushiClientUrls()).single;
+    expect(rotated.hostId, 'H');
+    expect(rotated.token, 'rotated');
+
+    await expectLater(
+      client.postJson('/api/x', authErrorMessage: 'rejected'),
+      throwsA(isA<InterconnectHostError>()),
+    );
+    expect(
+      await client.getFromHost('/api/x', timeout: const Duration(seconds: 1)),
+      isNull,
+    );
+    expect(reachedTokens, hasLength(1), reason: '凭据换了的会话一次请求都不该发出');
+  });
+
   test('重新配对后旧会话不换库：URL 改归另一台 host，旧会话抛 unreachable、新 host 零请求', () async {
     await repository.setFushiClientUrls(<FushiClientUrl>[liveHttps]);
     final List<String> reachedTokens = <String>[];
@@ -179,6 +259,23 @@ void main() {
       reason: 'cancelPending 之后重建通道，同一个 client 还能继续用',
     );
   });
+}
+
+/// [refusedHost] 像「连接被拒」一样失败：不读请求体就抛（真实 IOClient 建连失败时
+/// 也还没开始写请求体）；其余交给 [inner]。
+class _RefusingClient extends http.BaseClient {
+  _RefusingClient(this.refusedHost, this.inner);
+  final String refusedHost;
+  final http.Client inner;
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) {
+    if (request.url.host == refusedHost) {
+      return Future<http.StreamedResponse>.error(
+        http.ClientException('Connection refused', request.url),
+      );
+    }
+    return inner.send(request);
+  }
 }
 
 class _TrackingClient extends http.BaseClient {

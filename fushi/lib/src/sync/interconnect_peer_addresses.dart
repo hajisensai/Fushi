@@ -232,6 +232,10 @@ const Duration _raceCacheTtl = Duration(seconds: 30);
 @visibleForTesting
 void resetInterconnectRaceCache() => _raceCache.clear();
 
+/// 作废 [hostId] 缓存的选路胜者：消费方刚在某条地址上撞了传输失败（连接被拒 /
+/// 建连超时 / 断开），下一次请求重新竞速，不在缓存窗口内反复先撞那条死地址。
+void forgetInterconnectRaceWinner(String hostId) => _raceCache.remove(hostId);
+
 /// 地址本身带密码学身份：https 且钉了指纹，或持久地址是 `p2p://`（含本进程的
 /// 转发口——按 [interconnectPersistedUrl] 换回 `p2p://` 判）。其余（明文 http、
 /// 未钉扎的 https）只有当场 ping 核对 hostId 通过才可以拿凭据。

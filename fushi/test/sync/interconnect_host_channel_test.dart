@@ -33,6 +33,25 @@ class _TrackedClient extends http.BaseClient {
   }
 }
 
+/// [refused] 里的主机像「连接被拒」一样失败：不读请求体就抛（真实 IOClient 在
+/// openUrl 建连失败时也还没开始写请求体）；其余主机交给 [inner]。
+class _RefuseConnectClient extends http.BaseClient {
+  _RefuseConnectClient(this.refused, this.inner);
+  final Set<String> refused;
+  final http.Client inner;
+  final Map<String, int> refusedHits = <String, int>{};
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) {
+    if (refused.contains(request.url.host)) {
+      refusedHits.update(request.url.host, (int n) => n + 1, ifAbsent: () => 1);
+      return Future<http.StreamedResponse>.error(
+        http.ClientException('Connection refused', request.url),
+      );
+    }
+    return inner.send(request);
+  }
+}
+
 Future<bool> _alwaysReachable(FushiClientUrl c, String? hostId) async => true;
 
 void main() {
@@ -175,6 +194,46 @@ void main() {
       expect(hits['10.0.0.2'], isNull);
     });
 
+    test(
+      'POST 建连被拒（请求体没开始写出）：换同组下一条地址并作废选路缓存（评审 compat-1 / tests-1）',
+      () async {
+        final InterconnectHostRef host = await twoAddressHost();
+        int probes = 0;
+        final Map<String, int> hits = <String, int>{};
+        final _RefuseConnectClient plain = _RefuseConnectClient(
+          <String>{'10.0.0.1'},
+          MockClient((http.Request req) async {
+            hits.update(req.url.host, (int n) => n + 1, ifAbsent: () => 1);
+            return http.Response('{"ok":true}', 200);
+          }),
+        );
+        final InterconnectHostChannel ch = InterconnectHostChannel(
+          repo: repo,
+          host: host,
+          plainClient: plain,
+          probe: (FushiClientUrl c, String? hostId) async {
+            probes++;
+            return true;
+          },
+        );
+        final InterconnectChannelResponse r = await ch.send(
+          'POST',
+          '/api/x',
+          body: const InterconnectRequestBody.json(<String, Object?>{'a': 1}),
+          timeout: const Duration(seconds: 5),
+        );
+        expect(r.statusCode, 200, reason: '修复前直接抛 unreachable，不试活地址');
+        expect(r.via.url, 'http://10.0.0.2:8080');
+        expect(plain.refusedHits['10.0.0.1'], 1);
+        expect(hits['10.0.0.2'], 1);
+
+        // 选路缓存已作废：下一次请求重新竞速，而不是在 30 秒窗口里先撞死地址。
+        final int before = probes;
+        await ch.send('GET', '/api/y', timeout: const Duration(seconds: 5));
+        expect(probes, greaterThan(before));
+      },
+    );
+
     test('GET 在同样的失败下换到第二条地址', () async {
       final InterconnectHostRef host = await twoAddressHost();
       final InterconnectHostChannel ch = channel(
@@ -264,6 +323,76 @@ void main() {
       expect(opened, 1);
       expect(hits['10.0.0.2'], isNull);
     });
+
+    test('幂等的流式 PUT 写出一部分后断开：也不换地址，open 只调用一次（评审 correctness-4）', () async {
+      final InterconnectHostRef host = await twoAddressHost();
+      int opened = 0;
+      final Map<String, int> hits = <String, int>{};
+      final InterconnectHostChannel ch = channel(
+        host,
+        plain: MockClient.streaming((
+          http.BaseRequest req,
+          http.ByteStream body,
+        ) async {
+          hits.update(req.url.host, (int n) => n + 1, ifAbsent: () => 1);
+          await body.first;
+          throw http.ClientException('Connection reset', req.url);
+        }),
+      );
+      await expectLater(
+        ch.send(
+          'PUT',
+          '/api/upload',
+          idempotent: true,
+          body: InterconnectRequestBody.stream(() {
+            opened++;
+            return Stream<List<int>>.fromIterable(<List<int>>[
+              <int>[1],
+              <int>[2],
+            ]);
+          }),
+          timeout: const Duration(seconds: 5),
+        ),
+        throwsA(
+          channelFailure(
+            InterconnectChannelFailure.unreachable,
+            mayHaveDelivered: true,
+          ),
+        ),
+      );
+      expect(opened, 1, reason: '修复前幂等请求换地址后再 open 一次');
+      expect(hits['10.0.0.2'], isNull);
+    });
+
+    test('流式 PUT 第一条建连被拒（流没打开）：换下一条，open 只调用一次', () async {
+      final InterconnectHostRef host = await twoAddressHost();
+      int opened = 0;
+      final List<int> received = <int>[];
+      final _RefuseConnectClient plain = _RefuseConnectClient(
+        <String>{'10.0.0.1'},
+        MockClient.streaming((
+          http.BaseRequest req,
+          http.ByteStream body,
+        ) async {
+          received.addAll(await body.toBytes());
+          return http.StreamedResponse(Stream<List<int>>.value(<int>[]), 204);
+        }),
+      );
+      final InterconnectChannelResponse r = await channel(host, plain: plain)
+          .send(
+            'PUT',
+            '/api/upload',
+            body: InterconnectRequestBody.stream(() {
+              opened++;
+              return Stream<List<int>>.value(<int>[7, 8]);
+            }, contentLength: 2),
+            timeout: const Duration(seconds: 5),
+          );
+      expect(r.statusCode, 204);
+      expect(r.via.url, 'http://10.0.0.2:8080');
+      expect(opened, 1);
+      expect(received, <int>[7, 8]);
+    });
   });
 
   group('证书不符分型', () {
@@ -317,6 +446,70 @@ void main() {
         ),
       );
     });
+  });
+
+  test(
+    '钉扎闸拒掉明文地址、https 地址只是传输失败 → unreachable，不是永久的证书不符（评审 correctness-3）',
+    () async {
+      await repo.setFushiClientUrls(const <FushiClientUrl>[
+        FushiClientUrl(url: 'http://10.0.0.1:8080', hostId: 'h1', token: 'tok'),
+        FushiClientUrl(
+          url: 'https://10.0.0.2:8443',
+          hostId: 'h1',
+          fingerprintSha256: _fp,
+          token: 'tok',
+        ),
+      ]);
+      final InterconnectHostRef host = InterconnectHostRef.ofRow(
+        (await repo.getFushiClientUrls()).first,
+      );
+      int plainRequests = 0;
+      final InterconnectHostChannel ch = channel(
+        host,
+        plain: MockClient((http.Request req) async {
+          plainRequests++;
+          return http.Response('{}', 200);
+        }),
+        pinned: (String fp) => MockClient(
+          (http.Request req) async =>
+              throw http.ClientException('Connection timed out', req.url),
+        ),
+      );
+      await expectLater(
+        ch.send('GET', '/api/x', timeout: const Duration(seconds: 5)),
+        throwsA(
+          channelFailure(InterconnectChannelFailure.unreachable).having(
+            (InterconnectChannelException e) => e.permanent,
+            'permanent',
+            isFalse,
+          ),
+        ),
+      );
+      expect(plainRequests, 0, reason: '钉扎 host 的明文地址仍一个字节都不发');
+    },
+  );
+
+  test('请求 URI：没有查询参数时结尾不带 `?`；有则编码进查询串（评审 tests-2）', () {
+    expect(
+      interconnectRequestUri('http://10.0.0.1:8080/', '/api/x').toString(),
+      'http://10.0.0.1:8080/api/x',
+    );
+    expect(
+      interconnectRequestUri(
+        'https://h.example',
+        '/api/x',
+        const <String, String>{'deleteFiles': 'true'},
+      ).toString(),
+      'https://h.example/api/x?deleteFiles=true',
+    );
+    expect(
+      interconnectRequestUri(
+        'http://[fe80::1]:38765/old/path?q=1',
+        '/api/x',
+      ).toString(),
+      'http://[fe80::1]:38765/api/x',
+    );
+    expect(interconnectRequestUri('ftp://h', '/api/x'), isNull);
   });
 
   group('生命周期', () {
