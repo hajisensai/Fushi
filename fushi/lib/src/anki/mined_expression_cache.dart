@@ -100,7 +100,10 @@ class MinedExpressionCache {
 
   /// 用 Anki 的整份第一字段替换 [scope] 的缓存，再叠上刷新期间收到的实时答案。
   /// 返回替换后的条数。写盘失败照抛：调用方据此记错误日志，而不是以为刷新成功了。
-  Future<int> completeRefresh(String scope, Iterable<String> firstFields) async {
+  Future<int> completeRefresh(
+    String scope,
+    Iterable<String> firstFields,
+  ) async {
     final Map<String, bool> live =
         _liveDuringRefresh.remove(scope) ?? const <String, bool>{};
     final Set<String> next = <String>{};

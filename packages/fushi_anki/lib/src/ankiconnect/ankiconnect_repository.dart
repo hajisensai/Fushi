@@ -907,15 +907,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
       _duplicateCheckUnreachableUntil = null;
     }
     final settings = await loadSettings();
-    final deck =
-        settings.availableDecks.firstWhereOrNull(
-          (d) => d.id == settings.selectedDeckId,
-        ) ??
-        (settings.selectedDeckName != null
-            ? settings.availableDecks.firstWhereOrNull(
-                (d) => d.name == settings.selectedDeckName,
-              )
-            : null);
+    final deck = _duplicateCheckDeck(settings);
     final noteType = settings.selectedNoteType;
     if (deck == null || noteType == null || noteType.fields.isEmpty) {
       return false;
