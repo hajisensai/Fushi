@@ -67,12 +67,41 @@ The full plan needs its own design spec under `docs/specs/`. Size: L/XL.
    lyrics), `Remote*` DTOs, a capability bit, wiring in `LocalLibraryHostService`, an
    app-side remote client and UI, and op-catalog descriptions for any new ctl routes.
 
+## Interconnect audiobook updates
+
+- The audiobook list carries an optional `contentRevision` (`audiobookContentState` in
+  `packages/fushi_engine/lib/sync/audiobook_content_revision.dart`): a hash of the audio
+  list, the alignment / subtitle paths and those files' size + mtime. It changes on any
+  audio or subtitle change (rescan, app re-import, peer push) and not on a no-op rescan.
+  No DB column; old clients ignore it, old hosts don't send it.
+- The package endpoint's export cache is keyed on the same revision
+  (`ExportPackageCache.obtain(version:)`): a normal download after a change gets the new
+  package, without `?fresh=1` and without waiting for the 15-minute TTL. A download that
+  is streaming the old package finishes it; its resume (old ETag) gets a clean `200` of
+  the new package.
+- The package manifest carries the same `contentRevision` (computed just before packing).
+  After a full package download the app records that value, read from the package rather
+  than from the cached list, in the device-local pref `interconnect_audiobook_revisions`.
+  One shared entry point, `recordRemoteAudiobookPackageDownload` in
+  `fushi/lib/src/sync/remote_audiobook_revision_store.dart`, is used by shelf downloads,
+  the sync sweep's automatic audio pull and the sync compare page. When the list's value
+  differs, the shelf card shows "Update on peer" and the dialog offers "Download update
+  from peer". A subtitles-only refetch does not touch the record, so the flag stays until
+  the user downloads the full package.
+
 ## Other known gaps
 
 - **SRS follow-ups**:
   - Profiles whose sync location is end-to-end encrypted are not served in v1. Serving them
     would need the passphrase on the server.
   - AnkiConnect `getProfiles` reports one profile per key.
+  - No device-trust entry (srs.db v29, BUG-4306, `native/fushi_fsrs/src/store/sync2/trust.rs`).
+    The server is a full sync v2 replica. A device that first syncs after the server's copy of
+    the profile already has data stays "pending" on the server for good: its deletions and
+    permanent removals are held there and never reach the server's projection, so remote
+    review and AnkiConnect clients of the server keep seeing those notes. The app can only
+    trust the device in its own Conflict Center, which does not reach the server's srs.db.
+    Closing this needs a server op / admin page that calls the `trust` sync2 command.
   - The FSRS optimizer is not run on the server yet (spec §4.6). `SrsOptimizationScheduler`
     already lives in the engine; the server's collections pick up parameters optimized on
     other devices through the normal sync.
@@ -89,6 +118,11 @@ The full plan needs its own design spec under `docs/specs/`. Size: L/XL.
   (`video_scrape_host.dart`).
 - **Manga PDF**: not imported. Rasterizing needs the app's pdfium/pdfrx. Downloads with a
   PDF are blocked with `unsupportedOnThisHost`, and manga roots skip `.pdf`.
+- **PDF books over interconnect (receiving)**: the server does not wire
+  `importPdfBookFromFile` (PDF import needs pdfrx for the page count and cover), so it
+  advertises `liveLibrary.pdfBooks=false` and clients keep their PDF books local instead of
+  pushing them. The server still lists and serves any PDF already in its library
+  (`hasPdfContent`, BUG-4381).
 - **Subtitles (what is still app-only)**: downloads source subtitles and
   `POST /api/library/videos/<id>/subtitle/backfill` works on the server (one provider
   assembly in `packages/fushi_server/lib/src/server_subtitle_providers.dart`; the backfill
@@ -99,11 +133,11 @@ The full plan needs its own design spec under `docs/specs/`. Size: L/XL.
   downloads that finished without a subtitle (`download_subtitle_retry.dart`, now in the
   engine), AI reordering of candidates (the `ai:` provider is also assigned to
   `AiFeature.videoSearch`), and the app's Jimaku provider (search by AniList / TMDB id,
-  now `packages/fushi_engine/lib/media/video/jimaku_subtitle_provider.dart`). Still missing:
-  - AJATT (`fushi/lib/src/media/video/subtitle/ajatt_*`) is app-only;
-  - the download pipeline reads subtitle providers when the pipeline is (re)built (start,
-    or after resource indexers are saved). A key pushed later over interconnect needs one
-    of those, or a restart. Backfill reads them per request.
+  now `packages/fushi_engine/lib/media/video/jimaku_subtitle_provider.dart`). Provider keys
+  and switches are set in the WebUI / `PUT /api/admin/settings` (`subtitleProviders`) /
+  `ctl settings subtitle-key|subtitle-source`, and the download pipeline and backfill read
+  them (and the subtitle languages) on each use, so no restart is needed. Still missing:
+  - AJATT (`fushi/lib/src/media/video/subtitle/ajatt_*`) is app-only.
 - **Audiobooks with audio only (no subtitle)**: these are not imported, either from an
   `audiobook` library root (counted as `audiobooksNeedSubtitle` in the scan summary) or
   from a download (`buildServerDiscoveryImporters` in `discovery_import_host.dart` blocks
@@ -124,12 +158,24 @@ The full plan needs its own design spec under `docs/specs/`. Size: L/XL.
 
   Until that exists, run `fushi_server transcribe`, then either use
   `audiobook align --srt …` or drop the `.srt` next to the audio and rescan.
+- **Book roots don't pair audiobooks beyond same-name sidecars**: the app's shelf folder
+  import (feedback z398R0ndAw) pairs a book with audio in a same-name subfolder (disc
+  folders `CD1` / `Disc 2` merged in), by volume number, with the only book in a folder,
+  or by EPUB `dc:title` (`book_audiobook_pairing.dart` in the engine, R2–R5). The server's
+  `kind=book` roots don't call it yet. Only the disc-folder rule
+  (`isAudiobookDiscFolderName`) is shared, by the server's `planAudiobookFolders`. The
+  server also never queues transcription for a book whose audio has no subtitle (same
+  reason as the next item).
 - **Audiobook roots (limits of the first version)**: audio is imported by reference
   (`copyAudio: false`). It stays in the root and is never copied into the data dir. A book
-  is tracked by its folder (or by a loose audio file in the root). Files added to an
-  already-imported folder are not picked up again. Remove the book, or purge the root, to
-  re-import it. When a book title already exists in the library, the folder is skipped
-  and not adopted. Root folders are recorded in `media_sources` with
-  `mediaKind = 'audiobook'`. This value is server-only: it is not in the shared
-  `SourceLibraryKind` enum, because adding it would touch every exhaustive switch in the
-  app.
+  is tracked by its folder (or by a loose audio file in the root). When a book title
+  already exists in the library, the folder is skipped and not adopted. A rescan updates
+  an already-imported folder in place (parts added / removed, subtitle added / replaced)
+  but does not convert a book to another form: an EPUB added later to a subtitle-only
+  folder is ignored; re-import the book for that. Multi-file books with one
+  single-timeline subtitle get their cues split across the files by measured durations
+  (ffprobe on the server, BUG-4279); if ffprobe can't read a file the cues stay on file 0
+  and a diagnostic is logged. Root folders are
+  recorded in `media_sources` with `mediaKind = 'audiobook'`. This value is server-only:
+  it is not in the shared `SourceLibraryKind` enum, because adding it would touch every
+  exhaustive switch in the app.

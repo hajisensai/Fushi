@@ -44,6 +44,7 @@ extension _FushiSyncServerLibrary on FushiSyncServer {
     required Future<void> Function(File tmp) import,
     required Future<void> Function() delete,
     Future<bool> Function()? vetoPush,
+    Future<String?> Function()? contentVersion,
   }) async {
     switch (method) {
       case 'GET':
@@ -56,9 +57,18 @@ extension _FushiSyncServerLibrary on FushiSyncServer {
         if (request.url.queryParameters['fresh'] == '1') {
           await _exportCache.invalidate(cacheKind, id);
         }
+        // [contentVersion]（可选）：这一项此刻的内容版本，缓存只在同版本时命中
+        // （[ExportPackageCache] 类注释「内容版本」）。host 上内容一换，下一次普通
+        // 下载就拿到新包；正在传的旧包照常发完，它的续传因 ETag 不匹配收 200 新包。
         File file;
         try {
-          file = await _exportCache.obtain(cacheKind, id, export);
+          final String? version = await contentVersion?.call();
+          file = await _exportCache.obtain(
+            cacheKind,
+            id,
+            export,
+            version: version,
+          );
         } on StateError {
           return shelf.Response.notFound(notFoundMessage);
         }
@@ -754,6 +764,12 @@ extension _FushiSyncServerLibrary on FushiSyncServer {
       export: () => svc.exportAudiobook(bookKey),
       import: (File tmp) => svc.importAudiobook(tmp, bookKeyOverride: bookKey),
       delete: () => svc.deleteAudiobook(bookKey),
+      // 内容版本与清单的 `contentRevision` 同源：host 上换过音频 / 字幕（库根重扫、
+      // 换字幕、对端推送）后，下一次普通下载就重新打包，不回 TTL 内的旧包。
+      contentVersion: svc is AudiobookContentRevisionHost
+          ? () => (svc as AudiobookContentRevisionHost)
+                .audiobookContentRevision(bookKey)
+          : null,
       // 有声书与 EPUB 共享 bookKey：删书（只立 `book` 墓碑）会连带删掉 host 上的有声书，
       // 推回来的有声书包会在 host 落成一条无书可绑的孤儿。纯字幕书身份是 uid，同一端点。
       vetoPush: () => _peerPushVetoed(

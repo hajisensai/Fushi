@@ -14,7 +14,9 @@
 //   里的前台内存耗尽闪退（BUG-4075 `Eg5thU2wox`）也留得下崩前的内存曲线。
 // - Android 11+：`ActivityManager.getHistoricalProcessExitReasons`（原生
 //   `ProcessExitChannel.java`）：reason / description / importance / pss / rss / 时间，
-//   native crash 与 ANR 附 trace 摘要；外加进程级 `onTrimMemory` 级别记录。
+//   native crash 与 ANR 附 trace 摘要；Java 层崩溃（`CRASH`）系统不给 trace，由原生
+//   `JavaCrashCapture` 的链式未捕获异常处理器落盘、按 pid + 时间窗并进同一个 trace 字段；
+//   外加进程级 `onTrimMemory` 级别记录。
 // - Windows：`crash_dump.cpp` 的未处理异常过滤器在写 minidump 的同时追加一行
 //   `crash_summary.log`（异常码、模块+偏移、线程、x64 栈前若干帧）。不上传 minidump。
 //   过滤器接不到的死法（`__fastfail` / 堆损坏 / 栈溢出）与卡死被结束，从「应用程序」
@@ -94,6 +96,19 @@ enum PreviousExitKind {
   /// 用户主动强停（Android `USER_REQUESTED` / `USER_STOPPED`：设置里强行停止等）。
   userStopped,
 
+  /// 被厂商系统按应用结束（ColorOS / OxygenOS / realme UI 的 `o-stop`：Android 记成
+  /// `OTHER` +「`stop <包名> due to o-stop(<码>)`」）。这是 OPlus 框架主动停应用——划掉最近
+  /// 任务、一键清理、后台 / 耗电管理——平台给了明确原因，不是闪退；真崩溃 / ANR 系统另记
+  /// `CRASH*` / `ANR`。否则用户每在最近任务里划掉一次（死时界面还在最上层、importance=100），
+  /// 下次启动都弹「意外退出」（反馈 HqhXJvwgq3）。
+  vendorStopped,
+
+  /// 权限变更时被系统按 uid 结束（Android `PERMISSION_CHANGE`：撤销运行时权限；或
+  /// `OTHER` + AOSP 框架描述 `[KILL UID] <OP> changed.`：在系统设置里改「所有文件访问
+  /// 权限」等 appop）。平台给了明确原因、是系统对用户操作的标准反应，不是闪退——否则
+  /// 用户每改一次权限，下次启动都弹「意外退出」（反馈 DyamYE6bPL / g8AEGUyQBU）。
+  permissionChanged,
+
   /// 安装新版本时被系统停掉（Android `PACKAGE_UPDATED`：`installPackageLI`，自动更新 /
   /// 覆盖安装）。平台给了明确原因，压过会话标记的「停在前台时没了」——否则每次应用内
   /// 更新装完都弹一次「意外退出」（反馈 8z1tk0jEna / U_gWy3lDbx / jmgMk1gHG2）。
@@ -123,6 +138,8 @@ enum PreviousExitKind {
     nativeCrash || crash || anr || unexpected => true,
     memoryKill => foreground,
     userStopped ||
+    vendorStopped ||
+    permissionChanged ||
     appUpdated ||
     systemSessionEnd ||
     exitInterrupted ||
@@ -555,18 +572,48 @@ const Set<String> kSevereAndroidExitReasons = <String>{
   'FREEZER',
 };
 
-/// Android 退出原因 → [PreviousExitKind]；包更新映射成 [PreviousExitKind.appUpdated]
-/// （明确的良性原因，要压过会话标记的「疑似闪退」）；不说明问题的原因（自行退出、
-/// `SIGNALED`——lmkd 与 `Process.killProcess` 重启都报它，分不清）返回 null，交给会话标记。
-PreviousExitKind? androidExitKind(String reason) => switch (reason) {
-  'CRASH_NATIVE' => PreviousExitKind.nativeCrash,
-  'CRASH' || 'INITIALIZATION_FAILURE' => PreviousExitKind.crash,
-  'ANR' => PreviousExitKind.anr,
-  'LOW_MEMORY' || 'EXCESSIVE_RESOURCE_USAGE' => PreviousExitKind.memoryKill,
-  'USER_REQUESTED' || 'USER_STOPPED' => PreviousExitKind.userStopped,
-  'PACKAGE_UPDATED' => PreviousExitKind.appUpdated,
-  _ => null,
-};
+/// AOSP 框架在 appop 变更时按 uid 杀进程写下的 `ApplicationExitInfo` 描述：
+/// `StorageManagerService.killAppForOpChange` 等调 `ActivityManager.killUid(appId, userId,
+/// opToName(op) + " changed.")`，`AppExitInfoTracker` 再加上子原因前缀
+/// `[KILL UID]`（`SUBREASON_KILL_UID`），原因码是 `REASON_OTHER`。整串锚定，只认这一
+/// 形态：厂商 `OTHER`（`OneKeyClean`、`o-stop(40)` 等）不在此列。
+final RegExp _aospKillUidOpChanged = RegExp(
+  r'^\[KILL UID\] [A-Z][A-Z0-9_]* changed\.?$',
+);
+
+/// OPlus（ColorOS / OxygenOS / realme UI）框架停应用时写下的 `ApplicationExitInfo` 描述：
+/// 原因码 `REASON_OTHER`，描述形如 `[UNKNOWN] stop app.fushi.reader due to o-stop(40)`
+/// （`[...]` 是 `AppExitInfoTracker` 加的子原因前缀，括号里是 OPlus 的停止来源码）。整串
+/// 锚定，只认这一形态。
+final RegExp _oplusAppStop = RegExp(
+  r'^(?:\[[A-Z0-9_ ]+\] )?stop [A-Za-z0-9_.:]+ due to o-stop\(\d+\)$',
+);
+
+/// Android 退出原因 → [PreviousExitKind]；包更新 / 权限变更映射成
+/// [PreviousExitKind.appUpdated] / [PreviousExitKind.permissionChanged]（明确的良性原因，
+/// 要压过会话标记的「疑似闪退」）；不说明问题的原因（自行退出、`SIGNALED`——lmkd 与
+/// `Process.killProcess` 重启都报它，分不清）返回 null，交给会话标记。`OTHER` 只在
+/// [description] 是 AOSP 自己写的 appop 变更杀进程描述时才算权限变更、是 OPlus 的
+/// `o-stop` 停应用描述时算厂商停止（[PreviousExitKind.vendorStopped]），其它照旧 null。
+PreviousExitKind? androidExitKind(String reason, {String? description}) =>
+    switch (reason) {
+      'CRASH_NATIVE' => PreviousExitKind.nativeCrash,
+      'CRASH' || 'INITIALIZATION_FAILURE' => PreviousExitKind.crash,
+      'ANR' => PreviousExitKind.anr,
+      'LOW_MEMORY' || 'EXCESSIVE_RESOURCE_USAGE' => PreviousExitKind.memoryKill,
+      'USER_REQUESTED' || 'USER_STOPPED' => PreviousExitKind.userStopped,
+      'PACKAGE_UPDATED' => PreviousExitKind.appUpdated,
+      'PERMISSION_CHANGE' => PreviousExitKind.permissionChanged,
+      'OTHER'
+          when description != null &&
+              _aospKillUidOpChanged.hasMatch(description.trim()) =>
+        PreviousExitKind.permissionChanged,
+      'OTHER'
+          when description != null &&
+              _oplusAppStop.hasMatch(description.trim()) =>
+        PreviousExitKind.vendorStopped,
+      _ => null,
+    };
 
 /// `RunningAppProcessInfo.IMPORTANCE_FOREGROUND`（100）：界面在屏幕最上层、用户正在用。
 const int kAndroidForegroundUiImportance = 100;
@@ -678,7 +725,10 @@ List<ExitReportEntry> formatAndroidExitReports(
           kAndroidExitInfoSource,
           _cap(redactExitReportPaths(b.toString())),
           severe: kSevereAndroidExitReasons.contains(reason),
-          kind: androidExitKind(reason),
+          kind: androidExitKind(
+            reason,
+            description: description is String ? description : null,
+          ),
           foreground: androidDiedInForeground(
             importance is int ? importance : null,
             sessionSaysForeground:

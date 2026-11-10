@@ -194,6 +194,8 @@ VideoAcquisitionService createHostVideoAcquisitionService({
             reference,
           )).any((VideoDownloadSubscriptionRow row) => row.enabled),
       searchResources: registry.search,
+      // 标题判不出范围的发布（没写 batch 的 BD 包）取种子文件列表作整包证据。
+      inspectRelease: registry.inspectRelease,
       // 资料源（TMDB collection + MAL 关联）+ 联网资料补全（维基 → AI 列作品 →
       // 逐部回资料源核对），见 ai_video_franchise_assistant.dart。
       loadFranchise: createPreferencesVideoFranchiseLoader(

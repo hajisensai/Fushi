@@ -140,6 +140,8 @@ function loadBridge(opts) {
     Array,
     Object,
     Error,
+    // BUG-4186：诊断用的页面全局（document / MediaKeys / performance）按需注入。
+    ...(opts.globals || {}),
   };
   const ctx = vm.createContext(sandbox);
   vm.runInContext(src, ctx, { filename: 'netflix-bridge.js' });
@@ -736,4 +738,77 @@ test('轨身份三通道同源：清单条目 / 播放器当前轨 / 状态轨�
   assert.strictEqual(sniffed.length, 1);
   assert.strictEqual(sniffed[0].lang, 'pt-BR');
   assert.strictEqual(sniffed[0].trackId, 'T:pt');
+});
+
+// ── BUG-4186：同文档只装一份 bridge；seek 回执带页面诊断 ──
+test('BUG-4186 同一文档注入两次：第二份不装（钩子 / 监听 / 拍子都只有一套），一条 seek 只发一次 player.seek、只回一次', () => {
+  const h = loadBridge();
+  const parseAfterFirst = vm.runInContext('JSON.parse', h.ctx);
+  const xhrSendAfterFirst = h.FakeXhr.prototype.send;
+  vm.runInContext(fs.readFileSync(BRIDGE, 'utf8'), h.ctx, { filename: 'netflix-bridge.js' });
+  assert.strictEqual(h.listeners.length, 1, '第二份不再挂 message 监听');
+  assert.strictEqual(h.intervals.length, 1, '第二份不再起状态遍历拍子');
+  assert.strictEqual(vm.runInContext('JSON.parse', h.ctx), parseAfterFirst, 'JSON.parse 不被套第二层');
+  assert.strictEqual(h.FakeXhr.prototype.send, xhrSendAfterFirst, 'XHR 原型不被套第二层');
+  const done = sendSeek(h, 61000, 7);
+  assert.deepStrictEqual(h.player.seeks, [61000], '同一条 seek 消息不被两份各发一次');
+  assert.strictEqual(done.length, 1, '每个 id 只有一条回执');
+  assert.match(done[0].diag, /(^| )dup=1( |$)/, '重复注入记进诊断');
+});
+
+test('BUG-4186 bridge 实例标记不可被页面覆盖成「没装过」', () => {
+  const h = loadBridge();
+  const state = h.windowObj.__fushiNetflixBridge;
+  assert.strictEqual(typeof state.id, 'string');
+  assert.ok(state.id.length > 0);
+  try { h.windowObj.__fushiNetflixBridge = undefined; } catch (_) {}
+  assert.strictEqual(h.windowObj.__fushiNetflixBridge, state);
+});
+
+test('BUG-4186 seek 回执带页面诊断：<video> 数与状态、丢帧、未关的 EME 会话、页面侧时间', async () => {
+  const video = {
+    readyState: 1, networkState: 2, seeking: true, paused: false, videoWidth: 1920, videoHeight: 1080,
+    getVideoPlaybackQuality: () => ({ droppedVideoFrames: 12, totalVideoFrames: 3400 }),
+  };
+  const document = {
+    querySelector: (sel) => (sel === 'video' ? video : null),
+    querySelectorAll: (sel) => (sel === 'video' ? [video, { readyState: 0 }] : []),
+  };
+  const closers = [];
+  class MediaKeys {}
+  MediaKeys.prototype.createSession = function () {
+    let close;
+    const closed = new Promise((r) => { close = r; });
+    closers.push(close);
+    return { closed, owner: this };
+  };
+  const originalCreate = MediaKeys.prototype.createSession;
+  const h = loadBridge({ globals: { document, MediaKeys, performance: { memory: { usedJSHeapSize: 300 * 1048576 } } } });
+  assert.notStrictEqual(MediaKeys.prototype.createSession, originalCreate, 'createSession 已挂计数钩子');
+  const keys = new MediaKeys();
+  const s1 = keys.createSession('temporary');
+  assert.strictEqual(s1.owner, keys, '钩子纯透传：站点拿到的就是原始会话');
+  keys.createSession('temporary');
+  closers[0]();
+  await settle();
+  video.seeking = false;
+  video.readyState = 4;
+  const done = sendSeek(h, 61000, 7);
+  const diag = done[0].diag;
+  for (const part of ['videos=2', 'rs=4', 'ns=2', 'seeking=0', 'paused=0', 'size=1920x1080',
+    'frames=12/3400', 'nfSessions=2/1', 'keySessions=1/2', 'heapMB=300']) {
+    assert.ok(diag.split(' ').includes(part), `诊断缺 ${part}: ${diag}`);
+  }
+  assert.match(diag, /(^| )bridge=\S+/);
+  assert.match(diag, /(^| )dup=0( |$)/);
+  assert.match(diag, /(^| )waitMs=\d+( |$)/);
+  assert.match(diag, /(^| )at=\d+( |$)/);
+});
+
+test('BUG-4186 页面没有 document / MediaKeys 时诊断照样给（只缺读不到的项），seek 不受影响', () => {
+  const h = loadBridge();
+  const done = sendSeek(h, 61000, 7);
+  assert.strictEqual(done[0].ok, true);
+  assert.match(done[0].diag, /keySessions=0\/0/);
+  assert.doesNotMatch(done[0].diag, /videos=/);
 });

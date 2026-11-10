@@ -9,6 +9,7 @@ library;
 import 'package:fushi_engine/media/torrent/anime_release_descriptor.dart';
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi_engine/media/video/download/subscription_release_scope.dart';
+import 'package:fushi_engine/media/video/download/video_release_scope_evidence.dart';
 
 /// 从发布标题解析集号（`S01E05` / `Title - 05 [1080p]` 两种主流形态）。
 /// 认不出返回 null。纯函数（原居 acquisition dialogs，聚类需要后下沉到此，
@@ -97,9 +98,28 @@ bool isLikelyBatchVideoRelease(String title) =>
 /// 一张资源「版本卡」：同来源实例、同发布组、同清晰度、同片源、同发布形态（逐集 /
 /// 整包）、同索引器信任标记（trusted / remake）的发布集合。
 class VideoResourceVersionGroup {
-  VideoResourceVersionGroup._({required this.key, required this.members});
+  VideoResourceVersionGroup._({
+    required this.key,
+    required this.members,
+    required Map<String, VideoReleaseManifest> manifests,
+  }) : _manifests = manifests;
 
   final String key;
+
+  /// 成员的种子文件列表（按 identityKey；只含取到了的）。
+  final Map<String, VideoReleaseManifest> _manifests;
+
+  /// 一个成员在下载规划语义下的范围：标题证据 + （取到时的）文件列表证据。
+  /// 「这条是不是整包」在规划层只问这一处，见 [judgeVideoReleaseScope]。
+  VideoReleaseScopeEvidence scopeOf(VideoResourceCandidate member) =>
+      judgeVideoReleaseScope(
+        member.title,
+        manifest: _manifests[member.identityKey],
+      );
+
+  /// 这个成员是不是有据的整包（标题写明，或文件列表证成）。
+  bool isSeasonPack(VideoResourceCandidate member) =>
+      scopeOf(member).isSeasonPack;
 
   /// 集号升序（认不出的殿后），同集按发布时间降序。
   final List<VideoResourceCandidate> members;
@@ -132,12 +152,7 @@ class VideoResourceVersionGroup {
         episodeNumberFromReleaseTitle(member.title)!,
   };
 
-  int get batchCount => members
-      .where(
-        (VideoResourceCandidate member) =>
-            isLikelyBatchVideoRelease(member.title),
-      )
-      .length;
+  int get batchCount => members.where(isSeasonPack).length;
 
   DateTime? get latestPublishedAt {
     DateTime? latest;
@@ -213,9 +228,15 @@ int _byEpisodeAsc(VideoResourceCandidate a, VideoResourceCandidate b) {
 /// 「Nyaa 只做模糊词匹配，搜 "xxx 2" 会被做种更多的 S1/S3 压在前面」。组间再按做种数
 /// 重排等于把那个已修的 bug 原样放回主路径——用户搜第二季，第一季的版本卡回到第一位。
 /// 做种数退为**同等相关度内**的次级信号。
+///
+/// [manifests]：已取到的种子文件列表（按 identityKey），作为整包证据随卡带着，
+/// 见 [VideoResourceVersionGroup.scopeOf]。它不参与分组：标题认不出集号的发布
+/// 本就在「整包」卡里，文件列表只决定其中哪几条是有据的整包。
 List<VideoResourceVersionGroup> buildVideoResourceVersionGroups(
-  Iterable<VideoResourceCandidate> candidates,
-) {
+  Iterable<VideoResourceCandidate> candidates, {
+  Map<String, VideoReleaseManifest> manifests =
+      const <String, VideoReleaseManifest>{},
+}) {
   final Map<String, List<VideoResourceCandidate>> byKey =
       <String, List<VideoResourceCandidate>>{};
   // 输入次序 = 上游给的相关度名次；记下每组里最靠前的那个名次。
@@ -236,6 +257,12 @@ List<VideoResourceVersionGroup> buildVideoResourceVersionGroups(
         members: List<VideoResourceCandidate>.unmodifiable(
           entry.value..sort(_byEpisodeAsc),
         ),
+        manifests: <String, VideoReleaseManifest>{
+          for (final VideoResourceCandidate member in entry.value)
+            if (manifests[member.identityKey]
+                case final VideoReleaseManifest manifest)
+              member.identityKey: manifest,
+        },
       ),
   ];
   groups.sort((VideoResourceVersionGroup a, VideoResourceVersionGroup b) {

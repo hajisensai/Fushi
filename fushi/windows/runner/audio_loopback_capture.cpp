@@ -1,5 +1,7 @@
 #include "audio_loopback_capture.h"
 
+#include "audio_session_ducker.h"
+
 #include <audioclient.h>
 #include <audioclientactivationparams.h>
 #include <audiopolicy.h>
@@ -41,37 +43,6 @@ constexpr DWORD kPollIntervalMs = 10;
 constexpr DWORD kDuckRescanMs = 250;
 // 目标进程树刷新间隔（Chromium 按需起 / 退音频服务进程）。
 constexpr DWORD kTreeRefreshMs = 1000;
-// 音量不高于它的会话视为「被我们压低过」（崩溃残留）：没人会手动把音量调到 -80 dB。
-constexpr float kDuckedThreshold = kSilentDuckLevel * 10.0f;
-
-// ── 进程树 ────────────────────────────────────────────────────────────────
-
-// [root] 及其全部后代进程 id。
-std::set<DWORD> ProcessTree(DWORD root) {
-  std::set<DWORD> tree{root};
-  HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-  if (snap == INVALID_HANDLE_VALUE) {
-    return tree;
-  }
-  std::vector<std::pair<DWORD, DWORD>> edges;  // (pid, parent)
-  PROCESSENTRY32W pe{};
-  pe.dwSize = sizeof(pe);
-  for (BOOL ok = Process32FirstW(snap, &pe); ok; ok = Process32NextW(snap, &pe)) {
-    edges.emplace_back(pe.th32ProcessID, pe.th32ParentProcessID);
-  }
-  CloseHandle(snap);
-  bool grew = true;
-  while (grew) {
-    grew = false;
-    for (const auto& [pid, parent] : edges) {
-      if (pid != parent && tree.count(parent) != 0 && tree.count(pid) == 0) {
-        tree.insert(pid);
-        grew = true;
-      }
-    }
-  }
-  return tree;
-}
 
 // NtQueryInformationProcess(ProcessCommandLineInformation)：Win8.1+ 直接给 UNICODE_STRING，
 // 不用读对方 PEB。只需 PROCESS_QUERY_LIMITED_INFORMATION。
@@ -251,158 +222,6 @@ HRESULT ActivateProcessLoopback(DWORD pid, ComPtr<IAudioClient>& out) {
   return unk.As(&out);
 }
 
-// ── silent：压低目标进程树的音频会话 ────────────────────────────────────────
-
-// 一个被压低的会话：还原时写回 [original]。
-struct DuckedSession {
-  ComPtr<ISimpleAudioVolume> volume;
-  float original = 1.0f;
-};
-
-// 对一组渲染端点上属于目标进程树的会话做「压低 / 还原」。线程安全（mutex_），因为
-// IAudioSessionNotification 回调在系统线程上来。
-class SessionDucker {
- public:
-  // 打开全部活动渲染端点的会话管理器（Chromium 不一定渲染到默认端点）。
-  void Open() {
-    ComPtr<IMMDeviceEnumerator> enumerator;
-    if (FAILED(CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr,
-                                CLSCTX_ALL, IID_PPV_ARGS(&enumerator)))) {
-      return;
-    }
-    ComPtr<IMMDeviceCollection> devices;
-    if (FAILED(enumerator->EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE,
-                                              &devices))) {
-      return;
-    }
-    UINT count = 0;
-    devices->GetCount(&count);
-    for (UINT i = 0; i < count; ++i) {
-      ComPtr<IMMDevice> device;
-      ComPtr<IAudioSessionManager2> manager;
-      if (SUCCEEDED(devices->Item(i, &device)) &&
-          SUCCEEDED(device->Activate(
-              __uuidof(IAudioSessionManager2), CLSCTX_ALL, nullptr,
-              reinterpret_cast<void**>(manager.GetAddressOf())))) {
-        managers_.push_back(manager);
-      }
-    }
-  }
-
-  void SetTree(DWORD root, std::set<DWORD> tree) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    root_ = root;
-    tree_ = std::move(tree);
-  }
-
-  // 扫一遍全部会话：树内的压到 kSilentDuckLevel（首次见到时记下原音量）。
-  void DuckAll() {
-    for (const auto& manager : managers_) {
-      ComPtr<IAudioSessionEnumerator> sessions;
-      if (FAILED(manager->GetSessionEnumerator(&sessions))) {
-        continue;
-      }
-      int count = 0;
-      sessions->GetCount(&count);
-      for (int i = 0; i < count; ++i) {
-        ComPtr<IAudioSessionControl> control;
-        if (SUCCEEDED(sessions->GetSession(i, &control))) {
-          Duck(control.Get());
-        }
-      }
-    }
-  }
-
-  // 单个会话（扫描或新建通知）：属于目标树就压低。
-  void Duck(IAudioSessionControl* control) {
-    ComPtr<IAudioSessionControl2> control2;
-    if (FAILED(control->QueryInterface(IID_PPV_ARGS(&control2)))) {
-      return;
-    }
-    DWORD pid = 0;
-    if (FAILED(control2->GetProcessId(&pid)) || pid == GetCurrentProcessId()) {
-      // 本进程自己的会话（含采集方的 loopback 流）绝不压：实测会把回取信号再衰减一遍。
-      return;
-    }
-    LPWSTR id_raw = nullptr;
-    if (FAILED(control2->GetSessionInstanceIdentifier(&id_raw)) ||
-        id_raw == nullptr) {
-      return;
-    }
-    const std::wstring id(id_raw);
-    CoTaskMemFree(id_raw);
-    ComPtr<ISimpleAudioVolume> volume;
-    if (FAILED(control->QueryInterface(IID_PPV_ARGS(&volume)))) {
-      return;
-    }
-    std::lock_guard<std::mutex> lock(mutex_);
-    if (tree_.count(pid) == 0) {
-      // 没见过的 pid：可能是 Chromium 刚按需拉起的音频服务进程（建会话的回调早于下一次
-      // 定时刷新树）。当场重算一次树；确认不属于目标的记进 foreign_，不再为它重算。
-      if (root_ == 0 || foreign_.count(pid) != 0) {
-        return;
-      }
-      tree_ = ProcessTree(root_);
-      if (tree_.count(pid) == 0) {
-        foreign_.insert(pid);
-        return;
-      }
-    }
-    auto it = ducked_.find(id);
-    if (it == ducked_.end()) {
-      float current = 1.0f;
-      volume->GetMasterVolume(&current);
-      DuckedSession entry;
-      entry.volume = volume;
-      // 已经停在压低值上 = 上次崩溃残留（会话音量按可执行文件持久化），还原目标取 1.0。
-      entry.original = current <= kDuckedThreshold ? 1.0f : current;
-      it = ducked_.emplace(id, entry).first;
-    }
-    float now = 0.0f;
-    if (FAILED(it->second.volume->GetMasterVolume(&now)) ||
-        now != kSilentDuckLevel) {
-      it->second.volume->SetMasterVolume(kSilentDuckLevel, nullptr);
-    }
-  }
-
-  void RestoreAll() {
-    std::lock_guard<std::mutex> lock(mutex_);
-    for (auto& [id, entry] : ducked_) {
-      entry.volume->SetMasterVolume(entry.original, nullptr);
-    }
-    ducked_.clear();
-  }
-
-  const std::vector<ComPtr<IAudioSessionManager2>>& managers() const {
-    return managers_;
-  }
-
- private:
-  std::vector<ComPtr<IAudioSessionManager2>> managers_;
-  std::mutex mutex_;
-  DWORD root_ = 0;
-  std::set<DWORD> tree_;
-  std::set<DWORD> foreign_;  // 已确认不属于目标树的会话进程
-  std::map<std::wstring, DuckedSession> ducked_;
-};
-
-// 新会话一建立就压低（Chromium 音频服务进程按需起；等兜底扫描会漏掉开头一截）。
-class DuckOnCreate
-    : public RuntimeClass<RuntimeClassFlags<ClassicCom>, FtmBase,
-                          IAudioSessionNotification> {
- public:
-  explicit DuckOnCreate(SessionDucker* ducker) : ducker_(ducker) {}
-  STDMETHOD(OnSessionCreated)(IAudioSessionControl* session) override {
-    if (session != nullptr) {
-      ducker_->Duck(session);
-    }
-    return S_OK;
-  }
-
- private:
-  SessionDucker* ducker_;
-};
-
 // ── 采集状态 ──────────────────────────────────────────────────────────────
 
 // 全进程唯一采集状态。所有跨线程字段用 g_mutex / g_ring_mutex 保护。
@@ -473,17 +292,6 @@ LoopbackFormat ParseFormat(const WAVEFORMATEX* wf) {
   }
   f.ok = f.sample_rate > 0 && f.channels > 0 && f.bits_per_sample > 0;
   return f;
-}
-
-// silent 模式：把压低的浮点样本放大回原电平。仍高于压低后可能出现的幅度的样本说明
-// 那一刻会话还没压下去（新会话与压低之间的毫秒级空窗），放大会削顶成噪声，按静音写。
-void RestoreDuckedGain(float* samples, size_t count) {
-  constexpr float kGain = 1.0f / kSilentDuckLevel;
-  constexpr float kMaxDucked = kSilentDuckLevel * 1.5f;
-  for (size_t i = 0; i < count; ++i) {
-    const float s = samples[i];
-    samples[i] = (s > kMaxDucked || s < -kMaxDucked) ? 0.0f : s * kGain;
-  }
 }
 
 // 采集线程主体：初始化 WASAPI loopback → 握手回报格式 → 循环拉包写环形缓冲 → 收尾。
@@ -821,36 +629,8 @@ int AudioLoopbackCapture::RestoreDuckedSessions(const LoopbackOptions& options) 
     return 0;
   }
   const HRESULT co = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
-  const std::set<DWORD> tree = ProcessTree(target);
-  int restored = 0;
-  {
-    SessionDucker scan;
-    scan.Open();
-    for (const auto& manager : scan.managers()) {
-      ComPtr<IAudioSessionEnumerator> sessions;
-      if (FAILED(manager->GetSessionEnumerator(&sessions))) {
-        continue;
-      }
-      int count = 0;
-      sessions->GetCount(&count);
-      for (int i = 0; i < count; ++i) {
-        ComPtr<IAudioSessionControl> control;
-        ComPtr<IAudioSessionControl2> control2;
-        ComPtr<ISimpleAudioVolume> volume;
-        DWORD pid = 0;
-        float level = 1.0f;
-        if (SUCCEEDED(sessions->GetSession(i, &control)) &&
-            SUCCEEDED(control.As(&control2)) &&
-            SUCCEEDED(control2->GetProcessId(&pid)) && tree.count(pid) != 0 &&
-            SUCCEEDED(control.As(&volume)) &&
-            SUCCEEDED(volume->GetMasterVolume(&level)) &&
-            level <= kDuckedThreshold) {
-          volume->SetMasterVolume(1.0f, nullptr);
-          ++restored;
-        }
-      }
-    }
-  }
+  const int restored = RestoreResidualDuckedSessions(
+      OpenRenderSessionManagers(), ProcessTree(target));
   if (SUCCEEDED(co)) {
     CoUninitialize();
   }

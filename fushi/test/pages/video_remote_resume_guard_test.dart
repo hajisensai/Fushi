@@ -148,6 +148,28 @@ void main() {
       },
     );
 
+    test(
+      'BUG-4304: episode switch / auto-advance resolves against the live host',
+      () {
+        // 换集 / 连播走 _loadRemoteEpisode 不带 override：必须与首开同一条判定
+        // （本机库断点 vs 清单 vs 互联 host 此刻断点），不能只读本机断点——否则合集
+        // 下一成员 / 播放列表下一集从本机旧断点起播，实时上报再把旧位置写回 host。
+        final String loadEpisode = region(
+          'Future<void> _loadRemoteEpisode(',
+          'if (seq != _episodeLoadSeq || !mounted) return;',
+        );
+        expect(
+          _flat(loadEpisode),
+          contains(
+            _flat(
+              'initialPositionMsOverride ?? await _resolveRemoteInitialPositionMs(info, index);',
+            ),
+          ),
+          reason: 'episode switch must resolve via the shared resume helper',
+        );
+      },
+    );
+
     test('onPositionWrite is wired for remote (not null)', () {
       final String region2 = region(
         'controller.setSecondaryDelayMs(',
@@ -193,10 +215,16 @@ void main() {
         ),
         reason: '非原盘会话必须仍回落 widget.bookUid，不能改变远端断点身份',
       );
-      // 读侧用 helper 结果元组构造按集 key。
+      // 读侧用 helper 结果元组读按集断点（BUG-4304：经 resolveRemoteVideoResumeMs →
+      // readLocalRemoteVideoPosition 直接读库，键由它按 videoRemotePositionEpisodePrefKey
+      // 构造）。
       expect(
-        src.contains('videoRemotePositionEpisodePrefKey(uid, ep)'),
-        isTrue,
+        _flat(src),
+        contains(
+          _flat(
+            'final (String uid, int ep) = _remotePositionKeyForIndex(episodeIndex); return resolveRemoteVideoResumeMs( db: appModel.database, client: _effectiveRemoteClient!, uid: uid, episodeIndex: ep,',
+          ),
+        ),
         reason: 'read-side key must derive from the helper tuple',
       );
       // 写侧（_persistRemotePosition）用 helper 结果构造同一按集 key。

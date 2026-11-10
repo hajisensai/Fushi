@@ -23,6 +23,7 @@ add_custom_command(
 add_executable(${BINARY_NAME} WIN32
   "attached_text_surface_window.cpp"
   "audio_loopback_capture.cpp"
+  "audio_session_ducker.cpp"
   "clipboard_image_reader.cpp"
   "layer_origin_solver.cpp"
   "voice_hook_reader.cpp"
@@ -32,6 +33,7 @@ add_executable(${BINARY_NAME} WIN32
   "floating_ball_window.cpp"
   "floating_lyric_window.cpp"
   "foreground_selection.cpp"
+  "game_stream_host_mute.cpp"
   "game_stream_input.cpp"
   "global_lookup_shadow.cpp"
   "global_lookup_window.cpp"
@@ -354,6 +356,25 @@ add_custom_target(fushi_windows_attached_magpie_surface_geometry_gate
 )
 add_dependencies(${BINARY_NAME}
   fushi_windows_attached_magpie_surface_geometry_gate)
+
+# Measured-layout attached surface: decoding of the caller's per-glyph client
+# rectangles, stale-size rejection and client -> screen -> surface-local
+# mapping (incl. Magpie viewport) stay pure and executable.
+add_executable(fushi_windows_attached_measured_layout_test
+  "tests/attached_measured_layout_test.cpp"
+)
+apply_standard_settings(fushi_windows_attached_measured_layout_test)
+target_compile_definitions(fushi_windows_attached_measured_layout_test PRIVATE
+  "NOMINMAX")
+target_link_libraries(fushi_windows_attached_measured_layout_test PRIVATE
+  dwrite user32)
+add_custom_target(fushi_windows_attached_measured_layout_gate
+  COMMAND "$<TARGET_FILE:fushi_windows_attached_measured_layout_test>"
+  DEPENDS fushi_windows_attached_measured_layout_test
+  VERBATIM
+)
+add_dependencies(${BINARY_NAME}
+  fushi_windows_attached_measured_layout_gate)
 
 # 直连覆盖窗的画布→客户区映射决定卡片贴在哪、以及它是否还留在游戏画面内。这段几何
 # 一旦回归就表现为「卡片偏位/跑到画面外」，故保持纯函数且可执行。

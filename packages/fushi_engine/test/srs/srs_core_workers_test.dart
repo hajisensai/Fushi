@@ -73,8 +73,8 @@ void main() {
     );
     expect(sw.elapsed, lessThan(const Duration(milliseconds: 1500)));
     expect(await Future.wait(slow), everyElement(1));
-    // 分类：复习页的三条命令走交互道，媒体文件命令走文件道。
-    for (final String op in <String>['apply', 'study', 'preview']) {
+    // 分类：复习页的作答 / 排队 / 预览与本机手动排程（复习页撤销也走它）走交互道，媒体文件命令走文件道。
+    for (final String op in <String>['apply', 'sched', 'study', 'preview']) {
       expect(SrsDbStore.srsCoreLaneOf(op), SrsCoreLane.interactive);
     }
     for (final String op in <String>['seal_file', 'open_file', 'media_hash']) {

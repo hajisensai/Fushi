@@ -4,12 +4,16 @@
 #ifdef GDK_WINDOWING_X11
 #include <gdk/gdkx.h>
 #endif
+#ifdef GDK_WINDOWING_WAYLAND
+#include <gdk/gdkwayland.h>
+#endif
 
 #include "flutter/generated_plugin_registrant.h"
 
 #include "clipboard_image_channel.h"
 #include "external_open_handoff.h"
 #include "floating_ball_channel.h"
+#include "gamescope_overlay.h"
 #include "global_lookup_channel.h"
 
 struct _MyApplication {
@@ -22,6 +26,9 @@ struct _MyApplication {
   // 经 `app.fushi/external_video` 的 `openExternalVideo` 推给 Dart——与 Windows
   // WM_COPYDATA 落到的是同一个 Dart 处理（`_handleExternalVideoChannel`）。
   FlMethodChannel* external_video_channel;
+  // `app.fushi.reader/window_activation`: raise the main window with a Wayland
+  // activation token (Dart: linux_window_activation_channel.dart).
+  FlMethodChannel* window_activation_channel;
   // Desktop system floating ball (`app.fushi.reader/floating_ball`).
   FushiFloatingBall* floating_ball;
   // App-external lookup card + PRIMARY selection (`app.fushi.reader/
@@ -50,6 +57,10 @@ struct _MyApplication {
 // `lib/src/platform/desktop/linux_external_open_channel.dart`）。
 static constexpr const char* kExternalOpenReadyMethod = "externalOpenReady";
 static constexpr const char* kAppExitingMethod = "appExiting";
+// `app.fushi.reader/window_activation` 上唯一的方法（Dart 侧
+// `LinuxWindowActivationChannel.presentMethod`）。
+static constexpr const char* kPresentWithActivationTokenMethod =
+    "presentWithActivationToken";
 
 G_DEFINE_TYPE(MyApplication, my_application, GTK_TYPE_APPLICATION)
 
@@ -66,6 +77,50 @@ static void present_main_window(MyApplication* self) {
     return;
   }
   gtk_window_present(self->window);
+}
+
+// Wayland 不许客户端自己抢焦点：带着用户动作换来的 xdg_activation_v1 token
+// （GlobalShortcuts portal 的 Activated 会带）交给 GDK，下一次 present 就走
+// xdg_activation_v1_activate——与 GtkApplication 处理 D-Bus 激活的
+// activation-token 是同一条路。X11 显示（Flatpak 走 XWayland）上 token 无意义，
+// 直接 present。返回是否真的 present 了（同 present_main_window 的三道门）。
+static gboolean present_main_window_with_token(MyApplication* self,
+                                               const gchar* token) {
+  if (self->window == nullptr || self->exiting || !self->first_frame_shown) {
+    return FALSE;
+  }
+#ifdef GDK_WINDOWING_WAYLAND
+  if (GdkDisplay* display = gtk_widget_get_display(GTK_WIDGET(self->window));
+      GDK_IS_WAYLAND_DISPLAY(display) && token != nullptr && token[0] != '\0') {
+    gdk_wayland_display_set_startup_notification_id(display, token);
+  }
+#endif
+  gtk_window_present(self->window);
+  return TRUE;
+}
+
+static void window_activation_method_cb(FlMethodChannel* channel,
+                                        FlMethodCall* method_call,
+                                        gpointer user_data) {
+  MyApplication* self = MY_APPLICATION(user_data);
+  g_autoptr(FlMethodResponse) response = nullptr;
+  if (g_strcmp0(fl_method_call_get_name(method_call),
+                kPresentWithActivationTokenMethod) == 0) {
+    FlValue* args = fl_method_call_get_args(method_call);
+    const gchar* token = args != nullptr &&
+                                 fl_value_get_type(args) == FL_VALUE_TYPE_STRING
+                             ? fl_value_get_string(args)
+                             : nullptr;
+    g_autoptr(FlValue) result =
+        fl_value_new_bool(present_main_window_with_token(self, token));
+    response = FL_METHOD_RESPONSE(fl_method_success_response_new(result));
+  } else {
+    response = FL_METHOD_RESPONSE(fl_method_not_implemented_response_new());
+  }
+  g_autoptr(GError) error = nullptr;
+  if (!fl_method_call_respond(method_call, response, &error)) {
+    g_warning("window_activation respond failed: %s", error->message);
+  }
 }
 
 static void send_external_arg(MyApplication* self, const gchar* arg) {
@@ -185,8 +240,20 @@ static void my_application_activate(GApplication* application) {
                             FL_METHOD_CODEC(codec));
   fl_method_channel_set_method_call_handler(
       self->external_video_channel, external_video_method_cb, self, nullptr);
+  self->window_activation_channel =
+      fl_method_channel_new(messenger, "app.fushi.reader/window_activation",
+                            FL_METHOD_CODEC(codec));
+  fl_method_channel_set_method_call_handler(self->window_activation_channel,
+                                            window_activation_method_cb, self,
+                                            nullptr);
   self->floating_ball = fushi_floating_ball_new(messenger, window);
   self->global_lookup = fushi_global_lookup_new(messenger);
+
+  // Steam Deck Game Mode, started from Fushi's Steam library entry: Steam can
+  // switch to this window like to a game, and it fills the screen there.
+  if (fushi::gamescope::TagSteamApp(GTK_WIDGET(window))) {
+    gtk_window_fullscreen(window);
+  }
 
   gtk_widget_grab_focus(GTK_WIDGET(view));
 }
@@ -259,6 +326,7 @@ static void my_application_dispose(GObject* object) {
   g_clear_pointer(&self->dart_entrypoint_arguments, g_strfreev);
   g_clear_object(&self->clipboard_image_channel);
   g_clear_object(&self->external_video_channel);
+  g_clear_object(&self->window_activation_channel);
   g_clear_pointer(&self->floating_ball, fushi_floating_ball_free);
   g_clear_pointer(&self->global_lookup, fushi_global_lookup_free);
   g_clear_pointer(&self->pending_external_args, g_ptr_array_unref);

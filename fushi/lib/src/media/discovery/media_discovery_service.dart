@@ -4,11 +4,16 @@
 /// 同名资源在不同源就是不同的下载物（版本/压制/打包都不同），合并只会
 /// 抹掉用户要做的选择。结果按源分片（[DiscoverySourceSlice]）返回，
 /// UI 想平铺就用 [DiscoveryAggregateResult.entries]，想分组就用 slices。
+///
+/// 搜索请求的每个分片在这里统一按相关度重排（`discovery_search_relevance.dart`，
+/// 反馈 80S7Esbdec）：源后端的匹配口径不可控（shinnku 是字符级模糊匹配），
+/// 聚合层是所有消费方（发现页 / AI 下载 / ctl）共同的唯一出口。
 library;
 
 import 'dart:async';
 
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
+import 'package:fushi/src/media/discovery/discovery_search_relevance.dart';
 import 'package:fushi/src/media/discovery/media_discovery_source.dart';
 import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi/src/utils/misc/bounded_concurrency.dart';
@@ -138,7 +143,10 @@ class MediaDiscoveryService {
       List<int>.generate(candidates.length, (int i) => i),
       maxConcurrent: maxConcurrent,
       task: (int i) async {
-        results[i] = await _invoke(candidates[i], request);
+        results[i] = _rankByRelevance(
+          await _invoke(candidates[i], request),
+          request,
+        );
         onUpdate?.call(_assemble(candidates, results));
       },
     );
@@ -168,6 +176,29 @@ class MediaDiscoveryService {
       slices: slices,
       failures: failures,
       successfulSourceCount: successfulSourceCount,
+    );
+  }
+
+  /// 搜索请求：每页条目按相关度降序**稳定**重排（命中的在前，同档保持源给的
+  /// 原序）。不删条目——源可能按聚合层看不到的字段（作者 / 系列）命中，折叠
+  /// 与否交给 UI（发现页折进「疑似不相关」）。浏览请求原样返回。
+  static ProviderBatchResult<DiscoveryResultPage> _rankByRelevance(
+    ProviderBatchResult<DiscoveryResultPage> result,
+    DiscoveryRequest request,
+  ) {
+    final String? query = request.query;
+    if (!request.isSearch || query == null) return result;
+    return ProviderBatchResult<DiscoveryResultPage>(
+      items: <DiscoveryResultPage>[
+        for (final DiscoveryResultPage page in result.items)
+          DiscoveryResultPage(
+            entries: rankDiscoveryEntriesByRelevance(query, page.entries),
+            page: page.page,
+            hasMore: page.hasMore,
+          ),
+      ],
+      failures: result.failures,
+      successfulProviderCount: result.successfulProviderCount,
     );
   }
 

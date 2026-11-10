@@ -1729,6 +1729,27 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           data: r.ok ? await r.json() : null,
           ...(!r.ok ? { connection: await diagnoseConnectionCapped(base) } : {}),
         });
+      } else if (msg.type === 'subtitleAlign') {
+        // 反馈 0wkJImhZUp：网页视频自动对轴。subtitle-align.js 边播边听攒的 100ms 栅格能量包络 +
+        // 当前轨（已套偏移）的 cue → app 的自动对轴算法（与 app 视频页同一套互相关，Rust 本体），
+        // 回「再平移多少」。纯 CPU 小活，给 15 秒上限，app 不应答时如实回 offline。
+        const r = await fushiRequest(({ base, token }) => fetch(base + '/api/subtitle/align', {
+          method: 'POST',
+          signal: AbortSignal.timeout(15000),
+          headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
+          body: JSON.stringify({
+            binMs: msg.binMs,
+            startMs: msg.startMs,
+            rmsDb: Array.isArray(msg.rmsDb) ? msg.rmsDb : [],
+            cues: Array.isArray(msg.cues) ? msg.cues : [],
+          }),
+        }));
+        sendResponse({
+          ok: r.ok,
+          status: r.status,
+          data: r.ok ? await r.json() : null,
+          ...(!r.ok ? { connection: await diagnoseConnection(true) } : {}),
+        });
       } else if (msg.type === 'subtitleSearch') {
         // 查字幕①：Side Panel 搜索框 → server /api/subtitle/search。server 扇出
         // **用户已配好的全部在线字幕来源**（Jimaku / OpenSubtitles / AJATT，与 app 内

@@ -134,9 +134,21 @@ abstract interface class GoogleLensMangaOcrRunner {
 
 class GoogleLensMangaOcrService implements GoogleLensMangaOcrRunner {
   GoogleLensMangaOcrService({GoogleLensTransport? transport})
-    : _transport = transport ?? HttpGoogleLensTransport();
+    : this._(transport, transport == null ? HttpGoogleLensTransport() : null);
+
+  GoogleLensMangaOcrService._(
+    GoogleLensTransport? injected,
+    HttpGoogleLensTransport? owned,
+  ) : _transport = injected ?? owned!,
+      _ownedTransport = owned;
 
   final GoogleLensTransport _transport;
+
+  /// 本服务自建的 HTTP 传输；注入的 transport 生命周期归调用方，不在这里关。
+  final HttpGoogleLensTransport? _ownedTransport;
+
+  /// 关闭自建的 HTTP 连接池（宿主 dispose 时调用）。
+  void close() => _ownedTransport?.close();
 
   @override
   Stream<MangaOcrVolumeEvent> ocrFolder({

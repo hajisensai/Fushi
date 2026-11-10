@@ -13,6 +13,8 @@ import 'package:fushi/src/anki/lapis_style_editor_page.dart'
     show LapisVisualEditorResult, applyLapisVisualEditorResult;
 import 'package:fushi/src/anki/lapis_template_service.dart';
 import 'package:fushi/src/anki/mining_media_quality_labels.dart';
+import 'package:fushi/src/mining/gal_mining_settings.dart';
+import 'package:fushi/src/mining/gal_mining_settings_text.dart';
 import 'package:fushi/src/mining/video_online_mining_mode.dart';
 import 'package:fushi/src/mining/sentence_audio_source_text.dart';
 import 'package:fushi_engine/mining/sentence_audio_source.dart'
@@ -729,10 +731,6 @@ CtlBodyPage _mediaPage() {
             value: VideoOnlineMiningMode.deferred,
             label: t.video_online_mining_mode_deferred,
           ),
-          SettingsSegmentOption<VideoOnlineMiningMode>(
-            value: VideoOnlineMiningMode.wait,
-            label: t.video_online_mining_mode_wait,
-          ),
         ],
         selected: (SettingsContext c) => c.appModel.videoOnlineMiningMode,
         onChanged: (SettingsContext c, VideoOnlineMiningMode v) =>
@@ -793,6 +791,38 @@ CtlBodyPage _mediaPage() {
         read: (SettingsContext c) => c.appModel.galMiningStillFormat,
         write: (SettingsContext c, MiningStillFormat v) =>
             c.appModel.setGalMiningStillFormat(v),
+      ),
+      _choice<GalMiningAudioMode>(
+        id: 'gal_mining_audio_mode',
+        title: t.gal_mining_audio_mode,
+        subtitle: t.gal_mining_audio_mode_hint,
+        visible: (SettingsContext _) => Platform.isWindows,
+        options: <SettingsSegmentOption<GalMiningAudioMode>>[
+          for (final GalMiningAudioMode mode in GalMiningAudioMode.values)
+            SettingsSegmentOption<GalMiningAudioMode>(
+              value: mode,
+              label: galMiningAudioModeLabel(mode),
+            ),
+        ],
+        selected: (SettingsContext c) => c.appModel.galMiningAudioMode,
+        onChanged: (SettingsContext c, GalMiningAudioMode v) =>
+            c.appModel.setGalMiningAudioMode(v),
+      ),
+      SettingsSliderItem(
+        id: _id('gal_mining_audio_seconds'),
+        title: t.gal_mining_audio_seconds,
+        subtitle: t.gal_mining_audio_seconds_hint,
+        visible: (SettingsContext _) => Platform.isWindows,
+        min: kGalMiningAudioSecondsMin.toDouble(),
+        max: kGalMiningAudioSecondsMax.toDouble(),
+        divisions: kGalMiningAudioSecondsMax - kGalMiningAudioSecondsMin,
+        step: 1,
+        label: (double v) =>
+            t.gal_mining_audio_seconds_readout(seconds: v.round()),
+        value: (SettingsContext c) =>
+            c.appModel.galMiningAudioSeconds.toDouble(),
+        onChanged: (SettingsContext c, double v) =>
+            c.appModel.setGalMiningAudioSeconds(v.round()),
       ),
     ],
   );

@@ -29,12 +29,18 @@ class BookSeriesKey {
 final RegExp _hashSuffix = RegExp(r'\s*\[[0-9a-fA-F]{8}\]\s*$');
 
 /// 结尾卷号：`2` / `第2巻` / `2巻` / `Vol.2` / `Vol-2` / `Volume 2` / `v02` /
-/// `(2)` / `#2`，以及直接贴在汉字 / 假名后的 `安達としまむら10`。数字前必须有
-/// 分隔或非 ASCII 字符，「86」这类纯数字书名、「Catch22」这类拉丁字母贴数字的
-/// 书名尾数不会被吃掉（「Fahrenheit 451」会被读成卷号，但归组要求同系列 ≥2 卷，
-/// 单本不受影响）。只在全角已折半角的串上匹配。
+/// `(2)` / `#2`、连字符 / 下划线卷号 `Karakai-Jouzu-Takagi-san-02` / `Series_02`，
+/// 以及直接贴在汉字 / 假名后的 `安達としまむら10`。数字前必须有分隔或非 ASCII
+/// 字符，「86」这类纯数字书名、「Catch22」这类拉丁字母贴数字的书名尾数不会被吃掉
+/// （「Fahrenheit 451」「Spider-Man 2099」「Spider-Man-2099」会被读成卷号，但归组
+/// 要求同系列 ≥2 卷，单本不受影响）。只在全角已折半角的串上匹配。
+///
+/// 连字符 / 下划线分隔只认紧跟在字母、`)` / `]` 或非 ASCII 字符之后的一个 `-` /
+/// `_`（vECncM6f8Y：mokuro.moe 卷名是连字符化的 slug，`…-02` 以前不认，每卷系列键
+/// 各不相同、整套散在书架上）；数字后的 `-`（`2-02`）不算，免得把编号拆开。
 final RegExp _volumeSuffix = RegExp(
-  r'(?:\s+|[\s_\-:・]*(?:第|vol(?:ume)?[\s._\-]*|v(?=\d)|#)|\s*\(|(?<=[^\x00-\x7F]))'
+  r'(?:\s+|[\s_\-:・]*(?:第|vol(?:ume)?[\s._\-]*|v(?=\d)|#)|\s*\(|'
+  r'(?<=[A-Za-z)\]]|[^\x00-\x7F])[\-_]\s*|(?<=[^\x00-\x7F]))'
   r'(\d{1,4}(?:\.\d)?)'
   r'\s*(?:巻|卷|册|冊)?\s*\)?\s*$',
   caseSensitive: false,
@@ -130,6 +136,53 @@ BookSeriesKey? _seriesFromTrailingLabel(String title, String folded, int end) {
     seriesTitle: title.substring(innerStart, innerStart + inner.length),
     volume: volume == null ? null : num.parse(volume.group(1)!),
   );
+}
+
+/// 网址 slug：只由 ASCII 字母数字词经 `-` / `_` 连成、至少两个词、不含空白
+/// （`Karakai-Jouzu-Takagi-san`、`one_piece`）。
+final RegExp _slugToken = RegExp(r'^[A-Za-z0-9]+(?:[\-_][A-Za-z0-9]+)+$');
+
+/// slug / 书名里的拉丁词（小写，按非字母数字切）。
+List<String> _latinWords(String s) => s
+    .toLowerCase()
+    .split(RegExp(r'[^a-z0-9]+'))
+    .where((String w) => w.isNotEmpty)
+    .toList(growable: false);
+
+/// 自动合集名：把系列名 [seriesTitle]（[BookSeriesKey.seriesTitle]）里的网址
+/// slug 规整成可读名；不像 slug 的原样返回（去首尾空白）。只改**显示用的合集名**，
+/// 归组用的 [BookSeriesKey.key] 不变。
+///
+/// 两种 slug（vECncM6f8Y 后续拍板：合集名里的网址 slug 自动美化）：
+/// - 系列名后面挂着它自己的 slug：`Karakai Jouzu no Takagi-san Karakai-Jouzu-Takagi-san`
+///   （mokuro.moe 旧口径卷名，书 key 冻结不改）→ `Karakai Jouzu no Takagi-san`。
+///   判据同 mokuro 下载器的卷名规整：slug 的每个词都在前面的正文里出现过（slug
+///   常省掉 `no` 之类虚词，按「子集」比）；前缀切不出拉丁词（日文书名）不动。
+/// - 整个系列名就是一个 slug：含 `_`（`one_piece`），或至少两个 `-`
+///   （`karakai-jouzu-takagi-san`）→ 分隔换空格；全小写时每词首字母大写。只有
+///   一个 `-` 的（`Spider-Man`、`Takagi-san`）是正常拼写，不动。
+String readableSeriesTitle(String seriesTitle) {
+  final String t = seriesTitle.trim();
+  final int lastSpace = t.lastIndexOf(RegExp(r'\s'));
+  if (lastSpace < 0) return _readableWholeSlug(t) ?? t;
+  final String tail = t.substring(lastSpace + 1);
+  if (!_slugToken.hasMatch(tail)) return t;
+  final String prefix = t.substring(0, lastSpace).trim();
+  final Set<String> prefixWords = _latinWords(prefix).toSet();
+  final List<String> slugWords = _latinWords(tail);
+  if (prefixWords.isEmpty || !slugWords.every(prefixWords.contains)) return t;
+  return prefix;
+}
+
+/// 整串 slug → 可读名；不算 slug 时 null。
+String? _readableWholeSlug(String t) {
+  if (!_slugToken.hasMatch(t) || !t.contains(RegExp(r'[A-Za-z]'))) return null;
+  if (!t.contains('_') && '-'.allMatches(t).length < 2) return null;
+  final bool lower = t == t.toLowerCase();
+  return t
+      .split(RegExp(r'[\-_]'))
+      .map((String w) => lower ? w[0].toUpperCase() + w.substring(1) : w)
+      .join(' ');
 }
 
 /// 「系列目录/卷目录/页图」布局里，目录名 [name] 作为系列目录 [seriesFolderName]

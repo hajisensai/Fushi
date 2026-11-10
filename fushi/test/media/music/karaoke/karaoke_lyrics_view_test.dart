@@ -94,6 +94,7 @@ Widget _host({
   bool disableAnimations = false,
   bool tapLooksUp = false,
   bool Function(int buttons)? isSeekPointer,
+  KaraokeLyricsCursor? cursor,
 }) => MaterialApp(
   home: MediaQuery(
     data: MediaQueryData(
@@ -112,6 +113,7 @@ Widget _host({
           onLookup: onLookup,
           tapLooksUp: tapLooksUp,
           isSeekPointer: isSeekPointer,
+          cursor: cursor,
           appearance: const KaraokeLyricsAppearance(fontSize: 24),
         ),
       ),
@@ -548,6 +550,78 @@ void main() {
       await tester.tap(_row('one'));
       await tester.pump(const Duration(seconds: 4));
       expect(seeks, isEmpty);
+    });
+  });
+
+  group('KaraokeLyricsCursor (controller lookup mode)', () {
+    testWidgets('attaches, keeps its row at the anchor and resolves the hit '
+        'of its glyph', (WidgetTester tester) async {
+      final _Clock clock = _Clock()..ms = 1100;
+      final KaraokeLyricsCursor cursor = KaraokeLyricsCursor();
+      addTearDown(cursor.dispose);
+      expect(cursor.attached, isFalse);
+      await tester.pumpWidget(
+        _host(
+          timeline: _timeline(),
+          clock: clock,
+          playing: false,
+          cursor: cursor,
+          disableAnimations: true,
+        ),
+      );
+      await tester.pump();
+      expect(cursor.attached, isTrue);
+      expect(cursor.hitAtCursor(), isNull, reason: 'hidden cursor');
+
+      cursor.moveTo(3, 1); // 'klm', the 'l'
+      await tester.pump();
+      await tester.pump();
+      expect(
+        tester.getTopLeft(_row('klm')).dy,
+        closeTo(600 * 0.38, 1),
+        reason: 'the cursor row sits at the anchor, not the playing row',
+      );
+      final KaraokeLookupHit hit = cursor.hitAtCursor()!;
+      expect(hit.lineIndex, 3);
+      expect(hit.charIndexInLine, 1);
+      expect(hit.lineText, 'klm');
+      expect(hit.syllableIndex, 0);
+      final Rect row = tester.getRect(_row('klm'));
+      expect(hit.globalRect.width, greaterThan(0));
+      expect(row.inflate(1).contains(hit.globalRect.center), isTrue);
+
+      cursor.moveTo(2, 3); // 'fghij', second syllable 'ij'
+      await tester.pump();
+      expect(cursor.hitAtCursor()!.syllableIndex, 1);
+
+      cursor.clear();
+      await tester.pump();
+      await tester.pump();
+      expect(
+        tester.getTopLeft(_row('abcde')).dy,
+        closeTo(600 * 0.38, 1),
+        reason: 'cleared: back to following the playing row',
+      );
+
+      await tester.pumpWidget(const SizedBox());
+      expect(cursor.attached, isFalse, reason: 'unmount detaches');
+    });
+
+    test('KaraokeLineLayout.charRect: per-glyph box, null outside', () {
+      final KaraokeLineLayout l = KaraokeLineLayout.build(
+        line: _syllables(0, <(String, int)>[('abc', 500)]),
+        width: 400,
+        style: _style().main,
+        resolved: _style(),
+        align: TextAlign.left,
+        lineLevel: false,
+      );
+      final Rect a = l.charRect(0)!;
+      final Rect b = l.charRect(1)!;
+      expect(b.left, greaterThanOrEqualTo(a.right - 0.5));
+      expect(l.charRect(3), isNull);
+      expect(l.charRect(-1), isNull);
+      l.dispose();
     });
   });
 }

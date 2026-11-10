@@ -347,6 +347,7 @@ class JellyfinSubtitleStream {
     this.title,
     this.isExternal = false,
     this.isTextSubtitleStream = true,
+    this.isDefault = false,
   });
 
   final int index;
@@ -355,6 +356,10 @@ class JellyfinSubtitleStream {
   final String? title;
   final bool isExternal;
   final bool isTextSubtitleStream;
+
+  /// 服务器标的默认轨（`MediaStreams[].IsDefault`）。此前不读，起播永远看不到
+  /// 「默认」内嵌字幕（反馈 wCQIR4Pvz9）。
+  final bool isDefault;
 }
 
 /// **纯函数**：Emby / Jellyfin 的视频 `MediaStreams[]` 条目是否**无兼容基础层**的
@@ -1109,6 +1114,36 @@ class JellyfinApi {
   /// （音乐的服务器曲库，`jellyfin_music_client.dart`）用，不另起一套传输。
   Future<Object?> getDecodedJson(String path, [Map<String, String>? query]) =>
       _getDecoded(path, query);
+
+  /// 写请求（POST / DELETE）：同一份认证头 / 超时 / 凭据脱敏，给音乐歌单编辑用
+  /// （`jellyfin_music_client.dart`）。[body] 非空时按 JSON 发；响应体是 JSON 时解码返回，
+  /// 空体（204）返回 null。非 2xx 抛 [JellyfinApiException]。
+  Future<Object?> sendJson(
+    String method,
+    String path, {
+    Map<String, String>? query,
+    Object? body,
+  }) async {
+    try {
+      final http.Request req = http.Request(method, _uri(path, query))
+        ..headers.addAll(_headers);
+      if (body != null) req.body = jsonEncode(body);
+      final http.Response res = await http.Response.fromStream(
+        await _client.send(req).timeout(kRequestTimeout),
+      ).timeout(kRequestTimeout);
+      if (res.statusCode < 200 || res.statusCode >= 300) {
+        throw JellyfinApiException.fromResponse(res, path);
+      }
+      if (res.bodyBytes.isEmpty) return null;
+      try {
+        return jsonDecode(utf8.decode(res.bodyBytes));
+      } on FormatException {
+        return null;
+      }
+    } on http.ClientException catch (e) {
+      throw Exception(redactCredentialsInText(e.toString()));
+    }
+  }
 
   /// [_getDecoded] 的「指定根地址」版（连接探测要在候选根地址之间试，见
   /// [probeServer]）。
@@ -2318,6 +2353,7 @@ class JellyfinApi {
               isExternal: (s['IsExternal'] as bool?) ?? false,
               isTextSubtitleStream:
                   (s['IsTextSubtitleStream'] as bool?) ?? true,
+              isDefault: (s['IsDefault'] as bool?) ?? false,
             ),
           );
       }
@@ -3506,7 +3542,9 @@ class JellyfinVideoClient
     final ({String streamUrl, JellyfinPlaybackSession? session}) playback =
         await _negotiatePlayback(id, item);
 
-    // 外挂文本字幕优先作为默认外挂轨；其余文本轨全部报给播放页的字幕轨选择器。
+    // 外挂文本字幕作为后端默认字幕（subtitleUrl）；全部文本轨（带服务器默认标记）报给
+    // 播放页——起播挑轨在播放页按「app 偏好 > 服务器默认标记 > 这条外挂」裁决
+    // （pickRemoteStartupSubtitleTrack，反馈 wCQIR4Pvz9）。
     JellyfinSubtitleStream? external;
     final List<RemoteVideoEmbeddedSubtitleTrack> tracks =
         <RemoteVideoEmbeddedSubtitleTrack>[];
@@ -3528,6 +3566,8 @@ class JellyfinVideoClient
           containerTrackOrdinal: ordinals[s.index],
           // 外挂字幕文件不在直出的容器里：抽取失败时不能交给 libmpv 自绘。
           isExternalFile: s.isExternal,
+          // 服务器默认标记交给播放页：app 字幕语言偏好没命中时按它起播（wCQIR4Pvz9）。
+          isDefault: s.isDefault,
         ),
       );
     }

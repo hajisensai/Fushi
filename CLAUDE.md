@@ -35,6 +35,7 @@
 
 - **自动注音（机器推断读音的振假名 / furigana）——全仓绝对不可**：不 100% 准确会误导学习者。来源自带的 ruby（EPUB `<ruby>`、歌词源文件注音）照常显示。
 - **音乐歌词编辑界面**（改字、编辑翻译 / 注音、单行偏移）。整首偏移、选来源 / 恢复自动来源、导出 TTML 保留。
+- **给单语字幕加 AI 翻译**（对只有单语的字幕调用 AI 生成译文副字幕）——永远不做（反馈 zDThL5i5Kr，2026-11-10 拍板）。来源自带的翻译字幕轨照常识别与显示。
 
 ## 领域硬边界
 
@@ -84,6 +85,7 @@
 | Computer Use 巡检与真实像素证据 | [computer-use-testing.md](docs/agent/computer-use-testing.md) |
 | Windows app 外打开视频 | [external-video-open.md](docs/agent/external-video-open.md) |
 | 快捷键 / 手柄 / 鼠标绑定盘点 | [shortcuts-inventory.md](docs/agent/shortcuts-inventory.md) |
+| 第二块屏（双屏伴屏、游戏串流副屏、手柄查词模式） | [second-screen.md](docs/agent/second-screen.md) |
 | 学习统计域 | [statistics.md](docs/agent/statistics.md) |
 | Galgame Hook | [galgame-hooking.md](docs/agent/galgame-hooking.md) |
 | 本机重活租约 | [heavy-lease.md](docs/agent/heavy-lease.md) |

@@ -7,6 +7,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi_audio/fushi_audio.dart'
     show kDefaultReadingIdleTimeout, kStudyIdleTimeoutPrefKey;
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/mining/gal_mining_settings.dart';
 import 'package:fushi/src/profile/work_profile_scope.dart';
 import 'package:fushi_engine/ai/ai_settings.dart';
 import 'package:fushi_engine/srs/sync2/srs_folder_location.dart';
@@ -37,6 +38,7 @@ import 'package:fushi/src/models/preference_keys.dart'
         kAiWebSearchPageFetchPref,
         kLibraryManualOrderPrefKeyPrefix;
 import 'package:fushi/src/models/library_grid_columns.dart';
+import 'package:fushi/src/stats/study_goal_period.dart' show StudyGoalPeriod;
 import 'package:fushi/src/utils/misc/platform_utils.dart' show WindowSizeClass;
 import 'package:fushi/src/utils/adaptive/nav_bar_style.dart';
 import 'package:fushi/src/ai/ai_saved_prompts.dart';
@@ -48,9 +50,11 @@ import 'package:fushi/src/media/discovery/alist_site_config.dart';
 import 'package:fushi/src/media/discovery/audiobookshelf_server_config.dart';
 import 'package:fushi/src/media/discovery/opds_server_config.dart';
 import 'package:fushi/src/media/kavita/kavita_server_config.dart';
+import 'package:fushi/src/media/video/subtitle/video_subtitle_folder_memory.dart';
 import 'package:fushi/src/utils/misc/jump_history.dart'
     show migrateLegacyJumpPillAutoHide;
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/mining/advanced_mining/advanced_mining_layout.dart';
 import 'package:fushi/src/lookup/popup_ui_scale.dart';
 import 'package:fushi/src/utils/misc/toast_severity.dart'
     show MineToastStatus, mineToastShown;
@@ -144,6 +148,7 @@ import 'package:fushi/src/media/manga/manga_view_prefs.dart';
 import 'package:fushi/src/media/manga/library/manga_resume_point.dart';
 import 'package:fushi/src/media/manga/manga_reader_preferences.dart';
 import 'package:fushi/src/media/manga/manga_reading_mode.dart';
+import 'package:fushi/src/ocr/screen_ocr_engine.dart';
 import 'package:fushi/src/ocr/screen_ocr_language.dart';
 import 'package:fushi_engine/foundation/pref_store.dart';
 
@@ -554,6 +559,46 @@ class PreferencesRepository extends ChangeNotifier
   Future<int> readPrefsVersionFromDb() async {
     final String? raw = await _db.getPref(prefsVersionKey);
     return raw == null ? 0 : PrefCodec.decode<int>(raw, 0);
+  }
+
+  /// 运行中会被 Android 查词弹窗（`:popup` 进程）写入、主进程又要读的偏好键。
+  ///
+  /// 跨进程对账原本只有一个方向：弹窗按 `prefs_version` 重载主进程的改动
+  /// （[readPrefsVersionFromDb]）；主进程的缓存只在启动时装一次，弹窗写进库的值它看不见。
+  /// 这里列出的键由主进程回到前台时按行重读（[reloadPopupWrittenPrefs]），它们的读改写也先从
+  /// 库里取当前行（[_freshRaw]），陈旧缓存不会把另一个进程清掉的条目写回去（BUG-4289）。
+  ///
+  /// - [mineToServerTargetsKey]：弹窗里制卡时主机回 `targetUnavailable`，弹窗把这台主机的
+  ///   「保存到」退回主机默认。
+  static const Set<String> popupWrittenKeys = <String>{mineToServerTargetsKey};
+
+  /// 按行从库里重读 [popupWrittenKeys]（每键一次索引读），有变化才通知监听者。返回是否变过。
+  /// 主进程回到前台时调用（弹窗关掉后主 Activity 会 resume）。
+  Future<bool> reloadPopupWrittenPrefs() async {
+    bool changed = false;
+    for (final String key in popupWrittenKeys) {
+      final String? raw = await _db.getPref(key);
+      if (raw == _prefCache[key]) continue;
+      if (raw == null) {
+        _prefCache.remove(key);
+      } else {
+        _prefCache[key] = raw;
+      }
+      changed = true;
+    }
+    if (changed) notifyListeners();
+    return changed;
+  }
+
+  /// [key] 在库里的当前原始值（同时刷新本进程缓存）；给 [popupWrittenKeys] 的读改写用。
+  Future<String?> _freshRaw(String key) async {
+    final String? raw = await _db.getPref(key);
+    if (raw == null) {
+      _prefCache.remove(key);
+    } else {
+      _prefCache[key] = raw;
+    }
+    return raw;
   }
 
   bool containsKey(String key) => _workScoped(key)
@@ -1297,6 +1342,21 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setScreenOcrKeepCaptureSession(bool value) async {
     await setPref('screen_ocr.keep_capture_session', value);
+    notifyListeners();
+  }
+
+  /// 桌面截屏识字的 OCR 引擎设置（反馈 Eemf0HOZhj）：出厂跟随全局 OCR 引擎偏好
+  /// （[mangaOcrEnginePreference]），解析见 [resolveScreenOcrEngine]。
+  ScreenOcrEngineSetting get screenOcrEngine =>
+      ScreenOcrEngineSetting.fromStorage(
+        getPref(
+          'screen_ocr.engine',
+          defaultValue: ScreenOcrEngineSetting.followGlobal.storageValue,
+        ),
+      );
+
+  Future<void> setScreenOcrEngine(ScreenOcrEngineSetting value) async {
+    await setPref('screen_ocr.engine', value.storageValue);
     notifyListeners();
   }
 
@@ -3682,6 +3742,47 @@ class PreferencesRepository extends ChangeNotifier
     await setPref('video_remote_subtitle_files', jsonEncode(map));
   }
 
+  /// 反馈 0PZAhFd1RO：按系列记住的字幕文件夹（系列键见
+  /// [videoSubtitleFolderSeriesKey]）。坏值记诊断后当空表。
+  Map<String, VideoSubtitleFolder> get _videoSubtitleFolders {
+    final String raw =
+        getPref('video_subtitle_series_dirs', defaultValue: '') as String;
+    try {
+      return decodeVideoSubtitleFolders(raw);
+    } catch (e, stack) {
+      ErrorLogService.instance.log(
+        'PreferencesRepository.videoSubtitleFolders.decode',
+        e,
+        stack,
+      );
+      return <String, VideoSubtitleFolder>{};
+    }
+  }
+
+  /// 读系列 [seriesKey] 记住的字幕文件夹；没记过返回 null。
+  VideoSubtitleFolder? videoSubtitleFolder(String seriesKey) =>
+      _videoSubtitleFolders[seriesKey];
+
+  /// 记住 / 清除（[folder] 为 null）系列 [seriesKey] 的字幕文件夹（读改写整 map）。
+  Future<void> setVideoSubtitleFolder(
+    String seriesKey,
+    VideoSubtitleFolder? folder,
+  ) async {
+    final Map<String, VideoSubtitleFolder> map = _videoSubtitleFolders;
+    if (folder == null) {
+      if (!map.containsKey(seriesKey)) return;
+      map.remove(seriesKey);
+    } else {
+      if (map[seriesKey] == folder) return;
+      map[seriesKey] = folder;
+    }
+    await setPref(
+      'video_subtitle_series_dirs',
+      encodeVideoSubtitleFolders(map),
+    );
+    notifyListeners();
+  }
+
   // ── tags & card export ───────────────────────────────────────────────
 
   String get savedTags => getPref('saved_tags', defaultValue: '') as String;
@@ -3820,6 +3921,8 @@ class PreferencesRepository extends ChangeNotifier
     RemoteMiningTarget? target, {
     String? label,
   }) async {
+    // 另一个进程（查词弹窗）可能刚改过这一行：从库里取当前值再改，不拿陈旧缓存覆盖（BUG-4289）。
+    await _freshRaw(mineToServerTargetsKey);
     final Map<String, Map<Object?, Object?>> next =
         Map<String, Map<Object?, Object?>>.of(_mineToServerTargetsRaw());
     if (target == null || target.isEmpty) {
@@ -4285,7 +4388,7 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
-  // 在线视频点制卡后弹窗等不等（见 [VideoOnlineMiningMode]）。默认 background。
+  // 在线视频点制卡后卡往哪去（见 [VideoOnlineMiningMode]）。默认 background。
   VideoOnlineMiningMode get videoOnlineMiningMode =>
       VideoOnlineMiningMode.fromWireName(
         getPref('video_online_mining_mode', defaultValue: null) as String?,
@@ -4447,6 +4550,17 @@ class PreferencesRepository extends ChangeNotifier
     await setPref('advanced_mining_visible_fields', jsonEncode(names));
   }
 
+  /// 「高级制卡」对话框的分区布局（反馈 aZ99bm9R6K）。缺键 / 坏值 = 默认布局。
+  AdvancedMiningLayout get advancedMiningLayout {
+    final Object? raw = getPref('advanced_mining_layout');
+    return AdvancedMiningLayout.tryParse(raw is String ? raw : null) ??
+        AdvancedMiningLayout.defaults;
+  }
+
+  Future<void> setAdvancedMiningLayout(AdvancedMiningLayout layout) async {
+    await setPref('advanced_mining_layout', layout.toJson());
+  }
+
   /// 制卡动图只播放一次（反馈 ZxyIMK-C5V）。默认 false = 无限循环（存量行为）。
   /// 两条动图链（视频 cue、galgame 窗口）共用；见 `animatedLoopArgs`。
   bool get miningAnimatedPlayOnce =>
@@ -4487,6 +4601,55 @@ class PreferencesRepository extends ChangeNotifier
 
   void setGalMiningClipFormat(MiningClipFormat format) async {
     await setPref('gal_mining_clip_format', format.wireName);
+    notifyListeners();
+  }
+
+  // galgame 制卡句子音频长度策略（反馈 II3jOBIhT5）：无配音游戏的兜底链只能截到
+  // 整机混音，停在一句上越久卡里的 BGM 越长。全局默认；单游戏可在游戏详情页覆盖
+  // （[galMiningOverrides]）。默认 auto = 现状（按捕获窗口原样入卡）。
+  GalMiningAudioMode get galMiningAudioMode =>
+      GalMiningAudioMode.tryParse(
+        getPref('gal_mining_audio_mode', defaultValue: null) as String?,
+      ) ??
+      GalMiningAudioMode.auto;
+
+  Future<void> setGalMiningAudioMode(GalMiningAudioMode mode) async {
+    await setPref('gal_mining_audio_mode', mode.wireName);
+    notifyListeners();
+  }
+
+  /// 最长 / 固定时长两档共用的秒数（int，默认 [kGalMiningAudioSecondsDefault]）。
+  int get galMiningAudioSeconds {
+    final Object? raw = getPref(
+      'gal_mining_audio_seconds',
+      defaultValue: kGalMiningAudioSecondsDefault,
+    );
+    return clampGalMiningAudioSeconds(
+      raw is num ? raw.round() : kGalMiningAudioSecondsDefault,
+    );
+  }
+
+  Future<void> setGalMiningAudioSeconds(int seconds) async {
+    await setPref(
+      'gal_mining_audio_seconds',
+      clampGalMiningAudioSeconds(seconds),
+    );
+    notifyListeners();
+  }
+
+  /// 单个游戏的 gal 制卡设置覆盖层（反馈 3dRZdakRdJ）；没设过 = 全部跟随全局。
+  /// 键 `gal_mining_overrides::<galgames.id>`，值是 [GalGameMiningOverrides] 的 JSON。
+  GalGameMiningOverrides galMiningOverrides(String gameId) =>
+      GalGameMiningOverrides.decode(
+        getPref(galMiningOverridesPrefKey(gameId), defaultValue: ''),
+      );
+
+  /// 写回覆盖层；全部清空时写空串（= 这个游戏完全跟随全局）。
+  Future<void> setGalMiningOverrides(
+    String gameId,
+    GalGameMiningOverrides overrides,
+  ) async {
+    await setPref(galMiningOverridesPrefKey(gameId), overrides.encode());
     notifyListeners();
   }
 
@@ -6290,6 +6453,21 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 子开关：书架「导入文件夹」/ 本地来源扫描时，书配上了有声书音频但找不到字幕，
+  /// 就把音频排进转录队列、转完对齐到这本书（默认关：一本书几个小时的推理，要用户
+  /// 明确要）。只在总开关 [audiobookAutoTranscribe] 开时生效。设备本地：本机有没有
+  /// 算力跑转录是这台设备的事（见 `SyncRepository.deviceLocalPrefKeys`）。
+  static const String audiobookFolderImportTranscribeKey =
+      'audiobook_folder_import_transcribe';
+
+  bool get audiobookFolderImportTranscribe =>
+      getPref(audiobookFolderImportTranscribeKey, defaultValue: false) as bool;
+
+  Future<void> setAudiobookFolderImportTranscribe({required bool value}) async {
+    await setPref(audiobookFolderImportTranscribeKey, value);
+    notifyListeners();
+  }
+
   String get mangaSpreadPreference =>
       getPref('manga_spread_preference', defaultValue: 'auto') as String;
 
@@ -7121,6 +7299,47 @@ class PreferencesRepository extends ChangeNotifier
     await setPref('reading_goal_daily_chars', value.clamp(0, 1000000));
     notifyListeners();
   }
+
+  /// 每周字数目标上限 = 每日上限 × 7。
+  static const int readingGoalWeeklyCharsMax = 7000000;
+
+  /// 每周字数目标（0 = 未设）。只在 [readingGoalPeriod] 为 weekly 时生效。
+  int get readingGoalWeeklyChars =>
+      (getPref('reading_goal_weekly_chars', defaultValue: 0) as int).clamp(
+        0,
+        readingGoalWeeklyCharsMax,
+      );
+
+  Future<void> setReadingGoalWeeklyChars(int value) async {
+    await setPref(
+      'reading_goal_weekly_chars',
+      value.clamp(0, readingGoalWeeklyCharsMax),
+    );
+    notifyListeners();
+  }
+
+  /// 字数目标周期（日 / 周二选一，反馈 CjIr9RGSCe）。缺省 / 未知值 = daily。
+  StudyGoalPeriod get readingGoalPeriod => StudyGoalPeriod.fromWire(
+    getPref('reading_goal_period', defaultValue: 'daily') as String?,
+  );
+
+  Future<void> setReadingGoalPeriod(StudyGoalPeriod value) async {
+    await setPref('reading_goal_period', value.wire);
+    notifyListeners();
+  }
+
+  /// 当前周期下生效的字数目标值（0 = 未设）。
+  int get readingGoalActiveChars => switch (readingGoalPeriod) {
+    StudyGoalPeriod.daily => readingGoalDailyChars,
+    StudyGoalPeriod.weekly => readingGoalWeeklyChars,
+  };
+
+  /// 写当前周期下生效的那一份目标值（小组件设置页的「阅读字数」入口用）。
+  Future<void> setReadingGoalActiveChars(int value) =>
+      switch (readingGoalPeriod) {
+        StudyGoalPeriod.daily => setReadingGoalDailyChars(value),
+        StudyGoalPeriod.weekly => setReadingGoalWeeklyChars(value),
+      };
 
   // ── 每日目标（桌面小组件「目标」卡；0 = 关，随 Profile）─────────────────
   /// 目标上限：分钟 24h、张数 / 复习数 100 万，防误输入。

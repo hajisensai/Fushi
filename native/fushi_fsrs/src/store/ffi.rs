@@ -730,9 +730,11 @@ fn group_count(args: &[i64]) -> Result<usize, String> {
     usize::try_from(arg(args, 0)?).map_err(|_| "negative group count".to_string())
 }
 
-/// 优化器训练集（`SrsCore::optimizer_items`）。`args = [n_groups, alg, utcOffsetMin, rolloverHour, 卡数字 id × n_groups]`。
-#[no_mangle]
-pub extern "C" fn ffsrs_store_optimizer_items(
+/// 只读训练集命令的公共壳（`ffsrs_store_optimizer_items` / `ffsrs_store_calibration_items`）：
+/// 解析 `args = [n_groups, alg, utcOffsetMin, rolloverHour, 卡数字 id × n_groups]` 与 lineage 页，
+/// 把 `body` 产出的训练集字节串打包返回。
+#[allow(clippy::too_many_arguments)]
+fn lineage_command(
     core: *const SrsCoreHandle,
     page: *const u8,
     page_len: usize,
@@ -741,6 +743,13 @@ pub extern "C" fn ffsrs_store_optimizer_items(
     out: *mut *mut u8,
     out_len: *mut usize,
     error_out: *mut *mut c_char,
+    body: impl FnOnce(
+        &SrsCore,
+        Vec<Vec<String>>,
+        &[i64],
+        crate::projection::Alg,
+        crate::projection::Day,
+    ) -> Result<Vec<u8>, String>,
 ) -> i32 {
     command(
         core,
@@ -756,8 +765,58 @@ pub extern "C" fn ffsrs_store_optimizer_items(
             let (lineages, _) = lineage_page(page, n)?;
             let alg = crate::projection::Alg::from_code(arg(args, 1)?)?;
             let ids = args.get(4..4 + n).ok_or("missing card ids")?;
-            c.optimizer_items(&lineages, ids, alg, &day_of(args, 2)?)
+            body(c, lineages, ids, alg, day_of(args, 2)?)
         },
+    )
+}
+
+/// 优化器训练集（`SrsCore::optimizer_items`）。`args = [n_groups, alg, utcOffsetMin, rolloverHour, 卡数字 id × n_groups]`。
+#[no_mangle]
+pub extern "C" fn ffsrs_store_optimizer_items(
+    core: *const SrsCoreHandle,
+    page: *const u8,
+    page_len: usize,
+    args: *const i64,
+    n_args: usize,
+    out: *mut *mut u8,
+    out_len: *mut usize,
+    error_out: *mut *mut c_char,
+) -> i32 {
+    lineage_command(
+        core,
+        page,
+        page_len,
+        args,
+        n_args,
+        out,
+        out_len,
+        error_out,
+        |c, lineages, ids, alg, day| c.optimizer_items(&lineages, ids, alg, &day),
+    )
+}
+
+/// 复习统计页校准图的训练集与条目元数据（`SrsCore::calibration_items`）。参数同 [ffsrs_store_optimizer_items]。
+#[no_mangle]
+pub extern "C" fn ffsrs_store_calibration_items(
+    core: *const SrsCoreHandle,
+    page: *const u8,
+    page_len: usize,
+    args: *const i64,
+    n_args: usize,
+    out: *mut *mut u8,
+    out_len: *mut usize,
+    error_out: *mut *mut c_char,
+) -> i32 {
+    lineage_command(
+        core,
+        page,
+        page_len,
+        args,
+        n_args,
+        out,
+        out_len,
+        error_out,
+        |c, lineages, ids, alg, day| c.calibration_items(&lineages, ids, alg, &day),
     )
 }
 
@@ -1115,6 +1174,8 @@ const CHANNEL_TRANSPARENT: &[&str] = &[
     "identity",
     "device_info",
     "device_hint",
+    "location_sealed",
+    "location_seal",
     "channel_settle",
     "open_v1",
     "plan",
@@ -1173,6 +1234,7 @@ const CHANNEL_TRANSPARENT: &[&str] = &[
 #[cfg_attr(not(test), allow(dead_code))]
 const CHANNEL_SETTLES: &[&str] = &[
     "apply",
+    "sched",
     "retire",
     "dedup",
     "migrate",
@@ -1190,6 +1252,7 @@ const CHANNEL_SETTLES: &[&str] = &[
     "media_bind_unbound",
     "media_doomed",
     "resolve",
+    "trust",
     "purge",
     "checkpoint",
     "plan_restore",
@@ -1201,6 +1264,7 @@ const CHANNEL_SETTLES: &[&str] = &[
 
 const PROJECTING_OPS: &[&str] = &[
     "apply",
+    "sched",
     "retire",
     "ingest",
     "ingest_batch",
@@ -1209,6 +1273,7 @@ const PROJECTING_OPS: &[&str] = &[
     "replay_pending",
     "import",
     "resolve",
+    "trust",
     "purge",
     "checkpoint",
     "restore",
@@ -1253,6 +1318,8 @@ fn sync2_command(
                 .map_err(|e| e.to_string())?;
             parse(c.sync2_apply_local(profile, i("now")?, input)?)?
         }
+        // 本机手动排程操作（重置 / 改期 / 撤销 / 立即重排）：显式意图，内核算结果并落库（store/sync2/sched_local.rs）。
+        "sched" => c.sync2_sched_local(profile, i("now")?, req)?,
         "migrate" => {
             c.sync2_migrate(profile, i("now")?, req.get("limit").and_then(Value::as_u64))?
         }
@@ -1555,6 +1622,16 @@ fn sync2_command(
         // 的设备的补充名（互联 host 认出上传者）。
         "device_info" => c.sync2_device_info(profile, req, i("now")?)?,
         "device_hint" => c.sync2_device_hint(s("device")?, s("hint")?)?,
+        // 位置「见过加密」的本机记账（store/sync2/sealed.rs，BUG-4299）：读；记（带这一刻见到的 kdf，或段 / 转发件的开头字节）。
+        "location_sealed" => c.sync2_location_sealed(profile, s("location")?)?,
+        "location_seal" => c.sync2_location_seal(
+            profile,
+            s("location")?,
+            req.get("kdf").filter(|v| !v.is_null()),
+            req.get("seen").and_then(Value::as_bool).unwrap_or(false),
+            blobs,
+            i("now")?,
+        )?,
         // 停用 / 取消停用一台设备，紧接着投一遍缓冲（因它卡住的操作不再等它），同一次调用里刷新缓存（[PROJECTING_OPS]）。
         "retire" => {
             let retire = req["retire"] != Value::Bool(false);
@@ -1706,6 +1783,13 @@ fn sync2_command(
             profile,
             s("conflict")?,
             req["delete"] == Value::Bool(true),
+            i("now")?,
+        )?,
+        // 信任 / 拒绝一台待确认的设备（store/sync2/trust.rs）：信任时扣着的删除 / 彻底清除放行进投影。
+        "trust" => c.sync2_trust(
+            profile,
+            s("device")?,
+            req["trust"] != Value::Bool(false),
             i("now")?,
         )?,
         "purge" => c.sync2_purge(profile, s("kind")?, s("entity")?, i("now")?)?,

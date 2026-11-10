@@ -10,6 +10,7 @@ import 'package:fushi_engine/sync/fushi_library_host_service.dart'
 import 'package:fushi_engine/sync/manga_sync_package.dart';
 import 'package:fushi_engine/sync/sync_asset_store.dart' show AssetEntry;
 import 'package:fushi_engine/sync/online_novel_book.dart';
+import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/sync/cloud_book_content_names.dart';
 import 'package:fushi/src/sync/position_converter.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
@@ -24,6 +25,7 @@ import 'package:fushi_engine/sync/ttu_models.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 import 'package:fushi_engine/sync/epub_repackage.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 export 'package:fushi_engine/sync/epub_repackage.dart'
     show repackageExtractedEpub, resolveExtractedEpubRoot;
@@ -66,6 +68,32 @@ const String kSyncBookCssAssetName = 'book_css.json';
 
 /// Per-manga reader overrides sidecar (LWW by updatedAt).
 const String kSyncMangaReaderAssetName = 'manga_reader.json';
+
+/// [SyncManager.syncBook] 一本书走到的阶段：失败时随错误进 app 日志，定位挂在哪一步
+/// （BUG-4337：以前失败只回一个 error 字符串，用户日志里什么都看不到）。
+enum SyncBookStage {
+  /// 解析根目录 / 本书远端文件夹。
+  folder,
+
+  /// 列举本书远端同步文件。
+  listing,
+
+  /// 判定方向并传输进度 / 统计 / 有声书断点。
+  progress,
+
+  /// 补传书文件 / 元数据 sidecar。
+  content,
+}
+
+/// 同步日志里的来源类型：在线扩展源漫画带运行时，在线小说单列，其余按书格式。
+String syncBookSourceKind(EpubBookRow book) {
+  final OnlineMangaLibraryEntry? online = OnlineMangaLibraryEntry.tryParse(
+    book.sourceMetadata,
+  );
+  if (online != null) return 'online-manga:${online.runtime.wireValue}';
+  if (isLnReaderOnlineBookMetadata(book.sourceMetadata)) return 'online-novel';
+  return BookFormat.parseOrEpub(book.format).dbValue;
+}
 
 class SyncBookResult {
   const SyncBookResult({
@@ -203,9 +231,19 @@ class SyncManager {
       syncMangaContent: syncMangaContent,
     );
     SyncBookResult? progressResult;
+    SyncBookStage stage = SyncBookStage.folder;
+    void onStage(SyncBookStage next) => stage = next;
     // 进度已判定后才失败 = 失败的是补传书文件 / 元数据：保留已落地的进度结果（导入 /
     // 导出 / 冲突都照实上报），失败原因记进 contentError；进度判定前就失败才是整本失败。
-    SyncBookResult failure(String error) {
+    // 两种失败都进 app 日志（书 key / 来源类型 / 阶段），不能只留在返回值里——单本路径
+    // （对比弹窗 / 退出书）的调用方以前只 developer.log，用户日志里查无此事（BUG-4337）。
+    SyncBookResult failure(String error, StackTrace stack) {
+      ErrorLogService.instance.log(
+        'SyncManager.syncBook',
+        'book=${book.bookKey} source=${syncBookSourceKind(book)} '
+            'stage=${stage.name} title="${book.title}": $error',
+        stack,
+      );
       final SyncBookResult? decided = progressResult;
       if (decided != null) return decided.withContentError(error);
       return SyncBookResult(
@@ -227,11 +265,12 @@ class SyncManager {
         listing: listing,
         observations: observations,
         prefetchedSyncFiles: prefetchedSyncFiles,
+        onStage: onStage,
         onProgressResult: (SyncBookResult result) => progressResult = result,
       );
       await _persistDriveCache();
       return result;
-    } on SyncBackendError catch (e) {
+    } on SyncBackendError catch (e, stack) {
       if (e.isRetryable) {
         // 仅丢内存态让重试重新解析；不清磁盘 folder 缓存。否则一次瞬时错误
         // （网络超时等）会逼着重试及之后每个会话对每本书全量重做文件夹查找，
@@ -251,24 +290,25 @@ class SyncManager {
             // 老老实实逐本列举拿最新状态。
             listing: null,
             observations: observations,
+            onStage: onStage,
             onProgressResult: (SyncBookResult result) =>
                 progressResult = result,
           );
           await _persistDriveCache();
           return result;
-        } on SyncBackendError catch (retryError) {
-          return failure(retryError.message);
+        } on SyncBackendError catch (retryError, retryStack) {
+          return failure(retryError.message, retryStack);
         } on SyncAuthError {
           rethrow;
-        } catch (retryError) {
-          return failure(retryError.toString());
+        } catch (retryError, retryStack) {
+          return failure(retryError.toString(), retryStack);
         }
       }
-      return failure(e.message);
+      return failure(e.message, stack);
     } on SyncAuthError {
       rethrow;
-    } catch (e) {
-      return failure(e.toString());
+    } catch (e, stack) {
+      return failure(e.toString(), stack);
     }
   }
 
@@ -300,10 +340,62 @@ class SyncManager {
     // 没有整树快照时，把「每本书列一次文件夹」从串行改成有界并发的预取：请求数不变
     // （仍是每本一次），但不再一本接一本地排队等往返（jHQpTfjrNB：36 本书 ×
     // 一次 PROPFIND 串行就是十几秒）。
+    //
+    // 循环一旦提前退出（鉴权失效 / 同步模块被关掉的取消检查点抛出），预取 worker 不得
+    // 再领新活：此时调用方马上要放掉这条通道的后端锁，别的同步随即接手这个无锁单例，
+    // 被丢下的 worker 若还在发列举请求就是在锁外用它。
+    bool loopExited = false;
     final Map<String, Future<SyncFileTrio?>> prefetched = listing == null
-        ? await _prefetchSyncFileLists(books, skipBookKeys)
+        ? await _prefetchSyncFileLists(
+            books,
+            skipBookKeys,
+            stopped: () => loopExited,
+          )
         : const <String, Future<SyncFileTrio?>>{};
     final results = <SyncBookResult>[];
+    try {
+      await _syncBooksInOrder(
+        books: books,
+        results: results,
+        prefetched: prefetched,
+        syncStats: syncStats,
+        statsSyncMode: statsSyncMode,
+        syncAudioBook: syncAudioBook,
+        syncContent: syncContent,
+        syncMangaContent: syncMangaContent,
+        importOnly: importOnly,
+        listing: listing,
+        observations: observations,
+        skipBookKeys: skipBookKeys,
+        onBookProgress: onBookProgress,
+      );
+    } finally {
+      loopExited = true;
+    }
+    // TODO-1332: 不在此（书阶段末尾 / 整轮 sweep 中途）记录同步冷却时间戳。整轮 sweep
+    // 还有词典 / 本地音频 / 有声书 / live 进度 / 聚合等后续阶段；若在这里记 lastSyncMs，
+    // 书阶段后被中断（app 退出 / 进程被杀 / 异常）的残缺同步会误记冷却、压制下次
+    // app-open 重试。改由 SyncOrchestrator.run() 在整轮完成后记录（见其结尾 TODO-1332）。
+    await _persistDriveCache();
+    return results;
+  }
+
+  /// [syncAllBooks] 的逐本循环：按顺序同步每本书，结果追加进 [results]。
+  Future<void> _syncBooksInOrder({
+    required List<EpubBookRow> books,
+    required List<SyncBookResult> results,
+    required Map<String, Future<SyncFileTrio?>> prefetched,
+    required bool syncStats,
+    required StatisticsSyncMode statsSyncMode,
+    required bool syncAudioBook,
+    required bool syncContent,
+    required bool syncMangaContent,
+    required bool importOnly,
+    required RemoteListingSnapshot? listing,
+    required BookFolderListingObservations? observations,
+    required Set<String> skipBookKeys,
+    required void Function(int done, int total, String title)? onBookProgress,
+  }) async {
     for (int i = 0; i < books.length; i++) {
       final book = books[i];
       onBookProgress?.call(i, books.length, book.title);
@@ -338,12 +430,6 @@ class SyncManager {
       );
       results.add(result);
     }
-    // TODO-1332: 不在此（书阶段末尾 / 整轮 sweep 中途）记录同步冷却时间戳。整轮 sweep
-    // 还有词典 / 本地音频 / 有声书 / live 进度 / 聚合等后续阶段；若在这里记 lastSyncMs，
-    // 书阶段后被中断（app 退出 / 进程被杀 / 异常）的残缺同步会误记冷却、压制下次
-    // app-open 重试。改由 SyncOrchestrator.run() 在整轮完成后记录（见其结尾 TODO-1332）。
-    await _persistDriveCache();
-    return results;
   }
 
   /// 逐本列举预取的并发上限。只是把同样多的请求叠起来发，不改变请求数；取小值是为了
@@ -362,10 +448,13 @@ class SyncManager {
   ///
   /// 预取失败的那本得到 null，轮到它时走与改动前完全相同的现列路径——错误在那里照常
   /// 抛出、照常进重试 / 失败结果，不会被这里吞掉。
+  ///
+  /// [stopped] 为 true 后 worker 不再领新活（[syncAllBooks] 的循环已提前退出，见那里）。
   Future<Map<String, Future<SyncFileTrio?>>> _prefetchSyncFileLists(
     List<EpubBookRow> books,
-    Set<String> skipBookKeys,
-  ) async {
+    Set<String> skipBookKeys, {
+    required bool Function() stopped,
+  }) async {
     final Map<String, String> cached = _backend.cachedFolderIds;
     if (cached.isEmpty) return const <String, Future<SyncFileTrio?>>{};
     final Map<String, int> booksPerFolder = <String, int>{};
@@ -401,7 +490,7 @@ class SyncManager {
         };
     final Iterator<String> pending = slots.keys.iterator;
     Future<void> worker() async {
-      while (pending.moveNext()) {
+      while (!stopped() && pending.moveNext()) {
         final String id = pending.current;
         try {
           slots[id]!.complete(await _backend.listSyncFiles(id));
@@ -436,8 +525,10 @@ class SyncManager {
     BookFolderListingObservations? observations,
     Map<String, Future<SyncFileTrio?>> prefetchedSyncFiles =
         const <String, Future<SyncFileTrio?>>{},
+    required void Function(SyncBookStage stage) onStage,
     required void Function(SyncBookResult result) onProgressResult,
   }) async {
+    onStage(SyncBookStage.folder);
     // BUG-619 / TODO-1329: an empty sanitized title has no unique bookKey and no
     // per-book folder — `ensureBookFolder('')` collapses onto the sync root and
     // scatters this book's progress_/statistics_/audioBook_ JSON (plus cover /
@@ -469,6 +560,7 @@ class SyncManager {
     // `requireBookFolderName`），所以它既是快照的键，也是同步基线的键。
     final String assetKey = sanitizeTtuFilename(book.title);
 
+    onStage(SyncBookStage.listing);
     // 整个增量同步收敛到这一行：三件套要么来自本轮那一次全量列举快照，要么照旧为
     // 这本书单独问一次。两条路给出的是**同一批文件名**（快照的 trioFor 与各后端的
     // listSyncFiles 共用同一个 canonical matcher），所以下面的方向判定一个字都不用
@@ -494,6 +586,7 @@ class SyncManager {
       observations?.record(folderId, remoteFileNames);
     }
 
+    onStage(SyncBookStage.progress);
     final SyncBookResult result = await _syncBookProgress(
       book: book,
       assetKey: assetKey,
@@ -516,6 +609,7 @@ class SyncManager {
     // 互联文件箱只有本 client 写、host 从不读回：书内容走 live 端点，这里一律不传
     // （单本同步路径 —— 退出书 / 对比弹窗 —— 也传 syncContent，门必须在这里）。
     if (syncContent && !importOnly && !_fileBoxIsClientOwned) {
+      onStage(SyncBookStage.content);
       await _exportContentIfMissing(
         book: book,
         folderId: folderId,
@@ -548,7 +642,8 @@ class SyncManager {
             0,
           )
         : 0;
-    final chapters = parseChaptersJson(book.chaptersJson);
+    // BUG-4337：页式书（含在线扩展源漫画）不解析 chaptersJson，见 [syncChapterCharTable]。
+    final chapters = syncChapterCharTable(book);
 
     // HBK-AUDIT-047: compute the local progress fraction so a timestamp tie
     // can be broken by actual content instead of silently declaring 'synced'.
@@ -1072,7 +1167,8 @@ class SyncManager {
     // guard silently skipped every upload — BUG-088). Re-package the extracted
     // directory into a temp .epub and upload that.
     final BookFormat format = BookFormat.parseOrEpub(book.format);
-    // PDF 无内容同步通道（与互联侧 _syncBooksContentLive 同判据）：不打包、不上传。
+    // PDF 无云盘内容同步通道：不打包、不上传（互联侧已有 PDF 原件通道，见
+    // pdf_sync_package.dart / BUG-4381；云盘通道刻意未扩，见该 BUG 记录）。
     // 在线小说占位书（LNReader）不上传：对端拿到的会是一本补不全的书。
     // 漫画先判本地有没有可导出的页（在线漫画占位书没有）再问远端，否则这类书每轮
     // 白发一次探针（与互联 books.part 同顺序）。

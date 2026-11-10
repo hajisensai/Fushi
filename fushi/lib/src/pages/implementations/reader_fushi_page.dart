@@ -8,6 +8,16 @@ import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
+
+import 'package:drift/drift.dart' show TableUpdate, TableUpdateQuery;
+import 'package:fushi/src/second_screen/companion/companion_lookup_routing.dart';
+import 'package:fushi/src/second_screen/companion/companion_snapshot.dart';
+import 'package:fushi/src/second_screen/companion/modules/audiobook_companion_commands.dart';
+import 'package:fushi/src/second_screen/companion/modules/audiobook_companion_schema.dart';
+import 'package:fushi/src/second_screen/companion/modules/reader_companion_hook.dart';
+import 'package:fushi/src/second_screen/companion/modules/reader_companion_schema.dart';
+import 'package:fushi/src/second_screen/input/controller_lookup_mode.dart';
+import 'package:fushi/src/second_screen/input/controller_lookup_target.dart';
 import 'dart:ui' as ui show Image;
 import 'dart:ui' show ImageFilter;
 
@@ -53,6 +63,8 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/epub_book.dart';
 import 'package:fushi_engine/epub/epub_parser.dart';
 import 'package:fushi_engine/epub/epub_image_index_cache.dart';
+import 'package:fushi_engine/media/media_pref_keys.dart'
+    show kLyricsModeHintShownPrefShortKey;
 import 'package:fushi/src/epub/epub_spread_analyzer.dart';
 import 'package:fushi/src/epub/epub_spread_map.dart';
 import 'package:fushi/src/utils/adaptive/fushi_fold_posture.dart';
@@ -94,13 +106,16 @@ import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi/src/media/audiobook/highlight_bridge.dart';
 import 'package:fushi/src/media/audiobook/audiobook_play_bar.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_typography_panel.dart';
+import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_av_sync_panel.dart'
+    show showLyricsAvSyncPanel;
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_speed_panel.dart'
     show showLyricsSpeedPanel;
 import 'package:fushi/src/asr_host/asr_host.dart';
 import 'package:fushi/src/media/audiobook/asr_transcribe_sheet.dart';
+import 'package:fushi/src/media/audiobook/audiobook_subtitle_export_flow.dart';
 import 'package:fushi/src/media/audiobook/audiobook_import_dialog.dart';
 import 'package:fushi/src/media/audiobook/srt_book_reimport_dialog.dart';
-import 'package:fushi/src/media/import/srt_book_reimport.dart';
+import 'package:fushi_engine/media/audiobook/srt_book_reimport.dart';
 import 'package:fushi/src/media/video/video_exit_flush.dart';
 import 'package:fushi/src/media/audiobook/mining_audio_clip.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.dart';
@@ -183,6 +198,7 @@ import 'package:fushi/src/reader/reader_open_trace.dart';
 import 'package:fushi/src/reader/reader_progress_state.dart';
 import 'package:fushi/src/reader/reader_statistics_sheet.dart';
 import 'package:fushi/src/reader/reader_status_footer.dart';
+import 'package:fushi/src/stats/lyrics_read_unit.dart';
 import 'package:fushi/src/stats/read_unit_ledger.dart';
 import 'package:fushi/src/stats/reader_study_clock_start_mode.dart';
 import 'package:fushi/src/stats/study_cover_tracker.dart';
@@ -198,6 +214,7 @@ import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_channel.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_style.dart';
 import 'package:fushi/src/media/audiobook/pointer_seek.dart';
+import 'package:fushi/src/media/audiobook/text_leads_page_stop.dart';
 import 'package:fushi/src/platform/selection_external_actions.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
@@ -281,6 +298,8 @@ part 'reader_fushi/chrome.part.dart';
 part 'reader_fushi/webview.part.dart';
 part 'reader_fushi/tts.part.dart';
 part 'reader_fushi/session_remote.part.dart';
+part 'reader_fushi/companion.part.dart';
+part 'reader_fushi/controller_lookup.part.dart';
 part 'reader_fushi/jump_history.part.dart';
 part 'reader_fushi/kavita.part.dart';
 part 'reader_fushi/page_curl.part.dart';
@@ -1932,6 +1951,16 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   late final _ReaderPageSessionRemote _sessionRemote = _ReaderPageSessionRemote(
     this,
   );
+
+  /// Dual-screen companion: claims `reader` / `audiobook`, publishes the
+  /// snapshot only while the companion is up (see `companion.part.dart`).
+  late final ReaderCompanionHook _companion = ReaderCompanionHook(
+    _ReaderCompanionPageAdapter(this),
+  );
+
+  /// Controller lookup mode adapter (S6, hold L1 / Select; see
+  /// `reader_fushi/controller_lookup.part.dart`).
+  _ReaderControllerLookupTarget? _controllerLookupTarget;
   // 压平目录的按书缓存（见 [_buildTtuToc]）：顶栏章名逐帧要查，压平却要走整棵 TOC
   // 树。只随 _book 失效，故这两个字段总是成对写。
   List<TtuTocEntry>? _ttuTocCache;
@@ -2428,6 +2457,14 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   // （_lyricsMode=false，避免直接整页加载歌词 HTML 跳过 EPUB → iOS 白屏），等 EPUB
   // 内容就绪 + 有声书已挂载后再切歌词（等价用户手动切，已知安全）。一次性，恢复后清零。
   bool _pendingLyricsRestore = false;
+
+  /// 歌词模式的阅读位置：当前句所在章 + 章内学习单位偏移（只知道章时偏移为 -1）。
+  /// 歌词模式是独立模式，位置归当前句（`_settleLyricsCue` 每次换句更新），正文的
+  /// `_currentChapter` 停在进歌词那一刻。不在歌词模式时为 null。
+  ({int chapter, int offset})? _lyricsReadingPoint;
+
+  /// 上一次落定过的当前句（`_settleLyricsCue` 去重：同一句只落定一次）。
+  AudioCue? _lyricsSettledCue;
   bool _gamepadALongFired = false;
   // 重入守卫：「调整」面板从点击到 show 之间有 DB 读 await，快速连点会二次进入并
   // 弹出两个面板（BUG-026）。打开期间置 true、关闭后于 finally 复位。
@@ -2471,6 +2508,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       if (!mounted) return;
       // BUG-712 ①：highlightOnTap 是 JS 侧点词门控镜像的另一半，设置热更新时同步。
       _syncTapGateJs();
+      // 「跟随音频的领读方向」是热更新偏好：改完立刻同步给有声书控制器。
+      _syncAudiobookTextLeads();
       setState(() {});
     },
   );
@@ -2493,10 +2532,10 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   List<AudioCue> _lyricsCueList = const [];
 
   // ── 歌词覆盖层（2026-10-04，对齐 Niratan）──────────────────────────────
-  // 歌词模式不再把正文文档换成歌词 HTML：歌词是**盖在阅读器上的一层**，有自己的
-  // WebView（[_lyricsController]）。正文 WebView（[_controller]）在下面照常存活、
-  // 照常跟随音频翻页 / 高亮，阅读统计（账本字数、StudyClock 时长）也照常由正文
-  // 这条路产生——歌词层不写任何统计。
+  // 歌词模式是独立模式（2026-11-10），有自己的 WebView（[_lyricsController]）、
+  // 自己的阅读位置与统计（单元 = 当前句，见 lyrics.part.dart）。正文 WebView
+  // （[_controller]）实例留着但停在进歌词那一刻的位置，不跟随音频、不采样、不记账；
+  // 退出歌词时一次性对齐到当前句。
   //
   // BUG-3913：歌词 WebView 第一次进歌词模式时创建，之后**整页存活期间复用同一个
   // 实例**——退出时不卸载，按 [_lyricsWebViewKey] 停到屏外（[ParkedWebViewSlot]），
@@ -3048,6 +3087,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     _sourceReviewWasActive = _sourceReviewActive;
     _suppressPositionPersist = _sourceReviewActive;
     _sourceReviewSession?.addListener(_onSourceReviewChanged);
+    _attachControllerLookup();
     // 阅读计时开始方式：打开书这一刻定初值（手动 / 翻页后开始 = 先暂停）。
     _studyClockStartGate = ReaderStudyClockStartGate(
       appModelNoUpdate.readerStudyClockStartMode,
@@ -3102,13 +3142,18 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       layoutReload: () {
         if (!mounted) return;
         unawaited(
-          _reloadWithCurrentSettings().catchError((Object e, StackTrace s) {
-            ErrorLogService.instance.log(
-              'ReaderFushi.onLayoutReloadLive',
-              e,
-              s,
-            );
-          }),
+          _reloadWithCurrentSettings()
+              .then((_) {
+                // 切换翻页 / 连续 / VN 后文字领读是否适用跟着变。
+                if (mounted) _syncAudiobookTextLeads();
+              })
+              .catchError((Object e, StackTrace s) {
+                ErrorLogService.instance.log(
+                  'ReaderFushi.onLayoutReloadLive',
+                  e,
+                  s,
+                );
+              }),
         );
       },
       // 纯 Flutter chrome 布局变化（如反转底栏）只需重建一次重读偏好，
@@ -3310,6 +3355,14 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     }
 
     _openTrace.mark('parsed');
+    // 解析在后台 isolate 里跑，期间用户可能已关掉阅读器：dispose 早已执行过
+    // leaveBookLayout，此时再登记会留下一条永不撤销的书本排版（全局生效值被死页面
+    // 劫持、设置页「排版方向」一直置灰）。已卸载就不再往下开书。
+    if (!mounted) return;
+    // 反馈 sYPkmtitOM「跟随原书」：书一解析完就登记它自带的排版 / 翻页方向，必须在
+    // spread map 与首屏 HTML 读 writingMode / spreadDirection 之前。是否采用由
+    // ReaderSettings 按「跟随原书」开关现算，开关拨动后随布局重载即时生效。
+    _settings?.enterBookLayout(this, _book!.originalLayout);
     // 同合集卷上下文与首屏无关，后台装载；失败只记日志（卷切换入口不出现）。
     unawaited(_loadVolumeContext(db));
 
@@ -3759,6 +3812,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     _lyricsMenuDismiss.detach();
     // 反馈 kEFPY4cuKZ：离开这本书 = 撤掉它的作品级配置覆盖层（全局配置从未改动）。
     WorkProfileScope.instance.leave(this);
+    // 离开这本书 = 撤掉它登记的书本排版（全局设置从未被改写）。
+    _settings?.leaveBookLayout(this);
     _studyCoverWatch.dispose();
     _pageCurlDrag = null;
     _pageCurl?.dispose();
@@ -3766,11 +3821,11 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     _stopFollowingScrollDismissPointer();
     _sourceReviewClosed = _sourceReviewActive;
     _sourceReviewSession?.removeListener(_onSourceReviewChanged);
-    // 歌词覆盖层期间本页给控制器挂的「强制跟随」（[_toggleLyricsMode] 进入分支）
+    // 歌词模式期间本页给控制器挂的「正文面脱开」（[_toggleLyricsMode] 进入分支）
     // 必须随页面一起撤：控制器是会话对象，开着后台播放时会比页面活得久，不撤的话
-    // 再开书时用户的「跟随音频=关」会被这个残留覆盖成强制跟随。只在本页确实还在
-    // 歌词层时撤——覆盖层关掉时 [_exitLyricsMode] 已经撤过。
-    if (_lyricsMode) _audiobookController?.setReaderFollowOverride(false);
+    // 再开书时正文不跟随音频、也不跨章。只在本页确实还在歌词模式时撤——退出歌词时
+    // [_exitLyricsMode] 已经撤过。
+    if (_lyricsMode) _audiobookController?.setReaderDetached(false);
     // 可见性是本页喂的；会话比本页活得久，撤掉本页的「后台」判断（BUG-3777 D）。
     _audiobookController?.setReaderVisible(true);
     // 歌词模式插图「弹出停留」挂在控制器上的监听随页面一起摘（控制器比本页活得久）。
@@ -3786,6 +3841,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     // 整段跳过。
     _studyClock?.detach();
     readerSessionRemotes.unregister(_sessionRemote);
+    _detachControllerLookup();
+    _companion.dispose();
     // Kavita 绑定书：关书时限时 flush 待推进度（不阻塞 dispose，内部吞错）。
     // 防抖里还没落库的最后一章也要带上：dispose 之后 [_persistPosition] 的转发会撞
     // 上已置空的会话，所以这里用页面缓存的最近 section 直接补报（纯内存，零 DB IO）。
@@ -4157,6 +4214,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   void didChangeDependencies() {
     super.didChangeDependencies();
     _studyCoverWatch.attach(ModalRoute.of(context));
+    _companion.attach(ModalRoute.of(context));
     final LyricsThemeHostState? themeHost = LyricsThemeHost.maybeOf(context);
     if (!identical(themeHost, _lyricsThemeHost)) {
       _lyricsThemeHost?.themeChanges.removeListener(_onLyricsThemeHostChanged);
@@ -4508,8 +4566,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
                             'floating_ball',
                             _buildReaderFloatingBallScene(),
                           ),
-                          // 歌词覆盖层（盖住正文与顶栏 / 状态行；查词弹层仍在它之上）。
-                          // 正文 WebView 不卸载，照常跟随音频、照常记统计。
+                          // 歌词页（盖住正文与顶栏 / 状态行；查词弹层仍在它之上）。
+                          // 正文 WebView 不卸载（实例复用），歌词模式期间停着不工作。
                           _buildLyricsOverlay(),
                           // BUG-4103：卡片来源回看横幅（含它自己的状态栏那一条），高度与
                           // [_topChromeInset] 同源，正文 / 顶栏 / 弹窗都排在它下沿之下。
@@ -5747,6 +5805,13 @@ $liveConfigJs
         ?.findRenderObject();
     if (obj is! RenderBox || !obj.attached || !obj.hasSize) {
       // WebView 不可用：退回默认「点空白关栈」。
+      clearDictionaryResult();
+      return;
+    }
+    // GitHub #3088：「单击查词」关闭时单击正文不查词，弹窗外的这一击就是「点空白关
+    // 弹窗」——不转给 _selectTextAt（那会命中词就换词）。歌词覆盖层的单击另有语义
+    // （查词 + 跳句），不受本开关管辖。
+    if (!_lyricsMode && !ReaderFushiSource.instance.highlightOnTap) {
       clearDictionaryResult();
       return;
     }

@@ -12,6 +12,8 @@ class MangaOcrBackgroundJob {
     required this.events,
     this.focus,
     this.follower,
+    this.title,
+    this.resume,
   });
 
   final String bookKey;
@@ -26,6 +28,16 @@ class MangaOcrBackgroundJob {
   /// 任务之外的收尾步骤（目前只有大模型识别）；null = 没有。由注册表驱动，见
   /// [MangaOcrJobFollower]。
   final MangaOcrJobFollower? follower;
+
+  /// 任务显示名（卷名 / 「作品 章名」），OCR 任务管理页用；null = 调用方没给，
+  /// 管理页回落到书名 + 目录名。
+  final String? title;
+
+  /// 「暂停后继续」的重建口：返回一个**尚未订阅**的同目录新任务（只补缺页，
+  /// 逐页缓存里已识别的页直接复用）。底层事件流只能订阅一次，暂停（真停）之后
+  /// 原任务不能再跑，继续时必须重建。null = 这个任务不支持暂停，管理页只给取消。
+  /// 生产路径一律经 `mangaOcrBackgroundJob`（manga_ocr_job_stream.dart）构造。
+  final MangaOcrBackgroundJob Function()? resume;
 }
 
 /// 跟随步骤改好的一页：[pageIndex] 是该页在整卷结果里的序号。

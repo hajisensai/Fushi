@@ -537,17 +537,20 @@ extension _ReaderChrome on _ReaderFushiPageState {
       onPressed: () => unawaited(_runSelectionAction(action)),
     );
 
-    final List<ReaderSelectionActionItem> actionItems =
-        <ReaderSelectionActionItem>[
-          item(FushiIcons.search, t.search, 'search'),
-          item(FushiIcons.copy, t.copy, 'copy'),
-          if (isAndroidPlatform) item(FushiIcons.share, t.share, 'share'),
-          if (isAndroidPlatform)
-            item(FushiIcons.travelExplore, t.selection_web_search, 'webSearch'),
-          item(FushiIcons.star, t.action_favorite, 'favorite'),
-          if (hasAudio)
-            item(FushiIcons.video, t.audiobook_export_clip, 'export'),
-        ];
+    final List<ReaderSelectionActionItem>
+    actionItems = <ReaderSelectionActionItem>[
+      item(FushiIcons.search, t.search, 'search'),
+      item(FushiIcons.copy, t.copy, 'copy'),
+      if (isAndroidPlatform) item(FushiIcons.share, t.share, 'share'),
+      if (isAndroidPlatform)
+        item(FushiIcons.travelExplore, t.selection_web_search, 'webSearch'),
+      item(FushiIcons.star, t.action_favorite, 'favorite'),
+      // 反馈 C9wcnKaPq_：触屏的「跳到这句播放」入口（鼠标走中键）。排在「收藏」后、
+      // 「导出片段」前；操作条按宽度降级时前 3 颗常驻不受影响。
+      if (hasAudio)
+        item(FushiIcons.playCircle, t.play_from_cue, 'playFromSentence'),
+      if (hasAudio) item(FushiIcons.video, t.audiobook_export_clip, 'export'),
+    ];
 
     // 2026-10 体验优化：原本整条 Row 套 FittedBox(scaleDown)，按钮一多就被等比
     // 缩到 0.5 倍（字和触控目标都太小）。改由 [ReaderSelectionActionBar] 按可用
@@ -660,6 +663,9 @@ extension _ReaderChrome on _ReaderFushiPageState {
         );
         await _clearReaderAppSelection();
         return;
+      case 'playFromSentence':
+        await _playFromSelectionSentence(data);
+        return;
       case 'export':
         // TODO-1366: same backend as desktop (_exportAudiobookClip) but fed from
         // the app-drawn selection payload; clear grips + highlight afterward.
@@ -749,6 +755,43 @@ extension _ReaderChrome on _ReaderFushiPageState {
     return data;
   }
 
+  /// [data] 所在的有声书句子（cue）。三级回退见 [_fillLookupStateFromSelectionData]
+  /// 的注释；查词状态填充与选区操作条「从此句播放」共用这一份解析，两条路径对同一处
+  /// 选区永远认同一句。纯查询，不改任何查词状态。
+  AudioCue? _cueForSelectionData(ReaderSelectionData data) {
+    final List<AudioCue>? allCues = _cachedAllCues;
+    AudioCue? cue = data.audioCuePayload != null && allCues != null
+        ? cueForPointerPayload(data.audioCuePayload!, allCues)
+        : null;
+    cue ??= data.matchableOffset != null
+        ? _findCueForOffset(data.matchableOffset!)
+        : null;
+    if (cue == null && _srtBookUid != null) {
+      cue = _findCueForSentence(data.sentence);
+    }
+    return cue;
+  }
+
+  /// 反馈 C9wcnKaPq_：选区操作条「从此句播放」——触屏上「跳到这句播放」的入口。
+  /// 左键 / 单击只查词（合成书与 EPUB 书一致），鼠标有中键（`onPointerSeek`），触屏没有
+  /// 中键，于是由「长按句子 → 操作条 → 从此句播放」承担；两种书走同一条路。解析不到
+  /// 句子（选区落在无音频的段落）时提示，不静默无反应。
+  Future<void> _playFromSelectionSentence(ReaderSelectionData data) async {
+    final AudiobookPlayerController? controller = _audiobookController;
+    await _clearReaderAppSelection();
+    if (!mounted || controller == null) return;
+    if (!identical(_audiobookController, controller)) return;
+    final AudioCue? cue = _cueForSelectionData(data);
+    if (cue == null) {
+      FushiToast.show(
+        msg: t.audiobook_play_from_selection_no_cue,
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
+    controller.playCueAndContinue(cue);
+  }
+
   /// TODO-1366：把一个已解析的 [ReaderSelectionData]（tap 查词 / 移动端拖选菜单 payload /
   /// 原生选区解析结果同构）填进导出/查词所需的选区状态——currentSentence（非空契约）、
   /// [_lookupCue]、[_cachedSelectionRange]、[_cachedSentenceRange]、[_cachedSentenceOffset]、
@@ -778,18 +821,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
     // ② 没有 payload 的书（DOM 里不带 cue id）退到按**音频坐标** matchableOffset
     //    在本章 cue 的 fragment 区间里反查——比原先按句子文本找精确；
     // ③ 仍无命中再退到句子文本匹配（见下方 _findCueForSentence）。
-    final List<AudioCue>? allCues = _cachedAllCues;
-    if (data.audioCuePayload != null && allCues != null) {
-      _lookupCue = cueForPointerPayload(data.audioCuePayload!, allCues);
-    } else {
-      _lookupCue = null;
-    }
-    _lookupCue ??= data.matchableOffset != null
-        ? _findCueForOffset(data.matchableOffset!)
-        : null;
-    if (_lookupCue == null && _srtBookUid != null) {
-      _lookupCue = _findCueForSentence(data.sentence);
-    }
+    _lookupCue = _cueForSelectionData(data);
     _cachedSelectionRange =
         (data.normalizedOffset != null && data.normalizedLength != null)
         ? (
@@ -1433,6 +1465,44 @@ extension _ReaderChrome on _ReaderFushiPageState {
     _focusOwnership.reclaim(FocusReclaimCause.gesture);
     unawaited(_paginate(direction));
     return true;
+  }
+
+  /// 正文「空白单击」的唯一语义：JS 选词判空白回传的 `onTapEmpty`
+  /// （`args` = x, y, 视口宽, 视口高 → [sizeIndex] 2），以及「单击查词」关闭时
+  /// 落到正文上的 `onTap`（`args` = x, y, shift, 视口宽, 视口高 → [sizeIndex] 3，
+  /// GitHub #3088：关掉单击查词后点正文就是点空白，不能被吞掉）。
+  void _handleReaderBlankTap(List<dynamic> args, {required int sizeIndex}) {
+    // TODO-1027：有可见查词弹窗时，这一击是 dismiss barrier 转发的真点击命中空白
+    // （onDismissBarrierTap → _selectTextAt 命中真空白才 fire onTapEmpty）。此时按
+    // barrier 旧语义清整栈（clearDictionaryResult → onAllPopupsDismissed 续播
+    // BUG-072 / 保留热槽 BUG-092），不走下面的隐藏控制栏分支。
+    if (isDictionaryShown) {
+      clearDictionaryResult();
+      return;
+    }
+    // TODO-1366：点空白取消残留的拖选（app 自绘选区 + 起止手柄）。拖选松手弹的
+    // 菜单被 dismiss 后不再清选区（留着让用户拖手柄改选），于是「点空白 = 取消选择」
+    // 成为自然清除路径；无选区时 clearSelection 是空操作，零副作用。
+    unawaited(_clearReaderAppSelection());
+    // indZkg2A0I：点击翻页区域模板认领两侧（或上下）三分之一；中间三分之一与
+    // 关闭模板时落到下面原来的工具栏分支。查词弹窗在场时上面已经 return，
+    // 所以「点空白关弹窗」永远先于翻页。
+    if (args.length >= sizeIndex + 2 &&
+        _turnPageByTapZone(args, 0, sizeIndex: sizeIndex)) {
+      return;
+    }
+    // TODO-975 决策#3：开启「点空白处隐藏控制栏」即底栏悬浮模式。此时点空白
+    // 走悬浮唤出/收起状态机（_handleFloatingChromeReveal，不改预留高、不重锚），
+    // 而非旧的挤压 _toggleChrome。未开启（挤压）时维持旧行为（不响应空白点）。
+    // 顶栏和底栏被关掉时两条分支都被闸门拦下（栏不出来，出口在悬浮球上）。
+    if (_anyChromeFloating) {
+      _handleFloatingChromeReveal();
+    } else if (ReaderFushiSource.instance.tapEmptyToHideChrome) {
+      _toggleChrome();
+    }
+    // Tap on empty space handed OS focus to the WebView; reclaim it so
+    // ESC still exits the book afterward (BUG-136).
+    _focusOwnership.reclaim(FocusReclaimCause.gesture);
   }
 
   void _handleVnBlankTap() {
@@ -2115,6 +2185,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
     if (old != null) {
       old.removeListener(_onChromePlaybackChanged);
       old.followAudio.removeListener(_onChromePlaybackChanged);
+      _detachAudiobookTextLeads(old);
     }
     _chromePlaybackListened = ctrl;
     if (ctrl != null) {
@@ -2122,6 +2193,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
       ctrl.followAudio.addListener(_onChromePlaybackChanged);
       _chromeLastPlaying = ctrl.isPlaying;
       _chromeLastFollow = ctrl.followAudio.value;
+      _syncAudiobookTextLeads();
     }
   }
 
@@ -2359,7 +2431,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
   /// 它），旗标也不会残留去影响之后的系统返回。
   ///
   /// 退出时**不**先关歌词层：那会把持久化的 lyrics_mode 写成 false，重开书就不再
-  /// 恢复歌词模式（BUG-785）。覆盖层期间的强制跟随由 dispose 撤销。
+  /// 恢复歌词模式（BUG-785）。歌词模式期间的正文面脱开由 dispose 撤销。
   Future<void> _exitReaderBook() async {
     final NavigatorState navigator = Navigator.of(context);
     _exitBookRequested = true;
@@ -2750,8 +2822,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
               extractDir: extractDir,
               coverPath: _book?.coverHref,
             ),
-      readerProgress: (_currentChapter, _book!.chapters.length),
-      readerCharOffset: _tocCharOffsetFor(_currentChapter),
+      readerProgress: (_readingChapter, _book!.chapters.length),
+      readerCharOffset: _readingTocCharOffset,
       onJumpSection: (int index, String? fragment) async {
         await _jumpToChapterAnchor(
           index,
@@ -3121,9 +3193,23 @@ extension _ReaderChrome on _ReaderFushiPageState {
 
   String _currentChapterLabel() {
     return _currentChapterLabelFor(
-      _currentChapter,
-      charOffset: _tocCharOffsetFor(_currentChapter),
+      _readingChapter,
+      charOffset: _readingTocCharOffset,
     );
+  }
+
+  /// 「现在读到哪一章」：正文模式是正文挂载的章；歌词模式是当前句所在章（正文停在
+  /// 进歌词那一刻的章，不代表音频走到哪）。
+  int get _readingChapter => _lyricsMode
+      ? (_lyricsReadingPoint?.chapter ?? _currentChapter)
+      : _currentChapter;
+
+  /// 与 [_readingChapter] 配对的章内位置（学习单位，判目录项用）。
+  int? get _readingTocCharOffset {
+    if (!_lyricsMode) return _tocCharOffsetFor(_currentChapter);
+    final ({int chapter, int offset})? point = _lyricsReadingPoint;
+    if (point == null) return _tocCharOffsetFor(_currentChapter);
+    return point.offset >= 0 ? point.offset : null;
   }
 
   /// 章 [chapterIndex]（章内位置 [charOffset]，`countStudyChars` 口径，null / 负数
@@ -3396,6 +3482,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
           from: AxisDirection.up,
           child: FushiFloatingTopBar(
             excludeFocus: true,
+            // 标题压在正文上：Apple 也垫底（反馈 -JpWlEuH5N）。
+            titleBacking: true,
             leading: leading,
             title: layout.showsTitle ? (_book?.title ?? '') : '',
             // 章名跟着书名这颗槽位开关一起开合；歌词模式下没有「当前章」可言。
@@ -3803,9 +3891,10 @@ extension _ReaderChrome on _ReaderFushiPageState {
 
   /// 本章总字数 / 已读字数（状态行括号段 / 预计读完）——派生量在
   /// [ReaderProgressState]，这里只是按当前章取。
-  int? get _footerChapterTotalChars => _progress.chapterTotal(_currentChapter);
+  // 「本章」跟阅读位置走（歌词模式 = 当前句所在章，见 [_readingChapter]）。
+  int? get _footerChapterTotalChars => _progress.chapterTotal(_readingChapter);
   int? get _footerChapterCurrentChars =>
-      _progress.chapterCurrent(_currentChapter);
+      _progress.chapterCurrent(_readingChapter);
 
   /// 播放条右端的状态文字（与状态行同一套文案 / 同一读口），只在桌面端播放条可见时用。
   Widget _buildBarStatusText() => ReaderStatusInline(
