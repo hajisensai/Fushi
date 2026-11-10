@@ -395,7 +395,7 @@ class FushiMarquee extends StatelessWidget {
   Widget build(BuildContext context) {
     // 量字与真正画字的 Text 用同一套样式 / 缩放：列表行的标题样式来自祖先
     // DefaultTextStyle（FushiListItem 的 listTitle），只拿 [style] 量会按 14px 默认字
-    // 判溢出、给滚动版定错行高（BUG-4284）。
+    // 判溢出、给滚动版定错行高（BUG-4285）。
     // 系统「粗体文字」开着时 Text 会再并上 FontWeight.bold，量字也照做，否则
     // 粗体更宽、按细体量会把放不下误判成放得下。
     TextStyle effectiveStyle = DefaultTextStyle.of(context).style.merge(style);
@@ -480,7 +480,7 @@ class FushiMarquee extends StatelessWidget {
   }
 }
 
-/// 替 [FushiMarquee] 里的 LayoutBuilder 回答 intrinsic 尺寸与 dry layout（BUG-4284）。
+/// 替 [FushiMarquee] 里的 LayoutBuilder 回答 intrinsic 尺寸与 dry layout（BUG-4285）。
 ///
 /// AlertDialog / Apple 表单式对话框把正文包在 `IntrinsicWidth` 里量宽；往下问到
 /// LayoutBuilder 时 debug 抛「LayoutBuilder does not support returning intrinsic
