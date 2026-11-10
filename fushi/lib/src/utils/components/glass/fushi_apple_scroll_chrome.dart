@@ -188,6 +188,7 @@ class FushiAppleScrollChrome extends ChangeNotifier {
     } else if (notification is ScrollMetricsNotification) {
       metrics = notification.metrics;
       if (metrics.axis != Axis.vertical) return false;
+      _expandIfStranded(metrics);
     } else {
       return false;
     }
@@ -203,6 +204,25 @@ class FushiAppleScrollChrome extends ChangeNotifier {
       _notifySafely();
     }
     return false;
+  }
+
+  /// 反馈 TyMqz158nj：收起状态必须跟着「还有没有能滚回去的内容」走。
+  ///
+  /// [GlassTabBarMinimizeController] 自己的两条展开规则（内容不可滚 / 停在
+  /// 起始边）只在 [ScrollUpdateNotification] 上判——可内容被**换掉或缩短**
+  /// （查词清空结果、换成历史页，列表变短）时 Flutter 只发
+  /// [ScrollMetricsNotification]，不发 update，状态机看不到，底栏就停在收起态，
+  /// 而新内容没东西可回滚。这里把同两条规则补到尺寸通知上：新内容滚不动
+  /// （可滚范围不足库的 [GlassTabBarMinimizeController.kMinScrollableExtent]）
+  /// 或停在起始边时展开。只会展开、不会收起，不改变「只有用户滚动才收起」。
+  void _expandIfStranded(ScrollMetrics metrics) {
+    if (!minimize.minimized) return;
+    if (!metrics.hasContentDimensions || !metrics.hasPixels) return;
+    final bool cannotScroll =
+        metrics.maxScrollExtent - metrics.minScrollExtent <
+        GlassTabBarMinimizeController.kMinScrollableExtent;
+    final bool atRestingEdge = metrics.pixels <= metrics.minScrollExtent;
+    if (cannotScroll || atRestingEdge) minimize.expand();
   }
 
   bool _notifyScheduled = false;
