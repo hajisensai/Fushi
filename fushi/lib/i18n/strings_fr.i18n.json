@@ -12249,6 +12249,8 @@
   "web_browser_settings_force_dark": "Dark mode for web pages",
   "web_browser_settings_force_dark_hint": "Show pages in dark colors when the app is dark",
   "web_browser_settings_manage_search_engines": "Manage search engines",
+  "web_browser_settings_pull_to_refresh": "Tirer vers le bas pour actualiser",
+  "web_browser_settings_pull_to_refresh_hint": "Sur téléphone, tirez vers le bas en haut de la page pour la recharger. Désactivez-le si vous le déclenchez par erreur",
   "web_browser_settings_restore_tabs": "Restore tabs from last time",
   "web_browser_settings_restore_tabs_hint": "Incognito tabs are never restored",
   "web_browser_settings_site_settings": "Site settings",
