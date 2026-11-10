@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:pdfrx/pdfrx.dart';
@@ -67,4 +69,40 @@ Future<List<EpubSection>> loadPdfTextSections(EpubBookRow row) async {
     start: normalized.starts[normStart],
     end: normalized.ends[normEnd - 1],
   );
+}
+
+/// 一句字幕落在某一页上的归一化区间（[page] 0 起，区间相对该页归一化文本）。
+typedef PdfCuePageSpan = ({int page, int normStart, int normEnd});
+
+/// 把匹配器给的区间按页拆开。PDF 正文按页切成 section，句子常跨页尾：匹配器把整句
+/// 记在**起始页**上（`s=` 是起始页），`normEnd` 按全书拼接坐标（各页归一化文本首尾
+/// 相接）越过该页长度，越过的部分顺延到后续页。只画起始页会让跨页句的后半截没有
+/// 高亮；按 `normEnd > 页长` 直接判越界则整句都不画。
+///
+/// [normLengthOf] 返回某页归一化文本长度（与匹配器同一套归一化）；返回 null = 该页
+/// 文本层读不到，后面的页无从换算，到此为止。起始页装不下 [normStart]（文本层变了、
+/// cue 属于别的书）时返回空表，不画。
+Future<List<PdfCuePageSpan>> pdfSplitCueRangeAcrossPages({
+  required int startPage,
+  required int normStart,
+  required int normEnd,
+  required int pageCount,
+  required FutureOr<int?> Function(int page) normLengthOf,
+}) async {
+  final List<PdfCuePageSpan> spans = <PdfCuePageSpan>[];
+  if (startPage < 0 || normStart < 0 || normEnd <= normStart) return spans;
+  int start = normStart;
+  int end = normEnd;
+  for (int page = startPage; page < pageCount && end > 0; page++) {
+    final int? len = await normLengthOf(page);
+    if (len == null) break;
+    if (page == startPage && start >= len) return <PdfCuePageSpan>[];
+    final int segEnd = end < len ? end : len;
+    if (start < segEnd) {
+      spans.add((page: page, normStart: start, normEnd: segEnd));
+    }
+    start = start > len ? start - len : 0;
+    end -= len;
+  }
+  return spans;
 }

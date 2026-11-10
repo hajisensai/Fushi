@@ -241,6 +241,7 @@ void main() {
       'abortChapterTransition()',
       'pagePaintCallbacks: _pagePaintCallbacks',
       'pdfRawRangeForNormRange(',
+      'pdfSplitCueRangeAcrossPages(',
       'AudiobookPlayBar(',
       'FushiChromeReveal(',
     ]) {

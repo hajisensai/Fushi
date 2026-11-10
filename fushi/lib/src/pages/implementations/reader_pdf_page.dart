@@ -882,64 +882,85 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
     _cueHighlight = next;
     if (!_pdfController.isReady) return;
     _pdfController.invalidate();
-    if (!reveal || next == null || next.rects.isEmpty) return;
+    if (!reveal || next == null) return;
+    // 跨页句从起始页的那截开始露出（句首是读者要找的位置）。
+    final MapEntry<int, List<PdfRect>> first = next.rectsByPage.entries.first;
     final Rect target = _pdfController.calcRectForRectInsidePage(
-      pageNumber: next.pageIndex + 1,
-      rect: next.rects.boundingRect(),
+      pageNumber: first.key + 1,
+      rect: first.value.boundingRect(),
     );
     await _pdfController.ensureVisible(target, margin: 48);
   }
 
-  /// 句 → 页上逐行矩形。匹配器给的是该页文本层归一化后的区间（`fushi-cue://s=页`），
-  /// 经同一套归一化映射换回 `fullText` 下标（[pdfRawRangeForNormRange]），再按 pdfrx
-  /// 的文本片段拆成每行一块（与原生选区同一种画法）。没匹配上正文的句 / 页码越界 /
-  /// 文本层读不到时返回 null，不画。
+  /// 句 → 页上逐行矩形。匹配器给的是起始页文本层归一化后的区间（`fushi-cue://s=页`），
+  /// 跨页句的 `ne` 越过起始页长度、顺延到后续页（[pdfSplitCueRangeAcrossPages]）；
+  /// 每页那一截经同一套归一化映射换回 `fullText` 下标（[pdfRawRangeForNormRange]），
+  /// 再按 pdfrx 的文本片段拆成每行一块（与原生选区同一种画法）。没匹配上正文的句 /
+  /// 页码越界 / 文本层读不到时返回 null，不画。
   Future<_PdfCueHighlight?> _cueHighlightFor(AudioCue cue) async {
     final SubtitleRematchFragment? frag = SubtitleRematchCodec.tryDecode(
       cue.textFragmentId,
     );
     if (frag == null || !_pdfController.isReady) return null;
-    final int pageIndex = frag.sectionIndex;
     final List<PdfPage> pages = _pdfController.pages;
-    if (pageIndex < 0 || pageIndex >= pages.length) return null;
-    final PdfPageText? text = await _pageText(pageIndex, pages[pageIndex]);
-    if (text == null || text.fullText.isEmpty) return null;
+    final List<PdfCuePageSpan> spans = await pdfSplitCueRangeAcrossPages(
+      startPage: frag.sectionIndex,
+      normStart: frag.normCharStart,
+      normEnd: frag.normCharEnd,
+      pageCount: pages.length,
+      normLengthOf: (int page) async =>
+          (await _normalizedTextOf(page, pages[page]))?.normalized.text.length,
+    );
+    final Map<int, List<PdfRect>> rectsByPage = <int, List<PdfRect>>{};
+    for (final PdfCuePageSpan span in spans) {
+      final ({PdfPageText text, NormalizedTextWithOffsets normalized})? page =
+          await _normalizedTextOf(span.page, pages[span.page]);
+      if (page == null) continue;
+      final ({int start, int end})? range = pdfRawRangeForNormRange(
+        page.normalized,
+        normStart: span.normStart,
+        normEnd: span.normEnd,
+      );
+      if (range == null || range.end > page.text.charRects.length) continue;
+      final List<PdfRect> rects = <PdfRect>[
+        for (final PdfTextFragmentBoundingRect r in PdfPageTextRange(
+          pageText: page.text,
+          start: range.start,
+          end: range.end,
+        ).enumerateFragmentBoundingRects())
+          r.bounds,
+      ];
+      if (rects.isNotEmpty) rectsByPage[span.page] = rects;
+    }
+    return rectsByPage.isEmpty
+        ? null
+        : _PdfCueHighlight(rectsByPage: rectsByPage);
+  }
+
+  /// 某页（0 起）的文本层 + 其归一化映射（缓存）；文本层读不到返回 null。
+  Future<({PdfPageText text, NormalizedTextWithOffsets normalized})?>
+  _normalizedTextOf(int pageIndex, PdfPage page) async {
+    final PdfPageText? text = await _pageText(pageIndex, page);
+    if (text == null) return null;
     final NormalizedTextWithOffsets normalized = _normalizedPageText
         .putIfAbsent(
           pageIndex,
           () => AudioTextNormalizer.normalizeWithOffsets(text.fullText),
         );
-    final ({int start, int end})? range = pdfRawRangeForNormRange(
-      normalized,
-      normStart: frag.normCharStart,
-      normEnd: frag.normCharEnd,
-    );
-    if (range == null || range.end > text.charRects.length) return null;
-    return _PdfCueHighlight(
-      pageIndex: pageIndex,
-      rects: <PdfRect>[
-        for (final PdfTextFragmentBoundingRect r in PdfPageTextRange(
-          pageText: text,
-          start: range.start,
-          end: range.end,
-        ).enumerateFragmentBoundingRects())
-          r.bounds,
-      ],
-    );
+    return (text: text, normalized: normalized);
   }
 
   /// pdfrx 每画一页调一次：当前句在这页就把它的行矩形用荧光笔式正片叠底画上去
   /// （白纸上是 EPUB 同款高亮黄，黑字照常透出来）。
   void _paintCueHighlight(ui.Canvas canvas, Rect pageRect, PdfPage page) {
     final _PdfCueHighlight? highlight = _cueHighlight;
-    if (highlight == null || page.pageNumber != highlight.pageIndex + 1) {
-      return;
-    }
+    final List<PdfRect>? rects = highlight?.rectsByPage[page.pageNumber - 1];
+    if (rects == null) return;
     final Paint paint = Paint()
       ..color = FushiColor.defaultHighlightYellow
       ..blendMode = BlendMode.multiply
       ..style = PaintingStyle.fill;
-    for (final PdfRect rect in highlight.rects) {
+    for (final PdfRect rect in rects) {
       canvas.drawRect(
         rect.toRectInDocument(page: page, pageRect: pageRect),
         paint,
@@ -1388,12 +1409,12 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
   }
 }
 
-/// 有声书当前句在 PDF 上的高亮：页（0 起）+ 该页 PDF 坐标下的逐行矩形。
+/// 有声书当前句在 PDF 上的高亮：页（0 起）→ 该页 PDF 坐标下的逐行矩形。跨页句
+/// 有多页；按页序插入，首项是句首所在页。
 class _PdfCueHighlight {
-  const _PdfCueHighlight({required this.pageIndex, required this.rects});
+  const _PdfCueHighlight({required this.rectsByPage});
 
-  final int pageIndex;
-  final List<PdfRect> rects;
+  final Map<int, List<PdfRect>> rectsByPage;
 }
 
 /// [_ReaderPdfPageState._load] 的结果：PDF 磁盘路径 + 其 `EpubBooks` 行。
