@@ -7,6 +7,7 @@ import 'package:fushi_engine/epub/epub_series_backfill.dart';
 import 'package:fushi_engine/media/collections/book_series_key.dart';
 import 'package:fushi_engine/media/collections/shelf_sort.dart'
     show naturalCompare;
+import 'package:fushi_engine/sync/override_title_lookup.dart';
 
 /// 在线漫画描述符类型标记（写进 `sourceMetadata`，永不变；同
 /// `leaderboard/local_shelf.dart`）。在线漫画一行就是一整部作品，不按卷归组。
@@ -188,8 +189,14 @@ class BookSeriesGrouper {
   Future<List<_Volume>> _loadVolumes() async {
     final List<_Volume> out = <_Volume>[];
     final Map<String, _Volume> byBookKey = <String, _Volume>{};
+    // 书架卡上显示的是「改名覆盖 ?? 原书名」，归组也按它：用户把
+    // `… Karakai-Jouzu-Takagi-san-02` 改成 `… 2` 就是为了让它归组（vECncM6f8Y），
+    // 以前这里只读 `epub_books.title` 原名，改名对归组毫无作用、重启也不变。
+    final Map<String, OverrideTitleEntry> overrides =
+        await readOverrideTitlesByBookKey(_database);
     for (final EpubBookRow book in await _database.getAllEpubBooks()) {
       if (isOnlineMangaSourceMetadata(book.sourceMetadata)) continue;
+      final String title = overrides[book.bookKey]?.title ?? book.title;
       // 包里声明的系列优先（n4KC1azJvw：每卷副标题不同、书名里没有系列线索的作品
       // 只能靠它），没有声明才按书名启发式。
       final EpubSeries? declared = decodeEpubSeriesMetadata(
@@ -199,12 +206,12 @@ class BookSeriesGrouper {
           ? declaredBookSeriesKey(
               name: declared.name,
               index: declared.index,
-              title: book.title,
+              title: title,
             )
-          : parseBookSeriesKey(book.title);
+          : parseBookSeriesKey(title);
       if (key == null) continue;
       final _Volume v = _Volume(
-        title: book.title,
+        title: title,
         key: key,
         shelf: BookFormat.parseOrEpub(book.format) == BookFormat.manga
             ? 'manga'
