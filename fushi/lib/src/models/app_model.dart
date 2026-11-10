@@ -4991,17 +4991,11 @@ class AppModel
       //
       // 门只加在调用点：[startAnimeDownloadService] 函数体内部顺序敏感（懒建 session、
       // resume 剪枝哨兵），守卫测试按源码顺序扫它，绝不能把判断插进函数中段。
-      if (modules.isEnabled(ModuleId.browse)) {
-        unawaited(
-          startAnimeDownloadService().catchError((Object e, StackTrace s) {
-            ErrorLogService.instance.log(
-              'AppModel.startAnimeDownloadService',
-              e,
-              s,
-            );
-          }),
-        );
-      }
+      //
+      // BUG（反馈 cliIUL82nf）：启动与「功能模块」开关走同一个入口
+      // [ensureAnimeDownloadServiceRunning]，模块门也只在那里判一次——以前只有
+      // 这里起服务，会话中途打开「浏览」不补跑，内置引擎就一直被判成未就绪。
+      unawaited(ensureAnimeDownloadServiceRunning());
       // 推荐包（9.5 GB zip）的包目录进场收尾：删掉「已导入」的残包、搬改名前的旧
       // 半截文件，再把下载阶段对齐磁盘。
       //
@@ -7123,10 +7117,7 @@ class AppModel
   EmbeddedTorrentHostCapabilities? _embeddedTorrentHostCapabilities() {
     // 数据根迁移已把引擎停下、resume 交给迁移器改写（BUG-3541）：本进程随后
     // 重启，不得再懒建一个按旧路径落盘的 session。
-    if (_embeddedTorrentReleasedForDataRootMove) return null;
-    if (_embeddedTorrentSaveRoots == null ||
-        _embeddedTorrentResumeDir == null ||
-        !_supportsEmbeddedTorrent()) {
+    if (!isEmbeddedTorrentHostPrepared || !_supportsEmbeddedTorrent()) {
       return null;
     }
     return EmbeddedTorrentHost.probeCapabilities();
@@ -7414,7 +7405,41 @@ class AppModel
     notifyListeners();
   }
 
+  /// 在飞的 [startAnimeDownloadService]（并发去重用；落地后清空）。
+  Future<void>? _animeDownloadServiceStarting;
+
+  /// 下载中心（番剧下载完成监听 + 内置引擎落盘路径）的**唯一**启动入口：启动时
+  /// 与「功能模块」开关打开「浏览」时都走这里，模块门也只在这里判。
+  ///
+  /// 反馈 cliIUL82nf：以前只有 init 在「浏览」开着时起一次服务，会话中途从
+  /// [setModuleEnabled] 打开模块不补跑，[_embeddedTorrentSaveRoots] 一直是 null，
+  /// 内置引擎被判未就绪，下载后端引导还把它说成「缺少运行库」。
+  ///
+  /// 并发调用共享同一个在飞 future（init 与模块开关可能撞在一起），完成后清空，
+  /// 下次调用由 [startAnimeDownloadService] 自身的幂等判断兜住。失败只记日志、
+  /// 不抛：调用方都是 fire-and-forget，或（下载后端引导）随后按就绪判据重读状态。
+  Future<void> ensureAnimeDownloadServiceRunning() {
+    final Future<void>? inFlight = _animeDownloadServiceStarting;
+    if (inFlight != null) return inFlight;
+    if (!moduleVisibility.isEnabled(ModuleId.browse)) {
+      return Future<void>.value();
+    }
+    final Future<void> starting = () async {
+      try {
+        await startAnimeDownloadService();
+      } catch (e, s) {
+        ErrorLogService.instance.log('AppModel.startAnimeDownloadService', e, s);
+      } finally {
+        _animeDownloadServiceStarting = null;
+      }
+      // 就绪判据（[isEmbeddedTorrentReady]）随服务启动而变：让读它的 UI 重算。
+      notifyListeners();
+    }();
+    return _animeDownloadServiceStarting = starting;
+  }
+
   /// 启动番剧下载完成监听。幂等（重复调用不重建）；失败由调用方记日志，不破坏 init。
+  /// 生产代码不要直接调：走 [ensureAnimeDownloadServiceRunning]（模块门 + 并发去重）。
   Future<void> startAnimeDownloadService() async {
     if (_animeDownloadService != null) return;
     final Directory baseDir = await AppPaths.documentsSubdirectory(
@@ -8746,18 +8771,38 @@ class AppModel
     return imported;
   }
 
-  /// 内置引擎在本机是否可用（桌面 + DLL 能加载）。下载对话框据此判断能否走
-  /// 内置引擎（不必配置外接 qb）。
+  /// 本次安装的内置引擎运行库能否加载（本平台支持 + DLL 能加载）。**只看运行库**，
+  /// 与下载服务起没起无关——下载后端引导的「缺少运行库」只能据此判断。
   ///
-  /// BUG-1053：这是**能力探测**，不代表已经开了 session。以前它等价于
-  /// `_embeddedTorrentHost != null`，逼得启动就必须建 session（= 绑 6881 + 起
-  /// DHT）才能让下载按钮可用。现在探测只加载 DLL、不碰网络，真会话由
-  /// [_ensureEmbeddedTorrentHost] 在要下载时才建。
+  /// 反馈 cliIUL82nf：以前只有 [isEmbeddedTorrentReady] 一个判据，它把「DLL 能否
+  /// 加载」与「下载服务已备好落盘路径」用 `&&` 合在一起，服务没起时短路、根本不
+  /// 探测 DLL，引导就把「服务未启动」误报成「本次安装缺少内置引擎运行库」。
+  ///
+  /// BUG-1053：这是**能力探测**，不代表已经开了 session。探测只加载 DLL、不碰网络，
+  /// 真会话由 [_ensureEmbeddedTorrentHost] 在要下载时才建。
+  bool get isEmbeddedTorrentRuntimeAvailable =>
+      _embeddedTorrentHost != null ||
+      (supportsEmbeddedTorrent && probeEmbeddedTorrentRuntime());
+
+  /// DLL 探测本体（只加载引擎、不建 session、结果由宿主缓存）。单独成方法只为
+  /// 让测试在没有原生库的环境里替换掉它。
+  @protected
+  bool probeEmbeddedTorrentRuntime() => EmbeddedTorrentHost.probeAvailable();
+
+  /// 下载服务是否已为内置引擎备好落盘路径（下载根 + resume 目录），且本进程没有
+  /// 为数据根迁移把引擎释放掉。与 [_embeddedTorrentHostCapabilities] 同一判据：
+  /// 这一位为假时懒建入口必然交不出内置后端。
+  bool get isEmbeddedTorrentHostPrepared =>
+      !_embeddedTorrentReleasedForDataRootMove &&
+      _embeddedTorrentSaveRoots != null &&
+      _embeddedTorrentResumeDir != null;
+
+  /// 内置引擎此刻能不能接任务：运行库可用 **且** 下载服务已备好路径（或 session
+  /// 已经开着）。新任务的后端选择、上传同意弹窗、后端身份都看这一位；要回答
+  /// 「运行库在不在」用 [isEmbeddedTorrentRuntimeAvailable]。
   bool get isEmbeddedTorrentReady =>
       _embeddedTorrentHost != null ||
-      (_supportsEmbeddedTorrent() &&
-          _embeddedTorrentSaveRoots != null &&
-          EmbeddedTorrentHost.probeAvailable());
+      (isEmbeddedTorrentHostPrepared && isEmbeddedTorrentRuntimeAvailable);
 
   /// 按配置解析出应使用的下载后端（供下载对话框的推送按钮与轮询服务共用
   /// 同一选择逻辑）。调用方用完须 `close()`（内置引擎的视图 close 是 no-op，
@@ -10617,6 +10662,12 @@ class AppModel
     // 继续发已被关掉模块的设置项（settings_schema.dart 的 `_SettingsSchemaCache`）。
     resetSettingsSchemaCache();
     if (module == ModuleId.sync) _applySyncModuleGate();
+    // 打开「浏览」= 打开下载中心：与启动走同一入口补起服务（反馈 cliIUL82nf）。
+    // 关掉时沿用既有规则——不在会话中途停服务（已推给引擎的种子照常下完），只是
+    // 下次启动不再拉起。
+    if (module == ModuleId.browse && value) {
+      unawaited(ensureAnimeDownloadServiceRunning());
+    }
     notifyListeners();
   }
 
