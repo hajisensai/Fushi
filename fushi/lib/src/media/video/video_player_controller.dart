@@ -4016,7 +4016,7 @@ class VideoPlayerController extends ChangeNotifier
     _positionSub = player.stream.position.listen((_) {
       if (!_isCurrentLoad(player, loadToken)) return;
       _publishPosition();
-      // 渲染活动集跟着时钟走，不等 125ms tick（BUG-4349）。
+      // 渲染活动集跟着时钟走，不等 125ms tick（BUG-4350）。
       _syncRenderActivityToClock();
     });
     _publishPosition();
@@ -4572,7 +4572,7 @@ class VideoPlayerController extends ChangeNotifier
     return changed;
   }
 
-  /// 渲染活动集跟**播放时钟的每次位置更新**走（BUG-4349「字幕刷新率」）。
+  /// 渲染活动集跟**播放时钟的每次位置更新**走（BUG-4350「字幕刷新率」）。
   ///
   /// 活动集原先只由 125ms tick 重算，而 overlay 的 `\fad` / `\move` / `\t` / `\k`
   /// 动画逐帧读时钟：卡拉 OK 特效常把一句拆成几十毫秒一条的逐音节 / 逐帧事件，按 8 Hz
@@ -5031,7 +5031,7 @@ class VideoPlayerController extends ChangeNotifier
   @visibleForTesting
   void debugUpdateCueForPosition(int posMs) => updateCueForPosition(posMs);
 
-  /// 测试入口：模拟 libmpv 推来一次位置更新（[_syncRenderActivityToClock]，BUG-4349），
+  /// 测试入口：模拟 libmpv 推来一次位置更新（[_syncRenderActivityToClock]，BUG-4350），
   /// 位置取 [positionMs]（测试里用 [debugSetPositionForTesting] 注入）。
   @visibleForTesting
   void debugSyncRenderActivityToClock() => _syncRenderActivityToClock();

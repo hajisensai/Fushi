@@ -1,4 +1,4 @@
-## BUG-4349 · ASS 卡拉 OK 歌词（同一 \pos 多条事件）被竖排成多行、光晕残影；渲染活动集只按 125ms 刷新
+## BUG-4350 · ASS 卡拉 OK 歌词（同一 \pos 多条事件）被竖排成多行、光晕残影；渲染活动集只按 125ms 刷新
 - **报告**：2026-11-08（开发者自提，反馈 WWUuaXulfG，Windows 3.3.0-debug.24651，截图：BanG Dream 英文字幕轨作副字幕，顶部歌词「la,」/ 黄色光晕行 / 红色「Lalalalala lalalalalala」上下叠成几行）
 - **真实性**：✅ 真 bug。副字幕与主字幕同走 Flutter overlay 自绘（`secondary-sid` 只在远端内嵌轨回落时解码不画），不是 mpv 渲染问题。
   - 根因 1（叠行）：`fushi/lib/src/media/video/video_subtitle_overlay.dart:1748`（develop 704f8c6）`_groupMainCuesByPosition` 按位置键分组，`\pos` 相同、Layer 相同的多条同时事件进同一个组，`_positionCueGroup` 把组内 cue 放进一个 `Column` 竖排堆叠再整体落到 `\pos`。libass 对显式定位事件不做碰撞（`detect_collisions = !explicit`），同一 `\pos` 的整行底字、逐音节高亮 / 光晕拷贝原地叠画成一行卡拉 OK；overlay 却把它们排成上下好几行（离场 cue 还留隐形占位撑住槽位）。主、副字幕同一条路径，只是这次的卡拉 OK 轨在副字幕槽。
