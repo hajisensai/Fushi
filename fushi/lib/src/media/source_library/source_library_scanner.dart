@@ -90,6 +90,7 @@ import 'package:fushi_engine/media/manga/mokuro_payload.dart'
         resolveMokuroPageRoot;
 import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart'
     show kMangaOcrOutDirName;
+import 'package:fushi/src/media/source_library/game_source_scanner.dart';
 import 'package:fushi/src/media/source_library/sftp_stream_source.dart';
 import 'package:fushi/src/media/source_library/source_file_system.dart';
 import 'package:fushi/src/media/source_library/source_library_transports.dart';
@@ -1033,6 +1034,56 @@ class SourceLibraryScanner {
     );
   }
 
+  /// 游戏来源（反馈 9Rm_8JEkGM）：不走通用文件清单 + ScanPlan——游戏按「目录」认
+  /// （第一层直接含 exe 的目录一条），遍历在找到游戏目录处就停，不把整个游戏资源树
+  /// 列一遍；识别与增量规则见 `game_source_scanner.dart`。只收本地来源（exe 要在本机
+  /// 拉起），网络来源如实报错。[SourceScanSummary.importedMediaCount] 与其它来源同义：
+  /// 本轮**新增**的条目数（累计数由来源页另查）。
+  Future<SourceScanSummary> _scanGameSource(SourceLibraryRow source) async {
+    int mediaCount = 0;
+    String? scanError;
+    List<String> discovered = const <String>[];
+    List<String> created = const <String>[];
+    if (source.transport != 'local') {
+      scanError = 'Game sources support local folders only';
+    } else {
+      try {
+        final GameSourceScanResult result = await scanGameSource(
+          db: _db,
+          sourceId: source.id,
+          rootPath: source.rootPath,
+          recursive: source.recursive,
+        );
+        discovered = result.discoveredDirectories;
+        created = result.createdGameIds;
+        mediaCount = created.length;
+      } on FileSystemException catch (e, stack) {
+        // 根不存在 / 列不出：整次扫描没跑，记进来源行（与其它来源同口径）。
+        scanError = e.toString();
+        debugPrint(
+          'SourceLibraryScanner: game scan failed for source '
+          '${source.id} (${source.rootPath}): $e\n$stack',
+        );
+      }
+    }
+    await _db.updateMediaSourceScanResult(
+      id: source.id,
+      mediaCount: mediaCount,
+      lastScannedAt: DateTime.now(),
+      lastScanError: scanError,
+    );
+    // 游戏库仓储重载缓存 + 新游戏后台补封面（没有新增也要重载：认领只改索引，
+    // 但扫描期间别处可能改过库）。
+    onGameSourceScanned?.call(created);
+    return SourceScanSummary(
+      sourceId: source.id,
+      mediaKind: source.mediaKind,
+      discoveredPaths: List<String>.unmodifiable(discovered),
+      importedMediaCount: mediaCount,
+      error: scanError,
+    );
+  }
+
   /// 网络来源条目的库内命名空间（视频与音乐同一口径）：SFTP 换进 `sftp://` 稳定地址
   /// （[SftpUrlNamespaceFileSystem]），WebDAV / AList 条目本身就是 http(s) 地址。
   /// [scanRoot] 是与条目同一命名空间的来源根。
@@ -1083,6 +1134,9 @@ class SourceLibraryScanner {
     if (source.mediaKind == SourceLibraryKind.music.dbValue) {
       return _scanMusicSource(source, fs: fs);
     }
+    if (source.mediaKind == SourceLibraryKind.game.dbValue) {
+      return _scanGameSource(source);
+    }
     final SourceFileSystem transportFs = fs ?? await _resolveFileSystem(source);
     int mediaCount = 0;
     String? scanError;
@@ -1107,7 +1161,8 @@ class SourceLibraryScanner {
         throw ArgumentError.value(
           source.mediaKind,
           'mediaKind',
-          'Unsupported media kind for scan (expected book | video | manga)',
+          'Unsupported media kind for scan '
+              '(expected book | video | manga | music | game)',
         );
       }
       // 网络视频来源支持 SFTP、WebDAV 与 AList/OpenList，按流媒体书原地入库
@@ -1316,6 +1371,9 @@ class SourceLibraryScanner {
         case SourceLibraryKind.music:
           // 音乐来源在进 try 之前就分流给 [_scanMusicSource]，走不到这里。
           throw StateError('music sources are routed to _scanMusicSource');
+        case SourceLibraryKind.game:
+          // 同上：游戏来源分流给 [_scanGameSource]。
+          throw StateError('game sources are routed to _scanGameSource');
       }
     } catch (e, stack) {
       scanError = e.toString();

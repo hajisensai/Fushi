@@ -317,6 +317,46 @@ class ReaderFushiSource extends ReaderMediaSource {
     }
   }
 
+  /// [mediaSourceKeyFor] 的逆：书架卡 `MediaItem.mediaSourceIdentifier` → 它的
+  /// [BookFormat]。不是书类源（视频 / 游戏等）返回 null。
+  ///
+  /// 逐个 format 反查 [mediaSourceKeyFor]，而不是另写一张 key→format 表，保证正反
+  /// 两个方向永远是同一份映射。供「手上只有书架卡、不想为画一行菜单去读库」的判据
+  /// 使用（如 [mediaItemSupportsAudiobook]）。
+  static BookFormat? formatForMediaSourceKey(String mediaSourceIdentifier) {
+    for (final BookFormat format in BookFormat.values) {
+      if (mediaSourceKeyFor(format) == mediaSourceIdentifier) return format;
+    }
+    return null;
+  }
+
+  /// 这张书架卡能不能挂有声书：判据只在 [BookFormat.supportsAudiobook]，这里只做
+  /// 卡 → format 的换算。非书类源一律 false。
+  static bool mediaItemSupportsAudiobook(MediaItem item) =>
+      formatForMediaSourceKey(item.mediaSourceIdentifier)?.supportsAudiobook ??
+      false;
+
+  /// 书架上「被有声书配对 SRT 卡顶替、原书卡不再单独出现」的 bookKey 集合
+  /// （BUG-728 隐藏规则）。
+  ///
+  /// 顶替只对**能挂有声书**的格式成立（[BookFormat.supportsAudiobook]）：反馈
+  /// Ndnxy3mNdG 里 PDF 书被旧版 UI 挂上了有声书，书架按「有 srt_books 行就藏原书卡」
+  /// 把 PDF 卡藏掉、只剩一张写死 EPUB 阅读器的 SRT 卡，用户再也打不开原 PDF。存量
+  /// 的这类配对行不再顶替原卡，原 PDF / 漫画卡照常显示。
+  ///
+  /// [formatOf] 返回 null（书架上没有这本书的行，例如正文还没生成）按 EPUB 处理——
+  /// 没有原卡可藏，结果与旧行为一致。书架页 / ctl 书架 / 合集成员可见性 / 副屏书库
+  /// 共用本函数，不各写一份。
+  static Set<String> audiobookShadowedBookKeys(
+    Iterable<SrtBook> srtBooks, {
+    required BookFormat? Function(String bookKey) formatOf,
+  }) => <String>{
+    for (final SrtBook book in srtBooks)
+      if (book.bookKey.isNotEmpty &&
+          (formatOf(book.bookKey) ?? BookFormat.epub).supportsAudiobook)
+        book.bookKey,
+  };
+
   // HBK-AUDIT-127: percent-encode the href when building the URL so it is
   // symmetric with the consumer side, which decodes the whole post-'/epub/'
   // path with Uri.decodeComponent (reader_fushi_page.dart, epub_book.dart).
@@ -1427,11 +1467,17 @@ class ReaderFushiSource extends ReaderMediaSource {
   /// 与 binding 序列化完全解耦（[GamepadButton.serialize] 恒定）。以 token 字符串持久化，
   /// 未知/缺省回退 Xbox。
   GamepadBrand get gamepadGlyphBrand => GamepadBrand.fromToken(
-    getPreference<String?>(key: 'gamepad_glyph_brand', defaultValue: null),
+    getPreference<String?>(
+      key: pref_keys.kGamepadGlyphBrandPrefShortKey,
+      defaultValue: null,
+    ),
   );
 
   Future<void> setGamepadGlyphBrand(GamepadBrand brand) async {
-    await setPreference<String>(key: 'gamepad_glyph_brand', value: brand.token);
+    await setPreference<String>(
+      key: pref_keys.kGamepadGlyphBrandPrefShortKey,
+      value: brand.token,
+    );
   }
 
   bool get volumePageTurningEnabled => getPreference<bool>(

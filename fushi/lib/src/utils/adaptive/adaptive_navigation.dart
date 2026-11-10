@@ -705,6 +705,12 @@ class _MaterialNavCluster extends StatelessWidget {
     ];
     AdaptiveNavFab? fab = materialFab;
     final int? searchIndex = search;
+    final bool currentValid = currentIndex >= 0 && currentIndex < items.length;
+    // BUG-3064：FAB 那一项（查词）选中时同样随下滑收起——胶囊里没有当前项可
+    // 留，整条胶囊让位（M3E 浮动工具栏滚走、FAB 留下），回滚 / 焦点进入再展开。
+    // 此前这里直接不收起，查词页往下滑底栏纹丝不动。
+    final bool fabCurrent = currentIndex == searchIndex;
+    final bool minimized = glassMinimized && currentValid;
     if (fab == null && searchIndex != null) {
       final AdaptiveNavItem searchItem = items[searchIndex];
       fab = AdaptiveNavFab(
@@ -714,21 +720,25 @@ class _MaterialNavCluster extends StatelessWidget {
         experimentalBadge: searchItem.experimentalBadge,
         selected: currentIndex == searchIndex,
         onPressed: () {
-          if (currentIndex != searchIndex) fushiSelectionHaptic(context);
+          // 反馈 TyMqz158nj：FAB 是当前项且胶囊已让位时，FAB 就是收起态里
+          // 「当前项」的那颗小钮——与胶囊目的地当前时的小胶囊同一语义：点它
+          // 只展开底栏、不重复触发目的地（查词的导航入口会清空查询，清空后
+          // 页面常常没有可滚动内容，回滚这条恢复路径也跟着没了，用户被困在
+          // 查词页）。
+          final VoidCallback? expand = onGlassExpand;
+          if (fabCurrent && minimized && expand != null) {
+            expand();
+            return;
+          }
+          if (!fabCurrent) fushiSelectionHaptic(context);
           onTap(searchIndex);
         },
       );
     }
-    final bool currentValid = currentIndex >= 0 && currentIndex < items.length;
     final double capsuleHeight = materialNavBarCapsuleHeight(
       context,
       showLabels: showLabels,
     );
-    // BUG-3064：FAB 那一项（查词）选中时同样随下滑收起——胶囊里没有当前项可
-    // 留，整条胶囊让位（M3E 浮动工具栏滚走、FAB 留下），回滚 / 焦点进入再展开。
-    // 此前这里直接不收起，查词页往下滑底栏纹丝不动。
-    final bool fabCurrent = currentIndex == searchIndex;
-    final bool minimized = glassMinimized && currentValid;
     return _MaterialFloatingBar(
       minimized: minimized,
       onExpand: onGlassExpand,
