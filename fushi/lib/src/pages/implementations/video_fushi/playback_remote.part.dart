@@ -913,12 +913,16 @@ class _VideoPagePlaybackRemote
       delayMs: controller.miningDelayMs,
     );
     _state._lastLookupCue = cue;
-    _state._lastLookupSentence = cue?.text.trim() ?? '';
+    // 反馈 rLCxUJ-2i4：同时显示的多行（ASS 一句拆多条 Dialogue）合成一句制卡。
+    final String cueSentence = cue == null
+        ? ''
+        : simultaneousCueText(controller.cueStreamOwning(cue), cue);
+    _state._lastLookupSentence = cueSentence;
     _state._miningDraft.clear();
     final Map<String, String> payload = <String, String>{
       ...fields,
       if ((fields['sentence'] ?? '').isEmpty && cue != null)
-        'sentence': cue.text.trim(),
+        'sentence': cueSentence,
     };
     final String sentence = _state._lastLookupSentence;
     final List<_VideoOsdMessage> osd = <_VideoOsdMessage>[];

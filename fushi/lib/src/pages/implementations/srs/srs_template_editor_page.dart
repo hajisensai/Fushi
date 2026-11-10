@@ -44,7 +44,7 @@ import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_builtin_template_restore_action.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_fushi_block_layout_panel.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
-import 'package:fushi/src/pages/implementations/srs/srs_html_card_view.dart'
+import 'package:fushi/src/srs/srs_card_face_route.dart'
     show srsNativeUnsupportedNotice;
 import 'package:fushi/src/pages/implementations/srs/srs_load_error.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_note_preview.dart'
@@ -472,6 +472,7 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
                     f.id: _sampleFields[f.name] ?? '',
                 },
                 tags: _sample?.tags ?? const <String>[],
+                languageCode: ref.read(appProvider).defaultContentLanguage,
               )
             : null;
       }

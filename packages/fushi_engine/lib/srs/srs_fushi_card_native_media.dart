@@ -83,19 +83,36 @@ bool _nativeImageSource(String src) {
   return !lower.endsWith('.svg');
 }
 
-/// [fields]（按字段名，已展开）里的媒体原生卡面能否原样画全（见文件头）。
-bool srsFushiCardMediaIsNative(Map<String, String> fields) {
+/// 回退原因里引用原文的长度上限。
+const int _kDetailMax = 80;
+
+String _clip(String s) {
+  final String t = s.replaceAll(RegExp(r'\s+'), ' ').trim();
+  return t.length <= _kDetailMax ? t : '${t.substring(0, _kDetailMax)}…';
+}
+
+/// [fields]（按字段名，已展开）里的媒体原生卡面画不全时，第一处画不了的原文（见文件头）；
+/// 画得全为 null。字段还是旧名（`Picture`、`ExpressionAudio`）时按旧名取，与原生卡面
+/// 读字段的口径一致。
+String? srsFushiCardMediaProbe(Map<String, String> fields) {
   for (final String name in kSrsFushiNativeAudioFields) {
-    final String? value = fields[name];
-    if (value != null && _foreignAudioElement.hasMatch(value)) return false;
+    final String? value = FushiCardFields.value(fields, name);
+    if (value == null) continue;
+    final Match? foreign = _foreignAudioElement.firstMatch(value);
+    if (foreign != null) {
+      return '$name: ${_clip(value.substring(foreign.start))}';
+    }
   }
-  final String picture = (fields[kSrsFushiNativePictureField] ?? '')
-      .replaceAll(_videoElement, '')
-      .replaceAll(_videoSound, '');
+  final String picture =
+      (FushiCardFields.value(fields, kSrsFushiNativePictureField) ?? '')
+          .replaceAll(_videoElement, '')
+          .replaceAll(_videoSound, '');
   final List<String> sources = <String>[];
   for (final Match m in _img.allMatches(picture)) {
     final Match? src = _imgSrc.firstMatch(m.group(0)!);
-    if (src == null) return false;
+    if (src == null) {
+      return '$kSrsFushiNativePictureField: ${_clip(m.group(0)!)}';
+    }
     sources.add(_unescapeAttr(src.group(2) ?? src.group(3)!));
   }
   final String rest = picture
@@ -103,32 +120,100 @@ bool srsFushiCardMediaIsNative(Map<String, String> fields) {
       .replaceAll(_wrapperTag, '')
       .replaceAll(_nbsp, '')
       .trim();
-  if (rest.isNotEmpty) return false;
+  if (rest.isNotEmpty) return '$kSrsFushiNativePictureField: ${_clip(rest)}';
   for (final String src in sources) {
-    if (!_nativeImageSource(src)) return false;
+    if (!_nativeImageSource(src)) {
+      return '$kSrsFushiNativePictureField: <img src="${_clip(src)}">';
+    }
   }
-  return true;
+  return null;
+}
+
+/// [fields]（按字段名，已展开）里的媒体原生卡面能否原样画全（见文件头）。
+bool srsFushiCardMediaIsNative(Map<String, String> fields) =>
+    srsFushiCardMediaProbe(fields) == null;
+
+/// 卡面没走原生、退回整面 WebView 的原因类别。名字即 wire / 诊断日志里的值，不改名。
+enum SrsCardNativeFallbackCode {
+  /// 不是内置 Fushi 卡片（非 Fushi 卡片另走原生 HTML 判据，见 [html]）。
+  notBuiltin,
+
+  /// 样式表与任一版内置样式都不一致。
+  cssModified,
+
+  /// 正面模板骨架被改过（或区块结构坏了）。
+  frontTemplate,
+
+  /// 背面模板骨架被改过（或区块结构坏了）。
+  backTemplate,
+
+  /// 媒体字段里有原生画不了的内容。
+  media,
+
+  /// 字段区块 / HTML 区块里有原生 HTML 子集画不了的写法（app 侧判）。
+  block,
+
+  /// 非 Fushi 卡片的 HTML / CSS 不在原生 HTML 子集里（app 侧判）。
+  html,
+
+  /// 远程主机没带回退原因（老版本主机）。
+  remoteUnknown,
+}
+
+/// 卡面退回整面 WebView 的原因：类别 + 第一处不一致的原文（骨架差异处前后约 40 字、
+/// 媒体里第一段画不了的内容、HTML 子集第一句画不了的写法）。
+class SrsCardNativeFallback {
+  const SrsCardNativeFallback(this.code, [this.detail = '']);
+
+  final SrsCardNativeFallbackCode code;
+  final String detail;
+
+  /// wire / 日志形式：`code` 或 `code: detail`。
+  @override
+  String toString() => detail.isEmpty ? code.name : '${code.name}: $detail';
+
+  @override
+  bool operator ==(Object other) =>
+      other is SrsCardNativeFallback &&
+      other.code == code &&
+      other.detail == detail;
+
+  @override
+  int get hashCode => Object.hash(code, detail);
 }
 
 /// 原生混合渲染要的东西：只含释义区的背面 HTML（交给释义 WebView）与正面 / 背面的区块布局。
 /// 布局里的 HTML 区块（[FushiCardHtmlItem]）已按笔记字段展开，app 侧交给原生 HTML 渲染器。
+///
+/// [css] 是释义 WebView 用的样式表：样式是当前内置版时就是笔记类型的原样式；是历史内置版
+/// （冻住的旧版本，见 `fushiCardCssIsBuiltin`）时换成**当前**内置样式——释义 HTML 由当前的
+/// [fushiCardDefinitionsTemplateFor] 生成，类名要和样式对得上。
 typedef SrsFushiCardNative = ({
   String definitions,
   List<FushiCardItem> front,
   List<FushiCardItem> back,
+  String css,
 });
 
-/// 一张卡能否走原生混合渲染：内置 Fushi 卡片、样式没改、正面与背面都认得出区块布局
-/// （[fushiCardLayoutOf]：调序 / 增删区块、改内置区块选项、字段区块、HTML 区块；骨架不动）、
-/// 媒体原生画得全（[srsFushiCardMediaIsNative]）。能则返回释义区 HTML 与正背面布局，否则
-/// null（整面 WebView）。HTML 区块原生画不画得了由 app 侧再判（画不了同样整面 WebView）。
+/// [srsFushiCardNative] 的结果：能原生画时 [native] 非 null；否则 [fallback] 说明卡在哪一道。
+typedef SrsFushiCardNativeProbe = ({
+  SrsFushiCardNative? native,
+  SrsCardNativeFallback? fallback,
+});
+
+/// 一张卡能否走原生混合渲染：内置 Fushi 卡片、样式是某一版内置样式（[fushiCardCssIsBuiltin]）、
+/// 正面与背面都认得出区块布局（[fushiCardLayoutProbe]：当前骨架上调序 / 增删区块、改内置
+/// 区块选项、字段区块、HTML 区块；历史登记里的旧版本；自证标记一致的未知新骨架）、媒体
+/// 原生画得全（[srsFushiCardMediaProbe]）。能则返回释义区 HTML 与正背面布局，否则带上卡在
+/// 哪一道的原因（[SrsCardNativeFallback]，整面 WebView）。HTML 区块原生画不画得了由 app 侧
+/// 再判（画不了同样整面 WebView）。
 ///
 /// 复习页渲染（`SrsDbStore.renderCard`）与笔记编辑页的实时预览共用这一处判据：两边若各写
 /// 一份，编辑页预览会退回整面 WebView，与复习页画出来的不是同一张卡（片段 / 图片尺寸都不同）。
 ///
 /// [front] / [back] 是名字形式的模板；[fieldsByName] 已展开共享样式引用。同一笔记类型下
 /// 另加的模板（反向卡等）同样按它自己的正背面判定。
-SrsFushiCardNative? srsFushiCardNative({
+SrsFushiCardNativeProbe srsFushiCardNative({
   required String? builtinKey,
   required String front,
   required String back,
@@ -137,16 +222,32 @@ SrsFushiCardNative? srsFushiCardNative({
   required int cardOrd,
   AnkiCardSpecialFields specials = const AnkiCardSpecialFields(),
 }) {
-  if (builtinKey != kSrsBuiltinFushiCardKey || !fushiCardCssIsDefault(css)) {
-    return null;
+  SrsFushiCardNativeProbe off(SrsCardNativeFallbackCode code, [String? d]) =>
+      (native: null, fallback: SrsCardNativeFallback(code, d ?? ''));
+  if (builtinKey != kSrsBuiltinFushiCardKey) {
+    return off(SrsCardNativeFallbackCode.notBuiltin, builtinKey ?? '');
   }
-  final List<FushiCardItem>? frontItems = fushiCardFrontLayoutOf(front);
-  final List<FushiCardItem>? backItems = fushiCardBackLayoutOf(back);
-  if (frontItems == null ||
-      backItems == null ||
-      !srsFushiCardMediaIsNative(fieldsByName)) {
-    return null;
+  if (!fushiCardCssIsBuiltin(css)) {
+    return off(SrsCardNativeFallbackCode.cssModified);
   }
+  final FushiCardLayoutProbe frontLayout = fushiCardLayoutProbe(
+    front,
+    FushiCardSide.front,
+  );
+  final List<FushiCardItem>? frontItems = frontLayout.items;
+  if (frontItems == null) {
+    return off(SrsCardNativeFallbackCode.frontTemplate, frontLayout.mismatch);
+  }
+  final FushiCardLayoutProbe backLayout = fushiCardLayoutProbe(
+    back,
+    FushiCardSide.back,
+  );
+  final List<FushiCardItem>? backItems = backLayout.items;
+  if (backItems == null) {
+    return off(SrsCardNativeFallbackCode.backTemplate, backLayout.mismatch);
+  }
+  final String? media = srsFushiCardMediaProbe(fieldsByName);
+  if (media != null) return off(SrsCardNativeFallbackCode.media, media);
   final FushiCardBlockItem defs =
       backItems
           .whereType<FushiCardBlockItem>()
@@ -184,8 +285,12 @@ SrsFushiCardNative? srsFushiCardNative({
             x,
       ]);
   return (
-    definitions: definitions,
-    front: resolve(frontItems),
-    back: resolve(backItems),
+    native: (
+      definitions: definitions,
+      front: resolve(frontItems),
+      back: resolve(backItems),
+      css: fushiCardCssIsDefault(css) ? css : kFushiCardStylingCss,
+    ),
+    fallback: null,
   );
 }

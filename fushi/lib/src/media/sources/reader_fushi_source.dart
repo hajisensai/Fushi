@@ -1963,7 +1963,7 @@ class ReaderFushiSource extends ReaderMediaSource {
   /// 读数胶囊「本次字数」段是否显示（分层同 [showTopProgressBar]）。
   bool get showSessionChars =>
       readerSettings?.showSessionChars ??
-      getPreference<bool>(key: 'show_session_chars', defaultValue: true);
+      getPreference<bool>(key: 'show_session_chars', defaultValue: false);
 
   void toggleShowSessionChars() async {
     await (readerSettings?.toggleShowSessionChars() ??
@@ -1976,7 +1976,7 @@ class ReaderFushiSource extends ReaderMediaSource {
   /// 读数胶囊「本次字每时」段是否显示（分层同 [showTopProgressBar]）。
   bool get showCharsPerHour =>
       readerSettings?.showCharsPerHour ??
-      getPreference<bool>(key: 'show_chars_per_hour', defaultValue: true);
+      getPreference<bool>(key: 'show_chars_per_hour', defaultValue: false);
 
   void toggleShowCharsPerHour() async {
     await (readerSettings?.toggleShowCharsPerHour() ??
@@ -2006,6 +2006,13 @@ class ReaderFushiSource extends ReaderMediaSource {
   void toggleKeepScreenAwake() async {
     await (readerSettings?.toggleKeepScreenAwake() ??
         setPreference<bool>(key: 'keep_screen_awake', value: !keepScreenAwake));
+  }
+
+  /// 把全局「保持屏幕常亮」设成 [value]（漫画设置面板全局作用域的写入口；
+  /// 与 [toggleKeepScreenAwake] 同一个键，可 await 落库）。
+  Future<void> setKeepScreenAwake(bool value) async {
+    await (readerSettings?.setKeepScreenAwake(value) ??
+        setPreference<bool>(key: 'keep_screen_awake', value: value));
   }
 
   bool get lyricsMode =>
