@@ -4797,7 +4797,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     final List<SubtitleSource> restoredLocalSubtitles =
         await _restoreRemoteLocalSubtitleFiles(index);
     // 换集 / 连播（无 override）与首开同一条判定：本机库断点、清单条目、互联 host
-    // 此刻的断点取较新（BUG-4294）。只读本机断点会让合集下一成员 / 播放列表下一集
+    // 此刻的断点取较新（BUG-4298）。只读本机断点会让合集下一成员 / 播放列表下一集
     // 从本机旧断点起播，随后的实时上报（戳 = now）把旧位置写回 host。
     final int initialPositionMs =
         initialPositionMsOverride ??
@@ -5372,7 +5372,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 仅对起播集 [episodeIndex]==currentEpisode 有意义）与本地按集断点之间「取较新时间
   /// 戳」（[resolvePositionLww]）。host 进度新于本地时跨设备恢复；本地新于 host 时
   /// 不被旧 host 回退。非起播集清单不带进度，只比本地按集断点与互联 host 按集断点。
-  /// BUG-4294：本机断点读库（不读 prefsRepo 内存缓存——互联 sweep / 冲突弹窗只写库）、
+  /// BUG-4298：本机断点读库（不读 prefsRepo 内存缓存——互联 sweep / 冲突弹窗只写库）、
   /// 互联 host 再读一次此刻断点，见 [resolveRemoteVideoResumeMs]。首开与换集 / 连播
   /// （[_loadRemoteEpisode] 无 override）都走这里。
   Future<int> _resolveRemoteInitialPositionMs(

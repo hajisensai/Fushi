@@ -301,7 +301,7 @@ class SyncRunReport {
   int localBookProgressPulled = 0;
 
   /// 本轮互联进度 / 断点 sweep 里**位置真的挪动了**的条目数，按种类、按方向
-  /// （BUG-4292）。`*Received` = host 的位置落到了本机（applyRemote 落地），
+  /// （BUG-4296）。`*Received` = host 的位置落到了本机（applyRemote 落地），
   /// `*Sent` = 本机的位置推给了 host（pushLocal）。两端位置相同、只对齐时间戳的
   /// 条目不计——那不是一次「变化」。
   ///

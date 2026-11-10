@@ -26,7 +26,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../helpers/fake_anki_repository.dart';
 import '../helpers/test_platform_services.dart';
 
-/// BUG-4293：视频页远端卡的「看到 X」只显示 host 清单快照（缓存 + 页面常驻），
+/// BUG-4297：视频页远端卡的「看到 X」只显示 host 清单快照（缓存 + 页面常驻），
 /// 互联 sweep 落地 host 的新断点 / 本机看完回来后不变（Linux Phase 4 r4-13：
 /// host 已到 0:50，卡片「看到 0:40」）。卡片断点必须是清单快照与本机库断点的
 /// 较新者（与开播判定同一份），并在本机断点变化时就地刷新——不等清单过期。
