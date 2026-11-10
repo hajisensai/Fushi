@@ -6122,6 +6122,8 @@
   "music_plugins_uninstall_confirm": "卸载 $name？它在本机保存的数据也会一并删除。",
   "music_plugins_unsigned": "未签名：无法核实发布者",
   "music_plugins_version": "版本 $version",
+  "music_preview_badge": "试听",
+  "music_preview_badge_semantics": "仅试听片段，不是整首",
   "music_quality_chip_semantics": "音质：$quality，点按切换",
   "music_quality_current_stream": "当前流",
   "music_quality_fetching": "正在取流…",

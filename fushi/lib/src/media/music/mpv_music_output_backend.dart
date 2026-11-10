@@ -1343,7 +1343,9 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
     if (item == null) return;
     final Duration? duration =
         item.playbackDuration ??
-        (_player.state.duration > Duration.zero ? _player.state.duration : null);
+        (_player.state.duration > Duration.zero
+            ? _player.state.duration
+            : null);
     final Duration relative = absolute - _originOf(item);
     final Duration clamped = relative < Duration.zero
         ? Duration.zero
@@ -1540,7 +1542,7 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
     if (_isCd(_audible)) return ms == null ? null : Duration(milliseconds: ms);
     final Duration d = _player.state.duration;
     if (d > Duration.zero) return d;
-    return ms == null ? null : Duration(milliseconds: ms);
+    return _audible?.playbackDuration;
   }
 
   @override
