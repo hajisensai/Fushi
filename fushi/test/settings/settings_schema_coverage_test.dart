@@ -1372,6 +1372,13 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/reader/reader_production_js_behavior_test.dart',
   'reading/Keep spoken sentence on one screen':
       'test/settings/vn_settings_m1_test.dart',
+  // 「屏末音频」（文字领读，PR #3078）：同属 VN-only，生效点是有声书控制器的屏末
+  // 停播 / 翻屏续播，reader CSS 探针看不到。偏好写穿、选「暂停」时顺带打开合并
+  // 跨屏朗读句并重载布局由专项 widget 测试咬住，控制器行为由 text_leads 测试咬住。
+  'reading/Audio at end of page':
+      'test/settings/vn_settings_m1_test.dart + '
+      'test/media/audiobook/text_leads_controller_test.dart + '
+      'test/media/audiobook/text_leads_page_stop_test.dart',
   'reading/Blank tap advances':
       'test/settings/vn_settings_m1_test.dart + '
       'test/reader/vn_blank_tap_chrome_reveal_bug1195_test.dart',
