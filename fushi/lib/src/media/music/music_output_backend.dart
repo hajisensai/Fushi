@@ -37,6 +37,7 @@ class MusicPlayItem {
     this.artistRefs = const <MusicPlayArtistRef>[],
     this.sourceAlbumId,
     this.sourceId,
+    this.isPreview = false,
   });
 
   final String trackUid;
@@ -64,8 +65,20 @@ class MusicPlayItem {
   /// 碟号 / 轨号（判「专辑连续曲目」用，见 `musicTransitionIsBoundary`）。
   final int? discNo;
   final int? trackNo;
+  /// 曲目本身的时长（元数据；歌词匹配 / 加入曲库 / 历史按它）。试听片段（[isPreview]）
+  /// 不是整首，播放进度用 [playbackDuration]。
   final int? durationMs;
   final String? coverPath;
+
+  /// 这一项只是曲目的试听片段（Apple Music 未登录 / 无订阅时约 30 秒的预览）：界面打
+  /// 「试听」标记，播放时长以媒体实际长度为准（反馈 okvRZINcQU）。
+  final bool isPreview;
+
+  /// 播放进度条该用的时长：普通曲目 = [durationMs]；试听片段 = null（等媒体报实际长度，
+  /// 不拿整首的时长去画一条约 30 秒就跳回开头的进度条）。
+  Duration? get playbackDuration => isPreview || durationMs == null
+      ? null
+      : Duration(milliseconds: durationMs!);
 
   /// 曲库扫描从文件头读到的源属性（`dsd` / `flac` …；位深 mpv 不报，信号路径用这里的）。
   final String? codec;

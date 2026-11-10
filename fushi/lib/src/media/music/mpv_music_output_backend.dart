@@ -930,9 +930,7 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
       _pending = _next;
       _next = null;
       _entryProducedAudio = false;
-      _pendingFromDuration = _audible?.durationMs == null
-          ? null
-          : Duration(milliseconds: _audible!.durationMs!);
+      _pendingFromDuration = _audible?.playbackDuration;
       _lastIndex = playlist.index;
       return;
     }
@@ -1343,11 +1341,9 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
     final MusicPlayItem? item = _audible;
     // 取流期间没有出声曲目：mpv 卸掉旧曲时报的位置不上报。
     if (item == null) return;
-    final Duration? duration = item.durationMs == null
-        ? (_player.state.duration > Duration.zero
-              ? _player.state.duration
-              : null)
-        : Duration(milliseconds: item.durationMs!);
+    final Duration? duration =
+        item.playbackDuration ??
+        (_player.state.duration > Duration.zero ? _player.state.duration : null);
     final Duration relative = absolute - _originOf(item);
     final Duration clamped = relative < Duration.zero
         ? Duration.zero
