@@ -1838,8 +1838,6 @@ class _ManualLookupDialogState extends State<_ManualLookupDialog> {
   }
 }
 
-/// 桌面截屏识字的一次冻结层：截的是哪块显示器、识别出了哪些行（null = 还在识别）。
-/// 诊断日志里的像素框：`[l,t,r,b]` 取整。
 /// 截屏识字一次识别的几何取证（BUG-4323，一次截屏一行）：显示器矩形（物理像素）、
 /// 截图尺寸、两者是否一致（不一致 = 截图与屏幕坐标系对不上）、DPI、HDR 与取帧路径、
 /// 送进识别器的实际尺寸与上限、行数、前 [maxBoxes] 行的框与词框数。
@@ -1886,6 +1884,8 @@ String screenOcrGeometrySummary({
   return out.toString();
 }
 
+/// 桌面截屏识字的一次冻结层：截的是哪块显示器、识别出了哪些行（null = 还在识别）。
+/// 诊断日志里的像素框：`[l,t,r,b]` 取整。
 String _rectSummary(Rect rect) =>
     '[${rect.left.round()},${rect.top.round()},'
     '${rect.right.round()},${rect.bottom.round()}]';
