@@ -25,6 +25,8 @@ import 'package:fushi/src/pages/implementations/home_page.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart'
     show FushiAdjustableSegmented;
 import 'package:fushi/src/settings/settings_detail_page.dart';
+import 'package:fushi/src/settings/settings_schema_lookup.dart'
+    show buildLookupDestination;
 import 'package:fushi/src/sync/interconnect_link_pairing.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/sync_settings_schema.dart';
@@ -247,6 +249,122 @@ Future<ObserveShot> _shot(WidgetTester tester, String name) async {
   expect(shot.saved, isTrue, reason: '$name 截图应落盘');
   expect(shot.nonBlank, isTrue, reason: '$name 不应是空白帧');
   return shot;
+}
+
+/// 焦点驱动打开改名对话框（BUG-4273 回归闸）：焦点移到 [renameBtn] → Enter，逐帧记
+/// primaryFocus 与每次焦点变化的调用栈，并**断言**对话框输入框（autofocus）在几帧内
+/// 直接拿到主焦点——不再用 Tab 兜底，bug 回来这里就红。
+Future<EditableTextState> _openRenameByKeyboard(
+  WidgetTester tester,
+  FocusDriver driver,
+  Finder renameBtn,
+  String label, {
+  required String shotName,
+}) async {
+  final bool renameFocused = await driver.focusUntil(
+    () => _focusInside(driver, renameBtn),
+    maxSteps: 150,
+  );
+  debugPrint('$_kTag [$label] rename button focused=$renameFocused');
+  expect(renameFocused, isTrue, reason: '[$label] Rename 按钮应可经 Tab 到达');
+  debugPrint(
+    '$_kTag [$label] focus-trace pre-enter: ${_describeFocus(driver.focused)}',
+  );
+  final Finder dialogFrame = find.byType(FushiDialogFrame);
+  final Finder editable = find.descendant(
+    of: dialogFrame,
+    matching: find.byType(EditableText),
+  );
+  bool fieldHasPrimary() {
+    final FocusNode? now = FocusManager.instance.primaryFocus;
+    if (now == null) return false;
+    for (final Element e in editable.evaluate()) {
+      if (identical((e.widget as EditableText).focusNode, now)) return true;
+    }
+    return false;
+  }
+
+  final List<String> focusChanges = <String>[];
+  FocusNode? lastSeen = driver.focused;
+  void onFocusChange() {
+    final FocusNode? now = FocusManager.instance.primaryFocus;
+    if (identical(now, lastSeen)) return;
+    lastSeen = now;
+    final List<String> frames = StackTrace.current
+        .toString()
+        .split('\n')
+        .where(
+          (String l) =>
+              l.contains('package:fushi/') ||
+              l.contains('focus_') ||
+              l.contains('editable_text') ||
+              l.contains('text_field') ||
+              l.contains('dialog') ||
+              l.contains('routes.dart') ||
+              l.contains('navigator.dart'),
+        )
+        .take(16)
+        .map((String l) => l.trim())
+        .toList();
+    focusChanges.add(
+      '${_describeFocus(now)} fieldPrimary=${fieldHasPrimary()}\n'
+      '      ${frames.join('\n      ')}',
+    );
+  }
+
+  FocusManager.instance.addListener(onFocusChange);
+  final List<String> focusFrames = <String>[];
+  int? firstFieldFrame;
+  try {
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    focusFrames.add(
+      'f00 ${_describeFocus(driver.focused)} fieldPrimary=${fieldHasPrimary()}',
+    );
+    if (fieldHasPrimary()) firstFieldFrame = 0;
+    for (int i = 1; i <= 30; i++) {
+      await tester.pump(const Duration(milliseconds: 16));
+      final bool onField = fieldHasPrimary();
+      if (onField && firstFieldFrame == null) firstFieldFrame = i;
+      focusFrames.add(
+        'f${i.toString().padLeft(2, '0')} '
+        '${_describeFocus(driver.focused)} fieldPrimary=$onField',
+      );
+    }
+  } finally {
+    FocusManager.instance.removeListener(onFocusChange);
+  }
+  for (final String f in focusFrames) {
+    debugPrint('$_kTag [$label] focus-trace $f');
+  }
+  for (int i = 0; i < focusChanges.length; i++) {
+    debugPrint('$_kTag [$label] focus-change #$i ${focusChanges[i]}');
+  }
+  debugPrint(
+    '$_kTag [$label] rename dialog open=${dialogFrame.evaluate().isNotEmpty} '
+    'fields=${editable.evaluate().length} firstFieldFrame=$firstFieldFrame '
+    'focusChanges=${focusChanges.length}',
+  );
+  expect(dialogFrame, findsOneWidget, reason: '[$label] Enter 应打开改名对话框');
+  expect(editable, findsWidgets, reason: '[$label] 改名对话框应有输入框');
+  expect(
+    firstFieldFrame,
+    isNotNull,
+    reason: '[$label] BUG-4273：键盘打开改名框后输入框应在 30 帧内直接获焦（无 Tab）',
+  );
+  expect(
+    firstFieldFrame!,
+    lessThanOrEqualTo(10),
+    reason: '[$label] 输入框应在几帧内获焦，实际第 $firstFieldFrame 帧',
+  );
+  await _pumpFor(tester, const Duration(seconds: 1));
+  final bool stillOnField = fieldHasPrimary();
+  debugPrint(
+    '$_kTag [$label] after 1s: fieldPrimary=$stillOnField '
+    'primary=${_describeFocus(driver.focused)}',
+  );
+  expect(stillOnField, isTrue, reason: '[$label] 1 s 后焦点仍应在输入框上');
+  await _shot(tester, shotName);
+  return tester.state<EditableTextState>(editable.last);
 }
 
 void main() {
@@ -615,111 +733,12 @@ void main() {
             ValueKey<String>('dict-detail-rename-server:$hostId/Test KO'),
           );
           expect(renameBtn, findsOneWidget, reason: '服务器行详情应有 Rename');
-          final bool renameFocused = await driver.focusUntil(
-            () => _focusInside(driver, renameBtn),
-            maxSteps: 120,
-          );
-          debugPrint('$_kTag rename button focused=$renameFocused');
-          expect(renameFocused, isTrue);
-          // 焦点取证：Enter 之后逐帧记 primaryFocus，并记下每次焦点变化的调用栈。
-          debugPrint(
-            '$_kTag focus-trace pre-enter: ${_describeFocus(driver.focused)}',
-          );
-          final List<String> focusChanges = <String>[];
-          FocusNode? lastSeen = driver.focused;
-          void onFocusChange() {
-            final FocusNode? now = FocusManager.instance.primaryFocus;
-            if (identical(now, lastSeen)) return;
-            lastSeen = now;
-            final List<String> frames = StackTrace.current
-                .toString()
-                .split('\n')
-                .where(
-                  (String l) =>
-                      l.contains('package:fushi/') ||
-                      l.contains('focus_') ||
-                      l.contains('editable_text') ||
-                      l.contains('text_field') ||
-                      l.contains('dialog') ||
-                      l.contains('routes.dart') ||
-                      l.contains('navigator.dart'),
-                )
-                .take(16)
-                .map((String l) => l.trim())
-                .toList();
-            focusChanges.add(
-              '${_describeFocus(now)}\n      ${frames.join('\n      ')}',
-            );
-          }
-
-          FocusManager.instance.addListener(onFocusChange);
-          final List<String> focusFrames = <String>[];
-          try {
-            await tester.sendKeyEvent(LogicalKeyboardKey.enter);
-            focusFrames.add('f00 ${_describeFocus(driver.focused)}');
-            for (int i = 1; i <= 30; i++) {
-              await tester.pump(const Duration(milliseconds: 16));
-              focusFrames.add(
-                'f${i.toString().padLeft(2, '0')} '
-                '${_describeFocus(driver.focused)}',
-              );
-            }
-          } finally {
-            FocusManager.instance.removeListener(onFocusChange);
-          }
-          for (final String f in focusFrames) {
-            debugPrint('$_kTag focus-trace $f');
-          }
-          for (int i = 0; i < focusChanges.length; i++) {
-            debugPrint('$_kTag focus-change #$i ${focusChanges[i]}');
-          }
-          final Finder dialogFrame = find.byType(FushiDialogFrame);
-          for (int i = 0; i < 20 && dialogFrame.evaluate().isEmpty; i++) {
-            await tester.pump(const Duration(milliseconds: 250));
-          }
-          debugPrint(
-            '$_kTag rename dialog open=${dialogFrame.evaluate().isNotEmpty}',
-          );
-          expect(dialogFrame, findsOneWidget, reason: 'Enter 应打开改名对话框');
-          await _pumpFor(tester, const Duration(seconds: 1));
-          // 集成测试 binding 下没有 TestTextInput：按 IME 的 TextInputClient 契约把
-          // 新名字交给自动聚焦的输入框，再发 done（等同回车提交）。
-          final Finder editable = find.descendant(
-            of: dialogFrame,
-            matching: find.byType(EditableText),
-          );
-          final EditableTextState? fieldState = editable.evaluate().isEmpty
-              ? null
-              : tester.state<EditableTextState>(editable.last);
-          debugPrint(
-            '$_kTag rename dialog fields=${editable.evaluate().length} '
-            'fieldFocused=${fieldState?.widget.focusNode.hasFocus}',
-          );
-          expect(fieldState, isNotNull, reason: '改名对话框应有输入框');
-          await _pumpFor(tester, const Duration(seconds: 1));
-          final FocusNode? holder = driver.focused;
-          debugPrint(
-            '$_kTag rename dialog after 2s: '
-            'fieldFocused=${fieldState!.widget.focusNode.hasFocus} '
-            'primaryFocus=$holder '
-            'holderWidget=${holder?.context?.widget.runtimeType} '
-            'holderInsideRenameBtn=${_focusInside(driver, renameBtn)}',
-          );
-          if (!fieldState.widget.focusNode.hasFocus) {
-            debugPrint(
-              '$_kTag FINDING: rename dialog TextField (autofocus: true) did '
-              'not receive focus; moving focus into it with Tab',
-            );
-            final bool fieldFocused = await driver.focusUntil(
-              () => fieldState.widget.focusNode.hasFocus,
-              maxSteps: 20,
-            );
-            debugPrint('$_kTag rename field focused via Tab=$fieldFocused');
-          }
-          expect(
-            fieldState.widget.focusNode.hasFocus,
-            isTrue,
-            reason: '改名框应可聚焦',
+          final EditableTextState fieldState = await _openRenameByKeyboard(
+            tester,
+            driver,
+            renameBtn,
+            'server-row',
+            shotName: 'server-dict-05c0-rename-dialog-server',
           );
           fieldState.updateEditingValue(
             const TextEditingValue(
@@ -892,6 +911,55 @@ void main() {
           );
           await _shot(tester, 'server-dict-06d-filtered-header');
 
+          // 4d2. 本机词典行（Test Local JA）详情里同样键盘改名：证明 BUG-4273 的修复
+          // 不限于服务器行。
+          final Finder localTitle = find.descendant(
+            of: page,
+            matching: find.text('Test Local JA'),
+          );
+          expect(localTitle, findsWidgets, reason: '本机筛选下应可见 Test Local JA');
+          expect(
+            await driver.focusWidget(localTitle.first, maxSteps: 120),
+            isTrue,
+            reason: 'Test Local JA 行应可经 Tab 到达',
+          );
+          await driver.activate();
+          await _pumpFor(tester, const Duration(seconds: 1));
+          final Finder localRenameBtn = find.byKey(
+            const ValueKey<String>('dict-detail-rename-Test Local JA'),
+          );
+          expect(localRenameBtn, findsOneWidget, reason: '本机行详情应有 Rename');
+          final EditableTextState localField = await _openRenameByKeyboard(
+            tester,
+            driver,
+            localRenameBtn,
+            'local-row',
+            shotName: 'server-dict-06d1-rename-dialog-local',
+          );
+          localField.updateEditingValue(
+            const TextEditingValue(
+              text: 'My Local JA',
+              selection: TextSelection.collapsed(offset: 11),
+            ),
+          );
+          await tester.pump(const Duration(milliseconds: 300));
+          localField.performAction(TextInputAction.done);
+          String localName() => appModel.dictRepo.dictionaries
+              .firstWhere((Dictionary d) => d.name == 'Test Local JA')
+              .effectiveDisplayName;
+          for (int i = 0; i < 20 && localName() != 'My Local JA'; i++) {
+            await tester.pump(const Duration(milliseconds: 250));
+          }
+          await _pumpFor(tester, const Duration(seconds: 1));
+          debugPrint('$_kTag local effectiveDisplayName=${localName()}');
+          expect(localName(), 'My Local JA', reason: '本机改名应写入显示名');
+          expect(
+            find.descendant(of: page, matching: find.text('My Local JA')),
+            findsWidgets,
+            reason: '列表 / 详情应显示本机词典新名字',
+          );
+          await _shot(tester, 'server-dict-06d2-detail-local-renamed');
+
           // 4e. 来源条「Use for lookups」：先把唯一一台 host 的查词关掉（总闸随之派生
           // 为关），再焦点 + Enter 打开卡片开关，读回总闸 remoteLookupEnabled 变为开。
           expect(await driver.focusWidget(allFilter, maxSteps: 120), isTrue);
@@ -908,10 +976,12 @@ void main() {
                     (RemoteDictionaryHostSource h) => h.hostId == hostId,
                   )
                   .lookupEnabled;
-          final bool offNotice = find
-              .byKey(const ValueKey<String>('dict-remote-lookup-off'))
-              .evaluate()
-              .isNotEmpty;
+          final bool offNotice =
+              find
+                  .byKey(const ValueKey<String>('dict-remote-lookup-off'))
+                  .evaluate()
+                  .isNotEmpty ||
+              find.text('Remote lookup is off').evaluate().isNotEmpty;
           debugPrint(
             '$_kTag before strip toggle: '
             'remoteLookup=${appModel.remoteLookupEnabled} '
@@ -977,10 +1047,12 @@ void main() {
               .byKey(ValueKey<String>('dict-server-source-lookup-off-$hostId'))
               .evaluate()
               .length;
-          final bool offNoticeAfter = find
-              .byKey(const ValueKey<String>('dict-remote-lookup-off'))
-              .evaluate()
-              .isNotEmpty;
+          final bool offNoticeAfter =
+              find
+                  .byKey(const ValueKey<String>('dict-remote-lookup-off'))
+                  .evaluate()
+                  .isNotEmpty ||
+              find.text('Remote lookup is off').evaluate().isNotEmpty;
           debugPrint(
             '$_kTag after strip toggle: cardLine=$offLineAfter '
             'offNotice=$offNoticeAfter',
@@ -1067,6 +1139,83 @@ void main() {
             isTrue,
           );
           await _shot(tester, 'server-dict-07b-interconnect-host');
+          nav.popUntil((Route<dynamic> r) => r.isFirst);
+          await _pumpFor(tester, const Duration(seconds: 1));
+
+          // ── 5b. 查词 › 外部集成：全局「远程查词」开关已删，换成「Dictionary
+          // servers · <摘要>」导航行，Enter 打开「Pairing & devices」。
+          unawaited(
+            nav.push(
+              MaterialPageRoute<void>(
+                builder: (_) =>
+                    SettingsDetailPage(destination: buildLookupDestination()),
+              ),
+            ),
+          );
+          await _pumpFor(tester, const Duration(seconds: 3));
+          final Finder serversRow = find.byKey(
+            const ValueKey<String>('lookup.remote_lookup'),
+          );
+          final bool serversFocused = await driver.focusUntil(
+            () => _focusInside(driver, serversRow),
+            maxSteps: 250,
+          );
+          debugPrint('$_kTag dictionary-servers row focused=$serversFocused');
+          expect(
+            serversFocused,
+            isTrue,
+            reason: '「Dictionary servers」行应可经 Tab 到达',
+          );
+          await tester.ensureVisible(serversRow);
+          await _pumpFor(tester, const Duration(seconds: 1));
+          final List<String> rowTexts = _textsIn(tester, serversRow);
+          final int rowSwitches = find
+              .descendant(
+                of: serversRow,
+                matching: find.byWidgetPredicate(
+                  (Widget w) => w.runtimeType.toString().contains('Switch'),
+                ),
+              )
+              .evaluate()
+              .length;
+          final Finder integrationsScope = find
+              .ancestor(of: serversRow, matching: find.byType(Scaffold))
+              .first;
+          _printTexts(
+            '09-lookup-settings',
+            _textsIn(tester, integrationsScope),
+          );
+          debugPrint(
+            '$_kTag dictionary-servers row texts=$rowTexts switches=$rowSwitches '
+            'oldSwitchText=${find.text('Remote dictionary lookup').evaluate().length}',
+          );
+          expect(rowTexts, contains('Dictionary servers'));
+          expect(
+            rowTexts.any((String s) => s.contains(pairedName)),
+            isTrue,
+            reason: '副标题应报在用的服务器（$pairedName）',
+          );
+          expect(rowSwitches, 0, reason: '「Dictionary servers」行不应再有开关');
+          expect(find.text('Remote dictionary lookup'), findsNothing);
+          await _shot(tester, 'server-dict-09-lookup-settings');
+          await driver.activate();
+          await _pumpFor(tester, const Duration(seconds: 3));
+          final Finder pairingTitle = find.text('Pairing & devices');
+          final Finder pairingHost = find.byKey(
+            ValueKey<String>('interconnect-lookup-host-$hostId'),
+          );
+          debugPrint(
+            '$_kTag after Enter on servers row: '
+            'pairingTitle=${pairingTitle.evaluate().length} '
+            'hostSection=${pairingHost.evaluate().length}',
+          );
+          expect(
+            pairingTitle,
+            findsWidgets,
+            reason: 'Enter 应打开 Pairing & devices',
+          );
+          expect(pairingHost, findsOneWidget, reason: '打开的应是带 host 查词分组的配对页');
+          await _shot(tester, 'server-dict-09b-lookup-settings-open');
           nav.popUntil((Route<dynamic> r) => r.isFirst);
           await _pumpFor(tester, const Duration(seconds: 1));
 

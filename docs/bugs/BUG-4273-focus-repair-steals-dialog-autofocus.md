@@ -8,4 +8,4 @@
 - **[x] ① 已修复** — 显式焦点请求永远优先于被动修复：`ensureFocus()` 开头先 `FocusManager.instance.applyFocusChangesIfNeeded()`（构建期除外），在框架应用完所有挂起请求（含 autofocus）之后才判断主焦点是否无主；`scheduleRepair()` 的帧后回调不再同步修复，改走 `scheduleRepairBeforeNextFrame()` 微任务，保证本帧所有帧后回调（EditableText 排 autofocus 的那条）都跑完再判。不针对任何对话框做特例。
 - **[x] ② 已加自动化测试** — `fushi/test/focus/dialog_autofocus_beats_repair_test.dart`：真 `showNameInputDialog` + `FushiFocusRoot` 在 Navigator 之上 + Windows 平台 + 下层依赖 `ModalRoute` 的受管目标，键盘回车打开，断言主焦点是输入框的 EditableText 节点；另一用例锁住「新路由无 autofocus 时被动修复照常落到登记目标」。红→绿：去掉修复后第一条用例失败，实际焦点 `fushi-icon-button-<hash>`（与真机轨迹同一目标）。
 - **连带守卫调整**：`fushi/test/focus/main_window_focus_gate_test.dart` 旧用例断言「开门后焦点落在受管目标」，其绿全靠同一竞态（被动修复抢在框架应用闸门的显式 `requestFocus(关门前持有者)` 之前判无主并覆盖）；改为断言焦点还给关门前持有者（闸门设计本意），另加「原持有者已不可聚焦时由控制器补回受管目标」用例保住补票路径。
-- **备注**：真机复测（集成探针改名步骤）待补。
+- **备注**：真机复测已补：Windows 集成探针 `server_dictionaries_probe_test.dart` 改名步骤（服务端行与本机行各一次）在 run win-itest-20261109-205840-037415f0 中断言对话框文本框第 1 帧即获得焦点（修前落在屏幕键盘按钮）。
