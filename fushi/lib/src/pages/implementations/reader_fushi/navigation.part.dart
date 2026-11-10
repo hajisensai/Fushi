@@ -332,8 +332,9 @@ extension _ReaderNavigation on _ReaderFushiPageState {
     final bool allowed = readerScrollProgressRefreshAllowed(
       readerContentReady: _readerContentReady,
       restoreInFlight: _restoreInFlight,
-      // 覆盖层架构：正文在歌词层下面照常回传滚动、照常记进度 / 账本。
-      lyricsMode: false,
+      // 歌词模式是独立模式：正文停着，它的滚动回传（重排 / 窗口变尺寸的瞬态）
+      // 不代表阅读位置，不采样。
+      lyricsMode: _lyricsMode,
       controllerAvailable: _controller != null,
     );
     // TODO-151/164 / BUG-225 诊断（默认 off，DebugLogService.instance.enabled 门控）：
@@ -1309,9 +1310,10 @@ extension _ReaderNavigation on _ReaderFushiPageState {
     // 章末 progress 会把「旧位置 → 章末」整段计成本次读到的新字数。恢复完成
     // （_onRestoreComplete）与失败（_failNavigation / reload catch）都清旗，之后的
     // 首发刷新、onReanchorSettled 补刷都在清旗之后到达，不受这条门影响。
-    // 覆盖层架构（2026-10-04）：歌词模式不再替换正文文档，正文在歌词层下面照常跟随
-    // 音频翻页——字数 / 进度照常由这里采样入账，所以不再按歌词态早返回。
-    if (_controller == null || _restoreInFlight) return;
+    // 歌词模式是独立模式（2026-11-10）：阅读位置 / 账本单元归当前句
+    // （`_settleLyricsCue`），正文停在进歌词那一刻的页上。10s 轮询与补刷 Timer 不看
+    // 歌词态，这里统一挡住——否则正文那页会和当前句轮流 arrive，账本来回撤回 / 入账。
+    if (_controller == null || _restoreInFlight || _lyricsMode) return;
     final InAppWebViewController controller = _controller!;
     final int generation = _navigateGeneration;
     final int chapter = _currentChapter;
@@ -1349,6 +1351,9 @@ extension _ReaderNavigation on _ReaderFushiPageState {
         !_readerContentReady) {
       return;
     }
+    // 采样在飞期间进了歌词模式：正文这页已在进歌词那一刻结算，位置 / 账本此后归
+    // 当前句，晚到的正文快照不得再 arrive。
+    if (_lyricsMode) return;
     if (result == null) {
       // BUG-493：null = JS stableProgressInvocation 早退（重锚在飞 _reanchorPending / 尚未
       // settle）。这是**瞬态**：JS 侧清旗已单点化（_sharedJs 的 _setReanchorPending），
@@ -1708,7 +1713,12 @@ extension _ReaderNavigation on _ReaderFushiPageState {
   /// 共用这一份映射，两边口径不会漂开。
   ({int section, double progress, int charOffset})?
   _readingPositionFromCurrentCue() {
-    final AudioCue? cue = _audiobookController?.currentCue;
+    final AudiobookPlayerController? ctrl = _audiobookController;
+    if (ctrl == null) return null;
+    // 歌词模式的当前句与歌词层高亮同源（整书 cue）；正文模式是控制器的跟随句。
+    final AudioCue? cue = _lyricsMode
+        ? _lyricsReadingCue(ctrl)
+        : ctrl.currentCue;
     if (cue == null) return null;
     final SubtitleRematchFragment? frag = SubtitleRematchCodec.tryDecode(
       cue.textFragmentId,
@@ -1756,8 +1766,10 @@ extension _ReaderNavigation on _ReaderFushiPageState {
   /// 位置：音频停在没有句子的段落（片头、只对齐了部分章节的书、句子反查不到正文）时
   /// 当前句写不出任何位置，视口仍是唯一真值；只看跟读门会让两边都不落库，用户此时
   /// 手动读过的位置全部丢失。
+  ///
+  /// 歌词模式是独立模式：正文停着，阅读位置恒归当前句（映射得出时），不看跟读门。
   bool get _cueOwnsReadingPosition =>
-      _audiobookController?.shouldRevealCurrentCue == true &&
+      (_lyricsMode || _audiobookController?.shouldRevealCurrentCue == true) &&
       _readingPositionFromCurrentCue() != null;
 
   // HBK-AUDIT-122: in lyrics mode the persisted position must be derived from
@@ -1787,8 +1799,13 @@ extension _ReaderNavigation on _ReaderFushiPageState {
   /// 完整论证见 [flushWithBoundedProbe] 的文档注释。
   Future<void> _syncAndFlushPosition() async {
     await flushWithBoundedProbe(
-      // 覆盖层架构：正文一直跟着音频，位置就从正文采（歌词态不再另走 cue 派生）。
+      // 歌词模式：位置归当前句（同步、不碰 WebView）；正文停着的那页不是阅读位置。
+      // 当前句映射不出位置时保留最近一次落定的存档，不拿正文旧页去盖。
       probe: () async {
+        if (_lyricsMode) {
+          _syncPositionFromCurrentCue();
+          return;
+        }
         await _syncPositionFromWebViewProgress();
       },
       persist: () async {
