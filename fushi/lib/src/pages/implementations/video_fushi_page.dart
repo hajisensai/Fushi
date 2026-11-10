@@ -4771,9 +4771,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 后一集回来——直接 `= await` 会让作废的那一程把它那集的档覆盖到当前集列表上。
     final List<SubtitleSource> restoredLocalSubtitles =
         await _restoreRemoteLocalSubtitleFiles(index);
+    // 换集 / 连播（无 override）与首开同一条判定：本机库断点、清单条目、互联 host
+    // 此刻的断点取较新（BUG-4280）。只读本机断点会让合集下一成员 / 播放列表下一集
+    // 从本机旧断点起播，随后的实时上报（戳 = now）把旧位置写回 host。
     final int initialPositionMs =
         initialPositionMsOverride ??
-        await _readPersistedRemotePositionForEpisode(index);
+        await _resolveRemoteInitialPositionMs(info, index);
     if (seq != _episodeLoadSeq || !mounted) return;
     _importedSubtitleSources = restoredLocalSubtitles;
     // YouTube 画质档是 per-video 懒解析：新一集起播先复位（下次点开画质菜单再懒解析）。
@@ -5203,28 +5206,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     return v.clamp(0.0, max).toDouble();
   }
 
-  /// 读 per-book/per-episode 远端断点位置（无则 0，从头）。
-  ///
-  /// 在线远端视频（[_isRemote]）在 client 本地 DB 没有 VideoBooks 行（书架不收录
-  /// 远端在线视频，[home_video_page._openRemote] 直接 push 播放页不 upsert），因此本地
-  /// 视频走 `VideoBooks.lastPositionMs` 的进度链路对远端不可用。沿用 speed/volume 同款
-  /// per-book prefs 范式（落 Drift `preferences` 表，跨重启保留），key 用稳定的
-  /// `_activeBookUid`（= 远端 `RemoteVideoInfo.id`，每次列举不变）。TODO-885：
-  /// [episodeIndex]>0 用按集 key（`#ep<index>` 后缀），0 回退整书 key（向后兼容单视频 /
-  /// 旧 TODO-559 prefs）。
-  ///
-  /// BUG-4280：从库里读（[readLocalRemoteVideoPosition]），不读 prefsRepo 的内存缓存——
-  /// 互联 sweep / 冲突弹窗只写库，缓存里留着的是本机上次自己写的旧断点。
-  Future<int> _readPersistedRemotePositionForEpisode(int episodeIndex) async {
-    final (String uid, int ep) = _remotePositionKeyForIndex(episodeIndex);
-    final PlaybackPosition local = await readLocalRemoteVideoPosition(
-      appModel.database,
-      uid,
-      episodeIndex: ep,
-    );
-    return local.positionMs < 0 ? 0 : local.positionMs;
-  }
-
   /// 读本地持久化的远端视频 [uid] 字幕调轴（prefs，无记录返回 0）。与断点同款
   /// per-uid prefs 范式（互联远端调轴不持久化 bug：远端无 VideoBooks 行，
   /// `updateDelayMs` 是静默 0 行 UPDATE，调轴必须落 prefs 才能跨重启保留）。
@@ -5363,10 +5344,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   }
 
   /// 远端视频开播位置（TODO-653/885）：在 host 真相（[info] 随清单带回的整书 positionMs，
-  /// 仅对起播集 [episodeIndex]==currentEpisode 有意义）与本地按集 prefs 之间「取较新时间
+  /// 仅对起播集 [episodeIndex]==currentEpisode 有意义）与本地按集断点之间「取较新时间
   /// 戳」（[resolvePositionLww]）。host 进度新于本地时跨设备恢复；本地新于 host 时
-  /// 不被旧 host 回退。非起播集只用本地按集 prefs（host 清单只带整书/当前集进度）。
-  /// BUG-4280：本机断点读库、互联 host 再读一次此刻断点，见 [resolveRemoteVideoResumeMs]。
+  /// 不被旧 host 回退。非起播集清单不带进度，只比本地按集断点与互联 host 按集断点。
+  /// BUG-4280：本机断点读库（不读 prefsRepo 内存缓存——互联 sweep / 冲突弹窗只写库）、
+  /// 互联 host 再读一次此刻断点，见 [resolveRemoteVideoResumeMs]。首开与换集 / 连播
+  /// （[_loadRemoteEpisode] 无 override）都走这里。
   Future<int> _resolveRemoteInitialPositionMs(
     RemoteVideoInfo info,
     int episodeIndex,

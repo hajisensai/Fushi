@@ -193,13 +193,14 @@ void main() {
         ),
         reason: '非原盘会话必须仍回落 widget.bookUid，不能改变远端断点身份',
       );
-      // 读侧用 helper 结果元组读按集断点（BUG-4280：经 readLocalRemoteVideoPosition
-      // 直接读库，键由它按 videoRemotePositionEpisodePrefKey 构造）。
+      // 读侧用 helper 结果元组读按集断点（BUG-4280：经 resolveRemoteVideoResumeMs →
+      // readLocalRemoteVideoPosition 直接读库，键由它按 videoRemotePositionEpisodePrefKey
+      // 构造）。
       expect(
         _flat(src),
         contains(
           _flat(
-            'readLocalRemoteVideoPosition(appModel.database, uid, episodeIndex: ep)',
+            'final (String uid, int ep) = _remotePositionKeyForIndex(episodeIndex); return resolveRemoteVideoResumeMs( db: appModel.database, client: _effectiveRemoteClient!, uid: uid, episodeIndex: ep,',
           ),
         ),
         reason: 'read-side key must derive from the helper tuple',
