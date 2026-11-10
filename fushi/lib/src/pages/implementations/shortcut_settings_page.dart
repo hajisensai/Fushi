@@ -16,7 +16,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart' hide ModifierKey;
+import 'package:fushi/src/lookup/global_lookup_controller.dart';
 import 'package:fushi/src/pages/base_page.dart';
+import 'package:fushi/src/pages/implementations/shortcut_settings/global_hotkey_portal_panel.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -47,6 +49,8 @@ import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_destination_id.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/shortcuts/focus_navigation_shortcuts.dart';
+import 'package:fushi/src/shortcuts/global_hotkey_backend.dart'
+    show GlobalHotKeyBackendKind;
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
@@ -100,13 +104,41 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
   /// nothing.
   bool _gameInputUnavailable = false;
 
+  /// Which mechanism carries the app-outside keys right now. Starts as the
+  /// platform's choice and follows the controller: on a Wayland desktop
+  /// without GlobalShortcuts but with GTK on XWayland the portal hands over to
+  /// the X11 grab, and then the regular in-app recorder applies again.
+  GlobalHotKeyBackendKind? _hotKeyBackendKind;
+
+  void _onHotKeyStatusChanged() {
+    final GlobalHotKeyBackendKind? kind =
+        GlobalLookupController.instance.hotKeyStatus.value?.kind ??
+        GlobalLookupController.platformHotKeyBackendKind;
+    if (kind == _hotKeyBackendKind || !mounted) return;
+    setState(() => _hotKeyBackendKind = kind);
+  }
+
   @override
   void initState() {
     super.initState();
+    _hotKeyBackendKind =
+        GlobalLookupController.instance.hotKeyStatus.value?.kind ??
+        GlobalLookupController.platformHotKeyBackendKind;
+    GlobalLookupController.instance.hotKeyStatus.addListener(
+      _onHotKeyStatusChanged,
+    );
     _gamepadBrand = ReaderFushiSource.instance.gamepadGlyphBrand;
     // Surface the hint only on a gamepad-related surface (this settings page),
     // never as a startup popup — a mouse/keyboard-only user is not nagged.
     unawaited(_checkGameInputAvailability());
+  }
+
+  @override
+  void dispose() {
+    GlobalLookupController.instance.hotKeyStatus.removeListener(
+      _onHotKeyStatusChanged,
+    );
+    super.dispose();
   }
 
   /// TODO-1223: asks the platform whether the controller backend is available
@@ -610,6 +642,22 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
   /// 这类 scope 与鼠标设备一律回落到列表行（off-figure 键也在列表里可改）。
   Widget? _buildFigure(ShortcutScope scope, ShortcutInputDevice device) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    // Linux Wayland: the desktop owns the app-outside keys (GlobalShortcuts
+    // portal), so the keyboard view of this scope shows what the desktop bound
+    // instead of an in-app recorder nobody would listen to. Gamepad / mouse
+    // stay the regular rows: those triggers are Fushi's own.
+    if (scope == ShortcutScope.globalExternal &&
+        device == ShortcutInputDevice.keyboard &&
+        _hotKeyBackendKind == GlobalHotKeyBackendKind.portal) {
+      final GlobalLookupController controller = GlobalLookupController.instance;
+      return GlobalHotKeyPortalPanel(
+        status: controller.hotKeyStatus,
+        actions: ShortcutAction.actionsForScope(scope),
+        availableHere: GlobalLookupController.osHotKeyActionWorksHere,
+        onRebind: controller.rebindHotKeys,
+        onConfigure: controller.configureHotKeysInSystem,
+      );
+    }
     if (_visualMode) {
       final EdgeInsets padding = EdgeInsets.symmetric(
         horizontal: tokens.spacing.rowHorizontal,

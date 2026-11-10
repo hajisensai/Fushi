@@ -2,8 +2,11 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:fushi/src/lookup/gal_attached_measured_frame.dart';
 import 'package:fushi/src/lookup/gal_lookup_surface_profile.dart';
 import 'package:fushi/src/lookup/global_lookup_log.dart';
+import 'package:fushi/src/mining/tyrano_dom/tyrano_dom_feed.dart';
+import 'package:fushi/src/mining/tyrano_dom/tyrano_dom_frame.dart';
 import 'package:fushi/src/platform/gal_hook_text_overlay_channel.dart';
 
 typedef GalAttachedPreferenceReader = Object? Function(String key);
@@ -118,6 +121,24 @@ abstract interface class GalAttachedTextSurfacePort {
   });
 
   Future<GalAttachedCallResult> detach(GalAttachedSurfaceTarget target);
+
+  /// 实测排版路线：代替 [configure]（见
+  /// [GalHookTextOverlayChannel.attachedConfigureMeasured]）。
+  Future<GalAttachedCallResult> configureMeasured({
+    required GalAttachedSurfaceTarget target,
+    required String measuredSource,
+  });
+
+  /// 实测排版路线：发布当前行与逐字几何（见
+  /// [GalHookTextOverlayChannel.attachedUpdateMeasuredText]）。
+  Future<GalAttachedCallResult> updateMeasuredText({
+    required GalAttachedSurfaceTarget target,
+    required String sourceText,
+    required int textGeneration,
+    required List<GalAttachedMeasuredGlyph> glyphs,
+    required int clientWidth,
+    required int clientHeight,
+  });
 }
 
 class GalAttachedMethodChannelSurfacePort
@@ -233,6 +254,32 @@ class GalAttachedMethodChannelSurfacePort
   @override
   Future<GalAttachedCallResult> detach(GalAttachedSurfaceTarget target) =>
       GalHookTextOverlayChannel.attachedDetach(target);
+
+  @override
+  Future<GalAttachedCallResult> configureMeasured({
+    required GalAttachedSurfaceTarget target,
+    required String measuredSource,
+  }) => GalHookTextOverlayChannel.attachedConfigureMeasured(
+    target: target,
+    measuredSource: measuredSource,
+  );
+
+  @override
+  Future<GalAttachedCallResult> updateMeasuredText({
+    required GalAttachedSurfaceTarget target,
+    required String sourceText,
+    required int textGeneration,
+    required List<GalAttachedMeasuredGlyph> glyphs,
+    required int clientWidth,
+    required int clientHeight,
+  }) => GalHookTextOverlayChannel.attachedUpdateMeasuredText(
+    target: target,
+    sourceText: sourceText,
+    textGeneration: textGeneration,
+    glyphs: glyphs,
+    clientWidth: clientWidth,
+    clientHeight: clientHeight,
+  );
 }
 
 /// Child state machine fed by the app's existing single gal session listener.
@@ -330,7 +377,35 @@ class GalAttachedTextController extends ChangeNotifier {
   int _calibrationGeneration = 0;
   int? _committedCalibrationGeneration;
 
+  // -- 实测排版路线（TyranoScript DOM 源）--
+  // 有 DOM feed 时不走校准 profile：inspect -> attachedOnly 交接 -> configureMeasured，
+  // 之后由 DOM 帧驱动 updateMeasuredText。texthooker 送来的 sourceText 在这条路线上
+  // 不参与几何（它与 DOM 正文同源，但下标契约只对 DOM 帧成立）。
+  TyranoDomFeed? _measuredFeed;
+  bool _measuredConfigured = false;
+  StreamSubscription<TyranoDomFrame>? _measuredFrameSubscription;
+  GalAttachedMeasuredPayload? _measuredLastPayload;
+  GalAttachedMeasuredPayload? _measuredRejectedPayload;
+  String? _measuredStaleReason;
+  TyranoDomFrame? _measuredPendingFrame;
+  bool _measuredPendingForce = false;
+  bool _measuredPushing = false;
+  Future<void>? _measuredDrain;
+  String? _lastMeasuredDiagnostic;
+
   GalAttachedTextStatus get status => _status;
+
+  /// 当前 surface 走实测排版路线（有 TyranoScript DOM 源）。
+  bool get measuredLayoutActive => _measuredFeed != null;
+
+  /// 等当前排队的实测载荷全部发完（测试用）。
+  @visibleForTesting
+  Future<void> get measuredPushIdle async {
+    while (_measuredPushing) {
+      await (_measuredDrain ?? Future<void>.value());
+    }
+  }
+
   String? get statusReason => _statusReason;
   String? get nativeStatus => _nativeStatus;
   GalAttachedShieldStatus get shieldStatus => _shieldStatus;
@@ -388,6 +463,7 @@ class GalAttachedTextController extends ChangeNotifier {
   /// the workbench entry; the live probe calibration stays behind
   /// [calibrationManuallyEnabled].
   bool get sampleCalibrationEnabled {
+    if (_measuredFeed != null) return false;
     final GalLookupSurfaceMode mode =
         _profile?.mode ?? GalLookupSurfaceMode.auto;
     return mode == GalLookupSurfaceMode.auto ||
@@ -405,8 +481,9 @@ class GalAttachedTextController extends ChangeNotifier {
   /// 缺席时不再把校准入口推到用户面前——那条路的第一步就是往游戏正文上盖一个
   /// 预置矩形，属于用户没要过的干扰。
   bool get calibrationManuallyEnabled =>
+      _measuredFeed == null &&
       (_profile?.mode ?? GalLookupSurfaceMode.auto) ==
-      GalLookupSurfaceMode.attachedOnly;
+          GalLookupSurfaceMode.attachedOnly;
   bool get canCalibrate =>
       calibrationManuallyEnabled &&
       !calibrationActive &&
@@ -484,6 +561,9 @@ class GalAttachedTextController extends ChangeNotifier {
     String? launchExePath,
     bool inspectOnly = false,
     bool Function()? stillCurrent,
+
+    /// TyranoScript DOM 源（会话控制器发布）；非 null 时走实测排版路线。
+    TyranoDomFeed? measuredFeed,
   }) async {
     if (stillCurrent != null && !stillCurrent()) return;
     final bool hasTarget =
@@ -507,6 +587,7 @@ class GalAttachedTextController extends ChangeNotifier {
         current.sessionEpoch != sessionEpoch ||
         current.targetPid != targetPid ||
         _launchExePath != nextLaunchExePath ||
+        !identical(_measuredFeed, measuredFeed) ||
         (current.targetHwnd != targetHwnd &&
             !_retiredTargetHwnds.contains(targetHwnd));
     if (changed) {
@@ -518,7 +599,20 @@ class GalAttachedTextController extends ChangeNotifier {
         launchExePath: nextLaunchExePath,
         inspectOnly: inspectOnly,
         stillCurrent: stillCurrent,
+        measuredFeed: measuredFeed,
       );
+      return;
+    }
+    if (_measuredFeed != null) {
+      // 实测路线的正文与几何只来自 DOM 帧；这里只负责把 phase 1 推迟的激活放行。
+      if (_activationDeferred && !inspectOnly) {
+        _activationDeferred = false;
+        await _evaluateAndActivate(
+          ++_operationGeneration,
+          current,
+          stillCurrent: stillCurrent,
+        );
+      }
       return;
     }
     _latestSourceText = nextText;
@@ -629,10 +723,12 @@ class GalAttachedTextController extends ChangeNotifier {
     required String? launchExePath,
     required bool inspectOnly,
     bool Function()? stillCurrent,
+    TyranoDomFeed? measuredFeed,
   }) async {
     await detach();
     if (stillCurrent != null && !stillCurrent()) return;
-    _latestSourceText = sourceText;
+    _measuredFeed = measuredFeed;
+    _latestSourceText = measuredFeed == null ? sourceText : '';
     _launchExePath = launchExePath;
     final int operation = ++_operationGeneration;
     final GalAttachedSurfaceTarget target = GalAttachedSurfaceTarget(
@@ -739,6 +835,14 @@ class GalAttachedTextController extends ChangeNotifier {
     if (stillCurrent != null && !stillCurrent()) return;
     final GalAttachedSurfaceTarget? callTarget = _target;
     if (callTarget == null || !_sameLogicalSurface(callTarget, target)) return;
+    if (_measuredFeed != null) {
+      await _evaluateAndActivateMeasured(
+        operation,
+        callTarget,
+        stillCurrent: stillCurrent,
+      );
+      return;
+    }
     final GalLookupSurfaceProfileV1? profile = _profile;
     final GalLookupSurfaceMode mode =
         profile?.mode ?? GalLookupSurfaceMode.auto;
@@ -1051,6 +1155,7 @@ class GalAttachedTextController extends ChangeNotifier {
     final GalAttachedSurfaceTarget? target = _target;
     final GalLookupReferenceClientV1? client = _currentClient;
     if (calibrationActive ||
+        _measuredFeed != null ||
         target == null ||
         client == null ||
         _latestSourceText.isEmpty) {
@@ -1337,6 +1442,11 @@ class GalAttachedTextController extends ChangeNotifier {
         visible: _surfaceVisible,
         failed: event.state == 'error' || event.state == 'unavailable',
       );
+      notifyListeners();
+      return;
+    }
+    if (_measuredFeed != null) {
+      _handleMeasuredSurfaceState(event);
       notifyListeners();
       return;
     }
@@ -1812,6 +1922,7 @@ class GalAttachedTextController extends ChangeNotifier {
     if (profile == null ||
         client == null ||
         target == null ||
+        _measuredFeed != null ||
         !layout.isValid) {
       return;
     }
@@ -2148,6 +2259,11 @@ class GalAttachedTextController extends ChangeNotifier {
   }
 
   Future<void> _pushLatestTextIfActive() async {
+    if (_measuredFeed != null) {
+      // 实测路线没有「按 texthooker 文本排版」这回事：只重发 DOM 最新快照。
+      _scheduleMeasuredPush(_measuredFeed!.latest);
+      return;
+    }
     // While the samples dialog owns the foreground, the native surface stays
     // hidden as targetBackground. Its text still has to advance: a later
     // calibration capture requires the exact current text generation before it
@@ -2186,7 +2302,10 @@ class GalAttachedTextController extends ChangeNotifier {
     bool stageWhileProviderPending = false,
   }) {
     final GalAttachedSurfaceTarget? target = _target;
-    if (target == null) return Future<bool>.value(false);
+    // 实测模式下 runner 对 attachedUpdateText 一律回 measured_layout_active。
+    if (target == null || _measuredFeed != null) {
+      return Future<bool>.value(false);
+    }
     final Future<bool>? pending = _textPushFuture;
     if (pending != null &&
         _textPushTarget?.matches(target) == true &&
@@ -2304,6 +2423,7 @@ class GalAttachedTextController extends ChangeNotifier {
   }
 
   void _resetLocalState() {
+    _resetMeasuredState();
     _committedCalibrationGeneration = null;
     _target = null;
     _profile = null;
@@ -2585,6 +2705,311 @@ class GalAttachedTextController extends ChangeNotifier {
       _probeEndObservedIndex == probes.endIndex;
 
   /// 恒 true：风险已恒定接受（见 _unsafeLeftClickAlwaysAccepted）。
+  // ── 实测排版路线 ──────────────────────────────────────────────────────────
+
+  /// inspect 之后的实测激活：不需要校准 profile。
+  ///
+  /// 顺序照 runner 契约：先认领 attached provider 并把几何准入切到 attachedOnly
+  /// （[_claimAttachedProvider] → `_beforeAttachedActivation`，不发就会一直停在
+  /// geometryProviderPending），再 configureMeasured，之后才订阅 DOM 帧推几何。
+  Future<void> _evaluateAndActivateMeasured(
+    int operation,
+    GalAttachedSurfaceTarget target, {
+    bool Function()? stillCurrent,
+  }) async {
+    final TyranoDomFeed? feed = _measuredFeed;
+    if (feed == null) return;
+    final GalLookupSurfaceMode mode =
+        _profile?.mode ?? GalLookupSurfaceMode.auto;
+    // 用户对这个 exe 显式关掉了游戏内查词：实测路线同样尊重。
+    if (mode == GalLookupSurfaceMode.off) {
+      _setAttachedProviderClaim(false);
+      _surfaceVisible = false;
+      _setStatus(GalAttachedTextStatus.disabled);
+      return;
+    }
+    if (_shieldStatus.conclusion == GalAttachedShieldConclusion.faulted) {
+      _activationFailure('input_shield_faulted');
+      return;
+    }
+    if (_measuredConfigured && _attachedProviderClaimed) {
+      // 已配置且仍持有认领（例如用户切模式后重评）：只刷新状态并重发最新快照。
+      // 认领被撤过（失败分支）就整条重走：重新认领 + configureMeasured（同源重配
+      // 不清空 runner 侧当前行）。
+      _refreshMeasuredStatus();
+      _scheduleMeasuredPush(feed.latest, force: true);
+      return;
+    }
+    final bool claimed = await _claimAttachedProvider(
+      operation,
+      target,
+      profileMode: mode,
+      // 实测几何本身就是 attached 几何：准入固定 attachedOnly，不让 native provider 抢。
+      forceAttached: true,
+      stillCurrent: stillCurrent,
+    );
+    if (!claimed) return;
+    final GalAttachedCallResult result = await _surfacePort.configureMeasured(
+      target: target,
+      measuredSource: galAttachedMeasuredSourceTyranoDom,
+    );
+    if (!_isCurrent(operation, target) ||
+        (stillCurrent != null && !stillCurrent()) ||
+        !identical(feed, _measuredFeed)) {
+      return;
+    }
+    _adoptNativeMetadata(result);
+    if (result.shield.conclusion == GalAttachedShieldConclusion.faulted) {
+      _activationFailure('input_shield_faulted');
+      return;
+    }
+    if (!result.ok) {
+      final String reason =
+          result.error ?? result.reason ?? 'measured_configure_failed';
+      _measuredDiagnostic('configure_rejected reason=$reason');
+      _activationFailure(reason);
+      return;
+    }
+    _measuredConfigured = true;
+    _surfaceVisible = false;
+    _measuredFrameSubscription ??= feed.frames.listen((TyranoDomFrame frame) {
+      if (identical(feed, _measuredFeed)) _scheduleMeasuredPush(frame);
+    }, onDone: () => unawaited(_onMeasuredFeedEnded(feed)));
+    _refreshMeasuredStatus();
+    _scheduleMeasuredPush(feed.latest);
+  }
+
+  /// DOM 源断开（游戏退出 / CDP 断开 / 会话停源）：撤掉实测几何。
+  ///
+  /// 旧句的命中框绝不能比数据源活得久；之后由 central sync 按「没有 feed」重新接管
+  /// （回到校准路线，没有 profile 时安静挂起）。
+  Future<void> _onMeasuredFeedEnded(TyranoDomFeed feed) async {
+    if (!identical(feed, _measuredFeed) || _target == null) return;
+    _measuredDiagnostic('feed_ended port=${feed.port}');
+    await detach();
+  }
+
+  /// 按 provider 交接与最近一次发布结果得出公开状态。
+  void _refreshMeasuredStatus({String? reason}) {
+    if (!_attachedProviderClaimed ||
+        !_attachedRegistryProviderReady(
+          _providerKind,
+          _providerId,
+          _providerStatus,
+        )) {
+      _surfaceVisible = false;
+      _setStatus(
+        GalAttachedTextStatus.suspended,
+        reason: _nativeStatus == 'shieldHandshakePending'
+            ? 'shieldHandshakePending'
+            : 'geometryProviderPending',
+      );
+      return;
+    }
+    final String? stale = _measuredStaleReason;
+    if (stale != null) {
+      _surfaceVisible = false;
+      _setStatus(GalAttachedTextStatus.suspended, reason: stale);
+      return;
+    }
+    if (_sentSourceText.isEmpty) {
+      _setStatus(
+        GalAttachedTextStatus.waitingForBodyThread,
+        reason: 'measured_waiting_complete_line',
+      );
+      return;
+    }
+    _setStatus(GalAttachedTextStatus.activeAttached, reason: reason);
+  }
+
+  void _handleMeasuredSurfaceState(GalAttachedSurfaceStateEvent event) {
+    if (_shieldStatus.conclusion == GalAttachedShieldConclusion.faulted) {
+      _activationFailure(event.reason ?? 'input_shield_faulted');
+      return;
+    }
+    switch (event.status) {
+      case 'measuredLayoutStale':
+        // runner 已撤掉旧框（缩放 / 测量尺寸与客户区不符）：拿 DOM 最新快照重测重发。
+        // 同一份测量已被拒过就不重发，等观察脚本推来新快照（resize 本身会触发）。
+        _surfaceVisible = false;
+        _measuredStaleReason =
+            _stateEventReason(event) ?? 'measuredLayoutStale';
+        _setStatus(
+          GalAttachedTextStatus.suspended,
+          reason: _measuredStaleReason,
+        );
+        _scheduleMeasuredPush(_measuredFeed?.latest, force: true);
+        break;
+      case 'geometryProviderPending':
+        _surfaceVisible = false;
+        _setStatus(
+          GalAttachedTextStatus.suspended,
+          reason: 'geometryProviderPending',
+        );
+        break;
+      case 'ready':
+      case 'visible':
+      case 'visibleRisky':
+      case 'emptyText':
+        if (!_attachedProviderClaimed && _target != null) {
+          _surfaceVisible = false;
+          _setStatus(
+            GalAttachedTextStatus.suspended,
+            reason: 'geometryProviderPending',
+          );
+          unawaited(_evaluateAndActivate(++_operationGeneration, event.target));
+          break;
+        }
+        _refreshMeasuredStatus(reason: event.reason);
+        break;
+      case 'targetUnavailable':
+      case 'surfaceUnavailable':
+      case 'invalidConfiguration':
+      case 'exclusiveFullscreenUnavailable':
+        _activationFailure(event.reason);
+        break;
+      default:
+        if (event.state == 'error' || event.state == 'unavailable') {
+          _activationFailure(_stateEventReason(event));
+        } else if (event.state == 'suspended') {
+          _surfaceVisible = false;
+          _setStatus(
+            GalAttachedTextStatus.suspended,
+            reason: _stateEventReason(event),
+          );
+        }
+        break;
+    }
+  }
+
+  /// 排队发布一帧；同一时刻只有一个 updateMeasuredText 在途，期间到达的帧只保留最新一帧。
+  void _scheduleMeasuredPush(TyranoDomFrame? frame, {bool force = false}) {
+    if (frame == null || !_measuredConfigured || _target == null) return;
+    _measuredPendingFrame = frame;
+    _measuredPendingForce = _measuredPendingForce || force;
+    if (_measuredPushing) return;
+    _measuredPushing = true;
+    _measuredDrain = _drainMeasuredPushes();
+  }
+
+  Future<void> _drainMeasuredPushes() async {
+    try {
+      while (true) {
+        final TyranoDomFrame? frame = _measuredPendingFrame;
+        if (frame == null) break;
+        final bool force = _measuredPendingForce;
+        _measuredPendingFrame = null;
+        _measuredPendingForce = false;
+        await _pushMeasuredFrame(frame, force: force);
+      }
+    } catch (error, stackTrace) {
+      _measuredDiagnostic('push_exception $error\n$stackTrace');
+    } finally {
+      _measuredPushing = false;
+    }
+  }
+
+  /// runner 在这些拒收之前就返回、不会接下本行身份（文本 + generation）。
+  static const Set<String> _measuredRejectionsBeforeIdentity = <String>{
+    'stale_epoch',
+    'stale_text_generation',
+    'invalid_text_generation',
+    'measured_layout_not_configured',
+    'source_text_too_large',
+    'measured_glyphs_malformed',
+    'invalid_target',
+    'attached_surface_unavailable',
+    'unsupported',
+    'platform_error',
+  };
+
+  Future<void> _pushMeasuredFrame(
+    TyranoDomFrame frame, {
+    required bool force,
+  }) async {
+    final GalAttachedSurfaceTarget? target = _target;
+    if (target == null || !_measuredConfigured) return;
+    final GalAttachedMeasuredPayload payload =
+        galAttachedMeasuredPayloadForFrame(frame);
+    final GalAttachedMeasuredPayload sent =
+        _measuredLastPayload ?? const GalAttachedMeasuredPayload.clear();
+    // 同一份测量已经被拒：不管是不是重发请求，都等一份新的 DOM 快照。
+    if (payload == _measuredRejectedPayload) return;
+    if (!force && _measuredRejectedPayload == null && payload == sent) return;
+    // 同一句重测（缩放 / 重排）沿用 generation——runner 只接受「同句同代或更新」。
+    final bool sameLine =
+        _textGeneration > 0 && payload.sourceText == _sentSourceText;
+    final int generation = sameLine ? _textGeneration : _textGeneration + 1;
+    // 清空不带几何，但 runner 仍校验客户区尺寸为正。
+    final int clientWidth = payload.isClear
+        ? (frame.clientWidth > 0 ? frame.clientWidth : 1)
+        : payload.clientWidth;
+    final int clientHeight = payload.isClear
+        ? (frame.clientHeight > 0 ? frame.clientHeight : 1)
+        : payload.clientHeight;
+    final GalAttachedCallResult result = await _surfacePort.updateMeasuredText(
+      target: target,
+      sourceText: payload.sourceText,
+      textGeneration: generation,
+      glyphs: payload.glyphs,
+      clientWidth: clientWidth,
+      clientHeight: clientHeight,
+    );
+    if (!_isCurrentSurface(target) || !_measuredConfigured) return;
+    _adoptNativeMetadata(result);
+    if (result.ok) {
+      _textGeneration = generation;
+      _sentSourceText = payload.sourceText;
+      _latestSourceText = payload.sourceText;
+      _measuredLastPayload = payload;
+      _measuredRejectedPayload = null;
+      _measuredStaleReason = null;
+      _surfaceVisible = _activeCaptureLease == null && result.surfaceVisible;
+      _refreshMeasuredStatus();
+      notifyListeners();
+      return;
+    }
+    final String reason =
+        result.error ?? result.reason ?? 'measured_update_failed';
+    if (!_measuredRejectionsBeforeIdentity.contains(reason)) {
+      // runner 已接下本行身份并撤掉旧框（fail-closed）；之后同句同代的新测量可被接受。
+      _textGeneration = generation;
+      _sentSourceText = payload.sourceText;
+      _latestSourceText = payload.sourceText;
+    }
+    _measuredLastPayload = null;
+    _measuredRejectedPayload = payload;
+    _measuredStaleReason = reason;
+    _surfaceVisible = false;
+    // 视口尺寸与客户区不符（如 Electron 菜单栏占了客户区）只记诊断，不猜偏移。
+    _measuredDiagnostic(
+      'update_rejected reason=$reason '
+      'measured=${clientWidth}x$clientHeight glyphs=${payload.glyphs.length} '
+      'gen=$generation',
+    );
+    _setStatus(GalAttachedTextStatus.suspended, reason: reason);
+  }
+
+  void _measuredDiagnostic(String message) {
+    final String line = 'gal-attached-measured: $message';
+    if (line == _lastMeasuredDiagnostic) return;
+    _lastMeasuredDiagnostic = line;
+    glog(line);
+  }
+
+  void _resetMeasuredState() {
+    final Future<void>? cancelled = _measuredFrameSubscription?.cancel();
+    _measuredFrameSubscription = null;
+    if (cancelled != null) unawaited(cancelled);
+    _measuredFeed = null;
+    _measuredConfigured = false;
+    _measuredLastPayload = null;
+    _measuredRejectedPayload = null;
+    _measuredStaleReason = null;
+    _measuredPendingFrame = null;
+    _measuredPendingForce = false;
+  }
+
   bool get _nativeRiskGateSatisfied => true;
 
   void _activateNativeOrRequestRisk({String? reason}) {

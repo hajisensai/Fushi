@@ -157,25 +157,33 @@ class VideoMineQueue {
     final List<WebMineQueueRow> rows = await _store.pending(bookUid);
     int succeeded = 0;
     final List<String> failures = <String>[];
+    String? notice;
     for (int i = 0; i < rows.length; i++) {
       final WebMineQueueRow row = rows[i];
-      final String? error = await _commitOne(row, repo: repo, now: now);
+      final (String? error, String? rowNotice) = await _commitOne(
+        row,
+        repo: repo,
+        now: now,
+      );
       if (error == null) {
         succeeded++;
       } else {
         failures.add(error);
       }
+      notice ??= rowNotice;
       onProgress?.call(i + 1, rows.length);
     }
     return VideoMineCommitSummary(
       succeeded: succeeded,
       failed: failures.length,
       firstError: failures.isEmpty ? null : failures.first,
+      notice: notice,
     );
   }
 
-  /// 写入一行；成功返回 null，失败返回原因（行已标 failed）。
-  Future<String?> _commitOne(
+  /// 写入一行；成功返回 `(null, 提示)`，失败返回 `(原因, null)`（行已标 failed）。
+  /// 提示是落地结果带回的 [MineOutcome.notice]（如「保存到」被主机退回默认）。
+  Future<(String?, String?)> _commitOne(
     WebMineQueueRow row, {
     required BaseAnkiRepository repo,
     required DateTime Function() now,
@@ -185,7 +193,7 @@ class VideoMineQueue {
     if (meta == null) {
       const String reason = 'staged media missing';
       await _store.markFailed(row.id, reason);
-      return reason;
+      return (reason, null);
     }
     final String? coverPath = meta.coverFile == null
         ? null
@@ -216,7 +224,7 @@ class VideoMineQueue {
     } catch (e) {
       final String reason = '$e';
       await _store.markFailed(row.id, reason);
-      return reason;
+      return (reason, null);
     }
     // queued：卡已冻结进待发制卡队列（媒体已拷走），交接完成——与成功同样记账、
     // 出本暂存队列；当失败留着会让「重试」把同一张卡再入队一次。
@@ -226,14 +234,15 @@ class VideoMineQueue {
           ? 'duplicate'
           : (outcome.errorDetail ?? outcome.result.name);
       await _store.markFailed(row.id, reason);
-      return reason;
+      return (reason, null);
     }
     await _recordLanded(meta, fields, row.sentence, outcome.noteId, now());
     await _store.markDone(row.id, noteId: outcome.noteId);
     try {
       if (dir.existsSync()) await dir.delete(recursive: true);
     } catch (_) {}
-    return null;
+    final String? notice = outcome.notice;
+    return (null, notice == null || notice.isEmpty ? null : notice);
   }
 
   /// 与视频页即时制卡成功时同两笔账：制卡统计（按书）+ 制卡历史（可回跳）。best-effort。
@@ -310,11 +319,16 @@ class VideoMineCommitSummary {
     required this.succeeded,
     required this.failed,
     this.firstError,
+    this.notice,
   });
 
   final int succeeded;
   final int failed;
   final String? firstError;
+
+  /// 写入的卡随结果带回的第一条提示（[MineOutcome.notice]，如「保存到」被主机退回默认）。
+  /// 批量写入没有逐张的结果提示，汇总提示必须带上它（BUG-4287）。
+  final String? notice;
 }
 
 /// 暂存卡的附带信息（`meta.json`）。

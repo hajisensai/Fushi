@@ -132,6 +132,8 @@ class MusicServerTrack {
     this.channels,
     this.sizeBytes,
     this.coverRef,
+    this.playlistEntryId,
+    this.path,
   });
 
   final String id;
@@ -154,6 +156,14 @@ class MusicServerTrack {
   final int? channels;
   final int? sizeBytes;
   final String? coverRef;
+
+  /// 歌单条目 id（只在歌单曲目里有：Jellyfin 的 `PlaylistItemId`）。删条目 / 挪位置按它，
+  /// 同一首在歌单里出现两次时两条 id 不同。
+  final String? playlistEntryId;
+
+  /// 服务器上的文件路径（服务器愿意报时才有，Jellyfin 的 `Path`）。只用于导出 `.m3u8`；
+  /// 播放一律走 [MusicServerBrowser.streamFor]。
+  final String? path;
 
   bool get isLossless => isLosslessMusicCodec(codec ?? container);
 }
@@ -228,6 +238,33 @@ class MusicServerStream {
   final bool transcoded;
   final String? codec;
   final int? bitrateKbps;
+}
+
+/// 能改歌单的服务器（Jellyfin / Emby）。浏览器实现了它，歌单页与曲目菜单才出现新建 /
+/// 加歌 / 删条目 / 重排 / 改名 / 删除。失败一律抛（无权限 = 服务器 4xx）。
+abstract interface class MusicServerPlaylistEditing {
+  /// 新建歌单（[trackIds] 按顺序成为初始条目）。
+  Future<MusicServerPlaylist> createPlaylist(
+    String name, {
+    List<String> trackIds = const <String>[],
+  });
+
+  /// 把 [trackIds] 追加到歌单末尾。
+  Future<void> addToPlaylist(String playlistId, List<String> trackIds);
+
+  /// 删掉几条条目（[MusicServerTrack.playlistEntryId]）。
+  Future<void> removeFromPlaylist(String playlistId, List<String> entryIds);
+
+  /// 把一条条目挪到 [newIndex]（0 起，最终下标）。
+  Future<void> movePlaylistEntry(
+    String playlistId,
+    String entryId,
+    int newIndex,
+  );
+
+  Future<void> renamePlaylist(String playlistId, String name);
+
+  Future<void> deletePlaylist(String playlistId);
 }
 
 /// 服务器曲库的浏览器。失败一律抛（断网 / 令牌失效 / 服务器 5xx），页面显示错误与重试。

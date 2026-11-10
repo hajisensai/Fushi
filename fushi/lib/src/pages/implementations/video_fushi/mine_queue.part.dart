@@ -109,14 +109,9 @@ extension _VideoMineQueuePart on _VideoFushiPageState {
 
   void _showCommitSummary(VideoMineCommitSummary summary) {
     _showOsd(
-      t.video_mine_queue_committed(
-        ok: summary.succeeded,
-        failed: summary.failed,
-      ),
+      videoMineCommitMessage(summary),
       prominent: true,
-      severity: summary.failed == 0
-          ? ToastSeverity.success
-          : ToastSeverity.warning,
+      severity: videoMineCommitSeverity(summary),
     );
   }
 

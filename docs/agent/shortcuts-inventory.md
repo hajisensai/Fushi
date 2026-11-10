@@ -1,5 +1,30 @@
 # Fushi 快捷键清单（TODO-048a 统计）
 
+> **2026-11-08 增补（Linux Wayland 全局热键）：**
+>
+> - `globalExternal` 三个动作的 OS 注册收口到 `GlobalHotKeyBackend`（`lib/src/shortcuts/global_hotkey_backend.dart`）：
+>   Windows / macOS / Linux X11 走 `NativeGlobalHotKeyBackend`（hotkey_manager，X11 即 keybinder，行为不变）；
+>   Linux **Wayland 桌面**（按 `XDG_SESSION_TYPE` / `WAYLAND_DISPLAY` 判，不看 GTK 后端——Flatpak 钉了
+>   `GDK_BACKEND=x11` 但桌面仍是 Wayland）走 XDG GlobalShortcuts portal（`portal_global_hotkey_backend.dart` +
+>   `global_shortcuts_portal.dart`）。
+> - portal 下按键归桌面：注册表里的键盘绑定只作 `preferred_trigger` 提示，桌面可能弹窗让用户确认 / 改键，之后改键在
+>   系统设置里。设置页 `globalExternal` 的「键盘」视图在 Wayland 上换成 `GlobalHotKeyPortalPanel`：显示桌面回报的
+>   实际触发键、portal 缺失 / 对话框被取消 / 会话被关等原因，以及「在系统设置中修改」（portal v2 `ConfigureShortcuts`）
+>   或文字指引；手柄 / 鼠标视图不变。
+> - 热键不再依附查词卡覆盖窗：Wayland 会话没有覆盖窗时照样注册；选中文本查词改落到主窗查词页
+>   （`queueExternalLookup`），没取到选区就打开查词页；截屏识字需要覆盖窗，没有时不向 portal 声明。
+>   Flatpak（XWayland 下 GTK 走 X11）有覆盖窗，所以三个动作都向 portal 声明、查词仍出卡片。
+> - portal 会话生命周期：客户端按 `NameOwnerChanged` 跟踪 `org.freedesktop.portal.Desktop` 的属主——portal 进程
+>   崩溃 / 重启时，未应答的 Request 以 `PortalFailure.aborted` 结束、该进程的会话按「已关闭」上报（旧进程不会发
+>   `Closed`），之后只认新属主的信号；退出时 `dispose` 先 `abortPendingRequests()` 结束挂着的绑定对话框请求，再关会话
+>   与连接，不让退出步骤卡到超时。
+> - portal 缺 GlobalShortcuts（GNOME < 48、wlroots、Gamescope）而 GTK 跑在 XWayland 上（Flatpak、Steam 游戏模式启动脚本
+>   都钉 `GDK_BACKEND=x11`）时，`FallbackGlobalHotKeyBackend` 把热键交回 X11 keybinder（`portalShouldFallBackToX11Grab`）：
+>   X11 客户端（XWayland / Gamescope 下的游戏）有焦点时照样能触发，这是 portal 后端出现前这些会话本来就有的能力，不报
+>   「不支持」。设置页跟随实际后端：回落后键盘视图回到应用内录键。原生 Wayland GTK 上 X11 抓键看不到任何按键，不回落。
+> - 守卫 / 测试：`test/shortcuts/portal_global_hotkey_backend_test.dart`、`fallback_global_hotkey_backend_test.dart`、`global_shortcuts_portal_dbus_test.dart`（仅 Linux）、
+>   `test/lookup/global_hotkey_backend_wiring_test.dart`、`test/pages/global_hotkey_portal_panel_test.dart`。
+
 > **2026-11-08 增补（手柄查词模式 / 副屏面板驱动，副屏 S6）：**
 >
 > - `ControllerLookupMode`（`lib/src/second_screen/input/`）排在**一切页面分派之前**：桌面在
