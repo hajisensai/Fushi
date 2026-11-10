@@ -741,6 +741,8 @@ async function detailPage(env, id, dev) {
     .map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join('');
   const o = f.origin || {};
   const origin = [
+    // 开发者 CLI 建的条目没有请求、也没有账户签名：标明创建方式，免得「带账户签名：否」被读成匿名提交。
+    ['创建方式', o.via === 'dev_cli' ? '开发者 CLI' : 'App / 网页'],
     ['国家 / 地区', o.country || '未知'],
     ['ASN', o.asn ?? '未知'],
     ['User-Agent', o.ua || ''],

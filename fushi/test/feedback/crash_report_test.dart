@@ -643,6 +643,103 @@ void main() {
     });
   });
 
+  group('问过没回答的待报不重问（BUG-4231，反馈 dCYn9_hix-）', () {
+    testWidgets('首页提示条自己收起：下次启动（典型是更新交接后）不再弹同一次', (WidgetTester tester) async {
+      final CrashReporter r = CrashReporter()
+        ..attach(dir, enabled: true)
+        ..recordVerdict(_verdict(kind: PreviousExitKind.unexpected));
+      late BuildContext ctx;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (BuildContext c) {
+                ctx = c;
+                return const SizedBox.expand();
+              },
+            ),
+          ),
+        ),
+      );
+      await offerCrashReportAfterStartup(
+        context: () => ctx,
+        reporter: r,
+        service: _service(dir, <http.Request>[], (_) async => null),
+      );
+      await tester.pump();
+      expect(
+        find.byKey(const ValueKey<String>('crash-report-prompt')),
+        findsOneWidget,
+      );
+      // 用户没理它：提示条到时自己收起，或此刻 app 被更新交接结束（收起都等不到）——
+      // 两种结局都不经过「发送」/「不用了」，下面直接按进程没了接上状态文件。
+      // 下次启动：上次是一次正常的更新交接（没有新判定），不该再说「上次意外退出了」。
+      final CrashReporter next = CrashReporter()..attach(dir, enabled: true);
+      expect(next.currentOffer(), isNull);
+      expect(next.pendingCount, 0);
+      // 再下一次也不会冒出来。
+      expect((CrashReporter()..attach(dir, enabled: true)).pendingCount, 0);
+    });
+
+    test('启动前卡片上没选就被关掉：下次不重问那一次，下次新判出的照常记', () async {
+      final CrashReporter r = CrashReporter()
+        ..attach(dir, enabled: true)
+        ..recordVerdict(_verdict(duringStartup: true, atMs: 5000));
+      final Future<void> gate = runCrashReportStartupGate(
+        r,
+        spoolService: _service(r.spoolDir!, <http.Request>[], (_) async {
+          return null;
+        }),
+        markAwaitingDecision: (_) {},
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(crashReportStartupPrompt.value, isNotNull);
+      // 进程此刻没了：不走 finish。下次启动接上同一份状态文件。
+      final CrashReporter next = CrashReporter()
+        ..attach(dir, enabled: true)
+        ..recordVerdict(_verdict(atMs: 9000));
+      expect(next.pendingCount, 1, reason: '只剩本次新判出的那次');
+      expect(next.currentOffer()!.latest.atMs, 9000);
+      crashReportStartupPrompt.value!.finish();
+      await gate;
+    });
+
+    test('没给用户看过的（合并窗口里攒着的）不作废', () {
+      final CrashReporter r = CrashReporter()
+        ..attach(dir, enabled: true)
+        ..recordVerdict(_verdict(atMs: 5000));
+      final CrashReportOffer shown = r.currentOffer()!;
+      r
+        ..markOfferShown(shown)
+        // 同一次会话里新来、没给用户看过的那次（例如另一份证据）。
+        ..recordVerdict(_verdict(atMs: 6000));
+      final CrashReporter next = CrashReporter()..attach(dir, enabled: true);
+      expect(next.pendingCount, 1);
+      expect(next.currentOffer()!.latest.atMs, 6000);
+    });
+
+    test('点过「发送」但没交上去的那批照常重试，不按没回答作废', () async {
+      final CrashReporter r = CrashReporter()
+        ..attach(dir, enabled: true)
+        ..recordVerdict(_verdict());
+      r.markOfferShown(r.currentOffer()!);
+      await expectLater(
+        r.submit(
+          _service(
+            dir,
+            <http.Request>[],
+            (_) async => _json(<String, dynamic>{'error': 'down'}, 503),
+          ),
+          _draft,
+        ),
+        throwsA(anything),
+      );
+      final CrashReporter next = CrashReporter()..attach(dir, enabled: true);
+      expect(next.currentOffer(), isNotNull);
+      expect(next.pendingCount, 1);
+    });
+  });
+
   testWidgets('提示卡片：发送失败显示重试 / 跳过，重试沿用上次的选择', (WidgetTester tester) async {
     final List<bool> sends = <bool>[];
     int skips = 0;

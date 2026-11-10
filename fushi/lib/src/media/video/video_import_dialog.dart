@@ -13,7 +13,10 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/media/import/sidecar_finder.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi_engine/foundation/engine_paths.dart' show enginePaths;
 import 'package:fushi_engine/media/video/m3u8_playlist.dart';
+import 'package:fushi_engine/media/video/video_local_files.dart'
+    show adoptPickedVideoCopy;
 import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
 import 'package:fushi_engine/media/video/scraper/cover_meta_store.dart';
 import 'package:fushi/src/media/video/url_stream_video.dart';
@@ -370,6 +373,10 @@ class VideoImportDialog extends StatefulWidget {
 class _VideoImportDialogState extends State<VideoImportDialog>
     with ImportFlowMixin<VideoImportDialog> {
   String? _videoPath;
+
+  /// [_videoPath] 是不是用户原始位置的真实路径（拖入 / 初始路径恒为 true）。
+  /// false = 选择器临时副本，落库前必须经 [adoptPickedVideoCopy] 挪进持久目录。
+  bool _videoPathIsRealPath = true;
   String? _subtitlePath;
   final TextEditingController _streamUrlController = TextEditingController();
   final TextEditingController _streamSubtitleUrlController =
@@ -430,12 +437,25 @@ class _VideoImportDialogState extends State<VideoImportDialog>
       context,
       listen: false,
     ).read(appProvider);
-    final String? path = await pickRealFilePath(
-      context: context,
-      appModel: appModel,
-    );
-    if (path == null || !mounted) return;
-    setState(() => _videoPath = path);
+    // 必须带出处：iOS / 安卓降级给的是会被清掉的临时副本（反馈 HfXM-ECaE8），
+    // 导入时要挪进持久目录，不能把副本路径原样落库。
+    final PickedFilePath? picked;
+    try {
+      picked = await pickRealFilePathDetailed(
+        context: context,
+        appModel: appModel,
+      );
+    } on PickedFileWithoutPathException {
+      // 与改动前 pickRealFilePath 的契约一致：平台没给 path 时按未选处理。
+      return;
+    }
+    if (picked == null || !mounted) return;
+    final String path = picked.path;
+    final bool isRealPath = picked.isRealPath;
+    setState(() {
+      _videoPath = path;
+      _videoPathIsRealPath = isRealPath;
+    });
     await _autoAttachSubtitle(path);
   }
 
@@ -574,7 +594,8 @@ class _VideoImportDialogState extends State<VideoImportDialog>
       await _importStreamUrl(streamUrl);
       return;
     }
-    final String videoPath = _videoPath!;
+    final String pickedVideoPath = _videoPath!;
+    final bool pickedIsRealPath = _videoPathIsRealPath;
     final String? subtitlePath = _subtitlePath;
     // 错误处理（BUG-1117）走 runImport 模板：字幕解析/封面抽取/落库异常落日志 +
     // toast 提示，`importing` 在 finally 复位，不逃逸 async zone。
@@ -585,7 +606,21 @@ class _VideoImportDialogState extends State<VideoImportDialog>
       action: () async {
         late String bookUid;
         await _runVideoImportCoverMutation((bool allowAutoCover) async {
-          bookUid = await _uniqueBookUid(singleVideoBookUid(videoPath));
+          bookUid = await _uniqueBookUid(singleVideoBookUid(pickedVideoPath));
+          // 临时副本先挪进 app 自有持久目录，落库的是新路径（反馈 HfXM-ECaE8）。
+          final String videoPath = await adoptPickedVideoCopy(
+            pickedPath: pickedVideoPath,
+            isRealPath: pickedIsRealPath,
+            bookUid: bookUid,
+            copiesRoot: await enginePaths.pickedVideoCopiesDirectory(),
+          );
+          if (videoPath != pickedVideoPath && mounted) {
+            // 源副本已被挪走：后续失败重试必须指向新位置。
+            setState(() {
+              _videoPath = videoPath;
+              _videoPathIsRealPath = true;
+            });
+          }
 
           String? format;
           List<AudioCue>? cues;
@@ -657,13 +692,13 @@ class _VideoImportDialogState extends State<VideoImportDialog>
         // 时间轴）。best-effort（方法内吞异常只 log），不影响视频已导入。
         await widget.repo.recordVideoImportActivity(
           bookUid: bookUid,
-          title: p.basenameWithoutExtension(videoPath),
+          title: p.basenameWithoutExtension(pickedVideoPath),
         );
 
         if (!mounted) return;
         debugPrint(
           '[fushi-drop] [video-import] imported bookUid=$bookUid '
-          'video=${p.basename(videoPath)} subtitle=${subtitlePath == null ? 'none' : p.basename(subtitlePath)}',
+          'video=${p.basename(pickedVideoPath)} subtitle=${subtitlePath == null ? 'none' : p.basename(subtitlePath)}',
         );
         Navigator.pop(context, bookUid);
       },
@@ -718,7 +753,10 @@ class _VideoImportDialogState extends State<VideoImportDialog>
       return;
     }
     setState(() {
-      if (r.videoPath != null) _videoPath = r.videoPath;
+      if (r.videoPath != null) {
+        _videoPath = r.videoPath;
+        _videoPathIsRealPath = true;
+      }
       if (r.subtitlePath != null) _subtitlePath = r.subtitlePath;
     });
   }

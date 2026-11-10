@@ -28,6 +28,12 @@ const int kNativeAttributionTop = 8;
 /// malloc（MB）首次越过这些值时记一份详细 dump（每档一次）。
 const List<int> kNativeAttributionDumpThresholdsMb = <int>[800, 1600, 2400];
 
+/// 文件映射常驻页（`/proc/self/status` 的 RssFile，MB）首次越过这些值时也记一份 dump（每档
+/// 一次）。#hw7f_pogDW：启动 30 s 内 rss 2.5 GB 里 file=2.3 GB、malloc 才 72 MB，malloc 档位
+/// 不触发，报告里只有一个 `file=` 总数，看不出是哪个文件被整段读进来（词典 blobs？srs.db 的
+/// mmap？视频？）。smaps dump 按文件名列 Rss，正好回答这个。
+const List<int> kFileRssDumpThresholdsMb = <int>[1024, 2048];
+
 /// 线程 CPU 的时钟节拍（Android / Linux 的 USER_HZ 固定 100）。
 const int kProcClockTicksPerSecond = 100;
 
@@ -236,7 +242,8 @@ String? nativeMapsProbe() {
   }
 }
 
-/// `/proc/self/smaps` 正文 → 按映射组（含文件映射，按文件名）累计 Rss，前 [top] 项。
+/// `/proc/self/smaps` 正文 → 按映射组（含文件映射，按「上级目录/文件名」——词典、模型各自
+/// 一个目录、文件名常相同）累计 Rss，前 [top] 项。
 @visibleForTesting
 String describeSmapsRss(String smaps, {int top = 16}) {
   final Map<String, int> rss = <String, int>{};
@@ -250,7 +257,7 @@ String describeSmapsRss(String smaps, {int top = 16}) {
       final (int _, int _, String name, int inode) = m;
       current =
           mappingGroupOf(name, inode: inode) ??
-          (name.isEmpty ? 'file?' : name.split('/').last);
+          (name.isEmpty ? 'file?' : _lastTwoSegments(name));
       continue;
     }
     if (current != null && line.startsWith('Rss:')) {
@@ -265,41 +272,83 @@ String describeSmapsRss(String smaps, {int top = 16}) {
   return sorted.take(top).map((e) => '${e.key} ${_mb(e.value)}').join('; ');
 }
 
-final Set<int> _dumped = <int>{};
+/// `/data/app/…/base.apk` → `…/base.apk` 的后两段：`dict_a/blobs.bin`。
+String _lastTwoSegments(String path) {
+  final List<String> parts = path
+      .split('/')
+      .where((String s) => s.isNotEmpty)
+      .toList();
+  return parts.length <= 1 ? path : parts.sublist(parts.length - 2).join('/');
+}
 
-/// 每次采样后调用：malloc 首次越过某一档时，后台读 smaps + 全部线程累计 CPU，交给 [sink]。
-/// [mallocMb] 取不到（非 Android）时什么都不做。
+final Set<int> _dumped = <int>{};
+final Set<int> _fileDumped = <int>{};
+
+/// 每次采样后调用：malloc 首次越过 [kNativeAttributionDumpThresholdsMb] 某一档、或文件映射
+/// 常驻（[fileRssMb]）首次越过 [kFileRssDumpThresholdsMb] 某一档时，后台读 smaps + 全部线程
+/// 累计 CPU，交给 [sink]。两项都取不到（非 Android）时什么都不做；一次采样最多 dump 一份。
 void maybeDumpNativeAttribution(
   int? mallocMb,
-  void Function(String text) sink,
-) {
-  if (!_hasProc || mallocMb == null) return;
-  for (final int t in kNativeAttributionDumpThresholdsMb) {
-    if (mallocMb < t || !_dumped.add(t)) continue;
-    final Map<int, ProcThreadStat> threads = _readThreads();
-    final String cpu =
-        describeThreadCpuDelta(
-          const <int, ProcThreadStat>{},
-          threads,
-          top: 40,
-        ) ??
-        '-';
-    Isolate.run<String>(() {
-          try {
-            return describeSmapsRss(
-              File('/proc/self/smaps').readAsStringSync(),
-            );
-          } on Object catch (e) {
-            return 'smaps! $e';
-          }
-        })
-        .then((String rss) {
-          sink('malloc≥${t}MB rss=[$rss] 累计$cpu');
-        })
-        .catchError((Object e) {
-          sink('malloc≥${t}MB smaps! $e 累计$cpu');
-        });
-    return;
+  void Function(String text) sink, {
+  int? fileRssMb,
+}) {
+  if (!_hasProc) return;
+  final String? trigger = nativeAttributionDumpTrigger(mallocMb, fileRssMb);
+  if (trigger == null) return;
+  final Map<int, ProcThreadStat> threads = _readThreads();
+  final String cpu =
+      describeThreadCpuDelta(const <int, ProcThreadStat>{}, threads, top: 40) ??
+      '-';
+  Isolate.run<String>(() {
+        try {
+          return describeSmapsRss(File('/proc/self/smaps').readAsStringSync());
+        } on Object catch (e) {
+          return 'smaps! $e';
+        }
+      })
+      .then((String rss) {
+        sink('$trigger rss=[$rss] 累计$cpu');
+      })
+      .catchError((Object e) {
+        sink('$trigger smaps! $e 累计$cpu');
+      });
+}
+
+/// 这次采样该不该 dump、因为哪一档（`malloc≥800MB` / `file≥1024MB`）；都没越新档返回 null。
+/// 每档只报一次（记进已 dump 集合）。
+@visibleForTesting
+String? nativeAttributionDumpTrigger(int? mallocMb, int? fileRssMb) {
+  if (mallocMb != null) {
+    for (final int t in kNativeAttributionDumpThresholdsMb) {
+      if (mallocMb >= t && _dumped.add(t)) return 'malloc≥${t}MB';
+    }
+  }
+  if (fileRssMb != null) {
+    for (final int t in kFileRssDumpThresholdsMb) {
+      if (fileRssMb >= t && _fileDumped.add(t)) return 'file≥${t}MB';
+    }
+  }
+  return null;
+}
+
+/// `/proc/self/status` 正文里的 `RssFile:`（MB）；没有返回 null。
+@visibleForTesting
+int? parseProcStatusFileRssMb(String? status) {
+  if (status == null) return null;
+  final RegExpMatch? m = RegExp(
+    r'^RssFile:\s*(\d+)\s*kB',
+    multiLine: true,
+  ).firstMatch(status);
+  return m == null ? null : int.parse(m.group(1)!) >> 10;
+}
+
+int? _fileRssMb() {
+  try {
+    return parseProcStatusFileRssMb(
+      File('/proc/self/status').readAsStringSync(),
+    );
+  } on FileSystemException {
+    return null;
   }
 }
 
@@ -309,7 +358,13 @@ void Function(String text)? nativeAttributionSink;
 /// 采样探针形态的 dump 触发器：不出读数（返回 null），只在 malloc 越档时触发 dump。
 String? nativeAttributionDumpProbe() {
   final void Function(String text)? sink = nativeAttributionSink;
-  if (sink != null) maybeDumpNativeAttribution(nativeHeapAllocatedMb(), sink);
+  if (sink != null && _hasProc) {
+    maybeDumpNativeAttribution(
+      nativeHeapAllocatedMb(),
+      sink,
+      fileRssMb: _fileRssMb(),
+    );
+  }
   return null;
 }
 
@@ -318,4 +373,5 @@ String? nativeAttributionDumpProbe() {
 void resetNativeAttributionProbe() {
   _lastThreads = <int, ProcThreadStat>{};
   _dumped.clear();
+  _fileDumped.clear();
 }

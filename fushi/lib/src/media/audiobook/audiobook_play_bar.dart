@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
@@ -39,6 +40,7 @@ class AudiobookPlayBar extends StatelessWidget {
     this.reversed = false,
     this.invertSkip = false,
     this.trailing,
+    this.trailingStatus,
     this.showSettingsButton = true,
     super.key,
   });
@@ -75,8 +77,17 @@ class AudiobookPlayBar extends StatelessWidget {
   /// 访问 WebView controller 才能 probe ttu 当前章节 / TOC、触发书签。
   final VoidCallback onOpenSettings;
 
-  /// 跟随键之前的可选尾部内容（桌面端把状态行文字并进播放条右端）。
+  /// 跟随键之前的可选尾部按钮（底栏槽位按钮并进播放条右端）。放不下时横向滚动。
   final Widget? trailing;
+
+  /// 紧跟 [trailing] 之后的状态读数（桌面端把状态行读数并进播放条右端）。
+  ///
+  /// 它**不进** [trailing] 的横向滚动容器：滚动容器给子树的是无界宽度，读数在那里
+  /// 只能按一个静态估计值排版，宽度降级（`readerStatusPickDensity`）与 FittedBox
+  /// 缩放兜底都不起作用，字号放大 / 位数变多时读数被挤出视口。这里它先于
+  /// [trailing] 排版，拿到的是跟随键之前那段剩余宽度的真实上界；按钮拿剩下的宽度、
+  /// 放不下照常横滚。
+  final Widget? trailingStatus;
 
   /// Shared reader header already exposes settings, so its playback bar can omit
   /// the duplicate button and leave room for full-size transport touch targets.
@@ -213,19 +224,56 @@ class AudiobookPlayBar extends StatelessWidget {
       // 2026-10 体验优化：trailing（底栏槽位按钮 + 状态读数）原本是定宽 Row
       // 紧跟 Spacer，360dp 下拖进 3 颗以上按钮整条 bar 就溢出。改成占满剩余
       // 宽度、贴着跟随键对齐、放不下时横向滚动——三联键与跟随键永远完整可点。
-      if (trailing != null) ...<Widget>[
+      if (trailing != null || trailingStatus != null) ...<Widget>[
         Expanded(
-          child: Align(
-            alignment: reversed ? Alignment.centerLeft : Alignment.centerRight,
-            // 桌面端默认 dragDevices 不含鼠标：放不下时鼠标也得拖得动。
-            child: HorizontalDragScrollable(
-              child: SingleChildScrollView(
-                key: const ValueKey<String>('audiobook_play_bar_trailing'),
-                scrollDirection: Axis.horizontal,
-                reverse: !reversed,
-                child: trailing,
-              ),
-            ),
+          child: LayoutBuilder(
+            builder: (BuildContext context, BoxConstraints constraints) {
+              final Widget? buttons = trailing;
+              final Widget? status = trailingStatus;
+              final double statusGap = buttons != null && status != null
+                  ? tokens.spacing.gap / 2
+                  : 0;
+              return Align(
+                alignment: reversed
+                    ? Alignment.centerLeft
+                    : Alignment.centerRight,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    if (buttons != null)
+                      Flexible(
+                        // 桌面端默认 dragDevices 不含鼠标：放不下时鼠标也得拖得动。
+                        child: HorizontalDragScrollable(
+                          child: SingleChildScrollView(
+                            key: const ValueKey<String>(
+                              'audiobook_play_bar_trailing',
+                            ),
+                            scrollDirection: Axis.horizontal,
+                            reverse: !reversed,
+                            child: buttons,
+                          ),
+                        ),
+                      ),
+                    if (statusGap > 0) SizedBox(width: statusGap),
+                    // Row 给非 flex 子项的是无界宽度；读数的上界要显式给成这段
+                    // 剩余宽度，它内部才能按真实宽度降级 / 缩放。
+                    if (status != null)
+                      ConstrainedBox(
+                        key: const ValueKey<String>(
+                          'audiobook_play_bar_trailing_status',
+                        ),
+                        constraints: BoxConstraints(
+                          maxWidth: math.max(
+                            0,
+                            constraints.maxWidth - statusGap,
+                          ),
+                        ),
+                        child: status,
+                      ),
+                  ],
+                ),
+              );
+            },
           ),
         ),
         SizedBox(width: tokens.spacing.gap),
