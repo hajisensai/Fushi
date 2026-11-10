@@ -262,6 +262,56 @@ void main() {
     expect(entries[2].severe, isTrue);
   });
 
+  test('Android：Java 层 CRASH 带落盘栈时报告包含异常类与栈帧', () {
+    // 反馈 TlyH9HAD9T / E5IZOyVcbm / Z624TCPsBP / fS-G9X36Xc：系统对 REASON_CRASH 不给
+    // trace，原生 JavaCrashCapture 落盘的栈并进 trace 字段，走同一条 trace 显示路径。
+    final List<ExitReportEntry>
+    entries = formatAndroidExitReports(<Object?, Object?>{
+      'sdk': 35,
+      'reasons': <Object?>[
+        <Object?, Object?>{
+          'reason': 'CRASH',
+          'status': 0,
+          'description': 'crash',
+          'importance': 100,
+          'pssKb': 0,
+          'rssKb': 0,
+          'timestamp': 1762614225789,
+          'processName': 'app.fushi.reader',
+          'pid': 22495,
+          'trace':
+              'java uncaught exception\n'
+              'process=app.fushi.reader pid=22495 thread=main (id=2)\n'
+              'at=1762614225700\n'
+              'java.lang.OutOfMemoryError: Failed to allocate a 268435456 byte allocation\n'
+              '\tat app.fushi.reader.SystemOcrChannel.recognize(SystemOcrChannel.java:120)\n'
+              'Caused by: java.lang.IllegalStateException: inner\n'
+              '\t... 3 more\n',
+        },
+      ],
+    });
+    expect(entries, hasLength(1));
+    expect(entries[0].severe, isTrue);
+    expect(entries[0].kind, PreviousExitKind.crash);
+    expect(entries[0].text, contains('reason=CRASH'));
+    expect(
+      entries[0].text,
+      contains('trace summary:\njava uncaught exception'),
+    );
+    expect(
+      entries[0].text,
+      contains('java.lang.OutOfMemoryError: Failed to allocate'),
+    );
+    expect(
+      entries[0].text,
+      contains('SystemOcrChannel.recognize(SystemOcrChannel.java:120)'),
+    );
+    expect(
+      entries[0].text,
+      contains('Caused by: java.lang.IllegalStateException: inner'),
+    );
+  });
+
   test('Android：经真实 MethodChannel 取上次退出原因', () async {
     const MethodChannel channel = MethodChannel('test/process_exit');
     Object? sentArgs;
