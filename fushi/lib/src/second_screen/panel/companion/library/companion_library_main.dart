@@ -24,6 +24,7 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart'
     show HorizontalDragScrollable;
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
 
 /// The library page on top's Main-mode snapshot; null while the top is not a
 /// library or the page has not published one yet.

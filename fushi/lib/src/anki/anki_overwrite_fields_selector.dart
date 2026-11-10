@@ -13,6 +13,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 
 /// 反馈 nWWjBp3Clo：覆写已有卡时「只改哪些字段」的一次勾选结果。
 ///

@@ -3,17 +3,16 @@ import 'package:fushi/src/anki/mining_media_quality_labels.dart'
     show miningClipFormatLabel;
 import 'package:fushi/src/mining/gal_mining_settings.dart';
 import 'package:fushi/src/mining/gal_mining_settings_text.dart';
-import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_section_title.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
-import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart'
-    show FushiFilledButton;
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/mining/immersion_mining_request.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 
 /// 「跟随全局」在选项里的取值。选项用字符串（wireName）而不是可空枚举：Material
 /// 下拉把 `value == null` 当成「没选中」去显示占位，选不中一个值为 null 的选项。

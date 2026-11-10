@@ -7,8 +7,6 @@ import 'package:drift/native.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
-    show FushiTooltip;
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/media/detail/media_detail_kit.dart';
 import 'package:fushi/src/media/manga/library/manga_chapter_storage.dart';
@@ -309,16 +307,6 @@ Finder _chapterMenu(String chapterName) => find.descendant(
     matching: find.byType(MediaDetailItemRow),
   ),
   matching: find.byType(FushiOverflowMenu<String>),
-);
-
-/// 状态图标的 tooltip（[FushiTooltip]，按 message 找）。
-///
-/// 不用 `find.byTooltip`：状态图标的无障碍名称由外层 `Semantics(label:)` 给出，
-/// tooltip 自己 `excludeFromSemantics: true`；`find.byTooltip` 只认 flutter 自带
-/// `Tooltip` 的 message 或 `RawTooltip` 的语义 tooltip，而这里的气泡是 material_ui 的
-/// `Tooltip`（另一个类），语义又被关掉，于是一枚都找不到。
-Finder _statusTooltip(String message) => find.byWidgetPredicate(
-  (Widget w) => w is FushiTooltip && w.message == message,
 );
 
 void main() {
@@ -716,7 +704,20 @@ void main() {
       ),
       findsOneWidget,
     );
-    expect(_statusTooltip(t.manga_chapter_status_ocr_done), findsOneWidget);
+    // 状态图标的 tooltip 关了自身语义（无障碍名由外层 Semantics 显式给），这时
+    // find.byTooltip 只认 package:flutter 的 Tooltip 类，认不出 material_ui 的 Tooltip，
+    // 所以按 material_ui Tooltip 的 message 直接找，并核对读屏名。
+    expect(
+      find.byWidgetPredicate(
+        (Widget w) =>
+            w is Tooltip && w.message == t.manga_chapter_status_ocr_done,
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.bySemanticsLabel(t.manga_chapter_status_ocr_done),
+      findsOneWidget,
+    );
   });
 
   // 反馈 wCgL364tgM ④：长按进多选，点行切换，底栏批量标已读 / 未读。

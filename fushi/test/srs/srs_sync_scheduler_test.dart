@@ -1498,25 +1498,12 @@ void main() {
       );
       expect(src, contains('ready: () => runExclusiveWithSync('));
       expect(src, contains('onReachable: () => localPush.resetBackoff()'));
-      // 「立即同步」两条推送都清退避（BUG-4370 / 4382 起经 srsSyncSupersedingPushes：撤掉排着的推送、
-      // 清退避、失败再排回去，清退避那一步在它里面）。
+      // 「立即同步」清两条推送的退避（BUG-4370 起由 srsSyncSupersedingPushes 统一做：先撤掉
+      // 排着的推送、清退避，这轮没成就排回去；行为见 srs_interconnect_watch_test）。
       expect(
         RegExp(
           r'Future<SrsSyncNowResult> syncNow\(\) => srsSyncSupersedingPushes\(\s*<SrsLocalPush>\[localPush, cloudPush\],',
         ).hasMatch(src),
-        isTrue,
-      );
-      final String watch = File(
-        'lib/src/srs/srs_interconnect_watch.dart',
-      ).readAsStringSync();
-      final int helper = watch.indexOf(
-        'Future<T> srsSyncSupersedingPushes<T>(',
-      );
-      expect(helper, isNonNegative);
-      expect(
-        RegExp(
-          r'for \(final SrsLocalPush p in pushes\) \{\s*p\.resetBackoff\(\);',
-        ).hasMatch(watch.substring(helper)),
         isTrue,
       );
     });

@@ -14,6 +14,7 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart'
     show HorizontalDragScrollable;
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
 
 /// Builds the dictionary for [entry] (the popup dictionary page; tests pass a
 /// stand-in). [generation] changes on every lookup, also of the same word.

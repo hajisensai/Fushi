@@ -31,6 +31,7 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/updates/debug_pulse.dart';
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 
 class DebugPulsePanel extends StatefulWidget {
   const DebugPulsePanel({

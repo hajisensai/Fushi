@@ -77,13 +77,12 @@ void main() {
     final String headerCode = compactCode(windowHeader);
     final String hookHeaderCode = compactCode(hookHeader);
 
+    // BUG-4355 给这次 Reveal 追加了图层原点参数（kCommittedBBox），游戏 HWND 仍是
+    // 同一次调用的第 4 个实参——钉住「game 进首帧 Reveal」本身，不钉参数个数。
     expect(
-      // BUG-4323 起直连路径还带上 kCommittedBBox（保留 commitLayerShift 的图层平移）；
-      // 本条只钉「游戏 HWND 进同一次 Reveal」。
-      directCode.contains(
-        'Reveal(screen_width,screen_height,false,game,'
-        'RevealLayerOrigin::kCommittedBBox);',
-      ),
+      RegExp(
+        r'Reveal\(screen_width,screen_height,false,game[,)]',
+      ).hasMatch(directCode),
       isTrue,
       reason:
           '游戏 HWND 必须随首次 Reveal 一起 Arm；先按桌面模式 Arm、显示后再补绑'

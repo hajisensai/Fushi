@@ -20,6 +20,7 @@ import 'package:fushi/src/utils/components/settings_shared.dart'
     show gamepadSeekableSlider;
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/focus/fushi_focus_scroll.dart';
 
 /// The companion's Now panel while the music now-playing / lyrics page is on
 /// top (`CompanionContextKind.music`): track, seek bar, a window of the lyrics

@@ -91,6 +91,9 @@ const Map<String, String> kBareOutboundRegistry = <String, String>{
   'packages/fushi_anki/lib/src/ankiconnect/ankiconnect_service.dart':
       'AnkiConnect JSON-RPC，默认 localhost:8765（用户可改成局域网另一台机）。'
       '它自带 connectionFactory 做连接期超时；走 HTTP 代理会让制卡整条链路当场失效。',
+  'fushi/lib/src/mining/tyrano_dom/tyrano_dom_cdp.dart':
+      'TyranoScript 游戏 DOM 数据源：拉本机游戏进程的 CDP 目标表（127.0.0.1:<调试端口>/json/list），'
+      'findProxy 钉死 DIRECT；走用户代理会把回环请求送进代理，取不到。',
   'fushi/lib/src/media/manga/mihon/desktop_mihon_runtime.dart':
       'Mihon 桌面 sidecar：控制面与封面图都打本进程拉起的 127.0.0.1:<port> 认证代理端点。',
   'fushi/lib/src/utils/net/ffmpeg_relay_route.dart':
