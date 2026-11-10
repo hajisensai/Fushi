@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3846 条。点号进各自文件。
+> 共 3847 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4285](bugs/BUG-4285-app-p2p-host-listen-survives-stop.md) | ✅ | ✅ | 互联主机停止或启动失败回滚时绕过 P2P 串行队列，隧道转发残留 |
 | [BUG-4284](bugs/BUG-4284-headless-bind-ignored-listens-all.md) | ✅ | ✅ | 无头服务端 bind 配成具体地址或 ::1 仍监听全部网卡 |
 | [BUG-4283](bugs/BUG-4283-dictionary-media-url-carries-master-token.md) | ✅ | ✅ | 扩展词典图片 URL 只能携带主机主凭据原值，且不认可吊销的设备凭据 |
 | [BUG-4282](bugs/BUG-4282-interconnect-derived-tokens-survive-revoke.md) | ✅ | ✅ | 吊销已配对设备后，它签出的视频流 / 原盘 / 音频链接仍可用，老客户端拿到的共享 token 也无法单独吊销 |
