@@ -12,6 +12,8 @@ import 'package:fushi/src/pages/implementations/popup_dictionary_loading_view.da
 import 'package:fushi/src/startup/startup_splash_mark.dart' show DelayedReveal;
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
+import 'package:fushi/src/utils/adaptive/fushi_page_backdrop.dart'
+    show withoutFushiPageBackdrop;
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 
 const _overlayChannel = MethodChannel('app.fushi.reader/floating_overlay');
@@ -88,8 +90,10 @@ class _FloatingDictAppState extends ConsumerState<FloatingDictApp> {
     if (!appModel.isInitialised) {
       // 冷启动占位：快于揭示阈值什么都不画（窗口保持透明）；慢了才在窗口中央
       // 淡入与系统查词弹窗同一枚 M3E 加载胶囊（兜底主题，用户主题此时还没加载）。
-      final ThemeData fallbackTheme = buildFushiFallbackTheme(
-        WidgetsBinding.instance.platformDispatcher.platformBrightness,
+      final ThemeData fallbackTheme = withoutFushiPageBackdrop(
+        buildFushiFallbackTheme(
+          WidgetsBinding.instance.platformDispatcher.platformBrightness,
+        ),
       );
       return MaterialApp(
         debugShowCheckedModeBanner: false,
@@ -113,10 +117,13 @@ class _FloatingDictAppState extends ConsumerState<FloatingDictApp> {
       // 与 popup_main 同一口径：有书内覆盖主题用它，否则用用户真实主题
       // （主题色 / 自定义主题 / 墨水屏 / 组件主题都跟着走）。以前这里写死默认
       // 种子色现造一份裸 ThemeData，悬浮词典因此无视用户的主题设置。
-      theme: appModel.overrideDictionaryTheme ?? appModel.theme,
+      // 透明浮窗不垫页面背景层（底色 + 形状），见 [withoutFushiPageBackdrop]。
+      theme: withoutFushiPageBackdrop(
+        appModel.overrideDictionaryTheme ?? appModel.theme,
+      ),
       darkTheme: appModel.overrideDictionaryTheme != null
           ? null
-          : appModel.darkTheme,
+          : withoutFushiPageBackdrop(appModel.darkTheme),
       themeMode: appModel.overrideDictionaryTheme != null
           ? ThemeMode.light
           : appModel.themeMode,
