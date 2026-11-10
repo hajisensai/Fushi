@@ -1480,11 +1480,8 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     if (row.mediaKind != 'video' || row.videoGroupingMode == groupingMode) {
       return;
     }
-    await (_db.update(
-      _db.mediaSources,
-    )..where((tbl) => tbl.id.equals(row.id))).write(
-      MediaSourcesCompanion(videoGroupingMode: Value(groupingMode)),
-    );
+    await (_db.update(_db.mediaSources)..where((tbl) => tbl.id.equals(row.id)))
+        .write(MediaSourcesCompanion(videoGroupingMode: Value(groupingMode)));
     final SourceLibraryRow? fresh = await _db.getMediaSourceById(row.id);
     if (fresh == null) return;
     await _rescan(fresh);
