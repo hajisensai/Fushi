@@ -297,6 +297,10 @@ enum MangaReaderInputAction {
   /// 停 / 续学习计时（快捷键 [ShortcutAction.mangaToggleStudyClock]，与控制条计时键、
   /// 统计侧栏暂停键同一执行体）。
   toggleStudyClock,
+
+  /// 当前页书签加 / 删（快捷键 [ShortcutAction.mangaToggleBookmark]，反馈
+  /// FhspOXxPl_）。与书签面板「当前页」那一行同一执行体 `_toggleBookmarkHere`。
+  toggleBookmark,
 }
 
 /// 一次键盘平移移动的视口比例。按比例而非像素，1080p 与 4K 手感一致。
@@ -336,6 +340,24 @@ enum _MangaReaderInputSource {
 /// 把它映成逐级的 [MangaReaderInputAction.backOrExit]（弹窗可见先关弹窗，没弹窗才
 /// 退出漫画）。够不着它的结果是侧键退出直接落到 app 根的平 `maybePop()`，比键盘
 /// Esc 少了一级。防双派发靠 [MouseBindingDispatch] 认领，不靠把阶梯修窄。
+/// 翻页桥（`onMangaNavigationKey`）的固定键表。抽成常量是为了让命令键桥
+/// （[MangaFushiPage.commandKeyBridgeTokens]）能剔除与之重叠的 token。
+const List<String> _kNavigationBridgeKeys = <String>[
+  'ArrowLeft',
+  'ArrowRight',
+  'Escape',
+  'Esc',
+  'F11',
+];
+
+/// 平移桥（`onMangaPanKey`）的固定键表，用途同 [_kNavigationBridgeKeys]。
+const List<String> _kPanBridgeKeys = <String>[
+  'Ctrl+ArrowUp',
+  'Ctrl+ArrowDown',
+  'Ctrl+ArrowLeft',
+  'Ctrl+ArrowRight',
+];
+
 const List<ShortcutScope> _kMangaMouseLadder = <ShortcutScope>[
   ShortcutScope.manga,
   ShortcutScope.universal,
@@ -694,6 +716,11 @@ class MangaFushiPage extends BaseSourcePage {
     if (action == ShortcutAction.mangaToggleStudyClock) {
       return MangaReaderInputAction.toggleStudyClock;
     }
+    // 书签同理：不翻页、不动视野，查词弹窗开着 / webtoon 模式下照样能给当前页
+    // 加书签。
+    if (action == ShortcutAction.mangaToggleBookmark) {
+      return MangaReaderInputAction.toggleBookmark;
+    }
     // 平移排在两道翻页门控**之前**：它动的是当前页的视野、不是 spread，所以
     // 「webtoon 让位原生滚动」与「弹窗可见让位」都不适用——webtoon 的上下平移本身
     // 就是滚文档，弹窗开着时也该能挪画面去看被挡住的部分。
@@ -749,7 +776,7 @@ class MangaFushiPage extends BaseSourcePage {
   @visibleForTesting
   static final String navigationKeyBridgeScript = webViewKeyBridgeScript(
     handlerName: 'onMangaNavigationKey',
-    keys: const <String>['ArrowLeft', 'ArrowRight', 'Escape', 'Esc', 'F11'],
+    keys: _kNavigationBridgeKeys,
     forwardRepeats: false,
     stopPropagation: true,
   );
@@ -769,12 +796,7 @@ class MangaFushiPage extends BaseSourcePage {
   @visibleForTesting
   static final String panKeyBridgeScript = webViewKeyBridgeScript(
     handlerName: 'onMangaPanKey',
-    keys: const <String>[
-      'Ctrl+ArrowUp',
-      'Ctrl+ArrowDown',
-      'Ctrl+ArrowLeft',
-      'Ctrl+ArrowRight',
-    ],
+    keys: _kPanBridgeKeys,
     forwardRepeats: true,
     stopPropagation: true,
   );
@@ -804,6 +826,60 @@ class MangaFushiPage extends BaseSourcePage {
   /// 取并集而不是只取 manga：桥不做解析，它只决定「哪些按钮值得回传」，解析仍由
   /// Dart 侧的 [_handleNativeNavigationKey] 按完整阶梯做。漏一个按钮号，那个绑定在
   /// WebView 持有指针时就是死的。
+  /// 第四座桥：**命令键**（不翻页、不动视野的单发动作）。
+  ///
+  /// 前两座键盘桥的键表是硬编码的默认 token，只覆盖翻页 / 平移；切换界面（M）、
+  /// 统计（I）、计时（P）、书签（B，反馈 FhspOXxPl_）这类动作在 WebView2 持有
+  /// 键盘焦点时按下去只存在于 DOM 里、到不了 Dart——Windows 上点过一下页面后快捷键
+  /// 就「按了没反应」，改键更是无从生效。这些动作在 [inputActionForShortcut] 里都
+  /// 排在两道翻页门控**之前**、任何模式下都执行，所以截获它们的键不会抢走 webtoon
+  /// 原生滚动或词典弹窗的按键——这正是它们能安全地按**当前绑定**实时生成键表、
+  /// 而翻页桥不能的理由（翻页桥若按绑定生成，会把 webtoon 让给原生滚动的
+  /// ↑/↓/Space 也截走）。
+  ///
+  /// 与 [mouseBridgeScript] 同一范式：键表随每次换窗注入时按注册表重算，生成器把
+  /// 表存在 window 槽里、listener 只装一次，改键后下一次注入即生效。
+  @visibleForTesting
+  static const List<ShortcutAction> commandKeyActions = <ShortcutAction>[
+    ShortcutAction.mangaToggleChrome,
+    ShortcutAction.mangaOpenStatistics,
+    ShortcutAction.mangaToggleStudyClock,
+    ShortcutAction.mangaToggleBookmark,
+  ];
+
+  /// [commandKeyActions] 当前键盘绑定的桥 token（[InputBinding.bridgeToken]）。
+  ///
+  /// 已在翻页桥 / 平移桥键表里的 token 剔除：同一次按键被两座桥各回传一次就会
+  /// 执行两遍（切换类动作连按两次 = 没按）。
+  @visibleForTesting
+  static List<String> commandKeyBridgeTokens(FushiShortcutRegistry registry) {
+    final List<String> tokens = <String>[];
+    for (final ShortcutAction action in commandKeyActions) {
+      for (final InputBinding binding
+          in registry.bindingsFor(action).keyboardBindings) {
+        final String token = binding.bridgeToken;
+        if (_kNavigationBridgeKeys.contains(token) ||
+            _kPanBridgeKeys.contains(token) ||
+            tokens.contains(token)) {
+          continue;
+        }
+        tokens.add(token);
+      }
+    }
+    return tokens;
+  }
+
+  /// 命令键桥脚本。`forwardRepeats: false`：按住 B 不该来回加删书签；
+  /// `stopPropagation: true`：与翻页桥同样独占给 Dart。
+  @visibleForTesting
+  static String commandKeyBridgeScript(List<String> tokens) =>
+      webViewKeyBridgeScript(
+        handlerName: 'onMangaCommandKey',
+        keys: tokens,
+        forwardRepeats: false,
+        stopPropagation: true,
+      );
+
   @visibleForTesting
   static List<int> mouseBridgeButtons(FushiShortcutRegistry registry) {
     final List<int> buttons = <int>[];
@@ -4126,6 +4202,13 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       if (!_sourceReviewActive) _toggleStudyClockManualPause();
       return;
     }
+    // 书签与书签面板「当前页」一行同一入口：屏上已有书签就删、没有就加。没有书架身份
+    // （`_bookmarkBookUid == null`）时顶栏书签键本就不渲染，`_toggleBookmarkHere`
+    // 同样直接返回。
+    if (action == MangaReaderInputAction.toggleBookmark) {
+      unawaited(_toggleBookmarkHere(_bookmarkOnScreen()));
+      return;
+    }
     final DateTime now = DateTime.now();
     if (_lastReaderInputAction == action &&
         _lastReaderInputSource != source &&
@@ -4411,10 +4494,13 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     // （`ArrowLeft`），弹窗桥发注册表 token（可能是任意键名、可能带修饰键前缀），
     // 两者都能被同一个 deserialize 吃下——旧的三分支 switch 只认硬编码的方向键与
     // Escape，用户把翻页/关词典改绑到别的键后，WebView 持焦的这条路径就整个失效。
+    // 用 [InputBinding.fromBridgeToken]（deserialize 的超集）：命令键桥按
+    // [InputBinding.bridgeToken] 生成键表，小键盘键回传的是 DOM code（`Numpad1`）
+    // 而不是持久化 token `#<keyId>`。
     // `Esc` 是旧浏览器对 Escape 的别名，不在注册表键名表里，单独归一。
     final InputBinding? binding = key == 'Esc'
         ? const InputBinding(key: LogicalKeyboardKey.escape)
-        : InputBinding.deserialize(key);
+        : InputBinding.fromBridgeToken(key);
     if (binding == null) return false;
     final MangaReaderInputAction? action = _resolveMangaKeyAction(
       binding.key,
@@ -8313,6 +8399,15 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
             _handleNativeNavigationKey(args[0] as String);
           },
         );
+        // 命令键桥（第四座，键表按当前绑定生成）。回调同样汇进
+        // [_handleNativeNavigationKey]，动作由绑定决定。
+        controller.addJavaScriptHandler(
+          handlerName: 'onMangaCommandKey',
+          callback: (List<dynamic> args) {
+            if (args.isEmpty || args[0] is! String) return;
+            _handleNativeNavigationKey(args[0] as String);
+          },
+        );
         // 鼠标桥（第三座，只在指针归 WebView 的平台安装）。回调同样汇进
         // [_handleNativeNavigationKey]——它按 token 先试 MouseBinding 再试
         // InputBinding，动作由绑定决定而不是由桥决定。
@@ -8465,6 +8560,15 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     }
     await controller.evaluateJavascript(
       source: MangaFushiPage.panKeyBridgeScript,
+    );
+    if (!mounted || !_windowGate.owns(ticket)) {
+      return;
+    }
+    // 命令键桥：键表按当前绑定实时生成，改键后换窗即生效（与鼠标桥同理）。
+    await controller.evaluateJavascript(
+      source: MangaFushiPage.commandKeyBridgeScript(
+        MangaFushiPage.commandKeyBridgeTokens(appModel.shortcutRegistry),
+      ),
     );
     if (!mounted || !_windowGate.owns(ticket)) {
       return;
