@@ -331,21 +331,34 @@ fn explicit_intents_write_the_same_op_bytes_as_the_legacy_path() {
         json!([{"a": "undo", "card": cards[0], "log": reset}]),
     );
     written.extend(r["logs"].as_array().unwrap().iter().cloned());
-    let kinds: Vec<&str> = written
+    // 默认牌组的配置没有学习步（`ls: []`），新卡第一次 Good 就毕业进复习队列：作答后三张卡都是复习卡。
+    // 6 条 = 立即重排 3 条（cards[0] / cards[1] 库里学过的两张 + cards[2] 刚作答毕业的那张，按卡 ID 排序）
+    // + 改期 cards[1] + 重置 cards[0] + 撤销那条重置。
+    let shape: Vec<(String, String)> = written
         .iter()
-        .map(|l| l["kind"].as_str().unwrap())
+        .map(|l| {
+            (
+                l["kind"].as_str().unwrap().to_owned(),
+                l["card"].as_str().unwrap().to_owned(),
+            )
+        })
         .collect();
-    for k in ["reschedule", "manual", "undo"] {
-        assert!(kinds.contains(&k), "{k} written: {kinds:?}");
-    }
+    let mut rescheduled = cards.clone();
+    rescheduled.sort();
+    let mut expected: Vec<(String, String)> = rescheduled
+        .into_iter()
+        .map(|c| ("reschedule".to_owned(), c))
+        .collect();
+    expected.push(("manual".into(), cards[1].clone()));
+    expected.push(("manual".into(), cards[0].clone()));
+    expected.push(("undo".into(), cards[0].clone()));
+    assert_eq!(shape, expected);
+    assert_eq!(written[5]["revokes"], json!(reset));
     apply(&a, &deck, at, written.iter().map(legacy_event).collect());
 
     let (pa, pb) = (log_payloads(&a), log_payloads(&b));
-    assert_eq!(
-        pb.len(),
-        6 + 1 + written.len(),
-        "library reviews + answer + sched logs"
-    );
+    // 库里 6 条复习 + 1 条作答 + 6 条 sched 日志；两边条数与字节都相同。
+    assert_eq!(pb.len(), 6 + 1 + 6);
     assert_eq!(pa, pb);
     assert_eq!(intents(&a), intents(&b));
     assert_eq!(review_logs(&a), review_logs(&b));
