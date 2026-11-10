@@ -65,6 +65,12 @@ SettingsDestination buildStorageDestination() {
         title: t.storage_overview_section,
         subtitle: t.storage_overview_total,
       ),
+      // 反馈 jg3XoDVISk：搜「清除缓存」直达存储页（行本身在磁盘占用分组首行）。
+      SettingsBodySearchEntry(
+        id: 'storage.clear_cache',
+        title: t.storage_clear_cache_action,
+        subtitle: t.storage_category_cache,
+      ),
       SettingsBodySearchEntry(
         id: 'storage.shaders',
         title: t.storage_category_shaders,

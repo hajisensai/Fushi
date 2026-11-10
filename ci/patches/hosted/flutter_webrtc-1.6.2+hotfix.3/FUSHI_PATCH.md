@@ -49,6 +49,15 @@ the PMv2 real-window capture spike before changing the backend.
   timer resolution, and on the coarse fallback timer the clock still catches
   up by elapsed time. Covered by
   `fushi/windows/runner/tests/game_stream_audio_feed_clock_test.cpp`.
+  Host mute (FX-6ooNgU_): with a target process, the capture thread reads
+  the game tree's session volume (`fushi::DuckedTreeProbe`, compiled into
+  the plugin from `fushi/windows/runner/audio_session_ducker.cpp`) and, while
+  it sits at the runner's duck level (`game_stream_host_mute.cpp` silences
+  the host speakers that way), multiplies the float samples back by the
+  inverse gain (`audio_duck_gain.h`, covered by
+  `fushi/windows/runner/tests/audio_duck_gain_test.cpp`). A non-float mix
+  format is converted to float32 by the engine (`AUTOCONVERTPCM`) so the
+  -100 dB signal is not quantised away.
 - `common/cpp/src/flutter_peerconnection.cc` (BUG-2727):
   `updateRtpParameters` writes the edited encodings back with
   `set_encodings()` (upstream edited a copy, so every `setParameters` limit was

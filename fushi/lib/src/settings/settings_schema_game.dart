@@ -11,6 +11,7 @@ import 'package:fushi/src/platform/gal_hook_text_overlay_channel.dart';
 import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:fushi/src/lookup/gal_line_tts.dart';
 import 'package:fushi/src/lookup/gal_line_tts_settings_page.dart';
+import 'package:fushi/src/lookup/gal_line_tts_voice_overrides_page.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/module_registry.dart';
@@ -192,6 +193,27 @@ SettingsDestination buildGameDestination() {
                 picked.presetId == null
                     ? c.lineTtsSettings.copyWith(clearPresetId: true)
                     : c.lineTtsSettings.copyWith(presetId: picked.presetId),
+              );
+              settingsContext.refresh();
+            },
+          ),
+          // 按语言 / 按游戏覆盖上面的默认声音（同时玩日语和中文游戏时自动换）。
+          SettingsNavigationItem(
+            id: 'game.gal_line_tts_voice_overrides',
+            title: t.gal_line_tts_voice_overrides,
+            icon: FushiIcons.language,
+            showIcon: true,
+            visible: (_) => Platform.isWindows,
+            subtitleBuilder: (SettingsContext settingsContext) =>
+                galLineTtsVoiceOverridesSummary(
+                  _lineTtsController(settingsContext).lineTtsSettings,
+                ),
+            onTap: (SettingsContext settingsContext) async {
+              _lineTtsController(settingsContext);
+              await openGalLineTtsVoiceOverridesPage(
+                settingsContext.context,
+                TtsServices.of(settingsContext.appModel.prefsRepo),
+                settingsContext.appModel.galgameRepo,
               );
               settingsContext.refresh();
             },

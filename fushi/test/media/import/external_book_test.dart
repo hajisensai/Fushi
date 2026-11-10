@@ -117,6 +117,7 @@ void main() {
 
     LibraryCtlImporter importer() => LibraryCtlImporter(
       db: db,
+      folderTranscribeAudiobook: null,
       galgameRepo: GalgameRepository(db),
       isKindEnabled: (LibraryCtlKind _) => true,
       keepDuplicates: false,
@@ -156,6 +157,7 @@ void main() {
 
       LibraryCtlImporter asking(DuplicateChoice choice) => LibraryCtlImporter(
         db: db,
+        folderTranscribeAudiobook: null,
         galgameRepo: GalgameRepository(db),
         isKindEnabled: (LibraryCtlKind _) => true,
         keepDuplicates: false,
@@ -232,6 +234,7 @@ void main() {
 
       final LibraryCtlImportResult result = (await LibraryCtlImporter(
         db: db,
+        folderTranscribeAudiobook: null,
         galgameRepo: GalgameRepository(db),
         isKindEnabled: (LibraryCtlKind _) => true,
         keepDuplicates: false,
