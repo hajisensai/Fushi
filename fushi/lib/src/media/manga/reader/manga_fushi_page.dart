@@ -302,6 +302,12 @@ enum MangaReaderInputAction {
 /// 一次键盘平移移动的视口比例。按比例而非像素，1080p 与 4K 手感一致。
 const double kMangaPanStepFraction = 0.15;
 
+/// 正文 WebView 的 `preventGestureDelay`：iOS 上触摸直接进 WKWebView，不经 Flutter
+/// 手势竞技场延后投递（反馈 P2jQzOBBag，原因见 `_buildWebViewSurface`）。页内 JS
+/// 的双击 / 长按 / 双指点按判据都按 DOM pointer 事件的时间算，投递必须实时。
+/// 守卫：test/media/manga/manga_webview_gesture_policy_test.dart。
+const bool kMangaWebViewPreventGestureDelay = true;
+
 /// 「落在末页」的起始页码：远大于任何章的页数，装载链在页数已知处把它钳到
 /// `pageCount - 1`（`_presentPayload` 与在线直读落点都是 `clamp(0, n - 1)`）。
 /// 换章往回翻时用它，让上一章**一开始**就停在末页，而不是先画第 0 页再跳。
@@ -8174,6 +8180,19 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   Widget _buildWebViewSurface() {
     return InAppWebView(
       key: const ValueKey<String>('manga_webview'),
+      // 反馈 P2jQzOBBag（iOS 分页模式双击缩放几乎总是先弹控制层）：漫画的全部手势
+      // 都在页内 JS 里判（manga_overlay_html.dart 的双击窗口按 DOM pointer 事件的
+      // 时间算），Flutter 侧不挂任何会与它竞争的识别器。iOS 引擎默认的 eager 策略
+      // 却给平台视图装一个 delaysTouchesBegan/Ended 的延迟识别器，WKWebView 派发
+      // DOM 触摸事件的识别器必须等它失败——也就是等 Flutter 手势竞技场裁决、
+      // acceptGesture 经平台通道回到原生——才收得到这次触摸。第二击的 pointerdown
+      // 因此晚到（竞技场到松手才裁决时与 pointerup 一起到），挂起的空白单击先发出，
+      // 悬浮栏被切出来。这里让触摸直接进 WebView：上游这个选项的实现按旧类名找
+      // 识别器、早已是空操作，pub-cache 覆盖补丁把它映射到 doNotBlockGesture（见
+      // ci/patches/hosted/flutter_inappwebview_ios-1.1.2/PATCHES.md）；盖在 WebView
+      // 上的 Flutter 层（查词 barrier、悬浮栏、对话框）仍由引擎的同步命中测试拦住。
+      // 只作用于 iOS。
+      preventGestureDelay: kMangaWebViewPreventGestureDelay,
       initialUserScripts: UnmodifiableListView<UserScript>(<UserScript>[
         WebViewMenuDismissBridge.userScript,
       ]),
