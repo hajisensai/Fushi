@@ -227,7 +227,7 @@ void main() {
 
   // TODO-673：番名都一样、只有集数（第01話/E01...）不同的真实场景下，结果项文件名
   // 若单行 ellipsis 截断就把区分集数的部分吃掉，用户分不清是第几集。
-  // BUG-4323：上一版放宽到 3 行仍会在窄屏切掉末尾，改为完整换行、不限行
+  // BUG-4347：上一版放宽到 3 行仍会在窄屏切掉末尾，改为完整换行、不限行
   // （SubtitleFileNameText，与版本视图同一组件）。断言落在实际排版的
   // RenderParagraph 上：不限行、没有任何一行被截掉。
   List<JimakuCandidate> makeSameSeriesEpisodes() {
@@ -245,7 +245,7 @@ void main() {
   }
 
   testWidgets(
-    'TODO-673/BUG-4323: result title wraps fully (no line cap), episode visible',
+    'TODO-673/BUG-4347: result title wraps fully (no line cap), episode visible',
     (WidgetTester tester) async {
       tester.view.physicalSize = const Size(360, 800);
       tester.view.devicePixelRatio = 1.0;

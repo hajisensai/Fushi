@@ -1743,7 +1743,7 @@ class JimakuCandidateList extends StatelessWidget {
           final JimakuCandidate c = shown[i];
           final bool busy = busyName == c.name;
           // 文件名（含集数，如 第01話/E01）整段可见才能区分是第几集：完整换行、
-          // 不设行数上限（TODO-673 / BUG-4323：番名都一样，区分集数 / 版本的部分
+          // 不设行数上限（TODO-673 / BUG-4347：番名都一样，区分集数 / 版本的部分
           // 在末尾，任何上限在窄屏上都会再把它切掉）。与版本视图共用同一组件。
           return FushiGroupedListItem(
             index: i,

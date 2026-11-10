@@ -5,7 +5,7 @@ import 'package:material_ui/material_ui.dart';
 /// 字幕搜索的两处列表（文件视图 `SubtitleSearchPanel` 的结果行、版本视图
 /// `SubtitleVersionGroupList` 的文件行）里，同一番的候选文件名前半段几乎一样
 /// （组名 + 番名 + 集数 + 分辨率 + 编码），区分版本 / 集数的信息恰恰在**末尾**
-/// （BUG-4323：横屏手机上两条 EP5 都截在「...HEVC-10bit AAC」，看不出差别；
+/// （BUG-4347：横屏手机上两条 EP5 都截在「...HEVC-10bit AAC」，看不出差别；
 /// TODO-673：同理集数被省略号吃掉）。任何行数上限在足够窄的宽度下都会再次切掉
 /// 末尾，所以这里不设上限：两处列表都在可滚动的 ListView 里，行高自由，换行
 /// 只会让该行变高，不会溢出。
