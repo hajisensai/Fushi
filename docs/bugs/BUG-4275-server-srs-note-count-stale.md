@@ -1,4 +1,4 @@
-## BUG-4243 · 服务端复习状态的笔记数不随写入刷新
+## BUG-4275 · 服务端复习状态的笔记数不随写入刷新
 - **报告**：2026-11-08（服务端 Fushi 复习端到端测试：WebUI / `GET /api/admin/srs` 显示 11 条笔记，库里实际 13 条）
 - **真实性**：✅ 真 bug。
   - 根因：`packages/fushi_server/lib/src/server_srs.dart` 的 `ServerSrsProfile.noteCount` 只在 `applyConfig` 发现 profile 时从同步位置里各设备报的数（`srsListRemoteProfiles` → `info.noteCount`，设备上次发布时的数）赋一次，库打开后再也不更新。服务端自己写库（AnkiConnect / 互联制卡）、设备再同步进来，`toJson` 的 `notes`（`:240`）和远程复习握手的 profile 列表（`:363`）都停在旧数。

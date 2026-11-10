@@ -695,7 +695,7 @@ describeMineOutcome(MineOutcome outcome, {bool overwrite = false}) {
           : t.card_exported(deck: deckName);
       final bool hasAudioWarning =
           audioWarning != null && audioWarning.isNotEmpty;
-      // BUG-4244：结果附带的另一件事（如「保存到」被退回主机默认）接在同一条提示后面——单独弹会被
+      // BUG-4276：结果附带的另一件事（如「保存到」被退回主机默认）接在同一条提示后面——单独弹会被
       // 这条结果提示顶掉。
       final String? notice = outcome.notice;
       final bool hasNotice = notice != null && notice.isNotEmpty;

@@ -1,4 +1,4 @@
-## BUG-4246 · 保存到列表里默认牌组出现两次
+## BUG-4277 · 保存到列表里默认牌组出现两次
 - **报告**：2026-11-08（服务端 Fushi 复习端到端测试：「保存到」同时列出「Fushi review · Default / Default deck」和「Fushi review · Default · Default」）
 - **真实性**：✅ 真 bug。
   - 根因：`POST /api/mine/targets` 的回包（`packages/fushi_server/lib/src/remote_mining_host.dart` `miningTargets()`）每份复习 profile 只给 `decks` 全名列表，不说哪个是不点名时落进的牌组；手机 `mineToServerTargetOptions`（`fushi/lib/src/sync/mine_to_server_target_picker.dart`）于是先列「默认牌组」，再把同一个牌组按名字列一遍。

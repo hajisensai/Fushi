@@ -1401,7 +1401,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     }
     if (state == AppLifecycleState.resumed) {
       ref.read(appProvider).refreshSystemPalette();
-      // BUG-4241：查词弹窗是另一个进程，它写进库的偏好（「保存到」被主机退回默认）主进程缓存看不见。
+      // BUG-4273：查词弹窗是另一个进程，它写进库的偏好（「保存到」被主机退回默认）主进程缓存看不见。
       if (Platform.isAndroid) {
         unawaited(
           ref
