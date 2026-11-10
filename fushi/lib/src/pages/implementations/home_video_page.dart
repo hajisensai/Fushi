@@ -5586,7 +5586,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
                   ))
                     if (!mirroredRemote.contains(v.id)) v,
                 ];
-                // 「管理合集」页的成员数（BUG-4276）：管理页列的是本域全部合集、
+                // 「管理合集」页的成员数（BUG-4277）：管理页列的是本域全部合集、
                 // 不随搜索 / 筛选 / 分区变，成员数也只取未筛选全量（同首页口径）的
                 // 折叠结果。放在分区分支之前：「全部视频」分区不建系列墙，挂在系列
                 // 墙里就永远发布不到。骨架期归属映射还没到，不发布（不是 0）。
@@ -7661,7 +7661,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// 视频显示单元折叠：本地视频 + 远端占位 → [groupByCollections] 的合集组与散卡组
   /// （未排序）。系列墙吃筛选后的输入，「管理合集」页的成员数
   /// （[_collectionDisplayCounts]）吃未筛选的全量输入，两处同一份折叠规则
-  /// （BUG-4276）。远端占位用 `-1-index` 编码 importedAt（全为负，稳定排在本地条目
+  /// （BUG-4277）。远端占位用 `-1-index` 编码 importedAt（全为负，稳定排在本地条目
   /// 之后、组内保持目录序）。
   List<CollectionGroup<_VideoSlot>> _foldVideoUnits(
     List<VideoBookRow> books,
