@@ -88,7 +88,7 @@ legacy `D3D11_RESOURCE_MISC_SHARED` 资源只靠 OS 隐式串行化，生产端�
   mutex；原版引擎没有这个导出，插件留在 legacy 共享纹理，「补丁引擎与原版引擎都能跑同一份 app」不变。
 - 代价：每个新视频帧在 Flutter 设备上多一次整帧 GPU 拷贝。
 
-### `engine-a11y-tree-hardening.patch`（flutter 仓库根目录，与前四份互不重叠，按序叠在其后；BUG-4377）
+### `engine-a11y-tree-hardening.patch`（flutter 仓库根目录，与前四份互不重叠，按序叠在其后；BUG-4378）
 
 Windows 无障碍树加固（Windows 嵌入层与 `shell/platform/common` 的无障碍桥，Dart 侧不变）。原版
 `AccessibilityBridge::CommitUpdates` 把框架的增量语义更新原样交给 `ui::AXTree::Unserialize`；
