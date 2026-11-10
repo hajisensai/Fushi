@@ -38,6 +38,7 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-4334](bugs/BUG-4334-pdf-audiobook-wrong-reader.md) | ✅ | ✅ | PDF 书挂上有声书后打开一片空白（SRT 卡写死 EPUB 阅读器 + PDF 卡露出「导入有声书」） |
+| [BUG-4334](bugs/BUG-4334-game-session-card-floating-toolbar.md) | ✅ | ✅ | 游戏工作台会话卡的工具组用浮动胶囊样式、悬在卡片中段，与主操作不在同一行 |
 | [BUG-4333](bugs/BUG-4333-windows-axtree-desync-pending-children-recur.md) | 🚧 | 🚧 | Windows 3.3.0 AXTree 失步复发：父节点列出从未下发的子节点（BUG-4073 未覆盖的来源） |
 | [BUG-4332](bugs/BUG-4332-video-cue-nav-same-start.md) | ✅ | ✅ | 视频 ASS 同起止多条 Dialogue：上/下一句要按两次 |
 | [BUG-4331](bugs/BUG-4331-srs-card-gaiji-image-huge.md) | ✅ | ✅ | 复习卡上明鏡的外字 SVG（［参考］菱形）画成 150px 方块 |
