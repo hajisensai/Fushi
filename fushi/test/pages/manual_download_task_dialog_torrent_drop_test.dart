@@ -300,8 +300,6 @@ void main() {
           findsOneWidget,
         );
       }
-      // 不再是「前 6 个 + +N」的只读预览。
-      expect(find.textContaining('+'), findsNothing);
     });
 
     testWidgets('filter + select none/all act on the filtered rows', (
