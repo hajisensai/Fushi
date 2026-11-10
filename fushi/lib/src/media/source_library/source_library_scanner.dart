@@ -1736,7 +1736,11 @@ class SourceLibraryScanner {
       return;
     }
     final BookAudiobookTranscribePort? transcribe = _transcribeAudiobook;
-    if (transcribe == null || !fs.isLocal || hasBookmark) {
+    if (transcribe == null ||
+        !folderImportSourceCanTranscribe(
+          isLocalSource: fs.isLocal,
+          hasBookmark: hasBookmark,
+        )) {
       tally.missingSubtitle++;
       return;
     }

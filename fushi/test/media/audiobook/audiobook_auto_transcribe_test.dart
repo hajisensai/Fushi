@@ -3,7 +3,10 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/media/audiobook/book_audiobook_pairing.dart'
-    show BookAudiobookTranscribeResult;
+    show
+        BookAudiobookTranscribeResult,
+        folderImportSourceCanTranscribe,
+        folderImportTranscribeEnabled;
 import 'package:fushi_engine/media/audiobook/audiobook_transcribe_import_queue.dart';
 import 'package:fushi_engine/media/discovery/discovery_download_queue.dart'
     show DiscoveryImportOutcome;
@@ -394,31 +397,40 @@ void main() {
     });
   });
 
-  group('shouldTranscribeFolderImportAudiobook', () {
-    bool decide({
-      bool asr = true,
-      bool auto = true,
-      bool folder = true,
-      bool local = true,
-      bool bookmark = false,
-    }) => shouldTranscribeFolderImportAudiobook(
-      asrSupported: asr,
-      autoTranscribe: auto,
-      folderImportTranscribe: folder,
-      isLocalSource: local,
-      hasBookmark: bookmark,
-    );
-
-    test('五个条件全满足才排转录', () {
-      expect(decide(), isTrue);
-      expect(decide(asr: false), isFalse);
-      expect(decide(folder: false), isFalse);
-      expect(decide(local: false), isFalse);
-      expect(decide(bookmark: true), isFalse);
+  group('folder import transcribe predicates', () {
+    test('设备级三项全满足才提供转录端口', () {
+      bool enabled({bool asr = true, bool auto = true, bool folder = true}) =>
+          folderImportTranscribeEnabled(
+            asrSupported: asr,
+            autoTranscribe: auto,
+            folderImportTranscribe: folder,
+          );
+      expect(enabled(), isTrue);
+      expect(enabled(asr: false), isFalse);
+      expect(enabled(folder: false), isFalse);
+      // 总开关关时子开关开着也不排。
+      expect(enabled(auto: false), isFalse);
     });
 
-    test('总开关关时子开关开着也不排', () {
-      expect(decide(auto: false, folder: true), isFalse);
+    test('来源级：只有本地、非 iOS 书签来源能转录', () {
+      expect(
+        folderImportSourceCanTranscribe(
+          isLocalSource: true,
+          hasBookmark: false,
+        ),
+        isTrue,
+      );
+      expect(
+        folderImportSourceCanTranscribe(
+          isLocalSource: false,
+          hasBookmark: false,
+        ),
+        isFalse,
+      );
+      expect(
+        folderImportSourceCanTranscribe(isLocalSource: true, hasBookmark: true),
+        isFalse,
+      );
     });
   });
 

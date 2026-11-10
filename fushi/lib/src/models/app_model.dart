@@ -373,7 +373,7 @@ import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_p
 import 'package:fushi/src/media/audiobook/audiobook_auto_transcribe.dart';
 import 'package:fushi_engine/media/audiobook/audiobook_transcribe_import_queue.dart';
 import 'package:fushi_engine/media/audiobook/book_audiobook_pairing.dart'
-    show BookAudiobookTranscribePort;
+    show BookAudiobookTranscribePort, folderImportTranscribeEnabled;
 import 'package:fushi_engine/media/discovery/import/discovery_engine_importers.dart'
     show
         importDiscoveryAudiobook,
@@ -10251,12 +10251,15 @@ class AppModel
 
   /// 书架文件夹导入 / 本地书籍来源扫描的转录端口：书配上了有声书音频但没有字幕时，
   /// 把音频排进转录队列、转完对齐到这本书。本机没有 ASR、总开关或子开关任一关着时
-  /// 为 null（扫描器把这类书计入「缺字幕」）。来源级条件（本地、非 iOS 书签）由
-  /// 扫描器按来源判断（[shouldTranscribeFolderImportAudiobook] 的另两项）。
+  /// 为 null（[folderImportTranscribeEnabled]；扫描器把这类书计入「缺字幕」）。
+  /// 来源级条件（本地、非 iOS 书签）由扫描器按来源判断
+  /// （[folderImportSourceCanTranscribe]）。
   BookAudiobookTranscribePort? get folderImportTranscribePort {
-    if (!isAsrSupported ||
-        !prefsRepo.audiobookAutoTranscribe ||
-        !prefsRepo.audiobookFolderImportTranscribe) {
+    if (!folderImportTranscribeEnabled(
+      asrSupported: isAsrSupported,
+      autoTranscribe: prefsRepo.audiobookAutoTranscribe,
+      folderImportTranscribe: prefsRepo.audiobookFolderImportTranscribe,
+    )) {
       return null;
     }
     return ({

@@ -307,32 +307,6 @@ Future<AudiobookMaterialMatch> matchAudiobookMaterialsForAudio(
   return matchAudiobookMaterial(scan.index, key: key, title: title);
 }
 
-/// 书架文件夹导入：一本书配上了有声书音频却没有字幕时，要不要排转录。
-///
-/// 五个条件全满足才排：
-/// - [asrSupported]：本机有设备端 ASR；
-/// - [autoTranscribe]：总开关 `audiobook_auto_transcribe`（默认开）——关了一律不自动
-///   转录，子开关开着也不算；
-/// - [folderImportTranscribe]：子开关 `audiobook_folder_import_transcribe`（默认关）；
-/// - [isLocalSource]：本地来源。网络来源的音频要先整本下到本机，转录队列只认本地
-///   路径，不做；
-/// - ![hasBookmark]：不是 iOS 安全作用域书签来源。书签的访问窗口只撑这一次扫描，
-///   转录要跑几个小时，窗口早就关了。
-///
-/// 不满足的一律计入「缺字幕」，由完成提示告诉用户。
-bool shouldTranscribeFolderImportAudiobook({
-  required bool asrSupported,
-  required bool autoTranscribe,
-  required bool folderImportTranscribe,
-  required bool isLocalSource,
-  required bool hasBookmark,
-}) =>
-    asrSupported &&
-    autoTranscribe &&
-    folderImportTranscribe &&
-    isLocalSource &&
-    !hasBookmark;
-
 /// 书架文件夹导入的转录端口实现：把 [audioPaths] 排进转录队列，转完挂到已导入的
 /// [bookKey] 上（`targetBookKey`，对齐书的正文）。
 ///

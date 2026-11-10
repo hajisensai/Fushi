@@ -140,6 +140,28 @@ typedef BookAudiobookTranscribePort =
       required String title,
     });
 
+/// 设备级条件：这台设备要不要给「配上了有声书音频却没有字幕」的书排转录。三项全
+/// 满足才要，任一不满足时调用方不提供 [BookAudiobookTranscribePort]（传 null）：
+/// - [asrSupported]：本机有设备端 ASR；
+/// - [autoTranscribe]：总开关 `audiobook_auto_transcribe`——关了一律不自动转录，
+///   子开关开着也不算；
+/// - [folderImportTranscribe]：子开关 `audiobook_folder_import_transcribe`（默认关）。
+bool folderImportTranscribeEnabled({
+  required bool asrSupported,
+  required bool autoTranscribe,
+  required bool folderImportTranscribe,
+}) => asrSupported && autoTranscribe && folderImportTranscribe;
+
+/// 来源级条件：端口非空时，这个来源上的书能不能交给它。不能的计入「缺字幕」。
+/// - [isLocalSource]：本地来源。网络来源的音频要先整本下到本机，转录队列只认本地
+///   路径，不做；
+/// - ![hasBookmark]：不是 iOS 安全作用域书签来源。书签的访问窗口只撑这一次扫描，
+///   转录要跑几个小时，窗口早就关了。
+bool folderImportSourceCanTranscribe({
+  required bool isLocalSource,
+  required bool hasBookmark,
+}) => isLocalSource && !hasBookmark;
+
 /// R2–R4。
 ///
 /// - [unpairedBookPaths]：R1 没配上音频的非 PDF 书；
