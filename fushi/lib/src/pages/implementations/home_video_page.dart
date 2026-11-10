@@ -564,7 +564,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// 再重读一次——不在播放期间隔几秒就在后台重列整个书架。
   bool _watchProgressStale = false;
 
-  /// BUG-4297：本机远端视频断点变化监听（[watchLocalRemoteVideoPositionsChanged]）。
+  /// BUG-4300：本机远端视频断点变化监听（[watchLocalRemoteVideoPositionsChanged]）。
   /// 远端卡的「看到 X」是清单快照与本机库断点取较新（[withLocalRemoteVideoPositions]）；
   /// 清单有 TTL 缓存、页面常驻，互联 sweep 落地 host 的新断点或本机刚看完回来时，
   /// 只有本机库断点变了——由它驱动重算远端卡，不等清单过期 / 下拉刷新。
@@ -898,7 +898,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     _watchProgressSub = widget.repo.watchVideoWatchProgressChanged().listen(
       _onWatchProgressChanged,
     );
-    // BUG-4297：本机远端断点（sweep / 冲突弹窗 / 播放页 / 对端 PUT 写入）变了 →
+    // BUG-4300：本机远端断点（sweep / 冲突弹窗 / 播放页 / 对端 PUT 写入）变了 →
     // 远端卡的「看到 X」跟着重算。
     _remotePositionsSub = watchLocalRemoteVideoPositionsChanged(
       appModelNoUpdate.database,
@@ -1008,7 +1008,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     });
   }
 
-  /// BUG-4297：本机远端断点变了。前台 → 防抖后把本机断点重新叠到远端卡上
+  /// BUG-4300：本机远端断点变了。前台 → 防抖后把本机断点重新叠到远端卡上
   /// （[_overlayLocalRemotePositions]）；不在前台 → 记一笔，露出来时再叠。
   void _onRemotePositionsChanged(void _) {
     if (!mounted) return;
@@ -1026,7 +1026,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     );
   }
 
-  /// BUG-4297：只把此刻的本机库断点重新叠到当前远端清单上。变的只有断点，所以
+  /// BUG-4300：只把此刻的本机库断点重新叠到当前远端清单上。变的只有断点，所以
   /// 不走 [_loadRemoteVideos] 整轮重载——那会在清单 TTL 过期后重新向 host 要清单、
   /// 重跑合集收养与中断下载扫描（host 侧对端每次上报断点都会触发到这里）。
   ///
@@ -2050,7 +2050,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     _remoteGateAtLastLoad = _shouldLoadRemoteVideos;
     _jellyfinGateAtLastLoad = _jellyfinGate;
     // 每轮都按此刻的本机断点重算（[withLocalRemoteVideoPositions]），之前记下的
-    // 「断点变了待重算」随之作废（BUG-4297）。
+    // 「断点变了待重算」随之作废（BUG-4300）。
     _remotePositionsStale = false;
     // 远端清单换代 = 封面文件路径集合可能变，记忆表随之作废（见 _remoteCoverFileExists）。
     _remoteCoverExists.clear();
@@ -2117,7 +2117,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       // BUG-2714：清单到手才知道哪些中断的下载还能接（不挡列表渲染）。
       unawaited(_resumeInterruptedRemoteDownloads(source, remoteOnly));
       return _RemoteVideoState(
-        // BUG-4297：卡片的断点 = 清单快照与本机库断点取较新（与开播判定同一份）。
+        // BUG-4300：卡片的断点 = 清单快照与本机库断点取较新（与开播判定同一份）。
         videos: await withLocalRemoteVideoPositions(
           appModelNoUpdate.database,
           remoteOnly,
@@ -10413,7 +10413,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       // loadPendingRemoteDeletionKeys），详情页不出已「从所有设备删除」的集。
       loadRemoteVideos: () async {
         final Set<String> deleted = await _pendingRemoteVideoDeletions(source);
-        // BUG-4297：与库页同一口径——断点取清单快照与本机库断点的较新者。
+        // BUG-4300：与库页同一口径——断点取清单快照与本机库断点的较新者。
         return withLocalRemoteVideoPositions(
           appModelNoUpdate.database,
           filterOutLocallyDeletedRemoteVideos(
