@@ -29,7 +29,7 @@ void main() {
       isTrue,
       reason:
           '书架入口必须按卡上派生的阅读器源（ReaderFushiSource / PDF / 漫画）'
-          '经 openMedia 打开，由 source 层包裹中和器（BUG-4333）',
+          '经 openMedia 打开，由 source 层包裹中和器（BUG-4334）',
     );
     expect(
       src.contains('ReaderFushiPage('),
