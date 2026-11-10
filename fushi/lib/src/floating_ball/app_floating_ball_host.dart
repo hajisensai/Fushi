@@ -1062,6 +1062,13 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
             'image=${result.imageWidth}x${result.imageHeight} '
             'png=${png.length}B lines=${result.lines.length}',
       );
+      // 反馈 Z9fC87pZrY（Windows 150% 缩放下「识别不出或错位」，BUG-4323）：一次截屏
+      // 记一行几何取证——显示器矩形与截图尺寸对不对得上、DPI / HDR / 取帧路径、
+      // 送进识别器的实际尺寸、前几行的框。
+      ErrorLogService.instance.logDiagnostic(
+        'floating_ball.screen_ocr_geometry',
+        screenOcrGeometrySummary(capture: capture, result: result),
+      );
       if (result.isEmpty) message = t.floating_ball_ocr_empty;
     } on SystemOcrUnavailableException catch (error) {
       message = switch (error.reason) {
@@ -1126,11 +1133,16 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     // 落点，下一份反馈能分清是识别文本错了还是命中 / 查词错了。只记这一行的前
     // 32 个字。
     final String linePreview = text.characters.take(32).toString();
+    // 坐标映射前后值（BUG-4323）：截图像素里的字框 → 屏幕物理像素的查词卡锚点。
+    final Rect anchorScreenRect = hit.charRect.shift(session.screen.topLeft);
     ErrorLogService.instance.logDiagnostic(
       'floating_ball.screen_ocr_tap',
       'point=(${point.dx.round()},${point.dy.round()}) '
           'line=${_rectSummary(hit.line.rect)} '
           'vertical=${hit.line.isVertical} charIndex=${hit.charIndex} '
+          'segments=${hit.line.segments.length} '
+          'char=${_rectSummary(hit.charRect)} '
+          'anchor=${_rectSummary(anchorScreenRect)} '
           'text="$linePreview"',
     );
     unawaited(
@@ -1138,7 +1150,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
         text.substring(hit.charIndex),
         sentence: text,
         physicalPlacement: GlobalLookupPhysicalPlacement(
-          anchorScreenRect: hit.charRect.shift(session.screen.topLeft),
+          anchorScreenRect: anchorScreenRect,
         ),
         // 反馈 Gz7z6Y6Mbr：制卡带上截图里所点文字所在的文本块。
         miningHandler: screenOcrOverlayMiningHandler(
@@ -1828,6 +1840,52 @@ class _ManualLookupDialogState extends State<_ManualLookupDialog> {
 
 /// 桌面截屏识字的一次冻结层：截的是哪块显示器、识别出了哪些行（null = 还在识别）。
 /// 诊断日志里的像素框：`[l,t,r,b]` 取整。
+/// 截屏识字一次识别的几何取证（BUG-4323，一次截屏一行）：显示器矩形（物理像素）、
+/// 截图尺寸、两者是否一致（不一致 = 截图与屏幕坐标系对不上）、DPI、HDR 与取帧路径、
+/// 送进识别器的实际尺寸与上限、行数、前 [maxBoxes] 行的框与词框数。
+@visibleForTesting
+String screenOcrGeometrySummary({
+  required DesktopScreenOcrCapture capture,
+  required SystemOcrPageResult result,
+  int maxBoxes = 8,
+}) {
+  final Rect? screen = capture.screen;
+  final bool matches =
+      screen != null &&
+      screen.width.round() == result.imageWidth &&
+      screen.height.round() == result.imageHeight;
+  final int? dpi = capture.dpi;
+  final int? recognizedWidth = result.recognizedWidth;
+  final int? recognizedHeight = result.recognizedHeight;
+  final StringBuffer out = StringBuffer()
+    ..write('screen=${screen == null ? '-' : _rectSummary(screen)} ')
+    ..write('image=${result.imageWidth}x${result.imageHeight} ')
+    ..write('screenMatchesImage=$matches ')
+    ..write('dpi=${dpi == null ? '-' : '$dpi(${(dpi * 100 / 96).round()}%)'} ')
+    ..write('hdr=${capture.hdrMonitor ?? '-'} ')
+    ..write('path=${capture.capturePath ?? '-'} ')
+    ..write(
+      'recognized=${recognizedWidth == null || recognizedHeight == null ? '-' : '${recognizedWidth}x$recognizedHeight'} ',
+    )
+    ..write('max=${result.maxImageDimension ?? '-'} ')
+    ..write('lines=${result.lines.length}');
+  final Iterable<SystemOcrTextLine> head = result.lines.take(maxBoxes);
+  if (head.isNotEmpty) {
+    out
+      ..write(' boxes=')
+      ..write(
+        head
+            .map(
+              (SystemOcrTextLine line) =>
+                  '${_rectSummary(line.rect)}/${line.text.characters.length}c'
+                  '/${line.segments.length}w',
+            )
+            .join(' '),
+      );
+  }
+  return out.toString();
+}
+
 String _rectSummary(Rect rect) =>
     '[${rect.left.round()},${rect.top.round()},'
     '${rect.right.round()},${rect.bottom.round()}]';

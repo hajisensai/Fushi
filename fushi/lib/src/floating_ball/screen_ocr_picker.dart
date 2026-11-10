@@ -44,8 +44,9 @@ class ScreenOcrHit {
 /// 把点在屏幕上的 [point]（逻辑像素）映射到识别结果里的某一行某个字。
 ///
 /// [scale] = 逻辑像素 / 送检图像素（截图是物理像素，等于 1 / devicePixelRatio）。
-/// 系统 OCR 只给行框，字的位置按行内等分估计：竖排沿高度、横排沿宽度——日文
-/// 等宽字形下误差在一个字以内，查词本身还会从这个字往后扫。点在行框外（含
+/// 行带词框（[SystemOcrTextLine.segments]，Windows OCR 给）时先按词框定位到被点的
+/// 那个词，再在词内等分（BUG-4323：整行等分在日英混排、行内有空隙时会差出好几个
+/// 字）；只有行框时按行内等分估计：竖排沿高度、横排沿宽度。点在行框外（含
 /// [slop] 容差）返回 null。多行重叠时取面积最小的那一行（嵌套时更具体）。
 ScreenOcrHit? screenOcrHitTest({
   required List<SystemOcrTextLine> lines,
@@ -65,6 +66,15 @@ ScreenOcrHit? screenOcrHitTest({
     }
   }
   if (best == null || bestRect == null) return null;
+  if (best.segments.isNotEmpty) {
+    final ScreenOcrHit? bySegment = _hitBySegment(
+      line: best,
+      lineRect: bestRect,
+      point: point,
+      scale: scale,
+    );
+    if (bySegment != null) return bySegment;
+  }
   final List<String> glyphs = best.text.characters.toList();
   if (glyphs.isEmpty) return null;
   final int count = glyphs.length;
@@ -97,6 +107,74 @@ ScreenOcrHit? screenOcrHitTest({
     charIndex: charIndex,
     charRect: charRect,
     lineRect: bestRect,
+  );
+}
+
+/// 按词框定位：沿阅读方向找包含落点的词，落在词与词之间的空隙 / 行框容差里时取
+/// 沿阅读方向最近的词；词内按字等分（词通常只有一两个字，误差远小于整行等分）。
+ScreenOcrHit? _hitBySegment({
+  required SystemOcrTextLine line,
+  required Rect lineRect,
+  required Offset point,
+  required double scale,
+}) {
+  final bool vertical = line.isVertical;
+  final double along = vertical ? point.dy : point.dx;
+  SystemOcrTextSegment? picked;
+  Rect? pickedRect;
+  double pickedDistance = double.infinity;
+  for (final SystemOcrTextSegment segment in line.segments) {
+    final Rect rect = _scaleRect(segment.rect, scale);
+    final double start = vertical ? rect.top : rect.left;
+    final double end = vertical ? rect.bottom : rect.right;
+    final double distance = along < start
+        ? start - along
+        : along > end
+        ? along - end
+        : 0.0;
+    if (distance < pickedDistance) {
+      picked = segment;
+      pickedRect = rect;
+      pickedDistance = distance;
+      if (distance == 0) break;
+    }
+  }
+  if (picked == null || pickedRect == null) return null;
+  final List<String> glyphs = line.text
+      .substring(picked.start, picked.end)
+      .characters
+      .toList();
+  if (glyphs.isEmpty) return null;
+  final int count = glyphs.length;
+  final double fraction = vertical
+      ? (point.dy - pickedRect.top) / pickedRect.height
+      : (point.dx - pickedRect.left) / pickedRect.width;
+  final int glyph = (fraction.clamp(0.0, 1.0) * count).floor().clamp(
+    0,
+    count - 1,
+  );
+  int charIndex = picked.start;
+  for (int i = 0; i < glyph; i++) {
+    charIndex += glyphs[i].length;
+  }
+  final Rect charRect = vertical
+      ? Rect.fromLTWH(
+          pickedRect.left,
+          pickedRect.top + pickedRect.height * glyph / count,
+          pickedRect.width,
+          pickedRect.height / count,
+        )
+      : Rect.fromLTWH(
+          pickedRect.left + pickedRect.width * glyph / count,
+          pickedRect.top,
+          pickedRect.width / count,
+          pickedRect.height,
+        );
+  return ScreenOcrHit(
+    line: line,
+    charIndex: charIndex,
+    charRect: charRect,
+    lineRect: lineRect,
   );
 }
 
