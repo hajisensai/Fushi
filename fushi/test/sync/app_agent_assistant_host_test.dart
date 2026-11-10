@@ -34,6 +34,7 @@ import 'package:fushi_engine/ai/web_search.dart';
 import 'package:fushi_engine/sync/assistant/agent_assistant_host.dart';
 import 'package:fushi_engine/sync/assistant/host_assistant.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
+import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 
 class _Settings implements AiSettingsSource {
@@ -104,6 +105,43 @@ class _RecordingAssistantClient extends InterconnectAssistantClient {
     final Future<HostAssistantEnvelope> result = super.act(target, id, action);
     lastAct = result.then((_) {}, onError: (Object _) {});
     return result;
+  }
+}
+
+/// 统计发往会话路由的长轮询 GET（及其中的 401）与关会话 DELETE。借给
+/// [InterconnectAssistantClient] 用（借用的 client 它不关），由测试自己关 [inner]。
+class _CountingHttpClient extends http.BaseClient {
+  final http.Client inner = http.Client();
+  int sessionReads = 0;
+  int sessionReads401 = 0;
+  int sessionCloses = 0;
+
+  static final RegExp _session = RegExp(r'^/api/assistant/sessions/[^/]+$');
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    final bool onSession = _session.hasMatch(request.url.path);
+    final bool isRead = onSession && request.method == 'GET';
+    if (isRead) sessionReads++;
+    if (onSession && request.method == 'DELETE') sessionCloses++;
+    final http.StreamedResponse response = await inner.send(request);
+    if (isRead && response.statusCode == 401) sessionReads401++;
+    return response;
+  }
+}
+
+/// 记下会话何时释放 client，以及释放那一刻已经发出的关会话请求数。
+class _DisposeRecordingClient extends InterconnectAssistantClient {
+  _DisposeRecordingClient(SyncRepository repo, this.counting)
+    : super(repo: repo, httpClient: counting);
+
+  final _CountingHttpClient counting;
+  final Completer<int> disposed = Completer<int>();
+
+  @override
+  void dispose() {
+    if (!disposed.isCompleted) disposed.complete(counting.sessionCloses);
+    super.dispose();
   }
 }
 
@@ -519,6 +557,94 @@ void main() {
     );
     expect(session.running, isFalse);
     expect(session.awaitingConfirm, isFalse);
+  });
+
+  test('BUG-4395：会话中途凭据被吊销 → 401 后停止轮询、不再可用；dispose 不发关会话、'
+      '释放 client', () async {
+    // 与 `FushiServerController.revokePeer` 同一路径：删掉 per-peer 口令 + 清缓存。
+    final Set<String> peerTokens = <String>{'peer-tok'};
+    final FushiSyncServer server = FushiSyncServer(
+      syncDataDir: p.join(tmp.path, 'sync-revoke'),
+      port: 0,
+      token: 'tok',
+      assistant: agentHost(),
+    )..pairedPeerTokensProvider = () async => Set<String>.of(peerTokens);
+    await server.start();
+    addTearDown(server.stop);
+    final String url = 'http://127.0.0.1:${server.port}';
+    await repo.setFushiClientUrls(<FushiClientUrl>[
+      FushiClientUrl(url: url, deviceName: 'PC', token: 'peer-tok'),
+    ]);
+    final _CountingHttpClient counting = _CountingHttpClient();
+    addTearDown(counting.inner.close);
+    final _DisposeRecordingClient c = _DisposeRecordingClient(repo, counting);
+    const Duration retryDelay = Duration(milliseconds: 20);
+    final RemoteAiAgentSession session = await RemoteAiAgentSession.open(
+      client: c,
+      target: (await c.probeUrl(url))!,
+      locale: 'zh-CN',
+      retryDelay: retryDelay,
+      longPollWait: const Duration(seconds: 1),
+    );
+    addTearDown(session.dispose);
+    expect(session.isUsable, isTrue);
+
+    peerTokens.remove('peer-tok');
+    server.invalidatePeerTokenCache();
+    await until(session, () => session.isLost);
+
+    expect(session.isUsable, isFalse);
+    expect(counting.sessionReads401, greaterThanOrEqualTo(1));
+    final int reads = counting.sessionReads;
+    await Future<void>.delayed(retryDelay * 5);
+    expect(counting.sessionReads, reads, reason: '凭据被拒再试也不会好，不得每隔几秒重试');
+    expect(
+      session.entries
+          .where((AgentEntry e) => e.errorCode == kAiAgentRemoteUnavailableCode)
+          .length,
+      1,
+    );
+
+    session.dispose();
+    expect(
+      await c.disposed.future.timeout(const Duration(seconds: 10)),
+      0,
+      reason: '永久失败后关会话也不会成功，不发',
+    );
+    expect(counting.sessionCloses, 0);
+  });
+
+  test('BUG-4395：dispose 先关 host 上的会话、再释放会话接管的 client', () async {
+    final (_, String url) = await startHost(agentHost());
+    final _CountingHttpClient counting = _CountingHttpClient();
+    addTearDown(counting.inner.close);
+    final _DisposeRecordingClient c = _DisposeRecordingClient(repo, counting);
+    final HostAssistantTarget target = (await c.probeUrl(url))!;
+    final RemoteAiAgentSession session = await RemoteAiAgentSession.open(
+      client: c,
+      target: target,
+      locale: 'zh-CN',
+      longPollWait: const Duration(seconds: 1),
+    );
+    addTearDown(session.dispose);
+
+    session.dispose();
+    expect(
+      await c.disposed.future.timeout(const Duration(seconds: 10)),
+      1,
+      reason: '关会话的请求发完才释放 client',
+    );
+    // 释放后 client 不再可用：再发请求按本机已关闭收尾。
+    await expectLater(
+      c.read(target, session.currentSessionId ?? 'gone'),
+      throwsA(
+        isA<HostAssistantException>().having(
+          (HostAssistantException e) => e.cancelled,
+          'cancelled',
+          isTrue,
+        ),
+      ),
+    );
   });
 
   group('BUG-4067：远端会话历史（按发起设备）', () {

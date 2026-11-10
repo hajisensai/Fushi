@@ -5,7 +5,10 @@
 ///
 /// 断线时在条目里**固定位置**插一条本地提示（`errorCode` =
 /// [kAiAgentRemoteUnavailableCode]），并把 running / 待答卡片放开，用户能重试或停止；
-/// 恢复后提示留在原处。host 上的会话没了（闲置回收 / host 重启）就不再轮询。
+/// 恢复后提示留在原处。host 上的会话没了（闲置回收 / host 重启）或遇到再试也不会好
+/// 的失败（凭据被拒 / 证书不符 / 已不在配对表 / 401、403，
+/// [HostAssistantException.permanent]）就不再轮询，入口下次重新探测并说出具体原因。
+/// 会话开成后接管 [InterconnectAssistantClient]，[dispose] 时关完 host 会话再释放它。
 ///
 /// 会话历史（BUG-4067）：host 宣告了 `agentHistory`（[HostAssistantTarget.supportsAgentHistory]）
 /// 时，本对象同时是会话库（[AiAgentSessionLibrary]）——列出 / 续接 / 改名 / 删除这台
@@ -93,9 +96,14 @@ class RemoteAiAgentSession extends ChangeNotifier
   bool _lost = false;
   bool _disposed = false;
 
+  /// 在途的「关 host 会话」请求：[dispose] 等它们发完再释放 client，换场时
+  /// 关旧会话的请求不会被随后的 dispose 掐掉。
+  final Set<Future<void>> _hostCloses = <Future<void>>{};
+
   HostAssistantTarget get target => _target;
 
-  /// host 上的会话已经没了：入口据此换一场新的。
+  /// host 上的会话已经没了，或这台 host 永久拒绝了本机（凭据 / 证书 / 配对）：
+  /// 入口据此重新探测、换一场新的。
   bool get isLost => _lost;
 
   bool get isDisposed => _disposed;
@@ -497,7 +505,11 @@ class RemoteAiAgentSession extends ChangeNotifier
       'RemoteAiAgent.$where',
       '${_target.label}: $error',
     );
-    if (error is HostAssistantException && error.sessionGone) _lost = true;
+    // 会话没了 / 再试也不会好：停轮询、不再复用，dispose 也不再发关会话请求。
+    if (error is HostAssistantException &&
+        (error.sessionGone || error.permanent)) {
+      _lost = true;
+    }
     _markUnavailable();
   }
 
@@ -519,7 +531,13 @@ class RemoteAiAgentSession extends ChangeNotifier
     notifyListeners();
   }
 
-  Future<void> _closeHost(String id) async {
+  Future<void> _closeHost(String id) {
+    final Future<void> sent = _sendCloseHost(id);
+    _hostCloses.add(sent);
+    return sent.whenComplete(() => _hostCloses.remove(sent));
+  }
+
+  Future<void> _sendCloseHost(String id) async {
     try {
       await _client.close(_target, id);
     } on Object catch (error) {
@@ -535,10 +553,15 @@ class RemoteAiAgentSession extends ChangeNotifier
     if (_disposed) return;
     _disposed = true;
     if (identical(active, this)) active = null;
-    final String? id = _id;
+    final String? hostSession = _lost ? null : _id;
     // 退出即关 host 上的会话（待答卡片在 host 上按拒绝收尾）；失败只记诊断，
-    // host 闲置回收兜底。
-    if (id != null && !_lost) unawaited(_closeHost(id));
+    // host 闲置回收兜底。会话没了 / 永久失败时关会话也不会成功，不发。关完（连同
+    // 换场时还在途的关旧会话请求）再释放 client，在途的长轮询随之以 cancelled 收尾。
+    unawaited(() async {
+      if (hostSession != null) await _closeHost(hostSession);
+      await Future.wait(List<Future<void>>.of(_hostCloses));
+      _client.dispose();
+    }());
     _sessionsRevision.dispose();
     super.dispose();
   }
