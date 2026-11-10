@@ -18,7 +18,7 @@ typedef PlaybackBaselineSnapshot = ({
 /// 这对键有多个写者：播放页（经 `PreferencesRepository.setPref`，库 + 内存缓存）、
 /// 互联 sweep 与冲突弹窗（[InterconnectPlaybackPositionSync._writeLocal]，只写库）、
 /// 本机作为互联 host 收到的对端 PUT（引擎层，只写库）。库是唯一真相源；读
-/// `PreferencesRepository` 的内存缓存会拿到本机上次自己写的旧断点（BUG-4301）。
+/// `PreferencesRepository` 的内存缓存会拿到本机上次自己写的旧断点（BUG-4304）。
 /// sweep 与播放页开播都从这里读，两处口径不会漂移。
 Future<PlaybackPosition> readLocalRemoteVideoPosition(
   FushiDatabase db,
@@ -152,7 +152,7 @@ class InterconnectPlaybackPositionSync {
 
     switch (kind) {
       case PlaybackPositionKind.video:
-        // 与 [localPosition] / 播放页开播同一份键对解码（BUG-4301）。
+        // 与 [localPosition] / 播放页开播同一份键对解码（BUG-4304）。
         final PlaybackPosition prefsPosition =
             localRemoteVideoPositionFromPrefs(prefs, key);
         return (

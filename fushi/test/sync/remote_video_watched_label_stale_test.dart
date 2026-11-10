@@ -1,7 +1,7 @@
 /// BUG-4303：视频页远端卡的「看到 X」只显示 host 清单快照。清单经
 /// `RemoteLibraryCache`（TTL）缓存、页面常驻；互联 sweep 把 host 更新的断点落进
 /// 本机库、或本机刚看完回来，卡片仍是旧值（Linux Phase 4 r4-13：host 已到 0:50，
-/// 卡片「看到 0:40」）。开播位置（BUG-4301）早已认本机库断点，卡片与实际续播对不上。
+/// 卡片「看到 0:40」）。开播位置（BUG-4304）早已认本机库断点，卡片与实际续播对不上。
 ///
 /// 修复：卡片断点 = 清单快照与本机库断点取较新（[withLocalRemoteVideoPositions]，
 /// 与开播判定共用 [newestRemoteVideoPosition]）；本机断点一变就发信号

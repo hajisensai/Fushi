@@ -12,7 +12,7 @@ import 'package:fushi_engine/sync/fushi_library_host_service.dart'
 /// 远端视频断点的唯一判定：本机库断点与一份已知的 host 断点「取较新时间戳」
 /// （[resolvePositionLww]）。开播位置（[resolveRemoteVideoResumeMs]）与库页卡片上的
 /// 「看到 X」（[withLocalRemoteVideoPositions]）都走这里，两处不会各算各的
-/// （BUG-4301 / BUG-4303）。
+/// （BUG-4304 / BUG-4303）。
 PlaybackPosition newestRemoteVideoPosition({
   required PlaybackPosition local,
   required PlaybackPosition host,
@@ -29,7 +29,7 @@ PlaybackPosition newestRemoteVideoPosition({
 int remoteVideoListedEpisode(RemoteVideoInfo info) =>
     info.isPlaylist ? info.currentEpisode : 0;
 
-/// 远端视频开播位置（TODO-653/885 → BUG-4301）：本机带戳断点、host 清单快照、
+/// 远端视频开播位置（TODO-653/885 → BUG-4304）：本机带戳断点、host 清单快照、
 /// 互联 host 此刻的断点三者「取较新时间戳」（[newestRemoteVideoPosition]）。
 ///
 /// - 本机断点从库里读（[readLocalRemoteVideoPosition]），与互联 sweep 同一口径。
