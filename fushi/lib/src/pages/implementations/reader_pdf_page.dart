@@ -1224,6 +1224,8 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
             return FushiChromeReveal(
               visible: _chromeShown,
               child: FushiFloatingTopBar(
+                // 标题压在页面上：Apple 也垫底（与小说 / 漫画阅读器一致）。
+                titleBacking: true,
                 leading: <FushiToolbarItem>[
                   FushiToolbarItem(
                     key: const ValueKey<String>('pdf_back'),
