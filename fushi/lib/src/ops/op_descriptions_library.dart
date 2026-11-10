@@ -1549,8 +1549,9 @@ List<OpDescription> _describeAudiobookOps(OpDescribeKit kit) {
       method: 'POST',
       pattern: '$_item/audiobook',
       summary:
-          'Attach or replace audiobook audio and / or subtitle on an EPUB book or '
-          'subtitle book (replaces the stored audio / cues). Returns a task id.',
+          'Attach or replace audiobook audio and / or subtitle on an EPUB / PDF '
+          'book or subtitle book (replaces the stored audio / cues). Returns a '
+          'task id.',
       risk: OpRisk.irreversible,
       longRunning: true,
       taskIdOf: opTaskIdFromId,
