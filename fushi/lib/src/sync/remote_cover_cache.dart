@@ -30,7 +30,7 @@ class RemoteCoverCache {
 
   /// 目录**路径**只解析一次（memoized）；目录本身存不存在不缓存。
   ///
-  /// BUG-4372：以前把 `create(recursive:true)` 也一起 memoize 了——目录在进程存活期间
+  /// BUG-4373：以前把 `create(recursive:true)` 也一起 memoize 了——目录在进程存活期间
   /// 被删掉（存储页「清除全部缓存」/ 单删「缓存与临时文件」里的这一项、iOS 系统回收
   /// `Library/Caches`）之后，后续每次 [write] 都撞 `PathNotFoundException` 被吞掉，
   /// 磁盘缓存一直失效到重启。目录是可丢弃的，存在性只能在写入点现场保证（见 [write]）。
@@ -104,7 +104,7 @@ class RemoteCoverCache {
     if (bytes.isEmpty) return;
     try {
       final Directory dir = await _dir();
-      // 每次写都现场建（已存在时只是一次 stat）：目录随时可能被清缓存删掉（BUG-4372）。
+      // 每次写都现场建（已存在时只是一次 stat）：目录随时可能被清缓存删掉（BUG-4373）。
       await dir.create(recursive: true);
       final File f = File(p.join(dir.path, fileNameFor(key)));
       await f.writeAsBytes(bytes, flush: false);
