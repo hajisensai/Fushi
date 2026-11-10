@@ -70,6 +70,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // int（ms，默认 250）：高级制卡句子音频起止微调步长（反馈 3_VB7kAeHj），
   // 取值见 kAdvancedMiningAudioNudgeStepsMs。
   'advanced_mining_audio_nudge_step_ms',
+  // String（JSON，缺键 = 默认布局）：「高级制卡」对话框的分区布局——顺序、宽屏栏位、
+  // 显隐（反馈 aZ99bm9R6K）。格式见 AdvancedMiningLayout.toJson。
+  'advanced_mining_layout',
   // String（JSON 字符串数组，缺键 = 从没选过）：「高级制卡」卡片字段分区里显示（可编辑）
   // 的 Anki 字段名（反馈 -K86qlwBg6）。缺键时对话框按映射挑释义类字段作默认。
   'advanced_mining_visible_fields',
