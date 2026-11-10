@@ -694,7 +694,7 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
     );
   }
 
-  /// 这项设置被另一台设备的修改替换了：项旁一行提示。
+  /// 复习顺序选项的显示名。
   String _reviewOrderLabel(SrsReviewCardOrder o) => switch (o) {
     SrsReviewCardOrder.retrievability =>
       t.srs_settings_review_order_retrievability,
@@ -705,6 +705,7 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
     SrsReviewCardOrder.random => t.srs_settings_review_order_random,
   };
 
+  /// 这项设置被另一台设备的修改替换了：项旁一行提示。
   Widget? _conflictNote(BuildContext context, String key) {
     if (!_conflictKeys.contains(key)) return null;
     return Text(
