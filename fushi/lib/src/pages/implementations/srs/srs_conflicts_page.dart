@@ -34,10 +34,14 @@ import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_loading_view.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_load_error.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
 import 'package:fushi/src/utils/components/fushi_section_title.dart';
+import 'package:fushi/src/utils/components/fushi_tag.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
@@ -118,6 +122,9 @@ class _SrsConflictsPageState extends ConsumerState<SrsConflictsPage> {
   List<SrsDuplicateGroup> _duplicates = const <SrsDuplicateGroup>[];
   SrsDeviceDirectory _devices = SrsDeviceDirectory.empty;
 
+  /// 本机还没信任的设备（待确认在前，再是已拒绝的）：它们的删除与彻底清除在本机扣着（内核 trust.rs）。
+  List<SrsDeviceView> _untrusted = const <SrsDeviceView>[];
+
   /// 勾了「同类都按这个选」的组（[_Conflict.group] / 扣住删除的 `held/<kind>`）。
   final Set<String> _applySame = <String>{};
 
@@ -127,9 +134,45 @@ class _SrsConflictsPageState extends ConsumerState<SrsConflictsPage> {
     unawaited(_reload());
   }
 
+  /// 读失败（复习库打开失败原样抛出、或读的途中出错）：页面显示错误态 + 重试，不停在转圈、不变成未处理异常。
+  Object? _loadError;
+
   Future<void> _reload() async {
+    try {
+      await _load();
+    } catch (e, stack) {
+      ErrorLogService.instance.log('SrsConflictsPage.reload', e, stack);
+      if (mounted) {
+        setState(() {
+          _loadError = e;
+          _loading = false;
+        });
+      }
+    }
+  }
+
+  /// 错误态的「重试」：作废缓存着失败的复习库 provider 再重读。
+  void _retryLoad() {
+    retrySrsStoreOpen(ref);
+    setState(() {
+      _loadError = null;
+      _loading = true;
+    });
+    unawaited(_reload());
+  }
+
+  Future<void> _load() async {
     final SrsDbStore? store = await readSrsStore(ref);
-    if (store == null) return;
+    if (store == null) {
+      // 这里没有复习库（模块关着 / 存储此刻不可用）：说明原因，不停在转圈。
+      if (mounted) {
+        setState(() {
+          _loadError = t.module_disabled_hint;
+          _loading = false;
+        });
+      }
+      return;
+    }
     final SrsDeckTree tree = await store.deckTree();
     final List<_Conflict> conflicts = <_Conflict>[];
     Map<String, String>? typeNames;
@@ -209,13 +252,23 @@ class _SrsConflictsPageState extends ConsumerState<SrsConflictsPage> {
     final List<SrsDuplicateGroup> duplicates = await store
         .duplicateNoteGroups();
     final SrsDeviceDirectory devices = await srsLoadDeviceDirectory(store);
+    final List<SrsDeviceView> untrusted =
+        devices.all
+            .where((SrsDeviceView d) => d.trust != SrsDeviceTrust.trusted)
+            .toList()
+          ..sort(
+            (SrsDeviceView a, SrsDeviceView b) =>
+                a.trust.index.compareTo(b.trust.index),
+          );
     if (!mounted) return;
     setState(() {
       _devices = devices;
+      _untrusted = untrusted;
       _conflicts = conflicts;
       _pending = pending;
       _held = held;
       _duplicates = duplicates;
+      _loadError = null;
       _loading = false;
     });
   }
@@ -280,6 +333,34 @@ class _SrsConflictsPageState extends ConsumerState<SrsConflictsPage> {
         severity: ToastSeverity.success,
       );
     }
+  }
+
+  /// 信任（确认框说明扣着的会立即生效）/ 拒绝一台待确认的设备。
+  Future<void> _trustDevice(SrsDeviceView d, {required bool trust}) async {
+    final SrsDbStore? store = await readSrsStore(ref);
+    if (store == null || !mounted) return;
+    final String name = _who(d.id);
+    if (trust) {
+      final bool ok = await showFushiConfirmDialog(
+        context: context,
+        title: t.srs_trust_confirm_title(device: name),
+        message: t.srs_trust_confirm_body(n: d.heldDeletes + d.heldPurges),
+        confirmLabel: t.srs_trust_action_trust,
+        icon: FushiIcons.verified,
+        destructive: d.heldPurges > 0,
+      );
+      if (!ok) return;
+    }
+    await store.sync2Trust(d.id, trust: trust);
+    FushiToast.show(
+      msg: trust
+          ? t.srs_trust_trusted_toast(device: name)
+          : t.srs_trust_rejected_toast(device: name),
+      severity: ToastSeverity.success,
+    );
+    if (!mounted) return;
+    bumpSrsRevision(ref);
+    await _reload();
   }
 
   Future<void> _resolveHeld(_HeldDelete c, {required bool delete}) async {
@@ -433,7 +514,16 @@ class _SrsConflictsPageState extends ConsumerState<SrsConflictsPage> {
     if (_loading) {
       return const SafeArea(bottom: false, child: FushiLoadingView());
     }
+    final Object? loadError = _loadError;
+    if (loadError != null) {
+      return SrsLoadErrorView(
+        error: loadError,
+        retryKey: const ValueKey<String>('srs-conflicts-load-retry'),
+        onRetry: _retryLoad,
+      );
+    }
     if (_conflicts.isEmpty &&
+        _untrusted.isEmpty &&
         _pending.isEmpty &&
         _held.isEmpty &&
         _duplicates.isEmpty) {
@@ -450,6 +540,25 @@ class _SrsConflictsPageState extends ConsumerState<SrsConflictsPage> {
     }
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final List<Widget> items = <Widget>[
+      if (_untrusted.isNotEmpty) ...<Widget>[
+        FushiSectionTitle(t.srs_trust_section),
+        for (final SrsDeviceView d in _untrusted)
+          _TrustCard(
+            key: ValueKey<String>('srs-trust-${d.id}'),
+            device: d,
+            who: _who,
+            onTrust: () => srsRunLogged(
+              'SrsConflicts.trustDevice',
+              () => _trustDevice(d, trust: true),
+            ),
+            onReject: d.needsTrust
+                ? () => srsRunLogged(
+                    'SrsConflicts.rejectDevice',
+                    () => _trustDevice(d, trust: false),
+                  )
+                : null,
+          ),
+      ],
       if (_held.isNotEmpty) ...<Widget>[
         FushiSectionTitle(t.srs_conflicts_deletions),
         for (final _HeldDelete c in _held)
@@ -758,6 +867,102 @@ class _ConflictSide extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
           ),
           Text(from, style: context.fushiType.bodySmall),
+        ],
+      ),
+    );
+  }
+}
+
+/// 一台还没信任的设备：名称 / ID / 首次出现、扣着多少条删除与彻底清除，「信任」与「拒绝」（已拒绝的只剩「信任」）。
+class _TrustCard extends StatelessWidget {
+  const _TrustCard({
+    super.key,
+    required this.device,
+    required this.who,
+    required this.onTrust,
+    required this.onReject,
+  });
+
+  final SrsDeviceView device;
+  final String Function(String writerId) who;
+  final VoidCallback onTrust;
+
+  /// 已拒绝的设备为 null（只能改为信任）。
+  final VoidCallback? onReject;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final int? since = device.trustSince;
+    final String body = device.needsTrust
+        ? t.srs_trust_pending_body(
+            deletes: device.heldDeletes,
+            purges: device.heldPurges,
+          )
+        : t.srs_trust_rejected_body(
+            deletes: device.heldDeletes,
+            purges: device.heldPurges,
+          );
+    final VoidCallback? reject = onReject;
+    return FushiCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        spacing: tokens.spacing.gap,
+        children: <Widget>[
+          Row(
+            spacing: tokens.spacing.gap,
+            children: <Widget>[
+              FushiIcon(device.icon),
+              Expanded(
+                child: Text(
+                  who(device.id),
+                  style: context.fushiType.titleSmallEmphasized,
+                ),
+              ),
+              FushiTag(
+                text: device.needsTrust
+                    ? t.srs_device_trust_pending
+                    : t.srs_device_trust_rejected,
+                tone: device.needsTrust
+                    ? FushiTagTone.warning
+                    : FushiTagTone.neutral,
+                dense: true,
+              ),
+            ],
+          ),
+          Text(body, style: context.fushiType.bodyMedium),
+          Text(
+            SrsMetaLine.join(<String>[
+              t.srs_trust_device_id(id: device.id),
+              if (since != null)
+                t.srs_trust_first_seen(time: srsFormatMoment(since)),
+            ]),
+            style: context.fushiType.bodySmall,
+          ),
+          Wrap(
+            alignment: WrapAlignment.end,
+            spacing: tokens.spacing.gap,
+            runSpacing: tokens.spacing.gap,
+            children: <Widget>[
+              if (reject != null)
+                FushiPressScale(
+                  child: FushiOutlinedButton.icon(
+                    key: const ValueKey<String>('srs-trust-reject'),
+                    onPressed: reject,
+                    icon: const FushiIcon(FushiIcons.block),
+                    label: Text(t.srs_trust_action_reject),
+                  ),
+                ),
+              FushiPressScale(
+                child: FushiFilledButton.tonalIcon(
+                  key: const ValueKey<String>('srs-trust-accept'),
+                  onPressed: onTrust,
+                  icon: const FushiIcon(FushiIcons.verified),
+                  label: Text(t.srs_trust_action_trust),
+                ),
+              ),
+            ],
+          ),
         ],
       ),
     );

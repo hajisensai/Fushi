@@ -2168,13 +2168,33 @@ class _FushiChromeRevealState extends State<FushiChromeReveal>
     spring: FushiSprings.effectsDefault.description,
   );
 
+  /// 所在子树的 Ticker 是否在走。[TickerMode] 关掉时（例如阅读器层被歌词覆盖层
+  /// 盖住，BUG-4102 / BUG-4126）弹簧的 Ticker 被静音，`animateTo` 永远走不到目标：
+  /// 隐藏动画停在 1，chrome 照旧画着、吃着指针（反馈 zFSpGHJI2b：底部迷你播放条
+  /// 和悬浮工具栏留在歌词覆盖层上面）。显隐态必须收敛到 [FushiChromeReveal.visible]，
+  /// 不能依赖 Ticker 走完——Ticker 停着就直接落到目标值。
+  bool get _tickersLive => TickerMode.valuesOf(context).enabled;
+
+  void _settleTo(double target, {required bool animate}) {
+    _t.animateTo(target, animate: animate);
+    _fade.animateTo(target, animate: animate);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Ticker 中途被停（动画进行中 TickerMode 关掉）：同样直接落到目标值。
+    if (!_tickersLive) _settleTo(widget.visible ? 1 : 0, animate: false);
+  }
+
   @override
   void didUpdateWidget(FushiChromeReveal oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.visible != widget.visible) {
-      final bool animate = fushiMotionEnabled(context);
-      _t.animateTo(widget.visible ? 1 : 0, animate: animate);
-      _fade.animateTo(widget.visible ? 1 : 0, animate: animate);
+      _settleTo(
+        widget.visible ? 1 : 0,
+        animate: fushiMotionEnabled(context) && _tickersLive,
+      );
     }
   }
 

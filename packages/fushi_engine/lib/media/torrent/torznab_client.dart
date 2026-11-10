@@ -443,7 +443,8 @@ bool torznabHasEnabledIndexer(Iterable<TorznabIndexerConfig> indexers) =>
     indexers.any((TorznabIndexerConfig config) => config.enabled);
 
 /// A multi-indexer Torznab/Newznab provider.
-class TorznabClient implements VideoResourceProvider {
+class TorznabClient
+    implements VideoResourceProvider, VideoReleaseFileListingProvider {
   TorznabClient({
     required Iterable<TorznabIndexerConfig> indexers,
     http.Client? client,
@@ -681,6 +682,40 @@ class TorznabClient implements VideoResourceProvider {
         .timeout(requestTimeout);
     _requireSuccess(config.id, 'search', response);
     return parseTorznabSearchResponse(utf8.decode(response.bodyBytes));
+  }
+
+  /// 有 `.torrent` 下载地址的条目下载并读文件清单；只给磁链（或下载地址回的
+  /// 是磁链）的条目返回 null。
+  @override
+  Future<List<String>?> listReleaseFiles(
+    VideoResourceCandidate candidate,
+  ) async {
+    if (candidate is! _TorznabResourceCandidate) return null;
+    final Uri? downloadUri = candidate.item.downloadUri;
+    if (downloadUri == null ||
+        downloadUri.userInfo.isNotEmpty ||
+        !isSafeExternalProviderEndpoint(
+          downloadUri,
+          allowInsecureHttp: candidate.config.allowInsecureHttp,
+        )) {
+      return null;
+    }
+    final Uint8List bytes = await _fetchTorrentBytes(
+      candidate.config,
+      downloadUri,
+    );
+    final String head = utf8.decode(
+      bytes.length > 16 ? bytes.sublist(0, 16) : bytes,
+      allowMalformed: true,
+    );
+    if (head.trimLeft().toLowerCase().startsWith('magnet:')) return null;
+    final InspectedTorrentMetainfo inspected = inspectTorrentMetainfo(
+      bytes,
+      expectedInfoHash: candidate.infoHash,
+    );
+    return <String>[
+      for (final InspectedTorrentFile file in inspected.files) file.path,
+    ];
   }
 
   @override

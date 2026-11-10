@@ -1494,12 +1494,35 @@ class MediaDetailSectionHeader extends StatelessWidget {
 /// 条目（章节 / 分集）的下载状态。
 enum MediaDetailDownloadState { none, queued, downloading, downloaded, failed }
 
+/// 行尾状态位里的一枚额外状态图标（例如漫画章「已识别文字」）。
+///
+/// [label] 同时进悬停 tooltip 与无障碍名称：行尾一排小图标不带文字，不给说明
+/// 用户只能猜（反馈 wCgL364tgM）。
+@immutable
+class MediaDetailStatusIcon {
+  const MediaDetailStatusIcon({
+    required this.icon,
+    required this.label,
+    this.color,
+    this.key,
+  });
+
+  final IconData icon;
+  final String label;
+
+  /// null = onSurfaceVariant。
+  final Color? color;
+  final Key? key;
+}
+
 /// 章节 / 分集的分段列表行（M3E segmented list，组首尾大圆角、行间 2px 缝）：
 ///
 /// - 行首：[leading]（缩略图）或 [number] 序号胶囊（续看那条用 primary 实色）；
 /// - 标题 + 副标题 + 元信息（播出日 · 时长）；已看完的标题降为 onSurfaceVariant；
 /// - 观看进度（[progress]）：底部 primary 细条（M3E 波浪）；
-/// - 状态：已看 = tertiary 实心对勾；下载 = 排队 / 转圈 / 已下载 / 失败图标；
+/// - 状态：已看 = tertiary 实心对勾 + 整行内容降透明度（与「已下载」等其它
+///   状态图标一眼可分，反馈 wCgL364tgM）；下载 = 排队 / 转圈 / 已下载 / 失败
+///   图标；[statusIcons] 追加的状态。每枚状态图标都带 tooltip + 无障碍名称；
 /// - [current]：续看的那条整行 primaryContainer 高亮；
 /// - [selected] 非 null = 多选模式（行首对勾圆，点行切换选择）。
 class MediaDetailItemRow extends StatelessWidget {
@@ -1517,6 +1540,8 @@ class MediaDetailItemRow extends StatelessWidget {
     this.current = false,
     this.downloadState = MediaDetailDownloadState.none,
     this.downloadProgress,
+    this.statusIcons = const <MediaDetailStatusIcon>[],
+    this.completedLabel,
     this.trailing,
     this.selected,
     this.onTap,
@@ -1541,6 +1566,12 @@ class MediaDetailItemRow extends StatelessWidget {
   final bool current;
   final MediaDetailDownloadState downloadState;
   final double? downloadProgress;
+
+  /// 追加在下载状态之后的状态图标（各带 tooltip）。
+  final List<MediaDetailStatusIcon> statusIcons;
+
+  /// 「已看 / 已读」对勾的 tooltip 与无障碍名称；null = 通用「已完成」。
+  final String? completedLabel;
   final Widget? trailing;
   final bool? selected;
   final VoidCallback? onTap;
@@ -1575,6 +1606,10 @@ class MediaDetailItemRow extends StatelessWidget {
                   ? null
                   : _NumberPill(number: number!, current: current));
     final Widget? status = _buildStatus(context, cs, trailing != null);
+    // 已读 / 已看完：行首与文字整体降透明度（只降标题颜色时与未读几乎一样，
+    // 行尾对勾又和「已下载」图标形似，反馈 wCgL364tgM）。状态图标不降，保持可读。
+    final bool dimmed = completed && !current && selected == null;
+    final Duration motion = fushiMotionDuration(context, FushiMotion.short);
     return FushiGroupedListItem(
       index: index,
       count: count,
@@ -1592,56 +1627,80 @@ class MediaDetailItemRow extends StatelessWidget {
         child: Row(
           children: <Widget>[
             if (leadingSlot != null) ...<Widget>[
-              leadingSlot,
+              AnimatedOpacity(
+                opacity: dimmed ? kMediaDetailCompletedOpacity : 1,
+                duration: motion,
+                child: AnimatedSwitcher(
+                  duration: motion,
+                  transitionBuilder:
+                      (Widget child, Animation<double> animation) =>
+                          ScaleTransition(
+                            scale: animation,
+                            child: FadeTransition(
+                              opacity: animation,
+                              child: child,
+                            ),
+                          ),
+                  child: KeyedSubtree(
+                    key: ValueKey<bool>(selected != null),
+                    child: leadingSlot,
+                  ),
+                ),
+              ),
               const SizedBox(width: 14),
             ],
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  Text(
-                    title,
-                    maxLines: titleMaxLines,
-                    overflow: TextOverflow.ellipsis,
-                    style:
-                        (current
-                                ? type.titleMediumEmphasized
-                                : type.titleMedium)
-                            .copyWith(
-                              color: completed && !current ? fgVariant : fg,
-                            ),
-                  ),
-                  if (subtitle != null && subtitle.isNotEmpty) ...<Widget>[
-                    const SizedBox(height: 2),
+              child: AnimatedOpacity(
+                key: const ValueKey<String>('media-detail-item-content'),
+                opacity: dimmed ? kMediaDetailCompletedOpacity : 1,
+                duration: motion,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
                     Text(
-                      subtitle,
-                      maxLines: 2,
+                      title,
+                      maxLines: titleMaxLines,
                       overflow: TextOverflow.ellipsis,
-                      style: type.bodyMedium.copyWith(color: fgVariant),
+                      style:
+                          (current
+                                  ? type.titleMediumEmphasized
+                                  : type.titleMedium)
+                              .copyWith(
+                                color: completed && !current ? fgVariant : fg,
+                              ),
                     ),
-                  ],
-                  if (meta.isNotEmpty) ...<Widget>[
-                    const SizedBox(height: 2),
-                    Text(
-                      meta.join('  ·  '),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: type.labelMedium.tabular.copyWith(
-                        color: fgVariant,
+                    if (subtitle != null && subtitle.isNotEmpty) ...<Widget>[
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: type.bodyMedium.copyWith(color: fgVariant),
                       ),
-                    ),
-                  ],
-                  if (progress != null && progress > 0 && !completed)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: FushiLinearProgressIndicator(
-                        value: progress.clamp(0.0, 1.0),
-                        minHeight: 4,
-                        color: cs.primary,
+                    ],
+                    if (meta.isNotEmpty) ...<Widget>[
+                      const SizedBox(height: 2),
+                      Text(
+                        meta.join('  ·  '),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: type.labelMedium.tabular.copyWith(
+                          color: fgVariant,
+                        ),
                       ),
-                    ),
-                ],
+                    ],
+                    if (progress != null && progress > 0 && !completed)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: FushiLinearProgressIndicator(
+                          value: progress.clamp(0.0, 1.0),
+                          minHeight: 4,
+                          color: cs.primary,
+                        ),
+                      ),
+                  ],
+                ),
               ),
             ),
             if (status != null) ...<Widget>[const SizedBox(width: 8), status],
@@ -1655,49 +1714,94 @@ class MediaDetailItemRow extends StatelessWidget {
     );
   }
 
+  /// 一枚带 tooltip 的状态图标：悬停 / 长按出说明，读屏读 [label]。
+  ///
+  /// 无障碍名称显式给成 [Semantics.label]（图标本身没有语义，只靠 tooltip
+  /// 的 `tooltip` 语义属性时部分读屏只报「图像」）；tooltip 自己的语义关掉，
+  /// 免得同一句读两遍。
+  static Widget _labelled(String label, Widget icon, {Key? key}) => Semantics(
+    key: key,
+    label: label,
+    image: true,
+    child: FushiTooltip(
+      message: label,
+      excludeFromSemantics: true,
+      child: ExcludeSemantics(child: icon),
+    ),
+  );
+
   Widget? _buildStatus(BuildContext context, ColorScheme cs, bool hasTrailing) {
     final List<Widget> icons = <Widget>[
       if (completed)
-        FushiIcon(
-          FushiIcons.filled(FushiIcons.success),
-          key: const ValueKey<String>('media-detail-item-completed'),
-          size: 20,
-          color: isGlassDesign(context) ? cs.primary : cs.tertiary,
+        _labelled(
+          completedLabel ?? t.media_detail_status_completed,
+          FushiIcon(
+            FushiIcons.filled(FushiIcons.success),
+            key: const ValueKey<String>('media-detail-item-completed'),
+            size: 20,
+            color: isGlassDesign(context) ? cs.primary : cs.tertiary,
+          ),
         ),
       ...switch (downloadState) {
         MediaDetailDownloadState.none => const <Widget>[],
         MediaDetailDownloadState.queued => <Widget>[
-          FushiIcon(FushiIcons.pending, size: 20, color: cs.onSurfaceVariant),
+          _labelled(
+            t.media_detail_status_download_queued,
+            FushiIcon(FushiIcons.pending, size: 20, color: cs.onSurfaceVariant),
+          ),
         ],
         MediaDetailDownloadState.downloading => <Widget>[
           // 下载中行尾的下载钮会被撤掉：进度圈要落在它原来的 48dp 命中区
           // 中心（否则右偏 14dp 且只有 20dp 显得迷你）。有 trailing 时圈
           // 仍排在状态位，只放大到 24dp。
-          SizedBox.square(
-            key: const ValueKey<String>('media-detail-item-downloading'),
-            dimension: hasTrailing ? 24 : 48,
-            child: Center(
-              child: SizedBox.square(
-                dimension: 24,
-                child: FushiCircularProgressIndicator(
-                  value: downloadProgress,
-                  strokeWidth: 3,
+          _labelled(
+            t.media_detail_status_downloading,
+            SizedBox.square(
+              key: const ValueKey<String>('media-detail-item-downloading'),
+              dimension: hasTrailing ? 24 : 48,
+              child: Center(
+                child: SizedBox.square(
+                  dimension: 24,
+                  child: FushiCircularProgressIndicator(
+                    value: downloadProgress,
+                    strokeWidth: 3,
+                  ),
                 ),
               ),
             ),
           ),
         ],
+        // 已下载是中性的存储状态，不是「完成」：描边、onSurfaceVariant。此前
+        // 实心 primary 的 download_done（对勾 + 底线）与「已读」实心对勾形近色
+        // 近，未读章看起来也像打了勾（反馈 wCgL364tgM）。
         MediaDetailDownloadState.downloaded => <Widget>[
-          FushiIcon(
-            FushiIcons.filled(FushiIcons.downloadDone),
-            size: 20,
-            color: cs.primary,
+          _labelled(
+            t.media_detail_status_downloaded,
+            FushiIcon(
+              FushiIcons.downloadDone,
+              key: const ValueKey<String>('media-detail-item-downloaded'),
+              size: 20,
+              color: cs.onSurfaceVariant,
+            ),
           ),
         ],
         MediaDetailDownloadState.failed => <Widget>[
-          FushiIcon(FushiIcons.error, size: 20, color: cs.error),
+          _labelled(
+            t.media_detail_status_download_failed,
+            FushiIcon(FushiIcons.error, size: 20, color: cs.error),
+          ),
         ],
       },
+      for (final MediaDetailStatusIcon extra in statusIcons)
+        _labelled(
+          extra.label,
+          FushiIcon(
+            extra.icon,
+            size: 20,
+            color: extra.color ?? cs.onSurfaceVariant,
+          ),
+          key: extra.key,
+        ),
     ];
     if (icons.isEmpty) return null;
     return Row(
@@ -1711,6 +1815,10 @@ class MediaDetailItemRow extends StatelessWidget {
     );
   }
 }
+
+/// 已读 / 已看完行（[MediaDetailItemRow.completed]、非当前、非多选态）行首与
+/// 文字的透明度。
+const double kMediaDetailCompletedOpacity = 0.55;
 
 /// 序号胶囊：常态 secondaryContainer，续看那条 primary 实色。
 class _NumberPill extends StatelessWidget {

@@ -382,6 +382,8 @@ pub(crate) const COLUMNS: &[(&str, &[&str])] = &[
     ("sync2_self", &["profile_uid"]),
     ("sync2_tag_adds", &["profile_uid", "note"]),
     ("sync2_tag_order", &["profile_uid", "note"]),
+    ("sync2_trust", &["profile_uid"]),
+    ("sync2_trust_held", &["profile_uid", "entity"]),
 ];
 
 fn sql_err(e: rusqlite::Error) -> String {

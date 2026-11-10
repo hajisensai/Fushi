@@ -40,7 +40,9 @@ import 'package:fushi_engine/sync/subscriptions/host_subscription_routes.dart'
 import 'package:fushi_server/src/admin/admin_backups.dart';
 import 'package:fushi_server/src/admin/admin_srs.dart';
 import 'package:fushi_server/src/admin/admin_context.dart';
+import 'package:fushi_server/src/admin/admin_dictionaries.dart';
 import 'package:fushi_server/src/admin/resource_indexer_settings.dart';
+import 'package:fushi_server/src/admin/subtitle_provider_settings.dart';
 import 'package:fushi_server/src/anki_landing.dart';
 import 'package:fushi_server/src/admin/upload_store.dart';
 import 'package:fushi_server/src/config/server_ai_config.dart';
@@ -55,6 +57,7 @@ import 'package:fushi_server/src/video_scrape_host.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 import 'package:shelf/shelf.dart' as shelf;
+import 'package:fushi_server/src/server_language.dart';
 
 shelf.Response _json(Object body, {int status = 200}) => shelf.Response(
   status,
@@ -121,6 +124,9 @@ class AdminApi {
   /// 复习（SRS）端点（`/api/admin/srs*`，见 admin_srs.dart）。
   late final AdminSrs srs = AdminSrs(ctx);
 
+  /// 词典端点（`/api/admin/dictionaries*`，见 admin_dictionaries.dart）。
+  late final AdminDictionaries dictionaries = AdminDictionaries(ctx);
+
   Future<shelf.Response> _route(
     String method,
     String path,
@@ -132,6 +138,11 @@ class AdminApi {
     }
     if (path == kAdminSrsPath || path.startsWith('$kAdminSrsPath/')) {
       final shelf.Response? r = await srs.route(method, path, request);
+      if (r != null) return r;
+    }
+    if (path == kAdminDictionariesPath ||
+        path.startsWith('$kAdminDictionariesPath/')) {
+      final shelf.Response? r = await dictionaries.route(method, path, request);
       if (r != null) return r;
     }
     switch ((method, path)) {
@@ -599,7 +610,10 @@ class AdminApi {
     final bool result = await _ownerDevices.setOwnerDevicePeer(peerId, owner);
     if (owner && !result) {
       return _json(<String, Object?>{
-        'error': '该设备配对时没有证明设备钥匙（旧版客户端），不能标为「我的设备」；升级客户端后重新配对',
+        'error': tr(
+          '该设备配对时没有证明设备钥匙（旧版客户端），不能标为「我的设备」；升级客户端后重新配对',
+          'This device did not provide a device key when pairing (old client), so it cannot be marked as "my device". Upgrade the client and pair again',
+        ),
         'reason': 'device_key_unverified',
       }, status: 409);
     }
@@ -1274,7 +1288,7 @@ class AdminApi {
   }
 
   static String _ocrModelName(String key) => switch (key) {
-    'manga_ctc' => '漫画 CTC（快速）',
+    'manga_ctc' => tr('漫画 CTC（快速）', 'Manga CTC (fast)'),
     _ => key,
   };
 
@@ -1369,6 +1383,7 @@ class AdminApi {
     'lanRequiresPin': ctx.config.lanRequiresPin,
     'subtitleLanguage': ctx.config.subtitleLanguage,
     'metadataLocale': ctx.config.metadataLocale,
+    'language': ctx.config.language,
     'scanPrune': ctx.config.scanPrune,
     'scanScrape': ctx.config.scanScrape,
     'profileTransfer': ctx.config.profileTransfer,
@@ -1378,6 +1393,12 @@ class AdminApi {
     'lookupChineseScriptVariants': ctx.config.lookupChineseScriptVariants,
     // 与 qBittorrent 密码同样只报「设过没有」，不回显明文。
     'tmdbApiKeySet': (ctx.config.tmdbApiKey ?? '').isNotEmpty,
+    // 在线字幕来源（偏好表，与 app 同键）：key / 密码只报「设过没有」；保存即生效
+    // （下载管线每轮字幕阶段、补字幕每次请求现读）。
+    kSubtitleProvidersSettingsKey: subtitleProviderSettingsToJson(
+      ctx.host.prefs,
+      ctx.environment,
+    ),
     'ffmpeg': ctx.config.ffmpegPath,
     'ffprobe': ctx.config.ffprobePath,
     'onnxruntimeLibrary': ctx.config.ortLibraryPath,
@@ -1460,7 +1481,10 @@ class AdminApi {
     // 只拦「从关到开」：原本就开着（手写 yaml）时照常能保存别的项、也能关掉。
     if (p2p == true && !ctx.config.p2p && !ctx.host.p2pAvailable) {
       return _json(<String, Object?>{
-        'error': 'P2P 隧道不可用：没找到 libfushi_p2p（放在 bin/../lib/ 或设 FUSHI_P2P_LIB）',
+        'error': tr(
+          'P2P 隧道不可用：没找到 libfushi_p2p（放在 bin/../lib/ 或设 FUSHI_P2P_LIB）',
+          'P2P tunnel unavailable: libfushi_p2p not found (put it in bin/../lib/ or set FUSHI_P2P_LIB)',
+        ),
         'reason': 'p2p_unavailable',
       }, status: 409);
     }
@@ -1468,6 +1492,14 @@ class AdminApi {
       body['ai'],
       ctx.config.ai,
     );
+    // 字幕来源先整体校验（非法 → 400，什么都不写），配置文件落盘之后再写偏好。
+    final SubtitleProviderSettingsUpdate? subtitleProviders =
+        body[kSubtitleProvidersSettingsKey] == null
+        ? null
+        : parseSubtitleProviderSettings(
+            body[kSubtitleProvidersSettingsKey],
+            ctx.host.prefs,
+          );
     final ServerConfig next = ctx.config.copyWith(
       deviceName: body['deviceName']?.toString(),
       port: body['port'] is num ? (body['port'] as num).toInt() : null,
@@ -1478,6 +1510,7 @@ class AdminApi {
           : null,
       subtitleLanguage: body['subtitleLanguage']?.toString(),
       metadataLocale: body['metadataLocale']?.toString(),
+      language: ServerConfig.parseLanguage(body['language']),
       ffmpegPath: body['ffmpeg']?.toString(),
       ffprobePath: body['ffprobe']?.toString(),
       ortLibraryPath: body['onnxruntimeLibrary']?.toString(),
@@ -1514,6 +1547,7 @@ class AdminApi {
       clearAi: ai?.clear ?? false,
     );
     await ctx.updateConfig(next);
+    await subtitleProviders?.apply(ctx.host.prefs);
     return _settings();
   }
 

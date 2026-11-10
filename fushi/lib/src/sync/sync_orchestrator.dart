@@ -1,3 +1,4 @@
+import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 
@@ -32,6 +33,12 @@ import 'package:fushi/src/sync/font_sync.dart';
 import 'package:fushi/src/sync/interconnect_book_progress_sync.dart';
 import 'package:fushi/src/sync/interconnect_playback_position_sync.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
+import 'package:fushi/src/sync/remote_audiobook_revision.dart'
+    show remoteAudiobookRevisionKeyForBook;
+import 'package:fushi/src/sync/remote_audiobook_revision_store.dart'
+    show
+        forgetRemoteAudiobookRevisionAfterPush,
+        recordRemoteAudiobookPackageDownload;
 import 'package:fushi_engine/sync/override_title_lookup.dart';
 import 'package:fushi_engine/sync/interconnect_service_config.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
@@ -44,9 +51,11 @@ import 'package:fushi_engine/sync/sync_asset_store.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_remote_listing.dart';
 import 'package:fushi/src/sync/sync_manager.dart';
+import 'package:fushi/src/sync/sync_module_gate.dart';
 import 'package:fushi/src/sync/settings_sync.dart';
 import 'package:fushi/src/sync/sync_progress.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi/src/sync/sync_resource_locks.dart';
 import 'package:fushi/src/sync/sync_state_apply_lock.dart';
 import 'package:fushi_engine/sync/ttu_filename.dart';
 import 'package:fushi_engine/sync/online_novel_book.dart';
@@ -257,6 +266,12 @@ class SyncConflict {
 /// they are neither failures nor transfers, so they never feed `booksImported`
 /// nor `errors`.
 class SyncRunReport {
+  /// [onError]：每记下一条 [errors] 就同步回调一次（同步任务面板据此实时显示每项的
+  /// 失败，反馈 kM-Gb_Xnu-）。不论错误是经 [noteError] 还是直接 `errors.add` 进来的
+  /// 都会回调——观察点在列表本身，漏不掉。
+  SyncRunReport({void Function(String error)? onError})
+    : errors = _ObservedErrorList(onError);
+
   int booksImported = 0;
   int dictionariesImported = 0;
   int dictionariesExported = 0;
@@ -285,6 +300,42 @@ class SyncRunReport {
   /// play time, whereas the shelf progress bar is a cached snapshot of
   /// reader_positions).
   int localBookProgressPulled = 0;
+
+  /// 本轮互联进度 / 断点 sweep 里**位置真的挪动了**的条目数，按种类、按方向
+  /// （BUG-4302）。`*Received` = host 的位置落到了本机（applyRemote 落地），
+  /// `*Sent` = 本机的位置推给了 host（pushLocal）。两端位置相同、只对齐时间戳的
+  /// 条目不计——那不是一次「变化」。
+  ///
+  /// 此前报告只有内容 / 文件传输的计数，进度类改动不进任何计数，于是一轮只同步了
+  /// 播放断点 / 阅读进度的手动同步摘要显示「无变化」。[localBookProgressPulled] 是
+  /// 书架刷新信号（含只对齐时间戳的情形），不能拿来当摘要计数。
+  int bookProgressReceived = 0;
+  int bookProgressSent = 0;
+  int videoPositionsReceived = 0;
+  int videoPositionsSent = 0;
+  int audiobookPositionsReceived = 0;
+  int audiobookPositionsSent = 0;
+
+  /// 记一次播放断点落到本机（[received] = true）或推给 host（false）。
+  void notePlaybackPositionMoved(
+    PlaybackPositionKind kind, {
+    required bool received,
+  }) {
+    switch (kind) {
+      case PlaybackPositionKind.video:
+        if (received) {
+          videoPositionsReceived++;
+        } else {
+          videoPositionsSent++;
+        }
+      case PlaybackPositionKind.audiobook:
+        if (received) {
+          audiobookPositionsReceived++;
+        } else {
+          audiobookPositionsSent++;
+        }
+    }
+  }
 
   /// Per-book metadata/cover files that had spilled directly into the sync root
   /// and were swept back out this run (BUG-619 re-report / TODO-1340). Purely a
@@ -323,7 +374,7 @@ class SyncRunReport {
   /// 本机（落地设备）经跨设备中转新收到、待交给 Anki 的卡数。
   int pendingMinesReceived = 0;
 
-  final List<String> errors = <String>[];
+  final List<String> errors;
 
   /// XVEF3huDTF：本轮各阶段耗时（毫秒，按执行顺序）。慢同步的反馈只附带错误日志，
   /// 看不出时间花在哪一步；[SyncOrchestrator.run] 跑完把它连同最慢的几本书写进
@@ -436,6 +487,12 @@ class SyncRunReport {
     fontsExported += other.fontsExported;
     videosExported += other.videosExported;
     localBookProgressPulled += other.localBookProgressPulled;
+    bookProgressReceived += other.bookProgressReceived;
+    bookProgressSent += other.bookProgressSent;
+    videoPositionsReceived += other.videoPositionsReceived;
+    videoPositionsSent += other.videoPositionsSent;
+    audiobookPositionsReceived += other.audiobookPositionsReceived;
+    audiobookPositionsSent += other.audiobookPositionsSent;
     rootSpillFilesRemoved += other.rootSpillFilesRemoved;
     collectionsUpdated += other.collectionsUpdated;
     tagsUpdated += other.tagsUpdated;
@@ -577,6 +634,39 @@ enum SyncAssetKind {
 /// 下载」动作驱动（[runAssetTransferOnly]），方向由用户在点击时给出，而不是从一个
 /// 开关反推。互联通道的词典也一样：原来的「上传词典到互联对端」自动 union 开关已删除
 /// （BUG-2762）。
+/// [SyncRunReport.errors] 的实现：普通列表，外加「每加一条就回调」。
+class _ObservedErrorList extends ListBase<String> {
+  _ObservedErrorList(this._onAdd);
+
+  final void Function(String error)? _onAdd;
+  final List<String> _items = <String>[];
+
+  @override
+  int get length => _items.length;
+
+  @override
+  set length(int value) => _items.length = value;
+
+  @override
+  String operator [](int index) => _items[index];
+
+  @override
+  void operator []=(int index, String value) => _items[index] = value;
+
+  @override
+  void add(String element) {
+    _items.add(element);
+    _onAdd?.call(element);
+  }
+
+  @override
+  void addAll(Iterable<String> iterable) {
+    for (final String e in iterable) {
+      add(e);
+    }
+  }
+}
+
 class SyncOrchestrator {
   SyncOrchestrator({
     required FushiDatabase db,
@@ -600,7 +690,9 @@ class SyncOrchestrator {
     this.fontSync,
     this.statsSyncMode = StatisticsSyncMode.merge,
     this.onProgress,
+    this.onError,
     this.pendingMineRelay,
+    this.cancellation = SyncCancellation.never,
     AggregatePeerSnapshotCache? remoteManifestMirror,
   }) : _db = db,
        _manifestMirror =
@@ -675,6 +767,19 @@ class SyncOrchestrator {
   /// 测试构造）。
   final PendingMineRelay? pendingMineRelay;
 
+  /// 本轮的取消信号（「同步与备份 + 互联」模块途中被关掉，`sync_module_gate.dart`）。
+  final SyncCancellation cancellation;
+
+  /// 安全检查点：已取消则抛 [SyncCancelledException]。
+  ///
+  /// 只放在「上一项已完整落地、下一项还没开始」的位置——阶段之间、逐项循环的循环头
+  /// （在逐项 try 之外，不会被逐项 catch 吞掉）。中止留下的状态与网络失败在同一处
+  /// 抛错同形：锁与临时文件由各自的 finally 收拾，冷却戳 `lastSyncMs` 只在整轮
+  /// 跑完才写。整段 try/catch 吞错的阶段在 catch 前先放行它（`on
+  /// SyncCancelledException { rethrow; }`），否则取消会被记成一条阶段错误、流水线
+  /// 接着往下跑。
+  void _checkpoint() => cancellation.throwIfCancelled();
+
   /// 收藏词 / 收藏句是否参与聚合同步。互联通道由「共享收藏夹」开关驱动，与
   /// [syncStats] 互相独立；云通道两者同源（见 [ChannelSyncFlags.syncFavorites]）。
   /// 默认 true：省略该参数的既有调用点行为不变。
@@ -720,6 +825,9 @@ class SyncOrchestrator {
   /// which keeps its old silent behaviour.
   final SyncProgressCallback? onProgress;
 
+  /// 本轮每记下一条失败就回调一次（见 [SyncRunReport.new] 的 onError）。
+  final void Function(String error)? onError;
+
   void _emit(
     SyncPhase phase, {
     required int itemIndex,
@@ -727,6 +835,7 @@ class SyncOrchestrator {
     String? title,
     double? fileFraction,
     int? fileBytes,
+    SyncItemKind? itemKind,
   }) {
     final cb = onProgress;
     if (cb == null) return;
@@ -736,6 +845,7 @@ class SyncOrchestrator {
         itemIndex: itemIndex,
         itemTotal: itemTotal,
         title: title,
+        itemKind: itemKind,
         fileFraction: fileFraction,
         bytesPerSecond: fileBytes == null
             ? null
@@ -786,7 +896,7 @@ class SyncOrchestrator {
   /// Existing local books still go through [SyncManager], so progress,
   /// statistics, and audiobook-position conflicts remain visible.
   Future<SyncRunReport> run() async {
-    final SyncRunReport report = SyncRunReport();
+    final SyncRunReport report = SyncRunReport(onError: onError);
     // XVEF3huDTF：分阶段计时。每个 [mark] 把「上一个 mark 到此刻」记成一个阶段。
     final Stopwatch total = Stopwatch()..start();
     int lastMarkMs = 0;
@@ -802,6 +912,7 @@ class SyncOrchestrator {
     // 逐本问。每本书之后走的判定逻辑一字未改，也没有任何「快照说没变所以跳过」的
     // 中间结论——跳过是单边不安全的操作，一旦所依赖的结论与远端实情不符，漏掉的
     // 那次对端更新会被本地 LWW 覆盖掉，那是丢数据而不是慢。
+    _checkpoint();
     _emitPhaseStart(SyncPhase.remoteListing);
     final String root = await _backend.findOrCreateRootFolder();
     final SyncBackend backend = _backend;
@@ -823,10 +934,12 @@ class SyncOrchestrator {
     // sweep so a spilled `progress_*` in the root can't be mistaken for a book's
     // remote state.
     mark('resolve+listing');
+    _checkpoint();
     await pruneRootSpill(root, report);
     mark('pruneRootSpill');
 
     if (isInterconnect) {
+      _checkpoint();
       await _syncServiceConfigLive(report, b);
       // 互联内容（EPUB / 漫画包）走 live 端点，书籍或漫画任一开关开时执行，进去后
       // 按格式各看各的开关。
@@ -834,6 +947,7 @@ class SyncOrchestrator {
         await _syncBooksContentLive(report, b);
       }
       mark('serviceConfig+booksContentLive');
+      _checkpoint();
       // 书进度 live 紧跟书内容之后（反馈 kM-Gb_Xnu-）：它只依赖上一步把本机独有书
       // 推成 host 书（host 的 putBookProgress 对不在库的书是 no-op），与有声书 /
       // 视频**文件**上传毫无关系。此前它排在那两段大文件上传之后，视频一多，读完
@@ -854,6 +968,7 @@ class SyncOrchestrator {
     CloudDeletionTombstoneScan? cloudTombstoneScan;
     Set<String> cloudVetoedBookKeys = const <String>{};
     if (!isInterconnect) {
+      _checkpoint();
       cloudTombstoneScan = await _scanCloudDeletionTombstones(report);
       if (cloudTombstoneScan != null) {
         cloudVetoedBookKeys = await _cloudPushVetoedBookKeys(
@@ -909,6 +1024,7 @@ class SyncOrchestrator {
                 itemIndex: readingDone,
                 itemTotal: readingTotal,
                 title: readingTitle,
+                itemKind: SyncItemKind.book,
                 fileFraction: f,
                 fileBytes: b,
               ),
@@ -922,6 +1038,9 @@ class SyncOrchestrator {
               observations: bookFolderNames,
               skipBookKeys: cloudVetoedBookKeys,
               onBookProgress: (int done, int itemTotal, String title) {
+                // 安全检查点：在 [SyncManager.syncAllBooks] 的循环头、拿这本书的
+                // 锁之前回调，上一本已整本落地。
+                _checkpoint();
                 settleReadingBook();
                 readingBookStartMs = total.elapsedMilliseconds;
                 readingDone = done;
@@ -932,10 +1051,13 @@ class SyncOrchestrator {
                   itemIndex: done,
                   itemTotal: itemTotal,
                   title: title,
+                  itemKind: SyncItemKind.book,
                 );
               },
             );
       } on SyncAuthError {
+        rethrow;
+      } on SyncCancelledException {
         rethrow;
       } catch (e) {
         report.errors.add('books: $e');
@@ -955,6 +1077,7 @@ class SyncOrchestrator {
     // 生产侧的自动 sweep 恒传 [syncDictionary]=false（两条通道的词典都改由设置页的
     // 显式上传 / 下载驱动，见 [runAssetTransferOnly]，BUG-2762）；这里只剩编排器自身
     // 能力。
+    _checkpoint();
     if (syncDictionary) {
       await syncDictionaries(report, direction: SyncAssetDirection.both);
       mark('dictionaries');
@@ -984,6 +1107,7 @@ class SyncOrchestrator {
       if (syncVideoFiles) await syncVideoAssets(report);
     }
     mark('audiobook+videoFiles');
+    _checkpoint();
 
     // 互联视频 + 有声书进度走 live 端点双向同步（TODO-767；书籍进度见上，紧跟书
     // 内容阶段）。
@@ -1023,6 +1147,7 @@ class SyncOrchestrator {
       await _syncAggregate(report);
     }
     mark('aggregate');
+    _checkpoint();
 
     // 可移植设置（反馈 AWp-0BtDDv）：云与互联同走资产层 `__settings__/` 按设备分文件。
     if (syncSettings && deviceId.isNotEmpty) {
@@ -1038,6 +1163,7 @@ class SyncOrchestrator {
     //   __collections__ 资产（互联 backend 的资产层是 live 端点适配，语义不同）。
     // 两条通道调用同一 CollectionSyncEngine.merge / applyCollectionLocalChanges，
     // 成员并集 + 移出/删除墓碑 + 手动序整合集 LWW，仅通道不同。
+    _checkpoint();
     _emitPhaseStart(SyncPhase.collections);
     if (isInterconnect) {
       await _syncCollectionsLive(report, b);
@@ -1056,6 +1182,7 @@ class SyncOrchestrator {
     // 删除传播墓碑（显式确认式）：发布本机未发布删除标记 + 消费远端标记算 deleteLocal
     // 候选（塞 report，UI 弹逐条确认）。放合集之后、冷却戳之前：本地在库键此刻最稳定，
     // 且中断则下轮重跑。基线不在此推进（见 syncDeletionTombstones 文档）。
+    _checkpoint();
     _emitPhaseStart(SyncPhase.deletions);
     if (isInterconnect) {
       await _syncDeletionTombstonesLive(report, b);
@@ -1071,6 +1198,7 @@ class SyncOrchestrator {
     // 错误，不打断本轮——卡都还在各自设备的本地队列里，下一轮再传。阶段名只在中转
     // 真要碰远端时才公布：本机没认领落地、也没有要中转的卡时它一个请求都不发，
     // 挂出「同步待发制卡」只会让用户以为每轮都在传卡。
+    _checkpoint();
     final PendingMineRelay? relay = pendingMineRelay;
     if (relay != null) {
       try {
@@ -1091,6 +1219,9 @@ class SyncOrchestrator {
     // 冷却窗（[_syncCooldownMs]）压制、整轮重试——即「同步没完成就丢弃中间态、下次
     // 启动再同步」。此前该时间戳写在 SyncManager.syncAllBooks 书阶段末尾（sweep 中途），
     // 书阶段后被打断的残缺同步会误记冷却、错误地压制下次重试。
+    // 模块途中被关掉的一轮不算跑完：最后一道检查点必须在写冷却戳之前（上面的
+    // 待发制卡中转会吞掉自己阶段里的错误，取消信号到这里才兑现）。
+    _checkpoint();
     await SyncRepository(
       _db,
     ).setLastSyncMs(_scope, DateTime.now().millisecondsSinceEpoch);
@@ -1149,8 +1280,9 @@ class SyncOrchestrator {
   /// 自捕获异常进 [SyncRunReport.errors]。**不写** lastSyncMs 冷却戳——那是完整
   /// sweep 的语义（TODO-1332），轻量路径不得压制下一次 app-open 全量同步。
   Future<SyncRunReport> runCollectionsOnly() async {
-    final SyncRunReport report = SyncRunReport();
+    final SyncRunReport report = SyncRunReport(onError: onError);
     final SyncBackend b = _backend;
+    _checkpoint();
     if (b is InterconnectSyncBackend) {
       // 合集防抖轻量路径同步合集 + 标签（标签增删同一个观察者触发，见
       // installCollectionsSyncWatcher）；刮削元数据整库拉取留给完整 sweep（审查 #4）。
@@ -1179,13 +1311,15 @@ class SyncOrchestrator {
     required SyncAssetKind kind,
     required SyncAssetDirection direction,
   }) async {
-    final SyncRunReport report = SyncRunReport();
+    final SyncRunReport report = SyncRunReport(onError: onError);
     // 字体两条通道都走同步根下的 `__fonts__` 命名空间（互联 host 的 WebDAV 存储同样
     // 提供它），所以不论通道都要先解析根；词典 / 本地音频的互联路径直打 live 端点、
     // 不需要根。
+    _checkpoint();
     if (_backend is! InterconnectSyncBackend || kind == SyncAssetKind.fonts) {
       await _backend.findOrCreateRootFolder();
     }
+    _checkpoint();
     switch (kind) {
       case SyncAssetKind.dictionary:
         await syncDictionaries(report, direction: direction);
@@ -1929,6 +2063,8 @@ class SyncOrchestrator {
       int index = 0;
 
       for (final VideoBookRow v in localVideos) {
+        // 安全检查点：上一项已完整落地，这一项还没开始。
+        _checkpoint();
         _emit(
           SyncPhase.videos,
           itemIndex: index,
@@ -2038,6 +2174,8 @@ class SyncOrchestrator {
           merged.toJson(),
         );
       }
+    } on SyncCancelledException {
+      rethrow;
     } catch (e) {
       report.noteError('video assets sync', e);
     }
@@ -2088,6 +2226,8 @@ class SyncOrchestrator {
 
     for (int i = 0; i < total; i++) {
       final SyncFileRef folder = toImport[i];
+      // 安全检查点：上一项已完整落地，这一项还没开始。
+      _checkpoint();
       _emit(
         SyncPhase.books,
         itemIndex: i,
@@ -2236,6 +2376,8 @@ class SyncOrchestrator {
 
     // Push local-only.
     for (final LocalAudioDbEntry d in toPush) {
+      // 安全检查点：上一项已完整落地，这一项还没开始。
+      _checkpoint();
       _emit(
         SyncPhase.localAudio,
         itemIndex: index,
@@ -2277,6 +2419,8 @@ class SyncOrchestrator {
 
     // Pull remote-only.
     for (final AssetEntry e in toPull) {
+      // 安全检查点：上一项已完整落地，这一项还没开始。
+      _checkpoint();
       _emit(
         SyncPhase.localAudio,
         itemIndex: index,
@@ -2349,6 +2493,8 @@ class SyncOrchestrator {
     for (int i = 0; i < total; i++) {
       final EpubBookRow book = work[i].book;
       final SrtBookRow srt = work[i].srt;
+      // 安全检查点：上一项已完整落地，这一项还没开始。
+      _checkpoint();
       _emit(
         SyncPhase.audiobooks,
         itemIndex: i,

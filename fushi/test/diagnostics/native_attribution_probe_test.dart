@@ -77,7 +77,7 @@ ffffffffff600000-ffffffffff601000 r-xp 00000000 00:00 0                  [vsysca
     });
   });
 
-  test('smaps 按映射组累计 Rss，文件映射按文件名', () {
+  test('smaps 按映射组累计 Rss，文件映射按「上级目录/文件名」', () {
     const String smaps = '''
 7000000000-7000100000 rw-p 00000000 00:00 0                              [anon:scudo:secondary]
 Size:               1024 kB
@@ -86,7 +86,39 @@ Rss:                1024 kB
 Rss:                 512 kB
 7300000000-7300100000 r--s 00000000 fd:01 99                             /data/user/0/app/srs.db
 Rss:                2048 kB
+7400000000-7400300000 r--s 00000000 fd:01 100                            /data/user/0/app/dicts/jmdict/blobs.bin
+Rss:                3072 kB
+7500000000-7500100000 r--s 00000000 fd:01 101                            /data/user/0/app/dicts/daijirin/blobs.bin
+Rss:                1024 kB
 ''';
-    expect(describeSmapsRss(smaps), 'srs.db 2.0MB; scudo:secondary 1.5MB');
+    // 词典各自一个目录、文件名相同：只按文件名归组会把几本词典并成一项，看不出是哪本。
+    expect(
+      describeSmapsRss(smaps),
+      'jmdict/blobs.bin 3.0MB; app/srs.db 2.0MB; scudo:secondary 1.5MB; '
+      'daijirin/blobs.bin 1.0MB',
+    );
+  });
+
+  test('#hw7f_pogDW：malloc 不高、文件映射常驻越档也要 dump，每档只一次', () {
+    resetNativeAttributionProbe();
+    addTearDown(resetNativeAttributionProbe);
+    // 那份报告：malloc=72MB、file=2300MB。
+    expect(nativeAttributionDumpTrigger(72, 900), isNull);
+    expect(nativeAttributionDumpTrigger(72, 2300), 'file≥1024MB');
+    expect(nativeAttributionDumpTrigger(72, 2300), 'file≥2048MB');
+    expect(nativeAttributionDumpTrigger(72, 2300), isNull);
+    // malloc 越档优先于文件档，且两套档位各记各的。
+    expect(nativeAttributionDumpTrigger(900, 2300), 'malloc≥800MB');
+    expect(nativeAttributionDumpTrigger(900, null), isNull);
+    expect(nativeAttributionDumpTrigger(null, null), isNull);
+  });
+
+  test('RssFile 读数：kB → MB，缺行返回 null', () {
+    expect(
+      parseProcStatusFileRssMb('VmRSS:\t2610176 kB\nRssFile:\t 2355200 kB\n'),
+      2300,
+    );
+    expect(parseProcStatusFileRssMb('VmRSS:\t1 kB\n'), isNull);
+    expect(parseProcStatusFileRssMb(null), isNull);
   });
 }

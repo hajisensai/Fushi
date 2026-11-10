@@ -381,6 +381,9 @@ class ShortcutDefaults {
     ShortcutAction.videoToggleFavoriteSentence: _kb([
       _key(LogicalKeyboardKey.keyD, {ModifierKey.ctrl}),
     ]),
+    // 统计侧栏 / 停续学习计时：I / P 在 video 组已被占（快进 / 播放暂停），默认空绑定。
+    ShortcutAction.videoOpenStatistics: const ShortcutBindingSet(),
+    ShortcutAction.videoToggleStudyClock: const ShortcutBindingSet(),
     // 手柄/键盘字级选词查词（对齐阅读器 readerEnterCaret）：进入后 D-pad/方向键移
     // 光标、A/Enter 查词、B/Esc 退出（激活期按键在视频页先于注册表截获）。默认
     // Enter + Select——video 组内两个空闲位；纯手柄用户由此第一次获得视频查词入口
@@ -400,6 +403,19 @@ class ShortcutDefaults {
     ShortcutAction.videoLookupPrevWord: const ShortcutBindingSet(),
     // 循环当前句开关（Ix4j5SKUth）：默认空绑定，用户自配（见 shortcut_action）。
     ShortcutAction.videoToggleLoopCurrentSubtitle: const ShortcutBindingSet(),
+    // 逐句学习工具（副屏 S6）：键盘 Ctrl+Shift+R / P / B（video 组内空闲：裸 R /
+    // Shift+R 是重播当前 / 上一句，Ctrl+Shift 只占了 ← / →）；macOS 表自动换成
+    // ⌘⇧R / P / B。手柄**留空**——video scope 的手柄键位已占满，手柄用户走副屏视频
+    // 面板的逐句学习按钮，或在快捷键设置里自配。
+    ShortcutAction.videoReplayCueThenPause: _kb([
+      _key(LogicalKeyboardKey.keyR, {ModifierKey.ctrl, ModifierKey.shift}),
+    ]),
+    ShortcutAction.videoToggleAutoPauseAtCueEnd: _kb([
+      _key(LogicalKeyboardKey.keyP, {ModifierKey.ctrl, ModifierKey.shift}),
+    ]),
+    ShortcutAction.videoToggleAbLoop: _kb([
+      _key(LogicalKeyboardKey.keyB, {ModifierKey.ctrl, ModifierKey.shift}),
+    ]),
     // 复制当前台词主 / 副（_Eb0txdN4H）：默认空绑定，用户自配（见 shortcut_action）。
     ShortcutAction.videoCopyCurrentSubtitle: const ShortcutBindingSet(),
     ShortcutAction.videoCopyCurrentSecondarySubtitle:
@@ -460,6 +476,10 @@ class ShortcutDefaults {
         ModifierKey.ctrl,
       }),
     ]),
+    // 统计侧栏 I / 停续学习计时 P：与小说 readerOpenStatistics / readerToggleStudyClock
+    // 同键（manga scope 内未被占用；与 reader 组分属不同 co-active 组）。手柄留空。
+    ShortcutAction.mangaOpenStatistics: _kb([_key(LogicalKeyboardKey.keyI)]),
+    ShortcutAction.mangaToggleStudyClock: _kb([_key(LogicalKeyboardKey.keyP)]),
     ShortcutAction.videoReplayCurrentSubtitle: _kb(
       [_key(LogicalKeyboardKey.keyR)],
       [_gLT],

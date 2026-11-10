@@ -45,6 +45,7 @@ IconData lyricsControlItemIcon(LyricsControlItem item) => switch (item) {
   LyricsControlItem.swapSides => FushiIcons.swap,
   LyricsControlItem.positionJump => FushiIcons.myLocation,
   LyricsControlItem.jumpHistory => FushiIcons.history,
+  LyricsControlItem.avSync => FushiIcons.sync,
 };
 
 /// 歌词按钮的名称（编辑器 chip / 菜单 / 无障碍语义）。
@@ -59,6 +60,7 @@ String lyricsControlItemLabel(LyricsControlItem item) => switch (item) {
   LyricsControlItem.swapSides => t.lyrics_layout_swap_sides,
   LyricsControlItem.positionJump => t.lyrics_control_item_position_jump,
   LyricsControlItem.jumpHistory => t.media_jump_history_title,
+  LyricsControlItem.avSync => t.av_sync,
 };
 
 String _zoneLabel(LyricsControlSlot slot) => switch (slot) {
@@ -609,8 +611,11 @@ class _LyricsControlsPreview extends StatelessWidget {
 
   List<FushiToolbarItem> _items(LyricsControlSlot slot) => <FushiToolbarItem>[
     for (final LyricsControlItem i in layout.itemsIn(slot))
-      // 左右互换只在宽屏双栏渲染：窄屏预览与运行时一致，不画它。
-      if (!(compact && i == LyricsControlItem.swapSides))
+      // 左右互换只在宽屏双栏渲染、书籍模式在窄屏是顶栏固定件：窄屏预览与
+      // 运行时一致，不画它们。
+      if (!(compact &&
+          (i == LyricsControlItem.swapSides ||
+              i == LyricsControlItem.bookMode)))
         FushiToolbarItem(
           icon: lyricsControlItemIcon(i),
           label: lyricsControlItemLabel(i),

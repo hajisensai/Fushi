@@ -21,6 +21,7 @@ import 'package:fushi/src/floating_ball/screen_ocr_card_image.dart';
 import 'package:fushi/src/lookup/global_lookup_log.dart';
 import 'package:fushi/src/lookup/overlay_stat_source.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/toast_severity.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi/src/pages/implementations/dictionary_webview_media.dart';
@@ -486,15 +487,28 @@ Future<Map<String, Object?>> _mineEntry(
   if (recordStats && described.record) {
     unawaited(_recordMinedStats(model, fields, outcome.noteId, sentence));
   }
+  return overlayMineReply(outcome, described);
+}
+
+/// app 外浮窗（全局查词 / 剪贴板面板 / 截屏识字）制卡的回包：popup.js 形状的
+/// `{ankiConnect, noteId, ...}`，外加一句要在浮窗按钮旁就地说的话（`message`）。
+///
+/// - 失败：`described.message` 是 [describeMineOutcome] 算出的原因。BUG-1908：app 外的裸浮窗连
+///   Flutter toast 都没有（FushiToast 在拿不到 Overlay 时直接 return），此前失败就是纯静默。
+/// - 成功但结果带了提示（[MineOutcome.notice]，如「保存到」被主机退回默认）：只回这句提示，
+///   浮窗的 ➕→✓ 已经表达了成功。这条路径宿主不弹结果 toast，提示不回浮窗就无处可见（BUG-4287）。
+Map<String, Object?> overlayMineReply(
+  MineOutcome outcome,
+  ({String message, bool success, bool record, MineToastStatus status})
+  described,
+) {
   final MinePopupResult reply = described.success
       ? MinePopupResult.mined(outcome)
       : MinePopupResult.failed(outcome, message: described.message);
+  final String? hint = described.success ? outcome.notice : described.message;
   return <String, Object?>{
     ...reply.toJson(),
-    // BUG-1908：失败原因必须回到浮窗。app 外的裸浮窗连 Flutter toast 都没有
-    // （FushiToast 在拿不到 Overlay 时直接 return），此前失败就是纯静默。
-    if (!described.success && described.message.isNotEmpty)
-      'message': described.message,
+    if (hint != null && hint.isNotEmpty) 'message': hint,
   };
 }
 

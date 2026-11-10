@@ -102,6 +102,16 @@
         backdrop-filter: var(--fushi-mat-filter);
     }
 
+    /* 字幕遮布「模糊」外观（subtitle-mask.js）：糊掉背后的硬字幕，画面轮廓仍在。半径由 JS 写进
+       --fushi-mask-blur（设置里的模糊强度）；薄薄一层 scrim 压一下亮度，白字硬字幕糊开后不再是一团亮斑。
+       不支持 backdrop-filter 时停在段外的不透明 scrim（照样遮得住）。这是遮挡功能而非装饰材质，
+       所以「减少透明度」下不撤（撤了等于把用户要遮的字幕露出来）。 */
+    html #fushi-subtitle-mask[data-appearance="blur"] {
+        background: color-mix(in srgb, var(--fushi-scrim) 24%, transparent);
+        -webkit-backdrop-filter: blur(var(--fushi-mask-blur, 16px));
+        backdrop-filter: blur(var(--fushi-mask-blur, 16px));
+    }
+
     @media (prefers-reduced-transparency: reduce) {
         :host([data-fushi-glass]) {
             -webkit-backdrop-filter: none;
@@ -629,6 +639,185 @@
     opacity: 0.82;
     text-shadow: 0 1px 2px #000;
     user-select: none;
+}
+
+/* 字幕遮布（subtitle-mask.js）：盖住视频里烧录的硬字幕。几何由 JS 独占——left/top/position 走
+   video-target.js 视频锚定（内联 !important），width/height 按「画面内容区」比例折成 px 也写成内联
+   !important；其余几何属性在这里钉回默认，全屏时挂进站点全屏元素也不吃站点的通配子元素规则。
+   层级：比字幕覆盖层（2147483637）低一级、同一挂载点 → Fushi 字幕永远压在遮布上面可读可查词；
+   平时 pointer-events:none，不拦点画面 / 查词 / 站点控件。 */
+#fushi-subtitle-mask {
+    position: fixed;
+    z-index: 2147483636;
+    display: block;
+    box-sizing: border-box;
+    right: auto !important;
+    bottom: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    min-width: 0 !important;
+    min-height: 0 !important;
+    max-width: none !important;
+    max-height: none !important;
+    aspect-ratio: auto !important;
+    float: none !important;
+    transform: none !important;
+    border-radius: 6px;
+    /* 纯色与「模糊不可用」的共同底：scrim-strong（明暗两态都是深色，压在任何画面上都稳定）。 */
+    background: var(--fushi-scrim-strong);
+    pointer-events: none;
+    user-select: none;
+}
+
+/* 纯色外观：不透明度由 JS 写进 --fushi-mask-alpha（0..1）。 */
+#fushi-subtitle-mask[data-appearance="solid"] {
+    background: color-mix(in srgb, var(--fushi-scrim-strong) calc(var(--fushi-mask-alpha, 0.9) * 100%), transparent);
+}
+
+/* 相对颜色语法能把 scrim 的 alpha 换成用户的不透明度（100% = 完全不透明）；不支持时停在上面的
+   color-mix（上限是 scrim-strong 自带的 0.92）。 */
+@supports (color: rgb(from red r g b / 50%)) {
+    #fushi-subtitle-mask[data-appearance="solid"] {
+        background: rgb(from var(--fushi-scrim-strong) r g b / var(--fushi-mask-alpha, 0.9));
+    }
+}
+
+/* 编辑模式：可拖可缩放，临时升到字幕覆盖层之上（把手不被字幕挡住）；虚线框用 on-scrim 浅色，
+   深浅画面上都看得见。 */
+#fushi-subtitle-mask[data-editing] {
+    z-index: 2147483638;
+    pointer-events: auto;
+    cursor: move;
+    touch-action: none;
+    outline: 2px dashed var(--fushi-on-scrim);
+    outline-offset: -1px;
+}
+
+#fushi-subtitle-mask[data-editing][data-dragging] {
+    cursor: grabbing;
+}
+
+/* 四角四边的缩放把手：可见圆点 12px、命中区 28px（触屏放大到 40px）。 */
+#fushi-subtitle-mask .fushi-subtitle-mask-handle {
+    display: none;
+    position: absolute;
+    box-sizing: border-box;
+    width: 28px;
+    height: 28px;
+    margin: -14px 0 0 -14px;
+    touch-action: none;
+}
+
+#fushi-subtitle-mask[data-editing] .fushi-subtitle-mask-handle {
+    display: block;
+}
+
+#fushi-subtitle-mask .fushi-subtitle-mask-handle::before {
+    content: "";
+    position: absolute;
+    inset: 8px;
+    border-radius: 50%;
+    background: var(--fushi-primary);
+    box-shadow: 0 0 0 2px var(--fushi-on-primary), 0 1px 4px rgba(0, 0, 0, 0.5);
+}
+
+#fushi-subtitle-mask .fushi-subtitle-mask-handle[data-dir="nw"] { left: 0; top: 0; cursor: nwse-resize; }
+#fushi-subtitle-mask .fushi-subtitle-mask-handle[data-dir="n"] { left: 50%; top: 0; cursor: ns-resize; }
+#fushi-subtitle-mask .fushi-subtitle-mask-handle[data-dir="ne"] { left: 100%; top: 0; cursor: nesw-resize; }
+#fushi-subtitle-mask .fushi-subtitle-mask-handle[data-dir="e"] { left: 100%; top: 50%; cursor: ew-resize; }
+#fushi-subtitle-mask .fushi-subtitle-mask-handle[data-dir="se"] { left: 100%; top: 100%; cursor: nwse-resize; }
+#fushi-subtitle-mask .fushi-subtitle-mask-handle[data-dir="s"] { left: 50%; top: 100%; cursor: ns-resize; }
+#fushi-subtitle-mask .fushi-subtitle-mask-handle[data-dir="sw"] { left: 0; top: 100%; cursor: nesw-resize; }
+#fushi-subtitle-mask .fushi-subtitle-mask-handle[data-dir="w"] { left: 0; top: 50%; cursor: ew-resize; }
+
+@media (pointer: coarse) {
+    #fushi-subtitle-mask .fushi-subtitle-mask-handle {
+        width: 40px;
+        height: 40px;
+        margin: -20px 0 0 -20px;
+    }
+
+    #fushi-subtitle-mask .fushi-subtitle-mask-handle::before {
+        inset: 13px;
+    }
+}
+
+/* 编辑工具条（提示 + 重置 + 完成）：M3E 全圆胶囊，surface 底、primary 主按钮。默认在遮布上方，
+   放不下时 JS 写 data-bar="below" / "inside"。 */
+#fushi-subtitle-mask .fushi-subtitle-mask-bar {
+    display: none;
+    position: absolute;
+    left: 50%;
+    bottom: calc(100% + 10px);
+    translate: -50% 0;
+    align-items: center;
+    gap: 4px;
+    box-sizing: border-box;
+    max-width: calc(100vw - 16px);
+    padding: 4px 4px 4px 14px;
+    border-radius: 9999px;
+    background: var(--fushi-surface);
+    color: var(--fushi-text);
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+    font: 500 13px/18px system-ui, -apple-system, "Segoe UI", sans-serif;
+    letter-spacing: normal;
+    text-transform: none;
+    white-space: nowrap;
+    cursor: default;
+}
+
+#fushi-subtitle-mask[data-editing] .fushi-subtitle-mask-bar {
+    display: flex;
+}
+
+#fushi-subtitle-mask[data-bar="below"] .fushi-subtitle-mask-bar {
+    bottom: auto;
+    top: calc(100% + 10px);
+}
+
+#fushi-subtitle-mask[data-bar="inside"] .fushi-subtitle-mask-bar {
+    bottom: auto;
+    top: 8px;
+}
+
+#fushi-subtitle-mask .fushi-subtitle-mask-hint {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--fushi-muted);
+    margin-right: 6px;
+}
+
+#fushi-subtitle-mask .fushi-subtitle-mask-btn {
+    appearance: none;
+    flex: none;
+    min-height: 32px;
+    margin: 0;
+    padding: 6px 14px;
+    border: 0;
+    border-radius: 9999px;
+    background: transparent;
+    color: var(--fushi-primary);
+    font: inherit;
+    cursor: pointer;
+}
+
+#fushi-subtitle-mask .fushi-subtitle-mask-btn:hover {
+    background: color-mix(in srgb, var(--fushi-primary) 10%, transparent);
+}
+
+#fushi-subtitle-mask .fushi-subtitle-mask-btn.is-primary {
+    background: var(--fushi-primary);
+    color: var(--fushi-on-primary);
+}
+
+#fushi-subtitle-mask .fushi-subtitle-mask-btn.is-primary:hover {
+    background: color-mix(in srgb, var(--fushi-primary) 88%, black);
+}
+
+#fushi-subtitle-mask .fushi-subtitle-mask-btn:focus-visible {
+    outline: 2px solid var(--fushi-focus);
+    outline-offset: 2px;
 }
 
 /* 拖字幕文件时的单一全局提示；pointer-events:none，绝不抢宿主页 drop。

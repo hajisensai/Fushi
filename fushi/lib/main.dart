@@ -39,14 +39,18 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/src/pages/implementations/collections_page.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart';
 import 'package:fushi/popup_main.dart' as popup_entrypoint;
-import 'package:fushi/game_stream_companion_main.dart'
-    as game_stream_companion_entrypoint;
+import 'package:fushi/second_screen_main.dart' as second_screen_entrypoint;
+import 'package:fushi/src/second_screen/companion/companion_context.dart'
+    show companionContextRouteObserver;
+import 'package:fushi/src/second_screen/second_screen_approval_host.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/srs/srs_app_host.dart' show srsPushProfileNoteEditor;
 import 'package:fushi/src/srs/srs_app_runtime.dart' show installSrsAppRuntime;
 import 'package:fushi/src/srs/srs_memory_probe.dart';
+import 'package:fushi_engine/srs/srs_db_store.dart' show SrsDbStore;
 import 'package:fushi_engine/srs/srs_miner.dart' show SrsMiner;
-import 'package:fushi/src/srs/srs_providers.dart' show srsProfileStoresProvider;
+import 'package:fushi/src/srs/srs_providers.dart'
+    show srsProfileStoresProvider, srsRevisionProvider;
 import 'package:fushi/src/sync/interconnect_p2p_app.dart'
     show installInterconnectP2pClient;
 import 'package:fushi/src/sync/sync_repository.dart' show SyncRepository;
@@ -57,6 +61,7 @@ import 'package:fushi/src/sync/fushi_api_port_conflict_notice.dart'
 import 'package:fushi/src/sync/dropbox_sync_backend.dart';
 import 'package:fushi/src/sync/onedrive_sync_backend.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
+import 'package:fushi/src/sync/obfuscating_sync_backend.dart';
 import 'package:fushi/src/sync/sync_error_messages.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/utils/misc/app_icon_preferences.dart';
@@ -90,6 +95,8 @@ import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/misc/tts_channel.dart';
 import 'package:fushi/src/utils/misc/update_checker.dart';
+import 'package:fushi/src/shortcuts/global_hotkey_backend.dart'
+    show GlobalHotKeyBackendKind;
 import 'package:fushi/src/shortcuts/global_navigation.dart';
 import 'package:fushi/src/lookup/global_lookup_log.dart';
 import 'package:fushi/src/lookup/lookup_deep_link.dart';
@@ -99,6 +106,7 @@ import 'package:fushi/src/lookup/gal_hook_overlay_theme_sync.dart';
 import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:fushi/src/startup/desktop_window_placement.dart';
 import 'package:fushi/src/diagnostics/native_heap_probe.dart';
+import 'package:fushi/src/diagnostics/windows_memory_probe.dart';
 import 'package:fushi/src/diagnostics/native_attribution_probe.dart';
 import 'package:fushi/src/diagnostics/fushi_binding.dart';
 import 'package:fushi/src/diagnostics/ui_activity_probe.dart';
@@ -284,12 +292,12 @@ void popupMain() {
   popup_entrypoint.popupMain();
 }
 
-/// The game stream's lookup panel on a second display (Android
-/// `GameStreamCompanionActivity`). Engines resolve entry points in the root
-/// library, so it is forwarded from here like [popupMain].
+/// The panel on a second display (Android `SecondScreenActivity`): the
+/// companion or the game stream's lookup panel. Engines resolve entry points
+/// in the root library, so it is forwarded from here like [popupMain].
 @pragma('vm:entry-point')
-void gameStreamCompanionMain() {
-  game_stream_companion_entrypoint.gameStreamCompanionMain();
+void secondScreenMain() {
+  second_screen_entrypoint.secondScreenMain();
 }
 
 /// Application execution starts here.
@@ -480,7 +488,12 @@ void main([List<String> args = const <String>[]]) {
         await windowManager.setPreventClose(true);
         // Windows runner keeps the main window hidden until the first usable
         // home or error frame has reached the raster thread.
-        await hotKeyManager.unregisterAll(); // 热重载清理残留全局热键
+        // 热重载清理残留全局热键（hotkey_manager 的初始化约定）。Linux Wayland
+        // 桌面的热键走 GlobalShortcuts portal，不碰 X11 keybinder。
+        if (GlobalLookupController.platformHotKeyBackendKind ==
+            GlobalHotKeyBackendKind.native) {
+          await hotKeyManager.unregisterAll();
+        }
         // 运行时按持久化偏好重应用窗口/任务栏图标（Windows exe 静态图标改不了，
         // 启动后由 setWindowIcon 覆盖成用户所选预设/自定义图）。失败静默降级。
         if (Platform.isWindows) {
@@ -704,6 +717,9 @@ void main([List<String> args = const <String>[]]) {
           processRssBreakdownProbe,
           nativeHeapProbe,
           processThreadCountProbe,
+          // Windows 没有 anon/file/malloc 分项：私有提交 + 系统内存 / 提交余量；解码图缓存各平台都记。
+          windowsMemoryProbe,
+          imageCacheProbe,
           srsMemoryProbe,
           srsOpLedgerProbe,
           UiActivityProbe.probe,
@@ -773,12 +789,19 @@ void main([List<String> args = const <String>[]]) {
       // uid 取副本（srs_profile_stores.dart），「在复习里打开」的编辑页套那份副本。
       appModel.srsProfileStoresReader = () =>
           container.read(srsProfileStoresProvider);
+      // 复习模块关着时用户改的日界：这份配置的复习库下次激活时补写（AppModel.flushPendingDayRollover）。
+      container.read(srsProfileStoresProvider).onActivated = (SrsDbStore s) =>
+          unawaited(appModel.flushPendingDayRollover(s));
       appModel.srsProfileNoteOpener = (SrsMiner miner, String noteId) =>
           srsPushProfileNoteEditor(
             appModel.navigatorKey.currentState,
             miner,
             noteId,
           );
+      // 互联对端「保存到」激活配置的复习时（主机挖词目标不是复习、不经 hostMiningAnkiRepositoryProvider），
+      // 写入后同样刷新牌组列表 / 首页复习条的计数。
+      appModel.srsCardsAddedNotifier = () =>
+          container.read(srsRevisionProvider.notifier).state++;
       appModel.ankiRepositoryReader = () =>
           container.read(ankiRepositoryProvider);
       appModel.hostMiningRepositoryReader = () =>
@@ -801,6 +824,17 @@ void main([List<String> args = const <String>[]]) {
       // 互联 P2P 隧道（原生库可用才装）：client 选路在直连全失败后经隧道兜底
       // （docs/specs/2026-09-28-interconnect-remote-reach.md §5）。
       installInterconnectP2pClient(SyncRepository(appModel.database));
+      // BUG-4242：上一个进程上传途中被杀（iOS 挂起 / 内存压力）时，混淆临时目录
+      // （与原文件同尺寸，有声书数百 MB）不会经 finally 删掉。启动时认领本进程的
+      // 临时槽位，顺带删掉已死进程的槽位（活进程的锁拿不到、不删），并清旧版本留在
+      // 系统临时目录根下的 obf_*。失败由 sweepStaleTemps 自己记错误日志。
+      unawaited(
+        ObfuscatingSyncBackend.sweepStaleTemps().then((int removed) {
+          if (removed > 0) {
+            debugPrint('[startup] removed $removed stale sync obf temp dirs');
+          }
+        }),
+      );
 
       // ── 预热 WebView 引擎 ──────────────────────────────────────────────
       // 用户还在看主页/书架时就把冷启动成本吃掉：~500-1500ms。
@@ -1216,6 +1250,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
         focusMainWindow: _isDesktop ? _focusMainWindowForCtl : null,
         ingestExternalVideo: _ingestExternalVideo,
       ),
+      buildInProcessInvoker: buildInProcessOpInvoker,
     );
     if (_isDesktop) {
       unawaited(_startCtlServer());
@@ -1371,7 +1406,16 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     final BaseAnkiRepository repo = ref.read(ankiRepositoryProvider);
     if (repo is! PendingMiningAnkiRepository) return;
     // 补发失败只影响那几张待发卡（它们留在队列里），不能冒泡成未处理异常。
-    unawaited(repo.flush().then((_) {}, onError: (Object _) {}));
+    // 自动补发不报张数，但送达的卡带回的提示（如「保存到」被主机退回默认）必须让用户看到：
+    // 这条路径上没有别的结果提示能挂它（BUG-4287）。
+    unawaited(
+      repo.flush().then((PendingFlushReport report) {
+        final String? notice = report.notice;
+        if (notice != null) {
+          FushiToast.show(msg: notice, severity: ToastSeverity.warning);
+        }
+      }, onError: (Object _) {}),
+    );
   }
 
   @override
@@ -1384,6 +1428,21 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     }
     if (state == AppLifecycleState.resumed) {
       ref.read(appProvider).refreshSystemPalette();
+      // BUG-4289：查词弹窗是另一个进程，它写进库的偏好（「保存到」被主机退回默认）主进程缓存看不见。
+      if (Platform.isAndroid) {
+        unawaited(
+          ref
+              .read(appProvider)
+              .reloadPopupWrittenPrefs()
+              .catchError(
+                (Object e, StackTrace s) => ErrorLogService.instance.log(
+                  'main.reloadPopupWrittenPrefs',
+                  e,
+                  s,
+                ),
+              ),
+        );
+      }
       _flushPendingMines();
       if (ref.read(appProvider).isInitialised) {
         unawaited(_checkFeedbackReplies());
@@ -1530,6 +1589,13 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       // （CLI 能认出残留，但少一次连不上的探测）。
       _guardedExitStep('ctl channel stop', () async {
         await _ctlServer?.stop().timeout(_exitCtlStopTimeout);
+      }),
+      // app 外热键：注销 OS 热键 / 关掉 GlobalShortcuts portal 会话（连接断开时
+      // portal 也会收，这里是显式收口）。
+      _guardedExitStep('global hotkeys release', () async {
+        await GlobalLookupController.instance.releaseHotKeys().timeout(
+          _exitCtlStopTimeout,
+        );
       }),
       // 本机 GPT-SoVITS：Windows 不连坐子进程，exit(0) 后服务会继续占着显存和端口，
       // 解压中的 tar 也会继续往安装目录写。shutdown 同时停服务、取消安装（杀 tar）。
@@ -1723,6 +1789,12 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       return true;
     }
     return false;
+  }
+
+  /// The companion on the second screen asked to open a `fushi://widget/...`
+  /// link on this screen (continue an item, start reviews...).
+  Future<void> _openCompanionLink(String link) async {
+    await handleIncomingUrl(data: link, isInitial: false);
   }
 
   void _queueAppShortcut(AppShortcut shortcut) {
@@ -3069,6 +3141,8 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
             studyCoverTracker,
             // 页面离场时核对 Windows 拖入注册、丢了才重注册并记诊断（BUOxDR9WIJ）。
             desktopDropRouteObserver,
+            // 第二块屏：顶屏当前是哪个页面（companion 的上下文）。
+            companionContextRouteObserver,
           ],
           home: home,
           locale: locale,
@@ -3362,7 +3436,11 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
               ),
             );
             // BUG-2834：全 app 鼠标滚轮无极滚动，一处接住所有滚动区。
-            return SmoothWheelScrollScope(child: gated);
+            // 第二块屏：新副屏出现时在主屏问一次「要用这块屏幕吗」（auto 策略）。
+            return SecondScreenApprovalHost(
+              openLink: _openCompanionLink,
+              child: SmoothWheelScrollScope(child: gated),
+            );
           },
         ),
       ),

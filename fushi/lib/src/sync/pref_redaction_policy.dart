@@ -1,5 +1,8 @@
 import 'package:fushi/src/models/preference_keys.dart'
-    show kAnkiSettingsPrefKey;
+    show
+        kAnkiSettingsPrefKey,
+        kSrsDayRolloverPendingPrefKeyPrefix,
+        kSrsDayRolloverSeenPrefKeyPrefix;
 import 'package:fushi/src/sync/sync_repository.dart';
 
 /// 「一条 `preferences` key 能不能离开本设备」的**唯一真相源**。
@@ -103,6 +106,9 @@ abstract final class PrefRedactionPolicy {
     'ai_providers',
     // 同形：联网搜索配置 JSON 里的 Brave API key。
     'ai_web_search',
+    // 同形：外部 MCP server 清单里 base64 的请求头 / 环境变量值（可能是 token）。
+    // 也在 deviceLocalPrefKeys 中。
+    'ai_mcp_client_servers',
     // 同形：JSON 内含 base64 的 OPDS 服务器密码，键名本身没有 credential 形状。
     // 也在 deviceLocalPrefKeys 中，双重声明便于安全审计。
     'discovery_opds_servers',
@@ -121,12 +127,23 @@ abstract final class PrefRedactionPolicy {
     kAnkiSettingsPrefKey,
   };
 
+  /// 前缀登记：按 id 展开、无法逐个列进 [SyncRepository.deviceLocalPrefKeys] 的**设备本地状态**（不是凭据）。
+  ///
+  /// - 复习翻日时刻的待写标记 / 已见修改记录（后缀 = profile uid，`AppModel.setStatDayResetHourByUser` /
+  ///   `adoptSyncedDayRollover`）：描述的是「这台设备有没有把用户的修改写进复习」「这台设备见过哪条修改」，
+  ///   带到别的设备会让那台设备补写一个不是它的用户刚改的值，或把真正新来的修改当成见过的。
+  static const List<String> deviceLocalKeyPrefixes = <String>[
+    kSrsDayRolloverPendingPrefKeyPrefix,
+    kSrsDayRolloverSeenPrefKeyPrefix,
+  ];
+
   /// key 是否属于「设备本地 / 凭据」，即备份、Profile 快照与 Profile 分享 JSON
   /// 三条出境通道都必须剔除、且导入时必须从本机保留的那一类。
   ///
   /// 判定顺序（任一命中即 true）：
   /// 1. [SyncRepository.deviceLocalPrefKeys] 白名单——主防线，同步后端凭据 +
   ///    设备本地配置（device_id / 端口 / 因果基线等）的单一真相源；
+  /// 1b. [deviceLocalKeyPrefixes] 前缀——按 id 展开的设备本地状态；
   /// 2. [sensitiveKeys] 点名——名字不像凭据但值是凭据的；
   /// 3. [sensitiveKeyPrefixes] 前缀——按行 id 展开的整族凭据；
   /// 4. [credentialSubstrings] 形状兜底——将来新增、还没进前三条的凭据 key 也
@@ -134,6 +151,9 @@ abstract final class PrefRedactionPolicy {
   ///    跟随，而导入侧的对称保留会把本机值原样留住）。
   static bool isDeviceLocalOrCredential(String key) {
     if (SyncRepository.deviceLocalPrefKeys.contains(key)) return true;
+    for (final String prefix in deviceLocalKeyPrefixes) {
+      if (key.startsWith(prefix)) return true;
+    }
     if (sensitiveKeys.contains(key)) return true;
     final String lower = key.toLowerCase();
     for (final String prefix in sensitiveKeyPrefixes) {

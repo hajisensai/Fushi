@@ -1443,9 +1443,9 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
     );
   }
 
-  /// 在线视频（媒体服务器 / 在线源扩展等网络流）点制卡后弹窗等不等：后台（默认）/
-  /// 看完再制卡 / 等待完成。副标题随选中项说明取舍，透传
-  /// [AppModel.videoOnlineMiningMode]。本地视频不受影响（恒等待，本来就秒出）。
+  /// 在线视频（媒体服务器 / 在线源扩展等网络流）点制卡后卡往哪去：后台写入（默认）/
+  /// 看完再制卡。弹窗不陪等（反馈 OeS0m8tLHc 删了「等待完成」档）。副标题随选中项说明
+  /// 取舍，透传 [AppModel.videoOnlineMiningMode]。本地视频恒后台写入，不受影响。
   Widget _buildVideoOnlineMiningModePicker() {
     final VideoOnlineMiningMode mode = appModel.videoOnlineMiningMode;
     return AdaptiveSettingsPickerRow<VideoOnlineMiningMode>(
@@ -1455,7 +1455,6 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
           t.video_online_mining_mode_background_hint,
         VideoOnlineMiningMode.deferred =>
           t.video_online_mining_mode_deferred_hint,
-        VideoOnlineMiningMode.wait => t.video_online_mining_mode_wait_hint,
       },
       icon: FushiIcons.cloudDownload,
       controlBelow: true,
@@ -1468,10 +1467,6 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
         AdaptiveSettingsPickerOption<VideoOnlineMiningMode>(
           value: VideoOnlineMiningMode.deferred,
           label: t.video_online_mining_mode_deferred,
-        ),
-        AdaptiveSettingsPickerOption<VideoOnlineMiningMode>(
-          value: VideoOnlineMiningMode.wait,
-          label: t.video_online_mining_mode_wait,
         ),
       ],
       onChanged: (VideoOnlineMiningMode value) async {
@@ -2451,6 +2446,9 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
     // 隐藏没被用到的旧别名；当前字段正用着的旧别名仍会出现（并标「已弃用」）。
     final options = AnkiHandlebarOptions.optionsForField(
       dictionaryNames: dictionaryNames,
+      frequencyDictionaryNames: appModel.dictRepo.freqDictionaries
+          .map((d) => d.name)
+          .toList(),
       currentValue: currentValue,
     );
 

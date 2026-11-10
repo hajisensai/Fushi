@@ -45,6 +45,7 @@ abstract class VideoResourceCandidate {
     this.resolution,
     this.releaseGroup,
     this.trusted = false,
+    this.remake = false,
     this.detailsUrl,
     this.magnetUri,
   });
@@ -63,7 +64,17 @@ abstract class VideoResourceCandidate {
   final String? category;
   final String? resolution;
   final String? releaseGroup;
+
+  /// 索引器自己的信任标记（Nyaa 的 trusted 绿行）。没有这类信号的 provider 恒 false。
   final bool trusted;
+
+  /// 索引器自己的 remake 标记（Nyaa 的红行：非原发布者的重压 / 重封装 / 转载）。
+  /// 只降权不丢弃——合法重压很常见；没有这类信号的 provider 恒 false。
+  final bool remake;
+
+  /// 索引器信任档：2 = trusted，1 = 普通，0 = remake。只作相关度同档内的次序信号
+  /// （[rankVideoResourcesByRelevance]），不压过季号 / 标题贴合度。
+  int get indexerTrustTier => remake ? 0 : (trusted ? 2 : 1);
   final String? detailsUrl;
 
   /// 选择时刻就已在手的持久磁力链接（`magnet:` 前缀），入队时随任务落库
@@ -213,6 +224,15 @@ abstract interface class VideoResourceProvider {
   Future<TorrentAddPayload> resolve(VideoResourceCandidate candidate);
 
   void close();
+}
+
+/// 能给出一条发布的种子文件清单的 provider（下载规划的整包证据，见
+/// `video_release_scope_evidence.dart`）。只有磁链、拿不到 `.torrent` 的索引器
+/// （apibay / Knaben）不实现它。
+abstract interface class VideoReleaseFileListingProvider {
+  /// 种子内相对路径列表；null = 这条发布拿不到 `.torrent`（只有磁链 / 不是本
+  /// provider 的候选）。网络 / 格式错误照常抛，由调用方记录。
+  Future<List<String>?> listReleaseFiles(VideoResourceCandidate candidate);
 }
 
 /// 自带用户可见名的 provider（用户 BT 站）。注册表把这个名字写进按源回执，

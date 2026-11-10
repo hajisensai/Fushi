@@ -528,6 +528,10 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
   /// 本后端能不能读卡组新卡并改写位置（只有 AnkiConnect 能）。
   bool get supportsDeckReposition => _repository.supportsDeckReposition;
 
+  /// 重排读写的是 Fushi 复习（挖词目标 = Fushi 复习，装饰链里有 SRS 层）而不是 Anki：
+  /// 弹窗据此选文案，别把「从 Anki 读取」显示给没装 Anki 的复习用户。
+  bool get repositionTargetsSrs => repositionTargetsSrsFor(_repository);
+
   /// 本后端要不要「制卡后自动重排」（Fushi 复习不要：出卡直接按词频名次排）。
   bool get supportsAutoReposition => _repository.supportsAutoReposition;
 
@@ -758,10 +762,10 @@ final ankiRepositoryProvider = Provider<BaseAnkiRepository>((ref) {
   final AppModel appModel = ref.read(appProvider);
   final RemoteMiningAnkiRepository remote = RemoteMiningAnkiRepository(
     local: local,
-    client: appModel.createRemoteMiningClient(
-      onTargetUnavailable: (_) =>
-          FushiToast.show(msg: t.anki_mine_to_server_target_reset),
-    ),
+    // 「保存到」被主机退回默认时的提示跟着制卡结果走（RemoteMiningAnkiRepository 填
+    // MineOutcome.notice）：单独弹一条会被紧随其后的结果提示顶掉（BUG-4287）。
+    client: appModel.createRemoteMiningClient(),
+    targetResetNotice: () => t.anki_mine_to_server_target_reset,
     // BUG-1185：主机拒绝互联 token 时查重根本没跑成。bool 契约表达不了「不知道」，
     // 所以在这里把它变成用户可见的失败提示，而不是让用户收到一个静默的「不重复」。
     onAuthRejected: (String message) =>
@@ -887,6 +891,12 @@ String ankiRepositoryChainLabel(BaseAnkiRepository repo) {
   names.add('${cur.runtimeType}');
   return names.join(' > ');
 }
+
+/// 重排读写的是不是 Fushi 复习：与 [repositionSnapshotFolderFor] 同一个判据（装饰链里
+/// 有 [SrsMiningAnkiRepository] 层），纯函数，不需要构造 [AnkiViewModel]。
+bool repositionTargetsSrsFor(BaseAnkiRepository repo) =>
+    repositionSnapshotFolderFor(repo) ==
+    AnkiDeckRepositionRunner.kSrsSnapshotFolder;
 
 String repositionSnapshotFolderFor(BaseAnkiRepository repo) {
   BaseAnkiRepository cur = repo;

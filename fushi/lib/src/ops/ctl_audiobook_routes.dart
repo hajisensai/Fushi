@@ -8,7 +8,8 @@ import 'package:fushi_engine/media/audiobook/audiobook_alignment_service.dart'
     show
         AudiobookAlignmentMessages,
         AudiobookAlignmentResult,
-        alignAndPersistAudiobook;
+        alignAndPersistAudiobook,
+        replaceAudiobookAudio;
 import 'package:fushi_engine/media/audiobook/audiobook_subtitle_formats.dart';
 import 'package:fushi_engine/media/audiobook/audiobook_transcribe_import_queue.dart';
 import 'package:fushi_engine/media/discovery/import/discovery_engine_importers.dart'
@@ -17,7 +18,7 @@ import 'package:fushi_engine/media/audiobook/subtitle_rematch_policy.dart';
 
 import 'package:fushi/src/asr_host/asr_host.dart' show isAsrSupported;
 import 'package:fushi/src/media/audiobook/subtitle_rematch.dart';
-import 'package:fushi/src/media/import/srt_book_reimport.dart';
+import 'package:fushi_engine/media/audiobook/srt_book_reimport.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/ops/ctl_library_entries.dart';
@@ -30,8 +31,8 @@ import 'package:fushi/src/ops/op_context.dart';
 /// - 字幕书（无 `audiobooks` 行）换音频 / 字幕：[reimportSrtBook]（字幕书「重新导入」
 ///   对话框同一函数，换字幕时连带重建由 cue 生成的正文）；
 /// - EPUB 书挂有声书 / 换字幕：[alignAndPersistAudiobook]（导入书 + 字幕 + 音频时的
-///   对齐落库同一函数）；只换音频：[AudiobookStorage.syncAudioFiles] +
-///   [AudiobookRepository.replaceAudio]（有声书导入对话框「只换音频」同一组原语）；
+///   对齐落库同一函数）；只换音频：[replaceAudiobookAudio]（`syncAudioFiles` +
+///   [AudiobookRepository.replaceAudio] + 配对 SrtBook 音频，服务端库根重扫同一入口）；
 ///   判据与书架 `_openSrtBookReimport` 一致——看该 bookKey 有没有 `audiobooks` 行；
 /// - 重新匹配：[rematchStoredAudiobookCues]（Sasayaki 重匹配本体）；
 /// - 挂载 / 替换 / 重新匹配都是短时后台任务（[LibraryCtlTaskRegistry]）：立即返回
@@ -293,18 +294,13 @@ class _AudiobookHandlers {
             ..markCommitting()
             ..report(phase: 'copying');
           await stopPlayback();
-          final Directory persistDir = await AudiobookStorage.ensurePersistDir(
-            bookKey,
-          );
-          final List<String> persisted = await AudiobookStorage.syncAudioFiles(
-            persistDir,
-            audio,
+          // 与服务端有声书库根重扫补音频同一个引擎入口：连配对 SrtBook 的音频一起换。
+          final List<String> persisted = await replaceAudiobookAudio(
+            db: _db,
+            bookKey: bookKey,
+            audioPaths: audio,
             onProgress: (int copied, int total) =>
                 task.report(progress: total > 0 ? copied / total : null),
-          );
-          await audiobookRepo.replaceAudio(
-            bookKey: bookKey,
-            audioPaths: persisted,
           );
           _refreshShelf();
           return <String, Object?>{

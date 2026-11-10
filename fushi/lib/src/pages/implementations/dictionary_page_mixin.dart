@@ -224,11 +224,25 @@ mixin DictionaryPageMixin {
     required String matched,
   }) async => AdvancedMiningSections.none;
 
+  /// A popup search for [query] found entries ([result]); called once per
+  /// search with a result, nested layers included. Default: nothing. The
+  /// second-screen companion's embedded page reports the matched headword so
+  /// its history shows the word, not the scanned text.
+  @protected
+  void onPopupSearchResult(String query, DictionarySearchResult result) {}
+
   /// 「高级制卡」对话框里能不能为这张卡选卡组。默认 true（卡组取本机 Anki 设置）；
   /// 卡组由别的设备决定的表面覆写成 false（手机遥控页：遥控制卡落在电脑端、用电脑的
   /// Anki 配置），对话框就不渲染卡组分区。
   @protected
   bool get advancedMiningDeckChoiceAvailable => true;
+
+  /// 制卡被收下（成功 / 进后台 / 进待发队列）后关不关整个查词弹窗栈。默认读阅读器
+  /// 偏好 `close_popup_after_mining`（用户建议 q16Apecgbg，默认关）。视频页覆写为恒
+  /// true（反馈 OeS0m8tLHc：点「制卡」弹窗立刻关、视频立刻续播，制卡在后台跑）。
+  @protected
+  bool get closePopupAfterMining =>
+      ReaderFushiSource.instance.closePopupAfterMining;
 
   /// 「制卡前调整·选择句子上下文」里**手改某一句文本**（视频/首页查词车道）：把 [slot]
   /// （上文/当前/下文）第 index 句的文本改成给定文本，写回本表面会话级制卡草稿。
@@ -1385,7 +1399,7 @@ mixin DictionaryPageMixin {
           onMineEntry: closePopupAfterAcceptedMine(
             (Map<String, String> fields) =>
                 onMineEntry(miningFieldsForLayer(index, controller, fields)),
-            enabled: () => ReaderFushiSource.instance.closePopupAfterMining,
+            enabled: () => closePopupAfterMining,
             closeAll: () {
               if (mounted) onPop(0);
             },
@@ -1654,6 +1668,7 @@ mixin DictionaryPageMixin {
         searchTerm: trimmed,
       );
       mixinAppModel.addToDictionaryHistory(result: result);
+      onPopupSearchResult(trimmed, result);
       if (autoRead && ReaderFushiSource.instance.autoReadOnLookup) {
         final first = result.entries.first;
         if (first.word.isNotEmpty) {

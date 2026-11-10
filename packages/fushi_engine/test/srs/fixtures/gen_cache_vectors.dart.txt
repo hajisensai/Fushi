@@ -338,6 +338,8 @@ void main() {
         bootId: 'boot-$id',
       ),
       fallbackRolloverHour: () => 4,
+      // 「今天」的时区恒取本机偏移：钉成 JST，与向量里的期望一致。
+      localOffsetMin: () => 540,
     );
   }
 
@@ -373,7 +375,8 @@ void main() {
 
     final SrsDbStore a = await device(kDevice);
     await a.editFields(SrsEntityKind.profile, kProfile, <String, Object?>{
-      SrsFieldKeys.utcOffsetMin: 540,
+      // 历史字段键（常量已删，时区不再随 profile 同步）：向量里留着这条修改记录，照原键名写。
+      'utcOffsetMin': 540,
       SrsFieldKeys.dayRolloverHour: 4,
     });
 

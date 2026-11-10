@@ -31,6 +31,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:collection/collection.dart' show mergeSort;
 import 'package:crypto/crypto.dart' show sha1;
 import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
 import 'package:http/http.dart' as http;
@@ -1108,6 +1109,36 @@ class JellyfinApi {
   /// （音乐的服务器曲库，`jellyfin_music_client.dart`）用，不另起一套传输。
   Future<Object?> getDecodedJson(String path, [Map<String, String>? query]) =>
       _getDecoded(path, query);
+
+  /// 写请求（POST / DELETE）：同一份认证头 / 超时 / 凭据脱敏，给音乐歌单编辑用
+  /// （`jellyfin_music_client.dart`）。[body] 非空时按 JSON 发；响应体是 JSON 时解码返回，
+  /// 空体（204）返回 null。非 2xx 抛 [JellyfinApiException]。
+  Future<Object?> sendJson(
+    String method,
+    String path, {
+    Map<String, String>? query,
+    Object? body,
+  }) async {
+    try {
+      final http.Request req = http.Request(method, _uri(path, query))
+        ..headers.addAll(_headers);
+      if (body != null) req.body = jsonEncode(body);
+      final http.Response res = await http.Response.fromStream(
+        await _client.send(req).timeout(kRequestTimeout),
+      ).timeout(kRequestTimeout);
+      if (res.statusCode < 200 || res.statusCode >= 300) {
+        throw JellyfinApiException.fromResponse(res, path);
+      }
+      if (res.bodyBytes.isEmpty) return null;
+      try {
+        return jsonDecode(utf8.decode(res.bodyBytes));
+      } on FormatException {
+        return null;
+      }
+    } on http.ClientException catch (e) {
+      throw Exception(redactCredentialsInText(e.toString()));
+    }
+  }
 
   /// [_getDecoded] 的「指定根地址」版（连接探测要在候选根地址之间试，见
   /// [probeServer]）。
@@ -2902,7 +2933,7 @@ class JellyfinVideoClient
     ];
     // 服务器已按季号给出；回退路径按 SortName 来的也统一按季号排（特典 / 未编号
     // 的季放最后），页面不用再管来源。
-    seasons.sort(_bySeasonThenEpisode);
+    mergeSort<MediaServerItem>(seasons, compare: _bySeasonThenEpisode);
     return seasons;
   }
 
@@ -2945,7 +2976,8 @@ class JellyfinVideoClient
     final List<MediaServerItem> episodes = <MediaServerItem>[
       for (final MediaServerItem e in out.items)
         if (e.type == MediaServerItemType.episode) e,
-    ]..sort(_bySeasonThenEpisode);
+    ];
+    mergeSort<MediaServerItem>(episodes, compare: _bySeasonThenEpisode);
     return MediaServerPage(
       items: episodes,
       totalCount: out.totalCount,
@@ -2954,7 +2986,9 @@ class JellyfinVideoClient
     );
   }
 
-  /// 季集号升序；缺号的排最后（保持稳定，别让特典插到正片中间）。
+  /// 季集号升序；缺号的排最后（别让特典插到正片中间）。比较器对同号 / 都缺号
+  /// 的条目返回 0，调用方必须用稳定排序（[mergeSort]）保住服务器原序——Dart
+  /// 的 [List.sort] 超过 32 个元素走不稳定的快排，会把无集号的整季打乱（BUG-4257）。
   static int _bySeasonThenEpisode(MediaServerItem a, MediaServerItem b) {
     final int sa = a.seasonNumber ?? 1 << 30;
     final int sb = b.seasonNumber ?? 1 << 30;

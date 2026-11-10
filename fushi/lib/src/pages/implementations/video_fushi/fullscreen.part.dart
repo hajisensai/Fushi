@@ -190,6 +190,10 @@ extension _VideoFullscreen on _VideoFushiPageState {
       // 旧集页的离场判定恰好落在这一帧里，只靠 widget 登记仍会误退全屏。
       final PageRouteBuilder<void>
       fullscreenRoute = WindowFullscreenHostPageRoute<void>(
+        // 全屏就是在看同一个视频，只是换了个宿主路由：声明豁免学习计时
+        // （[StudyCoverTracker] 默认把压在本页之上的路由都判成「盖住」）。全屏之上
+        // 再压的菜单 / 对话框照样盖住本页，照样停表。
+        settings: studyClockRouteSettings(transparent: true),
         // BUG-697（TODO-1378）：全屏路由内容必须包进与窗口模式同一个
         // [_wrapVideoGamepadControls]（Actions<GamepadButtonIntent> + 旁观 Focus）。
         // 全屏是推到根 navigator 的独立路由，窗口侧 build() 外层的手柄输入层不是
@@ -366,6 +370,8 @@ extension _VideoFullscreen on _VideoFushiPageState {
         context,
         rootNavigator: true,
       ).push<void>(fullscreenRoute).whenComplete(_onVideoFullscreenRouteClosed);
+      // The companion's claim follows the route the video is shown in.
+      _companionHook.setFullscreenRoute(fullscreenRoute);
       await enterNativeFullscreen();
     } finally {
       _videoFullscreenTransitioning = false;
@@ -385,6 +391,7 @@ extension _VideoFullscreen on _VideoFushiPageState {
   /// 入口各补一次 refocus。
   void _onVideoFullscreenRouteClosed() {
     _videoFullscreenRoute = null;
+    _companionHook.setFullscreenRoute(null);
     if (!mounted) return;
     _rebuild(() => _videoFullscreenActive = false);
     _focusOwnership.reclaimAfterFrame(FocusReclaimCause.surfaceRemounted);

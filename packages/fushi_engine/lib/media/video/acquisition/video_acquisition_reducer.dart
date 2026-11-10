@@ -32,6 +32,7 @@ import 'package:fushi_engine/media/video/acquisition/video_acquisition_models.da
 import 'package:fushi_engine/media/video/discovery/video_franchise.dart';
 import 'package:fushi_engine/media/video/acquisition/video_acquisition_resource_picker.dart';
 import 'package:fushi_engine/media/video/acquisition/video_work_content_language.dart';
+import 'package:fushi_engine/media/video/download/video_release_scope_evidence.dart';
 import 'package:fushi_engine/media/video/download/video_resource_version_groups.dart';
 
 /// reducer 的返回：新状态 + 要执行的效果（按顺序）。
@@ -102,6 +103,11 @@ VideoAcquisitionReduction reduceVideoAcquisition(
       defaults,
     ),
     VideoAcquisitionResourcesLoadedEvent e => _onResourcesLoaded(
+      state,
+      e,
+      defaults,
+    ),
+    VideoAcquisitionReleasesInspectedEvent e => _onReleasesInspected(
       state,
       e,
       defaults,
@@ -793,6 +799,12 @@ VideoAcquisitionReduction _chooseWork(
   next = next.copyWith(
     stage: VideoAcquisitionStage.loadingDetails,
     chosenItem: item,
+    // 同一次搜索搜出来的其它作品就是资源搜索最容易混进来的兄弟作品（搜
+    // 「Garupa Pico」同时出 2018 / 大盛 / Fever 三部）。
+    siblingWorks: <VideoMediaReference>[
+      for (final VideoDiscoveryItem other in state.workCandidates)
+        if (!_sameWork(other.reference, item.reference)) other.reference,
+    ],
     workCandidates: const <VideoDiscoveryItem>[],
     clearQuestion: true,
     busy: true,
@@ -1436,22 +1448,112 @@ VideoAcquisitionReduction _onResourcesLoaded(
   if (state.stage != VideoAcquisitionStage.resolvingResources) {
     return (state, _noEffects);
   }
-  final VideoMediaReference reference = state.reference!;
-  final VideoAcquisitionState next = state.copyWith(
-    groups: buildVideoResourceVersionGroups(
-      cleanResourceCandidates(
-        event.items,
-        skipExtras: defaults.skipExtras,
-        work: reference.mediaKind == VideoMetadataMediaKind.movie
-            ? VideoResourceWorkTarget.fromReference(reference)
-            : null,
-        originalLanguageOnly: wantsOriginalLanguageRelease(state),
-        workLanguage: state.contentLanguage?.code,
-      ),
-    ),
+  final VideoAcquisitionState withItems = state.copyWith(
+    resourceItems: event.items,
+  );
+  final VideoAcquisitionState next = withItems.copyWith(
+    groups: _sessionGroups(withItems, defaults),
     busy: false,
   );
   return _refilter(next, defaults);
+}
+
+/// 本会话这一部作品的版本卡：[VideoAcquisitionState.resourceItems] 清洗后分组，
+/// 带上已取到的文件列表作整包证据。
+List<VideoResourceVersionGroup> _sessionGroups(
+  VideoAcquisitionState state,
+  VideoAcquisitionDefaults defaults,
+) {
+  final VideoMediaReference reference = state.reference!;
+  return buildVideoResourceVersionGroups(
+    cleanResourceCandidates(
+      state.resourceItems,
+      skipExtras: defaults.skipExtras,
+      work: reference.mediaKind == VideoMetadataMediaKind.movie
+          ? VideoResourceWorkTarget.fromReference(
+              reference,
+              siblings: state.siblingWorks,
+            )
+          : VideoResourceWorkTarget.seriesFromReference(
+              reference,
+              siblings: state.siblingWorks,
+            ),
+      originalLanguageOnly: wantsOriginalLanguageRelease(state),
+      workLanguage: state.contentLanguage?.code,
+    ),
+    manifests: state.knownReleaseManifests,
+  );
+}
+
+/// 种子文件列表取回：并进会话证据，单作品流程重建版本卡再过滤一遍；整套下载
+/// 流程重算在等的那一部。
+VideoAcquisitionReduction _onReleasesInspected(
+  VideoAcquisitionState state,
+  VideoAcquisitionReleasesInspectedEvent event,
+  VideoAcquisitionDefaults defaults,
+) {
+  final VideoAcquisitionState merged = state.copyWith(
+    releaseManifests: <String, VideoReleaseManifest?>{
+      ...state.releaseManifests,
+      ...event.manifests,
+    },
+  );
+  final int? franchiseIndex = event.franchiseIndex;
+  if (franchiseIndex != null) {
+    final VideoAcquisitionFranchiseEntryResolvedEvent? pending =
+        state.pendingFranchiseResolution;
+    if (state.stage != VideoAcquisitionStage.planningFranchise ||
+        pending == null ||
+        pending.index != franchiseIndex) {
+      return (merged, _noEffects);
+    }
+    return _onFranchiseEntryResolved(
+      merged.copyWith(clearPendingFranchiseResolution: true),
+      pending,
+      defaults,
+    );
+  }
+  if (state.stage != VideoAcquisitionStage.resolvingResources ||
+      state.reference == null) {
+    return (merged, _noEffects);
+  }
+  return _refilter(
+    merged.copyWith(groups: _sessionGroups(merged, defaults)),
+    defaults,
+  );
+}
+
+/// 「全集」下载要不要先取文件列表：标题判不出范围的发布（没写 batch 的 BD 包）
+/// 只有看了种子里装了什么才知道是不是整包（见 `video_release_scope_evidence.dart`）。
+///
+/// 只在剧集 + 下载 + 全部集时取；第一张能落地的卡已经是有据整包时不取（不会更好）。
+/// 否则按卡序在可选卡里挑标题判不出的发布，总量封顶
+/// （[kVideoReleaseManifestInspectionLimit]），取过的不再取。
+List<VideoResourceCandidate> _sessionInspectionTargets(
+  VideoAcquisitionState state,
+) {
+  final VideoMediaReference? reference = state.reference;
+  if (reference == null ||
+      reference.mediaKind != VideoMetadataMediaKind.tv ||
+      state.slots.mode != VideoAcquisitionMode.download ||
+      state.slots.episodes is! VideoAcquisitionAllEpisodes) {
+    return const <VideoResourceCandidate>[];
+  }
+  final ({int index, VideoAcquisitionResourcePlan plan})? first = _findPlan(
+    state,
+    0,
+  );
+  if (first != null && first.plan.usesBatch) {
+    return const <VideoResourceCandidate>[];
+  }
+  return videoReleaseManifestTargets(
+    <VideoResourceCandidate>[
+      for (final VideoResourceVersionGroup group in state.eligibleGroups)
+        if (group.wholeRelease) ...group.members,
+    ],
+    sizeReference: state.resourceItems,
+    inspected: state.releaseManifests.keys.toSet(),
+  );
 }
 
 /// 用当前 mode / quality 重过滤 `groups`（再按片源 / 码率偏好排序），并展示第一张
@@ -1505,7 +1607,20 @@ VideoAcquisitionReduction _refilter(
     case VideoAcquisitionResourceReason.noSubscribableVersion:
       return (_askSubscribeFallback(base), _noEffects);
     case VideoAcquisitionResourceReason.ok:
-      return _present(base, 0);
+      final List<VideoResourceCandidate> targets = _sessionInspectionTargets(
+        base,
+      );
+      if (targets.isEmpty) return _present(base, 0);
+      return (
+        base.copyWith(
+          stage: VideoAcquisitionStage.resolvingResources,
+          busy: true,
+          clearQuestion: true,
+        ),
+        <VideoAcquisitionEffect>[
+          VideoAcquisitionInspectReleasesEffect(targets: targets),
+        ],
+      );
   }
 }
 
@@ -1717,6 +1832,7 @@ VideoAcquisitionReduction _onSubmitted(
           args: <String, Object?>{
             'mode': state.slots.mode?.name,
             'count': event.count,
+            'alreadyQueued': event.alreadyQueued,
           },
         ),
       );
@@ -1874,6 +1990,7 @@ VideoAcquisitionReduction _changeScope(
     slots: state.slots.copyWith(scope: scope),
     transcript: state.transcript,
     chosenItem: state.chosenItem,
+    siblingWorks: state.siblingWorks,
     work: state.work,
     airing: state.airing,
     contentLanguage: state.contentLanguage,
@@ -2201,27 +2318,79 @@ VideoAcquisitionReduction _onFranchiseEntryResolved(
         pick.identityKey,
   };
   final VideoAcquisitionFranchiseEntry target = state.franchiseEntries[index];
+  final VideoAcquisitionFranchiseEntryResolvedEvent unused =
+      VideoAcquisitionFranchiseEntryResolvedEvent(
+        index: event.index,
+        work: event.work,
+        presence: event.presence,
+        alreadySubscribed: event.alreadySubscribed,
+        items: <VideoResourceCandidate>[
+          for (final VideoResourceCandidate item in event.items)
+            if (!used.contains(item.identityKey)) item,
+        ],
+      );
+  // 同名剧集（哆啦A梦 1979 / 2005）靠标题搜到的是同一批发布：清单里有同名
+  // 剧集时按年份排除写了别的年份的发布。独一份的长寿剧不排（逐集发布常带
+  // 播出年份，按首播年排会误杀）。
+  final bool filterSeriesByYear = _hasSameTitledSeries(
+    state.franchiseEntries,
+    target,
+  );
+  final List<VideoMediaReference> siblings = <VideoMediaReference>[
+    for (int i = 0; i < state.franchiseEntries.length; i++)
+      if (i != index) state.franchiseEntries[i].item.reference,
+  ];
+  final bool originalLanguageOnly = wantsOriginalLanguageRelease(state);
+  final String? workLanguage = state.contentLanguage?.code;
   final VideoAcquisitionFranchiseEntry resolved = planFranchiseEntry(
     target,
-    VideoAcquisitionFranchiseEntryResolvedEvent(
-      index: event.index,
-      work: event.work,
-      presence: event.presence,
-      alreadySubscribed: event.alreadySubscribed,
-      items: <VideoResourceCandidate>[
-        for (final VideoResourceCandidate item in event.items)
-          if (!used.contains(item.identityKey)) item,
-      ],
-    ),
+    unused,
     quality: state.slots.quality ?? VideoAcquisitionQuality.best,
     defaults: defaults,
-    // 同名剧集（哆啦A梦 1979 / 2005）靠标题搜到的是同一批发布：清单里有同名
-    // 剧集时按年份排除写了别的年份的发布。独一份的长寿剧不排（逐集发布常带
-    // 播出年份，按首播年排会误杀）。
-    filterSeriesByYear: _hasSameTitledSeries(state.franchiseEntries, target),
-    originalLanguageOnly: wantsOriginalLanguageRelease(state),
-    workLanguage: state.contentLanguage?.code,
+    filterSeriesByYear: filterSeriesByYear,
+    siblings: siblings,
+    originalLanguageOnly: originalLanguageOnly,
+    workLanguage: workLanguage,
+    manifests: state.knownReleaseManifests,
   );
+  // 剧集要下「全集」、标题证据又只给出逐集计划（或给不出）时，先看看标题判不出
+  // 范围的发布（没写 batch 的 BD 包）里装了什么，取回后重算这一部。在播剧集走
+  // 订阅不需要整包证据。
+  final bool wantsWholeSeason =
+      target.item.reference.mediaKind == VideoMetadataMediaKind.tv &&
+      !(resolved.plan?.usesBatch ?? false) &&
+      !(resolved.status == VideoAcquisitionFranchiseEntryStatus.ready &&
+          resolved.mode == VideoAcquisitionMode.subscribe);
+  if (wantsWholeSeason) {
+    final List<VideoResourceCandidate> targets = videoReleaseManifestTargets(
+      <VideoResourceCandidate>[
+        for (final VideoResourceVersionGroup group
+            in franchiseEntryResourceGroups(
+              target,
+              unused,
+              defaults: defaults,
+              filterSeriesByYear: filterSeriesByYear,
+              siblings: siblings,
+              originalLanguageOnly: originalLanguageOnly,
+              workLanguage: workLanguage,
+            ))
+          if (group.wholeRelease) ...group.members,
+      ],
+      sizeReference: unused.items,
+      inspected: state.releaseManifests.keys.toSet(),
+    );
+    if (targets.isNotEmpty) {
+      return (
+        state.copyWith(pendingFranchiseResolution: event),
+        <VideoAcquisitionEffect>[
+          VideoAcquisitionInspectReleasesEffect(
+            targets: targets,
+            franchiseIndex: index,
+          ),
+        ],
+      );
+    }
+  }
   final List<VideoAcquisitionFranchiseEntry> entries =
       List<VideoAcquisitionFranchiseEntry>.of(state.franchiseEntries);
   entries[index] = resolved;
@@ -2264,7 +2433,9 @@ VideoAcquisitionReduction _onFranchiseEntryResolved(
 /// * 模式：电影 / 已完结 / 已取消 → 下载；在播 / 未开播 / 状态未知 → 订阅（订阅
 ///   从已知最小集号起，已出的集会一起下）。订阅推不出严格规则时退回下载。
 /// * 身份：电影按完整身份（年份 / 重制版 / 续作序号）排除兄弟作品的发布
-///   （BUG-3065）；剧集只在清单里有同名剧集时按年份排除。
+///   （BUG-3065）；剧集只在清单里有同名剧集时按年份排除。两者都按 [siblings]
+///   （清单里的其它作品）排除标题点名了另一部的发布（`Garupa Pico: Fever!` 不是
+///   2018 年的《ガルパ☆ピコ》，BUG-4246）。
 /// * 语言：[originalLanguageOnly] 时排除只有配音 / 硬字幕的发布（BUG-3066）；
 ///   「配音 / 硬字幕」按这一部的原语言判（详情给得出就用它，否则用会话的
 ///   [workLanguage]）——国产片的国语、粤语片的粤语、中文作品的中字都不算。
@@ -2277,8 +2448,11 @@ VideoAcquisitionFranchiseEntry planFranchiseEntry(
   required VideoAcquisitionQuality quality,
   required VideoAcquisitionDefaults defaults,
   bool filterSeriesByYear = false,
+  List<VideoMediaReference> siblings = const <VideoMediaReference>[],
   bool originalLanguageOnly = false,
   String? workLanguage,
+  Map<String, VideoReleaseManifest> manifests =
+      const <String, VideoReleaseManifest>{},
 }) {
   final VideoMediaReference reference = entry.item.reference;
   final VideoMetadataMediaKind kind = reference.mediaKind;
@@ -2289,24 +2463,16 @@ VideoAcquisitionFranchiseEntry planFranchiseEntry(
           airing == VideoAiringStatus.cancelled
       ? VideoAcquisitionMode.download
       : VideoAcquisitionMode.subscribe;
-  final List<VideoResourceVersionGroup> groups =
-      buildVideoResourceVersionGroups(
-        cleanResourceCandidates(
-          event.items,
-          skipExtras: defaults.skipExtras,
-          work: kind == VideoMetadataMediaKind.movie
-              ? VideoResourceWorkTarget.fromReference(
-                  reference.withWorkLatinTitles(event.work),
-                )
-              : filterSeriesByYear
-              ? VideoResourceWorkTarget.yearOnly(reference.year)
-              : null,
-          originalLanguageOnly: originalLanguageOnly,
-          workLanguage:
-              resolveVideoWorkContentLanguage(event.work, reference).code ??
-              workLanguage,
-        ),
-      );
+  final List<VideoResourceVersionGroup> groups = franchiseEntryResourceGroups(
+    entry,
+    event,
+    defaults: defaults,
+    filterSeriesByYear: filterSeriesByYear,
+    siblings: siblings,
+    originalLanguageOnly: originalLanguageOnly,
+    workLanguage: workLanguage,
+    manifests: manifests,
+  );
   ({VideoAcquisitionMode mode, VideoAcquisitionResourcePlan plan})? found;
   for (final VideoAcquisitionMode mode in <VideoAcquisitionMode>[
     preferred,
@@ -2364,6 +2530,43 @@ VideoAcquisitionFranchiseEntry planFranchiseEntry(
     plan: found.plan,
     selected: !owned,
     owned: owned,
+  );
+}
+
+/// 整套下载里一部作品的版本卡：身份 / 语言清洗（判据见 [planFranchiseEntry]）后
+/// 分组，带上已取到的文件列表作整包证据。
+List<VideoResourceVersionGroup> franchiseEntryResourceGroups(
+  VideoAcquisitionFranchiseEntry entry,
+  VideoAcquisitionFranchiseEntryResolvedEvent event, {
+  required VideoAcquisitionDefaults defaults,
+  bool filterSeriesByYear = false,
+  List<VideoMediaReference> siblings = const <VideoMediaReference>[],
+  bool originalLanguageOnly = false,
+  String? workLanguage,
+  Map<String, VideoReleaseManifest> manifests =
+      const <String, VideoReleaseManifest>{},
+}) {
+  final VideoMediaReference reference = entry.item.reference;
+  return buildVideoResourceVersionGroups(
+    cleanResourceCandidates(
+      event.items,
+      skipExtras: defaults.skipExtras,
+      work: reference.mediaKind == VideoMetadataMediaKind.movie
+          ? VideoResourceWorkTarget.fromReference(
+              reference.withWorkLatinTitles(event.work),
+              siblings: siblings,
+            )
+          : VideoResourceWorkTarget.seriesFromReference(
+              reference.withWorkLatinTitles(event.work),
+              siblings: siblings,
+              byYear: filterSeriesByYear,
+            ),
+      originalLanguageOnly: originalLanguageOnly,
+      workLanguage:
+          resolveVideoWorkContentLanguage(event.work, reference).code ??
+          workLanguage,
+    ),
+    manifests: manifests,
   );
 }
 
@@ -2480,6 +2683,7 @@ VideoAcquisitionReduction _onFranchiseSubmitted(
               'downloads': event.downloads,
               'subscriptions': event.subscriptions,
               'failed': event.failed,
+              'alreadyQueued': event.alreadyQueued,
             },
           ),
         ),

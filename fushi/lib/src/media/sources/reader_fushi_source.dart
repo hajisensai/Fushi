@@ -27,9 +27,11 @@ import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_contract.d
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi/src/media/audiobook/book_import_dialog.dart';
+import 'package:fushi/src/media/audiobook/text_leads_page_stop.dart';
 import 'package:fushi/src/media/manga/interconnect/interconnect_manga_source.dart'
     show InterconnectMangaCatalog;
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
+import 'package:fushi/src/reader/continuous_chapter_turn_resistance.dart';
 import 'package:fushi/src/reader/page_turn_animation.dart';
 import 'package:fushi/src/reader/reader_page_spread.dart';
 import 'package:fushi/src/reader/reader_tap_zones.dart';
@@ -1568,6 +1570,20 @@ class ReaderFushiSource extends ReaderMediaSource {
     await setPreference<bool>(key: 'pause_on_lookup', value: value);
   }
 
+  /// 查词暂停后关弹窗时，从被查词所在那句的句首重播，而不是原地续播。
+  /// 只在 [pauseOnLookup] 开着时有意义（没暂停就没有「恢复」）。默认关。
+  bool get restartSentenceAfterLookup => getPreference<bool>(
+    key: 'restart_sentence_after_lookup',
+    defaultValue: false,
+  );
+
+  Future<void> setRestartSentenceAfterLookup({required bool value}) async {
+    await setPreference<bool>(
+      key: 'restart_sentence_after_lookup',
+      value: value,
+    );
+  }
+
   /// 悬停查词时，鼠标离开字幕与查词浮层后是否自动关掉浮层并恢复播放（免去「再点一下
   /// 空白」那一步）。只作用于**悬停发起**的查词会话——点击查词是显式的「停在这儿看」，
   /// 鼠标移开不关（判据见 `VideoFushiPage.shouldAutoResumeOnHoverLeave`）。
@@ -1672,7 +1688,9 @@ class ReaderFushiSource extends ReaderMediaSource {
 
   /// 制卡被收下（成功 / 进待发队列）后关掉整个查词弹窗栈（用户建议 q16Apecgbg：
   /// 「查词框妨碍阅读」）。默认关闭 = 制卡后弹窗照旧留着（既有行为）。接线在
-  /// `closePopupAfterAcceptedMine`（阅读器 / 有声书 / 视频两条弹窗车道共用）。
+  /// `closePopupAfterAcceptedMine`（阅读器 / 有声书 / 走 DictionaryPageMixin 的查词
+  /// 车道共用）。视频播放页不看本开关：制卡后恒关弹窗、续播（反馈 OeS0m8tLHc，见
+  /// `DictionaryPageMixin.closePopupAfterMining` 的覆写）。
   bool get closePopupAfterMining =>
       getPreference<bool>(key: 'close_popup_after_mining', defaultValue: false);
 
@@ -1742,6 +1760,44 @@ class ReaderFushiSource extends ReaderMediaSource {
     await (readerSettings?.setPageTurnFollowDrag(value) ??
         setPreference<bool>(
           key: ReaderSettings.pageTurnFollowDragKey,
+          value: value,
+        ));
+  }
+
+  /// 连续模式切章阻尼（落盘 key 与 [ReaderSettings.continuousChapterTurnResistance]
+  /// 同一个），`readerSettings` 为 null 的旁路 entry point 走偏好表兜底。
+  ContinuousChapterTurnResistance get continuousChapterTurnResistance =>
+      readerSettings?.continuousChapterTurnResistance ??
+      ContinuousChapterTurnResistance.fromKey(
+        getPreference<String?>(
+          key: ReaderSettings.continuousChapterTurnResistanceKey,
+          defaultValue: null,
+        ),
+      );
+
+  Future<void> setContinuousChapterTurnResistance(
+    ContinuousChapterTurnResistance value,
+  ) async {
+    await (readerSettings?.setContinuousChapterTurnResistance(value) ??
+        setPreference<String>(
+          key: ReaderSettings.continuousChapterTurnResistanceKey,
+          value: value.key,
+        ));
+  }
+
+  /// 连续模式章节无缝衔接（落盘 key 与 [ReaderSettings.continuousSeamlessChapters]
+  /// 同一个，默认关）。
+  bool get continuousSeamlessChapters =>
+      readerSettings?.continuousSeamlessChapters ??
+      getPreference<bool>(
+        key: ReaderSettings.continuousSeamlessChaptersKey,
+        defaultValue: false,
+      );
+
+  Future<void> setContinuousSeamlessChapters(bool value) async {
+    await (readerSettings?.setContinuousSeamlessChapters(value) ??
+        setPreference<bool>(
+          key: ReaderSettings.continuousSeamlessChaptersKey,
           value: value,
         ));
   }
@@ -1832,6 +1888,45 @@ class ReaderFushiSource extends ReaderMediaSource {
         setPreference<bool>(
           key: 'show_reading_timer',
           value: !showReadingTimer,
+        ));
+  }
+
+  /// 读数胶囊「本次字数」段是否显示（分层同 [showTopProgressBar]）。
+  bool get showSessionChars =>
+      readerSettings?.showSessionChars ??
+      getPreference<bool>(key: 'show_session_chars', defaultValue: true);
+
+  void toggleShowSessionChars() async {
+    await (readerSettings?.toggleShowSessionChars() ??
+        setPreference<bool>(
+          key: 'show_session_chars',
+          value: !showSessionChars,
+        ));
+  }
+
+  /// 读数胶囊「本次字每时」段是否显示（分层同 [showTopProgressBar]）。
+  bool get showCharsPerHour =>
+      readerSettings?.showCharsPerHour ??
+      getPreference<bool>(key: 'show_chars_per_hour', defaultValue: true);
+
+  void toggleShowCharsPerHour() async {
+    await (readerSettings?.toggleShowCharsPerHour() ??
+        setPreference<bool>(
+          key: 'show_chars_per_hour',
+          value: !showCharsPerHour,
+        ));
+  }
+
+  /// 悬浮控制栏收起后读数胶囊是否常驻（分层同 [showTopProgressBar]）。
+  bool get statusFooterPersistent =>
+      readerSettings?.statusFooterPersistent ??
+      getPreference<bool>(key: 'status_footer_persistent', defaultValue: true);
+
+  void toggleStatusFooterPersistent() async {
+    await (readerSettings?.toggleStatusFooterPersistent() ??
+        setPreference<bool>(
+          key: 'status_footer_persistent',
+          value: !statusFooterPersistent,
         ));
   }
 
@@ -2424,6 +2519,20 @@ class ReaderFushiSource extends ReaderMediaSource {
     await (readerSettings?.setVisualNovelMergeCrossScreenSentenceAudioCues(v) ??
         setPreference<bool>(key: 'vn_merge_cross_screen_cues', value: v));
   }
+
+  /// 「跟随音频」开着时的领读方向：'audio'（音频领读，文字跟着翻）或 'text'（文字
+  /// 领读：音频停在本屏末句、翻屏续播）。全局偏好，默认 'audio'。
+  String get audiobookLinkDirection => getPreference<String>(
+    key: 'audiobook_link_direction',
+    defaultValue: kAudiobookLinkDirectionAudio,
+  );
+
+  Future<void> setAudiobookLinkDirection(String value) async {
+    await setPreference<String>(key: 'audiobook_link_direction', value: value);
+  }
+
+  bool get audiobookTextLeads =>
+      audiobookLinkDirection == kAudiobookLinkDirectionText;
 
   String get readerTheme =>
       readerSettings?.theme ??

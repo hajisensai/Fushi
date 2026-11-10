@@ -64,7 +64,7 @@ void main() {
     });
   }
 
-  group('arrive：_refreshProgress 是唯一记字入口', () {
+  group('arrive：_refreshProgress 是正文唯一记字入口', () {
     final String body = methodBody(
       corpus,
       'Future<void> _refreshProgress() async',
@@ -97,7 +97,7 @@ void main() {
         'chapter != _currentChapter',
         '!identical(controller, _controller)',
         '_restoreInFlight',
-        // 2026-10-04 歌词覆盖层：正文在歌词层下面照常记账，这道闸不再看歌词态。
+        // 歌词态在首条门就挡掉了（2026-11-10 独立模式），这道在途闸不重复看。
         'return;',
       ]) {
         expect(guard, contains(rejection));
@@ -139,17 +139,31 @@ void main() {
       expect(containsIdentifier(body, 'addChars'), isFalse);
     });
 
-    test('全语料只有 _refreshProgress 落定入账（歌词覆盖层不入账）', () {
-      // 2026-10-04 歌词覆盖层（对齐 Niratan，取代 BUG-2597 的「歌词单元入账」）：
-      // 歌词模式是盖在正文上的一层，正文在下面照常跟随音频翻页，字数照常由正文的
-      // _refreshProgress 入账；歌词层不写任何统计，全语料只剩这一处 arrive。
-      // BUG-3100 起这唯一一处经 arriveReadUnitThroughStartGate(ledger: _readLedger)。
+    test('全语料恰两处落定入账：正文的页（_refreshProgress）与歌词的句（_settleLyricsCue）', () {
+      // 2026-11-10 歌词模式是独立模式（取代 10-04 的「覆盖层 + 正文在下面按页入账」）：
+      // 歌词模式的单元是当前句，换句即 arrive；正文在歌词模式期间不采样
+      // （_refreshProgress 首条门挡 _lyricsMode），两处互斥、不会轮流 arrive。
+      // 两处都经 arriveReadUnitThroughStartGate(ledger: _readLedger)（BUG-3100）。
       expect(
         'arriveReadUnitThroughStartGate('.allMatches(masked),
-        hasLength(1),
+        hasLength(2),
       );
       expect('_readLedger.arrive('.allMatches(masked), isEmpty);
-      expect(masked.contains('_arriveLyricsCueUnit'), isFalse);
+      expect(
+        containsIdentifierCall(
+          methodBody(corpus, 'void _settleLyricsCue('),
+          'arriveReadUnitThroughStartGate',
+        ),
+        isTrue,
+      );
+      expect(
+        containsCodeLine(
+          methodBody(corpus, 'Future<void> _refreshProgress()'),
+          'if (_controller == null || _restoreInFlight || _lyricsMode) return;',
+        ),
+        isTrue,
+        reason: '歌词模式期间正文那页不采样，否则与当前句轮流 arrive、账本来回撤回',
+      );
     });
   });
 
@@ -329,6 +343,21 @@ void main() {
   });
 
   group('leave：显式跳句；关书三条路不碰账本（BUG-2264）', () {
+    test('无缝衔接软换章在第一个 await 之前 leave（与 _beginNavigation 同一采样点）', () {
+      final String body = maskComments(
+        methodBody(corpus, 'Future<void> _onSeamlessChapterActivated({'),
+      );
+      final int leave = body.indexOf('_readLedger.leave();');
+      final int switched = body.indexOf('_currentChapter = to;');
+      final int firstAwait = body.indexOf(
+        'await controller.evaluateJavascript(',
+      );
+      expect(leave, isNonNegative);
+      expect(switched, greaterThan(leave), reason: '先结算旧章再换章号');
+      expect(firstAwait, greaterThan(switched));
+      expect('_readLedger.leave('.allMatches(body), hasLength(1));
+    });
+
     test('_handleExplicitCueJump 体内只 leave', () {
       final String body = methodBody(
         corpus,
@@ -420,19 +449,26 @@ void main() {
       expect(containsCodeLine(body, 'await _studyClock?.flushNow();'), isTrue);
     });
 
-    test('leave 恰七处：跳句 + _beginNavigation + 五个同章跳转入口；'
-        '关书三条路（dispose / onSourcePagePop / 进程退出）零账本动作', () {
-      // 2026-10-04 歌词覆盖层：进歌词不再换掉正文文档，正文仍站在当前页并继续跟随，
-      // 所以进歌词**不**结算正文页（旧 BUG-2597 的第六处 leave 随之删除）。
+    test('leave 恰十处：跳句 + _beginNavigation + 五个同章跳转入口 + 无缝衔接换章 + '
+        '进 / 出歌词；关书三条路（dispose / onSourcePagePop / 进程退出）零账本动作', () {
+      // 2026-11-10 歌词模式是独立模式：进歌词离开正文页（结算它）、出歌词离开
+      // 当前句——两次都是「离开当前单元且不进入新单元」，与跳走同律。
       // 五个同章跳转入口：进度条 / 收藏 / 脚注，加上书签（#2485）与跳回历史
       // （#2486）——后两处同章分支同样绕过 _beginNavigation，见上面的逐方法断言。
-      expect('_readLedger.leave('.allMatches(masked), hasLength(7));
+      // 第八处：连续模式章节无缝衔接的软换章（反馈 R7k887yaJI ③）不走
+      // _beginNavigation，在离开那章的那一刻（第一个 await 之前）自己 leave。
+      expect('_readLedger.leave('.allMatches(masked), hasLength(10));
       expect(
-        containsIdentifier(
+        '_readLedger.leave('.allMatches(
           methodBody(corpus, 'Future<void> _toggleLyricsMode()'),
-          '_readLedger',
         ),
-        isFalse,
+        hasLength(1),
+      );
+      expect(
+        '_readLedger.leave('.allMatches(
+          methodBody(corpus, 'Future<void> _exitLyricsMode()'),
+        ),
+        hasLength(1),
       );
       // BUG-2264：关书不是翻走。dispose 只 detach() 停表；`settle` 已从账本删除，
       // 任何形式的「关书结算当前页」回潮都会让开关一次涨一次。

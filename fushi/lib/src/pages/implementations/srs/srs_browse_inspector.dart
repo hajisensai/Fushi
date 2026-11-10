@@ -47,6 +47,7 @@ import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_loading_view.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_load_error.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
@@ -158,6 +159,9 @@ class _SrsBrowseInspectorState extends ConsumerState<SrsBrowseInspector> {
   SrsCardDetail? _detail;
   int _seq = 0;
 
+  /// 读这张卡失败（复习库打开失败原样抛出、或读的途中出错）：编辑 / 历史页签显示错误态 + 重试，不停在转圈。
+  Object? _loadError;
+
   @override
   void initState() {
     super.initState();
@@ -175,11 +179,45 @@ class _SrsBrowseInspectorState extends ConsumerState<SrsBrowseInspector> {
 
   Future<void> _load() async {
     final int seq = ++_seq;
-    final SrsDbStore? store = await readSrsStore(ref);
-    if (store == null) return;
-    final SrsCardDetail? detail = await store.cardDetail(widget.row.cardId);
+    final SrsCardDetail? detail;
+    try {
+      final SrsDbStore? store = await readSrsStore(ref);
+      if (store == null) return;
+      detail = await store.cardDetail(widget.row.cardId);
+    } catch (e, stack) {
+      ErrorLogService.instance.log('SrsBrowseInspector.load', e, stack);
+      if (mounted && seq == _seq) {
+        setState(() {
+          _loadError = e;
+          // 换了行：上一张卡的内容不能留在这一行的页签里，改显示错误态（同一张卡重读失败则照旧显示）。
+          if (_detail?.card.id != widget.row.cardId) _detail = null;
+        });
+      }
+      return;
+    }
     if (!mounted || seq != _seq) return;
-    setState(() => _detail = detail);
+    setState(() {
+      _detail = detail;
+      _loadError = null;
+    });
+  }
+
+  void _retryLoad() {
+    retrySrsStoreOpen(ref);
+    setState(() => _loadError = null);
+    unawaited(_load());
+  }
+
+  /// 编辑 / 历史页签在还没读到这张卡时的占位：读失败给错误态，否则转圈。
+  Widget _pending() {
+    final Object? error = _loadError;
+    return error == null
+        ? const FushiLoadingView()
+        : SrsLoadErrorView(
+            error: error,
+            retryKey: const ValueKey<String>('srs-browse-inspector-load-retry'),
+            onRetry: _retryLoad,
+          );
   }
 
   CardSourceLink? get _link {
@@ -199,7 +237,7 @@ class _SrsBrowseInspectorState extends ConsumerState<SrsBrowseInspector> {
       ),
       SrsBrowseInspectorTab.edit =>
         detail == null
-            ? const FushiLoadingView()
+            ? _pending()
             : _EditTab(
                 key: ValueKey<String>(
                   'srs-browse-inspector-edit-${detail.note.id}',
@@ -211,7 +249,7 @@ class _SrsBrowseInspectorState extends ConsumerState<SrsBrowseInspector> {
               ),
       SrsBrowseInspectorTab.history =>
         detail == null
-            ? const FushiLoadingView()
+            ? _pending()
             : _HistoryTab(
                 key: ValueKey<String>(
                   'srs-browse-inspector-history-${detail.card.id}',
@@ -749,6 +787,9 @@ class _HistoryTab extends ConsumerStatefulWidget {
 class _HistoryTabState extends ConsumerState<_HistoryTab> {
   _HistoryData? _data;
 
+  /// 读复习历史失败：页签显示错误态 + 重试（不是空白曲线 + 未处理异常）。
+  Object? _loadError;
+
   @override
   void initState() {
     super.initState();
@@ -762,6 +803,21 @@ class _HistoryTabState extends ConsumerState<_HistoryTab> {
   }
 
   Future<void> _load() async {
+    try {
+      await _read();
+    } catch (e, stack) {
+      ErrorLogService.instance.log('SrsBrowseInspector.history', e, stack);
+      if (mounted) setState(() => _loadError = e);
+    }
+  }
+
+  void _retryLoad() {
+    retrySrsStoreOpen(ref);
+    setState(() => _loadError = null);
+    unawaited(_load());
+  }
+
+  Future<void> _read() async {
     final SrsDbStore? store = await readSrsStore(ref);
     if (store == null) return;
     final SrsCardHistory history = await store.history(widget.detail.card.id);
@@ -791,8 +847,9 @@ class _HistoryTabState extends ConsumerState<_HistoryTab> {
             futureDays: math.max(7, interval * 1.5),
           );
     if (!mounted) return;
-    setState(
-      () => _data = _HistoryData(
+    setState(() {
+      _loadError = null;
+      _data = _HistoryData(
         logs: <SrsReviewLog>[
           for (final SrsReviewLog l in logs.reversed)
             if (l.kind == SrsLogKind.review) l,
@@ -800,12 +857,20 @@ class _HistoryTabState extends ConsumerState<_HistoryTab> {
         curve: curve,
         target: config.desiredRetention,
         nowMs: nowMs,
-      ),
-    );
+      );
+    });
   }
 
   @override
   Widget build(BuildContext context) {
+    final Object? loadError = _loadError;
+    if (loadError != null) {
+      return SrsLoadErrorView(
+        error: loadError,
+        retryKey: const ValueKey<String>('srs-browse-history-load-retry'),
+        onRetry: _retryLoad,
+      );
+    }
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final SrsBrowseRow row = widget.row;
     final _HistoryData? data = _data;

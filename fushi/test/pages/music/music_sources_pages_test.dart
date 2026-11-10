@@ -16,7 +16,11 @@ import 'package:fushi/src/media/music/music_online_sources.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/music/music_sources_page.dart';
+import 'package:fushi/src/pages/implementations/music/music_server_settings.dart';
 import 'package:fushi/src/pages/implementations/music/music_sources_recommend.dart';
+import 'package:fushi/src/settings/settings_detail_page.dart';
+import 'package:fushi/src/settings/settings_schema_services.dart'
+    show buildMusicServersDestination;
 import 'package:fushi/src/utils/components/glass/fushi_glass_chips.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/music/server/music_server.dart';
@@ -194,6 +198,32 @@ void main() {
           const EventChannel(kAppleMusicNativeEventChannel),
           null,
         );
+  });
+
+  testWidgets('来源页「添加 › 服务器」推的是 设置 › 在线服务 › 媒体服务器 里那一页（同一棵树）', (
+    WidgetTester tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1200, 1600);
+    addTearDown(tester.view.reset);
+    final _Env env = await _env(tester);
+    await tester.pumpWidget(_host(env.app, const MusicSourcesPage()));
+    await _settle(tester);
+
+    await tester.tap(find.text(t.music_sources_add));
+    await _settle(tester);
+    await tester.tap(
+      find.byKey(const ValueKey<String>('music_sources_add_server')),
+    );
+    await _settle(tester);
+
+    final SettingsDetailPage page = tester.widget<SettingsDetailPage>(
+      find.byType(SettingsDetailPage),
+    );
+    expect(page.subPageBuilder, equals(buildMusicServersDestination));
+    expect(find.byType(MusicServerSettingsBody), findsOneWidget);
+    expect(find.text(t.music_server_bitrate_title), findsOneWidget);
+    await _teardown(tester);
   });
 
   testWidgets('来源页：排序 / 开关写回时，停用中的服务器的顺序与隐藏原样保留', (WidgetTester tester) async {

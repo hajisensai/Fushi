@@ -122,6 +122,47 @@ class SrsTrainingSet {
   }();
 }
 
+/// 复习统计页校准图的训练集（`ffsrs_store_calibration_items`）：前半段就是优化器训练集（[training]，同一布局），
+/// 末尾按列接每个条目的五列。列直接取字节视图（不逐条解码），原样交给 `ffsrs_calibration_report`。
+class SrsCalibrationItems {
+  SrsCalibrationItems(this.bytes) : training = SrsTrainingSet(bytes);
+
+  final Uint8List bytes;
+  final SrsTrainingSet training;
+
+  int get length => training.itemCount;
+
+  /// 目标评分的时刻（毫秒）。
+  Int64List get ats => _column(0);
+
+  /// 目标评分的复习日志数字 ID（与 RWKV 回放行的标签同一个）。
+  Int64List get tags => _column(1);
+
+  /// 距上一次评分的复习日天数。
+  Int64List get elapsed => _column(2);
+
+  /// 卡的数字 id。
+  Int64List get cards => _column(3);
+
+  /// 1 = 记住（评分 > 1）。
+  Int64List get actual => _column(4);
+
+  Int64List _column(int k) {
+    final SrsTrainingSet t = training;
+    final int words =
+        3 + t.seqCount + 1 + t.seqCount + 2 * t.reviewTotal + 2 * t.itemCount;
+    final int at = 8 * (words + k * t.itemCount);
+    if ((bytes.offsetInBytes + at) % 8 == 0) {
+      return Int64List.sublistView(bytes, at, at + 8 * t.itemCount);
+    }
+    final ByteData d = ByteData.sublistView(bytes);
+    return Int64List.fromList(<int>[
+      for (int i = 0; i < t.itemCount; i++)
+        d.getInt64(at + 8 * i, Endian.little),
+    ]);
+  }
+}
+
 // ---------------------------------------------------------------- RWKV
 
 /// 一张卡最后一条**保留**评分的摘要：「此刻」这一行的 card_type 与间隔只取决于它。

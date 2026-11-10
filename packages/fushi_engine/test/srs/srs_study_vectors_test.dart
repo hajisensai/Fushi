@@ -8,6 +8,8 @@
 // 「按位置」新卡顺序。
 //
 // 重新生成（只在有意改变排队语义时）：SRS_STUDY_VECTORS_WRITE=1 跑本文件。
+// 2026-11-07 重新生成：RWKV 牌组不再按复习量调整新卡，RWKV 牌组行的复习预算列变成 0（新卡配额、调整原因与 FSRS 的
+// Root::B / Root::B1 行逐项不变，脚本逐值核对过）。
 import 'dart:convert';
 import 'dart:io';
 
@@ -83,6 +85,7 @@ void main() {
     final SrsDbStore s = await openTestStore(
       profileUid: kVecProfile,
       deviceId: 'v',
+      localOffsetMin: () => 0,
       now: () => t,
     );
     final Map<String, String> label = <String, String>{};
@@ -90,7 +93,9 @@ void main() {
     await s.editField(
       SrsEntityKind.profile,
       kVecProfile,
-      SrsFieldKeys.utcOffsetMin,
+      // 旧版声明过、从没有写入方的 profile 键：现在不读（时区恒为本机，由打开时的 localOffsetMin 钉住），
+      // 留着这条写入让写入序号与生成向量时一致。
+      'utcOffsetMin',
       0,
     );
     await s.editField(

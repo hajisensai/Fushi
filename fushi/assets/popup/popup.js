@@ -2709,12 +2709,20 @@ function renderDefinitionImageToCanvas(canvas, image, usedWidth, invAspectRatio,
 }
 
 // https://github.com/yomidevs/yomitan/blob/c0abb9e98a15aeb6b6f8f6e2d91fe5e54240b54a/ext/js/data/anki-note-data-creator.js#L177-L221
-function getFrequencyHarmonicRank(frequencies) {
+//
+// One number per dictionary, in display order: the first frequency of the first
+// group of each dictionary (later groups of the same dictionary are ignored), its
+// displayValue's leading digits when they parse to > 0, else its numeric value
+// when > 0, else the dictionary contributes nothing. This is the single source for
+// BOTH the harmonic rank ({frequency-harmonic-rank}) and Yomitan's per-dictionary
+// {single-frequency-number-<dict>} (BUG-4272: per-dict frequency could not
+// be mapped), so the two can never disagree about which number a dictionary gave.
+function collectFrequencyNumbers(frequencies) {
+    const numbers = [];
     if (!frequencies || frequencies.length === 0) {
-        return DEFAULT_HARMONIC_RANK;
+        return numbers;
     }
-    
-    const values = [];
+
     const seenDictionaries = new Set();
     frequencies.forEach(freqGroup => {
         const dictionary = freqGroup?.dictionary;
@@ -2724,36 +2732,73 @@ function getFrequencyHarmonicRank(frequencies) {
         if (dictionary) {
             seenDictionaries.add(dictionary);
         }
-        
+
         const firstFreq = freqGroup?.frequencies?.[0];
         if (!firstFreq) {
             return;
         }
-        
+
         const displayValue = firstFreq.displayValue;
         if (displayValue != null) {
             const match = String(displayValue).match(/^\d+/);
             if (match) {
                 const parsed = Number.parseInt(match[0], 10);
                 if (parsed > 0) {
-                    values.push(parsed);
+                    numbers.push({ dictionary, value: parsed });
                     return;
                 }
             }
         }
-        
+
         const val = firstFreq.value;
         if (val && val > 0) {
-            values.push(val);
+            numbers.push({ dictionary, value: val });
         }
     });
-    
+    return numbers;
+}
+
+function getFrequencyHarmonicRank(frequencies) {
+    const values = collectFrequencyNumbers(frequencies).map(n => n.value);
+
     if (values.length === 0) {
         return DEFAULT_HARMONIC_RANK;
     }
-    
+
     const sumOfReciprocals = values.reduce((sum, val) => sum + (1 / val), 0);
     return String(Math.floor(values.length / sumOfReciprocals));
+}
+
+// Yomitan {single-frequency-number-<dict>}: dictionary name -> that dictionary's
+// number (as a string, like freqHarmonicRank). Dictionaries without a usable
+// number are absent, so the Dart renderer yields '' for them (same as Yomitan,
+// whose partial renders nothing when the dictionary has no frequency).
+function constructSingleFrequencyNumbers(frequencies) {
+    const result = {};
+    collectFrequencyNumbers(frequencies).forEach(({ dictionary, value }) => {
+        if (dictionary) {
+            result[dictionary] = String(value);
+        }
+    });
+    return result;
+}
+
+// Yomitan {single-frequency-<dict>}: the {frequencies} list restricted to one
+// dictionary, rendered by the same constructFrequencyHtml so the markup matches.
+function constructSingleFrequenciesHtml(frequencies) {
+    const result = {};
+    if (!frequencies || frequencies.length === 0) {
+        return result;
+    }
+    frequencies.forEach(freqGroup => {
+        const dictionary = freqGroup?.dictionary;
+        if (!dictionary || dictionary in result || !freqGroup?.frequencies?.length) {
+            return;
+        }
+        result[dictionary] = constructFrequencyHtml(
+            frequencies.filter(group => group?.dictionary === dictionary));
+    });
+    return result;
 }
 
 // Builds the Anki field payload for a popup entry. Shared by mineEntry (create)
@@ -2768,6 +2813,8 @@ async function buildMinePayload(expression, reading, frequencies, pitches, rules
     const glossary = constructGlossaryHtml(idx);
     const freqHarmonicRank = getFrequencyHarmonicRank(frequencies);
     const frequenciesHtml = constructFrequencyHtml(frequencies);
+    const singleFrequencyNumbers = constructSingleFrequencyNumbers(frequencies);
+    const singleFrequenciesHtml = constructSingleFrequenciesHtml(frequencies);
     const singleGlossaries = constructSingleGlossaryHtml(idx);
     const dictionaryMedia = currentDictionaryMedia;
     currentDictionaryMedia = null;
@@ -2838,6 +2885,8 @@ async function buildMinePayload(expression, reading, frequencies, pitches, rules
         furiganaPlain,
         frequenciesHtml,
         freqHarmonicRank,
+        singleFrequencyNumbers: JSON.stringify(singleFrequencyNumbers),
+        singleFrequenciesHtml: JSON.stringify(singleFrequenciesHtml),
         glossary,
         glossaryFirst,
         singleGlossaries: JSON.stringify(singleGlossaries),
@@ -2917,39 +2966,54 @@ async function queueOverwrite(expression, reading, frequencies, pitches, rules, 
 
 const MINED_ACTION_OPEN_CLASS = 'mined-action-open';
 
-// 反馈 E0sdqm4h-F / PR #2980 审查：已制卡 ✓ 的「管理」手势——桌面右键、触屏长按（Android
-// 长按也会派发 contextmenu）、按钮聚焦时 ContextMenu 键 / Shift+F10。永远弹覆写 / 新增 /
-// 查看的选择单。单击在「允许重复」开着时直接新增，覆写指定旧卡 / 查看就只剩这条入口，
-// 所以它对所有宿主、不论设置都在。未制卡（+）时不拦，原生菜单照常。与 ♪ 的选源菜单
-// （bindAudioSourceMenuTriggers）同一套触发与「长按后吞掉补发 click」的约定。
-const MINED_MANAGE_LONG_PRESS_MS = 450;
-const MINED_MANAGE_MOVE_TOLERANCE_PX = 10;
-function bindMinedCardManageTriggers(button, openManage) {
+// ── 弹窗内联按钮的「次级动作」手势：唯一的绑定口 ─────────────────────────────────
+// 已制卡 ✓ 的管理选择单、♪ 的选源菜单都是「单击做主动作、长按 / 右键 / 菜单键打开次级
+// 菜单」。这套手势以前在两处各抄一份，而且长按只认 touch / pen：桌面鼠标按住不放什么都
+// 不发生，可两处的提示（「右键或长按」）对所有平台都这么写（反馈 3UHYaFPP8g）。现在
+// 只在这里定义一次，三种输入同一语义：
+//   - 长按：触屏 / 触控笔 / **鼠标主键**按住 ≥ POPUP_LONG_PRESS_MS 且未移出容差 → 打开；
+//     随后内核补发的那次 click 由按钮自己的 onclick 按 data-fushi-suppress-click 吞掉；
+//   - 右键：contextmenu（Android 长按也会派发它：长按计时已打开过时只吞原生菜单）；
+//   - 键盘：按钮聚焦时 ContextMenu 键 / Shift+F10（打开后焦点进菜单首项）。
+// [isActive]：此刻是否提供次级菜单（未制卡的「+」不提供，原生菜单与单击照常）。
+// [isOpen]：菜单已开着时右键只吞原生菜单、不重复打开。
+// [open]({focusFirst})：打开次级菜单。
+// 新增「长按 / 右键」次级动作的弹窗按钮一律走这里，不再自己挂 pointerdown 计时。
+const POPUP_LONG_PRESS_MS = 450;
+const POPUP_LONG_PRESS_MOVE_TOLERANCE_PX = 10;
+function isPopupLongPressPointer(e) {
+    if (e.pointerType === 'touch' || e.pointerType === 'pen') return true;
+    // 鼠标只认主键（button 0）；右键走 contextmenu，中键 / 侧键不归这里。
+    return e.pointerType === 'mouse' && e.button === 0;
+}
+function bindPopupSecondaryActionTriggers(button, { isActive, isOpen, open }) {
+    const active = typeof isActive === 'function' ? isActive : () => true;
+    const alreadyOpen = typeof isOpen === 'function' ? isOpen : () => false;
     let pressTimer = 0;
     let pressStart = null;
-    const isMined = () => button.dataset.mined === '1' && button.dataset.mining !== '1';
     const cancelPress = () => {
         if (pressTimer) clearTimeout(pressTimer);
         pressTimer = 0;
         pressStart = null;
     };
     button.addEventListener('pointerdown', (e) => {
+        // 长按后有的内核不再派发 click：残留的吞点击标记在下一次按下时作废。
         delete button.dataset.fushiSuppressClick;
-        if (e.pointerType !== 'touch' && e.pointerType !== 'pen') return;
         cancelPress();
-        if (!isMined()) return;
+        if (!isPopupLongPressPointer(e) || !active()) return;
         pressStart = { x: e.clientX, y: e.clientY };
         pressTimer = setTimeout(() => {
             pressTimer = 0;
             pressStart = null;
+            if (!active()) return;
             button.dataset.fushiSuppressClick = '1';
-            openManage();
-        }, MINED_MANAGE_LONG_PRESS_MS);
+            open({ focusFirst: false });
+        }, POPUP_LONG_PRESS_MS);
     });
     button.addEventListener('pointermove', (e) => {
         if (!pressStart) return;
-        if (Math.abs(e.clientX - pressStart.x) > MINED_MANAGE_MOVE_TOLERANCE_PX ||
-            Math.abs(e.clientY - pressStart.y) > MINED_MANAGE_MOVE_TOLERANCE_PX) {
+        if (Math.abs(e.clientX - pressStart.x) > POPUP_LONG_PRESS_MOVE_TOLERANCE_PX ||
+            Math.abs(e.clientY - pressStart.y) > POPUP_LONG_PRESS_MOVE_TOLERANCE_PX) {
             cancelPress();
         }
     });
@@ -2957,23 +3021,34 @@ function bindMinedCardManageTriggers(button, openManage) {
     button.addEventListener('pointercancel', cancelPress);
     button.addEventListener('pointerleave', cancelPress);
     button.addEventListener('contextmenu', (e) => {
-        if (!isMined()) return;
+        if (!active()) return;
         e.preventDefault();
         e.stopPropagation();
-        // 长按计时已经打开过：只吞掉原生菜单，不重复打开。
-        if (button.dataset.fushiSuppressClick === '1') return;
+        // 长按计时已经打开过 / 菜单正开着：只吞掉原生菜单，不重复打开。
+        if (button.dataset.fushiSuppressClick === '1' || alreadyOpen()) return;
         cancelPress();
         if (e.pointerType === 'touch' || e.pointerType === 'pen') {
             button.dataset.fushiSuppressClick = '1';
         }
-        openManage();
+        open({ focusFirst: false });
     });
     button.addEventListener('keydown', (e) => {
         const isMenuKey = e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey);
-        if (!isMenuKey || !isMined()) return;
+        if (!isMenuKey || !active()) return;
         e.preventDefault();
         e.stopPropagation();
-        openManage();
+        open({ focusFirst: true });
+    });
+}
+
+// 反馈 E0sdqm4h-F / PR #2980 审查：已制卡 ✓ 的「管理」手势（右键 / 长按 / 菜单键，手势本身
+// 见 bindPopupSecondaryActionTriggers）永远弹覆写 / 新增 / 查看的选择单。单击在「允许重复」
+// 开着时直接新增，覆写指定旧卡 / 查看就只剩这条入口，所以它对所有宿主、不论设置都在。
+// 未制卡（+）时不拦，原生菜单照常。
+function bindMinedCardManageTriggers(button, openManage) {
+    bindPopupSecondaryActionTriggers(button, {
+        isActive: () => button.dataset.mined === '1' && button.dataset.mining !== '1',
+        open: () => { openManage(); },
     });
 }
 
@@ -3590,10 +3665,29 @@ const DICT_SANDBOX_HELPER_JS = `(function () {
     return (code >= 0x3040 && code <= 0x30ff) || (code >= 0x3400 && code <= 0x9fff) ||
            (code >= 0xf900 && code <= 0xfaff) || (code >= 0xff66 && code <= 0xff9f);
   }
+  function anchorOf(event) {
+    var target = event.target && event.target.nodeType === 3 ? event.target.parentElement : event.target;
+    return target && target.closest ? target.closest('a[href]') : null;
+  }
+  function isSoundLink(anchor) {
+    return /^sound:/i.test((anchor.getAttribute('href') || '').trim());
+  }
+  // sound:// 是 MDict 约定由宿主从 MDD 取字节播放的协议，沙箱里的词典脚本自己播不了
+  // （CSP 不放行网络与相对路径媒体）。词典脚本却常在释义根节点上委托接管 speaker 点击并
+  // return false（LDOCE5++ 的 LM5Switch.js 在桌面 Chrome UA 下改走 ldoceonline 在线发音），
+  // 冒泡阶段的监听因此既收不到、也被 defaultPrevented 挡掉，发音整个哑掉。所以在 window
+  // 捕获阶段先接住：早于词典脚本的任何监听，只阻止默认导航、不拦传播，词典自己的 UI 照跑。
+  window.addEventListener('click', function (event) {
+    var anchor = anchorOf(event);
+    if (!anchor || !isSoundLink(anchor)) return;
+    event.preventDefault();
+    post({ type: 'link', href: anchor.getAttribute('href') || '', text: baseText(anchor),
+           rect: rectOf(event.clientX, event.clientY, anchor) });
+  }, true);
   document.addEventListener('click', function (event) {
     if (event.defaultPrevented) return;
-    var target = event.target && event.target.nodeType === 3 ? event.target.parentElement : event.target;
-    var anchor = target && target.closest ? target.closest('a[href]') : null;
+    var anchor = anchorOf(event);
+    if (anchor && isSoundLink(anchor)) return;
     if (anchor) {
       event.preventDefault();
       post({ type: 'link', href: anchor.getAttribute('href') || '', text: baseText(anchor),
@@ -4877,8 +4971,8 @@ function createAudioButton(expression, reading, entryIndex) {
 }
 
 // ── 「选择音频源」菜单 ────────────────────────────────────────────────────────────
-// 单击 ♪ 播默认源（首个解析出的源，与原行为一致）；触屏长按 ~450ms / 桌面右键 /
-// 按钮聚焦时 Shift+F10 或 ContextMenu 键 → 在按钮旁弹出菜单，列出当前词每个启用
+// 单击 ♪ 播默认源（首个解析出的源，与原行为一致）；长按 ~450ms（触屏 / 触控笔 / 鼠标
+// 主键）/ 右键 / 按钮聚焦时 Shift+F10 或 ContextMenu 键 → 在按钮旁弹出菜单，列出当前词每个启用
 // 音频源各自解析出的候选（源名 + 变体），点项即播并关菜单。列表经宿主桥
 // `listWordAudioSources({expression, reading})` → `[{name, variant, url}]` 取得：
 // app 内 / app 外由 Dart 逐源解析（listWordAudioWebViewChoices），扩展经 background
@@ -4887,61 +4981,17 @@ function createAudioButton(expression, reading, entryIndex) {
 // （没有「制卡用指定音频」的既有桥，不在这里发明）。
 // 菜单挂在 __fushiOverlayParent() 顶层（与 .audio-hint 同一套 fixed 定位），开着时
 // 记一层 __fushiPopupModalDepth，让宿主键桥（BUG-1347）把方向键 / Esc 让给菜单。
-const AUDIO_MENU_LONG_PRESS_MS = 450;
-const AUDIO_MENU_MOVE_TOLERANCE_PX = 10;
 let __fushiAudioMenu = null; // { menu, button, modal, onDocPointerDown, generation }
 let __fushiAudioMenuGeneration = 0;
 
 function bindAudioSourceMenuTriggers(button, expression, reading) {
-    let pressTimer = 0;
-    let pressStart = null;
-    const cancelPress = () => {
-        if (pressTimer) clearTimeout(pressTimer);
-        pressTimer = 0;
-        pressStart = null;
-    };
     button.setAttribute('aria-haspopup', 'menu');
     button.setAttribute('aria-expanded', 'false');
-    button.addEventListener('pointerdown', (e) => {
-        // 长按后有的内核不再派发 click：残留的吞点击标记在下一次按下时作废。
-        delete button.dataset.fushiSuppressClick;
-        if (e.pointerType !== 'touch' && e.pointerType !== 'pen') return;
-        cancelPress();
-        pressStart = { x: e.clientX, y: e.clientY };
-        pressTimer = setTimeout(() => {
-            pressTimer = 0;
-            pressStart = null;
-            button.dataset.fushiSuppressClick = '1';
-            openAudioSourceMenu(button, expression, reading, { focusFirst: false });
-        }, AUDIO_MENU_LONG_PRESS_MS);
-    });
-    button.addEventListener('pointermove', (e) => {
-        if (!pressStart) return;
-        if (Math.abs(e.clientX - pressStart.x) > AUDIO_MENU_MOVE_TOLERANCE_PX ||
-            Math.abs(e.clientY - pressStart.y) > AUDIO_MENU_MOVE_TOLERANCE_PX) {
-            cancelPress();
-        }
-    });
-    button.addEventListener('pointerup', cancelPress);
-    button.addEventListener('pointercancel', cancelPress);
-    button.addEventListener('pointerleave', cancelPress);
-    // 桌面右键（Android 长按同样会派发 contextmenu：菜单已由长按打开时只吞掉原生菜单）。
-    button.addEventListener('contextmenu', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        if (__fushiAudioMenu && __fushiAudioMenu.button === button) return;
-        cancelPress();
-        if (e.pointerType === 'touch' || e.pointerType === 'pen') {
-            button.dataset.fushiSuppressClick = '1';
-        }
-        openAudioSourceMenu(button, expression, reading, { focusFirst: false });
-    });
-    button.addEventListener('keydown', (e) => {
-        const isMenuKey = e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey);
-        if (!isMenuKey) return;
-        e.preventDefault();
-        e.stopPropagation();
-        openAudioSourceMenu(button, expression, reading, { focusFirst: true });
+    bindPopupSecondaryActionTriggers(button, {
+        isOpen: () => !!(__fushiAudioMenu && __fushiAudioMenu.button === button),
+        open: ({ focusFirst }) => {
+            openAudioSourceMenu(button, expression, reading, { focusFirst });
+        },
     });
 }
 
@@ -5626,9 +5676,11 @@ function createEntryHeader(entry, idx) {
         const queued = isEntryQueued();
         mineButton.dataset.queued = queued ? '1' : '';
         // 已制卡的 ✓ 提示「管理」手势（右键 / 长按）在哪——单击在「允许重复」开着时会直接新增。
-        mineButton.title = queued
+        // BUG-842 / 反馈 3UHYaFPP8g：走 DOM 自绘提示，不用原生 title——离屏 WebView2 上
+        // 原生提示按未拉伸坐标定位，会飘到上一个词条上方。
+        setInlineButtonTip(mineButton, queued
             ? (window.i18nMineQueued || '已加入制卡队列')
-            : (isMined ? (window.i18nMinedManageHint || '右键或长按：覆写 / 查看已有卡片') : '');
+            : (isMined ? (window.i18nMinedManageHint || '右键或长按：覆写 / 查看已有卡片') : ''));
         mineButton.classList.toggle('queued', queued);
         // Single source of truth for the button's lookup-time-detected state.
         // The optional second flag is the "latest editable" sub-state; it is only
@@ -5868,6 +5920,10 @@ function createEntryHeader(entry, idx) {
                     // latest word (only one editable card at a time).
                     rememberLatestMined(expression, reading, result.noteId);
                     await refreshFromAnki();
+                    // BUG-4287：成功结果带回的提示（如「保存到」被主机退回默认）。只有 app 外
+                    // 浮窗的宿主会在成功回包里放 message（它那边没有结果 toast）；应用内表面
+                    // 成功不带 message，由宿主 toast 说，这里不会重复。
+                    if (result.message) showInlineHint(mineButton, result.message);
                 } else {
                     // BUG-1908：制卡失败必须**就地**说出来。
                     //

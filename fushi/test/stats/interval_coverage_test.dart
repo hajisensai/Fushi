@@ -1,7 +1,7 @@
 import 'package:test/test.dart';
 import 'package:fushi/src/stats/interval_coverage.dart';
 
-// BUG-2108 起视频只计首次覆盖；2026-09-06 抽成通用 [IntervalCoverage]（阅读三域的
+// 视频字幕字数的「看过没」判据（BUG-2108 起；2026-11-07 起视频时长改按墙钟、并集只服务字数）；
 // ReadUnitLedger 也用它）。
 // 这里锁定它的代数性质：add 返回的是**新增**毫秒、重叠 / 相邻合并、任意顺序等价、
 // JSON 往返无损、脏输入当空。

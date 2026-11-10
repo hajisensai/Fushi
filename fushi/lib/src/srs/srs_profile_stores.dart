@@ -23,6 +23,7 @@ library;
 import 'dart:async';
 import 'dart:io';
 
+import 'package:fushi_core/fushi_core.dart' show SrsDatabase;
 import 'package:fushi_engine/srs/srs_miner.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
@@ -60,6 +61,11 @@ class SrsProfileStores {
 
   final SrsProfileStoresDeps _deps;
 
+  /// 新打开的副本成为激活副本之后调用（就地复用同一份副本时不调）。由 main.dart 挂上
+  /// `AppModel.flushPendingDayRollover`：复习模块关着时用户改的日界，在这份配置的复习库下次激活时补写。
+  /// 不等它做完，激活不被它拖慢。
+  void Function(SrsDbStore store)? onActivated;
+
   /// App 激活配置的副本。切配置时保留旧的那份直到交接完成（[_handOver]：它已排队的写入写完、
   /// 新副本在它最后一段独占区里打开、随后它作废）。
   SrsDbStore? _active;
@@ -82,6 +88,11 @@ class SrsProfileStores {
   final Map<String, int Function()> _rollover = <String, int Function()>{};
 
   late final SrsExclusiveOuter _outer = _ActiveStoreOuter(this);
+
+  /// 共用写连接的写锁：此刻激活副本的独占区（[_underActive]）。所有副本的写都在它里面（扩展副本经外层锁），
+  /// 持有期间连接上没有别的副本开着的 Drift 事务；直接上写连接的内核命令（采用 uid 时删旧 uid，
+  /// `SrsDbProfileLinker.writeLock`）在这里面跑。随激活副本交接而换，不会去拿已作废副本的锁。
+  SrsExclusiveOuter get writeLock => _outer;
 
   /// 在激活副本的独占区里跑 [body]。还没有激活副本、或它已作废（不会再写这条连接）时直接跑。
   ///
@@ -170,7 +181,9 @@ class SrsProfileStores {
           return current;
         }
         await release(profileUid);
-        return (await _handOver(open))!;
+        final SrsDbStore store = (await _handOver(open))!;
+        onActivated?.call(store);
+        return store;
       } finally {
         if (identical(_activating, marker)) _activating = null;
         settled.complete();
@@ -229,6 +242,19 @@ class SrsProfileStores {
       media: SrsMediaStore(SrsMediaStore.directoryFor(support, profileUid)),
       destination: destination,
     );
+  }
+
+  /// [profileUid] 在本机 srs.db 里有没有复习数据（激活过 / 制过卡 / 同步来过的配置都有）。只读：不打开副本、
+  /// 不播种内置记录——互联主机列「保存到」时据此只列已有复习的配置，列表本身不该给每份配置建出一份复习。
+  /// 复习模块关着时为 false。
+  Future<bool> hasReviewData(String profileUid) async {
+    final SrsStorage? storage = await _deps.storage();
+    if (storage == null) return false;
+    final SrsDatabase db = storage.db;
+    final query = db.select(db.srsEntities)
+      ..where((t) => t.profileUid.equals(profileUid))
+      ..limit(1);
+    return await query.getSingleOrNull() != null;
   }
 
   /// [profileUid] 的副本（见 [minerFor]）；复习模块关着时为 null。

@@ -5,12 +5,15 @@
 /// live host-apply + bidirectional + full-sweep fix with a real server/host/client/local.
 library;
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/sync/manual_sync_ui.dart' show summarizeSyncReport;
 import 'package:fushi_engine/sync/local_library_host_service.dart';
 import 'package:fushi/src/sync/interconnect_book_progress_sync.dart';
 import 'package:fushi/src/sync/interconnect_playback_position_sync.dart';
@@ -20,6 +23,10 @@ import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi_engine/sync/sync_asset_package_service.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_orchestrator.dart';
+import 'package:fushi/src/sync/sync_auto_trigger.dart'
+    show syncExitedBookOnChannel;
+import 'package:fushi/src/sync/sync_progress.dart';
+import 'package:fushi/src/sync/sync_resource_locks.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
@@ -1910,6 +1917,401 @@ void main() {
         360000,
         reason: 'run() full sweep must also push audiobook progress to host',
       );
+    });
+  });
+
+  // BUG-1569③：退出书的单本同步不再等整轮 sweep，在互联上只锁那本书。sweep 的书进度
+  // 阶段在开头一次读齐 host 进度与本端快照；若某本书在 sweep 跑到它之前被单本同步
+  // 改过（推了 host、记了新基线），拿那份旧 host 值去判定会被当成「host 偏离基线」
+  // 落回本机——进度倒退。锁代数变了必须重读 host、不信快照。
+  group('sweep 与退出书单本同步并发（BUG-1569③）', () {
+    test('单本同步在 sweep 读完快照后改过这本书：sweep 重读 host，不把旧值落回本机', () async {
+      await _seedBook(hostDb, 'BookA');
+      await _seedPosition(
+        hostDb,
+        'BookA',
+        section: 0,
+        norm: 1000,
+        charOffset: -1,
+        updatedAt: 1000,
+      );
+      final FushiDatabase localDb = _memDb();
+      addTearDown(localDb.close);
+      await _seedBook(localDb, 'BookA');
+      // 本机已读到 2000（偏离基线 1000），host 停在基线 → 快照判不了「已收敛」。
+      await _seedPosition(
+        localDb,
+        'BookA',
+        section: 0,
+        norm: 2000,
+        charOffset: -1,
+        updatedAt: 2000,
+      );
+      await _seedBaseline(localDb, 'BookA', section: 0, norm: 1000);
+
+      final Directory tmp = Directory(p.join(work.path, 'stale'))..createSync();
+      final InterconnectSyncBackend backend = await _buildClientBackend(
+        base: base,
+        token: token,
+      );
+      // sweep 跑到 BookA、排上这本书的锁时发出它的 readingData tick。
+      final Completer<void> sweepAtBook = Completer<void>();
+      final SyncOrchestrator orch = SyncOrchestrator(
+        db: localDb,
+        backend: backend,
+        dictionaryResourceRoot: tmp,
+        audioDatabaseRoot: tmp,
+        tempDir: tmp,
+        syncStats: false,
+        syncAudioBookPosition: false,
+        syncContent: false,
+        syncMangaContent: false,
+        syncAudioBookFiles: false,
+        syncDictionary: false,
+        onProgress: (SyncProgress progress) {
+          if (progress.phase == SyncPhase.readingData &&
+              progress.title == 'BookA' &&
+              !sweepAtBook.isCompleted) {
+            sweepAtBook.complete();
+          }
+        },
+      );
+
+      // 退出书：持有这本书的锁（与生产 _syncExitedBookChannel 同一把），等 sweep
+      // 读完快照、排到这本书之后，本机读到 3000 并同步给 host。
+      final Completer<void> lockHeld = Completer<void>();
+      final Future<SyncConflict?> exitBook = syncResourceLocks
+          .withResources<SyncConflict?>(
+            <String>{syncBookResource('BookA')},
+            () async {
+              lockHeld.complete();
+              await sweepAtBook.future;
+              expect(syncResourceLocks.waiterCount, 1, reason: 'sweep 在等书锁');
+              await _seedPosition(
+                localDb,
+                'BookA',
+                section: 0,
+                norm: 3000,
+                charOffset: -1,
+                updatedAt: 3000,
+              );
+              return syncExitedBookOnChannel(
+                db: localDb,
+                repo: SyncRepository(localDb),
+                backend: backend,
+                book: (await localDb.getEpubBook('BookA'))!,
+              );
+            },
+          );
+      await lockHeld.future;
+      final SyncRunReport report = SyncRunReport();
+      final Future<void> sweep = orch.syncBookProgressLiveForTest(
+        report,
+        backend,
+      );
+      expect(await exitBook, isNull, reason: '退出书：host 在基线上，直接推本机');
+      expect((await _positionOf(hostDb, 'BookA'))!.normCharOffset, 3000);
+      await sweep;
+
+      expect(report.errors, isEmpty, reason: '${report.errors}');
+      expect(
+        (await _positionOf(localDb, 'BookA'))!.normCharOffset,
+        3000,
+        reason: 'sweep 不得拿开头读到的 host 旧值（1000）把本机拉回去',
+      );
+      expect(report.localBookProgressPulled, 0);
+      expect((await _positionOf(hostDb, 'BookA'))!.normCharOffset, 3000);
+    });
+  });
+
+  // BUG-4302：手动同步摘要只数内容 / 文件传输，一轮只挪了进度的同步显示「无变化」
+  // （Linux Phase 4：拉到 host 的视频断点后提示「已同步 · 无变化」）。进度类改动
+  // 要进报告的计数（按种类、按方向），只对齐时间戳的不算。
+  group('BUG-4302: progress / position changes are counted in the report', () {
+    Future<(SyncOrchestrator, InterconnectSyncBackend)> orchFor(
+      FushiDatabase localDb,
+      String dir,
+    ) async {
+      final Directory tmp = Directory(p.join(work.path, dir))..createSync();
+      final InterconnectSyncBackend backend = await _buildClientBackend(
+        base: base,
+        token: token,
+      );
+      return (_orchestrator(db: localDb, backend: backend, tmp: tmp), backend);
+    }
+
+    String noChanges() => t.sync_now_done(detail: t.sync_now_no_changes);
+
+    test('video: host-newer pull counts as received, summary is not '
+        '"no changes"; the converged rerun counts nothing', () async {
+      await _seedHostVideo(hostDb, work, 'video/sum-in', 'SumIn');
+      await hostDb.setPrefTyped<int>(
+        videoRemotePositionPrefKey('video/sum-in'),
+        50000,
+      );
+      await hostDb.setPrefTyped<int>(
+        videoRemotePositionAtPrefKey('video/sum-in'),
+        3000,
+      );
+      final FushiDatabase localDb = _memDb();
+      addTearDown(localDb.close);
+      await localDb.setPrefTyped<int>(
+        videoRemotePositionPrefKey('video/sum-in'),
+        20000,
+      );
+      await localDb.setPrefTyped<int>(
+        videoRemotePositionAtPrefKey('video/sum-in'),
+        2000,
+      );
+      await localDb.setSyncBaseline(
+        'video/sum-in',
+        kInterconnectVideoPositionDimension,
+        20000,
+      );
+      final (SyncOrchestrator orch, InterconnectSyncBackend backend) =
+          await orchFor(localDb, 'sum-v-in');
+
+      final SyncRunReport report = SyncRunReport();
+      await orch.syncVideoProgressLiveForTest(report, backend);
+      expect(report.errors, isEmpty, reason: '${report.errors}');
+      expect(
+        await localDb.getPrefTyped<int>(
+          videoRemotePositionPrefKey('video/sum-in'),
+          0,
+        ),
+        50000,
+      );
+      expect(report.videoPositionsReceived, 1);
+      expect(report.videoPositionsSent, 0);
+      final String summary = summarizeSyncReport(report);
+      expect(summary, isNot(noChanges()));
+      expect(summary, contains(t.sync_now_video_progress_in(count: 1)));
+
+      final SyncRunReport again = SyncRunReport();
+      await orch.syncVideoProgressLiveForTest(again, backend);
+      expect(again.errors, isEmpty, reason: '${again.errors}');
+      expect(again.videoPositionsReceived, 0);
+      expect(again.videoPositionsSent, 0);
+      expect(summarizeSyncReport(again), noChanges());
+    });
+
+    test('video: local-newer push counts as sent', () async {
+      await _seedHostVideo(hostDb, work, 'video/sum-out', 'SumOut');
+      await hostDb.setPrefTyped<int>(
+        videoRemotePositionPrefKey('video/sum-out'),
+        20000,
+      );
+      await hostDb.setPrefTyped<int>(
+        videoRemotePositionAtPrefKey('video/sum-out'),
+        2000,
+      );
+      final FushiDatabase localDb = _memDb();
+      addTearDown(localDb.close);
+      await localDb.setPrefTyped<int>(
+        videoRemotePositionPrefKey('video/sum-out'),
+        30000,
+      );
+      await localDb.setPrefTyped<int>(
+        videoRemotePositionAtPrefKey('video/sum-out'),
+        4000,
+      );
+      await localDb.setSyncBaseline(
+        'video/sum-out',
+        kInterconnectVideoPositionDimension,
+        20000,
+      );
+      final (SyncOrchestrator orch, InterconnectSyncBackend backend) =
+          await orchFor(localDb, 'sum-v-out');
+
+      final SyncRunReport report = SyncRunReport();
+      await orch.syncVideoProgressLiveForTest(report, backend);
+      expect(report.errors, isEmpty, reason: '${report.errors}');
+      expect(
+        await hostDb.getPrefTyped<int>(
+          videoRemotePositionPrefKey('video/sum-out'),
+          0,
+        ),
+        30000,
+      );
+      expect(report.videoPositionsSent, 1);
+      expect(report.videoPositionsReceived, 0);
+      expect(
+        summarizeSyncReport(report),
+        contains(t.sync_now_video_progress_out(count: 1)),
+      );
+    });
+
+    test(
+      'video: same position, only the stamp differs -> not a change',
+      () async {
+        await _seedHostVideo(hostDb, work, 'video/sum-same', 'SumSame');
+        await hostDb.setPrefTyped<int>(
+          videoRemotePositionPrefKey('video/sum-same'),
+          40000,
+        );
+        await hostDb.setPrefTyped<int>(
+          videoRemotePositionAtPrefKey('video/sum-same'),
+          9000,
+        );
+        final FushiDatabase localDb = _memDb();
+        addTearDown(localDb.close);
+        await localDb.setPrefTyped<int>(
+          videoRemotePositionPrefKey('video/sum-same'),
+          40000,
+        );
+        await localDb.setPrefTyped<int>(
+          videoRemotePositionAtPrefKey('video/sum-same'),
+          5000,
+        );
+        final (SyncOrchestrator orch, InterconnectSyncBackend backend) =
+            await orchFor(localDb, 'sum-v-same');
+
+        final SyncRunReport report = SyncRunReport();
+        await orch.syncVideoProgressLiveForTest(report, backend);
+        expect(report.errors, isEmpty, reason: '${report.errors}');
+        expect(report.videoPositionsReceived, 0);
+        expect(report.videoPositionsSent, 0);
+        expect(summarizeSyncReport(report), noChanges());
+      },
+    );
+
+    test('book progress: host-moved book counts as received, local-moved '
+        'book as sent', () async {
+      await _seedBook(hostDb, 'SumBookIn');
+      await _seedPosition(
+        hostDb,
+        'SumBookIn',
+        section: 9,
+        norm: 9000,
+        charOffset: 90,
+        updatedAt: 5000,
+      );
+      await _seedBook(hostDb, 'SumBookOut');
+      await _seedPosition(
+        hostDb,
+        'SumBookOut',
+        section: 1,
+        norm: 10,
+        charOffset: 1,
+        updatedAt: 1000,
+      );
+      final FushiDatabase localDb = _memDb();
+      addTearDown(localDb.close);
+      await _seedBook(localDb, 'SumBookIn');
+      await _seedPosition(
+        localDb,
+        'SumBookIn',
+        section: 1,
+        norm: 100,
+        charOffset: 1,
+        updatedAt: 1000,
+      );
+      await _seedBaseline(localDb, 'SumBookIn', section: 1, norm: 100);
+      await _seedBook(localDb, 'SumBookOut');
+      await _seedPosition(
+        localDb,
+        'SumBookOut',
+        section: 7,
+        norm: 7000,
+        charOffset: 70,
+        updatedAt: 9000,
+      );
+      await _seedBaseline(localDb, 'SumBookOut', section: 1, norm: 10);
+      final (SyncOrchestrator orch, InterconnectSyncBackend backend) =
+          await orchFor(localDb, 'sum-b');
+
+      final SyncRunReport report = SyncRunReport();
+      await orch.syncBookProgressLiveForTest(report, backend);
+      expect(report.errors, isEmpty, reason: '${report.errors}');
+      expect((await _positionOf(localDb, 'SumBookIn'))!.sectionIndex, 9);
+      expect((await _positionOf(hostDb, 'SumBookOut'))!.sectionIndex, 7);
+      expect(report.bookProgressReceived, 1);
+      expect(report.bookProgressSent, 1);
+      final String summary = summarizeSyncReport(report);
+      expect(summary, contains(t.sync_now_book_progress_in(count: 1)));
+      expect(summary, contains(t.sync_now_book_progress_out(count: 1)));
+    });
+
+    test('audiobook: host-newer pull counts as received, local-newer push '
+        'as sent', () async {
+      await _seedHostAudiobook(hostDb, 'SumAbIn');
+      await hostDb.setPrefTyped<int>(
+        audiobookPositionPrefKey('SumAbIn'),
+        990000,
+      );
+      await hostDb.setPrefTyped<int>(
+        audiobookPositionAtPrefKey('SumAbIn'),
+        8000,
+      );
+      await _seedHostAudiobook(hostDb, 'SumAbOut');
+      await hostDb.setPrefTyped<int>(
+        audiobookPositionPrefKey('SumAbOut'),
+        1000,
+      );
+      await hostDb.setPrefTyped<int>(
+        audiobookPositionAtPrefKey('SumAbOut'),
+        1000,
+      );
+      final FushiDatabase localDb = _memDb();
+      addTearDown(localDb.close);
+      await localDb.setPrefTyped<int>(
+        audiobookPositionPrefKey('SumAbIn'),
+        100000,
+      );
+      await localDb.setPrefTyped<int>(
+        audiobookPositionAtPrefKey('SumAbIn'),
+        2000,
+      );
+      await localDb.setSyncBaseline(
+        'SumAbIn',
+        kInterconnectAudiobookPositionDimension,
+        100000,
+      );
+      await localDb.setPrefTyped<int>(
+        audiobookPositionPrefKey('SumAbOut'),
+        700000,
+      );
+      await localDb.setPrefTyped<int>(
+        audiobookPositionAtPrefKey('SumAbOut'),
+        9000,
+      );
+      await localDb.setSyncBaseline(
+        'SumAbOut',
+        kInterconnectAudiobookPositionDimension,
+        1000,
+      );
+      final (SyncOrchestrator orch, InterconnectSyncBackend backend) =
+          await orchFor(localDb, 'sum-a');
+
+      final SyncRunReport report = SyncRunReport();
+      await orch.syncAudiobookProgressLiveForTest(report, backend);
+      expect(report.errors, isEmpty, reason: '${report.errors}');
+      expect(report.audiobookPositionsReceived, 1);
+      expect(report.audiobookPositionsSent, 1);
+      expect(report.videoPositionsReceived, 0);
+      final String summary = summarizeSyncReport(report);
+      expect(summary, contains(t.sync_now_audio_progress_in(count: 1)));
+      expect(summary, contains(t.sync_now_audio_progress_out(count: 1)));
+    });
+
+    test('mergeFrom carries the progress counters across channels', () {
+      final SyncRunReport combined = SyncRunReport()
+        ..videoPositionsReceived = 1;
+      combined.mergeFrom(
+        SyncRunReport()
+          ..bookProgressReceived = 2
+          ..bookProgressSent = 3
+          ..videoPositionsReceived = 4
+          ..videoPositionsSent = 5
+          ..audiobookPositionsReceived = 6
+          ..audiobookPositionsSent = 7,
+      );
+      expect(combined.bookProgressReceived, 2);
+      expect(combined.bookProgressSent, 3);
+      expect(combined.videoPositionsReceived, 5);
+      expect(combined.videoPositionsSent, 5);
+      expect(combined.audiobookPositionsReceived, 6);
+      expect(combined.audiobookPositionsSent, 7);
     });
   });
 }

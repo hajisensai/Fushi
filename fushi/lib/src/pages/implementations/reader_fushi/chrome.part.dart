@@ -2115,6 +2115,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
     if (old != null) {
       old.removeListener(_onChromePlaybackChanged);
       old.followAudio.removeListener(_onChromePlaybackChanged);
+      _detachAudiobookTextLeads(old);
     }
     _chromePlaybackListened = ctrl;
     if (ctrl != null) {
@@ -2122,6 +2123,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
       ctrl.followAudio.addListener(_onChromePlaybackChanged);
       _chromeLastPlaying = ctrl.isPlaying;
       _chromeLastFollow = ctrl.followAudio.value;
+      _syncAudiobookTextLeads();
     }
   }
 
@@ -2194,8 +2196,12 @@ extension _ReaderChrome on _ReaderFushiPageState {
             invertSkip: ReaderFushiSource.instance.invertAudiobookSkipDirection,
             // 桌面端：播放条唤出时覆盖状态行，阅读追踪 / 进度并进条右端。
             // 底栏槽位里的按钮并进播放条右端（播放条在场时底栏只有这一条），
-            // 状态读数仍在最右。
+            // 状态读数仍在最右——它单独走 trailingStatus，拿到条尾真实剩余宽度
+            // 按实测宽度降级 / 缩放，不进按钮那段横向滚动容器（那里宽度无界）。
             trailing: _buildAudiobookBarTrailing(),
+            trailingStatus: _playbackStatusInline
+                ? _buildBarStatusText()
+                : null,
             showSettingsButton: !_desktopChromeEnabled,
           ),
         );
@@ -2228,15 +2234,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
           ),
         ),
     ];
-    final Widget? status = _playbackStatusInline ? _buildBarStatusText() : null;
-    if (buttons.isEmpty) return status;
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
-        ...buttons,
-        if (status != null) ...<Widget>[const SizedBox(width: 8), status],
-      ],
-    );
+    if (buttons.isEmpty) return null;
+    return Row(mainAxisSize: MainAxisSize.min, children: buttons);
   }
 
   /// 2026-10 体验优化：[AudiobookPlayBar] 自带的传输键（上一句 / 播放暂停 /
@@ -2362,7 +2361,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
   /// 它），旗标也不会残留去影响之后的系统返回。
   ///
   /// 退出时**不**先关歌词层：那会把持久化的 lyrics_mode 写成 false，重开书就不再
-  /// 恢复歌词模式（BUG-785）。覆盖层期间的强制跟随由 dispose 撤销。
+  /// 恢复歌词模式（BUG-785）。歌词模式期间的正文面脱开由 dispose 撤销。
   Future<void> _exitReaderBook() async {
     final NavigatorState navigator = Navigator.of(context);
     _exitBookRequested = true;
@@ -2753,8 +2752,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
               extractDir: extractDir,
               coverPath: _book?.coverHref,
             ),
-      readerProgress: (_currentChapter, _book!.chapters.length),
-      readerCharOffset: _tocCharOffsetFor(_currentChapter),
+      readerProgress: (_readingChapter, _book!.chapters.length),
+      readerCharOffset: _readingTocCharOffset,
       onJumpSection: (int index, String? fragment) async {
         await _jumpToChapterAnchor(
           index,
@@ -3124,9 +3123,23 @@ extension _ReaderChrome on _ReaderFushiPageState {
 
   String _currentChapterLabel() {
     return _currentChapterLabelFor(
-      _currentChapter,
-      charOffset: _tocCharOffsetFor(_currentChapter),
+      _readingChapter,
+      charOffset: _readingTocCharOffset,
     );
+  }
+
+  /// 「现在读到哪一章」：正文模式是正文挂载的章；歌词模式是当前句所在章（正文停在
+  /// 进歌词那一刻的章，不代表音频走到哪）。
+  int get _readingChapter => _lyricsMode
+      ? (_lyricsReadingPoint?.chapter ?? _currentChapter)
+      : _currentChapter;
+
+  /// 与 [_readingChapter] 配对的章内位置（学习单位，判目录项用）。
+  int? get _readingTocCharOffset {
+    if (!_lyricsMode) return _tocCharOffsetFor(_currentChapter);
+    final ({int chapter, int offset})? point = _lyricsReadingPoint;
+    if (point == null) return _tocCharOffsetFor(_currentChapter);
+    return point.offset >= 0 ? point.offset : null;
   }
 
   /// 章 [chapterIndex]（章内位置 [charOffset]，`countStudyChars` 口径，null / 负数
@@ -3723,6 +3736,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
     totalChars: _progressTotalChars,
     showTimer: ReaderFushiSource.instance.showReadingTimer,
     showProgress: ReaderFushiSource.instance.showTopProgressBar,
+    showChars: ReaderFushiSource.instance.showSessionChars,
+    showSpeed: ReaderFushiSource.instance.showCharsPerHour,
     textColor: _themeTextColor(),
     // 悬浮工具栏样式：读数是一枚浮在正文上的小胶囊（与悬浮工具栏同色），整条
     // 带透明，竖排 / 横排都没有实体底栏。
@@ -3730,10 +3745,15 @@ extension _ReaderChrome on _ReaderFushiPageState {
         ? _floatingToolbarColors().container!
         : _chromeSurfaceColor(),
     floating: _floatingToolbars,
+    resting: readerStatusFooterResting(
+      floating: _bottomBarFloating,
+      persistent: _statusFooterPersistent,
+      transientVisible: _chromeTransientVisible,
+    ),
     onTap: _anyChromeFloating
         ? () => _handleFloatingChromeReveal()
         : _toggleChrome,
-    // 左侧计时器 = 手动暂停 / 继续；右侧进度数字 = 打开统计浮层。
+    // 计时段 = 手动暂停 / 继续；字数 / 字每时 / 进度 = 打开统计浮层。
     onTapTracker: _toggleStudyClockManualPause,
     onTapProgress: _openReadingStatistics,
   );
@@ -3799,9 +3819,10 @@ extension _ReaderChrome on _ReaderFushiPageState {
 
   /// 本章总字数 / 已读字数（状态行括号段 / 预计读完）——派生量在
   /// [ReaderProgressState]，这里只是按当前章取。
-  int? get _footerChapterTotalChars => _progress.chapterTotal(_currentChapter);
+  // 「本章」跟阅读位置走（歌词模式 = 当前句所在章，见 [_readingChapter]）。
+  int? get _footerChapterTotalChars => _progress.chapterTotal(_readingChapter);
   int? get _footerChapterCurrentChars =>
-      _progress.chapterCurrent(_currentChapter);
+      _progress.chapterCurrent(_readingChapter);
 
   /// 播放条右端的状态文字（与状态行同一套文案 / 同一读口），只在桌面端播放条可见时用。
   Widget _buildBarStatusText() => ReaderStatusInline(
@@ -3810,8 +3831,11 @@ extension _ReaderChrome on _ReaderFushiPageState {
     totalChars: _progressTotalChars,
     showTimer: ReaderFushiSource.instance.showReadingTimer,
     showProgress: ReaderFushiSource.instance.showTopProgressBar,
+    showChars: ReaderFushiSource.instance.showSessionChars,
+    showSpeed: ReaderFushiSource.instance.showCharsPerHour,
     textColor: _themeTextColor(),
     onToggleTimer: _toggleStudyClockManualPause,
+    onOpenStats: _openReadingStatistics,
   );
 
   /// 状态行左侧的会话累计读口：账只在 [StudyClock] 一本（v92 纪律），时钟未建

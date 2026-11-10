@@ -28,6 +28,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
+import 'package:fushi/src/second_screen/companion/companion_protocol.dart'
+    show CompanionLibraryKind;
+import 'package:fushi/src/second_screen/companion/modules/library_companion_hook.dart';
+import 'package:fushi/src/second_screen/companion/modules/library_companion_schema.dart';
 import 'package:fushi_engine/media/collections/collection_asset_reclaim.dart';
 import 'package:fushi_engine/media/collections/collection_cover.dart'
     show collectionOwnCoverCandidates;
@@ -84,6 +88,7 @@ import 'package:fushi/src/media/video/media_server/media_server_library.dart'
 import 'package:fushi/src/pages/implementations/media_server/media_server_library_remove_confirm.dart';
 import 'package:fushi_engine/media/video/video_local_files.dart'
     show localVideoFileCandidates, videoBookHasLocalFiles;
+import 'package:fushi/src/media/video/remote_video_resume.dart';
 import 'package:fushi/src/media/video/remote_video_subtitle_refetch.dart';
 import 'package:fushi/src/media/video/video_subtitle_attach.dart';
 import 'package:fushi/src/media/video/video_subtitle_attach_messages.dart';
@@ -130,6 +135,7 @@ import 'package:fushi/src/pages/implementations/subtitle_workbench_page.dart';
 import 'package:fushi/src/pages/implementations/video_work_detail_page.dart';
 import 'package:fushi/src/pages/implementations/media_item_dialog_page.dart';
 import 'package:fushi/src/pages/implementations/media_item_stats_dialog.dart';
+import 'package:fushi/src/pages/implementations/video_filename_organize_dialog.dart';
 import 'package:fushi/src/media/library_progress_reset.dart';
 import 'package:fushi/src/pages/implementations/library_progress_reset_dialog.dart';
 import 'package:fushi/src/pages/implementations/media_sources_dialog.dart';
@@ -219,6 +225,8 @@ import 'package:fushi/src/media/video/metadata/video_source_scrape_run_detail_di
         showVideoMetadataCandidateSearchDialog,
         showVideoSourceScrapeManualBindingDialog;
 import 'package:fushi/src/media/video/metadata/video_tmdb_ordering_dialog.dart';
+
+part 'home_video/companion.part.dart';
 
 /// 顶层 helper：打开本地视频播放页的**共享路由入口**（本页 hero/卡片与首页
 /// dashboard 继续卡/活动条同一条路径），统一经 [VideoFushiPage.neutralized]
@@ -556,6 +564,16 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// 再重读一次——不在播放期间隔几秒就在后台重列整个书架。
   bool _watchProgressStale = false;
 
+  /// BUG-4303：本机远端视频断点变化监听（[watchLocalRemoteVideoPositionsChanged]）。
+  /// 远端卡的「看到 X」是清单快照与本机库断点取较新（[withLocalRemoteVideoPositions]）；
+  /// 清单有 TTL 缓存、页面常驻，互联 sweep 落地 host 的新断点或本机刚看完回来时，
+  /// 只有本机库断点变了——由它驱动重算远端卡，不等清单过期 / 下拉刷新。
+  StreamSubscription<void>? _remotePositionsSub;
+  Timer? _remotePositionsReloadDebounce;
+
+  /// 本页不在前台时到达的本机远端断点变化：露出来再重算一次（同 [_watchProgressStale]）。
+  bool _remotePositionsStale = false;
+
   /// 上一次看到的本页路由是否在栈顶（判「被盖住 → 又露出来」的边沿）。
   bool _routeWasCurrent = true;
 
@@ -611,12 +629,26 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// 组合三档判定（块3）与批量解散/删除（块4）都读这两个集。
   Set<int> get _selectedCollectionIds => _selection.collectionIds;
 
+  /// Dual-screen companion (Library tab, Main mode): see
+  /// `home_video/companion.part.dart`.
+  late final LibraryCompanionHook _companion = _createVideoCompanion();
+
+  /// The video whose menu is open (companion highlight).
+  FushiFocusId? _companionPressedId;
+
+  /// [setState] for the companion part (an extension cannot call it).
+  void _rebuild(VoidCallback fn) => setState(fn);
+
   /// 当前可见（过滤后）的本地视频列表，供全选 / 反选用。
   List<VideoBookRow> _visibleVideos = const <VideoBookRow>[];
 
   /// 当前渲染成横排行的合集 id 列表（[_buildLocalVideoSlivers] 每帧写入），供
   /// 全选 / 反选把可见合集纳入整选集。
   List<int> _visibleCollectionIds = const <int>[];
+
+  /// 本页合集卡的成员数，发布给「管理合集」页（与卡片「N 卷 / N 项」同源）。
+  final CollectionDisplayCounts _collectionDisplayCounts =
+      CollectionDisplayCounts();
 
   /// 上一次成功加载的全量列表缓存：_refresh/封面补齐把 [_future] 换新期间用它
   /// 顶住渲染，**不再整页转圈**（旧行为=每抽一张封面/每次从播放器返回都闪一次
@@ -866,6 +898,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     _watchProgressSub = widget.repo.watchVideoWatchProgressChanged().listen(
       _onWatchProgressChanged,
     );
+    // BUG-4303：本机远端断点（sweep / 冲突弹窗 / 播放页 / 对端 PUT 写入）变了 →
+    // 远端卡的「看到 X」跟着重算。
+    _remotePositionsSub = watchLocalRemoteVideoPositionsChanged(
+      appModelNoUpdate.database,
+    ).listen(_onRemotePositionsChanged);
     // BUG-1699：订阅合集两张表，任意写入者（后台合集同步/备份导入/合集编辑）
     // 落库后自动重载折叠映射——远端占位卡与新同步的合集立即成组。
     _collectionTablesSub = appModelNoUpdate.database
@@ -938,6 +975,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    _companion.attach(
+      context,
+      focusChanges: FushiFocusRoot.maybeControllerOf(context),
+    );
     // BUG-3610：本页路由被盖住（合集详情页 / 播放页）→ 又露出来的边沿，补做
     // 被盖住期间推迟的进度重读。isCurrentOf 只依赖路由的 isCurrent 一项。
     final bool current = ModalRoute.isCurrentOf(context) ?? true;
@@ -967,9 +1008,59 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     });
   }
 
+  /// BUG-4303：本机远端断点变了。前台 → 防抖后把本机断点重新叠到远端卡上
+  /// （[_overlayLocalRemotePositions]）；不在前台 → 记一笔，露出来时再叠。
+  void _onRemotePositionsChanged(void _) {
+    if (!mounted) return;
+    _remotePositionsReloadDebounce?.cancel();
+    _remotePositionsReloadDebounce = Timer(
+      const Duration(milliseconds: 300),
+      () {
+        if (!mounted) return;
+        if (!_isShowingWatchProgress) {
+          _remotePositionsStale = true;
+          return;
+        }
+        _overlayLocalRemotePositions();
+      },
+    );
+  }
+
+  /// BUG-4303：只把此刻的本机库断点重新叠到当前远端清单上。变的只有断点，所以
+  /// 不走 [_loadRemoteVideos] 整轮重载——那会在清单 TTL 过期后重新向 host 要清单、
+  /// 重跑合集收养与中断下载扫描（host 侧对端每次上报断点都会触发到这里）。
+  ///
+  /// 接在当前 [_remoteFuture] 之后叠：在途的整轮重载照常完成、不被丢弃，完成后再叠
+  /// 一次。叠加是「取较新时间戳」（[withLocalRemoteVideoPositions]），对已叠过的清单
+  /// 重复叠结果不变。
+  void _overlayLocalRemotePositions() {
+    _remotePositionsStale = false;
+    final Future<_RemoteVideoState?>? current = _remoteFuture;
+    if (current == null) return;
+    setState(() {
+      _remoteFuture = current.then(_withLocalRemotePositions);
+    });
+  }
+
+  Future<_RemoteVideoState?> _withLocalRemotePositions(
+    _RemoteVideoState? state,
+  ) async {
+    if (state == null || state.failed || state.videos.isEmpty) return state;
+    return _RemoteVideoState(
+      videos: await withLocalRemoteVideoPositions(
+        appModelNoUpdate.database,
+        state.videos,
+      ),
+      localCopies: state.localCopies,
+      source: state.source,
+    );
+  }
+
   /// 露出来时补做被推迟的进度重读（没有推迟的就什么都不做）。
   void _reloadStaleWatchProgress() {
-    if (!mounted || !_watchProgressStale) return;
+    if (!mounted) return;
+    if (_remotePositionsStale) _overlayLocalRemotePositions();
+    if (!_watchProgressStale) return;
     _watchProgressStale = false;
     _refreshAfterPlayback();
   }
@@ -999,6 +1090,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
 
   @override
   void dispose() {
+    _companion.dispose();
+    _collectionDisplayCounts.dispose();
     _coverExists.dispose();
     _remoteCoverExists.dispose();
     _coverExistsRevision.dispose();
@@ -1011,6 +1104,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     _videoUidsRefreshTimer?.cancel();
     _watchProgressSub?.cancel();
     _watchProgressReloadDebounce?.cancel();
+    _remotePositionsSub?.cancel();
+    _remotePositionsReloadDebounce?.cancel();
     _collectionTablesSub?.cancel();
     _downloadSubscriptionsSub?.cancel();
     _legacySubscriptionStore?.revision.removeListener(
@@ -1198,19 +1293,16 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// 故给用户一个**显式**强制刷新入口——别的设备新上传的互联视频，不重启 app 也能刷出来。
   ///
   /// 同步排在重读列表**之前**：同步会往本地库里落新视频和观看进度，先刷列表就会漏掉
-  /// 本次同步的产物。没配同步后端时 [runManualSyncWithFeedback] 直接返回 notConfigured
+  /// 本次同步的产物。没配同步后端或同步模块关掉时 [runPullToRefreshSync] 直接返回 notConfigured
   /// 且不弹提示，退化成纯列表刷新——与加同步之前的行为一字不差。
   /// [_loadRemoteVideos] 内部吞异常返回 `failed:true`，await 不会抛，指示器必定收起
   /// （客户端 [listRemoteVideos] 已用 listTimeout 封顶，host 卡响应也不会无限转圈）。
   /// 显式刷新失败时给一个可见 SnackBar（带原因），避免「看不到远端视频却不知为何」。
   Future<void> _pullToRefresh() async {
-    await runManualSyncWithFeedback(
+    // 同步模块门在 [runPullToRefreshSync] 里：模块关掉时只剩重拉列表。
+    await runPullToRefreshSync(
       context: context,
       appModel: ref.read(appProvider),
-      // 绝大多数用户没配云同步，每次下拉都弹「同步不可用」是纯噪音；已有同步在飞时
-      // 用户下拉，数据照样会更新，不必打断。冲突/错误提示仍然照给。
-      announceNotConfigured: false,
-      announceBusy: false,
     );
     if (!mounted) return;
     // 显式下拉 = 用户要最新的：强制穿透 [RemoteLibraryCache] 的 TTL（BUG-1180）。
@@ -1957,6 +2049,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   }) async {
     _remoteGateAtLastLoad = _shouldLoadRemoteVideos;
     _jellyfinGateAtLastLoad = _jellyfinGate;
+    // 每轮都按此刻的本机断点重算（[withLocalRemoteVideoPositions]），之前记下的
+    // 「断点变了待重算」随之作废（BUG-4303）。
+    _remotePositionsStale = false;
     // 远端清单换代 = 封面文件路径集合可能变，记忆表随之作废（见 _remoteCoverFileExists）。
     _remoteCoverExists.clear();
     if (!_shouldLoadRemoteVideos) {
@@ -2022,7 +2117,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       // BUG-2714：清单到手才知道哪些中断的下载还能接（不挡列表渲染）。
       unawaited(_resumeInterruptedRemoteDownloads(source, remoteOnly));
       return _RemoteVideoState(
-        videos: remoteOnly,
+        // BUG-4303：卡片的断点 = 清单快照与本机库断点取较新（与开播判定同一份）。
+        videos: await withLocalRemoteVideoPositions(
+          appModelNoUpdate.database,
+          remoteOnly,
+        ),
         localCopies: <String, RemoteVideoInfo>{
           for (final RemoteVideoInfo video in videos)
             if (localUids.contains(video.id)) video.id: video,
@@ -4309,7 +4408,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     required ImageProvider? Function() cover,
     required String title,
   }) {
-    showMediaItemActions<void>(
+    final Future<void> menu = showMediaItemActions<void>(
       context: context,
       builder: (BuildContext dialogContext) => ValueListenableBuilder<int>(
         valueListenable: _coverExistsRevision,
@@ -4321,6 +4420,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         ),
       ),
     );
+    _companionTrackMenu(book, menu);
   }
 
   /// [_showVideoMenu] 的面板本体；[cover] 是当前这一轮取到的图源（可能仍是
@@ -4537,6 +4637,17 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
             onPressed: () {
               Navigator.pop(dialogContext);
               unawaited(_rescrapeVideo(book));
+            },
+          ),
+        // 「整理文件名」（ZDYNkAP3Ln）：按刮削资料改磁盘文件名。门只挡「本机根本
+        // 没有文件」的条目；未刮削 / 已是规范名由计划判出、给明确提示。
+        if (videoBookHasLocalFiles(book))
+          DialogListAction(
+            label: t.video_filename_organize_action,
+            icon: Icons.drive_file_rename_outline,
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              unawaited(_organizeVideoFilenames(<String>[book.bookUid]));
             },
           ),
         // 从媒体服务器加入的作品：移出整部作品（电影 = 自身，剧 = 全部集），与
@@ -5572,6 +5683,20 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
                   ))
                     if (!mirroredRemote.contains(v.id)) v,
                 ];
+                // 「管理合集」页的成员数（BUG-4277）：管理页列的是本域全部合集、
+                // 不随搜索 / 筛选 / 分区变，成员数也只取未筛选全量（同首页口径）的
+                // 折叠结果。放在分区分支之前：「全部视频」分区不建系列墙，挂在系列
+                // 墙里就永远发布不到。骨架期归属映射还没到，不发布（不是 0）。
+                if (!firstPaintPending) {
+                  _collectionDisplayCounts.publish<_VideoSlot>(
+                    _foldVideoUnits(
+                      homeLocal,
+                      homeRemote,
+                      _primaryCollectionByEntry,
+                      _memberSortIndex,
+                    ),
+                  );
+                }
                 // 下拉刷新：保活后切回不再隐式重拉远端，给用户显式强制刷新入口。
                 // AlwaysScrollableScrollPhysics 保证内容不足一屏时也能下拉触发。
                 // UI v2：散卡网格与合集横排行统一卡宽（用户实报合集卡大一截）——
@@ -7605,9 +7730,37 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// 最近一次已完成合集收养的远端清单（对象身份，见 [_loadRemoteVideos]）。
   List<RemoteVideoInfo>? _adoptedRemoteVideos;
 
-  /// 过滤后视频（本地 + 远端占位 union）→ 合集折叠 + 按当前排序方式排 group。远端占位
-  /// 用 `-1-index` 编码 importedAt（全为负，稳定排在本地条目之后、组内保持目录序）。
+  /// 过滤后视频（本地 + 远端占位 union）→ 合集折叠 + 按当前排序方式排 group。
   List<CollectionGroup<_VideoSlot>> _groupVideos(
+    List<VideoBookRow> books,
+    List<RemoteVideoInfo> remoteVideos,
+    Map<String, int> primaryByEntry,
+    Map<String, int> memberSortIndex,
+  ) {
+    final List<CollectionGroup<_VideoSlot>> groups = _foldVideoUnits(
+      books,
+      remoteVideos,
+      primaryByEntry,
+      memberSortIndex,
+    );
+    groups.sort(
+      (CollectionGroup<_VideoSlot> a, CollectionGroup<_VideoSlot> b) =>
+          compareShelfSortKeys(
+            _groupSortKey(a),
+            _groupSortKey(b),
+            _sortMode,
+            manualRanks: _manualRanks,
+          ),
+    );
+    return groups;
+  }
+
+  /// 视频显示单元折叠：本地视频 + 远端占位 → [groupByCollections] 的合集组与散卡组
+  /// （未排序）。系列墙吃筛选后的输入，「管理合集」页的成员数
+  /// （[_collectionDisplayCounts]）吃未筛选的全量输入，两处同一份折叠规则
+  /// （BUG-4277）。远端占位用 `-1-index` 编码 importedAt（全为负，稳定排在本地条目
+  /// 之后、组内保持目录序）。
+  List<CollectionGroup<_VideoSlot>> _foldVideoUnits(
     List<VideoBookRow> books,
     List<RemoteVideoInfo> remoteVideos,
     Map<String, int> primaryByEntry,
@@ -7636,23 +7789,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         ),
       );
     }
-    final List<CollectionGroup<_VideoSlot>> groups =
-        groupByCollections<_VideoSlot>(
-          items: items,
-          primaryCollectionIdByEntry: primaryByEntry,
-          collectionsById: _collectionsById,
-          memberSortIndex: memberSortIndex,
-        );
-    groups.sort(
-      (CollectionGroup<_VideoSlot> a, CollectionGroup<_VideoSlot> b) =>
-          compareShelfSortKeys(
-            _groupSortKey(a),
-            _groupSortKey(b),
-            _sortMode,
-            manualRanks: _manualRanks,
-          ),
+    return groupByCollections<_VideoSlot>(
+      items: items,
+      primaryCollectionIdByEntry: primaryByEntry,
+      collectionsById: _collectionsById,
+      memberSortIndex: memberSortIndex,
     );
-    return groups;
   }
 
   /// 组级排序键：散卡取条目自身；合集行取成员聚合（recent/imported 取成员 max、
@@ -9874,6 +10016,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
             onPressed: () => _rescrapeCollection(collection),
           ),
         DialogListAction(
+          label: t.video_filename_organize_action,
+          icon: Icons.drive_file_rename_outline,
+          onPressed: () => _organizeCollectionFilenames(collection),
+        ),
+        DialogListAction(
           label: t.video_jimaku_batch_title,
           icon: Icons.subtitles_outlined,
           group: DialogActionGroup.content,
@@ -9966,6 +10113,35 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       collection.id,
     );
     _refresh();
+  }
+
+  /// 视频库「整理文件名」（反馈 ZDYNkAP3Ln）：按刮削资料改文件名（及同名字幕 /
+  /// 元数据），做种的文件走下载引擎改名；预览、做种联动查不清时的提示、撤销都在
+  /// [runVideoFilenameOrganize]。
+  Future<void> _organizeVideoFilenames(List<String> bookUids) async {
+    if (bookUids.isEmpty || !mounted) return;
+    await runVideoFilenameOrganize(
+      context,
+      service: ref.read(appProvider).videoFilenameOrganizeService,
+      bookUids: bookUids,
+      onLibraryChanged: () async {
+        if (mounted) _refresh();
+      },
+    );
+  }
+
+  /// 合集整体「整理文件名」：成员里的视频一次预览、一次确认。
+  Future<void> _organizeCollectionFilenames(
+    MediaCollectionRow collection,
+  ) async {
+    final FushiDatabase db = ref.read(appProvider).database;
+    final List<String> uids = <String>[
+      for (final MediaCollectionItemRow m in await db.getCollectionItems(
+        collection.id,
+      ))
+        if (MediaKind.tryParse(m.mediaType) == MediaKind.video) m.entryKey,
+    ];
+    await _organizeVideoFilenames(uids);
   }
 
   /// 合集右键「重新刮削资料与封面」：手动指定作品身份 → 走 canonical 来源刮削
@@ -10237,12 +10413,16 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       // loadPendingRemoteDeletionKeys），详情页不出已「从所有设备删除」的集。
       loadRemoteVideos: () async {
         final Set<String> deleted = await _pendingRemoteVideoDeletions(source);
-        return filterOutLocallyDeletedRemoteVideos(
-          remote: peerPlayableRemoteVideos(
-            await _readRemoteVideoList(source: source, forceRefresh: false) ??
-                const <RemoteVideoInfo>[],
+        // BUG-4303：与库页同一口径——断点取清单快照与本机库断点的较新者。
+        return withLocalRemoteVideoPositions(
+          appModelNoUpdate.database,
+          filterOutLocallyDeletedRemoteVideos(
+            remote: peerPlayableRemoteVideos(
+              await _readRemoteVideoList(source: source, forceRefresh: false) ??
+                  const <RemoteVideoInfo>[],
+            ),
+            deletedKeys: deleted,
           ),
-          deletedKeys: deleted,
         );
       },
       openEpisode:
@@ -10667,6 +10847,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
           domain: CollectionShelfDomain.video,
           onOpenCollection: _openCollectionDetail,
           onShowCollectionMenu: _showCollectionContextMenu,
+          displayCounts: _collectionDisplayCounts,
         ),
       ),
     );
@@ -10731,6 +10912,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
           onPickOnlineCover: _onlineCoverController == null
               ? null
               : _pickOnlineCollectionCoverFile,
+          // 单集菜单「整理文件名」（ZDYNkAP3Ln）：与库页同一条实现。
+          onOrganizeFilenames: _organizeVideoFilenames,
         ),
       ),
     );

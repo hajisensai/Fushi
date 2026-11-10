@@ -45,6 +45,8 @@ extension _SyncOrchestratorLocalAudio on SyncOrchestrator {
 
     // ── Pull：远端独有 → 下载并注册 ────────────────────────────────────────
     for (final String name in pulls) {
+      // 安全检查点：上一项已完整落地，这一项还没开始。
+      _checkpoint();
       _emit(
         SyncPhase.localAudio,
         itemIndex: index,
@@ -85,6 +87,8 @@ extension _SyncOrchestratorLocalAudio on SyncOrchestrator {
 
     // ── Push：本端独有 → 打包并上传 ─────────────────────────────────────────
     for (final String name in pushes) {
+      // 安全检查点：上一项已完整落地，这一项还没开始。
+      _checkpoint();
       _emit(
         SyncPhase.localAudio,
         itemIndex: index,

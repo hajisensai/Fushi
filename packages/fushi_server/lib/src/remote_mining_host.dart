@@ -28,6 +28,7 @@ import 'package:fushi_server/src/anki_landing.dart';
 import 'package:fushi_server/src/config/server_srs_config.dart';
 import 'package:fushi_server/src/dictionary_host.dart';
 import 'package:fushi_server/src/server_srs.dart';
+import 'package:fushi_server/src/server_language.dart';
 
 /// 落一张卡：未渲染的载荷 JSON + 制卡上下文 → 结果。
 typedef ServerMineCard =
@@ -37,8 +38,10 @@ typedef ServerMineCard =
     );
 
 /// 沉浸制卡在服务端不可用时回给对端的原因。
-const String kServerImmersionMiningUnsupported =
-    '服务端不支持沉浸制卡（截图 / 动图 / 句子音频需在客户端裁好后用「制卡到服务端」转发）';
+String get kServerImmersionMiningUnsupported => tr(
+  '服务端不支持沉浸制卡（截图 / 动图 / 句子音频需在客户端裁好后用「制卡到服务端」转发）',
+  'The server does not support immersive mining (screenshots / animations / sentence audio must be trimmed on the client and forwarded with "mine to server")',
+);
 
 /// 把一次 [MineOutcome] 映射成 wire 结果，失败写进服务端日志（与 app 的
 /// `remoteMineResultFromOutcome` 同一语义：error 带原因、success 带部分成功的音频警告与
@@ -69,15 +72,6 @@ RemoteMineResult serverRemoteMineResult(
       return RemoteMineResult(result: outcome.result.name);
   }
 }
-
-/// 落到哪：解析好的目标（[ServerRemoteMiningService._resolve]）。
-/// [fellBack]：手机点名的那一类 / profile 服务端没有，退回了默认。
-typedef _ServerLanding = ({
-  String kind,
-  String? profile,
-  String? deck,
-  bool fellBack,
-});
 
 /// 互联制卡在服务端的落点分派（docs/specs/2026-11-05-server-srs-design.md §4.8）：
 /// - Anki：[ServerAnkiLanding] 的同步客户端库（老行为）；
@@ -172,77 +166,29 @@ class ServerRemoteMiningService
     }
   }
 
-  /// [target] → 实际落点：所选的那一类没有就退到另一类；复习的 profile 没提供就落默认 profile。
-  _ServerLanding? _resolve(RemoteMiningTarget? target) {
-    String kind = target?.kind ?? _defaultKind();
-    final String? askedKind = target?.kind;
-    if (kind == kRemoteMiningKindReview && !_reviewAvailable) {
-      kind = kRemoteMiningKindAnki;
-    } else if (kind == kRemoteMiningKindAnki &&
-        !_ankiAvailable &&
-        _reviewAvailable) {
-      kind = kRemoteMiningKindReview;
-    }
-    if (kind == kRemoteMiningKindAnki) {
-      if (!_ankiAvailable) return null;
-      return (
-        kind: kind,
-        profile: null,
-        // 从复习退到 Anki 时不沿用复习的牌组名。
-        deck: askedKind == null || askedKind == kind ? target?.deck : null,
-        fellBack: askedKind != null && askedKind != kind,
-      );
-    }
-    final ServerSrs srs = _srs!;
-    final String? asked = target?.profile;
-    final String uid = asked != null && srs.storeFor(asked) != null
-        ? asked
-        : srs.defaultProfile!.uid;
-    // 牌组只对点名的那份 profile 有意义：退到默认 profile 时不沿用别人那份的牌组名。
-    final bool kindKept = askedKind == null || askedKind == kind;
-    final String? askedDeck = kindKept && (asked == null || asked == uid)
-        ? target?.deck
-        : null;
-    // 手机没点名牌组：用配置给这份定的制卡牌组（全名；空 = 默认牌组）。
-    final String? configured = _srsConfig().miningDecks[uid];
-    final String? deck =
-        askedDeck ??
-        (configured == null || configured.isEmpty ? null : configured);
-    return (
-      kind: kind,
-      profile: uid,
-      deck: deck,
-      // 手机默认带自己的 profile uid（不点名类别 / 牌组）：服务端没有那份就落默认，这是「服务端默认」的
-      // 本义，不算退回。点名了类别或牌组才算手机的显式选择。
-      fellBack:
-          !kindKept ||
-          (asked != null &&
-              asked != uid &&
-              (askedKind != null || target?.deck != null)),
+  /// [target] → 实际落点（与桌面 host 同一套语义：[resolveRemoteMiningTarget]）。手机没点名牌组时复习用配置给
+  /// 那份 profile 定的制卡牌组（全名；空 = 默认牌组）。点名的牌组没有了 → 整个退回服务端默认。
+  Future<RemoteMiningResolution?> _resolve(RemoteMiningTarget? target) {
+    final ServerSrs? srs = _srs;
+    return resolveRemoteMiningTarget(
+      target,
+      defaultKind: _defaultKind(),
+      ankiAvailable: _ankiAvailable,
+      defaultReviewProfile: _reviewAvailable ? srs!.defaultProfile!.uid : null,
+      servesReviewProfile: (String uid) => srs?.storeFor(uid) != null,
+      configuredReviewDeck: (String uid) => _srsConfig().miningDecks[uid],
+      ankiDeckExists: (String deck) async {
+        final List<AnkiDeck> decks = _ankiSettings().availableDecks;
+        // 没拉到过牌组清单：无从判断，交给 Anki 落卡时自己回落（回包仍按实际牌组报）。
+        return decks.isEmpty || decks.any((AnkiDeck d) => d.name == deck);
+      },
+      reviewDeckExists: (String uid, String deck) async {
+        final SrsDbStore? store = srs?.storeFor(uid);
+        if (store == null) return false;
+        final SrsDeckTree tree = await store.deckTree();
+        return tree.decks.any((SrsDeckView d) => tree.fullName(d.id) == deck);
+      },
     );
-  }
-
-  /// 把「落到哪个牌组」写进载荷的单卡覆盖（与「高级制卡」同一个键）；单卡已经选了牌组的不动。
-  /// [own] = 这张卡自己选了牌组（这时实际牌组与 [deck] 不同是预期内的）。
-  static ({String raw, bool own}) _withDeck(
-    String rawPayloadJson,
-    String? deck,
-  ) {
-    if (deck == null || deck.isEmpty) return (raw: rawPayloadJson, own: false);
-    final Object? decoded = jsonDecode(rawPayloadJson);
-    if (decoded is! Map) return (raw: rawPayloadJson, own: false);
-    final Map<String, dynamic> fields = Map<String, dynamic>.from(decoded);
-    final MiningRequestOverrides? existing = MiningRequestOverrides.readFrom(
-      fields,
-    );
-    if ((existing?.deckName ?? '').isNotEmpty) {
-      return (raw: rawPayloadJson, own: true);
-    }
-    fields[MiningRequestOverrides.wireKey] = jsonEncode(<String, Object?>{
-      ...?existing?.toJson(),
-      'deck': deck,
-    });
-    return (raw: jsonEncode(fields), own: false);
   }
 
   Future<RemoteMineLanding> _mineTo(
@@ -251,13 +197,13 @@ class ServerRemoteMiningService
     AnkiMiningContext context,
     String source,
   ) async {
-    final _ServerLanding? to = _resolve(target);
+    final RemoteMiningResolution? to = await _resolve(target);
     if (to == null) {
       return RemoteMineLanding(
         RemoteMineResult(result: MineResult.notConfigured.name),
       );
     }
-    final ({String raw, bool own}) withDeck = _withDeck(
+    final ({String raw, bool own}) withDeck = withRemoteMiningDeck(
       rawPayloadJson,
       to.deck,
     );
@@ -278,22 +224,12 @@ class ServerRemoteMiningService
         _srs.notifyWrite(to.profile!);
       }
     }
-    return RemoteMineLanding(
+    return remoteMineLandingFor(
       serverRemoteMineResult(outcome, source: source),
-      landed: RemoteMiningTarget(
-        kind: to.kind,
-        profile: to.profile,
-        deck: outcome.deckName ?? to.deck,
-      ),
-      // 手机点名的牌组主机没有（被删 / 改名）：卡落进了默认牌组，如实说，手机据此退回主机默认。
-      targetUnavailable:
-          to.fellBack ||
-          (outcome.result == MineResult.success &&
-              !withDeck.own &&
-              target?.deck != null &&
-              to.deck == target!.deck &&
-              outcome.deckName != null &&
-              outcome.deckName != to.deck),
+      outcome: outcome,
+      to: to,
+      target: target,
+      ownDeck: withDeck.own,
     );
   }
 
@@ -343,7 +279,7 @@ class ServerRemoteMiningService
       return RemoteMineLanding(
         RemoteMineResult(
           result: MineResult.error.name,
-          message: '服务端制卡失败',
+          message: tr('服务端制卡失败', 'Server-side mining failed'),
           detail: '$e',
         ),
       );
@@ -377,7 +313,7 @@ class ServerRemoteMiningService
   }) async {
     if (expression.isEmpty) return false;
     try {
-      final _ServerLanding? to = _resolve(target);
+      final RemoteMiningResolution? to = await _resolve(target);
       if (to == null) return false;
       if (to.kind == kRemoteMiningKindReview) {
         final SrsMiner? miner = _srs!.minerFor(to.profile!);
@@ -394,29 +330,34 @@ class ServerRemoteMiningService
 
   @override
   Future<Map<String, Object?>> miningTargets() async {
-    final _ServerLanding? def = _resolve(null);
+    final RemoteMiningResolution? def = await _resolve(null);
     final List<Map<String, Object?>> review = <Map<String, Object?>>[];
     for (final ServerSrsProfile prof
         in _srs?.readyProfiles ?? const <ServerSrsProfile>[]) {
       final SrsDbStore? store = prof.store;
       if (store == null) continue;
       final SrsDeckTree tree = await store.deckTree();
+      final List<String> decks = <String>[
+        for (final SrsDeckView d in tree.decks) tree.fullName(d.id),
+      ]..sort();
+      // 不点名牌组时卡实际落进的那个（配置给这份定的制卡牌组，不在了 / 没配 = 库的默认牌组，与
+      // resolveSrsMiningDestination 同口径）。手机据此不把它在「默认牌组」之外再列一遍（BUG-4288）。
+      final String? configured = _srsConfig().miningDecks[prof.uid];
+      final String? defaultDeck =
+          configured != null && decks.contains(configured)
+          ? configured
+          : tree[store.defaultDeckId] == null
+          ? null
+          : tree.fullName(store.defaultDeckId);
       review.add(<String, Object?>{
         'profile': prof.uid,
         'name': prof.name,
-        'decks': <String>[
-          for (final SrsDeckView d in tree.decks) tree.fullName(d.id),
-        ]..sort(),
+        'decks': decks,
+        'defaultDeck': ?defaultDeck,
       });
     }
     return <String, Object?>{
-      'default': def == null
-          ? null
-          : RemoteMiningTarget(
-              kind: def.kind,
-              profile: def.profile,
-              deck: def.deck,
-            ).toJson(),
+      'default': def?.landing.toJson(),
       'review': review,
       if (_ankiAvailable)
         'anki': <String, Object?>{

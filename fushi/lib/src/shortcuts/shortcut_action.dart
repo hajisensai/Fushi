@@ -563,6 +563,17 @@ enum ShortcutAction {
     ShortcutScope.video,
     'video_toggle_loop_current_subtitle',
   ),
+  // 逐句学习工具（副屏 S6，2026-11-08）：重播当前句并在句尾暂停（精听）、开关「每句
+  // 播完自动暂停」、A-B 循环三态（标 A → 标 B 开始循环 → 清除）。默认键盘
+  // Ctrl+Shift+R / P / B，手柄留空。执行体在 video_player_shortcuts →
+  // VideoPlayerController（replayCurrentCueThenPause / setAutoPauseAtCueEnd /
+  // toggleAbLoop），副屏视频面板走同一组控制器方法。
+  videoReplayCueThenPause(ShortcutScope.video, 'video_replay_cue_then_pause'),
+  videoToggleAutoPauseAtCueEnd(
+    ShortcutScope.video,
+    'video_toggle_auto_pause_at_cue_end',
+  ),
+  videoToggleAbLoop(ShortcutScope.video, 'video_toggle_ab_loop'),
   // 内封章节上/下一章（TODO-424，默认 PageUp / PageDown）：seek 到相邻章起点，无章节
   // 时 no-op。与「上/下一句字幕」(Ctrl+←/→) 正交——后者按字幕 cue，这里按容器章节。
   videoPreviousChapter(ShortcutScope.video, 'video_previous_chapter'),
@@ -668,6 +679,10 @@ enum ShortcutAction {
     ShortcutScope.video,
     'video_toggle_favorite_sentence',
   ),
+  // 视频的统计侧栏 / 停续学习计时（执行体 = 控制条 statistics / studyTimer 键同一入口）。
+  // 小说 / 漫画用的 I / P 在 video 组里已被快进 / 播放暂停占用，**默认不绑键**，用户自绑。
+  videoOpenStatistics(ShortcutScope.video, 'video_open_statistics'),
+  videoToggleStudyClock(ShortcutScope.video, 'video_toggle_study_clock'),
 
   // 漫画：翻页存的是**页序语义**（forward=下一页），左右方向键再按跨页方向
   // （日漫默认 rtl）校正——与 reader 的 resolveReaderArrowPageTurn 同构，见
@@ -691,6 +706,12 @@ enum ShortcutAction {
   mangaPanDown(ShortcutScope.manga, 'manga_pan_down'),
   mangaPanLeft(ShortcutScope.manga, 'manga_pan_left'),
   mangaPanRight(ShortcutScope.manga, 'manga_pan_right'),
+  // 漫画的统计侧栏 / 停续学习计时（执行体 = 控制条 statistics / studyTimer 键同一
+  // 入口）。与 reader 组的 readerOpenStatistics(I) / readerToggleStudyClock(P) 同键：
+  // manga scope 内 I / P 未被占用，与小说分属不同 co-active 组、绝不同时激活，
+  // 肌肉记忆跨阅读器复用。手柄留空，用户可自绑。
+  mangaOpenStatistics(ShortcutScope.manga, 'manga_open_statistics'),
+  mangaToggleStudyClock(ShortcutScope.manga, 'manga_toggle_study_clock'),
 
   // Web browser：app 内浏览器（[ShortcutScope.webBrowser]）。声明顺序 = 设置页展示
   // 顺序：标签页 → 导航 → 页面工具 → 缩放。执行体在 fushi_web_browser_page 的

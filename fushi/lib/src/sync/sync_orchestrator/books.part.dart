@@ -79,6 +79,8 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
     // ── Push：本端独有 → 重打包并上传 ───────────────────────────────────────
     for (final String key in diff.toPush) {
       final String title = localKeyToTitle[key] ?? key;
+      // 安全检查点：上一项已完整落地，这一项还没开始。
+      _checkpoint();
       _emit(SyncPhase.books, itemIndex: index, itemTotal: total, title: title);
       File? tmp;
       try {
@@ -186,6 +188,17 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
     );
     final List<EpubBookRow> localBooks = await _db.getAllEpubBooks();
     if (localBooks.isEmpty) return;
+    // BUG-1569③：退出书的单本同步不再等整轮 sweep 结束，它在互联上只锁那本书。
+    // 下面的批量读与本端快照都是「此刻」的，若在本阶段跑到某本书之前它已被单本
+    // 同步改过（推了 host、或落了本地、记了新基线），拿这份旧快照去判定就会把 host
+    // 的旧值当成「远端改了」落回本机——进度倒退。所以先记下每本书锁的代数，轮到
+    // 这本书时代数变了就不信快照：重读 host、整套重新判定。必须在读快照**之前**记。
+    final Map<String, int> lockGenerations = <String, int>{
+      for (final EpubBookRow book in localBooks)
+        book.bookKey: syncResourceLocks.generationOf(
+          syncBookResource(book.bookKey),
+        ),
+    };
     // 本端进度 / 基线整轮一次读齐（三条查询）；两端已收敛的书在内存里判定后
     // 跳过，其余照旧逐本重读、判定、落地（快照只用来跳过，从不用来写）。
     final BookProgressSweepSnapshot snapshot = await sync.loadSweepSnapshot();
@@ -199,35 +212,59 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
     }
     for (int i = 0; i < localBooks.length; i++) {
       final EpubBookRow book = localBooks[i];
+      // 安全检查点：上一项已完整落地，这一项还没开始。
+      _checkpoint();
       _emit(
         SyncPhase.readingData,
         itemIndex: i,
         itemTotal: localBooks.length,
         title: book.title,
+        itemKind: SyncItemKind.book,
       );
+      final String lockKey = syncBookResource(book.bookKey);
       try {
-        final RemoteBookProgressRead read = await remotes[i];
-        final Object? readError = read.error;
-        if (readError != null) {
-          Error.throwWithStackTrace(readError, read.stackTrace!);
-        }
-        final BookProgressSyncStep step = await sync.syncOne(
-          book,
-          remote: read.progress!,
-          snapshot: snapshot,
-        );
-        if (step.localChanged) report.localBookProgressPulled++;
-        if (step.action == BookProgressSyncAction.conflict) {
-          report.conflicts.add(
-            SyncConflict(
-              assetKey: book.bookKey,
-              dimension: kInterconnectBookProgressDimension,
-              title: book.title,
-              localVersion: step.localUpdatedAtMs,
-              remoteVersion: step.remoteUpdatedAtMs,
-            ),
+        // 判定 + 落地在这本书的锁里做，与退出书的单本同步互斥（见上）。
+        await syncResourceLocks.withResources(<String>{lockKey}, () async {
+          final bool touched =
+              syncResourceLocks.generationOf(lockKey) !=
+              lockGenerations[book.bookKey];
+          final RemoteBookProgress remote;
+          if (touched) {
+            remote = await sync.remoteProgress(book);
+          } else {
+            final RemoteBookProgressRead read = await remotes[i];
+            final Object? readError = read.error;
+            if (readError != null) {
+              Error.throwWithStackTrace(readError, read.stackTrace!);
+            }
+            remote = read.progress!;
+          }
+          final BookProgressSyncStep step = await sync.syncOne(
+            book,
+            remote: remote,
+            snapshot: touched ? null : snapshot,
           );
-        }
+          if (step.localChanged) report.localBookProgressPulled++;
+          // 摘要计数（BUG-4302）只数位置真的挪动了的：落地了 host 的进度 / 推出了
+          // 本机的进度。只对齐时间戳（synced）不算变化。
+          if (step.action == BookProgressSyncAction.applyRemote &&
+              step.localChanged) {
+            report.bookProgressReceived++;
+          } else if (step.action == BookProgressSyncAction.pushLocal) {
+            report.bookProgressSent++;
+          }
+          if (step.action == BookProgressSyncAction.conflict) {
+            report.conflicts.add(
+              SyncConflict(
+                assetKey: book.bookKey,
+                dimension: kInterconnectBookProgressDimension,
+                title: book.title,
+                localVersion: step.localUpdatedAtMs,
+                remoteVersion: step.remoteUpdatedAtMs,
+              ),
+            );
+          }
+        });
       } catch (e) {
         report.noteError('live book progress "${book.title}"', e);
       }
@@ -265,8 +302,26 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
     // 用来写）。
     final PlaybackBaselineSnapshot baselines = await sync
         .loadBaselineSnapshot();
-    for (final String key in localKeys) {
-      if (!hostKeys.contains(key)) continue; // host 无此条目：跳过。
+    final List<String> keys = <String>[
+      for (final String key in localKeys)
+        if (hostKeys.contains(key)) key, // host 无此条目：跳过。
+    ];
+    final SyncItemKind itemKind = switch (sync.kind) {
+      PlaybackPositionKind.video => SyncItemKind.video,
+      PlaybackPositionKind.audiobook => SyncItemKind.audiobook,
+    };
+    for (int i = 0; i < keys.length; i++) {
+      final String key = keys[i];
+      // 任务面板要能说出「在同步哪个视频 / 哪本有声书」（反馈 kM-Gb_Xnu-）。
+      // 安全检查点：上一项已完整落地，这一项还没开始。
+      _checkpoint();
+      _emit(
+        SyncPhase.readingData,
+        itemIndex: i,
+        itemTotal: keys.length,
+        title: titleOf(key),
+        itemKind: itemKind,
+      );
       try {
         final PlaybackPosition host = await readHost(key);
         if (InterconnectPlaybackPositionSync.isSettled(
@@ -288,8 +343,12 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
             await sync.alignSynced(key, local: local, remote: host);
           case BookProgressSyncAction.pushLocal:
             await sync.pushLocal(key, local: local, remote: host);
+            report.notePlaybackPositionMoved(sync.kind, received: false);
           case BookProgressSyncAction.applyRemote:
-            await sync.applyRemote(key, host, local: local);
+            // BUG-3537：判定后本端被改写则不落地，也不计「已拉取」（BUG-4302）。
+            if (await sync.applyRemote(key, host, local: local)) {
+              report.notePlaybackPositionMoved(sync.kind, received: true);
+            }
           case BookProgressSyncAction.conflict:
             report.conflicts.add(
               SyncConflict(

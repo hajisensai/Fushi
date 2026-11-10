@@ -151,6 +151,7 @@ void main() {
     const Map<String, String> autoResumeSites = <String, String>{
       'void _popNestedPopupAt(': '查词浮层整栈关闭（含悬停离开自动关）',
       'void _finishSubtitleCaretSession(': '选词光标会话结束',
+      'void _companionLookupClosed(': '副屏查词页关闭查词',
       'void _resumeAfterBackgroundIfNeeded()': '回前台续播',
       'Future<void> _editCueText(': '编辑字幕对话框关闭',
     };

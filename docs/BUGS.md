@@ -38,6 +38,93 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-4231](bugs/BUG-4231-srs-fushi-card-native-fallback-frozen-template.md) | ✅ | ✅ | Fushi 卡片冻住的旧版内置模板让复习卡静默回退整面 WebView |
+> 共 3871 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4322](bugs/BUG-4322-manual-address-host-no-device-name.md) | ✅ | ✅ | 手动地址添加的 host 没有设备名：peer ls 不列出、远端复习标题显示 host.docker.internal |
+| [BUG-4321](bugs/BUG-4321-cli-anki-mine-ignores-remote-lookup.md) | ✅ | ✅ | fushi_cli anki mine 在依赖远端查词的客户端上释义为空（只查本地词典） |
+| [BUG-4320](bugs/BUG-4320-srs-sync-v2-host-not-joined-silent.md) | ✅ | ✅ | SRS 同步 v2：host 未点「开始同步」时客户端显示「全部已同步」、什么都没同步且无提示 |
+| [BUG-4306](bugs/BUG-4306-srs-sync2-device-trust.md) | ✅ | ✅ | srs-sync2-device-trust |
+| [BUG-4305](bugs/BUG-4305-sync-module-off-keeps-syncing.md) | ✅ | ✅ | 关掉同步模块后在飞同步与定时同步仍继续跑 |
+| [BUG-4304](bugs/BUG-4304-interconnect-video-resume-stale-pref-cache.md) | ✅ | ✅ | 互联客户端视频续播用旧断点并写回 host（偏好内存缓存不知道同步写库） |
+| [BUG-4303](bugs/BUG-4303-remote-video-watched-label-stale.md) | ✅ | ✅ | 视频页远端卡「看到 X」只显示 host 清单快照：同步拉到新断点 / 播完返回后不刷新 |
+| [BUG-4302](bugs/BUG-4302-sync-summary-ignores-progress.md) | ✅ | ✅ | 同步完成提示只数内容传输：拉到 / 推出视频断点、书籍与有声书进度仍显示「无变化」 |
+| [BUG-4301](bugs/BUG-4301-bd-pack-without-batch-title-no-full-plan.md) | ✅ | ✅ | 没写 batch / 季号的 BD 整包给不出「全集」下载计划 |
+| [BUG-4300](bugs/BUG-4300-srs-day-rollover-not-synced.md) | ✅ | ✅ | 复习的「今天」日界不随同步、profile 时区字段从没有写入方 |
+| [BUG-4299](bugs/BUG-4299-srs-sync2-plaintext-downgrade.md) | ✅ | ✅ | SRS 同步 v2：没有密钥的设备会往已加密的位置写明文 |
+| [BUG-4298](bugs/BUG-4298-srs-kernel-reads-share-one-connection.md) | ✅ | ✅ | SRS 内核只读命令共用一条读连接：全库统计读着时复习排队等它跑完 |
+| [BUG-4297](bugs/BUG-4297-srs-panic-poisons-writer.md) | ✅ | ✅ | SRS 内核一次 panic 后写连接永久毒化，所有写命令报 srs writer poisoned |
+| [BUG-4296](bugs/BUG-4296-srs-conflict-stale-profile.md) | ✅ | ✅ | 复习同步冲突：一边采用对方 profile 解决后，另一边仍按检出时缓存的旧冲突再问一次（旧候选、旧笔记数），选了会分叉 |
+| [BUG-4295](bugs/BUG-4295-srs-read-store-swallows-open-failure.md) | ✅ | ✅ | readSrsStore 吞掉复习库打开失败：复习页报「排程内核不可用」，操作目录报「复习库还没就绪」 |
+| [BUG-4294](bugs/BUG-4294-srs-review-ignores-external-changes.md) | ✅ | ✅ | 复习页不接收外部变更（同步拉入、操作目录写入、模板编辑器返回），预取命中也认不出笔记 / 模板变化 |
+| [BUG-4293](bugs/BUG-4293-srs-remote-review-bumps-local-sessions.md) | ✅ | ✅ | 远程复习推动本机 runtime 的活跃复习会话计数 |
+| [BUG-4292](bugs/BUG-4292-srs-profile-purge-three-impls.md) | ✅ | ✅ | 删 / 换 profile uid 的三份实现不一致，并入与采用后旧 uid 在 srs.db 留残留 |
+| [BUG-4291](bugs/BUG-4291-electron-game-launch-crash-noaccess-section.md) | ✅ | ✅ | Electron/Chromium 打包游戏经 Fushi 启动即崩（不可读 PE 节被扫描） |
+| [BUG-4290](bugs/BUG-4290-server-backup-config-flag-shadowed.md) | ✅ | ✅ | fushi_server backup: --config <path> after the subcommand is taken as the restore-config flag |
+| [BUG-4289](bugs/BUG-4289-mine-target-reset-stale-main-process.md) | ✅ | ✅ | Save to reset written by the lookup popup process is invisible to the main process |
+| [BUG-4288](bugs/BUG-4288-save-to-default-deck-listed-twice.md) | ✅ | ✅ | 保存到列表里默认牌组出现两次 |
+| [BUG-4287](bugs/BUG-4287-popup-toast-truncated-two-lines.md) | ✅ | ✅ | 「保存到」退回主机默认的提示被截断 / 被结果提示顶掉 |
+| [BUG-4286](bugs/BUG-4286-server-srs-note-count-stale.md) | ✅ | ✅ | 服务端复习状态的笔记数不随写入刷新 |
+| [BUG-4285](bugs/BUG-4285-srs-conflict-dialog-marquee-intrinsic.md) | ✅ | ✅ | SRS 同步冲突弹窗在 debug 下不显示，只剩遮罩挡住复习页（FushiMarquee 的 LayoutBuilder 答不了 intrinsic） |
+| [BUG-4284](bugs/BUG-4284-popup-gutter-observer-loop.md) | ✅ | ✅ | 查词弹窗错误日志反复出现 ResizeObserver loop completed with undelivered notifications（滚动条 gutter 观察者在投递中同步重排） |
+| [BUG-4283](bugs/BUG-4283-cross-process-lookup-count-locked.md) | ✅ | ✅ | Companion / popup lookups not counted: addLookupCount fails with database is locked |
+| [BUG-4282](bugs/BUG-4282-thor-secondary-screen-volume-mutes-stream.md) | 🚧 | 🚧 | AYN Thor: game stream audio near silent while Fushi has a window on the bottom screen |
+| [BUG-4281](bugs/BUG-4281-game-stream-companion-r1-takes-controller.md) | ✅ | ✅ | Game stream: companion R1 panel drive takes the controller when the stream leaves the second screen to the companion |
+| [BUG-4280](bugs/BUG-4280-android-controller-dpad-device-type.md) | ✅ | ✅ | Android controller D-pad reaches Dart as keyboard arrows (lookup mode / panel drive ignore it) |
+| [BUG-4279](bugs/BUG-4279-audiobook-multifile-cues-stay-on-file0.md) | ✅ | ✅ | 服务端 / 发现页 / 书+字幕+音频导入的多文件有声书 cue 全落在第 0 个文件 |
+| [BUG-4278](bugs/BUG-4278-interconnect-host-client-p2p-fallback.md) | ✅ | ✅ | 互联：主机能力探测 / GET 与选路缓存不走 P2P 隧道，直连不通时远程复习找不到主机 |
+| [BUG-4277](bugs/BUG-4277-collection-manage-count-mismatch.md) | ✅ | ✅ | collection-manage-count-mismatch |
+| [BUG-4276](bugs/BUG-4276-lan-devices-duplicate-host.md) | ✅ | ✅ | 互联「局域网设备」列表把同一台 host 列两遍，配对后红屏 `_dependents.isEmpty` |
+| [BUG-4275](bugs/BUG-4275-interconnect-peer-row-shows-url-not-name.md) | ✅ | ✅ | 互联连接列表行标题只显示 URL、不显示对端设备名 |
+| [BUG-4274](bugs/BUG-4274-interconnect-test-all-probes-disabled.md) | ✅ | ✅ | 互联「测试连接」连已停用的地址也测 |
+| [BUG-4273](bugs/BUG-4273-media-server-unnumbered-episode.md) | ✅ | ✅ | 媒体服务器缺集号的集被显示成列表位置并排到最前 |
+| [BUG-4272](bugs/BUG-4272-yomitan-per-dict-frequency-unmappable.md) | ✅ | ✅ | yomitan-per-dict-frequency-unmappable |
+| [BUG-4271](bugs/BUG-4271-background-engine-kills-flutter-logs-startup-hang.md) | ✅ | ✅ | 后台被 WorkManager 拉起后打开白屏、启动耗时超出预期（flutter_logs 静态 channel 被后台引擎销毁时清掉） |
+| [BUG-4270](bugs/BUG-4270-video-enqueue-duplicate-torrent-opaque-drift-error.md) | ✅ | ✅ | 重复入队同一种子报不透明的 DriftRemoteException，诊断日志无记录 |
+| [BUG-4269](bugs/BUG-4269-nyaa-trust-signals-ignored-by-ranking.md) | ✅ | ✅ | 资源排序不看索引器信任标记：Nyaa remake 在 provider 边界丢失、trusted 不参与排序 |
+| [BUG-4268](bugs/BUG-4268-macos-stale-ips-false-crash.md) | ✅ | ✅ | macOS 把别的版本 / 上次会话之前的 .ips 判成上次闪退 |
+| [BUG-4267](bugs/BUG-4267-resource-search-misses-best-batches.md) | ✅ | ✅ | 资源搜索漏掉高种整季包：贴合度只认单一查询词、S01 季包给不出下载计划 |
+| [BUG-4266](bugs/BUG-4266-android-fgs-importance-false-foreground.md) | ✅ | ✅ | Android 死时重要度 125（前台服务）被当成界面在前台，后台被杀判成闪退 |
+| [BUG-4265](bugs/BUG-4265-ios-background-launch-inactive-false-crash.md) | ✅ | ✅ | iOS 后台拉起会话的 headless 标记被初始 inactive 覆盖，后台回收被判启动即闪退 |
+| [BUG-4264](bugs/BUG-4264-popup-mined-button-tip-rightclick.md) | ✅ | ✅ | Windows 查词弹窗已制卡 ✓：提示错位、右键被宿主菜单抢 |
+| [BUG-4263](bugs/BUG-4263-ios-video-import-tmp-copy-lost.md) | ✅ | ✅ | iOS 单个导入的视频过一阵「找不到文件」，重新导入后又失效 |
+| [BUG-4262](bugs/BUG-4262-onedrive-dropbox-json-latin1-decode.md) | ✅ | ✅ | OneDrive/Dropbox 下载 JSON 按 latin1 解码，非 ASCII 每轮多编一层致聚合快照与本地库膨胀 |
+| [BUG-4261](bugs/BUG-4261-webview-page-finished-cookie-flush-anr.md) | ✅ | ✅ | Android WebView 每次页面加载完在 UI 线程同步 CookieManager.flush 致 ANR |
+| [BUG-4260](bugs/BUG-4260-online-manga-grid-thumbnails.md) | ✅ | ✅ | 在线漫画「全部页面」网格不显示缩略图，已看过的页也没有 |
+| [BUG-4259](bugs/BUG-4259-audiobook-delay-not-applied-to-cue-seek.md) | ✅ | ✅ | 有声书音画同步偏移未作用于点句跳转 / 单句试听停止点 / 上下句导航 |
+| [BUG-4258](bugs/BUG-4258-ios-background-launch-inactive-gate-full-init.md) | ✅ | ✅ | iOS 后台拉起时 inactive 被精简入口当成有界面，完整初始化在后台照跑并被判闪退 |
+| [BUG-4257](bugs/BUG-4257-media-server-episode-unstable-sort.md) | ✅ | ✅ | 媒体服务器剧集无集号时 List.sort 不稳定，超过 32 集顺序被打乱 |
+| [BUG-4256](bugs/BUG-4256-continue-hero-side-row-hover-clip.md) | ✅ | ✅ | 首页「继续」并排封面行：方向待探测的视频卡解出横图后悬停放大，左缘被视口裁掉 |
+| [BUG-4255](bugs/BUG-4255-srs-reposition-progress-says-anki.md) | ✅ | ✅ | srs-reposition-progress-says-anki |
+| [BUG-4254](bugs/BUG-4254-srs-anki-revlog-double-count.md) | ✅ | ✅ | 从 Anki 迁移后复习数 ×2（同一条 Anki revlog 落在两张卡上算两次） |
+| [BUG-4253](bugs/BUG-4253-ldoce-mdx-sound-sandbox-swallowed.md) | ✅ | ✅ | LDOCE5++ MDX 内置发音点了不响（沙箱里词典脚本吞掉 sound:// 点击） |
+| [BUG-4252](bugs/BUG-4252-lyrics-unread-symbol-paragraph.md) | ✅ | ✅ | lyrics-unread-symbol-paragraph |
+| [BUG-4251](bugs/BUG-4251-advanced-mining-clear-keeps-audio.md) | ✅ | ✅ | 高级制卡清空前文/后文被当成删句，最外侧那句的音频一起丢 |
+| [BUG-4250](bugs/BUG-4250-video-popover-click-through-and-drag-hide.md) | ✅ | ✅ | 视频音量 / 倍速浮层点空白处下穿到进度条；拖浮层滑条时控制条照样自动隐藏 |
+| [BUG-4249](bugs/BUG-4249-subtitle-list-filter-labels-truncated.md) | ✅ | ✅ | 视频字幕列表 M3E 侧栏「全部 / 收藏」分段文字消失（横屏手机） |
+| [BUG-4248](bugs/BUG-4248-popup-tablet-near-fullscreen.md) | ✅ | ✅ | Android 平板外部查词浮卡近乎全屏、调最大宽高无效 |
+| [BUG-4247](bugs/BUG-4247-galhook-attach-audio-fallback-not-restored.md) | ✅ | ✅ | 附着已运行游戏时不读回该游戏上次的「音频降级」选择 |
+| [BUG-4246](bugs/BUG-4246-resource-search-sibling-work-accepted.md) | ✅ | ✅ | AI 下视频把同系列续作 / 另一季的发布当成所选作品（ガルパ☆ピコ 下成 Fever） |
+| [BUG-4245](bugs/BUG-4245-download-organizer-splits-disc-structure.md) | ✅ | ✅ | 视频下载整理器拆散 BDMV/VIDEO_TS 原盘结构，盘按 m2ts 逐文件改名 |
+| [BUG-4244](bugs/BUG-4244-onedrive-json-asset-upload-session.md) | ✅ | ✅ | OneDrive 大 JSON 资产（聚合快照）不走上传会话，>10MiB 单请求 PUT 一直 400 |
+| [BUG-4243](bugs/BUG-4243-pull-refresh-ignores-sync-module.md) | ✅ | ✅ | 下拉刷新无视「同步与备份」模块开关仍触发同步 |
+| [BUG-4242](bugs/BUG-4242-obfuscating-sync-temp-leak.md) | ✅ | ✅ | iOS 混淆同步上传临时目录 obf_up_* 进程被杀后永久残留（9×603MB） |
+| [BUG-4241](bugs/BUG-4241-sqlite-busy-timeout-collapses-under-sigprof.md) | ✅ | ✅ | Linux 上 Fushi 库的 5s busy 超时被 SIGPROF 压成几十毫秒（并发迁移偶发 database is locked） |
+| [BUG-4240](bugs/BUG-4240-music-plugin-enabled-state-concurrent-load.md) | ✅ | ✅ | 音乐插件启停状态并发首读各得一份副本，停用丢失 |
+| [BUG-4239](bugs/BUG-4239-continuous-diagonal-swipe-dropped.md) | ✅ | ✅ | 滚动模式斜着滑（拇指弧线）正文不动、也不跨章 |
+| [BUG-4238](bugs/BUG-4238-android-file-rss-no-attribution.md) | ✅ | ✅ | Android 文件映射常驻暴涨时没有按文件分项 |
+| [BUG-4237](bugs/BUG-4237-android-tombstone-summary-misses-crash-thread.md) | ✅ | ✅ | Android 原生崩溃摘要抽不到崩溃线程栈 |
+| [BUG-4236](bugs/BUG-4236-manga-series-chapter-column-anr.md) | ✅ | ✅ | 作品页章节表一次建全上千行致主线程 ANR |
+| [BUG-4235](bugs/BUG-4235-anime-subtitle-file-uri-fetched-over-http.md) | ✅ | ✅ | 在线视频源本地 file:// 字幕被当 HTTP 去取 |
+| [BUG-4234](bugs/BUG-4234-windows-memory-sample-no-breakdown.md) | ✅ | ✅ | Windows 内存采样只有工作集没有分项 |
+| [BUG-4233](bugs/BUG-4233-srs-remote-deck-list-flat-and-buried.md) | ✅ | ✅ | srs-remote-deck-list-flat-and-buried |
+| [BUG-4232](bugs/BUG-4232-anki-source-link-mine-missing-original.md) | ✅ | ✅ | anki-source-link-mine-missing-original |
+| [BUG-4231](bugs/BUG-4231-crash-prompt-stale-pending-after-update.md) | ✅ | ✅ | Windows 自动更新后又弹「上次意外退出」闪退报告提示（旧的待报没人答就每次启动重问） |
+| [BUG-4230](bugs/BUG-4230-popup-platform-view-ghost-pointer.md) | ✅ | ✅ | 查词弹窗按住时子弹窗就位导致平台视图丢指针：滑不动、点词失效、选区菜单关不掉 |
+| [BUG-4229](bugs/BUG-4229-lyrics-mine-toast-covers-text.md) | ✅ | ✅ | 歌词模式（平板）制卡结果小卡压住正文 |
+| [BUG-4228](bugs/BUG-4228-lyrics-mode-reader-chrome-stays-on-top.md) | ✅ | ✅ | 歌词模式下阅读器底部迷你播放条与悬浮工具栏留在歌词覆盖层上面 |
+| [BUG-4227](bugs/BUG-4227-youtube-asr-caption-line-mismatch.md) | ✅ | ✅ | YouTube 自动字幕制卡错位：悬停上一行配了下一行的例句与片段、Dart 解析不截滚动重叠 |
 | [BUG-4226](bugs/BUG-4226-collection-detail-open-eager-grid.md) | ✅ | ✅ | collection-detail-open-eager-grid |
 | [BUG-4225](bugs/BUG-4225-cloud-manga-shelf-download-stuck-100.md) | 🚧 | 🚧 | 书架下载云盘漫画卡 100% 打不开（对比页正常） |
 | [BUG-4224](bugs/BUG-4224-manga-webtoon-zoom-scroll-toggles-chrome.md) | ✅ | ✅ | manga-webtoon-zoom-scroll-toggles-chrome |

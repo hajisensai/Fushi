@@ -18,6 +18,7 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_ai_identity.dart';
 import 'package:fushi_engine/media/video/discovery/video_franchise.dart';
 import 'package:fushi_engine/media/video/download/video_discovery_selection.dart';
+import 'package:fushi_engine/media/video/download/video_release_scope_evidence.dart';
 import 'package:fushi_engine/media/video/download/video_resource_version_groups.dart';
 
 // ---------------------------------------------------------------------------
@@ -782,6 +783,7 @@ class VideoAcquisitionState {
     this.pendingQueries = const <String>[],
     this.workCandidates = const <VideoDiscoveryItem>[],
     this.chosenItem,
+    this.siblingWorks = const <VideoMediaReference>[],
     this.work,
     this.airing,
     this.contentLanguage,
@@ -790,6 +792,9 @@ class VideoAcquisitionState {
     this.presenceAcknowledged = false,
     this.subtitleLanguageAsked = false,
     this.subtitleLanguageResolutionSaid = false,
+    this.resourceItems = const <VideoResourceCandidate>[],
+    this.releaseManifests = const <String, VideoReleaseManifest?>{},
+    this.pendingFranchiseResolution,
     this.groups = const <VideoResourceVersionGroup>[],
     this.eligibleGroups = const <VideoResourceVersionGroup>[],
     this.availableResolutions = const <String>[],
@@ -823,6 +828,10 @@ class VideoAcquisitionState {
 
   final VideoDiscoveryItem? chosenItem;
 
+  /// 选定作品时同一次作品搜索的其它候选（续作 / 前作 / 外传）：资源搜索是模糊词
+  /// 匹配，它们的发布会混进这一部的候选，按兄弟作品判据排掉（BUG-4246）。
+  final List<VideoMediaReference> siblingWorks;
+
   /// `loadDetails` 之后的完整作品资料（TMDB 搜索项在这之前没有 status）。
   final VideoMetadataWork? work;
 
@@ -842,6 +851,25 @@ class VideoAcquisitionState {
 
   /// 「跟随作品语言 → 解析出 X」这句已经说过（决策表每次重跑不重复说）。
   final bool subtitleLanguageResolutionSaid;
+
+  /// 最近一次资源搜索的原始结果（相关度序）：取到文件列表后据此重建 [groups]。
+  final List<VideoResourceCandidate> resourceItems;
+
+  /// 本会话取过的种子文件列表（按 identityKey）；值为 null = 取过但这家给不出
+  /// 列表，不再重取。作为整包证据随版本卡带着（[VideoResourceVersionGroup.scopeOf]）。
+  final Map<String, VideoReleaseManifest?> releaseManifests;
+
+  /// 整套下载里一部作品的资源结果在等文件列表：取回后按它重算这一部的计划。
+  final VideoAcquisitionFranchiseEntryResolvedEvent? pendingFranchiseResolution;
+
+  /// 取到了的文件列表（[releaseManifests] 去掉 null）。
+  Map<String, VideoReleaseManifest> get knownReleaseManifests =>
+      <String, VideoReleaseManifest>{
+        for (final MapEntry<String, VideoReleaseManifest?> entry
+            in releaseManifests.entries)
+          if (entry.value case final VideoReleaseManifest manifest)
+            entry.key: manifest,
+      };
 
   /// 资源搜索结果的全部版本卡（相关度序）。
   final List<VideoResourceVersionGroup> groups;
@@ -882,6 +910,7 @@ class VideoAcquisitionState {
     List<String>? pendingQueries,
     List<VideoDiscoveryItem>? workCandidates,
     VideoDiscoveryItem? chosenItem,
+    List<VideoMediaReference>? siblingWorks,
     VideoMetadataWork? work,
     VideoAiringStatus? airing,
     bool clearAiring = false,
@@ -891,6 +920,10 @@ class VideoAcquisitionState {
     bool? presenceAcknowledged,
     bool? subtitleLanguageAsked,
     bool? subtitleLanguageResolutionSaid,
+    List<VideoResourceCandidate>? resourceItems,
+    Map<String, VideoReleaseManifest?>? releaseManifests,
+    VideoAcquisitionFranchiseEntryResolvedEvent? pendingFranchiseResolution,
+    bool clearPendingFranchiseResolution = false,
     List<VideoResourceVersionGroup>? groups,
     List<VideoResourceVersionGroup>? eligibleGroups,
     List<String>? availableResolutions,
@@ -912,6 +945,7 @@ class VideoAcquisitionState {
     pendingQueries: pendingQueries ?? this.pendingQueries,
     workCandidates: workCandidates ?? this.workCandidates,
     chosenItem: chosenItem ?? this.chosenItem,
+    siblingWorks: siblingWorks ?? this.siblingWorks,
     work: work ?? this.work,
     airing: clearAiring ? null : (airing ?? this.airing),
     contentLanguage: contentLanguage ?? this.contentLanguage,
@@ -921,6 +955,11 @@ class VideoAcquisitionState {
     subtitleLanguageAsked: subtitleLanguageAsked ?? this.subtitleLanguageAsked,
     subtitleLanguageResolutionSaid:
         subtitleLanguageResolutionSaid ?? this.subtitleLanguageResolutionSaid,
+    resourceItems: resourceItems ?? this.resourceItems,
+    releaseManifests: releaseManifests ?? this.releaseManifests,
+    pendingFranchiseResolution: clearPendingFranchiseResolution
+        ? null
+        : (pendingFranchiseResolution ?? this.pendingFranchiseResolution),
     groups: groups ?? this.groups,
     eligibleGroups: eligibleGroups ?? this.eligibleGroups,
     availableResolutions: availableResolutions ?? this.availableResolutions,
@@ -1097,11 +1136,33 @@ class VideoAcquisitionResourcesLoadedEvent extends VideoAcquisitionEvent {
   final List<VideoResourceCandidate> items;
 }
 
-/// 提交成功（[count] = 入队条数；订阅为 1）。
+/// 种子文件列表取回（[VideoAcquisitionInspectReleasesEffect] 的结果）。
+///
+/// [manifests] 对每个目标都有一项；值为 null = 这家给不出列表 / 取失败。
+/// [franchiseIndex] 非空 = 整套下载里第几部在等。
+class VideoAcquisitionReleasesInspectedEvent extends VideoAcquisitionEvent {
+  const VideoAcquisitionReleasesInspectedEvent({
+    required this.manifests,
+    this.franchiseIndex,
+  });
+
+  final Map<String, VideoReleaseManifest?> manifests;
+  final int? franchiseIndex;
+}
+
+/// 一次下载提交的结果：[queued] = 新建的任务条数，[alreadyQueued] = 已有任务管着
+/// 同一颗种子、没有重复入队的条数（BUG-4270：不算失败）。
+typedef VideoAcquisitionDownloadSubmission = ({int queued, int alreadyQueued});
+
+/// 提交成功（[count] = 入队条数；订阅为 1；[alreadyQueued] = 已在队列的条数）。
 class VideoAcquisitionSubmittedEvent extends VideoAcquisitionEvent {
-  const VideoAcquisitionSubmittedEvent({required this.count});
+  const VideoAcquisitionSubmittedEvent({
+    required this.count,
+    this.alreadyQueued = 0,
+  });
 
   final int count;
+  final int alreadyQueued;
 }
 
 /// 某个效果失败了（网络 / 后端 / 提交）。
@@ -1160,6 +1221,7 @@ class VideoAcquisitionFranchiseSubmittedEvent extends VideoAcquisitionEvent {
     required this.downloads,
     required this.subscriptions,
     required this.failed,
+    this.alreadyQueued = 0,
   });
 
   /// 入队的下载任务条数。
@@ -1170,6 +1232,9 @@ class VideoAcquisitionFranchiseSubmittedEvent extends VideoAcquisitionEvent {
 
   /// 提交失败的作品数。
   final int failed;
+
+  /// 已有任务管着、没有重复入队的下载条数（BUG-4270）。
+  final int alreadyQueued;
 }
 
 // ---------------------------------------------------------------------------
@@ -1226,6 +1291,18 @@ class VideoAcquisitionSearchResourcesEffect extends VideoAcquisitionEffect {
 
   final VideoMediaReference reference;
   final int? season;
+}
+
+/// 为标题判不出范围的发布取种子文件列表（整包证据，见
+/// `video_release_scope_evidence.dart`）。目标已按相关度排好、总量封顶。
+class VideoAcquisitionInspectReleasesEffect extends VideoAcquisitionEffect {
+  const VideoAcquisitionInspectReleasesEffect({
+    required this.targets,
+    this.franchiseIndex,
+  });
+
+  final List<VideoResourceCandidate> targets;
+  final int? franchiseIndex;
 }
 
 /// 要写的偏好。

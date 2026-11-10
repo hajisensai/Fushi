@@ -328,6 +328,30 @@ abstract interface class SrsExclusiveOuter {
   Future<T> run<T>(Future<T> Function() body);
 }
 
+/// 一条 Anki 导入的复习日志（[SrsDbStore.ankiImportedLogsAt]）：在哪张卡、对应哪条 revlog、内容，以及那张卡此刻
+/// 所属的笔记与是否可见（卡没有缓存行——笔记换了类型后不再属于它的旧卡——时 [noteId] 为 null、不可见）。
+class SrsAnkiLogAt {
+  const SrsAnkiLogAt({
+    required this.cardId,
+    required this.revlogId,
+    required this.rating,
+    required this.reviewType,
+    required this.durationMs,
+    required this.noteId,
+    required this.visible,
+  });
+
+  final String cardId;
+  final int revlogId;
+  final int? rating;
+
+  /// `SrsReviewType` 的持久化名。
+  final String reviewType;
+  final int durationMs;
+  final String? noteId;
+  final bool visible;
+}
+
 /// 副本被 [SrsDbStore.retire] 作废之后，排着的与以后再来的写入抛它。[store] 是被作废的那份副本：在跑的同步 / 维护
 /// 据此认出「我用的副本被换掉了」（与写失败重读也失败的作废区分开，那种仍是普通 [StateError]）。
 class SrsStoreRetiredError extends StateError {
@@ -335,6 +359,9 @@ class SrsStoreRetiredError extends StateError {
 
   final SrsDbStore store;
 }
+
+/// profile 里显式写过的翻日时刻与生效的那条修改记录 ID（[SrsDbStore.syncedDayRollover]）。
+typedef SrsDayRollover = ({int hour, String editId});
 
 class SrsDbStore implements SrsSync2Host {
   SrsDbStore._({
@@ -345,14 +372,18 @@ class SrsDbStore implements SrsSync2Host {
     required FsrsEngine? engine,
     required SrsTrustedClock trustedClock,
     required int Function() fallbackRolloverHour,
+    required int Function() localOffsetMin,
     this.styles,
     SrsExclusiveOuter? exclusiveOuter,
   }) : _engine = engine,
        _trusted = trustedClock,
        _fallbackRollover = fallbackRolloverHour,
+       _localOffset = localOffsetMin,
        _exclusiveOuter = exclusiveOuter;
 
   /// 打开（或首次初始化）某 profile 的 SRS 副本。
+  ///
+  /// [localOffsetMin]：本机此刻的 UTC 偏移（分钟），「今天」的时区只取它（见 [dayContext]）；缺省读系统时区。
   ///
   /// [exclusiveOuter]：同一条连接上同时开着别的 profile 的副本（App 当前 profile 的那份）时，本副本的
   /// 独占区要套在它外面的那把锁里（见 [SrsExclusiveOuter]）；null = 只用本副本自己的锁。
@@ -364,6 +395,7 @@ class SrsDbStore implements SrsSync2Host {
     FsrsEngine? engine,
     SrsTrustedClock? trustedClock,
     int Function()? fallbackRolloverHour,
+    int Function()? localOffsetMin,
     SrsStyleStore? styles,
     SrsExclusiveOuter? exclusiveOuter,
     Future<void> Function(SrsDbStore store)? beforeMigrate,
@@ -378,6 +410,7 @@ class SrsDbStore implements SrsSync2Host {
       trustedClock: trustedClock ?? srsProcessTrustedClock(core),
       fallbackRolloverHour:
           fallbackRolloverHour ?? () => SrsDayContext.defaultRolloverHour,
+      localOffsetMin: localOffsetMin ?? SrsDayContext.localOffsetMin,
       styles: styles,
       exclusiveOuter: exclusiveOuter,
     );
@@ -500,6 +533,7 @@ class SrsDbStore implements SrsSync2Host {
   final SrsStyleStore? styles;
   final SrsTrustedClock _trusted;
   int Function() _fallbackRollover;
+  final int Function() _localOffset;
 
   /// 同一个 profile 重新激活时就地换上打开参数（[engine]、统计日界回退），不另开副本：同一个 uid 只该有一份活
   /// 副本，交接会作废在跑的同步 / 维护（srs_profile_stores.dart `activate`）。连接、uid、设备 ID 不在此列——
@@ -568,7 +602,11 @@ class SrsDbStore implements SrsSync2Host {
   /// 卡（BUG-4217 修好前的 profile 合并写出）仍按旧规则重复计数、撤销一份不回退，要等这张卡再被改一次；哪些卡带副本
   /// 要逐卡解析日志才知道，所以与修订号 2 / 7 同样整库重算全部笔记缓存与全部投影（同一 srs.db 打开时，Rust 侧 v26
   /// 迁移已先按新规则重放了带副本的卡的日志投影行，这里读到的 `res` 已是新值）。
-  static const int _kCacheRevision = 11;
+  /// 12（BUG-4254）：同一条 Anki revlog 导入到不同卡上的两份算同一次复习——血统里的两份由选取规则合并（history.rs
+  /// `EventKey` 对 Anki 来源不比卡），没有血统链接的两张卡（删光重导后旧卡隐藏、新卡可见）由有效复习投影按 Anki 事件身份
+  /// 只留一份（caches.rs `refresh_stats`）。存量库的卡片状态与投影是旧规则算的（「从 Anki 迁移」后复习数 ×2），与修订号
+  /// 11 同样整库重算（srs.db v28 迁移已先按新规则重放了带这种副本的卡的日志投影行）。
+  static const int _kCacheRevision = 12;
 
   /// 当前缓存修订号（[_kCacheRevision]）。升级测试断言「打开老库后记下的是当前修订号」时用它，
   /// 不写字面量——每次加一级修订都要去改一串升级测试的魔数，漏改就整批红。
@@ -928,7 +966,6 @@ class SrsDbStore implements SrsSync2Host {
 
   (int, SrsTimeSource) now() => _trusted.now();
 
-  /// 「今天」的口径：profile 设置里的翻日时刻 / UTC 偏移（同步值），没有则用本机统计页的日界与本机偏移。
   /// [deckTree] 与 profile 修改记录的缓存（作答一次以前要物化牌组树 / 日界 8–10 次）。键是
   /// [_structureKey]：内容修订号覆盖了除复习日志与界面状态外的一切落库、服务器时刻变化、重读
   /// 本机状态与清除；界面状态（牌组收起 / 展开）另由 [_viewRevision] 计。
@@ -937,25 +974,52 @@ class SrsDbStore implements SrsSync2Host {
   int _viewRevision = 0;
   String get _structureKey => '$_epoch:$_contentRevision:$_viewRevision';
 
-  Future<SrsDayContext> dayContext() async {
+  Future<SrsEntityEdits> _profileEdits() async {
     final String key = _structureKey;
     final ({String key, SrsEntityEdits edits})? cached = _profileEditsCache;
-    final SrsEntityEdits p;
-    if (cached != null && cached.key == key) {
-      p = cached.edits;
-    } else {
-      p = await _entityEdits(SrsEntityKind.profile, profileUid);
-      if (_structureKey == key) _profileEditsCache = (key: key, edits: p);
-    }
-    final int rollover =
-        (p.value(SrsFieldKeys.dayRolloverHour) as int?) ?? _fallbackRollover();
-    final int offset =
-        (p.value(SrsFieldKeys.utcOffsetMin) as int?) ??
-        SrsDayContext.localOffsetMin();
-    return SrsDayContext(
-      utcOffsetMin: offset,
-      rolloverHour: rollover.clamp(0, 23),
+    if (cached != null && cached.key == key) return cached.edits;
+    final SrsEntityEdits p = await _entityEdits(
+      SrsEntityKind.profile,
+      profileUid,
     );
+    if (_structureKey == key) _profileEditsCache = (key: key, edits: p);
+    return p;
+  }
+
+  /// 「今天」的口径。
+  ///
+  /// - 翻日时刻：profile 的 [SrsFieldKeys.dayRolloverHour]（用户改日界时写下、随同步传到别的设备，多设备的「今天」
+  ///   一致）；没写过就用宿主给的回落值（App = 本机统计日界，服务端 / CLI = 各自的配置）。
+  /// - 时区：恒为本机此刻的偏移（[SrsDayContext.localOffsetMin]）。时区不随同步：人带着设备换时区时「今天」跟着
+  ///   本机走；每条复习日志自带作答时的偏移与翻日时刻，重放不读这里。旧版本库里可能有的 profile 键
+  ///   `utcOffsetMin` 从没有写入方，现在也不再读。
+  Future<SrsDayContext> dayContext() async {
+    final int rollover =
+        (await syncedDayRollover())?.hour ?? _fallbackRollover().clamp(0, 23);
+    return SrsDayContext(utcOffsetMin: _localOffset(), rolloverHour: rollover);
+  }
+
+  /// profile 里显式写过的翻日时刻（0–23）与生效的那条修改记录 ID；从没写过为 null（[dayContext] 用宿主的回落值）。
+  /// 修改记录 ID 让宿主分辨「同步带来了新的修改」与「还是本机见过的那条」。
+  Future<SrsDayRollover?> syncedDayRollover() async {
+    final SrsFieldEdit? winner =
+        (await _profileEdits())[SrsFieldKeys.dayRolloverHour]?.winner;
+    final Object? v = winner?.value;
+    return winner != null && v is int
+        ? (hour: v.clamp(0, 23), editId: winner.id)
+        : null;
+  }
+
+  /// 用户改了日界：写成 profile 的一条普通字段修改（同步 v2 传到别的设备；与现值相同不产生记录）。返回写完后
+  /// 生效的值（[syncedDayRollover]）。
+  Future<SrsDayRollover?> setDayRolloverHour(int hour) async {
+    await editField(
+      SrsEntityKind.profile,
+      profileUid,
+      SrsFieldKeys.dayRolloverHour,
+      hour.clamp(0, 23),
+    );
+    return syncedDayRollover();
   }
 
   // ------------------------------------------------------------------ 事件落库
@@ -1288,11 +1352,13 @@ class SrsDbStore implements SrsSync2Host {
   /// 本机产生事件：落库、进发件箱、刷新缓存（内核在 `apply` 的同一次调用里刷新）。调用方在独占区（[runExclusive]）里、紧接着分配
   /// 序号之后调它：分配与落库之间不插进别的写入。
   ///
-  /// [logNotes]：日志卡片 → 笔记（调用方已知时给，省一次读卡片行）；[study]：落库、刷新缓存后在同一次命令里
-  /// 排队（store/study.rs），结果交给 [onStudy]。
+  /// [logNotes]：日志卡片 → 笔记（调用方已知时给，省一次读卡片行）；[answers]：本机作答写的日志 ID（显式声明
+  /// 评分意图，内核不从日志形状反推）；[study]：落库、刷新缓存后在同一次命令里排队（store/study.rs），结果交给
+  /// [onStudy]。
   Future<void> _emit(
     List<SrsEvent> events, {
     Map<String, String> logNotes = const <String, String>{},
+    Set<String> answers = const <String>{},
     Map<String, Object?>? study,
     void Function(Map<String, Object?> study)? onStudy,
   }) async {
@@ -1305,6 +1371,7 @@ class SrsDbStore implements SrsSync2Host {
       await _storeLocalBatch(
         events,
         logNotes: logNotes,
+        answers: answers,
         study: study,
         onStudy: onStudy,
       );
@@ -1328,6 +1395,7 @@ class SrsDbStore implements SrsSync2Host {
     int? serverTimeMs,
     Map<String, int>? serverTimes,
     Map<String, String> logNotes = const <String, String>{},
+    Set<String> answers = const <String>{},
     Map<String, Object?>? study,
     void Function(Map<String, Object?> study)? onStudy,
   }) async {
@@ -1363,6 +1431,8 @@ class SrsDbStore implements SrsSync2Host {
       input.add(<String, Object?>{
         'e': stored.toJson(),
         'note': stored is SrsLogEvent ? noteOf[stored.log.cardId] : null,
+        if (stored is SrsLogEvent && answers.contains(stored.log.id))
+          'intent': 'answer',
         // 外来、已盖戳的事件（备份合并 / 按时间点恢复并入备份）：保留原 dot / 因果上下文 / HLC，支配关系照旧。
         if (stamped) 'stamped': true,
         if (stamped && (serverTimes?[stored.id] ?? serverTimeMs) != null)
@@ -1910,6 +1980,13 @@ class SrsDbStore implements SrsSync2Host {
         'retire': retire,
       });
 
+  /// 信任 / 拒绝一台待确认的设备（native/fushi_fsrs/src/store/sync2/trust.rs）：本机库非空之后才第一次同步过来的
+  /// 设备，它的删除与彻底清除扣到这里确认。信任 = 扣着的同一次调用里放行进投影并接进缓存；拒绝 = 继续扣着（它的
+  /// 普通修改照常同步，之后仍可改为信任）。
+  Future<void> sync2Trust(String device, {required bool trust}) => _sync2Write(
+    <String, Object?>{'op': 'trust', 'device': device, 'trust': trust},
+  );
+
   /// 算并记下状态摘要（写 head 时带上；两台设备在同一版本向量下摘要不同 = 确定性 bug）。
   Future<Map<String, Object?>> sync2Digest() async =>
       (await sync2Command(<String, Object?>{'op': 'digest'})).map;
@@ -1977,11 +2054,12 @@ class SrsDbStore implements SrsSync2Host {
   }
 
   /// 内核命令走哪条 worker 道（srs_core_workers.dart [SrsCoreLane]，集成审查【中】）：复习页的作答 / 排队 / 预览
-  /// 走交互道，不排在同步的成批命令与媒体文件加解密后面；媒体文件的流式加解密 / 哈希走专用的文件道（同步时按
+  /// 走交互道，不排在同步的成批命令与媒体文件加解密后面；本机手动排程（`sched`：复习页撤销、浏览页重置 / 改期、
+  /// 立即重排）是从 `apply` 拆出来的同一类本机写入，同走交互道；媒体文件的流式加解密 / 哈希走专用的文件道（同步时按
   /// `kSrsSync2Concurrency` 并发，以前一来就占满整个池）；其余走默认道。
   @visibleForTesting
   static SrsCoreLane srsCoreLaneOf(Object? op) => switch (op) {
-    'apply' || 'study' || 'preview' => SrsCoreLane.interactive,
+    'apply' || 'sched' || 'study' || 'preview' => SrsCoreLane.interactive,
     'seal_file' || 'open_file' || 'media_hash' => SrsCoreLane.file,
     _ => SrsCoreLane.bulk,
   };
@@ -1994,6 +2072,7 @@ class SrsDbStore implements SrsSync2Host {
   /// 要带上只有 Dart 知道的缓存配置（[_cacheConfig]）。
   static const Set<String> _kSync2CacheOps = <String>{
     'apply',
+    'sched',
     'ingest',
     'ingest_batch',
     'ingest_commit',
@@ -2002,6 +2081,7 @@ class SrsDbStore implements SrsSync2Host {
     'import',
     'retire',
     'resolve',
+    'trust',
     'purge',
     'checkpoint',
     'restore',
@@ -2602,6 +2682,53 @@ class SrsDbStore implements SrsSync2Host {
     }
   }
 
+  /// Anki 导入的复习日志里发生时刻（= Anki revlog id，见 srs_apkg_import.dart `_revlogLog`）落在 [revlogIds] 的那些，
+  /// 连同日志所在卡此刻的笔记与可见性（卡没有缓存行时为 null）。导入器写 revlog 前按它判「这次复习已经在本 profile
+  /// 里、只是落在另一张卡上」（BUG-4254）。走 `idx_srs_review_logs_profile_kind_time`，按块一次查。
+  Future<List<SrsAnkiLogAt>> ankiImportedLogsAt(Iterable<int> revlogIds) async {
+    final List<int> ids = revlogIds.toSet().toList();
+    final List<SrsAnkiLogAt> out = <SrsAnkiLogAt>[];
+    for (int i = 0; i < ids.length; i += 500) {
+      final List<int> chunk = ids.sublist(i, min(i + 500, ids.length));
+      for (final QueryRow q
+          in await db
+              .customSelect(
+                'SELECT l.card_id AS card_id, l.occurred_at AS at, l.rating AS rating, '
+                'l.review_type AS rtype, l.duration_ms AS dur, c.note_id AS note_id, '
+                'c.hidden AS hidden FROM srs_review_logs l '
+                'LEFT JOIN srs_cards_cache c ON c.id = l.card_id '
+                "WHERE l.profile_uid = ? AND l.kind IN ('review', 'manual') "
+                "AND l.occurred_at IN (${List<String>.filled(chunk.length, '?').join(', ')}) "
+                "AND l.origin = 'anki'",
+                variables: <Variable<Object>>[
+                  Variable<String>(profileUid, srsIdType),
+                  for (final int id in chunk) Variable<int>(id),
+                ],
+                readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
+                  db.srsReviewLogs,
+                  db.srsCardsCache,
+                },
+              )
+              .get()) {
+        out.add(
+          SrsAnkiLogAt(
+            cardId: q.readWithType<String>(srsIdType, 'card_id'),
+            revlogId: q.read<int>('at'),
+            rating: q.readNullable<int>('rating'),
+            reviewType: q.read<String>('rtype'),
+            durationMs: q.read<int>('dur'),
+            noteId: q.readNullableWithType<String>(srsIdType, 'note_id'),
+            visible: switch (q.readNullable<bool>('hidden')) {
+              null => false,
+              final bool hidden => !hidden,
+            },
+          ),
+        );
+      }
+    }
+    return out;
+  }
+
   /// 全部「前身卡 → 后继卡」链接（卡的 `historyFrom/<前身>` 修改记录）。
   ///
   /// 条件用 v119 的部分覆盖索引 `idx_srs_field_edits_history_from` 的同一句 WHERE
@@ -2688,8 +2815,9 @@ class SrsDbStore implements SrsSync2Host {
       if (_cacheRevision < 10) {
         await _sync2(const <String, Object?>{'op': 'backfill_source_keys'});
       }
-      // BUG-4218：选取规则变了（同一事件的副本只算一份），卡片状态与有效复习投影整库按新规则重算。
-      if (_cacheRevision < 11) {
+      // BUG-4218 / BUG-4254：选取规则变了（同一事件的副本只算一份；Anki 来源的副本跨卡也算同一事件），卡片状态与
+      // 有效复习投影整库按新规则重算。两级要做的是同一件事，只做一次。
+      if (_cacheRevision < 12) {
         await _refreshCaches(allNotes: true, allStats: true);
       }
       _cacheRevision = _kCacheRevision;
@@ -2792,6 +2920,36 @@ class SrsDbStore implements SrsSync2Host {
     return out;
   }
 
+  /// [cardIds] 里各卡此刻继承它历史的可见卡（血统里含它的可见卡，不含它自己；几张时取 id 最小的，与
+  /// [historyOwnerIndex] 同一条规则）。没有可见后继的卡不在结果里。只沿 [cardIds] 的后继链接扩，不建全表归属。
+  Future<Map<String, String>> visibleHeirsOf(Iterable<String> cardIds) async {
+    final Set<String> wanted = cardIds.toSet();
+    if (wanted.isEmpty) return const <String, String>{};
+    final Map<String, List<String>> successors = await _successorIndex();
+    // 链接表是超集，这里只收候选；真正的血统下面按 [_lineages]（修改记录的生效值）判。
+    final Set<String> candidates = <String>{};
+    final List<String> frontier = wanted.toList();
+    while (frontier.isNotEmpty) {
+      for (final String next
+          in successors[frontier.removeLast()] ?? const <String>[]) {
+        if (candidates.add(next)) frontier.add(next);
+      }
+    }
+    if (candidates.isEmpty) return const <String, String>{};
+    final List<String> visible = <String>[
+      for (final SrsCardCacheRow c in await cardRows(candidates))
+        if (!c.hidden) c.id,
+    ]..sort();
+    final Map<String, String> out = <String, String>{};
+    final List<List<String>> lineages = await _lineages(visible);
+    for (int k = 0; k < visible.length; k++) {
+      for (final String id in lineages[k].skip(1)) {
+        if (wanted.contains(id)) out.putIfAbsent(id, () => visible[k]);
+      }
+    }
+    return out;
+  }
+
   /// 一组卡各自的复习历史（同 [history]；按输入顺序去重）。按块预读整条血统的修改记录、日志与
   /// 服务器时刻（每块几次往返），批量重置 / 设置到期 / 撤销 / 立即重排 / 导出 / 优化器取数不再每张卡
   /// 各查四五次（BUG-3543）。
@@ -2850,6 +3008,27 @@ class SrsDbStore implements SrsSync2Host {
         core.libraryPath,
         _seedGroups(cardIds),
         numeric,
+        srsProjectionAlgorithmCode(algorithm),
+        day.utcOffsetMin,
+        day.rolloverHour,
+      ),
+    );
+  }
+
+  /// 复习统计页校准图的训练集（[optimizerTrainingSet] 同一份，外加每个条目的时刻 / 日志数字 ID / 间隔天数 /
+  /// 卡数字 id / 记住）。
+  Future<SrsCalibrationItems> calibrationItems(
+    List<String> cardIds, {
+    required SrsAlgorithm algorithm,
+    required SrsDayContext day,
+  }) async {
+    if (cardIds.isEmpty) return SrsCalibrationItems(Uint8List(32));
+    return SrsCalibrationItems(
+      await _coreCalibrationItems(
+        core.address,
+        core.libraryPath,
+        _seedGroups(cardIds),
+        SrsIds.ankiNumericIds(cardIds),
         srsProjectionAlgorithmCode(algorithm),
         day.utcOffsetMin,
         day.rolloverHour,
@@ -3580,74 +3759,73 @@ class SrsDbStore implements SrsSync2Host {
     return out;
   }
 
-  /// 批量重置为新卡：每张一条 manual 日志，一个批次落库。已经是新卡的跳过。
-  /// 返回写出的日志（撤销用）。各卡历史分块一次预读（以前每张卡各查四五次）。
+  /// 批量重置为新卡：每张一条 manual 日志，一次内核命令落库。已经是新卡的跳过。返回写出的日志（撤销用），
+  /// 按传入顺序（去重后）排列。
   Future<List<SrsReviewLog>> resetCards(Iterable<String> cardIds) =>
       runExclusive(() async {
-        final SrsDayContext day = await dayContext();
-        final List<SrsCardCacheRow> rows = <SrsCardCacheRow>[
-          for (final SrsCardCacheRow c in await cardRows(cardIds))
-            if (c.queue != SrsQueue.newCard.wire) c,
-        ];
-        final Map<String, SrsCardHistory> hist = await histories(
-          rows.map((SrsCardCacheRow c) => c.id),
-        );
-        final List<SrsReviewLog> logs = <SrsReviewLog>[
-          for (final SrsCardCacheRow c in rows)
-            _ops.reset(
-              cardId: c.id,
-              history: hist[c.id]!,
-              ctx: _logContext(day),
-            ),
-        ];
-        await _emitLogs(logs);
-        return logs;
+        final _SchedOutcome r = await _schedLocal(<Map<String, Object?>>[
+          for (final String id in cardIds.toSet())
+            <String, Object?>{'a': 'reset', 'card': id, 'skipNew': true},
+        ]);
+        return r.logs;
       });
 
-  /// 批量设置到期日（cardId → 排程日序号），一个批次落库。返回写出的日志（撤销用）。
+  /// 批量设置到期日（cardId → 排程日序号），一次内核命令落库。返回写出的日志（撤销用）。
   Future<List<SrsReviewLog>> setDueDays(Map<String, int> dueDays) =>
       runExclusive(() async {
-        final SrsDayContext day = await dayContext();
-        final Map<String, SrsCardHistory> hist = await histories(dueDays.keys);
-        final List<SrsReviewLog> logs = <SrsReviewLog>[
+        final _SchedOutcome r = await _schedLocal(<Map<String, Object?>>[
           for (final MapEntry<String, int> e in dueDays.entries)
-            _ops.setDue(
-              cardId: e.key,
-              history: hist[e.key]!,
-              dueDay: e.value,
-              ctx: _logContext(day),
-            ),
-        ];
-        await _emitLogs(logs);
-        return logs;
+            <String, Object?>{'a': 'setDue', 'card': e.key, 'due': e.value},
+        ]);
+        return r.logs;
       });
 
-  /// 批量撤销日志（cardId, logId）：一个批次落库。返回撤不了的条数（那条已不是该卡最后一条
+  /// 批量撤销日志（cardId, logId）：一次内核命令落库。返回撤不了的条数（那条已不是该卡最后一条
   /// 有效日志——别的设备同步来了更新的复习，铁律 B 的协议限制）。
   Future<int> undoLogs(List<(String, String)> targets) =>
       runExclusive(() async {
-        final SrsDayContext day = await dayContext();
-        final Map<String, SrsCardHistory> hist = await histories(<String>[
-          for (final (String cardId, String _) in targets) cardId,
+        final _SchedOutcome r = await _schedLocal(<Map<String, Object?>>[
+          for (final (String cardId, String logId) in targets)
+            <String, Object?>{'a': 'undo', 'card': cardId, 'log': logId},
         ]);
-        final List<SrsReviewLog> undos = <SrsReviewLog>[];
-        int blocked = 0;
-        for (final (String cardId, String logId) in targets) {
-          final SrsReviewLog? u = _ops.undo(
-            cardId: cardId,
-            history: hist[cardId]!,
-            targetLogId: logId,
-            ctx: _logContext(day),
-          );
-          if (u == null) {
-            blocked++;
-          } else {
-            undos.add(u);
-          }
-        }
-        await _emitLogs(undos);
-        return blocked;
+        return r.blocked;
       });
+
+  /// 本机手动排程操作（重置 / 改到期 / 撤销 / 立即重排）：把显式意图交给内核（`sched`，
+  /// native/fushi_fsrs/src/store/sync2/sched_local.rs），内核在一次事务里逐卡重放到此刻、判能不能做、算结果、
+  /// 落操作与投影并刷新缓存；交回落库后的日志行（结果是内核算出的值）与撤不了的条数。Dart 不读历史、不算排程。
+  ///
+  /// HLC 按本机时钟的规则由内核接着 [_clock] 推进（写了几条推进几次），交回的最后一个就是时钟的新状态；
+  /// 日志 ID、时刻、时间来源、日界口径与 Dart 组日志时同一套。调用方在独占区里。
+  Future<_SchedOutcome> _schedLocal(List<Map<String, Object?>> items) async {
+    assert(
+      identical(Zone.current[_writeZoneKey], this),
+      '_schedLocal outside runExclusive',
+    );
+    if (items.isEmpty) return const _SchedOutcome(<SrsReviewLog>[], 0);
+    final SrsDayContext day = await dayContext();
+    final (int nowMs, SrsTimeSource source) = now();
+    late Map<String, Object?> r;
+    await _transactionOrReload(() async {
+      r = await _sync2(<String, Object?>{
+        'op': 'sched',
+        'now': nowMs,
+        'at': nowMs,
+        'ts': source.wire,
+        'utcOff': day.utcOffsetMin,
+        'rollover': day.rolloverHour,
+        'hlc': _clock.last.encode(),
+        'items': items,
+      });
+      _absorbProjection(r);
+      if (r['hlc'] case final String h) _clock.adoptLocalTicks(Hlc.decode(h));
+      await _saveLocal();
+    });
+    return _SchedOutcome(<SrsReviewLog>[
+      for (final Object? l in (r['logs'] as List?) ?? const <Object?>[])
+        SrsReviewLog.fromJson((l! as Map).cast<String, Object?>()),
+    ], (r['blocked'] as int?) ?? 0);
+  }
 
   /// 一批本机日志落库（空则什么也不做）。调用方已在独占区里。
   Future<void> _emitLogs(List<SrsReviewLog> logs) async {
@@ -3659,14 +3837,6 @@ class SrsDbStore implements SrsSync2Host {
 
   SrsLogContext _logContext(SrsDayContext day) =>
       SrsLogContext(profileUid: profileUid, clock: _clock, now: now, day: day);
-
-  SrsCardOps get _ops {
-    final FsrsEngine? e = engine;
-    if (e == null) {
-      throw StateError('FSRS native library unavailable');
-    }
-    return SrsCardOps(engine: e);
-  }
 
   Future<SrsCardCacheRow?> cardRow(String cardId) => (db.select(
     db.srsCardsCache,
@@ -3788,6 +3958,7 @@ class SrsDbStore implements SrsSync2Host {
       await _emit(
         <SrsEvent>[SrsLogEvent(log)],
         logNotes: <String, String>{cardId: raw.note},
+        answers: <String>{log.id},
         study: merge
             ? await _studyRequest(tree, studyDeckId, pick: true, custom: custom)
             : null,
@@ -3805,73 +3976,34 @@ class SrsDbStore implements SrsSync2Host {
   }
 
   /// 撤销一条评分；它已不是该卡最后一条有效日志（别的设备同步来了更新的复习）时返回 false。
-  Future<bool> undo(String cardId, String logId) => runExclusive(() async {
-    final SrsDayContext day = await dayContext();
-    final SrsReviewLog? u = _ops.undo(
-      cardId: cardId,
-      history: await history(cardId),
-      targetLogId: logId,
-      ctx: _logContext(day),
-    );
-    if (u == null) return false;
-    await _emit(<SrsEvent>[SrsLogEvent(u)]);
-    return true;
-  });
+  Future<bool> undo(String cardId, String logId) => runExclusive(
+    () async =>
+        (await _schedLocal(<Map<String, Object?>>[
+          <String, Object?>{'a': 'undo', 'card': cardId, 'log': logId},
+        ])).blocked ==
+        0,
+  );
 
+  /// 设为新卡（单卡入口：已经是新卡也照写一条）。
   Future<void> resetCard(String cardId) => runExclusive(() async {
-    final SrsDayContext day = await dayContext();
-    await _emit(<SrsEvent>[
-      SrsLogEvent(
-        _ops.reset(
-          cardId: cardId,
-          history: await history(cardId),
-          ctx: _logContext(day),
-        ),
-      ),
+    await _schedLocal(<Map<String, Object?>>[
+      <String, Object?>{'a': 'reset', 'card': cardId},
     ]);
   });
 
   Future<void> setDueDay(String cardId, int dueDay) => runExclusive(() async {
-    final SrsDayContext day = await dayContext();
-    await _emit(<SrsEvent>[
-      SrsLogEvent(
-        _ops.setDue(
-          cardId: cardId,
-          history: await history(cardId),
-          dueDay: dueDay,
-          ctx: _logContext(day),
-        ),
-      ),
+    await _schedLocal(<Map<String, Object?>>[
+      <String, Object?>{'a': 'setDue', 'card': cardId, 'due': dueDay},
     ]);
   });
 
-  /// 「立即重排整组」：给子树里每张复习卡写一条 reschedule 日志。牌组树只读一次、各卡历史分块
-  /// 一次预读（以前每张卡各读一遍历史、各读一遍整棵牌组树，BUG-3543）。
-  Future<int> rescheduleDeck(String deckId) => runExclusive(() async {
-    final SrsDeckTree tree = await deckTree();
-    final List<String> sub = tree.subtree(deckId);
-    final SrsDayContext day = await dayContext();
-    final List<SrsCardCacheRow> cards =
-        await (db.select(db.srsCardsCache)..where(
-              (c) => c.deckId.isIn(sub) & c.queue.equals(SrsQueue.review.wire),
-            ))
-            .get();
-    final Map<String, SrsCardHistory> hist = await histories(
-      cards.map((SrsCardCacheRow c) => c.id),
-    );
-    final List<SrsReviewLog> logs = <SrsReviewLog>[];
-    for (final SrsCardCacheRow c in cards) {
-      final SrsReviewLog? l = _ops.reschedule(
-        cardId: c.id,
-        history: hist[c.id]!,
-        config: _schedulingConfigIn(tree, c.deckId),
-        ctx: _logContext(day),
-      );
-      if (l != null) logs.add(l);
-    }
-    await _emitLogs(logs);
-    return logs.length;
-  });
+  /// 「立即重排整组」：子树里每张复习卡写一条 reschedule 日志（候选、记忆状态、到期都由内核在一次命令里算）。
+  /// 返回写出的条数。
+  Future<int> rescheduleDeck(String deckId) => runExclusive(
+    () async => (await _schedLocal(<Map<String, Object?>>[
+      <String, Object?>{'a': 'rescheduleDeck', 'deck': deckId},
+    ])).logs.length,
+  );
 
   // ------------------------------------------------------------------ 查询
 
@@ -5710,6 +5842,14 @@ class SrsCardChangedError implements Exception {
   String toString() => 'SrsCardChangedError($cardId)';
 }
 
+/// 一次本机手动排程命令（[SrsDbStore._schedLocal]）的结果：落库后的日志行与撤不了的条数。
+final class _SchedOutcome {
+  const _SchedOutcome(this.logs, this.blocked);
+
+  final List<SrsReviewLog> logs;
+  final int blocked;
+}
+
 /// [SrsDbStore.answerAndStudy] 的结果：写出的日志（撤销栈用）与评分之后的排队（没要求排队时 null）。
 class SrsAnswerOutcome {
   const SrsAnswerOutcome(this.log, this.study);
@@ -5775,6 +5915,29 @@ Future<Uint8List> _coreOptimizerItems(
   () => SrsCoreWorkers.of(libraryPath).run<Uint8List>(
     address,
     (SrsCore c) => c.optimizerItems(
+      groups,
+      cardIds,
+      algorithm: algorithm,
+      utcOffsetMin: utcOffsetMin,
+      rolloverHour: rolloverHour,
+    ),
+  ),
+  measure: (Uint8List b) => (b.length, 0),
+);
+
+Future<Uint8List> _coreCalibrationItems(
+  int address,
+  String? libraryPath,
+  List<List<String>> groups,
+  List<int> cardIds,
+  int algorithm,
+  int utcOffsetMin,
+  int rolloverHour,
+) => SrsOpLedger.track(
+  'core:calibration_items',
+  () => SrsCoreWorkers.of(libraryPath).run<Uint8List>(
+    address,
+    (SrsCore c) => c.calibrationItems(
       groups,
       cardIds,
       algorithm: algorithm,

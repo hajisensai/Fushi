@@ -169,3 +169,12 @@ List<CollectionGroup<T>> groupByCollections<T>({
         ),
   ];
 }
+
+/// 合集 id → 库页上该合集卡实际折进的成员数（显示单元数，与卡片「N 卷 / N 项」
+/// 同源）。散卡组不计；没有卡的合集不在映射里。
+Map<int, int> collectionDisplayCountsOf<T>(
+  Iterable<CollectionGroup<T>> groups,
+) => <int, int>{
+  for (final CollectionGroup<T> g in groups)
+    if (g.collection != null) g.collection!.id: g.items.length,
+};

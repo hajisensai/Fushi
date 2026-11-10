@@ -1,13 +1,18 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/rendering.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
+import 'package:fushi/src/media/video/cover_ui/cover_aspect_probe.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_continue_hero.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
+import 'package:fushi/src/utils/cover_provider_epoch.dart';
 
 /// 所有库页与首页共用的「继续」区（[FushiContinueSpotlight]，2026-10-31 合一）：
 /// 主卡皮只看封面方向——横图剧照是叠层主卡，竖图（书 / 游戏 / 只有竖海报的
@@ -412,4 +417,79 @@ void main() {
     expect(menus, isNotEmpty);
     semantics.dispose();
   });
+  // 用户反馈 me_DAkqFJ_（首页「继续」并排封面行）：视频条目声明竖海报比例、
+  // 解码出横图后按 16:9 剧照画；横向悬停余量若按声明的竖图比例留，首张卡
+  // 放大后左缘超出 ListView 视口被裁，标题首字缺一截。
+  testWidgets('方向待探测的条目解出横图：悬停放大后的首张卡整张留在视口内', (WidgetTester tester) async {
+    const _PendingImage image = _PendingImage('spot-probed-landscape');
+    CoverProbeMemo.rememberAspect(
+      image,
+      16 / 9,
+      epoch: CoverProviderEpoch.of(image),
+    );
+    addTearDown(() => CoverProbeMemo.evict(image));
+    final FushiContinueEntry probed = FushiContinueEntry(
+      key: const ValueKey<String>('spot-1'),
+      focusId: const FushiFocusId('spot-1'),
+      title: 'Work 1',
+      subtitle: 'Next · Episode 2',
+      cover: const ColoredBox(color: Color(0xFF304050)),
+      coverAspectRatio: 2 / 3,
+      orientationImage: image,
+      progress: 0.5,
+      onOpen: () {},
+    );
+    await pumpAt(tester, 1200, <FushiContinueEntry>[
+      entry(0),
+      probed,
+      entry(2, still: false),
+    ]);
+    expect(tester.takeException(), isNull);
+    final Finder card = find.byKey(const ValueKey<String>('spot-1'));
+    final Size rest = tester.getSize(card);
+    // 确实按 16:9 剧照画了（否则下面的包含关系不说明问题）。
+    expect(rest.width / rest.height, closeTo(16 / 9, 0.01));
+
+    final TestGesture mouse = await tester.createGesture(
+      kind: PointerDeviceKind.mouse,
+    );
+    addTearDown(mouse.removePointer);
+    await mouse.addPointer(location: Offset.zero);
+    await mouse.moveTo(tester.getCenter(card));
+    await tester.pumpAndSettle();
+    final Rect lifted = tester.getRect(card);
+    final Rect viewport = tester.getRect(
+      find.descendant(
+        of: find.byType(ListView),
+        matching: find.byType(Scrollable),
+      ),
+    );
+    expect(lifted.width, greaterThan(rest.width));
+    expect(lifted.left, greaterThanOrEqualTo(viewport.left - 0.01));
+    expect(lifted.right, lessThanOrEqualTo(viewport.right + 0.01));
+  });
+}
+
+/// 永不解码完的图：方向只靠预先记进 [CoverProbeMemo] 的结论，不触发解码失败。
+class _PendingImage extends ImageProvider<_PendingImage> {
+  const _PendingImage(this.name);
+
+  final String name;
+
+  @override
+  Future<_PendingImage> obtainKey(ImageConfiguration configuration) =>
+      SynchronousFuture<_PendingImage>(this);
+
+  @override
+  ImageStreamCompleter loadImage(
+    _PendingImage key,
+    ImageDecoderCallback decode,
+  ) => OneFrameImageStreamCompleter(Completer<ImageInfo>().future);
+
+  @override
+  bool operator ==(Object other) =>
+      other is _PendingImage && other.name == name;
+
+  @override
+  int get hashCode => name.hashCode;
 }
