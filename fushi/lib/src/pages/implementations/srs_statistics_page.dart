@@ -23,6 +23,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_chips.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi_engine/srs/srs_calibration.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_stats.dart';
 import 'package:fushi_engine/srs/srs_stats_loader.dart';
@@ -41,11 +42,38 @@ import 'package:fushi_srs/fushi_srs.dart';
 /// 保留率（真实 vs 期望 + 成熟卡增长）→ 记忆分布（间隔 / 稳定性 / 难度 / 可提取度）
 /// → 按小时 → 评分按钮 → 新增卡片 → 易忘卡 → 制卡来源。
 class SrsStatisticsTab extends ConsumerStatefulWidget {
-  const SrsStatisticsTab({super.key});
+  const SrsStatisticsTab({
+    super.key,
+    this.debugCalibrationLoader,
+    this.debugCalibrationReporter,
+  });
+
+  /// 测试替身：校准原料（FSRS 留出预测 + RWKV 回放）。null = 真实原生管线。
+  @visibleForTesting
+  final SrsCalibrationLoader? debugCalibrationLoader;
+
+  /// 测试替身：按牌组出一份校准报告。null = 真实原生管线（后台 isolate）。
+  @visibleForTesting
+  final SrsCalibrationReporter? debugCalibrationReporter;
 
   @override
   ConsumerState<SrsStatisticsTab> createState() => _SrsStatisticsTabState();
 }
+
+/// 校准原料（与牌组无关，见 `srs_calibration.dart` 第 1、2 步）。
+typedef SrsCalibrationLoader =
+    Future<SrsCalibrationData> Function(
+      SrsDbStore store,
+      NativeSrsOptimizerControl control,
+      SrsCalibrationProgress onProgress,
+    );
+
+/// 按牌组（[scopeCardIds] null = 全部）出一份校准报告（第 3 步）。
+typedef SrsCalibrationReporter =
+    Future<SrsCalibrationReport> Function(
+      SrsCalibrationData data,
+      List<String>? scopeCardIds,
+    );
 
 /// 两列的最小内容宽度（手机横屏 / 平板竖屏起）。
 const double kSrsStatsTwoColumnMinWidth = 760;
@@ -78,6 +106,31 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
   bool _reviewsTime = false;
   _MemoryView _memory = _MemoryView.interval;
 
+  /// 校准原料（[srsCalibrationData]：FSRS 留出预测 + RWKV 回放，与牌组无关）。空 = 还没算；不自动跑，由用户点
+  /// 按钮触发（FSRS 留出预测要按参数组逐组训练，RWKV 还要全量回放，几秒到几分钟）。换牌组只用它重出报告。
+  SrsCalibrationData? _calibrationData;
+
+  /// [_calibrationData] 算的是哪份历史（[SrsStatsBundle.fingerprint]）；与当前不一致就是「算完之后又有复习」。
+  String _calibrationFingerprint = '';
+
+  /// 按 [_calibrationDeck] 出的那份报告（[srsCalibrationReportInBackground]）。
+  SrsCalibrationReport? _calibration;
+
+  /// [_calibration] 对应的牌组；与 [_deckId] 不同 = 新牌组的报告还在出（不把上一个牌组的图当成这个牌组的）。
+  String _calibrationDeck = '';
+
+  /// 每次出报告递增；后台 isolate 回来时序号已过期（期间又换了牌组 / 重算了原料）就丢弃。
+  int _calibrationReportSeq = 0;
+  bool _calibrationBusy = false;
+  bool _calibrationFailed = false;
+  SrsCalibrationPhase _calibrationPhase = SrsCalibrationPhase.fsrs;
+  int _calibrationDone = 0;
+  int _calibrationTotal = 0;
+  bool _umPlusSmall = false;
+
+  /// 正在跑的那次计算的取消把手（离开页面时取消，不再白跑）。
+  NativeSrsOptimizerControl? _calibrationControl;
+
   @override
   void initState() {
     super.initState();
@@ -87,6 +140,13 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
       }),
     );
     WidgetsBinding.instance.addPostFrameCallback((_) => unawaited(_load()));
+  }
+
+  @override
+  void dispose() {
+    // 只取消不 dispose：算完之后由那次计算自己的 finally 释放。
+    _calibrationControl?.cancel();
+    super.dispose();
   }
 
   /// [srsRevisionProvider] 的一跳：只有会改变统计结果的事件落了库（[SrsDbStore.statsFingerprint] 变了）才重读。
@@ -146,6 +206,8 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
         }
         _applyFilter();
       });
+      // 报告 = f(原料, 牌组的卡集)：重读后牌组可能被删（回落到全部）或卡换了牌组，按新的卡集重出。
+      unawaited(_refreshCalibrationReport());
     } catch (error, stack) {
       ErrorLogService.instance.log('SrsStatisticsTab.load', error, stack);
       if (mounted) {
@@ -335,6 +397,7 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
             _Section(_cardCountSection(data, colors), 3),
             _Section(_retentionSection(data, colors), 4),
             _Section(_memorySection(data, colors), 3.2),
+            ..._calibrationSections(colors),
             _Section(_addedSection(data, colors), 2.6),
             _Section(_sourceSection(data, colors), 2.6),
           ];
@@ -456,10 +519,14 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
                               orElse: () => (id, id),
                             )
                             .$2,
-                        onChanged: (String? id) => setState(() {
-                          _deckId = id ?? '';
-                          _applyFilter();
-                        }),
+                        onChanged: (String? id) {
+                          setState(() {
+                            _deckId = id ?? '';
+                            _applyFilter();
+                          });
+                          // 原料与牌组无关：只按新牌组重出报告（不重跑训练 / 回放）。
+                          unawaited(_refreshCalibrationReport());
+                        },
                       ),
                     ),
                 ],
@@ -1363,6 +1430,380 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
       ),
     );
   }
+
+  // ------------------------------------------------------------- 模型校准
+
+  /// 校准原料（训练 / 回放）。两个模型都要同一批复习：FSRS 留出预测、RWKV 从头回放，取两者都有预测的那些条
+  /// （见 `srs_calibration.dart`）。原料与牌组无关，算完按当前牌组出报告（[_refreshCalibrationReport]）。
+  Future<void> _computeCalibration() async {
+    if (_calibrationBusy) return;
+    final SrsStatsBundle? bundle = _bundle;
+    final SrsDbStore? store = _loadedStore;
+    if (bundle == null || store == null) return;
+    final NativeSrsOptimizerControl control = NativeSrsOptimizerControl();
+    final String fingerprint = bundle.fingerprint;
+    setState(() {
+      _calibrationBusy = true;
+      _calibrationFailed = false;
+      _calibrationPhase = SrsCalibrationPhase.fsrs;
+      _calibrationDone = 0;
+      _calibrationTotal = 0;
+      _calibrationControl = control;
+    });
+    try {
+      void onProgress(SrsCalibrationPhase phase, int done, int total) {
+        if (!mounted) return;
+        setState(() {
+          _calibrationPhase = phase;
+          _calibrationDone = done;
+          _calibrationTotal = total;
+        });
+      }
+
+      final SrsCalibrationLoader? loader = widget.debugCalibrationLoader;
+      // 范围：整段历史（校准要每张卡的完整复习史，切成 30 天会饿死训练集），牌组在出报告时按当前筛选走。
+      final SrsCalibrationData data = loader != null
+          ? await loader(store, control, onProgress)
+          : await srsCalibrationData(
+              store,
+              rwkv: await ref.read(srsRwkvServiceProvider.future),
+              fsrsLibraryPath: srsFsrsLibraryPath(),
+              control: control,
+              onProgress: onProgress,
+            );
+      if (!mounted) return;
+      setState(() {
+        _calibrationData = data;
+        _calibrationFingerprint = fingerprint;
+        _calibration = null;
+      });
+    } catch (error, stack) {
+      ErrorLogService.instance.log(
+        'SrsStatisticsTab.calibration',
+        error,
+        stack,
+      );
+      if (mounted) setState(() => _calibrationFailed = true);
+      return;
+    } finally {
+      _calibrationControl = null;
+      control.dispose();
+      if (mounted) setState(() => _calibrationBusy = false);
+    }
+    await _refreshCalibrationReport();
+  }
+
+  /// 第 3 步：按**当前**牌组用 [_calibrationData] 出一份报告（后台 isolate，自助法不占 UI isolate）。
+  /// 换牌组 / 重读统计 / 原料算完都走这里；回来时序号过期（期间又换了牌组）就丢弃，只认最后一次。
+  Future<void> _refreshCalibrationReport() async {
+    final SrsCalibrationData? data = _calibrationData;
+    final SrsStatsBundle? bundle = _bundle;
+    if (data == null || bundle == null || !mounted) return;
+    final int seq = ++_calibrationReportSeq;
+    final String deck = _deckId;
+    final List<String>? scope = deck.isEmpty
+        ? null
+        : bundle.index.cardIdsInDeck(deck).toList();
+    setState(() => _calibrationFailed = false);
+    try {
+      final SrsCalibrationReporter? reporter = widget.debugCalibrationReporter;
+      final SrsCalibrationReport report = reporter != null
+          ? await reporter(data, scope)
+          : await srsCalibrationReportInBackground(
+              data,
+              fsrsLibraryPath: srsFsrsLibraryPath(),
+              scopeCardIds: scope,
+            );
+      if (!mounted || seq != _calibrationReportSeq) return;
+      setState(() {
+        _calibration = report;
+        _calibrationDeck = deck;
+      });
+    } catch (error, stack) {
+      ErrorLogService.instance.log(
+        'SrsStatisticsTab.calibrationReport',
+        error,
+        stack,
+      );
+      if (mounted && seq == _calibrationReportSeq) {
+        setState(() {
+          _calibration = null;
+          _calibrationFailed = true;
+        });
+      }
+    }
+  }
+
+  List<_Section> _calibrationSections(SrsStatColors colors) {
+    // 只显示当前牌组的报告：换牌组后新报告出来之前不把上一个牌组的图挂在这个牌组名下。
+    final SrsCalibrationReport? report = _calibrationDeck == _deckId
+        ? _calibration
+        : null;
+    final bool pending =
+        _calibrationData != null && report == null && !_calibrationFailed;
+    final bool stale =
+        report != null &&
+        _calibrationFingerprint != (_bundle?.fingerprint ?? '');
+    final SrsUmPlus? um = report?.hasRwkv == true ? report?.umPlus : null;
+    final bool hasUm = um != null && um.count > 0;
+    return <_Section>[
+      _Section(
+        _calibrationSection(
+          report,
+          stale: stale,
+          pending: pending,
+          colors: colors,
+        ),
+        4,
+      ),
+      if (hasUm) _Section(_umPlusSection(um, colors), 3.6),
+      if (report != null && !report.hasRwkv && report.eligible > 0)
+        _Section(_noRwkvSection(), 2),
+    ];
+  }
+
+  Widget _calibrationSection(
+    SrsCalibrationReport? report, {
+    required bool stale,
+    required bool pending,
+    required SrsStatColors colors,
+  }) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final TextStyle small = context.fushiType.bodySmall;
+    final List<Widget> body = <Widget>[];
+    if (pending && !_calibrationBusy) {
+      // 原料已有、正在按当前牌组出报告（自助法，通常不到一秒）：不定进度条。
+      body.add(
+        FushiLinearProgressIndicator(
+          key: const ValueKey<String>('srs-stats-calibration-reporting'),
+          minHeight: 6,
+          color: colors.accent,
+          backgroundColor: colors.empty,
+        ),
+      );
+    } else if (_calibrationBusy) {
+      final int percent = _calibrationTotal <= 0
+          ? 0
+          : (_calibrationDone * 100 ~/ _calibrationTotal).clamp(0, 100);
+      body.addAll(<Widget>[
+        Text(
+          _calibrationPhase == SrsCalibrationPhase.fsrs
+              ? t.srs_stats_calibration_progress_fsrs(percent: percent)
+              : t.srs_stats_calibration_progress_rwkv(percent: percent),
+          key: const ValueKey<String>('srs-stats-calibration-progress'),
+          style: small,
+        ),
+        SizedBox(height: tokens.spacing.gap),
+        FushiLinearProgressIndicator(
+          value: _calibrationTotal <= 0 ? null : percent / 100,
+          minHeight: 6,
+          color: colors.accent,
+          backgroundColor: colors.empty,
+        ),
+      ]);
+    } else if (report == null) {
+      body.addAll(<Widget>[
+        Text(t.srs_stats_calibration_hint, style: small),
+        if (_calibrationFailed) ...<Widget>[
+          SizedBox(height: tokens.spacing.gap),
+          Text(
+            t.srs_stats_calibration_failed,
+            key: const ValueKey<String>('srs-stats-calibration-failed'),
+            style: small.copyWith(color: Theme.of(context).colorScheme.error),
+          ),
+        ],
+        SizedBox(height: tokens.spacing.gap),
+        Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: FushiTextButton.icon(
+            key: const ValueKey<String>('srs-stats-calibration-compute'),
+            onPressed: () => unawaited(_computeCalibration()),
+            icon: const FushiIcon(FushiIcons.refresh),
+            label: Text(
+              _calibrationFailed
+                  ? t.srs_stats_calibration_recompute
+                  : t.srs_stats_calibration_compute,
+            ),
+          ),
+        ),
+      ]);
+    } else {
+      final bool empty = report.fsrs == null && report.rwkv == null;
+      if (empty) {
+        body.add(Text(t.srs_stats_calibration_empty, style: small));
+      } else {
+        body.add(
+          SrsCalibrationChart(
+            key: const ValueKey<String>('srs-stats-calibration-chart'),
+            lines: <SrsCalibrationLine>[
+              if (report.fsrs case final SrsCalibrationSeries s)
+                SrsCalibrationLine(
+                  t.srs_stats_calibration_fsrs,
+                  colors.accent,
+                  s,
+                ),
+              if (report.rwkv case final SrsCalibrationSeries s)
+                SrsCalibrationLine(
+                  t.srs_stats_calibration_rwkv,
+                  colors.newCard,
+                  s,
+                ),
+            ],
+            countLabel: t.srs_stats_calibration_count,
+            predictedLabel: t.srs_stats_calibration_predicted,
+            actualLabel: t.srs_stats_calibration_actual,
+            intervalLabel: (String lower, String upper) =>
+                t.srs_stats_calibration_interval(lower: lower, upper: upper),
+          ),
+        );
+        for (final (String model, SrsCalibrationSeries s)
+            in <(String, SrsCalibrationSeries)>[
+              if (report.fsrs != null)
+                (t.srs_stats_calibration_fsrs, report.fsrs!),
+              if (report.rwkv != null)
+                (t.srs_stats_calibration_rwkv, report.rwkv!),
+            ]) {
+          body.add(
+            Padding(
+              padding: EdgeInsets.only(top: tokens.spacing.gap / 2),
+              child: Text(
+                t.srs_stats_calibration_metric(
+                  model: model,
+                  loss: s.logLoss.toStringAsFixed(3),
+                  rmse: s.rmse.toStringAsFixed(3),
+                  n: s.count,
+                ),
+                style: tokens.type.metadata.tabular,
+              ),
+            ),
+          );
+        }
+      }
+      body.addAll(<Widget>[
+        SizedBox(height: tokens.spacing.gap),
+        Text(t.srs_stats_calibration_hint, style: small),
+        if (stale) ...<Widget>[
+          SizedBox(height: tokens.spacing.gap),
+          Text(
+            t.srs_stats_calibration_stale,
+            key: const ValueKey<String>('srs-stats-calibration-stale'),
+            style: small.copyWith(color: Theme.of(context).colorScheme.error),
+          ),
+        ],
+        Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: FushiTextButton.icon(
+            key: const ValueKey<String>('srs-stats-calibration-recompute'),
+            onPressed: () => unawaited(_computeCalibration()),
+            icon: const FushiIcon(FushiIcons.refresh),
+            label: Text(t.srs_stats_calibration_recompute),
+          ),
+        ),
+      ]);
+    }
+    return StatSectionCard(
+      key: const ValueKey<String>('srs-stats-calibration'),
+      title: t.srs_stats_calibration_title,
+      icon: FushiIcons.lineChart,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: body,
+      ),
+    );
+  }
+
+  Widget _umPlusSection(SrsUmPlus um, SrsStatColors colors) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final TextStyle small = context.fushiType.bodySmall;
+    final String fsrsLabel = t.srs_stats_calibration_fsrs;
+    final String rwkvLabel = t.srs_stats_calibration_rwkv;
+    final List<SrsUmPlusBin> bins = um.visibleBins(showSmall: _umPlusSmall);
+    final List<SrsChartSeries> series = <SrsChartSeries>[
+      SrsChartSeries(fsrsLabel, colors.accent),
+      SrsChartSeries(rwkvLabel, colors.newCard),
+    ];
+    String score(String model, double value, double? slope) =>
+        t.srs_stats_umplus_score(
+          model: model,
+          score: value.toStringAsFixed(3),
+          slope: slope == null ? kStatEmptyValue : slope.toStringAsFixed(2),
+        );
+    return StatSectionCard(
+      key: const ValueKey<String>('srs-stats-umplus'),
+      title: t.srs_stats_umplus_title,
+      icon: FushiIcons.functions,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          if (bins.length < 2)
+            Text(t.srs_stats_calibration_empty, style: small)
+          else ...<Widget>[
+            SrsUmPlusChart(
+              key: const ValueKey<String>('srs-stats-umplus-chart'),
+              bins: bins,
+              total: um.count,
+              fsrs: series.first,
+              rwkv: series.last,
+              tooltipOf: (SrsUmPlusBin b) => <String>[
+                t.srs_stats_umplus_tip_bucket(
+                  d: b.disagreement.toStringAsFixed(2),
+                  n: b.count,
+                ),
+                t.srs_stats_umplus_tip_error(
+                  model: fsrsLabel,
+                  e: b.fsrsError.toStringAsFixed(3),
+                ),
+                t.srs_stats_umplus_tip_error(
+                  model: rwkvLabel,
+                  e: b.rwkvError.toStringAsFixed(3),
+                ),
+              ],
+            ),
+            SizedBox(height: tokens.spacing.gap),
+            SrsChartLegend(series: series),
+          ],
+          SizedBox(height: tokens.spacing.gap),
+          Text(
+            score(
+              fsrsLabel,
+              um.fsrsScore,
+              srsUmPlusSlope(bins, (SrsUmPlusBin b) => b.fsrsError),
+            ),
+            style: tokens.type.metadata.tabular,
+          ),
+          Text(
+            score(
+              rwkvLabel,
+              um.rwkvScore,
+              srsUmPlusSlope(bins, (SrsUmPlusBin b) => b.rwkvError),
+            ),
+            style: tokens.type.metadata.tabular,
+          ),
+          SizedBox(height: tokens.spacing.gap),
+          Row(
+            children: <Widget>[
+              Expanded(child: Text(t.srs_stats_umplus_small, style: small)),
+              SizedBox(width: tokens.spacing.gap),
+              FushiSwitch(
+                key: const ValueKey<String>('srs-stats-umplus-small'),
+                value: _umPlusSmall,
+                onChanged: (bool v) => setState(() => _umPlusSmall = v),
+              ),
+            ],
+          ),
+          SizedBox(height: tokens.spacing.gap),
+          Text(t.srs_stats_umplus_hint, style: small),
+        ],
+      ),
+    );
+  }
+
+  Widget _noRwkvSection() => StatSectionCard(
+    key: const ValueKey<String>('srs-stats-umplus-no-rwkv'),
+    title: t.srs_stats_umplus_title,
+    icon: FushiIcons.functions,
+    child: Text(t.srs_stats_umplus_no_rwkv, style: context.fushiType.bodySmall),
+  );
 
   // ------------------------------------------------------------- 小件
 

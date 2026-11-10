@@ -755,6 +755,10 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'appearance/Library panorama': 'test/pages/home_panorama_panel_test.dart',
   // 悬浮球「AI」按钮：默认勾选 / 平台可用 / 场景上下文在专项测试里钉死。
   'floatingBall/AI': 'test/floating_ball/floating_ball_ai_action_test.dart',
+  // 手柄查词模式开启方式（副屏 S6）：偏好的读取与默认（副屏在用 = 按住 L1、否则关）
+  // 和按键行为由 ControllerLookupMode 的专项测试钉死（生效点在手柄分派层）。
+  'appearance/Controller lookup mode':
+      'test/second_screen/controller_lookup_mode_test.dart',
   'appearance/Design system': 'test/models/theme_notifier_test.dart',
   'appearance/UI size': 'test/models/theme_notifier_test.dart',
   'reading/Spread mode': 'test/epub/epub_spread_map_test.dart',
@@ -1435,6 +1439,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'reading/Volume button page turning': 'DEVICE: native VolumeKeyChannel',
   'reading/Invert volume buttons': 'DEVICE: native volume-key direction',
   'lookup/Pause on lookup': 'DEVICE: audiobook pause on selection',
+  // 查词暂停后关弹窗从被查词那句句首重播：恢复点判据 + 阅读器接线由专项测试守，
+  // 真实跳句起播随「查词时暂停」同属设备 backlog。
+  'lookup/Restart sentence after lookup':
+      'test/media/audiobook/lookup_restart_sentence_test.dart '
+      '(DEVICE: resume from sentence start after popup close)',
   // TODO-756b：悬停即查词（视频 onCharHover 门控 + 阅读器 window.__hoverAutoLookup
   // JS 门控）。change/persist/restore 经 DB 由本测试守，运行时悬停查词分流由
   // 行为测试 test/media/video/video_subtitle_hover_lookup_test.dart 覆盖。

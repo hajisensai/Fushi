@@ -51,11 +51,13 @@ import 'package:fushi_server/src/commands/command_io.dart';
 import 'package:fushi_server/src/native_libs.dart' show onnxRuntimeLibraryName;
 import 'package:fushi_server/src/ocr_session_factory.dart'
     show serverOrtLibraryPath;
+import 'package:fushi_server/src/server_language.dart';
 import 'package:fushi_server/src/server_runtime.dart';
 import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
 
-const String kOcrUsage = '''
+String get kOcrUsage => tr(
+  '''
 ocr manga <bookKey> [--pages 1-20,25] [--model k] [--redo] [--ai-refine [--ai-mode low_confidence|all]]
                                                      对已入库漫画跑本地 OCR，结果写回书的 manga.json
 ocr models [ls|pull|rm] [--model k]                   本地 OCR 模型（manga_ctc）
@@ -63,7 +65,17 @@ ocr screen <image…> [--mode text|page|both] [--repeat n] [--model k]
                                                      截屏识字测速：整帧当文字图 / 走漫画整页管线，打印耗时与识别行
 manga panels <image…> [--ltr]                         分镜检测（默认日漫右→左阅读序）
 manga panel-model [status|pull]                       分镜模型
-（以上都支持 --json；--ai-refine 用配置文件 ai: 段的那一家提供商）''';
+（以上都支持 --json；--ai-refine 用配置文件 ai: 段的那一家提供商）''',
+  '''
+ocr manga <bookKey> [--pages 1-20,25] [--model k] [--redo] [--ai-refine [--ai-mode low_confidence|all]]
+                                                     run local OCR on an imported manga, write results back to the book's manga.json
+ocr models [ls|pull|rm] [--model k]                   local OCR models (manga_ctc)
+ocr screen <image…> [--mode text|page|both] [--repeat n] [--model k]
+                                                     screenshot OCR timing: whole frame as a text image / manga full-page pipeline; prints timings and recognized lines
+manga panels <image…> [--ltr]                         panel detection (default: manga right-to-left reading order)
+manga panel-model [status|pull]                       panel model
+(All of the above support --json; --ai-refine uses the provider from the ai: section of the config file)''',
+);
 
 /// 页号选择（1 起、闭区间、逗号分隔：`1-20,25`）→ 0 起的升序去重页下标。
 ///
@@ -74,20 +86,35 @@ List<int> parsePageSelection(String spec, int pageCount) {
     final String part = raw.trim();
     if (part.isEmpty) continue;
     final List<String> bounds = part.split('-');
-    if (bounds.length > 2) throw FormatException('页号范围写错了: "$part"');
+    if (bounds.length > 2) {
+      throw FormatException(
+        tr('页号范围写错了: "$part"', 'Invalid page range: "$part"'),
+      );
+    }
     final int? from = int.tryParse(bounds.first.trim());
     final int? to = bounds.length == 2
         ? int.tryParse(bounds.last.trim())
         : from;
-    if (from == null || to == null) throw FormatException('页号范围写错了: "$part"');
+    if (from == null || to == null) {
+      throw FormatException(
+        tr('页号范围写错了: "$part"', 'Invalid page range: "$part"'),
+      );
+    }
     if (from < 1 || to < from || to > pageCount) {
-      throw FormatException('页号 "$part" 越界（本书 1-$pageCount 页）');
+      throw FormatException(
+        tr(
+          '页号 "$part" 越界（本书 1-$pageCount 页）',
+          'Page "$part" is out of range (this book has pages 1-$pageCount)',
+        ),
+      );
     }
     for (int page = from; page <= to; page++) {
       picked.add(page - 1);
     }
   }
-  if (picked.isEmpty) throw FormatException('没有选中任何页: "$spec"');
+  if (picked.isEmpty) {
+    throw FormatException(tr('没有选中任何页: "$spec"', 'No pages selected: "$spec"'));
+  }
   return picked.toList()..sort();
 }
 
@@ -106,12 +133,16 @@ String? serverOrtProblem() {
     candidates: override == null ? null : <String>[override],
   );
   if (found != null) return null;
-  return 'onnxruntime 动态库不可用：在配置里设 ort_library_path，或把 ${override ?? onnxRuntimeLibraryName()} '
-      '放到可执行文件旁 / 系统库路径（ASR_ONNXRUNTIME_LIB 也认）';
+  return tr(
+    'onnxruntime 动态库不可用：在配置里设 ort_library_path，或把 ${override ?? onnxRuntimeLibraryName()} '
+        '放到可执行文件旁 / 系统库路径（ASR_ONNXRUNTIME_LIB 也认）',
+    'The onnxruntime library is unavailable: set ort_library_path in the config, or put ${override ?? onnxRuntimeLibraryName()} '
+        'next to the executable / on the system library path (ASR_ONNXRUNTIME_LIB is also honored)',
+  );
 }
 
 String _modelName(String key) => switch (key) {
-  'manga_ctc' => '漫画 CTC（快速）',
+  'manga_ctc' => tr('漫画 CTC（快速）', 'Manga CTC (fast)'),
   _ => key,
 };
 
@@ -181,39 +212,78 @@ class OcrCommands extends CliModule {
   void register(ArgParser parser) {
     final ArgParser ocr = parser.addCommand('ocr');
     addJsonFlag(ocr.addCommand('manga'))
-      ..addOption('pages', help: '只识别这些页（1 起：1-20,25）；缺省整卷')
+      ..addOption(
+        'pages',
+        help: tr(
+          '只识别这些页（1 起：1-20,25）；缺省整卷',
+          'Only recognize these pages (1-based, e.g. 1-20,25); default is the whole volume',
+        ),
+      )
       ..addOption(
         'model',
-        help: '本地模型 key（manga_ctc）',
+        help: tr('本地模型 key（manga_ctc）', 'Local model key (manga_ctc)'),
         defaultsTo: kDefaultMangaOcrLocalModel.key,
       )
-      ..addFlag('redo', negatable: false, help: '丢掉已有逐页缓存重新识别')
-      ..addFlag('ai-refine', negatable: false, help: '用配置文件 ai: 段的大模型重读块内文字')
+      ..addFlag(
+        'redo',
+        negatable: false,
+        help: tr(
+          '丢掉已有逐页缓存重新识别',
+          'Discard the existing per-page cache and recognize again',
+        ),
+      )
+      ..addFlag(
+        'ai-refine',
+        negatable: false,
+        help: tr(
+          '用配置文件 ai: 段的大模型重读块内文字',
+          'Re-read text inside blocks with the LLM from the ai: section of the config file',
+        ),
+      )
       ..addOption(
         'ai-mode',
         allowed: <String>['low_confidence', 'all'],
         defaultsTo: 'low_confidence',
       );
-    addJsonFlag(
-      ocr.addCommand('models'),
-    ).addOption('model', help: '模型 key（pull 缺省 manga_ctc；rm 必填）');
+    addJsonFlag(ocr.addCommand('models')).addOption(
+      'model',
+      help: tr(
+        '模型 key（pull 缺省 manga_ctc；rm 必填）',
+        'Model key (pull defaults to manga_ctc; required for rm)',
+      ),
+    );
     addJsonFlag(ocr.addCommand('screen'))
       ..addOption(
         'mode',
         allowed: <String>['text', 'page', 'both'],
         defaultsTo: 'both',
-        help: 'text = 整帧当一块文字图（PP 行检测 + 逐行识别）；page = 漫画整页管线',
+        help: tr(
+          'text = 整帧当一块文字图（PP 行检测 + 逐行识别）；page = 漫画整页管线',
+          'text = treat the whole frame as one text image (PP line detection + per-line recognition); page = manga full-page pipeline',
+        ),
       )
-      ..addOption('repeat', defaultsTo: '3', help: '每张图每种模式识别几次（首次含预热）')
+      ..addOption(
+        'repeat',
+        defaultsTo: '3',
+        help: tr(
+          '每张图每种模式识别几次（首次含预热）',
+          'How many times to recognize each image per mode (the first run includes warm-up)',
+        ),
+      )
       ..addOption(
         'model',
-        help: '本地模型 key（manga_ctc）',
+        help: tr('本地模型 key（manga_ctc）', 'Local model key (manga_ctc)'),
         defaultsTo: kDefaultMangaOcrLocalModel.key,
       );
     final ArgParser manga = parser.addCommand('manga');
-    addJsonFlag(
-      manga.addCommand('panels'),
-    ).addFlag('ltr', negatable: false, help: '左→右阅读序（美漫 / 条漫）');
+    addJsonFlag(manga.addCommand('panels')).addFlag(
+      'ltr',
+      negatable: false,
+      help: tr(
+        '左→右阅读序（美漫 / 条漫）',
+        'Left-to-right reading order (Western comics / webtoons)',
+      ),
+    );
     addJsonFlag(manga.addCommand('panel-model'));
   }
 
@@ -225,7 +295,7 @@ class OcrCommands extends CliModule {
     final ArgResults? leaf = command.command;
     if (leaf == null) {
       return _io.usage(
-        '缺少子命令',
+        tr('缺少子命令', 'Missing subcommand'),
         name == 'ocr'
             ? 'ocr manga <bookKey> … | ocr models [ls|pull|rm]'
             : 'manga panels <image…> | manga panel-model',
@@ -252,11 +322,23 @@ class OcrCommands extends CliModule {
     final String action = leaf.rest.isEmpty ? 'ls' : leaf.rest.first;
     if (!const <String>{'ls', 'pull', 'rm'}.contains(action) ||
         leaf.rest.length > 1) {
-      return _io.usage('未知动作 "${leaf.rest.join(' ')}"', usageLine);
+      return _io.usage(
+        tr(
+          '未知动作 "${leaf.rest.join(' ')}"',
+          'Unknown action "${leaf.rest.join(' ')}"',
+        ),
+        usageLine,
+      );
     }
     final String? key = leaf['model'] as String?;
     if (action == 'rm' && key == null) {
-      return _io.usage('rm 要用 --model 点名删哪个模型', usageLine);
+      return _io.usage(
+        tr(
+          'rm 要用 --model 点名删哪个模型',
+          'rm needs --model to name the model to delete',
+        ),
+        usageLine,
+      );
     }
     final bool json = wantsJson(leaf);
     return ctx.withRuntime((ServerRuntime rt) async {
@@ -271,7 +353,12 @@ class OcrCommands extends CliModule {
         if (json) {
           _io.json(<String, Object?>{'model': target, 'freedBytes': freed});
         } else {
-          _io.out.writeln('已删除 $target 模型，释放 $freed 字节');
+          _io.out.writeln(
+            tr(
+              '已删除 $target 模型，释放 $freed 字节',
+              'Deleted the $target model, freed $freed bytes',
+            ),
+          );
         }
         return kExitOk;
       }
@@ -285,7 +372,9 @@ class OcrCommands extends CliModule {
         }
       } on Exception catch (e, stack) {
         rt.log.log('cli.ocr.models.pull($target)', e, stack);
-        _io.err.writeln('下载 $target 模型失败: $e');
+        _io.err.writeln(
+          tr('下载 $target 模型失败: $e', 'Failed to download the $target model: $e'),
+        );
         return kExitUnavailable;
       }
       final MangaOcrModelStatus status = await service.modelStatus();
@@ -296,7 +385,9 @@ class OcrCommands extends CliModule {
           'diskBytes': status.diskBytes,
         });
       } else {
-        _io.out.writeln('$target: ${status.allReady ? '模型已就绪' : '下载结束但模型仍不齐'}');
+        _io.out.writeln(
+          '$target: ${status.allReady ? tr('模型已就绪', 'model ready') : tr('下载结束但模型仍不齐', 'download finished but the model is still incomplete')}',
+        );
       }
       return status.allReady ? kExitOk : kExitFailure;
     });
@@ -308,12 +399,18 @@ class OcrCommands extends CliModule {
     );
     if (!known) {
       return _io.usage(
-        '未知模型 "$key"（可用: ${services.keys.join(' / ')}）',
+        tr(
+          '未知模型 "$key"（可用: ${services.keys.join(' / ')}）',
+          'Unknown model "$key" (available: ${services.keys.join(' / ')})',
+        ),
         'ocr … --model <key>',
       );
     }
     _io.err.writeln(
-      '模型 $key 不支持本平台（${Platform.operatingSystem}）；可用: ${services.keys.join(' / ')}',
+      tr(
+        '模型 $key 不支持本平台（${Platform.operatingSystem}）；可用: ${services.keys.join(' / ')}',
+        'Model $key is not supported on this platform (${Platform.operatingSystem}); available: ${services.keys.join(' / ')}',
+      ),
     );
     return kExitUnavailable;
   }
@@ -346,9 +443,13 @@ class OcrCommands extends CliModule {
     }
     if (ortProblem != null) _io.out.writeln('! $ortProblem');
     for (final Map<String, Object?> row in rows) {
+      final String prefix =
+          '${'${row['key']}'.padRight(10)} ${row['ready'] == true ? 'ready  ' : 'missing'}';
       _io.out.writeln(
-        '${'${row['key']}'.padRight(10)} ${row['ready'] == true ? 'ready  ' : 'missing'} '
-        '${row['obtainedBytes']}/${row['totalBytes']} bytes（磁盘 ${row['diskBytes']}）  ${row['name']}',
+        tr(
+          '$prefix ${row['obtainedBytes']}/${row['totalBytes']} bytes（磁盘 ${row['diskBytes']}）  ${row['name']}',
+          '$prefix ${row['obtainedBytes']}/${row['totalBytes']} bytes (disk ${row['diskBytes']})  ${row['name']}',
+        ),
       );
     }
     return kExitOk;
@@ -362,17 +463,27 @@ class OcrCommands extends CliModule {
   Future<int> _screen(ArgResults leaf, CliContext ctx) async {
     const String usageLine =
         'ocr screen <image…> [--mode text|page|both] [--repeat n] [--model k] [--json]';
-    if (leaf.rest.isEmpty) return _io.usage('至少给一张截图', usageLine);
+    if (leaf.rest.isEmpty) {
+      return _io.usage(
+        tr('至少给一张截图', 'Give at least one screenshot'),
+        usageLine,
+      );
+    }
     final int? repeat = int.tryParse(leaf['repeat'] as String);
     if (repeat == null || repeat < 1) {
-      return _io.usage('--repeat 要正整数', usageLine);
+      return _io.usage(
+        tr('--repeat 要正整数', '--repeat must be a positive integer'),
+        usageLine,
+      );
     }
     final List<File> images = <File>[
       for (final String path in leaf.rest) File(path),
     ];
     for (final File image in images) {
       if (!image.existsSync()) {
-        _io.err.writeln('找不到截图: ${image.path}');
+        _io.err.writeln(
+          tr('找不到截图: ${image.path}', 'Screenshot not found: ${image.path}'),
+        );
         return kExitNoInput;
       }
     }
@@ -391,7 +502,10 @@ class OcrCommands extends CliModule {
       }
       if (!(await service.modelStatus()).allReady) {
         _io.err.writeln(
-          '$key 模型未下载：先跑 fushi_server ocr models pull --model $key',
+          tr(
+            '$key 模型未下载：先跑 fushi_server ocr models pull --model $key',
+            'The $key model is not downloaded: run fushi_server ocr models pull --model $key first',
+          ),
         );
         return kExitUnavailable;
       }
@@ -406,7 +520,7 @@ class OcrCommands extends CliModule {
       } on Object catch (e, stack) {
         // 任务边界：OCR 管线 / ORT 的任何失败都如实报出并记日志，退出码 1。
         rt.log.log('cli.ocr.screen', e, stack);
-        _io.err.writeln('OCR 失败: $e');
+        _io.err.writeln(tr('OCR 失败: $e', 'OCR failed: $e'));
         return kExitFailure;
       }
       if (json) {
@@ -445,7 +559,14 @@ class OcrCommands extends CliModule {
           session as MangaOcrTextImageSession;
       for (final File image in images) {
         final img.Image? decoded = img.decodeImage(await image.readAsBytes());
-        if (decoded == null) throw FormatException('解不开截图: ${image.path}');
+        if (decoded == null) {
+          throw FormatException(
+            tr(
+              '解不开截图: ${image.path}',
+              'Cannot decode screenshot: ${image.path}',
+            ),
+          );
+        }
         final img.Image rgbaImage = decoded.convert(numChannels: 4);
         final Uint8List rgba = rgbaImage.getBytes(order: img.ChannelOrder.rgba);
         final List<int> runsMs = <int>[];
@@ -519,7 +640,14 @@ class OcrCommands extends CliModule {
         pageNames: <String>[name],
         pageFiles: <File>[image],
       ).read('manga_ocr', 0);
-      if (result == null) throw StateError('$name 识别后没有逐页缓存');
+      if (result == null) {
+        throw StateError(
+          tr(
+            '$name 识别后没有逐页缓存',
+            '$name has no per-page cache after recognition',
+          ),
+        );
+      }
       reports.add(<String, Object?>{
         'mode': 'page',
         'image': image.path,
@@ -546,23 +674,37 @@ class OcrCommands extends CliModule {
   Future<int> _ocrManga(ArgResults leaf, CliContext ctx) async {
     const String usageLine =
         'ocr manga <bookKey> [--pages 1-20] [--model k] [--redo] [--ai-refine] [--json]';
-    if (leaf.rest.length != 1) return _io.usage('要且只要一个 bookKey', usageLine);
+    if (leaf.rest.length != 1) {
+      return _io.usage(
+        tr('要且只要一个 bookKey', 'Exactly one bookKey is required'),
+        usageLine,
+      );
+    }
     final String bookKey = leaf.rest.single;
     final bool json = wantsJson(leaf);
     return ctx.withRuntime((ServerRuntime rt) async {
       final EpubBookRow? row = await rt.db.getEpubBook(bookKey);
       if (row == null) {
-        _io.err.writeln('库里没有这本书: $bookKey');
+        _io.err.writeln(
+          tr('库里没有这本书: $bookKey', 'No such book in the library: $bookKey'),
+        );
         return kExitNoInput;
       }
       if (BookFormat.parseOrEpub(row.format) != BookFormat.manga) {
-        _io.err.writeln('$bookKey 不是漫画（format=${row.format}）');
+        _io.err.writeln(
+          tr(
+            '$bookKey 不是漫画（format=${row.format}）',
+            '$bookKey is not a manga (format=${row.format})',
+          ),
+        );
         return kExitFailure;
       }
       final String dir = row.extractDir;
       final List<MangaOcrPageFile> pages = enumerateMangaPages(Directory(dir));
       if (pages.isEmpty) {
-        _io.err.writeln('书目录里没有页图: $dir');
+        _io.err.writeln(
+          tr('书目录里没有页图: $dir', 'No page images in the book directory: $dir'),
+        );
         return kExitFailure;
       }
       List<int>? selection;
@@ -586,7 +728,10 @@ class OcrCommands extends CliModule {
       }
       if (!(await service.modelStatus()).allReady) {
         _io.err.writeln(
-          '$key 模型未下载：先跑 fushi_server ocr models pull --model $key',
+          tr(
+            '$key 模型未下载：先跑 fushi_server ocr models pull --model $key',
+            'The $key model is not downloaded: run fushi_server ocr models pull --model $key first',
+          ),
         );
         return kExitUnavailable;
       }
@@ -596,8 +741,12 @@ class OcrCommands extends CliModule {
         provider = rt.config.ai?.provider();
         if (provider == null) {
           _io.err.writeln(
-            '--ai-refine 需要可用的 AI 提供商：在配置文件里填 ai: 段'
-            '${rt.config.ai?.problem() == null ? '' : '（当前: ${rt.config.ai!.problem()}）'}，或经 WebUI 设置',
+            tr(
+              '--ai-refine 需要可用的 AI 提供商：在配置文件里填 ai: 段'
+                  '${rt.config.ai?.problem() == null ? '' : '（当前: ${rt.config.ai!.problem()}）'}，或经 WebUI 设置',
+              '--ai-refine needs a usable AI provider: fill in the ai: section of the config file'
+                  '${rt.config.ai?.problem() == null ? '' : ' (current: ${rt.config.ai!.problem()})'}, or set it up in the WebUI',
+            ),
           );
           return kExitUnavailable;
         }
@@ -647,7 +796,10 @@ class OcrCommands extends CliModule {
           final File existing = File(mangaJsonPath);
           if (!await existing.exists()) {
             _io.err.writeln(
-              '书目录里没有 ${row.epubPath}，--pages 无处合并；去掉 --pages 跑整卷',
+              tr(
+                '书目录里没有 ${row.epubPath}，--pages 无处合并；去掉 --pages 跑整卷',
+                '${row.epubPath} is missing in the book directory, so --pages has nothing to merge into; drop --pages to run the whole volume',
+              ),
             );
             return kExitFailure;
           }
@@ -658,7 +810,10 @@ class OcrCommands extends CliModule {
               );
           if (merged.merged < fresh.images.length) {
             _io.err.writeln(
-              '有 ${fresh.images.length - merged.merged} 页在 ${row.epubPath} 里对不上，未写入',
+              tr(
+                '有 ${fresh.images.length - merged.merged} 页在 ${row.epubPath} 里对不上，未写入',
+                '${fresh.images.length - merged.merged} pages do not match ${row.epubPath} and were not written',
+              ),
             );
           }
           payload = merged.payload;
@@ -666,7 +821,7 @@ class OcrCommands extends CliModule {
       } on Object catch (e, stack) {
         // 任务边界：OCR 管线 / ORT 的任何失败都如实报出并记日志，退出码 1。
         rt.log.log('cli.ocr.manga($bookKey)', e, stack);
-        _io.err.writeln('OCR 失败: $e');
+        _io.err.writeln(tr('OCR 失败: $e', 'OCR failed: $e'));
         return kExitFailure;
       }
 
@@ -700,9 +855,14 @@ class OcrCommands extends CliModule {
         });
       } else {
         _io.out.writeln(
-          'OCR 完成: $bookKey（${targets.length}/${pages.length} 页，模型 $key）→ $mangaJsonPath',
+          tr(
+            'OCR 完成: $bookKey（${targets.length}/${pages.length} 页，模型 $key）→ $mangaJsonPath',
+            'OCR done: $bookKey (${targets.length}/${pages.length} pages, model $key) -> $mangaJsonPath',
+          ),
         );
-        if (aiReport != null) _io.out.writeln('大模型重读: $aiReport');
+        if (aiReport != null) {
+          _io.out.writeln(tr('大模型重读: $aiReport', 'LLM re-read: $aiReport'));
+        }
       }
       return kExitOk;
     });
@@ -726,7 +886,14 @@ class OcrCommands extends CliModule {
       }
     }
     final String? path = resultPath;
-    if (path == null) throw StateError('OCR 任务结束但没有产出 manga.json');
+    if (path == null) {
+      throw StateError(
+        tr(
+          'OCR 任务结束但没有产出 manga.json',
+          'The OCR job finished but produced no manga.json',
+        ),
+      );
+    }
     return parseMangaJson(await File(path).readAsString());
   }
 
@@ -762,7 +929,12 @@ class OcrCommands extends CliModule {
     for (int i = 0; i < targets.length; i++) {
       final OcrPageResult? result = await cache.read('manga_ocr', i);
       if (result == null) {
-        throw StateError('页 ${targets[i].relativeUrl} 识别后没有逐页缓存');
+        throw StateError(
+          tr(
+            '页 ${targets[i].relativeUrl} 识别后没有逐页缓存',
+            'Page ${targets[i].relativeUrl} has no per-page cache after recognition',
+          ),
+        );
       }
       results.add(result);
     }
@@ -801,7 +973,10 @@ class OcrCommands extends CliModule {
       final String? failure = result.stats.failure;
       if (failure != null) failures.add(failure);
       _io.err.writeln(
-        'ai ${images.length}/${payload.images.length} 替换 ${result.stats.replaced}/${result.stats.candidates}',
+        tr(
+          'ai ${images.length}/${payload.images.length} 替换 ${result.stats.replaced}/${result.stats.candidates}',
+          'ai ${images.length}/${payload.images.length} replaced ${result.stats.replaced}/${result.stats.candidates}',
+        ),
       );
     }
     return (
@@ -820,7 +995,10 @@ class OcrCommands extends CliModule {
 
   Future<int> _panels(ArgResults leaf, CliContext ctx) async {
     if (leaf.rest.isEmpty) {
-      return _io.usage('缺少图片路径', 'manga panels <image…> [--ltr] [--json]');
+      return _io.usage(
+        tr('缺少图片路径', 'Missing image path'),
+        'manga panels <image…> [--ltr] [--json]',
+      );
     }
     final List<String> images = <String>[
       for (final String raw in leaf.rest) p.normalize(p.absolute(raw)),
@@ -831,7 +1009,7 @@ class OcrCommands extends CliModule {
     ];
     if (missing.isNotEmpty) {
       for (final String path in missing) {
-        _io.err.writeln('找不到: $path');
+        _io.err.writeln(tr('找不到: $path', 'Not found: $path'));
       }
       return kExitNoInput;
     }
@@ -842,7 +1020,12 @@ class OcrCommands extends CliModule {
     return ctx.withRuntime((ServerRuntime rt) async {
       final File model = await _panelModelFile(rt);
       if (!await verifyMangaPanelModelFile(model)) {
-        _io.err.writeln('分镜模型未就绪：先跑 fushi_server manga panel-model pull');
+        _io.err.writeln(
+          tr(
+            '分镜模型未就绪：先跑 fushi_server manga panel-model pull',
+            'The panel model is not ready: run fushi_server manga panel-model pull first',
+          ),
+        );
         return kExitUnavailable;
       }
       final String? ortProblem = serverOrtProblem();
@@ -853,7 +1036,10 @@ class OcrCommands extends CliModule {
       final OcrSessionFactory Function()? builder = ocrSessionFactoryBuilder;
       if (builder == null) {
         throw StateError(
-          'ocrSessionFactoryBuilder 未装配（installServerHostBindings 没跑）',
+          tr(
+            'ocrSessionFactoryBuilder 未装配（installServerHostBindings 没跑）',
+            'ocrSessionFactoryBuilder is not wired (installServerHostBindings did not run)',
+          ),
         );
       }
       final OcrSession session = await builder().createSession(
@@ -908,8 +1094,12 @@ class OcrCommands extends CliModule {
           final List<Map<String, Object?>> panels =
               (row['panels']! as List<Object?>).cast<Map<String, Object?>>();
           _io.out.writeln(
-            '${row['path']}: ${row['status']}，${panels.length} 格'
-            '${row['error'] == null ? '' : '（${row['error']}）'}',
+            tr(
+              '${row['path']}: ${row['status']}，${panels.length} 格'
+                  '${row['error'] == null ? '' : '（${row['error']}）'}',
+              '${row['path']}: ${row['status']}, ${panels.length} panels'
+                  '${row['error'] == null ? '' : ' (${row['error']})'}',
+            ),
           );
           for (int i = 0; i < panels.length; i++) {
             final Map<String, Object?> r = panels[i];
@@ -939,7 +1129,13 @@ class OcrCommands extends CliModule {
     final String action = leaf.rest.isEmpty ? 'status' : leaf.rest.first;
     if (!const <String>{'status', 'pull'}.contains(action) ||
         leaf.rest.length > 1) {
-      return _io.usage('未知动作 "${leaf.rest.join(' ')}"', usageLine);
+      return _io.usage(
+        tr(
+          '未知动作 "${leaf.rest.join(' ')}"',
+          'Unknown action "${leaf.rest.join(' ')}"',
+        ),
+        usageLine,
+      );
     }
     final bool json = wantsJson(leaf);
     return ctx.withRuntime((ServerRuntime rt) async {
@@ -949,13 +1145,20 @@ class OcrCommands extends CliModule {
           await _downloadPanelModel(model);
         } on Exception catch (e, stack) {
           rt.log.log('cli.manga.panelModel.pull', e, stack);
-          _io.err.writeln('下载分镜模型失败: $e');
+          _io.err.writeln(
+            tr('下载分镜模型失败: $e', 'Failed to download the panel model: $e'),
+          );
           return kExitUnavailable;
         }
         if (!await verifyMangaPanelModelFile(model)) {
           // 校验不过的文件留着只会让下次 status 继续报坏：删掉，下次重下。
           if (await model.exists()) await model.delete();
-          _io.err.writeln('下载的分镜模型校验失败（大小 / SHA-256 与清单不符），已删除');
+          _io.err.writeln(
+            tr(
+              '下载的分镜模型校验失败（大小 / SHA-256 与清单不符），已删除',
+              'The downloaded panel model failed verification (size / SHA-256 do not match the manifest) and was deleted',
+            ),
+          );
           return kExitFailure;
         }
       }
@@ -971,7 +1174,10 @@ class OcrCommands extends CliModule {
         });
       } else {
         _io.out.writeln(
-          '分镜模型: ${ready ? '就绪' : (bytes > 0 ? '文件损坏 / 不符' : '未下载')}  ${model.path}',
+          tr(
+            '分镜模型: ${ready ? '就绪' : (bytes > 0 ? '文件损坏 / 不符' : '未下载')}  ${model.path}',
+            'Panel model: ${ready ? 'ready' : (bytes > 0 ? 'corrupt / mismatched' : 'not downloaded')}  ${model.path}',
+          ),
         );
       }
       return ready || action == 'status' ? kExitOk : kExitFailure;

@@ -39,14 +39,17 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/src/pages/implementations/collections_page.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart';
 import 'package:fushi/popup_main.dart' as popup_entrypoint;
-import 'package:fushi/game_stream_companion_main.dart'
-    as game_stream_companion_entrypoint;
+import 'package:fushi/second_screen_main.dart' as second_screen_entrypoint;
+import 'package:fushi/src/second_screen/companion/companion_context.dart'
+    show companionContextRouteObserver;
+import 'package:fushi/src/second_screen/second_screen_approval_host.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/srs/srs_app_host.dart' show srsPushProfileNoteEditor;
 import 'package:fushi/src/srs/srs_app_runtime.dart' show installSrsAppRuntime;
 import 'package:fushi/src/srs/srs_memory_probe.dart';
 import 'package:fushi_engine/srs/srs_miner.dart' show SrsMiner;
-import 'package:fushi/src/srs/srs_providers.dart' show srsProfileStoresProvider;
+import 'package:fushi/src/srs/srs_providers.dart'
+    show srsProfileStoresProvider, srsRevisionProvider;
 import 'package:fushi/src/sync/interconnect_p2p_app.dart'
     show installInterconnectP2pClient;
 import 'package:fushi/src/sync/sync_repository.dart' show SyncRepository;
@@ -286,12 +289,12 @@ void popupMain() {
   popup_entrypoint.popupMain();
 }
 
-/// The game stream's lookup panel on a second display (Android
-/// `GameStreamCompanionActivity`). Engines resolve entry points in the root
-/// library, so it is forwarded from here like [popupMain].
+/// The panel on a second display (Android `SecondScreenActivity`): the
+/// companion or the game stream's lookup panel. Engines resolve entry points
+/// in the root library, so it is forwarded from here like [popupMain].
 @pragma('vm:entry-point')
-void gameStreamCompanionMain() {
-  game_stream_companion_entrypoint.gameStreamCompanionMain();
+void secondScreenMain() {
+  second_screen_entrypoint.secondScreenMain();
 }
 
 /// Application execution starts here.
@@ -784,6 +787,10 @@ void main([List<String> args = const <String>[]]) {
             miner,
             noteId,
           );
+      // 互联对端「保存到」激活配置的复习时（主机挖词目标不是复习、不经 hostMiningAnkiRepositoryProvider），
+      // 写入后同样刷新牌组列表 / 首页复习条的计数。
+      appModel.srsCardsAddedNotifier = () =>
+          container.read(srsRevisionProvider.notifier).state++;
       appModel.ankiRepositoryReader = () =>
           container.read(ankiRepositoryProvider);
       appModel.hostMiningRepositoryReader = () =>
@@ -1740,6 +1747,12 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       return true;
     }
     return false;
+  }
+
+  /// The companion on the second screen asked to open a `fushi://widget/...`
+  /// link on this screen (continue an item, start reviews...).
+  Future<void> _openCompanionLink(String link) async {
+    await handleIncomingUrl(data: link, isInitial: false);
   }
 
   void _queueAppShortcut(AppShortcut shortcut) {
@@ -3086,6 +3099,8 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
             studyCoverTracker,
             // 页面离场时核对 Windows 拖入注册、丢了才重注册并记诊断（BUOxDR9WIJ）。
             desktopDropRouteObserver,
+            // 第二块屏：顶屏当前是哪个页面（companion 的上下文）。
+            companionContextRouteObserver,
           ],
           home: home,
           locale: locale,
@@ -3379,7 +3394,11 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
               ),
             );
             // BUG-2834：全 app 鼠标滚轮无极滚动，一处接住所有滚动区。
-            return SmoothWheelScrollScope(child: gated);
+            // 第二块屏：新副屏出现时在主屏问一次「要用这块屏幕吗」（auto 策略）。
+            return SecondScreenApprovalHost(
+              openLink: _openCompanionLink,
+              child: SmoothWheelScrollScope(child: gated),
+            );
           },
         ),
       ),

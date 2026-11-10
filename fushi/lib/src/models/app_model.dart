@@ -148,6 +148,8 @@ import 'package:fushi/src/models/dictionary_download_controller.dart';
 import 'package:fushi/src/models/dictionary_download_resume.dart';
 import 'package:fushi/src/onboarding/recommended_pack_download_controller.dart';
 import 'package:fushi/src/onboarding/recommended_pack_tutorial_state.dart';
+import 'package:fushi/src/second_screen/second_screen_controller.dart';
+import 'package:fushi/src/second_screen/second_screen_host.dart';
 import 'package:fushi/src/srs/srs_app_host.dart';
 import 'package:fushi/src/srs/srs_card_appearance.dart';
 import 'package:fushi/src/srs/srs_mining.dart';
@@ -484,7 +486,13 @@ import 'package:fushi_engine/media/video/video_cover_extractor.dart'
     show extractVideoCover;
 import 'package:fushi_engine/sync/forwarded_mine_payload.dart';
 import 'package:fushi_engine/sync/remote_mining_target.dart'
-    show RemoteMiningTarget;
+    show
+        FushiRemoteMiningTargetService,
+        RemoteMineLanding,
+        RemoteMiningTarget,
+        kRemoteMiningKindAnki,
+        kRemoteMiningKindReview;
+import 'package:fushi/src/sync/host_remote_mining_targets.dart';
 import 'package:fushi/src/anki/forwarded_mine_codec.dart';
 import 'package:fushi_engine/sync/immersion_mine_payload.dart';
 import 'package:fushi/src/mining/bilibili_clip_miner.dart';
@@ -573,6 +581,32 @@ final Map<String, Field> fieldsByKey = Map.unmodifiable(
 final appProvider = ChangeNotifierProvider<AppModel>((ref) {
   return AppModel(ref.read(platformServicesProvider));
 });
+
+/// App-wide second-screen controller (main engine). Starts itself once the
+/// AppModel's preferences are loaded. Defined here rather than next to
+/// [SecondScreenController] so that file stays out of the AppModel import
+/// cycle (`test/build/import_cycle_guard_test.dart`): the controller only gets
+/// preference callbacks injected.
+final ChangeNotifierProvider<SecondScreenController>
+secondScreenControllerProvider = ChangeNotifierProvider<SecondScreenController>(
+  (Ref ref) {
+    final AppModel appModel = ref.read(appProvider);
+    final SecondScreenController controller = SecondScreenController(
+      readPref: (String key) => appModel.prefsRepo.getPref(key),
+      writePref: (String key, Object? value) =>
+          appModel.prefsRepo.setPref(key, value),
+      host: SecondScreenHost.forCurrentPlatform(),
+    );
+    void maybeStart() {
+      if (appModel.isInitialised) unawaited(controller.start());
+    }
+
+    appModel.addListener(maybeStart);
+    ref.onDispose(() => appModel.removeListener(maybeStart));
+    maybeStart();
+    return controller;
+  },
+);
 
 /// Provides color for all quick actions.
 final quickActionColorProvider = FutureProvider.autoDispose
@@ -2640,6 +2674,14 @@ class AppModel
 
   /// Non-null if [initialise] threw; UI should display this instead of spinning.
   String? get initError => _initError;
+
+  /// Theme (with the system palette) and UI language are loaded: true from
+  /// that point of [initialiseForDictionaryPopup] (before dictionaries and
+  /// language engines), and whenever [isInitialised]. Secondary processes that
+  /// paint before initialisation finishes wait for this instead of painting
+  /// the seed-colour fallback first.
+  bool get isAppearanceReady => _appearanceReady || _isInitialised;
+  bool _appearanceReady = false;
   String? _initError;
 
   /// Non-null when init was refused because the on-disk DB was created by a
@@ -5070,6 +5112,27 @@ class AppModel
 
       _prefsRepo = PreferencesRepository(_database);
       await prefsRepo.loadFromDb();
+      // 外观（主题 + 壁纸色板 + 界面语言）只依赖偏好，紧跟偏好加载就位并通知
+      // [isAppearanceReady]：第二块屏面板等它再画第一帧带主题的界面，不先用默认
+      // 种子色画几秒（其余初始化——词典、语言引擎、快捷键——还要一两秒）。
+      populateLanguages();
+      populateLocales();
+      LocaleSettings.setLocaleRaw(appLocale.toLanguageTag());
+      // The popup process always runs this full branch (separate :popup
+      // process, _isInitialised starts false). PopupDictApp.build() reads
+      // appModel.theme/darkTheme/themeMode which delegate to themeNotifier,
+      // so it MUST be constructed here exactly as in initialise() — otherwise
+      // the late final throws LateInitializationError (HBK-AUDIT-003).
+      themeNotifier = ThemeNotifier(_database, () => textTheme);
+      themeNotifier.loadFromPrefsSnapshot(prefsRepo.prefsSnapshot);
+      themeNotifier.addListener(notifyListeners);
+      _themeListenerAdded = true;
+      // 默认主题 `system-theme` 取 Android 壁纸色板；这个进程（:popup / 第二块屏
+      // 面板）不跑主进程 initialise，不在这里取就退回种子色，副屏 / 弹窗和主屏
+      // 配色对不上。
+      await refreshSystemPalette();
+      _appearanceReady = true;
+      notifyListeners();
       // 同主进程：Anki 设置改读 Drift（:popup 与悬浮词典是另外的进程 / engine，
       // SP 缓存看不到主 app 的修改），之后才做读设置的后端选择。本进程绝不改 SP。
       await installDriftAnkiSettingsStore(() => _database);
@@ -5098,16 +5161,6 @@ class AppModel
 
       mediaHistoryRepo = MediaHistoryRepository(_database);
       await mediaHistoryRepo.loadFromDb();
-
-      // The popup process always runs this full branch (separate :popup
-      // process, _isInitialised starts false). PopupDictApp.build() reads
-      // appModel.theme/darkTheme/themeMode which delegate to themeNotifier,
-      // so it MUST be constructed here exactly as in initialise() — otherwise
-      // the late final throws LateInitializationError (HBK-AUDIT-003).
-      themeNotifier = ThemeNotifier(_database, () => textTheme);
-      themeNotifier.loadFromPrefsSnapshot(prefsRepo.prefsSnapshot);
-      themeNotifier.addListener(notifyListeners);
-      _themeListenerAdded = true;
 
       _browserDirectory = Directory(path.join(appDirectory.path, 'browser'));
       _thumbnailsDirectory = Directory(
@@ -5143,9 +5196,6 @@ class AppModel
       );
       await _prepareLocalAudioForPlayback();
 
-      populateLanguages();
-      populateLocales();
-      LocaleSettings.setLocaleRaw(appLocale.toLanguageTag());
       // 词形变化语法说明的译文表跟界面语言走（BUG-2038）。装的是一张内存查表，
       // 与词典引擎里那份英文 transforms JSON 无关，所以放在引擎初始化之后也没问题。
       unawaited(applyTransformDescriptionLocale(appLocale.toLanguageTag()));
@@ -12169,19 +12219,116 @@ class AppModel
   /// 同形地包一层 [SrsMiningAnkiRepository]：制卡 / 查重 / 同词反查 / 在复习里打开都走**那份
   /// 配置**的复习副本（[extensionSrsMinerForView]），不碰 App 激活配置的复习、也不改发 Anki。
   BaseAnkiRepository hostMiningRepositoryForView(ProfileSettingsView view) {
-    final BaseAnkiRepository inner = platformServices.createAnkiRepository(
-      settingsStore: view.ankiSettingsStore,
-    );
     if (!moduleVisibility.isEnabled(ModuleId.srs) ||
         SrsMiningTarget.fromWire(view.prefs.srsMiningTarget) !=
             SrsMiningTarget.srs) {
-      return inner;
+      return platformServices.createAnkiRepository(
+        settingsStore: view.ankiSettingsStore,
+      );
     }
-    return SrsMiningAnkiRepository(
-      inner: inner,
-      miner: () => extensionSrsMinerForView(view),
-      openNote: (String noteId) => extensionSrsOpenNote(view, noteId),
-    );
+    return _reviewMiningRepositoryForView(view);
+  }
+
+  /// 不论 [view] 自己的挖词目标，落进它那份配置复习副本的仓库（Anki 设置同样读 [view]）。
+  BaseAnkiRepository _reviewMiningRepositoryForView(ProfileSettingsView view) =>
+      SrsMiningAnkiRepository(
+        inner: platformServices.createAnkiRepository(
+          settingsStore: view.ankiSettingsStore,
+        ),
+        miner: () => extensionSrsMinerForView(view),
+        openNote: (String noteId) => extensionSrsOpenNote(view, noteId),
+      );
+
+  /// 制卡写进激活配置的复习后递增 `srsRevisionProvider`（牌组列表与首页复习条的计数随之重读）。
+  /// AppModel 不在 Riverpod 图里，由 main.dart 注入；未注入时不通知。
+  void Function()? srsCardsAddedNotifier;
+
+  /// 互联主机的「保存到」（§4.8）：手机挑本机的 Anki 牌组 / 各配置的复习与牌组。见
+  /// [HostRemoteMiningTargets]。
+  late final HostRemoteMiningTargets hostRemoteMiningTargets =
+      HostRemoteMiningTargets(
+        defaultKind: () =>
+            moduleVisibility.isEnabled(ModuleId.srs) &&
+                hostSrsMiningTarget == SrsMiningTarget.srs
+            ? kRemoteMiningKindReview
+            : kRemoteMiningKindAnki,
+        defaultRepository: () => hostMiningAnkiRepository,
+        ankiRepository: () => platformServices.createAnkiRepository(),
+        reviewCatalog: _hostReviewMiningCatalog,
+        reviewRepository: _hostReviewMiningRepository,
+        reviewMiner: _hostReviewMiningMiner,
+        toResult: remoteMineResultFromOutcome,
+      );
+
+  /// 本机复习此刻能落到的配置：激活配置 + srs.db 里已有复习数据的其它配置。复习模块关着 / 未装配时 null。
+  Future<HostReviewMiningCatalog?> _hostReviewMiningCatalog() async {
+    final SrsProfileStores Function()? reader = srsProfileStoresReader;
+    if (reader == null || !moduleVisibility.isEnabled(ModuleId.srs)) {
+      return null;
+    }
+    final SrsProfileStores stores = reader();
+    final String active = await database.resolveActiveProfileUid();
+    if (active.isEmpty) return null;
+    final List<HostReviewMiningProfile> profiles = <HostReviewMiningProfile>[];
+    for (final ProfileRow row in await database.getAllProfiles()) {
+      final String uid = await database.profileUidOf(row.id);
+      if (uid == active || await stores.hasReviewData(uid)) {
+        profiles.add(HostReviewMiningProfile(uid: uid, name: row.name));
+      }
+    }
+    return HostReviewMiningCatalog(activeProfile: active, profiles: profiles);
+  }
+
+  /// uid 为 [profileUid] 的非激活配置的设置视图；是激活配置 / 不存在时 null。
+  Future<ProfileSettingsView?> _hostProfileViewForUid(String profileUid) async {
+    final int activeId = await database.resolveActiveProfileId();
+    for (final ProfileRow row in await database.getAllProfiles()) {
+      if (row.id == activeId) continue;
+      if (await database.profileUidOf(row.id) != profileUid) continue;
+      return interconnectProfileRepository().loadSettingsView(row.id);
+    }
+    return null;
+  }
+
+  /// 落进 [profileUid] 那份复习的仓库：激活配置用激活副本 + 激活配置的复习落点（不叠本机作品会话，与
+  /// `hostMiningAnkiRepositoryProvider` 同口径）；别的配置读它的设置视图。
+  Future<BaseAnkiRepository?> _hostReviewMiningRepository(
+    String profileUid,
+  ) async {
+    if (srsProfileStoresReader == null) return null;
+    if (profileUid == await database.resolveActiveProfileUid()) {
+      return SrsMiningAnkiRepository(
+        inner: platformServices.createAnkiRepository(),
+        miner: () => _hostReviewMiningMiner(profileUid),
+        onCardsAdded: srsCardsAddedNotifier,
+        openNote: (String noteId) async =>
+            await SrsAppHost.current?.openNote(noteId) ?? false,
+      );
+    }
+    final ProfileSettingsView? view = await _hostProfileViewForUid(profileUid);
+    return view == null ? null : _reviewMiningRepositoryForView(view);
+  }
+
+  /// [profileUid] 那份复习的制卡器（落点读那份配置的设置）。打不开时 null。
+  Future<SrsMiner?> _hostReviewMiningMiner(String profileUid) async {
+    final SrsProfileStores Function()? reader = srsProfileStoresReader;
+    if (reader == null) return null;
+    try {
+      if (profileUid == await database.resolveActiveProfileUid()) {
+        return await reader().minerFor(
+          profileUid: profileUid,
+          destination: hostSrsMiningDestination,
+          fallbackRolloverHour: () => statDayResetHour,
+        );
+      }
+      final ProfileSettingsView? view = await _hostProfileViewForUid(
+        profileUid,
+      );
+      return view == null ? null : await extensionSrsMinerForView(view);
+    } catch (e, stack) {
+      ErrorLogService.instance.log('hostReviewMiningMiner', e, stack);
+      return null;
+    }
   }
 
   /// 读 `srsProfileStoresProvider` 的委托（各配置的复习副本登记处）。AppModel 不在 Riverpod
@@ -13121,6 +13268,7 @@ class _AppModelRemoteLookupService
         FushiRemoteLanguageLookupService,
         FushiRemoteRubyLookupService,
         FushiRemoteMiningService,
+        FushiRemoteMiningTargetService,
         FushiRemoteDuplicatePolicyService,
         FushiRemoteSourceNoteService,
         FushiRemoteHistoryService {
@@ -13197,6 +13345,77 @@ class _AppModelRemoteLookupService
         stackTrace: st,
       );
     }
+  }
+
+  // ── §4.8「保存到」：手机挑本机的落点（[HostRemoteMiningTargets]）。只对互联对端生效：按浏览器扩展所选
+  // 配置处理的请求（[_view] 非 null）不认 `target`，照旧落那份配置的挖词目标。
+
+  @override
+  Future<Map<String, Object?>> miningTargets() =>
+      _appModel.hostRemoteMiningTargets.targets();
+
+  @override
+  Future<RemoteMineLanding> mineEntryTo({
+    required Map<String, String> fields,
+    required String sentence,
+    RemoteMiningTarget? target,
+  }) async {
+    if (_view != null) {
+      return RemoteMineLanding(
+        await mineEntry(fields: fields, sentence: sentence),
+      );
+    }
+    // BUG-2190：外字字节先落缓存（同 [mineEntry]）。
+    await writeDictionaryMediaCache(fields['dictionaryMedia'] ?? '');
+    return _appModel.hostRemoteMiningTargets.mine(
+      target,
+      rawPayloadJson: jsonEncode(fields),
+      context: AnkiMiningContext(sentence: sentence),
+    );
+  }
+
+  @override
+  Future<RemoteMineLanding> mineForwardedTo(
+    ForwardedMinePayload payload, {
+    RemoteMiningTarget? target,
+  }) async {
+    if (_view != null) return RemoteMineLanding(await mineForwarded(payload));
+    try {
+      return await withMaterializedMiningContext<RemoteMineLanding>(
+        payload,
+        (String raw, AnkiMiningContext context) => _appModel
+            .hostRemoteMiningTargets
+            .mine(target, rawPayloadJson: raw, context: context),
+        // 同 [_withForwardedMiningContext]：客户端搬不来字节的插图由本机词典补齐。
+        writeHostDictionaryMedia: writeDictionaryMediaCache,
+      );
+    } catch (e, st) {
+      return RemoteMineLanding(
+        remoteMineError(
+          'Anki.mineForwarded',
+          '服务端制卡失败',
+          detail: '$e',
+          error: e,
+          stackTrace: st,
+        ),
+      );
+    }
+  }
+
+  @override
+  Future<bool> isDuplicateIn({
+    required String expression,
+    required String reading,
+    RemoteMiningTarget? target,
+  }) {
+    if (_view != null) {
+      return isDuplicate(expression: expression, reading: reading);
+    }
+    return _appModel.hostRemoteMiningTargets.isDuplicate(
+      target,
+      expression: expression,
+      reading: reading,
+    );
   }
 
   @override
