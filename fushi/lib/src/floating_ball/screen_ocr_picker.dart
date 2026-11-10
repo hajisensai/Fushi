@@ -45,7 +45,7 @@ class ScreenOcrHit {
 ///
 /// [scale] = 逻辑像素 / 送检图像素（截图是物理像素，等于 1 / devicePixelRatio）。
 /// 行带词框（[SystemOcrTextLine.segments]，Windows OCR 给）时先按词框定位到被点的
-/// 那个词，再在词内等分（BUG-4362：整行等分在日英混排、行内有空隙时会差出好几个
+/// 那个词，再在词内等分（BUG-4364：整行等分在日英混排、行内有空隙时会差出好几个
 /// 字）；只有行框时按行内等分估计：竖排沿高度、横排沿宽度。点在行框外（含
 /// [slop] 容差）返回 null。多行重叠时取面积最小的那一行（嵌套时更具体）。
 ScreenOcrHit? screenOcrHitTest({
