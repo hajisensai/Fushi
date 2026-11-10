@@ -1388,7 +1388,16 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     final BaseAnkiRepository repo = ref.read(ankiRepositoryProvider);
     if (repo is! PendingMiningAnkiRepository) return;
     // 补发失败只影响那几张待发卡（它们留在队列里），不能冒泡成未处理异常。
-    unawaited(repo.flush().then((_) {}, onError: (Object _) {}));
+    // 自动补发不报张数，但送达的卡带回的提示（如「保存到」被主机退回默认）必须让用户看到：
+    // 这条路径上没有别的结果提示能挂它（BUG-4276）。
+    unawaited(
+      repo.flush().then((PendingFlushReport report) {
+        final String? notice = report.notice;
+        if (notice != null) {
+          FushiToast.show(msg: notice, severity: ToastSeverity.warning);
+        }
+      }, onError: (Object _) {}),
+    );
   }
 
   @override

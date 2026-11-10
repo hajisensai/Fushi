@@ -264,6 +264,41 @@ void main() {
     );
   });
 
+  test('BUG-4276：补发送达的卡带回的提示（「保存到」被退回主机默认）进补发报告', () async {
+    final PendingMiningAnkiRepository offlineRepo = repoOver(
+      _FakeBackend(outcomes: <MineOutcome>[_refused(), _refused(), _refused()]),
+    );
+    for (final String w in <String>['a', 'b', 'c']) {
+      await mine(offlineRepo, w);
+    }
+    // 第一张没提示，第二张带回提示，第三张连不上：提示仍随「停下」的报告带回。
+    final PendingFlushReport stopped = await repoOver(
+      _FakeBackend(
+        outcomes: <MineOutcome>[
+          const MineOutcome.success(),
+          const MineOutcome.success(notice: 'Save to was reset.'),
+          _refused(),
+        ],
+      ),
+    ).flush();
+    expect(stopped.unreachable, isTrue);
+    expect(stopped.notice, 'Save to was reset.');
+
+    final PendingFlushReport done = await repoOver(
+      _FakeBackend(
+        outcomes: <MineOutcome>[
+          const MineOutcome.success(notice: 'Save to was reset.'),
+        ],
+      ),
+    ).flush();
+    expect(done.delivered, 1);
+    expect(done.notice, 'Save to was reset.');
+
+    // 没提示的补发不带。
+    await mine(offlineRepo, 'd');
+    expect((await repoOver(_FakeBackend()).flush()).notice, isNull);
+  });
+
   test('补发：Anki 拒收的标 failed 并继续，重复视为已送达', () async {
     final PendingMiningAnkiRepository offlineRepo = repoOver(
       _FakeBackend(outcomes: <MineOutcome>[_refused(), _refused(), _refused()]),

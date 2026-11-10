@@ -44,20 +44,22 @@ import 'package:fushi/src/utils/misc/fushi_toast.dart';
 @visibleForTesting
 String pendingFlushMessage(PendingFlushReport report) {
   final MineOutcome? stop = report.stopOutcome;
-  if (report.unreachable) {
-    return stop == null
-        ? t.anki_pending_mines_unreachable
-        : t.anki_pending_mines_stopped(reason: _pendingFailureReason(stop));
-  }
-  final String summary = t.anki_pending_mines_flush_result(
-    delivered: report.delivered,
-    failed: report.failed,
-    remaining: report.remaining,
-  );
   final MineOutcome? failure = report.failureOutcome;
-  return failure == null
-      ? summary
-      : '$summary\n${_pendingFailureReason(failure)}';
+  return <String>[
+    if (!report.unreachable)
+      t.anki_pending_mines_flush_result(
+        delivered: report.delivered,
+        failed: report.failed,
+        remaining: report.remaining,
+      )
+    else if (stop == null)
+      t.anki_pending_mines_unreachable
+    else
+      t.anki_pending_mines_stopped(reason: _pendingFailureReason(stop)),
+    if (!report.unreachable && failure != null) _pendingFailureReason(failure),
+    // 送达的卡带回的提示（如「保存到」被主机退回默认，BUG-4276）跟着同一条走。
+    ?report.notice,
+  ].join('\n');
 }
 
 String _pendingFailureReason(MineOutcome outcome) {
@@ -251,7 +253,8 @@ class _PendingMinesPageState extends ConsumerState<PendingMinesPage>
       if (!mounted || repo.switchesAppPerNote) return;
       FushiToast.show(
         msg: pendingFlushMessage(report),
-        severity: report.unreachable || report.failed > 0
+        severity:
+            report.unreachable || report.failed > 0 || report.notice != null
             ? ToastSeverity.warning
             : ToastSeverity.success,
       );
