@@ -30,6 +30,7 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/fushi_share.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
+import 'package:fushi_engine/utils/misc/safe_file_name.dart';
 
 /// 歌单动作失败的提示文案。
 String musicPlaylistErrorText(Object e) =>
@@ -251,9 +252,7 @@ Future<String?> musicImportPlaylistFile(FushiDatabase db) async {
 
 /// 文件名里不能有的字符换成 `_`。
 String musicPlaylistExportFileName(String name) {
-  final String safe = name
-      .replaceAll(RegExp(r'[<>:"/\\|?*\x00-\x1F]'), '_')
-      .trim();
+  final String safe = safeWindowsFileName(name).trim();
   return '${safe.isEmpty ? 'playlist' : safe}.m3u8';
 }
 
