@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3891 条。点号进各自文件。
+> 共 3892 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4347](bugs/BUG-4347-embedded-torrent-runtime-misreported.md) | ✅ | ✅ | 下载后端引导把「下载服务没起」误报成「本次安装缺少内置引擎运行库」 |
 | [BUG-4346](bugs/BUG-4346-srs-card-synthetic-bold.md) | ✅ | ✅ | 复习卡词头 / 加粗段在单字重用户字体上被合成假粗体糊字 |
 | [BUG-4345](bugs/BUG-4345-pdf-audiobook-wrong-reader.md) | ✅ | ✅ | PDF 书挂上有声书后打开一片空白（SRT 卡写死 EPUB 阅读器 + PDF 卡露出「导入有声书」） |
 | [BUG-4339](bugs/BUG-4339-windows-video-output-teardown-order.md) | ✅ | ✅ | Windows 视频输出拆除顺序错：mpv 渲染上下文在 GL 上下文/共享显示销毁之后、且晚于 Dispose 回复才释放，卡面视频反复开关内存上涨后 libmpv abort / ANGLE AV |

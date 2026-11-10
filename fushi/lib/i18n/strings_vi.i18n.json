@@ -2540,6 +2540,8 @@
   "download_airing_calendar_week_next": "Tuần sau",
   "download_airing_calendar_week_prev": "Tuần trước",
   "download_backend_embedded_hint": "Khuyên dùng. Việc tải xuống chạy ngay trong Fushi — không cần cài thêm gì.",
+  "download_backend_embedded_service_starting": "Starting the download service...",
+  "download_backend_embedded_service_unavailable": "The download service isn't running. Make sure the Browse module is turned on, then reopen this dialog.",
   "download_backend_embedded_unavailable": "Bản cài đặt này thiếu thư viện chạy của công cụ tích hợp. Hãy cài lại gói đầy đủ, hoặc dùng qBittorrent bên ngoài.",
   "download_backend_not_configured": "Chưa cấu hình trình tải xuống.",
   "download_backend_qb_hint": "Kết nối Fushi tới một qBittorrent WebUI mà bạn đang chạy.",
