@@ -8,7 +8,7 @@ import '../../helpers/source_guard.dart';
 
 /// 「查词后从句首重播」：查词暂停后关弹窗，从被查词所在句的句首重播，而不是原地续播。
 ///
-/// 判据 [lookupRestartCue] 是纯函数，直接测；阅读器接线（`_clearLookupState`）是
+/// 判据 [lookupRestartCue] 是纯函数，直接测；阅读器接线（`_releaseLookupPause`）是
 /// 整页 WebView 状态机，用源码守卫咬住两条不能退化的约束：
 /// 1. 恢复必须经 [lookupRestartCue] 决定，关掉开关时仍是原地 `play()`；
 /// 2. 重播走「`skipToCue` 再 `play()`」，不走 `playCueAndContinue`——后者的 Future
@@ -93,8 +93,21 @@ void main() {
     ).readAsStringSync();
 
     test('popup close decides the resume point through lookupRestartCue', () {
-      final String body = maskComments(
+      // 页内弹窗关闭（_clearLookupState）与副屏伴侣查词关闭
+      // （_companionLookupClosed）共用 _releaseLookupPause 恢复播放。
+      final String clear = maskComments(
         methodBody(lookup, 'void _clearLookupState()'),
+      );
+      expect(clear, contains('_releaseLookupPause(resume: true)'));
+      final String companion = maskComments(
+        methodBody(
+          lookup,
+          'void _companionLookupClosed({required bool resume})',
+        ),
+      );
+      expect(companion, contains('_releaseLookupPause(resume: resume)'));
+      final String body = maskComments(
+        methodBody(lookup, 'void _releaseLookupPause({required bool resume})'),
       );
       expect(body, contains('lookupRestartCue('));
       expect(body, contains('restartSentenceAfterLookup'));

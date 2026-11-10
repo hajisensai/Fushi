@@ -84,6 +84,7 @@
 | Computer Use 巡检与真实像素证据 | [computer-use-testing.md](docs/agent/computer-use-testing.md) |
 | Windows app 外打开视频 | [external-video-open.md](docs/agent/external-video-open.md) |
 | 快捷键 / 手柄 / 鼠标绑定盘点 | [shortcuts-inventory.md](docs/agent/shortcuts-inventory.md) |
+| 第二块屏（双屏伴屏、游戏串流副屏、手柄查词模式） | [second-screen.md](docs/agent/second-screen.md) |
 | 学习统计域 | [statistics.md](docs/agent/statistics.md) |
 | Galgame Hook | [galgame-hooking.md](docs/agent/galgame-hooking.md) |
 | 本机重活租约 | [heavy-lease.md](docs/agent/heavy-lease.md) |
