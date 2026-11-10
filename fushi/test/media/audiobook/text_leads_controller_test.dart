@@ -248,11 +248,11 @@ void main() {
     expect(reports, 1);
   });
 
-  test('歌词覆盖层期间不生效（正文被强制跟随音频）', () async {
+  test('歌词模式期间不生效（正文面脱开、停着不跟随）', () async {
     final (AudiobookPlayerController c, _) = await setUpPlaying();
-    c.setReaderFollowOverride(true);
+    c.setReaderDetached(true);
     expect(c.textLeads, isFalse);
-    c.setReaderFollowOverride(false);
+    c.setReaderDetached(false);
     expect(c.textLeads, isTrue);
   });
 }

@@ -236,7 +236,8 @@ void main() {
       expect(key('lyrics_play_button'), findsOneWidget);
       expect(key('lyrics_seek_back_button'), findsNothing);
       expect(key('lyrics_more_button'), findsOneWidget);
-      expect(key('lyrics_player_back'), findsOneWidget);
+      expect(key('lyrics_player_back'), findsNothing);
+      expect(key('lyrics_close_button'), findsOneWidget);
       final Rect card = tester.getRect(key('lyrics_modern_card'));
       final Rect lyrics = tester.getRect(key('lyrics_view_probe'));
       expect(lyrics.bottom, lessThan(card.top));

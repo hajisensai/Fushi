@@ -185,6 +185,8 @@ Future<SrsSync2Report> srsSync2Round({
   onStep?.call('handshake');
   final SrsLocationHandshake hs = await srsLocationHandshake(
     location,
+    host: host,
+    locationId: locationId,
     key: key,
     collection: id['collection'],
     nowMs: nowMs(),
@@ -223,6 +225,16 @@ Future<SrsSync2Report> srsSync2Round({
     listed: listed,
   )) {
     return report;
+  }
+  if (keyHex == null) {
+    // 按明文收发的这一轮在拉段时见到了对这个位置密封的段（[srsSync2Pull] 已记下，BUG-4293）：`meta.json` 上没有
+    // `kdf`（被重写 / 读到的是旧的），位置其实是加密的。发件、转发、媒体、head 一个都不写，报错让用户输入口令。
+    final SrsLocationSeal seal = await srsLocationSealed(host, locationId);
+    if (seal.sealed) {
+      return report
+        ..kdf = seal.kdf
+        ..error = srsSealedRefusal(seal);
+    }
   }
   // 作者自检（transport.rs `sync2_audit_own`）：这一轮读 head 时列到的本机目录交给内核，水位以下却不在位置上的本机段
   // 登记重传、随下面第一批发件补上（位置上缺了 head 引用的段，读者只能永远「下一轮再来」）。收段时换了身份的话新身份
@@ -494,6 +506,12 @@ Future<bool> srsSync2Pull({
   onStep?.call(
     'planned fetch=${wanted.length} finishPending=${plan['finishPending'] == true}',
   );
+  // 按明文读一个同步位置时，读到的段交给内核看一眼段头（BUG-4293）：有对这个位置密封的段就记下「这里是加密的」，
+  // 调用方（[srsSync2Round]）据此不发件。见到一次就不再看。
+  final String? sealProbe = keyHex == null && progressId != null
+      ? srsLocationOfProgressId(progressId)
+      : null;
+  bool sealSeen = false;
   if (wanted.isNotEmpty) {
     int done = 0;
     onFetchProgress?.call(0, wanted.length);
@@ -508,6 +526,14 @@ Future<bool> srsSync2Pull({
       )) {
         // head 指向的段暂时还列不到（最终一致）的不在 batch.segments 里：这一轮跳过，下一轮再来。
         report.missing += batch.covered - batch.segments.length;
+        if (sealProbe != null && !sealSeen && batch.segments.isNotEmpty) {
+          sealSeen = (await srsNoteLocationSealed(
+            host,
+            sealProbe,
+            nowMs: DateTime.now().millisecondsSinceEpoch,
+            segmentPrefixes: batch.segments,
+          )).sealed;
+        }
         if (batch.segments.isNotEmpty) {
           absorb(await host.sync2IngestBatch(batch.segments, keyHex: keyHex));
         }
