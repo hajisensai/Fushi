@@ -41,6 +41,8 @@ import 'package:fushi_engine/updates/update_feed_port.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
+import '../bluray_fixture.dart';
+
 const String _torrentHash = '0123456789abcdef0123456789abcdef01234567';
 
 /// 发现身份快照里的 MAL ID 优先于兼容保留的 AniDB ID。
@@ -2368,6 +2370,293 @@ void main() {
       'Aoi Hana',
       '[A] Suzume [1080p]',
       '[B] Suzume [720p]',
+    });
+  });
+
+  group('蓝光原盘种子：整盘原样落位、按原盘入库（BUG-4276）', () {
+    /// 在 [root] 下按种子相对路径 [discRoot] 铺一张两条标题的盘，返回种子文件
+    /// 清单（相对路径用 `/`，与 qBittorrent 一致）。
+    List<String> writeDisc(String root, String discRoot) {
+      final List<String> written = <String>[];
+      void put(String relative, List<int> bytes) {
+        final File file = File(
+          p.joinAll(<String>[root, ...relative.split('/')]),
+        );
+        file.parent.createSync(recursive: true);
+        file.writeAsBytesSync(bytes);
+        written.add(relative);
+      }
+
+      const int start = 45000 * 4;
+      put('$discRoot/BDMV/index.bdmv', <int>[1, 2, 3]);
+      put('$discRoot/BDMV/MovieObject.bdmv', <int>[4, 5, 6]);
+      put('$discRoot/CERTIFICATE/id.bdmv', <int>[7]);
+      put('$discRoot/BDMV/META/DL/bdmt_jpn.xml', utf8.encode('<x/>'));
+      final List<(String, int)> clips = <(String, int)>[
+        ('00001', 1500),
+        ('00002', 1400),
+      ];
+      for (int i = 0; i < clips.length; i++) {
+        final (String clip, int seconds) = clips[i];
+        put(
+          '$discRoot/BDMV/PLAYLIST/0000${i + 1}.mpls',
+          buildMplsFixture(
+            playItems: <FixturePlayItem>[
+              FixturePlayItem(
+                clipId: clip,
+                inTimeTicks: start,
+                outTimeTicks: start + 45000 * seconds,
+              ),
+            ],
+            marks: const <FixtureMark>[
+              FixtureMark(playItemIndex: 0, timestampTicks: start),
+            ],
+          ),
+        );
+        put(
+          '$discRoot/BDMV/CLIPINF/$clip.clpi',
+          buildClpiFixture(
+            presentationStartTicks: start,
+            presentationEndTicks: start + 45000 * seconds,
+          ),
+        );
+        put('$discRoot/BDMV/STREAM/$clip.m2ts', Uint8List(4096 + i));
+      }
+      return written;
+    }
+
+    Future<
+      ({
+        _PipelineEnvironment environment,
+        String jobId,
+        VideoDownloadJobRow job,
+      })
+    >
+    runDownload({
+      required List<String> Function(String root) arrange,
+      String mediaKind = 'tv',
+    }) async {
+      final _RenamingTorrentBackend backend = _RenamingTorrentBackend();
+      late _PipelineEnvironment environment;
+      environment = await _PipelineEnvironment.create(
+        backend: backend,
+        backendResolver: (_) async => VideoDownloadBackendBinding(
+          backend: backend,
+          identity: _expectedIdentity,
+          pathMappings: <VideoDownloadPathMapping>[
+            VideoDownloadPathMapping(
+              remoteRoot: '/media',
+              localRoot: environment.root.path,
+            ),
+          ],
+        ),
+      );
+      addTearDown(environment.close);
+      backend.root = environment.root.path;
+      final List<String> names = arrange(environment.root.path);
+      backend.entries.addAll(<TorrentFileEntry>[
+        for (int i = 0; i < names.length; i++)
+          TorrentFileEntry(
+            name: names[i],
+            size: File(
+              p.joinAll(<String>[
+                environment.root.path,
+                ...names[i].split('/'),
+              ]),
+            ).lengthSync(),
+            progress: 1,
+            index: i,
+          ),
+      ]);
+      const String jobId = 'bluray-disc-job';
+      await environment.insertJob(
+        jobId: jobId,
+        stage: VideoDownloadJobStage.organize,
+        observedSavePath: '/media',
+        subtitlePolicy: VideoDownloadSubtitlePolicy.none,
+        mediaKind: mediaKind,
+      );
+      final int now = DateTime.now().millisecondsSinceEpoch;
+      for (final TorrentFileEntry entry in backend.entries) {
+        await environment.database.upsertVideoDownloadJobFile(
+          VideoDownloadJobFilesCompanion.insert(
+            jobId: jobId,
+            backendFileIndex: Value<int?>(entry.index),
+            originalRelativePath: entry.name,
+            currentRelativePath: entry.name,
+            sizeBytes: Value<int?>(entry.size),
+            status: const Value<String>(VideoDownloadJobFileStatus.downloaded),
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+      }
+      environment.service.wake();
+      final VideoDownloadJobRow job = await _waitForJob(
+        environment.database,
+        jobId,
+        (VideoDownloadJobRow row) =>
+            row.lifecycle == VideoDownloadJobLifecycle.completed ||
+            row.lifecycle == VideoDownloadJobLifecycle.needsAttention,
+      );
+      return (environment: environment, jobId: jobId, job: job);
+    }
+
+    test('纯原盘种子：盘树原样落到作品目录下，入库成一个盘合集而不是一堆 m2ts', () async {
+      final result = await runDownload(
+        arrange: (String root) => writeDisc(root, '[Rel] Show/BD'),
+        mediaKind: VideoMetadataMediaKind.movie.name,
+      );
+      final _PipelineEnvironment environment = result.environment;
+      expect(
+        result.job.lifecycle,
+        VideoDownloadJobLifecycle.completed,
+        reason: result.job.lastError,
+      );
+
+      final String discRoot = p.join(
+        environment.root.path,
+        'Show (2026)',
+        'BD',
+      );
+      for (final String inner in <String>[
+        'BDMV/index.bdmv',
+        'BDMV/MovieObject.bdmv',
+        'BDMV/PLAYLIST/00001.mpls',
+        'BDMV/PLAYLIST/00002.mpls',
+        'BDMV/CLIPINF/00001.clpi',
+        'BDMV/STREAM/00001.m2ts',
+        'BDMV/STREAM/00002.m2ts',
+        'BDMV/META/DL/bdmt_jpn.xml',
+        'CERTIFICATE/id.bdmv',
+      ]) {
+        expect(
+          File(p.joinAll(<String>[discRoot, ...inner.split('/')])).existsSync(),
+          isTrue,
+          reason: inner,
+        );
+      }
+
+      final List<VideoBookRow> books = await environment.database
+          .allVideoBooks();
+      expect(books, isNotEmpty);
+      // 库里的行全是盘标题（`.mpls`），没有任何一个 m2ts 被当成一集视频。
+      for (final VideoBookRow book in books) {
+        expect(p.extension(book.videoPath), '.mpls', reason: book.videoPath);
+        expect(p.isWithin(discRoot, book.videoPath), isTrue);
+        expect(book.sourceId, environment.sourceId);
+      }
+      final List<MediaCollectionRow> discCollections = <MediaCollectionRow>[
+        for (final MediaCollectionRow c
+            in await environment.database.getAllMediaCollections())
+          if (c.collectionType == 'playlist') c,
+      ];
+      expect(discCollections, hasLength(1));
+      final List<VideoDownloadJobFileRow> rows = await environment.database
+          .getVideoDownloadJobFiles(result.jobId);
+      for (final VideoDownloadJobFileRow row in rows) {
+        expect(row.kind, 'other', reason: row.originalRelativePath);
+        expect(
+          row.status,
+          VideoDownloadJobFileStatus.imported,
+          reason: row.originalRelativePath,
+        );
+      }
+    });
+
+    test('多卷盘 + 普通分集混装：分集按 Season 入任务合集，每张盘各成一个盘合集', () async {
+      final result = await runDownload(
+        arrange: (String root) {
+          final List<String> names = <String>[
+            ...writeDisc(root, 'Pack/DISC1'),
+            ...writeDisc(root, 'Pack/DISC2'),
+          ];
+          for (final String episode in <String>[
+            'Pack/[G] Show - 01 [1080p].mkv',
+            'Pack/[G] Show - 02 [1080p].mkv',
+          ]) {
+            final File file = File(
+              p.joinAll(<String>[root, ...episode.split('/')]),
+            );
+            file.writeAsBytesSync(Uint8List(64));
+            names.add(episode);
+          }
+          return names;
+        },
+      );
+      final _PipelineEnvironment environment = result.environment;
+      expect(
+        result.job.lifecycle,
+        VideoDownloadJobLifecycle.completed,
+        reason: result.job.lastError,
+      );
+
+      final String work = p.join(environment.root.path, 'Show (2026)');
+      expect(
+        File(
+          p.join(work, 'Season 01', 'Show (2026) - S01E01.mkv'),
+        ).existsSync(),
+        isTrue,
+      );
+      for (final String disc in <String>['DISC1', 'DISC2']) {
+        expect(
+          File(p.join(work, disc, 'BDMV', 'STREAM', '00001.m2ts')).existsSync(),
+          isTrue,
+          reason: disc,
+        );
+      }
+      final List<VideoBookRow> books = await environment.database
+          .allVideoBooks();
+      expect(
+        books.where((VideoBookRow b) => p.extension(b.videoPath) == '.m2ts'),
+        isEmpty,
+      );
+      expect(
+        books.where((VideoBookRow b) => p.extension(b.videoPath) == '.mkv'),
+        hasLength(2),
+      );
+      final Set<String> discRootsInLibrary = <String>{
+        for (final VideoBookRow b in books)
+          if (p.extension(b.videoPath) == '.mpls')
+            p.basename(p.dirname(p.dirname(p.dirname(b.videoPath)))),
+      };
+      expect(discRootsInLibrary, <String>{'DISC1', 'DISC2'});
+      final List<VideoDownloadJobFileRow> rows = await environment.database
+          .getVideoDownloadJobFiles(result.jobId);
+      expect(
+        rows.every(
+          (VideoDownloadJobFileRow row) =>
+              row.status == VideoDownloadJobFileStatus.imported,
+        ),
+        isTrue,
+      );
+    });
+
+    test('导入侧识别：videoDownloadBlurayDiscRoots 只认选中且已落位的盘', () {
+      final String root = Platform.isWindows ? r'C:\lib' : '/lib';
+      VideoDownloadJobFileRow row(String rel, {bool selected = true}) =>
+          VideoDownloadJobFileRow(
+            id: rel.hashCode,
+            jobId: 'j',
+            backendFileIndex: 0,
+            originalRelativePath: rel,
+            currentRelativePath: rel,
+            finalAbsolutePath: p.joinAll(<String>[root, ...rel.split('/')]),
+            kind: 'other',
+            selected: selected,
+            status: VideoDownloadJobFileStatus.organized,
+            createdAt: 0,
+            updatedAt: 0,
+          );
+      expect(
+        videoDownloadBlurayDiscRoots(<VideoDownloadJobFileRow>[
+          row('W/D1/BDMV/PLAYLIST/00001.mpls'),
+          row('W/D1/BDMV/STREAM/00001.m2ts'),
+          row('W/D2/BDMV/PLAYLIST/00001.mpls', selected: false),
+          row('W/Season 01/W - S01E01.mkv'),
+        ]),
+        <String>[p.join(root, 'W', 'D1')],
+      );
     });
   });
 
@@ -5783,6 +6072,41 @@ class _FakeTorrentBackend implements TorrentPauseBackend {
     String newPath,
   ) async {
     renameFileCalls += 1;
+    return TorrentStorageResult(ok: true, path: newPath);
+  }
+}
+
+/// 真在磁盘上改名的 fake：保存位置 = 来源根（[root]），`renameFile` 把种子内
+/// 文件从当前相对路径搬到新相对路径，`moveStorage` 原地不动——整理落位后磁盘
+/// 形状与真实引擎一致，导入阶段才能读到真盘。
+class _RenamingTorrentBackend extends _FakeTorrentBackend {
+  _RenamingTorrentBackend();
+
+  late String root;
+  final List<TorrentFileEntry> entries = <TorrentFileEntry>[];
+  final Map<int, String> _current = <int, String>{};
+
+  @override
+  Future<List<TorrentFileEntry>> listFiles(String torrentId) async {
+    listFilesCalls += 1;
+    return entries;
+  }
+
+  @override
+  Future<TorrentStorageResult> renameFile(
+    String torrentId,
+    int fileIndex,
+    String newPath,
+  ) async {
+    renameFileCalls += 1;
+    final String from =
+        _current[fileIndex] ??
+        entries.firstWhere((TorrentFileEntry e) => e.index == fileIndex).name;
+    final File source = File(p.joinAll(<String>[root, ...from.split('/')]));
+    final File target = File(p.joinAll(<String>[root, ...newPath.split('/')]));
+    await target.parent.create(recursive: true);
+    await source.rename(target.path);
+    _current[fileIndex] = newPath;
     return TorrentStorageResult(ok: true, path: newPath);
   }
 }
