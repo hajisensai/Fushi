@@ -3,7 +3,8 @@
 /// - `GET  /api/admin/srs`           状态（各份 profile、调度器、AnkiConnect 监听）+ 当前配置；
 /// - `PUT  /api/admin/srs`           改配置（只改给了的字段）：`profiles`（整份）/ `addProfiles` / `removeProfiles`、
 ///                                   `defaultProfile`、`rolloverHour`、
-///                                   `miningTarget`、`miningDecks`、`ankiConnect: {enabled, bind, port, apiKey,
+///                                   `miningTarget`、`miningDecks`（整份替换）/ `miningDecksPatch`（只改给了的
+///                                   那几份，空串 = 删掉那一项）、`ankiConnect: {enabled, bind, port, apiKey,
 ///                                   profileKeys, corsOrigins}`；
 /// - `GET  /api/admin/srs/profiles`  同步目录里能选的 profile（名字、设备、笔记数、是否已提供）；
 /// - `POST /api/admin/srs/sync`      立即同步（正文 `{"profile": uid}` 只同步那份）。
@@ -150,6 +151,15 @@ class AdminSrs {
       body['miningDecks'],
       'miningDecks',
     );
+    // 只改给了的那几份（与 ankiConnect.profileKeys 同一口径）：在这次配置更新里合并到
+    // 整份（同时给了 miningDecks 就合到它上面），调用方不必先读再整份写回。
+    final Map<String, String>? deckPatch = _uidMap(
+      body['miningDecksPatch'],
+      'miningDecksPatch',
+    );
+    final Map<String, String>? nextDecks = decks == null && deckPatch == null
+        ? null
+        : <String, String>{...(decks ?? cur.miningDecks), ...?deckPatch};
     final ServerSrsConfig nextSrs = cur.copyWith(
       profiles: nextProfiles,
       // 默认那份被取消了：清空（= 列表第一份），别留一个不再提供的 uid。
@@ -160,11 +170,11 @@ class AdminSrs {
       miningTarget: target == null
           ? null
           : ServerMiningTarget.parse(target as String),
-      // 整份替换；空串 = 那份用内置默认牌组。
-      miningDecks: decks == null
+      // 空串 = 那份用内置默认牌组（不留这一项）。
+      miningDecks: nextDecks == null
           ? null
           : <String, String>{
-              for (final MapEntry<String, String> e in decks.entries)
+              for (final MapEntry<String, String> e in nextDecks.entries)
                 if (e.value.isNotEmpty) e.key: e.value,
             },
     );
