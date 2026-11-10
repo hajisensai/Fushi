@@ -562,6 +562,11 @@ extension _FushiSyncServerPairing on FushiSyncServer {
         // `DELETE .../subtitle?which=`（清字幕源 + 备份本视频 sidecar）与
         // `POST .../subtitle/backfill`（立即补字幕）。老 host 无此字段 → 404。
         'videoSubtitleClear': _libraryService is VideoSubtitleClearHost,
+        // 列出一集的全部外挂字幕（`/streamurl` 的 `sidecarSubtitles`）+ 按名下载
+        // （`GET .../subtitle?sidecar=`，反馈 -CaVsioFhG）。老 host 无此字段 →
+        // `/streamurl` 也不带列表，client 只有默认那一条。
+        kVideoSidecarSubtitlesCapability:
+            _libraryService is VideoSidecarSubtitleListHost,
         // 远端原盘：整盘下载 + 流式原盘菜单共用的只读盘目录服务
         // （`/api/library/videos/<id>/disc` + `/api/library/disc/<token>/**`）。老 host
         // 无此字段 → client 的远端原盘按钮说明「对端版本过低」，不发请求。

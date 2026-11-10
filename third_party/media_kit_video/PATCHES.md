@@ -998,3 +998,49 @@ texture Flutter reads with `D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX` (instead of
 its own `CopyResource` out of the texture into an engine-owned copy (it never
 samples the shared texture), so the wait is bounded by one copy call. On a
 stock engine nothing changes: legacy shared texture, `CopyResource` + `Flush`.
+
+## BUG-4339: Windows `VideoOutput` teardown order
+
+`windows/video_output.{h,cc}`, `windows/video_output_manager.{h,cc}`,
+`windows/media_kit_video_plugin.cc`, `windows/angle_surface_manager.{h,cc}`.
+
+Upstream `~VideoOutput` unregistered the texture, destroyed the
+`ANGLESurfaceManager` (the EGLContext libmpv renders with; for the last
+instance also the shared EGLDisplay and Direct3D 11 device libmpv decodes on)
+and only then *posted* `mpv_render_context_free` without waiting for it, with
+no GL context current. The `VideoOutputManager.Dispose` method call replied
+before any of that ran, so `Player.dispose` (which awaits the reply through
+`NativeVideoController._dispose`) scheduled `mpv_terminate_destroy` on its 5 s
+timer racing the free. libmpv aborts when its core is destroyed while a render
+context is alive (`client.c`: "Broken API use: mpv_render_context_free() not
+called"), and its renderer teardown ran against destroyed ANGLE state. Field:
+`libmpv-2.dll` abort 0x40000015 after the SRS review page opened and closed a
+card video player per card with RSS climbing to 8 GB; `libGLESv2.dll` read AV
+under `media_kit_video_plugin` -> `libmpv` on the video page.
+
+Fork:
+
+- `~VideoOutput` first clears libmpv's update callback (libmpv invokes it under
+  the lock `mpv_render_context_set_update_callback` takes, so no `Render` can
+  be queued afterwards), then runs one task on the render thread: unregister
+  the texture and wait for Flutter's callback, `mpv_render_context_free` with
+  the output's own GL context current, drop the textures, reset the surface
+  manager. The destructor waits for that task. The old "promise only fulfilled
+  from the unregister callback" deadlock (no texture -> wait forever, blocking
+  every later Create / Dispose behind the manager mutex) is gone with it.
+- `Render` / `CheckAndResize` return at once when `destroyed_` (now atomic) is
+  set, so a queued resize cannot register a texture that outlives the object.
+- `VideoOutputManager::Dispose` takes an `on_done` callback run after the
+  erase; the plugin replies to `VideoOutputManager.Dispose` from it (on the
+  platform thread, like `SetHdrOutput`). `mpv_terminate_destroy` therefore can
+  only run after the render context is freed.
+- `ANGLESurfaceManager` keeps the texture `eglBindTexImage` binds the pbuffer
+  to (`bound_texture_`), releases and deletes it in `CleanUp` (upstream leaked
+  one per `Create`; the texture is now generated with the manager's own
+  context current, surfaceless, so the name `CleanUp` deletes is never one of
+  another output's context that the render thread happened to leave current),
+  and releases the current context before
+  `eglDestroyContext` so the context and surface are freed instead of only
+  marked for deletion.
+
+Guard: `fushi/test/third_party/media_kit_video_teardown_order_guard_test.dart`.
