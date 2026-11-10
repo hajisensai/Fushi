@@ -1,11 +1,15 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/module_registry.dart' show isHomeTabVisible;
 import 'package:fushi/src/models/theme_notifier.dart';
+import 'package:fushi/src/pages/implementations/crop_image_dialog_page.dart'
+    show showCropImageDialog;
 import 'package:fushi/src/pages/implementations/home_page.dart'
     show HomeTab, homeNavItemFor;
 import 'package:fushi/src/settings/settings_context.dart';
@@ -332,7 +336,8 @@ bool _isShapePreset(ThemeNotifier theme) => switch (theme.pageBackdropPreset) {
 };
 
 /// 选一张图当背景（[portrait] = 竖屏单独的那张；[module] 非空 = 只给这个模块）。
-/// 取消什么都不做。
+/// 选完先弹裁剪框（反馈 nYjjaLYlfn），裁剪框锁成这块槽位在本机屏幕上的宽高比
+/// （见 [pageBackdropCropAspectRatio]）；取消选图或取消裁剪都什么都不做。
 ///
 /// 任何一步失败（选图器的平台异常 / 权限、复制、数据目录、偏好写入）都告诉用户
 /// 并记应用日志——不只是复制时的 [FileSystemException]，否则别的失败会变成
@@ -345,13 +350,23 @@ Future<void> pickPageBackdropImage(
   try {
     final File? picked = await pickGalleryImageFile();
     if (picked == null) return;
+    final BuildContext pickContext = settingsContext.context;
+    if (!pickContext.mounted) return;
+    final Size display = pageBackdropDisplaySize(pickContext);
+    final File? cropped = await showCropImageDialog(
+      pickContext,
+      picked,
+      aspectRatio: pageBackdropCropAspectRatio(display, portrait: portrait),
+      maxDimension: pageBackdropCropMaxDimension(display),
+    );
+    if (cropped == null) return;
     final ThemeNotifier theme = _theme(settingsContext);
     if (module == null) {
-      await theme.importPageBackdropImage(picked, portrait: portrait);
+      await theme.importPageBackdropImage(cropped, portrait: portrait);
     } else {
       await theme.importPageBackdropModuleImage(
         module,
-        picked,
+        cropped,
         portrait: portrait,
       );
     }
@@ -365,6 +380,36 @@ Future<void> pickPageBackdropImage(
     }
   }
   settingsContext.refresh();
+}
+
+/// 本机屏幕的物理像素尺寸（背景最终铺满的画布）；拿不到显示器信息（测试宿主、
+/// 部分桌面环境返回零尺寸）时退回当前窗口的物理尺寸。
+Size pageBackdropDisplaySize(BuildContext context) {
+  final ui.FlutterView view = View.of(context);
+  final Size display = view.display.size;
+  if (!display.isEmpty) return display;
+  return view.physicalSize;
+}
+
+/// 背景裁剪框的宽高比：横屏槽取屏幕「长边 / 短边」，竖屏槽取倒数。
+///
+/// 背景层按区域「高 > 宽」选竖屏图、再 [BoxFit.cover] 铺满
+/// （`page_backdrop_layer.dart`），所以按屏幕比例裁出来的图在全屏时不会再被二次
+/// 裁掉，裁剪框里看到的就是最终显示的范围。[display] 是空尺寸时返回 null
+/// （自由裁剪）。
+double? pageBackdropCropAspectRatio(Size display, {required bool portrait}) {
+  if (display.isEmpty) return null;
+  final double long = math.max(display.width, display.height);
+  final double short = math.min(display.width, display.height);
+  return portrait ? short / long : long / short;
+}
+
+/// 背景裁剪的源图解码 / 输出长边上限 = 屏幕物理长边：超过屏幕分辨率的像素
+/// 显示时只会被缩掉，按原图（相机原片动辄 4800 万像素）解码再整张裁剪在低内存
+/// 手机上峰值过高（与应用图标裁剪的 BUG-3601 同一类问题）。空尺寸返回 null（原图）。
+int? pageBackdropCropMaxDimension(Size display) {
+  if (display.isEmpty) return null;
+  return math.max(display.width, display.height).ceil();
 }
 
 String _presetLabel(PageBackdropPreset preset) => switch (preset) {
