@@ -2450,6 +2450,7 @@
   "dictionary_source_status_last_seen": "Last seen $time",
   "dictionary_source_status_online": "Online",
   "dictionary_source_status_unreachable": "Unreachable since $time",
+  "dictionary_source_status_unreachable_ago": "Unreachable · $time",
   "dictionary_source_this_device": "This device",
   "dictionary_source_use_for_lookups": "Use for lookups",
   "dictionary_type_frequency": "Frequenza",

@@ -266,13 +266,104 @@ void main() {
       ]);
     });
 
-    test('导入管理器的 _nextOrder 委托给仓库（两表最大值）', () {
+    test('导入管理器的落库位置委托给仓库（placementForImport）', () {
       final String src = File(
         'lib/src/models/dictionary_import_manager.dart',
       ).readAsStringSync();
       expect(
-        src.contains('int _nextOrder() => _dictRepo.nextDictionaryOrder;'),
+        src.contains('_dictRepo.placementForImport(name, preservedSettings:'),
         isTrue,
+      );
+      expect(src.contains('nextDictionaryOrder'), isFalse);
+    });
+
+    test('导入同名本机副本：接替服务器行的位置与开关，而不是排到最后', () async {
+      // R 在 B 与 C 之间（order 2）。导入一本同名的本机 R：仍排在 B 与 C 之间。
+      final ({int order, List<String> hiddenLanguages}) placement = repo
+          .placementForImport('R');
+      expect(placement.order, 2);
+      expect(placement.hiddenLanguages, isEmpty);
+      await repo.persistDictionary(
+        _local(
+          'R',
+          placement.order,
+          hidden: placement.hiddenLanguages.isNotEmpty,
+        ),
+      );
+      expect(repo.lookupFilters.termDictionaryOrder, <String>[
+        'A',
+        'B',
+        'R',
+        'C',
+        'D',
+      ]);
+      expect(repo.lookupFilters.hiddenDictionaryNames, isEmpty);
+    });
+
+    test('导入同名本机副本：服务器行关着 ⇒ 本机副本也关着', () async {
+      await db.setRemoteDictionaryProfileColumns(
+        hostId: 'h1',
+        name: 'R',
+        order: 2,
+        hidden: true,
+      );
+      await repo.reloadRemoteDictionaries();
+      final ({int order, List<String> hiddenLanguages}) placement = repo
+          .placementForImport('R');
+      expect(placement.order, 2);
+      expect(placement.hiddenLanguages, <String>['ja']);
+    });
+
+    test('导入：替换旧本继承旧本；没有同名服务器行排最后', () {
+      final Dictionary old = _local('B', 1, hidden: true);
+      final ({int order, List<String> hiddenLanguages}) replaced = repo
+          .placementForImport('R', preservedSettings: old);
+      expect(replaced.order, 1);
+      expect(replaced.hiddenLanguages, <String>['ja']);
+      final ({int order, List<String> hiddenLanguages}) fresh = repo
+          .placementForImport('E');
+      expect(fresh.order, repo.nextDictionaryOrder);
+      expect(fresh.hiddenLanguages, isEmpty);
+    });
+
+    test('「下载到本机」：包里 host 的顺序 / 开关被改写成目录行的', () async {
+      await db.setRemoteDictionaryProfileColumns(
+        hostId: 'h1',
+        name: 'R',
+        order: 2,
+        hidden: true,
+      );
+      // 同步包导入照搬 host 自己的值：order 40、开关开着、还带一个别的语言隐藏位。
+      await db.upsertDictionaryMeta(
+        DictionaryMetadataCompanion.insert(
+          name: 'R',
+          formatKey: 'yomichan',
+          order: 40,
+          hiddenLanguagesJson: const Value<String>('["en"]'),
+          collapsedLanguagesJson: const Value<String>('["ja"]'),
+        ),
+      );
+      expect(
+        await DictionaryRepository.adoptCatalogPlacement(
+          db,
+          hostId: 'h1',
+          name: 'R',
+        ),
+        isTrue,
+      );
+      final DictionaryMetaRow row = (await db.getAllDictionaryMetadata())
+          .firstWhere((DictionaryMetaRow r) => r.name == 'R');
+      expect(row.order, 2);
+      expect(row.hiddenLanguagesJson, '["en","ja"]');
+      expect(row.collapsedLanguagesJson, '["ja"]', reason: '折叠照原样写回');
+      // 没有目录行的 host：不动。
+      expect(
+        await DictionaryRepository.adoptCatalogPlacement(
+          db,
+          hostId: 'h9',
+          name: 'R',
+        ),
+        isFalse,
       );
     });
 
@@ -291,6 +382,74 @@ void main() {
       expect(
         repo.kanjiSectionDictionaries.map((Dictionary d) => d.name),
         <String>['K2', 'K1'],
+      );
+    });
+  });
+
+  group('删本机词典：忘掉 host 上已没有的同名目录行', () {
+    late FushiDatabase db;
+    late DictionaryRepository repo;
+
+    Future<Set<String>> catalogKeys() async => <String>{
+      for (final RemoteDictionaryMetaRow r
+          in await db.getAllRemoteDictionaryMetadata())
+        '${r.hostId}/${r.name}',
+    };
+
+    setUp(() async {
+      db = FushiDatabase.forTesting(NativeDatabase.memory());
+      repo = DictionaryRepository(db);
+      // X：h1 上已消失、h2 上还在；h3 没开「用于查词」、也已消失。Y：h1 上已消失。
+      await db.upsertRemoteDictionaryCatalog(_catalogRow('h1', 'X', 1));
+      await db.upsertRemoteDictionaryCatalog(_catalogRow('h2', 'X', 2));
+      await db.upsertRemoteDictionaryCatalog(_catalogRow('h3', 'X', 3));
+      await db.upsertRemoteDictionaryCatalog(_catalogRow('h1', 'Y', 4));
+      await db.markRemoteDictionariesMissing('h1', <String>['X', 'Y'], 5);
+      await db.markRemoteDictionariesMissing('h3', <String>['X'], 5);
+      await SyncRepository(db).setFushiClientUrls(const <FushiClientUrl>[
+        FushiClientUrl(url: 'http://h1:1', hostId: 'h1'),
+        FushiClientUrl(url: 'http://h2:1', hostId: 'h2'),
+      ]);
+      await repo.loadFromDb();
+      await repo.persistDictionary(_local('X', 0));
+    });
+
+    tearDown(() async {
+      repo.dispose();
+      await db.close();
+    });
+
+    test('只忘掉同名且已缺席的行（各 host，含不查词的）；还在的行留着', () async {
+      await repo.deleteDictionaryMeta('X');
+      await repo.forgetMissingRemoteDictionariesNamed(<String>['X']);
+      expect(await catalogKeys(), <String>{'h2/X', 'h1/Y'});
+      // 删完 X 只在 h2 上：管理页是一条服务器行，没有「服务器上已没有」的残行。
+      expect(
+        repo.remoteDictionaries
+            .where((RemoteDictionary r) => r.name == 'X')
+            .map((RemoteDictionary r) => '${r.key} missing=${r.isMissing}'),
+        <String>['h2/X missing=false'],
+      );
+    });
+
+    test('AppModel 的删除入口（单本 / 全部）都接上这一步', () {
+      final String src = File(
+        'lib/src/models/app_model.dart',
+      ).readAsStringSync().replaceAll('\r\n', '\n');
+      String body(String signature) {
+        final int start = src.indexOf(signature);
+        expect(start, greaterThanOrEqualTo(0), reason: signature);
+        return src.substring(start, src.indexOf('\n  }\n', start));
+      }
+
+      final String single = body('Future<void> deleteDictionary(Dictionary');
+      expect(
+        single.indexOf('forgetMissingRemoteDictionariesNamed('),
+        greaterThan(single.indexOf('dictRepo.deleteDictionaryMeta(')),
+      );
+      expect(
+        body('Future<void> deleteDictionaries() async {'),
+        contains('dictRepo.forgetMissingRemoteDictionariesNamed(deletedNames)'),
       );
     });
   });

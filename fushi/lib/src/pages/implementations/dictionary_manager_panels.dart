@@ -433,8 +433,10 @@ class DictionaryOrderSection extends StatelessWidget {
           title: t.dict_detail_order_position(n: position + 1, m: count),
           icon: Icons.low_priority,
           showIcon: true,
-          // 点「第 n / m 位」本身也是「移到第几位」。
-          onTap: count > 1 ? onMoveToPrompt : null,
+          // 这一行**不给** onTap：有 onTap 的设置行在焦点根下是单停靠点、行尾控件
+          // 被 ExcludeFocus 挡出遍历（设置行 PR-0 契约），置顶 / 上移 / 下移 / 置底
+          // 就 Tab 不到了。「移到第几位」由下一行承担，这一行只是位置 + 四个按钮，
+          // 每个按钮各是一个 Tab 停靠点。
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
@@ -447,14 +449,14 @@ class DictionaryOrderSection extends StatelessWidget {
               ),
               FushiIconButton(
                 key: const ValueKey<String>('dict-detail-move-up'),
-                icon: Icons.keyboard_arrow_up,
+                icon: FushiIcons.expandLess,
                 tooltip: t.move_up,
                 enabled: !first,
                 onTap: () => onMoveTo(position - 1),
               ),
               FushiIconButton(
                 key: const ValueKey<String>('dict-detail-move-down'),
-                icon: Icons.keyboard_arrow_down,
+                icon: FushiIcons.expandMore,
                 tooltip: t.move_down,
                 enabled: !last,
                 onTap: () => onMoveTo(position + 1),
@@ -538,6 +540,7 @@ class DictionaryTypeCount {
     required this.total,
     required this.enabled,
     this.onServer = 0,
+    this.unlistedOnServer = 0,
   });
 
   final DictionaryType type;
@@ -551,8 +554,16 @@ class DictionaryTypeCount {
   /// 其中只在服务器上的行数（与本机同名的服务器词典算本机那一行，不重复计）。
   final int onServer;
 
+  /// 服务器上有、但这一类的列表不列成行的词典本数（「汉字」分区：服务器汉字词典
+  /// 暂不在这里管理，列表上方有一条按 host 的说明）。不算进 [total]，只让计数格
+  /// 与那条说明说同一件事。
+  final int unlistedOnServer;
+
   /// 其中本机已安装的行数。
   int get onDevice => total - onServer;
+
+  /// 服务器上的本数：单独成行的 + 不列成行的。
+  int get allOnServer => onServer + unlistedOnServer;
 }
 
 /// 宽屏详情侧板在「还没选中任何词典」时的内容：四类词典的计数格（点一下切到
@@ -676,7 +687,8 @@ class _DictionaryTypeTile extends StatelessWidget {
             FushiIcon(count.icon, size: 20, color: scheme.primary),
             SizedBox(height: tokens.spacing.gap),
             Text(
-              '${count.total}',
+              // 与下面「本机 n · 服务器 m」同一口径：服务器上不列成行的也算。
+              '${count.onDevice + count.allOnServer}',
               style: textTheme.headlineSmall?.copyWith(
                 fontWeight: FontWeight.w700,
               ),
@@ -690,10 +702,10 @@ class _DictionaryTypeTile extends StatelessWidget {
               ),
             ),
             // 有服务器词典时才分开计：没配服务器的用户这一行纯属噪音。
-            if (count.onServer > 0)
+            if (count.allOnServer > 0)
               Text(
                 '${t.dictionary_overview_on_device(n: count.onDevice)} · '
-                '${t.dictionary_overview_on_server(n: count.onServer)}',
+                '${t.dictionary_overview_on_server(n: count.allOnServer)}',
                 key: ValueKey<String>(
                   'dict-overview-sources-${count.type.name}',
                 ),
@@ -1433,13 +1445,18 @@ class DictionaryServerSourceCard {
     required this.lookupEnabled,
     required this.olderHost,
     required this.refreshing,
+    this.statusTooltip,
   });
 
   final String hostId;
   final String name;
 
-  /// 状态行：在线 / 最近在线 <时刻> / 自 <时刻> 起连不上。
+  /// 状态行：在线 / 最近在线 <多久以前> / 连不上 · <多久以前>（相对时间，默认宽度
+  /// 下放得下）。
   final String status;
+
+  /// 状态的完整说明（带完整时间戳），悬停 / 长按状态行时弹出；null = 不弹。
+  final String? statusTooltip;
 
   /// 当前分区里这台 host 上启用 / 全部的词典本数（已缺席的不算）。
   final int enabled;
@@ -1546,17 +1563,21 @@ class _DictionaryServerSourceCardView extends StatelessWidget {
       overflow: TextOverflow.ellipsis,
       style: textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
     );
+    final Widget statusText = Text(
+      card.status,
+      key: ValueKey<String>('dict-server-source-status-${card.hostId}'),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: meta,
+    );
+    final String? statusTooltip = card.statusTooltip;
     final Widget metaLine = Row(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
         Flexible(
-          child: Text(
-            card.status,
-            key: ValueKey<String>('dict-server-source-status-${card.hostId}'),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: meta,
-          ),
+          child: statusTooltip == null
+              ? statusText
+              : FushiTooltip(message: statusTooltip, child: statusText),
         ),
         Text(' · ', style: meta),
         Flexible(
@@ -1726,9 +1747,6 @@ class _SourceCardNote extends StatelessWidget {
   }
 }
 
-/// 只在服务器上的词典的详情（宽屏侧板 / 窄屏 sheet）：开关、排序、来源 / host /
-/// 类型 / 版本 / 最近在线；服务器上已没有的词典多一个「忘掉」。改名、内容语言、
-/// 更新、删除文件、CSS 这些要本机目录的动作一律不给。
 /// 本机词典详情里的「推送到 <服务器>」分组：每台还缺这本词典的查词 host 一行，
 /// 整行可聚焦、Enter / 点按即推送。host 已有同名词典（「两者」行）的不列。
 class DictionaryTransferSection extends StatelessWidget {
@@ -1757,7 +1775,7 @@ class DictionaryTransferSection extends StatelessWidget {
               'dict-detail-push-${host.key}-$dictionaryName',
             ),
             title: t.dict_transfer_push_to(name: host.value),
-            icon: Icons.upload_outlined,
+            icon: FushiIcons.upload,
             showIcon: true,
             onTap: () => onPush(host.key),
           ),
@@ -1766,6 +1784,10 @@ class DictionaryTransferSection extends StatelessWidget {
   }
 }
 
+/// 只在服务器上的词典的详情（宽屏侧板 / 窄屏 sheet）：开关、排序、来源 / host /
+/// 类型 / 版本 / 最近在线；服务器上已没有的词典多一个「忘掉」，有互联会话时多一个
+/// 「下载到本机」。改名只改本机显示名（设备本地）；内容语言、更新、删除文件、CSS
+/// 这些要本机目录的动作一律不给。
 class RemoteDictionaryDetail extends StatelessWidget {
   const RemoteDictionaryDetail({
     required this.row,

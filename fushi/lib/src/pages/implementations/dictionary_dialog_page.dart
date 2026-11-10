@@ -36,6 +36,8 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/models/dictionary_download_resume.dart';
 import 'package:fushi/src/models/dictionary_import_manager.dart';
 import 'package:fushi/src/dictionary/recommended_dictionary_installer.dart';
+import 'package:fushi/src/pages/implementations/activity_feed.dart'
+    show ActivityRelativeTime, ActivityRelativeUnit, activityRelativeTime;
 import 'package:fushi/src/pages/implementations/dictionary_manager_panels.dart';
 import 'package:fushi/src/pages/implementations/name_input_dialog.dart';
 import 'package:fushi/src/utils/components/batch_action_bar.dart';
@@ -738,25 +740,54 @@ class _DictionaryDialogPageState extends BasePageState {
     );
   }
 
-  /// 一台 host 的状态行：本次运行里连不上 → 「自 <时刻> 起连不上」；拉到过 → 「在线」；
-  /// 还没试过 → 目录行里最近一次见到它的时刻。
-  String _hostStatusLabel(RemoteDictionaryHostSource host) {
+  /// 一台 host 的状态行：本次运行里连不上 → 「连不上 · <多久以前>」；拉到过 → 「在线」；
+  /// 还没试过 → 「最近在线 <多久以前>」。卡片上只放相对时间（完整时间戳在默认宽度
+  /// 下会被截断），完整时刻进 [DictionaryServerSourceCard.statusTooltip]。
+  ({String label, String? tooltip}) _hostStatus(
+    RemoteDictionaryHostSource host,
+  ) {
     final RemoteDictionaryHostReachability? reach =
         appModel.remoteDictionaryHostReachability[host.hostId];
     final int? failing = reach?.failingSince;
     if (failing != null) {
-      return t.dictionary_source_status_unreachable(
-        time: dictionaryManagerTimestampLabel(failing),
+      return (
+        label: t.dictionary_source_status_unreachable_ago(
+          time: _relativeTimeLabel(failing),
+        ),
+        tooltip: t.dictionary_source_status_unreachable(
+          time: dictionaryManagerTimestampLabel(failing),
+        ),
       );
     }
-    if (reach?.lastOkAt != null) return t.dictionary_source_status_online;
+    if (reach?.lastOkAt != null) {
+      return (label: t.dictionary_source_status_online, tooltip: null);
+    }
     int seen = 0;
     for (final RemoteDictionary r in host.catalog) {
       if (r.lastSeenAt > seen) seen = r.lastSeenAt;
     }
-    return t.dictionary_source_status_last_seen(
-      time: dictionaryManagerTimestampLabel(seen),
+    return (
+      label: t.dictionary_source_status_last_seen(
+        time: _relativeTimeLabel(seen),
+      ),
+      tooltip: t.dictionary_source_status_last_seen(
+        time: dictionaryManagerTimestampLabel(seen),
+      ),
     );
+  }
+
+  /// 「3 分钟前」式相对时间（与动态流同一套推导与文案）。
+  static String _relativeTimeLabel(int epochMs) {
+    final ActivityRelativeTime rel = activityRelativeTime(
+      epochMs,
+      DateTime.now(),
+    );
+    return switch (rel.unit) {
+      ActivityRelativeUnit.justNow => t.activity_just_now,
+      ActivityRelativeUnit.minutesAgo => t.activity_minutes_ago(n: rel.value),
+      ActivityRelativeUnit.hoursAgo => t.activity_hours_ago(n: rel.value),
+      ActivityRelativeUnit.daysAgo => t.activity_days_ago(n: rel.value),
+    };
   }
 
   /// 「来源」条此刻该不该出现：有任何一台 host 的目录，且当前筛选能列出服务器行——
@@ -781,26 +812,31 @@ class _DictionaryDialogPageState extends BasePageState {
       key: const ValueKey<String>('dict-server-sources'),
       cards: <DictionaryServerSourceCard>[
         for (final RemoteDictionaryHostSource host in _hostSources)
-          DictionaryServerSourceCard(
-            hostId: host.hostId,
-            name: host.name,
-            status: _hostStatusLabel(host),
-            enabled: host.catalog
-                .where(
-                  (RemoteDictionary r) =>
-                      r.type == _selectedType && !r.isMissing && !r.hidden,
-                )
-                .length,
-            total: host.catalog
-                .where(
-                  (RemoteDictionary r) =>
-                      r.type == _selectedType && !r.isMissing,
-                )
-                .length,
-            lookupEnabled: host.lookupEnabled,
-            olderHost: _olderHost(host.hostId),
-            refreshing: _refreshingHosts.contains(host.hostId),
-          ),
+          if (_hostStatus(host) case (
+            label: final String status,
+            tooltip: final String? statusTooltip,
+          ))
+            DictionaryServerSourceCard(
+              hostId: host.hostId,
+              name: host.name,
+              status: status,
+              statusTooltip: statusTooltip,
+              enabled: host.catalog
+                  .where(
+                    (RemoteDictionary r) =>
+                        r.type == _selectedType && !r.isMissing && !r.hidden,
+                  )
+                  .length,
+              total: host.catalog
+                  .where(
+                    (RemoteDictionary r) =>
+                        r.type == _selectedType && !r.isMissing,
+                  )
+                  .length,
+              lookupEnabled: host.lookupEnabled,
+              olderHost: _olderHost(host.hostId),
+              refreshing: _refreshingHosts.contains(host.hostId),
+            ),
       ],
       onLookupChanged: (String hostId, bool enabled) => unawaited(
         _saveDictionaryChange(
@@ -826,17 +862,33 @@ class _DictionaryDialogPageState extends BasePageState {
     await _loadServerSources();
   }
 
-  /// 「汉字」分区：服务器上的汉字词典暂时不在这里管理（与本机汉字部分的独立序号不在
-  /// 一条数轴上，见 [_rowsForType]），按 host 各说一行有几本，免得用户以为它们丢了。
+  /// [host] 上（没缺席的）汉字词典本数。服务器上的汉字词典暂时不在「汉字」分区里
+  /// 管理（与本机汉字部分的独立序号不在一条数轴上，见 [_rowsForType]）。
+  static int _serverKanjiCountOf(RemoteDictionaryHostSource host) => host
+      .catalog
+      .where(
+        (RemoteDictionary r) => r.type == DictionaryType.kanji && !r.isMissing,
+      )
+      .length;
+
+  /// 服务器上有、但 [type] 分区不列成行的本数（只有「汉字」分区有，按 host 加总，
+  /// 与 [_buildKanjiServerNotes] 的各条说明同一口径）。
+  int _unlistedServerCount(DictionaryType type) {
+    if (type != DictionaryType.kanji) return 0;
+    int n = 0;
+    for (final RemoteDictionaryHostSource host in _hostSources) {
+      n += _serverKanjiCountOf(host);
+    }
+    return n;
+  }
+
+  /// 「汉字」分区：服务器上的汉字词典按 host 各说一行有几本，免得用户以为它们丢了。
   List<Widget> _buildKanjiServerNotes() {
     if (_selectedType != DictionaryType.kanji) return const <Widget>[];
     final double gap = FushiDesignTokens.of(context).spacing.gap;
     return <Widget>[
       for (final RemoteDictionaryHostSource host in _hostSources)
-        if (host.catalog.any(
-          (RemoteDictionary r) =>
-              r.type == DictionaryType.kanji && !r.isMissing,
-        ))
+        if (_serverKanjiCountOf(host) case final int n when n > 0)
           Padding(
             padding: EdgeInsets.only(bottom: gap),
             child: FushiInlineNotice(
@@ -844,12 +896,7 @@ class _DictionaryDialogPageState extends BasePageState {
               icon: FushiIcons.info,
               severity: FushiNoticeSeverity.info,
               message: t.dictionary_server_kanji_unmanaged(
-                n: host.catalog
-                    .where(
-                      (RemoteDictionary r) =>
-                          r.type == DictionaryType.kanji && !r.isMissing,
-                    )
-                    .length,
+                n: n,
                 name: host.name,
               ),
             ),
@@ -2163,14 +2210,17 @@ class _DictionaryDialogPageState extends BasePageState {
     final List<DictionaryManagerRow> rows = _rowsForType(_selectedType);
     final DictionarySourceFilter filter = _effectiveSourceFilter;
     final List<DictionaryManagerRow> visible = _visibleRows();
+    final List<Widget> kanjiServerNotes = _buildKanjiServerNotes();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _buildListHeader(rows, visible: visible),
-        ..._buildKanjiServerNotes(),
-        if (visible.isEmpty)
+        ...kanjiServerNotes,
+        // 有服务器汉字词典的说明时不再叠一句「导入一本词典」：说明已经讲清这一类
+        // 词典在哪，再劝导入就自相矛盾。
+        if (visible.isEmpty && kanjiServerNotes.isEmpty)
           _buildEmptyCategoryRow()
-        else
+        else if (visible.isNotEmpty)
           // 进场窗口：首开、切换词典类型与切换来源筛选时，首屏的组标题与词典行
           // 错峰淡入上移（服务器行与本机行同一条错峰序列）。
           FushiEntranceScope(
@@ -3576,6 +3626,7 @@ class _DictionaryDialogPageState extends BasePageState {
                 .length +
             serverOnly.where((RemoteDictionary r) => !r.hidden).length,
         onServer: serverOnly.length,
+        unlistedOnServer: _unlistedServerCount(type),
       );
     }
 

@@ -2450,6 +2450,7 @@
   "dictionary_source_status_last_seen": "最近在线：$time",
   "dictionary_source_status_online": "在线",
   "dictionary_source_status_unreachable": "自 $time 起连不上",
+  "dictionary_source_status_unreachable_ago": "连不上 · $time",
   "dictionary_source_this_device": "本机",
   "dictionary_source_use_for_lookups": "用于查词",
   "dictionary_type_frequency": "词频",

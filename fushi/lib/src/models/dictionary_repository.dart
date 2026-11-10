@@ -309,6 +309,98 @@ class DictionaryRepository {
     ];
   }
 
+  /// 本机即将新建一本名为 [name] 的词典时它接管的服务器词典目录行：参与查词的 host
+  /// 上同名、排得最前的那一行——管理页此前画的正是这一行。没有返回 null。
+  RemoteDictionary? catalogRowTakenOverBy(String name) {
+    for (final RemoteDictionary r in _remoteDictionariesCache) {
+      if (r.name == name) return r;
+    }
+    return null;
+  }
+
+  /// 导入（文件 / 目录）新落库的词典 [name] 在混排分区里的位置与开关：
+  /// * 替换旧本（重导 / 在线更新，[preservedSettings] 非空）：继承旧本的 `order` /
+  ///   `hiddenLanguages`；
+  /// * 全新的一本、但参与查词的 host 上有同名目录行（[catalogRowTakenOverBy]）：本机
+  ///   这份原地接替那一行的 `order` 与开关——它一落库就遮住那一行，管理页上同一个
+  ///   位置从「服务器」变成「两者」，查词顺序不变，而不是掉到分区末尾；
+  /// * 否则排在两表最大值之后（[nextDictionaryOrder]）。
+  ///
+  /// 「下载到本机」走同步包导入，规则相同，见 [adoptCatalogPlacement]。
+  ({int order, List<String> hiddenLanguages}) placementForImport(
+    String name, {
+    Dictionary? preservedSettings,
+  }) {
+    if (preservedSettings != null) {
+      return (
+        order: preservedSettings.order,
+        hiddenLanguages: preservedSettings.hiddenLanguages,
+      );
+    }
+    final RemoteDictionary? catalogRow = catalogRowTakenOverBy(name);
+    if (catalogRow != null) {
+      return (
+        order: catalogRow.order,
+        hiddenLanguages: catalogRow.hidden
+            ? <String>[JapaneseLanguage.instance.languageCode]
+            : const <String>[],
+      );
+    }
+    return (order: nextDictionaryOrder, hiddenLanguages: const <String>[]);
+  }
+
+  /// 「下载到本机」刚把 [hostId] 上的 [name] 装进本机之后：本机这一行接替那条目录行
+  /// 的 `order` 与开关（同 [placementForImport] 对文件导入的规则）。
+  ///
+  /// 下载走的是同步包导入（`SyncAssetPackageService.importDictionaryPackage`），包里
+  /// 的 `order` / `hiddenLanguagesJson` 是 **host 自己**词典表里的值——另一条数轴、
+  /// 另一个配置，照搬会让这本词典跳到管理页的随机位置。这里按本机目录行改写这两列
+  /// （折叠 / 语言覆盖照原样写回），没有目录行（还没刷新过）就不动。返回是否改了。
+  static Future<bool> adoptCatalogPlacement(
+    FushiDatabase db, {
+    required String hostId,
+    required String name,
+  }) async {
+    RemoteDictionaryMetaRow? catalogRow;
+    for (final RemoteDictionaryMetaRow r
+        in await db.getAllRemoteDictionaryMetadata()) {
+      if (r.hostId == hostId && r.name == name) catalogRow = r;
+    }
+    if (catalogRow == null) return false;
+    DictionaryMetaRow? local;
+    for (final DictionaryMetaRow r in await db.getAllDictionaryMetadata()) {
+      if (r.name == name) local = r;
+    }
+    if (local == null) return false;
+    final String code = JapaneseLanguage.instance.languageCode;
+    final List<String> hidden = <String>[
+      for (final String c in _decodeLanguageList(local.hiddenLanguagesJson))
+        if (c != code) c,
+      if (catalogRow.hidden) code,
+    ];
+    return await db.applyDictionaryMetaProfileColumns(
+          name: name,
+          order: catalogRow.order,
+          hiddenLanguagesJson: jsonEncode(hidden),
+          collapsedLanguagesJson: local.collapsedLanguagesJson,
+          expandedLanguagesJson: local.expandedLanguagesJson,
+          languageOverride: local.languageOverride,
+        ) >
+        0;
+  }
+
+  static List<String> _decodeLanguageList(String json) {
+    try {
+      final Object? decoded = jsonDecode(json);
+      if (decoded is List) {
+        return <String>[for (final Object? e in decoded) '$e'];
+      }
+    } on FormatException {
+      // 坏 JSON 当空表：与 [_rowToDictionary] 读同一列时的容错一致。
+    }
+    return const <String>[];
+  }
+
   /// 本机与服务器两张表里最大的 `order` + 1（两表都空为 1）：新导入的本机词典排在
   /// 混排分区最后，不会插到已有的服务器词典前面。
   int get nextDictionaryOrder {
@@ -957,6 +1049,27 @@ class DictionaryRepository {
         await _db.deleteRemoteDictionary(hostId, name);
         _applyRemoteRows(await _readRemoteSnapshot());
       });
+
+  /// 删掉本机词典 [names] 之后的收尾：忘掉**各 host**（含没开「用于查词」的）上同名、
+  /// 已从 host 目录里消失（`missingSince != null`）的目录行。
+  ///
+  /// 这些行原本被本机那本遮住；本机那本一删，它们就会冒出来成为一条开着开关、只能
+  /// 「忘掉」的「服务器上已没有」行——用户删的是一本词典，不该换来一条它从没在服务器
+  /// 上管理过的残行。host 上还在的同名行留着：词典就此变成只在服务器上。
+  Future<void> forgetMissingRemoteDictionariesNamed(Iterable<String> names) {
+    final Set<String> wanted = names.toSet();
+    if (wanted.isEmpty) return Future<void>.value();
+    return _writeMetadata(() async {
+      bool changed = false;
+      for (final RemoteDictionaryMetaRow r
+          in await _db.getAllRemoteDictionaryMetadata()) {
+        if (r.missingSince == null || !wanted.contains(r.name)) continue;
+        await _db.deleteRemoteDictionary(r.hostId, r.name);
+        changed = true;
+      }
+      if (changed) _applyRemoteRows(await _readRemoteSnapshot());
+    });
+  }
 
   /// 忘掉一台 host 的全部服务器词典目录行（解除配对时选「忘掉设置」）。
   Future<void> forgetRemoteDictionaryHost(String hostId) =>

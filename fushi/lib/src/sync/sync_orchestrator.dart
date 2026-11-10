@@ -12,6 +12,8 @@ import 'package:fushi_engine/media/video/strm_file.dart'
     show lacksLocalMediaFile;
 import 'package:fushi_engine/media/video/video_sidecar.dart'
     show listSidecarSubtitles;
+import 'package:fushi/src/models/dictionary_repository.dart'
+    show DictionaryRepository;
 import 'package:fushi/src/models/local_audio_manager.dart';
 import 'package:fushi/src/sync/peer_book_tombstone_alias.dart';
 import 'package:fushi_engine/sync/collection_manifest.dart';
@@ -2270,6 +2272,13 @@ class SyncOrchestrator {
           itemIndex: 0,
           itemTotal: 1,
           onImporting: onImporting,
+        );
+        // 包里带的是 host 自己的顺序 / 开关；本机这份接替管理页上那条服务器行的
+        // 位置与开关（在后置钩子重载词典之前写，重载读到的就是最终值）。
+        await DictionaryRepository.adoptCatalogPlacement(
+          _db,
+          hostId: await b.connectedHostIdentity(),
+          name: name,
         );
         report.dictionariesImported++;
         outcome = SingleDictionaryTransferOutcome.transferred;

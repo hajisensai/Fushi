@@ -13,6 +13,8 @@ import 'package:fushi/src/sync/remote_dictionary_catalog_service.dart'
 import 'package:fushi/src/utils/components/content_language_picker.dart'
     show contentLanguageLabelOf;
 import 'package:fushi/src/utils/components/fushi_tag.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
+    show FushiTooltip;
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/dictionary_dialog_page.dart';
 import 'package:fushi/src/pages/implementations/dictionary_manager_panels.dart';
@@ -678,13 +680,22 @@ void main() {
       find.byKey(const ValueKey<String>('dict-source-filter-server-h1')),
     );
     await _pressEnter(tester);
+    // 卡片上只放相对时间（默认宽度下放得下），完整时刻在悬停提示里。
+    final Finder status = find.byKey(
+      const ValueKey<String>('dict-server-source-status-h1'),
+    );
+    expect(tester.widget<Text>(status).data, startsWith('Unreachable · '));
+    expect(tester.widget<Text>(status).data, endsWith(' ago'));
     expect(
-      tester
-          .widget<Text>(
-            find.byKey(const ValueKey<String>('dict-server-source-status-h1')),
-          )
-          .data,
-      startsWith('Unreachable since '),
+      find.ancestor(
+        of: status,
+        matching: find.byWidgetPredicate(
+          (Widget w) =>
+              w is FushiTooltip &&
+              (w.message ?? '').startsWith('Unreachable since '),
+        ),
+      ),
+      findsOneWidget,
     );
     expect(tester.takeException(), isNull);
   });
@@ -952,6 +963,16 @@ void main() {
         ),
       ],
     );
+    // 概览的「汉字」格与那条说明说同一件事：本机 0 · 服务器 1。
+    expect(
+      tester
+          .widget<Text>(
+            find.byKey(const ValueKey<String>('dict-overview-sources-kanji')),
+          )
+          .data,
+      '0 on this device · 1 on server',
+    );
+
     // 两台参与查词的 host：例外 chip 写上设备名。
     expect(find.text('Not on server · Box'), findsOneWidget);
     // 同名只列排得最前的一份；详情说明另一台上也有。
@@ -975,6 +996,40 @@ void main() {
       ),
       findsOneWidget,
     );
+    // 有服务器汉字词典的说明时，不再叠一句自相矛盾的「导入一本词典」。
+    expect(find.text('Import a dictionary for use'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('kanji section without server kanji keeps the import empty '
+      'state', (WidgetTester tester) async {
+    await _pumpPage(tester);
+    expect(
+      find.byKey(const ValueKey<String>('dict-overview-sources-kanji')),
+      findsNothing,
+    );
+    await _stepSection(tester, 1);
+    expect(find.text('Import a dictionary for use'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('region-tagged server language: header is the native name '
+      'with the full tag', (WidgetTester tester) async {
+    await _pumpPage(
+      tester,
+      remote: const <RemoteDictionary>[
+        RemoteDictionary(
+          hostId: 'h1',
+          name: 'Korean Server',
+          type: DictionaryType.term,
+          order: 1,
+          lastSeenAt: _seenAt,
+          sourceLanguage: 'ko-KR',
+        ),
+      ],
+    );
+    expect(find.text('한국어 (ko-KR) · 1'), findsOneWidget);
+    expect(find.text('ko-KR · 1'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 

@@ -326,7 +326,8 @@ class DictionaryImportManager {
           decision: decision,
           replaceTarget: null,
         );
-        final int order = preservedSettings?.order ?? _nextOrder();
+        final ({int order, List<String> hiddenLanguages}) placement =
+            _placementFor(name, preservedSettings);
 
         final innerDataDir = Directory(path.join(tempOutputDir.path, name));
         final finalDir = Directory(path.join(_resourceDirectory.path, name));
@@ -350,7 +351,7 @@ class DictionaryImportManager {
         final detectedType = _parseType(result.detectedType);
         await _dictRepo.persistDictionary(
           Dictionary(
-            order: order,
+            order: placement.order,
             name: name,
             formatKey: 'yomichan',
             type: detectedType,
@@ -365,7 +366,7 @@ class DictionaryImportManager {
               // 标记，启动期的自愈循环就不会再对这本做一次全表扫描。
               kDictTypeProbeKey: kDictTypeProbeVersion,
             },
-            hiddenLanguages: preservedSettings?.hiddenLanguages ?? const [],
+            hiddenLanguages: placement.hiddenLanguages,
             collapsedLanguages:
                 preservedSettings?.collapsedLanguages ?? const [],
             expandedLanguages: preservedSettings?.expandedLanguages ?? const [],
@@ -659,7 +660,8 @@ class DictionaryImportManager {
         decision: decision,
         replaceTarget: replaceTarget,
       );
-      final int order = preservedSettings?.order ?? _nextOrder();
+      final ({int order, List<String> hiddenLanguages}) placement =
+          _placementFor(name, preservedSettings);
 
       final innerDataDir = Directory(path.join(tempOutputDir.path, name));
       final finalDir = Directory(path.join(_resourceDirectory.path, name));
@@ -707,7 +709,7 @@ class DictionaryImportManager {
       );
       await _dictRepo.persistDictionary(
         Dictionary(
-          order: order,
+          order: placement.order,
           name: name,
           formatKey: 'yomichan',
           type: detectedType,
@@ -720,7 +722,7 @@ class DictionaryImportManager {
             // 同目录导入路径：native 刚数完记录，探测标记直接落库（见另一处注释）。
             kDictTypeProbeKey: kDictTypeProbeVersion,
           },
-          hiddenLanguages: preservedSettings?.hiddenLanguages ?? const [],
+          hiddenLanguages: placement.hiddenLanguages,
           collapsedLanguages: preservedSettings?.collapsedLanguages ?? const [],
           expandedLanguages: preservedSettings?.expandedLanguages ?? const [],
           // 同上：用户手动指定的内容语言随 preservedSettings 继承，不被重导冲掉。
@@ -745,8 +747,13 @@ class DictionaryImportManager {
 
   // ── private helpers ──────────────────────────────────────────────────
 
-  /// 本机与服务器托管词典共用一条 `order` 数轴：新导入的排在两表最大值之后。
-  int _nextOrder() => _dictRepo.nextDictionaryOrder;
+  /// 新落库这本词典在混排分区里的位置与开关，规则在
+  /// [DictionaryRepository.placementForImport]（替换旧本继承旧本；接替同名服务器行；
+  /// 否则排最后）。
+  ({int order, List<String> hiddenLanguages}) _placementFor(
+    String name,
+    Dictionary? preservedSettings,
+  ) => _dictRepo.placementForImport(name, preservedSettings: preservedSettings);
 
   void _validatePath(Directory dir) {
     if (!path.isWithin(_resourceDirectory.path, dir.path)) {
