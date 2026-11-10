@@ -919,7 +919,6 @@ class _ManualDownloadTaskDialogState extends State<ManualDownloadTaskDialog> {
     return FushiListItem(
       key: ValueKey<String>('manual-task-file-${file.index}'),
       density: FushiListDensity.compact,
-      selected: checked,
       leading: FushiCheckbox(
         key: ValueKey<String>('manual-task-file-check-${file.index}'),
         value: checked,
