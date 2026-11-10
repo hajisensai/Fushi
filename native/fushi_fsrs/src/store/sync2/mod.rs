@@ -19,6 +19,7 @@ pub(crate) mod mvr;
 pub mod relay;
 pub(crate) mod sched_local;
 pub mod schema;
+pub(crate) mod sealed;
 pub(crate) mod semantics;
 pub(crate) mod snapshots;
 pub mod timeline;
