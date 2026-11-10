@@ -28,6 +28,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
+import 'package:fushi/src/second_screen/companion/companion_protocol.dart'
+    show CompanionLibraryKind;
+import 'package:fushi/src/second_screen/companion/modules/library_companion_hook.dart';
+import 'package:fushi/src/second_screen/companion/modules/library_companion_schema.dart';
 import 'package:fushi_engine/media/collections/collection_asset_reclaim.dart';
 import 'package:fushi_engine/media/collections/collection_cover.dart'
     show collectionOwnCoverCandidates;
@@ -220,6 +224,8 @@ import 'package:fushi/src/media/video/metadata/video_source_scrape_run_detail_di
         showVideoMetadataCandidateSearchDialog,
         showVideoSourceScrapeManualBindingDialog;
 import 'package:fushi/src/media/video/metadata/video_tmdb_ordering_dialog.dart';
+
+part 'home_video/companion.part.dart';
 
 /// 顶层 helper：打开本地视频播放页的**共享路由入口**（本页 hero/卡片与首页
 /// dashboard 继续卡/活动条同一条路径），统一经 [VideoFushiPage.neutralized]
@@ -612,6 +618,16 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// 组合三档判定（块3）与批量解散/删除（块4）都读这两个集。
   Set<int> get _selectedCollectionIds => _selection.collectionIds;
 
+  /// Dual-screen companion (Library tab, Main mode): see
+  /// `home_video/companion.part.dart`.
+  late final LibraryCompanionHook _companion = _createVideoCompanion();
+
+  /// The video whose menu is open (companion highlight).
+  FushiFocusId? _companionPressedId;
+
+  /// [setState] for the companion part (an extension cannot call it).
+  void _rebuild(VoidCallback fn) => setState(fn);
+
   /// 当前可见（过滤后）的本地视频列表，供全选 / 反选用。
   List<VideoBookRow> _visibleVideos = const <VideoBookRow>[];
 
@@ -943,6 +959,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    _companion.attach(
+      context,
+      focusChanges: FushiFocusRoot.maybeControllerOf(context),
+    );
     // BUG-3610：本页路由被盖住（合集详情页 / 播放页）→ 又露出来的边沿，补做
     // 被盖住期间推迟的进度重读。isCurrentOf 只依赖路由的 isCurrent 一项。
     final bool current = ModalRoute.isCurrentOf(context) ?? true;
@@ -1004,6 +1024,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
 
   @override
   void dispose() {
+    _companion.dispose();
     _collectionDisplayCounts.dispose();
     _coverExists.dispose();
     _remoteCoverExists.dispose();
@@ -4312,7 +4333,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     required ImageProvider? Function() cover,
     required String title,
   }) {
-    showMediaItemActions<void>(
+    final Future<void> menu = showMediaItemActions<void>(
       context: context,
       builder: (BuildContext dialogContext) => ValueListenableBuilder<int>(
         valueListenable: _coverExistsRevision,
@@ -4324,6 +4345,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         ),
       ),
     );
+    _companionTrackMenu(book, menu);
   }
 
   /// [_showVideoMenu] 的面板本体；[cover] 是当前这一轮取到的图源（可能仍是

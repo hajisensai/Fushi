@@ -269,13 +269,21 @@ class SrsRwkvService implements SrsRwkvScheduling {
   @visibleForTesting
   Future<void> Function()? debugAfterRebuildFingerprint;
 
+  /// 排程用的状态精度（int4 卡状态 + int8 笔记状态，见 native/fushi_rwkv）。校准图的临时回放用同一个。
+  static const RwkvPrecision precision = RwkvPrecision.int4;
+
   static Future<SrsRwkvBackend> _openWorker(File weights) async =>
       _WorkerBackend(
-        await RwkvWorker.spawn(
-          modelPath: weights.path,
-          precision: RwkvPrecision.int4,
-        ),
+        await RwkvWorker.spawn(modelPath: weights.path, precision: precision),
       );
+
+  /// 复习统计页校准图的回放行：全部保留评分，与全量重建同一份（[_fetchReplay]）。不碰常驻状态。
+  ///
+  /// 指纹直接整表取一次，不走 [_fingerprint]：后者在 [_replayed] 为空时会把 [_countedAt] 记成「全量回放的
+  /// 基数」，校准在排程首次重建期间调用就会盖掉重建自己记下的内容修订号，期间删过的日志之后只走增量计数、
+  /// 漏掉删除，常驻状态里留着已删的复习。
+  Future<SrsRwkvReplay> calibrationReplay() async =>
+      _fetchReplay(since: (await store.rwkvLogTail(since: 0)).maxRowId);
 
   SrsRwkvBackend? _backend;
   _LogPrint? _replayed;

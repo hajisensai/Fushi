@@ -1595,6 +1595,14 @@ Future<String> videoFileEtag(File file) async {
 ///
 /// 每份导出同时算一次整包 SHA-256（[reprDigestFor]，后台 isolate 跑，不占 host
 /// 所在 isolate），随响应发 `Repr-Digest`，供 client 续传拼完后做整体校验。
+///
+/// **内容版本**（[obtain] 的 `version`）：调用方能说出「这一项此刻的内容版本」时
+/// （有声书：`audiobookContentState` 的 revision），缓存只在版本相同时命中——host
+/// 上换过音频 / 字幕的书，下一次普通下载就重新打包，不必等 TTL 闲置换代，也不靠
+/// 每条写入路径记得通知缓存。换代时正在发送的旧包不受影响：它的响应体早已打开那份
+/// 文件，照常发完（旧文件删不掉的留给 [dispose]）；它之后的续传请求带的是旧 ETag，
+/// 撞上新包的 ETag 不匹配，`If-Range` 规则让它收到 200 全量新包、从 0 重下
+/// （[serveFileWithRange]）——干净地失败重来，绝不把两代字节拼在一起。
 class ExportPackageCache {
   ExportPackageCache({this.ttl = const Duration(minutes: 15)});
 
@@ -1605,6 +1613,16 @@ class ExportPackageCache {
 
   /// key → 最后一次使用（命中 / 生产 / 流式发送）时刻；滑动 TTL 的依据。
   final Map<String, DateTime> _lastUsed = <String, DateTime>{};
+
+  /// key → 当前缓存那份是按哪个内容版本导出的（[obtain] 的 `version`；没给版本的
+  /// 项不在表里）。
+  final Map<String, String> _versions = <String, String>{};
+
+  /// key → 当前 [_latest] 那份出自第几次开始的导出（[_produce] 的启动序号）。
+  /// 按版本去重后同一 key 可能有两次导出并行（内容刚换过）：后开始的那次代表更新的
+  /// 内容，先开始、后打完的旧导出不得把它顶掉。
+  final Map<String, int> _installedStart = <String, int>{};
+  int _startSeq = 0;
 
   /// 缓存文件路径 → `Repr-Digest` 头值（`sha-256=:<base64>:`）。
   final Map<String, String> _reprDigests = <String, String>{};
@@ -1627,14 +1645,18 @@ class ExportPackageCache {
   /// 取 (kind,id) 的缓存导出文件；TTL 内直接命中，否则经 [export] 重新打包。
   /// [export] 返回的临时文件（连同其父临时目录）所有权移交本缓存。
   ///
+  /// [version]（可选）：这一项此刻的内容版本。给了就只在缓存那份是同一版本导出的
+  /// 时候命中，版本不同当 miss 重新打包（见类注释「内容版本」）；不给 = 只按 TTL。
+  ///
   /// 命中判据走 async stat（包下载端点在 host 所在 isolate 上跑，同步 stat 会和别的
   /// 请求抢 isolate，BUG-3756）。await 之后再读 [_inFlight] / [_latest]：两段之间别的
   /// 请求可能已换代，命中判据只认 await 后仍是「当前代」的那份。
   Future<File> obtain(
     String kind,
     String id,
-    Future<File> Function() export,
-  ) async {
+    Future<File> Function() export, {
+    String? version,
+  }) async {
     final String key = '$kind|$id';
     final File? hit = _latest[key];
     if (hit != null) {
@@ -1644,7 +1666,8 @@ class ExportPackageCache {
         if (identical(_latest[key], hit) &&
             stat.type == FileSystemEntityType.file &&
             lastUsed != null &&
-            DateTime.now().difference(lastUsed) < ttl) {
+            DateTime.now().difference(lastUsed) < ttl &&
+            (version == null || _versions[key] == version)) {
           _lastUsed[key] = DateTime.now();
           return hit;
         }
@@ -1652,18 +1675,24 @@ class ExportPackageCache {
         // stat 失败：当 miss 处理，走重导出。
       }
     }
+    // 在跑的导出按「key + 版本」去重：内容刚换过时，新版本的请求不能搭上旧版本
+    // 那次还没打完的导出。
+    final String flightKey = version == null ? key : '$key#$version';
     // 注意回调必须用块体：`=> _inFlight.remove(key)` 会把被移除的 Future（即本
     // whenComplete 链自身）作为回调返回值交还 whenComplete，而 whenComplete 对
     // 返回的 Future 会等其完成——自己等自己，永久死锁。
-    return _inFlight[key] ??= _produce(key, export).whenComplete(() {
-      _inFlight.remove(key);
-    });
+    return _inFlight[flightKey] ??= _produce(key, export, version).whenComplete(
+      () {
+        _inFlight.remove(flightKey);
+      },
+    );
   }
 
   /// 让 (kind,id) 的缓存导出作废，下一次 [obtain] 必定重新打包。旧文件 best-effort
   /// 删除（Windows 上被正在流式的请求占用则删不掉，留给 [dispose]）。
   Future<void> invalidate(String kind, String id) async {
     _lastUsed.remove('$kind|$id');
+    _versions.remove('$kind|$id');
     final File? old = _latest.remove('$kind|$id');
     if (old == null) return;
     _reprDigests.remove(old.path);
@@ -1693,7 +1722,12 @@ class ExportPackageCache {
     return '"pkg-$seq-${stat.size}-${stat.modified.millisecondsSinceEpoch}"';
   }
 
-  Future<File> _produce(String key, Future<File> Function() export) async {
+  Future<File> _produce(
+    String key,
+    Future<File> Function() export,
+    String? version,
+  ) async {
+    final int start = ++_startSeq;
     final File exported = await export();
     // 保留原始文件名（扩展名决定 Content-Type，如 .epub → application/epub+zip），
     // 前缀序号防同名不同 key 撞车。
@@ -1719,9 +1753,20 @@ class ExportPackageCache {
       // 只损失整体校验（client 退回长度校验），不影响下载本身。
       engineLog.log('ExportPackageCache.reprDigest', e, stack);
     }
+    // 比这次晚开始的导出已经装进缓存：那份是更新的内容（版本换过之后才开始的），
+    // 这份更旧。不能把它顶回 [_latest]——那会让缓存退回旧版本，还会删掉新那份，而
+    // 新那份的请求方可能还没打开它（拿到 File 与开流之间还有 await）。这份照常交给
+    // 本次请求方发完；文件留在缓存目录，[dispose] 整目录回收。
+    if ((_installedStart[key] ?? 0) > start) return target;
+    _installedStart[key] = start;
     final File? old = _latest[key];
     _latest[key] = target;
     _lastUsed[key] = DateTime.now();
+    if (version == null) {
+      _versions.remove(key);
+    } else {
+      _versions[key] = version;
+    }
     if (old != null) {
       _reprDigests.remove(old.path);
       try {
@@ -1738,6 +1783,8 @@ class ExportPackageCache {
     _latest.clear();
     _inFlight.clear();
     _lastUsed.clear();
+    _versions.clear();
+    _installedStart.clear();
     _reprDigests.clear();
     final Directory? root = _root;
     _root = null;
