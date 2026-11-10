@@ -615,6 +615,9 @@ public class MainActivity extends AudioServiceActivity {
     public void configureFlutterEngine(@NonNull FlutterEngine flutterEngine) {
         super.configureFlutterEngine(flutterEngine);
         FloatingDictService.initEngineGroup(getApplicationContext());
+        // 反馈回复后台检查的排程：纯原生 Worker，不起 Flutter 引擎（反馈 yjn-3h8B-7）。
+        app.fushi.reader.feedback.FeedbackReplyWorkChannel.registerWith(
+                flutterEngine, getApplicationContext());
         SelectionActionChannel.registerWith(flutterEngine, this);
         SystemOcrChannel.registerWith(flutterEngine, this);
         ClipboardImageChannel.registerWith(flutterEngine, getApplicationContext());
