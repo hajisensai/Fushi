@@ -4216,6 +4216,7 @@
   "icon_custom_hint": "Нажмите на иконку, чтобы сменить, или выберите своё изображение ниже.",
   "icon_default": "По умолчанию",
   "icon_shortcut_created": "Ярлык на главном экране создан.",
+  "icon_shortcut_failed": "Could not set the home screen icon: ${error}",
   "icon_shortcut_unsupported": "Ярлыки не поддерживаются на этом устройстве.",
   "icon_switch_success": "Иконка приложения успешно изменена.",
   "image_pause": "Пауза на изображении",

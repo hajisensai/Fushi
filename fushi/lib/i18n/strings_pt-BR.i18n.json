@@ -4216,6 +4216,7 @@
   "icon_custom_hint": "Toque em um ícone para trocar, ou escolha uma imagem personalizada abaixo.",
   "icon_default": "Padrão",
   "icon_shortcut_created": "Atalho criado na tela inicial.",
+  "icon_shortcut_failed": "Could not set the home screen icon: ${error}",
   "icon_shortcut_unsupported": "Atalhos não são suportados neste dispositivo.",
   "icon_switch_success": "Ícone do app alterado com sucesso.",
   "image_pause": "Pausar na Imagem",

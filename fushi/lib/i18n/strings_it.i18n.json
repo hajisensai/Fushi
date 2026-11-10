@@ -4216,6 +4216,7 @@
   "icon_custom_hint": "Tocca un'icona per cambiarla, oppure scegli un'immagine personalizzata qui sotto.",
   "icon_default": "Predefinita",
   "icon_shortcut_created": "Collegamento sulla schermata iniziale creato.",
+  "icon_shortcut_failed": "Could not set the home screen icon: ${error}",
   "icon_shortcut_unsupported": "I collegamenti non sono supportati su questo dispositivo.",
   "icon_switch_success": "Icona dell'app cambiata con successo.",
   "image_pause": "Pausa su immagine",
