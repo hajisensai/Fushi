@@ -484,6 +484,9 @@ class AnkiRepository extends BaseAnkiRepository {
   /// 不必再经通道回读一次），否则 Lapis 的 `SentenceFurigana` 这类别的工具填过、
   /// 模板又优先读的字段会让卡面停在旧句子。`tags` 是新制会打的那组标签，native
   /// 与现有标签取并集——覆盖后的卡与新制的卡在字段与标签上都一样。
+  ///
+  /// 反馈 nWWjBp3Clo：用户给当前笔记类型选了「只覆写这些字段」时只点名选中的字段
+  /// （没映射到的选中字段写空串），`clearUnspecified: false` 让 native 保留其余字段。
   @override
   Future<MineOutcome> updateMinedNote({
     required int noteId,
@@ -524,17 +527,27 @@ class AnkiRepository extends BaseAnkiRepository {
         context: context,
         keepEmpty: true,
       );
-      final Map<String, String> fields = rendered.fields;
+      final AnkiNoteType? noteType = settings.selectedNoteType;
+      final Set<String>? onlyFields = settings.overwriteFieldsFor(
+        noteType?.name ?? settings.selectedNoteTypeName,
+      );
+      // 整卡覆写：只发映射字段，其余由 native 的 clearUnspecified 按位置写空（它握着
+      // 整条 note，不必经通道回读）。只覆写选中字段：只点名选中字段，其余保留。
+      final Map<String, String> fields = onlyFields == null
+          ? rendered.fields
+          : BaseAnkiRepository.fieldsForOverwrite(
+              existingFieldNames: noteType?.fields ?? const <String>[],
+              rendered: rendered.fields,
+              onlyFields: onlyFields,
+            );
 
-      // 所有映射字段渲染皆空白（含无字段映射）说明会把整卡清空——拒绝。部分字段
-      // 有内容时按覆盖语义整体替换（空字段随之清空，见 BUG-858）。
-      if (fields.values.every((String v) => v.trim().isEmpty)) {
-        return MineOutcome.failure(
-          'All fields are empty — refusing to clear an existing card. '
-          'Check your note type field mappings.',
-          errorCode: AnkiErrorCode.allFieldsEmpty,
-        );
-      }
+      // 要写的字段渲染皆空白说明会把它们（整卡覆写时 = 整卡）清空——拒绝。部分字段
+      // 有内容时按覆盖语义替换（空字段随之清空，见 BUG-858）。
+      final MineOutcome? empty = BaseAnkiRepository.rejectEmptyOverwrite(
+        fields,
+        onlyFields: onlyFields,
+      );
+      if (empty != null) return empty;
 
       // BUG-2606：与 [mineEntry] 同一组标签、同一个 helper。
       final List<String> tags = buildNoteTags(
@@ -551,7 +564,7 @@ class AnkiRepository extends BaseAnkiRepository {
         await _channel.invokeMethod('updateNoteFields', <String, dynamic>{
           'noteId': noteId,
           'fieldValues': fields,
-          'clearUnspecified': true,
+          'clearUnspecified': onlyFields == null,
           'tags': tags,
         });
         // TODO-779: 覆盖路径同样把音频下载失败原因带给成功 toast。

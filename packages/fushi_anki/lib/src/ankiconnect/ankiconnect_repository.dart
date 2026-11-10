@@ -718,6 +718,9 @@ class AnkiConnectRepository extends BaseAnkiRepository {
   /// `SentenceFurigana` 这类别的工具填过、模板又优先读的字段会让卡面停在旧句子。
   /// 同时把新制会打的那组标签（`fushi` / 分类 / 书名…）经 `addTags` 并进去——覆盖
   /// 后的卡与新制的卡在字段与标签上都一样，用户原有的其它标签保留。
+  ///
+  /// 反馈 nWWjBp3Clo：用户给这种笔记类型选了「只覆写这些字段」
+  /// （[AnkiSettings.overwriteFieldsFor]）时，只点名选中的字段，其余字段原样保留。
   @override
   Future<MineOutcome> updateMinedNote({
     required int noteId,
@@ -782,17 +785,22 @@ class AnkiConnectRepository extends BaseAnkiRepository {
         keepEmpty: true,
       );
       final RenderedMinedFields rendered = prepared.rendered;
-      final Map<String, String> fields = rendered.fields;
+      final Set<String>? onlyFields = settings.overwriteFieldsFor(
+        existing.modelName ?? targetModel,
+      );
+      final Map<String, String> toWrite = BaseAnkiRepository.fieldsForOverwrite(
+        existingFieldNames: existingFields.keys,
+        rendered: rendered.fields,
+        onlyFields: onlyFields,
+      );
 
-      // 所有映射字段渲染皆空白（含无字段映射）说明会把整卡清空——拒绝。部分字段
-      // 有内容时按覆盖语义整体替换（空字段随之清空，Never break userspace 见 BUG-858）。
-      if (fields.values.every((String v) => v.trim().isEmpty)) {
-        return MineOutcome.failure(
-          'All fields are empty — refusing to clear an existing card. '
-          'Check your note type field mappings.',
-          errorCode: AnkiErrorCode.allFieldsEmpty,
-        );
-      }
+      // 要写的字段渲染皆空白说明会把它们（整卡覆写时 = 整卡）清空——拒绝。部分字段
+      // 有内容时按覆盖语义替换（空字段随之清空，Never break userspace 见 BUG-858）。
+      final MineOutcome? empty = BaseAnkiRepository.rejectEmptyOverwrite(
+        toWrite,
+        onlyFields: onlyFields,
+      );
+      if (empty != null) return empty;
 
       // BUG-2606：与 [mineEntry] 同一组标签、同一个 helper——覆盖后的卡不该比新制
       // 的少 `fushi` / 分类 / 书名标签。
@@ -807,13 +815,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
       );
 
       try {
-        await service.updateNoteFields(
-          noteId,
-          BaseAnkiRepository.fieldsForOverwrite(
-            existingFieldNames: existingFields.keys,
-            rendered: fields,
-          ),
-        );
+        await service.updateNoteFields(noteId, toWrite);
         await service.addTags(noteId, tags);
         // TODO-779: 覆盖路径同样把音频下载失败原因带给成功 toast。
         // BUG-1549：覆写成功 toast 的牌组名与新制同源（按设置解析的目标牌组）。
