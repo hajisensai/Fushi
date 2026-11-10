@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3846 条。点号进各自文件。
+> 共 3847 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4285](bugs/BUG-4285-transcode-superseded-token-keeps-running.md) | ✅ | ✅ | 播放会话结束 / 换档换集后旧 token 的转码分段照样转完，占满转码名额拖慢新流起播 |
 | [BUG-4284](bugs/BUG-4284-adaptive-quality-switch-no-rollback.md) | ✅ | ✅ | 自适应换档失败后共享档位不回滚，重试仍用没起来的档 |
 | [BUG-4283](bugs/BUG-4283-adaptive-quality-seek-grace-unbounded.md) | ✅ | ✅ | 频繁 seek 时自适应画质的 seek 宽限不断续命，差网永不降档 |
 | [BUG-4282](bugs/BUG-4282-remote-agent-answer-not-bound-to-card.md) | ✅ | ✅ | 远端 AI 助手的确认 / 候选作答不绑定卡片，晚到的作答会落到下一张卡上 |
