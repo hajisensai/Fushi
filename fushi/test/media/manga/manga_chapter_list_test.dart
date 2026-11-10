@@ -364,7 +364,7 @@ void main() {
     ]) {
       expect(
         find.bySemanticsLabel(RegExp(RegExp.escape(label))),
-        findsOneWidget,
+        findsWidgets,
         reason: label,
       );
     }

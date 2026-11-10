@@ -115,10 +115,10 @@ function fixture({continuous = true, css = true, writingMode = 'horizontal-tb', 
     '_onContinuousViewportScroll',
     // 上游 2026-10-05 起 paginate 会调几何重锚收口；漏掉它 harness 会在第一次翻页就
     // TypeError（this._settleGeometryReanchor is not a function）。
-    '_settleGeometryReanchor', '_reanchorFrame',
-    // BUG-4325 起 paginate 的 limit 分支先问 claimBoundaryTurn（无缝连章接管章界）；
-    // 取生产默认实现（恒 false），否则第一次碰到边界就 TypeError。
-    'claimBoundaryTurn']) reader[name] = fn('pagination', name);
+    '_settleGeometryReanchor', '_reanchorFrame']) reader[name] = fn('pagination', name);
+  // BUG-4325 起 paginate 的 limit 分支先问 claimBoundaryTurn（无缝连章接管章界）。生产里
+  // 它是对象字面量属性（默认恒 false，无缝连章时被覆盖），fn() 抽不出这种写法，这里照默认给。
+  reader.claimBoundaryTurn = () => false;
   if (continuous) reader.scrollToChapterEnd = () => {};
   const start = html.appendChild(new Element('start-grip'));
   const end = html.appendChild(new Element('end-grip'));
