@@ -25,6 +25,8 @@ import 'package:fushi_engine/sync/pairing/fushi_pairing_protocol.dart'
     show FushiPairingProtocol;
 import 'package:fushi_engine/sync/fushi_sync_server.dart'
     show SyncServerPortInUseException, isAddressInUseError;
+import 'package:fushi_engine/utils/net/bounded_read.dart'
+    show BodyTooLargeException;
 import 'package:fushi/src/sync/browser_extension_test_page.dart'
     show kBrowserExtensionTestPagePath;
 import 'package:fushi/src/sync/extension_font_api.dart';
@@ -440,10 +442,20 @@ class FushiApiServer {
 
         // 只为在 body 里找 key（yomitan-api 兼容）最多读 64 KiB；超限抛
         // BodyTooLargeException 由 bodyLimitMiddleware 回 413，未鉴权的巨体不整读。
-        final String rawBody = await readBoundedBodyString(
-          request,
-          maxBytes: kApiKeyBodyProbeMaxBytes,
-        );
+        // 例外：header / query 已经带了凭据（只是不对）——那是凭据过期，不是体过大，
+        // 照旧回 401。浏览器扩展只在 401 时重读自动配置换新 key 重试，带截图 / 音频的
+        // 大制卡请求回 413 会直接失败（评审 compat-1）。
+        final String rawBody;
+        try {
+          rawBody = await readBoundedBodyString(
+            request,
+            maxBytes: kApiKeyBodyProbeMaxBytes,
+          );
+        } on BodyTooLargeException {
+          if (provided != null)
+            return shelf.Response(401, body: 'Unauthorized');
+          rethrow;
+        }
         final String? bodyKey = _apiKeyFromJsonBody(rawBody);
         if (bodyKey != null && _keyEquals(bodyKey, key)) {
           return inner(request.change(body: rawBody));

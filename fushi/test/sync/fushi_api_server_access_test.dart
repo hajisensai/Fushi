@@ -73,6 +73,7 @@ Future<({int? status, bool cutOffEarly})> _postChunkedWithoutKey(
   int port,
   String path, {
   required int totalBytes,
+  String? authorization,
 }) async {
   final Socket socket = await Socket.connect(
     InternetAddress.loopbackIPv4,
@@ -99,6 +100,7 @@ Future<({int? status, bool cutOffEarly})> _postChunkedWithoutKey(
     latin1.encode(
       'POST $path HTTP/1.1\r\nHost: 127.0.0.1:$port\r\n'
       'Content-Type: application/json\r\n'
+      '${authorization == null ? '' : 'Authorization: $authorization\r\n'}'
       'Transfer-Encoding: chunked\r\n\r\n',
     ),
   );
@@ -272,6 +274,25 @@ void main() {
     // 修复前服务端整读 70 MiB 后回 401，两条都不成立。
     expect(
       r.status == 413 || (r.status == null && r.cutOffEarly),
+      isTrue,
+      reason: 'status=${r.status} cutOffEarly=${r.cutOffEarly}',
+    );
+  });
+
+  test('Basic 头里 key 过期 + 正文超过 64 KiB → 401（不是 413）', () async {
+    // 评审 compat-1：浏览器扩展只在 401 时重读自动配置、换新 key 重试；回 413 会让
+    // 带截图的制卡请求直接失败。凭据已在头里给出（只是不对）就是鉴权失败。
+    final FushiApiServer s = await start(lanPolicy, apiKey: 'k1');
+    final ({int? status, bool cutOffEarly}) r = await _postChunkedWithoutKey(
+      s.port,
+      '/api/mine',
+      totalBytes: 1024 * 1024,
+      authorization: 'Basic ${base64Encode(utf8.encode('fushi:stale-key'))}',
+    );
+    // 服务端读满 64 KiB 就回应并关连接；读不到状态行时（macOS 上 RST 冲掉响应）
+    // 至少要看到没发完就被断开。修复前读得到状态行时是 413。
+    expect(
+      r.status == 401 || (r.status == null && r.cutOffEarly),
       isTrue,
       reason: 'status=${r.status} cutOffEarly=${r.cutOffEarly}',
     );
