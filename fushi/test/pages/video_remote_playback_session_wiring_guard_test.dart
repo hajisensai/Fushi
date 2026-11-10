@@ -1,4 +1,4 @@
-/// BUG-4283 页面接线守卫：互联远端视频每一集载入时经
+/// BUG-4393 页面接线守卫：互联远端视频每一集载入时经
 /// `InterconnectRemotePlaybackSession.startPositionFor` 走与 sweep 同一份三方判定，
 /// 实时上报经同一个会话。播放页依赖 libmpv，widget test 起不来；行为本身由
 /// `test/sync/interconnect_remote_playback_session_test.dart`（真 host）钉住，这里只

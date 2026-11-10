@@ -1,4 +1,4 @@
-/// BUG-4281（步骤 8）：文件箱进度基线的远端作用域工具。
+/// BUG-4391（步骤 8）：文件箱进度基线的远端作用域工具。
 ///
 /// 此前 `progressBaselineDimensionOf` 对全部云后端返回 `'progress'`、互联返回
 /// `'progress__fushiServer'`，不带远端身份：换云类型 / 账号 / 服务器之后，旧远端上

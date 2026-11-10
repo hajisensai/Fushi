@@ -53,7 +53,7 @@ Future<List<PlaybackPositionConflictView>> loadPlaybackPositionConflicts({
   }
   final List<PlaybackPositionConflictView> views =
       <PlaybackPositionConflictView>[];
-  // 同一次加载每种条目共用一个实例：都绑在加载时的那台 host 上（BUG-4281）。应用
+  // 同一次加载每种条目共用一个实例：都绑在加载时的那台 host 上（BUG-4391）。应用
   // 用的也是这个实例，会话期间换了 host 时那一条抛 InterconnectHostChangedException、
   // 不落地。
   final Map<PlaybackPositionKind, InterconnectPlaybackPositionSync> syncs =
@@ -100,7 +100,7 @@ Future<int> applyPlaybackPositionDecisions(
     final PlaybackPositionConflictView v = views[d.key];
     final String key = v.conflict.assetKey;
     try {
-      // 每条裁决在该条目的位置锁里落地（BUG-4279），不与 sweep / 实时上报交错。
+      // 每条裁决在该条目的位置锁里落地（BUG-4389），不与 sweep / 实时上报交错。
       if (await syncResourceLocks.withResources(<String>{
         syncPlaybackPositionResource(v.kind, key),
       }, () => _applyPlaybackPositionDecision(v, d.value))) {
@@ -116,10 +116,10 @@ Future<int> applyPlaybackPositionDecisions(
 /// 落地一条裁决（调用方持有该条目的位置锁）；返回这条是否真的解决。
 ///
 /// 两侧都按「用户在弹窗里看到的对端值」[PlaybackPositionConflictView.remote] 落地
-/// （BUG-4279）：
+/// （BUG-4389）：
 /// - 本机：推送的是锁内**重读**的本端（弹窗期间本机播放推进是常态，正是用户要
 ///   保留的一侧；拿弹窗快照推会把 host 落到旧位置），前置条件是弹窗展示的对端
-///   位置——对端在弹窗期间又变了就 superseded，host 确认才算解决（BUG-4278）。
+///   位置——对端在弹窗期间又变了就 superseded，host 确认才算解决（BUG-4388）。
 /// - 对端：锁内重读 host，与弹窗展示的位置或戳不同就不落地（用户没见过新值）；
 ///   否则照旧比较后写入本端（BUG-3537：本端断点在弹窗期间被改写同样不落地）。
 /// 未解决的条目下一轮 sweep 按新事实重新判定。

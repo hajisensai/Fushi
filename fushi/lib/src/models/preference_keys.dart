@@ -1174,7 +1174,7 @@ const List<String> kKnownPreferenceKeyPrefixes = <String>[
   kSrsDayRolloverSeenPrefKeyPrefix,
   'src:',
   // string：`sync_remote_account__<通道槽位>`——云后端最近一次取到的账号（规整后的
-  // 小写邮箱 / 用户名，BUG-4281），文件箱进度基线按它分槽。设备本地
+  // 小写邮箱 / 用户名，BUG-4391），文件箱进度基线按它分槽。设备本地
   // （SyncRepository.deviceLocalPrefKeys），不进备份 / 设置同步。
   'sync_remote_account__',
   // int（毫秒，v101）：`updates_last_check_<UpdateFeedKind.dbValue>`——某个域上次

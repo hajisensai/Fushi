@@ -2912,8 +2912,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   late final SourceReviewRemoteReportGate _remoteReportGate =
       SourceReviewRemoteReportGate(isReview: () => _sourceReviewActive);
 
-  /// 互联远端视频播放会话：每一集载入时的开播三方判定（BUG-4283，与 sweep 同一份）
-  /// + 实时上报（BUG-4279：同一条目最多一个在途 + 一个待发，慢网下每秒的上报不排
+  /// 互联远端视频播放会话：每一集载入时的开播三方判定（BUG-4393，与 sweep 同一份）
+  /// + 实时上报（BUG-4389：同一条目最多一个在途 + 一个待发，慢网下每秒的上报不排
   /// 长队）。首次用到时按当前互联客户端建，客户端换了就换一个（[_remoteSessionFor]）。
   ///
   /// `dispose` 不关它：退出路径的最后一次落库（[exitAfterPersist] 发起、pop 后才
@@ -4851,7 +4851,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 换集 / 连播（无 override）与首开同一条判定：本机库断点、清单条目、互联 host
     // 此刻的断点取较新（BUG-4304）。只读本机断点会让合集下一成员 / 播放列表下一集
     // 从本机旧断点起播，随后的实时上报（戳 = now）把旧位置写回 host。互联 host 上
-    // sweep 同步的那个键另走下面的三方判定（BUG-4283），这里的值只作它的离线回退。
+    // sweep 同步的那个键另走下面的三方判定（BUG-4393），这里的值只作它的离线回退。
     final int resumePositionMs =
         initialPositionMsOverride ??
         await _resolveRemoteInitialPositionMs(info, index);
@@ -4866,7 +4866,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _youtubeVariantsResolved = false;
     // TODO-1213：先置「正在连接视频流…」（远端流须先向 host / 源建流，有网络往返）。
     _setLoadingPhase(_VideoLoadPhase.connecting);
-    // BUG-4283：互联 host 的当前集 / 单视频 / 合集成员（sweep 同步的那个键）每一集载入
+    // BUG-4393：互联 host 的当前集 / 单视频 / 合集成员（sweep 同步的那个键）每一集载入
     // 时都与 sweep 走同一份三方判定定开播位置（冲突时从本机位置起播、上报 held 到裁决），
     // 上面的本地 / LWW 值只作离线回退。显式起点（换画质 / 换线路回到当前位置、卡片
     // 回看）照用调用方给的位置；回看中不碰服务器进度（BUG-3490）。

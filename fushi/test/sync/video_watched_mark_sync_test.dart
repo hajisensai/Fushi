@@ -91,7 +91,7 @@ void main() {
     );
     await localDb.setPrefTyped<int>(videoRemotePositionAtPrefKey(_uid), 5000);
     // 「上次同步已对齐」要落成位置基线：无基线时两端不等判冲突、不比墙钟
-    // （BUG-4282），标记已看要靠「只一端偏离基线」才能单向收敛。
+    // （BUG-4392），标记已看要靠「只一端偏离基线」才能单向收敛。
     await localDb.setSyncBaseline(
       _uid,
       kInterconnectVideoPositionDimension,

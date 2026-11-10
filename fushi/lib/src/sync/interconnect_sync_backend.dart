@@ -417,7 +417,7 @@ class InterconnectSyncBackend extends SyncBackend
     return _activeHostIdentity!;
   }
 
-  // ── 基线作用域（BUG-4281）──────────────────────────────────────────────────
+  // ── 基线作用域（BUG-4391）──────────────────────────────────────────────────
 
   /// 会话所连 host 的基线作用域 id（[interconnectScopeHostIdOf]）：选中候选的
   /// hostId；老条目（无 hostId）认得出是哪台带 hostId 的 host 时取那台的，认不出为
@@ -699,7 +699,7 @@ class InterconnectSyncBackend extends SyncBackend
     _registerPinnedNativeOrigin(normalized, chosen.fingerprintSha256);
     _activeHostIdentity = chosen.hostId ?? normalized;
     _activeCandidate = chosen;
-    // 基线作用域（BUG-4281）：选中候选的 hostId 变了（含首次）才算换 host；老条目
+    // 基线作用域（BUG-4391）：选中候选的 hostId 变了（含首次）才算换 host；老条目
     // （无 hostId）之间换地址都是 null，不算。
     final String? scopeId = _scopeHostIdOf(chosen);
     if (_hostScopeSerial == 0 || scopeId != _scopeHostId) {
@@ -3702,7 +3702,7 @@ class InterconnectSyncBackend extends SyncBackend
     _ops!.checkStatus(res.statusCode, 'PUT /api/library/videos/$id/position');
   }
 
-  // ── live 写入（三方同步专用，BUG-4278）──────────────────────────────────────
+  // ── live 写入（三方同步专用，BUG-4388）──────────────────────────────────────
 
   /// host 是否在 live 位置端点上宣告了带回执的写入契约（[kLiveWriteHeader]），按
   /// [_activeHostIdentity] 缓存：带头的成功响应记 true，不带头的成功响应记 false。
@@ -3852,7 +3852,7 @@ class InterconnectSyncBackend extends SyncBackend
   /// （[resolveLivePositionWrite]）——前置 GET 已核对 host 停在期望位置上，上报戳
   /// 不新于 host 已存可信戳（[trustedStoredSyncStamp]）时抬到「已存戳 + 1」，再截到
   /// [capFutureSyncStamp]。不抬的话旧 host 按 LWW 拒收时钟偏慢设备的每一次上报，
-  /// 实时上报整场 held（BUG-4278 评审 correctness-1）。
+  /// 实时上报整场 held（BUG-4388 评审 correctness-1）。
   static int _legacyLiveStamp(int reportedAtMs, {required int storedAtMs}) {
     final int now = DateTime.now().millisecondsSinceEpoch;
     final int stored = trustedStoredSyncStamp(storedAtMs, nowMs: now);
@@ -3862,7 +3862,7 @@ class InterconnectSyncBackend extends SyncBackend
     );
   }
 
-  /// live 写入的唯一流程（BUG-4278）。[read] / [legacyPut] 是既有的 GET / PUT
+  /// live 写入的唯一流程（BUG-4388）。[read] / [legacyPut] 是既有的 GET / PUT
   /// 方法，[path] / [body] 是带前置条件的新式 PUT。
   ///
   /// - host 未宣告新契约（未知或已知不支持）：先 [read] 一次（同时从响应头学到能力）。
@@ -4071,7 +4071,7 @@ class InterconnectSyncBackend extends SyncBackend
   }
 }
 
-/// 候选 [candidate] 的基线作用域 id（BUG-4281）：它自己的 hostId；老条目（无
+/// 候选 [candidate] 的基线作用域 id（BUG-4391）：它自己的 hostId；老条目（无
 /// hostId）按「是否与某条带 hostId 的候选同一台 host」认领那台的 hostId，认不出 →
 /// null（无后缀的老条目作用域）。纯函数。
 ///
@@ -4118,7 +4118,7 @@ String? interconnectScopeHostIdOf(
   return matched.length == 1 ? matched.single : null;
 }
 
-/// 一个互联会话所连 host 的基线作用域（BUG-4281）。
+/// 一个互联会话所连 host 的基线作用域（BUG-4391）。
 ///
 /// [hostId] == null 表示老条目（配对时没记 hostId）：全部老条目共用无后缀维度，地址
 /// 之间切换不算换 host（URL 不是 host 身份）。[serial] 是取 pin 时会话的作用域计数，
@@ -4146,7 +4146,7 @@ class InterconnectHostPin {
   String toString() => 'InterconnectHostPin($hostId#$serial)';
 }
 
-/// 旧无后缀基线行的领养决定（BUG-4281，由当前已启用候选算出）。
+/// 旧无后缀基线行的领养决定（BUG-4391，由当前已启用候选算出）。
 enum LegacyBaselineAdoption {
   /// 候选只有一台带 hostId 的 host：旧行全部归它（覆盖目标行后删源行）。
   move,
@@ -4167,7 +4167,7 @@ class InterconnectHostScope {
   final LegacyBaselineAdoption adoption;
 }
 
-/// 会话在钉住之后换了 host（BUG-4281）：用旧 host 的基线对新 host 判定会把另一台
+/// 会话在钉住之后换了 host（BUG-4391）：用旧 host 的基线对新 host 判定会把另一台
 /// host 的值当成「对端单边改动」静默落到本机。抛出点在发请求之前，host 没收到请求。
 class InterconnectHostChangedException implements Exception {
   const InterconnectHostChangedException({
@@ -4183,7 +4183,7 @@ class InterconnectHostChangedException implements Exception {
       'InterconnectHostChangedException: session moved off $expected';
 }
 
-/// 三方同步一次 live 写入的结局（BUG-4278）。
+/// 三方同步一次 live 写入的结局（BUG-4388）。
 enum LivePushStatus {
   /// host 确认停在上报位置：调用方可以记基线。
   confirmed,

@@ -18,7 +18,7 @@ typedef PlaybackBaselineSnapshot = ({
   Map<String, int> pending,
 });
 
-/// 播放页实时上报（[InterconnectPlaybackPositionSync.reportLive]）的结局（BUG-4278）。
+/// 播放页实时上报（[InterconnectPlaybackPositionSync.reportLive]）的结局（BUG-4388）。
 enum LiveReportResult {
   /// host 确认停在上报位置，基线已推进。
   confirmed,
@@ -89,7 +89,7 @@ enum PlaybackPositionKind { video, audiobook }
 
 /// 一条播放位置的资源键（[syncResourceLocks]）。同一条目的「读基线 / 本端 → 判定
 /// → 写 host / 本端 → 记基线」必须原子：sweep、播放页实时上报、冲突弹窗与对比弹窗
-/// 各拿各的旧判定交错落地，基线会被旧判定改写（BUG-4279）。
+/// 各拿各的旧判定交错落地，基线会被旧判定改写（BUG-4389）。
 ///
 /// 加锁顺序在「整轮 → 通道 → 书」之后：持有它的一方不再等任何别的资源。
 String syncPlaybackPositionResource(PlaybackPositionKind kind, String key) =>
@@ -124,7 +124,7 @@ PlaybackPositionKind? playbackPositionKindOfDimension(String dimension) =>
 /// pref——**不**写 `VideoBooks.lastPlayedAt`：那一列是「这一集是什么时候看的」，
 /// 抬戳不是一次观看，写进去会污染合集续播锚点（BUG-1542）。
 ///
-/// 基线按 host 分槽（BUG-4281）：一个实例一生只绑一台 host（[bind]），基线读写都落
+/// 基线按 host 分槽（BUG-4391）：一个实例一生只绑一台 host（[bind]），基线读写都落
 /// 那台 host 的存储维度，host 读写都钉住它（[InterconnectHostPin]）；会话中途换了
 /// host 时 live 读写抛 [InterconnectHostChangedException]，不拿这台 host 的基线去判
 /// 另一台 host 的值。sweep 每轮、弹窗每次加载各建新实例。
@@ -155,7 +155,7 @@ class InterconnectPlaybackPositionSync {
   /// 绑定的 host（[bind] 之前为 null）。
   InterconnectHostPin? get pin => _pin;
 
-  /// 绑到会话此刻所连的 host（BUG-4281）：取作用域、领养升级前的无后缀旧行、记下
+  /// 绑到会话此刻所连的 host（BUG-4391）：取作用域、领养升级前的无后缀旧行、记下
   /// 存储维度。同一实例只绑一次（并发调用 await 同一个）；失败下次重试。不发请求。
   Future<void> bind() => _binding ??= _bind().then(
     (_) {},
@@ -340,12 +340,12 @@ class InterconnectPlaybackPositionSync {
     );
   }
 
-  /// 一条的完整 live 三方同步：重读本端 → [decide] → 推送 / 落地 / 对齐（BUG-4283）。
+  /// 一条的完整 live 三方同步：重读本端 → [decide] → 推送 / 落地 / 对齐（BUG-4393）。
   ///
   /// sweep（`SyncOrchestrator._syncPositionsLive`）与播放页开播
   /// （[InterconnectRemotePlaybackSession.startPositionFor]）共用这一份，开播不再另走
   /// 一套 LWW。[remote] 是调用方刚从绑定的 host 读到的值，同时作推送的前置条件
-  /// （BUG-4279）。冲突时两端都不写，由调用方上报。调用方须已持有该条目的
+  /// （BUG-4389）。冲突时两端都不写，由调用方上报。调用方须已持有该条目的
   /// [syncPlaybackPositionResource] 锁。
   Future<PlaybackPositionSyncStep> syncOne(
     String key, {
@@ -408,7 +408,7 @@ class InterconnectPlaybackPositionSync {
   }
 
   /// 本端胜出：推给 host（时间戳不新于 host 时抬到 host + 1，见类头），**host 确认**
-  /// 停在推送位置后本端只对齐时间戳 pref、记基线（BUG-4278）。返回推送结局与推送
+  /// 停在推送位置后本端只对齐时间戳 pref、记基线（BUG-4388）。返回推送结局与推送
   /// 的位置。
   ///
   /// 推送带前置条件「host 仍停在判定时读到的 [remote]」：
@@ -427,7 +427,7 @@ class InterconnectPlaybackPositionSync {
   ///
   /// [expectedRemotePositions] 是前置条件：写者「判定时看到的 host 位置」。省略 =
   /// `[remote.positionMs]`（sweep 判定读到的就是 [remote]）；冲突弹窗传弹窗展示给
-  /// 用户的对端值（BUG-4279）。调用方须持有该条目的
+  /// 用户的对端值（BUG-4389）。调用方须持有该条目的
   /// [syncPlaybackPositionResource] 锁。
   Future<({LivePushStatus status, PlaybackPosition agreed})> pushLocal(
     String key, {
@@ -479,7 +479,7 @@ class InterconnectPlaybackPositionSync {
   }
 
   /// 播放页实时上报（节流回调）：本端位置 [live] 已由播放页写进本地 pref，这里推给
-  /// host，**host 确认**后把基线推进到上报位置（BUG-4278）。
+  /// host，**host 确认**后把基线推进到上报位置（BUG-4388）。
   ///
   /// 与 sweep 共用这一入口而不是播放页裸调 `putRemoteVideoPosition`：实时上报本身
   /// 就是「两端在这个位置达成一致」，不推进基线的话，A 串流到 600（host=600、基线
@@ -495,7 +495,7 @@ class InterconnectPlaybackPositionSync {
   /// `pushLocal` 以读到的 host 位置为前置条件推送，`applyRemote` / `conflict` 不写
   /// （播放中不把 host 值落到本端），返回 held。
   ///
-  /// 整段在该条目的 [syncPlaybackPositionResource] 锁里（BUG-4279）：锁罩住网络往返，
+  /// 整段在该条目的 [syncPlaybackPositionResource] 锁里（BUG-4389）：锁罩住网络往返，
   /// host 上的写入顺序与基线的写入顺序一致——否则先确认的写可能后记基线，把基线
   /// 倒退；sweep / 弹窗也不会拿各自的旧判定与它交错落地。播放页的每秒上报经
   /// [LivePositionReporter] 合并，积压不超过每条一个在途 + 一个待发。
@@ -619,7 +619,7 @@ class InterconnectPlaybackPositionSync {
     return localChanged;
   }
 
-  /// 删「待确认」行：这次推送 host 明确没采纳（BUG-4278），它不再携带信息。
+  /// 删「待确认」行：这次推送 host 明确没采纳（BUG-4388），它不再携带信息。
   Future<void> _dropPending(String key) =>
       _db.deleteSyncBaseline(key, _pendingDim);
 
@@ -696,7 +696,7 @@ class InterconnectPlaybackPositionSync {
   }
 }
 
-/// 播放页的 live 位置上报（BUG-4279）：按条目 single-flight，任意时刻每条最多一个
+/// 播放页的 live 位置上报（BUG-4389）：按条目 single-flight，任意时刻每条最多一个
 /// 在途 + 一个待发（只留最新值）。
 ///
 /// 播放页每秒节流一次上报；每次上报都要拿条目锁并走网络往返（旧 host 还多两个
@@ -725,7 +725,7 @@ class LivePositionReporter {
   final FushiDatabase _db;
   final PlaybackPositionKind _kind;
 
-  /// 绑在某一台 host 上的同步实例（BUG-4281）；会话换了 host 时换新实例。
+  /// 绑在某一台 host 上的同步实例（BUG-4391）；会话换了 host 时换新实例。
   InterconnectPlaybackPositionSync _sync;
 
   /// 有上报在途的条目。
@@ -783,7 +783,7 @@ class LivePositionReporter {
     try {
       await _sendWith(bound, key, live);
     } on InterconnectHostChangedException {
-      // 会话换了 host（BUG-4281）：抛出点在发请求之前，这个值没到任何 host。换一个
+      // 会话换了 host（BUG-4391）：抛出点在发请求之前，这个值没到任何 host。换一个
       // 绑到新 host 的实例，按新 host 的基线把这个值重新判定一次。
       _rebind(bound);
       try {
@@ -796,7 +796,7 @@ class LivePositionReporter {
     }
   }
 
-  /// [bound] 绑的 host 已不是会话所连的 host（BUG-4281）：换一个新实例（下次用到时
+  /// [bound] 绑的 host 已不是会话所连的 host（BUG-4391）：换一个新实例（下次用到时
   /// 绑到新 host）。held 记的是旧 host 的基线，一并作废。
   void _rebind(InterconnectPlaybackPositionSync bound) {
     if (!identical(_sync, bound)) return;
@@ -830,7 +830,7 @@ class LivePositionReporter {
 }
 
 /// 互联远端视频这一集的开播位置是否经 [InterconnectRemotePlaybackSession.startPositionFor]
-/// 走三方判定（BUG-4283；播放页只在互联客户端上调它）。纯函数。
+/// 走三方判定（BUG-4393；播放页只在互联客户端上调它）。纯函数。
 ///
 /// - [episodeIndex] > 0（host-playlist 非首集）：那一集的位置不在 sweep 同步的键上，
 ///   照用本地值；
@@ -848,7 +848,7 @@ bool remoteEpisodeStartUsesThreeWay({
     intent != EpisodeStartIntent.explicitCue &&
     !sourceReviewActive;
 
-/// 一个互联远端视频播放会话（BUG-4283）：每一集载入时的开播判定 + 实时上报。
+/// 一个互联远端视频播放会话（BUG-4393）：每一集载入时的开播判定 + 实时上报。
 ///
 /// 此前播放页开播用本地 prefs 与 host 清单值做「取较新时间戳」（LWW），不读基线、
 /// 不判冲突；合集切成员 / 换集只读本地 prefs。之后的实时上报把这次未经三方判定的

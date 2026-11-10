@@ -1,4 +1,4 @@
-/// BUG-4278：client 只按 host 确认记基线。真 [FushiSyncServer] +
+/// BUG-4388：client 只按 host 确认记基线。真 [FushiSyncServer] +
 /// [LocalLibraryHostService] + 真 [InterconnectSyncBackend]：host 拒收 / 判定后被第三
 /// 台设备改写时，实时上报、冲突弹窗「保留本机」、书进度推送都不能把基线推进到上报值。
 library;

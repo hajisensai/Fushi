@@ -148,7 +148,7 @@ class SyncCompareEntry {
   /// host 从不读回，对互联通道它描述不了「host 与本机的分歧」。
   final BookProgressSyncAction? liveAction;
 
-  /// 加载时 live 探测读到的本机 / host 书进度（[liveAction] 的判定输入，BUG-4279）。
+  /// 加载时 live 探测读到的本机 / host 书进度（[liveAction] 的判定输入，BUG-4389）。
   /// 「应用」按用户**在这一行看到的** host 值落地：选本机时它是推送的前置条件，
   /// 选远端时 host 已不是它就不落地。加载时探测失败为 null。
   final RemoteBookProgress? liveLocalProgress;
@@ -161,7 +161,7 @@ class SyncCompareEntry {
   final PlaybackPosition? liveLocalAudio;
   final PlaybackPosition? liveRemoteAudio;
 
-  /// 加载这一行的 live 值时会话所连的 host（BUG-4281，只在互联通道填）。「应用」时
+  /// 加载这一行的 live 值时会话所连的 host（BUG-4391，只在互联通道填）。「应用」时
   /// 会话已换了 host，这一行看到的 host 值就不属于现在这台 host：不落地。
   final InterconnectHostPin? liveHostPin;
 
@@ -357,7 +357,7 @@ Future<List<SyncCompareEntry>> _fetchCompareData(
       db: db,
       backend: backend,
     );
-    // 这次加载绑在此刻所连的 host 上（BUG-4281）；绑不上（连不到 host）时 live 行
+    // 这次加载绑在此刻所连的 host 上（BUG-4391）；绑不上（连不到 host）时 live 行
     // 都退回文件箱口径，与逐本 GET 失败同纪律。
     bool bound = true;
     try {
@@ -393,7 +393,7 @@ Future<List<SyncCompareEntry>> _fetchCompareData(
       ? await _fetchLiveCompareExtras(backend, localBooks)
       : null;
 
-  // 文件箱进度基线的存储维度（BUG-4281）：挂在当前远端名下，与 SyncManager 读写
+  // 文件箱进度基线的存储维度（BUG-4391）：挂在当前远端名下，与 SyncManager 读写
   // 的是同一行。认不出远端账号（[SyncRemoteIdentityUnavailableError]）时没有可用
   // 的共同祖先，按无基线展示（时间戳不等即冲突），不挑别人的槽。
   String? fileBoxBaseDimension;
@@ -1209,7 +1209,7 @@ Future<SyncCompareApplyResult> applySyncCompareChoices({
 }
 
 /// 互联通道上应用一本书的选择：书进度按选择经 live 端点落地；有声书断点走它自己的
-/// 三方判定（[_applyLiveAudioChoice]，BUG-4280），不跟随书的选择。
+/// 三方判定（[_applyLiveAudioChoice]，BUG-4390），不跟随书的选择。
 ///
 /// 书进度的门槛是「host 有这本书」（[SyncCompareEntry.remoteLiveTitle]），不是
 /// 「加载期那次 live 探测成功」（[SyncCompareEntry.liveAction]）：一次 GET 失败会让
@@ -1243,7 +1243,7 @@ Future<SyncApplyOutcome> _applyLiveChoice({
         );
     await audio.bind();
     _requireSeenHost(audio.pin, entry.liveHostPin);
-    // 已持有书锁，再拿这条有声书断点的位置锁（书 → 位置，合法顺序，BUG-4279）。
+    // 已持有书锁，再拿这条有声书断点的位置锁（书 → 位置，合法顺序，BUG-4389）。
     final bool audioWrote = await syncResourceLocks.withResources(
       <String>{
         syncPlaybackPositionResource(
@@ -1263,7 +1263,7 @@ Future<SyncApplyOutcome> _applyLiveChoice({
   return wrote ? SyncApplyOutcome.applied : SyncApplyOutcome.noop;
 }
 
-/// 有声书断点在对比弹窗「应用」时走它自己的三方判定（BUG-4280），不跟随用户对
+/// 有声书断点在对比弹窗「应用」时走它自己的三方判定（BUG-4390），不跟随用户对
 /// 书进度的选择：书与有声书是两个维度，各自的基线、各自的分叉。
 ///
 /// - 单边变化（[BookProgressSyncAction.pushLocal] / [BookProgressSyncAction.applyRemote]
@@ -1297,7 +1297,7 @@ Future<bool> _applyLiveAudioChoice({
         expectedRemotePositions: <int>[remote.positionMs],
       );
     case BookProgressSyncAction.pushLocal:
-      // BUG-4278：host 确认采纳才算写成功。
+      // BUG-4388：host 确认采纳才算写成功。
       return (await audio.pushLocal(
             audiobookKey,
             local: local,
@@ -1328,7 +1328,7 @@ Future<bool> _applyLiveAudioChoice({
 /// 返回是否真的写了东西（host 无记录且本机也无记录时无事可做）。
 ///
 /// 按「用户在这一行看到的 host 值」[SyncCompareEntry.liveRemoteProgress] 落地
-/// （BUG-4279）：选本机 → 推送重读的本机进度（加载后本机又读了也照推，那正是用户
+/// （BUG-4389）：选本机 → 推送重读的本机进度（加载后本机又读了也照推，那正是用户
 /// 要保留的一侧），前置条件是看到的 host 值，host 期间又被别的设备改了就不覆盖；
 /// 选远端 → 重读的 host 与看到的位置或戳不同就不落地（用户没见过新值）。加载时
 /// 探测失败（没有看到的值）时退回应用时重读的 host 值作前置条件，只关掉读写之间
@@ -1351,7 +1351,7 @@ Future<bool> _applyLiveProgressChoice({
   final RemoteBookProgress? seen = entry.liveRemoteProgress;
   if (useLocal) {
     if (local.updatedAtMs <= 0) return false;
-    // BUG-4278：host 确认采纳才算写成功。
+    // BUG-4388：host 确认采纳才算写成功。
     return (await sync.pushLocal(
           book,
           local: local,
@@ -1371,7 +1371,7 @@ Future<bool> _applyLiveProgressChoice({
   return sync.applyRemote(book, remote, local: local);
 }
 
-/// 应用时绑定的 host [bound] 必须是加载这一行时的 host [seen]（BUG-4281）：否则这一行
+/// 应用时绑定的 host [bound] 必须是加载这一行时的 host [seen]（BUG-4391）：否则这一行
 /// 展示的 host 值来自另一台 host，抛 [InterconnectHostChangedException]、不落地。
 /// [seen] 为 null（加载时没绑上）时不核对，退回应用时重读的 host 值（取舍 T7）。
 void _requireSeenHost(InterconnectHostPin? bound, InterconnectHostPin? seen) {

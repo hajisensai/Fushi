@@ -380,7 +380,7 @@ mixin _LocalLibraryHostAudiobooks
     await putAudiobookPositionChecked(bookKey, positionMs, updatedAtMs);
   }
 
-  /// 带回执与可选前置条件的有声书断点写入（BUG-4278，[LivePositionWriteHost]）。
+  /// 带回执与可选前置条件的有声书断点写入（BUG-4388，[LivePositionWriteHost]）。
   ///
   /// 存在性闸门：host 无该 bookKey 的 Audiobooks 行 → [LiveWriteResult.missing]，
   /// 不写孤儿 `audiobook_pos_` pref（与视频「视频不存在不写脏」、书「书不存在不写

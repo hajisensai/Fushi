@@ -1,4 +1,4 @@
-/// BUG-4281：互联 live 基线按 host 分槽（只对带 hostId 的 host），会话钉住 host。
+/// BUG-4391：互联 live 基线按 host 分槽（只对带 hostId 的 host），会话钉住 host。
 ///
 /// 此前 live 基线键 `(assetKey, dimension)` 不带 host：client 配了两台 host（A、B）
 /// 时，与 A 达成一致的基线在会话故障切到 B 之后被照搬去判 B 的值——本端停在基线、

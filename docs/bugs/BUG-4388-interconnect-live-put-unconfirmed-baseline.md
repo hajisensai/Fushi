@@ -1,4 +1,4 @@
-## BUG-4278 · 互联 live 进度 PUT 不回结果，client 无条件记基线
+## BUG-4388 · 互联 live 进度 PUT 不回结果，client 无条件记基线
 - **报告**：2026-11-10（用户：审计 sync-live 修复包 V-C2 / V-C3 / D10 / D11）
 - **真实性**：✅ 真 bug。host 侧契约（本条前半，修复前）：
   - `packages/fushi_engine/lib/sync/fushi_sync_server/library.part.dart:285-299`（书进度 `PUT`）、`:615-630`（有声书位置 `PUT`）、`fushi_sync_server/video.part.dart:544-560`（视频位置 `PUT`）一律 `shelf.Response(200)` 空体；

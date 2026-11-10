@@ -1,4 +1,4 @@
-/// BUG-4279：互联 live 播放位置按旧快照盲写 host。真 [FushiSyncServer] +
+/// BUG-4389：互联 live 播放位置按旧快照盲写 host。真 [FushiSyncServer] +
 /// [LocalLibraryHostService] + 真 [InterconnectSyncBackend]：
 /// - 旧判定推送带前置条件，host 已被更新的上报推进时不回退（D7）；
 /// - sweep 与实时上报对同一条目按条目锁互斥，两个 PUT 不同时到达 host；
