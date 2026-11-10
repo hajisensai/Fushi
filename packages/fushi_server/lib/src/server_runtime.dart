@@ -20,6 +20,7 @@ import 'package:fushi_server/src/server_log.dart';
 import 'package:fushi_server/src/server_paths.dart';
 import 'package:fushi_server/src/server_prefs.dart';
 import 'package:path/path.dart' as p;
+import 'package:fushi_server/src/server_language.dart';
 
 class ServerRuntime {
   ServerRuntime({
@@ -70,14 +71,24 @@ Future<int> withServerRuntime(
   String? command,
 }) async {
   if (!await configFile.exists()) {
-    stderr.writeln('找不到配置文件 ${configFile.path}；先跑 fushi_server init');
+    stderr.writeln(
+      tr(
+        '找不到配置文件 ${configFile.path}；先跑 fushi_server init',
+        'Config file not found: ${configFile.path}; run fushi_server init first',
+      ),
+    );
     return 66;
   }
   ServerConfig config;
   try {
     config = await ServerConfig.load(configFile);
   } on FormatException catch (e) {
-    stderr.writeln('配置文件解析失败: ${e.message}');
+    stderr.writeln(
+      tr(
+        '配置文件解析失败: ${e.message}',
+        'Failed to parse the config file: ${e.message}',
+      ),
+    );
     return 65;
   }
   // 先拿数据目录锁再碰任何东西（配置回写、迁移、偏好补写都是写）：两个进程同开
@@ -90,7 +101,14 @@ Future<int> withServerRuntime(
       command: command,
     );
   } on ServerDataLockedException catch (e) {
-    stderr.writeln(serve ? 'serve 拒绝启动：${e.describe()}' : e.describe());
+    stderr.writeln(
+      serve
+          ? tr(
+              'serve 拒绝启动：${e.describe()}',
+              'serve refuses to start: ${e.describe()}',
+            )
+          : e.describe(),
+    );
     return kExitConflict;
   }
   try {
