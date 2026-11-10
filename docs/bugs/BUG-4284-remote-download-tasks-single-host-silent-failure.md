@@ -1,0 +1,14 @@
+## BUG-4284 · 下载中心远端任务段只看一台 host、失败无提示、任务域与创建时间写错
+- **报告**：2026-11-10（用户：互联审查 R6）
+- **真实性**：✅ 真 bug（代码路径核实；新测试 4 条修复前全红）。行号指基准 94317ab6295：
+  - `fushi/lib/src/pages/implementations/remote_download_tasks_section.dart:48-81`：只在 initState 探一次，`probeUrl(偏好) ?? probe()` 取**单个** `_target` 当常量，其余已配对 host 的任务永远不显示；探测失败（`:72` `catch (_)`）后不再重探。
+  - `:91` `catch (_) {}`：轮询连续失败既不清列表也不标识，用户看到的是冻结的旧进度；探不到 / 凭据失效的 host 整段静默。
+  - `:78-79`：先 `await _refresh()` 再建 `Timer.periodic`——首轮请求挂起期间 dispose，请求回来后照样建出周期 Timer（泄漏，测试里报 "A Timer is still pending"）；每拍不看上一拍是否回来，请求叠加。
+  - `:126` / `:128`：`kind` 写死 video，`createdAt` 取 `updatedAt`；根源是 `fushi/lib/src/sync/interconnect_download_client.dart:68-75` 的 `HostDownloadJob.fromJson` 丢掉了 host 早已下发的 `createdAt` 与 `mediaKind`（非视频任务是 `DiscoveryMediaKind.name`）。
+- **[x] ① 已修复** — `4cedee11b21`：
+  - `HostDownloadJob` 加 `createdAt`（缺省回落 `updatedAt`）与 `discoveryKind`（`mediaKind` 按 `DiscoveryMediaKind` 名解析，movie / tv → null = 视频）。
+  - 段状态改为按 host 维护（`_RemoteHostState`：outcome / jobs / stale / inFlight），`probeAllOutcomes()` 一次探全部 host，「下载执行设备」那台排第一；每拍：可用的拉任务（在途跳过、不叠加），失败保留上次任务并标过期，`auth_rejected` / `certificate_mismatch` / `no_host` 降级为 Unavailable；连不上 / HTTP 错误的 host 每拍重探，永久性失败只在用户点重试时重探；`cancelled`（dispose 后在途请求被取消）静默；dispose 先停 Timer 再 `close()` 自建的 client；Timer 在首轮请求发出后立即建立、dispose 后不会再建。
+  - 条目 id / collectionKey / 卡片 key 改为 `remote:<hostRef.key>:<jobId>` / `remote:<hostRef.key>`（不再含可能是临时转发口的 baseUrl）；`kind` 按 `discoveryKind`；`createdAt` 取真创建时间；过期时卡片常显 summary 一行 `download_remote_jobs_stale`；每台 Unavailable 的 host 产出一条 attention 合成条目（标题 = 设备名，状态行 = `interconnectHostFailureText` 原因，`retry` = 重探该 host，图标 `FushiIcons.cloudOff`）。
+  - i18n 新增 `download_remote_jobs_stale`。
+- **[x] ② 已加自动化测试** — `fushi/test/pages/remote_download_tasks_section_test.dart`（widget test：内存 DB 三台 host + 计数 MockClient 驱动真实 `InterconnectDownloadClient` / 通道）：多 host 都列出 + manga 域 + createdAt=100 + 执行设备排第一；第二拍 500 → 保留任务并显示过期文案；401 → attention 条目带 auth_rejected 原因、轮询不重探、点重试重探后恢复；首轮请求挂起时下一拍不叠加、挂起中 dispose 无异常无残留 Timer。修复前 4 条全红（断言失败 3 条 + 残留 Timer 1 条）。
+- **备注**：计划写的是过期文案放卡片 details，但 `DownloadTaskCard` 的 details 默认收起，放那里用户看不到，改放常显的 summary。HTTP 错误（5xx 等）的能力探测失败也按瞬时失败每拍重探（计划只写了 unreachable）。真设备截图（Windows host + Android client，两台 host / 断网 stale / 配对失效）未做。
