@@ -4214,6 +4214,7 @@
   "icon_custom_hint": "Değiştirmek için bir simgeye dokunun veya aşağıdan özel bir görsel seçin.",
   "icon_default": "Varsayılan",
   "icon_shortcut_created": "Ana ekran kısayolu oluşturuldu.",
+  "icon_shortcut_failed": "Could not set the home screen icon: ${error}",
   "icon_shortcut_unsupported": "Bu cihazda kısayollar desteklenmiyor.",
   "icon_switch_success": "Uygulama simgesi başarıyla değiştirildi.",
   "image_pause": "Resimde duraklat",

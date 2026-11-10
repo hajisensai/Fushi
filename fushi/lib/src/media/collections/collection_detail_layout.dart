@@ -17,6 +17,7 @@ import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/utils/components/cover_badge.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
@@ -1304,140 +1305,154 @@ class CollectionEpisodeCard extends StatelessWidget {
         children: <Widget>[?statusLead, ?trailingStatus],
       ),
     );
-    return IgnorePointer(
-      child: Material(
-        color: container,
-        borderRadius: FushiM3eShape.cardRadius,
-        clipBehavior: Clip.antiAlias,
-        child: Stack(
-          children: <Widget>[
-            Padding(
-              padding: const EdgeInsets.all(kCollectionEpisodeCardPadding),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Stack(
+    // 整卡 IgnorePointer（手势归外层网格 / InkWell）挡掉了卡里 [FushiHoverLift]
+    // 自己的 MouseRegion；悬停与指针位置由外面的 [FushiHoverLiftRelay] 代收，
+    // 缩略图（材质封面框）照常走库页同一套抬升扫光 + 3D 倾斜视差 + 镜面高光
+    // （反馈 bsbJ4OVa8o）。整卡不放大（scale 1）：宽卡在 12px 间距的网格里按
+    // 1.05 放大会压到相邻卡，倾斜 / 扫光只作用在缩略图上。
+    return FushiHoverLiftRelay(
+      builder: (BuildContext context, bool _) => IgnorePointer(
+        child: FushiHoverLift(
+          scale: 1,
+          builder: (BuildContext context, bool _) => Material(
+            color: container,
+            borderRadius: FushiM3eShape.cardRadius,
+            clipBehavior: Clip.antiAlias,
+            child: Stack(
+              children: <Widget>[
+                Padding(
+                  padding: const EdgeInsets.all(kCollectionEpisodeCardPadding),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
-                      thumb,
-                      if (number case final String number)
-                        PositionedDirectional(
-                          start: 6,
-                          top: 6,
-                          child: CollectionEpisodeNumberPill(
-                            number: number,
-                            current: isContinue,
-                          ),
-                        ),
-                      // 进行中 → 铺满缩略图的压暗 + 进度环；失败 → 右下角标。
-                      if (downloadBadge case final Widget badge)
-                        positionRemoteDownloadBadge(
-                          badge,
-                          corner: (Widget b) =>
-                              Positioned(right: 4, bottom: 4, child: b),
-                        )
-                      else if (isRemote)
-                        const Positioned(
-                          right: 4,
-                          bottom: 4,
-                          child: CoverBadge(icon: FushiIcons.cloud),
-                        ),
-                    ],
-                  ),
-                  SizedBox(width: tokens.spacing.rowVertical),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        Text(
-                          title,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style:
-                              (isContinue
-                                      ? type.titleMediumEmphasized
-                                      : type.titleMedium)
-                                  .copyWith(
-                                    color: completed && !isContinue
-                                        ? fgVariant
-                                        : fg,
-                                    height: 1.3,
-                                  ),
-                        ),
-                        if (identityLabel case final String label
-                            when label.isNotEmpty)
-                          Text(
-                            label,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: type.labelSmall.copyWith(
-                              height: 1.3,
-                              color: fgVariant,
-                            ),
-                          ),
-                        if (meta.isNotEmpty)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 2),
-                            child: Text(
-                              meta.join('  ·  '),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: type.labelMedium.tabular.copyWith(
-                                color: fgVariant,
+                      Stack(
+                        children: <Widget>[
+                          thumb,
+                          if (number case final String number)
+                            PositionedDirectional(
+                              start: 6,
+                              top: 6,
+                              child: CollectionEpisodeNumberPill(
+                                number: number,
+                                current: isContinue,
                               ),
                             ),
-                          ),
-                        // 底部区吃剩余高度：状态行贴底，简介用状态行剩下的
-                        // 高度（放不下就省略），状态行折成两行仍放不下时裁掉
-                        // 第二行（规格）——卡高钳死，任何字号都不溢出。
-                        Expanded(
-                          child: ClipRect(
-                            child: CustomMultiChildLayout(
-                              delegate: _EpisodeCardBottomLayout(),
-                              children: <Widget>[
-                                if (summary != null && summary.isNotEmpty)
-                                  LayoutId(
-                                    id: _EpisodeCardBottomLayout.summary,
-                                    child: Padding(
-                                      padding: const EdgeInsets.only(top: 4),
-                                      child: Text(
-                                        summary,
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: type.bodySmall.copyWith(
-                                          color: fgVariant,
-                                          height: 1.3,
+                          // 进行中 → 铺满缩略图的压暗 + 进度环；失败 → 右下角标。
+                          if (downloadBadge case final Widget badge)
+                            positionRemoteDownloadBadge(
+                              badge,
+                              corner: (Widget b) =>
+                                  Positioned(right: 4, bottom: 4, child: b),
+                            )
+                          else if (isRemote)
+                            const Positioned(
+                              right: 4,
+                              bottom: 4,
+                              child: CoverBadge(icon: FushiIcons.cloud),
+                            ),
+                        ],
+                      ),
+                      SizedBox(width: tokens.spacing.rowVertical),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            Text(
+                              title,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style:
+                                  (isContinue
+                                          ? type.titleMediumEmphasized
+                                          : type.titleMedium)
+                                      .copyWith(
+                                        color: completed && !isContinue
+                                            ? fgVariant
+                                            : fg,
+                                        height: 1.3,
+                                      ),
+                            ),
+                            if (identityLabel case final String label
+                                when label.isNotEmpty)
+                              Text(
+                                label,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: type.labelSmall.copyWith(
+                                  height: 1.3,
+                                  color: fgVariant,
+                                ),
+                              ),
+                            if (meta.isNotEmpty)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 2),
+                                child: Text(
+                                  meta.join('  ·  '),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: type.labelMedium.tabular.copyWith(
+                                    color: fgVariant,
+                                  ),
+                                ),
+                              ),
+                            // 底部区吃剩余高度：状态行贴底，简介用状态行剩下的
+                            // 高度（放不下就省略），状态行折成两行仍放不下时裁掉
+                            // 第二行（规格）——卡高钳死，任何字号都不溢出。
+                            Expanded(
+                              child: ClipRect(
+                                child: CustomMultiChildLayout(
+                                  delegate: _EpisodeCardBottomLayout(),
+                                  children: <Widget>[
+                                    if (summary != null && summary.isNotEmpty)
+                                      LayoutId(
+                                        id: _EpisodeCardBottomLayout.summary,
+                                        child: Padding(
+                                          padding: const EdgeInsets.only(
+                                            top: 4,
+                                          ),
+                                          child: Text(
+                                            summary,
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: type.bodySmall.copyWith(
+                                              color: fgVariant,
+                                              height: 1.3,
+                                            ),
+                                          ),
                                         ),
                                       ),
+                                    LayoutId(
+                                      id: _EpisodeCardBottomLayout.status,
+                                      child: statusRow,
                                     ),
-                                  ),
-                                LayoutId(
-                                  id: _EpisodeCardBottomLayout.status,
-                                  child: statusRow,
+                                  ],
                                 ),
-                              ],
+                              ),
                             ),
-                          ),
+                          ],
                         ),
-                      ],
+                      ),
+                    ],
+                  ),
+                ),
+                if (fraction != null)
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    child: FushiLinearProgressIndicator(
+                      key: const ValueKey<String>(
+                        'collection-episode-progress',
+                      ),
+                      value: fraction,
+                      minHeight: 4,
+                      backgroundColor: Colors.transparent,
+                      color: cs.primary,
                     ),
                   ),
-                ],
-              ),
+              ],
             ),
-            if (fraction != null)
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: 0,
-                child: FushiLinearProgressIndicator(
-                  key: const ValueKey<String>('collection-episode-progress'),
-                  value: fraction,
-                  minHeight: 4,
-                  backgroundColor: Colors.transparent,
-                  color: cs.primary,
-                ),
-              ),
-          ],
+          ),
         ),
       ),
     );
