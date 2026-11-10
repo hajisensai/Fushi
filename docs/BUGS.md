@@ -38,6 +38,7 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-4366](bugs/BUG-4366-windows-screen-ocr-forensics-and-word-hit.md) | ✅ | ✅ | Windows 应用外截屏识字「基本识别不出或错位」：点字按整行等分错位 + 无几何取证 |
+| [BUG-4366](bugs/BUG-4366-srs-fushi-card-native-fallback-frozen-template.md) | ✅ | ✅ | Fushi 卡片冻住的旧版内置模板让复习卡静默回退整面 WebView |
 | [BUG-4365](bugs/BUG-4365-srs-autopush-skips-cloud-channel.md) | ✅ | ✅ | 答卡后的去抖推送不覆盖云盘通道，背完卡云盘不自动同步 |
 | [BUG-4364](bugs/BUG-4364-browse-installed-sources-not-lazy.md) | ✅ | ✅ | 浏览页已装在线源整组非懒建：上千行全绘进合成树 |
 | [BUG-4363](bugs/BUG-4363-seamless-slow-drag-double-chapter-skip.md) | ✅ | ✅ | 连续模式无缝衔接：章节交界处按住慢拖跨一章落到下下章（无缝晋升与边界拉动两个换章所有者叠加） |
