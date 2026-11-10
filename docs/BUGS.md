@@ -40,6 +40,9 @@
 | [BUG-4295](bugs/BUG-4295-cli-anki-mine-ignores-remote-lookup.md) | ✅ | ✅ | fushi_cli anki mine 在依赖远端查词的客户端上释义为空（只查本地词典） |
 | [BUG-4294](bugs/BUG-4294-srs-sync-v2-host-not-joined-silent.md) | ✅ | ✅ | SRS 同步 v2：host 未点「开始同步」时客户端显示「全部已同步」、什么都没同步且无提示 |
 | [BUG-4293](bugs/BUG-4293-manual-address-host-no-device-name.md) | ✅ | ✅ | 手动地址添加的 host 没有设备名：peer ls 不列出、远端复习标题显示 host.docker.internal |
+| [BUG-4295](bugs/BUG-4295-srs-read-store-swallows-open-failure.md) | ✅ | ✅ | readSrsStore 吞掉复习库打开失败：复习页报「排程内核不可用」，操作目录报「复习库还没就绪」 |
+| [BUG-4294](bugs/BUG-4294-srs-review-ignores-external-changes.md) | ✅ | ✅ | 复习页不接收外部变更（同步拉入、操作目录写入、模板编辑器返回），预取命中也认不出笔记 / 模板变化 |
+| [BUG-4293](bugs/BUG-4293-srs-remote-review-bumps-local-sessions.md) | ✅ | ✅ | 远程复习推动本机 runtime 的活跃复习会话计数 |
 | [BUG-4292](bugs/BUG-4292-srs-profile-purge-three-impls.md) | ✅ | ✅ | 删 / 换 profile uid 的三份实现不一致，并入与采用后旧 uid 在 srs.db 留残留 |
 | [BUG-4291](bugs/BUG-4291-electron-game-launch-crash-noaccess-section.md) | ✅ | ✅ | Electron/Chromium 打包游戏经 Fushi 启动即崩（不可读 PE 节被扫描） |
 | [BUG-4290](bugs/BUG-4290-server-backup-config-flag-shadowed.md) | ✅ | ✅ | fushi_server backup: --config <path> after the subcommand is taken as the restore-config flag |

@@ -45,8 +45,8 @@ bool textLeadsRequestedFor({
   required bool vnMode,
 }) => linkDirection == kAudiobookLinkDirectionText && vnMode;
 
-/// 文字领读此刻是否生效：reader 条件成立、跟随音频开着、且不在歌词覆盖层（覆盖层
-/// 期间正文被强制跟随音频）。
+/// 文字领读此刻是否生效：reader 条件成立、跟随音频开着、且不在歌词模式（歌词模式
+/// 期间正文面脱开、停着不跟随音频）。
 bool textLeadsActive({
   required bool requested,
   required bool followAudio,
