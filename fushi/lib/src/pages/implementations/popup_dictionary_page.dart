@@ -574,7 +574,19 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final double gap = tokens.spacing.gap;
     if (widget.embedded) {
-      return Padding(padding: EdgeInsets.all(gap), child: _buildCard(tokens));
+      // 副屏「查词」页：卡片填满整页、不按内容收缩——外壳就是上界高度，WebView
+      // 按它布局、没有被裁掉的一截（按内容收缩只用于浮卡，见 [_buildPositionedCard]）。
+      return Padding(
+        padding: EdgeInsets.all(gap),
+        child: LayoutBuilder(
+          builder: (BuildContext context, BoxConstraints constraints) =>
+              _buildCard(
+                tokens,
+                fullCardHeight: constraints.maxHeight,
+                webViewOverflowHeight: 0,
+              ),
+        ),
+      );
     }
     return Stack(
       children: <Widget>[
