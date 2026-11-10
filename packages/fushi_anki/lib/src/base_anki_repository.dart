@@ -7,6 +7,7 @@ import 'anki_settings_store.dart';
 import 'anki_note_type_definition.dart';
 import 'anki_synchronized_clip_template.dart';
 import 'card_source_link.dart';
+import 'fushi_card_fields.dart';
 import 'lapis_note_type.dart';
 import 'anki_note_composer.dart';
 
@@ -62,7 +63,7 @@ abstract class BaseAnkiRepository with AnkiNoteComposer {
   static const String _miscInfoMappingWithSource =
       '{document-title} {clip-timestamp} {source-link}';
   static const String _miscInfoMappingWithLinkedTitle =
-      '{source-link} {clip-timestamp}';
+      FushiCardFields.sourceDefaultMapping;
 
   /// 读原始设置 JSON 的**唯一通道**：载入期迁移（W2-2 别名改写 + MiscInfo 补片段
   /// 时间窗）都收敛在这里，改写结果经 [store] 回写——换成 Drift 存储后照样生效。
