@@ -256,7 +256,8 @@ class _VideoPagePlaybackRemote
             secondarySelectable: false,
             language: track.languageCode,
           ),
-          applyPrimary: () =>
+          // YouTube 轨懒下载、不走抽取加载态，来源无关。
+          applyPrimary: (VideoSubtitlePickOrigin _) =>
               _state._applyYoutubeCaptionTrack(controller, track),
         ),
       );
@@ -267,7 +268,6 @@ class _VideoPagePlaybackRemote
         in _state._remoteSubtitleFileRows) {
       final SubtitleSource? local = entry.local;
       final String path = entry.path;
-      final String? label = local == null ? null : entry.label;
       rows.add(
         _RemoteSubtitleRow(
           track: VideoRemoteSubtitleTrack(
@@ -276,21 +276,16 @@ class _VideoPagePlaybackRemote
             kind: local == null
                 ? VideoRemoteSubtitleKind.host
                 : VideoRemoteSubtitleKind.external,
-            primary: local == null
-                ? primary == path
-                : subtitleSourceMatchesPersistedForMenu(local, primary),
-            secondary: local == null
-                ? secondary == path
-                : subtitleSourceMatchesPersistedForMenu(local, secondary),
+            primary: entry.isSelectedBy(primary),
+            secondary: entry.isSelectedBy(secondary),
             ocrAvailable: false,
           ),
-          applyPrimary: () =>
-              _state._applyRemoteSubtitle(controller, path, label: label),
-          applySecondary: () => _state._applyRemoteSecondarySubtitle(
-            controller,
-            path,
-            label: label,
-          ),
+          // host 外挂字幕行（反馈 -CaVsioFhG）的 path 是选择编码，选中时才下载：
+          // 与主 / 副字幕菜单同一条分派。
+          applyPrimary: (VideoSubtitlePickOrigin origin) => _state
+              ._applyRemoteSubtitleFileEntry(controller, entry, origin: origin),
+          applySecondary: () =>
+              _state._applyRemoteSecondarySubtitleFileEntry(controller, entry),
         ),
       );
     }
@@ -318,7 +313,12 @@ class _VideoPagePlaybackRemote
             codec: track.codec,
           ),
           applyPrimary: selectable
-              ? () => _state._applyRemoteEmbeddedSubtitle(controller, track)
+              ? (VideoSubtitlePickOrigin origin) =>
+                    _state._applyRemoteEmbeddedSubtitle(
+                      controller,
+                      track,
+                      origin: origin,
+                    )
               : null,
           applySecondary: track.isText
               ? () => _state._applyRemoteEmbeddedSecondarySubtitle(
@@ -354,14 +354,33 @@ class _VideoPagePlaybackRemote
     return found;
   }
 
+  /// 遥控 / CLI 的选字幕：播放器侧来源（进度照旧在播放器设置面板里）。
   @override
-  Future<void> selectSubtitle(String source, {required bool secondary}) async {
+  Future<void> selectSubtitle(String source, {required bool secondary}) =>
+      _selectSubtitleFrom(
+        source,
+        secondary: secondary,
+        origin: VideoSubtitlePickOrigin.player,
+      );
+
+  /// 选字幕的共同入口；[origin] 决定抽取进度显示在哪（见
+  /// [VideoSubtitlePickOrigin]）。副字幕只有播放器侧入口。
+  Future<void> _selectSubtitleFrom(
+    String source, {
+    required bool secondary,
+    required VideoSubtitlePickOrigin origin,
+  }) async {
     final VideoPlayerController controller = _requireController();
     if (_state._subtitleLoadingShown) {
       throw const VideoRemoteFailure('busy', '字幕正在加载，稍后再试');
     }
     if (_state._isRemote) {
-      await _selectRemoteSubtitle(controller, source, secondary: secondary);
+      await _selectRemoteSubtitle(
+        controller,
+        source,
+        secondary: secondary,
+        origin: origin,
+      );
       return;
     }
     final SubtitleSource found = await _menuSource(source);
@@ -371,7 +390,7 @@ class _VideoPagePlaybackRemote
       osd,
       () => secondary
           ? _state._selectSecondarySubtitleSource(controller, found)
-          : _state._selectSubtitleSource(controller, found),
+          : _state._selectSubtitleSource(controller, found, origin: origin),
     );
     if (!applied) {
       throw VideoRemoteFailure(
@@ -387,11 +406,16 @@ class _VideoPagePlaybackRemote
     VideoPlayerController controller,
     String source, {
     required bool secondary,
+    required VideoSubtitlePickOrigin origin,
   }) async {
     final _RemoteSubtitleRow row = _remoteRow(controller, source);
+    final Future<void> Function(VideoSubtitlePickOrigin origin)? primary =
+        row.applyPrimary;
     final Future<void> Function()? apply = secondary
         ? row.applySecondary
-        : row.applyPrimary;
+        : primary == null
+        ? null
+        : () => primary(origin);
     if (apply == null) {
       throw VideoRemoteFailure(
         'unsupported',
@@ -900,7 +924,8 @@ class _VideoPagePlaybackRemote
     final List<_VideoOsdMessage> osd = <_VideoOsdMessage>[];
     final MinePopupResult result = await _collectingOsd(
       osd,
-      () => _state._onMineEntryImpl(payload),
+      // 手机要拿到真实结局（成功 / 失败原因）：本地视频等卡落地再回。
+      () => _state._onMineEntryImpl(payload, awaitLocalLanding: true),
     );
     if (!result.accepted && !result.duplicate) {
       throw VideoRemoteFailure('failed', _failureText(osd, '制卡没有成功'));
@@ -993,8 +1018,9 @@ class _RemoteSubtitleRow {
 
   final VideoRemoteSubtitleTrack track;
 
-  /// 选为主 / 副字幕；null = 面板里这一行不可选。
-  final Future<void> Function()? applyPrimary;
+  /// 选为主 / 副字幕；null = 面板里这一行不可选。主字幕带选择来源（第二屏面板
+  /// 选的不弹播放器设置面板，见 [VideoSubtitlePickOrigin]）。
+  final Future<void> Function(VideoSubtitlePickOrigin origin)? applyPrimary;
   final Future<void> Function()? applySecondary;
 
   /// host / 流内封轨（整轨 OCR 要用）；其它类为 null。

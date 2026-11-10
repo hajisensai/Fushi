@@ -31,9 +31,15 @@ void main() {
 
   group('global lookup hotkey register failure is visible', () {
     late String controller;
-    setUpAll(
-      () => controller = read('lib/src/lookup/global_lookup_controller.dart'),
-    );
+    late String nativeBackend;
+    setUpAll(() {
+      controller = read('lib/src/lookup/global_lookup_controller.dart');
+      // The hotkey_manager calls moved behind GlobalHotKeyBackend (the Linux
+      // Wayland portal is the other backend); the invariant is unchanged.
+      nativeBackend = read(
+        'lib/src/shortcuts/native_global_hotkey_backend.dart',
+      );
+    });
 
     test('a failed register() is logged to ErrorLogService (not glog-only)', () {
       // Anchor on the OS-registration CALL rather than a helper NAME: the
@@ -43,13 +49,18 @@ void main() {
       // never moved. Whatever function performs `hotKeyManager.register(` must
       // reach the user-visible / uploadable ErrorLogService channel from its
       // catch.
-      final int at = controller.indexOf('hotKeyManager.register(');
+      expect(
+        controller.contains('hotKeyManager.'),
+        isFalse,
+        reason: 'the controller registers through GlobalHotKeyBackend only',
+      );
+      final int at = nativeBackend.indexOf('hotKeyManager.register(');
       expect(
         at,
         greaterThan(-1),
-        reason: 'the controller must register the OS hotkey itself',
+        reason: 'the native backend must register the OS hotkey itself',
       );
-      final String fn = controller.substring(at);
+      final String fn = nativeBackend.substring(at);
       expect(
         fn.contains('ErrorLogService.instance.log('),
         isTrue,
@@ -59,9 +70,9 @@ void main() {
       );
     });
 
-    test('controller imports ErrorLogService', () {
+    test('native backend imports ErrorLogService', () {
       expect(
-        controller.contains(
+        nativeBackend.contains(
           "import 'package:fushi/src/utils/misc/error_log_service.dart';",
         ),
         isTrue,

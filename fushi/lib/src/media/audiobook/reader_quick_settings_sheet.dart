@@ -11,6 +11,7 @@ import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_illustrations.dar
     show LyricsIllustrationCue;
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_contract.dart'
     show LyricsControlsStyle;
+import 'package:fushi/src/media/audiobook/audiobook_av_sync_stepper.dart';
 import 'package:fushi/src/media/audiobook/audiobook_speed_slider.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:intl/intl.dart';
@@ -48,7 +49,6 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
-import 'package:fushi/src/utils/components/fushi_focusable.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
@@ -2466,76 +2466,17 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
     );
   }
 
-  static String _formatDelayMs(int ms) {
-    final String sign = ms > 0 ? '+' : '';
-    final int abs = ms.abs();
-    if (abs < 1000) return '$sign${ms}ms';
-    final double sec = ms / 1000;
-    return '$sign${sec.toStringAsFixed(1)}s';
-  }
-
-  Widget _buildDelaySection(ThemeData theme, AudiobookPlayerController ctrl) {
-    return ValueListenableBuilder<int>(
-      valueListenable: ctrl.delayMs,
-      builder: (ctx, ms, _) {
-        // 2026-10 体验优化：声明 trailing 固有宽度（4 颗 48 按钮 + 72 读数），
-        // 窄屏按真实需求换行而不是把标题削成一个字。
-        return AdaptiveSettingsRow(
-          title: t.av_sync,
-          icon: FushiIcons.sync,
-          trailingWidth: 4 * kMinInteractiveDimension + 72,
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _RepeatIconButton(
-                icon: FushiIcons.doubleChevronLeft,
-                tooltip: '-1000ms',
-                onPressed: () => ctrl.setDelayMs(ctrl.delayMs.value - 1000),
-              ),
-              _RepeatIconButton(
-                icon: FushiIcons.chevronLeft,
-                tooltip: '-50ms',
-                onPressed: () => ctrl.setDelayMs(ctrl.delayMs.value - 50),
-              ),
-              // 2026-10 体验优化：「点数字归零」此前没有任何可见提示。非零时
-              // 读数改用主色 + 下划线（可点的观感），并挂 Tooltip「归零」。
-              Tooltip(
-                message: ms == 0 ? '' : t.av_sync_reset,
-                child: FushiFocusable(
-                  onTap: ms == 0 ? null : () => ctrl.setDelayMs(0),
-                  child: SizedBox(
-                    width: 72,
-                    height: kMinInteractiveDimension,
-                    child: Center(
-                      child: Text(
-                        _formatDelayMs(ms),
-                        textAlign: TextAlign.center,
-                        style: theme.textTheme.bodyLarge?.copyWith(
-                          fontWeight: FontWeight.w600,
-                          color: ms == 0 ? null : theme.colorScheme.primary,
-                          decoration: ms == 0
-                              ? TextDecoration.none
-                              : TextDecoration.underline,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              _RepeatIconButton(
-                icon: FushiIcons.chevronRight,
-                tooltip: '+50ms',
-                onPressed: () => ctrl.setDelayMs(ctrl.delayMs.value + 50),
-              ),
-              _RepeatIconButton(
-                icon: FushiIcons.doubleChevronRight,
-                tooltip: '+1000ms',
-                onPressed: () => ctrl.setDelayMs(ctrl.delayMs.value + 1000),
-              ),
-            ],
-          ),
-        );
-      },
+  Widget _buildDelaySection(AudiobookPlayerController ctrl) {
+    // 步进 / 读数 / 归零与歌词模式同步面板同一个组件（只写一处）；新值交给
+    // setDelayMs（夹取 + 立即重查高亮 + 写偏好）。
+    return AdaptiveSettingsRow(
+      title: t.av_sync,
+      icon: FushiIcons.sync,
+      trailingWidth: AudiobookAvSyncStepper.intrinsicWidth,
+      trailing: AudiobookAvSyncStepper(
+        delayMs: ctrl.delayMs,
+        onChanged: ctrl.setDelayMs,
+      ),
     );
   }
 
@@ -2671,7 +2612,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
           children: [
             _buildVolumeSection(widget.controller!),
             _buildSpeedSection(widget.controller!),
-            _buildDelaySection(theme, widget.controller!),
+            _buildDelaySection(widget.controller!),
             _buildImagePauseSection(widget.controller!),
             _buildSkipActionSection(),
           ],
@@ -3608,73 +3549,6 @@ class _InBookIconButton extends StatelessWidget {
       ),
       padding: EdgeInsets.zero,
       onTap: onPressed,
-    );
-  }
-}
-
-class _RepeatIconButton extends StatefulWidget {
-  const _RepeatIconButton({
-    required this.icon,
-    required this.tooltip,
-    required this.onPressed,
-  });
-
-  final IconData icon;
-  final String tooltip;
-  final VoidCallback onPressed;
-
-  static const Duration _initialDelay = Duration(milliseconds: 500);
-  static const Duration _repeatInterval = Duration(milliseconds: 100);
-
-  @override
-  State<_RepeatIconButton> createState() => _RepeatIconButtonState();
-}
-
-class _RepeatIconButtonState extends State<_RepeatIconButton> {
-  Timer? _timer;
-
-  void _start() {
-    widget.onPressed();
-    _timer = Timer(_RepeatIconButton._initialDelay, () {
-      _timer = Timer.periodic(_RepeatIconButton._repeatInterval, (_) {
-        widget.onPressed();
-      });
-    });
-  }
-
-  void _stop() {
-    _timer?.cancel();
-    _timer = null;
-  }
-
-  @override
-  void dispose() {
-    _stop();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onLongPressStart: (_) => _start(),
-      onLongPressEnd: (_) => _stop(),
-      // BUG-912 #3：手势被取消（指针滑出 / 识别器被上层夺走）而非正常 End 时，
-      // onLongPressEnd 不必然回调；不补 cancel 的话 _timer 会持续每 100ms 连触
-      // widget.onPressed()（数值狂涨 / 狂降）直到 dispose。与 video_fushi_page.dart
-      // 的 _VideoRepeatGestureButton 对齐。
-      onLongPressCancel: () => _stop(),
-      child: FushiIconButton(
-        icon: widget.icon,
-        size: 18,
-        tooltip: widget.tooltip,
-        // 2026-10 体验优化：32×32 → 48×48 标准触控目标。
-        constraints: const BoxConstraints.tightFor(
-          width: kMinInteractiveDimension,
-          height: kMinInteractiveDimension,
-        ),
-        padding: EdgeInsets.zero,
-        onTap: widget.onPressed,
-      ),
     );
   }
 }

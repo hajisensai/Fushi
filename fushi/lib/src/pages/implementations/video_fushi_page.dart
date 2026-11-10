@@ -176,6 +176,11 @@ import 'package:fushi/src/media/video/video_exit_flush.dart';
 import 'package:fushi/src/media/video/video_study_clock_cover.dart';
 import 'package:fushi/src/media/video/video_study_accrual_arbiter.dart';
 import 'package:fushi/src/media/video/video_playback_remote.dart';
+import 'package:fushi/src/media/video/video_subtitle_pick_origin.dart';
+import 'package:fushi/src/second_screen/companion/companion_lookup_routing.dart';
+import 'package:fushi/src/second_screen/companion/modules/video_companion_hook.dart';
+import 'package:fushi/src/second_screen/input/controller_lookup_mode.dart';
+import 'package:fushi/src/second_screen/input/controller_lookup_target.dart';
 import 'package:fushi/src/media/video/video_remote_binding_support.dart';
 import 'package:fushi/src/media/video/video_ocr_cli_consent.dart';
 import 'package:fushi/src/media/video/video_import_dialog.dart';
@@ -327,6 +332,8 @@ import 'package:fushi/src/media/video/audio_energy_probe.dart';
 import 'package:fushi/src/media/video/waveform_envelope_cache.dart';
 import 'package:fushi/src/media/video/subtitle_auto_align.dart';
 import 'package:fushi/src/media/video/subtitle_waveform_align_panel.dart';
+import 'package:fushi/src/media/video/subtitle_waveform_segments.dart';
+import 'package:fushi/src/media/shared/controller_lookup_steps.dart';
 import 'package:fushi/src/media/video/subtitle_word_sweep.dart';
 import 'package:fushi/src/media/video/video_chapter_markers.dart';
 import 'package:fushi/src/media/links/theme_song/theme_song_detector.dart';
@@ -347,6 +354,7 @@ import 'package:fushi/src/media/video/video_thumbnail_preview_controller.dart';
 import 'package:fushi/src/media/video/video_thumbnail_preview_overlay.dart';
 import 'package:fushi/src/media/video/video_watch_tracker.dart';
 import 'package:fushi/src/media/video/video_duration_pref.dart';
+import 'package:fushi/src/media/video/remote_video_resume.dart';
 import 'package:fushi/src/media/video/subtitle/remote_online_subtitle_search.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_search_seed.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_series_season.dart';
@@ -504,6 +512,8 @@ part 'video_fushi/web_source.part.dart';
 part 'video_fushi/jump_history.part.dart';
 part 'video_fushi/theme_song.part.dart';
 part 'video_fushi/subtitle_text_edit.part.dart';
+part 'video_fushi/companion.part.dart';
+part 'video_fushi/controller_lookup.part.dart';
 part 'video_fushi/study_stats.part.dart';
 
 /// 视频页：media_kit 播放器 + 可点击字幕 overlay（点词查词 + 制卡）。
@@ -971,11 +981,16 @@ class VideoFushiPage extends ConsumerStatefulWidget {
   /// 光标会话接管，退出光标时按同一 [pausedForLookup] 标记恢复（单一恢复真相源）。
   /// 纯函数：与 [_VideoFushiPageState._popNestedPopupAt] 共用，供单测直接验证（BUG-072）。
   @visibleForTesting
+  ///
+  /// [companionHoldsPause]：双屏副屏的查词页上为本页打开的查词还开着——暂停归它，
+  /// 关它时再恢复（副屏与页内浮层共用同一个 [pausedForLookup] 标记）。
   static bool shouldResumeAfterLookupDismiss({
     required bool stackEmpty,
     required bool pausedForLookup,
     bool caretHoldsPause = false,
-  }) => stackEmpty && pausedForLookup && !caretHoldsPause;
+    bool companionHoldsPause = false,
+  }) =>
+      stackEmpty && pausedForLookup && !caretHoldsPause && !companionHoldsPause;
 
   /// BUG-2544：真进后台（`paused`）时是否由本页把播放暂停下来。
   ///
@@ -2013,8 +2028,18 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   VideoPlayerController? _controller;
 
   /// 桌面控制通道遥控面（见 `video_fushi/playback_remote.part.dart`）。
+  /// Controller lookup mode adapter (hold L1 / Select; see
+  /// `video_fushi/controller_lookup.part.dart`).
+  _VideoControllerLookupTarget? _controllerLookupTarget;
+
   late final _VideoPagePlaybackRemote _playbackRemote =
       _VideoPagePlaybackRemote(this);
+
+  /// Second-screen companion (video panel on a dual-screen handheld's bottom
+  /// screen): claim, snapshots and panel commands, see companion.part.dart.
+  late final VideoCompanionHook _companionHook = VideoCompanionHook(
+    _VideoCompanionPageAdapter(this),
+  );
 
   /// BUG-772：首开时新建但尚未赋给 [_controller] 的「在途」controller。持有它，才能在
   /// 用户于 `await controller.load()` 完成前退出页时，于 [dispose] 主动 dispose 取消它
@@ -2067,9 +2092,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// [_armNetworkOpenDiagnosis] 的定时器：新一次 load / dispose 取消。
   Timer? _networkOpenDiagnoseTimer;
 
-  /// TODO-1244：字幕对轴波形包络缓存。抽一次 ffmpeg 逐帧能量包络后按
-  /// `videoPath|audioStreamIndex` 记住结果，之后每次打开快速设置面板 / 波形对轴视图直接
-  /// 复用，不再重跑 ffmpeg（切视频/切音轨时 key 变化自动失效，见 [WaveformEnvelopeCache]）。
+  /// TODO-1244：字幕对轴波形包络缓存（按段，反馈 EUvw-RjUE4）。每段 ffmpeg 逐帧能量包络
+  /// 抽一次后按「音源|音轨 + 段区间」记住，之后重开波形对轴视图、滚回看过的段直接复用，
+  /// 不再重跑 ffmpeg（切视频/切音轨时音源 key 变化整槽失效，见 [WaveformEnvelopeCache]）。
   final WaveformEnvelopeCache _subtitleWaveformCache = WaveformEnvelopeCache();
 
   /// 互联远端视频的对轴 / 重定时音轨：host 在本地裁出整集音轨，落到本机临时文件后喂给
@@ -2880,6 +2905,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     super.didChangeDependencies();
     _providerContainer = ProviderScope.containerOf(context, listen: false);
     _playbackRouteMark.attach(ModalRoute.of(context));
+    _companionHook.attach(ModalRoute.of(context));
     _studyClockGate.attach(ModalRoute.of(context));
     final SourceReviewSession? session =
         widget.sourceReviewSession ?? SourceReviewScope.maybeOf(context);
@@ -3363,6 +3389,16 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   List<RemoteVideoEmbeddedSubtitleTrack> _remoteEmbeddedSubtitleTracks =
       const <RemoteVideoEmbeddedSubtitleTrack>[];
 
+  /// 当前远端集互联 host 上的**全部**外挂字幕（[RemoteVideoStreamUrls.sidecarSubtitles]，
+  /// 反馈 -CaVsioFhG）。此前协议只给默认那一条，host 下了日 / 中 / 英多条，菜单里
+  /// 只出现一行。老 host / 非互联来源为空。每集起播先清空、取流后按本集重填。
+  List<RemoteVideoSidecarSubtitle> _remoteSidecarSubtitles =
+      const <RemoteVideoSidecarSubtitle>[];
+
+  /// 本集已下载到临时目录的 host 外挂字幕（文件名 → 本地路径）：同一集里再选
+  /// 同一条不重复下载；与默认字幕同一缓存口径——按集作用域，换集清空。
+  final Map<String, String> _remoteSidecarSubtitlePaths = <String, String>{};
+
   /// BUG-2590：当前远端集的流是否原样送出源容器（来自 [RemoteVideoStreamUrls]）。
   /// 服务器抽不出内嵌文本轨时，决定能否把轨交给 libmpv 自绘（转码 HLS 不带轨）。
   bool _remoteStreamIsOriginalContainer = false;
@@ -3748,6 +3784,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     appFloatingBallPointerInside.addListener(_onFloatingBallPointerChanged);
     // 桌面控制通道遥控（`fushi_cli play`）：按路由压栈顺序登记，最上层的视频页优先。
     videoPlaybackRemotes.register(_playbackRemote);
+    _attachControllerLookup();
     // 不在 initState 读 appModel.lowMemoryMode（它读 prefsRepo，未初始化会抛；
     // 错误态 smoke 用未初始化 AppModel）。先建空 controller，真实 lowMemory 留到
     // _seedWarmPopup（成功路径、必已初始化）再设——与 base_source_page 同范式。
@@ -4669,7 +4706,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
             : EpisodeStartIntent.explicitCue,
         initialPositionMsOverride:
             widget.sourceReview?.startMs ??
-            _resolveRemoteInitialPositionMs(
+            await _resolveRemoteInitialPositionMs(
               _remoteMembers[startIndex],
               startIndex,
             ),
@@ -4700,7 +4737,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       // 起播集恢复其按集断点（host 真相 vs 本地 prefs 取较新者）。
       initialPositionMsOverride:
           widget.sourceReview?.startMs ??
-          _resolveRemoteInitialPositionMs(info, startIndex),
+          await _resolveRemoteInitialPositionMs(info, startIndex),
     );
   }
 
@@ -4769,10 +4806,18 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 本地换源在 [_applyLoad] 的 `clipExportSourceChanged` 分支清（远端
     // `_currentVideoPath` 恒 null，走不到那里）。
     _remoteSubtitlePath = null;
+    _remoteSidecarSubtitles = const <RemoteVideoSidecarSubtitle>[];
+    _remoteSidecarSubtitlePaths.clear();
     // 先查完再按集序号落：重建要逐个 `File.exists`，快速连切时较早那集的查询可能晚于
     // 后一集回来——直接 `= await` 会让作废的那一程把它那集的档覆盖到当前集列表上。
     final List<SubtitleSource> restoredLocalSubtitles =
         await _restoreRemoteLocalSubtitleFiles(index);
+    // 换集 / 连播（无 override）与首开同一条判定：本机库断点、清单条目、互联 host
+    // 此刻的断点取较新（BUG-4304）。只读本机断点会让合集下一成员 / 播放列表下一集
+    // 从本机旧断点起播，随后的实时上报（戳 = now）把旧位置写回 host。
+    final int initialPositionMs =
+        initialPositionMsOverride ??
+        await _resolveRemoteInitialPositionMs(info, index);
     if (seq != _episodeLoadSeq || !mounted) return;
     _importedSubtitleSources = restoredLocalSubtitles;
     // YouTube 画质档是 per-video 懒解析：新一集起播先复位（下次点开画质菜单再懒解析）。
@@ -4782,9 +4827,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _youtubeVariantsAudioUrl = null;
     _youtubeVariantsLoading = false;
     _youtubeVariantsResolved = false;
-    final int initialPositionMs =
-        initialPositionMsOverride ??
-        _readPersistedRemotePositionForEpisode(index);
     // TODO-1213：先置「正在连接视频流…」（远端流须先向 host / 源建流，有网络往返）。
     _setLoadingPhase(_VideoLoadPhase.connecting);
     try {
@@ -4793,6 +4835,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         episodeIndex: streamEpisodeIndex,
       );
       _remoteEmbeddedSubtitleTracks = urls.embeddedSubtitleTracks;
+      // host 不支持按名下载时列表留空：列了也选不了。
+      _remoteSidecarSubtitles = client is RemoteVideoSidecarSubtitleFetch
+          ? urls.sidecarSubtitles
+          : const <RemoteVideoSidecarSubtitle>[];
       _remoteStreamIsOriginalContainer = urls.streamIsOriginalContainer;
       _remoteSourceRequiresDolbyVisionReshape =
           urls.sourceRequiresDolbyVisionReshape;
@@ -4821,6 +4867,34 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           // 上次显式关闭 → 保持关闭，不加载 host 默认字幕（尊重用户选择）。
           _currentSubtitleSource = null;
           subtitleResolved = true;
+        } else if (SubtitleSource.isHostSidecarPersisted(persistedSub)) {
+          // 上次选的是互联 host 上的某一条外挂字幕（反馈 -CaVsioFhG）：按文件名
+          // 重新下载。host 这一集已没有它 / 下载或解析失败 → 落回下方后端默认分支。
+          final RemoteVideoSidecarSubtitle? sidecar =
+              remoteHostSidecarForSource(persistedSub, _remoteSidecarSubtitles);
+          if (sidecar != null) {
+            _setLoadingPhase(_VideoLoadPhase.downloadingSubtitle);
+            try {
+              final File subtitle = await _downloadRemoteHostSidecarSubtitle(
+                client,
+                info,
+                sidecar,
+                index: index,
+                streamEpisodeIndex: streamEpisodeIndex,
+              );
+              cues = await _loadExternalSubtitleCues(subtitle.path, info.id);
+              if (cues.isNotEmpty) {
+                externalSub = subtitle.path;
+                restoredPrimarySource = persistedSub;
+                subtitleResolved = true;
+              }
+            } catch (e) {
+              debugPrint(
+                '[VideoFushiPage] host sidecar subtitle replay failed: $e',
+              );
+            }
+            if (seq != _episodeLoadSeq || !mounted) return;
+          }
         } else if (isExternalSubtitleFilePathForMenu(persistedSub) &&
             await _isRemoteLocalSubtitleFile(persistedSub)) {
           // 本机已下载 / 导入的字幕档（Jimaku / 手动导入落 video_subtitles/）→ 重放成
@@ -5205,40 +5279,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     return v.clamp(0.0, max).toDouble();
   }
 
-  /// 读 per-book/per-episode 远端断点位置（无则 0，从头）。
-  ///
-  /// 在线远端视频（[_isRemote]）在 client 本地 DB 没有 VideoBooks 行（书架不收录
-  /// 远端在线视频，[home_video_page._openRemote] 直接 push 播放页不 upsert），因此本地
-  /// 视频走 `VideoBooks.lastPositionMs` 的进度链路对远端不可用。沿用 speed/volume 同款
-  /// per-book prefs 范式（落 Drift `preferences` 表，跨重启保留），key 用稳定的
-  /// `_activeBookUid`（= 远端 `RemoteVideoInfo.id`，每次列举不变）。TODO-885：
-  /// [episodeIndex]>0 用按集 key（`#ep<index>` 后缀），0 回退整书 key（向后兼容单视频 /
-  /// 旧 TODO-559 prefs）。
-  int _readPersistedRemotePositionForEpisode(int episodeIndex) {
-    final (String uid, int ep) = _remotePositionKeyForIndex(episodeIndex);
-    final Object? raw = appModel.prefsRepo.getPref(
-      videoRemotePositionEpisodePrefKey(uid, ep),
-      defaultValue: 0,
-    );
-    final int v = raw is num
-        ? raw.toInt()
-        : int.tryParse(raw?.toString() ?? '') ?? 0;
-    return v < 0 ? 0 : v;
-  }
-
-  /// 读 per-book/per-episode 远端断点的本地「最后更新时间」（无则 0）。TODO-653 冲突解决用。
-  int _readPersistedRemotePositionAtForEpisode(int episodeIndex) {
-    final (String uid, int ep) = _remotePositionKeyForIndex(episodeIndex);
-    final Object? raw = appModel.prefsRepo.getPref(
-      videoRemotePositionEpisodeAtPrefKey(uid, ep),
-      defaultValue: 0,
-    );
-    final int v = raw is num
-        ? raw.toInt()
-        : int.tryParse(raw?.toString() ?? '') ?? 0;
-    return v < 0 ? 0 : v;
-  }
-
   /// 读本地持久化的远端视频 [uid] 字幕调轴（prefs，无记录返回 0）。与断点同款
   /// per-uid prefs 范式（互联远端调轴不持久化 bug：远端无 VideoBooks 行，
   /// `updateDelayMs` 是静默 0 行 UPDATE，调轴必须落 prefs 才能跨重启保留）。
@@ -5377,21 +5417,30 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   }
 
   /// 远端视频开播位置（TODO-653/885）：在 host 真相（[info] 随清单带回的整书 positionMs，
-  /// 仅对起播集 [episodeIndex]==currentEpisode 有意义）与本地按集 prefs 之间「取较新时间
+  /// 仅对起播集 [episodeIndex]==currentEpisode 有意义）与本地按集断点之间「取较新时间
   /// 戳」（[resolvePositionLww]）。host 进度新于本地时跨设备恢复；本地新于 host 时
-  /// 不被旧 host 回退。非起播集只用本地按集 prefs（host 清单只带整书/当前集进度）。
-  int _resolveRemoteInitialPositionMs(RemoteVideoInfo info, int episodeIndex) {
+  /// 不被旧 host 回退。非起播集清单不带进度，只比本地按集断点与互联 host 按集断点。
+  /// BUG-4304：本机断点读库（不读 prefsRepo 内存缓存——互联 sweep / 冲突弹窗只写库）、
+  /// 互联 host 再读一次此刻断点，见 [resolveRemoteVideoResumeMs]。首开与换集 / 连播
+  /// （[_loadRemoteEpisode] 无 override）都走这里。
+  Future<int> _resolveRemoteInitialPositionMs(
+    RemoteVideoInfo info,
+    int episodeIndex,
+  ) {
     // host 的 info.positionMs 是整书/当前集进度，只对 host 的 currentEpisode 那集叠加；
     // 其它集 host 没带进度 → 退本地按集 prefs。
     final bool hostProgressApplies =
         !info.isPlaylist || episodeIndex == info.currentEpisode;
-    final ({int positionMs, int updatedAtMs}) winner = resolvePositionLww(
-      localPositionMs: _readPersistedRemotePositionForEpisode(episodeIndex),
-      localUpdatedAtMs: _readPersistedRemotePositionAtForEpisode(episodeIndex),
-      remotePositionMs: hostProgressApplies ? info.positionMs : 0,
-      remoteUpdatedAtMs: hostProgressApplies ? info.positionUpdatedAtMs : 0,
+    final (String uid, int ep) = _remotePositionKeyForIndex(episodeIndex);
+    return resolveRemoteVideoResumeMs(
+      db: appModel.database,
+      client: _effectiveRemoteClient!,
+      uid: uid,
+      episodeIndex: ep,
+      listed: hostProgressApplies
+          ? (positionMs: info.positionMs, updatedAtMs: info.positionUpdatedAtMs)
+          : (positionMs: 0, updatedAtMs: 0),
     );
-    return winner.positionMs < 0 ? 0 : winner.positionMs;
   }
 
   /// 远端视频断点位置持久化（controller 每秒至多一次回调 / flush / dispose）。
@@ -6812,6 +6861,46 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     return subtitle;
   }
 
+  /// 把互联 host 上这一集的外挂字幕 [sidecar] 按文件名下到临时目录（反馈
+  /// -CaVsioFhG）。同一集里已下过且文件还在 → 直接复用（[_remoteSidecarSubtitlePaths]）。
+  /// [streamEpisodeIndex] 与 [_downloadRemoteBackendDefaultSubtitle] 同口径（主机侧集序号）。
+  Future<File> _downloadRemoteHostSidecarSubtitle(
+    RemoteVideoClient client,
+    RemoteVideoInfo info,
+    RemoteVideoSidecarSubtitle sidecar, {
+    required int index,
+    required int streamEpisodeIndex,
+  }) async {
+    if (client is! RemoteVideoSidecarSubtitleFetch) {
+      throw StateError('remote client cannot fetch host sidecar subtitles');
+    }
+    final int seq = _episodeLoadSeq;
+    final String? cached = _remoteSidecarSubtitlePaths[sidecar.fileName];
+    if (cached != null && await File(cached).exists()) return File(cached);
+    final Directory temp = await getTemporaryDirectory();
+    final File subtitle = File(
+      p.join(
+        temp.path,
+        _remoteSubtitleTempFileName(
+          '${info.id}_ep${index}_sc',
+          sidecar.fileName,
+        ),
+      ),
+    );
+    await (client as RemoteVideoSidecarSubtitleFetch)
+        .getRemoteVideoSidecarSubtitle(
+          info.id,
+          subtitle,
+          fileName: sidecar.fileName,
+          episodeIndex: streamEpisodeIndex,
+        );
+    // 换集后才回来的下载不登记进新一集的缓存。
+    if (seq == _episodeLoadSeq) {
+      _remoteSidecarSubtitlePaths[sidecar.fileName] = subtitle.path;
+    }
+    return subtitle;
+  }
+
   /// 用户这一集已有别的字幕选择时，起播后把后端默认字幕下好、登记成菜单里的
   /// 「服务端字幕」行（[RemoteBackendDefaultSubtitlePlan.listOnly]），不挂到播放上。
   ///
@@ -6953,6 +7042,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _disposedDuringSourceReview = _sourceReviewActive;
     ExternalMediaNavigation.instance.unregister(this);
     videoPlaybackRemotes.unregister(_playbackRemote);
+    _detachControllerLookup();
+    _companionHook.dispose();
     _sourceReviewSession?.removeListener(_onSourceReviewChanged);
     // BUG-2043：加载中就被退出（ESC / 系统返回）而还没压上全屏路由 → 接管来的原生
     // 全屏由本页亲自退，不能把窗口留在「原生全屏、栈上无全屏路由」的悬空态。
@@ -8028,6 +8119,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       pausedForLookup: _pausedForLookup,
       // 光标仍激活 = 用户还在选词，暂停由光标会话接管（退出光标时恢复）。
       caretHoldsPause: _videoCaretActive,
+      companionHoldsPause: _companionHook.lookupOpen,
     )) {
       _pausedForLookup = false;
       unawaited(_controller?.resumePlayback());
@@ -8283,6 +8375,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   @override
   Future<MinePopupResult> onMineEntry(Map<String, String> fields) =>
       _onMineEntryImpl(fields);
+
+  /// 反馈 OeS0m8tLHc：查词弹窗点「制卡」→ 弹窗立刻关、视频立刻续播（关栈走
+  /// [_popNestedPopupAt]，按 [_pausedForLookup] 恢复），卡在后台落地（本地视频也是，
+  /// 见 [resolveVideoMineDispatch]），结局由 OSD 报告、失败的结果卡带「重试」。
+  /// 视频车道因此不再看「制卡后关闭查词弹窗」偏好，也不再等卡落地才关。
+  @override
+  bool get closePopupAfterMining => true;
 
   /// mixin 的纯字段制卡 / 覆盖（不带视频媒体）。网页档没有锚点 cue 时的退路：extension
   /// 里调不到 `super`，经这两个转发器。
@@ -8759,6 +8858,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       // 循环当前句开关（Ix4j5SKUth，默认空绑定）：状态在画面右上角常驻标记上可见。
       toggleLoopCurrentSubtitle: () =>
           _runWhenImmersiveAllowsShortcuts(_toggleLoopCurrentCue),
+      // 逐句学习工具（副屏 S6，默认 Ctrl+Shift+R / P / B）：状态归控制器，副屏视频面板
+      // 走同一组方法；开关类动作以 OSD 反馈当前状态。
+      replayCueThenPause: () =>
+          _runWhenImmersiveAllowsShortcuts(_replayCurrentCueThenPause),
+      toggleAutoPauseAtCueEnd: () =>
+          _runWhenImmersiveAllowsShortcuts(_toggleAutoPauseAtCueEnd),
+      toggleAbLoop: () => _runWhenImmersiveAllowsShortcuts(_toggleAbLoop),
       // 内封章节上/下一章（TODO-424，默认 PageUp/PageDown）：seek 到相邻章起点，
       // 无章节时 controller no-op。与跳句同范式（BUG-2030）：只续命、不唤起；章节**面板**
       // 里点条目仍 poke（那是指针交互，见 [_buildChapterSidePanel]）。
@@ -11973,6 +12079,46 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     controller.setLoopCurrentCue(next);
   }
 
+  /// 重播当前句并在句尾暂停（副屏 S6）。没有字幕时给出与循环当前句相同的提示。
+  void _replayCurrentCueThenPause() {
+    final VideoPlayerController? controller = _controller;
+    if (controller == null) return;
+    if (controller.cues.isEmpty) {
+      _showOsd(t.no_sentence_selected, severity: ToastSeverity.error);
+      return;
+    }
+    _keepControlsAliveIfVisible();
+    unawaited(controller.replayCurrentCueThenPause());
+  }
+
+  /// 开 / 关「每句播完自动暂停」（副屏 S6），OSD 报新状态。
+  void _toggleAutoPauseAtCueEnd() {
+    final VideoPlayerController? controller = _controller;
+    if (controller == null) return;
+    final bool next = !controller.autoPauseAtCueEnd;
+    controller.setAutoPauseAtCueEnd(next);
+    _showOsd(
+      next
+          ? t.video_line_study_auto_pause_on
+          : t.video_line_study_auto_pause_off,
+      icon: FushiIcons.pauseCircle,
+    );
+  }
+
+  /// A-B 循环三态切换（副屏 S6），OSD 报切换后的状态。B 不晚于 A 时控制器忽略，
+  /// 不报。
+  void _toggleAbLoop() {
+    final VideoPlayerController? controller = _controller;
+    if (controller == null) return;
+    if (!controller.toggleAbLoop()) return;
+    final String message = controller.abLoopActive
+        ? t.video_line_study_ab_on
+        : controller.abLoopA != null
+        ? t.video_line_study_ab_a_set
+        : t.video_line_study_ab_cleared;
+    _showOsd(message, icon: FushiIcons.repeatOne);
+  }
+
   /// 重播当前句：回到本句开头**并起播**（Dbd86l4kA-：暂停态按重播也开始播放；
   /// 只跳不播的是「上 / 下一句字幕」）。
   Future<void> _replayCurrentCueAndKeepControls() async {
@@ -12097,11 +12243,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       // （否则 null，面板不显示）；面板拖动预览、松手才经 onSetDelay(_setDelayMs) 落盘。
       subtitleWaveformCues: _controller?.cues ?? const <AudioCue>[],
       videoDurationMs: _controller?.durationMs ?? 0,
-      subtitleProbeLimitMs: _subtitleAlignProbeLimitMs,
       loadSubtitleWaveform:
           (_controller?.cues.isNotEmpty ?? false) &&
               _canResolveSubtitleAlignAudio
-          ? _loadSubtitleWaveformEnvelope
+          ? _loadSubtitleWaveformSegment
           : null,
       subtitlePositionListenable: _controller,
       currentSubtitlePositionMs: () => _controller?.subtitleClockMs ?? -1,

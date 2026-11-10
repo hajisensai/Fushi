@@ -47,6 +47,22 @@ GalLookupSurfaceProfileV1 _profile({
 );
 
 class _FakeSurfacePort implements GalAttachedTextSurfacePort {
+  @override
+  Future<GalAttachedCallResult> configureMeasured({
+    required GalAttachedSurfaceTarget target,
+    required String measuredSource,
+  }) async => const GalAttachedCallResult(error: 'measured_not_used');
+
+  @override
+  Future<GalAttachedCallResult> updateMeasuredText({
+    required GalAttachedSurfaceTarget target,
+    required String sourceText,
+    required int textGeneration,
+    required List<GalAttachedMeasuredGlyph> glyphs,
+    required int clientWidth,
+    required int clientHeight,
+  }) async => const GalAttachedCallResult(error: 'measured_not_used');
+
   final List<String> calls = <String>[];
   final List<({String text, int generation})> texts =
       <({String text, int generation})>[];

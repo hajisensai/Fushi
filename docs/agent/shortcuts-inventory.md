@@ -1,5 +1,59 @@
 # Fushi 快捷键清单（TODO-048a 统计）
 
+> **2026-11-08 增补（Linux Wayland 全局热键）：**
+>
+> - `globalExternal` 三个动作的 OS 注册收口到 `GlobalHotKeyBackend`（`lib/src/shortcuts/global_hotkey_backend.dart`）：
+>   Windows / macOS / Linux X11 走 `NativeGlobalHotKeyBackend`（hotkey_manager，X11 即 keybinder，行为不变）；
+>   Linux **Wayland 桌面**（按 `XDG_SESSION_TYPE` / `WAYLAND_DISPLAY` 判，不看 GTK 后端——Flatpak 钉了
+>   `GDK_BACKEND=x11` 但桌面仍是 Wayland）走 XDG GlobalShortcuts portal（`portal_global_hotkey_backend.dart` +
+>   `global_shortcuts_portal.dart`）。
+> - portal 下按键归桌面：注册表里的键盘绑定只作 `preferred_trigger` 提示，桌面可能弹窗让用户确认 / 改键，之后改键在
+>   系统设置里。设置页 `globalExternal` 的「键盘」视图在 Wayland 上换成 `GlobalHotKeyPortalPanel`：显示桌面回报的
+>   实际触发键、portal 缺失 / 对话框被取消 / 会话被关等原因，以及「在系统设置中修改」（portal v2 `ConfigureShortcuts`）
+>   或文字指引；手柄 / 鼠标视图不变。
+> - 热键不再依附查词卡覆盖窗：Wayland 会话没有覆盖窗时照样注册；选中文本查词改落到主窗查词页
+>   （`queueExternalLookup`），没取到选区就打开查词页；截屏识字需要覆盖窗，没有时不向 portal 声明。
+>   Flatpak（XWayland 下 GTK 走 X11）有覆盖窗，所以三个动作都向 portal 声明、查词仍出卡片。
+> - portal 会话生命周期：客户端按 `NameOwnerChanged` 跟踪 `org.freedesktop.portal.Desktop` 的属主——portal 进程
+>   崩溃 / 重启时，未应答的 Request 以 `PortalFailure.aborted` 结束、该进程的会话按「已关闭」上报（旧进程不会发
+>   `Closed`），之后只认新属主的信号；退出时 `dispose` 先 `abortPendingRequests()` 结束挂着的绑定对话框请求，再关会话
+>   与连接，不让退出步骤卡到超时。
+> - portal 缺 GlobalShortcuts（GNOME < 48、wlroots、Gamescope）而 GTK 跑在 XWayland 上（Flatpak、Steam 游戏模式启动脚本
+>   都钉 `GDK_BACKEND=x11`）时，`FallbackGlobalHotKeyBackend` 把热键交回 X11 keybinder（`portalShouldFallBackToX11Grab`）：
+>   X11 客户端（XWayland / Gamescope 下的游戏）有焦点时照样能触发，这是 portal 后端出现前这些会话本来就有的能力，不报
+>   「不支持」。设置页跟随实际后端：回落后键盘视图回到应用内录键。原生 Wayland GTK 上 X11 抓键看不到任何按键，不回落。
+> - 守卫 / 测试：`test/shortcuts/portal_global_hotkey_backend_test.dart`、`fallback_global_hotkey_backend_test.dart`、`global_shortcuts_portal_dbus_test.dart`（仅 Linux）、
+>   `test/lookup/global_hotkey_backend_wiring_test.dart`、`test/pages/global_hotkey_portal_panel_test.dart`。
+
+> **2026-11-08 增补（手柄查词模式 / 副屏面板驱动，副屏 S6）：**
+>
+> - `ControllerLookupMode`（`lib/src/second_screen/input/`）排在**一切页面分派之前**：桌面在
+>   `GamepadService._dispatchButton`，Android 在 `FocusManager` 早期按键处理器
+>   （`interceptNativeControllerLookupKey`）。不进注册表，开启方式是设备本地偏好
+>   `controller_lookup_style`（设置「外观」：按住 L1 / Select 切换 / 关）。**未设时：副屏伴侣在用 =
+>   按住 L1，否则关**——单屏手柄行为在用户自己打开前完全不变。
+> - 查词模式内（阅读器 / 视频字幕 / 漫画 OCR / 歌词页挂了目标时）：十字键 / 左摇杆左右 = 按词（Y 切按字）
+>   移光标，上下 = 上 / 下一行；A 查词（有查词结果时 A = 制卡）；X 发音；RT / LT 下 / 上一词条；右摇杆
+>   滚结果；B 先关查词、再退出模式。结果去副屏「查词」页，副屏不在时走页内弹窗。
+> - 副屏伴侣在用时**按住 R1** = 十字键 / 左摇杆 / A / B 驱动副屏面板的焦点（其它键吞掉），松开回到上屏。
+> - 行为变化（仅副屏伴侣在用、或用户打开了查词模式时）：L1（有查词目标时）与 R1 的**轻点**改在**松开**时
+>   按原绑定补发（按住期间没有别的输入才算轻点）。阅读器 RB/LB 翻页等因此在松开时触发。
+
+> **2026-11-08 增补（视频页逐句学习工具，副屏 S6）：**
+>
+> - 新增三个 video scope 动作：`videoReplayCueThenPause`（重播当前句并在句尾暂停，默认
+>   Ctrl+Shift+R）、`videoToggleAutoPauseAtCueEnd`（开关「每句播完自动暂停」，默认 Ctrl+Shift+P）、
+>   `videoToggleAbLoop`（A-B 循环三态：标 A → 标 B 开始循环 → 清除，默认 Ctrl+Shift+B）。macOS 表
+>   自动换成 ⌘⇧R / P / B；**手柄留空**（video scope 手柄键位已占满，手柄用户走副屏视频面板的
+>   「逐句学习」区或自配）。持久化 key 依次为 `video_replay_cue_then_pause` /
+>   `video_toggle_auto_pause_at_cue_end` / `video_toggle_ab_loop`。全新动作不在老快照里，直接取默认，
+>   不需要 schema 迁移。
+> - 状态归 `VideoPlayerController`：自动暂停与「重播本句」走同一套句尾暂停判定；循环当前句开着时
+>   自动暂停让位；A-B 只在自然播放越过 B 时回到 A，显式 seek / 拖进度条撤武装，换片作废。开关类
+>   动作在画面左上 OSD 报新状态。网页视频页不接线（默认 no-op）。
+> - 副屏视频面板「逐句学习」区另有「循环当前句 ×1 / ×2 / ×3 / ×5 / 无限」（`startCueLoop(times:)`，
+>   与 `videoToggleLoopCurrentSubtitle` 同一个循环模式），没有对应快捷键。
+
 > **2026-11-01 增补（焦点导航进快捷键体系，反馈 bjPjRHsaUy）：**
 >
 > - 设置页新分组「焦点导航」= 原 `gamepad` scope（枚举名与动作名 `dpadUp/Down/Left/Right`、

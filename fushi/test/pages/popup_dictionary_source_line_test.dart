@@ -35,6 +35,13 @@ class _SourceLineAppModel extends AppModel {
   /// 只在有结果时才换词，汉字结果不触发自动朗读，测试路径最短。
   final Set<String> kanjiHits = <String>{};
 
+  /// Query -> headword of the one term entry it returns.
+  final Map<String, String> wordHits = <String, String>{};
+
+  /// A term entry triggers auto-read on lookup: no audio sources here.
+  @override
+  List<AudioSourceConfig> get audioSourceConfigs => const <AudioSourceConfig>[];
+
   @override
   bool get isInitialised => true;
 
@@ -94,6 +101,15 @@ class _SourceLineAppModel extends AppModel {
     bool allowRemoteLookup = true,
   }) async {
     searched.add(searchTerm);
+    final String? word = wordHits[searchTerm];
+    if (word != null) {
+      return DictionarySearchResult(
+        searchTerm: searchTerm,
+        entries: <DictionaryEntry>[
+          DictionaryEntry(word: word, reading: '', meaning: 'm'),
+        ],
+      );
+    }
     if (kanjiHits.contains(searchTerm)) {
       return DictionarySearchResult(
         searchTerm: searchTerm,
@@ -155,6 +171,7 @@ Widget _buildApp({
   required int charIndex,
   String? sourceBlock,
   int sourceBlockOffset = -1,
+  ValueChanged<String>? onHeadword,
 }) {
   return ProviderScope(
     overrides: [
@@ -171,6 +188,7 @@ Widget _buildApp({
           sourceBlock: sourceBlock,
           sourceBlockOffset: sourceBlockOffset,
           closeInApp: () {},
+          onHeadword: onHeadword,
         ),
       ),
     ),
@@ -274,6 +292,33 @@ void main() {
       await tester.pump();
       await tester.pump();
       expect(appModel.searched.last, '今日は良い天気ですね');
+    },
+  );
+
+  testWidgets(
+    'the host lookup reports its matched headword once; a re-scan on the '
+    'strip does not',
+    (WidgetTester tester) async {
+      final _SourceLineAppModel appModel = _SourceLineAppModel()
+        ..wordHits['呼んでいた'] = '呼ぶ'
+        ..wordHits['私は'] = '私';
+      final List<String> headwords = <String>[];
+      await tester.pumpWidget(
+        _buildApp(
+          appModel: appModel,
+          repo: _RecordingAnkiRepo(),
+          text: '先生と呼んでいた',
+          charIndex: 3,
+          onHeadword: headwords.add,
+        ),
+      );
+      await _settle(tester);
+      expect(appModel.searched.first, '呼んでいた');
+      expect(headwords, <String>['呼ぶ']);
+
+      await tester.tap(find.text('先'));
+      await _settle(tester);
+      expect(headwords, <String>['呼ぶ']);
     },
   );
 

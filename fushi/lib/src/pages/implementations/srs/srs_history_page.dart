@@ -13,6 +13,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_profile_link.dart'
@@ -27,9 +28,11 @@ import 'package:share_plus/share_plus.dart';
 
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_conflicts_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_sync_devices_section.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_sync_settings.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
+import 'package:fushi/src/srs/srs_navigation.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/srs/srs_app_runtime.dart';
 import 'package:fushi/src/srs/srs_device_view.dart';
@@ -53,6 +56,7 @@ import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_loading_view.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_load_error.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
@@ -63,13 +67,20 @@ import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
+/// 复习运行时还没装好时（模块关着 / 正在打开）摘要行听的空集合。
+final ValueListenable<Set<String>> _noPeersNotJoined =
+    ValueNotifier<Set<String>>(const <String>{});
+
 /// 「同步状态」摘要行标题：同步在跑时说进行中（不能说「所有改动都已同步」——数字是开跑前的
-/// 快照），否则按未上传条数说。
+/// 快照）；已配对设备（互联 host）报告还没加入复习同步时如实说（BUG-4320：本机未上传条数为 0 只说明
+/// 发出去了，对端没并入、也没发它的数据）；否则按未上传条数说。
 String srsTimelineSummaryTitle({
   required SrsSyncProgress? syncing,
   required int unpublished,
+  bool peerNotJoined = false,
 }) {
   if (syncing != null) return t.srs_timeline_syncing;
+  if (peerNotJoined) return t.srs_sync_peer_not_joined;
   return unpublished > 0
       ? t.srs_timeline_unpublished(n: unpublished)
       : t.srs_timeline_all_published;
@@ -164,6 +175,9 @@ class SrsHistoryPage extends ConsumerStatefulWidget {
 
 class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
   bool _loading = true;
+
+  /// 复习库打开失败（[readSrsStore] 原样抛出的错误）：页面显示错误态 + 重试，不停在转圈。
+  Object? _loadError;
   bool _busy = false;
   Map<String, Object?> _status = const <String, Object?>{};
   List<SrsCheckpointView> _checkpoints = const <SrsCheckpointView>[];
@@ -203,7 +217,19 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
   }
 
   Future<void> _reload() async {
-    final SrsDbStore? store = await readSrsStore(ref);
+    final SrsDbStore? store;
+    try {
+      store = await readSrsStore(ref);
+    } catch (e, stack) {
+      ErrorLogService.instance.log('SrsHistoryPage.openStore', e, stack);
+      if (mounted) {
+        setState(() {
+          _loadError = e;
+          _loading = false;
+        });
+      }
+      return;
+    }
     Map<String, Object?> status = const <String, Object?>{};
     List<SrsCheckpointView> checkpoints = const <SrsCheckpointView>[];
     if (store != null) {
@@ -243,8 +269,19 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
       _status = status;
       _checkpoints = checkpoints;
       _deferredMerge = deferredMerge;
+      _loadError = null;
       _loading = false;
     });
+  }
+
+  /// 错误态的「重试」：作废缓存着失败的复习库 provider 再重读。
+  void _retryLoad() {
+    retrySrsStoreOpen(ref);
+    setState(() {
+      _loadError = null;
+      _loading = true;
+    });
+    unawaited(_reload());
   }
 
   /// 跑一个会改动复习库的操作：期间禁用按钮，失败统一提示。
@@ -905,51 +942,70 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
     final int pending = (_status['pending'] as num?)?.toInt() ?? 0;
     final int ops = (_status['ops'] as num?)?.toInt() ?? 0;
     final SrsDeferredProfileMerge? deferred = _deferredMerge;
+    // 已配对设备（互联 host）报告还没加入复习同步的位置（BUG-4320）：调度器一轮跑完问到的。
+    final ValueListenable<Set<String>> peersNotJoined =
+        ref.read(srsAppRuntimeProvider)?.sync.peersNotJoined ??
+        _noPeersNotJoined;
     // 状态数字是上次重读时的快照；同步在跑时它们正在变，不能说「都已同步」，
     // 摘要行换成进行中的阶段与进度，对端行的「没收到」换成「正在接收」。
-    return ValueListenableBuilder<SrsSyncProgress?>(
-      valueListenable: srsSyncProgress,
-      builder: (BuildContext context, SrsSyncProgress? syncing, _) =>
-          AdaptiveSettingsSection(
-            title: t.srs_timeline_status,
-            children: <Widget>[
-              AdaptiveSettingsRow(
-                key: const ValueKey<String>('srs_timeline_status_summary'),
-                title: srsTimelineSummaryTitle(
-                  syncing: syncing,
-                  unpublished: unpublished,
-                ),
-                subtitle: syncing != null
-                    ? srsSyncProgressLine(syncing)
-                    : t.srs_timeline_ops(n: ops),
-                icon: syncing != null
-                    ? FushiIcons.sync
-                    : (unpublished > 0
-                          ? FushiIcons.cloudSync
-                          : FushiIcons.success),
-                showIcon: true,
-              ),
-              if (pending > 0)
-                AdaptiveSettingsRow(
-                  key: const ValueKey<String>('srs_timeline_status_pending'),
-                  title: t.srs_timeline_waiting(n: pending),
-                  subtitle: t.srs_timeline_waiting_hint,
-                  icon: FushiIcons.schedule,
-                  showIcon: true,
-                ),
-              if (deferred != null)
-                AdaptiveSettingsRow(
-                  key: const ValueKey<String>(
-                    'srs_timeline_status_merge_deferred',
+    return ValueListenableBuilder<Set<String>>(
+      valueListenable: peersNotJoined,
+      builder: (BuildContext context, Set<String> notJoined, _) =>
+          ValueListenableBuilder<SrsSyncProgress?>(
+            valueListenable: srsSyncProgress,
+            builder: (BuildContext context, SrsSyncProgress? syncing, _) {
+              final bool peerNotJoined =
+                  syncing == null && notJoined.isNotEmpty;
+              return AdaptiveSettingsSection(
+                title: t.srs_timeline_status,
+                children: <Widget>[
+                  AdaptiveSettingsRow(
+                    key: const ValueKey<String>('srs_timeline_status_summary'),
+                    title: srsTimelineSummaryTitle(
+                      syncing: syncing,
+                      unpublished: unpublished,
+                      peerNotJoined: peerNotJoined,
+                    ),
+                    subtitle: syncing != null
+                        ? srsSyncProgressLine(syncing)
+                        : (peerNotJoined
+                              ? t.srs_sync_peer_not_joined_hint
+                              : t.srs_timeline_ops(n: ops)),
+                    icon: syncing != null
+                        ? FushiIcons.sync
+                        : (peerNotJoined
+                              ? FushiIcons.warning
+                              : (unpublished > 0
+                                    ? FushiIcons.cloudSync
+                                    : FushiIcons.success)),
+                    showIcon: true,
+                    subtitleMaxLines: 3,
                   ),
-                  title: t.srs_timeline_merge_deferred,
-                  subtitle: t.srs_timeline_merge_deferred_hint(
-                    n: deferred.missingRevoked.length,
-                  ),
-                  icon: FushiIcons.merge,
-                  showIcon: true,
-                ),
-            ],
+                  if (pending > 0)
+                    AdaptiveSettingsRow(
+                      key: const ValueKey<String>(
+                        'srs_timeline_status_pending',
+                      ),
+                      title: t.srs_timeline_waiting(n: pending),
+                      subtitle: t.srs_timeline_waiting_hint,
+                      icon: FushiIcons.schedule,
+                      showIcon: true,
+                    ),
+                  if (deferred != null)
+                    AdaptiveSettingsRow(
+                      key: const ValueKey<String>(
+                        'srs_timeline_status_merge_deferred',
+                      ),
+                      title: t.srs_timeline_merge_deferred,
+                      subtitle: t.srs_timeline_merge_deferred_hint(
+                        n: deferred.missingRevoked.length,
+                      ),
+                      icon: FushiIcons.merge,
+                      showIcon: true,
+                    ),
+                ],
+              );
+            },
           ),
     );
   }
@@ -970,8 +1026,18 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
                   srsRunLogged('SrsHistory.retireDevice', () => _retire(d)),
               onUnretire: (SrsDeviceView d) =>
                   srsRunLogged('SrsHistory.unretireDevice', () => _unretire(d)),
+              onReviewTrust: (SrsDeviceView d) =>
+                  srsRunLogged('SrsHistory.reviewTrust', _openConflicts),
             ),
       );
+
+  /// 去冲突中心确认 / 拒绝一台还没信任的设备；回来时重读状态。
+  Future<void> _openConflicts() async {
+    await srsPushPage<void>(context, (_) => const SrsConflictsPage());
+    if (!mounted) return;
+    bumpSrsRevision(ref);
+    await _reload();
+  }
 
   String _deviceName(SrsDeviceView d) =>
       d.displayName(formatTime: (DateTime x) => srsTimeLabel(context, x));
@@ -1041,6 +1107,14 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
   Widget _buildBody(BuildContext context) {
     if (_loading) {
       return const SafeArea(bottom: false, child: FushiLoadingView());
+    }
+    final Object? loadError = _loadError;
+    if (loadError != null) {
+      return SrsLoadErrorView(
+        error: loadError,
+        retryKey: const ValueKey<String>('srs-history-load-retry'),
+        onRetry: _retryLoad,
+      );
     }
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final List<Widget> items = <Widget>[

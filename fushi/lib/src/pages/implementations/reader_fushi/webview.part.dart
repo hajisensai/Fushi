@@ -1781,6 +1781,9 @@ $kContinuousWheelScrollJs
       // 必须松手、静默后再滑一次才跨章。离散滚轮/数位板旋钮：一格通常只有一个
       // WheelEvent，不能再要求 arm-then-fire 的第二拍，否则设备会表现为完全无响应。
       if (pointerKind === 'trackpad' && !startsNewWheelGesture) return;
+      // 反馈 R7k887yaJI 重开：文档内换章的所有者（章节无缝衔接）认领了这一侧就由它换章，
+      // 不再让 Dart 从（可能已在文档内换过的）章号再跨一章。
+      if (r && typeof r.claimBoundaryTurn === 'function' && r.claimBoundaryTurn(wheelDir)) return;
       window.flutter_inappwebview.callHandler(
         'onBoundarySwipe', wheelDir, pointerKind);
       return;
@@ -2837,9 +2840,15 @@ updateLive: function(patch) {
                 )) {
               return;
             }
+            // 反馈 R7k887yaJI 重开：边界换章的意图相对发出它那一刻的章号。截图要 await，
+            // 其间文档内换章（无缝晋升 → _onSeamlessChapterActivated 同步换掉
+            // _currentChapter）一旦落地，这次意图描述的边界已经不存在，再从新章号跨一章
+            // 就是跳两章。
+            final int fromChapter = _currentChapter;
             if (!await _prepareContinuousChapterTransition()) return;
             if (!mounted ||
                 _paginationInFlight ||
+                _currentChapter != fromChapter ||
                 !_hasChapterTurnTarget(dir)) {
               _discardIdleChapterTransitionSnapshot();
               return;
@@ -2870,6 +2879,12 @@ updateLive: function(patch) {
             if (_lyricsMode) return;
             _audiobookController?.triggerImagePause();
           },
+        );
+
+        // 文字领读：VN 引擎每次换屏回传当前屏的有声书句子首尾。
+        controller.addJavaScriptHandler(
+          handlerName: 'onTextLeadsScreenCues',
+          callback: _onTextLeadsScreenCues,
         );
 
         // TODO-1289 / BUG-898：JS 揭开防剧透图后回传稳定 key（extractDir 相对归一路径）。

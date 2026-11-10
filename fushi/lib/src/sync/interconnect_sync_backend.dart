@@ -32,6 +32,7 @@ import 'package:fushi/src/sync/remote_library_source.dart';
 import 'package:fushi/src/sync/interconnect_video_quality.dart';
 import 'package:fushi/src/sync/remote_video_client.dart';
 import 'package:fushi_engine/utils/misc/resumable_downloader.dart';
+import 'package:fushi_engine/sync/srs_change_feed.dart' show kSrsSyncStatusPath;
 import 'package:fushi_engine/sync/sync_asset_store.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_backend_file_trio_mixin.dart';
@@ -73,8 +74,11 @@ Future<FushiClientUrl> resolveReachableFushiCandidate(
     if (!candidate.enabled) continue;
     try {
       if (await probeFushiCandidate(candidate, fallbackToken, probe)) {
+        reportInterconnectCandidateReached(candidate);
         return candidate;
       }
+      // 连不上：它若是选路缓存的胜出地址就作废，别在 TTL 内继续排组首（BUG-4278）。
+      reportInterconnectCandidateUnreachable(candidate);
     } on SyncAuthError catch (e) {
       // 这台拒了我的凭据 —— 记下原因，继续问下一台。
       authError = e;
@@ -222,6 +226,7 @@ class InterconnectSyncBackend extends SyncBackend
         RemoteBookClient,
         RemoteVideoClient,
         RemoteVideoGraphicSubtitleTrackFetch,
+        RemoteVideoSidecarSubtitleFetch,
         RemoteVideoPlaybackSync,
         RemoteVideoPlaybackRelease,
         RemoteVideoQualityLimit,
@@ -1061,6 +1066,31 @@ class InterconnectSyncBackend extends SyncBackend
     }
     final Object? decoded = jsonDecode(await _readBodyBounded(res));
     return decoded is Map ? (decoded['token'] as num?)?.toInt() : null;
+  }
+
+  /// host 自己是否已加入复习同步 v2（BUG-4320，[kSrsSyncStatusPath]）。host 没确认首次 v2 同步前既不发布自己的
+  /// 复习数据、也不并入本机写过去的段：本机这一轮「成功」却收不到任何东西，调度器据此提示而不是说「全部已同步」。
+  /// null = host 不报告（无头服务端 / 老 host 没有首次确认这一步，端点 404）。网络 / 鉴权失败照常抛。
+  Future<bool?> hostSrsSyncJoined() async {
+    await _ensureResolved();
+    final HttpClientRequest req = await _ops!.buildRequest(
+      'GET',
+      '$_apiBase$kSrsSyncStatusPath',
+    );
+    final HttpClientResponse res = await _sendBounded(req);
+    if (res.statusCode == 404) {
+      await res.drain<void>();
+      return null;
+    }
+    if (res.statusCode >= 400) {
+      _ops!.checkStatus(
+        res.statusCode,
+        'GET $kSrsSyncStatusPath',
+        serverReason: await readSyncErrorBody(res),
+      );
+    }
+    final Object? decoded = jsonDecode(await _readBodyBounded(res));
+    return decoded is Map ? decoded['joined'] as bool? : null;
   }
 
   /// Pulls the host-owned service configuration over the pinned HTTPS session.
@@ -3072,6 +3102,35 @@ class InterconnectSyncBackend extends SyncBackend
     final Uri uri = Uri.parse(
       '$_apiBase/api/library/videos/${_encodeVideoId(id)}/subtitle',
     ).replace(queryParameters: query.isEmpty ? null : query);
+    await downloadContentFile(
+      fileId: uri.toString(),
+      destination: dest,
+      onProgress: syncTransferFractionOnly(onProgress),
+    );
+  }
+
+  /// 下载 host 上这一集名为 [fileName] 的外挂字幕（`GET .../subtitle?sidecar=`，
+  /// 反馈 -CaVsioFhG）。[fileName] 来自 `/streamurl` 的 `sidecarSubtitles`——只有
+  /// 下发了这份列表的 host 认得这个参数（老 host 会忽略它回默认字幕，所以调用方
+  /// 只对列表里的条目调用）。
+  @override
+  Future<void> getRemoteVideoSidecarSubtitle(
+    String id,
+    File dest, {
+    required String fileName,
+    int episodeIndex = 0,
+    void Function(double progress)? onProgress,
+  }) async {
+    await _ensureResolved();
+    final Uri uri =
+        Uri.parse(
+          '$_apiBase/api/library/videos/${_encodeVideoId(id)}/subtitle',
+        ).replace(
+          queryParameters: <String, String>{
+            kVideoSidecarSubtitleQueryParam: fileName,
+            if (episodeIndex > 0) 'episode': '$episodeIndex',
+          },
+        );
     await downloadContentFile(
       fileId: uri.toString(),
       destination: dest,

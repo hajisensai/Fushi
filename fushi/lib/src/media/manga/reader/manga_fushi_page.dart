@@ -97,6 +97,15 @@ import 'package:fushi/src/media/manga/reader/manga_control_layout.dart';
 import 'package:fushi/src/media/manga/reader/manga_control_layout_editor.dart'
     show showMangaControlLayoutEditorSheet;
 import 'package:fushi/src/media/manga/reader/manga_reader_bookmarks.dart';
+import 'package:fushi/src/media/manga/reader/manga_companion_hook.dart';
+import 'package:fushi/src/media/media_item.dart';
+import 'package:fushi/src/media/media_source.dart' show MediaItemAppLookup;
+import 'package:fushi/src/second_screen/companion/companion_cover_files.dart';
+import 'package:fushi/src/second_screen/companion/companion_lookup_routing.dart';
+import 'package:fushi/src/second_screen/input/controller_lookup_mode.dart';
+import 'package:fushi/src/second_screen/input/controller_lookup_target.dart';
+import 'package:fushi/src/media/manga/manga_controller_cursor_scripts.dart';
+import 'package:fushi/src/media/shared/controller_lookup_steps.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
     show FushiToolbarFab, FushiToolbarItem;
@@ -108,6 +117,7 @@ import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart'
         fushiTitleBarColorsOn;
 import 'package:fushi/src/media/manga/reader/manga_reader_settings_sheet.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_page_grid.dart';
+import 'package:fushi/src/media/manga/reader/manga_page_thumbnail_prefetcher.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_quick_settings_sheet.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_study_stats.dart';
 import 'package:fushi/src/pages/implementations/statistics_center_page.dart';
@@ -197,6 +207,8 @@ import 'package:fushi_engine/media/kavita/kavita_models.dart'
     show KavitaProgress;
 
 part 'manga_jump_history.part.dart';
+part 'manga_fushi/companion.part.dart';
+part 'manga_fushi/controller_lookup.part.dart';
 part 'manga_fushi/kavita.part.dart';
 part 'manga_fushi/page_curl.part.dart';
 part 'manga_fushi/read_aloud.part.dart';
@@ -289,6 +301,12 @@ enum MangaReaderInputAction {
 
 /// 一次键盘平移移动的视口比例。按比例而非像素，1080p 与 4K 手感一致。
 const double kMangaPanStepFraction = 0.15;
+
+/// 正文 WebView 的 `preventGestureDelay`：iOS 上触摸直接进 WKWebView，不经 Flutter
+/// 手势竞技场延后投递（反馈 P2jQzOBBag，原因见 `_buildWebViewSurface`）。页内 JS
+/// 的双击 / 长按 / 双指点按判据都按 DOM pointer 事件的时间算，投递必须实时。
+/// 守卫：test/media/manga/manga_webview_gesture_policy_test.dart。
+const bool kMangaWebViewPreventGestureDelay = true;
 
 /// 「落在末页」的起始页码：远大于任何章的页数，装载链在页数已知处把它钳到
 /// `pageCount - 1`（`_presentPayload` 与在线直读落点都是 `clamp(0, n - 1)`）。
@@ -1567,6 +1585,16 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
 
   /// 在线直读章的边看边识别（[MangaStreamPageOcr]）；只在直读章、自动触发时有。
   MangaStreamPageOcr? _streamOcr;
+
+  /// Dual-screen companion (claim, snapshot, panel commands); idle while the
+  /// companion is not up.
+  late final MangaCompanionHook _companion = MangaCompanionHook(
+    reader: _MangaCompanionReader(this),
+  );
+
+  /// Controller lookup mode adapter (S6, hold L1 / Select; see
+  /// `manga_fushi/controller_lookup.part.dart`).
+  _MangaControllerLookupTarget? _controllerLookupTarget;
   bool _streamOcrStarting = false;
 
   /// 漫画朗读（read_aloud.part.dart）：宿主实现、页文字等待者与会话。
@@ -1756,6 +1784,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       (_) => _syncVolumeOcrJob(),
     );
     _pageNotifier.addListener(_onReaderPageChanged);
+    _attachControllerLookup();
     _volumeKeyPagingController = MangaVolumeKeyPagingController(
       onPrevious: () => _executeReaderInputAction(
         MangaReaderInputAction.previous,
@@ -1828,6 +1857,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   void didChangeDependencies() {
     super.didChangeDependencies();
     _studyClockGate.attach(ModalRoute.of(context));
+    _syncCompanionClaim();
     // 系统「减弱动态效果」/ 墨水屏主题切换要立即传到 WebView（翻页动画降成无）。
     final bool motionEnabled = pageTurnMotionEnabledOf(context, eink: false);
     if (motionEnabled != _motionEnabled) {
@@ -1896,6 +1926,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       );
     }
     readerSessionRemotes.unregister(_sessionRemote);
+    _detachControllerLookup();
+    _companion.dispose();
     _disposedDuringSourceReview = _sourceReviewActive;
     _sourceReviewSession?.removeListener(_onSourceReviewChanged);
     if (Platform.isWindows || Platform.isLinux) {
@@ -2516,6 +2548,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     });
     _resetPanelNavigation();
     _pageNotifier.value = _currentPage;
+    // A chapter switch can land on the same page index (no notifier event).
+    _syncCompanionClaim();
+    _companion.publishNow();
     // 首屏页成为当前单元：开书直接停在恢复位置时不会再有 _recordProgress，
     // 翻走时才入账（存档页不预置，续读也计一次）。
     _noteVisiblePages();
@@ -4689,6 +4724,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   void _onReaderPageChanged() {
     _observedOcrJob?.focusPage(_pageNotifier.value);
     _streamOcr?.focus(_pageNotifier.value);
+    _companion.publishNow();
+    _controllerLookupTarget?.onPageChanged();
     _readAloud.onPageChanged(_pageNotifier.value);
   }
 
@@ -4805,6 +4842,19 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         pageIndex >= current.images.length) {
       return;
     }
+    _putRecognizedPage(pageIndex, page);
+  }
+
+  /// Hot-swaps one page's recognised text into the payload and its overlay
+  /// without rebuilding the WebView document (streaming page OCR, the
+  /// companion's "OCR this page").
+  void _putRecognizedPage(int pageIndex, MokuroImage page) {
+    final MokuroPayload? current = _payload;
+    if (current == null ||
+        pageIndex < 0 ||
+        pageIndex >= current.images.length) {
+      return;
+    }
     final MokuroImage existing = current.images[pageIndex];
     // url 保留直读占位那份（WebView 按它取图）；尺寸取识别时的真实像素，框坐标
     // 就在这个坐标系里。
@@ -4820,6 +4870,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     });
     _readAloud._pageTextArrived(pageIndex, merged);
     unawaited(_replacePageOcrOverlay(pageIndex, merged));
+    _companion.publishNow();
   }
 
   void _onStreamOcrError(Object error, StackTrace stack) {
@@ -5111,6 +5162,11 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         );
       },
       search: (String term, Rect selectionRect, bool verticalWriting) async {
+        // Dual-screen: the companion's Lookup tab shows it when it is up.
+        if (await routeCompanionLookup(text: term, sentence: _lastSentence)) {
+          return;
+        }
+        if (!mounted) return;
         _popupVerticalWriting = verticalWriting;
         prunePopupStack(0);
         final int highlightCount = await searchDictionaryResult(
@@ -5730,7 +5786,18 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       page,
       pageCount,
     );
-    if (atLastPage) {
+    // 「末页」是**当前载荷**的末页：本地卷一个载荷就是整本，书架在线条目一个载荷
+    // 只是一章。整本「读完」只在读到阅读顺序上的最后一话时才成立
+    // （[mangaChapterCompletesSeries]，BUG-4356）；其余章的末页只写下面的章级 readAt。
+    final OnlineMangaLibraryEntry? shelfEntry = _shelfEntry;
+    final bool completesBook =
+        atLastPage &&
+        (shelfEntry == null ||
+            mangaChapterCompletesSeries(
+              chapters: shelfEntry.chapters,
+              chapterIndex: _shelfChapterIndex,
+            ));
+    if (completesBook) {
       try {
         await db.markEpubBookCompletedIfUnset(widget.bookKey, DateTime.now());
       } catch (e, stack) {
@@ -6316,8 +6383,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   // ── 2026-10 重设计的 chrome 入口（页面一览 / 快捷设置 / 章节按钮 / 章末卡片）──
 
   /// 第 [pageIndex] 页的本地缩略图（拖动气泡 / 页面一览）。只认已经在盘上的页图
-  /// （本地卷 / 已下载章 / 在线直读会话已缓存的页）：在线直读的页不为了缩略图去
-  /// 发请求，取不到就返回 null，调用方画页码占位。
+  /// （本地卷 / 已下载章 / 在线直读会话已缓存的页）：本函数同步、不发请求，取不到
+  /// 就返回 null，调用方画页码占位；页面一览要预览没取到的页另经
+  /// [OnlineMangaThumbnailPrefetcher] 走页会话预取，落盘后这里就能取到。
   ImageProvider? _pageThumbnail(int pageIndex) {
     final MokuroPayload? payload = _payload;
     final String? imagesDir = _imagesDir;
@@ -6363,12 +6431,27 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   Future<void> _showPageGrid() async {
     final int total = _payload?.images.length ?? 0;
     if (total <= 0 || !mounted) return;
-    final int? page = await showMangaPageGridSheet(
-      context: context,
-      pageCount: total,
-      currentPages: _currentScreenPages(),
-      thumbnail: _pageThumbnail,
-    );
+    // 在线直读章：还没取到的页经阅读器自己的页会话预取（同一份缓存 / 管线 / 并发
+    // 上限），整章都能预览；本地卷 / 已下载章页图本就在盘上，不需要。
+    final MangaReaderSession? session = _pageSession;
+    final OnlineMangaThumbnailPrefetcher? prefetcher =
+        session is OnlineMangaReaderSession && !session.isClosed
+        ? OnlineMangaThumbnailPrefetcher(session)
+        : null;
+    final int? page;
+    try {
+      page = await showMangaPageGridSheet(
+        context: context,
+        pageCount: total,
+        currentPages: _currentScreenPages(),
+        thumbnail: _pageThumbnail,
+        prefetcher: prefetcher,
+      );
+    } finally {
+      // 只停不 dispose：面板退场动画期间格子还挂着监听，卸载时自己摘；停了之后
+      // 不再发新请求，排队的已撤，留下的只有已在飞、落盘后照样给阅读用的页。
+      prefetcher?.stop();
+    }
     if (page != null && mounted) {
       _recordMangaJumpDeparture(source: JumpSource.gallery, targetPage: page);
       await _jumpToPage(page + 1);
@@ -8097,6 +8180,19 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   Widget _buildWebViewSurface() {
     return InAppWebView(
       key: const ValueKey<String>('manga_webview'),
+      // 反馈 P2jQzOBBag（iOS 分页模式双击缩放几乎总是先弹控制层）：漫画的全部手势
+      // 都在页内 JS 里判（manga_overlay_html.dart 的双击窗口按 DOM pointer 事件的
+      // 时间算），Flutter 侧不挂任何会与它竞争的识别器。iOS 引擎默认的 eager 策略
+      // 却给平台视图装一个 delaysTouchesBegan/Ended 的延迟识别器，WKWebView 派发
+      // DOM 触摸事件的识别器必须等它失败——也就是等 Flutter 手势竞技场裁决、
+      // acceptGesture 经平台通道回到原生——才收得到这次触摸。第二击的 pointerdown
+      // 因此晚到（竞技场到松手才裁决时与 pointerup 一起到），挂起的空白单击先发出，
+      // 悬浮栏被切出来。这里让触摸直接进 WebView：上游这个选项的实现按旧类名找
+      // 识别器、早已是空操作，pub-cache 覆盖补丁把它映射到 doNotBlockGesture（见
+      // ci/patches/hosted/flutter_inappwebview_ios-1.1.2/PATCHES.md）；盖在 WebView
+      // 上的 Flutter 层（查词 barrier、悬浮栏、对话框）仍由引擎的同步命中测试拦住。
+      // 只作用于 iOS。
+      preventGestureDelay: kMangaWebViewPreventGestureDelay,
       initialUserScripts: UnmodifiableListView<UserScript>(<UserScript>[
         WebViewMenuDismissBridge.userScript,
       ]),

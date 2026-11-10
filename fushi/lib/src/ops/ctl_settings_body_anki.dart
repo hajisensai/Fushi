@@ -729,10 +729,6 @@ CtlBodyPage _mediaPage() {
             value: VideoOnlineMiningMode.deferred,
             label: t.video_online_mining_mode_deferred,
           ),
-          SettingsSegmentOption<VideoOnlineMiningMode>(
-            value: VideoOnlineMiningMode.wait,
-            label: t.video_online_mining_mode_wait,
-          ),
         ],
         selected: (SettingsContext c) => c.appModel.videoOnlineMiningMode,
         onChanged: (SettingsContext c, VideoOnlineMiningMode v) =>

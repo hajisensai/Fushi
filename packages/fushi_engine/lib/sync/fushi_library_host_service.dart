@@ -66,6 +66,17 @@ const String kSubtitleSuffixHeader = 'X-Fushi-Subtitle-Suffix';
 /// `PUT /api/library/videos/<id>/subtitle` 带 `1` = 设为这一集的默认字幕（BUG-2728）。
 const String kSubtitleDefaultHeader = 'X-Fushi-Subtitle-Default';
 
+/// `GET /api/library/videos/<id>/subtitle?sidecar=<文件名>`：按文件名下载这一集的
+/// 某一条外挂字幕（[RemoteVideoSidecarSubtitle.fileName]，反馈 -CaVsioFhG）。host 只
+/// 在它自己枚举出的 sidecar 里按 basename **精确**匹配，绝不把参数拼成路径。老 host
+/// 不认这个参数、会回默认字幕——所以 client 只对 `/streamurl` 下发了
+/// `sidecarSubtitles` 的 host 发它。
+const String kVideoSidecarSubtitleQueryParam = 'sidecar';
+
+/// `/api/host/info` 的能力位：host 会在 `/streamurl` 列出这一集的全部外挂字幕、
+/// 并接受 [kVideoSidecarSubtitleQueryParam]（[VideoSidecarSubtitleListHost]）。
+const String kVideoSidecarSubtitlesCapability = 'videoSidecarSubtitles';
+
 // ── 改名前的旧 header 名（Hibiki → Fushi，2026-10）─────────────────────────────
 //
 // 互联两端可能跑不同版本：改名前的 client / host 只认 `X-Hibiki-*`。旧名照样**发**
@@ -191,6 +202,7 @@ class RemoteAudiobookInfo {
     this.delayUpdatedAtMs = 0,
     this.importedAt,
     this.hasAudio,
+    this.contentRevision,
   });
 
   final String bookKey;
@@ -227,6 +239,13 @@ class RemoteAudiobookInfo {
   /// null = 旧 host 不下发此字段，**未知**（消费方必须按旧行为放行，不能当 false）。
   final bool? hasAudio;
 
+  /// host 上这本有声书的**内容版本**（`audiobookContentState`）：音频或字幕一换就变，
+  /// 断点 / 调轴 / 标题变了不变。不透明字符串，只比相等。
+  ///
+  /// client 在下载时记下它，之后清单里的值不同 = host 上内容换过，提示可以重新下载。
+  /// null = 旧 host 不下发（未知，消费方不得据此提示更新）。
+  final String? contentRevision;
+
   /// 传输/URL 身份键：srt-backed=bookKey；纯 SRT（bookKey 空）=uid。
   String get identity => bookKey.isNotEmpty ? bookKey : (uid ?? '');
 
@@ -243,6 +262,7 @@ class RemoteAudiobookInfo {
     if (delayUpdatedAtMs > 0) 'delayUpdatedAtMs': delayUpdatedAtMs,
     if (importedAt != null) 'importedAt': importedAt,
     if (hasAudio != null) 'hasAudio': hasAudio,
+    if (contentRevision != null) 'contentRevision': contentRevision,
   };
 
   static RemoteAudiobookInfo fromJson(Map<String, Object?> json) =>
@@ -260,6 +280,11 @@ class RemoteAudiobookInfo {
         importedAt: (json['importedAt'] as num?)?.toInt(),
         // 缺键 / 非 bool → null（未知），**不是** false：旧 host 的清单一律放行。
         hasAudio: json['hasAudio'] is bool ? json['hasAudio']! as bool : null,
+        contentRevision:
+            (json['contentRevision'] is String &&
+                (json['contentRevision']! as String).isNotEmpty)
+            ? json['contentRevision']! as String
+            : null,
       );
 }
 
@@ -288,6 +313,15 @@ abstract interface class AudiobookSubtitleHost {
   Future<File> exportAudiobookSubtitles(String identity);
 }
 
+/// host 端「有声书内容版本」的**可选**能力（与 [AudiobookDelayHost] 同范式，不并进
+/// 主接口）。包端点拿它给导出缓存定版本：缓存的包只在版本相同时命中，内容换过的书
+/// 下一次普通下载就重新打包。host 不实现 → 缓存只按 TTL 换代（旧行为）。
+abstract interface class AudiobookContentRevisionHost {
+  /// 身份键为 [identity] 的有声书此刻的内容版本（与清单的
+  /// [RemoteAudiobookInfo.contentRevision] 同值）；查无此书返回 null。
+  Future<String?> audiobookContentRevision(String identity);
+}
+
 /// host 端「client 导入的字幕设为该视频默认字幕」的**可选**能力（远端视频导入 /
 /// 重定时字幕自动上传）。与 [AudiobookDelayHost] 同范式：不并进主接口，免得十余个
 /// 测试 fake 全量补桩；server 用 `is` 探测，实现了才在 `/api/capabilities` 声明
@@ -308,6 +342,27 @@ abstract interface class VideoSubtitleDefaultHost {
     File subtitleFile, {
     required String id,
     required String format,
+  });
+}
+
+/// host 端「列出某一集**全部**外挂字幕」的**可选**能力（反馈 -CaVsioFhG；与
+/// [VideoSubtitleDefaultHost] 同范式，不扩大主接口）。
+///
+/// 此前协议只有单值 `subtitleFileName` / `subtitleUrl`：host 在视频旁放了日 / 中 /
+/// 英多条字幕，client 只看得到 [FushiLibraryHostService.resolveVideoSubtitle] 挑中的
+/// 那一条。实现了本接口的 host 在 `/streamurl` 额外下发 `sidecarSubtitles`，并接受
+/// `GET .../subtitle?sidecar=<文件名>` 按名下载其中任意一条。不实现 → 不下发列表、
+/// `?sidecar=` 落 404，client 退回只有默认那条的旧行为。
+abstract interface class VideoSidecarSubtitleListHost {
+  /// 视频 [id] 第 [episodeIndex] 集**同目录**的全部 sidecar 字幕文件（判据同
+  /// `listSidecarSubtitles`：`<视频 stem>[.lang].srt|ass|ssa|vtt`），只含真实存在的
+  /// 普通文件，按文件名排序。未知视频 / 网络流 / 目录读不了时返回空表。
+  ///
+  /// 不必包含 host 用户另行选定、住在别处的默认字幕——服务端会把
+  /// [FushiLibraryHostService.resolveVideoSubtitle] 的结果并进列表并标默认。
+  Future<List<File>> listVideoSidecarSubtitles(
+    String id, {
+    int episodeIndex = 0,
   });
 }
 
@@ -2171,6 +2226,72 @@ class RemoteVideoEmbeddedSubtitleTrack {
       );
 }
 
+/// host 上某一集的一条**外挂字幕文件**（`/streamurl` 的 `sidecarSubtitles[]`，
+/// 反馈 -CaVsioFhG）。
+///
+/// [fileName] 只是 basename（目录结构留在 host），同时是下载选择子：client 用
+/// `GET .../subtitle?sidecar=<fileName>` 取这一条（[kVideoSidecarSubtitleQueryParam]）。
+/// [format] 是小写扩展名（`srt` / `ass` / `ssa` / `vtt`），决定解析器。
+/// [language] 是文件名里视频 stem 与扩展名之间的标记（`ep01.ja.srt` → `ja`），没有
+/// 标记时为 null。[isDefault] = 这一条就是旧单值字段 `subtitleFileName` /
+/// `subtitleUrl` 指的那条（host 的默认字幕）。[url] 与 [RemoteVideoStreamUrls.subtitleUrl]
+/// 同口径：只说明 host 怎么定位它，client 实际按自己的 api base 拼请求。
+class RemoteVideoSidecarSubtitle {
+  const RemoteVideoSidecarSubtitle({
+    required this.fileName,
+    required this.format,
+    this.language,
+    this.sizeBytes,
+    this.isDefault = false,
+    this.url,
+  });
+
+  final String fileName;
+  final String format;
+  final String? language;
+  final int? sizeBytes;
+  final bool isDefault;
+  final String? url;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'fileName': fileName,
+    'format': format,
+    if (_isNonEmpty(language)) 'language': language,
+    if (sizeBytes != null) 'sizeBytes': sizeBytes,
+    if (isDefault) 'isDefault': true,
+    if (_isNonEmpty(url)) 'url': url,
+  };
+
+  /// 坏条目（没有文件名 / 文件名带路径分隔符 / 格式缺失）返回 null，调用方丢弃。
+  static RemoteVideoSidecarSubtitle? fromJson(Object? value) {
+    if (value is! Map) return null;
+    final String fileName = value['fileName']?.toString().trim() ?? '';
+    if (fileName.isEmpty || fileName.contains('/') || fileName.contains(r'\')) {
+      return null;
+    }
+    final String format = (value['format']?.toString() ?? '')
+        .trim()
+        .toLowerCase();
+    if (format.isEmpty) return null;
+    return RemoteVideoSidecarSubtitle(
+      fileName: fileName,
+      format: format,
+      language: _jsonString(value['language']),
+      sizeBytes: _jsonInt(value['sizeBytes']),
+      isDefault: value['isDefault'] == true,
+      url: _jsonString(value['url']),
+    );
+  }
+}
+
+/// 解析 `sidecarSubtitles` 数组（缺失 / 非数组 → 空表，坏条目丢弃）。
+List<RemoteVideoSidecarSubtitle> _jsonSidecarSubtitles(Object? value) =>
+    <RemoteVideoSidecarSubtitle>[
+      if (value case final List<Object?> items)
+        for (final Object? item in items)
+          ?RemoteVideoSidecarSubtitle.fromJson(item),
+    ];
+
 /// 远端播放列表中的一集（TODO-885）。
 ///
 /// **铁律：只带 [index]+[title]，绝不带 host 端文件 path**——path 是 host 本地绝对
@@ -2392,6 +2513,48 @@ class RemoteVideoInfo {
 
   bool get hasDisplayCover =>
       hasCover || _isNonEmpty(coverUrl) || _isNonEmpty(coverPath);
+
+  /// 只换断点（[positionMs] / [positionUpdatedAtMs]）的副本，其余字段原样。
+  ///
+  /// 客户端展示远端条目时把清单快照里的 host 断点与本机库断点取较新者
+  /// （BUG-4303，见 app 侧 `withLocalRemoteVideoPositions`）用。
+  RemoteVideoInfo withPosition({
+    required int positionMs,
+    required int positionUpdatedAtMs,
+  }) => RemoteVideoInfo(
+    id: id,
+    title: title,
+    sizeBytes: sizeBytes,
+    hasSubtitle: hasSubtitle,
+    subtitleFileName: subtitleFileName,
+    embeddedSubtitleTracks: embeddedSubtitleTracks,
+    durationMs: durationMs,
+    hasCover: hasCover,
+    coverUrl: coverUrl,
+    coverPath: coverPath,
+    seriesCoverUrl: seriesCoverUrl,
+    positionMs: positionMs,
+    positionUpdatedAtMs: positionUpdatedAtMs,
+    delayMs: delayMs,
+    delayUpdatedAtMs: delayUpdatedAtMs,
+    audioTrackId: audioTrackId,
+    audioTrackUpdatedAtMs: audioTrackUpdatedAtMs,
+    secondarySubtitleSource: secondarySubtitleSource,
+    secondarySubtitleUpdatedAtMs: secondarySubtitleUpdatedAtMs,
+    secondaryDelayMs: secondaryDelayMs,
+    secondaryDelayUpdatedAtMs: secondaryDelayUpdatedAtMs,
+    completedAt: completedAt,
+    completedMarkedAtMs: completedMarkedAtMs,
+    episodes: episodes,
+    currentEpisode: currentEpisode,
+    tags: tags,
+    tagsAddedAt: tagsAddedAt,
+    tagTombstones: tagTombstones,
+    collection: collection,
+    importedAt: importedAt,
+    fileName: fileName,
+    peerPlayable: peerPlayable,
+  );
 
   Map<String, Object?> toJson() => <String, Object?>{
     'id': id,
@@ -2655,6 +2818,7 @@ class RemoteVideoStreamUrls {
     this.miningVideoUrl,
     this.miningVideoHasAudio = false,
     this.embeddedSubtitleTracks = const <RemoteVideoEmbeddedSubtitleTrack>[],
+    this.sidecarSubtitles = const <RemoteVideoSidecarSubtitle>[],
     this.streamIsOriginalContainer = true,
     this.sourceRequiresDolbyVisionReshape = false,
     this.discTitle,
@@ -2699,6 +2863,12 @@ class RemoteVideoStreamUrls {
   final bool miningVideoHasAudio;
   final List<RemoteVideoEmbeddedSubtitleTrack> embeddedSubtitleTracks;
 
+  /// 这一集 host 上的**全部**外挂字幕文件（反馈 -CaVsioFhG），默认那条
+  /// （[subtitleFileName]）标 [RemoteVideoSidecarSubtitle.isDefault]。只有实现了
+  /// [VideoSidecarSubtitleListHost] 的互联 host 会发；老 host / 其它来源恒空，client
+  /// 退回只用 [subtitleUrl] / [subtitleFileName] 这一条的旧行为。
+  final List<RemoteVideoSidecarSubtitle> sidecarSubtitles;
+
   static RemoteVideoStreamUrls fromJson(Map<String, Object?> json) {
     final String streamUrl = json['url']?.toString() ?? '';
     final String? subtitleUrl = json['subtitleUrl']?.toString();
@@ -2725,6 +2895,7 @@ class RemoteVideoStreamUrls {
       miningVideoUrl: miningVideoUrl,
       miningVideoHasAudio: miningVideoHasAudio,
       embeddedSubtitleTracks: embeddedSubtitleTracks,
+      sidecarSubtitles: _jsonSidecarSubtitles(json['sidecarSubtitles']),
       streamIsOriginalContainer: streamIsOriginalContainer,
       discTitle: BlurayRemoteTitle.fromJson(json['discTitle']),
     );

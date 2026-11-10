@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/pages/base_page.dart';
+import 'package:fushi/src/second_screen/companion/companion_context.dart'
+    show companionSettingsHomeCategory;
 import 'package:fushi/src/settings/cupertino_settings_renderer.dart';
 import 'package:fushi/src/settings/glass_settings_renderer.dart';
 import 'package:fushi/src/settings/material_settings_renderer.dart';
@@ -123,8 +125,34 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
     // 内联详情与 push 出去的详情页走同一套分组组件，宿主页不再整页 setState。
   }
 
+  /// What [companionSettingsHomeCategory] should say for this page; applied
+  /// after the frame (the registry notifies the companion bridge).
+  String? _companionCategory;
+  bool _companionCategoryScheduled = false;
+
+  /// Two-pane layout: the companion's Settings tab shows the category in the
+  /// detail pane first (same as for a pushed settings page).
+  void _publishCompanionCategory(String? category) {
+    _companionCategory = category;
+    if (_companionCategoryScheduled ||
+        companionSettingsHomeCategory.value == category) {
+      return;
+    }
+    _companionCategoryScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((Duration _) {
+      _companionCategoryScheduled = false;
+      if (!mounted) return;
+      companionSettingsHomeCategory.value = _companionCategory;
+    });
+  }
+
   @override
   void dispose() {
+    if (companionSettingsHomeCategory.value != null) {
+      WidgetsBinding.instance.addPostFrameCallback(
+        (Duration _) => companionSettingsHomeCategory.value = null,
+      );
+    }
     settingsDestinationRequest.removeListener(_onDestinationRequested);
     _searchController.dispose();
     _searchFocusNode.dispose();
@@ -169,6 +197,7 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
         final bool wide =
             constraints.maxWidth >= kFushiSettingsHomeTwoPaneMinWidth;
         _wide = wide;
+        _publishCompanionCategory(wide ? selectedDestinationId.name : null);
         // MD3：Android 16「设置」。宽屏左导航右详情（页头外壳同旧），窄屏是自带
         // 折叠大标题顶栏的单列（不再套外壳页头，见 _buildMd3NarrowLayout）。
         if (md3) {

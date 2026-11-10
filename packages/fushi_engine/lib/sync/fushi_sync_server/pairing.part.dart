@@ -562,6 +562,11 @@ extension _FushiSyncServerPairing on FushiSyncServer {
         // `DELETE .../subtitle?which=`（清字幕源 + 备份本视频 sidecar）与
         // `POST .../subtitle/backfill`（立即补字幕）。老 host 无此字段 → 404。
         'videoSubtitleClear': _libraryService is VideoSubtitleClearHost,
+        // 列出一集的全部外挂字幕（`/streamurl` 的 `sidecarSubtitles`）+ 按名下载
+        // （`GET .../subtitle?sidecar=`，反馈 -CaVsioFhG）。老 host 无此字段 →
+        // `/streamurl` 也不带列表，client 只有默认那一条。
+        kVideoSidecarSubtitlesCapability:
+            _libraryService is VideoSidecarSubtitleListHost,
         // 远端原盘：整盘下载 + 流式原盘菜单共用的只读盘目录服务
         // （`/api/library/videos/<id>/disc` + `/api/library/disc/<token>/**`）。老 host
         // 无此字段 → client 的远端原盘按钮说明「对端版本过低」，不发请求。
@@ -595,8 +600,11 @@ extension _FushiSyncServerPairing on FushiSyncServer {
     });
   }
 
-  /// GET /api/host/addresses → `{hostId, addresses:[{url, kind}]}`
+  /// GET /api/host/addresses → `{hostId, deviceName?, addresses:[{url, kind}]}`
   /// （docs/specs/2026-09-28-interconnect-remote-reach.md §1）。
+  ///
+  /// `deviceName`（BUG-4322）：与 `/api/ping` 同一个 host 展示名。client 定期从这里学地址集时顺带给
+  /// 还没有名字的条目补上（升级前用手动地址配对的 host 只有 URL，`peer ls` / 远程复习标题都显示主机名）。
   ///
   /// 需鉴权——不放无鉴权的 /api/ping：不向任何能探到端口的人泄露内网拓扑。也不
   /// 并进 capabilities：那是「支持什么」，这是「在哪里」；capabilities 被各功能
@@ -607,6 +615,8 @@ extension _FushiSyncServerPairing on FushiSyncServer {
     if (id == null) return shelf.Response.notFound('No host id');
     return jsonResponse(<String, dynamic>{
       'hostId': id,
+      if (_deviceName != null && _deviceName.isNotEmpty)
+        'deviceName': _deviceName,
       'addresses': <Map<String, Object?>>[
         for (final InterconnectHostAddress a in await _hostAddresses())
           a.toJson(),

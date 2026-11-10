@@ -226,6 +226,15 @@ abstract interface class VideoResourceProvider {
   void close();
 }
 
+/// 能给出一条发布的种子文件清单的 provider（下载规划的整包证据，见
+/// `video_release_scope_evidence.dart`）。只有磁链、拿不到 `.torrent` 的索引器
+/// （apibay / Knaben）不实现它。
+abstract interface class VideoReleaseFileListingProvider {
+  /// 种子内相对路径列表；null = 这条发布拿不到 `.torrent`（只有磁链 / 不是本
+  /// provider 的候选）。网络 / 格式错误照常抛，由调用方记录。
+  Future<List<String>?> listReleaseFiles(VideoResourceCandidate candidate);
+}
+
 /// 自带用户可见名的 provider（用户 BT 站）。注册表把这个名字写进按源回执，
 /// UI 不必再按 provider id 反查站名。
 abstract interface class LabeledVideoResourceProvider

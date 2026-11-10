@@ -210,20 +210,27 @@ void main() {
       'class FushiSettingsSubPageHeader',
       'class FushiMasterDetailSettingsSheet',
     );
+    // 音画同步连发键 2026-11 抽到共享步进器（快捷设置与歌词模式同步面板共用，
+    // 反馈 G5xYgLcp4p）：从步进器文件读它。
+    final String stepperSource = File(
+      'lib/src/media/audiobook/audiobook_av_sync_stepper.dart',
+    ).readAsStringSync();
     final String favoriteActionSource = _between(
       source,
       'class _InBookIconButton',
-      'class _RepeatIconButton',
+      'class AudiobookVolumeRow',
     );
     final String repeatActionSource = _between(
-      source,
-      'class _RepeatIconButton',
-      source.length,
+      stepperSource,
+      'class AudiobookRepeatIconButton',
+      stepperSource.length,
     );
 
     expect(source, contains('FushiIconButton('));
     expect(source, contains('class _InBookIconButton'));
-    expect(source, contains('class _RepeatIconButton'));
+    expect(source, contains('AudiobookAvSyncStepper('));
+    expect(stepperSource, contains('class AudiobookRepeatIconButton'));
+    expect(repeatActionSource, contains('FushiIconButton('));
     for (final String actionSource in <String>[
       headerSource,
       favoriteActionSource,

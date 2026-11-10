@@ -129,7 +129,7 @@ fn fresh_ingest(dir: &Path, profile: &str, heads: &[Vec<u8>], segs: &[Vec<u8>]) 
         cmd(&core, profile, json!({"op": "ingest_begin"}), vec![]);
         let mut batch: Vec<Vec<u8>> = Vec::new();
         let mut size = 0;
-        let mut send = |batch: &mut Vec<Vec<u8>>| {
+        let send = |batch: &mut Vec<Vec<u8>>| {
             cmd(
                 &core,
                 profile,

@@ -54,7 +54,7 @@ void main() {
 
   test('reimportSrtBook writes audio through replaceAudio only', () {
     final String service = File(
-      'lib/src/media/import/srt_book_reimport.dart',
+      '../packages/fushi_engine/lib/media/audiobook/srt_book_reimport.dart',
     ).readAsStringSync();
     expect(
       service.contains('repo.replaceAudio('),
