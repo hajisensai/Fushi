@@ -893,12 +893,16 @@ class SrsDbProfileLinker implements SrsProfileLinker {
         pullTarget: _pullTarget(within),
       );
     } else {
-      await srsAdoptProfileUid(
-        db,
-        store.db,
-        profileId: profileId,
-        oldUid: oldUid,
-        newUid: uid,
+      // 删旧 uid 是内核命令、直接在共用写连接上跑（一个 savepoint）：排进旧副本的独占区，不夹进它开着的
+      // Drift 事务里随之回滚（以前经 Drift 的事务删，由 Drift 的事务锁排队）。
+      await store.runExclusive(
+        () => srsAdoptProfileUid(
+          db,
+          store.core,
+          profileId: profileId,
+          oldUid: oldUid,
+          newUid: uid,
+        ),
       );
     }
     // 主库已经改用 [uid]：旧 uid 的数据已在新 uid 下（并入）或本来只有内置行（采用），它在同步目录里的本设备
@@ -917,7 +921,7 @@ class SrsDbProfileLinker implements SrsProfileLinker {
         // 采用要么整体成功、要么回到原样（旧 uid 下只有内置行 / 本机状态，重开时重建）。
         await srsAdoptProfileUid(
           db,
-          store.db,
+          store.core,
           profileId: profileId,
           oldUid: uid,
           newUid: oldUid,
