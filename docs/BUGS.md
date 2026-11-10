@@ -38,6 +38,7 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-4274](bugs/BUG-4274-srs-conflict-dialog-marquee-intrinsic.md) | ✅ | ✅ | SRS 同步冲突弹窗在 debug 下不显示，只剩遮罩挡住复习页（FushiMarquee 的 LayoutBuilder 答不了 intrinsic） |
+| [BUG-4273](bugs/BUG-4273-media-server-unnumbered-episode.md) | ✅ | ✅ | 媒体服务器缺集号的集被显示成列表位置并排到最前 |
 | [BUG-4272](bugs/BUG-4272-yomitan-per-dict-frequency-unmappable.md) | ✅ | ✅ | yomitan-per-dict-frequency-unmappable |
 | [BUG-4271](bugs/BUG-4271-background-engine-kills-flutter-logs-startup-hang.md) | ✅ | ✅ | 后台被 WorkManager 拉起后打开白屏、启动耗时超出预期（flutter_logs 静态 channel 被后台引擎销毁时清掉） |
 | [BUG-4270](bugs/BUG-4270-video-enqueue-duplicate-torrent-opaque-drift-error.md) | ✅ | ✅ | 重复入队同一种子报不透明的 DriftRemoteException，诊断日志无记录 |
