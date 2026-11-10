@@ -21,10 +21,12 @@ const String kInterconnectBookProgressPendingDimension =
 ///
 /// [action] 为 null = 两端已收敛、本轮什么都没做（sweep 快照判定跳过）。
 /// [localChanged] = 本端 `reader_positions` 被改写（调用方据此刷新书架）。
+/// [pushed] = 本端进度推给了 host 且 host 确认采纳（BUG-4278；只计确认的推送）。
 /// 冲突时 [localUpdatedAtMs] / [remoteUpdatedAtMs] 是判定所依据的两端时间戳。
 typedef BookProgressSyncStep = ({
   BookProgressSyncAction? action,
   bool localChanged,
+  bool pushed,
   int localUpdatedAtMs,
   int remoteUpdatedAtMs,
 });
@@ -213,6 +215,7 @@ class InterconnectBookProgressSync {
       return (
         action: null,
         localChanged: false,
+        pushed: false,
         localUpdatedAtMs: remote.updatedAtMs,
         remoteUpdatedAtMs: remote.updatedAtMs,
       );
@@ -224,6 +227,7 @@ class InterconnectBookProgressSync {
       remote: remote,
     );
     bool localChanged = false;
+    bool pushed = false;
     switch (action) {
       case BookProgressSyncAction.synced:
         // BUG-686: a host-newer progress pull lands in reader_positions but
@@ -232,7 +236,9 @@ class InterconnectBookProgressSync {
         // the pre-sync progress bar and the sync looks like it did nothing.
         localChanged = await alignSynced(book, local: local, remote: remote);
       case BookProgressSyncAction.pushLocal:
-        await pushLocal(book, local: local, remote: remote);
+        pushed =
+            (await pushLocal(book, local: local, remote: remote)).status ==
+            LivePushStatus.confirmed;
       case BookProgressSyncAction.applyRemote:
         // BUG-3537：判定后本地被改写则不落地（比较后写入），不计「已拉取」。
         localChanged = await applyRemote(book, remote, local: local);
@@ -242,6 +248,7 @@ class InterconnectBookProgressSync {
     return (
       action: action,
       localChanged: localChanged,
+      pushed: pushed,
       localUpdatedAtMs: local.updatedAtMs,
       remoteUpdatedAtMs: remote.updatedAtMs,
     );
@@ -306,9 +313,13 @@ class InterconnectBookProgressSync {
     );
   }
 
-  /// 本端胜出：推给 host（时间戳抬到严格新于 host，见类头），本端行同步对齐，
-  /// 记基线。返回两端对齐后的进度。
-  Future<RemoteBookProgress> pushLocal(
+  /// 本端胜出：推给 host（时间戳抬到严格新于 host，见类头），**host 确认**后本端行
+  /// 同步对齐、记基线（BUG-4278）。返回推送结局与推送的进度。
+  ///
+  /// 推送带前置条件「host 仍停在判定时读到的 [remote] 位置」：确认 → 对齐 + 记基线；
+  /// rejected / superseded（host 没采纳 / 判定后被第三台设备改写）→ 删「待确认」行，
+  /// 不动本端、不记基线；抛异常 → 「待确认」行保留（BUG-3528）。
+  Future<({LivePushStatus status, RemoteBookProgress agreed})> pushLocal(
     EpubBookRow book, {
     required RemoteBookProgress local,
     required RemoteBookProgress remote,
@@ -338,16 +349,42 @@ class InterconnectBookProgressSync {
       kInterconnectBookProgressPendingDimension,
       BookProgressBaseline.of(agreed).encode(),
     );
-    await _backend.putRemoteBookProgress(book.bookKey, agreed);
-    if (ts != local.updatedAtMs) {
+    final LiveBookProgressPush pushed = await _backend.putLiveBookProgress(
+      book.bookKey,
+      agreed,
+      expected: <BookProgressBaseline>[BookProgressBaseline.of(remote)],
+    );
+    if (pushed.status != LivePushStatus.confirmed) {
+      await _dropPending(book);
+      return (status: pushed.status, agreed: agreed);
+    }
+    // host 可能把戳再抬过（前置条件命中时取 max(上报戳, 已存戳 + 1)），本端对齐到
+    // host 写后的戳，下一轮两端戳相同、不再重复对齐。
+    final int hostTs = capFutureSyncStamp(
+      pushed.hostNow?.updatedAtMs ?? ts,
+      nowMs: now,
+    );
+    final RemoteBookProgress landed = RemoteBookProgress(
+      sectionIndex: agreed.sectionIndex,
+      normCharOffset: agreed.normCharOffset,
+      charOffset: agreed.charOffset,
+      updatedAtMs: hostTs,
+    );
+    if (hostTs != local.updatedAtMs) {
       // 比较后写入（BUG-3537）：PUT 期间本地若已被改写（本机阅读器 / 本机作为
       // host 收到的对端 PUT），抬戳对齐作废——本地留着更新的那份，下一轮它偏离
-      // 基线、照常再推。host 此刻确实停在 [agreed]，基线照记。
-      await _upsertLocalIfUnchanged(book, agreed, expected: local);
+      // 基线、照常再推。host 已确认停在 [agreed]，基线照记。
+      await _upsertLocalIfUnchanged(book, landed, expected: local);
     }
     await recordBaseline(book, agreed);
-    return agreed;
+    return (status: LivePushStatus.confirmed, agreed: landed);
   }
+
+  /// 删「待确认」行：这次推送 host 明确没采纳（BUG-4278），它不再携带信息。
+  Future<void> _dropPending(EpubBookRow book) => _db.deleteSyncBaseline(
+    book.bookKey,
+    kInterconnectBookProgressPendingDimension,
+  );
 
   /// host 胜出：落回本端 `reader_positions`，记基线。返回是否真的落地。
   ///
@@ -398,7 +435,17 @@ class InterconnectBookProgressSync {
     if (winner.updatedAtMs > trustedRemote.updatedAtMs ||
         (winner.updatedAtMs == trustedRemote.updatedAtMs &&
             winner.charOffset != trustedRemote.charOffset)) {
-      await _backend.putRemoteBookProgress(book.bookKey, winner);
+      // 位置相同、只推本端较新的戳 / 精确锚；host 判定后被改写（superseded）则
+      // 这次判定作废，不对齐、不记基线。
+      final LiveBookProgressPush pushed = await _backend.putLiveBookProgress(
+        book.bookKey,
+        winner,
+        expected: <BookProgressBaseline>[BookProgressBaseline.of(remote)],
+      );
+      if (pushed.status == LivePushStatus.superseded) {
+        await _dropPending(book);
+        return false;
+      }
     }
     bool localChanged =
         winner.updatedAtMs != local.updatedAtMs ||

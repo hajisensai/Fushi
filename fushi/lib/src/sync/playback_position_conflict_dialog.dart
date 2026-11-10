@@ -96,8 +96,11 @@ Future<int> applyPlaybackPositionDecisions(
     try {
       switch (d.value) {
         case SyncChoice.useLocal:
-          await v.sync.pushLocal(key, local: v.local, remote: v.remote);
-          applied++;
+          // BUG-4278：host 确认采纳才算解决；弹窗展示后 host 被第三台设备改写
+          // （superseded）或拒收时这条仍未解决，下一轮 sweep 按新事实重新判定。
+          final ({LivePushStatus status, PlaybackPosition agreed}) pushed =
+              await v.sync.pushLocal(key, local: v.local, remote: v.remote);
+          if (pushed.status == LivePushStatus.confirmed) applied++;
         case SyncChoice.useRemote:
           // BUG-3537：弹窗展示后本端断点又被改写（本机播放 / 对端 PUT）则不落地，
           // 这条仍算未解决，下一轮 sweep 按新事实重新判定。

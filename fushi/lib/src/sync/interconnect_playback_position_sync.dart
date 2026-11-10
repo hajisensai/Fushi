@@ -12,6 +12,15 @@ typedef PlaybackBaselineSnapshot = ({
   Map<String, int> pending,
 });
 
+/// 播放页实时上报（[InterconnectPlaybackPositionSync.reportLive]）的结局（BUG-4278）。
+enum LiveReportResult {
+  /// host 确认停在上报位置，基线已推进。
+  confirmed,
+
+  /// host 没采纳或已被别的设备改写：基线不动，交给下一轮 sweep 判定。
+  held,
+}
+
 /// 互联播放位置的两类条目（BUG-3367）。
 enum PlaybackPositionKind { video, audiobook }
 
@@ -197,8 +206,16 @@ class InterconnectPlaybackPositionSync {
   Future<void> _recordPending(String key, int positionMs) => _db
       .setSyncBaseline(key, pendingDimension, positionMs < 0 ? 0 : positionMs);
 
-  /// 本端胜出：推给 host（时间戳不新于 host 时抬到 host + 1，见类头），本端只对齐
-  /// 时间戳 pref，记基线。返回两端对齐后的位置。
+  /// 本端胜出：推给 host（时间戳不新于 host 时抬到 host + 1，见类头），**host 确认**
+  /// 停在推送位置后本端只对齐时间戳 pref、记基线（BUG-4278）。返回推送结局与推送
+  /// 的位置。
+  ///
+  /// 推送带前置条件「host 仍停在判定时读到的 [remote]」：
+  /// - [LivePushStatus.confirmed]：本端 `_at_` pref 对齐到 host 写后的戳，记基线；
+  /// - [LivePushStatus.rejected] / [LivePushStatus.superseded]：host 没采纳或判定后
+  ///   被第三台设备改写——删「待确认」行，不动本端、不记基线，下一轮按新事实重判；
+  /// - 抛异常（超时 / 断网）：不处理，「待确认」行保留，下一轮 [decide] 照 BUG-3528
+  ///   提升。
   ///
   /// 抬戳纪律与书籍版 `InterconnectBookProgressSync.pushLocal` 一致（BUG-3367 的
   /// 书籍版补上了同一套防护）：抬出来的戳
@@ -206,7 +223,7 @@ class InterconnectPlaybackPositionSync {
   /// 结果再截到 [capFutureSyncStamp]——否则 `毒戳 + 1` 会写进本端 `_at_` pref，
   /// host 却把上报戳截成 `now + 余量`，下一轮两端位置相同、本端戳更新 →
   /// [alignSynced] 又 PUT 一次，每轮重复写。
-  Future<PlaybackPosition> pushLocal(
+  Future<({LivePushStatus status, PlaybackPosition agreed})> pushLocal(
     String key, {
     required PlaybackPosition local,
     required PlaybackPosition remote,
@@ -225,34 +242,82 @@ class InterconnectPlaybackPositionSync {
       updatedAtMs: ts,
     );
     await _recordPending(key, agreed.positionMs);
-    await _putRemote(key, agreed);
-    if (ts != local.updatedAtMs) {
+    final LivePositionPush pushed = await _putLive(
+      key,
+      agreed,
+      expectedPositionsMs: <int>[remote.positionMs],
+    );
+    if (pushed.status != LivePushStatus.confirmed) {
+      await _dropPending(key);
+      return (status: pushed.status, agreed: agreed);
+    }
+    // host 可能把戳再抬过（前置条件命中时取 max(上报戳, 已存戳 + 1)），本端对齐到
+    // host 写后的那个戳，下一轮两端戳相同、不再重复对齐。
+    final int hostTs = capFutureSyncStamp(
+      pushed.hostNow?.updatedAtMs ?? ts,
+      nowMs: now,
+    );
+    if (hostTs != local.updatedAtMs) {
       // 比较后写入（BUG-3537）：PUT 期间本端断点若已被改写，抬戳作废，本端留着
-      // 更新的那份，下一轮照常再推；host 此刻停在 [agreed]，基线照记。
+      // 更新的那份，下一轮照常再推；host 已确认停在 [agreed]，基线照记。
       await _db.runIfIntPrefUnchanged(
         stampKey: _localAtPrefKey(key),
         expectedStamp: local.updatedAtMs,
-        write: () => _db.setPrefTyped<int>(_localAtPrefKey(key), ts),
+        write: () => _db.setPrefTyped<int>(_localAtPrefKey(key), hostTs),
       );
     }
     await recordBaseline(key, agreed.positionMs);
-    return agreed;
+    return (status: LivePushStatus.confirmed, agreed: agreed);
   }
 
   /// 播放页实时上报（节流回调）：本端位置 [live] 已由播放页写进本地 pref，这里推给
-  /// host 并把基线推进到上报位置。
+  /// host，**host 确认**后把基线推进到上报位置（BUG-4278）。
   ///
   /// 与 sweep 共用这一入口而不是播放页裸调 `putRemoteVideoPosition`：实时上报本身
   /// 就是「两端在这个位置达成一致」，不推进基线的话，A 串流到 600（host=600、基线
   /// 仍停在旧的 100）→ B 从 600 接着看到 900 → A 下轮 sweep 见 local=600 ≠ 基线、
   /// remote=900 ≠ 基线，会把顺序接力误判成两端分叉而弹冲突（BUG-3367）。
   ///
-  /// host 端 PUT 仍是 LWW：若 host 已存更新的戳而拒收，基线停在本端位置，下一轮
-  /// sweep 判「只 host 动了」→ [applyRemote]，与 host 的 LWW 结论一致。
-  Future<void> reportLive(String key, PlaybackPosition live) async {
+  /// 前置条件 = 基线与「待确认」位置里非空的那些：host 仍停在两端上次一致的位置（或
+  /// 本机上一次已发出的位置）上，说明期间没有别的设备写过，上报可以接续推进——即使
+  /// host 的戳因时钟差比本机新（V-C3）。host 已被第三台设备改写 → 不写、不记基线，
+  /// 返回 [LiveReportResult.held]，交给下一轮 sweep 判定。
+  ///
+  /// 两者都没有（这一条从未同步过）：现读 host 跑一次 [decide]——`synced` 只记基线，
+  /// `pushLocal` 以读到的 host 位置为前置条件推送，`applyRemote` / `conflict` 不写
+  /// （播放中不把 host 值落到本端），返回 held。
+  Future<LiveReportResult> reportLive(String key, PlaybackPosition live) async {
+    final int? base = await baseline(key);
+    final int? pending = await _db.getSyncBaseline(key, pendingDimension);
+    final List<int> expected = <int>[
+      if (base != null) base,
+      if (pending != null && pending != base) pending,
+    ];
+    if (expected.isEmpty) {
+      final PlaybackPosition remote = await remotePosition(key);
+      switch (await decide(key, local: live, remote: remote)) {
+        case BookProgressSyncAction.synced:
+          await recordBaseline(key, live.positionMs);
+          return LiveReportResult.confirmed;
+        case BookProgressSyncAction.pushLocal:
+          expected.add(remote.positionMs);
+        case BookProgressSyncAction.applyRemote:
+        case BookProgressSyncAction.conflict:
+          return LiveReportResult.held;
+      }
+    }
     await _recordPending(key, live.positionMs);
-    await _putRemote(key, live);
+    final LivePositionPush pushed = await _putLive(
+      key,
+      live,
+      expectedPositionsMs: expected,
+    );
+    if (pushed.status != LivePushStatus.confirmed) {
+      await _dropPending(key);
+      return LiveReportResult.held;
+    }
     await recordBaseline(key, live.positionMs);
+    return LiveReportResult.confirmed;
   }
 
   /// host 胜出：落回本端，记基线。返回是否真的落地。
@@ -294,7 +359,17 @@ class InterconnectPlaybackPositionSync {
     );
     bool localChanged = false;
     if (local.updatedAtMs > remoteTs) {
-      await _putRemote(key, local);
+      // 位置相同、只推本端较新的戳；host 判定后被改写（superseded）则这次判定作废，
+      // 不记基线。host 拒收（rejected）不影响「两端位置一致」这一事实，基线照记。
+      final LivePositionPush pushed = await _putLive(
+        key,
+        local,
+        expectedPositionsMs: <int>[remote.positionMs],
+      );
+      if (pushed.status == LivePushStatus.superseded) {
+        await _dropPending(key);
+        return false;
+      }
     } else if (remoteTs > local.updatedAtMs) {
       // 比较后写入（BUG-3537）：判定后本端被改写就不对齐。
       localChanged = await _writeLocalIfUnchanged(key, remote, expected: local);
@@ -303,16 +378,27 @@ class InterconnectPlaybackPositionSync {
     return localChanged;
   }
 
-  Future<void> _putRemote(String key, PlaybackPosition p) => switch (kind) {
-    PlaybackPositionKind.video => _backend.putRemoteVideoPosition(
+  /// 删「待确认」行：这次推送 host 明确没采纳（BUG-4278），它不再携带信息。
+  Future<void> _dropPending(String key) =>
+      _db.deleteSyncBaseline(key, pendingDimension);
+
+  /// 带前置条件的 live 写入（[InterconnectSyncBackend.putLiveVideoPosition]）。
+  Future<LivePositionPush> _putLive(
+    String key,
+    PlaybackPosition p, {
+    required List<int> expectedPositionsMs,
+  }) => switch (kind) {
+    PlaybackPositionKind.video => _backend.putLiveVideoPosition(
       key,
       p.positionMs,
       p.updatedAtMs,
+      expectedPositionsMs: expectedPositionsMs,
     ),
-    PlaybackPositionKind.audiobook => _backend.putRemoteAudiobookPosition(
+    PlaybackPositionKind.audiobook => _backend.putLiveAudiobookPosition(
       key,
       p.positionMs,
       p.updatedAtMs,
+      expectedPositionsMs: expectedPositionsMs,
     ),
   };
 

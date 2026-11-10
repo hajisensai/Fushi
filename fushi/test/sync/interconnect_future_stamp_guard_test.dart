@@ -134,13 +134,15 @@ void main() {
       );
       final RemoteBookProgress local = _progress(2, 200, now - 60000);
       await _setLocalBook(db, book, local);
+      // host 此刻就是判定时读到的那份（live 写入的前置条件核对它，BUG-4278）。
+      backend.book = _progress(1, 100, poison);
 
-      final RemoteBookProgress agreed = await sync.pushLocal(
+      final RemoteBookProgress agreed = (await sync.pushLocal(
         book,
         local: local,
         remote: _progress(1, 100, poison),
         nowMs: now,
-      );
+      )).agreed;
 
       expect(backend.bookPuts, hasLength(1));
       expect(backend.bookPuts.single.updatedAtMs, lessThanOrEqualTo(cap));
@@ -159,6 +161,7 @@ void main() {
       );
       final RemoteBookProgress local = _progress(1, 100, now - 60000);
       await _setLocalBook(db, book, local);
+      backend.book = _progress(1, 100, poison);
 
       final bool localChanged = await sync.alignSynced(
         book,
@@ -209,6 +212,7 @@ void main() {
         updatedAtMs: now - 60000,
       );
       await _setLocalVideo(db, local);
+      backend.video = (positionMs: 5000, updatedAtMs: poison);
 
       final bool localChanged = await sync.alignSynced(
         _videoKey,

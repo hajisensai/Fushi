@@ -371,12 +371,12 @@ void main() {
             kind: PlaybackPositionKind.video,
           );
 
-      final PlaybackPosition agreed = await sync.pushLocal(
+      final PlaybackPosition agreed = (await sync.pushLocal(
         'vp',
         local: await sync.localPosition('vp'),
         remote: _pos(100000, poison),
         nowMs: now,
-      );
+      )).agreed;
       expect(
         agreed.updatedAtMs,
         lessThanOrEqualTo(now + kSyncFutureStampToleranceMs),

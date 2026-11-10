@@ -1669,6 +1669,7 @@ class InterconnectSyncBackend extends SyncBackend
       res.statusCode,
       'GET /api/library/books/$bookKey/progress',
     );
+    _noteLiveWriteSupport(res);
     final String body = await _readBodyBounded(res);
     final Map<String, dynamic> json = jsonDecode(body) as Map<String, dynamic>;
     return RemoteBookProgress.fromJson(json.cast<String, Object?>());
@@ -1721,6 +1722,7 @@ class InterconnectSyncBackend extends SyncBackend
         serverReason: await readSyncErrorBody(res),
       );
     }
+    _noteLiveWriteSupport(res);
     final Object? decoded = jsonDecode(await _readBodyBounded(res));
     if (decoded is! Map) {
       throw FormatException(
@@ -2274,6 +2276,7 @@ class InterconnectSyncBackend extends SyncBackend
       res.statusCode,
       'GET /api/library/audiobooks/$bookKey/position',
     );
+    _noteLiveWriteSupport(res);
     final String body = await _readBodyBounded(res);
     final Map<String, dynamic> json = jsonDecode(body) as Map<String, dynamic>;
     return (
@@ -3457,6 +3460,7 @@ class InterconnectSyncBackend extends SyncBackend
       return (positionMs: 0, updatedAtMs: 0);
     }
     _ops!.checkStatus(res.statusCode, 'GET /api/library/videos/$id/position');
+    _noteLiveWriteSupport(res);
     final String body = await _readBodyBounded(res);
     final Map<String, dynamic> json = jsonDecode(body) as Map<String, dynamic>;
     return (
@@ -3491,6 +3495,216 @@ class InterconnectSyncBackend extends SyncBackend
     final HttpClientResponse res = await _sendBounded(req);
     await res.drain<void>();
     _ops!.checkStatus(res.statusCode, 'PUT /api/library/videos/$id/position');
+  }
+
+  // ── live 写入（三方同步专用，BUG-4278）──────────────────────────────────────
+
+  /// host 是否在 live 位置端点上宣告了带回执的写入契约（[kLiveWriteHeader]），按
+  /// [_activeHostIdentity] 缓存：带头的成功响应记 true，不带头的成功响应记 false。
+  final Map<String, bool> _liveWriteSupport = <String, bool>{};
+
+  void _noteLiveWriteSupport(HttpClientResponse res) {
+    final String? host = _activeHostIdentity;
+    if (host == null) return;
+    _liveWriteSupport[host] = res.headers.value(kLiveWriteHeader) == '1';
+  }
+
+  bool get _liveWriteKnownSupported {
+    final String? host = _activeHostIdentity;
+    return host != null && _liveWriteSupport[host] == true;
+  }
+
+  /// 三方同步向 host 写视频 [id] 的播放位置：带前置条件 [expectedPositionsMs]
+  /// （判定时读到的 host 位置），只在 host 确认停在上报位置时返回
+  /// [LivePushStatus.confirmed]——调用方据此决定记不记基线。流程见 [_putLive]。
+  ///
+  /// 旧的 [putRemoteVideoPosition] 一字不改，其它调用方（如 host-playlist 非首集
+  /// 上报）照旧只发一次 PUT。
+  Future<LivePositionPush> putLiveVideoPosition(
+    String id,
+    int positionMs,
+    int updatedAtMs, {
+    int episodeIndex = 0,
+    required List<int> expectedPositionsMs,
+  }) {
+    final String query = episodeIndex > 0 ? '?episode=$episodeIndex' : '';
+    return _putLive<LivePosition>(
+      read: () => remoteVideoPosition(id, episodeIndex: episodeIndex),
+      expectedHit: (LivePosition now) =>
+          expectedPositionsMs.contains(now.positionMs),
+      landed: (LivePosition now) => now.positionMs == positionMs,
+      legacyPut: () => putRemoteVideoPosition(
+        id,
+        positionMs,
+        updatedAtMs,
+        episodeIndex: episodeIndex,
+      ),
+      path: () => '/api/library/videos/${_encodeVideoId(id)}/position$query',
+      body: <String, Object?>{
+        'positionMs': positionMs,
+        'positionUpdatedAtMs': updatedAtMs,
+        kLiveExpectedPositionsKey: expectedPositionsMs,
+      },
+      label: 'PUT /api/library/videos/$id/position',
+      parseReceipt: _parsePositionReceipt,
+    );
+  }
+
+  /// 有声书版 [putLiveVideoPosition]；[identity] 见 [RemoteAudiobookInfo.identity]。
+  Future<LivePositionPush> putLiveAudiobookPosition(
+    String identity,
+    int positionMs,
+    int updatedAtMs, {
+    required List<int> expectedPositionsMs,
+  }) => _putLive<LivePosition>(
+    read: () => remoteAudiobookPosition(identity),
+    expectedHit: (LivePosition now) =>
+        expectedPositionsMs.contains(now.positionMs),
+    landed: (LivePosition now) => now.positionMs == positionMs,
+    legacyPut: () =>
+        putRemoteAudiobookPosition(identity, positionMs, updatedAtMs),
+    path: () =>
+        '/api/library/audiobooks/${Uri.encodeComponent(identity)}/position',
+    body: <String, Object?>{
+      'positionMs': positionMs,
+      'positionUpdatedAtMs': updatedAtMs,
+      kLiveExpectedPositionsKey: expectedPositionsMs,
+    },
+    label: 'PUT /api/library/audiobooks/$identity/position',
+    parseReceipt: _parsePositionReceipt,
+  );
+
+  /// 书进度版 [putLiveVideoPosition]：前置条件是 host 进度落在 [expected] 某个
+  /// 位置上（[BookProgressBaseline.matches]），「停在上报位置」按 [sameBookPosition]。
+  Future<LiveBookProgressPush> putLiveBookProgress(
+    String bookKey,
+    RemoteBookProgress progress, {
+    required List<BookProgressBaseline> expected,
+  }) => _putLive<RemoteBookProgress>(
+    read: () => remoteBookProgress(bookKey),
+    expectedHit: (RemoteBookProgress now) =>
+        expected.any((BookProgressBaseline b) => b.matches(now)),
+    landed: (RemoteBookProgress now) => sameBookPosition(now, progress),
+    legacyPut: () => putRemoteBookProgress(bookKey, progress),
+    path: () => '/api/library/books/${Uri.encodeComponent(bookKey)}/progress',
+    body: <String, Object?>{
+      ...progress.toJson(),
+      kLiveExpectedBookProgressKey: <Map<String, Object?>>[
+        for (final BookProgressBaseline b in expected)
+          <String, Object?>{
+            'sectionIndex': b.sectionIndex,
+            'normCharOffset': b.normCharOffset,
+          },
+      ],
+    },
+    label: 'PUT /api/library/books/$bookKey/progress',
+    parseReceipt: (Object? json) {
+      final LiveBookProgressWriteOutcome? o =
+          LiveBookProgressWriteOutcome.tryParse(json);
+      return o == null ? null : (result: o.result, now: o.current);
+    },
+  );
+
+  static ({LiveWriteResult result, LivePosition now})? _parsePositionReceipt(
+    Object? json,
+  ) {
+    final LivePositionWriteOutcome? o = LivePositionWriteOutcome.tryParse(json);
+    return o == null
+        ? null
+        : (
+            result: o.result,
+            now: (positionMs: o.positionMs, updatedAtMs: o.updatedAtMs),
+          );
+  }
+
+  /// live 写入的唯一流程（BUG-4278）。[read] / [legacyPut] 是既有的 GET / PUT
+  /// 方法，[path] / [body] 是带前置条件的新式 PUT。
+  ///
+  /// - host 未宣告新契约（未知或已知不支持）：先 [read] 一次（同时从响应头学到能力）。
+  ///   host 此刻的值不在期望集合里 → [LivePushStatus.superseded]，不发 PUT。
+  /// - 学到 host 支持：发带前置条件的 PUT，按回执——`applied` → confirmed；
+  ///   `unchanged` → host 停在上报位置才 confirmed，否则 rejected；`stale` /
+  ///   `missing` → rejected；`preconditionFailed`（409）→ superseded；回执解析不了 →
+  ///   rejected 并记诊断。200 空体 = host 已降级：清掉能力缓存，按兼容层再 [read]
+  ///   一次确认。
+  /// - 兼容层（旧 host）：[legacyPut] 后再 [read]，host 停在上报位置才 confirmed。
+  ///   外部限制：旧 host 只有按时间戳的 LWW，前置 GET 与 PUT 之间仍有被第三台设备
+  ///   写入覆盖的窗口；清理条件：最低支持的 host 版本都发 [kLiveWriteHeader] 后删掉
+  ///   兼容层分支。
+  /// - 网络错误 / 超时 / 非 2xx（409 除外）照常抛：调用方保留「待确认」行（BUG-3528）。
+  Future<({LivePushStatus status, T? hostNow})> _putLive<T extends Object>({
+    required Future<T> Function() read,
+    required bool Function(T now) expectedHit,
+    required bool Function(T now) landed,
+    required Future<void> Function() legacyPut,
+    required String Function() path,
+    required Map<String, Object?> body,
+    required String label,
+    required ({LiveWriteResult result, T now})? Function(Object? json)
+    parseReceipt,
+  }) async {
+    Future<({LivePushStatus status, T? hostNow})> confirmByRead() async {
+      final T now = await read();
+      return (
+        status: landed(now)
+            ? LivePushStatus.confirmed
+            : LivePushStatus.rejected,
+        hostNow: now,
+      );
+    }
+
+    if (!_liveWriteKnownSupported) {
+      final T now = await read();
+      if (!expectedHit(now)) {
+        return (status: LivePushStatus.superseded, hostNow: now);
+      }
+      if (!_liveWriteKnownSupported) {
+        await legacyPut();
+        return confirmByRead();
+      }
+    }
+    await _ensureResolved();
+    final HttpClientRequest req = await _ops!.buildRequest(
+      'PUT',
+      '$_apiBase${path()}',
+    );
+    req.headers.set('Content-Type', 'application/json; charset=utf-8');
+    req.add(utf8.encode(jsonEncode(body)));
+    final HttpClientResponse res = await _sendBounded(req);
+    if (res.statusCode != 409) {
+      if (res.statusCode >= 300) await res.drain<void>();
+      _ops!.checkStatus(res.statusCode, label);
+    }
+    final String text = await _readBodyBounded(res);
+    if (res.statusCode != 409 && text.trim().isEmpty) {
+      // host 已降级成旧契约：这一次写已被旧 host 按 LWW 处理，前置条件没生效；
+      // 清掉能力缓存，下一次写回到兼容层。
+      final String? host = _activeHostIdentity;
+      if (host != null) _liveWriteSupport[host] = false;
+      return confirmByRead();
+    }
+    Object? json;
+    try {
+      json = jsonDecode(text);
+    } on FormatException {
+      json = null;
+    }
+    final ({LiveWriteResult result, T now})? receipt = parseReceipt(json);
+    if (receipt == null) {
+      debugPrint('[sync] $label: unrecognised live write receipt: $text');
+      return (status: LivePushStatus.rejected, hostNow: null);
+    }
+    final LivePushStatus status = switch (receipt.result) {
+      LiveWriteResult.applied => LivePushStatus.confirmed,
+      LiveWriteResult.unchanged =>
+        landed(receipt.now)
+            ? LivePushStatus.confirmed
+            : LivePushStatus.rejected,
+      LiveWriteResult.stale ||
+      LiveWriteResult.missing => LivePushStatus.rejected,
+      LiveWriteResult.preconditionFailed => LivePushStatus.superseded,
+    };
+    return (status: status, hostNow: receipt.now);
   }
 
   /// 读 host 端视频 [id] 的播放偏好带戳状态（[RemoteVideoPlaybackSync]）。host
@@ -3610,3 +3824,28 @@ class InterconnectSyncBackend extends SyncBackend
     }
   }
 }
+
+/// 三方同步一次 live 写入的结局（BUG-4278）。
+enum LivePushStatus {
+  /// host 确认停在上报位置：调用方可以记基线。
+  confirmed,
+
+  /// host 没采纳（较新戳胜出 / 条目不存在 / 回执不可识别）：不记基线。
+  rejected,
+
+  /// host 此刻的值已不是判定时读到的那份（对端在判定后又写过）：不写、不记基线，
+  /// 交给下一轮按新事实重新判定。
+  superseded,
+}
+
+/// 一条 live 播放位置：毫秒位置 + host 记下的时间戳。
+typedef LivePosition = ({int positionMs, int updatedAtMs});
+
+/// live 位置写入的结局与 host 写后的当前值（读不到时为 null）。
+typedef LivePositionPush = ({LivePushStatus status, LivePosition? hostNow});
+
+/// live 书进度写入的结局与 host 写后的当前进度（读不到时为 null）。
+typedef LiveBookProgressPush = ({
+  LivePushStatus status,
+  RemoteBookProgress? hostNow,
+});

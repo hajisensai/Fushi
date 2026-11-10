@@ -1125,8 +1125,15 @@ Future<SyncApplyOutcome> _applyLiveChoice({
     final PlaybackPosition remote = await audio.remotePosition(audiobookKey);
     if (useLocal) {
       if (local.updatedAtMs > 0) {
-        await audio.pushLocal(audiobookKey, local: local, remote: remote);
-        wrote = true;
+        // BUG-4278：host 确认采纳才算写成功。
+        wrote =
+            (await audio.pushLocal(
+                  audiobookKey,
+                  local: local,
+                  remote: remote,
+                )).status ==
+                LivePushStatus.confirmed ||
+            wrote;
       }
     } else if (remote.updatedAtMs > 0) {
       wrote =
@@ -1154,8 +1161,9 @@ Future<bool> _applyLiveProgressChoice({
   final RemoteBookProgress remote = await sync.remoteProgress(book);
   if (useLocal) {
     if (local.updatedAtMs <= 0) return false;
-    await sync.pushLocal(book, local: local, remote: remote);
-    return true;
+    // BUG-4278：host 确认采纳才算写成功。
+    return (await sync.pushLocal(book, local: local, remote: remote)).status ==
+        LivePushStatus.confirmed;
   }
   if (remote.updatedAtMs <= 0) return false;
   return sync.applyRemote(book, remote, local: local);
