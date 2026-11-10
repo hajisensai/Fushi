@@ -196,9 +196,10 @@ mixin _LocalLibraryHostVideos
     final String? fileName = fileFacts.fileName;
     final String? coverPath = fileFacts.coverPath;
     // TODO-653: 把 host 端记录的播放断点带进清单条目，供 client 跨设备恢复。
-    // 语义与 [getVideoPosition]\(id, episodeIndex: 0\) 完全一致：prefs 断点（本机/
-    // 远端播放统一键）与旧 `VideoBooks.lastPositionMs`（时间戳 0）取较新——只是行
-    // 已在手、prefs 已批量预取，不再逐行发查询。
+    // 语义与 [getVideoPosition]\(id, episodeIndex: 0\) 完全一致（同一个
+    // [_hostVideoPositionOf]）：prefs 断点（本机/远端播放统一键）与旧
+    // `VideoBooks.lastPositionMs`（戳取 importedAt）取较新——只是行已在手、prefs 已
+    // 批量预取，不再逐行发查询。
     // 系列级播放偏好（schema v52 同系列共享）：合集成员的无戳基底 = 系列级 ?? 本集
     // row 值（与本机播放页 [effectiveSeriesDelayMs] 同一决议）。此前只读 row，host
     // 在合集里调的轴远端永远看不到。
@@ -271,17 +272,20 @@ mixin _LocalLibraryHostVideos
         ),
       ),
     );
-    final ({int positionMs, int updatedAtMs}) progress = resolvePositionLww(
-      localPositionMs: PrefCodec.decode<int>(
+    // BUG-4277：与 [getVideoPosition] 同一个派生函数（行位置戳取 importedAt），清单、
+    // GET 与 PUT 判定对同一断点给出同一对 (位置, 戳)。整书键与第 0 集键是同一个
+    // （[videoRemotePositionEpisodePrefKey] 对 episodeIndex<=0 回退整书键）。
+    final ({int positionMs, int updatedAtMs}) progress = _hostVideoPositionOf(
+      prefsPositionMs: PrefCodec.decode<int>(
         prefs[videoRemotePositionPrefKey(row.bookUid)] ?? '',
         0,
       ),
-      localUpdatedAtMs: PrefCodec.decode<int>(
+      prefsUpdatedAtMs: PrefCodec.decode<int>(
         prefs[videoRemotePositionAtPrefKey(row.bookUid)] ?? '',
         0,
       ),
-      remotePositionMs: row.lastPositionMs,
-      remoteUpdatedAtMs: 0,
+      rowPositionMs: row.lastPositionMs,
+      rowImportedAtMs: row.importedAt ?? 0,
     );
     // TODO-885: 解析 playlistJson → 远端剧集（只 index+title，绝不带 host path）。
     final List<RemoteVideoEpisode> episodes = _episodesFromRow(row);
@@ -611,17 +615,11 @@ mixin _LocalLibraryHostVideos
     final VideoBookRow? row = episodeIndex <= 0
         ? await _db.getVideoBookByBookUid(id)
         : null;
-    final int rowPos = row?.lastPositionMs ?? 0;
-    // BUG-996：lastPositionMs 列无时间戳，此前硬编码 remoteUpdatedAtMs:0，使 host 的真
-    // 进度在跨设备 LWW 里恒输给任何带 now 戳的本地断点（client 一旦碰过就再也拉不回
-    // host 的桌面新进度）。用 importedAt 作「进度至少和导入一样旧」的可辩护下界戳——
-    // client 真更近才看过仍会赢（语义可接受），但 client 无有效断点时 host 能续上。
-    final int rowAt = rowPos > 0 ? (row?.importedAt ?? 0) : 0;
-    return resolvePositionLww(
-      localPositionMs: prefsPos,
-      localUpdatedAtMs: prefsAt,
-      remotePositionMs: rowPos,
-      remoteUpdatedAtMs: rowAt,
+    return _hostVideoPositionOf(
+      prefsPositionMs: prefsPos,
+      prefsUpdatedAtMs: prefsAt,
+      rowPositionMs: row?.lastPositionMs ?? 0,
+      rowImportedAtMs: row?.importedAt ?? 0,
     );
   }
 
@@ -1307,6 +1305,25 @@ mixin _LocalLibraryHostVideos
     }
   }
 }
+
+/// host 视频播放断点的唯一派生口径（BUG-4277）：清单条目、`GET .../position` 与
+/// `PUT .../position` 的判定都经它，同一条视频永远给出同一对 (位置, 戳)。
+///
+/// prefs 断点（本机 / 远端播放统一键）与旧 `VideoBooks.lastPositionMs` 经
+/// [resolvePositionLww] 取较新。BUG-996：行位置列无时间戳，用 importedAt 作「进度至少
+/// 和导入一样旧」的下界戳——client 真更近才看过仍会赢，但 client 无有效断点时 host
+/// 能续上；行位置为 0 时戳也记 0。
+({int positionMs, int updatedAtMs}) _hostVideoPositionOf({
+  required int prefsPositionMs,
+  required int prefsUpdatedAtMs,
+  required int rowPositionMs,
+  required int rowImportedAtMs,
+}) => resolvePositionLww(
+  localPositionMs: prefsPositionMs,
+  localUpdatedAtMs: prefsUpdatedAtMs,
+  remotePositionMs: rowPositionMs,
+  remoteUpdatedAtMs: rowPositionMs > 0 ? rowImportedAtMs : 0,
+);
 
 /// [clipVideoAudio] 的 ffmpeg 超时：句子片段沿用 120s；整集音轨（client 远端对轴 /
 /// 重定时拉整条音轨）按「至少 10 倍速转码」放大，两小时电影给到 12 分钟。
