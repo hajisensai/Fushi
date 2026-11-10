@@ -1,4 +1,4 @@
-## BUG-4291 · SRS 同步 v2：host 未点「开始同步」时客户端显示「全部已同步」、什么都没同步且无提示
+## BUG-4294 · SRS 同步 v2：host 未点「开始同步」时客户端显示「全部已同步」、什么都没同步且无提示
 - **报告**：2026-11-07（Linux Phase 4 互联测试；实测截图（未入库）：客户端显示「All changes are synced」，host 的一次性「Review sync has been upgraded → Start syncing」弹窗尚未点击）
 - **真实性**：✅ 真 bug，已沿代码路径确认。host 点「开始同步」之前，客户端一轮同步显示「所有改动都已同步」，host 的卡一张没收到，也没有任何提示说 host 还没加入；host 点了之后两个方向都正常。
   - 根因（host 侧状态没有出口）：app 作为互联 host 时，客户端写进来的段由 host 的「本机目录」那一轮并入、host 自己的数据也只在这一轮发布（`fushi/lib/src/srs/srs_sync_scheduler.dart:1556` `syncLocalDirectories` → `syncWithBackend`）；这一轮被首次 v2 确认闸门挡住（`fushi/lib/src/srs/srs_sync_scheduler.dart:969` `_firstSyncConfirmed()` → `kSrsSyncAwaitingConfirm`，判据 `fushi/lib/src/srs/srs_app_runtime.dart:214` `app.srsSync2MergeConfirmed`）。而互联协议里没有任何地方让客户端知道 host 处于这个状态：客户端经 WebDAV 把段写进 host 目录、读回的只有自己的东西，这一轮报告 `error == null`；「立即同步」只看报告错误（`fushi/lib/src/srs/srs_sync_scheduler.dart:1243`、`fushi/lib/src/srs/srs_import_entry.dart:503` → 「复习数据已同步」），同步与历史页摘要只看本机未上传条数（`fushi/lib/src/pages/implementations/srs/srs_history_page.dart:67-76` `srsTimelineSummaryTitle` → 「所有改动都已同步」）。

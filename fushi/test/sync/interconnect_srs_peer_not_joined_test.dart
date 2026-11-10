@@ -30,7 +30,7 @@ const String kProfile = '01928c3e-0000-7000-8000-0000000000ee';
 const String kHostId = 'srs-peer-not-joined-host';
 const String kToken = 'srs-peer-not-joined-token';
 
-/// BUG-4291：host 还没点过一次性的「复习同步已升级 → 开始同步」时，它不跑本机目录那一轮（既不发布自己的复习
+/// BUG-4294：host 还没点过一次性的「复习同步已升级 → 开始同步」时，它不跑本机目录那一轮（既不发布自己的复习
 /// 数据，也不并入客户端写进来的段），客户端一轮却「成功」、摘要说「所有改动都已同步」，什么都没收到也没有任何
 /// 提示。
 ///

@@ -1,4 +1,4 @@
-## BUG-4292 · fushi_cli anki mine 在依赖远端查词的客户端上释义为空（只查本地词典）
+## BUG-4295 · fushi_cli anki mine 在依赖远端查词的客户端上释义为空（只查本地词典）
 - **报告**：2026-11-07（Linux Phase 4 互联测试，第 5 行；证据为实测 CLI 输出与两端笔记导出，未入库）
 - **真实性**：✅ 真 bug。客户端本机没有词典、开着 `lookup.remote_lookup`（app 内查词能显示 host 的词典条目），开着 `interconnect.mine_to_server` 时 `fushi_cli anki mine -w 漢字` 能把卡落到 host 的 SRS，但 glossary 是空的。
   - 根因：控制通道替**本机用户**查词时用的是本机**作为 host 替对端 / 浏览器扩展**查词的服务：`fushi/lib/src/ops/ctl_dictionary_routes.dart:383`（`anki mine`）与 `:262`（`dict search`）`searchRemoteDictionaryForRequest(app().createRemoteLookupService(), ...)`，`fushi/lib/src/ops/ctl_video_player_routes.dart:276`（`video mine`）、`fushi/lib/src/ops/ctl_game_routes.dart:755`（`game mine`）`createRemoteLookupService().searchDictionary(...)`。这个服务（`fushi/lib/src/models/app_model.dart` `_AppModelRemoteLookupService._searchDictionary`）刻意 `allowRemoteLookup: false`（`app_model.dart:13621`，防止互为 host 的两台设备互相转发），只查本机词典；瘦客户端本机没词典 → 空结果 → `buildCtlMineFields` 释义 / 读音为空。查词页走的是 `AppModel.searchDictionary` 的远端优先链，不经这里。
