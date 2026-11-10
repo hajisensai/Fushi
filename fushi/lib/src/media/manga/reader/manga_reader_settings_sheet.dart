@@ -414,9 +414,28 @@ class MangaReaderSettingsSheet extends StatefulWidget {
       _MangaReaderSettingsSheetState();
 }
 
-/// 只能按作品设置的键：全局默认里的这两项是开书时由运行态（窗口全屏、阅读器
-/// 常亮偏好）现填的，不是全局偏好本身，写进全局等于把一次性的运行态钉成默认。
-const Set<String> _kWorkOnlyKeys = <String>{'fullscreen', 'keepScreenOn'};
+/// 只能按作品设置的键：全局默认里的 `fullscreen` 是开书时由运行态（窗口全屏）
+/// 现填的，不是全局偏好本身，写进全局等于把一次性的运行态钉成默认。
+///
+/// `keepScreenOn` 不在这里（反馈 lIoB_rGP7l）：它的全局值就是阅读器全局偏好
+/// 「保持屏幕常亮」（`keep_screen_awake`），全局作用域下照常可改，补丁由宿主经
+/// [splitMangaGlobalPatch] 分流过去，而不是写进漫画偏好里一个没人读的字段。
+const Set<String> _kWorkOnlyKeys = <String>{'fullscreen'};
+
+/// 全局作用域补丁按落点拆开：`keepScreenOn` 落到阅读器全局「保持屏幕常亮」
+/// （漫画没有本书覆盖时开书 / 重应用都只读它），其余键合进漫画全局偏好。
+///
+/// 返回的 `mangaPatch` 不含 `keepScreenOn`；`keepScreenAwake` 为 null 表示补丁
+/// 没动这一项。
+({Map<String, Object?> mangaPatch, bool? keepScreenAwake})
+splitMangaGlobalPatch(Map<String, Object?> patch) {
+  final Map<String, Object?> mangaPatch = Map<String, Object?>.from(patch);
+  final Object? keepScreenOn = mangaPatch.remove('keepScreenOn');
+  return (
+    mangaPatch: mangaPatch,
+    keepScreenAwake: keepScreenOn is bool ? keepScreenOn : null,
+  );
+}
 
 /// 浮动作用域条占的高度（含上下留白）：列表底部要让出它，最后一行（如外部
 /// mokuro 路径输入框）不被压住。
