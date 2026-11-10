@@ -38,6 +38,7 @@ import 'package:fushi/src/models/preference_keys.dart'
         kAiWebSearchPageFetchPref,
         kLibraryManualOrderPrefKeyPrefix;
 import 'package:fushi/src/models/library_grid_columns.dart';
+import 'package:fushi/src/stats/study_goal_period.dart' show StudyGoalPeriod;
 import 'package:fushi/src/utils/misc/platform_utils.dart' show WindowSizeClass;
 import 'package:fushi/src/utils/adaptive/nav_bar_style.dart';
 import 'package:fushi/src/ai/ai_saved_prompts.dart';
@@ -49,6 +50,7 @@ import 'package:fushi/src/media/discovery/alist_site_config.dart';
 import 'package:fushi/src/media/discovery/audiobookshelf_server_config.dart';
 import 'package:fushi/src/media/discovery/opds_server_config.dart';
 import 'package:fushi/src/media/kavita/kavita_server_config.dart';
+import 'package:fushi/src/media/video/subtitle/video_subtitle_folder_memory.dart';
 import 'package:fushi/src/utils/misc/jump_history.dart'
     show migrateLegacyJumpPillAutoHide;
 import 'package:fushi/src/models/module_id.dart';
@@ -3723,6 +3725,47 @@ class PreferencesRepository extends ChangeNotifier
     await setPref('video_remote_subtitle_files', jsonEncode(map));
   }
 
+  /// 反馈 0PZAhFd1RO：按系列记住的字幕文件夹（系列键见
+  /// [videoSubtitleFolderSeriesKey]）。坏值记诊断后当空表。
+  Map<String, VideoSubtitleFolder> get _videoSubtitleFolders {
+    final String raw =
+        getPref('video_subtitle_series_dirs', defaultValue: '') as String;
+    try {
+      return decodeVideoSubtitleFolders(raw);
+    } catch (e, stack) {
+      ErrorLogService.instance.log(
+        'PreferencesRepository.videoSubtitleFolders.decode',
+        e,
+        stack,
+      );
+      return <String, VideoSubtitleFolder>{};
+    }
+  }
+
+  /// 读系列 [seriesKey] 记住的字幕文件夹；没记过返回 null。
+  VideoSubtitleFolder? videoSubtitleFolder(String seriesKey) =>
+      _videoSubtitleFolders[seriesKey];
+
+  /// 记住 / 清除（[folder] 为 null）系列 [seriesKey] 的字幕文件夹（读改写整 map）。
+  Future<void> setVideoSubtitleFolder(
+    String seriesKey,
+    VideoSubtitleFolder? folder,
+  ) async {
+    final Map<String, VideoSubtitleFolder> map = _videoSubtitleFolders;
+    if (folder == null) {
+      if (!map.containsKey(seriesKey)) return;
+      map.remove(seriesKey);
+    } else {
+      if (map[seriesKey] == folder) return;
+      map[seriesKey] = folder;
+    }
+    await setPref(
+      'video_subtitle_series_dirs',
+      encodeVideoSubtitleFolders(map),
+    );
+    notifyListeners();
+  }
+
   // ── tags & card export ───────────────────────────────────────────────
 
   String get savedTags => getPref('saved_tags', defaultValue: '') as String;
@@ -7228,6 +7271,47 @@ class PreferencesRepository extends ChangeNotifier
     await setPref('reading_goal_daily_chars', value.clamp(0, 1000000));
     notifyListeners();
   }
+
+  /// 每周字数目标上限 = 每日上限 × 7。
+  static const int readingGoalWeeklyCharsMax = 7000000;
+
+  /// 每周字数目标（0 = 未设）。只在 [readingGoalPeriod] 为 weekly 时生效。
+  int get readingGoalWeeklyChars =>
+      (getPref('reading_goal_weekly_chars', defaultValue: 0) as int).clamp(
+        0,
+        readingGoalWeeklyCharsMax,
+      );
+
+  Future<void> setReadingGoalWeeklyChars(int value) async {
+    await setPref(
+      'reading_goal_weekly_chars',
+      value.clamp(0, readingGoalWeeklyCharsMax),
+    );
+    notifyListeners();
+  }
+
+  /// 字数目标周期（日 / 周二选一，反馈 CjIr9RGSCe）。缺省 / 未知值 = daily。
+  StudyGoalPeriod get readingGoalPeriod => StudyGoalPeriod.fromWire(
+    getPref('reading_goal_period', defaultValue: 'daily') as String?,
+  );
+
+  Future<void> setReadingGoalPeriod(StudyGoalPeriod value) async {
+    await setPref('reading_goal_period', value.wire);
+    notifyListeners();
+  }
+
+  /// 当前周期下生效的字数目标值（0 = 未设）。
+  int get readingGoalActiveChars => switch (readingGoalPeriod) {
+    StudyGoalPeriod.daily => readingGoalDailyChars,
+    StudyGoalPeriod.weekly => readingGoalWeeklyChars,
+  };
+
+  /// 写当前周期下生效的那一份目标值（小组件设置页的「阅读字数」入口用）。
+  Future<void> setReadingGoalActiveChars(int value) =>
+      switch (readingGoalPeriod) {
+        StudyGoalPeriod.daily => setReadingGoalDailyChars(value),
+        StudyGoalPeriod.weekly => setReadingGoalWeeklyChars(value),
+      };
 
   // ── 每日目标（桌面小组件「目标」卡；0 = 关，随 Profile）─────────────────
   /// 目标上限：分钟 24h、张数 / 复习数 100 万，防误输入。

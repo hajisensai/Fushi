@@ -3450,6 +3450,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
           from: AxisDirection.up,
           child: FushiFloatingTopBar(
             excludeFocus: true,
+            // 标题压在正文上：Apple 也垫底（反馈 -JpWlEuH5N）。
+            titleBacking: true,
             leading: leading,
             title: layout.showsTitle ? (_book?.title ?? '') : '',
             // 章名跟着书名这颗槽位开关一起开合；歌词模式下没有「当前章」可言。

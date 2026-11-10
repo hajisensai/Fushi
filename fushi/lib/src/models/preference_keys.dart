@@ -717,8 +717,11 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // bool：「工具栏样式强制悬浮」一次性迁移已跑（2026-10-06，非 Profile 键）。
   'reader_toolbar_style_floating_migrated',
   'reading_goal_daily_chars',
-  // int：每周字数目标（2026-10-10 用户拍板删除——#2029 删了统计中心目标卡后它
-  // 只能设、不显示进度）。存量键冻结、不再读写；留在这里只为键名不被别的功能复用。
+  // String 'daily' | 'weekly'：字数目标周期（StudyGoalPeriod.wire，反馈 CjIr9RGSCe：
+  // 日目标与周目标二选一）。缺省 = daily。
+  'reading_goal_period',
+  // int：每周字数目标（2026-10-10 曾删除，2026-11 反馈 CjIr9RGSCe 复活：作为
+  // `reading_goal_period = weekly` 时生效的目标值，首页 / 统计页 / 小组件按周显示进度）。
   'reading_goal_weekly_chars',
   'remote_lookup_enabled',
   // 用户自己添加的 BT 站清单（JSON 数组：id/name/url/enabled/domains/format/
@@ -1066,6 +1069,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'video_subtitle_save_beside_video',
   // string（默认 auto）：生成日语字幕的分段方式 auto/moss/window；设备本地。
   'video_subtitle_segmenter',
+  // JSON map `{系列键: {dir, template?}}`：按系列记住的字幕文件夹（反馈 0PZAhFd1RO），
+  // 之后各集在里面按集号匹配字幕。dir 是用户外部目录、系列键含本库合集 id：设备本地。
+  'video_subtitle_series_dirs',
   'video_subtitle_style',
   // string：SubDL（subdl.com）API key（用户在站点 panel 免费生成）。搜索必须带 key。
   'video_subtitle_subdl_api_key',
