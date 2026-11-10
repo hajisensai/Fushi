@@ -185,8 +185,10 @@ class InterconnectHostClient {
   /// [postJson]: both go through [InterconnectPostTransport], so a `p2p://`
   /// address is dialed through its local forwarding port). Null when none did,
   /// or when the host answered 404.
-  Future<http.Response?> getFromHost(String path, {required Duration timeout}) =>
-      _transport.get(path: path, timeout: timeout, onlyCandidate: peer);
+  Future<http.Response?> getFromHost(
+    String path, {
+    required Duration timeout,
+  }) => _transport.get(path: path, timeout: timeout, onlyCandidate: peer);
 }
 
 /// Refuses requests [allowed] rejects; the refusal surfaces as a transport
