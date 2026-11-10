@@ -19,6 +19,10 @@
 //     portal writes a PNG file and returns its URI; it is read, then deleted,
 //     because it is our temporary capture, not a screenshot the user took.
 //   - X11 session: the root window, read directly.
+//   - Steam Deck Game Mode (gamescope_overlay.h): Gamescope's PipeWire node
+//     "gamescope", through GStreamer (built when GStreamer is found:
+//     FUSHI_GAMESCOPE_CAPTURE). The root window there is Steam's display, not
+//     the game. Fushi's overlays are not in that picture.
 namespace fushi {
 namespace screen_capture {
 

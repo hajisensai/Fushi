@@ -152,8 +152,8 @@ class MediaSelectionController {
   Set<int> get retainedCollectionIds =>
       UnmodifiableSetView<int>(_collectionIds);
 
-  /// 当前锚点（无则 null）。仅供测试与调试断言。
-  @visibleForTesting
+  /// 当前锚点（无则 null）：最近一次点选的条目。副屏 Library「Main」模式拿它当
+  /// 选择模式下的高亮条目。
   SelectionSlot? get anchor => _anchor;
 
   /// 是否正在长按扫选。
