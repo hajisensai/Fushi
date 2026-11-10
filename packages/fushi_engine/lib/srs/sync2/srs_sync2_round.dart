@@ -139,7 +139,7 @@ class SrsSync2Report {
   /// 这一轮实际用密钥收发（位置是加密的且本机口令对）。
   bool encrypted = false;
 
-  /// 位置那头自己也跑复习同步的设备（互联 host）报告它还没加入复习同步（BUG-4297）：本机这一轮发出去了，但对端既
+  /// 位置那头自己也跑复习同步的设备（互联 host）报告它还没加入复习同步（BUG-4300）：本机这一轮发出去了，但对端既
   /// 不并入、也没发布它自己的数据。调度器在一轮成功后填（引擎的一轮不碰它）；不算这一轮失败。
   bool peerNotJoined = false;
 
@@ -231,7 +231,7 @@ Future<SrsSync2Report> srsSync2Round({
     return report;
   }
   if (keyHex == null) {
-    // 按明文收发的这一轮在拉段时见到了对这个位置密封的段（[srsSync2Pull] 已记下，BUG-4299）：`meta.json` 上没有
+    // 按明文收发的这一轮在拉段时见到了对这个位置密封的段（[srsSync2Pull] 已记下，BUG-4302）：`meta.json` 上没有
     // `kdf`（被重写 / 读到的是旧的），位置其实是加密的。发件、转发、媒体、head 一个都不写，报错让用户输入口令。
     final SrsLocationSeal seal = await srsLocationSealed(host, locationId);
     if (seal.sealed) {
@@ -510,7 +510,7 @@ Future<bool> srsSync2Pull({
   onStep?.call(
     'planned fetch=${wanted.length} finishPending=${plan['finishPending'] == true}',
   );
-  // 按明文读一个同步位置时，读到的段交给内核看一眼段头（BUG-4299）：有对这个位置密封的段就记下「这里是加密的」，
+  // 按明文读一个同步位置时，读到的段交给内核看一眼段头（BUG-4302）：有对这个位置密封的段就记下「这里是加密的」，
   // 调用方（[srsSync2Round]）据此不发件。见到一次就不再看。
   final String? sealProbe = keyHex == null && progressId != null
       ? srsLocationOfProgressId(progressId)

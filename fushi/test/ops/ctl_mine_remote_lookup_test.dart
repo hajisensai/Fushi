@@ -90,7 +90,7 @@ class _ContainerRef implements WidgetRef {
       throw UnsupportedError('unexpected ${invocation.memberName}');
 }
 
-/// BUG-4298：客户端本机没有词典、开着「远端查词」（查词页能显示 host 的词条），`fushi_cli anki mine -w 漢字`
+/// BUG-4301：客户端本机没有词典、开着「远端查词」（查词页能显示 host 的词条），`fushi_cli anki mine -w 漢字`
 /// 却建出释义为空的卡——控制通道查词用的是**替对端**查词的服务（只查本机词典），不是查词页的远端优先链。
 ///
 /// 真 host（FushiSyncServer 的 `/api/lookup/dictionary`，词典由 [_HostLookup] 提供）+ 真客户端 AppModel

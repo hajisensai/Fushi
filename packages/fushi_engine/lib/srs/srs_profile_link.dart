@@ -18,7 +18,7 @@
 ///   srs_profile_merge.dart），不丢任何一边的数据；
 /// - 没有用户笔记的 profile 不算候选：它所在的设备会来采用有数据的一方；
 /// - 双方都没有用户笔记时按 uid 字典序只让一边采用，不会两边互相采用来回翻；
-/// - 已经选定要并入别的 uid、只是并入暂缓着的写入者（说明文件里的 `mergingInto`，BUG-4299）不再算它旧 profile 的
+/// - 已经选定要并入别的 uid、只是并入暂缓着的写入者（说明文件里的 `mergingInto`，BUG-4302）不再算它旧 profile 的
 ///   成员：它按旧 uid 照常同步只是为了把缺的日志收进来，别的设备不能再把这个旧 profile 当成候选并进去。
 ///
 /// 只读写 [SyncAssetStore]，与后端无关（互联 / 云盘同一份格式）。
@@ -89,7 +89,7 @@ class SrsRemoteProfile {
 
   /// 写入者 → 它已经选定要并入的 uid（说明文件的 `mergingInto`，[srsPublishProfileInfo]）：那台设备的用户已经决定离开
   /// 这个 profile，只是并入暂缓（[SrsDeferredProfileMerge]）期间还按这个 uid 同步。[srsDecideProfileLink] 不把这些
-  /// 写入者算作这个 profile 的成员（BUG-4299）。旧版本不写这个键：空，按以前那样算。
+  /// 写入者算作这个 profile 的成员（BUG-4302）。旧版本不写这个键：空，按以前那样算。
   final Map<String, String> mergingInto;
 
   /// 不在离开中的写入者（[writers] 去掉 [mergingInto] 里的）。
@@ -151,7 +151,7 @@ SrsProfileLinkDecision srsDecideProfileLink({
       (v2Device != null && w == srsV2WriterName(v2Device));
   // 别的设备里只算留在这个 profile 的：已经选定并入别处、并入暂缓着的写入者（[SrsRemoteProfile.mergingInto]）不算
   // ——否则对方采用了本机的 profile 之后、并入做完之前，本机还会被问要不要并进对方已经放弃的那个 profile，选了两边
-  // 就分叉（BUG-4299）。
+  // 就分叉（BUG-4302）。
   bool otherMember(SrsRemoteProfile r) =>
       r.stayingWriters.any((String w) => !own(w));
   SrsRemoteProfile? mine;
@@ -352,7 +352,7 @@ Future<void> srsPublishProfileInfo(
   try {
     final File f = File('${dir.path}${Platform.pathSeparator}info');
     await f.writeAsString(
-      // `device` / `notes`（反馈 dOv8AdJ6yV）、`mergingInto`（BUG-4299）是附加键：旧读者只认 name / hasNotes，
+      // `device` / `notes`（反馈 dOv8AdJ6yV）、`mergingInto`（BUG-4302）是附加键：旧读者只认 name / hasNotes，
       // 忽略它们（不认识 `mergingInto` 的旧版本照旧把这个 profile 当候选，与以前一样）。
       jsonEncode(<String, Object?>{
         'v': 1,
@@ -577,7 +577,7 @@ class SrsDbProfileLinker implements SrsProfileLinker {
   /// 共用写连接上的写锁：持有期间连接上没有别的 Dart 写入者（任何副本的写都在它里面：app 里是激活副本的
   /// 独占区，扩展副本的独占区套在它里面，见 `SrsProfileStores`；随激活副本交接而换，旧副本作废后拿的是新的
   /// 那把）。采用时删 uid（[srsAdoptProfileUid]）是内核命令、直接在写连接上跑，必须在这把锁里：否则会夹进
-  /// 别的副本开着的 Drift 事务、随它回滚（BUG-4299）。
+  /// 别的副本开着的 Drift 事务、随它回滚（BUG-4302）。
   final SrsExclusiveOuter writeLock;
 
   /// 目录 → 上次发布的说明内容（同一进程里不重复写）。
@@ -670,7 +670,7 @@ class SrsDbProfileLinker implements SrsProfileLinker {
     final SrsDbStore? resumed = await _resumePendingMerges(store, backend);
     if (resumed != null) {
       // 并入刚做完：本设备离开的旧 uid 目录这一轮就清掉。这一轮按「已关联」交回，调度器之后不再跑 [link]，不在这里清
-      // 就要等下次启动——期间别的设备一直看得到那个旧 profile（BUG-4299）。清不掉不影响这一轮，下次 [link] 再清。
+      // 就要等下次启动——期间别的设备一直看得到那个旧 profile（BUG-4302）。清不掉不影响这一轮，下次 [link] 再清。
       try {
         await _removeRetiredFolders(
           backend,
@@ -1010,7 +1010,7 @@ class SrsDbProfileLinker implements SrsProfileLinker {
     final String? deviceLabel = label is String && label.isNotEmpty
         ? label
         : null;
-    // 并入暂缓着（或做到一半）：用户已经选定离开这个 uid，告诉别的设备别再把它当候选（BUG-4299）。并入标记是 srs.db
+    // 并入暂缓着（或做到一半）：用户已经选定离开这个 uid，告诉别的设备别再把它当候选（BUG-4302）。并入标记是 srs.db
     // 里的持久状态，进程重启、离线多久都还在；并入做完标记删掉、本设备换到新 uid，旧 uid 下的目录随后由 [link] 清掉。
     final String? mergingInto = await _mergingInto(store);
     final String sig =

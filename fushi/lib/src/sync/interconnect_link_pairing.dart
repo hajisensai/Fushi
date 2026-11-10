@@ -34,7 +34,7 @@ final class InterconnectLinkPairingFailed
   final String reason;
 }
 
-/// 一次 v2 配对成功后落库（BUG-4299：设置页手动地址、LAN 发现、扫码 / 深链三条入口共用这一份）：地址 + TOFU
+/// 一次 v2 配对成功后落库（BUG-4302：设置页手动地址、LAN 发现、扫码 / 深链三条入口共用这一份）：地址 + TOFU
 /// 指纹 + host 展示名，再把 per-peer token 落到这台 host 的全部地址（53NT7G_tSO）。
 ///
 /// [deviceName] 是 host 自报的展示名（`/api/ping` 的 `deviceName`，链接里的设备名）。以前设置页那两条入口在
