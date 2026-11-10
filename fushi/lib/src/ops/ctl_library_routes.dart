@@ -845,6 +845,7 @@ class _LibraryCtlHandlers {
       isKindEnabled: _kindVisible,
       keepDuplicates: duplicate == 'suffix',
       ingestVideoFile: _context.ingestExternalVideo,
+      folderTranscribeAudiobook: _app.folderImportTranscribePort,
       // 只有音频的有声书：本机能转录就排进「转录后入库」队列（发现页同一个）。
       enqueueTranscription: isAsrSupported
           ? ({
@@ -987,6 +988,7 @@ class _LibraryCtlHandlers {
     for (final MediaSourceRow row in targets) {
       final SourceScanSummary summary = await SourceLibraryScanner(
         _db,
+        transcribeAudiobook: _app.folderImportTranscribePort,
       ).scan(row);
       results.add(<String, Object?>{
         'id': row.id,
