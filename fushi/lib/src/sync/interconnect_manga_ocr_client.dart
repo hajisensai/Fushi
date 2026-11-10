@@ -9,6 +9,13 @@
 /// [SyncRepository.getFushiClientUrls]、`Basic base64(hibiki:token)` 鉴权、
 /// https 带指纹走钉扎 client。老 host 的 capabilities 无 `mangaOcr` 字段 →
 /// [probe] 返回 null → UI 隐藏远程选项（版本 skew 零破坏）。
+///
+/// 一次 [InterconnectMangaOcrClient.run] 与通用任务 client 同一张状态机：提交
+/// （create → 上传 → start）任何失败都清理 host 任务；观测 / 取回中的**传输失败**
+/// （[MangaOcrRemoteException.transport]）只说明此刻看不到 host，进断连子状态继续观测
+/// （[RemoteJobLinkWatch]，容忍窗超了才判断连）；host 判定的失败、协议错、用户取消
+/// 才 DELETE；任务已不在 host（`unknown_job`）不再 DELETE；取回成功后先交付结果再
+/// 尽力清理。每一次交换（含响应体）都有超时上界。
 library;
 
 import 'dart:async';
@@ -19,6 +26,7 @@ import 'dart:math';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart'
     show
         MangaOcrPageFile,
@@ -146,22 +154,30 @@ class MangaOcrRemoteEvent {
   const MangaOcrRemoteEvent.uploading({required this.done, required this.total})
     : uploading = true,
       finished = false,
+      reconnecting = false,
       mangaJsonPath = null;
 
-  const MangaOcrRemoteEvent.running({required this.done, required this.total})
-    : uploading = false,
-      finished = false,
-      mangaJsonPath = null;
+  const MangaOcrRemoteEvent.running({
+    required this.done,
+    required this.total,
+    this.reconnecting = false,
+  }) : uploading = false,
+       finished = false,
+       mangaJsonPath = null;
 
   const MangaOcrRemoteEvent.finished({required String this.mangaJsonPath})
     : uploading = false,
       finished = true,
+      reconnecting = false,
       done = 0,
       total = 0;
 
   /// true = 上传阶段进度；false = host 侧 OCR 阶段进度。
   final bool uploading;
   final bool finished;
+
+  /// 观测链路暂时断了、正在容忍窗内等 host 回来（进度停在最后看到的值）。
+  final bool reconnecting;
   final int done;
   final int total;
 
@@ -174,12 +190,20 @@ class MangaOcrRemoteEvent {
 /// code 取值：`no_host`（无可用主机）/ `no_pages`（本地目录无页图）/
 /// `models_not_ready`（host 模型未就绪）/ `not_supported`（host 不支持）/
 /// `auth`（token 被拒）/ `remote_failed`（host 侧 OCR 失败）/
-/// `cancelled`（host 侧任务被取消）/ `http`（网络/协议错误）。
+/// `cancelled`（host 侧任务被取消）/ `http`（网络/协议错误）/
+/// `unknown_job`（任务已不在 host）。
 class MangaOcrRemoteException implements Exception {
-  const MangaOcrRemoteException(this.code, [this.detail]);
+  const MangaOcrRemoteException(this.code, [this.detail]) : transport = false;
+
+  /// 传输层失败（超时、断连、网关 502/503/504）：此刻看不到 host，不代表任务失败。
+  const MangaOcrRemoteException.transport(this.code, [this.detail])
+    : transport = true;
 
   final String code;
   final String? detail;
+
+  /// true = 观测失败（传输层），观测 / 取回阶段据此进断连子状态而不是判任务失败。
+  final bool transport;
 
   @override
   String toString() => detail == null || detail!.isEmpty
@@ -218,6 +242,8 @@ class InterconnectMangaOcrClient implements MangaOcrRemoteRunner {
     int uploadConcurrency = 2,
     Duration Function(int attempt)? pollDelay,
     String? Function()? preferredModel,
+    Duration linkLossTolerance = kRemoteJobLinkLossTolerance,
+    DateTime Function()? now,
   }) : _repo = repo,
        _preferredModel = preferredModel,
        _httpClient = httpClient ?? http.Client(),
@@ -225,7 +251,9 @@ class InterconnectMangaOcrClient implements MangaOcrRemoteRunner {
        _probeTimeout = probeTimeout,
        _requestTimeout = requestTimeout,
        _uploadConcurrency = uploadConcurrency,
-       _pollDelay = pollDelay ?? remoteJobPollDelay;
+       _pollDelay = pollDelay ?? remoteJobPollDelay,
+       _linkLossTolerance = linkLossTolerance,
+       _now = now ?? DateTime.now;
 
   final SyncRepository _repo;
   final http.Client _httpClient;
@@ -234,6 +262,8 @@ class InterconnectMangaOcrClient implements MangaOcrRemoteRunner {
   final Duration _requestTimeout;
   final int _uploadConcurrency;
   final Duration Function(int attempt) _pollDelay;
+  final Duration _linkLossTolerance;
+  final DateTime Function() _now;
 
   /// 用户在引擎下拉里点名的服务端模型（null / 空 = 服务端默认）。每次 probe 现读。
   final String? Function()? _preferredModel;
@@ -353,6 +383,197 @@ class InterconnectMangaOcrClient implements MangaOcrRemoteRunner {
       }
     }
 
+    final RemoteJobLinkWatch watch = RemoteJobLinkWatch(
+      tolerance: _linkLossTolerance,
+      now: _now,
+    );
+
+    /// 用户取消后的收尾：create 在途时 [controller.onCancel] 拿不到 jobId，
+    /// 所以每个取消检查点都要自己补一次（[cleanupRemote] 幂等）。
+    Future<bool> stopIfCancelled() async {
+      if (!cancelled) return false;
+      await cleanupRemote();
+      return true;
+    }
+
+    /// 提交阶段：create → 有限并发上传 → start。返回 host 任务 id；用户取消返回 null。
+    Future<String?> submit(
+      http.Client c,
+      String token,
+      List<MangaOcrPageFile> pages,
+    ) async {
+      final Map<String, dynamic> created = _expectJson(
+        await _send(
+          c,
+          token,
+          'POST',
+          target,
+          '/api/ocr/job',
+          jsonBody: <String, Object?>{
+            if (volumeTitle != null && volumeTitle.trim().isNotEmpty)
+              'volumeTitle': volumeTitle.trim(),
+            'pageCount': pages.length,
+            if (target.model != null) 'model': target.model,
+          },
+        ),
+      );
+      final String id = created['jobId']?.toString() ?? '';
+      if (id.isEmpty) {
+        throw const MangaOcrRemoteException('http', 'missing jobId');
+      }
+      jobId = id;
+      if (await stopIfCancelled()) return null;
+
+      int nextIndex = 0;
+      int uploaded = 0;
+      Future<void> worker() async {
+        while (!cancelled) {
+          final int i = nextIndex;
+          if (i >= pages.length) return;
+          nextIndex += 1;
+          final MangaOcrPageFile page = pages[i];
+          final List<int> bytes = await page.file.readAsBytes();
+          _expectJson(
+            await _send(
+              c,
+              token,
+              'PUT',
+              target,
+              '/api/ocr/job/$id/page/$i',
+              query: <String, String>{'name': page.relativeUrl},
+              bodyBytes: bytes,
+            ),
+          );
+          uploaded += 1;
+          if (!controller.isClosed && !cancelled) {
+            controller.add(
+              MangaOcrRemoteEvent.uploading(
+                done: uploaded,
+                total: pages.length,
+              ),
+            );
+          }
+        }
+      }
+
+      await Future.wait(<Future<void>>[
+        for (int w = 0; w < max(1, _uploadConcurrency); w++) worker(),
+      ]);
+      if (await stopIfCancelled()) return null;
+
+      // start（host 模型未就绪等在此转成可读错误码）。
+      _expectJson(
+        await _send(c, token, 'POST', target, '/api/ocr/job/$id/start'),
+      );
+      if (await stopIfCancelled()) return null;
+      return id;
+    }
+
+    /// 观测 + 取回阶段：轮询到 done 后取回 manga.json 写到本地，返回该文件；
+    /// 用户取消返回 null。任务仍留在 host（[jobId] 不清），由调用方交付后尽力清理。
+    Future<File?> observeAndCollect(
+      http.Client c,
+      String token,
+      String id,
+      int pageCount,
+    ) async {
+      int lastDone = 0;
+      int lastTotal = pageCount;
+      bool announcedReconnect = false;
+
+      /// 一次观测 / 取回交换。传输失败且仍在容忍窗内返回 null（按退避再来），
+      /// 超窗抛断连；其余异常原样抛（由外层清理 + 报错）。
+      Future<T?> exchange<T extends Object>(Future<T> Function() send) async {
+        try {
+          final T value = await send();
+          watch.observed();
+          announcedReconnect = false;
+          return value;
+        } on MangaOcrRemoteException catch (e) {
+          if (!e.transport) rethrow;
+          if (!watch.lost()) {
+            throw MangaOcrRemoteException.transport(
+              'http',
+              t.interconnect_remote_job_disconnected(
+                minutes: '${_linkLossTolerance.inMinutes}',
+              ),
+            );
+          }
+          // 同一断连期只报一次「重连中」。
+          if (!announcedReconnect && !controller.isClosed && !cancelled) {
+            announcedReconnect = true;
+            controller.add(
+              MangaOcrRemoteEvent.running(
+                done: lastDone,
+                total: lastTotal,
+                reconnecting: true,
+              ),
+            );
+          }
+          return null;
+        }
+      }
+
+      bool hostDone = false;
+      int attempt = 0;
+      while (true) {
+        await Future<void>.delayed(_pollDelay(attempt));
+        attempt += 1;
+        if (await stopIfCancelled()) return null;
+        if (!hostDone) {
+          final Map<String, dynamic>? status;
+          try {
+            status = await exchange(
+              () async => _expectJson(
+                await _send(c, token, 'GET', target, '/api/ocr/job/$id'),
+              ),
+            );
+          } on MangaOcrRemoteException catch (e) {
+            if (e.code != 'unknown_job') rethrow;
+            // 任务已不在 host（被删 / host 重启后丢了）：没有可清理的，不再 DELETE。
+            jobId = null;
+            rethrow;
+          }
+          if (await stopIfCancelled()) return null;
+          if (status == null) continue;
+          final String state = status['state']?.toString() ?? '';
+          if (state == 'error') {
+            throw MangaOcrRemoteException(
+              'remote_failed',
+              status['error']?.toString(),
+            );
+          }
+          if (state == 'cancelled') {
+            throw const MangaOcrRemoteException('cancelled');
+          }
+          if (state != 'done') {
+            lastDone = (status['pagesDone'] as num?)?.toInt() ?? 0;
+            lastTotal = (status['pagesTotal'] as num?)?.toInt() ?? pageCount;
+            controller.add(
+              MangaOcrRemoteEvent.running(done: lastDone, total: lastTotal),
+            );
+            continue;
+          }
+          hostDone = true;
+        }
+
+        // 取回 manga.json，写到本地 <所选文件夹>/manga_ocr_out/manga.json。
+        final http.Response? result = await exchange(
+          () => _send(c, token, 'GET', target, '/api/ocr/job/$id/result'),
+        );
+        if (await stopIfCancelled()) return null;
+        if (result == null) continue;
+        final String json = utf8.decode(result.bodyBytes);
+        final Directory outDir = Directory(
+          p.join(imageDirPath, kMangaOcrOutDirName),
+        );
+        await outDir.create(recursive: true);
+        final File output = File(p.join(outDir.path, kMangaOcrOutputFileName));
+        await output.writeAsString(json, flush: true);
+        return output;
+      }
+    }
+
     controller.onListen = () {
       unawaited(() async {
         try {
@@ -373,131 +594,30 @@ class InterconnectMangaOcrClient implements MangaOcrRemoteRunner {
           client = c;
           closeAfter = close;
 
-          // 1. 创建任务。
-          final Map<String, dynamic> created = _expectJson(
-            await _send(
-              c,
-              token,
-              'POST',
-              target,
-              '/api/ocr/job',
-              jsonBody: <String, Object?>{
-                if (volumeTitle != null && volumeTitle.trim().isNotEmpty)
-                  'volumeTitle': volumeTitle.trim(),
-                'pageCount': pages.length,
-                if (target.model != null) 'model': target.model,
-              },
-            ),
-          );
-          final String id = created['jobId']?.toString() ?? '';
-          if (id.isEmpty) {
-            throw const MangaOcrRemoteException('http', 'missing jobId');
-          }
-          jobId = id;
-          if (cancelled) return;
-
-          // 2. 有限并发逐页上传（进度回调）。
-          int nextIndex = 0;
-          int uploaded = 0;
-          Future<void> worker() async {
-            while (!cancelled) {
-              final int i = nextIndex;
-              if (i >= pages.length) return;
-              nextIndex += 1;
-              final MangaOcrPageFile page = pages[i];
-              final List<int> bytes = await page.file.readAsBytes();
-              _expectJson(
-                await _send(
-                  c,
-                  token,
-                  'PUT',
-                  target,
-                  '/api/ocr/job/$id/page/$i',
-                  query: <String, String>{'name': page.relativeUrl},
-                  bodyBytes: bytes,
-                ),
-              );
-              uploaded += 1;
-              if (!controller.isClosed && !cancelled) {
-                controller.add(
-                  MangaOcrRemoteEvent.uploading(
-                    done: uploaded,
-                    total: pages.length,
-                  ),
-                );
-              }
-            }
-          }
-
-          await Future.wait(<Future<void>>[
-            for (int w = 0; w < max(1, _uploadConcurrency); w++) worker(),
-          ]);
-          if (cancelled) return;
-
-          // 3. start（host 模型未就绪等在此转成可读错误码）。
-          _expectJson(
-            await _send(c, token, 'POST', target, '/api/ocr/job/$id/start'),
-          );
-          if (cancelled) return;
-
-          // 4. 轮询（间隔递增上限）。
-          int attempt = 0;
-          while (true) {
-            await Future<void>.delayed(_pollDelay(attempt));
-            attempt += 1;
-            if (cancelled) return;
-            final Map<String, dynamic> status = _expectJson(
-              await _send(c, token, 'GET', target, '/api/ocr/job/$id'),
-            );
-            if (cancelled) return;
-            final String state = status['state']?.toString() ?? '';
-            if (state == 'done') break;
-            if (state == 'error') {
-              throw MangaOcrRemoteException(
-                'remote_failed',
-                status['error']?.toString(),
-              );
-            }
-            if (state == 'cancelled') {
-              throw const MangaOcrRemoteException('cancelled');
-            }
-            controller.add(
-              MangaOcrRemoteEvent.running(
-                done: (status['pagesDone'] as num?)?.toInt() ?? 0,
-                total: (status['pagesTotal'] as num?)?.toInt() ?? pages.length,
-              ),
-            );
-          }
-
-          // 5. 取回 manga.json，写到本地 <所选文件夹>/manga_ocr_out/manga.json。
-          final http.Response result = await _send(
+          final String? id = await submit(c, token, pages);
+          if (id == null) return;
+          final File? output = await observeAndCollect(
             c,
             token,
-            'GET',
-            target,
-            '/api/ocr/job/$id/result',
+            id,
+            pages.length,
           );
-          final String json = utf8.decode(result.bodyBytes);
-          final Directory outDir = Directory(
-            p.join(imageDirPath, kMangaOcrOutDirName),
-          );
-          await outDir.create(recursive: true);
-          final File output = File(
-            p.join(outDir.path, kMangaOcrOutputFileName),
-          );
-          await output.writeAsString(json, flush: true);
-
-          // 任务已完成：host 侧清掉（幂等；失败靠 TTL 兜底）。
-          await cleanupRemote();
+          if (output == null) return;
           if (!controller.isClosed && !cancelled) {
             controller.add(
               MangaOcrRemoteEvent.finished(mangaJsonPath: output.path),
             );
+            await controller.close();
           }
+          // 结果已交付；host 侧清理是尽力而为（幂等，失败靠 host TTL 兜底）。
+          await cleanupRemote();
         } catch (e, stack) {
+          // 提交阶段任何失败、host 判定的失败、协议错、断连超窗：先报错，再尽力清理
+          // host 任务（任务已不在 host 时 jobId 已清，这里是空操作）。
           if (!controller.isClosed && !cancelled) {
             controller.addError(e, stack);
           }
+          await cleanupRemote();
         } finally {
           if (closeAfter) client?.close();
           if (!controller.isClosed) {
@@ -556,15 +676,21 @@ class InterconnectMangaOcrClient implements MangaOcrRemoteRunner {
     }
     final http.Response response;
     try {
-      response = await http.Response.fromStream(
-        await client.send(request).timeout(_requestTimeout),
-      );
+      // 超时覆盖整次交换（含响应体）：对端发完响应头就卡住时也不会永久挂起。
+      response = await () async {
+        final http.StreamedResponse streamed = await client.send(request);
+        return http.Response.fromStream(streamed);
+      }().timeout(_requestTimeout);
     } on MangaOcrRemoteException {
       rethrow;
     } on TimeoutException {
-      throw const MangaOcrRemoteException('http', 'request timed out');
+      throw const MangaOcrRemoteException.transport(
+        'http',
+        'request timed out',
+      );
     } catch (e) {
-      throw MangaOcrRemoteException('http', '$e');
+      // 发送 / 读响应时抛出的一律是传输层失败（socket、TLS、连接被重置）。
+      throw MangaOcrRemoteException.transport('http', '$e');
     }
     if (response.statusCode == 401) {
       throw const MangaOcrRemoteException('auth');
@@ -595,6 +721,14 @@ class InterconnectMangaOcrClient implements MangaOcrRemoteRunner {
         }
       } catch (_) {
         // 错误体解析失败就用默认错误码——本 catch 只服务于错误信息提取。
+      }
+      // 网关 / 反代的 502/503/504（非 host 的机器可读码）：此刻到不了 host，按传输失败。
+      // 503 带 `models_not_ready` 等已知码时 code 已换成该码，不算传输失败。
+      if (code == 'http' &&
+          (response.statusCode == 502 ||
+              response.statusCode == 503 ||
+              response.statusCode == 504)) {
+        throw MangaOcrRemoteException.transport(code, detail);
       }
       throw MangaOcrRemoteException(code, detail);
     }
