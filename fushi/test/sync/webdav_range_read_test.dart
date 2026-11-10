@@ -22,6 +22,9 @@ import 'package:fushi/src/sync/webdav_sync_backend.dart';
 /// noContentRange = 回 206 却不带 Content-Range。
 enum _Mode { honor, ignore, noContentRange }
 
+/// 忽略 Range 时整份响应是文件的多少遍（见 [_FakeDavServer._handle]）。
+const int _ignoredRepeats = 64;
+
 class _FakeDavServer {
   _FakeDavServer._(this._server, this.file);
 
@@ -56,16 +59,23 @@ class _FakeDavServer {
         ? null
         : RegExp(r'^bytes=(\d+)-(\d*)$').firstMatch(range);
     if (mode == _Mode.ignore || m == null) {
+      // 忽略 Range 的 200：声明并写出远大于内核套接字缓冲的整份响应（文件重复
+      // [_ignoredRepeats] 遍）。4 MB 一份时 macOS 回环的发送 / 接收缓冲就能整份吞下，
+      // 客户端早已断开、服务端照样「写完」——判据随平台缓冲大小飘。体量拉到缓冲装不下后，
+      // 客户端断开必然让后续写入失败；客户端若真把整份读完（回归），这里如实报 true。
+      final int repeats = mode == _Mode.ignore ? _ignoredRepeats : 1;
+      final int total = file.length * repeats;
       response.statusCode = HttpStatus.ok;
-      response.contentLength = file.length;
+      response.contentLength = total;
       // 分块写，客户端取消后后续写入会失败：据此确认没把整文件读完。
       const int chunk = 64 * 1024;
       try {
-        for (int i = 0; i < file.length; i += chunk) {
-          final int endExclusive = i + chunk > file.length
+        for (int i = 0; i < total; i += chunk) {
+          final int at = i % file.length;
+          final int endExclusive = at + chunk > file.length
               ? file.length
-              : i + chunk;
-          response.add(Uint8List.sublistView(file, i, endExclusive));
+              : at + chunk;
+          response.add(Uint8List.sublistView(file, at, endExclusive));
           await response.flush();
         }
         await response.close();

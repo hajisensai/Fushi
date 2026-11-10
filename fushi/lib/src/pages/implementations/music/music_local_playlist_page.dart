@@ -105,7 +105,10 @@ class _MusicLocalPlaylistPageState
             ),
           )
           .listen((_) {
-            if (mounted) setState(() => _data = _load());
+            if (mounted)
+              setState(() {
+                _data = _load();
+              });
           });
     }
   }
@@ -189,7 +192,10 @@ class _MusicLocalPlaylistPageState
         msg: musicPlaylistErrorText(e),
         severity: ToastSeverity.error,
       );
-      if (mounted) setState(() => _data = _load());
+      if (mounted)
+        setState(() {
+          _data = _load();
+        });
     }
   }
 
