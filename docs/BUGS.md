@@ -33,11 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3901 条。点号进各自文件。
+> 共 3902 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4356](bugs/BUG-4356-android-startup-webview-prewarm-anr.md) | ✅ | ✅ | Android 低端机冷启动 8s ANR：WebView 预热在首帧前于主线程初始化 chromium |
+| [BUG-4357](bugs/BUG-4357-android-startup-webview-prewarm-anr.md) | ✅ | ✅ | Android 低端机冷启动 8s ANR：WebView 预热在首帧前于主线程初始化 chromium |
 | [BUG-4356](bugs/BUG-4356-online-manga-completion-per-book.md) | ✅ | ✅ | online-manga-completion-per-book |
 | [BUG-4355](bugs/BUG-4355-gal-direct-nested-flip-up-layer-reset.md) | ✅ | ✅ | 游戏内卡嵌套子卡向上翻出后两张卡下方出现透明区 |
 | [BUG-4354](bugs/BUG-4354-alist-download-gateway-pow-required.md) | ✅ | ✅ | 发现页 AList 下载网关返回 403 pow_required，下载器没有人机验证握手 |
