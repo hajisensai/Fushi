@@ -4214,6 +4214,7 @@
   "icon_custom_hint": "点击图标切换，或在下方选择自定义图片。",
   "icon_default": "默认",
   "icon_shortcut_created": "已创建主屏幕快捷方式。",
+  "icon_shortcut_failed": "无法设置主屏幕图标：${error}",
   "icon_shortcut_unsupported": "此设备不支持快捷方式。",
   "icon_switch_success": "应用图标已更改。",
   "image_pause": "图片暂停",
