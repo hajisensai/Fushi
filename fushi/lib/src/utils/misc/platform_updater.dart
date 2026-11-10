@@ -12,8 +12,11 @@ import 'package:fushi/src/platform/desktop/windows_native_pre_exit.dart';
 import 'package:fushi_engine/utils/misc/helper_process_registry.dart';
 import 'package:fushi_engine/platform/desktop/windows_process_query.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
+import 'package:fushi/src/utils/misc/flatpak_updater.dart';
 import 'package:fushi/src/utils/misc/mac_update_handoff.dart';
 import 'package:fushi/src/utils/misc/update_handoff.dart';
+import 'package:fushi/src/utils/misc/update_checker.dart'
+    show UpdateDownloadCancellation;
 import 'package:fushi/src/utils/misc/update_landing.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart'; // ErrorLogService
 
@@ -150,6 +153,10 @@ abstract class PlatformUpdater {
   /// 应用已下载到 [file] 的更新。仅在 [supportsInAppInstall] 为 true 时被调用。
   Future<void> apply(File file, String version);
 
+  /// 本安装绑定的更新通道；非 null 时**覆盖**设置里的通道。只有「装哪条轨由安装方式
+  /// 决定、应用内换不了」的平台才返回值（Flatpak：portal 只能更新已安装的 branch）。
+  UpdateChannel? get installedChannel => null;
+
   /// 不能应用内安装时，「前往下载」按钮该落到哪里。默认 = GitHub release 网页
   /// （[releaseHtmlUrl]），即所有桌面/未实现平台的既有行为。
   ///
@@ -160,11 +167,35 @@ abstract class PlatformUpdater {
       UpdateLanding(url: releaseHtmlUrl, kind: UpdateLandingKind.releasePage);
 }
 
-/// 本期支持「应用内安装」的平台集合（单一真相源；Linux 在其阶段加入）。macOS 走
-/// 去沙盒后的 zip 替换（[MacUpdater] / [MacInstaller]，Phase 3）。iOS 平台禁止应用内
-/// 安装可执行文件，永远只「检查→打开发布页」（[IosUpdater]），不在此集合。
+/// 更新由系统包管理器取回并安装、Fushi 不下载文件的平台（Linux Flatpak，见
+/// [FlatpakUpdater]）。
+///
+/// 下载 → [apply] 的两步换成 [stage]（包管理器拉取并部署，本进程仍跑旧版）→
+/// [restartIntoStagedUpdate]（启动新版并退出本进程）。所有入口（对话框 / 自动安装 /
+/// 控制通道 / 互联 host 远程更新）按 `updater is PackageManagedUpdater` 分流，不伪造下载文件。
+abstract class PackageManagedUpdater extends PlatformUpdater {
+  /// 拉取并部署 [version]。进度 0..1 经 [onProgress]；[cancellation] 取消时以
+  /// `UpdateDownloadCancelledException` 结束。
+  Future<void> stage(
+    String version, {
+    required void Function(double progress) onProgress,
+    UpdateDownloadCancellation? cancellation,
+  });
+
+  /// 启动已部署的新版本并退出本进程。
+  Future<void> restartIntoStagedUpdate(String version);
+
+  @override
+  Future<void> apply(File file, String version) async {
+    throw StateError('PackageManagedUpdater has no downloaded file to apply');
+  }
+}
+
+/// 本平台能否「应用内安装」（单一真相源 = 本平台 [PlatformUpdater.supportsInAppInstall]）：
+/// Android / Windows / macOS 恒可；Linux 只在发布通道的 Flatpak 里可（[FlatpakUpdater]）；
+/// iOS 禁止应用内安装可执行文件，永远只「检查→打开发布页」（[IosUpdater]）。
 bool platformSupportsInAppInstall() =>
-    Platform.isAndroid || Platform.isWindows || Platform.isMacOS;
+    updaterForCurrentPlatform().supportsInAppInstall;
 
 /// Flutter `--split-per-abi` 产出的 Android ABI 标签（CI 的 `app-<abi>-release.apk`
 /// 即据此重命名为 `fushi-<version>-<abi>.apk`，见 `.github/workflows/release.yml`）。
@@ -213,6 +244,10 @@ PlatformUpdater updaterForCurrentPlatform() {
   if (Platform.isWindows) return WindowsUpdater();
   if (Platform.isMacOS) return MacUpdater();
   if (Platform.isIOS) return IosUpdater();
+  if (Platform.isLinux) {
+    final FlatpakInstallation? flatpak = FlatpakInstallation.current();
+    if (flatpak != null) return FlatpakUpdater(installation: flatpak);
+  }
   return UnsupportedUpdater();
 }
 
@@ -238,10 +273,12 @@ bool assetBelongsToThisProduct(String name) =>
 /// 从 asset map 安全取出可下载的 (name, url)。
 ///
 /// 产品族过滤放在这里而不是各 `selectAsset`：这是所有平台把原始 asset map 变成候选的
-/// **唯一漏斗**（Android/Windows/macOS 三个实现都经它），在漏斗上过滤意味着新增平台
+/// **唯一漏斗**（Android / Windows / macOS / Flatpak 实现都经它），在漏斗上过滤意味着新增平台
 /// 自动继承约束，也不存在「某个调用点忘了传 product 参数」这种静默装错包的空档。
 /// 本族没有任何「有意去装别族产物」的场景，所以不需要把它做成可选参数。
-Iterable<UpdateAsset> _downloadable(List<Map<String, dynamic>> assets) sync* {
+Iterable<UpdateAsset> downloadableReleaseAssets(
+  List<Map<String, dynamic>> assets,
+) sync* {
   for (final Map<String, dynamic> a in assets) {
     final UpdateAsset asset = UpdateAsset.fromReleaseAsset(a);
     if (asset.name.isEmpty || asset.url.isEmpty) continue;
@@ -344,7 +381,7 @@ class AndroidUpdater extends PlatformUpdater {
     UpdateChannel channel = UpdateChannel.stable,
   }) async {
     final List<UpdateAsset> candidates = <UpdateAsset>[
-      for (final UpdateAsset asset in _downloadable(assets))
+      for (final UpdateAsset asset in downloadableReleaseAssets(assets))
         if (_androidAssetMatchesChannel(asset.name, channel)) asset,
     ];
     if (candidates.isEmpty) return null;
@@ -385,7 +422,7 @@ class WindowsUpdater extends PlatformUpdater {
     List<Map<String, dynamic>> assets, {
     UpdateChannel channel = UpdateChannel.stable,
   }) async {
-    for (final UpdateAsset asset in _downloadable(assets)) {
+    for (final UpdateAsset asset in downloadableReleaseAssets(assets)) {
       if (_windowsAssetMatchesChannel(asset.name, channel)) return asset;
     }
     return null;
@@ -418,7 +455,7 @@ class MacUpdater extends PlatformUpdater {
     List<Map<String, dynamic>> assets, {
     UpdateChannel channel = UpdateChannel.stable,
   }) async {
-    for (final UpdateAsset asset in _downloadable(assets)) {
+    for (final UpdateAsset asset in downloadableReleaseAssets(assets)) {
       if (_macosAssetMatchesChannel(asset.name, channel)) return asset;
     }
     return null;
@@ -465,7 +502,7 @@ class IosUpdater extends PlatformUpdater {
   }
 }
 
-/// Linux（本期未实现应用内安装）：可检查但不能自装，回退打开发布页。
+/// Flatpak 以外的 Linux（没有发布的安装包）：可检查但不能自装，回退打开发布页。
 class UnsupportedUpdater extends PlatformUpdater {
   @override
   bool get supportsUpdateCheck => true;
