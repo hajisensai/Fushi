@@ -949,6 +949,11 @@ enum AnkiMiningSource {
   /// （写入 Anki 的标签字面量为 `music`）。所有者 2026-10-24 拍板：此前沿用收藏夹
   /// 口径打成 `book`；只决定新卡，旧卡不迁移不重写。
   music,
+
+  /// 漫画阅读器制卡（OCR 气泡查词 / 收藏夹里的漫画句）—— 归「漫画」分类标签
+  /// （写入 Anki 的标签字面量为 `manga`）。反馈 uOanUXUIDt 拍板：此前漫画卡沿用
+  /// 书籍口径打成 `book`；只决定新卡，旧卡不迁移不重写。
+  manga,
 }
 
 class AnkiMiningContext {

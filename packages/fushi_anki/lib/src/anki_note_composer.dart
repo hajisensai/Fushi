@@ -393,6 +393,10 @@ mixin AnkiNoteComposer {
   /// 此前打成 `book` 的旧音乐卡不迁移不重写。
   static const String musicTag = 'music';
 
+  /// 漫画阅读器的分类标签（反馈 uOanUXUIDt 拍板）。仅决定新制卡默认标签，此前打成
+  /// `book` 的旧漫画卡不迁移不重写。
+  static const String mangaTag = 'manga';
+
   /// 把制卡来源类别映射成分类标签；`null`（未指定来源）时返回 `null`（不追加）。
   static String? _categoryTagForSource(AnkiMiningSource? source) {
     switch (source) {
@@ -404,6 +408,8 @@ mixin AnkiNoteComposer {
         return gameTag;
       case AnkiMiningSource.music:
         return musicTag;
+      case AnkiMiningSource.manga:
+        return mangaTag;
       case null:
         return null;
     }
@@ -413,8 +419,8 @@ mixin AnkiNoteComposer {
   /// **追加** [fushiTag] 与 [source] 对应的分类标签后去重（保序）。
   ///
   /// - 追加而非覆盖：用户已配置的 tag 全部保留，只是按开关额外多 `fushi` + 分类标签。
-  /// - 顺序：用户 tag → `fushi` → 分类标签（`book`/`video`/`game`/`music`）。
-  /// - 去重：用户若已手动配置了 `fushi`/`book`/`video`/`game`/`music`，不会出现两个。
+  /// - 顺序：用户 tag → `fushi` → 分类标签（`book`/`video`/`game`/`music`/`manga`）。
+  /// - 去重：用户若已手动配置了 `fushi` 或任一分类标签，不会出现两个。
   /// - [includeHibiki]（TODO-117 开关）为 `false` 时不追加 `fushi`。
   /// - [includeCategory]（TODO-117 开关）为 `false` 时不追加分类标签；为 `true` 但
   ///   [source] 为 `null`（未指定来源，如独立查词/悬浮窗）时本就没有分类标签可加。

@@ -5450,7 +5450,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         coverPath: coverPath,
         sentenceOffset: sentenceOffset,
         sourceLink: sourceLink,
-        source: AnkiMiningSource.book,
+        source: AnkiMiningSource.manga,
         bookTitleTag: appModel.autoAddBookNameToTags
             ? BaseAnkiRepository.sanitizeTitleTag(title)
             : null,
