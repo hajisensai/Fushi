@@ -722,25 +722,19 @@ class _Scheduler {
   /// paused) again after [kBusyWait], at most [busyRetries] times in a row --
   /// the same patience as for a batch it turns down. False when the others
   /// meanwhile ran everything it could have.
-  Future<bool> _prepareAskingAgain(DistWorker worker, IOSink log) async {
-    int busy = 0;
-    while (true) {
-      try {
-        return await _prepareWhileNeeded(worker, log);
-      } on DistWorkerBusy catch (e) {
-        if (++busy > busyRetries) rethrow;
-        stdout.writeln(
-          '[${worker.name}] ${e.message}; asking again in '
-          '${kBusyWait.inSeconds}s',
-        );
-        await Future<void>.delayed(kBusyWait);
-        await _stop.holdIfStopping();
-        if (_inFlight == 0 && !queue.remaining.any(worker.eligible)) {
-          return false;
-        }
-      }
-    }
-  }
+  Future<bool> _prepareAskingAgain(DistWorker worker, IOSink log) async =>
+      await distRetryWhileBusy<bool>(
+        () async {
+          await _stop.holdIfStopping();
+          return _prepareWhileNeeded(worker, log);
+        },
+        retries: busyRetries,
+        wait: kBusyWait,
+        stillWanted: () =>
+            _inFlight > 0 || queue.remaining.any(worker.eligible),
+        said: (String l) => stdout.writeln('[${worker.name}] $l'),
+      ) ??
+      false;
 
   /// Prepares [worker]; false as soon as nothing it may run is left in the
   /// queue and no batch is in flight (whose infrastructure failure could
@@ -964,7 +958,14 @@ Future<int> _jobOffMachine(
       options: options,
     );
     if (r.code != null) return r.code!;
-    if (!r.busy || round >= busyRetries || _tally.lost) break;
+    if (!distJobAskAgain(
+      busy: r.busy,
+      round: round,
+      retries: busyRetries,
+      lost: _tally.lost,
+    )) {
+      break;
+    }
     stdout.writeln(
       'every machine turned the ${job.build == null ? 'analyze' : 'build'} '
       'down for now; asking again in ${_Scheduler.kBusyWait.inSeconds}s '

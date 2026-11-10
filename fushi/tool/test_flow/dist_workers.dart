@@ -507,6 +507,45 @@ class DistWorkerBusy extends DistWorkerError {
   DistWorkerBusy(super.message);
 }
 
+/// [attempt], asked again after [wait] each time it throws [DistWorkerBusy],
+/// at most [retries] times in a row (then that busy error propagates; any
+/// other error at once). [stillWanted] is asked after each wait: false ends
+/// it with null (someone else did the work meanwhile). [said] gets one line
+/// per retry. Used for a worker that turns a run down at its `lock` /
+/// `init` (prepare) the way `--busy-retries` already covered a batch turned
+/// down at its start (2026-11-10: three locked Mac slots made every run
+/// decline at once whatever `--busy-retries` said).
+Future<T?> distRetryWhileBusy<T>(
+  Future<T> Function() attempt, {
+  required int retries,
+  required Duration wait,
+  bool Function()? stillWanted,
+  void Function(String line)? said,
+}) async {
+  int busy = 0;
+  while (true) {
+    try {
+      return await attempt();
+    } on DistWorkerBusy catch (e) {
+      if (++busy > retries) rethrow;
+      said?.call('${e.message}; asking again in ${wait.inSeconds}s');
+      await Future<void>.delayed(wait);
+      if (stillWanted != null && !stillWanted()) return null;
+    }
+  }
+}
+
+/// Whether a whole pass over the workers (analyze / a compile check) is
+/// worth another after [round] (0-based): only when some worker turned it
+/// down just for now ([busy]), [retries] allows it and the caller's machine
+/// has not taken the run meanwhile ([lost]).
+bool distJobAskAgain({
+  required bool busy,
+  required int round,
+  required int retries,
+  required bool lost,
+}) => busy && round < retries && !lost;
+
 /// Test processes per batch on a worker configured for [configured] (null:
 /// flutter's default) when the caller capped them at [cap] (an explicit
 /// `flutter test -j N` handed to dist_test): the lower of the two.
