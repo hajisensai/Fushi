@@ -606,7 +606,7 @@ void main() {
       findsNothing,
     );
     expect(
-      find.byKey(const ValueKey<String>('manga_ocr_no_engine_badge')),
+      find.byKey(const ValueKey<String>('manga_ocr_no_engine_notice')),
       findsNothing,
     );
     expect(

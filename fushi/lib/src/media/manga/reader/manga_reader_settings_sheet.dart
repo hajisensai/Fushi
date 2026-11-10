@@ -328,6 +328,12 @@ List<MangaReaderPreferenceDescriptor> mangaReaderPreferenceDescriptors(
     choices: const <String>['automatic', 'manual'],
   ),
   MangaReaderPreferenceDescriptor(
+    key: 'ocrProgressBadge',
+    kind: MangaReaderPreferenceKind.choice,
+    title: t.manga_reader_ocr_progress_badge,
+    choices: const <String>['full', 'edge', 'hidden'],
+  ),
+  MangaReaderPreferenceDescriptor(
     key: 'colorFilterColor',
     kind: MangaReaderPreferenceKind.choice,
     title: t.manga_reader_color_filter_color,
@@ -620,6 +626,11 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
       value == 'manual'
           ? t.manga_reader_ocr_manual
           : t.manga_reader_ocr_automatic,
+    'ocrProgressBadge' => switch (value) {
+      'edge' => t.manga_reader_ocr_progress_badge_edge,
+      'hidden' => t.manga_reader_ocr_progress_badge_hidden,
+      _ => t.manga_reader_ocr_progress_badge_full,
+    },
     'direction' =>
       value == 'ltr' ? t.manga_direction_ltr : t.manga_direction_rtl,
     'scaleType' => switch (value) {
@@ -707,6 +718,7 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
     'lookupOnHover' => FushiIcons.mouse,
     'showOcrBoxes' => FushiIcons.visibility,
     'ocrTrigger' => FushiIcons.ocr,
+    'ocrProgressBadge' => FushiIcons.visibility,
     _ => null,
   };
 
@@ -775,6 +787,7 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
     'direction',
     'background',
     'ocrTrigger',
+    'ocrProgressBadge',
   };
 
   Widget _choice(MangaReaderPreferenceDescriptor d) {
@@ -790,7 +803,11 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
           title: d.title,
           subtitle: _scopeNote(d.key),
           icon: _rowIcon(d.key),
-          info: d.key == 'ocrTrigger' ? t.manga_reader_ocr_engine_note : null,
+          info: switch (d.key) {
+            'ocrTrigger' => t.manga_reader_ocr_engine_note,
+            'ocrProgressBadge' => t.manga_reader_ocr_progress_badge_note,
+            _ => null,
+          },
           options: _options(d),
           selected: selected,
           onChanged: onChanged,
@@ -921,6 +938,7 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
     }
     if (const <String>{
       'ocrTrigger',
+      'ocrProgressBadge',
       'showOcrBoxes',
       'lookupOnHover',
     }.contains(key)) {
@@ -1021,7 +1039,12 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
     _ => <(String Function(), List<String>)>[
       (
         () => t.manga_reader_group_ocr_lookup,
-        <String>['lookupOnHover', 'showOcrBoxes', 'ocrTrigger'],
+        <String>[
+          'lookupOnHover',
+          'showOcrBoxes',
+          'ocrTrigger',
+          'ocrProgressBadge',
+        ],
       ),
     ],
   };
