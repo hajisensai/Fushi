@@ -1610,7 +1610,6 @@ class SrsDbStore implements SrsSync2Host {
     'open',
     'status',
     'media_known',
-    'media_live_refs',
     'media_hash',
     'conflicts',
     'checkpoints',
