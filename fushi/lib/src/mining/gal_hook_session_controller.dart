@@ -4710,6 +4710,21 @@ class GalHookSessionController extends ChangeNotifier {
             : 'manual_recapture',
       );
     }
+    // TyranoScript DOM 语音仲裁已经定论「这句没有语音」（声明了语音缓冲区、这句一条
+    // 语音事件都没有、也没有在取的原件）：入库时就把它标成 unavailable、不借时间邻近的
+    // native 资源、不录 Loopback（见 [_onTyranoDomFrame]）。制卡取音必须服从同一结论：
+    // 以前这里照样空等资源等待窗（默认 1.2s）再走 PCM / Loopback 兜底链，而制卡动图
+    // 的采样又要等本句音频有结论才收口——用户看到的就是浮窗「制卡」按钮一直转。
+    if (_tyranoDomLineHasNoVoice(lineId)) {
+      _record(
+        GalHookEventSeverity.info,
+        'match',
+        'audio.dom_no_voice',
+        'TyranoScript DOM voice arbitration reports no voice for this line',
+        details: <String, Object?>{'lineId': lineId},
+      );
+      return null;
+    }
     final int timestamp = _lineTimestampCache[lineId] ?? 0;
     if (engine != null && _isWindows) {
       final Uint8List? paired = await _waitForPairedResourceAudio(
@@ -4945,6 +4960,20 @@ class GalHookSessionController extends ChangeNotifier {
         await jobDirectory.delete(recursive: true);
       } catch (_) {}
     }
+  }
+
+  /// [lineId] 是 DOM 语音仲裁管辖的行，且它的语音组已经定论无语音：一条语音事件
+  /// 都没收到、没有在取的原件、也没有已落盘的资源。语音组已被淘汰 / 文档已重载
+  /// （找不到组）时不下结论，返回 false，交给原有等待与兜底链。
+  bool _tyranoDomLineHasNoVoice(String lineId) {
+    if (!_tyranoDomVoiceOwnedLines.contains(lineId)) return false;
+    for (final _TyranoDomVoiceGroup group in _tyranoDomVoiceGroups.values) {
+      if (group.lineId != lineId) continue;
+      return group.events == 0 &&
+          group.inFlight == 0 &&
+          group.resourceIds.isEmpty;
+    }
+    return false;
   }
 
   /// 资源 hook 已就绪时，资源文件仍可能比文本环晚几十到几百毫秒落盘。制卡不能在第一次

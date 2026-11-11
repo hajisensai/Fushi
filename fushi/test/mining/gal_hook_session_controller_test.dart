@@ -5639,7 +5639,9 @@ void _tyranoDomVoiceTests() {
     late Set<String> unreadable;
     late int tick;
 
-    GalHookSessionController buildController() {
+    GalHookSessionController buildController({
+      Duration resourceAudioWait = Duration.zero,
+    }) {
       engine = _FakeEngineSource(
         pairedBytes: Uint8List(0),
         replayBufferedLines: true,
@@ -5672,7 +5674,7 @@ void _tyranoDomVoiceTests() {
         windowListLoader: () async => const <ExternalWindowInfo>[],
         windowPollAttempts: 1,
         textPollInterval: const Duration(milliseconds: 5),
-        resourceAudioWait: Duration.zero,
+        resourceAudioWait: resourceAudioWait,
         endpointListenable: endpoints,
         endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
         tyranoDomLaunchPlanner:
@@ -5736,8 +5738,12 @@ void _tyranoDomVoiceTests() {
       await dumpDir.delete(recursive: true);
     });
 
-    Future<GalHookSessionController> started() async {
-      final GalHookSessionController controller = buildController();
+    Future<GalHookSessionController> started({
+      Duration resourceAudioWait = Duration.zero,
+    }) async {
+      final GalHookSessionController controller = buildController(
+        resourceAudioWait: resourceAudioWait,
+      );
       await controller.launchGame(r'D:\games\tyrano\game.exe');
       await _until(() => controller.tyranoDomFeed != null);
       return controller;
@@ -5884,6 +5890,40 @@ void _tyranoDomVoiceTests() {
       expect(engine.findEventIds.length, pairingCalls);
       expect(engine.pairedResourceIds, isNot(contains(null)));
       expect(domLine('synthetic narration').audioResourceId, isNull);
+      await controller.close();
+    });
+
+    test('DOM 已定论无语音：制卡取音立即返回，不空等资源窗、不走兜底链', () async {
+      // 真机：无语音行点浮窗「制卡」按钮一直转——取音先空等资源等待窗，再走 PCM /
+      // Loopback 兜底，而动图采样要等音频有结论才收口。等待窗拉到 30s，若仍空等，
+      // 下面 5s 的上限必然超时。
+      final GalHookSessionController controller = await started(
+        resourceAudioWait: const Duration(seconds: 30),
+      );
+      sources.single.emit(
+        _voicedFrame('synthetic silent', generation: 1, lineSeq: 6),
+      );
+      await _until(() => service.entries.isNotEmpty);
+      await pumpEventQueue();
+      final TexthookerLineEntry line = domLine('synthetic silent');
+      expect(line.audioStatus, TexthookerLineAudioStatus.unavailable);
+      final Uint8List? bytes = await controller
+          .captureAudioBytes(
+            lineId: line.id,
+            sentence: line.text,
+            outputExtension: 'aac',
+          )
+          .timeout(const Duration(seconds: 5));
+      expect(bytes, isNull);
+      expect(
+        controller.events.map((GalHookEvent e) => e.code),
+        contains('audio.dom_no_voice'),
+      );
+      expect(
+        domLine('synthetic silent').audioStatus,
+        TexthookerLineAudioStatus.unavailable,
+        reason: '无语音是定论，不能被兜底链改写成 missing',
+      );
       await controller.close();
     });
 
