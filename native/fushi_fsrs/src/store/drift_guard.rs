@@ -130,6 +130,8 @@ pub(crate) const DRIFT_TX_POLICY: &[(&str, DriftTxPolicy)] = &[
     ("outbox_ack", Reject),
     ("head", Reject),
     ("relay_outbox", Reject),
+    // 一轮收尾问「位置上此刻该删什么」（transport.rs `sync2_obsolete`）：登记待删的旧 head，与 `obsolete_ack` 同属传输记账。
+    ("obsolete", Reject),
     ("obsolete_ack", Reject),
     ("relay_ack", Reject),
     ("ingest", Reject),
