@@ -83,12 +83,18 @@ Future<_ManualDownloadBackend> _resolveBackend(AppModel appModel) async {
 /// 是单任务的，标题/内容类型/目标来源要逐个确认），用户取消其中一个即停止后续
 /// ——取消是「别再问了」，不是「跳过这个」。[initialDiscoveryKind] 按落点表面预填
 /// 内容类型（null = 视频，与对话框自身约定一致），用户仍可在框里改。
+///
+/// [initialMagnet] 非空 = 别处拿到了一条磁链要交给下载管线（视频源扩展给的种子，
+/// 反馈 xAeextyOV1）：开框即预填磁链与 [initialTitle]，与用户自己粘贴同一条提交
+/// 路径（P2P 说明、本机 / 互联 host 落点、目标来源都照常由用户确认）。
 Future<void> showManualDownloadTaskDialog({
   required BuildContext context,
   required AppModel appModel,
   InterconnectDownloadClient? remoteClient,
   List<String> torrentPaths = const <String>[],
   DiscoveryMediaKind? initialDiscoveryKind,
+  String? initialMagnet,
+  String? initialTitle,
 }) async {
   // 互联 host 代下载（设计 §3.3）：有已配对 host 宣告 downloads 能力时，本机没配
   // 下载后端也能打开对话框，把磁链交给 host。探测失败按「没有远端」处理。
@@ -103,6 +109,8 @@ Future<void> showManualDownloadTaskDialog({
       remote: remote,
       torrentPaths: torrentPaths,
       initialDiscoveryKind: initialDiscoveryKind,
+      initialMagnet: initialMagnet,
+      initialTitle: initialTitle,
     );
   } finally {
     if (remoteClient == null) remote.close();
@@ -115,6 +123,8 @@ Future<void> _showManualDownloadTaskDialogWith({
   required InterconnectDownloadClient remote,
   required List<String> torrentPaths,
   required DiscoveryMediaKind? initialDiscoveryKind,
+  required String? initialMagnet,
+  required String? initialTitle,
 }) async {
   // 「下载执行设备」偏好指向的 host 优先（并作为对话框的默认落点）；没设 / 连不上
   // 时退回「第一台宣告能力的 host」——对话框里有下拉，用户看得见投给了谁。
@@ -162,6 +172,8 @@ Future<void> _showManualDownloadTaskDialogWith({
         remoteTarget: remoteTarget,
         initialUseRemote: preferRemote,
         initialDiscoveryKind: initialDiscoveryKind,
+        initialMagnet: initialMagnet,
+        initialTitle: initialTitle,
       ),
     );
     return;
@@ -206,6 +218,8 @@ Future<void> _showManualDownloadTaskDialogWith({
       initialUseRemote: preferRemote,
       initialTorrentPath: torrentPath,
       initialDiscoveryKind: initialDiscoveryKind,
+      initialMagnet: torrentPath == null ? initialMagnet : null,
+      initialTitle: initialTitle,
     ),
   );
   if (torrentPaths.isEmpty) {
@@ -236,8 +250,17 @@ class ManualDownloadTaskDialog extends StatefulWidget {
     this.initialUseRemote = false,
     this.initialTorrentPath,
     this.initialDiscoveryKind,
+    this.initialMagnet,
+    this.initialTitle,
     super.key,
   });
+
+  /// 外部交来的磁链（视频源扩展给的种子）：开框即填进磁力框，与用户粘贴同一条
+  /// 校验 / 提交路径。与 [initialTorrentPath] 互斥（后者优先）。
+  final String? initialMagnet;
+
+  /// 预填标题（覆盖磁链 `dn` 的自动预填；用户仍可改）。
+  final String? initialTitle;
 
   /// 拖入 / 外部指定的种子文件：开框后立刻读取并预填，与点「选 .torrent 文件」
   /// 选中同一个文件的结果完全一致。读不到或不是合法 metainfo 给同一条
@@ -328,9 +351,16 @@ class _ManualDownloadTaskDialogState extends State<ManualDownloadTaskDialog> {
         (widget.initialUseRemote || widget.pipeline == null);
     _discoveryKind = widget.initialDiscoveryKind;
     final String? torrentPath = widget.initialTorrentPath;
+    final String initialMagnet = widget.initialMagnet?.trim() ?? '';
     if (torrentPath != null) {
       _source = _ManualTaskSource.torrent;
       unawaited(_loadTorrentFile(torrentPath));
+    } else if (initialMagnet.isNotEmpty) {
+      // 外部交来的磁链：直接落进磁力框（不读剪贴板——框里已经有内容了）。
+      _magnetController.text = initialMagnet;
+      _prefillTitle(
+        widget.initialTitle ?? parseMagnetDisplayName(initialMagnet),
+      );
     } else {
       unawaited(_detectClipboardMagnet());
     }

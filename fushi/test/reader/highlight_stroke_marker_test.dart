@@ -97,8 +97,13 @@ void main() {
     };
     return '<!doctype html><html><head><meta charset="utf-8">'
         '<style id="fushi-reader-style">$css</style>'
-        '<script>window.flutter_inappwebview = { callHandler: function() '
-        '{ return Promise.resolve(null); } };'
+        // The bridge stub records onRestoreComplete -- the engine's content-ready signal that
+        // lifts the app's loading mask -- so the harness waits on it, not on a fixed sleep.
+        '<script>window.__fushiRestored = new Promise(function(r) '
+        '{ window.__fushiMarkRestored = r; });'
+        'window.flutter_inappwebview = { callHandler: function(name) '
+        '{ if (name === "onRestoreComplete") window.__fushiMarkRestored(); '
+        'return Promise.resolve(null); } };'
         'window.__fushiApplyReaderMargins = function() {};</script>'
         '</head><body><p>$p1</p><p>$p2</p>'
         '<script>${ReaderSelectionScripts.source()}</script>$engine'

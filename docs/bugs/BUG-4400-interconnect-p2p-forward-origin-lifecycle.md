@@ -15,3 +15,4 @@
   - `packages/fushi_engine/test/sync/interconnect_p2p_node_test.dart`（新建，纯 Dart）：同提示复用口、换提示撤口、关端点后 `interconnectTunnelOriginUrl` 为 null。
   - `fushi/test/sync/interconnect_peer_addresses_test.dart`「死明文 LAN + P2P 隧道」用例改走真实装配（假端点开口），不再用只回 URL 的假 resolver。
 - **备注**：只涉及内存状态，无持久数据迁移。
+- **提交信息里的旧号**：本条撞号改过两次（4279 → 4389 → 4400，改号提交 `3ab9e64b3cd`、`99ab766caca`），历史不重写，所以改号前写下的提交信息仍是当时的号：上面记的修复提交标题写的是 4279。按号查提交历史用 `git log --grep` 搜 `BUG-` 接 4279（第一次改号之后、第二次之前的提交接 4389）；这两个旧号现在或以后属于别的 bug，与本条无关。此处旧号不带前缀，免得 `bug.dart renumber` / `settle` 替别的 bug 改号时把这里一起改掉。

@@ -17,3 +17,4 @@
   - `packages/fushi_p2p/test/tunnel_e2e_test.dart`（需 `FUSHI_P2P_LIB`）：真 iroh 隧道 echo 通 → `networkChange()` 返回 true 且 < 50 ms → 之后 echo 仍通。
   - `native/fushi_p2p/src/lib.rs` 的 `cargo test`：`fp2p_network_change` 连调两次 ok、空句柄 `ok:false`。
 - **备注**：真机切网（Android Wi-Fi → 蜂窝 → Wi-Fi、iOS 锁屏 10 分钟后解锁）未验证，隧道恢复时延与「DNS 刷新不触发」需真机 logcat / 控制台复测。Android 侧只做了 javac 单文件编译检查（本机无 gradlew、dist 机器未接构建），完整 `assembleRelease` 交给 PR CI。纯内存状态，无持久数据迁移。
+- **提交信息里的旧号**：本条撞号改过两次（4281 → 4391 → 4402，改号提交 `3ab9e64b3cd`、`99ab766caca`），历史不重写，所以改号前写下的提交信息仍是当时的号：上面记的修复提交标题写的是 4281。按号查提交历史用 `git log --grep` 搜 `BUG-` 接 4281（第一次改号之后、第二次之前的提交接 4391）；这两个旧号现在或以后属于别的 bug，与本条无关。此处旧号不带前缀，免得 `bug.dart renumber` / `settle` 替别的 bug 改号时把这里一起改掉。

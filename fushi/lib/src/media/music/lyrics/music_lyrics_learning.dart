@@ -38,18 +38,81 @@ class MusicLyricLineWindow {
   int get durationMs => endMs - startMs;
 
   /// 截音频片段的文件时间区间（前后各扩 [paddingMs]，起点夹 0、终点夹曲长）。
+  ///
+  /// [startDeltaMs] / [endDeltaMs] 是「高级制卡」对话框里用户对起止的微调
+  /// （`MiningRequestOverrides.audioStartDeltaMs` / `audioEndDeltaMs`）：加在扩过留白的
+  /// **最终区间**上，不夹相邻行（用户就是要越过行界）；仍夹在 [0, 曲长] 内，且终点
+  /// 不早于起点。对话框试听与写卡都经这里，听到的就是进卡的。
   ({int startMs, int endMs}) clipInFile({
     int fileOffsetMs = 0,
     int? trackDurationMs,
     int paddingMs = kMusicLyricClipPaddingMs,
+    int startDeltaMs = 0,
+    int endDeltaMs = 0,
   }) {
-    final int s = (startMs - paddingMs).clamp(0, startMs);
+    int s = (startMs - paddingMs).clamp(0, startMs);
     int e = endMs + paddingMs;
     if (trackDurationMs != null && trackDurationMs > 0 && e > trackDurationMs) {
       e = trackDurationMs < endMs ? endMs : trackDurationMs;
     }
+    if (startDeltaMs != 0 || endDeltaMs != 0) {
+      s += startDeltaMs;
+      e += endDeltaMs;
+      if (s < 0) s = 0;
+      if (trackDurationMs != null && trackDurationMs > 0) {
+        if (e > trackDurationMs) e = trackDurationMs;
+        if (s > trackDurationMs) s = trackDurationMs;
+      }
+      if (e < s) e = s;
+    }
     return (startMs: s + fileOffsetMs, endMs: e + fileOffsetMs);
   }
+
+  /// 把这一行扩成「上下文行 + 本行」合起来的窗口（高级制卡选了前后文）：[text] 换成合成
+  /// 的句子，起止换成合并后的区间（[startMs] / [endMs] 为 null = 没有可合的音频区间，
+  /// 时间窗保持本行）。[lineIndex] 仍是查词那一行。
+  MusicLyricLineWindow withContext({
+    required String text,
+    int? startMs,
+    int? endMs,
+  }) => MusicLyricLineWindow(
+    lineIndex: lineIndex,
+    text: text,
+    startMs: startMs ?? this.startMs,
+    endMs: endMs ?? this.endMs,
+    translation: translation,
+  );
+}
+
+/// 「上 N 行 / 下 N 行」制卡上下文：以 [lineIndex] 为锚，往前取最多 [prevCount] 个、
+/// 往后取最多 [nextCount] 个**主行**（跳过伴唱 / 空行，与 AB 循环「再加一行」同一判据
+/// [musicLyricNextMainLine] / [musicLyricPreviousMainLine]）。两侧都按播放顺序排好；到
+/// 歌词两端自然封顶（条数不再增长，高级制卡对话框据此禁用对应的「加一句」）。锚越界或
+/// 无时间歌词时两侧都为空。
+({List<int> prev, List<int> next}) musicLyricContextLines(
+  LyricTimeline t,
+  int lineIndex, {
+  required int prevCount,
+  required int nextCount,
+}) {
+  if (!t.isSynced || lineIndex < 0 || lineIndex >= t.lines.length) {
+    return (prev: const <int>[], next: const <int>[]);
+  }
+  final List<int> prev = <int>[];
+  int at = lineIndex;
+  while (prev.length < prevCount) {
+    at = musicLyricPreviousMainLine(t, at);
+    if (at < 0) break;
+    prev.insert(0, at);
+  }
+  final List<int> next = <int>[];
+  at = lineIndex;
+  while (next.length < nextCount) {
+    at = musicLyricNextMainLine(t, at);
+    if (at < 0) break;
+    next.add(at);
+  }
+  return (prev: prev, next: next);
 }
 
 /// 歌词时间 → 曲目时间（减回整首偏移，夹 0）。

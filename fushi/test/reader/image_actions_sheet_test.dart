@@ -185,6 +185,58 @@ void main() {
       expect(saver.saved, <String>['/books/OEBPS/i-001.jpg']);
     });
 
+    testWidgets('宿主动作列在图片动作之前；点中后关面板、执行宿主动作、不跑图片动作', (
+      WidgetTester tester,
+    ) async {
+      final _FakeSaver saver = _FakeSaver(
+        const ImageSaveResult(ImageSaveStatus.saved),
+      );
+      debugImageFileSaverOverride = saver;
+      final List<String> ran = <String>[];
+      ImageAction? picked = ImageAction.share;
+      await tester.pumpWidget(
+        _host((BuildContext context) async {
+          picked = await showImageActionsSheet(
+            context,
+            file: File('/manga/p-003.png'),
+            platform: TargetPlatform.iOS,
+            extraActions: <ImageSheetExtraAction>[
+              ImageSheetExtraAction(
+                id: 'copy_text',
+                icon: Icons.copy,
+                label: 'Copy text',
+                run: () async => ran.add('copy_text'),
+              ),
+            ],
+          );
+        }),
+      );
+      await tester.tap(find.byKey(const ValueKey<String>('open')));
+      await tester.pumpAndSettle();
+
+      final Finder extra = find.byKey(
+        const ValueKey<String>('image_extra_action_copy_text'),
+      );
+      final Finder save = find.byKey(
+        const ValueKey<String>('image_action_save'),
+      );
+      expect(extra, findsOneWidget);
+      expect(find.text('Copy text'), findsOneWidget);
+      expect(save, findsOneWidget);
+      expect(
+        tester.getTopLeft(extra).dy,
+        lessThan(tester.getTopLeft(save).dy),
+        reason: '宿主动作在图片动作之前',
+      );
+
+      await tester.tap(extra);
+      await tester.pumpAndSettle();
+      expect(find.byType(ImageActionsSheet), findsNothing);
+      expect(ran, <String>['copy_text']);
+      expect(picked, isNull, reason: '选的不是图片动作');
+      expect(saver.saved, isEmpty);
+    });
+
     testWidgets('关掉面板什么也不做', (WidgetTester tester) async {
       final _FakeSaver saver = _FakeSaver(
         const ImageSaveResult(ImageSaveStatus.saved),
