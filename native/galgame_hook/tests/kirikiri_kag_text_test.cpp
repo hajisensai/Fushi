@@ -15,6 +15,7 @@
 #include <cstdio>
 #include <fstream>
 #include <memory>
+#include <stdexcept>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -44,6 +45,27 @@ std::wstring Widen(const std::string& utf8) {
   std::wstring out(static_cast<size_t>(n), L'\0');
   MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, utf8.data(),
                       static_cast<int>(utf8.size()), out.data(), n);
+  return out;
+}
+
+// Fixture text: UTF-8 with {U+XXXX} standing for one UTF-16 unit (editors and
+// tools strip trailing whitespace, which is exactly what some cases test).
+std::wstring FixtureText(const std::string& utf8) {
+  std::wstring out;
+  size_t pos = 0;
+  while (pos < utf8.size()) {
+    const size_t open = utf8.find("{U+", pos);
+    if (open == std::string::npos) {
+      out += Widen(utf8.substr(pos));
+      break;
+    }
+    const size_t close = utf8.find('}', open);
+    assert(close != std::string::npos);
+    out += Widen(utf8.substr(pos, open - pos));
+    out += static_cast<wchar_t>(std::stoul(utf8.substr(open + 3, close - open - 3),
+                                            nullptr, 16));
+    pos = close + 1;
+  }
   return out;
 }
 
@@ -126,7 +148,7 @@ int RunFixture(const char* path) {
       consumed = 0;
     } else if (op == "c") {
       const uint32_t id = static_cast<uint32_t>(std::stoul(f.at(1)));
-      const std::wstring text = Widen(f.at(2));
+      const std::wstring text = FixtureText(f.at(2));
       for (size_t i = 0; i < text.size(); ++i) {
         size_t n = 1;
         if (IS_HIGH_SURROGATE(text[i]) && i + 1 < text.size()) n = 2;
@@ -136,7 +158,7 @@ int RunFixture(const char* path) {
     } else if (op == "s" || op == "r") {
       pending += Record(op[0] == 's' ? L'c' : L'r',
                         static_cast<uint32_t>(std::stoul(f.at(1))),
-                        Widen(f.at(2)));
+                        FixtureText(f.at(2)));
     } else if (op == "w" || op == "x") {
       pending += Record(static_cast<wchar_t>(op[0]),
                         static_cast<uint32_t>(std::stoul(f.at(1))), L"");
@@ -146,7 +168,7 @@ int RunFixture(const char* path) {
       flush();
     } else if (op == "expect") {
       flush();
-      const std::wstring want = Widen(f.at(1));
+      const std::wstring want = FixtureText(f.at(1));
       const bool have = consumed < committed.size();
       Check(have && committed[consumed] == want,
             name + ": expected \"" + f.at(1) + "\" got \"" +
@@ -372,7 +394,12 @@ int main(int argc, char** argv) {
     fprintf(stderr, "usage: %s <kirikiri_kag_text_replay.tsv>\n", argv[0]);
     return 2;
   }
-  const int cases = RunFixture(argv[1]);
+  int cases = -1;
+  try {
+    cases = RunFixture(argv[1]);
+  } catch (const std::exception& error) {
+    fprintf(stderr, "fixture parse error: %s\n", error.what());
+  }
   Check(cases >= 14, "fixture replayed (" + std::to_string(cases) + " cases)");
   TestMalformedBatchFailsClosed();
   TestOverlongLineIsNeverPublishedAsPrefix();

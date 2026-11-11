@@ -11,6 +11,7 @@
 #   o                    TJS event buffer overflow record
 #   flush                encode the pending events into one wire batch and apply it
 #   expect <text>        next committed line (in order)
+#   (inside <text>, {U+XXXX} is one UTF-16 unit, so edge whitespace stays visible)
 #   end                  flush, then require that no further line was committed
 # Columns are tab separated.
 
@@ -81,9 +82,9 @@ expect	ほんぶん
 end
 
 case	surrounding_whitespace_is_trimmed
-c	1	　まえ
+c	1	{U+3000}まえ{U+3000}
 w	1
-c	1
+c	1	{U+3000}{U+0020}
 w	1
 expect	まえ
 end

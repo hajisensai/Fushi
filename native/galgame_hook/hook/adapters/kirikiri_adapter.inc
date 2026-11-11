@@ -103,6 +103,10 @@ KiriKiriVoiceTask g_kirikiri_voice_tasks[kKirikiriVoiceTaskSlots];
 // 一瞬间到手。若用户在游戏起来之后才打开查词，安装窗口早过去了；这里借 registry 每轮都会
 // 调的 ProcessPendingEvents 复查开关，拿缓存的 exporter 补装。
 void PollKirikiriLookupInstall();
+// 经典 KAG3 ENGINE 文本道（x86 才有实现）：worker 侧登记安装意图、把主线程搬来的事件串
+// 拼成行写进文本道。与查词开关无关。
+void PollKirikiriKagTextInstall();
+void ProcessKirikiriKagTextBatches();
 
 uint64_t ReadKirikiriSharedU64(volatile uint64_t* value) {
   return value == nullptr
@@ -206,6 +210,8 @@ bool WriteKirikiriVoiceResource(const uint8_t* data, uint32_t len,
 
 void ProcessKirikiriVoiceTasks() {
   PollKirikiriLookupInstall();
+  PollKirikiriKagTextInstall();
+  ProcessKirikiriKagTextBatches();
   for (int i = 0; i < kKirikiriVoiceTaskSlots; ++i) {
     KiriKiriVoiceTask* task = &g_kirikiri_voice_tasks[i];
     if (InterlockedCompareExchange(&task->state, 3, 2) != 2) continue;
@@ -773,6 +779,12 @@ volatile LONG g_lookup_bootstrap_state = 0;  // 0=off, 1=registered, 2=running, 
 volatile LONG g_lookup_install_requested = 0;
 // 拥有游戏顶层窗口的线程 id，0 = 还没解析出来（窗口尚未建立）。
 volatile LONG g_lookup_engine_main_tid = 0;
+// 经典 KAG3 ENGINE 文本道的安装状态。与查词传感器共享 exporter、TJS 函数指针和主线程接缝，
+// 但意图与生命周期各自独立：文本道不看 lookup_enabled（见 kKirikiriKagTextBootstrapScript）。
+volatile LONG g_kag_text_install_requested = 0;
+volatile LONG g_kag_text_bootstrap_state = 0;  // 0=off, 1=registered, 2=running, 3=done
+TjsVariantString* g_kag_text_bootstrap_script = nullptr;
+void PumpKirikiriKagText();
 
 // TextRender 之外的捕获路径（Layer.drawText / MessageLayer.processCh）只在换游戏、
 // TextRender 一条都不命中时才有诊断价值。运行日志已证伪它们在本样本上的作用，故默认
@@ -5445,6 +5457,231 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 }
 )TJS";
 
+// ══ 经典 KAG3 的 ENGINE 文本道（ENGINE:KIRIKIRI:kag_message）══════════════════════════
+//
+// 起因（真机，フタマタ恋愛 ver1.35 / ものべの，KiriKiri2/BCB 经典 KAG3）：LunaHook 识别出
+// KiriKiri 并装上一串 hook，却只有 Krkr2wcs 出行，而且出的是脚本元数据（图层名、BGM/SE
+// 名）；屏幕上的对白一行都到不了任何 Luna 线程，另有一批逐字线程（每个 context 只观察到 1
+// 次）。同一局里我们自己的 classic processCh 包装每个对白字符都看得见——所以这类游戏缺的
+// 不是 hook 面，而是一条从 KAG 自己的消息流水线出来的整行文本。
+//
+// 行界只取 KAG 自己的生命周期，不用计时器：
+//   * 字符：当前消息层实例的 processCh(ch)。currentWithBack 时同一字符还会发给
+//     current.comp（背页层，不上屏）——只认 kag.current 那一层，逐字重复在源头就不存在。
+//     processCh 返回真 = 这个字没放下（溢出，KAG 随后进 showPageBreakAndClear），不计。
+//   * 提交：KAG 等玩家点击的三个窗口方法 showLineBreak（[l]）、showPageBreak（[p]）、
+//     showPageBreakAndClear（溢出自动换页）。这是 KAG3 里唯一「这段字已经完整上屏、在等
+//     读者」的结构信号；同一次等待被调两次（showPageBreakAndClear 内部再走 showPageBreak
+//     之类）时第二次缓冲已空，结构上不会重复出行。
+//   * 复位：消息层实例的 clear()（[er] / [cm] / [ct] / 溢出换页的点击）。没等到点击就被清
+//     掉的字（选项 link、[s] 停住的系统文字）随之丢弃，永远不出行。
+//   * ruby：[ruby text=...] 只走 setRuby 把注音挂到层上，基字仍经 processCh；注音作为 'r'
+//     事件交给 native 核心显式丢弃，行里只有基字。
+// 缓冲按消息层**实例**分开（名字框、正文各自一份），提交只取等待那一刻的 kag.current。
+//
+// 这段脚本只把上述四类事实编码成事件串（格式见 kirikiri_kag_text_core.h），拼行、去空白、
+// 溢出失败关闭全部在 HookWorker 上的纯逻辑核心里做（离线可测）。
+//
+// 与查词传感器完全独立：只要拿到 TJS exporter 就装，不看 lookup_enabled、不等传感器
+// activeNative（ものべの 真机停在 waitingForBodyThread 时同样需要这条文本道）。两者都给
+// 消息层实例包 processCh，各自用自己的标记与原方法槽，谁先谁后都只是多一层透传。
+//
+// 准入：只在 KiriKiri adapter 拿到引擎自己交出的 TVP 插件 ABI（exporter）的进程里装；脚本
+// 里再要求 kag.showLineBreak / kag.showPageBreak 两个 KAG3 等待方法都存在，否则一行都不改
+// 直接放弃（非 KAG 的 KiriKiri 框架保持静默）。KAGEX / KiriKiri Z 只要正文仍经消息层
+// processCh 就同样工作；正文改走 TextRender / msgwin 插件、processCh 从不触发的构建，缓冲
+// 恒空，等待时什么都不提交——静默而不是半句。
+//
+// 不挂 kag.addPlugin：KAG3 对插件对象调用的方法集（onStore / onRestore …）没有在本引擎
+// 验证过，一个裸字典插件可能在存档时抛异常。新建的消息层（[laycount]）改由每次等待时补扫；
+// 代价是新层上第一段字可能缺失（缺失 = 不出行，不是出半句）。
+constexpr wchar_t kKirikiriKagTextBootstrapScript[] = LR"TJS(
+if(typeof global.fushiKagTextSeq == "undefined")
+{
+	global.fushiKagTextSeq = 0;
+	global.fushiKagTextEvents = "";
+	global.fushiKagTextNextId = 0;
+	global.fushiKagTextInstalled = 0;
+	global.fushiKagTextFaults = 0;
+
+	global.fushiKagTextEmit = function(op, id, payload)
+	{
+		var record = op + id + "," + payload.length + ":" + payload;
+		var events = global.fushiKagTextEvents;
+		if(events.length + record.length > 3000)
+			global.fushiKagTextEvents = "o0,0:";
+		else
+			global.fushiKagTextEvents = events + record;
+		global.fushiKagTextSeq++;
+	};
+
+	global.fushiKagTextTake = function()
+	{
+		var events = global.fushiKagTextEvents;
+		global.fushiKagTextEvents = "";
+		return events;
+	};
+
+	global.fushiKagTextLayerId = function(layer)
+	{
+		try
+		{
+			if(layer !== void && layer !== null && typeof layer.fushiKagTextId == "Integer")
+				return layer.fushiKagTextId;
+		}
+		catch(e) {}
+		return 0;
+	};
+
+	global.fushiKagTextCurrentId = function()
+	{
+		try { return global.fushiKagTextLayerId(global.kag.current); }
+		catch(e) {}
+		return 0;
+	};
+
+	global.fushiKagTextPatchLayer = function(layer)
+	{
+		if(layer === void || layer === null || !isvalid layer) return false;
+		if(typeof layer.fushiKagTextId != "undefined") return false;
+		if(typeof layer.processCh != "Object" || typeof layer.clear != "Object") return false;
+		global.fushiKagTextNextId++;
+		layer.fushiKagTextId = global.fushiKagTextNextId;
+		layer.fushiKagTextOrig_clear = layer.clear;
+		layer.clear = function()
+		{
+			try { global.fushiKagTextEmit("x", this.fushiKagTextId, ""); }
+			catch(e) { global.fushiKagTextFaults++; }
+			return this.fushiKagTextOrig_clear(...);
+		} incontextof layer;
+		layer.fushiKagTextOrig_processCh = layer.processCh;
+		layer.processCh = function(ch)
+		{
+			var result = this.fushiKagTextOrig_processCh(...);
+			try
+			{
+				if(!result && typeof ch == "String" && ch != "" &&
+					global.fushiKagTextCurrentId() == this.fushiKagTextId)
+					global.fushiKagTextEmit("c", this.fushiKagTextId, ch);
+			}
+			catch(e) { global.fushiKagTextFaults++; }
+			return result;
+		} incontextof layer;
+		if(typeof layer.setRuby == "Object")
+		{
+			try
+			{
+				layer.fushiKagTextOrig_setRuby = layer.setRuby;
+				layer.setRuby = function(text)
+				{
+					try
+					{
+						if(typeof text == "String" &&
+							global.fushiKagTextCurrentId() == this.fushiKagTextId)
+							global.fushiKagTextEmit("r", this.fushiKagTextId, text);
+					}
+					catch(e) { global.fushiKagTextFaults++; }
+					return this.fushiKagTextOrig_setRuby(...);
+				} incontextof layer;
+			}
+			catch(e) { global.fushiKagTextFaults++; }
+		}
+		return true;
+	};
+
+	global.fushiKagTextSweep = function()
+	{
+		var patched = 0;
+		for(var page = 0; page < 2; page++)
+		{
+			var messages = void;
+			try { messages = (page == 0) ? global.kag.fore.messages : global.kag.back.messages; }
+			catch(e) { continue; }
+			if(messages === void || messages === null) continue;
+			var count = 0;
+			try { count = messages.count; }
+			catch(e) { continue; }
+			for(var i = 0; i < count; i++)
+			{
+				try { if(global.fushiKagTextPatchLayer(messages[i])) patched++; }
+				catch(e) { global.fushiKagTextFaults++; }
+			}
+		}
+		return patched;
+	};
+
+	global.fushiKagTextOnWait = function()
+	{
+		try
+		{
+			global.fushiKagTextSweep();
+			var id = global.fushiKagTextCurrentId();
+			if(id > 0) global.fushiKagTextEmit("w", id, "");
+		}
+		catch(e) { global.fushiKagTextFaults++; }
+	};
+
+	global.fushiKagTextWrapWait = function(name, wrapper)
+	{
+		try
+		{
+			if(typeof global.kag[name] != "Object") return false;
+			if(typeof global.kag["fushiKagTextOrig_" + name] != "undefined") return false;
+			global.kag["fushiKagTextOrig_" + name] = global.kag[name];
+			global.kag[name] = wrapper;
+			return true;
+		}
+		catch(e) { return false; }
+	};
+
+)TJS" LR"TJS(
+
+	global.fushiKagTextBootstrap = function()
+	{
+		if(typeof global.kag != "Object" || global.kag === null) return;
+		try
+		{
+			if(typeof global.kag.fore != "Object" || global.kag.fore === null) return;
+			if(typeof global.kag.fore.messages != "Object") return;
+		}
+		catch(e) { return; }
+		System.removeContinuousHandler(global.fushiKagTextBootstrap);
+		try
+		{
+			if(typeof global.kag.showLineBreak != "Object" ||
+				typeof global.kag.showPageBreak != "Object")
+			{
+				global.fushiKagTextInstalled = -1;
+				return;
+			}
+			var seams = 0;
+			if(global.fushiKagTextWrapWait("showLineBreak",
+				function()
+				{
+					global.fushiKagTextOnWait();
+					return this.fushiKagTextOrig_showLineBreak(...);
+				} incontextof global.kag)) seams = seams | 1;
+			if(global.fushiKagTextWrapWait("showPageBreak",
+				function()
+				{
+					global.fushiKagTextOnWait();
+					return this.fushiKagTextOrig_showPageBreak(...);
+				} incontextof global.kag)) seams = seams | 2;
+			if(global.fushiKagTextWrapWait("showPageBreakAndClear",
+				function()
+				{
+					global.fushiKagTextOnWait();
+					return this.fushiKagTextOrig_showPageBreakAndClear(...);
+				} incontextof global.kag)) seams = seams | 4;
+			if(global.fushiKagTextSweep() > 0) seams = seams | 16;
+			global.fushiKagTextInstalled = seams;
+		}
+		catch(e) { global.fushiKagTextInstalled = -2; }
+	};
+	System.addContinuousHandler(global.fushiKagTextBootstrap);
+}
+)TJS";
+
 // ── DLL 侧：像素落地 + 传感器读数搬运 ─────────────────────────────────────────────
 //
 // 这一整段只做三件事：把 host 的 BGRA 帧 memcpy 进游戏渲染树里的卡片 Layer、把 TJS 传感器
@@ -5706,6 +5943,14 @@ bool ProbeTjsVariantLayout() {
     return true;
   }
   return false;
+}
+
+// 变体布局只探一次，查词传感器与 KAG 文本道共用（两边都只在游戏主线程上调）。
+bool EnsureKirikiriTjsVariantLayout() {
+  if (g_lookup_variant_ready) return true;
+  if (!ProbeTjsVariantLayout()) return false;
+  g_lookup_variant_ready = true;
+  return true;
 }
 
 bool EvaluateTjsInteger(const wchar_t* expression, int64_t* value) {
@@ -6589,9 +6834,11 @@ void PumpKirikiriLookup() {
     return;
   }
   g_lookup_enabled_last = true;
-  if (!g_lookup_variant_ready) {
-    if (!ProbeTjsVariantLayout()) return;
-    g_lookup_variant_ready = true;
+  // 布局可能已由 KAG 文本道探过；就绪位仍归查词诊断自己报一次。
+  static bool expression_ready_reported = false;
+  if (!EnsureKirikiriTjsVariantLayout()) return;
+  if (!expression_ready_reported) {
+    expression_ready_reported = true;
     SetLookupDiag(fushi_voice_hook::kLookupDiagExpressionReady);
   }
   if (!g_lookup_sensor_live) {
@@ -6864,6 +7111,51 @@ bool QueryKirikiriNativeLookupFunctions(ITVPFunctionExporter* exporter,
   }
 }
 
+// 查词传感器与 KAG 文本道共用的 TJS 宿主函数表。只能在引擎主线程、核对过线程身份之后调
+// （两处调用方都先过 ResolveKirikiriEngineMainThreadId / GetCurrentThreadId）。
+bool ResolveKirikiriTjsHostFunctions() {
+  if (g_lookup_exporter == nullptr) return false;
+  const char* names[] = {
+      "tTJSVariantString * ::TJSAllocVariantString(const tjs_char *)",
+      "void tTJSVariantString::Release()",
+      "void ::TVPExecuteScript(const ttstr &,tTJSVariant *)",
+      "void ::TVPAddContinuousEventHook(tTVPContinuousEventCallbackIntf *)",
+      "void ::TVPRemoveContinuousEventHook(tTVPContinuousEventCallbackIntf *)",
+  };
+  void* functions[5] = {};
+  if (!QueryKirikiriNativeLookupFunctions(g_lookup_exporter, names, functions, 5)) {
+    SetXAudioDiagnostic2(fushi_voice_hook::kXAudioDiag2KirikiriLookupExportQueryFailed);
+    return false;
+  }
+  // 单独查：缺 TVPExecuteExpression 就读不回任何传感器读数（hit 与 input 都靠它，文本道的
+  // 事件串也靠它），此时装一半比不装更糟——卡片会挂在屏幕上却永远收不到内容。
+  const char* expression_name =
+      "void ::TVPExecuteExpression(const ttstr &,tTJSVariant *)";
+  void* expression = nullptr;
+  if (!QueryKirikiriNativeLookupFunctions(g_lookup_exporter, &expression_name,
+                                          &expression, 1) ||
+      expression == nullptr) {
+    SetXAudioDiagnostic2(
+        fushi_voice_hook::kXAudioDiag2KirikiriLookupExpressionQueryFailed);
+    return false;
+  }
+
+  g_lookup_alloc_string =
+      reinterpret_cast<TJSAllocVariantStringStub_t>(functions[0]);
+  g_lookup_release_string =
+      reinterpret_cast<TJSVariantStringReleaseStub_t>(functions[1]);
+  g_lookup_execute_script = reinterpret_cast<TVPExecuteScriptStub_t>(functions[2]);
+  g_lookup_add_continuous =
+      reinterpret_cast<TVPAddContinuousEventHookStub_t>(functions[3]);
+  g_lookup_remove_continuous =
+      reinterpret_cast<TVPRemoveContinuousEventHookStub_t>(functions[4]);
+  g_lookup_execute_expression =
+      reinterpret_cast<TVPExecuteExpressionStub_t>(expression);
+  return g_lookup_alloc_string != nullptr && g_lookup_release_string != nullptr &&
+         g_lookup_execute_script != nullptr && g_lookup_add_continuous != nullptr &&
+         g_lookup_remove_continuous != nullptr;
+}
+
 // 引擎主线程 = 拥有**游戏主窗口**的线程。只解析一次并缓存。
 //
 // 为什么需要它：安装路径要调 TJSAllocVariantString（从 TJS 全局变体字符串池分配）和
@@ -6926,6 +7218,19 @@ DWORD ResolveKirikiriEngineMainThreadId() {
 void* volatile g_lookup_main_thread_seam = nullptr;  // 实际类型 HHOOK
 volatile LONG g_lookup_main_thread_seam_tid = 0;
 void RunKirikiriLookupInstallOnMainThread();
+void RunKirikiriKagTextInstallOnMainThread();
+
+// 接缝由查词传感器与 KAG 文本道共用：任何一方还有「已请求、未开始」的安装就得留着，
+// 两方都完成或都撤销请求才卸。否则用户关查词会把文本道的安装接缝一起摘掉。
+bool KirikiriMainThreadInstallPending() {
+  const bool lookup =
+      InterlockedCompareExchange(&g_lookup_install_requested, 0, 0) != 0 &&
+      InterlockedCompareExchange(&g_lookup_bootstrap_state, 0, 0) == 0;
+  const bool kag_text =
+      InterlockedCompareExchange(&g_kag_text_install_requested, 0, 0) != 0 &&
+      InterlockedCompareExchange(&g_kag_text_bootstrap_state, 0, 0) == 0;
+  return lookup || kag_text;
+}
 
 // 取走并卸掉主线程接缝。可从任意线程调用；重复调用无害。
 void ReleaseLookupMainThreadSeam() {
@@ -6939,9 +7244,8 @@ LRESULT CALLBACK LookupMainThreadSeamProc(int code, WPARAM wparam, LPARAM lparam
   if (code >= 0) {
     SetXAudioDiagnostic2(fushi_voice_hook::kXAudioDiag2KirikiriLookupSeamFired);
     RunKirikiriLookupInstallOnMainThread();
-    const bool done = InterlockedCompareExchange(&g_lookup_bootstrap_state, 0, 0) != 0 ||
-                      InterlockedCompareExchange(&g_lookup_install_requested, 0, 0) == 0;
-    if (done) ReleaseLookupMainThreadSeam();
+    RunKirikiriKagTextInstallOnMainThread();
+    if (!KirikiriMainThreadInstallPending()) ReleaseLookupMainThreadSeam();
   }
   return CallNextHookEx(nullptr, code, wparam, lparam);
 }
@@ -6984,12 +7288,12 @@ void PollKirikiriLookupInstall() {
                       LookupEnabledNow() != 0;
   if (!wanted) {
     InterlockedExchange(&g_lookup_install_requested, 0);
-    ReleaseLookupMainThreadSeam();
+    if (!KirikiriMainThreadInstallPending()) ReleaseLookupMainThreadSeam();
     return;
   }
   if (InterlockedCompareExchange(&g_lookup_bootstrap_state, 0, 0) != 0) {
     // 安装已经起来了，接缝的活干完了：这里也摘一次，不必等下一条窗口消息。
-    ReleaseLookupMainThreadSeam();
+    if (!KirikiriMainThreadInstallPending()) ReleaseLookupMainThreadSeam();
     return;
   }
   InterlockedExchange(&g_lookup_install_requested, 1);
@@ -7009,47 +7313,7 @@ void RunKirikiriLookupInstallOnMainThread() {
   const DWORD main_tid = ResolveKirikiriEngineMainThreadId();
   if (main_tid == 0 || GetCurrentThreadId() != main_tid) return;
 
-  const char* names[] = {
-      "tTJSVariantString * ::TJSAllocVariantString(const tjs_char *)",
-      "void tTJSVariantString::Release()",
-      "void ::TVPExecuteScript(const ttstr &,tTJSVariant *)",
-      "void ::TVPAddContinuousEventHook(tTVPContinuousEventCallbackIntf *)",
-      "void ::TVPRemoveContinuousEventHook(tTVPContinuousEventCallbackIntf *)",
-  };
-  void* functions[5] = {};
-  if (!QueryKirikiriNativeLookupFunctions(g_lookup_exporter, names, functions, 5)) {
-    SetXAudioDiagnostic2(fushi_voice_hook::kXAudioDiag2KirikiriLookupExportQueryFailed);
-    return;
-  }
-  // 单独查：缺 TVPExecuteExpression 就读不回任何传感器读数（hit 与 input 都靠它），此时
-  // 装一半比不装更糟——卡片会挂在屏幕上却永远收不到内容。
-  const char* expression_name =
-      "void ::TVPExecuteExpression(const ttstr &,tTJSVariant *)";
-  void* expression = nullptr;
-  if (!QueryKirikiriNativeLookupFunctions(g_lookup_exporter, &expression_name,
-                                          &expression, 1) ||
-      expression == nullptr) {
-    SetXAudioDiagnostic2(
-        fushi_voice_hook::kXAudioDiag2KirikiriLookupExpressionQueryFailed);
-    return;
-  }
-
-  g_lookup_alloc_string =
-      reinterpret_cast<TJSAllocVariantStringStub_t>(functions[0]);
-  g_lookup_release_string =
-      reinterpret_cast<TJSVariantStringReleaseStub_t>(functions[1]);
-  g_lookup_execute_script = reinterpret_cast<TVPExecuteScriptStub_t>(functions[2]);
-  g_lookup_add_continuous =
-      reinterpret_cast<TVPAddContinuousEventHookStub_t>(functions[3]);
-  g_lookup_remove_continuous =
-      reinterpret_cast<TVPRemoveContinuousEventHookStub_t>(functions[4]);
-  g_lookup_execute_expression =
-      reinterpret_cast<TVPExecuteExpressionStub_t>(expression);
-  if (g_lookup_alloc_string == nullptr || g_lookup_release_string == nullptr ||
-      g_lookup_execute_script == nullptr || g_lookup_add_continuous == nullptr ||
-      g_lookup_remove_continuous == nullptr) {
-    return;
-  }
+  if (!ResolveKirikiriTjsHostFunctions()) return;
 
   try {
     PrepareKirikiriLookupCardPath();  // 备路缺失不阻断主路
@@ -7068,6 +7332,201 @@ void RunKirikiriLookupInstallOnMainThread() {
   }
 }
 
+// ── 经典 KAG3 ENGINE 文本道：主线程安装 + 每帧搬运 + worker 拼行发布 ───────────────────
+//
+// 线程纪律与查词传感器同一套：安装只在引擎主线程（WH_GETMESSAGE 接缝或 V2Link 栈）上跑，
+// 并先核对线程身份；每帧的 continuous callback 只做「读一个整数 → 变了就把事件串拷进有界
+// 邮箱」，解析、拼行、写文本道全部在 HookWorker 上（ProcessKirikiriKagTextBatches）。
+
+namespace kag_text = fushi_voice_hook::kirikiri_kag_text;
+
+class KiriKiriKagTextPumpCallback final : public TvpContinuousEventCallback {
+ public:
+  void __cdecl OnContinuousCallback(uint64_t) override {
+    try {
+      PumpKirikiriKagText();
+    } catch (...) {
+      // 插件 ABI 边界绝不把 C++/TJS 异常抛回游戏事件循环。
+    }
+  }
+};
+
+KiriKiriKagTextPumpCallback g_kag_text_pump_callback;
+
+class KiriKiriKagTextBootstrapCallback final : public TvpContinuousEventCallback {
+ public:
+  void __cdecl OnContinuousCallback(uint64_t) override {
+    if (InterlockedCompareExchange(&g_kag_text_bootstrap_state, 2, 1) != 1) return;
+    // 先移除再执行：任何异常都不会形成每帧重试（与查词 bootstrap 同一条官方语义）。
+    if (g_lookup_remove_continuous != nullptr) g_lookup_remove_continuous(this);
+    TjsVariantString* script = g_kag_text_bootstrap_script;
+    g_kag_text_bootstrap_script = nullptr;
+    if (script != nullptr && g_lookup_execute_script != nullptr) {
+      const TjsString content = {script};
+      CallTjsExecuteScriptSeh(content);
+    }
+    if (script != nullptr && g_lookup_release_string != nullptr) {
+      CallTjsReleaseStringSeh(script);
+    }
+    InterlockedExchange(&g_kag_text_bootstrap_state, 3);
+  }
+};
+
+KiriKiriKagTextBootstrapCallback g_kag_text_bootstrap_callback;
+
+// 主线程 → HookWorker 的单生产者单消费者邮箱。满了就丢这一批并在下一批上打 gap 标记：
+// worker 见到 gap 先让核心按「上游丢过字」处理（受影响的行整行不发），绝不拼出半句。
+constexpr uint32_t kKagTextMailboxSlots = 8;
+struct KagTextMailboxSlot {
+  bool gap = false;
+  uint32_t units = 0;
+  wchar_t text[kag_text::kMaxBatchUnits] = {};
+};
+KagTextMailboxSlot g_kag_text_mailbox[kKagTextMailboxSlots];
+volatile LONG g_kag_text_mailbox_head = 0;  // 只由主线程推进
+volatile LONG g_kag_text_mailbox_tail = 0;  // 只由 HookWorker 推进
+bool g_kag_text_pending_gap = false;        // 主线程私有
+int64_t g_kag_text_last_seq = -1;           // 主线程私有
+uint32_t g_kag_text_report_ticks = 0;       // 主线程私有
+volatile LONG g_kag_text_install_report = 0;  // TJS fushiKagTextInstalled 的回读（0 = 未知）
+
+void EnqueueKirikiriKagTextBatch(const wchar_t* text, uint32_t units) {
+  const LONG head = InterlockedCompareExchange(&g_kag_text_mailbox_head, 0, 0);
+  const LONG tail = InterlockedCompareExchange(&g_kag_text_mailbox_tail, 0, 0);
+  if (static_cast<uint32_t>(head - tail) >= kKagTextMailboxSlots) {
+    g_kag_text_pending_gap = true;
+    return;
+  }
+  KagTextMailboxSlot* slot =
+      &g_kag_text_mailbox[static_cast<uint32_t>(head) % kKagTextMailboxSlots];
+  slot->gap = g_kag_text_pending_gap;
+  slot->units = units;
+  if (units != 0u) memcpy(slot->text, text, units * sizeof(wchar_t));
+  g_kag_text_pending_gap = false;
+  MemoryBarrier();
+  InterlockedIncrement(&g_kag_text_mailbox_head);
+}
+
+void PumpKirikiriKagText() {
+  if (g_stop || !g_capture_enabled) return;
+  if (InterlockedCompareExchange(&g_kag_text_bootstrap_state, 0, 0) != 3) return;
+  if (!EnsureKirikiriTjsVariantLayout()) return;
+  // 安装结论只回读到第一次非零（每 60 帧一次，有界）；落日志在 worker 上做。
+  if (InterlockedCompareExchange(&g_kag_text_install_report, 0, 0) == 0 &&
+      ++g_kag_text_report_ticks >= 60) {
+    g_kag_text_report_ticks = 0;
+    int64_t installed = 0;
+    if (EvaluateTjsInteger(L"global.fushiKagTextInstalled", &installed) &&
+        installed != 0) {
+      InterlockedExchange(&g_kag_text_install_report,
+                          static_cast<LONG>(installed));
+    }
+  }
+  // 稳态每帧只有这一次求值：序号不变就一行 TJS 都不再跑。
+  int64_t seq = 0;
+  if (!EvaluateTjsInteger(L"global.fushiKagTextSeq", &seq)) return;
+  if (seq == g_kag_text_last_seq) return;
+  g_kag_text_last_seq = seq;
+  static wchar_t batch[kag_text::kMaxBatchUnits];
+  if (!EvaluateTjsString(L"global.fushiKagTextTake()", batch,
+                         kag_text::kMaxBatchUnits)) {
+    g_kag_text_pending_gap = true;  // 事件串可能已被取走：按丢字处理
+    return;
+  }
+  const size_t units = wcslen(batch);
+  if (units + 1u >= kag_text::kMaxBatchUnits) {
+    g_kag_text_pending_gap = true;  // 截断读：整批作废
+    return;
+  }
+  EnqueueKirikiriKagTextBatch(batch, static_cast<uint32_t>(units));
+}
+
+void PublishKirikiriKagTextLine(const kag_text::Line& line) {
+  if (!g_capture_enabled || g_header == nullptr || g_text_base == nullptr ||
+      !g_text_cs_ready || line.units == 0u) {
+    return;
+  }
+  const fushi_voice_hook::TextLaneWrite write =
+      kag_text::MakeLaneWrite(line, GetCurrentProcessId());
+  EnterCriticalSection(&g_text_cs);
+  const uint64_t event = fushi_voice_hook::WriteTextLaneEvent(
+      g_header, fushi_voice_hook::kNativeThreadPreviewStart,
+      fushi_voice_hook::kTextLaneCount, write);
+  LeaveCriticalSection(&g_text_cs);
+  // 精确引擎文本生产者在线：GDI 字形回退让路（字段名历史上叫 luna）。
+  if (event != 0u) g_header->luna_active = 1;
+}
+
+void ProcessKirikiriKagTextBatches() {
+  static kag_text::Assembler assembler;
+  static kag_text::LineBatch lines;
+  static LONG logged_report = 0;
+  const LONG report = InterlockedCompareExchange(&g_kag_text_install_report, 0, 0);
+  if (report != 0 && report != logged_report) {
+    logged_report = report;
+    wchar_t text[96] = {};
+    _snwprintf_s(text, _TRUNCATE, L"[FushiKagText] bootstrap installed=%ld", report);
+    HookLogLine(text);
+  }
+  LONG tail = InterlockedCompareExchange(&g_kag_text_mailbox_tail, 0, 0);
+  const LONG head = InterlockedCompareExchange(&g_kag_text_mailbox_head, 0, 0);
+  while (tail != head) {
+    MemoryBarrier();
+    const KagTextMailboxSlot& slot =
+        g_kag_text_mailbox[static_cast<uint32_t>(tail) % kKagTextMailboxSlots];
+    if (slot.gap) assembler.Overflow();
+    lines.count = 0;
+    kag_text::ApplyBatch(&assembler, slot.text, slot.units, &lines);
+    for (uint32_t i = 0; i < lines.count; ++i) {
+      PublishKirikiriKagTextLine(lines.lines[i]);
+    }
+    tail = InterlockedIncrement(&g_kag_text_mailbox_tail);
+  }
+}
+
+// HookWorker 侧只登记意图，一个引擎 API 都不调（BUG-1724）。准入只看 exporter，不看
+// lookup_enabled：文本道必须与查词传感器是否装上无关。
+void PollKirikiriKagTextInstall() {
+  const bool wanted = kag_text::LaneWanted(g_stop, g_capture_enabled,
+                                           g_lookup_exporter != nullptr,
+                                           g_header != nullptr);
+  if (!wanted) {
+    InterlockedExchange(&g_kag_text_install_requested, 0);
+    if (!KirikiriMainThreadInstallPending()) ReleaseLookupMainThreadSeam();
+    return;
+  }
+  if (InterlockedCompareExchange(&g_kag_text_bootstrap_state, 0, 0) != 0) {
+    if (!KirikiriMainThreadInstallPending()) ReleaseLookupMainThreadSeam();
+    return;
+  }
+  InterlockedExchange(&g_kag_text_install_requested, 1);
+  EnsureLookupMainThreadSeam();
+}
+
+void RunKirikiriKagTextInstallOnMainThread() {
+  if (g_stop || g_lookup_exporter == nullptr) return;
+  if (InterlockedCompareExchange(&g_kag_text_install_requested, 0, 0) == 0) return;
+  if (InterlockedCompareExchange(&g_kag_text_bootstrap_state, 0, 0) != 0) return;
+
+  const DWORD main_tid = ResolveKirikiriEngineMainThreadId();
+  if (main_tid == 0 || GetCurrentThreadId() != main_tid) return;
+
+  if (!ResolveKirikiriTjsHostFunctions()) return;
+  try {
+    g_kag_text_bootstrap_script =
+        CallTjsAllocStringSeh(kKirikiriKagTextBootstrapScript);
+    if (g_kag_text_bootstrap_script == nullptr) return;
+    InterlockedExchange(&g_kag_text_bootstrap_state, 1);
+    g_lookup_add_continuous(&g_kag_text_pump_callback);
+    g_lookup_add_continuous(&g_kag_text_bootstrap_callback);
+  } catch (...) {
+    TjsVariantString* script = g_kag_text_bootstrap_script;
+    g_kag_text_bootstrap_script = nullptr;
+    InterlockedExchange(&g_kag_text_bootstrap_state, 0);
+    if (script != nullptr) CallTjsReleaseStringSeh(script);
+  }
+}
+
 // 拿到 exporter 的两条路径（exe 直取 / 插件 V2Link）共用的入口：先记住 exporter，再按
 // 当前开关状态决定装不装。
 void InstallKirikiriLookupSensor(ITVPFunctionExporter* exporter) {
@@ -7081,6 +7540,7 @@ void InstallKirikiriLookupSensor(ITVPFunctionExporter* exporter) {
     ClaimLookupPresenter();
   }
   PollKirikiriLookupInstall();
+  PollKirikiriKagTextInstall();
 }
 
 // exe 直取 / V2Link 两条拿 exporter 的路径共享的一次性安装闩（InterlockedCompareExchange）。
@@ -7666,6 +8126,7 @@ HRESULT HandleV2Link(ITVPFunctionExporter* exporter, V2Link_t orig) {
   // V2Link 由引擎在主线程的 Plugins.link 栈上调进来，所以这里也是合法的安装接缝。
   InstallKirikiriLookupSensor(exporter);
   RunKirikiriLookupInstallOnMainThread();
+  RunKirikiriKagTextInstallOnMainThread();
   return result;
 }
 
@@ -7825,6 +8286,8 @@ bool TryHookKirikiriVoiceStream() {
 // KiriKiriZ 是 32 位引擎；x64 构建此路径为空实现（仅保证两架构都能编译）。
 bool TryHookKirikiriVoiceStream() { return true; }
 void PollKirikiriLookupInstall() {}
+void PollKirikiriKagTextInstall() {}
+void ProcessKirikiriKagTextBatches() {}
 bool KirikiriLookupSensorLive() { return false; }
 bool KirikiriLookupExporterAvailable() { return false; }
 
