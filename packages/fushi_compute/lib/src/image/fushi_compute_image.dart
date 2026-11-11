@@ -233,6 +233,8 @@ typedef _DecodePngDart =
       Pointer<Uint32>,
     );
 typedef _CoverSigC = Int32 Function(Pointer<Uint8>, Size, Pointer<Double>);
+typedef _DiscScanC = Int32 Function(Pointer<Uint8>, Size, Pointer<Double>);
+typedef _DiscScanDart = int Function(Pointer<Uint8>, int, Pointer<Double>);
 typedef _CoverSigDart = int Function(Pointer<Uint8>, int, Pointer<Double>);
 typedef _CoverCmpC =
     Int32 Function(Pointer<Double>, Pointer<Double>, Pointer<Double>);
@@ -342,6 +344,9 @@ class FushiComputeImage {
       _decodePng = lib.library.lookupFunction<_DecodePngC, _DecodePngDart>(
         'ffc_image_decode_png',
       ),
+      _discScan = lib.library.lookupFunction<_DiscScanC, _DiscScanDart>(
+        'ffc_image_disc_scan',
+      ),
       _coverSig = lib.library.lookupFunction<_CoverSigC, _CoverSigDart>(
         'ffc_image_cover_signature',
       ),
@@ -365,6 +370,7 @@ class FushiComputeImage {
   final _DbDart _db;
   final _DecodePngDart _decodePng;
   final _CoverSigDart _coverSig;
+  final _DiscScanDart _discScan;
   final _CoverCmpDart _coverCmp;
   final _AiCropsDart _aiCrops;
   final FushiCompute _lib;
@@ -909,6 +915,22 @@ class FushiComputeImage {
 
   /// 解码（按 EXIF 转正）并算封面比对特征：按面积平均缩成 32×32 灰度（BT.601，0–1，行优先），
   /// 空格子取同行左侧最近的非空格（`cover_compare.dart` 的口径）。解不开返回 null。
+  /// 这张图是不是光盘盘面扫描（`ffc_image_disc_scan`：近正方、四角纯色底、中心孔透底、
+  /// 夹持环与孔有色差、外缘一圈跳变）。解不开返回 null。不近正方或超过 1 亿像素的图只读头
+  /// 不解码。
+  FfcDiscScan? discScan(Uint8List bytes) {
+    final Pointer<Uint8> src = _copyIn(bytes);
+    final Pointer<Double> out = malloc<Double>(FfcDiscScan.slots);
+    try {
+      final int status = _discScan(src, bytes.length, out);
+      if (status == FfcStatus.badInput) return null;
+      _check('ffc_image_disc_scan', status);
+      return FfcDiscScan._(out.asTypedListOutOfLine(FfcDiscScan.slots));
+    } finally {
+      malloc.free(out);
+    }
+  }
+
   Float64List? coverSignature(Uint8List bytes) {
     final Pointer<Uint8> src = _copyIn(bytes);
     final Pointer<Double> out = malloc<Double>(coverGrid * coverGrid);
@@ -1010,4 +1032,33 @@ class FushiComputeImage {
       malloc.free(outLen);
     }
   }
+}
+
+/// [FushiComputeImage.discScan] 的结论与特征（色阶 0..255 上的差值；不近正方时各特征为 NaN）。
+final class FfcDiscScan {
+  FfcDiscScan._(Float64List v)
+    : isDisc = v[0] == 1,
+      aspect = v[1],
+      backgroundStd = v[2],
+      holeVsBackground = v[3],
+      hubVsHole = v[4],
+      bodyVsBackground = v[5],
+      edgeCoverage = v[6];
+
+  /// 输出槽位数（与 Rust `DISC_SCAN_FEATURES` 一致）。
+  static const int slots = 7;
+
+  final bool isDisc;
+  final double aspect;
+  final double backgroundStd;
+  final double holeVsBackground;
+  final double hubVsHole;
+  final double bodyVsBackground;
+  final double edgeCoverage;
+
+  @override
+  String toString() =>
+      'FfcDiscScan(isDisc: $isDisc, aspect: $aspect, backgroundStd: '
+      '$backgroundStd, holeVsBackground: $holeVsBackground, hubVsHole: '
+      '$hubVsHole, edgeCoverage: $edgeCoverage)';
 }

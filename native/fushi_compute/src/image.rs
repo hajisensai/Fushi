@@ -27,6 +27,8 @@
 use crate::{guard, status};
 
 mod avif;
+mod disc_scan;
+pub use disc_scan::{classify_disc_scan, DiscScan, DISC_SCAN_FEATURES};
 
 /// 缩放插值，取值与 `package:image` 的 `Interpolation` 对应（不支持 cubic）。
 pub const INTERP_NEAREST: i32 = 0;
