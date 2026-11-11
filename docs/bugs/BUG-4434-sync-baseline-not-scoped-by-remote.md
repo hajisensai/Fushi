@@ -17,7 +17,7 @@
 - **备注**：
   - 不动 Drift schema；新增的只是带 `@<tag>` 后缀的 `dimension` 取值。
   - 影响范围（升级 / 降级）：单 host 且带 hostId 的用户旧行整体搬到该 host 名下，判定不变；全是老条目（无 hostId）的用户继续用无后缀行，判定不变；多 host 用户旧行被删，各 host 首轮两端有戳且不同的书判一次冲突（播放位置在 BUG 步骤 9「缺基线不再比墙钟」之后同理）。装回旧版后旧代码读无后缀维度：单 host 用户书籍判一次冲突、播放位置走旧 LWW 一次；再升级时按「覆盖后删除」吸收。不丢进度，只多问一次。
-  - 残留：无 hostId 的多 host 用户仍共用一份基线（URL 不是 host 身份，取舍 T6），学到 hostId 或重新配对后分槽；单地址组不核对 hostId（V-B4）时同一 URL 上换了 host 会套用旧基线（归 client-routing）。
+  - 残留：无 hostId 的多 host 用户仍共用一份基线（URL 不是 host 身份，取舍 T6）——已由下方「取舍 T6」一节修掉；单地址组不核对 hostId（V-B4）时同一 URL 上换了 host 会套用旧基线（归 client-routing）。
   - 云通道 / 互联文件箱的 `progress` 基线分槽见下方「文件箱进度基线」一节。
 
 ### 文件箱进度基线（云通道 + 互联文件箱，计划步骤 8 + 跨包 X3）
@@ -41,3 +41,10 @@
 - **compat-3**：`LivePositionReporter` held 时只读本地基线、从不经网络，host 变更永远发现不了。修复：held 分支先 `InterconnectPlaybackPositionSync.verifyBoundHost()` → `InterconnectSyncBackend.verifyHostPin`（会话被掉线置脏时先重新选路；已解析不发请求），换了 host 就抛，`_send` 换绑并作废 held，按新 host 作用域重判这次上报。
 - **tests-1**：「并发绑定」用例测不出按 (db, 存储维度) 只做一次的缓存（第一次领养后无后缀行已空，重跑读到空集）。改为领养后再放一条无后缀行、第三次绑定后它原样保留、已推进基线不变；去掉缓存时这条会被搬动 / 冲掉 → 红。
 - 测试：`interconnect_live_baseline_host_scope_test.dart`（混配认不出 / 同一台 host 混配归同槽并领养、互切 pin 不变 / 目标槽冲突两行删 / 缓存可观测 / `interconnectScopeHostIdOf` 五条纯函数）、`sync_baseline_remote_scope_test.dart`（账号键全部设备本地）、`sync_progress_baseline_remote_scope_test.dart`（认不出远端：两端都动 → 该书 skipped、整段带结果抛 `SyncBooksIncompleteError`；单边本机 → 照常导出；单边远端 → 照常导入；均不写基线）、`interconnect_remote_playback_session_test.dart`（held 中换 host → 换绑后在新作用域记基线）。未运行（重活队列让给别的会话）。
+
+### 取舍 T6：认不出 hostId 的老条目按配对凭据分槽（a7ac3906f77，2026-11-12）
+- **真实性**：✅ 真缺口。上面的修复只对带 hostId 的候选分槽，认不出 hostId 的老条目（配对早于 host 公布 hostId 的版本、明文 http 地址从不学习 hostId）全部共用无后缀维度：两台都是老条目的 host 之间切换，仍是「与 A 达成的基线被拿去判 B → B 的不同进度静默落到本机」，就是本条 bug 的原样。
+- **[x] ① 修复** — `fushi/lib/src/sync/interconnect_sync_backend.dart`：作用域从 `String? hostId` 换成 `InterconnectScopeIdentity`（hostId，或配对凭据的截断哈希）；`interconnectScopeIdentityOf` = `interconnectScopeHostIdOf` 认得出就用 hostId，认不出退到这条地址实际使用的凭据（`interconnectTokenFor`），连凭据都没有才是 null。凭据能当身份的依据：token 是 host 用 `Random.secure` 生成的 256 位随机值（`FushiSyncServer.generateToken`），另一台 host 不认，会话能用它同步的地址只可能连着签发它的那台；同一台 host 的多条老地址（同一份凭据）落同一槽，互切不算换 host。库里只存 `syncRemoteTag` 截断哈希，不存明文。`liveHostScope()`：候选只有一个作用域（含只有老条目的单 host）→ 无后缀旧行 `move` 进来；多个 → `discard`；`keep` 只剩测试替身在用。老条目之后学到 hostId 时，同一份凭据的凭据作用域基线并入 hostId 作用域（`InterconnectHostScope.predecessorTags` → `ensureBaselinesAdopted` 的 `predecessorTags`，按「源 → 目标」各做一次，规则同 move）。`InterconnectHostChangedException.actualHostId` 改为 `actual`（作用域），`sync_compare_dialog.dart` 跟改。
+- **[x] ② 测试** — `fushi/test/sync/interconnect_live_baseline_host_scope_test.dart` 新增：两台无 hostId 的 host（凭据不同）切换后 B 的不同进度判冲突、不静默落到本机；单 host 老用户的无后缀存量基线搬进凭据作用域后判定不变（本机单边前进照推、不冲突）；老条目学到 hostId 后凭据作用域基线并入；`interconnectScopeIdentityOf` 纯函数；原「老条目多地址」「混配」两条按新口径改写。`sync_baseline_remote_scope_test.dart` 老条目用例改为断言凭据作用域 + 旧行搬入。另有六个连真 host 的测试文件原先按无后缀维度读基线（其中几条 `isNull` 断言在分槽后会变成空转），统一改读凭据槽（`test/helpers/interconnect_legacy_host_scope.dart` 的 `credentialScopedDimension`）。相关 27 个测试文件 258 条全过。未做「换回旧实现」的红绿对照：新用例依赖新类型，旧代码下编不过；修复前的行为即上面「残留」一行记录的原状。
+- **影响范围（升级）**：只有老条目的单 host 用户——旧行搬进凭据槽，判定不变；老条目 + 其它 host 混配、或多台老条目——旧行来源不可考被删，各 host 首轮两端都有且不同的条目判一次冲突（不丢数据）。重新配对换了 token 就换槽，同样是首轮判一次冲突。
+- **仍然残留**：两台 host 认同一份凭据（用户手动给两台配了同一个接入密钥、或拿一台的备份恢复出另一台）时仍被当成同一台；单地址组不核对 hostId（V-B4，归 client-routing）不变。
