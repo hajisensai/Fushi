@@ -15,9 +15,11 @@ class _Records {
     _subscription = worker.outputs.listen(
       (Uint8List output) {
         _queue.addAll(rwkvSchedRecords(output));
+        if (rwkvSchedSettles(output)) settled++;
         _wake();
       },
       onError: (Object error) {
+        settled++;
         errors.add(error);
         _wake();
       },
@@ -32,6 +34,9 @@ class _Records {
   final Queue<RwkvSchedRecord> _queue = Queue<RwkvSchedRecord>();
   final List<Object> errors = <Object>[];
   bool done = false;
+
+  /// 处理完的输入条数（每条输入的最后一段输出，或它的报错）。
+  int settled = 0;
   Completer<void>? _waiting;
 
   /// 输出流结束（worker 停了）。
@@ -254,6 +259,8 @@ void main() {
     expect(done.boolean(), isTrue);
 
     await worker.dispose();
+    await records.finished;
+    expect(records.settled, 5, reason: '递进去 5 条输入，各收尾一次');
     await records.cancel();
   });
 
@@ -272,6 +279,7 @@ void main() {
     expect(done.u32(), 8);
     await worker.dispose();
     await records.finished;
+    expect(records.settled, 2, reason: '报错的那条也算收尾');
     await records.cancel();
   });
 

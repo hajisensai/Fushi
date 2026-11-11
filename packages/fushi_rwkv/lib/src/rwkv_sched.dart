@@ -277,12 +277,19 @@ typedef RwkvSchedRecord = ({int tag, Uint8List body});
 
 /// 把一段输出（[RwkvSchedWorker.outputs] 的一个元素）拆成记录。
 Iterable<RwkvSchedRecord> rwkvSchedRecords(Uint8List output) sync* {
-  final RwkvSchedReader reader = RwkvSchedReader(output);
+  if (output.length <= 1) return;
+  final RwkvSchedReader reader = RwkvSchedReader(
+    Uint8List.sublistView(output, 1),
+  );
   while (!reader.isDone) {
     final int tag = reader.u8();
     yield (tag: tag, body: reader.bytes());
   }
 }
+
+/// 这段输出是不是它那条输入的最后一段（第一个字节为 0）。一条输入（[RwkvSchedWorker.send]）对应一段或
+/// 几段输出，最后一段之后内核停下来等下一条输入；数「递进去几条、收尾了几条」就知道内核是不是静下来了。
+bool rwkvSchedSettles(Uint8List output) => output.isEmpty || output[0] == 0;
 
 /// 排程内核的配置（`frwkv_sched_new` 的入参）。
 Uint8List rwkvSchedConfig({
@@ -402,8 +409,9 @@ class RwkvSchedWorker {
   final Completer<void> _stopped = Completer<void>();
   bool _closed = false;
 
-  /// 内核的输出，一段一个元素（若干条记录，用 [rwkvSchedRecords] 拆）。内核报错（消息不合布局 /
-  /// panic 过）时出一个 [RwkvNativeException] 错误；worker 停下后流结束。
+  /// 内核的输出，一段一个元素（若干条记录，用 [rwkvSchedRecords] 拆；[rwkvSchedSettles] = 这条输入处理
+  /// 完了）。每条输入至少有一段输出，哪怕里面没有记录。内核报错（消息不合布局 / panic 过）时出一个
+  /// [RwkvNativeException] 错误，那条输入就此收尾；worker 停下后流结束。
   Stream<Uint8List> get outputs => _outputs.stream;
 
   Future<void> _pump(
@@ -420,8 +428,7 @@ class RwkvSchedWorker {
       final Uint8List output = (message as TransferableTypedData)
           .materialize()
           .asUint8List();
-      // 第一个字节（还要不要立刻再调）后台 isolate 已经处理了。
-      if (output.length > 1) _outputs.add(Uint8List.sublistView(output, 1));
+      _outputs.add(output);
     }
     port.close();
     _closed = true;
