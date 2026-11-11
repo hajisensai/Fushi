@@ -705,6 +705,10 @@ bool ProveLeafRuntimeImageGuarded(
 void RecordLeafStructureProofFailure(
     const fushi_voice_hook::leaf_autoprofile::LeafStructureProof &proof) {
   const auto &a = proof.anchors;
+  // 两处入口签名一个都没命中 = 根本不是这套引擎的代码：本函数对**每个** x86 游戏都会跑到，
+  // 不给无关游戏留 Leaf 的诊断位（旧摘要门下它们同样不留）。
+  if (!proof.anchors_ok && a.traversal_hits == 0u && a.raster_hits == 0u)
+    return;
   SetXAudioDiagnostic2(fushi_voice_hook::kXAudioDiag2LeafStructureRejected);
   if (!proof.anchors_ok) {
     if (a.traversal_hits != 1u)

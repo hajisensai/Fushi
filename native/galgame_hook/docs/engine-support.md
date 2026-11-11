@@ -775,9 +775,9 @@ Tests：`tests/unity_event_cursor_test.cpp`、`tests/il2cpp_thread_scope_test.cp
 
 文本能力：
 
-- `luna_exact_cp932_thread`：`implemented_unverified` — The selected HSX0:0 source is identity-bound to module RVA 0x512BF. The original path was user-accepted, but the release evidence/offline gate set was intentionally skipped.
-- `ingame_lookup_geometry`：`implemented_unverified` — The exact D3D9 profile reconstructs bounded per-glyph geometry only after the portable SHA-256 identity and hydrated-image unique-signature/decoded-target/callgraph/COM-ABI gate pass. The relocated A1 /GS cookie operand is deliberately masked and then required to resolve to the profile's module-relative data RVA. Release E2E evidence remains incomplete.
-- `ingame_lookup_sampled_input_shield`：`implemented_unverified` — Single-click and Shift-hover interception is installed only after the same unique hydrated-image gate validates the exact GetAsyncKeyState poller callsites and D3D9 device ABI. Release evidence gates, including the 1,000-transaction shield corpus, remain incomplete.
+- `luna_exact_cp932_thread`：`implemented_unverified` — The selected HSX0:0 source is bound to the structurally derived embed hook RVA (0x512BF on the measured build, 0x5151F on the second build). The original path was user-accepted on the measured build only; the release evidence/offline gate set was intentionally skipped.
+- `ingame_lookup_geometry`：`implemented_unverified` — The exact D3D9 profile reconstructs bounded per-glyph geometry only after the structural proof (unique signatures, decoded call targets, callgraph, frame shapes, section roles) passes. The relocated A1 /GS cookie operand is deliberately masked and then required to resolve to the profile's module-relative data RVA. Release E2E evidence remains incomplete.
+- `ingame_lookup_sampled_input_shield`：`implemented_unverified` — Single-click and Shift-hover interception is installed only after the same structural proof validates the exact GetAsyncKeyState poller callsites and D3D9 device ABI. Release evidence gates, including the 1,000-transaction shield corpus, remain incomplete.
 - codepage：CP932
 - 线程提示：Use only the selected Luna line source whose thread address equals WA2.exe + 0x512BF.
 
@@ -791,8 +791,8 @@ Tests：`tests/unity_event_cursor_test.cpp`、`tests/il2cpp_thread_scope_test.cp
 
 已知限制：
 
-- This is one hash-pinned WHITE ALBUM2 x86 executable profile, not a family-wide Leaf or AQUAPLUS support claim. The hash is portable same-build identity, not a dependency on the developer's machine or install directory.
-- A game update, different executable hash, missing/ambiguous hydrated signature, decoded target mismatch, callgraph mismatch or D3D9 ABI mismatch disables the selected text, geometry and sampled-input offsets until that build is measured independently.
+- This is a WHITE ALBUM2-codegen structural profile, not a family-wide Leaf or AQUAPLUS support claim: stack-frame offsets and vertex formats are justified by the resolved frame shapes but were only measured end-to-end on the original build.
+- A missing/ambiguous signature, decoded target mismatch, callgraph or frame-shape mismatch, section-role mismatch or measured-build self-check failure disables the selected text, geometry and sampled-input offsets; a different executable hash alone no longer does.
 - DirectSound remains a decoded/mixed fallback; the user-accepted card audio comes from the complete source Ogg member in VOICE.PAK.
 - The root VOICE.PAK path completed runtime card mining; IC/VOICE.PAK shares the validated LAC parser but was not separately exercised in the accepted session.
 - Late attach remains implemented_unverified; the accepted path used suspended launch so archive handles and playback reads could not be missed.
