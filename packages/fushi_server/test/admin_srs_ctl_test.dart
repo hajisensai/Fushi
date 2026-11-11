@@ -703,7 +703,7 @@ void main() {
       );
       expect(forwarded, isEmpty);
       expect(done.undo!.payload['profile'], kJa, reason: '只有一份可用：不点名就是它');
-      expect(done.undo!.payload['changes'], hasLength(1));
+      expect(done.undo!.payload['undo'], hasLength(1));
     });
   });
 }

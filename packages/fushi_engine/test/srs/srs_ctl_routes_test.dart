@@ -750,7 +750,7 @@ void main() {
         caller: OpCaller.model,
         captureUndo: true,
       );
-      expect(roundTrip(preview.undo!)['changes'], isEmpty);
+      expect(roundTrip(preview.undo!)['undo'], isEmpty);
     });
 
     test('合并 / 不是重复：撤销拆回原样；之后又被改过报 superseded 不覆盖', () async {
