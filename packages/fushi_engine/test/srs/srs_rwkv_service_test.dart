@@ -2219,16 +2219,17 @@ void main() {
       f.advance(kDay);
       backend.setR(cards[0], 0.42);
 
-      final SrsFutureDue due = (await (await loadSrsStats(
-        f.store,
-      )).report(futureDays: 30)).future;
+      // 一次统计装载（= 一次 RWKV 打分）同时给聚合与逐卡视图：冻结的编排记录（support/srs_rwkv_transcript.dart）
+      // 里这一步只打一次分，装载两次会多出一轮 query。
+      final SrsStatsLoad stats = await loadSrsStats(f.store);
+      final SrsFutureDue due = (await stats.report(futureDays: 30)).future;
       expect(due.byRecall, 3);
       expect(due.total, 0);
       expect(due.overdue, 0);
       expect(due.dailyLoad, 0);
-      final StatCardRow c0 = (await statsRowsOf(
-        f.store,
-      )).cards.firstWhere((StatCardRow c) => c.id == cards[0]);
+      final StatCardRow c0 = StatsRows(
+        await stats.rows(),
+      ).cards.firstWhere((StatCardRow c) => c.id == cards[0]);
       expect(c0.byRecall, isTrue);
       expect(c0.retrievability, closeTo(0.42, 1e-6));
 
