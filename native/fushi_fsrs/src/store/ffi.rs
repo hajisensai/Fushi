@@ -1271,19 +1271,9 @@ fn local_write(
             None => None,
         };
         if let Some(local) = local_state {
-            // `sched` 接着 Dart 交来的 HLC 推进过时钟：本机状态行里的 `hlc` 用推进后的值（Dart 命令成功后
-            // `adoptLocalTicks` 采用的同一个）。
-            let hlc = match op {
-                "sched" => v["hlc"].as_str().map(str::to_owned),
-                _ => None,
-            };
-            crate::store::local_state::persist_projected(
-                conn,
-                profile,
-                local,
-                &mut v,
-                hlc.as_deref(),
-            )?;
+            // `apply` / `sched` 推进过的旧版时钟已由命令本体写进这一行（store/legacy_clock.rs，内核持有的键），这里的
+            // 合并 upsert 保留它。
+            crate::store::local_state::persist_projected(conn, profile, local, &mut v)?;
         }
         if let Some(m) = v.as_object_mut() {
             m.insert("cache".to_owned(), written.to_json());
@@ -1316,7 +1306,17 @@ fn local_write_body(
         .and_then(Value::as_i64)
         .ok_or("sync2: missing now")?;
     Ok(match op {
-        "apply" => s2::apply_local_on(conn, profile, now, &pre.items)?,
+        "apply" => {
+            // 旧版时钟（store/legacy_clock.rs）：宿主的设备 ID 必带（没存过写入者时用它拼缺省写入者）；带 `clk` 的项
+            // 按 `recvNow` / `tickNow` 推进，`stamps` 为真时回包带每项落库用的戳。
+            let legacy = s2::LegacyApply {
+                device: s("legacyDevice")?,
+                recv_now: req.get("recvNow").and_then(Value::as_i64),
+                tick_now: req.get("tickNow").and_then(Value::as_i64),
+                stamps: req.get("stamps") == Some(&Value::Bool(true)),
+            };
+            s2::apply_local_on(conn, profile, now, &pre.items, Some(&legacy))?
+        }
         // 本机手动排程操作（重置 / 改期 / 撤销 / 立即重排）：显式意图，内核算结果并落库（store/sync2/sched_local.rs）。
         "sched" => s2::sched_local::sched_local_on(conn, profile, now, req)?,
         // 存量重复流收敛作业推进一步（store/sync2/dedup.rs）；`done` 为假就再发。
@@ -1571,6 +1571,12 @@ fn sync2_command(
     Ok(match op {
         "identity" => {
             let mut v = c.sync2_identity(profile, i("now")?)?;
+            // 旧协议的本机写入者 ID（store/legacy_clock.rs）：宿主给了设备 ID 才回（开库那一次）。
+            if let Some(device) = req.get("legacyDevice").and_then(Value::as_str) {
+                v["legacyWriter"] = json!(c.read_visible(|conn| {
+                    crate::store::legacy_clock::writer_of(conn, profile, device)
+                })?);
+            }
             // 有没做完的收段通道（上次 App 在收段途中退出）：Dart 记下，开 Drift 事务前先 `channel_settle`。
             v["channel"] = json!(c.sync2_channel_active(profile)?);
             v

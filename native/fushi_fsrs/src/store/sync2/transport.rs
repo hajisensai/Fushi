@@ -1758,7 +1758,7 @@ fn persist_local_state(
         return Ok(result);
     };
     let mut r: Value = serde_json::from_str(&result).map_err(|e| e.to_string())?;
-    crate::store::local_state::persist_projected(c, profile, local, &mut r, None)?;
+    crate::store::local_state::persist_projected(c, profile, local, &mut r)?;
     Ok(r.to_string())
 }
 

@@ -451,8 +451,11 @@ class SrsDbStore implements SrsSync2Host {
     final Map<String, Object?> id = await _sync2(<String, Object?>{
       'op': 'identity',
       'now': nowMs,
+      // 顺带取回旧协议的本机写入者 ID（[writerId]）。
+      'legacyDevice': deviceId,
     });
     _sync2Device = id['device'] as String?;
+    _legacyWriter = id['legacyWriter'] as String?;
     // 上次在新设备收段途中退出、通道没做完：下一条本机写命令前先按片做完（[_commandOrReload]）。
     _channelLive = id['channel'] == true;
     _sync2Migrated = id['migrated'] == true;
@@ -546,10 +549,8 @@ class SrsDbStore implements SrsSync2Host {
     _fallbackRollover = fallbackRolloverHour;
   }
 
-  late SrsEditWriter _writer;
-  late HlcClock _clock;
-  int _incarnation = 1;
-  int _outboxSeq = 0;
+  /// 旧协议的本机写入者 ID（[writerId]）：内核持有，开库时随 `identity` 取回（[_sync2Open]）。
+  String? _legacyWriter;
 
   /// 存量样式去重的进度：srs_field_edits 里已检查到的 rowid（本机状态，不进备份）。
   int _styleCursor = 0;
@@ -648,24 +649,26 @@ class SrsDbStore implements SrsSync2Host {
   bool _epochMissing = false;
 
   /// 旧协议的本机写入者 ID（只用来认出迁移进来的旧修改记录里哪些是本机写的；v2 的写入者是 [sync2Device]）。
-  String get writerId => _writer.writerId;
+  ///
+  /// 内核持有（本机状态行的 `writerId`，没存过时按 [deviceId] 拼，native/fushi_fsrs/src/store/legacy_clock.rs）；这里
+  /// 是开库那一刻 `identity` 回包里的值。本机日志的 HLC 用的就是它（旧版 HLC 时钟也在内核里，Dart 没有副本）。
+  String get writerId => _legacyWriter!;
 
   /// [writer]（修改记录 / HLC 的写入者）是不是本机：v2 设备 ID 或旧协议的本机写入者。
   bool isOwnWriter(String writer) =>
-      writer == _sync2Device || writer == _writer.writerId;
+      writer == _sync2Device || writer == _legacyWriter;
   SrsTrustedClock get trustedClock => _trusted;
   bool get canSchedule => engine != null;
 
   // ------------------------------------------------------------------ 写锁
 
-  /// 本机写入的独占区：「读现值 → 分配修改记录序号（dot）/ HLC → 落库 → 刷新缓存 → 存本机状态」
+  /// 本机写入的独占区：「读现值 → 落库（内核分配修改记录序号 / HLC）→ 刷新缓存 → 存本机状态」
   /// 必须一气呵成，别的写入排在后面。
   ///
-  /// 序号与 HLC 在内存里分配、立刻并进因果上下文（[SrsEditWriter.create]）；若分配与落库之间
-  /// 插进别的写入，后分配的记录会先落库、先进发件箱（序号乱序），它的 ctx 还声称看见了尚未落库的
-  /// 记录——同一字段上那条记录晚到时会被判为「被支配」而丢弃；中途崩溃时持久化的因果上下文里
-  /// 还会留着永远不存在的 dot。以前逐条写的方法各自「await 读库 → 分配」，批量导入更是先攒一批
-  /// 已分配序号的事件再落库，都有这个窗口（BUG-3545）。
+  /// 「读现值、算出要写哪些键」与「落库」之间若插进别的写入，这次写入是按过期的现值判的（值没变的键不写、导入的
+  /// 初值该不该落）。序号、HLC、因果上下文都由内核在落库的命令里分配（`apply`，旧版 HLC 时钟见
+  /// native/fushi_fsrs/src/store/legacy_clock.rs），Dart 不在内存里预分配——以前预分配时还有「后分配的先落库」的
+  /// 窗口（BUG-3545）。
   ///
   /// 可重入：独占区里再调别的写方法直接执行（按 Zone 认）。在外面先开了数据库事务、再在事务里调
   /// 写方法的调用方（按时间点恢复）必须先进独占区再开事务，否则与排队等锁的写入互相等待。
@@ -787,20 +790,8 @@ class SrsDbStore implements SrsSync2Host {
     final Map<String, Object?> j = row == null
         ? const <String, Object?>{}
         : (jsonDecode(row.json) as Map).cast<String, Object?>();
-    _incarnation = (j['incarnation'] as int?) ?? 1;
-    final String writer =
-        (j['writerId'] as String?) ?? '$deviceId#$_incarnation';
-    _writer = SrsEditWriter(
-      writerId: writer,
-      lastSeq: (j['lastSeq'] as int?) ?? 0,
-      applied: SrsCausalContext.fromJson(j['applied']),
-    );
-    final Object? hlc = j['hlc'];
-    _clock = HlcClock(
-      writer,
-      last: hlc is String ? _rehome(Hlc.decode(hlc), writer) : null,
-    );
-    _outboxSeq = (j['outboxSeq'] as int?) ?? 0;
+    // 行里的 `hlc` / `writerId`（旧版 HLC 时钟与写入者）与 `incarnation` / `lastSeq` / `applied` / `outboxSeq`（旧版
+    // Dart 写入者留下的）是内核持有的键，这里不读（native/fushi_fsrs/src/store/legacy_clock.rs）。
     _styleCursor = (j['styleCursor'] as int?) ?? 0;
     _pendingMediaGc
       ..clear()
@@ -830,11 +821,9 @@ class SrsDbStore implements SrsSync2Host {
     return row != null;
   }
 
-  Hlc _rehome(Hlc h, String writer) => Hlc(h.physical, h.counter, writer);
-
   /// 写本机状态行。和内核共用一条合并 upsert（native/fushi_fsrs/src/store/local_state.rs `UPSERT_SQL`）：交来的整行
-  /// 去掉内核持有的键、保留库里这些键的原值（白名单 `KERNEL_HELD_KEYS`：缓存推导口径版本 `cacheRev`），所以 Dart
-  /// 整行重写不会抹掉内核写下的字段。
+  /// 去掉内核持有的键、保留库里这些键的原值（白名单 `KERNEL_HELD_KEYS`：缓存推导口径版本 `cacheRev`、旧版 HLC 时钟与
+  /// 写入者的键），所以 Dart 整行重写不会抹掉内核写下的字段。
   Future<void> _saveLocal() async {
     await db.customInsert(
       kSrsLocalStateUpsertSql,
@@ -854,16 +843,9 @@ class SrsDbStore implements SrsSync2Host {
       'ON CONFLICT(profile_uid) DO UPDATE SET '
       'json = srs_local_state_merge(json, excluded.json)';
 
-  /// [_saveLocal] 写下的本机状态（`srs_local_state.json`）。本机写命令与收段的一步把它作为 `localState` 交给内核、在
-  /// 命令的同一笔事务里写（[_localStateArg]）。[clock] 给出时用它的 HLC 代替 [_clock]（[applyRemote]：命令成功后才换上
-  /// 的时钟副本）。
-  Map<String, Object?> _localStateJson({HlcClock? clock}) => <String, Object?>{
-    'incarnation': _incarnation,
-    'writerId': _writer.writerId,
-    'lastSeq': _writer.lastSeq,
-    'applied': _writer.applied.toJson(),
-    'hlc': (clock ?? _clock).last.encode(),
-    'outboxSeq': _outboxSeq,
+  /// [_saveLocal] 写下的本机状态（`srs_local_state.json`）里 Dart 持有的键。本机写命令与收段的一步把它作为
+  /// `localState` 交给内核、在命令的同一笔事务里写（[_localStateArg]）。内核持有的键不在这里（见 [_saveLocal]）。
+  Map<String, Object?> _localStateJson() => <String, Object?>{
     'styleCursor': _styleCursor,
     if (_pendingMediaGc.isNotEmpty)
       'mediaGc': (_pendingMediaGc.toList()..sort()),
@@ -1121,27 +1103,29 @@ class SrsDbStore implements SrsSync2Host {
   /// 没有 `<style>` 块（绝大多数记录）时同步返回，不进异步流程：批量落库时逐条 await 本身
   /// 就是秒级开销（迁移 1.5 万笔记约 28 万条修改记录）。判据与 [srsDedupStyles] 的快速
   /// 判断相同，结果不变。
-  FutureOr<SrsFieldEdit> _compactEdit(SrsFieldEdit e) {
-    final SrsStyleStore? st = styles;
-    final Object? v = e.value;
-    if (st == null ||
-        e.entityKind != SrsEntityKind.note ||
-        v is! String ||
-        !e.fieldKey.startsWith(_noteFieldPrefix) ||
-        !v.contains('<style>')) {
-      return e;
-    }
-    return _compactWith(st, e, v);
-  }
+  FutureOr<SrsFieldEdit> _compactEdit(SrsFieldEdit e) =>
+      switch (_compactValue(e.entityKind, e.fieldKey, e.value)) {
+        final Future<Object?> f => f.then(
+          (Object? v) => identical(v, e.value) ? e : _withValue(e, v),
+        ),
+        final Object? v => identical(v, e.value) ? e : _withValue(e, v),
+      };
 
-  Future<SrsFieldEdit> _compactWith(
-    SrsStyleStore st,
-    SrsFieldEdit e,
-    String v,
-  ) async {
-    final String compacted = await st.compact(v);
-    if (identical(compacted, v)) return e;
-    return _withValue(e, compacted);
+  /// [_compactEdit] 的按值形态（修改记录草稿还没有记录对象）：[value] 没有可换的块时原样（同一个对象）返回。
+  FutureOr<Object?> _compactValue(
+    SrsEntityKind kind,
+    String fieldKey,
+    Object? value,
+  ) {
+    final SrsStyleStore? st = styles;
+    if (st == null ||
+        kind != SrsEntityKind.note ||
+        value is! String ||
+        !fieldKey.startsWith(_noteFieldPrefix) ||
+        !value.contains('<style>')) {
+      return value;
+    }
+    return st.compact(value);
   }
 
   static final String _noteFieldPrefix = SrsFieldKeys.noteField('');
@@ -1260,16 +1244,23 @@ class SrsDbStore implements SrsSync2Host {
     return rewritten;
   }
 
-  /// 本机产生事件：落库、进发件箱、刷新缓存（内核在 `apply` 的同一次调用里刷新）。调用方在独占区（[runExclusive]）里、紧接着分配
-  /// 序号之后调它：分配与落库之间不插进别的写入。
+  /// 本机产生一批草稿：落库、进发件箱、刷新缓存（内核在 `apply` 的同一次调用里刷新）。调用方在独占区
+  /// （[runExclusive]）里、紧接着读完现值之后调它：读现值与落库之间不插进别的写入。
   ///
-  /// [logNotes]：日志卡片 → 笔记（调用方已知时给，省一次读卡片行）；[answers]：本机作答写的日志 ID（显式声明
-  /// 评分意图，内核不从日志形状反推）；[study]：落库、刷新缓存后在同一次命令里排队（store/study.rs），结果交给
-  /// [onStudy]。
-  Future<void> _emit(
-    List<SrsEvent> events, {
+  /// 修改记录草稿（[SrsEditDraft]）的序号 / 因果上下文 / HLC 由内核在落库时分配，旧版 HLC 时钟每条走一步（同一时刻、
+  /// 逐条）。[receive]：已定稿的事件带着来源给的 HLC（导入的日志 / 记录）——旧版时钟按收到对端事件的规则推进（先钳位），
+  /// 整批先收、再走修改记录草稿的那几步。时钟在内核里（native/fushi_fsrs/src/store/legacy_clock.rs）。
+  ///
+  /// [stamps]：返回这批修改记录草稿落库后的修改记录（按草稿顺序；内核没写出操作的草稿——标签列表与现值相同——不在
+  /// 其中）。不要返回值的调用方不给，省掉内核逐条拼投影行。
+  ///
+  /// [logNotes]：日志卡片 → 笔记（调用方已知时给，省一次读卡片行）；[study]：落库、刷新缓存后在同一次命令里排队
+  /// （store/study.rs），结果交给 [onStudy]。
+  Future<List<SrsFieldEdit>> _emit(
+    List<SrsEventDraft> drafts, {
+    bool receive = false,
+    bool stamps = false,
     Map<String, String> logNotes = const <String, String>{},
-    Set<String> answers = const <String>{},
     Map<String, Object?>? study,
     void Function(Map<String, Object?> study)? onStudy,
   }) async {
@@ -1277,18 +1268,124 @@ class SrsDbStore implements SrsSync2Host {
       identical(Zone.current[_writeZoneKey], this),
       '_emit outside runExclusive',
     );
+    // 收（来源 HLC 的钳位）与走一步各自的「此刻」，以及修改记录草稿的时间来源：都在落库前这一刻取。
+    final int recvNow = now().$1;
+    final (int tickNow, SrsTimeSource source) = now();
+    final List<Map<String, Object?>> input = await _applyInput(
+      drafts,
+      receive: receive,
+      source: source,
+      logNotes: logNotes,
+    );
+    late _Applied applied;
     await _commandOrReload(() async {
       // 同步 v2：操作落进 ops 就是「已备份、待发布」，没有单独的发件箱（发件按段，见 store/sync2/transport.rs）。
       // 本机状态行随 `apply` 交给内核、在同一笔事务里写下（[_localStateArg]）。
-      await _storeLocalBatch(
-        events,
-        logNotes: logNotes,
-        answers: answers,
+      applied = await _applyLocal(
+        input,
+        recvNow: receive ? recvNow : null,
+        tickNow: tickNow,
+        stamps: stamps,
         study: study,
         onStudy: onStudy,
-        localState: _localStateArg,
       );
     });
+    if (!stamps) return const <SrsFieldEdit>[];
+    final List<SrsFieldEdit> out = <SrsFieldEdit>[];
+    for (int i = 0; i < drafts.length; i++) {
+      final SrsEventDraft d = drafts[i];
+      final Object? stamp = applied.stamps[i];
+      if (d is SrsEditDraft && stamp is Map) {
+        // 内核交回的是落库的投影行（值是落库形态，内联样式已换成共享引用）；返回值里带调用方给的原值。
+        out.add(
+          _withValue(
+            SrsFieldEdit.fromJson(stamp.cast<String, Object?>()),
+            d.value,
+          ),
+        );
+      }
+    }
+    return out;
+  }
+
+  /// 一批草稿 → `apply` 的输入（native/fushi_fsrs/src/store/sync2/mod.rs `apply_local_on`）：每项
+  /// `{e: 事件, note: 日志卡片的笔记, clk?: 旧版时钟指令}`。修改记录草稿只交内容（`clk: t`，时钟走一步）；[receive] 时
+  /// 已定稿的事件 `clk: r`（按它带的 HLC 收）。内联样式在这里换成共享样式引用（表示层，见 [_compactValue]）。
+  Future<List<Map<String, Object?>>> _applyInput(
+    List<SrsEventDraft> drafts, {
+    required bool receive,
+    required SrsTimeSource source,
+    Map<String, String> logNotes = const <String, String>{},
+  }) async {
+    final Map<String, String> noteOf = await _logNotesOf(<SrsEvent>[
+      for (final SrsEventDraft d in drafts)
+        if (d case SrsReadyDraft(:final SrsEvent event)) event,
+    ], logNotes);
+    final List<Map<String, Object?>> input = <Map<String, Object?>>[];
+    for (final SrsEventDraft d in drafts) {
+      switch (d) {
+        case SrsReadyDraft(:final SrsEvent event):
+          final SrsEvent stored = await _compactEvent(event);
+          input.add(<String, Object?>{
+            'e': stored.toJson(),
+            'note': stored is SrsLogEvent ? noteOf[stored.log.cardId] : null,
+            if (receive) 'clk': 'r',
+          });
+        case SrsEditDraft():
+          input.add(<String, Object?>{
+            'e': <String, Object?>{
+              't': 'edit',
+              'x': <String, Object?>{
+                'p': profileUid,
+                'k': d.kind.wire,
+                'e': d.entityId,
+                'f': d.key,
+                'v': switch (_compactValue(d.kind, d.key, d.value)) {
+                  final Future<Object?> f => await f,
+                  final Object? v => v,
+                },
+                'ts': source.wire,
+                if (d.machine) 'm': true,
+              },
+            },
+            'note': null,
+            'clk': 't',
+          });
+      }
+    }
+    return input;
+  }
+
+  /// [events] 里日志的卡片 → 笔记：[known] 里没有的按卡片缓存行补。
+  Future<Map<String, String>> _logNotesOf(
+    Iterable<SrsEvent> events,
+    Map<String, String> known,
+  ) async {
+    final Set<String> logCards = <String>{
+      for (final SrsEvent e in events)
+        if (e case SrsLogEvent(:final SrsReviewLog log))
+          if (!known.containsKey(log.cardId)) log.cardId,
+    };
+    return <String, String>{
+      ...known,
+      if (logCards.isNotEmpty)
+        for (final SrsCardCacheRow c in await cardRows(logCards))
+          c.id: c.noteId,
+    };
+  }
+
+  /// 表示层：事件里修改记录的内联样式换成共享样式引用（见 [_compactEdit]）。操作里带的就是落库形态（样式文件随媒体
+  /// 同步）。
+  FutureOr<SrsEvent> _compactEvent(SrsEvent e) {
+    if (e case SrsEditEvent(:final SrsFieldEdit edit)) {
+      return switch (_compactEdit(edit)) {
+        final SrsFieldEdit c => identical(c, edit) ? e : SrsEditEvent(c),
+        final Future<SrsFieldEdit> f => f.then<SrsEvent>(
+          (SrsFieldEdit c) => SrsEditEvent(c),
+        ),
+      };
+    }
+    return e;
   }
 
   /// 落一批事件（幂等；本机产生、导入、对端来的都走这里）：已有的身份记录、日志、相关实体的
@@ -1301,65 +1398,30 @@ class SrsDbStore implements SrsSync2Host {
   ///
   /// 以前每条事件「先查再写」各两三次往返（库在后台 isolate，每次往返都是一次跨 isolate 消息），
   /// 导入一个几千条笔记的包、应用一批对端事件都要几万次往返（BUG-3549 / BUG-3543）。
-  Future<int> _storeLocalBatch(
-    List<SrsEvent> events, {
-    bool stamped = false,
-    int? serverTimeMs,
-    Map<String, int>? serverTimes,
-    Map<String, String> logNotes = const <String, String>{},
-    Set<String> answers = const <String>{},
+  ///
+  /// [input] 见 [_applyInput]。同步 v2：事件交给 Rust 的 `apply`——分配 OpId / HLC / 因果上下文、落唯一事实表
+  /// （ops）、落投影、重放受影响的卡，一次 FFI（docs/specs/2026-10-25-srs-sync-v2-design.md §3、§4）。修改记录的
+  /// dot / ID 由 Rust 按本机设备身份分配，这里只交内容；日志的结果由重放算，作者给的只是提示。旧版 HLC 时钟按各项的
+  /// `clk` 在同一条命令里推进并写下（[recvNow] / [tickNow] 是收 / 走一步用的「此刻」）；本机状态行里 Dart 持有的键随
+  /// 命令交给内核、在同一笔事务里写下（[_localStateArg]）。
+  Future<_Applied> _applyLocal(
+    List<Map<String, Object?>> input, {
+    int? recvNow,
+    int? tickNow,
+    bool stamps = false,
     Map<String, Object?>? study,
     void Function(Map<String, Object?> study)? onStudy,
-    required String Function() localState,
   }) async {
-    // 同步 v2：本机事件交给 Rust 的 `apply`——分配 OpId / HLC / 因果上下文、落唯一事实表（ops）、落投影、
-    // 重放受影响的卡，一次 FFI（docs/specs/2026-10-25-srs-sync-v2-design.md §3、§4）。修改记录的 dot / ID
-    // 由 Rust 按本机设备身份重新分配，这里只交内容；日志的结果由重放算，作者给的只是提示。
-    final Set<String> logCards = <String>{
-      for (final SrsEvent e in events)
-        if (e case SrsLogEvent(:final SrsReviewLog log))
-          if (!logNotes.containsKey(log.cardId)) log.cardId,
-    };
-    final Map<String, String> noteOf = <String, String>{
-      ...logNotes,
-      if (logCards.isNotEmpty)
-        for (final SrsCardCacheRow c in await cardRows(logCards))
-          c.id: c.noteId,
-    };
-    final List<Map<String, Object?>> input = <Map<String, Object?>>[];
-    for (final SrsEvent e in events) {
-      final SrsEvent stored = switch (e) {
-        // 表示层：内联样式换成共享样式引用（见 [_compactEdit]）。操作里带的就是落库形态（样式文件随媒体同步）。
-        SrsEditEvent(:final SrsFieldEdit edit) => SrsEditEvent(
-          switch (_compactEdit(edit)) {
-            final SrsFieldEdit c => c,
-            final Future<SrsFieldEdit> f => await f,
-          },
-        ),
-        _ => e,
-      };
-      if (stored case SrsEditEvent(:final SrsFieldEdit edit)) {
-        _writer.apply(edit);
-      }
-      input.add(<String, Object?>{
-        'e': stored.toJson(),
-        'note': stored is SrsLogEvent ? noteOf[stored.log.cardId] : null,
-        if (stored is SrsLogEvent && answers.contains(stored.log.id))
-          'intent': 'answer',
-        // 外来、已盖戳的事件（备份合并 / 按时间点恢复并入备份）：保留原 dot / 因果上下文 / HLC，支配关系照旧。
-        if (stamped) 'stamped': true,
-        if (stamped && (serverTimes?[stored.id] ?? serverTimeMs) != null)
-          'server': serverTimes?[stored.id] ?? serverTimeMs,
-      });
-    }
-    // [localState] 在上面推进完内存（[_writer] 等）之后才取：交给内核的是命令落库后应有的本机状态（修订号由内核按投影
-    // 结果推进）。
     final Map<String, Object?> r = await _sync2(
       <String, Object?>{
         'op': 'apply',
         'now': now().$1,
+        'legacyDevice': deviceId,
+        'recvNow': ?recvNow,
+        'tickNow': ?tickNow,
+        if (stamps) 'stamps': true,
         'study': ?study,
-        'localState': localState(),
+        'localState': _localStateArg(),
       },
       blobs: <Uint8List>[utf8.encode(jsonEncode(input))],
     );
@@ -1367,7 +1429,14 @@ class SrsDbStore implements SrsSync2Host {
     if (r['study'] case final Map<Object?, Object?> st) {
       onStudy?.call(st.cast<String, Object?>());
     }
-    return landed;
+    final Object? got = r['stamps'];
+    if (stamps && (got is! List || got.length != input.length)) {
+      throw StateError(
+        'srs: `apply` was asked for stamps but its reply has none for each '
+        'item (the native core and Dart do not match)',
+      );
+    }
+    return _Applied(landed, got is List ? got : const <Object?>[]);
   }
 
   /// 把一次 sync2 命令（本机 apply、远端 ingest、冲突解决、恢复……）的结果接进修订号与本机缓存的变更日志：
@@ -2097,31 +2166,20 @@ class SrsDbStore implements SrsSync2Host {
 
   /// 导入（Anki 包 / fushi-ext）批量落一组事件：视同本机产生（进发件箱）、刷新缓存。幂等。
   ///
-  /// 事件内容由调用方按铁律 C 只从来源算出（身份记录 / 复习日志）；本机 HLC 按收到对端事件的规则推进（先钳位）。
+  /// 事件内容由调用方按铁律 C 只从来源算出（身份记录 / 复习日志）；本机 HLC 按收到对端事件的规则推进（先钳位，
+  /// [_emit] 的 `receive`）。
   Future<void> importEvents(List<SrsEvent> events) async {
     if (events.isEmpty) return;
-    await runExclusive(() async {
-      _receiveAll(events);
-      await _emit(events);
-    });
-  }
-
-  /// 来源给定的 HLC（导入的日志 / 记录）按收到对端事件的规则推进本机时钟（先钳位）。
-  void _receiveAll(List<SrsEvent> events) {
-    final (int nowMs, _) = now();
-    for (final SrsEvent e in events) {
-      final Hlc? h = switch (e) {
-        SrsEditEvent(:final SrsFieldEdit edit) => edit.hlc,
-        SrsLogEvent(:final SrsReviewLog log) => log.hlc,
-        _ => null,
-      };
-      if (h != null) _clock.receive(h, trustedNowMs: nowMs);
-    }
+    await runExclusive(
+      () => _emit(<SrsEventDraft>[
+        for (final SrsEvent e in events) SrsReadyDraft(e),
+      ], receive: true),
+    );
   }
 
   /// 导入攒的一批草稿（[newNoteDrafts] / [newEditDrafts] + 已定稿的日志等）落库：同 [importEvents]，
-  /// 但修改记录的序号 / HLC 在这里、落库的同一个独占区里才分配——攒批期间（读包、解析、别的写入）
-  /// 不占序号，落库顺序 = 序号顺序（BUG-3545，以前攒批时就分配，期间插进来的本机写入先落库）。
+  /// 修改记录的序号 / HLC 在落库的命令里才由内核分配——攒批期间（读包、解析、别的写入）不占序号，落库顺序 = 序号
+  /// 顺序（BUG-3545，以前攒批时就分配，期间插进来的本机写入先落库）。
   ///
   /// 返回这批身份记录里**落库前就已存在**的实体 ID（导入据此按实际新建数计数：攒批时以为是新
   /// 笔记、落库时已被同步 / 别处建好的，不算「新增」）。
@@ -2136,11 +2194,7 @@ class SrsDbStore implements SrsSync2Host {
             record.id,
       ]);
       final List<SrsEventDraft> live = await _dropAuthoredInitials(drafts);
-      _receiveAll(<SrsEvent>[
-        for (final SrsEventDraft d in live)
-          if (d case SrsReadyDraft(:final SrsEvent event)) event,
-      ]);
-      await _emit(_finalize(live));
+      await _emit(live, receive: true);
       return existed;
     });
   }
@@ -2163,7 +2217,7 @@ class SrsDbStore implements SrsSync2Host {
   }
 
   /// 去掉「初值」草稿（[SrsEditDraft.initial]）里键已有修改记录的：一次按实体分块查出现有的
-  /// (实体, 字段键)。只在独占区里、紧接着 [_finalize] 调用，查到的就是落库那一刻的真值。
+  /// (实体, 字段键)。只在独占区里、紧接着 [_emit] 调用，查到的就是落库那一刻的真值。
   Future<List<SrsEventDraft>> _dropAuthoredInitials(
     List<SrsEventDraft> drafts,
   ) async {
@@ -2205,30 +2259,6 @@ class SrsDbStore implements SrsSync2Host {
     ];
   }
 
-  /// 草稿定稿：修改记录按序分配序号与 HLC（同一时刻、逐条 tick），其余原样。只在独占区里、
-  /// 紧接着 [_emit] 调用。
-  List<SrsEvent> _finalize(List<SrsEventDraft> drafts) {
-    final (int nowMs, SrsTimeSource src) = now();
-    return <SrsEvent>[
-      for (final SrsEventDraft d in drafts)
-        switch (d) {
-          SrsReadyDraft(:final SrsEvent event) => event,
-          SrsEditDraft() => SrsEditEvent(
-            _writer.create(
-              profileUid: profileUid,
-              entityKind: d.kind,
-              entityId: d.entityId,
-              fieldKey: d.key,
-              value: d.value,
-              hlc: _clock.tick(nowMs),
-              timeSource: src,
-              machine: d.machine,
-            ),
-          ),
-        },
-    ];
-  }
-
   SrsEntityRecord _entityFromRow(SrsEntityRow r) => SrsEntityRecord(
     id: r.id,
     profileUid: r.profileUid,
@@ -2240,12 +2270,12 @@ class SrsDbStore implements SrsSync2Host {
 
   /// 内置默认牌组与内置笔记类型（Lapis、Fushi 卡片；确定性 ID，每台设备都生成同一份；没改过的内置定义不写修改记录）。
   Future<void> ensureBuiltins() => runExclusive(() async {
-    final List<SrsEvent> missing = <SrsEvent>[];
+    final List<SrsEventDraft> missing = <SrsEventDraft>[];
     for (final SrsEntityRecord r in srsBuiltinEntities(profileUid)) {
       final SrsEntityRow? row = await (db.select(
         db.srsEntities,
       )..where((t) => t.id.equals(r.id))).getSingleOrNull();
-      if (row == null) missing.add(SrsEntityEvent(r));
+      if (row == null) missing.add(SrsReadyDraft(SrsEntityEvent(r)));
     }
     if (missing.isNotEmpty) await _emit(missing);
   });
@@ -3082,23 +3112,18 @@ class SrsDbStore implements SrsSync2Host {
     bool machine = false,
   }) => runExclusive(() async {
     final SrsEntityEdits current = await _entityEdits(kind, entityId);
-    final List<SrsFieldEdit> out = _createEdits(
-      _changing(<(SrsEntityEdits?, String, Object?, SrsEditDraft)>[
-        for (final MapEntry<String, Object?> e in values.entries)
-          (
-            current,
-            e.key,
-            e.value,
-            SrsEditDraft(kind, entityId, e.key, e.value, machine: machine),
-          ),
-      ]),
-    );
-    if (out.isNotEmpty) {
-      await _emit(<SrsEvent>[
-        for (final SrsFieldEdit e in out) SrsEditEvent(e),
-      ]);
-    }
-    return out;
+    final List<SrsEditDraft> drafts =
+        _changing(<(SrsEntityEdits?, String, Object?, SrsEditDraft)>[
+          for (final MapEntry<String, Object?> e in values.entries)
+            (
+              current,
+              e.key,
+              e.value,
+              SrsEditDraft(kind, entityId, e.key, e.value, machine: machine),
+            ),
+        ]);
+    if (drafts.isEmpty) return const <SrsFieldEdit>[];
+    return _emit(drafts, stamps: true);
   });
 
   /// 一组候选写入 `(现值, 键, 新值, 草稿)` 里会改变现值的那些的草稿（值没变且无冲突的键不产生记录；
@@ -3114,12 +3139,6 @@ class SrsDbStore implements SrsSync2Host {
         if (!noop[i]) c[i].$4,
     ];
   }
-
-  /// 按序分配序号 / HLC，把草稿变成修改记录（同一时刻、逐条 tick）。只在独占区里、紧接着
-  /// [_emit] 调用。
-  List<SrsFieldEdit> _createEdits(List<SrsEditDraft> drafts) => <SrsFieldEdit>[
-    for (final SrsEvent e in _finalize(drafts)) (e as SrsEditEvent).edit,
-  ];
 
   /// 一组 (实体类型, 实体 ID) 各自的现值修改记录，键为 `<kind>/<id>`：按类型分组、按 ID 分块
   /// 一次预读（[_entityEditsMany]）。
@@ -3157,8 +3176,9 @@ class SrsDbStore implements SrsSync2Host {
         for (final SrsEditSpec spec in specs) (spec.kind, spec.entityId),
       ],
     );
-    final List<SrsFieldEdit> out = _createEdits(
-      _changing(<(SrsEntityEdits?, String, Object?, SrsEditDraft)>[
+    final List<SrsEventDraft> drafts = <SrsEventDraft>[
+      for (final SrsEntityRecord r in records) SrsReadyDraft(SrsEntityEvent(r)),
+      ..._changing(<(SrsEntityEdits?, String, Object?, SrsEditDraft)>[
         for (final SrsEditSpec spec in specs)
           (
             current['${spec.kind.wire}/${spec.entityId}']!,
@@ -3167,13 +3187,9 @@ class SrsDbStore implements SrsSync2Host {
             SrsEditDraft(spec.kind, spec.entityId, spec.key, spec.value),
           ),
       ]),
-    );
-    final List<SrsEvent> events = <SrsEvent>[
-      for (final SrsEntityRecord r in records) SrsEntityEvent(r),
-      for (final SrsFieldEdit e in out) SrsEditEvent(e),
     ];
-    if (events.isNotEmpty) await _emit(events);
-    return out;
+    if (drafts.isEmpty) return const <SrsFieldEdit>[];
+    return _emit(drafts, stamps: true);
   });
 
   // ------------------------------------------------------------------ 牌组
@@ -3208,39 +3224,37 @@ class SrsDbStore implements SrsSync2Host {
 
   /// 新建牌组，ID 见 [deckIdForNew]；名字与父牌组都一致的牌组已存在（含已删除的）时复活并沿用它。
   /// 身份记录不含本机时刻（createdAt = 0），同 ID 同内容。
-  Future<String> createDeck(String name, {String? parentId}) => runExclusive(
-    () async {
-      final String trimmed = name.trim();
-      final String id = await deckIdForNew(name, parentId: parentId);
-      final SrsEntityEdits current = await _entityEdits(SrsEntityKind.deck, id);
-      // 身份记录与名字 / 父牌组记录同一个事务落库（以前分两次事务、两次缓存刷新）。
-      await _emit(
-        _finalize(<SrsEventDraft>[
-          SrsReadyDraft(
-            SrsEntityEvent(
-              SrsEntityRecord(
-                id: id,
-                profileUid: profileUid,
-                kind: SrsEntityKind.deck,
-                payload: const <String, Object?>{'createdAt': 0},
-              ),
-            ),
+  Future<String> createDeck(
+    String name, {
+    String? parentId,
+  }) => runExclusive(() async {
+    final String trimmed = name.trim();
+    final String id = await deckIdForNew(name, parentId: parentId);
+    final SrsEntityEdits current = await _entityEdits(SrsEntityKind.deck, id);
+    // 身份记录与名字 / 父牌组记录同一个事务落库（以前分两次事务、两次缓存刷新）。
+    await _emit(<SrsEventDraft>[
+      SrsReadyDraft(
+        SrsEntityEvent(
+          SrsEntityRecord(
+            id: id,
+            profileUid: profileUid,
+            kind: SrsEntityKind.deck,
+            payload: const <String, Object?>{'createdAt': 0},
           ),
-          ...newEditDrafts(SrsEntityKind.deck, id, <String, Object?>{
-            SrsFieldKeys.name: trimmed,
-            if (parentId != null) SrsFieldKeys.deckParent: parentId,
-            if (current.deletedAt != null) SrsFieldKeys.deleted: null,
-            // 新建牌组的 RWKV 排队设置初值（[SrsRwkvQueueSettings.forNewDeck]：复习上限当停止点、每天
-            // 最少复习 40）。只在牌组从没写过这一项时写——复活的旧牌组保留原值。
-            if (current[SrsFieldKeys.deckRwkvQueue] == null)
-              SrsFieldKeys.deckRwkvQueue: SrsRwkvQueueSettings.forNewDeck
-                  .toValue(),
-          }, current: current),
-        ]),
-      );
-      return id;
-    },
-  );
+        ),
+      ),
+      ...newEditDrafts(SrsEntityKind.deck, id, <String, Object?>{
+        SrsFieldKeys.name: trimmed,
+        if (parentId != null) SrsFieldKeys.deckParent: parentId,
+        if (current.deletedAt != null) SrsFieldKeys.deleted: null,
+        // 新建牌组的 RWKV 排队设置初值（[SrsRwkvQueueSettings.forNewDeck]：复习上限当停止点、每天
+        // 最少复习 40）。只在牌组从没写过这一项时写——复活的旧牌组保留原值。
+        if (current[SrsFieldKeys.deckRwkvQueue] == null)
+          SrsFieldKeys.deckRwkvQueue: SrsRwkvQueueSettings.forNewDeck.toValue(),
+      }, current: current),
+    ]);
+    return id;
+  });
 
   /// 按「父::子」全名找或建牌组（AnkiConnect createDeck / 导入用）。
   Future<String> ensureDeckPath(String fullName) async {
@@ -3444,17 +3458,12 @@ class SrsDbStore implements SrsSync2Host {
       kind,
       ids,
     );
-    final List<SrsFieldEdit> out = _createEdits(
-      _changing(<(SrsEntityEdits?, String, Object?, SrsEditDraft)>[
-        for (final String id in ids)
-          (current[id]!, key, value, SrsEditDraft(kind, id, key, value)),
-      ]),
-    );
-    if (out.isNotEmpty) {
-      await _emit(<SrsEvent>[
-        for (final SrsFieldEdit e in out) SrsEditEvent(e),
-      ]);
-    }
+    final List<SrsEditDraft> drafts =
+        _changing(<(SrsEntityEdits?, String, Object?, SrsEditDraft)>[
+          for (final String id in ids)
+            (current[id]!, key, value, SrsEditDraft(kind, id, key, value)),
+        ]);
+    if (drafts.isNotEmpty) await _emit(drafts);
   }
 
   Future<SrsSchedulingConfig> schedulingConfigFor(String deckId) async =>
@@ -3482,17 +3491,15 @@ class SrsDbStore implements SrsSync2Host {
     // 身份记录与字段修改记录同一个事务、同一次缓存刷新（以前分两次落库，笔记先以空字段生成一遍卡）。
     final SrsEntityEdits current = await _entityEdits(SrsEntityKind.note, id);
     await _emit(
-      _finalize(
-        newNoteDrafts(
-          noteTypeId: noteTypeId,
-          fieldsById: fieldsById,
-          deckId: deckId,
-          tags: tags,
-          source: source,
-          guid: g,
-          createdAt: createdAt,
-          current: current,
-        ),
+      newNoteDrafts(
+        noteTypeId: noteTypeId,
+        fieldsById: fieldsById,
+        deckId: deckId,
+        tags: tags,
+        source: source,
+        guid: g,
+        createdAt: createdAt,
+        current: current,
       ),
     );
     return id;
@@ -3629,37 +3636,32 @@ class SrsDbStore implements SrsSync2Host {
 
   /// 多个实体的多个字段一次写：一个事务、一次发件箱批次（浏览页的批量操作）。
   /// no-op 不产生记录；返回实际写出的修改记录。现值按实体分块一次预读（以前每个实体各查两次）。
-  Future<List<SrsFieldEdit>> editFieldsBatch(List<SrsFieldChange> changes) =>
-      runExclusive(() async {
-        final Map<(SrsEntityKind, String), Map<String, Object?>> byEntity =
-            <(SrsEntityKind, String), Map<String, Object?>>{};
-        for (final SrsFieldChange c in changes) {
-          (byEntity[(c.kind, c.entityId)] ??= <String, Object?>{})[c.key] =
-              c.value;
-        }
-        final Map<String, SrsEntityEdits> current = await _currentEditsOf(
-          byEntity.keys,
-        );
-        final List<SrsFieldEdit> out = _createEdits(
-          _changing(<(SrsEntityEdits?, String, Object?, SrsEditDraft)>[
-            for (final MapEntry<(SrsEntityKind, String), Map<String, Object?>> e
-                in byEntity.entries)
-              for (final MapEntry<String, Object?> v in e.value.entries)
-                (
-                  current['${e.key.$1.wire}/${e.key.$2}']!,
-                  v.key,
-                  v.value,
-                  SrsEditDraft(e.key.$1, e.key.$2, v.key, v.value),
-                ),
-          ]),
-        );
-        if (out.isNotEmpty) {
-          await _emit(<SrsEvent>[
-            for (final SrsFieldEdit e in out) SrsEditEvent(e),
-          ]);
-        }
-        return out;
-      });
+  Future<List<SrsFieldEdit>> editFieldsBatch(
+    List<SrsFieldChange> changes,
+  ) => runExclusive(() async {
+    final Map<(SrsEntityKind, String), Map<String, Object?>> byEntity =
+        <(SrsEntityKind, String), Map<String, Object?>>{};
+    for (final SrsFieldChange c in changes) {
+      (byEntity[(c.kind, c.entityId)] ??= <String, Object?>{})[c.key] = c.value;
+    }
+    final Map<String, SrsEntityEdits> current = await _currentEditsOf(
+      byEntity.keys,
+    );
+    final List<SrsEditDraft> drafts =
+        _changing(<(SrsEntityEdits?, String, Object?, SrsEditDraft)>[
+          for (final MapEntry<(SrsEntityKind, String), Map<String, Object?>> e
+              in byEntity.entries)
+            for (final MapEntry<String, Object?> v in e.value.entries)
+              (
+                current['${e.key.$1.wire}/${e.key.$2}']!,
+                v.key,
+                v.value,
+                SrsEditDraft(e.key.$1, e.key.$2, v.key, v.value),
+              ),
+        ]);
+    if (drafts.isEmpty) return const <SrsFieldEdit>[];
+    return _emit(drafts, stamps: true);
+  });
 
   /// 一组卡片的缓存行（不存在的 ID 跳过）。
   Future<List<SrsCardCacheRow>> cardRows(Iterable<String> cardIds) async {
@@ -3712,8 +3714,8 @@ class SrsDbStore implements SrsSync2Host {
   /// native/fushi_fsrs/src/store/sync2/sched_local.rs），内核在一次事务里逐卡重放到此刻、判能不能做、算结果、
   /// 落操作与投影并刷新缓存；交回落库后的日志行（结果是内核算出的值）与撤不了的条数。Dart 不读历史、不算排程。
   ///
-  /// HLC 按本机时钟的规则由内核接着 [_clock] 推进（写了几条推进几次），交回的最后一个就是时钟的新状态；
-  /// 日志 ID、时刻、时间来源、日界口径与 Dart 组日志时同一套。调用方在独占区里。
+  /// 日志的 HLC 由内核的旧版时钟分配（写了几条走几步，native/fushi_fsrs/src/store/legacy_clock.rs）；日志 ID、
+  /// 时刻、时间来源、日界口径与以前 Dart 组日志时同一套。调用方在独占区里。
   Future<_SchedOutcome> _schedLocal(List<Map<String, Object?>> items) async {
     assert(
       identical(Zone.current[_writeZoneKey], this),
@@ -3724,7 +3726,7 @@ class SrsDbStore implements SrsSync2Host {
     final (int nowMs, SrsTimeSource source) = now();
     late Map<String, Object?> r;
     await _commandOrReload(() async {
-      // 本机状态行随命令写下：内核把其中的 `hlc` 换成推进后的值（与下面 [HlcClock.adoptLocalTicks] 采用的同一个）。
+      // 本机状态行随命令写下（旧版时钟是其中内核持有的键，内核在同一条命令里推进并写下）。
       r = await _sync2(<String, Object?>{
         'op': 'sched',
         'now': nowMs,
@@ -3732,12 +3734,11 @@ class SrsDbStore implements SrsSync2Host {
         'ts': source.wire,
         'utcOff': day.utcOffsetMin,
         'rollover': day.rolloverHour,
-        'hlc': _clock.last.encode(),
+        'legacyDevice': deviceId,
         'items': items,
         'localState': _localStateArg(),
       });
       _absorbLocalWrite(r);
-      if (r['hlc'] case final String h) _clock.adoptLocalTicks(Hlc.decode(h));
     });
     return _SchedOutcome(<SrsReviewLog>[
       for (final Object? l in (r['logs'] as List?) ?? const <Object?>[])
@@ -3745,16 +3746,7 @@ class SrsDbStore implements SrsSync2Host {
     ], (r['blocked'] as int?) ?? 0);
   }
 
-  /// 一批本机日志落库（空则什么也不做）。调用方已在独占区里。
-  Future<void> _emitLogs(List<SrsReviewLog> logs) async {
-    if (logs.isEmpty) return;
-    await _emit(<SrsEvent>[for (final SrsReviewLog l in logs) SrsLogEvent(l)]);
-  }
-
   // ------------------------------------------------------------------ 复习
-
-  SrsLogContext _logContext(SrsDayContext day) =>
-      SrsLogContext(profileUid: profileUid, clock: _clock, now: now, day: day);
 
   Future<SrsCardCacheRow?> cardRow(String cardId) => (db.select(
     db.srsCardsCache,
@@ -3848,13 +3840,14 @@ class SrsDbStore implements SrsSync2Host {
       final SrsScheduleResult before = SrsScheduleResult.fromJson(
         (raw.r['current']! as Map).cast<String, Object?>(),
       );
-      final SrsReviewLog log = SrsReviewLog(
-        id: uuidV7(nowMs: p.nowMs),
+      final String logId = uuidV7(nowMs: p.nowMs);
+      SrsReviewLog logWith(Hlc hlc) => SrsReviewLog(
+        id: logId,
         profileUid: profileUid,
         cardId: cardId,
         kind: SrsLogKind.review,
         rating: rating,
-        hlc: _clock.tick(p.nowMs),
+        hlc: hlc,
         occurredAt: p.nowMs,
         timeSource: p.timeSource,
         origin: SrsLogOrigin.fushi,
@@ -3873,14 +3866,34 @@ class SrsDbStore implements SrsSync2Host {
           (custom != null ||
               !_instantPossible(tree, tree.subtree(studyDeckId)));
       Map<String, Object?>? study;
-      await _emit(
-        <SrsEvent>[SrsLogEvent(log)],
-        logNotes: <String, String>{cardId: raw.note},
-        answers: <String>{log.id},
-        study: merge
-            ? await _studyRequest(tree, studyDeckId, pick: true, custom: custom)
-            : null,
-        onStudy: (Map<String, Object?> s) => study = s,
+      final Map<String, Object?>? request = merge
+          ? await _studyRequest(tree, studyDeckId, pick: true, custom: custom)
+          : null;
+      // 日志的 HLC 由内核的旧版时钟分配（`clk: t`，评分这一刻走一步）：交给内核的线格式里不带 `hlc`，回包的戳就是
+      // 它；显式声明评分意图（内核不从日志形状反推）。
+      final Map<String, Object?> event = <String, Object?>{
+        't': 'log',
+        'x': logWith(Hlc.zero).toJson()..remove('hlc'),
+      };
+      late _Applied applied;
+      await _commandOrReload(() async {
+        applied = await _applyLocal(
+          <Map<String, Object?>>[
+            <String, Object?>{
+              'e': event,
+              'note': raw.note,
+              'intent': 'answer',
+              'clk': 't',
+            },
+          ],
+          tickNow: p.nowMs,
+          stamps: true,
+          study: request,
+          onStudy: (Map<String, Object?> s) => study = s,
+        );
+      });
+      final SrsReviewLog log = logWith(
+        Hlc.decode(applied.stamps.single! as String),
       );
       return (log, study, tree);
     });
@@ -5070,35 +5083,21 @@ class SrsDbStore implements SrsSync2Host {
     String key,
     Object? value,
   ) => runExclusive(() async {
-    await _emit(
-      _finalize(<SrsEventDraft>[SrsEditDraft(kind, entityId, key, value)]),
-    );
+    await _emit(<SrsEventDraft>[SrsEditDraft(kind, entityId, key, value)]);
   });
-
-  // ------------------------------------------------------------------ 按时间点恢复（srs_point_in_time_restore.dart）
-
-  /// 本机写日志用的上下文（恢复写撤销 / manual 日志时用；不需要排程内核）。
-  Future<SrsLogContext> logContext() async => _logContext(await dayContext());
-
-  /// 把本机产生的一组日志落库、进发件箱（恢复计划写出的撤销 / manual 日志）。
-  Future<void> appendLocalLogs(List<SrsReviewLog> logs) =>
-      runExclusive(() => _emitLogs(logs));
 
   /// 库的变化指纹：本机状态纪元 + 单调修订号。任何事件真正落库（本机写、对端同步来的、导入）都会改变它；
   /// 只读查询、被支配而丢弃的记录不会。不用 (行数, 最大 rowid)：修改记录落库时先删被支配的旧行再插新行，
   /// TEXT 主键表会复用最大 rowid，同一字段连改两次 (行数, 最大 rowid) 不变。自动备份据此判断「有没有变动」。
   Future<String> changeFingerprint() async => '$_epoch:$_revision';
 
-  /// 从库里重读本机状态（写入者、因果上下文、时钟、发件箱序号、修订号），丢掉内存里的影响面。
-  /// 事务回滚不回滚内存：恢复等多步写入中途失败后必须调它，否则 applied 里会留下已回滚的 dot，
-  /// 之后真正同步来的同一批记录会被本机新写的记录误判为「已看见」而支配丢弃。
+  /// 从库里重读本机状态（修订号、样式去重进度、待回收媒体……），丢掉内存里的影响面。
+  /// 事务回滚不回滚内存：恢复等多步写入中途失败后必须调它，否则内存里的修订号 / 影响面还是已回滚的那些写入之后的。
+  /// （旧版 HLC 时钟与因果上下文在内核 / 库里，随事务一起回滚，不用重读。）
   Future<void> reloadLocal() => runExclusive(() async {
     _resetCacheJournal();
     await _loadLocal();
   });
-
-  /// 本机已应用的因果上下文（测试核对回滚后状态用）。
-  SrsCausalContext get appliedContext => _writer.applied;
 
   /// 备份清单里显示的计数：未删除的笔记、可见的卡片、有效的复习（评分且没被撤销）。
   Future<({int notes, int cards, int reviews})> backupCounts() =>
@@ -5168,34 +5167,29 @@ class SrsDbStore implements SrsSync2Host {
       for (final SrsEvent e in events)
         if (e is! SrsEntityEvent || e.record.profileUid == profileUid) e,
     ];
-    // 时钟先在副本上推进（收到对端事件的规则，先钳位）：随命令写下的本机状态行要带推进后的 HLC；命令成功后才换上，
-    // 失败时内存里的时钟不变。
-    final HlcClock clock = HlcClock(_clock.writerId, last: _clock.last);
+    final Map<String, String> noteOf = await _logNotesOf(
+      mine,
+      const <String, String>{},
+    );
+    final List<Map<String, Object?>> input = <Map<String, Object?>>[];
     for (final SrsEvent e in mine) {
-      final Hlc? h = switch (e) {
-        SrsEditEvent(:final SrsFieldEdit edit) => edit.hlc,
-        SrsLogEvent(:final SrsReviewLog log) => log.hlc,
-        _ => null,
-      };
-      if (h != null) {
-        clock.receive(
-          h,
-          serverTimeMs: serverTimes?[e.id] ?? serverTimeMs,
-          trustedNowMs: nowMs,
-        );
-      }
+      final SrsEvent stored = await _compactEvent(e);
+      final int? server = serverTimes?[stored.id] ?? serverTimeMs;
+      input.add(<String, Object?>{
+        'e': stored.toJson(),
+        'note': stored is SrsLogEvent ? noteOf[stored.log.cardId] : null,
+        // 外来、已盖戳的事件：保留原 dot / 因果上下文 / HLC，支配关系照旧。
+        'stamped': true,
+        // S(e)：排序键，也是旧版时钟收这条事件时钳位用的服务器时间。
+        'server': ?server,
+        // 旧版时钟按收到对端事件的规则推进（先钳位），与命令同一笔事务：命令失败时钟不动。
+        'clk': 'r',
+      });
     }
     await _commandOrReload(() async {
-      final int landed = await _storeLocalBatch(
-        mine,
-        stamped: true,
-        serverTimeMs: serverTimeMs,
-        serverTimes: serverTimes,
-        localState: () => jsonEncode(_localStateJson(clock: clock)),
-      );
-      _clock = clock;
+      final _Applied applied = await _applyLocal(input, recvNow: nowMs);
       // 同步合并：别的设备的作答带动了牌组 / 全局状态，RWKV 分数表整表重查（见 rwkvScoresKey）。
-      if (landed > 0) _bumpRwkvScores();
+      if (applied.landed > 0) _bumpRwkvScores();
     });
   });
 
@@ -5205,13 +5199,11 @@ class SrsDbStore implements SrsSync2Host {
   /// 状态行（随命令交的 `localState`，native/fushi_fsrs/src/store/ffi.rs `local_write`），要么全落、要么全不落。外面
   /// 已开着 Drift 事务时（Lapis 迁移、档案 / 备份并入）那个 SAVEPOINT 嵌进外层事务，随它提交或回滚。
   ///
-  /// 命令失败不回滚内存：发命令前已分配的序号 / 已并进因果上下文的 dot（[_storeLocalBatch] 里的 `_writer.apply`）、
-  /// 攒下的影响面都要丢掉，否则 applied 里留着不存在的 dot，之后真正同步来的同 dot 记录会被误判「已看见」而丢弃（与
-  /// [reloadLocal] 同一理由）。调用方已在独占区里。
+  /// 命令失败不回滚内存：攒下的影响面要丢掉、修订号等从库里重读（与 [reloadLocal] 同一理由）。调用方已在独占区里。
   ///
   /// 抛出的永远是命令本身的错误。重读也失败（典型是连接已经关了：app 退出时同步还在跑）时，
   /// 内存状态已无从与库对齐：副本标为作废（[_unusable]），之后的写入一律明确失败，不在过期的
-  /// 因果上下文 / 序号上继续写；也不拿重读的错误顶替原错误——以前日志里只剩 `_loadLocal` 上的
+  /// 本机状态上继续写；也不拿重读的错误顶替原错误——以前日志里只剩 `_loadLocal` 上的
   /// 「connection was closed」，看不出是哪一步写失败。
   Future<void> _commandOrReload(Future<void> Function() body) async {
     await _settleChannel();
@@ -5794,6 +5786,15 @@ class SrsCardChangedError implements Exception {
 
   @override
   String toString() => 'SrsCardChangedError($cardId)';
+}
+
+/// 一次 `apply` 命令（[SrsDbStore._applyLocal]）的结果：落进投影的事件数，与每项落库用的戳（没要就是空的；日志 = 它的
+/// HLC 字符串，修改记录 = 投影行，其余 null）。
+final class _Applied {
+  const _Applied(this.landed, this.stamps);
+
+  final int landed;
+  final List<Object?> stamps;
 }
 
 /// 一次本机手动排程命令（[SrsDbStore._schedLocal]）的结果：落库后的日志行与撤不了的条数。

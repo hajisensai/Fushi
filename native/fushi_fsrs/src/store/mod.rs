@@ -28,6 +28,7 @@ pub mod ffi;
 pub(crate) mod ids;
 #[cfg(test)]
 mod kernel_reads_tests;
+pub(crate) mod legacy_clock;
 pub(crate) mod local_state;
 mod mem_budget;
 #[cfg(test)]

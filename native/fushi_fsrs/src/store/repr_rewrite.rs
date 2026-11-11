@@ -99,7 +99,7 @@ pub(crate) fn command_on(
         .ok_or("srs local state: localState must be a JSON object")?
         .insert(CURSOR_KEY.to_owned(), Value::from(cursor));
     let mut v = json!({"rewritten": rows.len(), "notes": rewritten});
-    crate::store::local_state::persist_projected(c, profile, &state.to_string(), &mut v, None)?;
+    crate::store::local_state::persist_projected(c, profile, &state.to_string(), &mut v)?;
     if let Some(m) = v.as_object_mut() {
         m.insert("cache".to_owned(), written.to_json());
     }
@@ -156,7 +156,7 @@ mod tests {
         .to_string();
         dispatch(
             d,
-            json!({"op": "apply", "profile": P, "now": T0, "caches": caches(),
+            json!({"op": "apply", "profile": P, "now": T0, "caches": caches(), "legacyDevice": "dev",
                    "localState": json!({"revision": 0, "styleCursor": 0}).to_string()}),
             Some(input),
         )

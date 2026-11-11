@@ -20,6 +20,7 @@ use super::{
 };
 use crate::projection::Day;
 use crate::store::SrsCore;
+use crate::store::legacy_clock::LegacyClock;
 use crate::sync2::id::Id;
 use crate::sync2::op::{Body, Intent};
 use crate::sync2::replay::{self, Row};
@@ -38,42 +39,6 @@ enum Action {
         log: String,
     },
     Reschedule,
-}
-
-/// Dart `HlcClock.tick` 的同一规则：本机发出事件取 max(可信时间, 已见过的最大 HLC)。从 Dart 时钟当前的
-/// `last` 起推进，写了几条就推进几次，交回最后一个让 Dart 时钟跟上（没写就不动 Dart 时钟）。
-struct Ticker {
-    physical: i64,
-    counter: i64,
-    writer: String,
-}
-
-impl Ticker {
-    fn parse(text: &str) -> Result<Ticker, String> {
-        let mut parts = text.splitn(3, ':');
-        let (Some(p), Some(c), Some(w)) = (parts.next(), parts.next(), parts.next()) else {
-            return Err(format!("sched: bad hlc {text}"));
-        };
-        Ok(Ticker {
-            physical: p.parse().map_err(|_| format!("sched: bad hlc {text}"))?,
-            counter: c.parse().map_err(|_| format!("sched: bad hlc {text}"))?,
-            writer: w.to_owned(),
-        })
-    }
-
-    fn tick(&mut self, now: i64) -> String {
-        if now > self.physical {
-            self.physical = now;
-            self.counter = 0;
-        } else {
-            self.counter += 1;
-        }
-        self.encode()
-    }
-
-    fn encode(&self) -> String {
-        format!("{}:{}:{}", self.physical, self.counter, self.writer)
-    }
 }
 
 /// 卡所属笔记（缓存行；没有缓存行 = None，与 Dart 旧路径按缓存行补笔记同一口径）。
@@ -163,12 +128,14 @@ fn expand(
 
 impl SrsCore {
     /// 本机手动排程操作（见文件头）。[req]：
-    /// `{"at": 可信时刻, "ts": "anchored"|"wall", "utcOff", "rollover", "hlc": Dart 时钟当前的 last, "items": [..]}`，
+    /// `{"at": 可信时刻, "ts": "anchored"|"wall", "utcOff", "rollover", "legacyDevice": 宿主的设备 ID, "items": [..]}`，
     /// 每项 `{"a":"reset","card","skipNew"?}` / `{"a":"setDue","card","due"}` / `{"a":"undo","card","log"}` /
     /// `{"a":"rescheduleDeck","deck"}`。
     ///
-    /// 返回 `{"logs": [落库后的日志行], "blocked": 撤不了的条数, "hlc": 用到的最后一个 HLC | null, "marks", "replayed",
-    /// "changed", "purged", "diagnostics", "nextSeq"}`（后几项与 `apply` 同形，Dart 照样接进修订号与缓存）。
+    /// 返回 `{"logs": [落库后的日志行], "blocked": 撤不了的条数, "marks", "replayed", "changed", "purged",
+    /// "diagnostics", "nextSeq"}`（后几项与 `apply` 同形，Dart 照样接进修订号与缓存）。
+    ///
+    /// 日志的 HLC 由旧版时钟（store/legacy_clock.rs）在这里推进：写了几条走几步，推进后的时钟写进本机状态行。
     pub fn sync2_sched_local(&self, profile: &str, now: i64, req: &Value) -> Result<Value, String> {
         let w = self.writer()?;
         in_savepoint(&w, |c| sched_local_on(c, profile, now, req))
@@ -189,7 +156,13 @@ pub(crate) fn sched_local_on(
         utc_offset_min: req["utcOff"].as_i64().ok_or("sched: missing utcOff")?,
         rollover_hour: req["rollover"].as_i64().ok_or("sched: missing rollover")?,
     };
-    let mut ticker = Ticker::parse(req["hlc"].as_str().ok_or("sched: missing hlc")?)?;
+    let mut clock = LegacyClock::load(
+        c,
+        profile,
+        req["legacyDevice"]
+            .as_str()
+            .ok_or("sched: missing legacyDevice")?,
+    )?;
     let items: &[Value] = req["items"].as_array().map_or(&[], Vec::as_slice);
     let mut local = match Local::load(c, profile)? {
         Some(l) => l,
@@ -206,7 +179,6 @@ pub(crate) fn sched_local_on(
     let mut stamp_tree: Option<config::DeckTree> = None;
     let mut written: Vec<String> = Vec::new();
     let mut blocked = 0u64;
-    let mut last_hlc: Option<String> = None;
     for (card, action) in expand(c, profile, &tree, items)? {
         let note = note_of(c, &card)?;
         // 每张卡在它自己的归属组上重放到此刻（同一批里先写的日志已投影，后面的项看得见）。
@@ -257,7 +229,7 @@ pub(crate) fn sched_local_on(
             }
         };
         let id = Id::new_v7(at.max(0) as u64).text();
-        let hlc = ticker.tick(at);
+        let hlc = clock.tick(at);
         let mut x: Map<String, Value> = Map::new();
         x.insert("id".into(), json!(id));
         x.insert("p".into(), json!(profile));
@@ -283,9 +255,9 @@ pub(crate) fn sched_local_on(
         let op = append_local_cached(c, &mut local, &mut applied, &body, now, &mut deps_row)?;
         project_body(c, profile, &op, body, now, true, &mut t)?;
         written.push(id);
-        last_hlc = Some(hlc);
     }
     local.save(c)?;
+    clock.save(c, profile)?;
     let replayed: BTreeSet<String> = replay_touched(c, &t)?;
     let mut logs = Vec::with_capacity(written.len());
     for id in &written {
@@ -299,7 +271,6 @@ pub(crate) fn sched_local_on(
     Ok(json!({
         "logs": logs,
         "blocked": blocked,
-        "hlc": last_hlc,
         "marks": t.marks.to_json(),
         "replayed": replayed,
         "diagnostics": t.diagnostics,

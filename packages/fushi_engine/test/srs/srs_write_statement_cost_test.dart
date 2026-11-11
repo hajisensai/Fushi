@@ -104,6 +104,88 @@ void main() {
     });
   });
 
+  // 第 6～9 步涉及的写操作（每步的改动前后见 PR 说明）。
+  test('第 6～9 步：改字段 / 导入 / 删牌组 / 换笔记类型的语句数与内核命令数', () async {
+    final BulkFixture f = await BulkFixture.open(notes: 6);
+    final SrsDbStore s = f.store;
+    final SrsNoteTypeView basic = (await s.noteType(basicTypeId(s)))!;
+    final List<String> cards = <String>[
+      for (final SrsCardCacheRow c in await s.allCardRows()) c.id,
+    ]..sort();
+    final List<String> notes = await s.noteIdsOfType(basic.id);
+    final Map<String, _Cost> costs = <String, _Cost>{};
+    int n = 0;
+    costs['editFields'] = await _cost(
+      s,
+      () => s.editFields(SrsEntityKind.note, notes[0], <String, Object?>{
+        SrsFieldKeys.noteField(basic.fields[0].id): 'x${n++}',
+        SrsFieldKeys.noteField(basic.fields[1].id): 'y${n++}',
+      }),
+    );
+    costs['editFieldsBatch'] = await _cost(
+      s,
+      () => s.editFieldsBatch(<SrsFieldChange>[
+        for (final String c in cards.take(3))
+          SrsFieldChange(SrsEntityKind.card, c, SrsFieldKeys.flag, 2),
+      ]),
+    );
+    final String probeDeck = await s.deckIdForNew('CostProbe');
+    costs['importDrafts'] = await _cost(
+      s,
+      () => s.importDrafts(<SrsEventDraft>[
+        SrsReadyDraft(
+          SrsEntityEvent(
+            SrsEntityRecord(
+              id: probeDeck,
+              profileUid: kBulkUid,
+              kind: SrsEntityKind.deck,
+              payload: const <String, Object?>{'createdAt': 0},
+            ),
+          ),
+        ),
+        SrsEditDraft(
+          SrsEntityKind.deck,
+          probeDeck,
+          SrsFieldKeys.name,
+          'CostProbe',
+          initial: true,
+        ),
+        SrsEditDraft(SrsEntityKind.card, cards[0], SrsFieldKeys.flag, 4),
+        SrsEditDraft(
+          SrsEntityKind.card,
+          cards[1],
+          SrsFieldKeys.flag,
+          1,
+          initial: true,
+        ),
+      ]),
+    );
+    final ChangeSpec change = await reversedChange(s);
+    costs['changeNoteType'] = await _cost(
+      s,
+      () => s.changeNoteType(
+        noteIds: change.noteIds.take(2).toList(),
+        targetTypeId: change.targetTypeId,
+        fieldMap: change.fieldMap,
+        templateMap: change.templateMap,
+      ),
+    );
+    final String jp = await deckId(s, 'Lang::JP');
+    costs['deleteDeck(child)'] = await _cost(s, () => s.deleteDeck(jp));
+    final String lang = await deckId(s, 'Lang');
+    costs['deleteDeck(deleteCards)'] = await _cost(
+      s,
+      () => s.deleteDeck(lang, deleteCards: true),
+    );
+    for (final MapEntry<String, _Cost> e in costs.entries) {
+      // ignore: avoid_print
+      print(
+        'WRITE_COST ${e.key}: statements=${e.value.statements} '
+        'core=${e.value.core}',
+      );
+    }
+  });
+
   test('打开副本与缓存维护的语句数与内核命令数（第 4 步）', () async {
     final BulkFixture f = await BulkFixture.open(notes: 6);
     final SrsDbStore s = f.store;

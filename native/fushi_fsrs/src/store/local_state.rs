@@ -13,8 +13,8 @@
 //! [register]）写 upsert，内核经 [upsert]（同一条 SQL）。内核持有的键的写入方（之后的步骤）直接改这一行里自己的键，
 //! 不经这里。
 //!
-//! 首版白名单为空（第 1.5 步只立协议）；第 4 步交出 `cacheRev`（store/cache_rev.rs）。新行（库里还没有这一行）上内核
-//! 持有的键取初值（[held_default]）。
+//! 首版白名单为空（第 1.5 步只立协议）；第 4 步交出 `cacheRev`（store/cache_rev.rs）；第 6 步交出旧版时钟 / 写入者
+//! 的键（store/legacy_clock.rs）。新行（库里还没有这一行）上内核持有的键取初值（[held_default]）。
 
 use rusqlite::functions::FunctionFlags;
 use rusqlite::types::ValueRef;
@@ -26,10 +26,20 @@ use serde_json::{Map, Value};
 pub(crate) const KERNEL_HELD_KEYS: &[&str] = &[
     // 缓存推导口径版本（第 4 步，store/cache_rev.rs）。
     super::cache_rev::KEY,
+    // 旧版 HLC 时钟与旧版写入者（第 6 步，store/legacy_clock.rs）。
+    super::legacy_clock::HLC_KEY,
+    super::legacy_clock::WRITER_KEY,
+    // 旧版 Dart 写入者留下、现在没有写入方的键（`incarnation` / `lastSeq` / `applied` / `outboxSeq`）：存量行里的值
+    // 原样留着，新行没有这几个键。
+    super::legacy_clock::FROZEN_KEYS[0],
+    super::legacy_clock::FROZEN_KEYS[1],
+    super::legacy_clock::FROZEN_KEYS[2],
+    super::legacy_clock::FROZEN_KEYS[3],
 ];
 
 /// 内核持有的键在**新行**（库里还没有这一行，或那一行损坏）上的初值。`cacheRev`：还没有本机状态行 = 新设备或覆盖恢复
-/// 备份之后，缓存要么还没有、要么随即整份重建，都按当前规则算（store/cache_rev.rs）。
+/// 备份之后，缓存要么还没有、要么随即整份重建，都按当前规则算（store/cache_rev.rs）。旧版时钟 / 写入者的键没有初值：
+/// 缺省值要用宿主的设备 ID 拼，由第一条 `apply` / `sched` 写下（store/legacy_clock.rs `LegacyClock::save`）。
 fn held_default(key: &str) -> Option<Value> {
     (key == super::cache_rev::KEY).then(|| Value::from(super::cache_rev::CACHE_REVISION))
 }
@@ -141,14 +151,13 @@ pub(crate) fn upsert(c: &Connection, profile: &str, json: &str) -> Result<(), St
 /// [local_state] 是 Dart 发命令那一刻内存里的本机状态（`_localStateJson`）。命令只会改变其中的修订号 `revision`：Dart
 /// `_absorbProjection` 每条落进投影的事件（`marks.landed`）、每个可见性变了的实体（`changed` 里每个 `[kind, id]`，kind
 /// 是认得的实体类别）各 +1——这里按 [result] 用**同一口径**推进后写下，并把写下的值放进结果的 `localRevision`（Dart 以它
-/// 为准，内存与库里一致）。[hlc] 给出时（`sched`：内核接着 Dart 的时钟推进过 HLC）同时换掉 `hlc` 键，与 Dart 命令成功后
-/// `adoptLocalTicks` 采用的值一致。写入走 [upsert]（内核持有的键保留库里的值）。
+/// 为准，内存与库里一致）。写入走 [upsert]（内核持有的键保留库里的值：命令本体刚在同一个 SAVEPOINT 里推进过的旧版时钟
+/// 不会被这里盖掉）。
 pub(crate) fn persist_projected(
     c: &Connection,
     profile: &str,
     local_state: &str,
     result: &mut Value,
-    hlc: Option<&str>,
 ) -> Result<(), String> {
     let mut state: Value = serde_json::from_str(local_state)
         .map_err(|e| format!("srs local state: bad localState: {e}"))?;
@@ -171,9 +180,6 @@ pub(crate) fn persist_projected(
         .as_object_mut()
         .ok_or("srs local state: localState must be a JSON object")?;
     obj.insert("revision".to_owned(), Value::from(revision));
-    if let Some(h) = hlc {
-        obj.insert("hlc".to_owned(), Value::from(h));
-    }
     upsert(c, profile, &state.to_string())?;
     if let Some(m) = result.as_object_mut() {
         m.insert("localRevision".to_owned(), Value::from(revision));

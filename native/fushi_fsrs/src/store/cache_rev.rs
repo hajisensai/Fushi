@@ -209,7 +209,7 @@ mod tests {
         .to_string();
         dispatch(
             d,
-            json!({"op": "apply", "profile": P, "now": T0, "caches": caches()}),
+            json!({"op": "apply", "profile": P, "now": T0, "caches": caches(), "legacyDevice": "dev"}),
             Some(input),
         )
         .unwrap();

@@ -2162,6 +2162,9 @@ impl SrsCore {
     /// 本机写入（设计 §6.2 第 1 步之前：复习立即本地落盘）。[input] 是 JSON 数组，每项
     /// `{"e": <SrsEvent JSON>, "note": <日志卡片的笔记 ID | null>, "intent"?: "answer"}`。返回
     /// `{"marks":{..见 [Marks::to_json]}, "landed":[每项是否落了], "replayed":[...]}`。
+    ///
+    /// 不带旧版时钟（[apply_local_on] 的 `legacy` 为 None）：内核自己的测试 / 基准用。宿主的 `apply` 命令走分发器
+    /// （store/ffi.rs `local_write`），那里必带。
     pub fn sync2_apply_local(
         &self,
         profile: &str,
@@ -2170,7 +2173,7 @@ impl SrsCore {
     ) -> Result<String, String> {
         let items = parse_apply_input(input)?;
         let w = self.writer()?;
-        in_savepoint(&w, |c| apply_local_on(c, profile, now, &items)).map(|v| v.to_string())
+        in_savepoint(&w, |c| apply_local_on(c, profile, now, &items, None)).map(|v| v.to_string())
     }
 
     /// 旧库并入（计划 P3.2；拍板 5）：把本 profile 现有的身份记录、修改记录、日志、不认识的事件逐条包成
@@ -2631,14 +2634,73 @@ pub(crate) fn parse_apply_input(input: &str) -> Result<Vec<Value>, String> {
     serde_json::from_str(input).map_err(|e| format!("bad apply input: {e}"))
 }
 
+/// `apply` 的旧版时钟部分（store/legacy_clock.rs；宿主的 `apply` 命令必带，见 store/ffi.rs `local_write_body`）。
+///
+/// 输入项的 `clk` 是这一项对旧版时钟的指令（与以前 Dart `SrsDbStore` 发命令前在内存时钟上做的逐值相同）：
+/// - `"r"`：这一项带着来源给的 HLC（导入的日志 / 记录、并入的外来事件）——按收到对端事件的规则推进（先钳位，
+///   `S(e)` = 这一项的 `server`，此刻 = [recv_now]）。**整批的 `"r"` 先于任何 `"t"` 做**（Dart 旧 `_receiveAll` 在
+///   `_finalize` 之前）。
+/// - `"t"`：本机此刻新写的一项——时钟按 [tick_now] 走一步；是日志的话这一步的值就是它的 HLC（写进 `x.hlc`，输入里
+///   不带），是修改记录的话只推进时钟（修改记录的 HLC 是操作的，见 [edit_row]）。
+/// - 不带：不动时钟（身份记录、不认识的事件）。
+pub(crate) struct LegacyApply<'a> {
+    /// 宿主的设备 ID（Dart `SrsDbStore.deviceId`）：行里还没有 `writerId` 时拼缺省写入者。
+    pub device: &'a str,
+    pub recv_now: Option<i64>,
+    pub tick_now: Option<i64>,
+    /// 回包带 `stamps`（与输入等长）：日志 = 它的 HLC（字符串）；修改记录 = 落库用的投影行（[edit_row]，Dart
+    /// `SrsFieldEdit.toJson` 的线格式；标签写入取展开出的最后一条操作的身份，展开为空 = null）；其余 = null。
+    pub stamps: bool,
+}
+
+/// 一项的 `clk`（见 [LegacyApply]）。
+fn clk_of(it: &Value) -> Result<Option<char>, String> {
+    match it.get("clk").and_then(Value::as_str) {
+        None => Ok(None),
+        Some("r") => Ok(Some('r')),
+        Some("t") => Ok(Some('t')),
+        Some(other) => Err(format!("apply: unknown clk {other}")),
+    }
+}
+
 /// [SrsCore::sync2_apply_local] 的本体：在调用方持着的写连接、调用方开的 SAVEPOINT 里做（不自己取锁），分发器把它与
-/// 缓存刷新、排队、本机状态行合进同一个 SAVEPOINT（store/ffi.rs `local_write`）。
+/// 缓存刷新、排队、本机状态行合进同一个 SAVEPOINT（store/ffi.rs `local_write`）。[legacy]：旧版时钟（见
+/// [LegacyApply]）；None 时输入里不得有 `clk`。
 pub(crate) fn apply_local_on(
     c: &Connection,
     profile: &str,
     now: i64,
     items: &[Value],
+    legacy: Option<&LegacyApply<'_>>,
 ) -> Result<Value, String> {
+    use crate::store::legacy_clock::{LegacyClock, LegacyHlc};
+    let mut clock = match legacy {
+        Some(l) => Some(LegacyClock::load(c, profile, l.device)?),
+        None => None,
+    };
+    // 先收：整批带来源 HLC 的项按序推进时钟（事件类别与 Dart 旧 `_receiveAll` 相同：修改记录与日志）。
+    for it in items {
+        if clk_of(it)? != Some('r') {
+            continue;
+        }
+        let (Some(clock), Some(l)) = (clock.as_mut(), legacy) else {
+            return Err("apply: clk without legacyDevice".into());
+        };
+        let ev = &it["e"];
+        if !matches!(ev["t"].as_str(), Some("edit" | "log")) {
+            continue;
+        }
+        let Some(h) = ev["x"].get("hlc").and_then(Value::as_str) else {
+            continue;
+        };
+        clock.receive(
+            &LegacyHlc::parse(h)?,
+            it["server"].as_i64(),
+            l.recv_now.ok_or("apply: missing recvNow")?,
+        );
+    }
+    let want_stamps = legacy.is_some_and(|l| l.stamps);
+    let mut stamps: Vec<Value> = Vec::with_capacity(if want_stamps { items.len() } else { 0 });
     let mut local = match Local::load(c, profile)? {
         Some(l) => l,
         None => Local::create(c, profile, now)?,
@@ -2654,8 +2716,27 @@ pub(crate) fn apply_local_on(
     let mut tree: Option<config::DeckTree> = None;
     for it in items {
         let stamped = it["stamped"] == Value::Bool(true);
+        // 本机此刻新写的一项：时钟走一步；日志的 HLC 就是这一步的值。
+        let ticked: Option<Value> = if clk_of(it)? == Some('t') {
+            let (Some(clock), Some(l)) = (clock.as_mut(), legacy) else {
+                return Err("apply: clk without legacyDevice".into());
+            };
+            if stamped {
+                return Err("apply: a stamped event cannot tick the clock".into());
+            }
+            let hlc = clock.tick(l.tick_now.ok_or("apply: missing tickNow")?);
+            if it["e"]["t"].as_str() == Some("log") {
+                let mut ev = it["e"].clone();
+                ev["x"]["hlc"] = json!(hlc);
+                Some(ev)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
         let body = body_of_event(
-            &it["e"],
+            ticked.as_ref().unwrap_or(&it["e"]),
             it["note"].as_str(),
             stamped,
             it["server"].as_i64(),
@@ -2672,9 +2753,23 @@ pub(crate) fn apply_local_on(
         };
         let body = stamp_local_config(c, profile, body, stamped, &mut tree)?;
         let before = t.marks.landed;
+        // 戳（见 [LegacyApply::stamps]）：日志的 HLC 现在就有；修改记录的等操作追加出来再取。
+        let mut stamp = Value::Null;
+        let mut stamp_edit: Option<EditBody> = None;
+        if want_stamps {
+            match &body {
+                Body::Log(l) => stamp = json!(l.legacy_hlc),
+                Body::Edit(e) => stamp_edit = Some(e.clone()),
+                _ => {}
+            }
+        }
         let bodies = expand_tags(c, profile, body)?;
         for b in &bodies {
             let op = append_local_cached(c, &mut local, &mut applied, b, now, &mut deps_row)?;
+            if let Some(e) = &stamp_edit {
+                // 每条都算、留最后一条：普通修改记录只有一条操作；标签写入展开成若干条，取最后一条的身份。
+                stamp = edit_row(c, profile, &op, e)?.1;
+            }
             if !matches!(b, Body::Log(_)) {
                 // 非日志操作可能写下删除：批内「没有删除」的记忆作废（[Touched::log_no_delete]）。
                 if let Some(k) = t.log_no_delete.as_mut() {
@@ -2686,10 +2781,17 @@ pub(crate) fn apply_local_on(
             project_body(c, profile, &op, b.clone(), now, true, &mut t)?;
         }
         landed.push(t.marks.landed > before);
+        if want_stamps {
+            stamps.push(stamp);
+        }
     }
     local.save(c)?;
+    // 宿主的 `apply` 每次都把旧版时钟写下（没推进、但行里还没有 `hlc` / `writerId` 时也写，见 `LegacyClock::save`）。
+    if let Some(clock) = clock.as_mut() {
+        clock.save(c, profile)?;
+    }
     let replayed = replay_touched(c, &t)?;
-    Ok(json!({
+    let mut out = json!({
         "marks": t.marks.to_json(),
         "landed": landed,
         "replayed": replayed,
@@ -2697,7 +2799,11 @@ pub(crate) fn apply_local_on(
         "changed": t.entities_changed.iter().map(|(k, e)| json!([k, e])).collect::<Vec<_>>(),
         "purged": t.purged.iter().map(|(k, e)| json!([k, e])).collect::<Vec<_>>(),
         "nextSeq": local.next_seq,
-    }))
+    });
+    if want_stamps {
+        out["stamps"] = Value::Array(stamps);
+    }
+    Ok(out)
 }
 
 /// [SrsCore::sync2_append] 的本体：在调用方的写连接、调用方开的 SAVEPOINT 里追加并投影（不自己取锁）。
