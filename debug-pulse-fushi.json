@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-11T00:08:09Z",
+ "generatedAt": "2026-11-11T04:32:51Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "3ada4d9dfb9bac5e8bd77001b7599b5bedf08e0a",
-  "seq": 26440
+  "sha": "8603d1a7644363acc0bd973f79588ac140f4af5f",
+  "seq": 26444
  },
  "builds": [
   {
@@ -13,7 +13,7 @@
    "sha": "3ada4d9dfb9bac5e8bd77001b7599b5bedf08e0a",
    "unknown": false,
    "publishedAt": "2026-11-11T00:07:59Z",
-   "testflight": false,
+   "testflight": true,
    "baseSeq": 26434,
    "prs": [
     3298
@@ -132,7 +132,33 @@
    }
   }
  ],
- "pending": null,
+ "pending": {
+  "headSha": "8603d1a7644363acc0bd973f79588ac140f4af5f",
+  "headSeq": 26444,
+  "prs": [
+   3250
+  ],
+  "direct": [],
+  "truncated": false,
+  "platforms": {
+   "android": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/42959750767"
+   },
+   "windows": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/42959750715"
+   },
+   "macos": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/42959750715"
+   },
+   "ios": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/42959750715"
+   }
+  }
+ },
  "prs": {
   "3209": {
    "number": 3209,
@@ -195,6 +221,15 @@
    "mergedAt": "2026-11-10T19:01:26Z",
    "additions": 594,
    "deletions": 20,
+   "labels": []
+  },
+  "3250": {
+   "number": 3250,
+   "title": "heavy: queued offloadable runs keep asking the dist workers; analyze ceiling 16 GB",
+   "author": "W1ght",
+   "mergedAt": "2026-11-11T04:31:05Z",
+   "additions": 1261,
+   "deletions": 136,
    "labels": []
   },
   "3281": {
