@@ -4,6 +4,8 @@
 //! 排程内核经 C ABI 的端到端测试（宿主后端模式：取数与 runtime 调用都由这里的脚本化宿主回答）。
 //! 逐值的行为对拍在 Dart 侧（`packages/fushi_engine/test/srs/srs_rwkv_service_test.dart` 的夹具）；
 //! 这里钉内核自己的不变式：消息布局、没就绪不打分、追加 / 撤回 / 全量重建各走哪条路。
+//! 最后一条用真权重跑生产模式（内核自己持有 runtime），与直接调 [`RwkvRuntime`] 逐位对上；权重缺失
+//! 判红（`fetch_model.sh` / `fetch_model.ps1`），不跳过。
 
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
@@ -11,7 +13,7 @@ use std::path::PathBuf;
 use super::host::*;
 use super::wire::{Reader, Writer};
 use super::{FrwkvSched, frwkv_sched_alloc, frwkv_sched_free, frwkv_sched_new, frwkv_sched_step};
-use crate::frwkv_free_bytes;
+use crate::{FrwkvReview, Model, ReviewInput, RwkvRuntime, frwkv_free_bytes};
 
 const ROW: usize = 80;
 
@@ -38,6 +40,10 @@ struct World {
     scores: HashMap<i64, (u64, f32)>,
     /// 假后端下一次调用失败。
     backend_fails: bool,
+    /// 排队打分的候选卡（数字 id）。
+    query_cards: Vec<i64>,
+    /// 行按真 runtime 认的样子造（调度日、间隔、卡类型齐全）；否则只有卡 id 与评分（假后端不看内容）。
+    real_rows: bool,
 }
 
 impl World {
@@ -52,6 +58,8 @@ impl World {
             journal: Vec::new(),
             scores: HashMap::new(),
             backend_fails: false,
+            query_cards: vec![101, 102],
+            real_rows: false,
         }
     }
 
@@ -102,6 +110,80 @@ impl World {
         kept.sort_by_key(|l| l.at);
         kept
     }
+
+    /// 保留评分各自的回放行（按时间），带日志 id。
+    fn replay_rows(&self) -> Vec<(&Log, [u8; ROW])> {
+        let mut last: HashMap<&str, i64> = HashMap::new();
+        self.kept()
+            .into_iter()
+            .map(|log| {
+                let row = if self.real_rows {
+                    real_row(
+                        hash(&log.card) as i64,
+                        3,
+                        log.at,
+                        last.get(log.card.as_str()).copied(),
+                    )
+                } else {
+                    row_of(&log.card)
+                };
+                last.insert(&log.card, log.at);
+                (log, row)
+            })
+            .collect()
+    }
+
+    /// 候选卡 `card` 在时刻 `at` 的查询行。
+    fn query_row(&self, card: i64, at: i64) -> [u8; ROW] {
+        if !self.real_rows {
+            return query_row(card);
+        }
+        let last = self
+            .kept()
+            .iter()
+            .rev()
+            .find(|log| hash(&log.card) as i64 == card)
+            .map(|log| log.at);
+        real_row(card, 0, at, last)
+    }
+}
+
+const DAY_MS: i64 = 86_400_000;
+
+/// 真 runtime 认的一行：`ease == 0` 是查询行；`last` = 这张卡上一条保留评分的时刻。
+fn real_row(card: i64, ease: u8, at: i64, last: Option<i64>) -> [u8; ROW] {
+    let day = at / DAY_MS;
+    let review = FrwkvReview::from_input(&ReviewInput {
+        card_id: card,
+        note_id: Some(card),
+        deck_id: Some(1),
+        preset_id: Some(1),
+        is_query: ease == 0,
+        ease: (ease != 0).then_some(ease),
+        duration_millis: (ease != 0).then_some(4_000),
+        card_type: Some(if last.is_none() { 0 } else { 2 }),
+        day_offset: Some(day),
+        current_elapsed_days: Some(last.map_or(-1, |l| day - l / DAY_MS)),
+        current_elapsed_seconds: Some(last.map_or(-1, |l| (at - l) / 1000)),
+    });
+    let mut row = [0u8; ROW];
+    let fields = [
+        review.card_id,
+        review.note_id,
+        review.deck_id,
+        review.preset_id,
+        review.duration_millis,
+        review.card_type,
+        review.day_offset,
+        review.elapsed_days,
+        review.elapsed_seconds,
+    ];
+    for (k, field) in fields.iter().enumerate() {
+        row[8 * k..8 * k + 8].copy_from_slice(&field.to_le_bytes());
+    }
+    row[72..76].copy_from_slice(&review.present.to_le_bytes());
+    row[76] = review.ease;
+    row
 }
 
 fn hash(text: &str) -> u64 {
@@ -117,9 +199,20 @@ fn row_of(card: &str) -> [u8; ROW] {
     row
 }
 
+/// 候选卡 `card` 的查询行（没有评分、可选字段都空）。
+fn query_row(card: i64) -> [u8; ROW] {
+    let mut row = [0u8; ROW];
+    row[..8].copy_from_slice(&card.to_le_bytes());
+    row
+}
+
 struct Rig {
     sched: *mut FrwkvSched,
     dir: PathBuf,
+    /// 生产模式（内核自己持有 runtime）时的权重路径；`None` = 宿主后端模式。
+    weights: Option<String>,
+    /// 析构时留着目录（下一个内核接着用里面的快照）。
+    keep_dir: bool,
     world: World,
     trace: Vec<String>,
     /// 挂着没回的 effect（id，种类）。
@@ -132,7 +225,9 @@ struct Rig {
 impl Drop for Rig {
     fn drop(&mut self) {
         unsafe { frwkv_sched_free(self.sched) };
-        let _ = std::fs::remove_dir_all(&self.dir);
+        if !self.keep_dir {
+            let _ = std::fs::remove_dir_all(&self.dir);
+        }
     }
 }
 
@@ -142,15 +237,22 @@ fn phase_name(phase: u8) -> &'static str {
 
 impl Rig {
     fn new(name: &str, journal_seed: i64) -> Self {
+        Self::open(name, journal_seed, None, true)
+    }
+
+    /// `weights`：`Some` = 生产模式（内核自己读权重、持有 runtime）；`fresh`：先清掉快照目录。
+    fn open(name: &str, journal_seed: i64, weights: Option<String>, fresh: bool) -> Self {
         let dir = std::env::temp_dir().join(format!("frwkv-sched-{name}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
+        if fresh {
+            let _ = std::fs::remove_dir_all(&dir);
+        }
         let mut cfg = Writer::default();
         cfg.str("p1")
             .str(&dir.to_string_lossy())
             .u32(1)
             .i64(journal_seed)
             .i64(30 * 60 * 1000)
-            .bool(true)
+            .bool(weights.is_none())
             .i64(120_000)
             .i64(600_000);
         let sched = unsafe { frwkv_sched_new(cfg.0.as_ptr(), cfg.0.len()) };
@@ -158,6 +260,8 @@ impl Rig {
         Self {
             sched,
             dir,
+            weights,
+            keep_dir: false,
             world: World::new(),
             trace: Vec::new(),
             held: Vec::new(),
@@ -292,6 +396,15 @@ impl Rig {
                 None
             }
             OUT_LOG => None,
+            OUT_OP_BEGIN => {
+                let _id = r.u32().unwrap();
+                let name = r.str().unwrap();
+                let _bytes = r.i64().unwrap();
+                self.trace
+                    .push(format!("op {name} rows={}", r.i64().unwrap()));
+                None
+            }
+            OUT_OP_END => None,
             OUT_TIMER => {
                 let _generation = r.u32().unwrap();
                 let after = r.i64().unwrap();
@@ -368,6 +481,7 @@ impl Rig {
                 self.trace
                     .push(format!("fx replay since={since} rebase={rebase_since:?}"));
                 // 这个世界不模拟分歧时刻：退回重放一律从头给全部保留评分（分歧 = 第一条的时刻）。
+                let rows = self.world.replay_rows();
                 let kept = self.world.kept();
                 let total = self.world.logs.len() as i64;
                 let tail = rebase_since.map_or(0, |from| total - from);
@@ -381,8 +495,8 @@ impl Rig {
                         None => i64::MIN,
                     })
                     .i64(tail);
-                for log in &kept {
-                    w.0.extend_from_slice(&row_of(&log.card));
+                for (_, row) in &rows {
+                    w.0.extend_from_slice(row);
                 }
                 for log in &kept {
                     w.i64(log.at);
@@ -394,14 +508,16 @@ impl Rig {
             FX_APPEND_ROWS => {
                 let cards = r.u32().unwrap();
                 self.trace.push(format!("fx append_rows cards={cards}"));
+                let rows = self.world.replay_rows();
                 w.bool(false);
                 for _ in 0..cards {
-                    let card = r.str().unwrap();
+                    let _card = r.str().unwrap();
                     let ids = r.u32().unwrap();
                     w.bool(true);
                     for _ in 0..ids {
-                        r.str().unwrap();
-                        w.bytes(&row_of(&card));
+                        let id = r.str().unwrap();
+                        let (_, row) = rows.iter().find(|(log, _)| log.id == id).unwrap();
+                        w.bytes(row);
                     }
                 }
                 let tags = r.u32().unwrap();
@@ -413,23 +529,26 @@ impl Rig {
             FX_SCORE_INPUTS => {
                 self.trace.push("fx score_inputs".to_owned());
                 w.i64(7).i64(1).str("clear").str("requery");
-                w.i64s(&[101, 102]).u64s(&[1, 1]);
+                w.i64s(&self.world.query_cards)
+                    .u64s(&vec![1; self.world.query_cards.len()]);
             }
             FX_QUERY_ROWS => {
                 let _op = r.u32().unwrap();
-                let _at = r.i64().unwrap();
+                let at = r.i64().unwrap();
                 let indices: Vec<u32> = if r.bool().unwrap() {
                     let n = r.u32().unwrap();
                     (0..n).map(|_| r.u32().unwrap()).collect()
                 } else {
-                    vec![0, 1]
+                    (0..self.world.query_cards.len() as u32).collect()
                 };
                 self.trace.push(format!("fx query_rows {indices:?}"));
                 let mut rows = Vec::new();
                 for i in &indices {
-                    let mut row = [0u8; ROW];
-                    row[..8].copy_from_slice(&(101 + i64::from(*i)).to_le_bytes());
-                    rows.extend_from_slice(&row);
+                    rows.extend_from_slice(
+                        &self
+                            .world
+                            .query_row(self.world.query_cards[*i as usize], at),
+                    );
                 }
                 w.bytes(&rows);
                 w.i64s(&vec![-1; indices.len()]);
@@ -444,7 +563,8 @@ impl Rig {
             }
             FX_MODEL_READY => {
                 self.trace.push("fx model_ready".to_owned());
-                w.bool(self.world.model_ready).str("weights.bin");
+                w.bool(self.world.model_ready)
+                    .str(self.weights.as_deref().unwrap_or("weights.bin"));
             }
             FX_DOWNLOAD => {
                 self.trace.push("fx download".to_owned());
@@ -828,4 +948,169 @@ fn malformed_input_is_an_error_not_a_crash() {
     rig.world.review("a", 1_000);
     rig.start(false);
     assert_eq!(rig.trace.last().map(String::as_str), Some("done 1 ok"));
+}
+
+/// 小模型 int8 权重（`fetch_model` 下载到 `model/`；`FUSHI_RWKV_SMALL_DIR` 可指向别处）。缺失判红。
+fn small_weights() -> PathBuf {
+    let dir = match std::env::var_os("FUSHI_RWKV_SMALL_DIR") {
+        Some(dir) => PathBuf::from(dir),
+        None => PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("model"),
+    };
+    let path = dir.join("sm72e25_weights.int8.bin");
+    assert!(
+        path.exists(),
+        "small RWKV weights not found at {}: run native/fushi_rwkv/fetch_model.sh (or \
+         fetch_model.ps1) first, or point FUSHI_RWKV_SMALL_DIR at a directory holding it",
+        path.display()
+    );
+    path
+}
+
+fn inputs(rows: &[[u8; ROW]], is_query: bool) -> Vec<ReviewInput> {
+    rows.iter()
+        .map(|row| {
+            FrwkvReview::parse_rows(row).unwrap()[0]
+                .to_input(is_query)
+                .unwrap()
+        })
+        .collect()
+}
+
+fn bits(scores: &[f32]) -> Vec<u32> {
+    scores.iter().map(|score| score.to_bits()).collect()
+}
+
+/// 命令 `op`（instant / current）的结果里的分数。
+fn scores_of(trace: &[String], op: u32) -> Vec<f32> {
+    let prefix = format!("done {op} [");
+    let line = trace
+        .iter()
+        .find(|line| line.starts_with(&prefix))
+        .unwrap_or_else(|| panic!("no scores for command {op} in {trace:?}"));
+    line[prefix.len()..line.len() - 1]
+        .split(", ")
+        .map(|text| text.parse().unwrap())
+        .collect()
+}
+
+#[test]
+fn production_mode_owns_the_runtime_and_matches_direct_runtime_calls() {
+    let weights = small_weights();
+    let (a, b) = (hash("a") as i64, hash("b") as i64);
+    // 对照：同一份权重、同一精度，直接调 runtime。
+    let model = Model::from_bytes(&std::fs::read(&weights).unwrap()).unwrap();
+    let mut direct = RwkvRuntime::new(&model, PRECISION, 1).unwrap();
+
+    let mut rig = Rig::open(
+        "production",
+        2,
+        Some(weights.to_string_lossy().into_owned()),
+        true,
+    );
+    rig.keep_dir = true;
+    rig.world.real_rows = true;
+    rig.world.query_cards = vec![a, b];
+    for (card, at) in [("a", 1_000), ("b", 2_000), ("a", 90_000_000)] {
+        rig.world.review(card, at);
+    }
+    rig.start(false);
+    assert_eq!(
+        rig.take_trace(),
+        lines(&[
+            "fx model_ready",
+            "status preparing 0/0",
+            "fx tail since=0 rows=false incremental=false",
+            "fx replay since=3 rebase=None",
+            "op reset rows=0",
+            "status preparing 0/3",
+            "op replay rows=1",
+            "status preparing 1/3",
+            "op append rows=2",
+            "status preparing 3/3",
+            "op snapshot_to_file rows=0",
+            "status ready 0/0",
+            "done 1 ok",
+        ])
+    );
+    let replayed: Vec<[u8; ROW]> = rig.world.replay_rows().iter().map(|r| r.1).collect();
+    direct.replay(&inputs(&replayed, false), false).unwrap();
+    let queries =
+        |world: &World, at: i64| inputs(&[world.query_row(a, at), world.query_row(b, at)], true);
+
+    rig.instant(2, 100_000_000);
+    let trace = rig.take_trace();
+    assert_eq!(
+        trace[..trace.len() - 1],
+        lines(&[
+            "fx revision",
+            "fx tail since=3 rows=false incremental=true",
+            "fx score_inputs",
+            "op clear_scores rows=0",
+            "op lookup_scores rows=0",
+            "fx query_rows [0, 1]",
+            "op update_scores rows=2",
+        ])
+    );
+    let first = scores_of(&trace, 2);
+    assert_eq!(
+        bits(&first),
+        bits(&direct.query(&queries(&rig.world, 100_000_000)).unwrap())
+    );
+    assert!(first.iter().all(|score| score.is_finite()));
+
+    // 统计用的「此刻」打分走直接查询，同样逐位相同。
+    rig.command(|w| {
+        w.u8(5).u32(2).i64(100_000_000);
+    });
+    let trace = rig.take_trace();
+    assert_eq!(bits(&scores_of(&trace, 3)), bits(&first));
+
+    // 新答一题：追加进撤销日志（小模型支持），同卡的分数作废重算、别的卡留着表里的。
+    rig.world.review("b", 100_000_500);
+    rig.answered();
+    assert!(rig.take_trace().contains(&"op append rows=1".to_owned()));
+    let appended = rig.world.replay_rows().last().unwrap().1;
+    direct.replay(&inputs(&[appended], false), false).unwrap();
+    rig.instant(2, 100_001_000);
+    let trace = rig.take_trace();
+    assert!(trace.contains(&"fx query_rows [1]".to_owned()), "{trace:?}");
+    let second = scores_of(&trace, 5);
+    let fresh = direct.query(&queries(&rig.world, 100_001_000)).unwrap();
+    assert_eq!(second[0].to_bits(), first[0].to_bits());
+    assert_eq!(second[1].to_bits(), fresh[1].to_bits());
+    assert_ne!(second[1].to_bits(), first[1].to_bits());
+
+    // 关闭存快照；新内核从快照恢复（不回放），分数与直接调用逐位相同。
+    rig.command(|w| {
+        w.u8(8);
+    });
+    assert!(
+        rig.take_trace()
+            .contains(&"op snapshot_to_file rows=0".to_owned())
+    );
+    let world = std::mem::replace(&mut rig.world, World::new());
+    drop(rig);
+
+    let mut rig = Rig::open(
+        "production",
+        2,
+        Some(weights.to_string_lossy().into_owned()),
+        false,
+    );
+    rig.world = world;
+    let restored = direct.query(&queries(&rig.world, 100_002_000)).unwrap();
+    rig.start(false);
+    assert_eq!(
+        rig.take_trace(),
+        lines(&[
+            "fx model_ready",
+            "status preparing 0/0",
+            "op restore_from_file rows=0",
+            "status ready 0/0",
+            "done 1 ok",
+        ])
+    );
+    rig.instant(2, 100_002_000);
+    let trace = rig.take_trace();
+    assert_eq!(bits(&scores_of(&trace, 2)), bits(&restored));
 }

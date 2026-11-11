@@ -42,7 +42,7 @@ Fushi 的 **RWKV 排程**原生推理库，两个网络：
 
 | 符号 | 作用 |
 |---|---|
-| `int32_t frwkv_abi_version(void)` | ABI 版本（当前 5）；Dart 侧不一致即判不可用 |
+| `int32_t frwkv_abi_version(void)` | ABI 版本（当前 6）；Dart 侧不一致即判不可用 |
 | `size_t frwkv_review_struct_size(void)` | `sizeof(FrwkvReview)`（80），核对结构体布局 |
 | `FrwkvModel* frwkv_model_load(const uint8_t* bytes, size_t len)` | 从内存里的权重文件建模型，按内容识别大 / 小模型（`ARWKVWEIGHTS1` f32 两者皆可，`ARWKVWEIGHTS8PC1` int8 逐行仅小模型）；失败 NULL |
 | `int32_t frwkv_model_kind(const FrwkvModel*)` | 1 = 大模型，2 = 小模型；空指针 `-1` |
@@ -71,6 +71,21 @@ Fushi 的 **RWKV 排程**原生推理库，两个网络：
 | `int32_t frwkv_runtime_stats(const FrwkvRuntime*, FrwkvStats* out)` | 已回放复习数、卡 / 笔记 / 牌组 / 预设数、各层状态字节数 |
 | `char* frwkv_last_error(void)` | 本线程最近一次失败的可读错误（UTF-8，新分配）；无则 NULL |
 | `void frwkv_free_string(char*)` / `void frwkv_free_bytes(uint8_t*, size_t)` | 释放上面两种返回值 |
+| `uint8_t* frwkv_sched_alloc(size_t len)` | 给排程内核的一条输入消息分配内存（清零）；交给 `frwkv_sched_step` 后由它接管，没交出去的用 `frwkv_free_bytes` 释放 |
+| `FrwkvSched* frwkv_sched_new(const uint8_t* config, size_t len)` | 新建排程内核（见下「排程内核」）；失败 NULL |
+| `uint8_t* frwkv_sched_step(FrwkvSched*, uint8_t* input, size_t input_len, size_t* out_len)` | 喂一条输入消息（NULL + 0 = 接着跑），返回一段输出（`frwkv_free_bytes` 释放）；失败 NULL、原因走 `frwkv_last_error` |
+| `void frwkv_sched_free(FrwkvSched*)` | 释放排程内核（连同它持有的 runtime） |
+
+### 排程内核（`frwkv_sched_*`，`src/sched/`）
+
+Fushi 的 RWKV 排程**编排**（什么时候下载权重、恢复快照 / 检查点还是全量回放、新日志是追加、撤回还是退回
+重放、分数表何时清空 / 整表重查、空闲存快照、失败后的重试间隔）整个在这里，供 app 与无头服务端共用
+（`packages/fushi_engine` 的 `SrsRwkvService` 接到它上面是紧跟着的改动）；「没就绪就不打分」只在这一处判断。内核自己持有 runtime，宿主（Dart）只做三件事：递命令、替内核取数
+（复习库里的日志指纹 / 回放行 / 查询行、权重在哪、下载）、把状态事件转给界面。两边之间是一条消息通道：
+`frwkv_sched_step(一条输入消息)` → 一段输出记录；布局的唯一说明在 `src/sched/mod.rs` 的模块注释，Dart 侧
+的编号镜像在 `packages/fushi_rwkv/lib/src/rwkv_sched.dart`。一个内核不是线程安全的，调用方串行化（Dart 侧
+是专门的后台 isolate `RwkvSchedWorker`）。测试 `src/sched/tests.rs`：脚本化宿主经 C ABI 驱动内核，最后一条
+用真权重与直接调 runtime 逐位对拍。
 
 返回码：`0` 成功；`-1` 调用错误（空指针、未知 precision）；`-2` 输入行不合法；`-3` 权重 /
 快照字节损坏或不匹配；`-4` 内部 panic（已接住，不越过 FFI）；`-5` runtime 在之前的 panic 后

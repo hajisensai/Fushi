@@ -9,8 +9,10 @@
 //!
 //! # 调用方式
 //!
-//! `frwkv_sched_step(句柄, 一条输入消息)` → 一段输出（若干条记录）。句柄不是线程安全的：整个生命周期
-//! 只在一个线程上用（Dart 侧是专门的后台 isolate——回放要几秒到几十秒）。输入消息的内存由
+//! `frwkv_sched_step(句柄, 一条输入消息)` → 一段输出（若干条记录）。句柄不是线程安全的：同一时刻只能有
+//! 一个调用在跑，调用之间由宿主串行化（Dart 侧是专门的后台 isolate——回放要几秒到几十秒；isolate 在两次
+//! 调用之间可能换操作系统线程，内核不依赖线程身份，只有 `frwkv_last_error` 是线程局部的，所以失败后要在
+//! 同一段同步代码里取错误文本）。输入消息的内存由
 //! [`frwkv_sched_alloc`] 分配、`step` 接管（大块的回放行因此只复制一次）；输出由调用方用
 //! `frwkv_free_bytes` 释放。输出第一个字节非 0 = 内核还有活要干（刚把「开始」之类的记录交出来），
 //! 宿主应立刻用空消息再调一次。
@@ -82,7 +84,7 @@ const CMD_ANSWERED: u8 = 6;
 const CMD_PURGED: u8 = 7;
 const CMD_CLOSE: u8 = 8;
 
-/// 不透明句柄：一个排程内核。只能在创建它的线程上用。
+/// 不透明句柄：一个排程内核。不是线程安全的：调用方串行化（同一时刻只有一个调用）。
 pub struct FrwkvSched {
     exec: Rc<Exec>,
     host: Rc<Host>,
@@ -229,7 +231,7 @@ pub unsafe extern "C" fn frwkv_sched_new(config: *const u8, config_len: usize) -
 /// `out_len` 写 0，原因走 `frwkv_last_error`。
 ///
 /// # Safety
-/// `sched` 有效且只在创建它的线程上用；`input` / `input_len` 来自 [frwkv_sched_alloc]（或空）；`out_len` 可写。
+/// `sched` 有效且没有别的调用同时在用它；`input` / `input_len` 来自 [frwkv_sched_alloc]（或空）；`out_len` 可写。
 #[no_mangle]
 pub unsafe extern "C" fn frwkv_sched_step(
     sched: *mut FrwkvSched,
@@ -276,7 +278,7 @@ pub unsafe extern "C" fn frwkv_sched_step(
 }
 
 /// # Safety
-/// `sched` 必须是 [frwkv_sched_new] 返回且未释放过的句柄（或空指针），在创建它的线程上调用。
+/// `sched` 必须是 [frwkv_sched_new] 返回且未释放过的句柄（或空指针），且没有别的调用同时在用它。
 #[no_mangle]
 pub unsafe extern "C" fn frwkv_sched_free(sched: *mut FrwkvSched) {
     if !sched.is_null() {
