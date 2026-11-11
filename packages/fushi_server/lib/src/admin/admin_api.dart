@@ -21,6 +21,10 @@ import 'package:fushi_engine/media/torrent/torznab_client.dart'
 import 'package:fushi_engine/media/video/download/video_resource_prefs.dart'
     show readTorznabIndexerConfigs;
 import 'package:fushi_engine/media/video/download/video_resource_registry.dart';
+import 'package:fushi_engine/media/video/acquisition/video_acquisition_models.dart'
+    show kVideoAcquisitionSubtitleLanguageCodes;
+import 'package:fushi_engine/media/video/subtitle/subtitle_language_preference.dart'
+    show subtitleLanguageNativeName;
 import 'package:fushi_engine/utils/net/app_http.dart'
     show createAppHttpIoClient;
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart'
@@ -332,6 +336,10 @@ class AdminApi {
         );
       case ('GET', '/api/admin/p2p'):
         return _json(ctx.host.p2pStatus());
+      case ('GET', '/api/admin/upload/folders'):
+        return _json(<String, Object?>{
+          'folders': await UploadStore.subfolders(_libraryFor(request)),
+        });
       case ('GET', '/api/admin/upload'):
         return _uploadStatus(request);
       case ('PUT', '/api/admin/upload'):
@@ -1427,6 +1435,31 @@ class AdminApi {
     'aiPresets': <String>[
       for (final AiProviderPreset preset in kAiProviderPresets) preset.id,
       kAiCustomPresetId,
+    ],
+    // WebUI 下拉用：预设显示名 + 起点模型（模型框的建议值）。
+    'aiPresetOptions': <Map<String, String>>[
+      for (final AiProviderPreset preset in kAiProviderPresets)
+        <String, String>{
+          'id': preset.id,
+          'name': preset.displayName,
+          'model': preset.suggestedModel,
+        },
+    ],
+    // 字幕语言下拉：与「AI 下视频」同一份可选码，显示名用母语写法。
+    'subtitleLanguageOptions': <Map<String, String>>[
+      for (final String code in kVideoAcquisitionSubtitleLanguageCodes)
+        <String, String>{
+          'code': code,
+          'name': subtitleLanguageNativeName(code),
+        },
+    ],
+    'metadataLocaleOptions': <Map<String, String>>[
+      // 地区由 code 本身体现（zh-CN / zh-TW），名字只取主语种，免得显示成「中文 (CN) (zh-CN)」。
+      for (final String code in ServerConfig.metadataLocaleSuggestions)
+        <String, String>{
+          'code': code,
+          'name': subtitleLanguageNativeName(code.split('-').first),
+        },
     ],
     // 刮削协调器按启动时的配置快照构造（下载管线持有它），资料语言与 TMDB key 同重启生效。
     'restartRequiredKeys': const <String>[

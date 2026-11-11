@@ -282,4 +282,13 @@ void main() {
     expect((cleared['ankiConnect'] as Map)['apiKeySet'], isFalse);
     expect(host.config.ankiConnect.profileKeys[kJa], 'ja-key');
   });
+
+  test('牌组建议：没提供的 profile → 404', () async {
+    final (int status, Map<String, dynamic> body) = await call(
+      'GET',
+      'srs/decks?profile=$kJa',
+    );
+    expect(status, 404);
+    expect(body['error'], 'profile_not_served');
+  });
 }
