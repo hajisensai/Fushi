@@ -457,6 +457,42 @@ void AddDecoyWindowClass(SyntheticImage* img, const TargetedCodegen& cg) {
                  kDecoyRevealT);
 }
 
+// The VS2013 cs2 2.6.1.90 build's second text-window class: its own
+// RenderChar (frame 0xd0 instead of 0xcc, so the record argument is
+// [esp+0xe4] and the locals one dword further), its own reveal and Update,
+// and its own renderer class's ClearPage, called through the same window
+// renderer field from the function that also drives its reveal.
+constexpr size_t kRenderT2 = 0x7000u;
+constexpr size_t kRevealT2 = 0x7600u;
+constexpr size_t kUpdateT2 = 0x7800u;
+constexpr size_t kClearT2 = 0x7a00u;
+constexpr size_t kClearCallT2 = 0x7b00u;
+constexpr uint32_t kFrameT2 = 0xd0u;
+
+void AddSecondTextClass(SyntheticImage* img, const TargetedCodegen& cg) {
+  img->Put(kRenderT2, core::kRenderTBytes, sizeof(core::kRenderTBytes));
+  const uint32_t lea = kFrameT2 - 0x20u;
+  std::memcpy(img->base + kRenderT2 + 2u, &kFrameT2, 4u);
+  std::memcpy(img->base + kRenderT2 + 9u, &lea, 4u);
+  img->Put(kRenderT2 + core::kRecordPenTOffset, core::kRecordPenTBytes,
+           sizeof(core::kRecordPenTBytes));
+  const uint32_t record = kFrameT2 + 0x14u;
+  std::memcpy(img->base + kRenderT2 + core::kRecordPenTOffset + 3u, &record,
+              4u);
+  img->base[kRenderT2 + core::kRecordPenTOffset + 10u] = 0x30u;
+  img->base[kRenderT2 + core::kRecordPenTOffset + 18u] = 0x34u;
+  img->Put(kRenderT2 + kRecordCharOffsetT, cg.record_char,
+           cg.record_char_bytes);
+  const size_t tail = 0x2bbu;
+  img->Put(kRenderT2 + tail, core::kRenderTailTBytes,
+           sizeof(core::kRenderTailTBytes));
+  std::memcpy(img->base + kRenderT2 + tail + 2u, &kFrameT2, 4u);
+  img->Rel32(kRevealT2 + 0x40u, kRenderT2);
+  PutUpdate(img, cg, kUpdateT2, kRevealT2);
+  PutClear(img, cg, kClearT2, 0x1820u);
+  PutClearCaller(img, kClearCallT2, cg.window_renderer, kClearT2, kRevealT2);
+}
+
 bool LayoutEquals(const core::ObjectLayout& lhs,
                   const core::ObjectLayout& rhs) {
   return lhs.window_screen == rhs.window_screen &&
@@ -504,6 +540,9 @@ void TestResolveSites() {
          !sites.walk.layer_by_pointer);
   // The adjacent-page signatures fix the object layout.
   assert(LayoutEquals(sites.layout, {0x68u, 0x2acu, 0x14u, 0x18u, 0x40u}));
+  assert(sites.class_count == 1u &&
+         sites.classes[0].render_char == sites.render_char &&
+         sites.classes[0].window_update == sites.window_update);
 
   // Several parts share the base-class layer query; copies that agree on the
   // screen query are one proof, not an ambiguity.
@@ -566,6 +605,70 @@ void TestResolveTargetedRenderSites() {
     assert(LayoutEquals(sites.layout, cg->layout));
   }
 
+  // VS2013 cs2 2.6.1.90: two complete text-window classes, each proven
+  // through its own RenderChar; both are reported (the game's script picks
+  // which window shows the dialogue).
+  for (const TargetedCodegen* cg : {&kT2019, &kT2020}) {
+    core::Sites sites;
+    SyntheticImage img;
+    BuildEngineT(&img, *cg);
+    AddSecondTextClass(&img, *cg);
+    const auto result = core::ResolveSites(img.image, Imports(), &sites);
+    if (result != core::SiteResult::kResolved) {
+      std::fprintf(stderr, "two classes %s: got %u\n", cg->name,
+                   static_cast<unsigned>(result));
+    }
+    assert(result == core::SiteResult::kResolved);
+    assert(sites.class_count == 2u);
+    assert(sites.classes[0].render_char == img.At(kRenderT));
+    assert(sites.classes[0].window_update == img.At(kUpdateT));
+    assert(sites.classes[0].clear_page == img.At(kClearT));
+    assert(sites.classes[1].render_char == img.At(kRenderT2));
+    assert(sites.classes[1].window_update == img.At(kUpdateT2));
+    assert(sites.classes[1].clear_page == img.At(kClearT2));
+    assert(LayoutEquals(sites.classes[1].layout, cg->layout));
+    assert(sites.render_char == sites.classes[0].render_char);
+
+    // Each proof of the second class, broken alone, fails closed.
+    {
+      SyntheticImage broken;
+      BuildEngineT(&broken, *cg);
+      AddSecondTextClass(&broken, *cg);
+      broken.base[kRenderT2 + 0x2bbu + 7u] = 0x04u;  // ret 4: other ABI
+      assert(core::ResolveSites(broken.image, Imports(), &sites) ==
+             core::SiteResult::kRecordInvalid);
+    }
+    {
+      SyntheticImage broken;
+      BuildEngineT(&broken, *cg);
+      AddSecondTextClass(&broken, *cg);
+      std::memset(broken.base + kClearCallT2 + core::kClearCallTCall + 5u,
+                  0xcc, 5u);  // its ClearPage caller no longer reveals
+      assert(core::ResolveSites(broken.image, Imports(), &sites) ==
+             core::SiteResult::kClearInvalid);
+    }
+    {
+      // Two Updates revealing through the same RenderChar: ambiguous.
+      SyntheticImage broken;
+      BuildEngineT(&broken, *cg);
+      AddSecondTextClass(&broken, *cg);
+      PutUpdate(&broken, *cg, 0x7900u, kRevealT2);
+      assert(core::ResolveSites(broken.image, Imports(), &sites) ==
+             core::SiteResult::kUpdateMissing);
+    }
+  }
+  {
+    // A single-class build reports one class mirrored into the legacy fields.
+    core::Sites sites;
+    SyntheticImage img;
+    BuildEngineT(&img, kT2020);
+    assert(core::ResolveSites(img.image, Imports(), &sites) ==
+           core::SiteResult::kResolved);
+    assert(sites.class_count == 1u);
+    assert(sites.classes[0].render_char == sites.render_char);
+    assert(LayoutEquals(sites.classes[0].layout, sites.layout));
+  }
+
   // Both layouts present: the adjacent-page proof decides.
   core::Sites sites;
   SyntheticImage both;
@@ -584,11 +687,16 @@ void TestTargetedRenderEachProofFailsClosed() {
     core::SiteResult expected;
   };
   const Breaker breakers[] = {
-      // A second RenderChar is ambiguous.
+      // A second RenderChar-shaped prologue without the record proof.
       {[](SyntheticImage* img, const TargetedCodegen&) {
          img->Put(0x5000u, core::kRenderTBytes, sizeof(core::kRenderTBytes));
        },
-       core::SiteResult::kPageMissing},
+       core::SiteResult::kRecordInvalid},
+      // The prologue's frame and its record stack offset disagree.
+      {[](SyntheticImage* img, const TargetedCodegen&) {
+         img->base[kRenderT + core::kRecordPenTOffset + 3u] = 0xe4u;
+       },
+       core::SiteResult::kRecordInvalid},
       // Record offsets moved / GetCharImage through another slot / the code
       // from another record field / the epilogue pops another argument count.
       {[](SyntheticImage* img, const TargetedCodegen&) {
