@@ -182,6 +182,12 @@ inline constexpr uint8_t kEmbedLoopAnchorBytes[] = {
 inline constexpr exact_lookup::MaskedPattern kEmbedLoopAnchorPattern = {
     kEmbedLoopAnchorBytes, nullptr, sizeof(kEmbedLoopAnchorBytes)};
 inline constexpr size_t kEmbedHookOffsetFromAnchor = 23u;
+// 锚点去掉 hook 点那两字节后的前缀：对象字段 + NUL 扫描循环，单独即唯一。运行时映像上
+// hook 点可能已被注入的文本 hook 改写，前缀不受影响；hook 点由推导单独判形。
+inline constexpr exact_lookup::MaskedPattern kEmbedLoopPrefixPattern = {
+    kEmbedLoopAnchorBytes, nullptr, kEmbedHookOffsetFromAnchor};
+static_assert(kEmbedHookOffsetFromAnchor + 2u == sizeof(kEmbedLoopAnchorBytes),
+              "embed anchor ends with the two-byte hook site");
 
 // This is the only admitted access path that loads the IDirect3DDevice9
 // global immediately before the vtable dispatch. Loader-relocated absolute
