@@ -679,7 +679,6 @@ void main() {
       longPollWait: const Duration(seconds: 1),
     );
     addTearDown(session.dispose);
-    final String first = session.currentSessionId!;
 
     final Completer<void> release = Completer<void>();
     addTearDown(() {
@@ -689,6 +688,9 @@ void main() {
     // 新对话：关掉旧的一场，再开一场——开会话的应答被扣在路上。
     unawaited(session.newSession());
     await counting.openHeld.future.timeout(const Duration(seconds: 10));
+    // 此刻只有旧的一场被关（新的一场应答还扣着）。记它在 host 上的会话句柄——
+    // `currentSessionId` 是快照里的对话 id，不是 URL 里的句柄。
+    final String first = counting.closedIds.single;
 
     session.dispose();
     // 应答还没回：client 不得先释放（释放会把这次开会话掐成 cancelled）。

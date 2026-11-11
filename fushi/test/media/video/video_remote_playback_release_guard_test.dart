@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:test/test.dart';
 
+import '../../helpers/source_guard.dart';
+
 /// BUG-4461：远端播放的「释放服务端资源」（互联 host 的流票）与「播放停止上报」
 /// （Jellyfin / Plex 的 Stopped）是两件事，页面在不同边界上调：
 ///
@@ -25,17 +27,13 @@ void main() {
     'lib/src/pages/implementations/video_fushi/quality.part.dart',
   );
 
-  /// [source] 里 [signature] 起到函数体结束（下一个两格缩进的 `}`）的代码，去掉整行注释。
+  /// [source] 里 [signature] 起到函数体结束（下一个两格缩进的 `}`）的代码，注释抹掉。
   String body(String source, String signature) {
     final int start = source.indexOf(signature);
     expect(start, isNot(-1), reason: '找不到 $signature');
     final int end = source.indexOf('\n  }\n', start);
     expect(end, isNot(-1));
-    return source
-        .substring(start, end)
-        .split('\n')
-        .where((String line) => !line.trimLeft().startsWith('//'))
-        .join('\n');
+    return maskComments(source.substring(start, end));
   }
 
   test('释放 helper 同步调用、不等结果', () {
