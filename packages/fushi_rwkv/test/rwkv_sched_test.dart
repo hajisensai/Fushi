@@ -128,6 +128,20 @@ void main() {
     dir.deleteSync(recursive: true);
   });
 
+  test('可空值没有时照样占位：与内核的 opt T（u8 有无 + T）同布局', () {
+    final RwkvSchedWriter w = RwkvSchedWriter()
+      ..optI64(null)
+      ..optStr(null)
+      ..optI64(7)
+      ..optStr('a');
+    expect(w.take(), <int>[
+      0, 0, 0, 0, 0, 0, 0, 0, 0, // 无 + 8 字节占位
+      0, 0, 0, 0, 0, // 无 + 空串（长度 0）
+      1, 7, 0, 0, 0, 0, 0, 0, 0,
+      1, 1, 0, 0, 0, 0x61,
+    ]);
+  });
+
   test('编解码往返：各种标量、可空值、数组与分段正文', () {
     final RwkvSchedWriter w = RwkvSchedWriter(1)
       ..u8(7)

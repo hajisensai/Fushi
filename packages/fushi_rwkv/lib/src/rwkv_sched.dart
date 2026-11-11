@@ -131,9 +131,10 @@ final class RwkvSchedWriter {
     _length += 4;
   }
 
+  /// 可空值 = 有无（u8）+ 值：没有时值照样占位（写 0），与内核的 `opt T` 同布局。
   void optI64(int? value) {
     boolean(value != null);
-    if (value != null) i64(value);
+    i64(value ?? 0);
   }
 
   void raw(Uint8List value) {
@@ -151,7 +152,7 @@ final class RwkvSchedWriter {
 
   void optStr(String? value) {
     boolean(value != null);
-    if (value != null) str(value);
+    str(value ?? '');
   }
 
   void i64s(List<int> values) {
@@ -212,7 +213,12 @@ final class RwkvSchedReader {
 
   double f32() => _data.getFloat32(_advance(4), Endian.little);
 
-  int? optI64() => boolean() ? i64() : null;
+  /// 可空值 = 有无（u8）+ 值：没有时值照样占位，要读掉。
+  int? optI64() {
+    final bool has = boolean();
+    final int value = i64();
+    return has ? value : null;
+  }
 
   /// 一段带长度的字节（原缓冲上的视图）。
   Uint8List bytes() {
@@ -229,7 +235,11 @@ final class RwkvSchedReader {
 
   String str() => utf8.decode(bytes());
 
-  String? optStr() => boolean() ? str() : null;
+  String? optStr() {
+    final bool has = boolean();
+    final String value = str();
+    return has ? value : null;
+  }
 
   Int64List i64s() {
     final int n = u32();
