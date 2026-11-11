@@ -6,6 +6,9 @@
 //      峰值 RSS（工作集）把 SQLite mmap 进来的库文件页也算进去（srs.db 开 256 MiB mmap），那部分是可回收的
 //      文件页；私有提交才是收段真正占住的堆。同一轮里另起一路循环作答 B 自己的一张卡，报每次作答的等待时间
 //      （收段的解码 / 验签在写锁外时，作答只等锁内的投递）。
+// `FUSHI_SRS_INGEST_BENCH_FRESH=1`：B 是新装的设备（开库后什么都没写，只有内置身份记录）——第一次同步走新设备
+// 收段通道（BUG-4387），输出里的 `channel=` 是内核有没有把这一轮放上通道。缺省 B 先建一条自己的笔记并在收段期间
+// 循环作答（有自己数据的设备，逐条投递）。
 // 只用来出 PR 里的前后对比数字。
 import 'dart:io';
 import 'dart:typed_data';
@@ -35,6 +38,8 @@ void main() {
         Platform.environment['FUSHI_SRS_INGEST_BENCH_ANSWER_MS'] ?? '',
       ) ??
       20;
+  final bool fresh =
+      Platform.environment['FUSHI_SRS_INGEST_BENCH_FRESH'] == '1';
 
   test(
     'ingest bench',
@@ -72,23 +77,29 @@ void main() {
           loc.files[rel] = f.readAsBytesSync();
         }
         final SrsDbStore b = await device('B');
-        final String own = await b.createNote(
-          noteTypeId: b.lapisNoteTypeId,
-          fieldsById: <String, String>{
-            srsLapisFieldId(kProfile, 'Expression'): '自分',
-          },
-        );
-        final String card = (await b.cardsOfNote(own)).single.id;
-        await b.answer(card, 3);
+        String? card;
+        if (!fresh) {
+          final String own = await b.createNote(
+            noteTypeId: b.lapisNoteTypeId,
+            fieldsById: <String, String>{
+              srsLapisFieldId(kProfile, 'Expression'): '自分',
+            },
+          );
+          card = (await b.cardsOfNote(own)).single.id;
+          await b.answer(card, 3);
+        }
+        bool channel = false;
+        b.debugOnIngestSlice = () => channel = channel || b.debugChannelLive;
         final int priv0 = _peakPrivateBytes();
         final int rss0 = ProcessInfo.maxRss;
         final Stopwatch sw = Stopwatch()..start();
         bool ingesting = true;
         final List<int> waits = <int>[];
         final Future<void> answering = () async {
-          while (ingesting && answerGapMs > 0) {
+          final String? mine = card;
+          while (ingesting && answerGapMs > 0 && mine != null) {
             final Stopwatch one = Stopwatch()..start();
-            await b.answer(card, 3);
+            await b.answer(mine, 3);
             waits.add(one.elapsedMilliseconds);
             await Future<void>.delayed(Duration(milliseconds: answerGapMs));
           }
@@ -104,7 +115,8 @@ void main() {
         expect(r.applied, greaterThan(0));
         // ignore: avoid_print
         print(
-          'INGEST_BENCH notes=$notes applied=${r.applied} '
+          'INGEST_BENCH notes=$notes fresh=$fresh channel=$channel '
+          'applied=${r.applied} '
           'ms=${sw.elapsedMilliseconds} '
           'maxRssBeforeMiB=${rss0 >> 20} maxRssAfterMiB=${rss1 >> 20} '
           'peakDeltaMiB=${(rss1 - rss0) >> 20} '
