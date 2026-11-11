@@ -135,14 +135,14 @@ void main() {
         ),
       );
       // An analyze still fits next to the two test runs, booked at its
-      // measured footprint rather than its 8 GB ceiling.
+      // measured footprint (8 GB) rather than its 16 GB ceiling.
       final HeavyLease a = await take(4, kind: HeavyKind.analyze);
       expect(
         readHeavyHolders(
           Directory('${tmp.path}/state'),
           4,
         ).map((HeavyHolder h) => h.bookedMb).fold(0, (int s, int m) => s + m),
-        24576 + 4608,
+        24576 + 8192,
       );
       a.release();
       t2.release();
@@ -375,14 +375,14 @@ void main() {
         ),
       ),
     );
-    // Two analyzes (9216 MB) + a test (12288 MB) > a 16 GB budget.
+    // Two analyzes (16384 MB) + a test (12288 MB) > a 16 GB budget.
     await expectLater(
       take(1, kind: HeavyKind.test, budgetMb: 16384),
       throwsA(
         isA<HeavyLeaseTimeout>().having(
           (HeavyLeaseTimeout e) => e.message,
           'message',
-          contains('9216 MB booked + 12288 MB > 16384 MB'),
+          contains('16384 MB booked + 12288 MB > 16384 MB'),
         ),
       ),
     );
