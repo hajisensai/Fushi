@@ -731,6 +731,38 @@ class EngineSupportManifestTest(unittest.TestCase):
         for area in GENERATOR.LOOKUP_EVIDENCE_AREAS:
             self.assertEqual("implemented_unverified", smash[area]["status"])
 
+    def test_unity_canvas_provider_is_shared_by_both_scripting_backends(
+        self,
+    ) -> None:
+        # Provider 20 is one publisher (the shared Unity canvas-text runtime)
+        # claimed by both mutually exclusive backends; dropping either claim,
+        # or adding a third, is parity drift.
+        pair = (
+            "kLookupGeometryProviderEngineExactLayout",
+            "kLookupGeometryProviderIdUnityMono",
+        )
+        self.assertEqual(
+            ("unity_mono", "engine_exact_layout"),
+            GENERATOR.LOOKUP_NATIVE_PROVIDER_MANIFEST_BINDINGS[pair],
+        )
+        self.assertEqual(
+            (("unity_il2cpp", "engine_exact_layout"),),
+            GENERATOR.LOOKUP_NATIVE_PROVIDER_SHARED_BINDINGS[pair],
+        )
+        il2cpp = next(
+            record
+            for record in self.manifest["lookup_support"]["engines"]
+            if record["engine_id"] == "unity_il2cpp"
+        )
+        self.assertIn("engine_exact_layout", il2cpp["geometry"]["providers"])
+        for area in GENERATOR.LOOKUP_EVIDENCE_AREAS:
+            self.assertEqual("implemented_unverified", il2cpp[area]["status"])
+        il2cpp["geometry"]["providers"].remove("engine_exact_layout")
+        with self.assertRaisesRegex(
+            GENERATOR.ManifestError, "lookup provider manifest parity drift"
+        ):
+            GENERATOR.validate_manifest(self.manifest, ROOT)
+
     def test_lookup_claim_cannot_be_promoted_without_real_build_gates(self) -> None:
         siglus = next(
             record

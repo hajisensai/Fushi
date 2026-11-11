@@ -45,7 +45,7 @@
 | `kirikiri_z` | runtime_layout、attached_calibrated | `implemented_unverified` | `implemented_unverified` | `implemented_unverified` |
 | `renpy_ffmpeg` | runtime_layout、attached_calibrated | `implemented_unverified` | `implemented_unverified` | `implemented_unverified` |
 | `tyrano_nwjs` | attached_calibrated | `implemented_unverified` | `implemented_unverified` | `implemented_unverified` |
-| `unity_il2cpp` | attached_calibrated | `implemented_unverified` | `implemented_unverified` | `implemented_unverified` |
+| `unity_il2cpp` | engine_exact_layout、attached_calibrated | `implemented_unverified` | `implemented_unverified` | `implemented_unverified` |
 | `elf_ai6` | attached_calibrated | `implemented_unverified` | `implemented_unverified` | `implemented_unverified` |
 | `reallive` | engine_exact_layout、attached_calibrated | `implemented_unverified` | `implemented_unverified` | `implemented_unverified` |
 | `bgi_ethornell` | engine_exact_layout、attached_calibrated | `implemented_unverified` | `implemented_unverified` | `implemented_unverified` |
@@ -77,7 +77,7 @@
 - `tyrano_nwjs` geometry：The calibrated fallback is implemented offline; a Tyrano DOM runtime-layout provider is not yet admitted.
   - verified shield：The generic standard-surface shield is present, without the required real-build transaction corpus.
   - risky left click：Risk is accepted unconditionally (BUG-2154 removed the per-executable consent gate, which was unsatisfiable: the generic shield can never reach Verified); allow_risk still crosses the IPC contract, but no measured real-build click-leak rate is recorded.
-- `unity_il2cpp` geometry：The calibrated fallback is implemented offline; TMP/UGUI source-index and Canvas-transform geometry are not yet admitted.
+- `unity_il2cpp` geometry：The calibrated fallback is implemented offline. 2026-11-11 (owner decision: IL2CPP support may start), offline only: the Unity Mono canvas-text lookup (frameworks 3 TMP UGUI and 4 UI.Text, provider kLookupGeometryProviderIdUnityMono = 20, EngineExactLayout) now runs on the IL2CPP scripting backend through an accessor layer (hook/adapters/unity_il2cpp_api.h) that fills the same Mono embedding / lookup / value-size / class-hierarchy tables the shared resolvers read with shims over GameAssembly.dll's il2cpp_* exports, so the sites, sampler, model, click claim and hit publication are the Mono backend's code, not a copy (the two backends are mutually exclusive per process; the shared runtime records its owner and log tag). Identity is structural: GameAssembly.dll loaded, `<stem>_Data\il2cpp_data\` present, and all 32 il2cpp_* exports the resolvers read (missing ones are logged by name, bounded, and the lookup fails closed, e.g. obfuscated / stripped exports). The method signature handle is the MethodInfo itself; the sampling point is the AOT body of `static void Canvas.SendWillRenderCanvases()` taken from MethodInfo.methodPointer and accepted only inside GameAssembly.dll's mapped image (detour carries IL2CPP's trailing `const MethodInfo*`); engine bindings come from il2cpp_resolve_icall("Ns.Class::Method") and are refused when the short name is declared as more than one internal call on its class; value-type field offsets are boxed-relative as in Mono; the Il2CppArray element base (four pointers) is cross-checked against il2cpp_array_object_header_size when exported. Candidates come from the IL2CPP text path's own TMP set_text / SetText(string,bool) / SetText(string) and UI.Text.set_text lanes (lane bits and thread identity unchanged: component pointer + hook code + hook name); SetText(string) is hooked only with the complete pair and, nested, the outer call does not publish again. Resolution runs once on HookWorker after the text scan and a top-level window exist, inside an IL2CPP thread-attach scope; hooks install after detach. Bounded diagnostics: `unity-il2cpp: runtime GameAssembly= il2cpp_data= exports=found/required missing= header_export= image= arch=`, `unity-il2cpp-text: classes ... hooked ...`, and the Mono-format `unity-il2cpp-lookup:` site / gate / model / OfferReady lines. Offline: x86/x64 build and fushi_unity_il2cpp_lookup_test (fake il2cpp export table: export report and truncation, facade refusals, signature / array / AOT-entry / icall shims, TMP and UI.Text site resolution through the facade with every fail-closed branch, canvas lane identity, SetText(string) nesting, disk layout); fushi_unity_mono_lookup_test unchanged. No IL2CPP runtime session has exercised the lookup yet.
   - verified shield：The generic standard-surface shield is present, without the required real-build transaction corpus.
   - risky left click：Risk is accepted unconditionally (BUG-2154 removed the per-executable consent gate, which was unsatisfiable: the generic shield can never reach Verified); allow_risk still crosses the IPC contract, but no measured real-build click-leak rate is recorded.
 - `elf_ai6` geometry：The calibrated fallback is implemented offline; positioned GDI lineage has not been admitted for this engine.
@@ -751,10 +751,11 @@ Tests：`tests/qlie_pack_test.cpp`、`tests/adapter_structure_test.py`
 - Unity Mono is a separate Phase 4 target and is not covered by this IL2CPP claim.
 - The verified sample version and executable hash were not recorded.
 - Attach after startup may miss source voices and must retain loopback fallback.
+- In-game lookup (shared Unity canvas-text runtime, frameworks TMP UGUI / UI.Text) is offline-only on IL2CPP; Mono-only frameworks (Message.Mes per-glyph TextMesh, Fungus SayDialog) are not modelled on IL2CPP, and builds whose il2cpp_* exports are stripped or renamed fail closed.
 
 Fixtures：尚无（P5 补齐）
 
-Tests：`tests/unity_event_cursor_test.cpp`、`tests/il2cpp_thread_scope_test.cpp`、`tests/resource_audio_ready_test.cpp`、`tests/adapter_structure_test.py`
+Tests：`tests/unity_event_cursor_test.cpp`、`tests/il2cpp_thread_scope_test.cpp`、`tests/resource_audio_ready_test.cpp`、`tests/unity_il2cpp_lookup_test.cpp`、`tests/adapter_structure_test.py`
 
 ### Leaf / AQUAPLUS (WHITE ALBUM2 exact profile) (`leaf_aquaplus`)
 
