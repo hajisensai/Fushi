@@ -1060,7 +1060,7 @@ pub(crate) fn sync2_dispatch(
         });
     }
     // 存量样式去重的落库一半（store/repr_rewrite.rs）：改写一批修改记录的表示、刷新这些笔记的缓存行、推进去重游标并写
-    // 本机状态行，一个 SAVEPOINT。回包 `{rewritten, notes, localRevision, cache}`。
+    // 本机状态行，一个 SAVEPOINT。回包 `{rewritten, notes, localRevision, localEpoch, cache}`。
     if op == "edits_rewrite_repr" {
         let cfg = cache_config_of(c, profile, req)?;
         let w = c.writer()?;
@@ -1119,25 +1119,29 @@ pub(crate) fn sync2_dispatch(
                 let written = crate::store::sync2::in_savepoint(&w, |conn| {
                     let written = crate::store::caches::rebuild(conn, profile, &cfg)?;
                     crate::store::cache_rev::record(conn, profile)?;
+                    // 覆盖恢复 / 采用别处的 profile 之后：恢复进来的行可能还是内联样式，存量样式去重从头再查。
+                    if req.get("resetStyles").and_then(Value::as_bool) == Some(true) {
+                        crate::store::local_state::reset_style_cursor(conn, profile)?;
+                    }
                     Ok(written)
                 })?;
                 return Ok(json!({"cache": written.to_json()}));
             }
             // 分批收段的一片：本机已有缓存行的在这一片的事务里当场刷新，新实体记进待刷新集合等收尾
             // （transport.rs `defer_cache_refresh`），这里不再刷。一次投一片（默认按时间切、有写入排队就让出；测试用
-            // `sliceOps` 按条数切、`sliceMs` 改时间上限）；结果 `more` 为真 Dart 放开写锁再调。`localState`：Dart 的
-            // 本机状态行，与这一片同一笔事务写下（收段不套 Drift 事务，见 `sync2_ingest_commit_persisting`）。
+            // `sliceOps` 按条数切、`sliceMs` 改时间上限）；结果 `more` 为真 Dart 放开写锁再调。本机状态行与这一片
+            // 同一笔事务写下（收段不套 Drift 事务，见 `sync2_ingest_commit_persisting`）。
             "ingest_commit" => {
                 let now = req
                     .get("now")
                     .and_then(Value::as_i64)
                     .ok_or("sync2: missing now")?;
-                let local_state = req.get("localState").and_then(Value::as_str);
+                let anchor = crate::store::local_state::anchor_of(req)?;
                 let (r, written) = c.sync2_ingest_commit_cached(
                     profile,
                     now,
                     slice_budget(c, req),
-                    local_state,
+                    anchor.as_ref(),
                     Some(&*cfg),
                 )?;
                 let mut v: Value = serde_json::from_str(&r).map_err(|e| e.to_string())?;
@@ -1238,8 +1242,8 @@ fn cache_config_of(
 
 /// 本机写命令（收掉 Dart 写路径第 2 步）：Dart 不再为它们开 Drift 事务。分发器取**一次**写锁，在**一个** SAVEPOINT 里
 /// 依次做完命令本体（[local_write_body]）、缓存刷新（store/caches.rs）、请求带 `study` 时的排队（store/study.rs，看得见
-/// 这笔还没提交的写入），以及请求带 `localState` 时的本机状态行（store/local_state.rs `persist_projected`：修订号按投影
-/// 结果推进，回包带 `localRevision`）。任何一步出错整个 SAVEPOINT 回滚：命令、缓存行、本机状态行一起不落。外面开着 Drift
+/// 这笔还没提交的写入），以及本机状态行（store/local_state.rs `persist_projected`：修订号按投影
+/// 结果从库里的值推进，回包带 `localRevision` / `localEpoch`；请求带了校时状态 `anchor` 就一并写下）。任何一步出错整个 SAVEPOINT 回滚：命令、缓存行、本机状态行一起不落。外面开着 Drift
 /// 事务时 SAVEPOINT 照旧嵌进那笔事务，随它提交或回滚（生产调用方已经没有这种形态，守卫按 Reject 计，
 /// store/drift_guard.rs）。
 const LOCAL_WRITE_OPS: &[&str] = &[
@@ -1295,7 +1299,7 @@ fn local_write(
     } else if op == "retire" {
         pre.drain = Some(c.prepare_unlocked(profile, std::borrow::Cow::Owned(Vec::new()), None)?);
     }
-    let local_state = req.get("localState").and_then(Value::as_str);
+    let anchor = crate::store::local_state::anchor_of(req)?;
     let w = c.writer()?;
     // 会话外投递（导入、停用后的那一遍投递）：新设备收段通道没做完就先按片做完（各片自己提交，不进下面的 SAVEPOINT；
     // 分发器已在取写锁前收过，这里通常没有通道）。
@@ -1340,11 +1344,9 @@ fn local_write(
             )?),
             None => None,
         };
-        if let Some(local) = local_state {
-            // `apply` / `sched` 推进过的旧版时钟已由命令本体写进这一行（store/legacy_clock.rs，内核持有的键），这里的
-            // 合并 upsert 保留它。
-            crate::store::local_state::persist_projected(conn, profile, local, &mut v)?;
-        }
+        // 本机状态行：修订号按这次的投影结果从库里的值推进（`apply` / `sched` 推进过的旧版时钟已由命令本体写进同一
+        // 行，这里读改写整行，不动它）。
+        crate::store::local_state::persist_projected(conn, profile, anchor.as_ref(), &mut v)?;
         if let Some(m) = v.as_object_mut() {
             m.insert("cache".to_owned(), written.to_json());
             if let Some(s) = study {
@@ -1599,6 +1601,9 @@ const CHANNEL_TRANSPARENT: &[&str] = &[
     "media_known",
     "media_gc_queue",
     "media_live_refs",
+    "local_state",
+    "local_state_ensure",
+    "local_anchor",
     "profile_footprint",
     "profile_purge",
     "derive_key",
@@ -1924,13 +1929,31 @@ fn sync2_command(
             profile,
             i("now")?,
             slice_budget(c, req),
-            req.get("localState").and_then(Value::as_str),
+            crate::store::local_state::anchor_of(req)?.as_ref(),
         )?)?,
         "replay_pending" => parse(c.sync2_replay_pending_persisting(
             profile,
             slice_budget(c, req),
-            req.get("localState").and_then(Value::as_str),
+            crate::store::local_state::anchor_of(req)?.as_ref(),
         )?)?,
+        // 本机状态行（store/local_state.rs）：Dart 开库 / 重读时要的几个值（只读，不建行）；开库在缓存重建之后把行与
+        // 纪元落下；同步成功后写下校时状态。
+        "local_state" => c.read_visible(|conn| crate::store::local_state::read(conn, profile))?,
+        "local_state_ensure" => {
+            let w = c.writer()?;
+            crate::store::sync2::in_savepoint(&w, |conn| {
+                crate::store::local_state::ensure(conn, profile)
+            })?
+        }
+        "local_anchor" => {
+            let anchor =
+                crate::store::local_state::anchor_of(req)?.ok_or("local_anchor: missing anchor")?;
+            let w = c.writer()?;
+            crate::store::sync2::in_savepoint(&w, |conn| {
+                crate::store::local_state::set_anchor(conn, profile, &anchor)
+            })?;
+            json!({})
+        }
         "rotate" => c.sync2_rotate(profile, i("now")?)?,
         "export" => {
             files.push(("export.fushisrs".to_owned(), c.sync2_export(profile)?));

@@ -1744,21 +1744,17 @@ fn ingest_result(
     .to_string())
 }
 
-/// 收段的一步在同一笔事务里写下 Dart 的本机状态行（`srs_local_state`，集成审查【中高】）。[local_state] 是 Dart 调用
-/// 那一刻内存里的本机状态（`_saveLocal` 写的同一份 JSON）；修订号按 [result] 推进后写下、结果带 `localRevision`，与本机
-/// 写命令同一个函数（store/local_state.rs [crate::store::local_state::persist_projected]）。[local_state] 为 None
-/// （测试、旧调用方）就不写，结果原样返回。
+/// 收段的一步在同一笔事务里推进并写下本机状态行（`srs_local_state`，集成审查【中高】）：修订号按 [result] 从库里的值
+/// 推进、结果带 `localRevision` / `localEpoch`，与本机写命令同一个函数（store/local_state.rs
+/// [crate::store::local_state::persist_projected]）。[anchor]：Dart 此刻的校时状态，给了就一并写下。
 fn persist_local_state(
     c: &Connection,
     profile: &str,
-    local_state: Option<&str>,
+    anchor: Option<&serde_json::Value>,
     result: String,
 ) -> Result<String, String> {
-    let Some(local) = local_state else {
-        return Ok(result);
-    };
     let mut r: Value = serde_json::from_str(&result).map_err(|e| e.to_string())?;
-    crate::store::local_state::persist_projected(c, profile, local, &mut r)?;
+    crate::store::local_state::persist_projected(c, profile, anchor, &mut r)?;
     Ok(r.to_string())
 }
 
@@ -2792,8 +2788,8 @@ impl SrsCore {
         self.sync2_ingest_commit_persisting(profile, now, budget, None)
     }
 
-    /// 同 [Self::sync2_ingest_commit]；给了 [local_state]（Dart 本机状态行 `srs_local_state.json` 的此刻内容）就在投递
-    /// 的**同一笔事务**里把它写下（修订号按这一片落库的变化推进，见 [persist_local_state]）。收段不再套 Drift 事务
+    /// 同 [Self::sync2_ingest_commit]；[anchor] 是 Dart 此刻的校时状态（没有就 None）。本机状态行在投递的**同一笔
+    /// 事务**里写下（修订号按这一片落库的变化推进，见 [persist_local_state]；带不带 [anchor] 都写）。收段不再套 Drift 事务
     /// （集成审查【中高】）：这一片由内核自己提交，提交成功才推进会话内存（`prepared` / `delivery`），所以不会有
     /// 「内层 SAVEPOINT 释放、会话已推进，外层事务却回滚」的不一致；本机状态行也随同一次提交落盘或一起不落。
     pub fn sync2_ingest_commit_persisting(
@@ -2801,9 +2797,9 @@ impl SrsCore {
         profile: &str,
         now: i64,
         budget: CommitBudget<'_>,
-        local_state: Option<&str>,
+        anchor: Option<&serde_json::Value>,
     ) -> Result<String, String> {
-        self.sync2_ingest_commit_cached(profile, now, budget, local_state, None)
+        self.sync2_ingest_commit_cached(profile, now, budget, anchor, None)
             .map(|(r, _)| r)
     }
 
@@ -2814,10 +2810,10 @@ impl SrsCore {
         profile: &str,
         now: i64,
         budget: CommitBudget<'_>,
-        local_state: Option<&str>,
+        anchor: Option<&serde_json::Value>,
         cache: Option<&crate::store::caches::CacheConfig>,
     ) -> Result<(String, crate::store::caches::Written), String> {
-        let out = self.ingest_commit_slice(profile, now, budget, local_state, cache);
+        let out = self.ingest_commit_slice(profile, now, budget, anchor, cache);
         // 这一片收了：让出请求是冲着它来的（之后才到的最多让下一片早收）。
         self.ingest_yield
             .store(false, std::sync::atomic::Ordering::Relaxed);
@@ -2841,7 +2837,7 @@ impl SrsCore {
         profile: &str,
         now: i64,
         mut budget: CommitBudget<'_>,
-        local_state: Option<&str>,
+        anchor: Option<&serde_json::Value>,
         cache: Option<&crate::store::caches::CacheConfig>,
     ) -> Result<(String, crate::store::caches::Written), String> {
         let w = self.writer()?;
@@ -2914,7 +2910,7 @@ impl SrsCore {
                 Some(cfg) => crate::store::caches::refresh(c, profile, cfg, now_dirty)?,
                 None => crate::store::caches::Written::default(),
             };
-            let r = persist_local_state(c, profile, local_state, r)?;
+            let r = persist_local_state(c, profile, anchor, r)?;
             Ok((r, written, fork_at, done))
         });
         match out {
@@ -2953,13 +2949,13 @@ impl SrsCore {
         self.sync2_ingest_finish_persisting(profile, now, budget, None)
     }
 
-    /// 同 [Self::sync2_ingest_finish_within]，[local_state] 同 [Self::sync2_ingest_commit_persisting]。
+    /// 同 [Self::sync2_ingest_finish_within]，[anchor] 同 [Self::sync2_ingest_commit_persisting]。
     pub fn sync2_ingest_finish_persisting(
         &self,
         profile: &str,
         now: i64,
         mut budget: CommitBudget<'_>,
-        local_state: Option<&str>,
+        anchor: Option<&serde_json::Value>,
     ) -> Result<String, String> {
         let w = self.writer()?;
         let mut guard = self.ingest_phase()?;
@@ -3017,7 +3013,7 @@ impl SrsCore {
                 None,
             )?;
             let drained = !more && !cache_is_pending(c, profile)?;
-            Ok((persist_local_state(c, profile, local_state, r)?, drained))
+            Ok((persist_local_state(c, profile, anchor, r)?, drained))
         });
         self.ingest_yield
             .store(false, std::sync::atomic::Ordering::Relaxed);
@@ -3045,12 +3041,12 @@ impl SrsCore {
         self.sync2_replay_pending_persisting(profile, budget, None)
     }
 
-    /// 同 [Self::sync2_replay_pending]，[local_state] 同 [Self::sync2_ingest_commit_persisting]。
+    /// 同 [Self::sync2_replay_pending]，[anchor] 同 [Self::sync2_ingest_commit_persisting]。
     pub fn sync2_replay_pending_persisting(
         &self,
         profile: &str,
         mut budget: CommitBudget<'_>,
-        local_state: Option<&str>,
+        anchor: Option<&serde_json::Value>,
     ) -> Result<String, String> {
         let w = self.writer()?;
         let out = in_savepoint(&w, |c| {
@@ -3062,7 +3058,7 @@ impl SrsCore {
                 (BTreeSet::new(), true)
             };
             let r = ingest_result(c, profile, t, replayed, 0, Vec::new(), false, more, None)?;
-            persist_local_state(c, profile, local_state, r)
+            persist_local_state(c, profile, anchor, r)
         });
         self.ingest_yield
             .store(false, std::sync::atomic::Ordering::Relaxed);

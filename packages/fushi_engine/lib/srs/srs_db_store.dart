@@ -434,17 +434,18 @@ class SrsDbStore implements SrsSync2Host {
       styles: styles,
       exclusiveOuter: exclusiveOuter,
     );
-    final bool hadLocalState = await s._loadLocal();
-    // 老版本存的本机状态没有纪元：当场落盘，否则每次打开都是新纪元、指纹每次都「变了」。
-    if (hadLocalState && s._epochMissing) await s._saveLocal();
+    final ({bool exists, bool epochStored}) local = await s._loadLocal();
     // 注册本 profile 的缓存配置（库重开后内核里就没了，每次打开都注册），内核顺带把缓存补到当前推导口径
-    // （版本是内核持有的本机状态键，native/fushi_fsrs/src/store/cache_rev.rs）。
+    // （版本记在本机状态行里，native/fushi_fsrs/src/store/cache_rev.rs）。
     await s._registerCacheConfig();
-    if (!hadLocalState && await s._hasAnyEvent()) {
+    if (!local.exists && await s._hasAnyEvent()) {
       // 有事件却没有本机状态：覆盖恢复了备份（本机状态与缓存不进备份，恢复时清空）。重建缓存；同步 v2 的
       // 本机身份同样不进备份，打开时按新设备起步（[_sync2Open]），绝不沿用备份来源设备的身份。
       await s.afterRestore();
     }
+    // 还没有本机状态行（新 profile、刚覆盖恢复）或老版本存的行没有纪元：当场落下，否则每次打开都是新纪元、指纹
+    // 每次都「变了」。排在重建之后——「有事件却没有这一行」正是上面判要不要重建的依据，重建途中失败下次还得再来。
+    if (!local.epochStored) await s._ensureLocalState();
     await s.ensureBuiltins();
     await s._sync2Open(beforeMigrate, deferMigration);
     return s;
@@ -572,7 +573,8 @@ class SrsDbStore implements SrsSync2Host {
   /// 旧协议的本机写入者 ID（[writerId]）：内核持有，开库时随 `identity` 取回（[_sync2Open]）。
   String? _legacyWriter;
 
-  /// 存量样式去重的进度：srs_field_edits 里已检查到的 rowid（本机状态，不进备份）。
+  /// 存量样式去重的进度：srs_field_edits 里已检查到的 rowid（本机状态，不进备份）。内核持有（本机状态行的
+  /// `styleCursor`），这里是读到 / 写下的那一刻的值：[_loadLocal] 读、[compactStoredStyles] 每批推进、[afterRestore] 归零。
   int _styleCursor = 0;
 
   /// 这一版内核的缓存推导口径版本（`cache_config_set` 回包的 `current`，native/fushi_fsrs/src/store/cache_rev.rs
@@ -580,7 +582,9 @@ class SrsDbStore implements SrsSync2Host {
   @visibleForTesting
   int debugCacheRevision = 0;
 
-  /// 库的变化修订号：任何事件真正落库（本机产生或对端来的）+1（见 [changeFingerprint]）。
+  /// 库的变化修订号：任何事件真正落库（本机产生或对端来的）+1（见 [changeFingerprint]）。内核持有（本机状态行的
+  /// `revision`，native/fushi_fsrs/src/store/local_state.rs）：这里只由内核的回包赋值（[_loadLocal] /
+  /// [_absorbLocalWrite]），Dart 自己不加。
   int _revision = 0;
 
   /// 内容修订号（只在内存）：修订号的子集——复习日志与界面状态类修改记录（牌组收起 / 展开，
@@ -658,9 +662,9 @@ class SrsDbStore implements SrsSync2Host {
   /// 纪元：变了（覆盖恢复后本机状态重建）= 分数表清空、按历史重算。
   String get rwkvScoresClearKey => _epoch;
 
-  /// 本机状态的随机纪元：本机状态被清空重建（覆盖恢复）后换一个，修订号从 0 重数也不会撞上旧指纹。
+  /// 本机状态的随机纪元：本机状态被清空重建（覆盖恢复）后换一个，修订号从 0 重数也不会撞上旧指纹。内核生成并
+  /// 持有（本机状态行的 `epoch`），这里只由内核的回包赋值。
   String _epoch = '';
-  bool _epochMissing = false;
 
   /// 旧协议的本机写入者 ID（只用来认出迁移进来的旧修改记录里哪些是本机写的；v2 的写入者是 [sync2Device]）。
   ///
@@ -794,25 +798,18 @@ class SrsDbStore implements SrsSync2Host {
           .getSingleOrNull() !=
       null;
 
-  /// 读本机状态；返回之前是否存过。
-  Future<bool> _loadLocal() async {
+  /// 读本机状态（内核 `local_state`，只读：不建行、不补纪元）。`exists`：库里有没有这一行；`epochStored`：行里有没有
+  /// 纪元（没有时 [_epoch] 是内核现给的、没落盘的一个）。
+  ///
+  /// 重读路径（[reloadLocal]、命令失败后的 [_commandOrReload]）也走这里，所以不能顺手建行：这个 profile 的数据可能
+  /// 刚被整份删掉（`profile_purge` / 并入收尾），建回一行它就又被当成有数据的 profile。
+  Future<({bool exists, bool epochStored})> _loadLocal() async {
     _contentRevision++;
     _bumpRwkvScores();
-    final SrsLocalStateRow? row = await (db.select(
-      db.srsLocalState,
-    )..where((t) => t.profileUid.equals(profileUid))).getSingleOrNull();
-    final Map<String, Object?> j = row == null
-        ? const <String, Object?>{}
-        : (jsonDecode(row.json) as Map).cast<String, Object?>();
-    // 行里的 `hlc` / `writerId`（旧版 HLC 时钟与写入者）与 `incarnation` / `lastSeq` / `applied` / `outboxSeq`（旧版
-    // Dart 写入者留下的）是内核持有的键，这里不读（native/fushi_fsrs/src/store/legacy_clock.rs）。
-    _styleCursor = (j['styleCursor'] as int?) ?? 0;
-    _revision = (j['revision'] as int?) ?? 0;
-    _epochMissing = j['epoch'] is! String;
-    _epoch =
-        (j['epoch'] as String?) ??
-        '${DateTime.now().microsecondsSinceEpoch.toRadixString(36)}'
-            '${Random.secure().nextInt(1 << 30).toRadixString(36)}';
+    final Map<String, Object?> j = await _sync2(const <String, Object?>{
+      'op': 'local_state',
+    });
+    _absorbLocalState(j);
     final Object? anchor = j['anchor'];
     // `{o, b, s?, t?}`：o = 可信时间 − 墙钟，s / t = 校时时的服务器时间与开机时钟读数（只在写下它的进程 b 里接着
     // 用，见 [SrsTrustedClock.restoreAnchor]）。更旧的 `{s, m, b}`（服务器时间 + Stopwatch 读数）没有 o，不认。
@@ -826,44 +823,36 @@ class SrsDbStore implements SrsSync2Host {
         bootTimeMs: boot is int ? boot : null,
       );
     }
-    return row != null;
-  }
-
-  /// 写本机状态行。和内核共用一条合并 upsert（native/fushi_fsrs/src/store/local_state.rs `UPSERT_SQL`）：交来的整行
-  /// 去掉内核持有的键、保留库里这些键的原值（白名单 `KERNEL_HELD_KEYS`：缓存推导口径版本 `cacheRev`、旧版 HLC 时钟与
-  /// 写入者的键），所以 Dart 整行重写不会抹掉内核写下的字段。
-  Future<void> _saveLocal() async {
-    await db.customInsert(
-      kSrsLocalStateUpsertSql,
-      variables: <Variable>[
-        Variable<String>(profileUid),
-        Variable<String>(jsonEncode(_localStateJson())),
-      ],
-      updates: {db.srsLocalState},
+    return (
+      exists: j['exists']! as bool,
+      epochStored: j['epochStored']! as bool,
     );
   }
 
-  /// 本机状态行的合并 upsert，与内核 `local_state::UPSERT_SQL` 逐字相同（测试钉住）。
-  @visibleForTesting
-  static const String kSrsLocalStateUpsertSql =
-      'INSERT INTO srs_local_state (profile_uid, json) '
-      'VALUES (srs_id(?1), srs_local_state_merge(NULL, ?2)) '
-      'ON CONFLICT(profile_uid) DO UPDATE SET '
-      'json = srs_local_state_merge(json, excluded.json)';
+  /// 把本机状态行落下（内核 `local_state_ensure`：没有行就建、没有纪元就补）。只在开库时调（见 [open]）。
+  Future<void> _ensureLocalState() async {
+    _absorbLocalState(
+      await _sync2(const <String, Object?>{'op': 'local_state_ensure'}),
+    );
+  }
 
-  /// [_saveLocal] 写下的本机状态（`srs_local_state.json`）里 Dart 持有的键。本机写命令与收段的一步把它作为
-  /// `localState` 交给内核、在命令的同一笔事务里写（[_localStateArg]）。内核持有的键不在这里（见 [_saveLocal]）。
-  Map<String, Object?> _localStateJson() => <String, Object?>{
-    'styleCursor': _styleCursor,
-    'revision': _revision,
-    'epoch': _epoch,
-    if (_trusted.anchorState case final SrsClockAnchorState a)
-      'anchor': <String, Object?>{
-        'o': a.offsetMs,
-        'b': a.bootId,
-        if (a.serverTimeMs case final int server) 's': server,
-        if (a.bootTimeMs case final int boot) 't': boot,
-      },
+  /// `local_state` / `local_state_ensure` 的回包 → 内存里的修订号、纪元、样式去重进度。
+  void _absorbLocalState(Map<String, Object?> j) {
+    _styleCursor = j['styleCursor']! as int;
+    _revision = j['revision']! as int;
+    _epoch = j['epoch']! as String;
+  }
+
+  /// 此刻的校时状态（`{o, b, s?, t?}`，见 [_loadLocal]）；没校过时为 null。改投影的命令随请求带上（`anchor`），内核
+  /// 在命令的同一笔事务里写进本机状态行——o 是「可信时间 − 墙钟」，每次现算，内核算不出来。没带的命令不动行里的值。
+  Map<String, Object?>? _anchorArg() => switch (_trusted.anchorState) {
+    final SrsClockAnchorState a => <String, Object?>{
+      'o': a.offsetMs,
+      'b': a.bootId,
+      if (a.serverTimeMs case final int server) 's': server,
+      if (a.bootTimeMs case final int boot) 't': boot,
+    },
+    null => null,
   };
 
   (int, SrsTimeSource) now() => _trusted.now();
@@ -1234,9 +1223,10 @@ class SrsDbStore implements SrsSync2Host {
               'op': 'edits_rewrite_repr',
               'rows': rewrites,
               'cursor': cursor,
-              'localState': _localStateArg(),
+              'anchor': ?_anchorArg(),
             }),
           );
+          // 游标已随这一批写进本机状态行（同一个 SAVEPOINT）。
           _styleCursor = cursor;
           n = rewrites.length;
         });
@@ -1291,7 +1281,7 @@ class SrsDbStore implements SrsSync2Host {
     late _Applied applied;
     await _commandOrReload(() async {
       // 同步 v2：操作落进 ops 就是「已备份、待发布」，没有单独的发件箱（发件按段，见 store/sync2/transport.rs）。
-      // 本机状态行随 `apply` 交给内核、在同一笔事务里写下（[_localStateArg]）。
+      // 本机状态行由内核在 `apply` 的同一笔事务里写下（[_absorbLocalWrite]）。
       applied = await _applyLocal(
         input,
         recvNow: receive ? recvNow : null,
@@ -1417,8 +1407,8 @@ class SrsDbStore implements SrsSync2Host {
   /// [input] 见 [_applyInput]。同步 v2：事件交给 Rust 的 `apply`——分配 OpId / HLC / 因果上下文、落唯一事实表
   /// （ops）、落投影、重放受影响的卡，一次 FFI（docs/specs/2026-10-25-srs-sync-v2-design.md §3、§4）。修改记录的
   /// dot / ID 由 Rust 按本机设备身份分配，这里只交内容；日志的结果由重放算，作者给的只是提示。旧版 HLC 时钟按各项的
-  /// `clk` 在同一条命令里推进并写下（[recvNow] / [tickNow] 是收 / 走一步用的「此刻」）；本机状态行里 Dart 持有的键随
-  /// 命令交给内核、在同一笔事务里写下（[_localStateArg]）。
+  /// `clk` 在同一条命令里推进并写下（[recvNow] / [tickNow] 是收 / 走一步用的「此刻」）；本机状态行由内核在
+  /// 同一笔事务里写下（[_absorbLocalWrite]）。
   Future<_Applied> _applyLocal(
     List<Map<String, Object?>> input, {
     int? recvNow,
@@ -1439,7 +1429,7 @@ class SrsDbStore implements SrsSync2Host {
         if (stamps) 'stamps': true,
         'study': ?study,
         'expectLast': ?expectLast,
-        'localState': _localStateArg(),
+        'anchor': ?_anchorArg(),
       },
       blobs: <Uint8List>[utf8.encode(jsonEncode(input))],
     );
@@ -1473,13 +1463,13 @@ class SrsDbStore implements SrsSync2Host {
   /// 内核已把落进投影的事件折成粗粒度摘要 `marks`（native/fushi_fsrs/src/store/sync2/mod.rs `Marks`），并在
   /// 同一次调用里按它刷新了缓存行（store/caches.rs），交回写过哪些笔记 / 卡（`cache`）。这里只加计数、记日志——
   /// 不收事件全文，也不在 UI isolate 上重算缓存行（大同步曾因此卡死 / OOM）。冲突扣住 / 解除改变了可见性的
-  /// 实体各推进一次修订号。返回落进投影的事件数。
+  /// 实体各推进一次内容修订号。修订号本身不在这里加：内核按同一份结果推进并写下，回包带回（[_absorbLocalWrite]）。
+  /// 返回落进投影的事件数。
   int _absorbProjection(Map<String, Object?> r) {
     final Map<String, Object?> m =
         (r['marks'] as Map?)?.cast<String, Object?>() ??
         const <String, Object?>{};
     final int landed = (m['landed'] as int?) ?? 0;
-    _revision += landed;
     _contentRevision += (m['content'] as int?) ?? 0;
     _viewRevision += (m['view'] as int?) ?? 0;
     _bumpRwkvScores((m['rwkv'] as int?) ?? 0);
@@ -1487,7 +1477,6 @@ class SrsDbStore implements SrsSync2Host {
       if (c is List &&
           c.length == 2 &&
           SrsEntityKind.tryParse(c[0] as String?) != null) {
-        _revision++;
         _contentRevision++;
       }
     }
@@ -1839,9 +1828,9 @@ class SrsDbStore implements SrsSync2Host {
   /// **不套 Drift 事务**（集成审查【中高】）：以前包在 Drift 事务里，Drift 的 BEGIN 让内核把写连接标成
   /// 「挂着跨命令事务」（store/mod.rs `drift_tx`），整片期间所有只读命令与 Drift 查询都改走写连接——排在整片后面、
   /// 还读得到没提交的行；而内核的收段会话（`prepared` / `delivery`）在内层 SAVEPOINT 释放时就推进了，外层事务若因
-  /// [_saveLocal] 失败回滚，库回到这一片之前、会话却停在之后。现在这一片由内核自己在一笔事务里提交（提交成功才推进
-  /// 会话），本机状态行（[_localStateJson]，这一步只会推进其中的修订号）作为 `localState` 交给内核在**同一笔事务**里
-  /// 写下，内核按同一规则推进修订号并回报 `localRevision`——要么一起落盘、要么一起不落，内存在命令成功之后才改。
+  /// 写本机状态行失败回滚，库回到这一片之前、会话却停在之后。现在这一片由内核自己在一笔事务里提交（提交成功才推进
+  /// 会话），本机状态行（这一步只会推进其中的修订号）由内核在**同一笔事务**里写下并回报 `localRevision`
+  /// （[_absorbLocalWrite]）——要么一起落盘、要么一起不落，内存在命令成功之后才改。
   /// 命令失败时内存没动过，无需重读本机状态。
   Future<Map<String, Object?>> _sync2IngestStep(
     Map<String, Object?> request, [
@@ -1850,7 +1839,7 @@ class SrsDbStore implements SrsSync2Host {
     final Map<String, Object?> r = await _sync2(<String, Object?>{
       ...request,
       'now': now().$1,
-      'localState': _localStateArg(),
+      'anchor': ?_anchorArg(),
     }, blobs: segments);
     final int landed = _absorbLocalWrite(r);
     if (landed > 0 || ((r['replayed'] as List?)?.isNotEmpty ?? false)) {
@@ -1861,7 +1850,7 @@ class SrsDbStore implements SrsSync2Host {
   });
 
   /// 跑一个不改投影之外东西的 v2 写命令（冲突解决、清除、还原点、按时间点恢复、停用设备、信任设备、重复流收敛），投影变化接进
-  /// 缓存。本机状态行随命令交给内核、在同一笔事务里写下（[_localStateArg]）。
+  /// 缓存。本机状态行由内核在命令的同一笔事务里写下（[_absorbLocalWrite]）。
   Future<Map<String, Object?>> _sync2Write(Map<String, Object?> request) =>
       runExclusive(() async {
         late Map<String, Object?> r;
@@ -1869,7 +1858,7 @@ class SrsDbStore implements SrsSync2Host {
           r = await _sync2(<String, Object?>{
             ...request,
             'now': now().$1,
-            'localState': _localStateArg(),
+            'anchor': ?_anchorArg(),
           });
           _absorbLocalWrite(r);
         });
@@ -1958,7 +1947,7 @@ class SrsDbStore implements SrsSync2Host {
         <String, Object?>{
           'op': 'import',
           'now': now().$1,
-          'localState': _localStateArg(),
+          'anchor': ?_anchorArg(),
         },
         blobs: <Uint8List>[bytes],
       );
@@ -2758,10 +2747,20 @@ class SrsDbStore implements SrsSync2Host {
   /// 丢掉全部缓存（笔记 / 卡片缓存行、有效复习投影），由事件重建（缓存不同步，随时可重建）：内核一次调用删
   /// 掉本 profile 的缓存行、按全部笔记与全部有日志的卡重算（native/fushi_fsrs/src/store/caches.rs `rebuild`）。
   /// 内核在同一个 SAVEPOINT 里记下当前推导口径（store/cache_rev.rs）。
-  Future<void> rebuildCaches() => runExclusive(() async {
-    _resetCacheJournal();
-    _absorbCache(await _sync2(const <String, Object?>{'op': 'rebuild_caches'}));
-  });
+  Future<void> rebuildCaches() => _rebuildCaches(resetStyles: false);
+
+  /// [rebuildCaches]；[resetStyles]：同一个 SAVEPOINT 里把存量样式去重的游标归零（[afterRestore]）。
+  Future<void> _rebuildCaches({required bool resetStyles}) =>
+      runExclusive(() async {
+        _resetCacheJournal();
+        _absorbCache(
+          await _sync2(<String, Object?>{
+            'op': 'rebuild_caches',
+            if (resetStyles) 'resetStyles': true,
+          }),
+        );
+        if (resetStyles) _styleCursor = 0;
+      });
 
   /// 删除时刻不晚于 [deletedBeforeMs] 的已删笔记引用的媒体（过了保留期、可以回收的候选；是否真删由调用方
   /// 再扣掉存活引用）。
@@ -3229,7 +3228,7 @@ class SrsDbStore implements SrsSync2Host {
               'notes': moveNotes.noteIds,
             },
           'failAfter': ?debugFailAfter,
-          'localState': _localStateArg(),
+          'anchor': ?_anchorArg(),
         },
         blobs: <Uint8List>[utf8.encode(jsonEncode(input))],
       );
@@ -3253,7 +3252,7 @@ class SrsDbStore implements SrsSync2Host {
         'legacyDevice': deviceId,
         'tickNow': tickNow,
         'ts': source.wire,
-        'localState': _localStateArg(),
+        'anchor': ?_anchorArg(),
       }, blobs: blobs);
       _absorbLocalWrite(r);
     });
@@ -3488,7 +3487,7 @@ class SrsDbStore implements SrsSync2Host {
             'legacyDevice': deviceId,
             'tickNow': tickNow,
             'ts': source.wire,
-            'localState': _localStateArg(),
+            'anchor': ?_anchorArg(),
           });
           _absorbLocalWrite(r);
         });
@@ -3832,7 +3831,7 @@ class SrsDbStore implements SrsSync2Host {
     final (int nowMs, SrsTimeSource source) = now();
     late Map<String, Object?> r;
     await _commandOrReload(() async {
-      // 本机状态行随命令写下（旧版时钟是其中内核持有的键，内核在同一条命令里推进并写下）。
+      // 本机状态行随命令写下（旧版时钟也在这一行里，内核在同一条命令里推进并写下）。
       r = await _sync2(<String, Object?>{
         'op': 'sched',
         'now': nowMs,
@@ -3842,7 +3841,7 @@ class SrsDbStore implements SrsSync2Host {
         'rollover': day.rolloverHour,
         'legacyDevice': deviceId,
         'items': items,
-        'localState': _localStateArg(),
+        'anchor': ?_anchorArg(),
       });
       _absorbLocalWrite(r);
     });
@@ -5324,7 +5323,7 @@ class SrsDbStore implements SrsSync2Host {
   /// 一条本机写命令（[body] 发命令、把结果接进内存）；失败时从库里重读本机状态再抛出。
   ///
   /// 不开 Drift 事务（收掉 Dart 写路径第 2 步）：内核在命令的同一个 SAVEPOINT 里做完命令本体、缓存刷新、排队与本机
-  /// 状态行（随命令交的 `localState`，native/fushi_fsrs/src/store/ffi.rs `local_write`），要么全落、要么全不落。外面
+  /// 状态行（native/fushi_fsrs/src/store/ffi.rs `local_write`），要么全落、要么全不落。外面
   /// 已开着 Drift 事务时那个 SAVEPOINT 嵌进外层事务，随它提交或回滚（生产调用方已经没有这种形态：最后一个是旧
   /// Lapis 迁移，现在是一条 `change`，见 [writeChange]）。
   ///
@@ -5355,30 +5354,29 @@ class SrsDbStore implements SrsSync2Host {
   /// 写失败后重读本机状态也失败时置上（见 [_commandOrReload]）；之后进独占区的写入都抛它。
   StateError? _unusable;
 
-  /// 随本机写命令交给内核的本机状态行（`localState`）：此刻内存里的 [_localStateJson]。内核按命令的投影结果推进其中的
-  /// 修订号、在命令的同一笔事务里写下，回包带 `localRevision`（[_absorbLocalWrite]）。
-  String _localStateArg() => jsonEncode(_localStateJson());
-
-  /// 带 `localState` 的本机写命令的回包：先核对内核写下的修订号（`localRevision`）在，再把投影变化接进内存
-  /// （[_absorbProjection]），修订号以内核写下的为准（同一口径，内存与库里一致）。返回落进投影的事件数。
+  /// 改投影的命令的回包：先核对内核写下的修订号与纪元（`localRevision` / `localEpoch`）在，再把投影变化接进内存
+  /// （[_absorbProjection]）。修订号与纪元以内核写下的为准——内核在命令的同一笔事务里从**库里的值**推进
+  /// （native/fushi_fsrs/src/store/local_state.rs `persist_projected`），所以指向同一个 profile 的两个副本对象交替写也不会
+  /// 把修订号写回去。返回落进投影的事件数。
   ///
-  /// 交了 `localState` 的命令，回包必带 `localRevision`（native/fushi_fsrs/src/store/local_state.rs
-  /// `persist_projected`）；没有就是契约错误（原生库与 Dart 不配套、或某条命令漏接了本机状态行）：在动内存之前抛出，
-  /// 不静默沿用内存里的值——那样库里的本机状态行没写、内存却照常前进，下次开库修订号回退。
-  /// 测试：[_absorbLocalWrite]（回包缺 `localRevision` 时报契约错误、不动内存）。
+  /// 两个键缺任何一个都是契约错误（原生库与 Dart 不配套、或某条命令漏接了本机状态行）：在动内存之前抛出，不静默沿用
+  /// 内存里的值——那样库里的本机状态行没写、内存却照常前进，下次开库修订号回退。
+  /// 测试：[_absorbLocalWrite]（回包缺 `localRevision` / `localEpoch` 时报契约错误、不动内存）。
   @visibleForTesting
   int debugAbsorbLocalWrite(Map<String, Object?> r) => _absorbLocalWrite(r);
 
   int _absorbLocalWrite(Map<String, Object?> r) {
-    final Object? persisted = r['localRevision'];
-    if (persisted is! int) {
+    final Object? revision = r['localRevision'];
+    final Object? epoch = r['localEpoch'];
+    if (revision is! int || epoch is! String) {
       throw StateError(
-        'srs: a local write reply lacks `localRevision` (the native core did '
-        'not persist the local state row it was given)',
+        'srs: a projecting command reply lacks `localRevision` / `localEpoch` '
+        '(the native core did not write the local state row)',
       );
     }
     final int landed = _absorbProjection(r);
-    _revision = persisted;
+    _revision = revision;
+    _epoch = epoch;
     return landed;
   }
 
@@ -5557,7 +5555,11 @@ class SrsDbStore implements SrsSync2Host {
           serverTimeMs: serverTimeMs,
           observedAtBootMs: observedAtBootMs,
         );
-        await _saveLocal();
+        // 内核写进本机状态行（`local_anchor`；没有行就建）。校时之后 [_anchorArg] 必不为空。
+        await _sync2(<String, Object?>{
+          'op': 'local_anchor',
+          'anchor': _anchorArg(),
+        });
       });
 
   /// 覆盖恢复备份（或采用了别处的 profile 身份）后调用：按库里的事实重建缓存，存量样式去重从头再查。
@@ -5565,11 +5567,8 @@ class SrsDbStore implements SrsSync2Host {
   /// 同步 v2 的本机身份不进备份（快照剥掉 `sync2_self`），恢复出来的库打开时就是一台新设备；旧身份按普通
   /// 远端设备续收（设计 §7.3）。所以这里不需要换化身、重新发布。[freshIncarnation] 只为兼容旧调用方保留。
   Future<void> afterRestore({bool freshIncarnation = false}) =>
-      runExclusive(() async {
-        // 恢复进来的行可能还是内联样式：存量去重从头再查一遍。
-        _styleCursor = 0;
-        await rebuildCaches();
-      });
+      // 恢复进来的行可能还是内联样式：存量去重从头再查一遍（游标随重建在同一个 SAVEPOINT 里归零）。
+      _rebuildCaches(resetStyles: true);
 
   /// 笔记字段（`f/` 键）的值，按页交出（媒体引用扫描用）：直接按 rowid 分页读修改记录，
   /// 不物化笔记——以前每轮同步后都经 `allNoteViews`（已删）把整库笔记连同每条修改记录、整张服务器时间表
@@ -5755,18 +5754,6 @@ class SrsDbStore implements SrsSync2Host {
           freqRank: freq.at(i),
         ),
     ];
-  }
-
-  /// 笔记缓存的变化戳：(行数, 最大 updatedAt)。笔记内容 / 笔记类型变化都会刷新笔记缓存行。
-  Future<(int, int)> notesCacheStamp() async {
-    final Expression<int> count = db.srsNotesCache.id.count();
-    final Expression<int> maxUpdated = db.srsNotesCache.updatedAt.max();
-    final TypedResult row =
-        await (db.selectOnly(db.srsNotesCache)
-              ..addColumns(<Expression<Object>>[count, maxUpdated])
-              ..where(db.srsNotesCache.profileUid.equals(profileUid)))
-            .getSingle();
-    return (row.read(count) ?? 0, row.read(maxUpdated) ?? 0);
   }
 
   /// AnkiConnect 整数笔记 id（[SrsIds.ankiNumericId]）→ noteId；没有这条笔记为 null。

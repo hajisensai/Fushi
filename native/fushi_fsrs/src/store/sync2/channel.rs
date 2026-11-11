@@ -1022,7 +1022,7 @@ pub(crate) fn settle(w: &Connection, profile: &str) -> Result<(), String> {
     super::transport::bump_delivery_epoch();
     if !w.is_autocommit() {
         return super::in_savepoint(w, |c| {
-            advance(c, profile, &mut CommitBudget::unlimited()).map(|_| ())
+            settle_slice(c, profile, &mut CommitBudget::unlimited()).map(|_| ())
         });
     }
     loop {
@@ -1030,13 +1030,26 @@ pub(crate) fn settle(w: &Connection, profile: &str) -> Result<(), String> {
         if FAIL_SETTLE_AT.with(|f| f.get()) == Some(SETTLE_SLICES.with(|s| s.get())) {
             return Err("sync2 channel: injected settle failure".to_owned());
         }
-        let done = super::in_savepoint(w, |c| Ok(advance(c, profile, &mut settle_budget())?.0))?;
+        let done = super::in_savepoint(w, |c| settle_slice(c, profile, &mut settle_budget()))?;
         #[cfg(test)]
         SETTLE_SLICES.with(|s| s.set(s.get() + 1));
         if done {
             return Ok(());
         }
     }
+}
+
+/// [settle] 的一片：[advance]，这一片落进投影的变化在同一个 SAVEPOINT 里记进本机状态行的修订号——这里没有回包
+/// 可带（收段命令自己推进通道时并进它的结果，[absorb]），不记的话这些事件就从不推进修订号（自动备份据它判断
+/// 「有没有变动」）。返回通道做完了没有。
+fn settle_slice(
+    c: &Connection,
+    profile: &str,
+    budget: &mut CommitBudget<'_>,
+) -> Result<bool, String> {
+    let (done, t) = advance(c, profile, budget)?;
+    crate::store::local_state::advance_revision(c, profile, &t)?;
+    Ok(done)
 }
 
 /// [advance] 交回的投影变化并进调用方这一次的结果（计数相加、集合取并）。

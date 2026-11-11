@@ -146,6 +146,10 @@ pub(crate) const DRIFT_TX_POLICY: &[(&str, DriftTxPolicy)] = &[
     ("media_gc_queue", Reject),
     ("media_gc_collect", Reject),
     ("media_live_refs", ReadVisible),
+    // 本机状态行（store/local_state.rs）：读只读；建行 / 写校时状态各自一笔，不随别人的事务回滚。
+    ("local_state", ReadVisible),
+    ("local_state_ensure", Reject),
+    ("local_anchor", Reject),
     ("identity", Reject),
     ("channel_settle", Reject),
     ("migrate", Reject),
