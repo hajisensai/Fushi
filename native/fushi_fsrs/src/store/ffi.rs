@@ -974,7 +974,17 @@ pub(crate) fn sync2_dispatch(
     // 不针对单个 profile 的命令（store/profile_data.rs 找无主数据；WAL 并回）。
     match s("op")? {
         "profile_uids" => return c.profile_uids(),
-        "orphan_sweep_done" => return c.orphan_sweep_done(i("now")?),
+        "orphan_sweep_done" => {
+            let keep: Vec<String> = req
+                .get("keep")
+                .and_then(Value::as_array)
+                .ok_or("sync2: missing keep")?
+                .iter()
+                .filter_map(|v| v.as_str().map(str::to_owned))
+                .collect();
+            let mark = req.get("mark") == Some(&Value::Bool(true));
+            return c.orphan_sweep_done(i("now")?, &keep, mark);
+        }
         // 不占写连接的 WAL 并回（store/mod.rs）：大批写入收尾用。
         "wal_checkpoint" => return c.wal_checkpoint(),
         // 批量写入开始 / 结束（Dart `bulkWrites`）：期间写连接放回时留着页缓存（store/mem_budget.rs）。只置标志，不拿写锁。

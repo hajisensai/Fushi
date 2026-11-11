@@ -113,6 +113,35 @@ Future<SrsStoredProfiles> srsStoredProfiles(SrsCore core) async {
   );
 }
 
-/// 记下一次性存量无主数据扫描已完成。
-Future<void> srsMarkOrphanSweepDone(SrsCore core, int nowMs) =>
-    _run(core, <String, Object?>{'op': 'orphan_sweep_done', 'now': nowMs});
+/// [srsFinishOrphanSweep] 清掉的东西：只剩 `srs_meta` 键的无主 uid（[metaUids]）、它们名下的键数、回收的
+/// `sync2_deps` 行数。
+typedef SrsOrphanSweepRest = ({List<String> metaUids, int metaKeys, int deps});
+
+/// 一次性存量无主数据扫描的收尾（内核一个 savepoint，profile_data.rs `orphan_sweep_done`）：表里已经没有任何行、
+/// 只剩 `srs_meta` 键的 uid 里不在 [keep] 中的，删掉它名下的键；回收没有任何操作引用的 `sync2_deps`；[mark] 为真
+/// 时记下扫描已完成（之后不再扫）。
+///
+/// [keep]：不许当成无主的 uid——主库现存 profile 的 uid 加进行中并入涉及的 uid。调用方在当前副本的独占区里调
+/// （同 [srsPurgeProfileRows]）。
+Future<SrsOrphanSweepRest> srsFinishOrphanSweep(
+  SrsCore core,
+  int nowMs, {
+  required Iterable<String> keep,
+  required bool mark,
+}) async {
+  final Map<String, Object?> m = await _run(core, <String, Object?>{
+    'op': 'orphan_sweep_done',
+    'now': nowMs,
+    'keep': keep.toList(),
+    'mark': mark,
+  });
+  return (
+    metaUids: <String>[
+      for (final Object? u
+          in (m['metaUids'] as List<Object?>?) ?? const <Object?>[])
+        u! as String,
+    ],
+    metaKeys: (m['meta'] as int?) ?? 0,
+    deps: (m['deps'] as int?) ?? 0,
+  );
+}
