@@ -84,7 +84,11 @@ pub(crate) const DRIFT_TX_POLICY: &[(&str, DriftTxPolicy)] = &[
     ("drift_tx_guard", ReadVisible),
     ("study", ReadVisible),
     ("card_columns", ReadVisible),
-    ("stats_bundle", ReadVisible),
+    // 统计聚合（store/stats.rs）：原料快照经 `read_visible` 读，`stats_release` 只丢内核里缓存的快照，都不往事务里写。
+    ("stats_report", ReadVisible),
+    ("stats_recall", ReadVisible),
+    ("stats_rows", ReadVisible),
+    ("stats_release", ReadVisible),
     ("anki_resolve", ReadVisible),
     ("anki_notes_info", ReadVisible),
     ("browse_query", ReadVisible),
