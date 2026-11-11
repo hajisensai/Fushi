@@ -1254,12 +1254,16 @@ class SrsDbStore implements SrsSync2Host {
   /// [stamps]：返回这批修改记录草稿落库后的修改记录（按草稿顺序；内核没写出操作的草稿——标签列表与现值相同——不在
   /// 其中）。不要返回值的调用方不给，省掉内核逐条拼投影行。
   ///
+  /// [existed]：给了就按导入的一批草稿落（内核 `import_drafts`，见 [importDrafts]）——「初值」草稿里键已有记录的不落，
+  /// 这批身份记录里落库前就已存在的实体 ID 加进这个集合。
+  ///
   /// [logNotes]：日志卡片 → 笔记（调用方已知时给，省一次读卡片行）；[study]：落库、刷新缓存后在同一次命令里排队
   /// （store/study.rs），结果交给 [onStudy]。
   Future<List<SrsFieldEdit>> _emit(
     List<SrsEventDraft> drafts, {
     bool receive = false,
     bool stamps = false,
+    Set<String>? existed,
     Map<String, String> logNotes = const <String, String>{},
     Map<String, Object?>? study,
     void Function(Map<String, Object?> study)? onStudy,
@@ -1274,6 +1278,7 @@ class SrsDbStore implements SrsSync2Host {
     final List<Map<String, Object?>> input = await _applyInput(
       drafts,
       receive: receive,
+      initials: existed != null,
       source: source,
       logNotes: logNotes,
     );
@@ -1286,6 +1291,7 @@ class SrsDbStore implements SrsSync2Host {
         recvNow: receive ? recvNow : null,
         tickNow: tickNow,
         stamps: stamps,
+        existed: existed,
         study: study,
         onStudy: onStudy,
       );
@@ -1310,10 +1316,12 @@ class SrsDbStore implements SrsSync2Host {
 
   /// 一批草稿 → `apply` 的输入（native/fushi_fsrs/src/store/sync2/mod.rs `apply_local_on`）：每项
   /// `{e: 事件, note: 日志卡片的笔记, clk?: 旧版时钟指令}`。修改记录草稿只交内容（`clk: t`，时钟走一步）；[receive] 时
-  /// 已定稿的事件 `clk: r`（按它带的 HLC 收）。内联样式在这里换成共享样式引用（表示层，见 [_compactValue]）。
+  /// 已定稿的事件 `clk: r`（按它带的 HLC 收）。[initials] 时「初值」草稿带 `init: true`（只有 `import_drafts` 看它）。
+  /// 内联样式在这里换成共享样式引用（表示层，见 [_compactValue]）。
   Future<List<Map<String, Object?>>> _applyInput(
     List<SrsEventDraft> drafts, {
     required bool receive,
+    bool initials = false,
     required SrsTimeSource source,
     Map<String, String> logNotes = const <String, String>{},
   }) async {
@@ -1350,6 +1358,7 @@ class SrsDbStore implements SrsSync2Host {
             },
             'note': null,
             'clk': 't',
+            if (initials && d.initial) 'init': true,
           });
       }
     }
@@ -1409,12 +1418,13 @@ class SrsDbStore implements SrsSync2Host {
     int? recvNow,
     int? tickNow,
     bool stamps = false,
+    Set<String>? existed,
     Map<String, Object?>? study,
     void Function(Map<String, Object?> study)? onStudy,
   }) async {
     final Map<String, Object?> r = await _sync2(
       <String, Object?>{
-        'op': 'apply',
+        'op': existed == null ? 'apply' : 'import_drafts',
         'now': now().$1,
         'legacyDevice': deviceId,
         'recvNow': ?recvNow,
@@ -1428,6 +1438,16 @@ class SrsDbStore implements SrsSync2Host {
     final int landed = _absorbLocalWrite(r);
     if (r['study'] case final Map<Object?, Object?> st) {
       onStudy?.call(st.cast<String, Object?>());
+    }
+    if (existed != null) {
+      final Object? ids = r['existed'];
+      if (ids is! List) {
+        throw StateError(
+          'srs: `import_drafts` reply has no `existed` (the native core and '
+          'Dart do not match)',
+        );
+      }
+      existed.addAll(ids.cast<String>());
     }
     final Object? got = r['stamps'];
     if (stamps && (got is! List || got.length != input.length)) {
@@ -2074,6 +2094,7 @@ class SrsDbStore implements SrsSync2Host {
   @visibleForTesting
   static const Set<String> kSrsSync2ProjectingOps = <String>{
     'apply',
+    'import_drafts',
     'sched',
     'deck_delete',
     'retire',
@@ -2122,6 +2143,7 @@ class SrsDbStore implements SrsSync2Host {
   /// 要带上只有 Dart 知道的缓存配置（[_cacheConfig]）。
   static const Set<String> _kSync2CacheOps = <String>{
     'apply',
+    'import_drafts',
     'sched',
     'deck_delete',
     'ingest',
@@ -2183,82 +2205,18 @@ class SrsDbStore implements SrsSync2Host {
   /// 修改记录的序号 / HLC 在落库的命令里才由内核分配——攒批期间（读包、解析、别的写入）不占序号，落库顺序 = 序号
   /// 顺序（BUG-3545，以前攒批时就分配，期间插进来的本机写入先落库）。
   ///
+  /// 一条内核命令（`import_drafts`，native/fushi_fsrs/src/store/sync2/mod.rs `import_drafts_on`）：「初值」草稿
+  /// （[SrsEditDraft.initial]）里键已有修改记录的不落，由内核在落库的同一笔里判。
+  ///
   /// 返回这批身份记录里**落库前就已存在**的实体 ID（导入据此按实际新建数计数：攒批时以为是新
   /// 笔记、落库时已被同步 / 别处建好的，不算「新增」）。
   Future<Set<String>> importDrafts(List<SrsEventDraft> drafts) async {
     if (drafts.isEmpty) return const <String>{};
     return runExclusive(() async {
-      final Set<String> existed = await _existingEntityIds(<String>[
-        for (final SrsEventDraft d in drafts)
-          if (d case SrsReadyDraft(
-            event: SrsEntityEvent(:final SrsEntityRecord record),
-          ))
-            record.id,
-      ]);
-      final List<SrsEventDraft> live = await _dropAuthoredInitials(drafts);
-      await _emit(live, receive: true);
+      final Set<String> existed = <String>{};
+      await _emit(drafts, receive: true, existed: existed);
       return existed;
     });
-  }
-
-  /// [ids] 里已有身份记录的（按 ID 分块查）。
-  Future<Set<String>> _existingEntityIds(List<String> ids) async {
-    final Set<String> out = <String>{};
-    final $SrsEntitiesTable t = db.srsEntities;
-    for (final List<String> chunk in _chunks(ids)) {
-      final List<TypedResult> rows =
-          await (db.selectOnly(t)
-                ..addColumns(<Expression<Object>>[t.id])
-                ..where(t.id.isIn(chunk)))
-              .get();
-      for (final TypedResult r in rows) {
-        out.add(r.read(t.id)!);
-      }
-    }
-    return out;
-  }
-
-  /// 去掉「初值」草稿（[SrsEditDraft.initial]）里键已有修改记录的：一次按实体分块查出现有的
-  /// (实体, 字段键)。只在独占区里、紧接着 [_emit] 调用，查到的就是落库那一刻的真值。
-  Future<List<SrsEventDraft>> _dropAuthoredInitials(
-    List<SrsEventDraft> drafts,
-  ) async {
-    final Map<SrsEntityKind, Set<String>> byKind =
-        <SrsEntityKind, Set<String>>{};
-    for (final SrsEventDraft d in drafts) {
-      if (d is SrsEditDraft && d.initial) {
-        (byKind[d.kind] ??= <String>{}).add(d.entityId);
-      }
-    }
-    if (byKind.isEmpty) return drafts;
-    final $SrsFieldEditsTable t = db.srsFieldEdits;
-    final Set<String> authored = <String>{};
-    for (final MapEntry<SrsEntityKind, Set<String>> k in byKind.entries) {
-      for (final List<String> chunk in _chunks(k.value)) {
-        final List<TypedResult> rows =
-            await (db.selectOnly(t, distinct: true)
-                  ..addColumns(<Expression<Object>>[t.entityId, t.fieldKey])
-                  ..where(
-                    t.profileUid.equals(profileUid) &
-                        t.entityKind.equals(k.key.wire) &
-                        t.entityId.isIn(chunk),
-                  ))
-                .get();
-        for (final TypedResult r in rows) {
-          authored.add(
-            '${k.key.wire}/${r.read(t.entityId)!}/${r.read(t.fieldKey)!}',
-          );
-        }
-      }
-    }
-    if (authored.isEmpty) return drafts;
-    return <SrsEventDraft>[
-      for (final SrsEventDraft d in drafts)
-        if (d is! SrsEditDraft ||
-            !d.initial ||
-            !authored.contains('${d.kind.wire}/${d.entityId}/${d.key}'))
-          d,
-    ];
   }
 
   SrsEntityRecord _entityFromRow(SrsEntityRow r) => SrsEntityRecord(

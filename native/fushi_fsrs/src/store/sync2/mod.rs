@@ -2809,6 +2809,100 @@ pub(crate) fn apply_local_on(
     Ok(out)
 }
 
+/// `import_drafts`（导入攒的一批草稿：Anki 包、AnkiConnect）：[apply_local_on] 的本体，外加两件以前 Dart 在命令之前
+/// 各读一遍库才知道的事，现在与落库在同一笔里判——读与写之间插不进别的写入：
+///
+/// - 输入项 `init: true` 是「新建实体的初值」（Dart `SrsEditDraft.initial`）：攒批时以为本机还没有这个实体的记录。
+///   落库这一刻这个（类别, 实体, 字段键）已经有修改记录（攒批期间同步把对端的同一实体应用进来了——实体 ID 由 guid /
+///   全名确定性派生）就不落：它此刻才分配 HLC 与因果上下文，会支配对端的编辑、把用户的新值盖成源里的旧值。不落的项
+///   旧版时钟也不走。判据是这一批落库之前的库（同一批里先落的项不算）。
+/// - 回包 `existed`：这批身份记录里落库前就已存在的实体 ID（导入据此按实际新建数计数）。
+///
+/// 其余回包与 `apply` 同形；`landed` 按去掉不落的项之后的顺序。
+pub(crate) fn import_drafts_on(
+    c: &Connection,
+    profile: &str,
+    now: i64,
+    items: &mut Vec<Value>,
+    legacy: &LegacyApply<'_>,
+) -> Result<Value, String> {
+    use std::collections::{BTreeMap, HashSet};
+    let entity_ids: Vec<&str> = items
+        .iter()
+        .filter(|it| it["e"]["t"].as_str() == Some("entity"))
+        .filter_map(|it| it["e"]["x"]["id"].as_str())
+        .collect();
+    let mut existed: Vec<String> = Vec::new();
+    for chunk in entity_ids.chunks(400) {
+        let marks = vec!["srs_id(?)"; chunk.len()].join(",");
+        let mut stmt = c
+            .prepare_cached(&format!(
+                "SELECT srs_idt(id) AS id FROM srs_entities WHERE id IN ({marks})"
+            ))
+            .map_err(sql)?;
+        let rows = stmt
+            .query_map(rusqlite::params_from_iter(chunk.iter()), |r| {
+                r.get::<_, String>(0)
+            })
+            .map_err(sql)?;
+        for id in rows {
+            existed.push(id.map_err(sql)?);
+        }
+    }
+    existed.sort();
+    existed.dedup();
+    // 初值项涉及的实体，按类别分组，各自已有修改记录的字段键。
+    let is_init =
+        |it: &Value| it["init"] == Value::Bool(true) && it["e"]["t"].as_str() == Some("edit");
+    let mut by_kind: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    for it in items.iter().filter(|it| is_init(it)) {
+        let x = &it["e"]["x"];
+        if let (Some(k), Some(e)) = (x["k"].as_str(), x["e"].as_str()) {
+            by_kind
+                .entry(k.to_owned())
+                .or_default()
+                .insert(e.to_owned());
+        }
+    }
+    let mut authored: HashSet<(String, String, String)> = HashSet::new();
+    for (kind, entities) in &by_kind {
+        let entities: Vec<&String> = entities.iter().collect();
+        for chunk in entities.chunks(400) {
+            let marks = vec!["srs_id(?)"; chunk.len()].join(",");
+            let mut stmt = c
+                .prepare_cached(&format!(
+                    "SELECT DISTINCT srs_idt(entity_id) AS e, field_key FROM srs_field_edits                      WHERE profile_uid = srs_id(?) AND entity_kind = ? AND entity_id IN ({marks})"
+                ))
+                .map_err(sql)?;
+            let mut args: Vec<&dyn rusqlite::ToSql> = vec![&profile, kind];
+            for e in chunk {
+                args.push(*e);
+            }
+            let mut q = stmt.query(args.as_slice()).map_err(sql)?;
+            while let Some(r) = q.next().map_err(sql)? {
+                authored.insert((kind.clone(), r.get(0).map_err(sql)?, r.get(1).map_err(sql)?));
+            }
+        }
+    }
+    if !authored.is_empty() {
+        items.retain(|it| {
+            if !is_init(it) {
+                return true;
+            }
+            let x = &it["e"]["x"];
+            match (x["k"].as_str(), x["e"].as_str(), x["f"].as_str()) {
+                (Some(k), Some(e), Some(f)) => {
+                    !authored.contains(&(k.to_owned(), e.to_owned(), f.to_owned()))
+                }
+                _ => true,
+            }
+        });
+    }
+    let mut v = apply_local_on(c, profile, now, items, Some(legacy))?;
+    v["existed"] = json!(existed);
+    Ok(v)
+}
+
 /// [SrsCore::sync2_append] 的本体：在调用方的写连接、调用方开的 SAVEPOINT 里追加并投影（不自己取锁）。
 pub(crate) fn append_on(
     c: &Connection,

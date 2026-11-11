@@ -1199,6 +1199,7 @@ fn cache_config_of(
 /// 事务时（Lapis 迁移、档案 / 备份并入）SAVEPOINT 照旧嵌进那笔事务，随它提交或回滚。
 const LOCAL_WRITE_OPS: &[&str] = &[
     "apply",
+    "import_drafts",
     "sched",
     "deck_delete",
     "import",
@@ -1233,7 +1234,7 @@ fn local_write(
 ) -> Result<serde_json::Value, String> {
     use serde_json::Value;
     let mut pre = LocalPre::default();
-    if op == "apply" {
+    if op == "apply" || op == "import_drafts" {
         let input = std::str::from_utf8(blobs.first().ok_or("apply: missing input")?)
             .map_err(|e| e.to_string())?;
         pre.items = crate::store::sync2::parse_apply_input(input)?;
@@ -1317,6 +1318,17 @@ fn local_write_body(
                 stamps: req.get("stamps") == Some(&Value::Bool(true)),
             };
             s2::apply_local_on(conn, profile, now, &pre.items, Some(&legacy))?
+        }
+        // 导入攒的一批草稿（Anki 包、AnkiConnect）：`apply` 的本体，外加「初值」项的去留与「落库前已存在的实体」由内核在
+        // 同一笔里判（store/sync2/mod.rs `import_drafts_on`）。
+        "import_drafts" => {
+            let legacy = s2::LegacyApply {
+                device: s("legacyDevice")?,
+                recv_now: req.get("recvNow").and_then(Value::as_i64),
+                tick_now: req.get("tickNow").and_then(Value::as_i64),
+                stamps: false,
+            };
+            s2::import_drafts_on(conn, profile, now, &mut pre.items, &legacy)?
         }
         // 本机手动排程操作（重置 / 改期 / 撤销 / 立即重排）：显式意图，内核算结果并落库（store/sync2/sched_local.rs）。
         "sched" => s2::sched_local::sched_local_on(conn, profile, now, req)?,
@@ -1504,6 +1516,7 @@ const CHANNEL_TRANSPARENT: &[&str] = &[
 #[cfg_attr(not(test), allow(dead_code))]
 const CHANNEL_SETTLES: &[&str] = &[
     "apply",
+    "import_drafts",
     "sched",
     "deck_delete",
     "retire",
@@ -1536,6 +1549,7 @@ const CHANNEL_SETTLES: &[&str] = &[
 
 const PROJECTING_OPS: &[&str] = &[
     "apply",
+    "import_drafts",
     "sched",
     "deck_delete",
     "retire",

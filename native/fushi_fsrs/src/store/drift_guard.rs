@@ -127,6 +127,9 @@ pub(crate) const DRIFT_TX_POLICY: &[(&str, DriftTxPolicy)] = &[
     ("plan", Reject),
     // 删牌组的意图命令（store/sync2/deck_delete.rs）：分步、每步自己一笔，没有在 Drift 事务里发它的调用方。
     ("deck_delete", Reject),
+    // 导入攒的一批草稿（store/sync2/mod.rs `import_drafts_on`）：一批一条命令、自己一笔，调用方（Anki 包导入、
+    // AnkiConnect）都不开 Drift 事务。
+    ("import_drafts", Reject),
     ("identity", Reject),
     ("channel_settle", Reject),
     ("migrate", Reject),

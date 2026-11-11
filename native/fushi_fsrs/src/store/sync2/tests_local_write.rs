@@ -522,3 +522,99 @@ fn trust_persists_local_state_in_its_savepoint_and_rolls_back_with_it() {
     assert!(err.contains("always trusted"), "{err}");
     assert_eq!(local_state(&d).unwrap()["revision"], json!(7));
 }
+
+/// `import_drafts`（收掉 Dart 写路径第 8 步）：「初值」项在它的（类别, 实体, 字段键）已有修改记录时不落、旧版时钟不走；
+/// 判据是这一批落库之前的库。回包带落库前就已存在的实体。
+#[test]
+fn import_drafts_drops_authored_initials_and_reports_existing_entities() {
+    const NEW: &str = "0193a1b2-0000-7000-8000-00000000d0b2";
+    let d = Device::new("lw-import-drafts");
+    let deck = super::config::default_deck_id(P);
+    dispatch(
+        &d,
+        json!({
+            "op": "apply", "profile": P, "now": T0, "caches": caches(&deck),
+            "legacyDevice": "dev", "localState": "{}",
+        }),
+        Some(note_events(&deck)),
+    )
+    .unwrap();
+    let draft = |entity: &str, key: &str, v: Value, init: bool| {
+        let mut it = json!({
+            "e": {"t": "edit", "x": {"p": P, "k": "note", "e": entity, "f": key, "v": v, "ts": "anchored"}},
+            "note": null, "clk": "t",
+        });
+        if init {
+            it["init"] = json!(true);
+        }
+        it
+    };
+    let entity = |id: &str| {
+        json!({
+            "e": {"t": "entity", "x": {"id": id, "p": P, "k": "note", "d": {"createdAt": 2, "guid": id, "noteTypeId": NT}}},
+            "note": null,
+        })
+    };
+    let input = Value::Array(vec![
+        entity(NOTE),
+        entity(NEW),
+        // 已有记录的键：初值不落。
+        draft(NOTE, "f/fa", json!("stale"), true),
+        // 同一实体上还没有记录的键：落。
+        draft(NOTE, "deck", json!(deck), true),
+        // 新实体：同一批里先落的项不算「已有」，两条初值都落。
+        draft(NEW, "f/fa", json!("first"), true),
+        draft(NEW, "f/fa", json!("second"), true),
+        // 不是初值的照常落。
+        draft(NOTE, "f/fb", json!("edited"), false),
+    ]);
+    // 某实体某字段键的生效值（投影里被支配的记录已删，每键至多一条）。
+    let value = |entity: &str, key: &str| -> Value {
+        let rows = d.rows(&format!(
+            "SELECT json FROM srs_field_edits WHERE entity_id = srs_id('{entity}') AND field_key = '{key}'"
+        ));
+        assert_eq!(rows.len(), 2, "one live edit on {entity} {key}: {rows:?}");
+        serde_json::from_str::<Value>(&rows[1][0]).unwrap()["v"].clone()
+    };
+    assert_eq!(value(NOTE, "f/fa"), json!("word"));
+    let r = dispatch(
+        &d,
+        json!({
+            "op": "import_drafts", "profile": P, "now": T0 + 10, "caches": caches(&deck),
+            "legacyDevice": "dev", "recvNow": T0 + 10, "tickNow": T0 + 10, "localState": "{}",
+        }),
+        Some(input.to_string()),
+    )
+    .unwrap();
+    assert_eq!(r["existed"], json!([NOTE]), "{r}");
+    assert!(r["localRevision"].is_i64(), "{r}");
+    // 六项进了 `apply`（一条初值被去掉）；新实体与四条修改记录都落下。
+    let landed = r["landed"].as_array().unwrap();
+    assert_eq!(landed.len(), 6, "{r}");
+    assert!(landed[1..].iter().all(|l| *l == json!(true)), "{r}");
+    assert_eq!(
+        value(NOTE, "f/fa"),
+        json!("word"),
+        "the stale initial did not land"
+    );
+    assert_eq!(value(NOTE, "deck"), json!(deck));
+    assert_eq!(value(NEW, "f/fa"), json!("second"));
+    assert_eq!(value(NOTE, "f/fb"), json!("edited"));
+    // 旧版时钟：落下的四条修改记录各走一步（同一时刻：计数器 0..3），去掉的那条不走。
+    assert_eq!(
+        local_state(&d).unwrap()["hlc"],
+        json!(format!("{}:3:dev#1", T0 + 10))
+    );
+    // `apply` 不看 `init`（本机编辑照常覆盖）。
+    let r = dispatch(
+        &d,
+        json!({
+            "op": "apply", "profile": P, "now": T0 + 20, "caches": caches(&deck),
+            "legacyDevice": "dev", "tickNow": T0 + 20, "localState": "{}",
+        }),
+        Some(Value::Array(vec![draft(NOTE, "f/fa", json!("again"), true)]).to_string()),
+    )
+    .unwrap();
+    assert_eq!(r.get("existed"), None);
+    assert_eq!(value(NOTE, "f/fa"), json!("again"));
+}
