@@ -267,14 +267,6 @@ fn dispatch(req: &Value) -> Result<Value, String> {
                 model.current_retrievability(memory.to_fsrs(), elapsed)
             ))
         }
-        "next_interval" => {
-            let algorithm = Algorithm::parse(str_field(req, "algorithm")?)?;
-            let model = build_model(algorithm, req.get("params"))?;
-            let retention = f32_field(req, "desiredRetention")?;
-            let memory =
-                memory_field(req, "memory")?.ok_or_else(|| "missing `memory`".to_string())?;
-            Ok(json!(model.next_interval(Some(memory.s), retention, 3)))
-        }
         other => Err(format!("unknown op: {other}")),
     }
 }

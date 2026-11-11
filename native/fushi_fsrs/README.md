@@ -46,8 +46,8 @@ Fushi SRS（间隔重复）的排程内核：[fsrs-rs](https://github.com/open-s
 
 响应恒为 `{"ok": …}` 或 `{"error": "…"}`；panic 一律接住转成 error，不越过 FFI。每个 op 带
 `algorithm`（`"fsrs6"` 21 参 / `"fsrs7"` 34 参），`params` 空或缺省 = 该算法默认参数；elapsed
-一律**小数天**。`op`：`version` / `defaults` / `validate` / `retrievability` / `next_interval`。
-排程（四个评分的下一状态）、由历史重建记忆状态、SM-2 起点换算不在这里：由内核的确定性 FSRS
+一律**小数天**。`op`：`version` / `defaults` / `validate` / `retrievability`。
+排程（四个评分的下一状态与间隔）、由历史重建记忆状态、SM-2 起点换算不在这里：由内核的确定性 FSRS
 （`src/sync2/fsrs_det.rs`）在作答 / 回放里算，与 fsrs-rs 的对拍也在那个文件的单元测试里。
 
 `ffsrs_fit` 的训练集（BUG-3745）：每张卡只传一份完整历史（`ratings` / `delta_days` 按 `card_offsets`
