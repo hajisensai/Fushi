@@ -1,6 +1,6 @@
 /// 批量改笔记字段：设卡型（Lapis / Fushi 卡片的正面开关）、给字段设值 / 清空、查找替换。
 ///
-/// 浏览页的批量菜单与控制通道（`fushi/lib/src/ops/ctl_srs_routes.dart`，供 AI / `fushi_cli`）
+/// 浏览页的批量菜单与控制通道（`srs_ctl_routes.dart`，供 AI / `fushi_cli` / 服务端 `ctl`）
 /// 调同一组函数：先 `srsPlan*` 算出一份 [SrsNoteFieldPlan]（只读，可当预览 / dry-run），
 /// 再 [srsApplyNoteFieldPlan] 一个批次条件写落库（[SrsDbStore.editFieldsBatch]，走同步日志；计划之后
 /// 又被改过的字段不覆盖）。
