@@ -1568,6 +1568,15 @@ class GalHookSessionController extends ChangeNotifier {
   bool get tyranoDomTextOnline =>
       _tyranoDomFeed != null && _tyranoDomDeliveredLine;
 
+  /// 本会话的正文是否要靠用户选定一条 LunaHook 文本线程才能进工作台。
+  ///
+  /// 只有引擎文本道才需要选线程；TyranoScript DOM 源在线（[tyranoDomTextOnline]）时
+  /// 正文与语音都由 DOM 源按句给出、根本不读引擎文本道，此时再报「等待选择台词线程」
+  /// 就与屏幕上正在流入的台词和音频自相矛盾（真机：yurialice 工作台满屏 tyrano_dom
+  /// 行，状态卡却停在「等待选择台词线程」）。
+  bool get requiresTextThreadSelection =>
+      hasEngineSource && !tyranoDomTextOnline;
+
   static Future<TyranoDomLaunchPlan?> _defaultTyranoDomLaunchPlanner(
     String exePath, {
     required List<String> userArgs,
@@ -1920,7 +1929,11 @@ class GalHookSessionController extends ChangeNotifier {
       audioStatus: initialStatus,
     );
     if (entry == null) return;
+    final bool firstDomLine = !_tyranoDomDeliveredLine;
     _tyranoDomDeliveredLine = true;
+    // 第一句 DOM 正文翻转了 [requiresTextThreadSelection]：工作台的「等待选择台词线程」
+    // 由会话通知驱动，必须在这里通知一次，不能等别的事件顺带刷新。
+    if (firstDomLine) notifyListeners();
     _redirectFoldedLines(_textService.lastFoldedLineIds, entry.id);
     _pendingResourceMatches.remove(entry.id);
     _recordEngineDelta(

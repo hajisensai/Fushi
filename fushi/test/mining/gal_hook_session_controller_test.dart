@@ -5430,6 +5430,32 @@ void _tyranoDomSessionTests() {
       await controller.close();
     });
 
+    test('DOM 正文在线后不再要求选台词线程，并通知工作台刷新', () async {
+      final GalHookSessionController controller = buildController();
+      await controller.launchGame(r'D:\games\tyrano\game.exe');
+      await _until(() => controller.tyranoDomFeed != null);
+      expect(controller.hasEngineSource, isTrue);
+      expect(controller.selectedTextThreadKey, isNull);
+      expect(
+        controller.requiresTextThreadSelection,
+        isTrue,
+        reason: 'DOM 还没给出正文时仍靠引擎文本道，未选线程就是在等用户选',
+      );
+
+      int notifications = 0;
+      void listener() => notifications++;
+      controller.addListener(listener);
+      tick = 7000;
+      sources.single.emit(_domFrame('synthetic dom line', generation: 1));
+      await _until(() => service.entries.isNotEmpty);
+      expect(service.entries.single.sourceLabel, kTyranoDomLineSourceLabel);
+      expect(controller.tyranoDomTextOnline, isTrue);
+      expect(controller.requiresTextThreadSelection, isFalse);
+      expect(notifications, greaterThan(0), reason: '工作台状态由会话通知驱动');
+      controller.removeListener(listener);
+      await controller.close();
+    });
+
     test('DOM complete 帧作为正文进 texthooker，在线后引擎文本道被仲裁掉', () async {
       final List<GalHookedLine> lunaLines = <GalHookedLine>[];
       final GalHookSessionController controller = buildController(
