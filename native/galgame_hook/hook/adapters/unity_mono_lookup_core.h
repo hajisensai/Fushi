@@ -2,9 +2,11 @@
 
 // Unity (Mono runtime) in-game lookup: pure, unit-tested half.
 //
-// Two frameworks share provider id 20 (one geometry model, one click claim):
-// framework 1, the per-glyph TextMesh message framework (this section), and
-// framework 2, Fungus SayDialog on a UGUI Text (the section at the end).
+// Three frameworks share provider id 20 (one geometry model, one click claim):
+// framework 1, the per-glyph TextMesh message framework (this section),
+// framework 2, Fungus SayDialog on a UGUI Text, and framework 3, a bare
+// TextMeshPro UGUI text (TMPro.TextMeshProUGUI) whose text is the selected
+// line (the last two sections).
 //
 // Scope: the per-glyph TextMesh message framework the Mono text path already
 // admits structurally (unity_mono_text.h: instance `string Message.Mes(string,
@@ -481,7 +483,10 @@ inline uint64_t MessageRoleKey(const wchar_t* chars, int length) {
 inline constexpr size_t kMaxGlyphs = 256u;
 inline constexpr size_t kMaxLineUnits = 512u;
 inline constexpr size_t kMaxRenderedLines = 16u;
-inline constexpr size_t kInstanceSlots = 4u;
+// Framework 3 samples every recently written TMP text object (dialogue body,
+// its shadow copy, name plates, menus), so the slot table is wider than one
+// framework instance per role.
+inline constexpr size_t kInstanceSlots = 8u;
 inline constexpr uint16_t kNoSource = 0xffffu;
 
 // One glyph in Unity screen pixels (origin bottom-left).
@@ -1210,6 +1215,403 @@ inline bool FungusTextReadable(bool active_and_enabled, bool culled,
                                float inherited_alpha, float color_alpha) {
   return active_and_enabled && !culled && inherited_alpha >= kMinReadableAlpha &&
          color_alpha >= kMinReadableAlpha;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Framework 3: a bare TextMeshPro UGUI text (TMPro.TextMeshProUGUI).
+//
+// Scope: Unity Mono games whose dialogue is an ordinary TMP_Text written
+// through `TMP_Text.set_text` / `SetText(string, bool)` (the text path's
+// kTmpSetText pair) with no script-level message framework the text path
+// recognises (no Message.Mes, no Fungus).  Nothing tells which TMP object is
+// the dialogue; the selected text lane does: the dialogue object is the one
+// whose laid-out text equals the host-selected line.
+//
+// Engine facts used (TextMeshPro 1.4 / 3.0 sources, com.unity.textmeshpro;
+// not measured on a running player):
+//   * TMP_Text fields `m_text` (string), `m_textInfo` (TMP_TextInfo),
+//     `m_fontColor` (Color; the `color` property, not Graphic.m_Color),
+//     `m_firstVisibleCharacter` / `m_maxVisibleCharacters` (int).
+//     TextMeshProUGUI's own private `m_canvas` (Canvas) and
+//     `m_canvasRenderer` (CanvasRenderer), set in Awake / OnEnable.
+//   * TMP_TextInfo.characterCount (int) + characterInfo (TMP_CharacterInfo[],
+//     a value-type array; stride from mono_class_value_size).  One entry per
+//     parsed character (rich-text tags produce none; spaces and line feeds
+//     produce an entry with isVisible false).  `character` (char),
+//     `bottomLeft` / `topRight` (Vector3, the RectTransform's local space:
+//     exactly what TMP_TextUtilities.FindIntersectingCharacter transforms with
+//     rectTransform.TransformPoint), `isVisible` (false for whitespace and for
+//     characters cut by maxVisibleCharacters / maxVisibleLines / page mode),
+//     `color` (Color32 vertex colour; an `<alpha=#00>` span is alpha 0).
+//   * TextMeshProUGUI lays out in its Rebuild, run from the canvas update
+//     registry inside Canvas.willRenderCanvases; after the managed
+//     `static void Canvas.SendWillRenderCanvases()` returns, every dirty TMP
+//     UGUI text of the frame carries the layout of its current text.
+//   * Local -> world -> Unity screen pixels exactly as framework 2 (overlay:
+//     world == screen; Screen Space - Camera: worldCamera.WorldToScreenPoint;
+//     World Space refused).
+//
+// Nothing here consults a hash, file name or title.  Every class, field,
+// method and internal call is resolved by namespace + name + type (+ full
+// signature and internal-call flag), unique across images; any gap installs
+// nothing.
+
+inline constexpr int kMonoTypeChar = 0x03;
+inline constexpr int kMonoTypeU1 = 0x05;
+
+enum class TmpIcall : uint8_t {
+  kComponentTransform = 0,
+  kBehaviourActiveAndEnabled,
+  kTransformLocalToWorld,
+  kCanvasRoot,
+  kCanvasRenderMode,
+  kCanvasWorldCamera,
+  kCanvasRendererInheritedAlpha,
+  kCanvasRendererCull,
+  kCameraWorldToScreen,
+  kCameraTargetTexture,
+  kScreenWidth,
+  kScreenHeight,
+  kCount,
+};
+inline constexpr size_t kTmpIcallCount = static_cast<size_t>(TmpIcall::kCount);
+
+struct TmpIcallSpec {
+  TmpIcall id;
+  const char* name_space;
+  const char* class_name;
+  const char* method;
+  bool instance;
+  int return_type;
+  uint8_t param_count;
+  int params[3];
+  uint8_t byref_mask;
+};
+
+inline constexpr TmpIcallSpec kTmpIcallSpecs[kTmpIcallCount] = {
+    {TmpIcall::kComponentTransform, "UnityEngine", "Component",
+     "get_transform", true, kMonoTypeClass, 0, {0, 0, 0}, 0u},
+    {TmpIcall::kBehaviourActiveAndEnabled, "UnityEngine", "Behaviour",
+     "get_isActiveAndEnabled", true, kMonoTypeBoolean, 0, {0, 0, 0}, 0u},
+    {TmpIcall::kTransformLocalToWorld, "UnityEngine", "Transform",
+     "get_localToWorldMatrix_Injected", true, kMonoTypeVoid, 1,
+     {kMonoTypeValueType, 0, 0}, 0x1u},
+    {TmpIcall::kCanvasRoot, "UnityEngine", "Canvas", "get_rootCanvas", true,
+     kMonoTypeClass, 0, {0, 0, 0}, 0u},
+    {TmpIcall::kCanvasRenderMode, "UnityEngine", "Canvas", "get_renderMode",
+     true, kMonoTypeValueType, 0, {0, 0, 0}, 0u},
+    {TmpIcall::kCanvasWorldCamera, "UnityEngine", "Canvas", "get_worldCamera",
+     true, kMonoTypeClass, 0, {0, 0, 0}, 0u},
+    {TmpIcall::kCanvasRendererInheritedAlpha, "UnityEngine", "CanvasRenderer",
+     "GetInheritedAlpha", true, kMonoTypeSingle, 0, {0, 0, 0}, 0u},
+    {TmpIcall::kCanvasRendererCull, "UnityEngine", "CanvasRenderer",
+     "get_cull", true, kMonoTypeBoolean, 0, {0, 0, 0}, 0u},
+    {TmpIcall::kCameraWorldToScreen, "UnityEngine", "Camera",
+     "WorldToScreenPoint_Injected", true, kMonoTypeVoid, 3,
+     {kMonoTypeValueType, kMonoTypeValueType, kMonoTypeValueType}, 0x5u},
+    {TmpIcall::kCameraTargetTexture, "UnityEngine", "Camera",
+     "get_targetTexture", true, kMonoTypeClass, 0, {0, 0, 0}, 0u},
+    {TmpIcall::kScreenWidth, "UnityEngine", "Screen", "get_width", false,
+     kMonoTypeI4, 0, {0, 0, 0}, 0u},
+    {TmpIcall::kScreenHeight, "UnityEngine", "Screen", "get_height", false,
+     kMonoTypeI4, 0, {0, 0, 0}, 0u},
+};
+
+// Class hierarchy accessors (pure metadata reads: mono_class_get_parent,
+// mono_object_get_class).  The sampler only trusts TextMeshProUGUI field
+// offsets on an object whose class chain reaches TextMeshProUGUI.
+struct MonoClassHierarchyApi {
+  void* (*class_get_parent)(void* klass) = nullptr;
+  void* (*object_get_class)(void* object) = nullptr;
+  bool Complete() const {
+    return class_get_parent != nullptr && object_get_class != nullptr;
+  }
+};
+
+inline constexpr int kMaxClassDepth = 32;
+
+// true iff `klass` is `ancestor` or derives from it (bounded walk).
+inline bool ClassDerivesFrom(const MonoClassHierarchyApi& classes, void* klass,
+                             void* ancestor) {
+  if (classes.class_get_parent == nullptr || ancestor == nullptr) return false;
+  for (int depth = 0; klass != nullptr && depth < kMaxClassDepth; ++depth) {
+    if (klass == ancestor) return true;
+    klass = classes.class_get_parent(klass);
+  }
+  return false;
+}
+
+struct TmpSites {
+  void* will_render = nullptr;   // MonoMethod* Canvas.SendWillRenderCanvases
+  void* ugui_class = nullptr;    // MonoClass* TMPro.TextMeshProUGUI
+  uint32_t text_string_offset = 0u;       // TMP_Text.m_text
+  uint32_t text_info_offset = 0u;         // TMP_Text.m_textInfo
+  uint32_t font_alpha_offset = 0u;        // TMP_Text.m_fontColor.a
+  uint32_t first_visible_offset = 0u;     // TMP_Text.m_firstVisibleCharacter
+  uint32_t max_visible_offset = 0u;       // TMP_Text.m_maxVisibleCharacters
+  uint32_t canvas_offset = 0u;            // TextMeshProUGUI.m_canvas
+  uint32_t renderer_offset = 0u;          // TextMeshProUGUI.m_canvasRenderer
+  uint32_t info_count_offset = 0u;        // TMP_TextInfo.characterCount
+  uint32_t info_chars_offset = 0u;        // TMP_TextInfo.characterInfo
+  uint32_t char_stride = 0u;              // sizeof(TMP_CharacterInfo)
+  uint32_t char_character_offset = 0u;    // .character (char)
+  uint32_t char_bottom_left_offset = 0u;  // .bottomLeft (Vector3)
+  uint32_t char_top_right_offset = 0u;    // .topRight (Vector3)
+  uint32_t char_visible_offset = 0u;      // .isVisible (bool)
+  uint32_t char_alpha_offset = 0u;        // .color.a (Color32 byte)
+  uint32_t cached_ptr_offset = 0u;        // UnityEngine.Object.m_CachedPtr
+  std::array<void*, kTmpIcallCount> icalls{};
+
+  template <typename Fn>
+  Fn Get(TmpIcall id) const {
+    return reinterpret_cast<Fn>(icalls[static_cast<size_t>(id)]);
+  }
+};
+
+enum class TmpSiteResult : uint32_t {
+  kResolved = 0,
+  kApiIncomplete = 1,
+  kNoTmpClasses = 2,       // TMP_Text / TextMeshProUGUI absent, ambiguous or
+                           // not one hierarchy
+  kNoWillRender = 3,       // Canvas.SendWillRenderCanvases not managed static
+  kTextFieldsMissing = 4,  // TMP_Text fields
+  kUguiFieldsMissing = 5,  // TextMeshProUGUI m_canvas / m_canvasRenderer
+  kTextInfoMissing = 6,    // TMP_TextInfo characterCount / characterInfo
+  kCharLayoutMismatch = 7, // TMP_CharacterInfo layout
+  kObjectFieldMissing = 8,
+  kIcallMissing = 9,
+};
+
+struct TmpSiteResolution {
+  TmpSiteResult result = TmpSiteResult::kApiIncomplete;
+  int32_t missing_icall = -1;
+};
+
+// A value-type field of `klass` whose type is exactly `expected`; the offset
+// is relative to the unboxed value.
+inline bool ValueFieldOfClass(const MonoEmbeddingApi& api,
+                              const MonoLookupApi& lookup, void* klass,
+                              const char* name, void* expected,
+                              uint32_t* offset_out) {
+  uint32_t boxed = 0u;
+  if (!FieldOfClass(api, lookup, klass, name, kMonoTypeValueType, expected,
+                    &boxed)) {
+    return false;
+  }
+  *offset_out = boxed - 2u * static_cast<uint32_t>(sizeof(void*));
+  return true;
+}
+
+// Caller must be attached to the root domain.
+inline TmpSiteResolution ResolveTmpSites(const MonoEmbeddingApi& api,
+                                         const MonoLookupApi& lookup,
+                                         const MonoValueSizeApi& sizes,
+                                         const MonoClassHierarchyApi& classes,
+                                         TmpSites* out) {
+  TmpSiteResolution resolution;
+  if (out == nullptr || !api.CompleteForResolution() || !lookup.Complete() ||
+      sizes.class_value_size == nullptr || !classes.Complete()) {
+    return resolution;
+  }
+  *out = TmpSites();
+  MonoAssemblyList list;
+  api.assembly_foreach(&CollectMonoAssembly, &list);
+  const MonoTextHookSpec& setter =
+      MonoTextHookSpecFor(MonoTextHookId::kTmpSetText);
+  void* tmp_text =
+      FindClassInImages(api, list, setter.name_space, setter.class_name);
+  void* ugui = FindClassInImages(api, list, setter.name_space,
+                                 "TextMeshProUGUI");
+  if (tmp_text == nullptr || ugui == nullptr || ugui == tmp_text ||
+      !ClassDerivesFrom(classes, ugui, tmp_text)) {
+    resolution.result = TmpSiteResult::kNoTmpClasses;
+    return resolution;
+  }
+  out->ugui_class = ugui;
+  void* canvas = FindClassInImages(api, list, "UnityEngine", "Canvas");
+  void* will_render =
+      canvas == nullptr ? nullptr
+                        : FindMonoMethod(api, canvas, "SendWillRenderCanvases",
+                                         false, kMonoTypeVoid, 0, nullptr);
+  uint32_t will_render_iflags = 0u;
+  if (will_render != nullptr) {
+    lookup.method_get_flags(will_render, &will_render_iflags);
+  }
+  // A managed body (the native player invokes it every frame); an internal
+  // call there would have no JIT entry to detour.
+  if (will_render == nullptr ||
+      (will_render_iflags & kMethodImplInternalCall) != 0u) {
+    resolution.result = TmpSiteResult::kNoWillRender;
+    return resolution;
+  }
+  out->will_render = will_render;
+  void* text_info = FindClassInImages(api, list, setter.name_space,
+                                      "TMP_TextInfo");
+  void* char_info = FindClassInImages(api, list, setter.name_space,
+                                      "TMP_CharacterInfo");
+  void* color = FindClassInImages(api, list, "UnityEngine", "Color");
+  uint32_t color_offset = 0u, alpha_offset = 0u;
+  if (text_info == nullptr || color == nullptr ||
+      !FieldOfType(api, lookup, tmp_text, "m_text", kMonoTypeString, nullptr,
+                   &out->text_string_offset) ||
+      !FieldOfClass(api, lookup, tmp_text, "m_textInfo", kMonoTypeClass,
+                    text_info, &out->text_info_offset) ||
+      !FieldOfClass(api, lookup, tmp_text, "m_fontColor", kMonoTypeValueType,
+                    color, &color_offset) ||
+      !ValueFieldOffset(api, lookup, color, "a", kMonoTypeSingle,
+                        &alpha_offset) ||
+      alpha_offset + 4u > 16u ||
+      !FieldOfType(api, lookup, tmp_text, "m_firstVisibleCharacter",
+                   kMonoTypeI4, nullptr, &out->first_visible_offset) ||
+      !FieldOfType(api, lookup, tmp_text, "m_maxVisibleCharacters",
+                   kMonoTypeI4, nullptr, &out->max_visible_offset)) {
+    resolution.result = TmpSiteResult::kTextFieldsMissing;
+    return resolution;
+  }
+  out->font_alpha_offset = color_offset + alpha_offset;
+  void* renderer =
+      FindClassInImages(api, list, "UnityEngine", "CanvasRenderer");
+  if (canvas == nullptr || renderer == nullptr ||
+      !FieldOfClass(api, lookup, ugui, "m_canvas", kMonoTypeClass, canvas,
+                    &out->canvas_offset) ||
+      !FieldOfClass(api, lookup, ugui, "m_canvasRenderer", kMonoTypeClass,
+                    renderer, &out->renderer_offset)) {
+    resolution.result = TmpSiteResult::kUguiFieldsMissing;
+    return resolution;
+  }
+  void* chars_field = nullptr;
+  void* chars_array = nullptr;
+  if (char_info == nullptr ||
+      !FieldOfType(api, lookup, text_info, "characterCount", kMonoTypeI4,
+                   nullptr, &out->info_count_offset) ||
+      !FieldOfType(api, lookup, text_info, "characterInfo", kMonoTypeSzArray,
+                   &chars_field, &out->info_chars_offset) ||
+      out->info_count_offset == out->info_chars_offset ||
+      (chars_array = lookup.class_from_mono_type(
+           lookup.field_get_type(chars_field))) == nullptr ||
+      lookup.class_get_element_class(chars_array) != char_info) {
+    resolution.result = TmpSiteResult::kTextInfoMissing;
+    return resolution;
+  }
+  void* vector3 = FindClassInImages(api, list, "UnityEngine", "Vector3");
+  void* color32 = FindClassInImages(api, list, "UnityEngine", "Color32");
+  uint32_t align = 0u;
+  const int32_t stride = sizes.class_value_size(char_info, &align);
+  const int32_t vector3_size =
+      vector3 == nullptr ? 0 : sizes.class_value_size(vector3, &align);
+  uint32_t color32_offset = 0u, color32_alpha = 0u;
+  if (stride <= 0 || vector3_size != static_cast<int32_t>(sizeof(Vec3)) ||
+      color32 == nullptr ||
+      !ValueFieldOffset(api, lookup, char_info, "character", kMonoTypeChar,
+                        &out->char_character_offset) ||
+      !ValueFieldOfClass(api, lookup, char_info, "bottomLeft", vector3,
+                         &out->char_bottom_left_offset) ||
+      !ValueFieldOfClass(api, lookup, char_info, "topRight", vector3,
+                         &out->char_top_right_offset) ||
+      !ValueFieldOffset(api, lookup, char_info, "isVisible", kMonoTypeBoolean,
+                        &out->char_visible_offset) ||
+      !ValueFieldOfClass(api, lookup, char_info, "color", color32,
+                         &color32_offset) ||
+      !ValueFieldOffset(api, lookup, color32, "a", kMonoTypeU1,
+                        &color32_alpha) ||
+      color32_alpha >= 4u) {
+    resolution.result = TmpSiteResult::kCharLayoutMismatch;
+    return resolution;
+  }
+  out->char_alpha_offset = color32_offset + color32_alpha;
+  const uint32_t limit = static_cast<uint32_t>(stride);
+  if (out->char_character_offset + 2u > limit ||
+      out->char_bottom_left_offset + sizeof(Vec3) > limit ||
+      out->char_top_right_offset + sizeof(Vec3) > limit ||
+      out->char_visible_offset + 1u > limit ||
+      out->char_alpha_offset + 1u > limit) {
+    resolution.result = TmpSiteResult::kCharLayoutMismatch;
+    return resolution;
+  }
+  out->char_stride = limit;
+  void* unity_object = FindClassInImages(api, list, "UnityEngine", "Object");
+  if (!FieldOfType(api, lookup, unity_object, "m_CachedPtr", kMonoTypeI,
+                   nullptr, &out->cached_ptr_offset)) {
+    resolution.result = TmpSiteResult::kObjectFieldMissing;
+    return resolution;
+  }
+  for (const TmpIcallSpec& spec : kTmpIcallSpecs) {
+    const IcallSpec generic = {Icall::kCount,
+                               spec.name_space,
+                               spec.class_name,
+                               spec.method,
+                               spec.instance,
+                               spec.return_type,
+                               spec.param_count,
+                               {spec.params[0], spec.params[1], spec.params[2]},
+                               spec.byref_mask};
+    void* entry = ResolveIcall(api, lookup, list, generic);
+    if (entry == nullptr) {
+      resolution.result = TmpSiteResult::kIcallMissing;
+      resolution.missing_icall = static_cast<int32_t>(spec.id);
+      return resolution;
+    }
+    out->icalls[static_cast<size_t>(spec.id)] = entry;
+  }
+  resolution.result = TmpSiteResult::kResolved;
+  return resolution;
+}
+
+// One TMP character is drawn iff TMP itself marked it visible, it lies inside
+// [firstVisibleCharacter, maxVisibleCharacters) (the typewriter reveal) and
+// its vertex alpha is readable (an `<alpha=#00>` span is not).
+inline constexpr uint8_t kMinReadableVertexAlpha = 128u;
+
+inline bool TmpCharacterShown(bool is_visible, size_t index,
+                              int32_t first_visible, int32_t max_visible,
+                              uint8_t vertex_alpha) {
+  return is_visible && first_visible >= 0 &&
+         index >= static_cast<size_t>(first_visible) && max_visible > 0 &&
+         index < static_cast<size_t>(max_visible) &&
+         vertex_alpha >= kMinReadableVertexAlpha;
+}
+
+// Several TMP objects can show the selected line at once (a shadow / outline
+// copy drawn as a second text object, measured as two lanes with identical
+// text).  `readable` is a clean sample with at least one shown glyph;
+// `selected_lane` is the object whose own lane is the host-selected thread.
+struct TmpMatch {
+  bool readable = false;
+  bool selected_lane = false;
+};
+
+enum class TmpChoice : uint8_t {
+  kChosen = 0,
+  kNoneReadable = 1,
+  kAmbiguous = 2,
+};
+
+// Deterministic: the single readable match; among several readable matches
+// the single one whose lane the host selected; anything else fails closed.
+inline TmpChoice ChooseTmpMatch(const TmpMatch* matches, size_t count,
+                                size_t* chosen) {
+  if (matches == nullptr || chosen == nullptr) return TmpChoice::kNoneReadable;
+  size_t readable = 0u, readable_index = 0u;
+  size_t selected = 0u, selected_index = 0u;
+  for (size_t i = 0u; i < count; ++i) {
+    if (!matches[i].readable) continue;
+    ++readable;
+    readable_index = i;
+    if (matches[i].selected_lane) {
+      ++selected;
+      selected_index = i;
+    }
+  }
+  if (readable == 0u) return TmpChoice::kNoneReadable;
+  if (readable == 1u) {
+    *chosen = readable_index;
+    return TmpChoice::kChosen;
+  }
+  if (selected == 1u) {
+    *chosen = selected_index;
+    return TmpChoice::kChosen;
+  }
+  return TmpChoice::kAmbiguous;
 }
 
 }  // namespace fushi_voice_hook::unity_mono_lookup

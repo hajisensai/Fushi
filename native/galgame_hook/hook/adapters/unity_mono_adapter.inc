@@ -135,6 +135,10 @@ void RememberUnityMonoFungusStoryText(void* dialog) {
   g_um_fungus_story_texts[slot].store(story, std::memory_order_release);
 }
 
+// 游戏内查词框架 3（裸 TMP，unity_mono_lookup.inc）：TMP setter 发布出一行后记下该
+// TextMeshProUGUI 对象，供每帧 Canvas.SendWillRenderCanvases 之后采样。主线程上调用。
+void RememberUmTmpCandidateGuarded(void* component, uint8_t lane);
+
 using UnityMonoTextSetter = void(FUSHI_MONO_MANAGED_CALL*)(void*, void*);
 using UnityMonoTextSetterWithFlag = void(FUSHI_MONO_MANAGED_CALL*)(void*, void*,
                                                                     uintptr_t);
@@ -187,6 +191,11 @@ void RecordUnityMonoText(fushi_voice_hook::MonoTextHookId id, void* component,
   if (RecordUnityTextChars(component, chars, length, spec.hook_name,
                            spec.hook_code, spec.stable_identity, role)) {
     MarkUnityMonoFlag(kUnityMonoFlagTextPublished);
+    if (id == fushi_voice_hook::MonoTextHookId::kTmpSetText) {
+      RememberUmTmpCandidateGuarded(component, 1u);
+    } else if (id == fushi_voice_hook::MonoTextHookId::kTmpSetTextBool) {
+      RememberUmTmpCandidateGuarded(component, 2u);
+    }
   }
 }
 
@@ -614,7 +623,7 @@ class UnityMonoAdapter final : public fushi_voice_hook::EngineAdapter {
                 fushi_voice_hook::HostExecutableSha256Hex(), _TRUNCATE);
       return report;
     }
-    // 托管解析已结束但脚本程序集里没有逐字消息框架：查词只覆盖这一框架。
+    // 托管解析已结束但三个查词框架（逐字消息 / Fungus / 裸 TMP）都不成立。
     if (text_done_ && !lookup_framework_) {
       report.state = fushi_voice_hook::kLookupAdmissionEngineUnsupported;
       return report;
@@ -677,6 +686,7 @@ class UnityMonoAdapter final : public fushi_voice_hook::EngineAdapter {
         umono_audio::AudioSiteResult::kApiIncomplete;
     void* writer_audio_code[umono_audio::kWriterAudioMethodCount] = {};
     bool fungus_framework = false;
+    bool tmp_framework = false;
     {
       fushi_voice_hook::MonoAttachedThreadScope managed_thread(api, domain);
       if (!managed_thread.attached()) {
@@ -710,13 +720,24 @@ class UnityMonoAdapter final : public fushi_voice_hook::EngineAdapter {
                       fushi_voice_hook::MonoTextHookId::kFungusSayDialogDoSay)) !=
               0;
       if (fungus_framework) MarkUnityMonoFlag(kUnityMonoFlagFungusSignature);
-      lookup_framework_ = message_framework || fungus_framework;
+      // 框架 3：两种脚本层框架都不成立、但 TMP setter 这一对都在计划里——对白就是
+      // 某个 TextMeshProUGUI，哪一个由宿主选定的那行文本决定（见 unity_mono_lookup_core.h）。
+      const uint32_t tmp_pair =
+          fushi_voice_hook::MonoTextHookBit(
+              fushi_voice_hook::MonoTextHookId::kTmpSetText) |
+          fushi_voice_hook::MonoTextHookBit(
+              fushi_voice_hook::MonoTextHookId::kTmpSetTextBool);
+      tmp_framework = !message_framework && !fungus_framework &&
+                      (plan & tmp_pair) == tmp_pair;
+      lookup_framework_ = message_framework || fungus_framework || tmp_framework;
       if (message_framework) {
         get_name = fushi_voice_hook::unity_mono_lookup::ResolveObjectGetName(
             api, LoadUnityMonoLookupApi(runtime));
         lookup_code = ResolveUnityMonoLookup(api, runtime, domain);
       } else if (fungus_framework) {
         lookup_code = ResolveUnityMonoFungusLookup(api, runtime);
+      } else if (tmp_framework) {
+        lookup_code = ResolveUnityMonoTmpLookup(api, runtime);
       }
       // 逐句语音（所有 Unity Mono 构建）：AudioSource 播放内部调用 + 可选的 Fungus
       // WriterAudio 回调，同一个 attach 作用域里解析 / 编译。
@@ -744,7 +765,7 @@ class UnityMonoAdapter final : public fushi_voice_hook::EngineAdapter {
               ? 0
               : GetWindowThreadProcessId(unity_window, nullptr);
     }
-    if (lookup_framework_ && !fungus_framework) {
+    if (lookup_framework_ && !fungus_framework && !tmp_framework) {
       g_unity_mono_object_get_name =
           reinterpret_cast<fushi_voice_hook::unity_mono_lookup::IcallGetNameFn>(
               get_name);

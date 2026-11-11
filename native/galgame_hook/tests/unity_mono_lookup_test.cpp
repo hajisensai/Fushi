@@ -13,6 +13,9 @@
 //   * 命中：相邻字格恰好相接（半开区间）、字距紧导致重叠时取水平中心更近者、平局拒；
 //   * 消息级点击认领（按下与配对的抬起一起吞）；
 //   * 文本道角色键：同名稳定、异名不同、空名为 0。
+//   * 框架 3（裸 TextMeshProUGUI）：站点解析（每条拒绝分支）、类层级判定、TMP 字符
+//     显示判定（isVisible / 打字机可见区间 / 顶点 alpha）、同文多对象的确定性选择、
+//     字符四边形 本地 -> 世界 -> Unity 屏幕 -> 物理客户区 的投影与命中。
 #include <cassert>
 #include <cmath>
 #include <cstdio>
@@ -62,6 +65,7 @@ struct FakeClass {
   FakeClass* element = nullptr;  // array classes
   FakeType self_type;
   int32_t value_size = 0;  // mono_class_value_size (value types)
+  FakeClass* parent = nullptr;  // mono_class_get_parent
 };
 
 struct FakeImage {
@@ -1005,6 +1009,436 @@ void TestAudioDecisions() {
   assert(!ua::IsDuplicatePlayback(&recent, L"sce_0001", 1220));
 }
 
+
+// ── framework 3: a bare TextMeshPro UGUI text ───────────────────────────────
+
+void* FakeClassParent(void* klass) {
+  return static_cast<FakeClass*>(klass)->parent;
+}
+struct FakeObject {
+  FakeClass* klass;
+};
+void* FakeObjectClass(void* object) {
+  return static_cast<FakeObject*>(object)->klass;
+}
+
+ul::MonoClassHierarchyApi ClassApi() {
+  ul::MonoClassHierarchyApi api;
+  api.class_get_parent = &FakeClassParent;
+  api.object_get_class = &FakeObjectClass;
+  return api;
+}
+
+// A TMP 3.0-shaped world (field names / types from the com.unity.textmeshpro
+// 1.4 and 3.0 sources; offsets are arbitrary but mono-shaped: instance and
+// value-type fields reported after a two-pointer header).
+struct TmpWorld {
+  FakeType tvoid = T(kMonoTypeVoid), tbool = T(kMonoTypeBoolean),
+           ti4 = T(ul::kMonoTypeI4), tr4 = T(kMonoTypeSingle),
+           tchar = T(ul::kMonoTypeChar), tu1 = T(ul::kMonoTypeU1),
+           tstring = T(kMonoTypeString), tclass = T(kMonoTypeClass),
+           tintptr = T(ul::kMonoTypeI), tvalue = T(ul::kMonoTypeValueType),
+           tvalue_ref = T(ul::kMonoTypeValueType, true);
+  FakeClass graphic{"UnityEngine.UI", "MaskableGraphic"};
+  FakeClass tmp_text{"TMPro", "TMP_Text"};
+  FakeClass ugui{"TMPro", "TextMeshProUGUI"};
+  FakeClass tmp_3d{"TMPro", "TextMeshPro"};
+  FakeClass text_info{"TMPro", "TMP_TextInfo"};
+  FakeClass char_info{"TMPro", "TMP_CharacterInfo"};
+  FakeClass char_array{"", "TMP_CharacterInfo[]"};
+  FakeClass color{"UnityEngine", "Color"};
+  FakeClass color32{"UnityEngine", "Color32"};
+  FakeClass vector3{"UnityEngine", "Vector3"};
+  FakeClass canvas{"UnityEngine", "Canvas"};
+  FakeClass renderer{"UnityEngine", "CanvasRenderer"};
+  FakeClass unity_object{"UnityEngine", "Object"};
+  FakeClass component{"UnityEngine", "Component"};
+  FakeClass behaviour{"UnityEngine", "Behaviour"};
+  FakeClass transform{"UnityEngine", "Transform"};
+  FakeClass camera{"UnityEngine", "Camera"};
+  FakeClass screen{"UnityEngine", "Screen"};
+  FakeType t_text_info, t_color, t_color32, t_vector3, t_canvas, t_renderer,
+      t_char_items;
+  std::vector<FakeImage> images;
+
+  static FakeMethod Icall(const char* name, bool instance, FakeType* ret,
+                          std::vector<FakeType*> params) {
+    return {name, instance, ret, std::move(params), ul::kMethodImplInternalCall,
+            0};
+  }
+
+  TmpWorld() {
+    t_text_info = T(kMonoTypeClass, false, &text_info);
+    t_color = T(ul::kMonoTypeValueType, false, &color);
+    t_color32 = T(ul::kMonoTypeValueType, false, &color32);
+    t_vector3 = T(ul::kMonoTypeValueType, false, &vector3);
+    t_canvas = T(kMonoTypeClass, false, &canvas);
+    t_renderer = T(kMonoTypeClass, false, &renderer);
+    char_array.element = &char_info;
+    t_char_items = T(ul::kMonoTypeSzArray, false, &char_array);
+    tmp_text.parent = &graphic;
+    ugui.parent = &tmp_text;
+    tmp_3d.parent = &tmp_text;
+    tmp_text.fields = {{"m_text", &tstring, 40 * kPtr},
+                       {"m_fontColor", &t_color, 300},
+                       {"m_firstVisibleCharacter", &ti4, 400},
+                       {"m_maxVisibleCharacters", &ti4, 404},
+                       {"m_textInfo", &t_text_info, 60 * kPtr}};
+    ugui.fields = {{"m_canvasRenderer", &t_renderer, 90 * kPtr},
+                   {"m_canvas", &t_canvas, 91 * kPtr}};
+    text_info.fields = {{"characterCount", &ti4, 3 * kPtr},
+                        {"characterInfo", &t_char_items, 8 * kPtr}};
+    // TMP_CharacterInfo: character @0, bottomLeft @136, topRight @148,
+    // color @188, isVisible @228, stride 232 (the stride and every offset
+    // come from mono at run time, never from these numbers).
+    char_info.fields = {{"character", &tchar, kHdr},
+                        {"index", &ti4, kHdr + 4},
+                        {"bottomLeft", &t_vector3, kHdr + 136},
+                        {"topRight", &t_vector3, kHdr + 148},
+                        {"color", &t_color32, kHdr + 188},
+                        {"isVisible", &tbool, kHdr + 228}};
+    char_info.value_size = 232;
+    color.fields = {{"r", &tr4, kHdr}, {"g", &tr4, kHdr + 4},
+                    {"b", &tr4, kHdr + 8}, {"a", &tr4, kHdr + 12}};
+    color.value_size = 16;
+    // Unity 2018+: explicit layout with an overlapping `rgba` int.
+    color32.fields = {{"rgba", &ti4, kHdr}, {"r", &tu1, kHdr},
+                      {"g", &tu1, kHdr + 1}, {"b", &tu1, kHdr + 2},
+                      {"a", &tu1, kHdr + 3}};
+    color32.value_size = 4;
+    vector3.fields = {{"x", &tr4, kHdr}, {"y", &tr4, kHdr + 4},
+                      {"z", &tr4, kHdr + 8}};
+    vector3.value_size = 12;
+    unity_object.fields = {{"m_CachedPtr", &tintptr, 2 * kPtr}};
+    component.methods = {Icall("get_transform", true, &tclass, {})};
+    behaviour.methods = {Icall("get_enabled", true, &tbool, {}),
+                         Icall("get_isActiveAndEnabled", true, &tbool, {})};
+    transform.methods = {Icall("get_localToWorldMatrix_Injected", true, &tvoid,
+                               {&tvalue_ref})};
+    canvas.methods = {
+        {"SendPreWillRenderCanvases", false, &tvoid, {}, 0, 0},
+        {"SendWillRenderCanvases", false, &tvoid, {}, 0, 0},
+        Icall("get_rootCanvas", true, &tclass, {}),
+        Icall("get_renderMode", true, &tvalue, {}),
+        Icall("get_worldCamera", true, &tclass, {})};
+    renderer.methods = {Icall("GetInheritedAlpha", true, &tr4, {}),
+                        Icall("get_cull", true, &tbool, {})};
+    camera.methods = {Icall("WorldToScreenPoint_Injected", true, &tvoid,
+                            {&tvalue_ref, &tvalue, &tvalue_ref}),
+                      Icall("get_targetTexture", true, &tclass, {})};
+    screen.methods = {Icall("get_width", false, &ti4, {}),
+                      Icall("get_height", false, &ti4, {})};
+    images = {{"UnityEngine.CoreModule",
+               {&unity_object, &component, &behaviour, &transform, &camera,
+                &screen, &color, &color32, &vector3}},
+              {"UnityEngine.UIModule", {&canvas, &renderer}},
+              {"UnityEngine.UI", {&graphic}},
+              {"Unity.TextMeshPro",
+               {&tmp_text, &ugui, &tmp_3d, &text_info, &char_info}},
+              {"Assembly-CSharp", {}}};
+    g_images = &images;
+  }
+};
+
+ul::TmpSiteResolution ResolveTmp(ul::TmpSites* sites) {
+  return ul::ResolveTmpSites(Api(), LookupApi(), SizeApi(), ClassApi(), sites);
+}
+
+void TestTmpResolvesUguiShape() {
+  TmpWorld world;
+  ul::TmpSites sites;
+  const auto result = ResolveTmp(&sites);
+  assert(result.result == ul::TmpSiteResult::kResolved);
+  // The managed SendWillRenderCanvases, not its Pre* sibling.
+  assert(sites.will_render == &world.canvas.methods[1]);
+  assert(sites.ugui_class == &world.ugui);
+  assert(sites.text_string_offset == 40 * kPtr &&
+         sites.text_info_offset == 60 * kPtr);
+  assert(sites.font_alpha_offset == 312);  // m_fontColor @300 + a @12
+  assert(sites.first_visible_offset == 400 && sites.max_visible_offset == 404);
+  assert(sites.canvas_offset == 91 * kPtr &&
+         sites.renderer_offset == 90 * kPtr);
+  assert(sites.info_count_offset == 3 * kPtr &&
+         sites.info_chars_offset == 8 * kPtr);
+  assert(sites.char_stride == 232 && sites.char_character_offset == 0 &&
+         sites.char_bottom_left_offset == 136 &&
+         sites.char_top_right_offset == 148 &&
+         sites.char_visible_offset == 228);
+  assert(sites.char_alpha_offset == 191);  // color @188 + a @3
+  assert(sites.cached_ptr_offset == 2 * kPtr);
+  // Behaviour.get_isActiveAndEnabled, not get_enabled.
+  assert(sites.icalls[static_cast<size_t>(
+             ul::TmpIcall::kBehaviourActiveAndEnabled)] ==
+         &world.behaviour.methods[1].entry_tag);
+  for (void* entry : sites.icalls) assert(entry != nullptr);
+}
+
+void ExpectTmpFailure(TmpWorld& world, ul::TmpSiteResult expected) {
+  g_images = &world.images;
+  ul::TmpSites sites;
+  const auto result = ResolveTmp(&sites);
+  if (result.result != expected) {
+    std::printf("tmp expected %u got %u\n", static_cast<unsigned>(expected),
+                static_cast<unsigned>(result.result));
+  }
+  assert(result.result == expected);
+}
+
+void TestTmpFailClosedBranches() {
+  {
+    TmpWorld w;  // no TextMeshProUGUI (3D TextMeshPro only)
+    w.images[3].classes = {&w.tmp_text, &w.tmp_3d, &w.text_info, &w.char_info};
+    ExpectTmpFailure(w, ul::TmpSiteResult::kNoTmpClasses);
+  }
+  {
+    TmpWorld w;  // a TextMeshProUGUI that is not a TMP_Text
+    w.ugui.parent = &w.graphic;
+    ExpectTmpFailure(w, ul::TmpSiteResult::kNoTmpClasses);
+  }
+  {
+    TmpWorld w;  // TMP_Text in two images (two TMP copies): ambiguous
+    FakeClass twin{"TMPro", "TMP_Text"};
+    w.images[4].classes.push_back(&twin);
+    ExpectTmpFailure(w, ul::TmpSiteResult::kNoTmpClasses);
+  }
+  {
+    TmpWorld w;
+    w.canvas.methods.erase(w.canvas.methods.begin() + 1);
+    ExpectTmpFailure(w, ul::TmpSiteResult::kNoWillRender);
+  }
+  {
+    TmpWorld w;  // an internal call has no managed body to detour
+    w.canvas.methods[1].iflags = ul::kMethodImplInternalCall;
+    ExpectTmpFailure(w, ul::TmpSiteResult::kNoWillRender);
+  }
+  {
+    TmpWorld w;  // an instance method of the same name is not the hook
+    w.canvas.methods[1].instance = true;
+    ExpectTmpFailure(w, ul::TmpSiteResult::kNoWillRender);
+  }
+  {
+    TmpWorld w;
+    w.tmp_text.fields[0].type = &w.ti4;  // m_text must be a string
+    ExpectTmpFailure(w, ul::TmpSiteResult::kTextFieldsMissing);
+  }
+  {
+    TmpWorld w;  // m_textInfo typed as another class
+    FakeType other = T(kMonoTypeClass, false, &w.char_info);
+    w.tmp_text.fields[4].type = &other;
+    ExpectTmpFailure(w, ul::TmpSiteResult::kTextFieldsMissing);
+  }
+  {
+    TmpWorld w;  // m_fontColor as Color32 is not the Color the colour uses
+    w.tmp_text.fields[1].type = &w.t_color32;
+    ExpectTmpFailure(w, ul::TmpSiteResult::kTextFieldsMissing);
+  }
+  {
+    TmpWorld w;
+    w.tmp_text.fields[3].name = "m_maxVisibleWords";
+    ExpectTmpFailure(w, ul::TmpSiteResult::kTextFieldsMissing);
+  }
+  {
+    TmpWorld w;  // m_canvas declared nowhere on TextMeshProUGUI
+    w.ugui.fields.pop_back();
+    ExpectTmpFailure(w, ul::TmpSiteResult::kUguiFieldsMissing);
+  }
+  {
+    TmpWorld w;  // m_canvasRenderer typed Canvas
+    w.ugui.fields[0].type = &w.t_canvas;
+    ExpectTmpFailure(w, ul::TmpSiteResult::kUguiFieldsMissing);
+  }
+  {
+    TmpWorld w;
+    w.text_info.fields[0].type = &w.tr4;  // characterCount must be an int
+    ExpectTmpFailure(w, ul::TmpSiteResult::kTextInfoMissing);
+  }
+  {
+    TmpWorld w;  // characterInfo[] of another element type
+    FakeClass vertex{"TMPro", "TMP_Vertex"};
+    w.char_array.element = &vertex;
+    ExpectTmpFailure(w, ul::TmpSiteResult::kTextInfoMissing);
+  }
+  {
+    TmpWorld w;  // a stride that cannot hold isVisible
+    w.char_info.value_size = 200;
+    ExpectTmpFailure(w, ul::TmpSiteResult::kCharLayoutMismatch);
+  }
+  {
+    TmpWorld w;  // Vector3 not 12 bytes
+    w.vector3.value_size = 16;
+    ExpectTmpFailure(w, ul::TmpSiteResult::kCharLayoutMismatch);
+  }
+  {
+    TmpWorld w;  // bottomLeft typed as Color
+    w.char_info.fields[2].type = &w.t_color;
+    ExpectTmpFailure(w, ul::TmpSiteResult::kCharLayoutMismatch);
+  }
+  {
+    TmpWorld w;  // character as int (a UTF-32 build) is not this layout
+    w.char_info.fields[0].type = &w.ti4;
+    ExpectTmpFailure(w, ul::TmpSiteResult::kCharLayoutMismatch);
+  }
+  {
+    TmpWorld w;  // Color32 without a byte `a`
+    w.color32.fields.pop_back();
+    ExpectTmpFailure(w, ul::TmpSiteResult::kCharLayoutMismatch);
+  }
+  {
+    TmpWorld w;
+    w.unity_object.fields.clear();
+    ExpectTmpFailure(w, ul::TmpSiteResult::kObjectFieldMissing);
+  }
+  {
+    TmpWorld w;  // `out Matrix4x4` must be by-ref
+    w.transform.methods[0].params = {&w.tvalue};
+    ExpectTmpFailure(w, ul::TmpSiteResult::kIcallMissing);
+  }
+  {
+    TmpWorld w;  // a managed GetInheritedAlpha is not the binding
+    w.renderer.methods[0].iflags = 0u;
+    ul::TmpSites sites;
+    const auto result = ResolveTmp(&sites);
+    assert(result.result == ul::TmpSiteResult::kIcallMissing);
+    assert(result.missing_icall ==
+           static_cast<int32_t>(ul::TmpIcall::kCanvasRendererInheritedAlpha));
+  }
+  {
+    TmpWorld w;  // pre-2018 player: no _Injected world-to-screen binding
+    w.camera.methods[0].name = "INTERNAL_CALL_WorldToScreenPoint";
+    ExpectTmpFailure(w, ul::TmpSiteResult::kIcallMissing);
+  }
+  {
+    TmpWorld w;
+    ul::TmpSites sites;
+    ul::MonoClassHierarchyApi none;
+    assert(ul::ResolveTmpSites(Api(), LookupApi(), SizeApi(), none, &sites)
+               .result == ul::TmpSiteResult::kApiIncomplete);
+    ul::MonoValueSizeApi no_sizes;
+    assert(ul::ResolveTmpSites(Api(), LookupApi(), no_sizes, ClassApi(),
+                               &sites)
+               .result == ul::TmpSiteResult::kApiIncomplete);
+  }
+}
+
+void TestTmpHierarchy() {
+  TmpWorld w;
+  const ul::MonoClassHierarchyApi classes = ClassApi();
+  FakeClass derived{"Game", "DialogueText"};  // a game's own subclass
+  derived.parent = &w.ugui;
+  assert(ul::ClassDerivesFrom(classes, &w.ugui, &w.ugui));
+  assert(ul::ClassDerivesFrom(classes, &derived, &w.ugui));
+  assert(ul::ClassDerivesFrom(classes, &w.ugui, &w.tmp_text));
+  // A 3D TextMeshPro shares TMP_Text but not TextMeshProUGUI's offsets.
+  assert(!ul::ClassDerivesFrom(classes, &w.tmp_3d, &w.ugui));
+  assert(!ul::ClassDerivesFrom(classes, nullptr, &w.ugui));
+  assert(!ul::ClassDerivesFrom(classes, &w.ugui, nullptr));
+  // A malformed (cyclic) parent chain terminates and is not a match.
+  FakeClass a{"X", "A"}, b{"X", "B"};
+  a.parent = &b;
+  b.parent = &a;
+  assert(!ul::ClassDerivesFrom(classes, &a, &w.ugui));
+  FakeObject object{&derived};
+  assert(classes.object_get_class(&object) == &derived);
+}
+
+void TestTmpCharacterShown() {
+  // Revealed, opaque, inside the default range.
+  assert(ul::TmpCharacterShown(true, 0, 0, 99999, 255));
+  // TMP's own isVisible false (whitespace, cut by maxVisibleLines / page).
+  assert(!ul::TmpCharacterShown(false, 0, 0, 99999, 255));
+  // Typewriter: maxVisibleCharacters 3 shows 0..2.
+  assert(ul::TmpCharacterShown(true, 2, 0, 3, 255));
+  assert(!ul::TmpCharacterShown(true, 3, 0, 3, 255));
+  assert(!ul::TmpCharacterShown(true, 0, 0, 0, 255));
+  // firstVisibleCharacter.
+  assert(!ul::TmpCharacterShown(true, 1, 2, 99999, 255));
+  assert(ul::TmpCharacterShown(true, 2, 2, 99999, 255));
+  assert(!ul::TmpCharacterShown(true, 0, -1, 99999, 255));
+  // An <alpha=#00> span / a fade below half.
+  assert(!ul::TmpCharacterShown(true, 0, 0, 99999, 0));
+  assert(!ul::TmpCharacterShown(true, 0, 0, 99999, 127));
+  assert(ul::TmpCharacterShown(true, 0, 0, 99999, 128));
+}
+
+void TestTmpChooseMatch() {
+  size_t chosen = 99;
+  // One readable match.
+  ul::TmpMatch one[] = {{true, false}};
+  assert(ul::ChooseTmpMatch(one, 1, &chosen) == ul::TmpChoice::kChosen &&
+         chosen == 0);
+  // Body + an inactive / alpha-0 shadow copy: the readable one.
+  ul::TmpMatch shadow_hidden[] = {{false, true}, {true, false}};
+  assert(ul::ChooseTmpMatch(shadow_hidden, 2, &chosen) ==
+             ul::TmpChoice::kChosen &&
+         chosen == 1);
+  // Both readable (a drawn shadow): the one whose lane the host selected.
+  ul::TmpMatch both[] = {{true, false}, {true, true}};
+  assert(ul::ChooseTmpMatch(both, 2, &chosen) == ul::TmpChoice::kChosen &&
+         chosen == 1);
+  // Both readable, neither / both selected: fail closed.
+  ul::TmpMatch neither[] = {{true, false}, {true, false}};
+  assert(ul::ChooseTmpMatch(neither, 2, &chosen) == ul::TmpChoice::kAmbiguous);
+  ul::TmpMatch twice[] = {{true, true}, {true, true}};
+  assert(ul::ChooseTmpMatch(twice, 2, &chosen) == ul::TmpChoice::kAmbiguous);
+  // Nothing readable.
+  ul::TmpMatch none[] = {{false, false}, {false, true}};
+  assert(ul::ChooseTmpMatch(none, 2, &chosen) ==
+         ul::TmpChoice::kNoneReadable);
+  assert(ul::ChooseTmpMatch(nullptr, 0, &chosen) ==
+         ul::TmpChoice::kNoneReadable);
+  // Slot order does not decide: the selected lane wins wherever it sits.
+  ul::TmpMatch reversed[] = {{true, true}, {true, false}};
+  assert(ul::ChooseTmpMatch(reversed, 2, &chosen) == ul::TmpChoice::kChosen &&
+         chosen == 0);
+}
+
+void TestTmpGeometry() {
+  // A TMP UGUI text on a Screen Space - Overlay canvas: localToWorld scales
+  // by 1.5 and translates to (200, 160); characterInfo quads are local.
+  ul::Matrix4 m;
+  m.m[0] = 1.5f; m.m[5] = 1.5f; m.m[10] = 1.0f; m.m[15] = 1.0f;
+  m.m[12] = 200.0f; m.m[13] = 160.0f;
+  // Character 1: bottomLeft (32, -40), topRight (64, -4).
+  const ul::Vec3 a = ul::TransformPoint(m, 32.0f, -40.0f);
+  const ul::Vec3 b = ul::TransformPoint(m, 64.0f, -4.0f);
+  ul::GlyphCell cell;
+  assert(ul::CellFromScreenCorners(a, b, true, &cell));
+  assert(cell.x0 == 248 && cell.x1 == 296 && cell.y0 == 100 && cell.y1 == 154);
+  // Unity screen 1280x720 -> physical client 2560x1440 (192 dpi):
+  // x 496..592, y (720-154)*2 = 1132 .. (720-100)*2 = 1240.
+  ul::PixelRect rect;
+  assert(ul::ProjectCell(cell, 1280, 720, 2560, 1440, &rect));
+  assert(rect.x == 496 && rect.y == 1132 && rect.w == 96 && rect.h == 108);
+  // A quad hanging off the screen bottom is refused, not clipped.
+  const ul::Vec3 low = ul::TransformPoint(m, 32.0f, -200.0f);
+  ul::GlyphCell off;
+  assert(ul::CellFromScreenCorners(low, b, true, &off));
+  assert(!ul::ProjectCell(off, 1280, 720, 2560, 1440, &rect));
+  // A degenerate quad yields no cell.
+  assert(!ul::CellFromScreenCorners(a, a, true, &off));
+  // Glyph sources: the characterInfo index, skipping line feeds.
+  const std::wstring shown = L"あい\nう";
+  const uint16_t sources[] = {0, 1, 3};
+  assert(ul::ValidateGlyphSources(shown.data(), shown.size(), sources, 3));
+  const uint16_t line_feed[] = {0, 2};
+  assert(!ul::ValidateGlyphSources(shown.data(), shown.size(), line_feed, 2));
+  // Hit test on the projected cells (they touch at x = 248).
+  ul::GlyphCell cells[2];
+  assert(ul::CellFromScreenCorners(ul::TransformPoint(m, 0.0f, -40.0f),
+                                   ul::TransformPoint(m, 32.0f, -4.0f), true,
+                                   &cells[0]));
+  cells[1] = cell;
+  cells[0].visible = 1u;
+  cells[1].visible = 1u;
+  const uint16_t hit_sources[] = {0, 1};
+  size_t hit = 9;
+  assert(ul::HitTestCells(cells, hit_sources, 2, 250.0f, 120.0f, &hit) &&
+         hit == 1);
+  assert(ul::HitTestCells(cells, hit_sources, 2, 210.0f, 120.0f, &hit) &&
+         hit == 0);
+  assert(!ul::HitTestCells(cells, hit_sources, 2, 300.0f, 120.0f, &hit));
+}
+
 }  // namespace
 
 int main() {
@@ -1022,6 +1456,12 @@ int main() {
   TestFungusGeometry();
   TestAudioSites();
   TestAudioDecisions();
+  TestTmpResolvesUguiShape();
+  TestTmpFailClosedBranches();
+  TestTmpHierarchy();
+  TestTmpCharacterShown();
+  TestTmpChooseMatch();
+  TestTmpGeometry();
   std::printf("unity_mono_lookup_test: ok\n");
   return 0;
 }

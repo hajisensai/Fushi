@@ -19,6 +19,15 @@
 //     shows, projected through the text transform and the root canvas, each
 //     glyph tagged with its index in the tag-stripped text and hidden inside
 //     an alpha-0 <color> span (the Writer's read-ahead).
+//   * main thread, TMP (framework 3): the text path's TMP setter detours
+//     remember the TextMeshProUGUI objects they published from; after every
+//     Canvas.SendWillRenderCanvases (the canvas update laid out this frame's
+//     dirty TMP texts) each remembered object's TMP_TextInfo.characterInfo
+//     is sampled: its character sequence (compared with the selected line)
+//     and each character's local quad through the RectTransform and the
+//     root canvas, hidden when TMP marks it invisible, outside the
+//     typewriter's visible range or alpha-0.  Several objects showing the
+//     selected line (a shadow copy) are resolved by ChooseTmpMatch.
 //   * main thread, UnityWndClass window procedure (GWLP_WNDPROC subclass
 //     installed from HookWorker) — a bare WM_LBUTTONDOWN / DBLCLK that lands
 //     on a mapped glyph of the current model is swallowed together with its
@@ -65,6 +74,13 @@ enum UmSampleFailure : uint32_t {
 // Which framework produced an instance snapshot.
 constexpr uint8_t kUmFrameworkMessage = 1u;  // Message.Mes per-glyph TextMesh
 constexpr uint8_t kUmFrameworkFungus = 2u;   // Fungus SayDialog on UGUI Text
+constexpr uint8_t kUmFrameworkTmp = 3u;      // bare TMPro.TextMeshProUGUI
+// Lane bits of a TMP candidate: which text-path setter wrote it (each setter
+// publishes on its own lane, thread id = component + that setter's hook code).
+constexpr uint8_t kUmTmpLaneSetText = 1u;      // TMP_Text.set_text
+constexpr uint8_t kUmTmpLaneSetTextBool = 2u;  // TMP_Text.SetText(string,bool)
+static_assert(kUmTmpLaneSetText == 1u && kUmTmpLaneSetTextBool == 2u,
+              "RecordUnityMonoText passes these lane bits as literals");
 
 struct UmInstanceSnapshot {
   uintptr_t instance = 0u;
@@ -74,6 +90,7 @@ struct UmInstanceSnapshot {
   uintptr_t text_owner = 0u;
   uint32_t text_offset = 0u;
   uint8_t framework = 0u;
+  uint8_t lane_hooks = 0u;  // TMP: kUmTmpLane* bits of the setters that wrote it
   uint32_t failure = kUmSampleOk;
   int32_t screen_w = 0;
   int32_t screen_h = 0;
@@ -142,6 +159,9 @@ struct UnityMonoLookupRuntime {
   uint8_t framework = 0u;  // kUmFramework*; 0 until a framework resolved
   umono_lookup::FungusSiteResolution fungus_result;
   umono_lookup::FungusSites fungus;
+  umono_lookup::TmpSiteResolution tmp_result;
+  umono_lookup::TmpSites tmp;
+  umono_lookup::MonoClassHierarchyApi classes;
   umono_lookup::Sites sites;
   int (*string_length)(void*) = nullptr;
   const wchar_t* (*string_chars)(void*) = nullptr;
@@ -151,6 +171,14 @@ struct UnityMonoLookupRuntime {
 
   // ── main-thread-owned ──
   umono_lookup::RichTextMap rich_text;  // Fungus sampler scratch
+  // TMP: the TextMeshProUGUI objects recently written through the text path's
+  // TMP setters (sampled after every Canvas.SendWillRenderCanvases).
+  struct TmpCandidate {
+    uintptr_t object = 0u;
+    uint8_t lane_hooks = 0u;
+    uint64_t written_ms = 0u;
+  };
+  std::array<TmpCandidate, umono_lookup::kInstanceSlots> tmp_candidates{};
   UmSnapshot building;
   std::array<uint64_t, umono_lookup::kInstanceSlots> fingerprints{};
   std::array<uint64_t, umono_lookup::kInstanceSlots> last_sample_ms{};
@@ -185,6 +213,9 @@ using UmFixedUpdateFn = void(FUSHI_MONO_MANAGED_CALL*)(void*);
 UmFixedUpdateFn g_um_fixed_update_original = nullptr;
 // Fungus: SayDialog.LateUpdate (same managed shape: instance, no argument).
 UmFixedUpdateFn g_um_late_update_original = nullptr;
+// TMP: static void Canvas.SendWillRenderCanvases() (no `this`, no argument).
+using UmStaticVoidFn = void(FUSHI_MONO_MANAGED_CALL*)();
+UmStaticVoidFn g_um_will_render_original = nullptr;
 
 // ── two-slot seqlocks ──────────────────────────────────────────────────────
 
@@ -631,6 +662,213 @@ uint32_t SampleUmFungus(uintptr_t dialog, UmInstanceSnapshot* out) {
   return kUmSampleOk;
 }
 
+// ── main thread: a bare TextMeshPro UGUI text (framework 3) ────────────────
+
+// The candidate slot of `object` (main thread), or kInstanceSlots.
+size_t FindUmTmpCandidate(uintptr_t object) {
+  for (size_t i = 0; i < umono_lookup::kInstanceSlots; ++i) {
+    if (g_um_lookup.tmp_candidates[i].object == object) return i;
+  }
+  return umono_lookup::kInstanceSlots;
+}
+
+// Fills `out` from one TextMeshProUGUI after this frame's canvas update.  POD
+// + engine reads only (runs under __try); no engine write.
+uint32_t SampleUmTmp(uintptr_t object, UmInstanceSnapshot* out) {
+  auto& rt = g_um_lookup;
+  const auto& t = rt.tmp;
+  using umono_lookup::TmpIcall;
+  out->instance = object;
+  out->framework = kUmFrameworkTmp;
+  out->text_owner = object;
+  out->text_offset = t.text_string_offset;
+  out->text_object = 0u;
+  out->units = 0u;
+  out->lines = 0u;
+  out->glyph_count = 0u;
+  out->visible_count = 0u;
+  const size_t candidate = FindUmTmpCandidate(object);
+  out->lane_hooks = candidate == umono_lookup::kInstanceSlots
+                        ? 0u
+                        : rt.tmp_candidates[candidate].lane_hooks;
+  uintptr_t text = 0u, info = 0u, chars = 0u;
+  int32_t count = 0;
+  if (!UmAlive(object, t.cached_ptr_offset) ||
+      !ReadUmValue(object + t.text_string_offset, &text) || text == 0u) {
+    return kUmSampleNoText;
+  }
+  if (!ReadUmValue(object + t.text_info_offset, &info) || info == 0u ||
+      !ReadUmValue(info + t.info_count_offset, &count) ||
+      !ReadUmValue(info + t.info_chars_offset, &chars) || chars == 0u) {
+    return kUmSampleBadList;
+  }
+  if (count <= 0) return kUmSampleNoText;
+  if (static_cast<size_t>(count) > umono_lookup::kMaxLineUnits) {
+    return kUmSampleTooLarge;
+  }
+  if (rt.array_length(reinterpret_cast<void*>(chars)) <
+      static_cast<uintptr_t>(count)) {
+    return kUmSampleBadList;
+  }
+  const char* base = rt.array_addr(reinterpret_cast<void*>(chars),
+                                   static_cast<int32_t>(t.char_stride), 0u);
+  if (base == nullptr) return kUmSampleBadList;
+  // The laid-out character sequence is the text this object shows; the
+  // worker compares it with the selected line unit for unit.
+  for (int32_t i = 0; i < count; ++i) {
+    const char* entry = base + static_cast<size_t>(i) * t.char_stride;
+    wchar_t unit = 0;
+    std::memcpy(&unit, entry + t.char_character_offset, sizeof(wchar_t));
+    out->text[static_cast<size_t>(i)] = unit;
+  }
+  out->units = static_cast<uint32_t>(count);
+
+  void* self = reinterpret_cast<void*>(object);
+  const bool active_and_enabled = t.Get<umono_lookup::IcallInstanceBoolFn>(
+      TmpIcall::kBehaviourActiveAndEnabled)(self);
+  uintptr_t renderer = 0u;
+  bool culled = true;
+  float inherited_alpha = 0.0f;
+  if (ReadUmValue(object + t.renderer_offset, &renderer) &&
+      UmAlive(renderer, t.cached_ptr_offset)) {
+    void* renderer_object = reinterpret_cast<void*>(renderer);
+    culled = t.Get<umono_lookup::IcallInstanceBoolFn>(
+        TmpIcall::kCanvasRendererCull)(renderer_object);
+    inherited_alpha = t.Get<umono_lookup::IcallInstanceFloatFn>(
+        TmpIcall::kCanvasRendererInheritedAlpha)(renderer_object);
+  }
+  float font_alpha = 0.0f;
+  ReadUmValue(object + t.font_alpha_offset, &font_alpha);
+  const bool readable = umono_lookup::FungusTextReadable(
+      active_and_enabled, culled, inherited_alpha, font_alpha);
+
+  uintptr_t canvas = 0u;
+  if (!ReadUmValue(object + t.canvas_offset, &canvas) ||
+      !UmAlive(canvas, t.cached_ptr_offset)) {
+    return kUmSampleCanvas;
+  }
+  void* root = t.Get<umono_lookup::IcallInstanceObjectFn>(
+      TmpIcall::kCanvasRoot)(reinterpret_cast<void*>(canvas));
+  if (!UmAlive(reinterpret_cast<uintptr_t>(root), t.cached_ptr_offset)) {
+    return kUmSampleCanvas;
+  }
+  const int32_t mode = t.Get<umono_lookup::IcallInstanceIntFn>(
+      TmpIcall::kCanvasRenderMode)(root);
+  void* camera = nullptr;
+  if (mode == umono_lookup::kRenderModeScreenSpaceCamera) {
+    camera = t.Get<umono_lookup::IcallInstanceObjectFn>(
+        TmpIcall::kCanvasWorldCamera)(root);
+    // Screen Space - Camera without a camera renders as an overlay.
+    if (!UmAlive(reinterpret_cast<uintptr_t>(camera), t.cached_ptr_offset)) {
+      camera = nullptr;
+    } else if (t.Get<umono_lookup::IcallInstanceObjectFn>(
+                   TmpIcall::kCameraTargetTexture)(camera) != nullptr) {
+      return kUmSampleCameraTarget;
+    }
+  } else if (mode != umono_lookup::kRenderModeScreenSpaceOverlay) {
+    return kUmSampleCanvas;
+  }
+  out->screen_w =
+      t.Get<umono_lookup::IcallStaticIntFn>(TmpIcall::kScreenWidth)();
+  out->screen_h =
+      t.Get<umono_lookup::IcallStaticIntFn>(TmpIcall::kScreenHeight)();
+  void* transform = t.Get<umono_lookup::IcallInstanceObjectFn>(
+      TmpIcall::kComponentTransform)(self);
+  if (!UmAlive(reinterpret_cast<uintptr_t>(transform), t.cached_ptr_offset)) {
+    return kUmSampleCanvas;
+  }
+  umono_lookup::Matrix4 to_world;
+  t.Get<umono_lookup::IcallInstanceOutFn>(TmpIcall::kTransformLocalToWorld)(
+      transform, &to_world);
+  int32_t first_visible = 0, max_visible = 0;
+  ReadUmValue(object + t.first_visible_offset, &first_visible);
+  ReadUmValue(object + t.max_visible_offset, &max_visible);
+  const auto to_screen = t.Get<umono_lookup::IcallWorldToScreenFn>(
+      TmpIcall::kCameraWorldToScreen);
+
+  for (int32_t i = 0; i < count; ++i) {
+    const wchar_t unit = out->text[static_cast<size_t>(i)];
+    if (unit == L'\n' || unit == L'\r') continue;  // never drawn
+    const char* entry = base + static_cast<size_t>(i) * t.char_stride;
+    umono_lookup::Vec3 low, high;
+    uint8_t is_visible = 0u, alpha = 0u;
+    std::memcpy(&low, entry + t.char_bottom_left_offset, sizeof(low));
+    std::memcpy(&high, entry + t.char_top_right_offset, sizeof(high));
+    std::memcpy(&is_visible, entry + t.char_visible_offset, 1u);
+    std::memcpy(&alpha, entry + t.char_alpha_offset, 1u);
+    if (out->glyph_count >= umono_lookup::kMaxGlyphs) return kUmSampleTooLarge;
+    umono_lookup::Vec3 a = umono_lookup::TransformPoint(to_world, low.x, low.y);
+    umono_lookup::Vec3 b =
+        umono_lookup::TransformPoint(to_world, high.x, high.y);
+    if (camera != nullptr) {
+      umono_lookup::Vec3 sa, sb;
+      to_screen(camera, &a, umono_lookup::kMonoEye, &sa);
+      to_screen(camera, &b, umono_lookup::kMonoEye, &sb);
+      a = sa;
+      b = sb;
+    }
+    umono_lookup::GlyphCell& cell = out->cells[out->glyph_count];
+    cell = umono_lookup::GlyphCell();
+    if (umono_lookup::CellFromScreenCorners(a, b, camera == nullptr, &cell) &&
+        readable &&
+        umono_lookup::TmpCharacterShown(is_visible != 0u,
+                                        static_cast<size_t>(i), first_visible,
+                                        max_visible, alpha)) {
+      cell.visible = 1u;
+      ++out->visible_count;
+    }
+    out->sources[out->glyph_count] = static_cast<uint16_t>(i);
+    ++out->glyph_count;
+  }
+  out->text_object = text;
+  return kUmSampleOk;
+}
+
+// Text-path TMP setter detour (main thread, after a line was published):
+// remember the object for the per-frame sampler.  Only TextMeshProUGUI
+// objects (the sampler's field offsets are that class's); a full table
+// evicts a dead object first, then the least recently written one.
+void RememberUmTmpCandidateOnMain(void* component, uint8_t lane) {
+  auto& rt = g_um_lookup;
+  if (component == nullptr || rt.framework != kUmFrameworkTmp ||
+      !rt.live.load(std::memory_order_acquire) ||
+      GetCurrentThreadId() != rt.main_thread.load(std::memory_order_acquire)) {
+    return;
+  }
+  const uintptr_t object = reinterpret_cast<uintptr_t>(component);
+  const uint64_t now = GetTickCount64();
+  size_t slot = FindUmTmpCandidate(object);
+  if (slot == umono_lookup::kInstanceSlots) {
+    if (!umono_lookup::ClassDerivesFrom(
+            rt.classes, rt.classes.object_get_class(component),
+            rt.tmp.ugui_class)) {
+      return;  // a 3D TextMeshPro (MeshRenderer) text: not this branch
+    }
+    size_t oldest = 0u;
+    for (size_t i = 0; i < umono_lookup::kInstanceSlots; ++i) {
+      const auto& entry = rt.tmp_candidates[i];
+      if (entry.object == 0u ||
+          !UmAlive(entry.object, rt.tmp.cached_ptr_offset)) {
+        slot = i;
+        break;
+      }
+      if (entry.written_ms < rt.tmp_candidates[oldest].written_ms) oldest = i;
+    }
+    if (slot == umono_lookup::kInstanceSlots) slot = oldest;
+    rt.tmp_candidates[slot] = {object, 0u, now};
+  }
+  rt.tmp_candidates[slot].lane_hooks |= lane;
+  rt.tmp_candidates[slot].written_ms = now;
+}
+
+void RememberUmTmpCandidateGuarded(void* component, uint8_t lane) {
+  __try {
+    RememberUmTmpCandidateOnMain(component, lane);
+  } __except (EXCEPTION_EXECUTE_HANDLER) {
+    g_um_lookup.sample_faults.fetch_add(1u, std::memory_order_relaxed);
+  }
+}
+
 using UmSampler = uint32_t (*)(uintptr_t, UmInstanceSnapshot*);
 
 uint32_t SampleUmGuarded(UmSampler sampler, uintptr_t self,
@@ -650,6 +888,8 @@ uint64_t UmInstanceFingerprint(const UmInstanceSnapshot& instance) {
                                    sizeof(instance.text_object));
   hash = umono_lookup::Fingerprint(hash, &instance.failure,
                                    sizeof(instance.failure));
+  hash = umono_lookup::Fingerprint(hash, &instance.lane_hooks,
+                                   sizeof(instance.lane_hooks));
   hash = umono_lookup::Fingerprint(hash, &instance.screen_w,
                                    2u * sizeof(int32_t));
   hash = umono_lookup::Fingerprint(hash, &instance.units,
@@ -751,6 +991,26 @@ void FUSHI_MONO_MANAGED_CALL UmFungusLateUpdateDetour(void* self) {
       ReadUmValue(dialog + rt.fungus.story_text_offset, &story) &&
       story != 0u && ReadUmValue(story + rt.fungus.text_string_offset, &text);
   UmSampleFrame(dialog, known, text, &SampleUmFungus);
+}
+
+// TMP: after Canvas.SendWillRenderCanvases (this frame's canvas update laid
+// out every dirty TMP UGUI text), sample every remembered candidate.
+void FUSHI_MONO_MANAGED_CALL UmTmpWillRenderDetour() {
+  g_um_will_render_original();
+  auto& rt = g_um_lookup;
+  rt.fixed_hits.fetch_add(1u, std::memory_order_relaxed);
+  if (!rt.live.load(std::memory_order_acquire) ||
+      GetCurrentThreadId() != rt.main_thread.load(std::memory_order_acquire)) {
+    return;
+  }
+  for (size_t i = 0; i < umono_lookup::kInstanceSlots; ++i) {
+    const uintptr_t object = rt.tmp_candidates[i].object;
+    if (object == 0u) continue;
+    uintptr_t text = 0u;
+    const bool known =
+        ReadUmValue(object + rt.tmp.text_string_offset, &text);
+    UmSampleFrame(object, known, text, &SampleUmTmp);
+  }
 }
 
 // ── main thread: window procedure ───────────────────────────────────────────
@@ -1064,6 +1324,35 @@ void* ResolveUnityMonoFungusLookup(
   return api.compile_method(rt.fungus.late_update);
 }
 
+// TMP (framework 3): same contract (HookWorker, inside the text path's attach
+// scope, after the plan kept the TMP setter pair and admitted neither the
+// Message.Mes nor the Fungus framework).  Returns the JIT entry of
+// Canvas.SendWillRenderCanvases (nullptr: rejected).
+void* ResolveUnityMonoTmpLookup(const fushi_voice_hook::MonoEmbeddingApi& api,
+                                HMODULE runtime) {
+  auto& rt = g_um_lookup;
+  if (rt.resolved) return nullptr;
+  rt.resolved = true;
+  const auto lookup_api = LoadUnityMonoLookupApi(runtime);
+  umono_lookup::MonoValueSizeApi sizes;
+  LoadMonoExport(runtime, "mono_class_value_size", &sizes.class_value_size);
+  umono_lookup::MonoClassHierarchyApi classes;
+  LoadMonoExport(runtime, "mono_class_get_parent", &classes.class_get_parent);
+  LoadMonoExport(runtime, "mono_object_get_class", &classes.object_get_class);
+  rt.tmp_result = umono_lookup::ResolveTmpSites(api, lookup_api, sizes,
+                                                classes, &rt.tmp);
+  if (rt.tmp_result.result != umono_lookup::TmpSiteResult::kResolved) {
+    return nullptr;
+  }
+  rt.framework = kUmFrameworkTmp;
+  rt.classes = classes;
+  rt.string_length = api.string_length;
+  rt.string_chars = api.string_chars;
+  rt.array_length = lookup_api.array_length;
+  rt.array_addr = lookup_api.array_addr_with_size;
+  return api.compile_method(rt.tmp.will_render);
+}
+
 // After detach: hook the framework's per-frame sampling point and go live.
 // `code` is the JIT entry ResolveUnityMonoLookup / ResolveUnityMonoFungusLookup
 // returned (nullptr: rejected).
@@ -1072,11 +1361,13 @@ bool InstallUnityMonoLookupHooks(void* code) {
   if (code == nullptr) {
     // Only the attempted framework's result moved off its default.
     UmLookupLog(L"unity-mono-lookup: gate=sites-unresolved message=%u/%d "
-                L"fungus=%u/%d",
+                L"fungus=%u/%d tmp=%u/%d",
                 static_cast<unsigned>(rt.site_result.result),
                 rt.site_result.missing_icall,
                 static_cast<unsigned>(rt.fungus_result.result),
-                rt.fungus_result.missing_icall);
+                rt.fungus_result.missing_icall,
+                static_cast<unsigned>(rt.tmp_result.result),
+                rt.tmp_result.missing_icall);
     return false;
   }
   const HWND window = FindUmGameWindow();
@@ -1092,15 +1383,32 @@ bool InstallUnityMonoLookupHooks(void* code) {
   // The detour reads `live` before touching any state; publish state first.
   rt.live.store(true, std::memory_order_release);
   const bool fungus = rt.framework == kUmFrameworkFungus;
+  const bool tmp = rt.framework == kUmFrameworkTmp;
   const bool hooked =
-      fungus ? HookFn(code, reinterpret_cast<void*>(&UmFungusLateUpdateDetour),
-                      reinterpret_cast<void**>(&g_um_late_update_original))
-             : HookFn(code, reinterpret_cast<void*>(&UmFixedUpdateDetour),
-                      reinterpret_cast<void**>(&g_um_fixed_update_original));
+      tmp ? HookFn(code, reinterpret_cast<void*>(&UmTmpWillRenderDetour),
+                   reinterpret_cast<void**>(&g_um_will_render_original))
+      : fungus
+          ? HookFn(code, reinterpret_cast<void*>(&UmFungusLateUpdateDetour),
+                   reinterpret_cast<void**>(&g_um_late_update_original))
+          : HookFn(code, reinterpret_cast<void*>(&UmFixedUpdateDetour),
+                   reinterpret_cast<void**>(&g_um_fixed_update_original));
   rt.hooks_installed = hooked;
   rt.installed = hooked;
   if (!hooked) rt.live.store(false, std::memory_order_release);
-  if (fungus) {
+  if (tmp) {
+    const auto& t = rt.tmp;
+    UmLookupLog(
+        L"unity-mono-lookup: tmp sites will=%p text=+%u info=+%u alpha=+%u "
+        L"first=+%u max=+%u canvas=+%u renderer=+%u count=+%u chars=+%u "
+        L"stride=%u ch=+%u bl=+%u tr=+%u vis=+%u ca=+%u cached=+%u main=%lu "
+        L"hooks=%d",
+        code, t.text_string_offset, t.text_info_offset, t.font_alpha_offset,
+        t.first_visible_offset, t.max_visible_offset, t.canvas_offset,
+        t.renderer_offset, t.info_count_offset, t.info_chars_offset,
+        t.char_stride, t.char_character_offset, t.char_bottom_left_offset,
+        t.char_top_right_offset, t.char_visible_offset, t.char_alpha_offset,
+        t.cached_ptr_offset, main_thread, hooked ? 1 : 0);
+  } else if (fungus) {
     const auto& f = rt.fungus;
     UmLookupLog(
         L"unity-mono-lookup: fungus sites late=%p story=+%u text=+%u "
@@ -1166,12 +1474,40 @@ bool FailUmModel(uint32_t step, int32_t a = 0, int32_t b = 0, int32_t c = 0,
   return false;
 }
 
+// TMP: is the host-selected thread one of this object's own lanes?  The text
+// path keys a TMP lane by the component pointer and the setter's hook code
+// (RecordUnityTextChars, not scene-stable), so the same derivation names it.
+bool UmTmpLaneSelected(const UmInstanceSnapshot& instance, uint64_t selected) {
+  if (selected == 0u || instance.instance == 0u) return false;
+  struct Lane {
+    uint8_t bit;
+    fushi_voice_hook::MonoTextHookId id;
+  };
+  static constexpr Lane kLanes[] = {
+      {kUmTmpLaneSetText, fushi_voice_hook::MonoTextHookId::kTmpSetText},
+      {kUmTmpLaneSetTextBool,
+       fushi_voice_hook::MonoTextHookId::kTmpSetTextBool}};
+  for (const Lane& lane : kLanes) {
+    if ((instance.lane_hooks & lane.bit) == 0u) continue;
+    const auto& spec = fushi_voice_hook::MonoTextHookSpecFor(lane.id);
+    if (fushi_voice_hook::NativeTextThreadIdFrom(
+            static_cast<uint64_t>(instance.instance), spec.hook_code,
+            spec.hook_name) == selected) {
+      return true;
+    }
+  }
+  return false;
+}
+
 bool BuildUmModel(const UmSnapshot& snapshot, const std::wstring& line,
-                  HWND game, UmModel* model) {
+                  uint64_t selected_thread, HWND game, UmModel* model) {
   auto& rt = g_um_lookup;
   const uint64_t now = GetTickCount64();
-  // Exactly one fresh instance must show the selected line.
+  // Exactly one fresh instance must show the selected line (TMP: duplicates
+  // are resolved by ChooseTmpMatch or fail closed).
   size_t matched = umono_lookup::kInstanceSlots;
+  std::array<size_t, umono_lookup::kInstanceSlots> matches{};
+  size_t match_count = 0u;
   uint32_t fresh = 0u;
   for (size_t slot = 0; slot < umono_lookup::kInstanceSlots; ++slot) {
     const UmInstanceSnapshot& instance = snapshot.instances[slot];
@@ -1188,13 +1524,36 @@ bool BuildUmModel(const UmSnapshot& snapshot, const std::wstring& line,
                     line.size() * sizeof(wchar_t)) != 0) {
       continue;
     }
-    if (matched != umono_lookup::kInstanceSlots) return FailUmModel(3u);
-    matched = slot;
+    matches[match_count++] = slot;
   }
   if (fresh == 0u) return FailUmModel(1u);
-  if (matched == umono_lookup::kInstanceSlots) {
+  if (match_count == 0u) {
     return FailUmModel(2u, static_cast<int32_t>(fresh),
                        static_cast<int32_t>(line.size()));
+  }
+  if (match_count == 1u) {
+    matched = matches[0];
+  } else if (rt.framework == kUmFrameworkTmp) {
+    std::array<umono_lookup::TmpMatch, umono_lookup::kInstanceSlots> found{};
+    for (size_t k = 0u; k < match_count; ++k) {
+      const UmInstanceSnapshot& candidate = snapshot.instances[matches[k]];
+      found[k].readable =
+          candidate.failure == kUmSampleOk && candidate.visible_count > 0u;
+      found[k].selected_lane =
+          UmTmpLaneSelected(candidate, selected_thread);
+    }
+    size_t chosen = 0u;
+    const umono_lookup::TmpChoice choice =
+        umono_lookup::ChooseTmpMatch(found.data(), match_count, &chosen);
+    if (choice == umono_lookup::TmpChoice::kAmbiguous) {
+      return FailUmModel(3u, static_cast<int32_t>(match_count), 1);
+    }
+    // None readable: the first match carries the failure / visibility the
+    // checks below report.
+    matched = choice == umono_lookup::TmpChoice::kChosen ? matches[chosen]
+                                                         : matches[0];
+  } else {
+    return FailUmModel(3u, static_cast<int32_t>(match_count));
   }
   const UmInstanceSnapshot& instance = snapshot.instances[matched];
   if (instance.failure != kUmSampleOk) {
@@ -1208,7 +1567,8 @@ bool BuildUmModel(const UmSnapshot& snapshot, const std::wstring& line,
     mapped = umono_lookup::MapGlyphsToText(
         instance.text.data(), instance.units, instance.line_glyphs.data(),
         instance.lines, rt.source_scratch.data(), instance.glyph_count);
-  } else if (instance.framework == kUmFrameworkFungus &&
+  } else if ((instance.framework == kUmFrameworkFungus ||
+              instance.framework == kUmFrameworkTmp) &&
              umono_lookup::ValidateGlyphSources(
                  instance.text.data(), instance.units, instance.sources.data(),
                  instance.glyph_count)) {
@@ -1454,7 +1814,7 @@ void ProcessUnityMonoLookupTick() {
     return;
   }
   UmModel candidate;
-  if (!BuildUmModel(snapshot, line, game, &candidate)) {
+  if (!BuildUmModel(snapshot, line, thread, game, &candidate)) {
     NoteUmRetire(5u);
     RetireUmLookup();
     return;
