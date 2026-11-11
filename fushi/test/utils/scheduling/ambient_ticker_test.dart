@@ -105,16 +105,31 @@ void main() {
   });
 }
 
-class _Spinner extends StatefulWidget {
+/// 测试用的常驻 repeat 动画；[ambient] 决定走 ambient ticker 还是普通 ticker。
+class _Spinner extends StatelessWidget {
   const _Spinner({required this.ambient});
   final bool ambient;
 
   @override
-  State<_Spinner> createState() =>
-      ambient ? _AmbientSpinnerState() : _PlainSpinnerState();
+  Widget build(BuildContext context) =>
+      ambient ? const _AmbientSpinner() : const _PlainSpinner();
 }
 
-class _AmbientSpinnerState extends State<_Spinner>
+class _AmbientSpinner extends StatefulWidget {
+  const _AmbientSpinner();
+
+  @override
+  State<_AmbientSpinner> createState() => _AmbientSpinnerState();
+}
+
+class _PlainSpinner extends StatefulWidget {
+  const _PlainSpinner();
+
+  @override
+  State<_PlainSpinner> createState() => _PlainSpinnerState();
+}
+
+class _AmbientSpinnerState extends State<_AmbientSpinner>
     with AmbientTickerProviderStateMixin {
   late final AnimationController _c = AnimationController(
     vsync: this,
@@ -137,7 +152,8 @@ class _AmbientSpinnerState extends State<_Spinner>
   Widget build(BuildContext context) => const SizedBox(width: 1, height: 1);
 }
 
-class _PlainSpinnerState extends State<_Spinner> with TickerProviderStateMixin {
+class _PlainSpinnerState extends State<_PlainSpinner>
+    with TickerProviderStateMixin {
   late final AnimationController _c = AnimationController(
     vsync: this,
     duration: const Duration(seconds: 1),
