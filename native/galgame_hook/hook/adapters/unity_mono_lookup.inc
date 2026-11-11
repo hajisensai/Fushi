@@ -830,8 +830,10 @@ uint32_t SampleUmTmp(uintptr_t object, UmInstanceSnapshot* out) {
 // evicts a dead object first, then the least recently written one.
 void RememberUmTmpCandidateOnMain(void* component, uint8_t lane) {
   auto& rt = g_um_lookup;
-  if (component == nullptr || rt.framework != kUmFrameworkTmp ||
-      !rt.live.load(std::memory_order_acquire) ||
+  // `live` first: it publishes `framework` / `tmp` / `classes` (release on
+  // HookWorker before the detours can see them).
+  if (component == nullptr || !rt.live.load(std::memory_order_acquire) ||
+      rt.framework != kUmFrameworkTmp ||
       GetCurrentThreadId() != rt.main_thread.load(std::memory_order_acquire)) {
     return;
   }
