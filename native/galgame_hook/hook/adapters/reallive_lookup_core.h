@@ -128,7 +128,18 @@ inline constexpr size_t kGlyphEpilogueScanBytes = 0x280u;
 inline constexpr size_t kRasterScanBytes = 0x60u;
 
 // Key poll: `call Focused; test eax,eax; je zero; lea eax,[esp+0x10]; push
-// eax; call [GetKeyboardState]; jmp join; ... memset; add esp,0xc; join:`.
+// eax; call [GetKeyboardState]; jmp join; zero: ... memset; add esp,0xc;
+// join:` and, right after the join, a read of the table's VK_UP entry at
+// [esp+0x36] (the table is at esp+0x10 there).  Two engine shapes are
+// measured; both keep the table at esp+0x10 at the join:
+//   * plain (智代アフター 2005 build): the join reads `mov al,[esp+0x36]`.
+//   * normalised (Little Busters! EX 2008 build): between GetKeyboardState
+//     and `jmp join` the engine keeps only each entry's high bit
+//     (`xor eax,eax; loop: mov cl,[esp+eax+0x10]; and cl,0x80; mov
+//     [esp+eax+0x10],cl; inc eax; cmp eax,0x100; jl loop`); the join reads
+//     `cmp [esp+0x36],bl`.  Masking VK_LBUTTON's high bit at the join is
+//     unaffected by the normalisation, which runs before it.
+// The builds are samples only, never identity inputs.
 inline constexpr uint8_t kKeyPathBytes[] = {
     0xe8, 0x00, 0x00, 0x00, 0x00, 0x85, 0xc0, 0x74, 0x0d, 0x8d, 0x44, 0x24,
     0x10, 0x50, 0xff, 0x15, 0x00, 0x00, 0x00, 0x00, 0xeb, 0x13, 0x56, 0x8d,
@@ -139,10 +150,40 @@ inline constexpr size_t kKeyPathWildcards[][2] = {
     {1u, 5u}, {16u, 20u}, {34u, 38u}};
 inline constexpr auto kKeyPathMask =
     WildcardMask<sizeof(kKeyPathBytes)>(kKeyPathWildcards);
-inline constexpr size_t kKeyPathFocusCall = 0u;
-inline constexpr size_t kKeyPathKeyboardOperand = 16u;
-inline constexpr size_t kKeyPathJoinJump = 20u;  // `eb 13`
-inline constexpr size_t kKeyPathJoin = 41u;
+
+inline constexpr uint8_t kKeyPathNormalisedBytes[] = {
+    0xe8, 0x00, 0x00, 0x00, 0x00, 0x85, 0xc0, 0x74, 0x22, 0x8d, 0x44, 0x24,
+    0x10, 0x50, 0xff, 0x15, 0x00, 0x00, 0x00, 0x00, 0x33, 0xc0, 0x8a, 0x4c,
+    0x04, 0x10, 0x80, 0xe1, 0x80, 0x88, 0x4c, 0x04, 0x10, 0x40, 0x3d, 0x00,
+    0x01, 0x00, 0x00, 0x7c, 0xed, 0xeb, 0x13, 0x53, 0x8d, 0x4c, 0x24, 0x14,
+    0x68, 0x00, 0x01, 0x00, 0x00, 0x51, 0xe8, 0x00, 0x00, 0x00, 0x00, 0x83,
+    0xc4, 0x0c, 0x38, 0x5c, 0x24, 0x36};
+inline constexpr size_t kKeyPathNormalisedWildcards[][2] = {
+    {1u, 5u}, {16u, 20u}, {55u, 59u}};
+inline constexpr auto kKeyPathNormalisedMask =
+    WildcardMask<sizeof(kKeyPathNormalisedBytes)>(kKeyPathNormalisedWildcards);
+
+struct KeyPathShape {
+  const uint8_t* bytes;
+  const uint8_t* mask;
+  size_t size;
+  size_t zero_jump;         // `je zero` (74 rel8)
+  size_t keyboard_operand;  // [GetKeyboardState] slot operand
+  size_t join_jump;         // `jmp join` (eb rel8)
+  size_t zero_path;         // memset branch, the `je` target
+  size_t join;
+};
+inline constexpr size_t kKeyPathFocusCall = 0u;  // `call Focused`, every shape
+inline constexpr KeyPathShape kKeyPathShapes[] = {
+    {kKeyPathBytes, kKeyPathMask.data(), sizeof(kKeyPathBytes), 7u, 16u, 20u,
+     22u, 41u},
+    {kKeyPathNormalisedBytes, kKeyPathNormalisedMask.data(),
+     sizeof(kKeyPathNormalisedBytes), 7u, 16u, 41u, 43u, 62u},
+};
+
+inline size_t ShortJumpTarget(const uint8_t* path, size_t jump) {
+  return jump + 2u + path[jump + 1u];
+}
 
 // Focused(): `call [GetFocus]; cmp eax,[hwnd]; jne; mov eax,1; ret` (keyboard
 // focus, not the foreground window; the engine imports no GetForegroundWindow).
@@ -258,7 +299,8 @@ inline bool ContainsBytes(const uint8_t* begin, size_t bytes,
   return false;
 }
 
-// The rasteriser must load GetGlyphOutlineA from its import slot
+// The rasteriser must load the ANSI glyph rasteriser (GetGlyphOutlineA or its
+// unsuffixed alias, see kGlyphOutlineAnsiImportNames) from its import slot
 // (`mov reg,[slot]` or `call [slot]`) within its first bytes.
 inline bool RasterUsesGlyphOutline(const exact::LoadedPeImage& image,
                                    uintptr_t raster, uintptr_t slot_rva) {
@@ -323,19 +365,30 @@ inline SiteResult ResolveSites(const exact::LoadedPeImage& image,
   found.raster = raster;
 
   // ── key poll: GetKeyboardState table join + Focused() → window global ──
-  const exact::MaskedPattern key_pattern = {
-      kKeyPathBytes, kKeyPathMask.data(), sizeof(kKeyPathBytes)};
-  const auto key =
-      exact::FindUniquePatternInExecutableSections(image, key_pattern);
-  if (key.count != 1u ||
-      !OperandNamesSlot(image, key.address + kKeyPathKeyboardOperand,
+  // Exactly one key poll of exactly one shape, image-wide.
+  const uint8_t* key = nullptr;
+  const KeyPathShape* key_shape = nullptr;
+  uint32_t key_matches = 0u;
+  for (const KeyPathShape& shape : kKeyPathShapes) {
+    const exact::MaskedPattern key_pattern = {shape.bytes, shape.mask,
+                                              shape.size};
+    const auto match =
+        exact::FindUniquePatternInExecutableSections(image, key_pattern);
+    key_matches += match.count;
+    if (match.count == 1u) {
+      key = match.address;
+      key_shape = &shape;
+    }
+  }
+  if (key_matches != 1u || key == nullptr || key_shape == nullptr ||
+      !OperandNamesSlot(image, key + key_shape->keyboard_operand,
                         imports.get_keyboard_state) ||
-      kKeyPathJoinJump + 2u + key.address[kKeyPathJoinJump + 1u] !=
-          kKeyPathJoin) {
+      ShortJumpTarget(key, key_shape->zero_jump) != key_shape->zero_path ||
+      ShortJumpTarget(key, key_shape->join_jump) != key_shape->join) {
     return SiteResult::kKeyPathMissing;
   }
   uintptr_t focus = 0u;
-  if (!exact::DecodeRel32CallTarget(key.address + kKeyPathFocusCall, &focus) ||
+  if (!exact::DecodeRel32CallTarget(key + kKeyPathFocusCall, &focus) ||
       !IsExecutableImageAddress(image, focus, sizeof(kFocusBytes)) ||
       !MatchesAt(reinterpret_cast<const uint8_t*>(focus), kFocusBytes,
                  kFocusMask.data(), sizeof(kFocusBytes)) ||
@@ -348,7 +401,7 @@ inline SiteResult ResolveSites(const exact::LoadedPeImage& image,
           &found.window_rva)) {
     return SiteResult::kFocusInvalid;
   }
-  found.key_join = reinterpret_cast<uintptr_t>(key.address + kKeyPathJoin);
+  found.key_join = reinterpret_cast<uintptr_t>(key + key_shape->join);
 
   // ── compositor: blitter + screen buffer globals ──
   const exact::MaskedPattern composite_pattern = {
@@ -453,6 +506,36 @@ inline uintptr_t FindImportSlotRva(const exact::LoadedPeImage& image,
   }
 }
 
+// IAT slot RVA of the first of `symbols` (in order) that `dll` imports by
+// name, or 0.  For one entry point exported under several names.
+template <size_t Count>
+inline uintptr_t FindImportSlotRvaByAnyName(
+    const exact::LoadedPeImage& image, const char* dll,
+    const char* const (&symbols)[Count]) {
+  for (const char* symbol : symbols) {
+    const uintptr_t slot = FindImportSlotRva(image, dll, symbol);
+    if (slot != 0u) return slot;
+  }
+  return 0u;
+}
+
+// The ANSI glyph rasteriser the engine is modelled on, under every name
+// gdi32 exports it by.  Besides `GetGlyphOutlineA`, gdi32 keeps the
+// unsuffixed Win16-era ANSI name `GetGlyphOutline` (measured on Windows 11
+// SysWOW64\gdi32.dll: its own export, a stub that tail-jumps to the same
+// gdi32full!GetGlyphOutlineA the `A` export calls -- same stdcall arguments,
+// Shift_JIS character code).  An import table rebuilt by a translation patch
+// or unpacker can bind the rasteriser by that name; the import name is the
+// loader's binding contract, so it is matched by name, never by comparing
+// the bound IAT value (the two exports are different addresses, and other
+// hooks may already have rewritten the slot).  `GetGlyphOutlineW` is not a
+// spelling of it: its character argument is UTF-16, so it is not accepted.
+// Which slot the rasteriser really loads is still proven structurally by
+// RasterUsesGlyphOutline; an image that imports both names offers the `A`
+// slot first.
+inline constexpr const char* kGlyphOutlineAnsiImportNames[] = {
+    "GetGlyphOutlineA", "GetGlyphOutline"};
+
 // The import slots ResolveSites proves its sites against.  The hook and the
 // offline site probe (tools/reallive_site_probe.cpp) both read them here.
 inline ImportSlots FindLookupImportSlots(const exact::LoadedPeImage& image) {
@@ -460,8 +543,8 @@ inline ImportSlots FindLookupImportSlots(const exact::LoadedPeImage& image) {
   slots.get_keyboard_state =
       FindImportSlotRva(image, "user32.dll", "GetKeyboardState");
   slots.get_focus = FindImportSlotRva(image, "user32.dll", "GetFocus");
-  slots.get_glyph_outline =
-      FindImportSlotRva(image, "gdi32.dll", "GetGlyphOutlineA");
+  slots.get_glyph_outline = FindImportSlotRvaByAnyName(
+      image, "gdi32.dll", kGlyphOutlineAnsiImportNames);
   return slots;
 }
 

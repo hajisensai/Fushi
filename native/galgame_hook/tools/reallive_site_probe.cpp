@@ -219,8 +219,18 @@ int wmain(int argc, wchar_t** argv) {
   // Step 2: the resolver's signatures, counted image-wide.
   PrintPattern(image, "glyph", core::kGlyphPathBytes,
                core::kGlyphPathMask.data(), sizeof(core::kGlyphPathBytes));
-  PrintPattern(image, "key", core::kKeyPathBytes, core::kKeyPathMask.data(),
-               sizeof(core::kKeyPathBytes));
+  const char* const kKeyShapeNames[] = {"key.plain", "key.norm"};
+  static_assert(sizeof(kKeyShapeNames) / sizeof(kKeyShapeNames[0]) ==
+                    sizeof(core::kKeyPathShapes) /
+                        sizeof(core::kKeyPathShapes[0]),
+                "one name per key-poll shape");
+  for (size_t index = 0u; index < sizeof(core::kKeyPathShapes) /
+                                      sizeof(core::kKeyPathShapes[0]);
+       ++index) {
+    const core::KeyPathShape& shape = core::kKeyPathShapes[index];
+    PrintPattern(image, kKeyShapeNames[index], shape.bytes, shape.mask,
+                 shape.size);
+  }
   PrintPattern(image, "composite", core::kCompositeCallBytes,
                core::kCompositeCallMask.data(),
                sizeof(core::kCompositeCallBytes));
