@@ -3211,7 +3211,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
         _canTranscribeVideoSpeech || _canRunSubtitlePipeline;
     final VideoSubtitleStudioAiReference? aiReference =
         await _subtitleStudioAiReference();
-    if (!mounted || !identical(_controller, controller)) return;
+    if (!context.mounted || !identical(_controller, controller)) return;
     await showVideoSubtitleStudioSheet(
       context: context,
       reference: VideoSubtitleStudioReference(
