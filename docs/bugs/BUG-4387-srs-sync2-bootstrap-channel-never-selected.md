@@ -14,7 +14,7 @@
     `trust.rs:63` `note_new_device` 却按投影判「本机库里有没有用户的东西」。通道在追加 / 折叠阶段被打断、下一轮才第一次见到
     的设备，通道路径读到的投影还是空的 → 直接可信；逐条路径同一时刻投影已有数据 → 待确认、删除被扣。两条路径的
     `sync2_trust` / `sync2_trust_held` / 投影都不同。
-- **[x] ① 已修复** — PR 分支 `pr/srs-sync2-bootstrap-with-builtins`。只改内核本机怎么收：
+- **[x] ① 已修复** — 7b6d4757bd0（PR 分支 `pr/srs-sync2-bootstrap-with-builtins`）。只改内核本机怎么收：
   - 判据（`channel.rs` `fresh`）：这个 profile 在本机只有开库时自己写下的内置身份记录（或什么都没有）才开通道——投影里
     没有用户的东西（`trust::library_fresh`：没有复习日志、没有修改记录、身份记录的载荷全带 `builtin` 键），没有不认识的
     事件行，本机没换过身份，操作日志里每一条都是本机当前身份写的身份记录，且与投影里的身份记录行逐个对应（同 ID、同
@@ -25,7 +25,7 @@
     某台设备，先把通道做完再按投影判「本机库里有没有用户的东西」（进写事务之前按片做，事务里的那次只是兜底）。
 - **[x] ② 已加自动化测试** — `native/fushi_fsrs/src/store/sync2/tests_channel.rs`（起点 × 世界的通道 / 逐条对拍：带内置
   实体的起点、迁移出来的内置实体、远端没动过 / 改过 / 删过并清除过 / 同 ID 内容不同、追加 / 本机写入 / 折叠 / 归并四种
-  打断、判据逐项、通道没做完时新见到的设备的信任与放行、别的 profile 占着同 ID）；
+  打断、判据逐项、通道没做完时新见到的设备的信任与放行、开通道时没有不被信任的设备、别的 profile 占着同 ID）；
   `packages/fushi_engine/test/srs/sync2/srs_sync2_bootstrap_channel_entry_test.dart`（真实 `SrsDbStore.open` 的两台设备，
   通道被自然选中并收敛）；`fushi/test/srs/srs_pull_before_migrate_test.dart`（app 顺序：只拉不发 → 迁移 → 正式一轮）。
 - **备注**：只改本机怎么收，不动别的设备读到的任何字节（段、head、摘要、协议常量都不变）。
