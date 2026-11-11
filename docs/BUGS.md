@@ -37,16 +37,16 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4405](bugs/BUG-4405-transcode-superseded-token-keeps-running.md) | ✅ | ✅ | 播放会话结束 / 换档换集后旧 token 的转码分段照样转完，占满转码名额拖慢新流起播 |
-| [BUG-4404](bugs/BUG-4404-adaptive-quality-switch-no-rollback.md) | ✅ | ✅ | 自适应换档失败后共享档位不回滚，重试仍用没起来的档 |
-| [BUG-4403](bugs/BUG-4403-adaptive-quality-seek-grace-unbounded.md) | ✅ | ✅ | 频繁 seek 时自适应画质的 seek 宽限不断续命，差网永不降档 |
-| [BUG-4402](bugs/BUG-4402-remote-agent-answer-not-bound-to-card.md) | ✅ | ✅ | 远端 AI 助手的确认 / 候选作答不绑定卡片，晚到的作答会落到下一张卡上 |
-| [BUG-4401](bugs/BUG-4401-host-update-tracking-null-loops.md) | ✅ | ✅ | 主机更新跟踪中 host 回 404 时无限每 2 秒轮询、界面卡在进行中 |
-| [BUG-4400](bugs/BUG-4400-manga-ocr-client-error-orphan.md) | 🚧 | 🚧 | 漫画 OCR client 出错时只报错不清理、host 任务成孤儿（未复现） |
-| [BUG-4399](bugs/BUG-4399-remote-job-client-lifecycle.md) | ✅ | ✅ | 远端任务客户端不区分观测失败与任务失败：瞬时断网即删除 host 任务、清理失败当任务失败、观测可被卡住的响应体永久挂起 |
-| [BUG-4398](bugs/BUG-4398-host-jobs-ttl-only-at-startup.md) | ✅ | ✅ | 通用任务 host 只在启动时清理过期任务，被遗弃的上传永不回收 |
-| [BUG-4397](bugs/BUG-4397-manga-ocr-host-shared-volume-dir-deleted.md) | ✅ | ✅ | 漫画 OCR host 清理过期 / 取消的旧任务时删掉同卷新任务正在用的目录 |
-| [BUG-4396](bugs/BUG-4396-remote-job-poll-delay-overflow.md) | ✅ | ✅ | 远端任务轮询退避在约 2.4 小时后溢出抛错并删除 host 任务 |
+| [BUG-4461](bugs/BUG-4461-transcode-superseded-token-keeps-running.md) | ✅ | ✅ | 播放会话结束 / 换档换集后旧 token 的转码分段照样转完，占满转码名额拖慢新流起播 |
+| [BUG-4460](bugs/BUG-4460-adaptive-quality-switch-no-rollback.md) | ✅ | ✅ | 自适应换档失败后共享档位不回滚，重试仍用没起来的档 |
+| [BUG-4459](bugs/BUG-4459-adaptive-quality-seek-grace-unbounded.md) | ✅ | ✅ | 频繁 seek 时自适应画质的 seek 宽限不断续命，差网永不降档 |
+| [BUG-4458](bugs/BUG-4458-remote-agent-answer-not-bound-to-card.md) | ✅ | ✅ | 远端 AI 助手的确认 / 候选作答不绑定卡片，晚到的作答会落到下一张卡上 |
+| [BUG-4457](bugs/BUG-4457-host-update-tracking-null-loops.md) | ✅ | ✅ | 主机更新跟踪中 host 回 404 时无限每 2 秒轮询、界面卡在进行中 |
+| [BUG-4456](bugs/BUG-4456-manga-ocr-client-error-orphan.md) | 🚧 | 🚧 | 漫画 OCR client 出错时只报错不清理、host 任务成孤儿（未复现） |
+| [BUG-4455](bugs/BUG-4455-remote-job-client-lifecycle.md) | ✅ | ✅ | 远端任务客户端不区分观测失败与任务失败：瞬时断网即删除 host 任务、清理失败当任务失败、观测可被卡住的响应体永久挂起 |
+| [BUG-4454](bugs/BUG-4454-host-jobs-ttl-only-at-startup.md) | ✅ | ✅ | 通用任务 host 只在启动时清理过期任务，被遗弃的上传永不回收 |
+| [BUG-4453](bugs/BUG-4453-manga-ocr-host-shared-volume-dir-deleted.md) | ✅ | ✅ | 漫画 OCR host 清理过期 / 取消的旧任务时删掉同卷新任务正在用的目录 |
+| [BUG-4452](bugs/BUG-4452-remote-job-poll-delay-overflow.md) | ✅ | ✅ | 远端任务轮询退避在约 2.4 小时后溢出抛错并删除 host 任务 |
 | [BUG-4395](bugs/BUG-4395-interconnect-assistant-single-address-endless-poll.md) | ✅ | ✅ | AI 助手只认一条地址、会话期间不换路，凭据失效后仍每 3 秒无限重试 |
 | [BUG-4394](bugs/BUG-4394-remote-download-tasks-single-host-silent-failure.md) | ✅ | ✅ | 下载中心远端任务段只看一台 host、失败无提示、任务域与创建时间写错 |
 | [BUG-4393](bugs/BUG-4393-interconnect-probe-failure-reason-lost.md) | ✅ | ✅ | 互联能力探测把凭据失效、证书不符、老版本、连不上都折成『没有可用主机』 |

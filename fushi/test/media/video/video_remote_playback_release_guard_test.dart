@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:test/test.dart';
 
-/// BUG-4405：远端播放的「释放服务端资源」（互联 host 的流票）与「播放停止上报」
+/// BUG-4461：远端播放的「释放服务端资源」（互联 host 的流票）与「播放停止上报」
 /// （Jellyfin / Plex 的 Stopped）是两件事，页面在不同边界上调：
 ///
 /// - 自然播完只**上报**停止：播放器 `keep-open`，页面停在本集，用户还能回拖 /

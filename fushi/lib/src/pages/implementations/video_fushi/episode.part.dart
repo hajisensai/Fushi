@@ -125,7 +125,7 @@ extension _VideoEpisode on _VideoFushiPageState {
     // prefs（_persistRemotePosition 用 _currentEpisode），再按 episodeIndex 向 host
     // 重新建流（_loadRemoteEpisode 内 ++_episodeLoadSeq 取代慢路径旧集）。
     if (_isRemote) {
-      // 换集 = 丢掉本集的流：在新集取流之前同步释放（BUG-4405）。
+      // 换集 = 丢掉本集的流：在新集取流之前同步释放（BUG-4461）。
       _releaseRemotePlayback(
         info: _effectiveRemoteInfo,
         client: _effectiveRemoteClient,

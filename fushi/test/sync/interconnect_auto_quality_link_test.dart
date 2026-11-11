@@ -237,7 +237,7 @@ void main() {
     expect(backend.adaptiveQualityIndex, isNull);
   });
 
-  group('播放会话停止即释放流票（BUG-4405）', () {
+  group('播放会话停止即释放流票（BUG-4461）', () {
     Future<int> streamStatus(String url) async {
       final HttpClient http = HttpClient();
       addTearDown(() => http.close(force: true));

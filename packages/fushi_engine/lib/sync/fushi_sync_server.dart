@@ -1849,7 +1849,7 @@ class _VideoStreamToken {
     this.ticket,
   });
 
-  /// 随哪张流票一起释放（BUG-4405）。null = 这张 token 本身就是流票（`/streamurl`
+  /// 随哪张流票一起释放（BUG-4461）。null = 这张 token 本身就是流票（`/streamurl`
   /// 回给 client 的 `ticket` 即它的值）；光盘制卡 token 填主 token 的值，client 释放
   /// 播放票时一并作废。
   final String? ticket;

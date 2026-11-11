@@ -271,7 +271,7 @@ class RemoteAiAgentSession extends ChangeNotifier
   @override
   bool get awaitingChoice => _pendingKind == kAgentPendingChoice;
 
-  /// 作答带上卡片 id（BUG-4402）：host 只答那一张，晚到的旧卡作答不落到下一张上。
+  /// 作答带上卡片 id（BUG-4458）：host 只答那一张，晚到的旧卡作答不落到下一张上。
   /// 调用方没给时取发送这一刻快照里的待答卡片；旧 host 不认这个键，照旧答当前那张。
   @override
   void answerConfirm(bool approved, {String? entryId}) => unawaited(

@@ -413,7 +413,7 @@ extension _VideoQuality on _VideoFushiPageState {
     _adaptiveQualitySwitching = true;
     try {
       final int posMs = _controller?.resumePositionMs ?? 0;
-      // 写入 → 重载 → 失败回滚（BUG-4404）：取流 / 起播没立起来时，共享的
+      // 写入 → 重载 → 失败回滚（BUG-4460）：取流 / 起播没立起来时，共享的
       // `adaptiveQualityIndex` 回到原档，页面重试与下一次同 scope 起播不会沿用
       // 一个没起来的档。只覆盖取流 / 起播阶段；起播之后播放器异步暴露的失败
       // （转码分段出错）走页面既有的播放失败路径。
@@ -422,7 +422,7 @@ extension _VideoQuality on _VideoFushiPageState {
         write: (int? index) => client.adaptiveQualityIndex = index,
         targetIndex: decision.targetIndex,
         reload: () async {
-          // 重载 = 丢掉旧档的流：同步释放（BUG-4405），不等它再取新档。
+          // 重载 = 丢掉旧档的流：同步释放（BUG-4461），不等它再取新档。
           _releaseRemotePlayback(
             info: _effectiveRemoteInfo,
             client: _effectiveRemoteClient,

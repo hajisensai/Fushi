@@ -466,7 +466,7 @@ void main() {
     });
   });
 
-  // BUG-4402：作答带 entryId 时只答那一张卡片；晚到的旧卡作答不落到下一张卡上。
+  // BUG-4458：作答带 entryId 时只答那一张卡片；晚到的旧卡作答不落到下一张卡上。
   group('answers bind to the card', () {
     Map<String, Object?> entryOf(HostAssistantSession s, Object? id) =>
         _entries(s).firstWhere((Map<String, Object?> e) => e['id'] == id);
