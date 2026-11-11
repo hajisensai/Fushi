@@ -138,6 +138,9 @@ pub(crate) const DRIFT_TX_POLICY: &[(&str, DriftTxPolicy)] = &[
     // （收掉 Dart 写路径第 9 步），从 Join 移到这里。
     ("apply", Reject),
     ("checkpoint", Reject),
+    // 摘要不一致的自动重建（store/sync2/heal.rs）：本机写命令，唯一的调用方是同步一轮的收尾（srs_sync2_round.dart），
+    // 不开 Drift 事务。
+    ("digest_heal", Reject),
     ("identity", Reject),
     // 集合绑定状态只进不退（store/binding.rs）：与 `identity` 同属身份记账，随别人的 Drift 事务回滚就把「已定下」退回去了；
     // 调用方（srs_db_store.dart `setCollectionBinding`）走排队的 `sync2Command`，不开 Drift 事务。

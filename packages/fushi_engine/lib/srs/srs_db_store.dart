@@ -2193,6 +2193,7 @@ class SrsDbStore implements SrsSync2Host {
     'checkpoint',
     'restore',
     'dedup',
+    'digest_heal',
   };
 
   /// 内核 Drift 事务守卫的命中计数（native/fushi_fsrs/src/store/drift_guard.rs）：Drift 在写连接上开着事务时来的
