@@ -5473,6 +5473,22 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 //     showPageBreakAndClear（溢出自动换页）。这是 KAG3 里唯一「这段字已经完整上屏、在等
 //     读者」的结构信号；同一次等待被调两次（showPageBreakAndClear 内部再走 showPageBreak
 //     之类）时第二次缓冲已空，结构上不会重复出行。
+//     这三个方法只是 [l] / [p] 标签走到的入口；自定义宏（真机 Role player とろろ姉妹 的
+//     my_pagebreak）可以绕开它们自己停下等点击。KAG3 里所有「等读者点击」最终都落到同一个
+//     原语：conductor.wait(%[click : …])——showLineBreak / showPageBreak /
+//     showPageBreakAndClear / waitClick（[waitclick]）都是先挂这个只含 click 一个键的等待再
+//     返回 -2/-3。所以再包两处结构性的提交点，不认任何宏名：
+//       - kag.waitClick（[waitclick] 标签的实现，可选，typeof 判存在）；
+//       - kag.conductor / kag.extraConductor 实例的 wait(until)：until 恰好只有 click 一个
+//         键才算读者等待并提交。[wt] / [wm] / [wv] / [wait canskip] 这类「可点击跳过的效果
+//         等待」字典里还有 trans / move / timeout 之类触发键，或者走 waitWithTimeOut——都不
+//         提交，不会把句中的演出停顿切成半句。
+//     同一次等待被多处同时看到（showLineBreak 内部再调 conductor.wait）时后到的那次缓冲已
+//     空，结构上不重复出行。
+//   * 诊断（真机 installed=23 而一行不出的两例：とろろ姉妹 / ファタモルガーナの館）：TJS 侧
+//     数 processCh 命中、当前层命中、各提交点命中、clear、溢出；native 侧数取批、丢批、拼出
+//     的行与被丢的提交。每 60 帧读一次，worker 只在数变了才落一行 [FushiKagText] stats。
+//     新建 / 重建的消息层也由这次有界的定期补扫接上（不再只等某次等待触发补扫）。
 //   * 复位：消息层实例的 clear()（[er] / [cm] / [ct] / 溢出换页的点击）。没等到点击就被清
 //     掉的字（选项 link、[s] 停住的系统文字）随之丢弃，永远不出行。
 //   * ruby：[ruby text=...] 只走 setRuby 把注音挂到层上，基字仍经 processCh；注音作为 'r'
@@ -5502,8 +5518,8 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 // 或逐字重复）。
 //
 // 不挂 kag.addPlugin：KAG3 对插件对象调用的方法集（onStore / onRestore …）没有在本引擎
-// 验证过，一个裸字典插件可能在存档时抛异常。新建的消息层（[laycount]）改由每次等待时补扫；
-// 代价是新层上第一段字可能缺失（缺失 = 不出行，不是出半句）。
+// 验证过，一个裸字典插件可能在存档时抛异常。新建的消息层（[laycount]）改由每次等待与每
+// 60 帧一次的统计读数补扫；代价是新层上第一段字可能缺失（缺失 = 不出行，不是出半句）。
 constexpr wchar_t kKirikiriKagTextBootstrapScript[] = LR"TJS(
 if(typeof global.fushiKagTextSeq == "undefined")
 {
@@ -5512,13 +5528,21 @@ if(typeof global.fushiKagTextSeq == "undefined")
 	global.fushiKagTextNextId = 0;
 	global.fushiKagTextInstalled = 0;
 	global.fushiKagTextFaults = 0;
+	global.fushiKagTextStat = %[
+		pc : 0, cur : 0, over : 0, x : 0,
+		lb : 0, pb : 0, pbc : 0, wc : 0, cw : 0, cwo : 0,
+		w : 0, w0 : 0, ovf : 0, sweep : 0
+	];
 
 	global.fushiKagTextEmit = function(op, id, payload)
 	{
 		var record = op + id + "," + payload.length + ":" + payload;
 		var events = global.fushiKagTextEvents;
 		if(events.length + record.length > 3000)
+		{
 			global.fushiKagTextEvents = "o0,0:";
+			global.fushiKagTextStat.ovf++;
+		}
 		else
 			global.fushiKagTextEvents = events + record;
 		global.fushiKagTextSeq++;
@@ -5559,7 +5583,11 @@ if(typeof global.fushiKagTextSeq == "undefined")
 		layer.fushiKagTextOrig_clear = layer.clear;
 		layer.clear = function()
 		{
-			try { global.fushiKagTextEmit("x", this.fushiKagTextId, ""); }
+			try
+			{
+				global.fushiKagTextStat.x++;
+				global.fushiKagTextEmit("x", this.fushiKagTextId, "");
+			}
 			catch(e) { global.fushiKagTextFaults++; }
 			return this.fushiKagTextOrig_clear(...);
 		} incontextof layer;
@@ -5569,9 +5597,15 @@ if(typeof global.fushiKagTextSeq == "undefined")
 			var result = this.fushiKagTextOrig_processCh(...);
 			try
 			{
+				var stat = global.fushiKagTextStat;
+				stat.pc++;
+				if(result) stat.over++;
 				if(!result && typeof ch == "String" && ch != "" &&
 					global.fushiKagTextCurrentId() == this.fushiKagTextId)
+				{
+					stat.cur++;
 					global.fushiKagTextEmit("c", this.fushiKagTextId, ch);
+				}
 			}
 			catch(e) { global.fushiKagTextFaults++; }
 			return result;
@@ -5601,6 +5635,8 @@ if(typeof global.fushiKagTextSeq == "undefined")
 	global.fushiKagTextSweep = function()
 	{
 		var patched = 0;
+		try { if(global.fushiKagTextPatchLayer(global.kag.current)) patched++; }
+		catch(e) { global.fushiKagTextFaults++; }
 		for(var page = 0; page < 2; page++)
 		{
 			var messages = void;
@@ -5619,13 +5655,21 @@ if(typeof global.fushiKagTextSeq == "undefined")
 		return patched;
 	};
 
-	global.fushiKagTextOnWait = function()
+	global.fushiKagTextOnWait = function(kind)
 	{
 		try
 		{
+			var stat = global.fushiKagTextStat;
+			stat[kind]++;
 			global.fushiKagTextSweep();
 			var id = global.fushiKagTextCurrentId();
-			if(id > 0) global.fushiKagTextEmit("w", id, "");
+			if(id > 0)
+			{
+				stat.w++;
+				global.fushiKagTextEmit("w", id, "");
+			}
+			else
+				stat.w0++;
 		}
 		catch(e) { global.fushiKagTextFaults++; }
 	};
@@ -5644,6 +5688,65 @@ if(typeof global.fushiKagTextSeq == "undefined")
 	};
 
 )TJS" LR"TJS(
+
+	global.fushiKagTextIsReaderWait = function(until)
+	{
+		if(typeof until != "Object" || until === null) return false;
+		var pairs = [];
+		pairs.assign(until);
+		return pairs.count == 2 && pairs[0] == "click";
+	};
+
+	global.fushiKagTextWrapConductor = function(conductor)
+	{
+		try
+		{
+			if(typeof conductor != "Object" || conductor === null) return false;
+			if(typeof conductor.wait != "Object") return false;
+			if(typeof conductor.fushiKagTextOrig_wait != "undefined") return false;
+			conductor.fushiKagTextOrig_wait = conductor.wait;
+			conductor.wait = function(until)
+			{
+				try
+				{
+					if(global.fushiKagTextIsReaderWait(until)) global.fushiKagTextOnWait("cw");
+					else global.fushiKagTextStat.cwo++;
+				}
+				catch(e) { global.fushiKagTextFaults++; }
+				return this.fushiKagTextOrig_wait(...);
+			} incontextof conductor;
+			return true;
+		}
+		catch(e) { return false; }
+	};
+
+	global.fushiKagTextWrapConductors = function()
+	{
+		var seams = 0;
+		try { if(global.fushiKagTextWrapConductor(global.kag.conductor)) seams = seams | 32; }
+		catch(e) {}
+		try { if(global.fushiKagTextWrapConductor(global.kag.extraConductor)) seams = seams | 64; }
+		catch(e) {}
+		return seams;
+	};
+
+	global.fushiKagTextStats = function()
+	{
+		try
+		{
+			var stat = global.fushiKagTextStat;
+			if(global.fushiKagTextSweep() > 0) stat.sweep++;
+			global.fushiKagTextWrapConductors();
+			return "pc=" + stat.pc + ",cur=" + stat.cur + ",over=" + stat.over +
+				",lb=" + stat.lb + ",pb=" + stat.pb + ",pbc=" + stat.pbc +
+				",wc=" + stat.wc + ",cw=" + stat.cw + ",cwo=" + stat.cwo +
+				",w=" + stat.w + ",w0=" + stat.w0 + ",x=" + stat.x +
+				",layers=" + global.fushiKagTextNextId + ",resweep=" + stat.sweep +
+				",ovf=" + stat.ovf + ",faults=" + global.fushiKagTextFaults;
+		}
+		catch(e) {}
+		return "error";
+	};
 
 	global.fushiKagTextBootstrap = function()
 	{
@@ -5667,22 +5770,29 @@ if(typeof global.fushiKagTextSeq == "undefined")
 			if(global.fushiKagTextWrapWait("showLineBreak",
 				function()
 				{
-					global.fushiKagTextOnWait();
+					global.fushiKagTextOnWait("lb");
 					return this.fushiKagTextOrig_showLineBreak(...);
 				} incontextof global.kag)) seams = seams | 1;
 			if(global.fushiKagTextWrapWait("showPageBreak",
 				function()
 				{
-					global.fushiKagTextOnWait();
+					global.fushiKagTextOnWait("pb");
 					return this.fushiKagTextOrig_showPageBreak(...);
 				} incontextof global.kag)) seams = seams | 2;
 			if(global.fushiKagTextWrapWait("showPageBreakAndClear",
 				function()
 				{
-					global.fushiKagTextOnWait();
+					global.fushiKagTextOnWait("pbc");
 					return this.fushiKagTextOrig_showPageBreakAndClear(...);
 				} incontextof global.kag)) seams = seams | 4;
+			if(global.fushiKagTextWrapWait("waitClick",
+				function()
+				{
+					global.fushiKagTextOnWait("wc");
+					return this.fushiKagTextOrig_waitClick(...);
+				} incontextof global.kag)) seams = seams | 8;
 			if(global.fushiKagTextSweep() > 0) seams = seams | 16;
+			seams = seams | global.fushiKagTextWrapConductors();
 			global.fushiKagTextInstalled = seams;
 		}
 		catch(e) { global.fushiKagTextInstalled = -2; }
@@ -7412,6 +7522,7 @@ KiriKiriKagTextBootstrapCallback g_kag_text_bootstrap_callback;
 constexpr uint32_t kKagTextMailboxSlots = 8;
 struct KagTextMailboxSlot {
   bool gap = false;
+  bool stats = false;  // true = 这一格是 fushiKagTextStats() 的诊断串，不是事件批
   uint32_t units = 0;
   wchar_t text[kag_text::kMaxBatchUnits] = {};
 };
@@ -7422,37 +7533,69 @@ bool g_kag_text_pending_gap = false;        // 主线程私有
 int64_t g_kag_text_last_seq = -1;           // 主线程私有
 uint32_t g_kag_text_report_ticks = 0;       // 主线程私有
 volatile LONG g_kag_text_install_report = 0;  // TJS fushiKagTextInstalled 的回读（0 = 未知）
+// 主线程侧搬运诊断（只由主线程写，worker 只读来落日志）。
+volatile LONG g_kag_text_pump_batches = 0;       // 成功取到并入队的事件批
+volatile LONG g_kag_text_pump_take_failed = 0;   // fushiKagTextTake() 求值失败 / 非字符串
+volatile LONG g_kag_text_pump_truncated = 0;     // 事件串超过 native 缓冲
+volatile LONG g_kag_text_pump_mailbox_full = 0;  // 事件批因邮箱满被丢
+volatile LONG g_kag_text_pump_stats_failed = 0;  // fushiKagTextStats() 求值失败
 
-void EnqueueKirikiriKagTextBatch(const wchar_t* text, uint32_t units) {
+// 返回 false = 邮箱满。事件批满了要在下一批打 gap；诊断串满了直接丢，不影响拼行。
+bool PushKirikiriKagTextSlot(const wchar_t* text, uint32_t units, bool stats) {
   const LONG head = InterlockedCompareExchange(&g_kag_text_mailbox_head, 0, 0);
   const LONG tail = InterlockedCompareExchange(&g_kag_text_mailbox_tail, 0, 0);
-  if (static_cast<uint32_t>(head - tail) >= kKagTextMailboxSlots) {
-    g_kag_text_pending_gap = true;
-    return;
-  }
+  if (static_cast<uint32_t>(head - tail) >= kKagTextMailboxSlots) return false;
   KagTextMailboxSlot* slot =
       &g_kag_text_mailbox[static_cast<uint32_t>(head) % kKagTextMailboxSlots];
-  slot->gap = g_kag_text_pending_gap;
+  slot->stats = stats;
+  slot->gap = stats ? false : g_kag_text_pending_gap;
   slot->units = units;
   if (units != 0u) memcpy(slot->text, text, units * sizeof(wchar_t));
-  g_kag_text_pending_gap = false;
+  if (!stats) g_kag_text_pending_gap = false;
   MemoryBarrier();
   InterlockedIncrement(&g_kag_text_mailbox_head);
+  return true;
+}
+
+void EnqueueKirikiriKagTextBatch(const wchar_t* text, uint32_t units) {
+  if (PushKirikiriKagTextSlot(text, units, false)) {
+    InterlockedIncrement(&g_kag_text_pump_batches);
+    return;
+  }
+  g_kag_text_pending_gap = true;
+  InterlockedIncrement(&g_kag_text_pump_mailbox_full);
+}
+
+// 每 60 帧一次：fushiKagTextStats() 顺带补扫新建 / 重建的消息层与 conductor（有界：
+// 两页消息层数组 + 两个 conductor），返回只含整数的诊断串，原样交给 worker 判变化落日志。
+void PumpKirikiriKagTextStats() {
+  wchar_t stats[kag_text::kMaxStatsUnits];
+  if (!EvaluateTjsString(L"global.fushiKagTextStats()", stats,
+                         kag_text::kMaxStatsUnits)) {
+    InterlockedIncrement(&g_kag_text_pump_stats_failed);
+    return;
+  }
+  const size_t units = wcslen(stats);
+  if (units == 0u || units + 1u >= kag_text::kMaxStatsUnits) return;
+  PushKirikiriKagTextSlot(stats, static_cast<uint32_t>(units), true);
 }
 
 void PumpKirikiriKagText() {
   if (g_stop || !g_capture_enabled) return;
   if (InterlockedCompareExchange(&g_kag_text_bootstrap_state, 0, 0) != 3) return;
   if (!EnsureKirikiriTjsVariantLayout()) return;
-  // 安装结论只回读到第一次非零（每 60 帧一次，有界）；落日志在 worker 上做。
-  if (InterlockedCompareExchange(&g_kag_text_install_report, 0, 0) == 0 &&
-      ++g_kag_text_report_ticks >= 60) {
+  // 每 60 帧一次（有界）：安装结论只回读到第一次非零；之后读诊断串。落日志在 worker 上做。
+  if (++g_kag_text_report_ticks >= 60) {
     g_kag_text_report_ticks = 0;
-    int64_t installed = 0;
-    if (EvaluateTjsInteger(L"global.fushiKagTextInstalled", &installed) &&
-        installed != 0) {
-      InterlockedExchange(&g_kag_text_install_report,
-                          static_cast<LONG>(installed));
+    if (InterlockedCompareExchange(&g_kag_text_install_report, 0, 0) == 0) {
+      int64_t installed = 0;
+      if (EvaluateTjsInteger(L"global.fushiKagTextInstalled", &installed) &&
+          installed != 0) {
+        InterlockedExchange(&g_kag_text_install_report,
+                            static_cast<LONG>(installed));
+      }
+    } else {
+      PumpKirikiriKagTextStats();
     }
   }
   // 稳态每帧只有这一次求值：序号不变就一行 TJS 都不再跑。
@@ -7464,19 +7607,27 @@ void PumpKirikiriKagText() {
   if (!EvaluateTjsString(L"global.fushiKagTextTake()", batch,
                          kag_text::kMaxBatchUnits)) {
     g_kag_text_pending_gap = true;  // 事件串可能已被取走：按丢字处理
+    InterlockedIncrement(&g_kag_text_pump_take_failed);
     return;
   }
   const size_t units = wcslen(batch);
   if (units + 1u >= kag_text::kMaxBatchUnits) {
     g_kag_text_pending_gap = true;  // 截断读：整批作废
+    InterlockedIncrement(&g_kag_text_pump_truncated);
     return;
   }
   EnqueueKirikiriKagTextBatch(batch, static_cast<uint32_t>(units));
 }
 
+// worker 私有的发布结果计数（诊断）。
+uint32_t g_kag_text_published = 0;
+uint32_t g_kag_text_publish_skipped = 0;   // 捕获关 / 共享区未就绪
+uint32_t g_kag_text_publish_rejected = 0;  // WriteTextLaneEvent 返回 0
+
 void PublishKirikiriKagTextLine(const kag_text::Line& line) {
   if (!g_capture_enabled || g_header == nullptr || g_text_base == nullptr ||
       !g_text_cs_ready || line.units == 0u) {
+    ++g_kag_text_publish_skipped;
     return;
   }
   const fushi_voice_hook::TextLaneWrite write =
@@ -7487,7 +7638,53 @@ void PublishKirikiriKagTextLine(const kag_text::Line& line) {
       fushi_voice_hook::kTextLaneCount, write);
   LeaveCriticalSection(&g_text_cs);
   // 精确引擎文本生产者在线：GDI 字形回退让路（字段名历史上叫 luna）。
-  if (event != 0u) g_header->luna_active = 1;
+  if (event != 0u) {
+    g_header->luna_active = 1;
+    ++g_kag_text_published;
+  } else {
+    ++g_kag_text_publish_rejected;
+  }
+}
+
+// 诊断行：TJS 计数串（已校验只含 [a-z0-9=,-]）+ native 各段计数，只在整行内容变了时落。
+// 空闲时 TJS 不发事件、序号不变就不取批，所有数都不动，所以不会每秒刷一行。前 256 次
+// 变化全落，之后每 64 次变化落一次——整局有界，又不会在关键的头几句里漏数。
+void LogKirikiriKagTextStats(const wchar_t* tjs, uint32_t units,
+                             const kag_text::AssemblerCounters& counters,
+                             uint32_t malformed) {
+  static wchar_t last[640] = {};
+  static uint32_t changes = 0;
+  if (!kag_text::IsLoggableStats(tjs, units)) return;
+  wchar_t line[640] = {};
+  _snwprintf_s(
+      line, _TRUNCATE,
+      L"[FushiKagText] stats tjs{%.*ls} pump{batches=%ld,take_failed=%ld,truncated=%ld,"
+      L"mailbox_full=%ld,stats_failed=%ld} core{chars=%lu,waits=%lu,lines=%lu,"
+      L"poisoned=%lu,blank=%lu,capped=%lu,clears=%lu,overflows=%lu,malformed=%lu} "
+      L"publish{ok=%lu,skipped=%lu,rejected=%lu}",
+      static_cast<int>(units), tjs,
+      InterlockedCompareExchange(&g_kag_text_pump_batches, 0, 0),
+      InterlockedCompareExchange(&g_kag_text_pump_take_failed, 0, 0),
+      InterlockedCompareExchange(&g_kag_text_pump_truncated, 0, 0),
+      InterlockedCompareExchange(&g_kag_text_pump_mailbox_full, 0, 0),
+      InterlockedCompareExchange(&g_kag_text_pump_stats_failed, 0, 0),
+      static_cast<unsigned long>(counters.chars),
+      static_cast<unsigned long>(counters.waits),
+      static_cast<unsigned long>(counters.lines),
+      static_cast<unsigned long>(counters.poisoned_waits),
+      static_cast<unsigned long>(counters.blank_waits),
+      static_cast<unsigned long>(counters.capped_waits),
+      static_cast<unsigned long>(counters.clears),
+      static_cast<unsigned long>(counters.overflows),
+      static_cast<unsigned long>(malformed),
+      static_cast<unsigned long>(g_kag_text_published),
+      static_cast<unsigned long>(g_kag_text_publish_skipped),
+      static_cast<unsigned long>(g_kag_text_publish_rejected));
+  if (wcscmp(line, last) == 0) return;
+  wcscpy_s(last, line);
+  ++changes;
+  if (changes > 256u && (changes % 64u) != 0u) return;
+  HookLogLine(line);
 }
 
 void ProcessKirikiriKagTextBatches() {
@@ -7495,6 +7692,7 @@ void ProcessKirikiriKagTextBatches() {
   static kag_text::LineBatch lines;
   static LONG logged_report = 0;
   static bool logged_probe = false;
+  static uint32_t malformed = 0;
   if (!logged_probe &&
       InterlockedCompareExchange(&g_tjs_variant_probe_exhausted, 0, 0) != 0) {
     logged_probe = true;
@@ -7523,9 +7721,17 @@ void ProcessKirikiriKagTextBatches() {
     MemoryBarrier();
     const KagTextMailboxSlot& slot =
         g_kag_text_mailbox[static_cast<uint32_t>(tail) % kKagTextMailboxSlots];
+    if (slot.stats) {
+      LogKirikiriKagTextStats(slot.text, slot.units, assembler.counters(), malformed);
+      tail = InterlockedIncrement(&g_kag_text_mailbox_tail);
+      continue;
+    }
     if (slot.gap) assembler.Overflow();
     lines.count = 0;
-    kag_text::ApplyBatch(&assembler, slot.text, slot.units, &lines);
+    if (kag_text::ApplyBatch(&assembler, slot.text, slot.units, &lines) ==
+        kag_text::BatchStatus::kMalformed) {
+      ++malformed;
+    }
     for (uint32_t i = 0; i < lines.count; ++i) {
       PublishKirikiriKagTextLine(lines.lines[i]);
     }

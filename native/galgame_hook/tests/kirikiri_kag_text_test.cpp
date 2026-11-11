@@ -387,6 +387,62 @@ void TestLaneWriteIsAnEngineExactLane() {
   }
 }
 
+// Every commit point lands in exactly one outcome bucket, so the on-device
+// stats line can tell "no characters", "characters lost" and "no wait" apart.
+void TestOutcomeCountersClassifyEveryCommit() {
+  auto assembler = std::make_unique<kt::Assembler>();
+  // One wait seen by two seams (showLineBreak, then its own conductor.wait):
+  // one line, the second commit is blank -- never a duplicate.
+  std::vector<std::wstring> lines = Apply(
+      assembler.get(), Record(L'c', 1, L"あ") + Record(L'c', 1, L"い") +
+                           Record(L'w', 1, L"") + Record(L'w', 1, L""));
+  Check(lines.size() == 1 && lines[0] == L"あい", "double-seen wait commits once");
+  kt::AssemblerCounters c = assembler->counters();
+  Check(c.chars == 2 && c.waits == 2 && c.lines == 1 && c.blank_waits == 1,
+        "line + blank counted");
+  // A wait on a layer that never drew is blank.
+  Apply(assembler.get(), Record(L'w', 7, L""));
+  Check(assembler->counters().blank_waits == 2, "unseen layer wait is blank");
+  // Characters lost upstream: the commit is counted as poisoned, not blank.
+  Apply(assembler.get(), Record(L'c', 1, L"う"));
+  assembler->Overflow();
+  Apply(assembler.get(), Record(L'c', 1, L"え") + Record(L'w', 1, L""));
+  c = assembler->counters();
+  Check(c.poisoned_waits == 1 && c.overflows == 1 && c.lines == 1,
+        "poisoned commit counted");
+  Apply(assembler.get(), Record(L'x', 1, L""));
+  Check(assembler->counters().clears == 1, "clear counted");
+  Check(c.waits == c.lines + c.poisoned_waits + c.blank_waits + c.capped_waits,
+        "every wait has exactly one outcome");
+  // Batch cap: lines past the cap are counted, not silently lost.
+  auto capped = std::make_unique<kt::Assembler>();
+  std::wstring batch;
+  for (uint32_t i = 0; i < kt::kMaxLinesPerBatch + 2u; ++i) {
+    batch += Record(L'c', 1, L"お") + Record(L'w', 1, L"");
+  }
+  Apply(capped.get(), batch);
+  Check(capped->counters().capped_waits == 2, "capped commits counted");
+}
+
+void TestStatsLineShape() {
+  const std::wstring good = L"pc=12,cur=10,over=0,lb=1,pb=0,w=1,w0=0,faults=0";
+  Check(kt::IsLoggableStats(good.c_str(), static_cast<uint32_t>(good.size())),
+        "integer stats line is loggable");
+  for (const wchar_t* bad : {L"", L"pc=1 cur=2", L"pc=\x3042", L"error\n", L"PC=1"}) {
+    Check(!kt::IsLoggableStats(bad, static_cast<uint32_t>(wcslen(bad))),
+          "non-stats text is not logged: " + Narrow(bad));
+  }
+  const std::wstring longest(kt::kMaxStatsUnits, L'1');
+  Check(!kt::IsLoggableStats(longest.c_str(), static_cast<uint32_t>(longest.size())),
+        "overlong stats line is not logged");
+  auto line = std::make_unique<kt::Line>();
+  line->units = 1;
+  line->text[0] = L'a';
+  const fushi_voice_hook::TextLaneWrite write = kt::MakeLaneWrite(*line, 1);
+  Check(write.thread_address == kt::kComponentIdentity && write.thread_context != 0,
+        "lane carries a stable non-zero thread address");
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -410,6 +466,8 @@ int main(int argc, char** argv) {
   TestAdmissionRequiresTheKirikiriExporter();
   TestNoWaitSeamMeansSilence();
   TestLaneWriteIsAnEngineExactLane();
+  TestOutcomeCountersClassifyEveryCommit();
+  TestStatsLineShape();
   if (g_failures != 0) {
     fprintf(stderr, "%d of %d checks failed\n", g_failures, g_checks);
     return 1;

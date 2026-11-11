@@ -6924,7 +6924,13 @@ def find_kag_text_script_violations(raw: str) -> list[str]:
         'fushiKagTextWrapWait("showPageBreakAndClear"': "溢出自动换页等待提交",
         'global.fushiKagTextEmit("x",this.fushiKagTextId,"");': "clear() 复位",
         "if(!result&&": "processCh 溢出（返回真）的字不计",
-        'global.fushiKagTextCurrentId()==this.fushiKagTextId)global.fushiKagTextEmit("c",': "字符只认 kag.current 那一层",
+        'global.fushiKagTextCurrentId()==this.fushiKagTextId){stat.cur++;global.fushiKagTextEmit("c",': "字符只认 kag.current 那一层",
+        'fushiKagTextWrapWait("waitClick"': "[waitclick] 等待提交",
+        'if(global.fushiKagTextIsReaderWait(until))global.fushiKagTextOnWait("cw");': "conductor 读者点击等待提交",
+        'returnpairs.count==2&&pairs[0]=="click";': "conductor 等待只认「只有 click 一个键」的读者等待",
+        "global.fushiKagTextWrapConductor(global.kag.conductor)": "包主 conductor 的 wait",
+        "if(global.fushiKagTextSweep()>0)stat.sweep++;": "统计读数顺带补扫新建消息层",
+        'global.fushiKagTextStats=function()': "诊断计数串",
         'global.fushiKagTextEmit("r",': "ruby 注音作为可丢弃事件上报",
         'global.fushiKagTextEvents="o0,0:";': "TJS 缓冲溢出改写成单条溢出记录",
     }
@@ -7023,12 +7029,32 @@ class KagTextLaneGuardTest(unittest.TestCase):
     def test_counting_back_page_or_overflowed_characters_is_red(self) -> None:
         for old, new in (
             ("if(!result && ", "if("),
-            ("global.fushiKagTextCurrentId() == this.fushiKagTextId)\n"
-             "\t\t\t\t\tglobal.fushiKagTextEmit(\"c\"",
-             "true)\n\t\t\t\t\tglobal.fushiKagTextEmit(\"c\""),
+            ("global.fushiKagTextCurrentId() == this.fushiKagTextId)\n",
+             "true)\n"),
         ):
             with self.subTest(old=old):
                 self.assertNotEqual([], find_kag_text_script_violations(self._mutate(old, new)))
+
+    def test_committing_on_effect_waits_is_red(self) -> None:
+        # [wt canskip] / [wait canskip] 这类可跳过的演出等待也带 click 键；把它们当提交点
+        # 会把句中停顿切成半句。只有「只有 click 一个键」的等待才是读者等待。
+        for old, new in (
+            ('return pairs.count == 2 && pairs[0] == "click";',
+             'return typeof until.click != "undefined";'),
+            ('if(global.fushiKagTextIsReaderWait(until)) global.fushiKagTextOnWait("cw");',
+             'global.fushiKagTextOnWait("cw");'),
+        ):
+            with self.subTest(old=old):
+                self.assertNotEqual([], find_kag_text_script_violations(self._mutate(old, new)))
+
+    def test_dropping_the_universal_click_wait_seams_is_red(self) -> None:
+        for old in (
+            'if(global.fushiKagTextWrapWait("waitClick",',
+            "try { if(global.fushiKagTextWrapConductor(global.kag.conductor)) seams = seams | 32; }",
+        ):
+            with self.subTest(old=old):
+                dirty = self._mutate(old, old.replace("fushiKagText", "fushiKagTextOff", 1))
+                self.assertNotEqual([], find_kag_text_script_violations(dirty))
 
     def test_rebinding_the_original_wait_context_is_red(self) -> None:
         dirty = self._mutate(

@@ -97,6 +97,18 @@ inline bool IsControlUnit(wchar_t ch) {
   return ch < 0x20 || ch == 0x7F || (ch >= 0x80 && ch < 0xA0);
 }
 
+// Monotonic outcome counts for on-device diagnostics (never reset by Reset()).
+struct AssemblerCounters {
+  uint32_t chars = 0;           // drawn units accepted into a buffer
+  uint32_t waits = 0;           // commit points seen
+  uint32_t lines = 0;           // commit points that produced a line
+  uint32_t poisoned_waits = 0;  // commit points dropped because characters were lost
+  uint32_t blank_waits = 0;     // commit points with nothing (or only blanks) buffered
+  uint32_t capped_waits = 0;    // lines past kMaxLinesPerBatch in one batch
+  uint32_t clears = 0;
+  uint32_t overflows = 0;
+};
+
 class Assembler {
  public:
   // Drops everything; buffers created afterwards start clean.
@@ -109,6 +121,7 @@ class Assembler {
   // truncated read).  Every layer, including ones not seen yet, may be missing
   // the start of its current line: drop each until its next wait or clear.
   void Overflow() {
+    ++counters_.overflows;
     for (Slot& slot : slots_) {
       if (!slot.used) continue;
       slot.units = 0;
@@ -132,6 +145,7 @@ class Assembler {
         return;
       }
       slot->text[slot->units++] = ch;
+      ++counters_.chars;
     }
   }
 
@@ -141,8 +155,10 @@ class Assembler {
   // Commits the characters drawn since the previous boundary.  Returns true
   // and fills `out` only for a clean, non-blank line.
   bool OnWait(uint32_t id, Line* out) {
+    ++counters_.waits;
     Slot* slot = Find(id);
     if (slot == nullptr) {
+      ++counters_.blank_waits;
       // A layer that never drew anything in this session: nothing to commit,
       // but the boundary still clears the post-overflow poison for it.
       slot = Acquire(id);
@@ -159,6 +175,15 @@ class Assembler {
     while (end > begin && IsLineWhitespace(slot->text[end - 1])) --end;
     const bool emitted = publish && end > begin && out != nullptr;
     if (emitted) {
+      ++counters_.lines;
+    } else if (!publish) {
+      ++counters_.poisoned_waits;
+    } else if (end > begin) {
+      ++counters_.capped_waits;
+    } else {
+      ++counters_.blank_waits;
+    }
+    if (emitted) {
       out->layer_id = id;
       out->units = end - begin;
       memcpy(out->text, slot->text + begin, out->units * sizeof(wchar_t));
@@ -169,12 +194,15 @@ class Assembler {
   }
 
   void OnClear(uint32_t id) {
+    ++counters_.clears;
     Slot* slot = Find(id);
     if (slot == nullptr) slot = Acquire(id);
     if (slot == nullptr) return;
     slot->units = 0;
     slot->poisoned = false;
   }
+
+  const AssemblerCounters& counters() const { return counters_; }
 
   // Test introspection.
   uint32_t PendingUnits(uint32_t id) const {
@@ -226,6 +254,7 @@ class Assembler {
   }
 
   Slot slots_[kMaxLayers];
+  AssemblerCounters counters_;
   uint64_t clock_ = 0;
   bool poisoned_until_boundary_ = false;
 };
@@ -306,6 +335,21 @@ inline bool LaneWanted(bool stopping, bool capture_enabled, bool has_exporter,
   return !stopping && capture_enabled && has_exporter && has_shared_header;
 }
 
+// The TJS diagnostics string ("pc=1,cur=1,...") is engine-produced data; it
+// is logged only when it has exactly the shape our script builds.
+constexpr uint32_t kMaxStatsUnits = 256;
+
+inline bool IsLoggableStats(const wchar_t* text, uint32_t units) {
+  if (text == nullptr || units == 0u || units >= kMaxStatsUnits) return false;
+  for (uint32_t i = 0; i < units; ++i) {
+    const wchar_t ch = text[i];
+    const bool ok = (ch >= L'a' && ch <= L'z') || (ch >= L'0' && ch <= L'9') ||
+                    ch == L'=' || ch == L',' || ch == L'-';
+    if (!ok) return false;
+  }
+  return true;
+}
+
 inline uint64_t LaneThreadId() {
   return NativeTextThreadIdFrom(kComponentIdentity, kHookCode, kHookName);
 }
@@ -313,6 +357,8 @@ inline uint64_t LaneThreadId() {
 inline TextLaneWrite MakeLaneWrite(const Line& line, uint32_t process_id) {
   TextLaneWrite write;
   write.thread_id = LaneThreadId();
+  write.thread_address = kComponentIdentity;
+  write.thread_context = kComponentIdentity;
   write.process_id = process_id;
   write.source_kind = kTextSourceKirikiri;
   write.event_kind = kTextEventLine;
