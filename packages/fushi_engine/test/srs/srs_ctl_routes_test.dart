@@ -798,6 +798,12 @@ void main() {
         OpUndoStatus.partial,
       );
       expect(await _field(env.zh, keep, 'Sentence'), '手动改过');
+      expect((await env.zh.note(other))!.deletedAt, isNull, reason: '其余照拆');
+      expect(
+        await env.zh.duplicateNoteGroups(),
+        hasLength(1),
+        reason: '雪这组回来了',
+      );
 
       final String rainA = await _addNote(env.zh, '雨');
       final String rainB = await _addNote(env.zh, '雨');
@@ -810,7 +816,7 @@ void main() {
         caller: OpCaller.model,
         captureUndo: true,
       );
-      expect(await env.zh.duplicateNoteGroups(), isEmpty);
+      expect(await env.zh.duplicateNoteGroups(), hasLength(1), reason: '只剩雪');
       final Map<String, Object?> dismissPayload = roundTrip(dismissed.undo!);
       expect(dismissPayload['profile'], kZh);
       expect(
@@ -819,7 +825,7 @@ void main() {
         )).status,
         OpUndoStatus.done,
       );
-      expect(await env.zh.duplicateNoteGroups(), hasLength(1));
+      expect(await env.zh.duplicateNoteGroups(), hasLength(2));
     });
 
     test('撤销时那份库取不到 → failed，不抛；保留被扣住的删除没有表态参数时模型给不出来', () async {
