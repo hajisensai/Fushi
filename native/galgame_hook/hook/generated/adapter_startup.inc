@@ -15,3 +15,4 @@
     luca_.install();
     knife_.install();
     softpal_.install();
+    nitroplus_.install();

@@ -3853,6 +3853,122 @@
       ]
     },
     {
+      "id": "nitroplus",
+      "display_name": "Nitroplus N2System (nss/.npa)",
+      "aliases": [
+        "NitroplusSystem2.0",
+        "N2System",
+        "Nitroplus",
+        "ニトロプラス"
+      ],
+      "family": {
+        "id": "nitroplus",
+        "relation": "Nitroplus N2System script engine (nss scripts in .npa archives, Direct3D 9, GDI GetGlyphOutlineA glyphs); one generation measured: the 2011 鬼哭街 remake executable"
+      },
+      "detection": {
+        "executable_names": {
+          "values": [
+            "kikokugai_jp.exe"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Catalogue only: 鬼哭街 リメイク kikokugai_jp.exe (original code; that install's nss.npa carries a Chinese patch, which does not change the executable). The adapter never matches on names; identity is the backlog append routine proved by structure (nitroplus_core.h ResolveBacklogAppend)."
+          }
+        },
+        "pe_architectures": {
+          "values": [
+            "x86"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "PE32 machine 0x14c, image base 0x400000, TimeDateStamp 1303661712 (2011-04-24)"
+          }
+        },
+        "directory_files_all": {
+          "values": [],
+          "evidence": null
+        },
+        "runtime_modules": {
+          "values": [],
+          "evidence": null
+        },
+        "resource_extensions": {
+          "values": [
+            ".npa"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "nss.npa (scripts) and the other .npa archives next to the executable; entry names are keyed (the executable's name-key routine starts from 0x20101118)"
+          }
+        },
+        "pe_imports": {
+          "values": [
+            "d3d9.dll",
+            "DSOUND.dll",
+            "GDI32.dll"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Import table of kikokugai_jp.exe: Direct3DCreate9, DSOUND by ordinal, GetGlyphOutlineA (glyph rasterising)"
+          }
+        },
+        "hashes": {
+          "values": [
+            "kikokugai_jp.exe sha256:0665178b8703af8ca139a2c29e055052b1cdb0d4ed75731f1ed8680422cee4e5"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Catalogue only; the adapter does not hash-pin"
+          }
+        }
+      },
+      "process_strategy": {
+        "launch": "create_suspended_early_injection",
+        "attach": "supported",
+        "follow_child_processes": false,
+        "notes": [
+          "The routine is in the game executable itself: install at startup is final and module loads never change the identity.",
+          "Not run on the original launch path yet: process, injection and first-text timing are unmeasured."
+        ]
+      },
+      "text": {
+        "capabilities": [
+          {
+            "kind": "nitroplus_backlog_append_hook",
+            "status": "implemented_unverified",
+            "verification": "Native exact text lane (source kind 17, hook 'Nitroplus exact', ENGINE:NITROPLUS:backlog): the engine's BacklogAppendChar(code, voice) is resolved only by structure (nitroplus_core.h ResolveBacklogAppend): the 'no backlog' guard `cmp [state],imm; jne; xor eax,eax; ret` in front of `push edi; mov edi,[esp+8]`, the four tate-chu-yoko pair compares (0x210021, 0x21003f, 0x3f0021, 0x3f003f) branching to one block that splits the pair and re-enters the routine twice, `push ebp; mov ebp,[backlog]; mov eax,[ebp+W]`, and the VOICE tag writer (`mov ebx,[esp+0x18]`, tag 0x10 / separator 0x11, inline name `mov al,[ebx+N]`, file pointer `mov ecx,[ebx+F]`); not unique or any shape missing = refused, nothing installed. The detour calls the engine first and feeds only characters the engine logged (return 1); packed pairs are taken from the engine's own re-entry as their halves; a 0x0a ends the shown line, other control codes (the backlog's wrap marks) carry no text; a line over 512 codes or not clean CP932 is dropped. A voice tag (code 0 with the tag) names the voice of its line (first tag wins; name and file copied bounded under SEH). Offline: fushi_nitroplus_adapter_test (synthetic routine, six refusal shapes, line assembly, CP932) and its --probe on the 2011 kikokugai_jp.exe: append +0x3610, pair split +0x37cd, no-log state 0x61dff8 == 0x190, backlog global 0x6273ec (+0x24 write pointer), voice name +0x24, voice file +0x64; eight other-engine executables (BGI x2, CatSystem2, EAGLS, ExHIBIT, Kaguya, Leaf, Liar-soft) refuse with no anchor. No run in the game yet."
+          }
+        ],
+        "codepage": "932",
+        "thread_selection_hint": "Select the 'Nitroplus exact' lane (ENGINE:NITROPLUS:backlog): it carries only lines the engine writes to its backlog."
+      },
+      "audio": {
+        "priority": [
+          {
+            "kind": "process_loopback",
+            "format": "host PCM fallback",
+            "status": "implemented_unverified",
+            "clean_voice": false
+          }
+        ]
+      },
+      "verified_games": [],
+      "current_status": "implemented_unverified",
+      "known_limitations": [
+        "x86 only: one sample (2011 鬼哭街 remake); CHAOS;HEAD / 装甲悪鬼村正 executables not measured.",
+        "Voice: the voice tag name of each line is captured but the .npa entry bytes are not exported (the archive's keyed entries are not read yet), so no per-line engine resource is published; only the host's fallback applies.",
+        "No in-game lookup and no click shield: the text object's glyph records (stride 0x54 at +0x413c, glyph object x/y at +0x10/+0x14, per-glyph voice at +0x70144 in the 2011 sample) and its screen placement are not bound yet; vertical text geometry is not implemented.",
+        "Lines are published when the engine logs their end (0x0a after the reveal completes), so a line appears once fully shown, not per character."
+      ],
+      "adapter_path": "hook/adapters/nitroplus_adapter.inc",
+      "fixture_paths": [
+        "tests/fixtures/nitroplus_replay.json"
+      ],
+      "test_paths": [
+        "tests/nitroplus_adapter_test.cpp"
+      ]
+    },
+    {
       "id": "luca",
       "display_name": "LucaSystem (Prototype)",
       "aliases": [
