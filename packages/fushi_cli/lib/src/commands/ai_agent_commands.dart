@@ -201,6 +201,9 @@ String _renderUndo(Object? data) {
   return switch (data['status']) {
     'done' => '已撤销',
     'superseded' => '之后又被改过，保留现状（没有覆盖你的修改）',
+    'partial' =>
+      '部分已撤销，之后又被改过的部分保留现状'
+          '${data['message'] == null ? '' : '：${data['message']}'}',
     _ => '撤销失败：${data['message'] ?? data['status']}',
   };
 }

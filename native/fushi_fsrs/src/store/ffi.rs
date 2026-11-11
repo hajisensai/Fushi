@@ -1544,6 +1544,7 @@ const CHANNEL_SETTLES: &[&str] = &[
     "change",
     "sched",
     "deck_delete",
+    "undo_check",
     "retire",
     "dedup",
     "migrate",
@@ -2092,6 +2093,8 @@ fn sync2_command(
         "conflicts" => c.sync2_conflicts(profile)?,
         "checkpoints" => c.sync2_checkpoints(profile)?,
         "history" => c.sync2_history(profile, s("kind")?, s("entity")?)?,
+        // 编辑类撤销的校验（store/sync2/undo_check.rs）：只读，按修改记录判每个字段键能不能撤。
+        "undo_check" => c.sync2_undo_check(profile, req)?,
         // 预览恢复到还原点 / 某个时刻（只读；恢复本身是本机写命令，见 [local_write_body]）。
         "plan_restore" => c.sync2_plan_restore(
             profile,
