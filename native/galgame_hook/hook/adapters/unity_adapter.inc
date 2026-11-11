@@ -347,17 +347,51 @@ bool RecordUnityTextChars(void* text_component, const wchar_t* chars,
   return true;
 }
 
-void RecordUnityTmpText(void* text_component, void* string_object,
+bool RecordUnityTmpText(void* text_component, void* string_object,
                         const char* hook_name, const wchar_t* hook_code,
                         bool stable_across_components = false) {
   if (string_object == nullptr || g_il2cpp_string_chars == nullptr ||
       g_il2cpp_string_length == nullptr) {
-    return;
+    return false;
   }
-  RecordUnityTextChars(text_component, g_il2cpp_string_chars(string_object),
-                       g_il2cpp_string_length(string_object), hook_name,
-                       hook_code, stable_across_components);
+  return RecordUnityTextChars(
+      text_component, g_il2cpp_string_chars(string_object),
+      g_il2cpp_string_length(string_object), hook_name, hook_code,
+      stable_across_components);
 }
+
+// Canvas-text lanes (TMP_Text / UI.Text setters): publish under the lane's
+// hook identity and, when a line was published, hand the component to the
+// shared Unity canvas lookup (unity_mono_lookup.inc; it ignores the call
+// unless the IL2CPP lookup resolved and this is the Unity main thread).
+void RememberUmTmpCandidateGuarded(void* component, uint8_t lane);
+
+void RecordUnityCanvasText(
+    void* component, void* string_object,
+    const fushi_voice_hook::unity_il2cpp::CanvasLaneSpec& lane) {
+  if (RecordUnityTmpText(component, string_object, lane.hook_name,
+                         lane.hook_code)) {
+    RememberUmTmpCandidateGuarded(component, lane.bit);
+  }
+}
+
+// What the text scan found (HookWorker writes, HookWorker reads): the IL2CPP
+// canvas lookup resolves only the canvas kinds whose setter lanes exist.
+struct UnityIl2CppTextScan {
+  bool scanned = false;  // one full class scan ran after the window appeared
+  bool scan_refused = false;  // the scan's own exports are missing
+  bool tmp_class = false;
+  bool ui_text_class = false;
+  bool text_mesh_class = false;
+  bool naninovel_class = false;
+  bool tmp_set_text = false;
+  bool tmp_set_text_bool = false;
+  bool tmp_set_text_single = false;
+  bool ui_text_set_text = false;
+  bool text_mesh_set_text = false;
+  bool naninovel_set_text = false;
+};
+UnityIl2CppTextScan g_unity_il2cpp_text_scan;
 
 void FlushUnityTextMeshLine() {
   if (g_unity_text_mesh_reassembler.empty()) return;
@@ -708,23 +742,41 @@ void Detour_UnityAudioSourcePlayDelayedHelper(void* source, float delay,
   g_orig_UnityAudioSourcePlayDelayedHelper(source, delay, method);
 }
 
+namespace uil2cpp = fushi_voice_hook::unity_il2cpp;
+
 void Detour_UnityTmpSetText(void* self, void* text, const void* method) {
   g_orig_UnityTmpSetText(self, text, method);
-  RecordUnityTmpText(self, text, "Unity TMP_Text",
-                     L"TMPro.TMP_Text.set_text");
+  RecordUnityCanvasText(self, text, uil2cpp::kLaneTmpSetText);
 }
+
+// TMP 1.x SetText(string) forwards here; that nested call keeps publishing on
+// this lane and the outer detour stays silent (unity_il2cpp_api.h).
+thread_local uil2cpp::TmpSingleNesting g_unity_tmp_single_nesting;
 
 void Detour_UnityTmpSetText2(void* self, void* text, bool sync_input_box,
                             const void* method) {
+  uil2cpp::NoteTmpPairInsideSingle(&g_unity_tmp_single_nesting);
   g_orig_UnityTmpSetText2(self, text, sync_input_box, method);
-  RecordUnityTmpText(self, text, "Unity TMP_Text",
-                     L"TMPro.TMP_Text.SetText(string,bool)");
+  RecordUnityCanvasText(self, text, uil2cpp::kLaneTmpSetTextBool);
+}
+
+// TMP 3.2+ SetText(string): its own body (writes m_text directly).
+using UnityTmpSetTextSingle = void (*)(void*, void*, const void*);
+UnityTmpSetTextSingle g_orig_UnityTmpSetTextSingle = nullptr;
+
+void Detour_UnityTmpSetTextSingle(void* self, void* text,
+                                  const void* method) {
+  bool saved = false;
+  uil2cpp::EnterTmpSingle(&g_unity_tmp_single_nesting, &saved);
+  g_orig_UnityTmpSetTextSingle(self, text, method);
+  if (uil2cpp::LeaveTmpSingle(&g_unity_tmp_single_nesting, saved)) {
+    RecordUnityCanvasText(self, text, uil2cpp::kLaneTmpSetTextSingle);
+  }
 }
 
 void Detour_UnityUiTextSetText(void* self, void* text, const void* method) {
   g_orig_UnityUiTextSetText(self, text, method);
-  RecordUnityTmpText(self, text, "Unity UI.Text",
-                     L"UnityEngine.UI.Text.set_text");
+  RecordUnityCanvasText(self, text, uil2cpp::kLaneUiTextSetText);
 }
 
 void Detour_UnityTextMeshSetText(void* self, void* text,
@@ -911,6 +963,8 @@ bool TryHookUnityIl2CppAudio() {
       g_il2cpp_method_get_param_count == nullptr ||
       g_il2cpp_method_get_param == nullptr ||
       g_il2cpp_type_get_name == nullptr || g_il2cpp_free == nullptr) {
+    // Terminal for the canvas lookup: no text scan can run on this runtime.
+    g_unity_il2cpp_text_scan.scan_refused = true;
     return false;
   }
 
@@ -1026,6 +1080,19 @@ bool TryHookUnityIl2CppAudio() {
         reinterpret_cast<void*>(&Detour_UnityTmpSetText2),
         reinterpret_cast<void**>(&g_orig_UnityTmpSetText2));
     tmp_text_ready = property_ready && method_ready;
+    // TMP 3.2+'s own SetText(string) body, only next to the complete pair
+    // (SetText(StringBuilder) / SetText(char[]) differ by parameter type).
+    const void* set_text_single = FindIl2CppMethod(
+        tmp_text_class, "SetText", property_params, 1);
+    const bool single_ready =
+        uil2cpp::ShouldHookTmpSetTextSingle(tmp_text_ready,
+                                            set_text_single) &&
+        HookFn(Il2CppMethodPointer(set_text_single),
+               reinterpret_cast<void*>(&Detour_UnityTmpSetTextSingle),
+               reinterpret_cast<void**>(&g_orig_UnityTmpSetTextSingle));
+    g_unity_il2cpp_text_scan.tmp_set_text = property_ready;
+    g_unity_il2cpp_text_scan.tmp_set_text_bool = method_ready;
+    g_unity_il2cpp_text_scan.tmp_set_text_single = single_ready;
   }
   bool ui_text_ready = false;
   if (ui_text_class != nullptr) {
@@ -1076,6 +1143,15 @@ bool TryHookUnityIl2CppAudio() {
   const bool text_hooks_ready =
       tmp_text_ready || ui_text_ready || text_mesh_ready ||
       naninovel_text_ready;
+  g_unity_il2cpp_text_scan.tmp_class = tmp_text_class != nullptr;
+  g_unity_il2cpp_text_scan.ui_text_class = ui_text_class != nullptr;
+  g_unity_il2cpp_text_scan.text_mesh_class = text_mesh_class != nullptr;
+  g_unity_il2cpp_text_scan.naninovel_class =
+      naninovel_revealable_text_class != nullptr;
+  g_unity_il2cpp_text_scan.ui_text_set_text = ui_text_ready;
+  g_unity_il2cpp_text_scan.text_mesh_set_text = text_mesh_ready;
+  g_unity_il2cpp_text_scan.naninovel_set_text = naninovel_text_ready;
+  g_unity_il2cpp_text_scan.scanned = true;
   if (tmp_text_ready && g_header != nullptr) {
     g_header->hook_diagnostics |= kDiagUnityTmpTextHooksReady;
   }

@@ -153,8 +153,20 @@ struct UmSubmit {
   uint32_t glyph = 0u;
 };
 
+// The scripting backend that resolved the runtime.  Unity Mono and Unity
+// IL2CPP are mutually exclusive in one process (unity_mono_profile.h refuses
+// a GameAssembly.dll layout), so one runtime serves whichever resolved; each
+// adapter only ticks / shuts down / reports the runtime it owns.
+enum UmRuntime : uint8_t {
+  kUmRuntimeMono = 0u,
+  kUmRuntimeIl2Cpp = 1u,
+};
+
 struct UnityMonoLookupRuntime {
   // ── HookWorker-owned ──
+  UmRuntime runtime = kUmRuntimeMono;
+  // Log prefix of the owning backend (bounded diagnostics only).
+  const wchar_t* log_tag = L"unity-mono-lookup";
   bool resolved = false;
   bool hooks_installed = false;
   bool installed = false;
@@ -238,6 +250,10 @@ UmFixedUpdateFn g_um_late_update_original = nullptr;
 // TMP: static void Canvas.SendWillRenderCanvases() (no `this`, no argument).
 using UmStaticVoidFn = void(FUSHI_MONO_MANAGED_CALL*)();
 UmStaticVoidFn g_um_will_render_original = nullptr;
+// IL2CPP: the same method's AOT body, `void (const MethodInfo*)` (cdecl on
+// x86 like every IL2CPP-generated function).
+using UmIl2CppStaticVoidFn = void (*)(const void* method);
+UmIl2CppStaticVoidFn g_um_il2cpp_will_render_original = nullptr;
 
 // ── two-slot seqlocks ──────────────────────────────────────────────────────
 
@@ -908,6 +924,12 @@ uint32_t SampleUmUiText(uintptr_t object, UmInstanceSnapshot* out) {
 // scene-stable), so the same derivation names it here.
 bool UmLanesSelected(uintptr_t object, uint8_t lane_hooks, uint64_t selected) {
   if (selected == 0u || object == 0u) return false;
+  // The IL2CPP text path names its canvas lanes with its own hook identity
+  // (unity_il2cpp_api.h kCanvasLanes; same lane bits).
+  if (g_um_lookup.runtime == kUmRuntimeIl2Cpp) {
+    return fushi_voice_hook::unity_il2cpp::CanvasLaneSelected(
+        static_cast<uint64_t>(object), lane_hooks, selected);
+  }
   struct Lane {
     uint8_t bit;
     fushi_voice_hook::MonoTextHookId id;
@@ -1134,8 +1156,22 @@ void FUSHI_MONO_MANAGED_CALL UmFungusLateUpdateDetour(void* self) {
 
 // TMP: after Canvas.SendWillRenderCanvases (this frame's canvas update laid
 // out every dirty TMP UGUI text), sample every remembered candidate.
+void UmSampleCanvasCandidates();
+
 void FUSHI_MONO_MANAGED_CALL UmTmpWillRenderDetour() {
   g_um_will_render_original();
+  UmSampleCanvasCandidates();
+}
+
+// IL2CPP: the AOT body of the same `static void SendWillRenderCanvases()`
+// takes the trailing `const MethodInfo*` every IL2CPP managed method takes;
+// it is forwarded unchanged.
+void UmIl2CppWillRenderDetour(const void* method) {
+  g_um_il2cpp_will_render_original(method);
+  UmSampleCanvasCandidates();
+}
+
+void UmSampleCanvasCandidates() {
   auto& rt = g_um_lookup;
   rt.fixed_hits.fetch_add(1u, std::memory_order_relaxed);
   if (!rt.live.load(std::memory_order_acquire) ||
@@ -1472,6 +1508,12 @@ void* ResolveUnityMonoFungusLookup(
 // plan holds the TMP setter pair / UI.Text.set_text.  Each kind resolves on
 // its own; either suffices.  Returns the JIT entry of
 // Canvas.SendWillRenderCanvases (nullptr: rejected).
+void* ResolveUmCanvasLookup(const fushi_voice_hook::MonoEmbeddingApi& api,
+                            const umono_lookup::MonoLookupApi& lookup_api,
+                            const umono_lookup::MonoValueSizeApi& sizes,
+                            const umono_lookup::MonoClassHierarchyApi& classes,
+                            bool want_tmp, bool want_ui_text);
+
 void* ResolveUnityMonoTmpLookup(const fushi_voice_hook::MonoEmbeddingApi& api,
                                 HMODULE runtime, bool want_tmp,
                                 bool want_ui_text) {
@@ -1484,6 +1526,19 @@ void* ResolveUnityMonoTmpLookup(const fushi_voice_hook::MonoEmbeddingApi& api,
   umono_lookup::MonoClassHierarchyApi classes;
   LoadMonoExport(runtime, "mono_class_get_parent", &classes.class_get_parent);
   LoadMonoExport(runtime, "mono_object_get_class", &classes.object_get_class);
+  return ResolveUmCanvasLookup(api, lookup_api, sizes, classes, want_tmp,
+                               want_ui_text);
+}
+
+// The canvas-text resolution both scripting backends share (the accessor
+// tables are Mono exports or the IL2CPP facade, unity_il2cpp_api.h).  Caller
+// marked the runtime resolved and is attached to the managed domain.
+void* ResolveUmCanvasLookup(const fushi_voice_hook::MonoEmbeddingApi& api,
+                            const umono_lookup::MonoLookupApi& lookup_api,
+                            const umono_lookup::MonoValueSizeApi& sizes,
+                            const umono_lookup::MonoClassHierarchyApi& classes,
+                            bool want_tmp, bool want_ui_text) {
+  auto& rt = g_um_lookup;
   void* will_render = nullptr;
   if (want_tmp) {
     rt.tmp_result = umono_lookup::ResolveTmpSites(api, lookup_api, sizes,
@@ -1551,9 +1606,9 @@ bool InstallUnityMonoLookupHooks(void* code) {
   auto& rt = g_um_lookup;
   if (code == nullptr) {
     // Only the attempted framework's result moved off its default.
-    UmLookupLog(L"unity-mono-lookup: gate=sites-unresolved message=%u/%d "
+    UmLookupLog(L"%s: gate=sites-unresolved message=%u/%d "
                 L"fungus=%u/%d tmp=%u/%d uitext=%u/%u/%d nojit=%d",
-                static_cast<unsigned>(rt.site_result.result),
+                rt.log_tag, static_cast<unsigned>(rt.site_result.result),
                 rt.site_result.missing_icall,
                 static_cast<unsigned>(rt.fungus_result.result),
                 rt.fungus_result.missing_icall,
@@ -1569,7 +1624,7 @@ bool InstallUnityMonoLookupHooks(void* code) {
   const DWORD main_thread =
       window == nullptr ? 0u : GetWindowThreadProcessId(window, nullptr);
   if (main_thread == 0u) {
-    UmLookupLog(L"unity-mono-lookup: no UnityWndClass main window");
+    UmLookupLog(L"%s: no UnityWndClass main window", rt.log_tag);
     rt.site_result.result = umono_lookup::SiteResult::kApiIncomplete;
     return false;
   }
@@ -1579,8 +1634,13 @@ bool InstallUnityMonoLookupHooks(void* code) {
   rt.live.store(true, std::memory_order_release);
   const bool fungus = rt.framework == kUmFrameworkFungus;
   const bool tmp = rt.framework == kUmFrameworkCanvas;
+  const bool il2cpp = rt.runtime == kUmRuntimeIl2Cpp;
   const bool hooked =
-      tmp ? HookFnEx(code, reinterpret_cast<void*>(&UmTmpWillRenderDetour),
+      tmp && il2cpp
+          ? HookFnEx(code, reinterpret_cast<void*>(&UmIl2CppWillRenderDetour),
+                     reinterpret_cast<void**>(&g_um_il2cpp_will_render_original),
+                     &rt.hook_status)
+      : tmp ? HookFnEx(code, reinterpret_cast<void*>(&UmTmpWillRenderDetour),
                      reinterpret_cast<void**>(&g_um_will_render_original),
                      &rt.hook_status)
       : fungus
@@ -1598,10 +1658,10 @@ bool InstallUnityMonoLookupHooks(void* code) {
   if (tmp && rt.canvas_ui_text) {
     const auto& f = rt.fungus;
     UmLookupLog(
-        L"unity-mono-lookup: uitext sites will=%p text=+%u cache=+%u "
+        L"%s: uitext sites will=%p text=+%u cache=+%u "
         L"canvas=+%u renderer=+%u alpha=+%u chars=+%u/%u lines=+%u/%u "
         L"cached=+%u main=%lu hooks=%d why=%s",
-        code, f.text_string_offset, f.text_cache_offset,
+        rt.log_tag, code, f.text_string_offset, f.text_cache_offset,
         f.graphic_canvas_offset, f.graphic_renderer_offset,
         f.graphic_color_alpha_offset, f.generator_chars_offset, f.char_stride,
         f.generator_lines_offset, f.line_stride, f.cached_ptr_offset,
@@ -1610,11 +1670,11 @@ bool InstallUnityMonoLookupHooks(void* code) {
   if (tmp && rt.canvas_tmp) {
     const auto& t = rt.tmp;
     UmLookupLog(
-        L"unity-mono-lookup: tmp sites will=%p text=+%u info=+%u alpha=+%u "
+        L"%s: tmp sites will=%p text=+%u info=+%u alpha=+%u "
         L"first=+%u max=+%u canvas=+%u renderer=+%u count=+%u chars=+%u "
         L"stride=%u ch=+%u bl=+%u tr=+%u vis=+%u ca=+%u cached=+%u main=%lu "
         L"hooks=%d why=%s",
-        code, t.text_string_offset, t.text_info_offset, t.font_alpha_offset,
+        rt.log_tag, code, t.text_string_offset, t.text_info_offset, t.font_alpha_offset,
         t.first_visible_offset, t.max_visible_offset, t.canvas_offset,
         t.renderer_offset, t.info_count_offset, t.info_chars_offset,
         t.char_stride, t.char_character_offset, t.char_bottom_left_offset,
@@ -1625,18 +1685,18 @@ bool InstallUnityMonoLookupHooks(void* code) {
   } else if (fungus) {
     const auto& f = rt.fungus;
     UmLookupLog(
-        L"unity-mono-lookup: fungus sites late=%p story=+%u text=+%u "
+        L"%s: fungus sites late=%p story=+%u text=+%u "
         L"cache=+%u canvas=+%u renderer=+%u alpha=+%u chars=+%u/%u "
         L"lines=+%u/%u main=%lu hooks=%d",
-        code, f.story_text_offset, f.text_string_offset, f.text_cache_offset,
+        rt.log_tag, code, f.story_text_offset, f.text_string_offset, f.text_cache_offset,
         f.graphic_canvas_offset, f.graphic_renderer_offset,
         f.graphic_color_alpha_offset, f.generator_chars_offset, f.char_stride,
         f.generator_lines_offset, f.line_stride, main_thread, hooked ? 1 : 0);
   } else {
     UmLookupLog(
-        L"unity-mono-lookup: sites fixed=%p sprite=+%u lastmes=+%u items=+%u "
+        L"%s: sites fixed=%p sprite=+%u lastmes=+%u items=+%u "
         L"size=+%u cached=+%u main=%lu hooks=%d",
-        code, rt.sites.message_sprite_offset, rt.sites.last_mes_offset,
+        rt.log_tag, code, rt.sites.message_sprite_offset, rt.sites.last_mes_offset,
         rt.sites.list_items_offset, rt.sites.list_size_offset,
         rt.sites.cached_ptr_offset, main_thread, hooked ? 1 : 0);
   }
@@ -1951,9 +2011,9 @@ bool PublishUmLookupHit(const UmSubmit& submit) {
       fushi_voice_hook::g_geometry_provider_registry.PublishHit(g_header,
                                                                 publication);
   UmLookupLog(
-      L"unity-mono-lookup: hit gen=%llu glyph=%u char=%u/%u rect=%d,%d %dx%d "
+      L"%s: hit gen=%llu glyph=%u char=%u/%u rect=%d,%d %dx%d "
       L"screen=%.1f,%.1f-%.1f,%.1f view=%dx%d published=%d",
-      static_cast<unsigned long long>(model.generation), submit.glyph,
+      rt.log_tag, static_cast<unsigned long long>(model.generation), submit.glyph,
       static_cast<unsigned>(glyph.source), static_cast<unsigned>(units),
       glyph.rect.x, glyph.rect.y, glyph.rect.w, glyph.rect.h, glyph.cell.x0,
       glyph.cell.y0, glyph.cell.x1, glyph.cell.y1, model.physical_w,
@@ -1990,17 +2050,17 @@ void NoteUmRetire(uint32_t reason) {
   auto& rt = g_um_lookup;
   const auto& f = g_um_model_failure;
   UmLookupLog(
-      L"unity-mono-lookup: gate=%s step=%u %d,%d,%d,%d,%d fixed=%u "
+      L"%s: gate=%s step=%u %d,%d,%d,%d,%d fixed=%u "
       L"faults=%u version=%llu subclass=%d",
-      reason < 7u ? kNames[reason] : L"?", reason == 5u ? f.step : 0u, f.a,
+      rt.log_tag, reason < 7u ? kNames[reason] : L"?", reason == 5u ? f.step : 0u, f.a,
       f.b, f.c, f.d, f.e, rt.fixed_hits.load(), rt.sample_faults.load(),
       static_cast<unsigned long long>(rt.latest_version.load()),
       rt.subclass_live.load() ? 1 : 0);
 }
 
-void ProcessUnityMonoLookupTick() {
+void ProcessUnityMonoLookupTick(UmRuntime owner = kUmRuntimeMono) {
   auto& rt = g_um_lookup;
-  if (!rt.installed) return;
+  if (!rt.installed || rt.runtime != owner) return;
   if (g_stop || g_header == nullptr ||
       !fushi_voice_hook::HasLookupRegion(g_header) ||
       fushi_voice_hook::AtomicLoadShared32(&g_header->lookup_enabled) == 0u) {
@@ -2061,10 +2121,10 @@ void ProcessUnityMonoLookupTick() {
       const auto& first = rt.model.glyphs[0];
       const auto& last = rt.model.glyphs[rt.model.count - 1u];
       UmLookupLog(
-          L"unity-mono-lookup: model gen=%llu event=%llu units=%u glyphs=%u "
+          L"%s: model gen=%llu event=%llu units=%u glyphs=%u "
           L"first=%d,%d %dx%d (char %u) last=%d,%d %dx%d (char %u) "
           L"view=%dx%d screen=%dx%d",
-          static_cast<unsigned long long>(rt.model.generation),
+          rt.log_tag, static_cast<unsigned long long>(rt.model.generation),
           static_cast<unsigned long long>(event),
           static_cast<unsigned>(line.size()), rt.model.count, first.rect.x,
           first.rect.y, first.rect.w, first.rect.h,
@@ -2078,7 +2138,7 @@ void ProcessUnityMonoLookupTick() {
           g_header, fushi_voice_hook::kLookupGeometryProviderEngineExactLayout,
           fushi_voice_hook::kLookupGeometryProviderIdUnityMono)) {
     if (!rt.provider_offered) {
-      UmLookupLog(L"unity-mono-lookup: OfferReady gen=%llu glyphs=%u",
+      UmLookupLog(L"%s: OfferReady gen=%llu glyphs=%u", rt.log_tag,
                   static_cast<unsigned long long>(rt.model.generation),
                   rt.model.count);
     }
@@ -2096,8 +2156,9 @@ void ProcessUnityMonoLookupTick() {
   if (ReadLatestUmSubmit(&submit)) (void)PublishUmLookupHit(submit);
 }
 
-void ShutdownUnityMonoLookup() {
+void ShutdownUnityMonoLookup(UmRuntime owner = kUmRuntimeMono) {
   auto& rt = g_um_lookup;
+  if (rt.runtime != owner) return;
   // The FixedUpdate detour stays chained (MinHook owns it for the process
   // lifetime); clearing `live` turns it into a pure forwarder.  The window
   // procedure is restored.
@@ -2110,8 +2171,9 @@ void ShutdownUnityMonoLookup() {
 
 // Re-install after a shutdown: the detour is still chained and only needs to
 // start sampling again.  A rejected build stays rejected.
-bool ReinstallUnityMonoLookup() {
+bool ReinstallUnityMonoLookup(UmRuntime owner = kUmRuntimeMono) {
   auto& rt = g_um_lookup;
+  if (rt.runtime != owner) return false;
   if (rt.installed) return true;
   if (!rt.hooks_installed) return false;
   rt.claim = umono_lookup::ClaimState();
@@ -2120,7 +2182,10 @@ bool ReinstallUnityMonoLookup() {
   return true;
 }
 
-bool UnityMonoLookupSensorInstalled() { return g_um_lookup.installed; }
-bool UnityMonoLookupSitesRejected() {
-  return g_um_lookup.resolved && !g_um_lookup.hooks_installed;
+bool UnityMonoLookupSensorInstalled(UmRuntime owner = kUmRuntimeMono) {
+  return g_um_lookup.runtime == owner && g_um_lookup.installed;
+}
+bool UnityMonoLookupSitesRejected(UmRuntime owner = kUmRuntimeMono) {
+  return g_um_lookup.runtime == owner && g_um_lookup.resolved &&
+         !g_um_lookup.hooks_installed;
 }
