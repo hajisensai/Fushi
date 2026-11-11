@@ -813,7 +813,7 @@ $('#btn-up').onclick = guard(async()=>{
   if(!lib) throw new Error(T('先添加一个库根')); if(!files.length) throw new Error(T('没选文件'));
   $('#btn-up').disabled=true;
   try{ for(const f of files){ const row=document.createElement('div'); row.className='lrow'; row.innerHTML=`<div class="lead">${icon('upload')}</div><div class="txt"><div class="t">${esc(f.name)}</div><div class="s st">${esc(T('等待'))}</div>${progress(0)}</div>`; $('#up-list').prepend(row); try{ await uploadOne(f,lib,sub,row);}catch(e){ const st=row.querySelector('.st'); st.className='e st'; st.textContent=T('失败: {0}', e.message); } } toast(T('上传结束，记得扫描库')); }
-  finally{ $('#btn-up').disabled=false; loadStatus(); }
+  finally{ $('#btn-up').disabled=false; loadStatus(); loadUploadFolders(); }
 });
 
 // ── 任务 ──

@@ -377,12 +377,12 @@ client 首次连接的 TOFU，其它主机名 / 端口的坏证书照样拒绝�
 | `POST resource-indexers/bt-sites/<id>/reprobe` | 按已存地址重新检测（站点改版后用） |
 | `DELETE resource-indexers/bt-sites/<id>` | 删除 BT 站；订阅改由同类其它站点接手，没有可用站点时暂停，加了站点后自动唤醒 |
 | `GET models` / `POST models/pull {model}` | ASR 各语言 + OCR 模型状态 / 后台拉取 |
-| `GET|PUT settings` | 配置读写（下节「远程访问三项」） |
+| `GET|PUT settings` | 配置读写（下节「远程访问三项」）。GET 另带 WebUI 下拉用的只读选项：`aiPresetOptions [{id, name, model}]`、`subtitleLanguageOptions` / `metadataLocaleOptions [{code, name}]` |
 | `GET profiles` / `POST profiles/<id>/share` / `DELETE profiles/<id>` | 寄存的配置文件 + 开关状态 / 指定对端拉取时交出哪一份 / 删除（下节） |
 | `GET p2p` | P2P 隧道状态（同 `settings.p2pStatus`，WebUI 轮询用） |
 | `GET anki` / `POST anki/login|logout|sync|refresh|landing|run|retry` / `PUT anki/settings` | Anki 落地（下节） |
-| `GET|PUT srs` / `GET srs/profiles` / `POST srs/sync {profile?}` | Fushi 复习：状态与配置 / 同步目录里能选的配置文件 / 立即同步。PUT 只改带了的字段：`profiles`（整份）或 `addProfiles` / `removeProfiles`、`defaultProfile`、`rolloverHour`、`miningTarget`、`miningDecks`（整份替换）或 `miningDecksPatch`（只改给了的那几份，`""` 删掉那一项）、`ankiConnect {enabled, bind, port, apiKey, profileKeys, corsOrigins}`。key 不回显（只报 `apiKeySet` / `profileKeysSet`），`apiKey: ""` 清掉；AnkiConnect 配置起不来（非本机地址没 key、key 重复）回 409 `ankiconnect_invalid`，不落地 |
-| `GET|PUT upload?library=<id>&path=<相对路径>` | 分块上传（下节） |
+| `GET|PUT srs` / `GET srs/profiles` / `GET srs/decks?profile=<uid>` / `POST srs/sync {profile?}` | Fushi 复习：状态与配置 / 同步目录里能选的配置文件 / 那份已提供配置文件的牌组全名（`{decks}`，没提供 404 `profile_not_served`）/ 立即同步。PUT 只改带了的字段：`profiles`（整份）或 `addProfiles` / `removeProfiles`、`defaultProfile`、`rolloverHour`、`miningTarget`、`miningDecks`（整份替换）或 `miningDecksPatch`（只改给了的那几份，`""` 删掉那一项）、`ankiConnect {enabled, bind, port, apiKey, profileKeys, corsOrigins}`。key 不回显（只报 `apiKeySet` / `profileKeysSet`），`apiKey: ""` 清掉；AnkiConnect 配置起不来（非本机地址没 key、key 重复）回 409 `ankiconnect_invalid`，不落地 |
+| `GET|PUT upload?library=<id>&path=<相对路径>` / `GET upload/folders?library=<id>` | 分块上传 / 库根下已有子目录（下节） |
 | `GET|PUT dictionaries` / `PUT dictionaries/order {names}` / `PATCH dictionaries/<名> {hidden}` / `DELETE dictionaries/<名>` / `GET dictionaries/lookup?q=` | 词典（WebUI「词典」页）：引擎状态（`engine.available` / `reason` / `transformsLoaded`）+ 清单 / 正文为 Yomitan zip 的导入（同名视为更新；引擎没加载回 409，导入失败 422）/ 整份新顺序（必须恰好列全）/ 日语隐藏标记 / 删除 / 试查。改动与互联推送共用库锁，即时进引擎 |
 
 ### 远程访问三项
@@ -556,6 +556,8 @@ host 开关三道门；开关关着回 403，能力位 `liveLibrary.profileTrans
 `Content-Range: bytes <start>-<end>/<total>`。服务端追加到 `<目标>.part`，`start` 必须等于
 已收字节数（否则 409），收齐 `total` 后原子改名。`GET` 同 URL 返回 `{"received": n}` 供断点续传。
 路径不得逃出库根（400）；累计超 `upload_quota_bytes` 拒收（413）。传完记得扫描库。
+`GET /api/admin/upload/folders?library=<id>` 返回库根下两层内已有的子目录 `{"folders": ["Show", "Show/Season1"]}`
+（跳过隐藏目录、不跟符号链接），WebUI 子目录框用它做建议。
 
 ## Anki 落地
 
