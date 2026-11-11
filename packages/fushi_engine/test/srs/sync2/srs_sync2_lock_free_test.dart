@@ -84,6 +84,8 @@ void main() {
       // 位置上该删什么由内核定（transport.rs `sync2_obsolete`），它往待删表登记旧 head：写命令。
       'obsolete',
       'obsolete_ack',
+      // 旧身份目录的清理（former.rs `sync2_obsolete_former`）记观察时刻：写命令。
+      'obsolete_former',
       'ingest_begin',
       'media_record',
       'media_scan',

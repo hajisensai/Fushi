@@ -16,6 +16,7 @@ pub(crate) mod deck_delete;
 pub(crate) mod dedup;
 pub(crate) mod devices;
 pub mod digest;
+pub(crate) mod former;
 pub(crate) mod heal;
 pub mod media;
 pub(crate) mod min_reader;
@@ -2508,6 +2509,8 @@ mod tests_devices;
 mod tests_digest;
 #[cfg(test)]
 mod tests_footprint;
+#[cfg(test)]
+mod tests_former;
 #[cfg(test)]
 mod tests_head_gap;
 #[cfg(test)]
