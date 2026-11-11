@@ -12,3 +12,4 @@
   - `fushi/test/sync/interconnect_p2p_path_test.dart`：NodeId 校验纯函数（非法形态 → null；64 hex / 52 base32 可解析、大写转小写）；节点关闭后 `status` 为 null 且不碰端点；徽章 widget 用例（`InterconnectP2pNode.forTesting` + `bindInterconnectP2pClient`）：status 抛 FFI 异常时无未捕获异常、继续轮询、只留痕 1 条、恢复后显示；`p2p://not-a-node` 从不调用 status。
   - `fushi/test/sync/interconnect_p2p_tunnel_test.dart`、`fushi/test/sync/interconnect_peer_addresses_test.dart`：占位 NodeId（`node` / `nodeabc` / `p2p://node`）换成合法 64 hex 常量。
 - **备注**：Dart 侧校验是必要条件：形态合法但不在 ed25519 曲线上的公钥仍会被原生拒绝，徽章的异常边界兜住这种情况。已存的非法 `p2p://` 行（只可能来自畸形链接）不再被当成 P2P 地址，选路时 resolver 返回 null。纯内存与 UI 行为，无持久数据迁移。
+- **提交信息里的旧号**：本条撞号改过两次（4280 → 4390 → 4401，改号提交 `3ab9e64b3cd`、`99ab766caca`），历史不重写，所以改号前写下的提交信息仍是当时的号：上面记的修复提交标题写的是 4280。按号查提交历史用 `git log --grep` 搜 `BUG-` 接 4280（第一次改号之后、第二次之前的提交接 4390）；这两个旧号现在或以后属于别的 bug，与本条无关。此处旧号不带前缀，免得 `bug.dart renumber` / `settle` 替别的 bug 改号时把这里一起改掉。
