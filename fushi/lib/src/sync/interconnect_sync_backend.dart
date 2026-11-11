@@ -389,6 +389,11 @@ class InterconnectSyncBackend extends SyncBackend
   @visibleForTesting
   Future<void> ensureResolved() => _ensureResolved();
 
+  /// 会话此刻是否已选定 host（选路已完成、没被掉线置脏）。为真时 [liveHostScope]
+  /// 立即返回、不探测。给不能为此等一轮选路的只读调用方（库页卡片读位置基线，
+  /// BUG-4436）：离线时宁可拿不到作用域，也不能让列表等探测超时。
+  bool get sessionResolved => _sessionResolved;
+
   /// Test seam: the base URL the session has settled on.
   @visibleForTesting
   String? get activeBaseUrl => _ops?.baseUrl;

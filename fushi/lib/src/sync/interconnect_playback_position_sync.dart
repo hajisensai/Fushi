@@ -260,6 +260,60 @@ class InterconnectPlaybackPositionSync {
     );
   }
 
+  /// [loadBaselineSnapshot] 的不等待版：会话已选定 host 才读，否则返回 null、不触发
+  /// 选路（库页卡片用，见 [displayPosition]）。
+  Future<PlaybackBaselineSnapshot?> loadBaselineSnapshotIfResolved() async {
+    if (!_backend.sessionResolved) return null;
+    return loadBaselineSnapshot();
+  }
+
+  /// 三方判定实际用的基线：记下的基线 [base]，或「已发出、尚未确认」的推送位置
+  /// [pending]——它正是 host 当前位置时，那次推送其实已在 host 提交（BUG-3528），
+  /// 按它判。[decide] 与 [displayPosition] 共用，两处不会各算各的。
+  static int? effectiveBaseline({
+    required int? base,
+    required int? pending,
+    required PlaybackPosition remote,
+  }) =>
+      pending != null &&
+          remote.updatedAtMs > 0 &&
+          pending == remote.positionMs &&
+          base != remote.positionMs
+      ? pending
+      : base;
+
+  /// 库页卡片上 [key] 这条该显示哪一端的位置：开播会从哪一端起播就显示哪一端
+  /// （BUG-4436）。与开播（[InterconnectRemotePlaybackSession.startPositionFor]）同
+  /// 一份 [resolvePlaybackPositionThreeWay]：host 单边前进 → host 值；本端单边前进
+  /// → 本端值；冲突（待弹窗裁决）→ 本端值，因为开播也从本端起；两端位置相同 →
+  /// 时间戳较新的那份（位置一样，戳只影响「最近观看」排序）。
+  ///
+  /// 只读：不提升 pending、不写基线。[remote] 是清单带回的 host 值（可能是几分钟前
+  /// 的快照）；开播时现读 host，host 在这期间变了两者才会不同。
+  static PlaybackPosition displayPosition({
+    required String key,
+    required PlaybackPosition local,
+    required PlaybackPosition remote,
+    required PlaybackBaselineSnapshot snapshot,
+  }) {
+    final BookProgressSyncAction action = resolvePlaybackPositionThreeWay(
+      local: local,
+      remote: remote,
+      basePositionMs: effectiveBaseline(
+        base: snapshot.baselines[key],
+        pending: snapshot.pending[key],
+        remote: remote,
+      ),
+    );
+    return switch (action) {
+      BookProgressSyncAction.applyRemote => remote,
+      BookProgressSyncAction.pushLocal ||
+      BookProgressSyncAction.conflict => local,
+      BookProgressSyncAction.synced =>
+        remote.updatedAtMs > local.updatedAtMs ? remote : local,
+    };
+  }
+
   /// 两端已完全收敛、这一轮无事可做：位置与时间戳都相同、基线已等于该位置、
   /// 没有「待确认」推送。
   ///
@@ -324,15 +378,13 @@ class InterconnectPlaybackPositionSync {
     required PlaybackPosition local,
     required PlaybackPosition remote,
   }) async {
-    int? base = await baseline(key);
-    final int? pending = await _db.getSyncBaseline(key, _pendingDim);
-    if (pending != null &&
-        remote.updatedAtMs > 0 &&
-        pending == remote.positionMs &&
-        base != remote.positionMs) {
-      await recordBaseline(key, pending);
-      base = pending;
-    }
+    final int? recorded = await baseline(key);
+    final int? base = effectiveBaseline(
+      base: recorded,
+      pending: await _db.getSyncBaseline(key, _pendingDim),
+      remote: remote,
+    );
+    if (base != null && base != recorded) await recordBaseline(key, base);
     return resolvePlaybackPositionThreeWay(
       local: local,
       remote: remote,
