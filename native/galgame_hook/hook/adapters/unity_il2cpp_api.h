@@ -31,7 +31,11 @@
 //     UnityPlayer C entry Mono's mono_lookup_internal_call returns, so the
 //     binding function types are shared.  The short name cannot tell
 //     overloads apart, so a binding whose name is declared as more than one
-//     internal call on its class resolves to nothing (fail closed).
+//     internal call on its class resolves to nothing (fail closed).  Unity 6
+//     `<method>_Injected` bindings are registered the same way under their
+//     own name (InternalCalls::Resolve looks the full "Ns.Class::Method(...)"
+//     key up first, then the part before '('; the player registers the bare
+//     "Ns.Class::Method" key), so the same short name serves both forms.
 //   * value-type field offsets: IL2CPP reports them boxed-relative (after the
 //     two-pointer Il2CppObject header) exactly like Mono, so the core's
 //     `offset - 2 * sizeof(void*)` holds.
@@ -102,6 +106,15 @@ struct Il2CppExports {
   const wchar_t* (*string_chars)(void* string) = nullptr;
   // Optional cross-check of the array header (absent on older players).
   uint32_t (*array_object_header_size)() = nullptr;
+  // Optional: GC handle access, read only by a Unity 6 (injected) engine
+  // binding that returns a UnityEngine.Object (its result is the GC handle
+  // the native object owns).  il2cpp-api-functions.h declares the handle
+  // `Il2CppGCHandle` (void*) from 2023.1 on and uint32_t before; the
+  // pointer-sized declaration passes the same register / stack slot either
+  // way (a pre-2023 handle is a 32-bit value), and pre-2023 players have no
+  // injected bindings to call it for.
+  void* (*gchandle_get_target)(void* handle) = nullptr;
+  void (*gchandle_free)(void* handle) = nullptr;
 };
 
 struct ExportSlot {
@@ -179,6 +192,10 @@ inline size_t Il2CppExportSlots(Il2CppExports* e, ExportSlot* out,
        true},
       {"il2cpp_array_object_header_size",
        reinterpret_cast<void**>(&e->array_object_header_size), false},
+      {"il2cpp_gchandle_get_target",
+       reinterpret_cast<void**>(&e->gchandle_get_target), false},
+      {"il2cpp_gchandle_free", reinterpret_cast<void**>(&e->gchandle_free),
+       false},
   };
   const size_t count = sizeof(slots) / sizeof(slots[0]);
   for (size_t i = 0; out != nullptr && i < count && i < capacity; ++i) {
@@ -187,13 +204,14 @@ inline size_t Il2CppExportSlots(Il2CppExports* e, ExportSlot* out,
   return count;
 }
 
-inline constexpr size_t kIl2CppExportSlotCount = 33u;
+inline constexpr size_t kIl2CppExportSlotCount = 35u;
 inline constexpr size_t kMissingExportsChars = 192u;
 
 struct ExportReport {
   uint32_t required = 0u;
   uint32_t found = 0u;  // required exports found
   bool header_size_export = false;
+  bool gchandle_exports = false;  // il2cpp_gchandle_get_target + _free
   // Comma-joined names of the missing required exports without the
   // `il2cpp_` prefix, truncated with "..." (never more than the buffer).
   char missing[kMissingExportsChars] = {};
@@ -212,10 +230,7 @@ ExportReport LoadIl2CppExports(Resolve resolve, Il2CppExports* out) {
   bool truncated = false;
   for (size_t i = 0; i < count && i < kIl2CppExportSlotCount; ++i) {
     *slots[i].slot = resolve(slots[i].name);
-    if (!slots[i].required) {
-      report.header_size_export = *slots[i].slot != nullptr;
-      continue;
-    }
+    if (!slots[i].required) continue;
     ++report.required;
     if (*slots[i].slot != nullptr) {
       ++report.found;
@@ -237,6 +252,9 @@ ExportReport LoadIl2CppExports(Resolve resolve, Il2CppExports* out) {
     }
   }
   report.missing[used] = 0;
+  report.header_size_export = out->array_object_header_size != nullptr;
+  report.gchandle_exports =
+      out->gchandle_get_target != nullptr && out->gchandle_free != nullptr;
   return report;
 }
 
@@ -423,6 +441,11 @@ inline uint32_t ShimMethodFlags(void* method, uint32_t* iflags) {
 inline void* ShimClassGetType(void*) { return nullptr; }
 inline void* ShimTypeGetObject(void*, void*) { return nullptr; }
 inline uint32_t ShimGcHandleNew(void*, int32_t) { return 0u; }
+// Unity 6 object results (unity_mono_lookup_core.h BindingObjectResult).
+inline void* ShimGcHandleGetTarget(void* handle) {
+  return g_exports.gchandle_get_target(handle);
+}
+inline void ShimGcHandleFree(void* handle) { g_exports.gchandle_free(handle); }
 inline int32_t ShimTypeIsByref(void* type) {
   return g_exports.type_is_byref(type) ? 1 : 0;
 }
@@ -501,6 +524,12 @@ inline FacadeResult InstallFacade(const Il2CppExports& exports,
   lookup.type_is_byref = &ShimTypeIsByref;
   lookup.array_length = &ShimArrayLength;
   lookup.array_addr_with_size = &ShimArrayAddr;
+  // Both or neither: an injected object binding then fails closed
+  // (IcallFailure::kGcHandleApi) instead of reading a half API.
+  if (report.gchandle_exports) {
+    lookup.gchandle_get_target = &ShimGcHandleGetTarget;
+    lookup.gchandle_free = &ShimGcHandleFree;
+  }
   out->sizes.class_value_size = exports.class_value_size;
   out->classes.class_get_parent = exports.class_get_parent;
   out->classes.object_get_class = exports.object_get_class;

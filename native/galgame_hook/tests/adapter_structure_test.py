@@ -2806,13 +2806,44 @@ class AdapterStructureTest(unittest.TestCase):
         # by-ref-ness and the internal-call flag; the glyph container must be
         # proven List<List<GameObject>>.
         resolve = self._function_body(core, "inline SiteResolution ResolveSites(")
-        for proof in ("ResolveIcall(", "ListLayout(", "game_object",
-                      "m_CachedPtr", "FixedUpdate", "gchandle_new("):
+        for proof in ("ResolveIcallTable(", "ListLayout(", "game_object",
+                      "ResolveUnityObjectMarshal(", "FixedUpdate",
+                      "gchandle_new("):
             self.assertIn(proof, resolve)
-        icall = self._function_body(core, "inline void* ResolveIcall(")
+        marshal = self._function_body(
+            core, "inline bool ResolveUnityObjectMarshal(")
+        for proof in ("m_CachedPtr", "m_InstanceID", "gchandle_get_target"):
+            self.assertIn(proof, marshal)
+        match = self._function_body(core, "inline IcallMatch MatchIcallDeclarations(")
         for proof in ("kMethodImplInternalCall", "ParamsByrefMatch(",
-                      "MonoSignatureMatches(", "lookup_internal_call("):
-            self.assertIn(proof, icall)
+                      "MonoSignatureMatches("):
+            self.assertIn(proof, match)
+        # Every engine binding table resolves through the two-form resolver:
+        # the classic extern and the Unity 6 `<method>_Injected` one, exactly
+        # one of them; the canvas / Fungus / message tables never take the
+        # classic-only shortcut.
+        binding = self._function_body(
+            core, "inline IcallBinding ResolveIcallBinding(")
+        for proof in ("ClassicShape(spec)", "InjectedShape(", "total > 1u",
+                      "IcallFailure::kAmbiguous", "IcallFailure::kSelfField",
+                      "IcallFailure::kGcHandleApi", "lookup_internal_call("):
+            self.assertIn(proof, binding)
+        table = self._function_body(core, "inline bool ResolveIcallTable(")
+        self.assertIn("ResolveIcallBinding(", table)
+        for resolver in ("inline SiteResolution ResolveSites(",
+                         "inline FungusSiteResolution ResolveUguiTextLayout(",
+                         "inline TmpSiteResolution ResolveTmpSites("):
+            body = self._function_body(core, resolver)
+            self.assertIn("ResolveIcallTable(", body, resolver)
+            self.assertNotIn("ResolveIcall(", body, resolver)
+        # The sampler calls bindings only through the form-aware helpers: no
+        # raw cast of a binding entry to an instance function type.
+        for name in ("void SampleUmGlyph(", "uint32_t SampleUmInstance(",
+                     "uint32_t SampleUmUguiText(uintptr_t story, UmInstanceSnapshot* out) {",
+                     "uint32_t SampleUmTmp("):
+            body = self._function_body(runtime, name)
+            self.assertNotIn(".Get<", body, name)
+            self.assertNotIn("IcallInstance", body, name)
         # The lookup rides on the text path's framework verdict and attach
         # scope; the detour is hooked only after detach.
         install = adapter.split("void TryInstallManagedTextHooks()", 1)[1]
@@ -2864,7 +2895,7 @@ class AdapterStructureTest(unittest.TestCase):
         # The UGUI Text layout reading shared by frameworks 2 and 4.
         layout = self._function_body(
             core, "inline FungusSiteResolution ResolveUguiTextLayout(")
-        for proof in ("ListLayout(", "ResolveFungusIcall(", "class_value_size(",
+        for proof in ("ListLayout(", "ResolveIcallTable(", "class_value_size(",
                       "m_LastString"):
             self.assertIn(proof, layout)
         # Framework 4: UI.Text by the text path's own spec, the managed

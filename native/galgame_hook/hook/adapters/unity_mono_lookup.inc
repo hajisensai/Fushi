@@ -306,6 +306,74 @@ bool ReadUmValue(uintptr_t address, T* out) {
   return true;
 }
 
+// ── engine binding calls (either form, unity_mono_lookup_core.h) ───────────
+//
+// A classic binding takes the managed object as self and returns managed
+// objects; an injected (Unity 6) one takes the object's native peer and
+// returns a GC handle.  The machine signature is the same, so one call shape
+// serves both: only the self argument and an object result are translated.
+// A binding whose self cannot be formed (a zero native peer) is not called.
+
+bool UmReadPointer(uintptr_t address, uintptr_t* out) {
+  return ReadUmValue(address, out);
+}
+bool UmReadInt32(uintptr_t address, int32_t* out) {
+  return ReadUmValue(address, out);
+}
+
+bool UmBindingSelf(const umono_lookup::IcallBinding& binding, void* object,
+                   void** self) {
+  return umono_lookup::BindingSelf(binding, object, &UmReadPointer, self);
+}
+
+template <typename R, typename... A>
+bool UmCall(const umono_lookup::IcallBinding& binding, void* object, R* out,
+            A... args) {
+  void* self = nullptr;
+  if (out == nullptr || !UmBindingSelf(binding, object, &self)) return false;
+  using Fn = R(FUSHI_UNITY_ICALL*)(void*, A...);
+  *out = reinterpret_cast<Fn>(binding.entry)(self, args...);
+  return true;
+}
+
+template <typename... A>
+bool UmCallVoid(const umono_lookup::IcallBinding& binding, void* object,
+                A... args) {
+  void* self = nullptr;
+  if (!UmBindingSelf(binding, object, &self)) return false;
+  using Fn = void(FUSHI_UNITY_ICALL*)(void*, A...);
+  reinterpret_cast<Fn>(binding.entry)(self, args...);
+  return true;
+}
+
+// An instance binding returning a UnityEngine.Object.
+template <typename... A>
+bool UmCallObject(const umono_lookup::IcallBinding& binding,
+                  const umono_lookup::UnityObjectMarshal& marshal,
+                  void* object, void** out, A... args) {
+  void* raw = nullptr;
+  if (out == nullptr || !UmCall(binding, object, &raw, args...)) return false;
+  *out = umono_lookup::BindingObjectResult(binding, marshal, raw,
+                                           &UmReadInt32);
+  return true;
+}
+
+// A static binding without parameters returning a UnityEngine.Object.
+void* UmCallStaticObject(const umono_lookup::IcallBinding& binding,
+                         const umono_lookup::UnityObjectMarshal& marshal) {
+  if (binding.entry == nullptr || binding.instance) return nullptr;
+  void* raw = reinterpret_cast<umono_lookup::IcallObjectFn>(binding.entry)();
+  return umono_lookup::BindingObjectResult(binding, marshal, raw,
+                                           &UmReadInt32);
+}
+
+int32_t UmCallStaticInt(const umono_lookup::IcallBinding& binding) {
+  return binding.entry == nullptr || binding.instance
+             ? 0
+             : reinterpret_cast<umono_lookup::IcallStaticIntFn>(
+                   binding.entry)();
+}
+
 // ── main thread: glyph sampling ─────────────────────────────────────────────
 
 bool UmObjectAlive(uintptr_t object) {
@@ -344,7 +412,7 @@ uintptr_t UmArrayElement(uintptr_t array, uint32_t index) {
 // One glyph object -> its cell.  Engine calls only on objects whose native
 // peer is alive (a destroyed object would raise a managed exception through
 // this native frame).
-void SampleUmGlyph(uintptr_t object, void* camera, bool orthographic,
+void SampleUmGlyph(uintptr_t object, void* camera_self, bool orthographic,
                    int32_t mask, int32_t active_scene,
                    umono_lookup::GlyphCell* cell) {
   const auto& s = g_um_lookup.sites;
@@ -352,26 +420,32 @@ void SampleUmGlyph(uintptr_t object, void* camera, bool orthographic,
   *cell = umono_lookup::GlyphCell();
   if (!UmObjectAlive(object)) return;
   void* go = reinterpret_cast<void*>(object);
-  const bool active =
-      s.Get<umono_lookup::IcallInstanceBoolFn>(Icall::kGameObjectActive)(go);
-  if (!active) return;
-  void* renderer = s.Get<umono_lookup::IcallGetComponentFn>(
-      Icall::kGameObjectGetComponent)(go, s.renderer_type);
-  if (!UmObjectAlive(reinterpret_cast<uintptr_t>(renderer))) return;
-  const bool enabled =
-      s.Get<umono_lookup::IcallInstanceBoolFn>(Icall::kRendererEnabled)(
-          renderer);
+  bool active = false;
+  if (!UmCall(s.Binding(Icall::kGameObjectActive), go, &active) || !active) {
+    return;
+  }
+  void* renderer = nullptr;
+  if (!UmCallObject(s.Binding(Icall::kGameObjectGetComponent), s.marshal, go,
+                    &renderer, s.renderer_type) ||
+      !UmObjectAlive(reinterpret_cast<uintptr_t>(renderer))) {
+    return;
+  }
+  bool enabled = false;
   int32_t scene = 0;
-  s.Get<umono_lookup::IcallInstanceOutFn>(Icall::kGameObjectScene)(go, &scene);
-  const int32_t layer =
-      s.Get<umono_lookup::IcallInstanceIntFn>(Icall::kGameObjectLayer)(go);
+  int32_t layer = -1;
+  if (!UmCall(s.Binding(Icall::kRendererEnabled), renderer, &enabled) ||
+      !UmCallVoid(s.Binding(Icall::kGameObjectScene), go, &scene) ||
+      !UmCall(s.Binding(Icall::kGameObjectLayer), go, &layer)) {
+    return;
+  }
   if (!umono_lookup::GlyphVisible(active, enabled, scene, active_scene, layer,
                                   mask)) {
     return;
   }
   umono_lookup::Bounds bounds;
-  s.Get<umono_lookup::IcallInstanceOutFn>(Icall::kRendererBounds)(renderer,
-                                                                   &bounds);
+  if (!UmCallVoid(s.Binding(Icall::kRendererBounds), renderer, &bounds)) {
+    return;
+  }
   const umono_lookup::Vec3 low = {bounds.center.x - bounds.extents.x,
                                   bounds.center.y - bounds.extents.y,
                                   bounds.center.z};
@@ -379,10 +453,10 @@ void SampleUmGlyph(uintptr_t object, void* camera, bool orthographic,
                                    bounds.center.y + bounds.extents.y,
                                    bounds.center.z};
   umono_lookup::Vec3 a, b;
-  const auto to_screen = s.Get<umono_lookup::IcallWorldToScreenFn>(
-      Icall::kCameraWorldToScreen);
-  to_screen(camera, &low, umono_lookup::kMonoEye, &a);
-  to_screen(camera, &high, umono_lookup::kMonoEye, &b);
+  const auto to_screen = reinterpret_cast<umono_lookup::IcallWorldToScreenFn>(
+      s.Binding(Icall::kCameraWorldToScreen).entry);
+  to_screen(camera_self, &low, umono_lookup::kMonoEye, &a);
+  to_screen(camera_self, &high, umono_lookup::kMonoEye, &b);
   if (umono_lookup::CellFromScreenCorners(a, b, orthographic, cell)) {
     cell->visible = 1u;
   }
@@ -402,26 +476,34 @@ uint32_t SampleUmInstance(uintptr_t self, UmInstanceSnapshot* out) {
   out->lines = 0u;
   out->glyph_count = 0u;
   out->visible_count = 0u;
-  void* camera = s.Get<umono_lookup::IcallObjectFn>(Icall::kCameraMain)();
+  void* camera = UmCallStaticObject(s.Binding(Icall::kCameraMain), s.marshal);
   if (!UmObjectAlive(reinterpret_cast<uintptr_t>(camera))) {
     return kUmSampleNoCamera;
   }
-  if (s.Get<umono_lookup::IcallInstanceObjectFn>(Icall::kCameraTargetTexture)(
-          camera) != nullptr) {
+  void* target_texture = nullptr;
+  int32_t mask = 0;
+  bool orthographic = false;
+  void* camera_self = nullptr;
+  if (!UmCallObject(s.Binding(Icall::kCameraTargetTexture), s.marshal, camera,
+                    &target_texture) ||
+      !UmCall(s.Binding(Icall::kCameraCullingMask), camera, &mask) ||
+      !UmCall(s.Binding(Icall::kCameraOrthographic), camera, &orthographic) ||
+      !UmBindingSelf(s.Binding(Icall::kCameraWorldToScreen), camera,
+                     &camera_self)) {
+    return kUmSampleNoCamera;
+  }
+  if (target_texture != nullptr) {
     return kUmSampleCameraTarget;  // renders into a texture, not the screen
   }
-  const int32_t mask =
-      s.Get<umono_lookup::IcallInstanceIntFn>(Icall::kCameraCullingMask)(
-          camera);
-  const bool orthographic =
-      s.Get<umono_lookup::IcallInstanceBoolFn>(Icall::kCameraOrthographic)(
-          camera);
-  out->screen_w =
-      s.Get<umono_lookup::IcallStaticIntFn>(Icall::kScreenWidth)();
-  out->screen_h =
-      s.Get<umono_lookup::IcallStaticIntFn>(Icall::kScreenHeight)();
+  out->screen_w = UmCallStaticInt(s.Binding(Icall::kScreenWidth));
+  out->screen_h = UmCallStaticInt(s.Binding(Icall::kScreenHeight));
   int32_t active_scene = 0;
-  s.Get<umono_lookup::IcallStaticOutFn>(Icall::kActiveScene)(&active_scene);
+  const auto& active_binding = s.Binding(Icall::kActiveScene);
+  if (active_binding.entry == nullptr || active_binding.instance) {
+    return kUmSampleNoCamera;
+  }
+  reinterpret_cast<umono_lookup::IcallStaticOutFn>(active_binding.entry)(
+      &active_scene);
 
   uintptr_t text = 0u, sprites = 0u;
   if (!ReadUmValue(self + s.last_mes_offset, &text) ||
@@ -457,8 +539,8 @@ uint32_t SampleUmInstance(uintptr_t self, UmInstanceSnapshot* out) {
     out->line_glyphs[line] = static_cast<uint16_t>(glyphs);
     for (uint32_t index = 0u; index < glyphs; ++index) {
       umono_lookup::GlyphCell& cell = out->cells[out->glyph_count++];
-      SampleUmGlyph(UmArrayElement(glyphs_array, index), camera, orthographic,
-                    mask, active_scene, &cell);
+      SampleUmGlyph(UmArrayElement(glyphs_array, index), camera_self,
+                    orthographic, mask, active_scene, &cell);
       if (cell.visible != 0u) ++out->visible_count;
     }
   }
@@ -497,18 +579,20 @@ bool ReadUmTypedList(uintptr_t list, uint32_t items_offset,
 uint32_t SampleUmUguiText(uintptr_t story, UmInstanceSnapshot* out);
 
 // Local (0,0) / (d,0) / (0,d) of a canvas text through localToWorld and the
-// canvas camera (nullptr: overlay, world = screen): is the text upright?
-bool UmCanvasTextUpright(const umono_lookup::Matrix4& to_world, void* camera,
+// canvas camera (`camera_self`: the WorldToScreenPoint binding's self of the
+// camera; nullptr: overlay, world = screen): is the text upright?
+bool UmCanvasTextUpright(const umono_lookup::Matrix4& to_world,
+                         void* camera_self,
                          umono_lookup::IcallWorldToScreenFn to_screen) {
   constexpr float kProbe = 100.0f;
   umono_lookup::Vec3 points[3] = {
       umono_lookup::TransformPoint(to_world, 0.0f, 0.0f),
       umono_lookup::TransformPoint(to_world, kProbe, 0.0f),
       umono_lookup::TransformPoint(to_world, 0.0f, kProbe)};
-  if (camera != nullptr) {
+  if (camera_self != nullptr) {
     for (auto& point : points) {
       umono_lookup::Vec3 screen;
-      to_screen(camera, &point, umono_lookup::kMonoEye, &screen);
+      to_screen(camera_self, &point, umono_lookup::kMonoEye, &screen);
       point = screen;
     }
   }
@@ -568,19 +652,24 @@ uint32_t SampleUmUguiText(uintptr_t story, UmInstanceSnapshot* out) {
   out->units = static_cast<uint32_t>(map.plain_length);
 
   void* story_object = reinterpret_cast<void*>(story);
-  const bool active_and_enabled =
-      f.Get<umono_lookup::IcallInstanceBoolFn>(
-          FungusIcall::kBehaviourActiveAndEnabled)(story_object);
+  bool active_and_enabled = false;
+  if (!UmCall(f.Binding(FungusIcall::kBehaviourActiveAndEnabled), story_object,
+              &active_and_enabled)) {
+    active_and_enabled = false;
+  }
   uintptr_t renderer = 0u;
   bool culled = true;
   float inherited_alpha = 0.0f;
   if (ReadUmValue(story + f.graphic_renderer_offset, &renderer) &&
       UmAlive(renderer, f.cached_ptr_offset)) {
     void* renderer_object = reinterpret_cast<void*>(renderer);
-    culled = f.Get<umono_lookup::IcallInstanceBoolFn>(
-        FungusIcall::kCanvasRendererCull)(renderer_object);
-    inherited_alpha = f.Get<umono_lookup::IcallInstanceFloatFn>(
-        FungusIcall::kCanvasRendererInheritedAlpha)(renderer_object);
+    if (!UmCall(f.Binding(FungusIcall::kCanvasRendererCull), renderer_object,
+                &culled) ||
+        !UmCall(f.Binding(FungusIcall::kCanvasRendererInheritedAlpha),
+                renderer_object, &inherited_alpha)) {
+      culled = true;  // unreadable: not shown
+      inherited_alpha = 0.0f;
+    }
   }
   float color_alpha = 0.0f;
   ReadUmValue(story + f.graphic_color_alpha_offset, &color_alpha);
@@ -592,22 +681,34 @@ uint32_t SampleUmUguiText(uintptr_t story, UmInstanceSnapshot* out) {
       !UmAlive(canvas, f.cached_ptr_offset)) {
     return kUmSampleCanvas;
   }
-  void* root = f.Get<umono_lookup::IcallInstanceObjectFn>(
-      FungusIcall::kCanvasRoot)(reinterpret_cast<void*>(canvas));
-  if (!UmAlive(reinterpret_cast<uintptr_t>(root), f.cached_ptr_offset)) {
+  void* root = nullptr;
+  if (!UmCallObject(f.Binding(FungusIcall::kCanvasRoot), f.marshal,
+                    reinterpret_cast<void*>(canvas), &root) ||
+      !UmAlive(reinterpret_cast<uintptr_t>(root), f.cached_ptr_offset)) {
     return kUmSampleCanvas;
   }
-  const int32_t mode = f.Get<umono_lookup::IcallInstanceIntFn>(
-      FungusIcall::kCanvasRenderMode)(root);
+  int32_t mode = -1;
+  if (!UmCall(f.Binding(FungusIcall::kCanvasRenderMode), root, &mode)) {
+    return kUmSampleCanvas;
+  }
   void* camera = nullptr;
+  // The WorldToScreenPoint binding's self of `camera` (nullptr: overlay).
+  void* camera_self = nullptr;
   if (mode == umono_lookup::kRenderModeScreenSpaceCamera) {
-    camera = f.Get<umono_lookup::IcallInstanceObjectFn>(
-        FungusIcall::kCanvasWorldCamera)(root);
+    if (!UmCallObject(f.Binding(FungusIcall::kCanvasWorldCamera), f.marshal, root,
+                      &camera)) {
+      return kUmSampleCanvas;
+    }
+    void* target_texture = nullptr;
     // Screen Space - Camera without a camera renders as an overlay.
     if (!UmAlive(reinterpret_cast<uintptr_t>(camera), f.cached_ptr_offset)) {
       camera = nullptr;
-    } else if (f.Get<umono_lookup::IcallInstanceObjectFn>(
-                   FungusIcall::kCameraTargetTexture)(camera) != nullptr) {
+    } else if (!UmCallObject(f.Binding(FungusIcall::kCameraTargetTexture),
+                             f.marshal, camera, &target_texture) ||
+               !UmBindingSelf(f.Binding(FungusIcall::kCameraWorldToScreen), camera,
+                              &camera_self)) {
+      return kUmSampleCanvas;
+    } else if (target_texture != nullptr) {
       return kUmSampleCameraTarget;
     }
   } else if (mode != umono_lookup::kRenderModeScreenSpaceOverlay) {
@@ -617,18 +718,23 @@ uint32_t SampleUmUguiText(uintptr_t story, UmInstanceSnapshot* out) {
   if (!ReadUmValue(story + f.font_data_offset, &font_data) ||
       font_data == 0u ||
       !ReadUmValue(font_data + f.font_data_font_offset, &font) ||
-      !UmAlive(font, f.cached_ptr_offset) ||
-      !f.Get<umono_lookup::IcallInstanceBoolFn>(FungusIcall::kFontDynamic)(
-          reinterpret_cast<void*>(font))) {
+      !UmAlive(font, f.cached_ptr_offset)) {
+    return kUmSampleFont;
+  }
+  bool dynamic_font = false;
+  if (!UmCall(f.Binding(FungusIcall::kFontDynamic),
+              reinterpret_cast<void*>(font), &dynamic_font) ||
+      !dynamic_font) {
     return kUmSampleFont;
   }
   // Text.pixelsPerUnit of a dynamic font: the nearest canvas' scale factor.
-  const float pixels_per_unit = f.Get<umono_lookup::IcallInstanceFloatFn>(
-      FungusIcall::kCanvasScaleFactor)(reinterpret_cast<void*>(canvas));
-  out->screen_w = f.Get<umono_lookup::IcallStaticIntFn>(
-      FungusIcall::kScreenWidth)();
-  out->screen_h = f.Get<umono_lookup::IcallStaticIntFn>(
-      FungusIcall::kScreenHeight)();
+  float pixels_per_unit = 0.0f;
+  if (!UmCall(f.Binding(FungusIcall::kCanvasScaleFactor),
+              reinterpret_cast<void*>(canvas), &pixels_per_unit)) {
+    return kUmSampleCanvas;
+  }
+  out->screen_w = UmCallStaticInt(f.Binding(FungusIcall::kScreenWidth));
+  out->screen_h = UmCallStaticInt(f.Binding(FungusIcall::kScreenHeight));
 
   uintptr_t chars_list = 0u, lines_list = 0u;
   if (!ReadUmValue(generator + f.generator_chars_offset, &chars_list) ||
@@ -637,10 +743,12 @@ uint32_t SampleUmUguiText(uintptr_t story, UmInstanceSnapshot* out) {
     return kUmSampleBadList;
   }
   void* generator_object = reinterpret_cast<void*>(generator);
-  f.Get<umono_lookup::IcallInstanceArgFn>(FungusIcall::kGeneratorCharacters)(
-      generator_object, reinterpret_cast<void*>(chars_list));
-  f.Get<umono_lookup::IcallInstanceArgFn>(FungusIcall::kGeneratorLines)(
-      generator_object, reinterpret_cast<void*>(lines_list));
+  if (!UmCallVoid(f.Binding(FungusIcall::kGeneratorCharacters),
+                  generator_object, reinterpret_cast<void*>(chars_list)) ||
+      !UmCallVoid(f.Binding(FungusIcall::kGeneratorLines), generator_object,
+                  reinterpret_cast<void*>(lines_list))) {
+    return kUmSampleBadList;
+  }
   uintptr_t char_items = 0u, line_items = 0u;
   uint32_t char_count = 0u, line_count = 0u;
   if (!ReadUmTypedList(chars_list, f.char_list_items_offset,
@@ -677,16 +785,17 @@ uint32_t SampleUmUguiText(uintptr_t story, UmInstanceSnapshot* out) {
     std::memcpy(&line_tops[k], line + f.line_top_offset, sizeof(float));
   }
   umono_lookup::Matrix4 to_world;
-  void* transform = f.Get<umono_lookup::IcallInstanceObjectFn>(
-      FungusIcall::kComponentTransform)(story_object);
-  if (!UmAlive(reinterpret_cast<uintptr_t>(transform), f.cached_ptr_offset)) {
+  void* transform = nullptr;
+  if (!UmCallObject(f.Binding(FungusIcall::kComponentTransform), f.marshal,
+                    story_object, &transform) ||
+      !UmAlive(reinterpret_cast<uintptr_t>(transform), f.cached_ptr_offset) ||
+      !UmCallVoid(f.Binding(FungusIcall::kTransformLocalToWorld), transform,
+                  &to_world)) {
     return kUmSampleCanvas;
   }
-  f.Get<umono_lookup::IcallInstanceOutFn>(FungusIcall::kTransformLocalToWorld)(
-      transform, &to_world);
-  const auto to_screen = f.Get<umono_lookup::IcallWorldToScreenFn>(
-      FungusIcall::kCameraWorldToScreen);
-  if (!UmCanvasTextUpright(to_world, camera, to_screen)) {
+  const auto to_screen = reinterpret_cast<umono_lookup::IcallWorldToScreenFn>(
+      f.Binding(FungusIcall::kCameraWorldToScreen).entry);
+  if (!UmCanvasTextUpright(to_world, camera_self, to_screen)) {
     return kUmSampleNotHorizontal;
   }
 
@@ -716,8 +825,8 @@ uint32_t SampleUmUguiText(uintptr_t story, UmInstanceSnapshot* out) {
                                                         local.y1);
     if (camera != nullptr) {
       umono_lookup::Vec3 sa, sb;
-      to_screen(camera, &a, umono_lookup::kMonoEye, &sa);
-      to_screen(camera, &b, umono_lookup::kMonoEye, &sb);
+      to_screen(camera_self, &a, umono_lookup::kMonoEye, &sa);
+      to_screen(camera_self, &b, umono_lookup::kMonoEye, &sb);
       a = sa;
       b = sb;
     }
@@ -799,18 +908,24 @@ uint32_t SampleUmTmp(uintptr_t object, UmInstanceSnapshot* out) {
   out->units = static_cast<uint32_t>(count);
 
   void* self = reinterpret_cast<void*>(object);
-  const bool active_and_enabled = t.Get<umono_lookup::IcallInstanceBoolFn>(
-      TmpIcall::kBehaviourActiveAndEnabled)(self);
+  bool active_and_enabled = false;
+  if (!UmCall(t.Binding(TmpIcall::kBehaviourActiveAndEnabled), self,
+              &active_and_enabled)) {
+    active_and_enabled = false;
+  }
   uintptr_t renderer = 0u;
   bool culled = true;
   float inherited_alpha = 0.0f;
   if (ReadUmValue(object + t.renderer_offset, &renderer) &&
       UmAlive(renderer, t.cached_ptr_offset)) {
     void* renderer_object = reinterpret_cast<void*>(renderer);
-    culled = t.Get<umono_lookup::IcallInstanceBoolFn>(
-        TmpIcall::kCanvasRendererCull)(renderer_object);
-    inherited_alpha = t.Get<umono_lookup::IcallInstanceFloatFn>(
-        TmpIcall::kCanvasRendererInheritedAlpha)(renderer_object);
+    if (!UmCall(t.Binding(TmpIcall::kCanvasRendererCull), renderer_object,
+                &culled) ||
+        !UmCall(t.Binding(TmpIcall::kCanvasRendererInheritedAlpha),
+                renderer_object, &inherited_alpha)) {
+      culled = true;  // unreadable: not shown
+      inherited_alpha = 0.0f;
+    }
   }
   float font_alpha = 0.0f;
   ReadUmValue(object + t.font_alpha_offset, &font_alpha);
@@ -822,45 +937,56 @@ uint32_t SampleUmTmp(uintptr_t object, UmInstanceSnapshot* out) {
       !UmAlive(canvas, t.cached_ptr_offset)) {
     return kUmSampleCanvas;
   }
-  void* root = t.Get<umono_lookup::IcallInstanceObjectFn>(
-      TmpIcall::kCanvasRoot)(reinterpret_cast<void*>(canvas));
-  if (!UmAlive(reinterpret_cast<uintptr_t>(root), t.cached_ptr_offset)) {
+  void* root = nullptr;
+  if (!UmCallObject(t.Binding(TmpIcall::kCanvasRoot), t.marshal,
+                    reinterpret_cast<void*>(canvas), &root) ||
+      !UmAlive(reinterpret_cast<uintptr_t>(root), t.cached_ptr_offset)) {
     return kUmSampleCanvas;
   }
-  const int32_t mode = t.Get<umono_lookup::IcallInstanceIntFn>(
-      TmpIcall::kCanvasRenderMode)(root);
+  int32_t mode = -1;
+  if (!UmCall(t.Binding(TmpIcall::kCanvasRenderMode), root, &mode)) {
+    return kUmSampleCanvas;
+  }
   void* camera = nullptr;
+  // The WorldToScreenPoint binding's self of `camera` (nullptr: overlay).
+  void* camera_self = nullptr;
   if (mode == umono_lookup::kRenderModeScreenSpaceCamera) {
-    camera = t.Get<umono_lookup::IcallInstanceObjectFn>(
-        TmpIcall::kCanvasWorldCamera)(root);
+    if (!UmCallObject(t.Binding(TmpIcall::kCanvasWorldCamera), t.marshal, root,
+                      &camera)) {
+      return kUmSampleCanvas;
+    }
+    void* target_texture = nullptr;
     // Screen Space - Camera without a camera renders as an overlay.
     if (!UmAlive(reinterpret_cast<uintptr_t>(camera), t.cached_ptr_offset)) {
       camera = nullptr;
-    } else if (t.Get<umono_lookup::IcallInstanceObjectFn>(
-                   TmpIcall::kCameraTargetTexture)(camera) != nullptr) {
+    } else if (!UmCallObject(t.Binding(TmpIcall::kCameraTargetTexture),
+                             t.marshal, camera, &target_texture) ||
+               !UmBindingSelf(t.Binding(TmpIcall::kCameraWorldToScreen), camera,
+                              &camera_self)) {
+      return kUmSampleCanvas;
+    } else if (target_texture != nullptr) {
       return kUmSampleCameraTarget;
     }
   } else if (mode != umono_lookup::kRenderModeScreenSpaceOverlay) {
     return kUmSampleCanvas;
   }
-  out->screen_w =
-      t.Get<umono_lookup::IcallStaticIntFn>(TmpIcall::kScreenWidth)();
-  out->screen_h =
-      t.Get<umono_lookup::IcallStaticIntFn>(TmpIcall::kScreenHeight)();
-  void* transform = t.Get<umono_lookup::IcallInstanceObjectFn>(
-      TmpIcall::kComponentTransform)(self);
-  if (!UmAlive(reinterpret_cast<uintptr_t>(transform), t.cached_ptr_offset)) {
+  out->screen_w = UmCallStaticInt(t.Binding(TmpIcall::kScreenWidth));
+  out->screen_h = UmCallStaticInt(t.Binding(TmpIcall::kScreenHeight));
+  void* transform = nullptr;
+  umono_lookup::Matrix4 to_world;
+  if (!UmCallObject(t.Binding(TmpIcall::kComponentTransform), t.marshal, self,
+                    &transform) ||
+      !UmAlive(reinterpret_cast<uintptr_t>(transform), t.cached_ptr_offset) ||
+      !UmCallVoid(t.Binding(TmpIcall::kTransformLocalToWorld), transform,
+                  &to_world)) {
     return kUmSampleCanvas;
   }
-  umono_lookup::Matrix4 to_world;
-  t.Get<umono_lookup::IcallInstanceOutFn>(TmpIcall::kTransformLocalToWorld)(
-      transform, &to_world);
   int32_t first_visible = 0, max_visible = 0;
   ReadUmValue(object + t.first_visible_offset, &first_visible);
   ReadUmValue(object + t.max_visible_offset, &max_visible);
-  const auto to_screen = t.Get<umono_lookup::IcallWorldToScreenFn>(
-      TmpIcall::kCameraWorldToScreen);
-  if (!UmCanvasTextUpright(to_world, camera, to_screen)) {
+  const auto to_screen = reinterpret_cast<umono_lookup::IcallWorldToScreenFn>(
+      t.Binding(TmpIcall::kCameraWorldToScreen).entry);
+  if (!UmCanvasTextUpright(to_world, camera_self, to_screen)) {
     return kUmSampleNotHorizontal;
   }
 
@@ -880,8 +1006,8 @@ uint32_t SampleUmTmp(uintptr_t object, UmInstanceSnapshot* out) {
         umono_lookup::TransformPoint(to_world, high.x, high.y);
     if (camera != nullptr) {
       umono_lookup::Vec3 sa, sb;
-      to_screen(camera, &a, umono_lookup::kMonoEye, &sa);
-      to_screen(camera, &b, umono_lookup::kMonoEye, &sb);
+      to_screen(camera_self, &a, umono_lookup::kMonoEye, &sa);
+      to_screen(camera_self, &b, umono_lookup::kMonoEye, &sb);
       a = sa;
       b = sb;
     }
@@ -1474,6 +1600,14 @@ fushi_voice_hook::unity_mono_lookup::MonoLookupApi LoadUnityMonoLookupApi(
   LoadMonoExport(runtime, "mono_array_length", &api.array_length);
   LoadMonoExport(runtime, "mono_array_addr_with_size",
                  &api.array_addr_with_size);
+  // Unity 6 bindings hand UnityEngine.Object results back as pointer-sized
+  // GC handles (Unity's corlib GCHandle wraps an IntPtr that is the slot
+  // address, low bit set for weak handles); only the _v2 entries take that
+  // width.  The 32-bit mono_gchandle_get_target would truncate it on x64, so
+  // there is no fallback: without _v2 an injected object binding fails closed.
+  LoadMonoExport(runtime, "mono_gchandle_get_target_v2",
+                 &api.gchandle_get_target);
+  LoadMonoExport(runtime, "mono_gchandle_free_v2", &api.gchandle_free);
   return api;
 }
 
@@ -1621,6 +1755,67 @@ void DescribeUmHookFailure(void* code, const HookFnStatus& status,
                bytes[3], bytes[4], bytes[5], bytes[6], bytes[7]);
 }
 
+// Bounded binding diagnostics (names of engine members only, never dialogue):
+// the form letters of a table (c classic, i Unity 6 injected, - unresolved /
+// not reached) and "<Class>.<method>/<why>" of the spec that stopped it.
+struct UmBindingReport {
+  char message[umono_lookup::kIcallCount + 1u] = "-";
+  char ugui[umono_lookup::kFungusIcallCount + 1u] = "-";
+  char tmp[umono_lookup::kTmpIcallCount + 1u] = "-";
+  char miss_message[96] = "-";
+  char miss_fungus[96] = "-";
+  char miss_tmp[96] = "-";
+  char miss_ui_text[96] = "-";
+};
+
+template <typename Id, size_t N>
+void DescribeUmMissingIcall(const umono_lookup::EngineIcallSpec<Id> (&specs)[N],
+                            int32_t missing, umono_lookup::IcallFailure why,
+                            char* out, size_t size) {
+  if (missing < 0 || static_cast<size_t>(missing) >= N) {
+    std::snprintf(out, size, "-");
+    return;
+  }
+  const auto& spec = specs[static_cast<size_t>(missing)];
+  std::snprintf(out, size, "%s.%s/%s", spec.class_name, spec.method,
+                umono_lookup::IcallFailureName(why));
+}
+
+UmBindingReport DescribeUmBindings() {
+  const auto& rt = g_um_lookup;
+  UmBindingReport report;
+  if (rt.site_result.result != umono_lookup::SiteResult::kApiIncomplete) {
+    umono_lookup::IcallFormString(rt.sites.icalls, report.message,
+                                  sizeof(report.message));
+  }
+  if (rt.fungus_result.result != umono_lookup::FungusSiteResult::kApiIncomplete ||
+      rt.ui_text_result.result != umono_lookup::UiTextSiteResult::kApiIncomplete) {
+    umono_lookup::IcallFormString(rt.fungus.icalls, report.ugui,
+                                  sizeof(report.ugui));
+  }
+  if (rt.tmp_result.result != umono_lookup::TmpSiteResult::kApiIncomplete) {
+    umono_lookup::IcallFormString(rt.tmp.icalls, report.tmp,
+                                  sizeof(report.tmp));
+  }
+  DescribeUmMissingIcall(umono_lookup::kIcallSpecs,
+                         rt.site_result.missing_icall,
+                         rt.site_result.icall_failure, report.miss_message,
+                         sizeof(report.miss_message));
+  DescribeUmMissingIcall(umono_lookup::kFungusIcallSpecs,
+                         rt.fungus_result.missing_icall,
+                         rt.fungus_result.icall_failure, report.miss_fungus,
+                         sizeof(report.miss_fungus));
+  DescribeUmMissingIcall(umono_lookup::kTmpIcallSpecs,
+                         rt.tmp_result.missing_icall,
+                         rt.tmp_result.icall_failure, report.miss_tmp,
+                         sizeof(report.miss_tmp));
+  DescribeUmMissingIcall(umono_lookup::kFungusIcallSpecs,
+                         rt.ui_text_result.missing_icall,
+                         rt.ui_text_result.icall_failure, report.miss_ui_text,
+                         sizeof(report.miss_ui_text));
+  return report;
+}
+
 // After detach: hook the framework's per-frame sampling point and go live.
 // `code` is the JIT entry ResolveUnityMonoLookup / ResolveUnityMonoFungusLookup
 // returned (nullptr: rejected).
@@ -1628,8 +1823,11 @@ bool InstallUnityMonoLookupHooks(void* code) {
   auto& rt = g_um_lookup;
   if (code == nullptr) {
     // Only the attempted framework's result moved off its default.
+    const UmBindingReport bindings = DescribeUmBindings();
     UmLookupLog(L"%s: gate=sites-unresolved message=%u/%d "
-                L"fungus=%u/%d tmp=%u/%d uitext=%u/%u/%d nojit=%d",
+                L"fungus=%u/%d tmp=%u/%d uitext=%u/%u/%d nojit=%d "
+                L"forms=message:%hs,ugui:%hs,tmp:%hs "
+                L"miss=message:%hs,fungus:%hs,tmp:%hs,uitext:%hs",
                 rt.log_tag, static_cast<unsigned>(rt.site_result.result),
                 rt.site_result.missing_icall,
                 static_cast<unsigned>(rt.fungus_result.result),
@@ -1639,7 +1837,10 @@ bool InstallUnityMonoLookupHooks(void* code) {
                 static_cast<unsigned>(rt.ui_text_result.result),
                 static_cast<unsigned>(rt.ui_text_result.layout),
                 rt.ui_text_result.missing_icall,
-                rt.will_render_compile_failed ? 1 : 0);
+                rt.will_render_compile_failed ? 1 : 0, bindings.message,
+                bindings.ugui, bindings.tmp, bindings.miss_message,
+                bindings.miss_fungus, bindings.miss_tmp,
+                bindings.miss_ui_text);
     return false;
   }
   const HWND window = FindUmGameWindow();
@@ -1677,31 +1878,32 @@ bool InstallUnityMonoLookupHooks(void* code) {
   rt.hooks_installed = hooked;
   rt.installed = hooked;
   if (!hooked) rt.live.store(false, std::memory_order_release);
+  const UmBindingReport bindings = DescribeUmBindings();
   if (tmp && rt.canvas_ui_text) {
     const auto& f = rt.fungus;
     UmLookupLog(
         L"%s: uitext sites will=%p text=+%u cache=+%u "
         L"canvas=+%u renderer=+%u alpha=+%u chars=+%u/%u lines=+%u/%u "
-        L"cached=+%u main=%lu hooks=%d why=%s",
+        L"cached=+%u forms=%hs main=%lu hooks=%d why=%s",
         rt.log_tag, code, f.text_string_offset, f.text_cache_offset,
         f.graphic_canvas_offset, f.graphic_renderer_offset,
         f.graphic_color_alpha_offset, f.generator_chars_offset, f.char_stride,
         f.generator_lines_offset, f.line_stride, f.cached_ptr_offset,
-        main_thread, hooked ? 1 : 0, why);
+        bindings.ugui, main_thread, hooked ? 1 : 0, why);
   }
   if (tmp && rt.canvas_tmp) {
     const auto& t = rt.tmp;
     UmLookupLog(
         L"%s: tmp sites will=%p text=+%u info=+%u alpha=+%u "
         L"first=+%u max=+%u canvas=+%u renderer=+%u count=+%u chars=+%u "
-        L"stride=%u ch=+%u bl=+%u tr=+%u vis=+%u ca=+%u cached=+%u main=%lu "
-        L"hooks=%d why=%s",
+        L"stride=%u ch=+%u bl=+%u tr=+%u vis=+%u ca=+%u cached=+%u forms=%hs "
+        L"main=%lu hooks=%d why=%s",
         rt.log_tag, code, t.text_string_offset, t.text_info_offset, t.font_alpha_offset,
         t.first_visible_offset, t.max_visible_offset, t.canvas_offset,
         t.renderer_offset, t.info_count_offset, t.info_chars_offset,
         t.char_stride, t.char_character_offset, t.char_bottom_left_offset,
         t.char_top_right_offset, t.char_visible_offset, t.char_alpha_offset,
-        t.cached_ptr_offset, main_thread, hooked ? 1 : 0, why);
+        t.cached_ptr_offset, bindings.tmp, main_thread, hooked ? 1 : 0, why);
   } else if (tmp) {
     // unreachable: a canvas framework resolved at least one kind
   } else if (fungus) {
@@ -1709,18 +1911,20 @@ bool InstallUnityMonoLookupHooks(void* code) {
     UmLookupLog(
         L"%s: fungus sites late=%p story=+%u text=+%u "
         L"cache=+%u canvas=+%u renderer=+%u alpha=+%u chars=+%u/%u "
-        L"lines=+%u/%u main=%lu hooks=%d",
+        L"lines=+%u/%u forms=%hs main=%lu hooks=%d",
         rt.log_tag, code, f.story_text_offset, f.text_string_offset, f.text_cache_offset,
         f.graphic_canvas_offset, f.graphic_renderer_offset,
         f.graphic_color_alpha_offset, f.generator_chars_offset, f.char_stride,
-        f.generator_lines_offset, f.line_stride, main_thread, hooked ? 1 : 0);
+        f.generator_lines_offset, f.line_stride, bindings.ugui, main_thread,
+        hooked ? 1 : 0);
   } else {
     UmLookupLog(
         L"%s: sites fixed=%p sprite=+%u lastmes=+%u items=+%u "
-        L"size=+%u cached=+%u main=%lu hooks=%d",
+        L"size=+%u cached=+%u forms=%hs main=%lu hooks=%d",
         rt.log_tag, code, rt.sites.message_sprite_offset, rt.sites.last_mes_offset,
         rt.sites.list_items_offset, rt.sites.list_size_offset,
-        rt.sites.cached_ptr_offset, main_thread, hooked ? 1 : 0);
+        rt.sites.cached_ptr_offset, bindings.message, main_thread,
+        hooked ? 1 : 0);
   }
   if (rt.installed && g_header != nullptr) {
     fushi_voice_hook::AtomicOrShared32(
