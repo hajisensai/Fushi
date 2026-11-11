@@ -78,9 +78,11 @@ class HostJobManager {
   final List<String> _queue = <String>[];
   bool _draining = false;
 
-  /// 终态落盘（`_runOne` 的 finally）在飞的 job：`rec.state` 在 `_persist` 开始前
-  /// 就已可被轮询方看到，看到 done 立刻 DELETE 会把目录连同 `job.json.tmp` 一起
-  /// 删掉，随后 rename 抛 PathNotFound（CI 慢盘上稳定复现）。删除前先等它落完。
+  /// 每个 job 在飞的落盘链尾（[_persist]）。同一条记录的落盘必须串行：它们共用
+  /// 同一个 `job.json.tmp`，并发时（[cancel] 的落盘撞上 `_runOne` 收尾的落盘）后
+  /// rename 的那次抛 PathNotFound（BUG-4462）。[delete] 也靠它等在飞的落盘结束
+  /// 再删目录：`rec.state` 在落盘开始前就已可被轮询方看到，看到 done 立刻 DELETE
+  /// 会把目录连同 `job.json.tmp` 一起删掉（CI 慢盘上稳定复现）。
   final Map<String, Future<void>> _persisting = <String, Future<void>>{};
 
   /// 读盘只做一次；并发的首批调用方都等同一个 future，不会在表还没读完时放行。
@@ -142,13 +144,14 @@ class HostJobManager {
         final HostJobRecord rec = HostJobRecord.fromJson(
           Map<String, dynamic>.from(jsonDecode(await f.readAsString()) as Map),
         );
+        // 先登记再落盘：落盘只写表里的记录（[_writeRecord]）。
+        _jobs[rec.id] = rec;
         if (rec.state == HostJobState.running) {
           rec
             ..state = HostJobState.error
             ..error = 'host restarted while running';
           await _persist(rec);
         }
-        _jobs[rec.id] = rec;
       } catch (err, stack) {
         engineLog.log('HostJobManager.load(${e.path})', err, stack);
       }
@@ -303,7 +306,16 @@ class HostJobManager {
   /// 取消 + 删目录。
   Future<void> delete(String id) async {
     await cancel(id);
-    await _persisting[id]?.then<void>((_) {}, onError: (Object _) {});
+    // 等这条记录在飞的落盘全部结束（等的时候可能又排进一笔），随后**同步**摘掉
+    // 记录：runner 还没停下的话，它收尾的那笔落盘见不到记录就不写（[_writeRecord]），
+    // 不会把下面删掉的目录又建出来。
+    for (
+      Future<void>? persisting = _persisting[id];
+      persisting != null;
+      persisting = _persisting[id]
+    ) {
+      await persisting.then<void>((_) {}, onError: (Object _) {});
+    }
     _jobs.remove(id);
     _cancels.remove(id);
     final Directory dir = dirFor(id);
@@ -438,20 +450,33 @@ class HostJobManager {
     } finally {
       rec.updatedAt = _now();
       _cancels.remove(rec.id);
-      // 与上面的状态赋值同一个微任务里登记：观察到终态的一方一定能在 [_persisting]
-      // 里等到这笔落盘。
-      late final Future<void> persisting;
-      persisting = _persist(rec).whenComplete(() {
-        if (identical(_persisting[rec.id], persisting)) {
-          _persisting.remove(rec.id);
-        }
-      });
-      _persisting[rec.id] = persisting;
-      await persisting;
+      // 与上面的状态赋值同一个微任务里排进 [_persisting]：观察到终态的一方一定能
+      // 在那里等到这笔落盘。
+      await _persist(rec);
     }
   }
 
-  Future<void> _persist(HostJobRecord rec) async {
+  /// 把 [rec] 此刻的状态落盘。同一条记录的落盘排成一条链、逐笔执行（见
+  /// [_persisting]）；调用即登记，不等到第一个 await 之后。
+  Future<void> _persist(HostJobRecord rec) {
+    final Future<void>? previous = _persisting[rec.id];
+    late final Future<void> mine;
+    mine = () async {
+      // 前一笔的失败归它自己的调用方，这里只排队。
+      await previous?.then<void>((_) {}, onError: (Object _) {});
+      try {
+        await _writeRecord(rec);
+      } finally {
+        if (identical(_persisting[rec.id], mine)) _persisting.remove(rec.id);
+      }
+    }();
+    _persisting[rec.id] = mine;
+    return mine;
+  }
+
+  Future<void> _writeRecord(HostJobRecord rec) async {
+    // 已被 [delete] 摘掉的记录不再落盘（它的目录已删 / 正在删）。
+    if (!identical(_jobs[rec.id], rec)) return;
     final File f = File(p.join(dirFor(rec.id).path, 'job.json'));
     await f.parent.create(recursive: true);
     final File tmp = File('${f.path}.tmp');

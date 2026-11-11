@@ -17,7 +17,8 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_compute/fushi_compute.dart' show ffcSha256File;
 import 'package:fushi_engine/sync/host_jobs/file_content_hash_cache.dart';
 import 'package:fushi_engine/sync/host_jobs/host_input_matcher.dart';
-import 'package:fushi_engine/sync/host_jobs/host_job.dart' show HostJobRecord;
+import 'package:fushi_engine/sync/host_jobs/host_job.dart'
+    show HostJobRecord, HostJobState;
 import 'package:fushi_engine/sync/host_jobs/host_job_manager.dart';
 import 'package:fushi_engine/sync/host_jobs/host_job_routes.dart';
 import 'package:fushi_engine/sync/host_jobs/host_job_runner.dart';
@@ -929,6 +930,71 @@ void main() {
       );
       await wire.seen('DELETE', (String _) => true);
       expect(wire.count('DELETE', (String _) => true), 1);
+    });
+  });
+
+  group('BUG-4462：运行中删除任务', () {
+    /// 开一条 runner 卡在半路的任务；返回它的 id 与放行 runner 的开关。
+    Future<(String, Completer<void>)> startHeldJob() async {
+      final Completer<void> entered = Completer<void>();
+      final Completer<void> release = Completer<void>();
+      addTearDown(() {
+        if (!release.isCompleted) release.complete();
+      });
+      runner.duringFirstRun = () {
+        entered.complete();
+        return release.future;
+      };
+      final HostJobRecord rec = await jobs.create(
+        'asr',
+        const <String, Object?>{'language': 'ja'},
+      );
+      await jobs.start(rec.id);
+      await entered.future.timeout(const Duration(seconds: 10));
+      return (rec.id, release);
+    }
+
+    test('runner 在删除之后才停下：它收尾的落盘不把删掉的目录建回来', () async {
+      final (String id, Completer<void> release) = await startHeldJob();
+      final Directory dir = jobs.dirFor(id);
+      expect(dir.existsSync(), isTrue);
+
+      await jobs.delete(id);
+      expect(dir.existsSync(), isFalse);
+
+      // 再开一条排在后面的任务：前一条 runner 收尾完（含它的落盘）才轮到这条，
+      // 这条跑完即可断定前一条的收尾已经过去。
+      final HostJobRecord next = await jobs.create(
+        'asr',
+        const <String, Object?>{'language': 'ja'},
+      );
+      await jobs.start(next.id);
+      release.complete();
+      for (
+        int i = 0;
+        i < 500 && jobs.get(next.id).state == HostJobState.running;
+        i++
+      ) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      expect(jobs.get(next.id).state, HostJobState.done);
+      await jobs.whenIdle();
+
+      expect(dir.existsSync(), isFalse, reason: '删掉的任务目录被收尾落盘建了回来');
+      expect(() => jobs.get(id), throwsA(isA<HostJobNotFound>()));
+    });
+
+    test('删除与 runner 收尾撞在一起：两笔落盘串行，删除不抛、目录删干净', () async {
+      // 取消的落盘与跑完收尾的落盘共用同一个 job.json.tmp：并发时后 rename 的
+      // 那次抛 PathNotFound（CI 上 host_job_input_reuse「中途取消」偶发红）。
+      for (int round = 0; round < 20; round++) {
+        final (String id, Completer<void> release) = await startHeldJob();
+        final Future<void> deleting = jobs.delete(id);
+        release.complete();
+        await deleting;
+        await jobs.whenIdle();
+        expect(jobs.dirFor(id).existsSync(), isFalse, reason: 'round $round');
+      }
     });
   });
 
