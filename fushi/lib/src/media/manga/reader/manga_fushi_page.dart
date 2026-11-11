@@ -81,6 +81,7 @@ import 'package:fushi/src/media/manga/reader/manga_reader_auto_ocr.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_stream_ocr.dart';
 import 'package:fushi/src/media/manga/reader/manga_read_aloud_bar.dart';
 import 'package:fushi/src/media/manga/reader/manga_read_aloud_controller.dart';
+import 'package:fushi/src/media/manga/reader/manga_page_sentences.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_voice_quick_switch.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_voice_settings_page.dart'
@@ -167,6 +168,7 @@ import 'package:fushi/src/reader/reader_selection_scripts.dart';
 import 'package:fushi/src/reader/image_actions_sheet.dart'
     show
         ImageAction,
+        ImageSheetExtraAction,
         imageActionLabel,
         imageActionsFor,
         runImageAction,
@@ -530,6 +532,8 @@ Future<String> ensureMangaCoverPng(String sourcePath) async {
 }
 
 enum _MangaContextAction {
+  copyText,
+  copyPageText,
   previous,
   next,
   jump,
@@ -549,6 +553,9 @@ enum _MangaContextAction {
   static _MangaContextAction forImageAction(ImageAction action) =>
       values.firstWhere((_MangaContextAction a) => a.imageAction == action);
 }
+
+/// 长按 / 右键落点可复制的 OCR 文本：[sentence] 点中那句，[page] 整页。
+typedef _MangaOcrCopyTexts = ({String? sentence, String? page});
 
 Future<int?> showMangaPageJumpDialog(
   BuildContext context, {
@@ -6665,6 +6672,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     }
     if (decoded is! Map || decoded['page'] is! num || !mounted) return;
     final int pageIndex = (decoded['page'] as num).toInt();
+    final _MangaOcrCopyTexts texts = _ocrCopyTextsAt(decoded);
     fushiLiftHaptic(context);
     final File? file = await _mangaPageFileAt(pageIndex);
     if (!mounted) return;
@@ -6676,7 +6684,59 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       return;
     }
     if (!mounted) return;
-    await showImageActionsSheet(context, file: file);
+    final String? sentence = texts.sentence;
+    final String? pageText = texts.page;
+    await showImageActionsSheet(
+      context,
+      file: file,
+      extraActions: <ImageSheetExtraAction>[
+        if (sentence != null)
+          ImageSheetExtraAction(
+            id: 'manga_copy_text',
+            icon: FushiIcons.copy,
+            label: t.manga_ocr_copy_text,
+            run: () => _copyOcrText(sentence),
+          ),
+        if (pageText != null)
+          ImageSheetExtraAction(
+            id: 'manga_copy_page_text',
+            icon: FushiIcons.copy,
+            label: t.manga_ocr_copy_page_text,
+            run: () => _copyOcrText(pageText),
+          ),
+      ],
+    );
+  }
+
+  /// 长按 / 右键落点的可复制 OCR 文本（反馈 hjUlprxxKI：把漫画 OCR / mokuro 文本
+  /// 复制出去，例如贴进 AI 聊天问意思）。JS 只回传落点页号 `page` 与命中文本块的
+  /// 句子分组号 `group`（overlay 的 `_ocrHitPayload`）；文本真值在 Dart 侧从该页
+  /// OCR 块算（与查词 / 制卡 / 朗读同一次分组）：[_MangaOcrCopyTexts.sentence] 是
+  /// 点中那句的整句，[_MangaOcrCopyTexts.page] 是整页按阅读顺序一行一句。
+  /// 没有对应文字的项为 null，菜单 / 面板就不列它。
+  _MangaOcrCopyTexts _ocrCopyTextsAt(Map<dynamic, dynamic> hit) {
+    final MokuroPayload? payload = _payload;
+    final Object? rawPage = hit['page'];
+    if (payload == null || rawPage is! num) {
+      return (sentence: null, page: null);
+    }
+    final int pageIndex = rawPage.toInt();
+    if (pageIndex < 0 || pageIndex >= payload.images.length) {
+      return (sentence: null, page: null);
+    }
+    final MokuroImage image = payload.images[pageIndex];
+    final Object? rawGroup = hit['group'];
+    return (
+      sentence: rawGroup is num
+          ? mangaSentenceGroupCopyText(image, rawGroup.toInt())
+          : null,
+      page: mangaPageCopyText(image, rightToLeft: _spreadDirection == 'rtl'),
+    );
+  }
+
+  Future<void> _copyOcrText(String text) async {
+    await Clipboard.setData(ClipboardData(text: text));
+    if (mounted) FushiToast.show(msg: t.copied_to_clipboard);
   }
 
   Future<void> _runCurrentMangaPageImageAction(ImageAction action) async {
@@ -6712,6 +6772,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       return;
     }
     if (decoded is! Map || !mounted) return;
+    final _MangaOcrCopyTexts ocrTexts = _ocrCopyTextsAt(decoded);
     final double x = (decoded['x'] as num?)?.toDouble() ?? 0;
     // JS clientY 是 WebView 视口坐标；固定态顶栏让位时 WebView 顶部不在屏幕 0。
     final double y =
@@ -6743,6 +6804,20 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
             Offset.zero & overlay.size,
           ),
           items: <PopupMenuEntry<_MangaContextAction>>[
+            // 右键点在 OCR 文本块上才有「复制文字」；本页有 OCR 文字就有「复制本页
+            // 文字」（反馈 hjUlprxxKI）。
+            if (ocrTexts.sentence != null)
+              PopupMenuItem<_MangaContextAction>(
+                value: _MangaContextAction.copyText,
+                child: Text(t.manga_ocr_copy_text),
+              ),
+            if (ocrTexts.page != null)
+              PopupMenuItem<_MangaContextAction>(
+                value: _MangaContextAction.copyPageText,
+                child: Text(t.manga_ocr_copy_page_text),
+              ),
+            if (ocrTexts.sentence != null || ocrTexts.page != null)
+              const PopupMenuDivider(),
             PopupMenuItem<_MangaContextAction>(
               value: _MangaContextAction.previous,
               child: Text(t.manga_previous_page),
@@ -6789,6 +6864,14 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         );
     if (!mounted || action == null) return;
     switch (action) {
+      case _MangaContextAction.copyText:
+        final String? sentence = ocrTexts.sentence;
+        if (sentence != null) await _copyOcrText(sentence);
+        return;
+      case _MangaContextAction.copyPageText:
+        final String? pageText = ocrTexts.page;
+        if (pageText != null) await _copyOcrText(pageText);
+        return;
       case _MangaContextAction.previous:
         await (_mode.isContinuous
             ? _jumpToPageAnchor('prev')

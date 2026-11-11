@@ -33,7 +33,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3939 条。点号进各自文件。
+> 共 3940 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -47,6 +47,7 @@
 | [BUG-4389](bugs/BUG-4389-interconnect-auth-exemption-path-method.md) | ✅ | ✅ | 互联鉴权豁免按编码路径且不看方法，与路由分发的路径形态不一致 |
 | [BUG-4388](bugs/BUG-4388-interconnect-unbounded-request-body.md) | ✅ | ✅ | 互联 host 与扩展 API 读请求体没有上限，免鉴权配对端点可被巨体耗尽内存 |
 | [BUG-4387](bugs/BUG-4387-interconnect-peer-token-cache-revoke-race.md) | ✅ | ✅ | 吊销已配对设备时若恰逢 token 集合加载，旧 token 被写回缓存继续有效 |
+| [BUG-4386](bugs/BUG-4386-anime-source-magnet-opened-as-file.md) | ✅ | ✅ | 视频源扩展（Torrentio）给的磁链被当本地文件打开，无限加载 |
 | [BUG-4385](bugs/BUG-4385-music-exclusive-pause-holds-device.md) | ✅ | ✅ | 音乐 WASAPI 独占输出暂停时不交还设备 |
 | [BUG-4384](bugs/BUG-4384-apple-music-preview-full-duration.md) | ✅ | ✅ | Apple Music 试听片段放约 30 秒就「回到开头」，进度条按整首时长画、无试听提示 |
 | [BUG-4383](bugs/BUG-4383-jellyfin-default-embedded-sub.md) | ✅ | ✅ | Jellyfin 服务器标为默认的内嵌字幕起播不显示 |
