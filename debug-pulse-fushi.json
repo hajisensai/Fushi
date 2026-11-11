@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-11T05:43:11Z",
+ "generatedAt": "2026-11-11T13:02:35Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "8603d1a7644363acc0bd973f79588ac140f4af5f",
-  "seq": 26444
+  "sha": "75bd2199c533eef92dbaa126f439f9c7617ac271",
+  "seq": 26447
  },
  "builds": [
   {
@@ -13,7 +13,7 @@
    "sha": "8603d1a7644363acc0bd973f79588ac140f4af5f",
    "unknown": false,
    "publishedAt": "2026-11-11T05:42:57Z",
-   "testflight": false,
+   "testflight": true,
    "baseSeq": 26440,
    "prs": [
     3250
@@ -91,7 +91,33 @@
    }
   }
  ],
- "pending": null,
+ "pending": {
+  "headSha": "75bd2199c533eef92dbaa126f439f9c7617ac271",
+  "headSeq": 26447,
+  "prs": [
+   3341
+  ],
+  "direct": [],
+  "truncated": false,
+  "platforms": {
+   "android": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43025317632"
+   },
+   "windows": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43025317645"
+   },
+   "macos": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43025317645"
+   },
+   "ios": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43025317645"
+   }
+  }
+ },
  "prs": {
   "3250": {
    "number": 3250,
@@ -109,6 +135,15 @@
    "mergedAt": "2026-11-10T22:16:56Z",
    "additions": 163,
    "deletions": 19,
+   "labels": []
+  },
+  "3341": {
+   "number": 3341,
+   "title": "fix(scheduler): 常驻背景动画挡住 idle 任务致调度器空转、Windows 输入全失灵（BUG-4387）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-11T13:00:57Z",
+   "additions": 344,
+   "deletions": 6,
    "labels": []
   }
  }
