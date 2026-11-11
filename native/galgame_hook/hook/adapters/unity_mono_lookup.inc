@@ -93,6 +93,9 @@ constexpr uint8_t kUmTmpLaneSetTextSingle = 8u;  // TMP_Text.SetText(string)
 static_assert(kUmTmpLaneSetText == 1u && kUmTmpLaneSetTextBool == 2u &&
                   kUmLaneUiTextSetText == 4u && kUmTmpLaneSetTextSingle == 8u,
               "RecordUnityMonoText passes these lane bits as literals");
+// A framework lane whose component class (TMP UGUI or UI.Text) decides the
+// canvas kind (IL2CPP Naninovel RevealableText; unity_il2cpp_api.h).
+constexpr uint8_t kUmLaneClassDecided = 16u;
 constexpr uint8_t kUmTmpLanes =
     kUmTmpLaneSetText | kUmTmpLaneSetTextBool | kUmTmpLaneSetTextSingle;
 
@@ -970,9 +973,28 @@ void RememberUmTmpCandidateOnMain(void* component, uint8_t lane) {
       GetCurrentThreadId() != rt.main_thread.load(std::memory_order_acquire)) {
     return;
   }
-  const bool ui_text = lane == kUmLaneUiTextSetText;
-  if (ui_text ? !rt.canvas_ui_text : !rt.canvas_tmp) return;
-  const uint8_t kind = ui_text ? kUmFrameworkUiText : kUmFrameworkTmp;
+  uint8_t kind = kUmFrameworkTmp;
+  if (lane == kUmLaneClassDecided) {
+    // A framework setter whose component is a TextMeshProUGUI or a UI.Text
+    // subclass depending on the framework version (Naninovel RevealableText):
+    // the object's own class picks the canvas kind.
+    void* klass = rt.classes.object_get_class(component);
+    if (rt.canvas_tmp &&
+        umono_lookup::ClassDerivesFrom(rt.classes, klass, rt.tmp.ugui_class)) {
+      kind = kUmFrameworkTmp;
+    } else if (rt.canvas_ui_text &&
+               umono_lookup::ClassDerivesFrom(rt.classes, klass,
+                                              rt.fungus.text_class)) {
+      kind = kUmFrameworkUiText;
+    } else {
+      return;
+    }
+  } else {
+    const bool ui_text = lane == kUmLaneUiTextSetText;
+    if (ui_text ? !rt.canvas_ui_text : !rt.canvas_tmp) return;
+    kind = ui_text ? kUmFrameworkUiText : kUmFrameworkTmp;
+  }
+  const bool ui_text = kind == kUmFrameworkUiText;
   const uintptr_t object = reinterpret_cast<uintptr_t>(component);
   const uint64_t now = GetTickCount64();
   size_t slot = FindUmTmpCandidate(object);

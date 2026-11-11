@@ -737,10 +737,27 @@ void TestCanvasLaneIdentity() {
   const auto& mono = MonoTextHookSpecFor(MonoTextHookId::kTmpSetText);
   assert(NativeTextThreadIdFrom(object, mono.hook_code, mono.hook_name) !=
          tmp_lane);
-  // Lane bits are the shared runtime's candidate bits (1 / 2 / 4 / 8).
+  // Lane bits are the shared runtime's candidate bits (1 / 2 / 4 / 8 / 16).
   assert(ui::kLaneTmpSetText.bit == 1u && ui::kLaneTmpSetTextBool.bit == 2u &&
          ui::kLaneUiTextSetText.bit == 4u &&
-         ui::kLaneTmpSetTextSingle.bit == 8u);
+         ui::kLaneTmpSetTextSingle.bit == 8u &&
+         ui::kLaneNaninovelSetText.bit == 16u);
+  // Naninovel's printer lane is scene-stable: identity 0, the same thread for
+  // the component before and after a scene reload (BUG-1646), and exactly
+  // the id the text path publishes (RecordUnityTextChars stable key 0).
+  const uint64_t naninovel_lane = NativeTextThreadIdFrom(
+      0u, L"Naninovel.UI.RevealableText.set_Text", "Naninovel RevealableText");
+  assert(ui::kLaneNaninovelSetText.stable && !ui::kLaneUiTextSetText.stable &&
+         !ui::kLaneTmpSetText.stable);
+  assert(ui::CanvasLaneSelected(object, ui::kLaneNaninovelSetText.bit,
+                                naninovel_lane));
+  assert(ui::CanvasLaneSelected(object + 0x1000u,
+                                ui::kLaneNaninovelSetText.bit, naninovel_lane));
+  assert(!ui::CanvasLaneSelected(object, ui::kLaneUiTextSetText.bit,
+                                 naninovel_lane));
+  assert(ui::CanvasLaneSelected(
+      object, ui::kLaneUiTextSetText.bit | ui::kLaneNaninovelSetText.bit,
+      ui_lane));
 }
 
 void TestTmpSetTextSingle() {

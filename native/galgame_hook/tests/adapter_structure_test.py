@@ -2985,6 +2985,16 @@ class AdapterStructureTest(unittest.TestCase):
                       "uil2cpp::kLaneTmpSetTextSingle"):
             self.assertIn(proof, single)
         self.assertIn("ShouldHookTmpSetTextSingle(", adapter)
+        # Naninovel's printer keeps its scene-stable lane (BUG-1646) and joins
+        # the canvas lookup; its object's class picks TMP or UI.Text.
+        naninovel = self._function_body(
+            adapter, "void Detour_NaninovelRevealableSetText(")
+        self.assertIn("uil2cpp::kLaneNaninovelSetText", naninovel)
+        self.assertIn("lane.stable", record)
+        remember = self._function_body(
+            runtime, "void RememberUmTmpCandidateOnMain(")
+        self.assertIn("kUmLaneClassDecided", remember)
+        self.assertIn("scan.naninovel_set_text", install)
         # The registry ticks / admits / shuts down only its own runtime owner.
         il2cpp = registry.split("class UnityIl2CppAdapter", 1)[1]
         il2cpp = il2cpp.split("\nclass ", 1)[0]

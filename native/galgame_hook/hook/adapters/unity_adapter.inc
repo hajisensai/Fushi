@@ -370,7 +370,7 @@ void RecordUnityCanvasText(
     void* component, void* string_object,
     const fushi_voice_hook::unity_il2cpp::CanvasLaneSpec& lane) {
   if (RecordUnityTmpText(component, string_object, lane.hook_name,
-                         lane.hook_code)) {
+                         lane.hook_code, lane.stable)) {
     RememberUmTmpCandidateGuarded(component, lane.bit);
   }
 }
@@ -788,8 +788,7 @@ void Detour_UnityTextMeshSetText(void* self, void* text,
 void Detour_NaninovelRevealableSetText(void* self, void* text,
                                        const void* method) {
   g_orig_NaninovelRevealableSetText(self, text, method);
-  RecordUnityTmpText(self, text, "Naninovel RevealableText",
-                     L"Naninovel.UI.RevealableText.set_Text", true);
+  RecordUnityCanvasText(self, text, uil2cpp::kLaneNaninovelSetText);
 }
 
 void* Il2CppMethodPointer(const void* method) {

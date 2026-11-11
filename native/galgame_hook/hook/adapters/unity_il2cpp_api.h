@@ -518,6 +518,10 @@ struct CanvasLaneSpec {
   uint8_t bit;
   const char* hook_name;
   const wchar_t* hook_code;
+  // Scene-stable lane: published with identity 0 instead of the component
+  // pointer (RecordUnityTextChars `stable_across_components`), so every
+  // component of this setter shares one lane across scene reloads.
+  bool stable = false;
 };
 
 inline constexpr CanvasLaneSpec kLaneTmpSetText = {
@@ -528,16 +532,25 @@ inline constexpr CanvasLaneSpec kLaneUiTextSetText = {
     4u, "Unity UI.Text", L"UnityEngine.UI.Text.set_text"};
 inline constexpr CanvasLaneSpec kLaneTmpSetTextSingle = {
     8u, "Unity TMP_Text", L"TMPro.TMP_Text.SetText(string)"};
+// Naninovel's dialogue printer (`Naninovel.UI.RevealableText.set_Text`): a
+// scene-stable lane (Naninovel recreates the component on scene switches,
+// BUG-1646). Its component is a UI.Text or a TextMeshProUGUI subclass
+// depending on the Naninovel version, so the lookup decides the canvas kind
+// from the object's class (kUmLaneClassDecided in unity_mono_lookup.inc).
+inline constexpr CanvasLaneSpec kLaneNaninovelSetText = {
+    16u, "Naninovel RevealableText", L"Naninovel.UI.RevealableText.set_Text",
+    true};
 inline constexpr CanvasLaneSpec kCanvasLanes[] = {
     kLaneTmpSetText, kLaneTmpSetTextBool, kLaneUiTextSetText,
-    kLaneTmpSetTextSingle};
+    kLaneTmpSetTextSingle, kLaneNaninovelSetText};
 
 inline bool CanvasLaneSelected(uint64_t object, uint8_t lane_hooks,
                                uint64_t selected) {
   if (selected == 0u || object == 0u) return false;
   for (const CanvasLaneSpec& lane : kCanvasLanes) {
     if ((lane_hooks & lane.bit) == 0u) continue;
-    if (NativeTextThreadIdFrom(object, lane.hook_code, lane.hook_name) ==
+    const uint64_t identity = lane.stable ? 0u : object;
+    if (NativeTextThreadIdFrom(identity, lane.hook_code, lane.hook_name) ==
         selected) {
       return true;
     }

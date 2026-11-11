@@ -34,6 +34,14 @@
 //   unity-il2cpp-lookup: gate=sites-unresolved ... nojit=..
 //   unity-il2cpp-lookup: gate=<retire reason> step=.. / model ... / OfferReady
 
+static_assert(uil2cpp::kLaneTmpSetText.bit == kUmTmpLaneSetText &&
+                  uil2cpp::kLaneTmpSetTextBool.bit == kUmTmpLaneSetTextBool &&
+                  uil2cpp::kLaneUiTextSetText.bit == kUmLaneUiTextSetText &&
+                  uil2cpp::kLaneTmpSetTextSingle.bit ==
+                      kUmTmpLaneSetTextSingle &&
+                  uil2cpp::kLaneNaninovelSetText.bit == kUmLaneClassDecided,
+              "IL2CPP canvas lanes share the runtime's candidate bits");
+
 struct UnityIl2CppLookupState {
   bool done = false;       // the one resolution attempt ran
   bool framework = false;  // a canvas kind was attempted (lanes exist)
@@ -120,14 +128,23 @@ void TryInstallUnityIl2CppLookup() {
     RejectUnityIl2CppLookup(L"layout");
     return;
   }
-  const bool want_tmp = scan.tmp_set_text && scan.tmp_set_text_bool;
-  const bool want_ui_text = scan.ui_text_set_text;
+  // A canvas kind is modelled when a lane can name its objects: the TMP
+  // setter pair / UI.Text.set_text, or Naninovel's RevealableText.set_Text
+  // (a UI.Text or TextMeshProUGUI subclass; its class picks the kind).
+  const bool naninovel = scan.naninovel_set_text;
+  const bool want_tmp = (scan.tmp_set_text && scan.tmp_set_text_bool) ||
+                        (naninovel && scan.tmp_class);
+  const bool want_ui_text =
+      scan.ui_text_set_text || (naninovel && scan.ui_text_class);
   if (!want_tmp && !want_ui_text) {
     // No canvas-text lane to pick the dialogue by: nothing to model.
-    UmLookupLog(L"%s: gate=no-canvas-text-hooks tmp_pair=%d uitext=%d",
-                rt.log_tag, want_tmp ? 1 : 0, want_ui_text ? 1 : 0);
+    UmLookupLog(
+        L"%s: gate=no-canvas-text-hooks tmp=%d uitext=%d naninovel=%d",
+        rt.log_tag, want_tmp ? 1 : 0, want_ui_text ? 1 : 0, naninovel ? 1 : 0);
     return;
   }
+  UmLookupLog(L"%s: canvas want tmp=%d uitext=%d naninovel=%d", rt.log_tag,
+              want_tmp ? 1 : 0, want_ui_text ? 1 : 0, naninovel ? 1 : 0);
   st.framework = true;
   uil2cpp::Facade facade;
   const uil2cpp::FacadeResult installed = uil2cpp::InstallFacade(
