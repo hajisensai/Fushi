@@ -393,6 +393,55 @@ void main() {
       expect(inSub.cardCounts.total, 1);
       expect(b.decks.map(((String, String) x) => x.$2), contains('語彙'));
     });
+
+    // develop 上按 `SrsStatsData.sourceShares()` 写的同名用例（e10fe612256）：聚合搬进内核后，同一组出处、同一组
+    // 期望值改走真实库——制卡写出处 → 笔记缓存行 → `stats_report`。
+    test('制卡来源：带系列的出处按系列计（反馈 MCJLSBR5Wg），不带的按集标题', () async {
+      Future<String> mine(String expr, SrsSourceRef source) => store.createNote(
+        noteTypeId: store.lapisNoteTypeId,
+        fieldsById: lapis(expr),
+        source: source,
+      );
+      await mine(
+        '食べる',
+        SrsSourceRef.media(
+          kind: SrsSourceKind.video,
+          mediaKey: 'e1',
+          startMs: 0,
+          title: 'RWBY - S01E01',
+          seriesTitle: 'RWBY',
+        ),
+      );
+      await mine(
+        '飲む',
+        SrsSourceRef.media(
+          kind: SrsSourceKind.video,
+          mediaKey: 'e2',
+          startMs: 0,
+          title: 'RWBY - S02E01',
+          seriesTitle: 'RWBY',
+        ),
+      );
+      await mine(
+        '走る',
+        SrsSourceRef.media(
+          kind: SrsSourceKind.video,
+          mediaKey: 'e3',
+          startMs: 0,
+          title: 'Solo',
+        ),
+      );
+
+      final SrsStatsLoad b = await loadSrsStats(store, day: kJst, nowMs: now);
+      final List<SrsSourceShare> s = (await b.report()).sources;
+      expect(
+        s.map((SrsSourceShare x) => (x.kind, x.title, x.notes)).toList(),
+        <(String, String, int)>[
+          (SrsSourceKind.video, 'RWBY', 2),
+          (SrsSourceKind.video, 'Solo', 1),
+        ],
+      );
+    });
   });
 }
 

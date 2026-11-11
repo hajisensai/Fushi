@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/pages/implementations/home_game_page.dart';
+import 'package:fushi/src/pages/implementations/media_sources_view.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/sync/texthooker_service.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -21,6 +22,10 @@ import '../helpers/test_platform_services.dart';
 /// `selected` 随子区变化，同一个 State 的指示器从来源子区滑到目标子区——本测试守
 /// 的「切子区时指示条在滑」这个用户可见结果不变。
 Widget _stubDashboard(BuildContext _, VoidCallback __) => const SizedBox();
+
+/// 「导入」子区常驻来源列表的桩：绕开真 [MediaSourcesView] 对 appProvider 的依赖。
+Widget _stubSources(BuildContext _, GlobalKey<MediaSourcesViewState> __) =>
+    const Text('game-sources');
 
 Widget _stubLibrary(
   BuildContext _,
@@ -74,6 +79,7 @@ void main() {
           home: HomeGamePage(
             dashboardBuilder: _stubDashboard,
             libraryBuilder: _stubLibrary,
+            sourcesBuilder: _stubSources,
             discoverBuilder: _stubDiscover,
           ),
         ),

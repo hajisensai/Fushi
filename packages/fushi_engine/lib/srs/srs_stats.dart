@@ -613,7 +613,8 @@ class SrsStatsReport {
   /// 复习卡目标保留率的平均（期望保留率；按卡平均，没有复习卡时取全部卡）。
   final double? desiredRetention;
 
-  /// 制卡来源（按笔记计）：同种类同标题归一组，按笔记数倒序。
+  /// 制卡来源（按笔记计）：同种类同标题归一组，按笔记数倒序。带系列的出处按系列名计（「系列 → 集」的上一级，
+  /// 反馈 MCJLSBR5Wg；内核从笔记缓存行读出处，那里的 title 已是系列名，见 caches.rs `NoteInfo::of`）。
   final List<SrsSourceShare> sources;
 
   /// 卡片直接所在的牌组 → 今天的复习次数（首页牌组行）。

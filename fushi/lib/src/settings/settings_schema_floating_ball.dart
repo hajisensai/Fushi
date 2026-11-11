@@ -12,8 +12,10 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/floating_ball/floating_ball_channel.dart';
 import 'package:fushi/src/floating_ball/floating_ball_config.dart';
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
+import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/ocr/screen_ocr_engine.dart';
 import 'package:fushi/src/reader/reader_control_layout.dart';
 import 'package:fushi/src/reader/reader_control_layout_editor.dart';
 import 'package:fushi/src/settings/settings_context.dart';
@@ -122,6 +124,24 @@ SettingsDestination buildFloatingBallDestination() {
             },
             defaultValue: true,
           ),
+          // 反馈 Eemf0HOZhj：桌面截屏识字的 OCR 引擎，和 AI 的「功能 → 提供商」一样默认
+          // 跟随全局（设置 → 模型 → OCR 的引擎偏好），想单独改的在这里选。
+          SettingsSegmentedItem<ScreenOcrEngineSetting>(
+            id: 'floating_ball.screen_ocr_engine',
+            title: t.screen_ocr_engine,
+            subtitle: t.screen_ocr_engine_hint,
+            icon: FushiIcons.ocr,
+            dropdown: true,
+            visible: (SettingsContext c) => isDesktopSystemBallPlatform,
+            options: _screenOcrEngineOptions(null),
+            optionsBuilder: _screenOcrEngineOptions,
+            selected: (SettingsContext c) => _prefs(c).screenOcrEngine,
+            onChanged: (SettingsContext c, ScreenOcrEngineSetting value) async {
+              await _prefs(c).setScreenOcrEngine(value);
+              c.refresh();
+            },
+            defaultValue: ScreenOcrEngineSetting.followGlobal,
+          ),
           // 反馈 9bdhVTgq3A / LHyeNKyYjH：Android 截屏识字只确认一次（默认关）。
           SettingsSwitchItem(
             id: 'floating_ball.screen_ocr_keep_session',
@@ -189,6 +209,54 @@ SettingsDestination buildFloatingBallDestination() {
 }
 
 PreferencesRepository _prefs(SettingsContext c) => c.appModel.prefsRepo;
+
+/// 截屏识字引擎的选项：「跟随全局（当前全局引擎）」+ 本机模型 / 设备自带（只在有系统
+/// OCR 的平台）/ Google Lens。[c] 为 null（静态值域，恢复默认的标签查找用）时跟随项
+/// 按出厂全局引擎标注。
+List<SettingsSegmentOption<ScreenOcrEngineSetting>> _screenOcrEngineOptions(
+  SettingsContext? c,
+) {
+  final bool systemOcr = screenOcrHasSystemEngine;
+  final MangaOcrEnginePreference global = c == null
+      ? kDefaultMangaOcrEnginePreference
+      : MangaOcrEnginePreferenceKey.fromKey(_prefs(c).mangaOcrEnginePreference);
+  return <SettingsSegmentOption<ScreenOcrEngineSetting>>[
+    SettingsSegmentOption<ScreenOcrEngineSetting>(
+      value: ScreenOcrEngineSetting.followGlobal,
+      label: t.screen_ocr_engine_follow_global(
+        name: _screenOcrGlobalLabel(global, systemOcrSupported: systemOcr),
+      ),
+    ),
+    SettingsSegmentOption<ScreenOcrEngineSetting>(
+      value: ScreenOcrEngineSetting.localModel,
+      label: t.manga_ocr_engine_local_onnx,
+    ),
+    if (systemOcr)
+      SettingsSegmentOption<ScreenOcrEngineSetting>(
+        value: ScreenOcrEngineSetting.systemOcr,
+        label: t.manga_ocr_engine_system,
+      ),
+    SettingsSegmentOption<ScreenOcrEngineSetting>(
+      value: ScreenOcrEngineSetting.googleLens,
+      label: t.manga_ocr_engine_google_lens,
+    ),
+  ];
+}
+
+/// 「跟随全局（…）」括号里的名字：全局引擎在截屏识字里落到哪个引擎；外部 mokuro /
+/// 互联服务端 / 自动对截屏识字都按「自动」解析（[screenOcrEngineOfGlobal]）。
+String _screenOcrGlobalLabel(
+  MangaOcrEnginePreference global, {
+  required bool systemOcrSupported,
+}) => switch (screenOcrEngineOfGlobal(
+  global,
+  systemOcrSupported: systemOcrSupported,
+)) {
+  ScreenOcrEngine.localModel => t.manga_ocr_engine_local_onnx,
+  ScreenOcrEngine.systemOcr => t.manga_ocr_engine_system,
+  ScreenOcrEngine.googleLens => t.manga_ocr_engine_google_lens,
+  null => t.manga_ocr_engine_auto,
+};
 
 bool get _systemBallSupported => FloatingBallScope.systemBallSupported(
   isAndroid: Platform.isAndroid,

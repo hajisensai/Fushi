@@ -45,11 +45,12 @@ class SyncRepositoryContentSniffCacheStore
 /// `isMangaPackage` 同一判据 [isMangaPackageMarkerEntry]），不下载条目数据。
 ///
 /// - 只在后端能做区间读时启用（[plainAssetRangeReaderOf] 非 null：Google Drive /
-///   OneDrive / Dropbox）。WebDAV / FTP / SFTP 只能整包下载，不在列举时嗅探。
-/// - 只嗅探一次：结果按「资产 id + 后端内容版本标记 [AssetEntry.revision] + 大小」
-///   缓存在本机（[CloudContentSniffCacheStore]），资产内容变了标记必变，缓存自然失效。
-///   后端给不出 [AssetEntry.revision]（「可能变了」）的资产不嗅探——缓存不住就会每次
-///   列举都重读。
+///   OneDrive / Dropbox / WebDAV / SFTP）。FTP 只能整包下载，不在列举时嗅探。WebDAV
+///   服务器不支持 `Range`（[SyncAssetRangeUnsupported]）时本次列举不再判型、记一条
+///   日志，不退化成整包下载。
+/// - 只嗅探一次：结果按「资产 id + 内容校验值 [cacheValidatorOf] + 大小」缓存在本机
+///   （[CloudContentSniffCacheStore]），资产内容变了校验值必变，缓存自然失效。
+///   校验值取不到的资产不嗅探——缓存不住就会每次列举都重读。
 /// - 列举是只读查询：本类**不往云端写**格式标记（标记仍只由持有这本漫画的同步写入，
 ///   见 `SyncManager._exportContentIfMissing`）。
 /// - 判型失败（网络 / 鉴权）返回 null、不入缓存，调用方保持按文件名的判定，下次列举
@@ -72,6 +73,25 @@ class CloudLegacyMangaSniffer {
   Map<String, Object?>? _entries;
   bool _dirty = false;
 
+  /// 本次列举已确认服务器不支持区间读：余下资产不再发请求。
+  bool _rangeUnsupported = false;
+
+  /// [content] 的判型缓存校验值：后端内容版本标记 [AssetEntry.revision]；没有时（SFTP）
+  /// 退用「服务器修改时间（秒级）+ 大小」。
+  ///
+  /// [AssetEntry.revision] 的契约不拿修改时间 + 大小拼标记——同步要判「内容没变」，
+  /// 同一秒写入等长新内容撞成同值就会丢更新。这里撞值的后果只是：同一秒内把同一路径
+  /// 的旧名包换成**等长**的另一种格式时，书架位置沿用旧判定；下载导入仍按真实内容
+  /// 嗅探，不丢数据。代价可接受，换来 SFTP 上不必每次列举都重读。两者缺一返回 null。
+  @visibleForTesting
+  static String? cacheValidatorOf(AssetEntry content) {
+    final String? revision = content.revision;
+    if (revision != null) return revision;
+    final int? modifiedAt = content.modifiedAt;
+    if (modifiedAt == null || content.sizeBytes == null) return null;
+    return 'mtime:$modifiedAt';
+  }
+
   /// 读入缓存；[kindOf] 之前调用一次。
   Future<void> load() async {
     _entries = Map<String, Object?>.of(await _store.load());
@@ -84,8 +104,7 @@ class CloudLegacyMangaSniffer {
     required AssetEntry content,
   }) async {
     final Map<String, Object?> entries = _entries ??= <String, Object?>{};
-    final String? revision = content.revision;
-    if (revision == null) return null;
+    if (cacheValidatorOf(content) == null) return null;
     final Object? cached = entries[content.id];
     if (cached is Map) {
       final CloudBookContentKind? hit = _cachedKind(cached, content);
@@ -97,6 +116,7 @@ class CloudLegacyMangaSniffer {
         return hit;
       }
     }
+    if (_rangeUnsupported) return null;
     final CloudBookContentKind? kind = await _sniff(content);
     if (kind == null) return null;
     entries[content.id] = _entry(folderId, content, kind);
@@ -123,7 +143,7 @@ class CloudLegacyMangaSniffer {
     Map<Object?, Object?> cached,
     AssetEntry content,
   ) {
-    if (cached['revision'] != content.revision ||
+    if (cached['revision'] != cacheValidatorOf(content) ||
         cached['size'] != content.sizeBytes) {
       return null;
     }
@@ -140,7 +160,7 @@ class CloudLegacyMangaSniffer {
     CloudBookContentKind kind,
   ) => <String, Object?>{
     'folder': folderId,
-    'revision': content.revision,
+    'revision': cacheValidatorOf(content),
     'size': content.sizeBytes,
     'kind': kind.name,
   };
@@ -159,6 +179,14 @@ class CloudLegacyMangaSniffer {
       return CloudBookContentKind.epub; // 不是 zip / 目录损坏：确定不是漫画包。
     } on SyncAssetRangeNotSatisfiable {
       return CloudBookContentKind.epub; // 空文件。
+    } on SyncAssetRangeUnsupported catch (e) {
+      // 服务器不支持区间读：不判型（保持按文件名归书籍），也不为此整包下载。
+      _rangeUnsupported = true;
+      debugPrint(
+        '[CloudLegacyMangaSniffer] range reads unsupported, skipping legacy '
+        'content sniff: $e',
+      );
+      return null;
     } catch (e) {
       debugPrint(
         '[CloudLegacyMangaSniffer] sniff failed for ${content.name}: $e',

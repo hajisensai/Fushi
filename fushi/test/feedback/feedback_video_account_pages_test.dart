@@ -392,7 +392,9 @@ void main() {
     // 没点提交就已经在压。
     await settleIo(tester, () => calls.isNotEmpty);
     expect(calls, hasLength(1));
-    expect(calls.single.options.quality, FeedbackVideoQuality.p720);
+    // 默认档是原件（不超限、格式合规就原样传，超了才自动压）。
+    expect(calls.single.options.mode, FeedbackVideoMode.original);
+    expect(byKey('feedback-video-original-hint'), findsOneWidget);
     expect(byKey('feedback-video-compressing'), findsOneWidget);
     // 压缩中的 × 是「取消并移除视频」，不是「去掉视频继续提交」。
     expect(
@@ -448,12 +450,12 @@ void main() {
     final FeedbackService f = feedback(b, prepare: controlledPrepare(calls));
     await openAndPickVideo(tester, f, b);
     await settleIo(tester, () => calls.isNotEmpty);
-    expect(calls.single.options.quality, FeedbackVideoQuality.p720);
+    expect(calls.single.options.mode, FeedbackVideoMode.original);
 
-    await tester.tap(byKey('feedback-video-quality-1080p'));
+    await tester.tap(byKey('feedback-video-quality-p1080'));
     await settleIo(tester, () => calls.length == 2 && calls.first.cancelled);
     expect(calls.first.cancelled, isTrue);
-    expect(calls.last.options.quality, FeedbackVideoQuality.p1080);
+    expect(calls.last.options.mode, FeedbackVideoMode.p1080);
     expect(byKey('feedback-video-1080-hint'), findsOneWidget);
 
     await tester.enterText(byKey('feedback-title'), '原标题');

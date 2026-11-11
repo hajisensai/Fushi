@@ -221,6 +221,7 @@ fn stuck(
 
 /// [SrsCore::sync2_status] 每台设备的补充字段（按设备 ID 文本）：`model` / `app` / `platform` / `protocol` /
 /// `hint` / `retiredAt` / `gap` / `blocking` / `state`（`ok` / `behind` / `missing` / `upgrade` / `retired`），
+/// 还没信任的设备另有 `trust`（`pending` / `rejected`）/ `trustSince` / `heldDeletes` / `heldPurges`（trust.rs），
 /// 以及本机信息 `selfInfo`。
 pub(crate) fn status_extras(
     c: &Connection,
@@ -253,6 +254,11 @@ pub(crate) fn status_extras(
         .map_err(sql)?
         .collect::<Result<_, _>>()
         .map_err(sql)?;
+    let untrusted: BTreeMap<Id, (&'static str, i64, i64, i64)> =
+        super::trust::untrusted(c, profile)?
+            .into_iter()
+            .map(|(d, s, since, dels, purges)| (d, (s, since, dels, purges)))
+            .collect();
     let mut out = BTreeMap::new();
     let self_info = parse_obj(meta_get(c, &self_key(profile))?);
     for (dev, applied, head_seq) in rows {
@@ -311,6 +317,13 @@ pub(crate) fn status_extras(
             "ok"
         };
         m.insert("state".to_owned(), json!(state));
+        // 设备信任（trust.rs）：只有还没信任的设备带这几项；扣着的删除 / 彻底清除条数给冲突中心的确认卡片。
+        if let Some((trust, since, dels, purges)) = untrusted.get(&id) {
+            m.insert("trust".to_owned(), json!(trust));
+            m.insert("trustSince".to_owned(), json!(since));
+            m.insert("heldDeletes".to_owned(), json!(dels));
+            m.insert("heldPurges".to_owned(), json!(purges));
+        }
         out.insert(text, Value::Object(m));
     }
     let self_json = json!({

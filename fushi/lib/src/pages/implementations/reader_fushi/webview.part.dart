@@ -1406,10 +1406,15 @@ install: function(C) {
         return;
       }
       var imgUrl = _fushiBlockImageUrl(tapEl);
+      var shiftTap = !!(e && e.shiftKey);
+      var tapGate = window.__fushiTapGate;
+      // GitHub #3088：「单击查词」关闭（镜像 lookup === false）且不是 Shift 点击时，
+      // 单击正文与点空白同一语义——VN「点击前进」不再只认字面外的点。
+      var tapLookupOff = !shiftTap && !!tapGate && tapGate.lookup === false;
       if (imgUrl) {
         window.flutter_inappwebview.callHandler('onImageTap', imgUrl);
       } else if (fushiVnMode && fushiVnClickAdvance &&
-          _fushiVnTapIsBlank(x, y) &&
+          (tapLookupOff || _fushiVnTapIsBlank(x, y)) &&
           window.fushiReader && window.fushiReader.paginate) {
         // TODO-909: VN blank-tap. Only when the tap is NOT over matchable
         // text (so word lookup still wins on text).
@@ -1436,8 +1441,6 @@ install: function(C) {
               + ' scrollX=' + window.scrollX + ' scrollY=' + window.scrollY);
           } catch (err) {}
         }
-        var shiftTap = !!(e && e.shiftKey);
-        var tapGate = window.__fushiTapGate;
         if (tapGate && window.fushiSelection &&
             (shiftTap || (tapGate.chrome && tapGate.lookup))) {
           // BUG-712 ①（查词时延）：门控通过时 JS 直接选词——与旧链 Dart onTap→
@@ -1781,6 +1784,9 @@ $kContinuousWheelScrollJs
       // 必须松手、静默后再滑一次才跨章。离散滚轮/数位板旋钮：一格通常只有一个
       // WheelEvent，不能再要求 arm-then-fire 的第二拍，否则设备会表现为完全无响应。
       if (pointerKind === 'trackpad' && !startsNewWheelGesture) return;
+      // 反馈 R7k887yaJI 重开：文档内换章的所有者（章节无缝衔接）认领了这一侧就由它换章，
+      // 不再让 Dart 从（可能已在文档内换过的）章号再跨一章。
+      if (r && typeof r.claimBoundaryTurn === 'function' && r.claimBoundaryTurn(wheelDir)) return;
       window.flutter_inappwebview.callHandler(
         'onBoundarySwipe', wheelDir, pointerKind);
       return;
@@ -2488,15 +2494,10 @@ updateLive: function(patch) {
             // BUG-2276：抽屉压着正文时，这次点击是「点遮罩关抽屉」，不是正文点击。
             if (_closeSideSheetForWebViewPointer()) return;
             final bool shiftKey = args.length >= 3 && args[2] == true;
-            // indZkg2A0I：下面两条分支都**不查词**（挤压态栏收起 / 点按查词关闭），
-            // 点击翻页区域模板在这里先认领两侧，中间照旧。
-            if (!shiftKey &&
-                (!_tapGateChrome ||
-                    !ReaderFushiSource.instance.highlightOnTap) &&
-                _turnPageByTapZone(args, 0)) {
-              return;
-            }
-            if (!_tapGateChrome && !shiftKey) {
+            // 挤压态栏收起：这一击只管唤栏（不查词）。点击翻页区域模板（indZkg2A0I）
+            // 先认领两侧，中间照旧唤栏。
+            if (!shiftKey && !_tapGateChrome) {
+              if (_turnPageByTapZone(args, 0)) return;
               _toggleChrome();
               // Tap handed OS focus to the WebView; reclaim it so ESC still
               // exits after a tap-to-toggle-chrome (BUG-136). _toggleChrome()
@@ -2504,9 +2505,12 @@ updateLive: function(patch) {
               _focusOwnership.reclaim(FocusReclaimCause.gesture);
               return;
             }
+            // GitHub #3088（反馈 6UvuZxRQkW）：「单击查词」关闭时，单击正文与点空白
+            // **同一语义**（关弹窗 / 清拖选 / 翻页区域模板 / 悬浮栏唤出收起），查词只剩
+            // 长按选词与 Shift。旧实现在这里只 reclaim 焦点就吞掉了这一击——悬浮底栏
+            // 下点正文既不唤栏也不翻页，用户只能去找空白处点。
             if (!shiftKey && !ReaderFushiSource.instance.highlightOnTap) {
-              // Tap consumed without a selection/popup — reclaim reader focus.
-              _focusOwnership.reclaim(FocusReclaimCause.gesture);
+              _handleReaderBlankTap(args, sizeIndex: 3);
               return;
             }
             final double x = _ReaderFushiPageState._toDouble(args[0]) ?? 0;
@@ -2539,37 +2543,7 @@ updateLive: function(patch) {
           callback: (List<dynamic> args) {
             // BUG-2276：抽屉压着正文时，这次点击是「点遮罩关抽屉」，不是正文点击。
             if (_closeSideSheetForWebViewPointer()) return;
-            // TODO-1027：有可见查词弹窗时，本 onTapEmpty 是 dismiss barrier 转发的
-            // 真点击命中空白（onDismissBarrierTap → _selectTextAt 命中真空白才 fire）。
-            // 此时按 barrier 旧语义清整栈（clearDictionaryResult → onAllPopupsDismissed
-            // 续播 BUG-072 / 保留热槽 BUG-092），不走下面的隐藏控制栏分支。命中词的
-            // 情形不会到这里（走 onTextSelected）。无弹窗时（正常正文点空白）维持旧行为。
-            if (isDictionaryShown) {
-              clearDictionaryResult();
-              return;
-            }
-            // TODO-1366：点空白取消残留的拖选（app 自绘选区 + 起止手柄）。拖选松手弹的
-            // 菜单被 dismiss 后不再清选区（留着让用户拖手柄改选），于是「点空白 = 取消选择」
-            // 成为自然清除路径；无选区时 clearSelection 是空操作，零副作用。
-            _clearReaderAppSelection();
-            // indZkg2A0I：点击翻页区域模板认领两侧（或上下）三分之一；中间三分之一与
-            // 关闭模板时落到下面原来的工具栏分支。查词弹窗在场时上面已经 return，
-            // 所以「点空白关弹窗」永远先于翻页。
-            if (args.length >= 4 && _turnPageByTapZone(args, 0, sizeIndex: 2)) {
-              return;
-            }
-            // TODO-975 决策#3：开启「点空白处隐藏控制栏」即底栏悬浮模式。此时点空白
-            // 走悬浮唤出/收起状态机（_handleFloatingChromeReveal，不改预留高、不重锚），
-            // 而非旧的挤压 _toggleChrome。未开启（挤压）时维持旧行为（不响应空白点）。
-            // 顶栏和底栏被关掉时两条分支都被闸门拦下（栏不出来，出口在悬浮球上）。
-            if (_anyChromeFloating) {
-              _handleFloatingChromeReveal();
-            } else if (ReaderFushiSource.instance.tapEmptyToHideChrome) {
-              _toggleChrome();
-            }
-            // Tap on empty space handed OS focus to the WebView; reclaim it so
-            // ESC still exits the book afterward (BUG-136).
-            _focusOwnership.reclaim(FocusReclaimCause.gesture);
+            _handleReaderBlankTap(args, sizeIndex: 2);
           },
         );
 
@@ -2837,9 +2811,15 @@ updateLive: function(patch) {
                 )) {
               return;
             }
+            // 反馈 R7k887yaJI 重开：边界换章的意图相对发出它那一刻的章号。截图要 await，
+            // 其间文档内换章（无缝晋升 → _onSeamlessChapterActivated 同步换掉
+            // _currentChapter）一旦落地，这次意图描述的边界已经不存在，再从新章号跨一章
+            // 就是跳两章。
+            final int fromChapter = _currentChapter;
             if (!await _prepareContinuousChapterTransition()) return;
             if (!mounted ||
                 _paginationInFlight ||
+                _currentChapter != fromChapter ||
                 !_hasChapterTurnTarget(dir)) {
               _discardIdleChapterTransitionSnapshot();
               return;
@@ -2919,10 +2899,10 @@ updateLive: function(patch) {
             // 同时成立，两条退出通道一起死——所以本轮先修这一条。
             //
             // 口径更正：onImageTap **不是**「全阅读器唯一没 reclaim 的手势入口」。
-            // 同族至今仍有 7 处 JS 桥零 reclaim：onSelectionMenu、onImageRevealed、
-            // onImageContextMenu、onImageLongPress、onCueTap、onPointerSeek、
+            // 同族至今仍有 6 处 JS 桥零 reclaim：onSelectionMenu、onImageRevealed、
+            // onImageContextMenu、onImageLongPress、onPointerSeek、
             // onLyricsPointerSeek。其中 onImageRevealed / onImageContextMenu /
-            // onImageLongPress / onCueTap 连兄弟桥兜底都没有。本轮只修 spread 退出
+            // onImageLongPress 连兄弟桥兜底都没有。本轮只修 spread 退出
             // 路径必经的这一条，其余未覆盖——别把这里当作「此族已清干净」的证据。
             _focusOwnership.reclaim(FocusReclaimCause.gesture);
             _openImageViewer(args[0] as String);
@@ -3009,24 +2989,9 @@ updateLive: function(patch) {
           },
         );
 
-        controller.addJavaScriptHandler(
-          handlerName: 'onCueTap',
-          callback: (List<dynamic> args) {
-            if (args.isEmpty || _audiobookController == null) return;
-            // BUG-2276：抽屉压着正文时，点句子是「点遮罩关抽屉」，不是跳播。
-            if (_closeSideSheetForWebViewPointer()) return;
-            final int sentenceIndex = (args[0] as num).toInt();
-            final List<AudioCue>? allCues = _cachedAllCues;
-            if (allCues == null) return;
-            final int idx = allCues.indexWhere(
-              (AudioCue c) => c.sentenceIndex == sentenceIndex,
-            );
-            if (idx >= 0) {
-              _audiobookController!.playCueAndContinue(allCues[idx]);
-            }
-          },
-        );
-
+        // 反馈 C9wcnKaPq_：合成书左键点句跳播的 `onCueTap` 桥已删（左键只查词，与
+        // EPUB 书一致）；跳到点击句只走下面的位置型 `onPointerSeek`（中键）与触屏
+        // 长按选区操作条「从此句播放」（chrome.part.dart `_playFromSelectionSentence`）。
         controller.addJavaScriptHandler(
           handlerName: 'onPointerSeek',
           callback: (List<dynamic> args) async {

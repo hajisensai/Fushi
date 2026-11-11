@@ -270,7 +270,12 @@ void main() {
         // （正文 + 歌词）——每一处都必须回收焦点，不能只验第一处。
         final List<String> bodies = _handlerCallbackBodies(code, handler);
         expect(bodies, isNotEmpty);
-        for (final String body in bodies) {
+        for (final String handlerBody in bodies) {
+          // 正文 onTapEmpty 委托给 _handleReaderBlankTap（GitHub #3088：单击查词
+          // 关闭时 onTap 也走它），焦点回收落在 helper 体内。
+          final String body = handlerBody.contains('_handleReaderBlankTap(')
+              ? handlerBody + _methodBody(code, 'void _handleReaderBlankTap(')
+              : handlerBody;
           expect(
             body.contains('_focusOwnership.reclaim(FocusReclaimCause.gesture)'),
             isTrue,
@@ -316,6 +321,15 @@ List<String> _handlerCallbackBodies(String code, String handlerName) {
     start = code.indexOf("handlerName: '$handlerName'", start + 1);
   }
   return out;
+}
+
+/// 取 `[signature]` 起到方法体结束（两格缩进的 `}` 行）的源码。
+String _methodBody(String code, String signature) {
+  final int start = code.indexOf(signature);
+  expect(start, isNonNegative, reason: '找不到 `$signature`');
+  final int end = code.indexOf('\n  }\n', start);
+  expect(end, greaterThan(start), reason: '`$signature` 方法体没闭合');
+  return code.substring(start, end);
 }
 
 String _handlerCallbackBody(String code, String handlerName) {

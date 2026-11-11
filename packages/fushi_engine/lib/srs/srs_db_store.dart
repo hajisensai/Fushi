@@ -203,6 +203,7 @@ class SrsRenderedCard {
     this.fushiCardDefinitions,
     this.fushiCardFront = const <FushiCardItem>[],
     this.fushiCardBack = const <FushiCardItem>[],
+    this.nativeFallback,
   });
 
   final String question;
@@ -223,6 +224,12 @@ class SrsRenderedCard {
   /// 里面；HTML 区块已按笔记字段展开）。只在 [fushiCardDefinitions] 非 null 时有意义。
   final List<FushiCardItem> fushiCardFront;
   final List<FushiCardItem> fushiCardBack;
+
+  /// [fushiCardDefinitions] 为 null（引擎判定原生 Fushi 卡面画不了）时卡在哪一道
+  /// （[srsFushiCardNative]）；能原生画时为 null。非 Fushi 卡片是
+  /// [SrsCardNativeFallbackCode.notBuiltin]，远程老主机没带原因时是
+  /// [SrsCardNativeFallbackCode.remoteUnknown]。app 侧再判的区块 / HTML 子集原因不在这里。
+  final SrsCardNativeFallback? nativeFallback;
 }
 
 /// [SrsDbStore.writeEdits] 的一项：给某实体的某个字段键写一个值。
@@ -599,7 +606,10 @@ class SrsDbStore implements SrsSync2Host {
   /// `EventKey` 对 Anki 来源不比卡），没有血统链接的两张卡（删光重导后旧卡隐藏、新卡可见）由有效复习投影按 Anki 事件身份
   /// 只留一份（caches.rs `refresh_stats`）。存量库的卡片状态与投影是旧规则算的（「从 Anki 迁移」后复习数 ×2），与修订号
   /// 11 同样整库重算（srs.db v28 迁移已先按新规则重放了带这种副本的卡的日志投影行）。
-  static const int _kCacheRevision = 12;
+  /// 13（反馈 MCJLSBR5Wg）：出处带 `seriesTitle`（系列）的笔记按「系列 → 集」分组——缓存行的 `source_key` 是系列键、
+  /// `source_title` 是系列名（store/browse.rs `source_key`、caches.rs `NoteInfo::of`）。旧版本收到别的设备同步来的带
+  /// 系列的出处时按集算了这两列，升级时只重算出处记录里带 `seriesTitle` 的那些笔记。
+  static const int _kCacheRevision = 13;
 
   /// 当前缓存修订号（[_kCacheRevision]）。升级测试断言「打开老库后记下的是当前修订号」时用它，
   /// 不写字面量——每次加一级修订都要去改一串升级测试的魔数，漏改就整批红。
@@ -1973,6 +1983,13 @@ class SrsDbStore implements SrsSync2Host {
         'retire': retire,
       });
 
+  /// 信任 / 拒绝一台待确认的设备（native/fushi_fsrs/src/store/sync2/trust.rs）：本机库非空之后才第一次同步过来的
+  /// 设备，它的删除与彻底清除扣到这里确认。信任 = 扣着的同一次调用里放行进投影并接进缓存；拒绝 = 继续扣着（它的
+  /// 普通修改照常同步，之后仍可改为信任）。
+  Future<void> sync2Trust(String device, {required bool trust}) => _sync2Write(
+    <String, Object?>{'op': 'trust', 'device': device, 'trust': trust},
+  );
+
   /// 算并记下状态摘要（写 head 时带上；两台设备在同一版本向量下摘要不同 = 确定性 bug）。
   Future<Map<String, Object?>> sync2Digest() async =>
       (await sync2Command(<String, Object?>{'op': 'digest'})).map;
@@ -2067,6 +2084,7 @@ class SrsDbStore implements SrsSync2Host {
     'import',
     'retire',
     'resolve',
+    'trust',
     'purge',
     'checkpoint',
     'restore',
@@ -2804,6 +2822,26 @@ class SrsDbStore implements SrsSync2Host {
       // 有效复习投影整库按新规则重算。两级要做的是同一件事，只做一次。
       if (_cacheRevision < 12) {
         await _refreshCaches(allNotes: true, allStats: true);
+      } else if (_cacheRevision < 13) {
+        // 整库重算（上一步）已按新规则写好；只有已在 12 的库才需要挑出带系列的出处。按子串粗筛（多挑只是多重算几行），
+        // 真正的分组键由内核按出处 JSON 算。
+        final List<QueryRow> rows = await db
+            .customSelect(
+              'SELECT DISTINCT entity_id FROM srs_field_edits '
+              'WHERE profile_uid = ? AND entity_kind = ? AND field_key = ? '
+              "AND json LIKE '%seriesTitle%'",
+              variables: <Variable<Object>>[
+                Variable<String>(profileUid, srsIdType),
+                Variable<String>(SrsEntityKind.note.wire),
+                Variable<String>(SrsFieldKeys.noteSource),
+              ],
+            )
+            .get();
+        if (rows.isNotEmpty) {
+          await _refreshCaches(
+            notes: rows.map((QueryRow r) => r.read<String>('entity_id')),
+          );
+        }
       }
       _cacheRevision = _kCacheRevision;
       await _saveLocal();
@@ -4859,7 +4897,7 @@ class SrsDbStore implements SrsSync2Host {
     );
     // 原生卡面画不全的媒体（SVG / 远程图片、Picture 里的杂项内容）留在整面 WebView
     // （同一份模板），见 srs_fushi_card_native_media。
-    final SrsFushiCardNative? native = srsFushiCardNative(
+    final SrsFushiCardNativeProbe probe = srsFushiCardNative(
       builtinKey: d.noteType.builtinKey,
       front: front,
       back: back,
@@ -4868,15 +4906,19 @@ class SrsDbStore implements SrsSync2Host {
       cardOrd: tpl.ord,
       specials: specials,
     );
+    final SrsFushiCardNative? native = probe.native;
     return SrsRenderedCard(
       question: faces.question,
       answer: faces.answer,
-      css: d.noteType.css,
+      // 原生卡面只拿样式给释义 WebView 用：冻住的历史内置样式换成当前内置样式（释义 HTML
+      // 按当前模板生成），见 [SrsFushiCardNative.css]。
+      css: native?.css ?? d.noteType.css,
       isEmpty: r.isEmpty,
       fields: fields,
       fushiCardDefinitions: native?.definitions,
       fushiCardFront: native?.front ?? const <FushiCardItem>[],
       fushiCardBack: native?.back ?? const <FushiCardItem>[],
+      nativeFallback: probe.fallback,
     );
   }
 

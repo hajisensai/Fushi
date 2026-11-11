@@ -492,11 +492,11 @@ extension _ReaderLyrics on _ReaderFushiPageState {
   void _showLyricsModeHintIfNeeded() {
     final ReaderFushiSource src = ReaderFushiSource.instance;
     final bool shown = src.getPreference<bool>(
-      key: 'lyrics_mode_hint_shown',
+      key: kLyricsModeHintShownPrefShortKey,
       defaultValue: false,
     );
     if (shown || !mounted) return;
-    src.setPreference<bool>(key: 'lyrics_mode_hint_shown', value: true);
+    src.setPreference<bool>(key: kLyricsModeHintShownPrefShortKey, value: true);
     unawaited(
       _withStudyClockPaused(
         () => showAppDialog<void>(
@@ -846,6 +846,10 @@ extension _ReaderLyrics on _ReaderFushiPageState {
       onOpenJumpHistory: _jumpHistory.isEmpty
           ? null
           : () => unawaited(_openJumpHistoryPanel()),
+      // 导出当前字幕（反馈 iUtGmIlZiD：转录完直接听，播放页上要能导出字幕）。
+      onExportSubtitle: _canExportLyricsSubtitle
+          ? () => unawaited(_exportLyricsSubtitle(ctrl))
+          : null,
       onTapBackground: () {
         if (isDictionaryShown) clearDictionaryResult();
         _focusOwnership.reclaim(FocusReclaimCause.gesture);
@@ -1035,7 +1039,34 @@ extension _ReaderLyrics on _ReaderFushiPageState {
           label: label,
           onPressed: () => unawaited(_showLyricsAvSyncPanel(ctrl, anchor)),
         );
+      case LyricsControlItem.exportSubtitle:
+        if (!_canExportLyricsSubtitle) return null;
+        return ReaderHeaderAction(
+          icon: icon,
+          label: label,
+          onPressed: () => unawaited(_exportLyricsSubtitle(ctrl)),
+        );
     }
+  }
+
+  /// 歌词模式能否「导出当前字幕」：TTS 朗读的 cue 只在会话内存里、没有对应的音频
+  /// 文件可配，不给这个入口。
+  bool get _canExportLyricsSubtitle => _ttsCues == null;
+
+  /// 导出当前字幕（反馈 iUtGmIlZiD）：播放器手上的整本 cue 写成单时间轴 SRT，桌面
+  /// 存盘、移动端分享。保存框 / 分享面板压着歌词页期间停表（BUG-2208 同一口径）。
+  Future<void> _exportLyricsSubtitle(AudiobookPlayerController ctrl) async {
+    final List<AudioCue> cues = List<AudioCue>.of(ctrl.allBookCuesSnapshot);
+    final List<String> audioPaths = <String>[
+      for (final File f in ctrl.audioFiles) f.path,
+    ];
+    await _withStudyClockPaused(
+      () => runAudiobookSubtitleExport(
+        cues: cues,
+        audioPaths: audioPaths,
+        title: _book?.title ?? '',
+      ),
+    );
   }
 
   /// 歌词模式按钮的快捷键执行体（[ShortcutAction.audiobookReplaySentence] 等，

@@ -81,8 +81,6 @@ import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
-import 'package:fushi/src/utils/components/glass/fushi_expressive_controls.dart'
-    show FushiButtonSize;
 import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
@@ -531,6 +529,8 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
     try {
       final AddLocalFolderResult result = await addLocalFolderAsSource(
         db: _app.database,
+        // 音乐来源不扫书，没有有声书要转录。
+        transcribeAudiobook: null,
         mediaKind: SourceLibraryKind.music.dbValue,
         path: path,
       );
@@ -700,7 +700,10 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
   Future<void> _rescan() async {
     setState(() => _scanning = true);
     try {
-      final SourceLibraryScanner scanner = SourceLibraryScanner(_app.database);
+      final SourceLibraryScanner scanner = SourceLibraryScanner(
+        _app.database,
+        transcribeAudiobook: null,
+      );
       String? error;
       for (final MediaSourceRow source
           in await _app.database.getMediaSourcesByKind(
@@ -1326,7 +1329,11 @@ class _ImportLocalPlaylistButton extends ConsumerWidget {
         if (!app.isDatabaseReady) return;
         final FushiDatabase db = app.database;
         unawaited(() async {
-          final String? uid = await musicImportPlaylistFile(db);
+          final String? uid = await musicImportPlaylistFile(
+            context: context,
+            appModel: app,
+            db: db,
+          );
           if (uid == null || !context.mounted) return;
           await _openLocalPlaylistByUid(context, db, uid);
         }());
