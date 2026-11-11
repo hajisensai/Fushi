@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3950 条。点号进各自文件。
+> 共 3951 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4462](bugs/BUG-4462-host-job-concurrent-persist-and-delete-resurrect.md) | ✅ | ✅ | host 任务运行中被删除：两笔落盘并发写同一个临时文件，收尾落盘把删掉的目录建回来 |
 | [BUG-4461](bugs/BUG-4461-transcode-superseded-token-keeps-running.md) | ✅ | ✅ | 播放会话结束 / 换档换集后旧 token 的转码分段照样转完，占满转码名额拖慢新流起播 |
 | [BUG-4460](bugs/BUG-4460-adaptive-quality-switch-no-rollback.md) | ✅ | ✅ | 自适应换档失败后共享档位不回滚，重试仍用没起来的档 |
 | [BUG-4459](bugs/BUG-4459-adaptive-quality-seek-grace-unbounded.md) | ✅ | ✅ | 频繁 seek 时自适应画质的 seek 宽限不断续命，差网永不降档 |
