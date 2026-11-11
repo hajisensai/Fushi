@@ -1,6 +1,7 @@
 #pragma once
 
-// KiriKiri classic KAG3 message text lane: the pure, unit-tested half.
+// KiriKiri KAG message text lane (KiriKiri2 and KiriKiri Z alike): the pure,
+// unit-tested half.
 //
 // Engine facts (KAG3 system scripts, MainWindow.tjs / MessageLayer.tjs; the
 // same shape survives in KAGEX's MessageLayer):

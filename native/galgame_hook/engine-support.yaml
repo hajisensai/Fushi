@@ -1034,6 +1034,11 @@
             "kind": "ingame_lookup_geometry",
             "status": "implemented_unverified",
             "verification": "In-game dictionary lookup is implemented but remains capability-level unverified: the KiriKiri sensor supplies per-glyph geometry and paints the selection highlight, while Hibiki reuses its existing popup in a dedicated off-screen galCard WebView2 surface, captures BGRA, and presents that bitmap through the v15 shared-memory frame route into a game Layer. During mining, the v15 exact CaptureSuppress control frame temporarily hides the game-side card and highlight without destroying the off-screen popup state; the hook alone advances lookup_frame_applied_seq after a later continuous callback, so ordinary present/dismiss/highlight frames cannot satisfy the capture barrier. Embedded mode suppresses only the popup sentence banner; dictionary, audio, mining, theme, and nested-card rendering remain shared with the normal Fushi popup. A 2026-08-13 Windows/KiriKiri same-session E2E on the target game observed applied_seq 0→76, a later full restore frame at 80, a real Anki card with a 480×286 AVIF, and an original-resolution image containing no Fushi popup or selection highlight. Coordinate conversion, KAG message-layer identity, submit/hover fencing, off-screen resize handling, and the v15 wire contract have source-level guards, but by explicit request no automated tests, generators, guards, or CTest were run; no broad KiriKiri support upgrade is claimed."
+          },
+          {
+            "kind": "kirikiri_kag_message_text",
+            "status": "implemented_unverified",
+            "verification": "Native exact text lane (source kind 18, hook 'KiriKiri KAG exact', ENGINE:KIRIKIRI:kag_message), installed wherever the adapter holds the engine's TJS function exporter and independent of lookup_enabled or the lookup sensor's readiness. A TJS bootstrap wraps, per instance, the KAG message layers' processCh / clear / setRuby and the KAG window's three click waits (showLineBreak, showPageBreak, showPageBreakAndClear) and forwards them as a bounded event string; HookWorker assembles lines in kirikiri_kag_text_core.h: only characters drawn on kag.current count (the currentWithBack back-page copy and overflowed characters never enter), the characters since the previous boundary are committed at each click wait, clear() discards uncommitted text (choice links, [s] system text), ruby annotations are dropped, edge whitespace and control units are removed, and an overflow, malformed batch or over-long line drops the affected line instead of publishing a prefix. The script refuses to patch anything unless kag.showLineBreak and kag.showPageBreak exist. Offline: tests/kirikiri_kag_text_test.cpp with tests/fixtures/kirikiri_kag_text_replay.tsv and the KagTextLaneGuardTest source guards. Motivating real-machine observations (2026-11, no run with this build yet): classic KAG3 KiriKiri2/BCB (fata.exe, monobeno) and a KiriKiri Z build (rpsisters2.exe) where every Luna thread carried only script metadata or per-character fragments while the adapter's processCh wrapper saw each dialogue character. Not verified on any real game."
           }
         ],
         "codepage": "game-specific",
@@ -1099,13 +1104,15 @@
       ],
       "adapter_path": "hook/adapters/kirikiri_adapter.inc",
       "fixture_paths": [
-        "tests/fixtures/kirikiri_lookup_replay.tsv"
+        "tests/fixtures/kirikiri_lookup_replay.tsv",
+        "tests/fixtures/kirikiri_kag_text_replay.tsv"
       ],
       "test_paths": [
         "tests/resource_audio_ready_test.cpp",
         "tests/lookup_ipc_contract_test.cpp",
         "tests/lookup_session_replay_test.cpp",
-        "tests/kirikiri_lookup_source_guard_test.py"
+        "tests/kirikiri_lookup_source_guard_test.py",
+        "tests/kirikiri_kag_text_test.cpp"
       ]
     },
     {

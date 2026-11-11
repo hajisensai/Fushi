@@ -5488,9 +5488,18 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 //
 // 准入：只在 KiriKiri adapter 拿到引擎自己交出的 TVP 插件 ABI（exporter）的进程里装；脚本
 // 里再要求 kag.showLineBreak / kag.showPageBreak 两个 KAG3 等待方法都存在，否则一行都不改
-// 直接放弃（非 KAG 的 KiriKiri 框架保持静默）。KAGEX / KiriKiri Z 只要正文仍经消息层
-// processCh 就同样工作；正文改走 TextRender / msgwin 插件、processCh 从不触发的构建，缓冲
-// 恒空，等待时什么都不提交——静默而不是半句。
+// 直接放弃（非 KAG 的 KiriKiri 框架保持静默）。
+//
+// 不按 KiriKiri2 / KiriKiri Z、BCB / MSVC 或有无 textrender.dll 区分：判据只有「KAG 的消息
+// 流水线在不在」。KiriKiri Z 上同样需要这条道（Role player とろろ姉妹 真机：Luna 的
+// KiriKiriZX / KiriKiriZ 线程只出宏名与资源路径，没有对白）。KAGEX 系构建若正文改走
+// TextRender 整串排版、processCh 从不触发，缓冲恒空，等待时什么都不提交——静默而不是半句。
+// 正文仍经 processCh 的 KAGEX 构建（千恋＊万花实测查词走的就是 classic processCh 采集）
+// 也会装上；那里 EmbedKrkrZ 本来就有干净对白，而 ENGINE: 线程在 host 侧赢得自动选中，所以
+// 本道的行必须结构上不比它脏：只认 kag.current、只在点击等待处整段提交、clear 复位、注音
+// 丢弃、逐字重复在源头不存在。KAGEX 的等待是否全部经过上面三个方法尚未在真机核对，这是
+// 残余风险（漏包的等待处最坏是少出行，或到下一次 clear 前相邻两段并成一行；不会出半句
+// 或逐字重复）。
 //
 // 不挂 kag.addPlugin：KAG3 对插件对象调用的方法集（onStore / onRestore …）没有在本引擎
 // 验证过，一个裸字典插件可能在存档时抛异常。新建的消息层（[laycount]）改由每次等待时补扫；
@@ -5927,22 +5936,46 @@ bool ExecuteTjsExpressionGuarded(const wchar_t* expression, uint8_t* variant) {
   return ok;
 }
 
+// 布局探测的失败分型。探测次数用尽后查词传感器与 KAG 文本道**同时**永久失效，而 lookup_diag
+// 只有「expression_ready 没亮」一种读数，分不出「TVPExecuteExpression 本身失败」与「求值
+// 成功但没有候选布局对得上」——两者修法相反。用尽时把分型与那次结果的前 16 字节（一个
+// 已知常量的变体，不含任何游戏内容）交给 HookWorker 落日志（ProcessKirikiriKagTextBatches）。
+constexpr LONG kTjsVariantProbeEvalFailed = 1;
+constexpr LONG kTjsVariantProbeNoLayout = 2;
+volatile LONG g_tjs_variant_probe_exhausted = 0;  // 主线程写一次，worker 读
+LONG g_tjs_variant_probe_last_failure = 0;
+uint8_t g_tjs_variant_probe_last_bytes[16] = {};
+
 bool ProbeTjsVariantLayout() {
   if (g_lookup_variant_attempts >= kTjsVariantProbeAttempts) return false;
   g_lookup_variant_attempts++;
   uint8_t variant[kTjsVariantBytes];
-  if (!ExecuteTjsExpressionGuarded(L"0x0123456789ABCDEF", variant)) return false;
-  for (const TjsVariantLayout& candidate : kTjsVariantLayouts) {
-    if (ReadVariantU32(variant, candidate.type_offset) != kTjsVariantTypeInteger) {
-      continue;
+  bool matched = false;
+  if (!ExecuteTjsExpressionGuarded(L"0x0123456789ABCDEF", variant)) {
+    g_tjs_variant_probe_last_failure = kTjsVariantProbeEvalFailed;
+  } else {
+    for (const TjsVariantLayout& candidate : kTjsVariantLayouts) {
+      if (ReadVariantU32(variant, candidate.type_offset) != kTjsVariantTypeInteger) {
+        continue;
+      }
+      if (ReadVariantI64(variant, candidate.value_offset) != kTjsVariantProbeMagic) {
+        continue;
+      }
+      g_lookup_variant = candidate;
+      matched = true;
+      break;
     }
-    if (ReadVariantI64(variant, candidate.value_offset) != kTjsVariantProbeMagic) {
-      continue;
+    if (!matched) {
+      g_tjs_variant_probe_last_failure = kTjsVariantProbeNoLayout;
+      memcpy(g_tjs_variant_probe_last_bytes, variant,
+             sizeof(g_tjs_variant_probe_last_bytes));
     }
-    g_lookup_variant = candidate;
-    return true;
   }
-  return false;
+  if (!matched && g_lookup_variant_attempts >= kTjsVariantProbeAttempts) {
+    MemoryBarrier();
+    InterlockedExchange(&g_tjs_variant_probe_exhausted, 1);
+  }
+  return matched;
 }
 
 // 变体布局只探一次，查词传感器与 KAG 文本道共用（两边都只在游戏主线程上调）。
@@ -7461,6 +7494,22 @@ void ProcessKirikiriKagTextBatches() {
   static kag_text::Assembler assembler;
   static kag_text::LineBatch lines;
   static LONG logged_report = 0;
+  static bool logged_probe = false;
+  if (!logged_probe &&
+      InterlockedCompareExchange(&g_tjs_variant_probe_exhausted, 0, 0) != 0) {
+    logged_probe = true;
+    MemoryBarrier();
+    const uint8_t* b = g_tjs_variant_probe_last_bytes;
+    wchar_t text[192] = {};
+    _snwprintf_s(text, _TRUNCATE,
+                 L"[FushiKiriKiri] TJS variant layout probe exhausted: reason=%ld "
+                 L"bytes=%02x%02x%02x%02x %02x%02x%02x%02x %02x%02x%02x%02x "
+                 L"%02x%02x%02x%02x",
+                 g_tjs_variant_probe_last_failure, b[0], b[1], b[2], b[3], b[4],
+                 b[5], b[6], b[7], b[8], b[9], b[10], b[11], b[12], b[13], b[14],
+                 b[15]);
+    HookLogLine(text);
+  }
   const LONG report = InterlockedCompareExchange(&g_kag_text_install_report, 0, 0);
   if (report != 0 && report != logged_report) {
     logged_report = report;
@@ -7750,6 +7799,7 @@ void NoteKirikiriStreamOpen() {
     g_header->reserved_luna |= 0x40000;  // diag: detour 触发过
   }
   RunKirikiriLookupInstallOnMainThread();
+  RunKirikiriKagTextInstallOnMainThread();
 }
 
 // 这次开流要不要抓：采集开着、名字粗筛像语音。命中时把 storagename 拷进 storage（cap 520）。
@@ -7865,6 +7915,7 @@ TjsBinaryStream* __fastcall Detour_TVPCreateBinaryStream(const void* name, uint3
     g_header->reserved_luna |= 0x40000;  // diag: detour 触发过
   }
   RunKirikiriLookupInstallOnMainThread();  // 同上：主线程接缝 (BUG-1724)
+  RunKirikiriKagTextInstallOnMainThread();
   if (g_capture_enabled && stream != nullptr && name != nullptr && g_header != nullptr) {
     wchar_t storage[520];
     if (ExtractStorageNameGuarded(name, storage, 520) && IsVoiceStorageName(storage)) {
