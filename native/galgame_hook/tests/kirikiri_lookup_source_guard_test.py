@@ -6964,6 +6964,27 @@ def find_kag_text_foreign_references() -> list[str]:
     return hits
 
 
+def _lookup_classic_sweep_body(raw: str) -> str | None:
+    start = raw.find("global.fushiLookupSweepClassicLayers = function()")
+    if start < 0:
+        return None
+    end = raw.find("\n\t\t\t};", start)
+    return None if end < 0 else raw[start:end]
+
+
+def find_lookup_sweep_current_violations(body: str) -> list[str]:
+    """查词 classic sweep 必须同时补 kag.current（及 comp），不能只扫两个数组。"""
+    compact = re.sub(r"\s+", "", _strip_line_comments(body))
+    hits: list[str] = []
+    if "varcurrent=global.kag.current;" not in compact:
+        hits.append("查词 classic sweep 不看 kag.current")
+    if "currentLayers.add(current.comp);" not in compact:
+        hits.append("查词 classic sweep 不看 kag.current.comp（currentWithBack 背页）")
+    if "global.fushiLookupPatchClassicLayer(currentLayers[ci])" not in compact:
+        hits.append("查词 classic sweep 没给 kag.current 挂包装")
+    return hits
+
+
 class KagTextLaneGuardTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
@@ -7055,6 +7076,16 @@ class KagTextLaneGuardTest(unittest.TestCase):
             with self.subTest(old=old):
                 dirty = self._mutate(old, old.replace("fushiKagText", "fushiKagTextOff", 1))
                 self.assertNotEqual([], find_kag_text_script_violations(dirty))
+
+    def test_lookup_classic_sweep_covers_kag_current(self) -> None:
+        # とろろ姉妹 真机：对白层只经 kag.current 可达、不在 fore/back.messages[] 里，
+        # 只扫两个数组的查词 sweep 永远采不到字形（点击落空、剧情推进）。
+        body = _lookup_classic_sweep_body(self.raw)
+        self.assertIsNotNone(body, "找不到 fushiLookupSweepClassicLayers")
+        self.assertEqual([], find_lookup_sweep_current_violations(body))
+        dirty = body.replace(
+            "global.fushiLookupPatchClassicLayer(currentLayers[ci])", "false", 1)
+        self.assertNotEqual([], find_lookup_sweep_current_violations(dirty))
 
     def test_rebinding_the_original_wait_context_is_red(self) -> None:
         dirty = self._mutate(

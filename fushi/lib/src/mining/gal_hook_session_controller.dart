@@ -190,6 +190,7 @@ class GalCaptureMemory {
     this.textThreadTypicalLength,
     this.audioFallbackPolicy = GalAudioFallbackPolicy.full,
     this.textProcess = kGalDefaultTextProcessPipeline,
+    this.engineExactDeclined = false,
   });
 
   factory GalCaptureMemory.fromJson(Map<Object?, Object?> json) {
@@ -211,6 +212,7 @@ class GalCaptureMemory {
       textProcess: json['textProcess'] is List
           ? GalTextProcessPipeline.fromJson(json['textProcess'])
           : kGalDefaultTextProcessPipeline,
+      engineExactDeclined: json['engineExactDeclined'] == true,
     );
   }
 
@@ -241,12 +243,22 @@ class GalCaptureMemory {
   /// 禁用一次 = 下次启动又被默认管线顶回来」。
   final GalTextProcessPipeline textProcess;
 
+  /// 用户在**引擎精确线程已登记**的会话里亲手选了别的线程（或清空选择）。
+  ///
+  /// 引擎精确线程（[isEngineExactTextThread]）默认压过记忆里的 Luna 线程：记忆多半
+  /// 是在这条精确线程出现之前手挑的（真机 Role player とろろ姉妹：旧会话记下的
+  /// KiriKiriZX 线程把后来才有的 ENGINE:KIRIKIRI 整页线程挡在自动选择之外）。但用户
+  /// 在两者并存时明确选了别的，就是在否决它——这一位把那次否决记下来，之后的会话
+  /// 不再自动换掉用户的选择。用户再选回引擎精确线程时清零。
+  final bool engineExactDeclined;
+
   bool get isEmpty =>
       excludedTrackFingerprints.isEmpty &&
       voiceTrackFingerprint == null &&
       textThreadFingerprint == null &&
       audioFallbackPolicy == GalAudioFallbackPolicy.full &&
-      textProcess == kGalDefaultTextProcessPipeline;
+      textProcess == kGalDefaultTextProcessPipeline &&
+      !engineExactDeclined;
 
   GalCaptureMemory copyWith({
     List<String>? excludedTrackFingerprints,
@@ -255,6 +267,7 @@ class GalCaptureMemory {
     int? textThreadTypicalLength,
     GalAudioFallbackPolicy? audioFallbackPolicy,
     GalTextProcessPipeline? textProcess,
+    bool? engineExactDeclined,
     bool clearVoiceTrack = false,
     bool clearTextThread = false,
   }) => GalCaptureMemory(
@@ -271,6 +284,7 @@ class GalCaptureMemory {
         : textThreadTypicalLength ?? this.textThreadTypicalLength,
     audioFallbackPolicy: audioFallbackPolicy ?? this.audioFallbackPolicy,
     textProcess: textProcess ?? this.textProcess,
+    engineExactDeclined: engineExactDeclined ?? this.engineExactDeclined,
   );
 
   Map<String, Object?> toJson() => <String, Object?>{
@@ -283,6 +297,7 @@ class GalCaptureMemory {
       'audioFallback': audioFallbackPolicy.storageKey,
     if (textProcess != kGalDefaultTextProcessPipeline)
       'textProcess': textProcess.toJson(),
+    if (engineExactDeclined) 'engineExactDeclined': true,
   };
 }
 
@@ -1255,6 +1270,14 @@ class GalHookSessionController extends ChangeNotifier {
 
   /// 文本线程记忆已在本会话应用过（或用户已手动选过线程）——两者都终止自动恢复。
   bool _textThreadMemoryApplied = false;
+
+  /// 用户本会话亲手选过线程（工作台下拉 / 设置对话框 / ctl，`remember: true`）。
+  /// 之后任何自动选择——记忆恢复与引擎精确线程接管——都不再碰选择。
+  bool _textThreadUserSelected = false;
+
+  /// 一次自动选择（记忆恢复或引擎精确接管）正在等 native 确认。两条自动路径共用：
+  /// 恢复的 select 还没回来时引擎接管又发一次，晚回来的那次会把选择改回去。
+  bool _textThreadAutoSelectInFlight = false;
 
   /// 记忆恢复文本线程所需的最小行数：native 线程 id 混了 processId，跨会话不稳定，
   /// 同一 hook 往往有多条并行线程共用同一指纹，只能靠「真的在出台词」来消歧。
@@ -3890,6 +3913,7 @@ class GalHookSessionController extends ChangeNotifier {
       if (remember) {
         // 用户已亲自表态：本会话不再自动恢复，并把这次选择记成新的真值。
         _textThreadMemoryApplied = true;
+        _textThreadUserSelected = true;
         TexthookerTextThread? chosen;
         for (final TexthookerTextThread thread in textThreads) {
           if (thread.key == _selectedTextThreadKey) {
@@ -4302,16 +4326,17 @@ class GalHookSessionController extends ChangeNotifier {
   /// （ctx 未透出），靠「谁真的在出台词」消歧。选中后本会话不再自动改，避免
   /// 行数此消彼长导致选择反复跳动。
   void _maybeRestoreTextThread() {
+    if (_textThreadUserSelected || _textThreadAutoSelectInFlight) return;
+    // 引擎精确线程先于记忆：它一旦真出过行，就接管「没有用户本会话亲选」的任何选择
+    // ——包括记忆恢复出来的 Luna 线程（见 [GalCaptureMemory.engineExactDeclined]）。
+    if (_maybeAutoSelectEngineExactThread()) return;
     if (_textThreadMemoryApplied || _selectedTextThreadKey != null) return;
     // 记忆未接入 / 本局拿不到游戏 key / 记忆里没有线程指纹，三种情况都落到
     // 引擎精确线程的自动选择；只有真有记忆时才按指纹恢复（用户显式选择优先）。
     final String? wanted = _ensureCaptureMemoryLoaded()
         ? _captureMemory.textThreadFingerprint
         : null;
-    if (wanted == null) {
-      _maybeAutoSelectEngineExactThread();
-      return;
-    }
+    if (wanted == null) return;
     // BUG-2706：必须是**本会话**的线程目录（全量目录里还留着上一次启动的死线程）。
     final TexthookerTextThread? best = pickRememberedTextThread(
       textThreads,
@@ -4321,10 +4346,12 @@ class GalHookSessionController extends ChangeNotifier {
     );
     if (best == null) return;
     _textThreadMemoryApplied = true;
+    _textThreadAutoSelectInFlight = true;
     unawaited(
       selectTextThread(best.nativeThreadId, threadKey: best.key).then((
         bool selected,
       ) {
+        _textThreadAutoSelectInFlight = false;
         if (!selected) return;
         _record(
           GalHookEventSeverity.info,
@@ -4333,6 +4360,9 @@ class GalHookSessionController extends ChangeNotifier {
           'Restored the text thread remembered for this game',
           details: <String, Object?>{'threadKey': best.key},
         );
+        // 恢复在飞期间引擎精确线程可能已出满行数，而那一轮的判定被在飞标记挡掉了；
+        // 选择落定后按当前目录重评一次（引擎线程已选中时立即返回，不会往复）。
+        _maybeRestoreTextThread();
       }),
     );
   }
@@ -4347,7 +4377,18 @@ class GalHookSessionController extends ChangeNotifier {
   /// 在十几条 MultiByteToWideChar 噪声线程里手挑它，只是把确定的事推给人。
   /// 判据与记忆恢复同款：必须真出过 [_textThreadRestoreMinLines] 行，避免只登记
   /// 未出行的线程被选中后一行不来。选中后本会话不再自动改。
-  void _maybeAutoSelectEngineExactThread() {
+  ///
+  /// 接管对象：没有选择，或选择来自自动路径（记忆恢复）且不是引擎精确线程。用户本会话
+  /// 亲选过（[_textThreadUserSelected]）或记忆里记着用户否决过
+  /// （[GalCaptureMemory.engineExactDeclined]）时不接管。
+  ///
+  /// 返回 true = 引擎精确线程已是当前选择或刚发起选择，调用方不再做记忆恢复。
+  bool _maybeAutoSelectEngineExactThread() {
+    final TexthookerTextThread? current = selectedTextThread;
+    if (current != null && isEngineExactTextThread(current)) return true;
+    if (_ensureCaptureMemoryLoaded() && _captureMemory.engineExactDeclined) {
+      return false;
+    }
     TexthookerTextThread? best;
     for (final TexthookerTextThread thread in textThreads) {
       if (!isEngineExactTextThread(thread)) continue;
@@ -4358,38 +4399,65 @@ class GalHookSessionController extends ChangeNotifier {
         best = thread;
       }
     }
-    if (best == null) return;
+    if (best == null) return false;
+    final TexthookerTextThread chosen = best;
+    final String? replaced = current?.key ?? _selectedTextThreadKey;
     _textThreadMemoryApplied = true;
+    _textThreadAutoSelectInFlight = true;
     unawaited(
-      selectTextThread(best.nativeThreadId, threadKey: best.key).then((
+      selectTextThread(chosen.nativeThreadId, threadKey: chosen.key).then((
         bool selected,
       ) {
+        _textThreadAutoSelectInFlight = false;
         if (!selected) return;
         _record(
           GalHookEventSeverity.info,
           'text',
           'text.thread_engine_exact_selected',
           'Selected the engine exact text thread automatically',
-          details: <String, Object?>{'threadKey': best!.key},
+          details: <String, Object?>{
+            'threadKey': chosen.key,
+            if (replaced != null) 'replacedThreadKey': replaced,
+          },
         );
       }),
     );
+    return true;
   }
 
   /// 用户显式选定/取消文本线程后同步持久化（null = 未选择，清掉记忆）。
   void _persistTextThread(TexthookerTextThread? thread) {
     if (!_ensureCaptureMemoryLoaded()) return;
+    // 引擎精确线程已登记时选了别的（或清空）= 否决它；选回它 = 撤销否决。
+    final bool engineExactPresent = textThreads.any(
+      (TexthookerTextThread t) =>
+          isEngineExactTextThread(t) &&
+          t.nativeThreadId != null &&
+          t.nativeThreadId != 0,
+    );
+    final bool declined =
+        engineExactPresent &&
+        (thread == null || !isEngineExactTextThread(thread));
     final String? fingerprint = thread == null
         ? null
         : textThreadFingerprint(thread);
     if (fingerprint == null) {
-      if (_captureMemory.textThreadFingerprint == null) return;
-      _saveCaptureMemory(_captureMemory.copyWith(clearTextThread: true));
+      if (_captureMemory.textThreadFingerprint == null &&
+          _captureMemory.engineExactDeclined == declined) {
+        return;
+      }
+      _saveCaptureMemory(
+        _captureMemory.copyWith(
+          clearTextThread: true,
+          engineExactDeclined: declined,
+        ),
+      );
       return;
     }
     final int? typicalLength = textThreadTypicalLength(thread!);
     if (_captureMemory.textThreadFingerprint == fingerprint &&
-        _captureMemory.textThreadTypicalLength == typicalLength) {
+        _captureMemory.textThreadTypicalLength == typicalLength &&
+        _captureMemory.engineExactDeclined == declined) {
       return;
     }
     _saveCaptureMemory(
@@ -4400,6 +4468,7 @@ class GalHookSessionController extends ChangeNotifier {
         textThreadTypicalLength: typicalLength,
         audioFallbackPolicy: _captureMemory.audioFallbackPolicy,
         textProcess: _captureMemory.textProcess,
+        engineExactDeclined: declined,
       ),
     );
   }
@@ -4473,6 +4542,8 @@ class GalHookSessionController extends ChangeNotifier {
   void _resetCaptureMemorySession() {
     _trackMemoryApplied = false;
     _textThreadMemoryApplied = false;
+    _textThreadUserSelected = false;
+    _textThreadAutoSelectInFlight = false;
     _captureMemoryLoaded = false;
     _captureMemoryGameKey = null;
     _captureMemory = const GalCaptureMemory();

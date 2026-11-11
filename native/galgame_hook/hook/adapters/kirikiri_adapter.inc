@@ -107,6 +107,8 @@ void PollKirikiriLookupInstall();
 // 拼成行写进文本道。与查词开关无关。
 void PollKirikiriKagTextInstall();
 void ProcessKirikiriKagTextBatches();
+// 查词就绪位的 worker 侧日志（x86 才有实现）：只在位变化时落一行。
+void LogKirikiriLookupReadiness();
 
 uint64_t ReadKirikiriSharedU64(volatile uint64_t* value) {
   return value == nullptr
@@ -212,6 +214,7 @@ void ProcessKirikiriVoiceTasks() {
   PollKirikiriLookupInstall();
   PollKirikiriKagTextInstall();
   ProcessKirikiriKagTextBatches();
+  LogKirikiriLookupReadiness();
   for (int i = 0; i < kKirikiriVoiceTaskSlots; ++i) {
     KiriKiriVoiceTask* task = &g_kirikiri_voice_tasks[i];
     if (InterlockedCompareExchange(&task->state, 3, 2) != 2) continue;
@@ -3467,6 +3470,29 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 						catch(e) { global.fushiLookupFault(); }
 					}
 				}
+				// 正文真正画在哪一层，KAG 只在 kag.current（及 currentWithBack 的 comp）上说了
+				// 算；它不一定是 fore/back.messages[] 里的某一项（真机 Role player とろろ姉妹：
+				// KAG 文本道只经 kag.current 就数到 144 次 processCh，而本 sweep 只扫两个数组、
+				// 每次点击都重扫，查词包装始终只见 6 次——对白层不在数组里，几何一个字都没进
+				// registry，点击落空、剧情推进）。两者都扫，PatchClassicLayer 幂等。
+				var currentLayers = [];
+				try
+				{
+					var current = global.kag.current;
+					currentLayers.add(current);
+					if(current !== void && current !== null && isvalid current &&
+						typeof current.comp == "Object")
+						currentLayers.add(current.comp);
+				}
+				catch(e) {}
+				for(var ci = 0; ci < currentLayers.count; ci++)
+				{
+					try
+					{
+						if(global.fushiLookupPatchClassicLayer(currentLayers[ci])) patched++;
+					}
+					catch(e) { global.fushiLookupFault(); }
+				}
 				if(patched > 0)
 					global.fushiLookupClassicSource = global.fushiLookupClassicSource | 8;
 				return patched;
@@ -4817,7 +4843,30 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 					}
 				}
 				catch(e) { flags = flags | 16; }
-				var shape = "f=" + flags + ",src=" +
+				// kag.current 的归属：cm=1/2 = 它是 fore/back.messages[] 的一项，0 = 不在两个
+				// 数组里（只有 kag.current 能找到它），-1 = 读不到；cp=1 = 已挂上查词包装。
+				var currentMember = -1, currentPatched = 0;
+				try
+				{
+					var cur = global.kag.current;
+					if(cur !== void && cur !== null && isvalid cur)
+					{
+						currentMember = 0;
+						if(typeof cur.fushiLookupClassicPatched != "undefined") currentPatched = 1;
+						for(var mp = 1; mp <= 2 && currentMember == 0; mp++)
+						{
+							var list = global.fushiLookupMessagesForPage(mp);
+							if(list === void || list === null) continue;
+							for(var mi = 0; mi < list.count && mi < 32; mi++)
+							{
+								if(list[mi] === cur) { currentMember = mp; break; }
+							}
+						}
+					}
+				}
+				catch(e) { currentMember = -2; }
+				var shape = "f=" + flags + ",cm=" + currentMember + ",cp=" + currentPatched +
+					",src=" +
 					global.fushiLookupInstancePluginSource + ",kc=" +
 					global.fushiLookupInstancePluginCount + ",ki=" +
 					global.fushiLookupInstancePluginIndex + ",c=" + count + ",s=" + seen +
@@ -7739,6 +7788,40 @@ void ProcessKirikiriKagTextBatches() {
   }
 }
 
+// 查词就绪位此前只进共享区（host 读 lookup_diag / xaudio_diagnostics2 / reserved_luna），
+// helper 日志里一行都没有——真机只拿得到日志时（とろろ姉妹：查词点击落空、剧情推进），
+// 分不出传感器装没装、有没有采到字形、点没点中。worker 上读三个字，任一变化就落一行原值，
+// 解码表见 voice_hook_ipc.h 各位的定义。位只增不减，整局最多几十行。
+void LogKirikiriLookupReadiness() {
+  if (g_header == nullptr) return;
+  static uint32_t last_lookup = 0;
+  static uint32_t last_diag2 = 0;
+  static uint32_t last_luna = 0;
+  static bool logged = false;
+  const uint32_t lookup = static_cast<uint32_t>(InterlockedCompareExchange(
+      reinterpret_cast<volatile LONG*>(&g_header->lookup_diag), 0, 0));
+  const uint32_t diag2 = static_cast<uint32_t>(InterlockedCompareExchange(
+      reinterpret_cast<volatile LONG*>(&g_header->xaudio_diagnostics2), 0, 0));
+  const uint32_t luna = static_cast<uint32_t>(InterlockedCompareExchange(
+      reinterpret_cast<volatile LONG*>(&g_header->reserved_luna), 0, 0));
+  if (logged && lookup == last_lookup && diag2 == last_diag2 && luna == last_luna) {
+    return;
+  }
+  if (!logged && lookup == 0 && diag2 == 0 && luna == 0) return;
+  logged = true;
+  last_lookup = lookup;
+  last_diag2 = diag2;
+  last_luna = luna;
+  wchar_t text[160] = {};
+  _snwprintf_s(text, _TRUNCATE,
+               L"[FushiLookup] readiness lookup_diag=0x%08lx diag2=0x%08lx "
+               L"reserved_luna=0x%08lx enabled=%ld sensor_live=%d",
+               static_cast<unsigned long>(lookup), static_cast<unsigned long>(diag2),
+               static_cast<unsigned long>(luna), static_cast<long>(LookupEnabledNow()),
+               g_lookup_sensor_live ? 1 : 0);
+  HookLogLine(text);
+}
+
 // HookWorker 侧只登记意图，一个引擎 API 都不调（BUG-1724）。准入只看 exporter，不看
 // lookup_enabled：文本道必须与查词传感器是否装上无关。
 void PollKirikiriKagTextInstall() {
@@ -8545,6 +8628,7 @@ bool TryHookKirikiriVoiceStream() { return true; }
 void PollKirikiriLookupInstall() {}
 void PollKirikiriKagTextInstall() {}
 void ProcessKirikiriKagTextBatches() {}
+void LogKirikiriLookupReadiness() {}
 bool KirikiriLookupSensorLive() { return false; }
 bool KirikiriLookupExporterAvailable() { return false; }
 
