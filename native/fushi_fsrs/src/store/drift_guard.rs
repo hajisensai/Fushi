@@ -67,9 +67,6 @@ pub(crate) const DRIFT_TX_POLICY: &[(&str, DriftTxPolicy)] = &[
     ("retire", Join),
     ("dedup", Join),
     ("trust", Join),
-    // 一轮收尾的自愈（store/sync2/heal.rs `sync2_digest_heal`，#3248）：这一步仍经 `_sync2Write` 在 Drift 事务里发，
-    // 与 `dedup` 同属改投影的写；写路径 2 起改成内核本机写命令、策略改 Reject。
-    ("digest_heal", Join),
     // 缓存维护的 Drift 事务（`_upgradeCaches` / `rebuildCaches` / `compactStoredStyles`）与上面各事务里的刷新。
     ("refresh_caches", Join),
     ("rebuild_caches", Join),
@@ -126,6 +123,9 @@ pub(crate) const DRIFT_TX_POLICY: &[(&str, DriftTxPolicy)] = &[
     ("plan_restore", ReadVisible),
     // ---- Reject：不该落进别人的 Drift 事务。`plan` 只有 `readOnly` 那一路是读（[policy_of]）。
     ("plan", Reject),
+    // 摘要不一致的自动重建（store/sync2/heal.rs）：本机写命令，唯一的调用方是同步一轮的收尾（srs_sync2_round.dart），
+    // 不开 Drift 事务。
+    ("digest_heal", Reject),
     ("identity", Reject),
     // 集合绑定状态只进不退（store/binding.rs）：与 `identity` 同属身份记账，随别人的 Drift 事务回滚就把「已定下」退回去了；
     // 调用方（srs_db_store.dart `setCollectionBinding`）走排队的 `sync2Command`，不开 Drift 事务。

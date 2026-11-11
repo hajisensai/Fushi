@@ -1163,6 +1163,7 @@ const LOCAL_WRITE_OPS: &[&str] = &[
     "restore",
     "retire",
     "dedup",
+    "digest_heal",
 ];
 
 /// [LOCAL_WRITE_OPS] 写锁外的预处理：只读已提交数据（冲突表）、不持锁的解析与收段预处理。
@@ -1276,6 +1277,8 @@ fn local_write_body(
         "sched" => s2::sched_local::sched_local_on(conn, profile, now, req)?,
         // 存量重复流收敛作业推进一步（store/sync2/dedup.rs）；`done` 为假就再发。
         "dedup" => s2::dedup::dedup_on(conn, profile, now)?,
+        // 摘要不一致的自动重建（store/sync2/heal.rs）：重放改写的卡随这次命令刷新缓存。
+        "digest_heal" => s2::heal::digest_heal_on(conn, profile, now)?,
         "import" => s2::transport::import_on(
             conn,
             profile,
@@ -1856,8 +1859,6 @@ fn sync2_command(
             Some(ms) => c.sync2_digest_due(profile, i("now")?, Some(ms))?,
             None => c.sync2_digest(profile)?,
         },
-        // 摘要不一致的自动重建（store/sync2/heal.rs）：重放改写的卡在分发器里刷新缓存（[PROJECTING_OPS]）。
-        "digest_heal" => c.sync2_digest_heal(profile, i("now")?)?,
         "status" => c.sync2_status(profile)?,
         // 设备可识别（store/sync2/devices.rs）：本机型号 / 版本 / 平台 / 昵称（给了哪个改哪个，没变不进写锁）；没有自报名字
         // 的设备的补充名（互联 host 认出上传者）。
