@@ -284,19 +284,43 @@ inline constexpr size_t kInputScanBytes = 0x900u;
 
 // ── signatures: targeted-render layout ─────────────────────────────────────
 
-// RenderChar(renderer, record, target) prologue.
+// RenderChar(renderer, record, target) prologue:
+//   sub esp,F; lea eax,[esp+F-0x20]; push ebx; push ebp; push esi;
+//   mov esi,[GetLocalTime-like import]; mov ebx,ecx; push eax; call esi
+// The frame F is not fixed: 0xcc for the message window's renderer class,
+// 0xd0 for the second text-window class of the VS2013 cs2 2.6.1.90 build
+// (whose window draws its own pages through its own RenderChar).  F is read
+// from the prologue and every stack offset the proof checks follows it.
 inline constexpr uint8_t kRenderTBytes[] = {
     0x81, 0xec, 0xcc, 0x00, 0x00, 0x00, 0x8d, 0x84, 0x24, 0xac, 0x00, 0x00,
     0x00, 0x53, 0x55, 0x56, 0x8b, 0x35, 0x00, 0x00, 0x00, 0x00, 0x8b, 0xd9,
     0x50, 0xff, 0xd6};
-inline constexpr size_t kRenderTWildcards[][2] = {{18u, 22u}};
+inline constexpr size_t kRenderTWildcards[][2] = {
+    {2u, 6u}, {9u, 13u}, {18u, 22u}};
+inline constexpr size_t kRenderTFrameDisp = 2u;  // sub esp,imm32
+inline constexpr size_t kRenderTLeaDisp = 9u;    // lea eax,[esp+imm32]
+inline constexpr uint32_t kRenderTLeaBelowFrame = 0x20u;
+inline constexpr uint32_t kRenderTMinFrame = 0x80u;
+inline constexpr uint32_t kRenderTMaxFrame = 0x400u;
+// RenderChar-shaped prologues beyond which the image is not trusted.
+inline constexpr size_t kMaxRenderCopies = 4u;
 inline constexpr auto kRenderTMask =
     WildcardMask<sizeof(kRenderTBytes)>(kRenderTWildcards);
-// The record argument and its pen position.
+// The record argument and its pen position: `mov edi,[esp+F+0x14]` (the
+// record, first stack argument after the three pushes and the return
+// address), two zeroed consecutive locals, then the pen x / y loads.
 inline constexpr uint8_t kRecordPenTBytes[] = {
     0x8b, 0xbc, 0x24, 0xe0, 0x00, 0x00, 0x00, 0xc7, 0x44, 0x24,
     0x2c, 0x00, 0x00, 0x00, 0x00, 0xc7, 0x44, 0x24, 0x30, 0x00,
     0x00, 0x00, 0x00, 0x8b, 0x47, 0x10, 0x8b, 0x4f, 0x14};
+inline constexpr size_t kRecordPenTWildcards[][2] = {
+    {3u, 7u}, {10u, 11u}, {18u, 19u}};
+inline constexpr auto kRecordPenTMask =
+    WildcardMask<sizeof(kRecordPenTBytes)>(kRecordPenTWildcards);
+inline constexpr size_t kRecordPenTRecordDisp = 3u;
+inline constexpr uint32_t kRecordPenTRecordAboveFrame = 0x14u;
+inline constexpr size_t kRecordPenTFirstLocal = 10u;
+inline constexpr size_t kRecordPenTSecondLocal = 18u;
 inline constexpr size_t kRecordPenTOffset = 0x6fu;
 // esi = vtable of the font object [renderer]; code and font size of the
 // record go to `call [esi+4]` (GetCharImage, vtable slot 1).  The arguments
@@ -318,7 +342,8 @@ inline constexpr uint8_t kRecordCodePushTBytes[] = {0x0f, 0xb7, 0x47, 0x04,
                                                     0x50};
 inline constexpr uint8_t kCharImageCallTBytes[] = {0xff, 0x56, 0x04};
 inline constexpr size_t kRecordCharTScanBytes = 0x60u;
-// Epilogue: the prologue's 0xcc-byte frame released, two stack arguments
+// Epilogue: the prologue's frame (0xcc here; bytes 2..5 are F) released, two
+// stack arguments
 // (record, target image) popped, then int3 padding.  Its distance from the
 // entry is not fixed across builds (+0x298 on the VS2017 cs2 2.6.1.90 build,
 // +0x29e on the VS2013 one, whose body interleaves the GetCharImage argument
@@ -327,6 +352,7 @@ inline constexpr size_t kRecordCharTScanBytes = 0x60u;
 inline constexpr uint8_t kRenderTailTBytes[] = {0x81, 0xc4, 0xcc, 0x00, 0x00,
                                                 0x00, 0xc2, 0x08, 0x00, 0xcc};
 inline constexpr size_t kRenderTailTOffset = 0x298u;  // VS2017 build (tests)
+inline constexpr size_t kRenderTailTFrameDisp = 2u;
 inline constexpr size_t kRenderTMaxBodyBytes = 0x400u;
 inline constexpr uint32_t kRenderTStackArgs = 2u;
 // The vtable entry GetCharImage must be found through.
@@ -534,7 +560,21 @@ struct ObjectLayout {
   size_t work_image = kRendererWorkImageOffset;    // [renderer+]: fade page
 };
 
+// One text-window class: its Update, the RenderChar its reveal loop draws
+// through, the ClearPage of that renderer class and the fields read from
+// that proving code.  The VS2013 cs2 2.6.1.90 build has two such classes
+// (each with its own renderer class and RenderChar); which one a game shows
+// its dialogue in is runtime configuration, so every proven class is hooked.
+struct TextClass {
+  uintptr_t clear_page = 0u;
+  uintptr_t render_char = 0u;
+  uintptr_t window_update = 0u;
+  ObjectLayout layout;
+};
+inline constexpr size_t kMaxTextClasses = 2u;
+
 struct Sites {
+  // classes[0] mirrored for the first layout and for single-class callers.
   uintptr_t clear_page = 0u;     // hook targets (mapped addresses)
   uintptr_t render_char = 0u;
   uintptr_t window_update = 0u;
@@ -546,6 +586,8 @@ struct Sites {
   uint32_t input_stack_args = 0u;   // Input::Handle stdcall arguments
   SceneWalk walk;
   ObjectLayout layout;
+  uint32_t class_count = 0u;
+  std::array<TextClass, kMaxTextClasses> classes{};
 };
 
 enum class SiteResult : uint32_t {
@@ -867,6 +909,35 @@ inline bool HasVirtualCharImageCall(const uint8_t* body, size_t body_bytes,
     if (object != SIZE_MAX) ++calls;
   }
   return calls == 1u;
+}
+
+// One RenderChar-shaped prologue at `entry` (see kRenderTBytes): frame read
+// from the prologue, record argument and pen block at the frame's stack
+// offsets, the epilogue releasing that frame as the end of the body, and one
+// GetCharImage vcall inside it.
+inline bool ProveRenderCharT(const uint8_t* entry) {
+  if (!exact::IsReadableSpan(entry, kRenderTMaxBodyBytes)) return false;
+  uint32_t frame = 0u, lea = 0u, record = 0u;
+  std::memcpy(&frame, entry + kRenderTFrameDisp, sizeof(frame));
+  std::memcpy(&lea, entry + kRenderTLeaDisp, sizeof(lea));
+  const uint8_t* pen = entry + kRecordPenTOffset;
+  std::memcpy(&record, pen + kRecordPenTRecordDisp, sizeof(record));
+  if (frame < kRenderTMinFrame || frame >= kRenderTMaxFrame ||
+      frame % 4u != 0u || lea != frame - kRenderTLeaBelowFrame ||
+      !MatchesAt(pen, kRecordPenTBytes, kRecordPenTMask.data(),
+                 sizeof(kRecordPenTBytes)) ||
+      record != frame + kRecordPenTRecordAboveFrame ||
+      pen[kRecordPenTSecondLocal] !=
+          static_cast<uint8_t>(pen[kRecordPenTFirstLocal] + 4u)) {
+    return false;
+  }
+  uint8_t tail_bytes[sizeof(kRenderTailTBytes)] = {};
+  std::memcpy(tail_bytes, kRenderTailTBytes, sizeof(tail_bytes));
+  std::memcpy(tail_bytes + kRenderTailTFrameDisp, &frame, sizeof(frame));
+  constexpr size_t kPenEnd = kRecordPenTOffset + sizeof(kRecordPenTBytes);
+  const size_t tail = IndexOf(entry, kPenEnd, kRenderTMaxBodyBytes,
+                              tail_bytes, sizeof(tail_bytes));
+  return tail != SIZE_MAX && HasVirtualCharImageCall(entry, tail, kPenEnd);
 }
 
 /// ── targeted-render structural readers ─────────────────────────────────────
@@ -1256,6 +1327,9 @@ inline SiteResult ResolveAdjacentPageSites(const exact::LoadedPeImage& image,
     return SiteResult::kInputImportsInvalid;
   }
   found->input_handler = handler;
+  found->class_count = 1u;
+  found->classes[0] = {found->clear_page, found->render_char,
+                       found->window_update, found->layout};
   found->variant = SiteVariant::kAdjacentPage;
   found->render_stack_args = 1u;
   found->input_stack_args = kInputStackArgs;
@@ -1270,21 +1344,18 @@ inline SiteResult ResolveAdjacentPageSites(const exact::LoadedPeImage& image,
 inline SiteResult ResolveTargetedRenderSites(
     const exact::LoadedPeImage& image, const ImportSlots& imports,
     Sites* found) {
-  // ── RenderChar, record layout, rasteriser chain ──
-  const auto render = FindUnique(image, kRenderTBytes, kRenderTMask.data(),
-                                 sizeof(kRenderTBytes));
-  if (render.count != 1u) return SiteResult::kPageMissing;
-  const uint8_t* entry = render.address;
-  constexpr size_t kPenEnd = kRecordPenTOffset + sizeof(kRecordPenTBytes);
-  const size_t tail =
-      exact::IsReadableSpan(entry, kRenderTMaxBodyBytes)
-          ? IndexOf(entry, kPenEnd, kRenderTMaxBodyBytes, kRenderTailTBytes,
-                    sizeof(kRenderTailTBytes))
-          : SIZE_MAX;
-  if (!MatchesAt(entry + kRecordPenTOffset, kRecordPenTBytes, nullptr,
-                 sizeof(kRecordPenTBytes)) ||
-      tail == SIZE_MAX || !HasVirtualCharImageCall(entry, tail, kPenEnd)) {
-    return SiteResult::kRecordInvalid;
+  // ── RenderChar(s), record layout, rasteriser chain ──
+  // Every RenderChar-shaped prologue must pass the record proof (an
+  // unexplained copy could be the one the game draws with).
+  const uint8_t* renders[kMaxRenderCopies] = {};
+  const size_t render_count =
+      FindAllMatches(image, kRenderTBytes, kRenderTMask.data(),
+                     sizeof(kRenderTBytes), renders, kMaxRenderCopies);
+  if (render_count == 0u || render_count == SIZE_MAX) {
+    return SiteResult::kPageMissing;
+  }
+  for (size_t index = 0u; index < render_count; ++index) {
+    if (!ProveRenderCharT(renders[index])) return SiteResult::kRecordInvalid;
   }
   uintptr_t char_image = 0u;
   uintptr_t rasteriser = 0u;
@@ -1292,14 +1363,14 @@ inline SiteResult ResolveTargetedRenderSites(
                             &rasteriser)) {
     return SiteResult::kRasteriserInvalid;
   }
-  found->render_char = reinterpret_cast<uintptr_t>(entry);
   found->char_image = char_image;
   found->rasteriser = rasteriser;
 
-  // ── message-window Update → reveal loop → RenderChar; SyncLayer ──
-  // Several part classes share the Update body (cs2 2.6.1.90 has a second
-  // window class with its own renderer); the message window's is the one
-  // whose reveal loop renders through RenderChar.
+  // ── text-window Update → reveal loop → RenderChar; SyncLayer ──
+  // Several part classes share the Update body.  A text-window class is an
+  // Update whose reveal renders through one of the proven RenderChars; each
+  // RenderChar belongs to at most one such Update.  Updates whose reveal
+  // renders through none of them are other parts, not text windows.
   const uint8_t* updates[kMaxUpdateCopies] = {};
   const size_t update_count =
       FindAllMatches(image, kUpdateTBytes, kUpdateTMask.data(),
@@ -1307,50 +1378,75 @@ inline SiteResult ResolveTargetedRenderSites(
   if (update_count == 0u || update_count == SIZE_MAX) {
     return SiteResult::kUpdateMissing;
   }
-  const uint8_t* update_address = nullptr;
-  uintptr_t reveal = 0u;
+  struct Candidate {
+    const uint8_t* update;
+    uintptr_t reveal;
+    uintptr_t render;
+  };
+  Candidate classes[kMaxTextClasses] = {};
+  size_t class_count = 0u;
   for (size_t index = 0u; index < update_count; ++index) {
-    uintptr_t candidate = 0u;
+    uintptr_t reveal = 0u;
     if (!exact::DecodeRel32CallTarget(updates[index] + kUpdateTRevealCall,
-                                      &candidate) ||
-        !CallsTarget(image, candidate, kRevealScanBytes, found->render_char)) {
+                                      &reveal)) {
       continue;
     }
-    if (update_address != nullptr) return SiteResult::kUpdateMissing;
-    update_address = updates[index];
-    reveal = candidate;
+    uintptr_t render = 0u;
+    for (size_t r = 0u; r < render_count; ++r) {
+      const uintptr_t target = reinterpret_cast<uintptr_t>(renders[r]);
+      if (!CallsTarget(image, reveal, kRevealScanBytes, target)) continue;
+      if (render != 0u) return SiteResult::kRevealInvalid;  // two renderers
+      render = target;
+    }
+    if (render == 0u) continue;
+    for (size_t c = 0u; c < class_count; ++c) {
+      if (classes[c].render == render) return SiteResult::kUpdateMissing;
+    }
+    if (class_count == kMaxTextClasses) return SiteResult::kUpdateMissing;
+    classes[class_count++] = {updates[index], reveal, render};
   }
-  if (update_address == nullptr) return SiteResult::kRevealInvalid;
-  uint32_t window_renderer = 0u;
-  std::memcpy(&window_renderer, update_address + kUpdateTRendererDisp,
-              sizeof(window_renderer));
-  if (!IsWindowField(window_renderer)) return SiteResult::kUpdateMissing;
-  uintptr_t sync = 0u;
-  uint8_t window_screen = 0u;
-  if (!exact::DecodeRel32CallTarget(update_address + kUpdateTSyncCall,
-                                    &sync) ||
-      !IsExecutableImageAddress(image, sync, kSyncScanBytes) ||
-      !FindSyncScreenField(reinterpret_cast<const uint8_t*>(sync),
-                           &window_screen)) {
-    return SiteResult::kSyncInvalid;
-  }
-  found->window_update = reinterpret_cast<uintptr_t>(update_address);
+  if (class_count == 0u) return SiteResult::kRevealInvalid;
 
-  // ── ClearPage: both page images through one fill; called through the
-  //    window's renderer field ──
-  ObjectLayout layout;
-  layout.window_renderer = window_renderer;
-  layout.window_screen = window_screen;
-  uintptr_t clear_page = 0u;
-  if (!FindClearPageT(image, window_renderer, reveal, &clear_page, &layout)) {
-    return SiteResult::kClearInvalid;
+  // ── per class: window fields, ClearPage (both page images through one
+  //    fill; called through the window's renderer field by the caller that
+  //    also drives this class's reveal) ──
+  uint8_t window_screen = 0u;
+  for (size_t c = 0u; c < class_count; ++c) {
+    uint32_t window_renderer = 0u;
+    std::memcpy(&window_renderer, classes[c].update + kUpdateTRendererDisp,
+                sizeof(window_renderer));
+    if (!IsWindowField(window_renderer)) return SiteResult::kUpdateMissing;
+    uintptr_t sync = 0u;
+    uint8_t screen = 0u;
+    if (!exact::DecodeRel32CallTarget(classes[c].update + kUpdateTSyncCall,
+                                      &sync) ||
+        !IsExecutableImageAddress(image, sync, kSyncScanBytes) ||
+        !FindSyncScreenField(reinterpret_cast<const uint8_t*>(sync),
+                             &screen) ||
+        (window_screen != 0u && screen != window_screen)) {
+      return SiteResult::kSyncInvalid;  // the part base has one screen field
+    }
+    window_screen = screen;
+    TextClass& out = found->classes[c];
+    out.layout.window_renderer = window_renderer;
+    out.layout.window_screen = screen;
+    if (!FindClearPageT(image, window_renderer, classes[c].reveal,
+                        &out.clear_page, &out.layout)) {
+      return SiteResult::kClearInvalid;
+    }
+    out.render_char = classes[c].render;
+    out.window_update = reinterpret_cast<uintptr_t>(classes[c].update);
   }
-  found->clear_page = clear_page;
+  found->class_count = static_cast<uint32_t>(class_count);
+  found->render_char = found->classes[0].render_char;
+  found->clear_page = found->classes[0].clear_page;
+  found->window_update = found->classes[0].window_update;
+  const ObjectLayout layout = found->classes[0].layout;
 
   // ── layer id / screen → scene (layer by pointer) ──
   uint8_t layer_query[sizeof(kLayerQueryTBytes)] = {};
   std::memcpy(layer_query, kLayerQueryTBytes, sizeof(layer_query));
-  layer_query[kLayerQueryTScreenDisp] = window_screen;
+  layer_query[kLayerQueryTScreenDisp] = window_screen;  // all classes
   uintptr_t screen_query = 0u;
   if (!FindAgreeingCallTarget(image, layer_query, kLayerQueryTMask.data(),
                               sizeof(layer_query), kLayerQueryTCall,
