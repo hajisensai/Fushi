@@ -1048,6 +1048,30 @@ pub(crate) fn sync2_dispatch(
             crate::store::repr_rewrite::command_on(conn, profile, req, &cfg)
         });
     }
+    // 媒体回收（store/media_gc.rs）：待回收集合是内核持有的本机状态键。并候选、「核对存活引用 → 删文件 → 移出集合」
+    // 各自一次持写锁、一个 SAVEPOINT（后者对写入原子：期间没有写入能重新引用刚判为无引用的文件）；存活引用另有
+    // 只读命令给 Dart 的位置清理用。都不改投影、不推进修订号。回收要完整的存活引用，所以只有它在通道没做完时
+    // 先做完通道（[CHANNEL_SETTLES]）；另外两条对通道透明。
+    if op == "media_gc_queue" {
+        let w = c.writer()?;
+        return crate::store::sync2::in_savepoint(&w, |conn| {
+            crate::store::media_gc::queue(conn, profile, req)
+        });
+    }
+    if op == "media_gc_collect" {
+        let cfg = cache_config_of(c, profile, req)?;
+        let w = c.writer()?;
+        return crate::store::sync2::in_savepoint(&w, |conn| {
+            crate::store::media_gc::collect(conn, profile, &cfg, req)
+        });
+    }
+    if op == "media_live_refs" {
+        let cfg = cache_config_of(c, profile, req)?;
+        let after = i("aliveAfter")?;
+        return c.read_visible(|conn| {
+            Ok(json!({"refs": crate::store::media_gc::live_refs(conn, profile, &cfg, after)?}))
+        });
+    }
     // 本机写命令：命令本体、缓存刷新、排队与本机状态行在同一次持写锁、同一个 SAVEPOINT 里（[local_write]）。
     if LOCAL_WRITE_OPS.contains(&op) {
         let cfg = cache_config_of(c, profile, req)?;
@@ -1202,6 +1226,8 @@ const LOCAL_WRITE_OPS: &[&str] = &[
     "apply",
     "import_drafts",
     "change",
+    "note_fields_if",
+    "merge_notes",
     "sched",
     "deck_delete",
     "import",
@@ -1236,7 +1262,7 @@ fn local_write(
 ) -> Result<serde_json::Value, String> {
     use serde_json::Value;
     let mut pre = LocalPre::default();
-    if op == "apply" || op == "import_drafts" || op == "change" {
+    if op == "apply" || op == "import_drafts" || op == "change" || op == "note_fields_if" {
         let input = std::str::from_utf8(blobs.first().ok_or("apply: missing input")?)
             .map_err(|e| e.to_string())?;
         pre.items = crate::store::sync2::parse_apply_input(input)?;
@@ -1257,6 +1283,10 @@ fn local_write(
         c.settle_channel_on(&w, profile)?;
     }
     crate::store::sync2::in_savepoint(&w, |conn| {
+        // `apply` 的前置条件（远程作答核对基准）：不成立就什么都不做——不落、旧版时钟不走、不排队、不写本机状态行。
+        if op == "apply" && !expect_last_holds(conn, req)? {
+            return Ok(serde_json::json!({"stale": true}));
+        }
         let mut v = local_write_body(conn, op, profile, req, blobs, &mut pre)?;
         let mut written = crate::store::caches::refresh(
             conn,
@@ -1305,6 +1335,29 @@ fn local_write(
     })
 }
 
+/// `apply` 请求的可选前置条件 `expectLast: {card, log}`：这张卡的缓存行还在、且它最后一条生效日志就是 `log`（null =
+/// 还没有日志）。远程复习的作答带它（Dart `SrsRemoteStoreService` 的 `answerAndStudy` 路由）：客户端出题之后主机上
+/// 这张卡又被作答 / 撤销 / 删掉了，就不该再按客户端看到的那一面记一条日志。核对与落库在同一笔里，中间插不进别的
+/// 写入。不带 = 成立。
+fn expect_last_holds(conn: &rusqlite::Connection, req: &serde_json::Value) -> Result<bool, String> {
+    let Some(expect) = req.get("expectLast").filter(|e| e.is_object()) else {
+        return Ok(true);
+    };
+    let card = expect["card"]
+        .as_str()
+        .ok_or("apply: missing expectLast.card")?;
+    let last: Option<Option<String>> = conn
+        .prepare_cached("SELECT srs_idt(last_log_id) FROM srs_cards_cache WHERE id = srs_id(?1)")
+        .map_err(|e| e.to_string())?
+        .query_row([card], |r| r.get(0))
+        .map(Some)
+        .or_else(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => Ok(None),
+            e => Err(e.to_string()),
+        })?;
+    Ok(last.is_some_and(|l| l.as_deref() == expect["log"].as_str()))
+}
+
 /// [LOCAL_WRITE_OPS] 的命令本体：在 [local_write] 持着的写连接、开好的 SAVEPOINT 里做（各 `*_on` 都不自己取锁）。
 fn local_write_body(
     conn: &rusqlite::Connection,
@@ -1351,6 +1404,12 @@ fn local_write_body(
         // 结构性改动（更改笔记类型、删除重复模板、旧 Lapis 迁移）：还原点 + 一批修改记录（store/sync2/change.rs）；带
         // `move` 时 [local_write] 在缓存刷新之后接着做移牌组那一段。
         "change" => s2::change::change_on(conn, profile, now, req, &pre.items)?,
+        // 条件写笔记字段（批量改字段的落计划 / 撤销）：比对现值与写入在一笔里（store/sync2/note_fields_if.rs）。
+        "note_fields_if" => {
+            s2::note_fields_if::note_fields_if_on(conn, profile, now, req, &pre.items)?
+        }
+        // 合并重复笔记：还原点、前身链接、补字段 / 并标签、删除被吸收的笔记（store/sync2/merge_notes.rs）。
+        "merge_notes" => s2::merge_notes::merge_notes_on(conn, profile, now, req)?,
         // 本机手动排程操作（重置 / 改期 / 撤销 / 立即重排）：显式意图，内核算结果并落库（store/sync2/sched_local.rs）。
         "sched" => s2::sched_local::sched_local_on(conn, profile, now, req)?,
         // 删牌组（连同子牌组）：显式意图，分步（store/sync2/deck_delete.rs）；`done` 为假就带着 `token` 再发。
@@ -1518,6 +1577,8 @@ const CHANNEL_TRANSPARENT: &[&str] = &[
     "obsolete_ack",
     "relay_ack",
     "media_known",
+    "media_gc_queue",
+    "media_live_refs",
     "profile_footprint",
     "profile_purge",
     "derive_key",
@@ -1539,6 +1600,8 @@ const CHANNEL_SETTLES: &[&str] = &[
     "apply",
     "import_drafts",
     "change",
+    "note_fields_if",
+    "merge_notes",
     "sched",
     "deck_delete",
     "retire",
@@ -1567,12 +1630,15 @@ const CHANNEL_SETTLES: &[&str] = &[
     "backfill_tag_sources",
     "backfill_source_keys",
     "edits_rewrite_repr",
+    "media_gc_collect",
 ];
 
 const PROJECTING_OPS: &[&str] = &[
     "apply",
     "import_drafts",
     "change",
+    "note_fields_if",
+    "merge_notes",
     "sched",
     "deck_delete",
     "retire",

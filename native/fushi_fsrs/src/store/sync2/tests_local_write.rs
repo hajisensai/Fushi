@@ -618,3 +618,69 @@ fn import_drafts_drops_authored_initials_and_reports_existing_entities() {
     assert_eq!(r.get("existed"), None);
     assert_eq!(value(NOTE, "f/fa"), json!("again"));
 }
+
+/// `apply` 的前置条件 `expectLast`（远程作答核对基准）：核对与落库在同一笔里；不成立时什么都不做——不落、旧版时钟
+/// 不走、不排队、不写本机状态行，回包只有 `stale`。
+#[test]
+fn apply_checks_expect_last_before_anything_lands() {
+    let d = Device::new("lw-expect");
+    let deck = super::config::default_deck_id(P);
+    dispatch(
+        &d,
+        json!({"op": "apply", "profile": P, "now": T0, "caches": caches(&deck), "legacyDevice": "dev", "localState": "{}"}),
+        Some(note_events(&deck)),
+    )
+    .unwrap();
+    let card = d.rows(&format!(
+        "SELECT srs_idt(id) AS id FROM srs_cards_cache WHERE note_id = srs_id('{NOTE}')"
+    ))[1][0]
+        .clone();
+    let answer = |log: &str, at: i64, expect: Value| {
+        let x = json!({
+            "id": log, "p": P, "card": card, "kind": "review", "rating": 3, "at": at,
+            "ts": "anchored", "origin": "fushi", "rtype": "learn", "utcOff": 0, "rollover": 4, "fv": 1,
+            "res": {"queue": "new", "ivl": 0, "step": 0, "reps": 0, "lapses": 0, "scheduler": "fushi"}
+        });
+        dispatch(
+            &d,
+            json!({
+                "op": "apply", "profile": P, "now": at, "caches": caches(&deck), "legacyDevice": "dev",
+                "tickNow": at, "stamps": true, "expectLast": expect, "localState": "{}",
+            }),
+            Some(
+                json!([{"e": {"t": "log", "x": x}, "note": NOTE, "intent": "answer", "clk": "t"}])
+                    .to_string(),
+            ),
+        )
+        .unwrap()
+    };
+    const L1: &str = "0193a1b2-0000-7000-8000-00000000d0e1";
+    const L2: &str = "0193a1b2-0000-7000-8000-00000000d0e2";
+    const GONE: &str = "0193a1b2-0000-7000-8000-00000000d0ef";
+    // 还没有日志：基准 null 成立。
+    let r = answer(L1, T0 + 10, json!({"card": card, "log": null}));
+    assert!(r.get("stale").is_none(), "{r}");
+    assert_eq!(r["stamps"].as_array().unwrap().len(), 1, "{r}");
+    let before = (
+        count(&d, "SELECT COUNT(*) AS n FROM sync2_ops"),
+        local_state(&d),
+    );
+    // 出题之后这张卡又被作答过（基准还是 null）、基准是别的日志、卡不存在：都不成立。
+    for expect in [
+        json!({"card": card, "log": null}),
+        json!({"card": card, "log": L2}),
+        json!({"card": GONE, "log": null}),
+    ] {
+        let r = answer(L2, T0 + 20, expect);
+        assert_eq!(r, json!({"stale": true}));
+        assert_eq!(count(&d, "SELECT COUNT(*) AS n FROM sync2_ops"), before.0);
+        assert_eq!(local_state(&d), before.1);
+    }
+    // 基准是它最后一条日志：成立。
+    let r = answer(L2, T0 + 20, json!({"card": card, "log": L1}));
+    assert!(r.get("stale").is_none(), "{r}");
+    assert_eq!(
+        count(&d, "SELECT COUNT(*) AS n FROM sync2_ops"),
+        before.0 + 1
+    );
+}

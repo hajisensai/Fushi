@@ -49,6 +49,26 @@ SrsTrustedClock srsProcessTrustedClock(SrsCore core) => SrsTrustedClock(
   bootId: _srsProcessBootId,
 );
 
+/// 条件写笔记字段的一项（见 [SrsDbStore.editNoteFieldsIf]）：字段现值仍是 [expect] 才写成 [value]。
+typedef SrsNoteFieldWrite = ({
+  String noteId,
+  String fieldId,
+  String expect,
+  String value,
+});
+
+/// [SrsDbStore.answerAndStudy] 给了基准（`expectBase`）而基准不成立：出题之后这张卡又被作答 / 撤销过、或已经不在
+/// 了。什么都没落库。
+class SrsStaleCardError implements Exception {
+  const SrsStaleCardError(this.cardId);
+
+  final String cardId;
+
+  @override
+  String toString() =>
+      'SrsStaleCardError: card $cardId changed since it was shown';
+}
+
 /// 批量写的一项：某实体的某字段改成 [value]（见 [SrsDbStore.editFieldsBatch]）。
 class SrsFieldChange {
   const SrsFieldChange(this.kind, this.entityId, this.key, this.value);
@@ -555,12 +575,6 @@ class SrsDbStore implements SrsSync2Host {
   /// 存量样式去重的进度：srs_field_edits 里已检查到的 rowid（本机状态，不进备份）。
   int _styleCursor = 0;
 
-  /// 墓碑清除收集到、还没回收的媒体文件名（[purgeDeletedNotes] 与笔记删除同一事务落进本机状态）。
-  /// 回收（srs_purge.dart）在独占区里核对存活引用后删文件并从这里移除；刚被写过 / 复用过的文件
-  /// 留到下一轮。持久化是为了崩溃、被叫停或宽限期内跳过的名字下次接着处理——否则笔记已清、
-  /// 候选只在那一轮内存里，文件就永远没人回收了。
-  final Set<String> _pendingMediaGc = <String>{};
-
   /// 这一版内核的缓存推导口径版本（`cache_config_set` 回包的 `current`，native/fushi_fsrs/src/store/cache_rev.rs
   /// `CACHE_REVISION`）。升级测试断言「打开老库后记下的是当前版本」时读它，不写字面量。
   @visibleForTesting
@@ -793,12 +807,6 @@ class SrsDbStore implements SrsSync2Host {
     // 行里的 `hlc` / `writerId`（旧版 HLC 时钟与写入者）与 `incarnation` / `lastSeq` / `applied` / `outboxSeq`（旧版
     // Dart 写入者留下的）是内核持有的键，这里不读（native/fushi_fsrs/src/store/legacy_clock.rs）。
     _styleCursor = (j['styleCursor'] as int?) ?? 0;
-    _pendingMediaGc
-      ..clear()
-      ..addAll(<String>[
-        for (final Object? n in (j['mediaGc'] as List?) ?? const <Object?>[])
-          if (n is String) n,
-      ]);
     _revision = (j['revision'] as int?) ?? 0;
     _epochMissing = j['epoch'] is! String;
     _epoch =
@@ -847,8 +855,6 @@ class SrsDbStore implements SrsSync2Host {
   /// `localState` 交给内核、在命令的同一笔事务里写（[_localStateArg]）。内核持有的键不在这里（见 [_saveLocal]）。
   Map<String, Object?> _localStateJson() => <String, Object?>{
     'styleCursor': _styleCursor,
-    if (_pendingMediaGc.isNotEmpty)
-      'mediaGc': (_pendingMediaGc.toList()..sort()),
     'revision': _revision,
     'epoch': _epoch,
     if (_trusted.anchorState case final SrsClockAnchorState a)
@@ -1421,6 +1427,7 @@ class SrsDbStore implements SrsSync2Host {
     Set<String>? existed,
     Map<String, Object?>? study,
     void Function(Map<String, Object?> study)? onStudy,
+    Map<String, Object?>? expectLast,
   }) async {
     final Map<String, Object?> r = await _sync2(
       <String, Object?>{
@@ -1431,10 +1438,13 @@ class SrsDbStore implements SrsSync2Host {
         'tickNow': ?tickNow,
         if (stamps) 'stamps': true,
         'study': ?study,
+        'expectLast': ?expectLast,
         'localState': _localStateArg(),
       },
       blobs: <Uint8List>[utf8.encode(jsonEncode(input))],
     );
+    // 前置条件不成立（[expectLast]，内核 `apply`）：什么都没落、本机状态行没动，回包里没有别的东西可接。
+    if (expectLast != null && r['stale'] == true) return _Applied.stale;
     final int landed = _absorbLocalWrite(r);
     if (r['study'] case final Map<Object?, Object?> st) {
       onStudy?.call(st.cast<String, Object?>());
@@ -1600,6 +1610,7 @@ class SrsDbStore implements SrsSync2Host {
     'open',
     'status',
     'media_known',
+    'media_live_refs',
     'media_hash',
     'conflicts',
     'checkpoints',
@@ -2096,6 +2107,8 @@ class SrsDbStore implements SrsSync2Host {
     'apply',
     'import_drafts',
     'change',
+    'note_fields_if',
+    'merge_notes',
     'sched',
     'deck_delete',
     'retire',
@@ -2146,6 +2159,8 @@ class SrsDbStore implements SrsSync2Host {
     'apply',
     'import_drafts',
     'change',
+    'note_fields_if',
+    'merge_notes',
     'sched',
     'deck_delete',
     'ingest',
@@ -2166,6 +2181,8 @@ class SrsDbStore implements SrsSync2Host {
     'cache_config_set',
     'edits_rewrite_repr',
     'backfill_dupe_norms',
+    'media_gc_collect',
+    'media_live_refs',
   };
 
   /// 缓存刷新的配置：本 profile 的默认牌组与各内置笔记类型（代码默认值 + 读音字段，readingKey 的来源）。
@@ -3220,6 +3237,96 @@ class SrsDbStore implements SrsSync2Host {
     });
   });
 
+  /// 一条本机写意图命令（内核自己读现值、自己判、自己写）：一个独占区、一条命令——命令本体、缓存刷新、本机状态行
+  /// 在内核的同一笔里（native/fushi_fsrs/src/store/ffi.rs `local_write`）。旧版 HLC 时钟每条写入走一步，用这一刻的
+  /// 「此刻」。
+  Future<Map<String, Object?>> _intentWrite(
+    Map<String, Object?> request, {
+    List<Uint8List> blobs = const <Uint8List>[],
+  }) => runExclusive(() async {
+    late Map<String, Object?> r;
+    await _commandOrReload(() async {
+      final (int tickNow, SrsTimeSource source) = now();
+      r = await _sync2(<String, Object?>{
+        ...request,
+        'now': now().$1,
+        'legacyDevice': deviceId,
+        'tickNow': tickNow,
+        'ts': source.wire,
+        'localState': _localStateArg(),
+      }, blobs: blobs);
+      _absorbLocalWrite(r);
+    });
+    return r;
+  });
+
+  /// 条件写笔记字段（compare-and-set；批量改字段的落计划与撤销，srs_note_batch_edit.dart）：每项的字段现值仍是
+  /// `expect` 才写成 `value`。比对与写入是内核的一条命令（`note_fields_if`）、一笔：现值在写锁里读，比对与写入之间
+  /// 插不进别的写入。值没变的不产生记录（同 [editFieldsBatch]）。返回被拒的笔记。
+  ///
+  /// - [wholeNote]（落计划）：笔记不存在 / 已删除 / 它名下任一项对不上 → 整条笔记一项都不写（同一笔记的几个字段要么
+  ///   一起写、要么都不写）；
+  /// - 否则（撤销）：笔记不存在 / 已删除 → 它的项都不写；其余逐项，对不上的那一项不写、别的照写。
+  ///
+  /// `expect` 按笔记视图的字段值比（[SrsNoteView.field]：落库表示，没有这个字段 = 空串）。
+  Future<Set<String>> editNoteFieldsIf(
+    List<SrsNoteFieldWrite> writes, {
+    required bool wholeNote,
+  }) async {
+    if (writes.isEmpty) return const <String>{};
+    final List<Map<String, Object?>> items = <Map<String, Object?>>[
+      for (final SrsNoteFieldWrite w in writes)
+        <String, Object?>{
+          'n': w.noteId,
+          'f': w.fieldId,
+          'x': w.expect,
+          'v': switch (_compactValue(
+            SrsEntityKind.note,
+            SrsFieldKeys.noteField(w.fieldId),
+            w.value,
+          )) {
+            final Future<Object?> f => await f,
+            final Object? v => v,
+          },
+        },
+    ];
+    final Map<String, Object?> r = await _intentWrite(
+      <String, Object?>{
+        'op': 'note_fields_if',
+        'mode': wholeNote ? 'note' : 'field',
+      },
+      blobs: <Uint8List>[utf8.encode(jsonEncode(items))],
+    );
+    return <String>{...(r['rejected']! as List).cast<String>()};
+  }
+
+  /// 把 [absorbIds] 并进 [keepId]（重复笔记的合并，规则见 srs_duplicate_notes.dart 的库注释）：还原点、前身链接、
+  /// 补空字段 / 并标签、删除被吸收的笔记是内核的一条命令（`merge_notes`）、一笔——笔记与卡在写锁里读，任何一步出错
+  /// 整次合并都不落库。返回挂成前身的卡数与保留笔记没有对应模板的卡数。笔记不存在、笔记类型不同时抛 [StateError]
+  /// （文案里带 `not found` / `different note types`）。
+  Future<({int linked, int unmatched})> mergeNotesInto(
+    String keepId,
+    List<String> absorbIds,
+  ) async {
+    late Map<String, Object?> r;
+    try {
+      r = await _intentWrite(<String, Object?>{
+        'op': 'merge_notes',
+        'keep': keepId,
+        'absorb': absorbIds,
+        'deletedAt': now().$1,
+      });
+    } on SrsCoreException catch (e) {
+      // 调用方（冲突页、控制通道）按 StateError 的文案区分「笔记不存在」。
+      if (e.message.contains('merge_notes: note') ||
+          e.message.contains('different note types')) {
+        throw StateError(e.message.replaceFirst('merge_notes: ', ''));
+      }
+      rethrow;
+    }
+    return (linked: r['linked']! as int, unmatched: r['unmatched']! as int);
+  }
+
   // ------------------------------------------------------------------ 牌组
 
   /// 按名字 [name] 在 [parentId] 下（null = 顶层）新建或复活牌组时用的 ID（[createDeck] 与
@@ -3390,26 +3497,79 @@ class SrsDbStore implements SrsSync2Host {
 
   // ------------------------------------------------------------------ 墓碑物理清除（策略见 srs_purge.dart）
 
-  /// 待回收的媒体文件名（见 [_pendingMediaGc]）。
-  Set<String> get pendingMediaGc => Set<String>.unmodifiable(_pendingMediaGc);
+  /// 待回收的媒体文件名：媒体保留期到了 / 彻底清除时收集到、还没回收的。集合在内核里（本机状态行的 `mediaGc`，
+  /// 内核持有，native/fushi_fsrs/src/store/media_gc.rs）；持久化是为了被跳过（宽限期内）、被叫停或中途崩溃的名字
+  /// 下次接着处理。
+  Future<Set<String>> pendingMediaGc() =>
+      _mediaGcQueue(const <String, Object?>{});
 
-  /// 把 [names] 加进待回收集合并落盘（媒体保留期到了的候选、彻底清除的笔记引用过的文件）。
-  Future<void> queueMediaGc(Iterable<String> names) => runExclusive(() async {
-    final int before = _pendingMediaGc.length;
-    _pendingMediaGc.addAll(names);
-    if (_pendingMediaGc.length != before) await _saveLocal();
+  /// 把 [names] 加进待回收集合；返回加完之后的集合。
+  Future<Set<String>> queueMediaGc(Iterable<String> names) =>
+      _mediaGcQueue(<String, Object?>{'names': names.toList()});
+
+  /// 把这些笔记此刻的字段引用的媒体（[notes]：彻底清除之前调，清除会抹掉字段）、删除时刻不晚于 [expiredBeforeMs]
+  /// 的已删笔记引用的媒体（保留期到了的候选）加进待回收集合；返回加完之后的集合。引用由内核在同一笔里读、并
+  /// （Dart 不先读出来再交回去）。是否真删由 [collectPendingMedia] 再扣掉存活引用。
+  Future<Set<String>> queueMediaGcOf({
+    Iterable<String>? notes,
+    int? expiredBeforeMs,
+  }) => _mediaGcQueue(<String, Object?>{
+    'notes': ?notes?.toList(),
+    'expiredBefore': ?expiredBeforeMs,
   });
 
-  /// 把 [names] 移出待回收集合并落盘。只能在独占区里调：回收方在同一个独占区里核对存活引用、
-  /// 删文件、再调这里，期间不会有别的写入插进来重新引用它们。
-  Future<void> settlePendingMediaGc(Iterable<String> names) async {
-    assert(
-      identical(Zone.current[_writeZoneKey], this),
-      'settlePendingMediaGc outside runExclusive',
-    );
-    final int before = _pendingMediaGc.length;
-    _pendingMediaGc.removeAll(names);
-    if (_pendingMediaGc.length != before) await _saveLocal();
+  Future<Set<String>> _mediaGcQueue(Map<String, Object?> args) =>
+      runExclusive(() async {
+        final Map<String, Object?> r = await _sync2(<String, Object?>{
+          'op': 'media_gc_queue',
+          ...args,
+        });
+        return <String>{...(r['pending']! as List).cast<String>()};
+      });
+
+  /// [collectPendingMedia] 一条命令处理的文件名数：命令全程持着内核写锁做文件 IO，分批让作答等写入插得进来。
+  static const int kSrsMediaGcBatch = 200;
+
+  /// 回收待回收集合里此刻没有任何存活引用、且过了宽限期的文件（只删 [mediaRoot] 下的裸文件名），返回删掉的文件数。
+  ///
+  /// 「核对存活引用 → 删文件 → 移出集合」是内核的一条命令（`media_gc_collect`）：在写锁里、一笔里做完，期间没有
+  /// 写入能重新引用某个刚判为无引用的文件（HBK-AUDIT-014）。集合大时分成几条（每条 [kSrsMediaGcBatch] 个名字，
+  /// 各自重算存活引用），条与条之间看一次 [shouldStop]。[aliveAfterMs]：删除晚于它的已删笔记仍算存活引用（媒体
+  /// 保留期）；[freshAfterMs]：修改时间晚于它的文件不删（刚写 / 刚复用，引用它的笔记可能还没提交）。
+  Future<int> collectPendingMedia(
+    String mediaRoot, {
+    required int aliveAfterMs,
+    required int freshAfterMs,
+    bool Function()? shouldStop,
+  }) async {
+    int deleted = 0;
+    String? after;
+    do {
+      final Map<String, Object?> r = await runExclusive(
+        () => _sync2(<String, Object?>{
+          'op': 'media_gc_collect',
+          'root': mediaRoot,
+          'aliveAfter': aliveAfterMs,
+          'freshAfter': freshAfterMs,
+          'after': ?after,
+          'limit': kSrsMediaGcBatch,
+        }),
+      );
+      deleted += r['deleted']! as int;
+      after = r['next'] as String?;
+    } while (after != null && !(shouldStop?.call() ?? false));
+    return deleted;
+  }
+
+  /// 媒体回收 / 位置清理用的「存活引用」：存活笔记、删除晚于 [aliveAfterMs] 的已删笔记、全部笔记类型（含已删除的：
+  /// 可能被恢复）的模板与 CSS 引用的媒体文件名（只留裸文件名）。口径只在内核（store/media_gc.rs `live_refs`），
+  /// 回收用的是同一份。只读，不进写锁。
+  Future<Set<String>> liveMediaRefs({required int aliveAfterMs}) async {
+    final Map<String, Object?> r = await _sync2(<String, Object?>{
+      'op': 'media_live_refs',
+      'aliveAfter': aliveAfterMs,
+    });
+    return <String>{...(r['refs']! as List).cast<String>()};
   }
 
   Future<SrsSchedulingConfig> schedulingConfigFor(String deckId) async =>
@@ -3705,7 +3865,12 @@ class SrsDbStore implements SrsSync2Host {
 
   /// 一次 `preview` 命令（读快照，一次 FFI）：卡所属笔记与有效牌组由内核按缓存行查，不先在 Dart 读一遍
   /// 卡片行；结果里的 `current` 就是作答前的状态（日志的复习类型据它的队列定）。
-  Future<_PreviewRaw> _previewRaw(String cardId) async {
+  Future<_PreviewRaw> _previewRaw(String cardId) async =>
+      (await _previewRawOrNull(cardId)) ??
+      (throw StateError('SrsDbStore.preview: no card $cardId'));
+
+  /// [_previewRaw]；卡不存在（没有缓存行）= null。
+  Future<_PreviewRaw?> _previewRawOrNull(String cardId) async {
     if (engine == null) throw StateError('FSRS native library unavailable');
     final SrsDayContext day = await dayContext();
     final (int nowMs, SrsTimeSource source) = now();
@@ -3717,7 +3882,7 @@ class SrsDbStore implements SrsSync2Host {
       'rollover': day.rolloverHour,
     });
     final String? note = r['note'] as String?;
-    if (note == null) throw StateError('SrsDbStore.preview: no card $cardId');
+    if (note == null) return null;
     return (
       r: r,
       note: note,
@@ -3764,12 +3929,17 @@ class SrsDbStore implements SrsSync2Host {
   ///
   /// 子树里有按 RWKV-Instant 排队的牌组时，排队要用 RWKV 对这次作答之后的状态打分（[SrsRwkvScheduling.onAnswered]
   /// 先排进 RWKV 的串行队列），所以作答落库后另发一次排队命令（在写锁外）。
+  ///
+  /// [expectBase]（远程作答）：调用方出题时看到的这张卡最后一条生效日志（null = 还没有日志）。核对与落库是内核的
+  /// 同一条 `apply`（`expectLast`）：卡已经不在、或它的最后一条日志不是这一条（出题之后又被作答 / 撤销过）就什么都
+  /// 不落，抛 [SrsStaleCardError]。
   Future<SrsAnswerOutcome> answerAndStudy(
     String cardId,
     int rating, {
     int durationMs = 0,
     String? studyDeckId,
     SrsCustomStudy? custom,
+    ({String? lastLogId})? expectBase,
   }) async {
     if (rating < 1 || rating > 4) {
       throw ArgumentError.value(rating, 'rating', 'must be 1..4');
@@ -3780,7 +3950,13 @@ class SrsDbStore implements SrsSync2Host {
       SrsDeckTree tree,
     ) = await runExclusive(() async {
       // 永远在评分这一刻重算（学习步按分钟算，用出题时刻会偏一档；日志时刻也必须是评分时刻）。
-      final _PreviewRaw raw = await _previewRaw(cardId);
+      final _PreviewRaw? found = await _previewRawOrNull(cardId);
+      if (found == null) {
+        // 给了基准的调用方（远程作答）：卡已经不在 = 基准不成立。
+        if (expectBase != null) throw SrsStaleCardError(cardId);
+        throw StateError('SrsDbStore.preview: no card $cardId');
+      }
+      final _PreviewRaw raw = found;
       final SrsDeckTree tree = await deckTree();
       final SrsAnswerPreview p = _previewOf(raw, tree);
       final SrsScheduleResult before = SrsScheduleResult.fromJson(
@@ -3836,8 +4012,14 @@ class SrsDbStore implements SrsSync2Host {
           stamps: true,
           study: request,
           onStudy: (Map<String, Object?> s) => study = s,
+          expectLast: expectBase == null
+              ? null
+              : <String, Object?>{'card': cardId, 'log': expectBase.lastLogId},
         );
       });
+      // 基准不成立（内核在落库的同一笔里核对的）：什么都没落。在 [_commandOrReload] 之外抛——这不是写失败，
+      // 内存状态与库一致，不用重读。
+      if (identical(applied, _Applied.stale)) throw SrsStaleCardError(cardId);
       final SrsReviewLog log = logWith(
         Hlc.decode(applied.stamps.single! as String),
       );
@@ -5739,6 +5921,9 @@ class SrsCardChangedError implements Exception {
 /// HLC 字符串，修改记录 = 投影行，其余 null）。
 final class _Applied {
   const _Applied(this.landed, this.stamps);
+
+  /// `apply` 的前置条件（`expectLast`）不成立：什么都没落（按同一个对象判）。
+  static const _Applied stale = _Applied(0, <Object?>[]);
 
   final int landed;
   final List<Object?> stamps;

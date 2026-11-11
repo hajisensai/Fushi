@@ -7,14 +7,14 @@
 //! 协议：键分两类——
 //! - **内核持有**（[KERNEL_HELD_KEYS]）：只有内核写。任何一方交来的整行里带了这些键也不认，一律保留库里原值（没有原值
 //!   就没有这个键）。
-//! - **其余键**：Dart 持有。整行以交来的为准（交来的没有就删掉，例如媒体回收清单清空时 Dart 省略 `mediaGc`）。
+//! - **其余键**：Dart 持有。整行以交来的为准（交来的没有就删掉，例如还没校时的时候 Dart 省略 `anchor`）。
 //!
 //! 两个写入方共用同一个合并函数 [merge]：Dart 经 SQL 函数 `srs_local_state_merge(旧, 新)`（在写连接上注册，
 //! [register]）写 upsert，内核经 [upsert]（同一条 SQL）。内核持有的键的写入方（之后的步骤）直接改这一行里自己的键，
 //! 不经这里。
 //!
 //! 首版白名单为空（第 1.5 步只立协议）；第 4 步交出 `cacheRev`（store/cache_rev.rs）；第 6 步交出旧版时钟 / 写入者
-//! 的键（store/legacy_clock.rs）。新行（库里还没有这一行）上内核持有的键取初值（[held_default]）。
+//! 的键（store/legacy_clock.rs）；第 10 步交出媒体回收的待回收集合 `mediaGc`（store/media_gc.rs）。新行（库里还没有这一行）上内核持有的键取初值（[held_default]）。
 
 use rusqlite::functions::FunctionFlags;
 use rusqlite::types::ValueRef;
@@ -35,6 +35,8 @@ pub(crate) const KERNEL_HELD_KEYS: &[&str] = &[
     super::legacy_clock::FROZEN_KEYS[1],
     super::legacy_clock::FROZEN_KEYS[2],
     super::legacy_clock::FROZEN_KEYS[3],
+    // 媒体回收的待回收集合（第 10 步，store/media_gc.rs）。
+    super::media_gc::KEY,
 ];
 
 /// 内核持有的键在**新行**（库里还没有这一行，或那一行损坏）上的初值。`cacheRev`：还没有本机状态行 = 新设备或覆盖恢复

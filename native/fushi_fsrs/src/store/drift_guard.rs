@@ -134,6 +134,14 @@ pub(crate) const DRIFT_TX_POLICY: &[(&str, DriftTxPolicy)] = &[
     // （收掉 Dart 写路径第 9 步），从 Join 移到这里。
     ("apply", Reject),
     ("checkpoint", Reject),
+    // 条件写笔记字段、合并重复笔记的意图命令（store/sync2/note_fields_if.rs、merge_notes.rs）：比对 / 读与写在它们
+    // 自己的一笔里，调用方都不开 Drift 事务。
+    ("note_fields_if", Reject),
+    ("merge_notes", Reject),
+    // 媒体回收（store/media_gc.rs）：待回收集合的写入与删文件不该随别人的事务回滚；存活引用只读。
+    ("media_gc_queue", Reject),
+    ("media_gc_collect", Reject),
+    ("media_live_refs", ReadVisible),
     ("identity", Reject),
     ("channel_settle", Reject),
     ("migrate", Reject),

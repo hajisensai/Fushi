@@ -780,6 +780,8 @@ class SrsRemoteStore implements SrsDbStore, SrsRemoteForwarding {
     int durationMs = 0,
     String? studyDeckId,
     SrsCustomStudy? custom,
+    // 主机一侧的前置条件（路由按请求里的基准传给主机的库）；这一侧的基准是 [_bases]，不看这个参数。
+    ({String? lastLogId})? expectBase,
   }) async {
     final bool known = _bases.containsKey(cardId);
     final String? base = _bases.remove(cardId);
@@ -949,6 +951,42 @@ class SrsRemoteStore implements SrsDbStore, SrsRemoteForwarding {
       'values': values,
       'machine': machine,
     }, (Object? json) => json == null ? null : SrsRemoteWire.editsFrom(json));
+  }
+
+  /// 条件写笔记字段（批量改字段的落计划与撤销）。主机没有「比对 + 写」一条路由：读一遍主机上的现值、在这一侧
+  /// 比对、再用 [editFieldsBatch] 写——比对与写入之间主机上别的写入插得进来（远程副本上一直如此；本机库上这是内核的
+  /// 一条命令）。规则与 [SrsDbStore.editNoteFieldsIf] 相同。
+  @override
+  Future<Set<String>> editNoteFieldsIf(
+    List<SrsNoteFieldWrite> writes, {
+    required bool wholeNote,
+  }) async {
+    if (writes.isEmpty) return const <String>{};
+    final Map<String, SrsNoteView?> views = await notes(<String>{
+      for (final SrsNoteFieldWrite w in writes) w.noteId,
+    });
+    final Set<String> rejected = <String>{};
+    final List<SrsNoteFieldWrite> passed = <SrsNoteFieldWrite>[];
+    for (final SrsNoteFieldWrite w in writes) {
+      final SrsNoteView? n = views[w.noteId];
+      if (n == null || n.deletedAt != null || n.field(w.fieldId) != w.expect) {
+        rejected.add(w.noteId);
+      } else {
+        passed.add(w);
+      }
+    }
+    final List<SrsFieldChange> changes = <SrsFieldChange>[
+      for (final SrsNoteFieldWrite w in passed)
+        if (!wholeNote || !rejected.contains(w.noteId))
+          SrsFieldChange(
+            SrsEntityKind.note,
+            w.noteId,
+            SrsFieldKeys.noteField(w.fieldId),
+            w.value,
+          ),
+    ];
+    if (changes.isNotEmpty) await editFieldsBatch(changes);
+    return rejected;
   }
 
   @override

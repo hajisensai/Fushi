@@ -30,6 +30,7 @@ pub(crate) mod ids;
 mod kernel_reads_tests;
 pub(crate) mod legacy_clock;
 pub(crate) mod local_state;
+pub(crate) mod media_gc;
 mod mem_budget;
 #[cfg(test)]
 mod panic_recovery_tests;

@@ -417,7 +417,7 @@ impl NoteInfo {
     }
 
     /// Dart `SrsNoteView.field`：没有 = 空串。
-    fn field(&self, id: &str) -> &str {
+    pub(crate) fn field(&self, id: &str) -> &str {
         self.fields
             .iter()
             .rev()
@@ -542,6 +542,53 @@ fn load_types<'a>(
         types.insert(id.clone(), info);
     }
     Ok(())
+}
+
+/// 本 profile 全部笔记类型（含已删除的）物化视图里的文本：每个现行模板的正面、背面，再加 CSS（媒体回收的存活引用
+/// 扫这些，store/media_gc.rs）。与 Dart `SrsDbStore.noteTypesById` 物化出的 `templates` / `css` 同一份视图（内置类型的
+/// 代码默认值取缓存配置）。
+pub(crate) fn note_type_texts(
+    c: &Connection,
+    profile: &str,
+    cfg: &CacheConfig,
+) -> Result<Vec<String>, String> {
+    let ids = strings(
+        c,
+        "SELECT srs_idt(id) AS id FROM srs_entities WHERE profile_uid = srs_id(?1) AND kind = 'notetype' ORDER BY rowid",
+        &[profile],
+    )?;
+    let rows = entity_rows(c, &ids)?;
+    let edits = edits_of(c, "notetype", &ids)?;
+    let mut out = Vec::new();
+    for id in &ids {
+        let Some(payload) = rows.get(id) else {
+            continue;
+        };
+        let es: Vec<StoredEdit<'_>> = edits
+            .get(id)
+            .map(|v| {
+                v.iter()
+                    .map(|e| (e.1.as_str(), e.2, e.3.as_ref()))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let builtin = payload["builtin"]
+            .as_str()
+            .and_then(|k| cfg.builtins.get(k))
+            .map_or(Value::Null, |b| b.0.clone());
+        let view = registers::note_type_view_of(payload, &es, &builtin)?;
+        for t in view["ts"].as_array().into_iter().flatten() {
+            for side in ["front", "back"] {
+                if let Some(s) = t[side].as_str() {
+                    out.push(s.to_owned());
+                }
+            }
+        }
+        if let Some(css) = view["css"].as_str() {
+            out.push(css.to_owned());
+        }
+    }
+    Ok(out)
 }
 
 /// 笔记缓存行的 `dupe_norm`（srs.db v15）：首字段（笔记类型字段顺序第一个）的 AnkiConnect 查重规范形

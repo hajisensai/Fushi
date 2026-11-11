@@ -56,7 +56,9 @@ void main() {
       return jsonDecode(rows.single) as Map<String, Object?>;
     }
 
-    await s.queueMediaGc(<String>['a.png']);
+    // Dart 的整行重写（`_saveLocal`）：校时。待回收集合是内核持有的键，经内核命令写下（store/media_gc.rs）。
+    await s.anchorTime(1700000000000, observedAtBootMs: 1);
+    expect(await s.queueMediaGc(<String>['a.png']), <String>{'a.png'});
     expect((await row())['mediaGc'], <Object?>['a.png']);
     // 库里多出一个谁都不持有的键：下一次整行重写把它去掉（与改动前的整行覆盖一致）。
     await storage.db.customStatement(
@@ -65,18 +67,19 @@ void main() {
     expect((await row())['stray'], 1);
 
     final int before = s.debugCoreCommands;
-    await s.queueMediaGc(<String>['b.png']);
+    await s.anchorTime(1700000001000, observedAtBootMs: 2);
     expect(s.debugCoreCommands, before);
     final Map<String, Object?> after = await row();
     expect(after.containsKey('stray'), isFalse);
-    expect(after['mediaGc'], unorderedEquals(<Object?>['a.png', 'b.png']));
-    expect(s.pendingMediaGc, <String>{'a.png', 'b.png'});
+    // 内核持有的键：Dart 整行重写不带它，库里的值留着。
+    expect(after['mediaGc'], <Object?>['a.png']);
+    expect(await s.pendingMediaGc(), <String>{'a.png'});
     // 内核持有的缓存推导口径版本（第 4 步）：新行由合并协议补上当前版本；Dart 整行重写抹不掉库里的值。
     expect(after['cacheRev'], s.debugCacheRevision);
     await storage.db.customStatement(
       r"UPDATE srs_local_state SET json = json_set(json, '$.cacheRev', 5)",
     );
-    await s.queueMediaGc(<String>['c.png']);
+    await s.anchorTime(1700000002000, observedAtBootMs: 3);
     expect((await row())['cacheRev'], 5);
   });
 
