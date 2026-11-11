@@ -117,10 +117,11 @@ native lib 目录、macOS `Contents/Frameworks`、Linux `bundle/lib/`）；iOS �
   （Windows 在 `build_windows_dll.ps1` 里核对），守卫 `fushi/test/build/srs_id_audit_debug_only_guard_test.dart`。
   不带开关重编普通库会删掉已有的 `id_audit/`（那份对应上一次的源码）。Android / iOS 没有这份库（调试包也是
   普通库）；Mac / Linux 测试 worker 的 `worker_prepare.sh` 也不编它。代价（2026-11-11 实测）：Windows x64 DLL
-  9,550,336 B → 9,569,280 B（+18,944 B），多编这一份 +100 s；macOS arm64 dylib 6,370,432 B → 6,386,944 B
-  （+16,512 B），+80 s（都只重编 rusqlite 与本 crate，时间花在本 crate 的 fat LTO 上；机器在跑别的测试）；两份
-  共用一个 `target/`，之后每次在两者之间切换都要重新链接一次。普通库的字节不受影响（编审计库前后 sha256
-  相同）。运行时（Windows，开发库的拷贝：26 MB / 1501 张卡 / 25,504 条操作，经桥各 200 条写、2000 条读，机器
+  9,550,336 B → 9,569,280 B（+18,944 B），多编这一份 +100 s～4 分 46 秒（后一个数是机器同时在跑别的重活时）；
+  macOS arm64 dylib 6,370,432 B → 6,386,944 B（+16,512 B），+80 s（都只重编 rusqlite 与本 crate，时间花在本
+  crate 的 fat LTO 上）。两份共用一个 `target/`、同名产物轮流覆盖，所以源码变了之后两份都要把本 crate 重编一遍
+  （Windows 上忙时实测普通库 9 分 50 秒 + 审计库 4 分 46 秒）。普通库不受影响：macOS 上编审计库前后 sha256
+  相同；Windows 上同一份源码两次构建的 DLL sha256 本来就不同（审计库也是），看的是大小相同、不含审计标记。运行时（Windows，开发库的拷贝：26 MB / 1501 张卡 / 25,504 条操作，经桥各 200 条写、2000 条读，机器
   有别的负载，两轮）：**自动提交的写语句 0.13～0.26 ms → 26～66 ms / 条**——每条这样的写之后 `check_stored`
   把 54 张表的 92 个 ID 列各扫一遍，随库的行数增长；点查、200 行分页、开库没有可辨的差别。开着事务时的写
   不逐条扫，batch 收尾扫一次。调试时嫌慢就设 `FUSHI_FSRS_ID_AUDIT=0`。
