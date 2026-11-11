@@ -4,9 +4,12 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/downloads/download_task_entry.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_sources.dart';
 import 'package:fushi/src/media/music/plugin/music_plugin_download.dart';
 import 'package:fushi/src/media/music/plugin/music_plugins.dart';
+import 'package:fushi/src/pages/implementations/interconnect_download_tasks_section.dart'
+    show interconnectDownloadTaskEntry;
 import 'package:fushi/src/sync/interconnect_download_manager.dart';
 import 'package:fushi/src/sync/remote_video_client.dart'
     show RemoteDownloadCancelled;
@@ -405,6 +408,13 @@ void main() {
       expect(task.kind, InterconnectDownloadKind.music);
       expect(task.origin, InterconnectDownloadOrigin.musicPlugin);
       expect(task.title, '01 本編 · 声優B / 声優C');
+      // 下载中心：归「音乐」类、与扩展源同标外部来源。
+      final DownloadTaskEntry entry = interconnectDownloadTaskEntry(
+        h.downloads,
+        task,
+      );
+      expect(entry.kind, DownloadTaskKind.music);
+      expect(entry.collectionKey, 'interconnect-extension');
 
       // 再点一次：成品在，只重新登记，不再取流 / 下载。
       final MusicPluginDownloadStart again = await h.service.download(
