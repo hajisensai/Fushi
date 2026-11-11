@@ -3,24 +3,30 @@
 // 迁移。第二台设备、位置上已有第一台迁出的同一份旧库：只包本机独有的旧行，且拉取这一步不往位置写任何东西；拉取
 // 按进度判（一直有进展就等到收齐，哪怕远超旧的 2 分钟预算；连续停滞才放弃、照常迁移；位置上没有集合立即迁移，
 // 计时器用可控时钟、不做真实等待）；一轮里（拿着通道锁）只从那条通道收、不重入通道锁；档案合并（冲突弹窗选定）在
-// 候选所在那条通道的锁里做，并入前从它收。
+// 候选所在那条通道的锁里做，并入前从它收，等多久与迁移之前同一套（按进度判：持续有进展就等到收齐、并入沿用目标的
+// 写入者；停滞 / 到总上限才放弃、照常并入）。
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show QueryRow, Variable;
+import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/srs/srs_sync_scheduler.dart';
-import 'package:fushi_core/fushi_core.dart' show srsIdType;
+import 'package:fushi_core/fushi_core.dart'
+    show FushiDatabase, ProfilesCompanion, srsIdType;
 import 'package:fushi_engine/srs/srs_builtin.dart' show srsLapisFieldId;
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_profile_link.dart';
+import 'package:fushi_engine/srs/srs_profile_merge.dart'
+    show kSrsMergedWriterPrefix;
 import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_crypto.dart';
 import 'package:fushi_engine/srs/sync2/srs_sync2_pull_first.dart';
 import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart';
 import 'package:fushi_engine/sync/local_directory_asset_store.dart';
 import 'package:fushi_engine/sync/sync_asset_store.dart';
+import 'package:fushi_srs/fushi_srs.dart';
 
 import 'srs_test_support.dart';
 
@@ -245,6 +251,54 @@ class _SlowStore implements SyncAssetStore {
   @override
   Future<void> deleteAsset(String id, {bool isFolder = false}) =>
       _inner.deleteAsset(id, isFolder: isFolder);
+}
+
+/// 读取永远不返回的位置（卡死的网络）；第一次读取进来时 [entered] 完成。
+class _HangingStore implements SyncAssetStore {
+  final Completer<void> entered = Completer<void>();
+
+  Future<T> _hang<T>() {
+    if (!entered.isCompleted) entered.complete();
+    return Completer<T>().future;
+  }
+
+  @override
+  Future<String> ensureNamespace(String name) => _hang();
+
+  @override
+  Future<String> ensureFolder(String parentId, String name) => _hang();
+
+  @override
+  Future<List<AssetEntry>> listChildren(String namespaceId) => _hang();
+
+  @override
+  Future<AssetEntry?> findAsset(String namespaceId, String name) => _hang();
+
+  @override
+  Future<void> getAsset(
+    String assetId,
+    File destination, {
+    SyncTransferProgress? onProgress,
+  }) => _hang();
+
+  @override
+  Future<Object?> getJsonAsset(String assetId) => _hang();
+
+  @override
+  Future<void> putAsset(
+    String namespaceId,
+    String name,
+    File file, {
+    SyncTransferProgress? onProgress,
+  }) => throw StateError('pull-only must not write');
+
+  @override
+  Future<void> putJsonAsset(String namespaceId, String name, Object? json) =>
+      throw StateError('pull-only must not write');
+
+  @override
+  Future<void> deleteAsset(String id, {bool isFolder = false}) =>
+      throw StateError('pull-only must not delete');
 }
 
 /// 驱动 [f] 做完：有读取在等假时钟就拨钟，否则让出一下给真实的本地 IO（不是等预算：假时钟不因此前进）。
@@ -659,4 +713,293 @@ void main() {
     );
     expect(linker.adoptedWithin, <SyncAssetStore?>[backend]);
   });
+
+  // 档案合并之前收目标 uid 的数据（BUG-4011）：真 [SrsDbProfileLinker] + 真并入，拉取经调度器的
+  // [SrsSyncScheduler.pullBeforeMerge]（app 的接法，srs_app_runtime.dart）。目标 uid 的三条修改记录只在同步位置上
+  // （设备 A 写的），本机 B 自己有同一批修改记录（另一个写入者）和一条笔记：并入前收齐了就沿用目标的写入者，没收到
+  // 就改名成 `merged-…` 落第二份。
+  group('档案合并之前的拉取按进度判', () {
+    const int t0 = 1700000000000;
+    SrsEditEvent edit(String uid, String writer, int seq) => SrsEditEvent(
+      SrsFieldEdit(
+        profileUid: uid,
+        entityKind: SrsEntityKind.deck,
+        entityId: SrsIds.builtinDefaultDeck(uid),
+        fieldKey: 'x/$seq',
+        dot: SrsDot(writer, seq),
+        ctx: SrsCausalContext.empty(),
+        value: 'v$seq',
+        hlc: Hlc(t0 + seq, 0, writer),
+        timeSource: SrsTimeSource.wall,
+      ),
+    );
+
+    /// A 在目标 uid 下写三条修改记录并上传到 [root]；交回目标 uid。
+    Future<String> seedTarget() async {
+      final SrsStorage stA = await openSrsTestStorage();
+      final SrsDbStore a = await _open(stA, 'A');
+      await a.applyRemote(<SrsEvent>[
+        for (int i = 1; i <= 3; i++) edit(kProfile, 'their#1', i),
+      ]);
+      final SrsSync2Report r = await srsSync2Round(
+        host: a,
+        location: srsAssetLocation(backend, kProfile),
+        locationId: 'local:${root.path}',
+        nowMs: () => a.now().$1,
+      );
+      expect(r.error, isNull);
+      return kProfile;
+    }
+
+    /// 本机 B：主库一个 profile（自己的 uid）、一条笔记、同一批修改记录（写入者 `host-old#1`）；linker 的并入前
+    /// 拉取接调度器（假时钟），每次拉取返回时的假时钟记在 [_DeviceB.pullEnded]。
+    ///
+    /// 放弃的时刻只能在拉取返回的那一刻读：放弃之后那次在途的读取照常回来、后面的读取继续花假时钟（结果被闸门
+    /// 挡在本机库之外），并入做完时假时钟已经走到整个传输的终点。
+    Future<_DeviceB> deviceB(
+      _FakeTime time, {
+      SrsPullBound? mergePullBound,
+    }) async {
+      final FushiDatabase db = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
+      addTearDown(db.close);
+      final SrsStorage srs = await openSrsTestStorage();
+      final int now = DateTime.now().millisecondsSinceEpoch;
+      final int profileId = await db.insertProfile(
+        ProfilesCompanion.insert(
+          name: 'Default',
+          createdAt: now,
+          updatedAt: now,
+        ),
+      );
+      Future<SrsDbStore> open() async => SrsDbStore.open(
+        db: srs.db,
+        core: srs.core,
+        profileUid: await db.profileUidOf(profileId),
+        deviceId: 'B',
+        engine: const SrsTestEngine(),
+      );
+      SrsDbStore store = await open();
+      final String oldUid = store.profileUid;
+      await store.createNote(
+        noteTypeId: store.lapisNoteTypeId,
+        fieldsById: <String, String>{
+          srsLapisFieldId(oldUid, 'Expression'): '雪',
+        },
+      );
+      await store.applyRemote(<SrsEvent>[
+        for (int i = 1; i <= 3; i++) edit(oldUid, 'host-old#1', i),
+      ]);
+      final SrsSyncScheduler s = SrsSyncScheduler(
+        readStore: () async => store,
+        channels: channelsOf,
+        directoryKeyOf: (SyncAssetStore b) async => 'local:${root.path}',
+        onDataChanged: () {},
+        onNotice: (SrsSyncNotice _) {},
+        firstSyncConfirmed: () => true,
+        mergePullBound:
+            mergePullBound ??
+            const SrsPullBound.progress(
+              stall: kSrsPullBeforeMergeStall,
+              cap: kSrsPullBeforeMergeCap,
+            ),
+        pullTimer: time.create,
+      );
+      final List<Duration> pullEnded = <Duration>[];
+      final SrsDbProfileLinker linker = SrsDbProfileLinker(
+        db: db,
+        activeProfileId: () async => profileId,
+        reopenStore: () async => store = await open(),
+        writeLock: SrsCurrentStoreWriteLock(() => store),
+        onError: (String where, Object e, StackTrace _) => fail('$where: $e'),
+        pullBeforeMerge: (SrsDbStore target, SyncAssetStore? within) async {
+          await s.pullBeforeMerge(target, within);
+          pullEnded.add(time.now);
+        },
+      );
+      return _DeviceB(db, srs, profileId, oldUid, store, linker, pullEnded);
+    }
+
+    /// 并入之后目标 uid 下那批修改记录的写入者。
+    Future<List<String>> writersOf(SrsStorage srs, String uid) async {
+      final List<QueryRow> rows = await srs.db
+          .customSelect(
+            'SELECT srs_idt(writer_id) AS w FROM srs_field_edits '
+            "WHERE profile_uid = ? AND field_key LIKE 'x/%' "
+            'ORDER BY field_key, w',
+            variables: <Variable<Object>>[Variable<String>(uid, srsIdType)],
+          )
+          .get();
+      return <String>[for (final QueryRow r in rows) r.read<String>('w')];
+    }
+
+    int mergedIn(List<String> writers) => writers
+        .where((String w) => w.startsWith(kSrsMergedWriterPrefix))
+        .length;
+
+    test('一直有进展、总时长远超旧的 2 分钟预算：等到收齐再并入，沿用目标的写入者', () async {
+      final String target = await seedTarget();
+      final _FakeTime time = _FakeTime();
+      final _SlowStore slow = _SlowStore(
+        backend,
+        time,
+        const Duration(seconds: 20),
+      );
+      final _DeviceB b = await deviceB(time);
+      final Future<SrsProfileAdoptResult> adopting = b.linker.adopt(
+        b.store,
+        target,
+        within: slow,
+      );
+      await _drive(time, adopting);
+      expect(
+        b.pullEnded.single,
+        greaterThan(const Duration(minutes: 2)),
+        reason:
+            'the pull took longer than the old fixed budget '
+            '(${slow.reads} reads)',
+      );
+      expect(await adopting, isA<SrsProfileAdopted>());
+      expect(await b.db.profileUidOf(b.profileId), target);
+      final List<String> writers = await writersOf(b.srs, target);
+      expect(writers, <String>['their#1', 'their#1', 'their#1']);
+    });
+
+    test('对照：同样的传输，总上限只有 2 分钟（旧的固定预算）到点就并入，同一批修改记录改名成 merged-', () async {
+      final String target = await seedTarget();
+      final _FakeTime time = _FakeTime();
+      final _SlowStore slow = _SlowStore(
+        backend,
+        time,
+        const Duration(seconds: 20),
+      );
+      final _DeviceB b = await deviceB(
+        time,
+        mergePullBound: const SrsPullBound.progress(
+          stall: Duration(minutes: 2),
+          cap: Duration(minutes: 2),
+        ),
+      );
+      await _drive(time, b.linker.adopt(b.store, target, within: slow));
+      // 到点（2 分钟）就返回：不等在途的那次读取，更不等整个传输（上一条测试里它要 3 分多钟）。
+      expect(
+        b.pullEnded.single,
+        allOf(
+          greaterThanOrEqualTo(const Duration(minutes: 2)),
+          lessThan(const Duration(minutes: 3)),
+        ),
+        reason: 'gave up at the cap',
+      );
+      expect(await b.db.profileUidOf(b.profileId), target);
+      final List<String> writers = await writersOf(b.srs, target);
+      expect(mergedIn(writers), 3, reason: '$writers');
+    });
+
+    test('一直有进展但到了总上限：放弃、照常并入', () async {
+      final String target = await seedTarget();
+      final _FakeTime time = _FakeTime();
+      // 与第一条同样的传输（每次后端调用 20 秒，整轮 3 分 20 秒；位置上的一次读取是几次后端调用，相邻两次进展
+      // 都在停滞判定的 2 分钟之内，停滞不会到点）。这个小集合凑不满默认的 30 分钟，所以总上限注入成 2 分半——
+      // 比停滞判定长、比收齐短，到点时拉取还在进展中（默认取值由引擎侧的取值测试钉住）。
+      const Duration cap = Duration(minutes: 2, seconds: 30);
+      final _SlowStore slow = _SlowStore(
+        backend,
+        time,
+        const Duration(seconds: 20),
+      );
+      final _DeviceB b = await deviceB(
+        time,
+        mergePullBound: const SrsPullBound.progress(
+          stall: kSrsPullBeforeMergeStall,
+          cap: cap,
+        ),
+      );
+      await _drive(time, b.linker.adopt(b.store, target, within: slow));
+      expect(
+        b.pullEnded.single,
+        // 停滞放弃会落在 2 分钟那一格，收齐要到 3 分 20 秒。
+        allOf(
+          greaterThanOrEqualTo(cap),
+          lessThan(const Duration(minutes: 3, seconds: 20)),
+        ),
+        reason: 'gave up at the cap, not at a stall (${slow.reads} reads)',
+      );
+      // 放弃之后照常并入：换到了目标 uid，那批修改记录都在（到上限时已经收进来的沿用目标的写入者，没收到的
+      // 改名，各占多少取决于截断落在哪一次读取上，这里不钉）。
+      expect(await b.db.profileUidOf(b.profileId), target);
+      expect(await writersOf(b.srs, target), hasLength(3));
+    });
+
+    test('位置卡住（停滞）：最后一次进展之后整整 stall 才放弃，照常并入', () async {
+      final String target = await seedTarget();
+      final _FakeTime time = _FakeTime();
+      final _HangingStore hung = _HangingStore();
+      final _DeviceB b = await deviceB(time);
+      bool done = false;
+      final Future<SrsProfileAdoptResult> adopting = b.linker
+          .adopt(b.store, target, within: hung)
+          .whenComplete(() => done = true);
+      await hung.entered.future;
+      await pumpEventQueue();
+      // 卡住之前唯一的进展是开头那次内核调用（假时钟 0）。
+      time.jump(kSrsPullBeforeMergeStall - const Duration(seconds: 1));
+      await pumpEventQueue();
+      expect(done, isFalse, reason: 'one second before the stall: waiting');
+      expect(
+        await b.db.profileUidOf(b.profileId),
+        b.oldUid,
+        reason: 'not merged yet',
+      );
+      time.jump(kSrsPullBeforeMergeStall);
+      expect(await adopting, isA<SrsProfileAdopted>());
+      expect(b.pullEnded.single, kSrsPullBeforeMergeStall);
+      expect(await b.db.profileUidOf(b.profileId), target);
+      final List<String> writers = await writersOf(b.srs, target);
+      expect(mergedIn(writers), 3, reason: 'nothing pulled: $writers');
+    });
+
+    test('位置上没有目标的集合：不等任何计时器，立即并入', () async {
+      const String target = '01928c3e-0000-7000-8000-0000000000ea';
+      final _FakeTime time = _FakeTime();
+      final _DeviceB b = await deviceB(time);
+      final SrsProfileAdoptResult adopted = await b.linker.adopt(
+        b.store,
+        target,
+        within: backend,
+      );
+      expect(adopted, isA<SrsProfileAdopted>());
+      expect(
+        b.pullEnded.single,
+        Duration.zero,
+        reason: 'no fake time had to pass',
+      );
+      expect(await b.db.profileUidOf(b.profileId), target);
+    });
+  });
+}
+
+/// 并入测试里的本机 B。
+class _DeviceB {
+  _DeviceB(
+    this.db,
+    this.srs,
+    this.profileId,
+    this.oldUid,
+    this.store,
+    this.linker,
+    this.pullEnded,
+  );
+
+  final FushiDatabase db;
+  final SrsStorage srs;
+  final int profileId;
+  final String oldUid;
+
+  /// 并入之前（旧 uid）的 store。
+  final SrsDbStore store;
+  final SrsDbProfileLinker linker;
+
+  /// 并入之前的每一次拉取返回时的假时钟。
+  final List<Duration> pullEnded;
 }

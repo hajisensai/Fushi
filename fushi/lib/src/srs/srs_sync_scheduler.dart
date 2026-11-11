@@ -409,11 +409,16 @@ class SrsSyncScheduler {
       stall: kSrsPullBeforeMigrateStall,
       cap: kSrsPullBeforeMigrateCap,
     ),
+    SrsPullBound mergePullBound = const SrsPullBound.progress(
+      stall: kSrsPullBeforeMergeStall,
+      cap: kSrsPullBeforeMergeCap,
+    ),
     SrsPullTimerFactory pullTimer = Timer.new,
     Future<bool?> Function(SyncAssetStore backend)? peerJoined,
   }) : _profileLinker = profileLinker,
        _peerJoined = peerJoined,
        _migratePullBound = migratePullBound,
+       _mergePullBound = mergePullBound,
        _pullTimer = pullTimer,
        _locationDisabled = locationDisabled,
        _autoSyncEnabled = autoSyncEnabled,
@@ -657,6 +662,9 @@ class SrsSyncScheduler {
 
   /// 旧库迁移之前那轮只拉不发等多久（[ensureMigrated]）：默认按进度（停滞才放弃 + 防挂死的总上限）。
   final SrsPullBound _migratePullBound;
+
+  /// 档案合并之前收目标 uid 的数据等多久（[pullBeforeMerge]）：同样按进度。
+  final SrsPullBound _mergePullBound;
 
   /// 只拉不发的计时器（[pullInto]；测试换成可控时钟）。
   final SrsPullTimerFactory _pullTimer;
@@ -1792,8 +1800,8 @@ class SrsSyncScheduler {
   /// 文件夹位置）上 [store] 这个 profile 已有的操作收进 [store]，等多久按 [bound]（[srsSync2PullBounded]）。两个用处：
   /// - 本机旧库迁移之前（[ensureMigrated]）：迁移只包还没有任何设备的操作代表的旧行，先收到别的设备迁出的那份，
   ///   第二台设备就只补差；
-  /// - 档案合并之前（[SrsDbProfileLinker.pullBeforeMerge]，在那条位置的一轮里，[within] 给出它）：目标 uid 的数据
-  ///   先在本机，合并沿用目标的写入者。
+  /// - 档案合并之前（[pullBeforeMerge]，在那条位置的一轮里，[within] 给出它）：目标 uid 的数据先在本机，合并沿用
+  ///   目标的写入者。
   ///
   /// 通道：[within] 非 null = 只收这一条（调用方正在它的一轮里）；否则 [channels] 为真才经 [_channels] 收全部
   /// （通道锁不可重入：只能在锁外、[_serially] 外这样调）。不写位置、不做 profile 关联、不对账媒体。首次同步没确认 /
@@ -1919,12 +1927,30 @@ class SrsSyncScheduler {
     if (outcome != SrsPullOutcome.done) {
       ErrorLogService.instance.logDiagnostic(
         'SrsSyncScheduler.pullInto.$purpose',
-        '${outcome.name} (stall ${bound.stall?.inSeconds}s, cap '
+        '${outcome.name} (stall ${bound.stall.inSeconds}s, cap '
             '${bound.cap.inSeconds}s) after ${watch.elapsedMilliseconds} ms '
             '(applied $pulled); continuing with what was pulled',
       );
     }
   }
+
+  /// 档案合并之前把同步位置上目标 uid 已有的数据收进 [target]（[SrsDbProfileLinker.pullBeforeMerge] 接到这里；
+  /// 冲突弹窗里选定之后的并入、之后每一轮续做没做完的并入都走它）。
+  ///
+  /// 等多久与旧库迁移之前那轮同一套：按进度判（[SrsPullBound.progress]）——还在收就等到收齐，连续停滞才放弃，总
+  /// 上限只防挂死。没收齐就并入的话，目标里还没到本机的写入者会被改名成 `merged-…`，多出一份只能靠之后的收敛
+  /// 合并（BUG-4011）；停滞 / 到上限照常并入，已收的照用。
+  ///
+  /// 并入总在一轮同步 / [adoptProfile] 的 [_serially] 里、可能拿着 [within] 这条通道的锁：只从它和本机目录 /
+  /// 文件夹位置收，不再去取通道锁（`channels: false`）。
+  Future<void> pullBeforeMerge(SrsDbStore target, SyncAssetStore? within) =>
+      pullInto(
+        target,
+        bound: _mergePullBound,
+        purpose: 'merge',
+        within: within,
+        channels: false,
+      );
 
   /// 只跑本机直接读写的目录（本机作为互联 host 时）。
   Future<SrsSyncNowResult> syncLocalDirectories() async {

@@ -115,6 +115,12 @@ const String _kChainUndo = '019a3a0b-0000-7000-8000-0000000000f3';
 /// [seededChain] 的起始时刻（r2 在 +20、撤销它的 undo 在 +30）。
 const int _kChainT0 = 1792700000000;
 
+/// 并入之前收目标 uid 的数据等多久：与 app 调度器同一套（按进度判）。
+const SrsPullBound _kMergePull = SrsPullBound.progress(
+  stall: kSrsPullBeforeMergeStall,
+  cap: kSrsPullBeforeMergeCap,
+);
+
 void main() {
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
   late Directory root;
@@ -1127,21 +1133,22 @@ void main() {
       deviceId: partial.deviceId,
       pullTarget: (SrsDbStore t) async {
         expect(
-          await srsSync2PullWithin(
+          await srsSync2PullBounded(
             t,
-            (SrsSync2Host h) async {
+            (SrsSync2Host h, void Function() activity) async {
               final SrsSync2Report r = await srsSync2PullOnly(
                 host: h,
                 location: SrsAssetLocationStore(store: dir, profileUid: c),
                 locationId: 'interconnect:host',
                 nowMs: () => t.now().$1,
+                onActivity: activity,
               );
               expect(r.error, isNull);
             },
-            budget: kSrsPullBeforeMergeBudget,
+            bound: _kMergePull,
             onError: (Object e, StackTrace s) => fail('$e'),
           ),
-          isTrue,
+          SrsPullOutcome.done,
         );
       },
     );
@@ -1561,9 +1568,9 @@ void main() {
           pullTarget: pullFirst
               ? (SrsDbStore t) async {
                   expect(
-                    await srsSync2PullWithin(
+                    await srsSync2PullBounded(
                       t,
-                      (SrsSync2Host h) async {
+                      (SrsSync2Host h, void Function() activity) async {
                         final SrsSync2Report r = await srsSync2PullOnly(
                           host: h,
                           location: SrsAssetLocationStore(
@@ -1572,14 +1579,15 @@ void main() {
                           ),
                           locationId: 'interconnect:host',
                           nowMs: () => t.now().$1,
+                          onActivity: activity,
                         );
                         expect(r.error, isNull);
                         expect(r.applied, greaterThan(0));
                       },
-                      budget: kSrsPullBeforeMergeBudget,
+                      bound: _kMergePull,
                       onError: (Object e, StackTrace s) => fail('$e'),
                     ),
-                    isTrue,
+                    SrsPullOutcome.done,
                   );
                 }
               : null,
