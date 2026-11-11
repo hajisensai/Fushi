@@ -807,12 +807,11 @@ volatile LONG g_boot_kag_text_native = 0;
 volatile LONG g_boot_kag_text_tjs = 0;
 bool g_boot_lookup_tjs_terminal = false;  // 主线程私有：TJS 阶段已定格，不再求值
 
-// 两处主线程安装入口共用的身份核对，顺带记下「谁来过」。返回 true = 当前就是引擎主线程。
-// 位只增不减：只有 main 没有 other 是正常；只有 other / unresolved 而从无 main，说明
-// 主线程 id 解析到了一个从不经过安装入口的线程（或主线程根本没走到任何接缝）。
-DWORD ResolveKirikiriEngineMainThreadId();
-bool KirikiriInstallOnEngineMainThread() {
-  const DWORD main_tid = ResolveKirikiriEngineMainThreadId();
+// 两处主线程安装入口在线程身份核对之前调：只记下「谁来过」，不做判定（判定仍由调用方
+// 紧随其后的 GetCurrentThreadId() 核对完成）。位只增不减：只有 main 是正常；只有
+// other / unresolved 而从无 main，说明主线程 id 解析到了一个从不经过安装入口的线程，
+// 或主线程根本没走到任何接缝。
+void NoteKirikiriInstallCaller(DWORD main_tid) {
   LONG caller = boot_diag::kCallerMainThread;
   if (main_tid == 0) {
     caller = boot_diag::kCallerUnresolved;
@@ -822,7 +821,6 @@ bool KirikiriInstallOnEngineMainThread() {
   if ((InterlockedCompareExchange(&g_boot_install_callers, 0, 0) & caller) == 0) {
     InterlockedOr(&g_boot_install_callers, caller);
   }
-  return caller == boot_diag::kCallerMainThread;
 }
 
 // TextRender 之外的捕获路径（Layer.drawText / MessageLayer.processCh）只在换游戏、
@@ -7673,7 +7671,9 @@ void RunKirikiriLookupInstallOnMainThread() {
   if (LookupEnabledNow() == 0) return;
   if (InterlockedCompareExchange(&g_lookup_bootstrap_state, 0, 0) != 0) return;
 
-  if (!KirikiriInstallOnEngineMainThread()) return;
+  const DWORD main_tid = ResolveKirikiriEngineMainThreadId();
+  NoteKirikiriInstallCaller(main_tid);
+  if (main_tid == 0 || GetCurrentThreadId() != main_tid) return;
 
   if (!ResolveKirikiriTjsHostFunctions()) return;
 
@@ -8091,7 +8091,9 @@ void RunKirikiriKagTextInstallOnMainThread() {
   if (InterlockedCompareExchange(&g_kag_text_install_requested, 0, 0) == 0) return;
   if (InterlockedCompareExchange(&g_kag_text_bootstrap_state, 0, 0) != 0) return;
 
-  if (!KirikiriInstallOnEngineMainThread()) return;
+  const DWORD main_tid = ResolveKirikiriEngineMainThreadId();
+  NoteKirikiriInstallCaller(main_tid);
+  if (main_tid == 0 || GetCurrentThreadId() != main_tid) return;
 
   if (!ResolveKirikiriTjsHostFunctions()) return;
   try {
