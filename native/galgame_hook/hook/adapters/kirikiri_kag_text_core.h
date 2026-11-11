@@ -28,7 +28,10 @@
 //
 //     <op><layer id>,<payload length in UTF-16 units>:<payload>
 //
-//   op 'c'  processCh drew <payload> on the current layer <id>
+//   op 's'  a run of consecutive processCh characters drawn on the current
+//           layer <id> (the TJS side coalesces them; at most kMaxLineUnits)
+//   op 'c'  one processCh payload too long to be a character (never
+//           coalesced; the core poisons the line)
 //   op 'r'  setRuby(<payload>) on layer <id> (annotation; dropped)
 //   op 'w'  KAG waits for a click while layer <id> is current (commit)
 //   op 'x'  layer <id> was cleared (discard uncommitted characters)
@@ -37,6 +40,23 @@
 // Failure is always closed: a malformed batch, an overflow or a line longer
 // than the slot capacity drops the affected text instead of publishing a
 // partial line.
+//
+// Capacity is bounded by design, not by timing (real machine, a DWARF SOFT
+// KiriKiri2 title: KAG drew one character per frame while HookWorker drained
+// the 8-slot mailbox every ~200 ms; the old pump took a batch every frame and
+// dropped it when the mailbox was full, so every page was poisoned).  The
+// rules that replace it:
+//   * Backpressure, never drop: the frame pump takes the TJS buffer only when
+//     the mailbox has a free slot (NextPumpAction).  Otherwise the events stay
+//     queued in TJS and the next take carries all of them in one batch.
+//   * Coalescing: consecutive characters of one layer travel as one 's'
+//     record, so a whole page costs its characters plus one ~10-unit header
+//     per boundary instead of ~8 units per character.
+//   * The TJS buffer is as large as one native batch (kTjsEventBufferUnits).
+//     A maximal page (kMaxLineUnits) plus its wait and clear records is about
+//     500 units, so one drain period holds at least kPagesPerDrain such pages.
+//     Only more than that between two worker drains (KAG skip mode) can still
+//     overflow, and an overflow drops whole lines, never part of one.
 
 #include <cstddef>
 #include <cstdint>
@@ -61,16 +81,29 @@ inline constexpr uint32_t kMaxLineUnits = 480u;
 inline constexpr uint32_t kMaxCharPayloadUnits = 64u;
 // Message layers tracked at once (fore + back pages of numMessageLayers).
 inline constexpr uint32_t kMaxLayers = 16u;
-// Upper bound of one TJS event batch; the TJS side resets its buffer to a
-// single overflow record before reaching it.
-inline constexpr uint32_t kTjsEventBufferUnits = 3000u;
 inline constexpr uint32_t kMaxBatchUnits = 4096u;
+// Upper bound of one TJS event batch; the TJS side resets its buffer to a
+// single overflow record before exceeding it.  Two below the native read
+// buffer: one unit for the terminator, one so a full buffer is never mistaken
+// for a truncated read (the pump rejects units + 1 >= kMaxBatchUnits).
+inline constexpr uint32_t kTjsEventBufferUnits = kMaxBatchUnits - 2u;
 inline constexpr uint32_t kMaxLinesPerBatch = 32u;
+// Mailbox slots between the frame pump and HookWorker.
+inline constexpr uint32_t kMailboxSlots = 8u;
+// Record header upper bound: op + up to 8 id digits + ',' + up to 8 length
+// digits + ':'.
+inline constexpr uint32_t kMaxRecordHeaderUnits = 19u;
+// One maximal page as events: its character run, its wait and its clear.
+inline constexpr uint32_t kMaxPageEventUnits =
+    kMaxLineUnits + 3u * kMaxRecordHeaderUnits;
+inline constexpr uint32_t kPagesPerDrain = kTjsEventBufferUnits / kMaxPageEventUnits;
 
 static_assert(kMaxLineUnits * sizeof(wchar_t) + sizeof(TextSlot) <= kTextSlotBytes,
               "a committed KAG line must fit one text lane slot untruncated");
-static_assert(kTjsEventBufferUnits + 64u < kMaxBatchUnits,
+static_assert(kTjsEventBufferUnits + 1u < kMaxBatchUnits,
               "the native batch buffer must hold the largest TJS batch");
+static_assert(kPagesPerDrain >= 4u,
+              "one worker drain period must hold several maximal pages");
 
 struct Line {
   uint32_t layer_id = 0;
@@ -137,6 +170,23 @@ class Assembler {
       slot->poisoned = slot->poisoned || units != 0u;
       return;
     }
+    Append(slot, text, units);
+  }
+
+  // A coalesced run of processCh characters (op 's').
+  void OnRun(uint32_t id, const wchar_t* text, uint32_t units) {
+    Slot* slot = Acquire(id);
+    if (slot == nullptr || units == 0u) return;
+    if (units > kMaxLineUnits) {
+      slot->poisoned = true;
+      return;
+    }
+    Append(slot, text, units);
+  }
+
+ private:
+  struct Slot;
+  void Append(Slot* slot, const wchar_t* text, uint32_t units) {
     for (uint32_t i = 0; i < units; ++i) {
       const wchar_t ch = text[i];
       if (IsControlUnit(ch)) continue;
@@ -149,6 +199,7 @@ class Assembler {
     }
   }
 
+ public:
   // Base text only: the annotation is not part of the displayed line.
   void OnRuby(uint32_t id, const wchar_t*, uint32_t) { Acquire(id); }
 
@@ -300,6 +351,9 @@ inline BatchStatus ApplyBatch(Assembler* assembler, const wchar_t* batch,
       case L'c':
         assembler->OnChar(id, payload, units);
         break;
+      case L's':
+        assembler->OnRun(id, payload, units);
+        break;
       case L'r':
         assembler->OnRuby(id, payload, units);
         break;
@@ -323,6 +377,20 @@ inline BatchStatus ApplyBatch(Assembler* assembler, const wchar_t* batch,
     }
   }
   return BatchStatus::kOk;
+}
+
+// Frame-pump policy (backpressure).  The pump runs on the game's main thread
+// once per frame; HookWorker drains the mailbox on its own, slower cadence.
+enum class PumpAction : uint8_t {
+  kIdle = 0,   // nothing new in TJS
+  kDefer = 1,  // new events, but no free mailbox slot: leave them queued in TJS
+  kTake = 2,   // take the whole TJS buffer into one free slot
+};
+
+inline PumpAction NextPumpAction(int64_t tjs_seq, int64_t taken_seq,
+                                 bool mailbox_has_room) {
+  if (tjs_seq == taken_seq) return PumpAction::kIdle;
+  return mailbox_has_room ? PumpAction::kTake : PumpAction::kDefer;
 }
 
 // Text-lane admission.  The lane exists only where the KiriKiri adapter holds

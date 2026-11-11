@@ -443,6 +443,203 @@ void TestStatsLineShape() {
         "lane carries a stable non-zero thread address");
 }
 
+// Mirrors the TJS side's buffer discipline in kKirikiriKagTextBootstrapScript
+// (fushiKagTextAppend / FlushRun / EmitChar / Emit / Take).  The source guard
+// (KagTextLaneGuardTest.test_capacity_is_bounded_by_design) pins the script's
+// three capacity literals to this header's constants, so the model and the
+// script cannot drift apart silently.
+class TjsSideModel {
+ public:
+  void Char(uint32_t id, const std::wstring& ch) {
+    if (ch.size() > kt::kMaxCharPayloadUnits) {
+      Event(L'c', id, ch);
+      return;
+    }
+    if (run_id_ != id || run_.size() + ch.size() > kt::kMaxLineUnits) FlushRun();
+    run_id_ = id;
+    run_ += ch;
+    ++seq;
+  }
+  void Event(wchar_t op, uint32_t id, const std::wstring& payload = L"") {
+    FlushRun();
+    Append(Record(op, id, payload));
+    ++seq;
+  }
+  std::wstring Take() {
+    FlushRun();
+    std::wstring events;
+    events.swap(events_);
+    return events;
+  }
+  int64_t seq = 0;
+  uint32_t overflows = 0;
+  size_t peak_units = 0;
+
+ private:
+  void Append(const std::wstring& record) {
+    if (events_.size() + record.size() > kt::kTjsEventBufferUnits) {
+      events_ = L"o0,0:";
+      ++overflows;
+    } else {
+      events_ += record;
+    }
+    if (events_.size() > peak_units) peak_units = events_.size();
+  }
+  void FlushRun() {
+    if (run_id_ > 0 && !run_.empty()) Append(Record(L's', run_id_, run_));
+    run_id_ = 0;
+    run_.clear();
+  }
+  uint32_t run_id_ = 0;
+  std::wstring run_;
+  std::wstring events_;
+};
+
+struct BurstResult {
+  std::vector<std::wstring> lines;
+  kt::AssemblerCounters counters;
+  uint32_t tjs_overflows = 0;
+  uint32_t deferred = 0;
+  uint32_t dropped = 0;
+  size_t peak_units = 0;
+};
+
+// Frame-level replay of pump + mailbox + worker.  `chars_per_frame` characters
+// are drawn each game frame (0 = the whole page in one frame, KAG nowait), the
+// pump runs once per frame, HookWorker drains every `drain_every` frames.
+// `legacy_drop` replays the old policy (take every frame, drop when full).
+BurstResult ReplayBurst(const std::wstring& page, uint32_t chars_per_frame,
+                        uint32_t drain_every, bool legacy_drop) {
+  BurstResult result;
+  TjsSideModel tjs;
+  auto assembler = std::make_unique<kt::Assembler>();
+  std::vector<std::wstring> mailbox;  // FIFO, at most kMailboxSlots
+  std::vector<bool> gaps;
+  bool pending_gap = false;
+  int64_t taken_seq = -1;
+  size_t drawn = 0;
+  bool waited = false;
+  const uint32_t per_frame =
+      chars_per_frame == 0 ? static_cast<uint32_t>(page.size()) : chars_per_frame;
+  for (uint32_t frame = 1; frame < 100000u; ++frame) {
+    // Game: draw this frame's characters, then the [p] wait once all are drawn.
+    for (uint32_t i = 0; i < per_frame && drawn < page.size(); ++i, ++drawn) {
+      tjs.Char(1, page.substr(drawn, 1));
+    }
+    if (drawn == page.size() && !waited) {
+      tjs.Event(L'w', 1);
+      waited = true;
+    }
+    // Pump.
+    const bool room = mailbox.size() < kt::kMailboxSlots;
+    if (legacy_drop) {
+      if (tjs.seq != taken_seq) {
+        taken_seq = tjs.seq;
+        std::wstring batch = tjs.Take();
+        if (room) {
+          mailbox.push_back(batch);
+          gaps.push_back(pending_gap);
+          pending_gap = false;
+        } else {
+          pending_gap = true;
+          ++result.dropped;
+        }
+      }
+    } else {
+      switch (kt::NextPumpAction(tjs.seq, taken_seq, room)) {
+        case kt::PumpAction::kIdle:
+          break;
+        case kt::PumpAction::kDefer:
+          ++result.deferred;
+          break;
+        case kt::PumpAction::kTake:
+          taken_seq = tjs.seq;
+          mailbox.push_back(tjs.Take());
+          gaps.push_back(false);
+          break;
+      }
+    }
+    // Worker.
+    if (frame % drain_every == 0) {
+      for (size_t i = 0; i < mailbox.size(); ++i) {
+        if (gaps[i]) assembler->Overflow();
+        auto out = std::make_unique<kt::LineBatch>();
+        kt::ApplyBatch(assembler.get(), mailbox[i].data(),
+                       static_cast<uint32_t>(mailbox[i].size()), out.get());
+        for (uint32_t l = 0; l < out->count; ++l) {
+          result.lines.emplace_back(out->lines[l].text, out->lines[l].units);
+        }
+      }
+      mailbox.clear();
+      gaps.clear();
+      if (waited && tjs.seq == taken_seq) break;
+    }
+  }
+  result.counters = assembler->counters();
+  result.tjs_overflows = tjs.overflows;
+  result.peak_units = tjs.peak_units;
+  return result;
+}
+
+std::wstring SyntheticPage(uint32_t units) {
+  std::wstring page;
+  const std::wstring alphabet = L"あいうえおかきくけこさしすせそ、。「」";
+  for (uint32_t i = 0; i < units; ++i) page += alphabet[i % alphabet.size()];
+  return page;
+}
+
+// Real machine (a DWARF SOFT KiriKiri2 title): one character per frame while
+// HookWorker drained the 8-slot mailbox every ~200 ms (12 frames at 60 fps).
+// The old pump dropped every batch past the 8th and poisoned every page.
+void TestBurstBetweenDrainsPublishesOneWholeLine() {
+  const std::wstring page = SyntheticPage(120);
+  const BurstResult legacy = ReplayBurst(page, 1, 12, true);
+  Check(legacy.dropped > 0 && legacy.lines.empty(),
+        "replay reproduces the old drop-and-poison failure");
+
+  const BurstResult fixed = ReplayBurst(page, 1, 12, false);
+  Check(fixed.deferred > 0, "the mailbox did fill up: backpressure was exercised");
+  Check(fixed.lines.size() == 1 && fixed.lines[0] == page,
+        "one complete line after a per-frame burst");
+  Check(fixed.counters.poisoned_waits == 0 && fixed.counters.overflows == 0 &&
+            fixed.tjs_overflows == 0,
+        "no poison, no overflow under backpressure");
+
+  // KAG nowait: a maximal page lands in one frame, between two drains.
+  const std::wstring longest = SyntheticPage(kt::kMaxLineUnits);
+  const BurstResult instant = ReplayBurst(longest, 0, 12, false);
+  Check(instant.lines.size() == 1 && instant.lines[0] == longest,
+        "a maximal page drawn in one frame is one complete line");
+  Check(instant.tjs_overflows == 0 && instant.counters.poisoned_waits == 0,
+        "a maximal page fits the TJS buffer");
+  Check(instant.peak_units <= kt::kMaxPageEventUnits,
+        "a maximal page costs at most kMaxPageEventUnits");
+
+  // A slow worker (drains once per second) still loses nothing.
+  const BurstResult slow = ReplayBurst(page, 2, 60, false);
+  Check(slow.lines.size() == 1 && slow.lines[0] == page &&
+            slow.counters.poisoned_waits == 0,
+        "slow worker: whole line, no poison");
+}
+
+void TestRunRecords() {
+  auto assembler = std::make_unique<kt::Assembler>();
+  std::vector<std::wstring> lines = Apply(
+      assembler.get(), Record(L's', 1, L"あ\nい") + Record(L's', 1, L"う") +
+                           Record(L'w', 1, L""));
+  Check(lines.size() == 1 && lines[0] == L"あいう", "runs append, control units dropped");
+  lines = Apply(assembler.get(),
+                Record(L's', 1, std::wstring(kt::kMaxLineUnits + 1u, L'x')) +
+                    Record(L'w', 1, L""));
+  Check(lines.empty(), "a run longer than a line poisons it");
+  lines = Apply(assembler.get(), Record(L's', 1, L"え") + Record(L'w', 1, L""));
+  Check(lines.size() == 1 && lines[0] == L"え", "poison ends at the wait");
+  Check(kt::NextPumpAction(5, 5, false) == kt::PumpAction::kIdle &&
+            kt::NextPumpAction(6, 5, false) == kt::PumpAction::kDefer &&
+            kt::NextPumpAction(6, 5, true) == kt::PumpAction::kTake,
+        "pump action table");
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -468,6 +665,8 @@ int main(int argc, char** argv) {
   TestLaneWriteIsAnEngineExactLane();
   TestOutcomeCountersClassifyEveryCommit();
   TestStatsLineShape();
+  TestRunRecords();
+  TestBurstBetweenDrainsPublishesOneWholeLine();
   if (g_failures != 0) {
     fprintf(stderr, "%d of %d checks failed\n", g_failures, g_checks);
     return 1;

@@ -6924,7 +6924,9 @@ def find_kag_text_script_violations(raw: str) -> list[str]:
         'fushiKagTextWrapWait("showPageBreakAndClear"': "溢出自动换页等待提交",
         'global.fushiKagTextEmit("x",this.fushiKagTextId,"");': "clear() 复位",
         "if(!result&&": "processCh 溢出（返回真）的字不计",
-        'global.fushiKagTextCurrentId()==this.fushiKagTextId){stat.cur++;global.fushiKagTextEmit("c",': "字符只认 kag.current 那一层",
+        'global.fushiKagTextCurrentId()==this.fushiKagTextId){stat.cur++;global.fushiKagTextEmitChar(this.fushiKagTextId,ch);': "字符只认 kag.current 那一层",
+        'global.fushiKagTextTake=function(){global.fushiKagTextFlushRun();': "取批前先把在攒的字符串冲进缓冲",
+        'global.fushiKagTextEmit=function(op,id,payload){global.fushiKagTextFlushRun();': "边界事件之前先冲字符串（保持事件次序）",
         'fushiKagTextWrapWait("waitClick"': "[waitclick] 等待提交",
         'if(global.fushiKagTextIsReaderWait(until))global.fushiKagTextOnWait("cw");': "conductor 读者点击等待提交",
         'returnpairs.count==2&&pairs[0]=="click";': "conductor 等待只认「只有 click 一个键」的读者等待",
@@ -6943,6 +6945,46 @@ def find_kag_text_script_violations(raw: str) -> list[str]:
         hits.append("文本道挂了 kag.addPlugin（插件方法集未在本引擎验证）")
     if GLOBAL_PATCH_RE.search(text):
         hits.append("文本道给引擎全局类打了补丁（对实例不可见）")
+    return hits
+
+
+def _core_constant(name: str) -> int:
+    core = KAG_TEXT_CORE.read_text(encoding="utf-8")
+    values: dict[str, int] = {}
+    for m in re.finditer(r"inline constexpr uint32_t (\w+) =\s*([^;]+);", core):
+        expr = re.sub(r"(\d+)u\b", lambda d: d.group(1), m.group(2))
+        for key, value in values.items():
+            expr = re.sub(rf"\b{key}\b", str(value), expr)
+        if re.fullmatch(r"[0-9+\-* /()]+", expr):
+            values[m.group(1)] = int(eval(expr))  # noqa: S307 -- digits/operators only
+    return values[name]
+
+
+def find_kag_text_capacity_violations(raw: str, source: MaskedSource) -> list[str]:
+    """TJS 侧的三个容量常数必须与核心头一致；帧回调必须走背压，不得满了就丢。"""
+    script = _kag_text_script(raw)
+    if script is None:
+        return ["找不到 kKirikiriKagTextBootstrapScript"]
+    compact = re.sub(r"\s+", "", _strip_line_comments(script))
+    hits: list[str] = []
+    expected = {
+        f"events.length+record.length>{_core_constant('kTjsEventBufferUnits')})":
+            "TJS 缓冲上限 != kTjsEventBufferUnits",
+        f"global.fushiKagTextRun.length+ch.length>{_core_constant('kMaxLineUnits')})":
+            "字符串合并上限 != kMaxLineUnits",
+        f"if(ch.length>{_core_constant('kMaxCharPayloadUnits')})":
+            "单字载荷上限 != kMaxCharPayloadUnits",
+    }
+    hits += [why for needle, why in expected.items() if needle not in compact]
+    pump = _cpp_function_body(source, KAG_TEXT_PUMP_ENTRY)
+    if pump is None:
+        return hits + [f"找不到 {KAG_TEXT_PUMP_ENTRY.strip()}"]
+    if "kag_text::NextPumpAction(" not in pump or "KirikiriKagTextMailboxHasRoom()" not in pump:
+        hits.append("帧回调不再按邮箱空位决定取不取（背压）")
+    take = pump.find("fushiKagTextTake()")
+    decide = pump.find("kag_text::NextPumpAction(")
+    if take >= 0 and decide >= 0 and take < decide:
+        hits.append("帧回调在判断邮箱空位之前就取走了 TJS 事件串")
     return hits
 
 
@@ -7086,6 +7128,27 @@ class KagTextLaneGuardTest(unittest.TestCase):
         dirty = body.replace(
             "global.fushiLookupPatchClassicLayer(currentLayers[ci])", "false", 1)
         self.assertNotEqual([], find_lookup_sweep_current_violations(dirty))
+
+    def test_capacity_is_bounded_by_design(self) -> None:
+        self.assertEqual([], find_kag_text_capacity_violations(self.raw, self.source))
+        for old, new in (
+            ("events.length + record.length > 4094)", "events.length + record.length > 3000)"),
+            ("global.fushiKagTextRun.length + ch.length > 480)",
+             "global.fushiKagTextRun.length + ch.length > 4000)"),
+        ):
+            with self.subTest(old=old):
+                dirty = self._mutate(old, new)
+                self.assertNotEqual(
+                    [], find_kag_text_capacity_violations(dirty, MaskedSource(dirty)))
+
+    def test_dropping_when_the_mailbox_is_full_is_red(self) -> None:
+        dirty = self._mutate(
+            "  switch (kag_text::NextPumpAction(seq, g_kag_text_last_seq,\n"
+            "                                   KirikiriKagTextMailboxHasRoom())) {",
+            "  switch (kag_text::NextPumpAction(seq, g_kag_text_last_seq, true)) {",
+        )
+        self.assertNotEqual(
+            [], find_kag_text_capacity_violations(dirty, MaskedSource(dirty)))
 
     def test_rebinding_the_original_wait_context_is_red(self) -> None:
         dirty = self._mutate(

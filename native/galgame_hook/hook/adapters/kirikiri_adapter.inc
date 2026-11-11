@@ -5577,28 +5577,59 @@ if(typeof global.fushiKagTextSeq == "undefined")
 	global.fushiKagTextNextId = 0;
 	global.fushiKagTextInstalled = 0;
 	global.fushiKagTextFaults = 0;
+	global.fushiKagTextRunId = 0;
+	global.fushiKagTextRun = "";
 	global.fushiKagTextStat = %[
 		pc : 0, cur : 0, over : 0, x : 0,
 		lb : 0, pb : 0, pbc : 0, wc : 0, cw : 0, cwo : 0,
 		w : 0, w0 : 0, ovf : 0, sweep : 0
 	];
 
-	global.fushiKagTextEmit = function(op, id, payload)
+	global.fushiKagTextAppend = function(record)
 	{
-		var record = op + id + "," + payload.length + ":" + payload;
 		var events = global.fushiKagTextEvents;
-		if(events.length + record.length > 3000)
+		if(events.length + record.length > 4094)
 		{
 			global.fushiKagTextEvents = "o0,0:";
 			global.fushiKagTextStat.ovf++;
 		}
 		else
 			global.fushiKagTextEvents = events + record;
+	};
+
+	global.fushiKagTextFlushRun = function()
+	{
+		var run = global.fushiKagTextRun;
+		if(global.fushiKagTextRunId > 0 && run != "")
+			global.fushiKagTextAppend("s" + global.fushiKagTextRunId + "," + run.length + ":" + run);
+		global.fushiKagTextRunId = 0;
+		global.fushiKagTextRun = "";
+	};
+
+	global.fushiKagTextEmit = function(op, id, payload)
+	{
+		global.fushiKagTextFlushRun();
+		global.fushiKagTextAppend(op + id + "," + payload.length + ":" + payload);
+		global.fushiKagTextSeq++;
+	};
+
+	global.fushiKagTextEmitChar = function(id, ch)
+	{
+		if(ch.length > 64)
+		{
+			global.fushiKagTextEmit("c", id, ch);
+			return;
+		}
+		if(global.fushiKagTextRunId != id || global.fushiKagTextRun.length + ch.length > 480)
+			global.fushiKagTextFlushRun();
+		global.fushiKagTextRunId = id;
+		global.fushiKagTextRun += ch;
 		global.fushiKagTextSeq++;
 	};
 
 	global.fushiKagTextTake = function()
 	{
+		global.fushiKagTextFlushRun();
 		var events = global.fushiKagTextEvents;
 		global.fushiKagTextEvents = "";
 		return events;
@@ -5653,7 +5684,7 @@ if(typeof global.fushiKagTextSeq == "undefined")
 					global.fushiKagTextCurrentId() == this.fushiKagTextId)
 				{
 					stat.cur++;
-					global.fushiKagTextEmit("c", this.fushiKagTextId, ch);
+					global.fushiKagTextEmitChar(this.fushiKagTextId, ch);
 				}
 			}
 			catch(e) { global.fushiKagTextFaults++; }
@@ -7568,7 +7599,7 @@ KiriKiriKagTextBootstrapCallback g_kag_text_bootstrap_callback;
 
 // 主线程 → HookWorker 的单生产者单消费者邮箱。满了就丢这一批并在下一批上打 gap 标记：
 // worker 见到 gap 先让核心按「上游丢过字」处理（受影响的行整行不发），绝不拼出半句。
-constexpr uint32_t kKagTextMailboxSlots = 8;
+constexpr uint32_t kKagTextMailboxSlots = kag_text::kMailboxSlots;
 struct KagTextMailboxSlot {
   bool gap = false;
   bool stats = false;  // true = 这一格是 fushiKagTextStats() 的诊断串，不是事件批
@@ -7586,10 +7617,18 @@ volatile LONG g_kag_text_install_report = 0;  // TJS fushiKagTextInstalled 的�
 volatile LONG g_kag_text_pump_batches = 0;       // 成功取到并入队的事件批
 volatile LONG g_kag_text_pump_take_failed = 0;   // fushiKagTextTake() 求值失败 / 非字符串
 volatile LONG g_kag_text_pump_truncated = 0;     // 事件串超过 native 缓冲
-volatile LONG g_kag_text_pump_mailbox_full = 0;  // 事件批因邮箱满被丢
+volatile LONG g_kag_text_pump_mailbox_full = 0;  // 事件批因邮箱满被丢（背压下应恒为 0）
+volatile LONG g_kag_text_pump_deferred = 0;      // 邮箱满、事件留在 TJS 等下一帧（不丢）
 volatile LONG g_kag_text_pump_stats_failed = 0;  // fushiKagTextStats() 求值失败
 
-// 返回 false = 邮箱满。事件批满了要在下一批打 gap；诊断串满了直接丢，不影响拼行。
+bool KirikiriKagTextMailboxHasRoom() {
+  const LONG head = InterlockedCompareExchange(&g_kag_text_mailbox_head, 0, 0);
+  const LONG tail = InterlockedCompareExchange(&g_kag_text_mailbox_tail, 0, 0);
+  return static_cast<uint32_t>(head - tail) < kKagTextMailboxSlots;
+}
+
+// 返回 false = 邮箱满。事件批只在 KirikiriKagTextMailboxHasRoom() 之后才推（单生产者，
+// 推不进去是不变式被破坏）；诊断串满了直接丢，不影响拼行。
 bool PushKirikiriKagTextSlot(const wchar_t* text, uint32_t units, bool stats) {
   const LONG head = InterlockedCompareExchange(&g_kag_text_mailbox_head, 0, 0);
   const LONG tail = InterlockedCompareExchange(&g_kag_text_mailbox_tail, 0, 0);
@@ -7650,7 +7689,20 @@ void PumpKirikiriKagText() {
   // 稳态每帧只有这一次求值：序号不变就一行 TJS 都不再跑。
   int64_t seq = 0;
   if (!EvaluateTjsInteger(L"global.fushiKagTextSeq", &seq)) return;
-  if (seq == g_kag_text_last_seq) return;
+  // 背压：邮箱没空位就**不取**，事件留在 TJS 缓冲里，下一次有空位时整串一次取走。
+  // 旧实现每帧都取、满了就丢，游戏一帧画一个字而 worker 约 200 ms 才排空一次时，
+  // 每一页都被打成 gap（真机 DWARF SOFT KiriKiri2：mailbox_full 随 processCh 逐个上涨，
+  // lines=0）。容量论证见 kirikiri_kag_text_core.h 文件头。
+  switch (kag_text::NextPumpAction(seq, g_kag_text_last_seq,
+                                   KirikiriKagTextMailboxHasRoom())) {
+    case kag_text::PumpAction::kIdle:
+      return;
+    case kag_text::PumpAction::kDefer:
+      InterlockedIncrement(&g_kag_text_pump_deferred);
+      return;
+    case kag_text::PumpAction::kTake:
+      break;
+  }
   g_kag_text_last_seq = seq;
   static wchar_t batch[kag_text::kMaxBatchUnits];
   if (!EvaluateTjsString(L"global.fushiKagTextTake()", batch,
@@ -7708,7 +7760,7 @@ void LogKirikiriKagTextStats(const wchar_t* tjs, uint32_t units,
   _snwprintf_s(
       line, _TRUNCATE,
       L"[FushiKagText] stats tjs{%.*ls} pump{batches=%ld,take_failed=%ld,truncated=%ld,"
-      L"mailbox_full=%ld,stats_failed=%ld} core{chars=%lu,waits=%lu,lines=%lu,"
+      L"mailbox_full=%ld,deferred=%ld,stats_failed=%ld} core{chars=%lu,waits=%lu,lines=%lu,"
       L"poisoned=%lu,blank=%lu,capped=%lu,clears=%lu,overflows=%lu,malformed=%lu} "
       L"publish{ok=%lu,skipped=%lu,rejected=%lu}",
       static_cast<int>(units), tjs,
@@ -7716,6 +7768,7 @@ void LogKirikiriKagTextStats(const wchar_t* tjs, uint32_t units,
       InterlockedCompareExchange(&g_kag_text_pump_take_failed, 0, 0),
       InterlockedCompareExchange(&g_kag_text_pump_truncated, 0, 0),
       InterlockedCompareExchange(&g_kag_text_pump_mailbox_full, 0, 0),
+      InterlockedCompareExchange(&g_kag_text_pump_deferred, 0, 0),
       InterlockedCompareExchange(&g_kag_text_pump_stats_failed, 0, 0),
       static_cast<unsigned long>(counters.chars),
       static_cast<unsigned long>(counters.waits),
