@@ -1,7 +1,7 @@
 """在被控端拉起 galgame 真机驱动并按文件协议收发指令。
 
 驱动是 `fushi/integration_test/gal_realgame_driver_itest.dart` 打成的 Debug 版
-fushi.exe（见 build_agent.ps1）。协议（驱动侧已实现，这里只做客户端）：
+fushi.exe（见 build_packages.ps1）。协议（驱动侧已实现，这里只做客户端）：
 
 * 我们写 `GALDRIVER_DIR/cmd.txt`（一行一条指令），驱动读完即删；
 * 驱动每执行完一条，把结果追加到 `out.txt`，再把累计序号写进 `done.txt`；

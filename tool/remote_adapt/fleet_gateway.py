@@ -1,15 +1,12 @@
-"""机群网关：志愿者电脑上的 agent 主动连进来，本机的 Claude 会话通过一个 MCP 服务操作它们。
+"""远程适配网关（主控端）：志愿者电脑上的 agent 主动连进来，本机的 Claude 会话通过一个 MCP 服务操作它们。
 
-    python fleet_gateway.py --agent-host 100.x.y.z --token-file %USERPROFILE%\\.fushi-fleet\\token
+    python fleet_gateway.py            # 或主控端包里的 fushi-fleet-gateway.exe
 
-* agent 侧：WebSocket `ws://<agent-host>:<agent-port>/agent`，Bearer token 认证。
-  agent-host 填本机的 Tailscale 地址（或 0.0.0.0）。
-* Claude 侧：MCP Streamable HTTP `http://127.0.0.1:<mcp-port>/mcp`，只监听本机回环。
-  注册一次：`claude mcp add --scope user --transport http fleet http://127.0.0.1:8766/mcp`
+* agent 侧：WebSocket `ws://<本机地址>:8765/agent`，Bearer token 认证。
+* Claude 侧：MCP Streamable HTTP `http://127.0.0.1:8766/mcp`，只监听本机回环。
+* token：主控端包里与 exe 同目录的 token.txt，否则 ~/.fushi-fleet/token（不存在就生成）。
 
-同时有多个 Claude 会话在操作不同机器，所以每台机器有**独占租约**：先 claim_machine
-拿到 lease，之后所有操作都带上它；别的会话对这台机器的操作会被拒绝。租约空闲超过
-TTL 自动过期（会话中途死掉不会永久占着机器）。
+一个 Claude 会话即可同时操作所有在线机器：每个工具用 machine 参数点名，不同机器的调用可并行。
 """
 
 from __future__ import annotations
@@ -19,11 +16,14 @@ import asyncio
 import json
 import re
 import secrets
+import shutil
+import subprocess
+import sys
 import time
 from dataclasses import dataclass, field
 from http import HTTPStatus
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from mcp.server.fastmcp import FastMCP, Image
 from mcp.server.fastmcp.exceptions import ToolError
@@ -31,84 +31,7 @@ from websockets.asyncio.server import ServerConnection, serve
 
 import fleet_protocol as proto
 
-DEFAULT_LEASE_TTL_S = 30 * 60
 MACHINE_NAME = re.compile(r"[\w-]{1,64}")
-
-
-# ── 租约 ────────────────────────────────────────────────────────────────────
-
-
-@dataclass
-class Lease:
-    token: str
-    holder: str
-    claimed_at: float
-    last_used: float
-
-
-class LeaseTable:
-    """机器 → 独占租约。纯内存；网关重启后所有租约作废（agent 也会重连）。"""
-
-    def __init__(self, ttl_s: float = DEFAULT_LEASE_TTL_S, clock: Any = time.monotonic) -> None:
-        self.ttl_s = ttl_s
-        self._clock = clock
-        self._leases: dict[str, Lease] = {}
-
-    def _live(self, machine: str) -> Optional[Lease]:
-        lease = self._leases.get(machine)
-        if lease is not None and self._clock() - lease.last_used > self.ttl_s:
-            del self._leases[machine]
-            return None
-        return lease
-
-    def holder(self, machine: str) -> Optional[dict[str, Any]]:
-        lease = self._live(machine)
-        if lease is None:
-            return None
-        now = self._clock()
-        return {
-            "holder": lease.holder,
-            "held_s": round(now - lease.claimed_at),
-            "idle_s": round(now - lease.last_used),
-            "expires_in_s": round(self.ttl_s - (now - lease.last_used)),
-        }
-
-    def claim(self, machine: str, holder: str, steal: bool = False) -> str:
-        holder = holder.strip()
-        if not holder:
-            raise ToolError("holder 不能为空：写你的会话名 / 任务名，方便别人知道谁占着")
-        lease = self._live(machine)
-        now = self._clock()
-        if lease is not None:
-            if lease.holder == holder:
-                # 同一持有者重复 claim（例如上下文压缩后丢了 lease）：续上原租约。
-                lease.last_used = now
-                return lease.token
-            if not steal:
-                raise ToolError(
-                    f"{machine} 正被「{lease.holder}」占用（空闲 {round(now - lease.last_used)}s）。"
-                    "确认对方已不用再传 steal=true"
-                )
-        token = secrets.token_urlsafe(12)
-        self._leases[machine] = Lease(token, holder, now, now)
-        return token
-
-    def check(self, machine: str, token: str) -> None:
-        lease = self._live(machine)
-        if lease is None:
-            raise ToolError(f"{machine} 没有有效租约（可能已过期），先 claim_machine")
-        if not secrets.compare_digest(lease.token, token or ""):
-            raise ToolError(f"lease 不对：{machine} 当前由「{lease.holder}」持有")
-        lease.last_used = self._clock()
-
-    def release(self, machine: str, token: str) -> bool:
-        lease = self._live(machine)
-        if lease is None:
-            return False
-        if not secrets.compare_digest(lease.token, token or ""):
-            raise ToolError(f"lease 不对：{machine} 当前由「{lease.holder}」持有")
-        del self._leases[machine]
-        return True
 
 
 # ── agent 连接 ──────────────────────────────────────────────────────────────
@@ -155,9 +78,8 @@ class AgentConn:
 
 
 class Fleet:
-    def __init__(self, token: str, leases: LeaseTable, audit_dir: Optional[Path]) -> None:
+    def __init__(self, token: str, audit_dir: Optional[Path]) -> None:
         self.token = token
-        self.leases = leases
         self.agents: dict[str, AgentConn] = {}
         self.audit_dir = audit_dir
         if audit_dir:
@@ -232,12 +154,9 @@ class Fleet:
             raise ToolError(f"{machine} 不在线。在线机器：{online}")
         return conn
 
-    async def call(
-        self, machine: str, lease: str, op: str, args: dict[str, Any], timeout_s: float = 90
-    ) -> dict[str, Any]:
-        self.leases.check(machine, lease)
+    async def call(self, machine: str, op: str, args: dict[str, Any], timeout_s: float = 90) -> dict[str, Any]:
         conn = self.agent(machine)
-        self.audit(machine, op, args, note=self.leases.holder(machine)["holder"])
+        self.audit(machine, op, args)
         return await conn.request(op, args, timeout_s)
 
 
@@ -271,9 +190,8 @@ def build_mcp(fleet: Fleet, host: str, port: int) -> FastMCP:
     mcp = FastMCP(
         "fleet",
         instructions=(
-            "操作社区志愿者的 Windows 电脑做 galgame 内嵌查词适配。先 list_machines，"
-            "再 claim_machine 拿 lease（每台机器同一时间只归一个会话），之后所有操作都带 "
-            "machine + lease，做完 release_machine。坐标默认是最近一次截图里的像素"
+            "操作社区志愿者的 Windows 电脑做 galgame 内嵌查词适配。先 list_machines 看谁在线，"
+            "之后每个操作用 machine 指定机器；不同机器的操作可以并行发。坐标默认是该机器最近一次截图里的像素"
             "（coords='screenshot'），accept4 等物理坐标用 coords='physical'。"
             "适配验收优先用 galdriver 指令（state / lines / accept4 返回文字，省额度），"
             "截图只在需要看画面时用。游戏截图、台词不得写进仓库。"
@@ -285,14 +203,13 @@ def build_mcp(fleet: Fleet, host: str, port: int) -> FastMCP:
 
     @mcp.tool(structured_output=False)
     async def list_machines() -> str:
-        """列出在线机器：系统、分辨率、触屏、是否管理员、驱动是否就绪、谁占着。"""
+        """列出在线机器：系统、分辨率、触屏、是否管理员、驱动是否就绪。"""
         rows = []
         for name, conn in sorted(fleet.agents.items()):
             info = conn.info
             rows.append(
                 {
                     "machine": name,
-                    "lease": fleet.leases.holder(name),
                     "online_s": round(time.time() - conn.connected_at),
                     "os": info.get("os"),
                     "user": info.get("user"),
@@ -307,32 +224,15 @@ def build_mcp(fleet: Fleet, host: str, port: int) -> FastMCP:
         return json.dumps(rows, ensure_ascii=False, indent=1) if rows else "没有在线机器"
 
     @mcp.tool(structured_output=False)
-    async def claim_machine(machine: str, holder: str, steal: bool = False) -> str:
-        """独占一台机器，返回 lease。holder 写会话名/任务名（如「siglus 适配」）。
-        同一 holder 再 claim 会拿回原 lease；steal=true 强占别人的（确认对方已不用）。"""
-        fleet.agent(machine)
-        token = fleet.leases.claim(machine, holder, steal)
-        fleet.audit(machine, "claim", {"holder": holder, "steal": steal})
-        return json.dumps({"machine": machine, "lease": token, "ttl_s": fleet.leases.ttl_s}, ensure_ascii=False)
-
-    @mcp.tool(structured_output=False)
-    async def release_machine(machine: str, lease: str) -> str:
-        """释放租约。"""
-        ok = fleet.leases.release(machine, lease)
-        fleet.audit(machine, "release", {})
-        return "released" if ok else "本来就没有租约"
-
-    @mcp.tool(structured_output=False)
-    async def machine_info(machine: str, lease: str) -> str:
+    async def machine_info(machine: str) -> str:
         """刷新并返回机器信息（显示器、前台窗口、驱动状态等）。"""
-        result = await fleet.call(machine, lease, "info", {})
+        result = await fleet.call(machine, "info", {})
         fleet.agent(machine).info = result
         return json.dumps(result, ensure_ascii=False, indent=1)
 
     @mcp.tool(structured_output=False)
     async def screenshot(
         machine: str,
-        lease: str,
         monitor: int = 1,
         max_width: int = 1280,
         region: Optional[list[int]] = None,
@@ -345,7 +245,7 @@ def build_mcp(fleet: Fleet, host: str, port: int) -> FastMCP:
         args: dict[str, Any] = {"monitor": monitor, "max_width": max_width, "format": format, "quality": quality}
         if region:
             args["region"] = region
-        return _shot_content(await fleet.call(machine, lease, "screenshot", args))
+        return _shot_content(await fleet.call(machine, "screenshot", args))
 
     def _action_args(base: dict[str, Any], screenshot_after: bool, settle_ms: int) -> dict[str, Any]:
         args = {k: v for k, v in base.items() if v is not None}
@@ -357,7 +257,6 @@ def build_mcp(fleet: Fleet, host: str, port: int) -> FastMCP:
     @mcp.tool(structured_output=False)
     async def click(
         machine: str,
-        lease: str,
         x: float,
         y: float,
         button: str = "left",
@@ -375,17 +274,17 @@ def build_mcp(fleet: Fleet, host: str, port: int) -> FastMCP:
              "hold_ms": hold_ms, "coords": coords},
             screenshot_after, settle_ms,
         )
-        return _shot_content(await fleet.call(machine, lease, "click", args))
+        return _shot_content(await fleet.call(machine, "click", args))
 
     @mcp.tool(structured_output=False)
-    async def move(machine: str, lease: str, x: float, y: float, coords: str = "screenshot",
+    async def move(machine: str, x: float, y: float, coords: str = "screenshot",
                    screenshot_after: bool = False, settle_ms: int = 400) -> list[Any]:
         """移动鼠标（悬停）。"""
         args = _action_args({"x": x, "y": y, "coords": coords}, screenshot_after, settle_ms)
-        return _shot_content(await fleet.call(machine, lease, "move", args))
+        return _shot_content(await fleet.call(machine, "move", args))
 
     @mcp.tool(structured_output=False)
-    async def drag(machine: str, lease: str, x: float, y: float, x2: float, y2: float,
+    async def drag(machine: str, x: float, y: float, x2: float, y2: float,
                    button: str = "left", duration_ms: int = 400, coords: str = "screenshot",
                    screenshot_after: bool = False, settle_ms: int = 400) -> list[Any]:
         """按住拖动。"""
@@ -393,32 +292,32 @@ def build_mcp(fleet: Fleet, host: str, port: int) -> FastMCP:
             {"x": x, "y": y, "x2": x2, "y2": y2, "button": button, "duration_ms": duration_ms, "coords": coords},
             screenshot_after, settle_ms,
         )
-        return _shot_content(await fleet.call(machine, lease, "drag", args))
+        return _shot_content(await fleet.call(machine, "drag", args))
 
     @mcp.tool(structured_output=False)
-    async def scroll(machine: str, lease: str, x: float, y: float, dy: int = -3, dx: int = 0,
+    async def scroll(machine: str, x: float, y: float, dy: int = -3, dx: int = 0,
                      coords: str = "screenshot", screenshot_after: bool = False,
                      settle_ms: int = 400) -> list[Any]:
         """滚轮，dy>0 向上、dy<0 向下，单位是格。"""
         args = _action_args({"x": x, "y": y, "dy": dy, "dx": dx, "coords": coords}, screenshot_after, settle_ms)
-        return _shot_content(await fleet.call(machine, lease, "scroll", args))
+        return _shot_content(await fleet.call(machine, "scroll", args))
 
     @mcp.tool(structured_output=False)
-    async def key(machine: str, lease: str, keys: str, hold_ms: int = 30, repeat: int = 1,
+    async def key(machine: str, keys: str, hold_ms: int = 30, repeat: int = 1,
                   screenshot_after: bool = False, settle_ms: int = 400) -> list[Any]:
         """按键 / 组合键：enter、space、esc、ctrl+s、alt+f4、f5、vk0x5A…（同时发 VK 与扫描码）。"""
         args = _action_args({"keys": keys, "hold_ms": hold_ms, "repeat": repeat}, screenshot_after, settle_ms)
-        return _shot_content(await fleet.call(machine, lease, "key", args))
+        return _shot_content(await fleet.call(machine, "key", args))
 
     @mcp.tool(structured_output=False)
-    async def type_text(machine: str, lease: str, text: str, screenshot_after: bool = False,
+    async def type_text(machine: str, text: str, screenshot_after: bool = False,
                         settle_ms: int = 400) -> list[Any]:
         """按 Unicode 逐字输入文本（不经输入法），\\n 发回车。"""
         args = _action_args({"text": text}, screenshot_after, settle_ms)
-        return _shot_content(await fleet.call(machine, lease, "type", args, timeout_s=300))
+        return _shot_content(await fleet.call(machine, "type", args, timeout_s=300))
 
     @mcp.tool(structured_output=False)
-    async def touch(machine: str, lease: str, action: str, x: float, y: float,
+    async def touch(machine: str, action: str, x: float, y: float,
                     x2: Optional[float] = None, y2: Optional[float] = None,
                     duration_ms: Optional[int] = None, coords: str = "screenshot",
                     screenshot_after: bool = False, settle_ms: int = 400) -> list[Any]:
@@ -428,20 +327,20 @@ def build_mcp(fleet: Fleet, host: str, port: int) -> FastMCP:
             {"action": action, "x": x, "y": y, "x2": x2, "y2": y2, "duration_ms": duration_ms, "coords": coords},
             screenshot_after, settle_ms,
         )
-        return _shot_content(await fleet.call(machine, lease, "touch", args))
+        return _shot_content(await fleet.call(machine, "touch", args))
 
     @mcp.tool(structured_output=False)
-    async def powershell(machine: str, lease: str, command: str, timeout_s: int = 120,
+    async def powershell(machine: str, command: str, timeout_s: int = 120,
                          cwd: Optional[str] = None) -> str:
         """在对方桌面会话里跑 PowerShell（UTF-8 输出）。Start-Process 拉起的程序会出现在对方屏幕上。"""
         args = {"command": command, "timeout_s": timeout_s}
         if cwd:
             args["cwd"] = cwd
-        result = await fleet.call(machine, lease, "powershell", args, timeout_s=timeout_s + 30)
+        result = await fleet.call(machine, "powershell", args, timeout_s=timeout_s + 30)
         return json.dumps(result, ensure_ascii=False, indent=1)
 
     @mcp.tool(structured_output=False)
-    async def put_file(machine: str, lease: str, local_path: str, remote_path: str) -> str:
+    async def put_file(machine: str, local_path: str, remote_path: str) -> str:
         """把本机文件推到对方电脑（分块，原子落盘）。推目录请先打 zip 再用 powershell Expand-Archive。"""
         src = Path(local_path)
         if not src.is_file():
@@ -454,7 +353,7 @@ def build_mcp(fleet: Fleet, host: str, port: int) -> FastMCP:
                 chunk = fh.read(proto.FILE_CHUNK)
                 final = offset + len(chunk) >= size
                 result = await fleet.call(
-                    machine, lease, "file_write",
+                    machine, "file_write",
                     {"path": remote_path, "offset": offset, "data_b64": proto.b64e(chunk), "final": final},
                     timeout_s=180,
                 )
@@ -464,7 +363,7 @@ def build_mcp(fleet: Fleet, host: str, port: int) -> FastMCP:
         return json.dumps({"sent": size, **result}, ensure_ascii=False)
 
     @mcp.tool(structured_output=False)
-    async def get_file(machine: str, lease: str, remote_path: str, local_path: str) -> str:
+    async def get_file(machine: str, remote_path: str, local_path: str) -> str:
         """把对方电脑上的文件拉回本机（例如 galdriver 的 shot_n.png、日志）。"""
         dst = Path(local_path)
         dst.parent.mkdir(parents=True, exist_ok=True)
@@ -473,7 +372,7 @@ def build_mcp(fleet: Fleet, host: str, port: int) -> FastMCP:
         with part.open("wb") as fh:
             while True:
                 res = await fleet.call(
-                    machine, lease, "file_read",
+                    machine, "file_read",
                     {"path": remote_path, "offset": offset, "length": proto.FILE_CHUNK},
                     timeout_s=180,
                 )
@@ -486,17 +385,16 @@ def build_mcp(fleet: Fleet, host: str, port: int) -> FastMCP:
         return json.dumps({"saved": str(dst), "size": offset}, ensure_ascii=False)
 
     @mcp.tool(structured_output=False)
-    async def list_dir(machine: str, lease: str, path: str, limit: int = 500) -> str:
+    async def list_dir(machine: str, path: str, limit: int = 500) -> str:
         """列对方电脑上的目录。"""
         return json.dumps(
-            await fleet.call(machine, lease, "list_dir", {"path": path, "limit": limit}),
+            await fleet.call(machine, "list_dir", {"path": path, "limit": limit}),
             ensure_ascii=False, indent=1,
         )
 
     @mcp.tool(structured_output=False)
     async def galdriver_start(
         machine: str,
-        lease: str,
         seed_from_config: bool = False,
         seed_support_dir: Optional[str] = None,
         seed_documents_dir: Optional[str] = None,
@@ -514,46 +412,106 @@ def build_mcp(fleet: Fleet, host: str, port: int) -> FastMCP:
             "hidden": hidden,
             "ready_timeout_s": ready_timeout_s,
         }
-        result = await fleet.call(machine, lease, "galdriver_start", args, timeout_s=ready_timeout_s + 600)
+        result = await fleet.call(machine, "galdriver_start", args, timeout_s=ready_timeout_s + 600)
         return json.dumps(result, ensure_ascii=False, indent=1)
 
     @mcp.tool(structured_output=False)
-    async def galdriver(machine: str, lease: str, command: str, timeout_s: int = 300) -> str:
+    async def galdriver(machine: str, command: str, timeout_s: int = 300) -> str:
         """发一条真机驱动指令并等它执行完，返回输出：launch <exe> / attach / thread / state /
         lines / profile / calibrate / fakeanki / accept4 <x> <y> [ox oy] / shot game|card /
         windows / click / key / wait / stop … （完整列表见 gal_realgame_driver_itest.dart 文件头）。
         新截图文件名在 new_shots，用 get_file 拉回 <workdir>\\galdriver\\shot_n.png。"""
         result = await fleet.call(
-            machine, lease, "galdriver", {"command": command, "timeout_s": timeout_s}, timeout_s=timeout_s + 30
+            machine, "galdriver", {"command": command, "timeout_s": timeout_s}, timeout_s=timeout_s + 30
         )
         return json.dumps(result, ensure_ascii=False, indent=1)
 
     @mcp.tool(structured_output=False)
-    async def galdriver_status(machine: str, lease: str) -> str:
+    async def galdriver_status(machine: str) -> str:
         """驱动进程状态与 out.txt 末尾。"""
-        return json.dumps(await fleet.call(machine, lease, "galdriver_status", {}), ensure_ascii=False, indent=1)
+        return json.dumps(await fleet.call(machine, "galdriver_status", {}), ensure_ascii=False, indent=1)
 
     @mcp.tool(structured_output=False)
-    async def galdriver_stop(machine: str, lease: str) -> str:
+    async def galdriver_stop(machine: str) -> str:
         """让驱动 quit（超时则结束进程）。"""
-        return json.dumps(await fleet.call(machine, lease, "galdriver_stop", {}, timeout_s=60), ensure_ascii=False)
+        return json.dumps(await fleet.call(machine, "galdriver_stop", {}, timeout_s=60), ensure_ascii=False)
 
     @mcp.tool(structured_output=False)
-    async def update_agent(machine: str, lease: str, local_exe: str) -> str:
-        """把本机新编的 fushi-adapt-agent.exe 推过去并让 agent 自我替换重启（重连后租约仍有效）。"""
+    async def update_agent(machine: str, local_exe: str) -> str:
+        """把本机新编的 fushi-adapt-agent.exe 推过去并让 agent 自我替换重启。"""
         remote = (fleet.agent(machine).info.get("workdir") or "%TEMP%") + "\\fushi-adapt-agent.new.exe"
-        await put_file(machine, lease, local_exe, remote)
-        result = await fleet.call(machine, lease, "self_update", {"new_exe": remote})
+        await put_file(machine, local_exe, remote)
+        result = await fleet.call(machine, "self_update", {"new_exe": remote})
         return json.dumps(result, ensure_ascii=False)
 
     return mcp
 
 
+def app_dir() -> Path:
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parent
+
+
+def load_or_create_token(path: Path) -> str:
+    """读 token；文件不存在就生成一个（打包脚本把同一个 token 写进志愿者包）。"""
+    if path.exists():
+        token = path.read_text(encoding="utf-8-sig").strip()
+        if len(token) < 16:
+            raise SystemExit(f"{path} 里的 token 太短（至少 16 字符）")
+        return token
+    path.parent.mkdir(parents=True, exist_ok=True)
+    token = secrets.token_urlsafe(32)
+    path.write_text(token, encoding="utf-8")
+    return token
+
+
+def default_token_file() -> Path:
+    bundled = app_dir() / "token.txt"
+    return bundled if bundled.exists() else Path("~/.fushi-fleet/token").expanduser()
+
+
+FIREWALL_RULE = "Fushi remote adapt gateway"
+
+
+def _run_quiet(cmd: list[str]) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        cmd, capture_output=True, text=True, encoding="utf-8", errors="replace",
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+    )
+
+
+def setup_local(agent_port: int, mcp_port: int) -> None:
+    """首次运行的本机准备：放行入站端口、把 MCP 注册进 Claude Code。都做过就什么也不动。"""
+    if sys.platform == "win32":
+        shown = _run_quiet(["netsh", "advfirewall", "firewall", "show", "rule", f"name={FIREWALL_RULE}"])
+        if shown.returncode != 0:
+            added = _run_quiet([
+                "netsh", "advfirewall", "firewall", "add", "rule", f"name={FIREWALL_RULE}",
+                "dir=in", "action=allow", "protocol=TCP", f"localport={agent_port}",
+            ])
+            if added.returncode == 0:
+                print(f"[fleet] 已放行防火墙入站 TCP {agent_port}", flush=True)
+            else:
+                print(f"[fleet] ⚠ 防火墙放行失败（需要管理员）：{added.stdout.strip()}", flush=True)
+    url = f"http://127.0.0.1:{mcp_port}/mcp"
+    claude = shutil.which("claude")
+    if claude is None:
+        print(f"[fleet] ⚠ 没找到 claude 命令，手动注册一次：claude mcp add --scope user --transport http fleet {url}",
+              flush=True)
+        return
+    if _run_quiet([claude, "mcp", "get", "fleet"]).returncode == 0:
+        return
+    added = _run_quiet([claude, "mcp", "add", "--scope", "user", "--transport", "http", "fleet", url])
+    if added.returncode == 0:
+        print("[fleet] 已把 fleet 注册进 Claude Code（新开的会话生效）", flush=True)
+    else:
+        print(f"[fleet] ⚠ 注册 MCP 失败：{(added.stdout + added.stderr).strip()}", flush=True)
+
+
 async def serve_all(args: argparse.Namespace) -> None:
-    token = args.token or Path(args.token_file).expanduser().read_text(encoding="utf-8").strip()
-    if len(token) < 16:
-        raise SystemExit("token 太短（至少 16 字符）；用 --init-token 生成")
-    fleet = Fleet(token, LeaseTable(args.lease_ttl), Path(args.audit_dir).expanduser() if args.audit_dir else None)
+    token = args.token or load_or_create_token(Path(args.token_file).expanduser())
+    fleet = Fleet(token, Path(args.audit_dir).expanduser() if args.audit_dir else None)
     mcp = build_mcp(fleet, args.mcp_host, args.mcp_port)
     async with serve(
         fleet.handle_agent,
@@ -564,33 +522,53 @@ async def serve_all(args: argparse.Namespace) -> None:
         ping_interval=20,
         ping_timeout=60,
     ):
-        print(f"[fleet] agent 入口 ws://{args.agent_host}:{args.agent_port}{proto.AGENT_PATH}", flush=True)
-        print(f"[fleet] MCP 入口 http://{args.mcp_host}:{args.mcp_port}/mcp", flush=True)
+        print(f"[fleet] 等志愿者连入：端口 {args.agent_port}", flush=True)
+        print(f"[fleet] Claude 用的 MCP：http://{args.mcp_host}:{args.mcp_port}/mcp", flush=True)
+        print("[fleet] 保持本窗口打开；关掉即全部断开。", flush=True)
         await mcp.run_streamable_http_async()
 
 
 def main(argv: Optional[list[str]] = None) -> None:
-    parser = argparse.ArgumentParser(description="Fushi 远程适配机群网关（本机）")
-    parser.add_argument("--agent-host", default="0.0.0.0", help="agent 连入地址，建议填本机 Tailscale IP")
+    if not sys.stdout.isatty():
+        sys.stdout.reconfigure(encoding="utf-8")
+    parser = argparse.ArgumentParser(description="Fushi 远程适配网关（主控端）")
+    parser.add_argument("--agent-host", default="0.0.0.0")
     parser.add_argument("--agent-port", type=int, default=8765)
     parser.add_argument("--mcp-host", default="127.0.0.1")
     parser.add_argument("--mcp-port", type=int, default=8766)
     parser.add_argument("--token", default=None)
-    parser.add_argument("--token-file", default="~/.fushi-fleet/token")
-    parser.add_argument("--init-token", action="store_true", help="生成 token 写入 --token-file 后退出")
-    parser.add_argument("--lease-ttl", type=float, default=DEFAULT_LEASE_TTL_S)
+    parser.add_argument("--token-file", default=str(default_token_file()))
+    parser.add_argument("--print-token", action="store_true", help="打印 token（没有就生成）后退出")
     parser.add_argument("--audit-dir", default="~/.fushi-fleet/audit")
+    parser.add_argument("--no-setup", action="store_true", help="不自动放行防火墙、不注册 MCP")
     args = parser.parse_args(argv)
-    if args.init_token:
-        path = Path(args.token_file).expanduser()
-        path.parent.mkdir(parents=True, exist_ok=True)
-        if path.exists():
-            raise SystemExit(f"{path} 已存在，不覆盖")
-        path.write_text(secrets.token_urlsafe(32), encoding="utf-8")
-        print(f"token 已写入 {path}")
+    if args.print_token:
+        print(load_or_create_token(Path(args.token_file).expanduser()))
         return
+    if sys.platform == "win32":
+        import ctypes
+
+        ctypes.windll.kernel32.SetConsoleTitleW("Fushi 远程适配网关（关闭即断开所有志愿者）")
+    if not args.no_setup:
+        setup_local(args.agent_port, args.mcp_port)
     asyncio.run(serve_all(args))
 
 
+def run_and_pause_on_error(entry: Callable[[], None]) -> None:
+    """双击运行时窗口出错会直接消失，志愿者看不到原因：出错先停住等回车。"""
+    try:
+        entry()
+    except KeyboardInterrupt:
+        pass
+    except BaseException as exc:  # noqa: BLE001 - 顶层兜底只为把错误留在屏幕上
+        code = getattr(exc, "code", None)
+        if isinstance(exc, SystemExit) and code in (None, 0):
+            raise
+        print(f"\n出错：{code if isinstance(exc, SystemExit) else repr(exc)}", flush=True)
+        if getattr(sys, "frozen", False):
+            input("按回车关闭窗口…")
+        raise SystemExit(1) from None
+
+
 if __name__ == "__main__":
-    main()
+    run_and_pause_on_error(main)

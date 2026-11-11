@@ -1,9 +1,6 @@
 {
-  "name": "friend-a",
-  "gateway": "ws://100.64.0.1:8765/agent",
-  "token": "向维护者要",
-  "workdir": "work",
-  "galdriver_exe": "driver\\fushi.exe",
-  "seed_support_dir": "%APPDATA%\\Fushi\\Fushi",
-  "seed_documents_dir": null
+  "gateway": "ws://example.com:8765/agent",
+  "token": "与网关相同的 token",
+  "name": "",
+  "seed_support_dir": "%APPDATA%\\Fushi\\Fushi"
 }

@@ -1,9 +1,9 @@
 """被控端 agent：主动连上网关，执行截图 / 输入 / 命令 / 文件 / galdriver 请求。
 
-必须由登录用户在**桌面会话**里启动（install_agent.ps1 放进「启动」文件夹）：
+必须由登录用户在**桌面会话**里启动（志愿者双击「双击开始适配.exe」）：
 服务会话里 SendInput、截图、拉起的窗口都到不了用户看到的桌面。
 
-    fushi-adapt-agent.exe                 读同目录 agent.json
+    双击开始适配.exe                      读同目录 agent.json（打包时已写好地址和 token）
     python fleet_agent.py --config x.json
 
 窗口里逐条打印收到的操作，志愿者随时能看到在做什么；关掉窗口即断开。
@@ -19,6 +19,7 @@ import getpass
 import json
 import os
 import platform
+import re
 import socket
 import subprocess
 import sys
@@ -45,6 +46,13 @@ def app_dir() -> Path:
     return Path(__file__).resolve().parent
 
 
+def default_machine_name() -> str:
+    """没在 agent.json 里写 name 时用电脑名；只留网关认可的字符（字母数字、_、-）。"""
+    raw = os.environ.get("COMPUTERNAME") or socket.gethostname()
+    name = re.sub(r"[^\w-]", "-", raw).strip("-")[:64]
+    return name or "pc"
+
+
 @dataclass
 class AgentConfig:
     gateway: str
@@ -65,13 +73,13 @@ class AgentConfig:
         exe = Path(os.path.expandvars(exe_raw)) if exe_raw else None
         if exe is not None and not exe.is_absolute():
             exe = base / exe
-        for key in ("gateway", "token", "name"):
+        for key in ("gateway", "token"):
             if not raw.get(key):
                 raise SystemExit(f"agent.json 缺 {key}")
         return AgentConfig(
             gateway=raw["gateway"],
             token=raw["token"],
-            name=raw["name"],
+            name=raw.get("name") or default_machine_name(),
             workdir=workdir,
             galdriver_exe=exe,
             galdriver_args=list(raw.get("galdriver_args") or []),
@@ -499,7 +507,7 @@ def main(argv: Optional[list[str]] = None) -> None:
     if not sys.stdout.isatty():
         sys.stdout.reconfigure(encoding="utf-8")
     if not args.config.exists():
-        raise SystemExit(f"找不到配置 {args.config}（参考 agent.example.json）")
+        raise SystemExit(f"找不到配置 {args.config}（请重新解压完整的压缩包）")
     config = AgentConfig.load(args.config)
     import win_desktop
 
@@ -511,5 +519,21 @@ def main(argv: Optional[list[str]] = None) -> None:
     asyncio.run(agent.run_forever())
 
 
+def run_and_pause_on_error(entry: Callable[[], None]) -> None:
+    """双击运行时窗口出错会直接消失，志愿者看不到原因：出错先停住等回车。"""
+    try:
+        entry()
+    except KeyboardInterrupt:
+        pass
+    except BaseException as exc:  # noqa: BLE001 - 顶层兜底只为把错误留在屏幕上
+        code = getattr(exc, "code", None)
+        if isinstance(exc, SystemExit) and code in (None, 0):
+            raise
+        print(f"\n出错：{code if isinstance(exc, SystemExit) else repr(exc)}", flush=True)
+        if getattr(sys, "frozen", False):
+            input("按回车关闭窗口…")
+        raise SystemExit(1) from None
+
+
 if __name__ == "__main__":
-    main()
+    run_and_pause_on_error(main)

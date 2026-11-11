@@ -1,4 +1,4 @@
-"""远程适配机群：租约、驱动宿主、网关 ↔ agent ↔ MCP 端到端。
+"""远程适配机群：驱动宿主、网关 ↔ agent ↔ MCP 端到端。
 
     python -m pytest tool/remote_adapt/tests -q
 """
@@ -23,55 +23,8 @@ import fleet_agent  # noqa: E402
 import fleet_gateway  # noqa: E402
 import win_desktop  # noqa: E402
 from galdriver_host import GalDriverError, GalDriverHost  # noqa: E402
-from mcp.server.fastmcp.exceptions import ToolError  # noqa: E402
 
 FAKE_DRIVER = HERE / "fake_galdriver.py"
-
-
-# ── 租约 ────────────────────────────────────────────────────────────────────
-
-
-class Clock:
-    def __init__(self) -> None:
-        self.now = 1000.0
-
-    def __call__(self) -> float:
-        return self.now
-
-
-def test_lease_exclusive_and_reclaim_by_same_holder() -> None:
-    clock = Clock()
-    table = fleet_gateway.LeaseTable(ttl_s=60, clock=clock)
-    token = table.claim("a", "siglus")
-    assert table.claim("a", "siglus") == token  # 同一持有者拿回原租约
-    with pytest.raises(ToolError, match="正被「siglus」占用"):
-        table.claim("a", "bgi")
-    with pytest.raises(ToolError, match="lease 不对"):
-        table.check("a", "wrong")
-    table.check("a", token)
-    stolen = table.claim("a", "bgi", steal=True)
-    assert stolen != token
-    with pytest.raises(ToolError):
-        table.check("a", token)
-
-
-def test_lease_expires_after_idle_ttl_but_use_refreshes() -> None:
-    clock = Clock()
-    table = fleet_gateway.LeaseTable(ttl_s=60, clock=clock)
-    token = table.claim("a", "x")
-    clock.now += 50
-    table.check("a", token)  # 续期
-    clock.now += 50
-    table.check("a", token)
-    clock.now += 61
-    with pytest.raises(ToolError, match="没有有效租约"):
-        table.check("a", token)
-    assert table.claim("a", "y")
-
-
-def test_lease_requires_holder() -> None:
-    with pytest.raises(ToolError, match="holder"):
-        fleet_gateway.LeaseTable().claim("a", "  ")
 
 
 # ── Win32 结构体布局（与 SDK 头一致，否则 SendInput / InjectTouchInput 静默失败）──
@@ -238,7 +191,7 @@ async def test_end_to_end(tmp_path: Path) -> None:
 
     token = "t" * 32
     agent_port, mcp_port = _free_port(), _free_port()
-    fleet = fleet_gateway.Fleet(token, fleet_gateway.LeaseTable(), tmp_path / "audit")
+    fleet = fleet_gateway.Fleet(token, tmp_path / "audit")
     mcp = fleet_gateway.build_mcp(fleet, "127.0.0.1", mcp_port)
 
     desktops: dict[str, FakeDesktop] = {}
@@ -284,28 +237,29 @@ async def test_end_to_end(tmp_path: Path) -> None:
                 async with ClientSession(r, w) as s:
                     await s.initialize()
                     tools = {t.name for t in (await s.list_tools()).tools}
-                    assert {"claim_machine", "screenshot", "touch", "galdriver", "put_file"} <= tools
+                    assert {"list_machines", "screenshot", "touch", "galdriver", "put_file"} <= tools
 
                     rows = json.loads(_text(await s.call_tool("list_machines", {})))
                     assert [r["machine"] for r in rows] == ["pc-a", "pc-b"]
                     assert rows[0]["touch"]["digitizer"] == 0xC1
 
-                    lease_a = json.loads(_text(await s.call_tool(
-                        "claim_machine", {"machine": "pc-a", "holder": "siglus"})))["lease"]
-                    denied = await s.call_tool("claim_machine", {"machine": "pc-a", "holder": "bgi"})
-                    assert denied.isError and "siglus" in _text(denied)
-                    lease_b = json.loads(_text(await s.call_tool(
-                        "claim_machine", {"machine": "pc-b", "holder": "bgi"})))["lease"]
-                    wrong = await s.call_tool("screenshot", {"machine": "pc-a", "lease": lease_b})
-                    assert wrong.isError
+                    # 不存在的机器：报错并列出在线机器
+                    missing = await s.call_tool("screenshot", {"machine": "pc-z"})
+                    assert missing.isError and "pc-a, pc-b" in _text(missing)
+                    # 一个会话并行操作两台机器
+                    both = await asyncio.gather(
+                        s.call_tool("machine_info", {"machine": "pc-a"}),
+                        s.call_tool("machine_info", {"machine": "pc-b"}),
+                    )
+                    assert all(not r.isError for r in both)
 
                     # 截图 → 图片内容 + 元数据；之后截图坐标按 2 倍换算成物理坐标
-                    shot = await s.call_tool("screenshot", {"machine": "pc-a", "lease": lease_a})
+                    shot = await s.call_tool("screenshot", {"machine": "pc-a"})
                     kinds = [c.type for c in shot.content]
                     assert kinds == ["image", "text"]
                     assert shot.content[0].mimeType == "image/jpeg"
                     clicked = await s.call_tool("click", {
-                        "machine": "pc-a", "lease": lease_a, "x": 100, "y": 50, "screenshot_after": True,
+                        "machine": "pc-a", "x": 100, "y": 50, "screenshot_after": True,
                         "settle_ms": 0})
                     assert json.loads(clicked.content[0].text)["physical"] == [200, 100]
                     assert [c.type for c in clicked.content] == ["text", "image", "text"]
@@ -313,15 +267,15 @@ async def test_end_to_end(tmp_path: Path) -> None:
                     assert args == (200, 100) and kwargs["button"] == "left"
 
                     # pc-b 没截过图：截图坐标无法换算，必须报错而不是乱点
-                    nocap = await s.call_tool("click", {"machine": "pc-b", "lease": lease_b, "x": 1, "y": 1})
+                    nocap = await s.call_tool("click", {"machine": "pc-b", "x": 1, "y": 1})
                     assert nocap.isError and "还没有截图" in _text(nocap)
-                    await s.call_tool("touch", {"machine": "pc-b", "lease": lease_b, "action": "swipe",
+                    await s.call_tool("touch", {"machine": "pc-b", "action": "swipe",
                                                 "x": 10, "y": 20, "x2": 300, "y2": 20, "coords": "physical"})
                     gesture = [c for c in desktops["pc-b"].calls if c[0] == "touch_gesture"][0]
                     assert gesture[1] == ([(10, 20), (300, 20)], 300)
 
                     ps = json.loads(_text(await s.call_tool("powershell", {
-                        "machine": "pc-a", "lease": lease_a, "command": "Write-Output '日本語 ok'"})))
+                        "machine": "pc-a", "command": "Write-Output '日本語 ok'"})))
                     assert ps["exit_code"] == 0 and "日本語 ok" in ps["stdout"]
 
                     # 文件往返（跨块）
@@ -329,31 +283,27 @@ async def test_end_to_end(tmp_path: Path) -> None:
                     payload = bytes(range(256)) * (fleet_gateway.proto.FILE_CHUNK // 256 + 300)
                     src.write_bytes(payload)
                     remote = str(tmp_path / "pc-a" / "in" / "big.bin")
-                    await s.call_tool("put_file", {"machine": "pc-a", "lease": lease_a,
+                    await s.call_tool("put_file", {"machine": "pc-a",
                                                    "local_path": str(src), "remote_path": remote})
                     back = tmp_path / "back.bin"
-                    await s.call_tool("get_file", {"machine": "pc-a", "lease": lease_a,
+                    await s.call_tool("get_file", {"machine": "pc-a",
                                                    "remote_path": remote, "local_path": str(back)})
                     assert back.read_bytes() == payload
 
                     # 驱动：启动 → 指令 → 停止
                     started = json.loads(_text(await s.call_tool(
-                        "galdriver_start", {"machine": "pc-a", "lease": lease_a, "ready_timeout_s": 20})))
+                        "galdriver_start", {"machine": "pc-a", "ready_timeout_s": 20})))
                     assert "home=true" in started["ready"]
                     res = json.loads(_text(await s.call_tool(
-                        "galdriver", {"machine": "pc-a", "lease": lease_a, "command": "shot game"})))
+                        "galdriver", {"machine": "pc-a", "command": "shot game"})))
                     assert res["new_shots"] == ["shot_1.png"]
                     stop = json.loads(_text(await s.call_tool(
-                        "galdriver_stop", {"machine": "pc-a", "lease": lease_a})))
+                        "galdriver_stop", {"machine": "pc-a"})))
                     assert stop["how"] == "quit"
 
-                    assert _text(await s.call_tool(
-                        "release_machine", {"machine": "pc-a", "lease": lease_a})) == "released"
-                    # 释放后别人可以拿
-                    await s.call_tool("claim_machine", {"machine": "pc-a", "holder": "bgi"})
 
             audit = (tmp_path / "audit" / "pc-a.jsonl").read_text(encoding="utf-8")
-            assert '"op": "click"' in audit and '"note": "siglus"' in audit
+            assert '"op": "click"' in audit and '"op": "connect"' in audit
         finally:
             for t in agent_tasks:
                 t.cancel()
