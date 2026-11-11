@@ -58,6 +58,7 @@ class _Completer implements AiTextCompleter {
   Future<AiChatCompletion> complete(
     String prompt, {
     String stablePrefix = '',
+    List<AiChatImage> images = const <AiChatImage>[],
   }) async {
     prefixes.add(stablePrefix);
     return AiChatCompletion(
@@ -473,6 +474,7 @@ class _WrongWork extends _Completer {
   Future<AiChatCompletion> complete(
     String prompt, {
     String stablePrefix = '',
+    List<AiChatImage> images = const <AiChatImage>[],
   }) async => const AiChatCompletion(
     // 专名表行协议：`ja<TAB>reading<TAB>kind<TAB>误识` 每行一条 + `END`。
     text:

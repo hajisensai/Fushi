@@ -19,6 +19,18 @@ class _Prefs implements VideoSubtitleGeneratePrefs {
   bool consented = true;
 
   @override
+  bool frames = false;
+
+  @override
+  bool framesConsented = false;
+
+  @override
+  Future<void> setFrames(bool value) async => frames = value;
+
+  @override
+  Future<void> setFramesConsented(bool value) async => framesConsented = value;
+
+  @override
   VideoSubtitleSegmenterMode segmenter = VideoSubtitleSegmenterMode.auto;
 
   @override

@@ -17,7 +17,8 @@
 ///   套了它样式 / 位置的 `.ja.ass`，登记的是这份。
 ///
 /// AI 边界（CLAUDE.md「AI 功能」硬边界）：没指派提供商时一个请求都不发（[start] 直接
-/// 拒绝，UI 引导去「设置 › 模型 › LLM」）；只发 ASR 文本与专名表，不发音频 / 画面。
+/// 拒绝，UI 引导去「设置 › 模型 › LLM」）；发的是 ASR 文本、已有字幕的台词与专名表，
+/// 不发音频；画面只在用户打开「参考画面」（[AppVideoSubtitleOptions.frames]）后才发。
 library;
 
 import 'dart:async';
@@ -41,7 +42,10 @@ import 'package:fushi_engine/ai/web_search.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/ai_text_completer.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_ass_style_reference_loader.dart'
     show loadSubtitleStyleReference;
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_evidence.dart'
+    show SubtitleEvidenceTrack;
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_evidence_loader.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_frame_reference.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_song_lyrics.dart'
     show SubtitleLyricsFinder, buildSubtitleLyricsFinder;
 import 'package:fushi_engine/media/video/video_subtitle_source.dart'
@@ -245,9 +249,20 @@ class AppVideoSubtitleOptions {
     this.mossBackend = MossBackendPreference.auto,
     this.regenerateGlossary = false,
     this.language = VideoSubtitleLanguage.japanese,
+    this.frames = false,
+    this.pinnedEvidence = const <String, List<SubtitleEvidenceTrack>>{},
   });
 
   final bool proofread;
+
+  /// 画面参考：AI 校对时每批附上对应时刻的视频画面。只在 [proofread] 开着、且指派的
+  /// 提供商能收图（`AiProviderConfig.acceptsImages`）时生效，否则照常纯文字校对。
+  final bool frames;
+
+  /// 用户指定的参考字幕（视频路径 → 轨）：播放器里正对照着的其它语言字幕，时间轴已
+  /// 按用户的调轴摆到视频时间上（`SubtitleEvidenceWithPinnedTracks`）。不进 [toJson]：
+  /// 它是这一次运行的输入，不是可以回放的选项。
+  final Map<String, List<SubtitleEvidenceTrack>> pinnedEvidence;
   final VideoSubtitleSegmenterMode segmenter;
   final MossBackendPreference mossBackend;
   final bool regenerateGlossary;
@@ -261,6 +276,7 @@ class AppVideoSubtitleOptions {
     'mossBackend': mossBackend.name,
     'language': language.tag,
     if (regenerateGlossary) 'regenerateGlossary': true,
+    if (frames) 'frames': true,
   };
 }
 
@@ -535,8 +551,10 @@ class AppVideoSubtitleService {
     SubtitleEvidenceSource? Function(AppVideoSubtitleTarget target)?
     evidenceSource,
     SubtitleLyricsFinder Function({WebSearchClient? webSearch})? lyricsFinder,
+    SubtitleFrameSource? frameSource,
     int Function()? nowMs,
   }) : _evidenceSource = evidenceSource,
+       _frameSource = frameSource ?? ffmpegSubtitleFrameSource,
        _lyricsFinder = lyricsFinder ?? buildSubtitleLyricsFinder,
        _resolveRecognizer = recognizerResolver ?? _defaultResolver,
        _completerFactory = completerFactory ?? _defaultCompleter,
@@ -590,6 +608,14 @@ class AppVideoSubtitleService {
   final SubtitleLyricsFinder Function({WebSearchClient? webSearch})
   _lyricsFinder;
   final int Function() _nowMs;
+
+  /// 画面参考的取帧（生产 [ffmpegSubtitleFrameSource]；测试注入假件）。
+  final SubtitleFrameSource _frameSource;
+
+  /// 这次运行会不会真的给 AI 发画面：开了画面参考，且指派的提供商开了图片输入。
+  /// 面板据此显示「提供商没开图片输入」。
+  bool get proofreadAcceptsImages =>
+      _settings.proofreadProvider?.acceptsImages ?? false;
 
   /// 生产证据来源：媒体旁 / 内嵌字幕之外，再加落点在库里登记的人工字幕
   /// （[AppSubtitleOutputSink.extraEvidenceFiles]）。
@@ -950,6 +976,7 @@ class AppVideoSubtitleService {
     AppVideoSubtitleTarget target, {
     Map<String, int> knownDurationsMs = const <String, int>{},
     VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+    bool frames = false,
   }) async {
     final Directory root = await _jobsRoot();
     final List<List<SubtitleDraftCue>> lists = <List<SubtitleDraftCue>>[];
@@ -988,11 +1015,13 @@ class AppVideoSubtitleService {
       final int cues =
           (durationMs / 60000 * kVideoSubtitleEstimateCuesPerMinute).ceil();
       final String text = '人' * kVideoSubtitleEstimateCharsPerCue;
+      // 按真实语速摆时间：画面参考的张数是按行的时刻算的（一批 30 句跨多久）。
+      final int stepMs = (60000 / kVideoSubtitleEstimateCuesPerMinute).round();
       lists.add(<SubtitleDraftCue>[
         for (int i = 0; i < cues; i++)
           SubtitleDraftCue(
-            startMs: i * 1000,
-            endMs: i * 1000 + 900,
+            startMs: i * stepMs,
+            endMs: i * stepMs + stepMs * 9 ~/ 10,
             text: text,
           ),
       ]);
@@ -1013,6 +1042,8 @@ class AppVideoSubtitleService {
         title: language.workTitle(target.work),
         glossary: glossary == null || glossary.isEmpty ? null : glossary,
         language: language,
+        // 提供商收不了图时不会发画面，预估也不算。
+        frames: frames && proofreadAcceptsImages,
       ),
     );
   }
@@ -1160,9 +1191,13 @@ class AppVideoSubtitleService {
       List<String> videoPaths = target.videoPaths;
       final VideoSubtitleLanguage language = job.options.language;
       VideoSubtitleSegmenterMode mode = job.options.segmenter;
+      bool wantFrames = job.options.frames;
       if (job.consistencyOnly) {
         final List<String> rerun = <String>[];
         String? recognizerId;
+        // 只重跑写法统一：沿用上次校对时的画面参考开关——换了开关管线会把 S3 的
+        // 批缓存整个作废重做（看过画面与没看过的结果不混用）。
+        wantFrames = false;
         for (final String video in videoPaths) {
           final Directory dir = Directory(
             p.join(root.path, videoSubtitleJobIdFor(video, language)),
@@ -1174,6 +1209,7 @@ class AppVideoSubtitleService {
           await resetVideoSubtitleJobFrom(dir, VideoSubtitleStage.consistency);
           rerun.add(video);
           recognizerId ??= _recordedRecognizer(dir);
+          if (_recordedFrames(dir)) wantFrames = true;
         }
         if (rerun.isEmpty) {
           job.errorMessage = t.video_subtitle_ai_nothing_to_rerun;
@@ -1216,8 +1252,13 @@ class AppVideoSubtitleService {
           webKnowledge: web,
           proofreadConcurrency: provider.batchConcurrency,
           regenerateGlossary: job.options.regenerateGlossary,
+          // 画面只发给开了图片输入的提供商：收不了图的端点会整批报错。
+          frames: wantFrames && provider.acceptsImages ? _frameSource : null,
         );
       }
+      final SubtitleEvidenceSource? collected = _evidenceSource == null
+          ? _defaultEvidenceSource(target)
+          : _evidenceSource(target);
       final AppSubtitleOutputSink sink = _sinkOf(target);
       final VideoSubtitlePipeline pipeline = VideoSubtitlePipeline(
         recognizer: choice.recognizer,
@@ -1230,9 +1271,13 @@ class AppVideoSubtitleService {
         language: language,
         ai: aiConfig,
         probeDurationMs: _probeDurationMs,
-        evidence: _evidenceSource == null
-            ? _defaultEvidenceSource(target)
-            : _evidenceSource(target),
+        // 播放器里对照着的其它语言字幕（工作台交过来的）并进自动收集的证据。
+        evidence: collected == null || job.options.pinnedEvidence.isEmpty
+            ? collected
+            : SubtitleEvidenceWithPinnedTracks(
+                inner: collected,
+                pinned: job.options.pinnedEvidence,
+              ),
         // 歌词补齐要 AI 认歌 / 对齐：没开 AI 不装。
         lyricsFinder: aiConfig == null
             ? null
@@ -1295,6 +1340,18 @@ class AppVideoSubtitleService {
 
   /// 滑窗识别器的 id（`SlidingWindowVideoSubtitleRecognizer.id`）。
   static const String kSlidingRecognizerId = 'sliding_mixed';
+
+  /// 任务目录记的「上次校对带没带画面参考」（`state.json` 的 `frames`）。
+  static bool _recordedFrames(Directory dir) {
+    final File state = File(p.join(dir.path, VideoSubtitleJobFiles.state));
+    if (!state.existsSync()) return false;
+    try {
+      final Object? decoded = jsonDecode(state.readAsStringSync());
+      return decoded is Map && decoded['frames'] == true;
+    } on FormatException {
+      return false;
+    }
+  }
 
   static String? _recordedRecognizer(Directory dir) {
     final File state = File(p.join(dir.path, VideoSubtitleJobFiles.state));

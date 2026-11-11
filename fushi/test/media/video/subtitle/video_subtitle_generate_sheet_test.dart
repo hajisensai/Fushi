@@ -13,6 +13,7 @@ import 'package:fushi_asr_core/asr_core.dart' show ModelDownloadEvent;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/ai_text_completer.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_evidence.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_glossary.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_language.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_recognizer_factory.dart';
@@ -28,7 +29,21 @@ class _FakePrefs implements VideoSubtitleGeneratePrefs {
     this.proofread = false,
     this.consented = false,
     this.saveBesideVideo = true,
+    this.frames = false,
+    this.framesConsented = false,
   });
+
+  @override
+  bool frames;
+
+  @override
+  bool framesConsented;
+
+  @override
+  Future<void> setFrames(bool value) async => frames = value;
+
+  @override
+  Future<void> setFramesConsented(bool value) async => framesConsented = value;
 
   @override
   bool saveBesideVideo;
@@ -176,6 +191,8 @@ void main() {
             VideoSubtitleRecognizerChoice(recognizer: FakeVideoRecognizer()),
     completerFactory: (AiProviderConfig _) =>
         (completer: completer, close: () {}),
+    // widget 测试里不起真 ffmpeg：画面一律取不到（开关与选项照常走）。
+    frameSource: (String videoPath, int atMs) async => null,
   );
 
   Future<int> pumpSheet(
@@ -480,6 +497,126 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('What AI proofreading sends'), findsNothing);
     expect(prefs.proofread, isTrue);
+  });
+
+  testWidgets('参考画面：首次打开先说明会发送什么，取消不开、同意才开并记下；'
+      '提供商没开图片输入时直说画面不会发送', (WidgetTester tester) async {
+    tester.view
+      ..physicalSize = const Size(900, 1400)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    settings.provider = testProvider();
+    final _FakePrefs prefs = _FakePrefs(proofread: true, consented: true);
+    await pumpSheet(tester, buildService(), prefs);
+    final Finder toggle = find.byKey(
+      const ValueKey<String>('video-subtitle-ai-frames'),
+    );
+    final Finder unsupported = find.byKey(
+      const ValueKey<String>('video-subtitle-ai-frames-unsupported'),
+    );
+    expect(toggle, findsOneWidget);
+    expect(unsupported, findsNothing);
+
+    await tester.ensureVisible(toggle);
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    expect(find.text('Send video frames to the AI?'), findsOneWidget);
+    await tester.tap(find.text('Cancel').last);
+    await tester.pumpAndSettle();
+    expect(prefs.frames, isFalse);
+    expect(prefs.framesConsented, isFalse);
+
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Turn on'));
+    await tester.pumpAndSettle();
+    expect(prefs.frames, isTrue);
+    expect(prefs.framesConsented, isTrue);
+    // 这个提供商没开图片输入：开关开着也发不出去，面板直说。
+    expect(unsupported, findsOneWidget);
+
+    // 同意过：再关再开不再弹说明。
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    expect(prefs.frames, isFalse);
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    expect(find.text('Send video frames to the AI?'), findsNothing);
+    expect(prefs.frames, isTrue);
+  });
+
+  testWidgets('参考画面开着且提供商能收图：任务带上画面选项与视频页交来的参考字幕；'
+      '没开 AI 校对时不带画面', (WidgetTester tester) async {
+    tester.view
+      ..physicalSize = const Size(900, 1400)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    settings.provider = testProvider().copyWith(acceptsImages: true);
+    const SubtitleEvidenceTrack pinned = SubtitleEvidenceTrack(
+      label: 'player-secondary',
+      kind: SubtitleEvidenceKind.text,
+      language: 'zh',
+      cues: <SubtitleEvidenceCue>[
+        SubtitleEvidenceCue(startMs: 0, endMs: 1000, text: '你好'),
+      ],
+    );
+    final String videoPath = target.episodes.single.videoPath;
+
+    Future<AppVideoSubtitleOptions> startWith(_FakePrefs prefs) async {
+      final AppVideoSubtitleService service = buildService();
+      await tester.pumpWidget(
+        MaterialApp(
+          key: UniqueKey(),
+          home: Scaffold(
+            body: SizedBox(
+              height: 900,
+              child: VideoSubtitleGenerateSheet(
+                service: service,
+                target: target,
+                prefs: prefs,
+                openAiSettings: (BuildContext _) async {},
+                pinnedEvidence: <String, List<SubtitleEvidenceTrack>>{
+                  videoPath: const <SubtitleEvidenceTrack>[pinned],
+                },
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(
+          const ValueKey<String>('video-subtitle-ai-frames-unsupported'),
+        ),
+        findsNothing,
+      );
+      await tester.tap(
+        find.byKey(const ValueKey<String>('video-subtitle-ai-start')),
+      );
+      // 任务跑起来后进度条一直在动，不能 pumpAndSettle。
+      await tester.pump();
+      final AppVideoSubtitleJob job = service.latestJobFor(target)!;
+      job.cancel();
+      await tester.pump();
+      return job.options;
+    }
+
+    final AppVideoSubtitleOptions withAi = await startWith(
+      _FakePrefs(
+        proofread: true,
+        consented: true,
+        frames: true,
+        framesConsented: true,
+      ),
+    );
+    expect(withAi.frames, isTrue);
+    expect(withAi.pinnedEvidence[videoPath], <SubtitleEvidenceTrack>[pinned]);
+
+    final AppVideoSubtitleOptions withoutAi = await startWith(
+      _FakePrefs(frames: true, framesConsented: true),
+    );
+    expect(withoutAi.proofread, isFalse);
+    expect(withoutAi.frames, isFalse);
   });
 
   testWidgets('AI 请求失败的任务：重开面板接回，显示「暂停：AI 请求失败（原因）」与「继续」', (

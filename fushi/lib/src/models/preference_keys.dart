@@ -1039,6 +1039,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 用户唯一能用的源。
   // bool（默认 false）：用户是否已看过「AI 校对会发送什么」说明；设备本地。
   'video_subtitle_ai_consented',
+  // bool（默认 false）：AI 校对时是否附上视频画面（画面参考）；设备本地（发图同意）。
+  'video_subtitle_ai_frames',
+  // bool（默认 false）：用户是否已看过「画面参考会发送什么」说明；设备本地。
+  'video_subtitle_ai_frames_consented',
   // bool（默认 false）：生成日语字幕时是否 AI 校对；设备本地（计费同意）。
   'video_subtitle_ai_proofread',
   'video_subtitle_ajatt_enabled',

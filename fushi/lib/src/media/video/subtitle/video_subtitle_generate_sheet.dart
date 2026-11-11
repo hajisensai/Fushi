@@ -14,6 +14,10 @@ import 'package:fushi_asr_core/asr_core.dart' show ModelDownloadEvent;
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/ai_text_completer.dart'
     show SubtitleAiUsageTally, kSubtitleAiReplyIncomplete;
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_evidence.dart'
+    show SubtitleEvidenceTrack;
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_frame_reference.dart'
+    show kSubtitleReferenceFramesPerBatch;
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_glossary_builder.dart'
     show SubtitleGlossaryProblem;
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/moss_provisioning.dart'
@@ -59,6 +63,12 @@ abstract interface class VideoSubtitleGeneratePrefs {
   bool get consented;
   Future<void> setConsented(bool value);
 
+  /// 画面参考（AI 校对时附上视频画面）与它的「会发送什么」同意。
+  bool get frames;
+  Future<void> setFrames(bool value);
+  bool get framesConsented;
+  Future<void> setFramesConsented(bool value);
+
   VideoSubtitleSegmenterMode get segmenter;
   Future<void> setSegmenter(VideoSubtitleSegmenterMode value);
 
@@ -93,6 +103,19 @@ class PrefsRepoVideoSubtitleGeneratePrefs
   @override
   Future<void> setConsented(bool value) =>
       prefs.setVideoSubtitleAiConsented(value);
+
+  @override
+  bool get frames => prefs.videoSubtitleAiFrames;
+
+  @override
+  Future<void> setFrames(bool value) => prefs.setVideoSubtitleAiFrames(value);
+
+  @override
+  bool get framesConsented => prefs.videoSubtitleAiFramesConsented;
+
+  @override
+  Future<void> setFramesConsented(bool value) =>
+      prefs.setVideoSubtitleAiFramesConsented(value);
 
   @override
   VideoSubtitleSegmenterMode get segmenter => prefs.videoSubtitleSegmenter;
@@ -222,7 +245,8 @@ String videoSubtitleTokenCount(int n) {
 }
 
 /// 打开面板。[onJobStarted]：任务一起就回调（视频页据此在任务结束时把字幕切过去，
-/// 面板关了也照样切）。
+/// 面板关了也照样切）。[pinnedEvidence]：视频页交过来的、播放器里正对照着的其它
+/// 语言字幕（视频路径 → 轨），随任务交给 AI 校对当参考。
 Future<void> showVideoSubtitleGenerateSheet({
   required BuildContext context,
   required AppVideoSubtitleService service,
@@ -231,6 +255,8 @@ Future<void> showVideoSubtitleGenerateSheet({
   required Future<void> Function(BuildContext context) openAiSettings,
   void Function(AppVideoSubtitleJob job)? onJobStarted,
   VideoSubtitleInAppTranscribe? onTranscribeInApp,
+  Map<String, List<SubtitleEvidenceTrack>> pinnedEvidence =
+      const <String, List<SubtitleEvidenceTrack>>{},
 }) {
   Widget build(BuildContext ctx) => VideoSubtitleGenerateSheet(
     service: service,
@@ -239,6 +265,7 @@ Future<void> showVideoSubtitleGenerateSheet({
     openAiSettings: openAiSettings,
     onJobStarted: onJobStarted,
     onTranscribeInApp: onTranscribeInApp,
+    pinnedEvidence: pinnedEvidence,
   );
   if (isDesktopPlatform) {
     return showAppDialog<void>(
@@ -258,6 +285,28 @@ Future<void> showVideoSubtitleGenerateSheet({
   );
 }
 
+/// 打开画面参考前的确认（生成面板与字幕工作台共用）：首次先说明会发送什么，同意了
+/// 才返回 true 并记下已同意；看过的直接 true。
+Future<bool> confirmVideoSubtitleAiFrames(
+  BuildContext context,
+  VideoSubtitleGeneratePrefs prefs,
+) async {
+  if (prefs.framesConsented) return true;
+  final bool ok = await showFushiConfirmDialog(
+    context: context,
+    title: t.video_subtitle_ai_frames_consent_title,
+    message: t.video_subtitle_ai_frames_consent_body(
+      count: kSubtitleReferenceFramesPerBatch,
+    ),
+    confirmLabel: t.video_subtitle_ai_consent_confirm,
+    cancelLabel: t.cancel,
+    icon: FushiIcons.image,
+  );
+  if (!ok) return false;
+  await prefs.setFramesConsented(true);
+  return true;
+}
+
 class VideoSubtitleGenerateSheet extends StatefulWidget {
   const VideoSubtitleGenerateSheet({
     super.key,
@@ -267,6 +316,7 @@ class VideoSubtitleGenerateSheet extends StatefulWidget {
     required this.openAiSettings,
     this.onJobStarted,
     this.onTranscribeInApp,
+    this.pinnedEvidence = const <String, List<SubtitleEvidenceTrack>>{},
   });
 
   final AppVideoSubtitleService service;
@@ -279,6 +329,9 @@ class VideoSubtitleGenerateSheet extends StatefulWidget {
   /// 这条回调（见 [VideoSubtitleInAppTranscribe]）。整季 / 音乐入口不传。
   final VideoSubtitleInAppTranscribe? onTranscribeInApp;
 
+  /// 用户指定的参考字幕（见 [showVideoSubtitleGenerateSheet]）。
+  final Map<String, List<SubtitleEvidenceTrack>> pinnedEvidence;
+
   @override
   State<VideoSubtitleGenerateSheet> createState() =>
       _VideoSubtitleGenerateSheetState();
@@ -290,6 +343,7 @@ class _VideoSubtitleGenerateSheetState
   AppVideoSubtitleTarget get _target => widget.target;
 
   late bool _proofread = widget.prefs.proofread;
+  late bool _frames = widget.prefs.frames;
   late VideoSubtitleSegmenterMode _segmenter = widget.prefs.segmenter;
 
   /// 写到视频旁边（走管线）；false = 只在 Fushi 里转录。没有
@@ -498,7 +552,11 @@ class _VideoSubtitleGenerateSheetState
     setState(() => _estimating = true);
     AppVideoSubtitleCostEstimate? estimate;
     try {
-      estimate = await _service.estimateCost(_target, language: language);
+      estimate = await _service.estimateCost(
+        _target,
+        language: language,
+        frames: _frames,
+      );
     } catch (error, stack) {
       // 预估只是参考：读不出时长 / 缓存坏了就不显示，不拦用户（但留日志可查）。
       ErrorLogService.instance.log('video.subtitleEstimate', error, stack);
@@ -606,6 +664,17 @@ class _VideoSubtitleGenerateSheetState
     if (on) unawaited(_refreshEstimate());
   }
 
+  /// 打开画面参考：首次先说明会发送什么（[confirmVideoSubtitleAiFrames]）。
+  Future<void> _setFrames(bool on) async {
+    if (on && !await confirmVideoSubtitleAiFrames(context, widget.prefs)) {
+      return;
+    }
+    if (!mounted) return;
+    setState(() => _frames = on);
+    await widget.prefs.setFrames(on);
+    if (_proofread) unawaited(_refreshEstimate());
+  }
+
   Future<void> _setSaveBeside(bool on) async {
     setState(() {
       _saveBeside = on;
@@ -665,6 +734,8 @@ class _VideoSubtitleGenerateSheetState
           segmenter: _segmenter,
           mossBackend: widget.prefs.mossBackend,
           language: _language,
+          frames: _proofread && _frames,
+          pinnedEvidence: widget.pinnedEvidence,
         ),
       );
       setState(() => _attach(job));
@@ -1081,8 +1152,10 @@ class _VideoSubtitleGenerateSheetState
                             'video-subtitle-ai-provider',
                           ),
                         ),
-                      // 费用预估与专名表只属于管线校对；转录弹层的校对不用专名表。
+                      // 画面参考、费用预估与专名表只属于管线校对；转录弹层的校对
+                      // 只看文字、不用专名表。
                       if (_saveBeside) ...<Widget>[
+                        if (provider != null) _framesControl(provider),
                         _estimateLine(),
                         FushiPressScale(
                           child: FushiOutlinedButton.icon(
@@ -1103,6 +1176,46 @@ class _VideoSubtitleGenerateSheetState
     );
   }
 
+  /// 「参考画面」：AI 校对时每批附上对应时刻的视频画面。开着但提供商没开图片输入时
+  /// 直说画面不会发送（任务照常按纯文字校对）。
+  Widget _framesControl(AiProviderConfig provider) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    spacing: 4,
+    children: <Widget>[
+      Row(
+        children: <Widget>[
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  t.video_subtitle_ai_frames_label,
+                  style: context.fushiType.bodyMedium,
+                ),
+                _hint(t.video_subtitle_ai_frames_hint),
+              ],
+            ),
+          ),
+          SizedBox(width: FushiDesignTokens.of(context).spacing.gap),
+          KeyedSubtree(
+            key: const ValueKey<String>('video-subtitle-ai-frames'),
+            child: adaptiveSwitch(
+              context: context,
+              value: _frames,
+              onChanged: _running ? null : (bool v) => unawaited(_setFrames(v)),
+            ),
+          ),
+        ],
+      ),
+      if (_frames && !provider.acceptsImages)
+        _hint(
+          t.video_subtitle_ai_frames_unsupported,
+          key: const ValueKey<String>('video-subtitle-ai-frames-unsupported'),
+          error: true,
+        ),
+    ],
+  );
+
   Widget _estimateLine() {
     final AppVideoSubtitleCostEstimate? estimate = _estimate;
     if (estimate == null) {
@@ -1119,6 +1232,9 @@ class _VideoSubtitleGenerateSheetState
             input: videoSubtitleTokenCount(estimate.cost.inputTokens),
             output: videoSubtitleTokenCount(estimate.cost.outputTokens),
           ) +
+          (estimate.cost.frames > 0
+              ? t.video_subtitle_ai_estimate_frames(count: estimate.cost.frames)
+              : '') +
           (estimate.basis == AppVideoSubtitleEstimateBasis.duration
               ? t.video_subtitle_ai_estimate_by_duration
               : t.video_subtitle_ai_estimate_by_drafts),

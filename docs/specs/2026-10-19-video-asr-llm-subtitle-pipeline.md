@@ -35,7 +35,7 @@
 非目标：
 
 - 不做歌词全文校正（需抓取有版权的歌词全文）；唱段只加 `♪` 标记。
-- 不发送音频或画面给 AI，只发 ASR 文本。
+- 不发送音频或画面给 AI，只发 ASR 文本。（2026-11-11 起画面改为可选开启、默认关，见 [2026-11-11-video-subtitle-ai-reference.md](2026-11-11-video-subtitle-ai-reference.md)；已有字幕的台词自 11-04 的多源证据起也会发。音频仍不发。）
 - 不改有声书的 ReazonSpeech `cleanSpeech` 路径。
 - iOS 不新增受限能力（本功能不涉及 `StoreRestrictedCapability` 三类）。
 
