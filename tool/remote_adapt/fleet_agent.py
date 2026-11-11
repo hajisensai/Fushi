@@ -63,6 +63,8 @@ class AgentConfig:
     galdriver_args: list[str]
     seed_support_dir: Optional[str]
     seed_documents_dir: Optional[str]
+    # 网关自签证书（PEM），打包时写入；连接时只信任这一张。
+    gateway_cert: Optional[str] = None
 
     @staticmethod
     def load(path: Path) -> "AgentConfig":
@@ -73,9 +75,9 @@ class AgentConfig:
         exe = Path(os.path.expandvars(exe_raw)) if exe_raw else None
         if exe is not None and not exe.is_absolute():
             exe = base / exe
-        for key in ("gateway", "token"):
+        for key in ("gateway", "token", "gateway_cert"):
             if not raw.get(key):
-                raise SystemExit(f"agent.json 缺 {key}")
+                raise SystemExit(f"agent.json 缺 {key}（请重新解压完整的压缩包）")
         return AgentConfig(
             gateway=raw["gateway"],
             token=raw["token"],
@@ -85,6 +87,7 @@ class AgentConfig:
             galdriver_args=list(raw.get("galdriver_args") or []),
             seed_support_dir=raw.get("seed_support_dir"),
             seed_documents_dir=raw.get("seed_documents_dir"),
+            gateway_cert=raw["gateway_cert"],
         )
 
 
@@ -437,9 +440,13 @@ class Agent:
             await ws.send(proto.encode(reply))
 
     async def run_once(self) -> None:
+        # 只走 wss + 固定证书：明文 ws 会泄露 token，且无法确认对面真是网关。
+        if not self.config.gateway.startswith("wss://") or not self.config.gateway_cert:
+            raise SystemExit(f"网关地址必须是 wss:// 且带 gateway_cert：{self.config.gateway}")
         headers = {"Authorization": f"Bearer {self.config.token}"}
         async with connect(
             self.config.gateway,
+            ssl=proto.pinned_client_context(self.config.gateway_cert),
             additional_headers=headers,
             max_size=proto.MAX_FRAME_BYTES,
             ping_interval=20,

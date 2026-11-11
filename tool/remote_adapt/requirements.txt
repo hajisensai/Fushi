@@ -3,6 +3,8 @@ mcp>=1.12,<2
 websockets>=14
 mss>=9
 Pillow>=10
+# 网关生成自签 TLS 证书
+cryptography>=42
 # 只用于跑测试与打包
 pytest>=8
 pytest-asyncio>=0.23

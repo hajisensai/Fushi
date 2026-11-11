@@ -43,3 +43,18 @@ def b64e(data: bytes) -> str:
 
 def b64d(text: str) -> bytes:
     return base64.b64decode(text.encode("ascii"))
+
+
+def pinned_client_context(cert_pem: str) -> "ssl.SSLContext":
+    """agent 只信任打包时写进 agent.json 的那一张网关证书（自签，不依赖公共 CA）。
+
+    走公网时网关可能被 DNS 劫持或中间人冒充；冒充者能让 agent 以管理员身份执行任意命令，
+    所以必须验证服务端身份。证书已固定，主机名无需再比对。
+    """
+    import ssl
+
+    ctx = ssl.create_default_context(ssl.Purpose.SERVER_AUTH, cadata=cert_pem)
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_REQUIRED
+    ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+    return ctx

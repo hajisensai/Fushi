@@ -9,7 +9,7 @@
 ```
 志愿者电脑 ×N：双击开始适配.exe（UAC 提权、在登录用户的桌面会话里、主动外连）
    └─ driver\fushi.exe = gal_realgame_driver_itest 打成的 Debug 构建（数据隔离在 work\test-root）
-        │  WebSocket + Bearer token → 主控端公网地址:8765
+        │  wss（自签证书固定在 agent.json）+ Bearer token → 主控端公网地址:8765
         ▼
 本机：fushi-fleet-gateway.exe ── MCP（http://127.0.0.1:8766/mcp）── Claude 会话
 ```
@@ -18,7 +18,11 @@
   所以志愿者每次是自己双击 exe，不装服务。
 - 两个 exe 都带 `--uac-admin`：agent 提权后才能操作以管理员身份运行的游戏（UIPI）；网关提权才能写防火墙规则。
 - 坐标都是虚拟桌面物理像素（agent 声明 Per-Monitor-V2 DPI 感知），与 `accept4` 的坐标同一坐标系。
+- 走公网，所以 agent 只连 `wss://`：网关首次运行生成自签证书 `~/.fushi-fleet/gateway.crt`，打包时把证书 PEM
+  写进志愿者包的 `agent.json`（`gateway_cert`），agent 只信任这一张。DNS 被劫持或中间人冒充网关时 TLS 握手失败，
+  token 不会发出去，冒充者也拿不到对方电脑的控制权。明文 `ws://` 直接拒绝。
 - 所有 agent 共用一个 token（社区都是熟人，维护者拍板「权限高点无所谓」）：拿到志愿者包的人能以任意机器名连入。
+  主控端包里的 `token.txt` 和 `gateway.key` 只留在自己手里。
 
 ## 打包（维护者）
 
@@ -29,9 +33,9 @@ powershell -ExecutionPolicy Bypass -File tool/remote_adapt/build_packages.ps1 -G
 
 - `-Gateway` 是志愿者能连到的主控端地址（可写 `host:port`，默认端口 8765；中文域名自动转 punycode）。
   主控端在路由器后面时，要把 TCP 8765 转发到主控电脑。
-- token 存在 `~/.fushi-fleet/token`（没有就生成），两个包用同一个。换 token 会让已发出的志愿者包失效。
+- token 和网关证书存在 `~/.fushi-fleet/`（没有就生成），两个包配套。换掉任一个都会让已发出的志愿者包失效。
 - 产物在 `tool/remote_adapt/dist/`（不入库）：
-  - `fushi-adapt-主控端-<日期>.zip`：`fushi-fleet-gateway.exe` + `token.txt`。双击运行，首次自动放行防火墙入站 8765、
+  - `fushi-adapt-主控端-<日期>.zip`：`fushi-fleet-gateway.exe` + `token.txt` + `gateway.crt/.key`。双击运行，首次自动放行防火墙入站 8765、
     执行 `claude mcp add --scope user --transport http fleet http://127.0.0.1:8766/mcp`。
   - `fushi-adapt-志愿者-<日期>.zip`：`双击开始适配.exe` + 写好地址和 token 的 `agent.json` + `driver\` + `说明.txt`。
     机器名默认取对方电脑名。
@@ -72,4 +76,4 @@ python -m pytest tool/remote_adapt/tests -q
 
 覆盖 Win32 结构体布局（x64）、真实截图、驱动文件协议（用假驱动，含超时后迟到完成与崩溃的情形），
 以及「网关 + 两个替身 agent + 真 MCP 客户端」端到端：点名不存在的机器、两台并行、截图与坐标换算、PowerShell、
-跨块文件往返、驱动启停、错 token 与非法机器名被拒。
+跨块文件往返、驱动启停、错 token 与非法机器名被拒、证书不符的冒充网关与明文 ws 被拒。

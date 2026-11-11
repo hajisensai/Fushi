@@ -6,7 +6,8 @@
 #   dist/fushi-adapt-主控端-<日期>.zip  你自己用：解压，双击 fushi-fleet-gateway.exe
 #   dist/fushi-adapt-志愿者-<日期>.zip  发给朋友：解压，双击 双击开始适配.exe
 #
-# token 存在 ~/.fushi-fleet/token（没有就生成），两个包用同一个；换 token 会让旧志愿者包失效。
+# token 与网关证书存在 ~/.fushi-fleet/（没有就生成），两个包配套；换掉任一个都会让旧志愿者包失效。
+# 主控端包里有 token 和证书私钥，只留在自己手里。
 # 驱动 = fushi/integration_test/gal_realgame_driver_itest.dart 打成的 Debug 版 fushi.exe，
 # 志愿者电脑不需要 Flutter SDK。
 param(
@@ -28,7 +29,7 @@ $Stamp = Get-Date -Format "yyyyMMdd-HHmm"
 $hostPart = $Gateway.Trim()
 if ($hostPart -match '^(.+):(\d+)$') { $hostPart = $Matches[1]; $Port = [int]$Matches[2] }
 $hostAscii = (New-Object System.Globalization.IdnMapping).GetAscii($hostPart)
-$GatewayUrl = "ws://${hostAscii}:$Port/agent"
+$GatewayUrl = "wss://${hostAscii}:$Port/agent"
 
 $TokenFile = Join-Path $env:USERPROFILE ".fushi-fleet\token"
 if (-not (Test-Path $TokenFile)) {
@@ -36,6 +37,11 @@ if (-not (Test-Path $TokenFile)) {
   if ($LASTEXITCODE -ne 0) { throw "生成 token 失败" }
 }
 $Token = (Get-Content -Raw -Encoding UTF8 $TokenFile).Trim()
+# 网关自签 TLS 证书（~/.fushi-fleet/gateway.crt/.key，没有就生成）。证书写进志愿者包，agent 只信任它，
+# 公网上被 DNS 劫持或中间人冒充时连不上，也不会把 token 交出去。
+$CertDir = Join-Path $env:USERPROFILE ".fushi-fleet"
+$CertPem = (& python (Join-Path $Here "fleet_gateway.py") --print-cert --cert-dir $CertDir) -join "`n"
+if ($LASTEXITCODE -ne 0 -or $CertPem -notmatch "BEGIN CERTIFICATE") { throw "生成网关证书失败" }
 
 if ($BuildDriver) {
   Push-Location $App
@@ -74,7 +80,7 @@ if (Test-Path $Vol) { Remove-Item -Recurse -Force $Vol }
 New-Item -ItemType Directory -Force -Path $Vol, $Work | Out-Null
 Build-Exe "fleet_agent.py" "fushi-adapt-agent" $Vol
 Move-Item (Join-Path $Vol "fushi-adapt-agent.exe") (Join-Path $Vol "双击开始适配.exe")
-$agentJson = [ordered]@{ gateway = $GatewayUrl; token = $Token; name = "" } | ConvertTo-Json
+$agentJson = [ordered]@{ gateway = $GatewayUrl; token = $Token; name = ""; gateway_cert = $CertPem } | ConvertTo-Json
 Write-Utf8 (Join-Path $Vol "agent.json") $agentJson
 Copy-Item (Join-Path $Here "VOLUNTEER.txt") (Join-Path $Vol "说明.txt")
 
@@ -102,6 +108,7 @@ if (Test-Path $Ctl) { Remove-Item -Recurse -Force $Ctl }
 New-Item -ItemType Directory -Force -Path $Ctl | Out-Null
 Build-Exe "fleet_gateway.py" "fushi-fleet-gateway" $Ctl
 Write-Utf8 (Join-Path $Ctl "token.txt") $Token
+Copy-Item (Join-Path $CertDir "gateway.crt"), (Join-Path $CertDir "gateway.key") $Ctl
 Write-Utf8 (Join-Path $Ctl "说明.txt") @"
 双击 fushi-fleet-gateway.exe（会弹管理员确认），保持窗口打开。
 第一次运行会自动：放行防火墙入站 TCP $Port、把 fleet 注册进 Claude Code。
@@ -111,6 +118,8 @@ Write-Utf8 (Join-Path $Ctl "说明.txt") @"
 
 然后在 Claude Code 新开一个会话，直接说「看看有哪些机器在线」「在 XXX 上启动驱动 launch 某游戏」即可，
 一个会话可以同时操作所有在线机器。操作记录在 %USERPROFILE%\.fushi-fleet\audit\。
+
+token.txt 和 gateway.key 别外传：有它们就能冒充网关或连进来。
 "@
 
 foreach ($pair in @(@($Vol, "志愿者"), @($Ctl, "主控端"))) {

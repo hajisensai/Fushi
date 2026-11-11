@@ -9,6 +9,7 @@ import asyncio
 import ctypes
 import json
 import socket
+import ssl
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -193,20 +194,25 @@ async def test_end_to_end(tmp_path: Path) -> None:
     agent_port, mcp_port = _free_port(), _free_port()
     fleet = fleet_gateway.Fleet(token, tmp_path / "audit")
     mcp = fleet_gateway.build_mcp(fleet, "127.0.0.1", mcp_port)
+    cert_path, key_path = fleet_gateway.load_or_create_cert(tmp_path / "cert")
+    pem = cert_path.read_text(encoding="ascii")
+    url = f"wss://127.0.0.1:{agent_port}/agent"
 
     desktops: dict[str, FakeDesktop] = {}
     agent_tasks: list[asyncio.Task] = []
 
     async with serve(
         fleet.handle_agent, "127.0.0.1", agent_port,
+        ssl=fleet_gateway.server_ssl_context(cert_path, key_path),
         process_request=fleet.process_request, max_size=fleet_gateway.proto.MAX_FRAME_BYTES,
     ):
         server_task = asyncio.create_task(mcp.run_streamable_http_async())
         for name in ("pc-a", "pc-b"):
             cfg = fleet_agent.AgentConfig(
-                gateway=f"ws://127.0.0.1:{agent_port}/agent", token=token, name=name,
+                gateway=url, token=token, name=name,
                 workdir=tmp_path / name, galdriver_exe=Path(sys.executable),
                 galdriver_args=[str(FAKE_DRIVER)], seed_support_dir=None, seed_documents_dir=None,
+                gateway_cert=pem,
             )
             desktops[name] = FakeDesktop()
             agent_tasks.append(asyncio.create_task(fleet_agent.Agent(cfg, desktops[name]).run_once()))
@@ -214,20 +220,37 @@ async def test_end_to_end(tmp_path: Path) -> None:
 
         # 错 token 被拒
         bad = fleet_agent.AgentConfig(
-            gateway=f"ws://127.0.0.1:{agent_port}/agent", token="x" * 32, name="evil",
+            gateway=url, token="x" * 32, name="evil",
             workdir=tmp_path / "evil", galdriver_exe=None, galdriver_args=[],
-            seed_support_dir=None, seed_documents_dir=None,
+            seed_support_dir=None, seed_documents_dir=None, gateway_cert=pem,
         )
         with pytest.raises(Exception, match="401"):
             await fleet_agent.Agent(bad, FakeDesktop()).run_once()
         # 机器名会拼进审计文件路径：带路径分隔符的名字被拒
         traversal = fleet_agent.AgentConfig(
-            gateway=f"ws://127.0.0.1:{agent_port}/agent", token=token, name="..\\..\\evil",
+            gateway=url, token=token, name="..\\..\\evil",
             workdir=tmp_path / "evil2", galdriver_exe=None, galdriver_args=[],
-            seed_support_dir=None, seed_documents_dir=None,
+            seed_support_dir=None, seed_documents_dir=None, gateway_cert=pem,
         )
         with pytest.raises(SystemExit, match="机器名不合法"):
             await fleet_agent.Agent(traversal, FakeDesktop()).run_once()
+        # 冒充的网关（证书不是打包时固定的那张）：TLS 握手失败，agent 不会把 token 发过去
+        other_cert, _ = fleet_gateway.load_or_create_cert(tmp_path / "other-cert")
+        spoofed = fleet_agent.AgentConfig(
+            gateway=url, token=token, name="pc-c", workdir=tmp_path / "pc-c", galdriver_exe=None,
+            galdriver_args=[], seed_support_dir=None, seed_documents_dir=None,
+            gateway_cert=other_cert.read_text(encoding="ascii"),
+        )
+        with pytest.raises(ssl.SSLCertVerificationError):
+            await fleet_agent.Agent(spoofed, FakeDesktop()).run_once()
+        # 明文 ws:// 直接拒绝
+        plain = fleet_agent.AgentConfig(
+            gateway=f"ws://127.0.0.1:{agent_port}/agent", token=token, name="pc-d",
+            workdir=tmp_path / "pc-d", galdriver_exe=None, galdriver_args=[],
+            seed_support_dir=None, seed_documents_dir=None, gateway_cert=pem,
+        )
+        with pytest.raises(SystemExit, match="wss://"):
+            await fleet_agent.Agent(plain, FakeDesktop()).run_once()
         assert sorted(fleet.agents) == ["pc-a", "pc-b"]
         assert fleet_gateway.MACHINE_NAME.fullmatch("小明-pc_2")
 

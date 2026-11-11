@@ -2,7 +2,8 @@
 
     python fleet_gateway.py            # 或主控端包里的 fushi-fleet-gateway.exe
 
-* agent 侧：WebSocket `ws://<本机地址>:8765/agent`，Bearer token 认证。
+* agent 侧：WebSocket over TLS `wss://<本机地址>:8765/agent`，Bearer token 认证；
+  网关用自签证书（~/.fushi-fleet/gateway.crt），证书写进志愿者包，agent 只信任它。
 * Claude 侧：MCP Streamable HTTP `http://127.0.0.1:8766/mcp`，只监听本机回环。
 * token：主控端包里与 exe 同目录的 token.txt，否则 ~/.fushi-fleet/token（不存在就生成）。
 
@@ -466,6 +467,72 @@ def load_or_create_token(path: Path) -> str:
     return token
 
 
+CERT_NAME = "gateway.crt"
+KEY_NAME = "gateway.key"
+
+
+def load_or_create_cert(cert_dir: Path) -> tuple[Path, Path]:
+    """网关的自签证书（EC P-256，10 年）。证书 PEM 由打包脚本写进志愿者包，agent 只认它。"""
+    cert_path, key_path = cert_dir / CERT_NAME, cert_dir / KEY_NAME
+    if cert_path.exists() and key_path.exists():
+        return cert_path, key_path
+    import datetime
+
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.x509.oid import NameOID
+
+    key = ec.generate_private_key(ec.SECP256R1())
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "fushi-fleet-gateway")])
+    now = datetime.datetime.now(datetime.timezone.utc)
+    ski = x509.SubjectKeyIdentifier.from_public_key(key.public_key())
+    cert = (
+        x509.CertificateBuilder()
+        .subject_name(name)
+        .issuer_name(name)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - datetime.timedelta(days=1))
+        .not_valid_after(now + datetime.timedelta(days=3650))
+        .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True)
+        .add_extension(
+            x509.KeyUsage(
+                digital_signature=True, key_cert_sign=True, crl_sign=False, content_commitment=False,
+                key_encipherment=False, data_encipherment=False, key_agreement=False,
+                encipher_only=False, decipher_only=False,
+            ),
+            critical=True,
+        )
+        .add_extension(x509.SubjectAlternativeName([x509.DNSName("fushi-fleet-gateway")]), critical=False)
+        .add_extension(ski, critical=False)
+        .add_extension(x509.AuthorityKeyIdentifier.from_issuer_subject_key_identifier(ski), critical=False)
+        .sign(key, hashes.SHA256())
+    )
+    cert_dir.mkdir(parents=True, exist_ok=True)
+    key_path.write_bytes(
+        key.private_bytes(
+            serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()
+        )
+    )
+    cert_path.write_bytes(cert.public_bytes(serialization.Encoding.PEM))
+    return cert_path, key_path
+
+
+def server_ssl_context(cert_path: Path, key_path: Path) -> "ssl.SSLContext":
+    import ssl
+
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+    ctx.load_cert_chain(cert_path, key_path)
+    return ctx
+
+
+def default_cert_dir() -> Path:
+    # 主控端包里证书与 exe 同目录；源码运行时用用户目录。
+    return app_dir() if (app_dir() / CERT_NAME).exists() else Path("~/.fushi-fleet").expanduser()
+
+
 def default_token_file() -> Path:
     bundled = app_dir() / "token.txt"
     return bundled if bundled.exists() else Path("~/.fushi-fleet/token").expanduser()
@@ -513,10 +580,12 @@ async def serve_all(args: argparse.Namespace) -> None:
     token = args.token or load_or_create_token(Path(args.token_file).expanduser())
     fleet = Fleet(token, Path(args.audit_dir).expanduser() if args.audit_dir else None)
     mcp = build_mcp(fleet, args.mcp_host, args.mcp_port)
+    cert_path, key_path = load_or_create_cert(Path(args.cert_dir).expanduser())
     async with serve(
         fleet.handle_agent,
         args.agent_host,
         args.agent_port,
+        ssl=server_ssl_context(cert_path, key_path),
         process_request=fleet.process_request,
         max_size=proto.MAX_FRAME_BYTES,
         ping_interval=20,
@@ -538,12 +607,18 @@ def main(argv: Optional[list[str]] = None) -> None:
     parser.add_argument("--mcp-port", type=int, default=8766)
     parser.add_argument("--token", default=None)
     parser.add_argument("--token-file", default=str(default_token_file()))
+    parser.add_argument("--cert-dir", default=str(default_cert_dir()))
     parser.add_argument("--print-token", action="store_true", help="打印 token（没有就生成）后退出")
+    parser.add_argument("--print-cert", action="store_true", help="打印网关证书 PEM（没有就生成）后退出")
     parser.add_argument("--audit-dir", default="~/.fushi-fleet/audit")
     parser.add_argument("--no-setup", action="store_true", help="不自动放行防火墙、不注册 MCP")
     args = parser.parse_args(argv)
     if args.print_token:
         print(load_or_create_token(Path(args.token_file).expanduser()))
+        return
+    if args.print_cert:
+        cert_path, _ = load_or_create_cert(Path(args.cert_dir).expanduser())
+        print(cert_path.read_text(encoding="ascii").strip())
         return
     if sys.platform == "win32":
         import ctypes
