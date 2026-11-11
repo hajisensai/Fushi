@@ -10342,6 +10342,8 @@
   "theme_contrast_low_light": "Low contrast in light mode",
   "theme_icon_accent_follow": "Theme color follows custom icon",
   "theme_icon_accent_hint": "Take the accent color from your custom icon image. Turn off to return to the theme you picked.",
+  "theme_logo_glow_enabled": "Mascot glow",
+  "theme_logo_glow_hint": "A soft breathing glow around the mascot on the floating ball. It brightens and speeds up while background sync is running.",
   "theme_logo_tint_enabled": "Logo follows theme color",
   "theme_logo_tint_hint": "Recolor the built-in mascot icon to match the accent color. When off, the original artwork is always shown.",
   "theme_neutral_derived": "派生色をニュートラルグレーにする",

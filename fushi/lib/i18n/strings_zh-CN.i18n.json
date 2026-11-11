@@ -10342,6 +10342,8 @@
   "theme_contrast_low_light": "浅色下对比度低",
   "theme_icon_accent_follow": "主题色跟随图标",
   "theme_icon_accent_hint": "从自定义图标图片取强调色；关闭后恢复你原先选择的主题色。",
+  "theme_logo_glow_enabled": "吉祥物光晕",
+  "theme_logo_glow_hint": "悬浮球上的吉祥物外圈带一层呼吸光晕，后台同步时更亮、呼吸更快。",
   "theme_logo_tint_enabled": "图标跟随主题色",
   "theme_logo_tint_hint": "让内置吉祥物图标随强调色换色；关闭时始终显示原图。",
   "theme_neutral_derived": "派生色用中性灰",

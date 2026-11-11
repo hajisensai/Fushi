@@ -575,6 +575,20 @@ SettingsDestination buildAppearanceDestination() {
             },
             defaultValue: false,
           ),
+          // 「吉祥物光晕」：悬浮球上的吉祥物外圈呼吸光晕，后台同步时更亮更快。
+          SettingsSwitchItem(
+            id: 'appearance.mascot_glow',
+            title: t.theme_logo_glow_enabled,
+            subtitle: t.theme_logo_glow_hint,
+            icon: FushiIcons.widgets,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.themeNotifier.mascotGlow,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.themeNotifier.setMascotGlow(value);
+              settingsContext.refresh();
+            },
+            defaultValue: false,
+          ),
           // ②「主题色跟随图标」：设置了自定义图标图片时才出现；开着时从该图
           // 取种子色覆盖生效主题（不改写主题偏好，关掉即恢复原主题）。
           SettingsSwitchItem(
