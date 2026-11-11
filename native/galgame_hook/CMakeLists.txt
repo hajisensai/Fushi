@@ -730,6 +730,15 @@ target_include_directories(fushi_loader_init_gate_test PRIVATE "include")
 add_test(NAME fushi_loader_init_gate_test
   COMMAND fushi_loader_init_gate_test)
 
+# SteamStub 解壳门：Steam 客户端路径 / 附着时等 `.bind` 壳原地解密代码段再注入，
+# 否则 LunaHook 一次性的引擎识别扫到密文；含无 `.bind` 与重定位映像的负向。
+add_executable(fushi_steam_stub_unpack_test
+  "tests/steam_stub_unpack_test.cpp"
+)
+target_include_directories(fushi_steam_stub_unpack_test PRIVATE "include")
+add_test(NAME fushi_steam_stub_unpack_test
+  COMMAND fushi_steam_stub_unpack_test)
+
 add_executable(fushi_luna_hook_config_test tests/luna_hook_config_test.cpp)
 target_include_directories(fushi_luna_hook_config_test PRIVATE include)
 add_test(NAME fushi_luna_hook_config_test COMMAND fushi_luna_hook_config_test)
