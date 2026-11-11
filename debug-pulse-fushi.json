@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-11T05:17:47Z",
+ "generatedAt": "2026-11-11T05:43:11Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "8603d1a7644363acc0bd973f79588ac140f4af5f",
@@ -12,7 +12,7 @@
    "version": "3.3.0",
    "sha": "8603d1a7644363acc0bd973f79588ac140f4af5f",
    "unknown": false,
-   "publishedAt": "2026-11-11T05:17:37Z",
+   "publishedAt": "2026-11-11T05:42:57Z",
    "testflight": false,
    "baseSeq": 26440,
    "prs": [
@@ -25,16 +25,13 @@
      "state": "ok"
     },
     "windows": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/42959750715"
+     "state": "ok"
     },
     "macos": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/42959750715"
+     "state": "ok"
     },
     "ios": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/42959750715"
+     "state": "ok"
     }
    }
   },
@@ -74,43 +71,13 @@
    "unknown": false,
    "publishedAt": "2026-11-10T22:50:54Z",
    "testflight": true,
-   "baseSeq": 26407,
-   "prs": [
-    3281,
-    3293
-   ],
-   "direct": [],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "ok"
-    },
-    "windows": {
-     "state": "ok"
-    },
-    "macos": {
-     "state": "ok"
-    },
-    "ios": {
-     "state": "ok"
-    }
-   }
-  },
-  {
-   "seq": 26407,
-   "version": "3.3.0",
-   "sha": "f307da3ff2d0738e7be79eb900e4a6e8520c7864",
-   "unknown": false,
-   "publishedAt": "2026-11-10T21:25:41Z",
-   "testflight": true,
    "baseSeq": null,
    "prs": [],
    "direct": [],
    "truncated": false,
    "platforms": {
     "android": {
-     "state": "superseded",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/42881963518"
+     "state": "ok"
     },
     "windows": {
      "state": "ok"
@@ -133,24 +100,6 @@
    "mergedAt": "2026-11-11T04:31:05Z",
    "additions": 1261,
    "deletions": 136,
-   "labels": []
-  },
-  "3281": {
-   "number": 3281,
-   "title": "fix: 批量合并后统一验证——analyze / 守卫 / 测试真红按根因修",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-10T20:24:38Z",
-   "additions": 788,
-   "deletions": 506,
-   "labels": []
-  },
-  "3293": {
-   "number": 3293,
-   "title": "fix(verify): #3244 / #3236 / #3213 合入后的测试红（测试侧缺陷）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-10T19:45:57Z",
-   "additions": 75,
-   "deletions": 41,
    "labels": []
   },
   "3298": {
