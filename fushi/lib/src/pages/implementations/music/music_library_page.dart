@@ -37,6 +37,7 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/music/music_album_page.dart';
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
 import 'package:fushi/src/pages/implementations/music/music_disc_actions.dart';
+import 'package:fushi/src/pages/implementations/music/music_disc_cover.dart';
 import 'package:fushi/src/pages/implementations/music/music_local_playlist_actions.dart';
 import 'package:fushi/src/pages/implementations/music/music_local_playlist_page.dart';
 import 'package:fushi/src/pages/implementations/music/music_playlist_actions.dart'
@@ -44,6 +45,7 @@ import 'package:fushi/src/pages/implementations/music/music_playlist_actions.dar
 import 'package:fushi/src/pages/implementations/music/music_plugin_pages.dart';
 import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart'
     show MusicBarReserve, MusicFloatingBarHost;
+import 'package:fushi_engine/media/music/disc/music_disc.dart';
 import 'package:fushi_engine/media/music/server/music_server.dart'
     show MusicServerBrowser;
 import 'package:fushi/src/pages/implementations/music/music_server_pages.dart';
@@ -1190,11 +1192,23 @@ class _AlbumCard extends ConsumerWidget {
             bitDepth: first.bitDepth,
             bitrateKbps: first.bitrate,
           );
+    final String subtitle = <String>[
+      album.albumArtistCredit ?? t.music_artist_unknown,
+      if (badge.isNotEmpty) badge,
+      if (disc != null && tracks.isEmpty) t.music_disc_not_imported,
+    ].join(' · ');
+    final Widget cover = MusicCover(
+      coverPath: album.coverPath,
+      embeddedFromPath: embeddedCoverPath,
+      borderRadius: disc == null ? null : BorderRadius.zero,
+    );
     // 方形「唱片」材质卡（材质由网格外的 Scope 给）：封面上不压角标（用户
     // 2026-10-25），光盘规格徽标（CD / DVD / BD）进副行尾部，与视频库原盘卡同位。
+    // 光盘专辑画成真盘（用户 2026-11-11）：封面印在盘面上，规格 / 标题 / 副行写在
+    // 底下的盒面上（[MusicDiscCaseCard]）。
     final Widget card = FushiHoverLift(
       scale: kMusicHoverLiftScale,
-      builder: (BuildContext context, bool _) => shelfCoverCard(
+      builder: (BuildContext context, bool hovering) => shelfCoverCard(
         onTap: onTap,
         onLongPress: disc == null
             ? null
@@ -1207,33 +1221,30 @@ class _AlbumCard extends ConsumerWidget {
                   box.localToGlobal(box.size.center(Offset.zero)),
                 );
               },
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            AspectRatio(
-              aspectRatio: kShelfAlbumAspectRatio,
-              child: ShelfCoverFrame(
-                child: MusicCover(
-                  coverPath: album.coverPath,
-                  embeddedFromPath: embeddedCoverPath,
-                ),
+        child: disc != null
+            ? MusicDiscCaseCard(
+                key: ValueKey<String>('music-album-disc-${album.albumUid}'),
+                cover: cover,
+                kind: MusicDiscKind.fromWire(disc.kind),
+                title: album.title,
+                subtitle: subtitle,
+                hovering: hovering,
+              )
+            : Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  AspectRatio(
+                    aspectRatio: kShelfAlbumAspectRatio,
+                    child: ShelfCoverFrame(child: cover),
+                  ),
+                  ShelfCardMeta(
+                    key: ValueKey<String>('music-album-meta-${album.albumUid}'),
+                    title: album.title,
+                    subtitle: subtitle,
+                  ),
+                ],
               ),
-            ),
-            ShelfCardMeta(
-              key: ValueKey<String>('music-album-meta-${album.albumUid}'),
-              title: album.title,
-              subtitle: <String>[
-                album.albumArtistCredit ?? t.music_artist_unknown,
-                if (badge.isNotEmpty) badge,
-                if (disc != null && tracks.isEmpty) t.music_disc_not_imported,
-              ].join(' · '),
-              trailing: disc == null
-                  ? null
-                  : IgnorePointer(child: MusicDiscBadge(disc: disc)),
-            ),
-          ],
-        ),
       ),
     );
     if (disc == null) return card;

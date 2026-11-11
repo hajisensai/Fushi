@@ -23,7 +23,9 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart'
     show MusicFloatingBarHost;
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
+import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
 import 'package:fushi/src/pages/implementations/music/music_disc_actions.dart';
+import 'package:fushi/src/pages/implementations/music/music_disc_cover.dart';
 import 'package:fushi/src/pages/implementations/music/music_playlist_actions.dart'
     show musicAddLocalTracksToPlaylist;
 import 'package:fushi/src/pages/implementations/music/music_server_pages.dart'
@@ -204,13 +206,32 @@ class _MusicAlbumPageState extends ConsumerState<MusicAlbumPage> {
       children: <Widget>[
         // 方形「唱片」材质大图（与专辑网格同一材质）；封面上不压角标，光盘规格
         // 徽标挪到右侧格式徽章那一排。
-        musicAlbumDetailCover(
-          MusicCover(
-            coverPath: album.coverPath,
-            embeddedFromPath: embeddedCoverPath,
-            size: kMusicAlbumDetailCoverSize,
+        // 光盘专辑：大图也画成印着封面的盘（与网格的盒装卡同一张盘面）。
+        if (disc != null)
+          SizedBox.square(
+            key: const ValueKey<String>('music-album-disc-face'),
+            dimension: kMusicAlbumDetailCoverSize,
+            child: FushiHoverLift(
+              scale: kMusicHoverLiftScale,
+              builder: (BuildContext context, bool hovering) => MusicDiscFace(
+                hovering: hovering,
+                cover: MusicCover(
+                  coverPath: album.coverPath,
+                  embeddedFromPath: embeddedCoverPath,
+                  size: kMusicAlbumDetailCoverSize,
+                  borderRadius: BorderRadius.zero,
+                ),
+              ),
+            ),
+          )
+        else
+          musicAlbumDetailCover(
+            MusicCover(
+              coverPath: album.coverPath,
+              embeddedFromPath: embeddedCoverPath,
+              size: kMusicAlbumDetailCoverSize,
+            ),
           ),
-        ),
         ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 420),
           child: Column(
