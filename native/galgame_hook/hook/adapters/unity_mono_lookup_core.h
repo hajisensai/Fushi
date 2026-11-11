@@ -480,7 +480,8 @@ inline uint64_t MessageRoleKey(const wchar_t* chars, int length) {
 
 // ── snapshot model ──────────────────────────────────────────────────────────
 
-inline constexpr size_t kMaxGlyphs = 256u;
+// One glyph per laid-out unit of the longest line we accept (an NVL page).
+inline constexpr size_t kMaxGlyphs = 512u;
 inline constexpr size_t kMaxLineUnits = 512u;
 inline constexpr size_t kMaxRenderedLines = 16u;
 // Framework 3 samples every recently written TMP text object (dialogue body,
@@ -841,6 +842,7 @@ struct FungusSites {
   uint32_t line_height_offset = 0u;      // UILineInfo.height
   uint32_t line_top_offset = 0u;         // UILineInfo.topY
   uint32_t cached_ptr_offset = 0u;       // UnityEngine.Object.m_CachedPtr
+  void* text_class = nullptr;            // MonoClass* UnityEngine.UI.Text
   std::array<void*, kFungusIcallCount> icalls{};
 
   template <typename Fn>
@@ -916,33 +918,18 @@ inline void* ResolveFungusIcall(const MonoEmbeddingApi& api,
   return ResolveIcall(api, lookup, list, generic);
 }
 
-// Caller must be attached to the root domain.
-inline FungusSiteResolution ResolveFungusSites(const MonoEmbeddingApi& api,
-                                               const MonoLookupApi& lookup,
-                                               const MonoValueSizeApi& sizes,
-                                               FungusSites* out) {
+// The UGUI Text layout sites shared by framework 2 (Fungus story Text) and
+// framework 4 (any UI.Text): Text / Graphic / FontData / TextGenerator
+// fields, UICharInfo / UILineInfo value layouts and the internal calls.
+// `text` is the resolved UnityEngine.UI.Text class.
+inline FungusSiteResolution ResolveUguiTextLayout(const MonoEmbeddingApi& api,
+                                                  const MonoLookupApi& lookup,
+                                                  const MonoValueSizeApi& sizes,
+                                                  const MonoAssemblyList& list,
+                                                  void* text,
+                                                  FungusSites* out) {
   FungusSiteResolution resolution;
-  if (out == nullptr || !api.CompleteForResolution() || !lookup.Complete() ||
-      sizes.class_value_size == nullptr) {
-    return resolution;
-  }
-  *out = FungusSites();
-  MonoAssemblyList list;
-  api.assembly_foreach(&CollectMonoAssembly, &list);
-  const MonoTextHookSpec& say =
-      MonoTextHookSpecFor(MonoTextHookId::kFungusSayDialogDoSay);
-  void* dialog = FindClassInImages(api, list, say.name_space, say.class_name);
-  if (dialog == nullptr) {
-    resolution.result = FungusSiteResult::kNoSayDialog;
-    return resolution;
-  }
-  out->late_update = FindMonoMethod(api, dialog, "LateUpdate", true,
-                                    kMonoTypeVoid, 0, nullptr);
-  if (out->late_update == nullptr) {
-    resolution.result = FungusSiteResult::kNoLateUpdate;
-    return resolution;
-  }
-  void* text = FindClassInImages(api, list, "UnityEngine.UI", "Text");
+  out->text_class = text;
   void* graphic = FindClassInImages(api, list, "UnityEngine.UI", "Graphic");
   void* font_data = FindClassInImages(api, list, "UnityEngine.UI", "FontData");
   void* generator =
@@ -954,13 +941,7 @@ inline FungusSiteResolution ResolveFungusSites(const MonoEmbeddingApi& api,
   void* color = FindClassInImages(api, list, "UnityEngine", "Color");
   void* char_info = FindClassInImages(api, list, "UnityEngine", "UICharInfo");
   void* line_info = FindClassInImages(api, list, "UnityEngine", "UILineInfo");
-  if (text == nullptr ||
-      !FieldOfClass(api, lookup, dialog, "storyText", kMonoTypeClass, text,
-                    &out->story_text_offset)) {
-    resolution.result = FungusSiteResult::kStoryTextMissing;
-    return resolution;
-  }
-  if (generator == nullptr || font_data == nullptr || font == nullptr ||
+  if (text == nullptr || generator == nullptr || font_data == nullptr || font == nullptr ||
       !FieldOfType(api, lookup, text, "m_Text", kMonoTypeString, nullptr,
                    &out->text_string_offset) ||
       !FieldOfClass(api, lookup, text, "m_TextCache", kMonoTypeClass,
@@ -1058,6 +1039,42 @@ inline FungusSiteResolution ResolveFungusSites(const MonoEmbeddingApi& api,
   return resolution;
 }
 
+// Caller must be attached to the root domain.
+inline FungusSiteResolution ResolveFungusSites(const MonoEmbeddingApi& api,
+                                               const MonoLookupApi& lookup,
+                                               const MonoValueSizeApi& sizes,
+                                               FungusSites* out) {
+  FungusSiteResolution resolution;
+  if (out == nullptr || !api.CompleteForResolution() || !lookup.Complete() ||
+      sizes.class_value_size == nullptr) {
+    return resolution;
+  }
+  *out = FungusSites();
+  MonoAssemblyList list;
+  api.assembly_foreach(&CollectMonoAssembly, &list);
+  const MonoTextHookSpec& say =
+      MonoTextHookSpecFor(MonoTextHookId::kFungusSayDialogDoSay);
+  void* dialog = FindClassInImages(api, list, say.name_space, say.class_name);
+  if (dialog == nullptr) {
+    resolution.result = FungusSiteResult::kNoSayDialog;
+    return resolution;
+  }
+  out->late_update = FindMonoMethod(api, dialog, "LateUpdate", true,
+                                    kMonoTypeVoid, 0, nullptr);
+  if (out->late_update == nullptr) {
+    resolution.result = FungusSiteResult::kNoLateUpdate;
+    return resolution;
+  }
+  void* text = FindClassInImages(api, list, "UnityEngine.UI", "Text");
+  if (text == nullptr ||
+      !FieldOfClass(api, lookup, dialog, "storyText", kMonoTypeClass, text,
+                    &out->story_text_offset)) {
+    resolution.result = FungusSiteResult::kStoryTextMissing;
+    return resolution;
+  }
+  return ResolveUguiTextLayout(api, lookup, sizes, list, text, out);
+}
+
 // ── UGUI rich text ──────────────────────────────────────────────────────────
 //
 // The rendered string carries UGUI rich-text tags (Fungus emits <b> <i>
@@ -1152,6 +1169,66 @@ inline Vec3 TransformPoint(const Matrix4& matrix, float x, float y) {
   return {m[0] * x + m[4] * y + m[12], m[1] * x + m[5] * y + m[13],
           m[2] * x + m[6] * y + m[14]};
 }
+
+// Canvas texts are modelled as upright, unmirrored, horizontal layout: the
+// text's local +x must reach the screen as +x and local +y as +y (Unity
+// screen space, origin bottom-left), each within kAxisSkew of the other axis.
+// `origin`, `x_end`, `y_end`: screen points of local (0,0), (d,0), (0,d).  A
+// rotated (vertical-writing via a 90 degree RectTransform), mirrored or
+// skewed text fails closed: the axis-aligned cell model would hit the wrong
+// glyph.  The decision is in screen space, so a Screen Space - Camera canvas
+// under a rotated camera (canvas faces the camera) still passes.
+inline constexpr float kAxisSkew = 0.02f;
+
+// Step-2 diagnostic of a canvas text whose laid-out units differ from the
+// selected line: index of the first differing unit and the coarse kinds of
+// the two units there (never the units themselves -- no dialogue in logs).
+enum class UnitKind : uint32_t {
+  kEnd = 0,        // the sequence ended
+  kLineBreak = 1,  // LF, CR
+  kSpace = 2,      // space, tab, U+3000
+  kAscii = 3,      // other printable ASCII
+  kControl = 4,    // other C0 / C1 / format controls (incl. U+200B..U+200F)
+  kOther = 5,      // everything else (kana, kanji, punctuation, ...)
+};
+inline UnitKind KindOfUnit(const wchar_t* units, size_t count, size_t index) {
+  if (units == nullptr || index >= count) return UnitKind::kEnd;
+  const wchar_t c = units[index];
+  if (c == L'\n' || c == L'\r') return UnitKind::kLineBreak;
+  if (c == L' ' || c == L'\t' || c == 0x3000) return UnitKind::kSpace;
+  if (c > 0x20 && c < 0x7f) return UnitKind::kAscii;
+  if (c < 0x20 || (c >= 0x7f && c < 0xa0) || (c >= 0x200b && c <= 0x200f) ||
+      c == 0xfeff) {
+    return UnitKind::kControl;
+  }
+  return UnitKind::kOther;
+}
+struct UnitDifference {
+  size_t index = 0u;   // first differing index (== shorter length: a prefix)
+  uint32_t kinds = 0u;  // 10 * kind(a[index]) + kind(b[index])
+};
+inline UnitDifference FirstUnitDifference(const wchar_t* a, size_t a_count,
+                                          const wchar_t* b, size_t b_count) {
+  UnitDifference diff;
+  const size_t shorter = (std::min)(a_count, b_count);
+  while (diff.index < shorter && a[diff.index] == b[diff.index]) ++diff.index;
+  diff.kinds =
+      10u * static_cast<uint32_t>(KindOfUnit(a, a_count, diff.index)) +
+      static_cast<uint32_t>(KindOfUnit(b, b_count, diff.index));
+  return diff;
+}
+inline bool ScreenAxesUpright(const Vec3& origin, const Vec3& x_end,
+                              const Vec3& y_end) {
+  const float xx = x_end.x - origin.x, xy = x_end.y - origin.y;
+  const float yx = y_end.x - origin.x, yy = y_end.y - origin.y;
+  if (!std::isfinite(xx) || !std::isfinite(xy) || !std::isfinite(yx) ||
+      !std::isfinite(yy)) {
+    return false;
+  }
+  return xx > 0.0f && yy > 0.0f && std::fabs(xy) <= kAxisSkew * xx &&
+         std::fabs(yx) <= kAxisSkew * yy;
+}
+
 
 // The UILineInfo containing raw unit `index` (lines are sorted by start).
 inline bool LineOfUnit(const int32_t* line_starts, size_t lines, size_t index,
@@ -1402,6 +1479,24 @@ inline bool ValueFieldOfClass(const MonoEmbeddingApi& api,
   return true;
 }
 
+// `static void Canvas.SendWillRenderCanvases()`: a managed body the native
+// player invokes every frame (an internal call there would have no JIT entry
+// to detour).  Both canvas-text frameworks (3 TMP, 4 UI.Text) sample after it:
+// the canvas update it raises rebuilds every dirty UGUI graphic.
+inline void* ResolveWillRenderCanvases(const MonoEmbeddingApi& api,
+                                       const MonoLookupApi& lookup,
+                                       const MonoAssemblyList& list) {
+  void* canvas = FindClassInImages(api, list, "UnityEngine", "Canvas");
+  void* will_render =
+      canvas == nullptr ? nullptr
+                        : FindMonoMethod(api, canvas, "SendWillRenderCanvases",
+                                         false, kMonoTypeVoid, 0, nullptr);
+  if (will_render == nullptr) return nullptr;
+  uint32_t iflags = 0u;
+  lookup.method_get_flags(will_render, &iflags);
+  return (iflags & kMethodImplInternalCall) != 0u ? nullptr : will_render;
+}
+
 // Caller must be attached to the root domain.
 inline TmpSiteResolution ResolveTmpSites(const MonoEmbeddingApi& api,
                                          const MonoLookupApi& lookup,
@@ -1428,19 +1523,8 @@ inline TmpSiteResolution ResolveTmpSites(const MonoEmbeddingApi& api,
     return resolution;
   }
   out->ugui_class = ugui;
-  void* canvas = FindClassInImages(api, list, "UnityEngine", "Canvas");
-  void* will_render =
-      canvas == nullptr ? nullptr
-                        : FindMonoMethod(api, canvas, "SendWillRenderCanvases",
-                                         false, kMonoTypeVoid, 0, nullptr);
-  uint32_t will_render_iflags = 0u;
-  if (will_render != nullptr) {
-    lookup.method_get_flags(will_render, &will_render_iflags);
-  }
-  // A managed body (the native player invokes it every frame); an internal
-  // call there would have no JIT entry to detour.
-  if (will_render == nullptr ||
-      (will_render_iflags & kMethodImplInternalCall) != 0u) {
+  void* will_render = ResolveWillRenderCanvases(api, lookup, list);
+  if (will_render == nullptr) {
     resolution.result = TmpSiteResult::kNoWillRender;
     return resolution;
   }
@@ -1469,6 +1553,7 @@ inline TmpSiteResolution ResolveTmpSites(const MonoEmbeddingApi& api,
     return resolution;
   }
   out->font_alpha_offset = color_offset + alpha_offset;
+  void* canvas = FindClassInImages(api, list, "UnityEngine", "Canvas");
   void* renderer =
       FindClassInImages(api, list, "UnityEngine", "CanvasRenderer");
   if (canvas == nullptr || renderer == nullptr ||
@@ -1612,6 +1697,79 @@ inline TmpChoice ChooseTmpMatch(const TmpMatch* matches, size_t count,
     return TmpChoice::kChosen;
   }
   return TmpChoice::kAmbiguous;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Framework 4: a bare UGUI Text (UnityEngine.UI.Text) whose text is the
+// selected line.
+//
+// Same canvas-text mechanism as framework 3 (the text path's
+// `UI.Text.set_text` detour remembers the object, the main thread samples it
+// after Canvas.SendWillRenderCanvases, the selected line picks the object,
+// duplicates resolve through ChooseTmpMatch), with framework 2's UGUI layout
+// reading: the Text's cached TextGenerator laid out exactly `m_Text`
+// (m_LastString), one UICharInfo per raw unit + terminator, cells
+// [cursor.x, +charWidth] x [lineTop - height, lineTop] / pixelsPerUnit
+// through localToWorld and the root canvas.  Scope measured as missing on a
+// real player (2026-11-11): an x64 Mono NVL whose story text is only ever a
+// UI.Text (no TMP object renders), so framework 3 alone never had a sample.
+
+enum class UiTextSiteResult : uint32_t {
+  kResolved = 0,
+  kApiIncomplete = 1,
+  kNoTextClass = 2,    // UnityEngine.UI.Text absent or ambiguous
+  kNoWillRender = 3,
+  kLayout = 4,         // a shared UGUI layout site (see `layout`)
+};
+
+struct UiTextSiteResolution {
+  UiTextSiteResult result = UiTextSiteResult::kApiIncomplete;
+  FungusSiteResult layout = FungusSiteResult::kApiIncomplete;
+  int32_t missing_icall = -1;
+};
+
+// Caller must be attached to the root domain.  `out` receives the UGUI Text
+// layout sites (FungusSites without the SayDialog part), `will_render_out`
+// the managed SendWillRenderCanvases.
+inline UiTextSiteResolution ResolveUiTextSites(const MonoEmbeddingApi& api,
+                                               const MonoLookupApi& lookup,
+                                               const MonoValueSizeApi& sizes,
+                                               FungusSites* out,
+                                               void** will_render_out) {
+  UiTextSiteResolution resolution;
+  if (out == nullptr || will_render_out == nullptr ||
+      !api.CompleteForResolution() || !lookup.Complete() ||
+      sizes.class_value_size == nullptr) {
+    return resolution;
+  }
+  *out = FungusSites();
+  *will_render_out = nullptr;
+  MonoAssemblyList list;
+  api.assembly_foreach(&CollectMonoAssembly, &list);
+  const MonoTextHookSpec& setter =
+      MonoTextHookSpecFor(MonoTextHookId::kUiTextSetText);
+  void* text =
+      FindClassInImages(api, list, setter.name_space, setter.class_name);
+  if (text == nullptr) {
+    resolution.result = UiTextSiteResult::kNoTextClass;
+    return resolution;
+  }
+  void* will_render = ResolveWillRenderCanvases(api, lookup, list);
+  if (will_render == nullptr) {
+    resolution.result = UiTextSiteResult::kNoWillRender;
+    return resolution;
+  }
+  const FungusSiteResolution layout =
+      ResolveUguiTextLayout(api, lookup, sizes, list, text, out);
+  resolution.layout = layout.result;
+  resolution.missing_icall = layout.missing_icall;
+  if (layout.result != FungusSiteResult::kResolved) {
+    resolution.result = UiTextSiteResult::kLayout;
+    return resolution;
+  }
+  *will_render_out = will_render;
+  resolution.result = UiTextSiteResult::kResolved;
+  return resolution;
 }
 
 }  // namespace fushi_voice_hook::unity_mono_lookup
