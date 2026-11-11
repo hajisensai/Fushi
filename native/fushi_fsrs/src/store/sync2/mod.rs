@@ -1685,19 +1685,24 @@ pub(crate) fn replay_cards(
     conn: &Connection,
     cards: &BTreeSet<String>,
 ) -> Result<BTreeSet<String>, String> {
+    let p_tails = crate::store::prof::span("replay.tails");
     let mut groups: BTreeSet<String> = BTreeSet::new();
     for c in cards {
         groups.extend(tails(conn, c)?);
     }
+    drop(p_tails);
     let mut changed = BTreeSet::new();
     if groups.is_empty() {
         return Ok(changed);
     }
     for tail in &groups {
+        let p_group = crate::store::prof::span("replay.group");
         let Group { rows, .. } = group_of(conn, tail, None)?;
+        drop(p_group);
         if rows.is_empty() {
             continue;
         }
+        let _p_compute = crate::store::prof::span("replay.compute_write");
         let input: Vec<Row<'_>> = rows
             .iter()
             .map(|(_, j, s, i, _)| Row {
