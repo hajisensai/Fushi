@@ -7,6 +7,8 @@ import 'package:fushi_core/fushi_core.dart';
 
 /// 反馈 s2fdTTmLyh：设置 → 存储 →「检查数据库」的入口与结果文案。
 void main() {
+  // LocaleSettings.setLocale 经 slang_flutter 碰 WidgetsBinding.instance。
+  TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => LocaleSettings.setLocale(AppLocale.en));
 
   test('存储页有「检查数据库」动作，控制通道需 --yes 确认', () {

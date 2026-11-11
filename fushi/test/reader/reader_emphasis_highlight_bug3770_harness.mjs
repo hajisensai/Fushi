@@ -18,7 +18,14 @@ const payload = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));  // NOSONA
 // marks' side (right in vertical-rl, 0.6em thick; above in horizontal-tb, 1em thick).
 const PREP = String.raw`(async () => {
   const frames = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
-  await new Promise((r) => setTimeout(r, 700));
+  // Wait for the engine's content-ready signal (onRestoreComplete, recorded by the Dart page
+  // stub), not a fixed sleep: the shells lay out after document.fonts.ready, and under load
+  // that came later than a fixed 700 ms, so the checks ran on a page not yet laid out.
+  // The 30 s cap only turns a page that never reports ready into a clear failure.
+  const restored = await Promise.race([window.__fushiRestored.then(() => true),
+    new Promise((r) => setTimeout(() => r(false), 30000))]);
+  if (!restored) throw new Error('the reader engine never reported onRestoreComplete');
+  await frames();
   const R = window.fushiReader;
   R.highlightSentenceAudioCue('c1', true);
   await frames();

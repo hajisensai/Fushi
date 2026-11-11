@@ -48,7 +48,9 @@ import 'package:fushi/src/updates/host_self_update_service.dart'
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/remote_book_client.dart' show RemoteBookClient;
 import 'package:fushi/src/sync/hidden_remote_books.dart'
-    show remoteBookSourceHost, resolveShelfRemoteBookClient;
+    show resolveShelfRemoteBookClient;
+import 'package:fushi/src/sync/remote_book_source_host.dart'
+    show remoteBookSourceHost;
 import 'package:fushi/src/pages/implementations/hidden_remote_books_page.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';

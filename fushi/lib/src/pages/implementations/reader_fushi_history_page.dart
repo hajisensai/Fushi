@@ -148,6 +148,7 @@ import 'package:fushi/src/sync/deletion_propagation_availability.dart';
 import 'package:fushi/src/sync/deletion_prompt_preferences.dart';
 import 'package:fushi/src/sync/interconnect_download_manager.dart';
 import 'package:fushi/src/sync/hidden_remote_books.dart';
+import 'package:fushi/src/sync/remote_book_source_host.dart';
 import 'package:fushi/src/sync/hidden_remote_book.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
@@ -1070,6 +1071,11 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
                       onDragUpdate: (SelectionSlot slot) =>
                           setState(() => _selection.updateRangeDrag(slot)),
                       onDragEnd: () => setState(_selection.endRangeDrag),
+                      // 鼠标按下即拖 = 拉框框选（反馈 bFtYB0_Arl）；触屏仍是长按扫选。
+                      onBoxSelectBegin: () =>
+                          setState(_selection.beginBoxSelect),
+                      onBoxSelectUpdate: (Set<SelectionSlot> slots) =>
+                          setState(() => _selection.updateBoxSelect(slots)),
                       child: books.when(
                         // BUG-3337：书集合一变（下载 / 导入落库）fushiBooksProvider
                         // 就因依赖变化重算，AsyncValue 进 reload 态。默认

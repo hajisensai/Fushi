@@ -11,6 +11,7 @@ import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_schema_web_adblock.dart';
 import 'package:fushi/src/settings/settings_schema_web_browser_extension.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/web_browser/data/web_browser_store_provider.dart';
 import 'package:fushi/src/web_browser/features/extension_host/web_browser_extension_strings.dart';
 import 'package:fushi/src/web_browser/web_browser_prefs.dart';
@@ -68,6 +69,21 @@ SettingsSection buildWebBrowserSection() {
             webBrowserCollapseOnScroll(c.appModel.prefsRepo),
         onChanged: (SettingsContext c, bool value) async {
           await setWebBrowserCollapseOnScroll(c.appModel.prefsRepo, value);
+          c.refresh();
+        },
+      ),
+      // 下拉刷新只有手机 WebView 有（标签页只在 Android / iOS 挂控制器），桌面不显示。
+      SettingsSwitchItem(
+        id: 'system.web_browser_pull_to_refresh',
+        title: t.web_browser_settings_pull_to_refresh,
+        subtitle: t.web_browser_settings_pull_to_refresh_hint,
+        icon: FushiIcons.refresh,
+        visible: (_) => isMobilePlatform,
+        defaultValue: kWebBrowserPullToRefreshDefault,
+        value: (SettingsContext c) =>
+            webBrowserPullToRefresh(c.appModel.prefsRepo),
+        onChanged: (SettingsContext c, bool value) async {
+          await setWebBrowserPullToRefresh(c.appModel.prefsRepo, value);
           c.refresh();
         },
       ),
