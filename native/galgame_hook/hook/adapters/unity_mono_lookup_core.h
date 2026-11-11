@@ -50,6 +50,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 
 #include "unity_mono_text.h"
@@ -94,6 +95,13 @@ struct MonoLookupApi {
   uintptr_t (*array_length)(void* array) = nullptr;
   char* (*array_addr_with_size)(void* array, int32_t size,
                                 uintptr_t index) = nullptr;
+  // Pointer-sized GC handles (Unity 6 bindings return a UnityEngine.Object
+  // as one): mono_gchandle_get_target_v2 / _free_v2 on Mono,
+  // il2cpp_gchandle_get_target / _free on IL2CPP.  Optional: only a binding
+  // resolved in the Unity 6 form that returns an object needs them, and that
+  // binding fails closed without them (IcallFailure::kGcHandleApi).
+  void* (*gchandle_get_target)(void* handle) = nullptr;
+  void (*gchandle_free)(void* handle) = nullptr;
 
   bool Complete() const {
     return class_get_field_from_name != nullptr &&
@@ -128,17 +136,70 @@ enum class Icall : uint8_t {
 };
 inline constexpr size_t kIcallCount = static_cast<size_t>(Icall::kCount);
 
-struct IcallSpec {
-  Icall id;
+// ── engine binding forms ────────────────────────────────────────────────────
+//
+// An engine binding (an `extern` [InternalCall] of a UnityEngine module) is
+// declared by Unity's bindings generator in one of two forms; both are C
+// functions of the UnityPlayer, registered under the managed declaration.
+//
+//   classic   (Unity <= 2022)  the spec as written: an instance extern takes
+//             the managed object as `this`, an object result is the managed
+//             object.
+//   injected  (Unity 6)        `private static extern <R'> <method>_Injected(
+//             IntPtr _unity_self, <params>)`: the property / method itself is
+//             managed code that passes the object's native peer as
+//             `_unity_self` (UnityEngine.Object: MarshalledUnityObject.
+//             MarshalNotNull(this) == m_CachedPtr; a plain native-backed class
+//             such as TextGenerator: BindingsMarshaller.ConvertToNative(this)
+//             == m_Ptr) and turns an IntPtr result back into the object with
+//             Unmarshal.UnmarshalUnityObject<T> (the IntPtr is the GC handle
+//             the native object owns; a fake-null object, instance ID 0, owns
+//             none and its handle is freed by the reader).  A static extern
+//             keeps its parameters; a spec whose name already ends in
+//             `_Injected` keeps its name and gains `_unity_self`.
+//   Sources (UnityCsReference 6000.0): Runtime/Export/Scripting/
+//   BindingsHelpers.cs (Unmarshal), UnityEngineObject.bindings.cs
+//   (MarshalledUnityObject); the generated wrappers themselves are in the
+//   shipped UnityEngine.*Module.dll (e.g. `static extern IntPtr
+//   get_transform_Injected(IntPtr _unity_self)`, `static extern void
+//   WorldToScreenPoint_Injected(IntPtr _unity_self, ref Vector3,
+//   MonoOrStereoscopicEye, out Vector3)`, `static extern IntPtr
+//   get_main_Injected()`, `static extern void GetCharactersInternal_Injected(
+//   IntPtr _unity_self, object)`).
+//
+// A spec resolves to exactly one declared internal call across both forms;
+// none, two of one form, or one of each installs nothing.  The C function of
+// either form has the same machine signature (every self / object value is
+// pointer-sized); only the meaning of the self argument and of an object
+// result differs, so the callers pass the form-specific self and read the
+// form-specific result through the resolved IcallBinding.
+
+enum class IcallForm : uint8_t {
+  kUnresolved = 0,
+  kClassic = 1,
+  kInjected = 2,
+};
+
+// Where an injected instance binding's `_unity_self` comes from.
+enum class IcallSelf : uint8_t {
+  kUnityObject = 0,  // UnityEngine.Object.m_CachedPtr
+  kNativePtr = 1,    // the declaring class' own `IntPtr m_Ptr`
+};
+
+template <typename Id>
+struct EngineIcallSpec {
+  Id id;
   const char* name_space;
   const char* class_name;
-  const char* method;
+  const char* method;  // the classic name
   bool instance;
   int return_type;
   uint8_t param_count;
   int params[3];
   uint8_t byref_mask;  // bit i: parameter i is ref/out
+  IcallSelf self = IcallSelf::kUnityObject;
 };
+using IcallSpec = EngineIcallSpec<Icall>;
 
 // Every entry is an `extern` engine binding of UnityEngine.CoreModule
 // (searched in every loaded image; the module split differs across Unity
@@ -203,6 +264,110 @@ using IcallStaticOutFn = void(FUSHI_UNITY_ICALL*)(void* out);
 using IcallInstanceFloatFn = float(FUSHI_UNITY_ICALL*)(void* self);
 using IcallInstanceArgFn = void(FUSHI_UNITY_ICALL*)(void* self, void* arg);
 
+// ── resolved bindings ───────────────────────────────────────────────────────
+
+struct IcallBinding {
+  void* entry = nullptr;
+  IcallForm form = IcallForm::kUnresolved;
+  bool instance = false;       // the classic declaration is an instance extern
+  bool object_result = false;  // injected: the result is a GC handle
+  uint32_t self_offset = 0u;   // injected instance: native self field offset
+};
+
+// Why a spec did not resolve (diagnostics; never dialogue).
+enum class IcallFailure : uint8_t {
+  kNone = 0,
+  kAbsent = 1,      // no internal call of either form
+  kAmbiguous = 2,   // two of one form, or one of each
+  kSelfField = 3,   // injected instance: the native self field is missing
+  kGcHandleApi = 4, // injected object result: no GC handle reader / instance
+                    // ID field
+  kNoEntry = 5,     // the runtime registered no C entry under the name
+};
+
+inline char IcallFormLetter(IcallForm form) {
+  return form == IcallForm::kClassic    ? 'c'
+         : form == IcallForm::kInjected ? 'i'
+                                        : '-';
+}
+inline const char* IcallFailureName(IcallFailure failure) {
+  switch (failure) {
+    case IcallFailure::kNone: return "none";
+    case IcallFailure::kAbsent: return "absent";
+    case IcallFailure::kAmbiguous: return "ambiguous";
+    case IcallFailure::kSelfField: return "self-field";
+    case IcallFailure::kGcHandleApi: return "gchandle";
+    case IcallFailure::kNoEntry: return "no-entry";
+  }
+  return "?";
+}
+
+// What the injected form needs from UnityEngine.Object and the runtime.
+struct UnityObjectMarshal {
+  uint32_t cached_ptr_offset = 0u;   // m_CachedPtr (always resolved)
+  uint32_t instance_id_offset = 0u;  // m_InstanceID (0: not resolved)
+  void* (*gchandle_get_target)(void* handle) = nullptr;
+  void (*gchandle_free)(void* handle) = nullptr;
+  bool CanUnmarshal() const {
+    return instance_id_offset != 0u && gchandle_get_target != nullptr &&
+           gchandle_free != nullptr;
+  }
+};
+
+// The native self a binding takes for `object` (a managed object pointer):
+// the object itself (classic) or its native peer field (injected; a zero
+// peer -- a destroyed or never-bound object -- is no call).  `read` is a
+// fault-tolerant pointer read (address, uintptr_t*) -> bool.
+template <typename Read>
+inline bool BindingSelf(const IcallBinding& binding, void* object, Read read,
+                        void** self) {
+  if (self == nullptr || object == nullptr || binding.entry == nullptr) {
+    return false;
+  }
+  if (binding.form == IcallForm::kClassic) {
+    *self = object;
+    return true;
+  }
+  if (binding.form != IcallForm::kInjected || !binding.instance) return false;
+  uintptr_t native = 0u;
+  if (!read(reinterpret_cast<uintptr_t>(object) + binding.self_offset,
+            &native) ||
+      native == 0u) {
+    return false;
+  }
+  *self = reinterpret_cast<void*>(native);
+  return true;
+}
+
+// The managed object an object-returning binding produced: the value itself
+// (classic) or the target of the returned GC handle (injected), mirroring
+// Unmarshal.UnmarshalUnityObject: a fake-null target (instance ID 0) owns no
+// native object, its handle is freed and the result is null.  `read_i32`:
+// fault-tolerant (address, int32_t*) -> bool.
+template <typename ReadI32>
+inline void* BindingObjectResult(const IcallBinding& binding,
+                                 const UnityObjectMarshal& marshal, void* raw,
+                                 ReadI32 read_i32) {
+  if (binding.form == IcallForm::kClassic) return raw;
+  if (binding.form != IcallForm::kInjected || !binding.object_result ||
+      raw == nullptr || !marshal.CanUnmarshal()) {
+    return nullptr;
+  }
+  void* target = marshal.gchandle_get_target(raw);
+  if (target == nullptr) return nullptr;
+  int32_t instance_id = 0;
+  if (!read_i32(reinterpret_cast<uintptr_t>(target) +
+                    marshal.instance_id_offset,
+                &instance_id)) {
+    return nullptr;
+  }
+  if (instance_id == 0) {
+    marshal.gchandle_free(raw);
+    return nullptr;
+  }
+  return target;
+}
+
 // ── resolved sites ──────────────────────────────────────────────────────────
 
 struct Sites {
@@ -213,11 +378,11 @@ struct Sites {
   uint32_t list_size_offset = 0u;       // List`1._size (both levels)
   uint32_t cached_ptr_offset = 0u;      // UnityEngine.Object.m_CachedPtr
   void* renderer_type = nullptr;        // System.Type of UnityEngine.Renderer
-  std::array<void*, kIcallCount> icalls{};
+  UnityObjectMarshal marshal;
+  std::array<IcallBinding, kIcallCount> icalls{};
 
-  template <typename Fn>
-  Fn Get(Icall id) const {
-    return reinterpret_cast<Fn>(icalls[static_cast<size_t>(id)]);
+  const IcallBinding& Binding(Icall id) const {
+    return icalls[static_cast<size_t>(id)];
   }
 };
 
@@ -238,6 +403,7 @@ enum class SiteResult : uint32_t {
 struct SiteResolution {
   SiteResult result = SiteResult::kApiIncomplete;
   int32_t missing_icall = -1;  // Icall index when result == kIcallMissing
+  IcallFailure icall_failure = IcallFailure::kNone;
 };
 
 inline void* FindClassInImages(const MonoEmbeddingApi& api,
@@ -272,36 +438,195 @@ inline bool ParamsByrefMatch(const MonoEmbeddingApi& api,
   return true;
 }
 
-// Finds the single declared method matching the spec that is an internal
-// call, and returns the registered C entry.
-inline void* ResolveIcall(const MonoEmbeddingApi& api,
-                          const MonoLookupApi& lookup,
-                          const MonoAssemblyList& list, const IcallSpec& spec) {
-  void* klass = FindClassInImages(api, list, spec.name_space, spec.class_name);
-  if (klass == nullptr) return nullptr;
-  void* match = nullptr;
+// One binding signature to look for on a class.
+struct IcallShape {
+  const char* method = nullptr;
+  bool instance = false;
+  int return_type = 0;
+  uint8_t param_count = 0u;
+  int params[4] = {};
+  uint8_t byref_mask = 0u;
+};
+
+struct IcallMatch {
+  void* method = nullptr;  // the single match (count == 1)
+  uint32_t count = 0u;     // declared internal calls of this shape (capped 2)
+};
+
+// The internal calls `klass` declares with exactly this shape: name, static /
+// instance, return and parameter kinds, by-ref-ness, internal-call flag.
+inline IcallMatch MatchIcallDeclarations(const MonoEmbeddingApi& api,
+                                         const MonoLookupApi& lookup,
+                                         void* klass, const IcallShape& shape) {
+  IcallMatch match;
+  if (klass == nullptr || shape.method == nullptr) return match;
   void* iter = nullptr;
   for (int guard = 0; guard < 8192; ++guard) {
     void* method = api.class_get_methods(klass, &iter);
     if (method == nullptr) break;
     const char* name = api.method_get_name(method);
-    if (name == nullptr || std::strcmp(name, spec.method) != 0) continue;
-    if (!MonoSignatureMatches(api, method, spec.instance, spec.return_type,
-                              spec.param_count,
-                              spec.param_count == 0 ? nullptr : spec.params,
+    if (name == nullptr || std::strcmp(name, shape.method) != 0) continue;
+    if (!MonoSignatureMatches(api, method, shape.instance, shape.return_type,
+                              shape.param_count,
+                              shape.param_count == 0 ? nullptr : shape.params,
                               -1) ||
-        !ParamsByrefMatch(api, lookup, method, spec.param_count,
-                          spec.byref_mask)) {
+        !ParamsByrefMatch(api, lookup, method, shape.param_count,
+                          shape.byref_mask)) {
       continue;
     }
     uint32_t iflags = 0u;
     lookup.method_get_flags(method, &iflags);
     if ((iflags & kMethodImplInternalCall) == 0u) continue;
-    if (match != nullptr) return nullptr;  // two identical externs: refuse
-    match = method;
+    match.method = method;
+    if (++match.count >= 2u) return match;
   }
-  return match == nullptr ? nullptr : lookup.lookup_internal_call(match);
+  return match;
 }
+
+template <typename Id>
+inline IcallShape ClassicShape(const EngineIcallSpec<Id>& spec) {
+  IcallShape shape;
+  shape.method = spec.method;
+  shape.instance = spec.instance;
+  shape.return_type = spec.return_type;
+  shape.param_count = spec.param_count;
+  for (uint8_t i = 0; i < spec.param_count && i < 3u; ++i) {
+    shape.params[i] = spec.params[i];
+  }
+  shape.byref_mask = spec.byref_mask;
+  return shape;
+}
+
+inline constexpr char kInjectedSuffix[] = "_Injected";
+inline constexpr size_t kInjectedNameChars = 128u;
+
+inline bool EndsWithInjected(const char* name) {
+  const size_t length = std::strlen(name);
+  const size_t suffix = sizeof(kInjectedSuffix) - 1u;
+  return length >= suffix &&
+         std::strcmp(name + length - suffix, kInjectedSuffix) == 0;
+}
+
+// The Unity 6 form of a spec: `<method>_Injected` (unchanged when the classic
+// name already carries the suffix), static, `IntPtr _unity_self` prepended to
+// an instance binding's parameters (by-ref bits shift with them), an object
+// result as IntPtr.  `name` receives the injected name.  false when the
+// injected form is the classic one (a static binding without an object
+// result whose name already ends in `_Injected`) or the name does not fit.
+template <typename Id>
+inline bool InjectedShape(const EngineIcallSpec<Id>& spec, char* name,
+                          size_t name_size, IcallShape* out) {
+  if (spec.method == nullptr || name == nullptr || out == nullptr ||
+      spec.param_count > 3u) {
+    return false;
+  }
+  const bool suffixed = EndsWithInjected(spec.method);
+  const int written =
+      suffixed ? std::snprintf(name, name_size, "%s", spec.method)
+               : std::snprintf(name, name_size, "%s%s", spec.method,
+                               kInjectedSuffix);
+  if (written <= 0 || static_cast<size_t>(written) >= name_size) return false;
+  const int result = spec.return_type == kMonoTypeClass ? kMonoTypeI
+                                                        : spec.return_type;
+  if (!spec.instance && suffixed && result == spec.return_type) return false;
+  *out = IcallShape();
+  out->method = name;
+  out->instance = false;
+  out->return_type = result;
+  const uint8_t self = spec.instance ? 1u : 0u;
+  if (spec.instance) out->params[0] = kMonoTypeI;
+  for (uint8_t i = 0; i < spec.param_count; ++i) {
+    out->params[i + self] = spec.params[i];
+  }
+  out->param_count = static_cast<uint8_t>(spec.param_count + self);
+  out->byref_mask = static_cast<uint8_t>(spec.byref_mask << self);
+  return true;
+}
+
+// Resolves `spec` in whichever form the player declares (see "engine binding
+// forms").  `marshal` carries UnityEngine.Object.m_CachedPtr (+ m_InstanceID
+// and the GC handle reader, needed only by an injected object result).
+template <typename Id>
+inline IcallBinding ResolveIcallBinding(const MonoEmbeddingApi& api,
+                                        const MonoLookupApi& lookup,
+                                        const MonoAssemblyList& list,
+                                        const EngineIcallSpec<Id>& spec,
+                                        const UnityObjectMarshal& marshal,
+                                        IcallFailure* failure) {
+  IcallBinding binding;
+  IcallFailure why = IcallFailure::kAbsent;
+  void* klass = FindClassInImages(api, list, spec.name_space, spec.class_name);
+  const IcallMatch classic =
+      MatchIcallDeclarations(api, lookup, klass, ClassicShape(spec));
+  char injected_name[kInjectedNameChars] = {};
+  IcallShape injected_shape;
+  const IcallMatch injected =
+      InjectedShape(spec, injected_name, sizeof(injected_name),
+                    &injected_shape)
+          ? MatchIcallDeclarations(api, lookup, klass, injected_shape)
+          : IcallMatch();
+  const uint32_t total = classic.count + injected.count;
+  if (total > 1u) why = IcallFailure::kAmbiguous;
+  if (total == 1u) {
+    const bool is_injected = injected.count == 1u;
+    binding.form = is_injected ? IcallForm::kInjected : IcallForm::kClassic;
+    binding.instance = spec.instance;
+    binding.object_result =
+        is_injected && spec.return_type == kMonoTypeClass;
+    why = IcallFailure::kNone;
+    if (is_injected && spec.instance) {
+      if (spec.self == IcallSelf::kUnityObject) {
+        binding.self_offset = marshal.cached_ptr_offset;
+      } else {
+        void* field = lookup.class_get_field_from_name(klass, "m_Ptr");
+        void* type = field == nullptr ? nullptr : lookup.field_get_type(field);
+        const uint32_t offset =
+            field == nullptr ? 0u : lookup.field_get_offset(field);
+        if (type != nullptr && api.type_get_type(type) == kMonoTypeI &&
+            lookup.type_is_byref(type) == 0 &&
+            offset >= 2u * sizeof(void*) && offset < kMaxFieldOffset) {
+          binding.self_offset = offset;
+        }
+      }
+      if (binding.self_offset == 0u) why = IcallFailure::kSelfField;
+    }
+    if (why == IcallFailure::kNone && binding.object_result &&
+        !marshal.CanUnmarshal()) {
+      why = IcallFailure::kGcHandleApi;
+    }
+    if (why == IcallFailure::kNone) {
+      binding.entry = lookup.lookup_internal_call(
+          is_injected ? injected.method : classic.method);
+      if (binding.entry == nullptr) why = IcallFailure::kNoEntry;
+    }
+  }
+  if (why != IcallFailure::kNone) binding = IcallBinding();
+  if (failure != nullptr) *failure = why;
+  return binding;
+}
+
+// Classic-form-only resolution (the audio detours and Object.GetName read
+// their arguments / result as managed objects; their Unity 6 forms hand
+// native peers and a native string span, a different contract, so there
+// they stay unresolved and fail closed).
+inline void* ResolveIcall(const MonoEmbeddingApi& api,
+                          const MonoLookupApi& lookup,
+                          const MonoAssemblyList& list, const IcallSpec& spec) {
+  void* klass = FindClassInImages(api, list, spec.name_space, spec.class_name);
+  if (klass == nullptr) return nullptr;
+  const IcallMatch match =
+      MatchIcallDeclarations(api, lookup, klass, ClassicShape(spec));
+  // Two identical externs: refuse.
+  return match.count != 1u ? nullptr
+                           : lookup.lookup_internal_call(match.method);
+}
+
+// UnityEngine.Object's marshalling fields: m_CachedPtr (required) and
+// m_InstanceID (int; only the injected object-result path reads it).
+inline bool ResolveUnityObjectMarshal(const MonoEmbeddingApi& api,
+                                      const MonoLookupApi& lookup,
+                                      const MonoAssemblyList& list,
+                                      UnityObjectMarshal* out);
 
 inline bool FieldOfType(const MonoEmbeddingApi& api,
                         const MonoLookupApi& lookup, void* klass,
@@ -321,6 +646,62 @@ inline bool FieldOfType(const MonoEmbeddingApi& api,
   if (field_out != nullptr) *field_out = field;
   *offset_out = offset;
   return true;
+}
+
+inline bool ResolveUnityObjectMarshal(const MonoEmbeddingApi& api,
+                                      const MonoLookupApi& lookup,
+                                      const MonoAssemblyList& list,
+                                      UnityObjectMarshal* out) {
+  *out = UnityObjectMarshal();
+  void* unity_object = FindClassInImages(api, list, "UnityEngine", "Object");
+  if (!FieldOfType(api, lookup, unity_object, "m_CachedPtr", kMonoTypeI,
+                   nullptr, &out->cached_ptr_offset)) {
+    return false;
+  }
+  uint32_t instance_id = 0u;
+  if (FieldOfType(api, lookup, unity_object, "m_InstanceID", kMonoTypeI4,
+                  nullptr, &instance_id) &&
+      instance_id != out->cached_ptr_offset) {
+    out->instance_id_offset = instance_id;
+  }
+  out->gchandle_get_target = lookup.gchandle_get_target;
+  out->gchandle_free = lookup.gchandle_free;
+  return true;
+}
+
+// Resolves a whole binding table in order; stops at the first spec that does
+// not resolve (its index and why go to `missing` / `failure`).
+template <typename Id, size_t N>
+inline bool ResolveIcallTable(const MonoEmbeddingApi& api,
+                              const MonoLookupApi& lookup,
+                              const MonoAssemblyList& list,
+                              const EngineIcallSpec<Id> (&specs)[N],
+                              const UnityObjectMarshal& marshal,
+                              std::array<IcallBinding, N>* out,
+                              int32_t* missing, IcallFailure* failure) {
+  for (const EngineIcallSpec<Id>& spec : specs) {
+    IcallFailure why = IcallFailure::kNone;
+    const IcallBinding binding =
+        ResolveIcallBinding(api, lookup, list, spec, marshal, &why);
+    if (binding.entry == nullptr) {
+      *missing = static_cast<int32_t>(spec.id);
+      *failure = why;
+      return false;
+    }
+    (*out)[static_cast<size_t>(spec.id)] = binding;
+  }
+  return true;
+}
+
+// Bounded diagnostic of a binding table: one letter per spec in table order
+// (c classic, i injected, - not resolved / not reached).
+template <size_t N>
+inline void IcallFormString(const std::array<IcallBinding, N>& bindings,
+                            char* out, size_t size) {
+  if (out == nullptr || size == 0u) return;
+  size_t i = 0u;
+  for (; i < N && i + 1u < size; ++i) out[i] = IcallFormLetter(bindings[i].form);
+  out[i] = 0;
 }
 
 // List`1 layout of one closed instantiation: `_items` (T[]) and `_size`
@@ -406,20 +787,16 @@ inline SiteResolution ResolveSites(const MonoEmbeddingApi& api,
     resolution.result = SiteResult::kElementNotGameObject;
     return resolution;
   }
-  void* unity_object = FindClassInImages(api, list, "UnityEngine", "Object");
-  if (!FieldOfType(api, lookup, unity_object, "m_CachedPtr", kMonoTypeI,
-                   nullptr, &out->cached_ptr_offset)) {
+  if (!ResolveUnityObjectMarshal(api, lookup, list, &out->marshal)) {
     resolution.result = SiteResult::kObjectFieldMissing;
     return resolution;
   }
-  for (const IcallSpec& spec : kIcallSpecs) {
-    void* entry = ResolveIcall(api, lookup, list, spec);
-    if (entry == nullptr) {
-      resolution.result = SiteResult::kIcallMissing;
-      resolution.missing_icall = static_cast<int32_t>(spec.id);
-      return resolution;
-    }
-    out->icalls[static_cast<size_t>(spec.id)] = entry;
+  out->cached_ptr_offset = out->marshal.cached_ptr_offset;
+  if (!ResolveIcallTable(api, lookup, list, kIcallSpecs, out->marshal,
+                         &out->icalls, &resolution.missing_icall,
+                         &resolution.icall_failure)) {
+    resolution.result = SiteResult::kIcallMissing;
+    return resolution;
   }
   void* renderer = FindClassInImages(api, list, "UnityEngine", "Renderer");
   void* renderer_type =
@@ -755,17 +1132,7 @@ enum class FungusIcall : uint8_t {
 inline constexpr size_t kFungusIcallCount =
     static_cast<size_t>(FungusIcall::kCount);
 
-struct FungusIcallSpec {
-  FungusIcall id;
-  const char* name_space;
-  const char* class_name;
-  const char* method;
-  bool instance;
-  int return_type;
-  uint8_t param_count;
-  int params[3];
-  uint8_t byref_mask;
-};
+using FungusIcallSpec = EngineIcallSpec<FungusIcall>;
 
 inline constexpr FungusIcallSpec kFungusIcallSpecs[kFungusIcallCount] = {
     {FungusIcall::kComponentGameObject, "UnityEngine", "Component",
@@ -794,9 +1161,10 @@ inline constexpr FungusIcallSpec kFungusIcallSpecs[kFungusIcallCount] = {
      kMonoTypeBoolean, 0, {0, 0, 0}, 0u},
     {FungusIcall::kGeneratorCharacters, "UnityEngine", "TextGenerator",
      "GetCharactersInternal", true, kMonoTypeVoid, 1,
-     {kMonoTypeObject, 0, 0}, 0u},
+     {kMonoTypeObject, 0, 0}, 0u, IcallSelf::kNativePtr},
     {FungusIcall::kGeneratorLines, "UnityEngine", "TextGenerator",
-     "GetLinesInternal", true, kMonoTypeVoid, 1, {kMonoTypeObject, 0, 0}, 0u},
+     "GetLinesInternal", true, kMonoTypeVoid, 1, {kMonoTypeObject, 0, 0}, 0u,
+     IcallSelf::kNativePtr},
     {FungusIcall::kCameraWorldToScreen, "UnityEngine", "Camera",
      "WorldToScreenPoint_Injected", true, kMonoTypeVoid, 3,
      {kMonoTypeValueType, kMonoTypeValueType, kMonoTypeValueType}, 0x5u},
@@ -843,11 +1211,11 @@ struct FungusSites {
   uint32_t line_top_offset = 0u;         // UILineInfo.topY
   uint32_t cached_ptr_offset = 0u;       // UnityEngine.Object.m_CachedPtr
   void* text_class = nullptr;            // MonoClass* UnityEngine.UI.Text
-  std::array<void*, kFungusIcallCount> icalls{};
+  UnityObjectMarshal marshal;
+  std::array<IcallBinding, kFungusIcallCount> icalls{};
 
-  template <typename Fn>
-  Fn Get(FungusIcall id) const {
-    return reinterpret_cast<Fn>(icalls[static_cast<size_t>(id)]);
+  const IcallBinding& Binding(FungusIcall id) const {
+    return icalls[static_cast<size_t>(id)];
   }
 };
 
@@ -869,6 +1237,7 @@ enum class FungusSiteResult : uint32_t {
 struct FungusSiteResolution {
   FungusSiteResult result = FungusSiteResult::kApiIncomplete;
   int32_t missing_icall = -1;
+  IcallFailure icall_failure = IcallFailure::kNone;
 };
 
 // A declared field of `klass` whose type resolves to exactly `expected`.
@@ -900,22 +1269,6 @@ inline bool ValueFieldOffset(const MonoEmbeddingApi& api,
   }
   *offset_out = boxed - 2u * static_cast<uint32_t>(sizeof(void*));
   return true;
-}
-
-inline void* ResolveFungusIcall(const MonoEmbeddingApi& api,
-                                const MonoLookupApi& lookup,
-                                const MonoAssemblyList& list,
-                                const FungusIcallSpec& spec) {
-  const IcallSpec generic = {Icall::kCount,
-                             spec.name_space,
-                             spec.class_name,
-                             spec.method,
-                             spec.instance,
-                             spec.return_type,
-                             spec.param_count,
-                             {spec.params[0], spec.params[1], spec.params[2]},
-                             spec.byref_mask};
-  return ResolveIcall(api, lookup, list, generic);
 }
 
 // The UGUI Text layout sites shared by framework 2 (Fungus story Text) and
@@ -1020,20 +1373,16 @@ inline FungusSiteResolution ResolveUguiTextLayout(const MonoEmbeddingApi& api,
     return resolution;
   }
   out->line_stride = static_cast<uint32_t>(line_size);
-  void* unity_object = FindClassInImages(api, list, "UnityEngine", "Object");
-  if (!FieldOfType(api, lookup, unity_object, "m_CachedPtr", kMonoTypeI,
-                   nullptr, &out->cached_ptr_offset)) {
+  if (!ResolveUnityObjectMarshal(api, lookup, list, &out->marshal)) {
     resolution.result = FungusSiteResult::kObjectFieldMissing;
     return resolution;
   }
-  for (const FungusIcallSpec& spec : kFungusIcallSpecs) {
-    void* entry = ResolveFungusIcall(api, lookup, list, spec);
-    if (entry == nullptr) {
-      resolution.result = FungusSiteResult::kIcallMissing;
-      resolution.missing_icall = static_cast<int32_t>(spec.id);
-      return resolution;
-    }
-    out->icalls[static_cast<size_t>(spec.id)] = entry;
+  out->cached_ptr_offset = out->marshal.cached_ptr_offset;
+  if (!ResolveIcallTable(api, lookup, list, kFungusIcallSpecs, out->marshal,
+                         &out->icalls, &resolution.missing_icall,
+                         &resolution.icall_failure)) {
+    resolution.result = FungusSiteResult::kIcallMissing;
+    return resolution;
   }
   resolution.result = FungusSiteResult::kResolved;
   return resolution;
@@ -1388,17 +1737,7 @@ enum class TmpIcall : uint8_t {
 };
 inline constexpr size_t kTmpIcallCount = static_cast<size_t>(TmpIcall::kCount);
 
-struct TmpIcallSpec {
-  TmpIcall id;
-  const char* name_space;
-  const char* class_name;
-  const char* method;
-  bool instance;
-  int return_type;
-  uint8_t param_count;
-  int params[3];
-  uint8_t byref_mask;
-};
+using TmpIcallSpec = EngineIcallSpec<TmpIcall>;
 
 inline constexpr TmpIcallSpec kTmpIcallSpecs[kTmpIcallCount] = {
     {TmpIcall::kComponentTransform, "UnityEngine", "Component",
@@ -1472,11 +1811,11 @@ struct TmpSites {
   uint32_t char_visible_offset = 0u;      // .isVisible (bool)
   uint32_t char_alpha_offset = 0u;        // .color.a (Color32 byte)
   uint32_t cached_ptr_offset = 0u;        // UnityEngine.Object.m_CachedPtr
-  std::array<void*, kTmpIcallCount> icalls{};
+  UnityObjectMarshal marshal;
+  std::array<IcallBinding, kTmpIcallCount> icalls{};
 
-  template <typename Fn>
-  Fn Get(TmpIcall id) const {
-    return reinterpret_cast<Fn>(icalls[static_cast<size_t>(id)]);
+  const IcallBinding& Binding(TmpIcall id) const {
+    return icalls[static_cast<size_t>(id)];
   }
 };
 
@@ -1497,6 +1836,7 @@ enum class TmpSiteResult : uint32_t {
 struct TmpSiteResolution {
   TmpSiteResult result = TmpSiteResult::kApiIncomplete;
   int32_t missing_icall = -1;
+  IcallFailure icall_failure = IcallFailure::kNone;
 };
 
 // A value-type field of `klass` whose type is exactly `expected`; the offset
@@ -1649,29 +1989,16 @@ inline TmpSiteResolution ResolveTmpSites(const MonoEmbeddingApi& api,
     return resolution;
   }
   out->char_stride = limit;
-  void* unity_object = FindClassInImages(api, list, "UnityEngine", "Object");
-  if (!FieldOfType(api, lookup, unity_object, "m_CachedPtr", kMonoTypeI,
-                   nullptr, &out->cached_ptr_offset)) {
+  if (!ResolveUnityObjectMarshal(api, lookup, list, &out->marshal)) {
     resolution.result = TmpSiteResult::kObjectFieldMissing;
     return resolution;
   }
-  for (const TmpIcallSpec& spec : kTmpIcallSpecs) {
-    const IcallSpec generic = {Icall::kCount,
-                               spec.name_space,
-                               spec.class_name,
-                               spec.method,
-                               spec.instance,
-                               spec.return_type,
-                               spec.param_count,
-                               {spec.params[0], spec.params[1], spec.params[2]},
-                               spec.byref_mask};
-    void* entry = ResolveIcall(api, lookup, list, generic);
-    if (entry == nullptr) {
-      resolution.result = TmpSiteResult::kIcallMissing;
-      resolution.missing_icall = static_cast<int32_t>(spec.id);
-      return resolution;
-    }
-    out->icalls[static_cast<size_t>(spec.id)] = entry;
+  out->cached_ptr_offset = out->marshal.cached_ptr_offset;
+  if (!ResolveIcallTable(api, lookup, list, kTmpIcallSpecs, out->marshal,
+                         &out->icalls, &resolution.missing_icall,
+                         &resolution.icall_failure)) {
+    resolution.result = TmpSiteResult::kIcallMissing;
+    return resolution;
   }
   resolution.result = TmpSiteResult::kResolved;
   return resolution;
@@ -1761,6 +2088,7 @@ struct UiTextSiteResolution {
   UiTextSiteResult result = UiTextSiteResult::kApiIncomplete;
   FungusSiteResult layout = FungusSiteResult::kApiIncomplete;
   int32_t missing_icall = -1;
+  IcallFailure icall_failure = IcallFailure::kNone;
 };
 
 // Caller must be attached to the root domain.  `out` receives the UGUI Text
@@ -1798,6 +2126,7 @@ inline UiTextSiteResolution ResolveUiTextSites(const MonoEmbeddingApi& api,
       ResolveUguiTextLayout(api, lookup, sizes, list, text, out);
   resolution.layout = layout.result;
   resolution.missing_icall = layout.missing_icall;
+  resolution.icall_failure = layout.icall_failure;
   if (layout.result != FungusSiteResult::kResolved) {
     resolution.result = UiTextSiteResult::kLayout;
     return resolution;

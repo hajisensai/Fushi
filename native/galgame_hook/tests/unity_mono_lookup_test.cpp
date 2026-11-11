@@ -301,9 +301,12 @@ void TestResolvesUnityShape() {
   assert(sites.cached_ptr_offset == kCached);
   assert(sites.renderer_type == &g_type_object);
   // The (Type) overload, not the (string) one.
-  assert(sites.icalls[static_cast<size_t>(ul::Icall::kGameObjectGetComponent)] ==
+  assert(sites.icalls[static_cast<size_t>(ul::Icall::kGameObjectGetComponent)].entry ==
          &world.game_object.methods[2].entry_tag);
-  for (void* entry : sites.icalls) assert(entry != nullptr);
+  for (const auto& binding : sites.icalls) {
+    assert(binding.entry != nullptr &&
+           binding.form == ul::IcallForm::kClassic);
+  }
   assert(ul::ResolveObjectGetName(Api(), LookupApi()) ==
          &world.unity_object.methods[0].entry_tag);
 }
@@ -690,9 +693,12 @@ void TestFungusResolvesUguiShape() {
          sites.line_list_size_offset == kSize);
   // Behaviour.get_isActiveAndEnabled, not get_enabled.
   assert(sites.icalls[static_cast<size_t>(
-             ul::FungusIcall::kBehaviourActiveAndEnabled)] ==
+             ul::FungusIcall::kBehaviourActiveAndEnabled)].entry ==
          &world.behaviour.methods[1].entry_tag);
-  for (void* entry : sites.icalls) assert(entry != nullptr);
+  for (const auto& binding : sites.icalls) {
+    assert(binding.entry != nullptr &&
+           binding.form == ul::IcallForm::kClassic);
+  }
 }
 
 void ExpectFungusFailure(FungusWorld& world, ul::FungusSiteResult expected) {
@@ -824,7 +830,10 @@ void TestUiTextResolvesUguiShape() {
          sites.graphic_color_alpha_offset == 112);
   assert(sites.char_stride == 12 && sites.line_stride == 16);
   assert(sites.cached_ptr_offset == 2 * kPtr);
-  for (void* entry : sites.icalls) assert(entry != nullptr);
+  for (const auto& binding : sites.icalls) {
+    assert(binding.entry != nullptr &&
+           binding.form == ul::IcallForm::kClassic);
+  }
   // A Fungus game resolves the same layout through its SayDialog.
   {
     FungusWorld fungus;
@@ -1395,9 +1404,12 @@ void TestTmpResolvesUguiShape() {
   assert(sites.cached_ptr_offset == 2 * kPtr);
   // Behaviour.get_isActiveAndEnabled, not get_enabled.
   assert(sites.icalls[static_cast<size_t>(
-             ul::TmpIcall::kBehaviourActiveAndEnabled)] ==
+             ul::TmpIcall::kBehaviourActiveAndEnabled)].entry ==
          &world.behaviour.methods[1].entry_tag);
-  for (void* entry : sites.icalls) assert(entry != nullptr);
+  for (const auto& binding : sites.icalls) {
+    assert(binding.entry != nullptr &&
+           binding.form == ul::IcallForm::kClassic);
+  }
 }
 
 void ExpectTmpFailure(TmpWorld& world, ul::TmpSiteResult expected) {

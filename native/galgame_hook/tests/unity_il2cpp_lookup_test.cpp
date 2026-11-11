@@ -603,9 +603,12 @@ void TestTmpSitesThroughFacade() {
          sites.char_visible_offset == 228 && sites.char_alpha_offset == 191);
   assert(sites.cached_ptr_offset == 2 * kPtr);
   assert(sites.icalls[static_cast<size_t>(
-             ul::TmpIcall::kBehaviourActiveAndEnabled)] ==
+             ul::TmpIcall::kBehaviourActiveAndEnabled)].entry ==
          &w.behaviour.methods[1].icall_tag);
-  for (void* entry : sites.icalls) assert(entry != nullptr);
+  for (const auto& binding : sites.icalls) {
+    assert(binding.entry != nullptr &&
+           binding.form == ul::IcallForm::kClassic);
+  }
   // The candidate class check runs on il2cpp_object_get_class / _parent.
   FakeObject dialogue{&w.ugui};
   FakeObject world_text{&w.tmp_3d};
@@ -640,7 +643,10 @@ void TestUiTextSitesThroughFacade() {
          sites.line_list_size_offset == kSize);
   assert(sites.char_stride == 12 && sites.line_stride == 16 &&
          sites.line_top_offset == 8);
-  for (void* entry : sites.icalls) assert(entry != nullptr);
+  for (const auto& binding : sites.icalls) {
+    assert(binding.entry != nullptr &&
+           binding.form == ul::IcallForm::kClassic);
+  }
 }
 
 void TestFailClosedThroughFacade() {
