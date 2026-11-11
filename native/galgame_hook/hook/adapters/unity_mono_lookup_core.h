@@ -621,12 +621,7 @@ inline void* ResolveIcall(const MonoEmbeddingApi& api,
                            : lookup.lookup_internal_call(match.method);
 }
 
-// UnityEngine.Object's marshalling fields: m_CachedPtr (required) and
-// m_InstanceID (int; only the injected object-result path reads it).
-inline bool ResolveUnityObjectMarshal(const MonoEmbeddingApi& api,
-                                      const MonoLookupApi& lookup,
-                                      const MonoAssemblyList& list,
-                                      UnityObjectMarshal* out);
+
 
 inline bool FieldOfType(const MonoEmbeddingApi& api,
                         const MonoLookupApi& lookup, void* klass,
@@ -648,6 +643,9 @@ inline bool FieldOfType(const MonoEmbeddingApi& api,
   return true;
 }
 
+// UnityEngine.Object's marshalling fields: m_CachedPtr (required) and
+// m_InstanceID (int; only the injected object-result path reads it), plus the
+// runtime's GC handle reader.
 inline bool ResolveUnityObjectMarshal(const MonoEmbeddingApi& api,
                                       const MonoLookupApi& lookup,
                                       const MonoAssemblyList& list,

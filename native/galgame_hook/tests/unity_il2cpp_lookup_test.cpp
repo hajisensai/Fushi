@@ -227,6 +227,19 @@ std::map<std::string, void*> FakeExportTable() {
   };
 }
 
+// Unity 6 players: the optional GC handle pair present.
+void* FGcTarget(void* handle) {
+  return handle == nullptr ? nullptr : *static_cast<void**>(handle);
+}
+void FGcFree(void*) {}
+
+std::map<std::string, void*> Unity6ExportTable() {
+  auto table = FakeExportTable();
+  table["il2cpp_gchandle_get_target"] = reinterpret_cast<void*>(&FGcTarget);
+  table["il2cpp_gchandle_free"] = reinterpret_cast<void*>(&FGcFree);
+  return table;
+}
+
 ui::ExportReport Load(const std::map<std::string, void*>& table,
                       ui::Il2CppExports* exports) {
   return ui::LoadIl2CppExports(
@@ -478,6 +491,15 @@ void TestExportTable() {
   const ui::ExportReport full = Load(FakeExportTable(), &exports);
   assert(full.Complete() && full.required == 32u && full.found == 32u);
   assert(full.header_size_export && full.missing[0] == 0);
+  // The GC handle pair is optional (only Unity 6 object results read it)
+  // and reported only as a pair.
+  assert(!full.gchandle_exports);
+  assert(Load(Unity6ExportTable(), &exports).gchandle_exports);
+  auto half = Unity6ExportTable();
+  half.erase("il2cpp_gchandle_free");
+  const ui::ExportReport half_report = Load(half, &exports);
+  assert(half_report.Complete() && !half_report.gchandle_exports &&
+         half_report.required == 32u);
   // The optional header-size export never counts as missing.
   auto table = FakeExportTable();
   table.erase("il2cpp_array_object_header_size");
@@ -829,6 +851,125 @@ void TestLayout() {
   RemoveDirectoryW(data.c_str());
   DeleteFileW(dll.c_str());
   RemoveDirectoryW(root.c_str());
+}
+
+// ── Unity 6 (6000.x) bindings through the facade ───────────────────────────
+//
+// The player registers `<method>_Injected` (static, IntPtr _unity_self first,
+// object results as GC handles) under "Ns.Class::<method>_Injected"; the
+// managed wrapper keeps the classic name without the internal-call flag.
+
+void ToUnity6(FakeClass& klass, FakeType* intptr) {
+  std::vector<FakeMethod> wrappers;
+  for (FakeMethod& m : klass.methods) {
+    if ((m.iflags & ul::kMethodImplInternalCall) == 0u) continue;
+    const bool object_result = m.ret->kind == kMonoTypeClass;
+    if (!m.instance && !object_result) continue;
+    FakeMethod wrapper = m;
+    wrapper.iflags = 0u;
+    const std::string suffix = "_Injected";
+    if (m.name.size() < suffix.size() ||
+        m.name.compare(m.name.size() - suffix.size(), suffix.size(),
+                       suffix) != 0) {
+      wrappers.push_back(wrapper);
+      m.name += suffix;
+    }
+    if (m.instance) m.params.insert(m.params.begin(), intptr);
+    m.instance = false;
+    if (object_result) m.ret = intptr;
+  }
+  klass.methods.insert(klass.methods.end(), wrappers.begin(), wrappers.end());
+}
+
+void MakeUnity6(CanvasWorld& w) {
+  w.unity_object.fields.push_back({"m_InstanceID", &w.ti4, 3 * kPtr});
+  w.generator.fields.push_back({"m_Ptr", &w.tintptr, 2 * kPtr});
+  for (FakeClass* klass : {&w.component, &w.behaviour, &w.transform,
+                           &w.canvas, &w.renderer, &w.font, &w.generator,
+                           &w.camera, &w.screen}) {
+    ToUnity6(*klass, &w.tintptr);
+  }
+  w.Bind();
+}
+
+ui::Facade InstallUnity6Fake() {
+  ui::Il2CppExports exports;
+  const ui::ExportReport report = Load(Unity6ExportTable(), &exports);
+  assert(report.Complete() && report.gchandle_exports);
+  ui::Facade facade;
+  assert(ui::InstallFacade(exports, report, CodeBegin(), CodeEnd(), &facade) ==
+         ui::FacadeResult::kReady);
+  assert(facade.lookup.gchandle_get_target != nullptr &&
+         facade.lookup.gchandle_free != nullptr);
+  return facade;
+}
+
+void TestUnity6SitesThroughFacade() {
+  {
+    CanvasWorld w;
+    MakeUnity6(w);
+    const ui::Facade f = InstallUnity6Fake();
+    ul::TmpSites sites;
+    const auto result =
+        ul::ResolveTmpSites(f.api, f.lookup, f.sizes, f.classes, &sites);
+    assert(result.result == ul::TmpSiteResult::kResolved);
+    char forms[ul::kTmpIcallCount + 1u] = {};
+    ul::IcallFormString(sites.icalls, forms, sizeof(forms));
+    assert(std::strcmp(forms, "iiiiiiiiiicc") == 0);
+    // il2cpp_resolve_icall("UnityEngine.Component::get_transform_Injected").
+    assert(sites.icalls[static_cast<size_t>(ul::TmpIcall::kComponentTransform)]
+               .entry ==
+           g_icalls.at("UnityEngine.Component::get_transform_Injected"));
+    assert(sites.icalls[static_cast<size_t>(
+                            ul::TmpIcall::kCameraWorldToScreen)]
+               .entry ==
+           g_icalls.at("UnityEngine.Camera::WorldToScreenPoint_Injected"));
+    assert(sites.marshal.CanUnmarshal());
+  }
+  {
+    CanvasWorld w;
+    MakeUnity6(w);
+    const ui::Facade f = InstallUnity6Fake();
+    ul::FungusSites sites;
+    void* will_render = nullptr;
+    const auto result =
+        ul::ResolveUiTextSites(f.api, f.lookup, f.sizes, &sites, &will_render);
+    assert(result.result == ul::UiTextSiteResult::kResolved);
+    char forms[ul::kFungusIcallCount + 1u] = {};
+    ul::IcallFormString(sites.icalls, forms, sizeof(forms));
+    assert(std::strcmp(forms, "iiiiiiiiiiiiiiicc") == 0);
+    assert(sites.icalls[static_cast<size_t>(
+                            ul::FungusIcall::kGeneratorCharacters)]
+               .self_offset == 2 * kPtr);
+  }
+  {
+    // An obfuscated / older GameAssembly without the GC handle exports: the
+    // classic facade still installs, the injected object bindings refuse.
+    CanvasWorld w;
+    MakeUnity6(w);
+    const ui::Facade f = InstallFake();
+    assert(f.lookup.gchandle_get_target == nullptr);
+    ul::TmpSites sites;
+    const auto result =
+        ul::ResolveTmpSites(f.api, f.lookup, f.sizes, f.classes, &sites);
+    assert(result.result == ul::TmpSiteResult::kIcallMissing);
+    assert(result.icall_failure == ul::IcallFailure::kGcHandleApi);
+    assert(result.missing_icall ==
+           static_cast<int32_t>(ul::TmpIcall::kComponentTransform));
+  }
+  {
+    // The player registered nothing under the injected name.
+    CanvasWorld w;
+    MakeUnity6(w);
+    const ui::Facade f = InstallUnity6Fake();
+    g_icalls.erase("UnityEngine.CanvasRenderer::get_cull_Injected");
+    ul::TmpSites sites;
+    const auto result =
+        ul::ResolveTmpSites(f.api, f.lookup, f.sizes, f.classes, &sites);
+    assert(result.icall_failure == ul::IcallFailure::kNoEntry);
+    assert(result.missing_icall ==
+           static_cast<int32_t>(ul::TmpIcall::kCanvasRendererCull));
+  }
 }
 
 }  // namespace

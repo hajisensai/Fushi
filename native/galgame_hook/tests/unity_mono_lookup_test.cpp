@@ -16,6 +16,10 @@
 //   * 框架 3（裸 TextMeshProUGUI）：站点解析（每条拒绝分支）、类层级判定、TMP 字符
 //     显示判定（isVisible / 打字机可见区间 / 顶点 alpha）、同文多对象的确定性选择、
 //     字符四边形 本地 -> 世界 -> Unity 屏幕 -> 物理客户区 的投影与命中。
+//   * 引擎绑定两种形态：经典 instance extern 与 Unity 6 `<method>_Injected`
+//     static extern（首参 IntPtr self、对象返回为 GC handle）；两种都在 / 一种
+//     重复都拒；injected 的 self 字段 / GC handle 读取缺失都拒；假 null 释放
+//     handle；剥离掉 CanvasRenderer.GetInheritedAlpha 的构建拒绝而不是当不透明。
 #include <array>
 #include <cassert>
 #include <cmath>
@@ -1676,6 +1680,368 @@ void TestTmpGeometry() {
   assert(ul::HitTestCells(cells, hit_sources, 2, 210.0f, 120.0f, &hit) &&
          hit == 0);
   assert(!ul::HitTestCells(cells, hit_sources, 2, 300.0f, 120.0f, &hit));
+}
+
+// ── Unity 6 engine binding forms ────────────────────────────────────────────
+//
+// Unity 6's bindings generator turns every engine member that needs
+// marshalling into managed code over `private static extern <R'>
+// <method>_Injected(IntPtr _unity_self, <params>)` (an object result as
+// IntPtr = the GC handle); a static member without marshalling keeps its
+// classic extern (Screen.get_width).  ToUnity6 rewrites a fake class the same
+// way and leaves the managed wrapper under the classic name.
+
+bool EndsWith(const std::string& s, const char* suffix) {
+  const size_t n = std::strlen(suffix);
+  return s.size() >= n && s.compare(s.size() - n, n, suffix) == 0;
+}
+
+void ToUnity6(FakeClass& klass, FakeType* intptr) {
+  std::vector<FakeMethod> wrappers;
+  for (FakeMethod& m : klass.methods) {
+    if ((m.iflags & ul::kMethodImplInternalCall) == 0u) continue;
+    const bool object_result = m.ret->kind == kMonoTypeClass;
+    if (!m.instance && !object_result) continue;  // no marshalling: unchanged
+    FakeMethod wrapper = m;
+    wrapper.iflags = 0u;  // the managed property / method body
+    if (!EndsWith(m.name, "_Injected")) {
+      wrappers.push_back(wrapper);
+      m.name += "_Injected";
+    }
+    if (m.instance) m.params.insert(m.params.begin(), intptr);
+    m.instance = false;
+    if (object_result) m.ret = intptr;
+  }
+  klass.methods.insert(klass.methods.end(), wrappers.begin(), wrappers.end());
+}
+
+void* FakeGcTarget(void* handle) {
+  // A fake GC handle is the address of a slot holding the target.
+  return handle == nullptr ? nullptr : *static_cast<void**>(handle);
+}
+std::vector<void*> g_freed_handles;
+void FakeGcFree(void* handle) { g_freed_handles.push_back(handle); }
+
+ul::MonoLookupApi Unity6LookupApi() {
+  ul::MonoLookupApi api = LookupApi();
+  api.gchandle_get_target = &FakeGcTarget;
+  api.gchandle_free = &FakeGcFree;
+  return api;
+}
+
+constexpr uint32_t kInstanceId = 3 * kPtr;
+constexpr uint32_t kGeneratorPtr = 2 * kPtr;
+
+void Unity6Tmp(TmpWorld& w) {
+  w.unity_object.fields.push_back({"m_InstanceID", &w.ti4, kInstanceId});
+  for (FakeClass* klass : {&w.component, &w.behaviour, &w.transform,
+                           &w.canvas, &w.renderer, &w.camera, &w.screen}) {
+    ToUnity6(*klass, &w.tintptr);
+  }
+}
+
+void Unity6Fungus(FungusWorld& w) {
+  w.unity_object.fields.push_back({"m_InstanceID", &w.ti4, kInstanceId});
+  w.generator.fields.push_back({"m_Ptr", &w.tintptr, kGeneratorPtr});
+  for (FakeClass* klass :
+       {&w.component, &w.behaviour, &w.transform, &w.canvas, &w.renderer,
+        &w.font, &w.generator, &w.camera, &w.screen}) {
+    ToUnity6(*klass, &w.tintptr);
+  }
+}
+
+void Unity6Message(World& w) {
+  w.unity_object.fields.push_back({"m_InstanceID", &w.ti4, kInstanceId});
+  for (FakeClass* klass : {&w.game_object, &w.camera, &w.screen, &w.renderer,
+                           &w.scene_manager}) {
+    ToUnity6(*klass, &w.tintptr);
+  }
+}
+
+const FakeMethod* FindFake(const FakeClass& klass, const char* name) {
+  for (const FakeMethod& m : klass.methods) {
+    if (m.name == name && (m.iflags & ul::kMethodImplInternalCall) != 0u) {
+      return &m;
+    }
+  }
+  return nullptr;
+}
+
+void TestInjectedShape() {
+  char name[ul::kInjectedNameChars] = {};
+  ul::IcallShape shape;
+  // get_transform: name gains the suffix, static, IntPtr self, IntPtr result.
+  assert(ul::InjectedShape(ul::kTmpIcallSpecs[0], name, sizeof(name), &shape));
+  assert(std::strcmp(shape.method, "get_transform_Injected") == 0);
+  assert(!shape.instance && shape.return_type == ul::kMonoTypeI &&
+         shape.param_count == 1 && shape.params[0] == ul::kMonoTypeI &&
+         shape.byref_mask == 0u);
+  // WorldToScreenPoint_Injected keeps its name; ref / out bits shift past
+  // the self parameter: (IntPtr, ref Vector3, eye, out Vector3).
+  const auto& to_screen = ul::kTmpIcallSpecs[static_cast<size_t>(
+      ul::TmpIcall::kCameraWorldToScreen)];
+  assert(ul::InjectedShape(to_screen, name, sizeof(name), &shape));
+  assert(std::strcmp(shape.method, "WorldToScreenPoint_Injected") == 0);
+  assert(shape.param_count == 4 && shape.params[0] == ul::kMonoTypeI &&
+         shape.params[1] == ul::kMonoTypeValueType &&
+         shape.byref_mask == 0xau && shape.return_type == kMonoTypeVoid);
+  // Camera.get_main: static, no self, object result as IntPtr.
+  assert(ul::InjectedShape(ul::kIcallSpecs[0], name, sizeof(name), &shape));
+  assert(std::strcmp(shape.method, "get_main_Injected") == 0 &&
+         shape.param_count == 0 && shape.return_type == ul::kMonoTypeI);
+  // SceneManager.GetActiveScene_Injected(out Scene) is the same in both
+  // generations: no second form to look for.
+  const auto& active = ul::kIcallSpecs[static_cast<size_t>(
+      ul::Icall::kActiveScene)];
+  assert(!ul::InjectedShape(active, name, sizeof(name), &shape));
+}
+
+void TestTmpResolvesUnity6Shape() {
+  TmpWorld world;
+  Unity6Tmp(world);
+  ul::TmpSites sites;
+  const auto result = ul::ResolveTmpSites(Api(), Unity6LookupApi(), SizeApi(),
+                                          ClassApi(), &sites);
+  assert(result.result == ul::TmpSiteResult::kResolved);
+  char forms[ul::kTmpIcallCount + 1u] = {};
+  ul::IcallFormString(sites.icalls, forms, sizeof(forms));
+  // Every instance binding injected; Screen.width / height stay classic.
+  assert(std::strcmp(forms, "iiiiiiiiiicc") == 0);
+  const auto& transform =
+      sites.icalls[static_cast<size_t>(ul::TmpIcall::kComponentTransform)];
+  assert(transform.entry ==
+         &FindFake(world.component, "get_transform_Injected")->entry_tag);
+  assert(transform.instance && transform.object_result &&
+         transform.self_offset == 2 * kPtr);
+  const auto& alpha = sites.icalls[static_cast<size_t>(
+      ul::TmpIcall::kCanvasRendererInheritedAlpha)];
+  assert(alpha.form == ul::IcallForm::kInjected && !alpha.object_result);
+  assert(sites.marshal.instance_id_offset == kInstanceId &&
+         sites.marshal.CanUnmarshal());
+}
+
+void TestUnity6FailClosed() {
+  {
+    TmpWorld w;  // no pointer-sized GC handle reader: object results refused
+    Unity6Tmp(w);
+    ul::TmpSites sites;
+    const auto result =
+        ul::ResolveTmpSites(Api(), LookupApi(), SizeApi(), ClassApi(), &sites);
+    assert(result.result == ul::TmpSiteResult::kIcallMissing);
+    assert(result.missing_icall ==
+           static_cast<int32_t>(ul::TmpIcall::kComponentTransform));
+    assert(result.icall_failure == ul::IcallFailure::kGcHandleApi);
+  }
+  {
+    TmpWorld w;  // no m_InstanceID: a fake-null result cannot be told apart
+    Unity6Tmp(w);
+    w.unity_object.fields.pop_back();
+    ul::TmpSites sites;
+    const auto result = ul::ResolveTmpSites(Api(), Unity6LookupApi(),
+                                            SizeApi(), ClassApi(), &sites);
+    assert(result.icall_failure == ul::IcallFailure::kGcHandleApi);
+  }
+  {
+    TmpWorld w;  // the classic extern and the injected one side by side
+    Unity6Tmp(w);
+    w.component.methods.push_back(
+        TmpWorld::Icall("get_transform", true, &w.tclass, {}));
+    ul::TmpSites sites;
+    const auto result = ul::ResolveTmpSites(Api(), Unity6LookupApi(),
+                                            SizeApi(), ClassApi(), &sites);
+    assert(result.result == ul::TmpSiteResult::kIcallMissing);
+    assert(result.missing_icall ==
+           static_cast<int32_t>(ul::TmpIcall::kComponentTransform));
+    assert(result.icall_failure == ul::IcallFailure::kAmbiguous);
+  }
+  {
+    TmpWorld w;  // an injected binding that is not an internal call
+    Unity6Tmp(w);
+    for (FakeMethod& m : w.behaviour.methods) {
+      if (m.name == "get_isActiveAndEnabled_Injected") m.iflags = 0u;
+    }
+    ul::TmpSites sites;
+    const auto result = ul::ResolveTmpSites(Api(), Unity6LookupApi(),
+                                            SizeApi(), ClassApi(), &sites);
+    assert(result.missing_icall ==
+           static_cast<int32_t>(ul::TmpIcall::kBehaviourActiveAndEnabled));
+    assert(result.icall_failure == ul::IcallFailure::kAbsent);
+  }
+  {
+    TmpWorld w;  // injected self must be IntPtr, not the object
+    Unity6Tmp(w);
+    for (FakeMethod& m : w.renderer.methods) {
+      if (m.name == "get_cull_Injected") m.params[0] = &w.tclass;
+    }
+    ul::TmpSites sites;
+    const auto result = ul::ResolveTmpSites(Api(), Unity6LookupApi(),
+                                            SizeApi(), ClassApi(), &sites);
+    assert(result.missing_icall ==
+           static_cast<int32_t>(ul::TmpIcall::kCanvasRendererCull));
+    assert(result.icall_failure == ul::IcallFailure::kAbsent);
+  }
+  {
+    FungusWorld w;  // TextGenerator's injected self is its own m_Ptr
+    Unity6Fungus(w);
+    w.generator.fields.pop_back();
+    ul::FungusSites sites;
+    const auto result =
+        ul::ResolveFungusSites(Api(), Unity6LookupApi(), SizeApi(), &sites);
+    assert(result.result == ul::FungusSiteResult::kIcallMissing);
+    assert(result.missing_icall ==
+           static_cast<int32_t>(ul::FungusIcall::kGeneratorCharacters));
+    assert(result.icall_failure == ul::IcallFailure::kSelfField);
+  }
+}
+
+void TestFungusResolvesUnity6Shape() {
+  FungusWorld world;
+  Unity6Fungus(world);
+  ul::FungusSites sites;
+  const auto result =
+      ul::ResolveFungusSites(Api(), Unity6LookupApi(), SizeApi(), &sites);
+  assert(result.result == ul::FungusSiteResult::kResolved);
+  char forms[ul::kFungusIcallCount + 1u] = {};
+  ul::IcallFormString(sites.icalls, forms, sizeof(forms));
+  assert(std::strcmp(forms, "iiiiiiiiiiiiiiicc") == 0);
+  const auto& chars = sites.icalls[static_cast<size_t>(
+      ul::FungusIcall::kGeneratorCharacters)];
+  assert(chars.self_offset == kGeneratorPtr && !chars.object_result);
+  const auto& game_object = sites.icalls[static_cast<size_t>(
+      ul::FungusIcall::kComponentGameObject)];
+  assert(game_object.self_offset == 2 * kPtr && game_object.object_result);
+}
+
+void TestMessageResolvesUnity6Shape() {
+  World world;
+  Unity6Message(world);
+  ul::Sites sites;
+  const auto result =
+      ul::ResolveSites(Api(), Unity6LookupApi(), nullptr, &sites);
+  assert(result.result == ul::SiteResult::kResolved);
+  char forms[ul::kIcallCount + 1u] = {};
+  ul::IcallFormString(sites.icalls, forms, sizeof(forms));
+  // get_main injected (static object result), Screen classic, the static
+  // GetActiveScene_Injected(out Scene) the same in both generations.
+  assert(std::strcmp(forms, "iiiiicciiiicii") == 0);
+  const auto& main =
+      sites.icalls[static_cast<size_t>(ul::Icall::kCameraMain)];
+  assert(!main.instance && main.object_result);
+  // GetComponent_Injected(IntPtr, Type): the Type argument stays an object.
+  assert(sites.icalls[static_cast<size_t>(ul::Icall::kGameObjectGetComponent)]
+             .entry == &FindFake(world.game_object, "GetComponent_Injected")
+                            ->entry_tag);
+}
+
+// Fault-tolerant reads over plain memory (the runtime uses SEH reads).
+bool ReadPtr(uintptr_t address, uintptr_t* out) {
+  std::memcpy(out, reinterpret_cast<const void*>(address), sizeof(*out));
+  return true;
+}
+bool ReadI32(uintptr_t address, int32_t* out) {
+  std::memcpy(out, reinterpret_cast<const void*>(address), sizeof(*out));
+  return true;
+}
+
+void TestBindingMarshalling() {
+  alignas(8) unsigned char object[8 * sizeof(void*)] = {};
+  void* const native_peer = reinterpret_cast<void*>(0x5150);
+  std::memcpy(object + 2 * kPtr, &native_peer, sizeof(void*));
+  int entry = 0;
+  ul::IcallBinding classic;
+  classic.entry = &entry;
+  classic.form = ul::IcallForm::kClassic;
+  classic.instance = true;
+  ul::IcallBinding injected = classic;
+  injected.form = ul::IcallForm::kInjected;
+  injected.self_offset = 2 * kPtr;
+  injected.object_result = true;
+  void* self = nullptr;
+  assert(ul::BindingSelf(classic, object, &ReadPtr, &self) && self == object);
+  assert(ul::BindingSelf(injected, object, &ReadPtr, &self) &&
+         self == native_peer);
+  // A zero native peer (destroyed / never bound) is no call.
+  alignas(8) unsigned char unbound[8 * sizeof(void*)] = {};
+  assert(!ul::BindingSelf(injected, unbound, &ReadPtr, &self));
+  assert(!ul::BindingSelf(injected, nullptr, &ReadPtr, &self));
+  ul::IcallBinding unresolved;
+  assert(!ul::BindingSelf(unresolved, object, &ReadPtr, &self));
+
+  ul::UnityObjectMarshal marshal;
+  marshal.cached_ptr_offset = 2 * kPtr;
+  marshal.instance_id_offset = kInstanceId;
+  marshal.gchandle_get_target = &FakeGcTarget;
+  marshal.gchandle_free = &FakeGcFree;
+  // A live result: the handle's target, the handle left to its native owner.
+  alignas(8) unsigned char target[8 * sizeof(void*)] = {};
+  const int32_t live_id = 4242;
+  std::memcpy(target + kInstanceId, &live_id, sizeof(live_id));
+  void* slot = target;
+  g_freed_handles.clear();
+  assert(ul::BindingObjectResult(injected, marshal, &slot, &ReadI32) ==
+         target);
+  assert(g_freed_handles.empty());
+  // Classic: the value is the object.
+  assert(ul::BindingObjectResult(classic, marshal, target, &ReadI32) ==
+         target);
+  // Null handle, null target.
+  assert(ul::BindingObjectResult(injected, marshal, nullptr, &ReadI32) ==
+         nullptr);
+  void* empty_slot = nullptr;
+  assert(ul::BindingObjectResult(injected, marshal, &empty_slot, &ReadI32) ==
+         nullptr);
+  // Fake null (instance ID 0): its handle is freed, the result is null.
+  alignas(8) unsigned char fake_null[8 * sizeof(void*)] = {};
+  void* fake_slot = fake_null;
+  assert(ul::BindingObjectResult(injected, marshal, &fake_slot, &ReadI32) ==
+         nullptr);
+  assert(g_freed_handles.size() == 1u && g_freed_handles[0] == &fake_slot);
+  // No reader: never dereference the handle as an object.
+  ul::UnityObjectMarshal no_reader = marshal;
+  no_reader.gchandle_get_target = nullptr;
+  assert(ul::BindingObjectResult(injected, no_reader, &slot, &ReadI32) ==
+         nullptr);
+}
+
+// Unity 2021.3 Mono player with managed code stripping (measured 2026-11-12:
+// UnityEngine.UIModule.dll has CanvasRenderer.GetColor / GetColor_Injected /
+// get_cull but neither GetInheritedAlpha nor the managed GetAlpha): the
+// inherited CanvasGroup alpha is unreadable, so both canvas kinds refuse
+// instead of treating every glyph as opaque.
+void TestStrippedInheritedAlphaFailsClosed() {
+  {
+    TmpWorld w;
+    w.renderer.methods = {
+        TmpWorld::Icall("GetColor_Injected", true, &w.tvoid, {&w.tvalue_ref}),
+        TmpWorld::Icall("get_cull", true, &w.tbool, {})};
+    ul::TmpSites sites;
+    const auto result = ResolveTmp(&sites);
+    assert(result.result == ul::TmpSiteResult::kIcallMissing);
+    assert(result.missing_icall ==
+           static_cast<int32_t>(ul::TmpIcall::kCanvasRendererInheritedAlpha));
+    assert(result.icall_failure == ul::IcallFailure::kAbsent);
+    char forms[ul::kTmpIcallCount + 1u] = {};
+    ul::IcallFormString(sites.icalls, forms, sizeof(forms));
+    assert(std::strcmp(forms, "cccccc------") == 0);
+  }
+  {
+    FungusWorld w;
+    w.renderer.methods = {
+        FungusWorld::Icall("GetColor_Injected", true, &w.tvoid,
+                           {&w.tvalue_ref}),
+        FungusWorld::Icall("get_cull", true, &w.tbool, {})};
+    ul::FungusSites sites;
+    void* will_render = nullptr;
+    // The UI.Text canvas kind reads the same UGUI layout bindings.
+    const auto result = ul::ResolveFungusSites(Api(), LookupApi(), SizeApi(),
+                                               &sites);
+    (void)will_render;
+    assert(result.result == ul::FungusSiteResult::kIcallMissing);
+    assert(result.missing_icall ==
+           static_cast<int32_t>(
+               ul::FungusIcall::kCanvasRendererInheritedAlpha));
+    assert(result.icall_failure == ul::IcallFailure::kAbsent);
+  }
 }
 
 }  // namespace
