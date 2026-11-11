@@ -1,0 +1,6 @@
+## BUG-4388 · mokuro catalog import does not group volumes into a series
+- **报告**：2026-11-10（用户：从 mokuro 在线目录先后导入 `Ajin (HD Scan) Ajin 01`、`… 02`，书架上一直是两张散卡；库里没有对应合集、没有墓碑、没有报错）
+- **真实性**：✅ 真 bug（develop 上同样存在）。分卷归组（`BookSeriesGrouper.groupAll()`）只在书架映射重载时跑：`fushi/lib/src/pages/implementations/reader_fushi_history_page.dart` `_loadShelfMaps`（`_shelfMapsFuture`，首帧 `??=` 懒加载一次）。书列表 provider 自 BUG-793 起订阅书 / 有声书集合、任何导入落库都会刷新，但 `_shelfMapsFuture` 不跟着走：mokuro 下载完成只调 `_onMokuroImportedChanged`（同文件，只 invalidate 书列表 provider），导入对话框（`manga_fushi_source.dart` / `reader_fushi_source.dart` 的 `onTap`）同样只 invalidate provider。书架页在顶层 tab 里保活（BUG-750），所以新卷一直是散卡，直到下拉刷新、同步 refreshTab、合集表写入或重启碰巧重载映射。`parseBookSeriesKey` 两卷同 key，`_loadVolumes` 也不跳过这些行（`format='manga'`、`source_metadata` NULL）——归组器本身没问题，是没被调用。
+- **[x] ① 已修复** — 书架页订阅书集合与有声书集合的数据层信号（`FushiDatabase.watchShelfBookSetChanged`：书 / 有声书行的插入与删除，`tableUpdates` 不用 keyed `.watch()`），变化时走与合集表变化同一个 300 ms 合并窗口重载映射（先跑归组）。覆盖所有导入入口，不是给 mokuro 单加一次调用。
+- **[x] ② 已加自动化测试** — `fushi/test/pages/reader_shelf_groups_imported_volumes_test.dart`：书架打开时先后落库两卷 mokuro 形态的漫画行，第二卷后出现一个名为 `Ajin (HD Scan) Ajin` 的合集、两个成员；修复前同一测试红（无合集）。
+- **备注**：合集名仍是 `Ajin (HD Scan) Ajin`（`parseBookSeriesKey` 的系列名不去发布标签），是否改用追番的标题清洗另议。未在真实设备上复测 mokuro 下载全流程。
