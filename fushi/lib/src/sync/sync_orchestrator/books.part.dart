@@ -207,7 +207,7 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
     );
     final List<EpubBookRow> localBooks = await _db.getAllEpubBooks();
     if (localBooks.isEmpty) return;
-    // 先绑定这一轮的 host（BUG-4391）：基线读写落这台 host 的作用域，之后的 host
+    // 先绑定这一轮的 host（BUG-4434）：基线读写落这台 host 的作用域，之后的 host
     // 读写都钉住它，中途换了 host 本阶段就此结束。
     try {
       await sync.bind();
@@ -253,7 +253,7 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
         );
       }
     } on InterconnectHostChangedException catch (e) {
-      // 会话中途换了 host（BUG-4391）：用这台 host 的基线判另一台 host 的值会把它
+      // 会话中途换了 host（BUG-4434）：用这台 host 的基线判另一台 host 的值会把它
       // 当成「对端单边改动」落到本机。本阶段到此为止，报一条，下一轮重新绑定。
       report.noteError('live progress: host changed mid-round', e);
     }
@@ -302,7 +302,7 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
         );
         if (step.localChanged) report.localBookProgressPulled++;
         // 摘要计数（BUG-4302）只数位置真的挪动了的：落地了 host 的进度 / host 确认
-        // 采纳了本机的进度（BUG-4388）。只对齐时间戳（synced）不算变化。
+        // 采纳了本机的进度（BUG-4431）。只对齐时间戳（synced）不算变化。
         if (step.action == BookProgressSyncAction.applyRemote &&
             step.localChanged) {
           report.bookProgressReceived++;
@@ -344,13 +344,13 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
   /// `[errorLabel] "<key>": <e>` 进 [report.errors] 不中断整体。host 清单的获取
   /// 与两侧空集合的早退仍在各调用方（保持既有网络行为不变）。
   ///
-  /// 每条「重读本端 → 判定 → 落地」在该条目的位置锁里做（BUG-4389），与播放页实时
+  /// 每条「重读本端 → 判定 → 落地」在该条目的位置锁里做（BUG-4432），与播放页实时
   /// 上报、冲突弹窗互斥。
   ///
   /// [readHost]（host 清单）只用来跳过已收敛的条目：清单可能是钉住 host 之前取的、
   /// 甚至来自另一台 host 的缓存，也可能在取清单之后被实时上报推进过。所以未收敛的
   /// 条目一律在锁里经 [InterconnectPlaybackPositionSync.remotePosition]（钉住本轮
-  /// 绑定的 host）重读再判定（BUG-4391）；跳过是安全的，判定只用重读的值。会话中途
+  /// 绑定的 host）重读再判定（BUG-4434）；跳过是安全的，判定只用重读的值。会话中途
   /// 换了 host 时本阶段就此结束、报一条。
   Future<void> _syncPositionsLive(
     SyncRunReport report, {
@@ -371,7 +371,7 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
     // 整轮一次读齐基线 / 待确认基线（两条查询）；本端位置由调用方从 sweep 开头的
     // 偏好快照里取（零查询）。两端已收敛的条目在内存里判定后直接跳过，不再逐条
     // 读 3 次、写 2 次；其余条目照旧逐条重读、判定、落地（快照只用来跳过，从不
-    // 用来写）。基线落本轮绑定的 host 的作用域（BUG-4391）。
+    // 用来写）。基线落本轮绑定的 host 的作用域（BUG-4434）。
     final PlaybackBaselineSnapshot baselines = await sync
         .loadBaselineSnapshot();
     final List<String> keys = <String>[
@@ -440,14 +440,14 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
       }
       final String lockKey = syncPlaybackPositionResource(sync.kind, key);
       await syncResourceLocks.withResources(<String>{lockKey}, () async {
-        // 判定与落地与播放页开播共用同一份（BUG-4393）；前置条件 = 本次判定读到
-        // 的 host 位置（BUG-4389）。
+        // 判定与落地与播放页开播共用同一份（BUG-4436）；前置条件 = 本次判定读到
+        // 的 host 位置（BUG-4432）。
         final PlaybackPositionSyncStep step = await sync.syncOne(
           key,
           remote: await sync.remotePosition(key),
         );
         // 摘要计数（BUG-4302）：落地了 host 的位置（判定后本端被改写则未落地，
-        // BUG-3537）/ host 确认采纳了本机的位置（BUG-4388）。
+        // BUG-3537）/ host 确认采纳了本机的位置（BUG-4431）。
         if (step.action == BookProgressSyncAction.applyRemote &&
             step.localChanged) {
           report.notePlaybackPositionMoved(sync.kind, received: true);

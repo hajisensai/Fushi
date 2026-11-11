@@ -1,4 +1,4 @@
-/// BUG-4388：client live 写入对「旧 host」的兼容层。测试里起一个 dart:io 替身 host：
+/// BUG-4431：client live 写入对「旧 host」的兼容层。测试里起一个 dart:io 替身 host：
 /// 位置 `GET` / `PUT` 用 [resolvePositionLww] 维护内存值，旧模式下 `PUT` 回 200 空体、
 /// 不带 [kLiveWriteHeader]；新模式下带头并按 [resolveLivePositionWrite] 回执。记录
 /// 请求序列，驱动真 [InterconnectSyncBackend]。

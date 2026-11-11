@@ -444,7 +444,7 @@ void main() {
     });
   });
 
-  group('BUG-4387 host 视频位置清单与位置端点同口径', () {
+  group('BUG-4430 host 视频位置清单与位置端点同口径', () {
     /// 经 HTTP 读一条视频在清单里的 (positionMs, positionUpdatedAtMs)。
     Future<({int positionMs, int updatedAtMs})> listedPosition(
       String id,

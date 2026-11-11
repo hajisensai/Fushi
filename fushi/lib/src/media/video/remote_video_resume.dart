@@ -15,7 +15,7 @@ import 'package:fushi_engine/sync/fushi_library_host_service.dart'
 /// BUG-4303）。
 ///
 /// 互联 host 上 sweep 同步的那个键（当前集 / 单视频 / 合集成员）开播另走与 sweep 同一
-/// 份三方判定（`InterconnectRemotePlaybackSession.startPositionFor`，BUG-4393），这里
+/// 份三方判定（`InterconnectRemotePlaybackSession.startPositionFor`，BUG-4436），这里
 /// 只是它读 host 失败时的离线回退。三方判定冲突（无基线两端不同，或两端都偏离基线）
 /// 时从本机位置起播，卡片仍按 LWW 显示，两者可能不同——冲突留给弹窗裁决。
 PlaybackPosition newestRemoteVideoPosition({
@@ -37,7 +37,7 @@ int remoteVideoListedEpisode(RemoteVideoInfo info) =>
 /// 远端视频开播位置（TODO-653/885 → BUG-4304）：本机带戳断点、host 清单快照、
 /// 互联 host 此刻的断点三者「取较新时间戳」（[newestRemoteVideoPosition]）。
 /// 用于非三方场景（媒体服务器、host-playlist 非首集），以及互联三方判定
-/// （BUG-4393）读 host 失败时的离线回退（此时 [askHost] 为 false）。
+/// （BUG-4436）读 host 失败时的离线回退（此时 [askHost] 为 false）。
 ///
 /// - 本机断点从库里读（[readLocalRemoteVideoPosition]），与互联 sweep 同一口径。
 ///   此前播放页读 `PreferencesRepository` 的内存缓存：sweep 把 host 的新断点写进库，

@@ -1,6 +1,6 @@
-## BUG-4389 · 互联 live 进度按旧快照盲写 host，覆盖对端更新（sweep / 实时上报 / 冲突弹窗）
+## BUG-4432 · 互联 live 进度按旧快照盲写 host，覆盖对端更新（sweep / 实时上报 / 冲突弹窗）
 - **报告**：2026-11-10（用户：审计 sync-live 修复包 D7 / D10「按快照覆盖第三台设备」/ triggers-ui-4）
-- **真实性**：✅ 真 bug（修复前，行号以 BUG-4388 提交后的代码为准）：
+- **真实性**：✅ 真 bug（修复前，行号以 BUG-4431 提交后的代码为准）：
   - 同一条播放位置有四个写者，各拿各的判定快照落地、彼此不互斥：sweep `fushi/lib/src/sync/sync_orchestrator/books.part.dart:277-345` `_syncPositionsLive`（`:312` 用 host 清单里的值判定，不加锁）；播放页 `fushi/lib/src/pages/implementations/video_fushi_page.dart:5456-5460` 每秒 `new InterconnectPlaybackPositionSync(...).reportLive(...)`（由 `video_player_controller.dart` 以 `unawaited` 触发，不加锁、不合并）；冲突弹窗 `fushi/lib/src/sync/playback_position_conflict_dialog.dart:102,107`；对比弹窗 `fushi/lib/src/sync/sync_compare_dialog.dart:1165,1169`。两个写者交错时，后完成的旧判定把 host 写成旧值、把基线改写成旧判定的结论（`interconnect_playback_position_sync.dart:289` `reportLive` 与 sweep 的 `pushLocal` 同时到达 host 已用测试复现：两个 PUT 同时在途）。慢网下播放页的独立上报按旧值逐个排队打到 host。
   - 冲突弹窗「本机」推的是加载时的本端快照 `v.local`（弹窗期间本机继续播放的进度被回退到快照值）；「对端」把加载时的 `v.remote` 落到本机，不核对 host 是否已被第三台设备改写（用户没见过的新值被旧值顶替）。
   - 对比弹窗互联书进度「本地」以**应用时重读**的 host 值作前置条件——用户在这一行看到的是 X，加载后 host 被改成 Z，前置条件仍命中 Z，照样把 Z 覆盖掉；「远端」把用户没见过的 Z 落到本机。

@@ -1,4 +1,4 @@
-/// BUG-4389：播放进度冲突弹窗按「用户看到的对端值」落地。真 [FushiSyncServer] +
+/// BUG-4432：播放进度冲突弹窗按「用户看到的对端值」落地。真 [FushiSyncServer] +
 /// [LocalLibraryHostService] + 真 [InterconnectSyncBackend]（`playback_position_conflict_test.dart`
 /// 里有 testWidgets，测试绑定会把 HttpClient 换成恒回 400 的假客户端，所以真 host
 /// 用例单独成文件）。
@@ -26,7 +26,7 @@ FushiDatabase _memDb() =>
     FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 
 void main() {
-  /// BUG-4389：弹窗按「用户看到的对端值」落地。真 [FushiSyncServer] + 真
+  /// BUG-4432：弹窗按「用户看到的对端值」落地。真 [FushiSyncServer] + 真
   /// [InterconnectSyncBackend]：选本机推送锁内重读的本端（弹窗期间本机播放推进是
   /// 常态），前置条件是弹窗展示的对端值；选对端时 host 已不是展示的值就不落地。
   group('applyPlaybackPositionDecisions 按展示的对端值落地（真 host）', () {

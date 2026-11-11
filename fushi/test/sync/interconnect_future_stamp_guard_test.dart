@@ -136,7 +136,7 @@ void main() {
       );
       final RemoteBookProgress local = _progress(2, 200, now - 60000);
       await _setLocalBook(db, book, local);
-      // host 此刻就是判定时读到的那份（live 写入的前置条件核对它，BUG-4388）。
+      // host 此刻就是判定时读到的那份（live 写入的前置条件核对它，BUG-4431）。
       backend.book = _progress(1, 100, poison);
 
       final RemoteBookProgress agreed = (await sync.pushLocal(

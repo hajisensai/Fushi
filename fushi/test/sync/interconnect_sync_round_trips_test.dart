@@ -142,7 +142,7 @@ class _Rig {
       if (contentType != null) {
         inbound.response.headers.set('Content-Type', contentType);
       }
-      // host 的 live 写入契约宣告（BUG-4388）原样转发：丢了它，新 host 在 client
+      // host 的 live 写入契约宣告（BUG-4431）原样转发：丢了它，新 host 在 client
       // 眼里就成了旧 host，每次推送都走兼容层的 GET / PUT / GET。
       final String? liveWrite = res.headers.value(kLiveWriteHeader);
       if (liveWrite != null) {

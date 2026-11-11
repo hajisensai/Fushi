@@ -23,7 +23,7 @@ const String kInterconnectBookProgressPendingDimension =
 ///
 /// [action] 为 null = 两端已收敛、本轮什么都没做（sweep 快照判定跳过）。
 /// [localChanged] = 本端 `reader_positions` 被改写（调用方据此刷新书架）。
-/// [pushed] = 本端进度推给了 host 且 host 确认采纳（BUG-4388；只计确认的推送）。
+/// [pushed] = 本端进度推给了 host 且 host 确认采纳（BUG-4431；只计确认的推送）。
 /// 冲突时 [localUpdatedAtMs] / [remoteUpdatedAtMs] 是判定所依据的两端时间戳。
 typedef BookProgressSyncStep = ({
   BookProgressSyncAction? action,
@@ -59,7 +59,7 @@ typedef BookProgressSweepSnapshot = ({
 /// 于是每一轮都推、每一轮都被丢。所以 [pushLocal] 把时间戳抬到 `max(本端, host+1)`
 /// 并同步写回本端行，让两端在这一刻真正对齐；抬的是「决定时刻」，位置一字不改。
 ///
-/// 基线按 host 分槽（BUG-4391）：一个实例一生只绑一台 host（[bind]），基线读写都落
+/// 基线按 host 分槽（BUG-4434）：一个实例一生只绑一台 host（[bind]），基线读写都落
 /// 那台 host 的存储维度，host 读写都钉住它；会话中途换了 host 时 live 读写抛
 /// [InterconnectHostChangedException]。sweep 每轮、弹窗每次加载各建新实例。
 class InterconnectBookProgressSync {
@@ -80,7 +80,7 @@ class InterconnectBookProgressSync {
   /// 绑定的 host（[bind] 之前为 null）。
   InterconnectHostPin? get pin => _pin;
 
-  /// 绑到会话此刻所连的 host（BUG-4391）：取作用域、领养升级前的无后缀旧行、记下
+  /// 绑到会话此刻所连的 host（BUG-4434）：取作用域、领养升级前的无后缀旧行、记下
   /// 存储维度。同一实例只绑一次（并发调用 await 同一个）；失败下次重试。不发请求。
   Future<void> bind() => _binding ??= _bind().then(
     (_) {},
@@ -288,7 +288,7 @@ class InterconnectBookProgressSync {
     );
     bool localChanged = false;
     bool pushed = false;
-    // 前置条件 = 本次判定读到的 host 进度（BUG-4389）。
+    // 前置条件 = 本次判定读到的 host 进度（BUG-4432）。
     final List<BookProgressBaseline> expected = <BookProgressBaseline>[
       BookProgressBaseline.of(remote),
     ];
@@ -382,14 +382,14 @@ class InterconnectBookProgressSync {
   }
 
   /// 本端胜出：推给 host（时间戳抬到严格新于 host，见类头），**host 确认**后本端行
-  /// 同步对齐、记基线（BUG-4388）。返回推送结局与推送的进度。
+  /// 同步对齐、记基线（BUG-4431）。返回推送结局与推送的进度。
   ///
   /// 推送带前置条件「host 仍停在判定时读到的 [remote] 位置」：确认 → 对齐 + 记基线；
   /// rejected / superseded（host 没采纳 / 判定后被第三台设备改写）→ 删「待确认」行，
   /// 不动本端、不记基线；抛异常 → 「待确认」行保留（BUG-3528）。
   ///
   /// [expected] 是前置条件：写者「判定时看到的 host 进度」。省略 = `[remote]`；对比
-  /// 弹窗传加载时展示给用户的 host 进度（BUG-4389）。调用方须持有这本书的书锁。
+  /// 弹窗传加载时展示给用户的 host 进度（BUG-4432）。调用方须持有这本书的书锁。
   Future<({LivePushStatus status, RemoteBookProgress agreed})> pushLocal(
     EpubBookRow book, {
     required RemoteBookProgress local,
@@ -417,7 +417,7 @@ class InterconnectBookProgressSync {
     );
     // 先记「待确认」再发：PUT 超时而 host 已提交时，下一轮 [decide] 靠它认出
     // host 上那份是本机自己的写入（BUG-3528）。先核对会话仍连着绑定的 host：换了
-    // host 就不在这台 host 的作用域里留一条注定不会发出的「待确认」行（BUG-4391）。
+    // host 就不在这台 host 的作用域里留一条注定不会发出的「待确认」行（BUG-4434）。
     _backend.checkHostPin(_pin!);
     await _db.setSyncBaseline(
       book.bookKey,
@@ -457,7 +457,7 @@ class InterconnectBookProgressSync {
     return (status: LivePushStatus.confirmed, agreed: landed);
   }
 
-  /// 删「待确认」行：这次推送 host 明确没采纳（BUG-4388），它不再携带信息。
+  /// 删「待确认」行：这次推送 host 明确没采纳（BUG-4431），它不再携带信息。
   Future<void> _dropPending(EpubBookRow book) =>
       _db.deleteSyncBaseline(book.bookKey, _pendingDim);
 

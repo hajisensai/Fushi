@@ -236,13 +236,13 @@ extension _FushiSyncServerLibrary on FushiSyncServer {
   }
 
   /// 实现 [LivePositionWriteHost] 的 host 在 live 位置端点响应上加的能力宣告头
-  /// （BUG-4388）；没实现的 host 不加，client 据此走兼容层。
+  /// （BUG-4431）；没实现的 host 不加，client 据此走兼容层。
   Map<String, String> _liveWriteHeaders(Object? svc) =>
       svc is LivePositionWriteHost
       ? const <String, String>{kLiveWriteHeader: '1'}
       : const <String, String>{};
 
-  /// live 写入 `PUT` 的回执响应（BUG-4388）：前置条件不符回 409，其余 200；体是
+  /// live 写入 `PUT` 的回执响应（BUG-4431）：前置条件不符回 409，其余 200；体是
   /// 回执 JSON，带 [kLiveWriteHeader]。
   shelf.Response _liveWriteResponse(
     LiveWriteResult result,
@@ -332,7 +332,7 @@ extension _FushiSyncServerLibrary on FushiSyncServer {
           final RemoteBookProgress incoming = RemoteBookProgress.fromJson(
             json.cast<String, Object?>(),
           );
-          // BUG-4388：实现 [LivePositionWriteHost] 的 host 回结果回执、接受可选前置
+          // BUG-4431：实现 [LivePositionWriteHost] 的 host 回结果回执、接受可选前置
           // 条件（不符 → 409 不写）并宣告 [kLiveWriteHeader]；否则照旧 200 空体。
           final Object liveHost = svc;
           if (liveHost is! LivePositionWriteHost) {
@@ -684,7 +684,7 @@ extension _FushiSyncServerLibrary on FushiSyncServer {
           final int posMs = (json['positionMs'] as num?)?.toInt() ?? 0;
           final int updatedAtMs =
               (json['positionUpdatedAtMs'] as num?)?.toInt() ?? 0;
-          // BUG-4388：回执 + 可选前置条件（见书进度 PUT 同段注释）。
+          // BUG-4431：回执 + 可选前置条件（见书进度 PUT 同段注释）。
           final Object liveHost = svc;
           if (liveHost is! LivePositionWriteHost) {
             await svc.putAudiobookPosition(positionBookKey, posMs, updatedAtMs);

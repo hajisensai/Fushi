@@ -1,4 +1,4 @@
-/// BUG-4393：远端视频开播按 LWW 选位置，绕过三方判定（含合集切成员）。
+/// BUG-4436：远端视频开播按 LWW 选位置，绕过三方判定（含合集切成员）。
 ///
 /// 真 [FushiSyncServer] + [LocalLibraryHostService] + 真 [InterconnectSyncBackend]，
 /// 按播放页的调用形态驱动 [InterconnectRemotePlaybackSession]：每一集载入时

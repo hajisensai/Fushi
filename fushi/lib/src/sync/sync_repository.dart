@@ -1850,12 +1850,12 @@ class SyncRepository {
     _keyDeletionTombstonesBaselineMs,
     _keyVideoMetadataSyncSinceMs,
     _keyContentSniffCache,
-    // 云后端最近一次取到的账号（BUG-4391）：文件箱进度基线按它挑槽；随备份带到
+    // 云后端最近一次取到的账号（BUG-4434）：文件箱进度基线按它挑槽；随备份带到
     // 登着别的账号的设备，邮箱缺失时会挑错槽，且把账号邮箱带进备份。
     syncRemoteAccountPrefBase,
   ];
 
-  /// 按通道分槽的「云后端最近一次取到的账号」键基名（BUG-4391）；完整键见
+  /// 按通道分槽的「云后端最近一次取到的账号」键基名（BUG-4434）；完整键见
   /// `syncRemoteAccountPrefKey`（`sync_baseline_scope.dart`）。设备本地。
   static const String syncRemoteAccountPrefBase = 'sync_remote_account';
 

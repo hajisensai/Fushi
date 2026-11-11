@@ -131,7 +131,7 @@ void main() {
     expect(src, contains('source: ConflictSource.manual'));
     // TODO-836：鉴权失效必须登出，否则账号行不退回「未登录」，用户无从重新登录。
     expect(src, contains('on SyncAuthError catch'));
-    // 登出走共用入口（连带清该通道目录缓存、忘掉记下的云账号，BUG-4391），
+    // 登出走共用入口（连带清该通道目录缓存、忘掉记下的云账号，BUG-4434），
     // 不在 catch 里自己拼一遍。
     expect(
       src,

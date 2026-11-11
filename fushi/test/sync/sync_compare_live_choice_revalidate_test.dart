@@ -1,4 +1,4 @@
-/// BUG-4389：对比弹窗互联书进度的「应用」按用户**在这一行看到的** host 值落地。
+/// BUG-4432：对比弹窗互联书进度的「应用」按用户**在这一行看到的** host 值落地。
 /// 真 [FushiSyncServer] + [LocalLibraryHostService] + 真 [InterconnectSyncBackend]：
 /// 加载对比数据后 host 被第三台设备改写——选本地不得覆盖那个用户没见过的新值，
 /// 选远端也不得把它落回本机；该行结果是 noop（下一轮按新事实重判）。

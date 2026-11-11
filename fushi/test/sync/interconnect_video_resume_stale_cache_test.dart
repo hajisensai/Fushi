@@ -197,7 +197,7 @@ void main() {
 
     // 开播：与播放页同一入口（`_remoteSessionFor(...).startPositionFor`）先按三方
     // 判定收敛——全新客户端无本机断点，取 host 的 40 s 并记基线。缺这一步直接实时
-    // 上报，无基线、两端位置不同按 BUG-4392 判冲突、上报 held（不再按墙钟 LWW）。
+    // 上报，无基线、两端位置不同按 BUG-4435 判冲突、上报 held（不再按墙钟 LWW）。
     await _openOnClient(db, backend, 40000);
 
     final InterconnectPlaybackPositionSync sync =

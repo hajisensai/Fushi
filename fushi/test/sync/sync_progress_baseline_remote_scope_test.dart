@@ -1,4 +1,4 @@
-/// BUG-4391（步骤 8 接线）：SyncManager 的文件箱进度基线挂在当前远端名下。
+/// BUG-4434（步骤 8 接线）：SyncManager 的文件箱进度基线挂在当前远端名下。
 ///
 /// 此前 SyncManager 用 `progressBaselineDimensionOf` 的固定维度读写基线：在远端 A
 /// 达成一致（基线 = 本地戳 L）后换到远端 B，B 上是更早的旧进度——本地 == 基线、

@@ -130,7 +130,7 @@ void main() {
           'Future<void> _initRemote() async {',
           '/// per-book 播放倍速偏好 key',
         );
-        // TODO-653/885：恢复由 _loadRemoteEpisode 定（互联走三方判定 BUG-4393，其余
+        // TODO-653/885：恢复由 _loadRemoteEpisode 定（互联走三方判定 BUG-4436，其余
         // 走 _resolveRemoteInitialPositionMs 的 LWW，见下一条守卫）；首开只带卡片回看的
         // 显式起点，不预先算一份——预先算会在三方判定之外多读一次 host（评审 perf-1）。
         // 仍绝不硬编码 0（TODO-559 回归守卫保留）。

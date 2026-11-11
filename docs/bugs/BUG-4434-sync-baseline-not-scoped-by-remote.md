@@ -1,4 +1,4 @@
-## BUG-4391 · 同步基线不带远端身份：多 host 共用互联 live 基线，换 host 后静默导入旧值
+## BUG-4434 · 同步基线不带远端身份：多 host 共用互联 live 基线，换 host 后静默导入旧值
 - **报告**：2026-11-10（用户：审计 sync-live 修复包 V-A1 / D12 / D11 作用域部分）
 - **真实性**：✅ 真 bug（行号以 7f00ae0a6c0 为准）：
   - live 基线键 `(assetKey, dimension)` 不带 host：`fushi/lib/src/sync/interconnect_book_progress_sync.dart:272-278,292-298,315-328`、`fushi/lib/src/sync/interconnect_playback_position_sync.dart:146-149,183,196,212-215` 只按通道类型的固定维度（`progress_live` / `video_position_live` / `audiobook_position_live` 及 `_pending`）读写；`fushi/lib/src/sync/sync_backend.dart:383` `syncChannelScopeOf` 把互联一律映射成 `fushiServer`。

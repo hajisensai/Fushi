@@ -51,7 +51,7 @@ export 'package:fushi_engine/sync/epub_repackage.dart'
 /// 返回的是**逻辑维度**（冲突上报、裁决簿用它）：云通道 `'progress'`，互联通道
 /// 另开一行（[SyncChannelScope.key] 后缀，与 folder 缓存 / 删除水位的分槽同一套
 /// 命名，BUG-1576 族）。落库的**存储维度**还要挂到当前远端名下（换云类型 / 账号 /
-/// 服务器、互联换 host 都是另一个共同祖先，BUG-4391），一律经
+/// 服务器、互联换 host 都是另一个共同祖先，BUG-4434），一律经
 /// `progressBaselineStorageFor`（`sync_baseline_scope.dart`）取，不要直接拿本函数
 /// 的返回值读写 `sync_baselines`。与互联 host
 /// DB 进度的**位置**基线（`kInterconnectBookProgressDimension`）仍是不同的行：
@@ -219,7 +219,7 @@ class SyncManager {
   final SyncChannelScope _scope;
 
   /// 本通道文件箱进度基线落在 `sync_baselines` 里的存储维度与互联钉住的 host
-  /// （BUG-4391，见 [progressBaselineStorageFor]）：逻辑维度
+  /// （BUG-4434，见 [progressBaselineStorageFor]）：逻辑维度
   /// [progressBaselineDimensionOf] 挂到**当前远端**名下。惰性取一次，本 manager
   /// 一生只对一个远端判定；冲突上报的 `conflictDimension` 仍用逻辑名。
   Future<({String storageDimension, InterconnectHostPin? hostPin})>?
@@ -375,7 +375,7 @@ class SyncManager {
     } on SyncAuthError {
       rethrow;
     } on InterconnectHostChangedException {
-      // BUG-4391：会话中途换了 host，本 manager 钉住的作用域整体作废——不是这一本
+      // BUG-4434：会话中途换了 host，本 manager 钉住的作用域整体作废——不是这一本
       // 书的失败，交给调用方结束本阶段。
       rethrow;
     } catch (e, stack) {
@@ -406,7 +406,7 @@ class SyncManager {
     // 内存缓存去覆盖磁盘上的 title→folderId 映射（`isNotEmpty` 兜住了覆盖，但
     // rootFolderId 同样会失去回写机会），下一轮就得重新解析所有文件夹。
     await _restoreDriveCache();
-    // BUG-4391：开轮先钉住远端作用域（互联：本轮的 host；云：账号 + 服务器）。
+    // BUG-4434：开轮先钉住远端作用域（互联：本轮的 host；云：账号 + 服务器）。
     // 认不出远端（[SyncRemoteIdentityUnavailableError]）不换槽：需要共同祖先才判得
     // 了的书本轮跳过，其余照常（见 [_progressBaselineIfKnown]），收尾整段报一次错。
     _identityUnavailable = null;
@@ -512,7 +512,7 @@ class SyncManager {
           ),
         );
       } on InterconnectHostChangedException {
-        // BUG-4391：本轮钉住的 host 已不是会话的 host，后面每本书都会同样作废：
+        // BUG-4434：本轮钉住的 host 已不是会话的 host，后面每本书都会同样作废：
         // 结束本阶段、报一条错（编排器记进 report.errors），已落地的书不受影响。
         await _persistDriveCache();
         rethrow;
@@ -744,7 +744,7 @@ class SyncManager {
         ? parseProgressTimestamp(syncFiles.progress!.name)
         : null;
 
-    // BUG-4391：基线挂在当前远端名下；互联读完远端文件箱、判定之前核对 host 没换。
+    // BUG-4434：基线挂在当前远端名下；互联读完远端文件箱、判定之前核对 host 没换。
     // 手动路径（对比弹窗）落地后必写基线，认不出远端就整本失败；自动路径认不出
     // 远端时 storage 为 null：只判不需要共同祖先的情形，不读不写基线（评审 compat-2）。
     final ({String storageDimension, InterconnectHostPin? hostPin})? storage =
@@ -1050,7 +1050,7 @@ class SyncManager {
     // 认不出远端（评审 compat-2）时为 null：照常落地，不写基线（云通道没有 pin）。
     final ({String storageDimension, InterconnectHostPin? hostPin})? storage =
         await _progressBaselineIfKnown();
-    // BUG-4391：导入落地之前核对 host 没换（读到的可能是另一台 host 的文件箱）。
+    // BUG-4434：导入落地之前核对 host 没换（读到的可能是另一台 host 的文件箱）。
     if (storage != null) _checkHostPin(storage.hostPin);
 
     // Import progress → (sectionIndex, normCharOffset)。BUG-162: 不再缓存精确
@@ -1204,7 +1204,7 @@ class SyncManager {
       // not the whole tail of remote calls. Written on both the auto path and
       // the manual (compare useLocal→export) path so a user-resolved conflict's
       // new ancestor is also recorded.
-      // BUG-4391：上传之后、写基线之前核对 host 没换——换了就不记这条共同祖先。
+      // BUG-4434：上传之后、写基线之前核对 host 没换——换了就不记这条共同祖先。
       final ({String storageDimension, InterconnectHostPin? hostPin})? storage =
           await _progressBaselineIfKnown();
       if (storage != null) {

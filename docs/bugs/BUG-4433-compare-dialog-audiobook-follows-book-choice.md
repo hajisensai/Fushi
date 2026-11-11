@@ -1,6 +1,6 @@
-## BUG-4390 · 对比弹窗把书的选择强加给有声书断点，绕过有声书的三方判定
+## BUG-4433 · 对比弹窗把书的选择强加给有声书断点，绕过有声书的三方判定
 - **报告**：2026-11-10（用户：审计 sync-live 修复包 triggers-ui-3 成立部分）
-- **真实性**：✅ 真 bug（行号以 BUG-4389 提交 dc6b52ba92d 后的代码为准）：`fushi/lib/src/sync/sync_compare_dialog.dart:1136-1162` `_applyLiveChoice` 的有声书部分把用户对**书进度**的选择直接套到有声书断点：`useLocal` → `audio.pushLocal`（`:1148`），否则 → `audio.applyRemote`（`:1159`），从不调 `audio.decide`，并随之改写 `audiobook_position_live` 基线。两个维度被耦合：
+- **真实性**：✅ 真 bug（行号以 BUG-4432 提交 dc6b52ba92d 后的代码为准）：`fushi/lib/src/sync/sync_compare_dialog.dart:1136-1162` `_applyLiveChoice` 的有声书部分把用户对**书进度**的选择直接套到有声书断点：`useLocal` → `audio.pushLocal`（`:1148`），否则 → `audio.applyRemote`（`:1159`），从不调 `audio.decide`，并随之改写 `audiobook_position_live` 基线。两个维度被耦合：
   - 有声书只有 host 动过（基线 = 本端，host 前进）时，书冲突选「本地」会把 host 上更新的断点推回本机旧值；
   - 有声书真分叉且加载后 host 又被第三台设备改写时，照样推送 / 落地并改写基线，之后 `_presentPositionConflicts`（`sync_conflict_prompter.dart`）重新 `decide` 时这一维已被「解决」，有声书冲突被吞。
 - **[x] ① 修复** — c182eeacca2：

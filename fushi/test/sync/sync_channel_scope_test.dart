@@ -357,7 +357,7 @@ void main() {
     });
   });
 
-  group('远端标签（BUG-4391）', () {
+  group('远端标签（BUG-4434）', () {
     test('syncRemoteTag 同输入同输出、16 位十六进制、不含明文', () {
       final String tag = syncRemoteTag('fushiServer\nhost-123');
       expect(tag, syncRemoteTag('fushiServer\nhost-123'));

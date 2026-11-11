@@ -142,7 +142,7 @@ void main() {
     expect(cached.positionMs, 40000);
 
     // 客户端开播：与播放页同一入口先按三方判定收敛——全新客户端无本机断点，取
-    // host 的 40 s 并记基线（缺这一步无基线、两端不同，实时上报按 BUG-4392 判
+    // host 的 40 s 并记基线（缺这一步无基线、两端不同，实时上报按 BUG-4435 判
     // 冲突 held，不再按墙钟 LWW 写 host）。
     final InterconnectRemotePlaybackSession session =
         InterconnectRemotePlaybackSession(db: db, backend: backend);

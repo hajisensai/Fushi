@@ -7,7 +7,7 @@ import 'dart:convert' show utf8;
 import 'package:crypto/crypto.dart' show sha256;
 import 'package:fushi_engine/sync/sync_backend_type.dart';
 
-/// 远端身份字符串 → 短标签：sha256 的前 16 位十六进制（BUG-4391）。
+/// 远端身份字符串 → 短标签：sha256 的前 16 位十六进制（BUG-4434）。
 ///
 /// 「按远端记账」的基线维度要带上远端身份，但身份本身（hostId、地址、账号）不能
 /// 明文写进库——`sync_baselines` 会进诊断导出。同输入恒得同输出。

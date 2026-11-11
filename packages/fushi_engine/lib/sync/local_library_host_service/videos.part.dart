@@ -272,7 +272,7 @@ mixin _LocalLibraryHostVideos
         ),
       ),
     );
-    // BUG-4387：与 [getVideoPosition] 同一个派生函数（行位置戳取 importedAt），清单、
+    // BUG-4430：与 [getVideoPosition] 同一个派生函数（行位置戳取 importedAt），清单、
     // GET 与 PUT 判定对同一断点给出同一对 (位置, 戳)。整书键与第 0 集键是同一个
     // （[videoRemotePositionEpisodePrefKey] 对 episodeIndex<=0 回退整书键）。
     final ({int positionMs, int updatedAtMs}) progress = _hostVideoPositionOf(
@@ -671,9 +671,9 @@ mixin _LocalLibraryHostVideos
     );
   }
 
-  /// 带回执与可选前置条件的视频断点写入（BUG-4388，[LivePositionWriteHost]）。判定
+  /// 带回执与可选前置条件的视频断点写入（BUG-4431，[LivePositionWriteHost]）。判定
   /// 口径只在 [resolveLivePositionWrite] 一处；host 当前值取 [getVideoPosition]
-  /// （与清单同一派生函数，BUG-4387）。存在性闸门在端点（404），这里不重复。
+  /// （与清单同一派生函数，BUG-4430）。存在性闸门在端点（404），这里不重复。
   @override
   Future<LivePositionWriteOutcome> putVideoPositionChecked(
     String id,
@@ -1360,7 +1360,7 @@ mixin _LocalLibraryHostVideos
   }
 }
 
-/// host 视频播放断点的唯一派生口径（BUG-4387）：清单条目、`GET .../position` 与
+/// host 视频播放断点的唯一派生口径（BUG-4430）：清单条目、`GET .../position` 与
 /// `PUT .../position` 的判定都经它，同一条视频永远给出同一对 (位置, 戳)。
 ///
 /// prefs 断点（本机 / 远端播放统一键）与旧 `VideoBooks.lastPositionMs` 经

@@ -579,7 +579,7 @@ extension _FushiSyncServerVideo on FushiSyncServer {
           final int posMs = (json['positionMs'] as num?)?.toInt() ?? 0;
           final int updatedAtMs =
               (json['positionUpdatedAtMs'] as num?)?.toInt() ?? 0;
-          // BUG-4388：回执 + 可选前置条件（见书进度 PUT 同段注释）。
+          // BUG-4431：回执 + 可选前置条件（见书进度 PUT 同段注释）。
           final Object liveHost = svc;
           if (liveHost is! LivePositionWriteHost) {
             await svc.putVideoPosition(

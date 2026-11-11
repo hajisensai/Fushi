@@ -1647,9 +1647,9 @@ void main() {
       },
     );
 
-    // BUG-4392：无基线且两端位置不同时不再比较两台设备的墙钟（时钟偏快的一端会
+    // BUG-4435：无基线且两端位置不同时不再比较两台设备的墙钟（时钟偏快的一端会
     // 静默盖掉另一端）；与书籍同口径判冲突，两端都不动、不记基线。升级首轮的存量
-    // 基线由按 host 分槽的领养保住（BUG-4391），不会因此批量弹冲突。
+    // 基线由按 host 分槽的领养保住（BUG-4434），不会因此批量弹冲突。
     test('video: no baseline and positions differ -> conflict, '
         'neither side written, no baseline recorded', () async {
       await _seedHostVideo(hostDb, work, 'video/nobase', 'NoBase');

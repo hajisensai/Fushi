@@ -430,7 +430,7 @@ void main() {
       expect(src, contains('on SyncChannelAuthError catch'));
       expect(src, contains('if (shouldSignOutChannelOnAuthError(e)) {'));
       expect(src, contains('return shouldSignOutOnAuthError(e.error);'));
-      // 登出动作本身在共用入口 signOutSyncBackend 里（BUG-4391）。
+      // 登出动作本身在共用入口 signOutSyncBackend 里（BUG-4434）。
       expect(
         src,
         contains(

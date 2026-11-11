@@ -496,7 +496,7 @@ mixin _LocalLibraryHostBooks on _LocalLibraryHostBase, _LocalLibraryHostShared {
     await putBookProgressChecked(bookKey, progress);
   }
 
-  /// 带回执与可选前置条件的书进度写入（BUG-4388，[LivePositionWriteHost]）。判定口径
+  /// 带回执与可选前置条件的书进度写入（BUG-4431，[LivePositionWriteHost]）。判定口径
   /// 只在 [resolveLiveBookProgressWrite] 一处。
   @override
   Future<LiveBookProgressWriteOutcome> putBookProgressChecked(

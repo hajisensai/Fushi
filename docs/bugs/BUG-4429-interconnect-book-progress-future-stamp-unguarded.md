@@ -1,4 +1,4 @@
-## BUG-4386 · 互联书籍进度没接未来时间戳防护，毒戳在 LWW 里永远胜出并扩散到各端
+## BUG-4429 · 互联书籍进度没接未来时间戳防护，毒戳在 LWW 里永远胜出并扩散到各端
 - **报告**：2026-11-10（用户：审计 sync-live 修复包 D8）
 - **真实性**：✅ 真 bug。视频 / 有声书 PUT 早已截上报戳、把已存毒戳按 0 比较（BUG-3367），书籍通道漏接：
   - host：`packages/fushi_engine/lib/sync/local_library_host_service/books.part.dart:481` `putBookProgress` 把上报戳原样交给 `resolveBookProgressSync`，不截上报戳也不降权已存毒戳——时钟走快的设备一旦写下 `now + 1 天`，之后所有端的正常上报都被 no-op。

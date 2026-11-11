@@ -1,4 +1,4 @@
-## BUG-4393 · 远端视频开播按 LWW 选位置，绕过三方判定（含合集切成员）
+## BUG-4436 · 远端视频开播按 LWW 选位置，绕过三方判定（含合集切成员）
 - **报告**：2026-11-10（用户：审计 sync-live 修复包 D4b）
 - **真实性**：✅ 真 bug：`fushi/lib/src/pages/implementations/video_fushi_page.dart:5379-5392`（行号以 94317ab6295 为准）`_resolveRemoteInitialPositionMs` 首开时只拿本地 prefs 与 host 清单值做 `resolvePositionLww`（较新墙钟胜），不读位置基线、不判冲突；合集切成员 / 换集走 `_loadRemoteEpisode`（`:4784`）只读本地 prefs，host 一眼都不看。之后的实时上报把这次未经三方判定的开播位置当作「两端一致」的起点。后果：另一台时钟偏慢的设备把 host 推前之后，本机开播按戳选回自己的旧位置，host 那份进度在播放中被覆盖；两端都动过（真分叉）时开播也不报冲突。sweep 的同一判定在 `sync_orchestrator/books.part.dart` `_syncPositionsLive` 是另一份写法，两处口径各走各的。
 - **[x] ① 修复** — 提交见下：
@@ -7,9 +7,9 @@
 - **[x] ② 加自动化测试** — `fushi/test/sync/interconnect_remote_playback_session_test.dart`（真 `FushiSyncServer` + 真 `InterconnectSyncBackend`，按页面调用形态驱动会话：真分叉从本机起播且上报不发 PUT、host 不被覆盖；裁决后恢复上报；单边 host 前进（戳因时钟差更旧，LWW 对照会选本机）→ 从 host 起播、本机落地、基线推进；合集第二成员首播回退值起播、之后上报到达 host；离线返回回退值不抛）；`fushi/test/pages/video_remote_playback_session_wiring_guard_test.dart`（源码守卫：页面不自建同步实例 / 上报器、`_loadRemoteEpisode` 经 `startPositionFor`、`_persistRemotePosition` 经会话上报；页面接线前三条全红）。
 - **修复提交**：09f4e584201（测试已写好随同提交，本轮按协调者要求未运行，见备注）
 - **备注**：
-  - 与计划的偏差：开播三方判定排除 `EpisodeStartIntent.explicitCue`（换画质 / 换线路 / 媒体服务器换档带 `initialPositionMsOverride: posMs` 回到当前位置，跑三方判定会把正在播的位置换成库里上一秒的值甚至 host 值）与卡片回看（BUG-3490，回看不碰服务器进度）；计划只写了 `sourceReview == null`。`dispose` 仍不关会话（沿用 BUG-4389 实现时的理由：退出最后一次落库可能晚于 `dispose`）。
+  - 与计划的偏差：开播三方判定排除 `EpisodeStartIntent.explicitCue`（换画质 / 换线路 / 媒体服务器换档带 `initialPositionMsOverride: posMs` 回到当前位置，跑三方判定会把正在播的位置换成库里上一秒的值甚至 host 值）与卡片回看（BUG-3490，回看不碰服务器进度）；计划只写了 `sourceReview == null`。`dispose` 仍不关会话（沿用 BUG-4432 实现时的理由：退出最后一次落库可能晚于 `dispose`）。
   - 残留：`startPositionFor` 落地 host 值写的是数据库（与 sweep 同一写口），播放页 `PreferencesRepository` 的内存缓存在本集首次落库前仍是旧值；内存缓存过期属外部 PR #3074（BUG-4231）的范围。
-  - 每一集载入多一次 GET + 可能一次 PUT；旧 host 走 BUG-4388 兼容层。
+  - 每一集载入多一次 GET + 可能一次 PUT；旧 host 走 BUG-4431 兼容层。
   - 未运行：两份测试文件本轮未跑（重活队列让给别的会话），修复前红只由源码检视确认（守卫的三条断言对原页面不成立），合入前须跑一次。
   - 需真机复测：两台设备互联、一台播到中途另一台开同一视频 / 合集切成员，看开播位置与冲突弹窗。
 - **评审修正（af3281328dd，2026-11-10，评审 tests-2）**：补上此前无测试守住的分支——`interconnect_remote_playback_session_test.dart` 新增：applyRemote 判定后本机断点在比较后写入前被改写（`FushiDatabase.runIfIntPrefUnchanged` 子类钩子）→ 从重读的本机位置起播、不记基线；开播时会话已换 host → 返回回退值并换绑，下一次开播按新 host 作用域判定落地。页面开播判据抽成纯函数 `remoteEpisodeStartUsesThreeWay`（`interconnect_playback_position_sync.dart`；集号 > 0、`explicitCue`、卡片回看不判），页面改调它，直测五种判 / 三种不判；页面守卫改为钉「`client is InterconnectSyncBackend && remoteEpisodeStartUsesThreeWay(...) ? await _remoteSessionFor(`」整段调用形态。仍未运行。

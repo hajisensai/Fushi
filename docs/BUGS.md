@@ -37,14 +37,14 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4393](bugs/BUG-4393-remote-video-open-bypasses-three-way.md) | ✅ | ✅ | 远端视频开播按 LWW 选位置，绕过三方判定（含合集切成员） |
-| [BUG-4392](bugs/BUG-4392-playback-position-no-baseline-lww-fallback.md) | ✅ | ✅ | 播放位置缺基线时退回跨设备墙钟 LWW |
-| [BUG-4391](bugs/BUG-4391-sync-baseline-not-scoped-by-remote.md) | ✅ | ✅ | 同步基线不带远端身份：多 host 共用互联 live 基线，换 host 后静默导入旧值 |
-| [BUG-4390](bugs/BUG-4390-compare-dialog-audiobook-follows-book-choice.md) | ✅ | ✅ | 对比弹窗把书的选择强加给有声书断点，绕过有声书的三方判定 |
-| [BUG-4389](bugs/BUG-4389-interconnect-live-put-blind-overwrite.md) | ✅ | ✅ | 互联 live 进度按旧快照盲写 host，覆盖对端更新（sweep / 实时上报 / 冲突弹窗） |
-| [BUG-4388](bugs/BUG-4388-interconnect-live-put-unconfirmed-baseline.md) | ✅ | ✅ | 互联 live 进度 PUT 不回结果，client 无条件记基线 |
-| [BUG-4387](bugs/BUG-4387-host-video-manifest-position-stamp-diverges.md) | ✅ | ✅ | host 视频清单与位置端点对同一断点给出不同的位置 / 时间戳 |
-| [BUG-4386](bugs/BUG-4386-interconnect-book-progress-future-stamp-unguarded.md) | ✅ | ✅ | 互联书籍进度没接未来时间戳防护，毒戳在 LWW 里永远胜出并扩散到各端 |
+| [BUG-4436](bugs/BUG-4436-remote-video-open-bypasses-three-way.md) | ✅ | ✅ | 远端视频开播按 LWW 选位置，绕过三方判定（含合集切成员） |
+| [BUG-4435](bugs/BUG-4435-playback-position-no-baseline-lww-fallback.md) | ✅ | ✅ | 播放位置缺基线时退回跨设备墙钟 LWW |
+| [BUG-4434](bugs/BUG-4434-sync-baseline-not-scoped-by-remote.md) | ✅ | ✅ | 同步基线不带远端身份：多 host 共用互联 live 基线，换 host 后静默导入旧值 |
+| [BUG-4433](bugs/BUG-4433-compare-dialog-audiobook-follows-book-choice.md) | ✅ | ✅ | 对比弹窗把书的选择强加给有声书断点，绕过有声书的三方判定 |
+| [BUG-4432](bugs/BUG-4432-interconnect-live-put-blind-overwrite.md) | ✅ | ✅ | 互联 live 进度按旧快照盲写 host，覆盖对端更新（sweep / 实时上报 / 冲突弹窗） |
+| [BUG-4431](bugs/BUG-4431-interconnect-live-put-unconfirmed-baseline.md) | ✅ | ✅ | 互联 live 进度 PUT 不回结果，client 无条件记基线 |
+| [BUG-4430](bugs/BUG-4430-host-video-manifest-position-stamp-diverges.md) | ✅ | ✅ | host 视频清单与位置端点对同一断点给出不同的位置 / 时间戳 |
+| [BUG-4429](bugs/BUG-4429-interconnect-book-progress-future-stamp-unguarded.md) | ✅ | ✅ | 互联书籍进度没接未来时间戳防护，毒戳在 LWW 里永远胜出并扩散到各端 |
 | [BUG-4385](bugs/BUG-4385-music-exclusive-pause-holds-device.md) | ✅ | ✅ | 音乐 WASAPI 独占输出暂停时不交还设备 |
 | [BUG-4384](bugs/BUG-4384-apple-music-preview-full-duration.md) | ✅ | ✅ | Apple Music 试听片段放约 30 秒就「回到开头」，进度条按整首时长画、无试听提示 |
 | [BUG-4383](bugs/BUG-4383-jellyfin-default-embedded-sub.md) | ✅ | ✅ | Jellyfin 服务器标为默认的内嵌字幕起播不显示 |
