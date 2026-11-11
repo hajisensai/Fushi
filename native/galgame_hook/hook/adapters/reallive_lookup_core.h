@@ -453,6 +453,18 @@ inline uintptr_t FindImportSlotRva(const exact::LoadedPeImage& image,
   }
 }
 
+// The import slots ResolveSites proves its sites against.  The hook and the
+// offline site probe (tools/reallive_site_probe.cpp) both read them here.
+inline ImportSlots FindLookupImportSlots(const exact::LoadedPeImage& image) {
+  ImportSlots slots;
+  slots.get_keyboard_state =
+      FindImportSlotRva(image, "user32.dll", "GetKeyboardState");
+  slots.get_focus = FindImportSlotRva(image, "user32.dll", "GetFocus");
+  slots.get_glyph_outline =
+      FindImportSlotRva(image, "gdi32.dll", "GetGlyphOutlineA");
+  return slots;
+}
+
 // ── glyph codes ────────────────────────────────────────────────────────────
 
 // The render argument is a Shift_JIS code: one byte (ASCII / half-width
