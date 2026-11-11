@@ -21,6 +21,7 @@
 #include <cstdio>
 #include <cstring>
 #include <cwchar>
+#include <limits>
 #include <string>
 #include <utility>
 #include <vector>
@@ -669,6 +670,7 @@ void TestFungusResolvesUguiShape() {
   assert(result.result == ul::FungusSiteResult::kResolved);
   assert(sites.late_update == &world.say_dialog.methods[0]);
   assert(sites.story_text_offset == 8 * kPtr);
+  assert(sites.text_class == &world.text);
   assert(sites.text_string_offset == 25 * kPtr &&
          sites.text_cache_offset == 26 * kPtr &&
          sites.font_data_offset == 24 * kPtr && sites.font_data_font_offset == kHdr);
@@ -782,6 +784,189 @@ void TestFungusFailClosedBranches() {
     ul::MonoValueSizeApi none;
     assert(ul::ResolveFungusSites(Api(), LookupApi(), none, &sites).result ==
            ul::FungusSiteResult::kApiIncomplete);
+  }
+}
+
+// Framework 4: a bare UI.Text.  The Fungus world without SayDialog, plus the
+// managed Canvas.SendWillRenderCanvases the canvas texts sample after.
+struct UiTextWorld : FungusWorld {
+  UiTextWorld() {
+    images[4].classes.clear();  // no Fungus
+    canvas.methods.insert(canvas.methods.begin(),
+                          {"SendWillRenderCanvases", false, &tvoid, {}, 0, 0});
+    g_images = &images;
+  }
+};
+
+ul::UiTextSiteResolution ResolveUiText(ul::FungusSites* sites,
+                                       void** will_render) {
+  return ul::ResolveUiTextSites(Api(), LookupApi(), SizeApi(), sites,
+                                will_render);
+}
+
+void TestUiTextResolvesUguiShape() {
+  UiTextWorld world;
+  ul::FungusSites sites;
+  void* will_render = nullptr;
+  const auto result = ResolveUiText(&sites, &will_render);
+  assert(result.result == ul::UiTextSiteResult::kResolved);
+  assert(result.layout == ul::FungusSiteResult::kResolved);
+  assert(will_render == &world.canvas.methods[0]);
+  assert(sites.text_class == &world.text);
+  // No dialog part: the object comes from the text path, not from a field.
+  assert(sites.late_update == nullptr && sites.story_text_offset == 0u);
+  // The shared UGUI layout reading is the one framework 2 measured.
+  assert(sites.text_string_offset == 25 * kPtr &&
+         sites.text_cache_offset == 26 * kPtr);
+  assert(sites.graphic_canvas_offset == 6 * kPtr &&
+         sites.graphic_renderer_offset == 5 * kPtr &&
+         sites.graphic_color_alpha_offset == 112);
+  assert(sites.char_stride == 12 && sites.line_stride == 16);
+  assert(sites.cached_ptr_offset == 2 * kPtr);
+  for (void* entry : sites.icalls) assert(entry != nullptr);
+  // A Fungus game resolves the same layout through its SayDialog.
+  {
+    FungusWorld fungus;
+    ul::FungusSites fungus_sites;
+    assert(ul::ResolveFungusSites(Api(), LookupApi(), SizeApi(), &fungus_sites)
+               .result == ul::FungusSiteResult::kResolved);
+    assert(fungus_sites.text_string_offset == sites.text_string_offset &&
+           fungus_sites.char_stride == sites.char_stride);
+  }
+}
+
+void ExpectUiTextFailure(UiTextWorld& world, ul::UiTextSiteResult expected,
+                         ul::FungusSiteResult layout =
+                             ul::FungusSiteResult::kApiIncomplete) {
+  g_images = &world.images;
+  ul::FungusSites sites;
+  void* will_render = &sites;  // must be cleared on failure
+  const auto result = ResolveUiText(&sites, &will_render);
+  if (result.result != expected || result.layout != layout) {
+    std::printf("uitext expected %u/%u got %u/%u\n",
+                static_cast<unsigned>(expected), static_cast<unsigned>(layout),
+                static_cast<unsigned>(result.result),
+                static_cast<unsigned>(result.layout));
+  }
+  assert(result.result == expected && result.layout == layout);
+  assert(will_render == nullptr);
+}
+
+void TestUiTextFailClosedBranches() {
+  {
+    UiTextWorld w;  // no UnityEngine.UI.Text at all
+    w.images[3].classes = {&w.graphic, &w.font_data};
+    ExpectUiTextFailure(w, ul::UiTextSiteResult::kNoTextClass);
+  }
+  {
+    UiTextWorld w;  // two UnityEngine.UI.Text types: which one is unknown
+    FakeClass twin{"UnityEngine.UI", "Text"};
+    twin.fields = w.text.fields;
+    w.images[5].classes.push_back(&twin);
+    ExpectUiTextFailure(w, ul::UiTextSiteResult::kNoTextClass);
+  }
+  {
+    UiTextWorld w;  // only the Pre* sibling: no sampling point
+    w.canvas.methods[0].name = "SendPreWillRenderCanvases";
+    ExpectUiTextFailure(w, ul::UiTextSiteResult::kNoWillRender);
+  }
+  {
+    UiTextWorld w;  // an internal-call SendWillRenderCanvases has no JIT body
+    w.canvas.methods[0].iflags = ul::kMethodImplInternalCall;
+    ExpectUiTextFailure(w, ul::UiTextSiteResult::kNoWillRender);
+  }
+  {
+    UiTextWorld w;  // an instance SendWillRenderCanvases is not the player's
+    w.canvas.methods[0].instance = true;
+    ExpectUiTextFailure(w, ul::UiTextSiteResult::kNoWillRender);
+  }
+  {
+    UiTextWorld w;  // m_Text must be a string
+    w.text.fields[1].type = &w.ti4;
+    ExpectUiTextFailure(w, ul::UiTextSiteResult::kLayout,
+                        ul::FungusSiteResult::kTextFieldsMissing);
+  }
+  {
+    UiTextWorld w;  // a UICharInfo layout the stride cannot hold
+    w.char_info.value_size = 8;
+    ExpectUiTextFailure(w, ul::UiTextSiteResult::kLayout,
+                        ul::FungusSiteResult::kCharLayoutMismatch);
+  }
+  {
+    UiTextWorld w;  // a managed GetCharactersInternal is not the binding
+    w.generator.methods[0].iflags = 0u;
+    ExpectUiTextFailure(w, ul::UiTextSiteResult::kLayout,
+                        ul::FungusSiteResult::kIcallMissing);
+  }
+  {
+    UiTextWorld w;
+    ul::FungusSites sites;
+    void* will_render = nullptr;
+    ul::MonoValueSizeApi none;
+    assert(ul::ResolveUiTextSites(Api(), LookupApi(), none, &sites,
+                                  &will_render)
+               .result == ul::UiTextSiteResult::kApiIncomplete);
+    assert(ul::ResolveUiTextSites(Api(), LookupApi(), SizeApi(), &sites,
+                                  nullptr)
+               .result == ul::UiTextSiteResult::kApiIncomplete);
+  }
+}
+
+void TestScreenAxesUpright() {
+  const ul::Vec3 o{100.0f, 200.0f, 0.0f};
+  // Upright (overlay canvas, scale 1.5).
+  assert(ul::ScreenAxesUpright(o, {250.0f, 200.0f, 0.0f}, {100.0f, 350.0f, 0.0f}));
+  // A 1 degree tilt is within kAxisSkew (tan 1deg = 0.0175).
+  assert(ul::ScreenAxesUpright(o, {200.0f, 201.7f, 0.0f}, {98.3f, 300.0f, 0.0f}));
+  // A 5 degree tilt is not.
+  assert(!ul::ScreenAxesUpright(o, {199.6f, 208.7f, 0.0f}, {91.3f, 299.6f, 0.0f}));
+  // Rotated 90 degrees (a vertical-writing RectTransform): +x goes up.
+  assert(!ul::ScreenAxesUpright(o, {100.0f, 300.0f, 0.0f}, {0.0f, 200.0f, 0.0f}));
+  // Rotated -90 degrees.
+  assert(!ul::ScreenAxesUpright(o, {100.0f, 100.0f, 0.0f}, {200.0f, 200.0f, 0.0f}));
+  // Mirrored in x / in y.
+  assert(!ul::ScreenAxesUpright(o, {0.0f, 200.0f, 0.0f}, {100.0f, 300.0f, 0.0f}));
+  assert(!ul::ScreenAxesUpright(o, {200.0f, 200.0f, 0.0f}, {100.0f, 100.0f, 0.0f}));
+  // Degenerate (zero scale) and non-finite projections.
+  assert(!ul::ScreenAxesUpright(o, o, o));
+  const float nan = std::numeric_limits<float>::quiet_NaN();
+  assert(!ul::ScreenAxesUpright(o, {nan, 200.0f, 0.0f}, {100.0f, 300.0f, 0.0f}));
+}
+
+void TestFirstUnitDifference() {
+  using K = ul::UnitKind;
+  auto kinds = [](K a, K b) {
+    return 10u * static_cast<uint32_t>(a) + static_cast<uint32_t>(b);
+  };
+  {
+    // The laid-out text has a line break where the line has none.
+    const std::wstring shown = L"\u3042\u3044\n\u3046";
+    const std::wstring line = L"\u3042\u3044\u3046";
+    const auto d = ul::FirstUnitDifference(shown.data(), shown.size(),
+                                           line.data(), line.size());
+    assert(d.index == 2u && d.kinds == kinds(K::kLineBreak, K::kOther));
+  }
+  {
+    // A prefix (typewriter text not yet complete): the shown side ended.
+    const std::wstring shown = L"\u3042\u3044";
+    const std::wstring line = L"\u3042\u3044 x";
+    const auto d = ul::FirstUnitDifference(shown.data(), shown.size(),
+                                           line.data(), line.size());
+    assert(d.index == 2u && d.kinds == kinds(K::kEnd, K::kSpace));
+  }
+  {
+    const std::wstring shown = L"a\u200b";
+    const std::wstring line = L"aB";
+    const auto d = ul::FirstUnitDifference(shown.data(), shown.size(),
+                                           line.data(), line.size());
+    assert(d.index == 1u && d.kinds == kinds(K::kControl, K::kAscii));
+  }
+  {
+    const std::wstring same = L"\u3000x";
+    const auto d = ul::FirstUnitDifference(same.data(), same.size(),
+                                           same.data(), same.size());
+    assert(d.index == 2u && d.kinds == kinds(K::kEnd, K::kEnd));
+    assert(ul::KindOfUnit(same.data(), same.size(), 0u) == K::kSpace);
   }
 }
 
@@ -1462,6 +1647,10 @@ int main() {
   TestTmpCharacterShown();
   TestTmpChooseMatch();
   TestTmpGeometry();
+  TestUiTextResolvesUguiShape();
+  TestUiTextFailClosedBranches();
+  TestScreenAxesUpright();
+  TestFirstUnitDifference();
   std::printf("unity_mono_lookup_test: ok\n");
   return 0;
 }
