@@ -74,8 +74,6 @@ pub(crate) const DRIFT_TX_POLICY: &[(&str, DriftTxPolicy)] = &[
     ("backfill_dupe_norms", Join),
     ("backfill_tag_sources", Join),
     ("backfill_source_keys", Join),
-    // profile 并入的核对 + 删除在一笔 Drift 事务里（srs_profile_merge.dart）。
-    ("profile_purge", Join),
     // ---- ReadVisible：只读，或不碰写连接上的事务。
     ("profile_uids", ReadVisible),
     ("wal_checkpoint", ReadVisible),
@@ -138,6 +136,12 @@ pub(crate) const DRIFT_TX_POLICY: &[(&str, DriftTxPolicy)] = &[
     // 自己的一笔里，调用方都不开 Drift 事务。
     ("note_fields_if", Reject),
     ("merge_notes", Reject),
+    // profile 的整体删除、并入的标记 / 收尾、链接记的集合（store/profile_data.rs）：并入的收尾以前是一笔 Drift 事务
+    // 里的 `profile_purge`，第 11 步改成一条 `profile_merge_commit`，之后没有调用方在 Drift 事务里发它们。
+    ("profile_purge", Reject),
+    ("profile_merge_mark", Reject),
+    ("profile_merge_commit", Reject),
+    ("meta_set_edit", Reject),
     // 媒体回收（store/media_gc.rs）：待回收集合的写入与删文件不该随别人的事务回滚；存活引用只读。
     ("media_gc_queue", Reject),
     ("media_gc_collect", Reject),

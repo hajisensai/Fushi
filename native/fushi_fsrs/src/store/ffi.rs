@@ -977,6 +977,26 @@ pub(crate) fn sync2_dispatch(
     match s("op")? {
         "profile_uids" => return c.profile_uids(),
         "orphan_sweep_done" => return c.orphan_sweep_done(i("now")?),
+        // profile 并入 / 链接在 srs.db 里的写（store/profile_data.rs）：各自一次持写锁、一个 SAVEPOINT。
+        "profile_merge_mark" => {
+            return c.profile_merge_mark(s("from")?, i("profileId")?, s("to")?);
+        }
+        "profile_merge_commit" => {
+            let map = blobs.first().ok_or("profile_merge_commit: missing map")?;
+            return c.profile_merge_commit(
+                s("from")?,
+                s("to")?,
+                map,
+                req.get("failAfter").and_then(Value::as_str),
+            );
+        }
+        "meta_set_edit" => {
+            return c.meta_set_edit(
+                s("set")?,
+                req.get("add").and_then(Value::as_str),
+                req.get("remove").and_then(Value::as_str),
+            );
+        }
         // 不占写连接的 WAL 并回（store/mod.rs）：大批写入收尾用。
         "wal_checkpoint" => return c.wal_checkpoint(),
         // 批量写入开始 / 结束（Dart `bulkWrites`）：内核按库计嵌套深度，最外层调高 / 恢复写连接的 WAL 自动 checkpoint 阈值
@@ -2595,6 +2615,9 @@ mod tests {
         for global in [
             "profile_uids",
             "orphan_sweep_done",
+            "profile_merge_mark",
+            "profile_merge_commit",
+            "meta_set_edit",
             "wal_checkpoint",
             "bulk_cache",
             "ingest_yield",
