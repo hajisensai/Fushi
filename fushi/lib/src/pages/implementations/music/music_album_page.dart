@@ -23,13 +23,13 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart'
     show MusicFloatingBarHost;
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
-import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
 import 'package:fushi/src/pages/implementations/music/music_disc_actions.dart';
 import 'package:fushi/src/pages/implementations/music/music_disc_cover.dart';
+import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
 import 'package:fushi/src/pages/implementations/music/music_playlist_actions.dart'
     show musicAddLocalTracksToPlaylist;
 import 'package:fushi/src/pages/implementations/music/music_server_pages.dart'
-    show musicAlbumDetailCover, kMusicAlbumDetailCoverSize;
+    show kMusicAlbumDetailCoverSize;
 import 'package:fushi/src/pages/implementations/music/music_subtitle_actions.dart';
 import 'package:fushi/src/pages/implementations/music/music_track_list.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
@@ -206,32 +206,29 @@ class _MusicAlbumPageState extends ConsumerState<MusicAlbumPage> {
       children: <Widget>[
         // 方形「唱片」材质大图（与专辑网格同一材质）；封面上不压角标，光盘规格
         // 徽标挪到右侧格式徽章那一排。
-        // 光盘专辑：大图也画成印着封面的盘（与网格的盒装卡同一张盘面）。
-        if (disc != null)
-          SizedBox.square(
-            key: const ValueKey<String>('music-album-disc-face'),
+        // 有真盘面扫描就画成盘（用户 2026-11-11），没有保持方形材质封面；悬停
+        // 抬升 / 倾斜两种都由外层这一个 FushiHoverLift 给。
+        FushiHoverLift(
+          scale: kMusicHoverLiftScale,
+          builder: (BuildContext context, bool hovering) => SizedBox.square(
             dimension: kMusicAlbumDetailCoverSize,
-            child: FushiHoverLift(
-              scale: kMusicHoverLiftScale,
-              builder: (BuildContext context, bool hovering) => MusicDiscFace(
-                hovering: hovering,
-                cover: MusicCover(
+            child: MusicDiscArtOrCover(
+              albumUid: album.albumUid,
+              trackPath: tracks.isEmpty ? null : tracks.first.path,
+              mbReleaseId: album.mbReleaseId,
+              hovering: hovering,
+              size: kMusicAlbumDetailCoverSize,
+              fallback: musicMaterialCover(
+                MusicCover(
                   coverPath: album.coverPath,
                   embeddedFromPath: embeddedCoverPath,
                   size: kMusicAlbumDetailCoverSize,
-                  borderRadius: BorderRadius.zero,
                 ),
+                size: kMusicAlbumDetailCoverSize,
               ),
             ),
-          )
-        else
-          musicAlbumDetailCover(
-            MusicCover(
-              coverPath: album.coverPath,
-              embeddedFromPath: embeddedCoverPath,
-              size: kMusicAlbumDetailCoverSize,
-            ),
           ),
+        ),
         ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 420),
           child: Column(
