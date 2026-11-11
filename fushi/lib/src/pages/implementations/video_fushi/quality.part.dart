@@ -390,13 +390,23 @@ extension _VideoQuality on _VideoFushiPageState {
       _adaptiveSeenSeekGeneration = seekGeneration;
       _adaptiveQuality.noteSeek();
     }
-    // 暂停时不评估：暂停本来就不下载，缓冲深度与卡顿都不反映网况。
-    if (!controller.isPlaying) return;
+    // 暂停时不评估：暂停时缓冲深度与卡顿都不反映「播放时跟不跟得上」；跨暂停的
+    // 两拍不构成相邻读数（BUG-4459 T4 的深度走向判据）。
+    if (!controller.isPlaying) {
+      _adaptiveQuality.notePlaybackPaused();
+      return;
+    }
 
+    final double? cacheSeconds = controller.networkCacheSeconds.value;
     final AdaptiveQualityDecision? decision = _adaptiveQuality.tick(
       currentIndex: client.adaptiveQualityIndex ?? -1,
       buffering: controller.isBuffering,
-      cacheSeconds: controller.networkCacheSeconds.value,
+      cacheSeconds: cacheSeconds,
+      cacheReachesEnd: adaptiveCacheReachesEnd(
+        positionMs: controller.positionMs,
+        durationMs: controller.durationMs,
+        cacheSeconds: cacheSeconds,
+      ),
     );
     if (decision == null) return;
     unawaited(_applyAdaptiveQuality(client, decision));
