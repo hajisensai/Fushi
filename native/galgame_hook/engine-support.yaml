@@ -389,6 +389,24 @@
         }
       },
       {
+        "engine_id": "system4",
+        "geometry": {
+          "status": "implemented_unverified",
+          "providers": [
+            "engine_exact_layout"
+          ],
+          "evidence": "Engine-exact SACT2 text-sprite provider (kLookupGeometryProviderIdSystem4, 30). The page is the group of MSG lines whose characters the game's message function drew one per SP_TextDraw call on one sprite, matched character by character (system4_core.h OnMessage / OnDraw); each glyph cell is the sprite's text position before the draw (SP_GetTextPosX / Y, sprite-local), the X advance of the draw and the metrics font size (+0x0c of the raw block); the page sits at its sprite's SP_GetPosX / Y at the first draw, updated by SP_SetPos, and the design screen (GetScreenWidth / Height) is stretched over the client, projected to physical client pixels; a client of another aspect ratio than the design screen (more than 1%) is refused rather than guessed. The engine reads the left button from window messages only (no GetAsyncKeyState / GetKeyState / GetKeyboardState import in the executable or any HLL library, no touch registration), so the game window's procedure (the VM thread's largest visible unowned top-level window) claims a press on a glyph at WM_LBUTTONDOWN / DBLCLK and swallows its WM_LBUTTONUP (system4_core.h DecideMessage / ResolvePress); a touch tap arrives as the promoted mouse messages and is decided the same way. Refused when the page's sprite was cleared (SP_TextClear), deleted (SP_Delete) or hidden (SP_SetShow 0), the sprite moved, the client size changed, the host's native-input admission is missing, a card shields the game or the game is not foreground. Hover and looked-up-term highlights use the shared highlight window (owned by provider id). Offline: fushi_system4_adapter_test."
+        },
+        "verified_shield": {
+          "status": "implemented_unverified",
+          "evidence": "The generic standard-surface shield is present, without the required real-build transaction corpus."
+        },
+        "risky_left_click": {
+          "status": "implemented_unverified",
+          "evidence": "Risk is accepted unconditionally (BUG-2154 removed the per-executable consent gate); no measured real-build click-leak rate is recorded."
+        }
+      },
+      {
         "engine_id": "luca",
         "geometry": {
           "status": "implemented_unverified",
@@ -3850,6 +3868,139 @@
       ],
       "test_paths": [
         "tests/softpal_adapter_test.cpp"
+      ]
+    },
+    {
+      "id": "system4",
+      "display_name": "AliceSoft System 4",
+      "aliases": [
+        "System4.0",
+        "System 4",
+        "AliceSoft",
+        "SACT2"
+      ],
+      "family": {
+        "id": "system4",
+        "relation": "AliceSoft System 4.0 with the SACT2 HLL generation: System40.exe runs DLL\\Sys42VM.dll (the .ain VM), which calls the HLL libraries (DLL\\SACT2.dll and others) through their named cdecl exports. Measured: Sys42VM.dll 2.2.7, SACT2.dll 2.1.1. The 4.3+ generation with the HLL compiled into the executable is not covered."
+      },
+      "detection": {
+        "executable_names": {
+          "values": [
+            "System40.exe"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Catalogue only: 戦国ランス (System40.exe; the sample carries a fan translation patch fuckvs.dll statically imported by the executable, the original 戦国ランス.ain is used). The adapter never matches on names; identity is a loaded module exporting the SACT2 surface it binds (system4_core.h kRequiredExports) plus a VM module whose MSG handler decodes (system4_core.h DecodeMsgHandler)."
+          }
+        },
+        "pe_architectures": {
+          "values": [
+            "x86"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "System40.exe, DLL\\Sys42VM.dll and DLL\\SACT2.dll are PE32 machine 0x14c"
+          }
+        },
+        "directory_files_all": {
+          "values": [
+            "System40.ini",
+            "DLL/Sys42VM.dll",
+            "DLL/SACT2.dll"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "System40.ini (CodeName = the .ain), the VM and HLL libraries under DLL\\, *.ald archives next to the executable"
+          }
+        },
+        "pe_imports": {
+          "values": [
+            "USER32.DLL"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "No module of the engine imports GetAsyncKeyState / GetKeyState / GetKeyboardState; the executable imports SetCapture / ReleaseCapture (the button reaches the engine as window messages)."
+          }
+        },
+        "runtime_modules": {
+          "values": [
+            "Sys42VM.dll",
+            "SACT2.dll"
+          ],
+          "evidence": {
+            "kind": "runtime_observation",
+            "reference": "2026-11-11 probe on the sample: SACT2.dll is loaded by the VM after start; SP_TextDraw and MSG observed on one VM thread"
+          }
+        },
+        "resource_extensions": {
+          "values": [
+            ".ald",
+            ".ain"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "ALD archives (3-byte sector pointers, entry header u32 header size / u32 payload size / time / CP932 name); WA.ald holds 194 RIFF WAV sound effects and no voice"
+          }
+        },
+        "hashes": {
+          "values": [
+            "戦国ランス System40.exe sha256:2316553e9cb83f7368d45c35f1c631d130c3991c4002631c1331a3d0d4dfd6b7"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Catalogue only; the adapter does not hash-pin"
+          }
+        }
+      },
+      "process_strategy": {
+        "launch": "create_suspended_early_injection",
+        "attach": "supported",
+        "follow_child_processes": false,
+        "notes": [
+          "The original path is System40.exe started directly; there is no launcher process.",
+          "SACT2.dll loads after the hook attaches: the adapter installs on the module load that brings a module with the SACT2 exports, once the VM module's MSG handler decodes."
+        ]
+      },
+      "text": {
+        "capabilities": [
+          {
+            "kind": "system4_msg_hook",
+            "status": "implemented_unverified",
+            "verification": "Native exact text lane (source kind 17, hook 'System4 MSG', ENGINE:SYSTEM4:message, one lane, kTextEventFlagLaneUniqueHookCode). The VM's MSG instruction handler is found structurally: the one function of a loaded module pushing the handler's own diagnostic 「存在しない文字列データー%d：命令コード【 CallMessage 】」; its VM-object offsets (code pointer, code end, message function, message table) are decoded from its prologue and its table getter (system4_core.h DecodeMsgHandler), any other byte installs nothing. The detour reads the CP932 line of the message number at the code pointer (skipped when the game has no message function) and appends it to the page group; the following SP_TextDraw calls are matched to the group's characters in order on one sprite; the group is committed when its last character is drawn, when the next MSG comes after its draws began, or when its sprite is cleared or deleted; a group whose draws did not cover every character keeps its text and has no geometry. 2026-11-11 probe on the sample: every page arrived as SP_TextClear or SP_Delete of the message sprite, then one MSG per display line, then one SP_TextDraw per character on the VM thread."
+          },
+          {
+            "kind": "ingame_lookup_geometry",
+            "status": "implemented_unverified",
+            "verification": "Engine-exact SACT2 text-sprite provider kLookupGeometryProviderIdSystem4 (30), see lookup_support.geometry."
+          }
+        ],
+        "codepage": "932",
+        "thread_selection_hint": "Select the 'System4 MSG' lane."
+      },
+      "audio": {
+        "priority": [
+          {
+            "kind": "process_loopback",
+            "format": "host PCM fallback",
+            "status": "implemented_unverified",
+            "clean_voice": false
+          }
+        ]
+      },
+      "verified_games": [],
+      "current_status": "implemented_unverified",
+      "known_limitations": [
+        "x86 only, SACT2 HLL generation (Sys42VM 2.2.7 measured); the 4.3+ generation with the HLL in the executable is not covered.",
+        "No voice pairing: the measured sample has no voice (WA.ald holds sound effects only), so no engine voice rule is claimed and audio stays on the loopback fallback.",
+        "Text arrives from the MSG instruction; text a game draws without MSG (string variables, name plates) is not on the lane.",
+        "Lookup refuses a client whose aspect ratio differs from the design screen (letterboxed full screen is unmeasured)."
+      ],
+      "adapter_path": "hook/adapters/system4_adapter.inc",
+      "fixture_paths": [
+        "tests/fixtures/system4_replay.json"
+      ],
+      "test_paths": [
+        "tests/system4_adapter_test.cpp"
       ]
     },
     {
