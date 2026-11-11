@@ -116,10 +116,11 @@ void main() {
       return id;
     }
 
-    final File a = file('a.png');
-    final File b = file('b.png');
-    final String goneA = await deletedNote('a.png');
-    await deletedNote('b.png');
+    // 名字避开基准包：它的笔记类型模板引用着 `a.png`（srs_apkg_import_test.dart `legacyModels`），那是存活引用。
+    final File a = file('wp10-gone.png');
+    final File b = file('wp10-trash.png');
+    final String goneA = await deletedNote('wp10-gone.png');
+    await deletedNote('wp10-trash.png');
     late SrsPurgeReport report;
     costs['purgeNotesNow'] = await _cost(s, () async {
       report = await srsPurgeNotesNow(s, <String>[goneA], mediaRoot: media);
