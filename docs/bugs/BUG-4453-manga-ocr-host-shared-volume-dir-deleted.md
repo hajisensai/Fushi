@@ -4,3 +4,4 @@
 - **[x] ① 已修复** — `b1032b417b5` 目录按引用回收：新增 `_dirSharedWithOtherJob(job, liveOnly:)`（按 `p.canonicalize` 比目录、排除自身）。`_housekeep` 过期任务先出表，表里仍有任何任务引用该目录就跳过（同一轮都过期时最后一个出表的才删）；`cancelAndCleanup` 出表后若有非终态共享者就不删任何文件，共享者全是终态时照旧删页图、保留 `manga_ocr_out/`。`createJob` 的 `dirBusy` 与孤儿扫描不变。
 - **[x] ② 已加自动化测试** — `fushi/test/sync/fushi_sync_server_manga_ocr_test.dart` group `shared volume dir`：TTL 不删共享目录、DELETE 旧任务保留在跑共享者的页图、共享者全终态时照常删页图并保留 `manga_ocr_out/`（保持用例）。
 - **备注**：host 内部行为，无 wire / 持久化改动；目录名与断点缓存位置不变。
+- **提交信息里的旧号**：本条撞号改过三次（4277 → 4371 → 4397 → 4453，改号提交 `b53a5d1b1ca`、`99b2b65e68f`、`28f5009b2a5`），历史不重写，所以改号前写下的提交信息仍是当时的号：上面记的修复提交标题写的是 4277。按号查提交历史用 `git log --grep` 搜 `BUG-` 接 4277，但搜出来的不只本条：client-routing 修复包的 [BUG-4398](BUG-4398-interconnect-address-owner-unchecked.md) 最初也叫 4277（它的提交标题同样写 4277），`develop` 上现在叫 4277 的又是另一条无关 bug，搜到的提交可能分属这三条，认本条以上面记的提交哈希为准。中间两个号 4371、4397 只出现在改号提交里，这两个号现在或以后也属于别的 bug，与本条无关。此处旧号不带前缀，免得 `bug.dart renumber` / `settle` 替别的 bug 改号时把这里一起改掉。
