@@ -15,12 +15,21 @@
 #   --jobs <n>          number of processes (default: 3/4 of the logical cores)
 #
 # Why processes and not `cargo test`'s threads: fushi_fsrs's tests do not scale
-# inside one process. Measured 2026-11-11 (i5-12600KF, 384 tests): `cargo test`
-# with 16 threads takes 207 s, the same binary split over 12 processes 85 s; a
-# 16-test subset takes 7 s on one thread and 11-18 s on 16. Separate processes
-# scale almost linearly (8 processes do 8x the work in 1.3x the time). What
-# serialises the threads is not known yet (ruled out: SQLite's shared page
-# cache, the Rust allocator), so this goes around it instead of waiting for it.
+# inside one process. Measured 2026-11-11 (i5-12600KF, 384 tests, same load,
+# back to back): `cargo test` with 16 threads 263-301 s, the same binary split
+# over 12 processes 133 s; a 16-test subset takes 7 s on one thread and 11-18 s
+# on 16.
+#
+# Cause: SQLite's memory statistics (SQLITE_DEFAULT_MEMSTATUS, on by default)
+# put every SQLite allocation and free in the process behind one global mutex,
+# and the tests are allocation-heavy (fresh databases, schema, statement
+# preparation) on many threads. Built with -DSQLITE_DEFAULT_MEMSTATUS=0 the
+# subset takes 7 / 3 / 3 s on 1 / 4 / 16 threads and the whole suite 149-209 s
+# instead of 337 s. The app keeps the statistics on: `ffsrs_store_diag_counts`
+# reports SQLite's heap use for out-of-memory forensics, and read-only queries
+# lose little to the mutex (2 readers 1.54x vs 2.02x throughput, 4 readers
+# 2.47x vs 2.84x, 8 readers the same). Separate processes each have their own
+# mutex, so this script gets the parallelism without changing what is tested.
 #
 # What runs: the crate's unit tests and tests/*.rs (cargo `--tests`); doctests
 # do not. CI keeps running `cargo test --release --locked` (native-*-gate.yml);

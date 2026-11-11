@@ -148,9 +148,16 @@ Android / Windows / macOS / iOS debug/beta workflow 必须使用跨 workflow 统
 - **跑一大批测试用 `bash tool/rust_test.sh <crate> [过滤...]`**（`--features <f>`、`--jobs <n>`、`-- <libtest 参数>`）：用
   `quick` 编一次，再把测试分给多个**进程**跑，退出码 0 = 全部通过且报告的测试数等于选中的数。fushi_fsrs 的测试在同一个进程
   里多线程跑不快（16 个测试单线程 7 秒，16 线程反而 11～18 秒；分到 8 个进程则 8 倍工作量只多三成时间）。同负载背靠背
-  实测全量 384 个测试：`cargo test` 16 线程 263～301 秒，本脚本 12 进程 133 秒（机器闲时 85 秒）。是什么把线程串行化了
-  还没查到（已排除：SQLite 的全局页缓存 `SQLITE_ENABLE_MEMORY_MANAGEMENT`、Rust 堆分配器），所以先绕开；跑个别测试直接
+  实测全量 384 个测试：`cargo test` 16 线程 263～301 秒，本脚本 12 进程 133 秒（机器闲时 85 秒）。跑个别测试直接
   `cargo test --profile quick --lib <过滤>` 即可。
+- **为什么进程内多线程不快**：SQLite 的内存统计（`SQLITE_DEFAULT_MEMSTATUS`，默认开）让进程内每一次 SQLite 分配 / 释放都过
+  同一把全局锁，而测试是多线程同时建库、建表、预编译语句，分配极密。对照实验：用 `-DSQLITE_DEFAULT_MEMSTATUS=0` 重编后
+  同一批 16 个测试 1 / 4 / 16 线程是 7 / 3 / 3 秒，全量 16 线程 149～209 秒（开着是 337 秒，同负载背靠背）。已排除的：
+  SQLite 全局页缓存（`SQLITE_ENABLE_MEMORY_MANAGEMENT`）、Rust 堆分配器。**生产构建没有关它**：`ffsrs_store_diag_counts`
+  靠它报 SQLite 堆用量与高水位（移动端内存耗尽闪退的取证，BUG-4075，`store::ffi::tests::diag_counts_*` 钉着），而只读查询受
+  这把锁的影响不大——K 条只读连接各跑同样多的「取行 + JSON 取值 + 排序 + 分组」查询，吞吐开 / 关分别是 2 条 1.54× / 2.02×、
+  4 条 2.47× / 2.84×、8 条 2.52× / 2.63×。要在生产关掉它，得先给诊断换一个不靠全局统计的读数（例如按连接的
+  `sqlite3_db_status`）。分进程跑时每个进程各有一把锁，所以脚本不改被测对象就拿到了并行。
 - **循环里不跑两遍全量**：fushi_fsrs 的 `--features id_audit` 给 Dart 桥的 query / exec 路径加了 ID 绑定审计
   （`ids::audit::take`），默认构建没有；CI 两种都跑。本地按改动选一种——动了桥、ID 绑定或经桥执行的 SQL 就带
   `--features id_audit`，否则跑默认构建——两遍都跑留给 CI。
