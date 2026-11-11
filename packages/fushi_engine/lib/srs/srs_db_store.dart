@@ -663,11 +663,11 @@ class SrsDbStore implements SrsSync2Host {
     }
   }
 
-  /// 正在进行的收段会话；完成 = 会话结束。RWKV 回放（[rwkvReplay]，整 profile 扫一遍日志）等它结束才跑，
+  /// 正在进行的收段会话；完成 = 会话结束。RWKV 回放（[rwkvReplayBytes]，整 profile 扫一遍日志）等它结束才跑，
   /// 会话开始前等在途的回放跑完（[_rwkvReplaysIdle]）：两者都随日志总量线性占内存，不能叠在一起。
   Completer<void>? _ingestSession;
 
-  /// 在途的 [rwkvReplay] 个数与「全部跑完」信号（收段会话开始时等它）。
+  /// 在途的 [rwkvReplayBytes] 个数与「全部跑完」信号（收段会话开始时等它）。
   int _rwkvReplaysInFlight = 0;
   Completer<void>? _rwkvReplaysIdle;
 
@@ -1604,7 +1604,7 @@ class SrsDbStore implements SrsSync2Host {
     'open_file',
   };
 
-  /// 开一场收段会话。先登记会话（之后来的 [rwkvReplay] 排到会话结束），再等在途的回放跑完，然后才让内核开始：
+  /// 开一场收段会话。先登记会话（之后来的 [rwkvReplayBytes] 排到会话结束），再等在途的回放跑完，然后才让内核开始：
   /// 收段的投递 / 收尾与整 profile 的 RWKV 回放不会同时在内存里。开不成（抛错）时会话随即结束——调用方只在
   /// 这一步成功后才配对 [sync2IngestEnd]。
   @override
@@ -3090,26 +3090,43 @@ class SrsDbStore implements SrsSync2Host {
     required int since,
     int? rebaseSince,
     int? rowsFrom,
+  }) async => srsDecodeRwkvReplay(
+    await rwkvReplayBytes(
+      cardIds,
+      ids,
+      day,
+      since: since,
+      rebaseSince: rebaseSince,
+      rowsFrom: rowsFrom,
+    ),
+  );
+
+  /// [rwkvReplay] 未解码的字节（[srsDecodeRwkvReplay] 的布局）：RWKV 排程内核原样收下，不在 Dart 里解码。
+  Future<Uint8List> rwkvReplayBytes(
+    List<String> cardIds,
+    List<int> ids,
+    SrsDayContext day, {
+    required int since,
+    int? rebaseSince,
+    int? rowsFrom,
   }) async {
     // 收段会话期间不扫：等会话结束（[sync2IngestBegin] 反过来等在途的回放）。
     await sync2IngestSettled();
     _rwkvReplaysInFlight++;
     _rwkvReplaysIdle ??= Completer<void>();
     try {
-      return srsDecodeRwkvReplay(
-        (await _coreRwkvReplay(
-          core.address,
-          core.libraryPath,
-          profileUid,
-          _seedGroups(cardIds),
-          ids,
-          day.utcOffsetMin,
-          day.rolloverHour,
-          since,
-          rebaseSince,
-          rowsFrom,
-        )).materialize().asUint8List(),
-      );
+      return (await _coreRwkvReplay(
+        core.address,
+        core.libraryPath,
+        profileUid,
+        _seedGroups(cardIds),
+        ids,
+        day.utcOffsetMin,
+        day.rolloverHour,
+        since,
+        rebaseSince,
+        rowsFrom,
+      )).materialize().asUint8List();
     } finally {
       if (--_rwkvReplaysInFlight == 0) {
         _rwkvReplaysIdle?.complete();
