@@ -37,7 +37,7 @@ from websockets.asyncio.client import connect
 import fleet_protocol as proto
 from galdriver_host import GalDriverHost
 
-AGENT_VERSION = "1.0.0"
+AGENT_VERSION = "1.0.1"
 OUTPUT_LIMIT = 60_000
 
 
