@@ -728,7 +728,7 @@ void main() {
     });
   });
 
-  // BUG-4392（remote-tasks 步骤 13）：job client 的传输走共享 host 通道——每次 run
+  // BUG-4403（remote-tasks 步骤 13）：job client 的传输走共享 host 通道——每次 run
   // 一条通道，工厂建出的明文 client 归这次 run、用完必关；按 host 选路，不钉死
   // target.baseUrl 那一条地址。
   group('共享 host 通道（interconnect-client-no-shared-host-channel）', () {

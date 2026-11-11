@@ -32,7 +32,7 @@ import 'temp_dir_cleanup.dart';
 const String _hostId = 'HOST-P2P';
 const String _token = 'shared-token';
 
-/// 合法 NodeId（iroh 口径 64 位十六进制）：畸形 `p2p://` 在解析阶段就被拒（BUG-4390）。
+/// 合法 NodeId（iroh 口径 64 位十六进制）：畸形 `p2p://` 在解析阶段就被拒（BUG-4401）。
 final String _p2pUrl = interconnectP2pUrl('b' * 64, tls: false);
 
 void main() {

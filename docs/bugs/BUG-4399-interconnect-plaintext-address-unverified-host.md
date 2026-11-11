@@ -1,4 +1,4 @@
-## BUG-4388 · 明文互联地址未核对 hostId 就带 token 发出（单地址组与竞速失败时）
+## BUG-4399 · 明文互联地址未核对 hostId 就带 token 发出（单地址组与竞速失败时）
 - **报告**：2026-11-10（用户：互联审查 V-B4）
 - **真实性**：✅ 真 bug。
   - `fushi/lib/src/sync/interconnect_peer_addresses.dart:231`（基准 94317ab6295）`_rankGroup`：`if (group.length < 2 || hostId == null) return group;`——单地址组从不 ping 核对。一条明文 http 行标着 hostId A、带着 A 的 token，地址换网后背后是另一台 Fushi host 时，post transport 照样用 Basic 把 A 的 token 发过去。
@@ -16,5 +16,5 @@
   - 既有 MockClient 用例（明文行 + hostId）在 `setUp` 里设 `debugInterconnectAddressProbeOverride` 视为核对通过：`video_remote_phone_lifecycle_test`、`srs_remote_review_test`、`fushi_remote_lookup_client_dictionary_resources_test`、`remote_lookup_request_language_test`、`remote_lookup_request_ruby_test`、`game_stream_host_dictionary_styles_test`、`video_remote_client_test`、`fushi_remote_mining_client_target_test`；`interconnect_multi_address_identity_test` 的 onlyCandidate 用例经 transport 的 `probe` 参数注入。
 - **备注**：
   - 第一轮选路时每个「含明文地址且带 hostId」的组多一次 `/api/ping`（2 秒超时，之后缓存 30 秒）。
-  - 中和 BUG-4387 存量误收编的明文手输行：它 ping 回报的 hostId 不等于组的 hostId，就拿不到凭据。
+  - 中和 BUG-4398 存量误收编的明文手输行：它 ping 回报的 hostId 不等于组的 hostId，就拿不到凭据。
   - 胜者决出时还没回结果的明文地址这一轮被扣下（不再作为后备候选）；晚到的成功结果写进缓存项，30 秒内的后续选路可用。

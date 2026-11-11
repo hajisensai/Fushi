@@ -746,7 +746,7 @@ void main() {
     });
   });
 
-  // BUG-4392（remote-tasks 步骤 13）：OCR client 的传输走共享 host 通道——每次
+  // BUG-4403（remote-tasks 步骤 13）：OCR client 的传输走共享 host 通道——每次
   // probe / run 各一条通道，工厂建出的明文 client 归那一次、用完必关。
   group('shared host channel lifecycle', () {
     Future<void> eventually(bool Function() condition, String reason) async {

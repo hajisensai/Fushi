@@ -10,7 +10,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
-/// BUG-4392 步骤 11：[InterconnectHostClient] 收到共享 host 通道上——GET 与 POST
+/// BUG-4403 步骤 11：[InterconnectHostClient] 收到共享 host 通道上——GET 与 POST
 /// 共用同一套选路、per-peer 凭据、钉扎闸与 client 生命周期。
 void main() {
   late FushiDatabase database;

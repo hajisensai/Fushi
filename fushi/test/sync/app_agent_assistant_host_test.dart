@@ -578,7 +578,7 @@ void main() {
     expect(session.awaitingConfirm, isFalse);
   });
 
-  test('BUG-4395：会话中途凭据被吊销 → 401 后停止轮询、不再可用；dispose 不发关会话、'
+  test('BUG-4406：会话中途凭据被吊销 → 401 后停止轮询、不再可用；dispose 不发关会话、'
       '释放 client', () async {
     // 与 `FushiServerController.revokePeer` 同一路径：删掉 per-peer 口令 + 清缓存。
     final Set<String> peerTokens = <String>{'peer-tok'};
@@ -633,7 +633,7 @@ void main() {
     expect(counting.sessionCloses, 0);
   });
 
-  test('BUG-4395：dispose 先关 host 上的会话、再释放会话接管的 client', () async {
+  test('BUG-4406：dispose 先关 host 上的会话、再释放会话接管的 client', () async {
     final (_, String url) = await startHost(agentHost());
     final _CountingHttpClient counting = _CountingHttpClient();
     addTearDown(counting.inner.close);
@@ -666,7 +666,7 @@ void main() {
     );
   });
 
-  test('BUG-4395：开会话在途（host 已建好、应答未回）时 dispose：等它落地补关，'
+  test('BUG-4406：开会话在途（host 已建好、应答未回）时 dispose：等它落地补关，'
       '再释放 client', () async {
     final (_, String url) = await startHost(agentHost());
     final _CountingHttpClient counting = _CountingHttpClient();
