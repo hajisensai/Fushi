@@ -1,4 +1,4 @@
-## BUG-4392 · 互联功能 client 各自复制传输层：响应体不受超时约束、client 不回收、凭据与选路各处漂移
+## BUG-4403 · 互联功能 client 各自复制传输层：响应体不受超时约束、client 不回收、凭据与选路各处漂移
 - **报告**：2026-11-10（用户：互联审查 R8 / C12 / C13）
 - **真实性**：✅ 真 bug（代码路径核实；步骤 7 的两条核心断言修复前确认红）。行号指基准 94317ab6295：
   - `fushi/lib/src/sync/interconnect_download_client.dart:290-384`：代下载 client 自带一份传输实现（`_call` / `_tokenForBaseUrl` / `_clientFor`），与订阅、AI 助手、任务、漫画 OCR client 各抄一份，筛候选、取 token、选钉扎、解析错误各自漂移。
@@ -20,7 +20,7 @@
   - 能力探测（视频遥控、远程复习、AI 中继）用完即 `cancelPending()`；`interconnect_host_client.dart` 不再裸建 client，出站守卫撤掉它的登记（31 条）。
   - `docs/specs/2026-09-28-interconnect-remote-reach.md` §2 / §5 / §9 对齐实现。
 - **[x] ② 步骤 11 测试** — `fushi/test/sync/interconnect_host_client_channel_test.dart`（同组 [死明文 LAN, 活 https] 的 getFromHost 走活地址且死地址零请求；重新配对把 URL 改归另一台 host 后旧会话抛 unreachable、新 host 零请求；cancelPending 收尾在途请求、关掉自建钉扎 client、之后可继续请求）；`fushi/test/sync/interconnect_p2p_forward_lifecycle_test.dart`「InterconnectHostClient 经选路走 P2P 转发口」。步骤 11 时 `interconnect_p2p_forward_lifecycle_test.dart` 那条跑过一次是红的（实际 URL 结尾多一个 `?`），当时改成只比 origin + path，掩盖了差异；其余步骤 11 测试未运行。
-- **备注**：`remote_download_tasks_section.dart` 自建 client 的关闭已在步骤 9（`4cedee11b21`，BUG-4394）落地（dispose 里 `_client.close()`），此处不再遗留。
+- **备注**：`remote_download_tasks_section.dart` 自建 client 的关闭已在步骤 9（`4cedee11b21`，BUG-4405）落地（dispose 里 `_client.close()`），此处不再遗留。
 - **[x] ① 评审修正（2026-11-11）** — `1373a20f353`：
   - compat-1 / tests-1：步骤 11 把 `postJson` 迁到通道后，`interconnect_host_channel.dart` 的 send 对非幂等请求「任何传输失败直接抛 unreachable(mayHaveDelivered: true)」，连建连被拒这种一个字节都没发出的失败也不换地址；叠加选路缓存 30 秒内沿用死掉的胜者（`interconnect_peer_addresses.dart` `_rankGroup`），离开 Wi-Fi 后的 POST 全部失败。修法：请求统一成 `_ChannelRequest`，client 真正开始读请求体时记 `bodyStarted`（IOClient 在 openUrl 建连成功后才读请求体）；没开始写出的失败任何请求都换同组下一条，写出后非幂等 / 流式不重发；撞传输失败调用新增的 `forgetInterconnectRaceWinner(hostId)` 作废选路缓存；通道自建的明文 client 改 `IOClient(HttpClient()..connectionTimeout = kInterconnectConnectTimeout)`，死地址不吃满整段 deadline。
   - 合入 develop 后备注：`forgetInterconnectRaceWinner` 已删除，并入 develop BUG-4278 的 `reportInterconnectCandidateUnreachable(c)` / `reportInterconnectCandidateReached(c)`（`interconnect_peer_addresses.dart`，通道 `interconnect_host_channel.dart` 上报）：传输失败只在该地址正是缓存胜者时作废（不再按 hostId 无条件作废）；拿到应答且无有效缓存时只记 https 钉扎或 `p2p://` 地址（守 V-B4）。

@@ -37,16 +37,16 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4395](bugs/BUG-4395-interconnect-assistant-single-address-endless-poll.md) | ✅ | ✅ | AI 助手只认一条地址、会话期间不换路，凭据失效后仍每 3 秒无限重试 |
-| [BUG-4394](bugs/BUG-4394-remote-download-tasks-single-host-silent-failure.md) | ✅ | ✅ | 下载中心远端任务段只看一台 host、失败无提示、任务域与创建时间写错 |
-| [BUG-4393](bugs/BUG-4393-interconnect-probe-failure-reason-lost.md) | ✅ | ✅ | 互联能力探测把凭据失效、证书不符、老版本、连不上都折成『没有可用主机』 |
-| [BUG-4392](bugs/BUG-4392-interconnect-client-no-shared-host-channel.md) | ✅ | ✅ | 互联功能 client 各自复制传输层：响应体不受超时约束、client 不回收、凭据与选路各处漂移 |
-| [BUG-4391](bugs/BUG-4391-interconnect-p2p-network-change-not-notified.md) | ✅ | ✅ | P2P 隧道不知道系统网络变化，Android 切网、iOS 唤醒后隧道长时间不通 |
-| [BUG-4390](bugs/BUG-4390-interconnect-p2p-badge-invalid-node-crash.md) | ✅ | ✅ | p2p 地址不校验 NodeId，路径徽章在定时器里抛未捕获异常 |
-| [BUG-4389](bugs/BUG-4389-interconnect-p2p-forward-origin-lifecycle.md) | ✅ | ✅ | P2P 转发口撤销后反查映射残留，学习器拿临时转发口当锚点学不到地址 |
-| [BUG-4388](bugs/BUG-4388-interconnect-plaintext-address-unverified-host.md) | ✅ | ✅ | 明文互联地址未核对 hostId 就带 token 发出（单地址组与竞速失败时） |
-| [BUG-4387](bugs/BUG-4387-interconnect-address-owner-unchecked.md) | ✅ | ✅ | 互联地址写凭据不核对归属：同 URL 配对把 token 写进另一台 host 的整组，明文手输行按 URL 被收编 |
-| [BUG-4386](bugs/BUG-4386-lan-discovery-self-reported-id-key.md) | ✅ | ✅ | 局域网发现以对端自报 id 为键被冒名覆盖，mDNS 回退缓存收录无关记录且不回收 |
+| [BUG-4406](bugs/BUG-4406-interconnect-assistant-single-address-endless-poll.md) | ✅ | ✅ | AI 助手只认一条地址、会话期间不换路，凭据失效后仍每 3 秒无限重试 |
+| [BUG-4405](bugs/BUG-4405-remote-download-tasks-single-host-silent-failure.md) | ✅ | ✅ | 下载中心远端任务段只看一台 host、失败无提示、任务域与创建时间写错 |
+| [BUG-4404](bugs/BUG-4404-interconnect-probe-failure-reason-lost.md) | ✅ | ✅ | 互联能力探测把凭据失效、证书不符、老版本、连不上都折成『没有可用主机』 |
+| [BUG-4403](bugs/BUG-4403-interconnect-client-no-shared-host-channel.md) | ✅ | ✅ | 互联功能 client 各自复制传输层：响应体不受超时约束、client 不回收、凭据与选路各处漂移 |
+| [BUG-4402](bugs/BUG-4402-interconnect-p2p-network-change-not-notified.md) | ✅ | ✅ | P2P 隧道不知道系统网络变化，Android 切网、iOS 唤醒后隧道长时间不通 |
+| [BUG-4401](bugs/BUG-4401-interconnect-p2p-badge-invalid-node-crash.md) | ✅ | ✅ | p2p 地址不校验 NodeId，路径徽章在定时器里抛未捕获异常 |
+| [BUG-4400](bugs/BUG-4400-interconnect-p2p-forward-origin-lifecycle.md) | ✅ | ✅ | P2P 转发口撤销后反查映射残留，学习器拿临时转发口当锚点学不到地址 |
+| [BUG-4399](bugs/BUG-4399-interconnect-plaintext-address-unverified-host.md) | ✅ | ✅ | 明文互联地址未核对 hostId 就带 token 发出（单地址组与竞速失败时） |
+| [BUG-4398](bugs/BUG-4398-interconnect-address-owner-unchecked.md) | ✅ | ✅ | 互联地址写凭据不核对归属：同 URL 配对把 token 写进另一台 host 的整组，明文手输行按 URL 被收编 |
+| [BUG-4397](bugs/BUG-4397-lan-discovery-self-reported-id-key.md) | ✅ | ✅ | 局域网发现以对端自报 id 为键被冒名覆盖，mDNS 回退缓存收录无关记录且不回收 |
 | [BUG-4385](bugs/BUG-4385-music-exclusive-pause-holds-device.md) | ✅ | ✅ | 音乐 WASAPI 独占输出暂停时不交还设备 |
 | [BUG-4384](bugs/BUG-4384-apple-music-preview-full-duration.md) | ✅ | ✅ | Apple Music 试听片段放约 30 秒就「回到开头」，进度条按整首时长画、无试听提示 |
 | [BUG-4383](bugs/BUG-4383-jellyfin-default-embedded-sub.md) | ✅ | ✅ | Jellyfin 服务器标为默认的内嵌字幕起播不显示 |

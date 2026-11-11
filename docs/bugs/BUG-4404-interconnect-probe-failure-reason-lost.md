@@ -1,4 +1,4 @@
-## BUG-4393 · 互联能力探测把凭据失效、证书不符、老版本、连不上都折成『没有可用主机』
+## BUG-4404 · 互联能力探测把凭据失效、证书不符、老版本、连不上都折成『没有可用主机』
 - **报告**：2026-11-10（用户：互联审查 R9 / R8 / C13 订阅 client）
 - **真实性**：✅ 真 bug（代码路径核实；核心断言修复前确认红）。行号指基准 94317ab6295：
   - `fushi/lib/src/sync/interconnect_subscription_client.dart:237`（`statusCode != 200 → null`）与 `:252`（`catch (_) → null`）：订阅能力探测把 401、证书不符、5xx、超时、老 host 全部折成 null，`probeAll()` 只剩「有 / 没有」；`:317-416` 另有一份自带的传输实现（`_tokenForBaseUrl` / `_clientFor`，`fromStream` 不受超时约束，`http.Client()` 无关闭路径），`probeAll()` 按存储顺序逐条探测。
