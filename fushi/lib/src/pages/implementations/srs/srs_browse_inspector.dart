@@ -385,10 +385,9 @@ class _PreviewTab extends ConsumerWidget {
         if (plain.isNotEmpty) sentence = plain;
       }
       final String? aid = srsBrowseSentenceAudioFieldId(d.noteType);
-      final Match? sound = aid == null
-          ? null
-          : srsSoundTagPattern.firstMatch(d.note.field(aid));
-      if (sound != null) clip = srsSoundTagName(sound.group(1)!);
+      if (aid != null) {
+        clip = srsSoundTagPattern.firstMatch(d.note.field(aid))?.group(1);
+      }
     }
     final String term = inspector.row.sortText;
     final ColorScheme scheme = Theme.of(context).colorScheme;

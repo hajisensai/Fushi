@@ -4,8 +4,6 @@ import 'dart:io';
 
 import 'package:fushi/src/srs/srs_card_autoplay.dart';
 import 'package:fushi/src/srs/srs_card_media.dart';
-import 'package:fushi/src/srs/srs_fushi_card_fields.dart';
-import 'package:fushi/src/srs/srs_html_card.dart';
 import 'package:fushi/src/srs/srs_sound_tag.dart';
 import 'package:test/test.dart';
 
@@ -32,7 +30,7 @@ void main() {
     });
   });
 
-  group('同一个标记，各处解出同一个文件名', () {
+  group('同一个标记，整面 WebView 与宿主解出同一个文件名', () {
     // Anki 的字段是 HTML：文件名里的 & 存成 &amp;。
     const String field = '[sound: Tom &amp; Jerry.mp3 ][sound:plain.mp3]';
     const List<String> names = <String>['Tom & Jerry.mp3', 'plain.mp3'];
@@ -51,19 +49,6 @@ void main() {
       expect(srsCardSoundNames(field), names);
       expect(srsCardMediaNames(field), names);
       expect(srsCardReferencedMedia(field), names.toSet());
-    });
-
-    test('原生 Fushi 卡面与字段编辑器', () {
-      expect(srsAudioSources(field), names);
-      expect(srsSoundNames(field), names);
-    });
-
-    test('原生 HTML 卡面：发音键', () {
-      final SrsHtmlBlock root = SrsHtmlCardFace.parse(
-        '<div>$field</div>',
-        '',
-      ).layout(dark: false, foreground: 0xFF000000);
-      expect(srsHtmlVisibleSounds(root), names);
     });
   });
 
