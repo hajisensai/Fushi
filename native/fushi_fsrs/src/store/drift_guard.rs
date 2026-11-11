@@ -108,6 +108,8 @@ pub(crate) const DRIFT_TX_POLICY: &[(&str, DriftTxPolicy)] = &[
     ("location_sealed", ReadVisible),
     ("media_known", ReadVisible),
     ("profile_footprint", ReadVisible),
+    // 集合绑定状态（store/binding.rs）：只读一行 `srs_meta`。
+    ("binding_get", ReadVisible),
     ("ingest_prepare", ReadVisible),
     ("derive_key", ReadVisible),
     ("seal", ReadVisible),
@@ -135,6 +137,9 @@ pub(crate) const DRIFT_TX_POLICY: &[(&str, DriftTxPolicy)] = &[
     ("apply", Reject),
     ("checkpoint", Reject),
     ("identity", Reject),
+    // 集合绑定状态只进不退（store/binding.rs）：与 `identity` 同属身份记账，随别人的 Drift 事务回滚就把「已定下」退回去了；
+    // 调用方（srs_db_store.dart `setCollectionBinding`）走排队的 `sync2Command`，不开 Drift 事务。
+    ("binding_set", Reject),
     ("channel_settle", Reject),
     ("migrate", Reject),
     ("replay_all", Reject),
