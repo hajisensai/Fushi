@@ -68,6 +68,10 @@ function Invoke-Native {
 function Set-Toolchain {
   $env:PATH = "$depot;$env:PATH"
   $env:DEPOT_TOOLS_WIN_TOOLCHAIN = '0'
+  # build/toolchain/win/tool_wrapper.py reads the saved toolchain environment
+  # with the locale's default codec; on a GBK system a non-ASCII variable in
+  # it fails every link step (UnicodeDecodeError). Force UTF-8 on both sides.
+  $env:PYTHONUTF8 = '1'
   if (-not $VsInstall) {
     $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
     $script:VsInstall = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath

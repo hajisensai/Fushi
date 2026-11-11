@@ -172,6 +172,11 @@ DXBC——每次启动全量重编，Release 实测主线程阻塞约 1 秒（58
 丢弃 / 淘汰计数。引擎单测 `egl/program_binary_cache_unittests.cc`（目标
 `flutter/shell/platform/windows:flutter_windows_unittests`，未纳入本仓 CI）。
 
+实测（2026-11-12，本机 Release、离屏 `FUSHI_TEST_HIDDEN`、隔离测试根，同一 exe + app.so 只换
+`flutter_windows.dll`，进程创建 → Dart `main()`，6 轮）：原版 1458–1501 ms（中位 1464）；补丁首次
+（删缓存）1478–1577 ms（中位 1488，75 条程序全部 miss → 后台写入 75 条，共 460 KB）；补丁第二次起
+526–550 ms（中位 534，75/75 命中、0 写入）。
+
 **删除条件**：上游 Windows 嵌入层自己接上 `EGL_ANDROID_blob_cache`（或 Impeller GLES 自带程序二进制
 缓存）时删掉。
 
@@ -218,9 +223,10 @@ pack（连同 pdb 打 zip——`flutter build windows` 要求缓存里有 `flutt
 2026-11-05 编，含 `engine-hdr-output` + `engine-underlay-composition` + `engine-impeller-hdr` +
 `engine-d3d-keyed-mutex` 四份引擎补丁与 ANGLE 补丁；三种模式 + 匹配的 pdb——`flutter build windows`
 缺 pdb 会在 assemble 失败；tag 不以数字 / `v`+数字开头，app 更新检查与发布 workflow 都不会把它当
-app 版本）。**`hdr-output-3` 不含 `engine-a11y-tree-hardening.patch`**（2026-11-10 加入，尚未重编）：
-下一次重编必须带上它（建议 `patchVersion` 取 `hdr-output-4`），发 release 后更新 `artifacts.json`，
-在那之前出的包仍是旧引擎、无障碍树加固不生效。重编后换一个新的 `patchVersion` 发新 release，再改本目录的 `artifacts.json`，旧 release
+app 版本）。**`hdr-output-3` 不含 `engine-a11y-tree-hardening.patch`（2026-11-10 加入）与
+`engine-program-binary-cache.patch`（2026-11-12 加入）**：下一次重编必须带上两者（`patchVersion` 取
+`hdr-output-4`），发 release 后更新 `artifacts.json`，在那之前出的包仍是旧引擎、无障碍树加固与着色器
+程序缓存都不生效（runner 解析不到导出，照常每次编译）。重编后换一个新的 `patchVersion` 发新 release，再改本目录的 `artifacts.json`，旧 release
 留着给旧提交复现用（`hdr-output-2` 是前三份补丁、无 keyed mutex；`hdr-output-1` 只有 Skia 路径的
 HDR、不含 underlay；3.44.0 时代的是 `flutter-engine-3.44.0-hdr-output-2`）。
 
