@@ -168,6 +168,8 @@ struct UnityMonoLookupRuntime {
   uint64_t model_text_event = 0u;
   UmSnapshot snapshot_copy;
   std::array<uint16_t, umono_lookup::kMaxGlyphs> source_scratch{};
+  // Worker only: shown-text index -> selected-line index (MatchShownToLine).
+  std::array<uint16_t, umono_lookup::kMaxLineUnits> line_map{};
 
   // ── resolved once, read everywhere ──
   uint8_t framework = 0u;  // kUmFramework*; 0 until a framework resolved
@@ -1719,9 +1721,8 @@ bool BuildUmModel(const UmSnapshot& snapshot, const std::wstring& line,
       continue;
     }
     ++fresh;
-    if (instance.units != line.size() ||
-        std::memcmp(instance.text.data(), line.data(),
-                    line.size() * sizeof(wchar_t)) != 0) {
+    if (!umono_lookup::MatchShownToLine(instance.text.data(), instance.units,
+                                        line.data(), line.size(), nullptr)) {
       if (rt.framework == kUmFrameworkCanvas && selected_units < 0 &&
           UmTmpLaneSelected(instance, selected_thread)) {
         selected_units = static_cast<int32_t>(instance.units);
@@ -1785,6 +1786,23 @@ bool BuildUmModel(const UmSnapshot& snapshot, const std::wstring& line,
     std::memcpy(rt.source_scratch.data(), instance.sources.data(),
                 instance.glyph_count * sizeof(uint16_t));
     mapped = true;
+  }
+  // Glyph sources index the shown text; the model's index the selected line
+  // (the host reads `char_index` against it), line breaks aside.
+  if (mapped && !umono_lookup::MatchShownToLine(
+                    instance.text.data(), instance.units, line.data(),
+                    line.size(), rt.line_map.data())) {
+    mapped = false;
+  }
+  for (uint32_t index = 0u; mapped && index < instance.glyph_count; ++index) {
+    const uint16_t shown = rt.source_scratch[index];
+    const uint16_t in_line =
+        shown < instance.units ? rt.line_map[shown] : umono_lookup::kNoSource;
+    if (in_line == umono_lookup::kNoSource) {
+      mapped = false;
+    } else {
+      rt.source_scratch[index] = in_line;
+    }
   }
   if (!mapped) {
     return FailUmModel(4u, static_cast<int32_t>(instance.lines),

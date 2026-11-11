@@ -16,6 +16,7 @@
 //   * 框架 3（裸 TextMeshProUGUI）：站点解析（每条拒绝分支）、类层级判定、TMP 字符
 //     显示判定（isVisible / 打字机可见区间 / 顶点 alpha）、同文多对象的确定性选择、
 //     字符四边形 本地 -> 世界 -> Unity 屏幕 -> 物理客户区 的投影与命中。
+#include <array>
 #include <cassert>
 #include <cmath>
 #include <cstdio>
@@ -933,6 +934,47 @@ void TestScreenAxesUpright() {
   assert(!ul::ScreenAxesUpright(o, {nan, 200.0f, 0.0f}, {100.0f, 300.0f, 0.0f}));
 }
 
+void TestMatchShownToLineIgnoresLineBreaks() {
+  // Measured shape: the renderer laid out a line feed (a stripped <br>) the
+  // lane text does not carry.  Synthetic units, not dialogue.
+  const std::wstring line = L"\u3042\u3044\u3046\u3001\u3048\u304a";
+  const std::wstring shown = L"\u3042\u3044\u3046\u3001\n\u3048\u304a";
+  std::array<uint16_t, ul::kMaxLineUnits> map{};
+  assert(ul::MatchShownToLine(shown.data(), shown.size(), line.data(),
+                              line.size(), map.data()));
+  assert(map[3] == 3u && map[4] == ul::kNoSource && map[5] == 4u &&
+         map[6] == 5u);
+  // The other way round (the lane kept a break the layout joined), CRLF, and
+  // trailing breaks on either side.
+  assert(ul::MatchShownToLine(line.data(), line.size(), shown.data(),
+                              shown.size(), map.data()));
+  assert(map[4] == 5u);
+  const std::wstring crlf = L"\u3042\u3044\u3046\u3001\r\n\u3048\u304a\n";
+  assert(ul::MatchShownToLine(crlf.data(), crlf.size(), line.data(),
+                              line.size(), nullptr));
+  // Any drawn unit that differs, is missing or is extra still fails.
+  const std::wstring other = L"\u3042\u3044\u3046\u3002\n\u3048\u304a";
+  assert(!ul::MatchShownToLine(other.data(), other.size(), line.data(),
+                               line.size(), nullptr));
+  const std::wstring shorter = L"\u3042\u3044\u3046\u3001\n\u3048";
+  assert(!ul::MatchShownToLine(shorter.data(), shorter.size(), line.data(),
+                               line.size(), nullptr));
+  assert(!ul::MatchShownToLine(line.data(), line.size(), shorter.data(),
+                               shorter.size(), nullptr));
+  // A space is drawn content, not a break.
+  const std::wstring spaced = L"\u3042\u3044\u3046\u3001 \u3048\u304a";
+  assert(!ul::MatchShownToLine(spaced.data(), spaced.size(), line.data(),
+                               line.size(), nullptr));
+  // Only breaks on both sides is no text.
+  const std::wstring breaks = L"\n\n";
+  assert(!ul::MatchShownToLine(breaks.data(), breaks.size(), breaks.data(),
+                               breaks.size(), nullptr));
+  // Identical texts map to themselves.
+  assert(ul::MatchShownToLine(line.data(), line.size(), line.data(),
+                              line.size(), map.data()));
+  for (size_t i = 0; i < line.size(); ++i) assert(map[i] == i);
+}
+
 void TestFirstUnitDifference() {
   using K = ul::UnitKind;
   auto kinds = [](K a, K b) {
@@ -1651,6 +1693,7 @@ int main() {
   TestUiTextFailClosedBranches();
   TestScreenAxesUpright();
   TestFirstUnitDifference();
+  TestMatchShownToLineIgnoresLineBreaks();
   std::printf("unity_mono_lookup_test: ok\n");
   return 0;
 }

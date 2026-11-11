@@ -1180,6 +1180,41 @@ inline Vec3 TransformPoint(const Matrix4& matrix, float x, float y) {
 // under a rotated camera (canvas faces the camera) still passes.
 inline constexpr float kAxisSkew = 0.02f;
 
+// The identity of a shown text and the selected line, line breaks aside.
+// A line break is never drawn (no sampler emits a glyph for LF / CR), and the
+// two sides need not agree on it: the text lane strips every `<...>` tag, so
+// a `<br>` the renderer lays out as a line feed is absent from the line
+// (measured 2026-11-11 on a TMP build: shown 28 units with LF at index 20,
+// the selected line the same 27 units without it); a script may also break a
+// line the lane joined.  Every other unit must be equal, in order, with
+// nothing left on either side.  `shown_to_line` (optional, `shown_units`
+// entries) receives each shown unit's index in `line`, kNoSource for a line
+// break, so glyph sources keep addressing the line the host reads.
+inline bool IsLineBreakUnit(wchar_t c) { return c == L'\n' || c == L'\r'; }
+inline bool MatchShownToLine(const wchar_t* shown, size_t shown_units,
+                             const wchar_t* line, size_t line_units,
+                             uint16_t* shown_to_line) {
+  if (shown == nullptr || line == nullptr || shown_units > kMaxLineUnits ||
+      line_units > kMaxLineUnits) {
+    return false;
+  }
+  size_t j = 0u;
+  bool drawn = false;
+  for (size_t i = 0u; i < shown_units; ++i) {
+    if (IsLineBreakUnit(shown[i])) {
+      if (shown_to_line != nullptr) shown_to_line[i] = kNoSource;
+      continue;
+    }
+    while (j < line_units && IsLineBreakUnit(line[j])) ++j;
+    if (j >= line_units || line[j] != shown[i]) return false;
+    if (shown_to_line != nullptr) shown_to_line[i] = static_cast<uint16_t>(j);
+    drawn = true;
+    ++j;
+  }
+  while (j < line_units && IsLineBreakUnit(line[j])) ++j;
+  return drawn && j == line_units;
+}
+
 // Step-2 diagnostic of a canvas text whose laid-out units differ from the
 // selected line: index of the first differing unit and the coarse kinds of
 // the two units there (never the units themselves -- no dialogue in logs).
