@@ -2293,7 +2293,19 @@ class AdapterStructureTest(unittest.TestCase):
         targeted = self._function_body(
             core, "inline SiteResult ResolveTargetedRenderSites(")
         self.assertIn("FindVirtualCharImage(", targeted)
-        self.assertIn("AnyCallTargets(", targeted)
+        # Window / renderer field offsets come from the proving code (cs2
+        # 2.6.1.90 moved them); ClearPage is the body-parsed candidate called
+        # through the window's renderer field, tie-broken by the reveal loop.
+        self.assertIn("FindClearPageT(", targeted)
+        self.assertIn("found->layout = layout;", targeted)
+        clear = self._function_body(core, "inline bool FindClearPageT(")
+        for proof in ("ParseClearPageT(", "AnyCallTargets(", "CallerAlsoCalls("):
+            self.assertIn(proof, clear)
+        for field in ("rt.sites.layout.page_width", "rt.sites.layout.page_height",
+                      "g_cs2_lookup.sites.layout.work_image",
+                      "rt.sites.layout.window_renderer",
+                      "rt.sites.layout.window_screen"):
+            self.assertIn(field, runtime)
         self.assertIn("ProveCharImage(", self._function_body(
             core, "inline bool FindVirtualCharImage("))
         # Detours: bounded copies only; logging / file IO stays on the worker.
@@ -2364,8 +2376,9 @@ class AdapterStructureTest(unittest.TestCase):
                       "blocks != 1u"):
             self.assertIn(proof, resolve)
         block = self._function_body(core, "inline bool MatchesPlainBlock(")
-        for proof in ("kArchiveEncryptedOffset", "imports.set_file_pointer",
-                      "imports.read_file", "0x8du, 0x14u, entry"):
+        for proof in ("IsArchiveFlagOffset(disp)", "HasArchiveHandleLoad(",
+                      "imports.set_file_pointer", "imports.read_file",
+                      "0x8du, 0x14u, entry"):
             self.assertIn(proof, block)
         self.assertIn("OperandNamesSlot(",
                       self._function_body(core, "inline size_t FindImportCall("))

@@ -50,6 +50,16 @@
 //   * Window (+4 layer id, +0x68 screen, +0x2ac renderer), screen (+8 scene,
 //     +0x14..+0x24) and sprite fields are the same as above.
 //
+// The cs2 2.6.1.90 build (2020, newer MSVC; read offline from its exe — the
+// sample only) keeps the targeted-render layout but moves fields: the
+// renderer is one dword shorter in front of the page size (size +0x10 /
+// +0x14, fade page +0x3c), the part base one dword longer after the layer id
+// (window screen +0x6c, renderer +0x2b0); GetCharImage takes two more record
+// fields; a second window class shares the Update and ClearPage bodies (and
+// the +0x2b0 renderer field) for another renderer class.  Those offsets are
+// therefore read from the proving code (ObjectLayout), and the message
+// window's Update / ClearPage are the ones tied to RenderChar's reveal loop.
+//
 // Every site, offset and global below is proven by a byte signature plus a
 // structural cross-check (call chain into GetGlyphOutlineA, import slots,
 // adjacent function layout or vtable slot).  Runtime data is re-validated
