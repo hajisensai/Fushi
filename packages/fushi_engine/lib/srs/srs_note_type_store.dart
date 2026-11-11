@@ -74,6 +74,32 @@ class SrsNoteTypeChangePreview {
     0,
     (int sum, SrsNoteTypeChangePlan p) => sum + p.cardLinks.length,
   );
+
+  /// 执行这次更改要写的修改记录：逐条笔记的类型键、字段值与新卡的前身链接。
+  List<SrsEditSpec> get edits => <SrsEditSpec>[
+    for (final SrsNoteTypeChangePlan plan in plans) ...<SrsEditSpec>[
+      SrsEditSpec(
+        SrsEntityKind.note,
+        plan.noteId,
+        SrsFieldKeys.noteType,
+        to.id,
+      ),
+      for (final MapEntry<String, String> f in plan.fieldValues.entries)
+        SrsEditSpec(
+          SrsEntityKind.note,
+          plan.noteId,
+          SrsFieldKeys.noteField(f.key),
+          f.value,
+        ),
+      for (final MapEntry<String, String> l in plan.cardLinks.entries)
+        SrsEditSpec(
+          SrsEntityKind.card,
+          l.key,
+          SrsFieldKeys.cardHistoryFrom(l.value),
+          true,
+        ),
+    ],
+  ];
 }
 
 extension SrsNoteTypeStoreOps on SrsDbStore {
@@ -727,7 +753,8 @@ extension SrsNoteTypeStoreOps on SrsDbStore {
     return SrsNoteTypeChangePreview(from: from, to: to, plans: plans);
   }
 
-  /// 执行更改笔记类型：一个事务写完全部笔记的类型键、字段值与新卡的前身链接。
+  /// 执行更改笔记类型：还原点与全部笔记的类型键、字段值、新卡的前身链接同一条内核命令、一笔写完
+  /// （[SrsDbStore.writeChange]）。
   /// 复习日志一条不改；新卡的历史 = 自己 + 前身卡的日志（见 [SrsDbStore.history]）。
   /// 预演与写入在同一个独占区里：算计划时读到的现值就是落库时的现值。
   Future<void> changeNoteType({
@@ -766,30 +793,9 @@ extension SrsNoteTypeStoreOps on SrsDbStore {
       templateMap: templateMap,
     );
     if (p.from.id == p.to.id) return;
-    await sync2Checkpoint(p.to.name, 'note_type');
-    await writeEdits(<SrsEditSpec>[
-      for (final SrsNoteTypeChangePlan plan in p.plans) ...<SrsEditSpec>[
-        SrsEditSpec(
-          SrsEntityKind.note,
-          plan.noteId,
-          SrsFieldKeys.noteType,
-          p.to.id,
-        ),
-        for (final MapEntry<String, String> f in plan.fieldValues.entries)
-          SrsEditSpec(
-            SrsEntityKind.note,
-            plan.noteId,
-            SrsFieldKeys.noteField(f.key),
-            f.value,
-          ),
-        for (final MapEntry<String, String> l in plan.cardLinks.entries)
-          SrsEditSpec(
-            SrsEntityKind.card,
-            l.key,
-            SrsFieldKeys.cardHistoryFrom(l.value),
-            true,
-          ),
-      ],
-    ]);
+    await writeChange(
+      p.edits,
+      checkpoint: (name: p.to.name, reason: 'note_type'),
+    );
   });
 }

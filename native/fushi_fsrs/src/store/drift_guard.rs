@@ -53,8 +53,6 @@ use DriftTxPolicy::{Join, ReadVisible, Reject};
 /// 「unknown sync2 op」）。
 pub(crate) const DRIFT_TX_POLICY: &[(&str, DriftTxPolicy)] = &[
     // ---- Join：今天有意在 Drift 事务里跑的写命令（调用方见 PR 盘点 wp_inventory）。
-    // `_emit` → `_transactionOrReload`（本机写入、导入、Lapis 迁移的外层事务里的每一步）。
-    ("apply", Join),
     // `_schedLocal` → `_transactionOrReload`。
     ("sched", Join),
     // `sync2ImportOps` → `_transactionOrReload`。
@@ -62,7 +60,6 @@ pub(crate) const DRIFT_TX_POLICY: &[(&str, DriftTxPolicy)] = &[
     // `_sync2Write` → `_transactionOrReload`。
     ("resolve", Join),
     ("purge", Join),
-    ("checkpoint", Join),
     ("restore", Join),
     ("retire", Join),
     ("dedup", Join),
@@ -130,6 +127,13 @@ pub(crate) const DRIFT_TX_POLICY: &[(&str, DriftTxPolicy)] = &[
     // 导入攒的一批草稿（store/sync2/mod.rs `import_drafts_on`）：一批一条命令、自己一笔，调用方（Anki 包导入、
     // AnkiConnect）都不开 Drift 事务。
     ("import_drafts", Reject),
+    // 结构性改动的意图命令（store/sync2/change.rs）：还原点、修改记录、移牌组在它自己的一笔里，调用方（更改笔记
+    // 类型、删除重复模板、旧 Lapis 迁移）都不再开 Drift 事务。
+    ("change", Reject),
+    // 本机写入与还原点：最后一个在 Drift 事务里发它们的调用方是旧 Lapis 迁移的外层事务，已换成上面那条 `change`
+    // （收掉 Dart 写路径第 9 步），从 Join 移到这里。
+    ("apply", Reject),
+    ("checkpoint", Reject),
     ("identity", Reject),
     ("channel_settle", Reject),
     ("migrate", Reject),
@@ -275,8 +279,8 @@ mod tests {
             serde_json::json!({"join": {}, "readVisible": {}, "reject": {}})
         );
         core.exec("BEGIN", &[], false).unwrap();
-        core.note_drift_tx("apply", &req);
-        core.note_drift_tx("apply", &req);
+        core.note_drift_tx("import", &req);
+        core.note_drift_tx("import", &req);
         core.note_drift_tx("status", &req);
         core.note_drift_tx("outbox", &req);
         core.note_drift_tx("plan", &serde_json::json!({"readOnly": true}));
@@ -285,7 +289,7 @@ mod tests {
         assert_eq!(
             core.drift_tx_guard(true),
             serde_json::json!({
-                "join": {"apply": 2},
+                "join": {"import": 2},
                 "readVisible": {"status": 1, "plan": 1},
                 "reject": {"outbox": 1},
             })

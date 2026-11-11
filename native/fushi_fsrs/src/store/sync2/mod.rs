@@ -9,6 +9,7 @@
 //!
 //! 所有命令在写连接上的一个 SAVEPOINT 里做：Dart 的 Drift 事务开着时嵌在里面，没开时自成事务。
 
+pub(crate) mod change;
 pub(crate) mod channel;
 pub mod config;
 pub(crate) mod deck_delete;
@@ -2463,6 +2464,8 @@ mod tests_break;
 mod tests_cache_pending;
 #[cfg(test)]
 mod tests_causal;
+#[cfg(test)]
+mod tests_change;
 #[cfg(test)]
 mod tests_channel;
 #[cfg(test)]

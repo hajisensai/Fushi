@@ -2095,6 +2095,7 @@ class SrsDbStore implements SrsSync2Host {
   static const Set<String> kSrsSync2ProjectingOps = <String>{
     'apply',
     'import_drafts',
+    'change',
     'sched',
     'deck_delete',
     'retire',
@@ -2144,6 +2145,7 @@ class SrsDbStore implements SrsSync2Host {
   static const Set<String> _kSync2CacheOps = <String>{
     'apply',
     'import_drafts',
+    'change',
     'sched',
     'deck_delete',
     'ingest',
@@ -3150,6 +3152,72 @@ class SrsDbStore implements SrsSync2Host {
     ];
     if (drafts.isEmpty) return const <SrsFieldEdit>[];
     return _emit(drafts, stamps: true);
+  });
+
+  /// 一次结构性改动（更改笔记类型、删除重复模板、旧 Lapis 迁移）：还原点 [checkpoint] + 一批修改记录 [specs]
+  /// （no-op 规则同 [writeEdits]）+ 可选的移牌组 [moveNotes]，内核 `change` **一条命令、一笔**
+  /// （native/fushi_fsrs/src/store/sync2/change.rs）：任何一段失败整次改动都不落库。
+  ///
+  /// [moveNotes]：这批修改记录落库、缓存刷新（换了类型的笔记的新卡在这时生成）之后，把这些笔记的首选牌组与它们
+  /// 此刻可见的卡都移到 `deckId`，已经在那里的不写。换完类型之后有哪些可见卡只有内核的缓存推导知道，所以这一段
+  /// 在内核里做，Dart 不再读回缓存行。
+  ///
+  /// [debugFailAfter] 只给测试用：让内核在做完 `apply`（还原点 + 修改记录）或 `move`（移牌组）那一段之后报错。
+  Future<void> writeChange(
+    List<SrsEditSpec> specs, {
+    ({String name, String reason})? checkpoint,
+    ({String deckId, List<String> noteIds})? moveNotes,
+    String? debugFailAfter,
+  }) => runExclusive(() async {
+    final Map<String, SrsEntityEdits> current = await _currentEditsOf(
+      <(SrsEntityKind, String)>[
+        for (final SrsEditSpec spec in specs) (spec.kind, spec.entityId),
+      ],
+    );
+    final List<SrsEventDraft> drafts = <SrsEventDraft>[
+      ..._changing(<(SrsEntityEdits?, String, Object?, SrsEditDraft)>[
+        for (final SrsEditSpec spec in specs)
+          (
+            current['${spec.kind.wire}/${spec.entityId}']!,
+            spec.key,
+            spec.value,
+            SrsEditDraft(spec.kind, spec.entityId, spec.key, spec.value),
+          ),
+      ]),
+    ];
+    if (drafts.isEmpty && checkpoint == null && moveNotes == null) return;
+    // 走一步用的「此刻」与修改记录的时间来源：落库前这一刻取（同 [_emit]）。
+    final (int tickNow, SrsTimeSource source) = now();
+    final List<Map<String, Object?>> input = await _applyInput(
+      drafts,
+      receive: false,
+      source: source,
+    );
+    await _commandOrReload(() async {
+      final Map<String, Object?> r = await _sync2(
+        <String, Object?>{
+          'op': 'change',
+          'now': now().$1,
+          'legacyDevice': deviceId,
+          'tickNow': tickNow,
+          'ts': source.wire,
+          if (checkpoint != null)
+            'checkpoint': <String, Object?>{
+              'name': checkpoint.name,
+              'reason': checkpoint.reason,
+            },
+          if (moveNotes != null)
+            'move': <String, Object?>{
+              'deck': moveNotes.deckId,
+              'notes': moveNotes.noteIds,
+            },
+          'failAfter': ?debugFailAfter,
+          'localState': _localStateArg(),
+        },
+        blobs: <Uint8List>[utf8.encode(jsonEncode(input))],
+      );
+      _absorbLocalWrite(r);
+    });
   });
 
   // ------------------------------------------------------------------ 牌组
@@ -5075,7 +5143,8 @@ class SrsDbStore implements SrsSync2Host {
   ///
   /// 不开 Drift 事务（收掉 Dart 写路径第 2 步）：内核在命令的同一个 SAVEPOINT 里做完命令本体、缓存刷新、排队与本机
   /// 状态行（随命令交的 `localState`，native/fushi_fsrs/src/store/ffi.rs `local_write`），要么全落、要么全不落。外面
-  /// 已开着 Drift 事务时（Lapis 迁移、档案 / 备份并入）那个 SAVEPOINT 嵌进外层事务，随它提交或回滚。
+  /// 已开着 Drift 事务时那个 SAVEPOINT 嵌进外层事务，随它提交或回滚（生产调用方已经没有这种形态：最后一个是旧
+  /// Lapis 迁移，现在是一条 `change`，见 [writeChange]）。
   ///
   /// 命令失败不回滚内存：攒下的影响面要丢掉、修订号等从库里重读（与 [reloadLocal] 同一理由）。调用方已在独占区里。
   ///
@@ -5140,7 +5209,7 @@ class SrsDbStore implements SrsSync2Host {
   bool get debugChannelLive => _channelLive;
 
   /// 本机写命令之前把没做完的收段通道按片做完（`channel_settle`，内核每片一个事务）。写命令嵌在外层 Drift 事务里
-  /// （Lapis 迁移、档案并入）又要先做完通道时，内核只能把整段（真实数据约 1.1 GB 的投影）塞进那笔事务：WAL 要装下全部
+  /// 又要先做完通道时，内核只能把整段（真实数据约 1.1 GB 的投影）塞进那笔事务：WAL 要装下全部
   /// 页，失败整段回滚、下一次写又从头重做。没有通道时不发命令（复习路径的 FFI 次数不变）。调用方已在独占区里。
   Future<void> _settleChannel() async {
     if (!_channelLive) return;

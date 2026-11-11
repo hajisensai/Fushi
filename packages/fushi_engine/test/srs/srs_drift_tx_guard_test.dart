@@ -1,12 +1,14 @@
 // 收掉 Dart 写路径的第 1 步：内核 Drift 事务守卫（native/fushi_fsrs/src/store/drift_guard.rs）只计数、不拦。
 // Drift 在写连接上开着事务时来的 sync2 命令按 Join / ReadVisible / Reject 分类记数；后面的步骤靠这些计数验收
 // 「Join 集合缩小了」。这里钉住：计数读得到、只在 Drift 事务开着时记、行为不变；Dart 的改投影命令集合与内核同一组。
-// 第 2 步起本机写命令不再开 Drift 事务（只在外层事务里才计 Join）。
+// 第 2 步起本机写命令不再开 Drift 事务；第 9 步起也没有调用方在外层 Drift 事务里发 `apply` / `checkpoint`（旧 Lapis
+// 迁移改成一条 `change`），它们从 Join 移到 Reject。
 import 'dart:io';
 
 import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_legacy_lapis_migration.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:test/test.dart';
 
@@ -30,7 +32,7 @@ void main() {
     );
   }
 
-  test('本机写命令不再开 Drift 事务（不计）；外层开着 Drift 事务时照样嵌进去、记为 Join；行为不变', () async {
+  test('本机写命令不再开 Drift 事务（不计）；外层开着 Drift 事务时记为 Reject（只计数，行为不变）', () async {
     final SrsDbStore s = await open();
     await s.debugDriftTxGuardHits(reset: true);
 
@@ -53,13 +55,14 @@ void main() {
     // Drift 事务，守卫一次都不命中。
     expect(await s.debugDriftTxGuardHits(reset: true), none);
 
-    // 外层已开着 Drift 事务（Lapis 迁移 / 档案并入的形态）：写命令照样嵌进那笔事务。
+    // 外层已开着 Drift 事务（以前旧 Lapis 迁移的形态，现在没有调用方这么做）：写命令仍嵌进那笔事务，守卫记一次
+    // Reject。
     await s.db.transaction(() => s.sync2Checkpoint('outer', 'manual'));
     final Map<String, Map<String, int>> hits = await s.debugDriftTxGuardHits(
       reset: true,
     );
-    expect(hits['join'], <String, int>{'checkpoint': 1}, reason: '$hits');
-    expect(hits['reject'], isEmpty, reason: '$hits');
+    expect(hits['reject'], <String, int>{'checkpoint': 1}, reason: '$hits');
+    expect(hits['join'], isEmpty, reason: '$hits');
     // reset 之后清零。
     expect(await s.debugDriftTxGuardHits(), none);
     // 写入照常落库（守卫不拦）。
@@ -68,6 +71,14 @@ void main() {
       (await s.sync2Checkpoints()).map((Map<String, Object?> c) => c['name']),
       containsAll(<String>['manual', 'outer']),
     );
+    // 旧 Lapis 迁移（换类型、补迁、移牌组）现在是一条 `change`、不开 Drift 事务：守卫一次都不命中。
+    final String deck = await s.createDeck('Moved');
+    await s.debugDriftTxGuardHits(reset: true);
+    expect(
+      await s.migrateLegacyLapis(s.lapisNoteTypeId, targetDeckId: deck),
+      1,
+    );
+    expect(await s.debugDriftTxGuardHits(reset: true), none);
   });
 
   // 收掉 Dart 写路径第 4 步：重建缓存连同缓存版本号由内核在一个 SAVEPOINT 里做完，不再套 Drift 事务。

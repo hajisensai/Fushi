@@ -1196,10 +1196,12 @@ fn cache_config_of(
 /// 依次做完命令本体（[local_write_body]）、缓存刷新（store/caches.rs）、请求带 `study` 时的排队（store/study.rs，看得见
 /// 这笔还没提交的写入），以及请求带 `localState` 时的本机状态行（store/local_state.rs `persist_projected`：修订号按投影
 /// 结果推进，回包带 `localRevision`）。任何一步出错整个 SAVEPOINT 回滚：命令、缓存行、本机状态行一起不落。外面开着 Drift
-/// 事务时（Lapis 迁移、档案 / 备份并入）SAVEPOINT 照旧嵌进那笔事务，随它提交或回滚。
+/// 事务时 SAVEPOINT 照旧嵌进那笔事务，随它提交或回滚（生产调用方已经没有这种形态，守卫按 Reject 计，
+/// store/drift_guard.rs）。
 const LOCAL_WRITE_OPS: &[&str] = &[
     "apply",
     "import_drafts",
+    "change",
     "sched",
     "deck_delete",
     "import",
@@ -1234,7 +1236,7 @@ fn local_write(
 ) -> Result<serde_json::Value, String> {
     use serde_json::Value;
     let mut pre = LocalPre::default();
-    if op == "apply" || op == "import_drafts" {
+    if op == "apply" || op == "import_drafts" || op == "change" {
         let input = std::str::from_utf8(blobs.first().ok_or("apply: missing input")?)
             .map_err(|e| e.to_string())?;
         pre.items = crate::store::sync2::parse_apply_input(input)?;
@@ -1256,12 +1258,28 @@ fn local_write(
     }
     crate::store::sync2::in_savepoint(&w, |conn| {
         let mut v = local_write_body(conn, op, profile, req, blobs, &mut pre)?;
-        let written = crate::store::caches::refresh(
+        let mut written = crate::store::caches::refresh(
             conn,
             profile,
             cfg,
             crate::store::caches::Dirty::of_projection(&v),
         )?;
+        // `change` 的移牌组段（store/sync2/change.rs）：要看上面这次刷新生成的卡，所以排在它后面；写完再刷新一次，
+        // 两段的结果并成一份（修订号、Dart 的变更日志都按合起来的算）。
+        if op == "change" && crate::store::sync2::change::wants_move(req) {
+            let now = req
+                .get("now")
+                .and_then(Value::as_i64)
+                .ok_or("sync2: missing now")?;
+            let moved = crate::store::sync2::change::move_notes_on(conn, profile, now, req)?;
+            written.absorb(crate::store::caches::refresh(
+                conn,
+                profile,
+                cfg,
+                crate::store::caches::Dirty::of_projection(&moved),
+            )?);
+            crate::store::sync2::change::merge_results(&mut v, moved);
+        }
         let study = match req.get("study").filter(|s| s.is_object()) {
             Some(s) => Some(crate::store::study::study(
                 conn,
@@ -1330,6 +1348,9 @@ fn local_write_body(
             };
             s2::import_drafts_on(conn, profile, now, &mut pre.items, &legacy)?
         }
+        // 结构性改动（更改笔记类型、删除重复模板、旧 Lapis 迁移）：还原点 + 一批修改记录（store/sync2/change.rs）；带
+        // `move` 时 [local_write] 在缓存刷新之后接着做移牌组那一段。
+        "change" => s2::change::change_on(conn, profile, now, req, &pre.items)?,
         // 本机手动排程操作（重置 / 改期 / 撤销 / 立即重排）：显式意图，内核算结果并落库（store/sync2/sched_local.rs）。
         "sched" => s2::sched_local::sched_local_on(conn, profile, now, req)?,
         // 删牌组（连同子牌组）：显式意图，分步（store/sync2/deck_delete.rs）；`done` 为假就带着 `token` 再发。
@@ -1517,6 +1538,7 @@ const CHANNEL_TRANSPARENT: &[&str] = &[
 const CHANNEL_SETTLES: &[&str] = &[
     "apply",
     "import_drafts",
+    "change",
     "sched",
     "deck_delete",
     "retire",
@@ -1550,6 +1572,7 @@ const CHANNEL_SETTLES: &[&str] = &[
 const PROJECTING_OPS: &[&str] = &[
     "apply",
     "import_drafts",
+    "change",
     "sched",
     "deck_delete",
     "retire",

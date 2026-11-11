@@ -189,6 +189,8 @@ void main() {
     expect(costs['deleteDeck(deleteCards)'], (statements: 0, core: 2));
     // 第 8 步：导入的一批草稿一条命令（内核 `import_drafts`），Dart 不再预读已有实体与已有记录的键。
     expect(costs['importDrafts'], (statements: 0, core: 1));
+    // 第 9 步：更改笔记类型的还原点与修改记录是一条命令（内核 `change`）；语句数是预演与预读现值的读。
+    expect(costs['changeNoteType']!.core, 1);
   });
 
   test('打开副本与缓存维护的语句数与内核命令数（第 4 步）', () async {
