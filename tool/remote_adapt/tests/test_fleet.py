@@ -353,3 +353,15 @@ def test_log_never_blocks_event_loop_when_console_is_stuck(monkeypatch: pytest.M
 def test_disable_console_quick_edit_without_console_is_harmless() -> None:
     # pytest 下 stdin 不是控制台：应安静返回 False，而不是抛错。
     assert fleet_agent.disable_console_quick_edit() in (True, False)
+
+
+def test_self_update_command_survives_non_ascii_and_quotes() -> None:
+    import base64 as _b64
+
+    new_exe = Path(r"X:\fushi-adapt-志愿者-20261111\work\new agent's.exe")
+    cur = Path(r"X:\fushi-adapt-志愿者-20261111\双击开始适配.exe")
+    encoded = fleet_agent.self_update_command(1234, new_exe, cur)
+    script = _b64.b64decode(encoded).decode("utf-16-le")
+    assert "Wait-Process -Id 1234" in script
+    assert r"'X:\fushi-adapt-志愿者-20261111\work\new agent''s.exe'" in script
+    assert r"Start-Process -FilePath 'X:\fushi-adapt-志愿者-20261111\双击开始适配.exe'" in script

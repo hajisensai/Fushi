@@ -434,17 +434,9 @@ class Agent:
         if not new_exe.is_file():
             raise FileNotFoundError(new_exe)
         cur = Path(sys.executable).resolve()
-        script = self.config.workdir / "self_update.cmd"
-        script.write_text(
-            "@echo off\r\n"
-            f":wait\r\ntasklist /FI \"PID eq {os.getpid()}\" | find \"{os.getpid()}\" >nul "
-            "&& (timeout /t 1 /nobreak >nul & goto wait)\r\n"
-            f"move /Y \"{new_exe}\" \"{cur}\"\r\n"
-            f"start \"\" \"{cur}\"\r\n",
-            encoding="ascii",
-        )
         subprocess.Popen(
-            ["cmd", "/c", str(script)],
+            ["powershell", "-NoProfile", "-NonInteractive", "-EncodedCommand",
+             self_update_command(os.getpid(), new_exe, cur)],
             creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
             close_fds=True,
         )
@@ -538,6 +530,24 @@ def _clip(data: Optional[bytes]) -> str:
     if len(text) > OUTPUT_LIMIT:
         return f"…（截断，原长 {len(text)}）\n" + text[-OUTPUT_LIMIT:]
     return text
+
+
+def _ps_quote(value: object) -> str:
+    return "'" + str(value).replace("'", "''") + "'"
+
+
+def self_update_command(pid: int, new_exe: Path, cur: Path) -> str:
+    """自更新脚本编成 PowerShell -EncodedCommand（UTF-16LE base64）。
+
+    志愿者包目录名含中文（「志愿者」），批处理按 OEM 码页解析、ascii 根本写不出；
+    EncodedCommand 不经任何码页，路径里什么字符都原样到达。
+    """
+    script = (
+        f"Wait-Process -Id {int(pid)} -ErrorAction SilentlyContinue; "
+        f"Move-Item -LiteralPath {_ps_quote(new_exe)} -Destination {_ps_quote(cur)} -Force; "
+        f"Start-Process -FilePath {_ps_quote(cur)}"
+    )
+    return base64.b64encode(script.encode("utf-16-le")).decode("ascii")
 
 
 def _single_instance(name: str) -> object:
