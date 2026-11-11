@@ -686,6 +686,42 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
     return controller.stream;
   }
 
+  /// 书架上「有哪些书」变了：书（[epubBooks]）或有声书（[srtBooks]）行被插入或删除
+  /// （任何导入 / 删除路径）。行内字段更新（进度、读完、改名）不算。
+  ///
+  /// 书架的分卷归组随映射重载才跑，书列表自己订阅了书集合，映射却没有：BUG-4388
+  /// 两卷先后导入后一直是散卡。同 [watchCollectionTablesChanged]：手动
+  /// [StreamController] + [tableUpdates]，不用 drift keyed `.watch()`（BUG-834）。
+  Stream<void> watchShelfBookSetChanged() {
+    late final StreamController<void> controller;
+    StreamSubscription<void>? updatesSub;
+    controller = StreamController<void>(
+      onListen: () {
+        updatesSub =
+            tableUpdates(
+              TableUpdateQuery.allOf(<TableUpdateQuery>[
+                for (final ResultSetImplementation<dynamic, dynamic> table
+                    in <ResultSetImplementation<dynamic, dynamic>>[
+                      epubBooks,
+                      srtBooks,
+                    ])
+                  for (final UpdateKind kind in <UpdateKind>[
+                    UpdateKind.insert,
+                    UpdateKind.delete,
+                  ])
+                    TableUpdateQuery.onTable(table, limitUpdateKind: kind),
+              ]),
+            ).listen((_) {
+              if (!controller.isClosed) controller.add(null);
+            });
+      },
+      onCancel: () async {
+        await updatesSub?.cancel();
+      },
+    );
+    return controller.stream;
+  }
+
   /// 全部合集，按 sortOrder 升序、id 升序（卡片列表稳定排序，同 [getAllSeries] 范式）。
   Future<List<MediaCollectionRow>> getAllMediaCollections() =>
       (select(mediaCollections)..orderBy([
