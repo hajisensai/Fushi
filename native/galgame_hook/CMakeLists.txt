@@ -149,6 +149,7 @@ add_library(fushi_voice_hook SHARED
   "hook/adapters/qlie_profile.h"
   "hook/adapters/kirikiri_adapter.inc"
   "hook/adapters/kirikiri_kag_text_core.h"
+  "hook/adapters/kirikiri_bootstrap_diag.h"
   "hook/adapters/renpy_adapter.inc"
   "hook/adapters/text_render_adapter.inc"
   "hook/adapters/loopback_adapter.inc"
@@ -715,6 +716,12 @@ target_compile_definitions(fushi_kirikiri_kag_text_test
 add_test(NAME fushi_kirikiri_kag_text_test
   COMMAND fushi_kirikiri_kag_text_test
   "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/kirikiri_kag_text_replay.tsv")
+
+add_executable(fushi_kirikiri_bootstrap_diag_test "tests/kirikiri_bootstrap_diag_test.cpp")
+target_include_directories(fushi_kirikiri_bootstrap_diag_test PRIVATE "hook")
+target_compile_definitions(fushi_kirikiri_bootstrap_diag_test
+  PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_kirikiri_bootstrap_diag_test COMMAND fushi_kirikiri_bootstrap_diag_test)
 
 # 通用位图呈现器的几何换算（卡片飘出游戏窗口 == 用户看不见卡片，与"没投帧"同形）。
 add_executable(fushi_lookup_overlay_geometry_test
