@@ -2,7 +2,8 @@
 // 回收、远程作答核对基准）各改成内核的意图命令。这里量它们经 Drift 执行器送进内核的语句数与内核命令数
 // （口径同 srs_write_statement_cost_test.dart）。
 //
-// 改动前（第 9 步的头 0cae4963576 + 那一步的库，本机实测）见 PR 说明；改动后全部 0 条语句：
+// 改动前（第 9 步的头 0cae4963576 + 那一步的库，本机实测）见 PR 说明；改动后四个站点自己都是 0 条语句
+// （远程作答剩下的 6 条是路由上别的读）：
 // - 落计划 / 撤销：读笔记视图 + `editFieldsBatch` → 一条 `note_fields_if`；
 // - 合并：读笔记 + 读卡 + 还原点 + 3 + N 条写命令 → 一条 `merge_notes`；
 // - 彻底清除一条笔记并回收：读笔记 + `purge` + 存活引用的读 + 写本机状态行两次 → `media_gc_queue` + `purge` +
@@ -149,6 +150,7 @@ void main() {
     ]))[notes[6]]!.first.id;
     final String? base = (await s.cardRow(card))!.lastLogId;
     late int status;
+    f.counter.reset();
     costs['remoteAnswer'] = await _cost(s, () async {
       final shelf.Response res = await handleSrsRemoteStoreRequest(
         service,
@@ -174,6 +176,9 @@ void main() {
       status = res.statusCode;
     });
     expect(status, 200);
+    expect(f.counter.counts.keys, <String>[
+      'select',
+    ], reason: '路由上剩下的语句都是读：${f.counter.summary()}');
 
     for (final MapEntry<String, _Cost> e in costs.entries) {
       // ignore: avoid_print
@@ -188,7 +193,8 @@ void main() {
       'mergeNotes': (statements: 0, core: 1),
       'purgeNotesNow': (statements: 0, core: 3),
       'purgeExpired': (statements: 0, core: 2),
-      'remoteAnswer': (statements: 0, core: 2),
+      // 6 条都是 SELECT（上面钉了种类），不是这一步收掉的那条读卡缓存行；读站点改成命令归第 14 步。
+      'remoteAnswer': (statements: 6, core: 2),
     });
   });
 }
