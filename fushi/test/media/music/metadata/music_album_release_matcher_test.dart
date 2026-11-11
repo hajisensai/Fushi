@@ -217,11 +217,9 @@ void main() {
     await Future<void>.delayed(Duration.zero);
 
     expect(
-      provider.calls.map((c) => (c.title, c.artist, c.counts)),
-      unorderedEquals(<(String, String?, List<int>?)>[
-        ('Album A', 'Artist', <int>[2, 1]),
-        ('Album B', null, <int>[1]),
-      ]),
+      provider.calls.map((c) => '${c.title}|${c.artist}|${c.counts}'),
+      <String>['Album A|Artist|[2, 1]', 'Album B|null|[1]'],
+      reason: '按标题序；标签有 id 的 Tagged、缺时长的 No durations 不联网',
     );
     expect(provider.closed, 1);
     expect(events, <String>['a']);
