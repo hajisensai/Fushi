@@ -44,6 +44,7 @@ pub(crate) mod repr_rewrite;
 pub mod rows;
 pub mod schema;
 pub(crate) mod slim;
+pub(crate) mod stats;
 pub mod study;
 pub mod sync2;
 

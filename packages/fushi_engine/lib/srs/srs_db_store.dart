@@ -142,7 +142,7 @@ class SrsDeckSummary {
 }
 
 /// 今天（[SrsDbStore.dayContext] 的日界）已做的复习：首页复习条的「今日」一行。口径与复习统计页
-/// 「今天」一节（`SrsStatsData.todayStats`，不按牌组筛选）相同：有效复习投影里的评分复习。
+/// 「今天」一节（内核 `stats_report` 的 `todayStats`，不按牌组筛选）相同：有效复习投影里的评分复习。
 class SrsTodayReviewSummary {
   const SrsTodayReviewSummary({
     required this.count,
@@ -5812,12 +5812,22 @@ class SrsDbStore implements SrsSync2Host {
     if (visibleOnly) 'visibleOnly': true,
   })).tables['columns']!;
 
-  /// 统计页的三张表（内核 `stats_bundle`：可见卡的统计列、出处字典、有效复习投影，另有复习归属到的不可见卡 ID），
-  /// 见 `loadSrsStats`。
-  Future<Map<String, SrsColumns>> statsColumns() async =>
-      (await _columnsCommand(const <String, Object?>{
-        'op': 'stats_bundle',
-      })).tables;
+  /// 统计命令（内核 native/fushi_fsrs/src/store/stats.rs）：`stats_report` 一次范围 / 牌组的全部聚合、
+  /// `stats_recall` 按 RWKV 回忆率排队的复习卡、`stats_rows` 归一化后的逐卡视图（只给回归向量）、`stats_release`
+  /// 丢掉内核缓存的统计原料。在后台 isolate 跑；口径与用法见 `loadSrsStats`。
+  Future<Map<String, Object?>> statsCommand(Map<String, Object?> request) {
+    if (!_kStatsOps.contains(request['op'])) {
+      throw ArgumentError.value(request['op'], 'op', 'not a stats command');
+    }
+    return _sync2(request);
+  }
+
+  static const Set<String> _kStatsOps = <String>{
+    'stats_report',
+    'stats_recall',
+    'stats_rows',
+    'stats_release',
+  };
 
   /// 本 profile 的全部卡片缓存行（含隐藏）。由 [cardColumns] 组装；只要几列的调用方直接用 [cardColumns]。
   Future<List<SrsCardCacheRow>> allCardRows() async {
