@@ -19,6 +19,7 @@ import getpass
 import json
 import os
 import platform
+import queue
 import re
 import socket
 import subprocess
@@ -91,8 +92,49 @@ class AgentConfig:
         )
 
 
+# 控制台输出只由这个后台线程写：志愿者在窗口里点一下（快速编辑选择态）、按 Ctrl+S 或
+# 拖滚动条都会让 WriteConsole 阻塞；若在事件循环线程里同步 print，整个 asyncio 循环随之
+# 卡死、心跳超时被网关判掉线。队列有界，满了丢最旧之外的新行，绝不反压网络。
+_LOG_QUEUE: "queue.Queue[str]" = queue.Queue(maxsize=2000)
+_log_dropped = 0
+
+
+def _log_writer() -> None:
+    global _log_dropped
+    while True:
+        line = _LOG_QUEUE.get()
+        dropped, _log_dropped = _log_dropped, 0
+        try:
+            if dropped:
+                print(f"…（控制台繁忙，省略 {dropped} 行）", flush=True)
+            print(line, flush=True)
+        except Exception:  # noqa: BLE001 - 控制台已关 / 被重定向坏掉时日志丢弃即可
+            pass
+
+
+threading.Thread(target=_log_writer, name="console-log", daemon=True).start()
+
+
 def log(message: str) -> None:
-    print(f"[{time.strftime('%H:%M:%S')}] {message}", flush=True)
+    global _log_dropped
+    try:
+        _LOG_QUEUE.put_nowait(f"[{time.strftime('%H:%M:%S')}] {message}")
+    except queue.Full:
+        _log_dropped += 1
+
+
+def disable_console_quick_edit() -> bool:
+    """关掉控制台「快速编辑模式」：否则鼠标一点窗口就进入选择态，进程写控制台被挂起。"""
+    if sys.platform != "win32":
+        return False
+    kernel32 = ctypes.windll.kernel32
+    handle = kernel32.GetStdHandle(-10)  # STD_INPUT_HANDLE
+    mode = ctypes.c_uint32()
+    if not handle or handle == -1 or not kernel32.GetConsoleMode(handle, ctypes.byref(mode)):
+        return False  # 没有控制台（被重定向 / 无窗口）
+    enable_quick_edit, enable_extended_flags = 0x0040, 0x0080
+    new_mode = (mode.value & ~enable_quick_edit) | enable_extended_flags
+    return bool(kernel32.SetConsoleMode(handle, new_mode))
 
 
 def is_admin() -> bool:
@@ -521,6 +563,7 @@ def main(argv: Optional[list[str]] = None) -> None:
     _mutex = _single_instance(config.name)  # noqa: F841 - 进程存活期间持有
     if sys.platform == "win32":
         ctypes.windll.kernel32.SetConsoleTitleW(f"Fushi 远程适配 agent - {config.name}（关闭即断开）")
+        disable_console_quick_edit()
     agent = Agent(config, win_desktop)
     log(f"Fushi 远程适配 agent {AGENT_VERSION}  机器名={config.name}  管理员={is_admin()}")
     asyncio.run(agent.run_forever())

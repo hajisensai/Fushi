@@ -332,3 +332,24 @@ async def test_end_to_end(tmp_path: Path) -> None:
                 t.cancel()
             server_task.cancel()
             await asyncio.gather(*agent_tasks, server_task, return_exceptions=True)
+
+
+def test_log_never_blocks_event_loop_when_console_is_stuck(monkeypatch: pytest.MonkeyPatch) -> None:
+    """快速编辑选择态下写控制台会挂起；log() 只入队，不能把阻塞带进 asyncio 循环。"""
+    import queue as _queue
+    import time as _time
+
+    stuck: "_queue.Queue[str]" = _queue.Queue(maxsize=3)  # 没有消费者 = 控制台一直卡着
+    monkeypatch.setattr(fleet_agent, "_LOG_QUEUE", stuck)
+    monkeypatch.setattr(fleet_agent, "_log_dropped", 0)
+    start = _time.monotonic()
+    for i in range(50):
+        fleet_agent.log(f"line {i}")
+    assert _time.monotonic() - start < 0.5
+    assert stuck.qsize() == 3
+    assert fleet_agent._log_dropped == 47
+
+
+def test_disable_console_quick_edit_without_console_is_harmless() -> None:
+    # pytest 下 stdin 不是控制台：应安静返回 False，而不是抛错。
+    assert fleet_agent.disable_console_quick_edit() in (True, False)
