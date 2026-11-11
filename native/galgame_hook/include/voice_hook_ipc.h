@@ -392,6 +392,12 @@ constexpr uint32_t kTextSourceFvp = 10;
 // PalSpriteUnlock transaction lays out with PalFontDrawText, speaker plate
 // excluded (16 = first unused id on every local branch, checked 2026-11-03).
 constexpr uint32_t kTextSourceSoftpal = 16;
+// KiriKiri classic KAG3 exact text: the characters the current message layer's
+// processCh drew, committed at KAG's own click waits (showLineBreak /
+// showPageBreak), ruby annotations dropped. 18, not 17: id 17 is already
+// claimed on two in-flight branches (System 4, Nitroplus) and 22 by EntisGLS
+// (checked across all local refs 2026-11-11).
+constexpr uint32_t kTextSourceKirikiri = 18;
 constexpr uint32_t kTextEventLine = 0;
 constexpr uint32_t kTextEventThreadDiscovered = 1;
 // Some Luna engine hooks expose scenario text and system controls from the

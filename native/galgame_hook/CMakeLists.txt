@@ -148,6 +148,7 @@ add_library(fushi_voice_hook SHARED
   "hook/adapters/qlie_adapter.inc"
   "hook/adapters/qlie_profile.h"
   "hook/adapters/kirikiri_adapter.inc"
+  "hook/adapters/kirikiri_kag_text_core.h"
   "hook/adapters/renpy_adapter.inc"
   "hook/adapters/text_render_adapter.inc"
   "hook/adapters/loopback_adapter.inc"
@@ -704,6 +705,16 @@ add_executable(fushi_kirikiri_exporter_scan_test
 target_include_directories(fushi_kirikiri_exporter_scan_test PRIVATE "hook" "include")
 add_test(NAME fushi_kirikiri_exporter_scan_test
   COMMAND fushi_kirikiri_exporter_scan_test)
+
+# KiriKiri classic KAG3 ENGINE text lane: wire parsing, commit at KAG click waits,
+# reset on clear, ruby dropped, dedupe, overflow fail-closed, admission, lane write.
+add_executable(fushi_kirikiri_kag_text_test "tests/kirikiri_kag_text_test.cpp")
+target_include_directories(fushi_kirikiri_kag_text_test PRIVATE "hook" "include")
+target_compile_definitions(fushi_kirikiri_kag_text_test
+  PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_kirikiri_kag_text_test
+  COMMAND fushi_kirikiri_kag_text_test
+  "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/kirikiri_kag_text_replay.tsv")
 
 # 通用位图呈现器的几何换算（卡片飘出游戏窗口 == 用户看不见卡片，与"没投帧"同形）。
 add_executable(fushi_lookup_overlay_geometry_test

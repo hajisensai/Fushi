@@ -1,0 +1,133 @@
+# KiriKiri classic KAG3 text lane replay (synthetic text only, no game content).
+#
+# Each case replays the TJS-side events of kirikiri_adapter.inc's KAG text
+# bootstrap through the production assembler (kirikiri_kag_text_core.h).
+#   case <name>          start a case with a fresh assembler
+#   c <id> <text>        processCh drew <text> (one call per character) on layer <id>
+#   s <id> <text>        one processCh call carrying the whole <text> ([ch text=...])
+#   r <id> <text>        setRuby(<text>) on layer <id>
+#   w <id>               KAG click wait while layer <id> is current
+#   x <id>               layer <id> cleared
+#   o                    TJS event buffer overflow record
+#   flush                encode the pending events into one wire batch and apply it
+#   expect <text>        next committed line (in order)
+#   end                  flush, then require that no further line was committed
+# Columns are tab separated.
+
+case	commit_on_wait_assembles_characters
+c	1	テスト
+w	1
+expect	テスト
+end
+
+case	each_wait_commits_only_its_own_segment
+c	1	「あい」
+w	1
+c	1	「うえ」
+w	1
+expect	「あい」
+expect	「うえ」
+end
+
+case	clear_discards_uncommitted_characters
+c	1	せんたくし
+x	1
+w	1
+c	1	ほんぶん
+w	1
+expect	ほんぶん
+end
+
+case	text_without_any_wait_is_never_published
+c	1	えらぶ
+c	1	もどる
+x	1
+c	2	せってい
+end
+
+case	ruby_annotation_is_dropped_base_text_kept
+c	1	この
+r	1	かんじ
+c	1	漢字
+c	1	です
+w	1
+expect	この漢字です
+end
+
+case	repeated_waits_publish_once
+c	1	いちど
+w	1
+w	1
+flush
+w	1
+expect	いちど
+end
+
+case	only_the_waiting_layer_commits
+c	2	なまえ
+c	1	「せりふ」
+w	1
+x	2
+expect	「せりふ」
+end
+
+case	name_layer_text_stays_on_its_own_buffer
+c	2	なまえ
+w	1
+x	2
+c	1	ほんぶん
+w	1
+expect	ほんぶん
+end
+
+case	surrounding_whitespace_is_trimmed
+c	1	　まえ
+w	1
+c	1
+w	1
+expect	まえ
+end
+
+case	multi_character_processch_run
+s	1	――
+c	1	はい
+w	1
+expect	――はい
+end
+
+case	overflow_drops_the_interrupted_line_only
+c	1	まえ
+o
+c	1	あと
+w	1
+c	1	つぎ
+w	1
+expect	つぎ
+end
+
+case	layer_first_seen_after_overflow_waits_for_a_boundary
+o
+c	3	とちゅう
+w	3
+c	3	つぎ
+w	3
+expect	つぎ
+end
+
+case	clear_also_ends_the_overflow_poison
+c	1	まえ
+o
+x	1
+c	1	あたらしい
+w	1
+expect	あたらしい
+end
+
+case	events_split_across_batches_still_assemble
+c	1	まえ
+flush
+c	1	うしろ
+flush
+w	1
+expect	まえうしろ
+end
