@@ -274,7 +274,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
   /// 队列空了是因为 RWKV 还没准备好（[SrsStudyState.rwkvPending]）：RWKV 牌组的复习卡不退回按 FSRS-7 的到期日
   /// 出，这里显示 RWKV 的准备 / 失败状态，就绪后自动重新排队（[_onRwkvStatus]）。
   bool _rwkvPending = false;
-  SrsRwkvService? _rwkv;
+  SrsRwkvStatusSource? _rwkv;
   SrsRwkvStatus? _rwkvStatus;
   StreamSubscription<SrsRwkvStatus>? _rwkvSubscription;
 
@@ -531,9 +531,10 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     _store = store;
     // 先把 RWKV 服务装配到 store 上（[SrsDbStore.rwkv]）再排第一次队：没装配的 store 会把 RWKV 牌组当成
     // 「宿主没有 RWKV」按到期日排。
-    SrsRwkvService? rwkv;
+    SrsRwkvStatusSource? rwkv;
     try {
-      rwkv = await ref.read(srsRwkvServiceProvider.future);
+      // 本机复习：就是 RWKV 服务（[srsRwkvServiceProvider]，读它即完成装配）；远程复习：主机状态的影子。
+      rwkv = await ref.read(srsRwkvStatusProvider.future);
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsReviewPage.rwkv', e, stack);
     }
@@ -719,7 +720,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
         srsRunLogged('SrsReviewPage.stopAudio', _audio.cancel);
         // 「就绪」可能在这次排队等结果时就已经来过：那时 [_finished] 还是 false，[_onRwkvStatus] 不重排，
         // 之后也不会再有就绪事件——页面会一直停在「等 RWKV」。所以 pending 落定后当场看一次服务：已就绪就
-        // 重排。不会空转：服务就绪时打分失败会转「出错」（`SrsRwkvService` 的 _scoringFailed），store 也不会
+        // 重排。不会空转：服务就绪时打分失败会转「出错」（RWKV 排程内核，native/fushi_rwkv 的 sched），store 也不会
         // 在 RWKV 就绪且打分成功时报 pending，所以「就绪 + pending」只可能是这个竞态。
         if (rwkvPending && (_rwkv?.ready ?? false)) {
           await _loadNext();
@@ -2533,7 +2534,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
   /// 队列空了而 RWKV 还没准备好：说清楚在等什么（下载 / 回放 / 失败），失败给「重试」。
   Widget _buildRwkvPending(BuildContext context) {
     final SrsRwkvStatus? status = _rwkvStatus;
-    final SrsRwkvService? service = _rwkv;
+    final SrsRwkvStatusSource? service = _rwkv;
     final bool failed = status?.phase == SrsRwkvPhase.failed;
     final String? detail = switch (status?.phase) {
       SrsRwkvPhase.failed => t.srs_settings_rwkv_failed(
