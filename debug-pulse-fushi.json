@@ -1,12 +1,43 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-11T04:33:10Z",
+ "generatedAt": "2026-11-11T05:17:47Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "8603d1a7644363acc0bd973f79588ac140f4af5f",
   "seq": 26444
  },
  "builds": [
+  {
+   "seq": 26444,
+   "version": "3.3.0",
+   "sha": "8603d1a7644363acc0bd973f79588ac140f4af5f",
+   "unknown": false,
+   "publishedAt": "2026-11-11T05:17:37Z",
+   "testflight": false,
+   "baseSeq": 26440,
+   "prs": [
+    3250
+   ],
+   "direct": [],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "ok"
+    },
+    "windows": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/42959750715"
+    },
+    "macos": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/42959750715"
+    },
+    "ios": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/42959750715"
+    }
+   }
+  },
   {
    "seq": 26440,
    "version": "3.3.0",
@@ -72,18 +103,8 @@
    "unknown": false,
    "publishedAt": "2026-11-10T21:25:41Z",
    "testflight": true,
-   "baseSeq": 26365,
-   "prs": [
-    3223,
-    3209,
-    3236,
-    3241,
-    3216,
-    3213,
-    3244,
-    3288,
-    3283
-   ],
+   "baseSeq": null,
+   "prs": [],
    "direct": [],
    "truncated": false,
    "platforms": {
@@ -101,128 +122,10 @@
      "state": "ok"
     }
    }
-  },
-  {
-   "seq": 26365,
-   "version": "3.3.0",
-   "sha": "b68172e92620e0abb2c9c26fd5299c500869de89",
-   "unknown": false,
-   "publishedAt": "2026-11-10T21:13:18Z",
-   "testflight": false,
-   "baseSeq": null,
-   "prs": [],
-   "direct": [],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "ok"
-    },
-    "windows": {
-     "state": "superseded",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/42875515665"
-    },
-    "macos": {
-     "state": "superseded",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/42875515665"
-    },
-    "ios": {
-     "state": "superseded",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/42875515665"
-    }
-   }
   }
  ],
- "pending": {
-  "headSha": "8603d1a7644363acc0bd973f79588ac140f4af5f",
-  "headSeq": 26444,
-  "prs": [
-   3250
-  ],
-  "direct": [],
-  "truncated": false,
-  "platforms": {
-   "android": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/42959750767"
-   },
-   "windows": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/42959750715"
-   },
-   "macos": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/42959750715"
-   },
-   "ios": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/42959750715"
-   }
-  }
- },
+ "pending": null,
  "prs": {
-  "3209": {
-   "number": 3209,
-   "title": "feat(web-browser): 浏览器快捷键支持手柄键 + 下拉刷新开关",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-10T19:05:59Z",
-   "additions": 425,
-   "deletions": 72,
-   "labels": []
-  },
-  "3213": {
-   "number": 3213,
-   "title": "feat(music): 插件音源首页歌单 / 专辑栏目加「查看全部」网格页",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-10T19:02:03Z",
-   "additions": 536,
-   "deletions": 24,
-   "labels": []
-  },
-  "3216": {
-   "number": 3216,
-   "title": "feat(manga): 长按 / 右键复制 OCR 文本块与整页文字",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-10T19:02:33Z",
-   "additions": 555,
-   "deletions": 67,
-   "labels": []
-  },
-  "3223": {
-   "number": 3223,
-   "title": "fix(video): 视频源扩展的磁链改走种子下载管线，不再当本地文件打开（BUG-4386）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-10T19:06:39Z",
-   "additions": 509,
-   "deletions": 3,
-   "labels": []
-  },
-  "3236": {
-   "number": 3236,
-   "title": "feat(music): 歌词页高级制卡支持前后文行与句子音频区间",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-10T19:03:53Z",
-   "additions": 924,
-   "deletions": 14,
-   "labels": []
-  },
-  "3241": {
-   "number": 3241,
-   "title": "feat(gamepad): iOS 支持单只 Switch Joy-Con（vendor gamepads_ios，非 extended 手柄走 physicalInputProfile）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-10T19:02:53Z",
-   "additions": 935,
-   "deletions": 10,
-   "labels": []
-  },
-  "3244": {
-   "number": 3244,
-   "title": "feat(library): 多选态鼠标按下即拖框选（视频库 / 书架）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-10T19:01:26Z",
-   "additions": 594,
-   "deletions": 20,
-   "labels": []
-  },
   "3250": {
    "number": 3250,
    "title": "heavy: queued offloadable runs keep asking the dist workers; analyze ceiling 16 GB",
@@ -239,24 +142,6 @@
    "mergedAt": "2026-11-10T20:24:38Z",
    "additions": 788,
    "deletions": 506,
-   "labels": []
-  },
-  "3283": {
-   "number": 3283,
-   "title": "fix(verify): 拍板项批次第四批真红——macOS 图标图层被忽略、音乐 ASR 存在性判断、测试随新端点更新",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-10T18:38:03Z",
-   "additions": 22,
-   "deletions": 7,
-   "labels": []
-  },
-  "3288": {
-   "number": 3288,
-   "title": "fix(verify): 拍板项批次第五批红——源码守卫随重构收窄、设置测试补 binding",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-10T18:58:38Z",
-   "additions": 45,
-   "deletions": 9,
    "labels": []
   },
   "3293": {
