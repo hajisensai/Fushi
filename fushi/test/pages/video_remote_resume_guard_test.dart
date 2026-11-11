@@ -142,7 +142,7 @@ void main() {
           _flat(initRemoteBody)
               .split(
                 _flat(
-                  'initialPositionMsOverride: widget.sourceReview?.startMs,',
+                  'initialPositionMsOverride: widget.sourceReview?.startMs, )',
                 ),
               )
               .length,
@@ -188,7 +188,7 @@ void main() {
           _flat(loadEpisode),
           contains(
             _flat(
-              'fallback: () async => initialPositionMsOverride ?? await _resolveRemoteInitialPositionMs( info, index, askHost: false, ),',
+              'fallback: () async => initialPositionMsOverride ?? await _resolveRemoteInitialPositionMs( info, index, askHost: false, ), )',
             ),
           ),
           reason: 'three-way start must not read the host again for fallback',

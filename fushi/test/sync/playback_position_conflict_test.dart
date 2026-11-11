@@ -44,13 +44,25 @@ class _FakePositionBackend extends InterconnectSyncBackend
     int positionMs,
     int updatedAtMs,
   ) {
+    // 与真 host 的 PUT 同一口径（BUG-3367）：上报戳截到「此刻 + 余量」，已存的超限
+    // 毒戳按 0 参与比较；已存的那份胜出时原样留着。
+    final int now = DateTime.now().millisecondsSinceEpoch;
     final PlaybackPosition current = store[key] ?? _pos(0, 0);
-    return store[key] = resolvePositionLww(
-      localPositionMs: current.positionMs,
-      localUpdatedAtMs: current.updatedAtMs,
-      remotePositionMs: positionMs,
-      remoteUpdatedAtMs: updatedAtMs,
+    final int storedAt = trustedStoredSyncStamp(
+      current.updatedAtMs,
+      nowMs: now,
     );
+    final PlaybackPosition winner = resolvePositionLww(
+      localPositionMs: current.positionMs,
+      localUpdatedAtMs: storedAt,
+      remotePositionMs: positionMs,
+      remoteUpdatedAtMs: capFutureSyncStamp(updatedAtMs, nowMs: now),
+    );
+    if (winner.positionMs == current.positionMs &&
+        winner.updatedAtMs == storedAt) {
+      return current;
+    }
+    return store[key] = winner;
   }
 
   @override
@@ -371,8 +383,10 @@ void main() {
     test('视频 pushLocal：host 存的是超限毒戳时不把「毒戳+1」写进本端，下一轮不再重复 PUT', () async {
       final FushiDatabase db = _memDb();
       addTearDown(db.close);
-      const int now = 1700000000000;
-      const int poison = now + 86400000;
+      // 取真实时刻：兼容层的抬戳（_legacyLiveStamp）与 host 的截断都按墙钟判毒戳，
+      // 用写死的过去时刻会让「毒戳」在它们眼里是个可信的旧戳。
+      final int now = DateTime.now().millisecondsSinceEpoch;
+      final int poison = now + 86400000;
       await db.setPrefTyped<int>(videoRemotePositionPrefKey('vp'), 800000);
       await db.setPrefTyped<int>(videoRemotePositionAtPrefKey('vp'), now - 10);
       final _FakePositionBackend backend = _FakePositionBackend()
