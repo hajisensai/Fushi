@@ -2,7 +2,8 @@
 
     python fleet_gateway.py            # 或主控端包里的 fushi-fleet-gateway.exe
 
-* agent 侧：WebSocket over TLS `wss://<本机地址>:8765/agent`，Bearer token 认证；
+* agent 侧：WebSocket over TLS，本机监听 48765（路由器把公网 8765 转发过来；本机 8765 被 Fushi 自己占用），
+  Bearer token 认证；
   网关用自签证书（~/.fushi-fleet/gateway.crt），证书写进志愿者包，agent 只信任它。
 * Claude 侧：MCP Streamable HTTP `http://127.0.0.1:8766/mcp`，只监听本机回环。
 * token：主控端包里与 exe 同目录的 token.txt，否则 ~/.fushi-fleet/token（不存在就生成）。
@@ -467,6 +468,9 @@ def load_or_create_token(path: Path) -> str:
     return token
 
 
+# 本机 8765 被 Fushi 自己的服务占用，网关默认监听 48765；对外端口由路由器映射（志愿者连公网 8765）。
+DEFAULT_AGENT_PORT = 48765
+
 CERT_NAME = "gateway.crt"
 KEY_NAME = "gateway.key"
 
@@ -597,12 +601,20 @@ async def serve_all(args: argparse.Namespace) -> None:
         await mcp.run_streamable_http_async()
 
 
+def bundled_agent_port() -> int:
+    """主控端包里 gateway.json 的 agent_port（打包时按路由器转发目标写入），没有就用默认值。"""
+    path = app_dir() / "gateway.json"
+    if path.exists():
+        return int(json.loads(path.read_text(encoding="utf-8-sig")).get("agent_port", DEFAULT_AGENT_PORT))
+    return DEFAULT_AGENT_PORT
+
+
 def main(argv: Optional[list[str]] = None) -> None:
     if not sys.stdout.isatty():
         sys.stdout.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description="Fushi 远程适配网关（主控端）")
     parser.add_argument("--agent-host", default="0.0.0.0")
-    parser.add_argument("--agent-port", type=int, default=8765)
+    parser.add_argument("--agent-port", type=int, default=bundled_agent_port())
     parser.add_argument("--mcp-host", default="127.0.0.1")
     parser.add_argument("--mcp-port", type=int, default=8766)
     parser.add_argument("--token", default=None)

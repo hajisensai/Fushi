@@ -12,7 +12,8 @@
 # 志愿者电脑不需要 Flutter SDK。
 param(
   [Parameter(Mandatory = $true)][string]$Gateway,
-  [int]$Port = 8765,
+  [int]$Port = 8765,          # 志愿者连的公网端口（路由器对外端口）
+  [int]$ListenPort = 48765,   # 网关在本机监听的端口（路由器转发的目标；本机 8765 被 Fushi 占用）
   [switch]$BuildDriver,
   [switch]$SkipDriver
 )
@@ -108,13 +109,14 @@ if (Test-Path $Ctl) { Remove-Item -Recurse -Force $Ctl }
 New-Item -ItemType Directory -Force -Path $Ctl | Out-Null
 Build-Exe "fleet_gateway.py" "fushi-fleet-gateway" $Ctl
 Write-Utf8 (Join-Path $Ctl "token.txt") $Token
+Write-Utf8 (Join-Path $Ctl "gateway.json") (@{ agent_port = $ListenPort } | ConvertTo-Json)
 Copy-Item (Join-Path $CertDir "gateway.crt"), (Join-Path $CertDir "gateway.key") $Ctl
 Write-Utf8 (Join-Path $Ctl "说明.txt") @"
 双击 fushi-fleet-gateway.exe（会弹管理员确认），保持窗口打开。
-第一次运行会自动：放行防火墙入站 TCP $Port、把 fleet 注册进 Claude Code。
+第一次运行会自动：放行防火墙入站 TCP $ListenPort、把 fleet 注册进 Claude Code。
 
 志愿者连的地址：$GatewayUrl
-路由器要把 TCP $Port 转发到这台电脑（本机有公网 IP 时不用）。
+路由器要把公网 TCP $Port 转发到这台电脑的 TCP $ListenPort。
 
 然后在 Claude Code 新开一个会话，直接说「看看有哪些机器在线」「在 XXX 上启动驱动 launch 某游戏」即可，
 一个会话可以同时操作所有在线机器。操作记录在 %USERPROFILE%\.fushi-fleet\audit\。

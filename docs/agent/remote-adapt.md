@@ -9,7 +9,7 @@
 ```
 志愿者电脑 ×N：双击开始适配.exe（UAC 提权、在登录用户的桌面会话里、主动外连）
    └─ driver\fushi.exe = gal_realgame_driver_itest 打成的 Debug 构建（数据隔离在 work\test-root）
-        │  wss（自签证书固定在 agent.json）+ Bearer token → 主控端公网地址:8765
+        │  wss（自签证书固定在 agent.json）+ Bearer token → 主控端公网地址:8765 ─路由器转发→ 本机 48765
         ▼
 本机：fushi-fleet-gateway.exe ── MCP（http://127.0.0.1:8766/mcp）── Claude 会话
 ```
@@ -32,10 +32,11 @@ powershell -ExecutionPolicy Bypass -File tool/remote_adapt/build_packages.ps1 -G
 ```
 
 - `-Gateway` 是志愿者能连到的主控端地址（可写 `host:port`，默认端口 8765；中文域名自动转 punycode）。
-  主控端在路由器后面时，要把 TCP 8765 转发到主控电脑。
+  路由器把公网 TCP 8765 转发到主控电脑的 48765（`-ListenPort`，写进主控端包的 `gateway.json`）。
+  本机 8765 被 Fushi 自己的服务占用，网关不能监听它。
 - token 和网关证书存在 `~/.fushi-fleet/`（没有就生成），两个包配套。换掉任一个都会让已发出的志愿者包失效。
 - 产物在 `tool/remote_adapt/dist/`（不入库）：
-  - `fushi-adapt-主控端-<日期>.zip`：`fushi-fleet-gateway.exe` + `token.txt` + `gateway.crt/.key`。双击运行，首次自动放行防火墙入站 8765、
+  - `fushi-adapt-主控端-<日期>.zip`：`fushi-fleet-gateway.exe` + `token.txt` + `gateway.crt/.key`。双击运行，首次自动放行防火墙入站 48765、
     执行 `claude mcp add --scope user --transport http fleet http://127.0.0.1:8766/mcp`。
   - `fushi-adapt-志愿者-<日期>.zip`：`双击开始适配.exe` + 写好地址和 token 的 `agent.json` + `driver\` + `说明.txt`。
     机器名默认取对方电脑名。
