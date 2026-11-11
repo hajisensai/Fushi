@@ -2523,25 +2523,6 @@ class SrsDbStore implements SrsSync2Host {
 
   // ------------------------------------------------------------------ 缓存
 
-  /// 本机刷新缓存行（不经投影命令的路径：存量样式去重换了字段值的表示、推导规则升级）：内核一次调用算完并
-  /// 落库（native/fushi_fsrs/src/store/caches.rs），这里只记下写过哪些笔记 / 卡。调用方在独占区与写事务里。
-  Future<void> _refreshCaches({
-    Iterable<String> notes = const <String>[],
-    Iterable<String> cards = const <String>[],
-    bool allNotes = false,
-    bool allStats = false,
-  }) async {
-    _absorbCache(
-      await _sync2(<String, Object?>{
-        'op': 'refresh_caches',
-        'notes': notes.toList(),
-        'cards': cards.toList(),
-        'allNotes': allNotes,
-        'allStats': allStats,
-      }),
-    );
-  }
-
   /// 内核交回的缓存写入清单（`cache`：写了整行的笔记 / 卡、删掉的卡）记进变更日志与数字索引（同一个
   /// 独占区里；命令失败时 [_commandOrReload] 会把两者一起作废）。
   void _absorbCache(Map<String, Object?> r) {
