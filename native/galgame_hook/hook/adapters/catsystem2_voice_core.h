@@ -269,15 +269,16 @@ inline bool MatchesPlainBlock(const exact::LoadedPeImage& image,
   }
   if (entry == 8u) return false;
   const size_t after = cmp + kFlagCompareBytes;
+  const size_t seek = FindImportCall(image, code, after, after + kCallScanBytes,
+                                     imports.set_file_pointer);
   // The plain path seeks the archive's own handle: the flag and the handle
-  // are fields of one object, so the handle load uses the compare's base.
-  if (!HasArchiveHandleLoad(code, after, after + kCallScanBytes,
+  // are fields of one object, so the handle is loaded (before the seek) from
+  // the compare's base register.
+  if (!HasArchiveHandleLoad(code, after, seek,
                             static_cast<uint8_t>(modrm & 7u))) {
     return false;
   }
   *flag_offset = disp;
-  const size_t seek = FindImportCall(image, code, after, after + kCallScanBytes,
-                                     imports.set_file_pointer);
   if (seek == after + kCallScanBytes) return true;
   const size_t read = FindImportCall(image, code, seek + 6u,
                                      seek + 6u + kCallScanBytes,

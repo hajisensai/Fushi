@@ -167,16 +167,221 @@ constexpr size_t kSceneVisibleT = 0x3200u;
 constexpr size_t kSceneFindT = 0x3300u;
 constexpr size_t kSceneDrawT = 0x3400u;
 constexpr size_t kInputT = 0x4000u;
+constexpr size_t kDecoyUpdateT = 0x5c00u;  // another window class
+constexpr size_t kDecoyRevealT = 0x5d00u;
+constexpr size_t kDecoyClearT = 0x6800u;   // another renderer class
+constexpr size_t kDecoyClearCallT = 0x6900u;
 constexpr size_t kVtableT = 0xe100u;      // COL pointer, slot 0, slot 1
 constexpr size_t kLocatorT = 0xe200u;
 
-void BuildEngineT(SyntheticImage* img) {
+// ── the two measured targeted-render codegens ──────────────────────────────
+//
+// Hand-assembled instruction bytes of the parts the two builds compile
+// differently; rel32 targets, IAT operands and immediates the proof does not
+// read are zero and filled in by BuildEngineT.  "2016" is the 2016 build the
+// layout was first measured on, "2020" the cs2 2.6.1.90 build (newer MSVC,
+// renderer one dword shorter in front of the page size, window fields one
+// dword further, a second window / renderer class with the same bodies).
+
+// RenderChar's GetCharImage argument block (at kRecordCharOffsetT).
+constexpr size_t kRecordCharOffsetT = 0xfeu;
+constexpr uint8_t kRecordChar2016[] = {
+    0x8b, 0x03,                    // mov eax,[ebx]
+    0xff, 0x77, 0x54,              // push [edi+0x54]
+    0x8b, 0x4b, 0x08,              // mov ecx,[ebx+8]
+    0xff, 0x77, 0x50,              // push [edi+0x50]
+    0x8b, 0x30,                    // mov esi,[eax]
+    0xe8, 0x00, 0x00, 0x00, 0x00,  // call helper
+    0x8b, 0x4c, 0x24, 0x2c, 0x50, 0x33, 0xc0,
+    0xff, 0xb1, 0xac, 0x00, 0x00, 0x00,                          // push [ecx+0xac]
+    0x81, 0xb9, 0xa0, 0x00, 0x00, 0x00, 0xbc, 0x02, 0x00, 0x00,  // cmp
+    0x8b, 0x0b,                    // mov ecx,[ebx]
+    0x0f, 0x94, 0xc0, 0x50, 0x8d, 0x47, 0x34, 0x50,
+    0xff, 0x77, 0x1c,              // push [edi+0x1c]  size
+    0x0f, 0xb7, 0x47, 0x04, 0x50,  // movzx eax,word [edi+4]; push eax  code
+    0x8d, 0x44, 0x24, 0x58, 0x50,
+    0xff, 0x56, 0x04};             // call [esi+4]
+constexpr uint8_t kRecordChar2020[] = {
+    0xff, 0x77, 0x5c,              // push [edi+0x5c]
+    0x8b, 0x03,                    // mov eax,[ebx]
+    0xff, 0x77, 0x58,              // push [edi+0x58]
+    0x8b, 0x4b, 0x08,              // mov ecx,[ebx+8]
+    0xff, 0x77, 0x54,              // push [edi+0x54]
+    0x8b, 0x30,                    // mov esi,[eax]
+    0xff, 0x77, 0x50,              // push [edi+0x50]
+    0xe8, 0x00, 0x00, 0x00, 0x00,  // call helper
+    0x8b, 0x4c, 0x24, 0x34, 0x50, 0x33, 0xc0,
+    0xff, 0xb1, 0xcc, 0x00, 0x00, 0x00,                          // push [ecx+0xcc]
+    0x81, 0xb9, 0xc0, 0x00, 0x00, 0x00, 0xbc, 0x02, 0x00, 0x00,  // cmp
+    0x8b, 0x0b,                    // mov ecx,[ebx]
+    0x0f, 0x94, 0xc0, 0x50, 0x8d, 0x47, 0x34, 0x50,
+    0xff, 0x77, 0x1c,              // push [edi+0x1c]  size
+    0x0f, 0xb7, 0x47, 0x04, 0x50,  // movzx eax,word [edi+4]; push eax  code
+    0x8d, 0x44, 0x24, 0x60, 0x50,
+    0xff, 0x56, 0x04};             // call [esi+4]
+
+// ClearPage: head, five layout resets, the two page fills, epilogue.  Fill
+// calls at kClearFillNormalCall / kClearFillFadeCall.
+constexpr size_t kClearFillNormalCall = 69u;
+constexpr size_t kClearFillFadeCall = 93u;
+constexpr uint8_t kClear2016[] = {
+    0x56, 0x8b, 0xf1, 0x8b, 0x4e, 0x08, 0x85, 0xc9, 0x74, 0x05,
+    0xe8, 0x00, 0x00, 0x00, 0x00,
+    0xc7, 0x46, 0x20, 0x00, 0x00, 0x00, 0x00,  // mov [esi+0x20],0
+    0xc7, 0x46, 0x24, 0x00, 0x00, 0x00, 0x00,
+    0xc7, 0x46, 0x28, 0x00, 0x00, 0x00, 0x00,
+    0xc7, 0x46, 0x2c, 0x00, 0x00, 0x00, 0x00,
+    0xc7, 0x46, 0x30, 0x00, 0x00, 0x00, 0x00,
+    0x8b, 0x4e, 0x04, 0x85, 0xc9, 0x74, 0x11, 0x6a, 0x00,  // page +4
+    0xff, 0x76, 0x18, 0xff, 0x76, 0x14,                    // H +0x18, W +0x14
+    0x6a, 0x00, 0x6a, 0x00, 0xe8, 0x00, 0x00, 0x00, 0x00,
+    0x8b, 0x4e, 0x40, 0x85, 0xc9, 0x74, 0x11, 0x6a, 0x00,  // fade +0x40
+    0xff, 0x76, 0x18, 0xff, 0x76, 0x14,
+    0x6a, 0x00, 0x6a, 0x00, 0xe8, 0x00, 0x00, 0x00, 0x00,
+    0x5e, 0xc3};
+constexpr uint8_t kClear2020[] = {
+    0x56, 0x8b, 0xf1, 0x8b, 0x4e, 0x08, 0x85, 0xc9, 0x74, 0x05,
+    0xe8, 0x00, 0x00, 0x00, 0x00,
+    0xc7, 0x46, 0x1c, 0x00, 0x00, 0x00, 0x00,  // mov [esi+0x1c],0
+    0xc7, 0x46, 0x20, 0x00, 0x00, 0x00, 0x00,
+    0xc7, 0x46, 0x24, 0x00, 0x00, 0x00, 0x00,
+    0xc7, 0x46, 0x28, 0x00, 0x00, 0x00, 0x00,
+    0xc7, 0x46, 0x2c, 0x00, 0x00, 0x00, 0x00,
+    0x8b, 0x4e, 0x04, 0x85, 0xc9, 0x74, 0x11, 0x6a, 0x00,  // page +4
+    0xff, 0x76, 0x14, 0xff, 0x76, 0x10,                    // H +0x14, W +0x10
+    0x6a, 0x00, 0x6a, 0x00, 0xe8, 0x00, 0x00, 0x00, 0x00,
+    0x8b, 0x4e, 0x3c, 0x85, 0xc9, 0x74, 0x11, 0x6a, 0x00,  // fade +0x3c
+    0xff, 0x76, 0x14, 0xff, 0x76, 0x10,
+    0x6a, 0x00, 0x6a, 0x00, 0xe8, 0x00, 0x00, 0x00, 0x00,
+    0x5e, 0xc3};
+static_assert(sizeof(kClear2016) == sizeof(kClear2020), "same body length");
+constexpr size_t kClearPageHeight = 61u;  // H byte of the normal fill
+
+// Screen::QueryLayer with `dec eax` (2016) is core::kScreenQueryTBytes; the
+// 2020 build tests the result with `sub eax,1` (core::kScreenQueryT2Bytes).
+
+// Scene::Find: map = [ecx], head = [map].
+constexpr uint8_t kSceneFind2016[] = {
+    0x8b, 0x54, 0x24, 0x04, 0x56, 0x57,
+    0x8b, 0x39,   // mov edi,[ecx]
+    0x8b, 0x37};  // mov esi,[edi]
+constexpr uint8_t kSceneFind2020[] = {
+    0x8b, 0x01,   // mov eax,[ecx]
+    0x56,
+    0x8b, 0x30,   // mov esi,[eax]
+    0x8b, 0xc6, 0x8b, 0x48, 0x04};
+
+// Scene::Draw alignment between the loop test and the loop head.
+constexpr uint8_t kDrawGap2016[12] = {0xeb, 0x0a, 0xcc, 0xcc, 0xcc, 0xcc,
+                                      0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc};
+constexpr uint8_t kDrawGap2020[12] = {0x0f, 0x1f, 0x40, 0x00, 0x0f, 0x1f,
+                                      0x84, 0x00, 0x00, 0x00, 0x00, 0x00};
+constexpr size_t kDrawGapAt = 35u;
+
+// Input::Handle prologue up to the message dispatch.
+constexpr uint8_t kInputPrologue2016[] = {
+    0x55, 0x8b, 0xec, 0x83, 0xe4, 0xf8, 0x81, 0xec, 0x00, 0x00, 0x00, 0x00,
+    0xa1, 0x00, 0x00, 0x00, 0x00, 0x33, 0xc4, 0x89, 0x84, 0x24, 0x00, 0x00,
+    0x00, 0x00,
+    0x8b, 0x55, 0x10,              // mov edx,[ebp+0x10]  msg
+    0x8b, 0x4d, 0x14,
+    0x89, 0x4c, 0x24, 0x04,        // mov [esp+4],ecx
+    0x53, 0x8b, 0x5d, 0x08, 0x56, 0x8b, 0x75, 0x0c, 0x57, 0x8b, 0x7d, 0x18,
+    0x89, 0x7c, 0x24, 0x14};
+constexpr uint8_t kInputPrologue2020[] = {
+    0x55, 0x8b, 0xec, 0x83, 0xe4, 0xf8, 0x81, 0xec, 0x4c, 0x01, 0x00, 0x00,
+    0xa1, 0x00, 0x00, 0x00, 0x00, 0x33, 0xc4, 0x89, 0x84, 0x24, 0x48, 0x01,
+    0x00, 0x00,
+    0x8b, 0x55, 0x10,              // mov edx,[ebp+0x10]  msg
+    0x8b, 0x4d, 0x14,
+    0x89, 0x0c, 0x24,              // mov [esp],ecx
+    0x53, 0x8b, 0x5d, 0x08, 0x56, 0x8b, 0x75, 0x0c, 0x57, 0x8b, 0x7d, 0x18,
+    0x89, 0x7c, 0x24, 0x10};
+constexpr size_t kInputMessageDisp = 28u;  // disp8 of `mov edx,[ebp+0x10]`
+
+struct TargetedCodegen {
+  const char* name;
+  const uint8_t* record_char;
+  size_t record_char_bytes;
+  const uint8_t* clear;
+  uint32_t window_renderer;
+  uint8_t window_screen;
+  bool sub_eax_query;        // Screen::QueryLayer codegen
+  const uint8_t* scene_find;
+  size_t scene_find_bytes;
+  size_t scene_find_map;     // ModR/M byte of `mov r,[ecx]`
+  const uint8_t* draw_gap;
+  const uint8_t* input_prologue;
+  size_t input_prologue_bytes;
+  bool clear_caller_reveals;  // the window's ClearPage caller drives reveal
+  core::ObjectLayout layout;  // expected
+};
+
+constexpr TargetedCodegen kT2016 = {
+    "2016", kRecordChar2016, sizeof(kRecordChar2016), kClear2016, 0x2acu,
+    0x68u, false, kSceneFind2016, sizeof(kSceneFind2016), 7u, kDrawGap2016,
+    kInputPrologue2016, sizeof(kInputPrologue2016), false,
+    {0x68u, 0x2acu, 0x14u, 0x18u, 0x40u}};
+constexpr TargetedCodegen kT2020 = {
+    "2020", kRecordChar2020, sizeof(kRecordChar2020), kClear2020, 0x2b0u,
+    0x6cu, true, kSceneFind2020, sizeof(kSceneFind2020), 1u, kDrawGap2020,
+    kInputPrologue2020, sizeof(kInputPrologue2020), true,
+    {0x6cu, 0x2b0u, 0x10u, 0x14u, 0x3cu}};
+constexpr const TargetedCodegen* kTargetedCodegens[] = {&kT2016, &kT2020};
+
+size_t ScreenQuerySceneCall(const TargetedCodegen& cg) {
+  return cg.sub_eax_query ? core::kScreenQueryT2SceneCall
+                          : core::kScreenQueryTSceneCall;
+}
+
+// `mov ecx,[edi+renderer]; test ecx,ecx; je +5; call clear` at `at`, then
+// (optionally, same function) `call reveal; ret`.
+void PutClearCaller(SyntheticImage* img, size_t at, uint32_t window_renderer,
+                    size_t clear, size_t reveal) {
+  img->Put(at, core::kClearCallTBytes, sizeof(core::kClearCallTBytes));
+  std::memcpy(img->base + at + core::kClearCallTDisp, &window_renderer, 4u);
+  img->base[at + 9u] = 0x05u;
+  img->Rel32(at + core::kClearCallTCall, clear);
+  size_t tail = at + sizeof(core::kClearCallTBytes);
+  if (reveal != 0u) {
+    img->Rel32(tail, reveal);
+    tail += 5u;
+  }
+  img->base[tail] = 0xc3u;
+}
+
+void PutClear(SyntheticImage* img, const TargetedCodegen& cg, size_t at,
+              size_t fill) {
+  img->Put(at, cg.clear, sizeof(kClear2016));
+  img->Rel32(at + 10u, 0x1800u);
+  img->Rel32(at + kClearFillNormalCall, fill);
+  img->Rel32(at + kClearFillFadeCall, fill);
+}
+
+void PutUpdate(SyntheticImage* img, const TargetedCodegen& cg, size_t at,
+               size_t reveal) {
+  img->Put(at, core::kUpdateTBytes, sizeof(core::kUpdateTBytes));
+  std::memcpy(img->base + at + core::kUpdateTRendererDisp,
+              &cg.window_renderer, 4u);
+  img->Rel32(at + 13u, 0x1830u);
+  img->Rel32(at + core::kUpdateTRevealCall, reveal);
+  img->Rel32(at + core::kUpdateTSyncCall, kSyncT);
+}
+
+void PutLayerQuery(SyntheticImage* img, const TargetedCodegen& cg, size_t at,
+                   size_t target) {
+  img->Put(at, core::kLayerQueryTBytes, sizeof(core::kLayerQueryTBytes));
+  img->base[at + core::kLayerQueryTScreenDisp] = cg.window_screen;
+  img->Rel32(at + core::kLayerQueryTCall, target);
+}
+
+void BuildEngineT(SyntheticImage* img, const TargetedCodegen& cg = kT2016) {
   // RenderChar(renderer, record, target): prologue, record, epilogue.
   img->Put(kRenderT, core::kRenderTBytes, sizeof(core::kRenderTBytes));
   img->Put(kRenderT + core::kRecordPenTOffset, core::kRecordPenTBytes,
            sizeof(core::kRecordPenTBytes));
-  img->Put(kRenderT + core::kRecordCharTOffset, core::kRecordCharTBytes,
-           sizeof(core::kRecordCharTBytes));
+  img->Put(kRenderT + kRecordCharOffsetT, cg.record_char,
+           cg.record_char_bytes);
   img->Put(kRenderT + core::kRenderTailTOffset, core::kRenderTailTBytes,
            sizeof(core::kRenderTailTBytes));
   // GetCharImage (vtable slot 1 of the font object) -> rasteriser twice.
@@ -186,45 +391,63 @@ void BuildEngineT(SyntheticImage* img) {
   img->Pointer(kVtableT, kLocatorT);              // data: not code
   img->Pointer(kVtableT + 4u, 0x1800u);           // slot 0
   img->Pointer(kVtableT + 8u, kCharImageT);       // slot 1
-  // ClearPage: both page images through one fill helper; a +0x2ac caller.
-  img->Put(kClearT, core::kClearTBytes, sizeof(core::kClearTBytes));
-  img->Rel32(kClearT + 10u, 0x1800u);
-  img->Rel32(kClearT + core::kClearTNormalFillCall, 0x1810u);
-  img->Rel32(kClearT + core::kClearTFadeFillCall, 0x1810u);
-  img->Put(kClearCallT, core::kClearCallTBytes,
-           sizeof(core::kClearCallTBytes));
-  img->base[kClearCallT + 9u] = 0x05u;
-  img->Rel32(kClearCallT + core::kClearCallTCall, kClearT);
+  // ClearPage: both page images through one fill helper; a window caller.
+  PutClear(img, cg, kClearT, 0x1810u);
+  PutClearCaller(img, kClearCallT, cg.window_renderer, kClearT,
+                 cg.clear_caller_reveals ? kRevealT : 0u);
   // Window::Update -> reveal (renders through RenderChar), sync (screen copy).
-  img->Put(kUpdateT, core::kUpdateTBytes, sizeof(core::kUpdateTBytes));
-  img->Rel32(kUpdateT + 13u, 0x1830u);
-  img->Rel32(kUpdateT + core::kUpdateTRevealCall, kRevealT);
-  img->Rel32(kUpdateT + core::kUpdateTSyncCall, kSyncT);
+  PutUpdate(img, cg, kUpdateT, kRevealT);
   img->Rel32(kRevealT + 0x40u, kRenderT);
-  img->Put(kSyncT + 0x30u, core::kSyncScreenTBytes,
-           sizeof(core::kSyncScreenTBytes));
+  const uint8_t sync[] = {0x8b, 0x4b, cg.window_screen, 0x50, 0xe8};
+  img->Put(kSyncT + 0x30u, sync, sizeof(sync));
   // Layer query chain and the scene draw loop.
-  img->Put(kLayerQueryT, core::kLayerQueryTBytes,
-           sizeof(core::kLayerQueryTBytes));
-  img->Rel32(kLayerQueryT + core::kLayerQueryTCall, kScreenQueryT);
-  img->Put(kScreenQueryT, core::kScreenQueryTBytes,
-           sizeof(core::kScreenQueryTBytes));
+  PutLayerQuery(img, cg, kLayerQueryT, kScreenQueryT);
+  if (cg.sub_eax_query) {
+    img->Put(kScreenQueryT, core::kScreenQueryT2Bytes,
+             sizeof(core::kScreenQueryT2Bytes));
+  } else {
+    img->Put(kScreenQueryT, core::kScreenQueryTBytes,
+             sizeof(core::kScreenQueryTBytes));
+  }
   img->Rel32(kScreenQueryT + 18u, 0x1840u);
-  img->Rel32(kScreenQueryT + core::kScreenQueryTSceneCall, kSceneVisibleT);
+  img->Rel32(kScreenQueryT + ScreenQuerySceneCall(cg), kSceneVisibleT);
   img->Put(kSceneVisibleT, core::kSceneVisibleTBytes,
            sizeof(core::kSceneVisibleTBytes));
   img->Rel32(kSceneVisibleT + core::kSceneVisibleTFindCall, kSceneFindT);
-  img->Put(kSceneFindT, core::kSceneFindTBytes,
-           sizeof(core::kSceneFindTBytes));
+  img->Put(kSceneFindT, cg.scene_find, cg.scene_find_bytes);
   img->Put(kSceneDrawT, core::kSceneDrawTBytes,
            sizeof(core::kSceneDrawTBytes));
+  img->Put(kSceneDrawT + kDrawGapAt, cg.draw_gap, 12u);
   // Input::Handle with its capture bookkeeping imports.
-  img->Put(kInputT, core::kInputTBytes, sizeof(core::kInputTBytes));
+  img->Put(kInputT, cg.input_prologue, cg.input_prologue_bytes);
+  img->Put(kInputT + cg.input_prologue_bytes, core::kInputTDispatchBytes,
+           sizeof(core::kInputTDispatchBytes));
   img->CallSlot(kInputT + 0x100u, kSlotReleaseCapture);
   img->CallSlot(kInputT + 0x300u, kSlotWindowFromPoint);
   img->CallSlot(kInputT + 0x420u, kSlotSetCapture);
   img->Put(kInputT + 0x5adu, core::kInputTRetBytes,
            sizeof(core::kInputTRetBytes));
+}
+
+// The 2020 build's second window class: an Update with the same body whose
+// reveal renders through another renderer, and that renderer's ClearPage
+// (same body) called through the same window field from a function that does
+// not reveal the message page.
+void AddDecoyWindowClass(SyntheticImage* img, const TargetedCodegen& cg) {
+  PutUpdate(img, cg, kDecoyUpdateT, kDecoyRevealT);
+  img->base[kDecoyRevealT] = 0xc3u;
+  PutClear(img, cg, kDecoyClearT, 0x1820u);
+  PutClearCaller(img, kDecoyClearCallT, cg.window_renderer, kDecoyClearT,
+                 kDecoyRevealT);
+}
+
+bool LayoutEquals(const core::ObjectLayout& lhs,
+                  const core::ObjectLayout& rhs) {
+  return lhs.window_screen == rhs.window_screen &&
+         lhs.window_renderer == rhs.window_renderer &&
+         lhs.page_width == rhs.page_width &&
+         lhs.page_height == rhs.page_height &&
+         lhs.work_image == rhs.work_image;
 }
 
 void TestResolveSites() {
@@ -263,6 +486,8 @@ void TestResolveSites() {
   assert(sites.input_stack_args == 5u);
   assert(sites.walk.list_offset == 0u && sites.walk.head_offset == 0x14u &&
          !sites.walk.layer_by_pointer);
+  // The adjacent-page signatures fix the object layout.
+  assert(LayoutEquals(sites.layout, {0x68u, 0x2acu, 0x14u, 0x18u, 0x40u}));
 
   // Several parts share the base-class layer query; copies that agree on the
   // screen query are one proof, not an ambiguity.
@@ -273,36 +498,60 @@ void TestResolveSites() {
 }
 
 void TestResolveTargetedRenderSites() {
-  core::Sites sites;
-  SyntheticImage img;
-  BuildEngineT(&img);
-  assert(core::ResolveSites(img.image, Imports(), &sites) ==
-         core::SiteResult::kResolved);
-  assert(sites.variant == core::SiteVariant::kTargetedRender);
-  assert(sites.render_char == img.At(kRenderT));
-  assert(sites.clear_page == img.At(kClearT));
-  assert(sites.char_image == img.At(kCharImageT));
-  assert(sites.rasteriser == img.At(kRasterT));
-  assert(sites.window_update == img.At(kUpdateT));
-  assert(sites.input_handler == img.At(kInputT));
-  assert(sites.render_stack_args == 2u);
-  assert(sites.input_stack_args == 6u);
-  assert(sites.walk.list_offset == 4u && sites.walk.head_offset == 0u &&
-         sites.walk.layer_by_pointer);
+  for (const TargetedCodegen* cg : kTargetedCodegens) {
+    core::Sites sites;
+    SyntheticImage img;
+    BuildEngineT(&img, *cg);
+    const auto result = core::ResolveSites(img.image, Imports(), &sites);
+    if (result != core::SiteResult::kResolved) {
+      std::fprintf(stderr, "targeted %s: got %u\n", cg->name,
+                   static_cast<unsigned>(result));
+    }
+    assert(result == core::SiteResult::kResolved);
+    assert(sites.variant == core::SiteVariant::kTargetedRender);
+    assert(sites.render_char == img.At(kRenderT));
+    assert(sites.clear_page == img.At(kClearT));
+    assert(sites.char_image == img.At(kCharImageT));
+    assert(sites.rasteriser == img.At(kRasterT));
+    assert(sites.window_update == img.At(kUpdateT));
+    assert(sites.input_handler == img.At(kInputT));
+    assert(sites.render_stack_args == 2u);
+    assert(sites.input_stack_args == 6u);
+    assert(sites.walk.list_offset == 4u && sites.walk.head_offset == 0u &&
+           sites.walk.layer_by_pointer);
+    // Window and renderer fields come from the proving code.
+    assert(LayoutEquals(sites.layout, cg->layout));
 
-  // A derived class repeating GetCharImage in its own vtable is one
-  // function, not an ambiguity; so are other +0x2ac callers that clear
-  // something else, as long as one of them calls ClearPage.
-  img.Pointer(kVtableT + 0x40u, kLocatorT);
-  img.Pointer(kVtableT + 0x44u, 0x1820u);
-  img.Pointer(kVtableT + 0x48u, kCharImageT);
-  img.Put(0x5a00u, core::kClearCallTBytes, sizeof(core::kClearCallTBytes));
-  img.Rel32(0x5a00u + core::kClearCallTCall, 0x1850u);
-  assert(core::ResolveSites(img.image, Imports(), &sites) ==
-         core::SiteResult::kResolved);
-  assert(sites.char_image == img.At(kCharImageT));
+    // A derived class repeating GetCharImage in its own vtable is one
+    // function, not an ambiguity; so are other window-renderer callers that
+    // clear something else, as long as one of them calls ClearPage.
+    img.Pointer(kVtableT + 0x40u, kLocatorT);
+    img.Pointer(kVtableT + 0x44u, 0x1820u);
+    img.Pointer(kVtableT + 0x48u, kCharImageT);
+    PutClearCaller(&img, 0x5a00u, cg->window_renderer, 0x1850u, 0u);
+    assert(core::ResolveSites(img.image, Imports(), &sites) ==
+           core::SiteResult::kResolved);
+    assert(sites.char_image == img.At(kCharImageT));
+  }
+
+  // cs2 2.6.1.90: a second window class shares the Update and ClearPage
+  // bodies (and the renderer field).  Its Update's reveal does not render
+  // through RenderChar and its ClearPage's caller does not reveal the message
+  // page, so the message window's sites are still the only ones proven.
+  {
+    core::Sites sites;
+    SyntheticImage img;
+    BuildEngineT(&img, kT2020);
+    AddDecoyWindowClass(&img, kT2020);
+    assert(core::ResolveSites(img.image, Imports(), &sites) ==
+           core::SiteResult::kResolved);
+    assert(sites.window_update == img.At(kUpdateT));
+    assert(sites.clear_page == img.At(kClearT));
+    assert(LayoutEquals(sites.layout, kT2020.layout));
+  }
 
   // Both layouts present: the adjacent-page proof decides.
+  core::Sites sites;
   SyntheticImage both;
   BuildEngineT(&both);
   both.Put(0x6000u, core::kPageBytes, sizeof(core::kPageBytes));
@@ -311,44 +560,56 @@ void TestResolveTargetedRenderSites() {
   assert(sites.render_char == 0u);
 }
 
-// Each targeted-render proof, broken alone, installs nothing.
+// Each targeted-render proof, broken alone, installs nothing (both codegens).
 void TestTargetedRenderEachProofFailsClosed() {
+  using Apply = void (*)(SyntheticImage*, const TargetedCodegen&);
   struct Breaker {
-    void (*apply)(SyntheticImage*);
+    Apply apply;
     core::SiteResult expected;
   };
   const Breaker breakers[] = {
       // A second RenderChar is ambiguous.
-      {[](SyntheticImage* img) {
+      {[](SyntheticImage* img, const TargetedCodegen&) {
          img->Put(0x5000u, core::kRenderTBytes, sizeof(core::kRenderTBytes));
        },
        core::SiteResult::kPageMissing},
-      // Record offsets moved / the epilogue pops another argument count.
-      {[](SyntheticImage* img) {
+      // Record offsets moved / GetCharImage through another slot / the code
+      // from another record field / the epilogue pops another argument count.
+      {[](SyntheticImage* img, const TargetedCodegen&) {
          img->base[kRenderT + core::kRecordPenTOffset + 25u] = 0x18u;
        },
        core::SiteResult::kRecordInvalid},
-      {[](SyntheticImage* img) {
-         img->base[kRenderT + core::kRecordCharTOffset + 66u] = 0x08u;
+      {[](SyntheticImage* img, const TargetedCodegen& cg) {
+         img->base[kRenderT + kRecordCharOffsetT + cg.record_char_bytes - 1u] =
+             0x08u;
        },
        core::SiteResult::kRecordInvalid},
-      {[](SyntheticImage* img) {
+      {[](SyntheticImage* img, const TargetedCodegen& cg) {
+         img->base[kRenderT + kRecordCharOffsetT + cg.record_char_bytes -
+                   10u] = 0x06u;
+       },
+       core::SiteResult::kRecordInvalid},
+      {[](SyntheticImage* img, const TargetedCodegen&) {
          img->base[kRenderT + core::kRenderTailTOffset + 7u] = 0x04u;
        },
        core::SiteResult::kRecordInvalid},
       // No vtable names GetCharImage (the locator slot is code: not a vtable
       // start), or the function does not start after padding.
-      {[](SyntheticImage* img) { img->Pointer(kVtableT, 0x1830u); },
+      {[](SyntheticImage* img, const TargetedCodegen&) {
+         img->Pointer(kVtableT, 0x1830u);
+       },
        core::SiteResult::kRasteriserInvalid},
-      {[](SyntheticImage* img) { img->base[kCharImageT - 1u] = 0x90u; },
+      {[](SyntheticImage* img, const TargetedCodegen&) {
+         img->base[kCharImageT - 1u] = 0x90u;
+       },
        core::SiteResult::kRasteriserInvalid},
       // GetCharImage reaches the rasteriser only once.
-      {[](SyntheticImage* img) {
+      {[](SyntheticImage* img, const TargetedCodegen&) {
          std::memset(img->base + kCharImageT + 0x60u, 0xcc, 5u);
        },
        core::SiteResult::kRasteriserInvalid},
       // A second, different function passing the proof is ambiguous.
-      {[](SyntheticImage* img) {
+      {[](SyntheticImage* img, const TargetedCodegen&) {
          img->Rel32(0x1c00u + 0x20u, kRasterT);
          img->Rel32(0x1c00u + 0x60u, kRasterT);
          img->Pointer(kVtableT + 0x40u, kLocatorT);
@@ -356,72 +617,133 @@ void TestTargetedRenderEachProofFailsClosed() {
          img->Pointer(kVtableT + 0x48u, 0x1c00u);
        },
        core::SiteResult::kRasteriserInvalid},
-      // ClearPage missing, fills through two helpers, or nobody calls it
-      // through the message window's renderer.
-      {[](SyntheticImage* img) { img->base[kClearT + 63u] = 0x77u; },
-       core::SiteResult::kClearInvalid},
-      {[](SyntheticImage* img) {
-         img->Rel32(kClearT + core::kClearTFadeFillCall, 0x1820u);
+      // Update missing, its renderer field implausible, two Updates whose
+      // reveal both render; reveal does not render; sync does not hand the
+      // page to a screen.
+      {[](SyntheticImage* img, const TargetedCodegen&) {
+         img->base[kUpdateT + 43u] = 0x8fu;
        },
-       core::SiteResult::kClearInvalid},
-      {[](SyntheticImage* img) {
-         img->Rel32(kClearCallT + core::kClearCallTCall, 0x1850u);
-       },
-       core::SiteResult::kClearInvalid},
-      // Update missing; reveal does not render; sync does not reach +0x68.
-      {[](SyntheticImage* img) { img->base[kUpdateT + 46u] = 0xa8u; },
        core::SiteResult::kUpdateMissing},
-      {[](SyntheticImage* img) {
+      {[](SyntheticImage* img, const TargetedCodegen&) {
+         const uint32_t absurd = 0x12345u;
+         std::memcpy(img->base + kUpdateT + core::kUpdateTRendererDisp,
+                     &absurd, 4u);
+       },
+       core::SiteResult::kUpdateMissing},
+      {[](SyntheticImage* img, const TargetedCodegen& cg) {
+         PutUpdate(img, cg, kDecoyUpdateT, kRevealT);
+       },
+       core::SiteResult::kUpdateMissing},
+      {[](SyntheticImage* img, const TargetedCodegen&) {
          std::memset(img->base + kRevealT + 0x40u, 0xcc, 5u);
        },
        core::SiteResult::kRevealInvalid},
-      {[](SyntheticImage* img) { img->base[kSyncT + 0x32u] = 0x6cu; },
+      {[](SyntheticImage* img, const TargetedCodegen&) {
+         img->base[kSyncT + 0x33u] = 0x51u;
+       },
        core::SiteResult::kSyncInvalid},
-      // Layer query missing / disagreeing copies.
-      {[](SyntheticImage* img) { img->base[kLayerQueryT + 12u] = 0x08u; },
+      // ClearPage missing, fills through two helpers, a page height that is
+      // not width + 4, nobody calls it through the window's renderer, or a
+      // second ClearPage-shaped body whose caller also reveals (ambiguous).
+      {[](SyntheticImage* img, const TargetedCodegen&) {
+         img->base[kClearT + 63u] = 0x77u;
+       },
+       core::SiteResult::kClearInvalid},
+      {[](SyntheticImage* img, const TargetedCodegen&) {
+         img->Rel32(kClearT + kClearFillFadeCall, 0x1820u);
+       },
+       core::SiteResult::kClearInvalid},
+      {[](SyntheticImage* img, const TargetedCodegen&) {
+         for (const size_t at : {kClearPageHeight, kClearPageHeight + 24u}) {
+           img->base[kClearT + at] =
+               static_cast<uint8_t>(img->base[kClearT + at] + 4u);
+         }
+       },
+       core::SiteResult::kClearInvalid},
+      {[](SyntheticImage* img, const TargetedCodegen&) {
+         img->Rel32(kClearCallT + core::kClearCallTCall, 0x1850u);
+       },
+       core::SiteResult::kClearInvalid},
+      {[](SyntheticImage* img, const TargetedCodegen& cg) {
+         PutClear(img, cg, kDecoyClearT, 0x1820u);
+         PutClearCaller(img, kDecoyClearCallT, cg.window_renderer,
+                        kDecoyClearT, kRevealT);
+         PutClearCaller(img, kClearCallT, cg.window_renderer, kClearT,
+                        kRevealT);
+       },
+       core::SiteResult::kClearInvalid},
+      // Layer query missing / naming another screen field than SyncLayer /
+      // disagreeing copies.
+      {[](SyntheticImage* img, const TargetedCodegen&) {
+         img->base[kLayerQueryT + 12u] = 0x08u;
+       },
        core::SiteResult::kLayerQueryMissing},
-      {[](SyntheticImage* img) {
-         img->Put(0x5800u, core::kLayerQueryTBytes,
-                  sizeof(core::kLayerQueryTBytes));
-         img->Rel32(0x5800u + core::kLayerQueryTCall, 0x1850u);
+      {[](SyntheticImage* img, const TargetedCodegen& cg) {
+         img->base[kSyncT + 0x32u] =
+             static_cast<uint8_t>(cg.window_screen + 4u);
+       },
+       core::SiteResult::kLayerQueryMissing},
+      {[](SyntheticImage* img, const TargetedCodegen& cg) {
+         PutLayerQuery(img, cg, 0x5800u, 0x1850u);
        },
        core::SiteResult::kLayerQueryMissing},
       // Scene layout differs along the chain, or the draw loop is missing.
-      {[](SyntheticImage* img) { img->base[kScreenQueryT + 32u] = 0x0cu; },
+      {[](SyntheticImage* img, const TargetedCodegen& cg) {
+         img->base[kScreenQueryT + ScreenQuerySceneCall(cg) - 5u] = 0x0cu;
+       },
        core::SiteResult::kSceneInvalid},
-      {[](SyntheticImage* img) { img->base[kSceneVisibleT + 18u] = 0x08u; },
+      {[](SyntheticImage* img, const TargetedCodegen&) {
+         img->base[kSceneVisibleT + 18u] = 0x08u;
+       },
        core::SiteResult::kSceneInvalid},
-      {[](SyntheticImage* img) { img->base[kSceneFindT + 7u] = 0x3au; },
+      {[](SyntheticImage* img, const TargetedCodegen& cg) {
+         ++img->base[kSceneFindT + cg.scene_find_map];
+       },
        core::SiteResult::kSceneInvalid},
-      {[](SyntheticImage* img) { img->base[kSceneDrawT + 49u] = 0x0cu; },
+      {[](SyntheticImage* img, const TargetedCodegen&) {
+         img->base[kSceneDrawT + 49u] = 0x0cu;
+       },
        core::SiteResult::kSceneInvalid},
-      // Input handler missing / without capture imports.
-      {[](SyntheticImage* img) { img->base[kInputT + 55u] = 0x01u; },
+      // Input handler missing (dispatch on another bound, message from
+      // another argument) / without capture imports.
+      {[](SyntheticImage* img, const TargetedCodegen& cg) {
+         img->base[kInputT + cg.input_prologue_bytes + 3u] = 0x01u;
+       },
        core::SiteResult::kInputMissing},
-      {[](SyntheticImage* img) {
+      {[](SyntheticImage* img, const TargetedCodegen&) {
+         img->base[kInputT + kInputMessageDisp] = 0x14u;
+       },
+       core::SiteResult::kInputMissing},
+      {[](SyntheticImage* img, const TargetedCodegen&) {
          std::memset(img->base + kInputT + 0x300u, 0xcc, 6u);
        },
        core::SiteResult::kInputImportsInvalid},
       // Handle pops another number of arguments than the detour would.
-      {[](SyntheticImage* img) { img->base[kInputT + 0x5aeu] = 0x14u; },
+      {[](SyntheticImage* img, const TargetedCodegen&) {
+         img->base[kInputT + 0x5aeu] = 0x14u;
+       },
        core::SiteResult::kInputFrameInvalid},
   };
-  for (const Breaker& breaker : breakers) {
-    SyntheticImage img;
-    BuildEngineT(&img);
-    breaker.apply(&img);
-    core::Sites sites;
-    sites.render_char = 1u;
-    const auto result = core::ResolveSites(img.image, Imports(), &sites);
-    if (result != breaker.expected) {
-      std::fprintf(stderr, "targeted: expected %u got %u\n",
-                   static_cast<unsigned>(breaker.expected),
-                   static_cast<unsigned>(result));
+  for (const TargetedCodegen* cg : kTargetedCodegens) {
+    size_t index = 0u;
+    for (const Breaker& breaker : breakers) {
+      SyntheticImage img;
+      BuildEngineT(&img, *cg);
+      breaker.apply(&img, *cg);
+      core::Sites sites;
+      sites.render_char = 1u;
+      const auto result = core::ResolveSites(img.image, Imports(), &sites);
+      if (result != breaker.expected) {
+        std::fprintf(stderr, "targeted %s breaker %zu: expected %u got %u\n",
+                     cg->name, index, static_cast<unsigned>(breaker.expected),
+                     static_cast<unsigned>(result));
+      }
+      assert(result == breaker.expected);
+      assert(sites.render_char == 0u && sites.clear_page == 0u &&
+             sites.window_update == 0u && sites.input_handler == 0u &&
+             sites.variant == core::SiteVariant::kNone);
+      ++index;
     }
-    assert(result == breaker.expected);
-    assert(sites.render_char == 0u && sites.clear_page == 0u &&
-           sites.window_update == 0u && sites.input_handler == 0u &&
-           sites.variant == core::SiteVariant::kNone);
   }
 }
 
