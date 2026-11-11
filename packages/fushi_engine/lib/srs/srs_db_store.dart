@@ -1530,9 +1530,9 @@ class SrsDbStore implements SrsSync2Host {
     Map<String, Object?> request, {
     List<Uint8List> blobs = const <Uint8List>[],
   }) async {
-    if (request['op'] == 'dedup') {
-      // 重复流收敛（内核 store/sync2/dedup.rs）改投影（删并存的修改记录行、解除扣留）：与冲突解决同一条路径，
-      // 投影变化接进缓存。
+    if (request['op'] == 'dedup' || request['op'] == 'digest_heal') {
+      // 重复流收敛（内核 store/sync2/dedup.rs）改投影（删并存的修改记录行、解除扣留）、摘要不一致的自动重建
+      // （store/sync2/heal.rs）重放改写日志：与冲突解决同一条路径，投影变化接进缓存。
       return SrsSync2Result(
         await _sync2Write(request),
         const <(String, Uint8List)>[],
@@ -2089,6 +2089,7 @@ class SrsDbStore implements SrsSync2Host {
     'checkpoint',
     'restore',
     'dedup',
+    'digest_heal',
     'refresh_caches',
     'rebuild_caches',
     'backfill_dupe_norms',
