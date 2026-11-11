@@ -661,4 +661,83 @@ void main() {
     );
     expect(linker.adoptedWithin, <SyncAssetStore?>[backend]);
   });
+
+  // BUG-4387：`SrsDbStore.open` 在任何同步之前就写下内置身份记录，以前的判据（操作日志与投影全空）让新设备收段通道
+  // 在生产里一次都不开。app 的顺序是「只拉不发 → 迁移 → 正式一轮」：第一次收段发生在只拉不发那一步。
+  test('新装的设备确认后的第一轮：只拉不发那一步走收段通道，迁移与正式一轮照常，收敛', () async {
+    Future<SrsSync2Report> roundOf(SrsDbStore s) => srsSync2Round(
+      host: s,
+      location: srsAssetLocation(backend, kProfile),
+      locationId: 'local:${root.path}',
+      nowMs: () => s.now().$1,
+    );
+    final SrsStorage stA = await openSrsTestStorage();
+    final SrsDbStore a = await _open(stA, 'A');
+    final List<String> notes = <String>[];
+    for (int i = 0; i < 12; i++) {
+      final String n = await a.createNote(
+        noteTypeId: a.lapisNoteTypeId,
+        fieldsById: <String, String>{
+          srsLapisFieldId(kProfile, 'Expression'): '語$i',
+        },
+      );
+      notes.add(n);
+      await a.answer((await a.cardsOfNote(n)).first.id, 3);
+    }
+    expect((await roundOf(a)).error, isNull);
+
+    final SrsStorage stB = await openSrsTestStorage();
+    final SrsDbStore b = await _open(stB, 'B', deferMigration: true);
+    expect(b.sync2Migrated, isFalse);
+    // 收段的每一片开投之前：这个会话走不走通道（`ingest_begin` 的回报）。
+    final List<bool> slices = <bool>[];
+    b.debugOnIngestSlice = () => slices.add(b.debugChannelLive);
+    // 正式一轮开跑时：迁移做了没有、A 的复习收到了没有、之前投过几片。
+    final List<({bool migrated, int ops, int slices})> formal =
+        <({bool migrated, int ops, int slices})>[];
+    final SrsSyncScheduler s = scheduler(
+      store: b,
+      runner:
+          (
+            SyncAssetStore x,
+            SrsDbStore store,
+            String key, {
+            SrsLocationKey? locationKey,
+          }) async {
+            formal.add((
+              migrated: store.sync2Migrated,
+              ops: (await _logOps(stB)).ops,
+              slices: slices.length,
+            ));
+            return roundOf(store);
+          },
+    );
+    await s.syncNow();
+
+    expect(formal, isNotEmpty);
+    expect(formal.first.migrated, isTrue);
+    expect(
+      formal.first.ops,
+      12,
+      reason: "A's reviews were pulled before the formal round",
+    );
+    expect(formal.first.slices, greaterThan(0));
+    expect(
+      slices.take(formal.first.slices),
+      everyElement(isTrue),
+      reason: 'the pull-first ingest of a new device takes the channel',
+    );
+    final QueryRow boot = await stB.db
+        .customSelect('SELECT COUNT(*) AS c FROM sync2_boot')
+        .getSingle();
+    expect(boot.read<int>('c'), 0, reason: 'the channel is done');
+    expect(await b.note(notes.first), isNotNull);
+
+    expect((await roundOf(a)).error, isNull);
+    expect((await roundOf(b)).error, isNull);
+    expect(
+      (await b.sync2Digest())['digest'],
+      (await a.sync2Digest())['digest'],
+    );
+  });
 }

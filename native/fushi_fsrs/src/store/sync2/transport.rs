@@ -2763,6 +2763,13 @@ impl SrsCore {
             return Ok(v);
         }
         let w = self.writer()?;
+        // 收段通道没做完（上一轮被打断）时第一次见到某台设备：它的信任判定要读完整的投影（trust.rs
+        // `note_new_device`）。先按片把通道做完，不让它在下面这笔事务里一次做完。
+        if self.channel_live.load(std::sync::atomic::Ordering::SeqCst)
+            && super::trust::sees_new_device(&w, profile, heads)?
+        {
+            self.settle_channel_on(&w, profile)?;
+        }
         in_savepoint(&w, |c| {
             Ok(plan(c, profile, heads, location, true)?.expect("writable plan always answers"))
         })
