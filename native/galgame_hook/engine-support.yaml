@@ -4132,6 +4132,123 @@
       "test_paths": [
         "tests/knife_adapter_test.cpp"
       ]
+    },
+    {
+      "id": "entisgls",
+      "display_name": "EntisGLS (Cotopha / ECSSakura2)",
+      "aliases": [
+        "Entis",
+        "EntisGLS",
+        "Cotopha",
+        "ECSSakura2"
+      ],
+      "family": {
+        "id": "entisgls",
+        "relation": "Entis Cotopha engine (SakuraGL renderer, Rosetta script binding, scripts on the ECSSakura2 VM with JIT); the executable exports its runtime by MSVC-mangled names; one generation measured"
+      },
+      "detection": {
+        "executable_names": {
+          "values": [
+            "ststeady.exe"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Catalogue only: Marmalade スタディ§ステディ (Steam release) ststeady.exe. The adapter never matches on names; identity is the exported runtime (ECSSakura2Processor::entrySysCall, SakuraGL::SGLSpriteMessage and Rosetta::RSMessageSpriteClass runtime classes)."
+          }
+        },
+        "pe_architectures": {
+          "values": [
+            "x86"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "ststeady.exe is PE32 machine 0x14c, ASLR-enabled (relocations present)"
+          }
+        },
+        "directory_files_all": {
+          "values": [],
+          "evidence": null
+        },
+        "pe_imports": {
+          "values": [
+            "emotedriver.dll",
+            "OPENGL32.dll",
+            "WINMM.dll",
+            "GDI32.dll",
+            "USER32.dll"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "ststeady.exe import table: E-mote (emotedriver.dll EmoteCreate), OpenGL presents, WINMM waveOut plays the engine's software-mixed sound lines (no DirectSound/XAudio2 import or literal), GDI GetGlyphOutlineW rasterises glyphs"
+          }
+        },
+        "runtime_modules": {
+          "values": [],
+          "evidence": null
+        },
+        "resource_extensions": {
+          "values": [],
+          "evidence": null
+        },
+        "hashes": {
+          "values": [
+            "ststeady.exe sha256:9750f67ae51ba158cda4f756ccbd0875fb837ddd15e84db713be53f8573d91b3"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Catalogue only; the adapter does not hash-pin"
+          }
+        }
+      },
+      "process_strategy": {
+        "launch": "create_suspended_early_injection",
+        "attach": "supported",
+        "follow_child_processes": false,
+        "notes": [
+          "Not measured on the original path yet (Steam release): whether the Steam client relaunches the executable is unrecorded.",
+          "The AddMessage / ClearMessage detours are resolved from the executable read from disk (operands relative to its preferred base, targets rebased to the live image) and installed at startup."
+        ]
+      },
+      "text": {
+        "capabilities": [
+          {
+            "kind": "entisgls_message_sprite_hook",
+            "status": "implemented_unverified",
+            "verification": "Native exact text lane (source kind 22, hook 'EntisGLS exact', ENGINE:ENTISGLS:message): SGLSpriteMessage::AddMessage(node) and ClearMessage() are detoured. Sites resolve only from structure (entisgls_core.h ResolveSites): the Rosetta registrations of addMessageText, addMessageXML and clearMessage (one registration shape, unique handler per name, UTF-16 literal matched by content) give three handlers that share one sprite getter; the text handler's and the clear handler's sprite calls give AddMessage and ClearMessage, and the XML handler's parse-then-add method must reach the same AddMessage; AddMessage must read the node type (+0x0c) and children (+0x50/+0x54) and end in the layout call that compares the tag (+0x10) with \"ruby\" and lays out a text node's string (+0x28). The detour walks the node tree on the game thread through a fault-safe reader (text nodes in order, element children, ruby readings never read, CR/LF dropped; bounded to 960 units, 512 nodes, 16 levels) into a fixed ring; the worker publishes per message sprite the text added since the page's previous publication once a whole worker interval passed without an add or clear on that sprite (one click unit per line), and a clear starts a new page. Offline: fushi_entisgls_adapter_test (synthetic images and node trees); site probe on the Steam ststeady.exe resolves AddMessage +0x338230, ClearMessage +0x338060, layout +0x338750; 19 other-engine PE32 images (BGI x2, CatSystem2, EAGLS, ExHIBIT, Kaguya, Leaf, Liar-soft, Navel, Nitroplus and others, with their DLLs) have no EntisGLS identity. No runtime text_ready run is recorded."
+          },
+          {
+            "kind": "luna_auto_or_pc_hooks",
+            "status": "implemented_unverified",
+            "verification": "Not measured. The engine rasterises glyphs itself (GetGlyphOutlineW into its own surfaces), so generic GDI hooks see single glyphs."
+          }
+        ],
+        "codepage": "UTF-16",
+        "thread_selection_hint": "Select the 'EntisGLS exact' lane."
+      },
+      "audio": {
+        "priority": [
+          {
+            "kind": "process_loopback",
+            "format": "host PCM fallback",
+            "status": "implemented_unverified",
+            "clean_voice": false
+          }
+        ]
+      },
+      "verified_games": [],
+      "current_status": "implemented_unverified",
+      "known_limitations": [
+        "Text only. Voice: the engine mixes its own sound lines (system/music/sound/voice) in SakuraGL's software mixer and plays the mix through WINMM waveOut; there is no DirectSound/XAudio2 producer for the generic PCM capture and no per-line resource producer is bound, so only the loopback fallback (mixed, not clean voice) reaches the host. The game's voice container (ERISA archive entries; no Ogg decoder in the image) is unmeasured.",
+        "In-game lookup is not implemented (lookupAdmission stays EngineUnsupported): the laid-out character records (SGLSpriteMessage +0x238/+0x23c) are known from code, but no sprite-to-screen projection or input gate is bound.",
+        "Single sample, no runtime run: the lane identity is one hook code for every message sprite, so a backlog or other window built on SGLSpriteMessage would publish on the same lane; the click-unit boundary (one worker interval without an add or clear) is unmeasured on the original path."
+      ],
+      "adapter_path": "hook/adapters/entisgls_adapter.inc",
+      "fixture_paths": [
+        "tests/fixtures/entisgls_replay.json"
+      ],
+      "test_paths": [
+        "tests/entisgls_adapter_test.cpp"
+      ]
     }
   ]
 }
