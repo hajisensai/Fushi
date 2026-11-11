@@ -289,18 +289,25 @@ inline constexpr uint8_t kRecordPenTBytes[] = {
     0x00, 0x00, 0x00, 0x8b, 0x47, 0x10, 0x8b, 0x4f, 0x14};
 inline constexpr size_t kRecordPenTOffset = 0x6fu;
 // esi = vtable of the font object [renderer]; code and font size of the
-// record go to `call [esi+4]` (GetCharImage, vtable slot 1).
-inline constexpr uint8_t kRecordCharTBytes[] = {
-    0x8b, 0x03, 0xff, 0x77, 0x54, 0x8b, 0x4b, 0x08, 0xff, 0x77, 0x50, 0x8b,
-    0x30, 0xe8, 0x00, 0x00, 0x00, 0x00, 0x8b, 0x4c, 0x24, 0x2c, 0x50, 0x33,
-    0xc0, 0xff, 0xb1, 0xac, 0x00, 0x00, 0x00, 0x81, 0xb9, 0xa0, 0x00, 0x00,
-    0x00, 0xbc, 0x02, 0x00, 0x00, 0x8b, 0x0b, 0x0f, 0x94, 0xc0, 0x50, 0x8d,
-    0x47, 0x34, 0x50, 0xff, 0x77, 0x1c, 0x0f, 0xb7, 0x47, 0x04, 0x50, 0x8d,
-    0x44, 0x24, 0x58, 0x50, 0xff, 0x56, 0x04};
-inline constexpr size_t kRecordCharTWildcards[][2] = {{14u, 18u}};
-inline constexpr auto kRecordCharTMask =
-    WildcardMask<sizeof(kRecordCharTBytes)>(kRecordCharTWildcards);
-inline constexpr size_t kRecordCharTOffset = 0xfeu;
+// record go to `call [esi+4]` (GetCharImage, vtable slot 1).  The arguments
+// in between are not fixed across builds: the 2016 build hands record +0x50 /
+// +0x54 to a helper and reads font fields +0xa0 / +0xac, the cs2 2.6.1.90
+// build (2020, newer MSVC) hands it +0x50..+0x5c and reads +0xc0 / +0xcc, so
+// every stack offset behind it moves too.  The proof therefore reads only
+// what RenderChar's own registers fix (ebx = renderer from the prologue's
+// `mov ebx,ecx`, edi = record from the pen block's `mov edi,[esp+0xe0]`):
+//   mov eax,[ebx] ... mov esi,[eax] ... mov ecx,[ebx] ... push [edi+0x1c]
+//   ... movzx eax,word [edi+4]; push eax ... call [esi+4]
+// in that order inside kRecordCharTScanBytes before the call, and exactly one
+// such call in the body.
+inline constexpr uint8_t kFontObjectLoadTBytes[] = {0x8b, 0x03};  // eax,[ebx]
+inline constexpr uint8_t kFontVtableLoadTBytes[] = {0x8b, 0x30};  // esi,[eax]
+inline constexpr uint8_t kFontThisLoadTBytes[] = {0x8b, 0x0b};    // ecx,[ebx]
+inline constexpr uint8_t kRecordSizePushTBytes[] = {0xff, 0x77, 0x1c};
+inline constexpr uint8_t kRecordCodePushTBytes[] = {0x0f, 0xb7, 0x47, 0x04,
+                                                    0x50};
+inline constexpr uint8_t kCharImageCallTBytes[] = {0xff, 0x56, 0x04};
+inline constexpr size_t kRecordCharTScanBytes = 0x60u;
 // Epilogue: two stack arguments (record, target image).
 inline constexpr uint8_t kRenderTailTBytes[] = {0x81, 0xc4, 0xcc, 0x00, 0x00,
                                                 0x00, 0xc2, 0x08, 0x00, 0xcc};
@@ -309,64 +316,104 @@ inline constexpr uint32_t kRenderTStackArgs = 2u;
 // The vtable entry GetCharImage must be found through.
 inline constexpr size_t kCharImageVtableSlot = 1u;
 
-// ClearPage(renderer): reset the layout (+0x20..+0x30), then fill the normal
-// (+4) and the fade (+0x40) page image with the page size through one helper.
-inline constexpr uint8_t kClearTBytes[] = {
-    0x56, 0x8b, 0xf1, 0x8b, 0x4e, 0x08, 0x85, 0xc9, 0x74, 0x05, 0xe8, 0x00,
-    0x00, 0x00, 0x00, 0xc7, 0x46, 0x20, 0x00, 0x00, 0x00, 0x00, 0xc7, 0x46,
-    0x24, 0x00, 0x00, 0x00, 0x00, 0xc7, 0x46, 0x28, 0x00, 0x00, 0x00, 0x00,
-    0xc7, 0x46, 0x2c, 0x00, 0x00, 0x00, 0x00, 0xc7, 0x46, 0x30, 0x00, 0x00,
-    0x00, 0x00, 0x8b, 0x4e, 0x04, 0x85, 0xc9, 0x74, 0x11, 0x6a, 0x00, 0xff,
-    0x76, 0x18, 0xff, 0x76, 0x14, 0x6a, 0x00, 0x6a, 0x00, 0xe8, 0x00, 0x00,
-    0x00, 0x00, 0x8b, 0x4e, 0x40, 0x85, 0xc9, 0x74, 0x11, 0x6a, 0x00, 0xff,
-    0x76, 0x18, 0xff, 0x76, 0x14, 0x6a, 0x00, 0x6a, 0x00, 0xe8, 0x00, 0x00,
-    0x00, 0x00, 0x5e, 0xc3};
-inline constexpr size_t kClearTWildcards[][2] = {
-    {11u, 15u}, {70u, 74u}, {94u, 98u}};
-inline constexpr auto kClearTMask =
-    WildcardMask<sizeof(kClearTBytes)>(kClearTWildcards);
-inline constexpr size_t kClearTNormalFillCall = 69u;
-inline constexpr size_t kClearTFadeFillCall = 93u;
-// `mov ecx,[edi+0x2ac] (window renderer); test ecx,ecx; je; call ClearPage`.
-// Other classes keep a different object at +0x2ac, so at least one copy
-// (not every copy) must call ClearPage.
+// ClearPage(renderer): reset the layout (four or more consecutive dwords),
+// then fill the normal (+4) and the fade page image with the page size
+// through one helper:
+//   push esi; mov esi,ecx; mov ecx,[esi+8]; test ecx,ecx; je +5; call
+//   mov dword [esi+R],0 ...                            (R, R+4, R+8, ...)
+//   mov ecx,[esi+4]; test ecx,ecx; je +0x11
+//   push 0; push [esi+H]; push [esi+W]; push 0; push 0; call Fill
+//   mov ecx,[esi+F]; test ecx,ecx; je +0x11
+//   push 0; push [esi+H]; push [esi+W]; push 0; push 0; call Fill
+//   pop esi; ret
+// W / H (page size, H = W + 4) and F (fade page) are read from the body:
+// 0x14 / 0x18 / 0x40 on the 2016 build, 0x10 / 0x14 / 0x3c on cs2 2.6.1.90,
+// whose renderer dropped one dword in front of the page size.
+inline constexpr uint8_t kClearTHeadBytes[] = {
+    0x56, 0x8b, 0xf1, 0x8b, 0x4e, 0x08, 0x85, 0xc9, 0x74, 0x05, 0xe8};
+inline constexpr uint8_t kClearTResetBytes[] = {0xc7, 0x46};  // + d8 + imm32 0
+inline constexpr size_t kClearTMinResets = 4u;
+// `mov ecx,[esi+d8]; test ecx,ecx; je +0x11; push 0; push [esi+H];
+// push [esi+W]; push 0; push 0; call rel32` with d8 / H / W wildcarded.
+inline constexpr uint8_t kClearTFillBytes[] = {
+    0x8b, 0x4e, 0x00, 0x85, 0xc9, 0x74, 0x11, 0x6a, 0x00, 0xff, 0x76, 0x00,
+    0xff, 0x76, 0x00, 0x6a, 0x00, 0x6a, 0x00, 0xe8, 0x00, 0x00, 0x00, 0x00};
+inline constexpr size_t kClearTFillWildcards[][2] = {
+    {2u, 3u}, {11u, 12u}, {14u, 15u}, {20u, 24u}};
+inline constexpr auto kClearTFillMask =
+    WildcardMask<sizeof(kClearTFillBytes)>(kClearTFillWildcards);
+inline constexpr size_t kClearTFillImage = 2u;
+inline constexpr size_t kClearTFillHeight = 11u;
+inline constexpr size_t kClearTFillWidth = 14u;
+inline constexpr size_t kClearTFillCall = 19u;
+inline constexpr uint8_t kClearTTailBytes[] = {0x5e, 0xc3};
+// ClearPage-shaped functions beyond which the image is not trusted.
+inline constexpr uint32_t kMaxClearPageCopies = 8u;
+// `mov ecx,[edi+<window renderer>]; test ecx,ecx; je; call ClearPage`.
+// Other classes keep a different object at the same offset, so at least one
+// copy (not every copy) must call ClearPage.  The displacement (bytes 2..5)
+// is the window renderer offset proven by Update.
 inline constexpr uint8_t kClearCallTBytes[] = {
-    0x8b, 0x8f, 0xac, 0x02, 0x00, 0x00, 0x85, 0xc9,
+    0x8b, 0x8f, 0x00, 0x00, 0x00, 0x00, 0x85, 0xc9,
     0x74, 0x00, 0xe8, 0x00, 0x00, 0x00, 0x00};
 inline constexpr size_t kClearCallTWildcards[][2] = {{9u, 10u}, {11u, 15u}};
 inline constexpr auto kClearCallTMask =
     WildcardMask<sizeof(kClearCallTBytes)>(kClearCallTWildcards);
+inline constexpr size_t kClearCallTDisp = 2u;
 inline constexpr size_t kClearCallTCall = 10u;
+// When several ClearPage-shaped functions are called through that field
+// (cs2 2.6.1.90 has a second renderer class with the same body behind
+// another window class), the message window's one is called from a function
+// that also drives the reveal loop on the same renderer.  A function is
+// bounded by int3 padding; the search stops this far from the call.
+inline constexpr size_t kCallerFunctionScanBytes = 0x1000u;
 
-// Message-window Update(time, flags): renderer +0x2ac, reveal and SyncLayer.
+// Message-window Update(time, flags): renderer, reveal and SyncLayer.  The
+// renderer field is read from `mov ecx,[esi+disp32]` (bytes 44..47): +0x2ac
+// on the 2016 build, +0x2b0 on cs2 2.6.1.90.
 inline constexpr uint8_t kUpdateTBytes[] = {
     0x56, 0x57, 0xff, 0x74, 0x24, 0x10, 0x8b, 0x7c, 0x24, 0x10, 0x8b, 0xf1,
     0x57, 0xe8, 0x00, 0x00, 0x00, 0x00, 0x85, 0xc0, 0x75, 0x05, 0x5f, 0x5e,
     0xc2, 0x08, 0x00, 0x83, 0xbe, 0x00, 0x00, 0x00, 0x00, 0x00, 0x74, 0x00,
-    0xff, 0xb6, 0x00, 0x00, 0x00, 0x00, 0x8b, 0x8e, 0xac, 0x02, 0x00, 0x00,
+    0xff, 0xb6, 0x00, 0x00, 0x00, 0x00, 0x8b, 0x8e, 0x00, 0x00, 0x00, 0x00,
     0xff, 0xb6, 0x00, 0x00, 0x00, 0x00, 0xe8, 0x00, 0x00, 0x00, 0x00, 0xf7,
     0xd8, 0x8b, 0xce, 0x1b, 0xc0, 0x40, 0x89, 0x86, 0x00, 0x00, 0x00, 0x00,
     0xe8, 0x00, 0x00, 0x00, 0x00};
 inline constexpr size_t kUpdateTWildcards[][2] = {
-    {14u, 18u}, {29u, 33u}, {35u, 36u}, {38u, 42u},
+    {14u, 18u}, {29u, 33u}, {35u, 36u}, {38u, 42u}, {44u, 48u},
     {50u, 54u}, {55u, 59u}, {68u, 72u}, {73u, 77u}};
 inline constexpr auto kUpdateTMask =
     WildcardMask<sizeof(kUpdateTBytes)>(kUpdateTWildcards);
+inline constexpr size_t kUpdateTRendererDisp = 44u;
 inline constexpr size_t kUpdateTRevealCall = 54u;
 inline constexpr size_t kUpdateTSyncCall = 72u;
-// SyncLayer: `mov ecx,[ebx+0x68]; push eax; call Screen::CopyImage`.
-inline constexpr uint8_t kSyncScreenTBytes[] = {0x8b, 0x4b, 0x68, 0x50, 0xe8};
+// Update-shaped bodies beyond which the image is not trusted.
+inline constexpr size_t kMaxUpdateCopies = 8u;
+// Window fields are dword members of a part object of a few hundred bytes.
+inline constexpr uint32_t kMaxWindowFieldOffset = 0x1000u;
+// SyncLayer: `mov ecx,[ebx+<screen>]; push eax; call Screen::CopyImage`; the
+// disp8 is the window's screen field (+0x68 on the 2016 build, +0x6c on cs2
+// 2.6.1.90).  Every copy inside SyncLayer must name the same field.
+inline constexpr uint8_t kSyncScreenTBytes[] = {0x8b, 0x4b, 0x00, 0x50, 0xe8};
+inline constexpr size_t kSyncScreenTWildcards[][2] = {{2u, 3u}};
+inline constexpr auto kSyncScreenTMask =
+    WildcardMask<sizeof(kSyncScreenTBytes)>(kSyncScreenTWildcards);
+inline constexpr size_t kSyncScreenTDisp = 2u;
 
-// Part-base layer query: `push [esi+4] (layer id); mov ecx,[esi+0x68]
-// (screen); call Screen::QueryLayer`.
+// Part-base layer query: `push [esi+4] (layer id); mov ecx,[esi+<screen>]
+// (screen); call Screen::QueryLayer`; byte 15 is the screen field SyncLayer
+// proved.
 inline constexpr uint8_t kLayerQueryTBytes[] = {
     0x83, 0xec, 0x0c, 0x8d, 0x04, 0x24, 0x56, 0x8b, 0xf1, 0x50, 0xff,
-    0x76, 0x04, 0x8b, 0x4e, 0x68, 0xe8, 0x00, 0x00, 0x00, 0x00};
+    0x76, 0x04, 0x8b, 0x4e, 0x00, 0xe8, 0x00, 0x00, 0x00, 0x00};
 inline constexpr size_t kLayerQueryTWildcards[][2] = {{17u, 21u}};
 inline constexpr auto kLayerQueryTMask =
     WildcardMask<sizeof(kLayerQueryTBytes)>(kLayerQueryTWildcards);
+inline constexpr size_t kLayerQueryTScreenDisp = 15u;
 inline constexpr size_t kLayerQueryTCall = 16u;
 // Screen::QueryLayer: the scene is [screen+8]; forwards to Scene::Visible.
+// Two codegens of the same source: the result test is `dec eax` (2016) or
+// `sub eax,1` (cs2 2.6.1.90), which moves the Scene::Visible call by two.
 inline constexpr uint8_t kScreenQueryTBytes[] = {
     0x56, 0x8b, 0xf1, 0x83, 0x3e, 0x00, 0x75, 0x00, 0x83, 0x7e, 0x04, 0x00,
     0x74, 0x00, 0xff, 0x74, 0x24, 0x08, 0xe8, 0x00, 0x00, 0x00, 0x00, 0x48,
@@ -377,6 +424,16 @@ inline constexpr size_t kScreenQueryTWildcards[][2] = {
 inline constexpr auto kScreenQueryTMask =
     WildcardMask<sizeof(kScreenQueryTBytes)>(kScreenQueryTWildcards);
 inline constexpr size_t kScreenQueryTSceneCall = 37u;
+inline constexpr uint8_t kScreenQueryT2Bytes[] = {
+    0x56, 0x8b, 0xf1, 0x83, 0x3e, 0x00, 0x75, 0x00, 0x83, 0x7e, 0x04, 0x00,
+    0x74, 0x00, 0xff, 0x74, 0x24, 0x08, 0xe8, 0x00, 0x00, 0x00, 0x00, 0x83,
+    0xe8, 0x01, 0x75, 0x00, 0xff, 0x74, 0x24, 0x0c, 0x8b, 0x4e, 0x08, 0xff,
+    0x74, 0x24, 0x0c, 0xe8, 0x00, 0x00, 0x00, 0x00, 0x5e, 0xc2, 0x08, 0x00};
+inline constexpr size_t kScreenQueryT2Wildcards[][2] = {
+    {7u, 8u}, {13u, 14u}, {19u, 23u}, {27u, 28u}, {40u, 44u}};
+inline constexpr auto kScreenQueryT2Mask =
+    WildcardMask<sizeof(kScreenQueryT2Bytes)>(kScreenQueryT2Wildcards);
+inline constexpr size_t kScreenQueryT2SceneCall = 39u;
 // Scene::Visible(id, out): Find returns the layer; visible = [layer+4].
 inline constexpr uint8_t kSceneVisibleTBytes[] = {
     0xff, 0x74, 0x24, 0x04, 0xe8, 0x00, 0x00, 0x00, 0x00, 0x85, 0xc0,
@@ -386,39 +443,49 @@ inline constexpr size_t kSceneVisibleTWildcards[][2] = {{5u, 9u}};
 inline constexpr auto kSceneVisibleTMask =
     WildcardMask<sizeof(kSceneVisibleTBytes)>(kSceneVisibleTWildcards);
 inline constexpr size_t kSceneVisibleTFindCall = 4u;
-// Scene::Find(id): the id map at [scene].
-inline constexpr uint8_t kSceneFindTBytes[] = {0x8b, 0x54, 0x24, 0x04, 0x56,
-                                               0x57, 0x8b, 0x39, 0x8b, 0x37};
+// Scene::Find(id) (thiscall, one argument): the id map is [scene] and its
+// head node [map].  Both builds load them first thing, through different
+// registers (`mov edi,[ecx]; mov esi,[edi]` / `mov eax,[ecx]; ...; mov esi,
+// [eax]`), so the proof reads the two loads, not the bytes around them.
+inline constexpr size_t kSceneFindTMapScanBytes = 0x0cu;
 // Scene::Draw: list = [scene+4], first = [[list]], layer = [node+8],
-// skipped unless [layer+4] (visible) and [layer+0x10] (sprite).
+// skipped unless [layer+4] (visible) and [layer+0x10] (sprite).  The bytes
+// between the loop test and the loop head are alignment (a short jump over
+// int3 on the 2016 build, multi-byte nops on cs2 2.6.1.90).
 inline constexpr uint8_t kSceneDrawTBytes[] = {
     0x8b, 0x47, 0x04, 0xc7, 0x44, 0x24, 0x00, 0x00, 0x00, 0x00, 0x00, 0xc7,
     0x44, 0x24, 0x00, 0x00, 0x00, 0x00, 0x00, 0x89, 0x4c, 0x24, 0x00, 0x8b,
-    0x00, 0x8b, 0x30, 0x3b, 0xf0, 0x0f, 0x84, 0x00, 0x00, 0x00, 0x00, 0xeb,
+    0x00, 0x8b, 0x30, 0x3b, 0xf0, 0x0f, 0x84, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x8b,
     0x46, 0x08, 0x83, 0x78, 0x04, 0x00, 0x0f, 0x84, 0x00, 0x00, 0x00, 0x00,
     0x83, 0x78, 0x10, 0x00, 0x0f, 0x84, 0x00, 0x00, 0x00, 0x00};
 inline constexpr size_t kSceneDrawTWildcards[][2] = {
-    {6u, 7u}, {14u, 15u}, {22u, 23u}, {31u, 35u},
-    {36u, 47u}, {56u, 60u}, {66u, 70u}};
+    {6u, 7u}, {14u, 15u}, {22u, 23u}, {31u, 47u}, {56u, 60u}, {66u, 70u}};
 inline constexpr auto kSceneDrawTMask =
     WildcardMask<sizeof(kSceneDrawTBytes)>(kSceneDrawTWildcards);
 
-// Input::Handle(input, hwnd, msg, wparam, lparam) with an ebp frame.
-inline constexpr uint8_t kInputTBytes[] = {
-    0x55, 0x8b, 0xec, 0x83, 0xe4, 0xf8, 0x81, 0xec, 0x00, 0x00, 0x00, 0x00,
-    0xa1, 0x00, 0x00, 0x00, 0x00, 0x33, 0xc4, 0x89, 0x84, 0x24, 0x00, 0x00,
-    0x00, 0x00, 0x8b, 0x55, 0x10, 0x8b, 0x4d, 0x14, 0x89, 0x4c, 0x24, 0x04,
-    0x53, 0x8b, 0x5d, 0x08, 0x56, 0x8b, 0x75, 0x0c, 0x57, 0x8b, 0x7d, 0x18,
-    0x89, 0x7c, 0x24, 0x14, 0x81, 0xfa, 0x00, 0x02, 0x00, 0x00, 0x0f, 0x87,
-    0x00, 0x00, 0x00, 0x00, 0x0f, 0x84, 0x00, 0x00, 0x00, 0x00, 0x8d, 0x42,
-    0xfa, 0x3d, 0xfc, 0x00, 0x00, 0x00, 0x0f, 0x87, 0x00, 0x00, 0x00, 0x00,
-    0x0f, 0xb6, 0x80, 0x00, 0x00, 0x00, 0x00, 0xff, 0x24, 0x85};
-inline constexpr size_t kInputTWildcards[][2] = {
-    {8u, 12u}, {13u, 17u}, {22u, 26u}, {60u, 64u},
-    {66u, 70u}, {80u, 84u}, {87u, 91u}};
-inline constexpr auto kInputTMask =
-    WildcardMask<sizeof(kInputTBytes)>(kInputTWildcards);
+// Input::Handle(input, hwnd, msg, wparam, lparam, extra) with an aligned ebp
+// frame.  The prologue spills its arguments in an order that differs between
+// builds (`mov [esp+4],ecx` / `mov [esp],ecx`), so the proof reads the
+// frame, the message load and the dispatch, not the spills:
+//   push ebp; mov ebp,esp; and esp,-8; sub esp,imm32      (entry)
+//   ... mov edx,[ebp+0x10] (msg) ...
+//   cmp edx,0x200; ja; je; lea eax,[edx-6]; cmp eax,0xfc; ja;
+//   movzx eax,byte [eax+table]; jmp [eax*4+table]
+inline constexpr uint8_t kInputTFrameBytes[] = {0x55, 0x8b, 0xec, 0x83,
+                                                0xe4, 0xf8, 0x81, 0xec};
+inline constexpr uint8_t kInputTMessageBytes[] = {0x8b, 0x55, 0x10};
+inline constexpr uint8_t kInputTDispatchBytes[] = {
+    0x81, 0xfa, 0x00, 0x02, 0x00, 0x00, 0x0f, 0x87, 0x00, 0x00, 0x00, 0x00,
+    0x0f, 0x84, 0x00, 0x00, 0x00, 0x00, 0x8d, 0x42, 0xfa, 0x3d, 0xfc, 0x00,
+    0x00, 0x00, 0x0f, 0x87, 0x00, 0x00, 0x00, 0x00, 0x0f, 0xb6, 0x80, 0x00,
+    0x00, 0x00, 0x00, 0xff, 0x24, 0x85};
+inline constexpr size_t kInputTDispatchWildcards[][2] = {
+    {8u, 12u}, {14u, 18u}, {28u, 32u}, {35u, 39u}};
+inline constexpr auto kInputTDispatchMask =
+    WildcardMask<sizeof(kInputTDispatchBytes)>(kInputTDispatchWildcards);
+// The dispatch starts this close after the frame.
+inline constexpr size_t kInputTPrologueScanBytes = 0x50u;
 // It returns with `ret 0x18`: one stack argument more than the first layout's
 // Handle (input, hwnd, msg, wparam, lparam, extra).  The detour must pop the
 // same number of bytes, so the epilogue is part of the proof.
@@ -440,6 +507,17 @@ enum class SiteVariant : uint32_t {
   kTargetedRender = 2u,  // RenderChar(renderer, record, target image)
 };
 
+// Object fields the runtime reads that the site proof itself establishes.
+// The defaults are the first layout's (fixed by its signatures); the
+// targeted-render proof reads each one from the code that uses it.
+struct ObjectLayout {
+  size_t window_screen = kWindowScreenOffset;      // [window+]: screen
+  size_t window_renderer = kWindowRendererOffset;  // [window+]: renderer
+  size_t page_width = kRendererPageWidthOffset;    // [renderer+]: int32
+  size_t page_height = kRendererPageHeightOffset;
+  size_t work_image = kRendererWorkImageOffset;    // [renderer+]: fade page
+};
+
 struct Sites {
   uintptr_t clear_page = 0u;     // hook targets (mapped addresses)
   uintptr_t render_char = 0u;
@@ -451,6 +529,7 @@ struct Sites {
   uint32_t render_stack_args = 0u;  // RenderChar arguments after `this`
   uint32_t input_stack_args = 0u;   // Input::Handle stdcall arguments
   SceneWalk walk;
+  ObjectLayout layout;
 };
 
 enum class SiteResult : uint32_t {
@@ -713,6 +792,351 @@ inline bool FindVirtualCharImage(const exact::LoadedPeImage& image,
   return true;
 }
 
+// Last start of `needle` in code[begin, end), or SIZE_MAX.
+inline size_t LastIndexOf(const uint8_t* code, size_t begin, size_t end,
+                          const uint8_t* needle, size_t size) {
+  if (end < begin + size) return SIZE_MAX;
+  for (size_t at = end - size + 1u; at-- > begin;) {
+    if (std::memcmp(code + at, needle, size) == 0) return at;
+  }
+  return SIZE_MAX;
+}
+
+// The targeted-render RenderChar hands the record's code and font size to
+// GetCharImage through the font vtable (see kCharImageCallTBytes).  `body`
+// is the readable function body [entry, entry + body_bytes); exactly one
+// `call [esi+4]` after the pen block must carry the argument chain.
+inline bool HasVirtualCharImageCall(const uint8_t* body, size_t body_bytes,
+                                    size_t first) {
+  if (!exact::IsReadableSpan(body, body_bytes)) return false;
+  uint32_t calls = 0u;
+  for (size_t call = first + kRecordCharTScanBytes;
+       call + sizeof(kCharImageCallTBytes) <= body_bytes; ++call) {
+    if (std::memcmp(body + call, kCharImageCallTBytes,
+                    sizeof(kCharImageCallTBytes)) != 0) {
+      continue;
+    }
+    const size_t begin = call - kRecordCharTScanBytes;
+    const size_t code = LastIndexOf(body, begin, call, kRecordCodePushTBytes,
+                                    sizeof(kRecordCodePushTBytes));
+    const size_t size = code == SIZE_MAX
+                            ? SIZE_MAX
+                            : LastIndexOf(body, begin, code,
+                                          kRecordSizePushTBytes,
+                                          sizeof(kRecordSizePushTBytes));
+    const size_t self = size == SIZE_MAX
+                            ? SIZE_MAX
+                            : LastIndexOf(body, begin, size,
+                                          kFontThisLoadTBytes,
+                                          sizeof(kFontThisLoadTBytes));
+    const size_t vtable = self == SIZE_MAX
+                              ? SIZE_MAX
+                              : LastIndexOf(body, begin, self,
+                                            kFontVtableLoadTBytes,
+                                            sizeof(kFontVtableLoadTBytes));
+    const size_t object = vtable == SIZE_MAX
+                              ? SIZE_MAX
+                              : LastIndexOf(body, begin, vtable,
+                                            kFontObjectLoadTBytes,
+                                            sizeof(kFontObjectLoadTBytes));
+    if (object != SIZE_MAX) ++calls;
+  }
+  return calls == 1u;
+}
+
+/// ── targeted-render structural readers ─────────────────────────────────────
+
+// Every occurrence of a masked pattern in the executable sections, up to
+// `max`.  Returns the count, or SIZE_MAX when there are more than `max` or a
+// section cannot be read (it could hide another occurrence).
+inline size_t FindAllMatches(const exact::LoadedPeImage& image,
+                             const uint8_t* bytes, const uint8_t* mask,
+                             size_t size, const uint8_t** out, size_t max) {
+  const exact::MaskedPattern pattern = {bytes, mask, size};
+  size_t count = 0u;
+  for (size_t index = 0u; index < image.section_count; ++index) {
+    const auto& section = image.sections[index];
+    if (!exact::SectionHasRole(&section, IMAGE_SCN_MEM_EXECUTE)) continue;
+    if (section.bytes == nullptr || section.size == 0u ||
+        !exact::IsReadableSpan(section.bytes, section.size)) {
+      return SIZE_MAX;
+    }
+    if (section.size < size) continue;
+    for (size_t offset = 0u; offset <= section.size - size; ++offset) {
+      if (!exact::MatchesMaskedPattern(section.bytes + offset, pattern)) {
+        continue;
+      }
+      if (count == max) return SIZE_MAX;
+      out[count++] = section.bytes + offset;
+    }
+  }
+  return count;
+}
+
+// A dword member of the message window (Update's renderer field).
+inline bool IsWindowField(uint32_t offset) {
+  return offset >= 8u && offset < kMaxWindowFieldOffset && offset % 4u == 0u;
+}
+
+// SyncLayer hands the page to the window's screen object; every
+// `mov ecx,[ebx+d8]; push eax; call` in its body must name the same field.
+inline bool FindSyncScreenField(const uint8_t* sync, uint8_t* field) {
+  uint8_t agreed = 0u;
+  for (size_t at = 0u; at + sizeof(kSyncScreenTBytes) <= kSyncScanBytes;
+       ++at) {
+    if (!MatchesAt(sync + at, kSyncScreenTBytes, kSyncScreenTMask.data(),
+                   sizeof(kSyncScreenTBytes))) {
+      continue;
+    }
+    const uint8_t disp = sync[at + kSyncScreenTDisp];
+    if (agreed != 0u && disp != agreed) return false;
+    agreed = disp;
+  }
+  // The layer id is +4; the screen is a later dword member.
+  if (agreed < 8u || agreed % 4u != 0u) return false;
+  *field = agreed;
+  return true;
+}
+
+// One ClearPage-shaped body at `code` (see kClearTHeadBytes): fills the page
+// size and fade page fields of `layout` and the fill helper both pages go
+// through.
+inline bool ParseClearPageT(const exact::LoadedPeImage& image,
+                            const uint8_t* code, ObjectLayout* layout,
+                            uintptr_t* fill) {
+  if (!MatchesAt(code, kClearTHeadBytes, nullptr, sizeof(kClearTHeadBytes))) {
+    return false;
+  }
+  size_t at = sizeof(kClearTHeadBytes) + 4u;
+  size_t resets = 0u;
+  uint8_t first_reset = 0u;
+  constexpr uint8_t kZero[4] = {};
+  while (resets < 16u &&
+         MatchesAt(code + at, kClearTResetBytes, nullptr,
+                   sizeof(kClearTResetBytes)) &&
+         MatchesAt(code + at + 3u, kZero, nullptr, sizeof(kZero))) {
+    const uint8_t disp = code[at + 2u];
+    if (resets == 0u) {
+      first_reset = disp;
+    } else if (disp != static_cast<uint8_t>(first_reset + 4u * resets)) {
+      return false;
+    }
+    at += 7u;
+    ++resets;
+  }
+  if (resets < kClearTMinResets) return false;
+  const uint8_t* normal = code + at;
+  const uint8_t* fade = normal + sizeof(kClearTFillBytes);
+  if (!MatchesAt(normal, kClearTFillBytes, kClearTFillMask.data(),
+                 sizeof(kClearTFillBytes)) ||
+      !MatchesAt(fade, kClearTFillBytes, kClearTFillMask.data(),
+                 sizeof(kClearTFillBytes)) ||
+      !MatchesAt(fade + sizeof(kClearTFillBytes), kClearTTailBytes, nullptr,
+                 sizeof(kClearTTailBytes))) {
+    return false;
+  }
+  const uint8_t width = normal[kClearTFillWidth];
+  const uint8_t height = normal[kClearTFillHeight];
+  const uint8_t work = fade[kClearTFillImage];
+  if (normal[kClearTFillImage] != kRendererImageOffset ||
+      fade[kClearTFillWidth] != width || fade[kClearTFillHeight] != height ||
+      width < 8u || width % 4u != 0u || height != width + 4u ||
+      work <= height || work % 4u != 0u || work >= 0x80u) {
+    return false;
+  }
+  uintptr_t normal_fill = 0u;
+  uintptr_t fade_fill = 0u;
+  if (!exact::DecodeRel32CallTarget(normal + kClearTFillCall, &normal_fill) ||
+      !exact::DecodeRel32CallTarget(fade + kClearTFillCall, &fade_fill) ||
+      normal_fill != fade_fill ||
+      !IsExecutableImageAddress(image, normal_fill, 1u)) {
+    return false;
+  }
+  layout->page_width = width;
+  layout->page_height = height;
+  layout->work_image = work;
+  *fill = normal_fill;
+  return true;
+}
+
+// [begin, end) of the function around `at` in `section`: bounded by int3
+// padding (two consecutive 0xcc) or kCallerFunctionScanBytes either way.
+inline void FunctionAround(const exact::LoadedPeSection& section, size_t at,
+                           size_t* begin, size_t* end) {
+  const uint8_t* bytes = section.bytes;
+  size_t low = at;
+  while (low > 0u && at - low < kCallerFunctionScanBytes &&
+         !(low >= 2u && bytes[low - 1u] == 0xccu && bytes[low - 2u] == 0xccu)) {
+    --low;
+  }
+  size_t high = at;
+  while (high + 2u <= section.size && high - at < kCallerFunctionScanBytes &&
+         !(bytes[high] == 0xccu && bytes[high + 1u] == 0xccu)) {
+    ++high;
+  }
+  *begin = low;
+  *end = high;
+}
+
+// Some occurrence of `pattern` with a rel32 call at `call_offset` to `target`
+// sits in a function that also calls `also` with a rel32 call.
+inline bool CallerAlsoCalls(const exact::LoadedPeImage& image,
+                            const uint8_t* bytes, const uint8_t* mask,
+                            size_t size, size_t call_offset, uintptr_t target,
+                            uintptr_t also) {
+  const exact::MaskedPattern pattern = {bytes, mask, size};
+  for (size_t index = 0u; index < image.section_count; ++index) {
+    const auto& section = image.sections[index];
+    if (!exact::SectionHasRole(&section, IMAGE_SCN_MEM_EXECUTE) ||
+        section.bytes == nullptr || section.size < size ||
+        !exact::IsReadableSpan(section.bytes, section.size)) {
+      continue;
+    }
+    for (size_t offset = 0u; offset <= section.size - size; ++offset) {
+      uintptr_t called = 0u;
+      if (!exact::MatchesMaskedPattern(section.bytes + offset, pattern) ||
+          !exact::DecodeRel32CallTarget(section.bytes + offset + call_offset,
+                                        &called) ||
+          called != target) {
+        continue;
+      }
+      size_t begin = 0u;
+      size_t end = 0u;
+      FunctionAround(section, offset, &begin, &end);
+      for (size_t at = begin; at + 5u <= end; ++at) {
+        uintptr_t other = 0u;
+        if (section.bytes[at] == 0xe8u &&
+            exact::DecodeRel32CallTarget(section.bytes + at, &other) &&
+            other == also) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
+// The message window's ClearPage: a ClearPage-shaped body called through the
+// window's renderer field.  When more than one qualifies (another renderer
+// class with the same body behind another window class), only the one whose
+// caller also runs the reveal loop is the message window's.
+inline bool FindClearPageT(const exact::LoadedPeImage& image,
+                           uint32_t window_renderer, uintptr_t reveal,
+                           uintptr_t* clear_page, ObjectLayout* layout) {
+  uint8_t call[sizeof(kClearCallTBytes)] = {};
+  std::memcpy(call, kClearCallTBytes, sizeof(call));
+  std::memcpy(call + kClearCallTDisp, &window_renderer,
+              sizeof(window_renderer));
+  uintptr_t candidates[kMaxClearPageCopies] = {};
+  ObjectLayout layouts[kMaxClearPageCopies] = {};
+  uint32_t count = 0u;
+  for (size_t index = 0u; index < image.section_count; ++index) {
+    const auto& section = image.sections[index];
+    if (!exact::SectionHasRole(&section, IMAGE_SCN_MEM_EXECUTE)) continue;
+    if (section.bytes == nullptr || section.size == 0u ||
+        !exact::IsReadableSpan(section.bytes, section.size)) {
+      return false;  // could hide another candidate
+    }
+    for (size_t offset = 0u;
+         offset + sizeof(kClearTHeadBytes) <= section.size; ++offset) {
+      if (std::memcmp(section.bytes + offset, kClearTHeadBytes,
+                      sizeof(kClearTHeadBytes)) != 0) {
+        continue;
+      }
+      ObjectLayout parsed = *layout;
+      uintptr_t fill = 0u;
+      const uintptr_t at = reinterpret_cast<uintptr_t>(section.bytes + offset);
+      if (!ParseClearPageT(image, section.bytes + offset, &parsed, &fill) ||
+          !AnyCallTargets(image, call, kClearCallTMask.data(), sizeof(call),
+                          kClearCallTCall, at)) {
+        continue;
+      }
+      if (count == kMaxClearPageCopies) return false;
+      candidates[count] = at;
+      layouts[count] = parsed;
+      ++count;
+    }
+  }
+  uint32_t chosen = count;
+  if (count == 1u) {
+    chosen = 0u;
+  } else {
+    for (uint32_t index = 0u; index < count; ++index) {
+      if (!CallerAlsoCalls(image, call, kClearCallTMask.data(), sizeof(call),
+                           kClearCallTCall, candidates[index], reveal)) {
+        continue;
+      }
+      if (chosen != count) return false;  // still ambiguous
+      chosen = index;
+    }
+  }
+  if (chosen == count) return false;
+  *clear_page = candidates[chosen];
+  *layout = layouts[chosen];
+  return true;
+}
+
+// Scene::Find loads the id map from [ecx] and its head node from [map]
+// within its first instructions (see kSceneFindTMapScanBytes).
+inline bool MatchesSceneFindT(const uint8_t* code) {
+  constexpr size_t kBytes = 2u * kSceneFindTMapScanBytes + 2u;
+  if (!exact::IsReadableSpan(code, kBytes)) return false;
+  for (size_t at = 0u; at < kSceneFindTMapScanBytes; ++at) {
+    // `mov r,[ecx]`: mod 00, rm 001.
+    if (code[at] != 0x8bu || (code[at + 1u] & 0xc7u) != 0x01u) continue;
+    const uint8_t map = (code[at + 1u] >> 3u) & 7u;
+    if (map == 1u || map == 4u || map == 5u) continue;
+    for (size_t head = at + 2u; head < at + 2u + kSceneFindTMapScanBytes;
+         ++head) {
+      // `mov r,[map]`: mod 00, rm = map.
+      if (code[head] == 0x8bu && (code[head + 1u] & 0xc7u) == map) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+// Input::Handle of the targeted-render layout (see kInputTFrameBytes): the
+// unique dispatch on the message whose function starts with the aligned
+// ebp frame shortly before it and loads the message from [ebp+0x10].
+inline exact::UniquePatternMatch FindInputHandlerT(
+    const exact::LoadedPeImage& image) {
+  const exact::MaskedPattern dispatch = {kInputTDispatchBytes,
+                                         kInputTDispatchMask.data(),
+                                         sizeof(kInputTDispatchBytes)};
+  exact::UniquePatternMatch result;
+  for (size_t index = 0u; index < image.section_count; ++index) {
+    const auto& section = image.sections[index];
+    if (!exact::SectionHasRole(&section, IMAGE_SCN_MEM_EXECUTE)) continue;
+    if (section.bytes == nullptr || section.size == 0u ||
+        !exact::IsReadableSpan(section.bytes, section.size)) {
+      return {nullptr, 2u};
+    }
+    for (size_t offset = 0u;
+         offset + sizeof(kInputTDispatchBytes) <= section.size; ++offset) {
+      if (!exact::MatchesMaskedPattern(section.bytes + offset, dispatch)) {
+        continue;
+      }
+      const size_t low =
+          offset > kInputTPrologueScanBytes ? offset - kInputTPrologueScanBytes
+                                            : 0u;
+      const size_t frame = LastIndexOf(section.bytes, low, offset,
+                                       kInputTFrameBytes,
+                                       sizeof(kInputTFrameBytes));
+      if (frame == SIZE_MAX ||
+          LastIndexOf(section.bytes, frame + sizeof(kInputTFrameBytes),
+                      offset, kInputTMessageBytes,
+                      sizeof(kInputTMessageBytes)) == SIZE_MAX) {
+        continue;
+      }
+      if (++result.count == 1u) result.address = section.bytes + frame;
+    }
+  }
+  if (result.count != 1u) result.address = nullptr;
+  return result;
+}
+
 // Layout A: ClearPage and RenderChar(renderer, record) back to back.
 inline SiteResult ResolveAdjacentPageSites(const exact::LoadedPeImage& image,
                                            const ImportSlots& imports,
@@ -815,7 +1239,9 @@ inline SiteResult ResolveAdjacentPageSites(const exact::LoadedPeImage& image,
 }
 
 // Layout B: RenderChar(renderer, record, target), GetCharImage via vtable,
-// ClearPage proven by its body and its message-window caller.
+// ClearPage proven by its body and its message-window caller.  The window and
+// renderer field offsets the runtime needs are read from the proving code
+// (Update, SyncLayer, ClearPage), not assumed.
 inline SiteResult ResolveTargetedRenderSites(
     const exact::LoadedPeImage& image, const ImportSlots& imports,
     Sites* found) {
@@ -826,10 +1252,10 @@ inline SiteResult ResolveTargetedRenderSites(
   const uint8_t* entry = render.address;
   if (!MatchesAt(entry + kRecordPenTOffset, kRecordPenTBytes, nullptr,
                  sizeof(kRecordPenTBytes)) ||
-      !MatchesAt(entry + kRecordCharTOffset, kRecordCharTBytes,
-                 kRecordCharTMask.data(), sizeof(kRecordCharTBytes)) ||
       !MatchesAt(entry + kRenderTailTOffset, kRenderTailTBytes, nullptr,
-                 sizeof(kRenderTailTBytes))) {
+                 sizeof(kRenderTailTBytes)) ||
+      !HasVirtualCharImageCall(entry, kRenderTailTOffset,
+                               kRecordPenTOffset + sizeof(kRecordPenTBytes))) {
     return SiteResult::kRecordInvalid;
   }
   uintptr_t char_image = 0u;
@@ -842,63 +1268,80 @@ inline SiteResult ResolveTargetedRenderSites(
   found->char_image = char_image;
   found->rasteriser = rasteriser;
 
-  // ── ClearPage: both page images through one fill; called via +0x2ac ──
-  const auto clear = FindUnique(image, kClearTBytes, kClearTMask.data(),
-                                sizeof(kClearTBytes));
-  if (clear.count != 1u) return SiteResult::kClearInvalid;
-  uintptr_t normal_fill = 0u;
-  uintptr_t fade_fill = 0u;
-  const uintptr_t clear_page = reinterpret_cast<uintptr_t>(clear.address);
-  if (!exact::DecodeRel32CallTarget(clear.address + kClearTNormalFillCall,
-                                    &normal_fill) ||
-      !exact::DecodeRel32CallTarget(clear.address + kClearTFadeFillCall,
-                                    &fade_fill) ||
-      normal_fill != fade_fill ||
-      !IsExecutableImageAddress(image, normal_fill, 1u) ||
-      !AnyCallTargets(image, kClearCallTBytes, kClearCallTMask.data(),
-                      sizeof(kClearCallTBytes), kClearCallTCall,
-                      clear_page)) {
+  // ── message-window Update → reveal loop → RenderChar; SyncLayer ──
+  // Several part classes share the Update body (cs2 2.6.1.90 has a second
+  // window class with its own renderer); the message window's is the one
+  // whose reveal loop renders through RenderChar.
+  const uint8_t* updates[kMaxUpdateCopies] = {};
+  const size_t update_count =
+      FindAllMatches(image, kUpdateTBytes, kUpdateTMask.data(),
+                     sizeof(kUpdateTBytes), updates, kMaxUpdateCopies);
+  if (update_count == 0u || update_count == SIZE_MAX) {
+    return SiteResult::kUpdateMissing;
+  }
+  const uint8_t* update_address = nullptr;
+  uintptr_t reveal = 0u;
+  for (size_t index = 0u; index < update_count; ++index) {
+    uintptr_t candidate = 0u;
+    if (!exact::DecodeRel32CallTarget(updates[index] + kUpdateTRevealCall,
+                                      &candidate) ||
+        !CallsTarget(image, candidate, kRevealScanBytes, found->render_char)) {
+      continue;
+    }
+    if (update_address != nullptr) return SiteResult::kUpdateMissing;
+    update_address = updates[index];
+    reveal = candidate;
+  }
+  if (update_address == nullptr) return SiteResult::kRevealInvalid;
+  uint32_t window_renderer = 0u;
+  std::memcpy(&window_renderer, update_address + kUpdateTRendererDisp,
+              sizeof(window_renderer));
+  if (!IsWindowField(window_renderer)) return SiteResult::kUpdateMissing;
+  uintptr_t sync = 0u;
+  uint8_t window_screen = 0u;
+  if (!exact::DecodeRel32CallTarget(update_address + kUpdateTSyncCall,
+                                    &sync) ||
+      !IsExecutableImageAddress(image, sync, kSyncScanBytes) ||
+      !FindSyncScreenField(reinterpret_cast<const uint8_t*>(sync),
+                           &window_screen)) {
+    return SiteResult::kSyncInvalid;
+  }
+  found->window_update = reinterpret_cast<uintptr_t>(update_address);
+
+  // ── ClearPage: both page images through one fill; called through the
+  //    window's renderer field ──
+  ObjectLayout layout;
+  layout.window_renderer = window_renderer;
+  layout.window_screen = window_screen;
+  uintptr_t clear_page = 0u;
+  if (!FindClearPageT(image, window_renderer, reveal, &clear_page, &layout)) {
     return SiteResult::kClearInvalid;
   }
   found->clear_page = clear_page;
 
-  // ── message-window Update → reveal loop → RenderChar; SyncLayer ──
-  const auto update = FindUnique(image, kUpdateTBytes, kUpdateTMask.data(),
-                                 sizeof(kUpdateTBytes));
-  if (update.count != 1u) return SiteResult::kUpdateMissing;
-  uintptr_t reveal = 0u;
-  if (!exact::DecodeRel32CallTarget(update.address + kUpdateTRevealCall,
-                                    &reveal) ||
-      !CallsTarget(image, reveal, kRevealScanBytes, found->render_char)) {
-    return SiteResult::kRevealInvalid;
-  }
-  uintptr_t sync = 0u;
-  if (!exact::DecodeRel32CallTarget(update.address + kUpdateTSyncCall,
-                                    &sync) ||
-      !IsExecutableImageAddress(image, sync, kSyncScanBytes) ||
-      !ContainsBytes(reinterpret_cast<const uint8_t*>(sync), kSyncScanBytes,
-                     kSyncScreenTBytes, sizeof(kSyncScreenTBytes))) {
-    return SiteResult::kSyncInvalid;
-  }
-  found->window_update = reinterpret_cast<uintptr_t>(update.address);
-
   // ── layer id / screen → scene (layer by pointer) ──
+  uint8_t layer_query[sizeof(kLayerQueryTBytes)] = {};
+  std::memcpy(layer_query, kLayerQueryTBytes, sizeof(layer_query));
+  layer_query[kLayerQueryTScreenDisp] = window_screen;
   uintptr_t screen_query = 0u;
-  if (!FindAgreeingCallTarget(image, kLayerQueryTBytes,
-                              kLayerQueryTMask.data(),
-                              sizeof(kLayerQueryTBytes), kLayerQueryTCall,
+  if (!FindAgreeingCallTarget(image, layer_query, kLayerQueryTMask.data(),
+                              sizeof(layer_query), kLayerQueryTCall,
                               kMaxLayerQueryCopies, &screen_query)) {
     return SiteResult::kLayerQueryMissing;
   }
+  const auto* screen_code = reinterpret_cast<const uint8_t*>(screen_query);
   uintptr_t scene_visible = 0u;
   uintptr_t scene_find = 0u;
-  if (!MatchesAt(reinterpret_cast<const uint8_t*>(screen_query),
-                 kScreenQueryTBytes, kScreenQueryTMask.data(),
-                 sizeof(kScreenQueryTBytes)) ||
-      !exact::DecodeRel32CallTarget(
-          reinterpret_cast<const uint8_t*>(screen_query) +
-              kScreenQueryTSceneCall,
-          &scene_visible) ||
+  const bool screen_query_valid =
+      MatchesAt(screen_code, kScreenQueryTBytes, kScreenQueryTMask.data(),
+                sizeof(kScreenQueryTBytes))
+          ? exact::DecodeRel32CallTarget(screen_code + kScreenQueryTSceneCall,
+                                         &scene_visible)
+          : MatchesAt(screen_code, kScreenQueryT2Bytes,
+                      kScreenQueryT2Mask.data(), sizeof(kScreenQueryT2Bytes)) &&
+                exact::DecodeRel32CallTarget(
+                    screen_code + kScreenQueryT2SceneCall, &scene_visible);
+  if (!screen_query_valid ||
       !MatchesAt(reinterpret_cast<const uint8_t*>(scene_visible),
                  kSceneVisibleTBytes, kSceneVisibleTMask.data(),
                  sizeof(kSceneVisibleTBytes)) ||
@@ -906,8 +1349,7 @@ inline SiteResult ResolveTargetedRenderSites(
           reinterpret_cast<const uint8_t*>(scene_visible) +
               kSceneVisibleTFindCall,
           &scene_find) ||
-      !MatchesAt(reinterpret_cast<const uint8_t*>(scene_find),
-                 kSceneFindTBytes, nullptr, sizeof(kSceneFindTBytes)) ||
+      !MatchesSceneFindT(reinterpret_cast<const uint8_t*>(scene_find)) ||
       FindUnique(image, kSceneDrawTBytes, kSceneDrawTMask.data(),
                  sizeof(kSceneDrawTBytes))
               .count != 1u) {
@@ -915,8 +1357,7 @@ inline SiteResult ResolveTargetedRenderSites(
   }
 
   // ── input handler ──
-  const auto input = FindUnique(image, kInputTBytes, kInputTMask.data(),
-                                sizeof(kInputTBytes));
+  const auto input = FindInputHandlerT(image);
   if (input.count != 1u) return SiteResult::kInputMissing;
   const uintptr_t handler = reinterpret_cast<uintptr_t>(input.address);
   if (!CallsImport(image, handler, kInputScanBytes, imports.set_capture) ||
@@ -934,6 +1375,7 @@ inline SiteResult ResolveTargetedRenderSites(
   found->variant = SiteVariant::kTargetedRender;
   found->render_stack_args = kRenderTStackArgs;
   found->walk = kTargetedRenderWalk;
+  found->layout = layout;
   return SiteResult::kResolved;
 }
 

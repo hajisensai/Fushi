@@ -192,6 +192,12 @@ int wmain(int argc, wchar_t** argv) {
   std::printf("  walk list=+0x%zx head=+0x%zx layer_by_pointer=%d\n",
               sites.walk.list_offset, sites.walk.head_offset,
               sites.walk.layer_by_pointer ? 1 : 0);
+  std::printf(
+      "  layout window.screen=+0x%zx window.renderer=+0x%zx page=+0x%zx/"
+      "+0x%zx work=+0x%zx\n",
+      sites.layout.window_screen, sites.layout.window_renderer,
+      sites.layout.page_width, sites.layout.page_height,
+      sites.layout.work_image);
 
   cs2_voice::VoiceImportSlots voice_imports;
   voice_imports.set_file_pointer =

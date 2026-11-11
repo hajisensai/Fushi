@@ -277,8 +277,8 @@ void RecordCs2Render(uintptr_t renderer, uintptr_t record) {
   uint8_t bytes[cs2_lookup::kRecordBytes] = {};
   int32_t page_w = 0, page_h = 0;
   if (!ReadCs2Value(record, &bytes) ||
-      !ReadCs2Value(renderer + cs2_lookup::kRendererPageWidthOffset, &page_w) ||
-      !ReadCs2Value(renderer + cs2_lookup::kRendererPageHeightOffset,
+      !ReadCs2Value(renderer + rt.sites.layout.page_width, &page_w) ||
+      !ReadCs2Value(renderer + rt.sites.layout.page_height,
                     &page_h)) {
     return;
   }
@@ -308,7 +308,7 @@ int __fastcall Cs2RenderTargetDetour(uintptr_t renderer, uintptr_t,
   const int result = g_cs2_render_target_original(renderer, record, target);
   uintptr_t page = 0u, work_page = 0u;
   if (ReadCs2Value(renderer + cs2_lookup::kRendererImageOffset, &page) &&
-      ReadCs2Value(renderer + cs2_lookup::kRendererWorkImageOffset,
+      ReadCs2Value(renderer + g_cs2_lookup.sites.layout.work_image,
                    &work_page) &&
       cs2_lookup::IsRendererPage(target, page, work_page)) {
     RecordCs2Render(renderer, record);
@@ -405,9 +405,9 @@ void ObserveCs2Window(uintptr_t window_object) {
   auto& rt = g_cs2_lookup;
   uintptr_t renderer = 0u, screen = 0u;
   int32_t layer_id = 0;
-  if (!ReadCs2Value(window_object + cs2_lookup::kWindowRendererOffset,
+  if (!ReadCs2Value(window_object + rt.sites.layout.window_renderer,
                     &renderer) ||
-      !ReadCs2Value(window_object + cs2_lookup::kWindowScreenOffset, &screen) ||
+      !ReadCs2Value(window_object + rt.sites.layout.window_screen, &screen) ||
       !ReadCs2Value(window_object + cs2_lookup::kWindowLayerIdOffset,
                     &layer_id) ||
       renderer == 0u || screen == 0u) {
@@ -817,6 +817,14 @@ bool InstallCatSystem2Lookup() {
       static_cast<unsigned long>(rt.sites.char_image - base),
       static_cast<unsigned long>(rt.sites.rasteriser - base), hooked ? 1 : 0,
       scan_ms);
+  Cs2LookupLog(
+      L"catsystem2-lookup: layout window.screen=+0x%lx window.renderer=+0x%lx "
+      L"page=+0x%lx/+0x%lx work=+0x%lx",
+      static_cast<unsigned long>(rt.sites.layout.window_screen),
+      static_cast<unsigned long>(rt.sites.layout.window_renderer),
+      static_cast<unsigned long>(rt.sites.layout.page_width),
+      static_cast<unsigned long>(rt.sites.layout.page_height),
+      static_cast<unsigned long>(rt.sites.layout.work_image));
   if (rt.installed && g_header != nullptr) {
     fushi_voice_hook::AtomicOrShared32(
         &g_header->lookup_diag, fushi_voice_hook::kLookupDiagSensorInstalled);
