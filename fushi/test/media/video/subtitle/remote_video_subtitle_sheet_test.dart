@@ -57,10 +57,14 @@ class _Prefs implements VideoSubtitleGeneratePrefs {
 }
 
 class _Host implements RemoteVideoSubtitleHostPort {
-  _Host(this.kinds, {this.error});
+  _Host(this.kinds, {this.error, this.capability = const <String, Object?>{}});
 
   final List<String>? kinds;
   final Object? error;
+  final Map<String, Object?> capability;
+
+  /// 每次提交带的参数。
+  final List<Map<String, Object?>> runs = <Map<String, Object?>>[];
 
   @override
   Future<HostJobTarget?> probe() async => kinds == null
@@ -69,7 +73,7 @@ class _Host implements RemoteVideoSubtitleHostPort {
           baseUrl: 'http://pc.invalid',
           deviceName: 'Desk PC',
           kinds: kinds!,
-          capability: const <String, Object?>{},
+          capability: capability,
         );
 
   @override
@@ -77,7 +81,10 @@ class _Host implements RemoteVideoSubtitleHostPort {
     required HostJobTarget target,
     required Map<String, Object?> params,
     required Directory outputDir,
-  }) => Stream<HostJobEvent>.error(error ?? StateError('no script'));
+  }) {
+    runs.add(params);
+    return Stream<HostJobEvent>.error(error ?? StateError('no script'));
+  }
 }
 
 void main() {
@@ -195,6 +202,128 @@ void main() {
       findsOneWidget,
     );
     expect(startPressed(tester), isNull);
+  });
+
+  group('参考画面', () {
+    _Host hostWith({bool? framesAvailable}) => _Host(
+      <String>['video_subtitle'],
+      capability: <String, Object?>{
+        'video_subtitle': <String, Object?>{
+          'supported': true,
+          'framesAvailable': ?framesAvailable,
+        },
+      },
+    );
+    final Finder toggle = find.byKey(
+      const ValueKey<String>('remote-subtitle-frames'),
+    );
+    final Finder unsupported = find.byKey(
+      const ValueKey<String>('remote-subtitle-frames-unsupported'),
+    );
+    Future<void> start(WidgetTester tester) async {
+      await tester.ensureVisible(
+        find.byKey(const ValueKey<String>('remote-subtitle-start')),
+      );
+      await tester.tap(
+        find.byKey(const ValueKey<String>('remote-subtitle-start')),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('老 host（没报 framesAvailable）：不显示开关，提交不带 frames', (
+      WidgetTester tester,
+    ) async {
+      final _Host host = hostWith();
+      final _Prefs prefs = _Prefs()
+        ..proofread = true
+        ..frames = true
+        ..framesConsented = true;
+      await pump(tester, service(host), prefs: prefs);
+      expect(toggle, findsNothing);
+      await start(tester);
+      expect(host.runs.single.containsKey('frames'), isFalse);
+    });
+
+    testWidgets('host 能收图、开关开着且看过说明：提交带 frames=true；没开 AI 校对时不显示也不带', (
+      WidgetTester tester,
+    ) async {
+      final _Host host = hostWith(framesAvailable: true);
+      final _Prefs prefs = _Prefs()
+        ..proofread = true
+        ..frames = true
+        ..framesConsented = true;
+      await pump(tester, service(host), prefs: prefs);
+      expect(toggle, findsOneWidget);
+      expect(unsupported, findsNothing);
+      await start(tester);
+      expect(host.runs.single['frames'], isTrue);
+
+      final _Host plain = hostWith(framesAvailable: true);
+      await pump(
+        tester,
+        service(plain),
+        prefs: _Prefs()
+          ..frames = true
+          ..framesConsented = true,
+      );
+      expect(toggle, findsNothing);
+      await start(tester);
+      expect(plain.runs.single.containsKey('frames'), isFalse);
+    });
+
+    testWidgets('host 的提供商收不了图：直说画面不会发送，提交不带 frames', (
+      WidgetTester tester,
+    ) async {
+      final _Host host = hostWith(framesAvailable: false);
+      final _Prefs prefs = _Prefs()
+        ..proofread = true
+        ..frames = true
+        ..framesConsented = true;
+      await pump(tester, service(host), prefs: prefs);
+      expect(toggle, findsOneWidget);
+      expect(unsupported, findsOneWidget);
+      await start(tester);
+      expect(host.runs.single.containsKey('frames'), isFalse);
+      // 没发生任何发送，不需要打扰用户，开关也不动。
+      expect(prefs.frames, isTrue);
+    });
+
+    testWidgets('在旧说明下同意过的用户：第一次真要发画面前补看一次，点「不发画面」就关掉开关、'
+        '任务照常提交', (WidgetTester tester) async {
+      final _Host host = hostWith(framesAvailable: true);
+      final _Prefs prefs = _Prefs()
+        ..proofread = true
+        ..frames = true;
+      await pump(tester, service(host), prefs: prefs);
+      await start(tester);
+      expect(find.text(t.video_subtitle_ai_frames_consent_title), findsOne);
+      expect(host.runs, isEmpty);
+      await tester.tap(find.text(t.video_subtitle_ai_frames_consent_decline));
+      await tester.pumpAndSettle();
+      expect(prefs.frames, isFalse);
+      expect(prefs.framesConsented, isFalse);
+      expect(host.runs.single.containsKey('frames'), isFalse);
+    });
+
+    testWidgets('首次开 AI 校对的说明写明了画面：同意即两样都记下', (WidgetTester tester) async {
+      final _Prefs prefs = _Prefs()
+        ..consented = false
+        ..frames = true;
+      await pump(
+        tester,
+        service(hostWith(framesAvailable: true)),
+        prefs: prefs,
+      );
+      await tester.tap(
+        find.byKey(const ValueKey<String>('remote-subtitle-proofread')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(t.video_subtitle_ai_consent_confirm));
+      await tester.pumpAndSettle();
+      expect(prefs.consented, isTrue);
+      expect(prefs.framesConsented, isTrue);
+      expect(toggle, findsOneWidget);
+    });
   });
 
   testWidgets('支持的 host：显示在哪台上运行，「开始」可点', (WidgetTester tester) async {

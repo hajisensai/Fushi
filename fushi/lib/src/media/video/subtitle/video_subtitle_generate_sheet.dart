@@ -285,8 +285,23 @@ Future<void> showVideoSubtitleGenerateSheet({
   );
 }
 
-/// 打开画面参考前的确认（生成面板与字幕工作台共用）：首次先说明会发送什么，同意了
-/// 才返回 true 并记下已同意；看过的直接 true。
+/// 这次任务要不要带画面：[wanted]（AI 校对与「参考画面」都开着，且提供商能收图）并且
+/// 用户知情。画面参考默认开，首次开 AI 校对的说明里已写明会发画面；只有在旧版说明
+/// （写着「不发送画面」）下同意过的用户会在这里补看一次——点「不发画面」就把开关
+/// 关掉，任务照常按纯文字校对。
+Future<bool> resolveVideoSubtitleAiFrames(
+  BuildContext context,
+  VideoSubtitleGeneratePrefs prefs, {
+  required bool wanted,
+}) async {
+  if (!wanted) return false;
+  if (await confirmVideoSubtitleAiFrames(context, prefs)) return true;
+  await prefs.setFrames(false);
+  return false;
+}
+
+/// 发画面前的确认（生成面板、互联面板与字幕工作台共用）：没看过写明「会发画面」的
+/// 说明就先弹一次，同意了才返回 true 并记下；看过的直接 true。
 Future<bool> confirmVideoSubtitleAiFrames(
   BuildContext context,
   VideoSubtitleGeneratePrefs prefs,
@@ -299,7 +314,7 @@ Future<bool> confirmVideoSubtitleAiFrames(
       count: kSubtitleReferenceFramesPerBatch,
     ),
     confirmLabel: t.video_subtitle_ai_consent_confirm,
-    cancelLabel: t.cancel,
+    cancelLabel: t.video_subtitle_ai_frames_consent_decline,
     icon: FushiIcons.image,
   );
   if (!ok) return false;
@@ -642,7 +657,8 @@ class _VideoSubtitleGenerateSheetState
     await _refreshMoss();
   }
 
-  /// 打开 AI 校对：首次先说明会发送什么，同意了才开。
+  /// 打开 AI 校对：首次先说明会发送什么（文本、已有字幕的台词、专名表，以及画面），
+  /// 同意了才开；说明里写明了画面，所以画面的知情也一并记下。
   Future<void> _setProofread(bool on) async {
     if (on && !widget.prefs.consented) {
       final bool ok = await showFushiConfirmDialog(
@@ -658,13 +674,14 @@ class _VideoSubtitleGenerateSheetState
       );
       if (!ok || !mounted) return;
       await widget.prefs.setConsented(true);
+      await widget.prefs.setFramesConsented(true);
     }
     setState(() => _proofread = on);
     await widget.prefs.setProofread(on);
     if (on) unawaited(_refreshEstimate());
   }
 
-  /// 打开画面参考：首次先说明会发送什么（[confirmVideoSubtitleAiFrames]）。
+  /// 打开画面参考：没看过写明「会发画面」的说明就先看（[confirmVideoSubtitleAiFrames]）。
   Future<void> _setFrames(bool on) async {
     if (on && !await confirmVideoSubtitleAiFrames(context, widget.prefs)) {
       return;
@@ -690,6 +707,9 @@ class _VideoSubtitleGenerateSheetState
     final VideoSubtitleInAppTranscribe? transcribe = widget.onTranscribeInApp;
     if (transcribe == null) return;
     final bool proofread = _proofread;
+    // 转录弹层的 AI 校对同样会带画面（`appAsrProofreadHost` 现读偏好）：先把知情补上。
+    await _resolveFrames();
+    if (!mounted) return;
     await Navigator.of(context).maybePop();
     transcribe(proofread: proofread);
   }
@@ -719,6 +739,20 @@ class _VideoSubtitleGenerateSheetState
     if (mounted && _proofread) unawaited(_refreshEstimate());
   }
 
+  /// 这次要不要带画面（[resolveVideoSubtitleAiFrames]）；用户点了「不发画面」时开关
+  /// 跟着关掉。
+  Future<bool> _resolveFrames() async {
+    final bool frames = await resolveVideoSubtitleAiFrames(
+      context,
+      widget.prefs,
+      wanted: _proofread && _frames && _service.proofreadAcceptsImages,
+    );
+    if (mounted && _frames && !widget.prefs.frames) {
+      setState(() => _frames = false);
+    }
+    return frames;
+  }
+
   Future<void> _start() async {
     setState(() => _startError = null);
     // 开 AI 才会跑歌词补齐（联网搜索抓页交给 AI）：配了后端还没答过就先问一次。
@@ -726,6 +760,8 @@ class _VideoSubtitleGenerateSheetState
       await widget.prefs.ensureWebSearchPageFetchDecided(context);
       if (!mounted) return;
     }
+    final bool frames = await _resolveFrames();
+    if (!mounted) return;
     try {
       final AppVideoSubtitleJob job = _service.start(
         _target,
@@ -734,7 +770,7 @@ class _VideoSubtitleGenerateSheetState
           segmenter: _segmenter,
           mossBackend: widget.prefs.mossBackend,
           language: _language,
-          frames: _proofread && _frames,
+          frames: frames,
           pinnedEvidence: widget.pinnedEvidence,
         ),
       );
@@ -1152,10 +1188,10 @@ class _VideoSubtitleGenerateSheetState
                             'video-subtitle-ai-provider',
                           ),
                         ),
-                      // 画面参考、费用预估与专名表只属于管线校对；转录弹层的校对
-                      // 只看文字、不用专名表。
+                      // 画面参考两条路都用（转录弹层的校对同样附画面）。
+                      if (provider != null) _framesControl(provider),
+                      // 费用预估与专名表只属于管线校对；转录弹层的校对不用专名表。
                       if (_saveBeside) ...<Widget>[
-                        if (provider != null) _framesControl(provider),
                         _estimateLine(),
                         FushiPressScale(
                           child: FushiOutlinedButton.icon(
@@ -1176,8 +1212,9 @@ class _VideoSubtitleGenerateSheetState
     );
   }
 
-  /// 「参考画面」：AI 校对时每批附上对应时刻的视频画面。开着但提供商没开图片输入时
-  /// 直说画面不会发送（任务照常按纯文字校对）。
+  /// 「参考画面」：AI 校对时每批附上对应时刻的视频画面（默认开）。开着但提供商没开
+  /// 图片输入时直说画面不会发送（任务照常按纯文字校对）——只是说明，不标成错误：
+  /// 纯文字提供商是常态。
   Widget _framesControl(AiProviderConfig provider) => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     spacing: 4,
@@ -1211,7 +1248,6 @@ class _VideoSubtitleGenerateSheetState
         _hint(
           t.video_subtitle_ai_frames_unsupported,
           key: const ValueKey<String>('video-subtitle-ai-frames-unsupported'),
-          error: true,
         ),
     ],
   );

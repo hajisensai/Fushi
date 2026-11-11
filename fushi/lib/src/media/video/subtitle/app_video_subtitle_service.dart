@@ -18,7 +18,8 @@
 ///
 /// AI 边界（CLAUDE.md「AI 功能」硬边界）：没指派提供商时一个请求都不发（[start] 直接
 /// 拒绝，UI 引导去「设置 › 模型 › LLM」）；发的是 ASR 文本、已有字幕的台词与专名表，
-/// 不发音频；画面只在用户打开「参考画面」（[AppVideoSubtitleOptions.frames]）后才发。
+/// 不发音频；「参考画面」（[AppVideoSubtitleOptions.frames]，默认开）开着且提供商
+/// 能收图时还发视频的静态画面。
 library;
 
 import 'dart:async';

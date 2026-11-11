@@ -521,7 +521,7 @@ void main() {
     await tester.tap(toggle);
     await tester.pumpAndSettle();
     expect(find.text('Send video frames to the AI?'), findsOneWidget);
-    await tester.tap(find.text('Cancel').last);
+    await tester.tap(find.text("Don't send frames"));
     await tester.pumpAndSettle();
     expect(prefs.frames, isFalse);
     expect(prefs.framesConsented, isFalse);
@@ -617,6 +617,135 @@ void main() {
     );
     expect(withoutAi.proofread, isFalse);
     expect(withoutAi.frames, isFalse);
+  });
+
+  testWidgets('在旧说明下同意过的用户：开始时补看一次画面说明——点「不发画面」关掉开关、'
+      '任务照常按纯文字开始；同意则带画面并记下', (WidgetTester tester) async {
+    tester.view
+      ..physicalSize = const Size(900, 1400)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    settings.provider = testProvider().copyWith(acceptsImages: true);
+
+    Future<AppVideoSubtitleOptions> startAndAnswer(
+      _FakePrefs prefs,
+      String answer,
+    ) async {
+      final AppVideoSubtitleService service = buildService();
+      await tester.pumpWidget(
+        MaterialApp(
+          key: UniqueKey(),
+          home: Scaffold(
+            body: SizedBox(
+              height: 900,
+              child: VideoSubtitleGenerateSheet(
+                service: service,
+                target: target,
+                prefs: prefs,
+                openAiSettings: (BuildContext _) async {},
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey<String>('video-subtitle-ai-start')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Send video frames to the AI?'), findsOneWidget);
+      expect(service.latestJobFor(target), isNull);
+      await tester.tap(find.text(answer));
+      // 任务跑起来后进度条一直在动，不能 pumpAndSettle。
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      final AppVideoSubtitleJob job = service.latestJobFor(target)!;
+      job.cancel();
+      await tester.pump();
+      return job.options;
+    }
+
+    final _FakePrefs declined = _FakePrefs(
+      proofread: true,
+      consented: true,
+      frames: true,
+    );
+    final AppVideoSubtitleOptions plain = await startAndAnswer(
+      declined,
+      "Don't send frames",
+    );
+    expect(plain.proofread, isTrue);
+    expect(plain.frames, isFalse);
+    expect(declined.frames, isFalse);
+    expect(declined.framesConsented, isFalse);
+
+    final _FakePrefs accepted = _FakePrefs(
+      proofread: true,
+      consented: true,
+      frames: true,
+    );
+    final AppVideoSubtitleOptions withFrames = await startAndAnswer(
+      accepted,
+      'Turn on',
+    );
+    expect(withFrames.frames, isTrue);
+    expect(accepted.frames, isTrue);
+    expect(accepted.framesConsented, isTrue);
+  });
+
+  testWidgets('首次开 AI 校对的说明写明了画面：同意即两样都记下；提供商收不了图时开着也不带画面、'
+      '不打扰用户', (WidgetTester tester) async {
+    tester.view
+      ..physicalSize = const Size(900, 1400)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    settings.provider = testProvider();
+    final _FakePrefs prefs = _FakePrefs(frames: true);
+    final AppVideoSubtitleService service = buildService();
+    await pumpSheet(tester, service, prefs);
+    await tester.tap(
+      find.byKey(const ValueKey<String>('video-subtitle-ai-proofread')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Turn on'));
+    await tester.pumpAndSettle();
+    expect(prefs.consented, isTrue);
+    expect(prefs.framesConsented, isTrue);
+
+    // 纯文字提供商：开关开着，画面不会发，开始时也不弹画面说明。
+    final _FakePrefs textOnly = _FakePrefs(
+      proofread: true,
+      consented: true,
+      frames: true,
+    );
+    final AppVideoSubtitleService plainService = buildService();
+    await tester.pumpWidget(
+      MaterialApp(
+        key: UniqueKey(),
+        home: Scaffold(
+          body: SizedBox(
+            height: 900,
+            child: VideoSubtitleGenerateSheet(
+              service: plainService,
+              target: target,
+              prefs: textOnly,
+              openAiSettings: (BuildContext _) async {},
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey<String>('video-subtitle-ai-start')),
+    );
+    await tester.pump();
+    expect(find.text('Send video frames to the AI?'), findsNothing);
+    final AppVideoSubtitleJob job = plainService.latestJobFor(target)!;
+    job.cancel();
+    await tester.pump();
+    expect(job.options.frames, isFalse);
+    expect(textOnly.frames, isTrue);
   });
 
   testWidgets('AI 请求失败的任务：重开面板接回，显示「暂停：AI 请求失败（原因）」与「继续」', (

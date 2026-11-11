@@ -1121,7 +1121,7 @@ const FIELDS = [
   ['qbittorrent.url',T('qBittorrent WebUI 地址'),'text','downloads'],['qbittorrent.username',T('qBittorrent 用户名'),'text','downloads'],['qbittorrent.password',T('qBittorrent 密码'),'password','downloads'],
   ['ai.preset',T('AI 提供商（手机「AI 下视频」选本机执行时用；空 = 不用 AI、不发任何 AI 请求）'),'dyn:aiPresets','ai'],['ai.apiKey','AI API key','secret:ai.apiKeySet','ai'],
   ['ai.model',T('AI 模型（空 = 预设起点模型）'),'text','ai'],['ai.baseUrl',T('AI 接口地址（空 = 预设地址）'),'text','ai'],['ai.protocol',T('AI 协议（空 = 跟随预设）'),'select:,openAiCompatible,anthropicMessages,geminiGenerateContent','ai'],
-  ['ai.reasoningEffort',T('AI 推理档位'),'select:none,low,medium,high','ai'],['ai.allowInsecureHttp',T('AI 允许明文 HTTP（本地推理服务）'),'bool','ai'],['ai.webKnowledge',T('AI 联网资料（维基辅助识别作品）'),'bool','ai'],['ai.libraryOrganize',T('扫描入库后自动 AI 整理库（把该在一起的归进合集，按量计费）'),'bool','ai'],
+  ['ai.reasoningEffort',T('AI 推理档位'),'select:none,low,medium,high','ai'],['ai.allowInsecureHttp',T('AI 允许明文 HTTP（本地推理服务）'),'bool','ai'],['ai.images',T('AI 模型能看图（字幕校对会附上视频画面）'),'bool','ai'],['ai.webKnowledge',T('AI 联网资料（维基辅助识别作品）'),'bool','ai'],['ai.libraryOrganize',T('扫描入库后自动 AI 整理库（把该在一起的归进合集，按量计费）'),'bool','ai'],
 ];
 const SETTING_GROUPS = [['general',T('通用')],['network',T('网络与配对')],['media',T('媒体与刮削')],['access',T('设备权限')],['tools',T('外部工具')],['downloads',T('下载')],['ai',T('AI 助手')]];
 // 改后要重启 serve 才生效的项（同保存键旁的提示）。

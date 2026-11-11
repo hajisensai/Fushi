@@ -3537,18 +3537,20 @@ class PreferencesRepository extends ChangeNotifier
   }
 
   /// AI 校对时是否附上视频画面（画面参考，spec
-  /// `2026-11-11-video-subtitle-ai-reference`）。**默认关**；设备本地：开着就是「把
-  /// 视频画面发给所选提供商」，这种同意只对点它的那台设备成立。只在指派的提供商
-  /// 开了图片输入时才真的发图。
+  /// `2026-11-11-video-subtitle-ai-reference`）。**默认开**（所有者 2026-11-11 拍板）；
+  /// 设备本地：开着就是「把视频画面发给所选提供商」，这种选择只对点它的那台设备成立。
+  /// 真的发图还要两个条件：指派的提供商开了图片输入，且用户看过写明「会发画面」的
+  /// 说明（[videoSubtitleAiFramesConsented]）。
   bool get videoSubtitleAiFrames =>
-      getPref('video_subtitle_ai_frames', defaultValue: false) as bool;
+      getPref('video_subtitle_ai_frames', defaultValue: true) as bool;
 
   Future<void> setVideoSubtitleAiFrames(bool enabled) async {
     await setPref('video_subtitle_ai_frames', enabled);
     notifyListeners();
   }
 
-  /// 用户是否已看过并同意「画面参考会发送什么」的说明（首次打开画面参考时弹一次）。
+  /// 用户是否已看过写明「会发画面」的说明：首次开 AI 校对的说明里就有（同意即记下）；
+  /// 在旧版说明（写着「不发送画面」）下同意过的用户，第一次真要发画面前补看一次。
   bool get videoSubtitleAiFramesConsented =>
       getPref('video_subtitle_ai_frames_consented', defaultValue: false)
           as bool;

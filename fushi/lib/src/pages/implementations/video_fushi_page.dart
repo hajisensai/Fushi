@@ -134,6 +134,7 @@ import 'package:fushi_engine/media/audiobook/audiobook_transcribe_import_queue.d
         AudiobookTranscribeCancelled,
         AudiobookTranscribeJob,
         AudiobookTranscribeJobPhase;
+import 'package:fushi/src/asr_host/asr_ai_hosts.dart' show appAsrProofreadHost;
 import 'package:fushi/src/asr_host/asr_host.dart'
     show createAsrTranscriptionService, isAsrSupported;
 import 'package:fushi/src/media/audiobook/asr_transcribe_sheet.dart'

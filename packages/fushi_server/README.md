@@ -172,6 +172,7 @@ ai:                           # 「AI 下视频」助手会话、补字幕前候
   # protocol: ""              # 空 = 跟随预设：openAiCompatible / anthropicMessages / geminiGenerateContent
   reasoning_effort: "none"    # none / low / medium / high
   allow_insecure_http: false  # 本地推理服务（Ollama / LM Studio）走 http://localhost 时才需要
+  images: false               # 模型能看图时打开：字幕校对（subgen / host 任务）会附上视频画面（subgen 可用 --no-frames 关）
   web_knowledge: true         # 联网资料（内置维基站）辅助识别作品 / 列系列
   # web_search:               # 通用联网搜索（可选；省略 = 不联网搜索）。写上即表示同意：
   #                           # 字幕歌词补齐会抓排名前 3 的结果网页正文交给上面的 AI（按 token 计费）。

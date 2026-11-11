@@ -3654,6 +3654,12 @@ extension _VideoSubtitle on _VideoFushiPageState {
         audioProfile: AsrAudioProfile.mixedAudio,
       ),
       autoProofread: autoProofread,
+      // 转录稿的时间轴就是视频时间（音轨从 0 抽到片尾）：校对时可以附上这个视频的
+      // 画面。取不到本机字节的路径（远端 / 流）取帧那边自己跳过。
+      proofreadHost: appAsrProofreadHost(
+        appModel.prefsRepo,
+        framesVideoPath: _currentVideoPath,
+      ),
     );
   }
 

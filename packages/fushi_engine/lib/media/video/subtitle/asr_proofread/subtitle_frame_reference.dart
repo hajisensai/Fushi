@@ -81,11 +81,27 @@ List<int> planSubtitleReferenceFrames(
   int maxFrames = kSubtitleReferenceFramesPerBatch,
   int minGapMs = kSubtitleReferenceFrameMinGapMs,
 }) {
+  final int end = hi > cues.length ? cues.length : hi;
+  return planReferenceFrameTimes(
+    <({int startMs, int endMs, String text})>[
+      for (int i = lo < 0 ? 0 : lo; i < end; i++)
+        (startMs: cues[i].startMs, endMs: cues[i].endMs, text: cues[i].text),
+    ],
+    maxFrames: maxFrames,
+    minGapMs: minGapMs,
+  );
+}
+
+/// [planSubtitleReferenceFrames] 的规则本身，不绑字幕管线的行类型：转录稿校对
+/// （`AsrTranscriptProofreader`，行是 `AsrCue`）用同一套取法。
+List<int> planReferenceFrameTimes(
+  Iterable<({int startMs, int endMs, String text})> lines, {
+  int maxFrames = kSubtitleReferenceFramesPerBatch,
+  int minGapMs = kSubtitleReferenceFrameMinGapMs,
+}) {
   if (maxFrames <= 0) return const <int>[];
   final List<int> picked = <int>[];
-  final int end = hi > cues.length ? cues.length : hi;
-  for (int i = lo < 0 ? 0 : lo; i < end; i++) {
-    final SubtitleDraftCue c = cues[i];
+  for (final ({int startMs, int endMs, String text}) c in lines) {
     if (c.text.trim().isEmpty) continue;
     final int span = c.endMs > c.startMs ? c.endMs - c.startMs : 0;
     final int at = c.startMs + span ~/ 2;

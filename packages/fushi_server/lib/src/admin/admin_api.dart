@@ -1623,6 +1623,7 @@ class AdminApi {
           ? null
           : AiReasoningEffort.fromStorageKey(effort),
       allowInsecureHttp: flag('allowInsecureHttp'),
+      images: flag('images'),
       webKnowledge: flag('webKnowledge'),
       libraryOrganize: flag('libraryOrganize'),
       agentForPeers: flag('agentForPeers'),
