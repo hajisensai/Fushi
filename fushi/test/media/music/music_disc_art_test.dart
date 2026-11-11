@@ -317,7 +317,10 @@ void main() {
     final Rect caseRect = tester.getRect(box);
     final Rect discRect = tester.getRect(find.byType(MusicDiscFace));
     expect(caseRect.width, closeTo(200 * kMusicDiscCaseFraction, 0.01));
+    // 盘整张可见：画在盒子上面、完整落在格子里，且大部分不与盒子重叠。
+    expect(discRect.width, closeTo(200 * kMusicDiscDiameterFraction, 0.01));
     expect(discRect.right, greaterThan(caseRect.right));
+    expect(discRect.bottom, greaterThan(caseRect.bottom));
     for (final Rect r in <Rect>[caseRect, discRect]) {
       expect(
         cell.contains(r.topLeft) &&
@@ -341,10 +344,11 @@ void main() {
     );
   });
 
-  test('悬停时盘仍不出界', () {
-    const double peek = kMusicDiscCaseFraction + kMusicDiscPeekHover;
-    expect(peek, lessThanOrEqualTo(1));
-    expect(kMusicDiscDiameterFraction, lessThanOrEqualTo(1));
+  test('盒子与盘互相只压一角', () {
+    // 盘在右下、盒子在左上：两者重叠边长 < 盘直径的一半，盘面大部分露在盒外。
+    const double overlap =
+        kMusicDiscCaseFraction - (1 - kMusicDiscDiameterFraction);
+    expect(overlap, lessThan(kMusicDiscDiameterFraction / 2));
   });
 }
 

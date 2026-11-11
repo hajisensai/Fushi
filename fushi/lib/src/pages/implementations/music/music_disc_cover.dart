@@ -1,6 +1,7 @@
 /// 专辑封面位上的**盒子 + 盘面**（用户 2026-11-11：「让盒子封面和盘面都显示」）：专辑有
-/// 真实的盘面扫描（[MusicDiscArtService]）时，封面（盒子）在前，真盘面从盒子右侧滑出一截，
-/// 悬停时再多滑出一点并转一下；没有盘面扫描就只画原来的方形封面，不拿封面假造盘面。
+/// 真实的盘面扫描（[MusicDiscArtService]）时，盒子（封面）在左上、整张盘在右下压住盒子一角，
+/// 盘面完整可见——不靠悬停，手机上一样看得全（用户 2026-11-11：盘被挡住就没意义）；
+/// 桌面悬停时盘只转一下。没有盘面扫描就只画原来的方形封面，不拿封面假造盘面。
 library;
 
 import 'dart:async';
@@ -16,15 +17,11 @@ import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 /// 悬停时盘转过的圈数。
 const double kMusicDiscHoverTurns = 0.08;
 
-/// 有盘时盒子（封面）占封面位边长的比例。
-const double kMusicDiscCaseFraction = 0.80;
+/// 有盘时盒子（封面）占封面位边长的比例，贴左上角。
+const double kMusicDiscCaseFraction = 0.68;
 
-/// 盘的直径占封面位边长的比例（比盒子略小，像盘从盒里抽出）。
-const double kMusicDiscDiameterFraction = 0.76;
-
-/// 盘露出盒子右缘的宽度（占封面位边长）：静止 / 悬停。
-const double kMusicDiscPeekRest = 0.12;
-const double kMusicDiscPeekHover = 0.19;
+/// 盘的直径占封面位边长的比例，贴右下角、画在盒子上面（整张可见）。
+const double kMusicDiscDiameterFraction = 0.62;
 
 /// 一张真盘面扫描：圆形裁切 + 投影；[hovering] 时转一个小角度（时长走动效令牌，
 /// 系统关动画时直接到位）。
@@ -75,8 +72,7 @@ class MusicDiscFace extends StatelessWidget {
   }
 }
 
-/// 盒子 + 盘的组合（方形封面位里）：盘在后、垂直居中，从盒子右缘露出
-/// [kMusicDiscPeekRest]（悬停 [kMusicDiscPeekHover]）。
+/// 盒子 + 盘的组合（方形封面位里）：盒子贴左上，盘贴右下压在盒子上，两者都不出格。
 class MusicDiscCaseAndFace extends StatelessWidget {
   const MusicDiscCaseAndFace({
     super.key,
@@ -103,18 +99,21 @@ class MusicDiscCaseAndFace extends StatelessWidget {
             : (size ?? 200);
         final double caseSide = side * kMusicDiscCaseFraction;
         final double disc = side * kMusicDiscDiameterFraction;
-        final double peek = hovering ? kMusicDiscPeekHover : kMusicDiscPeekRest;
-        final double top = (side - caseSide) / 2;
         final double dpr = MediaQuery.devicePixelRatioOf(context);
         return SizedBox.square(
           dimension: side,
           child: Stack(
             children: <Widget>[
-              AnimatedPositioned(
-                duration: fushiMotionDuration(context, FushiMotion.long),
-                curve: Curves.easeOutCubic,
-                left: caseSide + side * peek - disc,
-                top: (side - disc) / 2,
+              Positioned(
+                left: 0,
+                top: 0,
+                width: caseSide,
+                height: caseSide,
+                child: cover,
+              ),
+              Positioned(
+                right: 0,
+                bottom: 0,
                 width: disc,
                 height: disc,
                 child: MusicDiscFace(
@@ -122,13 +121,6 @@ class MusicDiscCaseAndFace extends StatelessWidget {
                   hovering: hovering,
                   cacheSize: (disc * dpr).round(),
                 ),
-              ),
-              Positioned(
-                left: 0,
-                top: top,
-                width: caseSide,
-                height: caseSide,
-                child: cover,
               ),
             ],
           ),
