@@ -1253,6 +1253,11 @@ abstract class VideoFushiTestHooks {
   /// 当前 controller 读到的媒体时长（毫秒）；未就绪为 null/0。
   int? get debugDurationMs;
 
+  /// 播放器此刻是否在缓冲 / 网络流的缓冲深度（秒；非网络流或尚无读数为 null）——
+  /// 自适应画质判据的两个输入（BUG-4459），真机取证时逐秒留痕用。
+  bool get debugIsBuffering;
+  double? get debugNetworkCacheSeconds;
+
   /// 制卡 GIF/帧的抽取源（YouTube=低分辨率 miningVideoUrl；本地=videoPath）。
   String? get debugMiningSource;
 
@@ -1840,6 +1845,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   @override
   int? get debugPositionMs => _controller?.positionMs;
+
+  @override
+  bool get debugIsBuffering => _controller?.isBuffering ?? false;
+
+  @override
+  double? get debugNetworkCacheSeconds =>
+      _controller?.networkCacheSeconds.value;
 
   @override
   bool get debugIsWebBackend => _controller?.isWebBackend ?? false;
