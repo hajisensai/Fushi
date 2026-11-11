@@ -311,6 +311,10 @@ pub struct Obsolete {
     /// 还有旧小段只差 [Self::delete] 里的旧 head 确认删掉：这一份清单**全部**删成并回执（`obsolete_ack`）之后，同一轮
     /// 里再问一次就给。没全部删成就不必再问（下一轮照样从头给）。
     pub again: bool,
+    /// 本机的旧身份（换身份之前用的设备 id，设计 §7.3）里，这个位置上此刻该去看一眼目录的（former.rs）：调用方列
+    /// `devices/<它>/`、读其中的 head，交给 [SrsCore::sync2_obsolete_former]。没换过身份 / 还没到该看的时候 / 归档
+    /// 位置 = 空。
+    pub former: Vec<String>,
 }
 
 /// [location] 上此刻该删、还没确认删掉的文件。[below] = [head_retire_below]（位置上最新的本机 head 代号）。只读，不改表。
@@ -324,8 +328,9 @@ pub struct Obsolete {
 ///   以前还要等所有没冻结的其它设备在 head 里 ack 越过它，而对端重装 / 换身份 / 长期休眠时它的 ack 永远不动 →
 ///   `devices/<本机>/` 只增不减；删除安全只取决于「还有没有 head 引用它」，与别的设备应用到哪无关（它们缺的操作在
 ///   合并后的段里，同一 seq 区间）（审查 S-5）。
-/// - 只给**本机当前身份目录**下的：换过身份（设计 §7.3，[rotate]）之后旧身份的目录不归本机清——那里留着的 head 本机
-///   不再更新、也不再删，同一身份的另一个安装还在往里写，上面的推理对它不成立（BUG-4324）。
+/// - 只给**本机当前身份目录**下的：换过身份（设计 §7.3，[rotate]）之后旧身份的目录不归这条规则清——那里留着的 head
+///   本机不再更新，同一身份的另一个安装还在往里写，上面的推理对它不成立（BUG-4324）。旧目录下的记录在换身份时就
+///   作废了，那个目录另按当场的证据清（former.rs：只删被盖过的旧 head，段不删）。
 /// - 加上转发清理（relay.rs `sync2_relay_ack`）留下的被取代的旧转发件 / 旧转发 head。
 ///
 /// 归档位置（[archive]，只写不删）：Dart 对清单只回执、不删，旧 head 本来就都留着，不等它们。
@@ -406,6 +411,7 @@ fn pending_deletes(
     Ok(Obsolete {
         delete: names,
         again,
+        former: Vec::new(),
     })
 }
 
@@ -2164,6 +2170,8 @@ pub(crate) fn rotate(
         params![profile, old.device.0.to_vec(), keep as i64, chain_at(conn, profile, &old.device, keep)?.unwrap_or(CHAIN_ZERO).to_vec()],
     )
     .map_err(sql)?;
+    // 旧身份目录下的待删记录作废：那个目录从此不归代号规则管（former.rs）。
+    super::former::drop_rows(conn, profile, &old.device)?;
     // 各位置的上传进度记的是本机身份的 seq：新身份从 1 开始，进度归零（否则新段会被当成已传过）。
     conn.execute(
         "UPDATE sync2_locations SET uploaded = 0 WHERE profile_uid = srs_id(?1)",
@@ -2674,6 +2682,8 @@ impl SrsCore {
     /// - 列到的本机 head 里代号低于 [head_retire_below] 的登记进待删表（head 行，见 [stamp_obsolete]），与旧小段同一
     ///   张表、同一份清单、同样两段式：删成功后 `obsolete_ack`（[Self::sync2_obsolete_ack]）才移除，没确认的下一轮照样
     ///   再给。别的设备转发进本机目录的本机旧 head（relay.rs）同样是列到就按代号处理。
+    /// - 换过身份的设备：旧身份的目录不在这份清单里（[pending_deletes]），该去看的旧身份列在 [Obsolete::former]，
+    ///   由 [Self::sync2_obsolete_former] 另判（former.rs）。
     /// - 旧小段要等可能引用它的旧 head 都确认删掉才给（[pending_deletes]）：**段的删除永远不早于最后一份引用它的 head
     ///   被删**。被这份清单里的旧 head 拦住的旧小段用 [Obsolete::again] 告诉调用方：清单全部删成并回执后，把删掉的
     ///   文件从 [present] 里去掉再问一次（同一轮），旧小段就与以前在同一轮删掉。
@@ -2729,7 +2739,9 @@ impl SrsCore {
                     .map_err(sql)?;
                 }
             }
-            pending_deletes(c, &local, location, below, now, archive)
+            let mut out = pending_deletes(c, &local, location, below, now, archive)?;
+            out.former = super::former::due(c, &local, location, archive, now)?;
+            Ok(out)
         })
     }
 

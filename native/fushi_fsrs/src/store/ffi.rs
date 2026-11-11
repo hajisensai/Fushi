@@ -1214,6 +1214,7 @@ const CHANNEL_TRANSPARENT: &[&str] = &[
     "head",
     "relay_outbox",
     "obsolete",
+    "obsolete_former",
     "obsolete_ack",
     "relay_ack",
     "media_known",
@@ -1495,7 +1496,30 @@ fn sync2_command(
                 .collect();
             let archive = req.get("archive") == Some(&Value::Bool(true));
             let out = c.sync2_obsolete(profile, s("location")?, &present, archive, i("now")?)?;
-            json!({"delete": out.delete, "again": out.again})
+            json!({"delete": out.delete, "again": out.again, "former": out.former})
+        }
+        // 换过身份的设备清旧身份的目录（store/sync2/former.rs）：`obsolete` 回复的 `former` 里点名的旧身份，Dart 列
+        // `devices/<device>/`（`present`）、读其中每一份 head（blobs），这里给出证明得了可以删的（只会是被盖过的旧
+        // head）。没有待删记录，删完不必回执。
+        "obsolete_former" => {
+            let present: Vec<String> = req
+                .get("present")
+                .and_then(Value::as_array)
+                .ok_or("sync2: missing present")?
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_owned)
+                .collect();
+            let archive = req.get("archive") == Some(&Value::Bool(true));
+            json!({"delete": c.sync2_obsolete_former(
+                profile,
+                s("location")?,
+                s("device")?,
+                &present,
+                blobs,
+                archive,
+                i("now")?,
+            )?})
         }
         // 两段式删除：`obsolete` / `relay_ack` 给的待删清单里 Dart 已经删掉（归档位置：按策略不删）的那些，内核移除记录。
         "obsolete_ack" => {

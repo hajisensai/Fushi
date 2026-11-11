@@ -50,21 +50,56 @@ pub(crate) fn listed(bucket: &Bucket, device: &str) -> Vec<String> {
 
 /// 一轮收尾，按生产（srs_sync2_round.dart `srsSweepObsolete`）：head 传上去之后列本机目录 → 内核给该删的清单
 /// （transport.rs `sync2_obsolete`：旧 head + 旧小段 + 旧转发件）→ 两段式删；清单全部删成、内核说还有只差这份清单
-/// 确认的旧小段（`again`）就再问一次。返回内核两次给的清单。
+/// 确认的旧小段（`again`）就再问一次。内核点名的旧身份目录（`former`）接着照 [sweep_former] 清。返回内核两次给的
+/// 本机目录的清单（不含旧身份目录里删的）。
 pub(crate) fn sweep(core: &SrsCore, bucket: &mut Bucket, location: &str, now: i64) -> Vec<String> {
     let device = core.sync2_identity(P, now).unwrap()["device"]
         .as_str()
         .unwrap()
         .to_owned();
     let mut given = Vec::new();
-    for _ in 0..2 {
+    let mut former = Vec::new();
+    for ask in 0..2 {
         let out = core
             .sync2_obsolete(P, location, &listed(bucket, &device), false, now)
             .unwrap();
+        if ask == 0 {
+            former = out.former;
+        }
         delete_and_ack(core, bucket, location, &out.delete);
         given.extend(out.delete);
         if !out.again || FAIL_DELETES.with(|f| f.get()) {
             break;
+        }
+    }
+    for old in former {
+        sweep_former(core, bucket, location, &old, now);
+    }
+    given
+}
+
+/// 换过身份的设备清一个旧身份目录，按生产（srs_sync2_round.dart `srsSweepFormerIdentities`）：**此刻**列
+/// `devices/<旧身份>/`、读其中每一份 head、交给内核（former.rs `sync2_obsolete_former`），内核给的清单照删（没有待删
+/// 记录，不回执）。返回内核给的清单。
+pub(crate) fn sweep_former(
+    core: &SrsCore,
+    bucket: &mut Bucket,
+    location: &str,
+    device: &str,
+    now: i64,
+) -> Vec<String> {
+    let present = listed(bucket, device);
+    let heads: Vec<Vec<u8>> = present
+        .iter()
+        .filter(|n| n.starts_with("head-"))
+        .map(|n| bucket.0[&format!("devices/{device}/{n}")].clone())
+        .collect();
+    let given = core
+        .sync2_obsolete_former(P, location, device, &present, &heads, false, now)
+        .unwrap();
+    if !FAIL_DELETES.with(|f| f.get()) {
+        for p in &given {
+            bucket.0.remove(p);
         }
     }
     given
