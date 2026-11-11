@@ -318,10 +318,16 @@ inline constexpr uint8_t kRecordCodePushTBytes[] = {0x0f, 0xb7, 0x47, 0x04,
                                                     0x50};
 inline constexpr uint8_t kCharImageCallTBytes[] = {0xff, 0x56, 0x04};
 inline constexpr size_t kRecordCharTScanBytes = 0x60u;
-// Epilogue: two stack arguments (record, target image).
+// Epilogue: the prologue's 0xcc-byte frame released, two stack arguments
+// (record, target image) popped, then int3 padding.  Its distance from the
+// entry is not fixed across builds (+0x298 on the VS2017 cs2 2.6.1.90 build,
+// +0x29e on the VS2013 one, whose body interleaves the GetCharImage argument
+// loads differently), so the proof takes the first such epilogue after the
+// pen block, within kRenderTMaxBodyBytes, as the end of the body.
 inline constexpr uint8_t kRenderTailTBytes[] = {0x81, 0xc4, 0xcc, 0x00, 0x00,
                                                 0x00, 0xc2, 0x08, 0x00, 0xcc};
-inline constexpr size_t kRenderTailTOffset = 0x298u;
+inline constexpr size_t kRenderTailTOffset = 0x298u;  // VS2017 build (tests)
+inline constexpr size_t kRenderTMaxBodyBytes = 0x400u;
 inline constexpr uint32_t kRenderTStackArgs = 2u;
 // The vtable entry GetCharImage must be found through.
 inline constexpr size_t kCharImageVtableSlot = 1u;
@@ -802,6 +808,15 @@ inline bool FindVirtualCharImage(const exact::LoadedPeImage& image,
   return true;
 }
 
+// First start of `needle` in code[begin, end), or SIZE_MAX.
+inline size_t IndexOf(const uint8_t* code, size_t begin, size_t end,
+                      const uint8_t* needle, size_t size) {
+  for (size_t at = begin; at + size <= end; ++at) {
+    if (std::memcmp(code + at, needle, size) == 0) return at;
+  }
+  return SIZE_MAX;
+}
+
 // Last start of `needle` in code[begin, end), or SIZE_MAX.
 inline size_t LastIndexOf(const uint8_t* code, size_t begin, size_t end,
                           const uint8_t* needle, size_t size) {
@@ -1260,12 +1275,15 @@ inline SiteResult ResolveTargetedRenderSites(
                                  sizeof(kRenderTBytes));
   if (render.count != 1u) return SiteResult::kPageMissing;
   const uint8_t* entry = render.address;
+  constexpr size_t kPenEnd = kRecordPenTOffset + sizeof(kRecordPenTBytes);
+  const size_t tail =
+      exact::IsReadableSpan(entry, kRenderTMaxBodyBytes)
+          ? IndexOf(entry, kPenEnd, kRenderTMaxBodyBytes, kRenderTailTBytes,
+                    sizeof(kRenderTailTBytes))
+          : SIZE_MAX;
   if (!MatchesAt(entry + kRecordPenTOffset, kRecordPenTBytes, nullptr,
                  sizeof(kRecordPenTBytes)) ||
-      !MatchesAt(entry + kRenderTailTOffset, kRenderTailTBytes, nullptr,
-                 sizeof(kRenderTailTBytes)) ||
-      !HasVirtualCharImageCall(entry, kRenderTailTOffset,
-                               kRecordPenTOffset + sizeof(kRecordPenTBytes))) {
+      tail == SIZE_MAX || !HasVirtualCharImageCall(entry, tail, kPenEnd)) {
     return SiteResult::kRecordInvalid;
   }
   uintptr_t char_image = 0u;
