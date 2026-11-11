@@ -950,14 +950,6 @@ bool UmLanesSelected(uintptr_t object, uint8_t lane_hooks, uint64_t selected) {
   return false;
 }
 
-// Text-path setter detour (main thread, after a line was published):
-// remember the object for the per-frame sampler.  Only TextMeshProUGUI /
-// UI.Text objects (the samplers' field offsets are those classes').  A full
-// table evicts a dead object first, then the least recently written one --
-// never the object whose own lane is the host-selected thread: a game with
-// more than kInstanceSlots UI texts rewritten after each line (measured: the
-// table stayed full of 8 fresh instances while the dialogue lane was
-// selected) otherwise pushes the dialogue out before its line is matched.
 // The dialogue surface after this frame (main thread, end of the canvas
 // update): mark the leader's lane (g_unity_dialogue_surface_thread, read by
 // every Unity text event) and report the lanes whose mark changed.
@@ -990,6 +982,18 @@ void UpdateUmDialogueSurface(umono_dialogue::SurfaceChange* change) {
   rt.dialogue_changes.fetch_add(1u, std::memory_order_release);
 }
 
+// Text-path setter detour (main thread, after a line was published):
+// remember the object for the per-frame sampler and feed its text to the
+// dialogue-surface proof.  Only TextMeshProUGUI / UI.Text objects (the
+// samplers' field offsets are those classes').  A full table evicts a dead
+// object first, then -- among surfaces with no counted commit before any
+// with one -- the one whose text changed least recently (an identical
+// reassignment is not a change) -- never the object whose own lane is the
+// host-selected thread, nor the proven dialogue surface: a game with more
+// than kInstanceSlots UI texts rewritten after each line (measured: the table
+// stayed full of 8 fresh instances while the dialogue lane was selected)
+// otherwise pushes the dialogue out before its line is matched, or before it
+// can be proven.
 void RememberUmTmpCandidateOnMain(void* component, uint8_t lane,
                                   const wchar_t* chars, int length) {
   auto& rt = g_um_lookup;
@@ -1032,8 +1036,14 @@ void RememberUmTmpCandidateOnMain(void* component, uint8_t lane,
       // Nor the proven dialogue surface (the host may not have selected it
       // yet).
       if (i == rt.dialogue_surface) continue;
+      const bool counted = rt.surfaces[i].score > 0u;
+      const bool oldest_counted =
+          oldest != umono_lookup::kInstanceSlots &&
+          rt.surfaces[oldest].score > 0u;
       if (oldest == umono_lookup::kInstanceSlots ||
-          entry.written_ms < rt.tmp_candidates[oldest].written_ms) {
+          (!counted && oldest_counted) ||
+          (counted == oldest_counted &&
+           entry.written_ms < rt.tmp_candidates[oldest].written_ms)) {
         oldest = i;
       }
     }
@@ -1056,14 +1066,16 @@ void RememberUmTmpCandidateOnMain(void* component, uint8_t lane,
     }
   }
   rt.tmp_candidates[slot].lane_hooks |= lane;
-  rt.tmp_candidates[slot].written_ms = now;
   wchar_t clean[umono_dialogue::kMaxTrackedUnits];
   const size_t clean_length = umono_dialogue::StripRichText(
       chars, length > 0 ? static_cast<size_t>(length) : 0u, clean,
       umono_dialogue::kMaxTrackedUnits);
-  umono_dialogue::NoteSurfaceText(
+  const umono_dialogue::TextOutcome outcome = umono_dialogue::NoteSurfaceText(
       &rt.surfaces[slot], clean, clean_length, lane,
       rt.advance_inputs.load(std::memory_order_acquire));
+  if (outcome.step != umono_dialogue::TextStep::kSame) {
+    rt.tmp_candidates[slot].written_ms = now;
+  }
 }
 
 void RememberUmTmpCandidateGuarded(void* component, uint8_t lane,

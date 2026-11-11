@@ -2883,6 +2883,83 @@ class AdapterStructureTest(unittest.TestCase):
             self.assertNotIn(forbidden, remember)
         self.assertIn("ResolveUnityMonoFungusLookup(api, runtime)", scope)
 
+    def test_unity_mono_dialogue_surface_is_structural_and_wired(self) -> None:
+        """Unity Mono 对白面：判据只来自结构（显示 / 推进输入 / 替换），不认标题；
+
+        setter 喂文本、画布更新后喂「是否上屏」、每帧评估一次并在 SEH 保护区外发布；
+        窗口过程只数输入；所有主线程回调不做 IO / 日志；标记经同一个文本道写入口带出。"""
+        core = self._strip_comments(
+            (ROOT / "hook" / "adapters" / "unity_mono_dialogue_core.h").read_text(
+                encoding="utf-8"
+            )
+        )
+        runtime = self._strip_comments(
+            (ROOT / "hook" / "adapters" / "unity_mono_lookup.inc").read_text(
+                encoding="utf-8"
+            )
+        )
+        adapter = self._strip_comments(
+            (ROOT / "hook" / "adapters" / "unity_mono_adapter.inc").read_text(
+                encoding="utf-8"
+            )
+        )
+        unity = self._strip_comments(
+            (ROOT / "hook" / "adapters" / "unity_adapter.inc").read_text(
+                encoding="utf-8"
+            )
+        )
+        for forbidden in ("sha256", "getmodulefilename", "kindaichi",
+                          "teikan", "altair", "exe_name", "window_title"):
+            self.assertNotIn(forbidden, core.lower(), forbidden)
+        # The commit verdict needs all three structural facts.
+        note = self._function_body(core, "inline TextOutcome NoteSurfaceText(")
+        for proof in ("pending_shown", "counted_hash", "pending_inputs",
+                      "ClassifyTextStep("):
+            self.assertIn(proof, note)
+        # Setter feeds the text, the canvas update feeds visibility, the frame
+        # evaluates and publishes (outside the SEH-guarded remember).
+        remember = self._function_body(
+            runtime, "void RememberUmTmpCandidateOnMain(")
+        self.assertIn("NoteSurfaceText(", remember)
+        self.assertIn("advance_inputs", remember)
+        self.assertNotIn("UpdateUmDialogueSurface(", remember)
+        self.assertNotIn("WriteUnityTextEvent(", remember)
+        frame = self._function_body(
+            runtime, "void FUSHI_MONO_MANAGED_CALL UmTmpWillRenderDetour(")
+        self.assertLess(frame.index("NoteSurfaceShown("),
+                        frame.index("UpdateUmDialogueSurface("))
+        self.assertIn("PublishUnityMonoDialogueSurfaceChange(", frame)
+        self.assertIn("kUmSampleOk", frame)
+        proc = self._function_body(runtime, "LRESULT CALLBACK UmLookupWindowProc(")
+        self.assertIn("IsAdvanceInputMessage(", proc)
+        # The input is counted only after a claimed press returned.
+        self.assertLess(proc.index("if (decision.swallow) return 0;"),
+                        proc.index("advance_inputs.fetch_add("))
+        for name, source in (
+            ("void RememberUmTmpCandidateOnMain(", runtime),
+            ("void FUSHI_MONO_MANAGED_CALL UmTmpWillRenderDetour(", runtime),
+            ("void UpdateUmDialogueSurface(", runtime),
+            ("void PublishUnityMonoDialogueLane(", adapter),
+        ):
+            body = self._function_body(source, name)
+            for forbidden in ("UmLookupLog(", "CreateFile", "WriteFile",
+                              "malloc(", "std::wstring", "runtime_invoke",
+                              "thread_attach", "Sleep("):
+                self.assertNotIn(forbidden, body, name)
+        # The mark travels on every Unity text event through the one writer.
+        write = self._function_body(unity, "void WriteUnityTextEvent(")
+        self.assertIn("g_unity_dialogue_surface_thread", write)
+        self.assertIn("kTextEventFlagDialogueSurface", write)
+        # The subclass is bound before the lookup-enabled gate (inputs are
+        # counted with the lookup off), and the claim stays gated.
+        tick = self._function_body(runtime, "void ProcessUnityMonoLookupTick(")
+        self.assertLess(tick.index("InstallUmSubclass("),
+                        tick.index("lookup_enabled"))
+        eligible = self._function_body(runtime, "bool UmPressEligible(")
+        self.assertIn("lookup_enabled", eligible)
+        # The dialogue surface is never evicted before the host selects it.
+        self.assertIn("rt.dialogue_surface", remember)
+
     def test_unity_mono_voice_is_bundle_proven_and_callbacks_stay_bounded(
         self,
     ) -> None:
