@@ -105,6 +105,8 @@ pub(crate) const DRIFT_TX_POLICY: &[(&str, DriftTxPolicy)] = &[
     ("conflicts", ReadVisible),
     ("checkpoints", ReadVisible),
     ("history", ReadVisible),
+    // 编辑类撤销的裁决（store/sync2/undo_check.rs）：只读，按修改记录判每个字段键能不能撤。
+    ("undo_check", ReadVisible),
     ("location_sealed", ReadVisible),
     ("media_known", ReadVisible),
     ("profile_footprint", ReadVisible),
