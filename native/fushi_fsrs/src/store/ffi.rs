@@ -1200,6 +1200,7 @@ fn cache_config_of(
 const LOCAL_WRITE_OPS: &[&str] = &[
     "apply",
     "sched",
+    "deck_delete",
     "import",
     "resolve",
     "purge",
@@ -1319,6 +1320,8 @@ fn local_write_body(
         }
         // 本机手动排程操作（重置 / 改期 / 撤销 / 立即重排）：显式意图，内核算结果并落库（store/sync2/sched_local.rs）。
         "sched" => s2::sched_local::sched_local_on(conn, profile, now, req)?,
+        // 删牌组（连同子牌组）：显式意图，分步（store/sync2/deck_delete.rs）；`done` 为假就带着 `token` 再发。
+        "deck_delete" => s2::deck_delete::deck_delete_on(conn, profile, now, req)?,
         // 存量重复流收敛作业推进一步（store/sync2/dedup.rs）；`done` 为假就再发。
         "dedup" => s2::dedup::dedup_on(conn, profile, now)?,
         "import" => s2::transport::import_on(
@@ -1502,6 +1505,7 @@ const CHANNEL_TRANSPARENT: &[&str] = &[
 const CHANNEL_SETTLES: &[&str] = &[
     "apply",
     "sched",
+    "deck_delete",
     "retire",
     "dedup",
     "migrate",
@@ -1533,6 +1537,7 @@ const CHANNEL_SETTLES: &[&str] = &[
 const PROJECTING_OPS: &[&str] = &[
     "apply",
     "sched",
+    "deck_delete",
     "retire",
     "ingest",
     "ingest_batch",

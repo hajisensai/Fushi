@@ -11,6 +11,7 @@
 
 pub(crate) mod channel;
 pub mod config;
+pub(crate) mod deck_delete;
 pub(crate) mod dedup;
 pub(crate) mod devices;
 pub mod digest;
@@ -2466,6 +2467,8 @@ mod tests_causal;
 mod tests_channel;
 #[cfg(test)]
 mod tests_copy_migration_bench;
+#[cfg(test)]
+mod tests_deck_delete;
 #[cfg(test)]
 mod tests_dedup;
 #[cfg(test)]

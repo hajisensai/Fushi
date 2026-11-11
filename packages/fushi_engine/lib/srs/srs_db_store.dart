@@ -2075,6 +2075,7 @@ class SrsDbStore implements SrsSync2Host {
   static const Set<String> kSrsSync2ProjectingOps = <String>{
     'apply',
     'sched',
+    'deck_delete',
     'retire',
     'ingest',
     'ingest_batch',
@@ -2122,6 +2123,7 @@ class SrsDbStore implements SrsSync2Host {
   static const Set<String> _kSync2CacheOps = <String>{
     'apply',
     'sched',
+    'deck_delete',
     'ingest',
     'ingest_batch',
     'ingest_commit',
@@ -3279,23 +3281,21 @@ class SrsDbStore implements SrsSync2Host {
     return parent!;
   }
 
-  /// 删牌组每块的卡数（一块一个独占区 + 一个事务 + 一次缓存刷新）。
+  /// 删牌组每步处理的实体数（笔记 + 卡；一步一个独占区、一条内核命令）。
   static const int _deleteDeckChunk = 500;
 
   /// 删牌组（连同全部子牌组）：子树里的卡移到被删牌组的父牌组（没有父牌组则到默认牌组），每张卡
   /// 一条修改记录；卡都移完后给子树里每个牌组写删除标记。
   ///
-  /// 按块（每块 [_deleteDeckChunk] 张卡）走：块内现值一次预读、序号紧接着分配、一次落库一次刷新缓存，
-  /// 都在同一个独占区里；块与块之间别的写入（复习评分）照常插进来，不被一个长事务卡住。记录、顺序、
-  /// 「值没变的卡不写」都与以前逐张 `editField` 相同；中途被杀时已提交的块留在库里（以前逐张一个事务
-  /// 也是这样），删除标记在最后，再删一次即补齐。
+  /// 这里只发意图，找卡、判「值没变的卡不写」、落修改记录都在内核（native/fushi_fsrs/src/store/sync2/deck_delete.rs
+  /// `deck_delete`）：先一步只数（有要删的笔记就顺手打还原点，设计 §10.2），再按步（每步 [_deleteDeckChunk] 个实体、
+  /// 一个独占区）走，步与步之间别的写入（复习评分、后台导入）照常插进来；卡取完的那一步在同一笔里重读子树、扫一遍
+  /// 期间放进来的笔记 / 卡，再写删除标记。记录、顺序都与逐张 `editField` 相同；中途被杀时已提交的步留在库里，
+  /// 删除标记在最后，再删一次即补齐。[onProgress] 按实体数报进度。
   ///
-  /// 以前每张卡一次 `editField`：各自读两次现值、一个事务、一次缓存刷新（含一次修改记录全表扫描）、
-  /// 一次存本机状态，几千张卡的牌组要几万次往返、几十秒（BUG-3543）。[onProgress] 按卡数报进度。
-  ///
-  /// [deleteCards] 为真时（Anki「删除牌组」的语义）先删掉只在这个子树里有卡的笔记（每块一个独占区，
-  /// 进度里笔记数在前），之后照样把子树里的卡移走——删掉的笔记的卡已隐藏，移走只是让「恢复笔记」后
-  /// 卡不落在已删除的牌组里。Fushi 只能整条删笔记：在子树外还有卡的笔记不删，它在子树里的卡照常移走。
+  /// [deleteCards] 为真时（Anki「删除牌组」的语义）先删掉只在这个子树里有卡的笔记（进度里笔记数在前），之后照样把
+  /// 子树里的卡移走——删掉的笔记的卡已隐藏，移走只是让「恢复笔记」后卡不落在已删除的牌组里。Fushi 只能整条删笔记：
+  /// 在子树外还有卡的笔记不删，它在子树里的卡照常移走。
   ///
   /// 返回这次写了删除标记的笔记（[deleteCards] 为假时为空）。删除标记只是墓碑：正文、复习日志、
   /// 媒体留到墓碑过了同步安全期才由 srs_purge.dart 物理清除；从没同步过的副本可以当场清除
@@ -3308,119 +3308,59 @@ class SrsDbStore implements SrsSync2Host {
     if (deckId == defaultDeckId) {
       throw StateError('the default deck cannot be deleted');
     }
-    final SrsDeckTree tree = await deckTree();
-    final List<String> sub = tree.subtree(deckId);
-    final String target = tree.parentOf(deckId) ?? defaultDeckId;
-    final List<String> notes = deleteCards
-        ? await _notesOnlyInDecks(sub)
-        : const <String>[];
-    final List<String> cards = await _cardIdsInDecks(sub);
-    final int total = notes.length + cards.length;
-    // 批量删除之前自动打还原点（设计 §10.2），删错了能从时间线回到这一刻。
-    if (notes.isNotEmpty) {
-      await sync2Checkpoint(tree.fullName(deckId), 'bulk_delete');
-    }
-    onProgress?.call(0, total);
     final (int deletedAt, _) = now();
-    for (int i = 0; i < notes.length; i += _deleteDeckChunk) {
-      final List<String> chunk = notes.sublist(
-        i,
-        min(i + _deleteDeckChunk, notes.length),
-      );
-      await runExclusive(
-        () => _editEach(
-          SrsEntityKind.note,
-          chunk,
-          SrsFieldKeys.deleted,
-          deletedAt,
-        ),
-      );
-      onProgress?.call(i + chunk.length, total);
-    }
-    for (int i = 0; i < cards.length; i += _deleteDeckChunk) {
-      final List<String> chunk = cards.sublist(
-        i,
-        min(i + _deleteDeckChunk, cards.length),
-      );
-      await runExclusive(
-        () =>
-            _editEach(SrsEntityKind.card, chunk, SrsFieldKeys.cardDeck, target),
-      );
-      onProgress?.call(notes.length + i + chunk.length, total);
-    }
-    // 收尾在一个独占区里：子树、目标牌组、子树里还剩的卡都**在这里重读**——分块期间别的写入
-    // （后台导入把卡放进这个子树、建了新的子牌组、挪走了父牌组）已经落库，按开头那份快照写删除
-    // 标记会把它们留在已删除的牌组下面。重读与写删除标记之间没有别的写入能插进来。
-    final List<String> deletedNotes = <String>[...notes];
-    await runExclusive(() async {
-      final SrsDeckTree now0 = await deckTree();
-      if (now0[deckId] == null) return; // 期间已被别处删掉
-      final List<String> subNow = now0.subtree(deckId);
-      final String targetNow = now0.parentOf(deckId) ?? defaultDeckId;
-      if (deleteCards) {
-        final List<String> lateNotes = await _notesOnlyInDecks(subNow);
-        deletedNotes.addAll(lateNotes);
-        for (int i = 0; i < lateNotes.length; i += _deleteDeckChunk) {
-          await _editEach(
-            SrsEntityKind.note,
-            lateNotes.sublist(i, min(i + _deleteDeckChunk, lateNotes.length)),
-            SrsFieldKeys.deleted,
-            deletedAt,
-          );
-        }
-      }
-      final List<String> late = await _cardIdsInDecks(subNow);
-      for (int i = 0; i < late.length; i += _deleteDeckChunk) {
-        await _editEach(
-          SrsEntityKind.card,
-          late.sublist(i, min(i + _deleteDeckChunk, late.length)),
-          SrsFieldKeys.cardDeck,
-          targetNow,
-        );
-      }
-      final (int nowMs, _) = now();
-      await _editEach(SrsEntityKind.deck, subNow, SrsFieldKeys.deleted, nowMs);
+    Map<String, Object?> r = await _deckDeleteStep(<String, Object?>{
+      'deck': deckId,
+      'deleteCards': deleteCards,
+      'plan': true,
     });
+    final int total = (r['total']! as num).toInt();
+    // 总数先报一次：这之后、第一步之前排进来的写入（往这个牌组加卡、建子牌组）由收尾那一步处理。
+    onProgress?.call(0, total);
+    final List<String> deletedNotes = <String>[];
+    int done = 0;
+    Object? token;
+    while (r['done'] != true) {
+      r = await _deckDeleteStep(<String, Object?>{
+        'deck': deckId,
+        'deleteCards': deleteCards,
+        'limit': _deleteDeckChunk,
+        'token': ?token,
+        'deletedAt': deletedAt,
+      });
+      token = r['token'];
+      deletedNotes.addAll((r['notes']! as List<Object?>).cast<String>());
+      final int n = (r['count']! as num).toInt();
+      if (n > 0) {
+        done += n;
+        onProgress?.call(min(done, total), total);
+      }
+    }
+    // 步与步之间别的写入把卡移出了子树：按游标数到的比开头数的少，进度补到头。
+    if (done < total) onProgress?.call(total, total);
     return deletedNotes;
   }
 
-  /// 还没删、且卡全都归在 [deckIds] 这些牌组下的笔记（「连卡片一起删牌组」整条删掉的笔记）。
-  /// 有卡在别的牌组的笔记不算：删笔记会连带那些卡。
-  Future<List<String>> _notesOnlyInDecks(List<String> deckIds) async {
-    final Set<String> inside = <String>{
-      for (final SrsCardCacheRow c in await (db.select(
-        db.srsCardsCache,
-      )..where((c) => c.deckId.isIn(deckIds))).get())
-        c.noteId,
-    };
-    final Set<String> outside = <String>{};
-    for (final List<String> chunk in _chunks(inside)) {
-      for (final SrsCardCacheRow c
-          in await (db.select(
-                db.srsCardsCache,
-              )..where((c) => c.noteId.isIn(chunk) & c.deckId.isNotIn(deckIds)))
-              .get()) {
-        outside.add(c.noteId);
-      }
-    }
-    final List<String> out = <String>[];
-    for (final List<String> chunk in _chunks(inside.difference(outside))) {
-      for (final SrsNoteCacheRow n in await (db.select(
-        db.srsNotesCache,
-      )..where((n) => n.id.isIn(chunk) & n.deletedAt.isNull())).get()) {
-        out.add(n.id);
-      }
-    }
-    return out;
-  }
-
-  /// 缓存里归在 [deckIds] 这些牌组下的卡。
-  Future<List<String>> _cardIdsInDecks(List<String> deckIds) async => <String>[
-    for (final SrsCardCacheRow c in await (db.select(
-      db.srsCardsCache,
-    )..where((c) => c.deckId.isIn(deckIds))).get())
-      c.id,
-  ];
+  /// 删牌组的一步（内核 `deck_delete`，见 [deleteDeck]）：一个独占区、一条命令（命令本体、缓存刷新、本机状态行在内核
+  /// 的同一笔里）。旧版 HLC 时钟每条写入走一步，用这一步的「此刻」。
+  Future<Map<String, Object?>> _deckDeleteStep(Map<String, Object?> args) =>
+      runExclusive(() async {
+        late Map<String, Object?> r;
+        await _commandOrReload(() async {
+          final (int tickNow, SrsTimeSource source) = now();
+          r = await _sync2(<String, Object?>{
+            'op': 'deck_delete',
+            ...args,
+            'now': now().$1,
+            'legacyDevice': deviceId,
+            'tickNow': tickNow,
+            'ts': source.wire,
+            'localState': _localStateArg(),
+          });
+          _absorbLocalWrite(r);
+        });
+        return r;
+      });
 
   // ------------------------------------------------------------------ 墓碑物理清除（策略见 srs_purge.dart）
 
@@ -3444,26 +3384,6 @@ class SrsDbStore implements SrsSync2Host {
     final int before = _pendingMediaGc.length;
     _pendingMediaGc.removeAll(names);
     if (_pendingMediaGc.length != before) await _saveLocal();
-  }
-
-  /// 给 [ids] 每个实体的同一个字段键写同一个值（值没变的跳过）：现值一次预读，序号按 [ids] 的顺序
-  /// 分配，一次落库。与逐个 `editField` 同结果。调用方已在独占区里。
-  Future<void> _editEach(
-    SrsEntityKind kind,
-    List<String> ids,
-    String key,
-    Object? value,
-  ) async {
-    final Map<String, SrsEntityEdits> current = await _entityEditsMany(
-      kind,
-      ids,
-    );
-    final List<SrsEditDraft> drafts =
-        _changing(<(SrsEntityEdits?, String, Object?, SrsEditDraft)>[
-          for (final String id in ids)
-            (current[id]!, key, value, SrsEditDraft(kind, id, key, value)),
-        ]);
-    if (drafts.isNotEmpty) await _emit(drafts);
   }
 
   Future<SrsSchedulingConfig> schedulingConfigFor(String deckId) async =>

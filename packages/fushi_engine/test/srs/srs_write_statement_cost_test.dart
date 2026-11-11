@@ -184,6 +184,9 @@ void main() {
         'core=${e.value.core}',
       );
     }
+    // 第 7 步：删牌组只发意图（内核 `deck_delete`：先数一步、再一步做完这么小的牌组），Dart 不再读缓存表、读现值。
+    expect(costs['deleteDeck(child)'], (statements: 0, core: 2));
+    expect(costs['deleteDeck(deleteCards)'], (statements: 0, core: 2));
   });
 
   test('打开副本与缓存维护的语句数与内核命令数（第 4 步）', () async {
