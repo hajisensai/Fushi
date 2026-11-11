@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-11T13:52:02Z",
+ "generatedAt": "2026-11-11T14:06:05Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "75bd2199c533eef92dbaa126f439f9c7617ac271",
@@ -12,7 +12,7 @@
    "version": "3.3.0",
    "sha": "75bd2199c533eef92dbaa126f439f9c7617ac271",
    "unknown": false,
-   "publishedAt": "2026-11-11T13:51:50Z",
+   "publishedAt": "2026-11-11T14:05:47Z",
    "testflight": false,
    "baseSeq": 26444,
    "prs": [
@@ -25,16 +25,13 @@
      "state": "ok"
     },
     "windows": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43025317645"
+     "state": "ok"
     },
     "macos": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43025317645"
+     "state": "ok"
     },
     "ios": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43025317645"
+     "state": "ok"
     }
    }
   },
@@ -73,10 +70,8 @@
    "unknown": false,
    "publishedAt": "2026-11-11T00:07:59Z",
    "testflight": true,
-   "baseSeq": 26434,
-   "prs": [
-    3298
-   ],
+   "baseSeq": null,
+   "prs": [],
    "direct": [],
    "truncated": false,
    "platforms": {
@@ -94,33 +89,6 @@
      "state": "ok"
     }
    }
-  },
-  {
-   "seq": 26434,
-   "version": "3.3.0",
-   "sha": "4396e7338435b6f5b49176b776516c24b20d3443",
-   "unknown": false,
-   "publishedAt": "2026-11-10T22:50:54Z",
-   "testflight": true,
-   "baseSeq": null,
-   "prs": [],
-   "direct": [],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/42895013954"
-    },
-    "windows": {
-     "state": "ok"
-    },
-    "macos": {
-     "state": "ok"
-    },
-    "ios": {
-     "state": "ok"
-    }
-   }
   }
  ],
  "pending": null,
@@ -132,15 +100,6 @@
    "mergedAt": "2026-11-11T04:31:05Z",
    "additions": 1261,
    "deletions": 136,
-   "labels": []
-  },
-  "3298": {
-   "number": 3298,
-   "title": "fix: develop 4396e73 最终验证的真红（icons 棘轮 / format / OCR cancelAll / ffmpeg NO_PROXY / Chrome harness 就绪信号）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-10T22:16:56Z",
-   "additions": 163,
-   "deletions": 19,
    "labels": []
   },
   "3341": {
