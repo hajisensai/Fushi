@@ -126,7 +126,8 @@ pub(crate) struct Snapshot {
     extra: Vec<String>,
     /// 按时刻升序。
     reviews: Vec<Rev>,
-    /// 出处字典：(种类, 原样标题)；种类空串 = 没有出处。
+    /// 出处字典：(种类, 笔记缓存行的 `source_title`——带系列的出处是系列名、其余是原样标题，caches.rs
+    /// `NoteInfo::of`)；种类空串 = 没有出处。
     sources: Vec<(String, String)>,
 }
 
@@ -882,7 +883,10 @@ fn dart_cmp(a: &str, b: &str) -> std::cmp::Ordering {
     a.encode_utf16().cmp(b.encode_utf16())
 }
 
-/// 制卡来源（按笔记计）：同种类同标题（标题去两侧空白）归一组，按笔记数倒序、种类、标题。
+/// 制卡来源（按笔记计）：同种类同标题（标题去两侧空白）归一组，按笔记数倒序、种类、标题。带系列的出处按系列名计
+/// （「系列 → 集」的上一级，反馈 MCJLSBR5Wg）：系列名在缓存刷新时已写进笔记缓存行的 `source_title`（caches.rs
+/// `NoteInfo::of`，与出处分组键 `source_key` 同一个判据 store/browse.rs `source_series`），这里读到的标题就是它，
+/// 不再另判一遍。
 fn sources_json(s: &Snapshot, v: &View) -> Value {
     let mut order: Vec<(String, String)> = Vec::new();
     let mut counts: HashMap<(String, String), i64> = HashMap::new();

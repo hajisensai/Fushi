@@ -716,3 +716,74 @@ fn widget_learning_due_ats_and_reviews_next_day() {
     assert_eq!(at, vec![now + 9, now + 60_000]);
     assert_eq!(r["reviewsNextDay"], 2);
 }
+
+/// 带系列的出处（反馈 MCJLSBR5Wg；删除前 Dart `SrsStatsData.sourceShares` 的 `seriesTitle ?? title`）：制卡来源按
+/// 系列名计（系列名去两侧空白），系列名全是空白 / 不是字符串 = 没有系列，照旧按集标题。从出处事件一路走到
+/// `stats_report`：缓存刷新把系列名写进笔记缓存行（caches.rs `NoteInfo::of`），原料读的就是那一列。
+#[test]
+fn sources_count_series_notes_under_the_series_title() {
+    use crate::store::caches::{CacheConfig, Dirty, refresh};
+    use crate::store::sync2::in_savepoint;
+    use crate::store::sync2::tests::{Device, P, deck_entity, edit};
+
+    let d = Device::new("stats-series-sources");
+    let deck = crate::store::sync2::config::default_deck_id(P);
+    let note = |id: &str| json!({"t": "entity", "x": {"id": id, "p": P, "k": "note", "d": {"createdAt": 1, "guid": id, "noteTypeId": "NT"}}});
+    let video = |media: &str, title: &str| json!({"kind": "video", "mediaKey": media, "startMs": 0, "title": title});
+    let in_series = |media: &str, title: &str, series: Value| {
+        let mut v = video(media, title);
+        v["seriesTitle"] = series;
+        v
+    };
+    let sources = [
+        Some(in_series("e1", "RWBY - S01E01", json!("RWBY"))),
+        Some(in_series("e2", "RWBY - S02E01", json!(" RWBY "))),
+        Some(video("e3", "Solo")),
+        Some(in_series("e4", " Solo ", json!("  "))),
+        Some(in_series("e5", "Solo", json!(3))),
+        None,
+    ];
+    let mut events = vec![
+        deck_entity(&deck),
+        json!({"t": "entity", "x": {"id": "NT", "p": P, "k": "notetype", "d": {"createdAt": 1, "ntKind": "standard"}}}),
+        edit(
+            "notetype",
+            "NT",
+            "fieldDef/fa",
+            json!({"name": "Expression", "ord": 0}),
+        ),
+        edit(
+            "notetype",
+            "NT",
+            "tmplDef/t1",
+            json!({"name": "C", "ord": 0, "front": "{{Expression}}"}),
+        ),
+    ];
+    for (i, source) in sources.into_iter().enumerate() {
+        let id = format!("0193a1b2-0000-7000-8000-00000000000{}", i + 1);
+        events.push(note(&id));
+        events.push(edit("note", &id, "f/fa", json!("猫")));
+        if let Some(source) = source {
+            events.push(edit("note", &id, "source", source));
+        }
+    }
+    d.apply(1_700_000_000_000, events);
+    let cfg = CacheConfig::parse(&json!({"defaultDeck": deck, "builtins": {}})).unwrap();
+    {
+        let w = d.core.writer().unwrap();
+        let all = Dirty {
+            all_notes: true,
+            ..Dirty::default()
+        };
+        in_savepoint(&w, |c| refresh(c, P, &cfg, all)).unwrap();
+    }
+    let req = json!({"key": "k", "now": 1_700_000_000_000i64, "utcOff": 0, "rollover": 0, "range": "all"});
+    let r = d.core.stats_report(P, &req).unwrap();
+    assert_eq!(r["cardCounts"][0], 6, "one card per note: {r}");
+    // 笔记数倒序，同数按种类、标题（UTF-16 序）：三条没有系列的记在集标题下，两集 RWBY 记在系列名下，一条没有出处。
+    assert_eq!(
+        r["sources"],
+        json!([["video", "Solo", 3], ["video", "RWBY", 2], ["", "", 1]])
+    );
+    d.core.stats_release();
+}
