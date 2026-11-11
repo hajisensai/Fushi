@@ -22,6 +22,7 @@ import 'package:meta/meta.dart' show visibleForTesting;
 
 import 'package:fushi_engine/srs/srs_backup_snapshot.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
+import 'package:fushi_engine/srs/srs_collection_binding.dart';
 import 'package:fushi_engine/srs/srs_core_workers.dart';
 import 'package:fushi_engine/srs/srs_fushi_card_native_media.dart';
 import 'package:fushi_engine/srs/srs_op_ledger.dart';
@@ -5245,6 +5246,31 @@ class SrsDbStore implements SrsSync2Host {
     return any != null;
   }
 
+  /// 本 profile 有没有用户数据（[srsProfileHasUserData]：不只是笔记，自建牌组、改过的预设 / 内置笔记类型、
+  /// 复习日志都算）。决定换 uid 时能不能直接采用（删旧 uid 的全部行）还是必须并入。
+  Future<bool> hasUserData() => srsProfileHasUserData(db, profileUid);
+
+  /// 本 profile（集合）的绑定状态（内核 `binding_get`，见 srs_collection_binding.dart）；没有记录为 null。
+  Future<SrsCollectionBinding?> collectionBinding() async =>
+      SrsCollectionBinding.fromJson(
+        (await sync2Command(const <String, Object?>{
+          'op': 'binding_get',
+        })).map['binding'],
+      );
+
+  /// 写本 profile 的绑定状态（内核 `binding_set`：只进不退，已定下的不改），返回写完之后的状态。
+  Future<SrsCollectionBinding?> setCollectionBinding(
+    SrsCollectionBindingState state, {
+    required String via,
+  }) async => SrsCollectionBinding.fromJson(
+    (await sync2Command(<String, Object?>{
+      'op': 'binding_set',
+      'state': state.wire,
+      'via': via,
+      'now': now().$1,
+    })).map['binding'],
+  );
+
   /// 本 profile 的用户笔记数（铁律 E：内置行不算）。profile 冲突时给用户对比本机与候选（反馈 dOv8AdJ6yV）。
   Future<int> userNoteCount() async {
     final Expression<int> n = db.srsEntities.id.count();
@@ -6123,4 +6149,40 @@ class SrsAnkiNoteInfo {
 
   /// 同 [SrsNoteView.field]：没有 = 空串。
   String field(String fieldId) => fields[fieldId] ?? '';
+}
+
+/// [profileUid] 在 srs.db 里有没有用户数据（铁律 E 的「有数据」，决定换 uid 时能直接采用还是必须并入）：
+///
+/// - 内置 ID 集合（[srsBuiltinEntities]：内置默认牌组与内置笔记类型）之外的任何实体——笔记、自建牌组、自建笔记类型、
+///   profile 实体，含已删的墓碑；
+/// - 任何修改记录：没改过的内置定义不写修改记录（[SrsDbStore.ensureBuiltins]），所以改过内置牌组的预设 / 内置笔记
+///   类型 / 日界都会留下一条；
+/// - 任何复习日志、看不懂的事件（更新版本写的，同样是用户数据）。
+///
+/// 只有内置行 = 没有。以前只看笔记（[SrsDbStore.hasUserNotes]），只建了牌组 / 改了预设、还没有笔记的 profile 会被
+/// 当成空的直接采用对方 uid，删掉这些数据。
+Future<bool> srsProfileHasUserData(SrsDatabase db, String profileUid) async {
+  final List<String> builtin = <String>[
+    for (final SrsEntityRecord r in srsBuiltinEntities(profileUid)) r.id,
+  ];
+  final String marks = List<String>.filled(builtin.length, '?').join(', ');
+  final Variable<String> uid = Variable<String>(profileUid, srsIdType);
+  final QueryRow? row = await db
+      .customSelect(
+        'SELECT 1 WHERE '
+        'EXISTS (SELECT 1 FROM srs_entities WHERE profile_uid = ? '
+        'AND id NOT IN ($marks)) '
+        'OR EXISTS (SELECT 1 FROM srs_field_edits WHERE profile_uid = ?) '
+        'OR EXISTS (SELECT 1 FROM srs_review_logs WHERE profile_uid = ?) '
+        'OR EXISTS (SELECT 1 FROM srs_unknown_events WHERE profile_uid = ?)',
+        variables: <Variable<Object>>[
+          uid,
+          for (final String id in builtin) Variable<String>(id, srsIdType),
+          uid,
+          uid,
+          uid,
+        ],
+      )
+      .getSingleOrNull();
+  return row != null;
 }

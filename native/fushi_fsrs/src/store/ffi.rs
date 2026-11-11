@@ -1219,6 +1219,8 @@ const CHANNEL_TRANSPARENT: &[&str] = &[
     "media_known",
     "profile_footprint",
     "profile_purge",
+    "binding_get",
+    "binding_set",
     "derive_key",
     "seal",
     "open",
@@ -1794,6 +1796,9 @@ fn sync2_command(
         // 删 profile 的级联清理（store/profile_data.rs）：确认框的规模、一个事务里删光本机数据。
         "profile_footprint" => c.profile_footprint(profile)?,
         "profile_purge" => c.profile_purge(profile)?,
+        // 本机 profile（集合）的绑定状态（store/binding.rs）：只读 / 只写 srs_meta 的一个键，不碰投影。
+        "binding_get" => c.binding_get(profile)?,
+        "binding_set" => c.binding_set(profile, s("state")?, s("via")?, i("now")?)?,
         "conflicts" => c.sync2_conflicts(profile)?,
         "resolve" => c.sync2_resolve(
             profile,

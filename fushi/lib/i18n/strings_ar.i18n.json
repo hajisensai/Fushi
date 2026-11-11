@@ -9454,6 +9454,7 @@
   "srs_sync_directory_unidentified": "The sync folder can't be identified yet (account or address not ready)",
   "srs_sync_done": "Review data synced",
   "srs_sync_failed": "Couldn't sync review data: $reason",
+  "srs_sync_join_provisional_hint": "This device hasn't joined the review data already on your sync location yet. Keep studying as usual; it will be merged the next time sync connects.",
   "srs_sync_location_meta_unavailable": "The location's settings file can't be read right now; it will be retried next time.",
   "srs_sync_no_backend": "No sync service is set up",
   "srs_sync_now": "Sync now",

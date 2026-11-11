@@ -38,6 +38,7 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-4386](bugs/BUG-4386-anime-source-magnet-opened-as-file.md) | ✅ | ✅ | 视频源扩展（Torrentio）给的磁链被当本地文件打开，无限加载 |
+| [BUG-4386](bugs/BUG-4386-srs-adopt-deletes-decks-without-notes.md) | ✅ | ✅ | 复习同步关联只看笔记，只建了牌组 / 改了预设的设备被自动采用对方 uid，自建牌组与预设被删 |
 | [BUG-4385](bugs/BUG-4385-music-exclusive-pause-holds-device.md) | ✅ | ✅ | 音乐 WASAPI 独占输出暂停时不交还设备 |
 | [BUG-4384](bugs/BUG-4384-apple-music-preview-full-duration.md) | ✅ | ✅ | Apple Music 试听片段放约 30 秒就「回到开头」，进度条按整首时长画、无试听提示 |
 | [BUG-4383](bugs/BUG-4383-jellyfin-default-embedded-sub.md) | ✅ | ✅ | Jellyfin 服务器标为默认的内嵌字幕起播不显示 |
