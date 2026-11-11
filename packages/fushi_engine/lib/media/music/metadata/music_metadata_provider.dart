@@ -49,6 +49,16 @@ abstract interface class MusicReleaseProvider implements MusicMetadataProvider {
     int limit = 5,
   });
 
+  /// 按专辑名（可带艺人）搜任意格式的发行，返回带曲目表的候选（至多 [limit] 张详情）。
+  /// 带艺人搜不到时只按专辑名再搜一次。[discTrackCounts] 是本地各盘曲数：搜索结果里
+  /// 装不下这些曲数的发行不取详情。
+  Future<List<MusicReleaseTracklist>> searchAlbumReleases(
+    String title, {
+    String? artist,
+    List<int>? discTrackCounts,
+    int limit = 5,
+  });
+
   /// 发行详情（含全部 medium 与曲目）。不存在返回 null。
   Future<MusicReleaseTracklist?> fetchReleaseTracklist(String mbReleaseId);
 

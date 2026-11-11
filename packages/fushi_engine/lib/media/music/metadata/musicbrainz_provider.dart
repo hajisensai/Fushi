@@ -218,14 +218,67 @@ class MusicBrainzProvider
     int limit = 5,
   }) async {
     if (title.trim().isEmpty) return const <MusicReleaseTracklist>[];
-    final Map<String, Object?>? json = await _get('release', <String, String>{
-      'query': buildMusicBrainzDiscReleaseQuery(title, artist: artist),
-      'limit': '${limit.clamp(1, 25)}',
-    }, operation: 'musicbrainz disc release search');
-    final List<String> ids = <String>[
-      for (final Map<String, Object?> r in _maps(json?['releases']))
+    final List<Map<String, Object?>> hits = await _searchReleases(
+      buildMusicBrainzDiscReleaseQuery(title, artist: artist),
+      limit: limit,
+      operation: 'musicbrainz disc release search',
+    );
+    return _fetchTracklists(<String>[
+      for (final Map<String, Object?> r in hits)
         if (_str(r['id']) case final String id) id,
-    ];
+    ], limit: limit);
+  }
+
+  @override
+  Future<List<MusicReleaseTracklist>> searchAlbumReleases(
+    String title, {
+    String? artist,
+    List<int>? discTrackCounts,
+    int limit = 5,
+  }) async {
+    if (title.trim().isEmpty) return const <MusicReleaseTracklist>[];
+    // 搜索结果不含曲目表、只有每张盘的 track-count：先按曲数筛，省下对不上的详情请求
+    // （每张 1 s）。所以搜索多取一些（25），详情至多 [limit] 张。
+    const int searchLimit = 25;
+    final bool hasArtist = artist?.trim().isNotEmpty ?? false;
+    List<Map<String, Object?>> hits = await _searchReleases(
+      buildMusicBrainzAlbumReleaseQuery(title, artist: artist),
+      limit: searchLimit,
+      operation: 'musicbrainz album release search',
+    );
+    // 本地艺人标签常与 MusicBrainz 署名写法不同（罗马字 / 原文、Various Artists）：
+    // 带艺人一张都搜不到时只按专辑名再搜一次。时长对号兜底防误配。
+    if (hits.isEmpty && hasArtist) {
+      hits = await _searchReleases(
+        buildMusicBrainzAlbumReleaseQuery(title),
+        limit: searchLimit,
+        operation: 'musicbrainz album release search',
+      );
+    }
+    return _fetchTracklists(<String>[
+      for (final Map<String, Object?> r in hits)
+        if (_str(r['id']) case final String id
+            when musicBrainzReleaseHitFitsTrackCounts(r, discTrackCounts))
+          id,
+    ], limit: limit);
+  }
+
+  Future<List<Map<String, Object?>>> _searchReleases(
+    String query, {
+    required int limit,
+    required String operation,
+  }) async {
+    final Map<String, Object?>? json = await _get('release', <String, String>{
+      'query': query,
+      'limit': '${limit.clamp(1, 25)}',
+    }, operation: operation);
+    return _maps(json?['releases']);
+  }
+
+  Future<List<MusicReleaseTracklist>> _fetchTracklists(
+    List<String> ids, {
+    required int limit,
+  }) async {
     final List<MusicReleaseTracklist> out = <MusicReleaseTracklist>[];
     for (final String id in ids.take(limit)) {
       final MusicReleaseTracklist? full = await fetchReleaseTracklist(id);
@@ -282,6 +335,27 @@ class MusicBrainzProvider
   void close() {
     if (_ownsTransport) _transport.close();
   }
+}
+
+/// 一条发行搜索结果（`media[].track-count`）能不能装下本地各盘的曲数：本地每张盘的曲数
+/// 都要在这条发行的某张 medium 上出现（盘数多于 medium 数直接不要）。[discTrackCounts]
+/// 为空、或搜索结果没带 media 时不筛（交给详情的时长对号）。
+bool musicBrainzReleaseHitFitsTrackCounts(
+  Map<String, Object?> hit,
+  List<int>? discTrackCounts,
+) {
+  if (discTrackCounts == null || discTrackCounts.isEmpty) return true;
+  final List<Map<String, Object?>> media = _maps(hit['media']);
+  if (media.isEmpty) return true;
+  final List<int?> counts = <int?>[
+    for (final Map<String, Object?> m in media) _int(m['track-count']),
+  ];
+  if (counts.any((int? c) => c == null)) return true;
+  final List<int> pool = counts.cast<int>().toList();
+  for (final int want in discTrackCounts) {
+    if (!pool.remove(want)) return false;
+  }
+  return true;
 }
 
 String? _str(Object? v) {

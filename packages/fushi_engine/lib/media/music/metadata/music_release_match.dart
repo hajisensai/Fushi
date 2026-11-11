@@ -292,3 +292,148 @@ List<MusicDiscReleaseMatch> rankMusicDiscReleaseMatches(
   });
   return out;
 }
+
+/// 按专辑名（可带艺人）搜任意格式发行的 Lucene 查询串（纯函数，测试钉死）。与
+/// [buildMusicBrainzDiscReleaseQuery] 的区别只是不限 DVD / BD 格式——本地专辑的发行
+/// 对号（为了拿 Cover Art Archive 的盘面扫描）要找的是 CD / 数字发行。
+String buildMusicBrainzAlbumReleaseQuery(String title, {String? artist}) {
+  String phrase(String v) =>
+      '"${v.trim().replaceAll(r'\', r'\\').replaceAll('"', r'\"')}"';
+  final List<String> parts = <String>['release:${phrase(title)}'];
+  final String? a = artist?.trim();
+  if (a != null && a.isNotEmpty) parts.add('artist:${phrase(a)}');
+  return parts.join(' AND ');
+}
+
+/// 一张本地专辑对一张发行的整体对号：本地每张盘（按盘号）各对上发行里**不同**的一张
+/// medium，且每张都 [MusicDiscReleaseMatch.isConfident]。
+class MusicAlbumReleaseMatch {
+  const MusicAlbumReleaseMatch({
+    required this.release,
+    required this.discs,
+    required this.meanErrorMs,
+  });
+
+  final MusicReleaseTracklist release;
+
+  /// 本地盘号 → 对上的那张 medium 的结论。
+  final Map<int, MusicDiscReleaseMatch> discs;
+
+  /// 全部可比曲目的平均绝对时长误差（毫秒）。
+  final int meanErrorMs;
+
+  /// 本地盘数与发行 medium 数一致（不是「只有其中一张」）。
+  bool get coversAllMedia => discs.length == release.media.length;
+}
+
+/// 本地专辑（盘号 → 该盘按曲序的时长，毫秒）对一张发行。只返回可信结论：任何一张本地
+/// 盘找不到可信的 medium，或缺时长，就返回 null（绝不猜）。
+///
+/// 分配先按位置（本地盘号 = medium 位置）试；不成再按盘号顺序贪心挑误差最小的未用
+/// medium。贪心可能漏掉存在的完美分配，但它给出的结果一定每张都可信且互不重复。
+MusicAlbumReleaseMatch? matchMusicAlbumRelease(
+  Map<int, List<int>> discDurationsMs,
+  MusicReleaseTracklist release,
+) {
+  if (discDurationsMs.isEmpty) return null;
+  for (final List<int> d in discDurationsMs.values) {
+    if (d.isEmpty || d.any((int ms) => ms <= 0)) return null;
+  }
+  final List<int> discNos = discDurationsMs.keys.toList()..sort();
+
+  MusicDiscReleaseMatch? confidentOn(int discNo, MusicReleaseMedium m) {
+    final MusicDiscReleaseMatch? r = matchMusicDiscChapters(
+      discDurationsMs[discNo]!,
+      MusicReleaseTracklist(
+        mbReleaseId: release.mbReleaseId,
+        title: release.title,
+        media: <MusicReleaseMedium>[m],
+      ),
+      preferVideo: false,
+    );
+    if (r == null || !r.isConfident) return null;
+    return MusicDiscReleaseMatch(
+      release: release,
+      medium: r.medium,
+      tracks: r.tracks,
+      meanErrorMs: r.meanErrorMs,
+      comparedCount: r.comparedCount,
+    );
+  }
+
+  Map<int, MusicDiscReleaseMatch>? assigned;
+  // 1) 按位置。
+  final Map<int, MusicDiscReleaseMatch> byPosition =
+      <int, MusicDiscReleaseMatch>{};
+  for (final int no in discNos) {
+    final Iterable<MusicReleaseMedium> at = release.media.where(
+      (MusicReleaseMedium m) => m.position == no,
+    );
+    final MusicDiscReleaseMatch? hit = at.isEmpty
+        ? null
+        : confidentOn(no, at.first);
+    if (hit == null) break;
+    byPosition[no] = hit;
+  }
+  if (byPosition.length == discNos.length) assigned = byPosition;
+  // 2) 贪心。
+  if (assigned == null) {
+    final Map<int, MusicDiscReleaseMatch> greedy =
+        <int, MusicDiscReleaseMatch>{};
+    final Set<int> used = <int>{};
+    for (final int no in discNos) {
+      MusicDiscReleaseMatch? best;
+      int bestIndex = -1;
+      for (int i = 0; i < release.media.length; i++) {
+        if (used.contains(i)) continue;
+        final MusicDiscReleaseMatch? c = confidentOn(no, release.media[i]);
+        if (c == null) continue;
+        if (best == null || c.meanErrorMs! < best.meanErrorMs!) {
+          best = c;
+          bestIndex = i;
+        }
+      }
+      if (best == null) return null;
+      used.add(bestIndex);
+      greedy[no] = best;
+    }
+    assigned = greedy;
+  }
+  int total = 0;
+  int compared = 0;
+  for (final MusicDiscReleaseMatch m in assigned.values) {
+    total += m.meanErrorMs! * m.comparedCount;
+    compared += m.comparedCount;
+  }
+  return MusicAlbumReleaseMatch(
+    release: release,
+    discs: assigned,
+    meanErrorMs: compared == 0 ? 0 : total ~/ compared,
+  );
+}
+
+/// 多张候选发行里挑本地专辑的那一张：只看可信结论；盘数与发行 medium 数一致的优先，
+/// 再按平均误差，误差相同按候选顺序（MusicBrainz 搜索相关度）。都对不上返回 null。
+MusicAlbumReleaseMatch? pickMusicAlbumRelease(
+  Map<int, List<int>> discDurationsMs,
+  Iterable<MusicReleaseTracklist> candidates,
+) {
+  MusicAlbumReleaseMatch? best;
+  for (final MusicReleaseTracklist r in candidates) {
+    final MusicAlbumReleaseMatch? m = matchMusicAlbumRelease(
+      discDurationsMs,
+      r,
+    );
+    if (m == null) continue;
+    if (best == null) {
+      best = m;
+      continue;
+    }
+    if (m.coversAllMedia != best.coversAllMedia) {
+      if (m.coversAllMedia) best = m;
+      continue;
+    }
+    if (m.meanErrorMs < best.meanErrorMs) best = m;
+  }
+  return best;
+}
