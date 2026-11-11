@@ -1259,19 +1259,27 @@ class InterconnectSyncBackend extends SyncBackend
 
   /// 互联「主机版本」：取 host 的 app 版本、可用更新与更新进度（反馈 Pp8XPyve0N）。
   ///
-  /// 返回 null = host 不提供远程更新（老 host / 无头服务端 404）。host 明确拒绝
+  /// `status` 为 null = host 不提供远程更新（老 host / 无头服务端 404）。host 明确拒绝
   /// （未开开关 / 共享 token / 平台不支持）抛 [HostUpdateRejected]，其余错误照
   /// [WebDavOps.checkStatus] 抛。响应里的 `nonce` 是下一次 [triggerRemoteHostUpdate]
   /// 要带的一次性票据。[refresh] = 让 host 先（节流地）去更新源查一次。
   ///
   /// 与配置搬运不同，这里不要求 https：只读版本号不敏感，触发另有一次性 nonce +
   /// host 开关几道门（明文会话上的 token 本就在同一信任级别；不按来源网络区分）。
-  Future<HostUpdateStatus?> getRemoteHostUpdateStatus({
+  ///
+  /// 应答带上答话那台 host 的身份（[connectedHostIdentity] 口径）。本类是单例、会话
+  /// 落在「此刻可达的那台」上：已配对多台 host 时，前后两次调用可能问到不同的 host。
+  /// [onlyHost] 非 null = 只认这台——会话此刻连的是另一台时抛 [HostUpdateOtherHost]，
+  /// 不发请求（BUG-4457：跟踪一轮更新期间被更新的 host 在重启，会话换到另一台，
+  /// 它的版本号被当成「已更新到 X」）。
+  Future<HostUpdateAnswer> getRemoteHostUpdateStatus({
     required SyncRepository repo,
     bool refresh = false,
+    String? onlyHost,
   }) async {
     await _reloadSessionFrom(repo);
     await _ensureResolved();
+    final String host = _hostUpdateSessionHost(onlyHost);
     final HttpClientRequest req = await _ops!.buildRequest(
       'GET',
       '$_apiBase$kHostUpdatePath${refresh ? '?refresh=1' : ''}',
@@ -1279,20 +1287,38 @@ class InterconnectSyncBackend extends SyncBackend
     final HttpClientResponse res = await _sendBounded(req);
     if (res.statusCode == 404) {
       await res.drain<void>();
-      return null;
+      return (host: host, status: null);
     }
     await _checkHostUpdateResponse(res, 'GET $kHostUpdatePath');
-    return _parseHostUpdateStatus(await _readBodyBounded(res));
+    return (
+      host: host,
+      status: _parseHostUpdateStatus(await _readBodyBounded(res)),
+    );
+  }
+
+  /// 会话解析完后取所连 host 的身份；[onlyHost] 非 null 且不是这台时抛
+  /// [HostUpdateOtherHost]。必须紧跟 [_ensureResolved]、中间不隔 await：之后建的
+  /// 请求用的就是这一刻的 [_ops]。
+  String _hostUpdateSessionHost(String? onlyHost) {
+    final String host = _activeHostIdentity!;
+    if (onlyHost != null && onlyHost != host) {
+      throw HostUpdateOtherHost(expected: onlyHost, actual: host);
+    }
+    return host;
   }
 
   /// 让 host 开始更新自己（反馈 Pp8XPyve0N）。[nonce] 取自刚拿到的
-  /// [getRemoteHostUpdateStatus] 响应，单次有效。
+  /// [getRemoteHostUpdateStatus] 响应，单次有效。[onlyHost] 同
+  /// [getRemoteHostUpdateStatus]：用户确认的是那台 host 的更新，会话换到了另一台就
+  /// 不发请求。
   Future<HostUpdateStatus> triggerRemoteHostUpdate({
     required SyncRepository repo,
     required String nonce,
+    String? onlyHost,
   }) async {
     await _reloadSessionFrom(repo);
     await _ensureResolved();
+    _hostUpdateSessionHost(onlyHost);
     final HttpClientRequest req = await _ops!.buildRequest(
       'POST',
       '$_apiBase$kHostUpdatePath',
@@ -3807,4 +3833,22 @@ final class _PlaybackTicketSession {
   bool released = false;
   final List<({String base, String ticket})> tickets =
       <({String base, String ticket})>[];
+}
+
+/// 一次主机版本应答：答话那台 host 的身份（`InterconnectSyncBackend
+/// .connectedHostIdentity` 口径）与它的状态；`status == null` = 这台 host 不提供
+/// 远程更新（老 host / 无头服务端 404）。
+typedef HostUpdateAnswer = ({String host, HostUpdateStatus? status});
+
+/// 主机版本请求被钉在 [expected] 这台 host 上，而会话此刻连的是 [actual]：请求没有
+/// 发出。对调用方等同于「那台 host 现在问不到」（BUG-4457）。
+class HostUpdateOtherHost implements Exception {
+  const HostUpdateOtherHost({required this.expected, required this.actual});
+
+  final String expected;
+  final String actual;
+
+  @override
+  String toString() =>
+      'HostUpdateOtherHost(expected: $expected, actual: $actual)';
 }

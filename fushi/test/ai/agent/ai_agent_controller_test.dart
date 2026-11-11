@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/ai/agent/ai_agent_controller.dart';
 import 'package:fushi/src/ai/agent/ai_agent_session_archive.dart';
 import 'package:fushi/src/ai/agent/ai_agent_toolbox.dart';
+import 'package:fushi/src/ops/ctl_ai_agent_routes.dart';
 import 'package:fushi/src/ops/op_context.dart';
 import 'package:fushi_cli/fushi_cli.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -304,6 +305,65 @@ void main() {
     c.answerConfirm(false, entryId: cardB.id);
     await turn;
     expect(deleted, <String>['a.epub']);
+  });
+
+  test('BUG-4458：ctl 作答带卡片 id 只答那一张，卡片换了回 409；不带 id 照旧答当前那张', () async {
+    final AiAgentController c = controller(<AiChatTurn>[
+      _call('files.delete', <String, Object?>{'name': 'a.epub'}),
+      _call('files.delete', <String, Object?>{'name': 'b.epub'}),
+      _call('files.delete', <String, Object?>{'name': 'c.epub'}),
+    ]);
+    final Future<void> turn = c.send('删掉 a、b、c');
+    await pumpEventQueue();
+    String pendingCard() => c.entries
+        .lastWhere((AgentEntry e) => e.kind == AgentEntryKind.confirm)
+        .id;
+    final String cardA = pendingCard();
+    answerAiAgentCtlCard(c, approve: true, choice: null, entryId: cardA);
+    await pumpEventQueue();
+    final String cardB = pendingCard();
+    expect(cardB, isNot(cardA));
+    expect(deleted, <String>['a.epub']);
+
+    // 对卡片 A 的晚到重试：409，卡片 B 仍在等，第二个不可逆操作没执行。
+    expect(
+      () =>
+          answerAiAgentCtlCard(c, approve: true, choice: null, entryId: cardA),
+      throwsA(
+        isA<CtlFailure>().having((CtlFailure e) => e.status, 'status', 409),
+      ),
+    );
+    await pumpEventQueue();
+    expect(c.awaitingConfirm, isTrue);
+    expect(deleted, <String>['a.epub']);
+
+    // 确认卡片缺 approve：400，不当成拒绝。
+    expect(
+      () =>
+          answerAiAgentCtlCard(c, approve: null, choice: null, entryId: cardB),
+      throwsA(
+        isA<CtlFailure>().having((CtlFailure e) => e.status, 'status', 400),
+      ),
+    );
+    expect(c.awaitingConfirm, isTrue);
+
+    answerAiAgentCtlCard(c, approve: false, choice: null, entryId: cardB);
+    await pumpEventQueue();
+    expect(deleted, <String>['a.epub']);
+
+    // 旧调用方不带 id：答当前那张。
+    expect(c.awaitingConfirm, isTrue);
+    answerAiAgentCtlCard(c, approve: true, choice: null, entryId: null);
+    await turn;
+    expect(deleted, <String>['a.epub', 'c.epub']);
+
+    // 没有待答卡片：409。
+    expect(
+      () => answerAiAgentCtlCard(c, approve: true, choice: null, entryId: null),
+      throwsA(
+        isA<CtlFailure>().having((CtlFailure e) => e.status, 'status', 409),
+      ),
+    );
   });
 
   test('取消会话：待答的确认卡片按拒绝收尾，不替用户同意', () async {

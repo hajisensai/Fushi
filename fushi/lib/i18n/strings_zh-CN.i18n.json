@@ -4372,6 +4372,7 @@
   "interconnect_host_update_done": "主机已更新到 ${version}",
   "interconnect_host_update_downloading": "主机正在下载更新（${percent}%）",
   "interconnect_host_update_failed": "主机更新失败：${message}",
+  "interconnect_host_update_host_changed": "现在连着的是另一台主机，没有发起更新。请核对这里显示的版本后再试",
   "interconnect_host_update_host_toggle": "允许已配对设备远程更新本机",
   "interconnect_host_update_host_toggle_desc": "已配对设备（局域网或异地连接）可以查看本机版本并让本机更新。Android 上仍需在本机确认安装。",
   "interconnect_host_update_installing": "主机正在安装更新",

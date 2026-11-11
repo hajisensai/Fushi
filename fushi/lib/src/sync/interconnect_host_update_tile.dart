@@ -27,11 +27,16 @@ import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// 主机版本行要用到的两次远程调用。
 abstract interface class HostUpdateRemote {
-  /// host 的版本与更新状态；null = host 不提供远程更新（老 host / 无头服务端）。
-  Future<HostUpdateStatus?> status({bool refresh = false});
+  /// 此刻所连 host 的身份、版本与更新状态；`status == null` = 这台 host 不提供远程
+  /// 更新（老 host / 无头服务端）。
+  ///
+  /// 已配对多台 host 时，前后两次调用可能问到不同的 host。[onlyHost] 非 null = 只认
+  /// 这台：此刻连的是另一台时抛 [HostUpdateOtherHost]，不发请求。
+  Future<HostUpdateAnswer> status({bool refresh = false, String? onlyHost});
 
-  /// 让 host 开始更新（[nonce] 来自刚拿到的 [status]）。
-  Future<HostUpdateStatus> trigger(String nonce);
+  /// 让 [onlyHost] 这台 host 开始更新（[nonce] 来自刚拿到的 [status]）。此刻连的
+  /// 是另一台时抛 [HostUpdateOtherHost]，不发请求。
+  Future<HostUpdateStatus> trigger(String nonce, {required String onlyHost});
 }
 
 /// 生产实现：打当前已配对 host 的 `/api/host/update`。
@@ -41,16 +46,20 @@ class InterconnectHostUpdateRemote implements HostUpdateRemote {
   final SyncRepository _repo;
 
   @override
-  Future<HostUpdateStatus?> status({bool refresh = false}) =>
+  Future<HostUpdateAnswer> status({bool refresh = false, String? onlyHost}) =>
       InterconnectSyncBackend.instance.getRemoteHostUpdateStatus(
         repo: _repo,
         refresh: refresh,
+        onlyHost: onlyHost,
       );
 
   @override
-  Future<HostUpdateStatus> trigger(String nonce) => InterconnectSyncBackend
-      .instance
-      .triggerRemoteHostUpdate(repo: _repo, nonce: nonce);
+  Future<HostUpdateStatus> trigger(String nonce, {required String onlyHost}) =>
+      InterconnectSyncBackend.instance.triggerRemoteHostUpdate(
+        repo: _repo,
+        nonce: nonce,
+        onlyHost: onlyHost,
+      );
 }
 
 /// 主机拒绝原因 → 给用户的一句话。
@@ -130,6 +139,11 @@ class InterconnectHostUpdateTile extends StatefulWidget {
 class _InterconnectHostUpdateTileState
     extends State<InterconnectHostUpdateTile> {
   HostUpdateStatus? _status;
+
+  /// [_status] 是哪台 host 答的（[HostUpdateAnswer.host]）。触发与跟踪只认这一台：
+  /// 已配对多台 host 时会话可能换到另一台，它的版本号不是这一台的更新结果
+  /// （BUG-4457）。
+  String? _host;
   bool _loading = true;
   bool _hostLacksFeature = false;
   String? _message;
@@ -157,13 +171,14 @@ class _InterconnectHostUpdateTileState
 
   Future<void> _load({bool refresh = false}) async {
     try {
-      final HostUpdateStatus? status = await widget.remote.status(
+      final HostUpdateAnswer answer = await widget.remote.status(
         refresh: refresh,
       );
       if (!mounted) return;
       setState(() {
-        _status = status;
-        _hostLacksFeature = status == null;
+        _status = answer.status;
+        _host = answer.host;
+        _hostLacksFeature = answer.status == null;
         _message = null;
       });
     } on HostUpdateRejected catch (e) {
@@ -181,7 +196,13 @@ class _InterconnectHostUpdateTileState
   Future<void> _trigger() async {
     final HostUpdateStatus? current = _status;
     final String? latest = current?.latestVersion;
-    if (current == null || latest == null || _trackingFrom != null) return;
+    final String? host = _host;
+    if (current == null ||
+        latest == null ||
+        host == null ||
+        _trackingFrom != null) {
+      return;
+    }
     final bool confirmed = await showFushiConfirmDialog(
       context: context,
       title: t.interconnect_host_update_confirm_title,
@@ -193,12 +214,18 @@ class _InterconnectHostUpdateTileState
     setState(() => _loading = true);
     try {
       // nonce 单次有效且短 TTL：触发前现取一张，别用页面打开时拿到的那张。
-      final HostUpdateStatus? fresh = await widget.remote.status();
+      // 用户确认的是 [host] 这台的更新：现取与触发都只认它。
+      final HostUpdateStatus? fresh = (await widget.remote.status(
+        onlyHost: host,
+      )).status;
       final String? nonce = fresh?.nonce;
       if (fresh == null || nonce == null) {
         throw const HostUpdateRejected(HostUpdateDenial.unsupported);
       }
-      final HostUpdateStatus started = await widget.remote.trigger(nonce);
+      final HostUpdateStatus started = await widget.remote.trigger(
+        nonce,
+        onlyHost: host,
+      );
       if (!mounted) return;
       setState(() {
         _status = started;
@@ -210,6 +237,14 @@ class _InterconnectHostUpdateTileState
       _poll = Timer.periodic(widget.pollInterval, (_) => _pollOnce());
     } on HostUpdateRejected catch (e) {
       if (mounted) setState(() => _message = hostUpdateDenialText(e.denial));
+    } on HostUpdateOtherHost catch (e) {
+      // 确认框弹着的时候会话换到了另一台 host：没有发起任何更新。把这一行换成
+      // 现在连着的那台的状态并说明，用户核对后可以再点。
+      ErrorLogService.instance.logDiagnostic('Interconnect.hostUpdate', e);
+      await _load();
+      if (mounted) {
+        setState(() => _message = t.interconnect_host_update_host_changed);
+      }
     } catch (e) {
       ErrorLogService.instance.logDiagnostic('Interconnect.hostUpdate', e);
       if (mounted) {
@@ -233,11 +268,15 @@ class _InterconnectHostUpdateTileState
     if (from == null || _polling) return;
     _polling = true;
     try {
-      final HostUpdateStatus? status = await widget.remote.status();
+      // 只认被更新的那台：它重启期间会话可能换到另一台已配对的 host，那台答的版本
+      // 号与这一轮更新无关（[HostUpdateOtherHost] 走下面的 catch = 还没回来）。
+      final HostUpdateStatus? status = (await widget.remote.status(
+        onlyHost: _host,
+      )).status;
       if (!mounted) return;
       if (status == null) {
-        // host 回了 404：它回来了，却不再提供远程更新（降级 / 换成无头服务端 /
-        // 解析到了另一台）。这是明确应答、等下去不会变：结束这一轮跟踪，如实显示
+        // host 回了 404：它回来了，却不再提供远程更新（降级 / 换成无头服务端）。
+        // 这是明确应答、等下去不会变：结束这一轮跟踪，如实显示
         // 「主机不提供远程更新」，不当断连进重连窗。
         _stopTracking(null);
         setState(() {
@@ -267,6 +306,7 @@ class _InterconnectHostUpdateTileState
       }
     } catch (_) {
       // 桌面 host 由安装器接班后进程退出：连接失败 = 正在重启，继续等它回来。
+      // 会话换到了另一台 host（[HostUpdateOtherHost]）同样是「这一台还没回来」。
       if (!mounted) return;
       final DateTime now = _now();
       final DateTime since = _disconnectedSince ?? now;

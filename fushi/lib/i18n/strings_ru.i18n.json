@@ -4372,6 +4372,7 @@
   "interconnect_host_update_done": "Host updated to ${version}",
   "interconnect_host_update_downloading": "Host is downloading the update (${percent}%)",
   "interconnect_host_update_failed": "Host update failed: ${message}",
+  "interconnect_host_update_host_changed": "Now connected to a different host, so no update was started. Check the version shown here and try again",
   "interconnect_host_update_host_toggle": "Allow paired devices to update this device",
   "interconnect_host_update_host_toggle_desc": "Paired devices can see this app's version and start an update here, on the local network or remotely. On Android you still confirm the install on this device.",
   "interconnect_host_update_installing": "Host is installing the update",
