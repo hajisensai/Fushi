@@ -753,7 +753,7 @@ void main() {
       expect(roundTrip(preview.undo!)['undo'], isEmpty);
     });
 
-    test('合并 / 不是重复：撤销拆回原样；之后又被改过报 superseded 不覆盖', () async {
+    test('合并 / 不是重复：撤销拆回原样；之后又被改过的字段保留现值、报 partial', () async {
       final OpInvoker invoker = OpInvoker(catalogOf(env.host));
       final String keep = await _addNote(env.zh, '雪');
       final String other = await _addNote(env.zh, '雪', sentence: '下雪了');
@@ -792,9 +792,10 @@ void main() {
         keep,
         fieldsById: <String, String>{srsLapisFieldId(kZh, 'Sentence'): '手动改过'},
       );
+      // 撤销凭据按字段键裁决（srs_edit_undo.dart）：被改过的那个字段保留现值，其余键照样撤回 → partial。
       expect(
         (await undo.revert(roundTrip(again.undo!))).status,
-        OpUndoStatus.superseded,
+        OpUndoStatus.partial,
       );
       expect(await _field(env.zh, keep, 'Sentence'), '手动改过');
 
@@ -877,7 +878,7 @@ void main() {
       );
       final Map<String, Object?> payload = roundTrip(done.undo!);
       expect(payload.containsKey('profile'), isFalse);
-      expect(payload.keys.toSet(), <String>{'notes', 'changes'});
+      expect(payload.keys.toSet(), <String>{'notes', 'undo'});
       expect(changed, 1);
       expect(
         (await invoker.catalog['srs.notes.set-field']!.undo!.revert(
