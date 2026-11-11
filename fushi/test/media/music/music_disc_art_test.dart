@@ -89,6 +89,7 @@ void main() {
       required Future<List<MusicCoverImage>> Function(String) fetch,
       DateTime Function()? clock,
       List<String>? downloads,
+      MusicDiscScanDetector? detect,
     }) => MusicDiscArtService(
       cacheDirectory: () async => Directory(p.join(tmp.path, 'cache')),
       fetchCovers: fetch,
@@ -96,6 +97,7 @@ void main() {
         downloads?.add(url);
         return <int>[0xFF, 0xD8, 0xFF];
       },
+      detectScan: detect ?? (_) => throw StateError('no scans expected'),
       clock: clock,
     );
 
@@ -181,6 +183,83 @@ void main() {
       );
     });
 
+    test('编号扫描交给识别器，结论按图片清单缓存', () async {
+      final File a = File(p.join(tmp.path, '01.jpg'))
+        ..writeAsBytesSync(<int>[1]);
+      final File b = File(p.join(tmp.path, '02.jpg'))
+        ..writeAsBytesSync(<int>[2]);
+      final List<List<String>> calls = <List<String>>[];
+      Future<String?> detect(List<String> paths) async {
+        calls.add(paths);
+        return paths.last;
+      }
+
+      Future<String?> run() => service(
+        fetch: (_) => throw StateError('scan hit, no CAA'),
+        detect: detect,
+      ).resolve(albumUid: 'a', albumDir: tmp.path, mbReleaseId: _release);
+
+      expect(await run(), b.path);
+      expect(calls, <List<String>>[
+        <String>[a.path, b.path],
+      ]);
+      // 新实例（= 下次启动）：清单没变，读 local_scans.json，不再解码。
+      expect(await run(), b.path);
+      expect(calls, hasLength(1));
+      // 加了一张：清单变了，重新识别。
+      File(p.join(tmp.path, '03.jpg')).writeAsBytesSync(<int>[3]);
+      await run();
+      expect(calls, hasLength(2));
+    });
+
+    test('识别器失败不写缓存，退到 CAA', () async {
+      File(p.join(tmp.path, '01.jpg')).writeAsBytesSync(<int>[1]);
+      int fetches = 0;
+      final String? art = await service(
+        fetch: (_) async {
+          fetches++;
+          return const <MusicCoverImage>[];
+        },
+        detect: (_) async => throw StateError('native missing'),
+      ).resolve(albumUid: 'a', albumDir: tmp.path, mbReleaseId: _release);
+      expect(art, isNull);
+      expect(fetches, 1);
+      expect(
+        File(p.join(tmp.path, 'cache', 'local_scans.json')).existsSync(),
+        isFalse,
+      );
+    });
+
+    test('标签没有发行 ID 时用自动对号的；标签有就不问', () async {
+      final List<String> asked = <String>[];
+      Future<List<MusicCoverImage>> fetch(String id) async {
+        asked.add(id);
+        return const <MusicCoverImage>[];
+      }
+
+      int matcherCalls = 0;
+      Future<String?> matched() async {
+        matcherCalls++;
+        return _release.toUpperCase();
+      }
+
+      await service(
+        fetch: fetch,
+      ).resolve(albumUid: 'a', matchedRelease: matched);
+      expect(asked, <String>[_release]);
+      final MusicDiscArtService svc = service(fetch: fetch);
+      await svc.resolve(
+        albumUid: 'b',
+        mbReleaseId: _release,
+        matchedRelease: matched,
+      );
+      expect(matcherCalls, 1);
+      // invalidate 后重查。
+      svc.invalidate('b');
+      await svc.resolve(albumUid: 'b', matchedRelease: matched);
+      expect(matcherCalls, 2);
+    });
+
     test('没有发行 ID 也没有本地图：null', () async {
       expect(
         await service(
@@ -200,7 +279,7 @@ void main() {
     );
   });
 
-  testWidgets('有盘面图画盘，没有画方形封面', (WidgetTester tester) async {
+  testWidgets('有盘面图画盒子 + 盘且不出界，没有只画方形封面', (WidgetTester tester) async {
     final File disc = File(p.join(tmp.path, 'Disc.png'))
       ..writeAsBytesSync(_onePixelPng);
     final MusicDiscArtService svc = MusicDiscArtService(
@@ -208,15 +287,18 @@ void main() {
       fetchCovers: (_) async => const <MusicCoverImage>[],
     );
     Widget card(String uid, String? trackPath) => MaterialApp(
-      home: SizedBox.square(
-        dimension: 200,
-        child: MusicDiscArtOrCover(
-          albumUid: uid,
-          trackPath: trackPath,
-          service: svc,
-          fallback: const ColoredBox(
-            key: ValueKey<String>('fallback'),
-            color: Colors.pink,
+      // Center：否则 home 的紧约束把格子撑成整屏。
+      home: Center(
+        child: SizedBox.square(
+          dimension: 200,
+          child: MusicDiscArtOrCover(
+            albumUid: uid,
+            trackPath: trackPath,
+            service: svc,
+            cover: const ColoredBox(
+              key: ValueKey<String>('fallback'),
+              color: Colors.pink,
+            ),
           ),
         ),
       ),
@@ -228,7 +310,22 @@ void main() {
     });
     await tester.pump();
     expect(find.byType(MusicDiscFace), findsOneWidget);
-    expect(find.byKey(const ValueKey<String>('fallback')), findsNothing);
+    // 盒子（封面）也在，且盒子、盘都在 200×200 的格子里。
+    final Finder box = find.byKey(const ValueKey<String>('fallback'));
+    expect(box, findsOneWidget);
+    final Rect cell = tester.getRect(find.byType(MusicDiscArtOrCover));
+    final Rect caseRect = tester.getRect(box);
+    final Rect discRect = tester.getRect(find.byType(MusicDiscFace));
+    expect(caseRect.width, closeTo(200 * kMusicDiscCaseFraction, 0.01));
+    expect(discRect.right, greaterThan(caseRect.right));
+    for (final Rect r in <Rect>[caseRect, discRect]) {
+      expect(
+        cell.contains(r.topLeft) &&
+            cell.contains(r.bottomRight - const Offset(0.01, 0.01)),
+        isTrue,
+        reason: '$r',
+      );
+    }
     expect(disc.existsSync(), isTrue);
 
     await tester.runAsync(() async {
@@ -238,6 +335,16 @@ void main() {
     await tester.pump();
     expect(find.byType(MusicDiscFace), findsNothing);
     expect(find.byKey(const ValueKey<String>('fallback')), findsOneWidget);
+    expect(
+      tester.getSize(find.byKey(const ValueKey<String>('fallback'))),
+      const Size(200, 200),
+    );
+  });
+
+  test('悬停时盘仍不出界', () {
+    const double peek = kMusicDiscCaseFraction + kMusicDiscPeekHover;
+    expect(peek, lessThanOrEqualTo(1));
+    expect(kMusicDiscDiameterFraction, lessThanOrEqualTo(1));
   });
 }
 

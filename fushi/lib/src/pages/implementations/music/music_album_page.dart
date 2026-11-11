@@ -206,7 +206,7 @@ class _MusicAlbumPageState extends ConsumerState<MusicAlbumPage> {
       children: <Widget>[
         // 方形「唱片」材质大图（与专辑网格同一材质）；封面上不压角标，光盘规格
         // 徽标挪到右侧格式徽章那一排。
-        // 有真盘面扫描就画成盘（用户 2026-11-11），没有保持方形材质封面；悬停
+        // 有真盘面扫描就画「盒子 + 盘」（用户 2026-11-11），没有保持方形材质封面；悬停
         // 抬升 / 倾斜两种都由外层这一个 FushiHoverLift 给。
         FushiHoverLift(
           scale: kMusicHoverLiftScale,
@@ -216,9 +216,10 @@ class _MusicAlbumPageState extends ConsumerState<MusicAlbumPage> {
               albumUid: album.albumUid,
               trackPath: tracks.isEmpty ? null : tracks.first.path,
               mbReleaseId: album.mbReleaseId,
+              releaseMatcher: _app.musicAlbumReleases,
               hovering: hovering,
               size: kMusicAlbumDetailCoverSize,
-              fallback: musicMaterialCover(
+              cover: musicMaterialCover(
                 MusicCover(
                   coverPath: album.coverPath,
                   embeddedFromPath: embeddedCoverPath,

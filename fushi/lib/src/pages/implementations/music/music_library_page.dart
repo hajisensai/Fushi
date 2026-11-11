@@ -1214,13 +1214,14 @@ class _AlbumCard extends ConsumerWidget {
           children: <Widget>[
             AspectRatio(
               aspectRatio: kShelfAlbumAspectRatio,
-              // 有真盘面扫描就画成盘（用户 2026-11-11），没有保持方形封面。
+              // 有真盘面扫描就画「盒子 + 盘」（用户 2026-11-11），没有保持方形封面。
               child: MusicDiscArtOrCover(
                 albumUid: album.albumUid,
                 trackPath: first?.path,
                 mbReleaseId: album.mbReleaseId,
+                releaseMatcher: ref.read(appProvider).musicAlbumReleases,
                 hovering: hovering,
-                fallback: ShelfCoverFrame(
+                cover: ShelfCoverFrame(
                   child: MusicCover(
                     coverPath: album.coverPath,
                     embeddedFromPath: embeddedCoverPath,
