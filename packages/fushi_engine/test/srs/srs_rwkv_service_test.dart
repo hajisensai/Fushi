@@ -31,6 +31,9 @@ import 'package:fushi_engine/srs/srs_storage.dart';
 const String kProfile = '01928c3e-0000-7000-8000-0000000000aa';
 const int kDay = 86400000;
 
+/// 夹具库的「今天」所用的 UTC 偏移（分钟）：冻结的对拍记录是在 UTC+8 下录的。
+const int kFixtureUtcOffsetMin = 8 * 60;
+
 /// 正在跑的用例名：对拍记录（support/srs_rwkv_transcript.dart）的键。
 String _currentTest = '';
 
@@ -530,6 +533,9 @@ class _Fixture {
         bootClockMs: () => clock[0],
         bootId: 'b',
       ),
+      // 「今天」的时区钉成 UTC+8（夹具录制时的口径）：不钉就读跑测试那台机器的系统时区，日界与「今天结束」
+      // 的时刻随机器变，冻结的对拍记录只在 UTC+8 的机器上对得上（CI 是 UTC）。
+      localOffsetMin: () => kFixtureUtcOffsetMin,
     );
     // 这些用例测的是「按 R 合格」的排队规则：默认牌组没改过时带推荐的每天最少复习 40（会把 R 高于目标的卡补进
     // 来），这里显式关掉；测最少复习数的用例自己再写。
