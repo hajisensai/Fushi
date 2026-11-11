@@ -264,7 +264,8 @@ let connectionCache = null;
 // （dict-media-key.js），不再把 token 原值拼进 <img> URL；没报（旧 host / FushiApiServer）
 // 回原 token。connKey = base + '|' + token：与当前 cfg() 不一致（换 host / 端口 / 密钥）即视为
 // 未命中；SW 回收后内存清空同样未命中。
-let dictMediaCapability = { connKey: null, scheme: null };
+// connKey 初值用空串（未查过）：与真 key 同为字符串，且真 key 必含 '|'，不会相等。
+let dictMediaCapability = { connKey: '', scheme: null };
 let dictMediaCapabilityInflight = null;
 function rememberDictMediaCapability(base, token, status) {
   const scheme = status && typeof status.dictionaryMediaKey === 'string'
