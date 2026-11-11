@@ -160,6 +160,9 @@ pub(crate) const DRIFT_TX_POLICY: &[(&str, DriftTxPolicy)] = &[
     // 一轮收尾问「位置上此刻该删什么」（transport.rs `sync2_obsolete`）：登记待删的旧 head，与 `obsolete_ack` 同属传输记账。
     ("obsolete", Reject),
     ("obsolete_ack", Reject),
+    // 换过身份的设备清旧身份目录（store/sync2/former.rs `sync2_obsolete_former`）：一轮收尾之后发，写的是「这个目录多久
+    // 没变过」的观察记录（srs_meta），同属传输记账。
+    ("obsolete_former", Reject),
     ("relay_ack", Reject),
     ("ingest", Reject),
     ("ingest_begin", Reject),
