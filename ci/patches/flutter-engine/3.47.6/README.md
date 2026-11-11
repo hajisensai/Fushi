@@ -115,6 +115,66 @@ BUG-2345 / BUG-3796 / BUG-4073 / BUG-4333 都是这一个失步模型）。补�
 上游没有对应修复（截至 2026-11-10，`main` 上 `accessibility_bridge.cc` 仍是拒收即 return）。
 **删除条件**：上游 bridge 改成拒收后能自愈、且不再依赖 release 下无效的 `assert` 时删掉，或回移上游实现。
 
+### `engine-program-binary-cache.patch`（flutter 仓库根目录，叠在前五份之上）
+
+着色器程序磁盘缓存。冷启动时 `FlutterWindowsEngine::Run → … → PlatformView::NotifyCreated` 在主线程上
+干等 raster 线程建 `impeller::ContentContext`，后者逐条 `PipelineLibraryGLES::CreatePipeline →
+glLinkProgram`，ANGLE 在后台线程 `ProgramD3D::GetPixelExecutableTask → d3dcompiler_47` 把每条管线编成
+DXBC——每次启动全量重编，Release 实测主线程阻塞约 1 秒（580→1587 ms）。ANGLE 自带的程序缓存只在内存里，
+应用不给 `EGL_ANDROID_blob_cache` 回调就不落盘。补丁：
+
+- `egl::ProgramBinaryCache`（新文件 `egl/program_binary_cache.{h,cc}` + 单测）：blob cache 的磁盘后端。
+  一键一文件（`<目录>\<命名空间>\<SHA-1 十六进制>.bin`），文件头带 magic / 格式号 / 键长 / 值长 /
+  FNV-1a 校验和、正文带完整键；读出时逐项核对，短文件、校验不符、键不符一律当未命中并入队删除。
+  `Get` 同步读（它替代的就是同线程上的一次编译），ANGLE 先问大小再要字节，第一次读出的值暂存一次，
+  不读两遍。`Put` 只把值拷进队列；后台线程（`THREAD_MODE_BACKGROUND_BEGIN`，CPU 与 I/O 都降优先级）
+  负责写（临时文件 + `MoveFileExW` 原子替换，不 `FlushFileBuffers`——断电撕裂的文件过不了校验和）、
+  命中后刷新 mtime、删坏文件、总量封顶（32 MB，按 mtime 淘汰最久未用；单条 >4 MB 不存；排队未写
+  >16 MB 丢弃）。建不出目录、`ERROR_DISK_FULL` / `ERROR_ACCESS_DENIED` 等就整场停写，只退回照常编译。
+- 命名空间（子目录名）= FNV-1a(格式号 + `GetFlutterEngineVersion()` + 本 `flutter_windows.dll` 文件的
+  大小与修改时间)：换引擎版本、换补丁、重编 DLL 都换新目录，旧目录在后台删掉（只删 16 位小写十六进制
+  名的目录，不碰别的东西）。
+- `egl::Manager`：`eglInitialize` 之后、建上下文之前，若 runner 配了目录且 display 声明
+  `EGL_ANDROID_blob_cache`，调 `eglSetBlobCacheFuncsANDROID`。display 被所有 manager 共用、最后一个才
+  `eglTerminate`（ANGLE terminate 时清掉回调），所以装没装按 display 生命周期记。
+- 新导出 `FlutterDesktopSetProgramBinaryCacheDirectory(const wchar_t*)`：进程级，必须在建第一个引擎
+  之前调。runner 用 `GetProcAddress` 解析，原版引擎没有它就照常每次编译。
+
+缓存 key 与失效（ANGLE `84027ac` 源码）：
+
+- key 是 `MemoryProgramCache::ComputeHash`（`src/libANGLE/MemoryProgramCache.cpp:69-113`）：各 shader 的
+  `writeShaderKey`（源码 + 编译选项）、`ANGLE_PROGRAM_VERSION`、`GetANGLESHVersion()`、上下文 ES 版本、
+  **`GL_RENDERER` 字符串**、attrib / uniform / 输出位置绑定、TF varyings。D3D11 下 `GL_RENDERER` =
+  `ANGLE (<厂商>, <适配器描述> (<DeviceId>) Direct3D11 vs_5_0 ps_5_0, D3D11-<驱动版本>)`
+  （`src/libANGLE/Context.cpp:3490-3520`、`renderer/d3d/d3d11/Renderer11.cpp:2340-2356`、`:4533-4540`，
+  非 WebGL 上下文带完整驱动版本），所以**换显卡、换驱动都换 key**。
+- 载入时再查一遍：`Program::deserialize`（`src/libANGLE/Program.cpp:2260-2300`）核对程序版本、
+  64 位、SH 版本、renderer 字符串、ES 版本；`ProgramExecutableD3D::load`
+  （`renderer/d3d/ProgramExecutableD3D.cpp:491-520`）核对 `DeviceIdentifier`（VendorId / DeviceId /
+  SubSysId / Revision / FeatureLevel，`Renderer11.cpp:2358-2370`）与编译优化级别。任一不符 →
+  `CacheGetResult::Rejected` → 重新从源码链接（`Program.cpp:996-1001`），并经 `Put` 覆盖旧文件。
+- 值是 gzip（`angletypes.cpp:1063-1125` 的 `CompressBlob` / `DecompressBlob`），解压失败同样当未命中
+  （`MemoryProgramCache.cpp:137-143`）。
+- ANGLE 自己的 key **不**覆盖：ANGLE 翻译器 / D3D 后端改了 HLSL 生成但没动 `ANGLE_PROGRAM_VERSION`
+  （那个哈希只跟序列化相关文件走）。这一块由上面的命名空间兜住：换任何一份 DLL 都换目录。
+- 命中路径对 Impeller 成立：`PipelineLibraryGLES` 的 `LinkProgram`（`impeller/renderer/backend/gles/
+  pipeline_library_gles.cc:77-175`）是普通的 `glCompileShader` ×2 + `glBindAttribLocation` +
+  `glLinkProgram`，不设 `GL_PROGRAM_BINARY_RETRIEVABLE_HINT`、不是 separable，正好走
+  `Program::link` 里的缓存查找（`Program.cpp:961-1001`）与 `cacheProgramBinaryIfNotAlready`
+  （`:2380-2410`）。ANGLE 调回调时持着自己的 blob cache 锁（`BlobCache.cpp:55-72`、`:85-126`）。
+- 只缓存链好的程序，不改任何着色器、管线状态或渲染目标格式：渲染结果与不缓存完全一样；HDR
+  （`engine-impeller-hdr.patch`）的半浮点目标不进 key、也不触发重新编译（见上文该节）。
+
+目录由 runner 决定（`fushi/windows/runner/main.cpp` `ResolveProgramBinaryCacheDirectory`）：
+`FUSHI_TEST_ROOT` → `<测试根>\cache\shader-programs`；否则 exe 旁可写 → `<exe>.ShaderCache`；
+否则 `%LOCALAPPDATA%\Fushi\ShaderCache\<exe 路径哈希>`。永远不在生产数据根 `%APPDATA%\Fushi\Fushi` 下。
+诊断：`FUSHI_PROGRAM_CACHE_LOG=<文件>` 时后台线程每次排空队列追加一行命中 / 未命中 / 坏文件 / 写入 /
+丢弃 / 淘汰计数。引擎单测 `egl/program_binary_cache_unittests.cc`（目标
+`flutter/shell/platform/windows:flutter_windows_unittests`，未纳入本仓 CI）。
+
+**删除条件**：上游 Windows 嵌入层自己接上 `EGL_ANDROID_blob_cache`（或 Impeller GLES 自带程序二进制
+缓存）时删掉。
+
 ### `angle-scrgb-swapchain.patch`（ANGLE 仓库根目录 `git apply`）
 
 ANGLE 的 D3D11 后端原本**从不设置交换链色彩空间**，也不声明
@@ -135,9 +195,12 @@ sRGB 合成，>1.0 全被钳掉（实测：backing store 里 2.57，桌面上 1.
 tool/flutter_engine/build_patched_engine.ps1 -Root D:\fe -PatchVersion hdr-output-3   # 自动取 fushi/.fvmrc 的 Flutter 版本
 # 只重编 / 只打包：-Steps build,stage,pack -Modes release
 # 本机 VS 缺 ATL 时：-AtlDir '<另一套 VS>\VC\Tools\MSVC\<ver>\atlmfc'
+# 机器忙时限并发：-Jobs 8（每个 clang-cl 最多吃约 1 GB）
+# SDK 没装「Debugging Tools for Windows」（gn 报 dbghelp.dll not found）：-WindowsSdkDir <镜像目录>，
+#   目录里用 junction 指回真 SDK 的各子目录，再放一份 Debuggers\x64\dbghelp.dll（只被拷进 out 目录，不进产物）
 ```
 
-步骤：sync（clone `.fvmrc` 版本 + `gclient sync`；已有源码树就 fetch 新 tag 切过去再增量 sync）→ patch（五份引擎补丁 + ANGLE 一份，干净树上按序打）→
+步骤：sync（clone `.fvmrc` 版本 + `gclient sync`；已有源码树就 fetch 新 tag 切过去再增量 sync）→ patch（六份引擎补丁 + ANGLE 一份，干净树上按序打）→
 build（`gn --runtime-mode <mode>` + `ninja flutter_windows`，与官方产物同配置）→
 stage（按 `windows-x64{,-profile,-release}` 布局 + `engine-overlay.json`）→
 pack（连同 pdb 打 zip——`flutter build windows` 要求缓存里有 `flutter_windows.dll.pdb`，
