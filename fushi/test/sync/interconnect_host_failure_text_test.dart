@@ -29,6 +29,8 @@ InterconnectCapabilityOutcome<String> _down(
 );
 
 void main() {
+  // 纯逻辑用例，但切语言要动 TranslationProvider 的 GlobalKey，得先有 binding。
+  TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => LocaleSettings.setLocale(AppLocale.en));
 
   test('值得说的原因：凭据 / 证书 / 能力 / 配对；连不上与 HTTP 错误不说', () {
