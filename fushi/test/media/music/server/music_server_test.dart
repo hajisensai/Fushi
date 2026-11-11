@@ -11,6 +11,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/server/jellyfin_music_client.dart';
+import 'package:fushi/src/media/music/server/music_server_play_item.dart';
 import 'package:fushi/src/media/music/server/music_servers.dart';
 import 'package:fushi/src/media/music/server/youtube_music_gate.dart';
 import 'package:fushi/src/media/music/music_online_sources.dart';
