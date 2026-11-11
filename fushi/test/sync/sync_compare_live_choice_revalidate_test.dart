@@ -20,6 +20,8 @@ import 'package:fushi_engine/sync/local_library_host_service.dart';
 import 'package:fushi_engine/sync/sync_asset_package_service.dart';
 import 'package:path/path.dart' as p;
 
+import '../helpers/interconnect_legacy_host_scope.dart';
+
 FushiDatabase _memDb() =>
     FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 
@@ -152,7 +154,7 @@ void main() {
       BookProgressBaseline.decode(
         await clientDb.getSyncBaseline(
           _bookKey,
-          kInterconnectBookProgressDimension,
+          credentialScopedDimension(kInterconnectBookProgressDimension, token),
         ),
       )?.normCharOffset,
       1000,

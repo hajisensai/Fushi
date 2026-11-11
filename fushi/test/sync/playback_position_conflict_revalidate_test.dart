@@ -22,6 +22,8 @@ import 'package:fushi_engine/sync/local_library_host_service.dart';
 import 'package:fushi_engine/sync/sync_asset_package_service.dart';
 import 'package:path/path.dart' as p;
 
+import '../helpers/interconnect_legacy_host_scope.dart';
+
 FushiDatabase _memDb() =>
     FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 
@@ -129,7 +131,7 @@ void main() {
       expect(
         await clientDb.getSyncBaseline(
           uid,
-          kInterconnectVideoPositionDimension,
+          credentialScopedDimension(kInterconnectVideoPositionDimension, token),
         ),
         2500,
       );
@@ -154,7 +156,7 @@ void main() {
       expect(
         await clientDb.getSyncBaseline(
           uid,
-          kInterconnectVideoPositionDimension,
+          credentialScopedDimension(kInterconnectVideoPositionDimension, token),
         ),
         1000,
       );

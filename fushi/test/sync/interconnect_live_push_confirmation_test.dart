@@ -22,6 +22,8 @@ import 'package:fushi_engine/sync/local_library_host_service.dart';
 import 'package:fushi_engine/sync/sync_asset_package_service.dart';
 import 'package:path/path.dart' as p;
 
+import '../helpers/interconnect_legacy_host_scope.dart';
+
 FushiDatabase _memDb() =>
     FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 
@@ -148,7 +150,10 @@ void main() {
       expect(result, LiveReportResult.held);
       expect(await sync.baseline(_videoUid), 8000);
       expect(
-        await clientDb.getSyncBaseline(_videoUid, sync.pendingDimension),
+        await clientDb.getSyncBaseline(
+          _videoUid,
+          credentialScopedDimension(sync.pendingDimension, token),
+        ),
         isNull,
       );
       expect((await host.getVideoPosition(_videoUid)).positionMs, 12000);

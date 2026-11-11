@@ -292,17 +292,36 @@ void main() {
       expect(got.hostPin!.hostId, 'a');
     });
 
-    test('legacy candidate without hostId → unsuffixed dimension', () async {
+    // BUG-4434 残留①：老条目不再共用无后缀维度，按它实际使用的配对凭据分槽；
+    // 单 host 的无后缀旧行搬进这一槽，不丢。
+    test('legacy candidate without hostId → credential-scoped dimension, '
+        'legacy row moved in', () async {
       final FushiDatabase db = _memDb();
+      await db.setSyncBaseline('book-1', 'progress__fushiServer', 5);
       final InterconnectSyncBackend backend = await _interconnect(
         db,
         <FushiClientUrl>[const FushiClientUrl(url: 'http://127.0.0.1:9')],
       );
       final ({String storageDimension, InterconnectHostPin? hostPin}) got =
           await progressBaselineStorageFor(db, backend);
-      expect(got.storageDimension, 'progress__fushiServer');
+      final String expected = remoteScopedKey(
+        'progress__fushiServer',
+        InterconnectScopeIdentity.credential('scope-token').tag,
+      );
+      expect(got.storageDimension, expected);
       expect(got.hostPin, isNotNull);
       expect(got.hostPin!.hostId, isNull);
+      expect(
+        got.hostPin!.identity,
+        InterconnectScopeIdentity.credential('scope-token'),
+      );
+      expect(await db.getSyncBaselinesForDimension(expected), <String, int>{
+        'book-1': 5,
+      });
+      expect(
+        await db.getSyncBaselinesForDimension('progress__fushiServer'),
+        isEmpty,
+      );
     });
   });
 

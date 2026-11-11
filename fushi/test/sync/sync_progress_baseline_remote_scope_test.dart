@@ -185,7 +185,10 @@ class _SwitchingFileBox extends InterconnectSyncBackend {
   @override
   Future<InterconnectHostScope> liveHostScope() async =>
       const InterconnectHostScope(
-        pin: InterconnectHostPin(hostId: 'a', serial: 1),
+        pin: InterconnectHostPin(
+          identity: InterconnectScopeIdentity.host('a'),
+          serial: 1,
+        ),
         adoption: LegacyBaselineAdoption.keep,
       );
 

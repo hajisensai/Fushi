@@ -1378,7 +1378,7 @@ void _requireSeenHost(InterconnectHostPin? bound, InterconnectHostPin? seen) {
   if (seen == null || bound == seen) return;
   throw InterconnectHostChangedException(
     expected: seen,
-    actualHostId: bound?.hostId,
+    actual: bound?.identity,
   );
 }
 

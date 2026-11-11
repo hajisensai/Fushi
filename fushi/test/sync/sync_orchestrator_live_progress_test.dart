@@ -31,6 +31,8 @@ import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
+import '../helpers/interconnect_legacy_host_scope.dart';
+
 FushiDatabase _memDb() =>
     FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 
@@ -511,7 +513,10 @@ void main() {
         BookProgressBaseline.decode(
           await localDb.getSyncBaseline(
             'BookReopen',
-            kInterconnectBookProgressDimension,
+            credentialScopedDimension(
+              kInterconnectBookProgressDimension,
+              token,
+            ),
           ),
         ),
         isA<BookProgressBaseline>()
@@ -567,7 +572,7 @@ void main() {
       expect(
         await localDb.getSyncBaseline(
           'BookSame',
-          kInterconnectBookProgressDimension,
+          credentialScopedDimension(kInterconnectBookProgressDimension, token),
         ),
         BookProgressBaseline(sectionIndex: 2, normCharOffset: 200).encode(),
       );
@@ -1711,7 +1716,7 @@ void main() {
       expect(
         await localDb.getSyncBaseline(
           'video/nobase',
-          kInterconnectVideoPositionDimension,
+          credentialScopedDimension(kInterconnectVideoPositionDimension, token),
         ),
         isNull,
       );
@@ -1763,7 +1768,7 @@ void main() {
       expect(
         await localDb.getSyncBaseline(
           'video/same',
-          kInterconnectVideoPositionDimension,
+          credentialScopedDimension(kInterconnectVideoPositionDimension, token),
         ),
         420000,
       );
@@ -1851,7 +1856,10 @@ void main() {
       expect(
         await localDb.getSyncBaseline(
           'ABBase',
-          kInterconnectAudiobookPositionDimension,
+          credentialScopedDimension(
+            kInterconnectAudiobookPositionDimension,
+            token,
+          ),
         ),
         480000,
       );

@@ -15,49 +15,68 @@ import 'package:fushi/src/sync/webdav_ops.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/sync/sync_channel_scope.dart';
 
-/// 某作用域下 [logicalDimension] 的存储维度：[tag] 为 null（老条目作用域 / 认不出的
+/// 某作用域下 [logicalDimension] 的存储维度：[tag] 为 null（认不出的
 /// 后端）→ 逻辑维度本身，即升级前的那一行；否则 `<逻辑维度>@<tag>`。
 String baselineStorageDimension(String logicalDimension, String? tag) =>
     tag == null ? logicalDimension : remoteScopedKey(logicalDimension, tag);
 
-/// 进程内领养记录：数据库 → 存储维度 → 那一次领养的 Future。并发调用方 await 同一个，
-/// 领养只做一次；失败则移出，下次重试。
+/// 进程内领养记录：数据库 → 「源维度 → 目标维度」→ 那一次领养的 Future。并发调用方
+/// await 同一个，领养只做一次；失败则移出，下次重试。
 final Expando<Map<String, Future<void>>> _adoptions =
     Expando<Map<String, Future<void>>>('syncBaselineAdoptions');
 
-/// 把升级前写下的无后缀旧行按 [adoption] 处理到 [tag] 作用域（[tag] 为 null 时什么
-/// 都不做——那个作用域用的就是旧行）：
+/// 把升级前写下的无后缀旧行按 [adoption] 处理到 [tag] 作用域，并把 [predecessorTags]
+/// （同一远端先前用过的作用域）的行并进来（[tag] 为 null 时什么都不做——那个作用域
+/// 用的就是旧行）：
 /// - [LegacyBaselineAdoption.move]：每个逻辑维度的旧行逐行搬到目标作用域后删除。
 ///   目标行不存在或与旧行相等 → 照搬；目标行已存在且不同 → 两行都删。旧行可能来自
 ///   降级期间（比目标行新），也可能来自曾经认不出 host 的老条目作用域（与目标行谁新
 ///   不可考，评审 correctness-3）——拿错的那份当共同祖先会把单边改动判错方向、静默
 ///   覆盖，宁可这一条首轮无基线（两端不同判冲突，不丢数据）。
 /// - [LegacyBaselineAdoption.discard]：删除旧行（来源不可考）。
-/// - [LegacyBaselineAdoption.keep]：不动（老条目作用域正在用）。不记进程内缓存，
-///   候选之后变成单 host 时还能领养。
+/// - [LegacyBaselineAdoption.keep]：旧行不动，不记进程内缓存。
+/// - [predecessorTags]：每个前任作用域的行都按 move 的规则并入，与 [adoption] 无关
+///   （前任作用域与当前作用域是同一台远端，见 `InterconnectHostScope.predecessorTags`）。
 ///
-/// 判空 / 读源行 / 写目标 / 删源行在同一个事务里。
+/// 每一对「源 → 目标」的判空 / 读源行 / 写目标 / 删源行在同一个事务里，进程内按
+/// (db, 源, 目标) 只做一次。
 Future<void> ensureBaselinesAdopted(
   FushiDatabase db, {
   required List<String> logicalDimensions,
   required String? tag,
   required LegacyBaselineAdoption adoption,
+  List<String> predecessorTags = const <String>[],
 }) async {
-  if (tag == null || adoption == LegacyBaselineAdoption.keep) return;
-  final Map<String, Future<void>> byDimension = _adoptions[db] ??=
+  if (tag == null) return;
+  final Map<String, Future<void>> done = _adoptions[db] ??=
       <String, Future<void>>{};
   final List<Future<void>> waits = <Future<void>>[];
+  void adopt(String source, String target, LegacyBaselineAdoption how) {
+    final String key = '$source|$target';
+    waits.add(
+      done[key] ??= _adoptOne(db, source, target, how).catchError((
+        Object e,
+        StackTrace st,
+      ) {
+        done.remove(key);
+        Error.throwWithStackTrace(e, st);
+      }),
+    );
+  }
+
   for (final String logical in logicalDimensions) {
     final String storage = baselineStorageDimension(logical, tag);
-    final Future<void> existing = byDimension[storage] ??=
-        _adoptOne(db, logical, storage, adoption).catchError((
-          Object e,
-          StackTrace st,
-        ) {
-          byDimension.remove(storage);
-          Error.throwWithStackTrace(e, st);
-        });
-    waits.add(existing);
+    if (adoption != LegacyBaselineAdoption.keep) {
+      adopt(logical, storage, adoption);
+    }
+    for (final String predecessor in predecessorTags) {
+      if (predecessor == tag) continue;
+      adopt(
+        remoteScopedKey(logical, predecessor),
+        storage,
+        LegacyBaselineAdoption.move,
+      );
+    }
   }
   await Future.wait(waits);
 }
@@ -107,14 +126,18 @@ class SyncRemoteScope {
     required this.tag,
     required this.adoption,
     this.hostPin,
+    this.predecessorTags = const <String>[],
   });
 
-  /// 远端标签（[syncRemoteTag]）；null = 不分槽（认不出的后端、互联老条目），
+  /// 远端标签（[syncRemoteTag]）；null = 不分槽（认不出的后端），
   /// 存储维度就是逻辑维度本身。
   final String? tag;
 
   /// 升级前无后缀旧行怎么处理（见 [ensureBaselinesAdopted]）。
   final LegacyBaselineAdoption adoption;
+
+  /// 同一远端先前用过的作用域标签，绑定时并入 [tag]（见 [ensureBaselinesAdopted]）。
+  final List<String> predecessorTags;
 
   /// 互联时非空：本次作用域钉住的 host。落地 / 写基线前用
   /// [InterconnectSyncBackend.checkHostPin] 核对，会话中途换了 host 就放弃。
@@ -167,8 +190,8 @@ Future<void> signOutSyncBackend(FushiDatabase db, SyncBackend backend) async {
 /// [backend] 当前连着的远端的基线作用域。解析顺序：
 /// 1. 剥掉 [ObfuscatingSyncBackend]（纯包装，远端是被包着的那个）。
 /// 2. [SyncRemoteIdentified] → 按它报的身份分槽。
-/// 3. 互联 → 会话所连 host 的作用域（[InterconnectSyncBackend.liveHostScope]；老
-///    条目无 hostId 时不分槽）。
+/// 3. 互联 → 会话所连 host 的作用域（[InterconnectSyncBackend.liveHostScope]：
+///    hostId，认不出 hostId 的老条目按配对凭据）。
 /// 4. 认得出的云后端 → `类型 + 账号 + 服务器`（见 [cloudRemoteScopeOf]）。
 /// 5. 其余（测试 fake）→ 不分槽、不领养。
 Future<SyncRemoteScope> syncRemoteScopeOf(
@@ -192,6 +215,7 @@ Future<SyncRemoteScope> syncRemoteScopeOf(
       tag: scope.pin.tag,
       adoption: scope.adoption,
       hostPin: scope.pin,
+      predecessorTags: scope.predecessorTags,
     );
   }
   final SyncBackendType? cloud = cloudBackendTypeOfChannel(
@@ -280,6 +304,7 @@ progressBaselineStorageFor(FushiDatabase db, SyncBackend backend) async {
     logicalDimensions: <String>[logical],
     tag: scope.tag,
     adoption: scope.adoption,
+    predecessorTags: scope.predecessorTags,
   );
   return (
     storageDimension: baselineStorageDimension(logical, scope.tag),

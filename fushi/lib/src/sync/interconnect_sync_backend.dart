@@ -424,42 +424,50 @@ class InterconnectSyncBackend extends SyncBackend
 
   // ── 基线作用域（BUG-4434）──────────────────────────────────────────────────
 
-  /// 会话所连 host 的基线作用域 id（[interconnectScopeHostIdOf]）：选中候选的
-  /// hostId；老条目（无 hostId）认得出是哪台带 hostId 的 host 时取那台的，认不出为
-  /// null，共用无后缀的旧维度（URL 不是 host 身份，见取舍 T6）。
-  String? _scopeHostId;
+  /// 会话所连 host 的基线作用域（[interconnectScopeIdentityOf]）：选中候选的
+  /// hostId；老条目（无 hostId）认得出是哪台带 hostId 的 host 时取那台的，认不出时
+  /// 按它实际使用的配对凭据分槽（URL 不是 host 身份，见取舍 T6；凭据是签发它的那台
+  /// host 才认的随机值）。
+  InterconnectScopeIdentity? _scopeIdentity;
 
-  /// [_scopeHostId] 每变一次（含首次解析）自增。[InterconnectHostPin] 记下取 pin 时
-  /// 的值：同一 hostId 来回切换（a → b → a）也认得出中途换过 host。
+  /// [_scopeIdentity] 每变一次（含首次解析）自增。[InterconnectHostPin] 记下取 pin 时
+  /// 的值：同一作用域来回切换（a → b → a）也认得出中途换过 host。
   int _hostScopeSerial = 0;
 
-  String? _scopeHostIdOf(FushiClientUrl candidate) =>
-      interconnectScopeHostIdOf(candidate, _candidates, fallbackToken: _token);
+  InterconnectScopeIdentity? _scopeIdentityOf(FushiClientUrl candidate) =>
+      interconnectScopeIdentityOf(
+        candidate,
+        _candidates,
+        fallbackToken: _token,
+      );
 
   /// 先 [_ensureResolved]，再给出当前会话的基线作用域与旧无后缀基线的领养决定。
-  /// 候选按 [interconnectScopeHostIdOf] 归到 host：认得出是哪台的老条目与那台的
-  /// 带 hostId 地址算同一台，只有认不出的老条目才让旧行保留（keep）。不发额外请求
+  /// 候选按 [interconnectScopeIdentityOf] 归到 host：全部候选只有一个作用域（单 host，
+  /// 含只有老条目的单 host）→ 旧行搬给它（move）；多个 → 旧行来源不可考，删（discard）。
+  /// 当前作用域是 hostId 时，同一台 host 的候选所用凭据曾经的凭据作用域（老条目学到
+  /// hostId 之前写的）也并进来（[InterconnectHostScope.predecessorTags]）。不发额外请求
   /// （只读内存里的候选与已解析会话）。测试替身可覆写。
   Future<InterconnectHostScope> liveHostScope() async {
     await _ensureResolved();
-    final Set<String> hostIds = <String>{};
-    bool anyLegacy = false;
+    final InterconnectScopeIdentity? current = _scopeIdentity;
+    final Set<InterconnectScopeIdentity> hosts = <InterconnectScopeIdentity>{};
+    final Set<String> predecessors = <String>{};
     for (final FushiClientUrl c in _candidates) {
-      final String? id = _scopeHostIdOf(c);
-      if (id == null) {
-        anyLegacy = true;
-      } else {
-        hostIds.add(id);
+      final InterconnectScopeIdentity? id = _scopeIdentityOf(c);
+      if (id == null) continue;
+      hosts.add(id);
+      if (current?.hostId == null || id != current) continue;
+      final String? token = interconnectTokenFor(c, _token);
+      if (token != null) {
+        predecessors.add(InterconnectScopeIdentity.credential(token).tag);
       }
     }
-    final LegacyBaselineAdoption adoption = anyLegacy
-        ? LegacyBaselineAdoption.keep
-        : hostIds.length == 1
-        ? LegacyBaselineAdoption.move
-        : LegacyBaselineAdoption.discard;
     return InterconnectHostScope(
-      pin: InterconnectHostPin(hostId: _scopeHostId, serial: _hostScopeSerial),
-      adoption: adoption,
+      pin: InterconnectHostPin(identity: current, serial: _hostScopeSerial),
+      adoption: hosts.length <= 1
+          ? LegacyBaselineAdoption.move
+          : LegacyBaselineAdoption.discard,
+      predecessorTags: predecessors.toList(growable: false),
     );
   }
 
@@ -472,10 +480,10 @@ class InterconnectSyncBackend extends SyncBackend
   /// 之前」「导入落地之前」「上传之后、写基线之前」各调一次；抛出时这本书不落地、
   /// 不写基线，本轮文件箱进度阶段结束。
   void checkHostPin(InterconnectHostPin pin) {
-    if (pin.serial != _hostScopeSerial || pin.hostId != _scopeHostId) {
+    if (pin.serial != _hostScopeSerial || pin.identity != _scopeIdentity) {
       throw InterconnectHostChangedException(
         expected: pin,
-        actualHostId: _scopeHostId,
+        actual: _scopeIdentity,
       );
     }
   }
@@ -489,12 +497,15 @@ class InterconnectSyncBackend extends SyncBackend
     checkHostPin(pin);
   }
 
-  /// 测试入口：模拟会话故障切换到 [hostId] 所在的 host（null = 老条目作用域）。
-  /// hostId 不变时与真实选路一致，不算换 host。
+  /// 测试入口：模拟会话故障切换到 [hostId] 所在的 host（null = 无作用域）。
+  /// 作用域不变时与真实选路一致，不算换 host。
   @visibleForTesting
   void debugSwitchHostScope(String? hostId) {
-    if (_hostScopeSerial != 0 && hostId == _scopeHostId) return;
-    _scopeHostId = hostId;
+    final InterconnectScopeIdentity? next = hostId == null
+        ? null
+        : InterconnectScopeIdentity.host(hostId);
+    if (_hostScopeSerial != 0 && next == _scopeIdentity) return;
+    _scopeIdentity = next;
     _hostScopeSerial++;
   }
 
@@ -704,11 +715,11 @@ class InterconnectSyncBackend extends SyncBackend
     _registerPinnedNativeOrigin(normalized, chosen.fingerprintSha256);
     _activeHostIdentity = chosen.hostId ?? normalized;
     _activeCandidate = chosen;
-    // 基线作用域（BUG-4434）：选中候选的 hostId 变了（含首次）才算换 host；老条目
-    // （无 hostId）之间换地址都是 null，不算。
-    final String? scopeId = _scopeHostIdOf(chosen);
-    if (_hostScopeSerial == 0 || scopeId != _scopeHostId) {
-      _scopeHostId = scopeId;
+    // 基线作用域（BUG-4434）：选中候选的作用域变了（含首次）才算换 host。同一台
+    // host 的地址之间切换（同 hostId，或同一份配对凭据的老条目）不算。
+    final InterconnectScopeIdentity? scopeId = _scopeIdentityOf(chosen);
+    if (_hostScopeSerial == 0 || scopeId != _scopeIdentity) {
+      _scopeIdentity = scopeId;
       _hostScopeSerial++;
     }
     _sessionResolved = true;
@@ -4078,7 +4089,7 @@ class InterconnectSyncBackend extends SyncBackend
 
 /// 候选 [candidate] 的基线作用域 id（BUG-4434）：它自己的 hostId；老条目（无
 /// hostId）按「是否与某条带 hostId 的候选同一台 host」认领那台的 hostId，认不出 →
-/// null（无后缀的老条目作用域）。纯函数。
+/// null（由 [interconnectScopeIdentityOf] 退到凭据作用域）。纯函数。
 ///
 /// 同一台 host 常常一条地址带 hostId（配对 / 学习的锚点）、一条没有（手输的 DDNS
 /// 等 host 不公布的名字）。只看候选自己的 hostId 会把同一台 host 的基线拆成两槽：
@@ -4123,53 +4134,125 @@ String? interconnectScopeHostIdOf(
   return matched.length == 1 ? matched.single : null;
 }
 
+/// 候选 [candidate] 的基线作用域（BUG-4434）：[interconnectScopeHostIdOf] 认得出
+/// hostId → 那台 host；认不出（老条目：配对早于 host 公布 hostId 的版本、或明文 http
+/// 地址从不学习 hostId）→ 按它实际使用的配对凭据（[interconnectTokenFor]）分槽；连
+/// 凭据都没有（这条地址用不了）→ null。纯函数。
+///
+/// 凭据作身份的依据：token 是 host 用 `Random.secure` 生成的 256 位随机值，按设备
+/// 签发（v2）或 host 自己的接入密钥（v1），另一台 host 不认，所以会话能用这份凭据
+/// 同步的老条目只可能连着签发它的那台；同一台 host 的多条老地址（同一份凭据）落同一
+/// 槽，地址之间切换不算换 host。凭据只经 [syncRemoteTag] 截断哈希进内存与库，不存
+/// 明文。代价：重新配对换了 token 就换槽（首轮两端不同的条目判一次冲突，不丢数据）。
+/// 残留：两台 host 认同一份凭据（用户手动给两台配了同一个接入密钥、或拿一台的备份
+/// 恢复出另一台）时仍会被当成同一台。
+InterconnectScopeIdentity? interconnectScopeIdentityOf(
+  FushiClientUrl candidate,
+  List<FushiClientUrl> candidates, {
+  required String? fallbackToken,
+}) {
+  final String? hostId = interconnectScopeHostIdOf(
+    candidate,
+    candidates,
+    fallbackToken: fallbackToken,
+  );
+  if (hostId != null) return InterconnectScopeIdentity.host(hostId);
+  final String? token = interconnectTokenFor(candidate, fallbackToken);
+  return token == null ? null : InterconnectScopeIdentity.credential(token);
+}
+
+/// 一台 host 在基线表里的身份（BUG-4434）：它的 hostId，或（认不出 hostId 的老
+/// 条目）它签发的配对凭据的截断哈希。见 [interconnectScopeIdentityOf]。
+@immutable
+class InterconnectScopeIdentity {
+  const InterconnectScopeIdentity.host(String this.hostId)
+    : credentialTag = null;
+
+  InterconnectScopeIdentity.credential(String token)
+    : hostId = null,
+      credentialTag = syncRemoteTag('fushiServer-credential\n$token');
+
+  /// host 自报的稳定设备 id；凭据作用域为 null。
+  final String? hostId;
+
+  /// 凭据作用域的标签（凭据的截断哈希）；hostId 作用域为 null。
+  final String? credentialTag;
+
+  /// 基线维度的远端标签（[remoteScopedKey] 的后缀）。
+  String get tag =>
+      hostId != null ? syncRemoteTag('fushiServer\n$hostId') : credentialTag!;
+
+  @override
+  bool operator ==(Object other) =>
+      other is InterconnectScopeIdentity &&
+      other.hostId == hostId &&
+      other.credentialTag == credentialTag;
+
+  @override
+  int get hashCode => Object.hash(hostId, credentialTag);
+
+  @override
+  String toString() =>
+      hostId != null ? 'host:$hostId' : 'credential:$credentialTag';
+}
+
 /// 一个互联会话所连 host 的基线作用域（BUG-4434）。
 ///
-/// [hostId] == null 表示老条目（配对时没记 hostId）：全部老条目共用无后缀维度，地址
-/// 之间切换不算换 host（URL 不是 host 身份）。[serial] 是取 pin 时会话的作用域计数，
-/// 同一 hostId 中途换走又换回也认得出来。
+/// [identity] 是那台 host 的作用域（[interconnectScopeIdentityOf]）；null 只出现在
+/// 测试替身（无作用域，用无后缀维度）。[serial] 是取 pin 时会话的作用域计数，同一
+/// 作用域中途换走又换回也认得出来。
 class InterconnectHostPin {
-  const InterconnectHostPin({required this.hostId, required this.serial});
+  const InterconnectHostPin({required this.identity, required this.serial});
 
-  final String? hostId;
+  final InterconnectScopeIdentity? identity;
   final int serial;
 
-  /// 基线维度的远端标签（[syncRemoteTag]）；老条目作用域为 null（用无后缀维度）。
-  String? get tag =>
-      hostId == null ? null : syncRemoteTag('fushiServer\n$hostId');
+  /// 作用域是 hostId 时的 hostId；凭据作用域 / 无作用域为 null。
+  String? get hostId => identity?.hostId;
+
+  /// 基线维度的远端标签；无作用域为 null（用无后缀维度）。
+  String? get tag => identity?.tag;
 
   @override
   bool operator ==(Object other) =>
       other is InterconnectHostPin &&
-      other.hostId == hostId &&
+      other.identity == identity &&
       other.serial == serial;
 
   @override
-  int get hashCode => Object.hash(hostId, serial);
+  int get hashCode => Object.hash(identity, serial);
 
   @override
-  String toString() => 'InterconnectHostPin($hostId#$serial)';
+  String toString() => 'InterconnectHostPin($identity#$serial)';
 }
 
 /// 旧无后缀基线行的领养决定（BUG-4434，由当前已启用候选算出）。
 enum LegacyBaselineAdoption {
-  /// 候选只有一台带 hostId 的 host：旧行全部归它（覆盖目标行后删源行）。
+  /// 候选只有一个作用域（单 host，含只有老条目的单 host）：旧行全部归它。
   move,
 
-  /// 候选有多台带 hostId 的 host：旧行属于哪台不可考，删掉，不领养。
+  /// 候选有多个作用域：旧行属于哪台不可考，删掉，不领养。
   discard,
 
-  /// 候选里有认不出属于哪台 host 的老条目（[interconnectScopeHostIdOf] 为 null）：
-  /// 旧行是老条目作用域正在用的基线，不动。
+  /// 不动（认不出远端的测试替身 / 后端）。
   keep,
 }
 
 /// [InterconnectSyncBackend.liveHostScope] 的结果。
 class InterconnectHostScope {
-  const InterconnectHostScope({required this.pin, required this.adoption});
+  const InterconnectHostScope({
+    required this.pin,
+    required this.adoption,
+    this.predecessorTags = const <String>[],
+  });
 
   final InterconnectHostPin pin;
   final LegacyBaselineAdoption adoption;
+
+  /// 同一台 host 先前用过的作用域标签：当前作用域是 hostId 时，这台 host 的候选
+  /// 所用凭据的凭据作用域（老条目学到 hostId / 与带 hostId 的地址归组之前写的基线）。
+  /// 绑定时逐行并入当前作用域（见 `ensureBaselinesAdopted`）。
+  final List<String> predecessorTags;
 }
 
 /// 会话在钉住之后换了 host（BUG-4434）：用旧 host 的基线对新 host 判定会把另一台
@@ -4177,11 +4260,11 @@ class InterconnectHostScope {
 class InterconnectHostChangedException implements Exception {
   const InterconnectHostChangedException({
     required this.expected,
-    required this.actualHostId,
+    required this.actual,
   });
 
   final InterconnectHostPin expected;
-  final String? actualHostId;
+  final InterconnectScopeIdentity? actual;
 
   @override
   String toString() =>

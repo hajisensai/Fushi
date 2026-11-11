@@ -101,6 +101,7 @@ class InterconnectBookProgressSync {
       ],
       tag: tag,
       adoption: scope.adoption,
+      predecessorTags: scope.predecessorTags,
     );
     _storageDimension = baselineStorageDimension(
       kInterconnectBookProgressDimension,

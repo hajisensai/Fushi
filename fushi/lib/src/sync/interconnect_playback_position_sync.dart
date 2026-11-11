@@ -173,6 +173,7 @@ class InterconnectPlaybackPositionSync {
       logicalDimensions: <String>[dimension, pendingDimension],
       tag: tag,
       adoption: scope.adoption,
+      predecessorTags: scope.predecessorTags,
     );
     _storageDimension = baselineStorageDimension(dimension, tag);
     _storagePendingDimension = baselineStorageDimension(pendingDimension, tag);

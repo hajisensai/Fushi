@@ -1,4 +1,4 @@
-/// BUG-4434：互联 live 基线按 host 分槽（只对带 hostId 的 host），会话钉住 host。
+/// BUG-4434：互联 live 基线按 host 分槽（hostId；认不出 hostId 的老条目按配对凭据），会话钉住 host。
 ///
 /// 此前 live 基线键 `(assetKey, dimension)` 不带 host：client 配了两台 host（A、B）
 /// 时，与 A 达成一致的基线在会话故障切到 B 之后被照搬去判 B 的值——本端停在基线、
@@ -34,6 +34,10 @@ String _tagOf(String hostId) => syncRemoteTag('fushiServer\n$hostId');
 
 String _scoped(String logical, String hostId) =>
     remoteScopedKey(logical, _tagOf(hostId));
+
+/// 老条目（认不出 hostId）按配对凭据分槽的存储维度（BUG-4434 残留①）。
+String _credScoped(String logical, String token) =>
+    remoteScopedKey(logical, InterconnectScopeIdentity.credential(token).tag);
 
 Future<void> _seedBook(FushiDatabase db, String title) => db.insertEpubBook(
   EpubBooksCompanion.insert(
@@ -91,7 +95,11 @@ class _Host {
   final FushiSyncServer server;
   final String base;
 
-  static Future<_Host> start(Directory work, String name) async {
+  static Future<_Host> start(
+    Directory work,
+    String name, {
+    String token = _token,
+  }) async {
     final FushiDatabase db = _memDb();
     final LocalLibraryHostService libSvc = LocalLibraryHostService(
       db: db,
@@ -103,7 +111,7 @@ class _Host {
     final FushiSyncServer server = FushiSyncServer(
       syncDataDir: p.join(work.path, 'server_$name'),
       port: 0,
-      token: _token,
+      token: token,
       allowLan: false,
       libraryService: libSvc,
     );
@@ -368,7 +376,7 @@ void main() {
     }
   });
 
-  test('老条目多地址（都无 hostId）：换地址不算换 host，接着推进不冲突、用无后缀维度', () async {
+  test('老条目多地址（都无 hostId、同一份凭据）：换地址不算换 host，接着推进不冲突、用凭据作用域', () async {
     await _seedBook(hostA.db, 'BookL');
     final FushiDatabase localDb = _memDb();
     addTearDown(localDb.close);
@@ -410,7 +418,7 @@ void main() {
     expect(after.pin, before.pin, reason: '老条目之间换地址不算换 host');
     expect(
       await after.storageDimensionForTest(),
-      kInterconnectBookProgressDimension,
+      _credScoped(kInterconnectBookProgressDimension, _token),
     );
 
     await _seedPosition(
@@ -429,10 +437,150 @@ void main() {
       BookProgressBaseline.decode(
         await localDb.getSyncBaseline(
           'BookL',
-          kInterconnectBookProgressDimension,
+          _credScoped(kInterconnectBookProgressDimension, _token),
         ),
       )!.sectionIndex,
       3,
+    );
+  });
+
+  // BUG-4434 残留①：两台 host 都是老条目（无 hostId，各自签发的凭据）。修复前两者
+  // 共用无后缀维度：与 A 达成的基线被拿去判 B，本端停在基线、B 不同 → B 的进度静默
+  // 覆盖本机。
+  test('残留①：无 hostId 的两台 host（凭据不同）切换后，B 的不同进度判冲突，不静默落到本机', () async {
+    final _Host legacyA = await _Host.start(work, 'la', token: 'tok-a');
+    final _Host legacyB = await _Host.start(work, 'lb', token: 'tok-b');
+    addTearDown(legacyA.stop);
+    addTearDown(legacyB.stop);
+    await _seedBook(legacyA.db, 'BookW');
+    await _seedBook(legacyB.db, 'BookW');
+    await _seedPosition(
+      legacyB.db,
+      'BookW',
+      section: 7,
+      norm: 700,
+      updatedAt: 3000,
+    );
+    final FushiDatabase localDb = _memDb();
+    addTearDown(localDb.close);
+    await _seedBook(localDb, 'BookW');
+    await _seedPosition(
+      localDb,
+      'BookW',
+      section: 2,
+      norm: 200,
+      updatedAt: 1000,
+    );
+
+    final InterconnectSyncBackend backend =
+        await _buildBackend(<FushiClientUrl>[
+          FushiClientUrl(url: legacyA.base, token: 'tok-a'),
+          FushiClientUrl(url: legacyB.base, token: 'tok-b'),
+        ]);
+    final SyncOrchestrator orch = _orchestrator(
+      localDb,
+      backend,
+      Directory(p.join(work.path, 't'))..createSync(),
+    );
+    final InterconnectBookProgressSync onA = InterconnectBookProgressSync(
+      db: localDb,
+      backend: backend,
+    );
+    await onA.bind();
+    final SyncRunReport first = SyncRunReport();
+    await orch.syncBookProgressLiveForTest(first, backend);
+    expect(first.errors, isEmpty, reason: '${first.errors}');
+    expect((await _positionOf(legacyA.db, 'BookW'))!.sectionIndex, 2);
+
+    _down.add(legacyA.base);
+    await backend.probeHostReachability();
+    expect(backend.resolvedHostBaseUrl, legacyB.base);
+    await expectLater(
+      onA.remoteProgress((await localDb.getEpubBook('BookW'))!),
+      throwsA(isA<InterconnectHostChangedException>()),
+      reason: '钉在 A 的实例不得读 B',
+    );
+
+    final SyncRunReport second = SyncRunReport();
+    await orch.syncBookProgressLiveForTest(second, backend);
+    expect(second.errors, isEmpty, reason: '${second.errors}');
+    final ReaderPositionRow local = (await _positionOf(localDb, 'BookW'))!;
+    expect(local.sectionIndex, 2, reason: 'B 的进度不得静默覆盖本机');
+    expect(second.conflicts.map((SyncConflict c) => c.assetKey), <String>[
+      'BookW',
+    ]);
+    expect(
+      await localDb.getSyncBaseline(
+        'BookW',
+        _credScoped(kInterconnectBookProgressDimension, 'tok-a'),
+      ),
+      isNotNull,
+      reason: '与 A 的基线在 A 的凭据作用域',
+    );
+    expect(
+      await localDb.getSyncBaseline(
+        'BookW',
+        _credScoped(kInterconnectBookProgressDimension, 'tok-b'),
+      ),
+      isNull,
+      reason: '与 B 没达成过一致',
+    );
+  });
+
+  // 回归：只有一台老 host（两条地址、同一份凭据）的用户，升级前写在无后缀维度的
+  // 基线搬进凭据作用域后照常当共同祖先用——本机单边前进照推给 host，不判冲突。
+  test('单 host 老用户：无后缀存量基线搬进凭据作用域，判定不变（本机单边前进照推，不冲突）', () async {
+    await _seedBook(hostA.db, 'BookS');
+    await _seedPosition(
+      hostA.db,
+      'BookS',
+      section: 1,
+      norm: 100,
+      updatedAt: 1000,
+    );
+    final FushiDatabase localDb = _memDb();
+    addTearDown(localDb.close);
+    await _seedBook(localDb, 'BookS');
+    await _seedPosition(
+      localDb,
+      'BookS',
+      section: 4,
+      norm: 400,
+      updatedAt: DateTime.now().millisecondsSinceEpoch,
+    );
+    await localDb.setSyncBaseline(
+      'BookS',
+      kInterconnectBookProgressDimension,
+      const BookProgressBaseline(sectionIndex: 1, normCharOffset: 100).encode(),
+    );
+    final InterconnectSyncBackend backend =
+        await _buildBackend(<FushiClientUrl>[
+          FushiClientUrl(url: hostA.base),
+          FushiClientUrl(url: 'http://localhost:${hostA.server.port}'),
+        ]);
+    final SyncRunReport report = SyncRunReport();
+    await _orchestrator(
+      localDb,
+      backend,
+      Directory(p.join(work.path, 't'))..createSync(),
+    ).syncBookProgressLiveForTest(report, backend);
+    expect(report.errors, isEmpty, reason: '${report.errors}');
+    expect(report.conflicts, isEmpty, reason: '存量基线没丢');
+    expect((await _positionOf(hostA.db, 'BookS'))!.sectionIndex, 4);
+    expect(
+      await localDb.getSyncBaselinesForDimension(
+        kInterconnectBookProgressDimension,
+      ),
+      isEmpty,
+    );
+    expect(
+      BookProgressBaseline.decode(
+        await localDb.getSyncBaseline(
+          'BookS',
+          _credScoped(kInterconnectBookProgressDimension, _token),
+        ),
+      )!.sectionIndex,
+      4,
     );
   });
 
@@ -518,7 +666,7 @@ void main() {
       expect((await _positionOf(db, 'BookM'))!.sectionIndex, 2);
     });
 
-    test('混配（一台带 hostId + 一条认不出的老条目）：旧行保留给老条目，hostId 作用域为空', () async {
+    test('混配（一台带 hostId + 一条认不出的老条目）：两个作用域，旧行来源不可考被删', () async {
       final FushiDatabase db = _memDb();
       addTearDown(db.close);
       await db.setSyncBaseline('v1', dim, 10);
@@ -531,10 +679,42 @@ void main() {
       final InterconnectPlaybackPositionSync sync = videoSync(db, backend);
       await sync.bind();
       expect(sync.pin!.hostId, 'a');
-      expect(await db.getSyncBaselinesForDimension(dim), <String, int>{
-        'v1': 10,
-      });
+      expect(await db.getSyncBaselinesForDimension(dim), isEmpty);
       expect(await db.getSyncBaselinesForDimension(_scoped(dim, 'a')), isEmpty);
+      expect(
+        await db.getSyncBaselinesForDimension(_credScoped(dim, 'issued-by-b')),
+        isEmpty,
+      );
+    });
+
+    // 老条目学到 hostId（https 锚点从 /api/host/addresses 学到、或带 hostId 重新
+    // 配对拿到同一份凭据）后作用域从凭据换成 hostId：凭据作用域的基线并进来，不丢。
+    test('老条目学到 hostId 后：同一份凭据的凭据作用域基线并入 hostId 作用域', () async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      await db.setSyncBaseline('v1', _credScoped(dim, _token), 10);
+      await db.setSyncBaseline('v1', _credScoped(pending, _token), 11);
+      await db.setSyncBaseline('v2', _credScoped(dim, 'someone-else'), 20);
+      final InterconnectSyncBackend backend = await _buildBackend(
+        <FushiClientUrl>[FushiClientUrl(url: hostA.base, hostId: 'a')],
+      );
+      final InterconnectPlaybackPositionSync sync = videoSync(db, backend);
+      await sync.bind();
+      expect(await sync.storageDimensionForTest(), _scoped(dim, 'a'));
+      expect(await sync.baseline('v1'), 10);
+      expect(
+        await db.getSyncBaselinesForDimension(_scoped(pending, 'a')),
+        <String, int>{'v1': 11},
+      );
+      expect(
+        await db.getSyncBaselinesForDimension(_credScoped(dim, _token)),
+        isEmpty,
+      );
+      expect(
+        await db.getSyncBaselinesForDimension(_credScoped(dim, 'someone-else')),
+        <String, int>{'v2': 20},
+        reason: '别的凭据（别的 host）的槽不动',
+      );
     });
 
     // 评审 correctness-3：目标槽已有行时，无后缀旧行与它谁新不可考（降级期间写的
@@ -621,6 +801,40 @@ void main() {
       expect(after.pin, before.pin, reason: '同一台 host 的两条地址之间切换不算换 host');
       expect(await after.storageDimensionForTest(), _scoped(dim, 'a'));
       expect(await after.baseline('v1'), 500);
+    });
+  });
+
+  group('interconnectScopeIdentityOf', () {
+    test('认得出 hostId → host；认不出 → 所用凭据；没有凭据 → null', () {
+      final FushiClientUrl a = FushiClientUrl(
+        url: 'http://lan',
+        hostId: 'a',
+        token: 't',
+      );
+      final FushiClientUrl linked = FushiClientUrl(url: 'http://ddns');
+      final FushiClientUrl other = FushiClientUrl(
+        url: 'http://other',
+        token: 'u',
+      );
+      final List<FushiClientUrl> all = <FushiClientUrl>[a, linked, other];
+      expect(
+        interconnectScopeIdentityOf(linked, all, fallbackToken: 't'),
+        const InterconnectScopeIdentity.host('a'),
+      );
+      expect(
+        interconnectScopeIdentityOf(other, all, fallbackToken: 't'),
+        InterconnectScopeIdentity.credential('u'),
+      );
+      expect(
+        interconnectScopeIdentityOf(linked, <FushiClientUrl>[
+          linked,
+        ], fallbackToken: null),
+        isNull,
+      );
+      expect(
+        InterconnectScopeIdentity.credential('u').tag,
+        isNot(InterconnectScopeIdentity.credential('t').tag),
+      );
     });
   });
 
