@@ -28,16 +28,16 @@ state_file="$state_dir/x11-fallback"
 # A crash this soon after launch counts as "X11 drawing does not work here".
 startup_window_s=20
 
-if [ "${GDK_BACKEND:-}" != x11 ] || [ -z "${WAYLAND_DISPLAY:-}" ] ||
-  [ -n "${GAMESCOPE_WAYLAND_DISPLAY:-}" ]; then
+if [[ "${GDK_BACKEND:-}" != x11 || -z "${WAYLAND_DISPLAY:-}" ||
+  -n "${GAMESCOPE_WAYLAND_DISPLAY:-}" ]]; then
   exec "$binary" "$@"
 fi
 
 build_id="$(sed -n 's/^app-commit=//p' "$flatpak_info" 2>/dev/null | head -n 1)"
 marker="app-commit=${build_id:-unknown}"
 
-if [ -f "$state_file" ]; then
-  if [ "$(head -n 1 "$state_file" 2>/dev/null)" = "$marker" ]; then
+if [[ -f "$state_file" ]]; then
+  if [[ "$(head -n 1 "$state_file" 2>/dev/null)" == "$marker" ]]; then
     export GDK_BACKEND=wayland
     exec "$binary" "$@"
   fi
@@ -49,8 +49,8 @@ fi
 is_crash() {
   case "$1" in
     132 | 133 | 134 | 135 | 136 | 139) return 0 ;;
+    *) return 1 ;;
   esac
-  return 1
 }
 
 # Runs the app with GDK_BACKEND=$1 and the remaining arguments, passing
@@ -75,7 +75,7 @@ run_app() {
     if ! kill -0 "$child" 2>/dev/null; then
       wait "$child" 2>/dev/null
       local final=$?
-      [ "$final" -ne 127 ] && status=$final
+      [[ "$final" -ne 127 ]] && status=$final
       break
     fi
   done
@@ -84,12 +84,12 @@ run_app() {
 }
 
 run_app x11 "$@"
-if is_crash "$status" && [ "$elapsed_s" -lt "$startup_window_s" ]; then
+if is_crash "$status" && [[ "$elapsed_s" -lt "$startup_window_s" ]]; then
   echo "fushi: the X11 window crashed after ${elapsed_s}s (exit $status);" \
     "starting again on Wayland. Delete $state_file to try X11 again." >&2
   mkdir -p "$state_dir" && printf '%s\n' "$marker" >"$state_file"
   run_app wayland "$@"
-  if is_crash "$status" && [ "$elapsed_s" -lt "$startup_window_s" ]; then
+  if is_crash "$status" && [[ "$elapsed_s" -lt "$startup_window_s" ]]; then
     # It crashes on Wayland as well, so X11 was not the problem.
     rm -f "$state_file"
   fi
