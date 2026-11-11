@@ -111,6 +111,43 @@ Android / Windows / macOS / iOS debug/beta workflow 必须使用跨 workflow 统
 - **CI**：凡用 `setup-fushi-compute` 的 job 紧跟着用 `.github/actions/setup-fushi-rwkv`（同样的 `android-abis`，导出 `FUSHI_RWKV_LIB`）；出包 job 与 fushi_compute 同处各带 rust-cache 构建并出包后核对（APK 每个 ABI、Windows bundle、macOS Frameworks、iOS Runner 导出 `frwkv_*`、服务端 Linux / Windows bundle），dlopen 冒烟比对的 ABI 版本从 `src/lib.rs` 的 `ABI_VERSION` 读、不写死。PR 上 `native-rwkv-gate.yml` 跑三种 CPU 内核的 `cargo test --release`（权重与小模型包按 `fetch_model.sh` 钉的两个 SHA-256 缓存）+ Android 三 ABI 真编与符号核对。
 - **许可**：fushi_rwkv 是 AGPL-3.0-or-later（推理核心搬自 kuma3-anki-core，所有者 2026-10-19 拍板接受，见 `native/fushi_rwkv/UPSTREAM.md`）。动态加载它的四端 app 与静态链它的 iOS 伞形库 / Runner 都随之受 AGPL 约束（GPL-3.0 第 13 条允许与 AGPL-3.0 合并分发）。
 
+## Rust 本地开发循环（quick profile）
+
+- **改 Rust 时的「编译—测试」循环一律用 `quick` profile，不用 `--release`**：在 `native/<crate>/` 下
+  `cargo test --profile quick --lib <过滤>`。带 feature 的照加（fushi_fsrs 的 `--features id_audit`）；有 `tests/*.rs`
+  集成测试的 crate（fushi_music / fushi_rwkv / fushi_corpus）按需去掉 `--lib` 或写 `--test <名>`。profile 定义在仓库根
+  `.cargo/config.toml`（cargo 从工作目录逐级向上找，所以在仓库任意子目录、或从根目录带 `--manifest-path` 都生效）。
+- **为什么**：各 crate 的 `[profile.release]` 是出包配置（`lto = true` + `codegen-units = 1`）——改一行就把整个 crate 连同全部
+  依赖重新做一遍 fat LTO，而且基本单线程；`cargo test --release` 还要把库本体（cdylib + staticlib）和测试可执行文件各做一遍。
+  `quick` 继承 release（优化级别、各包 `opt-level` 覆盖、`panic`、不开 `debug-assertions` / `overflow-checks` 都不变，测试的
+  运行语义与 CI 的 `cargo test --release` 相同），只改编译方式：不做 LTO、256 个 codegen unit、增量编译、不 strip（panic 回溯
+  带函数名）。
+- **实测**（2026-11-11，i5-12600KF，fushi_fsrs 6.8 万行，机器同时有其他会话在编）：
+
+  | | `--release` | `--profile quick --lib` |
+  |---|---|---|
+  | 改一行后重编到可跑测试 | 7～15 分钟 | **8～9 秒** |
+  | 全新 target 冷编（含依赖） | 约 15 分钟 | 2.5～5.5 分钟（看机器负载） |
+  | 一轮「test + `id_audit` test + build」 | 约 40 分钟 | —— |
+  | 全量 lib 测试的运行时间 | 约 410 秒 | 同量级：384 个测试 258 秒（release 那格是另一分支的 460 个测试） |
+
+- **`--lib`**：不带它，`cargo test` 会把库本体与测试可执行文件各编一遍；测试都写在 crate 内（`#[cfg(test)]`）的 crate
+  （fushi_fsrs / fushi_compute / fushi_web_core）加 `--lib` 只编测试那一份，doctest 也跳过。
+- **`--release` 只在三种时候用**：① 出产物（`build_*` 脚本、`tool/native_libs.ps1`，给 app 与 `flutter test` 用的库必须是
+  release）；② 量性能（基准、README 里的耗时——`quick` 没有跨 crate 内联，**不要在 `quick` 下量性能**）；③ 复核只在 LTO /
+  单 codegen unit 下才出现的问题。全量 `cargo test --release --locked` 由 PR CI 的 `native-*-gate.yml` 跑，本地不拿它当循环，
+  一个分支至多 push 前跑一次。
+- **一个 worktree 一个 target 目录，不要跨 worktree 共用 `CARGO_TARGET_DIR`**：cargo 给工作区内 crate 算单元哈希时用的是相对
+  工作区的路径，不同 worktree 的 `fushi_fsrs` 是**同一个哈希**（实测五个 worktree 的 `.fingerprint/fushi_fsrs-<哈希>` 全相同），
+  新鲜度只比源文件 mtime——共用目录时，别的 worktree 刚编出的产物会被当成本 worktree 的新鲜产物直接拿来跑，测的不是你的
+  代码（假绿 / 假红）；并发构建还会互相等目录锁。默认的 `native/<crate>/target/` 就是按 worktree 分开的，不用另设；同一个
+  worktree 里的多个子代理共用它是对的。
+- **sccache（可选）**：`tool/native_libs.ps1` 发现装了就自动挂上。实测只对冷编有用且有限：换一个 target 目录后 146 次可缓存编译只命中 26 次
+  （带 build script 的依赖把 `OUT_DIR`——在 target 目录下——编进产物，下游跟着失配），冷编 153 秒 → 92 秒；对「改一行重编」
+  没有帮助（工作区 crate 开了增量，sccache 不缓存增量编译）。缓存目录用 sccache 自己的配置文件指定（Windows 开发机在
+  `D:\dev-cache\sccache`，别落 C 盘）。
+- 旧分支 / 还没合到这份配置的 worktree：本机 `~/.cargo/config.toml` 里放同一段 `[profile.quick]` 即可（Windows 开发机已放）。
+
 ## 发布通道
 
 默认 push 只发 debug 通道；beta/test 和 formal 都必须手动触发。任何 push 触发的 GitHub Release 都必须是 prerelease 且 `make_latest: false`，不得创建或更新 Latest/正式 release。

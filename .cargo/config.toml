@@ -1,0 +1,23 @@
+# 仓库级 cargo 配置：在仓库任意子目录跑 cargo 都会读到（cargo 从工作目录逐级向上找 .cargo/config.toml，
+# native/<crate>/.cargo/config.toml 里的同名键优先）。
+#
+# `quick`：本地开发循环用的 profile——`cargo test --profile quick --lib <过滤>`。
+#
+# 各 crate 的 `[profile.release]` 是给出包用的：`lto = true` + `codegen-units = 1`，改一行就把整个 crate 连同
+# 全部依赖重新做一遍 fat LTO，而且单线程。`cargo test --release` 还会把库（cdylib + staticlib）和测试可执行文件
+# 各做一遍。fushi_fsrs（6.8 万行）在 i5-12600KF 上一次要 7～15 分钟，一轮「test + id_audit + build」约 40 分钟。
+#
+# `quick` 继承 release（优化级别、各包的 opt-level 覆盖、`panic`、`debug-assertions = false`、
+# `overflow-checks = false` 都不变，所以测试的运行语义与 CI 的 `cargo test --release` 相同），只改编译方式：
+#   - 不做 LTO、多 codegen unit：并行编，不再整体重优化依赖；
+#   - 增量编译：只重编改到的部分（cargo 只对工作区内的 crate 开增量，crates.io 依赖不受影响、仍可被 sccache 缓存）；
+#   - 不 strip：测试 panic 的回溯带函数名。
+#
+# 出包与 CI 不用它：build_* 脚本、CI 的 `cargo test --release --locked` 照旧走 release。推送前要不要再跑一遍
+# `--release` 见 docs/agent/build.md「Rust 本地开发循环」。
+[profile.quick]
+inherits = "release"
+lto = "off"
+codegen-units = 256
+incremental = true
+strip = false
