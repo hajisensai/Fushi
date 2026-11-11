@@ -188,35 +188,6 @@ class _WorkerBackend implements SrsRwkvBackend {
   Future<void> close() => worker.close();
 }
 
-/// 服务阶段（界面显示用）。
-enum SrsRwkvPhase {
-  /// 还没启动（没有 RWKV 牌组时不启动）。
-  idle,
-
-  /// 正在下载所选模型的权重（[SrsRwkvStatus.done] / [SrsRwkvStatus.total] 是字节）。
-  downloading,
-
-  /// 正在加载 / 恢复快照或检查点 / 全量回放。
-  preparing,
-
-  /// 可以排程。
-  ready,
-
-  /// 出错（[SrsRwkvStatus.error]）；下次需要时重试。
-  failed,
-}
-
-class SrsRwkvStatus {
-  const SrsRwkvStatus(this.phase, {this.done = 0, this.total = 0, this.error});
-
-  final SrsRwkvPhase phase;
-
-  /// 进度：下载时是字节，全量回放时是条数。
-  final int done;
-  final int total;
-  final Object? error;
-}
-
 /// 复习日志表的指纹：行数与最大 rowid（日志只追加，所以「只多了新行」= 行数与 rowid 同增）。
 typedef _LogPrint = ({int count, int maxRowId});
 
@@ -235,7 +206,7 @@ const int kSrsRwkvJournalSeed = 500;
 /// [SrsRwkvService.requeryAfter] 的缺省值。
 const Duration kSrsRwkvRequeryAfter = Duration(minutes: 30);
 
-class SrsRwkvService implements SrsRwkvScheduling {
+class SrsRwkvService implements SrsRwkvScheduling, SrsRwkvStatusSource {
   SrsRwkvService({
     required this.store,
     required this.models,
@@ -331,7 +302,9 @@ class SrsRwkvService implements SrsRwkvScheduling {
       StreamController<SrsRwkvStatus>.broadcast();
   SrsRwkvStatus _current = const SrsRwkvStatus(SrsRwkvPhase.idle);
 
+  @override
   SrsRwkvStatus get status => _current;
+  @override
   Stream<SrsRwkvStatus> get statusChanges => _status.stream;
 
   void _set(SrsRwkvStatus status) {
@@ -370,6 +343,7 @@ class SrsRwkvService implements SrsRwkvScheduling {
   /// 再恢复快照或全量回放。已在准备时什么都不做，已就绪时只对齐日志。失败后的自动重试（排队时
   /// 调用）最多每 [_retryAfter] 一次，免得断网时每出一张卡都重下一遍；[force]（设置里「重试」）
   /// 不受此限。
+  @override
   Future<void> start({bool force = false}) async {
     if (_closed) return;
     if (_current.phase == SrsRwkvPhase.ready) {

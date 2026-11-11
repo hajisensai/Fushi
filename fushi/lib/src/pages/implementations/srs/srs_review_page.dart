@@ -270,7 +270,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
   /// 队列空了是因为 RWKV 还没准备好（[SrsStudyState.rwkvPending]）：RWKV 牌组的复习卡不退回按 FSRS-7 的到期日
   /// 出，这里显示 RWKV 的准备 / 失败状态，就绪后自动重新排队（[_onRwkvStatus]）。
   bool _rwkvPending = false;
-  SrsRwkvService? _rwkv;
+  SrsRwkvStatusSource? _rwkv;
   SrsRwkvStatus? _rwkvStatus;
   StreamSubscription<SrsRwkvStatus>? _rwkvSubscription;
 
@@ -520,9 +520,10 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     _store = store;
     // 先把 RWKV 服务装配到 store 上（[SrsDbStore.rwkv]）再排第一次队：没装配的 store 会把 RWKV 牌组当成
     // 「宿主没有 RWKV」按到期日排。
-    SrsRwkvService? rwkv;
+    SrsRwkvStatusSource? rwkv;
     try {
-      rwkv = await ref.read(srsRwkvServiceProvider.future);
+      // 本机复习：就是 RWKV 服务（[srsRwkvServiceProvider]，读它即完成装配）；远程复习：主机状态的影子。
+      rwkv = await ref.read(srsRwkvStatusProvider.future);
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsReviewPage.rwkv', e, stack);
     }
@@ -2485,7 +2486,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
   /// 队列空了而 RWKV 还没准备好：说清楚在等什么（下载 / 回放 / 失败），失败给「重试」。
   Widget _buildRwkvPending(BuildContext context) {
     final SrsRwkvStatus? status = _rwkvStatus;
-    final SrsRwkvService? service = _rwkv;
+    final SrsRwkvStatusSource? service = _rwkv;
     final bool failed = status?.phase == SrsRwkvPhase.failed;
     final String? detail = switch (status?.phase) {
       SrsRwkvPhase.failed => t.srs_settings_rwkv_failed(

@@ -39,7 +39,8 @@ SrsRemoteMediaStore (extends SrsMediaStore) ─GET /api/srs/remote/media/<名字
 - **`SrsRemoteCollectionScope`**（`srs_remote_review_page.dart`）：一个子 `ProviderScope`，把
   `srsStoreProvider` 覆盖成 `SrsRemoteStore`、`srsMediaStoreProvider` 覆盖成媒体缓存，并重新覆盖依赖它们的
   派生 provider（`srsCardAudioOutputProvider`；Riverpod 2.6 子作用域里派生 provider 不重覆盖就仍读根作用域的值）。
-  本机专属的 `srsRwkvServiceProvider` / `srsAppRuntimeProvider` 置 null，`srsRevisionProvider` /
+  本机专属的 `srsRwkvServiceProvider` / `srsAppRuntimeProvider` 置 null（`srsRwkvStatusProvider` 换成主机 RWKV
+  状态的影子 `SrsRemoteStore.hostRwkv`：「等 RWKV」的进度 / 错误 / 就绪后重排 / 重试都经主机），`srsRevisionProvider` /
   `srsLocalWriteProvider` 置 0（远程库自己按回包刷新）。
 - **`SrsRemoteStore`**（`fushi/lib/src/srs/srs_remote_store_client.dart`）：`implements SrsDbStore`，把页面用到的
   每个成员转成一次 `call(op, args)`；没覆盖的成员经 `noSuchMethod` 抛 `UnsupportedError`（不静默走错库）。
@@ -56,8 +57,10 @@ SrsRemoteMediaStore (extends SrsMediaStore) ─GET /api/srs/remote/media/<名字
 `srsRemoteStoreV1: true`；复习模块关着时不声明、端点 404。
 
 - `POST /api/srs/remote/call`，体 `{profile?, op, args, request?}`。
-- 回包信封 `{profile, rev, fp, tt, now, ts, sched, rwkv, dev, result}`：主机 profile uid、复习库版本、排程指纹、
-  牌组树标签、主机此刻 / 时间源、排程是否可用、RWKV 是否就绪、主机在同步集合里的设备 id、操作结果。
+- 回包信封 `{profile, rev, fp, tt, now, ts, sched, rwkv, rk?, dev, result}`：主机 profile uid、复习库版本、排程指纹、
+  牌组树标签、主机此刻 / 时间源、排程是否可用、RWKV 是否就绪、RWKV 的准备状态 `{p: 阶段, d, t, e?}`（主机没有
+  RWKV 运行时或是老主机时不带）、主机在同步集合里的设备 id、操作结果。主机 RWKV 就绪不推进 `rev`：客户端在
+  「等 RWKV」的界面开着时每 2 秒握手一次，就绪后重排；「重试」是操作 `rwkvStart`（不是库的写入，不走幂等 id）。
   客户端每次回包都吸收信封：`now()` 按主机时钟偏移算（日界、到期显示与主机同口径）。
 - `GET /api/srs/remote/media/<名字>`：媒体字节。
 - 错误：`{error: stale | profile_changed | unavailable | bad_request | unknown_op | failed}`。

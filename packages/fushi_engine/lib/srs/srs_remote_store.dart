@@ -24,6 +24,7 @@ import 'package:fushi_engine/srs/srs_fushi_card_native_media.dart'
     show SrsCardNativeFallback, SrsCardNativeFallbackCode;
 import 'package:fushi_engine/srs/srs_legacy_lapis_migration.dart';
 import 'package:fushi_engine/srs/srs_note_type_store.dart';
+import 'package:fushi_engine/srs/srs_rwkv_scheduling.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
 /// host 在 `GET /api/capabilities` 声明的能力位。
@@ -181,6 +182,7 @@ typedef SrsRemoteEnvelope = ({
   String? treeTag,
   bool canSchedule,
   bool rwkvReady,
+  SrsRwkvStatus? rwkvStatus,
   String? device,
   int? nowMs,
   String? timeSource,
@@ -217,10 +219,38 @@ abstract final class SrsRemoteWire {
     treeTag: _J.optStr(m['tt'], 'tt'),
     canSchedule: m['sched'] == true,
     rwkvReady: m['rwkv'] == true,
+    rwkvStatus: rwkvStatusFrom(m['rk']),
     device: _J.optStr(m['dev'], 'dev'),
     nowMs: _J.optInt(m['now'], 'now'),
     timeSource: _J.optStr(m['ts'], 'ts'),
   );
+
+  /// 主机 RWKV 的准备状态 `{p: 阶段名, d, t, e?}`（信封的 `rk`）：远程复习页「等 RWKV」时显示进度 / 错误用。
+  /// 错误只搬文本。
+  static Map<String, Object?> rwkvStatus(SrsRwkvStatus s) => <String, Object?>{
+    'p': s.phase.name,
+    'd': s.done,
+    't': s.total,
+    if (s.error != null) 'e': '${s.error}',
+  };
+
+  /// [rwkvStatus] 的逆。缺（老主机 / 主机没有 RWKV 运行时）→ null；阶段名不认识（更新的主机）→ 也当没有，
+  /// 客户端退回只看 `rwkv` 布尔。
+  static SrsRwkvStatus? rwkvStatusFrom(Object? v) {
+    if (v == null) return null;
+    final Map<String, Object?> m = _J.map(v, 'rk');
+    final String name = _J.str(m['p'], 'rk.p');
+    for (final SrsRwkvPhase phase in SrsRwkvPhase.values) {
+      if (phase.name != name) continue;
+      return SrsRwkvStatus(
+        phase,
+        done: _J.optInt(m['d'], 'rk.d') ?? 0,
+        total: _J.optInt(m['t'], 'rk.t') ?? 0,
+        error: _J.optStr(m['e'], 'rk.e'),
+      );
+    }
+    return null;
+  }
 
   // ---------------------------------------------------------------- 标量
 
@@ -1020,8 +1050,9 @@ class SrsRemoteStoreService {
   /// 执行一次调用。[profile] 是客户端以为的 profile（读操作可为 null = 握手，不核对；写操作必须带，
   /// 主机切了配置时拒绝写入，不靠客户端自觉）；[request] 是写操作的幂等 id。
   ///
-  /// 回包：`{profile, rev, fp, tt, now, ts, sched, rwkv, result}`——`rev` / `fp` 是主机的修订号与统计指纹，
-  /// `tt` 是牌组树标签（客户端据此判断缓存的树还新不新），`now` / `ts` 是主机此刻的复习时钟。
+  /// 回包：`{profile, rev, fp, tt, now, ts, sched, rwkv, rk, result}`——`rev` / `fp` 是主机的修订号与统计指纹，
+  /// `tt` 是牌组树标签（客户端据此判断缓存的树还新不新），`now` / `ts` 是主机此刻的复习时钟，`rwkv` / `rk` 是
+  /// 主机 RWKV 是否就绪与它的准备状态（[SrsRemoteWire.rwkvStatus]；主机没有 RWKV 运行时不带 `rk`）。
   Future<Map<String, Object?>> call({
     required String? profile,
     required String op,
@@ -1106,6 +1137,8 @@ class SrsRemoteStoreService {
       'ts': source.wire,
       'sched': store.canSchedule,
       'rwkv': store.rwkv?.ready ?? false,
+      if (store.rwkv case final SrsRwkvStatusSource source)
+        'rk': SrsRemoteWire.rwkvStatus(source.status),
       'dev': store.sync2Device,
       'result': result,
       if (op == 'hello' && _profiles != null)
@@ -1180,6 +1213,14 @@ class SrsRemoteStoreService {
   static final Map<String, _Op> _ops = <String, _Op>{
     // ------------------------------------------------------------ 读
     'hello': _Op((SrsDbStore s, _Args a) async => null),
+    // 让主机（重新）准备 RWKV：远程复习页「等 RWKV」出错时的「重试」。不等它跑完，状态随之后每次回包的 `rk` 回来。
+    // 不是库的写入：不走幂等 id、不触发同步。
+    'rwkvStart': _Op((SrsDbStore s, _Args a) async {
+      if (s.rwkv case final SrsRwkvStatusSource source) {
+        source.start(force: a.raw('force') == true).ignore();
+      }
+      return null;
+    }),
     'dayContext': _Op(
       (SrsDbStore s, _Args a) async =>
           SrsRemoteWire.dayContext(await s.dayContext()),
