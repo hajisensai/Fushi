@@ -32,5 +32,10 @@
   - 对拍要两边同一个投递顺序（同样的切片）。逐条投递的结果本身随片长而变（存量，与通道无关，未在本 bug 里修）：
     `transport.rs` `deliver_ready` 每片从第一台设备重新轮，而删除挂起（`semantics.rs` `evaluate_holds`）随投递顺序而变；
     两台都逐条投递、只是片长 64 / 97，`srs_field_edits` 与摘要桶就不同（未改动的 develop 上 10 个随机世界 7 个如此）。
+  - 对拍里的中途打断落在「交完一半的段」之后，所以段按世界里钉死的设备顺序交（`tests_channel.rs` `World::feed`），
+    不按文件夹里设备 ID 的顺序：ID 是随机的 UUIDv7（测试里前四台的时间前缀相同），照它交时六次里有一次，本机写入
+    那一刻通道里只有撞上本机已有行的内置身份记录、一条可折的都没有。PR 的 CI 为此红过一次——红的是拿「折了几条」
+    当「走没走通道」的断言，通道是走了的；现在直接断言 `ingest_begin` 报的 `channel`，那种到法另由
+    `a_local_write_settles_a_channel_holding_only_identity_records_already_there` 钉住（同样逐表相同）。
   - 已知边界：通道做到一半时换回旧版本的二进制（同一个库），旧折叠不认识「投影里已有行」，归并会撞主键报错，
     换回新版本即恢复。

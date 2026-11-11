@@ -8,7 +8,8 @@
 //! 服务器时刻、合成写入者的旧 `tags` 记录、一台设备分两批迁移让 v2 写入只见过它一部分旧记录）。
 //!
 //! 除了一口气收完，还对拍几种中途打断：追加到一半重开会话、折叠到一半重开会话、追加到一半本机写入（分发器先把通道
-//! 做完，之后逐条投递）。
+//! 做完，之后逐条投递）。打断落在「交完一半的段」之后，所以段按世界里钉死的设备顺序交（[World]），不按文件夹里
+//! 设备 ID 的顺序（ID 是随机的）。
 //!
 //! 起点有两种（[Start]）：裸 profile（只建了身份），与真实新设备（BUG-4387：Dart `SrsDbStore.open` 在任何同步之前就
 //! 写下内置身份记录，[builtins]）。带内置实体的起点上，世界（[Shape]）还覆盖：每台设备各写一份同样的内置身份记录、
@@ -272,13 +273,60 @@ fn local(d: &Device, now: i64, events: Vec<(Value, String)>) {
         .unwrap();
 }
 
-/// 一个伪随机世界的同步文件夹（全部历史）。
-fn world(seed: u64) -> Bucket {
+/// 一个伪随机世界：同步文件夹（全部历史）与交段的顺序。当 [Bucket] 用（解引用）。
+///
+/// 设备 ID 是随机的（mod.rs `Local::create`：UUIDv7，时间前缀取建身份那一刻的 `now`——前四台设备都是 `T0`，前缀
+/// 相同，先后全看随机位），而文件夹按路径 `devices/<设备 ID>/…` 排序：照文件夹的顺序交段，哪台设备的段先到就随运行
+/// 而变。一口气收完时无所谓（收下的是同一批操作），中途打断时不行——打断那一刻通道里已追加的是哪些操作跟着变。三台
+/// v2 设备里只有第一台的操作不依赖别人；另两台的 ID 恰好排在最前时（四台里排前两名：六次里一次），一半的段交完也
+/// 只投得出它们开库时写的内置身份记录，[Interrupt::LocalWrite] 那一刻通道里一条可折的都没有——PR #3314 的 CI 红在
+/// 这里（当时拿「折了几条」当「走没走通道」）。所以交段的顺序是世界的一部分（[World::feed]），不跟设备 ID 走；那种
+/// 到法另有一条测试钉着（`a_local_write_settles_a_channel_holding_only_identity_records_already_there`）。
+struct World {
+    bucket: Bucket,
+    /// 写这份文件夹的设备 ID，按交段的先后（[fed]）。[world_of] 给的是设备建出来的顺序：三台 v2 设备，再两台迁移
+    /// 旧库的。
+    feed: Vec<String>,
+}
+
+impl std::ops::Deref for World {
+    type Target = Bucket;
+
+    fn deref(&self) -> &Bucket {
+        &self.bucket
+    }
+}
+
+impl World {
+    /// 一份现成的文件夹，照文件夹的顺序交段：给不在中途打断的会话用（一台设备，或全部段一批交完）。
+    fn of(bucket: &Bucket) -> World {
+        let mut feed: Vec<String> = Vec::new();
+        for k in bucket.0.keys().filter(|k| k.contains("/seg-")) {
+            let dev = k.split('/').nth(1).unwrap().to_owned();
+            if feed.last() != Some(&dev) {
+                feed.push(dev);
+            }
+        }
+        World {
+            bucket: bucket.clone(),
+            feed,
+        }
+    }
+}
+
+fn device_id(d: &Device) -> String {
+    d.core.sync2_identity(P, NOW).unwrap()["device"]
+        .as_str()
+        .unwrap()
+        .to_owned()
+}
+
+fn world(seed: u64) -> World {
     world_of(seed, Shape::default())
 }
 
 /// [world]，内置实体那部分按 [shape]。缺省的 [Shape] 不多取随机数：原有种子生成的世界不变。
-fn world_of(seed: u64, shape: Shape) -> Bucket {
+fn world_of(seed: u64, shape: Shape) -> World {
     let mut rng = Rng(seed.wrapping_mul(0x9e37_79b9_7f4a_7c15) | 1);
     let deck = super::config::default_deck_id(P);
     let deck2 = "0193a1b2-0000-7000-8000-00000000d0c2".to_owned();
@@ -522,7 +570,8 @@ fn world_of(seed: u64, shape: Shape) -> Bucket {
             d.sync(&mut bucket, "loc", T0 + 30 * DAY);
         }
     }
-    bucket
+    let feed = devs.iter().chain([&l1, &l2]).map(device_id).collect();
+    World { bucket, feed }
 }
 
 /// 全部表（`sqlite_` 内部表除外）的全部列、逐行，排好序。缓存表的 `updated_at` 是刷新时的真实墙钟（两次运行必然
@@ -648,6 +697,29 @@ fn heads_and_segments(b: &Bucket) -> (Vec<Vec<u8>>, Vec<Vec<u8>>) {
     (heads, segs)
 }
 
+/// [w] 的 head，与按 [World::feed] 的设备先后（一台设备之内按段名 = seq 先后）排好的段。
+fn fed(w: &World) -> (Vec<Vec<u8>>, Vec<Vec<u8>>) {
+    let (heads, all) = heads_and_segments(w);
+    let segs: Vec<Vec<u8>> = w
+        .feed
+        .iter()
+        .flat_map(|dev| {
+            let dir = format!("devices/{dev}/seg-");
+            w.bucket
+                .0
+                .iter()
+                .filter(move |(k, _)| k.starts_with(&dir))
+                .map(|(_, v)| v.clone())
+        })
+        .collect();
+    assert_eq!(
+        segs.len(),
+        all.len(),
+        "a segment of a device the feed order does not name"
+    );
+    (heads, segs)
+}
+
 /// 中途要做的事（[session] 在第 [at] 批投完之后）。
 #[derive(Clone, Copy, PartialEq, Debug)]
 enum Interrupt {
@@ -669,9 +741,10 @@ fn boot_state(d: &Device) -> Option<(i64, i64)> {
         .map(|r| (r[0].parse().unwrap(), r[1].parse().unwrap()))
 }
 
-/// 分批会话收完 [b]：每批 [per] 个段，每片 [slice] 条（None = 生产的按时间切）。
-fn session(d: &Device, b: &Bucket, per: usize, slice: Option<u64>, interrupt: Interrupt) {
-    let (heads, segs) = heads_and_segments(b);
+/// 分批会话收完 [w]：按 [fed] 的顺序每批 [per] 个段，每片 [slice] 条（None = 生产的按时间切）。返回这个会话走不走
+/// 通道（`ingest_begin` 报给 Dart 的 `channel`）。
+fn session(d: &Device, w: &World, per: usize, slice: Option<u64>, interrupt: Interrupt) -> bool {
+    let (heads, segs) = fed(w);
     let sliced = |op: &str| -> Value {
         let mut r = json!({"op": op, "now": NOW});
         if let Some(n) = slice {
@@ -680,7 +753,7 @@ fn session(d: &Device, b: &Bucket, per: usize, slice: Option<u64>, interrupt: In
         r
     };
     cmd(d, json!({"op": "plan"}), heads);
-    cmd(d, json!({"op": "ingest_begin"}), vec![]);
+    let channel = cmd(d, json!({"op": "ingest_begin"}), vec![])["channel"] == json!(true);
     let at = segs.len() / per / 2;
     for (i, chunk) in segs.chunks(per).enumerate() {
         cmd(d, json!({"op": "ingest_prepare"}), chunk.to_vec());
@@ -688,7 +761,11 @@ fn session(d: &Device, b: &Bucket, per: usize, slice: Option<u64>, interrupt: In
         if i == at {
             match interrupt {
                 Interrupt::ReopenWhileAppending => {
-                    cmd(d, json!({"op": "ingest_begin"}), vec![]);
+                    assert_eq!(
+                        cmd(d, json!({"op": "ingest_begin"}), vec![])["channel"],
+                        json!(channel),
+                        "the reopened session goes on the way the first one went"
+                    );
                 }
                 Interrupt::LocalWrite => {
                     let input = json!([{"e": edit("note", &note_id(7), "f/fa", json!("typed mid-sync")), "note": note_id(7)}]).to_string();
@@ -732,6 +809,7 @@ fn session(d: &Device, b: &Bucket, per: usize, slice: Option<u64>, interrupt: In
     while r["more"] == json!(true) {
         r = cmd(d, sliced("replay_pending"), vec![]);
     }
+    channel
 }
 
 fn add(total: &mut [usize; 5], c: [usize; 5]) {
@@ -803,22 +881,42 @@ fn compare_from(
     total: &mut [usize; 5],
 ) {
     let all = world_of(seed, shape);
+    let what = format!(
+        "{start:?}, {shape:?}, seed {seed}, {per} segments a batch, slice {slice:?}, {interrupt:?}"
+    );
+    let covered = compare_world(start, &all, per, slice, interrupt, &what);
+    // 交段顺序钉死之后这是种子的函数：折了哪些只看收尾 / 打断那一刻通道里有哪些操作，不看它们到的先后。
+    assert!(
+        covered[0] > 0,
+        "{what}: the channel folded nothing ({covered:?})"
+    );
+    add(total, covered);
+}
+
+/// 新设备从 [start] 起收 [all]：通道与逐条两路经同一个分批会话收完，一切相同。返回通道那一路各分支走过几次
+/// （[super::channel::take_coverage]）。
+fn compare_world(
+    start: Start,
+    all: &World,
+    per: usize,
+    slice: Option<u64>,
+    interrupt: Interrupt,
+    what: &str,
+) -> [usize; 5] {
     let x = new_device("ch-x", start);
     let y = Device::copy_of(&x, "ch-y");
     dirty(&x);
     dirty(&y);
     super::channel::take_coverage();
-    session(&x, &all, per, slice, interrupt);
-    let covered = super::channel::take_coverage();
-    let what = format!(
-        "{start:?}, {shape:?}, seed {seed}, {per} segments a batch, slice {slice:?}, {interrupt:?}"
-    );
     assert!(
-        covered[0] > 0,
-        "{what}: the session never took the channel ({covered:?})"
+        session(&x, all, per, slice, interrupt),
+        "{what}: the session never took the channel"
     );
-    add(total, covered);
-    super::channel::sequential(|| session(&y, &all, per, slice, interrupt));
+    let covered = super::channel::take_coverage();
+    assert!(
+        !super::channel::sequential(|| session(&y, all, per, slice, interrupt)),
+        "{what}: the one-by-one control took the channel"
+    );
     assert!(
         x.rows("SELECT COUNT(*) FROM sync2_ops")[1][0]
             .parse::<u64>()
@@ -826,9 +924,10 @@ fn compare_from(
             > 50,
         "{what}: world too small"
     );
-    assert_same(&x, &y, &what);
+    assert_same(&x, &y, what);
     assert_eq!(dirty(&x), dirty(&y), "{what}: study / browse touches");
     digest_is_consistent(&x);
+    covered
 }
 
 /// 新设备第一次同步：通道与逐条投递逐表相同；随机世界走到了折叠、复杂实体逐条、折叠里落了又被支配、移进复杂牌组。
@@ -1014,10 +1113,10 @@ fn a_row_of_another_profile_under_the_same_id_is_met_like_one_by_one() {
         )
         .unwrap();
     let y = Device::copy_of(&x, "ch-foreign-y");
-    super::channel::take_coverage();
-    session(&x, &all, 2, Some(7), Interrupt::None);
-    let covered = super::channel::take_coverage();
-    assert!(covered[0] > 0, "the session took the channel ({covered:?})");
+    assert!(
+        session(&x, &all, 2, Some(7), Interrupt::None),
+        "the session took the channel"
+    );
     super::channel::sequential(|| session(&y, &all, 2, Some(7), Interrupt::None));
     assert_same(&x, &y, "another profile holds a row under a note's id");
     digest_is_consistent(&x);
@@ -1045,6 +1144,30 @@ fn channel_survives_interruptions_on_top_of_the_builtins() {
             );
         }
     }
+}
+
+/// 本机写入那一刻通道里只有撞上本机已有行的内置身份记录：另两台设备的段先到，它们除了开库时写的内置身份记录，
+/// 其余操作都依赖还没到的第一台设备、投不出去。通道照样被选中；做完它时一条都不折（六条身份记录全交给逐条的
+/// `project_entity`，其中两条内容与本机那行不同），之后的段按逐条投递收，结果与逐条投递相同。
+#[test]
+fn a_local_write_settles_a_channel_holding_only_identity_records_already_there() {
+    let mut all = world_of(62, SHAPES[3].1);
+    // 第一台设备的段排到另两台之后。
+    all.feed[..3].rotate_left(1);
+    let what = "builtins, divergent, seed 62, the first writer fed third, local write half way";
+    let covered = compare_world(
+        Start::Builtins,
+        &all,
+        2,
+        Some(5),
+        Interrupt::LocalWrite,
+        what,
+    );
+    assert_eq!(
+        (covered[0], covered[1], covered[4]),
+        (0, 6, 6),
+        "{what}: the channel held something else when the local write came ({covered:?})"
+    );
 }
 
 /// 这个 profile 开不开通道（`ingest_begin` 的回报）；开了就原样做完，不留痕迹。
@@ -1171,7 +1294,7 @@ fn channel_is_for_a_profile_holding_nothing_but_its_own_builtins() {
     let mut bucket = Bucket::default();
     other.sync(&mut bucket, "loc", NOW);
     let d = new_device("ch-received", Start::Builtins);
-    super::channel::sequential(|| session(&d, &bucket, 100, None, Interrupt::None));
+    super::channel::sequential(|| session(&d, &World::of(&bucket), 100, None, Interrupt::None));
     assert_eq!(
         d.rows("SELECT COUNT(*) FROM srs_entities")[1][0],
         "3",
@@ -1354,7 +1477,8 @@ fn a_device_first_seen_while_the_channel_is_open_is_judged_like_one_by_one() {
         channel
     };
     // 第二轮：C 出现了。
-    let second = |d: &Device| session(d, &bucket, 100, Some(5), Interrupt::None);
+    let late = World::of(&bucket);
+    let second = |d: &Device| session(d, &late, 100, Some(5), Interrupt::None);
     let x = new_device("ch-trust-x", Start::Builtins);
     let y = Device::copy_of(&x, "ch-trust-y");
     let z = Device::copy_of(&x, "ch-trust-z");
@@ -1472,12 +1596,12 @@ fn settling_commits_slice_by_slice_and_resumes_after_a_failure() {
     settling_resumes_after_a_failure(Start::Builtins, world_of(42, SHAPES[2].1));
 }
 
-fn settling_resumes_after_a_failure(start: Start, all: Bucket) {
+fn settling_resumes_after_a_failure(start: Start, all: World) {
     let x = new_device("ch-settle-x", start);
     let y = Device::copy_of(&x, "ch-settle-y");
     // 只收完各片、不收尾：通道停在追加阶段。
     let appended = |d: &Device| {
-        let (heads, segs) = heads_and_segments(&all);
+        let (heads, segs) = fed(&all);
         cmd(d, json!({"op": "plan"}), heads);
         let begun = cmd(d, json!({"op": "ingest_begin"}), vec![]);
         for chunk in segs.chunks(2) {
