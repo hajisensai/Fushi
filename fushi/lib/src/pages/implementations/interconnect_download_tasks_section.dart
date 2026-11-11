@@ -207,8 +207,9 @@ DownloadTaskEntry interconnectDownloadTaskEntry(
   InterconnectDownloadTask task, {
   Future<void> Function({required bool deleteFiles})? deleteCompletedFiles,
 }) {
+  // 在线视频扩展源与在线音源插件都是第三方来源：同标「扩展源 · 外部来源」。
   final bool fromExtension =
-      task.origin == InterconnectDownloadOrigin.extension;
+      task.origin != InterconnectDownloadOrigin.ownDevice;
   final String sectionTitle = fromExtension
       ? t.download_method_extension
       : t.download_interconnect_section_title;
@@ -224,6 +225,7 @@ DownloadTaskEntry interconnectDownloadTaskEntry(
       InterconnectDownloadKind.video => DownloadTaskKind.video,
       InterconnectDownloadKind.book => DownloadTaskKind.novel,
       InterconnectDownloadKind.audiobook => DownloadTaskKind.audiobook,
+      InterconnectDownloadKind.music => DownloadTaskKind.music,
     },
     status: switch (task.status) {
       InterconnectDownloadStatus.running => DownloadTaskStatus.active,
@@ -283,6 +285,7 @@ DownloadTaskEntry interconnectDownloadTaskEntry(
         InterconnectDownloadKind.video => Icons.devices_outlined,
         InterconnectDownloadKind.book => Icons.menu_book_outlined,
         InterconnectDownloadKind.audiobook => Icons.headphones_outlined,
+        InterconnectDownloadKind.music => Icons.music_note_outlined,
       }),
       details: _InterconnectTaskDetails(task: task),
     ),

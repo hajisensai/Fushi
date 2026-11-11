@@ -139,13 +139,15 @@ Widget? _pluginRadioButton(
 
 /// 插件曲目的菜单（行尾「更多」+ 整行右键）；一项动作都没有时回 null（行尾不留空位）。
 /// [inPlaylist] 是这首所在的歌单页（自己的歌单时多出「从这个歌单移除」，移除后调
-/// [onChanged] 重拉）。
+/// [onChanged] 重拉）；[inAlbum] 是这首所在的专辑页（下载时补专辑信息，见
+/// music_plugin_download.dart）。
 MusicItemMenu? musicPluginTrackMenu(
   BuildContext context,
   WidgetRef ref,
   MusicPluginManifest manifest,
   MusicPluginTrack track, {
   MusicPluginPlaylist? inPlaylist,
+  MusicPluginAlbum? inAlbum,
   VoidCallback? onChanged,
 }) {
   List<MusicMenuAction> actions({bool inLibrary = false}) =>
@@ -154,6 +156,7 @@ MusicItemMenu? musicPluginTrackMenu(
         manifest,
         track,
         inPlaylist: inPlaylist,
+        inAlbum: inAlbum,
         onChanged: onChanged,
         inLibrary: inLibrary,
       );
@@ -195,6 +198,7 @@ List<MusicMenuAction> _pluginTrackActions(
   MusicPluginManifest manifest,
   MusicPluginTrack track, {
   MusicPluginPlaylist? inPlaylist,
+  MusicPluginAlbum? inAlbum,
   VoidCallback? onChanged,
   bool inLibrary = false,
 }) {
@@ -269,6 +273,14 @@ List<MusicMenuAction> _pluginTrackActions(
         item,
         inLibrary: inLibrary,
         playlistLabel: t.music_action_add_to_local_playlist,
+      ),
+    // 下载成本地曲目（离线可播）；只能试听的曲目点了才知道，届时提示。
+    if (track.playable && app.isDatabaseReady)
+      MusicMenuAction(
+        id: 'download',
+        label: t.music_action_download,
+        icon: FushiIcons.download,
+        run: (_) => _downloadPluginTrack(ref, manifest, track, album: inAlbum),
       ),
     if (can(MusicPluginCapability.radio) && track.playable)
       MusicMenuAction(
@@ -603,13 +615,22 @@ List<Widget> _pluginCollectionActions(
   MusicPluginAlbum? album,
   MusicPluginPlaylist? playlist,
   required bool? collected,
+  required List<MusicPluginTrack> tracks,
 }) {
   final bool own =
       playlist != null &&
       playlist.editable &&
       manifest.can(MusicPluginCapability.playlistEdit);
+  final Widget? downloadAll = _pluginDownloadAllButton(
+    ref,
+    manifest,
+    tracks,
+    album: album,
+    playlist: playlist,
+  );
   if (own) {
     return <Widget>[
+      ?downloadAll,
       FushiPressScale(
         child: FushiOutlinedButton.icon(
           key: const ValueKey<String>('music-plugin-playlist-delete'),
@@ -622,8 +643,11 @@ List<Widget> _pluginCollectionActions(
     ];
   }
   // 自己建的歌单不需要「收藏」。
-  if (!manifest.can(MusicPluginCapability.collect)) return const <Widget>[];
+  if (!manifest.can(MusicPluginCapability.collect)) {
+    return <Widget>[?downloadAll];
+  }
   return <Widget>[
+    ?downloadAll,
     _PluginCollectToggle(
       key: const ValueKey<String>('music-plugin-collection-collect'),
       manifest: manifest,
@@ -681,4 +705,147 @@ Widget? _pluginCreatePlaylistButton(
     onCreated: onCreated,
     errorText: (Object e) => _pluginActionError(manifest, e),
   );
+}
+
+// -------------------------------------------------------------------------
+// 下载（music_plugin_download.dart；任务进度 / 暂停 / 重试在下载中心）
+// -------------------------------------------------------------------------
+
+/// 当前设置下的插件下载编排；曲库没就绪时为 null（下载入口不出现）。
+MusicPluginDownloadService? _pluginDownloads(WidgetRef ref) {
+  final AppModel app = ref.read(appProvider);
+  if (!app.isDatabaseReady) return null;
+  return MusicPluginDownloadService.forApp(
+    downloads: ref.read(interconnectDownloadManagerProvider),
+    plugins: () => app.musicPluginManager,
+    quality: () => app.musicPluginQuality,
+    database: app.database,
+  );
+}
+
+/// 插件声明了 `lyrics` 时下载连同歌词一起存（不经 [WidgetRef]：批量下载跑得比页面久）。
+MusicPluginDownloadLyricsFetcher? _pluginDownloadLyrics(
+  WidgetRef ref,
+  MusicPluginManifest manifest,
+) {
+  if (!manifest.can(MusicPluginCapability.lyrics)) return null;
+  final MusicPluginManager plugins = ref.read(appProvider).musicPluginManager;
+  return (String pluginId, String trackId) =>
+      plugins.source(pluginId).lyrics(trackId);
+}
+
+/// 一次发起结果 → 提示文案与级别（纯函数）。
+({String msg, ToastSeverity severity}) musicPluginDownloadStartToast(
+  MusicPluginDownloadStart outcome,
+) => switch (outcome) {
+  MusicPluginDownloadStart.started => (
+    msg: t.music_download_started,
+    severity: ToastSeverity.success,
+  ),
+  MusicPluginDownloadStart.alreadyRunning => (
+    msg: t.music_download_already_running,
+    severity: ToastSeverity.info,
+  ),
+  MusicPluginDownloadStart.alreadyDownloaded => (
+    msg: t.music_download_already_done,
+    severity: ToastSeverity.info,
+  ),
+  MusicPluginDownloadStart.trialOnly => (
+    msg: t.music_download_trial_only,
+    severity: ToastSeverity.warning,
+  ),
+  MusicPluginDownloadStart.unplayable => (
+    msg: t.music_download_unplayable,
+    severity: ToastSeverity.warning,
+  ),
+};
+
+Future<void> _downloadPluginTrack(
+  WidgetRef ref,
+  MusicPluginManifest manifest,
+  MusicPluginTrack track, {
+  MusicPluginAlbum? album,
+}) async {
+  final MusicPluginDownloadService? service = _pluginDownloads(ref);
+  if (service == null) return;
+  // 取流失败（MusicPluginStreamUnavailable）交给菜单的 errorText 提示。
+  final MusicPluginDownloadStart outcome = await service.download(
+    manifest.id,
+    track,
+    album: album,
+    lyrics: _pluginDownloadLyrics(ref, manifest),
+  );
+  final ({String msg, ToastSeverity severity}) toast =
+      musicPluginDownloadStartToast(outcome);
+  FushiToast.show(msg: toast.msg, severity: toast.severity);
+}
+
+/// 专辑 / 歌单页头部的「下载全部」；没有可下载的曲目（全部不可播放）或曲库没就绪时为 null。
+Widget? _pluginDownloadAllButton(
+  WidgetRef ref,
+  MusicPluginManifest manifest,
+  List<MusicPluginTrack> tracks, {
+  MusicPluginAlbum? album,
+  MusicPluginPlaylist? playlist,
+}) {
+  if (!ref.read(appProvider).isDatabaseReady) return null;
+  final List<MusicPluginTrack> playable = <MusicPluginTrack>[
+    for (final MusicPluginTrack track in tracks)
+      if (track.playable) track,
+  ];
+  if (playable.isEmpty) return null;
+  return FushiPressScale(
+    child: FushiOutlinedButton.icon(
+      key: const ValueKey<String>('music-plugin-collection-download'),
+      onPressed: () => unawaited(
+        _downloadPluginTracks(
+          ref,
+          manifest,
+          playable,
+          album: album,
+          playlist: playlist,
+        ),
+      ),
+      icon: const FushiIcon(FushiIcons.download),
+      label: Text(t.music_download_all),
+    ),
+  );
+}
+
+Future<void> _downloadPluginTracks(
+  WidgetRef ref,
+  MusicPluginManifest manifest,
+  List<MusicPluginTrack> tracks, {
+  MusicPluginAlbum? album,
+  MusicPluginPlaylist? playlist,
+}) async {
+  final MusicPluginDownloadService? service = _pluginDownloads(ref);
+  if (service == null) return;
+  final MusicPluginDownloadLyricsFetcher? lyrics = _pluginDownloadLyrics(
+    ref,
+    manifest,
+  );
+  FushiToast.show(
+    msg: t.music_download_all_started(count: tracks.length),
+    severity: ToastSeverity.success,
+  );
+  final MusicPluginDownloadBatchResult result = await service.downloadAll(
+    manifest.id,
+    tracks,
+    batchId: musicPluginDownloadBatchId(
+      manifest.id,
+      albumId: album?.id,
+      playlistId: playlist?.id,
+    ),
+    batchTitle: album?.title ?? playlist?.title ?? manifest.name,
+    album: album,
+    lyrics: lyrics,
+  );
+  // 失败的曲目在下载中心各自可见、可重试；这里只补「试听曲目没下」这件下载中心看不到的事。
+  if (result.trialOnly > 0) {
+    FushiToast.show(
+      msg: t.music_download_trial_skipped(count: result.trialOnly),
+      severity: ToastSeverity.warning,
+    );
+  }
 }
