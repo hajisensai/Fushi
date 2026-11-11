@@ -26,6 +26,11 @@
 //!   ffsrs_predict_tss / ffsrs_calibration_report
 //!   （复习统计页的校准图与 UM+：FSRS 时间序列切分的留出预测、分箱与自助法区间，见 calibration.rs）
 
+// 让 cargo 的新鲜度指纹带上「这是哪个 worktree」：多个 worktree 共用一个 CARGO_TARGET_DIR 时，没有它会把别的
+// worktree 编出的产物当成本 worktree 的直接用（假绿 / 假红）。值来自仓库根 .cargo/config.toml 的 [env]，不进产物。
+// 每个 native crate 的入口文件都要有这一行（守卫 fushi/test/build/native_crate_worktree_fingerprint_guard_test.dart）。
+const _: Option<&str> = option_env!("FUSHI_WORKTREE_ROOT");
+
 pub mod boot_clock;
 pub mod calibration;
 pub mod card_cache;

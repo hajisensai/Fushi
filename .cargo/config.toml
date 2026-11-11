@@ -21,3 +21,13 @@ lto = "off"
 codegen-units = 256
 incremental = true
 strip = false
+
+# 本 worktree 的根目录（`relative = true`：值按本文件所在目录的上一级解析成绝对路径）。只有一个用途：各 crate 的
+# lib.rs 用 `option_env!("FUSHI_WORKTREE_ROOT")` 读它一次，让 cargo 把它记进新鲜度指纹（dep-info 的 env-dep）。
+#
+# 不这样做，多个 worktree 共用一个 `CARGO_TARGET_DIR` 时会静默拿错产物：cargo 给工作区内 crate 算单元哈希用的是
+# 相对路径，各 worktree 的 `fushi_fsrs-<哈希>` 相同，新鲜度只比源文件 mtime——别的 worktree 刚编出的产物会被当成
+# 本 worktree 的新鲜产物直接拿来跑（2026-11-11 实测：B 侧加了必挂的测试，0.3 秒报全绿）。有了这个值，换 worktree
+# 就判 dirty 重编本仓 crate（依赖不受影响，仍可共用）。值不进产物：读它的是一个不被引用的 `const _`。
+[env]
+FUSHI_WORKTREE_ROOT = { value = "", relative = true }
