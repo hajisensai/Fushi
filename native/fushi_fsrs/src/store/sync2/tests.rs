@@ -4192,7 +4192,7 @@ fn ingest_slice_commits_on_its_own_with_the_local_state_row_sequential() {
     }));
     b.core.sync2_ingest_begin(P).unwrap();
     b.core.sync2_ingest_prepare(P, segs, None).unwrap();
-    let before = json!({"writerId": "w", "revision": 40, "epoch": "e1"}).to_string();
+    let before = json!({"styleCursor": 7, "revision": 40, "epoch": "e1"}).to_string();
     let r: Value = serde_json::from_str(
         &b.core
             .sync2_ingest_commit_persisting(
@@ -4218,23 +4218,43 @@ fn ingest_slice_commits_on_its_own_with_the_local_state_row_sequential() {
     assert_eq!(stored["revision"], json!(40 + landed + changed));
     assert_eq!(r["localRevision"], stored["revision"]);
     assert_eq!(
-        stored["writerId"],
-        json!("w"),
+        stored["styleCursor"],
+        json!(7),
         "the rest of the row is written as given"
     );
-    // 收尾同样在一笔事务里写本机状态行。
+    // 收尾同样在一笔事务里写本机状态行；与 Dart `_saveLocal` 同一个合并（store/local_state.rs）：内核持有的键
+    // 保留库里的值，交来的整行里同名的键不认。
+    let _held = crate::store::local_state::override_held_keys(&["kernelOnly"]);
+    b.core
+        .exec(
+            &format!(
+                "UPDATE srs_local_state SET json = json_set(json, '$.kernelOnly', 7) WHERE profile_uid = srs_id('{P}')"
+            ),
+            &[],
+            false,
+        )
+        .unwrap();
+    let mut given = stored.clone();
+    given["kernelOnly"] = json!(99);
     let fin: Value = serde_json::from_str(
         &b.core
             .sync2_ingest_finish_persisting(
                 P,
                 T0 + 41,
                 super::transport::CommitBudget::unlimited(),
-                Some(&stored.to_string()),
+                Some(&given.to_string()),
             )
             .unwrap(),
     )
     .unwrap();
     assert!(fin["localRevision"].as_i64().unwrap() >= stored["revision"].as_i64().unwrap());
+    let after: Value = serde_json::from_str(&local_json(&b).unwrap()).unwrap();
+    assert_eq!(
+        after["kernelOnly"],
+        json!(7),
+        "kernel-held key kept: {after}"
+    );
+    assert_eq!(after["styleCursor"], json!(7));
 }
 
 /// 集成审查【中】：旧小段删除两段式。过了宽限期该删的旧小段这一轮删除失败（head 上传 / `location.delete` 抛错），

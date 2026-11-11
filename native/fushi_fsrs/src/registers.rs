@@ -1276,6 +1276,24 @@ pub(crate) fn register_value(edits: &[StoredEdit<'_>], key: &str) -> Result<Valu
     Ok(ent.value(key).clone())
 }
 
+/// 往某实体的字段键 [key] 写 [value] 是不是什么都不改（Dart 旧 `srsEditIsNoop`）：这个键有生效记录、没有冲突，且
+/// 生效值与它「相同」（[same_value]）。没有记录、或有冲突待裁决的一律要写。
+pub(crate) fn write_is_noop(
+    edits: &[StoredEdit<'_>],
+    key: &str,
+    value: &Value,
+) -> Result<bool, String> {
+    let parsed = parse_stored(edits)?;
+    let ent = Entity::build(&parsed);
+    Ok(match ent.reg(key) {
+        Some(r) if !r.conflicted => r
+            .live
+            .first()
+            .is_some_and(|&i| same_value(&parsed[i].value, value)),
+        _ => false,
+    })
+}
+
 /// 测试用：一个实体全部寄存器的裁决（按记录 ID 而不是下标）——每个键的未被支配者（排序后，首个是胜者）、是否冲突、
 /// 可见败者，以及与删除并发的内容修改。两份只差 ctx 的记录集比这个就知道支配 / 胜负有没有变。
 #[cfg(test)]
