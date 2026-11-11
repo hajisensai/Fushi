@@ -421,7 +421,7 @@ class SrsHtmlCardFace {
     final String body = bodyHtml.replaceAllMapped(
       srsSoundTagPattern,
       (Match m) =>
-          '<fushi-sound data-name="${srsEscapeHtml(m.group(1)!.trim())}"></fushi-sound>',
+          '<fushi-sound data-name="${srsEscapeHtml(srsSoundTagName(m.group(1)!))}"></fushi-sound>',
     );
     final String lang = (languageCode ?? '').trim();
     final dom.Document doc = html_parser.parse(

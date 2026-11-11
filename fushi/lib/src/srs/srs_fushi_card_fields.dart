@@ -127,10 +127,10 @@ String srsPlainText(String html) => srsDecodeEntities(
       .replaceAll(RegExp(r'<[^>]+>'), ''),
 ).replaceAll(RegExp(r'[ \t]+'), ' ').replaceAll(RegExp(r'\n{2,}'), '\n').trim();
 
-/// 字段里的 `[sound:x]` 文件名（按出现顺序）。
+/// 字段里的 `[sound:x]` 文件名（按出现顺序；解码见 [srsSoundTagName]）。
 List<String> srsSoundNames(String field) => <String>[
   for (final Match m in srsSoundTagPattern.allMatches(field))
-    m.group(1)!.trim(),
+    srsSoundTagName(m.group(1)!),
 ];
 
 /// 视频片段的扩展名：Picture 字段里的 `[sound:x.mp4]`（MP4 片段，Anki 惯例）按视频算。
@@ -166,7 +166,7 @@ final RegExp _imgTagSrc = RegExp(
 List<String> _mediaNames(String html, Set<String> tags) {
   final List<(int, String)> found = <(int, String)>[
     for (final Match m in srsSoundTagPattern.allMatches(html))
-      (m.start, m.group(1)!.trim()),
+      (m.start, srsSoundTagName(m.group(1)!)),
     for (final Match m in _mediaTagSrc.allMatches(html))
       if (tags.contains(m.group(1)!.toLowerCase()))
         (m.start, srsDecodeEntities(m.group(3) ?? m.group(4)!).trim()),
