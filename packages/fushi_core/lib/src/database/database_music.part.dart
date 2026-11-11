@@ -163,6 +163,188 @@ mixin _FushiDbMusic on _$FushiDatabase {
     });
   }
 
+  /// 来源 [sourceId] 下在库曲目的专辑归属证据（专辑对齐 `planMusicAlbumMerges` 的输入）：
+  /// 当前专辑 uid 与专辑行标题，以及这首曲目**自己的**专辑艺人标签——署名表里的
+  /// `album_artist`，每次重扫随标签整组替换，不受之前合并改写的专辑行影响。光盘专辑
+  /// （`disc_uid` 非空）不参与：盘的专辑身份来自盘，不来自标签。
+  Future<
+    List<
+      ({
+        String trackUid,
+        String albumUid,
+        String path,
+        String albumTitle,
+        String? albumArtist,
+      })
+    >
+  >
+  listMusicAlbumMembersOfSource(int sourceId) async {
+    final List<QueryRow> rows = await customSelect(
+      'SELECT t.track_uid, t.album_uid, t.path, a.title, '
+      '(SELECT c.credit_name FROM music_track_credits c '
+      "WHERE c.track_uid = t.track_uid AND c.role = 'album_artist' "
+      'ORDER BY c.ord LIMIT 1) AS album_artist '
+      'FROM music_tracks t JOIN music_albums a ON a.album_uid = t.album_uid '
+      'WHERE t.source_id = ? AND t.deleted_at IS NULL AND a.disc_uid IS NULL '
+      'ORDER BY t.track_uid',
+      variables: <Variable<Object>>[Variable<int>(sourceId)],
+      readsFrom: <ResultSetImplementation<HasResultSet, dynamic>>{
+        musicTracks,
+        musicAlbums,
+        musicTrackCredits,
+      },
+    ).get();
+    return <
+      ({
+        String trackUid,
+        String albumUid,
+        String path,
+        String albumTitle,
+        String? albumArtist,
+      })
+    >[
+      for (final QueryRow r in rows)
+        (
+          trackUid: r.read<String>('track_uid'),
+          albumUid: r.read<String>('album_uid'),
+          path: r.read<String>('path'),
+          albumTitle: r.read<String>('title'),
+          albumArtist: r.readNullable<String>('album_artist'),
+        ),
+    ];
+  }
+
+  /// 落一份专辑对齐方案（一个事务）：每组曲目改挂到 `albumUid`，专辑行标题 / 专辑艺人
+  /// 写成规范值；其余列（封面、目录号、发行日期、MBID、碟数…）目标行已有的保留，缺的
+  /// 从被并掉的专辑行补（带专辑艺人的行优先——目录号 / MBID 通常写在那一首上）。被并掉、
+  /// 已没有任何曲目（含软删曲目）引用的专辑行删掉；仍被软删曲目引用的留着，歌单 /
+  /// 播放记录照样能解析。按专辑 uid 存的外部缓存（发行对号、盘面扫描）里旧 uid 只是
+  /// 孤儿键，不会指错。返回改挂的曲目数。
+  Future<int> applyMusicAlbumMerges(
+    List<
+      ({
+        String albumUid,
+        String title,
+        String? albumArtist,
+        List<String> trackUids,
+      })
+    >
+    merges, {
+    required int now,
+  }) async {
+    if (merges.isEmpty) return 0;
+    return transaction(() async {
+      int moved = 0;
+      final List<String> touched = <String>[];
+      for (final ({
+            String albumUid,
+            String title,
+            String? albumArtist,
+            List<String> trackUids,
+          })
+          m
+          in merges) {
+        final List<MusicTrackRow> tracks = await (select(
+          musicTracks,
+        )..where(($MusicTracksTable t) => t.trackUid.isIn(m.trackUids))).get();
+        final Set<String> from = <String>{
+          for (final MusicTrackRow t in tracks)
+            if (t.albumUid != null && t.albumUid != m.albumUid) t.albumUid!,
+        };
+        if (from.isEmpty) continue;
+        final List<MusicAlbumRow> rows =
+            await (select(musicAlbums)..where(
+                  ($MusicAlbumsTable a) =>
+                      a.albumUid.isIn(<String>{...from, m.albumUid}),
+                ))
+                .get();
+        MusicAlbumRow? target;
+        final List<MusicAlbumRow> sources = <MusicAlbumRow>[];
+        for (final MusicAlbumRow r in rows) {
+          if (r.albumUid == m.albumUid) {
+            target = r;
+          } else {
+            sources.add(r);
+          }
+        }
+        // 补列顺序：目标行 → 带专辑艺人的源行 → 其余源行（同类按 uid，结论稳定）。
+        sources.sort((MusicAlbumRow a, MusicAlbumRow b) {
+          final int byArtist =
+              (a.albumArtistCredit == null ? 1 : 0) -
+              (b.albumArtistCredit == null ? 1 : 0);
+          return byArtist != 0 ? byArtist : a.albumUid.compareTo(b.albumUid);
+        });
+        final List<MusicAlbumRow> ordered = <MusicAlbumRow>[
+          ?target,
+          ...sources,
+        ];
+        T? pick<T>(T? Function(MusicAlbumRow r) f) {
+          for (final MusicAlbumRow r in ordered) {
+            final T? v = f(r);
+            if (v != null) return v;
+          }
+          return null;
+        }
+
+        int addedAt = now;
+        for (final MusicAlbumRow r in ordered) {
+          if (r.addedAt < addedAt) addedAt = r.addedAt;
+        }
+        await into(musicAlbums).insertOnConflictUpdate(
+          MusicAlbumsCompanion.insert(
+            albumUid: m.albumUid,
+            title: m.title,
+            titleSort: Value<String?>(pick((MusicAlbumRow r) => r.titleSort)),
+            albumArtistCredit: Value<String?>(m.albumArtist),
+            mbReleaseId: Value<String?>(
+              pick((MusicAlbumRow r) => r.mbReleaseId),
+            ),
+            mbReleaseGroupId: Value<String?>(
+              pick((MusicAlbumRow r) => r.mbReleaseGroupId),
+            ),
+            catalogNo: Value<String?>(pick((MusicAlbumRow r) => r.catalogNo)),
+            releaseDate: Value<String?>(
+              pick((MusicAlbumRow r) => r.releaseDate),
+            ),
+            coverPath: Value<String?>(pick((MusicAlbumRow r) => r.coverPath)),
+            coverTrackUid: Value<String?>(
+              pick((MusicAlbumRow r) => r.coverTrackUid),
+            ),
+            totalDiscs: Value<int?>(pick((MusicAlbumRow r) => r.totalDiscs)),
+            discUid: Value<String?>(target?.discUid),
+            addedAt: addedAt,
+            updatedAt: now,
+          ),
+        );
+        moved +=
+            await (update(musicTracks)..where(
+                  ($MusicTracksTable t) =>
+                      t.trackUid.isIn(m.trackUids) &
+                      t.albumUid.equals(m.albumUid).not(),
+                ))
+                .write(
+                  MusicTracksCompanion(albumUid: Value<String?>(m.albumUid)),
+                );
+        touched.addAll(m.trackUids);
+        final Expression<bool> referenced = existsQuery(
+          select(musicTracks)..where(
+            ($MusicTracksTable t) => t.albumUid.equalsExp(musicAlbums.albumUid),
+          ),
+        );
+        await (delete(musicAlbums)..where(
+              ($MusicAlbumsTable a) =>
+                  a.albumUid.isIn(from) & a.discUid.isNull() & referenced.not(),
+            ))
+            .go();
+      }
+      // 识别结论（MBID / 目录号）按曲目所属专辑叠加：改挂后对新专辑重放一次。
+      if (touched.isNotEmpty) {
+        await _reapplyMusicScrapeOverlaySql(this, touched);
+      }
+      return moved;
+    });
+  }
+
   /// 来源 [sourceId] 下在库曲目的（路径, 修改时刻, 大小, uid）。扫描器据此告诉 Rust
   /// 哪些文件没变（跳过标签解析），以及「没变的文件」对应哪些曲目 uid（一个 CUE 整轨
   /// 对应多首）。

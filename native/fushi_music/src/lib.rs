@@ -14,6 +14,7 @@
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 pub mod ac3;
+pub mod album_merge;
 pub mod cd;
 pub mod cue;
 pub mod dsf;
@@ -339,6 +340,35 @@ pub unsafe extern "C" fn ffm_playlist_parse(
         let mut w = wire::Writer::new();
         playlist::write_parsed(&mut w, &parsed);
         hand_over_bytes(w.into_bytes(), out_ptr, out_len);
+        status::OK
+    })
+}
+
+/// 专辑对齐方案（[album_merge::plan]）：输入一个来源的在库曲目归属证据
+/// （[album_merge::decode_members] 线格式），输出要并成一张专辑的曲目组
+/// （[album_merge::encode_merges]）。纯计算，不碰文件系统。线格式不对返回 [status::BAD_INPUT]。
+///
+/// # Safety
+/// `in_ptr` 为空（`in_len == 0`）或指向 `in_len` 字节；`out_ptr` / `out_len` 可写。
+#[no_mangle]
+pub unsafe extern "C" fn ffm_album_merge_plan(
+    in_ptr: *const u8,
+    in_len: usize,
+    out_ptr: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    guard(|| {
+        if out_ptr.is_null() || out_len.is_null() {
+            return status::NULL_ARGUMENT;
+        }
+        let Some(input) = slice_arg(in_ptr, in_len) else {
+            return status::NULL_ARGUMENT;
+        };
+        let Some(members) = album_merge::decode_members(input) else {
+            return status::BAD_INPUT;
+        };
+        let merges = album_merge::plan(&members);
+        hand_over_bytes(album_merge::encode_merges(&merges), out_ptr, out_len);
         status::OK
     })
 }

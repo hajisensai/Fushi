@@ -9,6 +9,7 @@
 library;
 
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
@@ -264,6 +265,17 @@ typedef MusicDiscRegistrar =
 typedef MusicPlaylistParser =
     MusicPlaylistFile Function(Uint8List bytes, {String? baseDir});
 
+/// 专辑对齐方案（真 app = 后台 isolate 里调 Rust [planMusicAlbumMerges]；测试可注入替身）。
+typedef MusicAlbumMergePlanner =
+    Future<List<MusicAlbumMerge>> Function(List<MusicAlbumMember> members);
+
+/// 整个来源几千首的编码 + 分组可能超过 1 ms：放后台 isolate（每个 isolate 各自加载绑定）。
+Future<List<MusicAlbumMerge>> _nativeAlbumMergePlanner(
+  List<MusicAlbumMember> members,
+) => members.isEmpty
+    ? Future<List<MusicAlbumMerge>>.value(const <MusicAlbumMerge>[])
+    : Isolate.run(() => planMusicAlbumMerges(members));
+
 class MusicLibraryScanner {
   MusicLibraryScanner(
     this._db, {
@@ -272,7 +284,9 @@ class MusicLibraryScanner {
     MusicListingScanner? listingScanner,
     Future<Directory> Function()? coverDirectory,
     MusicPlaylistParser? playlistParser,
+    MusicAlbumMergePlanner? albumMergePlanner,
   }) : _playlistParser = playlistParser ?? parseMusicPlaylistFile,
+       _albumMergePlanner = albumMergePlanner ?? _nativeAlbumMergePlanner,
        _scanner = scanner ?? _nativeScanner,
        _discRegistrar =
            discRegistrar ?? MusicDiscImportService(_db).registerDiscsUnder,
@@ -285,6 +299,7 @@ class MusicLibraryScanner {
   final MusicListingScanner _listingScanner;
   final Future<Directory> Function() _coverDirectory;
   final MusicPlaylistParser _playlistParser;
+  final MusicAlbumMergePlanner _albumMergePlanner;
 
   /// 扫一个**远程**音乐来源（SFTP / WebDAV / AList）：[entries] 是来源访问层列出的条目
   /// （SFTP 已换进 `sftp://` 命名空间，与视频行、播放期解析同一口径），[bytes] 按区间
@@ -450,6 +465,17 @@ class MusicLibraryScanner {
       sourceId: sourceId,
       seenTrackUids: seen,
       deletedAt: DateTime.now().millisecondsSinceEpoch,
+    );
+    // 专辑对齐（native/fushi_music/src/album_merge.rs）：专辑 uid 由 Rust 逐首按标签派生，
+    // 同一目录里标签不一致（只有一首写了专辑艺人、专辑名标点不同）的曲目会被拆成两张。
+    // 增量扫描里没变的文件不带标签、存量库什么都没变，扫描流里看不全一个目录，所以对
+    // 「落库后这个来源的全部在库曲目」做：首扫 / 增量 / 整库重扫结论一致，存量库下次
+    // 扫描自动合并；合并完再跑没有方案（幂等）。
+    await _db.applyMusicAlbumMerges(
+      await _albumMergePlanner(
+        await _db.listMusicAlbumMembersOfSource(sourceId),
+      ),
+      now: DateTime.now().millisecondsSinceEpoch,
     );
     final int imported = await _importPlaylists(playlists, errors);
     return MusicScanSummary(

@@ -108,7 +108,7 @@ pub fn encode_listing(l: &Listing) -> Vec<u8> {
     w.into_bytes()
 }
 
-fn split_dir(path: &str) -> (&str, &str) {
+pub(crate) fn split_dir(path: &str) -> (&str, &str) {
     match path.rfind('/') {
         Some(i) => (&path[..i], &path[i + 1..]),
         None => ("", path),
