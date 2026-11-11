@@ -186,6 +186,159 @@ void main() {
     },
   );
 
+  // 带 ID 审计的库（prebuilt/<平台>/id_audit/）：只有调试构建（断言开着）去找，发布 / profile 构建的候选里永远
+  // 没有它——它不随包，发布构建就算跑在一个摆着这份库的仓库里也不加载。
+  group('the id_audit variant is a debug-build-only candidate', () {
+    final String sep = Platform.pathSeparator;
+    final String name = FushiFsrs.defaultLibraryName();
+    final String platformDir = Platform.isWindows
+        ? 'windows-x64'
+        : Platform.isMacOS
+        ? 'macos'
+        : 'linux-x64';
+    late Directory repo;
+    late File plain;
+    late File audited;
+    late Directory cwd;
+
+    String prebuiltIn(Directory root) =>
+        '${root.path}${sep}native${sep}fushi_fsrs${sep}prebuilt$sep$platformDir';
+
+    setUp(() {
+      repo = Directory.systemTemp.createTempSync('fushi_fsrs_audit_repo');
+      addTearDown(() => repo.deleteSync(recursive: true));
+      File('${repo.path}$sep.git').writeAsStringSync('gitdir: x');
+      plain = File('${prebuiltIn(repo)}$sep$name')..createSync(recursive: true);
+      audited = File('${prebuiltIn(repo)}$sep$kFushiFsrsIdAuditDir$sep$name')
+        ..createSync(recursive: true);
+      cwd = Directory('${repo.path}${sep}fushi${sep}test')
+        ..createSync(recursive: true);
+    });
+
+    test('this test process is a debug build', () {
+      expect(FushiFsrs.isDebugBuild, isTrue);
+    });
+
+    test('test hosts: the variant comes before the plain prebuilt', () {
+      final List<String> c = FushiFsrs.libraryCandidates(
+        environment: const <String, String>{},
+        executablePath: '${sep}sdk${sep}bin${sep}dart',
+        currentDirectory: cwd.path,
+        debugBuild: true,
+      );
+      expect(c.first, audited.path);
+      expect(c.indexOf(plain.path), greaterThan(0));
+      expect(FushiFsrs.isIdAuditVariantPath(c.first), isTrue);
+      expect(FushiFsrs.isIdAuditVariantPath(plain.path), isFalse);
+      expect(FushiFsrs.isIdAuditVariantPath(name), isFalse);
+      expect(FushiFsrs.isIdAuditVariantPath(null), isFalse);
+    });
+
+    test('an explicit path and FUSHI_FSRS_LIB still win', () {
+      final List<String> c = FushiFsrs.libraryCandidates(
+        libraryPath: '${sep}explicit$sep$name',
+        environment: <String, String>{kFushiFsrsLibEnv: '${sep}from_env'},
+        executablePath: '${sep}sdk${sep}bin${sep}dart',
+        currentDirectory: cwd.path,
+        debugBuild: true,
+      );
+      expect(c[0], endsWith('explicit$sep$name'));
+      expect(c[1], '${sep}from_env');
+      expect(c[2], audited.path);
+    });
+
+    test('a debug app finds it from its build tree, not from the cwd', () {
+      for (final String exe in <String>[
+        // flutter run -d windows / linux / macos 的产物位置。
+        'fushi${sep}build${sep}windows${sep}x64${sep}runner${sep}Debug'
+            '${sep}fushi.exe',
+        'fushi${sep}build${sep}linux${sep}x64${sep}debug${sep}bundle'
+            '${sep}fushi',
+        'fushi${sep}build${sep}macos${sep}Build${sep}Products${sep}Debug'
+            '${sep}Fushi.app${sep}Contents${sep}MacOS${sep}Fushi',
+      ]) {
+        final String exePath = '${repo.path}$sep$exe';
+        Directory(File(exePath).parent.path).createSync(recursive: true);
+        final List<String> c = FushiFsrs.libraryCandidates(
+          environment: const <String, String>{},
+          executablePath: exePath,
+          currentDirectory: Directory.systemTemp.path,
+          debugBuild: true,
+        );
+        expect(c.first, audited.path, reason: exe);
+        // 普通 prebuilt 仍然只有测试宿主才从仓库里拿；调试 app 的普通库是随包那份。
+        expect(c, isNot(contains(plain.path)), reason: exe);
+        expect(c[1], '${File(exePath).parent.path}$sep$name', reason: exe);
+      }
+    });
+
+    test('release / profile builds never look for it', () {
+      final String exePath =
+          '${repo.path}${sep}fushi${sep}build${sep}windows${sep}x64'
+          '${sep}runner${sep}Release${sep}fushi.exe';
+      Directory(File(exePath).parent.path).createSync(recursive: true);
+      for (final String exe in <String>[
+        exePath,
+        '${sep}sdk${sep}bin${sep}dart',
+      ]) {
+        final List<String> c = FushiFsrs.libraryCandidates(
+          environment: const <String, String>{},
+          executablePath: exe,
+          currentDirectory: cwd.path,
+          debugBuild: false,
+        );
+        expect(c, isNot(contains(audited.path)), reason: exe);
+        expect(c.where(FushiFsrs.isIdAuditVariantPath), isEmpty, reason: exe);
+      }
+    });
+
+    test('FUSHI_FSRS_ID_AUDIT=0 turns it off; other values do not', () {
+      List<String> candidates(Map<String, String> env) =>
+          FushiFsrs.libraryCandidates(
+            environment: env,
+            executablePath: '${sep}sdk${sep}bin${sep}dart',
+            currentDirectory: cwd.path,
+            debugBuild: true,
+          );
+      expect(
+        candidates(const <String, String>{kFushiFsrsIdAuditEnv: '0'}),
+        isNot(contains(audited.path)),
+      );
+      expect(
+        candidates(const <String, String>{kFushiFsrsIdAuditEnv: '1'}).first,
+        audited.path,
+      );
+    });
+
+    test('no variant on disk: the candidates are the ones from before', () {
+      audited.deleteSync();
+      final List<String> c = FushiFsrs.libraryCandidates(
+        environment: const <String, String>{},
+        executablePath: '${sep}sdk${sep}bin${sep}dart',
+        currentDirectory: cwd.path,
+        debugBuild: true,
+      );
+      expect(c.where(FushiFsrs.isIdAuditVariantPath), isEmpty);
+      expect(c[c.length - 2], plain.path);
+    });
+
+    test('the search stops at the repository root', () {
+      // 嵌在主 checkout 里的 worktree 自己没有这份库：不越过它的根去拿主 checkout 那份（别的源码编的）。
+      final Directory worktree = Directory('${repo.path}$sep.worktrees${sep}wt')
+        ..createSync(recursive: true);
+      File('${worktree.path}$sep.git').writeAsStringSync('gitdir: x');
+      final Directory wtCwd = Directory('${worktree.path}${sep}fushi${sep}test')
+        ..createSync(recursive: true);
+      final List<String> c = FushiFsrs.libraryCandidates(
+        environment: const <String, String>{},
+        executablePath: '${sep}sdk${sep}bin${sep}dart',
+        currentDirectory: wtCwd.path,
+        debugBuild: true,
+      );
+      expect(c, isNot(contains(audited.path)));
+    });
+  });
+
   final String libraryPath = _libraryPath();
   final FfiFsrsEngine? engine = FfiFsrsEngine.tryCreate(
     libraryPath: libraryPath,

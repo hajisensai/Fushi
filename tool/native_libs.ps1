@@ -15,6 +15,10 @@
   native/<crate> 有未提交改动时不复用也不写戳记，按工作区源码编。
   产物落在 native/<crate>/prebuilt/<平台>/，测试宿主下的加载器会向上找到它，不必设 FUSHI_*_LIB。
 
+  fushi_fsrs 另备一份带 ID 审计的库（cargo feature id_audit）到 prebuilt/<平台>/id_audit/：只有调试构建与测试
+  宿主加载它（packages/fushi_srs 的 kFushiFsrsIdAuditDir），不随包。它与普通库同一次构建脚本调用编出、各有
+  各的戳记，复用规则相同。
+
   新增一个 app / 测试硬依赖的 crate：往 $NativeTestCrates 加一行；它必须自带
   build_{windows_dll.ps1,linux_so.sh,macos_dylib.sh}、产物落 prebuilt/<平台>/，且不依赖
   native/<crate> 目录以外的源码（戳记只哈希这个目录）。
@@ -33,6 +37,10 @@ $root = Split-Path -Parent $PSScriptRoot
 # 缺 cargo 时（需要编的那一刻）直接失败而不是跳过：跳过的结果是之后 flutter build / test
 # 在 CMake / Gradle / 加载器里才报错，离原因更远。
 $NativeTestCrates = @('fushi_compute', 'fushi_fsrs', 'fushi_web_core', 'fushi_rwkv', 'fushi_music', 'fushi_corpus')
+# 另备一份带 ID 审计的库（prebuilt/<平台>/id_audit/<产物>）的 crate：构建脚本认 -IdAudit（.ps1）/
+# FUSHI_FSRS_ID_AUDIT_VARIANT=1（.sh），一次调用把两份都编出来。
+$NativeIdAuditCrates = @('fushi_fsrs')
+$NativeIdAuditDir = 'id_audit'
 
 function Get-NativeHostLayout {
     [OutputType([hashtable])]
@@ -133,7 +141,7 @@ function Copy-NativeFromSibling {
 
 function Invoke-NativeCrateBuild {
     [OutputType([void])]
-    param([string]$RepoRoot, [string]$GitBash, [string]$Crate, [hashtable]$Layout)
+    param([string]$RepoRoot, [string]$GitBash, [string]$Crate, [hashtable]$Layout, [bool]$IdAudit)
 
     $cargo = Get-Command cargo -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
     if (-not $cargo) {
@@ -162,16 +170,19 @@ function Invoke-NativeCrateBuild {
         }
     }
     Write-Host "Building native/$Crate (cargo: $($cargo.Source))..." -ForegroundColor Cyan
+    $previousVariant = $env:FUSHI_FSRS_ID_AUDIT_VARIANT
     try {
         if ($Layout.Script.EndsWith('.ps1')) {
-            & $script
+            if ($IdAudit) { & $script -IdAudit } else { & $script }
             return
         }
+        if ($IdAudit) { $env:FUSHI_FSRS_ID_AUDIT_VARIANT = '1' }
         & $GitBash $script
         if ($LASTEXITCODE -ne 0) { throw "native/$Crate/$($Layout.Script) failed (exit $LASTEXITCODE)." }
     }
     finally {
         $env:RUSTC_WRAPPER = $previousWrapper
+        $env:FUSHI_FSRS_ID_AUDIT_VARIANT = $previousVariant
     }
 }
 
@@ -180,18 +191,33 @@ function Install-NativeTestCrate {
     param([string]$RepoRoot, [string]$GitBash, [string]$Crate)
 
     $layout = Get-NativeHostLayout
-    $relLib = "native/$Crate/prebuilt/$($layout.Dir)/$($layout.Prefix)$Crate$($layout.Ext)"
-    $lib = Join-Path $RepoRoot $relLib
+    $name = "$($layout.Prefix)$Crate$($layout.Ext)"
+    $idAudit = $NativeIdAuditCrates -contains $Crate
+    # 这个 crate 要备的全部产物（相对仓库根）：普通库，加上带 ID 审计的那份（如有）。
+    $relLibs = @("native/$Crate/prebuilt/$($layout.Dir)/$name")
+    if ($idAudit) { $relLibs += "native/$Crate/prebuilt/$($layout.Dir)/$NativeIdAuditDir/$name" }
     $tree = Get-NativeSourceTree -RepoRoot $RepoRoot -Crate $Crate
 
-    if (Test-NativeStamp -Lib $lib -Tree $tree) {
+    $missing = @($relLibs | Where-Object { -not (Test-NativeStamp -Lib (Join-Path $RepoRoot $_) -Tree $tree) })
+    if ($missing.Count -eq 0) {
         Write-Host "OK native/$Crate 已是 HEAD 源码编出的产物，跳过。" -ForegroundColor DarkGray
         return
     }
     if ($tree) {
-        $from = Copy-NativeFromSibling -RepoRoot $RepoRoot -Crate $Crate -RelLib $relLib -Lib $lib -Tree $tree
-        if ($from) {
-            Write-NativeStamp -Lib $lib -Tree $tree
+        $from = $null
+        $stillMissing = @()
+        foreach ($rel in $missing) {
+            $lib = Join-Path $RepoRoot $rel
+            $src = Copy-NativeFromSibling -RepoRoot $RepoRoot -Crate $Crate -RelLib $rel -Lib $lib -Tree $tree
+            if ($src) {
+                Write-NativeStamp -Lib $lib -Tree $tree
+                $from = $src
+            }
+            else {
+                $stillMissing += $rel
+            }
+        }
+        if ($stillMissing.Count -eq 0) {
             Write-Host "OK native/$Crate 复用 $from 的同源码产物（树 $($tree.Substring(0, 10))），未编译。" -ForegroundColor Green
             return
         }
@@ -200,9 +226,12 @@ function Install-NativeTestCrate {
         Write-Host "native/$Crate 有未提交改动，按当前工作区源码编译。" -ForegroundColor Yellow
     }
     $sw = [Diagnostics.Stopwatch]::StartNew()
-    Invoke-NativeCrateBuild -RepoRoot $RepoRoot -GitBash $GitBash -Crate $Crate -Layout $layout
-    if (-not (Test-Path -LiteralPath $lib)) { throw "native/$Crate 构建后缺少产物 $lib" }
-    Write-NativeStamp -Lib $lib -Tree $tree
+    Invoke-NativeCrateBuild -RepoRoot $RepoRoot -GitBash $GitBash -Crate $Crate -Layout $layout -IdAudit $idAudit
+    foreach ($rel in $relLibs) {
+        $lib = Join-Path $RepoRoot $rel
+        if (-not (Test-Path -LiteralPath $lib)) { throw "native/$Crate 构建后缺少产物 $lib" }
+        Write-NativeStamp -Lib $lib -Tree $tree
+    }
     Write-Host ("OK native/$Crate 编译完成（{0:N0} 秒）。" -f $sw.Elapsed.TotalSeconds) -ForegroundColor Green
 }
 

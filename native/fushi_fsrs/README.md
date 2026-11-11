@@ -105,6 +105,25 @@ native lib 目录、macOS `Contents/Frameworks`、Linux `bundle/lib/`）；iOS �
   名逐个核对导出表（ELF `.so` / Mach-O dylib 与可执行文件 / ar 静态库）。
 - `target/`、`prebuilt/` 不入库。访问 crates.io / GitHub（fsrs-rs 是钉 rev 的 git 依赖）不稳时设
   `CARGO_HTTP_PROXY`。
+- **带 ID 审计的本机库（只给调试构建与测试宿主）**：cargo feature `id_audit`（`src/store/ids.rs` `audit`）让 Dart
+  经桥执行的 SQL 里漏写 `srs_id(?)` 的那条语句直接报 `id audit: …`（普通构建里只是静默查不到行）。桌面三端的
+  构建脚本可以在普通库之外另编一份到 `prebuilt/<平台>/id_audit/<库名>`：`build_windows_dll.ps1 -IdAudit`、
+  `FUSHI_FSRS_ID_AUDIT_VARIANT=1 build_{macos_dylib,linux_so}.sh`；`tool/native_libs.ps1` / `tool/bootstrap.sh`
+  备库时就是这么调的。谁加载它：断言开着的进程——`flutter run` 的桌面 debug app（从可执行文件所在的
+  `fushi/build/…` 向上找到仓库）、`dart test` / `flutter test`（从当前目录向上找）——见
+  `FushiFsrs.libraryCandidates`；设 `FUSHI_FSRS_ID_AUDIT=0` 关掉，没有这份库就照旧用普通库。profile / release
+  构建不找它。**它不随包**：上表「怎么进包」那一列的文件只认 `prebuilt/<平台>/` 里的普通库，发布流水线不带
+  `-IdAudit` / 不设那个环境变量；发布产物过 `verify_abi.sh` 时由 `verify_id_audit.sh <二进制> absent` 核对
+  （Windows 在 `build_windows_dll.ps1` 里核对），守卫 `fushi/test/build/srs_id_audit_debug_only_guard_test.dart`。
+  不带开关重编普通库会删掉已有的 `id_audit/`（那份对应上一次的源码）。Android / iOS 没有这份库（调试包也是
+  普通库）；Mac / Linux 测试 worker 的 `worker_prepare.sh` 也不编它。代价（2026-11-11 实测）：Windows x64 DLL
+  9,550,336 B → 9,569,280 B（+18,944 B），多编这一份 +100 s；macOS arm64 dylib 6,370,432 B → 6,386,944 B
+  （+16,512 B），+80 s（都只重编 rusqlite 与本 crate，时间花在本 crate 的 fat LTO 上；机器在跑别的测试）；两份
+  共用一个 `target/`，之后每次在两者之间切换都要重新链接一次。普通库的字节不受影响（编审计库前后 sha256
+  相同）。运行时（Windows，开发库的拷贝：26 MB / 1501 张卡 / 25,504 条操作，经桥各 200 条写、2000 条读，机器
+  有别的负载，两轮）：**自动提交的写语句 0.13～0.26 ms → 26～66 ms / 条**——每条这样的写之后 `check_stored`
+  把 54 张表的 92 个 ID 列各扫一遍，随库的行数增长；点查、200 行分页、开库没有可辨的差别。开着事务时的写
+  不逐条扫，batch 收尾扫一次。调试时嫌慢就设 `FUSHI_FSRS_ID_AUDIT=0`。
 - 体积（release，`opt-level="z"` + fat LTO + strip，2026-10-14 本机实测）：Windows x64 DLL
   806,912 B；Android arm64-v8a 936,848 B（NEEDED 只有 libc / libm / libdl）。2026-10-18 加 Anki 搜索
   （`regex` crate 默认特性：Unicode 表 + 字面量 / DFA 加速）后 Windows x64 DLL 2,149,376 B；正则 / 子串查找 /
