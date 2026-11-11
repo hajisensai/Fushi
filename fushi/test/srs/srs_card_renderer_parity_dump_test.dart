@@ -620,10 +620,7 @@ void main() {
           write(
             s.name,
             '$tag.widgets.txt',
-            _stable(
-              tester.element(find.byKey(boundary)).toStringDeep(),
-              out,
-            ),
+            _stable(tester.element(find.byKey(boundary)).toStringDeep(), out),
           );
           if (defsFaces.isNotEmpty) {
             final SrsCardFace d = defsFaces.last;
