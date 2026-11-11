@@ -193,7 +193,7 @@ fn head_min_reader_is_declared_from_content() {
         .unwrap();
     assert_eq!(row["state"], "upgrade", "{st}");
     let upto = a.upload_all(&mut bucket, "loc");
-    let (path, bytes, _, _) = a.core.sync2_head(P, "loc", upto, T0 + 3).unwrap();
+    let (path, bytes, _) = a.core.sync2_head(P, "loc", upto, T0 + 3).unwrap();
     bucket.0.insert(path, bytes);
     assert_eq!(latest_head(&bucket, &da).min_reader, 4);
     let out = b.core.sync2_plan_at(

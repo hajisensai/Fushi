@@ -5,7 +5,9 @@
 ///    重放受影响的卡；本机身份分叉就在这一步换身份、重签发）；
 /// 3. 发件：本机还没传到这个位置的段 → 上传 → 写新 head（**先读后写**：同一身份的另一个安装刚写的 head 不会
 ///    被自己这一轮的 head 挡住视线）；
-/// 4. 清掉本机两代以前的 head，以及小段合并换下来、大家都 ack 过的旧小段（归档位置都不删）。
+/// 4. 收尾：列本机目录交给内核，内核给出位置上该删的文件（本机的旧 head、小段合并换下来的旧小段、旧转发件），
+///    删成功的回执（[srsSweepObsolete]）。留几代旧 head、旧小段什么时候能删只在内核（transport.rs
+///    `HEAD_KEEP_GENS` / `sync2_obsolete`），这里不持有任何保留规则；归档位置都不删。
 ///
 /// 写入纪律（§6.1）：先写段、再写 head；读者只认「head 引用的段都可读」的前缀，所以 head 先于段可见、上传
 /// 中断、列目录最终一致（Google Drive）都只会让这一轮少收一点，下一轮补齐。传输只经 [SrsLocationStore]。
@@ -368,17 +370,17 @@ Future<SrsSync2Report> srsSync2Round({
   if (head.map['unchanged'] == true) {
     final String last = head.map['path']! as String;
     final String lastName = last.substring(last.lastIndexOf('/') + 1);
-    final bool present = (await location.list(
-      'devices/$self',
-    )).any((SrsLocationEntry f) => f.name == lastName);
-    if (present) {
-      // head 没变也交出待删清单：上一轮删到一半失败（或 head 上传失败没走到删除）的旧段 / 旧转发件这一轮再删。
-      await srsDeleteAndAck(
+    final List<SrsLocationEntry> own = await location.list('devices/$self');
+    if (own.any((SrsLocationEntry f) => f.name == lastName)) {
+      // head 没变也收尾：上一轮删到一半失败（或 head 上传失败没走到删除）的旧 head / 旧段 / 旧转发件这一轮再删。
+      await srsSweepObsolete(
         host: host,
         location: location,
         progressId: progressId,
-        paths: _pathsOf(head.map['delete']),
+        self: self,
+        own: own,
         archive: archive,
+        nowMs: nowMs(),
       );
       return report;
     }
@@ -404,32 +406,74 @@ Future<SrsSync2Report> srsSync2Round({
     }
     written = path.substring(path.lastIndexOf('/') + 1);
   }
-  // 小段合并（§7.1）换下来的旧小段（新 head 已不再引用、过了宽限期）与没删成的旧转发件：两段式，删成功才确认
-  // （内核 `obsolete_ack`），失败的下一轮再给。归档位置一个不删（只确认）。
-  await srsDeleteAndAck(
-    host: host,
-    location: location,
-    progressId: progressId,
-    paths: _pathsOf(head.map['delete']),
-    archive: archive,
-  );
-  final List<String> stale = <String>[];
-
-  // 4. 本机两代以前的 head；顺便取服务端时间。
-  final int gen = (head.map['gen'] as int?) ?? 0;
-  for (final SrsLocationEntry f in await location.list('devices/$self')) {
-    final int? g = _headGen(f.name);
-    if (!archive && g != null && g < gen - 2) {
-      stale.add('devices/$self/${f.name}');
-    }
+  // 4. 收尾：head 已经在位置上，列本机目录（顺便取服务端时间）交给内核定该删什么。
+  final List<SrsLocationEntry> own = await location.list('devices/$self');
+  for (final SrsLocationEntry f in own) {
     if (f.name == written && f.modifiedAt != null) {
       report
         ..serverTimeMs = f.modifiedAt
         ..serverTimeBootMs = writtenAtBootMs;
     }
   }
-  await srsRunPooled(stale, kSrsSync2Concurrency, location.delete);
+  await srsSweepObsolete(
+    host: host,
+    location: location,
+    progressId: progressId,
+    self: self,
+    own: own,
+    archive: archive,
+    nowMs: nowMs(),
+  );
   return report;
+}
+
+/// 一轮的收尾：把这一轮列 `devices/<本机>/` 得到的 [own]（**head 已经在位置上之后**列的）交给内核，内核给出位置上
+/// 此刻该删的文件——本机的旧 head、小段合并（§7.1）换下来的旧小段、没删成的旧转发件——照单删、删成功的回执
+/// （[srsDeleteAndAck]）。
+///
+/// 这里只列目录、删文件、回执：留几代旧 head、旧小段要等到什么时候、归档位置给不给，全在内核（transport.rs
+/// `sync2_obsolete` / `HEAD_KEEP_GENS`）——旧小段能不能删取决于引用它的旧 head 是否已经删掉，两条规则在同一处才对
+/// 得上。归档位置（[archive]）内核不给旧 head，其余清单照 [srsDeleteAndAck] 只回执不删。
+///
+/// 内核回 `again` = 还有旧小段只差这份清单里的旧 head 确认删掉：清单**全部**删成并回执之后（没删成的
+/// [srsDeleteAndAck] 已经抛出，走不到这里），把刚删掉的文件从列表里去掉再问一次，旧小段就在同一轮删掉——排在引用
+/// 它的旧 head 之后。内核保证第二次不再要求再问，这里也至多问两次。[self] = 本机的设备 id（[own] 所在的目录）。
+Future<void> srsSweepObsolete({
+  required SrsSync2Host host,
+  required SrsLocationStore location,
+  required String progressId,
+  required String self,
+  required List<SrsLocationEntry> own,
+  required bool archive,
+  required int nowMs,
+}) async {
+  final String dir = 'devices/$self/';
+  final Set<String> present = <String>{
+    for (final SrsLocationEntry f in own)
+      if (!f.isFolder) f.name,
+  };
+  for (int ask = 0; ask < 2; ask++) {
+    final SrsSync2Result sweep = await host.sync2Command(<String, Object?>{
+      'op': 'obsolete',
+      'location': progressId,
+      'present': present.toList(),
+      'archive': archive,
+      'now': nowMs,
+    });
+    final List<String> paths = _pathsOf(sweep.map['delete']);
+    await srsDeleteAndAck(
+      host: host,
+      location: location,
+      progressId: progressId,
+      paths: paths,
+      archive: archive,
+    );
+    if (archive || sweep.map['again'] != true) return;
+    present.removeAll(<String>[
+      for (final String p in paths)
+        if (p.startsWith(dir)) p.substring(dir.length),
+    ]);
+  }
 }
 
 /// 一轮的读半边（§6.2 第 1–3 步）：读 [location] 上全部设备的 head（每台取代号最大的，同一代号的都要）→ 内核定要拉
@@ -591,7 +635,7 @@ List<String> _pathsOf(Object? list) => <String>[
   for (final Object? p in (list as List?) ?? const <Object?>[]) p! as String,
 ];
 
-/// 两段式删除（集成审查【中】）：删掉内核给的待删清单 [paths]（`head` / `relay_ack` 的 `delete`），**只把删成功的**
+/// 两段式删除（集成审查【中】）：删掉内核给的待删清单 [paths]（`obsolete` / `relay_ack` 的 `delete`），**只把删成功的**
 /// 发 `obsolete_ack` 让内核移除记录；没删成的留在内核的待删表里，下一轮照样再给（[SrsLocationStore.delete] 对不存在
 /// 的文件视为成功，重删幂等）。以前内核交出清单时就删了记录，head 上传或删除中途抛错，这批旧文件永远没人再删。
 /// 归档位置（[archive]）按策略一个不删，直接确认。删除出错时先确认已删的那些，再原样抛出第一个错误。

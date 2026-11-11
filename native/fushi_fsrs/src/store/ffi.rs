@@ -1213,6 +1213,7 @@ const CHANNEL_TRANSPARENT: &[&str] = &[
     "outbox_ack",
     "head",
     "relay_outbox",
+    "obsolete",
     "obsolete_ack",
     "relay_ack",
     "media_known",
@@ -1441,17 +1442,12 @@ fn sync2_command(
                 i("now")?,
                 skip,
             )? {
-                crate::store::sync2::transport::HeadWrite::Written {
-                    path,
-                    bytes,
-                    gen,
-                    obsolete,
-                } => {
+                crate::store::sync2::transport::HeadWrite::Written { path, bytes, gen } => {
                     files.push((path, bytes));
-                    json!({"gen": gen, "delete": obsolete})
+                    json!({"gen": gen})
                 }
-                crate::store::sync2::transport::HeadWrite::Unchanged { path, obsolete } => {
-                    json!({"unchanged": true, "path": path, "delete": obsolete})
+                crate::store::sync2::transport::HeadWrite::Unchanged { path } => {
+                    json!({"unchanged": true, "path": path})
                 }
                 // 要引用的段还有没传到这个位置的（发件确认后被合并改切）：不写，Dart 按「改切」结束这一轮。
                 crate::store::sync2::transport::HeadWrite::Recut => json!({"recut": true}),
@@ -1485,7 +1481,23 @@ fn sync2_command(
             *files = batch.files;
             json!({"more": batch.more})
         }
-        // 两段式删除：`head` / `relay_ack` 给的待删清单里 Dart 已经删掉（归档位置：按策略不删）的那些，内核移除记录。
+        // 一轮收尾：位置上此刻该删的文件（本机的旧 head、合并换下来的旧小段、旧转发件），保留策略只在内核
+        // （transport.rs `sync2_obsolete` / `HEAD_KEEP_GENS`）。`present`：head 已经在位置上之后列 `devices/<本机>/`
+        // 得到的文件名；`archive`：归档位置（不给旧 head）。Dart 删成功的发 `obsolete_ack`。
+        "obsolete" => {
+            let present: Vec<String> = req
+                .get("present")
+                .and_then(Value::as_array)
+                .ok_or("sync2: missing present")?
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_owned)
+                .collect();
+            let archive = req.get("archive") == Some(&Value::Bool(true));
+            let out = c.sync2_obsolete(profile, s("location")?, &present, archive, i("now")?)?;
+            json!({"delete": out.delete, "again": out.again})
+        }
+        // 两段式删除：`obsolete` / `relay_ack` 给的待删清单里 Dart 已经删掉（归档位置：按策略不删）的那些，内核移除记录。
         "obsolete_ack" => {
             let deleted: Vec<String> = req
                 .get("deleted")

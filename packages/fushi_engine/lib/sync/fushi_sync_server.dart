@@ -1236,7 +1236,7 @@ class FushiSyncServer {
   }
 
   /// 写成功（2xx）才回调 [onClientWrite]；回调异常不影响响应。[published] = 这次写带来了新内容（PUT）：
-  /// 只有它推进复习同步的长轮询令牌。删旧 head（客户端每发一个新 head 就清两代前的）没有任何新数据，
+  /// 只有它推进复习同步的长轮询令牌。删旧 head（客户端每发一个新 head 就按内核给的清单清掉更早的）没有任何新数据，
   /// 以前也推进令牌，等于每轮多唤醒一次全部设备。
   shelf.Response _reportClientWrite(
     String reqPath,
