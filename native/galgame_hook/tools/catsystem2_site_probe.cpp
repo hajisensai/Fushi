@@ -212,6 +212,8 @@ int wmain(int argc, wchar_t** argv) {
               Rva(image, voice_sites.read_entry),
               Rva(image, voice_sites.big_read),
               Rva(image, voice_sites.plain_block));
+  std::printf("  archive_flag=+0x%x\n",
+              static_cast<unsigned>(voice_sites.archive_flag_offset));
   VirtualFree(view, 0u, MEM_RELEASE);
   return lookup == cs2::SiteResult::kResolved &&
                  voice == cs2_voice::VoiceSiteResult::kResolved
