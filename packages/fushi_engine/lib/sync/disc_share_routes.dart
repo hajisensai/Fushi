@@ -47,7 +47,7 @@ class DiscShareSession {
   final DiscShareManifest manifest;
   final DateTime createdAt;
 
-  /// 签发请求所用凭据的指纹（BUG-4392）；host 据此在凭据被吊销后连带作废本会话。
+  /// 签发请求所用凭据的指纹（BUG-4393）；host 据此在凭据被吊销后连带作废本会话。
   /// null = 签发方不记（没有可吊销的凭据模型）。
   final String? issuer;
   DateTime lastUsedAt;
@@ -131,7 +131,7 @@ class DiscShareTokenStore {
     );
   }
 
-  /// 作废 [token]（签发凭据已被吊销，BUG-4392）。
+  /// 作废 [token]（签发凭据已被吊销，BUG-4393）。
   void revoke(String token) => _sessions.remove(token);
 
   void clear() => _sessions.clear();
@@ -176,7 +176,7 @@ Uri discShareBaseUri(Uri requestedUri, String token) => Uri(
 /// 处理 `/api/library/disc/<token>/...`。[reqPath] 已 URL 解码、带前导 `/`。
 ///
 /// [issuerValid] 给了时，每次请求都用它核对会话的签发凭据仍有效；不再有效即删会话、
-/// 回 403（BUG-4392：吊销已配对设备连带作废它签出的原盘会话）。
+/// 回 403（BUG-4393：吊销已配对设备连带作废它签出的原盘会话）。
 Future<shelf.Response> handleDiscShareRequest(
   DiscShareTokenStore store,
   shelf.Request request,

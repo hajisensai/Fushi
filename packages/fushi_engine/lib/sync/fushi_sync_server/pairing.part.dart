@@ -4,7 +4,7 @@ part of '../fushi_sync_server.dart';
 /// 配对会话 TTL 与上限。公开回调（onPairRequest 等）留在 [FushiSyncServer] 本体；
 /// 方法逐字搬自 FushiSyncServer。
 extension _FushiSyncServerPairing on FushiSyncServer {
-  /// 本请求的来源分类（BUG-4389），见 [_classifyRequestOrigin]。
+  /// 本请求的来源分类（BUG-4390），见 [_classifyRequestOrigin]。
   _RequestOrigin _requestOrigin(shelf.Request request) {
     final List<String> proxies =
         trustedProxiesProvider?.call() ?? const <String>[];
@@ -72,7 +72,7 @@ extension _FushiSyncServerPairing on FushiSyncServer {
       ),
     );
     if (!approved) return _pairDenied('declined');
-    // BUG-4392：v1 没有稳定 deviceId——接了落库回调时发 legacy- 行 token（能单独吊销，
+    // BUG-4393：v1 没有稳定 deviceId——接了落库回调时发 legacy- 行 token（能单独吊销，
     // 权限同共享 token），不再把共享 token 本身交出去。
     final String issued = await _issueAccessToken(
       clientDeviceId: null,
@@ -165,7 +165,7 @@ extension _FushiSyncServerPairing on FushiSyncServer {
       lanRequiresPin: lanRequiresPin,
     );
 
-    // BUG-4390：本来源或本来源类别因 PIN 失败过多锁定中 → 不建会话、不生成 PIN、
+    // BUG-4391：本来源或本来源类别因 PIN 失败过多锁定中 → 不建会话、不生成 PIN、
     // 不弹审批 / 不刷无头日志。免 PIN 会话不猜 PIN，不受锁定影响。
     if (pinRequired &&
         _pinLockedOut(origin.originClass, origin.trustedSourceKey)) {
@@ -388,7 +388,7 @@ extension _FushiSyncServerPairing on FushiSyncServer {
       onPairSessionResolved?.call(session.sessionId);
     }
 
-    // TODO-961 M3 / BUG-4390：来源标识在建会话时由 [_requestOrigin] 算好存进会话
+    // TODO-961 M3 / BUG-4391：来源标识在建会话时由 [_requestOrigin] 算好存进会话
     // （IP，IPv6 按 /64；隧道按 NodeId；**不**认自报 deviceId）。只取能区分真实来源的
     // 键（[FushiPairSession.trustedSourceKey]）：经本机反代 / 穿透进来的共用键背后是
     // 所有人，按它锁会株连全体（含票据配对）。为 null 时不按来源限速，只受来源类别
@@ -464,7 +464,7 @@ extension _FushiSyncServerPairing on FushiSyncServer {
 
     // TODO-961 M3：成功配对 → 清零该来源的 PIN 失败计数与锁定态（不株连未来尝试）。
     if (sourceKey != null) _pinRateLimiter.recordSuccess(sourceKey);
-    // BUG-4390：本类别有 PIN 会话配对成功 → 类别预算的级数与计数清零。
+    // BUG-4391：本类别有 PIN 会话配对成功 → 类别预算的级数与计数清零。
     if (session.pinRequired && !isTicket) {
       _pinBudgets[session.originClass]!.recordSuccess();
     }
@@ -473,7 +473,7 @@ extension _FushiSyncServerPairing on FushiSyncServer {
       _pairTicket = null;
     }
 
-    // TODO-961 M1b / BUG-4392：host 接线了落库回调（onPeerPaired）时一律派发可单独
+    // TODO-961 M1b / BUG-4393：host 接线了落库回调（onPeerPaired）时一律派发可单独
     // 吊销的 per-peer token：带稳定 deviceId 的按 deviceId 落行，旧 client 不上报
     // deviceId 的落一行 legacy-（权限同共享 token）。没接线（纯协议单测）回共享 token。
     final String issuedToken = await _issueAccessToken(
@@ -494,7 +494,7 @@ extension _FushiSyncServerPairing on FushiSyncServer {
   /// 否则生成 per-peer token、经回调落库并清 token 缓存（吊销/新增即时生效）：
   /// 有稳定 [clientDeviceId] 的以它为 peerId；没有的（v1 / 旧 v2 client）落一行
   /// [kFushiLegacyPeerIdPrefix] 开头的随机 peerId——恒非「我的设备」、不记设备钥匙，
-  /// 只过普通鉴权（BUG-4392）。落库失败把异常抛出（500），绝不回退共享 token。
+  /// 只过普通鉴权（BUG-4393）。落库失败把异常抛出（500），绝不回退共享 token。
   Future<String> _issueAccessToken({
     required String? clientDeviceId,
     required String? deviceName,
@@ -737,7 +737,7 @@ extension _FushiSyncServerPairing on FushiSyncServer {
     );
   }
 
-  /// BUG-4390：PIN 会话是否因失败过多被拒——本来源类别的总预算锁定，或（来源可识别时）
+  /// BUG-4391：PIN 会话是否因失败过多被拒——本来源类别的总预算锁定，或（来源可识别时）
   /// 本来源被 [_pinRateLimiter] 锁定。
   bool _pinLockedOut(FushiPairOriginClass originClass, String? sourceKey) {
     final DateTime now = _now();
@@ -745,7 +745,7 @@ extension _FushiSyncServerPairing on FushiSyncServer {
     return sourceKey != null && _pinRateLimiter.isLockedOut(sourceKey, now);
   }
 
-  /// TODO-961 M1 / BUG-4390：为 [origin] 即将新建的会话腾位置；腾不出返回 false。
+  /// TODO-961 M1 / BUG-4391：为 [origin] 即将新建的会话腾位置；腾不出返回 false。
   ///
   /// 上限按来源类别分区（[_maxPairSessionsPerClass]），公网刷会话挤不掉局域网 / 隧道
   /// 的会话；可信来源键再限每来源 [_maxPairSessionsPerSource] 个，超了只淘汰它自己的。
@@ -834,18 +834,18 @@ MapEntry<String, FushiPairSession>? _oldestOf(
 /// TODO-961 M1（会话 TTL/上限，对照 audio/video token 的 prune 模式）：只发
 /// pair/v2 却不 confirm 的攻击者会留下永久驻留会话（慢速 DoS）。每个会话
 /// [kFushiPairSessionTtl] 后过期；超过分区上限时先 prune 再按 [_enforcePairSessionCap]
-/// 的规则淘汰（BUG-4390）。
+/// 的规则淘汰（BUG-4391）。
 /// TTL 与现有 host 60s 自动 deny（[FushiSyncServerController]）对齐：会话生命周期
 /// 不应长于一次审批窗口（留 90s 余量覆盖审批弹窗 + 用户输 PIN）。
 const Duration kFushiPairSessionTtl = Duration(seconds: 90);
 
-/// 每个来源类别（局域网 / 隧道 / 公网）最多同时挂起的配对会话数（BUG-4390）。
+/// 每个来源类别（局域网 / 隧道 / 公网）最多同时挂起的配对会话数（BUG-4391）。
 const int _maxPairSessionsPerClass = 32;
 
-/// 每个可信来源键最多同时挂起的配对会话数（BUG-4390）。
+/// 每个可信来源键最多同时挂起的配对会话数（BUG-4391）。
 const int _maxPairSessionsPerSource = 4;
 
-/// 转发层会附带的来源头（BUG-4389）。带任一个就说明请求经过了反代 / 穿透 / CDN，
+/// 转发层会附带的来源头（BUG-4390）。带任一个就说明请求经过了反代 / 穿透 / CDN，
 /// TCP 对端只是转发者，不能据它判局域网。
 const List<String> _kForwardingHeaders = <String>[
   'x-forwarded-for',
@@ -855,7 +855,7 @@ const List<String> _kForwardingHeaders = <String>[
   'true-client-ip',
 ];
 
-/// 一次配对请求的来源（BUG-4389）：类别（是否局域网）、展示串、限速来源键。
+/// 一次配对请求的来源（BUG-4390）：类别（是否局域网）、展示串、限速来源键。
 /// 由 [_classifyRequestOrigin] 一处算出，配对 v1 / v2 / 票据会话都只读它。
 class _RequestOrigin {
   const _RequestOrigin({
@@ -885,7 +885,7 @@ class _RequestOrigin {
   String? get trustedSourceKey => sourceKeyTrusted ? sourceKey : null;
 }
 
-/// 请求来源分类（BUG-4389）。判定顺序：
+/// 请求来源分类（BUG-4390）。判定顺序：
 /// 1. P2P 区域 → `p2p`；**不读任何转发头**（隧道里的头全是对端自填的）。
 /// 2. 拿不到 TCP 对端 → `public`。
 /// 3. 带任一转发头 → `public`，不论对端是否可信——伪造这些头只会让请求方自己被要 PIN。

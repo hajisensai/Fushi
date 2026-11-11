@@ -1,4 +1,4 @@
-// BUG-4393：词典媒体 <img> 的 query 凭据。host 在 /api/extension/status 里报
+// BUG-4394：词典媒体 <img> 的 query 凭据。host 在 /api/extension/status 里报
 // dictionaryMediaKey: 'fmk1' 时，扩展改发由 token 派生的作用域 key（吊销签发凭据即失效、
 // 不把主凭据原值拼进 URL）；没有这个能力位（旧 host / FushiApiServer）照旧发原 token。
 const { test } = require('node:test');

@@ -720,7 +720,7 @@ $('#btn-scan').onclick = guard(async()=>{ await post('scan'); toast(T('已开始
 
 // ── 配对 ──
 function setPairBadge(pending){ $('#pair-badge').hidden = !pending; }
-// BUG-4390：管理员签发一次性配对链接（票据配对不走 PIN 预算）。再签一张即作废上一张。
+// BUG-4391：管理员签发一次性配对链接（票据配对不走 PIN 预算）。再签一张即作废上一张。
 $('#btn-pair-link').onclick = guard(async()=>{
   const r = await post('pairing/link');
   const out = $('#pair-link-out');

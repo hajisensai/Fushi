@@ -5,7 +5,7 @@ import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:shelf/shelf.dart' as shelf;
 import 'package:test/test.dart';
 
-/// BUG-4389：配对来源分类。经反代 / 穿透进来的请求（带转发头）、无头端的回环对端
+/// BUG-4390：配对来源分类。经反代 / 穿透进来的请求（带转发头）、无头端的回环对端
 /// 一律不算局域网；可信代理只影响展示 / 限速键；P2P 区域不读转发头。
 class _FakeConnectionInfo implements HttpConnectionInfo {
   _FakeConnectionInfo(String address)

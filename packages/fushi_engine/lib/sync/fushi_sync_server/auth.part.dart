@@ -59,7 +59,7 @@ extension _FushiSyncServerAuth on FushiSyncServer {
       )) {
         return true;
       }
-      // TODO-961 M1b：再比对任一未吊销的 per-peer token（含 legacy- 行，BUG-4392）。
+      // TODO-961 M1b：再比对任一未吊销的 per-peer token（含 legacy- 行，BUG-4393）。
       // 惰性加载 + 缓存，避免每请求打库；配对/吊销经 [invalidatePeerTokenCache]
       // 清缓存促重载。
       final _CredentialSnapshot credentials = await _credentialSnapshot();
@@ -83,7 +83,7 @@ extension _FushiSyncServerAuth on FushiSyncServer {
 
   /// Sensitive service configuration is stricter than ordinary library APIs:
   /// it accepts only a currently paired device token, never the legacy shared
-  /// server token nor a `legacy-` row token (BUG-4392: same rights as the
+  /// server token nor a `legacy-` row token (BUG-4393: same rights as the
   /// shared token it replaces).
   Future<bool> _validatePeerAuth(String? header) async {
     if (header == null) return false;
@@ -157,7 +157,7 @@ extension _FushiSyncServerAuth on FushiSyncServer {
   }
 
   /// 本请求 Basic 凭据的指纹；没有 / 解不出密码时 null。派生凭据（视频流 token、
-  /// 原盘会话、查词音频 id）据此记签发者（BUG-4392）。
+  /// 原盘会话、查词音频 id）据此记签发者（BUG-4393）。
   String? _requestCredentialFingerprint(shelf.Request request) {
     final String? header = request.headers['authorization'];
     final String? password = header == null ? null : _basicPassword(header);

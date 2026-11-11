@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:fushi_engine/sync/pairing/fushi_pairing_protocol.dart';
 import 'package:test/test.dart';
 
-/// BUG-4389：可信代理地址集合与限速来源键。
+/// BUG-4390：可信代理地址集合与限速来源键。
 void main() {
   group('FushiAddressRangeSet', () {
     test('单个 v4 地址只匹配自己', () {

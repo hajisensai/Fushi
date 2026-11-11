@@ -259,7 +259,7 @@ function statusRequestBody() {
 
 let connectionCache = null;
 
-// BUG-4393：词典媒体 query 凭据的能力位缓存。host 在 /api/extension/status 里报
+// BUG-4394：词典媒体 query 凭据的能力位缓存。host 在 /api/extension/status 里报
 // dictionaryMediaKey（'fmk1'）时，dictMediaConfig 回由 token 派生的作用域 key
 // （dict-media-key.js），不再把 token 原值拼进 <img> URL；没报（旧 host / FushiApiServer）
 // 回原 token。connKey = base + '|' + token：与当前 cfg() 不一致（换 host / 端口 / 密钥）即视为
@@ -1468,7 +1468,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         // TODO-1215: content-script dict media image rewrite needs the server
         // base URL + token to build GET /api/media/dictionary. Same source as
         // lookup/mine (cfg()): installer-injected defaults or options override.
-        // BUG-4393：host 报了 fmk1 能力位时，token 换成派生的作用域 key（见
+        // BUG-4394：host 报了 fmk1 能力位时，token 换成派生的作用域 key（见
         // dictMediaQueryToken）；能力位未知时单飞地查一次 status，查不到本次回原 token。
         let scheme = null;
         if (dictMediaCapability.connKey === base + '|' + token) {

@@ -777,7 +777,7 @@ class FushiSyncServerController extends ChangeNotifier {
     if (server != null && identical(_server, server)) {
       _server = null;
       // 广播失败时 P2P 隧道可能已挂上：经串行队列卸下（排在在飞的 attach 之后），
-      // 再关 server，否则隧道转发残留到下一次启动（BUG-4395）。
+      // 再关 server，否则隧道转发残留到下一次启动（BUG-4396）。
       await _detachP2p(server);
       await server.stop();
     }
@@ -1013,7 +1013,7 @@ class FushiSyncServerController extends ChangeNotifier {
     _server = null;
     // 端点留着（client 选路也用它），只停入站。卸载与挂载同走 [_serializeP2p]：
     // 直连 hostStop 会被落在 attach 某次 await 里的那次 hostListen 反超，隧道对公网
-    // 开着却已没有 host（BUG-4395）。这里排在所有在飞 attach 之后。
+    // 开着却已没有 host（BUG-4396）。这里排在所有在飞 attach 之后。
     if (server != null) await _detachP2p(server);
     await broadcast?.stop();
     await server?.stop();
@@ -1053,7 +1053,7 @@ class FushiSyncServerController extends ChangeNotifier {
         final InterconnectP2pHostPort p2p = _p2p;
         if (!p2p.available) return;
         // 每次 await 之后的检查都把 stillWanted() 放在**最后**求值：先求它再 await
-        // 偏好，stop 落在这次 await 里就会漏判（BUG-4395）。最后一道检查之后到
+        // 偏好，stop 落在这次 await 里就会漏判（BUG-4396）。最后一道检查之后到
         // hostListen 之间不再有 await。
         bool stillWanted() => identical(_server, server);
         if (!stillWanted()) return;
@@ -1186,7 +1186,7 @@ class FushiSyncServerController extends ChangeNotifier {
 
   /// TODO-961 M1b: 供给 server auth 校验用的全部有效（未吊销）per-peer 凭据
   /// （peerId → token）。吊销 = 删行，故只需读全表；server 按 peerId 的 `legacy-`
-  /// 前缀区分旧 client 的行（BUG-4392）。
+  /// 前缀区分旧 client 的行（BUG-4393）。
   Future<Map<String, String>> _loadPairedPeerCredentials() async {
     final List<FushiPairedPeerRow> peers = await _database().getPairedPeers();
     return <String, String>{
@@ -1442,7 +1442,7 @@ class FushiSyncServerController extends ChangeNotifier {
                           fontWeight: FontWeight.w600,
                         ),
                       ),
-                      // BUG-4389：app 端回环对端仍算局域网（同机多实例 / 本机联调），
+                      // BUG-4390：app 端回环对端仍算局域网（同机多实例 / 本机联调），
                       // 但本机跑着反代 / 穿透时它可能是外网来的——如实提醒。
                       if (_isLoopbackPairSource(
                         request.remoteAddress,
@@ -1534,7 +1534,7 @@ class FushiSyncServerController extends ChangeNotifier {
     return approval.future;
   }
 
-  /// 配对来源是否本机回环（BUG-4389）。[remote] 是引擎的展示串：裸地址、
+  /// 配对来源是否本机回环（BUG-4390）。[remote] 是引擎的展示串：裸地址、
   /// `<地址> (proxied)` / `<地址> (via <代理>)` 或隧道标记，只看第一段地址。
   static bool _isLoopbackPairSource(String? remote) {
     final String first = (remote ?? '').trim().split(' ').first;

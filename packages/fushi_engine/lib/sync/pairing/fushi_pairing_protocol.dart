@@ -91,7 +91,7 @@ class FushiPairSession {
   /// 全局记账）。null = 本会话不提供该选项（没上报设备钥匙 / 扫码票据配对）。
   final FushiPairOwnerDeviceGrant? ownerDeviceGrant;
 
-  /// 本会话在 PIN 限速与会话分桶里的来源键（BUG-4390）：IP（IPv6 按 /64）、可信代理
+  /// 本会话在 PIN 限速与会话分桶里的来源键（BUG-4391）：IP（IPv6 按 /64）、可信代理
   /// 解析出的转发来源，或隧道 NodeId。**不**取 client 自报的 deviceId——那个谁都能冒报。
   /// null = 无法识别来源，只受类别预算约束。
   final String? sourceKey;
@@ -100,16 +100,16 @@ class FushiPairSession {
   /// 「每来源会话数」限额——否则所有经本机反代进来的人共用一个名额。
   final bool sourceKeyTrusted;
 
-  /// 能区分真实来源时的 [sourceKey]，否则 null（BUG-4390 评审 correctness-1）。按来源的
+  /// 能区分真实来源时的 [sourceKey]，否则 null（BUG-4391 评审 correctness-1）。按来源的
   /// PIN 限速 / 锁定与宿主「同源取代审批框」只认它：不可信键（经本机反代 / 穿透进来的
   /// 共用 `ip:127.0.0.1`、`p2p:?`）背后是所有人，按它锁会让一个攻击者把全体（含票据
   /// 配对）一起锁住，只计入来源类别预算。
   String? get trustedSourceKey => sourceKeyTrusted ? sourceKey : null;
 
-  /// 来源类别：决定 PIN 失败计入哪一份总预算、会话占哪一个分区（BUG-4390）。
+  /// 来源类别：决定 PIN 失败计入哪一份总预算、会话占哪一个分区（BUG-4391）。
   final FushiPairOriginClass originClass;
 
-  /// 会话上限淘汰时跳过本会话：票据会话、由人工批准过的 PIN 会话（BUG-4390）。
+  /// 会话上限淘汰时跳过本会话：票据会话、由人工批准过的 PIN 会话（BUG-4391）。
   final bool protectedFromEviction;
 
   /// 单次消费标志：一旦 confirm（无论成功/失败）即置位，第二次 confirm 直接拒，
@@ -276,7 +276,7 @@ class FushiPairingProtocol {
 ///
 /// 来源标识（[sourceKey]）由调用方给出：请求来源 IP（IPv6 按 /64，见
 /// [fushiRateKeyForAddress]）或隧道 NodeId，**不**用 client 自报的 deviceId（可冒报，
-/// BUG-4390）。拿不到来源时调用方不按来源限速，只受 [FushiPinFailureBudget] 约束。
+/// BUG-4391）。拿不到来源时调用方不按来源限速，只受 [FushiPinFailureBudget] 约束。
 /// 本类只挡单一来源；海量来源轮流猜由按来源类别的 [FushiPinFailureBudget] 兜住。
 ///
 /// 语义：同一来源在滑动窗口 [failureWindow] 内累计 [maxFailures] 次 PIN 校验失败即
@@ -351,7 +351,7 @@ class FushiPinRateLimiter {
     _records.remove(sourceKey);
   }
 
-  /// 管理员解除锁定（BUG-4390）：清掉全部来源记录。
+  /// 管理员解除锁定（BUG-4391）：清掉全部来源记录。
   void reset() {
     _records.clear();
   }
@@ -412,7 +412,7 @@ class _PinFailureRecord {
   final DateTime? lockedUntil;
 }
 
-/// 按来源类别的 PIN 失败总预算（BUG-4390）。[FushiPinRateLimiter] 只按来源分桶，
+/// 按来源类别的 PIN 失败总预算（BUG-4391）。[FushiPinRateLimiter] 只按来源分桶，
 /// 攻击者换来源（IPv6 一个 /64 外还有海量前缀、僵尸网络）即可绕过；无头端又没有人工
 /// 审批环节，「开会话 → 猜一次」可以无限循环。本类把同一类别的所有失败合在一起计：
 /// 失败间隔都不超过 [window] 的连续 [maxFailures] 次失败即锁定整个类别
@@ -493,7 +493,7 @@ class FushiPinFailureBudget {
   }
 }
 
-/// 配对请求的来源类别（BUG-4389）。决定是否免 PIN（只有 [lan] 可能免）。
+/// 配对请求的来源类别（BUG-4390）。决定是否免 PIN（只有 [lan] 可能免）。
 ///
 /// - [lan]：TCP 对端是私网地址、请求不带任何转发头（无头端另要求对端不是回环）。
 /// - [p2p]：经 P2P 隧道监听口进来（`fushi.zone = p2p`），恒按公网要 PIN / 票据。
