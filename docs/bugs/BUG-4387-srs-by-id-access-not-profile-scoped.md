@@ -1,0 +1,21 @@
+## BUG-4387 · 复习库按 id 的读写不按 profile 过滤：点名的 profile 与 id 不属于同一份时写错库
+- **报告**：2026-11-11（用户：内部审查，把复习的控制通道路由下沉到 engine、接上无头服务端时发现）
+- **真实性**：✅ 真 bug，engine 测试已复现（一份 srs.db 上开两份 profile 的 `SrsDbStore`，拿 A 的 store 操作 B 的笔记 id）。
+  - 根因在 `packages/fushi_engine/lib/srs/srs_db_store.dart`：按 id 的入口不看实体属于哪份 profile。`note(id)`（`:2389`）→ `_materializeNotes` → `_entityRow`（`:2586-2592`，`WHERE id = ?`，没有 `profile_uid`）；`cardsOfNote`（`:5052`）同样只按 `note_id`。写入口（`mergeNotes`、`dismissDuplicates`、`editFieldsBatch`）沿用这些读，也不核对归属。
+  - 实测（两份 profile 都用内置 Lapis 类型，id 给的是另一份的笔记）：
+    - 读一条笔记：返回那条笔记，但字段全空（按本 profile 的字段 id 去取别人的字段）；
+    - 给字段设值：报「改了 1 条」，实际往别人的笔记上写了一条本 profile 字段 id 的修改记录，那份自己看不到变化；
+    - 合并重复：把别人那份里被吸收的笔记删掉（墓碑）；
+    - 标记不是重复：照样写进去。
+  - 能走到的入口：
+    - app 的控制通道 / AI 助手（`srs.note.get`、`srs.duplicates.merge`、`srs.duplicates.dismiss`、`srs.notes.*` 的 `notes` 参数；路由本体在 `packages/fushi_engine/lib/srs/srs_ctl_routes.dart`）：app 一次只开当前 profile 的 store，搜索给出的 id 都是当前 profile 的，所以要拿到别的 profile 的 id 才会触发——切换 profile 之前搜到的 id 留在 AI 会话里、或命令行手敲，是能想到的两条路。
+    - 远程复习的主机侧（`packages/fushi_engine/lib/srs/srs_remote_store.dart:1084` 只核对请求的 profile 与 store 是同一份，不核对请求里的 id）：同一组 store 方法，推断有同样的缺口，**没有实测**。
+- **[ ] ① 未修复**（只挡住了一个入口）
+  - 无头服务端的入口已挡住：它的每个端点都要点名 profile，点错的可能性实打实，所以 engine 路由在多 profile 宿主下先核对 id 的归属（`srs_ctl_routes.dart` 的 `_requireInTarget`：别的 profile 的 id 按「不存在」回 404），读一条笔记 / 合并 / 不是重复 / 批量改笔记的 `notes` 都过这一道。
+  - app 的入口（单库宿主）没动：那次改动的范围是「下沉、行为不变」。要补的话，把 `_requireInTarget` 开头的 `target.profile == null` 放行去掉即可（404 取代写错库）。
+  - 根上的修法是让 `SrsDbStore` 按 id 的入口自己带上 profile（`_entityRow` 加 `profile_uid`，或在写入口统一核对），远程复习那条路也就一起收口；`srs_db_store.dart` 当时有多条未合并的改动在排队，没有在那次改动里碰。
+- **[ ] ② 未加自动化测试**（只覆盖了已挡住的入口）
+  - `packages/fushi_engine/test/srs/srs_ctl_routes_test.dart`：多 profile 宿主下，拿另一份 profile 的笔记 id 读 / 合并 / 标记不是重复 / 批量改 → 404，两份库都没被动过。
+  - `packages/fushi_server/test/admin_srs_ctl_test.dart`：经真 HTTP 的同一件事。
+  - app 入口与远程复习入口没有测试（缺口还在）。
+- **备注**：`conflicts/held/*` 与 `conflicts/fields/resolve` 不受影响——前者只认内核按 profile 列出的冲突项，后者的查询带 `profile_uid`。

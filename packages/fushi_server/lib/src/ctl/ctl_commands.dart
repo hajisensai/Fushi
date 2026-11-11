@@ -46,6 +46,7 @@ import 'package:fushi_server/src/config/server_config.dart';
 import 'package:fushi_server/src/ctl/admin_client.dart';
 import 'package:fushi_server/src/ctl/ctl_download_commands.dart';
 import 'package:fushi_server/src/ctl/ctl_host_commands.dart';
+import 'package:fushi_server/src/ctl/ctl_srs_commands.dart';
 import 'package:fushi_server/src/server_language.dart';
 
 /// `ctl` 子命令的参数表；所有动作的选项平铺在这一层（动词在 rest 里）。
@@ -53,6 +54,7 @@ ArgParser buildCtlParser() {
   final ArgParser parser = _buildBaseCtlParser();
   addCtlHostOptions(parser);
   addCtlDownloadOptions(parser);
+  addCtlSrsOptions(parser);
   return parser;
 }
 
@@ -239,6 +241,8 @@ fushi_server ctl <action> [args] --interconnect https://127.0.0.1:38765 --passwo
        login --user u [--endpoint e] [--accept-ankiweb]   密码从 stdin 或 FUSHI_ANKI_PASSWORD 读
        logout [--discard-unsynced]
   srs [status] | profiles                  复习库：状态 / 同步目录里能选的 profile
+  srs decks | notes [搜索] | note <id> | stats | conflicts [--srs-profile <uid>]
+                                           复习库内容；冲突处理 / 重复合并 / 批量改笔记见 `srs help`
   srs add|remove|default <uid> | off       提供哪几份 profile（off = 全部不提供）
   srs sync [<uid>] | ankiconnect on|off    立即同步 / AnkiConnect 监听（默认关）
   srs config '<json>'                      其余配置（rolloverHour、miningTarget、miningDecks、ankiConnect…）
@@ -283,6 +287,8 @@ fushi_server ctl <action> [args] --interconnect https://127.0.0.1:38765 --passwo
        login --user u [--endpoint e] [--accept-ankiweb]   Password is read from stdin or FUSHI_ANKI_PASSWORD
        logout [--discard-unsynced]
   srs [status] | profiles                  Review library: status / profiles selectable in the sync directory
+  srs decks | notes [search] | note <id> | stats | conflicts [--srs-profile <uid>]
+                                           Review library contents; see `srs help` for conflicts / duplicate merge / batch edits
   srs add|remove|default <uid> | off       Which profiles to provide (off = provide none)
   srs sync [<uid>] | ankiconnect on|off    Sync now / AnkiConnect listener (off by default)
   srs config '<json>'                      Other settings (rolloverHour, miningTarget, miningDecks, ankiConnect...)
@@ -544,6 +550,16 @@ _CtlRequest? _fromHost(CtlHostRequest? r) {
         : _listRenderer(key),
   );
 }
+
+_CtlRequest? _fromSrs(CtlSrsRequest? r) => r == null
+    ? null
+    : _CtlRequest(
+        r.method,
+        r.path,
+        body: r.body,
+        query: r.query == null || r.query!.isEmpty ? null : r.query,
+        render: r.render,
+      );
 
 int _exitCodeFor(AdminApiException ex) => switch (ex.status) {
   kCtlUsageErrorStatus => 64,
@@ -1057,6 +1073,10 @@ _CtlRequest? _parseAction(
       );
 
     case 'srs':
+      // 复习库内容（牌组 / 笔记 / 统计 / 冲突 / 批量改笔记）：见 ctl_srs_commands.dart。
+      if (kCtlSrsDataActions.contains(sub)) {
+        return _fromSrs(parseCtlSrsDataAction(sub, args, command, err));
+      }
       Map<String, Object?>? uidBody(String key) {
         final String? uid = arg(0);
         return uid == null

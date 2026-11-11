@@ -92,6 +92,19 @@ The full plan needs its own design spec under `docs/specs/`. Size: L/XL.
 ## Other known gaps
 
 - **SRS follow-ups**:
+  - Review content (decks, note search, one note, stats, the Conflict Center, duplicate
+    merge, batch note edits) is reachable on the server through the same engine routes the
+    app's `fushi_cli srs …` uses (`packages/fushi_engine/lib/srs/srs_ctl_routes.dart` /
+    `srs_ctl_ops.dart`): admin endpoints under `/api/admin/srs/…` (`admin_srs_ctl.dart`),
+    `fushi_server ctl srs decks|notes|note|stats|conflicts|…` (`ctl_srs_commands.dart`) and
+    the op catalog as `server.srs.decks.list` etc. (app id with a `server.` prefix, undo
+    included; the held-deletion "keep" is irreversible and needs the user's confirmation).
+    Every one takes `profile` (uid of a served profile); it may be left out only while exactly
+    one profile is ready, otherwise 409 `profile_required`. A note id that belongs to another
+    profile is refused as 404 (the store's by-id access is not profile scoped, BUG-4387; the
+    app's single-library host does not have this check yet). Known limits: route error messages
+    are the app's Chinese ones in both server languages; writes made through `ctl` are not
+    recorded for undo (admin only, use `--dry-run` first).
   - Profiles whose sync location is end-to-end encrypted are not served in v1. Serving them
     would need the passphrase on the server.
   - AnkiConnect `getProfiles` reports one profile per key.

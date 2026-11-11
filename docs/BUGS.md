@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3930 条。点号进各自文件。
+> 共 3931 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4387](bugs/BUG-4387-srs-by-id-access-not-profile-scoped.md) | 🚧 | 🚧 | 复习库按 id 的读写不按 profile 过滤：点名的 profile 与 id 不属于同一份时写错库 |
 | [BUG-4386](bugs/BUG-4386-anime-source-magnet-opened-as-file.md) | ✅ | ✅ | 视频源扩展（Torrentio）给的磁链被当本地文件打开，无限加载 |
 | [BUG-4385](bugs/BUG-4385-music-exclusive-pause-holds-device.md) | ✅ | ✅ | 音乐 WASAPI 独占输出暂停时不交还设备 |
 | [BUG-4384](bugs/BUG-4384-apple-music-preview-full-duration.md) | ✅ | ✅ | Apple Music 试听片段放约 30 秒就「回到开头」，进度条按整首时长画、无试听提示 |

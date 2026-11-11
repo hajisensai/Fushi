@@ -450,6 +450,7 @@ class HeadlessHost {
                   config: () => config,
                   db: db,
                   dispatch: () => adminDispatch,
+                  srs: () => _srs,
                 ),
               },
             ),
