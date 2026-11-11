@@ -424,6 +424,7 @@ import 'package:fushi/src/media/music/lyrics/music_desktop_lyrics_surface.dart';
 import 'package:fushi/src/media/music/lyrics/music_lookup_pause.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_live.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_service.dart';
+import 'package:fushi/src/media/music/metadata/music_album_release_matcher.dart';
 import 'package:fushi/src/media/music/metadata/music_scrape_service.dart';
 import 'package:fushi/src/media/music/apple_music/apple_music_account.dart';
 import 'package:fushi/src/media/music/apple_music/apple_music_favorites.dart';
@@ -2402,6 +2403,13 @@ class AppModel
     database: () => isDatabaseReady ? database : null,
     enabled: () => isDatabaseReady && prefsRepo.musicLoudnessScan,
   );
+
+  /// 本地专辑 → MusicBrainz 发行的后台自动对号（盘面扫描图要发行 MBID）。结论只在
+  /// 应用缓存文件里，不写 `music_albums`（重扫会按标签覆写）。
+  late final MusicAlbumReleaseMatcher musicAlbumReleases =
+      MusicAlbumReleaseMatcher(
+        database: () => isDatabaseReady ? database : null,
+      );
 
   bool get musicLoudnessScan => prefsRepo.musicLoudnessScan;
   Future<void> setMusicLoudnessScan(bool value) async {
@@ -4484,7 +4492,11 @@ class AppModel
       _databaseOpened = true;
       await _resetSrsStorageHost(isMainProcess: true);
       // 音乐来源扫完 → 缺 ReplayGain 标签的曲目进后台 EBU R128 测量（设计 §7.3）。
-      onMusicSourceScanned = () => unawaited(musicLoudness.schedule());
+      // 同时给还没有发行 MBID 的专辑做一轮发行对号（盘面扫描图）。
+      onMusicSourceScanned = () {
+        unawaited(musicLoudness.schedule());
+        unawaited(musicAlbumReleases.schedule());
+      };
       // 游戏来源扫完 → 游戏库缓存重载 + 新游戏后台补封面（反馈 9Rm_8JEkGM）。
       onGameSourceScanned = (List<String> created) =>
           unawaited(adoptSourceScannedGames(galgameRepo, created));
@@ -4854,6 +4866,12 @@ class AppModel
         '[Fushi] init: search preload (deferred to after first frame)',
       );
       unawaited(_warmUpSearchAfterFirstFrame());
+      // 启动后（首帧画完）给曲库里还没有发行 MBID 的专辑做一轮发行对号。
+      unawaited(
+        WidgetsBinding.instance.endOfFrame.then(
+          (_) => musicAlbumReleases.schedule(),
+        ),
+      );
       unawaited(_migrateDictionaryRedirectFlags());
       // 曲库歌词搜索的本机语料库：延后打开、清掉已下架「我库里的例句」留下的书 / 视频 /
       // 游戏文档（反馈 4S2_J80DfK），再对账歌词、订阅歌词表做增量。
@@ -10984,6 +11002,7 @@ class AppModel
 
   @override
   void dispose() {
+    musicAlbumReleases.dispose();
     unawaited(_extensionImageOcr?.close());
     _extensionImageOcr = null;
     // BUG-913：对称释放 initialise() 起的 4 个 app-wide 常驻子系统。dispose 是同步的、
