@@ -46,6 +46,7 @@
 // unchanged.
 
 namespace umono_lookup = fushi_voice_hook::unity_mono_lookup;
+namespace umono_dialogue = fushi_voice_hook::unity_mono_dialogue;
 
 constexpr uint32_t kUmModelSlots = 2u;
 constexpr uint32_t kUmSubmitSlots = 8u;
@@ -201,6 +202,13 @@ struct UnityMonoLookupRuntime {
     uint64_t written_ms = 0u;
   };
   std::array<TmpCandidate, umono_lookup::kInstanceSlots> tmp_candidates{};
+  // Dialogue-surface proof (unity_mono_dialogue_core.h), one track per
+  // candidate slot; reset whenever the slot changes object.
+  std::array<umono_dialogue::SurfaceTrack, umono_lookup::kInstanceSlots>
+      surfaces{};
+  size_t dialogue_surface = umono_dialogue::kNoSurface;  // candidate slot
+  uintptr_t dialogue_object = 0u;  // the marked lane (object + setter lane)
+  uint8_t dialogue_lane = 0u;
   UmSnapshot building;
   std::array<uint64_t, umono_lookup::kInstanceSlots> fingerprints{};
   std::array<uint64_t, umono_lookup::kInstanceSlots> last_sample_ms{};
@@ -224,6 +232,17 @@ struct UnityMonoLookupRuntime {
   std::atomic<uint64_t> submit_count{0u};
   std::atomic<uint64_t> claimed_presses{0u};
   std::atomic<uint32_t> fixed_hits{0u};
+  // Advance inputs delivered to the game (window procedure, not claimed by
+  // the lookup); read by the dialogue-surface proof on the main thread.
+  std::atomic<uint32_t> advance_inputs{0u};
+  // HookWorker -> main thread: drop every dialogue track (re-install).
+  std::atomic<bool> dialogue_reset{false};
+  // Main thread -> HookWorker diagnostics of the dialogue surface (no text).
+  std::atomic<uint32_t> dialogue_changes{0u};
+  std::atomic<uint64_t> dialogue_thread{0u};
+  std::atomic<uint32_t> dialogue_lane_diag{0u};
+  std::atomic<uint32_t> dialogue_score{0u};
+  std::atomic<uint32_t> dialogue_runner_up{0u};
   std::atomic<uint32_t> sample_faults{0u};
   std::atomic<HWND> window{nullptr};
   std::atomic<WNDPROC> original_proc{nullptr};
@@ -939,7 +958,40 @@ bool UmLanesSelected(uintptr_t object, uint8_t lane_hooks, uint64_t selected) {
 // more than kInstanceSlots UI texts rewritten after each line (measured: the
 // table stayed full of 8 fresh instances while the dialogue lane was
 // selected) otherwise pushes the dialogue out before its line is matched.
-void RememberUmTmpCandidateOnMain(void* component, uint8_t lane) {
+// The dialogue surface after this frame (main thread, end of the canvas
+// update): mark the leader's lane (g_unity_dialogue_surface_thread, read by
+// every Unity text event) and report the lanes whose mark changed.
+void UpdateUmDialogueSurface(umono_dialogue::SurfaceChange* change) {
+  auto& rt = g_um_lookup;
+  const size_t next = umono_dialogue::NextDialogueSurface(
+      rt.surfaces.data(), rt.surfaces.size(), rt.dialogue_surface);
+  rt.dialogue_surface = next;
+  const uintptr_t object =
+      next == umono_dialogue::kNoSurface ? 0u : rt.tmp_candidates[next].object;
+  const uint8_t lane =
+      next == umono_dialogue::kNoSurface ? 0u : rt.surfaces[next].lane;
+  const umono_dialogue::Leader leader =
+      umono_dialogue::PickLeader(rt.surfaces.data(), rt.surfaces.size());
+  rt.dialogue_score.store(leader.score, std::memory_order_relaxed);
+  rt.dialogue_runner_up.store(leader.runner_up, std::memory_order_relaxed);
+  if (object == rt.dialogue_object && lane == rt.dialogue_lane) return;
+  const uint64_t thread = UnityMonoLaneThreadId(object, lane, nullptr);
+  g_unity_dialogue_surface_thread.store(thread, std::memory_order_release);
+  if (change != nullptr) {
+    change->cleared_object = rt.dialogue_object;
+    change->cleared_lane = rt.dialogue_lane;
+    change->promoted_object = thread == 0u ? 0u : object;
+    change->promoted_lane = thread == 0u ? 0u : lane;
+  }
+  rt.dialogue_object = thread == 0u ? 0u : object;
+  rt.dialogue_lane = thread == 0u ? 0u : lane;
+  rt.dialogue_thread.store(thread, std::memory_order_relaxed);
+  rt.dialogue_lane_diag.store(rt.dialogue_lane, std::memory_order_relaxed);
+  rt.dialogue_changes.fetch_add(1u, std::memory_order_release);
+}
+
+void RememberUmTmpCandidateOnMain(void* component, uint8_t lane,
+                                  const wchar_t* chars, int length) {
   auto& rt = g_um_lookup;
   // `live` first: it publishes `framework` / `tmp` / `fungus` / `classes`
   // (release on HookWorker before the detours can see them).
@@ -977,6 +1029,9 @@ void RememberUmTmpCandidateOnMain(void* component, uint8_t lane) {
         break;
       }
       if (UmLanesSelected(entry.object, entry.lane_hooks, selected)) continue;
+      // Nor the proven dialogue surface (the host may not have selected it
+      // yet).
+      if (i == rt.dialogue_surface) continue;
       if (oldest == umono_lookup::kInstanceSlots ||
           entry.written_ms < rt.tmp_candidates[oldest].written_ms) {
         oldest = i;
@@ -995,14 +1050,26 @@ void RememberUmTmpCandidateOnMain(void* component, uint8_t lane) {
       }
     }
     rt.tmp_candidates[slot] = {object, 0u, kind, now};
+    rt.surfaces[slot] = umono_dialogue::SurfaceTrack();
+    if (slot == rt.dialogue_surface) {
+      rt.dialogue_surface = umono_dialogue::kNoSurface;
+    }
   }
   rt.tmp_candidates[slot].lane_hooks |= lane;
   rt.tmp_candidates[slot].written_ms = now;
+  wchar_t clean[umono_dialogue::kMaxTrackedUnits];
+  const size_t clean_length = umono_dialogue::StripRichText(
+      chars, length > 0 ? static_cast<size_t>(length) : 0u, clean,
+      umono_dialogue::kMaxTrackedUnits);
+  umono_dialogue::NoteSurfaceText(
+      &rt.surfaces[slot], clean, clean_length, lane,
+      rt.advance_inputs.load(std::memory_order_acquire));
 }
 
-void RememberUmTmpCandidateGuarded(void* component, uint8_t lane) {
+void RememberUmTmpCandidateGuarded(void* component, uint8_t lane,
+                                   const wchar_t* chars, int length) {
   __try {
-    RememberUmTmpCandidateOnMain(component, lane);
+    RememberUmTmpCandidateOnMain(component, lane, chars, length);
   } __except (EXCEPTION_EXECUTE_HANDLER) {
     g_um_lookup.sample_faults.fetch_add(1u, std::memory_order_relaxed);
   }
@@ -1051,8 +1118,10 @@ uint64_t UmInstanceFingerprint(const UmInstanceSnapshot& instance) {
 // (`current_text` differs from the last sample's) is sampled at once;
 // otherwise the reveal is followed at the sampling spacing.
 void UmSampleFrame(uintptr_t instance, bool text_known, uintptr_t current_text,
-                   UmSampler sampler) {
+                   UmSampler sampler,
+                   const UmInstanceSnapshot** sampled = nullptr) {
   auto& rt = g_um_lookup;
+  if (sampled != nullptr) *sampled = nullptr;
   const uint64_t now = GetTickCount64();
   // Slot of this instance; a slot whose instance stopped updating for a
   // second is reused.
@@ -1090,6 +1159,7 @@ void UmSampleFrame(uintptr_t instance, bool text_known, uintptr_t current_text,
   if (target.failure == kUmSampleFault) {
     rt.sample_faults.fetch_add(1u, std::memory_order_relaxed);
   }
+  if (sampled != nullptr) *sampled = &target;
   const uint64_t fingerprint = UmInstanceFingerprint(target);
   if (fingerprint != rt.fingerprints[slot]) {
     rt.fingerprints[slot] = fingerprint;
@@ -1142,6 +1212,10 @@ void FUSHI_MONO_MANAGED_CALL UmTmpWillRenderDetour() {
       GetCurrentThreadId() != rt.main_thread.load(std::memory_order_acquire)) {
     return;
   }
+  if (rt.dialogue_reset.exchange(false, std::memory_order_acq_rel)) {
+    for (auto& surface : rt.surfaces) surface = umono_dialogue::SurfaceTrack();
+    rt.dialogue_surface = umono_dialogue::kNoSurface;
+  }
   for (size_t i = 0; i < umono_lookup::kInstanceSlots; ++i) {
     const uintptr_t object = rt.tmp_candidates[i].object;
     if (object == 0u) continue;
@@ -1151,8 +1225,25 @@ void FUSHI_MONO_MANAGED_CALL UmTmpWillRenderDetour() {
         object + (ui_text ? rt.fungus.text_string_offset
                           : rt.tmp.text_string_offset),
         &text);
-    UmSampleFrame(object, known, text, ui_text ? &SampleUmUiText : &SampleUmTmp);
+    const UmInstanceSnapshot* sampled = nullptr;
+    UmSampleFrame(object, known, text, ui_text ? &SampleUmUiText : &SampleUmTmp,
+                  &sampled);
+    // Dialogue-surface proof: was this candidate's pending line shown?  Only
+    // a successful sample of this very object is evidence.
+    if (sampled != nullptr && sampled->instance == object &&
+        sampled->failure == kUmSampleOk) {
+      umono_dialogue::NoteSurfaceShown(
+          &rt.surfaces[i],
+          umono_dialogue::CellsShownOnScreen(
+              sampled->cells.data(), sampled->glyph_count, sampled->screen_w,
+              sampled->screen_h));
+    }
   }
+  // Once per frame, after every setter of the frame ran and every candidate
+  // was sampled (a name plate and its body text are compared together).
+  umono_dialogue::SurfaceChange change;
+  UpdateUmDialogueSurface(&change);
+  if (change.changed()) PublishUnityMonoDialogueSurfaceChange(change);
 }
 
 // ── main thread: window procedure ───────────────────────────────────────────
@@ -1293,6 +1384,13 @@ LRESULT CALLBACK UmLookupWindowProc(HWND hwnd, UINT message, WPARAM wparam,
       rt.claimed_presses.fetch_add(1u, std::memory_order_relaxed);
     }
     if (decision.swallow) return 0;
+  }
+  // An advance input the game receives (a claimed lookup press returned
+  // above): evidence for the dialogue-surface proof.
+  if (rt.subclass_live.load(std::memory_order_acquire) &&
+      rt.window.load(std::memory_order_acquire) == hwnd &&
+      umono_dialogue::IsAdvanceInputMessage(message)) {
+    rt.advance_inputs.fetch_add(1u, std::memory_order_acq_rel);
   }
   return CallUmOriginalProc(hwnd, message, wparam, lparam);
 }
@@ -1998,21 +2096,36 @@ void NoteUmRetire(uint32_t reason) {
       rt.subclass_live.load() ? 1 : 0);
 }
 
+// Logs every change of the dialogue surface (worker only, bounded, no text).
+void NoteUmDialogueSurface() {
+  static uint32_t seen = 0u;
+  static uint32_t budget = 32u;
+  auto& rt = g_um_lookup;
+  const uint32_t changes = rt.dialogue_changes.load(std::memory_order_acquire);
+  if (changes == seen || budget == 0u) return;
+  seen = changes;
+  --budget;
+  UmLookupLog(
+      L"unity-mono-dialogue: surface thread=%016llx lane=%u score=%u "
+      L"runner_up=%u inputs=%u changes=%u",
+      static_cast<unsigned long long>(rt.dialogue_thread.load()),
+      rt.dialogue_lane_diag.load(), rt.dialogue_score.load(),
+      rt.dialogue_runner_up.load(), rt.advance_inputs.load(), changes);
+}
+
 void ProcessUnityMonoLookupTick() {
   auto& rt = g_um_lookup;
   if (!rt.installed) return;
-  if (g_stop || g_header == nullptr ||
-      !fushi_voice_hook::HasLookupRegion(g_header) ||
-      fushi_voice_hook::AtomicLoadShared32(&g_header->lookup_enabled) == 0u) {
+  NoteUmDialogueSurface();
+  if (g_stop || g_header == nullptr) {
     NoteUmRetire(1u);
     RetireUmLookup();
     return;
   }
-  fushi_voice_hook::AtomicOrShared32(
-      &g_header->lookup_diag, fushi_voice_hook::kLookupDiagSensorInstalled);
-
   // The click claim lives in the game window's procedure; (re)bind it to the
-  // current Unity window (a fullscreen toggle can recreate it).
+  // current Unity window (a fullscreen toggle can recreate it).  Bound even
+  // while the lookup is off: the same procedure counts the advance inputs the
+  // dialogue-surface proof needs, and with the lookup off it never claims.
   HWND game = rt.window.load(std::memory_order_acquire);
   if (!rt.subclass_live.load(std::memory_order_acquire) || game == nullptr ||
       !IsWindow(game)) {
@@ -2024,6 +2137,14 @@ void ProcessUnityMonoLookupTick() {
     }
     rt.claim = umono_lookup::ClaimState();
   }
+  if (!fushi_voice_hook::HasLookupRegion(g_header) ||
+      fushi_voice_hook::AtomicLoadShared32(&g_header->lookup_enabled) == 0u) {
+    NoteUmRetire(1u);
+    RetireUmLookup();
+    return;
+  }
+  fushi_voice_hook::AtomicOrShared32(
+      &g_header->lookup_diag, fushi_voice_hook::kLookupDiagSensorInstalled);
 
   UmSnapshot& snapshot = rt.snapshot_copy;
   if (!ReadUmSlot(rt.snapshot_seq, rt.snapshots, rt.published_snapshot,
@@ -2106,6 +2227,10 @@ void ShutdownUnityMonoLookup() {
   rt.claim = umono_lookup::ClaimState();
   RetireUmLookup();
   rt.installed = false;
+  // No lane is the dialogue surface any more; the main thread drops its
+  // tracks before it next uses them (it owns them).
+  g_unity_dialogue_surface_thread.store(0u, std::memory_order_release);
+  rt.dialogue_reset.store(true, std::memory_order_release);
 }
 
 // Re-install after a shutdown: the detour is still chained and only needs to
