@@ -78,10 +78,18 @@ void main() {
     },
   );
 
-  test('GET /api/pair is rejected with 405', () async {
+  test('GET /api/pair is not exempt from auth (401); with Basic 405', () async {
     server.onPairRequest = (FushiPairRequest _) async => true;
     final http.Response resp = await http.get(pairUri());
-    expect(resp.statusCode, 405);
+    expect(resp.statusCode, 401);
+    final http.Response authed = await http.get(
+      pairUri(),
+      headers: <String, String>{
+        'authorization':
+            'Basic ${base64Encode(utf8.encode('hibiki:super-secret-token'))}',
+      },
+    );
+    expect(authed.statusCode, 405);
   });
 
   test('pairing endpoint needs no auth header (bypasses Basic auth)', () async {

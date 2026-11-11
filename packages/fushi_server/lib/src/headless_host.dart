@@ -8,6 +8,7 @@
 library;
 
 import 'dart:async';
+import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 
@@ -53,6 +54,7 @@ import 'package:fushi_engine/sync/local_audio_library_store.dart';
 import 'package:fushi_engine/sync/local_library_host_service.dart';
 import 'package:fushi_engine/sync/manga_sync_package.dart';
 import 'package:fushi_engine/sync/override_title_db.dart';
+import 'package:fushi_engine/sync/pairing/fushi_pair_link.dart';
 import 'package:fushi_engine/sync/pairing/fushi_pairing_protocol.dart';
 import 'package:fushi_engine/sync/subscriptions/host_subscription_host.dart';
 import 'package:fushi_engine/sync/sync_asset_package_service.dart';
@@ -82,19 +84,49 @@ import 'package:fushi_server/src/video_scrape_host.dart';
 import 'package:path/path.dart' as p;
 import 'package:fushi_server/src/server_language.dart';
 
-/// 当前待输入的配对 PIN（无头进程的「审批弹窗」：CLI 日志 + WebUI 状态）。
+/// 一条待输入的配对 PIN（无头进程的「审批弹窗」：CLI 日志 + WebUI 状态）。按会话持有，
+/// 并发的配对请求各占一条，互不覆盖。
 class PendingPairing {
   const PendingPairing({
+    required this.sessionId,
     required this.pin,
     required this.deviceName,
     required this.remoteAddress,
     required this.createdAt,
   });
 
+  /// 配对会话 id（只在进程内用来按会话收起，不下发给 WebUI）。
+  final String sessionId;
   final String pin;
   final String? deviceName;
   final String? remoteAddress;
   final DateTime createdAt;
+}
+
+/// 管理员签发配对链接的结果（BUG-4391）：签出 [PairLinkIssued]，或签不出的原因
+/// [PairLinkUnavailable]。
+sealed class PairLinkOutcome {
+  const PairLinkOutcome();
+}
+
+/// 一次性配对链接（`fushi://pair?...&k=<票据>`）及票据失效时刻。
+final class PairLinkIssued extends PairLinkOutcome {
+  const PairLinkIssued({required this.uri, required this.expiresAt});
+
+  final String uri;
+  final DateTime expiresAt;
+}
+
+/// 签不出链接。[reason] 是 admin API 的 wire 值：`not_running`（互联服务没在跑）/
+/// `no_reachable_address`（没有可公布的地址：明文 host 的网卡地址不公布，又没有
+/// HTTPS 公网地址 / P2P，app 解析不出这种链接）。
+final class PairLinkUnavailable extends PairLinkOutcome {
+  const PairLinkUnavailable(this.reason);
+
+  static const String notRunning = 'not_running';
+  static const String noReachableAddress = 'no_reachable_address';
+
+  final String reason;
 }
 
 /// 串行化库变动（对应 app 的 `runExclusiveWithSync`）。
@@ -203,19 +235,38 @@ class HeadlessHost {
         prefs.setRaw(ServerProfileHub.pinnedPrefKey, id ?? ''),
   );
 
-  /// [start] 时的绑定地址是否只监听本机（重启前改了 `bind` 也按实际监听判）。
+  /// [start] 时的监听范围是否只在本机回环（重启前改了 `bind` 也按实际监听判；
+  /// 判据只有 [FushiListenScope.isLoopbackOnly] 一份，`::1` / `127.0.0.2` 也算）。
   bool _loopbackOnly = false;
 
   /// P2P 挂载 / 卸载一律串行（见 [_serializeP2p]）。
   Future<void> _p2pOps = Future<void>.value();
   bool _p2pListening = false;
   String? _p2pLastError;
-  PendingPairing? _pendingPairing;
+
+  /// 按会话持有的待输入 PIN（插入序 = 时间序），上限 [_maxPendingPairings]。
+  final LinkedHashMap<String, PendingPairing> _pendingPairings =
+      LinkedHashMap<String, PendingPairing>();
+  static const int _maxPendingPairings = 8;
   String? _hostFingerprint;
   SecurityContext? _securityContext;
 
-  /// 给 CLI / WebUI 看的状态。
-  PendingPairing? get pendingPairing => _pendingPairing;
+  /// 给 CLI / WebUI 看的状态：最新一条待输入 PIN（兼容单条展示）。
+  PendingPairing? get pendingPairing {
+    final List<PendingPairing> all = pendingPairings;
+    return all.isEmpty ? null : all.last;
+  }
+
+  /// 所有未过期的待输入 PIN（旧→新）。会话过了 [kFushiPairSessionTtl] 就不可能再被
+  /// confirm，读前剔除。
+  List<PendingPairing> get pendingPairings {
+    final DateTime cutoff = DateTime.now().subtract(kFushiPairSessionTtl);
+    _pendingPairings.removeWhere(
+      (String _, PendingPairing p) => p.createdAt.isBefore(cutoff),
+    );
+    return List<PendingPairing>.unmodifiable(_pendingPairings.values);
+  }
+
   String? get hostFingerprint => _hostFingerprint;
 
   /// 互联端口用的 TLS 上下文；admin 端口复用同一份自签证书。
@@ -249,6 +300,32 @@ class HeadlessHost {
 
   /// 吊销 peer 后让服务器重读 token 集（否则旧 token 还在缓存里能用到重启）。
   void invalidatePeerTokens() => _server?.invalidatePeerTokenCache();
+
+  /// 因 PIN 失败过多而暂停配对的来源类别及解锁时刻（BUG-4391）；host 没跑时为空。
+  Map<FushiPairOriginClass, DateTime> get pairingLockouts =>
+      _server?.pairingLockouts ?? const <FushiPairOriginClass, DateTime>{};
+
+  /// 管理员解除配对锁定（BUG-4391）。
+  void resetPairingLockout() => _server?.resetPairingLockout();
+
+  /// 管理员签发一次性配对链接（BUG-4391）：票据配对凭 192-bit secret，不走 PIN、
+  /// 不进 PIN 失败预算，公网类别被爆破锁住时只能从公网接入的用户仍有路可走。
+  /// 票据 TTL 用引擎默认；再签一张即作废上一张（引擎语义）。链接没有可公布地址时
+  /// 立刻作废票据并报 [PairLinkUnavailable.noReachableAddress]，不发 app 解析不了
+  /// 的废链接。
+  Future<PairLinkOutcome> createPairLink() async {
+    final FushiSyncServer? server = _server;
+    if (server == null) {
+      return const PairLinkUnavailable(PairLinkUnavailable.notRunning);
+    }
+    final FushiPairTicket ticket = server.issuePairTicket();
+    final FushiPairLink link = await server.buildPairLink(ticket: ticket);
+    if (link.addresses.isEmpty) {
+      server.revokePairTicket();
+      return const PairLinkUnavailable(PairLinkUnavailable.noReachableAddress);
+    }
+    return PairLinkIssued(uri: link.toUri(), expiresAt: ticket.expiresAt);
+  }
 
   /// 配对 PIN 出现/消失时的观察者（WebUI SSE、CLI 打印）。
   final StreamController<PendingPairing?> pairingEvents =
@@ -410,13 +487,18 @@ class HeadlessHost {
     );
     _ankiConnect = ankiConnect;
 
-    _loopbackOnly = _isLoopbackBind(config.bind);
+    final ({FushiListenScope scope, String? warning}) listen = parseBindSetting(
+      config.bind,
+    );
+    if (listen.warning != null) {
+      engineLog.logDiagnostic('HeadlessHost', listen.warning!);
+    }
     final FushiSyncServer server =
         FushiSyncServer(
             syncDataDir: paths.syncData.path,
             port: config.port,
             token: identity.hostToken,
-            allowLan: !_loopbackOnly,
+            listenScope: listen.scope,
             libraryService: libraryService,
             mangaOcrJobs: ocrJobs,
             // 截屏识字（Steam Deck 游戏内识字插件）：用默认本地模型，常驻会话空闲 5 分钟关。
@@ -484,13 +566,20 @@ class HeadlessHost {
             // 路由回 501 unsupported、capabilities 报 `gameStream: false`。
             gameStreamService: null,
           )
+          // 本会话 PIN 由 server 生成，经 [FushiPairRequest.pin] 交给 [_approvePairing] 登记。
           ..onPairRequest = _approvePairing
-          ..onPairPinGenerated = _generatePin
           ..onPairSessionResolved = _clearPendingPairing
           // 这里与下面公网地址的 provider 都读 [config] getter：WebUI 改完即生效。
           ..lanRequiresPinProvider = (() async => config.lanRequiresPin)
+          // BUG-4390：无头端经回环进来的几乎都是本机反代 / 穿透，不算局域网；
+          // 可信代理只影响限速键与展示 IP。
+          ..loopbackPeerIsLan = false
+          ..trustedProxiesProvider = (() => config.trustedProxies)
+          // BUG-4391：要 PIN 的会话由 [_approvePairing] 自动放行、没人点过，不受会话
+          // 上限淘汰保护（否则谁都能刷出一堆占住位置）。
+          ..pinApprovalIsManual = false
           ..onPeerPaired = _persistPairedPeer
-          ..pairedPeerTokensProvider = _loadPairedPeerTokens
+          ..pairedPeerCredentialsProvider = _loadPairedPeerCredentials
           // 地址集：与 LAN 广播同一个设备 id；公网 / 反代地址与 app 同一个偏好键。
           ..hostId = identity.deviceId
           ..publicUrlsProvider = (() async => config.publicUrls)
@@ -532,6 +621,7 @@ class HeadlessHost {
       rethrow;
     }
     _server = server;
+    _loopbackOnly = !server.listensBeyondLoopback;
     // P2P 挂不上只留痕（[_serializeP2p] 吞错并记 lastError）：server 已经起来了，
     // 这里抛出去会让它没有拥有者（泄漏一个在跑的 server，审查问题 12）。
     await _attachP2p(server);
@@ -549,13 +639,10 @@ class HeadlessHost {
     await _advertiser!.start();
     engineLog.logDiagnostic(
       'HeadlessHost',
-      'listening on ${config.bind}:${server.port} '
+      'listening on ${server.boundAddress?.address}:${server.port} '
           '(${securityContext != null ? 'https' : 'http'}, device=${config.deviceName})',
     );
   }
-
-  static bool _isLoopbackBind(String bind) =>
-      bind == '127.0.0.1' || bind == 'localhost';
 
   // ── P2P 隧道 ──────────────────────────────────────────────────────────
   //
@@ -756,32 +843,46 @@ class HeadlessHost {
   /// 服务端日志/WebUI 上的 PIN 谁才配得上）；免 PIN 会话只在配置显式关掉
   /// `lan_requires_pin` 时放行。
   Future<bool> _approvePairing(FushiPairRequest request) async {
-    if (request.pinRequired) return true;
+    if (request.pinRequired) {
+      final String? pin = request.pin;
+      final String? sessionId = request.sessionId;
+      if (pin != null && sessionId != null) {
+        _registerPendingPairing(
+          PendingPairing(
+            sessionId: sessionId,
+            pin: pin,
+            deviceName: request.deviceName,
+            remoteAddress: request.remoteAddress,
+            createdAt: DateTime.now(),
+          ),
+        );
+      }
+      return true;
+    }
     return !config.lanRequiresPin;
   }
 
-  String _generatePin(FushiPairSession session) {
-    final String pin = FushiPairingProtocol.generatePin();
-    final PendingPairing pending = PendingPairing(
-      pin: pin,
-      deviceName: session.deviceName,
-      remoteAddress: session.remoteAddress,
-      createdAt: DateTime.now(),
-    );
-    _pendingPairing = pending;
+  /// 登记一条待输入 PIN：按会话各占一条（并发请求互不覆盖），满了丢最旧。
+  void _registerPendingPairing(PendingPairing pending) {
+    _pendingPairings.remove(pending.sessionId);
+    while (_pendingPairings.length >= _maxPendingPairings) {
+      _pendingPairings.remove(_pendingPairings.keys.first);
+    }
+    _pendingPairings[pending.sessionId] = pending;
     // PIN 是敏感值，但它的存在意义就是给操作服务端的人读：打到 stdout（日志文件
     // 也记，与 app 在屏幕上显示同级）。
     stdout.writeln(
-      '[pair] ${session.deviceName ?? 'unknown device'} '
-      '(${session.remoteAddress ?? '?'}) requests pairing — PIN: $pin',
+      '[pair] ${pending.deviceName ?? 'unknown device'} '
+      '(${pending.remoteAddress ?? '?'}) requests pairing — PIN: ${pending.pin}',
     );
-    pairingEvents.add(pending);
-    return pin;
+    if (!pairingEvents.isClosed) pairingEvents.add(pending);
   }
 
-  void _clearPendingPairing() {
-    _pendingPairing = null;
-    if (!pairingEvents.isClosed) pairingEvents.add(null);
+  /// server 通知某个会话已 confirm / 过期：只删它那一条。表空推 null，否则推最新一条。
+  void _clearPendingPairing(String sessionId) {
+    if (_pendingPairings.remove(sessionId) == null) return;
+    if (pairingEvents.isClosed) return;
+    pairingEvents.add(pendingPairing);
   }
 
   Future<void> _persistPairedPeer(
@@ -827,9 +928,13 @@ class HeadlessHost {
     }());
   }
 
-  Future<Set<String>> _loadPairedPeerTokens() async {
+  /// 全部未吊销的已配对设备凭据（peerId → token）；server 按 `legacy-` 前缀区分
+  /// 旧 client 的行（BUG-4393）。
+  Future<Map<String, String>> _loadPairedPeerCredentials() async {
     final List<FushiPairedPeerRow> peers = await db.getPairedPeers();
-    return peers.map((FushiPairedPeerRow r) => r.token).toSet();
+    return <String, String>{
+      for (final FushiPairedPeerRow r in peers) r.peerId: r.token,
+    };
   }
 
   /// 补字幕（单视频 / 刮削后 / 下载后缺字幕重试）的装配，见 server_subtitle_backfill.dart。

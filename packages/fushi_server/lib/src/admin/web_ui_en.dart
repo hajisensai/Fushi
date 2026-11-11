@@ -108,6 +108,25 @@ const Map<String, String> kWebUiEnglish = <String, String>{
   '{0} ({1}) 请求配对，请在该设备输入：':
       '{0} ({1}) wants to pair. Enter this on that device:',
   '未知设备': 'Unknown device',
+  '局域网': 'LAN',
+  '公网或反向代理': 'internet or reverse proxy',
+  '来自{0}的配对因多次 PIN 错误暂停至 {1}':
+      'Pairing from {0} is paused until {1} after repeated wrong PINs',
+  '解除': 'Unlock',
+  '已解除': 'Unlocked',
+  '配对链接': 'Pairing link',
+  '一次性链接自带票据，配对不用 PIN；来自公网的 PIN 配对被暂停时也能用。':
+      'A single-use link carries its own ticket, so pairing needs no PIN. It works even while PIN pairing from the internet is paused.',
+  '生成配对链接': 'Create pairing link',
+  '复制': 'Copy',
+  '{0} 分钟内有效，只能用一次。在 Fushi 的互联设置里点「粘贴配对链接」使用。':
+      'Valid for {0} minutes, single use. In the interconnect settings of Fushi, tap "Paste pairing link".',
+  '浏览器不让复制，请手动选中':
+      'The browser blocked copying; select the link and copy it manually',
+  '已复制': 'Copied',
+  '互联服务没在运行': 'The interconnect service is not running',
+  '没有能放进链接的地址：配对链接只收 HTTPS 地址或 P2P 隧道。请开启 TLS、在「设置 › 远程访问」填写 HTTPS 公网地址，或开启 P2P 隧道':
+      'No address can go into the link: pairing links only carry HTTPS addresses or a P2P tunnel. Turn on TLS, add an HTTPS public address under Settings › Remote access, or turn on the P2P tunnel',
   '已配对设备': 'Paired devices',
   '我的设备': 'My device',
   '标为我的设备': 'Mark as my device',

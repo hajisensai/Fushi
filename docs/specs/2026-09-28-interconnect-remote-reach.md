@@ -58,7 +58,7 @@
 ```
 fushi://pair?v=1&h=<hostId>&n=<展示名>&fp=<证书指纹>&k=<ticketId>.<secret>&a=<url>&a=<url>...
 ```
-- 主机「显示配对二维码」生成一次性 ticket：32 字节随机 secret，5 分钟有效，同时只存一张，成功配对即作废。
+- 主机「显示配对二维码」生成一次性 ticket：24 字节（192 bit）随机 secret（满足 128+ bit），5 分钟有效，同时只存一张，成功配对即作废。
 - 协议：`pair/v2` 请求新增可选 `ticket`（ticketId）。命中有效 ticket 时：`pinRequired=true`、会话 PIN = secret、**不弹审批框**（主机上主动打开二维码 = 用户已批准）。`confirm` 路径**一行不改**：client 用 secret 代替 PIN 算 `HMAC(secret, clientNonce|hostNonce)`。
   - 老主机不认 ticket 字段 → 走原审批 + PIN 流程；但老主机根本不会生成二维码，所以不会出现。
   - 限速器照旧生效；secret 128+ bit，不可爆破。

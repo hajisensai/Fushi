@@ -10176,6 +10176,7 @@
   "sync_pair_request_title": "Eşleştirme isteği",
   "sync_pair_scan": "QR kodunu tara",
   "sync_pair_scan_failed": "Kamera açılamadı",
+  "sync_pair_source_loopback_hint": "This request came from this device. If a reverse proxy or tunnel runs here, it may be someone on the internet.",
   "sync_pair_success": "Eşleştirildi — belirteç dolduruldu",
   "sync_pair_timeout": "Eş zamanında yanıt vermedi.",
   "sync_pair_tls_failed": "Sertifika kontrolü başarısız. Eşin sertifikası sabitlenen sertifikayla eşleşmiyor.",

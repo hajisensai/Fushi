@@ -7,6 +7,9 @@ library;
 
 import 'dart:io';
 
+import 'package:fushi_engine/sync/fushi_sync_server.dart' show FushiListenScope;
+import 'package:fushi_engine/sync/pairing/fushi_pairing_protocol.dart'
+    show FushiAddressRangeSet;
 import 'package:fushi_server/src/config/server_ai_config.dart';
 import 'package:fushi_server/src/config/server_srs_config.dart';
 import 'package:path/path.dart' as p;
@@ -28,6 +31,42 @@ String unsupportedLibraryKindMessage(String kind) => kind == 'music'
     ? 'kind "music" is not supported by fushi_server yet (music libraries are deferred; '
           'see docs/agent/server-parity-gaps.md); supported: ${kServerLibraryRootKinds.join(' / ')}'
     : 'unsupported kind "$kind"; supported: ${kServerLibraryRootKinds.join(' / ')}';
+
+/// `bind` 配置值 → 互联监听范围（互联 host 与 AnkiConnect 监听的「是否只听本机」判据
+/// 都从这里出，只此一份）：
+/// - 空、`0.0.0.0`、`::` 及通配地址的其他全零写法（`::0` 等）→ [FushiListenScope.lan]
+///   （与升级前逐字相同；`::` 不映射成双栈，免得明文部署在全局 IPv6 上暴露）；
+/// - `localhost`、`127.0.0.1` → [FushiListenScope.loopbackV4]（`localhost` 不交给系统
+///   解析——部分系统先解析成 `::1`，127.0.0.1 上的反代会断）；
+/// - 其他 IP 字面量（`::1`、`127.0.0.2`、具体网卡地址）→ [FushiListenScope.exact]；
+/// - 其余（主机名）→ [FushiListenScope.lan] 并带 [warning]，由调用方打日志。
+({FushiListenScope scope, String? warning}) parseBindSetting(String bind) {
+  final String value = bind.trim();
+  final String lower = value.toLowerCase();
+  if (value.isEmpty || value == '0.0.0.0' || value == '::') {
+    return (scope: const FushiListenScope.lan(), warning: null);
+  }
+  if (lower == 'localhost' || value == '127.0.0.1') {
+    return (scope: const FushiListenScope.loopbackV4(), warning: null);
+  }
+  final InternetAddress? address = InternetAddress.tryParse(value);
+  if (address != null) {
+    // 通配地址的其他写法（`::0`、`0:0:0:0:0:0:0:0`、`0000::`…）与 `0.0.0.0` / `::`
+    // 同义：按 lan() 处理。交给 exact() 会直接 bind 到 anyIPv6（v6Only=false 即双栈
+    // 全网卡），明文暴露在全局 IPv6 上，地址集也匹配不到任何网卡（评审 compat-2）。
+    if (address.rawAddress.every((int b) => b == 0)) {
+      return (scope: const FushiListenScope.lan(), warning: null);
+    }
+    return (scope: FushiListenScope.exact(address), warning: null);
+  }
+  return (
+    scope: const FushiListenScope.lan(),
+    warning: tr(
+      'bind 只接受 IP 字面量或 localhost，`$value` 按 0.0.0.0 处理',
+      'bind only accepts an IP literal or localhost; treating `$value` as 0.0.0.0',
+    ),
+  );
+}
 
 /// 一条扫描根：服务端库的来源目录。
 class LibraryRootConfig {
@@ -112,6 +151,7 @@ class ServerConfig {
     required this.torrentLibraryPath,
     required this.torrentListen,
     this.publicUrls = const <String>[],
+    this.trustedProxies = const <String>[],
     this.p2p = false,
     this.p2pRelays = const <String>[],
     this.scanPrune = true,
@@ -232,6 +272,11 @@ class ServerConfig {
   /// （docs/specs/2026-09-28-interconnect-remote-reach.md §1）。
   final List<String> publicUrls;
 
+  /// 可信反代地址（IP / CIDR，YAML `trusted_proxies`，缺省空）。TCP 对端命中时才读
+  /// 转发头里的真实来源，**只**用于配对限速键与展示 IP；不让任何请求变回局域网——
+  /// 带转发头的配对请求恒按公网要 PIN（BUG-4390）。
+  final List<String> trustedProxies;
+
   /// 扫描后是否对账回收「文件已消失」的视频条目（默认开）。
   ///
   /// 库行不记源文件路径的书 / 漫画根不受影响；关闭只停清理，导入行为不变。
@@ -313,6 +358,7 @@ class ServerConfig {
     String? torrentLibraryPath,
     String? torrentListen,
     List<String>? publicUrls,
+    List<String>? trustedProxies,
     bool? p2p,
     List<String>? p2pRelays,
     bool? scanPrune,
@@ -351,6 +397,7 @@ class ServerConfig {
     torrentLibraryPath: torrentLibraryPath ?? this.torrentLibraryPath,
     torrentListen: torrentListen ?? this.torrentListen,
     publicUrls: publicUrls ?? this.publicUrls,
+    trustedProxies: trustedProxies ?? this.trustedProxies,
     p2p: p2p ?? this.p2p,
     p2pRelays: p2pRelays ?? this.p2pRelays,
     scanPrune: scanPrune ?? this.scanPrune,
@@ -429,6 +476,7 @@ class ServerConfig {
       torrentLibraryPath: torrentMap['library']?.toString(),
       torrentListen: torrentMap['listen']?.toString() ?? base.torrentListen,
       publicUrls: _strings(map['public_urls']),
+      trustedProxies: _trustedProxies(map['trusted_proxies']),
       p2p: _bool(map['p2p']) ?? base.p2p,
       p2pRelays: _strings(map['p2p_relays']),
       scanPrune: _bool(map['scan_prune']) ?? base.scanPrune,
@@ -461,6 +509,23 @@ class ServerConfig {
     }
     if (uri.host.isEmpty) return tr('缺少主机名', 'Missing host name');
     return null;
+  }
+
+  /// `trusted_proxies`：每条必须是 IP 或 CIDR，非法条目拒绝启动并点名那一项——
+  /// 写错的可信代理会静默退回「按 TCP 对端」，用户很难察觉。
+  static List<String> _trustedProxies(Object? v) {
+    final List<String> entries = _strings(v);
+    try {
+      FushiAddressRangeSet.parse(entries);
+    } on FormatException catch (e) {
+      throw FormatException(
+        tr(
+          'trusted_proxies 条目不是合法的 IP / CIDR：${e.source}',
+          'trusted_proxies entry is not a valid IP / CIDR: ${e.source}',
+        ),
+      );
+    }
+    return entries;
   }
 
   static List<String> _strings(Object? v) => <String>[
@@ -506,6 +571,10 @@ class ServerConfig {
     b.writeln('upload_quota_bytes: $uploadQuotaBytes');
     b.writeln('public_urls:${publicUrls.isEmpty ? ' []' : ''}');
     for (final String u in publicUrls) {
+      b.writeln('  - ${_q(u)}');
+    }
+    b.writeln('trusted_proxies:${trustedProxies.isEmpty ? ' []' : ''}');
+    for (final String u in trustedProxies) {
       b.writeln('  - ${_q(u)}');
     }
     b.writeln('p2p: $p2p');

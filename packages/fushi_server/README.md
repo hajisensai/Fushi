@@ -154,6 +154,7 @@ lookup_chinese_script_variants: false   # 中文查词简体 ↔ 繁體互查（
 # onnxruntime_library: "/opt/ort-gpu/lib/libonnxruntime.so"   # 换 GPU 版 ORT 时指过去
 upload_quota_bytes: 53687091200   # WebUI 上传累计配额（50 GB），防被当网盘
 public_urls: []               # 公网 / 反代 / DDNS 地址（如 - "https://nas.example.com"），经 /api/host/addresses 公布给已配对设备自动学习
+trusted_proxies: []           # 可信反代地址（IP / CIDR，如 - "127.0.0.1"）：只用于配对限速与展示真实来源 IP；带转发头或经本机回环进来的配对请求一律要 PIN，与此项无关
 p2p: false                    # 允许经 iroh P2P 隧道远程连接（无公网 IP 时用；会连 iroh 公共中继与发现服务）。需随包 libfushi_p2p（bin/../lib/ 或 FUSHI_P2P_LIB）
 p2p_relays: []                # 自建 iroh-relay 地址；空 = iroh 公共中继
 torrent:

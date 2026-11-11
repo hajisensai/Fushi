@@ -24,7 +24,7 @@ import 'package:fushi_engine/sync/fushi_sync_server.dart'
     show serveFileWithRange;
 import 'package:shelf/shelf.dart' as shelf;
 
-/// 共享会话路由前缀（不含前导 `/` 的形式见 [isDiscShareSessionPath]）。
+/// 共享会话路由前缀（规范化路径形态，带前导 `/`；判据见 [isDiscShareSessionPath]）。
 const String kDiscShareRoutePrefix = '/api/library/disc/';
 
 /// 签发端点挂在视频路由下的后缀：`/api/library/videos/<id>/disc`。
@@ -39,12 +39,17 @@ class DiscShareSession {
     required this.discRoot,
     required this.manifest,
     required this.createdAt,
+    this.issuer,
   }) : lastUsedAt = createdAt;
 
   /// host 本机盘根（目录或 `.iso`）。只在 host 进程内存里，从不下发。
   final String discRoot;
   final DiscShareManifest manifest;
   final DateTime createdAt;
+
+  /// 签发请求所用凭据的指纹（BUG-4393）；host 据此在凭据被吊销后连带作废本会话。
+  /// null = 签发方不记（没有可吊销的凭据模型）。
+  final String? issuer;
   DateTime lastUsedAt;
 }
 
@@ -76,6 +81,7 @@ class DiscShareTokenStore {
   String issue({
     required String discRoot,
     required DiscShareManifest manifest,
+    String? issuer,
   }) {
     _prune();
     while (_sessions.length >= capacity) {
@@ -96,6 +102,7 @@ class DiscShareTokenStore {
       discRoot: discRoot,
       manifest: manifest,
       createdAt: _now(),
+      issuer: issuer,
     );
     return token;
   }
@@ -124,13 +131,17 @@ class DiscShareTokenStore {
     );
   }
 
+  /// 作废 [token]（签发凭据已被吊销，BUG-4393）。
+  void revoke(String token) => _sessions.remove(token);
+
   void clear() => _sessions.clear();
 }
 
-/// [urlPath]（`request.url.path`，无前导 `/`）是不是共享会话路径——鉴权中间件据此
-/// 豁免 Basic（门在 handler 里校验 token）。
-bool isDiscShareSessionPath(String urlPath) =>
-    urlPath.startsWith(kDiscShareRoutePrefix.substring(1));
+/// 规范化路径 [path]（`canonicalRequestPath`：已解码、带前导 `/`）是不是共享会话
+/// 路径——鉴权中间件据此豁免 Basic（门在 handler 里校验 token）。与路由分发
+/// （`reqPath.startsWith(kDiscShareRoutePrefix)`）是同一个判据。
+bool isDiscShareSessionPath(String path) =>
+    path.startsWith(kDiscShareRoutePrefix);
 
 /// 签发：`GET /api/library/videos/<id>/disc` 的响应体。[baseUrl] 以 `/` 结尾，
 /// client 在其后拼 `manifest.json` / `files/<路径>`。
@@ -163,12 +174,16 @@ Uri discShareBaseUri(Uri requestedUri, String token) => Uri(
 );
 
 /// 处理 `/api/library/disc/<token>/...`。[reqPath] 已 URL 解码、带前导 `/`。
+///
+/// [issuerValid] 给了时，每次请求都用它核对会话的签发凭据仍有效；不再有效即删会话、
+/// 回 403（BUG-4393：吊销已配对设备连带作废它签出的原盘会话）。
 Future<shelf.Response> handleDiscShareRequest(
   DiscShareTokenStore store,
   shelf.Request request,
   String method,
-  String reqPath,
-) async {
+  String reqPath, {
+  Future<bool> Function(String? issuer)? issuerValid,
+}) async {
   if (method != 'GET') return shelf.Response(405);
   final String rest = reqPath.substring(kDiscShareRoutePrefix.length);
   final int slash = rest.indexOf('/');
@@ -180,6 +195,14 @@ Future<shelf.Response> handleDiscShareRequest(
     return shelf.Response(
       401,
       body: 'Disc share session expired',
+      headers: const <String, String>{'Content-Type': 'text/plain'},
+    );
+  }
+  if (issuerValid != null && !await issuerValid(session.issuer)) {
+    store.revoke(token);
+    return shelf.Response(
+      403,
+      body: 'Disc share session revoked',
       headers: const <String, String>{'Content-Type': 'text/plain'},
     );
   }

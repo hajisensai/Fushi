@@ -10176,6 +10176,7 @@
   "sync_pair_request_title": "طلب اقتران",
   "sync_pair_scan": "مسح رمز QR",
   "sync_pair_scan_failed": "تعذّر فتح الكاميرا",
+  "sync_pair_source_loopback_hint": "This request came from this device. If a reverse proxy or tunnel runs here, it may be someone on the internet.",
   "sync_pair_success": "تم الاقتران — تم ملء الرمز",
   "sync_pair_timeout": "لم يستجب الجهاز الآخر في الوقت المحدد.",
   "sync_pair_tls_failed": "فشل التحقق من الشهادة. شهادة الجهاز الآخر لا تتطابق مع الشهادة المثبّتة.",

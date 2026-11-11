@@ -10176,6 +10176,7 @@
   "sync_pair_request_title": "Solicitud de emparejamiento",
   "sync_pair_scan": "Escanear código QR",
   "sync_pair_scan_failed": "No se pudo abrir la cámara",
+  "sync_pair_source_loopback_hint": "This request came from this device. If a reverse proxy or tunnel runs here, it may be someone on the internet.",
   "sync_pair_success": "Emparejado: token rellenado",
   "sync_pair_timeout": "El par no respondió a tiempo.",
   "sync_pair_tls_failed": "La verificación de certificado falló. El certificado del par no coincide con el fijado.",

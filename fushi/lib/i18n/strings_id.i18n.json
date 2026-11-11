@@ -10176,6 +10176,7 @@
   "sync_pair_request_title": "Permintaan pemasangan",
   "sync_pair_scan": "Pindai kode QR",
   "sync_pair_scan_failed": "Tidak dapat membuka kamera",
+  "sync_pair_source_loopback_hint": "This request came from this device. If a reverse proxy or tunnel runs here, it may be someone on the internet.",
   "sync_pair_success": "Terpasang — token telah diisi",
   "sync_pair_timeout": "Peer tidak merespons tepat waktu.",
   "sync_pair_tls_failed": "Pemeriksaan sertifikat gagal. Sertifikat peer tidak cocok dengan yang disematkan.",

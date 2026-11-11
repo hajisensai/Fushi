@@ -6,6 +6,7 @@ import 'package:fushi_anki/fushi_anki_core.dart' show AnkiOpenWordOutcome;
 import 'package:fushi_engine/sync/fushi_remote_api_handlers.dart';
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
 import 'package:fushi_engine/sync/remote_mining_target.dart';
+import 'package:fushi_engine/utils/net/bounded_read.dart';
 import 'package:shelf/shelf.dart' as shelf;
 
 /// 单词音频短命 token：`/api/lookup/audio` 存字节、返回免鉴权的
@@ -18,10 +19,14 @@ class RemoteAudioToken {
     required this.bytes,
     required this.contentType,
     required this.createdAt,
+    this.issuer,
   });
 
   final Uint8List bytes;
   final String contentType;
+
+  /// 签发请求所用凭据的指纹（BUG-4393）；null = 签发方不记。
+  final String? issuer;
   DateTime createdAt;
 }
 
@@ -48,7 +53,7 @@ class RemoteAudioTokenStore {
   int get count => _tokens.length;
 
   /// 签发一个不可猜的 id 并存入字节；先 prune 再收束上限。
-  String mint(Uint8List bytes, String contentType) {
+  String mint(Uint8List bytes, String contentType, {String? issuer}) {
     prune();
     _enforceCap();
     final String id = _generateId();
@@ -56,9 +61,13 @@ class RemoteAudioTokenStore {
       bytes: bytes,
       contentType: contentType,
       createdAt: _now(),
+      issuer: issuer,
     );
     return id;
   }
+
+  /// 作废 [id]（签发凭据已被吊销，BUG-4393）。
+  void revoke(String id) => _tokens.remove(id);
 
   /// 取 [id] 对应的 token；命中即续期。未命中 / [id] 为空返回 null。
   RemoteAudioToken? take(String? id) {
@@ -98,18 +107,66 @@ class RemoteAudioTokenStore {
   }
 }
 
+/// 互联 host / 扩展 API 已鉴权 JSON 请求体的默认上限。已知最大的合法体是
+/// `PUT /api/library/aggregate` 的整库快照，64 MiB 留足余量。
+const int kInterconnectJsonBodyMaxBytes = 64 * 1024 * 1024;
+
+/// 免鉴权配对端点（`/api/pair`、`/api/pair/v2`、`/api/pair/v2/confirm`）的请求体
+/// 上限。合法体只有 name / nonce / deviceId / pubkey / ticket，远小于 1 KiB。
+const int kPairingBodyMaxBytes = 16 * 1024;
+
+/// 有界读取请求体并按请求声明的字符集（缺省 UTF-8）解码。声明的 Content-Length
+/// 或实际累计字节超过 [maxBytes] 抛 [BodyTooLargeException]，由
+/// [bodyLimitMiddleware] 统一回 413——绝不先整读进内存再比长度。
+Future<String> readBoundedBodyString(
+  shelf.Request request, {
+  int maxBytes = kInterconnectJsonBodyMaxBytes,
+}) async {
+  final Uint8List bytes = await readBoundedRequestBody(
+    request.read(),
+    declaredLength: request.contentLength,
+    maxBytes: maxBytes,
+  );
+  return (request.encoding ?? utf8).decode(bytes);
+}
+
 /// 读请求体为 JSON object；非法 JSON / 空体 / 非 object 一律 null，由调用方回 400。
-Future<Map<String, dynamic>?> readJsonObjectBody(shelf.Request request) async {
+/// 超过 [maxBytes] 抛 [BodyTooLargeException]（不吞，交给 [bodyLimitMiddleware]）。
+Future<Map<String, dynamic>?> readJsonObjectBody(
+  shelf.Request request, {
+  int maxBytes = kInterconnectJsonBodyMaxBytes,
+}) async {
   try {
-    final String raw = await request.readAsString();
+    final String raw = await readBoundedBodyString(request, maxBytes: maxBytes);
     if (raw.isEmpty) return null;
     final dynamic decoded = jsonDecode(raw);
     if (decoded is Map<String, dynamic>) return decoded;
     if (decoded is Map) return Map<String, dynamic>.from(decoded);
+  } on BodyTooLargeException {
+    rethrow;
   } catch (_) {
     // 客户端请求体非法 JSON：当作无 body 处理。
   }
   return null;
+}
+
+/// 把处理链里任何一处有界读取抛出的 [BodyTooLargeException] 统一翻成
+/// 413 `{"reason":"body_too_large"}`。互联 host 与扩展 API 的 pipeline 都挂它，
+/// 路由只管抛、不各自拼 413。
+shelf.Middleware bodyLimitMiddleware() {
+  return (shelf.Handler inner) {
+    return (shelf.Request request) async {
+      try {
+        return await inner(request);
+      } on BodyTooLargeException {
+        return shelf.Response(
+          413,
+          body: jsonEncode(<String, String>{'reason': 'body_too_large'}),
+          headers: const <String, String>{'Content-Type': 'application/json'},
+        );
+      }
+    };
+  };
 }
 
 /// 200 + `application/json; charset=utf-8`。
@@ -144,9 +201,18 @@ class RemoteLookupRoutes {
     required this.audioTokens,
     this.lookup,
     FushiRemoteMiningService? mining,
+    this.issuerOf,
+    this.issuerValid,
   }) : _mining = mining;
 
   final RemoteAudioTokenStore audioTokens;
+
+  /// 签发音频 id 时取本请求凭据的指纹（BUG-4393）。null = 不记签发者
+  /// （[FushiApiServer] 的 key 模型独立，不接）。
+  final String? Function(shelf.Request request)? issuerOf;
+
+  /// 取音频字节时核对签发凭据仍有效；不再有效即作废该 id、回 403。null = 不核对。
+  final Future<bool> Function(String? issuer)? issuerValid;
   final FushiRemoteLookupService? lookup;
   final FushiRemoteMiningService? _mining;
 
@@ -171,7 +237,11 @@ class RemoteLookupRoutes {
     );
     if (found == null) return _audioMissResponse();
 
-    final String id = audioTokens.mint(found.bytes, found.contentType);
+    final String id = audioTokens.mint(
+      found.bytes,
+      found.contentType,
+      issuer: issuerOf?.call(request),
+    );
     final Uri url = request.requestedUri.replace(
       path: '/api/lookup/audio/file',
       queryParameters: <String, String>{'id': id},
@@ -229,6 +299,7 @@ class RemoteLookupRoutes {
                     'id': audioTokens.mint(
                       choice.audio.bytes,
                       choice.audio.contentType,
+                      issuer: issuerOf?.call(request),
                     ),
                   },
                 )
@@ -239,14 +310,18 @@ class RemoteLookupRoutes {
   }
 
   /// 单词音频②：GET/HEAD `?id=` 取字节（免鉴权，靠不可猜 id）；命中即续期。
-  shelf.Response handleAudioFile(
+  Future<shelf.Response> handleAudioFile(
     shelf.Request request, {
     required bool headOnly,
-  }) {
-    final RemoteAudioToken? token = audioTokens.take(
-      request.url.queryParameters['id'],
-    );
+  }) async {
+    final String? id = request.url.queryParameters['id'];
+    final RemoteAudioToken? token = audioTokens.take(id);
     if (token == null) return shelf.Response.notFound('Not found');
+    final Future<bool> Function(String? issuer)? valid = issuerValid;
+    if (valid != null && !await valid(token.issuer)) {
+      audioTokens.revoke(id!);
+      return shelf.Response.forbidden('Token revoked');
+    }
     return shelf.Response.ok(
       headOnly ? null : token.bytes,
       headers: <String, String>{

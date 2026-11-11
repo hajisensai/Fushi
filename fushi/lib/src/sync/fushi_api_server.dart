@@ -21,8 +21,12 @@ import 'package:fushi_srs/fushi_srs.dart' show SrsTermQuery;
 import 'package:fushi_engine/sync/fushi_remote_api_handlers.dart';
 import 'package:fushi_engine/sync/remote_lookup_routes.dart';
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
+import 'package:fushi_engine/sync/pairing/fushi_pairing_protocol.dart'
+    show FushiPairingProtocol;
 import 'package:fushi_engine/sync/fushi_sync_server.dart'
     show SyncServerPortInUseException, isAddressInUseError;
+import 'package:fushi_engine/utils/net/bounded_read.dart'
+    show BodyTooLargeException;
 import 'package:fushi/src/sync/browser_extension_test_page.dart'
     show kBrowserExtensionTestPagePath;
 import 'package:fushi/src/sync/extension_font_api.dart';
@@ -34,6 +38,10 @@ import 'package:fushi/src/sync/yomitan_tokenize_adapter.dart';
 
 /// yomitan-api 默认端口（Kuuuube/yomitan-api）。
 const int kFushiApiDefaultPort = 19633;
+
+/// 鉴权失败（header / query 都没给对 key）时，为在 JSON body 里找 key 最多读的字节数。
+/// 已通过 header / query 鉴权的请求后续读体用 [kInterconnectJsonBodyMaxBytes]。
+const int kApiKeyBodyProbeMaxBytes = 64 * 1024;
 
 const List<String> _apiKeyParameterNames = <String>[
   'apiKey',
@@ -350,6 +358,7 @@ class FushiApiServer {
     if (_server != null) return;
     final shelf.Handler handler = const shelf.Pipeline()
         .addMiddleware(_networkAccessMiddleware())
+        .addMiddleware(bodyLimitMiddleware())
         .addMiddleware(_authMiddleware())
         .addHandler(_handleRequest);
     try {
@@ -427,11 +436,29 @@ class FushiApiServer {
         if (key == null || key.isEmpty) return inner(request);
 
         final String? provided = _apiKeyFromRequestMetadata(request);
-        if (provided == key) return inner(request);
+        if (provided != null && _keyEquals(provided, key)) {
+          return inner(request);
+        }
 
-        final String rawBody = await request.readAsString();
+        // 只为在 body 里找 key（yomitan-api 兼容）最多读 64 KiB；超限抛
+        // BodyTooLargeException 由 bodyLimitMiddleware 回 413，未鉴权的巨体不整读。
+        // 例外：header / query 已经带了凭据（只是不对）——那是凭据过期，不是体过大，
+        // 照旧回 401。浏览器扩展只在 401 时重读自动配置换新 key 重试，带截图 / 音频的
+        // 大制卡请求回 413 会直接失败（评审 compat-1）。
+        final String rawBody;
+        try {
+          rawBody = await readBoundedBodyString(
+            request,
+            maxBytes: kApiKeyBodyProbeMaxBytes,
+          );
+        } on BodyTooLargeException {
+          if (provided != null) {
+            return shelf.Response(401, body: 'Unauthorized');
+          }
+          rethrow;
+        }
         final String? bodyKey = _apiKeyFromJsonBody(rawBody);
-        if (bodyKey == key) {
+        if (bodyKey != null && _keyEquals(bodyKey, key)) {
           return inner(request.change(body: rawBody));
         }
 
@@ -439,6 +466,10 @@ class FushiApiServer {
       };
     };
   }
+
+  /// 常量时间比较 API key，不让响应时间泄露前缀匹配长度。
+  static bool _keyEquals(String a, String b) =>
+      FushiPairingProtocol.constantTimeEquals(a, b);
 
   String? _apiKeyFromRequestMetadata(shelf.Request request) {
     final String? headerKey = request.headers['x-api-key'];

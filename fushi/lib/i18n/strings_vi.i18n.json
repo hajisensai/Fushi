@@ -10176,6 +10176,7 @@
   "sync_pair_request_title": "Yêu cầu ghép nối",
   "sync_pair_scan": "Quét mã QR",
   "sync_pair_scan_failed": "Không thể mở camera",
+  "sync_pair_source_loopback_hint": "This request came from this device. If a reverse proxy or tunnel runs here, it may be someone on the internet.",
   "sync_pair_success": "Đã ghép nối — đã điền mã",
   "sync_pair_timeout": "Thiết bị đối tác không phản hồi kịp thời.",
   "sync_pair_tls_failed": "Kiểm tra chứng chỉ thất bại. Chứng chỉ của thiết bị đối tác không khớp với chứng chỉ đã ghim.",

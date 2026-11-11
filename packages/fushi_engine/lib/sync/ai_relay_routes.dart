@@ -8,6 +8,8 @@ import 'dart:convert';
 
 import 'package:fushi_engine/ai/ai_relay.dart';
 import 'package:fushi_engine/foundation/pref_store.dart';
+import 'package:fushi_engine/sync/remote_lookup_routes.dart'
+    show readBoundedBodyString;
 import 'package:shelf/shelf.dart' as shelf;
 
 /// 主机开关的偏好键（设备本地，不随备份跨设备：「这台机器的 AI 额度给不给别的设备
@@ -54,7 +56,7 @@ Future<shelf.Response> handleAiRelayRequest(
   }
   final Map<String, Object?> body;
   try {
-    final String text = await request.readAsString();
+    final String text = await readBoundedBodyString(request);
     final Object? decoded = text.trim().isEmpty
         ? <String, Object?>{}
         : jsonDecode(text);

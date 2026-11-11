@@ -10176,6 +10176,7 @@
   "sync_pair_request_title": "Pairing request",
   "sync_pair_scan": "Scan QR code",
   "sync_pair_scan_failed": "Couldn't open the camera",
+  "sync_pair_source_loopback_hint": "This request came from this device. If a reverse proxy or tunnel runs here, it may be someone on the internet.",
   "sync_pair_success": "Paired — token filled in",
   "sync_pair_timeout": "The peer did not respond in time.",
   "sync_pair_tls_failed": "Certificate check failed. The peer's certificate does not match the pinned one.",
