@@ -57,6 +57,10 @@ const DAY_MS = 24 * 3600 * 1000;
 export const INSTALL_LIMITS = {
   /** install_days / installs 保留天数（定时任务清理）。 */
   retentionDays: 400,
+  /** 安装统计快照的重算间隔（定时任务每 30 分钟检查一次，到期才重算；一次重算读全部统计表）。 */
+  snapshotEveryMs: 6 * 3600 * 1000,
+  /** 处理台「立即刷新」的冷却：距上次重算不足这么久就不重算，防连点把 D1 日读额度烧光。 */
+  snapshotRefreshCooldownMs: 15 * 60 * 1000,
   /** 统计页的日活表显示多少天。 */
   dailyRows: 30,
   /** 版本分布最多列多少个版本。 */
@@ -292,6 +296,45 @@ export async function purgeInstallStats(env, now) {
   const cutoff = now - INSTALL_LIMITS.retentionDays * DAY_MS;
   await env.DB.prepare('DELETE FROM install_days WHERE day < ?1').bind(utcDateKey(cutoff)).run();
   await env.DB.prepare('DELETE FROM installs WHERE last_seen < ?1').bind(cutoff).run();
+}
+
+/**
+ * 读安装统计快照：{computedAt, stats}；还没有快照（刚迁移完、定时任务还没跑）→ null。
+ * 处理台与 stats.json 只走这里，不现场调 installStats（见迁移 0020 文件头）。
+ */
+export async function installStatsSnapshot(env) {
+  const row = await env.DB.prepare('SELECT computed_at, data FROM install_stats_snapshot WHERE id = 1').first();
+  return row ? { computedAt: row.computed_at, stats: JSON.parse(row.data) } : null;
+}
+
+/**
+ * 按间隔重算安装统计快照。定时任务调用时距上次不足 snapshotEveryMs 就跳过；处理台手动刷新传
+ * force，仍受 snapshotRefreshCooldownMs 冷却约束。返回是否真的重算了。
+ */
+export async function refreshInstallStatsSnapshot(env, now, { force = false } = {}) {
+  const last = await env.DB.prepare('SELECT computed_at FROM install_stats_snapshot WHERE id = 1').first();
+  if (last) {
+    const age = now - last.computed_at;
+    const minAge = force ? INSTALL_LIMITS.snapshotRefreshCooldownMs : INSTALL_LIMITS.snapshotEveryMs;
+    if (age >= 0 && age < minAge) return false;
+  }
+  const stats = await installStats(env, now);
+  await env.DB.prepare(
+    `INSERT INTO install_stats_snapshot (id, computed_at, data) VALUES (1, ?1, ?2)
+     ON CONFLICT (id) DO UPDATE SET computed_at = excluded.computed_at, data = excluded.data`,
+  ).bind(now, JSON.stringify(stats)).run();
+  return true;
+}
+
+/**
+ * 处理台取统计：读快照；没有快照时现场算一次并存下（只在部署后第一次发生，入口都要开发者会话，
+ * 不会被外部请求踩踏）。
+ */
+export async function loadInstallStats(env, now) {
+  const snap = await installStatsSnapshot(env);
+  if (snap) return snap;
+  await refreshInstallStatsSnapshot(env, now, { force: true });
+  return installStatsSnapshot(env);
 }
 
 function countBy(rows, key) {

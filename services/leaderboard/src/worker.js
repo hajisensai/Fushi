@@ -71,7 +71,7 @@ import { issueMusicKitToken } from './musickit.js';
 import { isMusicKitPagePath, renderMusicKitPage } from './musickit_page.js';
 import { isFeedbackPath, purgeFeedbackAttachments, purgeFeedbackVideos, routeFeedback } from './feedback.js';
 import { isDevConsolePath, purgeDevSessions, routeDevConsole } from './devconsole.js';
-import { purgeInstallStats, recordPing } from './installs.js';
+import { purgeInstallStats, recordPing, refreshInstallStatsSnapshot } from './installs.js';
 import { refreshProjectStats } from './project_stats.js';
 import { USAGE_LIMITS, recordAiUsage } from './ai_usage.js';
 
@@ -372,6 +372,8 @@ export default {
     await purgeFeedbackAttachments(env, now);
     await purgeFeedbackVideos(env, now);
     await purgeInstallStats(env, now);
+    // 安装统计快照：按 INSTALL_LIMITS.snapshotEveryMs 节流，不到期只读一行就返回（迁移 0020）。
+    await refreshInstallStatsSnapshot(env, now);
     // 冷却期到期、没有新票的封面挑战者（cover_votes.js 文件头「替换门槛」）。
     await deleteMedia(env, (await settlePendingCovers(env.DB, now)).released);
     // 放最后：要等外部 API（GitHub / Cloudflare），按自己的间隔节流，失败只记状态不抛。
