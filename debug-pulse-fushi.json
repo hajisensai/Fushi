@@ -1,12 +1,43 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-11T13:02:43Z",
+ "generatedAt": "2026-11-11T13:52:02Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "75bd2199c533eef92dbaa126f439f9c7617ac271",
   "seq": 26447
  },
  "builds": [
+  {
+   "seq": 26447,
+   "version": "3.3.0",
+   "sha": "75bd2199c533eef92dbaa126f439f9c7617ac271",
+   "unknown": false,
+   "publishedAt": "2026-11-11T13:51:50Z",
+   "testflight": false,
+   "baseSeq": 26444,
+   "prs": [
+    3341
+   ],
+   "direct": [],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "ok"
+    },
+    "windows": {
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43025317645"
+    },
+    "macos": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43025317645"
+    },
+    "ios": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43025317645"
+    }
+   }
+  },
   {
    "seq": 26444,
    "version": "3.3.0",
@@ -77,7 +108,8 @@
    "truncated": false,
    "platforms": {
     "android": {
-     "state": "ok"
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/42895013954"
     },
     "windows": {
      "state": "ok"
@@ -91,33 +123,7 @@
    }
   }
  ],
- "pending": {
-  "headSha": "75bd2199c533eef92dbaa126f439f9c7617ac271",
-  "headSeq": 26447,
-  "prs": [
-   3341
-  ],
-  "direct": [],
-  "truncated": false,
-  "platforms": {
-   "android": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43025317632"
-   },
-   "windows": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43025317645"
-   },
-   "macos": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43025317645"
-   },
-   "ios": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43025317645"
-   }
-  }
- },
+ "pending": null,
  "prs": {
   "3250": {
    "number": 3250,
