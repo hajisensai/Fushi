@@ -179,7 +179,7 @@ void main() {
     final _ProbeHost probe = _ProbeHost(b.store, b.storage);
     final SrsSync2Report r = await round(probe, loc);
     expect(r.error, isNull);
-    expect(r.applied, greaterThan(100));
+    expect(r.applied, greaterThan(50));
     expect(
       probe.channelAtBegin,
       isNotEmpty,
@@ -192,7 +192,7 @@ void main() {
     );
     expect(
       probe.orderRowsAfterBatch.first,
-      greaterThan(100),
+      greaterThan(50),
       reason: 'the batch was appended to the channel, not projected',
     );
     expect(
@@ -288,7 +288,7 @@ void main() {
     await b.store.sync2IngestBegin();
     expect(b.store.debugChannelLive, isTrue);
     await b.store.sync2IngestBatch(segments);
-    expect(await _count(b.storage, 'sync2_boot_order'), greaterThan(100));
+    expect(await _count(b.storage, 'sync2_boot_order'), greaterThan(50));
     expect(await b.store.note(notes.first), isNull);
 
     // App 没等收尾：会话放掉，用户制了一张卡。

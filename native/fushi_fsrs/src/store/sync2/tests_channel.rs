@@ -1435,6 +1435,35 @@ fn a_device_first_seen_while_the_channel_is_open_is_judged_like_one_by_one() {
     digest_is_consistent(&x);
 }
 
+/// 开通道那一刻不会有不被信任的设备：库里没有用户的东西时第一次见到的设备不记待确认（trust.rs `note_new_device`），
+/// 可信的设备也不能凭空拒绝。之后才出现的设备见上一条；它们的删除与清除在通道里本来就按投递顺序逐条投
+/// （有过 `deleted` 写入的实体是复杂实体），信任在生产的 `project_edit_noted` / `project_body` 里判。
+#[test]
+fn nothing_is_distrusted_when_the_channel_opens() {
+    let all = world_of(65, SHAPES[2].1);
+    let x = new_device("ch-rej-x", Start::Builtins);
+    let (heads, _) = heads_and_segments(&all);
+    cmd(&x, json!({"op": "plan"}), heads);
+    let devices: Vec<String> = x
+        .rows("SELECT srs_idt(device) AS device FROM sync2_devices ORDER BY device")[1..]
+        .iter()
+        .map(|r| r[0].clone())
+        .collect();
+    assert!(devices.len() >= 3, "{devices:?}");
+    assert_eq!(x.rows("SELECT COUNT(*) FROM sync2_trust")[1][0], "0");
+    for d in &devices {
+        let err = x.core.sync2_trust(P, d, false, NOW).unwrap_err();
+        // 「已经可信」；本机自己那一行是「永远可信」。
+        assert!(err.contains("trusted"), "{err}");
+    }
+    assert_eq!(
+        cmd(&x, json!({"op": "ingest_begin"}), vec![])["channel"],
+        json!(true)
+    );
+    cmd(&x, json!({"op": "ingest_end"}), vec![]);
+    assert_eq!(x.rows("SELECT COUNT(*) FROM sync2_trust")[1][0], "0");
+}
+
 /// 会话外把通道做完（分发器在本机写入前、`channel_settle`）按片提交：中途失败只丢那一片，已做的留着、下一次接着做，
 /// 结果与逐条投递相同。以前整段在调用方的一个事务里：失败整段回滚，每条写命令都从头重做。
 #[test]
