@@ -276,6 +276,9 @@ constexpr uint8_t kDrawGap2016[12] = {0xeb, 0x0a, 0xcc, 0xcc, 0xcc, 0xcc,
                                       0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc};
 constexpr uint8_t kDrawGap2020[12] = {0x0f, 0x1f, 0x40, 0x00, 0x0f, 0x1f,
                                       0x84, 0x00, 0x00, 0x00, 0x00, 0x00};
+// `jmp +0x0a; lea esp,[esp]; lea ecx,[ecx]` (VS2013 alignment fill).
+constexpr uint8_t kDrawGap2019[12] = {0xeb, 0x0a, 0x8d, 0xa4, 0x24, 0x00,
+                                      0x00, 0x00, 0x00, 0x8d, 0x49, 0x00};
 constexpr size_t kDrawGapAt = 35u;
 
 // Input::Handle prologue up to the message dispatch.
@@ -314,20 +317,33 @@ struct TargetedCodegen {
   const uint8_t* input_prologue;
   size_t input_prologue_bytes;
   bool clear_caller_reveals;  // the window's ClearPage caller drives reveal
+  size_t render_tail;         // RenderChar epilogue distance from the entry
   core::ObjectLayout layout;  // expected
 };
 
 constexpr TargetedCodegen kT2016 = {
     "2016", kRecordChar2016, sizeof(kRecordChar2016), kClear2016, 0x2acu,
     0x68u, false, kSceneFind2016, sizeof(kSceneFind2016), 7u, kDrawGap2016,
-    kInputPrologue2016, sizeof(kInputPrologue2016), false,
+    kInputPrologue2016, sizeof(kInputPrologue2016), false, 0x298u,
     {0x68u, 0x2acu, 0x14u, 0x18u, 0x40u}};
 constexpr TargetedCodegen kT2020 = {
     "2020", kRecordChar2020, sizeof(kRecordChar2020), kClear2020, 0x2b0u,
     0x6cu, true, kSceneFind2020, sizeof(kSceneFind2020), 1u, kDrawGap2020,
-    kInputPrologue2020, sizeof(kInputPrologue2020), true,
+    kInputPrologue2020, sizeof(kInputPrologue2020), true, 0x298u,
     {0x6cu, 0x2b0u, 0x10u, 0x14u, 0x3cu}};
-constexpr const TargetedCodegen* kTargetedCodegens[] = {&kT2016, &kT2020};
+// cs2 2.6.1.90 built with VS2013 (linker 12.0, PE timestamp 2019-03): the
+// 2016 object layout (window +0x68 / +0x2ac, page +0x14 / +0x18, fade
+// +0x40), `dec eax` QueryLayer, 2016 Scene::Find and Input::Handle spills,
+// but the 2020 GetCharImage argument block, the second window / renderer
+// class, and a RenderChar body six bytes longer (epilogue at +0x29e).  The
+// fixed +0x298 epilogue check rejected it with kRecordInvalid (result=4).
+constexpr TargetedCodegen kT2019 = {
+    "2019-vs2013", kRecordChar2020, sizeof(kRecordChar2020), kClear2016,
+    0x2acu, 0x68u, false, kSceneFind2016, sizeof(kSceneFind2016), 7u,
+    kDrawGap2019, kInputPrologue2016, sizeof(kInputPrologue2016), true,
+    0x29eu, {0x68u, 0x2acu, 0x14u, 0x18u, 0x40u}};
+constexpr const TargetedCodegen* kTargetedCodegens[] = {&kT2016, &kT2020,
+                                                        &kT2019};
 
 size_t ScreenQuerySceneCall(const TargetedCodegen& cg) {
   return cg.sub_eax_query ? core::kScreenQueryT2SceneCall
@@ -382,7 +398,7 @@ void BuildEngineT(SyntheticImage* img, const TargetedCodegen& cg = kT2016) {
            sizeof(core::kRecordPenTBytes));
   img->Put(kRenderT + kRecordCharOffsetT, cg.record_char,
            cg.record_char_bytes);
-  img->Put(kRenderT + core::kRenderTailTOffset, core::kRenderTailTBytes,
+  img->Put(kRenderT + cg.render_tail, core::kRenderTailTBytes,
            sizeof(core::kRenderTailTBytes));
   // GetCharImage (vtable slot 1 of the font object) -> rasteriser twice.
   img->Rel32(kCharImageT + 0x20u, kRasterT);
@@ -538,16 +554,16 @@ void TestResolveTargetedRenderSites() {
   // bodies (and the renderer field).  Its Update's reveal does not render
   // through RenderChar and its ClearPage's caller does not reveal the message
   // page, so the message window's sites are still the only ones proven.
-  {
+  for (const TargetedCodegen* cg : {&kT2020, &kT2019}) {
     core::Sites sites;
     SyntheticImage img;
-    BuildEngineT(&img, kT2020);
-    AddDecoyWindowClass(&img, kT2020);
+    BuildEngineT(&img, *cg);
+    AddDecoyWindowClass(&img, *cg);
     assert(core::ResolveSites(img.image, Imports(), &sites) ==
            core::SiteResult::kResolved);
     assert(sites.window_update == img.At(kUpdateT));
     assert(sites.clear_page == img.At(kClearT));
-    assert(LayoutEquals(sites.layout, kT2020.layout));
+    assert(LayoutEquals(sites.layout, cg->layout));
   }
 
   // Both layouts present: the adjacent-page proof decides.
@@ -589,8 +605,20 @@ void TestTargetedRenderEachProofFailsClosed() {
                    10u] = 0x06u;
        },
        core::SiteResult::kRecordInvalid},
+      {[](SyntheticImage* img, const TargetedCodegen& cg) {
+         img->base[kRenderT + cg.render_tail + 7u] = 0x04u;
+       },
+       core::SiteResult::kRecordInvalid},
+      // No epilogue within the body bound.
+      {[](SyntheticImage* img, const TargetedCodegen& cg) {
+         std::memset(img->base + kRenderT + cg.render_tail, 0x90,
+                     sizeof(core::kRenderTailTBytes));
+       },
+       core::SiteResult::kRecordInvalid},
+      // An earlier epilogue ends the body before the GetCharImage call.
       {[](SyntheticImage* img, const TargetedCodegen&) {
-         img->base[kRenderT + core::kRenderTailTOffset + 7u] = 0x04u;
+         img->Put(kRenderT + kRecordCharOffsetT - 0x10u,
+                  core::kRenderTailTBytes, sizeof(core::kRenderTailTBytes));
        },
        core::SiteResult::kRecordInvalid},
       // No vtable names GetCharImage (the locator slot is code: not a vtable
