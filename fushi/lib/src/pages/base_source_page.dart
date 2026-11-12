@@ -35,6 +35,8 @@ import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart';
 import 'package:fushi/src/utils/components/fushi_deferred_loading.dart';
+import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart'
+    show FushiDesktopTitleBar;
 import 'package:fushi/src/lookup/lookup_audio_playback.dart';
 import 'package:fushi/src/utils/misc/lookup_auto_read_coordinator.dart';
 import 'package:fushi/src/utils/misc/lookup_dismiss_barrier.dart';
@@ -139,9 +141,20 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
           mounted && identical(ModalRoute.of(context), route),
     );
 
+    FushiDesktopTitleBar.addCaptionTapListener(_onCaptionTap);
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _seedWarmPopup();
     });
+  }
+
+  /// BUG-4475：标题行（含沉浸页的隐形拖动条）叠在 Navigator 之上，弹窗的
+  /// dismiss barrier 在那一条里命中不到。标题行上的单击按「点在弹窗外」走
+  /// barrier 同一钩子；只有当前路由上、弹窗可见的页面响应（被盖住的页面不动）。
+  void _onCaptionTap(Offset globalPosition) {
+    if (!mounted || !isDictionaryShown) return;
+    if (!(ModalRoute.of(context)?.isCurrent ?? true)) return;
+    onDismissBarrierTap(globalPosition);
   }
 
   /// BUG-092: seed a single persistent, hidden popup slot on open so its
@@ -163,6 +176,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
 
   @override
   void dispose() {
+    FushiDesktopTitleBar.removeCaptionTapListener(_onCaptionTap);
     ExternalMediaNavigation.instance.unregister(this);
     _visibleRenderFailsafeTimer?.cancel();
     // TODO-058：controller 现持有挂起层兜底 Timer，作为其所有者必须 dispose 取消，防泄漏。
@@ -510,7 +524,11 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
         final expression = entry.word;
         final reading = entry.reading;
         if (expression.isNotEmpty) {
-          _autoReadWord(expression, reading);
+          _autoReadWord(
+            expression,
+            reading,
+            matched: lookupEntryMatchedText(entry),
+          );
         }
       }
 
@@ -625,7 +643,11 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
           result.entries.isNotEmpty) {
         final DictionaryEntry entry = result.entries.first;
         if (entry.word.isNotEmpty) {
-          _autoReadWord(entry.word, entry.reading);
+          _autoReadWord(
+            entry.word,
+            entry.reading,
+            matched: lookupEntryMatchedText(entry),
+          );
         }
       }
     } finally {
@@ -806,15 +828,24 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   }
 
   /// Resolve audio exactly like Hoshi: enabled sources only, no TTS fallback.
-  Future<void> _autoReadWord(String expression, String reading) async {
+  /// [matched] 是查词命中原文：词头带替换写法时 TTS 兜底念它（反馈 WJFhjUGaTn）。
+  Future<void> _autoReadWord(
+    String expression,
+    String reading, {
+    String matched = '',
+  }) async {
     await LookupAutoReadCoordinator.instance.runAutomatic(
       expression: expression,
       reading: reading,
-      play: () => _playAutoReadWord(expression, reading),
+      play: () => _playAutoReadWord(expression, reading, matched: matched),
     );
   }
 
-  Future<bool> _playAutoReadWord(String expression, String reading) {
+  Future<bool> _playAutoReadWord(
+    String expression,
+    String reading, {
+    String matched = '',
+  }) {
     // Prefer the popup's own <audio> (unified fast path); fall back to the Dart
     // player when the popup WebView is not ready. Capture the state once so the
     // callback does not re-evaluate the getter mid-play.
@@ -824,6 +855,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       expression,
       reading,
       playInWebView: popup?.playWordAudioUrl,
+      matched: matched,
     );
   }
 
@@ -1137,6 +1169,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       child: DictionaryPopupLayer(
         result: item.result,
         restoreScrollTop: item.restoreScrollTop,
+        lookupSession: item.lookupSession,
         webViewKey: item.webViewKey,
         keepWebViewWarm: item.isWarmSlot,
         // TODO-869：本层有后代弹窗时注入 __hasChildPopup，点卡片本体留白才能关子窗。
@@ -1421,6 +1454,8 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
           expression: expression.isEmpty ? null : expression,
           deck: deck,
           fields: fields,
+          layout: appModel.advancedMiningLayout,
+          setLayout: appModel.setAdvancedMiningLayout,
           // 单词音频：与弹窗 ♪「选择音频源」同一份候选（读音空时与 ♪ 一样退回原形）。
           wordAudio: expression.isEmpty
               ? null
@@ -1429,6 +1464,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
                       await webViewKey.currentState?.listWordAudioChoices(
                         expression,
                         reading.isEmpty ? expression : reading,
+                        matched: matched,
                       ) ??
                       const <Map<String, String>>[],
                   refreshSource: (int sourceIndex) async =>

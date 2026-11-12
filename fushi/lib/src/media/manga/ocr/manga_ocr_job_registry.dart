@@ -18,11 +18,13 @@ import 'dart:async';
 import 'dart:collection';
 import 'dart:io';
 
+import 'package:meta/meta.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/manga/manga_json_writeback.dart';
 import 'package:fushi/src/media/manga/manga_ocr_background_job.dart';
 import 'package:fushi/src/media/manga/mihon/manga_page_provider.dart';
+import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service_impl.dart'
@@ -214,6 +216,72 @@ int hostMangaOcrMaxParallelTasks() {
   );
 }
 
+/// OCR 任务管理页上一行的状态（反馈 iuv4-jWC8S）。
+enum MangaOcrJobStatus { running, queued, paused }
+
+/// OCR 任务管理页的一行：某本书某个目录（章 / 卷）上的整卷任务快照。
+///
+/// 只是注册表状态的只读投影，管理页每次 [MangaOcrJobRegistry.changes] 重新取，
+/// 不另存镜像。
+@immutable
+class MangaOcrJobEntry {
+  const MangaOcrJobEntry({
+    required this.bookKey,
+    required this.directory,
+    required this.engine,
+    required this.status,
+    required this.canPause,
+    this.title,
+    this.lastEvent,
+  });
+
+  final String bookKey;
+
+  /// 任务目录（[MangaOcrBackgroundJob.managedDirectory]），与 [bookKey] 一起定位一行。
+  final String directory;
+  final String? title;
+  final MangaOcrEngineId engine;
+  final MangaOcrJobStatus status;
+
+  /// 运行中 = 最近一次进度快照；已暂停 = 暂停那一刻的快照（排队中暂停的为 null）。
+  final MangaOcrBackgroundEvent? lastEvent;
+
+  /// 能不能暂停：排队中的恒可以（任务还没订阅，原样留着继续用）；运行中的要有
+  /// [MangaOcrBackgroundJob.resume] 重建口。已暂停的行为 false。
+  final bool canPause;
+
+  MangaOcrJobRef get ref => (bookKey: bookKey, directory: directory);
+}
+
+/// 排着队、还没轮到的任务（任务还没订阅）。
+class _QueuedJob {
+  _QueuedJob(this.job, this.mangaJsonPath);
+
+  final MangaOcrBackgroundJob job;
+  final String mangaJsonPath;
+
+  String get directory => job.managedDirectory;
+}
+
+/// 用户暂停的任务。[job] 只供管理页取身份 / 显示名 / 引擎；继续时由 [take] 给出
+/// **尚未订阅**、可直接重新排队的那一个：排队中暂停 = 原任务原样；运行中暂停 =
+/// 到继续那一刻才经 [MangaOcrBackgroundJob.resume] 重建（重建会现读大模型识别等
+/// 偏好、新建跟随步骤，暂停期间改的设置要在继续时生效，不能在暂停时就冻住）。
+class _PausedJob {
+  _PausedJob(this.job, this.mangaJsonPath, this.lastEvent, this.take);
+
+  final MangaOcrBackgroundJob job;
+  final String mangaJsonPath;
+  final MangaOcrBackgroundEvent? lastEvent;
+  final MangaOcrBackgroundJob Function() take;
+
+  String get bookKey => job.bookKey;
+  String get directory => job.managedDirectory;
+}
+
+/// 管理页批量操作的目标：一本书的一个任务目录。
+typedef MangaOcrJobRef = ({String bookKey, String directory});
+
 /// 按 `bookKey` 索引的任务注册表；一本书同一时刻最多一个整卷任务。
 ///
 /// [maxConcurrentJobs] 是跨书的全局上限（每次排到时现读，低内存模式开关即时生效）；
@@ -258,9 +326,13 @@ class MangaOcrJobRegistry {
   /// 按 bookKey 的排队链尾（[enqueue] 用）；链上没人时不留条目。
   final Map<String, Future<void>> _queues = <String, Future<void>>{};
 
-  /// 按 bookKey 排着队、还没轮到的任务目录（[MangaOcrBackgroundJob.managedDirectory]），
-  /// 按入队序。作品页据此给章节行标「等待识别」（BUG-2481）。
-  final Map<String, List<String>> _queuedDirectories = <String, List<String>>{};
+  /// 按 bookKey 排着队、还没轮到的任务，按入队序。作品页据此给章节行标「等待
+  /// 识别」（BUG-2481，经 [queuedDirectories]）；管理页据此列排队行并可暂停。
+  final Map<String, List<_QueuedJob>> _queued = <String, List<_QueuedJob>>{};
+
+  /// 用户暂停的任务，按暂停序（反馈 iuv4-jWC8S）。只存在于本次运行：退出 app 时
+  /// 所有任务本来就会被真停，下次从书架「识别文字」重排即可从逐页缓存续跑。
+  final List<_PausedJob> _paused = <_PausedJob>[];
 
   /// 任务集合变了（起了 / 结束了 / 入队了 / 轮到了）就发一下；进度本身走各任务的
   /// [MangaOcrRunningJob.events]。作品页订阅它决定「要不要重新挂到当前任务上」。
@@ -273,9 +345,46 @@ class MangaOcrJobRegistry {
   }
 
   /// 这本书排着队、还没开始的任务目录（按入队序）；没有则空。
-  List<String> queuedDirectories(String bookKey) => List<String>.unmodifiable(
-    _queuedDirectories[bookKey] ?? const <String>[],
-  );
+  List<String> queuedDirectories(String bookKey) =>
+      List<String>.unmodifiable(<String>[
+        for (final _QueuedJob queued
+            in _queued[bookKey] ?? const <_QueuedJob>[])
+          queued.directory,
+      ]);
+
+  /// 管理页的全部行：运行中、排队中（按书、按入队序）、已暂停（按暂停序）。
+  List<MangaOcrJobEntry> entries() => <MangaOcrJobEntry>[
+    for (final MangaOcrRunningJob running in _jobs.values)
+      MangaOcrJobEntry(
+        bookKey: running.bookKey,
+        directory: running.job.managedDirectory,
+        title: running.job.title,
+        engine: running.job.engine,
+        status: MangaOcrJobStatus.running,
+        lastEvent: running.lastEvent,
+        canPause: running.job.resume != null,
+      ),
+    for (final List<_QueuedJob> list in _queued.values)
+      for (final _QueuedJob queued in list)
+        MangaOcrJobEntry(
+          bookKey: queued.job.bookKey,
+          directory: queued.directory,
+          title: queued.job.title,
+          engine: queued.job.engine,
+          status: MangaOcrJobStatus.queued,
+          canPause: true,
+        ),
+    for (final _PausedJob paused in _paused)
+      MangaOcrJobEntry(
+        bookKey: paused.bookKey,
+        directory: paused.directory,
+        title: paused.job.title,
+        engine: paused.job.engine,
+        status: MangaOcrJobStatus.paused,
+        lastEvent: paused.lastEvent,
+        canPause: false,
+      ),
+  ];
 
   /// 这本书正在跑的任务；没有则 null。已结束的任务不会留在这里。
   MangaOcrRunningJob? running(String bookKey) => _jobs[bookKey];
@@ -300,6 +409,7 @@ class MangaOcrJobRegistry {
       mangaJsonPath: mangaJsonPath,
       sessions: sessions,
     );
+    _dropPaused(job.bookKey, job.managedDirectory);
     _jobs[job.bookKey] = running;
     _notifyChanged();
     // 同目录上一个任务的跟随步骤还在收尾：新任务会重写这份 manga.json 并带着
@@ -367,20 +477,23 @@ class MangaOcrJobRegistry {
         _queues[bookKey] ?? _jobs[bookKey]?.whenEnded ?? Future<void>.value();
     final Completer<MangaOcrRunningJob?> started =
         Completer<MangaOcrRunningJob?>();
-    final String directory = job.managedDirectory;
-    _queuedDirectories.putIfAbsent(bookKey, () => <String>[]).add(directory);
+    final _QueuedJob entry = _QueuedJob(job, mangaJsonPath);
+    // 别处（阅读器、作品页、管理页「继续」）把暂停的目录重新排上：暂停作废。
+    _dropPaused(bookKey, job.managedDirectory);
+    _queued.putIfAbsent(bookKey, () => <_QueuedJob>[]).add(entry);
     _notifyChanged();
     final Future<void> tail = previous.then((_) async {
       await _acquireSlot();
       try {
-        final List<String>? queue = _queuedDirectories[bookKey];
-        if (queue == null || !queue.remove(directory)) {
-          // 排队期间（含等全局名额期间）被 cancel(bookKey) 整本放弃：不启动。目录
-          // 可能已随「移出书架」被删，对着空目录跑只会产出一条失败日志。
+        final List<_QueuedJob>? queue = _queued[bookKey];
+        if (queue == null || !queue.remove(entry)) {
+          // 排队期间（含等全局名额期间）被 cancel(bookKey) 整本放弃、或被用户
+          // 暂停（[pause]）：不启动。目录可能已随「移出书架」被删，对着空目录跑
+          // 只会产出一条失败日志。
           started.complete(null);
           return;
         }
-        if (queue.isEmpty) _queuedDirectories.remove(bookKey);
+        if (queue.isEmpty) _queued.remove(bookKey);
         // 前一个刚 _forget 时 running() 可能已为空，但也可能仍是「刚结束还没被
         // 清掉」的那一个；start 只认 _jobs 里的，_forget 与 _end 同步发生，安全。
         final MangaOcrRunningJob running = start(
@@ -407,24 +520,134 @@ class MangaOcrJobRegistry {
   /// （BUG-2513「移出书架」删完目录后排队者仍会对空目录开跑）。
   Future<void> cancel(String bookKey) async {
     await _cancelFollowersFor(bookKey);
-    final bool hadQueued = _queuedDirectories.remove(bookKey) != null;
+    final bool hadQueued = _queued.remove(bookKey) != null;
+    // 删书 / 取消本书：暂停着的也一并作废，否则「继续」会对着已删的目录开跑。
+    final int pausedBefore = _paused.length;
+    _paused.removeWhere((_PausedJob paused) => paused.bookKey == bookKey);
+    final bool hadPaused = _paused.length != pausedBefore;
     final MangaOcrRunningJob? running = _jobs.remove(bookKey);
-    if (running == null && !hadQueued) return;
+    if (running == null && !hadQueued && !hadPaused) return;
     _notifyChanged();
     await running?.cancel();
   }
 
   /// 退出 app / 切换 Profile 等整体拆栈：把所有任务真停掉。
+  ///
+  /// 排队者也一并放弃（与 [cancel] 同理，BUG-2513）：只停运行中的，它一结束
+  /// 同书队列链就把下一个排队者 start 起来，拆栈之后还在跑。
   Future<void> cancelAll() async {
     final List<MangaOcrRunningJob> jobs = <MangaOcrRunningJob>[
       ..._jobs.values,
       for (final List<MangaOcrRunningJob> list in _finishing.values) ...list,
     ];
+    final bool hadAny =
+        _jobs.isNotEmpty || _queued.isNotEmpty || _paused.isNotEmpty;
     _jobs.clear();
     _finishing.clear();
+    _queued.clear();
+    _paused.clear();
+    if (hadAny) _notifyChanged();
     for (final MangaOcrRunningJob running in jobs) {
       await running.cancel();
     }
+  }
+
+  /// 暂停 [bookKey] 在 [directory] 上的任务（OCR 任务管理页，反馈 iuv4-jWC8S）。
+  ///
+  /// - 排队中：从队列摘下（排队链轮到它时发现不在队里就跳过），原任务留着继续用；
+  /// - 运行中：真停（各执行器在页边界停、逐页缓存保留），释放全局名额让下一个
+  ///   排队者开跑；记下 [MangaOcrBackgroundJob.resume] 重建口，[resume] 时才重建。
+  ///
+  /// 本书其它排队的章不受影响。没有匹配的任务、或运行中的任务不支持暂停时返回
+  /// false。
+  Future<bool> pause(String bookKey, String directory) async {
+    final List<_QueuedJob>? queue = _queued[bookKey];
+    final int queuedIndex =
+        queue?.indexWhere(
+          (_QueuedJob queued) => p.equals(queued.directory, directory),
+        ) ??
+        -1;
+    if (queue != null && queuedIndex >= 0) {
+      final _QueuedJob queued = queue.removeAt(queuedIndex);
+      if (queue.isEmpty) _queued.remove(bookKey);
+      final MangaOcrBackgroundJob original = queued.job;
+      _paused.add(
+        _PausedJob(original, queued.mangaJsonPath, null, () => original),
+      );
+      _notifyChanged();
+      return true;
+    }
+    final MangaOcrRunningJob? running = _jobs[bookKey];
+    final MangaOcrBackgroundJob Function()? rebuild = running?.job.resume;
+    if (running == null ||
+        rebuild == null ||
+        !p.equals(running.job.managedDirectory, directory)) {
+      return false;
+    }
+    _jobs.remove(bookKey);
+    _paused.add(
+      _PausedJob(
+        running.job,
+        running.mangaJsonPath,
+        running.lastEvent,
+        rebuild,
+      ),
+    );
+    _notifyChanged();
+    await running.cancel();
+    return true;
+  }
+
+  /// 继续一个已暂停的任务：重新经 [enqueue] 排到本书队尾（同书 FIFO + 全局名额
+  /// 照旧）。没有匹配的暂停项返回 false。
+  bool resume(String bookKey, String directory) {
+    final int index = _paused.indexWhere(
+      (_PausedJob paused) =>
+          paused.bookKey == bookKey && p.equals(paused.directory, directory),
+    );
+    if (index < 0) return false;
+    final _PausedJob paused = _paused.removeAt(index);
+    unawaited(enqueue(job: paused.take(), mangaJsonPath: paused.mangaJsonPath));
+    return true;
+  }
+
+  /// 批量暂停。先摘排队的、再停运行中的：反过来的话，停掉一个运行中的任务会
+  /// 立刻放下一个排队者开跑，而它可能正是这批里下一个要暂停的。返回暂停成功数。
+  Future<int> pauseAll(Iterable<MangaOcrJobRef> targets) async {
+    final List<MangaOcrJobRef> list = targets.toList(growable: false);
+    bool isRunning(MangaOcrJobRef ref) {
+      final MangaOcrRunningJob? running = _jobs[ref.bookKey];
+      return running != null &&
+          p.equals(running.job.managedDirectory, ref.directory);
+    }
+
+    final List<MangaOcrJobRef> ordered = <MangaOcrJobRef>[
+      ...list.where((MangaOcrJobRef ref) => !isRunning(ref)),
+      ...list.where(isRunning),
+    ];
+    int paused = 0;
+    for (final MangaOcrJobRef ref in ordered) {
+      if (await pause(ref.bookKey, ref.directory)) paused += 1;
+    }
+    return paused;
+  }
+
+  /// 批量继续（按传入顺序重新排队）。返回继续成功数。
+  int resumeAll(Iterable<MangaOcrJobRef> targets) {
+    int resumed = 0;
+    for (final MangaOcrJobRef ref in targets.toList(growable: false)) {
+      if (resume(ref.bookKey, ref.directory)) resumed += 1;
+    }
+    return resumed;
+  }
+
+  void _dropPaused(String bookKey, String directory) {
+    final int before = _paused.length;
+    _paused.removeWhere(
+      (_PausedJob paused) =>
+          paused.bookKey == bookKey && p.equals(paused.directory, directory),
+    );
+    if (_paused.length != before) _notifyChanged();
   }
 
   /// 任务已结束、跟随步骤（大模型重读）还在收尾的，按 bookKey。删书 / 取消本书

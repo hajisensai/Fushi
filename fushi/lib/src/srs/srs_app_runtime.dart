@@ -25,7 +25,7 @@ import 'package:fushi_engine/srs/ankiconnect/srs_ankiconnect_endpoint.dart';
 import 'package:fushi_engine/srs/ankiconnect/srs_ankiconnect_handler.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/sync2/srs_sync2_pull_first.dart'
-    show kSrsPullBeforeMergeBudget;
+    show SrsPullBound, kSrsPullBeforeMergeBudget;
 import 'package:fushi_engine/srs/srs_profile_link.dart';
 import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart'
     show SrsSync2Report;
@@ -125,7 +125,7 @@ srsAppRuntimeProvider = Provider<SrsAppRuntime?>((Ref ref) {
       pullBeforeMerge: (SrsDbStore target, SyncAssetStore? within) =>
           runtime.sync.pullInto(
             target,
-            budget: kSrsPullBeforeMergeBudget,
+            bound: const SrsPullBound.budget(kSrsPullBeforeMergeBudget),
             purpose: 'merge',
             within: within,
             channels: false,
@@ -134,19 +134,19 @@ srsAppRuntimeProvider = Provider<SrsAppRuntime?>((Ref ref) {
   );
   // 旧库迁移推迟到首次同步确认之后（BUG-4011）：store 打开时不迁移（srs_providers.dart `deferMigration`），
   // 由调度器在确认后的第一轮上传之前先收一轮再迁移（[SrsSyncScheduler.ensureMigrated]）。
-  // 本机写了复习数据：去抖后经互联快速通道推一轮（设计 §6.3）。同步拉进来的变更不触发
+  // 本机写了复习数据：去抖后经互联与云盘通道各推一轮（设计 §6.3，反馈 O4MSorhpie）。同步拉进来的变更不触发
   // （反馈 I1Bg6uMZ32：拉入 → 修订号 +1 → 又推一轮同步，见 [SrsRevisionOrigin]）。
   // BUG-4075 取证：修订号每跳一次按来源记一笔（`rev:local` 本机写入 / `rev:pulled` 同步拉入，后者在
   // bumpPulledRevision 里记）：停在复习页不动时它跳不跳、跳多少次、是谁在跳，直接看内存采样里的 marks。
   // 不另挂直接 listen 修订号的监听：那样分不出来源（srs_revision_origin_test 接线守卫）。
   listenSrsLocalWrites(ref, revisionOrigin, () {
     SrsOpLedger.mark('rev:local');
-    runtime.localPush.trigger();
+    runtime.notifyLocalWrite();
   });
   // 复习页的评分 / 撤销等只发这个信号（不叫醒被盖住的列表，见 srsLocalWriteProvider）。
   ref.listen<int>(
     srsLocalWriteProvider,
-    (int? previous, int next) => runtime.localPush.trigger(),
+    (int? previous, int next) => runtime.notifyLocalWrite(),
   );
   // RWKV 排程服务随模块常驻（store.rwkv 由它装配；对象很轻，重活按需启动）。
   ref.listen<AsyncValue<Object?>>(
@@ -267,25 +267,50 @@ class SrsAppRuntime {
     onReachable: () => localPush.resetBackoff(),
   );
 
-  /// 本机变动后去抖推送：连着互联 host 就同步那条通道；本机自己是 host 就跑本机目录（唤醒连它的设备）。
-  /// 推送失败按指数退避（[SrsLocalPush]），不再每答一张卡就探测一轮死地址。
+  /// 本机变动后去抖推送（设计 §6.3），按通道分两条、各自一个 [SrsLocalPush]（反馈 O4MSorhpie：以前只推互联，云盘
+  /// 通道要等进复习 tab / 常规同步 / 「立即同步」才带上答卡记录）：
+  /// - [localPush]：互联通道 + 本机目录（本机自己是 host 时唤醒连它的设备）；
+  /// - [cloudPush]：云盘通道（OneDrive / WebDAV / Google Drive 等，`enabledSyncChannelBackends` 里非互联的那条）。
+  /// 两条各自失败退避（[SrsLocalPush]）：host 不可达时互联那条退避，不拖住云盘那条；反之亦然。
   /// 复习页开着时按最长等待批量推（[kSrsLocalPushMaxWait]，审查 S-8），离开复习页 / 进后台立即推。
   late final SrsLocalPush localPush = SrsLocalPush(
-    push: _pushInterconnect,
-    batching: () => srsActiveReviewSessions.value > 0,
+    push: () => _push(interconnect: true),
+    batching: _reviewing,
   );
 
-  /// 下一次推送是 app 正要进后台时的那一次（[_onLifecycle]）：放过前台检查，只这一次。
-  bool _pushOnLeave = false;
+  /// 云盘通道那条推送（见 [localPush]）。
+  late final SrsLocalPush cloudPush = SrsLocalPush(
+    push: () => _push(interconnect: false),
+    batching: _reviewing,
+  );
 
-  Future<bool> _interconnectReady({bool allowBackground = false}) async {
+  static bool _reviewing() => srsActiveReviewSessions.value > 0;
+
+  /// 两条推送的名字（限流日志 / [SrsSyncScheduler.autoPushSkipReason]）。
+  static const String kInterconnectPushLane = 'interconnect';
+  static const String kCloudPushLane = 'cloud';
+
+  /// 本机写了复习数据：两条推送都排上。
+  void notifyLocalWrite() {
+    localPush.trigger();
+    cloudPush.trigger();
+  }
+
+  /// 下一次推送是 app 正要进后台时的那一次（[_onLifecycle]）：放过前台检查，每条推送只这一次。
+  bool _interconnectPushOnLeave = false;
+  bool _cloudPushOnLeave = false;
+
+  /// 此刻能不能为复习同步联网：库开着、首次同步已确认、app 在前台（或 [allowBackground]：进后台时的那一次推送）。
+  bool _syncAllowedNow({bool allowBackground = false}) {
     if (!app.isInitialised || !app.srsSync2MergeConfirmed) return false;
     final AppLifecycleState? state = WidgetsBinding.instance.lifecycleState;
-    if (!allowBackground &&
-        state != null &&
-        state != AppLifecycleState.resumed) {
-      return false;
-    }
+    return allowBackground ||
+        state == null ||
+        state == AppLifecycleState.resumed;
+  }
+
+  Future<bool> _interconnectReady() async {
+    if (!_syncAllowedNow()) return false;
     final SyncRepository repo = SyncRepository(app.database);
     if (!await repo.isInterconnectEnabled()) return false;
     final InterconnectSyncBackend backend = InterconnectSyncBackend.instance;
@@ -293,19 +318,36 @@ class SrsAppRuntime {
     return backend.isAuthenticated;
   }
 
-  /// 返回互联这一步是否推成（[SrsLocalPush] 的退避依据）；失败照常记日志。
-  Future<bool> _pushInterconnect() async {
-    final bool leaving = _pushOnLeave;
-    _pushOnLeave = false;
+  /// 一条推送：[interconnect] 选互联那组通道（+ 本机目录）还是云盘那组。通道的启用 / 认证由
+  /// `runOnAuthenticatedSyncChannels` 逐条判（与「立即同步」同一套），它也拿常规同步的互斥（反馈 XDV7Mzc2gw）。
+  /// 返回这条推送是否推成（[SrsLocalPush] 的退避依据）；失败照常记日志。
+  Future<bool> _push({required bool interconnect}) async {
+    final bool leaving = interconnect
+        ? _interconnectPushOnLeave
+        : _cloudPushOnLeave;
+    if (interconnect) {
+      _interconnectPushOnLeave = false;
+    } else {
+      _cloudPushOnLeave = false;
+    }
     try {
       return await sync.autoPush(
-        () async => await _interconnectReady(allowBackground: leaving)
-            ? InterconnectSyncBackend.instance
-            : null,
-        exclusive: runExclusiveWithSync,
+        (Future<void> Function(SyncAssetStore backend) body) =>
+            runOnAuthenticatedSyncChannels(
+              db: app.database,
+              where: (SyncChannel c) => c.isInterconnect == interconnect,
+              body: (SyncBackend backend) => body(backend),
+            ),
+        lane: interconnect ? kInterconnectPushLane : kCloudPushLane,
+        ready: () async => _syncAllowedNow(allowBackground: leaving),
+        localDirectories: interconnect,
       );
     } catch (e, stack) {
-      ErrorLogService.instance.log('SrsAppRuntime.pushInterconnect', e, stack);
+      ErrorLogService.instance.log(
+        'SrsAppRuntime.push(${interconnect ? kInterconnectPushLane : kCloudPushLane})',
+        e,
+        stack,
+      );
       return false;
     }
   }
@@ -335,9 +377,10 @@ class SrsAppRuntime {
 
   Future<void> _postRun(SyncBackend backend) async {
     final SrsSync2Report? r = await sync.autoSyncWithBackend(backend);
-    // 常规同步经互联跑通了一轮：host 可达，推送不必再等退避期满。
-    if (backend is InterconnectSyncBackend && r != null && r.error == null) {
-      localPush.resetBackoff();
+    // 常规同步经这条通道跑通了一轮：它可达，这条通道的推送不必再等退避期满。
+    if (r != null && r.error == null) {
+      (backend is InterconnectSyncBackend ? localPush : cloudPush)
+          .resetBackoff();
     }
   }
 
@@ -444,6 +487,7 @@ class SrsAppRuntime {
     _hostUploads = null;
     interconnectWatch.stop();
     localPush.dispose();
+    cloudPush.dispose();
     sync.dispose();
     if (identical(syncChannelPostRunHook, _postRunHook)) {
       syncChannelPostRunHook = null;
@@ -503,10 +547,15 @@ class SrsAppRuntime {
 
   /// 牌组列表「立即同步」：对所有已认证通道跑一轮（结果区分没配置 / 失败 / 成功）。
   /// 用户手动同步也清掉推送的失败退避（用户明说「现在就同步」）。
-  Future<SrsSyncNowResult> syncNow() {
-    localPush.resetBackoff();
-    return sync.syncNow();
-  }
+  ///
+  /// 这一轮跑遍全部通道与本机目录，是两条推送的超集：此刻排着的推送由它带上、撤掉（[SrsLocalPush.takePending]，
+  /// BUG-4382）。以前排着的推送在「已同步」提示之后去抖到期又各跑一轮空同步，同步状态行在提示后继续走。这一轮
+  /// 没同步成功（有错 / 抛错）就把撤掉的推送排回去，本机改动照常等推送补上。
+  Future<SrsSyncNowResult> syncNow() => srsSyncSupersedingPushes(
+    <SrsLocalPush>[localPush, cloudPush],
+    sync.syncNow,
+    synced: (SrsSyncNowResult r) => r.errors.isEmpty,
+  );
 
   void _onHomeTabChanged() {
     if (homeShellTabNotifier.value != HomeTab.srs) return;
@@ -523,17 +572,25 @@ class SrsAppRuntime {
     final int now = srsActiveReviewSessions.value;
     if (now > 0) optimizer.cancel();
     // 离开复习页：复习中攒着的变动立即推（审查 S-8）。
-    if (now == 0) localPush.flush();
+    if (now == 0) {
+      localPush.flush();
+      cloudPush.flush();
+    }
   }
 
   void _onLifecycle(AppLifecycleState state) {
     if (state != AppLifecycleState.resumed) optimizer.cancel();
     // 正在进后台：待推的立即推（之后前台检查会挡住推送，后台也可能很快被挂起）。
-    if ((state == AppLifecycleState.inactive ||
-            state == AppLifecycleState.hidden) &&
-        localPush.pending) {
-      _pushOnLeave = true;
-      localPush.flush();
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.hidden) {
+      if (localPush.pending) {
+        _interconnectPushOnLeave = true;
+        localPush.flush();
+      }
+      if (cloudPush.pending) {
+        _cloudPushOnLeave = true;
+        cloudPush.flush();
+      }
     }
     // 回到前台：快速通道马上重新挂上（不等空闲重查的间隔）。
     if (state == AppLifecycleState.resumed) interconnectWatch.nudge();

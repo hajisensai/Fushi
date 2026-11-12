@@ -153,6 +153,24 @@ abstract interface class RemoteVideoGraphicSubtitleTrackFetch {
   });
 }
 
+/// 「能按文件名下载 host 上某一条外挂字幕」的可选能力（互联 host，反馈 -CaVsioFhG）。
+///
+/// [RemoteVideoStreamUrls.sidecarSubtitles] 列出这一集 host 上的全部外挂字幕，
+/// 本能力按其中一条的 [RemoteVideoSidecarSubtitle.fileName] 把它下到本地。只有
+/// 互联 host 会下发那份列表，媒体服务器 / URL 流不实现（它们的外挂字幕走
+/// [RemoteVideoEmbeddedSubtitleTrack.isExternalFile]）。
+abstract interface class RemoteVideoSidecarSubtitleFetch {
+  /// 把视频 [id] 第 [episodeIndex] 集名为 [fileName] 的外挂字幕下载到 [dest]。
+  /// host 上已没有这一条（404）或网络失败时抛错。
+  Future<void> getRemoteVideoSidecarSubtitle(
+    String id,
+    File dest, {
+    required String fileName,
+    int episodeIndex = 0,
+    void Function(double progress)? onProgress,
+  });
+}
+
 /// 「知道某一集的集号」的可选能力（BUG-2626）。
 ///
 /// [RemoteVideoInfo] 只有 `title` 与合集内的 `sortIndex`：前者是分集标题（在线视频源
@@ -214,6 +232,22 @@ abstract interface class RemoteVideoCollectionIsWork {}
 abstract interface class RemoteVideoPlaybackStop {
   /// 上报远端视频 [id] 已停止，位置单位为毫秒。
   Future<void> stopRemoteVideoPlayback(String id, int positionMs);
+}
+
+/// 「播放页不再用这次播放的流」的可选能力（BUG-4461）：来源借此释放这次播放在服务端
+/// 占着的资源（互联 host 的流票与它们的转码）。
+///
+/// 与 [RemoteVideoPlaybackStop] 分开：Stop 是「播放结束」的**上报**（Jellyfin / Plex
+/// 据此判已看、发 webhook），自然播完时也要发，而那时页面仍停在本集、播放器开着
+/// （`keep-open`），用户还能回拖或重看——流不能在那时作废。释放只在页面真正丢掉
+/// 这次播放的流时调：退出、换集、换档 / 换线路重载之前。
+///
+/// 契约：实现必须在第一个 await 之前**同步**摘下 [id] 当前播放会话的登记，之后
+/// 再发起的取流属于新会话、不受影响；释放请求本身是尽力而为的后台清理，调用方
+/// 不等它（返回的 Future 只供测试等待，失败也正常完成）。
+abstract interface class RemoteVideoPlaybackRelease {
+  /// 释放视频 [id] 当前播放会话签下的服务端资源。
+  Future<void> releaseRemoteVideoPlayback(String id);
 }
 
 /// 「手动标记已看 / 未看」的可选能力（Jellyfin / Emby 的 PlayedItems 端点）。

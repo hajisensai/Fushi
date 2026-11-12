@@ -179,7 +179,7 @@ void main() {
       if (r.url.path == '/v1/feedback') return receipt(r);
       return _json(<String, dynamic>{'slot': 'x'}, 201);
     };
-    final List<FeedbackVideoQuality> qualities = <FeedbackVideoQuality>[];
+    final List<FeedbackVideoMode> modes = <FeedbackVideoMode>[];
     final FeedbackService s = service(
       prepare:
           (
@@ -188,7 +188,7 @@ void main() {
             void Function(double) onProgress,
             FeedbackVideoPrepareOptions options,
           ) async {
-            qualities.add(options.quality);
+            modes.add(options.mode);
             final File out = await src.copy(p.join(work.path, 'out.mp4'));
             return PreparedFeedbackVideo(
               file: out,
@@ -200,9 +200,7 @@ void main() {
     );
     final FeedbackStagedVideo staged = await s.stageVideo(
       source,
-      options: const FeedbackVideoPrepareOptions(
-        quality: FeedbackVideoQuality.p1080,
-      ),
+      options: const FeedbackVideoPrepareOptions(mode: FeedbackVideoMode.p1080),
     );
     final List<FeedbackSubmitStage> stages = <FeedbackSubmitStage>[];
     final FeedbackSubmitResult result = await s.submit(
@@ -217,7 +215,7 @@ void main() {
       onStage: stages.add,
     );
     expect(result.failedAttachments, 0);
-    expect(qualities, <FeedbackVideoQuality>[FeedbackVideoQuality.p1080]);
+    expect(modes, <FeedbackVideoMode>[FeedbackVideoMode.p1080]);
     expect(stages, <FeedbackSubmitStage>[
       FeedbackSubmitStage.sending,
       FeedbackSubmitStage.video,

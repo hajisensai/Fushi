@@ -9,8 +9,11 @@
 //   POST /dev/f/:id  {status,reply}
 //   GET  /dev/project             项目数据：GitHub star / fork / Release 下载与官网访问量的每日快照（project_stats.js）
 //   POST /dev/project/refresh     立即重新取一遍外部数据（不等定时任务的节流间隔）
-//   GET  /dev/stats               安装统计：日活 / 周活 / 月活、近 30 天每日活跃与新增、平台 / 通道 / 版本分布（installs.js）
-//   GET  /dev/stats.json          同一份数据的 JSON（installStats），给维护者自己的看板（Fushi Pulse）取数；没有会话 → 401 JSON
+//   GET  /dev/stats               安装统计（读定时快照，迁移 0021）：日活 / 周活 / 月活、近 30 天每日活跃与新增、平台 / 通道 / 版本分布（installs.js）
+//   GET  /dev/stats.json          同一份数据的 JSON（安装统计快照 + computedAt），给维护者自己的看板（Fushi Pulse）取数；没有会话 → 401 JSON
+//   POST /dev/stats/refresh       立即重算安装统计快照（距上次不足 15 分钟则不重算）
+//   GET  /dev/decisions           拍板台：AI 代理写入的待拍事项（decisions.js）
+//   POST /dev/d/:id  {v,text,back} 拍板并 / 或留言
 //
 // 安全：页面无脚本（CSP script-src 为 none）；会话 Cookie HttpOnly + Secure + SameSite=Strict，
 // 只发往 /dev；所有 POST 另验 Origin 与本站一致（双保险防 CSRF）。会话 7 天，库里只存 token 哈希。
@@ -30,8 +33,11 @@ import {
   feedbackById,
   newSessionToken,
 } from './feedback.js';
-import { PING_PLATFORMS, installStats, versionIncludes } from './installs.js';
+import { PING_PLATFORMS, loadInstallStats, refreshInstallStatsSnapshot, versionIncludes } from './installs.js';
 import { RELEASE_PLATFORMS, projectStats, refreshProjectStats } from './project_stats.js';
+import {
+  DECISIONS_STYLE, DECISION_LIMITS, decisionStageParam, listDecisions, renderDecisions, submitDecision,
+} from './decisions.js';
 
 export const SESSION_COOKIE = 'fushi_dev';
 export const SESSION_TTL_MS = 7 * 24 * 3600 * 1000;
@@ -110,7 +116,7 @@ function fmtBytes(n) {
 
 function layout(title, body, { signedIn = false } = {}) {
   const logout = signedIn
-    ? '<nav class="top"><a href="/dev">反馈</a><a href="/dev/stats">统计</a><a href="/dev/project">项目</a>'
+    ? '<nav class="top"><a href="/dev">反馈</a><a href="/dev/decisions">拍板</a><a href="/dev/stats">统计</a><a href="/dev/project">项目</a>'
       + '<form method="post" action="/dev/logout" class="inline"><button class="link">退出</button></form></nav>'
     : '';
   return `<!doctype html>
@@ -121,7 +127,7 @@ function layout(title, body, { signedIn = false } = {}) {
 <meta name="color-scheme" content="light dark">
 <meta name="robots" content="noindex">
 <title>${esc(title)} · Fushi 反馈处理台</title>
-<style>${STYLE}</style>
+<style>${STYLE}${DECISIONS_STYLE}</style>
 </head>
 <body>
 <header><a class="brand" href="/dev">Fushi 反馈处理台</a>${logout}</header>
@@ -508,14 +514,16 @@ function distTable(rows, label = (k) => k) {
 }
 
 async function statsPage(env, now) {
-  const st = await installStats(env, now);
+  const { computedAt, stats: st } = await loadInstallStats(env, now);
   const kpi = (label, n) => `<div class="kpi"><span class="muted">${esc(label)}</span><b>${n}</b></div>`;
   const head = `<tr><th>日期（UTC）</th><th>活跃</th><th>新增</th>${PING_PLATFORMS.map((p) => `<th>${esc(p)}</th>`).join('')}`
     + '<th class="muted">未验证</th></tr>';
   const daily = st.daily.map((d) => `<tr><td>${esc(d.day)}</td><td>${d.n}</td><td>${d.fresh}</td>`
     + `${PING_PLATFORMS.map((p) => `<td>${d.platforms[p]}</td>`).join('')}<td class="muted">${d.unverified}</td></tr>`).join('');
   const u = st.unverified;
-  return html(layout('统计', `<h1>安装统计</h1>
+  return html(layout('统计', `<div class="title"><h1>安装统计</h1>
+<form method="post" action="/dev/stats/refresh" class="inline"><button class="small">刷新</button></form></div>
+<p class="muted">快照算于 ${esc(fmtTime(computedAt))}（定时任务每 6 小时重算一次；「刷新」距上次不足 15 分钟时不重算——每次重算要读全部统计表，D1 按读取行数计额度）。</p>
 <p class="muted">来自 App 每天一次的匿名心跳（Android / Windows / macOS / Linux；iOS 看 App Store Connect）。
 按安装 id 去重，关了统计的安装不计；日期按 UTC。分布取近 30 天活跃安装各自最近一次上报的值。
 数字只算<b>已验证</b>安装（出示了安装证明：签名 + 工作量证明）；未验证的（旧版客户端或自报伪造）另列。</p>
@@ -655,7 +663,7 @@ async function projectPage(env, now) {
   const today = new Date(now).toISOString().slice(0, 10);
   const kpi = (label, v) => `<div class="kpi"><span class="muted">${esc(label)}</span><b>${v}</b></div>`;
   // App 用户：与 /dev/stats 同口径（只数已验证安装），这里只放总数和每日走势。
-  const users = await installStats(env, now);
+  const { stats: users } = await loadInstallStats(env, now);
   const ud = [...users.daily].reverse().filter((d) => d.day < today);
   const usersSection = `<h2>App 用户 <a class="more" href="/dev/stats">详细统计 →</a></h2>
 <div class="kpis">${kpi('今日活跃', fmtInt(users.dau))}${kpi('7 日活跃', fmtInt(users.wau))}`
@@ -865,7 +873,15 @@ export async function routeDevConsole(request, env, url, now, ctx, ip) {
 
   if (method === 'GET' && path === '/dev') return listPage(env, url, dev);
   if (method === 'GET' && path === '/dev/stats') return statsPage(env, now);
-  if (method === 'GET' && path === '/dev/stats.json') return json(await installStats(env, now));
+  if (method === 'GET' && path === '/dev/stats.json') {
+    // 快照内容 + computedAt（毫秒时间戳）：数字最多滞后 snapshotEveryMs。
+    const { computedAt, stats } = await loadInstallStats(env, now);
+    return json({ ...stats, computedAt });
+  }
+  if (method === 'POST' && path === '/dev/stats/refresh') {
+    await refreshInstallStatsSnapshot(env, now, { force: true });
+    return redirect('/dev/stats');
+  }
   if (method === 'GET' && path === '/dev/feedback.json') {
     // 与 /dev 列表同一份数据（devList），给 Fushi Pulse 之类的本机面板用；status 缺省 = 未结案，all = 全部。
     const status = url.searchParams.get('status') || 'active';
@@ -878,6 +894,16 @@ export async function routeDevConsole(request, env, url, now, ctx, ip) {
   }
   if (method === 'GET' && (m = /^\/dev\/f\/([A-Za-z0-9_-]{8,16})\.json$/.exec(path))) {
     return json(await devView(env, await feedbackById(env, m[1])));
+  }
+  if (method === 'GET' && path === '/dev/decisions') {
+    const stage = decisionStageParam(url.searchParams.get('stage'));
+    return html(layout('拍板台', renderDecisions(await listDecisions(env), stage), { signedIn: true }));
+  }
+  if (method === 'POST' && (m = /^\/dev\/d\/([A-Za-z0-9_-]{1,40})$/.exec(path))) {
+    const form = await readForm(request, formLimit(DECISION_LIMITS.noteMax));
+    await submitDecision(env, dev, m[1], { v: form.get('v') || 'note', text: form.get('text') || '' }, now);
+    // 回到原来那一栏、定位到这条（拍完它可能已离开当前栏，锚点找不到就停在栏顶）。
+    return redirect(`/dev/decisions?stage=${decisionStageParam(form.get('back'))}#d-${m[1]}`);
   }
   if (method === 'GET' && path === '/dev/project') return projectPage(env, now);
   if (method === 'POST' && path === '/dev/project/refresh') {

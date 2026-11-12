@@ -1,3 +1,4 @@
+import 'dart:async' show unawaited;
 import 'dart:ui' as ui;
 
 import 'package:material_ui/material_ui.dart';
@@ -6,6 +7,7 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi_core/fushi_core.dart' show SourceLibraryKind;
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
 import 'package:fushi/src/ai/ai_media_acquisition_assistant.dart'
     show AiMediaAcquisitionDomain;
@@ -21,6 +23,7 @@ import 'package:fushi/src/pages/implementations/game_shared.dart';
 import 'package:fushi/src/pages/implementations/game_stream_library_page.dart';
 import 'package:fushi/src/pages/implementations/games_library_page.dart';
 import 'package:fushi/src/pages/implementations/media_discovery_page.dart';
+import 'package:fushi/src/pages/implementations/media_sources_view.dart';
 import 'package:fushi/src/pages/implementations/media_library_shell.dart'
     show LibrarySectionGroup, libraryImportChromeButton;
 import 'package:fushi/src/pages/implementations/texthooker_page.dart';
@@ -34,6 +37,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
@@ -76,6 +80,15 @@ typedef GameDiscoverBuilder =
 typedef GameStreamSectionBuilder =
     Widget Function(BuildContext context, Widget navigation);
 
+/// 「导入」子区里常驻来源列表的构造器；测试可注入桩，绕开 [MediaSourcesView] 对
+/// `appProvider`（Drift DB / 偏好）的依赖。[viewKey] 必须挂在真正的
+/// [MediaSourcesView] 上：区头「添加来源」按钮经它调 [MediaSourcesViewState.addSource]。
+typedef GameSourcesBuilder =
+    Widget Function(
+      BuildContext context,
+      GlobalKey<MediaSourcesViewState> viewKey,
+    );
+
 /// 首页一级「游戏」模块。
 ///
 /// 集成持久化游戏库、Hook 监控工作台与兼容性诊断。内部使用 [IndexedStack]，
@@ -89,6 +102,7 @@ class HomeGamePage extends StatefulWidget {
     this.dashboardBuilder,
     this.discoverBuilder,
     this.streamBuilder,
+    this.sourcesBuilder,
     this.controller,
   });
 
@@ -97,6 +111,7 @@ class HomeGamePage extends StatefulWidget {
   final GameDashboardBuilder? dashboardBuilder;
   final GameDiscoverBuilder? discoverBuilder;
   final GameStreamSectionBuilder? streamBuilder;
+  final GameSourcesBuilder? sourcesBuilder;
   final GalHookSessionController? controller;
 
   static const Key dashboardKey = ValueKey<String>('game-dashboard');
@@ -106,6 +121,9 @@ class HomeGamePage extends StatefulWidget {
   static const Key importKey = ValueKey<String>('game-import');
   static const Key discoverKey = ValueKey<String>('game-discover');
   static const Key streamKey = ValueKey<String>('game-stream');
+
+  /// 「导入」子区「常驻来源」区头的「添加来源」按钮（反馈 9Rm_8JEkGM）。
+  static const Key addSourceKey = ValueKey<String>('game-import-add-source');
 
   /// 库页顶部会话状态带（原两张总览大卡的收敛替身），整条可点进入捕获工作台。
   static const Key captureStatusKey = ValueKey<String>('game-capture-status');
@@ -123,6 +141,13 @@ class _HomeGamePageState extends State<HomeGamePage> {
 
   /// 「串流」子区同理：一挂载就去连已配对主机，访问过才构建。
   late bool _streamVisited = _section == GameSection.stream;
+
+  /// 「导入」子区的常驻来源列表同理：一挂载就查来源表与各来源计数，访问过才构建。
+  late bool _importVisited = _section == GameSection.importGames;
+
+  /// 常驻来源列表的状态句柄：区头「添加来源」按钮经它调 `addSource`。
+  final GlobalKey<MediaSourcesViewState> _sourcesKey =
+      GlobalKey<MediaSourcesViewState>();
 
   /// 「我的游戏」组上次停留的子区：在发现 / 导入时点组页签回到这里。
   late GameSection _lastLibrarySection =
@@ -186,6 +211,7 @@ class _HomeGamePageState extends State<HomeGamePage> {
       _section = requested;
       if (requested == GameSection.discover) _discoverVisited = true;
       if (requested == GameSection.stream) _streamVisited = true;
+      if (requested == GameSection.importGames) _importVisited = true;
     });
   }
 
@@ -509,8 +535,9 @@ class _HomeGamePageState extends State<HomeGamePage> {
     );
   }
 
-  /// 游戏「导入」视图：与书 / 漫画 / 视频库页的「导入」视图同构同位（快速导入
-  /// 区收纳单件入口；游戏暂无扫描根概念，故本页只有快速导入一区）。
+  /// 游戏「导入」视图：与书 / 漫画 / 视频库页的「导入」视图同构同位——快速导入区
+  /// 收纳单件入口（添加游戏 / 拖 exe），其下「常驻来源」区管理扫描根（反馈
+  /// 9Rm_8JEkGM：区头「添加来源」+ 与其它模块同一个 [MediaSourcesView]）。
   Widget _buildImport(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     // 导入页自己接 drop：此前整个游戏域只有**库**页挂了 drop target，而
@@ -595,6 +622,30 @@ class _HomeGamePageState extends State<HomeGamePage> {
                             ),
                           ),
                         ),
+                        const SizedBox(height: 28),
+                        FushiStaggeredEntrance(
+                          index: 2,
+                          child: _buildSourcesSectionHeader(context),
+                        ),
+                        const SizedBox(height: 4),
+                        FushiStaggeredEntrance(
+                          index: 3,
+                          child: Text(
+                            t.game_source_scan_hint,
+                            style: context.fushiType.bodySmall.copyWith(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        FushiStaggeredEntrance(
+                          index: 4,
+                          child: _importVisited
+                              ? _buildSources(context)
+                              : const SizedBox.shrink(),
+                        ),
                       ],
                     ),
                   ),
@@ -604,6 +655,39 @@ class _HomeGamePageState extends State<HomeGamePage> {
           ],
         ),
       ),
+    );
+  }
+
+  /// 「常驻来源」区头：标题 + 「添加来源」（与书 / 漫画 / 视频「导入」视图同一组件、
+  /// 同一文案；游戏来源只收本地文件夹，`addSource` 直达选目录）。
+  Widget _buildSourcesSectionHeader(BuildContext context) {
+    return Row(
+      children: <Widget>[
+        Expanded(
+          child: Text(
+            t.media_source_section_title,
+            style: context.fushiType.titleLargeEmphasized,
+          ),
+        ),
+        FushiIconButton(
+          key: HomeGamePage.addSourceKey,
+          tooltip: t.media_source_add,
+          label: t.media_source_add,
+          icon: FushiIcons.add,
+          onTap: () => unawaited(_sourcesKey.currentState?.addSource()),
+        ),
+      ],
+    );
+  }
+
+  /// 常驻来源列表（游戏种类）。扫描写完 `galgames` 后由 AppModel 的
+  /// `onGameSourceScanned` 重载游戏库缓存，这里不另接刷新。
+  Widget _buildSources(BuildContext context) {
+    final GameSourcesBuilder? builder = widget.sourcesBuilder;
+    if (builder != null) return builder(context, _sourcesKey);
+    return MediaSourcesView(
+      key: _sourcesKey,
+      mediaKind: SourceLibraryKind.game.dbValue,
     );
   }
 
@@ -618,7 +702,7 @@ class _HomeGamePageState extends State<HomeGamePage> {
         final lines = _controller.lines;
         final GalWorkbenchReadiness readiness = galWorkbenchReadiness(
           state: state,
-          hasEngineSource: _controller.hasEngineSource,
+          requiresTextThread: _controller.requiresTextThreadSelection,
           selectedTextThreadKey: _controller.selectedTextThreadKey,
         );
         final double page = FushiDesignTokens.of(context).spacing.page;

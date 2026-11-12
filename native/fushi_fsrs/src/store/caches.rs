@@ -197,6 +197,7 @@ pub(crate) fn refresh(
     // 一次刷新内同一笔记类型只物化一次。
     let mut types: HashMap<String, Option<TypeInfo>> = HashMap::new();
     let notes: Vec<String> = notes.into_iter().collect();
+    let p_notes = super::prof::span("cache.notes");
     for chunk in notes.chunks(CHUNK) {
         flush_notes(
             c,
@@ -209,6 +210,8 @@ pub(crate) fn refresh(
             &mut out,
         )?;
     }
+    drop(p_notes);
+    let p_cards = super::prof::span("cache.cards");
     // 卡片的历史 / 标志沿「前身」继承：前身变了，后继卡也要重算。链接从种子卡按需查（[Links]）：一次作答只碰
     // 这张卡的血统，不再把全库的前身链接读进内存；全量重建投影（`all_stats`）本来就要走遍全库，一次读完。
     let mut links = if dirty.all_stats {
@@ -225,6 +228,8 @@ pub(crate) fn refresh(
     for chunk in rest.chunks(CHUNK) {
         flush_cards(c, profile, cfg, chunk, &mut out)?;
     }
+    drop(p_cards);
+    let _p_stats = super::prof::span("cache.stats");
     // 投影在全部缓存行（可见性）写完之后再算：归属看的是这一轮之后的可见性。还没有缓存行的卡也算。
     stat_seeds.extend(closure);
     stat_seeds.extend(out.cards.iter().cloned());
@@ -295,7 +300,7 @@ pub(crate) struct NoteInfo {
     deck: Option<String>,
     pub(crate) deleted_at: Option<i64>,
     pending: bool,
-    /// 出处（`SrsSourceRef`）：kind 与原样 title；没有出处（或不是带 kind 的对象）时按 Fushi 制卡标签认
+    /// 出处（`SrsSourceRef`）：kind 与原样 title（带系列的出处是系列名）；没有出处（或不是带 kind 的对象）时按 Fushi 制卡标签认
     /// （[source_from_tags]），也认不出 = 两个空串。
     source_kind: String,
     source_title: String,
@@ -379,8 +384,10 @@ impl NoteInfo {
         match v["s"]["kind"].as_str().filter(|k| !k.is_empty()) {
             Some(kind) => {
                 n.source_kind = kind.to_owned();
-                n.source_title = v["s"]["title"]
-                    .as_str()
+                // 带系列的出处（反馈 MCJLSBR5Wg）记系列名：统计页「制卡来源」按「系列 → 集」的上一级计，与
+                // `source_key` 的系列键同一个判据（store/browse.rs `source_series`）。
+                n.source_title = super::browse::source_series(&v["s"])
+                    .or_else(|| v["s"]["title"].as_str())
                     .map(str::to_owned)
                     .unwrap_or_default();
             }
@@ -638,9 +645,12 @@ fn flush_notes(
     now: i64,
     out: &mut Written,
 ) -> Result<(), String> {
+    let p_views = super::prof::span("cache.notes.views");
     let views = note_infos(c, chunk)?;
     let existing = cards_of_notes(c, chunk)?;
     load_types(c, cfg, views.iter().map(|v| &v.note_type), types)?;
+    drop(p_views);
+    let p_rows = super::prof::span("cache.notes.rows");
     // 笔记缓存行与应有的卡。
     // (笔记下标, 应有的卡, 笔记已不在, 词频名次)。
     let mut plans: Vec<(usize, Vec<(String, String, i64, bool)>, bool, Option<i64>)> =
@@ -715,7 +725,9 @@ fn flush_notes(
     }
     delete_cards(c, &gone_cards)?;
     out.removed.extend(gone_cards);
+    drop(p_rows);
     let materials = card_materials(c, cfg, &want)?;
+    let _p_cards = super::prof::span("cache.notes.card_rows");
     let mut card_stmt = c.prepare_cached(CARD_UPSERT).map_err(sql)?;
     for (k, expected, gone, freq) in &plans {
         let n = &views[*k];
@@ -755,9 +767,14 @@ fn card_materials(
     cfg: &CacheConfig,
     want: &[(String, Option<String>)],
 ) -> Result<HashMap<String, Material>, String> {
+    let p_lineages = super::prof::span("cache.material.lineages");
     let lineages = lineages(c, cfg, want)?;
+    drop(p_lineages);
     let groups: Vec<Vec<String>> = lineages.iter().map(|l| l.0.clone()).collect();
+    let p_logs = super::prof::span("cache.material.logs");
     let logs = logs_of(c, &groups)?;
+    drop(p_logs);
+    let _p_state = super::prof::span("cache.material.state");
     let empty: Vec<LogRow> = Vec::new();
     let mut out = HashMap::with_capacity(want.len());
     for ((card, _), (lineage, flags)) in want.iter().zip(lineages) {
@@ -1270,6 +1287,7 @@ fn refresh_stats(
     seeds: &BTreeSet<String>,
     expand: bool,
 ) -> Result<(), String> {
+    let p_family = super::prof::span("cache.stats.family");
     // 连通分量：沿链接双向扩（链接表是超集；真正的血统下面按修改记录的生效值算）。
     let mut family = link_family(c, links, seeds)?;
     if expand {
@@ -1282,6 +1300,8 @@ fn refresh_stats(
             family = link_family(c, links, &grown)?;
         }
     }
+    drop(p_family);
+    let p_owners = super::prof::span("cache.stats.owners");
     let mut ids: Vec<String> = family.iter().cloned().collect();
     ids.sort_by(|a, b| cmp_utf16(a, b));
     let mut visible: HashSet<String> = HashSet::new();
@@ -1354,6 +1374,8 @@ fn refresh_stats(
             g.push(id.clone());
         }
     }
+    drop(p_owners);
+    let p_delete = super::prof::span("cache.stats.delete");
     let family: Vec<&String> = family.iter().collect();
     for chunk in family.chunks(500) {
         let q = format!(
@@ -1365,6 +1387,7 @@ fn refresh_stats(
             .execute(params_from_iter(chunk.iter()))
             .map_err(sql)?;
     }
+    drop(p_delete);
     let mut ins = c
         .prepare_cached(
             "INSERT INTO srs_stat_reviews (log_id, profile_uid, card_id, occurred_at, utc_offset_min, rating, kind, \
@@ -1381,7 +1404,10 @@ fn refresh_stats(
     let mut anki_keys: Vec<AnkiStatKey> = Vec::new();
     for (base, owners) in order.chunks(500).enumerate().map(|(k, o)| (k * 500, o)) {
         let batch: Vec<Vec<String>> = owners.iter().map(|o| groups[o].clone()).collect();
+        let p_logs = super::prof::span("cache.stats.logs");
         let logs = logs_of(c, &batch)?;
+        drop(p_logs);
+        let _p_rows = super::prof::span("cache.stats.rows");
         for (k, (o, g)) in owners.iter().zip(&batch).enumerate() {
             let mut stored: Vec<crate::history::StoredLog<'_>> = Vec::new();
             for id in g {
@@ -2280,6 +2306,60 @@ mod tests {
         assert!(filled >= 3, "filled {filled}");
         assert_eq!(keys(&d), expect);
         assert_eq!(backfill(&d), 0);
+    }
+
+    /// 带系列的出处（反馈 MCJLSBR5Wg）：缓存行的 `source_key` 是系列键、`source_title` 是系列名（统计页「制卡来源」
+    /// 按系列计）；系列名全是空白 = 没有系列，照旧按集（作品键 + 集标题）。
+    #[test]
+    fn series_sources_key_and_title_the_cache_row_by_series() {
+        let d = Device::new("series-sources");
+        let deck = crate::store::sync2::config::default_deck_id(P);
+        let video = |media: &str, title: &str, series: &str| json!({"kind": "video", "mediaKey": media, "startMs": 0, "title": title, "seriesTitle": series});
+        d.apply(
+            T0,
+            vec![
+                deck_entity(&deck),
+                note_type("NT", json!({"createdAt": 1, "ntKind": "standard"})),
+                note(N1, "NT"),
+                edit("note", N1, "source", video("e1", "RWBY - E1", "RWBY")),
+                note(N2, "NT"),
+                edit("note", N2, "source", video("e2", "RWBY - E2", "RWBY")),
+                note(N3, "NT"),
+                edit("note", N3, "source", video("e3", "Solo", "  ")),
+            ],
+        );
+        let cfg = CacheConfig::parse(&json!({"defaultDeck": deck, "builtins": {}})).unwrap();
+        run(
+            &d,
+            &cfg,
+            Dirty {
+                all_notes: true,
+                ..Dirty::default()
+            },
+        );
+        let rows: Vec<Vec<String>> = d
+            .rows(
+                "SELECT srs_idt(id), source_kind, source_title, source_key FROM srs_notes_cache ORDER BY id",
+            )
+            .into_iter()
+            .skip(1)
+            .collect();
+        let row = |id: &str, title: &str, key: &str| {
+            vec![
+                id.to_owned(),
+                "video".to_owned(),
+                title.to_owned(),
+                key.to_owned(),
+            ]
+        };
+        assert_eq!(
+            rows,
+            vec![
+                row(N1, "RWBY", "video::RWBY"),
+                row(N2, "RWBY", "video::RWBY"),
+                row(N3, "Solo", "video:e3"),
+            ]
+        );
     }
 
     /// 每条笔记的卡的 freq_rank（NULL 记成 "null"）。

@@ -189,17 +189,19 @@ const NUMERIC_TAG = /^\d+$/;
 const POS_TAGS = new Set(['n', 'adj-i', 'adj-na', 'adj-no', 'v1', 'vk', 'vs', 'vs-i', 'vs-s', 'vz', 'vi', 'vt']);
 const audioUrls = {};
 
-function audioCacheKey(expression, reading) {
-    return `${expression || ''}\u0000${reading || ''}`;
+// matched（查词命中原文）也进键：同一下标上同一词头换了命中原文时，TTS 兜底念的字
+// 不同（见 fetchAudioUrl），不能复用上一条。
+function audioCacheKey(expression, reading, matched) {
+    return `${expression || ''}\u0000${reading || ''}\u0000${matched || ''}`;
 }
 
-async function resolveCachedAudioUrl(expression, reading, entryIndex) {
-    const key = audioCacheKey(expression, reading);
+async function resolveCachedAudioUrl(expression, reading, entryIndex, matched) {
+    const key = audioCacheKey(expression, reading, matched);
     const cached = audioUrls[entryIndex];
     if (cached?.key === key) {
         return cached.url;
     }
-    const url = await fetchAudioUrl(expression, reading);
+    const url = await fetchAudioUrl(expression, reading, matched);
     if (url) {
         audioUrls[entryIndex] = { key, url };
     } else {
@@ -2861,19 +2863,19 @@ async function buildMinePayload(expression, reading, frequencies, pitches, rules
         // resolve here (re-signing a new token) and decouple it from the playback
         // cache. If the fresh resolve fails (host has no audio for this word),
         // fall back to whatever the cache holds rather than regressing to empty.
-        const fresh = await fetchAudioUrl(expression, audioReading);
+        const fresh = await fetchAudioUrl(expression, audioReading, matched);
         if (fresh) {
             audio = fresh;
-            audioUrls[idx] = { key: audioCacheKey(expression, audioReading), url: fresh };
+            audioUrls[idx] = { key: audioCacheKey(expression, audioReading, matched), url: fresh };
         } else {
             const cached = audioUrls[idx];
-            if (cached?.key === audioCacheKey(expression, audioReading)) {
+            if (cached?.key === audioCacheKey(expression, audioReading, matched)) {
                 audio = cached.url;
             }
         }
     } else {
         const cached = audioUrls[idx];
-        if (cached?.key === audioCacheKey(expression, audioReading)) {
+        if (cached?.key === audioCacheKey(expression, audioReading, matched)) {
             audio = cached.url;
         }
     }
@@ -4738,10 +4740,13 @@ function createGlossarySectionWrapper(entry) {
     return { details: section, body, grouped, dictNames };
 }
 
-async function fetchAudioUrl(expression, reading) {
+// matched：查词命中的原文（句子里实际出现的写法）。宿主只拿它决定 TTS 兜底念什么——
+// 词头带替换写法（`quite a/the something`）时念原文，不连斜杠念词头（反馈
+// WJFhjUGaTn）；音频源照旧按 expression / reading 查。不认这个键的旧宿主原样忽略。
+async function fetchAudioUrl(expression, reading, matched) {
     try {
         return await window.flutter_inappwebview.callHandler(
-            'resolveWordAudio', { expression, reading });
+            'resolveWordAudio', { expression, reading, matched: matched || '' });
     } catch {
         return null;
     }
@@ -4945,7 +4950,7 @@ function showNoAudioHint(button) {
     }, 1800);
 }
 
-function createAudioButton(expression, reading, entryIndex) {
+function createAudioButton(expression, reading, entryIndex, matched) {
     const button = el('button', {
         className: 'inline-action-button audio-button',
         onclick: async () => {
@@ -4954,7 +4959,7 @@ function createAudioButton(expression, reading, entryIndex) {
                 delete button.dataset.fushiSuppressClick;
                 return;
             }
-            const audioUrl = await resolveCachedAudioUrl(expression, reading || expression, entryIndex);
+            const audioUrl = await resolveCachedAudioUrl(expression, reading || expression, entryIndex, matched);
             if (!audioUrl) {
                 // TODO-1251: 无音频源 → 明确「暂无发音」提示，区别于播放失败。
                 showNoAudioHint(button);
@@ -4966,7 +4971,7 @@ function createAudioButton(expression, reading, entryIndex) {
         }
     });
     setButtonIcon(button, 'audio');
-    bindAudioSourceMenuTriggers(button, expression, reading || expression);
+    bindAudioSourceMenuTriggers(button, expression, reading || expression, matched);
     return button;
 }
 
@@ -4984,22 +4989,22 @@ function createAudioButton(expression, reading, entryIndex) {
 let __fushiAudioMenu = null; // { menu, button, modal, onDocPointerDown, generation }
 let __fushiAudioMenuGeneration = 0;
 
-function bindAudioSourceMenuTriggers(button, expression, reading) {
+function bindAudioSourceMenuTriggers(button, expression, reading, matched) {
     button.setAttribute('aria-haspopup', 'menu');
     button.setAttribute('aria-expanded', 'false');
     bindPopupSecondaryActionTriggers(button, {
         isOpen: () => !!(__fushiAudioMenu && __fushiAudioMenu.button === button),
         open: ({ focusFirst }) => {
-            openAudioSourceMenu(button, expression, reading, { focusFirst });
+            openAudioSourceMenu(button, expression, reading, { focusFirst, matched });
         },
     });
 }
 
-async function fetchAudioSourceChoices(expression, reading) {
+async function fetchAudioSourceChoices(expression, reading, matched) {
     let list = null;
     try {
         list = await window.flutter_inappwebview.callHandler(
-            'listWordAudioSources', { expression, reading });
+            'listWordAudioSources', { expression, reading, matched: matched || '' });
     } catch (_) {
         list = null;
     }
@@ -5007,7 +5012,7 @@ async function fetchAudioSourceChoices(expression, reading) {
         return list.filter((item) => item && typeof item.url === 'string' && item.url);
     }
     // 旧宿主没有列表桥：退化成只列默认源。
-    const url = await fetchAudioUrl(expression, reading);
+    const url = await fetchAudioUrl(expression, reading, matched);
     return url ? [{ name: '', variant: '', url }] : [];
 }
 
@@ -5374,7 +5379,7 @@ async function openAudioSourceMenu(button, expression, reading, options) {
     requestAnimationFrame(() => menu.classList.add('visible'));
     try { menu.focus({ preventScroll: true }); } catch (_) { /* no-op */ }
 
-    const choices = await fetchAudioSourceChoices(expression, reading);
+    const choices = await fetchAudioSourceChoices(expression, reading, options?.matched);
     if (!__fushiAudioMenu || __fushiAudioMenu.generation !== generation) return;
     renderAudioSourceMenuItems(menu, button, choices, reading);
     positionAudioSourceMenu(menu, button);
@@ -5621,7 +5626,7 @@ function createEntryHeader(entry, idx) {
     const miningEnabled = window.__fushiMiningEnabled !== false;
     
     if (window.audioSources?.length) {
-        buttonsContainer.appendChild(createAudioButton(expression, reading, idx));
+        buttonsContainer.appendChild(createAudioButton(expression, reading, idx, matched));
     }
 
     buttonsContainer.appendChild(createFavoriteButton(expression, reading, idx));
@@ -5920,6 +5925,10 @@ function createEntryHeader(entry, idx) {
                     // latest word (only one editable card at a time).
                     rememberLatestMined(expression, reading, result.noteId);
                     await refreshFromAnki();
+                    // BUG-4287：成功结果带回的提示（如「保存到」被主机退回默认）。只有 app 外
+                    // 浮窗的宿主会在成功回包里放 message（它那边没有结果 toast）；应用内表面
+                    // 成功不带 message，由宿主 toast 说，这里不会重复。
+                    if (result.message) showInlineHint(mineButton, result.message);
                 } else {
                     // BUG-1908：制卡失败必须**就地**说出来。
                     //
@@ -8005,6 +8014,21 @@ function __fushiReportedContentHeight(){
 // 每个尾批切片后都试一次「够高就恢复」，尾批全部完成（final）时不管够不够高都
 // 应用一次兜底（浏览器自行夹紧）。应用后清零，同一份 pending 绝不影响下一次渲染。
 window.__fushiPendingScrollTop = 0;
+
+// 「新查词会话从顶部开始」的唯一实现：in-app 热槽（dictionary_popup_webview.dart 全量
+// 推送前调用）与 app 外查词窗 / galgame 内嵌查词的常驻根 iframe（global_lookup_host.js
+// beginLookup / 停驻 realm 复位）共用这一份。BUG-141 只在 in-app 注入块里归零，TODO-1095
+// 让 global 根 iframe 跨查词复用后没跟过去，上一次滚到哪下一次就停在哪。顺带停掉滚轮缓动
+// 与待恢复位，否则上一次在途的 rAF / pending 会在归零后把页面又滚回去。
+window.__fushiResetPopupScroll = function() {
+    popupWheelEaseStop();
+    window.__fushiPendingScrollTop = 0;
+    window.scrollTo(0, 0);
+    const el = document.scrollingElement || document.documentElement;
+    if (el) el.scrollTop = 0;
+    if (document.body) document.body.scrollTop = 0;
+};
+
 function __fushiApplyPendingScrollTop(isFinal) {
     const y = window.__fushiPendingScrollTop || 0;
     if (!(y > 0)) return;

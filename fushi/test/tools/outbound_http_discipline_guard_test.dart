@@ -91,6 +91,9 @@ const Map<String, String> kBareOutboundRegistry = <String, String>{
   'packages/fushi_anki/lib/src/ankiconnect/ankiconnect_service.dart':
       'AnkiConnect JSON-RPC，默认 localhost:8765（用户可改成局域网另一台机）。'
       '它自带 connectionFactory 做连接期超时；走 HTTP 代理会让制卡整条链路当场失效。',
+  'fushi/lib/src/mining/tyrano_dom/tyrano_dom_cdp.dart':
+      'TyranoScript 游戏 DOM 数据源：拉本机游戏进程的 CDP 目标表（127.0.0.1:<调试端口>/json/list），'
+      'findProxy 钉死 DIRECT；走用户代理会把回环请求送进代理，取不到。',
   'fushi/lib/src/media/manga/mihon/desktop_mihon_runtime.dart':
       'Mihon 桌面 sidecar：控制面与封面图都打本进程拉起的 127.0.0.1:<port> 认证代理端点。',
   'fushi/lib/src/utils/net/ffmpeg_relay_route.dart':
@@ -118,16 +121,16 @@ const Map<String, String> kBareOutboundRegistry = <String, String>{
       '互联 POST 传输：目标恒为已配对的局域网 peer。',
   'fushi/lib/src/sync/interconnect_sync_backend.dart':
       '互联同步 / 远程库 / 远程视频流：pinned client 之外的回退分支，目标仍是局域网 peer。',
-  'fushi/lib/src/sync/interconnect_manga_ocr_client.dart':
-      '远程 manga-OCR：把 OCR 卸载到局域网另一台机，经代理等于把内网请求发到公网出口。',
-  'fushi/lib/src/sync/interconnect_job_client.dart':
-      '互联通用任务（ASR 等）客户端：目标恒为已配对 host，与 manga-OCR 客户端同一理由。',
   'fushi/lib/src/sync/interconnect_download_client.dart':
-      '互联代下载客户端：目标恒为已配对 host，与 manga-OCR 客户端同一理由。',
+      '互联代下载客户端：目标恒为已配对 host（局域网 / P2P 本地转发口），'
+      '经代理等于把内网请求发到公网出口。',
   'fushi/lib/src/sync/interconnect_subscription_client.dart':
-      '互联内容订阅客户端：目标恒为已配对 host，与 manga-OCR 客户端同一理由。',
+      '互联内容订阅客户端：目标恒为已配对 host，与代下载客户端同一理由。',
   'fushi/lib/src/sync/interconnect_assistant_client.dart':
-      '互联 AI 助手会话客户端（手机把一句话交给电脑办）：目标恒为已配对 host，与 manga-OCR 客户端同一理由。',
+      '互联 AI 助手会话客户端（手机把一句话交给电脑办）：目标恒为已配对 host，与代下载客户端同一理由。',
+  'fushi/lib/src/sync/interconnect_host_channel.dart':
+      '互联共享 host 通道（各互联 client 的传输层：明文 client 与按指纹钉扎的 IOClient）：'
+      '目标恒为已配对 host 的某条地址（含 P2P 本地转发口），与代下载客户端同一理由。',
   'packages/fushi_server/lib/src/commands/sync_commands.dart':
       '`fushi_server sync push|pull` 聚合同步：目标恒为用户给出的已配对互联 host'
       '（https 走指纹钉扎，http 需显式允许），与 interconnect_sync_backend 同一理由。',
@@ -135,12 +138,9 @@ const Map<String, String> kBareOutboundRegistry = <String, String>{
       '配对 peer 存活 ping：目标是 mDNS 发现出来的局域网地址。',
   'fushi/lib/src/sync/interconnect_peer_addresses.dart':
       '互联地址学习（/api/host/addresses）：目标恒为已配对 host 的某条地址（LAN / IPv6 / '
-      '组网 / P2P 本地转发口 127.0.0.1），与 manga-OCR 客户端同一理由；隧道口走代理必然取不到。',
+      '组网 / P2P 本地转发口 127.0.0.1），与代下载客户端同一理由；隧道口走代理必然取不到。',
   'fushi/lib/src/models/app_model.dart':
       '远端查词 / 远端发音共用的 keep-alive client（TODO-744）：目标恒为已配对的局域网 peer。',
-  'fushi/lib/src/sync/interconnect_host_client.dart':
-      '绑定一台已配对互联 host 的传输（视频遥控的快照 / 事件流 / 控制命令、远程复习库调用与媒体）：'
-      '目标恒为已配对 host，与 manga-OCR 客户端同一理由。',
   'fushi/lib/src/pages/implementations/video_remote_page.dart':
       '手机遥控页的词典资源 client（样式 / 媒体 / 发音由电脑端提供）：目标恒为已配对 host，'
       '与 app_model 的远端查词 client 同一理由。',
@@ -148,7 +148,7 @@ const Map<String, String> kBareOutboundRegistry = <String, String>{
 
 /// 登记在案的文件总数（装配点 + 豁免）。**这是自校验用的哨兵**：改清单必须同步改这个数，
 /// 光靠「新增未登记即红」挡不住「悄悄多登记一条」。
-const int kRegisteredOutboundFileCount = 31;
+const int kRegisteredOutboundFileCount = 30;
 
 /// 裸出站构造的判据。
 ///

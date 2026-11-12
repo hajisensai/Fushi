@@ -29,6 +29,11 @@
 //! 当前最好的块整块跳过（[DueIndex::best]）。下界由同一组浮点运算在端点上算出：IEEE 除法 / 加法对每个参数单调，
 //! 所以下界对块里每张卡**按 SQL 同一条式子算出的** R 都成立，结果与旧的 `ORDER BY R, id LIMIT 1` 逐张相同
 //! （含 R 相等按 id、除以零得 NULL 排最前）。一次取最低只访问少数几块，不随到期卡数线性增长。
+//!
+//! 牌组设置「复习顺序」（`reviewOrder`，store/study.rs [ReviewOrder]）选了 R 以外的顺序时，排序键与此刻无关
+//! （[order_key]：到期日 / 难度 / 间隔 / 当天哈希），每个牌组另建一份按键有序的 `BTreeSet`。按需懒建
+//! （[Session::ensure_order]：第一次有人按这个顺序出卡时遍历到期候选建一次），之后随增量重读同步增删；会话
+//! 跨日整份重建，当天哈希里的「今天」随之换。
 
 use std::cmp::Ordering;
 use std::collections::{BTreeSet, BinaryHeap, HashMap, HashSet};
@@ -39,6 +44,7 @@ use rusqlite::{Connection, params_from_iter, types::Value as Sql};
 use serde_json::Value;
 
 use crate::projection::Day;
+use crate::store::study::ReviewOrder;
 use crate::store::sync2::sql;
 
 const DAY_MS: i64 = 86_400_000;
@@ -157,7 +163,7 @@ pub(crate) struct StudyHub {
 }
 
 /// 写连接上的临时触发器（只在这条连接上、不进库文件、不随备份走）：缓存行与日志的每次增删改记下 id。
-const TRIGGERS: &str = "
+pub(crate) const TRIGGERS: &str = "
 CREATE TEMP TRIGGER IF NOT EXISTS srs_study_card_ins AFTER INSERT ON main.srs_cards_cache
   BEGIN SELECT srs_study_touch(0, NEW.profile_uid, NEW.id); END;
 CREATE TEMP TRIGGER IF NOT EXISTS srs_study_card_upd AFTER UPDATE ON main.srs_cards_cache
@@ -268,7 +274,7 @@ impl StudyHub {
         day: Day,
         today: i64,
         _uncommitted: bool,
-        f: impl FnOnce(&Session) -> Result<T, String>,
+        f: impl FnOnce(&mut Session) -> Result<T, String>,
     ) -> Result<T, String> {
         // 建 / 重读到一半 panic（锁被毒化）时会话停在半截、取走的待重读 id 也没用上：整表丢掉、下次整份重建（同重建 /
         // 重读出错时丢会话，BUG-4297）。
@@ -299,7 +305,7 @@ impl StudyHub {
             sessions.remove(profile);
             return Err(e);
         }
-        f(&sessions[profile])
+        f(sessions.get_mut(profile).expect("ready above"))
     }
 }
 
@@ -535,6 +541,10 @@ struct Row {
     due_at: Option<i64>,
     last: Option<i64>,
     stab: Option<f64>,
+    /// `scheduled_days`（复习顺序「间隔从短到长」的键）。
+    ivl: i32,
+    /// `difficulty`（复习顺序「难度从高到低」的键）。
+    difficulty: Option<f32>,
 }
 
 impl Row {
@@ -545,7 +555,7 @@ impl Row {
 }
 
 pub(crate) const ROW_COLUMNS: &str = "SELECT srs_idt(id) AS id, srs_idt(deck_id) AS deck_id, hidden, suspended, scheduler = 'fushi', buried_until_day, queue, due_day, due_at, \
-     last_reviewed_at, stability FROM srs_cards_cache";
+     last_reviewed_at, stability, scheduled_days, difficulty FROM srs_cards_cache";
 
 /// 一个牌组自己（不含子牌组）的计数原料。
 #[derive(Clone, Copy, Default, Debug, PartialEq)]
@@ -564,6 +574,8 @@ struct DeckQueue {
     /// 可出的学习 / 重学卡：(COALESCE(due_at, 0), 卡)。
     learning: BTreeSet<(i64, Arc<str>)>,
     due: DueIndex,
+    /// 到期复习候选按 R 以外的复习顺序排好的索引（只给 [Session] 里建过的顺序）：(键, 卡)。
+    ordered: HashMap<ReviewOrder, BTreeSet<(OrdKey, u32)>>,
 }
 
 /// 一个 profile 的常驻队列状态（见文件头）。
@@ -577,6 +589,8 @@ pub(crate) struct Session {
     deck_index: HashMap<Arc<str>, u32>,
     decks: Vec<DeckQueue>,
     logs: LogState,
+    /// 已建过顺序索引（`DeckQueue::ordered`）的复习顺序。
+    orders: Vec<ReviewOrder>,
 }
 
 /// 一张到期复习候选：(卡, 上次作答, 稳定度)。
@@ -634,6 +648,8 @@ impl Session {
                 due_at: r.get(8).map_err(sql)?,
                 last: r.get(9).map_err(sql)?,
                 stab: r.get(10).map_err(sql)?,
+                ivl: r.get(11).map_err(sql)?,
+                difficulty: r.get::<_, Option<f64>>(12).map_err(sql)?.map(|d| d as f32),
             },
         ))
     }
@@ -650,6 +666,7 @@ impl Session {
             deck_index: HashMap::new(),
             decks: Vec::new(),
             logs: LogState::scan(c, profile, day, today)?,
+            orders: Vec::new(),
         };
         // `+profile_uid`：整表顺扫比按 profile 前缀索引逐行回表快（一个 profile 通常就是全表）。
         let mut stmt = c
@@ -735,20 +752,104 @@ impl Session {
                 }
                 if let Some(o) = old {
                     if self.place(card, &o, -1) {
-                        self.decks[o.deck as usize].due.remove(card, &self.ids);
+                        self.index_due(card, &o, false);
                     }
                 }
                 if let Some(n) = new {
                     if self.place(card, &n, 1) {
-                        self.decks[n.deck as usize]
-                            .due
-                            .insert(card, n.last, n.stab, &self.ids);
+                        self.index_due(card, &n, true);
                     }
                 }
                 self.rows[card as usize] = new;
             }
         }
         Ok(())
+    }
+
+    /// 把一张到期复习候选加进（[add]）/ 移出所在牌组的 R 索引与全部已建的顺序索引。
+    fn index_due(&mut self, card: u32, row: &Row, add: bool) {
+        let today = self.today;
+        let id = &self.ids[card as usize];
+        let dq = &mut self.decks[row.deck as usize];
+        if add {
+            dq.due.insert(card, row.last, row.stab, &self.ids);
+        } else {
+            dq.due.remove(card, &self.ids);
+        }
+        for order in &self.orders {
+            let k = (ord_key(*order, id, today, row), card);
+            let set = dq.ordered.entry(*order).or_default();
+            if add {
+                set.insert(k);
+            } else {
+                set.remove(&k);
+            }
+        }
+    }
+
+    /// 按需建 [order] 的顺序索引（R 顺序用块索引，不用建）：已建过直接返回，否则遍历各牌组的到期候选建一份，
+    /// 之后由 [Session::index_due] 随增量重读维护。
+    pub(crate) fn ensure_order(&mut self, order: ReviewOrder) {
+        if order == ReviewOrder::Retrievability || self.orders.contains(&order) {
+            return;
+        }
+        self.orders.push(order);
+        let today = self.today;
+        let (ids, rows) = (&self.ids, &self.rows);
+        for dq in &mut self.decks {
+            let set: BTreeSet<(OrdKey, u32)> = dq
+                .due
+                .at
+                .keys()
+                .map(|&c| {
+                    let row = rows[c as usize].expect("due cards have rows");
+                    (ord_key(order, &ids[c as usize], today, &row), c)
+                })
+                .collect();
+            dq.ordered.insert(order, set);
+        }
+    }
+
+    /// 几个牌组的到期复习卡里按 [order] 排第一的一张（排除 [exclude]）：R 顺序走 [Session::lowest_due]，其余
+    /// 取各牌组顺序索引里跳过排除后的第一张、牌组之间按（键, id）取最小。顺序索引要先 [Session::ensure_order]。
+    pub(crate) fn first_due(
+        &self,
+        decks: &[&str],
+        order: ReviewOrder,
+        now: i64,
+        exclude: &HashSet<&str>,
+    ) -> Result<Option<DueCand>, String> {
+        if order == ReviewOrder::Retrievability {
+            return Ok(self.lowest_due(decks, now, exclude));
+        }
+        if !self.orders.contains(&order) {
+            return Err(format!("study: review order {order:?} not indexed"));
+        }
+        let ex: HashSet<u32> = exclude
+            .iter()
+            .filter_map(|e| self.index.get(*e).copied())
+            .collect();
+        let lt = |a: &(OrdKey, u32), b: &(OrdKey, u32)| {
+            (a.0, &self.ids[a.1 as usize]) < (b.0, &self.ids[b.1 as usize])
+        };
+        let mut best: Option<(OrdKey, u32)> = None;
+        for d in decks {
+            let Some(di) = self.deck_index.get(*d) else {
+                continue;
+            };
+            let Some(set) = self.decks[*di as usize].ordered.get(&order) else {
+                continue;
+            };
+            if let Some(h) = set.iter().find(|(_, c)| !ex.contains(c)) {
+                if best.as_ref().is_none_or(|b| lt(h, b)) {
+                    best = Some(*h);
+                }
+            }
+        }
+        Ok(best.map(|(_, card)| {
+            let row = self.rows[card as usize].expect("due cards have rows");
+            (self.ids[card as usize].to_string(), row.last, row.stab)
+        }))
     }
 
     /// 几个牌组各自的计数原料（只给有 hidden = 0 的卡的牌组，与旧 SQL `GROUP BY deck_id` 出不出行一致）；
@@ -864,6 +965,69 @@ impl Session {
             let row = self.rows[card as usize].expect("due cards have rows");
             (self.ids[card as usize].to_string(), row.last, row.stab)
         })
+    }
+}
+
+// ------------------------------------------------------------------ 复习顺序的静态键
+
+/// R 以外的复习顺序的排序键（升序）：(主键, 次键, 当天哈希)；整键相同（只在 64 位哈希碰撞时）再按卡。与此刻
+/// 无关，一天之内不变。
+pub(crate) type OrdKey = (i64, u32, u64);
+
+/// FNV-1a 64（自己实现：标准库的 `DefaultHasher` 不保证跨版本稳定，换个 Rust 版本出卡顺序就变）。
+fn fnv1a64(bytes: &[u8]) -> u64 {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in bytes {
+        h ^= u64::from(*b);
+        h = h.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    h
+}
+
+/// splitmix64 终混（把 FNV 与日序号的异或打散）。
+fn splitmix64(x: u64) -> u64 {
+    let mut z = x.wrapping_add(0x9e37_79b9_7f4a_7c15);
+    z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+    z ^ (z >> 31)
+}
+
+/// 当天哈希：同主键的卡按它断平（不按 id：id 与添加顺序相关，会悄悄变成「先加的先出」）；「随机」顺序只按它。
+/// 同一天内不变，第二天换一组。
+pub(crate) fn day_hash(id: &str, today: i64) -> u64 {
+    splitmix64(fnv1a64(id.as_bytes()) ^ today as u64)
+}
+
+/// f32 的全序位（与 `f32::total_cmp` 同序）：难度取负后按它升序 = 难度从高到低。
+fn total_order_bits(x: f32) -> u32 {
+    let b = x.to_bits();
+    if b >> 31 == 1 { !b } else { b | 0x8000_0000 }
+}
+
+/// 一张到期复习卡在 [order] 下的排序键。
+fn ord_key(order: ReviewOrder, id: &str, today: i64, row: &Row) -> OrdKey {
+    order_key(order, id, today, row.due_day, row.ivl, row.difficulty)
+}
+
+/// [ord_key] 的列版（store/study.rs [ReviewOrder] 的表；测试基准按 SQL 读出的列算同一个键）。
+pub(crate) fn order_key(
+    order: ReviewOrder,
+    id: &str,
+    today: i64,
+    due_day: Option<i64>,
+    ivl: i32,
+    difficulty: Option<f32>,
+) -> OrdKey {
+    let h = day_hash(id, today);
+    match order {
+        ReviewOrder::DueDate => (due_day.unwrap_or(0), 0, h),
+        // 最难的先出，没有难度的排最后。
+        ReviewOrder::Difficulty => match difficulty {
+            Some(d) => (0, total_order_bits(-d), h),
+            None => (1, 0, h),
+        },
+        ReviewOrder::IntervalAscending => (i64::from(ivl), 0, h),
+        ReviewOrder::Random | ReviewOrder::Retrievability => (0, 0, h),
     }
 }
 

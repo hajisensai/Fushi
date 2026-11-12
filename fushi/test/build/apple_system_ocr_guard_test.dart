@@ -146,7 +146,8 @@ void main() {
       // `VNRecognizeTextRequest` 不读竖排（实测字召回 7.4%）；新请求只在 Xcode 26
       // 的 SDK 里有，裸用会让旧 Xcode 编不过、在 iOS 15~25 上直接崩。
       expect(swift, contains('#if compiler(>=6.2)'));
-      expect(swift, contains('if #available(iOS 26.0, macOS 26.0, *)'));
+      // 运行期门控可以和别的条件并列（如截屏识字跳过新请求的 `if !screenText, #available`）。
+      expect(swift, contains('#available(iOS 26.0, macOS 26.0, *)'));
       expect(swift, contains('@available(iOS 26.0, macOS 26.0, *)'));
       expect(swift, contains('RecognizeDocumentsRequest()'));
       expect(

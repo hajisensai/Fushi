@@ -717,12 +717,17 @@ class _LibraryManageHandlers {
       SourceLibraryKind.music => throw CtlFailure.badRequest(
         '命令行暂不支持音乐来源，请在 app 的音乐库里添加',
       ),
+      // 同上：ctl 没有游戏库命令，游戏来源只在 app 的游戏「导入」页添加。
+      SourceLibraryKind.game => throw CtlFailure.badRequest(
+        '命令行暂不支持游戏来源，请在 app 的游戏库「导入」页添加',
+      ),
     };
     if (!_app.moduleVisibility.isEnabled(ctlKind.module)) {
       throw CtlFailure.rejected('「${ctlKind.wireName}」所属模块已在设置里关闭');
     }
     final AddLocalFolderResult result = await addLocalFolderAsSource(
       db: _db,
+      transcribeAudiobook: _app.folderImportTranscribePort,
       mediaKind: kind.dbValue,
       path: path,
     );

@@ -19,8 +19,9 @@ import 'package:fushi_anki/fushi_anki_core.dart'
         FushiCardItem,
         templateIdsToNames;
 import 'package:fushi_engine/srs/srs_builtin.dart';
+import 'package:fushi_engine/srs/srs_db_store.dart' show SrsRenderedCard;
 import 'package:fushi_engine/srs/srs_fushi_card_native_media.dart'
-    show SrsFushiCardNative, srsFushiCardNative;
+    show SrsFushiCardNative, SrsFushiCardNativeProbe, srsFushiCardNative;
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -30,9 +31,8 @@ import 'package:fushi/src/pages/implementations/srs/srs_field_editors.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_fushi_card_view.dart'
     show SrsFushiCardView;
 import 'package:fushi/src/pages/implementations/srs/srs_html_card_view.dart'
-    show SrsHtmlCardView, srsNativeHtmlCardFor;
-import 'package:fushi/src/srs/srs_fushi_card_items.dart'
-    show srsFushiCardItemsNative;
+    show SrsHtmlCardView;
+import 'package:fushi/src/srs/srs_card_face_route.dart';
 import 'package:fushi/src/srs/srs_html_card.dart' show SrsHtmlCard;
 import 'package:fushi/src/pages/implementations/srs/srs_template_editor_page.dart'
     show SrsTemplatePreview, srsRenderTemplatePreview;
@@ -105,13 +105,14 @@ typedef SrsPreviewNativeFushiCard = ({
 
 /// 这张预览卡能否与复习页一样走原生混合渲染（内置 Fushi 卡片、样式没改、正背面认得出区块
 /// 布局、媒体与自定义区块原生画得全）；能则返回 [SrsPreviewNativeFushiCard]，否则 null（整面
-/// WebView）。判据与复习页同一处（[srsFushiCardNative] + [srsFushiCardItemsNative]），编辑页
-/// 看到的就是复习页那张卡。
+/// WebView）。判据与复习页同一处（[srsFushiCardNative] + [srsCardFaceRoute]），编辑页
+/// 看到的就是复习页那张卡。[languageCode] 是内容语言（与复习页同一个）。
 SrsPreviewNativeFushiCard? srsNotePreviewNativeFushiCard({
   required SrsNoteTypeView type,
   required SrsTemplateDef template,
   required Map<String, String> valuesById,
   List<String> tags = const <String>[],
+  String? languageCode,
 }) {
   if (type.isCloze) return null;
   final Map<String, String> idToName = <String, String>{
@@ -123,9 +124,9 @@ SrsPreviewNativeFushiCard? srsNotePreviewNativeFushiCard({
   final int ord = type.templates.indexWhere(
     (SrsTemplateDef x) => x.id == template.id,
   );
-  final SrsFushiCardNative? native;
+  final SrsFushiCardNativeProbe probe;
   try {
-    native = srsFushiCardNative(
+    probe = srsFushiCardNative(
       builtinKey: type.builtinKey,
       front: templateIdsToNames(template.front, idToName),
       back: templateIdsToNames(template.back, idToName),
@@ -141,14 +142,23 @@ SrsPreviewNativeFushiCard? srsNotePreviewNativeFushiCard({
   } on AnkiTemplateError {
     return null;
   }
-  if (native == null ||
-      !srsFushiCardItemsNative(
-        front: native.front,
-        back: native.back,
-        fields: fieldsByName,
-      )) {
-    return null;
-  }
+  final SrsFushiCardNative? native = probe.native;
+  if (native == null) return null;
+  final SrsCardFaceRoute route = srsCardFaceRoute(
+    SrsRenderedCard(
+      question: '',
+      answer: '',
+      css: native.css,
+      isEmpty: false,
+      fields: fieldsByName,
+      fushiCardDefinitions: native.definitions,
+      fushiCardFront: native.front,
+      fushiCardBack: native.back,
+    ),
+    fushiCard: true,
+    languageCode: languageCode,
+  );
+  if (route is! SrsCardFaceFushiNative) return null;
   return (
     fieldsByName: fieldsByName,
     definitionsHtml: native.definitions,
@@ -166,7 +176,7 @@ SrsPreviewNativeFushiCard? srsNotePreviewNativeFushiCard({
 ///
 /// [native] 非 null 时走与复习页同一个原生混合渲染（内置 Fushi 卡片、只调了区块布局），不建
 /// 整面 WebView；否则给了 [sides]（这张卡渲染出的正反两面）且两面都在原生认得的子集里时，
-/// 与复习页同一判据（[srsNativeHtmlCardFor]）走原生 HTML 卡面。[face] 为 null（还没有任何
+/// 与复习页同一判据（[srsCardFaceRoute]）走原生 HTML 卡面。[face] 为 null（还没有任何
 /// 能渲染的内容）时只画 [overlay]。
 class SrsStablePreviewFace extends ConsumerWidget {
   const SrsStablePreviewFace({
@@ -187,15 +197,22 @@ class SrsStablePreviewFace extends ConsumerWidget {
     final SrsCardFace? face = this.face;
     final SrsPreviewNativeFushiCard? native = this.native;
     final ({String question, String answer})? sides = this.sides;
-    final SrsHtmlCard? html = face == null || native != null || sides == null
+    final SrsCardFaceRoute? route =
+        face == null || native != null || sides == null
         ? null
-        : srsNativeHtmlCardFor(
+        : srsCardFaceRoute(
+            SrsRenderedCard(
+              question: sides.question,
+              answer: sides.answer,
+              css: face.css,
+              isEmpty: false,
+            ),
             fushiCard: face.fushiCard,
-            question: sides.question,
-            answer: sides.answer,
-            css: face.css,
             languageCode: face.languageCode,
           );
+    final SrsHtmlCard? html = route is SrsCardFaceHtmlNative
+        ? route.card
+        : null;
     final Widget base = face == null
         ? const SizedBox.expand()
         : native != null
@@ -370,6 +387,7 @@ class _SrsNotePreviewState extends ConsumerState<SrsNotePreview> {
               template: tpl,
               valuesById: values,
               tags: widget.tags,
+              languageCode: ref.read(appProvider).defaultContentLanguage,
             )
           : null;
       final AnkiRenderedCard? card = _preview.card;

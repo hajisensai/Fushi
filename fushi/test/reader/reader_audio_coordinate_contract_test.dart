@@ -68,9 +68,24 @@ void main() {
           source,
           isNot(contains('_findCueForOffset(data.normalizedOffset!')),
         );
-        expect(source, contains('_findCueForOffset(data.matchableOffset!'));
+        // 查词 / 选区操作条的 cue 回退共用 chrome.part 的 [_cueForSelectionData]，
+        // 两处都经它取 cue；偏移域在它的函数体里钉（见下）。
+        expect(source, contains('_cueForSelectionData(data)'));
         expect(source, contains('_cacheMatchableSelection(data)'));
       }
+      final String chrome = File(
+        '${directory}chrome.part.dart',
+      ).readAsStringSync();
+      final int helperAt = chrome.indexOf(
+        'AudioCue? _cueForSelectionData(ReaderSelectionData data) {',
+      );
+      expect(helperAt, isNonNegative);
+      final String helper = chrome.substring(
+        helperAt,
+        chrome.indexOf('\n  }\n', helperAt),
+      );
+      expect(helper, contains('_findCueForOffset(data.matchableOffset!'));
+      expect(helper, isNot(contains('normalizedOffset')));
       final String audio = File(
         '${directory}audiobook.part.dart',
       ).readAsStringSync();

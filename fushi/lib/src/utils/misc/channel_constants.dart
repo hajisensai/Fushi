@@ -7,6 +7,12 @@ abstract final class FushiChannels {
   static const String _prefix = 'app.fushi.reader';
 
   static const MethodChannel splash = MethodChannel('$_prefix/splash');
+
+  /// 冷启动原生段计时（进程创建到 Dart `main()` 之前），`get` 取一次。Windows runner
+  /// `startup_trace.cpp`、Android `StartupTrace.java`、iOS `FushiStartupTrace`。
+  static const MethodChannel startupTrace = MethodChannel(
+    '$_prefix/startup_trace',
+  );
   static const MethodChannel anki = MethodChannel('$_prefix/anki');
   static const MethodChannel popup = MethodChannel('$_prefix/popup');
   static const MethodChannel tts = MethodChannel('$_prefix/tts');
@@ -55,6 +61,13 @@ abstract final class FushiChannels {
   /// native side (`widgets/WidgetChannel.kt`). Dart facade
   /// `lib/src/platform/widget_snapshot.dart`.
   static const MethodChannel widgets = MethodChannel('$_prefix/widgets');
+
+  /// 反馈回复后台检查（反馈 yjn-3h8B-7）：主引擎上排 / 撤 Android 纯原生的
+  /// `FeedbackReplyWorker`（`feedback/FeedbackReplyWorkChannel.kt`）。Dart 门面
+  /// `lib/src/feedback/feedback_reply_background.dart`。
+  static const MethodChannel feedbackReplyWork = MethodChannel(
+    '$_prefix/feedback_reply_work',
+  );
   static const MethodChannel clipboardImage = MethodChannel(
     '$_prefix/clipboard_image',
   );
@@ -70,6 +83,13 @@ abstract final class FushiChannels {
   /// `lib/src/diagnostics/previous_exit_log.dart`。
   static const MethodChannel processExit = MethodChannel(
     '$_prefix/process_exit',
+  );
+
+  /// 系统默认网络变了（EventChannel，Android / iOS）：互联 P2P 隧道据此通知 iroh
+  /// 重新探测路径。原生侧 `NetworkChangeChannel.java` / `FushiNetworkChange.swift`，
+  /// Dart 侧 `interconnect_p2p_app.dart`。
+  static const EventChannel networkChange = EventChannel(
+    '$_prefix/network_change',
   );
   static const MethodChannel screenBrightness = MethodChannel(
     '$_prefix/screen_brightness',

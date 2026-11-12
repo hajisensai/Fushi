@@ -268,7 +268,6 @@ class _VideoPagePlaybackRemote
         in _state._remoteSubtitleFileRows) {
       final SubtitleSource? local = entry.local;
       final String path = entry.path;
-      final String? label = local == null ? null : entry.label;
       rows.add(
         _RemoteSubtitleRow(
           track: VideoRemoteSubtitleTrack(
@@ -277,26 +276,16 @@ class _VideoPagePlaybackRemote
             kind: local == null
                 ? VideoRemoteSubtitleKind.host
                 : VideoRemoteSubtitleKind.external,
-            primary: local == null
-                ? primary == path
-                : subtitleSourceMatchesPersistedForMenu(local, primary),
-            secondary: local == null
-                ? secondary == path
-                : subtitleSourceMatchesPersistedForMenu(local, secondary),
+            primary: entry.isSelectedBy(primary),
+            secondary: entry.isSelectedBy(secondary),
             ocrAvailable: false,
           ),
-          applyPrimary: (VideoSubtitlePickOrigin origin) =>
-              _state._applyRemoteSubtitle(
-                controller,
-                path,
-                label: label,
-                origin: origin,
-              ),
-          applySecondary: () => _state._applyRemoteSecondarySubtitle(
-            controller,
-            path,
-            label: label,
-          ),
+          // host 外挂字幕行（反馈 -CaVsioFhG）的 path 是选择编码，选中时才下载：
+          // 与主 / 副字幕菜单同一条分派。
+          applyPrimary: (VideoSubtitlePickOrigin origin) => _state
+              ._applyRemoteSubtitleFileEntry(controller, entry, origin: origin),
+          applySecondary: () =>
+              _state._applyRemoteSecondarySubtitleFileEntry(controller, entry),
         ),
       );
     }
@@ -924,12 +913,16 @@ class _VideoPagePlaybackRemote
       delayMs: controller.miningDelayMs,
     );
     _state._lastLookupCue = cue;
-    _state._lastLookupSentence = cue?.text.trim() ?? '';
+    // 反馈 rLCxUJ-2i4：同时显示的多行（ASS 一句拆多条 Dialogue）合成一句制卡。
+    final String cueSentence = cue == null
+        ? ''
+        : simultaneousCueText(controller.cueStreamOwning(cue), cue);
+    _state._lastLookupSentence = cueSentence;
     _state._miningDraft.clear();
     final Map<String, String> payload = <String, String>{
       ...fields,
       if ((fields['sentence'] ?? '').isEmpty && cue != null)
-        'sentence': cue.text.trim(),
+        'sentence': cueSentence,
     };
     final String sentence = _state._lastLookupSentence;
     final List<_VideoOsdMessage> osd = <_VideoOsdMessage>[];

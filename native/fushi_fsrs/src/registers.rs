@@ -918,6 +918,9 @@ fn deck_view(ent: &Entity<'_, '_>, payload: &Value) -> Result<Value, String> {
         "po": position,
         "ap": *ent.value("autoplay") != Value::Bool(false),
         "no": as_str(ent.value("newOrder"), "newOrder")?,
+        // 复习顺序 / 新卡与复习怎么排（store/study.rs `ReviewOrder` / `NewMix`；`nm` 已被名字占用）。
+        "ro": as_str(ent.value("reviewOrder"), "reviewOrder")?,
+        "mx": as_str(ent.value("newMix"), "newMix")?,
         "rq": *ent.value("replayQuestion") != Value::Bool(false),
         "rw": rwkv_queue,
         "npl": ent.value("newPlan"),
@@ -1264,6 +1267,16 @@ pub(crate) fn card_id(note_id: &str, template_id: &str, cloze_ord: i64) -> Resul
         &uuid_bytes(note_id),
         &format!("{template_id}/{cloze_ord}"),
     ))
+}
+
+/// 一个寄存器的裁决（[resolve]，与读路径同一个函数）：[edits] 是同一个字段键上的全部写入；返回没被支配的那些
+/// （下标，按排序键从大到小，第一条是胜者）与是否冲突。协议 4 的派生索引（store/gen4/derive.rs）从操作体拼出
+/// 这里要的行再来判，判据只有这一份。
+pub(crate) fn judge_register(edits: &[StoredEdit<'_>]) -> Result<(Vec<usize>, bool), String> {
+    let parsed = parse_stored(edits)?;
+    let idx: Vec<usize> = (0..parsed.len()).collect();
+    let r = resolve("", &parsed, &idx);
+    Ok((r.live, r.conflicted))
 }
 
 /// 某实体某字段键的生效值（多值寄存器按读路径的规则取胜者；没有记录 = null）。

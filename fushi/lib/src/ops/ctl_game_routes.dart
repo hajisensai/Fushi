@@ -16,6 +16,7 @@ import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:fushi/src/lookup/gal_lookup_surface_profile.dart';
 import 'package:fushi/src/mining/gal_hook_mining_coordinator.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
+import 'package:fushi/src/mining/gal_mining_settings.dart';
 import 'package:fushi/src/mining/galgame_audio_source.dart';
 import 'package:fushi/src/mining/galgame_helper_installer.dart';
 import 'package:fushi/src/mining/galgame_japanese_locale.dart';
@@ -777,6 +778,10 @@ class _AppGameCtlHost implements GameCtlHost {
     int? updateNoteId,
   }) {
     final AppModel model = _app;
+    // 全局 + 当前游戏覆盖（反馈 3dRZdakRdJ），与浮窗 / texthooker 页同一个解析入口。
+    final GalMiningSettings mining = model.galMiningSettingsForGame(
+      GalHookSessionController.instance.activityGameKey,
+    );
     return GalHookMiningCoordinator.instance.mineLine(
       lineId: lineId,
       fields: fields,
@@ -784,15 +789,16 @@ class _AppGameCtlHost implements GameCtlHost {
       compression: MiningMediaCompression.resolve(
         imageTier: model.miningImageQuality,
         audioTier: model.miningAudioQuality,
-        format: model.galMiningAnimatedFormat,
+        format: mining.animatedFormat,
       ),
       repo: model.miningAnkiRepository,
       updateNoteId: updateNoteId,
       addTitleTag: model.autoAddBookNameToTags,
-      imageMode: model.galMiningImageMode,
-      animatedFormat: model.galMiningAnimatedFormat,
-      stillFormat: model.galMiningStillFormat,
-      clipFormat: model.galMiningClipFormat,
+      imageMode: mining.imageMode,
+      animatedFormat: mining.animatedFormat,
+      stillFormat: mining.stillFormat,
+      clipFormat: mining.clipFormat,
+      audioLimit: mining.audioLimit,
     );
   }
 }
@@ -2495,6 +2501,7 @@ Map<String, Object?> galHookCtlThreadJson(
   if (t.nativeThreadId != null) 'nativeThreadId': t.nativeThreadId,
   'engineExact': isEngineExactTextThread(t),
   'hookCodeLaneUnique': t.hookCodeLaneUnique,
+  'dialogueSurface': t.dialogueSurface,
   'observedLines': t.observedLineCount,
   'observedArtifacts': t.observedArtifactCount,
   'publishedLines': t.lineCount,

@@ -14,7 +14,10 @@ pub mod config;
 pub(crate) mod dedup;
 pub(crate) mod devices;
 pub mod digest;
+pub(crate) mod former;
+pub(crate) mod heal;
 pub mod media;
+pub(crate) mod min_reader;
 pub(crate) mod mvr;
 pub mod relay;
 pub(crate) mod sched_local;
@@ -24,6 +27,7 @@ pub(crate) mod semantics;
 pub(crate) mod snapshots;
 pub mod timeline;
 pub mod transport;
+pub(crate) mod trust;
 
 use std::collections::BTreeSet;
 use std::sync::Arc;
@@ -1102,6 +1106,10 @@ pub(crate) fn project_body(
             semantics::evaluate_holds(conn, profile, "note", &n, now, t)?;
         }
         Body::Purge { kind, entity } => {
+            // 不可信设备的彻底清除先扣住（trust.rs）：本机确认这台设备之前不改写日志、不删投影。
+            if trust::hold_purge(conn, profile, op, kind, &entity.text())? {
+                return Ok(());
+            }
             let own = self_device(conn, profile)?;
             semantics::purge_entity(conn, profile, kind, &entity.text(), op, &own, t)?;
         }
@@ -1334,6 +1342,10 @@ pub(crate) fn project_edit_noted(
     project: bool,
     t: &mut Touched,
 ) -> Result<(), String> {
+    // 不可信设备的删除先扣住（trust.rs）：不投影、不进实体 → 操作索引，本机确认这台设备后由 trust::release 放行。
+    if project && trust::hold_edit(conn, profile, op, e)? {
+        return Ok(());
+    }
     let ent = e.entity.text();
     index_edit(conn, profile, op, e, &ent)?;
     // 标签是 OR-Set：整列表的 `tags` 写入（迁移进来的旧记录）按「添加其中每个标签」并入。迁移时也要做：
@@ -1559,7 +1571,7 @@ fn log_holds(
     semantics::evaluate_holds(conn, profile, kind, entity, now, t)
 }
 
-fn intent_code(i: &Intent) -> (i64, Option<i64>) {
+pub(crate) fn intent_code(i: &Intent) -> (i64, Option<i64>) {
     match i {
         Intent::Absolute => (0, None),
         Intent::Answer => (1, None),
@@ -1570,7 +1582,7 @@ fn intent_code(i: &Intent) -> (i64, Option<i64>) {
     }
 }
 
-fn intent_of(code: i64, arg: Option<i64>) -> Intent {
+pub(crate) fn intent_of(code: i64, arg: Option<i64>) -> Intent {
     match code {
         1 => Intent::Answer,
         2 => Intent::SetDue {
@@ -1676,19 +1688,24 @@ pub(crate) fn replay_cards(
     conn: &Connection,
     cards: &BTreeSet<String>,
 ) -> Result<BTreeSet<String>, String> {
+    let p_tails = crate::store::prof::span("replay.tails");
     let mut groups: BTreeSet<String> = BTreeSet::new();
     for c in cards {
         groups.extend(tails(conn, c)?);
     }
+    drop(p_tails);
     let mut changed = BTreeSet::new();
     if groups.is_empty() {
         return Ok(changed);
     }
     for tail in &groups {
+        let p_group = crate::store::prof::span("replay.group");
         let Group { rows, .. } = group_of(conn, tail, None)?;
+        drop(p_group);
         if rows.is_empty() {
             continue;
         }
+        let _p_compute = crate::store::prof::span("replay.compute_write");
         let input: Vec<Row<'_>> = rows
             .iter()
             .map(|(_, j, s, i, _)| Row {
@@ -2112,6 +2129,12 @@ pub(crate) fn append_local_cached(
     };
     let chain = chain_next(&local.chain, &op);
     insert_op_cached(conn, &local.profile, &op, &chain, now, deps_row)?;
+    // head 的 `minReader` 按本机写过的内容声明（sync2/min_reader.rs）；载荷就是 [body] 的规范编码，不用再解一遍。
+    min_reader::raise(
+        conn,
+        &local.profile,
+        crate::sync2::min_reader::min_reader_of_body(body),
+    )?;
     local.chain = chain;
     local.next_seq += 1;
     applied.set(local.device, seq);
@@ -2573,7 +2596,11 @@ mod tests_digest;
 #[cfg(test)]
 mod tests_footprint;
 #[cfg(test)]
+mod tests_former;
+#[cfg(test)]
 mod tests_head_gap;
+#[cfg(test)]
+mod tests_heal;
 #[cfg(test)]
 mod tests_migrate_dedup;
 #[cfg(test)]
@@ -2581,9 +2608,13 @@ mod tests_perf;
 #[cfg(test)]
 mod tests_replay_pending;
 #[cfg(test)]
+mod tests_retention;
+#[cfg(test)]
 mod tests_sched_local;
 #[cfg(test)]
 mod tests_synthetic_ctx;
+#[cfg(test)]
+mod tests_trust;
 
 impl SrsCore {
     /// 评分预览（原 Dart `SrsCardOps.preview` 的 v2 实现）：在这张卡的归属组重放到此刻的状态上，用当前牌组配置与

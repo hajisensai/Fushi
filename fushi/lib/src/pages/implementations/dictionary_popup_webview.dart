@@ -458,6 +458,7 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
     this.onHostInputToken,
     this.nudgeSurfaceOnRender = false,
     this.restoreScrollTop,
+    this.lookupSession = 0,
     this.lookupPending = false,
     this.resourceSource,
   });
@@ -484,6 +485,12 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
   /// 应用（尾批渲染完兜底应用一次）——Dart 侧渲染后直接 scrollTo 不可靠：内容分批
   /// 进 DOM，首发 popupRendered 时文档往往还不够高，滚不到目标位。
   final double? restoreScrollTop;
+
+  /// 本层查词会话编号（[DictionaryPopupEntry.lookupSession]）。换了会话就必须全量重推
+  /// （归零滚动、重置句子上下文 / 词典选择），即使 [result] 还是同一个对象——本地缓存
+  /// 命中时同一个词再查会拿回同一个结果实例，只比身份会把新会话当成「没变」，弹窗带着
+  /// 上一次的滚动位翻出。不按 entry 驱动的宿主留默认 0（只按结果身份判）。
+  final int lookupSession;
 
   /// TODO-869：本层弹窗是否有子（后代）弹窗。注入 `window.__hasChildPopup`，让
   /// popup.js 在点卡片本体留白时据此决定是否发 `tapOutside`（有子层才关后代，叶子层
@@ -767,6 +774,8 @@ class DictionaryPopupWebViewState extends ConsumerState<DictionaryPopupWebView>
     _lastRenderedResult = null;
     _lastPushedPending = false;
     _lastRenderedPending = false;
+    _lastPushedSession = null;
+    _lastRenderedSession = null;
     _lastSentStaticRevision = null;
     _lastSentRemoteStyles = null;
     _lastSentInAppExtrasKey = null;
@@ -1031,6 +1040,11 @@ class DictionaryPopupWebViewState extends ConsumerState<DictionaryPopupWebView>
   bool _lastPushedPending = false;
   bool _lastRenderedPending = false;
 
+  /// 与上两组配对的查词会话号（[DictionaryPopupWebView.lookupSession]）。null = 本文档
+  /// 还没推过 / 没渲染完过。同结果同 pending 但会话换了，也必须重推（见 didUpdateWidget）。
+  int? _lastPushedSession;
+  int? _lastRenderedSession;
+
   /// 当前这次推送是不是「还没有内容」的占位渲染（搜索期占位单例：空闲空占位或加载
   /// 指示器）。这种 DOM 的高度不是内容高度，不能拿去自适应外壳——否则复用热槽查词
   /// 时外壳先缩到加载盒子的高度、结果一到再撑开（跳一下）。
@@ -1169,8 +1183,7 @@ class DictionaryPopupWebViewState extends ConsumerState<DictionaryPopupWebView>
     return configuredDictionaryFontPaths(ref.read(appProvider));
   }
 
-  /// BUG-717 ③：最近一次已注入的 in-app 固定块（`__fushiResetPopupScroll` 钩子 +
-  /// 句子上下文 i18n 文案 + `advancedMiningEnabled`）的键。该块只随静态段
+  /// BUG-717 ③：最近一次已注入的 in-app 固定块（句子上下文 i18n 文案 + `advancedMiningEnabled`）的键。该块只随静态段
   /// 版本（含语言切换——locale 在 builder 的 memo 键里）与「高级制卡」回调的有无变化，
   /// 此前每次查词都重发约 1-2KB。页面重载时同样置 null。
   ({int revision, bool advancedMining})? _lastSentInAppExtrasKey;
@@ -1736,10 +1749,12 @@ JSON.stringify((function(){
 
   /// 「选择音频源」的候选 `[{name, variant, url}]`：弹窗 ♪ 菜单（`listWordAudioSources`
   /// 桥）与「高级制卡」的单词音频分区共用这一处，两边列出来的永远是同一份。
+  /// [matched] 是查词命中原文，只影响 TTS 兜底念的字（`wordAudioTtsText`）。
   Future<List<Map<String, String>>> listWordAudioChoices(
     String expression,
-    String reading,
-  ) async {
+    String reading, {
+    String matched = '',
+  }) async {
     if (widget.resourceSource != null) {
       // 别的设备的结果：「选择音频源」只剩那台设备给的默认一条。
       final String? url = await _resolveWordAudio(expression, reading);
@@ -1752,6 +1767,7 @@ JSON.stringify((function(){
       ref.read(appProvider),
       expression,
       reading,
+      matched: matched,
     );
   }
 
@@ -1995,13 +2011,18 @@ JSON.stringify((function(){
   String _dictionaryMediaForLocalMining(Map<String, String> fields) =>
       widget.resourceSource == null ? (fields['dictionaryMedia'] ?? '') : '';
 
-  Future<String?> _resolveWordAudio(String expression, String reading) async {
+  Future<String?> _resolveWordAudio(
+    String expression,
+    String reading, {
+    String matched = '',
+  }) async {
     final DictionaryPopupResourceSource? resources = widget.resourceSource;
     if (resources == null) {
       return resolveWordAudioWebViewUrl(
         ref.read(appProvider),
         expression,
         reading,
+        matched: matched,
       );
     }
     // 结果来自别的设备：♪ 也问那台设备（本机音频源未必有、也不是同一份配置）。
@@ -2091,6 +2112,13 @@ JSON.stringify((function(){
   void didUpdateWidget(DictionaryPopupWebView oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.result != widget.result) {
+      _pushResults();
+    } else if (widget.lookupSession != _lastPushedSession &&
+        !identical(widget.result, kPopupSearchingPlaceholderResult)) {
+      // 同一个结果对象、新的查词会话（本地缓存命中时同词再查拿回同一实例，宿主在同一帧
+      // 里走完 复位→beginTop→fillResult，WebView 只看到 A→A）：必须当新会话全量重推，
+      // 否则不归零滚动、旧 DOM 原样翻出。占位单例不在此推——搜索期不推送（mixin 约定），
+      // 真结果到达时按结果身份变化推。
       _pushResults();
     } else if (oldWidget.lookupPending != widget.lookupPending) {
       // 结果对象没变、查询状态变了：复用热槽查词（占位单例 → 占位单例）激活时翻 true，
@@ -2201,11 +2229,15 @@ JSON.stringify((function(){
       return;
     }
     _refreshWhenReady = false;
+    // load-more 只可能发生在同一会话里；换会话（哪怕同词同结果）一律全量渲染、归零滚动。
+    final bool sameSession = _lastPushedSession == widget.lookupSession;
     _lastPushedResult = widget.result;
     _lastPushedPending = widget.lookupPending;
+    _lastPushedSession = widget.lookupSession;
 
     final int renderToken = ++_renderToken;
     final bool isLoadMore =
+        sameSession &&
         _lastSearchTerm == widget.result.searchTerm &&
         widget.result.entries.length > _lastEntryCount;
     _lastSearchTerm = widget.result.searchTerm;
@@ -2220,7 +2252,7 @@ JSON.stringify((function(){
     // zoom + every window.* flag, incl. autoExpandRows) is produced by the
     // single source of truth in popup_settings_injection.dart — the SAME builder
     // the app-outside global-lookup window uses (options.globalLookup:false here).
-    // The in-app-only wiring (instant-scroll pref, __fushiResetPopupScroll hook,
+    // The in-app-only wiring (instant-scroll pref, __fushiResetPopupScroll call,
     // sentence-context i18n labels, load-more vs scroll-reset beforeRenderJs,
     // scroll-check) layers around it below. _lastThemeVarsJs still tracks the
     // in-app theme-vars string for the live theme-switch dedup in
@@ -2259,7 +2291,7 @@ JSON.stringify((function(){
     final String remoteStylesJs = remoteStylesChanged
         ? 'window.dictionaryStyles = ${jsonEncode(remoteStyles)};'
         : '';
-    // BUG-717 ③：in-app 固定块（__fushiResetPopupScroll 钩子 + 句子上下文 i18n +
+    // BUG-717 ③：in-app 固定块（句子上下文 i18n +
     // advancedMiningEnabled）并入静态段的失效节奏：随静态段版本重发
     // （语言切换 → builder memo 键含 locale → 新 revision → 必然重发），另跟踪
     // 「高级制卡」回调有无（热槽 WebView 换宿主 / 制卡模块开关翻转时，旧的
@@ -2372,12 +2404,9 @@ JSON.stringify((function(){
   /// WebView 的 window.* 跨渲染持久。语言切换经静态段 revision 失效（builder memo
   /// 键含 locale），文案随之重发。
   String _inAppStaticExtrasJs({required bool advancedMiningEnabled}) {
+    // `window.__fushiResetPopupScroll`（全量推送前的滚动归零）定义在 popup.js，与 app 外
+    // 查词窗 / galgame 内嵌查词的常驻根 iframe 共用一份，不在这里另写。
     return '''
-      window.__fushiResetPopupScroll = function() {
-        window.scrollTo(0, 0);
-        document.documentElement.scrollTop = 0;
-        document.body.scrollTop = 0;
-      };
       // TODO-382/393：注入「上 N 句 / 下 N 句」选择器的方向标签与「清空」tooltip
       // （popup.js 无自带 i18n 机制，按钮文字硬编码；文案走宿主 i18n 注入）。仅 in-app
       // 路径需要（app 外 sentenceDraftEnabled 恒 false，不渲染选择器）。
@@ -2414,11 +2443,13 @@ JSON.stringify((function(){
   /// 空等到 failsafe 超时。
   bool refreshCurrentResult() {
     if (identical(_lastRenderedResult, widget.result) &&
-        _lastRenderedPending == widget.lookupPending) {
+        _lastRenderedPending == widget.lookupPending &&
+        _lastRenderedSession == widget.lookupSession) {
       return false;
     }
     if (identical(_lastPushedResult, widget.result) &&
-        _lastPushedPending == widget.lookupPending) {
+        _lastPushedPending == widget.lookupPending &&
+        _lastPushedSession == widget.lookupSession) {
       // 已发出注入、渲染在途：popupRendered 会带当前 token 到达，别重推。
       return true;
     }
@@ -3256,6 +3287,7 @@ JSON.stringify((function(){
                 // （识别渲染信号早于宿主盖板架起的竞态）。
                 _lastRenderedResult = _lastPushedResult;
                 _lastRenderedPending = _lastPushedPending;
+                _lastRenderedSession = _lastPushedSession;
                 widget.onRendered?.call();
                 // TODO-1152：全高填充宿主（in-app 查词结果区）渲染完成后补一次表面
                 // 重绘 nudge，逼 Windows WebView2/WGC 捕获完整视口，消除下半屏黑。
@@ -3870,8 +3902,10 @@ JSON.stringify((function(){
                 final data = args[0] as Map;
                 final expression = data['expression']?.toString() ?? '';
                 final reading = data['reading']?.toString() ?? '';
+                // 查词命中原文（反馈 WJFhjUGaTn）：词头带替换写法时 TTS 兜底念它。
+                final matched = data['matched']?.toString() ?? '';
                 if (expression.isEmpty) return null;
-                return _resolveWordAudio(expression, reading);
+                return _resolveWordAudio(expression, reading, matched: matched);
               },
             );
           },
@@ -3889,8 +3923,10 @@ JSON.stringify((function(){
                 final data = args[0] as Map;
                 final expression = data['expression']?.toString() ?? '';
                 final reading = data['reading']?.toString() ?? '';
+                // 查词命中原文（反馈 WJFhjUGaTn）：词头带替换写法时 TTS 兜底念它。
+                final matched = data['matched']?.toString() ?? '';
                 if (expression.isEmpty) return null;
-                return _resolveWordAudio(expression, reading);
+                return _resolveWordAudio(expression, reading, matched: matched);
               },
             );
           },
@@ -3912,8 +3948,13 @@ JSON.stringify((function(){
                 final data = args[0] as Map;
                 final expression = data['expression']?.toString() ?? '';
                 final reading = data['reading']?.toString() ?? '';
+                final matched = data['matched']?.toString() ?? '';
                 if (expression.isEmpty) return const <Map<String, String>>[];
-                return listWordAudioChoices(expression, reading);
+                return listWordAudioChoices(
+                  expression,
+                  reading,
+                  matched: matched,
+                );
               },
             );
           },

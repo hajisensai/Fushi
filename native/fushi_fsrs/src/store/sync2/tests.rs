@@ -21,6 +21,9 @@ thread_local! {
     /// 测试开关：为真时同步助手里的「删位置上的文件」一律失败（模拟 `location.delete` 抛错 / head 上传失败后
     /// 没走到删除）——不删也不发 `obsolete_ack`，与生产 Dart 只确认删成功的那些同一语义。
     pub(crate) static FAIL_DELETES: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// 测试开关（默认开）：同步助手在 plan 之后把待确认的设备全部信任（模拟用户每次都点了「信任」）。同步语义的测试
+    /// 照旧按全部互信写；设备信任本身的测试（tests_trust.rs）关掉它。
+    pub(crate) static AUTO_TRUST: std::cell::Cell<bool> = const { std::cell::Cell::new(true) };
 }
 
 /// 按生产（srs_sync2_round.dart）的两段式删除：删成功的才 `obsolete_ack`。[FAIL_DELETES] 打开时一个都不删。
@@ -32,6 +35,74 @@ fn delete_and_ack(core: &SrsCore, bucket: &mut Bucket, location: &str, paths: &[
         bucket.0.remove(p);
     }
     core.sync2_obsolete_ack(P, location, paths).unwrap();
+}
+
+/// [bucket] 上 `devices/<device>/` 里的文件名（生产里 Dart 列目录得到的那一份）。
+pub(crate) fn listed(bucket: &Bucket, device: &str) -> Vec<String> {
+    let dir = format!("devices/{device}/");
+    bucket
+        .0
+        .keys()
+        .filter_map(|k| k.strip_prefix(&dir))
+        .map(str::to_owned)
+        .collect()
+}
+
+/// 一轮收尾，按生产（srs_sync2_round.dart `srsSweepObsolete`）：head 传上去之后列本机目录 → 内核给该删的清单
+/// （transport.rs `sync2_obsolete`：旧 head + 旧小段 + 旧转发件）→ 两段式删；清单全部删成、内核说还有只差这份清单
+/// 确认的旧小段（`again`）就再问一次。内核点名的旧身份目录（`former`）接着照 [sweep_former] 清。返回内核两次给的
+/// 本机目录的清单（不含旧身份目录里删的）。
+pub(crate) fn sweep(core: &SrsCore, bucket: &mut Bucket, location: &str, now: i64) -> Vec<String> {
+    let device = core.sync2_identity(P, now).unwrap()["device"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let mut given = Vec::new();
+    let mut former = Vec::new();
+    for ask in 0..2 {
+        let out = core
+            .sync2_obsolete(P, location, &listed(bucket, &device), false, now)
+            .unwrap();
+        if ask == 0 {
+            former = out.former;
+        }
+        delete_and_ack(core, bucket, location, &out.delete);
+        given.extend(out.delete);
+        if !out.again || FAIL_DELETES.with(|f| f.get()) {
+            break;
+        }
+    }
+    for old in former {
+        sweep_former(core, bucket, location, &old, now);
+    }
+    given
+}
+
+/// 换过身份的设备清一个旧身份目录，按生产（srs_sync2_round.dart `srsSweepFormerIdentities`）：**此刻**列
+/// `devices/<旧身份>/`、读其中每一份 head、交给内核（former.rs `sync2_obsolete_former`），内核给的清单照删（没有待删
+/// 记录，不回执）。返回内核给的清单。
+pub(crate) fn sweep_former(
+    core: &SrsCore,
+    bucket: &mut Bucket,
+    location: &str,
+    device: &str,
+    now: i64,
+) -> Vec<String> {
+    let present = listed(bucket, device);
+    let heads: Vec<Vec<u8>> = present
+        .iter()
+        .filter(|n| n.starts_with("head-"))
+        .map(|n| bucket.0[&format!("devices/{device}/{n}")].clone())
+        .collect();
+    let given = core
+        .sync2_obsolete_former(P, location, device, &present, &heads, false, now)
+        .unwrap();
+    if !FAIL_DELETES.with(|f| f.get()) {
+        for p in &given {
+            bucket.0.remove(p);
+        }
+    }
+    given
 }
 
 pub(crate) mod tempdir {
@@ -116,6 +187,9 @@ impl Device {
             heads.extend(hs.into_iter().filter(|x| x.0 == top).map(|x| x.1));
         }
         let plan = self.core.sync2_plan_at(P, &heads, Some(location)).unwrap();
+        if AUTO_TRUST.with(|f| f.get()) {
+            super::trust::trust_all_pending(&self.core, P, now);
+        }
         let mut fetched = Vec::new();
         for f in plan["fetch"].as_array().unwrap() {
             for name in f["files"].as_array().unwrap() {
@@ -131,18 +205,9 @@ impl Device {
         let out: Value =
             serde_json::from_str(&self.core.sync2_ingest(P, &fetched, key, now).unwrap()).unwrap();
         let upto = self.upload_all_keyed(bucket, location, key);
-        let (path, bytes, gen, obsolete) = self.core.sync2_head(P, location, upto, now).unwrap();
-        let dir = path.rsplit_once('/').unwrap().0.to_owned();
+        let (path, bytes, _gen) = self.core.sync2_head(P, location, upto, now).unwrap();
         bucket.0.insert(path, bytes);
-        delete_and_ack(&self.core, bucket, location, &obsolete);
-        // 与生产（srs_sync2_round.dart 第 4 步）同样：删本机两代以前的 head。
-        bucket.0.retain(|k, _| {
-            !(k.starts_with(&format!("{dir}/"))
-                && k.rsplit('/')
-                    .next()
-                    .and_then(crate::sync2::segment::parse_head_file_name)
-                    .is_some_and(|g| g + 2 < gen))
-        });
+        sweep(&self.core, bucket, location, now);
         self.relay_all(bucket, location, key);
         // 与生产同一节奏：版本向量变了且到期才重算（测试里间隔为 0 = 变了就算）。
         self.core.sync2_digest_due(P, now, Some(0)).unwrap();
@@ -4237,20 +4302,31 @@ fn failed_obsolete_deletes_are_retried_next_round() {
     assert_eq!(segment_files(&bucket, &a), before, "nothing was deleted");
     let pending = rows_pending(&a);
     assert!(pending > 0, "the failed deletes are still on record");
-    // head 没变、不写的一轮也把待删清单交出来。
+    // head 没变、不写的一轮也把待删清单交出来（旧 head 也在这张清单里；它们没确认删掉之前，可能被它们引用的旧小段
+    // 留在记录里不给，见 tests_retention.rs）。
     let w = a
         .core
         .sync2_head_if_changed(P, "loc", u64::MAX, T0 + DAY + 70_000, Some(DAY))
         .unwrap();
     match w {
-        super::transport::HeadWrite::Unchanged { obsolete, .. } => {
-            assert_eq!(obsolete.len(), pending)
-        }
+        super::transport::HeadWrite::Unchanged { .. } => {}
         super::transport::HeadWrite::Written { .. } | super::transport::HeadWrite::Recut => {
             panic!("head content did not change")
         }
     }
-    // 下一轮正常：删光并确认。
+    FAIL_DELETES.with(|f| f.set(true));
+    let again = sweep(&a.core, &mut bucket, "loc", T0 + DAY + 70_000);
+    FAIL_DELETES.with(|f| f.set(false));
+    assert!(
+        again.iter().any(|p| p.contains("/seg-")) && again.len() <= pending,
+        "{again:?}"
+    );
+    assert_eq!(
+        rows_pending(&a),
+        pending,
+        "handing the list out removes nothing"
+    );
+    // 下一轮正常：先删掉没删成的旧 head，再删它们可能引用的旧小段，全部确认。
     a.sync(&mut bucket, "loc", T0 + DAY + 80_000);
     assert_eq!(rows_pending(&a), 0);
     let rows = a.rows("SELECT COUNT(*) FROM sync2_segments")[1][0]

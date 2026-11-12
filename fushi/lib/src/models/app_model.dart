@@ -167,6 +167,7 @@ import 'package:fushi/src/storage/export_directory.dart';
 import 'package:fushi/src/storage/installer_data_root_bootstrap.dart';
 import 'package:fushi/src/storage/sandbox_relocation.dart';
 import 'package:fushi/src/startup/exit_flush_registry.dart';
+import 'package:fushi/src/startup/startup_timeline.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 import 'package:fushi/src/utils/misc/error_details_dialog.dart';
 import 'package:fushi/src/utils/misc/lookup_input_limits.dart';
@@ -195,6 +196,7 @@ import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:fushi_engine/srs/sync2/srs_folder_location.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_crypto.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
+import 'package:fushi/src/pdf/pdf_importer.dart';
 import 'package:fushi/src/diagnostics/video_diag_log.dart';
 import 'package:fushi/src/dictionary/dict_resource_materializer.dart';
 import 'package:fushi/src/dictionary/dict_style_rules.dart';
@@ -292,6 +294,7 @@ import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_model
 import 'package:fushi_engine/media/discovery/discovery_download_queue.dart';
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
 import 'package:fushi/src/media/discovery/direct_link_download.dart';
+import 'package:fushi/src/media/discovery/download_gateway_challenge_gate.dart';
 import 'package:fushi_engine/media/discovery/import/discovery_import_executor.dart';
 import 'package:fushi/src/media/downloads/download_keep_alive_bindings.dart';
 import 'package:fushi/src/media/discovery/import/discovery_import_production.dart';
@@ -371,6 +374,8 @@ import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_p
     show isDefaultVideoSubtitlePipelineOutput, videoSubtitleJobsRootUnder;
 import 'package:fushi/src/media/audiobook/audiobook_auto_transcribe.dart';
 import 'package:fushi_engine/media/audiobook/audiobook_transcribe_import_queue.dart';
+import 'package:fushi_engine/media/audiobook/book_audiobook_pairing.dart'
+    show BookAudiobookTranscribePort, folderImportTranscribeEnabled;
 import 'package:fushi_engine/media/discovery/import/discovery_engine_importers.dart'
     show
         importDiscoveryAudiobook,
@@ -424,7 +429,7 @@ import 'package:fushi/src/media/music/metadata/music_scrape_service.dart';
 import 'package:fushi/src/media/music/apple_music/apple_music_account.dart';
 import 'package:fushi/src/media/music/apple_music/apple_music_favorites.dart';
 import 'package:fushi/src/media/music/server/music_servers.dart'
-    show appleMusicTokenSource;
+    show appleMusicTokenSource, loadMusicServerBindings;
 import 'package:fushi_engine/media/music/apple_music/apple_music_catalog_client.dart'
     show AppleMusicCatalogClient;
 import 'package:fushi_engine/media/music/apple_music/apple_music_personal_client.dart'
@@ -444,6 +449,8 @@ import 'package:fushi/src/media/music/music_plugin_quality_host.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_library_scanner.dart'
     show onMusicSourceScanned;
+import 'package:fushi/src/media/source_library/game_source_scanner.dart'
+    show onGameSourceScanned;
 import 'package:fushi/src/media/music/music_audio_intake.dart';
 import 'package:fushi/src/media/music/video_audio_to_music_migration.dart';
 import 'package:fushi/src/media/video/subtitle/app_video_subtitle_service.dart'
@@ -460,6 +467,8 @@ import 'package:fushi/src/media/favorites/web_video_favorite.dart'
 import 'package:fushi/src/media/music/plugin/music_plugin_favorites.dart';
 import 'package:fushi/src/media/music/plugin/music_plugins.dart';
 import 'package:fushi/src/media/music/music_remote_media.dart';
+import 'package:fushi/src/media/music/music_remote_tracks.dart'
+    show musicServerBindingLoader;
 import 'package:fushi/src/media/music/plugin/music_plugin_vault_key.dart';
 import 'package:fushi/src/media/audiobook/audiobook_material_service.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session.dart';
@@ -498,7 +507,12 @@ import 'package:fushi/src/sync/host_remote_mining_targets.dart';
 import 'package:fushi/src/anki/forwarded_mine_codec.dart';
 import 'package:fushi_engine/sync/immersion_mine_payload.dart';
 import 'package:fushi/src/mining/bilibili_clip_miner.dart';
+import 'package:fushi/src/mining/galgame_add_flow.dart'
+    show adoptSourceScannedGames;
+import 'package:fushi/src/mining/gal_hook_session_controller.dart';
+import 'package:fushi/src/mining/gal_mining_settings.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
+import 'package:fushi/src/mining/advanced_mining/advanced_mining_layout.dart';
 import 'package:fushi/src/mining/galgame_repository.dart';
 import 'package:fushi/src/mining/immersion_mining_engine.dart';
 import 'package:fushi/src/mining/mining_image_mode_target.dart';
@@ -538,6 +552,8 @@ import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/stats/reader_study_clock_start_mode.dart';
+import 'package:fushi/src/stats/study_goal_period.dart';
+export 'package:fushi/src/stats/study_goal_period.dart' show StudyGoalPeriod;
 
 export 'package:fushi/src/models/local_audio_manager.dart'
     show LocalAudioDbEntry, InvalidLocalAudioDbException;
@@ -1161,6 +1177,15 @@ class AppModel
           fileName: path.basename(bookFile.path),
         );
       },
+      // 反馈 Jq1_ujHa4t：对端推来的 PDF 原件（引擎 importBook 已按内容嗅探分好流）。
+      // 接了它本 host 才在 capabilities 宣称 `liveLibrary.pdfBooks`，client 据此推 PDF。
+      importPdfBookFromFile: (File pdfFile, String title) =>
+          PdfImporter.importFromPath(
+            db: database,
+            filePath: pdfFile.path,
+            fileName: '$title.pdf',
+            title: title,
+          ),
       // BUG-2815：现读而非快照——host 服务只在互联启动时构造一次，快照会让之后
       // 新增 / 删除的本地音频库在对端清单与导出里都看不见。
       // BUG-3702：path 归一到本机落点，别的设备带来的库引用才能按本机文件导出。
@@ -2052,6 +2077,8 @@ class AppModel
     // 网络音乐来源（SFTP / WebDAV / AList）的曲目同样在打开时取流；解析器按来源缓存在
     // 这个进程级装配点里（交叉淡入的两个 mpv 实例共用一份连接）。
     musicRemoteMediaResolver ??= SourceMusicRemoteMediaResolver(() => database);
+    // 曲库 / 本地歌单里的服务器曲目（v149）：起播 / 取封面的地址按当前服务器配置现算。
+    musicServerBindingLoader ??= () => loadMusicServerBindings(this);
     // 由专用后端播放的曲目（托管播放）；其余走默认链路（docs/specs/2026-10-31-apple-music-musickit.md
     // §3.3）。Apple Music 整曲：本平台有 MusicKit 播放器才装（Linux / macOS 13 没有，这类曲目
     // 落到 mpv 打不开、按单曲失败）。
@@ -3762,6 +3789,15 @@ class AppModel
   List<DictionarySearchResult> get dictionaryHistory =>
       dictRepo.dictionaryHistory;
 
+  /// 冷启动后查词历史还在后台装载：[dictionaryHistory] 暂时为空，不等于「没查过词」。
+  bool get dictionaryHistoryLoading =>
+      _dictionaryRepoReady && dictRepo.dictionaryHistoryLoading;
+
+  /// 查词历史装载落定（没有在途装载时立即完成）。
+  Future<void> get dictionaryHistoryLoaded => _dictionaryRepoReady
+      ? dictRepo.dictionaryHistoryLoaded
+      : Future<void>.value();
+
   // ── audio & media streams (delegated to AudioController) ────────────
 
   Stream<void> get currentMediaPauseStream => audioCtrl.currentMediaPauseStream;
@@ -4424,6 +4460,7 @@ class AppModel
       debugPrint('[Fushi] init: PackageInfo + DeviceInfo');
 
       /// Prepare entities that may be repeatedly used at runtime.
+      StartupTimeline.mark('init-enter');
       _packageInfo = await PackageInfo.fromPlatform();
       _mediaTrackingAppVersion = _packageInfo.version;
       // 媒体服务器认证头的客户端身份（产品名 / 本机设备名 / 应用版本，
@@ -4433,6 +4470,7 @@ class AppModel
         version: _packageInfo.version,
       );
 
+      StartupTimeline.mark('package+device-info');
       debugPrint('[Fushi] init: directories (early, needed for DB)');
       // TODO-1260：这一步内部解析数据根（含对自定义数据根盘的 stat）。盘掉线时最易 hang，
       // 故写启动面包屑 + 叠超时（超时→错误屏 Retry，不再无限加载）。
@@ -4452,6 +4490,7 @@ class AppModel
             .log('AppModel.migrateLegacyBooksDirectory', e, stack),
       );
 
+      StartupTimeline.mark('data-roots');
       debugPrint('[Fushi] init: Drift database');
       ErrorLogService.instance.markInitStep('open-database（Drift 打开 fushi.db）');
       _database = FushiDatabase(_databaseDirectory.path);
@@ -4459,6 +4498,9 @@ class AppModel
       await _resetSrsStorageHost(isMainProcess: true);
       // 音乐来源扫完 → 缺 ReplayGain 标签的曲目进后台 EBU R128 测量（设计 §7.3）。
       onMusicSourceScanned = () => unawaited(musicLoudness.schedule());
+      // 游戏来源扫完 → 游戏库缓存重载 + 新游戏后台补封面（反馈 9Rm_8JEkGM）。
+      onGameSourceScanned = (List<String> created) =>
+          unawaited(adoptSourceScannedGames(galgameRepo, created));
 
       // Sync-pref maintenance, before any repository loads them or sync runs:
       // 1) recover device-local sync config if a previous backup import crashed
@@ -4467,6 +4509,7 @@ class AppModel
       // 3) migrate the mutually-exclusive `backendType==fushiServer` interconnect
       //    selection to the independent interconnect toggle (interconnect and a
       //    cloud backup backend can now coexist).
+      StartupTimeline.mark('db-open+srs-host');
       await BackupRestoreService.recoverPendingRestore(_databaseDirectory.path);
 
       // 沙箱重定位自愈：数据根被**平台**挪走后，把库里的绝对路径重基过去。
@@ -4480,6 +4523,7 @@ class AppModel
       //
       // 自愈失败只上报、不阻塞启动：用户至多回到修复前的状态，绝不能因为对账
       // 出错而进不去 app（台账故意不写，下次启动会重试）。
+      StartupTimeline.mark('pending-restore');
       await SandboxRelocation.reconcile(
         db: _database,
         documentsRoot: _appDirectory.path,
@@ -4497,6 +4541,7 @@ class AppModel
       //    folderId is an ABSOLUTE URL, which the other channel would then hit
       //    (Basic credentials attached). It is a pure cache: every backend
       //    re-resolves its root/book folders by name on the next sweep.
+      StartupTimeline.mark('sandbox-relocation');
       await SyncRepository(_database).migrateSmbToWebDav();
       await SyncRepository(_database).migrateInterconnectBackendToToggle();
       await SyncRepository(_database).migrateFolderCacheToPerChannel();
@@ -4505,6 +4550,7 @@ class AppModel
       // （BUG-3697）。视频来源是原地播放，播放器 / 字幕 / 制卡都要读原文件。不阻塞
       // 启动：扫描与播放前会各自等它跑完（`ensureSourceAccess` / `ensureForPath`）。
       // 其它平台 no-op；弹窗词典 / 悬浮词典进程不经 initialise()，那边不读来源。
+      StartupTimeline.mark('sync-pref-migrations');
       SourceFolderAccess.instance.activateAllOnStartup(_database);
 
       /// Prepare all repositories (objects created first, then loaded in
@@ -4530,6 +4576,7 @@ class AppModel
       // 客户端）。两步都必须早于下面任何 loadSettings（ensureDefaultProfile 会快照
       // Anki 设置），否则读到的是 SP 那份进程内旧缓存（反馈 fiwDIpFep7）。
       await installDriftAnkiSettingsStore(() => _database);
+      StartupTimeline.mark('anki-settings-store');
       await platformServices.init();
       final BaseAnkiRepository ankiRepo = platformServices
           .createAnkiRepository();
@@ -4543,6 +4590,8 @@ class AppModel
       dictRepo = DictionaryRepository(
         _database,
         onCacheRebuild: _rebuildDictPathsCache,
+        // 查词历史在首帧之后才落进内存（见下方 deferHistory），到了让首页词典页重画。
+        onHistoryLoaded: notifyListeners,
         isLowMemory: () => prefsRepo.lowMemoryMode,
       );
       _dictionaryRepoReady = true;
@@ -4551,13 +4600,17 @@ class AppModel
       systemTtsDictionaryLanguages = () => installedDictionarySourceLanguages;
       mediaHistoryRepo = MediaHistoryRepository(_database);
 
+      StartupTimeline.mark('platform-services');
       debugPrint('[Fushi] init: repositories (parallel)');
       await Future.wait(<Future<void>>[
         prefsRepo.loadFromDb().then((_) => _applyStatDayResetHour()),
         profileRepo.ensureDefaultProfile(),
-        dictRepo.loadFromDb(),
+        // 查词历史不挡首帧：十条历史是几 MB 的 JSON，同步解析要几百毫秒
+        // （实测 Windows 370-566 ms，手机更久），在后台 isolate 里解完再通知重画。
+        dictRepo.loadFromDb(deferHistory: true),
         mediaHistoryRepo.loadFromDb(),
       ]);
+      StartupTimeline.mark('repositories-load');
       prefsRepo.addListener(notifyListeners);
       navRailExpandedNotifier.value = prefsRepo.navRailExpanded;
       // 封面模式默认是音画同步片段：2026-09-28 被钉成 GIF 的存量安装在这里迁一次。
@@ -4593,7 +4646,9 @@ class AppModel
       // 拿不到用户选的模式/凭据。这里只留更新专用的那个。
       appUpdateDownloadSourceReader = () => prefsRepo.updateDownloadSource;
       // 主入口与精简词典入口共用装配，并等系统代理就绪后再启动网络服务。
+      StartupTimeline.mark('pref-settles');
       await installAppNetworkBindings();
+      StartupTimeline.mark('network-bindings');
       _applyEmbeddedTorrentProxy();
       _applyMemoryPolicy();
       // BUG-1647：lazy getter 可能已提前建过实例；替换前先取消其重试定时器，
@@ -4615,6 +4670,7 @@ class AppModel
       themeNotifier.addListener(notifyListeners);
       _themeListenerAdded = true;
 
+      StartupTimeline.mark('tracking+theme');
       debugPrint('[Fushi] init: directories + system palette (parallel)');
       _browserDirectory = Directory(path.join(appDirectory.path, 'browser'));
       _thumbnailsDirectory = Directory(
@@ -4659,6 +4715,7 @@ class AppModel
       // （文件名是 identifier 的 hashCode，v73 改写库内 identifier 后旧文件
       // 不再命中）。pref 门控幂等；清扫不干净（rename 失败）不落标记，下次
       // 启动重试。放在 thumbnails 目录建好、DB 迁移已跑完之后。
+      StartupTimeline.mark('runtime-dirs+palette');
       if (!prefsRepo.containsKey(kOverrideThumbnailPrefixMigratedPrefKey)) {
         final bool clean = await migrateOverrideThumbnailPrefixes(
           db: _database,
@@ -4678,6 +4735,7 @@ class AppModel
       );
       await _guardInitIo('rebuild-dict-paths', _rebuildDictPathsCacheAsync());
 
+      StartupTimeline.mark('dict-paths');
       _localAudioManager = LocalAudioManager(
         prefsRepo: prefsRepo,
         databaseDirectory: _databaseDirectory,
@@ -4700,6 +4758,7 @@ class AppModel
       populateEnhancements();
       populateQuickActions();
 
+      StartupTimeline.mark('populate-maps');
       _dictImportManager = DictionaryImportManager(
         dictRepo: dictRepo,
         resourceDirectory: _dictionaryResourceDirectory,
@@ -4715,6 +4774,7 @@ class AppModel
       debugPrint(
         '[Fushi] init: reader settings + enhancements + quick actions + media sources (parallel)',
       );
+      StartupTimeline.mark('language+licenses+local-audio');
       MediaSource.setDatabase(_database);
       final readerSettings = ReaderSettings(_database);
       await readerSettings.loadFromPrefsSnapshot(prefsSnapshot);
@@ -4743,6 +4803,7 @@ class AppModel
       // settings just loaded above to avoid a second prefs read.
       // 三个字体目标互不依赖，并发解析（同名家族由 AppFontLoader 的在途表去重，
       // 只装一次）；串行三条链 = 首帧前三段可见等待。
+      StartupTimeline.mark('reader-settings');
       final Future<List<String>> appFontsF = AppFontLoader.resolveAndLoadAll(
         readerSettings.appUiFonts,
       );
@@ -4777,6 +4838,7 @@ class AppModel
       _gameLookupFontFamilies = await gameFontsF;
       _srsCardFonts = srsCardFonts;
       _srsCardFontFamilies = await srsCardFontsF;
+      StartupTimeline.mark('fonts');
       ReaderFushiSource.readerSettings = readerSettings;
       WorkProfileScope.instance.addListener(_onWorkProfileScopeChanged);
       // 反馈 kEFPY4cuKZ：作品会话只活在主进程内存里——上次进程被杀时发布的会话已经不存在，
@@ -4789,6 +4851,7 @@ class AppModel
 
       // Start polling physical controllers on platforms that need it (desktop);
       // start() is a no-op where the engine already delivers gameButton* keys.
+      StartupTimeline.mark('work-profile');
       gamepadService.start();
 
       await Future.wait(<Future<void>>[
@@ -4815,6 +4878,7 @@ class AppModel
       // permanently dropping the user's custom keys on every launch. Mirrors the
       // profile-switch path (refreshPrefCache: refresh source caches first, then
       // loadShortcutRegistry).
+      StartupTimeline.mark('enhancements+actions+sources');
       await loadShortcutRegistry(
         shortcutRegistry,
         ReaderFushiSource.instance,
@@ -4824,6 +4888,7 @@ class AppModel
       debugPrint(
         '[Fushi] init: search preload (deferred to after first frame)',
       );
+      StartupTimeline.mark('shortcuts');
       unawaited(_warmUpSearchAfterFirstFrame());
       unawaited(_migrateDictionaryRedirectFlags());
       // 曲库歌词搜索的本机语料库：延后打开、清掉已下架「我库里的例句」留下的书 / 视频 /
@@ -4838,7 +4903,11 @@ class AppModel
       // 旧版按「无画面视频」收进视频库的纯音频搬到音乐库（反馈 QAondMh4M5）。按数据
       // 幂等：没有这类行就什么都不做；搬不动的行原样留在视频库，下次启动再试。
       unawaited(_migrateAudioOnlyVideosToMusic());
+      // 启动关键路径上的查询都发完了：这时才读查词历史整表（见
+      // DictionaryRepository.loadFromDb 的 deferHistory）。
+      dictRepo.startDeferredHistoryLoad();
 
+      StartupTimeline.mark('post-init-kicks');
       debugPrint('[Fushi] init: DONE');
       // TODO-1260：启动正常跑完，清掉启动步进面包屑（否则下次启动会误报上次 hang）。
       ErrorLogService.instance.clearInitStep();
@@ -4991,17 +5060,11 @@ class AppModel
       //
       // 门只加在调用点：[startAnimeDownloadService] 函数体内部顺序敏感（懒建 session、
       // resume 剪枝哨兵），守卫测试按源码顺序扫它，绝不能把判断插进函数中段。
-      if (modules.isEnabled(ModuleId.browse)) {
-        unawaited(
-          startAnimeDownloadService().catchError((Object e, StackTrace s) {
-            ErrorLogService.instance.log(
-              'AppModel.startAnimeDownloadService',
-              e,
-              s,
-            );
-          }),
-        );
-      }
+      //
+      // BUG（反馈 cliIUL82nf）：启动与「功能模块」开关走同一个入口
+      // [ensureAnimeDownloadServiceRunning]，模块门也只在那里判一次——以前只有
+      // 这里起服务，会话中途打开「浏览」不补跑，内置引擎就一直被判成未就绪。
+      unawaited(ensureAnimeDownloadServiceRunning());
       // 推荐包（9.5 GB zip）的包目录进场收尾：删掉「已导入」的残包、搬改名前的旧
       // 半截文件，再把下载阶段对齐磁盘。
       //
@@ -7123,10 +7186,7 @@ class AppModel
   EmbeddedTorrentHostCapabilities? _embeddedTorrentHostCapabilities() {
     // 数据根迁移已把引擎停下、resume 交给迁移器改写（BUG-3541）：本进程随后
     // 重启，不得再懒建一个按旧路径落盘的 session。
-    if (_embeddedTorrentReleasedForDataRootMove) return null;
-    if (_embeddedTorrentSaveRoots == null ||
-        _embeddedTorrentResumeDir == null ||
-        !_supportsEmbeddedTorrent()) {
+    if (!isEmbeddedTorrentHostPrepared || !_supportsEmbeddedTorrent()) {
       return null;
     }
     return EmbeddedTorrentHost.probeCapabilities();
@@ -7414,7 +7474,45 @@ class AppModel
     notifyListeners();
   }
 
+  /// 在飞的 [startAnimeDownloadService]（并发去重用；落地后清空）。
+  Future<void>? _animeDownloadServiceStarting;
+
+  /// 下载中心（番剧下载完成监听 + 内置引擎落盘路径）的**唯一**启动入口：启动时
+  /// 与「功能模块」开关打开「浏览」时都走这里，模块门也只在这里判。
+  ///
+  /// 反馈 cliIUL82nf：以前只有 init 在「浏览」开着时起一次服务，会话中途从
+  /// [setModuleEnabled] 打开模块不补跑，[_embeddedTorrentSaveRoots] 一直是 null，
+  /// 内置引擎被判未就绪，下载后端引导还把它说成「缺少运行库」。
+  ///
+  /// 并发调用共享同一个在飞 future（init 与模块开关可能撞在一起），完成后清空，
+  /// 下次调用由 [startAnimeDownloadService] 自身的幂等判断兜住。失败只记日志、
+  /// 不抛：调用方都是 fire-and-forget，或（下载后端引导）随后按就绪判据重读状态。
+  Future<void> ensureAnimeDownloadServiceRunning() {
+    final Future<void>? inFlight = _animeDownloadServiceStarting;
+    if (inFlight != null) return inFlight;
+    if (!moduleVisibility.isEnabled(ModuleId.browse)) {
+      return Future<void>.value();
+    }
+    final Future<void> starting = () async {
+      try {
+        await startAnimeDownloadService();
+      } catch (e, s) {
+        ErrorLogService.instance.log(
+          'AppModel.startAnimeDownloadService',
+          e,
+          s,
+        );
+      } finally {
+        _animeDownloadServiceStarting = null;
+      }
+      // 就绪判据（[isEmbeddedTorrentReady]）随服务启动而变：让读它的 UI 重算。
+      notifyListeners();
+    }();
+    return _animeDownloadServiceStarting = starting;
+  }
+
   /// 启动番剧下载完成监听。幂等（重复调用不重建）；失败由调用方记日志，不破坏 init。
+  /// 生产代码不要直接调：走 [ensureAnimeDownloadServiceRunning]（模块门 + 并发去重）。
   Future<void> startAnimeDownloadService() async {
     if (_animeDownloadService != null) return;
     final Directory baseDir = await AppPaths.documentsSubdirectory(
@@ -8629,6 +8727,8 @@ class AppModel
       },
       importer: (DiscoveryDownloadTask task, File file) =>
           discoveryImportExecutor.importDownload(task, file),
+      // BUG-4354：下载网关回人机验证挑战时弹 WebView 解题（UI 装好解题器前为 null）。
+      challengeSolver: DownloadGatewayChallengeGate.solve,
     );
     // BUG-2714：队列有未结束任务时挂下载保活。
     _discoveryDownloadKeepAlive = DiscoveryDownloadKeepAliveBinding(queue);
@@ -8746,18 +8846,38 @@ class AppModel
     return imported;
   }
 
-  /// 内置引擎在本机是否可用（桌面 + DLL 能加载）。下载对话框据此判断能否走
-  /// 内置引擎（不必配置外接 qb）。
+  /// 本次安装的内置引擎运行库能否加载（本平台支持 + DLL 能加载）。**只看运行库**，
+  /// 与下载服务起没起无关——下载后端引导的「缺少运行库」只能据此判断。
   ///
-  /// BUG-1053：这是**能力探测**，不代表已经开了 session。以前它等价于
-  /// `_embeddedTorrentHost != null`，逼得启动就必须建 session（= 绑 6881 + 起
-  /// DHT）才能让下载按钮可用。现在探测只加载 DLL、不碰网络，真会话由
-  /// [_ensureEmbeddedTorrentHost] 在要下载时才建。
+  /// 反馈 cliIUL82nf：以前只有 [isEmbeddedTorrentReady] 一个判据，它把「DLL 能否
+  /// 加载」与「下载服务已备好落盘路径」用 `&&` 合在一起，服务没起时短路、根本不
+  /// 探测 DLL，引导就把「服务未启动」误报成「本次安装缺少内置引擎运行库」。
+  ///
+  /// BUG-1053：这是**能力探测**，不代表已经开了 session。探测只加载 DLL、不碰网络，
+  /// 真会话由 [_ensureEmbeddedTorrentHost] 在要下载时才建。
+  bool get isEmbeddedTorrentRuntimeAvailable =>
+      _embeddedTorrentHost != null ||
+      (supportsEmbeddedTorrent && probeEmbeddedTorrentRuntime());
+
+  /// DLL 探测本体（只加载引擎、不建 session、结果由宿主缓存）。单独成方法只为
+  /// 让测试在没有原生库的环境里替换掉它。
+  @protected
+  bool probeEmbeddedTorrentRuntime() => EmbeddedTorrentHost.probeAvailable();
+
+  /// 下载服务是否已为内置引擎备好落盘路径（下载根 + resume 目录），且本进程没有
+  /// 为数据根迁移把引擎释放掉。与 [_embeddedTorrentHostCapabilities] 同一判据：
+  /// 这一位为假时懒建入口必然交不出内置后端。
+  bool get isEmbeddedTorrentHostPrepared =>
+      !_embeddedTorrentReleasedForDataRootMove &&
+      _embeddedTorrentSaveRoots != null &&
+      _embeddedTorrentResumeDir != null;
+
+  /// 内置引擎此刻能不能接任务：运行库可用 **且** 下载服务已备好路径（或 session
+  /// 已经开着）。新任务的后端选择、上传同意弹窗、后端身份都看这一位；要回答
+  /// 「运行库在不在」用 [isEmbeddedTorrentRuntimeAvailable]。
   bool get isEmbeddedTorrentReady =>
       _embeddedTorrentHost != null ||
-      (_supportsEmbeddedTorrent() &&
-          _embeddedTorrentSaveRoots != null &&
-          EmbeddedTorrentHost.probeAvailable());
+      (isEmbeddedTorrentHostPrepared && isEmbeddedTorrentRuntimeAvailable);
 
   /// 按配置解析出应使用的下载后端（供下载对话框的推送按钮与轮询服务共用
   /// 同一选择逻辑）。调用方用完须 `close()`（内置引擎的视图 close 是 no-op，
@@ -10179,6 +10299,36 @@ class AppModel
   Future<void> setAudiobookAutoTranscribeWithoutText({required bool value}) =>
       prefsRepo.setAudiobookAutoTranscribeWithoutText(value: value);
 
+  bool get audiobookFolderImportTranscribe =>
+      prefsRepo.audiobookFolderImportTranscribe;
+  Future<void> setAudiobookFolderImportTranscribe({required bool value}) =>
+      prefsRepo.setAudiobookFolderImportTranscribe(value: value);
+
+  /// 书架文件夹导入 / 本地书籍来源扫描的转录端口：书配上了有声书音频但没有字幕时，
+  /// 把音频排进转录队列、转完对齐到这本书。本机没有 ASR、总开关或子开关任一关着时
+  /// 为 null（[folderImportTranscribeEnabled]；扫描器把这类书计入「缺字幕」）。
+  /// 来源级条件（本地、非 iOS 书签）由扫描器按来源判断
+  /// （[folderImportSourceCanTranscribe]）。
+  BookAudiobookTranscribePort? get folderImportTranscribePort {
+    if (!folderImportTranscribeEnabled(
+      asrSupported: isAsrSupported,
+      autoTranscribe: prefsRepo.audiobookAutoTranscribe,
+      folderImportTranscribe: prefsRepo.audiobookFolderImportTranscribe,
+    )) {
+      return null;
+    }
+    return ({
+      required String bookKey,
+      required List<String> audioPaths,
+      required String title,
+    }) => enqueueFolderImportTranscription(
+      queue: audiobookTranscribeImportQueue,
+      bookKey: bookKey,
+      audioPaths: audioPaths,
+      title: title,
+    );
+  }
+
   // ── player streams & audio handler (delegated to AudioController) ───
 
   Stream<MediaPlayIntent> get playIntentStream => audioCtrl.playIntentStream;
@@ -10617,6 +10767,12 @@ class AppModel
     // 继续发已被关掉模块的设置项（settings_schema.dart 的 `_SettingsSchemaCache`）。
     resetSettingsSchemaCache();
     if (module == ModuleId.sync) _applySyncModuleGate();
+    // 打开「浏览」= 打开下载中心：与启动走同一入口补起服务（反馈 cliIUL82nf）。
+    // 关掉时沿用既有规则——不在会话中途停服务（已推给引擎的种子照常下完），只是
+    // 下次启动不再拉起。
+    if (module == ModuleId.browse && value) {
+      unawaited(ensureAnimeDownloadServiceRunning());
+    }
     notifyListeners();
   }
 
@@ -11238,6 +11394,12 @@ class AppModel
   Future<void> setAdvancedMiningVisibleFields(List<String> names) =>
       prefsRepo.setAdvancedMiningVisibleFields(names);
 
+  /// 「高级制卡」对话框的分区布局（反馈 aZ99bm9R6K）。
+  AdvancedMiningLayout get advancedMiningLayout =>
+      prefsRepo.advancedMiningLayout;
+  Future<void> setAdvancedMiningLayout(AdvancedMiningLayout layout) =>
+      prefsRepo.setAdvancedMiningLayout(layout);
+
   /// 制卡动图只播放一次（反馈 ZxyIMK-C5V）。
   bool get miningAnimatedPlayOnce => prefsRepo.miningAnimatedPlayOnce;
   Future<void> setMiningAnimatedPlayOnce(bool value) =>
@@ -11265,6 +11427,49 @@ class AppModel
   MiningClipFormat get galMiningClipFormat => prefsRepo.galMiningClipFormat;
   void setGalMiningClipFormat(MiningClipFormat format) =>
       prefsRepo.setGalMiningClipFormat(format);
+
+  // galgame 制卡句子音频长度策略（反馈 II3jOBIhT5，透传 prefsRepo）。
+  GalMiningAudioMode get galMiningAudioMode => prefsRepo.galMiningAudioMode;
+  Future<void> setGalMiningAudioMode(GalMiningAudioMode mode) =>
+      prefsRepo.setGalMiningAudioMode(mode);
+  int get galMiningAudioSeconds => prefsRepo.galMiningAudioSeconds;
+  Future<void> setGalMiningAudioSeconds(int seconds) =>
+      prefsRepo.setGalMiningAudioSeconds(seconds);
+
+  /// 单游戏 gal 制卡设置覆盖层（反馈 3dRZdakRdJ，透传 prefsRepo）。
+  GalGameMiningOverrides galMiningOverrides(String gameId) =>
+      prefsRepo.galMiningOverrides(gameId);
+  Future<void> setGalMiningOverrides(
+    String gameId,
+    GalGameMiningOverrides overrides,
+  ) => prefsRepo.setGalMiningOverrides(gameId, overrides);
+
+  /// 全局 gal 制卡设置（设置页那一组）。
+  GalMiningSettings get galMiningGlobalSettings => GalMiningSettings(
+    imageMode: galMiningImageMode,
+    animatedFormat: galMiningAnimatedFormat,
+    stillFormat: galMiningStillFormat,
+    clipFormat: galMiningClipFormat,
+    audioLimit: GalMiningAudioLimit(
+      mode: galMiningAudioMode,
+      seconds: galMiningAudioSeconds,
+    ),
+  );
+
+  /// 一次 gal 制卡实际生效的设置：全局 + [gameId]（`galgames.id`）的覆盖层。
+  /// gameId 为空（不在库里的游戏 / 纯 WebSocket 文本源）时就是全局设置。
+  ///
+  /// 所有 gal 制卡入口都必须从这里取，传当前会话的
+  /// `GalHookSessionController.activityGameKey`——各自读全局偏好会让「本游戏设置」
+  /// 在漏改的入口上静默失效。
+  GalMiningSettings galMiningSettingsForGame(String? gameId) {
+    final GalMiningSettings global = galMiningGlobalSettings;
+    if (gameId == null || gameId.isEmpty) return global;
+    return GalMiningSettings.resolve(
+      global: global,
+      overrides: galMiningOverrides(gameId),
+    );
+  }
 
   /// 高级制卡句子音频起止微调步长（毫秒，反馈 3_VB7kAeHj），各宿主共用。
   int get advancedMiningAudioNudgeStepMs =>
@@ -11371,6 +11576,19 @@ class AppModel
   int get readingGoalDailyChars => prefsRepo.readingGoalDailyChars;
   Future<void> setReadingGoalDailyChars(int value) =>
       prefsRepo.setReadingGoalDailyChars(value);
+  int get readingGoalWeeklyChars => prefsRepo.readingGoalWeeklyChars;
+  Future<void> setReadingGoalWeeklyChars(int value) =>
+      prefsRepo.setReadingGoalWeeklyChars(value);
+
+  /// 字数目标周期（日 / 周二选一，反馈 CjIr9RGSCe）。
+  StudyGoalPeriod get readingGoalPeriod => prefsRepo.readingGoalPeriod;
+  Future<void> setReadingGoalPeriod(StudyGoalPeriod value) =>
+      prefsRepo.setReadingGoalPeriod(value);
+
+  /// 当前周期下生效的字数目标（0 = 未设）。
+  int get readingGoalActiveChars => prefsRepo.readingGoalActiveChars;
+  Future<void> setReadingGoalActiveChars(int value) =>
+      prefsRepo.setReadingGoalActiveChars(value);
 
   // 桌面小组件「目标」卡的其余每日目标（0 = 关，随 Profile）。
   int get studyGoalDailyMinutes => prefsRepo.studyGoalDailyMinutes;
@@ -12067,6 +12285,10 @@ class AppModel
       imageMode: galMiningImageMode,
       animatedFormat: galMiningAnimatedFormat,
       stillFormat: galMiningStillFormat,
+      // 每张卡现读：全局改了 / 换了游戏，下一张串流卡就跟着走（含本游戏覆盖）。
+      miningSettings: () => galMiningSettingsForGame(
+        GalHookSessionController.instance.activityGameKey,
+      ),
       addTitleTag: () => autoAddBookNameToTags,
     );
   }

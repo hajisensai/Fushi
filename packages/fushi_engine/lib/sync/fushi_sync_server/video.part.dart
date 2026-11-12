@@ -154,6 +154,7 @@ extension _FushiSyncServerVideo on FushiSyncServer {
           episodeIndex: episodeIndex,
           transcodeProfile: _kDiscMiningTranscodeProfile,
           transcodeDurationMs: disc!.playlist.duration.inMilliseconds,
+          ticket: tokenValue,
         );
         miningUri = request.requestedUri.replace(
           path: '/api/library/videos/$encodedId/hls.m3u8',
@@ -191,6 +192,17 @@ extension _FushiSyncServerVideo on FushiSyncServer {
             streamUrlId,
             episodeIndex,
           );
+      // 这一集的全部外挂字幕（反馈 -CaVsioFhG）：旧单值 `subtitleUrl` /
+      // `subtitleFileName` 照发给老 client，新 client 优先读这份列表。
+      final List<RemoteVideoSidecarSubtitle> sidecarSubtitles =
+          await _sidecarSubtitlesForRequest(
+            svc,
+            request,
+            streamUrlId,
+            episodeIndex,
+            videoStem: p.basenameWithoutExtension(file.path),
+            defaultSubtitle: sub,
+          );
       // 源文件平均码率：client「自动」档拿它和实测链路带宽比，决定原画直传还是转码
       // （反馈 uaBRMzK_WM）。只在本机能转码时才算——转不了就没有可选的，client 也
       // 不会去比。蓝光标题的 `file` 是 `.mpls`，大小不代表视频，不报。
@@ -202,6 +214,10 @@ extension _FushiSyncServerVideo on FushiSyncServer {
         // `discTitle`，原样交给 libmpv 也能播明文 http host；新 client 读 `discTitle`
         // 逐段过本地 TLS 中继后自己拼。
         'url': discTitle?.edlUri() ?? streamUri.toString(),
+        // 流票（BUG-4461）：client 播放会话结束时拿它调 `/streamrelease`，host 立刻
+        // 作废这次签的全部 token（含上面的制卡 token）并停掉它们的转码。旧 client
+        // 不读，token 照旧按 TTL 过期。
+        'ticket': tokenValue,
         if (discTitle != null) 'discTitle': discTitle.toJson(),
         if (miningUri != null) ...<String, dynamic>{
           'miningVideoUrl': miningUri.toString(),
@@ -226,7 +242,25 @@ extension _FushiSyncServerVideo on FushiSyncServer {
             for (final RemoteVideoEmbeddedSubtitleTrack track in embeddedTracks)
               track.toJson(),
           ],
+        if (sidecarSubtitles.isNotEmpty)
+          'sidecarSubtitles': <Map<String, Object?>>[
+            for (final RemoteVideoSidecarSubtitle sidecar in sidecarSubtitles)
+              sidecar.toJson(),
+          ],
       });
+    }
+
+    // POST /api/library/videos/<id>/streamrelease?ticket=<t> — 释放流票（BUG-4461，
+    // 需 Basic 鉴权：路径不以任何豁免后缀结尾）。幂等：票已不在也 204。
+    final String? releaseId = _extractVideoId(reqPath, 'streamrelease');
+    if (releaseId != null) {
+      if (method != 'POST') return shelf.Response(405);
+      final String? ticket = request.url.queryParameters['ticket'];
+      if (ticket == null || ticket.isEmpty) {
+        return shelf.Response(400, body: 'Missing ticket');
+      }
+      _releaseVideoTicket(releaseId, ticket);
+      return shelf.Response(204);
     }
 
     // GET /api/library/videos/<id>/stream — 流式传输（豁免 Basic，靠 token 鉴权）
@@ -479,7 +513,18 @@ extension _FushiSyncServerVideo on FushiSyncServer {
       final int episodeIndex = _episodeIndexFromRequest(request);
       final String? embeddedIndexText =
           request.url.queryParameters['embeddedStreamIndex'];
-      final File? sub = embeddedIndexText == null
+      // `?sidecar=<文件名>`：这一集的某一条外挂字幕（反馈 -CaVsioFhG）。只在
+      // host 自己枚举出的 sidecar 里按 basename 精确匹配，不拼路径。
+      final String? sidecarName =
+          request.url.queryParameters[kVideoSidecarSubtitleQueryParam];
+      final File? sub = sidecarName != null
+          ? await _resolveSidecarVideoSubtitle(
+              svc,
+              subtitleId,
+              sidecarName,
+              episodeIndex,
+            )
+          : embeddedIndexText == null
           ? await svc.resolveVideoSubtitle(
               subtitleId,
               episodeIndex: episodeIndex,
@@ -876,6 +921,93 @@ extension _FushiSyncServerVideo on FushiSyncServer {
     );
   }
 
+  /// 这一集可下发的全部外挂字幕文件：host 的同目录 sidecar
+  /// （[VideoSidecarSubtitleListHost.listVideoSidecarSubtitles]）并上默认字幕
+  /// [defaultSubtitle]（host 用户选定的字幕可能住在别处，此时排第一）。按路径去重。
+  /// host 不支持该能力 → 空表（client 只有旧单值字段那一条）。
+  Future<List<File>> _sidecarSubtitleFiles(
+    FushiLibraryHostService service,
+    String id,
+    int episodeIndex, {
+    required File? defaultSubtitle,
+  }) async {
+    if (service is! VideoSidecarSubtitleListHost) return const <File>[];
+    final List<File> listed = await (service as VideoSidecarSubtitleListHost)
+        .listVideoSidecarSubtitles(id, episodeIndex: episodeIndex);
+    final File? def = defaultSubtitle;
+    if (def == null ||
+        listed.any((File f) => p.equals(f.path, def.path)) ||
+        !isSidecarSubtitleSuffix(p.extension(def.path))) {
+      return listed;
+    }
+    return <File>[def, ...listed];
+  }
+
+  /// `/streamurl` 的 `sidecarSubtitles[]`（反馈 -CaVsioFhG）。
+  Future<List<RemoteVideoSidecarSubtitle>> _sidecarSubtitlesForRequest(
+    FushiLibraryHostService service,
+    shelf.Request request,
+    String videoId,
+    int episodeIndex, {
+    required String videoStem,
+    required File? defaultSubtitle,
+  }) async {
+    final List<File> files = await _sidecarSubtitleFiles(
+      service,
+      videoId,
+      episodeIndex,
+      defaultSubtitle: defaultSubtitle,
+    );
+    final String encodedId = Uri.encodeFull(videoId);
+    final File? def = defaultSubtitle;
+    return <RemoteVideoSidecarSubtitle>[
+      for (final File file in files)
+        RemoteVideoSidecarSubtitle(
+          fileName: p.basename(file.path),
+          format: p.extension(file.path).replaceFirst('.', '').toLowerCase(),
+          language: sidecarSubtitleLanguageTag(
+            videoStem,
+            p.basename(file.path),
+          ),
+          sizeBytes: await _regularFileLength(file),
+          isDefault: def != null && p.equals(file.path, def.path),
+          url: request.requestedUri
+              .replace(
+                path: '/api/library/videos/$encodedId/subtitle',
+                queryParameters: <String, String>{
+                  kVideoSidecarSubtitleQueryParam: p.basename(file.path),
+                  if (episodeIndex > 0) 'episode': '$episodeIndex',
+                },
+              )
+              .toString(),
+        ),
+    ];
+  }
+
+  /// `GET .../subtitle?sidecar=<name>` 的解析：只在 [_sidecarSubtitleFiles] 里按
+  /// basename 精确匹配（[name] 带路径分隔符 / 穿越时自然匹配不到），找不到 → null。
+  Future<File?> _resolveSidecarVideoSubtitle(
+    FushiLibraryHostService service,
+    String id,
+    String name,
+    int episodeIndex,
+  ) async {
+    if (name.isEmpty || service is! VideoSidecarSubtitleListHost) return null;
+    final List<File> files = await _sidecarSubtitleFiles(
+      service,
+      id,
+      episodeIndex,
+      defaultSubtitle: await service.resolveVideoSubtitle(
+        id,
+        episodeIndex: episodeIndex,
+      ),
+    );
+    for (final File file in files) {
+      if (p.basename(file.path) == name) return file;
+    }
+    return null;
+  }
+
   Future<File?> _resolveEmbeddedVideoSubtitle(
     FushiLibraryHostService service,
     String id,
@@ -993,6 +1125,27 @@ extension _FushiSyncServerVideo on FushiSyncServer {
     final Random random = Random.secure();
     final List<int> bytes = List<int>.generate(24, (_) => random.nextInt(256));
     return base64UrlEncode(bytes);
+  }
+
+  /// 释放流票 [ticket]（BUG-4461）：作废它本身与随它签发的 token（光盘制卡 token），
+  /// 并取消它们名下排队 / 在跑的转码分段。只认 [videoId] 下的 token——拿别的视频
+  /// 的路径释放不动这张票。全程同步：作废 token 与 [cancelTranscodeWork] 之间没有
+  /// await，与分段请求「登记 → 判存活」的同步段互斥，不存在漏网窗口。
+  ///
+  /// TTL / 数量上限淘汰 token 时**不**走这里（不 kill 在跑的分段），排队中的分段
+  /// 在拿到名额后的存活判定处放弃。
+  void _releaseVideoTicket(String videoId, String ticket) {
+    final List<String> keys = <String>[
+      for (final MapEntry<String, _VideoStreamToken> e
+          in _videoStreamTokens.entries)
+        if (e.value.videoId == videoId &&
+            (e.key == ticket || e.value.ticket == ticket))
+          e.key,
+    ];
+    for (final String key in keys) {
+      _videoStreamTokens.remove(key);
+      cancelTranscodeWork(key);
+    }
   }
 
   void _pruneVideoTokens() {
@@ -1122,15 +1275,29 @@ extension _FushiSyncServerVideo on FushiSyncServer {
     if (index == null || index < 0 || index >= count) {
       return shelf.Response.notFound('Segment out of range');
     }
-    final Uint8List? segment = await _runTranscode(
-      () => transcodeSegment(
-        inputPath: file.path,
-        profile: profile,
-        index: index,
-        durationMs: durationMs,
-        audioStreamIndex: tok.transcodeAudioStreamIndex,
-      ),
-    );
+    // 分段工作挂在签发它的 token 名下（BUG-4461）：流票被释放时
+    // [_releaseVideoTicket] 按 token 取消排队 / 在跑的分段；token 在本请求反查文件
+    // 期间已被释放或过期的，[isAlive] 在登记时就拦下，不起 ffmpeg。
+    final Uint8List? segment;
+    try {
+      segment = await _runTranscode(
+        () => transcodeSegment(
+          inputPath: file.path,
+          profile: profile,
+          index: index,
+          durationMs: durationMs,
+          audioStreamIndex: tok.transcodeAudioStreamIndex,
+          workKey: tokenValue,
+          isAlive: () => _videoStreamTokens.containsKey(tokenValue),
+        ),
+      );
+    } on TranscodeCancelled {
+      return shelf.Response(
+        410,
+        body: 'Stream released',
+        headers: <String, String>{'Content-Type': 'text/plain'},
+      );
+    }
     if (segment == null) {
       return shelf.Response(503, body: 'Transcoder unavailable');
     }

@@ -1,0 +1,23 @@
+## BUG-4406 · AI 助手只认一条地址、会话期间不换路，凭据失效后仍每 3 秒无限重试
+- **报告**：2026-11-10（用户：互联审查 V-B3、R5b）
+- **真实性**：✅ 真 bug（代码路径核实；新测试 3 条修复前全红）。行号指基准 94317ab6295：
+  - `fushi/lib/src/sync/interconnect_assistant_client.dart:141-147`：`probeUrl` 按 `candidate.url != baseUrl` 精确匹配，不按 host 分组、不选路、不解析 P2P——偏好存的那条地址（如 LAN）不通时，同一台 host 的其它可达地址一概不试，直接报不可达。
+  - `:385-393` `_tokenForBaseUrl` 不经 `interconnectPersistedUrl`、也不看行是否启用；`:359-361` 响应体读取不受超时约束；`:122` 自建 `http.Client` 无关闭路径。
+  - `fushi/lib/src/media/video/acquisition/remote_video_acquisition_session.dart:56`：`_target` 是整场会话固定的单地址，中途不重新选路。
+  - 同文件 `:150-166`：`_pollLoop` 只认 `sessionGone`，其余错误（含 401、证书不符）每隔 `_retryDelay`（3 秒）无限重试，界面只说「连接中断」。
+- **[x] ① 已修复** — `e73995000e6`：
+  - `HostAssistantTarget` 加 `host`（`InterconnectHostRef`）与 `hostRef`；client 产出的 target `baseUrl = host.anchorUrl`、指纹取组内钉扎值、`pairedToken` 按组内代表行判定。
+  - `InterconnectAssistantClient` 传输层改走 `InterconnectHostChannel`（每台 host 一条通道）：新增 `probeUrlOutcome` / `probeHost`（带失败原因；老 host 200 无 `assistant` 仍给 Available + unsupported），`probeUrl` 签名语义不变；`_call` 经通道 send（长轮询 `timeout = requestTimeout + wait`，GET 幂等），通道异常 → `HostAssistantException(e.code)`；删除 `_tokenForBaseUrl` / `_clientFor` / `_headers`；新增 `dispose()` 关闭通道与自建 client。
+  - `HostAssistantException` 加 `permanent`（auth_rejected / certificate_mismatch / no_host / http_401 / http_403）与 `cancelled`。
+  - `RemoteVideoAcquisitionSession` 状态改为 `live / unreachable / gone / halted`：unreachable 继续按节奏轮询（通道每次重新选路）；gone 与 halted 停止轮询、不再发请求；halted 插 `remote_auth_rejected` / `remote_certificate_mismatch` / `remote_not_paired` 提示；cancelled 静默。会话开成后接管 client，`dispose` 关完 host 会话（halted / gone 跳过）再 `client.dispose()`。
+  - `ai_video_acquisition_page.dart` 的 `_failureText` 把三个新码映射到 `interconnect_host_failure_*`；`home_page.dart` 与 `ai_agent_page.dart` 改用 `probeUrlOutcome`，非 unreachable 的失败说出具体原因，各失败路径释放 client；AI 助手复用判断改为 `hostRef` 相等。
+- **[x] ② 已加自动化测试** — `fushi/test/sync/app_assistant_host_test.dart`（真 `FushiSyncServer` + `VideoAcquisitionAssistantHost`，行 hostId 与服务器一致）：V-B3 死地址排第一时 `probeUrl(死地址)` 仍探到并能开会话；R5b 会话中途 host 吊销 per-peer 口令 → 401 后会话读不再增长、记录末条为 `remote_auth_rejected`、之后的动作不发请求；会话开在可拔掉的转发地址上，拔掉并停用后下一次动作改走同组另一条地址。修复前 3 条全红（1 条断言失败、2 条等待超时）。
+- **备注**：计划写的 client 生命周期方法名是 `close()`，但 `close(target, id)` 早就是「关 host 上的会话」请求，同名冲突，改叫 `dispose()`。halted 之后的动作计划写「一律 `_markUnavailable`」，实现为直接返回（进入 halted 时已插过一条具体提示，再插会重复）。`remote_ai_agent_session.dart`（AI 助手远端会话）的同类状态机与 dispose 关 client 归 remote-tasks 包。真设备切网 / 吊销复测未做。
+- **[x] ① remote-tasks 步骤 14：AI 助手远端会话（2026-11-11）** — `a53eb435151`：
+  - 根因（基准 94317ab6295）：`fushi/lib/src/ai/agent/remote_ai_agent_session.dart:481` `_onError` 只在 `sessionGone` 时置 `_lost`，`:427` `_pollLoop` 对其余错误（含 401、证书不符）每 `_retryDelay`（3 秒）无限重试；`:515` `dispose` 从不释放会话接管的 `InterconnectAssistantClient`（`ai_agent_page.dart` 每次开会话新建一个交给会话）。
+  - `_onError` 把 `HostAssistantException.permanent` 与 `sessionGone` 同等处理：置 `_lost`，停轮询、`isUsable` 为 false（入口下次重新探测并经 `probeUrlOutcome` 说出具体原因）、dispose 不再发关会话请求。
+  - `dispose` 关完 host 会话（`_lost` 时不发）、并等换场时仍在途的关旧会话请求发完后调用 `_client.dispose()`。
+  - 评审补丁（同日）：在途的开会话请求（`_start` / `switchToSession` 的 `open`）也登记进 `_hostOpens`（`_openHost`）；应答回来时若已释放就地补发关会话，`dispose` 循环等 `_hostOpens` 与 `_hostCloses` 都清空后才 `_client.dispose()`。此前释放会把已送达 host 的开会话 POST 掐成 `cancelled`，host 上那场会话没人关；`_start` 进门先判 `_disposed`，`_reopen` 等关旧会话期间被释放时不再开新的。
+- **[x] ② remote-tasks 步骤 14 测试** — `fushi/test/sync/app_agent_assistant_host_test.dart`：会话中途 host 删掉 per-peer 口令并清缓存（同 `FushiServerController.revokePeer`）→ 401 后长轮询 GET 计数不再增长、`isUsable == false`、断线提示只一条、dispose 不发 DELETE 且释放 client（修复前计数持续增长，红）；正常 dispose 先发 DELETE 再释放 client、之后请求以 `cancelled` 收尾。新对话的开会话 POST 送达 host 后扣住应答时 dispose：client 在应答回来前不释放，释放时已发出两条 DELETE（旧会话 + 在途开出的那场）。重活队列让给别的会话，**未运行**，修复前红未实跑确认。
+- **备注（步骤 14）**：计划写 `_client.close()` 与「计数的 client 工厂」；真实接口里 client 释放叫 `dispose()`（`close(target, id)` 是关会话请求），且 `InterconnectAssistantClient` 只收借用的 `httpClient`、没有明文 client 工厂，测试改用借用的计数 client + 覆写 `dispose()` 记录释放时刻。
+- **提交信息里的旧号**：本条撞号改过两次（4285 → 4395 → 4406，改号提交 `3ab9e64b3cd`、`99ab766caca`），历史不重写，所以改号前写下的提交信息仍是当时的号：上面记的修复提交标题写的是 4285。按号查提交历史用 `git log --grep` 搜 `BUG-` 接 4285（第一次改号之后、第二次之前的提交接 4395）；这两个旧号现在或以后属于别的 bug，与本条无关。此处旧号不带前缀，免得 `bug.dart renumber` / `settle` 替别的 bug 改号时把这里一起改掉。
