@@ -689,7 +689,7 @@ impl Body {
 }
 
 /// 日志种类的紧凑码（持久化名冻结）；不认识的写字符串。
-const LOG_KINDS: [&str; 6] = [
+pub(crate) const LOG_KINDS: [&str; 6] = [
     "review",
     "manual",
     "reschedule",
@@ -697,7 +697,7 @@ const LOG_KINDS: [&str; 6] = [
     "handOff",
     "undo",
 ];
-const RTYPES: [&str; 6] = [
+pub(crate) const RTYPES: [&str; 6] = [
     "learn",
     "review",
     "relearn",
@@ -705,7 +705,7 @@ const RTYPES: [&str; 6] = [
     "manual",
     "rescheduled",
 ];
-const ORIGINS: [&str; 2] = ["fushi", "anki"];
+pub(crate) const ORIGINS: [&str; 2] = ["fushi", "anki"];
 
 fn write_code(w: &mut Writer, table: &[&str], s: &str) {
     match table.iter().position(|x| *x == s) {

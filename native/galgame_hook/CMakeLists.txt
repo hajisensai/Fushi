@@ -123,6 +123,11 @@ add_library(fushi_voice_hook SHARED
   "hook/adapters/softpal_lookup.inc"
   "hook/adapters/softpal_profile.h"
   "hook/adapters/softpal_text.inc"
+  "hook/adapters/system4_adapter.inc"
+  "hook/adapters/system4_core.h"
+  "hook/adapters/system4_lookup.inc"
+  "hook/adapters/system4_profile.h"
+  "hook/adapters/system4_text.inc"
   "hook/adapters/fvp_adapter.inc"
   "hook/adapters/fvp_profile.h"
   "hook/adapters/fvp_lookup.inc"
@@ -200,6 +205,16 @@ target_compile_definitions(fushi_leaf_autoprofile_test PRIVATE
   UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 add_test(NAME fushi_leaf_autoprofile_test
   COMMAND fushi_leaf_autoprofile_test)
+
+# Leaf/AQUAPLUS 离线站点探针：对本机样本（磁盘 PE 或运行时主模块 dump）跑与 hook 同一份
+# 推导代码，只打印站点 RVA 与断点阶段，不打印样本内容。样本不入库，故不进 CTest。
+add_executable(fushi_leaf_site_probe
+  "tools/leaf_site_probe.cpp"
+)
+target_include_directories(fushi_leaf_site_probe PRIVATE
+  "hook/adapters")
+target_compile_definitions(fushi_leaf_site_probe PRIVATE
+  UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 
 # Siglus OVK 索引/Ogg 完整性解析是纯函数，独立小测试不需启动或注入游戏。
 enable_testing()
@@ -730,6 +745,15 @@ target_include_directories(fushi_loader_init_gate_test PRIVATE "include")
 add_test(NAME fushi_loader_init_gate_test
   COMMAND fushi_loader_init_gate_test)
 
+# SteamStub 解壳门：Steam 客户端路径 / 附着时等 `.bind` 壳原地解密代码段再注入，
+# 否则 LunaHook 一次性的引擎识别扫到密文；含无 `.bind` 与重定位映像的负向。
+add_executable(fushi_steam_stub_unpack_test
+  "tests/steam_stub_unpack_test.cpp"
+)
+target_include_directories(fushi_steam_stub_unpack_test PRIVATE "include")
+add_test(NAME fushi_steam_stub_unpack_test
+  COMMAND fushi_steam_stub_unpack_test)
+
 add_executable(fushi_luna_hook_config_test tests/luna_hook_config_test.cpp)
 target_include_directories(fushi_luna_hook_config_test PRIVATE include)
 add_test(NAME fushi_luna_hook_config_test COMMAND fushi_luna_hook_config_test)
@@ -1087,6 +1111,18 @@ target_compile_definitions(fushi_reallive_lookup_test PRIVATE
 add_test(NAME fushi_reallive_lookup_test
   COMMAND fushi_reallive_lookup_test)
 
+# RealLive offline site probe: runs the lookup's import-slot reader and site
+# resolver above over a game exe (or a flat dump of its main module) read from
+# disk and prints every step.  Diagnostic only (needs a real game image, so no
+# add_test); reads the file into a private buffer, never loads or runs it.
+add_executable(fushi_reallive_site_probe
+  "tools/reallive_site_probe.cpp"
+)
+target_include_directories(fushi_reallive_site_probe PRIVATE
+  "hook/adapters")
+target_compile_definitions(fushi_reallive_site_probe PRIVATE
+  UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+
 # CatSystem2 in-game lookup core: structural site resolution on a synthetic
 # x86 image (ClearPage+RenderChar pair -> record layout -> GetCharImage ->
 # GetGlyphOutlineA rasteriser, Window::Update -> reveal/sync, layer query ->
@@ -1155,6 +1191,18 @@ target_compile_definitions(fushi_catsystem2_voice_test PRIVATE
   UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 add_test(NAME fushi_catsystem2_voice_test
   COMMAND fushi_catsystem2_voice_test)
+
+# CatSystem2 offline site probe: runs the two resolvers above over a game exe
+# (or a flat dump of its main module) read from disk and prints the resolved
+# RVAs.  Diagnostic only (needs a real game image, so no add_test); reads the
+# file into a private buffer, never loads or runs it.
+add_executable(fushi_catsystem2_site_probe
+  "tools/catsystem2_site_probe.cpp"
+)
+target_include_directories(fushi_catsystem2_site_probe PRIVATE
+  "hook/adapters")
+target_compile_definitions(fushi_catsystem2_site_probe PRIVATE
+  UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 
 # CMVS per-line voice: group-loader site proof from the x64 exception
 # directory (both toolchain shapes, chained fragments, overflow) and the
@@ -1275,7 +1323,31 @@ add_executable(fushi_softpal_adapter_test "tests/softpal_adapter_test.cpp")
 target_include_directories(fushi_softpal_adapter_test PRIVATE "hook" "hook/adapters")
 target_compile_definitions(fushi_softpal_adapter_test PRIVATE UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 add_test(NAME fushi_softpal_adapter_test COMMAND fushi_softpal_adapter_test)
+add_executable(fushi_system4_adapter_test "tests/system4_adapter_test.cpp")
+target_include_directories(fushi_system4_adapter_test PRIVATE "hook" "hook/adapters")
+target_compile_definitions(fushi_system4_adapter_test PRIVATE UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_system4_adapter_test COMMAND fushi_system4_adapter_test)
 add_executable(fushi_lookup_hover_highlight_state_test "tests/lookup_hover_highlight_state_test.cpp")
 target_include_directories(fushi_lookup_hover_highlight_state_test PRIVATE "hook")
 target_compile_definitions(fushi_lookup_hover_highlight_state_test PRIVATE UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 add_test(NAME fushi_lookup_hover_highlight_state_test COMMAND fushi_lookup_hover_highlight_state_test)
+
+add_executable(fushi_test_version_resource_test "tests/test_version_resource_test.cpp")
+target_compile_definitions(fushi_test_version_resource_test PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+target_link_libraries(fushi_test_version_resource_test PRIVATE version)
+add_test(NAME fushi_test_version_resource_test COMMAND fushi_test_version_resource_test)
+
+# 所有 *_test 可执行文件统一挂 VERSIONINFO。不带版本资源的极小 x64 Release 控制台 exe
+# 会撞杀软泛型启发式（实测 Kaspersky 把 fushi_utterance_window_test.exe 报
+# VHO:Trojan.Win32.Sdum.gen 并删除，CTest 静默少跑一条）。必须留在文件末尾：
+# BUILDSYSTEM_TARGETS 只含此前已定义的目标。守卫：fushi_test_version_resource_test。
+if(MSVC)
+  enable_language(RC)
+  get_property(_fushi_all_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
+  foreach(_fushi_target IN LISTS _fushi_all_targets)
+    get_target_property(_fushi_type ${_fushi_target} TYPE)
+    if(_fushi_type STREQUAL "EXECUTABLE" AND _fushi_target MATCHES "_test$")
+      target_sources(${_fushi_target} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_version.rc")
+    endif()
+  endforeach()
+endif()
