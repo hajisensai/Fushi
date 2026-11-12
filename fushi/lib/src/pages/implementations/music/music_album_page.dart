@@ -20,23 +20,34 @@ import 'package:fushi/src/media/music/music_player_engine.dart';
 import 'package:fushi/src/media/music/music_resume.dart';
 import 'package:fushi/src/media/music/music_resume_points_watch.dart';
 import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart'
-    show MusicFloatingBarHost;
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
 import 'package:fushi/src/pages/implementations/music/music_disc_actions.dart';
 import 'package:fushi/src/pages/implementations/music/music_playlist_actions.dart'
     show musicAddLocalTracksToPlaylist;
 import 'package:fushi/src/pages/implementations/music/music_server_pages.dart'
-    show musicAlbumDetailCover, kMusicAlbumDetailCoverSize;
+    show
+        MusicDetailHero,
+        kMusicAlbumDetailCoverSize,
+        musicAlbumDetailCover,
+        musicBrowseScaffold,
+        musicDetailHeroGap;
 import 'package:fushi/src/pages/implementations/music/music_subtitle_actions.dart';
 import 'package:fushi/src/pages/implementations/music/music_track_list.dart';
-import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
+import 'package:fushi/src/pages/implementations/music/music_track_row_surface.dart';
+import 'package:fushi/src/pages/implementations/music/music_collection_view.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show shellContentLayoutOf;
+import 'package:fushi/src/utils/components/fushi_cover_block.dart'
+    show FushiCoverBlockSize;
+import 'package:fushi/src/utils/components/fushi_cover_block_layout.dart'
+    show FushiCoverBlocks;
+import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
+    show FushiToolbarItem;
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_section_title.dart';
@@ -184,11 +195,16 @@ class _MusicAlbumPageState extends ConsumerState<MusicAlbumPage> {
   ];
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => MusicViewStyleBuilder(
+    kind: MusicViewKind.tracks,
+    fallback: MusicViewStyle.list,
+    builder: _buildPage,
+  );
+
+  /// [style]：各碟曲目排成单列曲目行（原有）或多列封面色块。
+  Widget _buildPage(BuildContext context, MusicViewStyle style) {
     final String? embeddedCoverPath = widget.embeddedCoverPath;
-    final bool apple = isGlassDesign(context);
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final NavigatorState? navigator = Navigator.maybeOf(context);
     final MusicPlayerEngine engine = ref.read(appProvider).musicSession.engine;
     final ({List<String> badges, bool hiRes}) fmt = musicAlbumBadges(tracks);
     final Map<int?, List<MusicTrackRow>> discs = groupTracksByDisc(tracks);
@@ -197,192 +213,193 @@ class _MusicAlbumPageState extends ConsumerState<MusicAlbumPage> {
     };
     final MusicDiscSourceRow? disc = this.disc;
 
-    final Widget header = Wrap(
-      spacing: tokens.spacing.section,
-      runSpacing: tokens.spacing.gap,
-      crossAxisAlignment: WrapCrossAlignment.end,
-      children: <Widget>[
-        // 方形「唱片」材质大图（与专辑网格同一材质）；封面上不压角标，光盘规格
-        // 徽标挪到右侧格式徽章那一排。
-        musicAlbumDetailCover(
-          MusicCover(
-            coverPath: album.coverPath,
-            embeddedFromPath: embeddedCoverPath,
-            size: kMusicAlbumDetailCoverSize,
+    final String meta = <String>[
+      album.albumArtistCredit ?? t.music_artist_unknown,
+      if (album.releaseDate != null) album.releaseDate!,
+      t.music_tracks_count(count: tracks.length),
+    ].join(' · ');
+    final List<Widget> discBadges = <Widget>[
+      if (disc != null)
+        IgnorePointer(
+          child: MusicDiscBadge(
+            key: const ValueKey<String>('music-album-disc-badge'),
+            disc: disc,
           ),
         ),
-        ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 420),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            spacing: tokens.spacing.gap * 0.5,
-            children: <Widget>[
-              Text(album.title, style: context.fushiType.headlineSmall),
-              Text(
-                <String>[
-                  album.albumArtistCredit ?? t.music_artist_unknown,
-                  if (album.releaseDate != null) album.releaseDate!,
-                  t.music_tracks_count(count: tracks.length),
-                ].join(' · '),
-                style: context.fushiType.bodyMedium,
-              ),
-              Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: <Widget>[
-                  if (disc != null)
-                    IgnorePointer(
-                      child: MusicDiscBadge(
-                        key: const ValueKey<String>('music-album-disc-badge'),
-                        disc: disc,
-                      ),
-                    ),
-                  for (final String b in fmt.badges) _Badge(text: b),
-                  if (fmt.hiRes)
-                    _Badge(text: t.music_hi_res_badge, strong: true),
-                ],
-              ),
-              const SizedBox(height: 4),
-              Wrap(
-                spacing: tokens.spacing.gap,
-                runSpacing: tokens.spacing.gap,
-                children: <Widget>[
-                  FushiPressScale(
-                    child: FushiFilledButton.icon(
-                      size: FushiButtonSize.m,
-                      key: const ValueKey<String>('music_album_play'),
-                      onPressed: tracks.isEmpty
-                          ? null
-                          : () => unawaited(
-                              engine.playQueue(
-                                _items(),
-                                context: MusicQueueContext.album,
-                                source: _source,
-                              ),
-                            ),
-                      icon: const FushiIcon(FushiIcons.play),
-                      label: Text(t.music_play_all),
-                    ),
+    ];
+    final List<Widget> actions = <Widget>[
+      FushiPressScale(
+        child: FushiFilledButton.icon(
+          size: FushiButtonSize.m,
+          key: const ValueKey<String>('music_album_play'),
+          onPressed: tracks.isEmpty
+              ? null
+              : () => unawaited(
+                  engine.playQueue(
+                    _items(),
+                    context: MusicQueueContext.album,
+                    source: _source,
                   ),
-                  FushiPressScale(
-                    child: FushiFilledButton.tonalIcon(
-                      size: FushiButtonSize.m,
-                      key: const ValueKey<String>('music_album_shuffle'),
-                      onPressed: tracks.isEmpty
-                          ? null
-                          : () => unawaited(
-                              engine.playQueue(
-                                _items(),
-                                context: MusicQueueContext.album,
-                                shuffle: true,
-                                source: _source,
-                              ),
-                            ),
-                      icon: const FushiIcon(FushiIcons.repeat),
-                      label: Text(t.music_shuffle_play),
-                    ),
-                  ),
-                  FushiPressScale(
-                    child: FushiFilledButton.tonalIcon(
-                      size: FushiButtonSize.m,
-                      key: const ValueKey<String>(
-                        'music_album_add_to_playlist',
-                      ),
-                      onPressed: tracks.isEmpty
-                          ? null
-                          : () => unawaited(
-                              musicAddLocalTracksToPlaylist(context, <String>[
-                                for (final MusicTrackRow tr in tracks)
-                                  tr.trackUid,
-                              ]),
-                            ),
-                      icon: const FushiIcon(FushiIcons.playlist),
-                      label: Text(t.music_action_add_to_playlist),
-                    ),
-                  ),
-                  // 广播剧 CD 一类整张专辑：一键排队生成日语字幕（已有生成字幕的曲目跳过）。
-                  if (musicSubtitleGenerationAvailableForAny(<String>[
-                    for (final MusicTrackRow t in tracks) t.path,
-                  ]))
-                    FushiPressScale(
-                      child: FushiFilledButton.tonalIcon(
-                        size: FushiButtonSize.m,
-                        key: const ValueKey<String>(
-                          'music_album_generate_subtitles',
-                        ),
-                        onPressed: () => unawaited(
-                          openMusicSubtitleGenerateSheet(
-                            context: context,
-                            appModel: _app,
-                            resolve: (MusicSubtitleTargets targets) =>
-                                targets.forAlbum(album.albumUid),
-                          ),
-                        ),
-                        icon: const FushiIcon(FushiIcons.subtitles),
-                        label: Text(t.music_subtitle_generate_album),
-                      ),
-                    ),
-                  if (disc != null) ...<Widget>[
-                    FushiPressScale(
-                      child: FushiFilledButton.tonalIcon(
-                        size: FushiButtonSize.m,
-                        key: const ValueKey<String>('music_disc_import'),
-                        onPressed: _busy
-                            ? null
-                            : () => unawaited(
-                                _runDisc(MusicDiscMenuAction.importChapters),
-                              ),
-                        icon: const FushiIcon(FushiIcons.toc),
-                        label: Text(
-                          musicDiscImportLabel(
-                            disc,
-                            hasTracks: tracks.isNotEmpty,
-                          ),
-                        ),
-                      ),
-                    ),
-                    if (tracks.isNotEmpty &&
-                        disc.kind != MusicDiscKind.cdda.wire)
-                      FushiPressScale(
-                        child: FushiFilledButton.tonalIcon(
-                          size: FushiButtonSize.m,
-                          key: const ValueKey<String>('music_disc_lookup'),
-                          onPressed: _busy
-                              ? null
-                              : () => unawaited(
-                                  _runDisc(MusicDiscMenuAction.lookup),
-                                ),
-                          icon: const FushiIcon(FushiIcons.search),
-                          label: Text(t.music_disc_lookup),
-                        ),
-                      ),
-                    FushiPressScale(
-                      child: FushiFilledButton.tonalIcon(
-                        size: FushiButtonSize.m,
-                        key: const ValueKey<String>('music_disc_remove'),
-                        onPressed: _busy
-                            ? null
-                            : () => unawaited(
-                                _runDisc(MusicDiscMenuAction.remove),
-                              ),
-                        icon: const FushiIcon(FushiIcons.delete),
-                        label: Text(t.music_disc_remove),
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-              if (disc != null && tracks.isEmpty)
-                Text(
-                  t.music_disc_not_imported,
-                  style: context.fushiType.bodySmall,
                 ),
-            ],
+          icon: const FushiIcon(FushiIcons.play),
+          label: Text(t.music_play_all),
+        ),
+      ),
+      FushiPressScale(
+        child: FushiFilledButton.tonalIcon(
+          size: FushiButtonSize.m,
+          key: const ValueKey<String>('music_album_shuffle'),
+          onPressed: tracks.isEmpty
+              ? null
+              : () => unawaited(
+                  engine.playQueue(
+                    _items(),
+                    context: MusicQueueContext.album,
+                    shuffle: true,
+                    source: _source,
+                  ),
+                ),
+          icon: const FushiIcon(FushiIcons.repeat),
+          label: Text(t.music_shuffle_play),
+        ),
+      ),
+      FushiPressScale(
+        child: FushiFilledButton.tonalIcon(
+          size: FushiButtonSize.m,
+          key: const ValueKey<String>('music_album_add_to_playlist'),
+          onPressed: tracks.isEmpty
+              ? null
+              : () => unawaited(
+                  musicAddLocalTracksToPlaylist(context, <String>[
+                    for (final MusicTrackRow tr in tracks) tr.trackUid,
+                  ]),
+                ),
+          icon: const FushiIcon(FushiIcons.playlist),
+          label: Text(t.music_action_add_to_playlist),
+        ),
+      ),
+      // 广播剧 CD 一类整张专辑：一键排队生成日语字幕（已有生成字幕的曲目跳过）。
+      if (musicSubtitleGenerationAvailableForAny(<String>[
+        for (final MusicTrackRow t in tracks) t.path,
+      ]))
+        FushiPressScale(
+          child: FushiFilledButton.tonalIcon(
+            size: FushiButtonSize.m,
+            key: const ValueKey<String>('music_album_generate_subtitles'),
+            onPressed: () => unawaited(
+              openMusicSubtitleGenerateSheet(
+                context: context,
+                appModel: _app,
+                resolve: (MusicSubtitleTargets targets) =>
+                    targets.forAlbum(album.albumUid),
+              ),
+            ),
+            icon: const FushiIcon(FushiIcons.subtitles),
+            label: Text(t.music_subtitle_generate_album),
+          ),
+        ),
+      if (disc != null) ...<Widget>[
+        FushiPressScale(
+          child: FushiFilledButton.tonalIcon(
+            size: FushiButtonSize.m,
+            key: const ValueKey<String>('music_disc_import'),
+            onPressed: _busy
+                ? null
+                : () => unawaited(_runDisc(MusicDiscMenuAction.importChapters)),
+            icon: const FushiIcon(FushiIcons.toc),
+            label: Text(
+              musicDiscImportLabel(disc, hasTracks: tracks.isNotEmpty),
+            ),
+          ),
+        ),
+        if (tracks.isNotEmpty && disc.kind != MusicDiscKind.cdda.wire)
+          FushiPressScale(
+            child: FushiFilledButton.tonalIcon(
+              size: FushiButtonSize.m,
+              key: const ValueKey<String>('music_disc_lookup'),
+              onPressed: _busy
+                  ? null
+                  : () => unawaited(_runDisc(MusicDiscMenuAction.lookup)),
+              icon: const FushiIcon(FushiIcons.search),
+              label: Text(t.music_disc_lookup),
+            ),
+          ),
+        FushiPressScale(
+          child: FushiFilledButton.tonalIcon(
+            size: FushiButtonSize.m,
+            key: const ValueKey<String>('music_disc_remove'),
+            onPressed: _busy
+                ? null
+                : () => unawaited(_runDisc(MusicDiscMenuAction.remove)),
+            icon: const FushiIcon(FushiIcons.delete),
+            label: Text(t.music_disc_remove),
           ),
         ),
       ],
+    ];
+    final bool notImported = disc != null && tracks.isEmpty;
+
+    final Widget header = MusicDetailHero(
+      title: album.title,
+      coverPath: album.coverPath,
+      embeddedFromPath: embeddedCoverPath,
+      eyebrow: t.music_section_albums,
+      meta: meta,
+      leadingBadges: discBadges,
+      chips: fmt.badges,
+      strongChips: <String>[if (fmt.hiRes) t.music_hi_res_badge],
+      actions: actions,
+      footer: notImported ? t.music_disc_not_imported : null,
+      legacy: Wrap(
+        spacing: tokens.spacing.section,
+        runSpacing: tokens.spacing.gap,
+        crossAxisAlignment: WrapCrossAlignment.end,
+        children: <Widget>[
+          // 方形「唱片」材质大图（与专辑网格同一材质）；封面上不压角标，光盘规格
+          // 徽标挪到右侧格式徽章那一排。
+          musicAlbumDetailCover(
+            MusicCover(
+              coverPath: album.coverPath,
+              embeddedFromPath: embeddedCoverPath,
+              size: kMusicAlbumDetailCoverSize,
+            ),
+          ),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              spacing: tokens.spacing.gap * 0.5,
+              children: <Widget>[
+                Text(album.title, style: context.fushiType.headlineSmall),
+                Text(meta, style: context.fushiType.bodyMedium),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: <Widget>[
+                    ...discBadges,
+                    for (final String b in fmt.badges) _Badge(text: b),
+                    if (fmt.hiRes)
+                      _Badge(text: t.music_hi_res_badge, strong: true),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Wrap(
+                  spacing: tokens.spacing.gap,
+                  runSpacing: tokens.spacing.gap,
+                  children: actions,
+                ),
+                if (notImported)
+                  Text(
+                    t.music_disc_not_imported,
+                    style: context.fushiType.bodySmall,
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
 
     final List<Widget> children = <Widget>[
@@ -396,58 +413,45 @@ class _MusicAlbumPageState extends ConsumerState<MusicAlbumPage> {
           allTracks: tracks,
           albums: albumMap,
           album: album,
+          style: style,
         ),
       ],
     ];
 
-    return MusicFloatingBarHost(
-      child: FushiPageScaffold(
-        title: album.title,
-        header: apple
-            ? null
-            : Padding(
-                padding: EdgeInsets.fromLTRB(
-                  tokens.spacing.page,
-                  tokens.spacing.gap,
-                  tokens.spacing.page,
-                  tokens.spacing.gap,
-                ),
-                child: FushiFloatingTopBar(
-                  title: album.title,
-                  leading: <FushiToolbarItem>[
-                    if (navigator != null && navigator.canPop())
-                      FushiToolbarItem(
-                        icon: FushiIcons.back,
-                        label: MaterialLocalizations.of(
-                          context,
-                        ).backButtonTooltip,
-                        onPressed: () => unawaited(navigator.maybePop()),
-                      ),
-                  ],
-                ),
+    final double heroGap = musicDetailHeroGap(context, tokens.spacing.gap);
+    // 外壳与服务器 / 插件详情同一份（[musicBrowseScaffold]）：重设计外壳下是页头
+    // 大字（标题已在色块里，页头只留返回键，滚过色块后页名淡入）；墨水屏照旧是
+    // 悬浮顶栏 / Apple 系统页头。
+    return musicBrowseScaffold(
+      context,
+      title: album.title,
+      titleInBody: true,
+      actions: <FushiToolbarItem>[
+        if (musicTrackRowSurfaceActive(context))
+          musicViewStyleToggle(MusicViewKind.tracks, style),
+      ],
+      body: FushiEntranceScope(
+        // Builder：顶部让位读的是脚手架给正文的 MediaQuery（页头高度在里面），
+        // 不是本页 build 的外层 context。
+        child: Builder(
+          builder: (BuildContext context) => ListView.separated(
+            padding: withBottomSafeInset(
+              context,
+              EdgeInsets.fromLTRB(
+                tokens.spacing.page,
+                // 外壳把正文铺到悬浮页头底下，页头高度经 MediaQuery 顶部 padding
+                // 传下来，必须让出，否则封面被顶栏盖住（反馈 yglXWr9DTq）。与同目录
+                // 其它页同一约定。
+                MediaQuery.paddingOf(context).top + tokens.spacing.gap,
+                tokens.spacing.page,
+                tokens.spacing.section,
               ),
-        body: FushiEntranceScope(
-          // Builder：顶部让位读的是脚手架给正文的 MediaQuery（页头高度在里面），
-          // 不是本页 build 的外层 context。
-          child: Builder(
-            builder: (BuildContext context) => ListView.separated(
-              padding: withBottomSafeInset(
-                context,
-                EdgeInsets.fromLTRB(
-                  tokens.spacing.page,
-                  // MD3 下 FushiPageScaffold 把正文铺到悬浮页头底下，页头高度经
-                  // MediaQuery 顶部 padding 传下来，必须让出，否则封面被顶栏盖住
-                  // （反馈 yglXWr9DTq）。与同目录其它页同一约定。
-                  MediaQuery.paddingOf(context).top + tokens.spacing.gap,
-                  tokens.spacing.page,
-                  tokens.spacing.section,
-                ),
-              ),
-              itemCount: children.length,
-              separatorBuilder: (_, _) => SizedBox(height: tokens.spacing.gap),
-              itemBuilder: fushiStaggeredItemBuilder(
-                (BuildContext context, int i) => children[i],
-              ),
+            ),
+            itemCount: children.length,
+            separatorBuilder: (_, int i) =>
+                SizedBox(height: i == 0 ? heroGap : tokens.spacing.gap),
+            itemBuilder: fushiStaggeredItemBuilder(
+              (BuildContext context, int i) => children[i],
             ),
           ),
         ),
@@ -465,12 +469,16 @@ class _AlbumDiscList extends ConsumerStatefulWidget {
     required this.allTracks,
     required this.albums,
     required this.album,
+    this.style = MusicViewStyle.list,
   });
 
   final List<MusicTrackRow> tracks;
   final List<MusicTrackRow> allTracks;
   final Map<String, MusicAlbumRow> albums;
   final MusicAlbumRow album;
+
+  /// 单列曲目行 / 多列封面色块（[MusicTrackBlock]，重设计外壳下）。
+  final MusicViewStyle style;
 
   @override
   ConsumerState<_AlbumDiscList> createState() => _AlbumDiscListState();
@@ -526,6 +534,92 @@ class _AlbumDiscListState extends ConsumerState<_AlbumDiscList> {
       for (final MusicTrackRow t in tracks)
         musicTrackResumeOf(t, _resume[t.trackUid], mode),
     ];
+    void play(int i) => unawaited(
+      engine.playQueue(
+        <MusicPlayItem>[
+          for (final MusicTrackRow t in allTracks)
+            musicPlayItemOf(t, album: album),
+        ],
+        startIndex: allTracks.indexOf(tracks[i]),
+        context: MusicQueueContext.album,
+        source: MusicPlaySource.album(
+          album.albumUid,
+          title: album.title,
+          cover: album.coverPath,
+        ),
+      ),
+    );
+    Widget? subtitleOf(int i) => musicTrackSubtitleWithResume(
+      tracks[i],
+      tracks[i].artistCredit == null ||
+              tracks[i].artistCredit == album.albumArtistCredit
+          ? null
+          : Text(tracks[i].artistCredit!),
+      resumes[i],
+    );
+    if (widget.style == MusicViewStyle.blocks &&
+        musicTrackRowSurfaceActive(context)) {
+      // 一碟十几首、排在外层列表里：盒子版色块（一次建完），与库页同一套几何。
+      // 外层列表已整块错峰进场，格子不再各自进场。
+      return FushiCoverBlocks(
+        layout: shellContentLayoutOf(context),
+        staggerEntrance: false,
+        itemCount: tracks.length,
+        itemBuilder: (BuildContext context, int i, FushiCoverBlockSize size) =>
+            MusicNowPlayingTrack(
+              trackUid: tracks[i].trackUid,
+              builder: (BuildContext context, bool playing) => MusicTrackBlock(
+                key: ValueKey<String>(
+                  'music-album-track-${tracks[i].trackUid}',
+                ),
+                size: size,
+                title: tracks[i].title,
+                subtitle: <String>[
+                  if (tracks[i].trackNo != null) '${tracks[i].trackNo}',
+                  if (tracks[i].artistCredit != null &&
+                      tracks[i].artistCredit != album.albumArtistCredit)
+                    tracks[i].artistCredit!,
+                ].join(' · '),
+                coverPath: album.coverPath,
+                embeddedFromPath: tracks[i].path,
+                durationText: musicTrackTimeLabel(
+                  tracks[i].durationMs,
+                  resumes[i],
+                ),
+                playing: playing,
+                onTap: () => play(i),
+              ),
+            ),
+      );
+    }
+    if (musicTrackRowSurfaceActive(context)) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          for (int i = 0; i < tracks.length; i++)
+            MusicNowPlayingTrack(
+              trackUid: tracks[i].trackUid,
+              builder: (BuildContext context, bool playing) =>
+                  MusicTrackRowSurface(
+                    key: ValueKey<String>(
+                      'music-album-track-${tracks[i].trackUid}',
+                    ),
+                    title: tracks[i].title,
+                    subtitleWidget: subtitleOf(i),
+                    ordinal: tracks[i].trackNo?.toString() ?? '',
+                    coverPath: album.coverPath,
+                    embeddedFromPath: tracks[i].path,
+                    durationText: musicTrackTimeLabel(
+                      tracks[i].durationMs,
+                      resumes[i],
+                    ),
+                    playing: playing,
+                    onTap: () => play(i),
+                  ),
+            ),
+        ],
+      );
+    }
     return Column(
       children: <Widget>[
         for (int i = 0; i < tracks.length; i++)
@@ -534,21 +628,7 @@ class _AlbumDiscListState extends ConsumerState<_AlbumDiscList> {
               key: ValueKey<String>('music-album-track-${tracks[i].trackUid}'),
               index: i,
               count: tracks.length,
-              onTap: () => unawaited(
-                engine.playQueue(
-                  <MusicPlayItem>[
-                    for (final MusicTrackRow t in allTracks)
-                      musicPlayItemOf(t, album: album),
-                  ],
-                  startIndex: allTracks.indexOf(tracks[i]),
-                  context: MusicQueueContext.album,
-                  source: MusicPlaySource.album(
-                    album.albumUid,
-                    title: album.title,
-                    cover: album.coverPath,
-                  ),
-                ),
-              ),
+              onTap: () => play(i),
               child: FushiListItem(
                 leading: SizedBox(
                   width: 28,
@@ -563,14 +643,7 @@ class _AlbumDiscListState extends ConsumerState<_AlbumDiscList> {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
-                subtitle: musicTrackSubtitleWithResume(
-                  tracks[i],
-                  tracks[i].artistCredit == null ||
-                          tracks[i].artistCredit == album.albumArtistCredit
-                      ? null
-                      : Text(tracks[i].artistCredit!),
-                  resumes[i],
-                ),
+                subtitle: subtitleOf(i),
                 trailing: Text(
                   musicTrackTimeLabel(tracks[i].durationMs, resumes[i]),
                   style: context.fushiType.bodySmall,

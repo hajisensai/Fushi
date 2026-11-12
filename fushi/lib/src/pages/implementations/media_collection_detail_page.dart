@@ -11,6 +11,7 @@ import 'package:fushi/src/utils/components/library_reorder.dart';
 import 'package:fushi/src/media/collections/collection_owned_subscriptions.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/focus/fushi_focus_scroll.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:path/path.dart' as p;
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
@@ -21,6 +22,10 @@ import 'package:fushi_engine/media/collections/collection_cover.dart'
 import 'package:fushi/src/media/collections/collection_continue.dart';
 import 'package:fushi/src/media/collections/collection_detail_layout.dart';
 import 'package:fushi/src/media/detail/media_detail_kit.dart';
+import 'package:fushi/src/media/detail/media_poster_detail.dart';
+import 'package:fushi/src/media/video/cover_ui/video_poster_detail_hero.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show shellRedesignActive;
 import 'package:fushi/src/media/collections/collection_drag.dart'
     show CollectionAddOutcome, addMediaRefToCollection;
 import 'package:fushi/src/media/drag_drop/drop_classification.dart';
@@ -2365,6 +2370,20 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   /// 作品资料区：事实行在本页求值，视觉交给共享 [CollectionWorkDetailsSection]。
   Widget _buildWorkDetailsSection() {
     final VideoMetadataWorkRow? work = _canonicalWork;
+    // 简介已在 hero 里展示（可展开、可选中）；这里只拿它判空——有简介就不是
+    // 「资料待补」。
+    return CollectionWorkDetailsSection(
+      overview: work?.overview ?? _scrapeMeta?.summary,
+      showOverview: false,
+      facts: _workFacts(),
+      pendingText: t.video_work_metadata_pending,
+    );
+  }
+
+  /// 作品资料清单（类型 / 关键词 / 制作公司 / 国家 / 分级 / 外部 ID）：原版式的
+  /// 「作品资料」区块与海报面板 hero 的附栏共用同一份。
+  List<(String, String)> _workFacts() {
+    final VideoMetadataWorkRow? work = _canonicalWork;
     final Map<String, List<String>> terms = <String, List<String>>{};
     for (final VideoMetadataTermRow term in _workTerms) {
       terms.putIfAbsent(term.kind, () => <String>[]).add(term.name);
@@ -2396,14 +2415,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
               .join(' · '),
         ),
     ];
-    // 简介已在 hero 里展示（可展开、可选中）；这里只拿它判空——有简介就不是
-    // 「资料待补」。
-    return CollectionWorkDetailsSection(
-      overview: work?.overview ?? _scrapeMeta?.summary,
-      showOverview: false,
-      facts: facts,
-      pendingText: t.video_work_metadata_pending,
-    );
+    return facts;
   }
 
   Widget _buildCreditsSection(FushiDesignTokens tokens) {
@@ -2610,10 +2622,21 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   }
 
   Widget _buildEpisodeSection(FushiDesignTokens tokens) {
+    // 重设计外壳：区块间距收到常规档——上方只隔 hero 一个卡片间距、下方不另垫
+    // （下一个区块标题自带上间距），多选入口并进标题行，标题与剧照格之间只隔
+    // 一个 gap（用户 2026-11-12「不要留白」）。墨水屏原版式不变。
+    final bool redesign = shellRedesignActive(context);
+    // 多选入口：选集后批量标记已看 / 未看（底栏见 [_buildSelectionBar]）。
+    final Widget selectToggle = FushiTextButton(
+      key: const ValueKey<String>('collection-select-toggle'),
+      onPressed: _toggleSelecting,
+      child: Text(_selecting ? t.dialog_cancel : t.collection_select_episodes),
+    );
     return Padding(
+      key: _episodeSectionKey,
       padding: EdgeInsets.only(
-        top: tokens.spacing.section,
-        bottom: tokens.spacing.section,
+        top: redesign ? tokens.spacing.card : tokens.spacing.section,
+        bottom: redesign ? 0 : tokens.spacing.section,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -2621,25 +2644,20 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
           CollectionSectionTitle(
             t.video_episode_list,
             count: _visibleSlots.length,
+            trailing: redesign ? selectToggle : null,
           ),
           // 多季合集：季分段（浮动胶囊）紧贴标题行、在集列表之上——用户一进详情页
           // 就看得见分季。
           if (_hasSeasonTabs) _buildSeasonTabs(),
-          // 多选入口：选集后批量标记已看 / 未看（底栏见 [_buildSelectionBar]）。
-          Align(
-            alignment: Alignment.centerRight,
-            child: Padding(
-              padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
-              child: FushiTextButton(
-                key: const ValueKey<String>('collection-select-toggle'),
-                onPressed: _toggleSelecting,
-                child: Text(
-                  _selecting ? t.dialog_cancel : t.collection_select_episodes,
-                ),
+          if (!redesign)
+            Align(
+              alignment: Alignment.centerRight,
+              child: Padding(
+                padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
+                child: selectToggle,
               ),
             ),
-          ),
-          SizedBox(height: tokens.spacing.card),
+          SizedBox(height: redesign ? tokens.spacing.gap : tokens.spacing.card),
           // hayase 式宽列表卡（TODO-2491 用户拍板）：每集一张横向卡（16:9 缩略图 +
           // 「N. 集名」+ 集简介 + 观看进度），**默认全量可见、不再折叠**；宽屏两列。
           // 旧的横滚剧集轨已移除：列表默认展开后轨道与列表讲同一份内容（轨道无简介/
@@ -2698,16 +2716,40 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         if (mounted) setState(() {});
       });
     }
+    // 重设计外壳：分集走剧照格（够宽时网格、窄屏一集一行，见
+    // [MediaPosterEpisodeTile]）；墨水屏照旧 hayase 宽卡。
+    final bool posterTiles = shellRedesignActive(context);
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         const double spacing = 12;
-        final int columns = collectionEpisodeColumns(constraints.maxWidth);
-        final double columnWidth =
-            (constraints.maxWidth - spacing * (columns - 1)) / columns;
+        final double width = constraints.maxWidth;
+        final bool stills =
+            posterTiles && width >= kMediaPosterEpisodeGridMinWidth;
+        final int columns = !posterTiles
+            ? collectionEpisodeColumns(width)
+            : (stills ? mediaPosterEpisodeColumns(width, spacing) : 1);
+        final double columnWidth = (width - spacing * (columns - 1)) / columns;
+        // 本季可见集里有集简介才给剧照格留简介行（没有刮削集级资料的合集行高
+        // 不变）。
+        final bool anySummary = visible.any(
+          (CollectionEpisodeSlot slot) => _episodeSummary(slot) != null,
+        );
+        final double cellHeight = !posterTiles
+            ? kCollectionEpisodeCardHeight
+            : (stills
+                  ? mediaPosterEpisodeTileHeight(
+                      columnWidth,
+                      textScaler: MediaQuery.textScalerOf(context),
+                      summaryLines: anySummary
+                          ? kMediaPosterEpisodeSummaryLines
+                          : 0,
+                    )
+                  : kMediaPosterEpisodeRowHeight);
+        final bool? posterHorizontal = posterTiles ? !stills : null;
         return FushiReorderableGrid(
           itemCount: visible.length,
           crossAxisCount: columns,
-          childAspectRatio: columnWidth / kCollectionEpisodeCardHeight,
+          childAspectRatio: columnWidth / cellHeight,
           crossAxisSpacing: spacing,
           mainAxisSpacing: spacing,
           feedbackBorderRadius: FushiBorderRadius.card,
@@ -2740,12 +2782,22 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
             index: i,
             child: _selecting
                 ? _withSelectionOverlay(
-                    _buildEpisodeCard(context, visible[i], i),
+                    _buildEpisodeCard(
+                      context,
+                      visible[i],
+                      i,
+                      posterHorizontal: posterHorizontal,
+                    ),
                     selected: _selection.isSelected(
                       SelectionSlot.loose(visible[i].entryKey),
                     ),
                   )
-                : _buildEpisodeCard(context, visible[i], i),
+                : _buildEpisodeCard(
+                    context,
+                    visible[i],
+                    i,
+                    posterHorizontal: posterHorizontal,
+                  ),
           ),
         );
       },
@@ -2756,34 +2808,59 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   /// 共享 [CollectionEpisodeCard]（hayase 式宽卡，整卡 IgnorePointer——手势归
   /// [FushiReorderableGrid]）；键盘/手柄焦点不走指针，[FushiFocusTarget] 照常可
   /// 聚焦、Enter 开播。
+  ///
+  /// [posterHorizontal] 非 null = 重设计外壳的剧照格（[MediaPosterEpisodeTile]，
+  /// true 时一集一行）；null = 原 hayase 宽卡。数据求值两者同一份。
   Widget _buildEpisodeCard(
     BuildContext context,
     CollectionEpisodeSlot episode,
-    int index,
-  ) {
-    Widget buildCard(Widget? downloadBadge) => CollectionEpisodeCard(
-      thumb: collectionEpisodeThumb(context, _episodeCover(episode)),
-      // BUG-1544：序号跟随文件名解析出的真实集数（缺集时不再用顺位号冒充）；
-      // 解析不出时回退顺位号。
-      number: '${_episodeDisplayNumber(episode, index)}',
-      title: _episodeDisplayTitle(episode),
-      identityLabel: _episodeIdentityLabel(episode),
-      summary: _episodeSummary(episode),
-      // 播出日 · 时长（规范分集资料有才出）。
-      meta: _episodeMeta(episode),
-      completed: episode.completed,
-      positionMs: episode.positionMs,
-      progress: _episodeProgress(episode),
-      isContinue: episode.entryKey == _continueKey,
-      // 云角标 = 这一集只在对端（与库页远端占位卡同一枚角标）。
-      isRemote: episode.isRemote,
-      downloadBadge: downloadBadge,
-      // v95：该集的规格摘要（`1080p · HDR10 · HEVC`），挤在状态行右端。
-      trailingStatus: VideoSpecsInlineLine(
-        service: widget.videoSpecs,
-        filePath: episode.local?.videoPath,
-      ),
-    );
+    int index, {
+    bool? posterHorizontal,
+  }) {
+    Widget buildCard(Widget? downloadBadge) => posterHorizontal != null
+        ? MediaPosterEpisodeTile(
+            image: _episodeCover(episode),
+            horizontal: posterHorizontal,
+            number: '${_episodeDisplayNumber(episode, index)}',
+            title: _episodeDisplayTitle(episode),
+            identityLabel: _episodeIdentityLabel(episode),
+            meta: _episodeMeta(episode),
+            // 集级刮削的集简介（TODO-2491），与 hayase 宽卡同一份求值。
+            summary: _episodeSummary(episode),
+            completed: episode.completed,
+            positionMs: episode.positionMs,
+            progress: _episodeProgress(episode),
+            isContinue: episode.entryKey == _continueKey,
+            isRemote: episode.isRemote,
+            downloadBadge: downloadBadge,
+            trailingStatus: VideoSpecsInlineLine(
+              service: widget.videoSpecs,
+              filePath: episode.local?.videoPath,
+            ),
+          )
+        : CollectionEpisodeCard(
+            thumb: collectionEpisodeThumb(context, _episodeCover(episode)),
+            // BUG-1544：序号跟随文件名解析出的真实集数（缺集时不再用顺位号冒充）；
+            // 解析不出时回退顺位号。
+            number: '${_episodeDisplayNumber(episode, index)}',
+            title: _episodeDisplayTitle(episode),
+            identityLabel: _episodeIdentityLabel(episode),
+            summary: _episodeSummary(episode),
+            // 播出日 · 时长（规范分集资料有才出）。
+            meta: _episodeMeta(episode),
+            completed: episode.completed,
+            positionMs: episode.positionMs,
+            progress: _episodeProgress(episode),
+            isContinue: episode.entryKey == _continueKey,
+            // 云角标 = 这一集只在对端（与库页远端占位卡同一枚角标）。
+            isRemote: episode.isRemote,
+            downloadBadge: downloadBadge,
+            // v95：该集的规格摘要（`1080p · HDR10 · HEVC`），挤在状态行右端。
+            trailingStatus: VideoSpecsInlineLine(
+              service: widget.videoSpecs,
+              filePath: episode.local?.videoPath,
+            ),
+          );
     // 远端集 + 库页注入了下载管理器 → 集卡跟着该集任务快照重绘（进度环 / 失败
     // 角标）。任务键 = 远端集 id = entryKey，与库页远端占位卡同一张表；管理器是
     // ChangeNotifier，用 ListenableBuilder 订阅而不是把本页改成 Consumer（既有
@@ -3432,35 +3509,42 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       ),
       surfaceTintColor: Colors.transparent,
       elevation: 0,
-      actions: <Widget>[
-        // 宽屏才有两种版式可切（窄屏本来就是海报横幅）。
-        if (MediaDetailLayout.isTwoPane(
-          context,
-          MediaQuery.sizeOf(context).width,
-        ))
-          FushiIconButtonControl(
-            key: const ValueKey<String>('collection-detail-layout-toggle'),
-            tooltip: _posterLayout
-                ? t.video_detail_layout_two_pane
-                : t.video_detail_layout_poster,
-            icon: FushiIcon(
-              _posterLayout ? FushiIcons.viewColumn : FushiIcons.viewAgenda,
-            ),
-            onPressed: () => unawaited(_togglePosterLayout()),
-          ),
-        _buildSortMenu(),
-        // 管理动作默认全部平铺，页头放不下才从最低优先级起收进「⋯」
-        // （用户 2026-10-06「默认展开，空间不足才收起」）。保底宽度扣掉返回钮、标题
-        // 与前面的布局切换 / 排序钮。
-        FushiAdaptiveActionStrip(
-          key: const ValueKey<String>('collection-detail-manage-actions'),
-          moreKey: const ValueKey<String>('collection-detail-manage-more'),
-          reservedWidth:
-              FushiAdaptiveActionStrip.titleBarReservedWidth + 48 * 2,
-          actions: _manageActions(),
-        ),
-      ],
+      actions: _appBarActions(),
     );
+  }
+
+  /// 页头右侧动作：原版式排在 [FushiAppBar] 上，重设计外壳排在
+  /// [MediaPosterDetailChrome] 的裸图标页头上（同一组按钮与 key）。
+  List<Widget> _appBarActions() {
+    return <Widget>[
+      // 宽屏才有两种版式可切（窄屏本来就是海报横幅）。重设计外壳下只有海报面板
+      // 一种版式，没有可切的。
+      if (!shellRedesignActive(context) &&
+          MediaDetailLayout.isTwoPane(
+            context,
+            MediaQuery.sizeOf(context).width,
+          ))
+        FushiIconButtonControl(
+          key: const ValueKey<String>('collection-detail-layout-toggle'),
+          tooltip: _posterLayout
+              ? t.video_detail_layout_two_pane
+              : t.video_detail_layout_poster,
+          icon: FushiIcon(
+            _posterLayout ? FushiIcons.viewColumn : FushiIcons.viewAgenda,
+          ),
+          onPressed: () => unawaited(_togglePosterLayout()),
+        ),
+      _buildSortMenu(),
+      // 管理动作默认全部平铺，页头放不下才从最低优先级起收进「⋯」
+      // （用户 2026-10-06「默认展开，空间不足才收起」）。保底宽度扣掉返回钮、标题
+      // 与前面的布局切换 / 排序钮。
+      FushiAdaptiveActionStrip(
+        key: const ValueKey<String>('collection-detail-manage-actions'),
+        moreKey: const ValueKey<String>('collection-detail-manage-more'),
+        reservedWidth: FushiAdaptiveActionStrip.titleBarReservedWidth + 48 * 2,
+        actions: _manageActions(),
+      ),
+    ];
   }
 
   /// 合集管理动作（优先级 = 顺序，最后一个最低，放不下先收进「⋯」）。
@@ -3603,9 +3687,275 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     ];
   }
 
+  /// hero 以下的区块（两种版式共用同一份）：选集 / 人物 / 附件 / 相关作品 / 同一
+  /// 作品 / 作品资料。[workDetails] = false：作品资料已挪进海报面板 hero 的附栏
+  /// （[_buildPosterAside]），这里不再重复。
+  List<Widget> _detailSlivers(
+    FushiDesignTokens tokens, {
+    bool workDetails = true,
+  }) => <Widget>[
+    SliverToBoxAdapter(child: _buildEpisodeSection(tokens)),
+    SliverToBoxAdapter(child: _buildCreditsSection(tokens)),
+    SliverToBoxAdapter(child: _buildExtrasSection(tokens)),
+    // 相关作品横滚（TODO-2484）：无关系边整块不渲染（区块内部判空）。
+    SliverToBoxAdapter(
+      child: CollectionRelationsSection(
+        database: widget.database,
+        collectionId: widget.collection.id,
+        onOpenCollection: (int id) => _openRelatedCollection(id),
+        onDownload: _downloadsAvailable ? _downloadRelation : null,
+      ),
+    ),
+    // 跨模块「同一作品」（作品图谱 media_links）：原作 / 改编 / 游戏…
+    SliverToBoxAdapter(
+      child: Consumer(
+        builder: (BuildContext context, WidgetRef ref, Widget? _) {
+          final MediaLinkEndpoint self = (
+            kind: MediaLinkKind.videoCollection,
+            key: collectionTagEntryKey(widget.collection.id),
+          );
+          return MediaLinksSection(
+            database: widget.database,
+            self: self,
+            onOpen: (MediaLinkEntry e) =>
+                openMediaLinkEntry(context: context, ref: ref, entry: e),
+            onInfer: mediaLinkInferCallback(ref: ref, self: self),
+            searchActionFor: (MediaLinkKind k) =>
+                mediaLinkSearchAction(context: context, ref: ref, kind: k),
+          );
+        },
+      ),
+    ),
+    if (workDetails) SliverToBoxAdapter(child: _buildWorkDetailsSection()),
+  ];
+
+  /// 「选集」区块的锚点（海报面板 hero 的「选集」按钮滚到这里）。
+  final GlobalKey _episodeSectionKey = GlobalKey(
+    debugLabel: 'collection-episode-section',
+  );
+
+  void _scrollToEpisodes() {
+    final BuildContext? target = _episodeSectionKey.currentContext;
+    if (target == null) return;
+    unawaited(
+      FushiFocusScroll.ensureVisible(
+        target,
+        alignment: 0,
+        duration: fushiMotionDuration(context, FushiMotion.medium),
+        curve: FushiMotion.standard,
+      ),
+    );
+  }
+
+  /// 海报面板 hero（重设计外壳）：数据与 [_buildHero] 同源（同一套背景 / 封面 /
+  /// logo / 续播集 / 主操作），只换视觉（[VideoPosterDetailHero]：横版截帧封面
+  /// 不进竖版海报位）。
+  Widget _buildPosterHero() {
+    final CollectionEpisodeSlot episode = _slots[_continueIndex];
+    final ScrapeMetadata? meta = _scrapeMeta;
+    final VideoMetadataWorkRow? work = _canonicalWork;
+    final String? originalTitle = work?.originalTitle ?? meta?.originalTitle;
+    final bool useLegacyHeroDetails = work == null;
+    final bool started = _isEpisodeStarted(episode);
+    final bool discPrimary = _discPrimaryKind == DiscPrimaryKind.playDisc;
+    final DiscMenuUnavailableReason? discUnavailable = _isDiscEntry
+        ? _discUnavailable
+        : null;
+    final DiscRef? disc = preferredDisc(_discs);
+    // 「接着看」卡（附栏）：只在主操作是播剧集时出；光盘入口仍走续播行文案。
+    final bool upNext = !discPrimary && discUnavailable == null;
+    return VideoPosterDetailHero(
+      title: work?.title ?? _name,
+      mediaType: work?.mediaType,
+      status: work?.status,
+      originalTitle: originalTitle == _name ? null : originalTitle,
+      cover: _heroCover,
+      backdrop: _heroBackdrop,
+      backdropKey: _heroBackdropIndex,
+      logo: _heroLogo,
+      // 读屏与测试按合集名找 logo。
+      logoSemanticsName: _name,
+      pills: _posterPills(meta),
+      // 剧集续播已由附栏的「接着看」卡（剧照 + 集名 + 进度）表达，标题块下不再
+      // 重复一行「继续看 第 N 集」。
+      continueLabel: discUnavailable != null
+          ? discMenuUnavailableText(discUnavailable)
+          : discPrimary && _discs.length > 1 && disc != null
+          ? '${t.video_disc_play}  ·  ${disc.label}'
+          : null,
+      summary: useLegacyHeroDetails ? meta?.summary : work.overview,
+      primaryAction: MediaDetailPrimaryButton(
+        icon: discPrimary ? FushiIcons.toc : FushiIcons.play,
+        label: discPrimary
+            ? t.video_disc_play
+            : MediaDetailResumeFab.labelFor(watching: true, started: started),
+        buttonKey: const ValueKey<String>('collection-hero-play'),
+        onPressed: () => _onPrimaryPlay(episode),
+      ),
+      secondaryActions: <Widget>[
+        // 设计稿的「选集」「字幕」：选集滚到下面的分集区，字幕开整季字幕面板
+        // （与右上角管理菜单的「为合集获取字幕」同一动作）。
+        MediaDetailSecondaryButton(
+          buttonKey: const ValueKey<String>('collection-hero-episodes'),
+          icon: FushiIcons.playlist,
+          label: t.video_episode_list,
+          onPressed: _scrollToEpisodes,
+        ),
+        MediaDetailSecondaryButton(
+          buttonKey: const ValueKey<String>('collection-hero-subtitles'),
+          icon: FushiIcons.subtitles,
+          label: t.section_video_subtitles,
+          onPressed: _members.isEmpty
+              ? null
+              : () => unawaited(
+                  _handleManageAction(_CollectionManageAction.subtitles),
+                ),
+        ),
+        ..._heroSecondaryActions(),
+      ],
+      footer: _posterHeroFooter(
+        useLegacyHeroDetails: useLegacyHeroDetails,
+        meta: meta,
+      ),
+      aside: _buildPosterAside(episode, upNext: upNext),
+    );
+  }
+
+  /// 海报面板 hero 的附栏（宽屏占标题块右侧一列，窄屏接在动作栏下）：
+  /// 「接着看」卡（剧照 / 没有就背景图 · 集号 · 集名 · 元信息 · 进度，点了直接
+  /// 播）+ 作品资料清单（从页面底部的「作品资料」区块挪上来，底部不再重复）。
+  Widget _buildPosterAside(
+    CollectionEpisodeSlot episode, {
+    required bool upNext,
+  }) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final VideoMetadataWorkRow? work = _canonicalWork;
+    final String? overview = (work?.overview ?? _scrapeMeta?.summary)?.trim();
+    return Column(
+      key: const ValueKey<String>('collection-hero-aside'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        if (upNext) ...<Widget>[
+          MediaPosterUpNextCard(
+            key: const ValueKey<String>('collection-hero-up-next'),
+            label: t.collection_continue_progress(n: _continueIndex + 1),
+            title: _episodeDisplayTitle(episode),
+            image: _episodeCover(episode) ?? _heroBackdrop ?? _heroCover,
+            meta: _episodeMeta(episode),
+            progress: _episodeProgress(episode),
+            completed: episode.completed,
+            onPlay: () => _onPrimaryPlay(episode),
+          ),
+          SizedBox(height: tokens.spacing.section),
+        ],
+        MediaPosterFactList(
+          heading: t.video_work_details,
+          facts: _workFacts(),
+          // 与原「作品资料」区块同一判据：有简介就不算「资料待补」。
+          emptyText: overview == null || overview.isEmpty
+              ? t.video_work_metadata_pending
+              : null,
+        ),
+      ],
+    );
+  }
+
+  /// 海报面板的信息胶囊（设计稿 `.pills`）：★ 评分（实心）· 评分人数 · 年份 ·
+  /// 类型 · 全 N 话 · 时长 · 已看完 x/N。逐项存在才出；观看进度恒在（不依赖
+  /// 刮削）。类型 / 状态进小标签行，不在这里重复。
+  List<MediaDetailChip> _posterPills(ScrapeMetadata? meta) {
+    final VideoMetadataWorkRow? work = _canonicalWork;
+    // 放送日期不再单独压一行，收成年份胶囊：规范作品没写 year 或只有旧 v68 刮削
+    // 资料（没有规范作品宿主）时按首播 / 放送日期取年份，不让放送信息整条消失。
+    final int? year =
+        work?.year ?? _yearOfDate(work?.premiereDate ?? meta?.airDate);
+    final int episodeCount = meta?.episodeCount ?? _slots.length;
+    final double? rating = work?.rating ?? meta?.rating;
+    final int? votes = work?.ratingCount ?? meta?.ratingCount;
+    final int? runtime = work?.runtimeMinutes;
+    final bool allWatched = _slots.isNotEmpty && _watchedCount == _slots.length;
+    final List<String> genres = <String>[
+      for (final VideoMetadataTermRow term in _workTerms)
+        if (term.kind == 'genre') term.name,
+    ];
+    return <MediaDetailChip>[
+      if (rating != null && rating > 0) ...<MediaDetailChip>[
+        MediaDetailChip(
+          '★ ${rating.toStringAsFixed(1)}',
+          tone: MediaDetailChipTone.primary,
+        ),
+        if (votes != null && votes > 0)
+          MediaDetailChip(t.video_scrape_rating_votes(count: votes)),
+      ],
+      if (year != null) MediaDetailChip('$year'),
+      for (final String genre in genres.take(3)) MediaDetailChip(genre),
+      if (episodeCount > 0)
+        MediaDetailChip(t.collection_hero_total_episodes(count: episodeCount)),
+      if (runtime != null && runtime > 0)
+        MediaDetailChip(t.video_runtime_minutes(n: runtime)),
+      MediaDetailChip(
+        t.collection_watched_progress(
+          done: _watchedCount,
+          total: _slots.length,
+        ),
+        icon: FushiIcons.success,
+        tone: allWatched
+            ? MediaDetailChipTone.tertiary
+            : MediaDetailChipTone.neutral,
+      ),
+    ];
+  }
+
+  /// `2023-01-04` / `2023` → 2023；取不出四位年份为 null。
+  static int? _yearOfDate(String? date) {
+    final String? head = RegExp(
+      r'^\s*(\d{4})',
+    ).firstMatch(date ?? '')?.group(1);
+    return head == null ? null : int.parse(head);
+  }
+
+  /// 海报面板 hero 的页脚：旧 v68 资料（没有规范详情宿主）时的题材标签 / 人物
+  /// chip 回退（与 [_buildHero] 同一判据），以及用户自建标签。
+  Widget _posterHeroFooter({
+    required bool useLegacyHeroDetails,
+    required ScrapeMetadata? meta,
+  }) {
+    final List<String> tagNames = useLegacyHeroDetails
+        ? <String>[for (final ScrapeTag tag in _heroScrapeTags(meta)) tag.name]
+        : const <String>[];
+    final List<CollectionHeroCredit> credits = useLegacyHeroDetails
+        ? <CollectionHeroCredit>[
+            for (final VideoMetadataCreditSummary credit in _heroCredits())
+              CollectionHeroCredit(
+                kind: credit.creditKind,
+                name: credit.displayName,
+              ),
+          ]
+        : const <CollectionHeroCredit>[];
+    final Widget userTags = buildDetailTagChips();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      spacing: 8,
+      children: <Widget>[
+        if (tagNames.isNotEmpty)
+          MediaDetailChipRow(
+            chips: <MediaDetailChip>[
+              for (final String name in tagNames)
+                MediaDetailChip(name, tone: MediaDetailChipTone.secondary),
+            ],
+          ),
+        if (credits.isNotEmpty) CollectionHeroCreditChips(credits: credits),
+        userTags,
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final bool redesign = shellRedesignActive(context);
     final Widget body;
     if (_loading) {
       body = const MediaDetailSkeleton();
@@ -3614,6 +3964,19 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         child: FushiPlaceholderMessage(
           icon: FushiIcons.collection,
           message: t.collection_empty,
+        ),
+      );
+    } else if (redesign) {
+      // 重设计外壳：海报面板版式（封面取色的大面板 + 背景图 / logo + 斜放海报 +
+      // 信息胶囊 + 动作按钮，下面接同一套区块）。仍是本路由的正文；面板配色与
+      // 裸图标页头装在下面整页外层（骨架 / 空态同一套）。墨水屏走下面的原版式。
+      body = FushiEntranceScope(
+        replayKey: _selectedSection?.groupKey,
+        child: MediaPosterDetailLayout(
+          bottomPadding: tokens.spacing.page,
+          fab: _buildResumeFab(),
+          header: _buildPosterHero(),
+          slivers: _detailSlivers(tokens, workDetails: false),
         ),
       );
     } else {
@@ -3641,85 +4004,56 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
           bottomPadding: tokens.spacing.page,
           fab: _buildResumeFab(),
           header: _buildHero(),
-          slivers: <Widget>[
-            SliverToBoxAdapter(child: _buildEpisodeSection(tokens)),
-            SliverToBoxAdapter(child: _buildCreditsSection(tokens)),
-            SliverToBoxAdapter(child: _buildExtrasSection(tokens)),
-            // 相关作品横滚（TODO-2484）：无关系边整块不渲染（区块内部判空）。
-            SliverToBoxAdapter(
-              child: CollectionRelationsSection(
-                database: widget.database,
-                collectionId: widget.collection.id,
-                onOpenCollection: (int id) => _openRelatedCollection(id),
-                onDownload: _downloadsAvailable ? _downloadRelation : null,
-              ),
-            ),
-            // 跨模块「同一作品」（作品图谱 media_links）：原作 / 改编 / 游戏…
-            SliverToBoxAdapter(
-              child: Consumer(
-                builder: (BuildContext context, WidgetRef ref, Widget? _) {
-                  final MediaLinkEndpoint self = (
-                    kind: MediaLinkKind.videoCollection,
-                    key: collectionTagEntryKey(widget.collection.id),
-                  );
-                  return MediaLinksSection(
-                    database: widget.database,
-                    self: self,
-                    onOpen: (MediaLinkEntry e) => openMediaLinkEntry(
-                      context: context,
-                      ref: ref,
-                      entry: e,
-                    ),
-                    onInfer: mediaLinkInferCallback(ref: ref, self: self),
-                    searchActionFor: (MediaLinkKind k) => mediaLinkSearchAction(
-                      context: context,
-                      ref: ref,
-                      kind: k,
-                    ),
-                  );
-                },
-              ),
-            ),
-            SliverToBoxAdapter(child: _buildWorkDetailsSection()),
-          ],
+          slivers: _detailSlivers(tokens),
         ),
       );
     }
+    // 加载骨架 → 正文 / 空态交叉淡入（时长走动效令牌，墨水屏 / 减弱动效归零）。
+    final Widget content = Stack(
+      children: <Widget>[
+        Positioned.fill(
+          child: AnimatedSwitcher(
+            duration: context.fushiMotion.effectsDefault.duration,
+            child: KeyedSubtree(
+              key: ValueKey<String>(
+                _loading ? 'loading' : (_slots.isEmpty ? 'empty' : 'content'),
+              ),
+              child: body,
+            ),
+          ),
+        ),
+        LibraryReorderBar.overlay(
+          context: context,
+          visible: _reordering,
+          onDone: _endReorder,
+        ),
+      ],
+    );
     final Widget page = Scaffold(
       // 背景铺满到窗口顶端，浮动顶栏只是几颗胶囊（不画整宽底带）；正文 / 骨架 /
       // 空态各自按 MediaQuery 顶部 padding 让位（[MediaDetailLayout] /
-      // [MediaDetailSkeleton] / SafeArea）。
+      // [MediaDetailSkeleton] / SafeArea）。重设计外壳不挂 AppBar：返回键与管理
+      // 动作是 [MediaPosterDetailChrome] 的裸图标页头（桌面画进窗口标题行），
+      // 整页套面板配色（骨架 / 空态也跟封面取色）。
       extendBodyBehindAppBar: true,
-      appBar: _buildAppBar(),
+      appBar: redesign ? null : _buildAppBar(),
       bottomNavigationBar: _buildSelectionBar(),
-      // 加载骨架 → 正文 / 空态交叉淡入（时长走动效令牌，墨水屏 / 减弱动效归零）。
       body: PopScope(
         canPop: !_reordering,
         onPopInvokedWithResult: (bool didPop, Object? _) {
           if (!didPop && _reordering) _endReorder();
         },
-        child: Stack(
-          children: <Widget>[
-            Positioned.fill(
-              child: AnimatedSwitcher(
-                duration: context.fushiMotion.effectsDefault.duration,
-                child: KeyedSubtree(
-                  key: ValueKey<String>(
-                    _loading
-                        ? 'loading'
-                        : (_slots.isEmpty ? 'empty' : 'content'),
-                  ),
-                  child: body,
+        child: redesign
+            ? MediaPosterDetailTheme(
+                image: _heroCover,
+                fallbackKey: _name,
+                child: MediaPosterDetailChrome(
+                  title: _name,
+                  actions: _appBarActions(),
+                  child: content,
                 ),
-              ),
-            ),
-            LibraryReorderBar.overlay(
-              context: context,
-              visible: _reordering,
-              onDone: _endReorder,
-            ),
-          ],
-        ),
+              )
+            : content,
       ),
     );
     // 整页（含空合集占位）都是拖放落点：把视频文件拖进来即导入并归入本合集。

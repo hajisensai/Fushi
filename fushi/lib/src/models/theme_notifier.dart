@@ -18,6 +18,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/fushi_page_transitions.dart';
 import 'package:fushi/src/utils/adaptive/predictive_back_page_transitions.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart';
 import 'package:fushi/src/utils/components/accent_logo_image.dart'
     show appLogoFollowsAccent;
 import 'package:fushi/src/utils/misc/app_icon_preferences.dart'
@@ -881,6 +882,10 @@ class ThemeNotifier extends ChangeNotifier {
     'design_system',
     'glass_material',
     'pure_black_dark',
+    'shell_rail_style',
+    'shell_content_layout',
+    'shell_block_arrangement',
+    'shell_smooth_corners',
     tintAppLogoPrefKey,
     followAppIconPrefKey,
     audioHighlightColorPrefKey,
@@ -2049,6 +2054,62 @@ class ThemeNotifier extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 外壳样式（侧栏样式 / 库页布局 / 平滑圆角），随 Profile 走，经
+  /// [FushiShellTheme] 扩展随主题下发。
+  FushiShellTheme get shellTheme => FushiShellTheme(
+    railStyle: shellRailStyle,
+    contentLayout: shellContentLayout,
+    blockArrangement: _shellBlockArrangementPref,
+    smoothCorners: shellSmoothCorners,
+  );
+
+  ShellRailStyle get shellRailStyle => ShellRailStyle.fromPref(
+    _get('shell_rail_style', defaultValue: '') as String,
+  );
+
+  Future<void> setShellRailStyle(ShellRailStyle value) async {
+    await _set('shell_rail_style', value.prefValue);
+    notifyListeners();
+  }
+
+  ShellContentLayout get shellContentLayout => ShellContentLayout.fromPref(
+    _get('shell_content_layout', defaultValue: '') as String,
+  );
+
+  Future<void> setShellContentLayout(ShellContentLayout value) async {
+    await _set('shell_content_layout', value.prefValue);
+    notifyListeners();
+  }
+
+  /// 落库的色块摆放；没选过为 null（跟着布局走）。
+  ShellBlockArrangement? get _shellBlockArrangementPref {
+    final String value =
+        _get('shell_block_arrangement', defaultValue: '') as String;
+    for (final ShellBlockArrangement arrangement
+        in ShellBlockArrangement.values) {
+      if (arrangement.prefValue == value) return arrangement;
+    }
+    return null;
+  }
+
+  /// 生效的色块摆放：没选过时拼贴 = 散落、规整色块 = 规整。
+  ShellBlockArrangement get shellBlockArrangement =>
+      _shellBlockArrangementPref ??
+      ShellBlockArrangement.defaultFor(shellContentLayout);
+
+  Future<void> setShellBlockArrangement(ShellBlockArrangement value) async {
+    await _set('shell_block_arrangement', value.prefValue);
+    notifyListeners();
+  }
+
+  bool get shellSmoothCorners =>
+      _get('shell_smooth_corners', defaultValue: true) as bool;
+
+  Future<void> setShellSmoothCorners(bool value) async {
+    await _set('shell_smooth_corners', value);
+    notifyListeners();
+  }
+
   String get brightnessMode {
     final String mode = _get('brightness_mode', defaultValue: '');
     if (mode.isNotEmpty) return mode;
@@ -2447,6 +2508,7 @@ class ThemeNotifier extends ChangeNotifier {
     designSystem: designSystemTheme,
     glass: glassMaterial,
     glassDesign: designSystem == 'glass',
+    shell: shellTheme,
     // 默认主题（系统取色）在玻璃设计系统下是单色：白底黑字 / 黑底白字。
     monochromeAccent: appThemeKey == 'system-theme',
     platform: defaultTargetPlatform,
@@ -2460,6 +2522,7 @@ class ThemeNotifier extends ChangeNotifier {
         designSystem: inputs.designSystem,
         glass: inputs.glass,
         glassDesign: inputs.glassDesign,
+        shell: inputs.shell,
         monochromeAccent: inputs.monochromeAccent,
       );
 
@@ -2922,10 +2985,24 @@ ThemeData buildFushiThemeData({
   FushiGlassMaterial glass = FushiGlassMaterial.off,
   bool glassDesign = false,
   bool monochromeAccent = false,
+  FushiShellTheme shell = const FushiShellTheme(),
 }) {
   // 玻璃设计系统 = Apple 26 设计语言：表面 / 文字 / 描边换成 Apple 系统色，
   // 强调色取主题色相按 iOS 系统色重建（见 fushi_apple_palette.dart）。MD3 不受影响。
   final bool appleDesign = glassDesign && !eink;
+  // 平滑圆角（外壳设置）：主题层这些 Material 表面（菜单、对话框、卡片、
+  // 底部弹层、列表行、FAB）一起换成连续曲率圆角，全应用一次生效。墨水屏的
+  // 描边表面保持普通圆角。
+  final bool smoothCorners = shell.smoothCorners && !eink;
+  OutlinedBorder roundedShape(
+    BorderRadius radius, {
+    BorderSide side = BorderSide.none,
+  }) => smoothCorners
+      ? RoundedSuperellipseBorder(
+          borderRadius: radius * kShellSmoothRadiusScale,
+          side: side,
+        )
+      : RoundedRectangleBorder(borderRadius: radius, side: side);
   final ColorScheme cs = appleDesign
       ? appleColorScheme(scheme, monochrome: monochromeAccent)
       : scheme;
@@ -2967,8 +3044,8 @@ ThemeData buildFushiThemeData({
       EdgeInsets.all(6),
     ),
     shape: WidgetStatePropertyAll<OutlinedBorder>(
-      RoundedRectangleBorder(
-        borderRadius: FushiBorderRadius.menu,
+      roundedShape(
+        FushiBorderRadius.menu,
         side: eink ? BorderSide(color: cs.outline) : BorderSide.none,
       ),
     ),
@@ -3129,6 +3206,7 @@ ThemeData buildFushiThemeData({
       FushiDesignSystemTheme(designSystem),
       FushiEinkTheme(eink),
       FushiGlassTheme(glass, glassDesign: glassDesign && !eink),
+      shell,
       if (appleColors != null) appleColors,
     ],
     // 玻璃下顶栏透明：透出外壳的系统窗口材质（Windows 11 Mica / macOS
@@ -3286,8 +3364,8 @@ ThemeData buildFushiThemeData({
     // MD3 弹出菜单：与 MenuAnchor 同一块面板（surfaceContainer、圆角 12、
     // elevation 3、无 tint、上下 6），14 号 onSurface 文字。
     popupMenuTheme: PopupMenuThemeData(
-      shape: RoundedRectangleBorder(
-        borderRadius: FushiBorderRadius.menu,
+      shape: roundedShape(
+        FushiBorderRadius.menu,
         side: eink ? BorderSide(color: cs.outline) : BorderSide.none,
       ),
       color: glassMenuColor ?? cs.surfaceContainer,
@@ -3312,8 +3390,8 @@ ThemeData buildFushiThemeData({
     // showAppDialog 铺整屏模糊。Apple 设计系统的对话框不走 Material
     // 表面（fushi_glass_overlays.dart 自绘），文字样式留空交给它自己。
     dialogTheme: DialogThemeData(
-      shape: RoundedRectangleBorder(
-        borderRadius: FushiBorderRadius.dialog,
+      shape: roundedShape(
+        FushiBorderRadius.dialog,
         side: eink ? BorderSide(color: cs.outline) : BorderSide.none,
       ),
       backgroundColor:
@@ -3355,9 +3433,7 @@ ThemeData buildFushiThemeData({
             contentPadding: const EdgeInsetsDirectional.symmetric(
               horizontal: 16,
             ),
-            shape: const RoundedRectangleBorder(
-              borderRadius: BorderRadius.all(Radius.circular(12)),
-            ),
+            shape: roundedShape(const BorderRadius.all(Radius.circular(12))),
             selectedColor: cs.onSecondaryContainer,
             selectedTileColor: cs.secondaryContainer,
           ),
@@ -3474,8 +3550,8 @@ ThemeData buildFushiThemeData({
       color:
           glassTint(cs.surfaceContainerLow, fushiGlassContainerOpacity) ??
           cs.surfaceContainerLow,
-      shape: RoundedRectangleBorder(
-        borderRadius: const BorderRadius.all(Radius.circular(16)),
+      shape: roundedShape(
+        const BorderRadius.all(Radius.circular(16)),
         // E-ink: surfaceContainerLow == the page background, so cards need a
         // solid outline to keep their boundary readable in pure black/white.
         side: eink ? BorderSide(color: cs.outline) : BorderSide.none,
@@ -3488,8 +3564,8 @@ ThemeData buildFushiThemeData({
     // 最宽 640（MD3 规范）。墨水屏补实描边、遮罩不透明度交回默认。
     bottomSheetTheme: BottomSheetThemeData(
       showDragHandle: true,
-      shape: RoundedRectangleBorder(
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+      shape: roundedShape(
+        const BorderRadius.vertical(top: Radius.circular(28)),
         side: eink ? BorderSide(color: cs.outline) : BorderSide.none,
       ),
       dragHandleColor: cs.onSurfaceVariant.withValues(alpha: 0.4),
@@ -3520,8 +3596,8 @@ ThemeData buildFushiThemeData({
       foregroundColor: appleDesign ? cs.primary : cs.onPrimaryContainer,
       shape: appleDesign
           ? const StadiumBorder()
-          : RoundedRectangleBorder(
-              borderRadius: FushiBorderRadius.control,
+          : roundedShape(
+              FushiBorderRadius.control,
               // E-ink：primaryContainer == 页面底色、阴影又是透明的，FAB 只剩一枚
               // 悬空图标（首页后台刮削任务按钮）；描边把按钮体画回来。
               side: eink ? BorderSide(color: cs.outline) : BorderSide.none,
@@ -3810,6 +3886,7 @@ class _ThemeDataInputs {
     required this.designSystem,
     required this.glass,
     required this.glassDesign,
+    required this.shell,
     required this.monochromeAccent,
     required this.platform,
   });
@@ -3820,6 +3897,7 @@ class _ThemeDataInputs {
   final FushiDesignSystem designSystem;
   final FushiGlassMaterial glass;
   final bool glassDesign;
+  final FushiShellTheme shell;
   final bool monochromeAccent;
   final TargetPlatform platform;
 
@@ -3832,6 +3910,7 @@ class _ThemeDataInputs {
       other.designSystem == designSystem &&
       other.glass == glass &&
       other.glassDesign == glassDesign &&
+      other.shell == shell &&
       other.monochromeAccent == monochromeAccent &&
       other.platform == platform;
 
@@ -3843,6 +3922,7 @@ class _ThemeDataInputs {
     designSystem,
     glass,
     glassDesign,
+    shell,
     monochromeAccent,
     platform,
   );

@@ -196,6 +196,7 @@ class _MangaOcrManagerPageState extends ConsumerState<MangaOcrManagerPage> {
     }
     final List<String> books = byBook.keys.toList(growable: false);
     return FushiPageScaffold(
+      masthead: true,
       title: t.manga_ocr_manager_title,
       actions: <Widget>[
         FushiIconButton(

@@ -20,7 +20,10 @@ import 'package:fushi/src/settings/settings_search.dart';
 import 'package:fushi/src/settings/settings_search_sheet.dart';
 import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
-    show FushiHeightReporter, FushiTopFadeScrim;
+    show FushiHeightReporter, FushiTopFadeScrim, kFushiFloatingChromeGap;
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show shellRedesignActive;
+import 'package:fushi/src/utils/components/fushi_static_masthead.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
@@ -264,8 +267,47 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
         );
       },
     );
-    return md3 ? content : _buildEmbeddedShell(content);
+    final Widget page = md3 ? content : _buildEmbeddedShell(content);
+    if (!_mastheadHeader) return page;
+    // 重设计外壳：窄屏单列顶部一行页头大字（与库页同一套），下面是原版面；各
+    // 版式自己的「设置」标题（MD3 窄屏浮动页头、玻璃窄屏 iOS 大标题、全屏设置的
+    // 返回页头）在 [_mastheadHeader] 下都不再画。
+    //
+    // 宽屏主从不画这一行：右窗格的分类页自己有页头大字（「外观与交互」等），
+    // 上面再叠一行「设置」就是两个大标题，右半边还空出一整条。只有带返回的
+    // 全屏设置留着它放返回键。
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final bool wide =
+            constraints.maxWidth >= kFushiSettingsHomeTwoPaneMinWidth;
+        if (wide && widget.onBack == null) return page;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Padding(
+              padding: const EdgeInsets.only(top: kFushiFloatingChromeGap),
+              child: FushiStaticMasthead(
+                key: const ValueKey<String>('settings_home_masthead'),
+                title: t.settings,
+                leading: widget.onBack == null
+                    ? null
+                    : FushiIconButtonControl(
+                        icon: const FushiIcon(FushiIcons.back),
+                        tooltip: t.back,
+                        onPressed: widget.onBack,
+                      ),
+              ),
+            ),
+            Expanded(child: page),
+          ],
+        );
+      },
+    );
   }
+
+  /// 首页外壳里的设置 tab 在重设计外壳下用页头大字（[FushiStaticMasthead]）做
+  /// 页头；独立推出来的设置页（非嵌入）与墨水屏保持原页头。
+  bool get _mastheadHeader => widget.embedded && shellRedesignActive(context);
 
   /// [onNavCard] 为 true 时搜索框画在宽屏导航卡（`surfaces.card`，见
   /// [_buildWideLayout]）里：那里 `surfaces.search` 与卡底只差一档、几乎糊掉，故再
@@ -414,7 +456,8 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
   }
 
   Widget _buildEmbeddedShell(Widget content) {
-    if (!widget.embedded) {
+    // 页头大字已经带了返回键与页名（见 [build]）。
+    if (!widget.embedded || _mastheadHeader) {
       return content;
     }
     // 自绘顶栏的桌面主窗口（Windows / macOS）已经由应用壳层提供当前 tab 标题；
@@ -442,7 +485,7 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
       title: t.settings,
       leading: widget.onBack != null
           ? FushiIconButtonControl(
-              icon: const FushiIcon(Icons.arrow_back),
+              icon: const FushiIcon(FushiIcons.back),
               tooltip: t.back,
               onPressed: widget.onBack,
             )
@@ -577,7 +620,8 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
   bool get _glassShowsLargeTitle =>
       widget.embedded &&
       widget.onBack == null &&
-      !FushiDesktopTitleBar.isEnabled;
+      !FushiDesktopTitleBar.isEnabled &&
+      !_mastheadHeader;
 
   /// 设置搜索栏（M3E 胶囊 / Apple 液态玻璃胶囊，见 [SettingsSearchBar]）。回车
   /// 打开第一条结果，↓ 把焦点交给结果列表。
@@ -848,7 +892,9 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
   }) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     const MaterialSettingsRenderer renderer = MaterialSettingsRenderer();
-    final bool showHeader = !widget.embedded || !FushiDesktopTitleBar.isEnabled;
+    final bool showHeader =
+        (!widget.embedded || !FushiDesktopTitleBar.isEnabled) &&
+        !_mastheadHeader;
     final bool searching = _searchQuery.trim().isNotEmpty;
     final Widget body = searching
         ? _buildKitSearchResults(

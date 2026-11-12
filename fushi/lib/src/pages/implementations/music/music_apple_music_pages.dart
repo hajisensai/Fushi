@@ -33,6 +33,16 @@ import 'package:fushi/src/pages/implementations/music/music_cover.dart';
 import 'package:fushi/src/pages/implementations/music/music_preview_badge.dart';
 import 'package:fushi/src/pages/implementations/music/music_server_pages.dart';
 import 'package:fushi/src/pages/implementations/music/music_track_actions.dart';
+import 'package:fushi/src/pages/implementations/music/music_track_row_surface.dart';
+import 'package:fushi/src/pages/implementations/music/music_collection_view.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show ShellContentLayout, shellContentLayoutOf;
+import 'package:fushi/src/utils/components/fushi_cover_block.dart'
+    show FushiCoverBlockSize;
+import 'package:fushi/src/utils/components/fushi_cover_block_layout.dart'
+    show FushiCoverBlockItemBuilder, FushiCoverBlocks;
+import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
+    show FushiToolbarItem;
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -279,6 +289,47 @@ class _ShelfRow extends StatelessWidget {
   }
 }
 
+/// 艺人页的一段专辑 / 歌单 / 相似艺人，按「色块 / 列表」样式排：
+/// - 色块：库页布局是封面网格时是原有的横排卡（[card]，null = 也排色块），色块
+///   布局（拼贴 / 规整）下是封面色块（[block]，盒子版，一次建完）；
+/// - 列表：单列行（[row]）。
+/// 没有条目不占位。
+Widget _styledSection(
+  BuildContext context, {
+  required String title,
+  required MusicViewStyle style,
+  required int count,
+  required FushiCoverBlockItemBuilder block,
+  required IndexedWidgetBuilder row,
+  IndexedWidgetBuilder? card,
+}) {
+  if (count == 0) return const SizedBox.shrink();
+  final bool gridLayout =
+      shellContentLayoutOf(context) == ShellContentLayout.grid;
+  if (style == MusicViewStyle.blocks && gridLayout && card != null) {
+    return _ShelfRow(
+      title: title,
+      children: <Widget>[for (int i = 0; i < count; i++) card(context, i)],
+    );
+  }
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    mainAxisSize: MainAxisSize.min,
+    children: <Widget>[
+      FushiSectionTitle(title),
+      if (style == MusicViewStyle.blocks)
+        FushiCoverBlocks(
+          layout: shellContentLayoutOf(context),
+          staggerEntrance: false,
+          itemCount: count,
+          itemBuilder: block,
+        )
+      else
+        for (int i = 0; i < count; i++) row(context, i),
+    ],
+  );
+}
+
 /// 一组混排条目 → 卡片（资料库条目用资料库来源打开，其余用 catalog）。
 List<Widget> _itemCards(
   BuildContext context,
@@ -346,15 +397,26 @@ class _SongSection extends StatelessWidget {
   Widget build(BuildContext context) {
     if (tracks.isEmpty) return const SizedBox.shrink();
     final int shown = tracks.length.clamp(0, _kInlineSongs);
+    final List<MusicServerTrack> inline = tracks.sublist(0, shown);
+    Widget tile(BuildContext context, int i) => MusicServerTrackTile(
+      browser: browser,
+      tracks: inline,
+      index: i,
+      showAlbum: true,
+      onPlay: (int i) => _playTracks(context, browser, tracks, start: i),
+    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
         FushiSectionTitle(
           title,
+          // 与音乐推荐页段标题同一种动作样式（[musicSectionAction]）。
           trailing: tracks.length <= shown
               ? null
-              : FushiTextButton(
+              : musicSectionAction(
+                  kind: MusicSectionActionKind.viewAll,
+                  label: t.music_apple_music_see_all,
                   onPressed: () => _push(
                     context,
                     AppleMusicTrackListPage(
@@ -363,17 +425,19 @@ class _SongSection extends StatelessWidget {
                       tracks: tracks,
                     ),
                   ),
-                  child: Text(t.music_apple_music_see_all),
                 ),
         ),
-        for (int i = 0; i < shown; i++)
-          MusicServerTrackTile(
-            browser: browser,
-            tracks: tracks.sublist(0, shown),
-            index: i,
-            showAlbum: true,
-            onPlay: (int i) => _playTracks(context, browser, tracks, start: i),
-          ),
+        // 重设计外壳：整段装进与推荐页曲目段同一块色块面板（首曲封面取色、
+        // 宽屏多列）；墨水屏照旧逐行。
+        if (musicTrackRowSurfaceActive(context))
+          MusicTrackGridPanel(
+            title: title,
+            coverPath: browser.coverUri(inline.first.coverRef)?.toString(),
+            itemCount: shown,
+            itemBuilder: tile,
+          )
+        else
+          for (int i = 0; i < shown; i++) tile(context, i),
       ],
     );
   }
@@ -808,59 +872,79 @@ class AppleMusicTrackListPage extends StatelessWidget {
   final List<MusicServerTrack> tracks;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => MusicViewStyleBuilder(
+    kind: MusicViewKind.tracks,
+    fallback: MusicViewStyle.list,
+    builder: _buildPage,
+  );
+
+  /// [style]：曲目排成单列曲目行（原有）或多列封面色块。
+  Widget _buildPage(BuildContext context, MusicViewStyle style) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final Widget header = Padding(
+      padding: EdgeInsets.only(bottom: tokens.spacing.gap),
+      child: Wrap(
+        spacing: tokens.spacing.gap,
+        children: <Widget>[
+          FushiPressScale(
+            child: FushiFilledButton.icon(
+              size: FushiButtonSize.m,
+              onPressed: () => _playTracks(context, browser, tracks),
+              icon: const FushiIcon(FushiIcons.play),
+              label: Text(t.music_play_all),
+            ),
+          ),
+          FushiPressScale(
+            child: FushiFilledButton.tonalIcon(
+              size: FushiButtonSize.m,
+              onPressed: () =>
+                  _playTracks(context, browser, tracks, shuffle: true),
+              icon: const FushiIcon(FushiIcons.shuffle),
+              label: Text(t.music_shuffle_play),
+            ),
+          ),
+        ],
+      ),
+    );
+    Widget tile(BuildContext context, int i, {FushiCoverBlockSize? block}) =>
+        MusicServerTrackTile(
+          browser: browser,
+          tracks: tracks,
+          index: i,
+          leading: MusicServerTrackLeading.position,
+          showAlbum: true,
+          block: block,
+          onPlay: (int j) => _playTracks(context, browser, tracks, start: j),
+        );
     return musicBrowseScaffold(
       context,
       title: title,
-      body: FushiEntranceScope(
-        child: ListView.builder(
-          padding: musicBrowsePagePadding(context),
-          itemCount: tracks.length + 1,
-          itemBuilder: fushiStaggeredItemBuilder((BuildContext context, int i) {
-            if (i == 0) {
-              return Padding(
-                padding: EdgeInsets.only(bottom: tokens.spacing.gap),
-                child: Wrap(
-                  spacing: tokens.spacing.gap,
-                  children: <Widget>[
-                    FushiPressScale(
-                      child: FushiFilledButton.icon(
-                        size: FushiButtonSize.m,
-                        onPressed: () => _playTracks(context, browser, tracks),
-                        icon: const FushiIcon(FushiIcons.play),
-                        label: Text(t.music_play_all),
-                      ),
-                    ),
-                    FushiPressScale(
-                      child: FushiFilledButton.tonalIcon(
-                        size: FushiButtonSize.m,
-                        onPressed: () => _playTracks(
-                          context,
-                          browser,
-                          tracks,
-                          shuffle: true,
-                        ),
-                        icon: const FushiIcon(FushiIcons.shuffle),
-                        label: Text(t.music_shuffle_play),
-                      ),
-                    ),
-                  ],
+      actions: <FushiToolbarItem>[
+        if (musicTrackRowSurfaceActive(context))
+          musicViewStyleToggle(MusicViewKind.tracks, style),
+      ],
+      body:
+          style == MusicViewStyle.blocks && musicTrackRowSurfaceActive(context)
+          ? MusicStyledCollection(
+              style: style,
+              itemCount: tracks.length,
+              padding: musicBrowsePagePadding(context),
+              header: header,
+              rowBuilder: tile,
+              blockBuilder:
+                  (BuildContext context, int i, FushiCoverBlockSize size) =>
+                      tile(context, i, block: size),
+            )
+          : FushiEntranceScope(
+              child: ListView.builder(
+                padding: musicBrowsePagePadding(context),
+                itemCount: tracks.length + 1,
+                itemBuilder: fushiStaggeredItemBuilder(
+                  (BuildContext context, int i) =>
+                      i == 0 ? header : tile(context, i - 1),
                 ),
-              );
-            }
-            return MusicServerTrackTile(
-              browser: browser,
-              tracks: tracks,
-              index: i - 1,
-              leading: MusicServerTrackLeading.position,
-              showAlbum: true,
-              onPlay: (int j) =>
-                  _playTracks(context, browser, tracks, start: j),
-            );
-          }),
-        ),
-      ),
+              ),
+            ),
     );
   }
 }
@@ -935,6 +1019,47 @@ class _AppleMusicLibrarySongsViewState
       );
     }
     final List<MusicServerTrack> tracks = List<MusicServerTrack>.of(_tracks);
+    Widget tile(BuildContext context, int i, {FushiCoverBlockSize? block}) =>
+        MusicServerTrackTile(
+          key: ValueKey<String>('apple-music-library-song-${tracks[i].id}'),
+          browser: widget.library,
+          tracks: tracks,
+          index: i,
+          showAlbum: true,
+          block: block,
+          onPlay: (int j) =>
+              _playTracks(context, widget.library, tracks, start: j),
+        );
+    // 与服务器曲库「歌曲」分区同一份样式（服务器页头的切换键；那一页在样式
+    // 变化时整页重建，本视图跟着重建）。
+    final MusicViewStyle style = musicViewStyleOf(
+      context,
+      MusicViewKind.tracks,
+      MusicViewStyle.list,
+    );
+    if (style == MusicViewStyle.blocks) {
+      return NotificationListener<ScrollNotification>(
+        onNotification: (ScrollNotification n) {
+          if (n.metrics.extentAfter < 600) unawaited(_loadMore());
+          return false;
+        },
+        child: MusicStyledCollection(
+          style: style,
+          itemCount: tracks.length,
+          padding: musicBrowsePagePadding(context),
+          rowBuilder: tile,
+          blockBuilder:
+              (BuildContext context, int i, FushiCoverBlockSize size) =>
+                  tile(context, i, block: size),
+          footer: _loading
+              ? const SizedBox(
+                  height: 64,
+                  child: Center(child: FushiLoadingView()),
+                )
+              : null,
+        ),
+      );
+    }
     return NotificationListener<ScrollNotification>(
       onNotification: (ScrollNotification n) {
         if (n.metrics.extentAfter < 600) unawaited(_loadMore());
@@ -951,15 +1076,7 @@ class _AppleMusicLibrarySongsViewState
                 child: Center(child: FushiLoadingView()),
               );
             }
-            return MusicServerTrackTile(
-              key: ValueKey<String>('apple-music-library-song-${tracks[i].id}'),
-              browser: widget.library,
-              tracks: tracks,
-              index: i,
-              showAlbum: true,
-              onPlay: (int j) =>
-                  _playTracks(context, widget.library, tracks, start: j),
-            );
+            return tile(context, i);
           }),
         ),
       ),
@@ -1007,50 +1124,89 @@ class _AppleMusicArtistPageState extends State<AppleMusicArtistPage> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: MusicViewStyleStore.instance,
+    builder: (BuildContext context, Widget? _) => _buildPage(context),
+  );
+
+  /// 专辑段跟本页页头的切换键（专辑样式）；精选歌单 / 相似艺人段跟各自种类记下的
+  /// 样式（在曲库 / 服务器曲库的歌单、艺人分区切）。
+  Widget _buildPage(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final AppleMusicCatalogClient catalog = widget.catalog;
-    final List<Widget> sections = <Widget>[
-      Padding(
-        padding: EdgeInsets.only(bottom: tokens.spacing.gap),
-        child: Wrap(
-          spacing: tokens.spacing.gap,
-          runSpacing: tokens.spacing.gap,
-          children: <Widget>[
-            FushiPressScale(
-              child: FushiFilledButton.icon(
-                key: const ValueKey<String>('apple-music-artist-play-top'),
-                size: FushiButtonSize.m,
-                onPressed: () async {
-                  try {
-                    final List<MusicServerTrack> top = await _top;
-                    if (context.mounted) _playTracks(context, catalog, top);
-                  } on Object catch (e) {
-                    _toastError(e);
-                  }
-                },
-                icon: const FushiIcon(FushiIcons.play),
-                label: Text(t.music_apple_music_play_top_songs),
+    final MusicViewStyle albumStyle = musicViewStyleOf(
+      context,
+      MusicViewKind.albums,
+      MusicViewStyle.blocks,
+    );
+    final MusicViewStyle playlistStyle = musicViewStyleOf(
+      context,
+      MusicViewKind.playlists,
+      MusicViewStyle.blocks,
+    );
+    final MusicViewStyle artistStyle = musicViewStyleOf(
+      context,
+      MusicViewKind.artists,
+      MusicViewStyle.list,
+    );
+    void openArtist(BuildContext context, MusicServerArtist a) =>
+        _push(context, AppleMusicArtistPage(catalog: catalog, artist: a));
+    final List<Widget> actions = <Widget>[
+      FushiPressScale(
+        child: FushiFilledButton.icon(
+          key: const ValueKey<String>('apple-music-artist-play-top'),
+          size: FushiButtonSize.m,
+          onPressed: () async {
+            try {
+              final List<MusicServerTrack> top = await _top;
+              if (context.mounted) _playTracks(context, catalog, top);
+            } on Object catch (e) {
+              _toastError(e);
+            }
+          },
+          icon: const FushiIcon(FushiIcons.play),
+          label: Text(t.music_apple_music_play_top_songs),
+        ),
+      ),
+      if (catalog.fullTracks)
+        FushiPressScale(
+          child: FushiFilledButton.tonalIcon(
+            key: const ValueKey<String>('apple-music-artist-station'),
+            size: FushiButtonSize.m,
+            onPressed: () => unawaited(
+              _startStationFor(
+                context,
+                catalog,
+                AppleMusicStationSeed.artist,
+                widget.artist.id,
               ),
             ),
-            if (catalog.fullTracks)
-              FushiPressScale(
-                child: FushiFilledButton.tonalIcon(
-                  key: const ValueKey<String>('apple-music-artist-station'),
-                  size: FushiButtonSize.m,
-                  onPressed: () => unawaited(
-                    _startStationFor(
-                      context,
-                      catalog,
-                      AppleMusicStationSeed.artist,
-                      widget.artist.id,
-                    ),
-                  ),
-                  icon: const FushiIcon(FushiIcons.cast),
-                  label: Text(t.music_action_start_station),
-                ),
-              ),
-          ],
+            icon: const FushiIcon(FushiIcons.cast),
+            label: Text(t.music_action_start_station),
+          ),
+        ),
+    ];
+    final String? avatar = catalog.coverUri(widget.artist.coverRef)?.toString();
+    final List<Widget> sections = <Widget>[
+      // 重设计外壳：艺人名 + 头像压在取色色块上（水印大字 = 艺人名），按钮排进
+      // 色块；墨水屏照旧只有一排按钮。
+      Padding(
+        padding: EdgeInsets.only(
+          bottom: musicDetailHeroGap(context, tokens.spacing.gap),
+        ),
+        child: MusicDetailHero(
+          title: widget.artist.name,
+          coverPath: avatar,
+          showCover: avatar != null,
+          roundCover: true,
+          eyebrow: t.music_section_artists,
+          meta: catalog.displayName,
+          actions: actions,
+          legacy: Wrap(
+            spacing: tokens.spacing.gap,
+            runSpacing: tokens.spacing.gap,
+            children: actions,
+          ),
         ),
       ),
       _AsyncSection<List<MusicServerTrack>>(
@@ -1066,55 +1222,107 @@ class _AppleMusicArtistPageState extends State<AppleMusicArtistPage> {
       _AsyncSection<List<MusicServerAlbum>>(
         future: _albums,
         onRetry: () => setState(_load),
-        builder: (BuildContext context, List<MusicServerAlbum> albums) =>
-            _ShelfRow(
-              title: t.music_section_albums,
-              children: <Widget>[
-                for (final MusicServerAlbum a in albums)
-                  MusicServerAlbumCard(
-                    key: ValueKey<String>('apple-music-artist-album-${a.id}'),
-                    browser: catalog,
-                    album: a,
-                  ),
-              ],
+        builder: (BuildContext context, List<MusicServerAlbum> albums) {
+          ValueKey<String> keyOf(int i) =>
+              ValueKey<String>('apple-music-artist-album-${albums[i].id}');
+          return _styledSection(
+            context,
+            title: t.music_section_albums,
+            style: albumStyle,
+            count: albums.length,
+            card: (BuildContext context, int i) => MusicServerAlbumCard(
+              key: keyOf(i),
+              browser: catalog,
+              album: albums[i],
             ),
+            block: (BuildContext context, int i, FushiCoverBlockSize size) =>
+                MusicServerAlbumBlockCard(
+                  key: keyOf(i),
+                  browser: catalog,
+                  album: albums[i],
+                  size: size,
+                ),
+            row: (BuildContext context, int i) => MusicServerAlbumListRow(
+              key: keyOf(i),
+              browser: catalog,
+              album: albums[i],
+            ),
+          );
+        },
       ),
       _AsyncSection<List<MusicServerPlaylist>>(
         future: _playlists,
         onRetry: () => setState(_load),
-        builder: (BuildContext context, List<MusicServerPlaylist> ps) =>
-            _ShelfRow(
-              title: t.music_section_playlists,
-              children: <Widget>[
-                for (final MusicServerPlaylist p in ps)
-                  MusicServerPlaylistCard(
-                    key: ValueKey<String>(
-                      'apple-music-artist-playlist-${p.id}',
-                    ),
-                    browser: catalog,
-                    playlist: p,
-                  ),
-              ],
-            ),
+        builder: (BuildContext context, List<MusicServerPlaylist> ps) {
+          MusicServerPlaylistCard card(
+            int i, {
+            FushiCoverBlockSize? block,
+            bool row = false,
+          }) => MusicServerPlaylistCard(
+            key: ValueKey<String>('apple-music-artist-playlist-${ps[i].id}'),
+            browser: catalog,
+            playlist: ps[i],
+            block: block,
+            row: row,
+          );
+          return _styledSection(
+            context,
+            title: t.music_section_playlists,
+            style: playlistStyle,
+            count: ps.length,
+            card: (BuildContext context, int i) => card(i),
+            block: (BuildContext context, int i, FushiCoverBlockSize size) =>
+                card(i, block: size),
+            row: (BuildContext context, int i) => card(i, row: true),
+          );
+        },
       ),
       _AsyncSection<List<MusicServerArtist>>(
         future: _similar,
         onRetry: () => setState(_load),
         builder: (BuildContext context, List<MusicServerArtist> artists) {
           if (artists.isEmpty) return const SizedBox.shrink();
+          if (musicViewStyleSwitchable(context)) {
+            ValueKey<String> keyOf(int i) =>
+                ValueKey<String>('apple-music-similar-${artists[i].id}');
+            String? coverOf(int i) =>
+                catalog.coverUri(artists[i].coverRef)?.toString();
+            return _styledSection(
+              context,
+              title: t.music_artist_similar,
+              style: artistStyle,
+              count: artists.length,
+              block: (BuildContext context, int i, FushiCoverBlockSize size) =>
+                  MusicCollectionBlock(
+                    key: keyOf(i),
+                    size: size,
+                    title: artists[i].name,
+                    coverPath: coverOf(i),
+                    circular: true,
+                    onTap: () => openArtist(context, artists[i]),
+                  ),
+              row: (BuildContext context, int i) => MusicCollectionRow(
+                key: keyOf(i),
+                title: artists[i].name,
+                coverPath: coverOf(i),
+                circular: true,
+                onTap: () => openArtist(context, artists[i]),
+              ),
+            );
+          }
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
               FushiSectionTitle(t.music_artist_similar),
               for (int i = 0; i < artists.length; i++)
-                FushiPressScale(
-                  child: FushiGroupedListItem(
+                if (musicTrackRowSurfaceActive(context))
+                  MusicTrackRowSurface(
                     key: ValueKey<String>(
                       'apple-music-similar-${artists[i].id}',
                     ),
-                    index: i,
-                    count: artists.length,
+                    title: artists[i].name,
+                    leading: const FushiListLeadingIcon(FushiIcons.person),
                     onTap: () => _push(
                       context,
                       AppleMusicArtistPage(
@@ -1122,13 +1330,32 @@ class _AppleMusicArtistPageState extends State<AppleMusicArtistPage> {
                         artist: artists[i],
                       ),
                     ),
-                    child: FushiListItem(
-                      leading: const FushiListLeadingIcon(FushiIcons.person),
-                      title: Text(artists[i].name),
-                      trailing: const FushiIcon(FushiIcons.chevronRight),
+                    trailing: const <Widget>[
+                      FushiIcon(FushiIcons.chevronRight),
+                    ],
+                  )
+                else
+                  FushiPressScale(
+                    child: FushiGroupedListItem(
+                      key: ValueKey<String>(
+                        'apple-music-similar-${artists[i].id}',
+                      ),
+                      index: i,
+                      count: artists.length,
+                      onTap: () => _push(
+                        context,
+                        AppleMusicArtistPage(
+                          catalog: catalog,
+                          artist: artists[i],
+                        ),
+                      ),
+                      child: FushiListItem(
+                        leading: const FushiListLeadingIcon(FushiIcons.person),
+                        title: Text(artists[i].name),
+                        trailing: const FushiIcon(FushiIcons.chevronRight),
+                      ),
                     ),
                   ),
-                ),
             ],
           );
         },
@@ -1137,6 +1364,11 @@ class _AppleMusicArtistPageState extends State<AppleMusicArtistPage> {
     return musicBrowseScaffold(
       context,
       title: widget.artist.name,
+      titleInBody: true,
+      actions: <FushiToolbarItem>[
+        if (musicViewStyleSwitchable(context))
+          musicViewStyleToggle(MusicViewKind.albums, albumStyle),
+      ],
       body: FushiEntranceScope(
         child: ListView.builder(
           padding: musicBrowsePagePadding(context),

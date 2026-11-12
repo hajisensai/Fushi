@@ -231,7 +231,11 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
       contentBuilder: _buildContent,
     );
     if (widget.embedded) return buildEmbeddedStatTab(context, body);
-    return FushiPageScaffold(title: t.game_statistics, body: body);
+    return FushiPageScaffold(
+      masthead: true,
+      title: t.game_statistics,
+      body: body,
+    );
   }
 
   /// 骨架与总览 / 阅读 / 观看 tab 同一套（2026-10 统计中心重设计，

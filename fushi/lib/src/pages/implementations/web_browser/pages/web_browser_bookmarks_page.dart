@@ -261,6 +261,7 @@ class _WebBrowserBookmarksPageState extends State<WebBrowserBookmarksPage> {
       },
       child: FushiPageScaffold(
         title: _path.isEmpty ? t.web_browser_bookmarks_title : _path.last.title,
+        masthead: true,
         actions: <Widget>[
           FushiIconButton(
             key: const ValueKey<String>('web_browser_bookmarks_new_folder'),

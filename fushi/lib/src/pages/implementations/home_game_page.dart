@@ -409,6 +409,8 @@ class _HomeGamePageState extends State<HomeGamePage> {
             controller: _chrome,
             // 工具栏叠在内容上，收起只滑出画面、不改内容视口高度（BUG-2975）。
             child: FushiFloatingChromeOverlay(
+              // 重设计外壳下画成页头大字（`fushi_page_masthead.dart`）。
+              masthead: true,
               // 浮动工具区 = 顶栏 + 同步进度条（常规同步 / 复习同步在跑时才有高度），
               // 子区按整个工具区的高度让位，进度条不压内容。
               chrome: Column(
@@ -423,6 +425,8 @@ class _HomeGamePageState extends State<HomeGamePage> {
                       onTap: _toggleImport,
                       focusIdPrefix: 'game-library-view',
                     ),
+                    // 页头大字顶栏里二级页签由大字行画（放得下与页名同一行）。
+                    secondary: hasSubNavigation ? subNavigation : null,
                   ),
                 ],
               ),
@@ -435,6 +439,7 @@ class _HomeGamePageState extends State<HomeGamePage> {
                   // 二级下划线页签贴着顶栏，不再隔 8（见 nestedGap）。
                   nestedGap: 0,
                   opaqueChrome: true,
+                  masthead: true,
                   chrome: !hasSubNavigation
                       ? const SizedBox.shrink()
                       : Padding(

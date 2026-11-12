@@ -49,6 +49,12 @@ import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
 import 'package:fushi/src/utils/components/fushi_tag.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show shellRedesignActive;
+import 'package:fushi/src/utils/components/fushi_cover_block.dart'
+    show FushiCoverBlockColors, FushiCoverBlockSize, fushiCoverBlockShape;
+import 'package:fushi/src/utils/components/fushi_poster_block.dart';
+import 'package:fushi/src/utils/components/fushi_static_masthead.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
@@ -711,6 +717,11 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
           ) ==
           WindowSizeClass.compact;
 
+  /// 重设计外壳（墨水屏除外）：页头换成页头大字（[FushiStaticMasthead]）。窄屏
+  /// 的 tab 承载照旧不画页头（[_hidesCompactPageHeader]，用户 2026-11-12 复核
+  /// 「去掉大标题」），清空历史仍在搜索栏那一行。
+  bool _mastheadHeader(BuildContext context) => shellRedesignActive(context);
+
   /// Apple（iOS）搜索中折叠大标题：搜索区持焦或已有查询时收起，把高度让给建议与
   /// 结果（UISearchController 搜索态隐藏导航栏大标题的同款）。只在窄屏——桌面 /
   /// 平板的大标题不挤占结果区。独立路由不折叠：它的返回键在页头里，是 iOS 上唯一的
@@ -932,6 +943,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
   }
 
   Widget _buildPageHeader() {
+    if (_mastheadHeader(context)) return _buildMasthead();
     return FushiPageHeader(
       title: t.nav_lookup,
       leading: widget.showBackButton
@@ -959,6 +971,43 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
           onTap: _showDeleteDictionaryHistoryPrompt,
         ),
       ],
+    );
+  }
+
+  /// 重设计外壳的页头大字（设计稿查词页 `.cap-B`）：页名「查词」+ 模块徽标，右侧
+  /// 动作组 = 原页头动作（Apple 的词典管理 + 清空历史）。查词页没有一级切换 /
+  /// 二级页签（稿里的「查词 / 历史 / 词典」是示意，代码里历史与结果同屏主从、
+  /// 词典管理是弹层），主按钮位也不另造（稿里的「OCR 查词」本页没有）。独立
+  /// 路由的返回键作前导。
+  Widget _buildMasthead() {
+    return Padding(
+      padding: EdgeInsets.only(top: FushiDesignTokens.of(context).spacing.gap),
+      child: FushiStaticMasthead(
+        key: const ValueKey<String>('home-dictionary-masthead'),
+        title: t.nav_lookup,
+        leading: widget.showBackButton
+            ? FushiIconButton(
+                key: const ValueKey<String>('home-dictionary-route-back'),
+                tooltip: t.back,
+                icon: FushiIcons.back,
+                onTap: () => Navigator.of(context).maybePop(),
+              )
+            : null,
+        actions: <Widget>[
+          if (isGlassDesign(context))
+            FushiIconButton(
+              key: const ValueKey<String>('home-dictionary-manage'),
+              tooltip: t.dictionaries,
+              icon: CupertinoIcons.book,
+              onTap: appModel.showDictionaryMenu,
+            ),
+          FushiIconButton(
+            tooltip: t.clear_dictionary_title,
+            icon: FushiIcons.deleteSweep,
+            onTap: _showDeleteDictionaryHistoryPrompt,
+          ),
+        ],
+      ),
     );
   }
 
@@ -1432,6 +1481,9 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     }
     final bool glass = isGlassDesign(context);
     final int count = historyResults.length;
+    if (shellRedesignActive(context)) {
+      return _buildDictionaryHistoryBlocks(historyResults);
+    }
     // 进场窗口：历史屏每次挂载（首开 / 清空查询退回 / 宽窄切换）首屏行错峰淡入，
     // 滚动带出来的行瞬间出现。
     return FushiEntranceScope(
@@ -1549,6 +1601,97 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
             ),
           );
         }),
+      ),
+    );
+  }
+
+  /// 重设计外壳的查词历史（设计稿查词页 `sec('最近查过','HISTORY')` + `.box.word`）：
+  /// 每条历史一块按词取色的小色块——上面是词形 / 读音小字，正中查过的词大字，
+  /// 下面命中词典数 chip，读音大字水印压在底边。点按 = 回看这条（与列表行同一
+  /// 路径），悬停 / 聚焦露出「⋯」（收藏 / 移出历史），当前右栏那条描边选中。
+  /// 数据、滚动控制器、下拉同步与列表形态相同，只换视觉；稿里的「N 次」查询次数
+  /// 历史里没有，换成命中词典数。
+  Widget _buildDictionaryHistoryBlocks(List<DictionarySearchResult> results) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return FushiEntranceScope(
+      child: CustomScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        controller: DictionaryMediaType.instance.scrollController,
+        slivers: <Widget>[
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.only(top: tokens.spacing.gap / 2),
+              child: _buildSectionTitle(t.lookup_history_title),
+            ),
+          ),
+          SliverPadding(
+            padding: EdgeInsets.fromLTRB(
+              tokens.spacing.page,
+              tokens.spacing.gap / 2,
+              tokens.spacing.page,
+              tokens.spacing.page,
+            ),
+            sliver: SliverGrid(
+              gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                maxCrossAxisExtent: 200,
+                mainAxisExtent: 150,
+                mainAxisSpacing: 14,
+                crossAxisSpacing: 14,
+              ),
+              delegate: SliverChildBuilderDelegate(
+                fushiStaggeredItemBuilder((BuildContext context, int index) {
+                  final DictionarySearchResult result = results[index];
+                  final String searchTerm = result.searchTerm.trim();
+                  final first = result.entries.first;
+                  final String word = first.word;
+                  final String reading = first.reading;
+                  final bool hasWordInfo =
+                      word.isNotEmpty && word != searchTerm;
+                  final bool hasReading =
+                      reading.isNotEmpty &&
+                      reading != word &&
+                      reading != searchTerm;
+                  return _LookupWordBlock(
+                    key: ValueKey<String>(
+                      'home_dictionary_history_${index}_$searchTerm',
+                    ),
+                    term: searchTerm.replaceAll('\n', ' '),
+                    subtitle: hasWordInfo || hasReading
+                        ? <String>[
+                            if (hasWordInfo) word,
+                            if (hasReading) reading,
+                          ].join('  ')
+                        : null,
+                    watermark: hasReading ? reading : searchTerm,
+                    dictionaryCount: result.entries
+                        .map((e) => e.dictionaryName)
+                        .toSet()
+                        .length,
+                    selected: _hasActiveQuery && _lastQuery == searchTerm,
+                    onOpen: () {
+                      _controller.text = searchTerm;
+                      _controller.selection = TextSelection.collapsed(
+                        offset: searchTerm.length,
+                      );
+                      _showCachedResult(result);
+                    },
+                    onFavorite: () => unawaited(
+                      onFavoriteEntry(<String, String>{
+                        'expression': word.isNotEmpty ? word : searchTerm,
+                        'reading': reading,
+                        'glossary': first.plainMeaning,
+                      }),
+                    ),
+                    onRemove: () => appModel.removeFromDictionaryHistory(
+                      searchTerm: result.searchTerm,
+                    ),
+                  );
+                }),
+                childCount: results.length,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -2575,6 +2718,173 @@ class _LookupHistoryRowState extends State<_LookupHistoryRow> {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 查词历史的一块色块（重设计外壳，见 `_buildDictionaryHistoryBlocks`）。
+class _LookupWordBlock extends StatefulWidget {
+  const _LookupWordBlock({
+    super.key,
+    required this.term,
+    required this.subtitle,
+    required this.watermark,
+    required this.dictionaryCount,
+    required this.selected,
+    required this.onOpen,
+    required this.onFavorite,
+    required this.onRemove,
+  });
+
+  final String term;
+  final String? subtitle;
+  final String watermark;
+  final int dictionaryCount;
+  final bool selected;
+  final VoidCallback onOpen;
+  final VoidCallback onFavorite;
+  final VoidCallback onRemove;
+
+  @override
+  State<_LookupWordBlock> createState() => _LookupWordBlockState();
+}
+
+class _LookupWordBlockState extends State<_LookupWordBlock> {
+  bool _hovered = false;
+  bool _focused = false;
+  bool _menuFocused = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiCoverBlockColors colors = fushiPosterColors(
+      context,
+      fushiPosterHue(widget.term),
+    );
+    final TextStyle base =
+        Theme.of(context).textTheme.bodyMedium ?? const TextStyle();
+    final Duration duration = fushiMotionDuration(context, FushiMotion.short);
+    final bool reveal = _hovered || _focused || _menuFocused;
+    final bool ring = widget.selected || _focused;
+    final String? subtitle = widget.subtitle;
+    // 与里面的海报色块同一个外形（半高档：26），焦点环 / 水波沿同一条边。
+    final OutlinedBorder shape = fushiCoverBlockShape(
+      context,
+      FushiCoverBlockSize.half,
+    );
+    // 「⋯」始终挂在树里（菜单打开期间按钮不能被卸载），只按悬停 / 焦点换透明度。
+    final Widget menu = Focus(
+      canRequestFocus: false,
+      skipTraversal: true,
+      onFocusChange: (bool focused) {
+        if (focused != _menuFocused) setState(() => _menuFocused = focused);
+      },
+      child: AnimatedOpacity(
+        duration: duration,
+        curve: FushiMotion.standard,
+        opacity: reveal ? 1 : 0,
+        child: FushiOverflowMenu<String>(
+          tooltip: t.lookup_history_more,
+          icon: FushiIcons.moreHoriz,
+          iconSize: 20,
+          items: <PopupMenuEntry<String>>[
+            PopupMenuItem<String>(
+              value: 'favorite',
+              child: Text(t.lookup_history_favorite),
+            ),
+            PopupMenuItem<String>(
+              value: 'remove',
+              child: Text(t.lookup_history_remove),
+            ),
+          ],
+          onSelected: (String value) {
+            if (value == 'favorite') {
+              widget.onFavorite();
+            } else if (value == 'remove') {
+              widget.onRemove();
+            }
+          },
+        ),
+      ),
+    );
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: Semantics(
+        selected: widget.selected,
+        child: FushiPressScale(
+          child: InkWell(
+            onTap: widget.onOpen,
+            onFocusChange: (bool focused) {
+              if (focused != _focused) setState(() => _focused = focused);
+            },
+            customBorder: shape,
+            overlayColor: const WidgetStatePropertyAll<Color>(
+              Colors.transparent,
+            ),
+            child: AnimatedContainer(
+              duration: duration,
+              curve: FushiMotion.standard,
+              foregroundDecoration: ShapeDecoration(
+                shape: shape.copyWith(
+                  side: BorderSide(
+                    color: ring ? colors.accent : Colors.transparent,
+                    width: 3,
+                  ),
+                ),
+              ),
+              child: FushiPosterBlock(
+                watermark: widget.watermark,
+                colors: colors,
+                watermarkFontSize: 72,
+                watermarkEdge: FushiPosterWatermarkEdge.bottom,
+                blockSize: FushiCoverBlockSize.half,
+                padding: const EdgeInsetsDirectional.fromSTEB(18, 8, 6, 14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: <Widget>[
+                    Row(
+                      children: <Widget>[
+                        Expanded(
+                          child: Text(
+                            subtitle ?? '',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: FushiPosterText.meta
+                                .on(base)
+                                .copyWith(
+                                  color: colors.onContainer.withValues(
+                                    alpha: 0.8,
+                                  ),
+                                ),
+                          ),
+                        ),
+                        menu,
+                      ],
+                    ),
+                    Padding(
+                      padding: const EdgeInsetsDirectional.only(end: 12),
+                      child: Text(
+                        widget.term,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: FushiPosterText.term
+                            .on(base)
+                            .copyWith(color: colors.accent),
+                      ),
+                    ),
+                    FushiPosterChip(
+                      colors: colors,
+                      icon: FushiIcons.dictionary,
+                      label: '${widget.dictionaryCount}',
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
         ),
       ),
     );

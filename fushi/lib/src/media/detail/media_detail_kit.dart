@@ -2437,6 +2437,29 @@ class _MediaDetailFabHostState extends State<_MediaDetailFabHost> {
   }
 }
 
+/// 单列悬浮按钮宿主的公开入口：自带滚动视图、不经 [MediaDetailLayout] 的详情版式
+/// （海报面板版式 `MediaPosterDetailLayout`）用它挂同一个「继续 / 开始」悬浮按钮，
+/// 显隐判据与 [MediaDetailLayout] 单列时完全相同——hero 主按钮
+/// （[MediaDetailActionBar] 的 primary）滚进 [topInset] 线以上才出现。
+class MediaDetailFabHost extends StatelessWidget {
+  const MediaDetailFabHost({
+    required this.fab,
+    required this.topInset,
+    required this.child,
+    super.key,
+  });
+
+  final Widget fab;
+
+  /// 浮动顶栏 + 状态栏占掉的高度。
+  final double topInset;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) =>
+      _MediaDetailFabHost(fab: fab, topInset: topInset, child: child);
+}
+
 /// [MediaDetailLayout.fab] 占掉的正文底部留白（56 高的悬浮按钮 + 上下间距）。
 const double kMediaDetailFabClearance = 80;
 

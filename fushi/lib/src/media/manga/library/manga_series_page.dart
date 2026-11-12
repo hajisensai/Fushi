@@ -33,6 +33,11 @@ import 'package:fushi/src/utils/components/fushi_bottom_action_bar.dart';
 import 'package:fushi/src/media/online/online_shelf_removal.dart';
 import 'package:fushi/src/media/online/online_source_error_text.dart';
 import 'package:fushi/src/media/online/online_work_detail.dart';
+import 'package:fushi/src/media/detail/media_poster_detail.dart';
+import 'package:fushi/src/utils/adaptive/fushi_page_backdrop.dart'
+    show fushiPageBackgroundColor;
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show shellRedesignActive;
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_service.dart';
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
@@ -1820,13 +1825,29 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
       onPopInvokedWithResult: (bool didPop, Object? _) {
         if (!didPop && _selecting) _exitSelection();
       },
-      child: FushiPageScaffold(
-        // hero 里已有大标题：顶栏标题等它滚出视口再淡入（不同屏重复）。
-        revealTitleAfterScroll: kMediaDetailTitleRevealOffset,
-        title: title,
-        bottomNavigationBar: _buildSelectionBar(context),
-        body: _buildBody(context),
-      ),
+      // 重设计外壳：不用悬浮胶囊页头，返回键是 [MediaPosterDetailChrome] 的裸图标
+      // 页头（桌面画进窗口标题行）；整页套面板配色（骨架 / 错误态同一套）。
+      child: shellRedesignActive(context)
+          ? Scaffold(
+              backgroundColor: fushiPageBackgroundColor(context),
+              bottomNavigationBar: _buildSelectionBar(context),
+              body: MediaPosterDetailTheme(
+                image: _coverImageProvider(),
+                fallbackKey: title,
+                child: MediaPosterDetailChrome(
+                  title: title,
+                  ownPrimaryScroll: true,
+                  child: _buildBody(context),
+                ),
+              ),
+            )
+          : FushiPageScaffold(
+              // hero 里已有大标题：顶栏标题等它滚出视口再淡入（不同屏重复）。
+              revealTitleAfterScroll: kMediaDetailTitleRevealOffset,
+              title: title,
+              bottomNavigationBar: _buildSelectionBar(context),
+              body: _buildBody(context),
+            ),
     );
   }
 
@@ -1861,8 +1882,23 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
         child: _buildLoadError(context, loadError),
       );
     }
-    final double page = FushiDesignTokens.of(context).spacing.page;
-    final Widget? ocrBanner = _buildOcrBanner(context);
+    if (shellRedesignActive(context)) {
+      // 重设计外壳：海报面板版式（封面取色的大面板 + 斜放封面 + 信息胶囊 + 动作
+      // 按钮，章节列表接在面板里、跟着面板配色）。仍是本路由的正文；面板配色与
+      // 裸图标页头由 [build] 装在整页外层。墨水屏走下面的原版式。
+      return FushiEntranceScope(
+        child: MangaChapterFastScrollbar(
+          controller: _scroll,
+          notificationPredicate: _isBodyScroll,
+          child: MediaPosterDetailLayout(
+            controller: _scroll,
+            fab: _buildResumeFab(),
+            header: _buildPosterHeader(context),
+            slivers: _bodySlivers(context),
+          ),
+        ),
+      );
+    }
     // 宽屏两栏：左 hero（封面 / 标题 / 操作 / 简介）独立滚动，右章节列表；窄屏
     // 单列。BUG-2440 的底部安全区由 MediaDetailLayout 的尾部 SliverSafeArea 补。
     return FushiEntranceScope(
@@ -1874,56 +1910,57 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
           fab: _buildResumeFab(),
           backdrop: _coverImageProvider(),
           header: _buildHeader(context),
-          slivers: <Widget>[
-            SliverPadding(
-              padding: EdgeInsets.symmetric(horizontal: page),
-              sliver: SliverMainAxisGroup(
-                slivers: <Widget>[
-                  if (ocrBanner != null)
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: FushiStaggeredEntrance(
-                          index: 0,
-                          child: ocrBanner,
-                        ),
-                      ),
-                    ),
-                  if (_isLocal)
-                    SliverToBoxAdapter(
-                      child: FushiStaggeredEntrance(
-                        index: 1,
-                        child: _buildLocalDetails(context),
-                      ),
-                    )
-                  else
-                    _buildChapterList(context),
-                ],
-              ),
-            ),
-            // 跨模块「同一作品」（作品图谱 media_links）：只对已入库的漫画（有 bookKey）。
-            if (_bookKey case final String bookKey)
-              SliverToBoxAdapter(
-                child: MediaLinksSection(
-                  database: _appModel.database,
-                  self: (kind: MediaLinkKind.book, key: bookKey),
-                  onOpen: (MediaLinkEntry e) =>
-                      openMediaLinkEntry(context: context, ref: ref, entry: e),
-                  searchActionFor: (MediaLinkKind k) => mediaLinkSearchAction(
-                    context: context,
-                    ref: ref,
-                    kind: k,
-                  ),
-                  onInfer: mediaLinkInferCallback(
-                    ref: ref,
-                    self: (kind: MediaLinkKind.book, key: bookKey),
-                  ),
-                ),
-              ),
-          ],
+          slivers: _bodySlivers(context),
         ),
       ),
     );
+  }
+
+  /// hero 以下的区块（两种版式共用）：识别横幅 + 章节列表 / 本地卷信息 + 同一作品。
+  List<Widget> _bodySlivers(BuildContext context) {
+    final double page = FushiDesignTokens.of(context).spacing.page;
+    final Widget? ocrBanner = _buildOcrBanner(context);
+    return <Widget>[
+      SliverPadding(
+        padding: EdgeInsets.symmetric(horizontal: page),
+        sliver: SliverMainAxisGroup(
+          slivers: <Widget>[
+            if (ocrBanner != null)
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: FushiStaggeredEntrance(index: 0, child: ocrBanner),
+                ),
+              ),
+            if (_isLocal)
+              SliverToBoxAdapter(
+                child: FushiStaggeredEntrance(
+                  index: 1,
+                  child: _buildLocalDetails(context),
+                ),
+              )
+            else
+              _buildChapterList(context),
+          ],
+        ),
+      ),
+      // 跨模块「同一作品」（作品图谱 media_links）：只对已入库的漫画（有 bookKey）。
+      if (_bookKey case final String bookKey)
+        SliverToBoxAdapter(
+          child: MediaLinksSection(
+            database: _appModel.database,
+            self: (kind: MediaLinkKind.book, key: bookKey),
+            onOpen: (MediaLinkEntry e) =>
+                openMediaLinkEntry(context: context, ref: ref, entry: e),
+            searchActionFor: (MediaLinkKind k) =>
+                mediaLinkSearchAction(context: context, ref: ref, kind: k),
+            onInfer: mediaLinkInferCallback(
+              ref: ref,
+              self: (kind: MediaLinkKind.book, key: bookKey),
+            ),
+          ),
+        ),
+    ];
   }
 
   /// 「跳到当前章节」：当前章在懒列表里可能还没建出来，按它在显示顺序里的下标估位。
@@ -2234,6 +2271,70 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
   /// 作品页头部：三域共用的 [OnlineWorkHeader]（M3E 详情 hero）——封面模糊大
   /// 背景 + 封面卡 + 来源 overline + 标题 + 作者 / 在书架 chip + 主操作按钮组 +
   /// 类型标签 + 可展开简介（+ 刷新失败提示条）。
+  /// hero 的信息 chip（两种版式共用）：作者 / 署名、已在书架、外部来源提示。
+  List<MediaDetailChip> _headerChips() {
+    final OnlineMangaSeries? series = _entry?.series;
+    return <MediaDetailChip>[
+      for (final String? line in <String?>[
+        series?.byline,
+        if (_isLocal) _row?.author,
+      ])
+        if (line != null && line.trim().isNotEmpty)
+          MediaDetailChip(line.trim(), icon: FushiIcons.person),
+      if (_row != null && !_isLocal)
+        MediaDetailChip(
+          t.video_discovery_in_library,
+          icon: FushiIcons.check,
+          tone: MediaDetailChipTone.primary,
+          key: const ValueKey<String>('manga_series_in_library_chip'),
+        ),
+      // 扩展源的作品来自第三方站点（10-09 所有者「外部来源」提示）；互联对端
+      // 是用户自己的设备，本地卷没有在线来源，都不标。
+      if (_entry case final OnlineMangaLibraryEntry entry
+          when entry.runtime != OnlineMangaRuntimeKind.interconnect &&
+              entry.runtime != OnlineMangaRuntimeKind.kavita)
+        ...extensionSourceDetailChips(),
+    ];
+  }
+
+  /// 海报面板 hero（重设计外壳）：数据与 [_buildHeader] 同源（同一个封面 / 来源名 /
+  /// chip / 主操作 / 次按钮 / 「⋯」/ 刷新失败提示条），只换视觉。漫画没有横版
+  /// 背景图，顶部背景带拿封面重模糊垫底；类型标签并进信息胶囊。按钮组与简介沿用
+  /// 原 key（`online_work_actions` / `online_work_more` / `online_work_description`）。
+  Widget _buildPosterHeader(BuildContext context) {
+    final OnlineMangaSeries? series = _entry?.series;
+    final OnlineMangaUnavailable? refreshError = _refreshError;
+    final List<MediaDetailMenuItem> moreItems = _buildMoreItems();
+    return MediaPosterDetailHero(
+      title: _displayTitle,
+      kicker: _subtitle(),
+      poster: SizedBox.expand(child: _buildCover(context)),
+      posterImage: _coverImageProvider(),
+      backdropFallback: _coverImageProvider(),
+      pills: <MediaDetailChip>[
+        ..._headerChips(),
+        for (final String genre
+            in (series?.genreLabels ?? const <String>[]).take(6))
+          MediaDetailChip(genre),
+      ],
+      summary: series?.description,
+      summaryKey: const ValueKey<String>('online_work_description'),
+      selectableSummary: false,
+      actionsKey: const ValueKey<String>('online_work_actions'),
+      primaryAction: _buildPrimaryAction(),
+      secondaryActions: _buildSecondaryActions(),
+      more: moreItems.isEmpty
+          ? null
+          : MediaDetailMoreButton(
+              buttonKey: const ValueKey<String>('online_work_more'),
+              items: moreItems,
+            ),
+      footer: refreshError == null
+          ? null
+          : _buildRefreshBanner(context, refreshError),
+    );
+  }
+
   Widget _buildHeader(BuildContext context) {
     final OnlineMangaSeries? series = _entry?.series;
     final OnlineMangaUnavailable? refreshError = _refreshError;
@@ -2243,27 +2344,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
       backdrop: _coverImageProvider(),
       overline: _subtitle(),
       title: _displayTitle,
-      chips: <MediaDetailChip>[
-        for (final String? line in <String?>[
-          series?.byline,
-          if (_isLocal) _row?.author,
-        ])
-          if (line != null && line.trim().isNotEmpty)
-            MediaDetailChip(line.trim(), icon: FushiIcons.person),
-        if (_row != null && !_isLocal)
-          MediaDetailChip(
-            t.video_discovery_in_library,
-            icon: FushiIcons.check,
-            tone: MediaDetailChipTone.primary,
-            key: const ValueKey<String>('manga_series_in_library_chip'),
-          ),
-        // 扩展源的作品来自第三方站点（10-09 所有者「外部来源」提示）；互联对端
-        // 是用户自己的设备，本地卷没有在线来源，都不标。
-        if (_entry case final OnlineMangaLibraryEntry entry
-            when entry.runtime != OnlineMangaRuntimeKind.interconnect &&
-                entry.runtime != OnlineMangaRuntimeKind.kavita)
-          ...extensionSourceDetailChips(),
-      ],
+      chips: _headerChips(),
       genres: series?.genreLabels ?? const <String>[],
       description: series?.description,
       primaryAction: _buildPrimaryAction(),

@@ -9,12 +9,22 @@
 library;
 
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:path_provider/path_provider.dart';
 
+import 'package:fushi/src/media/detail/media_detail_kit.dart';
+import 'package:fushi/src/media/detail/media_poster_detail.dart';
 import 'package:fushi/src/media/kavita/kavita_api_registry.dart';
+import 'package:fushi/src/pages/implementations/kavita/kavita_browse_page.dart'
+    show KavitaSeriesCover;
+import 'package:fushi/src/utils/adaptive/fushi_page_backdrop.dart'
+    show fushiPageBackgroundColor;
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show shellRedesignActive;
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/media/kavita/kavita_book_binding.dart';
 import 'package:fushi/src/media/kavita/kavita_book_service.dart';
 import 'package:fushi/src/media/kavita/kavita_open_books.dart';
@@ -386,11 +396,98 @@ class _KavitaBookSeriesPageState extends ConsumerState<KavitaBookSeriesPage>
     await _refreshBound();
   }
 
+  /// 海报面板的封面（取色 / 海报 / 背景带共用同一个 provider）；只在重设计外壳
+  /// 下按需拉取，与系列封面格同一份进程内缓存（[KavitaSeriesCover.loadBytes]）。
+  ImageProvider? _cover;
+  bool _coverRequested = false;
+
+  void _ensureCover() {
+    if (_coverRequested) return;
+    _coverRequested = true;
+    unawaited(
+      KavitaSeriesCover.loadBytes(
+        api: widget.api,
+        server: widget.server,
+        series: widget.series,
+      ).then(
+        (Uint8List bytes) {
+          if (!mounted || bytes.isEmpty) return;
+          setState(() => _cover = MemoryImage(bytes));
+        },
+        // 封面拉不到：海报位画占位、按系列名折色相，页面照常可用。
+        onError: (Object _) {},
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (shellRedesignActive(context)) {
+      // 重设计外壳：海报面板版式（与漫画 / 视频作品详情同一套，见
+      // media_poster_detail.dart）。返回键是 [MediaPosterDetailChrome] 的裸图标
+      // 页头；加载 / 失败态也在同一外壳里。墨水屏走下面的原版式。
+      _ensureCover();
+      return Scaffold(
+        backgroundColor: fushiPageBackgroundColor(context),
+        body: MediaPosterDetailTheme(
+          image: _cover,
+          fallbackKey: widget.series.displayName,
+          child: MediaPosterDetailChrome(
+            title: widget.series.displayName,
+            child: _body(),
+          ),
+        ),
+      );
+    }
     return Scaffold(
       appBar: FushiAppBar(title: Text(widget.series.displayName)),
       body: _body(),
+    );
+  }
+
+  /// 海报面板 hero（重设计外壳）：海报 = 系列封面（背景带拿它重模糊垫底），标题
+  /// 上方是所在书库；主按钮从第一章没读完的章接着读（与章节行「打开」同一条
+  /// [_read]），都读完时从第一章读。
+  Widget _posterHero() {
+    final KavitaSeries series = widget.series;
+    final KavitaChapter next = _chapters.firstWhere(
+      (KavitaChapter chapter) => !chapter.isRead,
+      orElse: () => _chapters.first,
+    );
+    final bool started = _chapters.any(
+      (KavitaChapter chapter) => chapter.pagesRead > 0,
+    );
+    final ImageProvider? cover = _cover;
+    final String? original = series.originalName?.trim();
+    return MediaPosterDetailHero(
+      title: series.displayName,
+      kicker: series.libraryName,
+      originalTitle: original == null || original == series.displayName
+          ? null
+          : original,
+      poster: SizedBox.expand(
+        child: cover == null
+            ? KavitaSeriesCover(
+                api: widget.api,
+                server: widget.server,
+                series: series,
+              )
+            : Image(image: cover, fit: BoxFit.cover, gaplessPlayback: true),
+      ),
+      posterImage: cover,
+      backdropFallback: cover,
+      primaryAction: MediaDetailPrimaryButton(
+        buttonKey: const ValueKey<String>('kavita-series-read'),
+        icon: FushiIcons.readingMode,
+        label: MediaDetailResumeFab.labelFor(
+          watching: false,
+          started: started,
+          itemLabel: next.displayName,
+        ),
+        onPressed: _busy.containsKey(next.id)
+            ? null
+            : () => unawaited(_read(next)),
+      ),
     );
   }
 
@@ -414,6 +511,33 @@ class _KavitaBookSeriesPageState extends ConsumerState<KavitaBookSeriesPage>
       );
     }
     final bool canDownload = userConfiguredServersAvailable;
+    if (shellRedesignActive(context)) {
+      final double page = FushiDesignTokens.of(context).spacing.page;
+      return FushiRefreshIndicator(
+        onRefresh: () => _load(silent: true),
+        child: FushiEntranceScope(
+          child: MediaPosterDetailLayout(
+            bottomPadding: page,
+            header: _posterHero(),
+            slivers: <Widget>[
+              SliverPadding(
+                padding: EdgeInsets.symmetric(horizontal: page),
+                sliver: SliverList.builder(
+                  itemCount: _chapters.length,
+                  itemBuilder: fushiStaggeredItemBuilder((
+                    BuildContext context,
+                    int index,
+                  ) {
+                    final KavitaChapter chapter = _chapters[index];
+                    return _chapterTile(chapter, canDownload: canDownload);
+                  }),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     return FushiRefreshIndicator(
       onRefresh: () => _load(silent: true),
       child: FushiEntranceScope(

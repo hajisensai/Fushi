@@ -2,7 +2,7 @@ import 'package:fushi/src/media/privacy/media_privacy_dialog.dart';
 import 'package:fushi/src/media/tags/tag_picker_sheet.dart';
 
 import 'dart:async' show StreamSubscription, Timer, unawaited;
-import 'dart:convert' show utf8;
+import 'dart:convert' show jsonDecode, utf8;
 import 'dart:io';
 
 import 'package:crypto/crypto.dart' show sha1;
@@ -48,6 +48,7 @@ import 'package:fushi/src/media/drag_drop/drop_decision.dart';
 import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/pages/implementations/manual_download_task_dialog.dart';
+import 'package:fushi/src/media/video/cover_ui/cover_orientation_builder.dart';
 import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
 import 'package:fushi/src/media/video/cover_ui/landscape_cover_image.dart';
 import 'package:fushi/src/media/video/cover_ui/video_online_cover_picker.dart';
@@ -208,7 +209,11 @@ import 'package:fushi_engine/utils/misc/safe_file_name.dart';
 import 'package:fushi/src/utils/components/batch_action_bar.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
+import 'package:fushi/src/utils/components/fushi_continue_blocks.dart';
 import 'package:fushi/src/utils/components/fushi_continue_card_row.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart';
+import 'package:fushi/src/utils/components/fushi_cover_block.dart';
+import 'package:fushi/src/utils/components/fushi_cover_block_layout.dart';
 import 'package:fushi/src/utils/components/fushi_continue_hero.dart';
 import 'package:fushi/src/utils/cover_image.dart';
 import 'package:fushi/src/pages/implementations/collection_name_dialog.dart';
@@ -2343,7 +2348,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
           onReorder: (int from, int to) => _onVideoReorder(unitKeys, from, to),
           itemBuilder: (BuildContext context, int i) => FushiStaggeredEntrance(
             index: i,
-            child: IgnorePointer(child: cells[i].build(orientation)),
+            child: IgnorePointer(child: cells[i].build(orientation, null)),
           ),
         ),
       ),
@@ -5892,10 +5897,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     // 首屏就是全部的「继续观看」（[FushiContinueSpotlight]，与书架 / 游戏 /
     // 音乐 / 首页同一个组件；最多 15 部，与原继续观看行同一上限），下面不再
     // 另起一行。
-    final List<FushiContinueEntry> spotlight = <FushiContinueEntry>[
-      for (final _HomeContinueItem item in continueItems.take(15))
-        _spotlightEntry(item.hero()),
+    final List<_HomeHeroData> heroData = <_HomeHeroData>[
+      for (final _HomeContinueItem item in continueItems.take(15)) item.hero(),
     ];
+    final List<FushiContinueEntry> spotlight = <FushiContinueEntry>[
+      for (final _HomeHeroData data in heroData) _spotlightEntry(data),
+    ];
+    final bool blocks = FushiContinueBlocks.active(context);
     // 首屏（2026-11-01 用户：「留一个大屏的显示，其他都按这个并列卡」）：最近
     // 在看的那部仍是大卡（剧照叠层 / 竖海报封面皮），其余条目换成与书架同一个
     // 封面取色并列卡（[FushiContinueCardRow]）——宽屏排在大卡旁、与大卡等高
@@ -5908,12 +5916,22 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       gap: tokens.spacing.gap * 1.5,
       entries: spotlight.sublist(1),
     );
-    final Widget? hero = spotlight.isEmpty
-        ? null
-        : FushiContinueSpotlight(
-            main: spotlight.first,
-            sideBuilder: spotlight.length > 1 ? sideCards : null,
-          );
+    // 重设计外壳 + 色块布局：最近那部是整行大封面主块（2026-11-12 用户：「视频
+    // 首页还是要保留一个是大封面的设计」），其余条目排成与「系列」页签同组件、
+    // 同尺寸的整块色块网格（[_rowBlockCard]，规整块、放不下换行），不用半高块
+    // （同日：「视频首页都换成这种，现在太小块展示有问题」）。
+    final Widget? hero;
+    if (spotlight.isEmpty) {
+      hero = null;
+    } else if (blocks) {
+      hero = _continueBlocksSection(spotlight, heroData);
+    } else {
+      hero = FushiContinueSpotlight(
+        main: spotlight.first,
+        side: spotlight.sublist(1),
+        sideBuilder: spotlight.length > 1 ? sideCards : null,
+      );
+    }
     final Widget? subscriptionRow = _buildSubscriptionUpdatesRow(
       updates,
       cardWidth,
@@ -5945,6 +5963,104 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
           if (recentRow != null) recentRow,
         ],
       ),
+    );
+  }
+
+  /// 色块版式的「继续观看」（2026-11-12 用户：「左边大封面完整显示比例，右侧
+  /// 两行横滑，跟之前一样只不过用上新样式」）：宽屏最近那部是按 16:9 完整显示的
+  /// 剧照主卡（[FushiContinueStillCard]），右边两行「系列」同款整块色块横向
+  /// 滑动，两行合起来与主卡等高；窄屏 / 没有剧照时主块在上、其余一行横滑。
+  Widget _continueBlocksSection(
+    List<FushiContinueEntry> spotlight,
+    List<_HomeHeroData> heroData,
+  ) {
+    final int rest = heroData.length - 1;
+    Widget strip({int rows = 1, double? tileHeight, double? tileWidth}) =>
+        FushiCoverBlockStrip(
+          key: const ValueKey<String>('home_video_continue_blocks'),
+          leadingHero: false,
+          rowSize: FushiCoverBlockSize.regular,
+          rows: rows,
+          tileHeight: tileHeight,
+          tileWidth: tileWidth,
+          itemCount: rest,
+          itemBuilder:
+              (BuildContext context, int i, FushiCoverBlockSize size) =>
+                  _rowBlockCard(_heroRowSpec(heroData[i + 1]), size),
+        );
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints c) {
+        final double width = c.maxWidth;
+        final FushiContinueEntry first = spotlight.first;
+        final bool wide = !FushiCoverBlockStrip.isCompact(width);
+        // 宽屏一律左主卡 + 右两行横滑。条目是横图还是竖图要等图解码后才知道
+        // （[FushiContinueOrientedEntry]），不能在这里按 `first.still` 分版式：
+        // 冷启动时它恒为竖版，整段会退回整行主块（2026-11-13 用户：「视频首页
+        // 好像还是没变成之前那样」）。
+        if (wide) {
+          const double spacing = kFushiCoverBlockSpacing;
+          // 主卡：两行整块（204 × 2 + 间距）高、16:9 宽；窗口窄时按 55% 行宽
+          // 收，两行块跟着等比缩。
+          const double fullHeight = kFushiCoverBlockHeight * 2 + spacing;
+          final double mainWidth = rest > 0
+              ? (fullHeight * 16 / 9).clamp(0.0, width * 0.55)
+              : (fullHeight * 16 / 9).clamp(0.0, width);
+          final double mainHeight = mainWidth * 9 / 16;
+          final Widget main = SizedBox(
+            width: mainWidth,
+            height: mainHeight,
+            child: FushiContinueOrientedEntry(
+              entry: first,
+              builder: (FushiContinueEntry e) => e.still
+                  ? FushiContinueStillCard(entry: e)
+                  : FushiContinueBlockCard(
+                      entry: e,
+                      size: FushiCoverBlockSize.hero,
+                      label: t.video_continue_watching,
+                    ),
+            ),
+          );
+          if (rest <= 0) {
+            return Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: main,
+            );
+          }
+          final double tileHeight = (mainHeight - spacing) / 2;
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              main,
+              const SizedBox(width: spacing),
+              Expanded(
+                child: strip(
+                  rows: 2,
+                  tileHeight: tileHeight,
+                  tileWidth:
+                      tileHeight *
+                      kFushiCoverBlockTargetWidthMedia /
+                      kFushiCoverBlockHeight,
+                ),
+              ),
+            ],
+          );
+        }
+        final Widget main = FushiContinueSpotlight(
+          main: first,
+          blockLabel: t.video_continue_watching,
+          blockLeadingHero: true,
+        );
+        if (rest <= 0) return main;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            main,
+            const SizedBox(height: kFushiCoverBlockSpacing),
+            strip(),
+          ],
+        );
+      },
     );
   }
 
@@ -5990,6 +6106,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         metaLines: <String>[if (hero.detailLine != null) hero.detailLine!],
         metaIcon: hero.cloud ? FushiIcons.cloud : null,
         subtitle: hero.subtitle,
+        byline: hero.detailLine,
         progress: hero.progress,
         onOpen: onOpen,
         onLongPress: onLongPress,
@@ -6010,6 +6127,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         eyebrow: subtitle,
         metaIcon: hero.cloud ? FushiIcons.cloud : null,
         subtitle: hero.subtitle,
+        byline: hero.detailLine,
         progress: hero.progress,
         onOpen: onOpen,
         onLongPress: onLongPress,
@@ -6027,6 +6145,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       eyebrow: subtitle,
       metaIcon: hero.cloud ? FushiIcons.cloud : null,
       subtitle: hero.subtitle,
+      byline: hero.detailLine,
       progress: hero.progress,
       onOpen: onOpen,
       onLongPress: onLongPress,
@@ -6344,13 +6463,14 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     if (updates.isEmpty) return null;
     return _buildHorizontalCardRow(
       title: t.video_home_subscription_updates,
+      blocksKey: const ValueKey<String>('home_video_subscription_blocks'),
       controller: _subscriptionRowController,
       cardWidth: cardWidth,
       items: <_VideoRowItem>[
         for (final _HomeSubscriptionItem item in updates.take(15))
           _VideoRowItem(
             recentMs: item.update.latestUnwatchedImportedAtMs,
-            build: () => _buildRowMediaCard(
+            spec: _RowCardSpec(
               cardKey: ValueKey<String>(
                 'home_video_subscription_collection_${item.collection.id}',
               ),
@@ -6363,7 +6483,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
                 item.target,
               ),
               title: _workTitle(item.collection),
-              cardWidth: cardWidth,
               onTap: () => _openSlot(
                 item.target,
                 playlistCollectionId: item.collection.id,
@@ -6383,6 +6502,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
                 count: item.update.unwatchedCount,
               ),
               cloudBadge: item.target.local == null,
+              collectionId: item.collection.id,
             ),
           ),
       ],
@@ -6457,13 +6577,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       recent.add(
         _VideoRowItem(
           recentMs: _slotImportedAtMs(latest) ?? 0,
-          build: () => _buildRowMediaCard(
+          spec: _RowCardSpec(
             cardKey: ValueKey<String>('home_video_recent_collection_$cid'),
+            collectionId: cid,
             focusId: FushiFocusId('home-video-recent-collection-$cid'),
             // 竖版作品封面链；纯远端合集回落到最新那一集的远端封面。
             cover: _collectionPosterProvider(collection, members, latest),
             title: _workTitle(collection),
-            cardWidth: cardWidth,
             onTap: () => _openCollectionDetail(collection),
             onLongPress: () => _showCollectionContextMenu(
               collection,
@@ -6485,9 +6605,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       recent.add(
         _VideoRowItem(
           recentMs: _slotImportedAtMs(slot) ?? 0,
-          build: () => local != null
-              ? _buildRecentlyAddedCard(local, cardWidth)
-              : _buildRecentlyAddedRemoteCard(slot.remote!, cardWidth),
+          spec: local != null
+              ? _recentlyAddedSpec(local)
+              : _recentlyAddedRemoteSpec(slot.remote!),
         ),
       );
     }
@@ -6497,6 +6617,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     if (recent.isEmpty) return null;
     return _buildHorizontalCardRow(
       title: t.home_recently_added,
+      blocksKey: const ValueKey<String>('home_video_recent_blocks'),
       controller: _recentRowController,
       cardWidth: cardWidth,
       items: recent.take(15).toList(growable: false),
@@ -6516,19 +6637,129 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// 默认 Shift，见 `scrollable.dart` 的 `_pointerSignalEventDelta`），横滚由
   /// 框架提供，无需任何自有代码。行为守卫见
   /// `test/pages/collection_relations_section_test.dart`。
+  ///
+  /// 重设计外壳的色块布局（[FushiContinueBlocks.active]）下整段换成与「系列」
+  /// 页签同一种卡片（[FushiCoverBlocks] 规整整块、放不下换行；每块是系列墙
+  /// 同一个 [_videoCoverBlock]，横 / 竖封面自适应），上方粗大分区
+  /// 标题；副行（「第 N 集 · M 集未看」/「最近添加」）、☁ 与标签进色块文字区
+  /// （2026-11-12 用户：「这些也用新样式吧」「改成跟系列一样展示吧这里」）。
+  /// 封面网格布局与墨水屏保留下面的竖版封面卡横滚行。
   Widget _buildHorizontalCardRow({
     required String title,
+    required Key blocksKey,
     required ScrollController controller,
     required double cardWidth,
     required List<_VideoRowItem> items,
   }) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    if (FushiContinueBlocks.active(context)) {
+      return _blocksSectionFrame(
+        tokens,
+        header: FushiBlockSectionTitle(title),
+        blocks: FushiCoverBlocks(
+          key: blocksKey,
+          // 与系列页正常整块同尺寸（规整块，放不下换行）：分区里不排拼贴首块 /
+          // 半高块。
+          layout: null,
+          itemCount: items.length,
+          itemBuilder:
+              (BuildContext context, int i, FushiCoverBlockSize size) =>
+                  _rowBlockCard(items[i].spec, size),
+        ),
+      );
+    }
     return _buildHorizontalRowFrame(
       header: Text(title, style: tokens.type.sectionLabel),
       controller: controller,
       cardWidth: cardWidth,
       itemCount: items.length,
-      itemBuilder: (int i) => items[i].build(),
+      itemBuilder: (int i) => _buildRowMediaCard(items[i].spec, cardWidth),
+    );
+  }
+
+  /// 色块分区（真内容与骨架共用）：分区标题 + 色块，分区之间留够色块投影的
+  /// 余量，投影不压到下一段的标题上。
+  Widget _blocksSectionFrame(
+    FushiDesignTokens tokens, {
+    required Widget header,
+    required Widget blocks,
+  }) => Padding(
+    padding: EdgeInsets.only(bottom: tokens.spacing.card * 2),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        header,
+        SizedBox(height: tokens.spacing.card),
+        blocks,
+      ],
+    ),
+  );
+
+  /// 「继续观看」其余条目在色块版式下的信息：与主卡同一份 [_HomeHeroData]，
+  /// 副行「看到第 N 集 · 剩 M 分钟 · 已看 N 集」，进度同主卡。
+  _RowCardSpec _heroRowSpec(_HomeHeroData hero) => _RowCardSpec(
+    cardKey: hero.cardKey,
+    focusId: hero.focusId,
+    cover: hero.poster ?? hero.image(overlay: false),
+    title: hero.title,
+    onTap: hero.onPlay,
+    onLongPress: hero.onLongPress,
+    secondaryText: <String>[
+      if (hero.subtitle.isNotEmpty) hero.subtitle,
+      if (hero.detailLine != null) hero.detailLine!,
+    ].join(' · '),
+    cloudBadge: hero.cloud,
+    progress: hero.progress,
+    collectionId: hero.collectionId,
+    bookUid: hero.bookUid,
+  );
+
+  /// 色块版式下分区的一块：与竖版行卡同一份信息（[_RowCardSpec]），卡壳与视觉
+  /// 同系列墙（[shelfCoverCard] + [_videoCoverBlock] 竖版槽 + [FushiHoverLift]），
+  /// 拼贴首块带刮削的 logo / 背景图 / 简介（[_videoBlockMeta]）。分区不参与多选
+  /// （与行卡同一纪律）：多选态下点按 / 长按置 null、不画勾选圈。
+  Widget _rowBlockCard(_RowCardSpec spec, FushiCoverBlockSize size) {
+    final ImageProvider? cover = spec.cover;
+    final int? collectionId = spec.collectionId;
+    final String? bookUid = spec.bookUid;
+    final Widget card = shelfCoverCard(
+      key: spec.cardKey,
+      focusId: spec.focusId,
+      padding: EdgeInsets.zero,
+      onTap: _selectionMode ? null : spec.onTap,
+      onLongPress: _selectionMode ? null : spec.onLongPress,
+      onSecondaryTap: _selectionMode ? null : spec.onLongPress,
+      child: _videoCoverBlock(
+        size: size,
+        orientation: VideoCardOrientation.portrait,
+        title: spec.title,
+        covers: <Widget>[
+          if (cover == null)
+            ShelfCoverPlaceholder(icon: FushiIcons.video)
+          else
+            PortraitCoverImage(
+              image: cover,
+              errorBuilder: (BuildContext _) =>
+                  ShelfCoverPlaceholder(icon: FushiIcons.video),
+            ),
+        ],
+        tintImage: cover,
+        selectionMode: false,
+        selected: false,
+        subtitle: spec.secondaryText,
+        leadingIcon: spec.cloudBadge ? FushiIcons.cloud : null,
+        progress: spec.progress,
+        completed: (spec.progress ?? 0) >= 1,
+        tags: spec.tags,
+        poster: collectionId != null || bookUid != null
+            ? _videoBlockMeta(collectionId: collectionId, bookUid: bookUid)
+            : null,
+      ),
+    );
+    return FushiHoverLift(
+      enabled: !_selectionMode,
+      builder: (BuildContext _, bool __) => card,
     );
   }
 
@@ -6602,19 +6833,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// chip / 底边进度条），信息全进封面下的 [_videoCardMeta]：[secondaryText] 是
   /// 副行，[cloudBadge] 变成副行前导 ☁，[progressFraction] 画在副行下的进度条，
   /// [tags]（BUG-1808）是副行尾部的「色点 + 标签名」。
-  Widget _buildRowMediaCard({
-    required Key cardKey,
-    required FushiFocusId focusId,
-    required ImageProvider? cover,
-    required String title,
-    required double cardWidth,
-    required VoidCallback onTap,
-    VoidCallback? onLongPress,
-    double? progressFraction,
-    String? secondaryText,
-    List<_VideoTagChip> tags = const <_VideoTagChip>[],
-    bool cloudBadge = false,
-  }) {
+  Widget _buildRowMediaCard(_RowCardSpec spec, double cardWidth) {
+    final Key cardKey = spec.cardKey;
+    final FushiFocusId focusId = spec.focusId;
+    final ImageProvider? cover = spec.cover;
+    final VoidCallback onTap = spec.onTap;
+    final VoidCallback? onLongPress = spec.onLongPress;
     final double coverHeight = videoCoverHeightForPortraitWidth(cardWidth);
     final Widget card = SizedBox(
       width: cardWidth,
@@ -6647,12 +6871,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
             ),
             Expanded(
               child: _videoCardMeta(
-                title: title,
-                subtitle: secondaryText,
-                leadingIcon: cloudBadge ? FushiIcons.cloud : null,
-                progress: progressFraction,
-                completed: progressFraction != null && progressFraction >= 1,
-                tags: tags,
+                title: spec.title,
+                subtitle: spec.secondaryText,
+                leadingIcon: spec.cloudBadge ? FushiIcons.cloud : null,
+                tags: spec.tags,
               ),
             ),
           ],
@@ -6726,6 +6948,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     final ImageProvider? poster = _bookPosterProvider(book);
     return _HomeHeroData(
       cardKey: ValueKey<String>('home_video_continue_${book.bookUid}'),
+      bookUid: book.bookUid,
       focusId: FushiFocusId('home-video-continue-${book.bookUid}'),
       title: title,
       subtitle: _continueSecondaryText(book, episodeNumber: episodeNumber),
@@ -6791,6 +7014,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       cardKey: ValueKey<String>(
         'home_video_continue_collection_${collection.id}',
       ),
+      collectionId: collection.id,
       focusId: FushiFocusId('home-video-continue-collection-${collection.id}'),
       title: _workTitle(collection),
       subtitle: _continueCollectionSecondaryText(target, currentIndex),
@@ -6859,18 +7083,18 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   }
 
   /// 最近添加行卡：副行「最近添加」；点击带主合集上下文开播。
-  Widget _buildRecentlyAddedCard(VideoBookRow book, double cardWidth) {
+  _RowCardSpec _recentlyAddedSpec(VideoBookRow book) {
     final int? cid =
         _primaryCollectionByEntry[MediaKind.video.compositeKey(book.bookUid)];
     final bool playlist = playlistEpisodeCount(book.playlistJson) > 1;
     final ImageProvider? poster = _bookPosterProvider(book);
     final String title = _metadataWorkByBook[book.bookUid]?.title ?? book.title;
-    return _buildRowMediaCard(
+    return _RowCardSpec(
       cardKey: ValueKey<String>('home_video_recent_${book.bookUid}'),
+      bookUid: book.bookUid,
       focusId: FushiFocusId('home-video-recent-${book.bookUid}'),
       cover: poster,
       title: title,
-      cardWidth: cardWidth,
       onTap: () => _open(book, playlistCollectionId: cid),
       onLongPress: () => _showVideoMenu(
         book,
@@ -6886,17 +7110,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
 
   /// 远端占位的「最近添加」行卡：与本地同形（副行「最近添加」+ 集数），另带 ☁ 表明
   /// 内容还在 host 上；短按走既有远端流播 / 下载分派。
-  Widget _buildRecentlyAddedRemoteCard(
-    RemoteVideoInfo video,
-    double cardWidth,
-  ) {
+  _RowCardSpec _recentlyAddedRemoteSpec(RemoteVideoInfo video) {
     final String safeKey = _safeRemoteKey(video.id);
-    return _buildRowMediaCard(
+    return _RowCardSpec(
       cardKey: ValueKey<String>('home_video_recent_remote_$safeKey'),
       focusId: FushiFocusId('home-video-recent-remote-$safeKey'),
       cover: _remoteCoverProvider(video),
       title: video.title,
-      cardWidth: cardWidth,
       onTap: () => unawaited(_openRemote(video)),
       onLongPress: () => _showRemoteVideoDialog(video),
       tags: _remoteTagChips(video.tags),
@@ -7016,8 +7236,15 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
           _VideoLooseCard(
             sortKey: _groupSortKey(group),
             entry: _VideoWallEntry(
-              build: (VideoCardOrientation orientation) =>
-                  _buildVideoSlotCard(slot, orientation: orientation),
+              build:
+                  (
+                    VideoCardOrientation orientation,
+                    FushiCoverBlockSize? block,
+                  ) => _buildVideoSlotCard(
+                    slot,
+                    orientation: orientation,
+                    block: block,
+                  ),
             ),
             selectionKey: _videoSlotSelectionKey(slot),
           ),
@@ -7053,8 +7280,15 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
             (
               sortKey: _groupSortKey(group),
               entry: _VideoWallEntry(
-                build: (VideoCardOrientation orientation) =>
-                    _buildCollectionCoverCard(group, orientation: orientation),
+                build:
+                    (
+                      VideoCardOrientation orientation,
+                      FushiCoverBlockSize? block,
+                    ) => _buildCollectionCoverCard(
+                      group,
+                      orientation: orientation,
+                      block: block,
+                    ),
               ),
             ),
           for (final _VideoLooseCard card in loose)
@@ -7209,7 +7443,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     // 主卡位与真剧照主卡（[FushiContinueSpotlight]）同一套几何：量的是同一个
     // 可用宽（LayoutBuilder），贴起始侧，骨架换真卡不跳。
     final Widget hero = LayoutBuilder(
-      builder: (BuildContext _, BoxConstraints c) {
+      builder: (BuildContext context, BoxConstraints c) {
+        // 封面色块版式：骨架与真主块同位同高（整行一块主块高）。
+        if (FushiContinueBlocks.active(context)) {
+          return FushiContinueBlocks.placeholder(context, leadingHero: true);
+        }
         final Size main = FushiContinueSpotlight.placeholderStillSize(
           c.maxWidth,
         );
@@ -7243,19 +7481,63 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
                 ),
               ),
             for (int row = 0; row < 2; row++)
-              KeyedSubtree(
-                key: ValueKey<String>('home_video_row_skeleton_$row'),
-                child: _buildHorizontalRowFrame(
-                  header: header,
-                  controller: null,
-                  cardWidth: cardWidth,
-                  itemCount: cardCount,
-                  itemBuilder: (int i) => KeyedSubtree(
-                    key: ValueKey<String>('home_video_row_skeleton_${row}_$i'),
-                    child: card(i),
+              if (FushiContinueBlocks.active(context))
+                // 色块版式：与真色块分区同一套几何（标题位 + 一块规整块，与真
+                // 首块同位同尺寸）。
+                KeyedSubtree(
+                  key: ValueKey<String>('home_video_row_skeleton_$row'),
+                  child: _blocksSectionFrame(
+                    tokens,
+                    header: ExcludeSemantics(
+                      child: Stack(
+                        alignment: AlignmentDirectional.centerStart,
+                        children: <Widget>[
+                          // 同样式单行文本只撑出与真标题相同的行高，本身不可见。
+                          const Opacity(
+                            opacity: 0,
+                            child: FushiBlockSectionTitle(' '),
+                          ),
+                          SizedBox(
+                            width: 120,
+                            child: FushiSkeleton.line(height: 16),
+                          ),
+                        ],
+                      ),
+                    ),
+                    blocks: FushiCoverBlocks(
+                      layout: null,
+                      itemCount: 1,
+                      staggerEntrance: false,
+                      itemBuilder:
+                          (BuildContext _, int i, FushiCoverBlockSize size) =>
+                              KeyedSubtree(
+                                key: ValueKey<String>(
+                                  'home_video_row_skeleton_${row}_$i',
+                                ),
+                                child: _videoCardSkeleton(
+                                  VideoCardOrientation.portrait,
+                                  size,
+                                ),
+                              ),
+                    ),
+                  ),
+                )
+              else
+                KeyedSubtree(
+                  key: ValueKey<String>('home_video_row_skeleton_$row'),
+                  child: _buildHorizontalRowFrame(
+                    header: header,
+                    controller: null,
+                    cardWidth: cardWidth,
+                    itemCount: cardCount,
+                    itemBuilder: (int i) => KeyedSubtree(
+                      key: ValueKey<String>(
+                        'home_video_row_skeleton_${row}_$i',
+                      ),
+                      child: card(i),
+                    ),
                   ),
                 ),
-              ),
           ],
         ),
       ),
@@ -7304,7 +7586,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         cells: <_VideoWallEntry>[
           for (final VideoBookRow book in ordered)
             _VideoWallEntry(
-              build: (_) =>
+              build: (_, _) =>
                   _buildCard(book, orientation: VideoCardOrientation.landscape),
             ),
         ],
@@ -7356,14 +7638,18 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         <_VideoWallEntry>[
           for (final VideoBookRow book in ordered)
             _VideoWallEntry(
-              build: (_) =>
-                  _buildCard(book, orientation: VideoCardOrientation.landscape),
+              build: (_, FushiCoverBlockSize? block) => _buildCard(
+                book,
+                orientation: VideoCardOrientation.landscape,
+                block: block,
+              ),
             ),
           for (final RemoteVideoInfo video in remoteVideos)
             _VideoWallEntry(
-              build: (_) => _buildRemoteVideoCard(
+              build: (_, FushiCoverBlockSize? block) => _buildRemoteVideoCard(
                 video,
                 orientation: VideoCardOrientation.landscape,
+                block: block,
               ),
             ),
         ],
@@ -7621,12 +7907,14 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   Widget _buildVideoSlotCard(
     _VideoSlot slot, {
     VideoCardOrientation orientation = VideoCardOrientation.portrait,
+    FushiCoverBlockSize? block,
   }) {
     final VideoBookRow? local = slot.local;
     if (local != null) {
       return _buildCard(
         local,
         orientation: orientation,
+        block: block,
         coverOverride: widget.section == VideoLibrarySection.series
             ? () => _canonicalBookPosterProvider(local.bookUid)
             : null,
@@ -7642,6 +7930,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     return _buildRemoteVideoCard(
       remote,
       orientation: orientation,
+      block: block,
       openOverride:
           widget.section == VideoLibrarySection.series &&
               client is RemoteVideoWorkMetadataFetch
@@ -7866,6 +8155,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   Widget _buildCollectionCoverCard(
     CollectionGroup<_VideoSlot> group, {
     VideoCardOrientation orientation = VideoCardOrientation.portrait,
+    FushiCoverBlockSize? block,
   }) {
     final MediaCollectionRow collection = group.collection!;
     final List<_VideoTagChip> tags = _collectionTagChips(collection.id);
@@ -7888,6 +8178,35 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     final bool selected =
         _selectionMode && _selectedCollectionIds.contains(collection.id);
     final bool landscape = orientation == VideoCardOrientation.landscape;
+    // 副行一份数据，网格卡与色块卡共用。
+    final Key metaKey =
+        download?.key ??
+        (hasRemoteMember
+            ? ValueKey<String>('home_video_collection_cloud_${collection.id}')
+            : ValueKey<String>('home_video_collection_meta_${collection.id}'));
+    final String subtitle = download?.label ?? progress.label;
+    final IconData? leadingIcon = download != null
+        ? (download.failed ? Icons.error_outline : Icons.download_outlined)
+        : (hasRemoteMember ? FushiIcons.cloud : null);
+    final ShelfMetaTone tone = download?.failed ?? false
+        ? ShelfMetaTone.error
+        : ShelfMetaTone.normal;
+    final double? metaProgress =
+        download?.progress ??
+        (progress.started || progress.completed > 0
+            ? progress.completed / memberCount
+            : null);
+    final bool metaCompleted =
+        download == null && progress.completed >= progress.total;
+    final Widget? discBadge = _discFormatBadge(
+      badgeKey: ValueKey<String>(
+        'home_video_collection_disc_badge_${collection.id}',
+      ),
+      memberPaths: <String>[
+        for (final CollectionOrderingItem<_VideoSlot> it in group.items)
+          if (it.payload.local case final VideoBookRow local) local.videoPath,
+      ],
+    );
     // 菜单头部与本卡同源：封面走 [_buildCollectionCover] 的同一条取图链，标题同副行。
     void openMenu() => _showCollectionContextMenu(
       collection,
@@ -7915,86 +8234,91 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       // 后才禁用菜单，让整卡点击/扫选负责勾选。
       onLongPress: _selectionMode ? null : openMenu,
       onSecondaryTap: _selectionMode ? null : openMenu,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          AspectRatio(
-            // TODO-2486 朝向自适应：竖版 2:3 海报 / 横版 16:9（封面朝向由墙格
-            // CoverOrientationBuilder 探测注入），与散卡同分流。
-            aspectRatio: landscape ? 16 / 9 : 2 / 3,
-            // 合集 = 碟盒式叠层（材质下最近两个成员的封面往右上错开，悬停散开）；
-            // 封面上只留多选勾选圈 / 选中罩——集数 / 云 / 下载 / 标签进副行。
-            child: ShelfCoverFrame(
-              stackedBehind: _buildCollectionCover(
-                group,
-                landscapeSlot: landscape,
-              ),
-              stackedCovers: _collectionStackCovers(
-                group,
-                landscapeSlot: landscape,
-              ),
-              child: Stack(
-                fit: StackFit.expand,
-                children: <Widget>[
-                  _buildCollectionCover(group, landscapeSlot: landscape),
-                  if (_selectionMode)
-                    Positioned(
-                      top: 6,
-                      left: 6,
-                      child: ShelfSelectionCheck(selected: selected),
-                    ),
-                  if (selected)
-                    const Positioned.fill(child: ShelfSelectedOverlay()),
-                ],
-              ),
-            ),
-          ),
-          // 副行：「继续看 第n集 · N 集」/「已看完 x/N」；含远端成员时前导 ☁，
-          // 成员在下载 / 刚失败时换成下载态（下载本身蕴含「有远端成员」）。
-          Expanded(
-            child: _videoCardMeta(
-              key:
-                  download?.key ??
-                  (hasRemoteMember
-                      ? ValueKey<String>(
-                          'home_video_collection_cloud_${collection.id}',
-                        )
-                      : ValueKey<String>(
-                          'home_video_collection_meta_${collection.id}',
-                        )),
+      child: block != null
+          ? _videoCoverBlock(
+              size: block,
+              orientation: orientation,
               title: _workTitle(collection),
-              subtitle: download?.label ?? progress.label,
-              leadingIcon: download != null
-                  ? (download.failed
-                        ? Icons.error_outline
-                        : Icons.download_outlined)
-                  : (hasRemoteMember ? FushiIcons.cloud : null),
-              tone: download?.failed ?? false
-                  ? ShelfMetaTone.error
-                  : ShelfMetaTone.normal,
-              progress:
-                  download?.progress ??
-                  (progress.started || progress.completed > 0
-                      ? progress.completed / memberCount
-                      : null),
-              completed:
-                  download == null && progress.completed >= progress.total,
+              // 合集 = 最前那张 + 后面的成员叠层（色块里画在主封面左后方）。
+              covers: <Widget>[
+                _buildCollectionCover(group, landscapeSlot: landscape),
+                // 后两层只从主封面背后露出一条边：成员截帧（16:9）直接裁满 2:3，
+                // 不走「模糊垫底 + 一条小图」。
+                if (!landscape)
+                  ..._collectionStackCovers(
+                    group,
+                    landscapeSlot: false,
+                    cropMismatch: true,
+                  ),
+              ],
+              tintImage: _collectionCoverSource(group)?.image,
+              memberArt: landscape
+                  ? null
+                  : _collectionStackProviders(group).firstOrNull,
+              selectionMode: _selectionMode,
+              selected: selected,
+              metaKey: metaKey,
+              subtitle: subtitle,
+              leadingIcon: leadingIcon,
+              tone: tone,
+              progress: metaProgress,
+              completed: metaCompleted,
               tags: tags,
-              discBadge: _discFormatBadge(
-                badgeKey: ValueKey<String>(
-                  'home_video_collection_disc_badge_${collection.id}',
+              discBadge: discBadge,
+              poster: _videoBlockMeta(collectionId: collection.id),
+            )
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                AspectRatio(
+                  // TODO-2486 朝向自适应：竖版 2:3 海报 / 横版 16:9（封面朝向由墙格
+                  // CoverOrientationBuilder 探测注入），与散卡同分流。
+                  aspectRatio: landscape ? 16 / 9 : 2 / 3,
+                  // 合集 = 碟盒式叠层（材质下最近两个成员的封面往右上错开，悬停
+                  // 散开）；封面上只留多选勾选圈 / 选中罩——集数 / 云 / 下载 /
+                  // 标签进副行。
+                  child: ShelfCoverFrame(
+                    stackedBehind: _buildCollectionCover(
+                      group,
+                      landscapeSlot: landscape,
+                    ),
+                    stackedCovers: _collectionStackCovers(
+                      group,
+                      landscapeSlot: landscape,
+                    ),
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: <Widget>[
+                        _buildCollectionCover(group, landscapeSlot: landscape),
+                        if (_selectionMode)
+                          Positioned(
+                            top: 6,
+                            left: 6,
+                            child: ShelfSelectionCheck(selected: selected),
+                          ),
+                        if (selected)
+                          const Positioned.fill(child: ShelfSelectedOverlay()),
+                      ],
+                    ),
+                  ),
                 ),
-                memberPaths: <String>[
-                  for (final CollectionOrderingItem<_VideoSlot> it
-                      in group.items)
-                    if (it.payload.local case final VideoBookRow local)
-                      local.videoPath,
-                ],
-              ),
+                // 副行：「继续看 第n集 · N 集」/「已看完 x/N」；含远端成员时前导 ☁，
+                // 成员在下载 / 刚失败时换成下载态（下载本身蕴含「有远端成员」）。
+                Expanded(
+                  child: _videoCardMeta(
+                    key: metaKey,
+                    title: _workTitle(collection),
+                    subtitle: subtitle,
+                    leadingIcon: leadingIcon,
+                    tone: tone,
+                    progress: metaProgress,
+                    completed: metaCompleted,
+                    tags: tags,
+                    discBadge: discBadge,
+                  ),
+                ),
+              ],
             ),
-          ),
-        ],
-      ),
     );
     // BUG-2002 悬停抬升：与散卡 [_buildCard] 同壳同纪律（多选态关掉；嵌套顺序
     // 同散卡：lift 在内、拖放目标在外）。
@@ -8184,7 +8508,28 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   List<Widget> _collectionStackCovers(
     CollectionGroup<_VideoSlot> group, {
     bool landscapeSlot = false,
+    bool cropMismatch = false,
   }) {
+    final List<Widget> covers = <Widget>[
+      for (final ImageProvider image in _collectionStackProviders(group))
+        PortraitCoverImage(
+          image: image,
+          landscapeSlot: landscapeSlot,
+          cropMismatch: cropMismatch,
+          errorBuilder: (BuildContext _) =>
+              ShelfCoverPlaceholder(icon: FushiIcons.video),
+        ),
+    ];
+    while (covers.length < 2) {
+      covers.add(_buildCollectionCover(group, landscapeSlot: landscapeSlot));
+    }
+    return covers;
+  }
+
+  /// [_collectionStackCovers] 的取图：前层之外的成员封面，近 → 远，最多两张。
+  List<ImageProvider> _collectionStackProviders(
+    CollectionGroup<_VideoSlot> group,
+  ) {
     final bool frontOwnsCover =
         _collectionOwnCover(group.collection) != null ||
         (group.collection != null &&
@@ -8213,19 +8558,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       providers.add(cover);
       if (providers.length >= 2) break;
     }
-    final List<Widget> covers = <Widget>[
-      for (final ImageProvider image in providers.take(2))
-        PortraitCoverImage(
-          image: image,
-          landscapeSlot: landscapeSlot,
-          errorBuilder: (BuildContext _) =>
-              ShelfCoverPlaceholder(icon: FushiIcons.video),
-        ),
-    ];
-    while (covers.length < 2) {
-      covers.add(_buildCollectionCover(group, landscapeSlot: landscapeSlot));
-    }
-    return covers;
+    return providers;
   }
 
   /// 远端占位卡的下载态（BUG-1561）：进行中 → 副行「正在下载… 46%」+ 进度条；
@@ -8322,6 +8655,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     int memberIndex = 0,
     VideoCardOrientation orientation = VideoCardOrientation.portrait,
     VoidCallback? openOverride,
+    FushiCoverBlockSize? block,
   }) {
     final String safeKey = _safeRemoteKey(video.id);
     final _CardDownloadMeta? download = _remoteDownloadMeta(video, safeKey);
@@ -8332,6 +8666,44 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     final String selectionKey = _remoteVideoSelectionKey(video);
     final bool showSelection = _selectionMode && selectable;
     final bool selected = showSelection && _selectedUids.contains(selectionKey);
+    final bool landscapeSlot = orientation == VideoCardOrientation.landscape;
+    // 副行：下载中「正在下载… 46%」+ 进度条 / 失败（错误色，BUG-1561：失败态要有
+    // 恒定出口，重进页面照样在）/ 平时「☁ 远端 · N 集」（多端库联合视图占位卡的
+    // 「远端 / 未下载」标识，spec §2.1）。网格卡与色块卡同一份。
+    final Key metaKey =
+        download?.key ?? ValueKey<String>('remote_video_cloud_badge_$safeKey');
+    final String subtitle =
+        download?.label ??
+        <String>[
+          t.home_remote_source,
+          if (video.isPlaylist)
+            video.currentEpisode > 0 || video.positionMs > 0
+                ? t.video_home_continue_episode_number(
+                    n: video.currentEpisode + 1,
+                  )
+                : t.video_playlist_episodes(count: video.episodes.length)
+          else if (video.completedAt != null)
+            t.video_stat_completed
+          else if (video.positionMs > 0)
+            t.video_watched_up_to(time: formatVideoPosition(video.positionMs)),
+        ].join(' · ');
+    final IconData leadingIcon = download != null
+        ? (download.failed ? Icons.error_outline : Icons.download_outlined)
+        : FushiIcons.cloud;
+    final ShelfMetaTone tone = download?.failed ?? false
+        ? ShelfMetaTone.error
+        : ShelfMetaTone.normal;
+    final double? progress =
+        download?.progress ??
+        (video.completedAt != null
+            ? 1
+            : _slotPositionFraction(_VideoSlot(remote: video)));
+    final bool completed = download == null && video.completedAt != null;
+    final Widget coverImage = _buildRemoteVideoCover(
+      video,
+      poster: true,
+      landscapeSlot: landscapeSlot,
+    );
     // 不再固定 260 宽：和本地 [_buildCard] 一样让卡片填满网格 cell，宽度由
     // 响应式网格决定（TODO-593）。
     final Widget card = shelfCoverCard(
@@ -8361,90 +8733,68 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       onSecondaryTap: _selectionMode
           ? null
           : () => _showRemoteVideoDialog(video),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          // BUG-926：与本地卡同因——封面从 Expanded 改为固定 AspectRatio，标题浮动
-          // 高度不再反灌封面区。TODO-2486 朝向自适应：竖版 2:3 / 横版 16:9，
-          // 不合槽封面由 [PortraitCoverImage] 模糊垫底填充。
-          AspectRatio(
-            aspectRatio: orientation == VideoCardOrientation.landscape
-                ? 16 / 9
-                : 2 / 3,
-            child: ShelfCoverFrame(
-              child: Stack(
-                fit: StackFit.expand,
-                children: <Widget>[
-                  _buildRemoteVideoCover(
-                    video,
-                    poster: true,
-                    landscapeSlot:
-                        orientation == VideoCardOrientation.landscape,
-                  ),
-                  // 2026-10-25 材质定版：封面上只留多选勾选圈 / 选中罩。原四角的
-                  // 下载进度 / 失败、字幕、集数、云角标与标签 chip 全部进副行
-                  // （[_videoCardMeta]）。封面内嵌下载按钮早已撤掉（UI 巡检
-                  // PR-4：卡内嵌套焦点目标违反 hero 卡「无独立按钮」纪律），下载
-                  // 动作在长按 / 右键面板。
-                  if (showSelection)
-                    Positioned(
-                      top: 6,
-                      left: 6,
-                      child: ShelfSelectionCheck(selected: selected),
-                    ),
-                  if (selected)
-                    const Positioned.fill(child: ShelfSelectedOverlay()),
-                ],
-              ),
-            ),
-          ),
-          // 副行：下载中「正在下载… 46%」+ 进度条 / 失败（错误色，BUG-1561：
-          // 失败态要有恒定出口，重进页面照样在）/ 平时「☁ 远端 · N 集」（多端库
-          // 联合视图占位卡的「远端 / 未下载」标识，spec §2.1）。
-          Expanded(
-            child: _videoCardMeta(
-              key:
-                  download?.key ??
-                  ValueKey<String>('remote_video_cloud_badge_$safeKey'),
+      child: block != null
+          ? _videoCoverBlock(
+              size: block,
+              orientation: orientation,
               title: video.title,
-              subtitle:
-                  download?.label ??
-                  <String>[
-                    t.home_remote_source,
-                    if (video.isPlaylist)
-                      video.currentEpisode > 0 || video.positionMs > 0
-                          ? t.video_home_continue_episode_number(
-                              n: video.currentEpisode + 1,
-                            )
-                          : t.video_playlist_episodes(
-                              count: video.episodes.length,
-                            )
-                    else if (video.completedAt != null)
-                      t.video_stat_completed
-                    else if (video.positionMs > 0)
-                      t.video_watched_up_to(
-                        time: formatVideoPosition(video.positionMs),
-                      ),
-                  ].join(' · '),
-              leadingIcon: download != null
-                  ? (download.failed
-                        ? Icons.error_outline
-                        : Icons.download_outlined)
-                  : FushiIcons.cloud,
-              tone: download?.failed ?? false
-                  ? ShelfMetaTone.error
-                  : ShelfMetaTone.normal,
-              progress:
-                  download?.progress ??
-                  (video.completedAt != null
-                      ? 1
-                      : _slotPositionFraction(_VideoSlot(remote: video))),
-              completed: download == null && video.completedAt != null,
+              covers: <Widget>[coverImage],
+              tintImage: _remoteCoverProvider(video),
+              selectionMode: showSelection,
+              selected: selected,
+              metaKey: metaKey,
+              subtitle: subtitle,
+              leadingIcon: leadingIcon,
+              tone: tone,
+              progress: progress,
+              completed: completed,
               tags: remoteTags,
+              playsOnTap: !_selectionMode,
+            )
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                // BUG-926：与本地卡同因——封面从 Expanded 改为固定 AspectRatio，
+                // 标题浮动高度不再反灌封面区。TODO-2486 朝向自适应：竖版 2:3 /
+                // 横版 16:9，不合槽封面由 [PortraitCoverImage] 模糊垫底填充。
+                AspectRatio(
+                  aspectRatio: landscapeSlot ? 16 / 9 : 2 / 3,
+                  child: ShelfCoverFrame(
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: <Widget>[
+                        coverImage,
+                        // 2026-10-25 材质定版：封面上只留多选勾选圈 / 选中罩。原
+                        // 四角的下载进度 / 失败、字幕、集数、云角标与标签 chip 全部
+                        // 进副行（[_videoCardMeta]）。封面内嵌下载按钮早已撤掉（UI
+                        // 巡检 PR-4：卡内嵌套焦点目标违反 hero 卡「无独立按钮」
+                        // 纪律），下载动作在长按 / 右键面板。
+                        if (showSelection)
+                          Positioned(
+                            top: 6,
+                            left: 6,
+                            child: ShelfSelectionCheck(selected: selected),
+                          ),
+                        if (selected)
+                          const Positioned.fill(child: ShelfSelectedOverlay()),
+                      ],
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: _videoCardMeta(
+                    key: metaKey,
+                    title: video.title,
+                    subtitle: subtitle,
+                    leadingIcon: leadingIcon,
+                    tone: tone,
+                    progress: progress,
+                    completed: completed,
+                    tags: remoteTags,
+                  ),
+                ),
+              ],
             ),
-          ),
-        ],
-      ),
     );
     // BUG-2002 悬停抬升：与本地散卡同壳（多选态关掉；远端占位卡不可单独勾选，
     // 指针纪律与本地卡一致）。
@@ -9721,6 +10071,16 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     ({int columns, double cardWidth}) cardLayout, {
     List<String>? dragReorderKeys,
   }) {
+    final ShellContentLayout layout = shellContentLayoutOf(context);
+    if (layout != ShellContentLayout.grid) {
+      return _buildVideoBlockSliver(
+        cells,
+        padding,
+        layout,
+        VideoCardOrientation.portrait,
+        dragReorderKeys: dragReorderKeys,
+      );
+    }
     final double coverHeight = videoCoverHeightForPortraitWidth(
       cardLayout.cardWidth,
     );
@@ -9743,9 +10103,38 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
                 child: _videoDragReorderCell(
                   dragReorderKeys,
                   index,
-                  cells[index].build(VideoCardOrientation.portrait),
+                  cells[index].build(VideoCardOrientation.portrait, null),
                 ),
               ),
+        ),
+      ),
+    );
+  }
+
+  /// 库页布局为拼贴 / 规整色块时的墙（[SliverFushiCoverBlocks]）：同一份 cells、
+  /// 同一套直拖重排包装，每格按色块尺寸档构造（[_VideoWallEntry.build] 的 block
+  /// 参数）。错峰进场由 [SliverFushiCoverBlocks] 包。
+  Widget _buildVideoBlockSliver(
+    List<_VideoWallEntry> cells,
+    EdgeInsetsGeometry padding,
+    ShellContentLayout layout,
+    VideoCardOrientation orientation, {
+    List<String>? dragReorderKeys,
+  }) {
+    return SliverPadding(
+      padding: padding,
+      sliver: _wrapVideoDragReorder(
+        dragReorderKeys,
+        SliverFushiCoverBlocks(
+          layout: layout,
+          itemCount: cells.length,
+          itemBuilder:
+              (BuildContext context, int index, FushiCoverBlockSize size) =>
+                  _videoDragReorderCell(
+                    dragReorderKeys,
+                    index,
+                    cells[index].build(orientation, size),
+                  ),
         ),
       ),
     );
@@ -9780,6 +10169,16 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     ({int columns, double cardWidth}) cardLayout, {
     List<String>? dragReorderKeys,
   }) {
+    final ShellContentLayout layout = shellContentLayoutOf(context);
+    if (layout != ShellContentLayout.grid) {
+      return _buildVideoBlockSliver(
+        cells,
+        padding,
+        layout,
+        VideoCardOrientation.landscape,
+        dragReorderKeys: dragReorderKeys,
+      );
+    }
     final double coverHeight = cardLayout.cardWidth / kVideoLandscapeCardAspect;
     final double cellHeight = coverHeight + _videoCardTextBlock(context);
     return SliverPadding(
@@ -9800,7 +10199,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
                 child: _videoDragReorderCell(
                   dragReorderKeys,
                   index,
-                  cells[index].build(VideoCardOrientation.landscape),
+                  cells[index].build(VideoCardOrientation.landscape, null),
                 ),
               ),
         ),
@@ -10954,10 +11353,20 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     VideoCardOrientation orientation = VideoCardOrientation.portrait,
     VoidCallback? onTapOverride,
     ImageProvider? Function()? coverOverride,
+    FushiCoverBlockSize? block,
   }) {
     // [coverOverride] 是取图函数：卡片这一轮画它取到的图源，菜单在探测落定后
     // 还要重取（见 [_showVideoMenu]）。
     final ImageProvider? override = coverOverride?.call();
+    final bool landscapeSlot = orientation == VideoCardOrientation.landscape;
+    final Widget coverImage = override != null
+        ? PortraitCoverImage(
+            image: override,
+            landscapeSlot: landscapeSlot,
+            errorBuilder: (BuildContext _) =>
+                _buildCover(book, poster: true, landscapeSlot: landscapeSlot),
+          )
+        : _buildCover(book, poster: true, landscapeSlot: landscapeSlot);
     final String displayTitle = widget.section == VideoLibrarySection.series
         ? (_metadataWorkByBook[book.bookUid]?.title ?? book.title)
         : book.title;
@@ -10978,6 +11387,14 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     // 块2：只有可单独勾选的卡才在多选态显示勾选框/高亮/切换选中。
     final bool showSelection = _selectionMode && selectable;
     final bool selected = showSelection && _selectedUids.contains(book.bookUid);
+    final Widget? discBadge = _discFormatBadge(
+      badgeKey: ValueKey<String>('home_video_disc_badge_${book.bookUid}'),
+      memberPaths: <String>[book.videoPath],
+    );
+    // 原盘的规格由原盘角标说（BD / UHD），不再对盘目录跑 ffprobe。
+    final String? specsPath = isDiscMemberPath(book.videoPath)
+        ? null
+        : book.videoPath;
     final FushiCard fushiCard = shelfCoverCard(
       key: ValueKey<String>('home_video_${book.bookUid}'),
       focusId: FushiFocusId('home-video-${book.bookUid}'),
@@ -10998,83 +11415,75 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       // 卡片长按识别器，让祖先 SelectionDragArea 接管扫选。
       onLongPress: _selectionMode ? null : openMenu,
       onSecondaryTap: _selectionMode ? null : openMenu,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          // BUG-926：封面此前用 Expanded 吃掉「cell 高 − 下方文字块实际高度」的剩余，
-          // 而文字块高度随标题行数 / 有无观看进度浮动（≤_kVideoCardTextBlock），文字
-          // 不足时多出的空间灌进封面区，contain 封面上下留空隙（标题短或无进度时才
-          // 现，故「时有时无」）。改为固定 AspectRatio：封面比例恒定，与标题长短彻底
-          // 解耦。TODO-2486 朝向自适应：竖版 2:3 海报 / 横版 16:9（朝向由墙格
-          // CoverOrientationBuilder 探测注入），不合槽封面由 [PortraitCoverImage]
-          // 模糊垫底填充，无黑边/变形。
-          AspectRatio(
-            aspectRatio: orientation == VideoCardOrientation.landscape
-                ? 16 / 9
-                : 2 / 3,
-            child: ShelfCoverFrame(
-              child: Stack(
-                fit: StackFit.expand,
-                children: <Widget>[
-                  if (override != null)
-                    PortraitCoverImage(
-                      image: override,
-                      landscapeSlot:
-                          orientation == VideoCardOrientation.landscape,
-                      errorBuilder: (BuildContext _) => _buildCover(
-                        book,
-                        poster: true,
-                        landscapeSlot:
-                            orientation == VideoCardOrientation.landscape,
-                      ),
-                    )
-                  else
-                    _buildCover(
-                      book,
-                      poster: true,
-                      landscapeSlot:
-                          orientation == VideoCardOrientation.landscape,
-                    ),
-                  // 2026-10-25 材质定版：封面上只留多选勾选圈 / 选中罩，集数、
-                  // 进度、标签、清晰度角标一律挪进封面下的副行（[_videoCardMeta]）。
-                  if (showSelection)
-                    Positioned(
-                      top: 6,
-                      left: 6,
-                      child: ShelfSelectionCheck(selected: selected),
-                    ),
-                  if (selected)
-                    const Positioned.fill(child: ShelfSelectedOverlay()),
-                ],
-              ),
-            ),
-          ),
-          // 文字块占封面下方固定高度（cell 高 − 封面 = [_videoCardTextBlock]），
-          // 浮动高度不反灌进封面区（BUG-926 血缘）。
-          Expanded(
-            child: _videoCardMeta(
-              key: ValueKey<String>('home_video_meta_${book.bookUid}'),
+      child: block != null
+          ? _videoCoverBlock(
+              size: block,
+              orientation: orientation,
               title: displayTitle,
+              covers: <Widget>[coverImage],
+              tintImage: override ?? _localCoverProvider(book),
+              selectionMode: showSelection,
+              selected: selected,
+              metaKey: ValueKey<String>('home_video_meta_${book.bookUid}'),
               subtitle: _buildCardWatchMeta(book, episodeCount: episodeCount),
-              // TODO-1346：多集按「看到第几集」、单视频按集内位置（不知道片长就
-              // 只有看完才满格）；都没有时不画进度条。
               progress: watchFrac ?? _bookPositionFraction(book),
               completed: book.completedAt != null,
               tags: tags,
-              discBadge: _discFormatBadge(
-                badgeKey: ValueKey<String>(
-                  'home_video_disc_badge_${book.bookUid}',
+              discBadge: discBadge,
+              specsPath: specsPath,
+              poster: _videoBlockMeta(bookUid: book.bookUid),
+              playsOnTap: onTapOverride == null && !_selectionMode,
+            )
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                // BUG-926：封面此前用 Expanded 吃掉「cell 高 − 下方文字块实际高度」的
+                // 剩余，文字不足时多出的空间灌进封面区。改为固定 AspectRatio：封面
+                // 比例恒定，与标题长短彻底解耦。TODO-2486 朝向自适应：竖版 2:3 海报
+                // / 横版 16:9（朝向由墙格 CoverOrientationBuilder 探测注入），不合槽
+                // 封面由 [PortraitCoverImage] 模糊垫底填充，无黑边/变形。
+                AspectRatio(
+                  aspectRatio: landscapeSlot ? 16 / 9 : 2 / 3,
+                  child: ShelfCoverFrame(
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: <Widget>[
+                        coverImage,
+                        // 2026-10-25 材质定版：封面上只留多选勾选圈 / 选中罩，集数、
+                        // 进度、标签、清晰度角标一律挪进封面下的副行（[_videoCardMeta]）。
+                        if (showSelection)
+                          Positioned(
+                            top: 6,
+                            left: 6,
+                            child: ShelfSelectionCheck(selected: selected),
+                          ),
+                        if (selected)
+                          const Positioned.fill(child: ShelfSelectedOverlay()),
+                      ],
+                    ),
+                  ),
                 ),
-                memberPaths: <String>[book.videoPath],
-              ),
-              // 原盘的规格由原盘角标说（BD / UHD），不再对盘目录跑 ffprobe。
-              specsPath: isDiscMemberPath(book.videoPath)
-                  ? null
-                  : book.videoPath,
+                // 文字块占封面下方固定高度（cell 高 − 封面 = [_videoCardTextBlock]），
+                // 浮动高度不反灌进封面区（BUG-926 血缘）。
+                Expanded(
+                  child: _videoCardMeta(
+                    key: ValueKey<String>('home_video_meta_${book.bookUid}'),
+                    title: displayTitle,
+                    subtitle: _buildCardWatchMeta(
+                      book,
+                      episodeCount: episodeCount,
+                    ),
+                    // TODO-1346：多集按「看到第几集」、单视频按集内位置（不知道片长
+                    // 就只有看完才满格）；都没有时不画进度条。
+                    progress: watchFrac ?? _bookPositionFraction(book),
+                    completed: book.completedAt != null,
+                    tags: tags,
+                    discBadge: discBadge,
+                    specsPath: specsPath,
+                  ),
+                ),
+              ],
             ),
-          ),
-        ],
-      ),
     );
     // 悬停抬升：与游戏库同一个壳（含墨水屏 / 减弱动态效果两处降级）。多选态
     // 关掉——那时卡片是勾选目标，跟着指针放大只会干扰框选。
@@ -11230,6 +11639,28 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     String? specsPath,
     Key? key,
   }) {
+    return ShelfCardMeta(
+      key: key,
+      title: title,
+      subtitle: subtitle,
+      leadingIcon: leadingIcon,
+      tone: tone,
+      progress: progress,
+      completed: completed,
+      trailing: _videoMetaTrailing(
+        tags: tags,
+        discBadge: discBadge,
+        specsPath: specsPath,
+      ),
+    );
+  }
+
+  /// 副行尾部：原盘角标、文件规格角标、用户标签（网格卡与色块卡同一份）。
+  Widget? _videoMetaTrailing({
+    required List<_VideoTagChip> tags,
+    Widget? discBadge,
+    String? specsPath,
+  }) {
     final List<Widget> trailing = <Widget>[
       ?discBadge,
       if (specsPath != null && specsPath.isNotEmpty)
@@ -11243,18 +11674,353 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         ),
       if (tags.isNotEmpty) Flexible(child: ShelfMetaTags(tags: tags)),
     ];
-    return ShelfCardMeta(
-      key: key,
+    return trailing.isEmpty
+        ? null
+        : Row(mainAxisSize: MainAxisSize.min, spacing: 4, children: trailing);
+  }
+
+  /// 封面色块卡的视觉（库页布局为拼贴 / 规整色块时代替「封面 + 副行」）：信息与
+  /// [_videoCardMeta] 同一份，多选勾选圈 / 选中罩由色块自己画。
+  Widget _videoCoverBlock({
+    required FushiCoverBlockSize size,
+    required VideoCardOrientation orientation,
+    required String title,
+    required List<Widget> covers,
+    required ImageProvider? tintImage,
+    required bool selectionMode,
+    required bool selected,
+    Key? metaKey,
+    String? subtitle,
+    IconData? leadingIcon,
+    ShelfMetaTone tone = ShelfMetaTone.normal,
+    double? progress,
+    bool completed = false,
+    List<_VideoTagChip> tags = const <_VideoTagChip>[],
+    Widget? discBadge,
+    String? specsPath,
+    _VideoBlockMeta? poster,
+    bool playsOnTap = false,
+    ImageProvider? memberArt,
+  }) {
+    final bool landscape = orientation == VideoCardOrientation.landscape;
+    final bool hero = size == FushiCoverBlockSize.hero;
+    // 背景图：竖版槽（系列页）取刮削背景图；横版槽（全部视频）本身的 16:9 封面
+    // 就是背景图，有 2:3 作品封面时左侧再斜放它（设计稿 `.vb` 的 bd + ps）。
+    // 都没有时退回原摆法：竖版海报斜放在右 / 横版剧照铺右侧。
+    final ImageProvider? posterImage = landscape ? poster?.poster : null;
+    final Widget? scrapedBackdrop = poster?.backdrop == null
+        ? null
+        : Image(
+            image: poster!.backdrop!,
+            fit: BoxFit.cover,
+            excludeFromSemantics: true,
+            errorBuilder: (BuildContext _, Object __, StackTrace? ___) =>
+                const SizedBox.shrink(),
+          );
+    final Widget? backdrop = landscape
+        ? (posterImage != null ? covers.first : null)
+        : scrapedBackdrop;
+    final List<Widget> blockCovers = posterImage != null
+        ? <Widget>[
+            PortraitCoverImage(
+              image: posterImage,
+              errorBuilder: (BuildContext _) =>
+                  ShelfCoverPlaceholder(icon: FushiIcons.video),
+            ),
+          ]
+        : covers;
+    // 拼贴首块：观看状态升格成顶上的状态 chip（「看到第 N 集 · 12 集」）。下载中 /
+    // 失败 / 远端这类带图标或语气的副行保持原位，不换成 chip。
+    final bool statusAsEyebrow =
+        hero &&
+        subtitle != null &&
+        subtitle.isNotEmpty &&
+        leadingIcon == null &&
+        tone == ShelfMetaTone.normal;
+    final double? value = completed ? 1 : progress;
+    final bool started = !completed && value != null && value > 0;
+    final ImageProvider? settledTint = tintImage == kPendingCoverImage
+        ? null
+        : tintImage;
+    Widget block({
+      required FushiCoverBlockArt art,
+      required List<Widget> covers,
+      required Widget? backdrop,
+    }) => FushiCoverBlock(
+      size: size,
+      art: art,
       title: title,
-      subtitle: subtitle,
+      covers: covers,
+      backdrop: backdrop,
+      logo: poster?.logo,
+      eyebrow: statusAsEyebrow ? subtitle : null,
+      overview: poster?.overview,
+      chip: poster?.chip,
+      action: playsOnTap && started
+          ? FushiCoverBlockAction(
+              icon: Icons.play_arrow_rounded,
+              label: t.home_continue,
+            )
+          : null,
+      tintImage: settledTint,
+      metaKey: metaKey,
+      subtitle: statusAsEyebrow ? null : subtitle,
       leadingIcon: leadingIcon,
       tone: tone,
       progress: progress,
       completed: completed,
-      trailing: trailing.isEmpty
-          ? null
-          : Row(mainAxisSize: MainAxisSize.min, spacing: 4, children: trailing),
+      trailing: _videoMetaTrailing(
+        tags: tags,
+        discBadge: discBadge,
+        specsPath: specsPath,
+      ),
+      selectionMode: selectionMode,
+      selected: selected,
+      hoverEnabled: !_selectionMode,
     );
+    if (landscape) {
+      if (posterImage != null) {
+        return block(
+          art: FushiCoverBlockArt.portrait,
+          covers: blockCovers,
+          backdrop: backdrop,
+        );
+      }
+      // 横版槽（全部视频）同样按封面固有朝向自适应：只有竖版海报、没有截帧的
+      // 视频铺进横版剧照位只剩「模糊垫底 + 一条小图」，改走竖版摆法（海报斜放，
+      // 有刮削背景图时铺在右侧）。未解码前按横版画，绝大多数卡不闪。
+      return CoverOrientationBuilder(
+        image: settledTint,
+        unknownOrientation: VideoCardOrientation.landscape,
+        builder: (BuildContext context, VideoCardOrientation resolved) {
+          if (resolved == VideoCardOrientation.landscape ||
+              settledTint == null) {
+            return block(
+              art: FushiCoverBlockArt.landscape,
+              covers: blockCovers,
+              backdrop: null,
+            );
+          }
+          return block(
+            art: FushiCoverBlockArt.portrait,
+            covers: <Widget>[
+              PortraitCoverImage(
+                image: settledTint,
+                errorBuilder: (BuildContext _) =>
+                    ShelfCoverPlaceholder(icon: FushiIcons.video),
+              ),
+            ],
+            backdrop: scrapedBackdrop,
+          );
+        },
+      );
+    }
+    // 竖版槽（系列页）按封面的固有朝向自适应：合集没有竖版海报时取图链落到
+    // 单集截帧（16:9），硬塞进 2:3 斜放封面只剩「模糊垫底 + 一条小图」。横图
+    // 改走横版摆法——整张图铺在右侧渐入，有刮削背景图时用背景图（无字、构图
+    // 更完整）。朝向判定与库墙卡宽分流同一个探针（[CoverOrientationBuilder]），
+    // 未解码前按竖卡画。
+    return CoverOrientationBuilder(
+      image: settledTint,
+      builder: (BuildContext context, VideoCardOrientation resolved) {
+        if (resolved == VideoCardOrientation.portrait || settledTint == null) {
+          final ImageProvider? member = memberArt == kPendingCoverImage
+              ? null
+              : memberArt;
+          if (backdrop != null || member == null) {
+            return block(
+              art: FushiCoverBlockArt.portrait,
+              covers: blockCovers,
+              backdrop: backdrop,
+            );
+          }
+          // 竖版海报 + 成员封面是横版截帧的合集（没刮到背景图）：横图不叠在
+          // 海报背后当竖卡，按横图的摆法铺在右侧当背景，海报斜放在左——和刮到
+          // 背景图的合集同一个样子。成员封面也是竖图时才叠层。
+          return CoverOrientationBuilder(
+            image: member,
+            builder: (BuildContext context, VideoCardOrientation memberSide) {
+              if (memberSide == VideoCardOrientation.portrait) {
+                return block(
+                  art: FushiCoverBlockArt.portrait,
+                  covers: blockCovers,
+                  backdrop: null,
+                );
+              }
+              return block(
+                art: FushiCoverBlockArt.portrait,
+                covers: <Widget>[blockCovers.first],
+                backdrop: Image(
+                  image: member,
+                  fit: BoxFit.cover,
+                  excludeFromSemantics: true,
+                  errorBuilder: (BuildContext _, Object __, StackTrace? ___) =>
+                      const SizedBox.shrink(),
+                ),
+              );
+            },
+          );
+        }
+        return block(
+          art: FushiCoverBlockArt.landscape,
+          covers: <Widget>[
+            scrapedBackdrop ??
+                PortraitCoverImage(
+                  image: settledTint,
+                  landscapeSlot: true,
+                  errorBuilder: (BuildContext _) =>
+                      ShelfCoverPlaceholder(icon: FushiIcons.video),
+                ),
+          ],
+          backdrop: null,
+        );
+      },
+    );
+  }
+
+  /// 色块卡的海报元数据（设计稿 `.vb`）：只读 [_loadLibraryMapsInner] 已批量预取
+  /// 的刮削数据，不另发查询；背景图 / logo / 作品封面先本地文件、再远程地址（磁盘缓存，
+  /// 与作品详情页同一条取图链）。没有的项为 null，卡上整项不画。
+  ///
+  /// - 背景图：附加图组 backdrop（v68 `media_images`）→ 刮削作品图组 backdrop；
+  /// - logo：附加图组 logo → 刮削作品图组 logo；
+  /// - 作品封面（「全部视频」横版槽左侧那张）：合集自有 / 原盘竖版封面 → 刮削作品
+  ///   海报（cover / poster）；
+  /// - 信息 chip：作品类型（TV / 电影）· 年份 · 总集数（合集刮削资料）；
+  /// - 概览：合集刮削标签前两个 · ★ 评分。
+  ///
+  /// [bookUid] 给出而这本视频自己没有作品资料时（剧集里的一集），借它主合集的。
+  _VideoBlockMeta _videoBlockMeta({int? collectionId, String? bookUid}) {
+    int? cid = collectionId;
+    VideoMetadataWorkRow? work = cid != null
+        ? _metadataWorkByCollection[cid]
+        : _metadataWorkByBook[bookUid];
+    List<MediaImageRow>? images = cid != null
+        ? _mediaImagesByCollection[cid]
+        : _mediaImagesByBookUid[bookUid];
+    if (cid == null && bookUid != null && work == null) {
+      cid = _primaryCollectionByEntry[MediaKind.video.compositeKey(bookUid)];
+      if (cid != null) {
+        work = _metadataWorkByCollection[cid];
+        images = images ?? _mediaImagesByCollection[cid];
+      }
+    }
+    final CollectionScrapeMetaRow? scrape = cid == null
+        ? null
+        : _collectionScrapeMetaById[cid];
+    ImageProvider? settled(ImageProvider? image) =>
+        image == kPendingCoverImage ? null : image;
+    // 与作品详情页（`media_collection_detail_page.dart` 的 `_resolveCanonicalImage`）
+    // 同一条取图链：先本地文件，没有再走远程地址（[AppCachedHttpImage] 磁盘缓存，
+    // 详情页看过的图直接命中）。刮削常常只存了远程地址，只认本地的话艺术字和
+    // 横版背景在库页一张都出不来。某张本地图还在探测存在性时先不落到远程，
+    // 等探测完重建，免得本地有图还去下载一遍。
+    ImageProvider? workImage(List<String> kinds, {required int decodeWidth}) {
+      final List<VideoMetadataImageRow>? rows = work == null
+          ? null
+          : _metadataImagesByWork[work.id];
+      if (rows == null) return null;
+      final List<VideoMetadataImageRow> ordered = rows.toList()
+        ..sort(
+          (VideoMetadataImageRow a, VideoMetadataImageRow b) =>
+              a.position.compareTo(b.position),
+        );
+      bool probing = false;
+      for (final String kind in kinds) {
+        for (final VideoMetadataImageRow row in ordered) {
+          if (row.kind != kind) continue;
+          final ImageProvider? local = _localFileCover(row.localPath);
+          if (local == kPendingCoverImage) {
+            probing = true;
+          } else if (local != null) {
+            return local;
+          }
+        }
+      }
+      if (probing) return null;
+      for (final String kind in kinds) {
+        for (final VideoMetadataImageRow row in ordered) {
+          if (row.kind != kind || row.remoteUrl.isEmpty) continue;
+          return ResizeImage.resizeIfNeeded(
+            decodeWidth,
+            null,
+            AppCachedHttpImage(row.remoteUrl),
+          );
+        }
+      }
+      return null;
+    }
+
+    final ImageProvider? backdrop =
+        settled(
+          _mediaImageProvider(images, const <MediaImageKind>[
+            MediaImageKind.backdrop,
+          ]),
+        ) ??
+        workImage(const <String>['backdrop'], decodeWidth: 1280);
+    final ImageProvider? logo =
+        settled(
+          _mediaImageProvider(images, const <MediaImageKind>[
+            MediaImageKind.logo,
+          ]),
+        ) ??
+        workImage(const <String>['logo'], decodeWidth: 640);
+    final ImageProvider? poster =
+        (cid == null
+            ? null
+            : settled(_collectionOwnCover(_collectionsById[cid]))) ??
+        workImage(const <String>['cover', 'poster'], decodeWidth: 480);
+    final String? kind = switch (work?.mediaType) {
+      'tv' => t.shelf_block_video_kind_tv,
+      'movie' => t.shelf_block_video_kind_movie,
+      _ => null,
+    };
+    final int? year =
+        work?.year ??
+        videoAirYear(work?.premiereDate) ??
+        videoAirYear(scrape?.airDate) ??
+        (bookUid == null ? null : _airYearByUid[bookUid]);
+    final int? episodes = work?.mediaType == 'movie'
+        ? null
+        : scrape?.episodeCount;
+    final List<String> chipParts = <String>[
+      ?kind,
+      if (year != null) '$year',
+      if (episodes != null && episodes > 0)
+        t.video_playlist_episodes(count: episodes),
+    ];
+    final double? rating = work?.rating ?? scrape?.rating;
+    final List<String> genres = _scrapeTagNames(scrape?.tagsJson, limit: 2);
+    final List<String> overviewParts = <String>[
+      if (genres.isNotEmpty) genres.join(' / '),
+      if (rating != null && rating > 0) '★ ${rating.toStringAsFixed(1)}',
+    ];
+    return (
+      backdrop: backdrop,
+      logo: logo,
+      poster: poster,
+      overview: overviewParts.isEmpty ? null : overviewParts.join(' · '),
+      chip: chipParts.isEmpty ? null : chipParts.join(' · '),
+    );
+  }
+
+  /// 刮削标签 JSON（`[{"name":"日常","count":1234}]`，按热度降序）的前 [limit]
+  /// 个名字；解析失败 / 没有为空表。
+  static List<String> _scrapeTagNames(String? json, {required int limit}) {
+    if (json == null || json.isEmpty) return const <String>[];
+    try {
+      final Object? decoded = jsonDecode(json);
+      if (decoded is! List<Object?>) return const <String>[];
+      return <String>[
+        for (final Object? tag in decoded)
+          if (tag is Map<String, Object?> &&
+              tag['name'] is String &&
+              (tag['name']! as String).isNotEmpty)
+            tag['name']! as String,
+      ].take(limit).toList(growable: false);
+    } on FormatException {
+      return const <String>[];
+    }
   }
 
   /// 视频书的用户标签（BUG-1808）：墙卡与首页横滚卡共用同一口径，别再各处 inline
@@ -11362,29 +12128,55 @@ class _VideoLooseCard {
 /// `SliverGrid.builder`，只有滚进视口的格才会调 [build]；这里不再预先持有封面
 /// provider——旧的 `cover` 字段在构造 cells 列表时就对每条目同步求值（含
 /// `existsSync`），几千条目的库首帧先付几千次磁盘 stat。
+/// 视频色块卡的海报元数据（见 [_HomeVideoPageState._videoBlockMeta]）。
+typedef _VideoBlockMeta = ({
+  ImageProvider? backdrop,
+  ImageProvider? logo,
+  ImageProvider? poster,
+  String? overview,
+  String? chip,
+});
+
 class _VideoWallEntry {
   const _VideoWallEntry({required this.build});
 
-  final Widget Function(VideoCardOrientation orientation) build;
+  /// [block] 非 null = 以封面色块卡渲染（库页布局为拼贴 / 规整色块时，见
+  /// [SliverFushiCoverBlocks]），null = 原封面网格卡。
+  final Widget Function(
+    VideoCardOrientation orientation,
+    FushiCoverBlockSize? block,
+  )
+  build;
 }
 
-/// 骨架卡：封面块（按朝向 2:3 / 16:9）+ 两行文字条，与真卡同轮廓。
-Widget _videoCardSkeleton(VideoCardOrientation orientation) => Column(
-  crossAxisAlignment: CrossAxisAlignment.stretch,
-  mainAxisSize: MainAxisSize.min,
-  children: <Widget>[
-    AspectRatio(
-      aspectRatio: orientation == VideoCardOrientation.portrait
-          ? kVideoPortraitCardAspect
-          : kVideoLandscapeCardAspect,
-      child: const FushiSkeleton(),
-    ),
-    const SizedBox(height: 8),
-    FushiSkeleton.line(widthFactor: 0.8),
-    const SizedBox(height: 6),
-    FushiSkeleton.line(widthFactor: 0.5, height: 10),
-  ],
-);
+/// 骨架卡：封面块（按朝向 2:3 / 16:9）+ 两行文字条，与真卡同轮廓；色块布局下
+/// 是一整块圆角骨架。
+Widget _videoCardSkeleton(
+  VideoCardOrientation orientation,
+  FushiCoverBlockSize? block,
+) => block != null
+    ? ClipRRect(
+        borderRadius: BorderRadius.circular(
+          fushiCoverBlockRadius(block, kFushiCoverBlockHeight),
+        ),
+        child: const FushiSkeleton(),
+      )
+    : Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          AspectRatio(
+            aspectRatio: orientation == VideoCardOrientation.portrait
+                ? kVideoPortraitCardAspect
+                : kVideoLandscapeCardAspect,
+            child: const FushiSkeleton(),
+          ),
+          const SizedBox(height: 8),
+          FushiSkeleton.line(widthFactor: 0.8),
+          const SizedBox(height: 6),
+          FushiSkeleton.line(widthFactor: 0.5, height: 10),
+        ],
+      );
 
 /// 首页「继续观看」的一项：首屏 [FushiContinueSpotlight] 的一张卡（[hero]，
 /// 惰性构造）+ 排序键。
@@ -11410,11 +12202,17 @@ class _HomeHeroData {
     this.detailLine,
     this.poster,
     this.cloud = false,
+    this.collectionId,
+    this.bookUid,
   });
 
   final Key cardKey;
   final FushiFocusId focusId;
   final String title;
+
+  /// 合集条目的合集 id / 本地散片的 bookUid（色块版式取刮削 logo / 背景图用）。
+  final int? collectionId;
+  final String? bookUid;
 
   /// 副标题（「看到第 N 集 · 剩余 M 分钟」等）；小卡只取第一段压在图上。
   final String subtitle;
@@ -11461,10 +12259,47 @@ class _HomeSubscriptionItem {
 
 /// 横滚行一项（TODO-2486）：最近时刻（排序键）+ 惰性构造。
 class _VideoRowItem {
-  const _VideoRowItem({required this.recentMs, required this.build});
+  const _VideoRowItem({required this.recentMs, required this.spec});
 
   final int recentMs;
-  final Widget Function() build;
+  final _RowCardSpec spec;
+}
+
+/// 首页横滚行一项的信息（竖版行卡 [_HomeVideoPageState._buildRowMediaCard] 与
+/// 色块版式 [_HomeVideoPageState._rowBlockCard] 共用同一份）。
+class _RowCardSpec {
+  const _RowCardSpec({
+    required this.cardKey,
+    required this.focusId,
+    required this.cover,
+    required this.title,
+    required this.onTap,
+    this.onLongPress,
+    this.secondaryText,
+    this.tags = const <_VideoTagChip>[],
+    this.cloudBadge = false,
+    this.progress,
+    this.collectionId,
+    this.bookUid,
+  });
+
+  final Key cardKey;
+  final FushiFocusId focusId;
+  final ImageProvider? cover;
+  final String title;
+  final VoidCallback onTap;
+  final VoidCallback? onLongPress;
+  final String? secondaryText;
+  final List<_VideoTagChip> tags;
+  final bool cloudBadge;
+
+  /// 进度 0–1（只有「继续观看」条目给；色块文字区画进度条）。
+  final double? progress;
+
+  /// 色块版式取刮削 logo / 背景图 / 简介用（[_HomeVideoPageState._videoBlockMeta]）：
+  /// 合集条目给 [collectionId]，本地散片给 [bookUid]，远端占位都不给。
+  final int? collectionId;
+  final String? bookUid;
 }
 
 /// 视频库分组 union 载荷（多端库联合视图 §2.3 任务10）：本地视频行 [local] 或

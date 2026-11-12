@@ -128,6 +128,7 @@ class _ServerPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => FushiPageScaffold(
+    masthead: true,
     title: title,
     headerCompact: true,
     body: Builder(

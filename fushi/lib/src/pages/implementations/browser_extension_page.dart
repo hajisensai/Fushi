@@ -12,8 +12,12 @@ import 'package:fushi/src/lookup/browser_extension_setup.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/settings/settings_kit_core.dart';
 import 'package:fushi/src/sync/fushi_api_server.dart' show kFushiApiDefaultPort;
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show shellRedesignActive;
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
     show FushiFloatingChromeInset;
+import 'package:fushi/src/utils/components/fushi_masthead_scaffold.dart'
+    show FushiMastheadScaffold;
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -172,6 +176,15 @@ class _BrowserExtensionPageState extends ConsumerState<BrowserExtensionPage> {
     final ThemeData theme = Theme.of(context);
     final AppModel appModel = ref.watch(appProvider);
 
+    // 重设计外壳（墨水屏除外）下独立成页时换成页头大字（返回键按本页路由判，
+    // 同下方「首个路由不出箭头」口径）；被 hub 托管时页头归 hub，照旧。
+    if (!widget.hostedByHub && shellRedesignActive(context)) {
+      return FushiMastheadScaffold(
+        title: t.nav_browser_extension,
+        body: _buildBody(theme, appModel, masthead: true),
+      );
+    }
+
     // BUG-1658：顶层各 tab 页头统一为 FushiPageHeader 大标题（全出血 + 自身
     // spacing.page 内边距，与书架/视频/游戏/查词/下载同一几何），不再用旧 AppBar
     // 小标题工具栏。M3E 下 FushiPageHeader 本身就是浮动胶囊页头。
@@ -203,14 +216,20 @@ class _BrowserExtensionPageState extends ConsumerState<BrowserExtensionPage> {
     );
   }
 
-  Widget _buildBody(ThemeData theme, AppModel appModel) {
+  /// [masthead]：正文铺在页头大字底下，列表顶部再让出页头下沿
+  /// （`MediaQuery.paddingOf(context).top`）。
+  Widget _buildBody(
+    ThemeData theme,
+    AppModel appModel, {
+    bool masthead = false,
+  }) {
     final bool serverOn = appModel.fushiApiServerEnabled;
     final bool connected = _isRecentlySeen(appModel);
     final String? build = appModel.browserExtensionBuild;
     final bool guideExpanded = _guideExpanded ?? !connected;
     final double page = FushiDesignTokens.of(context).spacing.page;
     // 宿主 hub 的工具栏行叠在本页上：正文顶部让出它（独立页时为 0）。
-    final double top = FushiFloatingChromeInset.of(context) + 8;
+    final double chromeTop = FushiFloatingChromeInset.of(context) + 8;
 
     final Widget hero = ValueListenableBuilder<String?>(
       valueListenable: appModel.browserExtensionReportedBuild,
@@ -244,6 +263,8 @@ class _BrowserExtensionPageState extends ConsumerState<BrowserExtensionPage> {
           // 两栏阈值：左栏要容得下 hero 的「状态 + 检测连接」一行与第 1 步的
           // 地址行，右栏至少一张特色卡宽。
           final bool wide = constraints.maxWidth >= 920;
+          final double top =
+              chromeTop + (masthead ? MediaQuery.paddingOf(context).top : 0);
           if (!wide) {
             return ListView(
               padding: EdgeInsets.fromLTRB(page, top, page, 32),

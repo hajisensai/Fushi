@@ -19,6 +19,7 @@ import 'package:fushi/src/media/source_library/source_library_scanner.dart'
 import 'package:fushi/src/models/asset_licenses.dart';
 import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:fushi/src/utils/adaptive/nav_bar_style.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart';
 import 'package:fushi/src/updates/host_self_update_service.dart';
 import 'package:fushi/src/updates/local_update_notifier.dart';
 import 'package:fushi/src/updates/update_check_scheduler.dart';
@@ -125,6 +126,11 @@ import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/section_tab_order.dart'
+    show
+        PrefsSectionTabOrderStore,
+        SectionTabOrderStore,
+        sectionTabOrderAppFallback;
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_audio_handler.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
@@ -419,6 +425,8 @@ import 'package:fushi/src/models/audio_controller.dart';
 import 'package:fushi/src/media/music/lyrics/karaoke/karaoke_stage_plan.dart'
     show MusicAssRenderPreference;
 import 'package:fushi/src/media/music/lyrics/lrclib_client.dart';
+import 'package:fushi/src/media/music/music_view_style.dart'
+    show MusicViewStyleStore;
 import 'package:fushi/src/media/music/lyrics/lyrics_provider_list.dart';
 import 'package:fushi/src/media/music/lyrics/music_desktop_lyrics_surface.dart';
 import 'package:fushi/src/media/music/lyrics/music_lookup_pause.dart';
@@ -598,6 +606,24 @@ final Map<String, Field> fieldsByKey = Map.unmodifiable(
 final appProvider = ChangeNotifierProvider<AppModel>((ref) {
   return AppModel(ref.read(platformServicesProvider));
 });
+
+/// [sectionTabOrderAppFallback] 的应用实现：有 ProviderScope 且偏好已装载时读写
+/// 偏好；没有 ProviderScope（启动早期 / 裸组件）或偏好未装载时返回 null。
+SectionTabOrderStore? _appSectionTabOrderStore(BuildContext context) {
+  final bool hasScope =
+      context
+          .getElementForInheritedWidgetOfExactType<
+            UncontrolledProviderScope
+          >() !=
+      null;
+  if (!hasScope) return null;
+  final AppModel app = ProviderScope.containerOf(
+    context,
+    listen: false,
+  ).read(appProvider);
+  if (!app.isPreferencesReady) return null;
+  return PrefsSectionTabOrderStore(app.prefsRepo);
+}
 
 /// App-wide second-screen controller (main engine). Starts itself once the
 /// AppModel's preferences are loaded. Defined here rather than next to
@@ -4542,6 +4568,10 @@ class AppModel
       // 导入 / 归组后的合集 AI 排序（自动路径）按偏好里的 AI 指派决定发不发请求；
       // 每次现取，设置页改了立即生效。弹窗进程不装，自动路径在那边是 no-op。
       installCollectionAiOrderSettings(_prefsRepo);
+      // 音乐列表 / 网格的「色块 / 列表」样式记忆（按视图种类分键）读写这份仓库。
+      MusicViewStyleStore.instance.bind(prefsRepo);
+      // 库页 / 更新中心等共用的二级页签：没有显式顺序存储时读写这份偏好。
+      sectionTabOrderAppFallback = _appSectionTabOrderStore;
       // 「互联主机」AI 提供商的客户端出口：按 hostId 找已配对主机、经它的鉴权通道转发
       // （弹窗进程不装：那边没有 AI 功能入口）。
       aiRelayTransport = AppAiRelayTransport(SyncRepository(_database));
@@ -5399,6 +5429,21 @@ class AppModel
   bool get pureBlackDark => themeNotifier.pureBlackDark;
   Future<void> setPureBlackDark(bool value) =>
       themeNotifier.setPureBlackDark(value);
+
+  /// 外壳样式（侧栏样式 / 库页布局 / 平滑圆角 / 封面取色）。
+  ShellRailStyle get shellRailStyle => themeNotifier.shellRailStyle;
+  Future<void> setShellRailStyle(ShellRailStyle value) =>
+      themeNotifier.setShellRailStyle(value);
+  ShellContentLayout get shellContentLayout => themeNotifier.shellContentLayout;
+  Future<void> setShellContentLayout(ShellContentLayout value) =>
+      themeNotifier.setShellContentLayout(value);
+  ShellBlockArrangement get shellBlockArrangement =>
+      themeNotifier.shellBlockArrangement;
+  Future<void> setShellBlockArrangement(ShellBlockArrangement value) =>
+      themeNotifier.setShellBlockArrangement(value);
+  bool get shellSmoothCorners => themeNotifier.shellSmoothCorners;
+  Future<void> setShellSmoothCorners(bool value) =>
+      themeNotifier.setShellSmoothCorners(value);
 
   // TODO-930: multi custom theme list delegation. The UI (theme swatch row +
   // CustomThemePage) talks to AppModel, so mirror ThemeNotifier's list API here

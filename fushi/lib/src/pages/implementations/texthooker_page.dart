@@ -7,6 +7,8 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart' show HardwareKeyboard, KeyEvent;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/anki/mined_card_undo.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show shellRedesignActive;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
@@ -78,6 +80,8 @@ import 'package:fushi/src/utils/components/fushi_adaptive_action_strip.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_masthead_scaffold.dart'
+    show FushiMastheadScaffold;
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_tag.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
@@ -1773,6 +1777,21 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
             ),
           ),
         ],
+      );
+    }
+    // 重设计外壳（墨水屏除外）：独立页换成页头大字。工作台是定高版面（会话卡 +
+    // 自带滚动的台词面板），正文排在页头下沿以下、不铺到页头底下。
+    if (shellRedesignActive(context)) {
+      return FushiMastheadScaffold(
+        title: t.texthooker,
+        actions: _buildAppBarActions(),
+        extendBodyBehindHeader: false,
+        body: _buildMonitorBody(
+          context,
+          lines,
+          textThreads,
+          selectedTextThreadKey,
+        ),
       );
     }
     return Scaffold(

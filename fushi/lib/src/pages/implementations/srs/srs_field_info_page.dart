@@ -37,6 +37,8 @@ import 'package:fushi/src/pages/implementations/srs/srs_visual_template_panel.da
 import 'package:fushi/src/srs/srs_field_catalog.dart';
 import 'package:fushi_engine/srs/srs_miner.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show shellRedesignActive;
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -272,6 +274,7 @@ class _SrsFieldInfoPageState extends ConsumerState<SrsFieldInfoPage> {
   @override
   Widget build(BuildContext context) {
     final bool apple = isGlassDesign(context);
+    final bool masthead = shellRedesignActive(context);
     final SrsFieldDef? field = _field;
     final String title = field == null
         ? t.srs_field_info_title
@@ -285,8 +288,9 @@ class _SrsFieldInfoPageState extends ConsumerState<SrsFieldInfoPage> {
       },
       child: FushiPageScaffold(
         title: title,
+        masthead: true,
         header: apple ? null : _buildTopBar(context, title),
-        actions: apple
+        actions: apple || masthead
             ? <Widget>[
                 FushiIconButton(
                   key: _saveItem.key,

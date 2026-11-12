@@ -892,14 +892,6 @@ class AnotherPopupPart {
           'Android / Win32 window via FloatingLyricChannel.show (content data, '
           'renders no Flutter widgets) — same reviewed exception as '
           'audiobook_session.',
-      'lib/src/media/audiobook/now_listening_mini_bar.dart':
-          'Now-listening media mini-bar: surface role + book-cover thumbnail '
-          'radius are media-subsystem content chrome (same category as the '
-          'allowlisted reader-shelf book covers / media_item_dialog cover '
-          'hero), driven off the active ColorScheme. M3E redesign: the '
-          'Material branch is a floating capsule sharing the floating '
-          'toolbar pill decoration (surfaceContainer, full radius); only the '
-          'e-ink strip (surfaceContainerHighest) and the cover radius remain.',
       // 悬浮字幕 M3E 改造：app 级 / reader 级两个样式构造点收敛到同一个纯函数
       // buildFloatingLyricStyle，它从 AppModel / reader 搬出的正是同一类 payload。
       'lib/src/media/audiobook/floating_lyric_style.dart':
@@ -1393,9 +1385,6 @@ class AnotherPopupPart {
       'lib/src/media/audiobook/floating_lyric_style.dart': <String>{
         'surfaceContainerHigh',
         'fontSize:',
-      },
-      'lib/src/media/audiobook/now_listening_mini_bar.dart': <String>{
-        'BorderRadius.circular(',
       },
       'lib/src/media/video/video_clip_subtitle_image.dart': <String>{
         'fontSize:',

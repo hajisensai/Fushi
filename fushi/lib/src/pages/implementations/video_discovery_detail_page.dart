@@ -1,6 +1,9 @@
 import 'dart:async';
 
 import 'package:fushi/src/media/detail/media_detail_kit.dart';
+import 'package:fushi/src/media/detail/media_poster_detail.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show shellRedesignActive;
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
@@ -349,6 +352,10 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    // 重设计外壳：海报面板版式（与视频作品详情同一套，见 media_poster_detail.dart），
+    // 返回键是 [MediaPosterDetailChrome] 的裸图标页头；墨水屏照旧悬浮返回键 +
+    // [MediaDetailLayout]。
+    final bool redesign = shellRedesignActive(context);
     // 状态流只订阅一次（单订阅流 + 「watchStatus 只调一次」契约），hero 主按钮与
     // 状态行都从这一份状态取值。
     return Scaffold(
@@ -404,6 +411,80 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
                       //
                       // 新增横向/懒加载区块请照做，守卫见
                       // test/pages/video_discovery_detail_selectable_test.dart。
+                      final List<Widget> slivers = <Widget>[
+                        if (snapshot.hasError)
+                          SliverToBoxAdapter(child: _buildDetailsError())
+                        else ...<Widget>[
+                          if (snapshot.connectionState != ConnectionState.done)
+                            SliverToBoxAdapter(
+                              child: _buildDetailsLoading(details),
+                            ),
+                          SliverToBoxAdapter(
+                            child: FushiStaggeredEntrance(
+                              index: 0,
+                              child: _buildOverview(details),
+                            ),
+                          ),
+                        ],
+                        // 获取途径与详情资料无关：资料加载失败时照样给出。
+                        if (_acquisition
+                            case final VideoWorkAcquisitionController
+                                acquisition)
+                          SliverToBoxAdapter(
+                            child: FushiStaggeredEntrance(
+                              index: 1,
+                              child: Padding(
+                                padding: EdgeInsets.only(
+                                  top: tokens.spacing.section,
+                                ),
+                                child: VideoWorkAcquisitionSection(
+                                  key: _acquisitionKey,
+                                  controller: acquisition,
+                                ),
+                              ),
+                            ),
+                          ),
+                        if (!snapshot.hasError) ...<Widget>[
+                          if (details.people.isNotEmpty)
+                            SliverToBoxAdapter(
+                              child: FushiStaggeredEntrance(
+                                index: 2,
+                                child: _buildPeople(details.people),
+                              ),
+                            ),
+                          if (details.related.isNotEmpty)
+                            SliverToBoxAdapter(
+                              child: FushiStaggeredEntrance(
+                                index: 3,
+                                child: _buildRelated(details.related),
+                              ),
+                            ),
+                        ],
+                      ];
+                      if (redesign) {
+                        final ImageProvider? poster = _networkImage(
+                          item.posterUrl,
+                        );
+                        return MediaPosterDetailTheme(
+                          image: poster,
+                          fallbackKey: item.reference.title,
+                          child: MediaPosterDetailChrome(
+                            title: item.reference.title,
+                            child: SelectionArea(
+                              child: FushiEntranceScope(
+                                child: MediaPosterDetailLayout(
+                                  key: const PageStorageKey<String>(
+                                    'video-discovery-detail-scroll',
+                                  ),
+                                  bottomPadding: tokens.spacing.page,
+                                  header: _buildPosterHero(item, state, poster),
+                                  slivers: slivers,
+                                ),
+                              ),
+                            ),
+                          ),
+                        );
+                      }
                       return Stack(
                         children: <Widget>[
                           Positioned.fill(
@@ -418,61 +499,7 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
                                       ? 28
                                       : 16,
                                   header: _buildHero(item, state, backdrop),
-                                  slivers: <Widget>[
-                                    if (snapshot.hasError)
-                                      SliverToBoxAdapter(
-                                        child: _buildDetailsError(),
-                                      )
-                                    else ...<Widget>[
-                                      if (snapshot.connectionState !=
-                                          ConnectionState.done)
-                                        SliverToBoxAdapter(
-                                          child: _buildDetailsLoading(details),
-                                        ),
-                                      SliverToBoxAdapter(
-                                        child: FushiStaggeredEntrance(
-                                          index: 0,
-                                          child: _buildOverview(details),
-                                        ),
-                                      ),
-                                    ],
-                                    // 获取途径与详情资料无关：资料加载失败时照样给出。
-                                    if (_acquisition
-                                        case final VideoWorkAcquisitionController
-                                            acquisition)
-                                      SliverToBoxAdapter(
-                                        child: FushiStaggeredEntrance(
-                                          index: 1,
-                                          child: Padding(
-                                            padding: EdgeInsets.only(
-                                              top: tokens.spacing.section,
-                                            ),
-                                            child: VideoWorkAcquisitionSection(
-                                              key: _acquisitionKey,
-                                              controller: acquisition,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    if (!snapshot.hasError) ...<Widget>[
-                                      if (details.people.isNotEmpty)
-                                        SliverToBoxAdapter(
-                                          child: FushiStaggeredEntrance(
-                                            index: 2,
-                                            child: _buildPeople(details.people),
-                                          ),
-                                        ),
-                                      if (details.related.isNotEmpty)
-                                        SliverToBoxAdapter(
-                                          child: FushiStaggeredEntrance(
-                                            index: 3,
-                                            child: _buildRelated(
-                                              details.related,
-                                            ),
-                                          ),
-                                        ),
-                                    ],
-                                  ],
+                                  slivers: slivers,
                                 ),
                               ),
                             ),
@@ -542,6 +569,53 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
     );
   }
 
+  /// 海报面板 hero（重设计外壳）：数据与 [_buildHero] 同源（同一组按钮 / 页脚），
+  /// 只换视觉。竖版海报斜放、剧照作背景带（没有剧照拿海报重模糊垫底）；作品类型
+  /// 进小标签行，评分 / 年份进信息胶囊。按钮组沿用原 key
+  /// （`video-discovery-actions` / `video-discovery-detail-more`）。
+  Widget _buildPosterHero(
+    VideoDiscoveryItem item,
+    VideoDiscoveryAcquisitionState state,
+    ImageProvider? poster,
+  ) {
+    final double? score = item.score;
+    final _VideoDiscoveryActionParts parts = _actionParts(item, state);
+    return MediaPosterDetailHero(
+      title: item.reference.title,
+      originalTitle: item.reference.originalTitle,
+      kicker: _kindLabel(item.reference.discoveryCategory),
+      poster: poster == null
+          ? null
+          : SizedBox.expand(
+              child: Image(
+                image: poster,
+                fit: BoxFit.cover,
+                gaplessPlayback: true,
+                errorBuilder: (_, __, ___) =>
+                    const MediaDetailCoverPlaceholder(icon: FushiIcons.video),
+              ),
+            ),
+      posterImage: poster,
+      backdrop: _networkImage(item.backdropUrl),
+      backdropFallback: poster,
+      pills: <MediaDetailChip>[
+        if (score != null)
+          MediaDetailChip(
+            score.toStringAsFixed(1),
+            icon: FushiIcons.filled(FushiIcons.star),
+            tone: MediaDetailChipTone.primary,
+          ),
+        if (item.reference.year != null)
+          MediaDetailChip('${item.reference.year}'),
+      ],
+      actionsKey: const ValueKey<String>('video-discovery-actions'),
+      primaryAction: parts.primary,
+      secondaryActions: parts.secondary,
+      more: parts.more,
+      footer: _buildHeroFooter(item, state),
+    );
+  }
+
   /// 「任务」入口：能定位到本作品就定位（[VideoDiscoveryActions.onOpenWorkDownloads]），
   /// 否则只打开下载页。两者都没接（下载模块关着）返回 null，入口不渲染。
   VoidCallback? _openDownloadsFor(VideoDiscoveryItem item) {
@@ -560,6 +634,20 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
   /// 进度）+ 次按钮（tonal：找资源〔播放占主位时〕/ 订阅 / 字幕）+「⋯」（AI 获取、
   /// 下载任务）。
   Widget _buildActionBar(
+    VideoDiscoveryItem item,
+    VideoDiscoveryAcquisitionState state,
+  ) {
+    final _VideoDiscoveryActionParts parts = _actionParts(item, state);
+    return MediaDetailActionBar(
+      key: const ValueKey<String>('video-discovery-actions'),
+      primary: parts.primary,
+      secondary: parts.secondary,
+      more: parts.more,
+    );
+  }
+
+  /// 主操作按钮组的三段（两种 hero 版式共用同一份按钮与 key）。
+  _VideoDiscoveryActionParts _actionParts(
     VideoDiscoveryItem item,
     VideoDiscoveryAcquisitionState state,
   ) {
@@ -614,8 +702,7 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
           onSelected: onDownloads,
         ),
     ];
-    return MediaDetailActionBar(
-      key: const ValueKey<String>('video-discovery-actions'),
+    return (
       primary: primary,
       secondary: <Widget>[
         if (playPrimary)
@@ -1042,6 +1129,13 @@ class _RelatedWorkCard extends StatelessWidget {
     item.reference.discoveryCategory.name,
   ].join(' · ');
 }
+
+/// 详情主操作按钮组：主按钮 + 次按钮 + 「⋯」。
+typedef _VideoDiscoveryActionParts = ({
+  Widget primary,
+  List<Widget> secondary,
+  Widget? more,
+});
 
 ImageProvider? _networkImage(String? url) {
   final String value = url?.trim() ?? '';

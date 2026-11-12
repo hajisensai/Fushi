@@ -225,6 +225,7 @@ class _WebBrowserHistoryPageState extends State<WebBrowserHistoryPage> {
       title: _selecting
           ? t.batch_selected_count(n: _selected.length)
           : t.web_browser_history_title,
+      masthead: true,
       actions: _actions(),
       body: _loading
           ? const Center(child: FushiCircularProgressIndicator())

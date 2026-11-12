@@ -255,6 +255,7 @@ class _SrsLegacyLapisMigrationPageState
     final bool apple = isGlassDesign(context);
     return FushiPageScaffold(
       title: t.srs_lapis_migration_title,
+      masthead: true,
       header: apple ? null : _buildTopBar(context),
       body: Builder(builder: _buildBody),
     );

@@ -61,6 +61,7 @@ class KavitaBrowsePage extends ConsumerWidget {
       return KavitaLibrariesPage(server: usable.single, apiFor: apiFor);
     }
     return FushiPageScaffold(
+      masthead: true,
       title: t.kavita_settings_title,
       automaticallyImplyLeading: false,
       headerCompact: true,
@@ -185,6 +186,7 @@ class _KavitaLibrariesPageState extends State<KavitaLibrariesPage> {
 
   @override
   Widget build(BuildContext context) => FushiPageScaffold(
+    masthead: true,
     title: widget.server.displayName,
     automaticallyImplyLeading: false,
     headerCompact: true,
@@ -400,6 +402,7 @@ class _KavitaSeriesGridPageState extends ConsumerState<KavitaSeriesGridPage> {
 
   @override
   Widget build(BuildContext context) => FushiPageScaffold(
+    masthead: true,
     title: widget.library.name,
     automaticallyImplyLeading: false,
     headerCompact: true,
@@ -581,14 +584,28 @@ class KavitaSeriesCover extends StatefulWidget {
     }
   }
 
+  /// 系列封面字节：先查进程内缓存，没有再经 [KavitaApi.fetchSeriesCoverBytes]
+  /// 拉取并记入缓存。封面格与系列详情的海报面板（取色 / 海报）共用这一份。
+  static Future<Uint8List> loadBytes({
+    required KavitaApi api,
+    required KavitaServerConfig server,
+    required KavitaSeries series,
+  }) {
+    final String key = '${server.id}:${series.id}';
+    final Uint8List? cached = _cached(key);
+    if (cached != null) return SynchronousFuture<Uint8List>(cached);
+    return api.fetchSeriesCoverBytes(series.id).then((Uint8List bytes) {
+      if (bytes.isNotEmpty) _remember(key, bytes);
+      return bytes;
+    });
+  }
+
   @override
   State<KavitaSeriesCover> createState() => _KavitaSeriesCoverState();
 }
 
 class _KavitaSeriesCoverState extends State<KavitaSeriesCover> {
   Future<Uint8List>? _future;
-
-  String get _cacheKey => '${widget.server.id}:${widget.series.id}';
 
   @override
   void initState() {
@@ -606,18 +623,11 @@ class _KavitaSeriesCoverState extends State<KavitaSeriesCover> {
   }
 
   void _start() {
-    final Uint8List? cached = KavitaSeriesCover._cached(_cacheKey);
-    if (cached != null) {
-      _future = SynchronousFuture<Uint8List>(cached);
-      return;
-    }
-    final String key = _cacheKey;
-    _future = widget.api.fetchSeriesCoverBytes(widget.series.id).then((
-      Uint8List bytes,
-    ) {
-      if (bytes.isNotEmpty) KavitaSeriesCover._remember(key, bytes);
-      return bytes;
-    });
+    _future = KavitaSeriesCover.loadBytes(
+      api: widget.api,
+      server: widget.server,
+      series: widget.series,
+    );
   }
 
   @override
