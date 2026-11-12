@@ -574,7 +574,8 @@ class AdapterStructureTest(unittest.TestCase):
             )
             self.assertIn("g_geometry_provider_registry.Retire", lifecycle_source)
 
-        self.assertEqual(20, len(publishers), publishers)
+        self.assertEqual(21, len(publishers), publishers)
+        self.assertIn("system4_lookup.inc", publishers)
         self.assertIn("softpal_lookup.inc", publishers)
         self.assertIn("luca_lookup.inc", publishers)
         self.assertIn("luca_x64_lookup.inc", publishers)
@@ -642,7 +643,10 @@ class AdapterStructureTest(unittest.TestCase):
             )
             seen[name] = spaces[0]
 
-        self.assertEqual(20, len(seen), seen)
+        self.assertEqual(21, len(seen), seen)
+        self.assertEqual(
+            "kLookupCoordinateSpaceClientPhysicalPixels", seen["system4_lookup.inc"]
+        )
         self.assertEqual(
             "kLookupCoordinateSpaceClientPhysicalPixels", seen["softpal_lookup.inc"]
         )
@@ -1076,17 +1080,44 @@ class AdapterStructureTest(unittest.TestCase):
             "view->section_count < kSgreImageMaxSections", sgre_profile
         )
 
+        # Leaf admission is the structural proof, never the executable digest:
+        # the measured digest only feeds diagnostics and a self-check.
+        leaf_autoprofile = (adapter_root / "leaf_aquaplus_autoprofile.h").read_text(
+            encoding="utf-8"
+        )
         leaf_gate = self._function_body(
-            leaf, "bool IsLeafAquaplusProfileMatched()"
+            leaf, "bool MeasureLeafAquaplusIdentityExclusive() {"
         )
         for required in (
-            "FindUniqueAbsolute32PatternInExecutableSections",
+            "ProveLeafStructure",
+            "kPristineFile",
+            "LeafExecutableCodeLooksPacked",
+            "ProveLeafRuntimeImageGuarded",
+            "kLeafRuntimeRescanWindowMs",
+            "LeafIdentityRetryWindowExhausted",
+        ):
+            self.assertIn(required, leaf_gate)
+        self.assertNotIn("MatchesLeafAquaplusProfile(", leaf)
+        self.assertIn("LeafImageSource::kRuntimeImage", leaf)
+        prove = self._function_body(
+            leaf_autoprofile, "inline bool ProveLeafStructure("
+        )
+        for required in (
+            "DeriveLeafAnchors",
+            "ResolveLeafProfile",
+            "LeafProfileSectionRolesValid",
+        ):
+            self.assertIn(required, prove)
+        for required in (
             "FindUniquePatternInExecutableSections",
             "MatchesRel32CallEndingAt",
             "MatchesAbsoluteIndirectCallEndingAt",
+            "MatchesRegisterIndirectCallEndingAt",
             "kEmbedHookOffsetFromAnchor",
+            "HasGlyphStateCopyBeforeCall",
+            "HasTwoArgumentFramelessReturnAfter",
         ):
-            self.assertIn(required, leaf_gate)
+            self.assertIn(required, leaf_autoprofile)
         self.assertIn("kTextTraversalEntryMask", leaf_profile)
         self.assertIn("kTextTraversalCookieOperandOffset", leaf_profile)
         self.assertNotIn("0x30, 0x16, 0x4d, 0x00", leaf_profile.lower())
@@ -1112,6 +1143,7 @@ class AdapterStructureTest(unittest.TestCase):
             sgre_anchors,
             leaf,
             leaf_profile,
+            leaf_autoprofile,
             siglus,
             siglus_header,
         ):
@@ -2304,7 +2336,24 @@ class AdapterStructureTest(unittest.TestCase):
         targeted = self._function_body(
             core, "inline SiteResult ResolveTargetedRenderSites(")
         self.assertIn("FindVirtualCharImage(", targeted)
-        self.assertIn("AnyCallTargets(", targeted)
+        # Window / renderer field offsets come from the proving code (cs2
+        # 2.6.1.90 moved them); ClearPage is the body-parsed candidate called
+        # through the window's renderer field, tie-broken by the reveal loop.
+        self.assertIn("FindClearPageT(", targeted)
+        self.assertIn("found->layout = layout;", targeted)
+        clear = self._function_body(core, "inline bool FindClearPageT(")
+        for proof in ("ParseClearPageT(", "AnyCallTargets(", "CallerAlsoCalls("):
+            self.assertIn(proof, clear)
+        for field in ("layout.page_width", "layout.page_height",
+                      "layout.work_image", "layout.window_renderer",
+                      "layout.window_screen"):
+            self.assertIn(field, runtime)
+        # Every proven text-window class is hooked with its own layout (the
+        # VS2013 cs2 2.6.1.90 build draws dialogue through a second class).
+        self.assertIn("for (size_t c = 0u; c < class_count; ++c)", targeted)
+        self.assertIn("ProveRenderCharT(", targeted)
+        self.assertIn("g_cs2_lookup.sites.classes[K].layout", runtime)
+        self.assertIn("AppendCs2ClassSites<1u>(", runtime)
         self.assertIn("ProveCharImage(", self._function_body(
             core, "inline bool FindVirtualCharImage("))
         # Detours: bounded copies only; logging / file IO stays on the worker.
@@ -2375,8 +2424,9 @@ class AdapterStructureTest(unittest.TestCase):
                       "blocks != 1u"):
             self.assertIn(proof, resolve)
         block = self._function_body(core, "inline bool MatchesPlainBlock(")
-        for proof in ("kArchiveEncryptedOffset", "imports.set_file_pointer",
-                      "imports.read_file", "0x8du, 0x14u, entry"):
+        for proof in ("IsArchiveFlagOffset(disp)", "HasArchiveHandleLoad(",
+                      "imports.set_file_pointer", "imports.read_file",
+                      "0x8du, 0x14u, entry"):
             self.assertIn(proof, block)
         self.assertIn("OperandNamesSlot(",
                       self._function_body(core, "inline size_t FindImportCall("))
@@ -2475,8 +2525,20 @@ class AdapterStructureTest(unittest.TestCase):
         for proof in ("ResolveImpl(", "ResolveExVtable(", "ResolveScreenTables("):
             self.assertIn(proof, resolve)
         vtable = self._function_body(core, "inline SiteResult ResolveExVtable(")
-        for proof in ("kAnchor", "EnclosingFunction(", "layout_slot_disp"):
+        for proof in ("FindAnchorRvas(", "EnclosingFunction(", "layout_slot_disp",
+                      "IsVtableRva("):
             self.assertIn(proof, vtable)
+        # The anchor may only be split by a flag-neutral `mov r32,imm32` that
+        # leaves al alone; a vtable outside read-only data must be all code
+        # pointers up to the layout slot.
+        anchor = self._function_body(core, "inline bool AnchorAt(")
+        for proof in ("ShapeAt(at, end, kAnchor)", "0xb8u", "0xbcu"):
+            self.assertIn(proof, anchor)
+        table = self._function_body(core, "inline bool IsVtableRva(")
+        self.assertIn("IsDataRva(", table)
+        self.assertIn("IsExecutableRva(image, function", table)
+        screen = self._function_body(core, "inline SiteResult ResolveScreenTables(")
+        self.assertIn("PlausibleScreenTables(", screen)
         owner = self._function_body(core, "bool DecodeOwnerAbi(")
         for proof in ("DecodeDrawable(", "DecodeTerm(", "best_function"):
             self.assertIn(proof, owner)
@@ -2513,7 +2575,26 @@ class AdapterStructureTest(unittest.TestCase):
         self.assertNotIn("rt.model.", publish)
         # The adapter installs the lane only when its structural identity holds.
         install = self._function_body(adapter, "  bool install() override {")
-        self.assertIn("if (probe()) text_installed_ = InstallBgiLookup()", install)
+        self.assertIn("if (probe()) {", install)
+        self.assertIn("text_installed_ = InstallBgiLookup()", install)
+        # install() runs once at startup, before a protected image hydrates: a
+        # pending site scan is advanced by the worker poll, scheduled by the
+        # tested core (bounded window, no sleep / blind retry), and only a
+        # settled scan is ever reported as a rejection.
+        pending = self._function_body(adapter, "  void ProcessPendingEvents() {")
+        self.assertIn("BgiLookupSitesPending()", pending)
+        self.assertIn("InstallBgiLookup()", pending)
+        lookup = self._function_body(runtime, "bool InstallBgiLookup() {")
+        self.assertIn("rt.scan.Due(", lookup)
+        self.assertIn("rt.scan.Record(", lookup)
+        for forbidden in ("Sleep(", "WaitForSingleObject("):
+            self.assertNotIn(forbidden, lookup)
+            self.assertNotIn(forbidden, pending)
+        rejected = self._function_body(runtime, "bool BgiLookupSitesRejected() {")
+        self.assertIn("scan.settled()", rejected)
+        schedule = self._function_body(core, "  SiteScanVerdict Record(")
+        self.assertIn("IsHydrationPendingResult(", schedule)
+        self.assertIn("kSiteRetryWindowMs", schedule)
 
     def test_malie_is_structural_keyless_and_callbacks_stay_bounded(self) -> None:
         """Malie：身份 / 语音 / 文本 / 查词站点只来自结构；不含归档密钥与解密；回调只做有界拷贝。"""
@@ -3486,44 +3567,39 @@ class AdapterStructureTest(unittest.TestCase):
         )
 
     def test_leaf_identity_does_not_latch_an_unmeasured_executable(self) -> None:
-        """身份缓存只能记录**测量成功**的结论。
+        """身份缓存只能记录**测量成功**的结论；exe 摘要不再参与认领。
 
-        `g_leaf_aquaplus_profile_state` 是永久缓存（0/±1，命中即直接返回）。若把
-        「读不到 exe / 算不出摘要」也写成 -1，一次瞬时失败就让本会话的 Leaf adapter
-        永久出局：没有 adapter 认领 → 准入收敛成 EngineUnsupported、LAC 原声 hook
-        一次都不装，用户看到整场音频降级到系统 Loopback。首次 probe 可能落在注入
-        窗口内（摘要走 BCrypt + 文件映射），所以这是个真实会命中的时序。
+        `g_leaf_aquaplus_profile_state` 是永久缓存（0/±1，命中即直接返回）。旧实现把
+        「读不到 exe / 算不出摘要」写成 -1，一次瞬时失败就让本会话的 Leaf adapter 永久
+        出局（BUG-2051）。准入改成结构证明后，摘要只做诊断与已测量构建的自检：摘要量
+        不到只置诊断位，既不写永久缓存，也不挡结构证明。
         """
         source = self._strip_comments(
             (ROOT / "hook" / "adapters" / "leaf_aquaplus_adapter.inc").read_text(
                 encoding="utf-8"
             )
         )
-        body = self._function_body(source, "bool IsLeafAquaplusProfileMatched(")
-
-        guard = body.index("if (!executable_read)")
-        latch = body.rindex("InterlockedExchange(&g_leaf_aquaplus_profile_state")
-        self.assertLess(
-            guard,
-            latch,
-            "测量失败必须在写入永久缓存之前就返回，否则一次瞬时失败被钉成永久拒绝",
+        body = self._function_body(
+            source, "bool MeasureLeafAquaplusIdentityExclusive() {"
         )
+        digest = self._function_body(source, "bool MeasureLeafExecutableDigest(")
+        self.assertIn("kXAudioDiag2LeafExecutableUnmeasurable", digest)
+        self.assertNotIn("g_leaf_aquaplus_profile_state", digest)
+        self.assertNotIn("CommitLeafAquaplusIdentity", digest)
+        self.assertNotIn("MatchesLeafAquaplusProfile(", source)
+        # 摘要先于结构证明测，但结果只流向 Commit 的自检参数。
         self.assertLess(
-            guard,
-            body.index("MatchesLeafAquaplusProfile("),
-            "测量失败必须早于 profile 选择返回",
+            body.index("MeasureLeafExecutableDigest("),
+            body.index("ProveLeafStructure("),
         )
 
-        # 重试有界，且**量纲是时间不是调用次数**：本函数每轮 Poll 被打 5~7 次
-        # （PollDelayMs 自己也调 leaf_aquaplus_.probe()），DispatchNewModules 每拍
-        # 还对每个新模块再打 3 次；按 32 次调用限界只有 0.2~1.2 秒，启动期模块风暴下
-        # 单个 200ms 拍就能烧光，而要覆盖的注入窗口以秒计。
+        # 重试有界，且**量纲是时间不是调用次数**（BUG-2074）。
         self.assertIn("LeafIdentityRetryWindowExhausted()", body)
-        self.assertIn("kXAudioDiag2LeafExecutableUnmeasurable", body)
-        whole = (ROOT / "hook" / "adapters" / "leaf_aquaplus_adapter.inc").read_text(
-            encoding="utf-8"
+        gate = self._strip_comments(
+            (ROOT / "hook" / "adapters" / "leaf_aquaplus_adapter.inc").read_text(
+                encoding="utf-8"
+            )
         )
-        gate = self._strip_comments(whole)
         self.assertIn("kLeafIdentityRetryWindowMs", gate)
         self.assertIn("kLeafIdentityRetryIntervalMs", gate)
         self.assertNotIn(
@@ -3533,6 +3609,10 @@ class AdapterStructureTest(unittest.TestCase):
         )
         # 计次仍要挡 CPU：高频 Poll 不能把 SHA-256 + 映像展开摊进每一次调用。
         self.assertIn("LeafIdentityMeasurementThrottled()", body)
+        # 永久缓存只有一个写入口。
+        commit = self._function_body(source, "bool CommitLeafAquaplusIdentity(")
+        self.assertIn("InterlockedExchange(&g_leaf_aquaplus_profile_state", commit)
+        self.assertNotIn("InterlockedExchange(&g_leaf_aquaplus_profile_state", body)
 
     def test_leaf_structure_gate_retries_a_transient_pristine_image_failure(
         self,
@@ -3540,35 +3620,32 @@ class AdapterStructureTest(unittest.TestCase):
         """原始映像映不上是瞬时条件，不得一次失败就永久钉死身份。
 
         LoadLeafPristineImage 走 CreateFileW + CreateFileMappingW + VirtualAlloc：
-        杀软扫描期占住 exe、共享冲突、32 位地址空间碎片都能让它临时失败。往下走的
-        结局是 opened=false → 三组全 false → g_leaf_exact_binary_structure_state 被
-        写成 -1 → profile 置空 → g_leaf_aquaplus_profile_state 永久 -1，症状与
-        「exe 摘要量不到」完全一样：LAC 原声 hook 一次都不装、整场降级 Loopback。
-
-        结构门在改成读磁盘原始映像之前只读进程内存、没有任何文件 IO——这条失败面是
-        那次修法自己引进来的，必须共用同一个有界重试窗口。
+        杀软扫描期占住 exe、共享冲突、32 位地址空间碎片都能让它临时失败。窗口内必须
+        保持未定：既不写磁盘判定缓存，也不经 Commit 写身份永久缓存。
         """
         source = self._strip_comments(
             (ROOT / "hook" / "adapters" / "leaf_aquaplus_adapter.inc").read_text(
                 encoding="utf-8"
             )
         )
-        body = self._function_body(source, "bool IsLeafAquaplusProfileMatched(")
+        body = self._function_body(
+            source, "bool MeasureLeafAquaplusIdentityExclusive() {"
+        )
 
-        guard = body.index("if (!pristine_ready)")
+        guard = body.index("if (!opened)")
         self.assertLess(
             guard,
             body.index("LeafIdentityRetryWindowExhausted()", guard),
-            "映像映不上必须走与摘要量不到同一个有界重试窗口",
+            "映像映不上必须走有界重试窗口",
         )
         self.assertLess(
             guard,
-            body.index("InterlockedExchange(&g_leaf_exact_binary_structure_state"),
-            "重试窗口未耗尽时必须在写结构门永久缓存之前返回",
+            body.index("InterlockedExchange(&g_leaf_pristine_verdict"),
+            "重试窗口未耗尽时必须在写磁盘判定缓存之前返回",
         )
         self.assertLess(
             guard,
-            body.rindex("InterlockedExchange(&g_leaf_aquaplus_profile_state"),
+            body.index("CommitLeafAquaplusIdentity("),
             "重试窗口未耗尽时也不得写 profile 的永久缓存",
         )
 
@@ -3672,49 +3749,57 @@ class AdapterStructureTest(unittest.TestCase):
     def test_leaf_structure_gate_reads_the_pristine_file_not_process_memory(
         self,
     ) -> None:
-        """身份的结构校验只能读磁盘上的原始映像。
+        """身份的结构证明先读磁盘原始映像；进程内存只在磁盘代码带壳时才读。
 
-        这五处掩码模式扫的地址都会被 hook 改写，其中 embed_leaf_hook_rva 正是 profile
-        指定给 LunaHook 的 HSX0:0 文本 hook 点：Luna 的 detour 一落下，唯一命中数就变 0,
-        结构门判否 → adapter 不认领 → 几何 provider、输入护盾、LAC 原声 hook 全不装,
-        表现为「点击穿透到下一句」+「语音整场降级」。text_traversal / raster_draw 更是
-        我们自己在 InstallLeafAquaplusD3DTrace 里要 hook 的地址。
-
-        身份是「这个 exe 是不是那份被测量过的构建」——文件的属性，不是当前进程内存的属性。
+        锚点里的 embed_leaf_hook_rva 正是 Fushi 选给 LunaHook 的 HSX0:0 文本 hook 点，
+        text_traversal / raster_draw 是我们自己要 hook 的地址：进程内存里这些字节随时会
+        被改写（BUG-2052），所以能读磁盘就读磁盘。带壳构建的磁盘代码证明不了任何事，
+        这时才转去运行时映像，并且只有运行时那一路允许 hook 点已是注入模块的 detour。
         """
         source = self._strip_comments(
             (ROOT / "hook" / "adapters" / "leaf_aquaplus_adapter.inc").read_text(
                 encoding="utf-8"
             )
         )
-        body = self._function_body(source, "bool IsLeafAquaplusProfileMatched(")
+        body = self._function_body(
+            source, "bool MeasureLeafAquaplusIdentityExclusive() {"
+        )
 
-        self.assertIn("LoadLeafPristineImage(executable, &pristine)", body)
-        self.assertIn("image.absolute_base = preferred_base;", body)
-        # 语义锚点：不逐字面量比 "OpenLoadedPeImage(module," ——那对 clang-format
-        # 敏感，参数一旦折行守卫就看不见回改（实测能存活变异）。改成取实参表本身。
+        self.assertIn("LoadLeafPristineImage(executable, &image_copy)", body)
+        self.assertIn("image.absolute_base = image_copy.preferred_base;", body)
         calls = self._call_arguments(body, "OpenLoadedPeImage")
-        self.assertTrue(calls, "结构校验必须真的打开一份 PE 映像")
+        self.assertTrue(calls, "结构证明必须真的打开一份 PE 映像")
         for arguments in calls:
             subject = arguments.split(",")[0]
             self.assertIn(
-                "pristine",
+                "image_copy",
                 subject,
-                "结构校验只能打开 LoadLeafPristineImage 展开的私有副本，"
+                "磁盘那一路只能打开 LoadLeafPristineImage 展开的私有副本，"
                 f"实参却是 {subject!r}",
             )
-            self.assertNotIn(
-                "module",
-                subject,
-                "结构校验不得读进程内已加载的模块："
-                "那段内存会被 LunaHook 与我们自己的 hook 改写",
-            )
             self.assertNotIn("GetModuleHandle", subject)
+        # 磁盘证明在前；运行时证明只在磁盘判定为带壳 / 读不到时才走。
         self.assertLess(
-            body.index("LoadLeafPristineImage(executable, &pristine)"),
-            body.index("FindUniqueAbsolute32PatternInExecutableSections("),
-            "原始映像必须在任何模式扫描之前就绪",
+            body.index("LoadLeafPristineImage(executable, &image_copy)"),
+            body.index("ProveLeafRuntimeImageGuarded("),
         )
+        self.assertLess(
+            body.index("LeafExecutableCodeLooksPacked("),
+            body.index("ProveLeafRuntimeImageGuarded("),
+        )
+        self.assertIn("if (pristine == -1)", body)
+        runtime = self._function_body(source, "bool ProveLeafRuntimeImageUnsafe(")
+        self.assertIn("GetModuleHandleW(nullptr)", runtime)
+        self.assertIn("LeafImageSource::kRuntimeImage", runtime)
+        guarded = self._function_body(source, "bool ProveLeafRuntimeImageGuarded(")
+        self.assertIn("__try", guarded)
+        autoprofile = self._strip_comments(
+            (ROOT / "hook" / "adapters" / "leaf_aquaplus_autoprofile.h").read_text(
+                encoding="utf-8"
+            )
+        )
+        site = self._function_body(autoprofile, "inline bool EmbedHookSiteIsIntact(")
+        self.assertIn("LeafImageSource::kRuntimeImage", site)
 
         # 加载器认路径：对**本进程自己的主映像**调 LoadLibraryEx(AS_IMAGE_RESOURCE)
         # 会把已加载的那一份别名返回（实测 masked handle == GetModuleHandleW(nullptr)），
@@ -3728,28 +3813,10 @@ class AdapterStructureTest(unittest.TestCase):
         self.assertNotIn("SEC_IMAGE", loader, "SEC_IMAGE 映射到非首选基址会施加重定位")
         self.assertIn("PAGE_READONLY", loader)
         self.assertIn("IMAGE_FIRST_SECTION", loader)
-        # 私有副本每次 ~1.2MB，且 IsLeafAquaplusProfileMatched 在身份未定期间会被
-        # 反复调用。释放必须断言在**析构体**上：整份 1500 行源文件里 VirtualFree
-        # 到处都有，删掉析构里那一句仍然全绿（实测存活的变异）。
+        # 私有副本每次 ~1.2MB：释放必须断言在**析构体**上。
         destructor = self._function_body(source, "~LeafPristineImage()")
         self.assertIn("VirtualFree", destructor)
         self.assertIn("MEM_RELEASE", destructor)
-
-        # absolute_base 只能作用于绝对操作数解码：rel32/寄存器间接算出的是映射内地址。
-        shared = self._strip_comments(
-            (ROOT / "hook" / "adapters" / "exact_lookup_signature.h").read_text(
-                encoding="utf-8"
-            )
-        )
-        decode = self._function_body(shared, "inline bool DecodeAbsolute32ImageAddress(")
-        self.assertIn("image.absolute_base", decode)
-        to_rva = self._function_body(shared, "inline bool AddressToRva(")
-        self.assertNotIn(
-            "absolute_base",
-            to_rva,
-            "AddressToRva 必须继续用 image.base，否则未重定位映像上 rel32 各路整片假失败",
-        )
-
 
 if __name__ == "__main__":
     unittest.main()

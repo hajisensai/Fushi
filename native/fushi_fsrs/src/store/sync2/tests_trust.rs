@@ -163,6 +163,10 @@ fn new_device_ordinary_ops_land_but_deletes_and_purges_wait_for_confirmation() {
     b.sync(&mut bucket, "loc", T0 + 9);
     assert_eq!(row_of(&a, &bid)["digestMismatch"], false);
     assert_eq!(row_of(&b, &device_id(&a))["digestMismatch"], false);
+    // 自动重建（heal.rs）同样不比：扣住指纹让摘要串 `@` 之后的部分不同，两边都不重放、不上报。
+    let none = json!({"replayed": [], "healed": [], "healFailed": []});
+    assert_eq!(a.core.sync2_digest_heal(P, T0 + 10).unwrap(), none);
+    assert_eq!(b.core.sync2_digest_heal(P, T0 + 10).unwrap(), none);
     // 本机自己永远可信；不能拒绝已可信的设备。
     assert!(
         a.core

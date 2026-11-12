@@ -130,6 +130,7 @@
 #include "adapters/hunex_gge_lookup_core.h"
 #include "adapters/hunex_gge_selected_text.h"
 #include "adapters/leaf_aquaplus_voice_archive.h"
+#include "adapters/leaf_aquaplus_autoprofile.h"
 #include "adapters/smash_fzmedia_shared.h"
 #include "adapters/smash_fzmedia_lookup_core.h"
 #include "adapters/smash_fzmedia_lookup.h"

@@ -3144,6 +3144,7 @@ class GalHookedLine {
       13 => 'knife',
       15 => 'malie',
       16 => 'softpal',
+      17 => 'system4',
       _ => 'hook',
     };
     return '$source:${threadId.toUnsigned(64).toRadixString(16)}';
@@ -3169,6 +3170,7 @@ class GalHookedLine {
             13 => 'knife exact',
             15 => 'Malie exact',
             16 => 'SoftPal exact',
+            17 => 'System4 exact',
             _ => 'Text hook',
           };
     if (threadAddress == 0) return source;
