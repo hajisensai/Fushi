@@ -730,6 +730,15 @@ target_include_directories(fushi_loader_init_gate_test PRIVATE "include")
 add_test(NAME fushi_loader_init_gate_test
   COMMAND fushi_loader_init_gate_test)
 
+# SteamStub 解壳门：Steam 客户端路径 / 附着时等 `.bind` 壳原地解密代码段再注入，
+# 否则 LunaHook 一次性的引擎识别扫到密文；含无 `.bind` 与重定位映像的负向。
+add_executable(fushi_steam_stub_unpack_test
+  "tests/steam_stub_unpack_test.cpp"
+)
+target_include_directories(fushi_steam_stub_unpack_test PRIVATE "include")
+add_test(NAME fushi_steam_stub_unpack_test
+  COMMAND fushi_steam_stub_unpack_test)
+
 add_executable(fushi_luna_hook_config_test tests/luna_hook_config_test.cpp)
 target_include_directories(fushi_luna_hook_config_test PRIVATE include)
 add_test(NAME fushi_luna_hook_config_test COMMAND fushi_luna_hook_config_test)
@@ -1087,6 +1096,18 @@ target_compile_definitions(fushi_reallive_lookup_test PRIVATE
 add_test(NAME fushi_reallive_lookup_test
   COMMAND fushi_reallive_lookup_test)
 
+# RealLive offline site probe: runs the lookup's import-slot reader and site
+# resolver above over a game exe (or a flat dump of its main module) read from
+# disk and prints every step.  Diagnostic only (needs a real game image, so no
+# add_test); reads the file into a private buffer, never loads or runs it.
+add_executable(fushi_reallive_site_probe
+  "tools/reallive_site_probe.cpp"
+)
+target_include_directories(fushi_reallive_site_probe PRIVATE
+  "hook/adapters")
+target_compile_definitions(fushi_reallive_site_probe PRIVATE
+  UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+
 # CatSystem2 in-game lookup core: structural site resolution on a synthetic
 # x86 image (ClearPage+RenderChar pair -> record layout -> GetCharImage ->
 # GetGlyphOutlineA rasteriser, Window::Update -> reveal/sync, layer query ->
@@ -1279,3 +1300,23 @@ add_executable(fushi_lookup_hover_highlight_state_test "tests/lookup_hover_highl
 target_include_directories(fushi_lookup_hover_highlight_state_test PRIVATE "hook")
 target_compile_definitions(fushi_lookup_hover_highlight_state_test PRIVATE UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 add_test(NAME fushi_lookup_hover_highlight_state_test COMMAND fushi_lookup_hover_highlight_state_test)
+
+add_executable(fushi_test_version_resource_test "tests/test_version_resource_test.cpp")
+target_compile_definitions(fushi_test_version_resource_test PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+target_link_libraries(fushi_test_version_resource_test PRIVATE version)
+add_test(NAME fushi_test_version_resource_test COMMAND fushi_test_version_resource_test)
+
+# 所有 *_test 可执行文件统一挂 VERSIONINFO。不带版本资源的极小 x64 Release 控制台 exe
+# 会撞杀软泛型启发式（实测 Kaspersky 把 fushi_utterance_window_test.exe 报
+# VHO:Trojan.Win32.Sdum.gen 并删除，CTest 静默少跑一条）。必须留在文件末尾：
+# BUILDSYSTEM_TARGETS 只含此前已定义的目标。守卫：fushi_test_version_resource_test。
+if(MSVC)
+  enable_language(RC)
+  get_property(_fushi_all_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
+  foreach(_fushi_target IN LISTS _fushi_all_targets)
+    get_target_property(_fushi_type ${_fushi_target} TYPE)
+    if(_fushi_type STREQUAL "EXECUTABLE" AND _fushi_target MATCHES "_test$")
+      target_sources(${_fushi_target} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_version.rc")
+    endif()
+  endforeach()
+endif()

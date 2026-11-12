@@ -13,7 +13,7 @@ void main() {
       expect(
         galWorkbenchReadiness(
           state: const GalHookSessionState(),
-          hasEngineSource: false,
+          requiresTextThread: false,
           selectedTextThreadKey: null,
         ),
         GalWorkbenchReadiness.idle,
@@ -27,7 +27,7 @@ void main() {
             phase: GalHookSessionPhase.running,
             audioBackend: GalHookAudioBackend.systemLoopback,
           ),
-          hasEngineSource: true,
+          requiresTextThread: true,
           selectedTextThreadKey: null,
         ),
         GalWorkbenchReadiness.waitingForThread,
@@ -41,8 +41,22 @@ void main() {
             phase: GalHookSessionPhase.running,
             audioBackend: GalHookAudioBackend.systemLoopback,
           ),
-          hasEngineSource: true,
+          requiresTextThread: true,
           selectedTextThreadKey: 'pid:thread:hook',
+        ),
+        GalWorkbenchReadiness.listening,
+      );
+    });
+
+    test('正文来自 TyranoScript DOM 源时不需要选线程，直接监听', () {
+      expect(
+        galWorkbenchReadiness(
+          state: const GalHookSessionState(
+            phase: GalHookSessionPhase.running,
+            audioBackend: GalHookAudioBackend.gameResource,
+          ),
+          requiresTextThread: false,
+          selectedTextThreadKey: null,
         ),
         GalWorkbenchReadiness.listening,
       );
@@ -52,7 +66,7 @@ void main() {
       expect(
         galWorkbenchReadiness(
           state: const GalHookSessionState(phase: GalHookSessionPhase.running),
-          hasEngineSource: false,
+          requiresTextThread: false,
           selectedTextThreadKey: null,
         ),
         GalWorkbenchReadiness.listening,
@@ -73,7 +87,7 @@ void main() {
       expect(
         shouldPromptGalCaptureSetup(
           state: launched,
-          hasEngineSource: true,
+          requiresTextThread: true,
           selectedTextThreadKey: null,
           textThreadCount: 2,
           sessionAlreadyPrompted: false,
@@ -91,7 +105,7 @@ void main() {
         bool riskPending = false,
       }) => shouldPromptGalCaptureSetup(
         state: launched,
-        hasEngineSource: true,
+        requiresTextThread: true,
         selectedTextThreadKey: selected,
         textThreadCount: count,
         sessionAlreadyPrompted: shown,
@@ -102,6 +116,18 @@ void main() {
       expect(prompt(selected: 'pid:thread:hook'), isFalse);
       expect(prompt(shown: true), isFalse);
       expect(prompt(riskPending: true), isFalse);
+      expect(
+        shouldPromptGalCaptureSetup(
+          state: launched,
+          requiresTextThread: false,
+          selectedTextThreadKey: null,
+          textThreadCount: 2,
+          sessionAlreadyPrompted: false,
+          lookupRiskAcceptancePending: false,
+        ),
+        isFalse,
+        reason: 'DOM 正文在线时不弹选线程设置',
+      );
     });
 
     test('启动早期与停止阶段即使残留候选也不能弹窗', () {
@@ -118,7 +144,7 @@ void main() {
               phase: phase,
               sessionStartedAt: DateTime(2026, 8, 2),
             ),
-            hasEngineSource: true,
+            requiresTextThread: true,
             selectedTextThreadKey: null,
             textThreadCount: 2,
             sessionAlreadyPrompted: false,

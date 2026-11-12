@@ -12,7 +12,10 @@
 // It queues first come, first served for a free slot whose run's memory
 // ceiling fits the budget next to the holders' (half the RAM; it never "runs
 // anyway", never reads the live free memory, and unless --wait-max-min=N is
-// given it never gives up waiting), keeps one build/-writing run per worktree, gives a
+// given it never gives up waiting; a run goes ahead of earlier ones only
+// while those do not fit the budget and the head's booking stays free, and
+// the same command submitted again from the same directory takes the queued
+// one's place), keeps one build/-writing run per worktree, gives a
 // `flutter test` without its own --concurrency a default of 4, and on
 // Windows runs the command
 // tree at below-normal priority under a memory ceiling, killing whatever the
@@ -21,7 +24,9 @@
 // script, PATH) and refused before queueing when that SDK is not the
 // fushi/.fvmrc version (test_flow/heavy_sdk_check.dart). Exit code: the
 // command's; 2 for a mismatched SDK; 75 when an
-// explicit --wait-max-min ran out before admission; 124 when --max-minutes cut it off. CI / FUSHI_HEAVY=off
+// explicit --wait-max-min ran out before admission; 79 when the same command
+// was submitted again from this directory and took this run's place in the
+// queue; 124 when --max-minutes cut it off. CI / FUSHI_HEAVY=off
 // run the command directly.
 //
 // Before queueing here, the work goes to the other machines of the dist_test
@@ -109,6 +114,12 @@ Future<void> main(List<String> args) async {
   final int waitMax = _intArg(own, '--wait-max-min=') ?? 0;
   final int maxMinutes = _intArg(own, '--max-minutes=') ?? 120;
   final String label = command.take(3).join(' ');
+  // The same command from the same directory is one run: submitted again
+  // while it still queues here, it takes the queued one's place.
+  final String runKey = heavyRunKey(
+    cwd: Directory.current.absolute.path,
+    argv: sdk.command,
+  );
 
   // Joined before anything starts: the offloaded run (dist_test and its own
   // local fallback worker) and a run here after it declined both live in this
@@ -189,7 +200,18 @@ Future<void> main(List<String> args) async {
         worktreeRoot: checkout,
         waitMax: waitMax > 0 ? Duration(minutes: waitMax) : null,
         rival: asking,
+        runKey: runKey,
       );
+    } on HeavyLeaseSuperseded catch (e) {
+      // The same command was submitted again from here and has this run's
+      // place in the queue. Unless an attempt there took it meanwhile, the
+      // claim here keeps any attempt still out from starting it as well.
+      if (asking == null || asking.claimHere()) {
+        await onCtrlC?.cancel();
+        await asking?.close();
+        stderr.writeln('$e. Not running it here.');
+        exit(kHeavySupersededExit);
+      }
     } on HeavyLeaseTimeout catch (e) {
       // Not admitted in time. Unless an attempt there took it meanwhile, the
       // claim here keeps any attempt still out from starting it.
@@ -592,7 +614,11 @@ void _status() {
   final List<HeavyQueued> queue = readHeavyQueue(dir, sweep: false);
   stdout.writeln('  queue: ${queue.length} waiting');
   for (int i = 0; i < queue.length; i++) {
-    stdout.writeln('    ${i + 1}. pid ${queue[i].pid}, ${queue[i].label}');
+    final int? books = queue[i].bookedMb;
+    stdout.writeln(
+      '    ${i + 1}. pid ${queue[i].pid}, ${queue[i].label}'
+      '${books == null ? '' : ', $books MB'}',
+    );
   }
   for (final HeavyHolder h in holders) {
     stdout.writeln(
