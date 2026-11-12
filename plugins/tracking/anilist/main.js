@@ -286,12 +286,13 @@ async function getEntry(id, kind, token) {
  */
 async function setEntry(args, token) {
   /** @type {[name: string, type: string, value: any][]} */
-  const fields = [['mediaId', 'Int', args.id]];
-  if (args.status !== undefined) {
-    const status = STATUS_TO_SITE[args.status];
-    if (!status) throw new Error(`Unknown list status "${args.status}".`);
-    fields.push(['status', 'MediaListStatus', status]);
-  }
+  // The contract always sends a status with `set`.
+  const status = STATUS_TO_SITE[args.status];
+  if (!status) throw new Error(`Unknown list status "${args.status}".`);
+  const fields = [
+    ['mediaId', 'Int', args.id],
+    ['status', 'MediaListStatus', status],
+  ];
   if (args.progress !== undefined) fields.push(['progress', 'Int', args.progress]);
   if (args.progressVolume !== undefined) fields.push(['progressVolumes', 'Int', args.progressVolume]);
   // Only declared arguments are sent, so AniList leaves every other field as it is.

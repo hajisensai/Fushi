@@ -86,7 +86,7 @@ function toSubject(m) {
   if (!kind || typeof m.id !== 'number') return null;
   const t = m.title ?? {};
   // Name = first non-empty of romaji, English, native.
-  const name = [t.romaji, t.english, t.native].map(trimmed).find((s) => s) ?? '';
+  const name = [t.romaji, t.english, t.native].map(trimmed).find(Boolean) ?? '';
   /** @type {FushiTracking.Subject} */
   const subject = { id: m.id, name, kind, titles: titlesOf(t, m.synonyms), finished: m.status === 'FINISHED' };
   if (kind === 'anime') {

@@ -39,7 +39,7 @@ function kindOfType(type) {
 
 /** @param {unknown} language @returns {string} `ja` for `ja-JP`; '' when absent. */
 function baseLanguage(language) {
-  return String(language ?? '').split('-')[0];
+  return typeof language === 'string' ? language.split('-')[0] : '';
 }
 
 /**

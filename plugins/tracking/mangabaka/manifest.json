@@ -3,7 +3,7 @@
   "kind": "tracking",
   "id": "moe.fushi.tracking.mangabaka",
   "name": "MangaBaka",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "api": 1,
   "entry": "main.js",
   "description": "Keeps your MangaBaka library in step with the manga and novels you read in Fushi.",
