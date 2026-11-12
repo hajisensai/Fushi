@@ -2614,7 +2614,15 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
   /// `FUSHI_STARTUP_TRACE` 指向的文件（桌面 release 没有控制台，测速脚本读它）。
   void _reportStartupTimeline(String timeline) {
     ErrorLogService.instance.logDiagnostic('Startup.timeline', timeline);
-    debugPrint('[Fushi] startup timeline: $timeline');
+    // 控制台按段界折行：logcat 单条约 1 KB，整行打会截掉后半截。
+    final List<String> lines = StartupTimeline.consoleLines(timeline);
+    for (int i = 0; i < lines.length; i++) {
+      debugPrint(
+        i == 0
+            ? '[Fushi] startup timeline: ${lines[i]}'
+            : '[Fushi] startup timeline +$i: ${lines[i]}',
+      );
+    }
     final String? tracePath = Platform.environment['FUSHI_STARTUP_TRACE'];
     if (tracePath == null || tracePath.isEmpty) return;
     try {

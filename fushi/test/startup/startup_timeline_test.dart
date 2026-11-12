@@ -152,5 +152,31 @@ void main() {
         isNull,
       );
     });
+
+    test('consoleLines：按段界折行，拼回去等于原文，每行不超长', () {
+      final String timeline = <String>[
+        'total=1234ms start=2026-11-12T00:00:00.000',
+        for (int i = 0; i < 60; i++) 'phase-number-$i=$i',
+      ].join(' | ');
+
+      final List<String> lines = StartupTimeline.consoleLines(
+        timeline,
+        maxLength: 200,
+      );
+      expect(lines.length, greaterThan(1));
+      expect(lines.every((String l) => l.length <= 200), isTrue);
+      expect(lines.join(' | '), timeline);
+    });
+
+    test('consoleLines：短的原样一行；单段超长独占一行不拆', () {
+      expect(StartupTimeline.consoleLines('total=1ms | a=1'), <String>[
+        'total=1ms | a=1',
+      ]);
+      final String long = 'x' * 50;
+      expect(
+        StartupTimeline.consoleLines('a=1 | $long | b=2', maxLength: 20),
+        <String>['a=1', long, 'b=2'],
+      );
+    });
   });
 }

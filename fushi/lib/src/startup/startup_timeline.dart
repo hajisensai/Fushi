@@ -81,6 +81,27 @@ class StartupTimeline {
     return out.toString();
   }
 
+  /// 把 [describe] 的一行按段界（` | `）折成每行不超过 [maxLength] 的若干行，给控制台用。
+  ///
+  /// Android 的 logcat 一条日志只留约 1 KB，整行打出去后半截（`home-build` /
+  /// `first-frame-raster` 这些最要看的段）直接被截掉。单段超长时该段独占一行、不拆。
+  static List<String> consoleLines(String timeline, {int maxLength = 900}) {
+    const String separator = ' | ';
+    final List<String> lines = <String>[];
+    final StringBuffer current = StringBuffer();
+    for (final String segment in timeline.split(separator)) {
+      if (current.isNotEmpty &&
+          current.length + separator.length + segment.length > maxLength) {
+        lines.add(current.toString());
+        current.clear();
+      }
+      if (current.isNotEmpty) current.write(separator);
+      current.write(segment);
+    }
+    if (current.isNotEmpty) lines.add(current.toString());
+    return lines;
+  }
+
   /// 仅测试用：清空状态。
   static void debugReset() {
     _watch
