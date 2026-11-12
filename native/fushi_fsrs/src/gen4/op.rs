@@ -13,7 +13,8 @@
 //! - `fmt` 是操作体格式号，本版本写 [BODY_FMT] = 4（协议 3 的 `schema` 恒为 1）。
 //! - Edit：键是紧凑形（name.rs）；旧戳是紧凑形（stamp.rs）且**只许出现在承袭日志**（[edit_has_stamp]，原生段拒绝）。
 //! - Log：可选字段收进一个位图，等于默认值的不写；作者给的旧 HLC 拆成数字。
-//! - 种类 12（协议 3 的 MediaAt）退役、永不复用；13 Dedup 只出现在承袭日志；新增 14 [Body4::Join]。
+//! - 种类 12（协议 3 的 MediaAt）退役、永不复用；13 Dedup 只出现在承袭日志；新增 14 [Body4::Join]、15 [Body4::Salts]
+//!   （两种带盐的操作，只出现在原生日志，见下「盐集合」）。
 //!   副本记录与空洞不是种类，是日志里的槽（heritage.rs）。
 //!
 //! # 格式号与演进规则（冻结）
@@ -26,7 +27,38 @@
 //! - 载荷原字节永远原样保存、原样转发（[Op4::payload]），链与签名按原字节算；不认识的种类同样。
 //!
 //! 独立编码只给本机与测试用，自己不带魔数；跨代隔离靠段魔数与 head 的形状，用它的容器（导出包、待投递队列）要自带版本标记。
+//!
+//! # 盐集合（设计 §5.1、§5.4；种类 14 Join 与 15 Salts）
+//!
+//! 盐 = 这个集合里出现过的旧 profile uid，只给别名验算用。**盐集合是集合的共享状态，不是本机状态**：别名表是
+//! 「操作集合 + 盐集合」的纯函数，各设备的盐集合不同，算出的规范 ID 就不同，之后各按各的规范 ID 写新操作，就是永久分叉。
+//! 所以盐只由操作携带；本机记着的东西（已退役 uid 的列表）只是写操作时的输入。
+//!
+//! ```text
+//! 盐表       n uv | n × str            按 UTF-8 字节严格升序（于是无重复）；n <= 65536（[SALTS_MAX]）
+//! Salts(15)  盐表，n >= 1              本集合的盐
+//! Join(14)   from[16] | dir str | 盐表，n >= 0（被并入集合的盐）
+//! ```
+//!
+//! - **盐是不透明的文本，相等 = 字节相等。** 不折叠大小写、不做 Unicode 归一、不剪空白、不解析成 UUID、不特判空文本：
+//!   别名验算把它逐字节拼进名字里再算，载体改它一个字节，验算就对不上。旧库里的 uid 是什么字节，盐就是什么字节。
+//!   两种载体里的盐是同一个值域、同一张表、同一种字节形。
+//! - **集合的盐集合 = 本机算数的操作里，全部 Salts 的盐 ∪ 全部 Join 盐表里的盐**（[salt_union]）。是并集，所以与到达顺序无关、
+//!   重复无害、**只增不减**：没有删盐的操作，以后的版本也不许加——删掉一个盐，靠它验上的别名就退回成它自己，
+//!   而已经按规范 ID 写出去的新操作收不回来。同一个盐出现在多条操作里是合法的（每台迁移过的设备都可以各写一条）。
+//! - `Join` 的 `from` / `dir` **不是盐**：被并入的集合出现过哪些 uid，只以它盐表里写的为准，不从目录名推断。
+//! - **Salts 不许为空**（`n == 0` 拒；[Body4::salts] 也写不出来）：它唯一的内容就是盐，空的那条什么都没说，
+//!   却占一个操作号、一环链。`Join` 的盐表可以为空（它另有 `from` / `dir`）。
+//! - **谁能写**：编解码不设限——任何设备都能把 Salts / Join 写进自己的原生日志，原生段由作者签名。**算不算数**由收段一侧
+//!   按作者的信任状态定（设计 §5.1「受信设备签名的操作」）；这里只给纯函数，喂哪些操作进去是调用方的事。
+//! - **只出现在原生日志。** 承袭段的操作槽拒绝种类 14 与 15（heritage.rs，打包与打开两侧，不论格式号）：承袭日志是旧设备的
+//!   协议 3 日志经转译 T 得到的，T 从不产生这两种；承袭段由上传者而不是原作者签名，放它们进去等于让上传者以旧设备的名义
+//!   改盐集合。协议 3 日志里种类号恰好是 14 / 15 的旧操作（旧代码不认识的种类）转出来是原样件，不应用，不会被当成盐
+//!   （translate.rs，测试 `legacy_ops_never_carry_salts`）。
+//! - 原生日志的空洞不带操作体（segment.rs）。带盐的操作不属于任何实体，没有哪条 Purge 指向它；存储层也不得把它清成空洞
+//!   ——清掉的盐在别的设备上还在，盐集合就各设备不同了。这一条编解码管不到，是存储层的约束。
 
+use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use super::name::{read_edit_key, write_edit_key};
@@ -56,6 +88,8 @@ pub const KIND_RETIRED_MEDIA_AT: u16 = 12;
 pub const KIND_DEDUP: u16 = 13;
 /// 另一个集合并入本集合（设计 §5.4）。
 pub const KIND_JOIN: u16 = 14;
+/// 本集合的盐（设计 §5.1；规则见文件头「盐集合」）。只出现在原生日志。
+pub const KIND_SALTS: u16 = 15;
 
 /// 本版本写出的操作体格式号。协议 3 的操作体是 1；4 之前的号永远不属于协议 4。
 pub const BODY_FMT: u16 = 4;
@@ -65,6 +99,9 @@ pub const CHAIN_DOMAIN: &[u8] = b"fushi-srs-chain/4\n";
 
 /// 一条 Dedup 最多带多少对（与协议 3 相同）。
 pub const DEDUP_MAX_PAIRS: usize = 20_000;
+
+/// 一张盐表最多多少项（Join 与 Salts 相同）。
+pub const SALTS_MAX: usize = 1 << 16;
 
 /// 一条协议 4 的操作。克隆是廉价的（载荷与上下文共享）。
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -304,6 +341,11 @@ pub enum Body4 {
         pairs: Vec<(u64, OpId)>,
     },
     Join(Join4),
+    /// 本集合的盐（出现过的旧 profile uid）。非空、不超过 [SALTS_MAX] 项——用 [Body4::salts] 构造；
+    /// 字节升序由 `BTreeSet<String>` 的迭代序给出。规则见文件头「盐集合」。
+    Salts {
+        salts: BTreeSet<String>,
+    },
     /// 本版本不认识的种类（含退役的 12）：原样保存、原样转发、不应用。
     Unknown,
 }
@@ -316,6 +358,18 @@ fn ent_kind(code: u8) -> DResult<EntKind> {
 }
 
 impl Body4 {
+    /// 一条 Salts（种类 15）。重复的盐并成一个；空的、超过 [SALTS_MAX] 项的写不出来（解码侧同样拒）。
+    pub fn salts<S: Into<String>>(salts: impl IntoIterator<Item = S>) -> DResult<Body4> {
+        let salts: BTreeSet<String> = salts.into_iter().map(Into::into).collect();
+        if salts.is_empty() {
+            return Err(DecodeError("salts op carries no salt"));
+        }
+        if salts.len() > SALTS_MAX {
+            return Err(DecodeError("too many salts"));
+        }
+        Ok(Body4::Salts { salts })
+    }
+
     /// 种类号。[Body4::Unknown] 没有自己的号（原操作的 `kind` 才是），给 `u16::MAX`。
     pub fn kind(&self) -> u16 {
         match self {
@@ -332,6 +386,7 @@ impl Body4 {
             Body4::LegacyUnknown { .. } => KIND_LEGACY_UNKNOWN,
             Body4::Dedup { .. } => KIND_DEDUP,
             Body4::Join(_) => KIND_JOIN,
+            Body4::Salts { .. } => KIND_SALTS,
             Body4::Unknown => u16::MAX,
         }
     }
@@ -398,11 +453,9 @@ impl Body4 {
             Body4::Join(j) => {
                 j.from.write(&mut w);
                 w.str(&j.dir);
-                w.uv(j.salts.len() as u64);
-                for s in &j.salts {
-                    w.str(s);
-                }
+                write_salts(&mut w, j.salts.len(), j.salts.iter());
             }
+            Body4::Salts { salts } => write_salts(&mut w, salts.len(), salts.iter()),
             Body4::Unknown => {}
         }
         w.into_vec()
@@ -469,19 +522,17 @@ impl Body4 {
             KIND_JOIN => {
                 let from = Id::read(r)?;
                 let dir = str_min(r)?.to_owned();
-                let n = uv_min(r)?;
-                if n > 1 << 16 {
-                    return Err(DecodeError("too many salts"));
-                }
-                let mut salts: Vec<String> = Vec::with_capacity(n as usize);
-                for _ in 0..n {
-                    let s = str_min(r)?;
-                    if salts.last().is_some_and(|p| p.as_bytes() >= s.as_bytes()) {
-                        return Err(DecodeError("join salts not sorted"));
-                    }
-                    salts.push(s.to_owned());
-                }
+                let salts = read_salts(r)?;
                 Body4::Join(Join4 { from, dir, salts })
+            }
+            KIND_SALTS => {
+                let salts = read_salts(r)?;
+                if salts.is_empty() {
+                    return Err(DecodeError("salts op carries no salt"));
+                }
+                Body4::Salts {
+                    salts: salts.into_iter().collect(),
+                }
             }
             _ => return Ok(Body4::Unknown),
         };
@@ -490,6 +541,47 @@ impl Body4 {
         }
         Ok(body)
     }
+}
+
+/// 盐表（Join 与 Salts 共用；布局与规则见文件头「盐集合」）。调用方给的必须已经按字节升序、无重复。
+fn write_salts<'a>(w: &mut Writer, n: usize, salts: impl Iterator<Item = &'a String>) {
+    w.uv(n as u64);
+    for s in salts {
+        w.str(s);
+    }
+}
+
+/// 盐表：项数不超过 [SALTS_MAX]，按 UTF-8 字节严格升序。
+fn read_salts(r: &mut Reader<'_>) -> DResult<Vec<String>> {
+    let n = uv_min(r)?;
+    if n > SALTS_MAX as u64 {
+        return Err(DecodeError("too many salts"));
+    }
+    let mut salts: Vec<String> = Vec::with_capacity(n as usize);
+    for _ in 0..n {
+        let s = str_min(r)?;
+        if salts.last().is_some_and(|p| p.as_bytes() >= s.as_bytes()) {
+            return Err(DecodeError("salts not sorted"));
+        }
+        salts.push(s.to_owned());
+    }
+    Ok(salts)
+}
+
+/// 盐集合：这些操作体带的盐的并集——Salts 的全部、Join 盐表里的全部；别的种类不带盐。
+///
+/// 是并集，所以与顺序无关、重复无害、只增不减（文件头「盐集合」）。喂进来的应当是本机算数的操作
+/// （作者受信、已接受的）；这里不判断。
+pub fn salt_union<'a>(bodies: impl IntoIterator<Item = &'a Body4>) -> BTreeSet<String> {
+    let mut out = BTreeSet::new();
+    for b in bodies {
+        match b {
+            Body4::Salts { salts } => out.extend(salts.iter().cloned()),
+            Body4::Join(j) => out.extend(j.salts.iter().cloned()),
+            _ => {}
+        }
+    }
+    out
 }
 
 /// Dedup：设备表严格升序、个个用到；作者 seq 严格升序（增量 >= 1）。
@@ -869,7 +961,7 @@ fn read_log(r: &mut Reader<'_>, exact: bool) -> DResult<Log4> {
 }
 
 /// 能不能出现在原生日志里（[super::segment::pack_native] 的写侧检查，读侧同样用它）：
-/// 协议 3 的操作体、退役的 12、只属于承袭日志的 13 与带旧戳的修改不能。
+/// 协议 3 的操作体、退役的 12、只属于承袭日志的 13 与带旧戳的修改不能。带盐的 14 / 15 只能出现在这里（heritage.rs 拒）。
 pub fn native_allowed(op: &Op4) -> Result<(), &'static str> {
     if op.fmt < BODY_FMT {
         return Err("native op body is not protocol 4");
@@ -1065,6 +1157,14 @@ pub(crate) mod tests {
                 dir: "0192f0aa-0000-7000-8000-00000000000b".into(),
                 salts: vec!["a".into(), "b".into()],
             }),
+            // 字节序：数字 < 大写 < 小写 < 多字节字符；大小写不同是两个盐。
+            Body4::salts([
+                "profile-a",
+                "é",
+                "Profile-A",
+                "0192f0aa-0000-7000-8000-00000000000a",
+            ])
+            .unwrap(),
         ]
     }
 
@@ -1512,6 +1612,14 @@ pub(crate) mod tests {
     fn native_logs_refuse_heritage_only_content() {
         assert!(native_allowed(&op_of(id(1), 1, &Body4::Edit(native_edit()))).is_ok());
         assert!(native_allowed(&op_of(id(1), 1, &Body4::Log(sample_log()))).is_ok());
+        // 带盐的两种只属于原生日志。
+        assert!(native_allowed(&op_of(id(1), 1, &Body4::salts(["u"]).unwrap())).is_ok());
+        let join = Body4::Join(Join4 {
+            from: id(0xb0),
+            dir: "b".into(),
+            salts: vec![],
+        });
+        assert!(native_allowed(&op_of(id(1), 1, &join)).is_ok());
         let stamped = Body4::Edit(Edit4 {
             stamp: Some(typical()),
             ..native_edit()
@@ -1547,7 +1655,7 @@ pub(crate) mod tests {
         }
     }
 
-    pub const GOLDEN_BODIES: [(u16, &str); 16] = [
+    pub const GOLDEN_BODIES: [(u16, &str); 17] = [
         (
             1,
             "0300010101010101010101010101010101012b7b22637265617465644174223a312c2267756964223a2267222c226e6f7465547970654964223a2274227d",
@@ -1591,7 +1699,316 @@ pub(crate) mod tests {
             14,
             "b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b02430313932663061612d303030302d373030302d383030302d3030303030303030303030620201610162",
         ),
+        (
+            15,
+            "042430313932663061612d303030302d373030302d383030302d3030303030303030303030610950726f66696c652d410970726f66696c652d6102c3a9",
+        ),
     ];
+
+    // ------------------------------------------------------------ 盐集合（种类 14 / 15）
+
+    /// 一张盐表的字节，逐项照给的写（不排序、不查 UTF-8）。
+    fn salt_table<T: AsRef<[u8]>>(items: &[T]) -> Vec<u8> {
+        let mut w = Writer::new();
+        w.uv(items.len() as u64);
+        for s in items {
+            w.bytes(s.as_ref());
+        }
+        w.into_vec()
+    }
+
+    /// 一条 Join 的字节，盐表照给的接在后面。
+    fn join_with_table(table: &[u8]) -> Vec<u8> {
+        let mut w = Writer::new();
+        id(0xb0).write(&mut w);
+        w.str("dir");
+        w.raw(table);
+        w.into_vec()
+    }
+
+    /// Salts 只有一种字节形：空的、乱序、重复、非最短 varint、坏 UTF-8、截断、尾字节、超过上限一律拒。
+    /// Join 的盐表是同一张表，同样的拒绝（只是可以为空）。
+    #[test]
+    fn salt_tables_have_one_byte_form() {
+        let dec = |bytes: &[u8]| Body4::decode(KIND_SALTS, BODY_FMT, bytes);
+        let join = |table: &[u8]| Body4::decode(KIND_JOIN, BODY_FMT, &join_with_table(table));
+        let ok = salt_table(&["A", "a", "b"]);
+        let want = Body4::salts(["b", "a", "A", "a"]).unwrap();
+        assert_eq!(dec(&ok).unwrap(), want);
+        assert_eq!(want.encode(), ok);
+        let Body4::Join(j) = join(&ok).unwrap() else {
+            panic!("join");
+        };
+        assert_eq!(j.salts, ["A", "a", "b"]);
+
+        // 空的 Salts：什么都没说的操作。Join 的盐表可以为空。
+        let empty = salt_table::<&str>(&[]);
+        assert_eq!(
+            dec(&empty).unwrap_err(),
+            DecodeError("salts op carries no salt")
+        );
+        assert_eq!(
+            Body4::salts(Vec::<String>::new()).unwrap_err(),
+            DecodeError("salts op carries no salt")
+        );
+        assert!(join(&empty).is_ok());
+
+        // 乱序、重复。按字节序而不是字母序：大写在小写之前，多字节字符在 ASCII 之后，前缀在前。
+        let unsorted: [[&str; 2]; 5] =
+            [["b", "a"], ["a", "a"], ["a", "A"], ["é", "z"], ["ab", "a"]];
+        for t in unsorted {
+            let t = salt_table(&t);
+            assert_eq!(dec(&t).unwrap_err(), DecodeError("salts not sorted"));
+            assert_eq!(join(&t).unwrap_err(), DecodeError("salts not sorted"));
+        }
+        let sorted: [[&str; 2]; 3] = [["A", "a"], ["z", "é"], ["a", "ab"]];
+        for t in sorted {
+            let t = salt_table(&t);
+            assert!(dec(&t).is_ok());
+            assert!(join(&t).is_ok());
+        }
+
+        // 项数、长度写成非最短 varint。
+        let loose: [[u8; 4]; 2] = [[0x81, 0x00, 0x01, b'a'], [0x01, 0x81, 0x00, b'a']];
+        for t in loose {
+            assert_eq!(dec(&t).unwrap_err(), DecodeError("non-minimal varint"));
+            assert_eq!(join(&t).unwrap_err(), DecodeError("non-minimal varint"));
+        }
+        // 坏 UTF-8。
+        let bad = salt_table(&[[0xffu8]]);
+        assert_eq!(dec(&bad).unwrap_err(), DecodeError("bad utf-8"));
+        assert_eq!(join(&bad).unwrap_err(), DecodeError("bad utf-8"));
+        // 截断：少一个字节、少一项。
+        assert!(dec(&ok[..ok.len() - 1]).is_err());
+        assert!(dec(&[0x02, 0x01, b'a']).is_err());
+        assert!(join(&[0x02, 0x01, b'a']).is_err());
+        // 尾字节：本版本的格式号下拒；更新的格式号只读已知前缀，盐表自身的规则照旧。
+        let mut tail = ok.clone();
+        tail.push(0);
+        assert_eq!(
+            dec(&tail).unwrap_err(),
+            DecodeError("trailing bytes in op body")
+        );
+        assert_eq!(
+            Body4::decode(KIND_SALTS, BODY_FMT + 1, &tail).unwrap(),
+            want
+        );
+        assert!(Body4::decode(KIND_SALTS, BODY_FMT + 1, &salt_table(&["b", "a"])).is_err());
+        assert!(Body4::decode(KIND_SALTS, BODY_FMT + 1, &empty).is_err());
+        // 协议 3 的操作体格式号。
+        for fmt in 0..BODY_FMT {
+            assert!(Body4::decode(KIND_SALTS, fmt, &ok).is_err());
+        }
+        // 项数上限：超了在读任何一项之前就拒；构造同样写不出来。
+        let mut w = Writer::new();
+        w.uv(SALTS_MAX as u64 + 1);
+        let over = w.into_vec();
+        assert_eq!(dec(&over).unwrap_err(), DecodeError("too many salts"));
+        assert_eq!(join(&over).unwrap_err(), DecodeError("too many salts"));
+        assert_eq!(
+            Body4::salts((0..=SALTS_MAX).map(|i| i.to_string())).unwrap_err(),
+            DecodeError("too many salts")
+        );
+        let full = Body4::salts((0..SALTS_MAX).map(|i| i.to_string())).unwrap();
+        assert_eq!(
+            Body4::decode(KIND_SALTS, BODY_FMT, &full.encode()).unwrap(),
+            full
+        );
+    }
+
+    /// 盐是不透明的文本：大小写、空白、空文本、组合字符的两种写法、长得像 UUID 的两种写法，各是各的盐，原样往返。
+    #[test]
+    fn salts_are_opaque_text() {
+        let raw = [
+            "",
+            " a",
+            "a",
+            "a ",
+            "A",
+            "0192F0AA-0000-7000-8000-00000000000A",
+            "0192f0aa-0000-7000-8000-00000000000a",
+            "é",
+            "e\u{301}",
+        ];
+        let b = Body4::salts(raw).unwrap();
+        let back = Body4::decode(KIND_SALTS, BODY_FMT, &b.encode()).unwrap();
+        assert_eq!(back, b);
+        let Body4::Salts { salts } = &back else {
+            panic!("salts");
+        };
+        assert_eq!(salts.len(), raw.len());
+        assert!(raw.iter().all(|s| salts.contains(*s)));
+        assert_eq!(salt_union([&back]), *salts);
+    }
+
+    /// 盐集合的几个定点：只有 14 / 15 带盐；Join 的 `from` / `dir` 不是盐；同一个盐写几遍都只算一个。
+    #[test]
+    fn the_salt_set_counts_salts_and_joins_only() {
+        let join = Body4::Join(Join4 {
+            from: id(0xb0),
+            dir: "u-dir".into(),
+            salts: vec!["u1".into(), "u2".into()],
+        });
+        let bare_join = Body4::Join(Join4 {
+            from: id(0xb1),
+            dir: "u-other".into(),
+            salts: vec![],
+        });
+        let bodies = [
+            Body4::salts(["u0", "u1"]).unwrap(),
+            join,
+            bare_join,
+            Body4::salts(["u1"]).unwrap(),
+            Body4::Checkpoint {
+                name: "u9".into(),
+                reason: "import".into(),
+            },
+            Body4::Unknown,
+        ];
+        let want: BTreeSet<String> = ["u0", "u1", "u2"].into_iter().map(str::to_owned).collect();
+        assert_eq!(salt_union(&bodies), want);
+        assert!(salt_union(&bodies[2..3]).is_empty());
+        assert!(salt_union(&bodies[4..]).is_empty());
+        assert!(salt_union(&[] as &[Body4]).is_empty());
+    }
+
+    /// 生成用的盐：故意取一个小池子（碰撞多），含空文本、大小写、空白、多字节、像 UUID 的两种写法。
+    const SALT_POOL: &[&str] = &[
+        "",
+        "a",
+        "A",
+        "b",
+        " a",
+        "é",
+        "u-1",
+        "u-2",
+        "0192f0aa-0000-7000-8000-00000000000a",
+        "0192F0AA-0000-7000-8000-00000000000A",
+    ];
+
+    fn arb_salt_set(min: usize) -> impl Strategy<Value = BTreeSet<String>> {
+        proptest::collection::btree_set(
+            proptest::sample::select(SALT_POOL).prop_map(str::to_owned),
+            min..6,
+        )
+    }
+
+    fn arb_join() -> impl Strategy<Value = Join4> {
+        (arb_salt_set(0), "[a-z]{0,4}", any::<u8>()).prop_map(|(salts, dir, from)| Join4 {
+            from: id(from),
+            dir,
+            salts: salts.into_iter().collect(),
+        })
+    }
+
+    /// 带盐的两种操作体，掺着不带盐的。
+    fn arb_salt_carrier() -> impl Strategy<Value = Body4> {
+        prop_oneof![
+            3 => arb_salt_set(1).prop_map(|salts| Body4::Salts { salts }),
+            3 => arb_join().prop_map(Body4::Join),
+            1 => Just(Body4::Checkpoint {
+                name: "u-1".into(),
+                reason: "import".into(),
+            }),
+            1 => Just(Body4::TagAdd {
+                note: Key::of("n"),
+                tag: "u-2".into(),
+            }),
+        ]
+    }
+
+    /// 参照读法：不经 [Body4]，直接从线上的字节里走盐表（Salts 的载荷就是表；Join 跳过 `from` 与 `dir`）。
+    fn salts_on_the_wire(kind: u16, bytes: &[u8]) -> Vec<String> {
+        let mut r = Reader::new(bytes);
+        match kind {
+            KIND_SALTS => {}
+            KIND_JOIN => {
+                r.raw(16).unwrap();
+                r.str().unwrap();
+            }
+            _ => return vec![],
+        }
+        let n = r.uv().unwrap();
+        (0..n).map(|_| r.str().unwrap().to_owned()).collect()
+    }
+
+    proptest! {
+        #[test]
+        fn any_salts_round_trip(salts in arb_salt_set(1)) {
+            let b = Body4::Salts { salts: salts.clone() };
+            let bytes = b.encode();
+            prop_assert_eq!(&Body4::decode(KIND_SALTS, BODY_FMT, &bytes).unwrap(), &b);
+            prop_assert_eq!(&Body4::salts(salts.iter().rev().cloned()).unwrap(), &b);
+            // 两种载体里是同一张表、同样的字节：Join 的尾部就是它。
+            let join = Body4::Join(Join4 {
+                from: id(1),
+                dir: "d".into(),
+                salts: salts.iter().cloned().collect(),
+            });
+            prop_assert!(join.encode().ends_with(&bytes));
+            prop_assert_eq!(salt_union([&join]), salts.clone());
+            prop_assert_eq!(salt_union([&b]), salts);
+        }
+
+        #[test]
+        fn any_join_round_trips(j in arb_join()) {
+            let b = Body4::Join(j);
+            prop_assert_eq!(Body4::decode(KIND_JOIN, BODY_FMT, &b.encode()).unwrap(), b);
+        }
+
+        /// 盐集合是操作集合的纯函数，而且是并集：与顺序无关、重复无害、只增不减；Join 带的盐与 Salts 带的盐同样算数，
+        /// 同一批盐怎么分到两种载体里结果都一样；恰好是线上字节里写着的那些盐，经字节往返后不变。
+        #[test]
+        fn the_salt_set_is_the_union_over_both_carriers(
+            (bodies, shuffled) in proptest::collection::vec(arb_salt_carrier(), 0..8)
+                .prop_flat_map(|v| (Just(v.clone()), Just(v).prop_shuffle())),
+            more in proptest::collection::vec(arb_salt_carrier(), 0..5),
+        ) {
+            let all = salt_union(&bodies);
+            // 顺序、重复。
+            prop_assert_eq!(&salt_union(&shuffled), &all);
+            prop_assert_eq!(&salt_union(bodies.iter().chain(&bodies)), &all);
+            // 并：两批操作的盐集合 = 各自盐集合的并；于是多收到操作只会让它变大。
+            let both = salt_union(bodies.iter().chain(&more));
+            let joined: BTreeSet<String> = all.union(&salt_union(&more)).cloned().collect();
+            prop_assert_eq!(&both, &joined);
+            prop_assert!(all.is_subset(&both));
+            // 恰好是线上字节里写着的盐：不多（`from` / `dir`、别的种类的内容不算），不少。
+            let wire: BTreeSet<String> = bodies
+                .iter()
+                .flat_map(|b| salts_on_the_wire(b.kind(), &b.encode()))
+                .collect();
+            prop_assert_eq!(&wire, &all);
+            // 经字节往返。
+            let back: Vec<Body4> = bodies
+                .iter()
+                .map(|b| Body4::decode(b.kind(), BODY_FMT, &b.encode()).unwrap())
+                .collect();
+            prop_assert_eq!(&salt_union(&back), &all);
+            // 换载体：Salts 改由一条 Join 带，Join 的盐表挪到一条 Salts 上（Join 自己留空表）。
+            let mut swapped: Vec<Body4> = Vec::new();
+            for b in &bodies {
+                match b {
+                    Body4::Salts { salts } => swapped.push(Body4::Join(Join4 {
+                        from: id(9),
+                        dir: "moved".into(),
+                        salts: salts.iter().cloned().collect(),
+                    })),
+                    Body4::Join(j) => {
+                        swapped.push(Body4::Join(Join4 { salts: vec![], ..j.clone() }));
+                        if let Ok(s) = Body4::salts(j.salts.iter().cloned()) {
+                            swapped.push(s);
+                        }
+                    }
+                    other => swapped.push(other.clone()),
+                }
+            }
+            prop_assert_eq!(&salt_union(&swapped), &all);
+            // 一条一个盐地拆开写，也一样。
+            let split: Vec<Body4> = all.iter().map(|s| Body4::salts([s.as_str()]).unwrap()).collect();
+            prop_assert_eq!(&salt_union(&split), &all);
+        }
+    }
 
     #[test]
     fn golden_op_and_chain() {
@@ -1732,7 +2149,7 @@ pub(crate) mod tests {
 
         /// 任意字节当任意种类解：不 panic；解得开的（本版本格式号、已知种类）重新编码必与原字节相同。
         #[test]
-        fn fmt_4_bodies_have_one_byte_form(kind in 0u16..16, bytes in proptest::collection::vec(any::<u8>(), 0..120)) {
+        fn fmt_4_bodies_have_one_byte_form(kind in 0u16..18, bytes in proptest::collection::vec(any::<u8>(), 0..120)) {
             if let Ok(b) = Body4::decode(kind, BODY_FMT, &bytes) {
                 if b != Body4::Unknown {
                     prop_assert_eq!(b.encode(), bytes.clone());
@@ -1746,7 +2163,7 @@ pub(crate) mod tests {
         /// 同上，但从合法字节出发改一个字节（随机字节几乎走不到深处）。
         #[test]
         fn mutated_bodies_have_one_byte_form(
-            which in 0usize..16,
+            which in 0usize..17,
             at in any::<proptest::sample::Index>(),
             to in any::<u8>(),
             log in arb_log(),

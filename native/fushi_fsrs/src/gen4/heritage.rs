@@ -25,6 +25,8 @@
 //! - wall 增量相对上一个带时间的槽（操作 / 原样件 / 副本记录；跨过空洞），段里第一个相对 0。deps 标志的「上一条」是上一个
 //!   操作 / 原样件槽。
 //! - **操作**：转译后的协议 4 操作（`fmt >= 4`）。`fmt == 4` 时操作体必须是已知种类的规范字节。
+//!   **带盐的种类（14 Join、15 Salts）不许出现在这里**，不论格式号：转译从不产生它们，而承袭段由上传者签名——
+//!   盐集合只能经作者自己签的原生日志改（op.rs 文件头「盐集合」）。
 //! - **原样件**：转译规则不能逐字节交代清楚的旧操作（不认识的种类、解不开的载荷、`schema` 不是 1、解码再编码不等于原字节的
 //!   载荷）。整条原样带过来（[Raw3]），`schema` 保留原值；读者保存、转发。它是「未知字段保留原字节」在承袭方向的出口。
 //!   **应用与否跟协议 3 相同**：协议 3 的解码器解得开、种类也认识的（它只读已知前缀、不看 `schema`），派生层按解出的值应用
@@ -47,7 +49,9 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
-use super::op::{BODY_FMT, Body4, KIND_RETIRED_MEDIA_AT, Op4, read_deps, read_kind_fmt};
+use super::op::{
+    BODY_FMT, Body4, KIND_JOIN, KIND_RETIRED_MEDIA_AT, KIND_SALTS, Op4, read_deps, read_kind_fmt,
+};
 use super::segment::{
     read_chain, read_magic, read_op_slot, read_range, seal, stream_err, unseal, write_op_slot,
 };
@@ -268,13 +272,17 @@ fn read_fp(r: &mut Reader<'_>) -> DResult<Fp> {
     r.raw(8)?.try_into().map_err(|_| DecodeError("fp"))
 }
 
-/// 操作槽的内容检查（写侧报错、读侧判段损坏）：转译出的操作必须是协议 4 的操作体，本版本格式号下还得是已知种类的规范字节。
+/// 操作槽的内容检查（写侧报错、读侧判段损坏）：转译出的操作必须是协议 4 的操作体，本版本格式号下还得是已知种类的规范字节；
+/// 退役的 12 与只属于原生日志的 14 / 15（带盐的种类）不论格式号一律拒。
 fn check_op(op: &Op4) -> Result<(), &'static str> {
     if op.fmt < BODY_FMT {
         return Err("heritage op body is not protocol 4");
     }
-    if op.kind == KIND_RETIRED_MEDIA_AT {
-        return Err("kind 12 is retired");
+    match op.kind {
+        KIND_RETIRED_MEDIA_AT => return Err("kind 12 is retired"),
+        KIND_JOIN => return Err("join belongs to native logs only"),
+        KIND_SALTS => return Err("salts belong to native logs only"),
+        _ => {}
     }
     if op.fmt == BODY_FMT {
         match op.body() {
@@ -761,7 +769,7 @@ pub fn open_heritage(
 pub(crate) mod tests {
     use super::*;
     use crate::gen4::op::tests::{id, imported_log, native_edit, op_of};
-    use crate::gen4::op::{Edit4, KIND_EDIT, KIND_LOG};
+    use crate::gen4::op::{Edit4, Join4, KIND_EDIT, KIND_LOG};
     use crate::gen4::segment::tests::{coll, signer, v3_segment};
     use crate::gen4::segment::{NativeItem, open_native, pack_native, peek_native_header};
     use crate::gen4::stamp::tests::typical;
@@ -993,6 +1001,18 @@ pub(crate) mod tests {
             }),
             "kind 12 is retired"
         );
+        // 带盐的种类只属于原生日志，不论格式号。
+        for (body, why) in salt_carriers() {
+            let op = op_of(id(OLD), 1, &body);
+            assert_eq!(bad(op.clone()), why);
+            assert_eq!(
+                bad(Op4 {
+                    fmt: BODY_FMT + 1,
+                    ..op
+                }),
+                why
+            );
+        }
         assert_eq!(
             bad(Op4 {
                 payload: vec![0xff].into(),
@@ -1129,6 +1149,54 @@ pub(crate) mod tests {
             open_err(&assemble(&header_for(1, 1, fp(1)), &w.into_vec())),
             SegmentError::Corrupt("heritage op body is not protocol 4".into())
         );
+    }
+
+    /// 带盐的两种操作体与各自的拒绝理由。
+    fn salt_carriers() -> [(Body4, &'static str); 2] {
+        [
+            (
+                Body4::Join(Join4 {
+                    from: id(0xb0),
+                    dir: "b".into(),
+                    salts: vec!["u".into()],
+                }),
+                "join belongs to native logs only",
+            ),
+            (
+                Body4::salts(["u"]).unwrap(),
+                "salts belong to native logs only",
+            ),
+        ]
+    }
+
+    /// 读侧同样不收带盐的操作：上传者不能以旧设备的名义改盐集合。
+    #[test]
+    fn open_rejects_salt_carriers() {
+        let one = |op: &Op4| {
+            let mut w = Writer::new();
+            w.uv(1);
+            w.u8(TAG_OP);
+            w.raw(&fp(1));
+            write_op_slot(&mut w, op, 0, None);
+            open_heritage(
+                &assemble(&header_for(1, 1, fp(1)), &w.into_vec()),
+                &signer().public(),
+                None,
+            )
+        };
+        assert!(one(&op_of(id(OLD), 1, &Body4::Edit(native_edit()))).is_ok());
+        for (body, why) in salt_carriers() {
+            let op = op_of(id(OLD), 1, &body);
+            assert_eq!(one(&op).unwrap_err(), SegmentError::Corrupt(why.to_owned()));
+            let newer = Op4 {
+                fmt: BODY_FMT + 1,
+                ..op
+            };
+            assert_eq!(
+                one(&newer).unwrap_err(),
+                SegmentError::Corrupt(why.to_owned())
+            );
+        }
     }
 
     /// 段体只有一种字节形：同一批槽的另一种写法（依赖向量不用「同上一条」、varint 不取最短）读侧拒绝。
