@@ -6,6 +6,8 @@
 #include <mmdeviceapi.h>
 #include <wrl/client.h>
 
+#include <cstdio>
+#include <cwctype>
 #include <memory>
 #include <string>
 #include <vector>
@@ -247,6 +249,80 @@ void EnsureWritableWebView2UserDataFolder() {
                             fallback.c_str());
 }
 
+// 着色器程序磁盘缓存的目录（引擎补丁 engine-program-binary-cache.patch，
+// ci/patches/flutter-engine/<版本>/README.md）。Impeller 每次冷启动都在
+// ContentContext 构造里把全部管线经 ANGLE→d3dcompiler 重编一遍（约 1 秒，主线程
+// 在 NotifyCreated 上干等）；引擎把 ANGLE 链好的程序落盘后，第二次起直接取回。
+// 目录跟 WebView2 userDataFolder 同一套「由 exe 决定、按测试根隔离」的思路：
+// - FUSHI_TEST_ROOT（itest harness / 测速脚本）→ <测试根>\cache\shader-programs，
+//   与 crash_dump.cpp 的测试根分流同一判据，测试进程绝不碰别处；
+// - exe 旁可写 → <exe>.ShaderCache（与默认的 <exe>.WebView2 并排）。安装版与各个
+//   开发构建天然各用各的，开发构建（含编进 FUSHI_TEST_ROOT dart-define 的
+//   Release）只写在自己的构建目录里，不会落进生产数据根 %APPDATA%\Fushi\Fushi；
+// - exe 旁不可写（装进 Program Files）→ %LOCALAPPDATA%\Fushi\ShaderCache\<exe 路径哈希>。
+// 这只是缓存：引擎把内容放进以「本引擎构建」命名的子目录、总量封顶、坏文件 / 写不进
+// 一律退回照常编译。目录算不出来就不开缓存，行为与原版引擎相同。
+std::wstring ResolveProgramBinaryCacheDirectory() {
+  wchar_t test_root[MAX_PATH];
+  const DWORD test_root_len =
+      ::GetEnvironmentVariableW(L"FUSHI_TEST_ROOT", test_root, MAX_PATH);
+  if (test_root_len > 0 && test_root_len < MAX_PATH) {
+    return std::wstring(test_root, test_root_len) + L"\\cache\\shader-programs";
+  }
+  wchar_t exe_path[MAX_PATH];
+  const DWORD len = ::GetModuleFileNameW(nullptr, exe_path, MAX_PATH);
+  if (len == 0 || len >= MAX_PATH) {
+    return std::wstring();
+  }
+  const std::wstring exe(exe_path, len);
+  const size_t slash = exe.find_last_of(L'\\');
+  if (slash == std::wstring::npos) {
+    return std::wstring();
+  }
+  const std::wstring beside_exe = exe + L".ShaderCache";
+  const DWORD attrs = ::GetFileAttributesW(beside_exe.c_str());
+  const bool has_dir = attrs != INVALID_FILE_ATTRIBUTES &&
+                       (attrs & FILE_ATTRIBUTE_DIRECTORY) != 0;
+  if (DirectoryWritable(has_dir ? beside_exe : exe.substr(0, slash))) {
+    return beside_exe;
+  }
+  wchar_t local_appdata[MAX_PATH];
+  const DWORD n =
+      ::GetEnvironmentVariableW(L"LOCALAPPDATA", local_appdata, MAX_PATH);
+  if (n == 0 || n >= MAX_PATH) {
+    return std::wstring();
+  }
+  // 不区分大小写的 exe 路径哈希（FNV-1a 64）：同一安装位置稳定，不同安装互不相扰。
+  unsigned long long hash = 0xcbf29ce484222325ull;
+  for (wchar_t c : exe) {
+    const wchar_t lower = static_cast<wchar_t>(::towlower(c));
+    hash ^= static_cast<unsigned long long>(lower);
+    hash *= 0x100000001b3ull;
+  }
+  wchar_t hex[17];
+  ::swprintf_s(hex, L"%016llx", hash);
+  return std::wstring(local_appdata, n) + L"\\Fushi\\ShaderCache\\" + hex;
+}
+
+// 引擎起来之前把目录交给补丁引擎。原版引擎没有这个导出：GetProcAddress 落空就
+// 什么都不做（照常每次编译）。
+void ConfigureProgramBinaryCache() {
+  using SetProgramBinaryCacheDirectoryFn = bool (*)(const wchar_t *);
+  HMODULE engine = ::GetModuleHandleW(L"flutter_windows.dll");
+  if (engine == nullptr) {
+    return;
+  }
+  const auto set_directory = reinterpret_cast<SetProgramBinaryCacheDirectoryFn>(
+      ::GetProcAddress(engine, "FlutterDesktopSetProgramBinaryCacheDirectory"));
+  if (set_directory == nullptr) {
+    return;
+  }
+  const std::wstring directory = ResolveProgramBinaryCacheDirectory();
+  if (directory.empty() || !set_directory(directory.c_str())) {
+    ::OutputDebugStringW(L"Fushi: program binary cache not configured.\n");
+  }
+}
+
 }  // namespace
 
 int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
@@ -365,6 +441,9 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   ::fushi::StartupTraceMark("single-instance");
   EnsureWritableWebView2UserDataFolder();
   ::fushi::StartupTraceMark("webview2-folder");
+
+  // 同理必须在引擎（进而 ANGLE 显示）创建之前：第一个管线链接就要走缓存。
+  ConfigureProgramBinaryCache();
 
   // BUG-209 / TODO-398：在 Flutter engine / COM 初始化之前安装进程级 minidump
   // 写出（写进 %LOCALAPPDATA%\Fushi\crashdumps\，链回引擎既有 filter），让
