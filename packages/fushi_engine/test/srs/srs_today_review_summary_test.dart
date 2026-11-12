@@ -58,7 +58,9 @@ void main() {
     expect(s.again, 1);
     expect(s.correctRate, 0.5);
 
-    final SrsTodayStats page = (await loadSrsStats(store)).data.todayStats();
+    final SrsTodayStats page = (await (await loadSrsStats(
+      store,
+    )).report()).todayStats;
     expect(s.count, page.count);
     expect(s.durationMs, page.durationMs);
     expect(s.again, page.ratings[0]);

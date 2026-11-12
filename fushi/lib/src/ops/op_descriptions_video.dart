@@ -7,7 +7,7 @@ import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/ops/op_describe_kit.dart';
 import 'package:fushi/src/ops/op_task_status.dart';
 import 'package:fushi/src/ops/op_descriptions_library.dart'
-    show OpUndoScope, opCustomUndo, opScopedSnapshotUndo, opUndoDisplay;
+    show OpUndoScope, opScopedSnapshotUndo, opUndoDisplay;
 
 /// 视频库、播放器遥控、字幕的操作描述（spec `docs/specs/2026-10-26-ai-operations-agent-design.md` §4）。
 ///

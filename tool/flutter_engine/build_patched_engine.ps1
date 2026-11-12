@@ -1,6 +1,6 @@
 # Builds Fushi's patched Flutter Windows engine (HDR output inside the Flutter
-# compositor, hardened accessibility tree) and packages it for
-# tool/engine_overlay.ps1.
+# compositor, hardened accessibility tree, ANGLE program binary disk cache)
+# and packages it for tool/engine_overlay.ps1.
 #
 # Steps (run any subset, in this order):
 #   sync   clone flutter/flutter at -FlutterVersion into <Root>\flutter and
@@ -27,6 +27,13 @@ param(
   [string]$VsInstall,
   [string]$AtlDir,
   [string]$WindowsSdkVersion,
+  # ninja parallelism; 0 = ninja's default (cores + 2). Lower it on a busy
+  # machine: every clang-cl job holds up to ~1 GB.
+  [int]$Jobs = 0,
+  # Windows 10 SDK root. gn copies Debuggers\x64\dbghelp.dll out of it, so an
+  # SDK installed without "Debugging Tools for Windows" fails at gn time; point
+  # this at a directory that mirrors the SDK and adds that file.
+  [string]$WindowsSdkDir = "${env:ProgramFiles(x86)}\Windows Kits\10",
   [string]$Proxy = $env:HTTPS_PROXY
 )
 $ErrorActionPreference = 'Stop'
@@ -61,12 +68,16 @@ function Invoke-Native {
 function Set-Toolchain {
   $env:PATH = "$depot;$env:PATH"
   $env:DEPOT_TOOLS_WIN_TOOLCHAIN = '0'
+  # build/toolchain/win/tool_wrapper.py reads the saved toolchain environment
+  # with the locale's default codec; on a GBK system a non-ASCII variable in
+  # it fails every link step (UnicodeDecodeError). Force UTF-8 on both sides.
+  $env:PYTHONUTF8 = '1'
   if (-not $VsInstall) {
     $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
     $script:VsInstall = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
   }
   $env:GYP_MSVS_OVERRIDE_PATH = $VsInstall
-  $env:WINDOWSSDKDIR = "${env:ProgramFiles(x86)}\Windows Kits\10"
+  $env:WINDOWSSDKDIR = $WindowsSdkDir
   if ($AtlDir) {
     # vcvarsall appends to INCLUDE/LIB and setup_toolchain.py keeps them when
     # VSINSTALLDIR is unset: seed them with an ATL from another VS install.
@@ -156,6 +167,14 @@ if ($Steps -contains 'patch') {
   # semantics and never left half-applied (Windows UIA crashes, BUG-4073 /
   # BUG-4333 / BUG-3796).
   Invoke-Patch $flutter (Join-Path $patchDir 'engine-a11y-tree-hardening.patch')
+  # Applies on top of all of the above (egl::Manager, flutter_windows.{h,cc},
+  # BUILD.gn): persists ANGLE's linked programs (EGL_ANDROID_blob_cache) so
+  # Impeller stops recompiling every pipeline on each cold start.
+  Invoke-Patch $flutter (Join-Path $patchDir 'engine-program-binary-cache.patch')
+  # Applies on top of all of the above (FlutterWindowsView resize sync): a
+  # window resize before any frame was presented no longer blocks the platform
+  # thread for the 100 ms resize timeout (startup window placement).
+  Invoke-Patch $flutter (Join-Path $patchDir 'engine-resize-before-first-frame.patch')
   Invoke-Patch (Join-Path $src 'flutter\third_party\angle') (Join-Path $patchDir 'angle-scrgb-swapchain.patch')
 }
 
@@ -167,7 +186,8 @@ if ($Steps -contains 'build') {
       # Same configuration as the official windows-x64{,-profile,-release}
       # artifacts (optimized).
       Invoke-Native "gn $mode" { python .\flutter\tools\gn --runtime-mode $mode --no-goma --no-rbe }
-      Invoke-Native "ninja $mode" { ninja -C "out\host_$mode" flutter/shell/platform/windows:flutter_windows }
+      $jobArgs = if ($Jobs -gt 0) { @('-j', "$Jobs") } else { @() }
+      Invoke-Native "ninja $mode" { ninja -C "out\host_$mode" @jobArgs flutter/shell/platform/windows:flutter_windows }
     }
   } finally { Pop-Location }
 }

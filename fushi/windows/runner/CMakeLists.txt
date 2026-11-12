@@ -47,6 +47,7 @@ add_executable(${BINARY_NAME} WIN32
   "low_level_mouse_hook.cpp"
   "main.cpp"
   "screen_ocr_overlay.cpp"
+  "startup_trace.cpp"
   "system_font_list.cpp"
   "system_ocr_channel_host.cpp"
   "system_ocr_windows.cpp"

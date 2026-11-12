@@ -33,6 +33,10 @@ dependencies:
   # Fushi SRS 纯 Dart 内核（含 native/fushi_fsrs 的 FFI，原生库缺失时排程能力判不可用）。
   fushi_srs:
     path: ../fushi_srs
+  # 控制通道路由 / 操作目录的类型（CtlRoute / CtlCall / OpDescription / OpUndo，纯 Dart）：复习的
+  # ctl 路由与操作描述（srs/srs_ctl_routes.dart、srs/srs_ctl_ops.dart）是 app 与无头服务端共用的一份实现。
+  fushi_cli:
+    path: ../fushi_cli
   # Rust 计算内核（native/fushi_compute，纯 Dart FFI）。硬依赖、没有 Dart 回退：原生库或某域
   # 符号缺失时调用即抛 FushiComputeUnavailableError。
   fushi_compute:

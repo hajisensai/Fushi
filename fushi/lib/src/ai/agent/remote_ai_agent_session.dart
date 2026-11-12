@@ -5,7 +5,10 @@
 ///
 /// 断线时在条目里**固定位置**插一条本地提示（`errorCode` =
 /// [kAiAgentRemoteUnavailableCode]），并把 running / 待答卡片放开，用户能重试或停止；
-/// 恢复后提示留在原处。host 上的会话没了（闲置回收 / host 重启）就不再轮询。
+/// 恢复后提示留在原处。host 上的会话没了（闲置回收 / host 重启）或遇到再试也不会好
+/// 的失败（凭据被拒 / 证书不符 / 已不在配对表 / 401、403，
+/// [HostAssistantException.permanent]）就不再轮询，入口下次重新探测并说出具体原因。
+/// 会话开成后接管 [InterconnectAssistantClient]，[dispose] 时关完 host 会话再释放它。
 ///
 /// 会话历史（BUG-4067）：host 宣告了 `agentHistory`（[HostAssistantTarget.supportsAgentHistory]）
 /// 时，本对象同时是会话库（[AiAgentSessionLibrary]）——列出 / 续接 / 改名 / 删除这台
@@ -93,9 +96,20 @@ class RemoteAiAgentSession extends ChangeNotifier
   bool _lost = false;
   bool _disposed = false;
 
+  /// 在途的「关 host 会话」请求：[dispose] 等它们发完再释放 client，换场时
+  /// 关旧会话的请求不会被随后的 dispose 掐掉。
+  final Set<Future<void>> _hostCloses = <Future<void>>{};
+
+  /// 在途的「开 host 会话」请求（含开上后因已释放而补发的关会话）：开会话是
+  /// 非幂等 POST，host 可能已经建好会话而应答还在路上；[dispose] 先等它们落地，
+  /// 拿到 id 的补关掉，再释放 client——不然释放会把应答掐成 cancelled，host 上
+  /// 留一场没人关的会话。
+  final Set<Future<void>> _hostOpens = <Future<void>>{};
+
   HostAssistantTarget get target => _target;
 
-  /// host 上的会话已经没了：入口据此换一场新的。
+  /// host 上的会话已经没了，或这台 host 永久拒绝了本机（凭据 / 证书 / 配对）：
+  /// 入口据此重新探测、换一场新的。
   bool get isLost => _lost;
 
   bool get isDisposed => _disposed;
@@ -149,12 +163,7 @@ class RemoteAiAgentSession extends ChangeNotifier
     if (running) return false;
     final HostAssistantEnvelope envelope;
     try {
-      envelope = await _client.open(
-        _target,
-        feature: kHostAssistantFeatureAgent,
-        locale: _locale,
-        resume: sessionId,
-      );
+      envelope = await _openHost(resume: sessionId);
     } on Object catch (error) {
       ErrorLogService.instance.logDiagnostic(
         'RemoteAiAgent.resume',
@@ -162,10 +171,8 @@ class RemoteAiAgentSession extends ChangeNotifier
       );
       return false;
     }
-    if (_disposed) {
-      unawaited(_closeHost(envelope.id));
-      return false;
-    }
+    // 开上时已释放：[_openHost] 已补发关会话。
+    if (_disposed) return false;
     final String? old = _id;
     final bool wasLost = _lost;
     _resetState();
@@ -250,20 +257,39 @@ class RemoteAiAgentSession extends ChangeNotifier
     return pending is Map ? '${pending['kind']}' : null;
   }
 
+  /// 快照里待答卡片的条目 id；离线 / 没有待答卡片时为 null。
+  String? get _pendingEntryId {
+    if (_offline) return null;
+    final Object? pending = _view['pending'];
+    final Object? entryId = pending is Map ? pending['entryId'] : null;
+    return entryId is String && entryId.isNotEmpty ? entryId : null;
+  }
+
   @override
   bool get awaitingConfirm => _pendingKind == kAgentPendingConfirm;
 
   @override
   bool get awaitingChoice => _pendingKind == kAgentPendingChoice;
 
+  /// 作答带上卡片 id（BUG-4458）：host 只答那一张，晚到的旧卡作答不落到下一张上。
+  /// 调用方没给时取发送这一刻快照里的待答卡片；旧 host 不认这个键，照旧答当前那张。
   @override
-  void answerConfirm(bool approved) => unawaited(
-    _act(<String, Object?>{'type': 'answerConfirm', 'approve': approved}),
+  void answerConfirm(bool approved, {String? entryId}) => unawaited(
+    _act(<String, Object?>{
+      'type': 'answerConfirm',
+      'approve': approved,
+      'entryId': ?(entryId ?? _pendingEntryId),
+    }),
   );
 
   @override
-  void answerChoice(String? id) =>
-      unawaited(_act(<String, Object?>{'type': 'answerChoice', 'choice': id}));
+  void answerChoice(String? id, {String? entryId}) => unawaited(
+    _act(<String, Object?>{
+      'type': 'answerChoice',
+      'choice': id,
+      'entryId': ?(entryId ?? _pendingEntryId),
+    }),
+  );
 
   /// 截图不过线：远端用的是那台设备配的模型，本机不知道它能不能收图。
   @override
@@ -396,15 +422,11 @@ class RemoteAiAgentSession extends ChangeNotifier
   }
 
   Future<void> _start() async {
-    final HostAssistantEnvelope first = await _client.open(
-      _target,
-      feature: kHostAssistantFeatureAgent,
-      locale: _locale,
-    );
-    if (_disposed) {
-      unawaited(_closeHost(first.id));
-      return;
-    }
+    // _reopen 等关旧会话期间可能已释放：不再开新的。
+    if (_disposed) return;
+    final HostAssistantEnvelope first = await _openHost();
+    // 开上时已释放：[_openHost] 已补发关会话。
+    if (_disposed) return;
     _id = first.id;
     _apply(first, force: true);
     unawaited(_pollLoop(_generation));
@@ -478,7 +500,11 @@ class RemoteAiAgentSession extends ChangeNotifier
       'RemoteAiAgent.$where',
       '${_target.label}: $error',
     );
-    if (error is HostAssistantException && error.sessionGone) _lost = true;
+    // 会话没了 / 再试也不会好：停轮询、不再复用，dispose 也不再发关会话请求。
+    if (error is HostAssistantException &&
+        (error.sessionGone || error.permanent)) {
+      _lost = true;
+    }
     _markUnavailable();
   }
 
@@ -500,7 +526,34 @@ class RemoteAiAgentSession extends ChangeNotifier
     notifyListeners();
   }
 
-  Future<void> _closeHost(String id) async {
+  /// 开 host 会话并登记到 [_hostOpens]。应答回来时若已释放，就地补发关会话
+  /// （与应答同一轮回调里判定，释放不会插在两者之间），[dispose] 等它一起落地。
+  Future<HostAssistantEnvelope> _openHost({String? resume}) {
+    final Future<HostAssistantEnvelope> opened = _client.open(
+      _target,
+      feature: kHostAssistantFeatureAgent,
+      locale: _locale,
+      resume: resume,
+    );
+    final Future<void> settled = opened.then<void>(
+      (HostAssistantEnvelope envelope) {
+        if (_disposed) return _closeHost(envelope.id);
+      },
+      // 开会话的失败由调用方处理；这里只关心它何时落地。
+      onError: (Object _) {},
+    );
+    _hostOpens.add(settled);
+    unawaited(settled.whenComplete(() => _hostOpens.remove(settled)));
+    return opened;
+  }
+
+  Future<void> _closeHost(String id) {
+    final Future<void> sent = _sendCloseHost(id);
+    _hostCloses.add(sent);
+    return sent.whenComplete(() => _hostCloses.remove(sent));
+  }
+
+  Future<void> _sendCloseHost(String id) async {
     try {
       await _client.close(_target, id);
     } on Object catch (error) {
@@ -516,10 +569,18 @@ class RemoteAiAgentSession extends ChangeNotifier
     if (_disposed) return;
     _disposed = true;
     if (identical(active, this)) active = null;
-    final String? id = _id;
+    final String? hostSession = _lost ? null : _id;
     // 退出即关 host 上的会话（待答卡片在 host 上按拒绝收尾）；失败只记诊断，
-    // host 闲置回收兜底。
-    if (id != null && !_lost) unawaited(_closeHost(id));
+    // host 闲置回收兜底。会话没了 / 永久失败时关会话也不会成功，不发。在途的开会话
+    // 请求先等它落地（开上的由 [_openHost] 补关），连同换场时还在途的关旧会话请求
+    // 全部发完再释放 client，在途的长轮询随之以 cancelled 收尾。
+    unawaited(() async {
+      if (hostSession != null) await _closeHost(hostSession);
+      while (_hostOpens.isNotEmpty || _hostCloses.isNotEmpty) {
+        await Future.wait(<Future<void>>[..._hostOpens, ..._hostCloses]);
+      }
+      _client.dispose();
+    }());
     _sessionsRevision.dispose();
     super.dispose();
   }

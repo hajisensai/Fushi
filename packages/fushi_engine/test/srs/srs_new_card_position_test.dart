@@ -179,7 +179,7 @@ void main() {
     // 模拟 v123 之前的设备：修改记录已落库，缓存没有这一列（升级加列后为 NULL），
     // 本机状态里也没有缓存版本。
     Future<void> asPreV123() async {
-      await a.db.customStatement(
+      a.core.debugExecRaw(
         'UPDATE srs_cards_cache SET new_position = NULL WHERE profile_uid = srs_id(?)',
         <Object>[kPosProfile],
       );
@@ -195,7 +195,7 @@ void main() {
               .read<String>('json');
       final Map<String, Object?> j =
           (jsonDecode(json) as Map).cast<String, Object?>()..remove('cacheRev');
-      await a.db.customStatement(
+      a.core.debugExecRaw(
         'UPDATE srs_local_state SET json = ? WHERE profile_uid = srs_id(?)',
         <Object>[jsonEncode(j), kPosProfile],
       );
@@ -225,7 +225,7 @@ void main() {
     expect(await upgraded.nextCard(upgraded.defaultDeckId), c[2]);
 
     // 记下了缓存版本：之后再打开不再扫修改记录表（手动清掉的值不会被补回）。
-    await a.db.customStatement(
+    a.core.debugExecRaw(
       'UPDATE srs_cards_cache SET new_position = NULL WHERE profile_uid = srs_id(?)',
       <Object>[kPosProfile],
     );

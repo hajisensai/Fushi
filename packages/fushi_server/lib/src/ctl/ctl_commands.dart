@@ -46,6 +46,7 @@ import 'package:fushi_server/src/config/server_config.dart';
 import 'package:fushi_server/src/ctl/admin_client.dart';
 import 'package:fushi_server/src/ctl/ctl_download_commands.dart';
 import 'package:fushi_server/src/ctl/ctl_host_commands.dart';
+import 'package:fushi_server/src/ctl/ctl_srs_commands.dart';
 import 'package:fushi_server/src/server_language.dart';
 
 /// `ctl` 子命令的参数表；所有动作的选项平铺在这一层（动词在 rest 里）。
@@ -53,6 +54,7 @@ ArgParser buildCtlParser() {
   final ArgParser parser = _buildBaseCtlParser();
   addCtlHostOptions(parser);
   addCtlDownloadOptions(parser);
+  addCtlSrsOptions(parser);
   return parser;
 }
 
@@ -239,9 +241,13 @@ fushi_server ctl <action> [args] --interconnect https://127.0.0.1:38765 --passwo
        login --user u [--endpoint e] [--accept-ankiweb]   密码从 stdin 或 FUSHI_ANKI_PASSWORD 读
        logout [--discard-unsynced]
   srs [status] | profiles                  复习库：状态 / 同步目录里能选的 profile
+  srs decks | notes [搜索] | note <id> | stats | conflicts [--srs-profile <uid>]
+                                           复习库内容；冲突处理 / 重复合并 / 批量改笔记见 `srs help`
   srs add|remove|default <uid> | off       提供哪几份 profile（off = 全部不提供）
   srs sync [<uid>] | ankiconnect on|off    立即同步 / AnkiConnect 监听（默认关）
   srs config '<json>'                      其余配置（rolloverHour、miningTarget、miningDecks、ankiConnect…）
+  srs devices [<uid>]                      还没信任的复习同步设备（扣着的删除 / 彻底清除）
+  srs trust|reject <设备 ID> [<uid>]       信任（扣着的立即生效）/ 拒绝（继续扣着）一台设备
   profiles [ls] | share|rm <id>
   backup [ls] | create [--no-documents] | rm <name>
                                            整机备份（落 <data>/backups/；下载走
@@ -283,9 +289,13 @@ fushi_server ctl <action> [args] --interconnect https://127.0.0.1:38765 --passwo
        login --user u [--endpoint e] [--accept-ankiweb]   Password is read from stdin or FUSHI_ANKI_PASSWORD
        logout [--discard-unsynced]
   srs [status] | profiles                  Review library: status / profiles selectable in the sync directory
+  srs decks | notes [search] | note <id> | stats | conflicts [--srs-profile <uid>]
+                                           Review library contents; see `srs help` for conflicts / duplicate merge / batch edits
   srs add|remove|default <uid> | off       Which profiles to provide (off = provide none)
   srs sync [<uid>] | ankiconnect on|off    Sync now / AnkiConnect listener (off by default)
   srs config '<json>'                      Other settings (rolloverHour, miningTarget, miningDecks, ankiConnect...)
+  srs devices [<uid>]                      Review sync devices not trusted yet (their held deletes / purges)
+  srs trust|reject <device id> [<uid>]     Trust (held changes apply now) / reject (keep holding) a device
   profiles [ls] | share|rm <id>
   backup [ls] | create [--no-documents] | rm <name>
                                            Whole-machine backup (stored in <data>/backups/; download via
@@ -544,6 +554,16 @@ _CtlRequest? _fromHost(CtlHostRequest? r) {
         : _listRenderer(key),
   );
 }
+
+_CtlRequest? _fromSrs(CtlSrsRequest? r) => r == null
+    ? null
+    : _CtlRequest(
+        r.method,
+        r.path,
+        body: r.body,
+        query: r.query == null || r.query!.isEmpty ? null : r.query,
+        render: r.render,
+      );
 
 int _exitCodeFor(AdminApiException ex) => switch (ex.status) {
   kCtlUsageErrorStatus => 64,
@@ -1057,6 +1077,10 @@ _CtlRequest? _parseAction(
       );
 
     case 'srs':
+      // 复习库内容（牌组 / 笔记 / 统计 / 冲突 / 批量改笔记）：见 ctl_srs_commands.dart。
+      if (kCtlSrsDataActions.contains(sub)) {
+        return _fromSrs(parseCtlSrsDataAction(sub, args, command, err));
+      }
       Map<String, Object?>? uidBody(String key) {
         final String? uid = arg(0);
         return uid == null
@@ -1105,10 +1129,29 @@ _CtlRequest? _parseAction(
           return body == null
               ? null
               : _CtlRequest('PUT', '$_api/srs', body: body);
+        case 'devices':
+          return _CtlRequest(
+            'GET',
+            '$_api/srs/devices',
+            query: arg(0) == null ? null : <String, String>{'profile': arg(0)!},
+            render: _renderSrsDevices,
+          );
+        case 'trust' || 'reject' when arg(0) != null:
+          return _CtlRequest(
+            'POST',
+            '$_api/srs/devices/trust',
+            body: <String, Object?>{
+              'device': arg(0),
+              'trust': sub == 'trust',
+              'profile': ?arg(1),
+            },
+            render: _renderSrsDevices,
+          );
       }
       return usage(
         'srs [status] | srs profiles | srs add|remove|default <uid> | srs off | '
-        "srs sync [<uid>] | srs ankiconnect on|off | srs config '<json>'",
+        "srs sync [<uid>] | srs ankiconnect on|off | srs config '<json>' | "
+        'srs devices [<uid>] | srs trust|reject <device> [<uid>]',
       );
 
     case 'profiles':
@@ -1286,6 +1329,57 @@ void _renderPairing(Object? response, StringSink out) {
     );
   }
   _listRenderer('peers')(response, out);
+}
+
+/// `srs devices` / `srs trust|reject`：每份 profile 一段，还没信任的设备一行一台。
+void _renderSrsDevices(Object? response, StringSink out) {
+  if (response is! Map) return _renderGeneric(response, out);
+  void line(Object? d) {
+    if (d is! Map) return;
+    final String trust = switch (d['trust']) {
+      'pending' => tr('待确认', 'pending'),
+      'rejected' => tr('已拒绝', 'rejected'),
+      _ => tr('已信任', 'trusted'),
+    };
+    final String name = '${d['name'] ?? ''}'.isEmpty
+        ? tr('未命名设备', 'Unnamed device')
+        : '${d['name']}${'${d['app'] ?? ''}'.isEmpty ? '' : ' (Fushi ${d['app']})'}';
+    final Object? since = d['trustSince'];
+    out.writeln(
+      '  ${d['device']}  [$trust]  $name  '
+      '${tr('扣着 ${d['heldDeletes']} 条删除、${d['heldPurges']} 条彻底清除', 'holding ${d['heldDeletes']} deletes, ${d['heldPurges']} purges')}'
+      '${since is num ? tr('  首次出现 ${DateTime.fromMillisecondsSinceEpoch(since.toInt()).toIso8601String()}', '  first seen ${DateTime.fromMillisecondsSinceEpoch(since.toInt()).toIso8601String()}') : ''}',
+    );
+  }
+
+  void profile(Object? p) {
+    if (p is! Map) return;
+    final String name = '${p['name'] ?? ''}';
+    out.writeln(name.isEmpty ? '${p['uid']}' : '$name (${p['uid']})');
+    final Object? untrusted = p['untrusted'];
+    if (untrusted is! List || untrusted.isEmpty) {
+      out.writeln(tr('  （没有待确认的设备）', '  (no devices waiting)'));
+      return;
+    }
+    untrusted.forEach(line);
+  }
+
+  final Object? device = response['device'];
+  if (device is Map) {
+    out.writeln(
+      device['trust'] == 'trusted'
+          ? tr('已信任 ${device['device']}', 'Trusted ${device['device']}')
+          : tr('已拒绝 ${device['device']}', 'Rejected ${device['device']}'),
+    );
+    profile(response['profile']);
+    return;
+  }
+  final Object? profiles = response['profiles'];
+  if (profiles is! List) return _renderGeneric(response, out);
+  if (profiles.isEmpty) {
+    out.writeln(tr('  （没有可用的复习配置文件）', '  (no review profile available)'));
+  }
+  profiles.forEach(profile);
 }
 
 /// `downloads subtitles <id>`：一行一条字幕行。
