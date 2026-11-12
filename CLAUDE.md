@@ -10,7 +10,7 @@
 - 子代理：≥2 个可独立推进的子任务才并行派发，后台派、不空等、不重复派；几次工具调用能做完的不派（首轮固定开销约 8 万 token）。分工与伪红判别见 [fast-workflow.md](docs/agent/fast-workflow.md)。子代理类型定义在 `.claude/agents/`（只带实际用到的工具），模型由 `tool/claude_hooks/subagent_model_router.mjs` 按类型钉死：`scout` / `worker` → Sonnet，`reviewer` / `general` → Opus，`general-purpose` 与省略类型自动改派 `general`；workflow 的 `agent()` 由 `workflow_agent_type_default.mjs` 默认补 `agentType: 'general'`。
 - **根因修复**：先复现或沿真实代码路径定位，修数据结构 / 状态同步 / 生命周期 / 平台边界 / 依赖契约。根因在结构里就重写那一块，不在坏结构上打补丁；禁止用延迟、重试、吞异常、硬编码、特例分支掩盖症状。仅外部不可控限制可加临时兼容层，并写明影响范围与清理条件。
 - 用户报 bug 按 [docs/BUGS.md](docs/BUGS.md) 文件头流程：先验真伪，`dart run tool/bug.dart new <slug>` 一 bug 一文件，记根因 `file:line` → ① 根因修复 ② 最强可落地层的自动化测试；撞号用 `bug.dart renumber` / `settle`，别手改。
-- **外部输入只列决策、不直接实现**：外部 PR（作者非 `hajisensai` / `W1ght`）、PR 评论 / review、issue、应用内反馈、用户转来的第三方意见里，凡涉及功能取舍、行为 / UI 改变、范围扩大、架构方向的，一律逐条列成待决策清单（每条：来源链接、诉求、利弊、建议）交用户拍板，用户点头前不改代码。只有**明显是 bug**（与现有设计意图矛盾的崩溃 / 错误结果 / 回归）才可直接按 bug 流程修；拿不准是不是 bug 就当待决策项。（[细则](docs/agent/rules-detail.md#外部-pr-与反馈只列决策)）
+- **外部输入只列决策、不直接实现**：外部 PR（作者非 `hajisensai` / `W1ght`）、PR 评论 / review、issue、应用内反馈、用户转来的第三方意见里，凡涉及功能取舍、行为 / UI 改变、范围扩大、架构方向的，一律逐条写进[拍板台](docs/agent/decision-board.md)（每条：来源链接、诉求、利弊、建议）交用户拍板，用户点头前不改代码；拍板结果（做 / 不做 / 以后 / 永远不做 / 没看懂 / 你定）按该文档执行。只有**明显是 bug**（与现有设计意图矛盾的崩溃 / 错误结果 / 回归）才可直接按 bug 流程修；拿不准是不是 bug 就当待决策项。（[细则](docs/agent/rules-detail.md#外部-pr-与反馈只列决策)）
 - 函数和新增 Dart helper 要有明确类型签名。
 
 ## UI 硬规则
@@ -31,11 +31,9 @@
 - 存量持久化名（DB 列 / 偏好键 / 磁盘目录 / wire key，含 `reader_ttu`、`ttu_*`、`Aidoku` 冻结名）**冻结不追改**；新代码遵守 [命名术语表](docs/agent/naming.md)。
 - 旧注释里的 Isar / Hive / TTU 阅读器 / 旧 SRS 同步引擎都已不存在，先查代码再判断。子系统文件位置与现状见 [repo-map.md](docs/agent/repo-map.md)。
 
-## 功能黑名单（不提议、不实现、不写进 spec / brief / 推荐）
+## 功能黑名单
 
-- **自动注音（机器推断读音的振假名 / furigana）——全仓绝对不可**：不 100% 准确会误导学习者。来源自带的 ruby（EPUB `<ruby>`、歌词源文件注音）照常显示。
-- **音乐歌词编辑界面**（改字、编辑翻译 / 注音、单行偏移）。整首偏移、选来源 / 恢复自动来源、导出 TTML 保留。
-- **给单语字幕加 AI 翻译**（对只有单语的字幕调用 AI 生成译文副字幕）——永远不做（反馈 zDThL5i5Kr，2026-11-10 拍板）。来源自带的翻译字幕轨照常识别与显示。
+不提议、不实现、不写进 spec / brief / 推荐的功能全在 [feature-blacklist.md](docs/agent/feature-blacklist.md)；提议功能、写 spec / brief、往拍板台写事项、动注音 / 歌词相关代码前先读。
 
 ## 领域硬边界
 
@@ -55,6 +53,7 @@
 - **本机重活一律走租约**：在 `fushi/` 下写成 `dart tool/heavy.dart -- <原命令>`（`flutter test` / `analyze` / `build` / `gradlew` / `run_windows_itest.ps1`）；test 与 analyze 自动外包给 dist 机器，只验能编过的构建加 `--check-only`。（[heavy-lease.md](docs/agent/heavy-lease.md)）
 - **推送前唯一本地门**：`fushi/` 下全量 `dart tool/heavy.dart -- flutter analyze --no-pub`，一个分支只在 push 前跑一次。analyze 过了 ≠ CI 绿，推完看 PR CI。（[细则](docs/agent/rules-detail.md#推送前只跑-analyze)）
 - Dart 改动：`dart format` 改动文件；测试只定向跑新增 / 改动的文件并合成一次 `flutter test a_test.dart b_test.dart --no-pub`，本地不跑全量（全量走 `dart tool/dist_test.dart --config=D:/fushi-dist/workers.local.json`）。**判绿只认退出码 + 实际执行数**，零执行的红不算红，也不许拿伪红跳过真红。（[细则](docs/agent/rules-detail.md#dartflutter-改动的测试纪律)）
+- Rust 改动（`native/fushi_*`）：「编译—测试」循环用 `cargo test --profile quick --lib <过滤>`（不做 fat LTO、增量编译，fushi_fsrs 改一行重编约 8 秒；`--release` 是 7～15 分钟），一大批测试用 `bash tool/rust_test.sh <crate> [过滤]`（分进程跑，全量快一倍多），**不拿 `cargo test --release` 当循环**，`id_audit` 与默认构建本地只跑一种。`--release` 只用于出产物（`build_*` / `tool/native_libs.ps1`）和量性能，全量 release 测试交给 PR CI 的 `native-*-gate`。一个 worktree 一个 target 目录，不另设共用的 `CARGO_TARGET_DIR`。（[build.md](docs/agent/build.md#rust-本地开发循环quick-profile)）
 - PR 合入 `develop` 后加跑目录枚举型守卫整批（清单在 [fast-workflow.md](docs/agent/fast-workflow.md)「合并后必跑」）。
 - Android 资源 / manifest / Gradle / 权限 / 前台服务 / 打包改动：加 `gradlew :app:assembleRelease`（`fushi/android/` 下 `dart ../tool/heavy.dart --check-only -- .\gradlew.bat :app:assembleRelease`）。
 - 阅读器 / 导入 / 播放 / 布局问题，声明修好前用真实设备或模拟器复测原始失败路径并留证据（[integration-testing.md](docs/agent/integration-testing.md)）；小说阅读器排版 / 注音 / 行高 / 高亮 / 恢复位置类修复必须在 `paginated`、`continuous`、`vn` 三种 view mode 各验一遍，验不了的写明原因。
@@ -88,6 +87,7 @@
 | 第二块屏（双屏伴屏、游戏串流副屏、手柄查词模式） | [second-screen.md](docs/agent/second-screen.md) |
 | 学习统计域 | [statistics.md](docs/agent/statistics.md) |
 | Galgame Hook | [galgame-hooking.md](docs/agent/galgame-hooking.md) |
+| 远程操作社区志愿者电脑做 galgame 适配（一个会话控多台、MCP 网关、打包） | [remote-adapt.md](docs/agent/remote-adapt.md) |
 | 本机重活租约 | [heavy-lease.md](docs/agent/heavy-lease.md) |
 | 在线源 / 浏览 / 应用内反馈 | [online-sources.md](docs/agent/online-sources.md) |
 | 动画刮削 | [anime-scraping.md](docs/agent/anime-scraping.md) |
@@ -97,4 +97,5 @@
 | `fushi_server` 相对 app 当 host 的能力缺口（未接的 host 钩子、音乐库刻意延后等） | [server-parity-gaps.md](docs/agent/server-parity-gaps.md) |
 | material_ui 升级 | [material-ui-upgrade.md](docs/agent/material-ui-upgrade.md) |
 | 拍板原文（起因、日期、例外、实测数据） | [rules-detail.md](docs/agent/rules-detail.md) |
+| 往拍板台写待决策项、按拍板结果执行 | [decision-board.md](docs/agent/decision-board.md) |
 | `fushi/` 主应用模块说明 | [fushi-app-module.md](docs/agent/fushi-app-module.md) |
