@@ -3191,7 +3191,8 @@ void FlutterWindow::RegisterGalHookTextChannel() {
                   WideFromValue(args, "sourceText", L""),
                   Int64FromValue(args, "textGeneration", 0), *glyph_words,
                   IntFromValue(args, "clientWidth", 0),
-                  IntFromValue(args, "clientHeight", 0), &error);
+                  IntFromValue(args, "clientHeight", 0),
+                  IntFromValue(args, "clientSizeTolerance", 0), &error);
             }
           } else if (method == "attachedUpdateText") {
             request = attached_text_surface_window_->UpdateText(
