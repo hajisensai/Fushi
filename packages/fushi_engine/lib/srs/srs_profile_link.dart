@@ -30,6 +30,7 @@ import 'dart:io';
 import 'package:drift/drift.dart' show QueryRow, Variable;
 import 'package:fushi_core/fushi_core.dart' show FushiDatabase;
 import 'package:fushi_engine/srs/srs_backup_merge.dart' show srsAdoptProfileUid;
+import 'package:fushi_engine/srs/srs_collection_binding.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_profile_merge.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_store.dart'
@@ -137,6 +138,9 @@ String srsV2WriterName(String device) => 'v2:$device';
 ///
 /// - [localHasNotes]：本机 profile 有没有用户数据（[SrsDbStore.hasUserData]：笔记、自建牌组、改过的预设…，不只是
 ///   笔记；参数名沿用旧名）。为假时可能判成采用，采用会删掉本机旧 uid 的全部行。
+/// - [settled]：本机 profile 已经在**别的**同步位置上定下了集合（[SrsCollectionBinding.settledElsewhere]）。为真时
+///   不再返回 [SrsProfileLinkAdopt]：唯一的有数据候选也交给用户选（[SrsProfileLinkChoose]），候选全空时保持——一台设备的
+///   几个位置各自判出不同答案时不来回改 uid。
 /// - [localProfileCount]：本机 profile 总数。目录里的 profile 都没有说明文件（旧版本写的）、
 ///   名字对不上时，只有「两边都只有一个 profile」才把唯一那个当成同一个。
 SrsProfileLinkDecision srsDecideProfileLink({
@@ -147,6 +151,7 @@ SrsProfileLinkDecision srsDecideProfileLink({
   required int localProfileCount,
   required List<SrsRemoteProfile> remote,
   String? v2Device,
+  bool settled = false,
 }) {
   bool own(String w) =>
       srsWriterOfDevice(w, deviceId) ||
@@ -199,7 +204,7 @@ SrsProfileLinkDecision srsDecideProfileLink({
   if (withData.isEmpty) {
     // 候选全是只有内置行的空 profile：本机有笔记就等它们来采用本机；本机也没有，就全体收敛到 uid 最小的那个
     // （只让较大的一边采用，不会互相采用来回翻）。
-    if (localHasNotes) return const SrsProfileLinkKeep();
+    if (localHasNotes || settled) return const SrsProfileLinkKeep();
     final String smallest = pool
         .map((SrsRemoteProfile r) => r.uid)
         .reduce((String a, String b) => a.compareTo(b) <= 0 ? a : b);
@@ -208,7 +213,7 @@ SrsProfileLinkDecision srsDecideProfileLink({
         : const SrsProfileLinkKeep();
   }
   // 本机是空的、有数据的候选恰好一个：答案唯一，直接采用。
-  if (!localHasNotes && withData.length == 1) {
+  if (!localHasNotes && !settled && withData.length == 1) {
     return SrsProfileLinkAdopt(withData.single.uid);
   }
   return SrsProfileLinkChoose(withData);
@@ -507,7 +512,15 @@ final class SrsProfileAdoptDeferred extends SrsProfileAdoptResult {
 /// 同步前的 profile 关联与同步后的说明文件发布（铁律 E，见文件头）。
 abstract interface class SrsProfileLinker {
   /// 跑引擎之前：决定本机 profile 是否改用目录里已有的 uid（必要时采用并重开 store）。
-  Future<SrsProfileLinkOutcome> link(SyncAssetStore backend, SrsDbStore store);
+  ///
+  /// [directoryKey]：[backend] 的位置身份。关联上（目录里已有别的设备在本机 uid 下，或刚采用了对方的 uid）时把绑定
+  /// 状态定为 `settled`、记下这个位置（[SrsCollectionBinding]）；已经在别的位置定下时不再自动采用。null = 调用方不知道
+  /// 位置：不记绑定，已定下的绑定按「别处」算。
+  Future<SrsProfileLinkOutcome> link(
+    SyncAssetStore backend,
+    SrsDbStore store, {
+    String? directoryKey,
+  });
 
   /// 用户在 [SrsProfileLinkChoose] 的候选里选了 [uid]：本机 profile 改用它（本机有用户笔记时并入），返回按新身份
   /// 重开的 store。本设备在旧 uid 下的同步目录由之后的 [link] 清掉。
@@ -517,10 +530,13 @@ abstract interface class SrsProfileLinker {
   ///
   /// 并入暂缓（undo 撤销的日志还没同步到，[SrsProfileMergeDeferred]）不是失败：返回 [SrsProfileAdoptDeferred]
   /// （store 不变、并入标记已写，之后的 [link] 续做）；其它失败照常抛。
+  ///
+  /// [directoryKey]：候选所在位置的身份；改用成功后按它把绑定状态定为 `settled`（null = 不记）。
   Future<SrsProfileAdoptResult> adopt(
     SrsDbStore store,
     String uid, {
     SyncAssetStore? within,
+    String? directoryKey,
   });
 
   /// [store] 所属的当前 profile 正在暂缓的并入：并入标记还在、且本进程里最近一次跑它的结果是暂缓；否则 null。
@@ -663,11 +679,21 @@ class SrsDbProfileLinker implements SrsProfileLinker {
     return row.read<int>('c');
   }
 
+  /// 在位置 [directoryKey] 上关联上了：[store] 的绑定状态定为 `settled`（只进不退，已定下的不改）。
+  Future<void> _settle(SrsDbStore store, String? directoryKey) async {
+    if (directoryKey == null) return;
+    await store.setCollectionBinding(
+      SrsCollectionBindingState.settled,
+      via: directoryKey,
+    );
+  }
+
   @override
   Future<SrsProfileLinkOutcome> link(
     SyncAssetStore backend,
-    SrsDbStore store,
-  ) async {
+    SrsDbStore store, {
+    String? directoryKey,
+  }) async {
     // 上次并入做到一半进程就退出了（标记还在 srs.db）：先用同样的参数做完，再按新身份判定。
     final SrsDbStore? resumed = await _resumePendingMerges(store, backend);
     if (resumed != null) {
@@ -682,6 +708,7 @@ class SrsDbProfileLinker implements SrsProfileLinker {
       } catch (e, stack) {
         onError?.call('SrsProfileLinker.cleanup', e, stack);
       }
+      await _settle(resumed, directoryKey);
       return SrsProfileLinkOutcome(resumed, linked: true);
     }
     // 当前 profile 的并入暂缓中：用户（或之前的自动判定）已经选定了要并入的 uid，不再重新判定、不再弹冲突让用户
@@ -692,6 +719,7 @@ class SrsDbProfileLinker implements SrsProfileLinker {
     // 「本机有数据」看的是全部用户数据（[SrsDbStore.hasUserData]），不只是笔记：判成采用就会经 [_switchUid]
     // 删掉本机旧 uid 的全部行，只建了牌组 / 改了预设、还没有笔记的 profile 以前会被当成空的删掉。
     final bool localHasNotes = await store.hasUserData();
+    final SrsCollectionBinding? binding = await store.collectionBinding();
     final SrsProfileLinkDecision decision = srsDecideProfileLink(
       localUid: store.profileUid,
       localName: await _nameOf(store.profileUid),
@@ -700,9 +728,11 @@ class SrsDbProfileLinker implements SrsProfileLinker {
       localProfileCount: await _profileCount(),
       remote: remote,
       v2Device: store.sync2Device,
+      settled: binding?.settledElsewhere(directoryKey) ?? false,
     );
     switch (decision) {
       case SrsProfileLinkKeep(:final bool linked):
+        if (linked) await _settle(store, directoryKey);
         return SrsProfileLinkOutcome(store, linked: linked);
       case SrsProfileLinkChoose(:final List<SrsRemoteProfile> candidates):
         return SrsProfileLinkOutcome(
@@ -726,6 +756,7 @@ class SrsDbProfileLinker implements SrsProfileLinker {
           // 孤儿目录只有本设备的内置行批次，删不掉不影响同步。
           onError?.call('SrsProfileLinker.cleanup', e, stack);
         }
+        await _settle(adopted, directoryKey);
         return SrsProfileLinkOutcome(adopted, linked: true);
     }
   }
@@ -785,6 +816,7 @@ class SrsDbProfileLinker implements SrsProfileLinker {
     SrsDbStore store,
     String uid, {
     SyncAssetStore? within,
+    String? directoryKey,
   }) async {
     if (uid == store.profileUid) return SrsProfileAdopted(store);
     if (await _uidTakenLocally(uid)) {
@@ -792,14 +824,14 @@ class SrsDbProfileLinker implements SrsProfileLinker {
     }
     final int profileId = await activeProfileId();
     try {
-      return SrsProfileAdopted(
-        await _switchUid(
-          store,
-          uid,
-          merge: await store.hasUserData(),
-          within: within,
-        ),
+      final SrsDbStore adopted = await _switchUid(
+        store,
+        uid,
+        merge: await store.hasUserData(),
+        within: within,
       );
+      await _settle(adopted, directoryKey);
+      return SrsProfileAdopted(adopted);
     } on SrsProfileMergeDeferred catch (e, stack) {
       // 暂缓在第一次落库之前抛（[SrsProfileMergeDeferred]）：主库还指向旧 uid、并入标记已写（[srsMergeProfileUid]
       // 一开头），之后的 [link] 经 [_resumePendingMerges] 重跑。主库已经改了 uid 就不是这种干净的暂缓，按失败抛。

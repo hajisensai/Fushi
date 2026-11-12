@@ -22,6 +22,7 @@ import 'package:meta/meta.dart' show visibleForTesting;
 
 import 'package:fushi_engine/srs/srs_backup_snapshot.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
+import 'package:fushi_engine/srs/srs_collection_binding.dart';
 import 'package:fushi_engine/srs/srs_core_workers.dart';
 import 'package:fushi_engine/srs/srs_fushi_card_native_media.dart';
 import 'package:fushi_engine/srs/srs_op_ledger.dart';
@@ -5268,6 +5269,27 @@ class SrsDbStore implements SrsSync2Host {
   /// 本 profile 有没有用户数据（[srsProfileHasUserData]：不只是笔记，自建牌组、改过的预设 / 内置笔记类型、
   /// 复习日志都算）。决定换 uid 时能不能直接采用（删旧 uid 的全部行）还是必须并入。
   Future<bool> hasUserData() => srsProfileHasUserData(db, profileUid);
+
+  /// 本 profile（集合）的绑定状态（内核 `binding_get`，见 srs_collection_binding.dart）；没有记录为 null。
+  Future<SrsCollectionBinding?> collectionBinding() async =>
+      SrsCollectionBinding.fromJson(
+        (await sync2Command(const <String, Object?>{
+          'op': 'binding_get',
+        })).map['binding'],
+      );
+
+  /// 写本 profile 的绑定状态（内核 `binding_set`：只进不退，已定下的不改），返回写完之后的状态。
+  Future<SrsCollectionBinding?> setCollectionBinding(
+    SrsCollectionBindingState state, {
+    required String via,
+  }) async => SrsCollectionBinding.fromJson(
+    (await sync2Command(<String, Object?>{
+      'op': 'binding_set',
+      'state': state.wire,
+      'via': via,
+      'now': now().$1,
+    })).map['binding'],
+  );
 
   /// 本 profile 的用户笔记数（铁律 E：内置行不算）。profile 冲突时给用户对比本机与候选（反馈 dOv8AdJ6yV）。
   Future<int> userNoteCount() async {

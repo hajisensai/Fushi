@@ -1308,7 +1308,11 @@ class SrsSyncScheduler {
     final String linkKey = _linkKey(key, uid);
     final ({DateTime at, SrsProfileConflict? conflict})? previous =
         _linkDecided[linkKey];
-    final SrsProfileLinkOutcome link = await linker.link(backend, store);
+    final SrsProfileLinkOutcome link = await linker.link(
+      backend,
+      store,
+      directoryKey: key,
+    );
     final SrsDbStore linked = link.store;
     final List<SrsRemoteProfile>? choose = link.choose;
     if (choose == null) {
@@ -1495,6 +1499,7 @@ class SrsSyncScheduler {
           store,
           uid,
           within: channel ? backend : null,
+          directoryKey: conflict.directoryKey,
         );
         adoptedResult = result;
         if (result is SrsProfileAdoptDeferred) {
