@@ -91,20 +91,38 @@ class _Host {
   final List<String> ops = <String>[];
   final Map<String, Uint8List> media = <String, Uint8List>{};
 
+  /// 收到的 `call` 请求体（原样，未剥字段）。
+  final List<Map<String, Object?>> bodies = <Map<String, Object?>>[];
+
   late final SyncRepository repository = SyncRepository(db);
 
-  SrsRemoteHostClient client() => SrsRemoteHostClient(
+  /// [localOffsetMin]：客户端设备的 UTC 偏移（缺省读系统时区）。[legacyHost]：模拟不认识
+  /// [kSrsRemoteDeviceOffsetKey] 的旧主机——请求体里的那个键不交给路由（旧路由只读已知键）。
+  SrsRemoteHostClient client({
+    int Function()? localOffsetMin,
+    bool legacyHost = false,
+  }) => SrsRemoteHostClient(
     repository: repository,
     peer: _peer,
+    localOffsetMin: localOffsetMin,
     httpClient: MockClient((http.Request r) async {
       final String path = r.url.path;
       if (!path.startsWith(kSrsRemoteStorePathPrefix)) {
         return http.Response('', 404);
       }
       String? op;
+      String? body = r.method == 'GET' ? null : r.body;
       if (r.method == 'POST') {
-        op = (jsonDecode(r.body) as Map)['op'] as String?;
+        final Map<String, Object?> decoded = (jsonDecode(r.body) as Map)
+            .cast<String, Object?>();
+        bodies.add(decoded);
+        op = decoded['op'] as String?;
         ops.add(op!);
+        if (legacyHost) {
+          body = jsonEncode(
+            Map<String, Object?>.of(decoded)..remove(kSrsRemoteDeviceOffsetKey),
+          );
+        }
       } else {
         ops.add(path.substring(kSrsRemoteStorePathPrefix.length));
       }
@@ -117,11 +135,7 @@ class _Host {
       }
       final shelf.Response res = await handleSrsRemoteStoreRequest(
         service,
-        shelf.Request(
-          r.method,
-          Uri.parse('http://host$path'),
-          body: r.method == 'GET' ? null : r.body,
-        ),
+        shelf.Request(r.method, Uri.parse('http://host$path'), body: body),
         r.method,
         path,
       );
@@ -387,6 +401,62 @@ void main() {
         await remote.noteIdsOfType(host.store.lapisNoteTypeId),
         await host.store.noteIdsOfType(host.store.lapisNoteTypeId),
       );
+    });
+
+    test('「今天」的时区取本机：每次调用带本机偏移，主机按它算；本机换时区后重取', () async {
+      final int hostOff = SrsDayContext.localOffsetMin();
+      int off = hostOff == -300 ? 330 : -300;
+      final SrsRemoteStore remote = await SrsRemoteStore.connect(
+        host.client(localOffsetMin: () => off),
+      );
+      final SrsDayContext hostDay = await host.store.dayContext();
+      final SrsDayContext day = await remote.dayContext();
+      expect(day.utcOffsetMin, off);
+      expect(
+        day.rolloverHour,
+        hostDay.rolloverHour,
+        reason: '翻日时刻仍取主机 profile',
+      );
+      expect(host.bodies, isNotEmpty);
+      for (final Map<String, Object?> b in host.bodies) {
+        expect(b[kSrsRemoteDeviceOffsetKey], off);
+      }
+      // 本机这台设备换了时区：缓存的「今天」作废，按新偏移重取。
+      off = 540;
+      expect((await remote.dayContext()).utcOffsetMin, 540);
+      expect(host.bodies.last[kSrsRemoteDeviceOffsetKey], 540);
+      // 主机自己的「今天」不受远程调用影响。
+      expect((await host.store.dayContext()).utcOffsetMin, hostOff);
+    });
+
+    test('新客户端连旧主机：旧主机不认偏移键，按主机时区算，照常复习', () async {
+      final int hostOff = SrsDayContext.localOffsetMin();
+      final int off = hostOff == -300 ? 330 : -300;
+      final SrsRemoteStore remote = await SrsRemoteStore.connect(
+        host.client(localOffsetMin: () => off, legacyHost: true),
+      );
+      expect((await remote.dayContext()).utcOffsetMin, hostOff);
+      expect(
+        host.bodies.first[kSrsRemoteDeviceOffsetKey],
+        off,
+        reason: '客户端照带',
+      );
+      final String deck = host.store.defaultDeckId;
+      final SrsStudyState study = (await remote.studyState(deck))!;
+      expect(study.next, (await host.store.studyState(deck))!.next);
+    });
+
+    test('本机偏移越出现实时区范围：不带偏移，按主机时区算', () async {
+      final SrsRemoteStore remote = await SrsRemoteStore.connect(
+        host.client(localOffsetMin: () => 15 * 60),
+      );
+      expect(
+        (await remote.dayContext()).utcOffsetMin,
+        SrsDayContext.localOffsetMin(),
+      );
+      for (final Map<String, Object?> b in host.bodies) {
+        expect(b.containsKey(kSrsRemoteDeviceOffsetKey), isFalse);
+      }
     });
 
     test('主机回包不合契约：抛机读码 bad_response 的错误（带出错路径），不漏成 TypeError', () async {
