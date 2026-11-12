@@ -11,8 +11,10 @@
 ///    每张 `srs_*` / `sync2_*` 表里的行；再删 `srs_media/<uid>`（媒体与释义样式同目录）和这个 uid 的 RWKV 快照。
 ///    远端存储位置上已同步的集合不动（只删本机）。
 /// 4. **存量**（[sweepOrphans]）：进 Profile 管理时扫一次 srs.db 里不属于任何现存 profile 的 uid，同样先备份再清；
-///    全部清完在 srs.db 记下完成标记，之后不再扫。标记在 BUG-4463 换过一次键（`profile_orphan_sweep_v2`）：
-///    BUG-4292 之前采用 / 并入的手抄删除留下的残留，在已扫过的库里要再扫一次。进行中并入涉及的 uid 不算无主。
+///    收尾（`srsFinishOrphanSweep`，内核一条命令）再清表里已经没有行、只剩 `srs_meta` 键的无主 uid 的键，和没有
+///    任何操作引用的 `sync2_deps`；全部清完在 srs.db 记下完成标记，之后不再扫。标记换过两次键（BUG-4463
+///    `profile_orphan_sweep_v2`：BUG-4292 之前采用 / 并入的手抄删除留下的残留；`…_v3`：只剩 meta 键的 uid 与孤立的
+///    `sync2_deps`），已扫过的库各再扫一次。进行中并入涉及的 uid 不算无主。
 ///
 /// 删数据的那一刻，这个 uid 的副本（[SrsDbStore]）先 [SrsDbStore.retire]：在途写入做完、之后的写入一律失败，
 /// 不会有迟到的写把行写回一个已删的 uid。所有对共用写连接的操作都排进当前副本的独占区：Rust 命令在写连接上是
@@ -123,13 +125,19 @@ class SrsProfileCleanup implements ProfileDeletionCascade {
       );
       await cleanup.run();
     }
-    if (merging.isEmpty) {
-      await srsMarkOrphanSweepDone(
+    // 收尾：表里已经没有任何行、只剩 srs_meta 键的无主 uid（旧版删除实现留下的 `…/<uid>/…` 键；没有行就没有可备份
+    // 的东西，也不为它开副本），和没有任何操作引用的 sync2_deps。判定与删除在内核的一个 savepoint 里；进行中并入
+    // 的 uid 同样不动，那时也不记完成标记。
+    final SrsOrphanSweepRest rest = await _serialized(
+      null,
+      () => srsFinishOrphanSweep(
         storage.core,
         _deps.clock().millisecondsSinceEpoch,
-      );
-    }
-    return orphans.length;
+        keep: <String>{...liveUids, ...merging},
+        mark: merging.isEmpty,
+      ),
+    );
+    return orphans.length + rest.metaUids.length;
   }
 
   /// srs.db 里记着进行中并入（`profile_merge/<旧 uid>` 标记）的旧 uid 与目标 uid。标记值读不懂时旧 uid 照样算上

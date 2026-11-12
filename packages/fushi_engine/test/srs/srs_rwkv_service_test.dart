@@ -25,6 +25,7 @@ import 'package:test/test.dart' as package_test;
 
 import 'support/srs_fake_engine.dart';
 import 'support/srs_rwkv_transcript.dart';
+import 'support/srs_stats_rows.dart';
 import 'support/srs_test_storage.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
 
@@ -2218,15 +2219,17 @@ void main() {
       f.advance(kDay);
       backend.setR(cards[0], 0.42);
 
-      final SrsStatsBundle stats = await loadSrsStats(f.store);
-      final SrsFutureDue due = stats.data.futureDue(30);
+      // 一次统计装载（= 一次 RWKV 打分）同时给聚合与逐卡视图：冻结的编排记录（support/srs_rwkv_transcript.dart）
+      // 里这一步只打一次分，装载两次会多出一轮 query。
+      final SrsStatsLoad stats = await loadSrsStats(f.store);
+      final SrsFutureDue due = (await stats.report(futureDays: 30)).future;
       expect(due.byRecall, 3);
       expect(due.total, 0);
       expect(due.overdue, 0);
       expect(due.dailyLoad, 0);
-      final SrsStatCard c0 = stats.data.cards.firstWhere(
-        (SrsStatCard c) => c.id == cards[0],
-      );
+      final StatCardRow c0 = StatsRows(
+        await stats.rows(),
+      ).cards.firstWhere((StatCardRow c) => c.id == cards[0]);
       expect(c0.byRecall, isTrue);
       expect(c0.retrievability, closeTo(0.42, 1e-6));
 
@@ -2253,9 +2256,9 @@ void main() {
 
       // RWKV 用不了：照旧按存下的到期日（排队也是），统计也照旧。
       await service.close();
-      final SrsFutureDue fallback = (await loadSrsStats(
+      final SrsFutureDue fallback = (await (await loadSrsStats(
         f.store,
-      )).data.futureDue(3650);
+      )).report(futureDays: 3650)).future;
       expect(fallback.byRecall, 0);
       expect(fallback.total, 3);
     });

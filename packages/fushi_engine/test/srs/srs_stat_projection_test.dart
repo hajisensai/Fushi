@@ -16,13 +16,13 @@ import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_note_type_store.dart';
 import 'package:fushi_engine/srs/srs_purge.dart';
 import 'package:fushi_engine/srs/srs_stats.dart';
-import 'package:fushi_engine/srs/srs_stats_loader.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:test/test.dart';
 
 import 'apkg/apkg_test_support.dart' show FakeFsrsEngine, openTestStore;
 import 'support/srs_bulk_fixture.dart' show importBench;
+import 'support/srs_stats_rows.dart';
 import 'support/srs_test_storage.dart';
 import 'support/srs_sync2_peers.dart';
 
@@ -46,6 +46,9 @@ class _SqlLog extends QueryInterceptor {
 const int _dayMs = 86400000;
 const int _hourMs = 3600000;
 
+/// 「成熟」的间隔下限（内核 history.rs 同名常量）。
+const int _matureIntervalDays = 21;
+
 /// 投影表原样的行（按日志 ID 排序；一条日志至多一行）。
 Future<List<String>> projectionRows(SrsDatabase db) async => <String>[
   for (final QueryRow r
@@ -61,8 +64,8 @@ Future<List<String>> projectionRows(SrsDatabase db) async => <String>[
 
 /// 统计页读到的复习记录 + 成熟变化（排序后逐条比较）。
 Future<List<String>> fromLoader(SrsDbStore s, SrsDayContext day) async {
-  final SrsStatsData d = (await loadSrsStats(s, day: day)).data;
-  return <String>[...d.reviews.map(_review), ...d.maturityEvents.map(_maturity)]
+  final StatsRows d = await statsRowsOf(s, day: day);
+  return <String>[...d.reviews.map(_review), ...d.maturity.map(_maturity)]
     ..sort();
 }
 
@@ -142,8 +145,8 @@ Future<List<String>> fromReference(SrsDbStore s, SrsDayContext day) async {
       g.value,
       serverTimeOf: (String id) => serverTimes[id],
     );
-    final ({List<SrsStatReview> reviews, List<SrsStatMaturityEvent> maturity})
-    one = _classify(g.key, h, day);
+    final ({List<StatReviewRow> reviews, List<StatMaturityRow> maturity}) one =
+        _classify(g.key, h, day);
     out.addAll(one.reviews.map(_review));
     out.addAll(one.maturity.map(_maturity));
   }
@@ -151,13 +154,13 @@ Future<List<String>> fromReference(SrsDbStore s, SrsDayContext day) async {
 }
 
 /// 旧 `srsStatsFromHistory`（c82c1eb7a9 之前的 lib/srs/srs_stats.dart）照抄，记录的卡换成归属卡 [owner]。
-({List<SrsStatReview> reviews, List<SrsStatMaturityEvent> maturity}) _classify(
+({List<StatReviewRow> reviews, List<StatMaturityRow> maturity}) _classify(
   String owner,
   SrsCardHistory history,
   SrsDayContext day,
 ) {
-  final List<SrsStatReview> reviews = <SrsStatReview>[];
-  final List<SrsStatMaturityEvent> maturity = <SrsStatMaturityEvent>[];
+  final List<StatReviewRow> reviews = <StatReviewRow>[];
+  final List<StatMaturityRow> maturity = <StatMaturityRow>[];
   SrsScheduleResult prev = SrsScheduleResult.initial;
   bool prevMature = false;
   for (final SrsReviewLog l in history.effective) {
@@ -173,7 +176,7 @@ Future<List<String>> fromReference(SrsDbStore s, SrsDayContext day) async {
               ? SrsStatReviewKind.newCard
               : SrsStatReviewKind.learn,
         SrsReviewType.review =>
-          prev.scheduledDays >= kSrsMatureIntervalDays
+          prev.scheduledDays >= _matureIntervalDays
               ? SrsStatReviewKind.mature
               : SrsStatReviewKind.young,
         SrsReviewType.relearn => SrsStatReviewKind.relearn,
@@ -183,7 +186,7 @@ Future<List<String>> fromReference(SrsDbStore s, SrsDayContext day) async {
       if (kind != null) {
         final int offsetMs = l.utcOffsetMin * 60000;
         reviews.add(
-          SrsStatReview(
+          StatReviewRow(
             cardId: owner,
             at: l.occurredAt,
             day: dayIndex,
@@ -205,15 +208,9 @@ Future<List<String>> fromReference(SrsDbStore s, SrsDayContext day) async {
     if (res == null) continue;
     final bool mature =
         res.queue == SrsQueue.review &&
-        res.scheduledDays >= kSrsMatureIntervalDays;
+        res.scheduledDays >= _matureIntervalDays;
     if (mature != prevMature) {
-      maturity.add(
-        SrsStatMaturityEvent(
-          cardId: owner,
-          day: dayIndex,
-          delta: mature ? 1 : -1,
-        ),
-      );
+      maturity.add(StatMaturityRow(owner, dayIndex, mature ? 1 : -1));
       prevMature = mature;
     }
     prev = res;
@@ -311,14 +308,14 @@ void main() {
     expect(row.read<int>('occurred_at'), now);
     expect(row.read<int>('duration_ms'), 777);
 
-    int dayOf(SrsStatsData d) =>
-        d.reviews.firstWhere((SrsStatReview r) => r.at == now).day;
-    final SrsStatsData at4 = (await loadSrsStats(store, day: jst)).data;
+    int dayOf(StatsRows d) =>
+        d.reviews.firstWhere((StatReviewRow r) => r.at == now).day;
+    final StatsRows at4 = await statsRowsOf(store, day: jst);
     const SrsDayContext midnight = SrsDayContext(
       rolloverHour: 0,
       utcOffsetMin: 540,
     );
-    final SrsStatsData at0 = (await loadSrsStats(store, day: midnight)).data;
+    final StatsRows at0 = await statsRowsOf(store, day: midnight);
     expect(dayOf(at4), srsDateToDay(2026, 10, 14));
     expect(dayOf(at0), srsDateToDay(2026, 10, 15));
     expect(await fromLoader(store, jst), await fromReference(store, jst));
@@ -334,7 +331,7 @@ void main() {
   test('存量库（缓存修订号 1、投影表为空）打开时补齐', () async {
     await scenario();
     final List<String> want = await projectionRows(db);
-    expect(await cacheRev(), '${SrsDbStore.currentCacheRevision}');
+    expect(await cacheRev(), '${store.debugCacheRevision}');
     await db.customStatement('DELETE FROM srs_stat_reviews');
     await db.customStatement(
       "UPDATE srs_local_state SET json = json_set(json, '\$.cacheRev', 1)",
@@ -343,7 +340,7 @@ void main() {
 
     store = await open();
     expect(await projectionRows(db), want);
-    expect(await cacheRev(), '${SrsDbStore.currentCacheRevision}');
+    expect(await cacheRev(), '${store.debugCacheRevision}');
     expect(await fromLoader(store, jst), await fromReference(store, jst));
   });
 
@@ -355,7 +352,7 @@ void main() {
     );
     store = await open();
     expect(await projectionRows(db), want);
-    expect(await cacheRev(), '${SrsDbStore.currentCacheRevision}');
+    expect(await cacheRev(), '${store.debugCacheRevision}');
   });
 
   test('统计读取路径不读复习日志表（大量日志：240 条笔记 × 2 卡 × 4 条）', () async {
@@ -367,8 +364,8 @@ void main() {
             .read<int>('c');
     expect(logs, greaterThanOrEqualTo(1440));
     sql.selects.clear();
-    final SrsStatsBundle b = await loadSrsStats(store, day: jst, nowMs: now);
-    expect(b.data.reviews, hasLength(240 * 2 * 3));
+    final StatsRows b = await statsRowsOf(store, day: jst, nowMs: now);
+    expect(b.reviews, hasLength(240 * 2 * 3));
     expect(
       sql.selects.where((String s) => s.contains('srs_review_logs')),
       isEmpty,
@@ -576,7 +573,7 @@ void main() {
       expect(
         maturityNet(stats),
         c.queue == SrsQueue.review.wire &&
-                c.scheduledDays >= kSrsMatureIntervalDays
+                c.scheduledDays >= _matureIntervalDays
             ? 1
             : 0,
         reason: '成熟净值 = 新卡当前是否成熟（按合并历史的最后状态）',
@@ -592,8 +589,8 @@ void main() {
   });
 }
 
-String _review(SrsStatReview r) =>
+String _review(StatReviewRow r) =>
     'r ${r.cardId} ${r.at} ${r.day} ${r.hour} ${r.rating} ${r.kind.name} '
     '${r.durationMs} ${r.early}';
 
-String _maturity(SrsStatMaturityEvent m) => 'm ${m.cardId} ${m.day} ${m.delta}';
+String _maturity(StatMaturityRow m) => 'm ${m.cardId} ${m.day} ${m.delta}';

@@ -497,6 +497,152 @@ void main() {
     },
   );
 
+  /// 不带参数的计数查询。
+  Future<int> countAll(String sql) async =>
+      (await storage.db.customSelect(sql).getSingle()).read<int>('c');
+
+  Future<void> putMeta(String key) => storage.db.customStatement(
+    "INSERT INTO srs_meta (key, value) VALUES (?, '{}')",
+    <Object>[key],
+  );
+
+  /// 旧版删除实现删过的 uid：表里一行不剩，按 profile 记的键留下四个（三个 uid 在中间的是 Rust 旧
+  /// `profile_purge` 漏的，状态摘要是并入旧实现漏的）。不为它开副本——开了就有行了。
+  Future<void> leaveMetaOnly(String uid, String device) async {
+    await putMeta('sync2_device_ext/$uid/$device');
+    await putMeta('sync2_retired/$uid/$device');
+    await putMeta('sync2_head_sig/$uid/local:/srv/sync');
+    await putMeta('sync2_digest/$uid');
+    expect((await tableRows(uid)).values.where((int n) => n > 0), isEmpty);
+    expect(await metaOf(uid), 4);
+  }
+
+  // BUG-4463 跟进：第一版扫描只认「表里还有行」的 uid，只剩 srs_meta 键的 uid 与没人引用的 sync2_deps 不在清理面
+  // 里。完成标记再换一次键（v3），v2 扫过的库再扫一次，收尾把这两类清掉。
+  test(
+    'the sweep re-runs once over a v2-swept library and clears meta-only orphan '
+    'uids and unreferenced sync2_deps; keys that carry a device id stay',
+    () async {
+      final ProfileViewModel vm = await loadedVm();
+      final String liveUid = await uidOf(await repo.getActiveProfileId());
+      await activeStore();
+      await seed(liveUid, notes: 1, reviews: 1);
+      // 一台别的设备的 ID：UUID 形状，不是任何 profile 的 uid。
+      const String device = '0193a1b2-0000-7000-8000-0000000d0001';
+      const String gone = '0193a1b2-0000-7000-8000-00000000a0e1';
+      // 活 profile 名下带设备 ID 的键、不分 profile 的设备键：把设备 ID 当成无主 uid 去删就会误删它们。
+      await putMeta('sync2_device_ext/$liveUid/$device');
+      await putMeta('sync2_retired/$liveUid/$device');
+      await putMeta('sync2_device_hint/$device');
+      await leaveMetaOnly(gone, device);
+      await storage.db.customStatement(
+        "INSERT INTO sync2_deps (vv) VALUES (x'DEADBEEF')",
+      );
+      // v2 已经扫过。
+      await putMeta('profile_orphan_sweep_v2');
+      expect((await srsStoredProfiles(storage.core)).orphanSweptAt, isNull);
+      expect((await srsStoredProfiles(storage.core)).uids, <String>[liveUid]);
+      final Map<String, int> liveBefore = await tableRows(liveUid);
+      final int liveMeta = await metaOf(liveUid);
+      final int depsBefore = await countAll(
+        'SELECT COUNT(*) AS c FROM sync2_deps',
+      );
+
+      expect(await vm.sweepOrphanProfileData(), 1);
+
+      expect(await metaOf(gone), 0);
+      expect(await metaOf(liveUid), liveMeta);
+      expect(
+        await countAll(
+          'SELECT COUNT(*) AS c FROM srs_meta '
+          "WHERE key = 'sync2_device_hint/$device'",
+        ),
+        1,
+      );
+      expect(await tableRows(liveUid), liveBefore);
+      expect(
+        await countAll('SELECT COUNT(*) AS c FROM sync2_deps'),
+        depsBefore - 1,
+      );
+      expect(
+        await countAll(
+          'SELECT COUNT(*) AS c FROM sync2_ops '
+          'WHERE deps NOT IN (SELECT id FROM sync2_deps)',
+        ),
+        0,
+        reason: 'every op keeps its causal context',
+      );
+      expect((await srsStoredProfiles(storage.core)).orphanSweptAt, isNotNull);
+      expect(
+        backups.existsSync(),
+        isFalse,
+        reason: 'a uid with no rows has nothing to back up',
+      );
+      // 活 profile 照常能写。
+      final SrsDbStore live = await activeStore();
+      await live.createNote(
+        noteTypeId: live.lapisNoteTypeId,
+        fieldsById: <String, String>{
+          srsLapisFieldId(liveUid, 'Expression'): '後',
+        },
+      );
+      final Map<String, int> liveAfter = await tableRows(liveUid);
+      final int depsAfter = await countAll(
+        'SELECT COUNT(*) AS c FROM sync2_deps',
+      );
+
+      // 已扫过：不再跑。
+      expect(await vm.sweepOrphanProfileData(), 0);
+      // 幂等：去掉完成标记硬再扫一遍，也没有可清的、什么都不变。
+      await storage.db.customStatement(
+        "DELETE FROM srs_meta WHERE key = 'profile_orphan_sweep_v3'",
+      );
+      expect(await vm.sweepOrphanProfileData(), 0);
+      expect(await tableRows(liveUid), liveAfter);
+      expect(await metaOf(liveUid), liveMeta);
+      expect(await countAll('SELECT COUNT(*) AS c FROM sync2_deps'), depsAfter);
+      expect((await srsStoredProfiles(storage.core)).orphanSweptAt, isNotNull);
+    },
+  );
+
+  test('leftover meta keys of an unfinished merge target stay until the merge '
+      'finishes; an unrelated meta-only orphan is cleared meanwhile', () async {
+    final ProfileViewModel vm = await loadedVm();
+    final String liveUid = await uidOf(await repo.getActiveProfileId());
+    await activeStore();
+    await seed(liveUid, notes: 1, reviews: 0);
+    const String device = '0193a1b2-0000-7000-8000-0000000d0002';
+    // 并入刚开始：标记已写，目标 uid 的副本还没开（表里没有行），它名下只有上一次用这个 uid 时留下的键。
+    const String target = '0193a1b2-0000-7000-8000-0000000002e0';
+    const String gone = '0193a1b2-0000-7000-8000-0000000003e0';
+    await leaveMetaOnly(target, device);
+    await leaveMetaOnly(gone, device);
+    await storage.db.customStatement(
+      'INSERT INTO srs_meta (key, value) VALUES (?, ?)',
+      <Object>['profile_merge/$liveUid', '{"profileId":1,"newUid":"$target"}'],
+    );
+    final Map<String, int> liveBefore = await tableRows(liveUid);
+    final int liveMeta = await metaOf(liveUid);
+
+    expect(await vm.sweepOrphanProfileData(), 1);
+
+    expect(await metaOf(target), 4, reason: 'merge target is not an orphan');
+    expect(await metaOf(gone), 0);
+    expect(await tableRows(liveUid), liveBefore);
+    expect(await metaOf(liveUid), liveMeta, reason: 'merge marker kept');
+    expect((await srsStoredProfiles(storage.core)).orphanSweptAt, isNull);
+
+    // 并入不做了（标记撤掉）、目标 uid 也没成为本机 profile：下一次扫描才把它当无主清掉，并记完成。
+    await storage.db.customStatement(
+      'DELETE FROM srs_meta WHERE key = ?',
+      <Object>['profile_merge/$liveUid'],
+    );
+    expect(await vm.sweepOrphanProfileData(), 1);
+    expect(await metaOf(target), 0);
+    expect(await tableRows(liveUid), liveBefore);
+    expect((await srsStoredProfiles(storage.core)).orphanSweptAt, isNotNull);
+  });
+
   test(
     'with no live profile uid to compare against the sweep deletes nothing',
     () async {

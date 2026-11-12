@@ -335,6 +335,34 @@ impl Device {
     }
 }
 
+/// 测试：让改投影的命令在「写本机状态行」那一步失败（`local_state::persist_projected` 写下带修订号的整行时触发）。
+/// 命令本体、缓存刷新都已做完，用来验证整笔回滚。[mend_local_state] 撤掉。
+pub(crate) fn break_local_state(core: &SrsCore) {
+    for (name, event) in [("ins", "INSERT"), ("upd", "UPDATE")] {
+        core.exec(
+            &format!(
+                "CREATE TRIGGER test_local_state_boom_{name} BEFORE {event} ON srs_local_state \
+                 WHEN json_extract(NEW.json, '$.revision') IS NOT NULL \
+                 BEGIN SELECT RAISE(ABORT, 'local state row refused'); END"
+            ),
+            &[],
+            false,
+        )
+        .unwrap();
+    }
+}
+
+pub(crate) fn mend_local_state(core: &SrsCore) {
+    for name in ["ins", "upd"] {
+        core.exec(
+            &format!("DROP TRIGGER test_local_state_boom_{name}"),
+            &[],
+            false,
+        )
+        .unwrap();
+    }
+}
+
 pub(crate) fn deck_entity(id: &str) -> Value {
     json!({"t": "entity", "x": {"id": id, "p": P, "k": "deck", "d": {"createdAt": 1, "builtin": "default"}}})
 }
@@ -4141,10 +4169,10 @@ fn ingest_commit_rechecks_device_keys_that_changed_after_prepare() {
     b.core.sync2_ingest_finish(P, T0 + 31).unwrap();
 }
 
-/// 集成审查【中高】：收段的一片不套 Drift 事务，由内核在一笔事务里提交，Dart 的本机状态行同一笔写下。
+/// 集成审查【中高】：收段的一片不套 Drift 事务，由内核在一笔事务里提交，本机状态行同一笔写下。
 /// - 片投递完、提交之前（写锁仍被占着），并发的只读命令走读连接：不被阻塞、看不到这一片没提交的行；
-/// - 提交后本机状态行的修订号 = 调用时的值 + 落库的事件 + 变化的实体（`localRevision` 同值）；
-/// - 本机状态行写不下（坏 JSON）时整片回滚：库与本机状态行都停在这一片之前，会话作废；重开会话同样的段照样收齐。
+/// - 提交后本机状态行的修订号 = 库里原来的值 + 落库的事件 + 变化的实体（`localRevision` 同值），别的键原样；
+/// - 本机状态行写不下时整片回滚：库与本机状态行都停在这一片之前，会话作废；重开会话同样的段照样收齐。
 #[test]
 fn ingest_slice_commits_on_its_own_with_the_local_state_row() {
     // 逐条投递的一片（各片当场落投影、推进修订号）；新设备收段通道的各片只追加，见 tests_channel.rs。
@@ -4194,13 +4222,12 @@ fn ingest_slice_commits_on_its_own_with_the_local_state_row_sequential() {
     // 本机状态行写不下：整片回滚，会话作废。
     b.core.sync2_ingest_begin(P).unwrap();
     b.core.sync2_ingest_prepare(P, segs.clone(), None).unwrap();
-    let bad = b.core.sync2_ingest_commit_persisting(
-        P,
-        T0 + 30,
-        super::transport::CommitBudget::unlimited(),
-        Some("not json"),
-    );
-    assert!(bad.is_err());
+    break_local_state(&b.core);
+    let bad = b
+        .core
+        .sync2_ingest_commit(P, T0 + 30, super::transport::CommitBudget::unlimited());
+    mend_local_state(&b.core);
+    assert!(bad.unwrap_err().contains("local state row refused"));
     assert_eq!(logs(&b), 0, "the failed slice rolled back as a whole");
     assert_eq!(local_json(&b), None);
     assert!(
@@ -4227,14 +4254,25 @@ fn ingest_slice_commits_on_its_own_with_the_local_state_row_sequential() {
     }));
     b.core.sync2_ingest_begin(P).unwrap();
     b.core.sync2_ingest_prepare(P, segs, None).unwrap();
-    let before = json!({"writerId": "w", "revision": 40, "epoch": "e1"}).to_string();
+    // 库里已有的行（修订号 40、去重游标 7、一个这一版不认识的键）：这一片从它推进，带来的校时状态一并写下。
+    b.core
+        .exec(
+            &format!(
+                "INSERT INTO srs_local_state (profile_uid, json) VALUES (srs_id('{P}'), \
+                 '{{\"styleCursor\":7,\"revision\":40,\"epoch\":\"e1\",\"kernelOnly\":7}}')"
+            ),
+            &[],
+            false,
+        )
+        .unwrap();
+    let anchor = json!({"o": 12, "b": "boot"});
     let r: Value = serde_json::from_str(
         &b.core
             .sync2_ingest_commit_persisting(
                 P,
                 T0 + 40,
                 super::transport::CommitBudget::unlimited(),
-                Some(&before),
+                Some(&anchor),
             )
             .unwrap(),
     )
@@ -4252,24 +4290,26 @@ fn ingest_slice_commits_on_its_own_with_the_local_state_row_sequential() {
     let stored: Value = serde_json::from_str(&local_json(&b).unwrap()).unwrap();
     assert_eq!(stored["revision"], json!(40 + landed + changed));
     assert_eq!(r["localRevision"], stored["revision"]);
-    assert_eq!(
-        stored["writerId"],
-        json!("w"),
-        "the rest of the row is written as given"
-    );
-    // 收尾同样在一笔事务里写本机状态行。
+    assert_eq!(r["localEpoch"], json!("e1"));
+    assert_eq!(stored["styleCursor"], json!(7), "the rest of the row stays");
+    assert_eq!(stored["anchor"], anchor);
+    // 收尾同样在一笔事务里写本机状态行：没带校时状态就不动它，别的键原样。
     let fin: Value = serde_json::from_str(
         &b.core
             .sync2_ingest_finish_persisting(
                 P,
                 T0 + 41,
                 super::transport::CommitBudget::unlimited(),
-                Some(&stored.to_string()),
+                None,
             )
             .unwrap(),
     )
     .unwrap();
     assert!(fin["localRevision"].as_i64().unwrap() >= stored["revision"].as_i64().unwrap());
+    let after: Value = serde_json::from_str(&local_json(&b).unwrap()).unwrap();
+    assert_eq!(after["anchor"], anchor, "{after}");
+    assert_eq!(after["kernelOnly"], json!(7), "unknown key kept: {after}");
+    assert_eq!(after["styleCursor"], json!(7));
 }
 
 /// 集成审查【中】：旧小段删除两段式。过了宽限期该删的旧小段这一轮删除失败（head 上传 / `location.delete` 抛错），
