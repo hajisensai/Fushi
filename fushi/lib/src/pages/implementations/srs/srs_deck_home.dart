@@ -1356,6 +1356,7 @@ List<Widget> _srsDeckBanners(
   required SrsDeckListData data,
   required bool showImportTasks,
   required int lapisPending,
+  bool joinProvisional = false,
   required VoidCallback onMigrateLapis,
   required VoidCallback onDismissLapisReminder,
   required VoidCallback onStarterPacks,
@@ -1413,6 +1414,18 @@ List<Widget> _srsDeckBanners(
                 ),
               ],
             ),
+          ],
+        ),
+      ),
+    // 先加入、后写入没赶上（离线 / 超时）：这台设备的复习数据暂时自成一份，下次同步连上时与已有的数据合并。不挡使用。
+    if (joinProvisional)
+      FushiCard(
+        key: const ValueKey<String>('srs-join-provisional'),
+        child: Row(
+          spacing: tokens.spacing.gap * 1.5,
+          children: <Widget>[
+            const FushiIcon(FushiIcons.cloudSync),
+            Expanded(child: Text(t.srs_sync_join_provisional_hint)),
           ],
         ),
       ),

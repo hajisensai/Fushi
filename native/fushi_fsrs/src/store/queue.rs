@@ -165,7 +165,7 @@ pub(crate) struct StudyHub {
 }
 
 /// 写连接上的临时触发器（只在这条连接上、不进库文件、不随备份走）：缓存行与日志的每次增删改记下 id。
-const TRIGGERS: &str = "
+pub(crate) const TRIGGERS: &str = "
 CREATE TEMP TRIGGER IF NOT EXISTS srs_study_card_ins AFTER INSERT ON main.srs_cards_cache
   BEGIN SELECT srs_study_touch(0, NEW.profile_uid, NEW.id); END;
 CREATE TEMP TRIGGER IF NOT EXISTS srs_study_card_upd AFTER UPDATE ON main.srs_cards_cache

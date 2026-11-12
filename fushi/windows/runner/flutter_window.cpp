@@ -28,6 +28,7 @@
 
 #include "crash_dump.h"
 #include "external_video_handoff.h"
+#include "startup_trace.h"
 #include "flutter/generated_plugin_registrant.h"
 #include "audio_loopback_capture.h"
 #include "clipboard_image_reader.h"
@@ -476,6 +477,7 @@ bool FlutterWindow::OnCreate() {
     return false;
   }
 
+  ::fushi::StartupTraceMark("win32-window");
   RECT frame = GetClientArea();
 
   // The size here must match the window dimensions to avoid unnecessary surface
@@ -486,7 +488,9 @@ bool FlutterWindow::OnCreate() {
   if (!flutter_controller_->engine() || !flutter_controller_->view()) {
     return false;
   }
+  ::fushi::StartupTraceMark("engine-create");
   RegisterPlugins(flutter_controller_->engine());
+  ::fushi::StartupTraceMark("register-plugins");
 
   // Title-bar theming channel: Dart pushes surface/onSurface colors so the
   // native caption follows the in-app theme (see window_caption_channel.dart).
@@ -790,6 +794,9 @@ bool FlutterWindow::OnCreate() {
   RegisterGameStreamInputChannel();
   RegisterSystemFontListChannel(flutter_controller_->engine()->messenger());
   RegisterSystemTransparencyChannel(flutter_controller_->engine()->messenger());
+  ::fushi::RegisterStartupTraceChannel(
+      flutter_controller_->engine()->messenger());
+  ::fushi::StartupTraceMark("runner-channels");
 
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
   caption_snap_button_.Attach(
@@ -3184,7 +3191,8 @@ void FlutterWindow::RegisterGalHookTextChannel() {
                   WideFromValue(args, "sourceText", L""),
                   Int64FromValue(args, "textGeneration", 0), *glyph_words,
                   IntFromValue(args, "clientWidth", 0),
-                  IntFromValue(args, "clientHeight", 0), &error);
+                  IntFromValue(args, "clientHeight", 0),
+                  IntFromValue(args, "clientSizeTolerance", 0), &error);
             }
           } else if (method == "attachedUpdateText") {
             request = attached_text_surface_window_->UpdateText(
