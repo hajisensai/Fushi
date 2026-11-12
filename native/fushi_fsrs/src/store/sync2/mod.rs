@@ -16,6 +16,7 @@ pub(crate) mod devices;
 pub mod digest;
 pub mod media;
 pub(crate) mod mvr;
+pub(crate) mod ownership;
 pub mod relay;
 pub(crate) mod sched_local;
 pub mod schema;
@@ -2161,7 +2162,8 @@ impl SrsCore {
 
     /// 本机写入（设计 §6.2 第 1 步之前：复习立即本地落盘）。[input] 是 JSON 数组，每项
     /// `{"e": <SrsEvent JSON>, "note": <日志卡片的笔记 ID | null>, "intent"?: "answer"}`。返回
-    /// `{"marks":{..见 [Marks::to_json]}, "landed":[每项是否落了], "replayed":[...]}`。
+    /// `{"marks":{..见 [Marks::to_json]}, "landed":[每项是否落了], "foreign":[被拒绝的输入项下标], "replayed":[...]}`。
+    /// 指向别的 profile 实体的输入项不追加、不投影（[ownership]），下标在 `foreign` 里交回。
     pub fn sync2_apply_local(
         &self,
         profile: &str,
@@ -2183,9 +2185,12 @@ impl SrsCore {
             };
             let mut deps_row: Option<(Vec<u8>, i64)> = None;
             let mut landed = Vec::with_capacity(items.len());
+            // 指向别的 profile 实体的输入项（下标）：不追加、不投影（ownership.rs）。
+            let mut foreign: Vec<usize> = Vec::new();
+            let mut owners = ownership::Seen::new();
             // 牌组树（配置快照用）：这一批里落过非日志操作（可能改了配置 / 归属）就重读。
             let mut tree: Option<config::DeckTree> = None;
-            for it in &items {
+            for (at, it) in items.iter().enumerate() {
                 let stamped = it["stamped"] == Value::Bool(true);
                 let body = body_of_event(
                     &it["e"],
@@ -2203,6 +2208,11 @@ impl SrsCore {
                     (_, Some(other)) => return Err(format!("apply: unknown intent {other}")),
                     (b, None) => b,
                 };
+                if ownership::targets_foreign(c, profile, &body, &mut owners)? {
+                    foreign.push(at);
+                    landed.push(false);
+                    continue;
+                }
                 let body = stamp_local_config(c, profile, body, stamped, &mut tree)?;
                 let before = t.marks.landed;
                 let bodies = expand_tags(c, profile, body)?;
@@ -2226,6 +2236,7 @@ impl SrsCore {
             Ok(json!({
                 "marks": t.marks.to_json(),
                 "landed": landed,
+                "foreign": foreign,
                 "replayed": replayed,
                 "diagnostics": t.diagnostics,
                 "changed": t.entities_changed.iter().map(|(k, e)| json!([k, e])).collect::<Vec<_>>(),
@@ -2398,7 +2409,12 @@ impl SrsCore {
             };
             let mut applied = applied_vv(c, profile)?;
             let mut t = Touched::default();
+            let mut owners = ownership::Seen::new();
             for b in &bodies {
+                // 别的 profile 的实体：按没有这个实体处理，不追加（ownership.rs）。
+                if ownership::targets_foreign(c, profile, b, &mut owners)? {
+                    continue;
+                }
                 let op = append_local(c, &mut local, &mut applied, b, now)?;
                 project(c, profile, &op, now, true, &mut t)?;
             }
@@ -2586,6 +2602,8 @@ mod tests_head_gap;
 #[cfg(test)]
 mod tests_migrate_dedup;
 #[cfg(test)]
+mod tests_ownership;
+#[cfg(test)]
 mod tests_perf;
 #[cfg(test)]
 mod tests_replay_pending;
@@ -2614,9 +2632,13 @@ impl SrsCore {
     ) -> Result<Value, String> {
         self.read_visible(|c| {
             let tree = config::DeckTree::load(c, profile)?;
+            // 别的 profile 的卡按「没有这张卡」算（ownership.rs）：不读它的笔记与日志，回包与不存在的卡同形。
+            let foreign = ownership::foreign(c, profile, EntKind::Card, card)?;
+            let note = if foreign { None } else { note };
             // 调用方没给笔记（作答路径不再先读一遍卡片缓存行）：按缓存行补上，结果里交回（落日志时要带上）。
             let looked_up: Option<String> = match note {
                 Some(_) => None,
+                None if foreign => None,
                 None => c
                     .prepare_cached("SELECT srs_idt(note_id) AS note_id FROM srs_cards_cache WHERE id = srs_id(?1)")
                     .map_err(sql)?
@@ -2625,7 +2647,11 @@ impl SrsCore {
                     .map_err(sql)?,
             };
             let note = note.or(looked_up.as_deref());
-            let Group { rows, note: group_note } = group_of(c, card, note)?;
+            let Group { rows, note: group_note } = if foreign {
+                Group { rows: Vec::new(), note: None }
+            } else {
+                group_of(c, card, note)?
+            };
             // 此刻的生效配置：预览的是「现在作答」，作答落库时 `sc` 记下的也是这一份（[stamp_config]）。
             let deck = if rows.is_empty() && note.is_none() { None } else { Some(config::card_deck(c, &tree, card, group_note.as_deref())?) };
             let cfg = match &deck {

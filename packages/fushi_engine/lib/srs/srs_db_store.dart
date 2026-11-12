@@ -1087,12 +1087,14 @@ class SrsDbStore implements SrsSync2Host {
                 'FROM srs_field_edits f '
                 'LEFT JOIN srs_event_local s ON s.event_id = f.id '
                 'WHERE f.entity_kind = ? AND f.field_key = ? '
-                'AND f.entity_id IN (${_marks(chunk)})',
+                'AND f.entity_id IN (${_marks(chunk)}) '
+                'AND +f.profile_uid = ?',
                 variables: <Variable<Object>>[
                   Variable<String>(kind),
                   Variable<String>(fieldKey),
                   for (final String id in chunk)
                     Variable<String>(id, srsIdType),
+                  Variable<String>(profileUid, srsIdType),
                 ],
                 readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
                   db.srsFieldEdits,
@@ -1358,7 +1360,9 @@ class SrsDbStore implements SrsSync2Host {
   /// [logNotes]：日志卡片 → 笔记（调用方已知时给，省一次读卡片行）；[answers]：本机作答写的日志 ID（显式声明
   /// 评分意图，内核不从日志形状反推）；[study]：落库、刷新缓存后在同一次命令里排队（store/study.rs），结果交给
   /// [onStudy]。
-  Future<void> _emit(
+  ///
+  /// 返回内核没收的事件 ID：指向别的 profile 实体的那些（见 [_storeLocalBatch]），没有落库。
+  Future<Set<String>> _emit(
     List<SrsEvent> events, {
     Map<String, String> logNotes = const <String, String>{},
     Set<String> answers = const <String>{},
@@ -1369,6 +1373,7 @@ class SrsDbStore implements SrsSync2Host {
       identical(Zone.current[_writeZoneKey], this),
       '_emit outside runExclusive',
     );
+    final Set<String> refused = <String>{};
     await _transactionOrReload(() async {
       // 同步 v2：操作落进 ops 就是「已备份、待发布」，没有单独的发件箱（发件按段，见 store/sync2/transport.rs）。
       await _storeLocalBatch(
@@ -1377,9 +1382,11 @@ class SrsDbStore implements SrsSync2Host {
         answers: answers,
         study: study,
         onStudy: onStudy,
+        refused: refused,
       );
       await _saveLocal();
     });
+    return refused;
   }
 
   /// 落一批事件（幂等；本机产生、导入、对端来的都走这里）：已有的身份记录、日志、相关实体的
@@ -1389,6 +1396,10 @@ class SrsDbStore implements SrsSync2Host {
   /// - 修改记录：同 ID 已在不落；被同一字段键上已有记录支配的丢掉，支配别人的把对方删掉；
   /// - 日志：同 ID 取规范编码较小的一份；不认识的事件原样保留。
   /// 每条真落库的事件修订号 +1（[changeFingerprint]）。返回真正新落的事件数。
+  ///
+  /// 指向**别的 profile** 的实体（同一份 srs.db 里记在另一个 uid 名下的笔记 / 卡片 / 牌组 / 笔记类型）的事件内核
+  /// 不收（native/fushi_fsrs/src/store/sync2/ownership.rs）：不追加操作、不动对方的任何一行，事件 ID 记进
+  /// [refused]。实体 ID 是整库主键，profile 之间互不干扰靠的就是这一条。
   ///
   /// 以前每条事件「先查再写」各两三次往返（库在后台 isolate，每次往返都是一次跨 isolate 消息），
   /// 导入一个几千条笔记的包、应用一批对端事件都要几万次往返（BUG-3549 / BUG-3543）。
@@ -1401,6 +1412,7 @@ class SrsDbStore implements SrsSync2Host {
     Set<String> answers = const <String>{},
     Map<String, Object?>? study,
     void Function(Map<String, Object?> study)? onStudy,
+    Set<String>? refused,
   }) async {
     // 同步 v2：本机事件交给 Rust 的 `apply`——分配 OpId / HLC / 因果上下文、落唯一事实表（ops）、落投影、
     // 重放受影响的卡，一次 FFI（docs/specs/2026-10-25-srs-sync-v2-design.md §3、§4）。修改记录的 dot / ID
@@ -1447,6 +1459,11 @@ class SrsDbStore implements SrsSync2Host {
       blobs: <Uint8List>[utf8.encode(jsonEncode(input))],
     );
     final int landed = _absorbProjection(r);
+    if (refused != null) {
+      for (final Object? at in (r['foreign'] as List?) ?? const <Object?>[]) {
+        refused.add(events[at! as int].id);
+      }
+    }
     if (r['study'] case final Map<Object?, Object?> st) {
       onStudy?.call(st.cast<String, Object?>());
     }
@@ -2582,13 +2599,21 @@ class SrsDbStore implements SrsSync2Host {
   /// 批量读（历史、血统）每块的卡数：块内的读各合成几次往返。
   static const int _refreshChunk = 200;
 
-  /// 身份记录行（刷新期间先查预读）。
+  /// [t] 的行记在本 profile 名下。实体 ID 是整库主键，按 ID（或按牌组 / 笔记）的读一律带上这一条：别的 profile
+  /// 的 ID 与不存在的 ID 一样读不到（写入由内核把关，见 [_storeLocalBatch]）。写成一元加号：这一项不参与选
+  /// 索引，查询照旧按 ID 的索引定位，计划与结果顺序都不变。
+  Expression<bool> _own(TableInfo<Table, dynamic> t) =>
+      CustomExpression<String>(
+        '+${t.aliasedName}.profile_uid',
+      ).equalsExp(Variable<String>(profileUid, srsIdType));
+
+  /// 身份记录行（刷新期间先查预读）。只认本 profile 的（[_own]）。
   Future<SrsEntityRow?> _entityRow(String id) async {
     final _RefreshPrefetch? pre = _RefreshPrefetch.current;
     if (pre != null && pre.entities.containsKey(id)) return pre.entities[id];
     return (db.select(
       db.srsEntities,
-    )..where((t) => t.id.equals(id))).getSingleOrNull();
+    )..where((t) => t.id.equals(id) & _own(t))).getSingleOrNull();
   }
 
   Future<void> _prefetchEntities(
@@ -2601,7 +2626,7 @@ class SrsDbStore implements SrsSync2Host {
       }
       for (final SrsEntityRow r in await (db.select(
         db.srsEntities,
-      )..where((t) => t.id.isIn(chunk))).get()) {
+      )..where((t) => t.id.isIn(chunk) & _own(t))).get()) {
         pre.entities[r.id] = r;
       }
     }
@@ -2625,11 +2650,14 @@ class SrsDbStore implements SrsSync2Host {
                 'CAST(f.json AS BLOB) AS j, s.server_time AS st '
                 'FROM srs_field_edits f '
                 'LEFT JOIN srs_event_local s ON s.event_id = f.id '
-                'WHERE f.entity_kind = ? AND f.entity_id IN (${_marks(chunk)})',
+                // 只认本 profile 名下的记录（见 [_own]）；一元加号：照旧按 (种类, 实体) 的索引定位。
+                'WHERE f.entity_kind = ? AND f.entity_id IN (${_marks(chunk)}) '
+                'AND +f.profile_uid = ?',
                 variables: <Variable<Object>>[
                   Variable<String>(kind.wire),
                   for (final String id in chunk)
                     Variable<String>(id, srsIdType),
+                  Variable<String>(profileUid, srsIdType),
                 ],
                 readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
                   db.srsFieldEdits,
@@ -2667,10 +2695,12 @@ class SrsDbStore implements SrsSync2Host {
               .customSelect(
                 'SELECT l.*, e.server_time AS st__ FROM srs_review_logs l '
                 'LEFT JOIN srs_event_local e ON e.event_id = l.id '
-                'WHERE l.card_id IN (${_marks(chunk)})',
+                'WHERE l.card_id IN (${_marks(chunk)}) '
+                'AND +l.profile_uid = ?',
                 variables: <Variable<Object>>[
                   for (final String id in chunk)
                     Variable<String>(id, srsIdType),
+                  Variable<String>(profileUid, srsIdType),
                 ],
                 readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
                   db.srsReviewLogs,
@@ -3150,7 +3180,7 @@ class SrsDbStore implements SrsSync2Host {
           ]
         : await (db.select(
             db.srsReviewLogs,
-          )..where((t) => t.cardId.isIn(cardIds))).get();
+          )..where((t) => t.cardId.isIn(cardIds) & _own(t))).get();
     final List<SrsReviewLog> logs = <SrsReviewLog>[
       for (final SrsReviewLogRow r in rows)
         SrsReviewLog.fromJson(
@@ -3200,9 +3230,10 @@ class SrsDbStore implements SrsSync2Host {
       ]),
     );
     if (out.isNotEmpty) {
-      await _emit(<SrsEvent>[
+      final Set<String> refused = await _emit(<SrsEvent>[
         for (final SrsFieldEdit e in out) SrsEditEvent(e),
       ]);
+      out.removeWhere((SrsFieldEdit e) => refused.contains(e.id));
     }
     return out;
   });
@@ -3278,7 +3309,10 @@ class SrsDbStore implements SrsSync2Host {
       for (final SrsEntityRecord r in records) SrsEntityEvent(r),
       for (final SrsFieldEdit e in out) SrsEditEvent(e),
     ];
-    if (events.isNotEmpty) await _emit(events);
+    if (events.isNotEmpty) {
+      final Set<String> refused = await _emit(events);
+      out.removeWhere((SrsFieldEdit e) => refused.contains(e.id));
+    }
     return out;
   });
 
@@ -3482,7 +3516,7 @@ class SrsDbStore implements SrsSync2Host {
     final Set<String> inside = <String>{
       for (final SrsCardCacheRow c in await (db.select(
         db.srsCardsCache,
-      )..where((c) => c.deckId.isIn(deckIds))).get())
+      )..where((c) => c.deckId.isIn(deckIds) & _own(c))).get())
         c.noteId,
     };
     final Set<String> outside = <String>{};
@@ -3510,7 +3544,7 @@ class SrsDbStore implements SrsSync2Host {
   Future<List<String>> _cardIdsInDecks(List<String> deckIds) async => <String>[
     for (final SrsCardCacheRow c in await (db.select(
       db.srsCardsCache,
-    )..where((c) => c.deckId.isIn(deckIds))).get())
+    )..where((c) => c.deckId.isIn(deckIds) & _own(c))).get())
       c.id,
   ];
 
@@ -3760,9 +3794,10 @@ class SrsDbStore implements SrsSync2Host {
           ]),
         );
         if (out.isNotEmpty) {
-          await _emit(<SrsEvent>[
+          final Set<String> refused = await _emit(<SrsEvent>[
             for (final SrsFieldEdit e in out) SrsEditEvent(e),
           ]);
+          out.removeWhere((SrsFieldEdit e) => refused.contains(e.id));
         }
         return out;
       });
@@ -3776,7 +3811,7 @@ class SrsDbStore implements SrsSync2Host {
       out.addAll(
         await (db.select(
           db.srsCardsCache,
-        )..where((c) => c.id.isIn(chunk))).get(),
+        )..where((c) => c.id.isIn(chunk) & _own(c))).get(),
       );
     }
     return out;
@@ -3863,7 +3898,7 @@ class SrsDbStore implements SrsSync2Host {
 
   Future<SrsCardCacheRow?> cardRow(String cardId) => (db.select(
     db.srsCardsCache,
-  )..where((c) => c.id.equals(cardId))).getSingleOrNull();
+  )..where((c) => c.id.equals(cardId) & _own(c))).getSingleOrNull();
 
   /// 四个评分的预览。走 Rust 的重放路径（`preview`）：按钮上显示的间隔与之后合并重放出的到期是同一段
   /// 代码、同一套确定性浮点运算（设计 §4.5）；记忆状态 / 参数也由它给出，RWKV 是否可用只决定日志的 `alg`。
@@ -5042,7 +5077,9 @@ class SrsDbStore implements SrsSync2Host {
       final List<TypedResult> rows =
           await (db.selectOnly(c)
                 ..addColumns(<Expression<Object>>[c.id])
-                ..where(c.deckId.isIn(chunk) & c.hidden.equals(false)))
+                ..where(
+                  c.deckId.isIn(chunk) & c.hidden.equals(false) & _own(c),
+                ))
               .get();
       out.addAll(rows.map((TypedResult r) => r.read(c.id)!));
     }
@@ -5051,7 +5088,7 @@ class SrsDbStore implements SrsSync2Host {
 
   Future<List<SrsCardCacheRow>> cardsOfNote(String noteId) => (db.select(
     db.srsCardsCache,
-  )..where((c) => c.noteId.equals(noteId))).get();
+  )..where((c) => c.noteId.equals(noteId) & _own(c))).get();
 
   /// 待裁决笔记数（冲突角标；走 v125 的部分索引 idx_srs_notes_cache_pending，不读回行）。
   Future<int> pendingDecisionCount() async =>
