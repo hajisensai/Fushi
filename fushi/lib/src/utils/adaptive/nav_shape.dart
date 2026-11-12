@@ -6,9 +6,9 @@ import 'package:fushi/src/utils/components/glass/fushi_expressive.dart'
 
 /// M3 Expressive「expressive」动效方案的 default spatial 弹簧（刚度 380、
 /// 阻尼比 0.8）：导航指示器选中时带一点回弹地展开、选中形状由圆变形，侧栏与
-/// 底栏（含各底栏原型）同用。
-final SpringDescription kNavExpressiveSpatial =
-    SpringDescription.withDampingRatio(mass: 1, stiffness: 380, ratio: 0.8);
+/// 底栏（含各底栏原型）同用。取官方 token [Springs.expressiveDefaultSpatial]。
+const SpringDescription kNavExpressiveSpatial =
+    Springs.expressiveDefaultSpatial;
 
 /// MD3 导航的选中形状：没给 [AdaptiveNavItem.railShape] 的目的地按序号轮流取。
 /// 全是 M3E 官方 [MaterialShapes]，彼此轮廓差得够开，相邻两项不会撞形。

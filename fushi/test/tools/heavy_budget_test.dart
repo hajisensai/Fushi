@@ -210,6 +210,139 @@ void main() {
     );
   });
 
+  // 2026-11-11: a small run may go ahead of queued runs that do not fit the
+  // budget, but never into the room the head needs.
+  group('heavyMayGoAhead', () {
+    const int budget = 16384;
+    HeavyHolder holder(int bookedMb, int startedAtMs) => HeavyHolder(
+      slot: 0,
+      pid: 1,
+      startedAtMs: startedAtMs,
+      label: 'h',
+      cwd: '',
+      capMb: bookedMb,
+    );
+    // An older test (7680) and an analyze that started after the head queued.
+    final List<HeavyHolder> busy = <HeavyHolder>[
+      holder(7680, 1000),
+      holder(4608, 3000),
+    ];
+    const HeavyEarlier head = (bookedMb: 7680, enqueuedUs: 2000000);
+
+    test('past a head that does not fit, within what the head leaves', () {
+      expect(
+        heavyMayGoAhead(
+          needMb: 2048,
+          earlier: <HeavyEarlier>[head],
+          holders: busy,
+          budgetMb: budget,
+        ),
+        isTrue,
+      );
+      // 4608 + 2048 + 2048 already started since the head queued: 2048 more
+      // would leave the head less than its 7680 of the 16384.
+      expect(
+        heavyMayGoAhead(
+          needMb: 2048,
+          earlier: <HeavyEarlier>[head],
+          holders: <HeavyHolder>[
+            holder(4608, 3000),
+            holder(2048, 4000),
+            holder(2048, 5000),
+          ],
+          budgetMb: budget,
+        ),
+        isFalse,
+      );
+      // A head that books the whole budget needs every run gone.
+      expect(
+        heavyMayGoAhead(
+          needMb: 2048,
+          earlier: <HeavyEarlier>[(bookedMb: 16384, enqueuedUs: 2000000)],
+          holders: <HeavyHolder>[holder(7680, 1000)],
+          budgetMb: budget,
+        ),
+        isFalse,
+      );
+    });
+
+    test('never past a waiter that can start, or one of unknown size', () {
+      // The head fits next to the analyze alone.
+      expect(
+        heavyMayGoAhead(
+          needMb: 2048,
+          earlier: <HeavyEarlier>[head],
+          holders: <HeavyHolder>[holder(4608, 3000)],
+          budgetMb: budget,
+        ),
+        isFalse,
+      );
+      // The head does not fit, but the second waiter does: it goes next.
+      expect(
+        heavyMayGoAhead(
+          needMb: 2048,
+          earlier: <HeavyEarlier>[head, (bookedMb: 2048, enqueuedUs: 2500000)],
+          holders: busy,
+          budgetMb: budget,
+        ),
+        isFalse,
+      );
+      // Queued by an older checkout's tool: no booking recorded.
+      expect(
+        heavyMayGoAhead(
+          needMb: 2048,
+          earlier: <HeavyEarlier>[(bookedMb: null, enqueuedUs: 2000000)],
+          holders: busy,
+          budgetMb: budget,
+        ),
+        isFalse,
+      );
+      // No budget on this machine: slots alone pace the runs.
+      expect(
+        heavyMayGoAhead(
+          needMb: 2048,
+          earlier: <HeavyEarlier>[head],
+          holders: busy,
+          budgetMb: null,
+        ),
+        isFalse,
+      );
+    });
+  });
+
+  test('heavyRunKey: one run however the tool and directory are spelled', () {
+    final String key = heavyRunKey(
+      cwd: r'D:\repo\.worktrees\a\fushi',
+      argv: <String>['flutter', 'test', 'test/a_test.dart', '--no-pub'],
+    );
+    expect(
+      heavyRunKey(
+        cwd: 'd:/repo/.worktrees/a/fushi/',
+        argv: <String>[
+          'D:/sdk/bin/flutter.bat',
+          'test',
+          'test/a_test.dart',
+          '--no-pub',
+        ],
+      ),
+      key,
+    );
+    expect(
+      heavyRunKey(
+        cwd: r'D:\repo\.worktrees\b\fushi',
+        argv: <String>['flutter', 'test', 'test/a_test.dart', '--no-pub'],
+      ),
+      isNot(key),
+    );
+    expect(
+      heavyRunKey(
+        cwd: r'D:\repo\.worktrees\a\fushi',
+        argv: <String>['flutter', 'test', 'test/b_test.dart', '--no-pub'],
+      ),
+      isNot(key),
+    );
+  });
+
   test('a holder without a recorded ceiling books the largest one', () {
     final HeavyHolder? old = HeavyHolder.fromJson(0, <String, Object>{
       'pid': 7,

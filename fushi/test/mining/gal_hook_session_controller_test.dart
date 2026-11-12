@@ -4616,6 +4616,225 @@ void _bug950Guard() {
     endpoints.dispose();
   });
 
+  group('Unity 对白面道自动选中（kTextEventFlagDialogueSurface）', () {
+    // 三种真机证据形状的合成重放（不含真实台词）。Unity 画布文本一组件一道：
+    // sourceKind 3（unity_tmp）、thread id = 组件指针 + setter hook code。
+    const int kUnityTmp = 3;
+    const String kSetText = 'Mono:TMPro.TMP_Text.set_text';
+    const String kSetTextBool = 'Mono:TMPro.TMP_Text.SetText(string,bool)';
+    const String kSetTextSingle = 'Mono:TMPro.TMP_Text.SetText(string)';
+    const String kUiText = 'Mono:UnityEngine.UI.Text.set_text';
+
+    GalHookedLine unity(
+      int seq,
+      int threadId,
+      String hookCode,
+      String text, {
+      bool dialogue = false,
+    }) => GalHookedLine(
+      seq: seq,
+      timestampMs: 1000 + seq,
+      text: text,
+      threadId: threadId,
+      threadAddress: 0x7ff000000000 + threadId,
+      sourceKind: kUnityTmp,
+      eventKind: text.isEmpty
+          ? GalTextEventKind.threadDiscovered
+          : GalTextEventKind.line,
+      eventFlags: dialogue ? GalHookedLine.flagDialogueSurface : 0,
+      hookName: hookCode == kUiText
+          ? 'Unity Mono UI.Text'
+          : 'Unity Mono TMP_Text',
+      hookCode: hookCode,
+    );
+
+    GalHookSessionController controllerFor(
+      TexthookerService service,
+      ChangeNotifier endpoints,
+      _FakeEngineSource engine,
+    ) => GalHookSessionController(
+      textService: service,
+      isWindows: true,
+      targetWow64Probe: (_) async => false,
+      injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
+      engineSourceFactory:
+          ({
+            required int targetPid,
+            required String? launchExe,
+            required String injectorPath,
+            required bool lunaPcHooks,
+            int? lunaCodepage,
+            List<String> launchArguments = const <String>[],
+            String launchWorkdir = '',
+            GalJapaneseLocaleMode japaneseLocaleMode =
+                kGalDefaultJapaneseLocaleMode,
+            String? contentLanguage,
+          }) => engine,
+      loopbackSourceFactory: _FakeLoopbackSource.new,
+      textPollInterval: const Duration(milliseconds: 5),
+      endpointListenable: endpoints,
+      endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+    );
+
+    // 形状 1（TMP）：~50 条 set_text UI 标签各 1 行 + 对白在一条
+    // SetText(string,bool) 道上；第 4 句时 native 判定成对白面。
+    List<GalHookedLine> manyLabelsShape({required bool promoted}) {
+      int seq = 0;
+      const int dialogue = 9001;
+      return <GalHookedLine>[
+        for (int i = 0; i < 50; i++) unity(++seq, 100 + i, kSetText, 'ラベル$i'),
+        for (int n = 1; n <= 4; n++)
+          unity(++seq, dialogue, kSetTextBool, '「合成の台詞その$nです」'),
+        if (promoted) unity(++seq, dialogue, kSetTextBool, '', dialogue: true),
+        if (promoted)
+          unity(++seq, dialogue, kSetTextBool, '「合成の台詞その5です」', dialogue: true),
+      ];
+    }
+
+    // 形状 2（TMP 3.2）：设置页 UI.Text 打字机预览逐字增长、循环同一句——观测数
+    // 最多（这里 1000+ 行）；对白在 SetText(string) 道上逐字增长，后来被判成对白面。
+    List<GalHookedLine> loopingPreviewShape() {
+      int seq = 0;
+      const int preview = 300;
+      const int dialogue = 9002;
+      const String sentence = 'プレビュー用の合成文です';
+      final List<GalHookedLine> lines = <GalHookedLine>[];
+      for (int cycle = 0; cycle < 90; cycle++) {
+        for (int n = 1; n <= sentence.length; n++) {
+          lines.add(unity(++seq, preview, kUiText, sentence.substring(0, n)));
+        }
+      }
+      for (int line = 1; line <= 5; line++) {
+        final String text = '「合成の台詞その$lineです」';
+        for (int n = 1; n <= text.length; n++) {
+          lines.add(
+            unity(
+              ++seq,
+              dialogue,
+              kSetTextSingle,
+              text.substring(0, n),
+              dialogue: line == 5,
+            ),
+          );
+        }
+        if (line == 4) {
+          lines.add(unity(++seq, dialogue, kSetTextSingle, '', dialogue: true));
+        }
+      }
+      return lines;
+    }
+
+    // 形状 3（UI.Text）：只有一条 UI.Text 道出叙述。
+    List<GalHookedLine> singleNarrationShape() {
+      int seq = 0;
+      const int narration = 9003;
+      return <GalHookedLine>[
+        for (int n = 1; n <= 4; n++)
+          unity(++seq, narration, kUiText, '合成の地の文その$n。'),
+        unity(++seq, narration, kUiText, '', dialogue: true),
+        unity(++seq, narration, kUiText, '合成の地の文その5。', dialogue: true),
+      ];
+    }
+
+    for (final (String name, List<GalHookedLine> Function() shape, int wanted)
+        in <(String, List<GalHookedLine> Function(), int)>[
+          ('many TMP labels', () => manyLabelsShape(promoted: true), 9001),
+          ('looping UI.Text preview', loopingPreviewShape, 9002),
+          ('single UI.Text narration', singleNarrationShape, 9003),
+        ]) {
+      test('$name：native 标成对白面的道被自动选中', () async {
+        final TexthookerService service = TexthookerService.test();
+        final ChangeNotifier endpoints = ChangeNotifier();
+        final _FakeEngineSource engine = _FakeEngineSource(
+          pairedBytes: Uint8List(0),
+          audioFormat: null,
+          textReady: true,
+          polledLines: shape(),
+        );
+        final GalHookSessionController controller = controllerFor(
+          service,
+          endpoints,
+          engine,
+        );
+        await controller.startAttachedCapture(
+          const ExternalWindowInfo(hwnd: 8, pid: 909, title: 'Unity'),
+        );
+        for (
+          int i = 0;
+          i < 200 && controller.selectedNativeTextThreadId != wanted;
+          i++
+        ) {
+          await Future<void>.delayed(const Duration(milliseconds: 5));
+        }
+
+        expect(controller.selectedNativeTextThreadId, wanted);
+        final TexthookerTextThread chosen = service.textThreads.firstWhere(
+          (TexthookerTextThread thread) => thread.nativeThreadId == wanted,
+        );
+        expect(chosen.dialogueSurface, isTrue);
+        expect(isEngineExactTextThread(chosen), isTrue);
+        expect(controller.selectedTextThreadKey, chosen.key);
+        // 其它 Unity 道（含观测数最多的预览道）都没有被当成对白面。
+        for (final TexthookerTextThread other in service.textThreads) {
+          if (other.nativeThreadId == wanted) continue;
+          expect(other.dialogueSurface, isFalse, reason: other.key);
+          expect(isEngineExactTextThread(other), isFalse, reason: other.key);
+        }
+        expect(
+          controller.events.map((GalHookEvent event) => event.code),
+          contains('text.thread_engine_exact_selected'),
+        );
+
+        await controller.close();
+        endpoints.dispose();
+      });
+    }
+
+    test('没有对白面标记时，几十条 Unity 道一条都不自动选（频率不是判据）', () async {
+      final TexthookerService service = TexthookerService.test();
+      final ChangeNotifier endpoints = ChangeNotifier();
+      final List<GalHookedLine> lines = <GalHookedLine>[
+        ...manyLabelsShape(promoted: false),
+        // 再叠一条出行最多的打字机预览道。
+        for (int n = 1; n <= 12; n++)
+          unity(54 + n, 300, kUiText, 'プレビュー用の合成文です'.substring(0, n)),
+      ];
+      final _FakeEngineSource engine = _FakeEngineSource(
+        pairedBytes: Uint8List(0),
+        audioFormat: null,
+        textReady: true,
+        polledLines: lines,
+      );
+      final GalHookSessionController controller = controllerFor(
+        service,
+        endpoints,
+        engine,
+      );
+      await controller.startAttachedCapture(
+        const ExternalWindowInfo(hwnd: 8, pid: 909, title: 'Unity'),
+      );
+      // 等到最后一行确实被摄入（自动选线程的判定就在同一轮 poll 里跑完）。
+      for (int i = 0; i < 200; i++) {
+        final Iterable<TexthookerTextThread> preview = service.textThreads
+            .where((TexthookerTextThread t) => t.nativeThreadId == 300);
+        if (preview.isNotEmpty && preview.first.observedLineCount >= 12) break;
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+      final TexthookerTextThread preview = service.textThreads.firstWhere(
+        (TexthookerTextThread t) => t.nativeThreadId == 300,
+      );
+      expect(preview.observedLineCount, 12);
+      expect(controller.selectedNativeTextThreadId, isNull);
+      expect(
+        controller.events.map((GalHookEvent event) => event.code),
+        isNot(contains('text.thread_engine_exact_selected')),
+      );
+
+      await controller.close();
+      endpoints.dispose();
+    });
+  });
+
   test('BUG-2069：配对到的资源语音必须把整句时长写回行条目（制卡动图靠它决定抓多长）', () async {
     final TexthookerService service = TexthookerService.test();
     final ChangeNotifier endpoints = ChangeNotifier();
@@ -5157,6 +5376,44 @@ void _gameExitWatchTests() {
     endpoints.dispose();
   });
 
+  test('同目录启动器 stub 在第一次采样前就退出：launch 会话交接给它拉起的本体', () async {
+    // ファタモルガーナ：原始入口 fata_jp.exe 只 CreateProcessW 拉起同目录的
+    // fata.exe -language=jp 就退出，注入器回报的 LAUNCH pid（假引擎 4242）一次也
+    // 没被判活过。旧实现套「从没见过活着就永不判死」，会话永远停在已退出的 stub 上。
+    final ChangeNotifier endpoints = ChangeNotifier();
+    final _FakeGameProcessProbe probe = _FakeGameProcessProbe()
+      ..alive.add(5001)
+      ..processes.add(
+        const GalgameProcessInfo(
+          pid: 5001,
+          imagePath: r'D:\Games\Fata\fata.exe',
+        ),
+      );
+    final List<int> engineTargetPids = <int>[];
+    final GalHookSessionController controller = buildController(
+      probe: probe,
+      endpoints: endpoints,
+      engineTargetPids: engineTargetPids,
+    );
+    expect(
+      (await controller.launchGame(r'D:\Games\Fata\fata_jp.exe')).launched,
+      isTrue,
+    );
+    await pumpUntil(
+      () => codes(controller).contains('session.game_process_handoff'),
+    );
+    expect(codes(controller), contains('session.game_process_handoff'));
+    await pumpUntil(() => engineTargetPids.contains(5001));
+    expect(engineTargetPids.last, 5001);
+    expect(controller.state.gamePid, 5001);
+    expect(controller.state.isActive, isTrue);
+    expect(controller.gameExitedCount.value, 0);
+    expect(codes(controller), isNot(contains('session.game_exited')));
+
+    await controller.close();
+    endpoints.dispose();
+  });
+
   test('BUG-4002：游戏目录下有接手进程（自重启）时整条会话跟到新进程', () async {
     final ChangeNotifier endpoints = ChangeNotifier();
     final _FakeGameProcessProbe probe = _FakeGameProcessProbe()
@@ -5430,6 +5687,32 @@ void _tyranoDomSessionTests() {
       await controller.close();
     });
 
+    test('DOM 正文在线后不再要求选台词线程，并通知工作台刷新', () async {
+      final GalHookSessionController controller = buildController();
+      await controller.launchGame(r'D:\games\tyrano\game.exe');
+      await _until(() => controller.tyranoDomFeed != null);
+      expect(controller.hasEngineSource, isTrue);
+      expect(controller.selectedTextThreadKey, isNull);
+      expect(
+        controller.requiresTextThreadSelection,
+        isTrue,
+        reason: 'DOM 还没给出正文时仍靠引擎文本道，未选线程就是在等用户选',
+      );
+
+      int notifications = 0;
+      void listener() => notifications++;
+      controller.addListener(listener);
+      tick = 7000;
+      sources.single.emit(_domFrame('synthetic dom line', generation: 1));
+      await _until(() => service.entries.isNotEmpty);
+      expect(service.entries.single.sourceLabel, kTyranoDomLineSourceLabel);
+      expect(controller.tyranoDomTextOnline, isTrue);
+      expect(controller.requiresTextThreadSelection, isFalse);
+      expect(notifications, greaterThan(0), reason: '工作台状态由会话通知驱动');
+      controller.removeListener(listener);
+      await controller.close();
+    });
+
     test('DOM complete 帧作为正文进 texthooker，在线后引擎文本道被仲裁掉', () async {
       final List<GalHookedLine> lunaLines = <GalHookedLine>[];
       final GalHookSessionController controller = buildController(
@@ -5613,7 +5896,9 @@ void _tyranoDomVoiceTests() {
     late Set<String> unreadable;
     late int tick;
 
-    GalHookSessionController buildController() {
+    GalHookSessionController buildController({
+      Duration resourceAudioWait = Duration.zero,
+    }) {
       engine = _FakeEngineSource(
         pairedBytes: Uint8List(0),
         replayBufferedLines: true,
@@ -5646,7 +5931,7 @@ void _tyranoDomVoiceTests() {
         windowListLoader: () async => const <ExternalWindowInfo>[],
         windowPollAttempts: 1,
         textPollInterval: const Duration(milliseconds: 5),
-        resourceAudioWait: Duration.zero,
+        resourceAudioWait: resourceAudioWait,
         endpointListenable: endpoints,
         endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
         tyranoDomLaunchPlanner:
@@ -5710,8 +5995,12 @@ void _tyranoDomVoiceTests() {
       await dumpDir.delete(recursive: true);
     });
 
-    Future<GalHookSessionController> started() async {
-      final GalHookSessionController controller = buildController();
+    Future<GalHookSessionController> started({
+      Duration resourceAudioWait = Duration.zero,
+    }) async {
+      final GalHookSessionController controller = buildController(
+        resourceAudioWait: resourceAudioWait,
+      );
       await controller.launchGame(r'D:\games\tyrano\game.exe');
       await _until(() => controller.tyranoDomFeed != null);
       return controller;
@@ -5858,6 +6147,40 @@ void _tyranoDomVoiceTests() {
       expect(engine.findEventIds.length, pairingCalls);
       expect(engine.pairedResourceIds, isNot(contains(null)));
       expect(domLine('synthetic narration').audioResourceId, isNull);
+      await controller.close();
+    });
+
+    test('DOM 已定论无语音：制卡取音立即返回，不空等资源窗、不走兜底链', () async {
+      // 真机：无语音行点浮窗「制卡」按钮一直转——取音先空等资源等待窗，再走 PCM /
+      // Loopback 兜底，而动图采样要等音频有结论才收口。等待窗拉到 30s，若仍空等，
+      // 下面 5s 的上限必然超时。
+      final GalHookSessionController controller = await started(
+        resourceAudioWait: const Duration(seconds: 30),
+      );
+      sources.single.emit(
+        _voicedFrame('synthetic silent', generation: 1, lineSeq: 6),
+      );
+      await _until(() => service.entries.isNotEmpty);
+      await pumpEventQueue();
+      final TexthookerLineEntry line = domLine('synthetic silent');
+      expect(line.audioStatus, TexthookerLineAudioStatus.unavailable);
+      final Uint8List? bytes = await controller
+          .captureAudioBytes(
+            lineId: line.id,
+            sentence: line.text,
+            outputExtension: 'aac',
+          )
+          .timeout(const Duration(seconds: 5));
+      expect(bytes, isNull);
+      expect(
+        controller.events.map((GalHookEvent e) => e.code),
+        contains('audio.dom_no_voice'),
+      );
+      expect(
+        domLine('synthetic silent').audioStatus,
+        TexthookerLineAudioStatus.unavailable,
+        reason: '无语音是定论，不能被兜底链改写成 missing',
+      );
       await controller.close();
     });
 

@@ -1,0 +1,1412 @@
+diff --git a/engine/src/flutter/shell/platform/windows/BUILD.gn b/engine/src/flutter/shell/platform/windows/BUILD.gn
+index a6af78f4..b5ec43e2 100644
+--- a/engine/src/flutter/shell/platform/windows/BUILD.gn
++++ b/engine/src/flutter/shell/platform/windows/BUILD.gn
+@@ -64,6 +64,8 @@ source_set("flutter_windows_source") {
+     "egl/manager.h",
+     "egl/proc_table.cc",
+     "egl/proc_table.h",
++    "egl/program_binary_cache.cc",
++    "egl/program_binary_cache.h",
+     "egl/surface.cc",
+     "egl/surface.h",
+     "egl/window_surface.cc",
+@@ -186,6 +188,7 @@ source_set("flutter_windows_source") {
+     "//flutter/shell/platform/common/client_wrapper",
+     "//flutter/shell/platform/embedder:embedder_as_internal_library",
+     "//flutter/shell/platform/windows/client_wrapper:client_wrapper_windows",
++    "//flutter/shell/version",
+ 
+     # libEGL_static MUST be ordered before libGLESv2_static in this list. If
+     # reversed, a linker error will occur, reporting DllMain already defined in
+@@ -228,6 +231,7 @@ executable("flutter_windows_unittests") {
+     "direct_manipulation_unittests.cc",
+     "display_manager_unittests.cc",
+     "dpi_utils_unittests.cc",
++    "egl/program_binary_cache_unittests.cc",
+     "flutter_project_bundle_unittests.cc",
+     "flutter_window_unittests.cc",
+     "flutter_windows_engine_unittests.cc",
+diff --git a/engine/src/flutter/shell/platform/windows/egl/manager.cc b/engine/src/flutter/shell/platform/windows/egl/manager.cc
+index 07d7fd2a..47582b46 100644
+--- a/engine/src/flutter/shell/platform/windows/egl/manager.cc
++++ b/engine/src/flutter/shell/platform/windows/egl/manager.cc
+@@ -11,11 +11,35 @@
+ 
+ #include "flutter/fml/logging.h"
+ #include "flutter/shell/platform/windows/egl/egl.h"
++#include "flutter/shell/platform/windows/egl/program_binary_cache.h"
+ 
+ namespace flutter {
+ namespace egl {
+ 
+ int Manager::instance_count_ = 0;
++bool Manager::program_binary_cache_installed_ = false;
++
++namespace {
++
++// Fushi patch (program binary disk cache): EGL_ANDROID_blob_cache callbacks.
++// ANGLE invokes them under its blob cache lock, from whichever thread links
++// or loads a program.
++void SetProgramBinary(const void* key,
++                      EGLsizeiANDROID key_size,
++                      const void* value,
++                      EGLsizeiANDROID value_size) {
++  ProgramBinaryCache::SetBlobCallback(key, key_size, value, value_size);
++}
++
++EGLsizeiANDROID GetProgramBinary(const void* key,
++                                 EGLsizeiANDROID key_size,
++                                 void* value,
++                                 EGLsizeiANDROID value_size) {
++  return static_cast<EGLsizeiANDROID>(
++      ProgramBinaryCache::GetBlobCallback(key, key_size, value, value_size));
++}
++
++}  // namespace
+ 
+ std::unique_ptr<Manager> Manager::Create(GpuPreference gpu_preference) {
+   std::unique_ptr<Manager> manager;
+@@ -33,6 +57,9 @@ Manager::Manager(GpuPreference gpu_preference) {
+     return;
+   }
+ 
++  // Before any context exists, so the first link already goes through it.
++  InstallProgramBinaryCache();
++
+   if (!InitializeConfig()) {
+     return;
+   }
+@@ -201,6 +228,40 @@ bool Manager::InitializeDisplay(GpuPreference gpu_preference) {
+   FML_UNREACHABLE();
+ }
+ 
++// Fushi patch (program binary disk cache): hands ANGLE's blob cache a disk
++// store when the embedder configured a directory
++// (|FlutterDesktopSetProgramBinaryCacheDirectory|). Never fails the manager:
++// without it every program is compiled from source, as in the stock engine.
++void Manager::InstallProgramBinaryCache() {
++  if (program_binary_cache_installed_ ||
++      ProgramBinaryCache::Global() == nullptr) {
++    // Already installed on this display (it is shared by every manager and
++    // only terminated with the last one), or no directory configured.
++    return;
++  }
++  const char* extensions = ::eglQueryString(display_, EGL_EXTENSIONS);
++  if (extensions == nullptr ||
++      std::string(extensions).find("EGL_ANDROID_blob_cache") ==
++          std::string::npos) {
++    return;
++  }
++  const auto set_blob_cache_funcs =
++      reinterpret_cast<PFNEGLSETBLOBCACHEFUNCSANDROIDPROC>(
++          ::eglGetProcAddress("eglSetBlobCacheFuncsANDROID"));
++  if (set_blob_cache_funcs == nullptr) {
++    return;
++  }
++  ::eglGetError();  // Clear a stale error: the call itself returns void.
++  set_blob_cache_funcs(display_, &SetProgramBinary, &GetProgramBinary);
++  const EGLint error = ::eglGetError();
++  if (error != EGL_SUCCESS) {
++    FML_LOG(ERROR) << "Failed to install the program binary cache: EGL error "
++                   << error;
++    return;
++  }
++  program_binary_cache_installed_ = true;
++}
++
+ bool Manager::InitializeConfig() {
+   const EGLint config_attributes[] = {EGL_RED_SIZE,   8, EGL_GREEN_SIZE,   8,
+                                       EGL_BLUE_SIZE,  8, EGL_ALPHA_SIZE,   8,
+@@ -349,6 +410,9 @@ void Manager::CleanUp() {
+     // if destroying last instance
+     if (instance_count_ == 1) {
+       ::eglTerminate(display_);
++      // ANGLE drops the blob cache callbacks on terminate; a later display
++      // initialization installs them again.
++      program_binary_cache_installed_ = false;
+     }
+     display_ = EGL_NO_DISPLAY;
+   }
+diff --git a/engine/src/flutter/shell/platform/windows/egl/manager.h b/engine/src/flutter/shell/platform/windows/egl/manager.h
+index e669d868..555b0ad1 100644
+--- a/engine/src/flutter/shell/platform/windows/egl/manager.h
++++ b/engine/src/flutter/shell/platform/windows/egl/manager.h
+@@ -137,6 +137,13 @@ class Manager {
+   // Number of active instances of Manager
+   static int instance_count_;
+ 
++  // Fushi patch (program binary disk cache): whether the shared display has
++  // the blob cache callbacks (reset when the display is terminated).
++  static bool program_binary_cache_installed_;
++
++  // Fushi patch (program binary disk cache): see manager.cc.
++  void InstallProgramBinaryCache();
++
+   // Helper function to get GPU LUID by preference.
+   static std::optional<LUID> GetGpuLuidByPreference(
+       DXGI_GPU_PREFERENCE preference);
+diff --git a/engine/src/flutter/shell/platform/windows/egl/program_binary_cache.cc b/engine/src/flutter/shell/platform/windows/egl/program_binary_cache.cc
+new file mode 100644
+index 00000000..8ab05578
+--- /dev/null
++++ b/engine/src/flutter/shell/platform/windows/egl/program_binary_cache.cc
+@@ -0,0 +1,734 @@
++// Copyright 2013 The Flutter Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "flutter/shell/platform/windows/egl/program_binary_cache.h"
++
++#include <windows.h>
++
++#include <algorithm>
++#include <cstdio>
++#include <cstring>
++#include <filesystem>
++#include <string>
++#include <system_error>
++#include <utility>
++
++#include "flutter/fml/logging.h"
++#include "flutter/fml/platform/win/wstring_conversion.h"
++#include "flutter/shell/version/version.h"
++
++namespace flutter {
++namespace egl {
++
++namespace {
++
++// Bump when the file layout or the namespace recipe changes, and whenever a
++// Fushi ANGLE patch changes what ANGLE writes into program binaries without
++// changing the engine version (the namespace then changes with the module
++// file anyway, but this documents the contract).
++constexpr char kNamespaceRecipe[] = "fushi-program-binary-cache/1";
++
++constexpr uint32_t kMagic = 0x42505346;  // "FSPB" little-endian.
++constexpr uint32_t kFormat = 1;
++constexpr size_t kHeaderSize = 32;
++constexpr size_t kMaxKeyBytes = 1024;
++constexpr size_t kMaxSizedValues = 8;
++// Temp files of a crashed writer are removed once they are this old (a live
++// writer in another process renames its temp file within milliseconds).
++constexpr uint64_t kStaleTempAge100ns = 10ull * 60 * 10'000'000;
++
++constexpr uint64_t kFnvOffset = 0xcbf29ce484222325ull;
++constexpr uint64_t kFnvPrime = 0x100000001b3ull;
++
++uint64_t Fnv1a(uint64_t hash, const uint8_t* data, size_t size) {
++  for (size_t i = 0; i < size; ++i) {
++    hash ^= data[i];
++    hash *= kFnvPrime;
++  }
++  return hash;
++}
++
++void PutU32(uint8_t* out, uint32_t v) {
++  for (int i = 0; i < 4; ++i) {
++    out[i] = static_cast<uint8_t>(v >> (8 * i));
++  }
++}
++
++void PutU64(uint8_t* out, uint64_t v) {
++  for (int i = 0; i < 8; ++i) {
++    out[i] = static_cast<uint8_t>(v >> (8 * i));
++  }
++}
++
++uint32_t GetU32(const uint8_t* in) {
++  uint32_t v = 0;
++  for (int i = 0; i < 4; ++i) {
++    v |= static_cast<uint32_t>(in[i]) << (8 * i);
++  }
++  return v;
++}
++
++uint64_t GetU64(const uint8_t* in) {
++  uint64_t v = 0;
++  for (int i = 0; i < 8; ++i) {
++    v |= static_cast<uint64_t>(in[i]) << (8 * i);
++  }
++  return v;
++}
++
++std::wstring Hex(const uint8_t* data, size_t size) {
++  static const wchar_t kDigits[] = L"0123456789abcdef";
++  std::wstring out;
++  out.reserve(size * 2);
++  for (size_t i = 0; i < size; ++i) {
++    out.push_back(kDigits[data[i] >> 4]);
++    out.push_back(kDigits[data[i] & 0xf]);
++  }
++  return out;
++}
++
++std::wstring Hex64(uint64_t v) {
++  uint8_t bytes[8];
++  for (int i = 0; i < 8; ++i) {
++    bytes[i] = static_cast<uint8_t>(v >> (8 * (7 - i)));
++  }
++  return Hex(bytes, sizeof(bytes));
++}
++
++bool EndsWith(const std::wstring& s, const wchar_t* suffix) {
++  const size_t n = wcslen(suffix);
++  return s.size() >= n && s.compare(s.size() - n, n, suffix) == 0;
++}
++
++uint64_t FileTimeToU64(const FILETIME& t) {
++  return (static_cast<uint64_t>(t.dwHighDateTime) << 32) | t.dwLowDateTime;
++}
++
++uint64_t NowAsFileTime() {
++  FILETIME now;
++  ::GetSystemTimeAsFileTime(&now);
++  return FileTimeToU64(now);
++}
++
++bool IsFatalWriteError(DWORD error) {
++  switch (error) {
++    case ERROR_DISK_FULL:
++    case ERROR_HANDLE_DISK_FULL:
++    case ERROR_ACCESS_DENIED:
++    case ERROR_PATH_NOT_FOUND:
++    case ERROR_WRITE_PROTECT:
++    case ERROR_NOT_READY:
++      return true;
++    default:
++      return false;
++  }
++}
++
++// Optional diagnostics: FUSHI_PROGRAM_CACHE_LOG=<file> appends one line per
++// idle transition of the background thread.
++void AppendDiagnosticLine(const std::string& line) {
++  wchar_t path[MAX_PATH];
++  const DWORD n =
++      ::GetEnvironmentVariableW(L"FUSHI_PROGRAM_CACHE_LOG", path, MAX_PATH);
++  if (n == 0 || n >= MAX_PATH) {
++    return;
++  }
++  HANDLE file =
++      ::CreateFileW(path, FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE,
++                    nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
++  if (file == INVALID_HANDLE_VALUE) {
++    return;
++  }
++  DWORD written = 0;
++  ::WriteFile(file, line.data(), static_cast<DWORD>(line.size()), &written,
++              nullptr);
++  ::CloseHandle(file);
++}
++
++std::mutex& GlobalMutex() {
++  static std::mutex* mutex = new std::mutex();
++  return *mutex;
++}
++
++ProgramBinaryCache*& GlobalInstance() {
++  static ProgramBinaryCache* instance = nullptr;
++  return instance;
++}
++
++}  // namespace
++
++ProgramBinaryCache::ProgramBinaryCache(std::wstring root,
++                                       std::wstring namespace_tag,
++                                       Limits limits)
++    : root_(std::move(root)),
++      namespace_tag_(std::move(namespace_tag)),
++      directory_(root_ + L"\\" + namespace_tag_),
++      limits_(limits) {
++  // The background thread starts with maintenance (directory creation,
++  // stale-namespace cleanup, size cap); |WaitForIdle| waits for it too.
++  busy_ = true;
++  worker_ = std::thread([this]() { WorkerMain(); });
++}
++
++ProgramBinaryCache::~ProgramBinaryCache() {
++  {
++    std::lock_guard<std::mutex> lock(mutex_);
++    shutting_down_ = true;
++  }
++  work_available_.notify_all();
++  if (worker_.joinable()) {
++    worker_.join();
++  }
++}
++
++// static
++std::wstring ProgramBinaryCache::CurrentNamespaceTag() {
++  std::string recipe = kNamespaceRecipe;
++  recipe += "|";
++  recipe += GetFlutterEngineVersion();
++  // The module file identifies the exact build: two engine builds from the
++  // same commit with different patches differ in size and timestamp.
++  HMODULE module = nullptr;
++  wchar_t path[MAX_PATH];
++  WIN32_FILE_ATTRIBUTE_DATA attributes = {};
++  if (::GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
++                               GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
++                           reinterpret_cast<LPCWSTR>(&Fnv1a), &module)) {
++    const DWORD n = ::GetModuleFileNameW(module, path, MAX_PATH);
++    if (n > 0 && n < MAX_PATH &&
++        ::GetFileAttributesExW(path, GetFileExInfoStandard, &attributes)) {
++      char buffer[64];
++      std::snprintf(buffer, sizeof(buffer), "|%lu.%lu|%llu",
++                    attributes.nFileSizeHigh, attributes.nFileSizeLow,
++                    static_cast<unsigned long long>(
++                        FileTimeToU64(attributes.ftLastWriteTime)));
++      recipe += buffer;
++    }
++  }
++  const uint64_t hash =
++      Fnv1a(kFnvOffset, reinterpret_cast<const uint8_t*>(recipe.data()),
++            recipe.size());
++  return Hex64(hash);
++}
++
++// static
++bool ProgramBinaryCache::IsNamespaceFolderName(const std::wstring& name) {
++  if (name.size() != 16) {
++    return false;
++  }
++  return std::all_of(name.begin(), name.end(), [](wchar_t c) {
++    return (c >= L'0' && c <= L'9') || (c >= L'a' && c <= L'f');
++  });
++}
++
++// static
++std::wstring ProgramBinaryCache::FileNameForKey(const uint8_t* key,
++                                                size_t key_size) {
++  if (key_size <= 64) {
++    return Hex(key, key_size) + L".bin";
++  }
++  // The full key is stored in the file and compared on read.
++  return L"h" + Hex64(Fnv1a(kFnvOffset, key, key_size)) + L".bin";
++}
++
++// static
++std::vector<uint8_t> ProgramBinaryCache::Encode(const uint8_t* key,
++                                                size_t key_size,
++                                                const uint8_t* value,
++                                                size_t value_size) {
++  std::vector<uint8_t> file(kHeaderSize + key_size + value_size);
++  uint8_t* header = file.data();
++  PutU32(header, kMagic);
++  PutU32(header + 4, kFormat);
++  PutU32(header + 8, static_cast<uint32_t>(key_size));
++  PutU32(header + 12, 0);
++  PutU64(header + 16, value_size);
++  PutU64(header + 24,
++         Fnv1a(Fnv1a(kFnvOffset, key, key_size), value, value_size));
++  std::memcpy(file.data() + kHeaderSize, key, key_size);
++  std::memcpy(file.data() + kHeaderSize + key_size, value, value_size);
++  return file;
++}
++
++// static
++bool ProgramBinaryCache::Decode(const std::vector<uint8_t>& file,
++                                const uint8_t* key,
++                                size_t key_size,
++                                std::vector<uint8_t>* value) {
++  if (file.size() < kHeaderSize) {
++    return false;
++  }
++  const uint8_t* header = file.data();
++  if (GetU32(header) != kMagic || GetU32(header + 4) != kFormat ||
++      GetU32(header + 8) != key_size) {
++    return false;
++  }
++  const uint64_t value_size = GetU64(header + 16);
++  if (file.size() - kHeaderSize < key_size || value_size == 0 ||
++      value_size != file.size() - kHeaderSize - key_size) {
++    return false;
++  }
++  const uint8_t* stored_key = file.data() + kHeaderSize;
++  const uint8_t* stored_value = stored_key + key_size;
++  if (std::memcmp(stored_key, key, key_size) != 0) {
++    return false;
++  }
++  if (GetU64(header + 24) != Fnv1a(Fnv1a(kFnvOffset, stored_key, key_size),
++                                   stored_value, value_size)) {
++    return false;
++  }
++  value->assign(stored_value, stored_value + value_size);
++  return true;
++}
++
++bool ProgramBinaryCache::ReadEntry(
++    const std::wstring& file_name,
++    const uint8_t* key,
++    size_t key_size,
++    std::shared_ptr<const std::vector<uint8_t>>* value) {
++  const std::wstring path = directory_ + L"\\" + file_name;
++  // FILE_SHARE_DELETE: the writer (this or another process) may replace or
++  // evict the file while it is being read; this handle keeps its old bytes.
++  HANDLE file =
++      ::CreateFileW(path.c_str(), GENERIC_READ,
++                    FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
++                    nullptr, OPEN_EXISTING, FILE_FLAG_SEQUENTIAL_SCAN, nullptr);
++  if (file == INVALID_HANDLE_VALUE) {
++    return false;
++  }
++  bool ok = false;
++  bool corrupt = true;
++  LARGE_INTEGER size = {};
++  if (::GetFileSizeEx(file, &size) && size.QuadPart > 0 &&
++      static_cast<uint64_t>(size.QuadPart) <=
++          kHeaderSize + key_size + limits_.max_entry_bytes) {
++    std::vector<uint8_t> contents(static_cast<size_t>(size.QuadPart));
++    DWORD read = 0;
++    if (::ReadFile(file, contents.data(), static_cast<DWORD>(contents.size()),
++                   &read, nullptr) &&
++        read == contents.size()) {
++      auto decoded = std::make_shared<std::vector<uint8_t>>();
++      if (Decode(contents, key, key_size, decoded.get())) {
++        *value = std::move(decoded);
++        ok = true;
++        corrupt = false;
++      }
++    } else {
++      // A read error is not evidence of a bad file.
++      corrupt = false;
++    }
++  }
++  ::CloseHandle(file);
++  if (corrupt) {
++    {
++      std::lock_guard<std::mutex> lock(mutex_);
++      ++stats_.corrupt;
++    }
++    Enqueue({Task::Kind::kDelete, file_name, nullptr});
++  }
++  return ok;
++}
++
++int64_t ProgramBinaryCache::Get(const void* key,
++                                int64_t key_size,
++                                void* value,
++                                int64_t value_size) {
++  if (key == nullptr || key_size <= 0 ||
++      static_cast<uint64_t>(key_size) > kMaxKeyBytes || value_size < 0) {
++    return 0;
++  }
++  const auto* key_bytes = static_cast<const uint8_t*>(key);
++  const size_t key_length = static_cast<size_t>(key_size);
++  const std::wstring file_name = FileNameForKey(key_bytes, key_length);
++
++  std::shared_ptr<const std::vector<uint8_t>> found;
++  {
++    std::lock_guard<std::mutex> lock(mutex_);
++    auto sized = sized_values_.find(file_name);
++    if (sized != sized_values_.end()) {
++      found = sized->second;
++    } else {
++      auto pending = pending_values_.find(file_name);
++      if (pending != pending_values_.end()) {
++        auto decoded = std::make_shared<std::vector<uint8_t>>();
++        if (Decode(*pending->second, key_bytes, key_length, decoded.get())) {
++          found = std::move(decoded);
++        }
++      }
++    }
++  }
++  if (!found && !ReadEntry(file_name, key_bytes, key_length, &found)) {
++    std::lock_guard<std::mutex> lock(mutex_);
++    ++stats_.misses;
++    return 0;
++  }
++
++  const int64_t size = static_cast<int64_t>(found->size());
++  bool copied = false;
++  {
++    std::lock_guard<std::mutex> lock(mutex_);
++    if (value != nullptr && value_size >= size) {
++      std::memcpy(value, found->data(), found->size());
++      sized_values_.erase(file_name);
++      ++stats_.hits;
++      copied = true;
++    } else {
++      if (sized_values_.size() >= kMaxSizedValues) {
++        sized_values_.clear();
++      }
++      sized_values_[file_name] = found;
++    }
++  }
++  if (copied) {
++    // Keeps recently used entries away from eviction.
++    Enqueue({Task::Kind::kTouch, file_name, nullptr});
++  }
++  return size;
++}
++
++void ProgramBinaryCache::Put(const void* key,
++                             int64_t key_size,
++                             const void* value,
++                             int64_t value_size) {
++  if (key == nullptr || key_size <= 0 ||
++      static_cast<uint64_t>(key_size) > kMaxKeyBytes || value == nullptr ||
++      value_size <= 0) {
++    return;
++  }
++  const auto* key_bytes = static_cast<const uint8_t*>(key);
++  const size_t key_length = static_cast<size_t>(key_size);
++  const std::wstring file_name = FileNameForKey(key_bytes, key_length);
++  {
++    std::lock_guard<std::mutex> lock(mutex_);
++    if (writes_disabled_) {
++      return;
++    }
++    if (static_cast<uint64_t>(value_size) > limits_.max_entry_bytes ||
++        pending_bytes_ + kHeaderSize + key_length + value_size >
++            limits_.max_pending_bytes) {
++      ++stats_.dropped;
++      return;
++    }
++  }
++  auto contents = std::make_shared<const std::vector<uint8_t>>(
++      Encode(key_bytes, key_length, static_cast<const uint8_t*>(value),
++             static_cast<size_t>(value_size)));
++  {
++    std::lock_guard<std::mutex> lock(mutex_);
++    pending_bytes_ += contents->size();
++    pending_values_[file_name] = contents;
++    // A size query may have cached an older value for this key.
++    sized_values_.erase(file_name);
++    tasks_.push_back({Task::Kind::kWrite, file_name, std::move(contents)});
++  }
++  work_available_.notify_one();
++}
++
++void ProgramBinaryCache::Enqueue(Task task) {
++  {
++    std::lock_guard<std::mutex> lock(mutex_);
++    if (shutting_down_) {
++      return;
++    }
++    tasks_.push_back(std::move(task));
++  }
++  work_available_.notify_one();
++}
++
++void ProgramBinaryCache::WaitForIdle() {
++  std::unique_lock<std::mutex> lock(mutex_);
++  idle_.wait(lock, [this]() { return tasks_.empty() && !busy_; });
++}
++
++ProgramBinaryCache::Stats ProgramBinaryCache::GetStats() {
++  std::lock_guard<std::mutex> lock(mutex_);
++  return stats_;
++}
++
++void ProgramBinaryCache::WorkerMain() {
++  // Background mode lowers both CPU and I/O priority: the cache must never
++  // compete with the launch it is trying to speed up.
++  ::SetThreadPriority(::GetCurrentThread(), THREAD_MODE_BACKGROUND_BEGIN);
++  Maintain();
++  bool did_work = true;
++  while (true) {
++    Task task;
++    {
++      std::unique_lock<std::mutex> lock(mutex_);
++      busy_ = false;
++      if (tasks_.empty()) {
++        idle_.notify_all();
++        if (did_work) {
++          char line[256];
++          std::snprintf(
++              line, sizeof(line),
++              "program binary cache idle: hits=%llu misses=%llu corrupt=%llu "
++              "stored=%llu dropped=%llu evicted=%llu writes_disabled=%d\n",
++              static_cast<unsigned long long>(stats_.hits),
++              static_cast<unsigned long long>(stats_.misses),
++              static_cast<unsigned long long>(stats_.corrupt),
++              static_cast<unsigned long long>(stats_.stored),
++              static_cast<unsigned long long>(stats_.dropped),
++              static_cast<unsigned long long>(stats_.evicted),
++              writes_disabled_ ? 1 : 0);
++          lock.unlock();
++          AppendDiagnosticLine(line);
++          lock.lock();
++          did_work = false;
++        }
++      }
++      work_available_.wait(
++          lock, [this]() { return shutting_down_ || !tasks_.empty(); });
++      if (shutting_down_) {
++        return;
++      }
++      task = std::move(tasks_.front());
++      tasks_.pop_front();
++      busy_ = true;
++    }
++    RunTask(task);
++    did_work = true;
++    if (task.kind == Task::Kind::kWrite) {
++      std::lock_guard<std::mutex> lock(mutex_);
++      pending_bytes_ -= task.contents->size();
++      auto pending = pending_values_.find(task.file_name);
++      if (pending != pending_values_.end() &&
++          pending->second == task.contents) {
++        pending_values_.erase(pending);
++      }
++    }
++  }
++}
++
++void ProgramBinaryCache::Maintain() {
++  std::error_code ec;
++  std::filesystem::create_directories(directory_, ec);
++  if (ec || !std::filesystem::is_directory(directory_, ec)) {
++    DisableWrites("cannot create the cache directory",
++                  static_cast<unsigned long>(ec.value()));
++    return;
++  }
++  directory_ready_ = true;
++
++  // Blobs of other engine builds can never be used again.
++  for (std::filesystem::directory_iterator it(root_, ec), end; !ec && it != end;
++       it.increment(ec)) {
++    const std::wstring name = it->path().filename().wstring();
++    std::error_code type_ec;
++    if (name != namespace_tag_ && IsNamespaceFolderName(name) &&
++        it->is_directory(type_ec)) {
++      std::error_code remove_ec;
++      std::filesystem::remove_all(it->path(), remove_ec);
++    }
++  }
++
++  const uint64_t now = NowAsFileTime();
++  WIN32_FIND_DATAW data;
++  HANDLE find = ::FindFirstFileW((directory_ + L"\\*").c_str(), &data);
++  if (find != INVALID_HANDLE_VALUE) {
++    do {
++      if (data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
++        continue;
++      }
++      const std::wstring name = data.cFileName;
++      const uint64_t write_time = FileTimeToU64(data.ftLastWriteTime);
++      if (EndsWith(name, L".tmp")) {
++        if (now > write_time && now - write_time > kStaleTempAge100ns) {
++          ::DeleteFileW((directory_ + L"\\" + name).c_str());
++        }
++        continue;
++      }
++      if (!EndsWith(name, L".bin")) {
++        continue;
++      }
++      const uint64_t size =
++          (static_cast<uint64_t>(data.nFileSizeHigh) << 32) | data.nFileSizeLow;
++      files_[name] = {size, write_time};
++      total_bytes_ += size;
++    } while (::FindNextFileW(find, &data));
++    ::FindClose(find);
++  }
++  EvictToLimit();
++}
++
++void ProgramBinaryCache::RunTask(const Task& task) {
++  if (!directory_ready_) {
++    return;
++  }
++  const std::wstring path = directory_ + L"\\" + task.file_name;
++  switch (task.kind) {
++    case Task::Kind::kWrite: {
++      {
++        std::lock_guard<std::mutex> lock(mutex_);
++        if (writes_disabled_) {
++          return;
++        }
++      }
++      if (!WriteFileAtomically(task.file_name, *task.contents)) {
++        return;
++      }
++      auto previous = files_.find(task.file_name);
++      if (previous != files_.end()) {
++        total_bytes_ -= previous->second.size;
++      }
++      files_[task.file_name] = {task.contents->size(), NowAsFileTime()};
++      total_bytes_ += task.contents->size();
++      {
++        std::lock_guard<std::mutex> lock(mutex_);
++        ++stats_.stored;
++      }
++      EvictToLimit();
++      break;
++    }
++    case Task::Kind::kTouch: {
++      HANDLE file =
++          ::CreateFileW(path.c_str(), FILE_WRITE_ATTRIBUTES,
++                        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
++                        nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
++      if (file == INVALID_HANDLE_VALUE) {
++        return;
++      }
++      FILETIME now;
++      ::GetSystemTimeAsFileTime(&now);
++      ::SetFileTime(file, nullptr, nullptr, &now);
++      ::CloseHandle(file);
++      auto entry = files_.find(task.file_name);
++      if (entry != files_.end()) {
++        entry->second.write_time = FileTimeToU64(now);
++      }
++      break;
++    }
++    case Task::Kind::kDelete: {
++      ::DeleteFileW(path.c_str());
++      auto entry = files_.find(task.file_name);
++      if (entry != files_.end()) {
++        total_bytes_ -= entry->second.size;
++        files_.erase(entry);
++      }
++      break;
++    }
++  }
++}
++
++bool ProgramBinaryCache::WriteFileAtomically(
++    const std::wstring& file_name,
++    const std::vector<uint8_t>& contents) {
++  const std::wstring path = directory_ + L"\\" + file_name;
++  const std::wstring temp =
++      path + L"." + std::to_wstring(::GetCurrentProcessId()) + L".tmp";
++  HANDLE file = ::CreateFileW(temp.c_str(), GENERIC_WRITE, 0, nullptr,
++                              CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
++  if (file == INVALID_HANDLE_VALUE) {
++    const DWORD error = ::GetLastError();
++    if (IsFatalWriteError(error)) {
++      DisableWrites("cannot create a cache file", error);
++    }
++    return false;
++  }
++  DWORD written = 0;
++  const bool wrote =
++      ::WriteFile(file, contents.data(), static_cast<DWORD>(contents.size()),
++                  &written, nullptr) &&
++      written == contents.size();
++  const DWORD write_error = wrote ? ERROR_SUCCESS : ::GetLastError();
++  ::CloseHandle(file);
++  if (!wrote) {
++    ::DeleteFileW(temp.c_str());
++    if (IsFatalWriteError(write_error)) {
++      DisableWrites("cannot write a cache file", write_error);
++    }
++    return false;
++  }
++  // No FlushFileBuffers: a file torn by a power loss fails the checksum and
++  // is treated as a miss.
++  if (!::MoveFileExW(temp.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING)) {
++    // E.g. another process holds the target without FILE_SHARE_DELETE; the
++    // entry is simply not cached this time.
++    ::DeleteFileW(temp.c_str());
++    return false;
++  }
++  return true;
++}
++
++void ProgramBinaryCache::EvictToLimit() {
++  if (total_bytes_ <= limits_.max_total_bytes) {
++    return;
++  }
++  std::vector<std::pair<uint64_t, std::wstring>> by_age;
++  by_age.reserve(files_.size());
++  for (const auto& [name, info] : files_) {
++    by_age.emplace_back(info.write_time, name);
++  }
++  std::sort(by_age.begin(), by_age.end());
++  uint64_t evicted = 0;
++  for (const auto& [write_time, name] : by_age) {
++    if (total_bytes_ <= limits_.max_total_bytes) {
++      break;
++    }
++    ::DeleteFileW((directory_ + L"\\" + name).c_str());
++    auto entry = files_.find(name);
++    total_bytes_ -= entry->second.size;
++    files_.erase(entry);
++    ++evicted;
++  }
++  std::lock_guard<std::mutex> lock(mutex_);
++  stats_.evicted += evicted;
++}
++
++void ProgramBinaryCache::DisableWrites(const char* reason,
++                                       unsigned long error) {
++  {
++    std::lock_guard<std::mutex> lock(mutex_);
++    if (writes_disabled_) {
++      return;
++    }
++    writes_disabled_ = true;
++  }
++  FML_LOG(WARNING) << "Program binary cache: " << reason << " (error " << error
++                   << "); shaders compile as usual this session.";
++}
++
++// static
++bool ProgramBinaryCache::InstallGlobal(const std::wstring& root) {
++  std::lock_guard<std::mutex> lock(GlobalMutex());
++  ProgramBinaryCache*& instance = GlobalInstance();
++  if (instance != nullptr) {
++    return instance->root_ == root;
++  }
++  // Process lifetime (never destroyed): ANGLE may call the callbacks until
++  // the process exits. Queued writes that have not landed by then are lost,
++  // which only costs a compile on the next launch.
++  instance = new ProgramBinaryCache(root, CurrentNamespaceTag(), Limits());
++  FML_LOG(IMPORTANT) << "Program binary cache: "
++                     << fml::WideStringToUtf8(instance->directory_);
++  return true;
++}
++
++// static
++ProgramBinaryCache* ProgramBinaryCache::Global() {
++  std::lock_guard<std::mutex> lock(GlobalMutex());
++  return GlobalInstance();
++}
++
++// static
++void ProgramBinaryCache::SetBlobCallback(const void* key,
++                                         int64_t key_size,
++                                         const void* value,
++                                         int64_t value_size) {
++  if (ProgramBinaryCache* cache = Global()) {
++    cache->Put(key, key_size, value, value_size);
++  }
++}
++
++// static
++int64_t ProgramBinaryCache::GetBlobCallback(const void* key,
++                                            int64_t key_size,
++                                            void* value,
++                                            int64_t value_size) {
++  ProgramBinaryCache* cache = Global();
++  return cache != nullptr ? cache->Get(key, key_size, value, value_size) : 0;
++}
++
++}  // namespace egl
++}  // namespace flutter
+diff --git a/engine/src/flutter/shell/platform/windows/egl/program_binary_cache.h b/engine/src/flutter/shell/platform/windows/egl/program_binary_cache.h
+new file mode 100644
+index 00000000..0b1146f3
+--- /dev/null
++++ b/engine/src/flutter/shell/platform/windows/egl/program_binary_cache.h
+@@ -0,0 +1,190 @@
++// Copyright 2013 The Flutter Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef FLUTTER_SHELL_PLATFORM_WINDOWS_EGL_PROGRAM_BINARY_CACHE_H_
++#define FLUTTER_SHELL_PLATFORM_WINDOWS_EGL_PROGRAM_BINARY_CACHE_H_
++
++#include <condition_variable>
++#include <cstddef>
++#include <cstdint>
++#include <deque>
++#include <map>
++#include <memory>
++#include <mutex>
++#include <string>
++#include <thread>
++#include <vector>
++
++#include "flutter/fml/macros.h"
++
++namespace flutter {
++namespace egl {
++
++// Fushi patch (program binary disk cache): a persistent backing store for
++// ANGLE's EGL_ANDROID_blob_cache.
++//
++// ANGLE (D3D11 backend) serializes every linked program -- including the
++// D3D bytecode it produced with d3dcompiler -- into its blob cache, keyed by a
++// SHA-1 over the shader sources, ANGLE's program/translator versions, the
++// GL_RENDERER string (adapter + driver version) and the pre-link program
++// state. Without application callbacks that cache only lives in memory, so
++// Impeller's ContentContext recompiles every pipeline on every launch. This
++// class gives the callbacks a directory:
++//
++// - One file per key under <root>\<namespace>\. The namespace folds in this
++//   engine build's identity (engine version, cache format, the module file's
++//   size and timestamp), so a different engine never sees another engine's
++//   blobs; stale namespace folders are deleted in the background.
++// - Every file carries a header (magic, format, sizes, FNV-1a checksum over
++//   key and value). A file that is short, corrupt or for another key is a
++//   miss (and gets deleted): ANGLE then links from source as usual.
++// - |Get| reads synchronously (that is the point: the read replaces a
++//   compile on the same thread); |Put| only copies the blob into a queue. A
++//   low-priority background thread does all writes (temp file + atomic
++//   rename), mtime refreshes on hits, deletions and the size-cap eviction
++//   (least recently written/used first).
++// - Any I/O failure degrades to "not cached". A directory that cannot be
++//   created or written, or a full disk, turns writes off for the session.
++class ProgramBinaryCache {
++ public:
++  struct Limits {
++    // Upper bound for all blob files in the namespace folder.
++    uint64_t max_total_bytes = 32ull * 1024 * 1024;
++    // Larger blobs are not stored.
++    uint64_t max_entry_bytes = 4ull * 1024 * 1024;
++    // Upper bound for blobs queued but not yet written.
++    uint64_t max_pending_bytes = 16ull * 1024 * 1024;
++  };
++
++  struct Stats {
++    uint64_t hits = 0;
++    uint64_t misses = 0;
++    uint64_t corrupt = 0;
++    uint64_t stored = 0;
++    uint64_t dropped = 0;
++    uint64_t evicted = 0;
++  };
++
++  // |root| must be an absolute path. |namespace_tag| names the subfolder the
++  // blobs live in; blobs under any other subfolder of |root| that looks like
++  // a namespace (see |IsNamespaceFolderName|) are deleted.
++  ProgramBinaryCache(std::wstring root,
++                     std::wstring namespace_tag,
++                     Limits limits);
++  ~ProgramBinaryCache();
++
++  // EGL_ANDROID_blob_cache semantics: returns the size of the value stored
++  // for |key| (0 when there is none). The value is copied into |value| only
++  // when |value_size| is large enough.
++  int64_t Get(const void* key,
++              int64_t key_size,
++              void* value,
++              int64_t value_size);
++
++  // Queues |value| for |key|. Never blocks on I/O.
++  void Put(const void* key,
++           int64_t key_size,
++           const void* value,
++           int64_t value_size);
++
++  // Blocks until the background thread has nothing left to do. Tests only.
++  void WaitForIdle();
++
++  Stats GetStats();
++
++  const std::wstring& directory() const { return directory_; }
++
++  // The namespace for the running engine module.
++  static std::wstring CurrentNamespaceTag();
++
++  static bool IsNamespaceFolderName(const std::wstring& name);
++
++  // Process-wide instance used by the EGL callbacks. Returns false when a
++  // cache is already installed for a different root (the first one wins:
++  // ANGLE's display keeps its callbacks for its whole lifetime).
++  static bool InstallGlobal(const std::wstring& root);
++  static ProgramBinaryCache* Global();
++
++  // EGLSetBlobFuncANDROID / EGLGetBlobFuncANDROID for |Global()|.
++  static void SetBlobCallback(const void* key,
++                              int64_t key_size,
++                              const void* value,
++                              int64_t value_size);
++  static int64_t GetBlobCallback(const void* key,
++                                 int64_t key_size,
++                                 void* value,
++                                 int64_t value_size);
++
++ private:
++  struct Task {
++    enum class Kind { kWrite, kTouch, kDelete } kind;
++    std::wstring file_name;
++    std::shared_ptr<const std::vector<uint8_t>> contents;
++  };
++
++  struct FileInfo {
++    uint64_t size = 0;
++    uint64_t write_time = 0;
++  };
++
++  static std::wstring FileNameForKey(const uint8_t* key, size_t key_size);
++  static std::vector<uint8_t> Encode(const uint8_t* key,
++                                     size_t key_size,
++                                     const uint8_t* value,
++                                     size_t value_size);
++  // Returns the value bytes when |file| is a valid entry for |key|.
++  static bool Decode(const std::vector<uint8_t>& file,
++                     const uint8_t* key,
++                     size_t key_size,
++                     std::vector<uint8_t>* value);
++
++  bool ReadEntry(const std::wstring& file_name,
++                 const uint8_t* key,
++                 size_t key_size,
++                 std::shared_ptr<const std::vector<uint8_t>>* value);
++  void Enqueue(Task task);
++  void WorkerMain();
++  void Maintain();
++  void RunTask(const Task& task);
++  bool WriteFileAtomically(const std::wstring& file_name,
++                           const std::vector<uint8_t>& contents);
++  void EvictToLimit();
++  void DisableWrites(const char* reason, unsigned long error);
++
++  const std::wstring root_;
++  const std::wstring namespace_tag_;
++  const std::wstring directory_;
++  const Limits limits_;
++
++  std::mutex mutex_;
++  std::condition_variable work_available_;
++  std::condition_variable idle_;
++  std::deque<Task> tasks_;
++  bool busy_ = false;
++  bool shutting_down_ = false;
++  bool writes_disabled_ = false;
++  uint64_t pending_bytes_ = 0;
++  // Values queued for writing (lookups must see them before they land).
++  std::map<std::wstring, std::shared_ptr<const std::vector<uint8_t>>>
++      pending_values_;
++  // Values read by a size query and not yet copied out: ANGLE asks for the
++  // size first and then for the bytes, and the file must not be read twice.
++  std::map<std::wstring, std::shared_ptr<const std::vector<uint8_t>>>
++      sized_values_;
++  Stats stats_;
++
++  // Background thread only.
++  std::map<std::wstring, FileInfo> files_;
++  uint64_t total_bytes_ = 0;
++  bool directory_ready_ = false;
++
++  std::thread worker_;
++
++  FML_DISALLOW_COPY_AND_ASSIGN(ProgramBinaryCache);
++};
++
++}  // namespace egl
++}  // namespace flutter
++
++#endif  // FLUTTER_SHELL_PLATFORM_WINDOWS_EGL_PROGRAM_BINARY_CACHE_H_
+diff --git a/engine/src/flutter/shell/platform/windows/egl/program_binary_cache_unittests.cc b/engine/src/flutter/shell/platform/windows/egl/program_binary_cache_unittests.cc
+new file mode 100644
+index 00000000..0db49fed
+--- /dev/null
++++ b/engine/src/flutter/shell/platform/windows/egl/program_binary_cache_unittests.cc
+@@ -0,0 +1,269 @@
++// Copyright 2013 The Flutter Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "flutter/shell/platform/windows/egl/program_binary_cache.h"
++
++#include <windows.h>
++
++#include <filesystem>
++#include <fstream>
++#include <string>
++#include <vector>
++
++#include "gtest/gtest.h"
++
++namespace flutter {
++namespace egl {
++namespace testing {
++
++namespace {
++
++constexpr wchar_t kTag[] = L"0123456789abcdef";
++
++class ProgramBinaryCacheTest : public ::testing::Test {
++ protected:
++  void SetUp() override {
++    wchar_t temp[MAX_PATH];
++    ASSERT_GT(::GetTempPathW(MAX_PATH, temp), 0u);
++    root_ = std::filesystem::path(temp) /
++            (L"flutter_program_binary_cache_" +
++             std::to_wstring(::GetCurrentProcessId()) + L"_" +
++             std::to_wstring(::GetTickCount64()));
++    std::error_code ec;
++    std::filesystem::remove_all(root_, ec);
++  }
++
++  void TearDown() override {
++    std::error_code ec;
++    std::filesystem::remove_all(root_, ec);
++  }
++
++  std::unique_ptr<ProgramBinaryCache> Open(
++      ProgramBinaryCache::Limits limits = ProgramBinaryCache::Limits()) {
++    auto cache =
++        std::make_unique<ProgramBinaryCache>(root_.wstring(), kTag, limits);
++    cache->WaitForIdle();
++    return cache;
++  }
++
++  static std::vector<uint8_t> Key(uint8_t seed) {
++    std::vector<uint8_t> key(20);
++    for (size_t i = 0; i < key.size(); ++i) {
++      key[i] = static_cast<uint8_t>(seed * 31 + i);
++    }
++    return key;
++  }
++
++  static std::vector<uint8_t> Value(uint8_t seed, size_t size) {
++    std::vector<uint8_t> value(size);
++    for (size_t i = 0; i < size; ++i) {
++      value[i] = static_cast<uint8_t>(seed + i * 7);
++    }
++    return value;
++  }
++
++  // The two-step EGL_ANDROID_blob_cache read ANGLE performs.
++  static std::vector<uint8_t> Read(ProgramBinaryCache& cache,
++                                   const std::vector<uint8_t>& key) {
++    const int64_t size = cache.Get(key.data(), key.size(), nullptr, 0);
++    if (size <= 0) {
++      return {};
++    }
++    std::vector<uint8_t> value(static_cast<size_t>(size));
++    EXPECT_EQ(cache.Get(key.data(), key.size(), value.data(), size), size);
++    return value;
++  }
++
++  std::vector<std::filesystem::path> BlobFiles() {
++    std::vector<std::filesystem::path> files;
++    std::error_code ec;
++    for (const auto& entry :
++         std::filesystem::directory_iterator(root_ / kTag, ec)) {
++      if (entry.path().extension() == L".bin") {
++        files.push_back(entry.path());
++      }
++    }
++    return files;
++  }
++
++  std::filesystem::path root_;
++};
++
++}  // namespace
++
++TEST_F(ProgramBinaryCacheTest, RoundTripsAcrossInstances) {
++  const auto key = Key(1);
++  const auto value = Value(1, 5000);
++  {
++    auto cache = Open();
++    EXPECT_TRUE(Read(*cache, key).empty());
++    cache->Put(key.data(), key.size(), value.data(), value.size());
++    // Visible before the background write lands.
++    EXPECT_EQ(Read(*cache, key), value);
++    cache->WaitForIdle();
++    EXPECT_EQ(cache->GetStats().stored, 1u);
++  }
++  auto cache = Open();
++  EXPECT_EQ(Read(*cache, key), value);
++  EXPECT_EQ(cache->GetStats().hits, 1u);
++  EXPECT_EQ(Read(*cache, Key(2)).size(), 0u);
++}
++
++TEST_F(ProgramBinaryCacheTest, SmallBufferOnlyReportsSize) {
++  const auto key = Key(3);
++  const auto value = Value(3, 100);
++  auto cache = Open();
++  cache->Put(key.data(), key.size(), value.data(), value.size());
++  cache->WaitForIdle();
++  std::vector<uint8_t> small(10, 0xee);
++  EXPECT_EQ(cache->Get(key.data(), key.size(), small.data(), small.size()),
++            100);
++  EXPECT_EQ(small, std::vector<uint8_t>(10, 0xee));
++}
++
++TEST_F(ProgramBinaryCacheTest, DamagedFilesAreMissesAndRemoved) {
++  const auto truncated_key = Key(4);
++  const auto flipped_key = Key(5);
++  {
++    auto cache = Open();
++    const auto value = Value(4, 3000);
++    cache->Put(truncated_key.data(), truncated_key.size(), value.data(),
++               value.size());
++    cache->Put(flipped_key.data(), flipped_key.size(), value.data(),
++               value.size());
++    cache->WaitForIdle();
++  }
++  auto files = BlobFiles();
++  ASSERT_EQ(files.size(), 2u);
++  for (const auto& file : files) {
++    const bool truncate =
++        file.filename().wstring().find(L"7c7d7e") != std::wstring::npos;
++    if (truncate) {
++      std::filesystem::resize_file(file, 1000);
++    } else {
++      std::fstream stream(file,
++                          std::ios::in | std::ios::out | std::ios::binary);
++      stream.seekp(-1, std::ios::end);
++      stream.put(static_cast<char>(0x5a));
++    }
++  }
++  {
++    auto cache = Open();
++    EXPECT_TRUE(Read(*cache, truncated_key).empty());
++    EXPECT_TRUE(Read(*cache, flipped_key).empty());
++    cache->WaitForIdle();
++    EXPECT_EQ(cache->GetStats().corrupt, 2u);
++  }
++  EXPECT_TRUE(BlobFiles().empty());
++}
++
++TEST_F(ProgramBinaryCacheTest, FileForAnotherKeyIsAMiss) {
++  const auto key = Key(6);
++  const auto other = Key(7);
++  {
++    auto cache = Open();
++    const auto value = Value(6, 64);
++    cache->Put(key.data(), key.size(), value.data(), value.size());
++    cache->WaitForIdle();
++  }
++  auto files = BlobFiles();
++  ASSERT_EQ(files.size(), 1u);
++  // Same bytes under the other key's file name.
++  {
++    auto cache = Open();
++    cache->Put(other.data(), other.size(), Value(7, 64).data(), 64);
++    cache->WaitForIdle();
++  }
++  files = BlobFiles();
++  ASSERT_EQ(files.size(), 2u);
++  std::filesystem::copy_file(files[0], files[1],
++                             std::filesystem::copy_options::overwrite_existing);
++  auto cache = Open();
++  const auto first = Read(*cache, key);
++  const auto second = Read(*cache, other);
++  // Exactly one of the two names now holds bytes for the wrong key.
++  EXPECT_NE(first.empty(), second.empty());
++}
++
++TEST_F(ProgramBinaryCacheTest, EvictsLeastRecentlyUsedToTheCap) {
++  ProgramBinaryCache::Limits limits;
++  limits.max_total_bytes = 10 * 1024;
++  auto cache = Open(limits);
++  for (uint8_t i = 0; i < 10; ++i) {
++    const auto key = Key(10 + i);
++    const auto value = Value(i, 2000);
++    cache->Put(key.data(), key.size(), value.data(), value.size());
++    cache->WaitForIdle();
++    ::Sleep(20);  // Distinct write times.
++  }
++  uint64_t total = 0;
++  for (const auto& file : BlobFiles()) {
++    total += std::filesystem::file_size(file);
++  }
++  EXPECT_LE(total, limits.max_total_bytes);
++  EXPECT_GT(cache->GetStats().evicted, 0u);
++  // The newest entry survives, the oldest does not.
++  EXPECT_FALSE(Read(*cache, Key(19)).empty());
++  EXPECT_TRUE(Read(*cache, Key(10)).empty());
++}
++
++TEST_F(ProgramBinaryCacheTest, OversizedEntriesAreNotStored) {
++  ProgramBinaryCache::Limits limits;
++  limits.max_entry_bytes = 1000;
++  auto cache = Open(limits);
++  const auto key = Key(30);
++  const auto value = Value(30, 1001);
++  cache->Put(key.data(), key.size(), value.data(), value.size());
++  cache->WaitForIdle();
++  EXPECT_EQ(cache->GetStats().dropped, 1u);
++  EXPECT_TRUE(BlobFiles().empty());
++}
++
++TEST_F(ProgramBinaryCacheTest, DeletesOtherNamespacesOnly) {
++  std::filesystem::create_directories(root_ / L"fedcba9876543210");
++  std::filesystem::create_directories(root_ / L"keep-me");
++  std::ofstream(root_ / L"fedcba9876543210" / L"x.bin") << "stale";
++  auto cache = Open();
++  EXPECT_FALSE(std::filesystem::exists(root_ / L"fedcba9876543210"));
++  EXPECT_TRUE(std::filesystem::exists(root_ / L"keep-me"));
++  EXPECT_TRUE(std::filesystem::is_directory(root_ / kTag));
++}
++
++TEST_F(ProgramBinaryCacheTest, UnusableDirectoryFallsBackToMisses) {
++  // The root is a file: the namespace folder cannot be created.
++  std::filesystem::create_directories(root_.parent_path());
++  std::ofstream(root_) << "not a directory";
++  auto cache = Open();
++  const auto key = Key(40);
++  const auto value = Value(40, 128);
++  cache->Put(key.data(), key.size(), value.data(), value.size());
++  cache->WaitForIdle();
++  EXPECT_TRUE(Read(*cache, key).empty());
++  EXPECT_EQ(cache->GetStats().stored, 0u);
++  std::error_code ec;
++  std::filesystem::remove(root_, ec);
++}
++
++TEST_F(ProgramBinaryCacheTest, RejectsBadArguments) {
++  auto cache = Open();
++  const auto value = Value(50, 16);
++  cache->Put(nullptr, 20, value.data(), value.size());
++  cache->Put(Key(50).data(), 0, value.data(), value.size());
++  cache->Put(Key(50).data(), 20, nullptr, 16);
++  EXPECT_EQ(cache->Get(nullptr, 20, nullptr, 0), 0);
++  cache->WaitForIdle();
++  EXPECT_TRUE(BlobFiles().empty());
++}
++
++TEST(ProgramBinaryCacheNamespaceTest, TagIsAStableNamespaceFolderName) {
++  const std::wstring tag = ProgramBinaryCache::CurrentNamespaceTag();
++  EXPECT_TRUE(ProgramBinaryCache::IsNamespaceFolderName(tag));
++  EXPECT_EQ(tag, ProgramBinaryCache::CurrentNamespaceTag());
++  EXPECT_FALSE(ProgramBinaryCache::IsNamespaceFolderName(L"0123456789ABCDEF"));
++  EXPECT_FALSE(ProgramBinaryCache::IsNamespaceFolderName(L"keep-me"));
++}
++
++}  // namespace testing
++}  // namespace egl
++}  // namespace flutter
+diff --git a/engine/src/flutter/shell/platform/windows/flutter_windows.cc b/engine/src/flutter/shell/platform/windows/flutter_windows.cc
+index 00409549..f5640829 100644
+--- a/engine/src/flutter/shell/platform/windows/flutter_windows.cc
++++ b/engine/src/flutter/shell/platform/windows/flutter_windows.cc
+@@ -18,6 +18,7 @@
+ #include "flutter/shell/platform/common/path_utils.h"
+ #include "flutter/shell/platform/embedder/embedder.h"
+ #include "flutter/shell/platform/windows/dpi_utils.h"
++#include "flutter/shell/platform/windows/egl/program_binary_cache.h"
+ #include "flutter/shell/platform/windows/flutter_project_bundle.h"
+ #include "flutter/shell/platform/windows/flutter_window.h"
+ #include "flutter/shell/platform/windows/flutter_windows_engine.h"
+@@ -305,6 +306,14 @@ bool FlutterDesktopGpuSurfaceSupportsKeyedMutex() {
+   return true;
+ }
+ 
++bool FlutterDesktopSetProgramBinaryCacheDirectory(const wchar_t* directory) {
++  if (directory == nullptr || directory[0] == L'\0' ||
++      !std::filesystem::path(directory).is_absolute()) {
++    return false;
++  }
++  return flutter::egl::ProgramBinaryCache::InstallGlobal(directory);
++}
++
+ IDXGIAdapter* FlutterDesktopViewGetGraphicsAdapter(FlutterDesktopViewRef view) {
+   auto engine = ViewFromHandle(view)->GetEngine();
+   IDXGIAdapter* adapter;
+diff --git a/engine/src/flutter/shell/platform/windows/public/flutter_windows.h b/engine/src/flutter/shell/platform/windows/public/flutter_windows.h
+index 417eab6e..f79993b9 100644
+--- a/engine/src/flutter/shell/platform/windows/public/flutter_windows.h
++++ b/engine/src/flutter/shell/platform/windows/public/flutter_windows.h
+@@ -357,6 +357,21 @@ FLUTTER_EXPORT void FlutterDesktopViewSetUnderlayComposition(
+ // GetProcAddress and only create keyed-mutex textures when it returns true.
+ FLUTTER_EXPORT bool FlutterDesktopGpuSurfaceSupportsKeyedMutex();
+ 
++// Fushi patch (program binary disk cache): persists ANGLE's linked programs
++// (EGL_ANDROID_blob_cache) under |directory| so later launches load them
++// instead of recompiling every Impeller pipeline. Call once, before the first
++// engine is created; |directory| must be absolute and is created on demand on
++// a background thread. The cache lives in a subfolder named after this engine
++// build; folders of other builds are deleted, total size is capped, and any
++// I/O problem (unwritable directory, full disk, damaged file) falls back to
++// compiling from source. Returns false for an invalid path or when a cache
++// with a different directory is already installed in this process.
++//
++// Engines without this patch do not export the symbol; resolve it with
++// GetProcAddress.
++FLUTTER_EXPORT bool FlutterDesktopSetProgramBinaryCacheDirectory(
++    const wchar_t* directory);
++
+ // Retrieves the DXGI adapter used for rendering. Returns true if the adapter
+ // was successfully retrieved, or false if an error occured.
+ // The caller must provide a valid pointer to an IDXGIAdapter* and is
