@@ -67,6 +67,9 @@ pub(crate) const DRIFT_TX_POLICY: &[(&str, DriftTxPolicy)] = &[
     ("retire", Join),
     ("dedup", Join),
     ("trust", Join),
+    // 一轮收尾的自愈（store/sync2/heal.rs `sync2_digest_heal`，#3248）：这一步仍经 `_sync2Write` 在 Drift 事务里发，
+    // 与 `dedup` 同属改投影的写；写路径 2 起改成内核本机写命令、策略改 Reject。
+    ("digest_heal", Join),
     // 缓存维护的 Drift 事务（`_upgradeCaches` / `rebuildCaches` / `compactStoredStyles`）与上面各事务里的刷新。
     ("refresh_caches", Join),
     ("rebuild_caches", Join),
