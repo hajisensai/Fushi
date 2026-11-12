@@ -14,6 +14,7 @@ import 'dart:typed_data';
 
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_devices.dart';
 import 'package:fushi_engine/srs/srs_media_store.dart';
 import 'package:fushi_engine/srs/srs_media_sync.dart';
 import 'package:fushi_engine/srs/srs_miner.dart';
@@ -633,6 +634,29 @@ class ServerSrs {
     await Future.wait(<Future<void>>[
       for (final ServerSrsProfile prof in targets) prof.syncNow(),
     ]);
+  }
+
+  /// [uid] 那份里还没信任的设备（待确认在前）：服务端第一轮同步之后才第一次出现的设备，它的删除与彻底清除在服务端
+  /// 的库里扣着（native/fushi_fsrs/src/store/sync2/trust.rs），要管理员确认。那份不可用时 null。
+  Future<List<SrsDeviceView>?> untrustedDevices(String uid) async {
+    final SrsDbStore? s = _profiles[uid]?.store;
+    if (s == null) return null;
+    return srsUntrustedDevices(await srsLoadDevices(s));
+  }
+
+  /// 信任 / 拒绝 [uid] 那份里的一台设备（与 app 冲突中心的「待确认的设备」同一条 engine 路径）。信任 = 扣着的删除与
+  /// 彻底清除立即生效，库有变化，通知远程复习等重读。那份不可用时抛 [StateError]；设备不对抛
+  /// [SrsDeviceTrustException]。
+  Future<SrsDeviceView> setDeviceTrust(
+    String uid,
+    String device, {
+    required bool trust,
+  }) async {
+    final SrsDbStore? s = _profiles[uid]?.store;
+    if (s == null) throw StateError('profile $uid is not available');
+    final SrsDeviceView view = await srsSetDeviceTrust(s, device, trust: trust);
+    if (trust) _onChanged(uid);
+    return view;
   }
 
   /// 服务端自己写了 [uid] 的库（AnkiConnect / 互联制卡）：去抖后发出去。

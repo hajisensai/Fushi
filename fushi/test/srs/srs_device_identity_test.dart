@@ -2,12 +2,14 @@
 // 冲突差异、设备显示名规则（「<名称>（Fushi X.Y）」/ 对端名 / 「未命名设备 · 最后在线」）。
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_sync_devices_section.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_value_diff.dart';
 import 'package:fushi/src/srs/srs_device_identity.dart';
 import 'package:fushi/src/srs/srs_device_view.dart';
 import 'package:fushi_engine/srs/sync2/srs_host_directory.dart';
 import 'package:fushi_engine/sync/interconnect_device_name.dart';
+import 'package:material_ui/material_ui.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -150,5 +152,44 @@ void main() {
       dir.label('ffff', selfLabel: '本机', fallback: '?', formatTime: fmt),
       '?',
     );
+  });
+
+  // 对端的派生规则版本（内核从它摘要串的前缀解析，store/sync2/digest.rs）与本机不同：设备行说明「对方规则 vN」；
+  // 规则相同（内核不给 `rules`）或本机行都不说。
+  testWidgets('派生规则不同的对端在设备行说明「对方规则 vN」', (WidgetTester tester) async {
+    final List<SrsDeviceView> views = srsDeviceViewsOf(<String, Object?>{
+      'devices': <Object?>[
+        <String, Object?>{'device': 'me', 'self': true},
+        <String, Object?>{
+          'device': 'old',
+          'name': 'iPad',
+          'rules': <String, Object?>{'theirs': 4, 'mine': 5},
+        },
+        <String, Object?>{'device': 'same', 'name': 'Pixel 8'},
+      ],
+    });
+    expect(views[1].rulesTheirs, 4);
+    expect(views[1].rulesMine, 5);
+    expect(views[2].rulesTheirs, isNull);
+    late List<List<String>> details;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (BuildContext context) {
+            details = <List<String>>[
+              for (final SrsDeviceView d in views)
+                srsDeviceRowDetails(context, d, syncing: false),
+            ];
+            return const SizedBox();
+          },
+        ),
+      ),
+    );
+    final String hint = t.srs_device_rules_differ(theirs: '4', mine: '5');
+    expect(hint, contains('v4'));
+    expect(hint, contains('v5'));
+    expect(details[1], contains(hint));
+    expect(details[0], isNot(contains(hint)));
+    expect(details[2].where((String x) => x.contains('v4')), isEmpty);
   });
 }

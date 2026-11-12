@@ -12,7 +12,9 @@ import {
   installIdFromSpki,
   installPowValid,
   installStats,
+  installStatsSnapshot,
   normalizeLocale,
+  refreshInstallStatsSnapshot,
   retentionCohorts,
   versionAdoption,
   versionIncludes,
@@ -136,7 +138,7 @@ const budgetUsed = (env, day = '2026-10-17') =>
 const installRow = (env, id) => env.DB.raw.prepare('SELECT * FROM installs WHERE install_id = ?').get(id);
 
 let devSeq = 0;
-async function devPage(env, path) {
+async function devPage(env, path, { method = 'GET', now = NOW } = {}) {
   const dev = await registerUser(env, 'dev', { now: NOW });
   expect((await call(env, 'POST', `/admin/api/accounts/${dev.id}/role`, { headers: basic, body: { role: 'dev' }, now: NOW })).status).toBe(200);
   devSeq += 1;
@@ -144,7 +146,9 @@ async function devPage(env, path) {
   const { hex, sha256 } = await import('../src/util.js');
   env.DB.raw.prepare('INSERT INTO dev_sessions (token_hash, account_id, expires_at) VALUES (?, ?, ?)')
     .run(hex(await sha256(new TextEncoder().encode(token))), dev.id, NOW + DAY);
-  return call(env, 'GET', path, { headers: { Cookie: `fushi_dev=${token}` }, now: NOW });
+  const headers = { Cookie: `fushi_dev=${token}` };
+  if (method === 'POST') headers.Origin = BASE;
+  return call(env, method, path, { headers, now });
 }
 
 describe('POST /v1/ping（未验证 / 旧客户端）', () => {
@@ -671,10 +675,65 @@ describe('统计', () => {
     expect(anon.data.error).toBe('dev_session_required');
     const r = await devPage(env, '/dev/stats.json');
     expect(r.status).toBe(200);
-    expect(r.data).toEqual(await installStats(env, NOW));
+    expect(r.data).toEqual({ ...(await installStats(env, NOW)), computedAt: NOW });
     expect(r.data.dau).toBe(1);
     expect(r.data.unverified.dau).toBe(1);
     expect(r.data.daily[0].day).toBe('2026-10-17');
+  });
+});
+
+describe('安装统计快照（迁移 0021）', () => {
+  const snapshotAt = (env) => env.DB.raw.prepare('SELECT computed_at FROM install_stats_snapshot').get()?.computed_at;
+
+  it('处理台只读快照：快照之后的新心跳不进页面，直到重算', async () => {
+    const env = makeEnv();
+    await signedPing(env, await makeInstall());
+    // 没有快照时第一次打开现场算一次并存下。
+    expect((await devPage(env, '/dev/stats.json')).data.dau).toBe(1);
+    expect(snapshotAt(env)).toBe(NOW);
+    await signedPing(env, await makeInstall());
+    const later = await devPage(env, '/dev/stats.json', { now: NOW + 60 * 1000 });
+    expect(later.data.dau).toBe(1);
+    expect(later.data.computedAt).toBe(NOW);
+    expect((await devPage(env, '/dev/stats')).data).toContain('快照算于 2026-10-17 12:00 UTC');
+  });
+
+  it('定时重算按 snapshotEveryMs 节流，手动刷新按冷却节流', async () => {
+    const env = makeEnv();
+    await signedPing(env, await makeInstall());
+    expect(await refreshInstallStatsSnapshot(env, NOW)).toBe(true);
+    await signedPing(env, await makeInstall());
+    expect(await refreshInstallStatsSnapshot(env, NOW + INSTALL_LIMITS.snapshotEveryMs - 1)).toBe(false);
+    expect(await refreshInstallStatsSnapshot(env, NOW + INSTALL_LIMITS.snapshotRefreshCooldownMs - 1, { force: true }))
+      .toBe(false);
+    expect((await installStatsSnapshot(env)).stats.dau).toBe(1);
+    const t = NOW + INSTALL_LIMITS.snapshotRefreshCooldownMs;
+    expect(await refreshInstallStatsSnapshot(env, t, { force: true })).toBe(true);
+    expect(await installStatsSnapshot(env)).toMatchObject({ computedAt: t, stats: { dau: 2 } });
+    expect(await refreshInstallStatsSnapshot(env, NOW + INSTALL_LIMITS.snapshotEveryMs)).toBe(false);
+    expect(await refreshInstallStatsSnapshot(env, t + INSTALL_LIMITS.snapshotEveryMs)).toBe(true);
+  });
+
+  it('POST /dev/stats/refresh 冷却过后重算并跳回统计页', async () => {
+    const env = makeEnv();
+    await signedPing(env, await makeInstall());
+    await devPage(env, '/dev/stats');
+    await signedPing(env, await makeInstall());
+    const early = await devPage(env, '/dev/stats/refresh', { method: 'POST', now: NOW + 1000 });
+    expect(early.status).toBe(303);
+    expect(early.res.headers.get('Location')).toBe('/dev/stats');
+    expect(snapshotAt(env)).toBe(NOW);
+    const t = NOW + INSTALL_LIMITS.snapshotRefreshCooldownMs;
+    await devPage(env, '/dev/stats/refresh', { method: 'POST', now: t });
+    expect(snapshotAt(env)).toBe(t);
+    expect((await installStatsSnapshot(env)).stats.dau).toBe(2);
+  });
+
+  it('定时任务在没有快照时生成一份', async () => {
+    const env = makeEnv();
+    await signedPing(env, await makeInstall());
+    await worker.scheduled({}, env, { waitUntil() {} });
+    expect(snapshotAt(env)).toBeTypeOf('number');
   });
 });
 

@@ -3,6 +3,8 @@ import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/downloads/download_source_method.dart';
+import 'package:fushi/src/media/downloads/download_execution_target.dart'
+    show DownloadExecutionUnreachable;
 import 'package:fushi/src/pages/implementations/download_notice.dart';
 import 'package:fushi/src/pages/implementations/bt_site_settings_route.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
@@ -1721,6 +1723,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
     final AppModel appModel = ref.read(appProvider);
     if (!await confirmP2pDownloadNotice(context) || !mounted) return;
     setState(() => _pushingGeneric = true);
+    DownloadExecutionUnreachable? unreachable;
     final GenericPushOutcome outcome = await pushGenericMagnet(
       context: context,
       appModel: appModel,
@@ -1730,10 +1733,11 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
       discoveryKind: _genericKind == AnimeDownloadPlan.kindBook
           ? DiscoveryMediaKind.novel
           : null,
+      onRemoteUnreachable: (DownloadExecutionUnreachable u) => unreachable = u,
     );
     if (!mounted) return;
     setState(() => _pushingGeneric = false);
-    _snack(genericPushMessage(outcome));
+    _snack(genericPushMessage(outcome, unreachable: unreachable));
     if (outcome.isSuccess) {
       _magnetCtrl.clear();
       await _reloadPlans();
