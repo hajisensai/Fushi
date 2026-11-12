@@ -281,7 +281,13 @@ class MusicPlaylistEntries extends Table {
 ///
 /// 播放路径不落库：由 [kind] + [sourceKey] + [itemId] 现推（`fushi-music-youtube://` /
 /// `fushi-music-plugin://` 占位，真正的流起播时才取），表里没有会过期的直链、也没有凭据。
-/// 媒体服务器（Jellyfin / Subsonic）曲目不进这张表：它们的播放地址带账号凭据，且整库可混排。
+///
+/// 媒体服务器（Jellyfin / Subsonic）曲目（v149，反馈 se3Fw8HmOX）：[kind] = `server`、
+/// [sourceKey] = 服务器配置身份（`MusicServerBrowser.serverId`：Jellyfin = 媒体服务器配置的
+/// sourceId，Subsonic = `subsonic-<配置 id>`）、[itemId] = 服务器侧曲目 id、封面只存服务器侧
+/// 引用 [coverRef]。播放流与封面地址都带账号凭据（token / api_key / u+p），一律在起播 / 取封面
+/// 时由当前配置的服务器客户端现算，**任何带凭据的地址都不落这张表**；这台设备上没配这台
+/// 服务器（配置删了 / 歌单从别的设备同步来）时曲目显示为不可用。
 ///
 /// 与歌单一起随「音乐」备份类别走（歌单条目可能引用这里的行），按 [updatedAt] LWW 合并；
 /// 「从音乐库移除」只清 [libraryAddedAt]、不删行（别的设备 / 歌单可能还引用）。
@@ -289,13 +295,13 @@ class MusicPlaylistEntries extends Table {
 class MusicRemoteTracks extends Table {
   TextColumn get trackUid => text()();
 
-  /// 来源种类 wire 值（冻结）：`youtube` | `plugin`。
+  /// 来源种类 wire 值（冻结）：`youtube` | `plugin` | `server`（v149）。
   TextColumn get kind => text()();
 
-  /// 来源宿主：YouTube 为 `youtube`；插件为插件 id。
+  /// 来源宿主：YouTube 为 `youtube`；插件为插件 id；服务器为服务器配置身份。
   TextColumn get sourceKey => text()();
 
-  /// 来源内的条目 id：YouTube videoId / 插件曲目 id。
+  /// 来源内的条目 id：YouTube videoId / 插件曲目 id / 服务器侧曲目 id。
   TextColumn get itemId => text()();
 
   TextColumn get title => text()();
@@ -303,8 +309,20 @@ class MusicRemoteTracks extends Table {
   TextColumn get album => text().nullable()();
   IntColumn get durationMs => integer().nullable()();
 
-  /// 封面的 http(s) 地址（来源给的缩略图）；没有为 NULL。
+  /// 封面的 http(s) 地址（来源给的缩略图）；没有为 NULL。服务器曲目恒为 NULL（地址带凭据，
+  /// 见 [coverRef]）。
   TextColumn get coverUrl => text().nullable()();
+
+  /// 服务器侧封面引用（v149，只有服务器曲目有：Jellyfin 条目 id / Subsonic `coverArt` id），
+  /// 显示时由服务器客户端现算地址。
+  TextColumn get coverRef => text().nullable()();
+
+  /// 来源侧专辑 id（v149：插件专辑 id / 服务器专辑 id），「去专辑」跳转与专辑 uid 用。
+  TextColumn get albumId => text().nullable()();
+
+  /// 来源侧艺人引用（v149，JSON 数组 `[{"id": "…", "name": "…"}]`，`id` 可缺），「去艺人」
+  /// 跳转用；没有为 NULL。
+  TextColumn get artistRefs => text().nullable()();
 
   /// 加入音乐库的时刻（毫秒）；NULL = 不在曲库里（只被歌单引用）。
   IntColumn get libraryAddedAt => integer().nullable()();

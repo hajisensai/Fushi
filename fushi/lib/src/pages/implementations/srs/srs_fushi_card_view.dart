@@ -21,7 +21,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart'
     show ValueListenable, defaultTargetPlatform;
 import 'package:flutter/rendering.dart'
-    show RenderObjectVisitor, RenderOffstage, RenderProxyBox, SelectedContent;
+    show RenderObjectVisitor, RenderOffstage, RenderProxyBox;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_anki/fushi_anki.dart' show CardSourceLink;
@@ -47,6 +47,7 @@ import 'package:fushi/src/anki/card_source_origin.dart'
 import 'package:fushi/src/anki/card_source_router.dart' show openCardSource;
 import 'package:fushi/src/models/app_model.dart' show appProvider;
 import 'package:fushi/src/models/content_font_chain.dart';
+import 'package:fushi/src/models/font_face_weight.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_video_clip.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_defs_scroll_window.dart';
@@ -78,8 +79,6 @@ import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_tag.dart';
-import 'package:fushi/src/utils/misc/error_log_service.dart';
-import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 export 'package:fushi/src/srs/srs_fushi_card_plan.dart'
@@ -400,22 +399,13 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
       host(names);
       return;
     }
-    if (names.isNotEmpty) await _play(names.first);
-  }
-
-  Future<void> _play(String name) async {
-    SrsMediaStore? store;
-    try {
-      store = await ref.read(srsMediaStoreProvider.future);
-    } catch (e, stack) {
-      ErrorLogService.instance.log('SrsFushiCardView.mediaStore', e, stack);
+    if (names.isNotEmpty) {
+      await srsPlayCardSoundFile(
+        ref,
+        names.first,
+        logTag: 'SrsFushiCardView.mediaStore',
+      );
     }
-    final File? file = store?.resolve(name);
-    if (file == null || !await file.exists()) {
-      FushiToast.show(msg: t.srs_media_missing(name: name));
-      return;
-    }
-    await ref.read(srsSoundPlayerProvider)(file.path);
   }
 
   void _onDefsHeight(double h) {
@@ -510,14 +500,8 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
   /// 不在它的子树里；WebView 自己声明手势（[srsCardFaceGestureRecognizers]）。
   Widget _selectable(Widget child, {FocusNode? focusNode}) => SelectionArea(
     focusNode: focusNode ?? _selectionFocus,
-    // 复习时编辑：原生区选中的文字交给复习页（没有序号；整页清空选区不报）。
-    onSelectionChanged: widget.face.onEditSelection == null
-        ? null
-        : (SelectedContent? content) {
-            final String text = content?.plainText ?? '';
-            if (text.trim().isEmpty) return;
-            widget.face.onEditSelection!(SrsCardSelection(text));
-          },
+    // 复习时编辑：原生区选中的文字交给复习页。
+    onSelectionChanged: srsCardSelectionReporter(widget.face),
     child: child,
   );
 
@@ -1205,7 +1189,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
   }
 
   /// 卡面上的一段 HTML（字段区块 / HTML 区块）：原生 HTML 渲染器画（能不能画由
-  /// [srsFushiCardItemsNative] 事先判过，画不了的卡整张走 WebView，不会到这里）。
+  /// [srsFushiCardItemsFallback] 事先判过，画不了的卡整张走 WebView，不会到这里）。
   Widget? _htmlFragment(String html, String key) {
     if (html.trim().isEmpty) return null;
     final SrsHtmlCardFace? face = srsHtmlFragmentProbe(
@@ -1676,11 +1660,12 @@ class _SrsCardStyle {
   double indentOf(TextStyle style, int chars) =>
       chars <= 0 ? 0 : chars * (style.fontSize ?? 16);
 
-  TextStyle term(TextStyle role, {double scale = 1}) => text(
-    role,
-    scale: scale,
-    height: 1.25,
-  ).copyWith(fontWeight: FontWeight.w600);
+  /// 词头：w600，但单字重的用户字体不请求（会被合成假粗体糊字，见
+  /// [withFaceSafeWeight]），保持其原字重、靠字号区分。
+  TextStyle term(TextStyle role, {double scale = 1}) => withFaceSafeWeight(
+    text(role, scale: scale, height: 1.25),
+    FontWeight.w600,
+  );
 }
 
 // ---------------------------------------------------------------- 组件
@@ -1715,7 +1700,10 @@ class SrsRubyText extends StatelessWidget {
   final Color? emphasis;
 
   TextStyle _styleOf(SrsInline s) => style.copyWith(
-    fontWeight: s.bold ? FontWeight.w700 : null,
+    // 单字重用户字体不请求 w700（会合成假粗体），只靠强调色区分。
+    fontWeight: s.bold
+        ? faceSafeFontWeight(style.fontFamily, FontWeight.w700)
+        : null,
     fontStyle: s.italic ? FontStyle.italic : null,
     decoration: s.underline ? TextDecoration.underline : null,
     color: s.bold && emphasis != null ? emphasis : null,
@@ -1787,49 +1775,13 @@ class SrsRubyText extends StatelessWidget {
       if (s.ruby == null) {
         spans.add(TextSpan(text: s.text, style: _styleOf(s)));
       } else {
-        Widget tag(Widget child, {required bool isRuby}) => lookup
-            ? MetaData(
-                metaData: SrsLookupRubySegment(
-                  fullStart: fullStart,
-                  isRuby: isRuby,
-                ),
-                child: child,
-              )
-            : child;
-        // 按基线对齐，基线取基字（不是上面的注音）：注音段与旁边的普通字落在
-        // 同一条基线上。WidgetSpan 的子组件已由 Text.rich 按 textScaler 整体缩放，
-        // 里面的 Text 不能再缩一次（否则带注音的字比旁边的大一圈）。
         spans.add(
-          WidgetSpan(
-            alignment: PlaceholderAlignment.baseline,
-            baseline: TextBaseline.alphabetic,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                SrsNoBaseline(
-                  child: tag(
-                    Text(
-                      s.ruby!,
-                      style: rubyStyle.copyWith(height: 1.1),
-                      maxLines: 1,
-                      softWrap: false,
-                      textScaler: TextScaler.noScaling,
-                    ),
-                    isRuby: true,
-                  ),
-                ),
-                tag(
-                  Text(
-                    s.text,
-                    style: _styleOf(s),
-                    maxLines: 1,
-                    softWrap: false,
-                    textScaler: TextScaler.noScaling,
-                  ),
-                  isRuby: false,
-                ),
-              ],
-            ),
+          srsRubyWidgetSpan(
+            reading: s.ruby!,
+            base: s.text,
+            rubyStyle: rubyStyle,
+            baseStyle: _styleOf(s),
+            lookupFullStart: lookup ? fullStart : null,
           ),
         );
       }
@@ -1843,6 +1795,64 @@ class SrsRubyText extends StatelessWidget {
     if (!lookup) return text;
     return MetaData(metaData: _lookupData(), child: text);
   }
+}
+
+/// 注音段的行内组件（注音在上、基字在下），两套原生卡面（Fushi 卡面的 [SrsRubyText]、
+/// 原生 HTML 卡面的行内排版）共用。读音只来自卡片内容自带的 ruby，这里不推断。
+///
+/// 按基线对齐，基线取基字（不是上面的注音，见 [SrsNoBaseline]）：注音段与旁边的普通字落在
+/// 同一条基线上。WidgetSpan 的子组件已由 Text.rich 按 textScaler 整体缩放，里面的 Text
+/// 不能再缩一次（否则带注音的字比旁边的大一圈）。
+///
+/// [lookupFullStart] 非空 = 标成可取词（[SrsLookupRubySegment]）：值是这段基字在整段纯文本
+/// 里的起点，点基字 / 注音都换算回它。
+WidgetSpan srsRubyWidgetSpan({
+  required String reading,
+  required String base,
+  required TextStyle rubyStyle,
+  required TextStyle baseStyle,
+  int? lookupFullStart,
+}) {
+  Widget tag(Widget child, {required bool isRuby}) => lookupFullStart == null
+      ? child
+      : MetaData(
+          metaData: SrsLookupRubySegment(
+            fullStart: lookupFullStart,
+            isRuby: isRuby,
+          ),
+          child: child,
+        );
+  return WidgetSpan(
+    alignment: PlaceholderAlignment.baseline,
+    baseline: TextBaseline.alphabetic,
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        SrsNoBaseline(
+          child: tag(
+            Text(
+              reading,
+              style: rubyStyle.copyWith(height: 1.1),
+              maxLines: 1,
+              softWrap: false,
+              textScaler: TextScaler.noScaling,
+            ),
+            isRuby: true,
+          ),
+        ),
+        tag(
+          Text(
+            base,
+            style: baseStyle,
+            maxLines: 1,
+            softWrap: false,
+            textScaler: TextScaler.noScaling,
+          ),
+          isRuby: false,
+        ),
+      ],
+    ),
+  );
 }
 
 /// 不对外报告基线的包装：Column 取「第一个有基线的孩子」作自己的基线，注音行包上它
@@ -1988,11 +1998,13 @@ class SrsPitchGraph extends StatelessWidget {
       ),
       child: Text(
         '$p',
-        style: style.copyWith(
-          fontSize: math.max(9, base * 0.42),
-          height: 1,
-          color: color,
-          fontWeight: FontWeight.w600,
+        style: withFaceSafeWeight(
+          style.copyWith(
+            fontSize: math.max(9, base * 0.42),
+            height: 1,
+            color: color,
+          ),
+          FontWeight.w600,
         ),
       ),
     );
@@ -2127,9 +2139,10 @@ class _MetaRow extends StatelessWidget {
       children: <Widget>[
         Text(
           label,
-          style: style
-              .text(style.tokens.label, color: style.muted, ui: true)
-              .copyWith(fontWeight: FontWeight.w600),
+          style: withFaceSafeWeight(
+            style.text(style.tokens.label, color: style.muted, ui: true),
+            FontWeight.w600,
+          ),
         ),
         const SizedBox(height: 6),
         child,

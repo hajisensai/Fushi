@@ -1043,22 +1043,36 @@ void main() {
           'returnnull;}',
         ),
       );
-      // 曲库快照与歌单解析：门没过时不读远程曲目。
+      // 曲库快照与歌单解析：都经 musicRemoteEntriesOf 按种类过门（v149 起服务器曲目不受
+      // 这个门约束，YouTube / 插件仍只问它），门值缺省取真实平台。
       final String data = compactCode(
         read('lib/src/media/music/music_library_data.dart'),
       );
       expect(
         data,
         contains(
-          'remoteTracks:(remoteAvailable??musicRemoteTracksAvailable)'
-          '?awaitdb.listMusicRemoteLibraryTracks()',
+          'remoteTracks:awaitmusicRemoteEntriesOf(awaitdb.listMusicRemoteLibraryTracks(),'
+          'online:remoteAvailable??musicRemoteTracksAvailable,',
         ),
       );
       expect(
         data,
         contains(
-          '(remoteAvailable??musicRemoteTracksAvailable)'
-          '?awaitdb.listMusicRemoteTracks(uids)',
+          'awaitmusicRemoteEntriesOf((awaitdb.listMusicRemoteTracks(uids)).values,'
+          'online:remoteAvailable??musicRemoteTracksAvailable,',
+        ),
+      );
+      expect(
+        data,
+        contains('whenmusicRemoteKindAvailable(k,online:online)'),
+        reason: '条目只在这一种在本平台可用时列出',
+      );
+      // 种类判据：只有 YouTube / 插件受合规门约束（媒体服务器在 iOS 上照常可用）。
+      expect(
+        gate,
+        contains(
+          'MusicRemoteTrackKind.server=>true,'
+          'MusicRemoteTrackKind.youtube||MusicRemoteTrackKind.plugin=>online,',
         ),
       );
     });

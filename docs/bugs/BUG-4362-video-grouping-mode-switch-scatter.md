@@ -1,0 +1,12 @@
+## BUG-4362 · 视频来源从「按文件夹」改「按作品」后，系列页整部剧散成每集一张卡、刮削逐集当作品
+- **报告**：2026-11-08（应用内反馈 YUH015QaF2，Windows 3.3.0+24434：「按作品刮削后散成每集了 之前可以聚合成作品呀」；视频 › 媒体库 › 系列里白莲花度假村十几张卡、每张一集，横幅「2 部作品还没确认身份」）
+- **真实性**：✅ 真 bug，沿代码路径确认（用户目录与文件名拿不到，按常见发布命名复现）。
+  - 先排除文件名解析：`groupVideosIntoPlaylists` 对白莲花度假村 / The White Lotus 的常见命名（`白莲花度假村.S01E01.2021.1080p`、`[字幕组] 白莲花度假村 第01集`、`The.White.Lotus.S01E01…`、`Season 01/白莲花度假村 (2021) - S01E01`（整理文件名的目标形态）等十几种）在 develop 上都解析成同一部作品、一组。
+  - 根因：分组方式是**扫描的输入**，作品合集（playlist）只由按作品模式的扫描（`packages/fushi_engine/lib/media/video/video_folder_group_coordinator.dart:182` `groupPaths` 的系列分支）建出来；但来源设置对话框保存时只写 `media_sources.video_grouping_mode`（`fushi/lib/src/pages/implementations/media_sources_view.dart:1440` 修前），提示语还写着「下次扫描使用此设置」。而模式的两个读者是**即时**按来源当前模式取舍的：
+    - 视频库折叠 `fushi/lib/src/media/video/video_folder_collection_policy.dart:49-53`：按作品模式下把目录合集从主归属里剔掉，又没有作品合集可回退 → 每集一张散卡；
+    - 刮削计划 `packages/fushi_engine/lib/media/video/metadata/video_source_work_planner.dart:103-108`：目录合集不当作品单元 → 每一集当一部作品单独识别（大部分逐集刮上、少数确认不了，就是横幅里的「2 部作品」）。
+  - 文件夹模式提示语正是「如需刮削，请切换为按作品」，用户照做就落进这段「模式已变、归组没跟」的空窗；以前在文件夹模式下目录合集把整部剧折成一张卡，所以用户感知为回归。
+- **[x] ① 已修复** — `MediaSourcesViewState.applyVideoGroupingMode`：分组方式变了就写模式并立即走同一条扫描管线重扫（`_rescan`，与新增来源一致），模式与归组一起变；刮削设置先落库，重扫收尾的「扫描后自动刮削」读到的是本次保存的设置。提示语换成新键 `video_source_grouping_change_rescan_hint`（i18n_sync 增删）。已经落进这个状态的库：对该来源点一次「重新扫描」即按作品归组（按作品模式扫描会把不在任何作品合集里的分集归进新作品合集）。
+- **[x] ② 已加自动化测试** — `fushi/test/media/video/video_folder_group_coordinator_test.dart`「BUG-4362」组：复现命名解析成一部作品；目录模式 → 只改模式（修前行为）每集散卡、刮削计划 6 部作品 → 按作品归组后折回一个 playlist、计划 1 部作品；「整理文件名」改名（`applyMediaFileMoves`）后重扫成员仍在原作品合集、不新建合集。`fushi/test/pages/media_source_grouping_mode_rescan_test.dart`：真实磁盘目录 + 真 `SourceLibraryScanner`，`applyVideoGroupingMode(folder→series)` 后 6 集折进同一个 playlist；模式不变不重扫。
+- **复核补丁**：`_rescan` 在 `isBusy`（任一来源扫描 / 刮削进行中）时直接返回；设置对话框开着期间若别的扫描 / 刮削开始，原实现会照写模式却不重扫，又落回本 bug 的状态。改为忙时不改模式、toast `video_source_grouping_change_busy` 提示稍后再改，`media_source_grouping_mode_rescan_test.dart` 加用例钉住。
+- **备注**：测试未在本分支运行（批次统一在合并后验证）。另见：点分命名里若部分集的标题段带空格（`The.White.Lotus.S01E02.New Day.1080p`），规则引擎把这几集的系列名解成 `The White Lotus`、其余解成 `The.White.Lotus`，会拆成两组——与本 bug 无关，未改。

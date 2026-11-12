@@ -88,4 +88,29 @@ void main() {
       expect(magnetUriFromInfoHash('z' * 40), isNull);
     });
   });
+
+  group('isMagnetUri', () {
+    test('magnet scheme regardless of case / fullwidth / btih validity', () {
+      // Torrentio（Aniyomi）给的形态：dn 就是 hash、末尾带 Aniyomi 的 index=。
+      expect(
+        isMagnetUri(
+          'magnet:?xt=urn:btih:72723c6e45267b82cdd8241825425c4f7310cf32'
+          '&dn=72723c6e45267b82cdd8241825425c4f7310cf32'
+          '&tr=udp://tracker.opentrackr.org:1337/announce&index=0',
+        ),
+        isTrue,
+      );
+      expect(isMagnetUri('  MAGNET:?xt=urn:btih:abc'), isTrue);
+      expect(isMagnetUri('magnet：?xt=urn:btih:abc'), isTrue);
+      // 只判形态：没有可解析的 btih 也是磁链（不能当 URL / 路径交给播放器）。
+      expect(isMagnetUri('magnet:?dn=only-a-name'), isTrue);
+    });
+
+    test('http(s) / file paths are not magnets', () {
+      expect(isMagnetUri('https://cdn.example/ep1.m3u8'), isFalse);
+      expect(isMagnetUri(r'C:\Videos\magnet.mkv'), isFalse);
+      expect(isMagnetUri('/videos/magnet:x.mkv'), isFalse);
+      expect(isMagnetUri(''), isFalse);
+    });
+  });
 }

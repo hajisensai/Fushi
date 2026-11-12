@@ -44,6 +44,7 @@ import 'package:fushi/src/web_browser/tab_view/web_browser_load_errors.dart';
 import 'package:fushi/src/web_browser/tab_view/web_browser_page_scripts.dart';
 import 'package:fushi/src/web_browser/tab_view/web_browser_page_settings.dart';
 import 'package:fushi/src/web_browser/tab_view/web_browser_permissions.dart';
+import 'package:fushi/src/web_browser/tab_view/web_browser_pull_to_refresh.dart';
 import 'package:fushi/src/web_browser/tab_view/web_browser_tab_actions.dart';
 import 'package:fushi/src/web_browser/tab_view/web_browser_visit_recorder.dart';
 import 'package:fushi/src/web_browser/tabs/web_browser_tab.dart';
@@ -129,7 +130,9 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
   /// 本标签页发起查词时，弹窗打开期间给它开静态硬件层（见 [PopupBodyStaticLayerGate]）。
   @override
   Object? get popupBodyWebViewId => _controller?.getViewId();
-  PullToRefreshController? _pullToRefresh;
+
+  /// 手机端「下拉刷新」控制器与偏好的绑定；桌面 / 测试桩为 null。
+  WebBrowserPullToRefreshBinding? _pullToRefresh;
   late final WebBrowserDownloader _downloader;
   WebBrowserVisitRecorder? _recorder;
   late final InAppWebViewSettings _settings;
@@ -201,13 +204,18 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
     if (WebBrowserTabView.debugWebViewBuilder == null) {
       _settings = _buildSettings();
       if (_mobile) {
-        _pullToRefresh = PullToRefreshController(
-          onRefresh: () {
-            final InAppWebViewController? controller = _controller;
-            if (controller == null) return;
-            _recorder?.onReload();
-            unawaited(controller.reload());
-          },
+        _pullToRefresh = WebBrowserPullToRefreshBinding(
+          prefs: _prefs,
+          createController: (PullToRefreshSettings settings) =>
+              PullToRefreshController(
+                settings: settings,
+                onRefresh: () {
+                  final InAppWebViewController? controller = _controller;
+                  if (controller == null) return;
+                  _recorder?.onReload();
+                  unawaited(controller.reload());
+                },
+              ),
         );
       }
       if (_tab.windowId != null && _sharedReady) {
@@ -397,6 +405,7 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
   }
 
   void _onPrefsChanged() {
+    _pullToRefresh?.sync();
     final bool forceDark = _readForceDark();
     if (forceDark == _appliedForceDark) return;
     _appliedForceDark = forceDark;
@@ -567,7 +576,7 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
     InAppWebViewController controller,
     WebUri? url,
   ) async {
-    unawaited(_pullToRefresh?.endRefreshing());
+    unawaited(_pullToRefresh?.controller.endRefreshing());
     _tab.update(loading: false);
     await _syncNavigation(controller, url);
     if (!mounted) return;
@@ -647,7 +656,7 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
     if (classified == null || _navigations.isSuperseded(classified.url)) {
       return;
     }
-    unawaited(_pullToRefresh?.endRefreshing());
+    unawaited(_pullToRefresh?.controller.endRefreshing());
     _tab.update(loading: false);
     _tab.setError(classified);
   }
@@ -1296,7 +1305,7 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
         initialUserScripts: UnmodifiableListView<UserScript>(
           _initialUserScripts(adblock),
         ),
-        pullToRefreshController: _pullToRefresh,
+        pullToRefreshController: _pullToRefresh?.controller,
         shouldInterceptRequest: adblock.shouldInterceptRequest,
         onWebViewCreated: _onWebViewCreated,
         onLoadStart: (InAppWebViewController _, WebUri? url) =>

@@ -625,6 +625,52 @@ void main() {
       expect(onlyRwkv.hasDueDateCards, isFalse);
       expect(d.subset(<String>{'f'}).rwkvNow, isNull, reason: '没有按 R 排队的卡');
     });
+
+    test('制卡来源：带系列的出处按系列计（反馈 MCJLSBR5Wg），不带的按集标题', () {
+      SrsStatCard card(String id) => SrsStatCard(
+        id: id,
+        noteId: 'n$id',
+        deckId: 'd',
+        state: SrsStatCardState.young,
+        dueDay: today,
+      );
+      final SrsStatsData d = SrsStatsData(
+        day: kJst,
+        nowMs: nowMs,
+        reviews: const <SrsStatReview>[],
+        cards: <SrsStatCard>[card('a'), card('b'), card('c')],
+        sources: <String, SrsSourceRef?>{
+          'na': SrsSourceRef.media(
+            kind: SrsSourceKind.video,
+            mediaKey: 'e1',
+            startMs: 0,
+            title: 'RWBY - S01E01',
+            seriesTitle: 'RWBY',
+          ),
+          'nb': SrsSourceRef.media(
+            kind: SrsSourceKind.video,
+            mediaKey: 'e2',
+            startMs: 0,
+            title: 'RWBY - S02E01',
+            seriesTitle: 'RWBY',
+          ),
+          'nc': SrsSourceRef.media(
+            kind: SrsSourceKind.video,
+            mediaKey: 'e3',
+            startMs: 0,
+            title: 'Solo',
+          ),
+        },
+      );
+      final List<SrsSourceShare> s = d.sourceShares();
+      expect(
+        s.map((SrsSourceShare x) => (x.kind, x.title, x.notes)).toList(),
+        <(String, String, int)>[
+          (SrsSourceKind.video, 'RWBY', 2),
+          (SrsSourceKind.video, 'Solo', 1),
+        ],
+      );
+    });
   });
 
   group('loadSrsStats（真实库）', () {
@@ -730,53 +776,6 @@ class _Engine implements FsrsEngine {
       List<double>.filled(a.paramCount, 1);
   @override
   String? validateParams(SrsAlgorithm a, List<double> p) => null;
-  SrsMemory _step(SrsMemory? m, int r) => SrsMemory(
-    stability: switch (r) {
-      1 => 0.3,
-      2 => 1.5 + (m?.stability ?? 0),
-      3 => 3 + (m?.stability ?? 0) * 2,
-      _ => 6 + (m?.stability ?? 0) * 3,
-    },
-    difficulty: 5,
-  );
-  @override
-  SrsNextStates nextStates({
-    required SrsAlgorithm algorithm,
-    required List<double> params,
-    required double desiredRetention,
-    required SrsMemory? memory,
-    required double elapsedDays,
-  }) {
-    SrsItemState st(int r) {
-      final SrsMemory m = _step(memory, r);
-      return SrsItemState(memory: m, interval: m.stability);
-    }
-
-    return SrsNextStates(again: st(1), hard: st(2), good: st(3), easy: st(4));
-  }
-
-  @override
-  SrsMemory? memoryState({
-    required SrsAlgorithm algorithm,
-    required List<double> params,
-    required List<SrsFsrsReview> reviews,
-    SrsMemory? starting,
-  }) {
-    SrsMemory? m = starting;
-    for (final SrsFsrsReview r in reviews) {
-      m = _step(m, r.rating);
-    }
-    return m;
-  }
-
-  @override
-  SrsMemory memoryStateFromSm2({
-    required SrsAlgorithm algorithm,
-    required List<double> params,
-    required double easeFactor,
-    required double intervalDays,
-    required double sm2Retention,
-  }) => SrsMemory(stability: intervalDays, difficulty: 5);
   @override
   double retrievability({
     required SrsAlgorithm algorithm,

@@ -62,8 +62,9 @@ class HeavyNeed {
 /// all slot files, so they book the budget for every checkout's tool.
 const int kLightSlotBase = 100;
 
-/// At most this many light runs at once (two analyzes book 9 GB; they still
-/// have to fit the budget next to the tests and builds).
+/// At most this many light runs at once (two analyzes book 16 GB: all of a
+/// 32 GB machine's budget, half a 64 GB one's; they still have to fit the
+/// budget next to the tests and builds).
 const int kLightSlotCount = 2;
 
 const HeavyNeed _test = HeavyNeed(
@@ -132,10 +133,16 @@ int? testConcurrencyOf(List<String> argv) {
 // server averages under one core. Holding a regular slot and booking the
 // full ceiling made tests queue behind it (11 h of queueing on analyze across
 // those runs) for a job that is mostly memory, so it books ~p90 and is light.
+// 2026-11-10 the app had grown: of 201 full analyzes under the 8 GB ceiling
+// since 10-25, 42 died on it (0xC0000409, dartvm `Could not start thread`);
+// the 159 that finished peaked at p50 7.0 / p90 8.0 GB, and 20 runs with a
+// higher --cap-mb went up to 8.7 GB (p50 7.4). The ceiling is now 16 GB
+// (owner's call, "32 GB machine, give it at least 16 GB") and it books 8 GB,
+// ~p90: booking 4.5 GB had let the budget promise memory analyze then used.
 const HeavyNeed _analyze = HeavyNeed(
   kind: HeavyKind.analyze,
-  capMb: 8192,
-  bookMb: 4608,
+  capMb: 16384,
+  bookMb: 8192,
   worktreeExclusive: false,
   light: true,
 );

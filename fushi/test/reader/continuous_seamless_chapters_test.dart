@@ -296,6 +296,147 @@ void main() {
     });
   });
 
+  // 反馈 R7k887yaJI 重开：「章节交界处长按慢拖，飞到下下章」。根因是无缝模式下有两个换章
+  // 所有者：无缝模块在手势中途晋升邻章（换一章），连续 shell 的触摸边界拉动在松手时按
+  // 手势起点的文档尽头 pin 再回传 onBoundarySwipe，Dart 从新章号再跨一章。真渲染复现与
+  // 修复验证在探针 runSlowDragLateMount / runShortNeighborBoundaryPull；这里锁结构接线。
+  group('无缝模式是文档内换章的唯一所有者（不与边界换章叠加）', () {
+    final String continuous = ReaderPaginationScripts.continuousShellSource();
+    final String module = kSeamlessChaptersInstallJs;
+
+    test('连续 shell 默认不在文档内换章：计数恒 0、从不认领边界换章', () {
+      expect(
+        containsCodeLine(
+          continuous,
+          'chapterTurnEpoch: function() { return 0; },',
+        ),
+        isTrue,
+      );
+      expect(
+        containsCodeLine(
+          continuous,
+          'claimBoundaryTurn: function(direction) { return false; },',
+        ),
+        isTrue,
+      );
+    });
+
+    test('模块装饰这两个方法：计数 = 晋升序号，认领先问模块', () {
+      expect(module, contains("wrap('chapterTurnEpoch', function() {"));
+      expect(
+        containsCodeLine(module, 'return function() { return S.seq; };'),
+        isTrue,
+      );
+      expect(module, contains("wrap('claimBoundaryTurn', function(orig) {"));
+      expect(
+        containsCodeLine(
+          module,
+          'if (S.claimBoundaryTurn(direction)) return true;',
+        ),
+        isTrue,
+      );
+    });
+
+    test('模块的认领：邻章已挂 → 晋升并对齐；挂载中归模块；给不了邻章才交还 Dart', () {
+      final int start = module.indexOf('S.claimBoundaryTurn = function(dir) {');
+      expect(start, greaterThan(0));
+      final String body = module.substring(
+        start,
+        module.indexOf('function scheduleEvaluate()', start),
+      );
+      for (final String line in <String>[
+        'if (!S.started) return S._starting === true;',
+        'if (!nb) return false;',
+        'if (!host) return S.pending[nb.index] === true;',
+        'if (!S.promote(host)) return false;',
+        'if (side > 0) S.alignActiveStart();',
+        'else S.alignActiveEnd();',
+      ]) {
+        expect(containsCodeLine(body, line), isTrue, reason: line);
+      }
+    });
+
+    test('触摸边界控制器：手势里文档内换过章就不再换章，回传前先问认领', () {
+      final int start = continuous.indexOf('function _bEnd(x, y, src) {');
+      expect(start, greaterThan(0));
+      final String bEnd = continuous.substring(
+        start,
+        continuous.indexOf("document.addEventListener('touchstart'", start),
+      );
+      final int epoch = bEnd.indexOf(
+        'if (r.chapterTurnEpoch() !== downEpoch) return;',
+      );
+      final int claim = bEnd.indexOf('if (r.claimBoundaryTurn(dir)) return;');
+      final int handoff = bEnd.indexOf("callHandler('onBoundarySwipe', dir)");
+      expect(epoch, greaterThan(0));
+      expect(claim, greaterThan(epoch));
+      expect(handoff, greaterThan(claim));
+      // 起点记下当时的计数。
+      final int bStart = continuous.indexOf('function _bStart(x, y) {');
+      final String bStartBody = continuous.substring(
+        bStart,
+        continuous.indexOf('function _bMove(', bStart),
+      );
+      expect(
+        containsCodeLine(
+          bStartBody,
+          'downEpoch = r0 ? r0.chapterTurnEpoch() : 0;',
+        ),
+        isTrue,
+      );
+    });
+
+    test('按键 paginate 滚不动时先问认领，认领了不回 limit', () {
+      expect(
+        containsCodeLine(
+          continuous,
+          'return this.claimBoundaryTurn(direction) ? "scrolled" : "limit";',
+        ),
+        isTrue,
+      );
+    });
+
+    test('滚轮试滚到尽头：先问认领再回传 onBoundarySwipe', () {
+      final String corpus = maskCommentsAndScriptLines(readReaderPageSource());
+      final int start = bodyEngineWheelListenerStart(corpus);
+      expect(start, isNonNegative);
+      final String wheel = balancedBlockFrom(
+        corpus,
+        start,
+        lexicon: SourceLexicon.js,
+        what: '正文引擎 wheel 监听回调体',
+      );
+      final int claim = wheel.indexOf(
+        "if (r && typeof r.claimBoundaryTurn === 'function' && r.claimBoundaryTurn(wheelDir)) return;",
+      );
+      final int handoff = wheel.indexOf("'onBoundarySwipe', wheelDir");
+      expect(claim, isNonNegative);
+      expect(handoff, greaterThan(claim));
+    });
+
+    test('Dart 边界换章：意图相对发出时的章号，await 期间换过章就作废', () {
+      final String page = maskCommentsAndScriptLines(readReaderPageSource());
+      final int handler = page.indexOf("handlerName: 'onBoundarySwipe'");
+      expect(handler, isNonNegative);
+      final String body = page.substring(
+        handler,
+        page.indexOf('controller.addJavaScriptHandler(', handler + 1),
+      );
+      final int capture = body.indexOf(
+        'final int fromChapter = _currentChapter;',
+      );
+      final int snapshot = body.indexOf(
+        'await _prepareContinuousChapterTransition()',
+      );
+      final int recheck = body.indexOf('_currentChapter != fromChapter ||');
+      final int navigate = body.indexOf("_handlePageTurnLimit('");
+      expect(capture, isNonNegative);
+      expect(snapshot, greaterThan(capture));
+      expect(recheck, greaterThan(snapshot));
+      expect(navigate, greaterThan(recheck));
+    });
+  });
+
   group('设置项', () {
     late FushiDatabase db;
     late ReaderSettings readerSettings;

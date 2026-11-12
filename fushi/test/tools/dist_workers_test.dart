@@ -424,4 +424,126 @@ void main() {
     expect(shellQuote("it's"), r"'it'\''s'");
     expect(shellQuote(r'$HOME'), r"'$HOME'");
   });
+
+  // 2026-11-10: with all three Mac slots locked by other runs, `lock`
+  // exits 75 in prepare and every worker was dropped at once, whatever
+  // --busy-retries said (only a batch turned down at its start was asked
+  // again); analyze / --build ignored --busy-retries altogether.
+  group('turned down at prepare (lock busy)', () {
+    test('asked again up to --busy-retries, then given up', () async {
+      int calls = 0;
+      final List<String> said = <String>[];
+      await expectLater(
+        distRetryWhileBusy<bool>(
+          () async {
+            calls++;
+            throw DistWorkerBusy('lock failed on mac (exit 75): busy: x');
+          },
+          retries: 3,
+          wait: Duration.zero,
+          said: said.add,
+        ),
+        throwsA(isA<DistWorkerBusy>()),
+      );
+      expect(calls, 4, reason: 'the first ask plus three retries');
+      expect(said, hasLength(3));
+    });
+
+    test('a slot that frees up is taken', () async {
+      int calls = 0;
+      final bool? ok = await distRetryWhileBusy<bool>(
+        () async {
+          if (++calls < 3) throw DistWorkerBusy('busy: locked');
+          return true;
+        },
+        retries: 5,
+        wait: Duration.zero,
+      );
+      expect(ok, isTrue);
+      expect(calls, 3);
+    });
+
+    test(
+      'a real prepare failure is not retried; none at --busy-retries=0',
+      () async {
+        int calls = 0;
+        await expectLater(
+          distRetryWhileBusy<bool>(
+            () async {
+              calls++;
+              throw DistWorkerError('prepare failed: compile error');
+            },
+            retries: 5,
+            wait: Duration.zero,
+          ),
+          throwsA(isNot(isA<DistWorkerBusy>())),
+        );
+        expect(calls, 1);
+        calls = 0;
+        await expectLater(
+          distRetryWhileBusy<bool>(
+            () async {
+              calls++;
+              throw DistWorkerBusy('busy: locked');
+            },
+            retries: 0,
+            wait: Duration.zero,
+          ),
+          throwsA(isA<DistWorkerBusy>()),
+        );
+        expect(calls, 1, reason: 'heavy.dart passes --busy-retries=0');
+      },
+    );
+
+    test('stops waiting once the others did the work', () async {
+      int calls = 0;
+      final bool? ok = await distRetryWhileBusy<bool>(
+        () async {
+          calls++;
+          throw DistWorkerBusy('busy: locked');
+        },
+        retries: 5,
+        wait: Duration.zero,
+        stillWanted: () => false,
+      );
+      expect(ok, isNull);
+      expect(calls, 1);
+    });
+
+    test('analyze / build: another pass only while it was just busy', () {
+      expect(
+        distJobAskAgain(busy: true, round: 0, retries: 60, lost: false),
+        isTrue,
+      );
+      expect(
+        distJobAskAgain(busy: true, round: 60, retries: 60, lost: false),
+        isFalse,
+      );
+      expect(
+        distJobAskAgain(busy: false, round: 0, retries: 60, lost: false),
+        isFalse,
+        reason: 'no toolchain / prepare red: not worth another pass',
+      );
+      expect(
+        distJobAskAgain(busy: true, round: 0, retries: 60, lost: true),
+        isFalse,
+        reason: 'heavy.dart admitted it here meanwhile',
+      );
+      expect(
+        distJobAskAgain(busy: true, round: 0, retries: 0, lost: false),
+        isFalse,
+      );
+    });
+
+    test('lock / init exit 75 reads as busy', () {
+      expect(
+        distRemoteExitCode(
+          75,
+          printedNothing: true,
+          stderr: 'busy: in use by dist_test run 20261110-235126-3cd3\n',
+        ),
+        kDistShimBusy,
+      );
+    });
+  });
 }

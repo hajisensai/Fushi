@@ -44,6 +44,17 @@ LyricTimeline _timeline({int offsetMs = 0}) => LyricTimeline(
   ],
 );
 
+/// 记录里的 List 按身份比较：逐侧比内容。
+void expectContext(
+  ({List<int> prev, List<int> next}) actual,
+  List<int> prev,
+  List<int> next, {
+  String? reason,
+}) {
+  expect(actual.prev, prev, reason: reason);
+  expect(actual.next, next, reason: reason);
+}
+
 void main() {
   group('行时间窗（歌词时间 → 曲目时间）', () {
     test('减回整首偏移、带翻译；起点夹 0', () {
@@ -187,6 +198,90 @@ void main() {
       expect(musicNextSyllableBoundary(l, 2000), isNull);
       final LyricLine padded = _timeline().lines[3];
       expect(musicDesktopSungLength(padded, 8000), 3, reason: '行首空白不算');
+    });
+  });
+  // 反馈 l8XrV_IfXH：音乐高级制卡选前后文行 + 起止微调。
+  group('高级制卡：前后文行与句子音频微调', () {
+    test('上 N / 下 N 主行：跳过伴唱、两端封顶、按播放顺序', () {
+      final LyricTimeline t = _timeline();
+      // 主行是 0、1、3（2 是伴唱）。
+      expectContext(
+        musicLyricContextLines(t, 1, prevCount: 1, nextCount: 1),
+        <int>[0],
+        <int>[3],
+      );
+      expectContext(
+        musicLyricContextLines(t, 3, prevCount: 5, nextCount: 5),
+        <int>[0, 1],
+        <int>[],
+        reason: '到两端不再增长（对话框据此禁用「加一句」）',
+      );
+      expectContext(
+        musicLyricContextLines(t, 0, prevCount: 0, nextCount: 0),
+        <int>[],
+        <int>[],
+      );
+    });
+
+    test('锚越界 / 无时间歌词：两侧都为空', () {
+      final LyricTimeline t = _timeline();
+      expectContext(
+        musicLyricContextLines(t, 9, prevCount: 1, nextCount: 1),
+        <int>[],
+        <int>[],
+      );
+      final LyricTimeline unsynced = LyricTimeline(
+        format: 'txt',
+        timingQuality: LyricTimingQuality.unsynced,
+        lines: t.lines,
+      );
+      expectContext(
+        musicLyricContextLines(unsynced, 1, prevCount: 1, nextCount: 1),
+        <int>[],
+        <int>[],
+      );
+    });
+
+    test('合并窗口：换句子与起止，保留查词行号与翻译', () {
+      final MusicLyricLineWindow w = musicLyricLineWindow(_timeline(), 0)!;
+      final MusicLyricLineWindow merged = w.withContext(
+        text: '夜に駆ける\n沈むように',
+        startMs: 1000,
+        endMs: 6000,
+      );
+      expect(merged.lineIndex, 0);
+      expect(merged.text, '夜に駆ける\n沈むように');
+      expect((merged.startMs, merged.endMs), (1000, 6000));
+      expect(merged.translation, '在夜里奔跑');
+      final MusicLyricLineWindow textOnly = w.withContext(text: 'x');
+      expect((textOnly.startMs, textOnly.endMs), (w.startMs, w.endMs));
+    });
+
+    test('起止微调加在扩过留白的最终区间上，可越过行界，仍夹在 [0, 曲长]', () {
+      final MusicLyricLineWindow w = musicLyricLineWindow(_timeline(), 1)!;
+      // 行 [4 s, 6 s) → 留白后 [3.5 s, 6.5 s)。
+      expect(w.clipInFile(startDeltaMs: -250, endDeltaMs: 1000), (
+        startMs: 3250,
+        endMs: 7500,
+      ));
+      expect(
+        w.clipInFile(
+          startDeltaMs: -10000,
+          trackDurationMs: 7000,
+          endDeltaMs: 5000,
+        ),
+        (startMs: 0, endMs: 7000),
+      );
+      expect(
+        w.clipInFile(fileOffsetMs: 60000, startDeltaMs: 100, endDeltaMs: -100),
+        (startMs: 63600, endMs: 66400),
+        reason: '微调在曲目时间上做，再加 CUE 段首',
+      );
+      expect(
+        w.clipInFile(startDeltaMs: 4000, endDeltaMs: -4000).endMs,
+        w.clipInFile(startDeltaMs: 4000, endDeltaMs: -4000).startMs,
+        reason: '终点不早于起点',
+      );
     });
   });
 }

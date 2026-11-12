@@ -31,6 +31,9 @@ class _NativeHost {
   int? availableBps;
   bool setParametersResult = true;
 
+  /// Thrown by `setHostMuted(muted: true)` when set (no render endpoint).
+  PlatformException? hostMuteError;
+
   Future<Object?> rtc(MethodCall call) async {
     rtcCalls.add(call);
     if (call.method == delayedMethod) {
@@ -126,6 +129,12 @@ class _NativeHost {
       case 'send':
       case 'release':
       case 'unbind':
+        return null;
+      case 'setHostMuted':
+        final PlatformException? error = hostMuteError;
+        if (error != null && (call.arguments as Map)['muted'] == true) {
+          throw error;
+        }
         return null;
       case 'inspect':
         return <String, Object?>{
@@ -484,6 +493,135 @@ void main() {
         expect(statsCalls(), callsAtStop);
       } finally {
         await stop();
+        host.dispose();
+        service.dispose();
+        await tester.pump(const Duration(milliseconds: 1));
+        for (final MethodChannel channel in channels) {
+          messenger.setMockMethodCallHandler(channel, null);
+        }
+      }
+    },
+    skip: !Platform.isWindows,
+  );
+
+  testWidgets(
+    'mute host is applied before capture and follows receiver settings',
+    (WidgetTester tester) async {
+      final _NativeHost native = _NativeHost('never-delayed');
+      final TestDefaultBinaryMessenger messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      const MethodChannel rtc = MethodChannel('FlutterWebRTC.Method');
+      const MethodChannel input = MethodChannel('app.fushi/game_stream_input');
+      const MethodChannel events = MethodChannel('FlutterWebRTC.Event');
+      const MethodChannel peerEvents = MethodChannel(
+        'FlutterWebRTC/peerConnectionEvent$_peerId',
+      );
+      const MethodChannel control = MethodChannel(
+        'FlutterWebRTC/dataChannelEvent${_peerId}control-1',
+      );
+      final List<MethodChannel> channels = <MethodChannel>[
+        rtc,
+        input,
+        events,
+        peerEvents,
+        control,
+      ];
+      bool? mutedBeforeCapture;
+      messenger.setMockMethodCallHandler(rtc, (MethodCall call) {
+        if (call.method == 'getDisplayMedia') {
+          mutedBeforeCapture = native.inputCalls.any(
+            (MethodCall c) => c.method == 'setHostMuted',
+          );
+        }
+        return native.rtc(call);
+      });
+      messenger.setMockMethodCallHandler(input, native.input);
+      for (final MethodChannel channel in channels.skip(2)) {
+        messenger.setMockMethodCallHandler(channel, (_) async => null);
+      }
+      final FushiRemoteGameStreamService service =
+          FushiRemoteGameStreamService();
+      final FushiGameStreamHost host = FushiGameStreamHost(service: service);
+      List<Object?> muteRequests() => <Object?>[
+        for (final MethodCall call in native.inputCalls)
+          if (call.method == 'setHostMuted') (call.arguments as Map)['muted'],
+      ];
+      Future<T> settle<T>(Future<T> future) async {
+        bool done = false;
+        Object? failure;
+        StackTrace? failureStack;
+        late T value;
+        final Future<void> waiting = future.then<void>(
+          (T result) {
+            value = result;
+            done = true;
+          },
+          onError: (Object error, StackTrace stack) {
+            failure = error;
+            failureStack = stack;
+            done = true;
+          },
+        );
+        await _flushUntil(tester, () => done);
+        await waiting;
+        final Object? error = failure;
+        if (error != null) Error.throwWithStackTrace(error, failureStack!);
+        return value;
+      }
+
+      try {
+        await settle(
+          host.start(
+            hwnd: _hwnd,
+            settings: const GameStreamVideoSettings(muteHost: true),
+          ),
+        );
+        expect(host.started, isTrue);
+        expect(muteRequests(), <Object?>[true]);
+        // Muted after binding the game and before its audio is captured, so
+        // the stream starts with the host speakers already silent.
+        final List<String> inputOrder = <String>[
+          for (final MethodCall call in native.inputCalls) call.method,
+        ];
+        expect(
+          inputOrder.indexOf('setHostMuted'),
+          greaterThan(inputOrder.indexOf('bind')),
+        );
+        expect(mutedBeforeCapture, isTrue);
+        expect(host.settings.muteHost, isTrue);
+
+        // A receiver turning it off mid-stream restores the speakers.
+        final GameStreamVideoSettings off = await settle(
+          host.applySettings(host.settings.copyWith(muteHost: false)),
+        );
+        expect(off.muteHost, isFalse);
+        expect(muteRequests(), <Object?>[true, false]);
+
+        // The host refusing (no render endpoint) keeps streaming and reports
+        // the host as still audible instead of claiming it worked.
+        native.hostMuteError = PlatformException(code: 'mute_failed');
+        final GameStreamVideoSettings refused = await settle(
+          host.applySettings(host.settings.copyWith(muteHost: true)),
+        );
+        expect(refused.muteHost, isFalse);
+        expect(host.started, isTrue);
+        expect(muteRequests(), <Object?>[true, false, true]);
+
+        // Settings that leave it unchanged send nothing to the runner.
+        await settle(host.applySettings(host.settings.copyWith(maxFps: 30)));
+        expect(muteRequests(), hasLength(3));
+      } finally {
+        bool stopped = false;
+        final Future<void> stopping = host.stop().then<void>(
+          (_) => stopped = true,
+        );
+        await _flushUntil(tester, () => stopped);
+        await stopping;
+        // unbind restores the host speakers natively.
+        expect(
+          native.inputCalls.where((MethodCall c) => c.method == 'unbind'),
+          hasLength(1),
+        );
         host.dispose();
         service.dispose();
         await tester.pump(const Duration(milliseconds: 1));
