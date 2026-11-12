@@ -242,6 +242,8 @@ pub struct Settled {
     pub scanned: u64,
     /// 别名表重算后写的行数（没重算 = 0）、重算了语义摘要的实体数。
     pub aliases: u64,
+    /// 别名表这一批是增量证明出来的（1），不是整表重算（`alias.rs`「重算与增量」）。
+    pub aliases_proven: u64,
     pub digests: u64,
     /// 缓存层（`cache.rs`）重算了的笔记行 / 卡行 / 统计行。
     pub cache_notes: u64,
@@ -282,6 +284,8 @@ pub struct Index<'t, 'c> {
     pub(super) alias_dirty: bool,
     /// 重算先攒着（[Index::hold_aliases]）。
     pub(super) alias_held: bool,
+    /// 只添了证据、等收尾时试增量证明的那些（`alias.rs`）。
+    pub(super) alias_delta: super::alias::AliasDelta,
     /// 带盐的操作进出过，或信任状态变了：盐集合要重算。
     pub(super) salts_dirty: bool,
     /// 这一批里缓存层要重看的（`cache.rs`）。
@@ -310,6 +314,7 @@ impl<'t, 'c> Index<'t, 'c> {
             partial: HashMap::new(),
             alias_dirty: false,
             alias_held: false,
+            alias_delta: Default::default(),
             salts_dirty: false,
             dirt: Dirt::default(),
         }
@@ -1055,9 +1060,9 @@ impl<'t, 'c> Index<'t, 'c> {
         if std::mem::take(&mut self.salts_dirty) {
             self.settle_salts()?;
         }
-        if self.alias_dirty && !self.alias_held {
-            out.aliases = self.rebuild_aliases()?;
-        }
+        let (rows, proven) = self.settle_aliases()?;
+        out.aliases = rows;
+        out.aliases_proven = u64::from(proven);
         self.refresh_caches(&mut out)?;
         Ok(out)
     }
@@ -2041,6 +2046,51 @@ pub(crate) mod tests {
                 cached.cache_cards,
                 cached.cache_stats
             );
+            // 别名增量证明在真实规模上的耗时：拿已有的笔记当「这一批的笔记」证一遍（证据没变，写回的行应与原来相同）。
+            {
+                let dump = |c: &Connection| -> Vec<(Vec<u8>, Vec<u8>, i64)> {
+                    c.prepare("SELECT id, canon, how FROM alias_ix WHERE col = ?1 ORDER BY id")
+                        .unwrap()
+                        .query_map([col], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+                        .unwrap()
+                        .map(Result::unwrap)
+                        .collect()
+                };
+                let ids: Vec<Id> = dst
+                    .prepare(
+                        "SELECT id FROM ent_ix WHERE col = ?1 AND kind = ?2 AND typeof(id) = 'blob' ORDER BY id LIMIT 50",
+                    )
+                    .unwrap()
+                    .query_map(params![col, EntKind::Note as i64], |r| {
+                        r.get::<_, [u8; 16]>(0)
+                    })
+                    .unwrap()
+                    .map(|r| Id(r.unwrap()))
+                    .collect();
+                let before = dump(&dst);
+                dst.execute_batch("BEGIN IMMEDIATE").unwrap();
+                let mut ix = Index::new(&t, col);
+                let started = Instant::now();
+                let mut proven = 0;
+                for n in &ids {
+                    if crate::store::gen4::alias::tests::probe_notes(&mut ix, &[*n])
+                        .unwrap()
+                        .is_some()
+                    {
+                        proven += 1;
+                    }
+                }
+                let probe_s = started.elapsed().as_secs_f64();
+                drop(ix);
+                let same = dump(&dst) == before;
+                dst.execute_batch("ROLLBACK").unwrap();
+                t.reset();
+                println!(
+                    "SAMPLE alias_probe notes {} proven {proven} avg_ms {:.1} table_unchanged {same}",
+                    ids.len(),
+                    probe_s * 1000.0 / ids.len().max(1) as f64
+                );
+            }
             for table in DERIVED_TABLES {
                 let n: i64 = dst
                     .query_row(

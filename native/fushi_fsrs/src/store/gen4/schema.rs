@@ -31,7 +31,7 @@ use std::path::Path;
 use rusqlite::Connection;
 
 /// 新代库的 schema 号。只要求远大于协议 3 的任何一个 schema 号（最后一个是 29）；万位是代，低位是这一代里的存储版本。
-pub const SCHEMA: i64 = 40_004;
+pub const SCHEMA: i64 = 40_005;
 
 const SEQ_BITS: u32 = 40;
 const SEQ_MASK: i64 = (1 << SEQ_BITS) - 1;
@@ -242,6 +242,7 @@ CREATE TABLE IF NOT EXISTS alias_ix (
   PRIMARY KEY (col, id)
 ) WITHOUT ROWID;
 CREATE INDEX IF NOT EXISTS alias_canon ON alias_ix (col, canon, id) WHERE canon != id;
+CREATE INDEX IF NOT EXISTS alias_pool ON alias_ix (col, id) WHERE how >= 3;
 CREATE TABLE IF NOT EXISTS alias_writer_ix (
   col INTEGER NOT NULL,
   name TEXT NOT NULL,
@@ -334,9 +335,10 @@ fn check_kind(conn: &Connection) -> Result<(), String> {
 /// 平均剩下的行数；`WITHOUT ROWID` 表的主键那一行 `idx` = 表名。量级取样本库，数字只表达形状、不随数据更新：计划因此
 /// 是 schema 的函数，不因某台设备数据多少而变（`tests::lookups_with_a_key_never_walk_the_whole_collection` 钉住）。
 /// 对这个文件跑 `ANALYZE` / `PRAGMA optimize` 会把它们换成随数据变的统计——下次打开时 [install] 会写回来。
-const PLANNER_STATS: [(&str, &str, &str); 20] = [
+const PLANNER_STATS: [(&str, &str, &str); 21] = [
     ("alias_ix", "alias_canon", "1000000 1000000 2 1"),
     ("alias_ix", "alias_ix", "1000000 1000000 1"),
+    ("alias_ix", "alias_pool", "5000 5000 1"),
     ("cards", "cards", "100000 100000 1"),
     ("cards", "cards_note", "100000 100000 2"),
     ("dg_ix", "dg_ix", "200000 200000 40000 1"),
@@ -541,7 +543,7 @@ mod tests {
     #[test]
     fn lookups_with_a_key_never_walk_the_whole_collection() {
         // 本来就是对整个集合做的（多出来的相等条件是 `state` / `kind` / 键名这类过滤，不是定位）。
-        const WHOLE: [&str; 7] = [
+        const WHOLE: [&str; 8] = [
             "SELECT DISTINCT ekind, ent FROM reg_ix WHERE col = ?1 AND key = ?2",
             "SELECT k FROM reg_ix WHERE col = ?1 AND state = ?2 UNION SELECT k FROM tag_ix WHERE col = ?1 AND state = ?2",
             "SELECT k FROM reg_ix WHERE col = ?1 AND state = ?2 UNION SELECT k FROM purge_ix WHERE col = ?1 AND state = ?2",
@@ -550,6 +552,8 @@ mod tests {
             "SELECT ekind, ent, key, k FROM reg_ix WHERE col = ?1 AND state != ?2 AND typeof(ent) = 'blob' ORDER BY ekind, ent, key, k",
             // 整份物化：本来就要列出集合里全部活着的笔记。
             "SELECT id FROM ent_ix WHERE col = ?1 AND kind = ?2 AND win = 1",
+            // 别名增量证明：全部笔记类型 / 牌组的身份记录（量小，扫的是身份记录表）。
+            "SELECT id, k FROM ent_ix WHERE col = ?1 AND kind = ?2 AND typeof(id) = 'blob' ORDER BY id, k",
         ];
         let conn = open_in_memory().unwrap();
         let mut seen = 0;
