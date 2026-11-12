@@ -1,5 +1,6 @@
 // 上次进程退出取证（反馈 WkL9BvD7Z9 / XDV7Mzc2gw / O2eI1Bewe_ 等「Dart 日志无栈」）：
 // 各平台摘要的解析、会话标记、Android 假通道，以及最终确实进了反馈上传的日志文本。
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -185,6 +186,52 @@ void main() {
       expect(prev.memorySamples.last, endsWith('probe=ok (pressure)'));
     });
 
+    test('firstSampleAfter：开头那一次等它完成才采，期间停掉就不补', () async {
+      await PreviousExitLog.collect(
+        appDir: tmp,
+        version: 'v',
+        isAndroid: false,
+        isWindows: false,
+        isMacOS: false,
+        isIOS: false,
+      );
+      addTearDown(PreviousExitLog.stopMemorySampling);
+      int probed = 0;
+      String probe() {
+        probed++;
+        return 'probe=ok';
+      }
+
+      List<String> samples() => PreviousSession.tryParse(
+        markerFile().readAsStringSync(),
+      )!.memorySamples;
+
+      final Completer<void> firstFrame = Completer<void>();
+      PreviousExitLog.startMemorySampling(
+        probes: <MemoryProbe>[probe],
+        firstSampleAfter: firstFrame.future,
+      );
+      expect(probed, 0, reason: '启动关键路径上不许同步读探针');
+      expect(samples(), isEmpty);
+
+      firstFrame.complete();
+      await pumpEventQueue();
+      expect(probed, 1);
+      expect(samples().single, endsWith('probe=ok (start)'));
+
+      // 等待期间被停掉：不补采。
+      PreviousExitLog.stopMemorySampling();
+      final Completer<void> never = Completer<void>();
+      PreviousExitLog.startMemorySampling(
+        probes: <MemoryProbe>[probe],
+        firstSampleAfter: never.future,
+      );
+      PreviousExitLog.stopMemorySampling();
+      never.complete();
+      await pumpEventQueue();
+      expect(probed, 1);
+    });
+
     test('停在后台没了只算诊断；正常退出 / detached 不报', () {
       final SessionMarker a = SessionMarker(markerFile(), pid: 1, version: 'v')
         ..start(nowMs: 1);
@@ -358,6 +405,8 @@ void main() {
   // 崩溃分诊 e1_jaKAeiF：realme 后台管理 `o-stop(40)` 在 app 进入后台的瞬间杀进程
   // （ApplicationExitInfo importance=400），会话标记还停在 `inactive`，旧判定只看标记 →
   // 「停在前台时没了，疑似闪退」→ 弹闪退报告。同一 pid 的平台记录必须压过标记推断。
+  // （`o-stop` 本身后来按厂商停止单独分类（BUG-4370），这里的重要性用例改用不说明原因的
+  // OTHER 描述，只测前后台判定。）
   group('Android：同一 pid 的死时重要性压过会话标记的前后台推断', () {
     const MethodChannel channel = MethodChannel('test/process_exit_importance');
 
@@ -410,7 +459,7 @@ void main() {
       required int importance,
       int timestamp = 5000,
       String reason = 'OTHER',
-      String description = '[UNKNOWN] stop app.fushi.reader due to o-stop(40)',
+      String description = '[UNKNOWN] unspecified',
     }) => <String, Object?>{
       'reason': reason,
       'status': 0,
@@ -567,6 +616,126 @@ void main() {
       expect(v.worthReporting, isTrue);
     });
 
+    // BUG-4370（反馈 HqhXJvwgq3）：OnePlus（ColorOS）在最近任务里划掉 app，OPlus 框架以
+    // OTHER +「[UNKNOWN] stop app.fushi.reader due to o-stop(40)」停掉进程；死时界面还在最上层
+    // （importance=100）、标记停在 inactive。旧实现 OTHER 只认 AOSP 权限描述 → null → 回落
+    // 标记推断「停在前台时没了，疑似闪退」→ 弹闪退报告。
+    test(
+      'OTHER + o-stop + importance=100 + 标记停在 inactive → 厂商停止，不弹闪退报告',
+      () async {
+        final PreviousExitVerdict? v = await verdictFor(
+          lifecycle: 'inactive',
+          reasons: <Map<String, Object?>>[
+            record(
+              pid: 19104,
+              importance: 100,
+              description: '[UNKNOWN] stop app.fushi.reader due to o-stop(40)',
+            ),
+            // 同一时刻被一并结束的 WebView 沙箱子进程，不影响判定。
+            <String, Object?>{
+              'reason': 'OTHER',
+              'status': 0,
+              'description': '[ISOLATED NOT NEEDED] isolated not needed',
+              'importance': 300,
+              'timestamp': 5010,
+              'processName':
+                  'com.google.android.webview:sandboxed_process0:org.chromium.content.app.SandboxedProcessService0:0',
+              'pid': 19300,
+            },
+          ],
+        );
+        expect(v, isNotNull);
+        expect(v!.kind, PreviousExitKind.vendorStopped);
+        expect(v.worthReporting, isFalse);
+        expect(v.summary, contains('o-stop(40)'));
+      },
+    );
+
+    test('OTHER + o-stop + importance=400 → 厂商停止，不弹闪退报告', () async {
+      final PreviousExitVerdict? v = await verdictFor(
+        lifecycle: 'paused',
+        reasons: <Map<String, Object?>>[
+          record(
+            pid: 19104,
+            importance: 400,
+            description: '[UNKNOWN] stop app.fushi.reader due to o-stop(40)',
+          ),
+        ],
+      );
+      expect(v!.kind, PreviousExitKind.vendorStopped);
+      expect(v.worthReporting, isFalse);
+    });
+
+    test('o-stop 不压过真崩溃：同一启动另有 CRASH 记录时照样上报', () async {
+      final PreviousExitVerdict? v = await verdictFor(
+        lifecycle: 'resumed',
+        reasons: <Map<String, Object?>>[
+          record(
+            pid: 19104,
+            importance: 100,
+            description: '[UNKNOWN] stop app.fushi.reader due to o-stop(40)',
+          ),
+          record(pid: 18800, importance: 100, reason: 'CRASH', timestamp: 4500),
+        ],
+      );
+      expect(v!.kind, PreviousExitKind.crash);
+      expect(v.worthReporting, isTrue);
+    });
+
+    test(
+      'androidExitKind：OTHER 只认锚定的 OPlus「stop <包名> due to o-stop(<码>)」形态',
+      () {
+        expect(
+          androidExitKind(
+            'OTHER',
+            description: '[UNKNOWN] stop app.fushi.reader due to o-stop(40)',
+          ),
+          PreviousExitKind.vendorStopped,
+        );
+        expect(
+          androidExitKind(
+            'OTHER',
+            description: 'stop app.fushi.reader due to o-stop(12)',
+          ),
+          PreviousExitKind.vendorStopped,
+        );
+        // 前后缀不锚定 / 不是 o-stop 的厂商文本不认。
+        expect(
+          androidExitKind(
+            'OTHER',
+            description: 'crash: stop app.fushi.reader due to o-stop(40)',
+          ),
+          isNull,
+        );
+        expect(
+          androidExitKind(
+            'OTHER',
+            description: '[UNKNOWN] stop app.fushi.reader due to o-stop',
+          ),
+          isNull,
+        );
+        // 只有 OTHER 看描述：真崩溃 / ANR 带这段文字也不改判。
+        expect(
+          androidExitKind(
+            'CRASH',
+            description: '[UNKNOWN] stop app.fushi.reader due to o-stop(40)',
+          ),
+          PreviousExitKind.crash,
+        );
+        expect(
+          androidExitKind(
+            'SIGNALED',
+            description: '[UNKNOWN] stop app.fushi.reader due to o-stop(40)',
+          ),
+          isNull,
+        );
+        expect(
+          PreviousExitKind.vendorStopped.worthReporting(foreground: true),
+          isFalse,
+        );
+      },
+    );
+
     test('androidExitKind：OTHER 只认锚定的 AOSP「[KILL UID] <OP> changed」形态', () {
       expect(
         androidExitKind('PERMISSION_CHANGE'),
@@ -588,13 +757,6 @@ void main() {
       );
       expect(androidExitKind('OTHER'), isNull);
       expect(androidExitKind('OTHER', description: 'OneKeyClean'), isNull);
-      expect(
-        androidExitKind(
-          'OTHER',
-          description: '[UNKNOWN] stop app.fushi.reader due to o-stop(40)',
-        ),
-        isNull,
-      );
       // 前后缀不锚定的变体不认（避免厂商文本里夹着这段被误判）。
       expect(
         androidExitKind(

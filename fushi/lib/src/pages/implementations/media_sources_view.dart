@@ -44,6 +44,8 @@ import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:fushi/src/media/source_library/source_library_removal.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi_engine/media/audiobook/book_audiobook_pairing.dart'
+    show BookAudiobookTranscribePort;
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
@@ -1179,6 +1181,7 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
           path: norm,
           videoGroupingMode: groupingMode,
           bookmark: pick.bookmark,
+          transcribeAudiobook: _bookTranscribePort,
           onScanning: onScanning,
         ),
       );
@@ -1209,11 +1212,48 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
               },
               severity: ToastSeverity.success,
             );
+            _showBookAudiobookSummary(summary);
           }
         }
       }
       onLibraryChanged?.call();
     }
+  }
+
+  /// 书籍来源扫描的转录端口（反馈 z398R0ndAw）：书配上了有声书音频却没有字幕时排
+  /// 转录。只有书籍来源要，其余种类显式 null。
+  BookAudiobookTranscribePort? get _bookTranscribePort =>
+      widget.mediaKind == 'book' ? _appModel.folderImportTranscribePort : null;
+
+  /// 书籍来源扫描的有声书摘要：新挂上几本、排了几本转录、几本有音频没字幕、几本
+  /// 因音频归属不清被跳过。「导入文件夹（仅此一次）」、常驻来源重扫与「添加本地
+  /// 文件夹」（经 [_rescan]）三处共用；全为零时不打扰。
+  void _showBookAudiobookSummary(SourceScanSummary summary) {
+    if (widget.mediaKind != 'book' || !mounted) return;
+    final List<String> lines = <String>[
+      if (summary.attachedAudiobookCount > 0)
+        t.media_source_audiobook_attached(n: summary.attachedAudiobookCount),
+      if (summary.audiobookTranscribeQueuedCount > 0)
+        t.media_source_audiobook_transcribe_queued(
+          n: summary.audiobookTranscribeQueuedCount,
+        ),
+      if (summary.audiobookMissingSubtitleCount > 0)
+        t.media_source_audiobook_missing_subtitle(
+          n: summary.audiobookMissingSubtitleCount,
+        ),
+      if (summary.ambiguousAudiobookBookPaths.isNotEmpty)
+        t.media_source_audiobook_ambiguous(
+          n: summary.ambiguousAudiobookBookPaths.length,
+        ),
+    ];
+    if (lines.isEmpty) return;
+    final bool needsAttention =
+        summary.audiobookMissingSubtitleCount > 0 ||
+        summary.ambiguousAudiobookBookPaths.isNotEmpty;
+    FushiToast.show(
+      msg: lines.join('\n'),
+      severity: needsAttention ? ToastSeverity.warning : ToastSeverity.info,
+    );
   }
 
   /// 选一个要登记成来源（常驻或仅此一次）的本地文件夹。
@@ -1366,6 +1406,7 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     try {
       Future<SourceScanSummary> scan() => SourceLibraryScanner(
         _db,
+        transcribeAudiobook: _bookTranscribePort,
       ).scan(row, restoreDissolvedGroups: restoreDissolvedGroups);
       final VideoSourceScrapeTaskController? controller =
           widget.mediaKind == 'video' ? widget.scrapeTaskController : null;
@@ -1395,6 +1436,8 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
           });
           // 扫描可能新增条目，刷新累计计数（TODO-1036）。
           await _refreshCount(row.id);
+          final SourceScanSummary? done = summary;
+          if (done != null && done.succeeded) _showBookAudiobookSummary(done);
         }
       } finally {
         onLibraryChanged?.call();
@@ -1454,11 +1497,8 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
           ),
         );
     if (draft == null) return;
-    await (_db.update(
-      _db.mediaSources,
-    )..where((tbl) => tbl.id.equals(row.id))).write(
-      MediaSourcesCompanion(videoGroupingMode: Value(draft.groupingMode)),
-    );
+    // 刮削设置先落库：分组方式变了会立即重扫，重扫收尾的「扫描后自动刮削」读的
+    // 必须是这次保存的设置。
     await _db.upsertVideoSourceScrapeSettings(
       VideoSourceScrapeSettingsCompanion.insert(
         sourceId: Value<int>(row.id),
@@ -1476,8 +1516,47 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
         updatedAt: DateTime.now().millisecondsSinceEpoch,
       ),
     );
+    await applyVideoGroupingMode(row, draft.groupingMode);
     await _load();
     widget.onLibraryChanged?.call();
+  }
+
+  /// 改视频来源的分组方式（按作品 / 按文件夹），变了就**立即按新方式重扫**该来源。
+  ///
+  /// 分组方式是扫描的输入：作品合集（playlist）只由按作品模式的扫描
+  /// （`VideoFolderGroupCoordinator.groupPaths`）建出来，目录合集只由目录模式的扫描
+  /// 建出来。而它的两个读者是**即时**按来源当前模式取舍的：
+  /// - 视频库折叠（`applyVideoFolderCollectionPolicy`）在按作品模式下不再把成员折进
+  ///   目录合集；
+  /// - 刮削计划（`VideoSourceWorkPlanner.plan`）不拿目录合集当作品单元。
+  ///
+  /// 只写模式、等「下次扫描」再归组，中间这段时间目录合集里的整部剧在「系列」页
+  /// 散成每集一张卡，期间刮削还会把每一集当成一部独立作品去识别（反馈 YUH015QaF2，
+  /// BUG-4362）。所以模式与归组必须一起变：写完模式就走同一条扫描管线重扫。
+  ///
+  /// [_rescan] 在 [isBusy] 时直接返回；设置对话框开着的期间另一条扫描 / 刮削可能已经
+  /// 开始。此时若照写模式就会重新落进「模式已变、归组没跟」的状态，所以忙时**不改
+  /// 模式**并提示用户稍后再改，保证模式只在能立即重扫时才变。
+  Future<void> applyVideoGroupingMode(
+    SourceLibraryRow row,
+    String groupingMode,
+  ) async {
+    if (row.mediaKind != 'video' || row.videoGroupingMode == groupingMode) {
+      return;
+    }
+    if (!mounted) return;
+    if (isBusy) {
+      FushiToast.show(
+        msg: t.video_source_grouping_change_busy,
+        severity: ToastSeverity.warning,
+      );
+      return;
+    }
+    await (_db.update(_db.mediaSources)..where((tbl) => tbl.id.equals(row.id)))
+        .write(MediaSourcesCompanion(videoGroupingMode: Value(groupingMode)));
+    final SourceLibraryRow? fresh = await _db.getMediaSourceById(row.id);
+    if (fresh == null) return;
+    await _rescan(fresh);
   }
 
   Future<String?> _pickVideoGroupingMode() async {
@@ -1971,7 +2050,7 @@ class _VideoSourceScrapeSettingsDialogState
                   ? t.video_source_grouping_folder_hint
                   : t.video_source_grouping_series_hint,
             ),
-            Text(t.video_source_grouping_change_hint),
+            Text(t.video_source_grouping_change_rescan_hint),
             if (_groupingMode != 'folder') ...<Widget>[
               AdaptiveSettingsPickerRow<String>(
                 title: t.video_metadata_primary_provider,

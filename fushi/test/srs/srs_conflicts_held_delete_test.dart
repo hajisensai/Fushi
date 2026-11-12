@@ -227,11 +227,76 @@ void main() {
 
         // 结论是普通操作：同步到 A 后 A 的冲突也消失、状态一致。
         await _io(tester, env.syncAll);
+        if (delete) {
+          // B 第一次出现时 A 已有内容，B 在 A 上待确认（BUG-4276）：B 选「删除」的结论在 A 上扣到确认，
+          // A 的冲突还在；A 信任 B 之后才落地。「保留」是普通操作，不受影响。
+          expect(
+            (await _io(tester, env.a.sync2Conflicts)).single['kind'],
+            'delete_edit',
+          );
+          await _io(
+            tester,
+            () => env.a.sync2Trust(env.b.sync2Device!, trust: true),
+          );
+          await _io(tester, env.syncAll);
+        }
         expect(await _io(tester, env.a.sync2Conflicts), isEmpty);
         expect(
           (await _io(
             tester,
             () => env.a.cardsOfNote(env.noteId),
+          )).single.hidden,
+          delete,
+        );
+        await _close(tester, env);
+      });
+    }
+
+    for (final bool delete in <bool>[false, true]) {
+      testWidgets('[$ds] #IBjxAjty39 顶栏「批量处理」：扣住的删除'
+          '「全部${delete ? '删除' : '保留'}」按选择落地', (WidgetTester tester) async {
+        final _Env env = await _open(tester);
+        await _pump(tester, env.b, apple: apple);
+        final Finder card = find.byKey(
+          ValueKey<String>('srs-held-${env.conflictId}'),
+        );
+        await _pumpUntil(tester, card);
+        // 只有扣住的删除、没有字段冲突时，批量按钮也在（不是灰掉 / 被删掉）。
+        final Finder bulk = find.byKey(
+          const ValueKey<String>('srs_conflicts_bulk'),
+        );
+        expect(bulk, findsOneWidget);
+        await tester.tap(bulk);
+        await _settle(tester, rounds: 6);
+        expect(find.text(t.srs_conflicts_bulk_held_keep(n: 1)), findsOneWidget);
+        expect(
+          find.text(t.srs_conflicts_bulk_held_delete(n: 1)),
+          findsOneWidget,
+        );
+        await tester.tap(
+          find.text(
+            delete
+                ? t.srs_conflicts_bulk_held_delete(n: 1)
+                : t.srs_conflicts_bulk_held_keep(n: 1),
+          ),
+        );
+        await _settle(tester, rounds: 6);
+        if (delete) {
+          // 全部删除不好撤回：再确认一次。
+          expect(
+            find.text(t.srs_conflicts_bulk_confirm_title(n: 1)),
+            findsOneWidget,
+          );
+          await tester.tap(find.text(t.dialog_ok));
+        }
+        await _pumpUntil(tester, find.text(t.srs_conflicts_empty));
+        expect(card, findsNothing);
+        expect(bulk, findsNothing, reason: '没有可批量处理的条目就不画');
+        expect(await _io(tester, env.b.sync2Conflicts), isEmpty);
+        expect(
+          (await _io(
+            tester,
+            () => env.b.cardsOfNote(env.noteId),
           )).single.hidden,
           delete,
         );

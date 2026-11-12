@@ -20,6 +20,7 @@ import 'dart:typed_data';
 
 import 'package:fushi/src/mining/tyrano_dom/tyrano_asar.dart';
 import 'package:path/path.dart' as p;
+import 'package:fushi_engine/utils/misc/safe_file_name.dart';
 
 /// 单条语音原件的大小上限（逐句语音一般几十到几百 KB）。
 const int kTyranoVoiceMaxBytes = 32 * 1024 * 1024;
@@ -340,7 +341,7 @@ String tyranoVoiceDumpBasename(
   String stem = tail.join('-');
   final int dot = stem.lastIndexOf('.');
   if (dot > 0) stem = stem.substring(0, dot);
-  stem = stem.replaceAll(RegExp(r'[<>:"/\\|?*\x00-\x1f]'), '_');
+  stem = safeWindowsFileName(stem);
   if (stem.isEmpty) stem = 'voice';
   if (stem.length > 80) stem = stem.substring(stem.length - 80);
   return '$stem${tyranoVoiceExtension(container)}';

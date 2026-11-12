@@ -10,6 +10,8 @@ import 'dart:typed_data';
 import 'package:fushi_core/fushi_core.dart' show SrsCardCacheRow;
 import 'package:fushi_engine/srs/apkg/srs_apkg_import.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_fushi_card_native_media.dart'
+    show SrsCardNativeFallback, SrsCardNativeFallbackCode;
 import 'package:fushi_engine/srs/srs_remote_store.dart';
 import 'package:fushi_engine/srs/srs_remote_store_routes.dart';
 import 'package:fushi_srs/fushi_srs.dart';
@@ -93,6 +95,72 @@ Future<Object?> _call(
 }
 
 void main() {
+  // 反馈 O5YDP27Xko：远程复习卡退回整面 WebView 时，客户端要拿到主机侧的原因（`nfb`）记诊断，
+  // 不再一律 remoteUnknown。
+  group('整面 WebView 原因 nfb 线格式', () {
+    SrsRenderedCard card(SrsCardNativeFallback? f) => SrsRenderedCard(
+      question: 'q',
+      answer: 'a',
+      css: '',
+      isEmpty: false,
+      nativeFallback: f,
+    );
+
+    test('往返保留类别与说明', () {
+      const SrsCardNativeFallback f = SrsCardNativeFallback(
+        SrsCardNativeFallbackCode.backTemplate,
+        '<div class="fc-x">',
+      );
+      final Map<String, Object?> json = SrsRemoteWire.rendered(card(f));
+      final SrsRenderedCard back = SrsRemoteWire.renderedFrom(
+        jsonDecode(jsonEncode(json)),
+      )!;
+      expect(back.nativeFallback, f);
+    });
+
+    test('能原生画时不发 nfb，解码为 null', () {
+      final Map<String, Object?> json = SrsRemoteWire.rendered(card(null));
+      expect(json.containsKey('nfb'), isFalse);
+      expect(SrsRemoteWire.renderedFrom(json)!.nativeFallback, isNull);
+    });
+
+    test('更新的主机发来不认识的类别：按 remoteUnknown，原类别并进说明', () {
+      final SrsRenderedCard back = SrsRemoteWire.renderedFrom(<String, Object?>{
+        'q': '',
+        'a': '',
+        'css': '',
+        'fields': <String, Object?>{},
+        'nfb': <String, Object?>{'code': 'futureCode', 'detail': 'x'},
+      })!;
+      expect(
+        back.nativeFallback,
+        const SrsCardNativeFallback(
+          SrsCardNativeFallbackCode.remoteUnknown,
+          'futureCode: x',
+        ),
+      );
+    });
+
+    test('nfb 不合契约抛带路径的 SrsRemoteWireError', () {
+      expect(
+        () => SrsRemoteWire.renderedFrom(<String, Object?>{
+          'q': '',
+          'a': '',
+          'css': '',
+          'fields': <String, Object?>{},
+          'nfb': <String, Object?>{'code': 3},
+        }),
+        throwsA(
+          isA<SrsRemoteWireError>().having(
+            (SrsRemoteWireError e) => e.path,
+            'path',
+            'result.nfb.code',
+          ),
+        ),
+      );
+    });
+  });
+
   test('牌组行线格式往返保留 RWKV 状态（rp / rs）', () async {
     final SrsDbStore store = await openTestStore(
       profileUid: _uid,
@@ -732,6 +800,132 @@ void main() {
       expect(body['error'], SrsRemoteStoreError.badRequest, reason: op);
     }
     expect(writes, 0);
+  });
+
+  group('「今天」的时区取客户端设备（请求体 tz）', () {
+    // 主机在 UTC+9、翻日 4 点；时钟可拨。
+    late int clock;
+    late SrsDbStore store;
+    late SrsRemoteStoreService service;
+    late String deck;
+    setUp(() async {
+      clock = DateTime.utc(2026, 11, 1, 18, 30).millisecondsSinceEpoch;
+      store = await openTestStore(
+        profileUid: _uid,
+        deviceId: 'host',
+        now: () => clock,
+        localOffsetMin: () => 540,
+      );
+      await importAnkiPackage(
+        store: store,
+        bytes: benchApkg(6),
+        storeMedia: (String name, Uint8List b) async => name,
+        options: kFullOptions,
+        zstdDecompress: (Uint8List b) => null,
+      );
+      service = SrsRemoteStoreService(
+        readStore: () async => store,
+        readMedia: (String name) async => null,
+      );
+      deck = (await store.deckSummaries())
+          .where((SrsDeckSummary d) => d.totalCards > 0)
+          .first
+          .deck
+          .id;
+    });
+
+    Future<(int, Map<String, Object?>)> callTz(
+      String op,
+      Object? tz, {
+      Map<String, Object?> args = const <String, Object?>{},
+      String? request,
+    }) => _route(service, <String, Object?>{
+      'profile': _uid,
+      'op': op,
+      'args': args,
+      'request': ?request,
+      kSrsRemoteDeviceOffsetKey: ?tz,
+    });
+
+    Future<SrsDayContext> dayOf(Object? tz) async {
+      final (int status, Map<String, Object?> body) = await callTz(
+        'dayContext',
+        tz,
+      );
+      expect(status, 200, reason: '$body');
+      return SrsRemoteWire.dayContextFrom(body['result']);
+    }
+
+    Future<int> todayCount(Object? tz) async {
+      final (int status, Map<String, Object?> body) = await callTz(
+        'todayReviewSummary',
+        tz,
+      );
+      expect(status, 200, reason: '$body');
+      return SrsRemoteWire.todayReviewsFrom(body['result']).count;
+    }
+
+    test('新客户端带偏移：这次调用按它算日界；翻日时刻与主机本机调用不变', () async {
+      final SrsDayContext day = await dayOf(-300);
+      expect(day.utcOffsetMin, -300);
+      expect(day.rolloverHour, 4);
+      expect((await store.dayContext()).utcOffsetMin, 540, reason: '只作用于那次调用');
+    });
+
+    test('旧客户端不带偏移：按主机偏移算（与旧协议一致）', () async {
+      expect((await dayOf(null)).utcOffsetMin, 540);
+    });
+
+    test('越界偏移当没带、按主机偏移算；不是整数回 400 不执行', () async {
+      expect((await dayOf(kSrsRemoteDeviceOffsetMinMax + 1)).utcOffsetMin, 540);
+      expect((await dayOf(kSrsRemoteDeviceOffsetMinMin - 1)).utcOffsetMin, 540);
+      expect((await dayOf(kSrsRemoteDeviceOffsetMinMax)).utcOffsetMin, 840);
+      expect((await dayOf(kSrsRemoteDeviceOffsetMinMin)).utcOffsetMin, -720);
+      for (final Object bad in <Object>['0', 60.5, true]) {
+        final (int status, Map<String, Object?> body) = await callTz(
+          'dayContext',
+          bad,
+        );
+        expect(status, 400, reason: '$bad');
+        expect(body['error'], SrsRemoteStoreError.badRequest);
+      }
+    });
+
+    test('不认识的顶层键一律忽略（旧主机收到 tz 即如此）', () async {
+      final (int status, Map<String, Object?> body) = await _route(
+        service,
+        <String, Object?>{'profile': _uid, 'op': 'dayContext', 'tzFuture': 'x'},
+      );
+      expect(status, 200);
+      expect(SrsRemoteWire.dayContextFrom(body['result']).utcOffsetMin, 540);
+    });
+
+    test('作答与今日计数按客户端的「今天」：跨过主机的翻日时刻、没跨过客户端的', () async {
+      final String card = (await store.studyState(deck))!.next!;
+      // 18:30 UTC：主机 UTC+9 是次日 03:30（还没到翻日 4 点），客户端 UTC+0 是当天 18:30。
+      final (int status, Map<String, Object?> body) = await callTz(
+        'answerAndStudy',
+        0,
+        args: <String, Object?>{
+          'card': card,
+          'rating': 3,
+          'durationMs': 1000,
+          'deck': deck,
+        },
+        request: 'tz-answer',
+      );
+      expect(status, 200, reason: '$body');
+      final SrsReviewLog log = SrsRemoteWire.logFrom(
+        (body['result']! as Map)['log'],
+      );
+      expect(log.utcOffsetMin, 0, reason: '日志记下的是作答设备的偏移');
+      expect(log.dayRolloverHour, 4);
+
+      // 一小时后（19:30 UTC）：主机已翻到下一天，客户端还在同一天。
+      clock += const Duration(hours: 1).inMilliseconds;
+      expect(await todayCount(null), 0, reason: '旧客户端：主机的今天');
+      expect(await todayCount(0), 1, reason: '新客户端：客户端的今天');
+    });
   });
 
   group('一台主机提供几份 profile（无头服务端：一门语言一份）', () {

@@ -3096,6 +3096,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       folders++;
       final AddLocalFolderResult result = await addLocalFolderAsSource(
         db: appModel.database,
+        // 视频来源不扫书，没有有声书要转录。
+        transcribeAudiobook: null,
         mediaKind: SourceLibraryKind.video.dbValue,
         path: dir,
       );
@@ -5492,6 +5494,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
                 onDragUpdate: (SelectionSlot slot) =>
                     setState(() => _selection.updateRangeDrag(slot)),
                 onDragEnd: () => setState(_selection.endRangeDrag),
+                // 鼠标按下即拖 = 拉框框选（反馈 bFtYB0_Arl）；触屏仍是长按扫选。
+                onBoxSelectBegin: () => setState(_selection.beginBoxSelect),
+                onBoxSelectUpdate: (Set<SelectionSlot> slots) =>
+                    setState(() => _selection.updateBoxSelect(slots)),
                 child: _buildVideoLibraryBody(),
               ),
             ),

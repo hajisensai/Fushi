@@ -10,6 +10,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi/src/mining/gal_hook_mining_coordinator.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
+import 'package:fushi/src/mining/gal_mining_settings.dart';
 import 'package:fushi/src/mining/window_capture_channel.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/startup/test_environment.dart';
@@ -361,6 +362,7 @@ class GameStreamLanEvidence {
     required String lineId,
     required String sentence,
     required String outputExtension,
+    required GalMiningAudioLimit limit,
   }) async {
     final Uint8List? bytes =
         await (_captureAudio ??
@@ -368,6 +370,7 @@ class GameStreamLanEvidence {
           lineId: lineId,
           sentence: sentence,
           outputExtension: outputExtension,
+          limit: limit,
         );
     if (bytes != null && bytes.isNotEmpty) {
       _audio[lineId] = (

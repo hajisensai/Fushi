@@ -203,6 +203,7 @@ class SrsRenderedCard {
     this.fushiCardDefinitions,
     this.fushiCardFront = const <FushiCardItem>[],
     this.fushiCardBack = const <FushiCardItem>[],
+    this.nativeFallback,
   });
 
   final String question;
@@ -223,6 +224,12 @@ class SrsRenderedCard {
   /// 里面；HTML 区块已按笔记字段展开）。只在 [fushiCardDefinitions] 非 null 时有意义。
   final List<FushiCardItem> fushiCardFront;
   final List<FushiCardItem> fushiCardBack;
+
+  /// [fushiCardDefinitions] 为 null（引擎判定原生 Fushi 卡面画不了）时卡在哪一道
+  /// （[srsFushiCardNative]）；能原生画时为 null。非 Fushi 卡片是
+  /// [SrsCardNativeFallbackCode.notBuiltin]，远程老主机没带原因时是
+  /// [SrsCardNativeFallbackCode.remoteUnknown]。app 侧再判的区块 / HTML 子集原因不在这里。
+  final SrsCardNativeFallback? nativeFallback;
 }
 
 /// [SrsDbStore.writeEdits] 的一项：给某实体的某个字段键写一个值。
@@ -599,7 +606,10 @@ class SrsDbStore implements SrsSync2Host {
   /// `EventKey` 对 Anki 来源不比卡），没有血统链接的两张卡（删光重导后旧卡隐藏、新卡可见）由有效复习投影按 Anki 事件身份
   /// 只留一份（caches.rs `refresh_stats`）。存量库的卡片状态与投影是旧规则算的（「从 Anki 迁移」后复习数 ×2），与修订号
   /// 11 同样整库重算（srs.db v28 迁移已先按新规则重放了带这种副本的卡的日志投影行）。
-  static const int _kCacheRevision = 12;
+  /// 13（反馈 MCJLSBR5Wg）：出处带 `seriesTitle`（系列）的笔记按「系列 → 集」分组——缓存行的 `source_key` 是系列键、
+  /// `source_title` 是系列名（store/browse.rs `source_key`、caches.rs `NoteInfo::of`）。旧版本收到别的设备同步来的带
+  /// 系列的出处时按集算了这两列，升级时只重算出处记录里带 `seriesTitle` 的那些笔记。
+  static const int _kCacheRevision = 13;
 
   /// 当前缓存修订号（[_kCacheRevision]）。升级测试断言「打开老库后记下的是当前修订号」时用它，
   /// 不写字面量——每次加一级修订都要去改一串升级测试的魔数，漏改就整批红。
@@ -854,6 +864,9 @@ class SrsDbStore implements SrsSync2Host {
   /// 每个副本一把锁（嵌套打开的另一个副本不会误认成持锁）。
   final Object _writeZoneKey = Object();
 
+  /// [withDeviceOffset] 的 Zone 键（每个副本一个：只换本副本的时区）。
+  final Object _deviceOffsetZoneKey = Object();
+
   // ------------------------------------------------------------------ 本机状态
 
   Future<bool> _hasAnyEvent() async =>
@@ -986,11 +999,28 @@ class SrsDbStore implements SrsSync2Host {
   /// - 时区：恒为本机此刻的偏移（[SrsDayContext.localOffsetMin]）。时区不随同步：人带着设备换时区时「今天」跟着
   ///   本机走；每条复习日志自带作答时的偏移与翻日时刻，重放不读这里。旧版本库里可能有的 profile 键
   ///   `utcOffsetMin` 从没有写入方，现在也不再读。
+  ///   「本机」是用户手上那台设备：远程复习时主机替另一台设备跑这次调用，时区取那台设备报来的偏移
+  ///   （[withDeviceOffset]）。
   Future<SrsDayContext> dayContext() async {
     final int rollover =
         (await syncedDayRollover())?.hour ?? _fallbackRollover().clamp(0, 23);
-    return SrsDayContext(utcOffsetMin: _localOffset(), rolloverHour: rollover);
+    final Object? device = Zone.current[_deviceOffsetZoneKey];
+    return SrsDayContext(
+      utcOffsetMin: device is int ? device : _localOffset(),
+      rolloverHour: rollover,
+    );
   }
+
+  /// 在 [body] 这条异步调用链里，本副本「今天」的时区改取 [utcOffsetMin]（分钟），翻日时刻不变。
+  ///
+  /// 远程复习用（[SrsRemoteStoreService]）：手机连电脑上的库复习时，主机上的这次调用替手机执行，每日上限 /
+  /// 到期计数 / 作答日志记下的偏移都应按手机所在的时区算，而不是主机的。只作用于本副本，别的副本与 [body]
+  /// 之外的调用照旧取宿主给的 `localOffsetMin`。偏移的合法性由调用方先校验（远程端点只放行现实时区范围）。
+  Future<T> withDeviceOffset<T>(int utcOffsetMin, Future<T> Function() body) =>
+      runZoned(
+        body,
+        zoneValues: <Object, Object>{_deviceOffsetZoneKey: utcOffsetMin},
+      );
 
   /// profile 里显式写过的翻日时刻（0–23）与生效的那条修改记录 ID；从没写过为 null（[dayContext] 用宿主的回落值）。
   /// 修改记录 ID 让宿主分辨「同步带来了新的修改」与「还是本机见过的那条」。
@@ -1520,9 +1550,9 @@ class SrsDbStore implements SrsSync2Host {
     Map<String, Object?> request, {
     List<Uint8List> blobs = const <Uint8List>[],
   }) async {
-    if (request['op'] == 'dedup') {
-      // 重复流收敛（内核 store/sync2/dedup.rs）改投影（删并存的修改记录行、解除扣留）：与冲突解决同一条路径，
-      // 投影变化接进缓存。
+    if (request['op'] == 'dedup' || request['op'] == 'digest_heal') {
+      // 重复流收敛（内核 store/sync2/dedup.rs）改投影（删并存的修改记录行、解除扣留）、摘要不一致的自动重建
+      // （store/sync2/heal.rs）重放改写日志：与冲突解决同一条路径，投影变化接进缓存。
       return SrsSync2Result(
         await _sync2Write(request),
         const <(String, Uint8List)>[],
@@ -2079,6 +2109,7 @@ class SrsDbStore implements SrsSync2Host {
     'checkpoint',
     'restore',
     'dedup',
+    'digest_heal',
     'refresh_caches',
     'rebuild_caches',
     'backfill_dupe_norms',
@@ -2812,6 +2843,26 @@ class SrsDbStore implements SrsSync2Host {
       // 有效复习投影整库按新规则重算。两级要做的是同一件事，只做一次。
       if (_cacheRevision < 12) {
         await _refreshCaches(allNotes: true, allStats: true);
+      } else if (_cacheRevision < 13) {
+        // 整库重算（上一步）已按新规则写好；只有已在 12 的库才需要挑出带系列的出处。按子串粗筛（多挑只是多重算几行），
+        // 真正的分组键由内核按出处 JSON 算。
+        final List<QueryRow> rows = await db
+            .customSelect(
+              'SELECT DISTINCT entity_id FROM srs_field_edits '
+              'WHERE profile_uid = ? AND entity_kind = ? AND field_key = ? '
+              "AND json LIKE '%seriesTitle%'",
+              variables: <Variable<Object>>[
+                Variable<String>(profileUid, srsIdType),
+                Variable<String>(SrsEntityKind.note.wire),
+                Variable<String>(SrsFieldKeys.noteSource),
+              ],
+            )
+            .get();
+        if (rows.isNotEmpty) {
+          await _refreshCaches(
+            notes: rows.map((QueryRow r) => r.read<String>('entity_id')),
+          );
+        }
       }
       _cacheRevision = _kCacheRevision;
       await _saveLocal();
@@ -4867,7 +4918,7 @@ class SrsDbStore implements SrsSync2Host {
     );
     // 原生卡面画不全的媒体（SVG / 远程图片、Picture 里的杂项内容）留在整面 WebView
     // （同一份模板），见 srs_fushi_card_native_media。
-    final SrsFushiCardNative? native = srsFushiCardNative(
+    final SrsFushiCardNativeProbe probe = srsFushiCardNative(
       builtinKey: d.noteType.builtinKey,
       front: front,
       back: back,
@@ -4876,15 +4927,19 @@ class SrsDbStore implements SrsSync2Host {
       cardOrd: tpl.ord,
       specials: specials,
     );
+    final SrsFushiCardNative? native = probe.native;
     return SrsRenderedCard(
       question: faces.question,
       answer: faces.answer,
-      css: d.noteType.css,
+      // 原生卡面只拿样式给释义 WebView 用：冻住的历史内置样式换成当前内置样式（释义 HTML
+      // 按当前模板生成），见 [SrsFushiCardNative.css]。
+      css: native?.css ?? d.noteType.css,
       isEmpty: r.isEmpty,
       fields: fields,
       fushiCardDefinitions: native?.definitions,
       fushiCardFront: native?.front ?? const <FushiCardItem>[],
       fushiCardBack: native?.back ?? const <FushiCardItem>[],
+      nativeFallback: probe.fallback,
     );
   }
 

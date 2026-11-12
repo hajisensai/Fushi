@@ -15,7 +15,7 @@
 ///
 /// 自动同步开关（[SrsSyncScheduler.isAutoSyncEnabled]，设置 › 同步「自动同步复习数据」，反馈 VNz9dsLeIy）
 /// 只管不由用户直接发起的那几处：1（[autoSyncWithBackend]，互联快速通道同走它）、4（[notifyLocalDirectoryWritten]）与本机写入后的
-/// 推送（[autoPush]）；app 侧互联快速通道也读它。关掉后只剩 2、3：用户点了「立即同步」，或自己进了复习页。
+/// 推送（[autoPush]，互联与云盘通道都推，反馈 O4MSorhpie）；app 侧互联快速通道也读它。关掉后只剩 2、3：用户点了「立即同步」，或自己进了复习页。
 ///
 /// 目录身份拿不到（云盘账户还没认出来）时这一轮跳过该后端（报告 error =
 /// [kSrsSyncDirectoryIdentityUnavailable]），不把同一个目录当成新目录起步 / 重发。
@@ -44,6 +44,8 @@ import 'package:fushi/src/srs/srs_device_identity.dart';
 import 'package:fushi/src/srs/srs_sync_progress.dart';
 import 'package:fushi/src/sync/dropbox_sync_backend.dart';
 import 'package:fushi/src/sync/obfuscating_sync_backend.dart';
+import 'package:fushi/src/sync/sync_module_gate.dart'
+    show SyncRunTicket, syncModuleGate;
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/sync2/srs_folder_location.dart';
@@ -221,6 +223,11 @@ Future<SrsMediaSyncReport> srsDefaultMediaSyncRunner(
   locationId: locationId,
   uploadOnly: uploadOnly,
 );
+
+/// 本机写入后推送失败时，同一条推送的诊断日志最多隔这么久记一次（[SrsSyncScheduler.autoPush]）：每次去抖 / 退避
+/// 到点都会再推一次，host 长时间不在时不刷屏、也不至于完全看不到。稳定的跳过原因（模块关着、没配对、不在前台）只在
+/// 原因变化时记一次。
+const Duration kSrsAutoPushSkipLogInterval = Duration(minutes: 10);
 
 /// 「对所有已认证通道跑一次」的入口（生产：`runOnAuthenticatedSyncChannels`）。
 /// 返回跑成功的通道数与抛错通道的异常。
@@ -432,6 +439,23 @@ class SrsSyncScheduler {
 
   /// 坏文件只记一次日志（每轮都会再跳过同一个文件）。
   final Set<String> _loggedSkipped = <String>{};
+
+  /// 清本机旧身份目录没做成的原因（[SrsSync2Report.formerSweepErrors]）记日志：不算这一轮失败，同一个原因只记一次
+  /// （内核每个周期让看一次，持续性的故障每次都是同一句）。
+  void _logFormerSweep(String key, SrsSync2Report report) {
+    for (final String f in report.formerSweepErrors) {
+      if (_loggedSkipped.add('former|$key|$f')) {
+        ErrorLogService.instance.log(
+          'SrsSyncScheduler.formerIdentitySweep',
+          StateError(
+            'SRS sync could not tidy a former identity directory in $key: $f',
+          ),
+          StackTrace.current,
+        );
+      }
+    }
+  }
+
   final Future<List<SrsLocalDirectory>> Function()? _localDirectories;
   final Future<List<SrsFolderLocation>> Function()? _folderLocations;
 
@@ -669,28 +693,20 @@ class SrsSyncScheduler {
   final Map<String, SrsLocationCryptoState> locationCrypto =
       <String, SrsLocationCryptoState>{};
 
-  /// 已经上报过摘要不一致的设备（每次启动每台只报一次）。
-  final Set<String> _digestReported = <String>{};
-
-  /// 设计 §4.5：两台设备在同一版本向量下派生状态摘要不同 = 确定性 bug，自动上报日志（不让用户处理）。
-  Future<void> _reportDigestMismatch(SrsDbStore store) async {
-    try {
-      final Map<String, Object?> status = await store.sync2Status();
-      for (final Object? d
-          in (status['devices'] as List?) ?? const <Object?>[]) {
-        if (d is! Map || d['digestMismatch'] != true) continue;
-        final String id = d['device'] as String? ?? '';
-        if (!_digestReported.add(id)) continue;
-        ErrorLogService.instance.log(
-          'SrsSync2.digestMismatch',
-          StateError(
-            'SRS state digest differs from device $id at the same version vector',
-          ),
-          StackTrace.current,
-        );
-      }
-    } catch (e, stack) {
-      ErrorLogService.instance.log('SrsSyncScheduler.digest', e, stack);
+  /// 设计 §4.5：两台设备在同一进度下派生状态摘要不同 = 有一边的派生行是旧的或确定性 bug。内核先自动重建（按组指纹
+  /// 定位、重放本机落在不同组里的卡，store/sync2/heal.rs），只把修不好的交出来（[SrsSync2Report.healFailed]，每个对端
+  /// 每组集合只给一次），这里只记这些（不让用户处理）。
+  void _reportHealFailed(SrsSync2Report report) {
+    for (final Map<String, Object?> f in report.healFailed) {
+      ErrorLogService.instance.log(
+        'SrsSync2.healFailed',
+        StateError(
+          'SRS state digest differs from device ${f['device']} at the same version vector '
+          'and replaying did not converge: reason=${f['reason']} groups=${f['groups']} '
+          'rows=${f['rows']} peerApp=${f['app']}',
+        ),
+        StackTrace.current,
+      );
     }
   }
 
@@ -783,31 +799,108 @@ class SrsSyncScheduler {
     return syncWithBackend(backend);
   }
 
-  /// 本机写了复习数据后的推送：[interconnect] 给出此刻可用的互联后端（没连上为 null）就同步它，
-  /// 再跑本机目录（本机作为 host 时唤醒连它的设备）。自动同步关着时什么都不做。
+  /// 本机写了复习数据后的推送（[SrsLocalPush] 去抖 / 攒批到点、离开复习页、进后台时调；反馈 O4MSorhpie）：对
+  /// [channels] 给出的那组已认证通道各跑一轮（与「立即同步」/ 进复习 tab 同一个通道抽象 [SrsChannelRunner]，生产是
+  /// `runOnAuthenticatedSyncChannels`，自带常规同步的互斥锁与逐条通道的认证），[localDirectories] 为真时再跑本机目录
+  /// （本机作为 host 时唤醒连它的设备；只读写本机文件系统、不碰共享后端，放在通道锁外）。
   ///
-  /// [exclusive] 包住「取互联后端 + 跑它的一轮」：app 侧传常规同步的那把互斥（`runExclusiveWithSync`），
-  /// 推送与常规同步不再并发改同一个单例后端的会话 / 选路缓存（反馈 XDV7Mzc2gw）。本机目录只读写本机文件
-  /// 系统、不碰共享后端，放在锁外，不延长常规同步的等待。
+  /// app 侧按通道分成两条推送（互联 / 云盘，见 `srs_app_runtime.dart`），各自一个 [SrsLocalPush]：两条各自退避，
+  /// host 不可达时互联那条退避，不拖住云盘那条。[lane] 是这条推送的名字（限流日志与 [autoPushSkipReason] 用）。
   ///
-  /// 返回互联这一步是否成功（没连上 / 自动同步关着 / 首次同步未确认这类本机状态都不算失败）：
-  /// [SrsLocalPush] 据此做失败退避。互联那一轮抛的错照常抛给调用方。
+  /// 不推（返回 true，不算失败、不触发退避）的情形：自动同步关着；「同步与备份 + 互联」模块关着（[syncModuleGate]，
+  /// 与常规同步同一道门）；[ready] 说此刻不该联网（app 在后台且不是进后台时的那一次、首次同步还没确认、库关着）；这组里
+  /// 没有已认证的通道（没配对 / 没登录 / 通道关着）。这些与推送失败（host 不可达等）都记进 [autoPushSkipReason]，并记
+  /// 一条诊断日志（稳定原因只在变化时记，失败按 [kSrsAutoPushSkipLogInterval] 限流）；本机改动仍在本机日志里，
+  /// 同步与历史页照常显示「还有 N 条改动没上传」。
+  ///
+  /// 返回这组通道是否都推成（本机状态类原因 [kSrsSyncLocalStateErrors] 不算失败）：[SrsLocalPush] 据此做失败退避。
+  /// 通道抛的错由 [channels] 收集（生产实现已逐条记日志），算失败。
   Future<bool> autoPush(
-    Future<SyncAssetStore?> Function() interconnect, {
-    Future<bool> Function(Future<bool> Function() body)? exclusive,
+    SrsChannelRunner channels, {
+    required String lane,
+    Future<bool> Function()? ready,
+    bool localDirectories = false,
   }) async {
     if (!await isAutoSyncEnabled()) return true;
-    Future<bool> pushInterconnect() async {
-      final SyncAssetStore? backend = await interconnect();
-      if (backend == null) return true;
-      final String? error = (await syncWithBackend(backend)).error;
-      return error == null || kSrsSyncLocalStateErrors.contains(error);
+    final SyncRunTicket? ticket = syncModuleGate.enter();
+    if (ticket == null) {
+      _noteAutoPushSkipped(lane, 'sync module off', steady: true);
+      return true;
     }
+    try {
+      bool ok = true;
+      if (ready != null && !await ready()) {
+        _noteAutoPushSkipped(
+          lane,
+          'not ready (app in background / first sync unconfirmed / store closed)',
+          steady: true,
+        );
+      } else {
+        final List<String> failed = <String>[];
+        final ({int ran, List<Object> errors}) r = await channels((
+          SyncAssetStore backend,
+        ) async {
+          // 安全检查点（[SyncCancellation]）：上一条通道的一轮已落地、这一条还没开始。
+          if (ticket.isCancelled) return;
+          final String? error = (await syncWithBackend(backend)).error;
+          if (error != null && !kSrsSyncLocalStateErrors.contains(error)) {
+            failed.add('${_backendLabel(backend)}: $error');
+          }
+        });
+        failed.addAll(r.errors.map((Object e) => '$e'));
+        ok = failed.isEmpty;
+        if (!ok) {
+          _noteAutoPushSkipped(lane, 'push failed: ${failed.join('; ')}');
+        } else if (ticket.isCancelled) {
+          // 途中关了模块：后面的通道没跑（通道运行器照样把它们算进 ran），不能说成推成了。
+          _noteAutoPushSkipped(lane, 'sync module off', steady: true);
+        } else if (r.ran == 0) {
+          _noteAutoPushSkipped(
+            lane,
+            'no authenticated channel (not paired / not signed in / channel off)',
+            steady: true,
+          );
+        } else {
+          _autoPushSkips.remove(lane);
+        }
+      }
+      if (localDirectories && !ticket.isCancelled) {
+        await syncLocalDirectories();
+      }
+      return ok;
+    } finally {
+      ticket.leave();
+    }
+  }
 
-    final bool ok =
-        await (exclusive?.call(pushInterconnect) ?? pushInterconnect());
-    await syncLocalDirectories();
-    return ok;
+  /// 各条推送最近一次没推出去的原因（推成即清掉）；见 [autoPush]。
+  final Map<String, String> _autoPushSkips = <String, String>{};
+
+  /// 各条推送上次记失败日志的时刻（限流，见 [kSrsAutoPushSkipLogInterval]）。
+  final Map<String, DateTime> _autoPushFailureLoggedAt = <String, DateTime>{};
+
+  /// [lane] 这条推送最近一次没推出去的原因；null = 上次推成了（或还没推过）。
+  String? autoPushSkipReason(String lane) => _autoPushSkips[lane];
+
+  /// [steady]：稳定的跳过原因（模块关着 / 不该联网 / 没有已认证通道），与上次相同就不再记日志；否则是推送失败，
+  /// 失败细节（地址、错误文本）每次可能不同，按条推送限流。
+  void _noteAutoPushSkipped(String lane, String reason, {bool steady = false}) {
+    final String? previous = _autoPushSkips[lane];
+    _autoPushSkips[lane] = reason;
+    if (steady) {
+      if (previous == reason) return;
+    } else {
+      final DateTime now = _clock();
+      final DateTime? last = _autoPushFailureLoggedAt[lane];
+      if (last != null && now.difference(last) < kSrsAutoPushSkipLogInterval) {
+        return;
+      }
+      _autoPushFailureLoggedAt[lane] = now;
+    }
+    ErrorLogService.instance.logDiagnostic(
+      'SrsSyncScheduler.autoPushSkipped',
+      'lane=$lane $reason',
+    );
   }
 
   /// 串行化：通道后置步骤（常规同步互斥锁里）、进复习 tab、「立即同步」、本机 host 目录可能同时触发，
@@ -1092,6 +1185,7 @@ class SrsSyncScheduler {
         );
       }
     }
+    _logFormerSweep(key, report);
     // 服务器时间与写 head 那次上传同一刻的开机时钟配对（[SrsSync2Report.serverTimeBootMs]），与这一轮跑了多久无关。
     final int? serverTime = report.serverTimeMs;
     final int? observedAt = report.serverTimeBootMs;
@@ -1105,7 +1199,7 @@ class SrsSyncScheduler {
     if (report.error == kSrsSyncNeedsUpgrade) {
       _noticeOnce(SrsSyncNotice.backendUnsupported);
     }
-    if (report.error == null && !_halted) await _reportDigestMismatch(store);
+    _reportHealFailed(report);
     bool mediaChanged = false;
     final Future<Directory?> Function()? readMediaRoot = _readMediaRoot;
     // 媒体对账要逐个过一遍全部引用的媒体、扫三遍笔记引用：只在媒体引用可能变了（本机或别的设备改了笔记 / 笔记类型
@@ -1600,6 +1694,8 @@ class SrsSyncScheduler {
           srsLogMigrationLeftover(prepared, l.locationId);
         }
         if (outcome.stopped) continue;
+        final SrsSync2Report? folderOps = r.ops;
+        if (folderOps != null) _logFormerSweep(l.locationId, folderOps);
         await _noteCrypto(l.locationId, r.crypto);
         _noteMediaKey(l.locationId, r.media);
         // 口令类问题不进 folderErrors，由 [locationCrypto] 显示（需要口令 / 口令不对 / 加密设置不见了）。

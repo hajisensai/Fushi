@@ -7,6 +7,7 @@ import 'anki_settings_store.dart';
 import 'anki_note_type_definition.dart';
 import 'anki_synchronized_clip_template.dart';
 import 'card_source_link.dart';
+import 'fushi_card_fields.dart';
 import 'lapis_note_type.dart';
 import 'anki_note_composer.dart';
 
@@ -62,7 +63,7 @@ abstract class BaseAnkiRepository with AnkiNoteComposer {
   static const String _miscInfoMappingWithSource =
       '{document-title} {clip-timestamp} {source-link}';
   static const String _miscInfoMappingWithLinkedTitle =
-      '{source-link} {clip-timestamp}';
+      FushiCardFields.sourceDefaultMapping;
 
   /// 读原始设置 JSON 的**唯一通道**：载入期迁移（W2-2 别名改写 + MiscInfo 补片段
   /// 时间窗）都收敛在这里，改写结果经 [store] 回写——换成 Drift 存储后照样生效。
@@ -448,6 +449,36 @@ abstract class BaseAnkiRepository with AnkiNoteComposer {
 
   Future<bool> isDuplicate(String expression, String reading);
 
+  /// 反馈 JAEwvc6Lmr：[isDuplicate] 的**三态**版本——`true` / `false` 是后端明确
+  /// 应答的结论，`null` = 这次**没问到**（后端不可达、未授权、collection 打不开、
+  /// 处于不可达冷却窗……）。
+  ///
+  /// [isDuplicate] 的 `bool` 契约把「不知道」折成了 `false`（查词渲染路径要 fail-soft），
+  /// 于是上层分不清「Anki 说没有」和「Anki 没开」，离线时只能一律画 +。离线已制卡缓存
+  /// （app 层 `MinedExpressionCacheAnkiRepository`）靠这个第三态决定：问到了就用答案
+  /// 刷新缓存，没问到才退回缓存。
+  ///
+  /// **默认实现**：直接转 [isDuplicate]，即「每次都算问到了」。这对答案不经网络 /
+  /// 外部进程的后端（本机复习、AnkiMobile 本机账本）是如实的；会连不上的后端
+  /// （AnkiDroid、AnkiConnect）覆写本方法，并让 [isDuplicate] = `probe ?? false`，
+  /// 保证两条口径只有一份判据。
+  Future<bool?> probeDuplicate(String expression, String reading) =>
+      isDuplicate(expression, reading);
+
+  /// 离线已制卡缓存的**作用域键**：同一个键下 [probeDuplicate] 的答案可互相替代。
+  ///
+  /// 键里必须带上决定查重结果的全部设置（后端种类、连接目标、笔记类型、查重范围
+  /// 用到的卡组），换了其中任何一项，旧缓存就不能再拿来回答——那是另一个问题的答案。
+  /// 返回 `null` = 本后端不做离线缓存（默认；没配好笔记类型时也返回 `null`）。
+  Future<String?> minedCacheScope() async => null;
+
+  /// 当前查重作用域（见 [minedCacheScope]）里**全部**笔记的第一字段原文，供离线缓存
+  /// 在后端可达时整份刷新。
+  ///
+  /// 返回 `null` = 本后端不支持整份列出（默认）；后端可达但查询失败时**抛出**，
+  /// 不返回空列表——空列表会被当成「Anki 里一张卡都没有」，把缓存清空。
+  Future<List<String>?> listMinedFirstFields() async => null;
+
   /// Create [template] as a note type in the backend. Idempotent: returns
   /// `false` if a note type with that name already exists (no-op), `true` if
   /// newly created. Throws on backend failure (not-reachable, permission).
@@ -641,8 +672,46 @@ abstract class BaseAnkiRepository with AnkiNoteComposer {
   static Map<String, String> fieldsForOverwrite({
     required Iterable<String> existingFieldNames,
     required Map<String, String> rendered,
+    Set<String>? onlyFields,
   }) => AnkiNoteComposer.fieldsForOverwrite(
     existingFieldNames: existingFieldNames,
     rendered: rendered,
+    onlyFields: onlyFields,
   );
+
+  /// 反馈 nWWjBp3Clo：覆写结果里**要写的那部分**是否全空。
+  ///
+  /// [onlyFields] 为 null（覆写全部字段）时沿用 BUG-858 的空卡门（错误码
+  /// [AnkiErrorCode.allFieldsEmpty]，提示查字段映射）；用户只选了部分字段、而这次
+  /// 这些字段渲染全空（或选中的字段一个都不在这张卡上）时，写下去只会把它们清空，
+  /// 用 [AnkiErrorCode.overwriteFieldsEmpty] 拒绝。不拒绝时返回 null。
+  static MineOutcome? rejectEmptyOverwrite(
+    Map<String, String> toWrite, {
+    required Set<String>? onlyFields,
+  }) {
+    if (toWrite.values.any((String v) => v.trim().isNotEmpty)) return null;
+    if (onlyFields == null) {
+      return MineOutcome.failure(
+        'All fields are empty — refusing to clear an existing card. '
+        'Check your note type field mappings.',
+        errorCode: AnkiErrorCode.allFieldsEmpty,
+      );
+    }
+    return MineOutcome.failure(
+      'The fields chosen for overwriting are all empty for this card — '
+      'nothing was changed.',
+      errorCode: AnkiErrorCode.overwriteFieldsEmpty,
+    );
+  }
+
+  /// 反馈 nWWjBp3Clo：覆写 [noteId] 时按哪种笔记类型取「只覆写这些字段」的选择
+  /// （[AnkiSettings.overwriteFieldsFor] 的键）。
+  ///
+  /// 默认 = 当前选中的笔记类型：Anki 后端只覆写这个类型的卡（AnkiConnect 对别的
+  /// 类型直接拒绝，AnkiDroid 按它的字段渲染）。卡按**自己的**笔记类型渲染的后端
+  /// （Fushi 复习）覆写本方法。取不到返回 null。
+  Future<String?> overwriteNoteTypeName(int noteId) async {
+    final AnkiSettings settings = await loadSettings();
+    return settings.selectedNoteType?.name ?? settings.selectedNoteTypeName;
+  }
 }

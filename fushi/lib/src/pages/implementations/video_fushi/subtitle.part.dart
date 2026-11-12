@@ -223,43 +223,27 @@ extension _VideoSubtitle on _VideoFushiPageState {
                     : _pickAndImportSubtitle(controller),
               ),
       ),
-      // 生成字幕：原「语音识别生成字幕」与「生成日语字幕」合并成这一个入口（反馈
-      // 6Tj3ECtB0Q），两条路由面板里的「保存字幕文件」选项分流，见
-      // [_openSubtitleGeneration]。与上面两行同属「拿到一份字幕」，所以并在同一组。
-      if (_canTranscribeVideoSpeech || _canRunSubtitlePipeline)
+      // 反馈 0PZAhFd1RO：本系列的字幕文件夹（整季字幕放在单独文件夹时，之后各集按集号
+      // 自动挂）。远端流没有本机文件夹可匹配，不显示；iOS 选出的文件夹 `dart:io` 读不了
+      // （BUG-2786），露出来只会每次报「读不到」，也不显示。
+      if (!_isRemote &&
+          _currentVideoPath != null &&
+          canRelistPickedDirectoryInPlace)
+        _subtitleFolderTile(controller),
+      // 字幕工作台（反馈 E1pq561P2q）：原「生成字幕」入口改成工作台——生成字幕（管线 /
+      // 本机转录分流不变，见 [_openSubtitleGeneration]）、拆出双语字幕中的日语、按每句
+      // 语音逐句对轴（模型重定时）、按内嵌字幕对齐都收进去，并带画面截图与其它语言
+      // 字幕的逐句对照。与上面两行同属「拿到 / 修好一份字幕」，所以并在同一组。
+      if (_subtitleStudioAvailable(controller))
         FushiListTileControl(
-          key: const ValueKey<String>('video-subtitle-generate'),
+          key: const ValueKey<String>('video-subtitle-studio'),
           leading: const FushiIcon(Icons.transcribe_outlined),
-          title: Text(t.video_subtitle_ai_generate_title),
-          subtitle: Text(t.video_subtitle_generate_entry_hint),
+          title: Text(t.video_subtitle_studio_title),
+          subtitle: Text(t.video_subtitle_studio_entry_hint),
           enabled: !_subtitleLoadingShown,
           onTap: _subtitleLoadingShown
               ? null
-              : () => unawaited(_openSubtitleGeneration(controller)),
-        ),
-      // 模型重定时：它要把整条音轨喂给设备端转录（判据同上面的本机转录）。
-      // 空 cue 时也显示（点了会说「先选一条字幕轨」），不显示反而更像功能坏了。
-      if (_canTranscribeVideoSpeech)
-        FushiListTileControl(
-          leading: const FushiIcon(Icons.model_training_outlined),
-          title: Text(t.video_subtitle_retime_action),
-          enabled: !_subtitleLoadingShown,
-          onTap: _subtitleLoadingShown
-              ? null
-              : () => unawaited(_retimeSubtitleWithSpeechModel(controller)),
-        ),
-      // 按视频自带文本字幕轨对轴：只看开口时刻，不需要转录。参考轨要从本机容器文件里
-      // 抽，判据就是「有没有本机视频文件」：远端 / 流视频的 _currentVideoPath 恒为 null
-      // （见 _applyLoad 的 TODO-1000），不另按 _isRemote 身份判。当前不是外挂
-      // 字幕时点了会说明原因，不隐藏入口。
-      if (_currentVideoPath != null)
-        FushiListTileControl(
-          leading: const FushiIcon(Icons.sync_alt_outlined),
-          title: Text(t.video_subtitle_reference_sync_action),
-          enabled: !_subtitleLoadingShown,
-          onTap: _subtitleLoadingShown
-              ? null
-              : () => unawaited(_alignSubtitleToEmbeddedTracks(controller)),
+              : () => unawaited(_openSubtitleStudio(controller)),
         ),
       const FushiDividerControl(height: 1),
       FushiListTileControl(
@@ -1668,14 +1652,216 @@ extension _VideoSubtitle on _VideoFushiPageState {
 
   /// 弹系统文件选择器挑一个字幕文件（srt/ass/ssa/vtt）→ 经 [_importExternalSubtitle]
   /// 落盘并应用。FilePicker 会夺走视频键盘焦点，关闭后 [_focusOwnership] 归还。
+  ///
+  /// 反馈 0PZAhFd1RO：选到的是用户原始位置的文件（出处见 [PickedFilePath.isRealPath]）
+  /// 时，顺带判断它所在文件夹是不是整季字幕文件夹，是就为本系列记住（见
+  /// [_rememberSubtitleFolderFromPick]）。安卓 / iOS 系统选择器交回的是缓存副本，
+  /// 不记——那边用字幕面板里的「字幕文件夹」入口直接指定文件夹。
   Future<void> _pickAndImportSubtitle(VideoPlayerController controller) async {
-    final String? path = await pickSystemFilePath(
+    final PickedFilePath? picked = await pickSystemFilePathDetailed(
       context: context,
       allowedExtensions: const <String>{'srt', 'vtt', 'ass', 'ssa'},
     );
     _focusOwnership.reclaim(FocusReclaimCause.overlayClosed);
-    if (path == null) return;
-    await _importExternalSubtitle(controller, path);
+    if (picked == null) return;
+    final String? videoPath = _currentVideoPath;
+    await _importExternalSubtitle(controller, picked.path);
+    if (!picked.isRealPath || videoPath == null || !mounted) return;
+    await _rememberSubtitleFolderFromPick(videoPath, picked.path);
+  }
+
+  /// 本集所属系列的字幕文件夹记忆键（合集优先，否则视频所在目录）。
+  String _subtitleFolderSeriesKey(String videoPath) =>
+      videoSubtitleFolderSeriesKey(
+        collectionId: widget.playlistCollectionId,
+        videoPath: videoPath,
+      );
+
+  /// 列出 [folder] 里的文件，按集号给 [videoPath] 挑字幕。文件夹读不到（被删 / 外接盘
+  /// 没插 / 无权限）返回 null 并记诊断——本集照常走别的字幕来源，记忆不删（盘插回来
+  /// 就又能用）。
+  Future<SubtitleDirectoryMatch?> _matchSubtitleFolder(
+    VideoSubtitleFolder folder,
+    String videoPath,
+  ) async {
+    final List<String>? names = await _listSubtitleFolderNames(
+      folder.directory,
+    );
+    if (names == null) return null;
+    return matchEpisodeSubtitleInDirectory(
+      videoPath: videoPath,
+      fileNames: names,
+      langCode: _targetLangCode,
+      templateFileName: folder.templateFileName,
+    );
+  }
+
+  /// [directory] 下的文件名（不递归）；读不到返回 null 并记诊断。async 列目录：字幕
+  /// 文件夹常在网络盘 / 外接盘上，同步 stat 会冻结 UI isolate（BUG-3756 同理）。
+  Future<List<String>?> _listSubtitleFolderNames(String directory) async {
+    final List<String> names = <String>[];
+    try {
+      await for (final FileSystemEntity e in Directory(
+        directory,
+      ).list(followLinks: false)) {
+        if (e is File) names.add(p.basename(e.path));
+      }
+    } on FileSystemException catch (error) {
+      ErrorLogService.instance.logDiagnostic(
+        'VideoFushiPage._listSubtitleFolderNames',
+        error,
+      );
+      return null;
+    }
+    return names;
+  }
+
+  /// 用户从原始位置手选了字幕 [pickedPath] 后：它所在文件夹里有不止一集的字幕、且按
+  /// 集号给本集挑出来的正是这一份，就为本系列记住这个文件夹（以这份为命名模板）。
+  /// 两条都要成立——只有一集字幕的文件夹（下载目录里随手一份）、或集号对不上的文件夹
+  /// 都不记，免得之后各集被误配。
+  Future<void> _rememberSubtitleFolderFromPick(
+    String videoPath,
+    String pickedPath,
+  ) async {
+    final String directory = p.dirname(pickedPath);
+    final String fileName = p.basename(pickedPath);
+    final List<String>? names = await _listSubtitleFolderNames(directory);
+    if (names == null || subtitleDirectoryEpisodeCount(names) < 2) return;
+    final VideoSubtitleFolder folder = VideoSubtitleFolder(
+      directory: directory,
+      templateFileName: fileName,
+    );
+    final SubtitleDirectoryMatch match = matchEpisodeSubtitleInDirectory(
+      videoPath: videoPath,
+      fileNames: names,
+      langCode: _targetLangCode,
+      templateFileName: fileName,
+    );
+    if (match.fileName != fileName) return;
+    final String key = _subtitleFolderSeriesKey(videoPath);
+    final VideoSubtitleFolder? previous = appModel.prefsRepo
+        .videoSubtitleFolder(key);
+    await appModel.prefsRepo.setVideoSubtitleFolder(key, folder);
+    if (!mounted) return;
+    _rebuild(() {});
+    if (previous?.directory != directory) {
+      _showOsd(t.video_subtitle_folder_remembered);
+    }
+  }
+
+  /// 字幕面板「字幕文件夹」入口：选一个文件夹 → 为本系列记住 → 当场按集号给本集挑
+  /// 字幕并应用。安卓走 SAF 解析出真实路径（需全文件访问，见 [pickRealDirectoryPath]）。
+  Future<void> _pickSubtitleFolder(VideoPlayerController controller) async {
+    final String? videoPath = _currentVideoPath;
+    if (videoPath == null) return;
+    final String key = _subtitleFolderSeriesKey(videoPath);
+    final VideoSubtitleFolder? previous = appModel.prefsRepo
+        .videoSubtitleFolder(key);
+    final String? directory = await pickRealDirectoryPath(
+      context: context,
+      appModel: appModel,
+      dialogTitle: t.video_subtitle_folder_title,
+      initialDirectory: previous?.directory,
+    );
+    _focusOwnership.reclaim(FocusReclaimCause.overlayClosed);
+    if (directory == null || !mounted || _currentVideoPath != videoPath) return;
+    // 换了文件夹，旧模板（上一个文件夹里的命名）不再适用。
+    final VideoSubtitleFolder folder =
+        previous != null && p.equals(previous.directory, directory)
+        ? previous
+        : VideoSubtitleFolder(directory: directory);
+    await appModel.prefsRepo.setVideoSubtitleFolder(key, folder);
+    if (!mounted) return;
+    _rebuild(() {});
+    await _applySubtitleFolderMatch(controller, folder, videoPath);
+  }
+
+  /// 按集号在 [folder] 里给本集挑字幕并应用；挑不出时如实说明原因（字幕仍可手选）。
+  Future<void> _applySubtitleFolderMatch(
+    VideoPlayerController controller,
+    VideoSubtitleFolder folder,
+    String videoPath,
+  ) async {
+    final SubtitleDirectoryMatch? match = await _matchSubtitleFolder(
+      folder,
+      videoPath,
+    );
+    if (!mounted || _currentVideoPath != videoPath) return;
+    final String? name = match?.fileName;
+    if (name == null) {
+      _showOsd(switch (match?.status) {
+        null => t.video_subtitle_folder_unreadable,
+        SubtitleDirectoryMatchStatus.noEpisodeNumber =>
+          t.video_subtitle_folder_no_episode,
+        SubtitleDirectoryMatchStatus.ambiguous =>
+          t.video_subtitle_folder_ambiguous,
+        SubtitleDirectoryMatchStatus.notFound ||
+        SubtitleDirectoryMatchStatus.matched =>
+          t.video_subtitle_folder_not_found,
+      }, severity: ToastSeverity.warning);
+      return;
+    }
+    final String path = p.join(folder.directory, name);
+    final SubtitleSource source = SubtitleSource.external(
+      externalPath: path,
+      label: name,
+    );
+    await _selectSubtitleSource(controller, source);
+    if (!mounted) return;
+    _registerImportedSubtitleSource(path);
+  }
+
+  /// 忘掉本系列的字幕文件夹（已挂上的字幕不动）。
+  Future<void> _clearSubtitleFolder() async {
+    final String? videoPath = _currentVideoPath;
+    if (videoPath == null) return;
+    await appModel.prefsRepo.setVideoSubtitleFolder(
+      _subtitleFolderSeriesKey(videoPath),
+      null,
+    );
+    if (!mounted) return;
+    _rebuild(() {});
+    _showOsd(t.video_subtitle_folder_cleared);
+  }
+
+  /// 字幕面板里的「字幕文件夹」行：没记时提示用途，记了显示路径并给「清除」按钮；点行
+  /// 选择 / 更改文件夹。只对本机视频（远端流没有本机文件夹可匹配）。
+  Widget _subtitleFolderTile(VideoPlayerController controller) {
+    final String? videoPath = _currentVideoPath;
+    final VideoSubtitleFolder? folder = videoPath == null
+        ? null
+        : appModel.prefsRepo.videoSubtitleFolder(
+            _subtitleFolderSeriesKey(videoPath),
+          );
+    return FushiListTileControl(
+      key: const ValueKey<String>('video-subtitle-folder'),
+      leading: const FushiIcon(Icons.folder_open_outlined),
+      title: Text(
+        folder == null
+            ? t.video_subtitle_folder_title
+            : t.video_subtitle_folder_change,
+      ),
+      subtitle: Text(
+        folder?.directory ?? t.video_subtitle_folder_hint,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+      ),
+      trailing: folder == null
+          ? null
+          : FushiIconButtonControl(
+              key: const ValueKey<String>('video-subtitle-folder-clear'),
+              tooltip: t.video_subtitle_folder_clear,
+              icon: const FushiIcon(Icons.close),
+              onPressed: _subtitleLoadingShown
+                  ? null
+                  : () => unawaited(_clearSubtitleFolder()),
+            ),
+      enabled: !_subtitleLoadingShown,
+      onTap: _subtitleLoadingShown
+          ? null
+          : () => unawaited(_pickSubtitleFolder(controller)),
+    );
   }
 
   /// 远端模式：弹文件选择器挑字幕 → 直接在内存里应用到当前流（不拷盘、不持久化）。
@@ -1993,11 +2179,16 @@ extension _VideoSubtitle on _VideoFushiPageState {
   /// 返回 false = 流不是原始容器（转码 HLS 不带轨）/ 轨本来就是外挂文件、不在流里
   /// （[RemoteVideoEmbeddedSubtitleTrack.isExternalFile]）/ 轨未就绪 / 序号越界，调用方
   /// 按下载失败提示。
+  ///
+  /// [remember] = false：起播按「app 偏好 > 服务器默认标记」自动挑中的轨（反馈
+  /// wCQIR4Pvz9）只是本次默认、不写持久化选择——否则服务器抽不出、走 libmpv 回落
+  /// 的那一次会把自动挑选固化成「用户选择」，之后改偏好也不再生效。
   Future<bool> _showRemoteEmbeddedTrackViaPlayer(
     VideoPlayerController controller,
     RemoteVideoEmbeddedSubtitleTrack track, {
     required String source,
     required String label,
+    bool remember = true,
   }) async {
     final int seq = _episodeLoadSeq;
     final bool shown;
@@ -2016,10 +2207,12 @@ extension _VideoSubtitle on _VideoFushiPageState {
     }
     if (!shown || !mounted || seq != _episodeLoadSeq) return shown;
     _rebuild(() => _currentSubtitleSource = source);
-    final (String subUid, int subEp) = _remotePositionKeyForIndex(
-      _currentEpisode,
-    );
-    _rememberRemoteSubtitleSource(subUid, subEp, source);
+    if (remember) {
+      final (String subUid, int subEp) = _remotePositionKeyForIndex(
+        _currentEpisode,
+      );
+      _rememberRemoteSubtitleSource(subUid, subEp, source);
+    }
     _showOsd(t.video_subtitle_remote_player_decoded(label: label));
     return true;
   }
@@ -2940,6 +3133,148 @@ extension _VideoSubtitle on _VideoFushiPageState {
           _discBookUid == null &&
           isAsrSupported) ||
       (_isRemote && _remoteHostVideoTarget() != null);
+
+  /// 字幕工作台里至少有一项能用：能生成（有音轨 / 能跑管线）、能对内嵌轨（本机文件）、
+  /// 或已经有一条文本字幕可拆分 / 对照。
+  bool _subtitleStudioAvailable(VideoPlayerController controller) =>
+      _canTranscribeVideoSpeech ||
+      _canRunSubtitlePipeline ||
+      _currentVideoPath != null ||
+      controller.cues.isNotEmpty;
+
+  /// 打开字幕工作台（[showVideoSubtitleStudioSheet]）。参考区读的都是播放器的现值
+  /// （主 / 副字幕 cue、各自扣过调轴的等效位置、裸画面截图），面板开着时随播放实时
+  /// 刷新；工具全部复用本页既有路径，面板只负责分派。
+  Future<void> _openSubtitleStudio(VideoPlayerController controller) async {
+    final List<AudioCue> cues = controller.cues;
+    final SubtitleContentLanguage language = detectSubtitleContentLanguage(
+      <String>[
+        for (final AudioCue c in cues)
+          if (!c.isRenderOnly) c.text,
+      ].join('\n'),
+    );
+    final bool canGenerate =
+        _canTranscribeVideoSpeech || _canRunSubtitlePipeline;
+    await showVideoSubtitleStudioSheet(
+      context: context,
+      reference: VideoSubtitleStudioReference(
+        listenable: controller.positionMsListenable,
+        primaryCues: () => controller.cues,
+        secondaryCues: () => controller.secondaryCues,
+        primaryPositionMs: () => effectiveSubtitlePositionMs(
+          controller.positionMs ?? 0,
+          controller.delayMs,
+        ),
+        secondaryPositionMs: () => effectiveSubtitlePositionMs(
+          controller.positionMs ?? 0,
+          controller.effectiveSecondaryDelayMs,
+        ),
+        primaryLanguage: language,
+        captureFrame: controller.screenshot,
+        jumpToCue: (AudioCue cue) => unawaited(controller.skipToCue(cue)),
+      ),
+      actions: VideoSubtitleStudioActions(
+        generate: canGenerate
+            ? () => _openSubtitleGeneration(controller)
+            : null,
+        splitBilingual: cues.isEmpty
+            ? null
+            : () => _extractJapaneseFromBilingualSubtitle(controller),
+        retime: _canTranscribeVideoSpeech
+            ? () => _retimeSubtitleWithSpeechModel(controller)
+            : null,
+        alignEmbedded: _currentVideoPath != null
+            ? () => _alignSubtitleToEmbeddedTracks(controller)
+            : null,
+      ),
+    );
+  }
+
+  /// 拆出双语字幕中的日语（反馈 E1pq561P2q）：当前主字幕的 cue 交给
+  /// [extractJapaneseFromBilingual]（只删行、不改字、不动时间轴），结果另存一份新的
+  /// SRT 并走既有外挂字幕链路选中——原字幕一个字节都不动，字幕轨列表里随时切回去。
+  /// 远端视频走远端导入同一条链路（内存应用 + 按集记住选择），再上传给 host。
+  Future<void> _extractJapaneseFromBilingualSubtitle(
+    VideoPlayerController controller,
+  ) async {
+    final List<SubtitleTextCue> input = <SubtitleTextCue>[
+      for (final AudioCue c in controller.cues)
+        if (!c.isRenderOnly && c.text.trim().isNotEmpty)
+          SubtitleTextCue(startMs: c.startMs, endMs: c.endMs, text: c.text),
+    ];
+    if (input.isEmpty) {
+      _showOsd(
+        t.video_subtitle_retime_no_track,
+        severity: ToastSeverity.warning,
+      );
+      return;
+    }
+    final BilingualSplitResult split = extractJapaneseFromBilingual(input);
+    if (split.cues.isEmpty) {
+      _showOsd(
+        t.video_subtitle_studio_split_failed,
+        severity: ToastSeverity.warning,
+      );
+      return;
+    }
+    final int loadSeq = _episodeLoadSeq;
+    final String? videoPath = _currentVideoPath;
+    bool isCurrent() =>
+        mounted &&
+        identical(_controller, controller) &&
+        _episodeLoadSeq == loadSeq &&
+        _currentVideoPath == videoPath;
+    // 远端片名直接拼进档名：「Re:Zero」这类带 `:` / `/` 的标题在 Windows 上写不出
+    // 文件（或被当成子目录），先按全仓唯一的文件名安全化规则清洗。
+    final String rawBaseName = _isRemote
+        ? (_title ?? _effectiveRemoteInfo?.title ?? '')
+        : p.basenameWithoutExtension(videoPath ?? '');
+    final String safeBaseName = safeWindowsFileName(rawBaseName).trim();
+    final String baseName = safeBaseName.isEmpty ? 'subtitle' : safeBaseName;
+    final String videoKey = sha256
+        .convert(utf8.encode('$_activeBookUid|$videoPath|$_currentEpisode'))
+        .toString()
+        .substring(0, 8);
+    try {
+      final Directory directory = await AppPaths.videoSubtitlesDirectory();
+      await directory.create(recursive: true);
+      final String target = p.join(
+        directory.path,
+        '$baseName.ja-split-$videoKey.srt',
+      );
+      await File(
+        target,
+      ).writeAsString(subtitleTextCuesToSrt(split.cues), flush: true);
+      if (!isCurrent()) return;
+      if (_isRemote) {
+        _registerImportedSubtitleSource(target);
+        if (await _applyRemoteSubtitle(controller, target)) {
+          if (!isCurrent()) return;
+          unawaited(_uploadRemoteSubtitleToHost(target));
+        }
+      } else {
+        await _importExternalSubtitle(controller, target);
+      }
+    } catch (error, stack) {
+      ErrorLogService.instance.log(
+        'video.subtitleBilingualSplit',
+        error,
+        stack,
+      );
+      if (isCurrent()) {
+        _showOsd(t.video_subtitle_import_failed, severity: ToastSeverity.error);
+      }
+      return;
+    }
+    if (!isCurrent()) return;
+    _showOsd(
+      t.video_subtitle_studio_split_done(
+        kept: split.cues.length,
+        dropped: split.droppedCues,
+      ),
+      severity: ToastSeverity.success,
+    );
+  }
 
   /// 「生成字幕」入口（反馈 6Tj3ECtB0Q：原来两个入口功能重叠）。管线能跑时打开管线
   /// 面板，面板里多一项「保存字幕文件」：开 = 管线（原「生成日语字幕」），关 = 本机

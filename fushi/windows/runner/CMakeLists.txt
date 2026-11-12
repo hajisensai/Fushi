@@ -23,6 +23,7 @@ add_custom_command(
 add_executable(${BINARY_NAME} WIN32
   "attached_text_surface_window.cpp"
   "audio_loopback_capture.cpp"
+  "audio_session_ducker.cpp"
   "clipboard_image_reader.cpp"
   "layer_origin_solver.cpp"
   "voice_hook_reader.cpp"
@@ -32,6 +33,7 @@ add_executable(${BINARY_NAME} WIN32
   "floating_ball_window.cpp"
   "floating_lyric_window.cpp"
   "foreground_selection.cpp"
+  "game_stream_host_mute.cpp"
   "game_stream_input.cpp"
   "global_lookup_shadow.cpp"
   "global_lookup_window.cpp"
@@ -45,6 +47,7 @@ add_executable(${BINARY_NAME} WIN32
   "low_level_mouse_hook.cpp"
   "main.cpp"
   "screen_ocr_overlay.cpp"
+  "startup_trace.cpp"
   "system_font_list.cpp"
   "system_ocr_channel_host.cpp"
   "system_ocr_windows.cpp"

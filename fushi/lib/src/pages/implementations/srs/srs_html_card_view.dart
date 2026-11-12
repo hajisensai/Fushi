@@ -12,13 +12,11 @@
 library;
 
 import 'dart:async';
-import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart'
     show ValueListenable, defaultTargetPlatform;
 import 'package:flutter/gestures.dart' show TapGestureRecognizer;
-import 'package:flutter/rendering.dart' show SelectedContent;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_anki/fushi_anki.dart' show CardSourceLink;
 import 'package:fushi_dictionary/fushi_dictionary.dart' show FushiRubySpan;
@@ -29,7 +27,7 @@ import 'package:fushi/src/models/content_font_chain.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_fushi_card_view.dart'
-    show SrsNoBaseline, showSrsCardImageViewer, srsCardImageWidget;
+    show showSrsCardImageViewer, srsCardImageWidget, srsRubyWidgetSpan;
 import 'package:fushi/src/srs/srs_card_appearance.dart'
     show SrsCardAppearance, kSrsCardDefaultFontZh;
 import 'package:fushi/src/srs/srs_card_design_skin.dart'
@@ -38,12 +36,9 @@ import 'package:fushi/src/srs/srs_card_tokens.dart';
 import 'package:fushi/src/srs/srs_fushi_card_items.dart'
     show kSrsHtmlFragmentHostCss;
 import 'package:fushi/src/srs/srs_html_card.dart';
-import 'package:fushi/src/srs/srs_native_template.dart'
-    show srsForcedNativeHtmlCard, srsTemplateIsNative;
 import 'package:fushi_engine/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_providers.dart'
     show srsCardAppearanceProvider, srsMediaStoreProvider, srsRunLogged;
-import 'package:fushi/src/srs/srs_review_edit.dart' show SrsCardSelection;
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
@@ -53,50 +48,6 @@ import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/dictionary_external_link.dart';
-import 'package:fushi/src/utils/misc/error_log_service.dart';
-import 'package:fushi/src/utils/misc/fushi_toast.dart';
-
-/// 一张卡能否走原生 HTML 卡面的统一判据（复习页、浏览预览、笔记 / 模板编辑预览共用，
-/// 保证预览与复习时长得一样）。null = 走整面 WebView。
-///
-/// 内置 Fushi 卡片类型（[fushiCard]）一律不走这里：模板未改或只调了区块布局的走原生混合
-/// 卡面（[SrsFushiCardView]，见 `srsFushiCardNative`）；改到原生混合卡面画不了的（改了正面 /
-/// 样式 / 区块内部），模板本身带脚本、媒体查询与定位，原生 HTML 子集也画不了，仍走 WebView
-/// 外壳（它还要注入外观设置：`--fushi-srs-*` 变量、类名、字体）。
-///
-/// 正面模板标了「原生渲染」（[srsTemplateIsNative]）的卡一律原生：画不了的块在卡面上换成
-/// 提示（[srsForcedNativeHtmlCard]），不静默回退整面 WebView。
-SrsHtmlCard? srsNativeHtmlCardFor({
-  required bool fushiCard,
-  required String question,
-  required String answer,
-  required String css,
-  required String? languageCode,
-}) {
-  if (fushiCard) return null;
-  final String? lang = languageCode == null || languageCode.isEmpty
-      ? null
-      : languageCode;
-  final SrsHtmlCard? plain = srsHtmlCardOf(
-    question: question,
-    answer: answer,
-    css: css,
-    languageCode: lang,
-  );
-  // 模板标了「原生渲染」（srs_native_template.dart）：画不了的部分就地提示，不回退 WebView。
-  if (plain != null || !srsTemplateIsNative(question)) return plain;
-  return srsForcedNativeHtmlCard(
-    question: question,
-    answer: answer,
-    css: css,
-    languageCode: lang,
-    notice: srsNativeUnsupportedNotice,
-  ).card;
-}
-
-/// 原生渲染标记的卡面上，画不了的部分换成的提示文字。
-String srsNativeUnsupportedNotice(String reason) =>
-    t.srs_template_native_unsupported(reason: reason);
 
 /// 卡面上的链接：`fushi://` 来源链接跳回原处（[onSourceLink]），http(s) 外链系统浏览器打开，
 /// 其余不处理。
@@ -265,18 +216,7 @@ class _SrsHtmlCardViewState extends ConsumerState<SrsHtmlCardView> {
       host(<String>[name]);
       return;
     }
-    SrsMediaStore? store;
-    try {
-      store = await ref.read(srsMediaStoreProvider.future);
-    } catch (e, stack) {
-      ErrorLogService.instance.log('SrsHtmlCardView.mediaStore', e, stack);
-    }
-    final File? file = store?.resolve(name);
-    if (file == null || !await file.exists()) {
-      FushiToast.show(msg: t.srs_media_missing(name: name));
-      return;
-    }
-    await ref.read(srsSoundPlayerProvider)(file.path);
+    await srsPlayCardSoundFile(ref, name, logTag: 'SrsHtmlCardView.mediaStore');
   }
 
   void _openLink(String href) =>
@@ -369,13 +309,7 @@ class _SrsHtmlCardViewState extends ConsumerState<SrsHtmlCardView> {
 
   Widget _selectable(Widget child) => SelectionArea(
     focusNode: _selectionFocus,
-    onSelectionChanged: widget.face.onEditSelection == null
-        ? null
-        : (SelectedContent? content) {
-            final String text = content?.plainText ?? '';
-            if (text.trim().isEmpty) return;
-            widget.face.onEditSelection!(SrsCardSelection(text));
-          },
+    onSelectionChanged: srsCardSelectionReporter(widget.face),
     child: child,
   );
 }
@@ -1124,44 +1058,13 @@ class _FlowViewState extends State<_FlowView> {
               ),
             );
           }
-          Widget tag(Widget child, {required bool isRuby}) => MetaData(
-            metaData: SrsLookupRubySegment(
-              fullStart: fullStart,
-              isRuby: isRuby,
-            ),
-            child: child,
-          );
           spans.add(
-            WidgetSpan(
-              alignment: PlaceholderAlignment.baseline,
-              baseline: TextBaseline.alphabetic,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  SrsNoBaseline(
-                    child: tag(
-                      Text(
-                        r.reading,
-                        style: ruby.copyWith(height: 1.1),
-                        maxLines: 1,
-                        softWrap: false,
-                        textScaler: TextScaler.noScaling,
-                      ),
-                      isRuby: true,
-                    ),
-                  ),
-                  tag(
-                    Text(
-                      r.base,
-                      style: base,
-                      maxLines: 1,
-                      softWrap: false,
-                      textScaler: TextScaler.noScaling,
-                    ),
-                    isRuby: false,
-                  ),
-                ],
-              ),
+            srsRubyWidgetSpan(
+              reading: r.reading,
+              base: r.base,
+              rubyStyle: ruby,
+              baseStyle: base,
+              lookupFullStart: fullStart,
             ),
           );
           segments.add(

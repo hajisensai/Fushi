@@ -20,6 +20,8 @@ import 'package:fushi_core/fushi_core.dart' show SrsCardCacheRow;
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_edit_history.dart';
+import 'package:fushi_engine/srs/srs_fushi_card_native_media.dart'
+    show SrsCardNativeFallback, SrsCardNativeFallbackCode;
 import 'package:fushi_engine/srs/srs_legacy_lapis_migration.dart';
 import 'package:fushi_engine/srs/srs_note_type_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
@@ -29,6 +31,24 @@ const String kSrsRemoteStoreCapability = 'srsRemoteStoreV1';
 
 /// 端点前缀（`POST <前缀>call`、`GET <前缀>media/<名字>`）。
 const String kSrsRemoteStorePathPrefix = '/api/srs/remote/';
+
+/// 请求体里客户端设备此刻的 UTC 偏移（分钟）的键：主机按它算这次调用的「今天」（[SrsDbStore.withDeviceOffset]）。
+///
+/// 向后兼容（不改能力位）：旧客户端不带 → 主机照旧用自己的偏移；旧主机不认这个键 → 忽略（路由只读已知键），
+/// 同样按主机的偏移算。
+const String kSrsRemoteDeviceOffsetKey = 'tz';
+
+/// 主机接受的设备偏移范围（分钟，含两端）：现实时区 UTC−12:00 … UTC+14:00。
+const int kSrsRemoteDeviceOffsetMinMin = -12 * 60;
+const int kSrsRemoteDeviceOffsetMinMax = 14 * 60;
+
+/// [offsetMin] 在现实时区范围内时原样返回，否则 null（越界不当成任何时区：调用方回落到主机自己的偏移）。
+int? srsRemoteDeviceOffset(int? offsetMin) =>
+    offsetMin != null &&
+        offsetMin >= kSrsRemoteDeviceOffsetMinMin &&
+        offsetMin <= kSrsRemoteDeviceOffsetMinMax
+    ? offsetMin
+    : null;
 
 /// 远程复习库的失败：[code] 是给客户端的机读码，[status] 是 HTTP 状态。
 class SrsRemoteStoreError implements Exception {
@@ -610,6 +630,9 @@ abstract final class SrsRemoteWire {
     'back': <Object?>[
       for (final FushiCardItem x in r.fushiCardBack) x.toJson(),
     ],
+    // 整面 WebView 的原因（反馈 O5YDP27Xko）：客户端据此记诊断、外观页显示原因。
+    if (r.nativeFallback case final SrsCardNativeFallback f)
+      'nfb': <String, Object?>{'code': f.code.name, 'detail': f.detail},
   };
 
   static SrsRenderedCard? renderedFrom(Object? json, [String at = 'result']) {
@@ -630,7 +653,26 @@ abstract final class SrsRemoteWire {
       fushiCardBack: m['back'] == null
           ? kFushiCardDefaultBackItems
           : _layoutFrom(m['back'], '$at.back'),
+      nativeFallback: _nativeFallbackFrom(m['nfb'], '$at.nfb'),
     );
+  }
+
+  /// `nfb`：主机侧没走原生的原因。老主机不发（null，客户端按
+  /// [SrsCardNativeFallbackCode.remoteUnknown]）；更新的主机发了本端不认识的类别时同样按
+  /// remoteUnknown，原类别名并进说明，不丢信息。
+  static SrsCardNativeFallback? _nativeFallbackFrom(Object? json, String at) {
+    if (json == null) return null;
+    final Map<String, Object?> m = _J.map(json, at);
+    final String code = _J.str(m['code'], '$at.code');
+    final String detail = _J.optStr(m['detail'], '$at.detail') ?? '';
+    final SrsCardNativeFallbackCode? known = SrsCardNativeFallbackCode.values
+        .asNameMap()[code];
+    return known != null
+        ? SrsCardNativeFallback(known, detail)
+        : SrsCardNativeFallback(
+            SrsCardNativeFallbackCode.remoteUnknown,
+            detail.isEmpty ? code : '$code: $detail',
+          );
   }
 
   static List<FushiCardItem> _layoutFrom(Object? json, String at) {
@@ -996,6 +1038,10 @@ class SrsRemoteStoreService {
   /// 执行一次调用。[profile] 是客户端以为的 profile（读操作可为 null = 握手，不核对；写操作必须带，
   /// 主机切了配置时拒绝写入，不靠客户端自觉）；[request] 是写操作的幂等 id。
   ///
+  /// [deviceOffsetMin]：客户端设备此刻的 UTC 偏移（分钟，[kSrsRemoteDeviceOffsetKey]）。「今天」的时区取用户手上那台
+  /// 设备：给了且在现实时区范围内（[srsRemoteDeviceOffset]）时这次调用按它算日界（每日上限、到期计数、作答日志
+  /// 记下的偏移）；不给（旧客户端）或越界时按主机自己的偏移算，与旧协议一致。翻日时刻照旧取 profile 同步的那一份。
+  ///
   /// 回包：`{profile, rev, fp, tt, now, ts, sched, rwkv, result}`——`rev` / `fp` 是主机的修订号与统计指纹，
   /// `tt` 是牌组树标签（客户端据此判断缓存的树还新不新），`now` / `ts` 是主机此刻的复习时钟。
   Future<Map<String, Object?>> call({
@@ -1003,14 +1049,16 @@ class SrsRemoteStoreService {
     required String op,
     required Map<String, Object?> args,
     String? request,
+    int? deviceOffsetMin,
   }) {
+    final int? offset = srsRemoteDeviceOffset(deviceOffsetMin);
     final _Op? spec = _ops[op];
     if (spec == null) {
       return Future<Map<String, Object?>>.error(
         const SrsRemoteStoreError(404, SrsRemoteStoreError.unknownOp),
       );
     }
-    if (!spec.write) return _run(op, spec, profile, args);
+    if (!spec.write) return _run(op, spec, profile, args, offset);
     if (request == null ||
         request.isEmpty ||
         profile == null ||
@@ -1023,7 +1071,13 @@ class SrsRemoteStoreService {
     if (done != null) return Future<Map<String, Object?>>.value(done);
     final Future<Map<String, Object?>>? running = _inFlight[request];
     if (running != null) return running;
-    final Future<Map<String, Object?>> future = _run(op, spec, profile, args);
+    final Future<Map<String, Object?>> future = _run(
+      op,
+      spec,
+      profile,
+      args,
+      offset,
+    );
     _inFlight[request] = future;
     return future
         .then((Map<String, Object?> out) {
@@ -1042,6 +1096,7 @@ class SrsRemoteStoreService {
     _Op spec,
     String? profile,
     Map<String, Object?> args,
+    int? deviceOffsetMin,
   ) async {
     final Future<SrsDbStore?> Function(String)? byUid = _readProfile;
     final SrsDbStore? store = profile != null && byUid != null
@@ -1062,7 +1117,12 @@ class SrsRemoteStoreService {
     }
     final Object? result;
     try {
-      result = await spec.run(store, _Args(args));
+      result = deviceOffsetMin == null
+          ? await spec.run(store, _Args(args))
+          : await store.withDeviceOffset(
+              deviceOffsetMin,
+              () => spec.run(store, _Args(args)),
+            );
     } on SrsRemoteStoreError {
       rethrow;
     } on SrsRemoteWireError catch (e) {

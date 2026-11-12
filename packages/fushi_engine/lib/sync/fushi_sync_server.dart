@@ -40,6 +40,8 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart'
 import 'package:fushi_engine/media/video/metadata/video_metadata_wire.dart';
 import 'package:fushi_engine/sync/video_metadata_manifest.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
+import 'package:fushi_engine/sync/pdf_sync_package.dart'
+    show kLiveLibraryPdfBooksCapability;
 import 'package:fushi_engine/media/video/dandanplay_file_key.dart'
     show DandanplayFileKey;
 import 'package:fushi_engine/sync/graphic_subtitle_track_export.dart';
@@ -996,12 +998,17 @@ class FushiSyncServer {
       return _handlePing();
     }
     // 复习同步快速通道（设计 §6.3）：令牌变了立刻回，没变挂到下一次写入或超时。鉴权走上方 middleware。
+    // `own`：这段推进全是提问的这台设备自己写 head 引起的（BUG-4382，见 [SrsChangePoll.ownOnly]）。
     if (reqPath == '/api/srs/changes') {
       if (method != 'GET') return shelf.Response(405);
-      final int token = await srsChanges.waitAfter(
+      final SrsChangePoll poll = await srsChanges.poll(
         int.tryParse(request.url.queryParameters['after'] ?? ''),
+        reader: _pairedIdentity(request.headers['authorization']),
       );
-      return jsonResponse(<String, dynamic>{'token': token});
+      return jsonResponse(<String, dynamic>{
+        'token': poll.token,
+        'own': poll.ownOnly,
+      });
     }
     // 复习同步 v2 的参与状态（BUG-4320）：客户端一轮跑完问 host 自己加入了没有。鉴权走上方 middleware。
     if (reqPath == kSrsSyncStatusPath) {
@@ -1237,8 +1244,18 @@ class FushiSyncServer {
     }
   }
 
+  /// 已配对设备的身份（它的专属口令，BUG-4382 长轮询分辨「是不是自己写的」）：没带鉴权、或用的是共享口令（多台设备
+  /// 共用，分不出是谁）时为 null。只在内存里比对，不落盘、不进日志。
+  String? _pairedIdentity(String? authHeader) {
+    if (authHeader == null) return null;
+    final String? password = _basicPassword(authHeader);
+    return password == null || password.isEmpty || password == _token
+        ? null
+        : password;
+  }
+
   /// 写成功（2xx）才回调 [onClientWrite]；回调异常不影响响应。[published] = 这次写带来了新内容（PUT）：
-  /// 只有它推进复习同步的长轮询令牌。删旧 head（客户端每发一个新 head 就清两代前的）没有任何新数据，
+  /// 只有它推进复习同步的长轮询令牌。删旧 head（客户端每发一个新 head 就按内核给的清单清掉更早的）没有任何新数据，
   /// 以前也推进令牌，等于每轮多唤醒一次全部设备。
   shelf.Response _reportClientWrite(
     String reqPath,
@@ -1253,7 +1270,7 @@ class FushiSyncServer {
         // 写，head 落地才说明这一轮的段齐了，只在这时唤醒长轮询。
         reqPath.contains('/fushi-srs/') &&
         p.posix.basename(reqPath).startsWith('head-')) {
-      srsChanges.bump();
+      srsChanges.bump(writer: _pairedIdentity(authHeader));
     }
     final void Function(String relativePath)? cb = onClientWrite;
     if (cb != null && response.statusCode >= 200 && response.statusCode < 300) {
