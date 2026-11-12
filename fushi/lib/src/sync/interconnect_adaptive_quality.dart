@@ -5,6 +5,8 @@
 /// 所以判据全部收在这里，能被单测按拍钉死。
 library;
 
+import 'dart:math' show max, min;
+
 import 'package:fushi/src/sync/interconnect_video_quality.dart';
 import 'package:fushi/src/sync/remote_video_client.dart';
 
@@ -77,17 +79,125 @@ const double kAdaptiveHeadroomCacheSeconds = 25;
 /// 宽限是**有上限**的：seek 之后一直缓冲超过 10 秒，那就是真的跟不上了，照常计入。
 /// 一出现不缓冲的一拍（seek 已落地起播）宽限立即结束。
 ///
+/// 频繁 seek（句子循环、反复拖动）时宽限不能每次无条件续命，否则差网上缓冲永远不入
+/// 卡顿窗口、永不降档。但 seek 本身有与网况无关的固定代价（局域网平板 3～4 拍），
+/// 也不能给宽限设总额（那会让局域网连续拖动降档，BUG-2731 回归）。所以判据是「窗口
+/// 内平均每次 seek 的代价」是否超出健康链路的正常代价
+/// [kAdaptiveSeekCostBaselineTicks]：窗口内有 ≥2 次 seek 时，被豁免的缓冲拍数超过
+/// 「seek 次数 × 正常代价」的部分按卡顿计。
+///
+/// 只看拍数分不开「平均 3～5 拍」的两种 seek：局域网上那几拍是**延迟**（断旧连接、
+/// 新 Range 请求、找关键帧），差网上是**吞吐**跟不上。两者的分界在 seek 落地起播之后
+/// 的缓冲深度走向（[AdaptiveQualityController.tick] 的 `cacheSeconds`，mpv
+/// `demuxer-cache-duration`）：缓冲刚见底、播放器正在全速拉流，相邻两拍播放之间
+/// 深度的变化 = 这一秒到的媒体时长 − 这一秒播掉的媒体时长。链路跟得上（吞吐 ≥ 码率
+/// × 倍速）深度只增不减；跟不上就一路往下掉。所以窗口内 ≥2 次 seek、且「seek 后
+/// 缓冲过」的那些 seek 起播后的播放拍里缓冲深度净值在**减少**时，这些缓冲就不是 seek
+/// 的固定代价，豁免拍全部按卡顿计（BUG-4459 残留 T4）。
+///
+/// 深度读数只在「没被截断」时才是吞吐的证据，三种截断都要排除：
+/// - **预读上限**（`cache-secs` 桌面 30 秒 / 移动 20 秒，或字节上限）：缓冲满了播放器
+///   按需停下载，深度在上限附近抖动，正负是随机的。千兆内网上低码率片子起播后一秒内
+///   就填满，所以不能假设「见底之后碰不到上限」——相邻两拍里**至少一拍低于**
+///   [kAdaptiveRefillLowCacheSeconds] 才计入（见底附近的走向才算数；从低位涨上去的
+///   那一拍照常计为正）。
+/// - **片尾**：缓冲已经铺到文件末尾，没有可下载的了，深度随播放一秒少一秒
+///   （[AdaptiveQualityController.tick] 的 `cacheReachesEnd`）。
+/// - **缓存内 seek**（落在后向缓冲里、没缓冲过）：前向深度可能超出预读上限后回落，
+///   所以只取 seek 后真缓冲过的那段。
+/// 起播后不足两拍播放（拿不到深度走向）时退回上面的平均代价判据。
+///
 /// 已知盲区（审查记录，未修，改判据前先读）：
 /// - **1 Hz 采样的空档**：宽限靠「采到一拍不缓冲」结束。seek 落地后若是「短暂起播
 ///   零点几秒又卡住」，这段起播可能正好落在两次采样之间，采样看到的仍是连续缓冲，
 ///   宽限一直延续到 10 拍上限——真卡顿被多吞最多 10 秒才开始计入；反过来若起播恰好
 ///   被采到，宽限立即结束、紧随其后的卡顿照常计入，行为取决于采样相位。
-/// - **循环重播 / 频繁 seek 让差网永不降档**：每次 seek 都把宽限重新拉满。用户在
-///   差网上反复 seek（例如句子循环每几秒 seek 回句首），宽限不断续命，缓冲几乎永远
-///   不入卡顿窗口，[kAdaptiveStallTicksToDrop] 永远凑不齐，该降档时不降。要修得让
-///   宽限只抵扣「seek 本身的那一段」（例如按连续 seek 的累计宽限设上限），而不是每次
-///   seek 无条件重置。
+/// - **HLS 分段粒度**：转码档的缓冲深度按分段（6 秒级）跳增，两个分段之间只看到下降。
+///   深度掉到见底线以下才计入，所以只有「下一个分段快赶不上了」的那段下降会被当成
+///   跟不上——这时 seek 的缓冲本身就在等分段下载（吞吐受限），降一档能缩短它；局域网
+///   的起点是原画直传（数据连续到达，不受此影响）。
+/// - **每次起播只播一拍就又 seek**：拿不到深度走向，只能退回平均代价判据，平均 3～5
+///   拍的这种循环仍不降档。
 const int kAdaptiveSeekGraceTicks = 10;
+
+/// 缓冲是否已经铺到片尾：位置 + 缓冲深度离总时长不到 [kAdaptiveCacheEndSlackMs]。
+/// 之后没有可下载的了，深度随播放一秒少一秒，不反映吞吐。时长 / 位置 / 深度任一拿
+/// 不到时返回 false（不能断言到了片尾）。
+bool adaptiveCacheReachesEnd({
+  required int? positionMs,
+  required int? durationMs,
+  required double? cacheSeconds,
+}) {
+  if (positionMs == null || durationMs == null || cacheSeconds == null) {
+    return false;
+  }
+  if (durationMs <= 0) return false;
+  return positionMs + (cacheSeconds * 1000).round() >=
+      durationMs - kAdaptiveCacheEndSlackMs;
+}
+
+/// [adaptiveCacheReachesEnd] 的容差：位置与缓冲深度各是 ≤1 秒旧的采样，且末尾一小段
+/// 音视频轨长度可以不齐。
+const int kAdaptiveCacheEndSlackMs = 2000;
+
+/// 「缓冲见底附近」的深度上界（秒）：相邻两拍播放里至少一拍低于它，这对读数才计入
+/// 深度走向（见 [kAdaptiveSeekGraceTicks] 的「截断」说明）。mpv 缓冲到约 1 秒就起播
+/// （`cache-pause-wait` 默认值），跟不上的链路起播后一直待在这条线以下；预读上限最低
+/// 的组合（移动端 32MiB 前向缓冲）要码率超过 85 Mbps 上限才会落到 3 秒以内。
+const double kAdaptiveRefillLowCacheSeconds = 3;
+
+/// 一次 seek 在健康链路上的正常代价（拍）。BUG-2731 实测局域网平板 3～4 拍，取 5。
+/// 窗口内有 ≥2 次 seek、且豁免的缓冲拍数超过「seek 次数 × 本值」时，超出部分按卡顿计
+/// （见 [kAdaptiveSeekGraceTicks]）。
+const int kAdaptiveSeekCostBaselineTicks = 5;
+
+/// 观察窗里一拍的分类。
+enum _TickKind {
+  /// 没在缓冲。
+  clear,
+
+  /// 缓冲且不在 seek 宽限内：按卡顿计。
+  stalled,
+
+  /// 缓冲但在 seek 宽限内：先按 seek 代价豁免。
+  graced,
+}
+
+/// 观察窗里的一拍。
+class _WindowTick {
+  const _WindowTick(this.kind, this.graceSeekSerial);
+
+  final _TickKind kind;
+
+  /// [_TickKind.graced] 拍归属的那次 seek（登记时的拍序号），其他拍为 null。
+  final int? graceSeekSerial;
+}
+
+/// 自适应换档事务：写入目标档 → 重载 → 没立起来就回滚（BUG-4460）。
+///
+/// 取流协商要读 [write] 写进去的目标档，所以必须先写；[reload] 没把新流立起来
+/// （返回 false 或抛错）时把共享档回滚到原值——否则共享状态停在一个没起来的档上，
+/// 页面「重试」与进程级单例 backend 的下一次同 scope 起播都会沿用它。只在共享档
+/// 此刻仍是我们写的那个目标时回滚：换档途中用户手动选档、换源 / 换链路让 backend
+/// 重新定了起点，都不能被一个过期的原值覆盖。
+///
+/// 返回新流是否立起来；[reload] 抛的错回滚后原样重新抛出。
+Future<bool> runAdaptiveQualitySwitch({
+  required int? Function() read,
+  required void Function(int? index) write,
+  required int targetIndex,
+  required Future<bool> Function() reload,
+}) async {
+  final int? previous = read();
+  write(targetIndex);
+  bool ok = false;
+  try {
+    ok = await reload();
+    return ok;
+  } finally {
+    if (!ok && read() == targetIndex) write(previous);
+  }
+}
 
 /// 「自动」档的自适应控制器。
 ///
@@ -99,8 +209,18 @@ class AdaptiveQualityController {
 
   final List<MediaServerQualityPreset> _presets;
 
-  /// 最近若干拍是否在缓冲（环形窗口，新的在末尾）。
-  final List<bool> _stalls = <bool>[];
+  /// 最近若干拍的分类（环形窗口，新的在末尾）。
+  final List<_WindowTick> _window = <_WindowTick>[];
+
+  /// 已喂的拍数（单调递增，给 seek 登记定位用）。
+  int _tickSerial = 0;
+
+  /// 落在观察窗内的 seek（登记时的 [_tickSerial]，即它之后第一拍是第
+  /// `serial + 1` 拍）。
+  final List<int> _seekSerials = <int>[];
+
+  /// 当前宽限归属的 seek（[_seekSerials] 里的值）。
+  int? _graceSeekSerial;
 
   /// 连续没卡过的拍数。
   int _quietTicks = 0;
@@ -114,48 +234,95 @@ class AdaptiveQualityController {
   /// seek 宽限剩余拍数（见 [kAdaptiveSeekGraceTicks]）。
   int _seekGraceTicksLeft = 0;
 
+  /// 每次「seek 后缓冲过」的 seek 起播之后，相邻两拍播放之间缓冲深度变化的累计
+  /// （秒；key 是 seek 的登记序号）。有 key 即至少有一对读数。见
+  /// [kAdaptiveSeekGraceTicks] 的「吞吐 vs 延迟」说明。
+  final Map<int, double> _seekRefillDrift = <int, double>{};
+
+  /// 最近一次 seek 的登记序号（深度走向记在它名下）。
+  int? _refillSeekSerial;
+
+  /// 最近一次 seek 之后是否真缓冲过（只有缓冲见底后的深度走向才不被预读上限截断）。
+  bool _refillArmed = false;
+
+  /// 上一拍是「在播、不缓冲」时它的缓冲深度；否则为 null（不构成相邻读数对）。
+  double? _prevPlayingCacheSeconds;
+
   /// 起播/换集后重置：新的一条流，过去的观察不再作数。
   void reset() {
-    _stalls.clear();
+    _window.clear();
+    _seekSerials.clear();
+    _graceSeekSerial = null;
     _quietTicks = 0;
     _healthyCacheTicks = 0;
     _ticksSinceSwitch = 0;
     _seekGraceTicksLeft = 0;
+    _clearRefillTracking();
+  }
+
+  void _clearRefillTracking() {
+    _seekRefillDrift.clear();
+    _refillSeekSerial = null;
+    _refillArmed = false;
+    _prevPlayingCacheSeconds = null;
   }
 
   /// 用户发起了一次 seek：随后的缓冲先按 seek 代价处理（见 [kAdaptiveSeekGraceTicks]）。
   void noteSeek() {
     _seekGraceTicksLeft = kAdaptiveSeekGraceTicks;
+    _graceSeekSerial = _tickSerial;
+    _seekSerials.add(_tickSerial);
+    _refillSeekSerial = _tickSerial;
+    _refillArmed = false;
+    _prevPlayingCacheSeconds = null;
+  }
+
+  /// 这一秒没在播（暂停时页面不喂 [tick]）：断开相邻读数对——暂停期间照样在下载，
+  /// 跨暂停的深度差不是「播放时跟不跟得上」。
+  void notePlaybackPaused() {
+    _prevPlayingCacheSeconds = null;
   }
 
   /// 喂一拍（1 Hz）。
   ///
   /// [currentIndex] 是当前生效档（-1 = 原画直传）；[buffering] 是这一拍播放器是否在
-  /// 缓冲；[cacheSeconds] 是缓冲深度（拿不到时传 null，升档判据就不成立）。
+  /// 缓冲；[cacheSeconds] 是缓冲深度（拿不到时传 null，升档判据就不成立）；
+  /// [cacheReachesEnd] 是缓冲是否已经铺到片尾（之后深度只会随播放减少，不反映吞吐）。
   ///
   /// 返回 null 表示保持不动。
   AdaptiveQualityDecision? tick({
     required int currentIndex,
     required bool buffering,
     double? cacheSeconds,
+    bool cacheReachesEnd = false,
   }) {
     _ticksSinceSwitch++;
+    _tickSerial++;
 
-    // seek 引起的缓冲不是网况：宽限内不入卡顿窗口；一旦起播（不缓冲）宽限立即结束。
-    bool stalled = buffering;
-    if (_seekGraceTicksLeft > 0) {
-      if (buffering) {
-        _seekGraceTicksLeft--;
-        stalled = false;
-      } else {
-        _seekGraceTicksLeft = 0;
-      }
+    // seek 引起的缓冲先按 seek 代价豁免；一旦起播（不缓冲）宽限立即结束。
+    final _WindowTick sample;
+    if (!buffering) {
+      _seekGraceTicksLeft = 0;
+      sample = const _WindowTick(_TickKind.clear, null);
+      _recordRefillDrift(cacheReachesEnd ? null : cacheSeconds);
+    } else if (_seekGraceTicksLeft > 0) {
+      _seekGraceTicksLeft--;
+      sample = _WindowTick(_TickKind.graced, _graceSeekSerial);
+      _refillArmed = true;
+      _prevPlayingCacheSeconds = null;
+    } else {
+      sample = const _WindowTick(_TickKind.stalled, null);
+      _prevPlayingCacheSeconds = null;
     }
 
-    _stalls.add(stalled);
-    while (_stalls.length > kAdaptiveStallWindowTicks) {
-      _stalls.removeAt(0);
+    _window.add(sample);
+    while (_window.length > kAdaptiveStallWindowTicks) {
+      _window.removeAt(0);
     }
+    // 窗口第一拍的序号；登记在它之前的 seek（之后第一拍已滑出窗口）不再计入。
+    final int windowFirstSerial = _tickSerial - _window.length + 1;
+    _seekSerials.removeWhere((int s) => s + 1 < windowFirstSerial);
+    _pruneRefillDrift();
     if (buffering) {
       _quietTicks = 0;
     } else {
@@ -169,8 +336,7 @@ class AdaptiveQualityController {
 
     if (_ticksSinceSwitch < kAdaptiveCooldownTicks) return null;
 
-    final int stallTicks = _stalls.where((bool s) => s).length;
-    if (stallTicks >= kAdaptiveStallTicksToDrop) {
+    if (_stallScore() >= kAdaptiveStallTicksToDrop) {
       final int target = _nextLowerIndex(currentIndex);
       if (target == currentIndex) return null;
       _markSwitched();
@@ -193,9 +359,85 @@ class AdaptiveQualityController {
     return null;
   }
 
+  /// 在播的一拍：若最近一次 seek 之后缓冲过，把与上一拍播放之间的深度变化记在
+  /// 那次 seek 名下。[cacheSeconds] 为 null = 这一拍的深度不能当读数。只有见底附近
+  /// 的读数对才计入（[kAdaptiveRefillLowCacheSeconds]）。
+  void _recordRefillDrift(double? cacheSeconds) {
+    final double? prev = _prevPlayingCacheSeconds;
+    final int? owner = _refillSeekSerial;
+    _prevPlayingCacheSeconds = cacheSeconds;
+    if (!_refillArmed ||
+        owner == null ||
+        prev == null ||
+        cacheSeconds == null ||
+        min(prev, cacheSeconds) >= kAdaptiveRefillLowCacheSeconds) {
+      return;
+    }
+    final double drift = cacheSeconds - prev;
+    _seekRefillDrift.update(
+      owner,
+      (double sum) => sum + drift,
+      ifAbsent: () => drift,
+    );
+  }
+
+  /// 仍参与判据的 seek：登记在窗口内的，加上豁免拍仍在窗口内的（seek 本身已滑出
+  /// 窗口、它的缓冲还在窗口里时，不能只算缓冲不算 seek）。
+  Set<int> _liveSeeks() {
+    final Set<int> seeks = <int>{..._seekSerials};
+    for (final _WindowTick t in _window) {
+      final int? owner = t.graceSeekSerial;
+      if (owner != null) seeks.add(owner);
+    }
+    return seeks;
+  }
+
+  /// 滑出判据的 seek 不再记深度走向：它之后的播放早已离开缓冲见底的那一段，再记
+  /// 下去会混进被预读上限截断的读数。
+  void _pruneRefillDrift() {
+    final Set<int> live = _liveSeeks();
+    _seekRefillDrift.removeWhere((int s, double _) => !live.contains(s));
+    final int? current = _refillSeekSerial;
+    if (current != null && !live.contains(current)) _refillArmed = false;
+  }
+
+  /// 窗口内按卡顿计的拍数：真卡顿 + seek 豁免拍里不能算 seek 固定代价的部分。
+  ///
+  /// 窗口内 ≥2 次 seek 时：seek 起播后缓冲深度净减少（链路吞吐跟不上播放）→ 豁免拍
+  /// 全部按卡顿计；否则超出「seek 次数 × [kAdaptiveSeekCostBaselineTicks]」的部分
+  /// 按卡顿计。
+  int _stallScore() {
+    int stalled = 0;
+    int graced = 0;
+    for (final _WindowTick t in _window) {
+      switch (t.kind) {
+        case _TickKind.clear:
+          break;
+        case _TickKind.stalled:
+          stalled++;
+        case _TickKind.graced:
+          graced++;
+      }
+    }
+    final Set<int> seeks = _liveSeeks();
+    if (seeks.length < 2) return stalled;
+    double? refillDrift;
+    for (final int s in seeks) {
+      final double? drift = _seekRefillDrift[s];
+      if (drift != null) refillDrift = (refillDrift ?? 0) + drift;
+    }
+    final bool linkFallsBehind = refillDrift != null && refillDrift < 0;
+    final int excess = linkFallsBehind
+        ? graced
+        : max(0, graced - seeks.length * kAdaptiveSeekCostBaselineTicks);
+    return stalled + excess;
+  }
+
   void _markSwitched() {
     _ticksSinceSwitch = 0;
-    _stalls.clear();
+    _window.clear();
+    _seekSerials.clear();
+    _clearRefillTracking();
     _quietTicks = 0;
     _healthyCacheTicks = 0;
   }

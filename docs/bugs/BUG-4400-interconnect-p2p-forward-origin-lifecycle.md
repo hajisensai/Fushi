@@ -1,0 +1,18 @@
+## BUG-4400 · P2P 转发口撤销后反查映射残留，学习器拿临时转发口当锚点学不到地址
+- **报告**：2026-11-10（用户：互联审查 C8）
+- **真实性**：✅ 真 bug。
+  - `fushi/lib/src/sync/interconnect_peer_addresses.dart:392-407`（BUG-4399 修复后的行号；基准 94317ab6295 为 `:291-312`）：`_p2pOrigins`（转发口 URL → `p2p://`）只在 `_resolveTransport` 成功时写入，全仓没有删除的地方。
+  - `packages/fushi_engine/lib/sync/interconnect_p2p.dart:134-141, 157-163`（基准）：换拨号提示撤口、关端点时只回收 engine 的 `_tunnelPorts`，app 侧映射与之脱节。旧口被撤后 `interconnectPersistedUrl` 仍把它换回 `p2p://`：`_credentialSafe` 视其为带密码学身份的地址，`InterconnectHostClient._plaintextAllowed`（`interconnect_host_client.dart:96-101`）对钉扎 host 照样放行这条回环明文地址（该口可能已被本机别的进程占用）。
+  - 同文件学习器 `refresh(anchor)`（基准 `:636-662`）：拿到的锚点是本地转发口 URL。明文隧道被「非 https 不学」拒掉；tls=1 隧道取到地址集后按转发口 URL 在列表里找锚点，找不到 → 原样返回，host 换 home relay / 新增地址永远学不到。节流键也是临时 URL。
+  - 新测试 `interconnect_p2p_forward_lifecycle_test.dart` 修复前 5 条中 4 条红：撤口后旧口仍映射到 `p2p://…?relay=r1`；钉扎守卫放行旧口；两条学习器用例 `changed == false`。
+- **[x] ① 已修复** — `24f39afb270`：
+  - engine `interconnect_p2p.dart`：`_tunnelPorts` 改为 `Map<int, String /*originUrl*/>`，新增 `interconnectTunnelOriginUrl(host, port)`（只认仍存活的转发口）；`forwardTo` 新增必填 `originUrl`，复用 / 新建口时登记，换提示撤口时随口移除，`close()` 移除本节点全部口。抽出端点窄接口 `InterconnectP2pEndpointPort`（私有适配器 `_FfiEndpointPort` 包 `FushiP2pEndpoint`），加测试缝 `InterconnectP2pNode.forTesting` / `InterconnectP2pRuntime.debugInstall`；导出 `FushiP2pInfo`。
+  - app `interconnect_p2p_app.dart`：resolver 传 `originUrl: candidate.url`；`installInterconnectP2pClient` 拆出 `bindInterconnectP2pClient(runtime)`（不查原生库）与 `debugResetAppInterconnectP2p()`。
+  - `interconnect_peer_addresses.dart`：删除 `_p2pOrigins`；`interconnectPersistedUrl` 改为按 host:port 问 engine 的 `interconnectTunnelOriginUrl`（签名不变，所有调用点自动获得正确的生命周期）；`_resolveTransport` 不再登记映射。
+  - 学习器 `refresh`：按 `interconnectPersistedUrl(anchor.url)` 认锚点并作为合并的 `anchorUrl`；存活隧道锚点（明文或 tls=1）且带 hostId 时可学，`/api/host/addresses` 仍走传输 URL、指纹按其 scheme 取；`refreshInBackground` 节流键改为持久 URL。
+- **[x] ② 已加自动化测试** —
+  - `fushi/test/sync/interconnect_p2p_forward_lifecycle_test.dart`（新建，假 iroh 端点 + 真实装配 `bindInterconnectP2pClient`）：换提示撤口 / 关端点后映射回收；钉扎 host 的明文守卫拒绝旧口、放行存活口；tls=1 隧道锚点经转发口学到新 LAN https 地址；明文隧道锚点学到新 relay 的 p2p 行并替换旧行、节流按持久 URL；无 hostId 的隧道锚点不学。
+  - `packages/fushi_engine/test/sync/interconnect_p2p_node_test.dart`（新建，纯 Dart）：同提示复用口、换提示撤口、关端点后 `interconnectTunnelOriginUrl` 为 null。
+  - `fushi/test/sync/interconnect_peer_addresses_test.dart`「死明文 LAN + P2P 隧道」用例改走真实装配（假端点开口），不再用只回 URL 的假 resolver。
+- **备注**：只涉及内存状态，无持久数据迁移。
+- **提交信息里的旧号**：本条撞号改过两次（4279 → 4389 → 4400，改号提交 `3ab9e64b3cd`、`99ab766caca`），历史不重写，所以改号前写下的提交信息仍是当时的号：上面记的修复提交标题写的是 4279。按号查提交历史用 `git log --grep` 搜 `BUG-` 接 4279（第一次改号之后、第二次之前的提交接 4389）；这两个旧号现在或以后属于别的 bug，与本条无关。此处旧号不带前缀，免得 `bug.dart renumber` / `settle` 替别的 bug 改号时把这里一起改掉。
