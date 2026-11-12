@@ -100,7 +100,7 @@ void main() {
     final _Keys k1 = _keys(a.store);
     expectAllDiffer(k1, k0, '一条内容写入');
     await close(a);
-    expect(a.store.contentFingerprint, 'closed', reason: '库已关');
+    expect(_keys(a.store), k1, reason: '库关了之后不再变：停在关之前最后读到的那一组');
 
     // 同一个库再开一次（纪元相同）：计数从头数，但前缀换了；库里多了一条笔记。
     final _Opened b = await open();

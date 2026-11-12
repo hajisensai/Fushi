@@ -597,13 +597,23 @@ class SrsDbStore implements SrsSync2Host {
   /// 落库都变」的判据读 [landedFingerprint]。
   int get revision => _revision;
 
-  /// 内核持有的进程内刷新键（[SrsCore.refreshKeys]，native/fushi_fsrs/src/store/refresh.rs）。每次现读、不存：计数
-  /// 按 profile 归内核，在每次提交之后推进（本机写命令、收段的每一步、收段通道自己做完的每一片、导入、重读本机
-  /// 状态、删 / 并入 profile），同一个 profile 的所有副本对象读到同一组值；键里的前缀每次打开库随机生成，进程重启、
-  /// 关库重开之后不会回到以前出现过的值。库已关时这几个指纹都是 [_closedKey]。
-  SrsRefreshKeys? get _refreshKeys => core.refreshKeys(profileUid);
+  /// 内核持有的进程内刷新键（[SrsCore.refreshKeys]，native/fushi_fsrs/src/store/refresh.rs）。每次现读：计数按 profile
+  /// 归内核，在每次提交之后推进（本机写命令、收段的每一步、收段通道自己做完的每一片、导入、重读本机状态、删 / 并入
+  /// profile），同一个 profile 的所有副本对象读到同一组值；键里的前缀每次打开库随机生成，进程重启、关库重开之后不会
+  /// 回到以前出现过的值。
+  ///
+  /// 库关了之后不会再有任何变化：读到的是关之前最后读到的那一组（[_keysAtClose]），按键记的缓存照旧命中——关库后
+  /// 收尾的读者（RWKV 服务关闭时存快照要 [dayContext]）不必再去读已关的库。一次都没读到过时是 [_closedKey]。
+  SrsRefreshKeys? get _refreshKeys {
+    final SrsRefreshKeys? k = core.refreshKeys(profileUid);
+    if (k == null) return _keysAtClose;
+    return _keysAtClose = k;
+  }
 
-  /// 库已关时的指纹（与任何开着时的值都不等：开着时的键形如 `<16 位十六进制>:<计数>`）。
+  /// 最后一次从内核读到的刷新键；只在库关了之后用（见 [_refreshKeys]），不是计数的镜像。
+  SrsRefreshKeys? _keysAtClose;
+
+  /// 库关了、且之前一次都没读到过键时的指纹（与任何开着时的值都不等：开着时的键形如 `<16 位十六进制>:<计数>`）。
   static const String _closedKey = 'closed';
 
   /// 统计指纹：落库事件里会改变统计结果的那部分（复习日志、卡片 / 笔记 / 牌组 / 笔记类型的内容事件、冲突扣住与
