@@ -20,12 +20,18 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/epub/book_file_location.dart';
 import 'package:fushi/src/lookup/sentence_extraction.dart';
+import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
+import 'package:fushi/src/media/audiobook/audiobook_play_bar.dart';
+import 'package:fushi/src/media/audiobook/audiobook_session.dart';
+import 'package:fushi/src/media/audiobook/audiobook_session_launcher.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/pages/base_source_page.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi/src/reader/reader_panel_chrome_kit.dart';
 import 'package:fushi/src/reader/reader_session_remote.dart';
 import 'package:fushi/src/pdf/pdf_engine.dart';
+import 'package:fushi/src/pdf/pdf_text_sections.dart';
 import 'package:fushi/src/startup/exit_flush_registry.dart';
 import 'package:fushi/src/stats/read_unit_ledger.dart';
 import 'package:fushi/src/stats/study_clock_run_gate.dart';
@@ -36,7 +42,9 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/fushi_color.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/misc/jump_history.dart' show JumpSource;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/src/media/video/video_exit_flush.dart';
 
@@ -68,7 +76,8 @@ class ReaderPdfPage extends BaseSourcePage {
 }
 
 class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
-    with WidgetsBindingObserver {
+    with WidgetsBindingObserver
+    implements ReaderAudiobookView {
   final PdfViewerController _pdfController = PdfViewerController();
 
   @override
@@ -149,6 +158,28 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
   String _lastSentence = '';
   int _lastSentenceOffset = 0;
 
+  /// 本书有声书会话的控制器（进程级 [AudiobookSession] 持有，本页只读、不 dispose）。
+  /// null = 本书没挂有声书 / 听书模块关闭 / 会话还没起来。
+  AudiobookPlayerController? _audiobookController;
+
+  /// 当前画在页上的字幕句高亮（PDF 页坐标的逐行矩形），null = 不画。
+  _PdfCueHighlight? _cueHighlight;
+
+  /// 上一次同步高亮时的句（同句的重复通知不重算矩形）。
+  AudioCue? _highlightedCue;
+
+  /// 高亮异步计算的代次：取页文本要 await，期间句子又变了就丢弃旧结果。
+  int _cueHighlightGeneration = 0;
+
+  /// 每页文本层的归一化映射缓存（匹配器偏移 → `fullText` 码元下标）。
+  final Map<int, NormalizedTextWithOffsets> _normalizedPageText =
+      <int, NormalizedTextWithOffsets>{};
+
+  /// 画高亮的回调列表必须是同一个实例：[PdfViewerParams] 按值比较，每次 build
+  /// 新建列表会让 pdfrx 认为参数变了。
+  late final List<PdfViewerPagePaintCallback> _pagePaintCallbacks =
+      <PdfViewerPagePaintCallback>[_paintCueHighlight];
+
   /// 命中判定容差（PDF point）。点在字符矩形外但足够近仍算命中；超出即视为点在
   /// 空白/图片上不查词（对齐 pdfrx 自身 `_findTextAndIndexForPoint` 的 8pt）。
   static const double _kHitTestMarginPt = 8;
@@ -173,6 +204,11 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
     readerSessionRemotes.unregister(_sessionRemote);
     WidgetsBinding.instance.removeObserver(this);
     _saveDebounce?.cancel();
+    // 有声书：解绑本页回调（会话可能比本页活得久，后台续播）；没开「退出后续播」
+    // 时一并停掉。正常退出已在 onSourcePagePop 停过，这里是硬拆栈的兜底，二次 stop
+    // 对已清空的会话是 no-op。
+    appModel.audiobookSession.detachReader(this);
+    _stopAudiobookUnlessBackground('ReaderPdf.disposeStopAudiobook');
     // 崩溃 / 异常拆栈的兜底（正常退出走 onSourcePagePop 的 await 路径）：dispose
     // 是同步的，这里**一笔 DB 写都不许发起**——无人 await 的事务与随后的
     // `db.close()` 互等。关书不是翻走：站着的那页不结算（`ReadUnitLedger` 类文档），
@@ -212,6 +248,9 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
     // 返回书架的正常路径：await 落盘，保证书架 recency/进度立刻正确。
     await _flushPosition();
     await _studyClock?.stop();
+    // 与 EPUB 阅读器同律（BUG-1273）：不 await stop——native 播放器的拆除耗时不可控，
+    // 不能挡住返回；会话可见状态在 stop 的同步首段就已清空。
+    _stopAudiobookUnlessBackground('ReaderPdf.popStopAudiobook');
   }
 
   // ── 加载 / 恢复 ───────────────────────────────────────────────────────
@@ -260,10 +299,14 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
     );
     // 建表时已在后台 / 已被盖住就不起表（BUG-3994）。
     _studyClockGate.sync();
+    // 本书挂了有声书就接上会话（不等它：文档先渲染，播放条随后出现）。
+    unawaited(_resolveAudiobookSession());
     return _PdfBookLoad(path: path, row: row);
   }
 
   void _onViewerReady() {
+    // 会话可能先于文档就绪：文档到了再按当前句补画一次高亮。
+    _syncCueHighlight(force: true);
     if (_restoreDone) return;
     _restoreDone = true;
     if (_restorePageIndex <= 0) return;
@@ -658,6 +701,321 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
     );
   }
 
+  // ── 有声书：会话接管 / 跨页跟随 / 字幕句高亮 ────────────────────────────
+
+  /// 解析并接管本书的有声书会话（与 EPUB 阅读器同一个进程级 [AudiobookSession]）。
+  ///
+  /// 已有同书会话（退书后台听书再进 / 书架迷你条起的）直接复用；否则起新会话。
+  /// 听书模块关闭时不碰会话，也不拉起媒体通知（模块专属后台不启动）。
+  Future<void> _resolveAudiobookSession() async {
+    if (!appModel.moduleVisibility.isEnabled(ModuleId.listening)) return;
+    try {
+      final AudiobookSessionStartRequest? req = await appModel
+          .newAudiobookSessionLauncher()
+          .resolve(widget.bookKey);
+      if (req == null || !mounted) return;
+      // 会话挂媒体通知与控制流前要等 audio_service 就绪（同 EPUB 阅读器）。
+      await appModel.initialiseAudioHandler();
+      if (!mounted) return;
+      final AudiobookSession session = appModel.audiobookSession;
+      final AudiobookPlayerController? existing = session.controller;
+      AudiobookPlayerController? controller;
+      if (existing != null && session.book?.bookKey == req.info.bookKey) {
+        controller = existing;
+        // 复用的会话可能是别处按章灌的 cue：PDF 一律用扁平全书 cue（句的页码在
+        // textFragmentId 的 `s=` 里），换列表不打断当前句（BUG-2781）。
+        controller.setAllBookCues(req.cues);
+        controller.setChapterCues(req.cues);
+      } else {
+        controller = await session.start(
+          info: req.info,
+          audioFiles: req.audioFiles,
+          prefs: req.prefs,
+          persist: req.persist,
+          cues: req.cues,
+          remote: req.remote,
+        );
+      }
+      if (controller == null) return;
+      if (!mounted) {
+        // 会话起来时本页已经退了：按「退出后续播」偏好决定留不留。
+        if (!appModel.audiobookBackgroundPlay &&
+            identical(session.controller, controller)) {
+          await session.stop();
+        }
+        return;
+      }
+      session.attachReader(this);
+      setState(() => _audiobookController = controller);
+      _syncCueHighlight(force: true);
+    } catch (e, stack) {
+      ErrorLogService.instance.log('ReaderPdf.startAudiobook', e, stack);
+      if (mounted) {
+        FushiToast.show(
+          msg: t.audiobook_load_error,
+          severity: ToastSeverity.error,
+        );
+      }
+    }
+  }
+
+  /// 没开「退出后续播」时停掉本页接管的会话（fire-and-forget，见 onSourcePagePop）。
+  void _stopAudiobookUnlessBackground(String logTag) {
+    final AudiobookPlayerController? controller = _audiobookController;
+    if (controller == null || appModel.audiobookBackgroundPlay) return;
+    final AudiobookSession session = appModel.audiobookSession;
+    if (!identical(session.controller, controller)) return;
+    unawaited(
+      session.stop().catchError((Object e, StackTrace s) {
+        ErrorLogService.instance.log(logTag, e, s);
+      }),
+    );
+  }
+
+  /// [page]（0 起）是否有一部分在视口内。
+  bool _isPageVisible(int page) {
+    if (!_pdfController.isReady) return false;
+    final List<Rect> layouts = _pdfController.layout.pageLayouts;
+    if (page < 0 || page >= layouts.length) return false;
+    return layouts[page].overlaps(_pdfController.visibleRect);
+  }
+
+  /// 控制器的跨章参照系「reader 当前挂着哪一章」在 PDF 上的对应：所有页同时在一条
+  /// 连续文档里，当前句所在页**只要还露在视口里**就算「正文已在那里」，不必跨页；
+  /// 否则是视口主页（[_currentPageIndex]）。只看主页的话，句子落在下半屏露出的下一页
+  /// 时会被判成跨页、把视口生硬地拽过去。文档未就绪返回 -1（控制器不跨章）。
+  @override
+  int getCurrentReaderSection() {
+    if (!_pdfController.isReady) return -1;
+    final AudioCue? cue = _audiobookController?.currentCue;
+    final int? cuePage = cue == null
+        ? null
+        : SubtitleRematchCodec.tryDecode(cue.textFragmentId)?.sectionIndex;
+    if (cuePage != null && _isPageVisible(cuePage)) return cuePage;
+    return _currentPageIndex;
+  }
+
+  /// 句子播到了视口外的另一页（跟随音频开着）：翻到那一页，再回执控制器清跨章守卫。
+  /// 回执无论成败都必须发，否则守卫卡住、句子不再推进（BUG-2529）。
+  @override
+  Future<void> onCueCrossChapter(int sectionIndex) async {
+    // attachReader 先于本页记下控制器（setState 在其后），回执对象以会话为准。
+    final AudiobookPlayerController? controller =
+        _audiobookController ?? appModel.audiobookSession.controller;
+    bool landed = false;
+    try {
+      if (mounted &&
+          _pdfController.isReady &&
+          sectionIndex >= 0 &&
+          sectionIndex < _pdfController.pageCount) {
+        await _pdfController.goToPage(pageNumber: sectionIndex + 1);
+        landed = true;
+      }
+    } catch (e, stack) {
+      ErrorLogService.instance.log('ReaderPdf.cueCrossPage', e, stack);
+    }
+    if (controller == null) return;
+    if (landed) {
+      controller.notifySectionRestoreCompleted(
+        currentReaderSection: sectionIndex,
+        success: true,
+      );
+    } else {
+      controller.abortChapterTransition();
+    }
+  }
+
+  /// PDF 会话灌的是扁平全书 cue，「章首 / 章尾」就是全书首尾，越界没有下一章可载。
+  @override
+  Future<void> onBoundarySkip(int delta) async {}
+
+  /// PDF 的阅读统计按页记（翻走即计），没有字数水位可抬。
+  @override
+  void onExplicitCueJump(AudioCue cue) {}
+
+  /// PDF 阅读器没有「跳转回退」面板，大跨度跳转不记出发点。
+  @override
+  void onBeforeAudioJump(int fromGlobalMs, JumpSource source) {}
+
+  @override
+  void onReaderCueChanged() {
+    final AudiobookPlayerController? controller = _audiobookController;
+    if (!mounted || controller == null) return;
+    // 听书播放态是阅读输入（BUG-2212 同律）：播放中每次通知喂一次空闲门。
+    if (controller.isPlaying) _studyClock?.touch();
+    _syncCueHighlight();
+  }
+
+  /// 把控制器当前句同步成页上的高亮；需要时把句子滚进视口。
+  ///
+  /// 显式跳句 / 刚打开跟随的那一次 reveal 每次通知都要读掉（一次性旗，留着会在之后
+  /// 某次通知迟到生效）；被动播放的 reveal 只在句子变了时做，不跟用户的手动滚动抢。
+  void _syncCueHighlight({bool force = false}) {
+    final AudiobookPlayerController? controller = _audiobookController;
+    if (controller == null) return;
+    final bool forceReveal = controller.consumeForceReveal();
+    final bool navigationReveal = controller.consumeExplicitNavigationReveal();
+    final AudioCue? cue = controller.currentCue;
+    final bool cueChanged = !identical(cue, _highlightedCue);
+    if (!force && !cueChanged && !forceReveal && !navigationReveal) return;
+    _highlightedCue = cue;
+    final bool reveal =
+        forceReveal ||
+        navigationReveal ||
+        (cueChanged && controller.shouldRevealCurrentCue);
+    final int generation = ++_cueHighlightGeneration;
+    unawaited(_applyCueHighlight(cue, generation, reveal: reveal));
+  }
+
+  Future<void> _applyCueHighlight(
+    AudioCue? cue,
+    int generation, {
+    required bool reveal,
+  }) async {
+    _PdfCueHighlight? next;
+    try {
+      next = cue == null ? null : await _cueHighlightFor(cue);
+    } catch (e, stack) {
+      ErrorLogService.instance.log('ReaderPdf.cueHighlight', e, stack);
+    }
+    if (!mounted || generation != _cueHighlightGeneration) return;
+    _cueHighlight = next;
+    if (!_pdfController.isReady) return;
+    _pdfController.invalidate();
+    if (!reveal || next == null) return;
+    // 跨页句从起始页的那截开始露出（句首是读者要找的位置）。
+    final MapEntry<int, List<PdfRect>> first = next.rectsByPage.entries.first;
+    final Rect target = _pdfController.calcRectForRectInsidePage(
+      pageNumber: first.key + 1,
+      rect: first.value.boundingRect(),
+    );
+    await _pdfController.ensureVisible(target, margin: 48);
+  }
+
+  /// 句 → 页上逐行矩形。匹配器给的是起始页文本层归一化后的区间（`fushi-cue://s=页`），
+  /// 跨页句的 `ne` 越过起始页长度、顺延到后续页（[pdfSplitCueRangeAcrossPages]）；
+  /// 每页那一截经同一套归一化映射换回 `fullText` 下标（[pdfRawRangeForNormRange]），
+  /// 再按 pdfrx 的文本片段拆成每行一块（与原生选区同一种画法）。没匹配上正文的句 /
+  /// 页码越界 / 文本层读不到时返回 null，不画。
+  Future<_PdfCueHighlight?> _cueHighlightFor(AudioCue cue) async {
+    final SubtitleRematchFragment? frag = SubtitleRematchCodec.tryDecode(
+      cue.textFragmentId,
+    );
+    if (frag == null || !_pdfController.isReady) return null;
+    final List<PdfPage> pages = _pdfController.pages;
+    final List<PdfCuePageSpan> spans = await pdfSplitCueRangeAcrossPages(
+      startPage: frag.sectionIndex,
+      normStart: frag.normCharStart,
+      normEnd: frag.normCharEnd,
+      pageCount: pages.length,
+      normLengthOf: (int page) async =>
+          (await _normalizedTextOf(page, pages[page]))?.normalized.text.length,
+    );
+    final Map<int, List<PdfRect>> rectsByPage = <int, List<PdfRect>>{};
+    for (final PdfCuePageSpan span in spans) {
+      final ({PdfPageText text, NormalizedTextWithOffsets normalized})? page =
+          await _normalizedTextOf(span.page, pages[span.page]);
+      if (page == null) continue;
+      final ({int start, int end})? range = pdfRawRangeForNormRange(
+        page.normalized,
+        normStart: span.normStart,
+        normEnd: span.normEnd,
+      );
+      if (range == null || range.end > page.text.charRects.length) continue;
+      final List<PdfRect> rects = <PdfRect>[
+        for (final PdfTextFragmentBoundingRect r in PdfPageTextRange(
+          pageText: page.text,
+          start: range.start,
+          end: range.end,
+        ).enumerateFragmentBoundingRects())
+          r.bounds,
+      ];
+      if (rects.isNotEmpty) rectsByPage[span.page] = rects;
+    }
+    return rectsByPage.isEmpty
+        ? null
+        : _PdfCueHighlight(rectsByPage: rectsByPage);
+  }
+
+  /// 某页（0 起）的文本层 + 其归一化映射（缓存）；文本层读不到返回 null。
+  Future<({PdfPageText text, NormalizedTextWithOffsets normalized})?>
+  _normalizedTextOf(int pageIndex, PdfPage page) async {
+    final PdfPageText? text = await _pageText(pageIndex, page);
+    if (text == null) return null;
+    final NormalizedTextWithOffsets normalized = _normalizedPageText
+        .putIfAbsent(
+          pageIndex,
+          () => AudioTextNormalizer.normalizeWithOffsets(text.fullText),
+        );
+    return (text: text, normalized: normalized);
+  }
+
+  /// pdfrx 每画一页调一次：当前句在这页就把它的行矩形用荧光笔式正片叠底画上去
+  /// （白纸上是 EPUB 同款高亮黄，黑字照常透出来）。
+  void _paintCueHighlight(ui.Canvas canvas, Rect pageRect, PdfPage page) {
+    final _PdfCueHighlight? highlight = _cueHighlight;
+    final List<PdfRect>? rects = highlight?.rectsByPage[page.pageNumber - 1];
+    if (rects == null) return;
+    final Paint paint = Paint()
+      ..color = FushiColor.defaultHighlightYellow
+      ..blendMode = BlendMode.multiply
+      ..style = PaintingStyle.fill;
+    for (final PdfRect rect in rects) {
+      canvas.drawRect(
+        rect.toRectInDocument(page: page, pageRect: pageRect),
+        paint,
+      );
+    }
+  }
+
+  /// 底部有声书播放条（上一句 / 播放暂停 / 下一句 / 跟随音频），与翻页胶囊同一套
+  /// 悬浮胶囊 + 弹簧显隐，随 chrome 一起收起。播放条组件本身接 MD3 / Apple 两套。
+  Widget _buildAudiobookBar() {
+    final AudiobookPlayerController? controller = _audiobookController;
+    final bool show = controller != null && _chromeShown;
+    return FushiChromeReveal(
+      key: const ValueKey<String>('pdf_audiobook_bar'),
+      visible: show,
+      from: AxisDirection.down,
+      child: controller == null || !show
+          ? const SizedBox.shrink()
+          : Padding(
+              padding: const EdgeInsets.only(
+                bottom: kFushiFloatingToolbarEdgeMargin / 2,
+              ),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 560),
+                  child: FushiFloatingPill(
+                    color: fushiFloatingToolbarPalette(context).container,
+                    child: ListenableBuilder(
+                      listenable: controller,
+                      builder: (BuildContext context, Widget? child) =>
+                          AudiobookPlayBar(
+                            controller: controller,
+                            skipActionSeconds:
+                                ReaderFushiSource.instance.skipActionSeconds,
+                            reversed: appModel.reverseReaderBottomBar,
+                            invertSkip: ReaderFushiSource
+                                .instance
+                                .invertAudiobookSkipDirection,
+                            backgroundColor: Colors.transparent,
+                            foregroundColor: fushiFloatingToolbarPalette(
+                              context,
+                            ).foreground,
+                            // PDF 阅读器没有有声书设置面板（倍速 / 音画同步在
+                            // 书架迷你条与媒体通知里），不放一颗点了没反应的齿轮。
+                            showSettingsButton: false,
+                            onOpenSettings: () {},
+                          ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+    );
+  }
+
   // ── Phase 4：制卡 ─────────────────────────────────────────────────────
 
   /// 查词弹窗里点「+」制卡。句子来自最近一次查词（[_lastSentence]），卡图是**当前页
@@ -866,6 +1224,8 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
             return FushiChromeReveal(
               visible: _chromeShown,
               child: FushiFloatingTopBar(
+                // 标题压在页面上：Apple 也垫底（与小说 / 漫画阅读器一致）。
+                titleBacking: true,
                 leading: <FushiToolbarItem>[
                   FushiToolbarItem(
                     key: const ValueKey<String>('pdf_back'),
@@ -926,7 +1286,7 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
             final int pageCount = ready ? _pdfController.pageCount : 0;
             final int page = (ready ? _pdfController.pageNumber : null) ?? 1;
             final bool show = ready && pageCount > 1 && _chromeVisible;
-            return FushiChromeReveal(
+            final Widget pager = FushiChromeReveal(
               visible: show,
               from: AxisDirection.down,
               child: !show
@@ -988,6 +1348,11 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
                       ),
                     ),
             );
+            // 有声书播放条叠在翻页胶囊上方（本书挂了有声书才出现）。
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[_buildAudiobookBar(), pager],
+            );
           },
         ),
       ),
@@ -1021,6 +1386,8 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
             backgroundColor: const Color(0xFF3A3A3A),
             onViewerReady: (_, __) => _onViewerReady(),
             onPageChanged: _onPageChanged,
+            // 有声书字幕句高亮画在页面上（随缩放 / 滚动由 pdfrx 一起重绘）。
+            pagePaintCallbacks: _pagePaintCallbacks,
             // 单击正文即查词（没命中字则切换 chrome）；点页面外背景切换 chrome。
             // 返回 true 吃掉 tap，阻止 pdfrx 默认清选区行为。
             onGeneralTap:
@@ -1042,6 +1409,14 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
       },
     );
   }
+}
+
+/// 有声书当前句在 PDF 上的高亮：页（0 起）→ 该页 PDF 坐标下的逐行矩形。跨页句
+/// 有多页；按页序插入，首项是句首所在页。
+class _PdfCueHighlight {
+  const _PdfCueHighlight({required this.rectsByPage});
+
+  final Map<int, List<PdfRect>> rectsByPage;
 }
 
 /// [_ReaderPdfPageState._load] 的结果：PDF 磁盘路径 + 其 `EpubBooks` 行。

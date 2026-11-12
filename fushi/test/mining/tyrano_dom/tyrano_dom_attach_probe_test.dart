@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/mining/tyrano_dom/tyrano_dom_attach_probe.dart';
 
 void main() {

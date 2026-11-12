@@ -45,6 +45,8 @@ import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_fushi_card_native_media.dart'
+    show SrsCardNativeFallback;
 import 'package:fushi_engine/srs/srs_rwkv_service.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
@@ -82,8 +84,7 @@ import 'package:fushi/src/srs/srs_card_appearance.dart'
     show SrsCardAppearance, SrsCardColorSource, srsCardColorScheme;
 import 'package:fushi/src/srs/srs_card_autoplay.dart';
 import 'package:fushi/src/srs/srs_fushi_card_media.dart';
-import 'package:fushi/src/srs/srs_fushi_card_items.dart'
-    show srsFushiCardRenderedNative;
+import 'package:fushi/src/srs/srs_card_face_route.dart';
 import 'package:fushi/src/srs/srs_fushi_card_plan.dart' show srsFushiCardPlan;
 import 'package:fushi/src/srs/srs_html_card.dart';
 import 'package:fushi/src/srs/srs_card_media.dart' show srsMediaNameFromUrl;
@@ -265,6 +266,10 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
   bool _busy = false;
   bool _finished = false;
   Object? _error;
+
+  /// 队列空了之后，库在本页之外变了（同步拉入新卡、别处取消暂停 / 改期）又排得出卡：「复习完」页给一个回到复习的
+  /// 入口（[_recheckFinished]），不自动把卡塞到用户眼前。只在 [_finished] 时有意义，出卡 / 再次排空时清掉。
+  bool _moreDue = false;
 
   /// 队列空了是因为 RWKV 还没准备好（[SrsStudyState.rwkvPending]）：RWKV 牌组的复习卡不退回按 FSRS-7 的到期日
   /// 出，这里显示 RWKV 的准备 / 失败状态，就绪后自动重新排队（[_onRwkvStatus]）。
@@ -615,8 +620,8 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
               ?rendered.fushiCardDefinitions,
             ],
           );
-          // 原生 HTML 卡面的解析与判据（按内容记忆）同样提前算好。
-          _htmlCardOf(rendered, detail);
+          // 卡面路线（原生 HTML / 区块判据，按内容记忆）同样提前算好。
+          _routeOf(rendered, detail);
           SrsReviewPage.debugPhase?.call('prefetch:warm');
         }
         final _CardContext ctx = await _cardContextOf(store, detail, mark);
@@ -695,6 +700,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
         setState(() {
           _loading = false;
           _finished = true;
+          _moreDue = false;
           _rwkvPending = rwkvPending;
           // 状态以服务此刻的为准：等排队结果的途中发来的事件（例如打分失败转「出错」）已被 [_onRwkvStatus]
           // 记下，这里再对一次，免得界面停在排队前的阶段。
@@ -793,6 +799,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     setState(() {
       _loading = false;
       _finished = false;
+      _moreDue = false;
       _error = null;
       _detail = detail;
       _rendered = rendered;
@@ -926,7 +933,8 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     SrsRenderedCard rendered, {
     bool layout = false,
   }) {
-    if (_fushiNative(rendered)) {
+    final SrsCardFaceRoute? route = _routeOf(rendered);
+    if (route is SrsCardFaceFushiNative) {
       final SrsFushiCardMedia media = srsFushiCardPlan(
         rendered.fields,
         ref.read(srsCardAppearanceProvider),
@@ -935,8 +943,8 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
       ).media;
       return (question: media.front, answer: media.back);
     }
-    final SrsHtmlCard? html = _htmlCardOf(rendered);
-    if (html != null) {
+    if (route is SrsCardFaceHtmlNative) {
+      final SrsHtmlCard html = route.card;
       // 原生 HTML 卡面：盒子树里看得见的发音键（与卡面画出来的同一份，两面都现成）。
       final bool dark = Theme.of(context).brightness == Brightness.dark;
       List<String> sounds(SrsHtmlCardFace f) => srsHtmlVisibleSounds(
@@ -1617,6 +1625,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
   ///
   /// 只在变化关系到正在显示的这张（卡片行、笔记字段、模板 / CSS、牌组设置，[srsShownCardStale]）时走
   /// [_reloadCurrent]（保持正反面）；与它无关的变化不 setState、不重建本页。预取的下一张变了就重新预取（不上屏）。
+  /// 已到「复习完」时没有当前卡，改为重新看一次还排不排得出卡（[_recheckFinished]）。
   ///
   /// 串行：一轮在跑时又来的请求不另起，跑完再对一轮——上一轮的重读已把版本记到它开始读的那一刻，第二轮只会
   /// 看到那之后落库的写入。
@@ -1636,6 +1645,11 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     final SrsDbStore? store = _store;
     final SrsShownCardStamp? stamp = _stamp;
     if (store == null) return;
+    // 队列已排空：没有正在显示的卡可对，要对的是「还排不排得出卡」。
+    if (_finished) {
+      await _recheckFinished(store);
+      return;
+    }
     if (stamp != null && _detail?.card.id == stamp.cardId) {
       final bool stale = await srsShownCardStale(
         store,
@@ -1662,6 +1676,31 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     if (stale && mounted && identical(pending, _prefetch) && current != null) {
       _startPrefetch(current);
     }
+  }
+
+  /// 「复习完」（含等 RWKV）时库变了：按库重排一次队（与出卡同一条 [SrsDbStore.studyState]），排得出卡就亮出
+  /// 回到复习的入口（[_moreDue]），排不出就收起；计数随之更新。只改入口与计数，不出卡——出卡由用户点入口
+  /// （[_resumeMoreDue]）。
+  Future<void> _recheckFinished(SrsDbStore store) async {
+    final SrsStudyState? plan = await store.studyState(
+      widget.deckId,
+      custom: widget.custom,
+    );
+    // 排队途中已离开「复习完」（撤销 / 点了入口 / 重试）：那边已重新排过队。
+    if (!mounted || !_finished) return;
+    setState(() {
+      if (plan != null) {
+        _applyCounts(plan.summary);
+        if (widget.custom != null) _customProgress = plan.custom;
+      }
+      _moreDue = plan?.next != null;
+    });
+  }
+
+  /// 「复习完」页的入口：重新排队出卡（与加载同一条路径 [_loadNext]）。
+  void _resumeMoreDue() {
+    setState(() => _moreDue = false);
+    unawaited(_loadNext());
   }
 
   /// 原地刷新当前这张（库里关它的内容变了，经 [_syncWithStore]；或本页的标记等操作之后），保持正反面状态。
@@ -2415,33 +2454,42 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
       _detail != null &&
       _nativeFace(_rendered);
 
-  /// 非 Fushi 卡片两面都能原生画时的解析结果（[srsNativeHtmlCardFor]，按内容记忆）；null =
-  /// 不是这类卡或画不全（整面 WebView）。[detail] 缺省为当前卡（预取时传那张卡的）。
-  SrsHtmlCard? _htmlCardOf(SrsRenderedCard? rendered, [SrsCardDetail? detail]) {
-    if (rendered == null || _fushiNative(rendered)) return null;
-    return srsNativeHtmlCardFor(
-      fushiCard:
-          (detail ?? _detail)?.noteType.builtinKey == kSrsBuiltinFushiCardKey,
-      question: rendered.question,
-      answer: rendered.answer,
-      css: rendered.css,
-      languageCode: ref.read(appProvider).defaultContentLanguage,
-    );
-  }
-
-  /// 内置 Fushi 卡片走原生混合卡面：引擎认得出区块布局、自定义区块（字段 / HTML 区块）原生
-  /// 画得全（[srsFushiCardRenderedNative]，按内容记忆）。否则整面 WebView。
-  bool _fushiNative(SrsRenderedCard? rendered) =>
-      rendered != null &&
-      srsFushiCardRenderedNative(
-        rendered,
-        languageCode: ref.read(appProvider).defaultContentLanguage,
-      );
+  /// 这张卡走哪种卡面（[srsCardFaceRoute]：原生 Fushi 混合卡面 / 原生 HTML 卡面 / 整面 WebView，
+  /// 判据按内容记忆）。[detail] 缺省为当前卡（预取时传那张卡的）。
+  SrsCardFaceRoute? _routeOf(
+    SrsRenderedCard? rendered, [
+    SrsCardDetail? detail,
+  ]) => rendered == null
+      ? null
+      : srsCardFaceRoute(
+          rendered,
+          fushiCard:
+              (detail ?? _detail)?.noteType.builtinKey ==
+              kSrsBuiltinFushiCardKey,
+          languageCode: ref.read(appProvider).defaultContentLanguage,
+        );
 
   /// 卡面由 Flutter 原生画（Fushi 卡片混合渲染或原生 HTML 卡面）。
   bool _nativeFace(SrsRenderedCard? rendered) =>
-      rendered != null &&
-      (_fushiNative(rendered) || _htmlCardOf(rendered) != null);
+      _routeOf(rendered)?.isNative ?? false;
+
+  /// 已记过的整面 WebView 回退（笔记类型 × 模板 × 原因类别），会话内每种只记一次。
+  final Set<String> _loggedWebFallbacks = <String>{};
+
+  /// 卡面走了整面 WebView：把卡在哪一道记进诊断日志（反馈 O5YDP27Xko：以前静默回退，
+  /// 查不出是模板、样式、媒体还是区块的原因）。
+  void _logWebFallback(SrsCardDetail detail, SrsCardNativeFallback fallback) {
+    final String key =
+        '${detail.noteType.id}\u0000${detail.template?.id}\u0000'
+        '${fallback.code.name}';
+    if (!_loggedWebFallbacks.add(key)) return;
+    ErrorLogService.instance.logDiagnostic(
+      'SrsCardFace.webFallback',
+      'noteType=${detail.noteType.name} '
+          'builtin=${detail.noteType.builtinKey ?? '-'} '
+          'tpl=${detail.template?.name ?? '-'} reason=$fallback',
+    );
+  }
 
   Widget _buildBody(BuildContext context) {
     // 首张卡还在读：先把卡面（WebView 外壳）建起来、上面压加载指示。WebView 冷建 +
@@ -2503,16 +2551,17 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
                 : FushiPlaceholderTone.neutral,
             message: t.srs_review_rwkv_pending,
             detail: detail,
-            action: failed && service != null
-                ? FushiFilledButton(
-                    key: const ValueKey<String>('srs-review-rwkv-retry'),
-                    onPressed: () => srsRunLogged(
-                      'SrsRwkvService.start',
-                      () => service.start(force: true),
-                    ),
-                    child: Text(t.retry),
-                  )
-                : null,
+            action: _finishedActions(<Widget>[
+              if (failed && service != null)
+                FushiFilledButton(
+                  key: const ValueKey<String>('srs-review-rwkv-retry'),
+                  onPressed: () => srsRunLogged(
+                    'SrsRwkvService.start',
+                    () => service.start(force: true),
+                  ),
+                  child: Text(t.retry),
+                ),
+            ]),
           ),
         ),
       ),
@@ -2530,25 +2579,48 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
             icon: FushiIcons.success,
             message: t.srs_review_done,
             detail: t.srs_review_done_detail(n: _reviewedThisSession),
-            action: Wrap(
-              spacing: FushiDesignTokens.of(context).spacing.gap,
-              children: <Widget>[
-                if (_canUndo)
-                  FushiOutlinedButton.icon(
-                    onPressed: _busy ? null : _undoLast,
-                    icon: const FushiIcon(FushiIcons.undo),
-                    label: Text(t.undo),
-                  ),
-                if (navigator.canPop())
-                  FushiFilledButton.tonalIcon(
-                    onPressed: () => unawaited(navigator.maybePop()),
-                    icon: const FushiIcon(FushiIcons.back),
-                    label: Text(t.srs_review_back_to_decks),
-                  ),
-              ],
-            ),
+            action: _finishedActions(<Widget>[
+              if (_canUndo)
+                FushiOutlinedButton.icon(
+                  onPressed: _busy ? null : _undoLast,
+                  icon: const FushiIcon(FushiIcons.undo),
+                  label: Text(t.undo),
+                ),
+              if (navigator.canPop())
+                FushiFilledButton.tonalIcon(
+                  onPressed: () => unawaited(navigator.maybePop()),
+                  icon: const FushiIcon(FushiIcons.back),
+                  label: Text(t.srs_review_back_to_decks),
+                ),
+            ]),
           ),
         ),
+      ),
+    );
+  }
+
+  /// 「复习完」/「等 RWKV」页的动作行：[_moreDue] 时在最前面加「有新的到期卡」入口。入口随库变化出现 / 收起，
+  /// 整行交叉淡入淡出（不跳）。一个动作都没有时 null。
+  Widget? _finishedActions(List<Widget> actions) {
+    final List<Widget> children = <Widget>[
+      if (_moreDue)
+        FushiFilledButton.icon(
+          key: const ValueKey<String>('srs-review-more-due'),
+          onPressed: _resumeMoreDue,
+          icon: const FushiIcon(FushiIcons.play),
+          label: Text(t.srs_review_more_due_continue),
+        ),
+      ...actions,
+    ];
+    if (children.isEmpty) return null;
+    return AnimatedSwitcher(
+      duration: fushiMotionDuration(context, FushiMotion.medium),
+      switchInCurve: FushiMotion.enter,
+      switchOutCurve: FushiMotion.exit,
+      child: Wrap(
+        key: ValueKey<bool>(_moreDue),
+        spacing: FushiDesignTokens.of(context).spacing.gap,
+        children: children,
       ),
     );
   }
@@ -2621,17 +2693,20 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     );
     // 内置 Fushi 卡片（模板未改或只调了区块布局）走原生 + 释义 WebView 的混合渲染；其余卡片两面都在原生
     // 认得的 HTML / CSS 子集里就整面原生（[srsHtmlCardOf]），否则整面 WebView。
-    final SrsHtmlCard? html = _htmlCardOf(rendered);
-    final Widget built = html != null
+    final SrsCardFaceRoute? route = _routeOf(rendered);
+    if (route is SrsCardFaceWeb && detail != null) {
+      _logWebFallback(detail, route.fallback);
+    }
+    final Widget built = route is SrsCardFaceHtmlNative
         ? SrsHtmlCardView(
             key: const ValueKey<String>('srs-html-card-view'),
             face: face,
-            source: html.face(answerSide: _showingAnswer),
+            source: route.card.face(answerSide: _showingAnswer),
             topInset: media.padding.top,
             bottomInset: _bottomBarInset,
             zoom: zoom,
           )
-        : _fushiNative(rendered)
+        : route is SrsCardFaceFushiNative
         ? MediaQuery(
             // 原生区跟随卡面缩放：在系统字号倍率上再乘缩放倍率。
             data: media.copyWith(

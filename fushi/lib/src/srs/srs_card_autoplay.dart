@@ -26,23 +26,14 @@ import 'package:fushi/src/srs/srs_fushi_card_media.dart'
     show srsDedupeMediaNames;
 import 'package:fushi_engine/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
+import 'package:fushi/src/srs/srs_sound_tag.dart';
 import 'package:fushi/src/utils/misc/desktop_audio_playback.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
-final RegExp _soundTag = RegExp(r'\[sound:([^\]]+)\]');
-
-String _htmlUnescape(String s) => s
-    .replaceAll('&quot;', '"')
-    .replaceAll('&#39;', "'")
-    .replaceAll('&lt;', '<')
-    .replaceAll('&gt;', '>')
-    .replaceAll('&amp;', '&');
-
 /// 卡面 HTML 里的 `[sound:x]` 文件名，按出现顺序（与卡面播放按钮同一套解码）。
 List<String> srsCardSoundNames(String html) => <String>[
-  for (final Match m in _soundTag.allMatches(html))
-    if (_htmlUnescape(m.group(1)!.trim()).isNotEmpty)
-      _htmlUnescape(m.group(1)!.trim()),
+  for (final Match m in srsSoundTagPattern.allMatches(html))
+    if (srsSoundTagName(m.group(1)!).isNotEmpty) srsSoundTagName(m.group(1)!),
 ];
 
 final RegExp _inlineMediaTag = RegExp(
@@ -64,13 +55,13 @@ final RegExp _classAttr = RegExp(
 /// 片段自带句子声音。整面 WebView 卡面里这些标签由页内脚本自己播，不走这里。
 List<String> srsCardMediaNames(String html) {
   final List<(int, String, String)> found = <(int, String, String)>[
-    for (final Match m in _soundTag.allMatches(html))
-      (m.start, _htmlUnescape(m.group(1)!.trim()), 'sound'),
+    for (final Match m in srsSoundTagPattern.allMatches(html))
+      (m.start, srsSoundTagName(m.group(1)!), 'sound'),
     for (final Match m in _inlineMediaTag.allMatches(html))
       if (_srcAttr.firstMatch(m.group(2)!) case final Match src)
         (
           m.start,
-          _htmlUnescape((src.group(2) ?? src.group(3)!).trim()),
+          srsUnescapeMediaName((src.group(2) ?? src.group(3)!).trim()),
           m.group(1)!.toLowerCase() == 'video'
               ? 'video'
               : (_classAttr.firstMatch(m.group(2)!)?.group(2) ?? '').contains(
@@ -327,7 +318,10 @@ class SrsCardAudioSequencer {
 ///   改认「元素带 `controls` + 此刻有瞬时用户激活（`navigator.userActivation`）」。
 /// - `play()`：包一层 `HTMLMediaElement.prototype.play`，手势外的调用直接返回以
 ///   `NotAllowedError` 拒绝的 Promise（与浏览器自动播放策略同一形态，现有片段脚本的
-///   `catch` 照常吞掉）。
+///   `catch` 照常吞掉）。放行的 `play()` 若是源为公网 http(s) 的 `<audio>`，先经宿主取回、
+///   换成 `blob:` 再开播（`window.__fushiSrsRemoteAudio`，srs_card_remote_audio.dart：
+///   WebKit 播不了不支持 Range 的在线 TTS，反馈 ffWC0TPq1I）；许可在手势里就记下，取回后的
+///   开播不再看手势。
 /// - `autoplay`：不经 `play()`，插入后再设也照样生效（BUG-3546 第一版只看
 ///   childList，`el.autoplay = true` / `setAttribute('autoplay')` / 不进文档的
 ///   `new Audio()` 都绕过去了）。手势外把 `autoplay` 属性 setter 与
@@ -378,17 +372,59 @@ const String kSrsCardAutoplayGateScript = r'''
   // 的那些会接着响到播完（N-JACNGS-K：换卡后上一张的音频不停）。
   var sounding = typeof Set === 'function' ? new Set() : null;
   function track(el){ if (sounding && isMedia(el)) sounding.add(el); }
+  // 远程音频（源是公网 http(s) 的 `<audio>`）：先经宿主取回换成 `blob:` 再播
+  // （srs_card_remote_audio.dart，反馈 ffWC0TPq1I）。取回期间：`pause()` 取消这次开播
+  // （与浏览器「play() 被 pause() 打断」同形态），换卡 / 翻面（代号 `remoteGen` 自增）同样作废。
+  // 换源时 `src` 赋值触发的 `emptied` 不算停播，手势里放行过的许可留着（`swapping`）。
+  var remoteGen = 0;
+  var pendingRemote = typeof WeakMap === 'function' ? new WeakMap() : null;
+  var swapping = typeof WeakSet === 'function' ? new WeakSet() : null;
+  function interrupted(){
+    var msg = 'The play() request was interrupted';
+    try { return new DOMException(msg, 'AbortError'); }
+    catch (e) { var err = new Error(msg); err.name = 'AbortError'; return err; }
+  }
   var proto = window.HTMLMediaElement && window.HTMLMediaElement.prototype;
   if (proto && typeof proto.play === 'function') {
     var nativePlay = proto.play;
+    var playRemote = function(el, urls, args){
+      var token = { gen: remoteGen };
+      pendingRemote.set(el, token);
+      return window.__fushiSrsRemoteAudio.load(urls).then(function(blobUrl){
+        if (pendingRemote.get(el) !== token || token.gen !== remoteGen) {
+          throw interrupted();
+        }
+        pendingRemote['delete'](el);
+        if (swapping) swapping.add(el);
+        el.src = blobUrl;
+        permit(el);
+        track(el);
+        return nativePlay.apply(el, args);
+      }, function(err){
+        if (pendingRemote.get(el) === token) pendingRemote['delete'](el);
+        throw err;
+      });
+    };
     proto.play = function(){
       if (blocked()) return Promise.reject(refusal());
       permit(this);
       track(this);
+      var remote = window.__fushiSrsRemoteAudio;
+      var urls = pendingRemote && remote ? remote.sources(this) : null;
+      if (urls) return playRemote(this, urls, arguments);
       return nativePlay.apply(this, arguments);
     };
   }
+  if (proto && typeof proto.pause === 'function') {
+    var nativePause = proto.pause;
+    proto.pause = function(){
+      if (pendingRemote) pendingRemote['delete'](this);
+      return nativePause.apply(this, arguments);
+    };
+  }
   window.__fushiSrsStopAllMedia = function(){
+    remoteGen++;
+    if (window.__fushiSrsRemoteAudio) window.__fushiSrsRemoteAudio.release();
     if (!sounding) return;
     sounding.forEach(function(el){ try { el.pause(); } catch (e) {} });
     sounding.clear();
@@ -462,6 +498,10 @@ const String kSrsCardAutoplayGateScript = r'''
   }
   function onStop(e){
     if (!e || !isMedia(e.target)) return;
+    if (e.type === 'emptied' && swapping && swapping.has(e.target)) {
+      swapping['delete'](e.target);
+      return;
+    }
     if (permitted) permitted['delete'](e.target);
     if (sounding) sounding['delete'](e.target);
   }

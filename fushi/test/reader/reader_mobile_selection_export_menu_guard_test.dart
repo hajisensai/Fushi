@@ -125,10 +125,21 @@ void main() {
       final String webview = File(
         'lib/src/pages/implementations/reader_fushi/webview.part.dart',
       ).readAsStringSync();
-      final String body = _between(
+      final String chromePart = File(
+        'lib/src/pages/implementations/reader_fushi/chrome.part.dart',
+      ).readAsStringSync();
+      final String handler = _between(
         webview,
         "handlerName: 'onTapEmpty'",
         "handlerName: 'onSwipe'",
+      );
+      // 空白单击语义收口在 _handleReaderBlankTap（GitHub #3088：单击查词关闭时
+      // 点正文也走它）。
+      expect(handler, contains('_handleReaderBlankTap(args, sizeIndex: 2);'));
+      final String body = _between(
+        chromePart,
+        'void _handleReaderBlankTap(',
+        'void _handleVnBlankTap()',
       );
       expect(
         body,

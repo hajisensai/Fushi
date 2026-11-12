@@ -1,0 +1,245 @@
+// 卡面路线的统一判据（反馈 O5YDP27Xko）：复习页、浏览预览、笔记 / 模板编辑预览、外观页预览
+// 只经 srsCardFaceRoute 判「原生 Fushi / 原生 HTML / 整面 WebView（带原因）」。
+import 'dart:io';
+
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, debugDefaultTargetPlatformOverride;
+import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/srs/srs_card_face_route.dart';
+import 'package:fushi/src/srs/srs_native_template.dart'
+    show kSrsNativeTemplateMarker;
+import 'package:fushi_anki/fushi_anki_core.dart';
+import 'package:fushi_engine/srs/srs_db_store.dart' show SrsRenderedCard;
+import 'package:fushi_engine/srs/srs_fushi_card_native_media.dart';
+
+Map<String, String> _fields([Map<String, String> extra = const {}]) =>
+    <String, String>{
+      for (final String f in FushiCardNoteType.fields) f: '',
+      'Term': '免許',
+      ...extra,
+    };
+
+SrsRenderedCard _fushi({
+  List<FushiCardItem> back = const <FushiCardItem>[],
+  SrsCardNativeFallback? fallback,
+  bool native = true,
+}) => SrsRenderedCard(
+  question: '<div>q</div>',
+  answer: '<div>a</div>',
+  css: kFushiCardStylingCss,
+  isEmpty: false,
+  fields: _fields(),
+  fushiCardDefinitions: native ? '<div>defs</div>' : null,
+  fushiCardFront: native ? kFushiCardDefaultFrontItems : const [],
+  fushiCardBack: native
+      ? <FushiCardItem>[...kFushiCardDefaultBackItems, ...back]
+      : const [],
+  nativeFallback: fallback,
+);
+
+void main() {
+  group('srsCardFaceRoute', () {
+    test('引擎认得出布局、区块画得全：原生 Fushi 卡面', () {
+      expect(
+        srsCardFaceRoute(_fushi(), fushiCard: true),
+        isA<SrsCardFaceFushiNative>(),
+      );
+    });
+
+    test('HTML 区块画不了：整面 WebView，原因 block + 子集原因', () {
+      final SrsCardFaceRoute r = srsCardFaceRoute(
+        _fushi(
+          back: <FushiCardItem>[
+            const FushiCardHtmlItem('<script>alert(1)</script>'),
+          ],
+        ),
+        fushiCard: true,
+        languageCode: 'ja',
+      );
+      expect(r, isA<SrsCardFaceWeb>());
+      final SrsCardNativeFallback f = (r as SrsCardFaceWeb).fallback;
+      expect(f.code, SrsCardNativeFallbackCode.block);
+      expect(f.detail, isNotEmpty);
+    });
+
+    test('引擎没给布局：带引擎原因；远程老主机没带原因时 remoteUnknown', () {
+      const SrsCardNativeFallback css = SrsCardNativeFallback(
+        SrsCardNativeFallbackCode.cssModified,
+      );
+      final SrsCardFaceRoute r = srsCardFaceRoute(
+        _fushi(native: false, fallback: css),
+        fushiCard: true,
+      );
+      expect((r as SrsCardFaceWeb).fallback, css);
+      final SrsCardFaceRoute old = srsCardFaceRoute(
+        _fushi(native: false),
+        fushiCard: true,
+      );
+      expect(
+        (old as SrsCardFaceWeb).fallback.code,
+        SrsCardNativeFallbackCode.remoteUnknown,
+      );
+    });
+
+    test('非 Fushi 卡片：子集内原生 HTML，子集外整面 WebView（html + 原因）', () {
+      const SrsRenderedCard plain = SrsRenderedCard(
+        question: '<div>front</div>',
+        answer: '<div>back</div>',
+        css: '.card { color: black; }',
+        isEmpty: false,
+        nativeFallback: SrsCardNativeFallback(
+          SrsCardNativeFallbackCode.notBuiltin,
+        ),
+      );
+      expect(
+        srsCardFaceRoute(plain, fushiCard: false),
+        isA<SrsCardFaceHtmlNative>(),
+      );
+      const SrsRenderedCard scripted = SrsRenderedCard(
+        question: '<div>front</div><script>x()</script>',
+        answer: '<div>back</div>',
+        css: '',
+        isEmpty: false,
+      );
+      final SrsCardFaceRoute r = srsCardFaceRoute(scripted, fushiCard: false);
+      expect(
+        (r as SrsCardFaceWeb).fallback.code,
+        SrsCardNativeFallbackCode.html,
+      );
+    });
+
+    // develop 的模板级「原生渲染」标记（srs_native_template.dart）并进统一判据：标了标记的
+    // 非 Fushi 卡片画不了的块就地提示，仍走原生 HTML 卡面，不回退整面 WebView。
+    test('非 Fushi 卡片标了原生渲染：子集外也走原生 HTML（强制原生）', () {
+      const String table = '<table><tr><td>表格内容</td></tr></table>';
+      const SrsRenderedCard marked = SrsRenderedCard(
+        question: '$kSrsNativeTemplateMarker\n<div>猫</div>\n$table',
+        answer: '$kSrsNativeTemplateMarker\n<div>猫</div>\n$table<div>cat</div>',
+        css: '',
+        isEmpty: false,
+      );
+      expect(
+        srsCardFaceRoute(marked, fushiCard: false),
+        isA<SrsCardFaceHtmlNative>(),
+      );
+      // 同样的内容不带标记：照旧整面 WebView。
+      const SrsRenderedCard unmarked = SrsRenderedCard(
+        question: '<div>猫</div>\n$table',
+        answer: '<div>cat</div>',
+        css: '',
+        isEmpty: false,
+      );
+      expect(
+        srsCardFaceRoute(unmarked, fushiCard: false),
+        isA<SrsCardFaceWeb>(),
+      );
+      // 内置 Fushi 卡片不受标记影响（Fushi 卡片模板原生 HTML 子集画不了）。
+      expect(srsCardFaceRoute(marked, fushiCard: true), isA<SrsCardFaceWeb>());
+    });
+  });
+
+  // 反馈 O5YDP27Xko：同一张卡 Android 整面 WebView、桌面原生。判据只按卡片数据判，不随平台
+  // 变：同一份数据在每个平台下路线与原因都相同。
+  test('同一卡片数据在各平台下路线与原因一致', () {
+    final List<(SrsRenderedCard, bool)> cards = <(SrsRenderedCard, bool)>[
+      (_fushi(), true),
+      (
+        _fushi(
+          back: <FushiCardItem>[
+            const FushiCardHtmlItem('<script>alert(1)</script>'),
+          ],
+        ),
+        true,
+      ),
+      (
+        _fushi(
+          native: false,
+          fallback: const SrsCardNativeFallback(
+            SrsCardNativeFallbackCode.backTemplate,
+            '<div class="x">',
+          ),
+        ),
+        true,
+      ),
+      (
+        const SrsRenderedCard(
+          question: '<div>front</div>',
+          answer: '<div>back</div>',
+          css: '.card { color: black; }',
+          isEmpty: false,
+        ),
+        false,
+      ),
+    ];
+    String describe(SrsCardFaceRoute r) => switch (r) {
+      SrsCardFaceFushiNative() => 'fushi',
+      SrsCardFaceHtmlNative() => 'html',
+      SrsCardFaceWeb(:final SrsCardNativeFallback fallback) => 'web $fallback',
+    };
+    List<String> routes() => <String>[
+      for (final (SrsRenderedCard card, bool fushiCard) in cards)
+        describe(
+          srsCardFaceRoute(card, fushiCard: fushiCard, languageCode: 'ja'),
+        ),
+    ];
+    final List<String> baseline = routes();
+    try {
+      for (final TargetPlatform p in TargetPlatform.values) {
+        debugDefaultTargetPlatformOverride = p;
+        expect(routes(), baseline, reason: '$p');
+      }
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
+
+  // 守卫：卡面判据（app 侧路线、区块 / HTML 子集，引擎侧内置模板认定）不得按平台分支。
+  test('卡面判据源码不按平台分支', () {
+    final RegExp platform = RegExp(
+      r'\b(Platform\.is|defaultTargetPlatform|TargetPlatform\.|kIsWeb)',
+    );
+    final List<String> offenders = <String>[
+      for (final String path in <String>[
+        'lib/src/srs/srs_card_face_route.dart',
+        'lib/src/srs/srs_fushi_card_items.dart',
+        'lib/src/srs/srs_html_card.dart',
+        'lib/src/srs/srs_native_template.dart',
+        '../packages/fushi_engine/lib/srs/srs_fushi_card_native_media.dart',
+        '../packages/fushi_anki/lib/src/fushi_card_blocks.dart',
+        '../packages/fushi_anki/lib/src/fushi_card_template_history.dart',
+      ])
+        if (platform.hasMatch(File(path).readAsStringSync())) path,
+    ];
+    expect(offenders, isEmpty);
+  });
+
+  // 守卫：卡面路线只在 srs_card_face_route.dart 判一次。页面里再各拼一份原生判据（以前的
+  // srsFushiCardRenderedNative / srsNativeHtmlCardFor），四处预览与复习页就会各走各的。
+  test('页面不得绕过 srsCardFaceRoute 直接判原生卡面', () {
+    final RegExp banned = RegExp(
+      r'\b(srsFushiCardRenderedNative|srsNativeHtmlCardFor|'
+      r'srsFushiCardItemsFallback|srsHtmlCardProbe|srsHtmlCardOf)\s*\(',
+    );
+    final Directory pages = Directory('lib/src/pages/implementations/srs');
+    final List<String> offenders = <String>[
+      for (final FileSystemEntity f in pages.listSync(recursive: true))
+        if (f is File &&
+            f.path.endsWith('.dart') &&
+            banned.hasMatch(f.readAsStringSync()))
+          f.path,
+    ];
+    expect(offenders, isEmpty);
+    for (final String name in <String>[
+      'srs_review_page.dart',
+      'srs_browse_preview.dart',
+      'srs_note_preview.dart',
+      'srs_card_appearance_page.dart',
+    ]) {
+      expect(
+        File('${pages.path}/$name').readAsStringSync(),
+        contains('srsCardFaceRoute('),
+        reason: '$name 经统一判据选卡面',
+      );
+    }
+  });
+}

@@ -105,7 +105,10 @@ class _MusicLocalPlaylistPageState
             ),
           )
           .listen((_) {
-            if (mounted) setState(() => _data = _load());
+            if (!mounted) return;
+            setState(() {
+              _data = _load();
+            });
           });
     }
   }
@@ -189,7 +192,11 @@ class _MusicLocalPlaylistPageState
         msg: musicPlaylistErrorText(e),
         severity: ToastSeverity.error,
       );
-      if (mounted) setState(() => _data = _load());
+      if (mounted) {
+        setState(() {
+          _data = _load();
+        });
+      }
     }
   }
 
@@ -269,8 +276,7 @@ class _MusicLocalPlaylistPageState
           final String? cover = <String?>[
             for (final MusicPlaylistItem i in items)
               switch (i.entry) {
-                MusicRemoteEntry(:final MusicRemoteTrackRow track) =>
-                  track.coverUrl,
+                final MusicRemoteEntry e => e.coverUrl,
                 MusicLocalEntry(:final MusicTrackRow track) =>
                   d.albums[track.albumUid]?.coverPath,
               },

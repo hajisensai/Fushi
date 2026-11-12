@@ -3366,6 +3366,10 @@ window.fushiSelection = {
       while (startOffset > 0 && !this.isTokenStartBoundary(hitContent[startOffset - 1])) {
         startOffset--;
       }
+      if (startOffset === 0) {
+        var crossed = this.tokenStartBeforeNode(startNode);
+        if (crossed) return crossed;
+      }
       return { node: startNode, offset: startOffset };
     }
     if (startNode && startNode.nodeType === Node.TEXT_NODE) {
@@ -3375,6 +3379,37 @@ window.fushiSelection = {
       }
     }
     return { node: startNode, offset: startOffset };
+  },
+  // BUG-4361（反馈 vXYKPudf7U，承 BUG-4179）：词首回退跨相邻文本节点。词首回退原先只在
+  // 命中的文本节点内做，退到偏移 0 就停——漫画 OCR 叠加层每个字格是独立的
+  // <span class="ocr-char">（manga_overlay_html.dart），点 WELL 的 E 起点停在 E，查的是
+  // ELL。前向扫描本来就跨节点（walker.nextNode），回退与它对称：在同一个
+  // [findParagraph] 容器（漫画 = 一个 <p class="ocr-box">；阅读器 = 段落）内按文档序取
+  // 前一个可扫文本节点，遇到词首界（[isTokenStartBoundary]）、被跳过的空白缝（BUG-4179
+  // 补的词间空白节点 / BUG-3453 cue 缝，[hasSkippedWhitespaceBetween]）或容器边界即停。
+  // 只在命中节点已退到偏移 0 时调用；返回跨节点起点 {node, offset}，跨不过去返回 null。
+  tokenStartBeforeNode: function(node) {
+    if (!node || node.nodeType !== Node.TEXT_NODE) return null;
+    var container = this.findParagraph(node);
+    if (!container) return null;
+    var walker = this.createWalker(container);
+    walker.currentNode = node;
+    var current = node;
+    var result = null;
+    for (var guard = 0; guard < 256; guard++) {
+      var prev = walker.previousNode();
+      if (!prev || this.hasSkippedWhitespaceBetween(prev, current)) break;
+      var content = prev.textContent;
+      var offset = content.length;
+      while (offset > 0 && !this.isTokenStartBoundary(content[offset - 1])) {
+        offset--;
+      }
+      if (offset === content.length) break;
+      result = { node: prev, offset: offset };
+      if (offset > 0) break;
+      current = prev;
+    }
+    return result;
   },
   selectFromPosition: function(node, offset, maxLength, x, y, fromHover) {
     var normalizedStart = this.selectionStartFor(node, offset);
