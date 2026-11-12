@@ -1096,6 +1096,18 @@ target_compile_definitions(fushi_reallive_lookup_test PRIVATE
 add_test(NAME fushi_reallive_lookup_test
   COMMAND fushi_reallive_lookup_test)
 
+# RealLive offline site probe: runs the lookup's import-slot reader and site
+# resolver above over a game exe (or a flat dump of its main module) read from
+# disk and prints every step.  Diagnostic only (needs a real game image, so no
+# add_test); reads the file into a private buffer, never loads or runs it.
+add_executable(fushi_reallive_site_probe
+  "tools/reallive_site_probe.cpp"
+)
+target_include_directories(fushi_reallive_site_probe PRIVATE
+  "hook/adapters")
+target_compile_definitions(fushi_reallive_site_probe PRIVATE
+  UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+
 # CatSystem2 in-game lookup core: structural site resolution on a synthetic
 # x86 image (ClearPage+RenderChar pair -> record layout -> GetCharImage ->
 # GetGlyphOutlineA rasteriser, Window::Update -> reveal/sync, layer query ->
