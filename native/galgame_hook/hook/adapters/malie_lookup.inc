@@ -118,6 +118,8 @@ struct MalieLookupRuntime {
   uint64_t next_segment = 0u;
   uint32_t logged = 0u;
   uint64_t logged_claims = 0u;
+  uint64_t logged_pairing = 0u;   // sum of the pairing counters last logged
+  uint64_t pairing_log_tick = 0u;
   uint64_t logged_snapshot_segment = 0u;
   int32_t design_w = 0;
   int32_t design_h = 0;
@@ -157,6 +159,13 @@ struct MalieLookupRuntime {
   std::atomic<uintptr_t> watched_node{0u};
   std::atomic<uint64_t> draw_calls{0u};
   std::atomic<uint64_t> segment_count{0u};
+  // Pairing counters (game thread increments, worker logs): parser calls,
+  // reveal calls, reveals with no pending unit of this thread, reveals
+  // whose range differs from the pending unit's glyph count.
+  std::atomic<uint64_t> parse_calls{0u};
+  std::atomic<uint64_t> reveal_calls{0u};
+  std::atomic<uint64_t> reveal_unpaired{0u};
+  std::atomic<uint64_t> reveal_mismatch{0u};
   std::array<std::atomic<uint64_t>, kMalieSegmentSlots> segment_seq = {};
   std::array<MalieSegmentEvent, kMalieSegmentSlots> segments = {};
   std::array<std::atomic<uint32_t>, 2> snapshot_seq = {};
@@ -248,6 +257,7 @@ int32_t __cdecl MalieParserDetour(const wchar_t* text, int32_t start,
                                   int32_t* glyphs) {
   const int32_t end = g_malie_parser_original(text, start, glyphs);
   auto& rt = g_malie_lookup;
+  rt.parse_calls.fetch_add(1u, std::memory_order_relaxed);
   if (!rt.live.load(std::memory_order_acquire) || text == nullptr ||
       glyphs == nullptr || end <= start) {
     return end;
@@ -269,13 +279,18 @@ int32_t __cdecl MalieParserDetour(const wchar_t* text, int32_t start,
 void __cdecl MalieRevealDetour(void* node, int32_t start, int32_t end) {
   g_malie_reveal_original(node, start, end);
   auto& rt = g_malie_lookup;
+  rt.reveal_calls.fetch_add(1u, std::memory_order_relaxed);
   if (!rt.live.load(std::memory_order_acquire) || node == nullptr ||
       rt.pending_glyphs < 0 || rt.pending_thread != GetCurrentThreadId()) {
+    rt.reveal_unpaired.fetch_add(1u, std::memory_order_relaxed);
     return;
   }
   const bool matches = end - start == rt.pending_glyphs;
   rt.pending_glyphs = -1;
-  if (!matches) return;
+  if (!matches) {
+    rt.reveal_mismatch.fetch_add(1u, std::memory_order_relaxed);
+    return;
+  }
   const uint64_t sequence =
       rt.segment_count.fetch_add(1u, std::memory_order_acq_rel) + 1u;
   auto& slot_seq = rt.segment_seq[sequence % kMalieSegmentSlots];
@@ -1088,10 +1103,36 @@ void NoteMalieRetire(uint32_t reason) {
   MalieLookupLog(L"lookup: gate=%s", reason < 8u ? kNames[reason] : L"?");
 }
 
+// At most every 5 s while anything changed: how parser and reveal calls
+// paired, so a run without segments says which side never arrived.
+void LogMaliePairing() {
+  auto& rt = g_malie_lookup;
+  const uint64_t parses = rt.parse_calls.load(std::memory_order_relaxed);
+  const uint64_t reveals = rt.reveal_calls.load(std::memory_order_relaxed);
+  const uint64_t unpaired =
+      rt.reveal_unpaired.load(std::memory_order_relaxed);
+  const uint64_t mismatch =
+      rt.reveal_mismatch.load(std::memory_order_relaxed);
+  const uint64_t sum = parses + reveals + unpaired + mismatch;
+  const uint64_t now = GetTickCount64();
+  if (sum == rt.logged_pairing || now - rt.pairing_log_tick < 5000u) return;
+  rt.logged_pairing = sum;
+  rt.pairing_log_tick = now;
+  MalieLookupLog(L"pairing: parses=%llu reveals=%llu unpaired=%llu "
+                 L"mismatch=%llu segments=%llu",
+                 static_cast<unsigned long long>(parses),
+                 static_cast<unsigned long long>(reveals),
+                 static_cast<unsigned long long>(unpaired),
+                 static_cast<unsigned long long>(mismatch),
+                 static_cast<unsigned long long>(
+                     rt.segment_count.load(std::memory_order_acquire)));
+}
+
 void ProcessMalieLookupTick() {
   auto& rt = g_malie_lookup;
   if (!rt.installed) return;
   DrainMalieSegments();  // the text lane does not depend on the lookup switch
+  LogMaliePairing();
   if (g_stop || g_header == nullptr ||
       !fushi_voice_hook::HasLookupRegion(g_header) ||
       fushi_voice_hook::AtomicLoadShared32(&g_header->lookup_enabled) == 0u) {
