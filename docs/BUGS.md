@@ -33,6 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
+> 共 3931 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4387](bugs/BUG-4387-galhook-test-exe-av-false-positive.md) | ✅ | ✅ | Kaspersky 把 galgame hook 测试 exe 报为 Trojan.Win32.Sdum.gen 并删除 |
 > 共 3933 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
