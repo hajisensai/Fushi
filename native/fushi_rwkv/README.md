@@ -369,6 +369,8 @@ Accelerate 路径，本表不代表移动端速度。冷启动第一次回放会
 ```sh
 bash native/fushi_rwkv/fetch_model.sh          # 或 powershell -File native/fushi_rwkv/fetch_model.ps1
 cargo test --release --manifest-path native/fushi_rwkv/Cargo.toml
+# 开发循环（不做 fat LTO、增量编译；docs/agent/build.md「Rust 本地开发循环」），按需加 --lib / --test <名> 与过滤：
+cargo test --profile quick --manifest-path native/fushi_rwkv/Cargo.toml
 ```
 
 权重缺失 / SHA-256 不符时测试**失败**并提示跑 fetch_model（不跳过）；`FUSHI_RWKV_MODEL`

@@ -221,6 +221,79 @@ void main() {
     },
   );
 
+  test('dialogue-surface mark follows the latest native event of the lane', () {
+    final DateTime at = DateTime(2026, 11, 11, 12);
+    final TexthookerService service = TexthookerService.instance;
+    TexthookerTextThread thread() => service.textThreads.single;
+    service.observeTextThreadLine(
+      key: 'unity_tmp:1',
+      label: 'Unity Mono TMP_Text',
+      hookCode: 'Mono:TMPro.TMP_Text.SetText(string,bool)',
+      dialogueSurface: false,
+      nativeThreadId: 0x1,
+      text: '台詞1',
+      observedAt: at,
+    );
+    expect(thread().dialogueSurface, isFalse);
+    expect(isEngineExactTextThread(thread()), isFalse);
+    // Promotion: a thread-discovered event carrying the flag.
+    service.registerTextThread(
+      key: 'unity_tmp:1',
+      label: 'Unity Mono TMP_Text',
+      dialogueSurface: true,
+      nativeThreadId: 0x1,
+      discoveredAt: at,
+    );
+    expect(thread().dialogueSurface, isTrue);
+    expect(isEngineExactTextThread(thread()), isTrue);
+    // A source that does not report the bit (null) keeps it; a published line
+    // rebuilding the thread from its entry keeps it.
+    service.observeTextThreadLine(
+      key: 'unity_tmp:1',
+      label: 'Unity Mono TMP_Text',
+      nativeThreadId: 0x1,
+      text: '台詞2',
+      observedAt: at,
+    );
+    service.appendLine(
+      '台詞2',
+      textThreadKey: 'unity_tmp:1',
+      textThreadLabel: 'Unity Mono TMP_Text',
+      textHookCode: 'Mono:TMPro.TMP_Text.SetText(string,bool)',
+      nativeTextThreadId: 0x1,
+      receivedAt: at.add(const Duration(seconds: 1)),
+    );
+    expect(thread().dialogueSurface, isTrue);
+    // Demotion: the writer's discovered event without the flag clears it.
+    service.registerTextThread(
+      key: 'unity_tmp:1',
+      label: 'Unity Mono TMP_Text',
+      dialogueSurface: false,
+      nativeThreadId: 0x1,
+      discoveredAt: at,
+    );
+    expect(thread().dialogueSurface, isFalse);
+    expect(isEngineExactTextThread(thread()), isFalse);
+    expect(
+      const GalHookedLine(
+        seq: 1,
+        timestampMs: 0,
+        text: 'x',
+        eventFlags: GalHookedLine.flagDialogueSurface,
+      ).isDialogueSurface,
+      isTrue,
+    );
+    expect(
+      const GalHookedLine(
+        seq: 1,
+        timestampMs: 0,
+        text: 'x',
+        eventFlags: GalHookedLine.flagLaneUniqueHookCode,
+      ).isDialogueSurface,
+      isFalse,
+    );
+  });
+
   test('native lane-unique declaration survives into the thread directory', () {
     final DateTime at = DateTime(2026, 11, 3, 12);
     TexthookerService.instance.observeTextThreadLine(

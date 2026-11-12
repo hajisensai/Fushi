@@ -1,0 +1,6 @@
+{
+  "gateway": "ws://example.com:8765/agent",
+  "token": "与网关相同的 token",
+  "name": "",
+  "seed_support_dir": "%APPDATA%\\Fushi\\Fushi"
+}
