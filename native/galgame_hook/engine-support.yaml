@@ -2452,8 +2452,8 @@
         "attach": "implemented_unverified",
         "follow_child_processes": false,
         "notes": [
-          "Admission requires the exact executable SHA-256 and i386 machine type. WA2.exe, Leaf/AQUAPLUS family labels and sibling PAK files never enable binary offsets by themselves.",
-          "The measured profile pins the selected Luna CP932 source thread, D3D9 glyph path and GetAsyncKeyState poller to exact RVAs; an unknown or patched executable fails closed."
+          "Admission is a structural proof on the i386 main image (leaf_autoprofile: five unique anchors with cross-checked /GS cookie and IAT operands -> call-shape/frame-shape resolved return sites -> section roles); the executable SHA-256 only feeds diagnostics and a measured-build self-check. The pristine on-disk image is proved first; when its executable sections look packed (no raw data or high entropy) the runtime main image is re-proved every 500 ms for up to 120 s. WA2.exe, Leaf/AQUAPLUS family labels and sibling PAK files never enable binary offsets by themselves.",
+          "The selected Luna CP932 source thread, D3D9 glyph path and GetAsyncKeyState poller are bound to the structurally resolved RVAs; a build whose proof is ambiguous or incomplete fails closed. A second WA2 2011 PC build (disk SHA-256 c395d93f74695d2bb7a4fb2fe30486a5d37715b4c30bf20451883569bba3990b) is resolved offline from both its disk image and a runtime dump, implemented_unverified."
         ]
       },
       "text": {
@@ -2461,17 +2461,17 @@
           {
             "kind": "luna_exact_cp932_thread",
             "status": "implemented_unverified",
-            "verification": "The selected HSX0:0 source is identity-bound to module RVA 0x512BF. The original path was user-accepted, but the release evidence/offline gate set was intentionally skipped."
+            "verification": "The selected HSX0:0 source is bound to the structurally derived embed hook RVA (0x512BF on the measured build, 0x5151F on the second build). The original path was user-accepted on the measured build only; the release evidence/offline gate set was intentionally skipped."
           },
           {
             "kind": "ingame_lookup_geometry",
             "status": "implemented_unverified",
-            "verification": "The exact D3D9 profile reconstructs bounded per-glyph geometry only after the portable SHA-256 identity and hydrated-image unique-signature/decoded-target/callgraph/COM-ABI gate pass. The relocated A1 /GS cookie operand is deliberately masked and then required to resolve to the profile's module-relative data RVA. Release E2E evidence remains incomplete."
+            "verification": "The exact D3D9 profile reconstructs bounded per-glyph geometry only after the structural proof (unique signatures, decoded call targets, callgraph, frame shapes, section roles) passes. The relocated A1 /GS cookie operand is deliberately masked and then required to resolve to the profile's module-relative data RVA. Release E2E evidence remains incomplete."
           },
           {
             "kind": "ingame_lookup_sampled_input_shield",
             "status": "implemented_unverified",
-            "verification": "Single-click and Shift-hover interception is installed only after the same unique hydrated-image gate validates the exact GetAsyncKeyState poller callsites and D3D9 device ABI. Release evidence gates, including the 1,000-transaction shield corpus, remain incomplete."
+            "verification": "Single-click and Shift-hover interception is installed only after the same structural proof validates the exact GetAsyncKeyState poller callsites and D3D9 device ABI. Release evidence gates, including the 1,000-transaction shield corpus, remain incomplete."
           }
         ],
         "codepage": "CP932",
@@ -2496,8 +2496,8 @@
       "verified_games": [],
       "current_status": "implemented_unverified",
       "known_limitations": [
-        "This is one hash-pinned WHITE ALBUM2 x86 executable profile, not a family-wide Leaf or AQUAPLUS support claim. The hash is portable same-build identity, not a dependency on the developer's machine or install directory.",
-        "A game update, different executable hash, missing/ambiguous hydrated signature, decoded target mismatch, callgraph mismatch or D3D9 ABI mismatch disables the selected text, geometry and sampled-input offsets until that build is measured independently.",
+        "This is a WHITE ALBUM2-codegen structural profile, not a family-wide Leaf or AQUAPLUS support claim: stack-frame offsets and vertex formats are justified by the resolved frame shapes but were only measured end-to-end on the original build.",
+        "A missing/ambiguous signature, decoded target mismatch, callgraph or frame-shape mismatch, section-role mismatch or measured-build self-check failure disables the selected text, geometry and sampled-input offsets; a different executable hash alone no longer does.",
         "DirectSound remains a decoded/mixed fallback; the user-accepted card audio comes from the complete source Ogg member in VOICE.PAK.",
         "The root VOICE.PAK path completed runtime card mining; IC/VOICE.PAK shares the validated LAC parser but was not separately exercised in the accepted session.",
         "Late attach remains implemented_unverified; the accepted path used suspended launch so archive handles and playback reads could not be missed.",

@@ -37,6 +37,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4387](bugs/BUG-4387-galhook-leaf-wa2-second-build-unrecognized.md) | ✅ | ✅ | Leaf/AQUAPLUS：WHITE ALBUM2 另一构建不被认领（准入钉在单个 exe 摘要 + glyph 返回点判据无选择性） |
 | [BUG-4387](bugs/BUG-4387-tyrano-measured-client-size-dpr-rounding.md) | ✅ | ✅ | TyranoScript 内嵌查词在 Electron 全屏 + 小数缩放下永远不出卡：DOM 推算的客户区与真实客户区差 1px 被逐像素拒收 |
 > 共 3933 条。点号进各自文件。
 

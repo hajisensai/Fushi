@@ -201,6 +201,16 @@ target_compile_definitions(fushi_leaf_autoprofile_test PRIVATE
 add_test(NAME fushi_leaf_autoprofile_test
   COMMAND fushi_leaf_autoprofile_test)
 
+# Leaf/AQUAPLUS 离线站点探针：对本机样本（磁盘 PE 或运行时主模块 dump）跑与 hook 同一份
+# 推导代码，只打印站点 RVA 与断点阶段，不打印样本内容。样本不入库，故不进 CTest。
+add_executable(fushi_leaf_site_probe
+  "tools/leaf_site_probe.cpp"
+)
+target_include_directories(fushi_leaf_site_probe PRIVATE
+  "hook/adapters")
+target_compile_definitions(fushi_leaf_site_probe PRIVATE
+  UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+
 # Siglus OVK 索引/Ogg 完整性解析是纯函数，独立小测试不需启动或注入游戏。
 enable_testing()
 add_executable(fushi_siglus_ovk_test
