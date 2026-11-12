@@ -1,0 +1,11 @@
+## BUG-4433 · 对比弹窗把书的选择强加给有声书断点，绕过有声书的三方判定
+- **报告**：2026-11-10（用户：审计 sync-live 修复包 triggers-ui-3 成立部分）
+- **真实性**：✅ 真 bug（行号以 BUG-4432 提交 dc6b52ba92d 后的代码为准）：`fushi/lib/src/sync/sync_compare_dialog.dart:1136-1162` `_applyLiveChoice` 的有声书部分把用户对**书进度**的选择直接套到有声书断点：`useLocal` → `audio.pushLocal`（`:1148`），否则 → `audio.applyRemote`（`:1159`），从不调 `audio.decide`，并随之改写 `audiobook_position_live` 基线。两个维度被耦合：
+  - 有声书只有 host 动过（基线 = 本端，host 前进）时，书冲突选「本地」会把 host 上更新的断点推回本机旧值；
+  - 有声书真分叉且加载后 host 又被第三台设备改写时，照样推送 / 落地并改写基线，之后 `_presentPositionConflicts`（`sync_conflict_prompter.dart`）重新 `decide` 时这一维已被「解决」，有声书冲突被吞。
+- **[x] ① 修复** — c182eeacca2：
+  - `SyncCompareEntry` 加 `liveLocalAudio` / `liveRemoteAudio`（加载时带戳的本机 / host 有声书断点，只在互联通道填；本机改读 `InterconnectPlaybackPositionSync.localPosition`）；`_LiveCompareExtras` 加 `audioPositionByBookKey`（与 `audioPosSecByBookKey` 同口径同条目）；`_copyWithoutAudio` 带上两字段。
+  - 新增 `_applyLiveAudioChoice`（在有声书位置锁内）：重读两端 → `audio.decide`；`synced` / `pushLocal` / `applyRemote` 按三方结论落地（前置条件 = 重读的 host 值），与书的选择无关；`conflict` 只有重读的 host 值仍等于用户在这一行看到的 `liveRemoteAudio` 时才按这一行的选择落地（「本地」前置条件 = 看到的值），否则两端与基线都不动，交播放位置冲突弹窗。
+- **[x] ② 加自动化测试** — `fushi/test/sync/sync_compare_interconnect_live_progress_test.dart`（假互联后端，`fetchCompareDataForTest` → `applySyncCompareChoices`）新增三条：书冲突选本地 + 有声书只 host 动过 → 不推 host、本机落 host 值、基线 = host 值；书与有声书都分叉且加载后 host 有声书又变 → 两端与基线不动、`loadPlaybackPositionConflicts` 仍报冲突；都分叉且 host 未变 → 按选择推本地。修复前前两条红（`fake.putAudioPositions` Expected: empty，实际被推了本机旧值），13 条中 2 条失败；修复后同文件 + `sync_compare_live_choice_revalidate_test.dart` 15 条全绿。
+- **修复提交**：c182eeacca2
+- **备注**：无线上 / 持久化改动。用户可见变化（取舍 T9）：书冲突选「本地」后有声书断点可能被落成 host 值（host 单边前进时），这正是 sweep 本来的结论。

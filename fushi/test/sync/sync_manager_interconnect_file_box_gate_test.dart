@@ -17,10 +17,12 @@ import 'package:fushi_engine/sync/sync_asset_store.dart';
 import 'package:fushi_engine/sync/ttu_filename.dart';
 import 'package:fushi_engine/sync/ttu_models.dart';
 import 'package:path/path.dart' as p;
+import '../helpers/interconnect_legacy_host_scope.dart';
 
 const String _title = 'Interconnect Box Book';
 
-class _FileBoxBackend extends InterconnectSyncBackend {
+class _FileBoxBackend extends InterconnectSyncBackend
+    with LegacyInterconnectHostScope {
   _FileBoxBackend() : super.withProbe((String url, String token) async => true);
 
   int contentProbes = 0;

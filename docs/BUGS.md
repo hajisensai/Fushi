@@ -33,6 +33,18 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
+> 共 3938 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4436](bugs/BUG-4436-remote-video-open-bypasses-three-way.md) | ✅ | ✅ | 远端视频开播按 LWW 选位置，绕过三方判定（含合集切成员） |
+| [BUG-4435](bugs/BUG-4435-playback-position-no-baseline-lww-fallback.md) | ✅ | ✅ | 播放位置缺基线时退回跨设备墙钟 LWW |
+| [BUG-4434](bugs/BUG-4434-sync-baseline-not-scoped-by-remote.md) | ✅ | ✅ | 同步基线不带远端身份：多 host 共用互联 live 基线，换 host 后静默导入旧值 |
+| [BUG-4433](bugs/BUG-4433-compare-dialog-audiobook-follows-book-choice.md) | ✅ | ✅ | 对比弹窗把书的选择强加给有声书断点，绕过有声书的三方判定 |
+| [BUG-4432](bugs/BUG-4432-interconnect-live-put-blind-overwrite.md) | ✅ | ✅ | 互联 live 进度按旧快照盲写 host，覆盖对端更新（sweep / 实时上报 / 冲突弹窗） |
+| [BUG-4431](bugs/BUG-4431-interconnect-live-put-unconfirmed-baseline.md) | ✅ | ✅ | 互联 live 进度 PUT 不回结果，client 无条件记基线 |
+| [BUG-4430](bugs/BUG-4430-host-video-manifest-position-stamp-diverges.md) | ✅ | ✅ | host 视频清单与位置端点对同一断点给出不同的位置 / 时间戳 |
+| [BUG-4429](bugs/BUG-4429-interconnect-book-progress-future-stamp-unguarded.md) | ✅ | ✅ | 互联书籍进度没接未来时间戳防护，毒戳在 LWW 里永远胜出并扩散到各端 |
 > 共 3931 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |

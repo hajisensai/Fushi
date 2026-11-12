@@ -8,6 +8,8 @@ import 'package:fushi/src/storage/storage_usage_service.dart'
 import 'package:fushi/src/sync/sync_activity.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
+import 'package:fushi/src/sync/sync_baseline_scope.dart'
+    show signOutSyncBackend;
 import 'package:fushi/src/sync/sync_compare_dialog.dart';
 import 'package:fushi/src/sync/sync_conflict_decider.dart';
 import 'package:fushi/src/sync/sync_conflict_prompter.dart';
@@ -15,7 +17,6 @@ import 'package:fushi/src/sync/sync_error_messages.dart';
 import 'package:fushi/src/sync/sync_message_dialog.dart';
 import 'package:fushi/src/sync/sync_orchestrator.dart';
 import 'package:fushi/src/sync/sync_progress.dart';
-import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/i18n/strings.g.dart';
 
 /// 手动同步完成后的 SnackBar 摘要（消费 [SyncRunReport]）。纯函数，便于单测边界：
@@ -416,12 +417,9 @@ Future<ManualSyncOutcome> _runWithSyncFeedback({
     // 会话、并清掉云通道的目录缓存——用户没碰过的那条通道被打坏，而真正出问题的
     // 那条一点没动。
     if (shouldSignOutChannelOnAuthError(e)) {
-      final SyncRepository repo = SyncRepository(appModel.database);
       try {
-        final SyncBackend backend = e.channel.backend;
-        await backend.signOut(repo: repo);
-        backend.clearCache();
-        await repo.clearFolderCache(e.channel.scope);
+        // 登出连带的清理（该通道的目录缓存、记下的云账号）都在共用入口里。
+        await signOutSyncBackend(appModel.database, e.channel.backend);
       } catch (_) {
         // 尽力登出；绝不因此盖掉原本要给用户的重新登录提示。
       }

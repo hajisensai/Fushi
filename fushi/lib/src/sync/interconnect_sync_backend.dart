@@ -22,6 +22,7 @@ import 'package:fushi_engine/sync/pdf_sync_package.dart'
     show interconnectHostAcceptsPdfBooks;
 import 'package:fushi_engine/sync/interconnect_service_config.dart';
 import 'package:fushi_engine/sync/interconnect_profile_transfer.dart';
+import 'package:fushi_engine/sync/sync_channel_scope.dart' show syncRemoteTag;
 import 'package:fushi_engine/sync/host_update/host_update_protocol.dart';
 import 'package:fushi/src/sync/interconnect_package_download.dart';
 import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
@@ -388,6 +389,11 @@ class InterconnectSyncBackend extends SyncBackend
   @visibleForTesting
   Future<void> ensureResolved() => _ensureResolved();
 
+  /// 会话此刻是否已选定 host（选路已完成、没被掉线置脏）。为真时 [liveHostScope]
+  /// 立即返回、不探测。给不能为此等一轮选路的只读调用方（库页卡片读位置基线，
+  /// BUG-4436）：离线时宁可拿不到作用域，也不能让列表等探测超时。
+  bool get sessionResolved => _sessionResolved;
+
   /// Test seam: the base URL the session has settled on.
   @visibleForTesting
   String? get activeBaseUrl => _ops?.baseUrl;
@@ -415,6 +421,137 @@ class InterconnectSyncBackend extends SyncBackend
     await _ensureResolved();
     return _activeHostIdentity!;
   }
+
+  // ── 基线作用域（BUG-4434）──────────────────────────────────────────────────
+
+  /// 会话所连 host 的基线作用域（[interconnectScopeIdentityOf]）：选中候选的
+  /// hostId；老条目（无 hostId）认得出是哪台带 hostId 的 host 时取那台的，认不出时
+  /// 按它实际使用的配对凭据分槽（URL 不是 host 身份，见取舍 T6；凭据是签发它的那台
+  /// host 才认的随机值）。
+  InterconnectScopeIdentity? _scopeIdentity;
+
+  /// [_scopeIdentity] 每变一次（含首次解析）自增。[InterconnectHostPin] 记下取 pin 时
+  /// 的值：同一作用域来回切换（a → b → a）也认得出中途换过 host。
+  int _hostScopeSerial = 0;
+
+  InterconnectScopeIdentity? _scopeIdentityOf(FushiClientUrl candidate) =>
+      interconnectScopeIdentityOf(
+        candidate,
+        _candidates,
+        fallbackToken: _token,
+      );
+
+  /// 先 [_ensureResolved]，再给出当前会话的基线作用域与旧无后缀基线的领养决定。
+  /// 候选按 [interconnectScopeIdentityOf] 归到 host：全部候选只有一个作用域（单 host，
+  /// 含只有老条目的单 host）→ 旧行搬给它（move）；多个 → 旧行来源不可考，删（discard）。
+  /// 当前作用域是 hostId 时，同一台 host 的候选所用凭据曾经的凭据作用域（老条目学到
+  /// hostId 之前写的）也并进来（[InterconnectHostScope.predecessorTags]）。不发额外请求
+  /// （只读内存里的候选与已解析会话）。测试替身可覆写。
+  Future<InterconnectHostScope> liveHostScope() async {
+    await _ensureResolved();
+    final InterconnectScopeIdentity? current = _scopeIdentity;
+    final Set<InterconnectScopeIdentity> hosts = <InterconnectScopeIdentity>{};
+    final Set<String> predecessors = <String>{};
+    for (final FushiClientUrl c in _candidates) {
+      final InterconnectScopeIdentity? id = _scopeIdentityOf(c);
+      if (id == null) continue;
+      hosts.add(id);
+      if (current?.hostId == null || id != current) continue;
+      final String? token = interconnectTokenFor(c, _token);
+      if (token != null) {
+        predecessors.add(InterconnectScopeIdentity.credential(token).tag);
+      }
+    }
+    return InterconnectHostScope(
+      pin: InterconnectHostPin(identity: current, serial: _hostScopeSerial),
+      adoption: hosts.length <= 1
+          ? LegacyBaselineAdoption.move
+          : LegacyBaselineAdoption.discard,
+      predecessorTags: predecessors.toList(growable: false),
+    );
+  }
+
+  /// 同步核对 [pin] 仍是当前会话的作用域（hostId 相同且期间没换过 host），否则抛
+  /// [InterconnectHostChangedException]。live 读写在 `_ensureResolved` 之后、发请求
+  /// 之前调它，两步之间没有 `await`，核对与发出用的是同一个连接句柄。测试替身可覆写。
+  ///
+  /// 文件箱（WebDAV 面）调用约定：文件箱请求本身不带 pin，由调用方（`SyncManager`
+  /// 经 `progressBaselineStorageFor` 取到的 `hostPin`）在每本书「读完远端进度、判定
+  /// 之前」「导入落地之前」「上传之后、写基线之前」各调一次；抛出时这本书不落地、
+  /// 不写基线，本轮文件箱进度阶段结束。
+  void checkHostPin(InterconnectHostPin pin) {
+    if (pin.serial != _hostScopeSerial || pin.identity != _scopeIdentity) {
+      throw InterconnectHostChangedException(
+        expected: pin,
+        actual: _scopeIdentity,
+      );
+    }
+  }
+
+  /// [checkHostPin] 的「先确认会话仍落在某台 host 上」版：会话被掉线置脏时先按
+  /// 选路重新解析（可能落到另一台 host），再核对 [pin]。会话已解析时不发任何请求。
+  /// 给不发网络请求、却要知道钉住的 host 还在不在的调用方（held 中的实时上报，评审
+  /// compat-3）。测试替身可覆写。
+  Future<void> verifyHostPin(InterconnectHostPin pin) async {
+    await _ensureResolved();
+    checkHostPin(pin);
+  }
+
+  /// 测试入口：模拟会话故障切换到 [hostId] 所在的 host（null = 无作用域）。
+  /// 作用域不变时与真实选路一致，不算换 host。
+  @visibleForTesting
+  void debugSwitchHostScope(String? hostId) {
+    final InterconnectScopeIdentity? next = hostId == null
+        ? null
+        : InterconnectScopeIdentity.host(hostId);
+    if (_hostScopeSerial != 0 && next == _scopeIdentity) return;
+    _scopeIdentity = next;
+    _hostScopeSerial++;
+  }
+
+  /// 本次 live 调用钉住的 host（经 [_pinned] 放进 zone）。[_resolvedForLive] 在
+  /// `_ensureResolved` 之后核对它；不在 [_pinned] 里的调用（既有 `remote*` /
+  /// `putRemote*` 的其它调用方）不核对，行为不变。
+  static final Object _pinZoneKey = Object();
+
+  /// 在钉住 [pin] 的 zone 里跑 [body]：其中经过的每一次 host 读写（含兼容层的
+  /// GET / PUT）都各自核对 pin。pin 为 null = 不钉。
+  Future<T> _pinned<T>(InterconnectHostPin? pin, Future<T> Function() body) =>
+      pin == null
+      ? body()
+      : runZoned(body, zoneValues: <Object?, Object?>{_pinZoneKey: pin});
+
+  /// `_ensureResolved` + 本 zone 钉住的 host 的核对（见 [_pinned]）。核对与随后的
+  /// `_ops!.buildRequest` 之间不得有 `await`。
+  Future<void> _resolvedForLive() async {
+    await _ensureResolved();
+    final Object? pin = Zone.current[_pinZoneKey];
+    if (pin is InterconnectHostPin) checkHostPin(pin);
+  }
+
+  /// 钉住 [pin] 读 host 书进度（内容同 [remoteBookProgress]）。
+  Future<RemoteBookProgress> getLiveBookProgress(
+    String bookKey, {
+    InterconnectHostPin? pin,
+  }) => _pinned(pin, () => remoteBookProgress(bookKey));
+
+  /// 钉住 [pin] 一次取齐 host 书进度（内容同 [remoteBookProgressSnapshot]）。
+  Future<Map<String, RemoteBookProgress>?> getLiveBookProgressSnapshot({
+    InterconnectHostPin? pin,
+  }) => _pinned(pin, remoteBookProgressSnapshot);
+
+  /// 钉住 [pin] 读 host 视频播放位置（内容同 [remoteVideoPosition]）。
+  Future<LivePosition> getLiveVideoPosition(
+    String id, {
+    int episodeIndex = 0,
+    InterconnectHostPin? pin,
+  }) => _pinned(pin, () => remoteVideoPosition(id, episodeIndex: episodeIndex));
+
+  /// 钉住 [pin] 读 host 有声书播放位置（内容同 [remoteAudiobookPosition]）。
+  Future<LivePosition> getLiveAudiobookPosition(
+    String identity, {
+    InterconnectHostPin? pin,
+  }) => _pinned(pin, () => remoteAudiobookPosition(identity));
 
   // ── Auth ──────────────────────────────────────────────────────────
 
@@ -578,6 +715,13 @@ class InterconnectSyncBackend extends SyncBackend
     _registerPinnedNativeOrigin(normalized, chosen.fingerprintSha256);
     _activeHostIdentity = chosen.hostId ?? normalized;
     _activeCandidate = chosen;
+    // 基线作用域（BUG-4434）：选中候选的作用域变了（含首次）才算换 host。同一台
+    // host 的地址之间切换（同 hostId，或同一份配对凭据的老条目）不算。
+    final InterconnectScopeIdentity? scopeId = _scopeIdentityOf(chosen);
+    if (_hostScopeSerial == 0 || scopeId != _scopeIdentity) {
+      _scopeIdentity = scopeId;
+      _hostScopeSerial++;
+    }
     _sessionResolved = true;
     final SyncRepository? repo = _learnRepo;
     if (repo != null) {
@@ -1703,7 +1847,7 @@ class InterconnectSyncBackend extends SyncBackend
   /// （离线 / 旧 host 无端点不致崩溃）。
   @override
   Future<RemoteBookProgress> remoteBookProgress(String bookKey) async {
-    await _ensureResolved();
+    await _resolvedForLive();
     final HttpClientRequest req = await _ops!.buildRequest(
       'GET',
       '$_apiBase/api/library/books/${Uri.encodeComponent(bookKey)}/progress',
@@ -1717,6 +1861,7 @@ class InterconnectSyncBackend extends SyncBackend
       res.statusCode,
       'GET /api/library/books/$bookKey/progress',
     );
+    _noteLiveWriteSupport(res);
     final String body = await _readBodyBounded(res);
     final Map<String, dynamic> json = jsonDecode(body) as Map<String, dynamic>;
     return RemoteBookProgress.fromJson(json.cast<String, Object?>());
@@ -1729,7 +1874,7 @@ class InterconnectSyncBackend extends SyncBackend
     String bookKey,
     RemoteBookProgress progress,
   ) async {
-    await _ensureResolved();
+    await _resolvedForLive();
     final HttpClientRequest req = await _ops!.buildRequest(
       'PUT',
       '$_apiBase/api/library/books/${Uri.encodeComponent(bookKey)}/progress',
@@ -1752,7 +1897,7 @@ class InterconnectSyncBackend extends SyncBackend
   /// 回落逐本 GET。其它失败（网络、鉴权、5xx）照常抛，不降级成「全都没进度」——那会
   /// 让本轮把每本书都当成 host 无记录来判。
   Future<Map<String, RemoteBookProgress>?> remoteBookProgressSnapshot() async {
-    await _ensureResolved();
+    await _resolvedForLive();
     final HttpClientRequest req = await _ops!.buildRequest(
       'GET',
       '$_apiBase$kBookProgressBatchPath',
@@ -1769,6 +1914,7 @@ class InterconnectSyncBackend extends SyncBackend
         serverReason: await readSyncErrorBody(res),
       );
     }
+    _noteLiveWriteSupport(res);
     final Object? decoded = jsonDecode(await _readBodyBounded(res));
     if (decoded is! Map) {
       throw FormatException(
@@ -2308,7 +2454,7 @@ class InterconnectSyncBackend extends SyncBackend
   Future<({int positionMs, int updatedAtMs})> remoteAudiobookPosition(
     String bookKey,
   ) async {
-    await _ensureResolved();
+    await _resolvedForLive();
     final HttpClientRequest req = await _ops!.buildRequest(
       'GET',
       '$_apiBase/api/library/audiobooks/${Uri.encodeComponent(bookKey)}/position',
@@ -2322,6 +2468,7 @@ class InterconnectSyncBackend extends SyncBackend
       res.statusCode,
       'GET /api/library/audiobooks/$bookKey/position',
     );
+    _noteLiveWriteSupport(res);
     final String body = await _readBodyBounded(res);
     final Map<String, dynamic> json = jsonDecode(body) as Map<String, dynamic>;
     return (
@@ -2337,7 +2484,7 @@ class InterconnectSyncBackend extends SyncBackend
     int positionMs,
     int updatedAtMs,
   ) async {
-    await _ensureResolved();
+    await _resolvedForLive();
     final HttpClientRequest req = await _ops!.buildRequest(
       'PUT',
       '$_apiBase/api/library/audiobooks/${Uri.encodeComponent(bookKey)}/position',
@@ -3522,7 +3669,7 @@ class InterconnectSyncBackend extends SyncBackend
     String id, {
     int episodeIndex = 0,
   }) async {
-    await _ensureResolved();
+    await _resolvedForLive();
     final String query = episodeIndex > 0 ? '?episode=$episodeIndex' : '';
     final HttpClientRequest req = await _ops!.buildRequest(
       'GET',
@@ -3534,6 +3681,7 @@ class InterconnectSyncBackend extends SyncBackend
       return (positionMs: 0, updatedAtMs: 0);
     }
     _ops!.checkStatus(res.statusCode, 'GET /api/library/videos/$id/position');
+    _noteLiveWriteSupport(res);
     final String body = await _readBodyBounded(res);
     final Map<String, dynamic> json = jsonDecode(body) as Map<String, dynamic>;
     return (
@@ -3550,7 +3698,7 @@ class InterconnectSyncBackend extends SyncBackend
     int updatedAtMs, {
     int episodeIndex = 0,
   }) async {
-    await _ensureResolved();
+    await _resolvedForLive();
     final String query = episodeIndex > 0 ? '?episode=$episodeIndex' : '';
     final HttpClientRequest req = await _ops!.buildRequest(
       'PUT',
@@ -3568,6 +3716,257 @@ class InterconnectSyncBackend extends SyncBackend
     final HttpClientResponse res = await _sendBounded(req);
     await res.drain<void>();
     _ops!.checkStatus(res.statusCode, 'PUT /api/library/videos/$id/position');
+  }
+
+  // ── live 写入（三方同步专用，BUG-4431）──────────────────────────────────────
+
+  /// host 是否在 live 位置端点上宣告了带回执的写入契约（[kLiveWriteHeader]），按
+  /// [_activeHostIdentity] 缓存：带头的成功响应记 true，不带头的成功响应记 false。
+  final Map<String, bool> _liveWriteSupport = <String, bool>{};
+
+  void _noteLiveWriteSupport(HttpClientResponse res) {
+    final String? host = _activeHostIdentity;
+    if (host == null) return;
+    _liveWriteSupport[host] = res.headers.value(kLiveWriteHeader) == '1';
+  }
+
+  bool get _liveWriteKnownSupported {
+    final String? host = _activeHostIdentity;
+    return host != null && _liveWriteSupport[host] == true;
+  }
+
+  /// 三方同步向 host 写视频 [id] 的播放位置：带前置条件 [expectedPositionsMs]
+  /// （判定时读到的 host 位置），只在 host 确认停在上报位置时返回
+  /// [LivePushStatus.confirmed]——调用方据此决定记不记基线。流程见 [_putLive]。
+  ///
+  /// 旧的 [putRemoteVideoPosition] 一字不改，其它调用方（如 host-playlist 非首集
+  /// 上报）照旧只发一次 PUT。
+  Future<LivePositionPush> putLiveVideoPosition(
+    String id,
+    int positionMs,
+    int updatedAtMs, {
+    int episodeIndex = 0,
+    required List<int> expectedPositionsMs,
+    InterconnectHostPin? pin,
+  }) {
+    final String query = episodeIndex > 0 ? '?episode=$episodeIndex' : '';
+    return _pinned(
+      pin,
+      () => _putLive<LivePosition>(
+        read: () => remoteVideoPosition(id, episodeIndex: episodeIndex),
+        expectedHit: (LivePosition now) =>
+            expectedPositionsMs.contains(now.positionMs),
+        landed: (LivePosition now) => now.positionMs == positionMs,
+        legacyPut: (LivePosition pre) => putRemoteVideoPosition(
+          id,
+          positionMs,
+          _legacyLiveStamp(updatedAtMs, storedAtMs: pre.updatedAtMs),
+          episodeIndex: episodeIndex,
+        ),
+        path: () => '/api/library/videos/${_encodeVideoId(id)}/position$query',
+        body: <String, Object?>{
+          'positionMs': positionMs,
+          'positionUpdatedAtMs': updatedAtMs,
+          kLiveExpectedPositionsKey: expectedPositionsMs,
+        },
+        label: 'PUT /api/library/videos/$id/position',
+        parseReceipt: _parsePositionReceipt,
+      ),
+    );
+  }
+
+  /// 有声书版 [putLiveVideoPosition]；[identity] 见 [RemoteAudiobookInfo.identity]。
+  Future<LivePositionPush> putLiveAudiobookPosition(
+    String identity,
+    int positionMs,
+    int updatedAtMs, {
+    required List<int> expectedPositionsMs,
+    InterconnectHostPin? pin,
+  }) => _pinned(
+    pin,
+    () => _putLive<LivePosition>(
+      read: () => remoteAudiobookPosition(identity),
+      expectedHit: (LivePosition now) =>
+          expectedPositionsMs.contains(now.positionMs),
+      landed: (LivePosition now) => now.positionMs == positionMs,
+      legacyPut: (LivePosition pre) => putRemoteAudiobookPosition(
+        identity,
+        positionMs,
+        _legacyLiveStamp(updatedAtMs, storedAtMs: pre.updatedAtMs),
+      ),
+      path: () =>
+          '/api/library/audiobooks/${Uri.encodeComponent(identity)}/position',
+      body: <String, Object?>{
+        'positionMs': positionMs,
+        'positionUpdatedAtMs': updatedAtMs,
+        kLiveExpectedPositionsKey: expectedPositionsMs,
+      },
+      label: 'PUT /api/library/audiobooks/$identity/position',
+      parseReceipt: _parsePositionReceipt,
+    ),
+  );
+
+  /// 书进度版 [putLiveVideoPosition]：前置条件是 host 进度落在 [expected] 某个
+  /// 位置上（[BookProgressBaseline.matches]），「停在上报位置」按 [sameBookPosition]。
+  Future<LiveBookProgressPush> putLiveBookProgress(
+    String bookKey,
+    RemoteBookProgress progress, {
+    required List<BookProgressBaseline> expected,
+    InterconnectHostPin? pin,
+  }) => _pinned(
+    pin,
+    () => _putLive<RemoteBookProgress>(
+      read: () => remoteBookProgress(bookKey),
+      expectedHit: (RemoteBookProgress now) =>
+          expected.any((BookProgressBaseline b) => b.matches(now)),
+      landed: (RemoteBookProgress now) => sameBookPosition(now, progress),
+      legacyPut: (RemoteBookProgress pre) => putRemoteBookProgress(
+        bookKey,
+        RemoteBookProgress(
+          sectionIndex: progress.sectionIndex,
+          normCharOffset: progress.normCharOffset,
+          charOffset: progress.charOffset,
+          updatedAtMs: _legacyLiveStamp(
+            progress.updatedAtMs,
+            storedAtMs: pre.updatedAtMs,
+          ),
+        ),
+      ),
+      path: () => '/api/library/books/${Uri.encodeComponent(bookKey)}/progress',
+      body: <String, Object?>{
+        ...progress.toJson(),
+        kLiveExpectedBookProgressKey: <Map<String, Object?>>[
+          for (final BookProgressBaseline b in expected)
+            <String, Object?>{
+              'sectionIndex': b.sectionIndex,
+              'normCharOffset': b.normCharOffset,
+            },
+        ],
+      },
+      label: 'PUT /api/library/books/$bookKey/progress',
+      parseReceipt: (Object? json) {
+        final LiveBookProgressWriteOutcome? o =
+            LiveBookProgressWriteOutcome.tryParse(json);
+        return o == null ? null : (result: o.result, now: o.current);
+      },
+    ),
+  );
+
+  static ({LiveWriteResult result, LivePosition now})? _parsePositionReceipt(
+    Object? json,
+  ) {
+    final LivePositionWriteOutcome? o = LivePositionWriteOutcome.tryParse(json);
+    return o == null
+        ? null
+        : (
+            result: o.result,
+            now: (positionMs: o.positionMs, updatedAtMs: o.updatedAtMs),
+          );
+  }
+
+  /// 兼容层发给旧 host 的上报戳：模拟新 host「前置条件命中就不按戳拒收」的口径
+  /// （[resolveLivePositionWrite]）——前置 GET 已核对 host 停在期望位置上，上报戳
+  /// 不新于 host 已存可信戳（[trustedStoredSyncStamp]）时抬到「已存戳 + 1」，再截到
+  /// [capFutureSyncStamp]。不抬的话旧 host 按 LWW 拒收时钟偏慢设备的每一次上报，
+  /// 实时上报整场 held（BUG-4431 评审 correctness-1）。
+  static int _legacyLiveStamp(int reportedAtMs, {required int storedAtMs}) {
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    final int stored = trustedStoredSyncStamp(storedAtMs, nowMs: now);
+    return capFutureSyncStamp(
+      reportedAtMs > stored ? reportedAtMs : stored + 1,
+      nowMs: now,
+    );
+  }
+
+  /// live 写入的唯一流程（BUG-4431）。[read] / [legacyPut] 是既有的 GET / PUT
+  /// 方法，[path] / [body] 是带前置条件的新式 PUT。
+  ///
+  /// - host 未宣告新契约（未知或已知不支持）：先 [read] 一次（同时从响应头学到能力）。
+  ///   host 此刻的值不在期望集合里 → [LivePushStatus.superseded]，不发 PUT。
+  /// - 学到 host 支持：发带前置条件的 PUT，按回执——`applied` → confirmed；
+  ///   `unchanged` → host 停在上报位置才 confirmed，否则 rejected；`stale` /
+  ///   `missing` → rejected；`preconditionFailed`（409）→ superseded；回执解析不了 →
+  ///   rejected 并记诊断。200 空体 = host 已降级：清掉能力缓存，按兼容层再 [read]
+  ///   一次确认。
+  /// - 兼容层（旧 host）：[legacyPut]（收到前置 GET 读到的值，据此抬戳，见
+  ///   [_legacyLiveStamp]）后再 [read]，host 停在上报位置才 confirmed。
+  ///   外部限制：旧 host 只有按时间戳的 LWW，前置 GET 与 PUT 之间仍有被第三台设备
+  ///   写入覆盖的窗口；清理条件：最低支持的 host 版本都发 [kLiveWriteHeader] 后删掉
+  ///   兼容层分支。
+  /// - 网络错误 / 超时 / 非 2xx（409 除外）照常抛：调用方保留「待确认」行（BUG-3528）。
+  Future<({LivePushStatus status, T? hostNow})> _putLive<T extends Object>({
+    required Future<T> Function() read,
+    required bool Function(T now) expectedHit,
+    required bool Function(T now) landed,
+    required Future<void> Function(T precheck) legacyPut,
+    required String Function() path,
+    required Map<String, Object?> body,
+    required String label,
+    required ({LiveWriteResult result, T now})? Function(Object? json)
+    parseReceipt,
+  }) async {
+    Future<({LivePushStatus status, T? hostNow})> confirmByRead() async {
+      final T now = await read();
+      return (
+        status: landed(now)
+            ? LivePushStatus.confirmed
+            : LivePushStatus.rejected,
+        hostNow: now,
+      );
+    }
+
+    if (!_liveWriteKnownSupported) {
+      final T now = await read();
+      if (!expectedHit(now)) {
+        return (status: LivePushStatus.superseded, hostNow: now);
+      }
+      if (!_liveWriteKnownSupported) {
+        await legacyPut(now);
+        return confirmByRead();
+      }
+    }
+    await _resolvedForLive();
+    final HttpClientRequest req = await _ops!.buildRequest(
+      'PUT',
+      '$_apiBase${path()}',
+    );
+    req.headers.set('Content-Type', 'application/json; charset=utf-8');
+    req.add(utf8.encode(jsonEncode(body)));
+    final HttpClientResponse res = await _sendBounded(req);
+    if (res.statusCode != 409) {
+      if (res.statusCode >= 300) await res.drain<void>();
+      _ops!.checkStatus(res.statusCode, label);
+    }
+    final String text = await _readBodyBounded(res);
+    if (res.statusCode != 409 && text.trim().isEmpty) {
+      // host 已降级成旧契约：这一次写已被旧 host 按 LWW 处理，前置条件没生效；
+      // 清掉能力缓存，下一次写回到兼容层。
+      final String? host = _activeHostIdentity;
+      if (host != null) _liveWriteSupport[host] = false;
+      return confirmByRead();
+    }
+    Object? json;
+    try {
+      json = jsonDecode(text);
+    } on FormatException {
+      json = null;
+    }
+    final ({LiveWriteResult result, T now})? receipt = parseReceipt(json);
+    if (receipt == null) {
+      debugPrint('[sync] $label: unrecognised live write receipt: $text');
+      return (status: LivePushStatus.rejected, hostNow: null);
+    }
+    final LivePushStatus status = switch (receipt.result) {
+      LiveWriteResult.applied => LivePushStatus.confirmed,
+      LiveWriteResult.unchanged =>
+        landed(receipt.now)
+            ? LivePushStatus.confirmed
+            : LivePushStatus.rejected,
+      LiveWriteResult.stale ||
+      LiveWriteResult.missing => LivePushStatus.rejected,
+      LiveWriteResult.preconditionFailed => LivePushStatus.superseded,
+    };
+    return (status: status, hostNow: receipt.now);
   }
 
   /// 读 host 端视频 [id] 的播放偏好带戳状态（[RemoteVideoPlaybackSync]）。host
@@ -3687,3 +4086,212 @@ class InterconnectSyncBackend extends SyncBackend
     }
   }
 }
+
+/// 候选 [candidate] 的基线作用域 id（BUG-4434）：它自己的 hostId；老条目（无
+/// hostId）按「是否与某条带 hostId 的候选同一台 host」认领那台的 hostId，认不出 →
+/// null（由 [interconnectScopeIdentityOf] 退到凭据作用域）。纯函数。
+///
+/// 同一台 host 常常一条地址带 hostId（配对 / 学习的锚点）、一条没有（手输的 DDNS
+/// 等 host 不公布的名字）。只看候选自己的 hostId 会把同一台 host 的基线拆成两槽：
+/// 换网走另一条地址就拿另一槽的旧基线判定，两端都「偏离基线」而反复判冲突、实时
+/// 上报 held；两条地址之间故障切换还被当成换 host（评审 compat-1 / correctness-3）。
+///
+/// 认领判据（都只用本机已存的配对事实，不发请求）：
+/// - 两边都钉了证书指纹：相等 → 同一台（指纹 = host 私钥）；不等 → 不是同一台，
+///   不再看凭据。
+/// - 否则看实际使用的凭据（[interconnectTokenFor]，行内 token 优先、回落全局键）：
+///   相等 → 同一台。token 是 host 按设备签发的随机值，另一台 host 不认，所以会话能
+///   用这份凭据同步的老条目只可能是签发它的那台。残留：用户给两台 host 手动配了
+///   同一个 token 且都没钉指纹时，会被当成同一台。
+/// - 认领到的 hostId 必须唯一；与多台 host 都对得上（来源不可考）→ null。
+String? interconnectScopeHostIdOf(
+  FushiClientUrl candidate,
+  List<FushiClientUrl> candidates, {
+  required String? fallbackToken,
+}) {
+  String? idOf(FushiClientUrl c) {
+    final String? id = c.hostId;
+    return (id == null || id.isEmpty) ? null : id;
+  }
+
+  final String? own = idOf(candidate);
+  if (own != null) return own;
+  final String? fp = candidate.fingerprintSha256;
+  final String? token = interconnectTokenFor(candidate, fallbackToken);
+  final Set<String> matched = <String>{};
+  for (final FushiClientUrl c in candidates) {
+    final String? id = idOf(c);
+    if (id == null) continue;
+    final String? cFp = c.fingerprintSha256;
+    if (fp != null && fp.isNotEmpty && cFp != null && cFp.isNotEmpty) {
+      if (fingerprintEquals(fp, cFp)) matched.add(id);
+      continue;
+    }
+    if (token != null && interconnectTokenFor(c, fallbackToken) == token) {
+      matched.add(id);
+    }
+  }
+  return matched.length == 1 ? matched.single : null;
+}
+
+/// 候选 [candidate] 的基线作用域（BUG-4434）：[interconnectScopeHostIdOf] 认得出
+/// hostId → 那台 host；认不出（老条目：配对早于 host 公布 hostId 的版本、或明文 http
+/// 地址从不学习 hostId）→ 按它实际使用的配对凭据（[interconnectTokenFor]）分槽；连
+/// 凭据都没有（这条地址用不了）→ null。纯函数。
+///
+/// 凭据作身份的依据：token 是 host 用 `Random.secure` 生成的 256 位随机值，按设备
+/// 签发（v2）或 host 自己的接入密钥（v1），另一台 host 不认，所以会话能用这份凭据
+/// 同步的老条目只可能连着签发它的那台；同一台 host 的多条老地址（同一份凭据）落同一
+/// 槽，地址之间切换不算换 host。凭据只经 [syncRemoteTag] 截断哈希进内存与库，不存
+/// 明文。代价：重新配对换了 token 就换槽（首轮两端不同的条目判一次冲突，不丢数据）。
+/// 残留：两台 host 认同一份凭据（用户手动给两台配了同一个接入密钥、或拿一台的备份
+/// 恢复出另一台）时仍会被当成同一台。
+InterconnectScopeIdentity? interconnectScopeIdentityOf(
+  FushiClientUrl candidate,
+  List<FushiClientUrl> candidates, {
+  required String? fallbackToken,
+}) {
+  final String? hostId = interconnectScopeHostIdOf(
+    candidate,
+    candidates,
+    fallbackToken: fallbackToken,
+  );
+  if (hostId != null) return InterconnectScopeIdentity.host(hostId);
+  final String? token = interconnectTokenFor(candidate, fallbackToken);
+  return token == null ? null : InterconnectScopeIdentity.credential(token);
+}
+
+/// 一台 host 在基线表里的身份（BUG-4434）：它的 hostId，或（认不出 hostId 的老
+/// 条目）它签发的配对凭据的截断哈希。见 [interconnectScopeIdentityOf]。
+@immutable
+class InterconnectScopeIdentity {
+  const InterconnectScopeIdentity.host(String this.hostId)
+    : credentialTag = null;
+
+  InterconnectScopeIdentity.credential(String token)
+    : hostId = null,
+      credentialTag = syncRemoteTag('fushiServer-credential\n$token');
+
+  /// host 自报的稳定设备 id；凭据作用域为 null。
+  final String? hostId;
+
+  /// 凭据作用域的标签（凭据的截断哈希）；hostId 作用域为 null。
+  final String? credentialTag;
+
+  /// 基线维度的远端标签（[remoteScopedKey] 的后缀）。
+  String get tag =>
+      hostId != null ? syncRemoteTag('fushiServer\n$hostId') : credentialTag!;
+
+  @override
+  bool operator ==(Object other) =>
+      other is InterconnectScopeIdentity &&
+      other.hostId == hostId &&
+      other.credentialTag == credentialTag;
+
+  @override
+  int get hashCode => Object.hash(hostId, credentialTag);
+
+  @override
+  String toString() =>
+      hostId != null ? 'host:$hostId' : 'credential:$credentialTag';
+}
+
+/// 一个互联会话所连 host 的基线作用域（BUG-4434）。
+///
+/// [identity] 是那台 host 的作用域（[interconnectScopeIdentityOf]）；null 只出现在
+/// 测试替身（无作用域，用无后缀维度）。[serial] 是取 pin 时会话的作用域计数，同一
+/// 作用域中途换走又换回也认得出来。
+class InterconnectHostPin {
+  const InterconnectHostPin({required this.identity, required this.serial});
+
+  final InterconnectScopeIdentity? identity;
+  final int serial;
+
+  /// 作用域是 hostId 时的 hostId；凭据作用域 / 无作用域为 null。
+  String? get hostId => identity?.hostId;
+
+  /// 基线维度的远端标签；无作用域为 null（用无后缀维度）。
+  String? get tag => identity?.tag;
+
+  @override
+  bool operator ==(Object other) =>
+      other is InterconnectHostPin &&
+      other.identity == identity &&
+      other.serial == serial;
+
+  @override
+  int get hashCode => Object.hash(identity, serial);
+
+  @override
+  String toString() => 'InterconnectHostPin($identity#$serial)';
+}
+
+/// 旧无后缀基线行的领养决定（BUG-4434，由当前已启用候选算出）。
+enum LegacyBaselineAdoption {
+  /// 候选只有一个作用域（单 host，含只有老条目的单 host）：旧行全部归它。
+  move,
+
+  /// 候选有多个作用域：旧行属于哪台不可考，删掉，不领养。
+  discard,
+
+  /// 不动（认不出远端的测试替身 / 后端）。
+  keep,
+}
+
+/// [InterconnectSyncBackend.liveHostScope] 的结果。
+class InterconnectHostScope {
+  const InterconnectHostScope({
+    required this.pin,
+    required this.adoption,
+    this.predecessorTags = const <String>[],
+  });
+
+  final InterconnectHostPin pin;
+  final LegacyBaselineAdoption adoption;
+
+  /// 同一台 host 先前用过的作用域标签：当前作用域是 hostId 时，这台 host 的候选
+  /// 所用凭据的凭据作用域（老条目学到 hostId / 与带 hostId 的地址归组之前写的基线）。
+  /// 绑定时逐行并入当前作用域（见 `ensureBaselinesAdopted`）。
+  final List<String> predecessorTags;
+}
+
+/// 会话在钉住之后换了 host（BUG-4434）：用旧 host 的基线对新 host 判定会把另一台
+/// host 的值当成「对端单边改动」静默落到本机。抛出点在发请求之前，host 没收到请求。
+class InterconnectHostChangedException implements Exception {
+  const InterconnectHostChangedException({
+    required this.expected,
+    required this.actual,
+  });
+
+  final InterconnectHostPin expected;
+  final InterconnectScopeIdentity? actual;
+
+  @override
+  String toString() =>
+      'InterconnectHostChangedException: session moved off $expected';
+}
+
+/// 三方同步一次 live 写入的结局（BUG-4431）。
+enum LivePushStatus {
+  /// host 确认停在上报位置：调用方可以记基线。
+  confirmed,
+
+  /// host 没采纳（较新戳胜出 / 条目不存在 / 回执不可识别）：不记基线。
+  rejected,
+
+  /// host 此刻的值已不是判定时读到的那份（对端在判定后又写过）：不写、不记基线，
+  /// 交给下一轮按新事实重新判定。
+  superseded,
+}
+
+/// 一条 live 播放位置：毫秒位置 + host 记下的时间戳。
+typedef LivePosition = ({int positionMs, int updatedAtMs});
+
+/// live 位置写入的结局与 host 写后的当前值（读不到时为 null）。
+typedef LivePositionPush = ({LivePushStatus status, LivePosition? hostNow});
+
+/// live 书进度写入的结局与 host 写后的当前进度（读不到时为 null）。
+typedef LiveBookProgressPush = ({
+  LivePushStatus status,
+  RemoteBookProgress? hostNow,
+});

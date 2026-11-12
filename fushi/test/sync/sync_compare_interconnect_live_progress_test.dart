@@ -6,6 +6,9 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/sync/interconnect_book_progress_sync.dart';
+import 'package:fushi/src/sync/interconnect_playback_position_sync.dart';
+import 'package:fushi/src/sync/playback_position_conflict_dialog.dart';
+import 'package:fushi/src/sync/sync_orchestrator.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_engine/sync/aggregate_snapshot.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
@@ -18,6 +21,7 @@ import 'package:fushi_engine/sync/sync_asset_store.dart';
 import 'package:fushi_engine/sync/ttu_filename.dart';
 import 'package:fushi_engine/sync/ttu_models.dart';
 import 'package:fushi_core/fushi_core.dart';
+import '../helpers/interconnect_legacy_host_scope.dart';
 
 /// BUG-2506：互联通道的冲突对比弹窗此前只看 host 上的 WebDAV 文件箱
 /// （`progress_*.json`，client 自己写、host 从不读回），永远看不到「host DB 与本机
@@ -29,7 +33,8 @@ FushiDatabase _memDb() =>
 /// 一章 1000 字：normCharOffset 0..10000 线性对应阅读分数。
 const String _chaptersJson = '[{"characters":1000}]';
 
-class _FakeInterconnectBackend extends InterconnectSyncBackend {
+class _FakeInterconnectBackend extends InterconnectSyncBackend
+    with LegacyInterconnectHostScope {
   _FakeInterconnectBackend({required this.hostProgress})
     : super.withProbe((String url, String token) async => true);
 
@@ -682,6 +687,205 @@ void main() {
         await db.getSyncBaseline('BookA', kInterconnectBookProgressDimension),
       ),
       isA<BookProgressBaseline>().having((b) => b.normCharOffset, 'norm', 9000),
+    );
+  });
+
+  // BUG-4433：对比弹窗里书进度冲突选「本地」，以前把这个选择原样套到有声书断点上
+  // （直接 pushLocal，不走有声书自己的三方判定）。有声书只有 host 动过时，host 上
+  // 更新的断点会被本机旧值推回去。
+  test('对比「应用」：书冲突选本地，有声书只 host 动过 → 按三方结论落 host 值', () async {
+    final FushiDatabase db = _memDb();
+    addTearDown(db.close);
+    final EpubBookRow book = await _seedBook(db, 'BookA');
+    await _seedPosition(db, book.uid, norm: 3000, updatedAt: 1000);
+    await _seedBaseline(db, 'BookA', 1000);
+    // 有声书：基线 = 本端 4000；host 前进到 8000。
+    await db.setPrefTyped<int>(audiobookPositionPrefKey('BookA'), 4000);
+    await db.setPrefTyped<int>(audiobookPositionAtPrefKey('BookA'), 2000);
+    await db.setSyncBaseline(
+      'BookA',
+      kInterconnectAudiobookPositionDimension,
+      4000,
+    );
+    final _FakeInterconnectBackend fake = _FakeInterconnectBackend(
+      hostProgress: <String, RemoteBookProgress>{'BookA': _host(9000, 5000)},
+    );
+    fake.hostAudiobooks.add(
+      const RemoteAudiobookInfo(
+        bookKey: 'BookA',
+        title: 'BookA',
+        positionMs: 8000,
+        positionUpdatedAtMs: 6000,
+      ),
+    );
+    fake.hostAudioPositions['BookA'] = (positionMs: 8000, updatedAtMs: 6000);
+
+    final List<SyncCompareEntry> entries = await fetchCompareDataForTest(
+      db,
+      fake,
+    );
+    final SyncCompareEntry row = entries.single;
+    expect(row.hasConflict, isTrue, reason: '书进度两端都偏离基线');
+    expect(row.liveRemoteAudio, (positionMs: 8000, updatedAtMs: 6000));
+    expect(row.liveLocalAudio, (positionMs: 4000, updatedAtMs: 2000));
+
+    final Directory tmp = Directory.systemTemp.createTempSync('cmp_audio_');
+    addTearDown(() => tmp.deleteSync(recursive: true));
+    final SyncCompareApplyResult result = await applySyncCompareChoices(
+      db: db,
+      backend: fake,
+      actionable: entries,
+      choices: <String, SyncChoice>{'BookA': SyncChoice.useLocal},
+      tempDir: tmp,
+    );
+    expect(result.errors, isEmpty);
+    expect(fake.putProgress['BookA']?.normCharOffset, 3000, reason: '书按选择推本地');
+    expect(
+      fake.putAudioPositions,
+      isEmpty,
+      reason: '有声书只 host 动过：不得把本机旧断点推回 host',
+    );
+    expect(fake.hostAudioPositions['BookA']?.positionMs, 8000);
+    expect(
+      await db.getPrefTyped<int>(audiobookPositionPrefKey('BookA'), 0),
+      8000,
+      reason: '按三方结论把 host 断点落回本机',
+    );
+    expect(
+      await db.getSyncBaseline(
+        'BookA',
+        kInterconnectAudiobookPositionDimension,
+      ),
+      8000,
+    );
+  });
+
+  test('对比「应用」：书与有声书都分叉、加载后 host 有声书又变 → 有声书两端不动', () async {
+    final FushiDatabase db = _memDb();
+    addTearDown(db.close);
+    final EpubBookRow book = await _seedBook(db, 'BookA');
+    await _seedPosition(db, book.uid, norm: 3000, updatedAt: 1000);
+    await _seedBaseline(db, 'BookA', 1000);
+    // 有声书：基线 4000，本端 5000，host 7000 —— 真分叉。
+    await db.setPrefTyped<int>(audiobookPositionPrefKey('BookA'), 5000);
+    await db.setPrefTyped<int>(audiobookPositionAtPrefKey('BookA'), 2000);
+    await db.setSyncBaseline(
+      'BookA',
+      kInterconnectAudiobookPositionDimension,
+      4000,
+    );
+    final _FakeInterconnectBackend fake = _FakeInterconnectBackend(
+      hostProgress: <String, RemoteBookProgress>{'BookA': _host(9000, 5000)},
+    );
+    fake.hostAudiobooks.add(
+      const RemoteAudiobookInfo(
+        bookKey: 'BookA',
+        title: 'BookA',
+        positionMs: 7000,
+        positionUpdatedAtMs: 3000,
+      ),
+    );
+    fake.hostAudioPositions['BookA'] = (positionMs: 7000, updatedAtMs: 3000);
+
+    final List<SyncCompareEntry> entries = await fetchCompareDataForTest(
+      db,
+      fake,
+    );
+    expect(entries.single.liveRemoteAudio, (
+      positionMs: 7000,
+      updatedAtMs: 3000,
+    ));
+    // 用户看着这一行时，第三台设备把 host 有声书推到 7500。
+    fake.hostAudioPositions['BookA'] = (positionMs: 7500, updatedAtMs: 4000);
+
+    final Directory tmp = Directory.systemTemp.createTempSync('cmp_audio_');
+    addTearDown(() => tmp.deleteSync(recursive: true));
+    final SyncCompareApplyResult result = await applySyncCompareChoices(
+      db: db,
+      backend: fake,
+      actionable: entries,
+      choices: <String, SyncChoice>{'BookA': SyncChoice.useLocal},
+      tempDir: tmp,
+    );
+    expect(result.errors, isEmpty);
+    expect(fake.putAudioPositions, isEmpty, reason: '用户没见过 7500，不覆盖');
+    expect(fake.hostAudioPositions['BookA']?.positionMs, 7500);
+    expect(
+      await db.getPrefTyped<int>(audiobookPositionPrefKey('BookA'), 0),
+      5000,
+    );
+    expect(
+      await db.getSyncBaseline(
+        'BookA',
+        kInterconnectAudiobookPositionDimension,
+      ),
+      4000,
+      reason: '基线不被改写，冲突不被吞',
+    );
+    final List<PlaybackPositionConflictView> views =
+        await loadPlaybackPositionConflicts(
+          db: db,
+          backend: fake,
+          conflicts: <SyncConflict>[
+            SyncConflict(
+              assetKey: 'BookA',
+              dimension: kInterconnectAudiobookPositionDimension,
+              title: 'BookA',
+              localVersion: 2000,
+              remoteVersion: 4000,
+            ),
+          ],
+        );
+    expect(views, hasLength(1), reason: '有声书分叉仍交给播放位置冲突弹窗');
+  });
+
+  test('对比「应用」：书与有声书都分叉、host 仍是看到的值 → 按这一行的选择落地', () async {
+    final FushiDatabase db = _memDb();
+    addTearDown(db.close);
+    final EpubBookRow book = await _seedBook(db, 'BookA');
+    await _seedPosition(db, book.uid, norm: 3000, updatedAt: 1000);
+    await _seedBaseline(db, 'BookA', 1000);
+    await db.setPrefTyped<int>(audiobookPositionPrefKey('BookA'), 5000);
+    await db.setPrefTyped<int>(audiobookPositionAtPrefKey('BookA'), 2000);
+    await db.setSyncBaseline(
+      'BookA',
+      kInterconnectAudiobookPositionDimension,
+      4000,
+    );
+    final _FakeInterconnectBackend fake = _FakeInterconnectBackend(
+      hostProgress: <String, RemoteBookProgress>{'BookA': _host(9000, 5000)},
+    );
+    fake.hostAudiobooks.add(
+      const RemoteAudiobookInfo(
+        bookKey: 'BookA',
+        title: 'BookA',
+        positionMs: 7000,
+        positionUpdatedAtMs: 3000,
+      ),
+    );
+    fake.hostAudioPositions['BookA'] = (positionMs: 7000, updatedAtMs: 3000);
+
+    final List<SyncCompareEntry> entries = await fetchCompareDataForTest(
+      db,
+      fake,
+    );
+    final Directory tmp = Directory.systemTemp.createTempSync('cmp_audio_');
+    addTearDown(() => tmp.deleteSync(recursive: true));
+    final SyncCompareApplyResult result = await applySyncCompareChoices(
+      db: db,
+      backend: fake,
+      actionable: entries,
+      choices: <String, SyncChoice>{'BookA': SyncChoice.useLocal},
+      tempDir: tmp,
+    );
+    expect(result.errors, isEmpty);
+    expect(fake.hostAudioPositions['BookA']?.positionMs, 5000);
+    expect(
+      await db.getSyncBaseline(
+        'BookA',
+        kInterconnectAudiobookPositionDimension,
+      ),
+      5000,
     );
   });
 }

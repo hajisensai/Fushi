@@ -7,6 +7,8 @@ import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_orchestrator.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/sync/sync_channel_scope.dart'
+    show remoteScopedKey, syncRemoteTag;
 
 /// 通道分槽守卫（BUG-1576 / BUG-1578 / BUG-1579 / BUG-1580）。
 ///
@@ -352,6 +354,20 @@ void main() {
         syncChannelScopeOf(cloudChannel.backend).id,
       );
       expect(lanChannel.scope.id, syncChannelScopeOf(lanChannel.backend).id);
+    });
+  });
+
+  group('远端标签（BUG-4434）', () {
+    test('syncRemoteTag 同输入同输出、16 位十六进制、不含明文', () {
+      final String tag = syncRemoteTag('fushiServer\nhost-123');
+      expect(tag, syncRemoteTag('fushiServer\nhost-123'));
+      expect(tag, matches(RegExp(r'^[0-9a-f]{16}$')));
+      expect(tag, isNot(contains('host')));
+      expect(syncRemoteTag('fushiServer\nhost-124'), isNot(tag));
+    });
+
+    test('remoteScopedKey 形态是 <维度>@<标签>', () {
+      expect(remoteScopedKey('progress_live', 'abc'), 'progress_live@abc');
     });
   });
 }

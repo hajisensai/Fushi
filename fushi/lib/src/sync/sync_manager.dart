@@ -13,7 +13,15 @@ import 'package:fushi_engine/sync/online_novel_book.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/sync/cloud_book_content_names.dart';
 import 'package:fushi/src/sync/position_converter.dart';
+import 'package:fushi/src/sync/interconnect_sync_backend.dart'
+    show
+        InterconnectHostChangedException,
+        InterconnectHostPin,
+        InterconnectSyncBackend;
+import 'package:fushi/src/sync/obfuscating_sync_backend.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
+import 'package:fushi/src/sync/sync_baseline_scope.dart'
+    show SyncRemoteIdentityUnavailableError, progressBaselineStorageFor;
 import 'package:fushi/src/sync/sync_remote_listing.dart';
 import 'package:fushi/src/sync/paged_book_sync_position.dart';
 import 'package:fushi/src/sync/sync_progress_resolver.dart';
@@ -40,9 +48,12 @@ export 'package:fushi_engine/sync/epub_repackage.dart'
 /// 自己上一轮导出的旧进度**倒灌回本机**；用户再读一段，两条通道的远端与基线全都
 /// 对不上 → 每轮 sweep 都报同一本书冲突、每次「立即同步」之后还会再弹。
 ///
-/// 云通道沿用历史行 `'progress'`（同一时刻只有一条云通道在跑，切换云后端与此前
-/// 一样共用一行，存量基线不迁移）；互联通道另开一行（[SyncChannelScope.key]
-/// 后缀，与 folder 缓存 / 删除水位的分槽同一套命名，BUG-1576 族）。与互联 host
+/// 返回的是**逻辑维度**（冲突上报、裁决簿用它）：云通道 `'progress'`，互联通道
+/// 另开一行（[SyncChannelScope.key] 后缀，与 folder 缓存 / 删除水位的分槽同一套
+/// 命名，BUG-1576 族）。落库的**存储维度**还要挂到当前远端名下（换云类型 / 账号 /
+/// 服务器、互联换 host 都是另一个共同祖先，BUG-4434），一律经
+/// `progressBaselineStorageFor`（`sync_baseline_scope.dart`）取，不要直接拿本函数
+/// 的返回值读写 `sync_baselines`。与互联 host
 /// DB 进度的**位置**基线（`kInterconnectBookProgressDimension`）仍是不同的行：
 /// 那条描述的是本机 ↔ host DB，这条描述的是本机 ↔ host 上的文件箱。
 String progressBaselineDimensionOf(SyncBackend backend) {
@@ -139,6 +150,19 @@ class SyncBookResult {
   );
 }
 
+/// [SyncManager.syncAllBooks] 整段跑完、但云后端这一轮认不出账号（评审 compat-2）：
+/// 需要共同祖先才判得了的书被跳过、其余书照常同步，也没有写任何进度基线。带着
+/// 本段的逐本结果抛出，调用方照常收冲突 / 内容错误，再把 [cause] 记成一条错误。
+class SyncBooksIncompleteError implements Exception {
+  const SyncBooksIncompleteError({required this.results, required this.cause});
+
+  final List<SyncBookResult> results;
+  final SyncRemoteIdentityUnavailableError cause;
+
+  @override
+  String toString() => cause.toString();
+}
+
 /// 本书生效的「上传文件」开关：漫画（[BookFormat.manga]）看 [syncMangaContent]，
 /// 其它格式看 [syncContent]（所有者 2026-10-21：书籍和漫画分开）。云盘补缺路径与互联
 /// live 上传共用这一个判据。
@@ -183,8 +207,7 @@ class SyncManager {
   }) : _db = db,
        _repo = SyncRepository(db),
        _backend = backend,
-       _scope = syncChannelScopeOf(backend),
-       _progressDimension = progressBaselineDimensionOf(backend);
+       _scope = syncChannelScopeOf(backend);
 
   final FushiDatabase _db;
   final SyncRepository _repo;
@@ -195,8 +218,50 @@ class SyncManager {
   /// 绝对 URL，串槽后会让本通道把书籍 JSON 连同自己的凭据 PUT 到对端主机。
   final SyncChannelScope _scope;
 
-  /// 本通道文件箱进度基线的 dimension（见 [progressBaselineDimensionOf]）。
-  final String _progressDimension;
+  /// 本通道文件箱进度基线落在 `sync_baselines` 里的存储维度与互联钉住的 host
+  /// （BUG-4434，见 [progressBaselineStorageFor]）：逻辑维度
+  /// [progressBaselineDimensionOf] 挂到**当前远端**名下。惰性取一次，本 manager
+  /// 一生只对一个远端判定；冲突上报的 `conflictDimension` 仍用逻辑名。
+  Future<({String storageDimension, InterconnectHostPin? hostPin})>?
+  _progressStorage;
+
+  Future<({String storageDimension, InterconnectHostPin? hostPin})>
+  _progressBaseline() =>
+      _progressStorage ??= progressBaselineStorageFor(_db, _backend).catchError(
+        (Object e, StackTrace st) {
+          _progressStorage = null;
+          Error.throwWithStackTrace(e, st);
+        },
+      );
+
+  /// 云后端这一轮认不出账号（[SyncRemoteIdentityUnavailableError]）时的那个错误；
+  /// [_progressBaselineIfKnown] 记下，[syncAllBooks] 收尾时整段报一次。
+  SyncRemoteIdentityUnavailableError? _identityUnavailable;
+
+  /// [_progressBaseline]，但认不出远端时返回 null（记进 [_identityUnavailable]）
+  /// 而不是抛出（评审 compat-2）：挑不出基线槽只影响「需要共同祖先」的那部分
+  /// 判定（两端都有戳且不同）与基线写入；单边变化、两端一致的书照常同步，书内容 /
+  /// 统计 / 有声书断点跟着方向照常传，不因一次取邮箱失败整段跳过。
+  Future<({String storageDimension, InterconnectHostPin? hostPin})?>
+  _progressBaselineIfKnown() async {
+    try {
+      return await _progressBaseline();
+    } on SyncRemoteIdentityUnavailableError catch (e) {
+      _identityUnavailable = e;
+      return null;
+    }
+  }
+
+  /// 互联文件箱钉住的 host 仍是会话当前的 host（[InterconnectSyncBackend
+  /// .checkHostPin]，同步、零往返）；换了就抛 [InterconnectHostChangedException]，
+  /// 这本书不落地、不写基线。云通道 [pin] 为 null，无操作。
+  void _checkHostPin(InterconnectHostPin? pin) {
+    if (pin == null) return;
+    final SyncBackend inner = _backend is ObfuscatingSyncBackend
+        ? _backend.inner
+        : _backend;
+    if (inner is InterconnectSyncBackend) inner.checkHostPin(pin);
+  }
 
   /// 文件箱里的进度是否只有本 client 在写（互联 host 从不读回文件箱，见
   /// [SyncCompareEntry.liveAction]）。云盘文件箱是多设备共写的，不算。
@@ -300,12 +365,18 @@ class SyncManager {
           return failure(retryError.message, retryStack);
         } on SyncAuthError {
           rethrow;
+        } on InterconnectHostChangedException {
+          rethrow;
         } catch (retryError, retryStack) {
           return failure(retryError.toString(), retryStack);
         }
       }
       return failure(e.message, stack);
     } on SyncAuthError {
+      rethrow;
+    } on InterconnectHostChangedException {
+      // BUG-4434：会话中途换了 host，本 manager 钉住的作用域整体作废——不是这一本
+      // 书的失败，交给调用方结束本阶段。
       rethrow;
     } catch (e, stack) {
       return failure(e.toString(), stack);
@@ -335,6 +406,11 @@ class SyncManager {
     // 内存缓存去覆盖磁盘上的 title→folderId 映射（`isNotEmpty` 兜住了覆盖，但
     // rootFolderId 同样会失去回写机会），下一轮就得重新解析所有文件夹。
     await _restoreDriveCache();
+    // BUG-4434：开轮先钉住远端作用域（互联：本轮的 host；云：账号 + 服务器）。
+    // 认不出远端（[SyncRemoteIdentityUnavailableError]）不换槽：需要共同祖先才判得
+    // 了的书本轮跳过，其余照常（见 [_progressBaselineIfKnown]），收尾整段报一次错。
+    _identityUnavailable = null;
+    await _progressBaselineIfKnown();
 
     final books = await _db.getAllEpubBooks();
     // 没有整树快照时，把「每本书列一次文件夹」从串行改成有界并发的预取：请求数不变
@@ -377,6 +453,11 @@ class SyncManager {
     // 书阶段后被中断（app 退出 / 进程被杀 / 异常）的残缺同步会误记冷却、压制下次
     // app-open 重试。改由 SyncOrchestrator.run() 在整轮完成后记录（见其结尾 TODO-1332）。
     await _persistDriveCache();
+    final SyncRemoteIdentityUnavailableError? unidentified =
+        _identityUnavailable;
+    if (unidentified != null) {
+      throw SyncBooksIncompleteError(results: results, cause: unidentified);
+    }
     return results;
   }
 
@@ -413,21 +494,29 @@ class SyncManager {
 
       // 这本书的判定 + 落地与别的路径（互联通道上的退出书同步、对比弹窗应用）互斥：
       // 那些路径不再等整轮 sweep 结束（BUG-1569③），只排这本书的锁。
-      final result = await syncResourceLocks.withResources(
-        <String>{syncBookResource(book.bookKey)},
-        () => syncBook(
-          book: book,
-          syncStats: syncStats,
-          statsSyncMode: statsSyncMode,
-          syncAudioBook: syncAudioBook,
-          syncContent: syncContent,
-          syncMangaContent: syncMangaContent,
-          importOnly: importOnly,
-          listing: listing,
-          observations: observations,
-          prefetchedSyncFiles: prefetched,
-        ),
-      );
+      final SyncBookResult result;
+      try {
+        result = await syncResourceLocks.withResources(
+          <String>{syncBookResource(book.bookKey)},
+          () => syncBook(
+            book: book,
+            syncStats: syncStats,
+            statsSyncMode: statsSyncMode,
+            syncAudioBook: syncAudioBook,
+            syncContent: syncContent,
+            syncMangaContent: syncMangaContent,
+            importOnly: importOnly,
+            listing: listing,
+            observations: observations,
+            prefetchedSyncFiles: prefetched,
+          ),
+        );
+      } on InterconnectHostChangedException {
+        // BUG-4434：本轮钉住的 host 已不是会话的 host，后面每本书都会同样作废：
+        // 结束本阶段、报一条错（编排器记进 report.errors），已落地的书不受影响。
+        await _persistDriveCache();
+        rethrow;
+      }
       results.add(result);
     }
   }
@@ -655,6 +744,16 @@ class SyncManager {
         ? parseProgressTimestamp(syncFiles.progress!.name)
         : null;
 
+    // BUG-4434：基线挂在当前远端名下；互联读完远端文件箱、判定之前核对 host 没换。
+    // 手动路径（对比弹窗）落地后必写基线，认不出远端就整本失败；自动路径认不出
+    // 远端时 storage 为 null：只判不需要共同祖先的情形，不读不写基线（评审 compat-2）。
+    final ({String storageDimension, InterconnectHostPin? hostPin})? storage =
+        direction != null
+        ? await _progressBaseline()
+        : await _progressBaselineIfKnown();
+    final String? progressDimension = storage?.storageDimension;
+    if (storage != null) _checkHostPin(storage.hostPin);
+
     final SyncDirection syncDir;
     // 自动路径读到的共同祖先；手动路径不读（null），落基线时照旧无条件写。
     int? autoBase;
@@ -668,13 +767,26 @@ class SyncManager {
       // Auto path: gate on the common-ancestor baseline. A genuine fork
       // (both sides moved off base) must surface as a conflict instead of
       // silently last-write-wins clobbering one side.
-      final int? base = await _db.getSyncBaseline(assetKey, _progressDimension);
+      final int? base = progressDimension == null
+          ? null
+          : await _db.getSyncBaseline(assetKey, progressDimension);
       autoBase = base;
       ProgressResolution res = resolveProgressSync(
         local: localPosition?.updatedAt,
         remote: remoteTimestamp,
         base: base,
       );
+      final SyncRemoteIdentityUnavailableError? unidentified =
+          _identityUnavailable;
+      if (res.isConflict && progressDimension == null && unidentified != null) {
+        // 两端都有戳且不同，判不了谁动过（不知道该读哪个远端的共同祖先）：这本书
+        // 本轮跳过，不报冲突（基线槽找到后可能根本不是冲突），不落地。
+        return SyncBookResult(
+          direction: SyncResult.skipped,
+          title: book.title,
+          error: unidentified.message,
+        );
+      }
       if (res.isConflict && base == null && _fileBoxIsClientOwned) {
         // 互联通道的文件箱 `progress_*.json` 只有 client 自己写、host 从不读回
         // （[SyncCompareEntry.liveAction]）：这里的「远端」永远是本 client 上一次
@@ -690,7 +802,7 @@ class SyncManager {
           direction: SyncResult.conflict,
           title: book.title,
           conflictAssetKey: assetKey,
-          conflictDimension: _progressDimension,
+          conflictDimension: progressBaselineDimensionOf(_backend),
           conflictLocalVersion: localPosition?.updatedAt,
           conflictRemoteVersion: remoteTimestamp,
         );
@@ -721,8 +833,11 @@ class SyncManager {
       // jHQpTfjrNB：自动路径上基线已经等于这个时间戳（两端都没动过的书——每轮绝大
       // 多数书都是这样）时不再重写同一个值：旧实现每本未变的书每轮都落一次库。
       final int? agreed = localPosition?.updatedAt;
-      if (agreed != null && (direction != null || autoBase != agreed)) {
-        await _db.setSyncBaseline(assetKey, _progressDimension, agreed);
+      if (agreed != null &&
+          storage != null &&
+          (direction != null || autoBase != agreed)) {
+        _checkHostPin(storage.hostPin);
+        await _db.setSyncBaseline(assetKey, storage.storageDimension, agreed);
       }
       return SyncBookResult(direction: SyncResult.synced, title: book.title);
     }
@@ -932,6 +1047,11 @@ class SyncManager {
     if (remoteProgress == null) {
       return SyncBookResult(direction: SyncResult.skipped, title: book.title);
     }
+    // 认不出远端（评审 compat-2）时为 null：照常落地，不写基线（云通道没有 pin）。
+    final ({String storageDimension, InterconnectHostPin? hostPin})? storage =
+        await _progressBaselineIfKnown();
+    // BUG-4434：导入落地之前核对 host 没换（读到的可能是另一台 host 的文件箱）。
+    if (storage != null) _checkHostPin(storage.hostPin);
 
     // Import progress → (sectionIndex, normCharOffset)。BUG-162: 不再缓存精确
     // exploredCharCount（ttuCharOffset 列已删）；下次导出由 normCharOffset 重算。
@@ -978,11 +1098,13 @@ class SyncManager {
     // to that, instead of spanning every trailing remote call. Written on both
     // the auto path and the manual (compare useRemote→import) path so a
     // user-resolved conflict's new ancestor is also persisted here.
-    await _db.setSyncBaseline(
-      assetKey,
-      _progressDimension,
-      remoteProgress.lastBookmarkModified,
-    );
+    if (storage != null) {
+      await _db.setSyncBaseline(
+        assetKey,
+        storage.storageDimension,
+        remoteProgress.lastBookmarkModified,
+      );
+    }
 
     // Import statistics
     if (syncStats && statsFileId != null) {
@@ -1082,7 +1204,17 @@ class SyncManager {
       // not the whole tail of remote calls. Written on both the auto path and
       // the manual (compare useLocal→export) path so a user-resolved conflict's
       // new ancestor is also recorded.
-      await _db.setSyncBaseline(assetKey, _progressDimension, timestampMs);
+      // BUG-4434：上传之后、写基线之前核对 host 没换——换了就不记这条共同祖先。
+      final ({String storageDimension, InterconnectHostPin? hostPin})? storage =
+          await _progressBaselineIfKnown();
+      if (storage != null) {
+        _checkHostPin(storage.hostPin);
+        await _db.setSyncBaseline(
+          assetKey,
+          storage.storageDimension,
+          timestampMs,
+        );
+      }
 
       // Export statistics
       if (syncStats) {

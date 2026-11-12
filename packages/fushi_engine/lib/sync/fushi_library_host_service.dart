@@ -2060,6 +2060,333 @@ int capFutureSyncStamp(int atMs, {required int nowMs}) {
 int trustedStoredSyncStamp(int storedAtMs, {required int nowMs}) =>
     storedAtMs > nowMs + kSyncFutureStampToleranceMs ? 0 : storedAtMs;
 
+/// 书进度的「可信戳」视图：只把 [RemoteBookProgress.updatedAtMs] 换成
+/// [trustedStoredSyncStamp]（超限毒戳按 0），其余字段原样。戳本来可信时原样返回
+/// 同一个对象。比较前用它，书籍通道才与视频 / 有声书同样能自愈毒戳（BUG-3367 的
+/// 书籍版）。纯函数。
+RemoteBookProgress withTrustedStoredStamp(
+  RemoteBookProgress p, {
+  required int nowMs,
+}) {
+  final int trusted = trustedStoredSyncStamp(p.updatedAtMs, nowMs: nowMs);
+  if (trusted == p.updatedAtMs) return p;
+  return RemoteBookProgress(
+    sectionIndex: p.sectionIndex,
+    normCharOffset: p.normCharOffset,
+    charOffset: p.charOffset,
+    updatedAtMs: trusted,
+  );
+}
+
+/// 书进度的上报戳截到 `nowMs + kSyncFutureStampToleranceMs`（[capFutureSyncStamp]），
+/// 其余字段原样；未超限时原样返回同一个对象。纯函数。
+RemoteBookProgress withCappedStamp(RemoteBookProgress p, {required int nowMs}) {
+  final int capped = capFutureSyncStamp(p.updatedAtMs, nowMs: nowMs);
+  if (capped == p.updatedAtMs) return p;
+  return RemoteBookProgress(
+    sectionIndex: p.sectionIndex,
+    normCharOffset: p.normCharOffset,
+    charOffset: p.charOffset,
+    updatedAtMs: capped,
+  );
+}
+
+/// 互联 live 写入（书进度 / 视频位置 / 有声书位置 `PUT`）的结果（BUG-4431）。
+/// wire 值即枚举名。
+enum LiveWriteResult {
+  /// host 已按上报值落库。
+  applied,
+
+  /// 上报值与 host 已存值相同，没有可写的（host 值即为两端一致的值）。
+  unchanged,
+
+  /// 无前置条件的旧口径 LWW 下，上报值被 host 已存的较新值胜过，未写。
+  stale,
+
+  /// host 没有该条目（书 / 有声书不在库），未写。
+  missing,
+
+  /// 上报带的前置条件与 host 此刻的值不符（判定后对端又改过），未写；端点回 409。
+  preconditionFailed,
+}
+
+/// 新 host 在 live 位置端点（三个位置 `GET` / `PUT` 与批量书进度 `GET`）的响应上
+/// 宣告新写入契约的头（BUG-4431）。值恒为 `1`；旧 host 不发此头，client 据此走兼容层。
+const String kLiveWriteHeader = 'X-Fushi-Live-Write';
+
+/// 视频 / 有声书位置 `PUT` 请求体里的可选前置条件键：host 当前位置必须是其中之一。
+const String kLiveExpectedPositionsKey = 'expectedPositionsMs';
+
+/// 书进度 `PUT` 请求体里的可选前置条件键：`[{sectionIndex, normCharOffset}, ...]`。
+const String kLiveExpectedBookProgressKey = 'expected';
+
+LiveWriteResult? _liveWriteResultOf(Object? raw) {
+  if (raw is! String) return null;
+  for (final LiveWriteResult r in LiveWriteResult.values) {
+    if (r.name == raw) return r;
+  }
+  return null;
+}
+
+/// 视频 / 有声书位置 live 写入的回执：结果 + host 写后的当前值（BUG-4431）。
+class LivePositionWriteOutcome {
+  const LivePositionWriteOutcome({
+    required this.result,
+    required this.positionMs,
+    required this.updatedAtMs,
+  });
+
+  final LiveWriteResult result;
+  final int positionMs;
+  final int updatedAtMs;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'result': result.name,
+    'positionMs': positionMs,
+    'positionUpdatedAtMs': updatedAtMs,
+  };
+
+  /// 解析失败（非 Map、缺字段、`result` 未知）返回 null，不抛；调用方按「未确认」处理。
+  static LivePositionWriteOutcome? tryParse(Object? json) {
+    if (json is! Map) return null;
+    final LiveWriteResult? result = _liveWriteResultOf(json['result']);
+    final Object? pos = json['positionMs'];
+    final Object? at = json['positionUpdatedAtMs'];
+    if (result == null || pos is! num || at is! num) return null;
+    return LivePositionWriteOutcome(
+      result: result,
+      positionMs: pos.toInt(),
+      updatedAtMs: at.toInt(),
+    );
+  }
+}
+
+/// 书进度 live 写入的回执：结果 + host 写后的当前进度（BUG-4431）。
+class LiveBookProgressWriteOutcome {
+  const LiveBookProgressWriteOutcome({
+    required this.result,
+    required this.current,
+  });
+
+  final LiveWriteResult result;
+  final RemoteBookProgress current;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'result': result.name,
+    'progress': current.toJson(),
+  };
+
+  /// 解析失败（非 Map、缺 `progress`、`result` 未知）返回 null，不抛。
+  static LiveBookProgressWriteOutcome? tryParse(Object? json) {
+    if (json is! Map) return null;
+    final LiveWriteResult? result = _liveWriteResultOf(json['result']);
+    final Object? progress = json['progress'];
+    if (result == null || progress is! Map) return null;
+    return LiveBookProgressWriteOutcome(
+      result: result,
+      current: RemoteBookProgress.fromJson(progress.cast<String, Object?>()),
+    );
+  }
+}
+
+/// 可选 host 能力：带结果回执与前置条件的 live 写入（BUG-4431）。与
+/// [MangaLibraryHost] 同范式，server 用 `is` 协商；没实现的 host 端点照旧回 200 空体、
+/// 不发 [kLiveWriteHeader]。
+abstract interface class LivePositionWriteHost {
+  /// [expectedPositionsMs] 非 null 时是前置条件：host 当前位置不在其中 →
+  /// [LiveWriteResult.preconditionFailed]，不写。判定口径见 [resolveLivePositionWrite]。
+  Future<LivePositionWriteOutcome> putVideoPositionChecked(
+    String id,
+    int positionMs,
+    int updatedAtMs, {
+    int episodeIndex = 0,
+    List<int>? expectedPositionsMs,
+  });
+
+  /// 有声书版；host 无该有声书 → [LiveWriteResult.missing]。
+  Future<LivePositionWriteOutcome> putAudiobookPositionChecked(
+    String identity,
+    int positionMs,
+    int updatedAtMs, {
+    List<int>? expectedPositionsMs,
+  });
+
+  /// 书进度版；host 无该书 → [LiveWriteResult.missing]。判定口径见
+  /// [resolveLiveBookProgressWrite]。
+  Future<LiveBookProgressWriteOutcome> putBookProgressChecked(
+    String bookKey,
+    RemoteBookProgress progress, {
+    List<BookProgressBaseline>? expected,
+  });
+}
+
+/// 解析位置 `PUT` 请求体的 [kLiveExpectedPositionsKey]：缺省 / null → null（不设
+/// 前置条件）；不是全为整数的数组 → 抛 [FormatException]（端点回 400）。
+List<int>? parseLiveExpectedPositionsMs(Object? raw) {
+  if (raw == null) return null;
+  if (raw is! List) {
+    throw const FormatException('expectedPositionsMs must be an int array');
+  }
+  return <int>[
+    for (final Object? e in raw)
+      if (e is int)
+        e
+      else
+        throw const FormatException('expectedPositionsMs must be an int array'),
+  ];
+}
+
+/// 解析书进度 `PUT` 请求体的 [kLiveExpectedBookProgressKey]：缺省 / null → null；
+/// 元素不是带整数 `sectionIndex` 与 `normCharOffset` 的对象 → 抛 [FormatException]。
+List<BookProgressBaseline>? parseLiveExpectedBookProgress(Object? raw) {
+  if (raw == null) return null;
+  const FormatException bad = FormatException(
+    'expected must be an array of {sectionIndex, normCharOffset}',
+  );
+  if (raw is! List) throw bad;
+  return <BookProgressBaseline>[
+    for (final Object? e in raw)
+      if (e is Map && e['sectionIndex'] is int && e['normCharOffset'] is int)
+        BookProgressBaseline(
+          sectionIndex: e['sectionIndex'] as int,
+          normCharOffset: e['normCharOffset'] as int,
+        )
+      else
+        throw bad,
+  ];
+}
+
+/// host 位置写入（视频 / 有声书 `PUT`）的唯一判定口径（BUG-4431）。纯函数。
+///
+/// - 上报位置 clamp 0，上报戳截到 `now + 余量`；已存超限毒戳按 0 比较。
+/// - [expectedPositionsMs] 非 null（新 client 带前置条件）：host 当前位置不在其中 →
+///   [LiveWriteResult.preconditionFailed]；命中时**不按戳拒收**（写入方已核对过 host
+///   此刻的值，时钟偏慢的设备也不该被拒），落库戳取 `max(上报戳, 已存可信戳 + 1)`，
+///   保证 host 戳单调前进；同位置且已存戳可信、上报戳不新 → [LiveWriteResult.unchanged]。
+///   已存毒戳一定被改写成可信戳。
+/// - null（旧 client）：沿用 [resolvePositionLww]；胜者是 host 已存值时按上报位置是否
+///   相同回 [LiveWriteResult.unchanged] / [LiveWriteResult.stale]，否则
+///   [LiveWriteResult.applied]。
+///
+/// 返回的 `next` 是 host 写后应处的值（未写时即 [current]）。
+({LiveWriteResult result, ({int positionMs, int updatedAtMs}) next})
+resolveLivePositionWrite({
+  required ({int positionMs, int updatedAtMs}) current,
+  required int positionMs,
+  required int updatedAtMs,
+  required List<int>? expectedPositionsMs,
+  required int nowMs,
+}) {
+  final int inPos = positionMs < 0 ? 0 : positionMs;
+  final int inTs = capFutureSyncStamp(updatedAtMs, nowMs: nowMs);
+  final int curTs = trustedStoredSyncStamp(current.updatedAtMs, nowMs: nowMs);
+  final bool stampTrusted = curTs == current.updatedAtMs;
+  if (expectedPositionsMs != null) {
+    if (!expectedPositionsMs.contains(current.positionMs)) {
+      return (result: LiveWriteResult.preconditionFailed, next: current);
+    }
+    if (inPos == current.positionMs &&
+        stampTrusted &&
+        inTs <= current.updatedAtMs) {
+      return (result: LiveWriteResult.unchanged, next: current);
+    }
+    return (
+      result: LiveWriteResult.applied,
+      next: (
+        positionMs: inPos,
+        updatedAtMs: capFutureSyncStamp(
+          inTs > curTs ? inTs : curTs + 1,
+          nowMs: nowMs,
+        ),
+      ),
+    );
+  }
+  final ({int positionMs, int updatedAtMs}) winner = resolvePositionLww(
+    localPositionMs: current.positionMs,
+    localUpdatedAtMs: curTs,
+    remotePositionMs: inPos,
+    remoteUpdatedAtMs: inTs,
+  );
+  if (winner.positionMs == current.positionMs && winner.updatedAtMs == curTs) {
+    return (
+      result: inPos == current.positionMs
+          ? LiveWriteResult.unchanged
+          : LiveWriteResult.stale,
+      next: current,
+    );
+  }
+  return (result: LiveWriteResult.applied, next: winner);
+}
+
+/// host 书进度写入（`PUT /api/library/books/<bookKey>/progress`）的唯一判定口径
+/// （BUG-4431）。纯函数；书不在库的 [LiveWriteResult.missing] 由调用方判。
+///
+/// 与 [resolveLivePositionWrite] 同构：前置条件用 [BookProgressBaseline.matches]；
+/// 命中时 [LiveWriteResult.unchanged] 要求 section / normCharOffset / **charOffset**
+/// 三者都相同且已存戳可信、上报戳不新——同位置只差 charOffset 时照样写，host 才拿得到
+/// 精确锚点。无前置条件时沿用 [resolveBookProgressSync]（可信戳视图 vs 截戳上报）。
+({LiveWriteResult result, RemoteBookProgress next})
+resolveLiveBookProgressWrite({
+  required RemoteBookProgress current,
+  required RemoteBookProgress incoming,
+  required List<BookProgressBaseline>? expected,
+  required int nowMs,
+}) {
+  final RemoteBookProgress inP = RemoteBookProgress(
+    sectionIndex: incoming.sectionIndex < 0 ? 0 : incoming.sectionIndex,
+    normCharOffset: incoming.normCharOffset < 0 ? 0 : incoming.normCharOffset,
+    charOffset: incoming.charOffset,
+    updatedAtMs: capFutureSyncStamp(incoming.updatedAtMs, nowMs: nowMs),
+  );
+  final int curTs = trustedStoredSyncStamp(current.updatedAtMs, nowMs: nowMs);
+  final bool stampTrusted = curTs == current.updatedAtMs;
+  if (expected != null) {
+    if (!expected.any((BookProgressBaseline b) => b.matches(current))) {
+      return (result: LiveWriteResult.preconditionFailed, next: current);
+    }
+    if (sameBookPosition(inP, current) &&
+        inP.charOffset == current.charOffset &&
+        stampTrusted &&
+        inP.updatedAtMs <= current.updatedAtMs) {
+      return (result: LiveWriteResult.unchanged, next: current);
+    }
+    return (
+      result: LiveWriteResult.applied,
+      next: RemoteBookProgress(
+        sectionIndex: inP.sectionIndex,
+        normCharOffset: inP.normCharOffset,
+        charOffset: inP.charOffset,
+        updatedAtMs: capFutureSyncStamp(
+          inP.updatedAtMs > curTs ? inP.updatedAtMs : curTs + 1,
+          nowMs: nowMs,
+        ),
+      ),
+    );
+  }
+  final RemoteBookProgress trustedCurrent = withTrustedStoredStamp(
+    current,
+    nowMs: nowMs,
+  );
+  final RemoteBookProgress winner = resolveBookProgressSync(
+    local: trustedCurrent,
+    remote: inP,
+  );
+  // 胜者是 host 已存那份（可信戳视图）就不写：不能把毒戳视图的 0 戳写回库。胜者是
+  // 上报那份时仍与**原始** current 逐字段比较（含原始戳）。
+  if (identical(winner, trustedCurrent) ||
+      (sameBookPosition(winner, current) &&
+          winner.charOffset == current.charOffset &&
+          winner.updatedAtMs == current.updatedAtMs)) {
+    return (
+      result: sameBookPosition(inP, current)
+          ? LiveWriteResult.unchanged
+          : LiveWriteResult.stale,
+      next: current,
+    );
+  }
+  return (result: LiveWriteResult.applied, next: winner);
+}
+
 /// 互联播放位置（视频 / 有声书）的三方判定（BUG-3367）。纯函数。
 ///
 /// 与书籍进度 [resolveBookProgressThreeWay]（BUG-2506）同口径，只是位置是单维
@@ -2068,10 +2395,11 @@ int trustedStoredSyncStamp(int storedAtMs, {required int nowMs}) =>
 /// 是**位置基线**（上次两端达成一致的位置，`sync_baselines` 一行），不看时间戳：
 /// - 一端「无记录」（updatedAtMs<=0，含没带时间戳的旧数据）→ 另一端直接胜出；
 /// - 两端位置相同 → [BookProgressSyncAction.synced]（调用方只对齐时间戳）；
-/// - 没有基线且两端位置不同 → 退回旧口径 LWW（较新时间戳胜，平局取较远位置）一次，
-///   胜出端落地时调用方顺带记下基线，此后才走三方判定。升级前从没记过基线，若这里
-///   直接判冲突，升级后首轮会把每条「只有一端动过」的条目全弹出来；
-
+/// - 没有基线且两端位置不同 → [BookProgressSyncAction.conflict] 交用户（BUG-4435，
+///   与书籍同口径）。不比较两台设备各自的墙钟：时钟偏快的一端会静默盖掉另一端的
+///   真实进度。升级首轮不会因此批量弹冲突——存量基线由按 host 分槽的领养
+///   （`ensureBaselinesAdopted`，BUG-4434）搬到新作用域；只有从未记过基线的条目
+///   （多 host、从备份恢复的新设备、新配对的 host）首次两端不等时问一次；
 /// - 有基线：只一端偏离 → 那端胜；两端都偏离 → [BookProgressSyncAction.conflict]，
 ///   谁都不覆盖。
 ///
@@ -2097,17 +2425,7 @@ BookProgressSyncAction resolvePlaybackPositionThreeWay({
   if (local.positionMs == remote.positionMs) {
     return BookProgressSyncAction.synced;
   }
-  if (basePositionMs == null) {
-    if (local.updatedAtMs > remote.updatedAtMs) {
-      return BookProgressSyncAction.pushLocal;
-    }
-    if (remote.updatedAtMs > local.updatedAtMs) {
-      return BookProgressSyncAction.applyRemote;
-    }
-    return local.positionMs > remote.positionMs
-        ? BookProgressSyncAction.pushLocal
-        : BookProgressSyncAction.applyRemote;
-  }
+  if (basePositionMs == null) return BookProgressSyncAction.conflict;
   final bool localMoved = local.positionMs != basePositionMs;
   final bool remoteMoved = remote.positionMs != basePositionMs;
   if (localMoved && remoteMoved) return BookProgressSyncAction.conflict;

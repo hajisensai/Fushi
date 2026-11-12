@@ -137,7 +137,14 @@ void main() {
     expect(src, contains('source: ConflictSource.manual'));
     // TODO-836：鉴权失效必须登出，否则账号行不退回「未登录」，用户无从重新登录。
     expect(src, contains('on SyncAuthError catch'));
-    expect(src, contains('await backend.signOut(repo: repo)'));
+    // 登出走共用入口（连带清该通道目录缓存、忘掉记下的云账号，BUG-4434），
+    // 不在 catch 里自己拼一遍。
+    expect(
+      src,
+      contains(
+        'await signOutSyncBackend(appModel.database, e.channel.backend)',
+      ),
+    );
   });
 
   // 2026-11-03 顶栏让位：同步进度不再在各库页顶部铺两行横幅（常驻挤掉近一行
