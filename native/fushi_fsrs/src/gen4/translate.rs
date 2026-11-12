@@ -543,6 +543,45 @@ pub(crate) mod tests {
         }
     }
 
+    /// 旧设备的日志不能给集合加盐：协议 3 日志里种类号恰好是 14 / 15 的旧操作（旧代码不认识的种类），载荷即使恰好是
+    /// 合法的 Join / Salts 字节，转出来也是原样件、不应用；手工把它们放进承袭段的操作槽，槽的检查拒绝。
+    #[test]
+    fn legacy_ops_never_carry_salts() {
+        use crate::gen4::op::{Join4, KIND_JOIN, KIND_SALTS};
+        let join = Body4::Join(Join4 {
+            from: id(0xb0),
+            dir: "b".into(),
+            salts: vec!["u".into()],
+        });
+        let salts = Body4::salts(["u"]).unwrap();
+        for (seq, b) in [(1u64, &join), (2, &salts)] {
+            assert!(matches!(b.kind(), KIND_JOIN | KIND_SALTS));
+            let op = op3(seq, b.kind(), b.encode());
+            assert_eq!(raw_reason(&op), Some(RawReason::UnknownKind));
+            let slot = translate(&op, &[seq as u8; 32]).unwrap();
+            assert!(matches!(slot.body, SlotBody::Raw3(_)));
+            assert!(slot.check().is_ok());
+            assert!(applied_body(&slot).is_none());
+            // 同一条内容放进操作槽：不是转译产生得出来的东西。
+            let forged = HeritageSlot::op(
+                slot.fp,
+                Op4 {
+                    id: op.id,
+                    hlc: op.hlc,
+                    deps: op.deps.clone(),
+                    kind: op.kind,
+                    fmt: BODY_FMT,
+                    payload: op.payload.clone(),
+                },
+            );
+            assert!(forged.check().is_err());
+            assert!(
+                applied_body(&forged).is_some(),
+                "操作体本身解得开，拦它的是槽的检查"
+            );
+        }
+    }
+
     /// 黄金向量的输入：每种规则各一条，seq 1 起连续。
     fn golden_ops() -> Vec<v3::Op> {
         let entity = v3::Body::Entity {
@@ -1313,7 +1352,7 @@ pub(crate) mod tests {
             Body4::DeckAlias { from, to } => v3::Body::DeckAlias { from, to },
             Body4::LegacyUnknown { json } => v3::Body::LegacyUnknown { json },
             Body4::Dedup { pairs } => v3::Body::Dedup { pairs },
-            Body4::Join(_) | Body4::Unknown => v3::Body::Unknown,
+            Body4::Join(_) | Body4::Salts { .. } | Body4::Unknown => v3::Body::Unknown,
         }
     }
 
