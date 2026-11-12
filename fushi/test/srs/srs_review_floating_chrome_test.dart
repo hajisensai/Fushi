@@ -67,12 +67,7 @@ Future<void> _addFushiCard(WidgetTester tester, SrsDbStore store) async {
 }
 
 Future<void> _settle(WidgetTester tester, {int rounds = 12}) async {
-  for (int i = 0; i < rounds; i++) {
-    await tester.runAsync(
-      () => Future<void>.delayed(const Duration(milliseconds: 5)),
-    );
-    await tester.pump(const Duration(milliseconds: 60));
-  }
+  await srsSettle(tester, minRounds: rounds);
 }
 
 /// 打开复习页；[faces] 收集每次构建的卡面（拿 onCardGesture 模拟页内脚本回报）。
