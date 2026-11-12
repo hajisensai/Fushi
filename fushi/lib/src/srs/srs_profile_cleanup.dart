@@ -11,7 +11,8 @@
 ///    每张 `srs_*` / `sync2_*` 表里的行；再删 `srs_media/<uid>`（媒体与释义样式同目录）和这个 uid 的 RWKV 快照。
 ///    远端存储位置上已同步的集合不动（只删本机）。
 /// 4. **存量**（[sweepOrphans]）：进 Profile 管理时扫一次 srs.db 里不属于任何现存 profile 的 uid，同样先备份再清；
-///    全部清完在 srs.db 记下完成标记，之后不再扫。
+///    全部清完在 srs.db 记下完成标记，之后不再扫。标记在 BUG-4463 换过一次键（`profile_orphan_sweep_v2`）：
+///    BUG-4292 之前采用 / 并入的手抄删除留下的残留，在已扫过的库里要再扫一次。进行中并入涉及的 uid 不算无主。
 ///
 /// 删数据的那一刻，这个 uid 的副本（[SrsDbStore]）先 [SrsDbStore.retire]：在途写入做完、之后的写入一律失败，
 /// 不会有迟到的写把行写回一个已删的 uid。所有对共用写连接的操作都排进当前副本的独占区：Rust 命令在写连接上是
@@ -20,10 +21,16 @@ library;
 
 import 'dart:io';
 
+import 'package:drift/drift.dart' show QueryRow, Variable;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_core/fushi_core.dart' show ProfileRow;
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_profile_data.dart';
+import 'package:fushi_engine/srs/srs_profile_merge.dart'
+    show
+        SrsPendingProfileMerge,
+        kSrsProfileMergeMarkerPrefix,
+        srsPendingProfileMerges;
 import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:fushi_engine/srs/sync2/srs_fushisrs.dart';
 import 'package:fushi_engine/utils/misc/safe_file_name.dart';
@@ -102,9 +109,12 @@ class SrsProfileCleanup implements ProfileDeletionCascade {
     if (storage == null) return 0;
     final SrsStoredProfiles stored = await srsStoredProfiles(storage.core);
     if (stored.orphanSweptAt != null) return 0;
+    // 没做完的并入（srs_profile_merge.dart）：改主库 uid 之前目标 uid、之后旧 uid 都不在主库里，却是并入还要用的
+    // 数据（旧 uid 那份要等第二遍并入收完才删）。它们不算无主；有这种 uid 时也不记完成标记，等并入做完再扫。
+    final Set<String> merging = await _mergingUids(storage);
     final List<String> orphans = <String>[
       for (final String uid in stored.uids)
-        if (!liveUids.contains(uid)) uid,
+        if (!liveUids.contains(uid) && !merging.contains(uid)) uid,
     ];
     for (final String uid in orphans) {
       final ProfileDeletionCleanup cleanup = await _prepareUid(
@@ -113,11 +123,37 @@ class SrsProfileCleanup implements ProfileDeletionCascade {
       );
       await cleanup.run();
     }
-    await srsMarkOrphanSweepDone(
-      storage.core,
-      _deps.clock().millisecondsSinceEpoch,
-    );
+    if (merging.isEmpty) {
+      await srsMarkOrphanSweepDone(
+        storage.core,
+        _deps.clock().millisecondsSinceEpoch,
+      );
+    }
     return orphans.length;
+  }
+
+  /// srs.db 里记着进行中并入（`profile_merge/<旧 uid>` 标记）的旧 uid 与目标 uid。标记值读不懂时旧 uid 照样算上
+  /// （宁可少清）。
+  static Future<Set<String>> _mergingUids(SrsStorage storage) async {
+    final Set<String> out = <String>{
+      for (final SrsPendingProfileMerge m in await srsPendingProfileMerges(
+        storage.db,
+      )) ...<String>[m.oldUid, m.newUid],
+    };
+    for (final QueryRow r
+        in await storage.db
+            .customSelect(
+              'SELECT key FROM srs_meta WHERE key LIKE ?',
+              variables: <Variable<Object>>[
+                Variable<String>('$kSrsProfileMergeMarkerPrefix%'),
+              ],
+            )
+            .get()) {
+      out.add(
+        r.read<String>('key').substring(kSrsProfileMergeMarkerPrefix.length),
+      );
+    }
+    return out;
   }
 
   static String? _uidOf(ProfileRow profile) {

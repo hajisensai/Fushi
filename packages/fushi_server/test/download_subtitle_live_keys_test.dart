@@ -13,6 +13,7 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_resolver.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_sweep_ledger.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_coordinator.dart';
+import 'package:fushi_engine/media/video/subtitle/open_subtitles_client.dart';
 import 'package:fushi_engine/media/video/subtitle/subdl_client.dart';
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi_server/src/config/server_config.dart';
@@ -36,6 +37,7 @@ void main() {
   late ServerDownloadHost host;
   late int sourceId;
   late List<_RecordingSubtitleProvider> built;
+  late String embeddedOpenSubtitlesKeyBackup;
   Completer<void>? searchGate;
 
   /// 当前配置（模拟 WebUI 经 applyConfig 换进来的那份；HeadlessHost 同样传
@@ -46,6 +48,12 @@ void main() {
   List<String> offered = const <String>[];
 
   setUp(() async {
+    // CI 的 provide-baked-secrets 会把真 OpenSubtitles 应用 key 写进
+    // opensubtitles_default_key.dart（本地是空占位），于是 OpenSubtitles 在没有任何
+    // 偏好 key 时也「有 key」、会被装进每一轮。本文件只测「偏好表里的 key / 开关」
+    // 怎么驱动来源装配，这里清空内置 key，让结论不随构建是否带密钥而变。
+    embeddedOpenSubtitlesKeyBackup = OpenSubtitlesConfig.embeddedApiKey;
+    OpenSubtitlesConfig.embeddedApiKey = '';
     tmp = await Directory.systemTemp.createTemp('fushi_server_subs_live_');
     enginePaths = ServerPaths(p.join(tmp.path, 'data'));
     db = FushiDatabase.forTesting(NativeDatabase.memory());
@@ -123,6 +131,7 @@ void main() {
     await host.stop();
     await db.close();
     enginePaths = const UninstalledEnginePaths();
+    OpenSubtitlesConfig.embeddedApiKey = embeddedOpenSubtitlesKeyBackup;
     try {
       await tmp.delete(recursive: true);
     } catch (_) {}
