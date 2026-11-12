@@ -18,6 +18,7 @@ import 'package:test/test.dart';
 
 import 'support/srs_bulk_fixture.dart';
 import 'support/srs_legacy_fixtures.dart';
+import 'support/srs_raw_sql.dart';
 
 const int kNotes = 24;
 
@@ -28,12 +29,12 @@ Future<(BulkFixture, BulkFixture)> twins({int notes = kNotes}) async => (
 );
 
 Future<void> expectSame(BulkFixture bulk, BulkFixture ref) async {
-  final Map<String, List<String>> got = await dumpSrsState(bulk.db);
-  expectSameState(got, await dumpSrsState(ref.db));
+  final Map<String, List<String>> got = await dumpSrsState(bulk.core);
+  expectSameState(got, await dumpSrsState(ref.core));
   // 缓存是事件的纯函数：增量刷新的结果与整体重建相同。重建只生成「应有」的卡，增量刷新把
   // 不再应有的旧卡（换类型前的卡）留成隐藏行——两者等价，只比可见的卡。
   await bulk.store.rebuildCaches();
-  final Map<String, List<String>> rebuilt = await dumpSrsState(bulk.db);
+  final Map<String, List<String>> rebuilt = await dumpSrsState(bulk.core);
   List<String> visible(List<String> rows) => <String>[
     for (final String r in rows)
       if (r.split('|')[8] == '0') r,
@@ -53,6 +54,26 @@ Future<void> expectSame(BulkFixture bulk, BulkFixture ref) async {
 
 Future<List<String>> allCards(SrsDbStore s) async => <String>[
   for (final SrsCardCacheRow c in await s.allCardRows()) c.id,
+];
+
+/// [decks] 里的卡，按缓存表的 rowid 序：批量删牌组按这个游标顺序走（native/fushi_fsrs/src/store/sync2/deck_delete.rs），
+/// 逐张参照必须同序，修改记录的序号才逐条相同。读命令 `cards` 不保证顺序，这里走测试专用的原始通道。
+Future<List<String>> cardsInDecksByRowid(
+  SrsDbStore s,
+  List<String> decks,
+) async => <String>[
+  for (final SrsRawRow r
+      in await s.core
+          .customSelect(
+            'SELECT id FROM srs_cards_cache WHERE deck_id IN '
+            '(${List<String>.filled(decks.length, '?').join(',')}) '
+            'ORDER BY rowid',
+            variables: <Variable<Object>>[
+              for (final String d in decks) Variable<String>(d, srsIdType),
+            ],
+          )
+          .get())
+    r.read<String>('id'),
 ];
 
 Future<List<String>> allNotes(SrsDbStore s) async => <String>[
@@ -76,16 +97,9 @@ void main() {
     final SrsDeckTree tree = await r.deckTree();
     final List<String> sub = tree.subtree(lang);
     final String target = tree.parentOf(lang) ?? r.defaultDeckId;
-    final List<SrsCardCacheRow> cards = await (r.db.select(
-      r.db.srsCardsCache,
-    )..where((c) => c.deckId.isIn(sub))).get();
-    for (final SrsCardCacheRow c in cards) {
-      await r.editField(
-        SrsEntityKind.card,
-        c.id,
-        SrsFieldKeys.cardDeck,
-        target,
-      );
+    final List<String> cards = await cardsInDecksByRowid(r, sub);
+    for (final String c in cards) {
+      await r.editField(SrsEntityKind.card, c, SrsFieldKeys.cardDeck, target);
     }
     final (int nowMs, _) = r.now();
     for (final String id in sub) {
@@ -109,12 +123,10 @@ void main() {
     final String lang = await deckId(r, 'Lang');
     final SrsDeckTree tree = await r.deckTree();
     final List<String> sub = tree.subtree(lang);
-    for (final SrsCardCacheRow c in await (r.db.select(
-      r.db.srsCardsCache,
-    )..where((c) => c.deckId.isIn(sub))).get()) {
+    for (final String c in await cardsInDecksByRowid(r, sub)) {
       await r.editField(
         SrsEntityKind.card,
-        c.id,
+        c,
         SrsFieldKeys.cardDeck,
         r.defaultDeckId,
       );
@@ -228,7 +240,7 @@ void main() {
     final int today = day.dayIndexOf(r.now().$1);
     final Map<String, Object?> local =
         (jsonDecode(
-                  (await r.db
+                  (await r.core
                           .customSelect('SELECT json FROM srs_local_state')
                           .getSingle())
                       .read<String>('json'),
@@ -278,13 +290,10 @@ void main() {
     );
     // 立即重排：子树里的复习卡按 ID 序（内核的写出顺序）。
     final List<String> review = <String>[
-      for (final SrsCardCacheRow c
-          in await (r.db.select(r.db.srsCardsCache)..where(
-                (c) =>
-                    c.deckId.isIn(tree.subtree(lang)) &
-                    c.queue.equals(SrsQueue.review.wire),
-              ))
-              .get())
+      for (final SrsCardCacheRow c in await r.cardRowsWhere(<String, Object?>{
+        'decks': tree.subtree(lang),
+        'queue': SrsQueue.review.wire,
+      }))
         c.id,
     ]..sort();
     await appendLocalLogs(<SrsReviewLog>[

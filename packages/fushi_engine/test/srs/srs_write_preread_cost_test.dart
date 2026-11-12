@@ -1,6 +1,6 @@
 // 写路径第 14 步的成本验收：发命令前的 Drift 预读、同一批笔记的重复物化、彻底清除的逐条命令。
 //
-// 量的是每种操作经 Drift 执行器送进内核的语句数（`SrsInlineExecutor.debugStatements`，第 13 步之后只可能是只读
+// 量的是每种操作经 Drift 执行器送进内核的语句数（`srsDebugReadCommands`，第 13 步之后只可能是只读
 // 查询）与内核命令数（`debugCoreCommands`）。改动前的数字（第 13 步的代码上跑同一份测试，Mac，2026-11-12）：
 //
 // | 操作 | 改前（语句, 命令） | 改后 |
@@ -21,7 +21,6 @@ import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:fushi_anki/fushi_anki_core.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
-import 'package:fushi_engine/srs/srs_database_executor.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_legacy_lapis_migration.dart';
 import 'package:fushi_engine/srs/srs_note_type_store.dart';
@@ -30,6 +29,7 @@ import 'package:fushi_srs/fushi_srs.dart';
 import 'package:test/test.dart';
 
 import 'support/srs_bulk_fixture.dart';
+import 'package:fushi_engine/srs/srs_reads.dart';
 
 typedef _Cost = ({int statements, int core});
 
@@ -40,10 +40,10 @@ Future<_Cost> _cost(
   Future<void> Function() op,
 ) async {
   final int core = store.debugCoreCommands;
-  SrsInlineExecutor.debugStatements = 0;
+  srsDebugReadCommands = 0;
   await op();
   final _Cost cost = (
-    statements: SrsInlineExecutor.debugStatements,
+    statements: srsDebugReadCommands,
     core: store.debugCoreCommands - core,
   );
   // ignore: avoid_print

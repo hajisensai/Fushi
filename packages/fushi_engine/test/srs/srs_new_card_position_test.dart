@@ -3,7 +3,6 @@
 import 'dart:convert';
 
 import 'package:drift/drift.dart' show Variable, driftRuntimeOptions;
-import 'package:fushi_core/fushi_core.dart' show srsIdType;
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
@@ -12,6 +11,7 @@ import 'package:test/test.dart';
 
 import 'apkg/apkg_test_support.dart';
 import 'support/srs_sync2_peers.dart';
+import 'support/srs_raw_sql.dart';
 
 const String kPosProfile = '01928c3e-0000-7000-8000-0000000000b7';
 
@@ -184,7 +184,7 @@ void main() {
         <Object>[kPosProfile],
       );
       final String json =
-          (await a.db
+          (await a.core
                   .customSelect(
                     'SELECT json FROM srs_local_state WHERE profile_uid = ?',
                     variables: <Variable<Object>>[
@@ -202,7 +202,6 @@ void main() {
     }
 
     Future<SrsDbStore> reopen() => SrsDbStore.open(
-      db: a.db,
       core: a.core,
       profileUid: kPosProfile,
       deviceId: 'a',

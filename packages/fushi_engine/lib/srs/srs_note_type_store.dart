@@ -12,7 +12,6 @@
 /// 也不允许删除它的内置字段**（挖词与词状态按内置 fieldId 写入 / 读取，删了会让新挖的词落进看不见的字段）。
 library;
 
-import 'package:drift/drift.dart';
 import 'package:fushi_anki/fushi_anki_core.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_srs/fushi_srs.dart';
@@ -126,23 +125,12 @@ extension SrsNoteTypeStoreOps on SrsDbStore {
 
   /// 每个笔记类型的笔记数（未删除的笔记；按笔记**当前**类型计）。SQLite 侧分组计数（走
   /// idx_srs_notes_cache_type），不把笔记缓存行读回来逐行数。
-  Future<Map<String, int>> noteCountsByType() async => <String, int>{
-    for (final QueryRow r
-        in await db
-            .customSelect(
-              'SELECT note_type_id AS t, COUNT(*) AS c FROM srs_notes_cache '
-              'WHERE profile_uid = ? AND deleted_at IS NULL '
-              'GROUP BY note_type_id',
-              variables: <Variable<Object>>[
-                Variable<String>(profileUid, srsIdType),
-              ],
-              readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
-                db.srsNotesCache,
-              },
-            )
-            .get())
-      r.read<String>('t'): r.read<int>('c'),
-  };
+  Future<Map<String, int>> noteCountsByType() async {
+    final SrsColumns c = await readNoteTypeCounts();
+    final SrsStringColumn t = c.strings('t');
+    final SrsIntColumn n = c.ints('c');
+    return <String, int>{for (int i = 0; i < c.rows; i++) t[i]: n[i]};
+  }
 
   /// 某笔记类型下的笔记（未删除），按落库顺序。走 idx_srs_notes_cache_type、只读 id 列；
   /// [limit] 给了就只取前几条（取样本预览用）。
@@ -154,17 +142,10 @@ extension SrsNoteTypeStoreOps on SrsDbStore {
         limit: limit,
       );
     }
-    final $SrsNotesCacheTable n = db.srsNotesCache;
-    final JoinedSelectStatement<$SrsNotesCacheTable, SrsNoteCacheRow> q =
-        db.selectOnly(n)
-          ..addColumns(<Expression<Object>>[n.id])
-          ..where(
-            n.profileUid.equals(profileUid) &
-                n.noteTypeId.equals(noteTypeId) &
-                n.deletedAt.isNull(),
-          );
-    if (limit != null) q.limit(limit);
-    return <String>[for (final TypedResult r in await q.get()) r.read(n.id)!];
+    return (await noteColumns(
+      const <String>['id'],
+      <String, Object?>{'typeId': noteTypeId, 'alive': true, 'limit': ?limit},
+    )).strings('id').toList();
   }
 
   /// 这个字段里有内容的笔记数（删字段前的提示用）。
@@ -192,9 +173,9 @@ extension SrsNoteTypeStoreOps on SrsDbStore {
         i,
         i + 500 > ids.length ? ids.length : i + 500,
       );
-      for (final SrsCardCacheRow c in await (db.select(
-        db.srsCardsCache,
-      )..where((x) => x.noteId.isIn(chunk))).get()) {
+      for (final SrsCardCacheRow c in await cardRowsWhere(<String, Object?>{
+        'notes': chunk,
+      })) {
         out[c.noteId]!.add(c);
       }
     }
@@ -203,14 +184,13 @@ extension SrsNoteTypeStoreOps on SrsDbStore {
 
   /// 这个模板现在可见的卡数（删模板前的提示用：删了这些卡就不再出现）。
   Future<int> visibleCardsOfTemplate(String templateId) async =>
-      (await (db.select(db.srsCardsCache)..where(
-                (c) =>
-                    c.profileUid.equals(profileUid) &
-                    c.templateId.equals(templateId) &
-                    c.hidden.equals(false),
-              ))
-              .get())
-          .length;
+      (await cardColumnsWhere(
+        const <String>['id'],
+        <String, Object?>{
+          'templates': <String>[templateId],
+          'visibleOnly': true,
+        },
+      )).rows;
 
   // ------------------------------------------------------------------ 新建 / 删除
 

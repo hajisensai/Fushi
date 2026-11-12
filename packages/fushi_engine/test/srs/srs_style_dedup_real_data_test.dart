@@ -23,6 +23,7 @@ import 'package:sqlite3/sqlite3.dart';
 import 'package:test/test.dart';
 import 'support/srs_test_storage.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
+import 'support/srs_raw_sql.dart';
 
 const String kProfile = '01928c3e-0000-7000-8000-0000000000be';
 
@@ -43,14 +44,12 @@ void main() {
     final SrsStorage dedupDb = await openTestSrsStorage();
     try {
       final SrsDbStore plain = await SrsDbStore.open(
-        db: plainDb.db,
         core: plainDb.core,
         profileUid: kProfile,
         deviceId: 'plain',
       );
       final Directory styleDir = Directory(p.join(tmp.path, 'media'));
       final SrsDbStore dedup = await SrsDbStore.open(
-        db: dedupDb.db,
         core: dedupDb.core,
         profileUid: kProfile,
         deviceId: 'dedup',
@@ -87,7 +86,7 @@ void main() {
         ));
       }
       Future<int> bytes(SrsStorage s) async =>
-          (await s.db
+          (await s.core
                   .customSelect(
                     'SELECT COALESCE(SUM(LENGTH(CAST(json AS BLOB))), 0) AS n '
                     'FROM srs_field_edits',

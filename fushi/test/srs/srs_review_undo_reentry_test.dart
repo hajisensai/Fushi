@@ -37,12 +37,7 @@ class _SilentAudio implements SrsCardAudioOutput {
 }
 
 Future<void> _settle(WidgetTester tester, {int rounds = 16}) async {
-  for (int i = 0; i < rounds; i++) {
-    await tester.runAsync(
-      () => Future<void>.delayed(const Duration(milliseconds: 5)),
-    );
-    await tester.pump(const Duration(milliseconds: 60));
-  }
+  await srsSettle(tester, minRounds: rounds);
 }
 
 Future<SrsDbStore> _seed(WidgetTester tester) async {

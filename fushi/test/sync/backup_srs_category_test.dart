@@ -17,6 +17,7 @@ import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:path/path.dart' as p;
 
 import 'temp_dir_cleanup.dart';
+import '../../../packages/fushi_engine/test/srs/support/srs_raw_sql.dart';
 
 /// `BackupCategory.srs`（复习）：Rust 的 srs.db 快照（zip 条目 `srs.db`）+ `<support>/srs_media/`
 /// 媒体目录成为备份类别（docs/specs/2026-10-23-srs-rust-store.md §4）。主库条目不带 SRS；
@@ -49,6 +50,10 @@ void main() {
 
   Future<int> count(DatabaseConnectionUser db, String sql) async =>
       (await db.customSelect(sql).getSingle()).data['c'] as int;
+
+  /// srs.db 上的计数（测试专用的原始通道）。
+  Future<int> srsCount(SrsStorage srs, String sql) async =>
+      (await srs.core.customSelect(sql).getSingle()).data['c']! as int;
 
   Future<bool> hasTable(FushiDatabase db, String table) async =>
       (await db
@@ -91,15 +96,15 @@ void main() {
               .get())
         r.read<String>('uid'),
     };
-    return (await srs.db
+    return (await srs.core
             .customSelect('SELECT profile_uid FROM srs_entities')
             .get())
-        .where((QueryRow r) => !uids.contains(r.read<String>('profile_uid')))
+        .where((SrsRawRow r) => !uids.contains(r.read<String>('profile_uid')))
         .length;
   }
 
   Future<String?> ownerOf(SrsStorage srs, String id) async =>
-      (await srs.db
+      (await srs.core
               .customSelect(
                 'SELECT profile_uid FROM srs_entities WHERE id = ?',
                 variables: <Variable<Object>>[Variable<String>(id, srsIdType)],
@@ -107,8 +112,8 @@ void main() {
               .getSingleOrNull())
           ?.read<String>('profile_uid');
 
-  Future<int> noteCount(SrsStorage srs) => count(
-    srs.db,
+  Future<int> noteCount(SrsStorage srs) => srsCount(
+    srs,
     "SELECT COUNT(*) AS c FROM srs_entities WHERE kind = 'note'",
   );
 
@@ -120,16 +125,11 @@ void main() {
   );
 
   Future<SrsDbStore> storeOn(SrsStorage srs, String uid, String deviceId) =>
-      SrsDbStore.open(
-        db: srs.db,
-        core: srs.core,
-        profileUid: uid,
-        deviceId: deviceId,
-      );
+      SrsDbStore.open(core: srs.core, profileUid: uid, deviceId: deviceId);
 
   /// 按 app 的方式（主进程：带一次性搬迁）打开 [dbDir] 下的 srs.db。调用方负责关。
   Future<SrsStorage> openSrsLikeApp(String dbDir, FushiDatabase db) =>
-      SrsStorage.open(path: SrsStorage.pathIn(dbDir), legacy: db, inline: true);
+      SrsStorage.open(path: SrsStorage.pathIn(dbDir), legacy: db);
 
   /// 源设备：profile「日语」一条笔记 + 两个媒体文件（另有一个写入中途的 .tmp）。
   /// [legacy] 为真时模拟还没搬迁的设备：SRS 只在主库老表里，本机没有 srs.db。
@@ -153,7 +153,6 @@ void main() {
       path: legacy
           ? p.join(src.path, 'scratch_srs.db')
           : SrsStorage.pathIn(dbDir),
-      inline: true,
     );
     final SrsDbStore store = await storeOn(srs, uid, 'dev-src');
     if (!withSrs) {
@@ -189,8 +188,8 @@ void main() {
               in await db.customSelect('PRAGMA table_info(${t.key})').get())
             c.read<String>('name'),
         };
-        for (final QueryRow r
-            in await srs.db.customSelect('SELECT * FROM ${t.key}').get()) {
+        for (final SrsRawRow r
+            in await srs.core.customSelect('SELECT * FROM ${t.key}').get()) {
           final List<String> cols = <String>[
             for (final String c in r.data.keys)
               if (legacyCols.contains(c)) c,
@@ -310,17 +309,16 @@ void main() {
       }
       final SrsStorage snap = await SrsStorage.open(
         path: extract(archive, 'srs.db', ex),
-        inline: true,
       );
       try {
         expect(await noteCount(snap), 1);
         expect(
-          await count(snap.db, 'SELECT COUNT(*) AS c FROM srs_local_state'),
+          await srsCount(snap, 'SELECT COUNT(*) AS c FROM srs_local_state'),
           0,
           reason: '本机状态永不出境',
         );
         expect(
-          await count(snap.db, 'SELECT COUNT(*) AS c FROM srs_event_local'),
+          await srsCount(snap, 'SELECT COUNT(*) AS c FROM srs_event_local'),
           0,
         );
       } finally {
@@ -576,8 +574,8 @@ void main() {
       Future<(int, int)> fingerprint(FushiDatabase db, SrsStorage srs) async =>
           (
             await count(db, 'SELECT COUNT(*) AS c FROM profiles'),
-            await count(
-              srs.db,
+            await srsCount(
+              srs,
               'SELECT (SELECT COUNT(*) FROM srs_entities) * 1000 + '
               '(SELECT COUNT(*) FROM srs_field_edits) AS c',
             ),
@@ -633,7 +631,6 @@ void main() {
     final String staged = '${SrsStorage.pathIn(dstDb)}.restore-new';
     final SrsStorage other = await SrsStorage.open(
       path: p.join(dst.path, 'other_srs.db'),
-      inline: true,
     );
     const String otherUid = '01928c3e-0000-7000-8000-00000000beef';
     final String otherNote = await addNote(
@@ -690,12 +687,9 @@ Future<String> _noteIn(Directory src, bool legacy) async {
       await db.close();
     }
   }
-  final SrsStorage srs = await SrsStorage.open(
-    path: SrsStorage.pathIn(dbDir),
-    inline: true,
-  );
+  final SrsStorage srs = await SrsStorage.open(path: SrsStorage.pathIn(dbDir));
   try {
-    return (await srs.db.customSelect(sql).getSingle()).read<String>('id');
+    return (await srs.core.customSelect(sql).getSingle()).read<String>('id');
   } finally {
     await srs.close();
   }

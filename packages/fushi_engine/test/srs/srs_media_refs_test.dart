@@ -15,6 +15,7 @@ import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 import 'support/srs_test_storage.dart';
+import 'support/srs_raw_sql.dart';
 
 const String kProfile = '01928c3e-0000-7000-8000-0000000000de';
 
@@ -46,7 +47,6 @@ void main() {
   });
 
   Future<SrsDbStore> open({String? styleDir}) => SrsDbStore.open(
-    db: st.db,
     core: st.core,
     profileUid: kProfile,
     deviceId: 'dev',
@@ -142,7 +142,7 @@ void main() {
     final SrsDbStore reopened = await open();
     expect(await srsReferencedMedia(reopened), want);
     final String json =
-        (await st.db
+        (await st.core
                 .customSelect('SELECT json FROM srs_local_state')
                 .getSingle())
             .read<String>('json');

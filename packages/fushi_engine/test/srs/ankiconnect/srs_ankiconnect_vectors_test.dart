@@ -18,7 +18,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:drift/drift.dart' show QueryRow, driftRuntimeOptions;
+import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:fushi_engine/srs/ankiconnect/srs_ankiconnect_handler.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_note_type_store.dart';
@@ -28,6 +28,7 @@ import 'package:test/test.dart';
 
 import '../apkg/apkg_test_support.dart';
 import '../support/srs_test_storage.dart';
+import '../support/srs_raw_sql.dart';
 
 const String kAcVecProfile = '01928c3e-0000-7000-8000-0000000000ad';
 
@@ -290,7 +291,6 @@ void main() {
     final TestSrs srs = await openTestSrsAt(path);
     t = _queryNow;
     final SrsDbStore s = await SrsDbStore.open(
-      db: srs.db,
       core: srs.core,
       profileUid: kAcVecProfile,
       deviceId: 'v',
@@ -315,12 +315,12 @@ void main() {
 
     // 已删笔记的数字 id：库里还留着它的缓存行（deleted_at）。
     deletedNote =
-        (await s.db
+        (await s.core
                 .customSelect(
                   'SELECT anki_id FROM srs_notes_cache WHERE deleted_at IS NOT NULL',
                 )
                 .get())
-            .map((QueryRow r) => '${r.read<int>('anki_id')}')
+            .map((SrsRawRow r) => '${r.read<int>('anki_id')}')
             .firstOrNull;
     expect(deletedNote, isNotNull);
 

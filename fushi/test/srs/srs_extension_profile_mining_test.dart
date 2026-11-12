@@ -6,18 +6,18 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:drift/drift.dart' show QueryRow, Variable;
+import 'package:drift/drift.dart' show Variable;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/srs/srs_mining.dart';
 import 'package:fushi_engine/srs/srs_mining_target.dart';
 import 'package:fushi/src/srs/srs_profile_stores.dart';
 import 'package:fushi_anki/fushi_anki.dart';
-import 'package:fushi_core/fushi_core.dart' show srsIdType;
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
 import 'srs_test_support.dart';
+import '../../../packages/fushi_engine/test/srs/support/srs_raw_sql.dart';
 
 const String _uidA = 'profile-a-uid';
 const String _uidB = 'profile-b-uid';
@@ -72,7 +72,6 @@ void main() {
   Future<SrsDbStore> openActive(String uid) => stores.activate(
     uid,
     () => SrsDbStore.open(
-      db: storage.db,
       core: storage.core,
       profileUid: uid,
       deviceId: 'dev',
@@ -100,7 +99,7 @@ void main() {
   ])).isNotEmpty;
 
   Future<int> opsOf(String uid) async {
-    final QueryRow r = await storage.db
+    final SrsRawRow r = await storage.core
         .customSelect(
           'SELECT COUNT(*) AS c FROM sync2_ops WHERE profile_uid = ?',
           variables: <Variable<Object>>[Variable<String>(uid, srsIdType)],
@@ -286,7 +285,7 @@ void main() {
     await foreignA.createDeck('之后');
 
     final List<int> seqs =
-        (await storage.db
+        (await storage.core
                 .customSelect(
                   'SELECT seq FROM sync2_ops WHERE profile_uid = ? ORDER BY seq',
                   variables: <Variable<Object>>[
@@ -294,7 +293,7 @@ void main() {
                   ],
                 )
                 .get())
-            .map((QueryRow r) => r.read<int>('seq'))
+            .map((SrsRawRow r) => r.read<int>('seq'))
             .toList();
     expect(seqs, isNotEmpty);
     expect(seqs.toSet().length, seqs.length, reason: '同一写入者序号不重复');

@@ -9,9 +9,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:drift/drift.dart' hide isNull, isNotNull;
-import 'package:fushi_core/fushi_core.dart';
-import 'package:fushi_engine/srs/srs_database_executor.dart';
+import 'package:fushi_core/fushi_core.dart' show SrsCardCacheRow;
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:test/test.dart';
@@ -34,14 +32,11 @@ class _Replica {
   int nowMs;
 
   late SrsCore core;
-  late SrsDatabase db;
   late SrsDbStore store;
 
   Future<void> open() async {
     core = SrsCore.open(path);
-    db = SrsDatabase(srsInlineExecutor(core));
     store = await SrsDbStore.open(
-      db: db,
       core: core,
       profileUid: _uid,
       deviceId: deviceId,
@@ -57,23 +52,26 @@ class _Replica {
   }
 
   Future<void> close() async {
-    await db.close();
     core.close();
   }
 
   /// 本机状态行里的旧版时钟与写入者、库里全部日志的 HLC（排序）。
   Future<Map<String, Object?>> snapshot() async {
-    final SrsLocalStateRow? row = await (db.select(
-      db.srsLocalState,
-    )..where((t) => t.profileUid.equals(_uid))).getSingleOrNull();
-    final Map<String, Object?> j = row == null
+    // 测试专用的原始通道直接看表（ID 参数写 srs_id(?)）。
+    final List<Map<String, Object?>> state = core.debugSelectRaw(
+      'SELECT json FROM srs_local_state WHERE profile_uid = srs_id(?)',
+      <Object?>[_uid],
+    );
+    final Map<String, Object?> j = state.isEmpty
         ? const <String, Object?>{}
-        : (jsonDecode(row.json) as Map).cast<String, Object?>();
+        : (jsonDecode(state.single['json']! as String) as Map)
+              .cast<String, Object?>();
     final List<String> logs = <String>[
-      for (final SrsReviewLogRow r in await (db.select(
-        db.srsReviewLogs,
-      )..where((t) => t.profileUid.equals(_uid))).get())
-        (jsonDecode(r.json) as Map)['hlc']! as String,
+      for (final Map<String, Object?> r in core.debugSelectRaw(
+        'SELECT json FROM srs_review_logs WHERE profile_uid = srs_id(?)',
+        <Object?>[_uid],
+      ))
+        (jsonDecode(r['json']! as String) as Map)['hlc']! as String,
     ]..sort();
     return <String, Object?>{
       'hlc': j['hlc'],
@@ -396,8 +394,6 @@ Future<List<Map<String, Object?>>> _run(Directory tmp) async {
 }
 
 void main() {
-  driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
-
   test('旧版 HLC 的推进与本机状态行：与搬进内核之前逐值相同', () async {
     final Directory tmp = Directory.systemTemp.createTempSync('srs_lclock_');
     addTearDown(() {

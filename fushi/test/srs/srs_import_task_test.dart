@@ -67,12 +67,7 @@ class _Pending {
 SrsImportReport _report(int added) => SrsImportReport()..notesAdded = added;
 
 Future<void> _settle(WidgetTester tester, {int rounds = 12}) async {
-  for (int i = 0; i < rounds; i++) {
-    await tester.runAsync(
-      () => Future<void>.delayed(const Duration(milliseconds: 5)),
-    );
-    await tester.pump(const Duration(milliseconds: 60));
-  }
+  await srsSettle(tester, minRounds: rounds);
 }
 
 Widget _app({
@@ -491,7 +486,6 @@ void main() {
           return (
             db,
             await SrsDbStore.open(
-              db: srs.db,
               core: srs.core,
               profileUid: kSrsTestProfile,
               deviceId: 'dev',
@@ -784,7 +778,6 @@ void main() {
           return (
             db,
             await SrsDbStore.open(
-              db: srs.db,
               core: srs.core,
               profileUid: kSrsTestProfile,
               deviceId: 'dev',

@@ -13,7 +13,7 @@ use super::ffi::{
 };
 use super::kernel_reads_tests::open;
 use super::sync2::{in_savepoint, test_panic};
-use super::{READ_ONLY, SrsCore, rows};
+use super::{SrsCore, rows};
 
 fn insert(id: &str) -> String {
     format!(
@@ -22,14 +22,11 @@ fn insert(id: &str) -> String {
 }
 
 fn has(core: &SrsCore, id: &str) -> bool {
-    let page = core
-        .select(
-            "SELECT COUNT(*) FROM srs_unknown_events WHERE id = srs_id(?1)",
-            &[Value::Text(id.into())],
-        )
-        .unwrap();
-    let (_, rows) = rows::decode(&page).unwrap();
-    rows[1][0] == Value::Integer(1)
+    core.query_scalar(&format!(
+        "SELECT COUNT(*) FROM srs_unknown_events WHERE id = srs_id('{id}')"
+    ))
+    .unwrap()
+        == Value::Integer(1)
 }
 
 /// 持着写锁 panic（命令跑到一半），由 [catch_unwind] 接住——与 FFI 入口（store/ffi.rs `run`）同一形态。
@@ -53,7 +50,7 @@ fn ffi_err(err: *mut c_char) -> String {
     s
 }
 
-/// `mode`：0 = Drift 执行器的写入口（只读，一律拒绝），4 = 测试用的原始通道。
+/// `mode`：4 = 测试用的原始通道（以前 0–3 是 Drift 执行器的语句入口，已删，内核报 unknown exec mode）。
 fn ffi_exec(h: *const SrsCoreHandle, sql: &str, mode: i32) -> (i32, String) {
     let (mut out, mut out_len, mut err) = (null_mut(), 0usize, null_mut());
     let params = rows::encode(0, &[vec![]]);
@@ -113,11 +110,13 @@ fn after_a_panicking_command_through_the_c_abi_writes_still_work() {
         let (rc, e) = ffi_exec(h, &insert(id), 4);
         assert_eq!(rc, 0, "write after the panic failed: {e}");
     }
-    // Drift 执行器的写入口照旧只读：panic 之后也不会变成能写的状态。
+    // 以前 Drift 执行器的语句入口（mode 0–3）已经没有了：panic 之后也不会多出一个能写的入口。
     for sql in [insert("drift").as_str(), "BEGIN TRANSACTION"] {
-        let (rc, e) = ffi_exec(h, sql, 0);
-        assert_ne!(rc, 0, "{sql} ran through the read-only entry");
-        assert!(e.starts_with(READ_ONLY), "{e}");
+        for mode in 0..4 {
+            let (rc, e) = ffi_exec(h, sql, mode);
+            assert_ne!(rc, 0, "{sql} ran through exec mode {mode}");
+            assert!(e.contains("unknown exec mode"), "{e}");
+        }
     }
     ffsrs_store_close(h);
 }

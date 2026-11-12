@@ -12,6 +12,7 @@ import 'package:fushi_srs/fushi_srs.dart';
 import 'package:test/test.dart';
 
 import 'apkg/apkg_test_support.dart';
+import 'support/srs_raw_sql.dart';
 
 const String kProfile = '01928c3e-0000-7000-8000-0000000000c4';
 
@@ -66,7 +67,6 @@ void main() {
       "UPDATE srs_local_state SET json = json_set(json, '\$.cacheRev', 6)",
     );
     final SrsDbStore reopened = await SrsDbStore.open(
-      db: s.db,
       core: s.core,
       profileUid: kProfile,
       deviceId: 'd',
@@ -84,7 +84,7 @@ void main() {
       <String>['${SrsSourceKind.book}/本'],
     );
     final String json =
-        (await s.db
+        (await s.core
                 .customSelect('SELECT json FROM srs_local_state')
                 .getSingle())
             .read<String>('json');
@@ -131,7 +131,6 @@ void main() {
       "UPDATE srs_local_state SET json = json_set(json, '\$.cacheRev', 8)",
     );
     final SrsDbStore reopened = await SrsDbStore.open(
-      db: s.db,
       core: s.core,
       profileUid: kProfile,
       deviceId: 'd',
@@ -169,10 +168,10 @@ void main() {
     t += 1000;
     await s.answer(card, 4);
     final List<SrsCardCacheRow> rows = await s.allCardRows();
-    final List<SrsCardCacheRow> drift = await (s.db.select(
-      s.db.srsCardsCache,
-    )..where((c) => c.profileUid.equals(kProfile))).get();
-    expect(rows, drift);
+    final List<SrsCardCacheRow> byQuery = await s.cardRowsWhere(
+      const <String, Object?>{},
+    );
+    expect(rows, unorderedEquals(byQuery));
     final SrsColumns ids = await s.cardColumns(
       fields: const <String>['id'],
       visibleOnly: true,

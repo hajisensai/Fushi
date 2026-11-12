@@ -25,13 +25,9 @@ void main() {
     '删牌组耗时',
     () async {
       final int notes = int.parse(n!);
-      final CountingInterceptor counter = CountingInterceptor();
+      final SrsReadCounter counter = SrsReadCounter();
       final Directory tmp = Directory.systemTemp.createTempSync('srs_bulk_');
-      final TestSrs srs = await openTestSrsAt(
-        '${tmp.path}/srs.db',
-        interceptor: counter,
-        inline: false,
-      );
+      final TestSrs srs = await openTestSrsAt('${tmp.path}/srs.db');
       addTearDown(() async {
         try {
           tmp.deleteSync(recursive: true);
@@ -41,7 +37,6 @@ void main() {
       });
       const String uid = '01928c3e-0000-7000-8000-0000000be4c6';
       final SrsDbStore store = await SrsDbStore.open(
-        db: srs.db,
         core: srs.core,
         profileUid: uid,
         deviceId: 'bench',

@@ -174,15 +174,10 @@ class _RssSampler {
 Future<SrsDbStore> _openStore(
   Directory tmp,
   String name,
-  CountingInterceptor? c,
+  SrsReadCounter? c,
 ) async {
-  final TestSrs srs = await openTestSrsAt(
-    '${tmp.path}/$name.db',
-    interceptor: c,
-    inline: false,
-  );
+  final TestSrs srs = await openTestSrsAt('${tmp.path}/$name.db');
   return SrsDbStore.open(
-    db: srs.db,
     core: srs.core,
     profileUid: '01928c3e-0000-7000-8000-00000000e3e3',
     deviceId: 'bench',
@@ -279,12 +274,12 @@ void main() {
       }
 
       // 已导入的库每段各用一份拷贝（重导入会改它）。
-      Future<SrsDbStore> copyOfImported(CountingInterceptor c) async {
+      Future<SrsDbStore> copyOfImported(SrsReadCounter c) async {
         imported.copySync('${tmp.path}/a.db');
         return _openStore(tmp, 'a', c);
       }
 
-      final CountingInterceptor counter = CountingInterceptor();
+      final SrsReadCounter counter = SrsReadCounter();
       final SrsDbStore store = switch (phase) {
         'import' ||
         'anki21b' ||

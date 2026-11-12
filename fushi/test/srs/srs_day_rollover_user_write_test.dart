@@ -44,7 +44,6 @@ void main() {
   Future<SrsDbStore> activate() => stores.activate(
     _uid,
     () => SrsDbStore.open(
-      db: storage.db,
       core: storage.core,
       profileUid: _uid,
       deviceId: 'dev',

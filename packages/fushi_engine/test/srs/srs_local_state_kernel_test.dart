@@ -10,8 +10,6 @@
 import 'dart:convert';
 
 import 'package:drift/drift.dart' show driftRuntimeOptions;
-import 'package:fushi_core/fushi_core.dart' show SrsDatabase;
-import 'package:fushi_engine/srs/srs_database_executor.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:fushi_srs/fushi_srs.dart';
@@ -19,7 +17,9 @@ import 'package:test/test.dart';
 
 import 'apkg/apkg_test_support.dart' show FakeFsrsEngine;
 import 'support/srs_bulk_fixture.dart';
+import 'support/srs_raw_sql.dart';
 import 'support/srs_test_storage.dart';
+import 'package:fushi_engine/srs/srs_reads.dart';
 
 const String kUid = '01928c3e-0000-7000-8000-00000000d7a5';
 
@@ -33,7 +33,6 @@ SrsTrustedClock _clock(String bootId, {int Function()? boot}) =>
 
 Future<SrsDbStore> _open(SrsStorage storage, {SrsTrustedClock? clock}) =>
     SrsDbStore.open(
-      db: storage.db,
       core: storage.core,
       profileUid: kUid,
       deviceId: 'dev',
@@ -43,9 +42,9 @@ Future<SrsDbStore> _open(SrsStorage storage, {SrsTrustedClock? clock}) =>
     );
 
 /// 库里的本机状态行；没有为 null。
-Future<Map<String, Object?>?> _row(SrsStorage storage) => _rowOf(storage.db);
+Future<Map<String, Object?>?> _row(SrsStorage storage) => _rowOf(storage.core);
 
-Future<Map<String, Object?>?> _rowOf(SrsDatabase db) async {
+Future<Map<String, Object?>?> _rowOf(SrsCore db) async {
   final List<String> rows = <String>[
     for (final r
         in await db.customSelect('SELECT json FROM srs_local_state').get())
@@ -55,14 +54,14 @@ Future<Map<String, Object?>?> _rowOf(SrsDatabase db) async {
   return rows.isEmpty ? null : jsonDecode(rows.single) as Map<String, Object?>;
 }
 
-Future<int> _count(SrsDatabase db, String table) async =>
+Future<int> _count(SrsCore db, String table) async =>
     (await db.customSelect('SELECT COUNT(*) AS c FROM $table').getSingle())
         .read<int>('c');
 
 void main() {
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
 
-  test('校时、待回收集合、缓存版本各写各的键，互不抹掉；校时是一条内核命令、不经 Drift 写', () async {
+  test('校时、待回收集合、缓存版本各写各的键，互不抹掉；校时是一条内核命令、不发读命令', () async {
     final SrsStorage storage = await openTestSrsStorage();
     final SrsDbStore s = await _open(storage, clock: _clock('boot-a'));
     // 开库就把行落下了：纪元、当前缓存推导口径版本。
@@ -71,14 +70,14 @@ void main() {
     expect(opened['cacheRev'], s.debugCacheRevision);
 
     final int commands = s.debugCoreCommands;
-    SrsInlineExecutor.debugStatements = 0;
+    srsDebugReadCommands = 0;
     await s.anchorTime(1700000000000, observedAtBootMs: 20);
     // ignore: avoid_print
     print(
-      'WRITE_COST anchorTime: statements=${SrsInlineExecutor.debugStatements} '
+      'WRITE_COST anchorTime: reads=$srsDebugReadCommands '
       'core=${s.debugCoreCommands - commands}',
     );
-    expect(SrsInlineExecutor.debugStatements, 0);
+    expect(srsDebugReadCommands, 0);
     expect(s.debugCoreCommands - commands, 1);
     // o = 可信时间 − 墙钟 = 1700000000000 + (50 − 20) − 1000。
     expect((await _row(storage))!['anchor'], <String, Object?>{
@@ -108,9 +107,8 @@ void main() {
 
   test('覆盖恢复之后：重建缓存只做一次，行在重建之后落下，纪元不再每次开库都换', () async {
     final BulkFixture f = await BulkFixture.open(notes: 3);
-    final SrsDatabase db = f.db;
+    final SrsCore db = f.core;
     Future<SrsDbStore> open() => SrsDbStore.open(
-      db: db,
       core: f.store.core,
       profileUid: kBulkUid,
       deviceId: 'dev',

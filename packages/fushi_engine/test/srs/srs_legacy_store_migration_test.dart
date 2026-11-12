@@ -112,7 +112,6 @@ void main() {
     // 先在一份新的 srs.db 上造数据，再抄进主库的旧表形态。
     final SrsStorage gen = await openTestSrsStorage();
     final SrsDbStore store = await SrsDbStore.open(
-      db: gen.db,
       core: gen.core,
       profileUid: '01928c3e-0000-7000-8000-00000000a11a',
       deviceId: 'mig',
@@ -127,7 +126,7 @@ void main() {
       zstdDecompress: (Uint8List b) => null,
     );
     await store.setFlag((await store.allCardRows()).first.id, 2);
-    await copySrsRowsToLegacyTables(gen.db, db);
+    await copySrsRowsToLegacyTables(gen.core, db);
 
     final Map<String, List<Map<String, Object?>>> before =
         <String, List<Map<String, Object?>>>{};

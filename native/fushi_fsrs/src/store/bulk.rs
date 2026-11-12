@@ -25,12 +25,12 @@ use std::collections::HashMap;
 
 use super::sync2::sql;
 
-const KIND_I64: u32 = 1;
-const KIND_F64: u32 = 2;
-const KIND_OPT_I64: u32 = 3;
-const KIND_OPT_F64: u32 = 4;
-const KIND_STR: u32 = 5;
-const KIND_OPT_STR: u32 = 6;
+pub(crate) const KIND_I64: u32 = 1;
+pub(crate) const KIND_F64: u32 = 2;
+pub(crate) const KIND_OPT_I64: u32 = 3;
+pub(crate) const KIND_OPT_F64: u32 = 4;
+pub(crate) const KIND_STR: u32 = 5;
+pub(crate) const KIND_OPT_STR: u32 = 6;
 
 /// 一张列式表的编码器。
 pub struct Columns {
@@ -139,7 +139,7 @@ impl Columns {
 }
 
 /// 一列从 SQL 读出的值（按声明类型收集）。
-enum Col {
+pub(crate) enum Col {
     I64(Vec<i64>),
     F64(Vec<f64>),
     OptI64(Vec<Option<i64>>),
@@ -148,8 +148,9 @@ enum Col {
     OptStr(Vec<Option<String>>),
 }
 
-/// 卡片缓存的列：(列名, 类型)。`card_columns` 默认交回全部（`SrsCardCacheRow` 的每个字段，`profile_uid` 除外）。
-const CARD_COLUMNS: [(&str, u32); 23] = [
+/// 卡片缓存的列：(列名, 类型)。`card_columns` 与 `read` 的 `cards`（store/reads.rs）默认交回全部（`SrsCardCacheRow` 的
+/// 每个字段，`profile_uid` 除外）。
+pub(crate) const CARD_COLUMNS: [(&str, u32); 23] = [
     ("id", KIND_STR),
     ("note_id", KIND_STR),
     ("template_id", KIND_STR),
@@ -175,7 +176,8 @@ const CARD_COLUMNS: [(&str, u32); 23] = [
     ("freq_rank", KIND_OPT_I64),
 ];
 
-fn read_cols(
+/// 跑一条查询，按 [kinds]（与 SELECT 的列一一对应）逐列收集。
+pub(crate) fn read_cols(
     c: &Connection,
     q: &str,
     params: &[&dyn rusqlite::ToSql],
@@ -234,7 +236,7 @@ fn read_cols(
     Ok((n, cols))
 }
 
-fn encode(rows: usize, names: &[&str], cols: &[Col]) -> Vec<u8> {
+pub(crate) fn encode(rows: usize, names: &[&str], cols: &[Col]) -> Vec<u8> {
     let mut out = Columns::new(rows);
     for (name, col) in names.iter().zip(cols) {
         match col {

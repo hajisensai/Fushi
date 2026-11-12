@@ -547,12 +547,11 @@ void main() {
     setUp(() => LocaleSettings.setLocale(AppLocale.en));
 
     Future<void> settle(WidgetTester tester, {int rounds = 20}) async {
-      for (int i = 0; i < rounds; i++) {
-        await tester.runAsync(
-          () => Future<void>.delayed(const Duration(milliseconds: 10)),
-        );
-        await tester.pump(const Duration(milliseconds: 60));
-      }
+      await srsSettle(
+        tester,
+        minRounds: rounds,
+        real: const Duration(milliseconds: 10),
+      );
     }
 
     testWidgets('本机的复习页跑在主机的库上：翻面 → 评分 → 下一张 → 撤销', (

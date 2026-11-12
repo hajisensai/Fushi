@@ -455,7 +455,6 @@ void main() {
   // （不自动采用、不检出冲突、不续做中断的并入）。
   test('关联判定缓存按（位置, profile）记：切到另一个 profile 照样判定，同一 profile 才复用', () async {
     final SrsDbStore other = await SrsDbStore.open(
-      db: store.db,
       core: store.core,
       profileUid: 'other-profile',
       deviceId: 'dev',
@@ -490,7 +489,6 @@ void main() {
   test('profile 冲突：每次重新判出都通知；切了 profile 后用旧冲突采用被拒、什么都不动', () async {
     DateTime now = DateTime(2026, 10, 28, 12);
     final SrsDbStore other = await SrsDbStore.open(
-      db: store.db,
       core: store.core,
       profileUid: 'other-profile',
       deviceId: 'dev',
@@ -586,7 +584,6 @@ void main() {
 
   test('弹窗前重判 / 采用前复核时 link 换了 store（自动采用唯一剩下的候选）：与轮次里一样通知界面重读', () async {
     final SrsDbStore other = await SrsDbStore.open(
-      db: store.db,
       core: store.core,
       profileUid: 'remote-uid',
       deviceId: 'dev',

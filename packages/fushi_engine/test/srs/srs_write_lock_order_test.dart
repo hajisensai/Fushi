@@ -18,13 +18,14 @@ import 'package:test/test.dart';
 import 'apkg/srs_apkg_import_bench_test.dart' show benchApkg;
 import 'apkg/srs_apkg_import_test.dart' show kFullOptions;
 import 'support/srs_bulk_fixture.dart';
+import 'support/srs_raw_sql.dart';
 
 /// 操作日志里每台设备的操作，按 seq 排：(seq, wall, logical)。
 Future<Map<String, List<(int, int, int)>>> opsByDevice(BulkFixture f) async {
   final Map<String, List<(int, int, int)>> out =
       <String, List<(int, int, int)>>{};
-  for (final QueryRow r
-      in await f.db
+  for (final SrsRawRow r
+      in await f.core
           .customSelect(
             'SELECT hex(device) AS d, seq, wall, logical FROM sync2_ops '
             'WHERE profile_uid = ? ORDER BY device, seq',
@@ -71,7 +72,7 @@ void main() {
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
 
   test('导入攒批期间插进来的本机写入：操作日志 seq 连续、HLC 随 seq 递增', () async {
-    final BulkFixture f = await BulkFixture.open(notes: 2, background: true);
+    final BulkFixture f = await BulkFixture.open(notes: 2);
     final SrsDbStore s = f.store;
     // 每次写不同的卡：同一字段键上后写的会支配并删掉先写的，乱序就看不见了。
     final List<String> cards = <String>[
@@ -102,7 +103,7 @@ void main() {
   });
 
   test('更改笔记类型（多实体一次写）期间插进来的本机写入：操作日志 seq 连续、HLC 随 seq 递增', () async {
-    final BulkFixture f = await BulkFixture.open(notes: 120, background: true);
+    final BulkFixture f = await BulkFixture.open(notes: 120);
     final SrsDbStore s = f.store;
     final List<String> cards = <String>[
       for (final SrsCardCacheRow c in await s.allCardRows()) c.id,

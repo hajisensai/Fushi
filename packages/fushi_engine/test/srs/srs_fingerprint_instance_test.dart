@@ -5,10 +5,7 @@
 // 指纹必然不同。
 import 'dart:io';
 
-import 'package:drift/drift.dart' show driftRuntimeOptions;
-import 'package:fushi_core/fushi_core.dart' show SrsDatabase;
 import 'package:fushi_engine/srs/srs_builtin.dart';
-import 'package:fushi_engine/srs/srs_database_executor.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:path/path.dart' as p;
@@ -16,11 +13,9 @@ import 'package:test/test.dart';
 
 const String kProfile = '01928c3e-0000-7000-8000-0000000000f1';
 
-typedef _Opened = ({SrsDbStore store, SrsDatabase db, SrsCore core});
+typedef _Opened = ({SrsDbStore store, SrsCore core});
 
 void main() {
-  driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
-
   late Directory dir;
   late String path;
 
@@ -39,19 +34,16 @@ void main() {
 
   Future<_Opened> open() async {
     final SrsCore core = SrsCore.open(path);
-    final SrsDatabase db = SrsDatabase(srsInlineExecutor(core));
     final SrsDbStore store = await SrsDbStore.open(
-      db: db,
       core: core,
       profileUid: kProfile,
       deviceId: 'A',
       engine: FfiFsrsEngine.tryCreate(),
     );
-    return (store: store, db: db, core: core);
+    return (store: store, core: core);
   }
 
   Future<void> close(_Opened o) async {
-    await o.db.close();
     o.core.close();
   }
 

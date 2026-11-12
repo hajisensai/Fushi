@@ -52,13 +52,9 @@ void main() {
         }
       });
       File(src!).copySync('${tmp.path}/srs.db');
-      final TestSrs srs = await openTestSrsAt(
-        '${tmp.path}/srs.db',
-        inline: false,
-      );
+      final TestSrs srs = await openTestSrsAt('${tmp.path}/srs.db');
       final Stopwatch open = Stopwatch()..start();
       final SrsDbStore store = await SrsDbStore.open(
-        db: srs.db,
         core: srs.core,
         profileUid: uid,
         deviceId: 'dev',

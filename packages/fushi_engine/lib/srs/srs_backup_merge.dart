@@ -27,6 +27,7 @@ import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_profile_data.dart'
     show srsPurgeProfileRows;
+import 'package:fushi_engine/srs/srs_reads.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
 
 /// 只读地读一份备份里的 SRS 数据。
@@ -34,51 +35,56 @@ import 'package:fushi_engine/srs/srs_storage.dart';
 /// profile 名字与 uid 总在备份的主库（`profiles` 表）里；SRS 的事件有两种存放：
 /// - 老备份（2026-10-23 之前）：srs_* 表也在备份的主库里——[SrsBackupSource.database]（单独打开
 ///   的备份库）或 [SrsBackupSource.attached]（ATTACH 在本机主库连接上，合并导入引擎的形态）；
-/// - 新备份：备份里单独的 `srs.db`，由 Rust 只读打开（[SrsBackupSource.split]；Dart 的 SQLite
-///   绝不打开它，见 docs/specs/2026-10-23-srs-rust-store.md §1）。
-/// 都只发 SELECT。
+/// - 新备份：备份里单独的 `srs.db`，由 Rust 打开（[SrsBackupSource.split]），读的是内核读命令（srs_reads.dart）；
+///   Dart 的 SQLite 绝不打开它，见 docs/specs/2026-10-23-srs-rust-store.md §1。
+/// 老形态的 SQL 只发 SELECT，打在备份主库（fushi.db 形态）上，不碰任何 srs.db。
 class SrsBackupSource {
-  SrsBackupSource.database(DatabaseConnectionUser db) : this._(db, '', db, '');
+  SrsBackupSource.database(DatabaseConnectionUser db)
+    : this._(db, '', db, '', null);
 
   /// [schema] 是 `ATTACH DATABASE ... AS <schema>` 的别名。
   SrsBackupSource.attached(DatabaseConnectionUser connection, String schema)
-    : this._(connection, '$schema.', connection, '$schema.');
+    : this._(connection, '$schema.', connection, '$schema.', null);
 
-  /// profile 从 [profiles]（可带 ATTACH 别名 [profilesSchema]）读，SRS 事件从 [srs] 读。
+  /// profile 从 [profiles]（可带 ATTACH 别名 [profilesSchema]）读，SRS 事件经 [srs]（那份 srs.db 的内核句柄）的
+  /// 读命令读。
   SrsBackupSource.split({
     required DatabaseConnectionUser profiles,
     String? profilesSchema,
-    required SrsDatabase srs,
+    required SrsCore srs,
   }) : this._(
          profiles,
          profilesSchema == null ? '' : '$profilesSchema.',
-         srs,
+         null,
          '',
+         srs,
        );
 
   SrsBackupSource._(
     this._profilesDb,
     this._profilesPrefix,
-    this._db,
+    this._legacy,
     this._prefix,
+    this._srs,
   );
 
   final DatabaseConnectionUser _profilesDb;
   final String _profilesPrefix;
-  final DatabaseConnectionUser _db;
+
+  /// 老形态：srs_* 表在备份主库里（[_srs] 为 null 时非空）。
+  final DatabaseConnectionUser? _legacy;
   final String _prefix;
+
+  /// 新形态：备份里单独的 srs.db 的内核句柄。
+  final SrsCore? _srs;
 
   String _t(String table) => '$_prefix$table';
 
-  /// ID 列的绑定：srs.db（[SrsDatabase]）里 ID 列存编码值，要走 `srsIdType`；老备份在 fushi.db 里，仍是文本。
-  Variable<String> _id(String v) =>
-      Variable<String>(v, _db is SrsDatabase ? srsIdType : null);
-
   Future<bool> _any(String table, String profileUid) async =>
-      await _db
+      await _legacy!
           .customSelect(
             'SELECT 1 FROM ${_t(table)} WHERE profile_uid = ? LIMIT 1',
-            variables: <Variable<Object>>[_id(profileUid)],
+            variables: <Variable<Object>>[Variable<String>(profileUid)],
           )
           .getSingleOrNull() !=
       null;
@@ -88,10 +94,17 @@ class SrsBackupSource {
     final Set<String> builtin = <String>{
       for (final SrsEntityRecord r in srsBuiltinEntities(profileUid)) r.id,
     };
-    final List<QueryRow> ids = await _db
+    final SrsCore? srs = _srs;
+    if (srs != null) {
+      return (await srsRead(srs, profileUid, 'has_user_data', <String, Object?>{
+            'builtins': builtin.toList(),
+          })).json['any'] ==
+          true;
+    }
+    final List<QueryRow> ids = await _legacy!
         .customSelect(
           'SELECT id FROM ${_t('srs_entities')} WHERE profile_uid = ?',
-          variables: <Variable<Object>>[_id(profileUid)],
+          variables: <Variable<Object>>[Variable<String>(profileUid)],
         )
         .get();
     if (ids.any((QueryRow r) => !builtin.contains(r.read<String>('id')))) {
@@ -128,12 +141,17 @@ class SrsBackupSource {
   /// 该 profile 的全部事件（身份记录 → 修改记录 → 复习日志 → 不认识的事件），
   /// 解码方式与 [SrsDbStore.exportAll] 一致。
   Future<List<SrsEvent>> eventsOf(String profileUid) async {
-    final List<Variable<Object>> v = <Variable<Object>>[_id(profileUid)];
+    final SrsCore? srs = _srs;
+    if (srs != null) return srsEventsOf(srs, profileUid);
+    final DatabaseConnectionUser db = _legacy!;
+    final List<Variable<Object>> v = <Variable<Object>>[
+      Variable<String>(profileUid),
+    ];
     Map<String, Object?> obj(String json) =>
         (jsonDecode(json) as Map).cast<String, Object?>();
     final List<SrsEvent> out = <SrsEvent>[];
     for (final QueryRow r
-        in await _db
+        in await db
             .customSelect(
               'SELECT id, profile_uid, kind, payload_json FROM '
               '${_t('srs_entities')} WHERE profile_uid = ? ORDER BY id',
@@ -154,7 +172,7 @@ class SrsBackupSource {
       );
     }
     for (final QueryRow r
-        in await _db
+        in await db
             .customSelect(
               'SELECT json FROM ${_t('srs_field_edits')} '
               'WHERE profile_uid = ? ORDER BY id',
@@ -164,7 +182,7 @@ class SrsBackupSource {
       out.add(SrsEditEvent(SrsFieldEdit.fromJson(obj(r.read<String>('json')))));
     }
     for (final QueryRow r
-        in await _db
+        in await db
             .customSelect(
               'SELECT json FROM ${_t('srs_review_logs')} '
               'WHERE profile_uid = ? ORDER BY id',
@@ -174,7 +192,7 @@ class SrsBackupSource {
       out.add(SrsLogEvent(SrsReviewLog.fromJson(obj(r.read<String>('json')))));
     }
     for (final QueryRow r
-        in await _db
+        in await db
             .customSelect(
               'SELECT json FROM ${_t('srs_unknown_events')} '
               'WHERE profile_uid = ? ORDER BY id',
@@ -185,6 +203,47 @@ class SrsBackupSource {
     }
     return out;
   }
+}
+
+/// [srs] 里 [profileUid] 的全部事件（身份记录 → 修改记录 → 复习日志 → 不认识的事件，各按 ID 排），内核读命令
+/// `events`（native/fushi_fsrs/src/store/reads.rs）。
+Future<List<SrsEvent>> srsEventsOf(SrsCore srs, String profileUid) async {
+  final Map<String, SrsColumns> t = (await srsRead(
+    srs,
+    profileUid,
+    'events',
+    const <String, Object?>{'ordered': true},
+  )).tables;
+  Map<String, Object?> obj(String json) =>
+      (jsonDecode(json) as Map).cast<String, Object?>();
+  final List<SrsEvent> out = <SrsEvent>[];
+  final SrsColumns entities = t['entities']!;
+  final SrsStringColumn id = entities.strings('id');
+  final SrsStringColumn kind = entities.strings('kind');
+  final SrsStringColumn payload = entities.strings('payload_json');
+  for (int i = 0; i < entities.rows; i++) {
+    out.add(
+      SrsEntityEvent(
+        SrsEntityRecord(
+          id: id[i],
+          profileUid: profileUid,
+          kind: SrsEntityKind.tryParse(kind[i]) ?? SrsEntityKind.note,
+          payload: obj(payload[i]),
+        ),
+      ),
+    );
+  }
+  List<String> jsons(String name) => t[name]!.strings('json').toList();
+  for (final String j in jsons('edits')) {
+    out.add(SrsEditEvent(SrsFieldEdit.fromJson(obj(j))));
+  }
+  for (final String j in jsons('logs')) {
+    out.add(SrsLogEvent(SrsReviewLog.fromJson(obj(j))));
+  }
+  for (final String j in jsons('unknown')) {
+    out.add(SrsUnknownEvent(obj(j)));
+  }
+  return out;
 }
 
 /// 备份里一个有 SRS 数据的 profile。
@@ -337,20 +396,14 @@ Future<List<_LocalProfile>> _localProfiles(
 
 /// 本机 profile（当前 uid [uid]）能否改用备份的 uid：没有用户笔记，且从未发布过批次。
 Future<bool> _canAdoptUid(SrsStorage srs, String? uid) async {
-  final SrsDatabase db = srs.db;
   if (uid == null || uid.isEmpty) return true;
   final bool hasNotes =
-      await db
-          .customSelect(
-            'SELECT 1 FROM srs_entities WHERE profile_uid = ? AND kind = ? '
-            'LIMIT 1',
-            variables: <Variable<Object>>[
-              Variable<String>(uid, srsIdType),
-              Variable<String>(SrsEntityKind.note.wire),
-            ],
-          )
-          .getSingleOrNull() !=
-      null;
+      ((await srsRead(srs.core, uid, 'entity_count', <String, Object?>{
+            'kind': SrsEntityKind.note.wire,
+            'limit': 1,
+          })).json['n']!
+          as int) >
+      0;
   if (hasNotes) return false;
   // 同步 v2：传到过任何位置就算发布过（别的设备可能已经拿到这个身份下的操作）。只读判断，不打开副本。
   final Object? locations = srs.core.sync2(<String, Object?>{
@@ -389,37 +442,14 @@ Future<void> srsAdoptProfileUid(
   await db.adoptProfileUid(profileId, newUid);
 }
 
-/// 本机 SRS 四张事件表里已存在的事件 ID。
-Future<Set<String>> _existingEventIds(SrsDatabase db, List<String> ids) async {
-  final Set<String> out = <String>{};
-  for (int i = 0; i < ids.length; i += 400) {
-    final List<String> chunk = ids.sublist(
-      i,
-      i + 400 > ids.length ? ids.length : i + 400,
-    );
-    final String marks = List<String>.filled(chunk.length, '?').join(', ');
-    final List<Variable<Object>> vars = <Variable<Object>>[
-      for (final String id in chunk) Variable<String>(id, srsIdType),
-    ];
-    for (final String table in const <String>[
-      'srs_entities',
-      'srs_field_edits',
-      'srs_review_logs',
-      'srs_unknown_events',
-    ]) {
-      for (final QueryRow r
-          in await db
-              .customSelect(
-                'SELECT id FROM $table WHERE id IN ($marks)',
-                variables: vars,
-              )
-              .get()) {
-        out.add(r.read<String>('id'));
-      }
-    }
-  }
-  return out;
-}
+/// 本机 [profileUid] 名下四张事件表里已存在的事件 ID（内核读命令 `events_present`）。
+Future<Set<String>> _existingEventIds(
+  SrsCore core,
+  String profileUid,
+  List<String> ids,
+) async => (await srsRead(core, profileUid, 'events_present', <String, Object?>{
+  'ids': ids,
+})).table.strings('id').toList().toSet();
 
 /// 经本机副本合并一组事件，返回新落下的事件数（这些事件重新进发件箱）。
 Future<int> _mergeEvents({
@@ -429,14 +459,17 @@ Future<int> _mergeEvents({
   required List<SrsEvent> events,
 }) async {
   final SrsDbStore store = await SrsDbStore.open(
-    db: local.db,
     core: local.core,
     profileUid: profileUid,
     deviceId: deviceId,
   );
   if (events.isEmpty) return 0;
   final List<String> ids = <String>[for (final SrsEvent e in events) e.id];
-  final Set<String> before = await _existingEventIds(local.db, ids);
+  final Set<String> before = await _existingEventIds(
+    local.core,
+    profileUid,
+    ids,
+  );
   await store.applyRemote(events);
   final List<String> fresh = <String>[
     for (final String id in ids)
@@ -444,7 +477,11 @@ Future<int> _mergeEvents({
   ];
   if (fresh.isEmpty) return 0;
   // 被本机更晚的修改支配而丢掉的记录不在库里；落进来的都已是本机操作（同步 v2：并入即发布，不需要发件箱）。
-  final Set<String> landed = await _existingEventIds(local.db, fresh);
+  final Set<String> landed = await _existingEventIds(
+    local.core,
+    profileUid,
+    fresh,
+  );
   return <String>[
     for (final String id in fresh)
       if (landed.contains(id)) id,

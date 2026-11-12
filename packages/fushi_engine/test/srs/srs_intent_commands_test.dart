@@ -7,7 +7,6 @@
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/apkg/srs_apkg_common.dart' show srsMediaRefsIn;
-import 'package:fushi_engine/srs/srs_database_executor.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_duplicate_notes.dart';
 import 'package:fushi_engine/srs/srs_media_sync.dart';
@@ -18,11 +17,15 @@ import 'package:fushi_srs/fushi_srs.dart';
 import 'package:test/test.dart';
 
 import 'support/srs_bulk_fixture.dart';
+import 'support/srs_raw_sql.dart';
+import 'package:fushi_engine/srs/srs_reads.dart';
 
 const int _day = 24 * 60 * 60 * 1000;
 
 Future<int> _ops(SrsDbStore s) async =>
-    (await s.db.customSelect('SELECT COUNT(*) AS n FROM sync2_ops').getSingle())
+    (await s.core
+            .customSelect('SELECT COUNT(*) AS n FROM sync2_ops')
+            .getSingle())
         .read<int>('n');
 
 void main() {
@@ -287,7 +290,7 @@ void main() {
     final int ops = await _ops(s);
     final int revision = s.revision;
     final int core = s.debugCoreCommands;
-    SrsInlineExecutor.debugStatements = 0;
+    srsDebugReadCommands = 0;
     await expectLater(
       s.answerAndStudy(card, 4, expectBase: (lastLogId: base)),
       throwsA(
@@ -300,7 +303,7 @@ void main() {
     );
     // 预览 + 被拒的 `apply`；没有写失败后的重读（那是 Drift 读）。
     expect(s.debugCoreCommands - core, 2);
-    expect(SrsInlineExecutor.debugStatements, 0);
+    expect(srsDebugReadCommands, 0);
     expect(await _ops(s), ops);
     expect(s.revision, revision);
     expect((await s.cardRow(card))!.lastLogId, first.id);

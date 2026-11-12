@@ -1,103 +1,65 @@
-/// 测试用：数一个 Drift 连接上的语句往返（库在后台 isolate 时每条语句都是一次跨 isolate 往返）。
+/// 测试用：数 srs.db 的读命令往返（内核读命令 `read` / `read_lib`，packages/fushi_engine/lib/srs/srs_reads.dart）。
+///
+/// 以前数的是 srs.db 上 Drift 连接的语句往返；Drift 视图删了之后 Dart 对 srs.db 只有两种往返：读命令（这里数）
+/// 与内核写命令（`SrsCore.debugCoreCommands`）。
 library;
 
-import 'package:drift/drift.dart';
+import 'package:fushi_engine/srs/srs_reads.dart';
+import 'package:test/test.dart';
 
-/// 统计语句往返次数、等待时长与 SELECT 读回的行数。
-class CountingInterceptor extends QueryInterceptor {
+/// 统计读命令次数、等待时长与读回的行数。钩子是本 isolate 全局的一个：建出来与每次 [reset] 都把它接到自己身上
+/// （同一个测试里有几个计数器时，数的是最近一次 [reset] 之后的读——各测量段先 [reset] 再量），测试结束自动摘钩。
+class SrsReadCounter {
+  SrsReadCounter() {
+    _attach();
+    addTearDown(() {
+      if (srsDebugReadObserver == _on) srsDebugReadObserver = null;
+    });
+  }
+
+  void _attach() => srsDebugReadObserver = _on;
+
+  /// 按查询名的次数 / 微秒。
   final Map<String, int> counts = <String, int>{};
   final Map<String, int> micros = <String, int>{};
 
-  /// SELECT 读回的总行数。
+  /// 读回的总行数。
   int rowsRead = 0;
 
-  /// 单条 SELECT 读回的最多行数（一次物化了多少行到调用方 isolate）。
+  /// 单条读命令读回的最多行数（一次物化了多少行到调用方 isolate）。
   int maxRowsPerSelect = 0;
 
+  /// 读回的列式结果总字节数。
+  int bytes = 0;
+
+  /// 恒为 0：Dart 对 srs.db 不再开事务（写命令的事务在内核里）。
+  int get transactions => 0;
+
+  void _on(String q, int rows, int b, int us) {
+    bytes += b;
+    counts[q] = (counts[q] ?? 0) + 1;
+    micros[q] = (micros[q] ?? 0) + us;
+    rowsRead += rows;
+    if (rows > maxRowsPerSelect) maxRowsPerSelect = rows;
+  }
+
   void reset() {
+    _attach();
     counts.clear();
     micros.clear();
     rowsRead = 0;
     maxRowsPerSelect = 0;
-    transactions = 0;
+    bytes = 0;
   }
 
-  int count(String kind) => counts[kind] ?? 0;
+  /// 查询名 [q] 的读命令次数；`select` = 全部读命令（以前数的是 SELECT 语句），别的语句种类恒为 0。
+  int count(String q) => q == 'select' ? total : counts[q] ?? 0;
 
-  /// 全部语句往返（SELECT / 写 / 批 / 自定义语句）。
+  /// 全部读命令往返。
   int get total => counts.values.fold<int>(0, (int a, int b) => a + b);
-
-  Future<T> _run<T>(String kind, Future<T> Function() body) async {
-    final Stopwatch sw = Stopwatch()..start();
-    try {
-      return await body();
-    } finally {
-      counts[kind] = (counts[kind] ?? 0) + 1;
-      micros[kind] = (micros[kind] ?? 0) + sw.elapsedMicroseconds;
-    }
-  }
 
   String summary() => <String>[
     for (final MapEntry<String, int> e in counts.entries)
       '${e.key}=${e.value}/${(micros[e.key]! / 1000).round()}ms',
-    'tx=$transactions',
   ].join(' ');
-
-  @override
-  Future<List<Map<String, Object?>>> runSelect(
-    QueryExecutor executor,
-    String statement,
-    List<Object?> args,
-  ) => _run('select', () async {
-    final List<Map<String, Object?>> rows = await executor.runSelect(
-      statement,
-      args,
-    );
-    rowsRead += rows.length;
-    if (rows.length > maxRowsPerSelect) maxRowsPerSelect = rows.length;
-    return rows;
-  });
-
-  @override
-  Future<int> runInsert(
-    QueryExecutor executor,
-    String statement,
-    List<Object?> args,
-  ) => _run('insert', () => executor.runInsert(statement, args));
-
-  @override
-  Future<int> runUpdate(
-    QueryExecutor executor,
-    String statement,
-    List<Object?> args,
-  ) => _run('update', () => executor.runUpdate(statement, args));
-
-  @override
-  Future<int> runDelete(
-    QueryExecutor executor,
-    String statement,
-    List<Object?> args,
-  ) => _run('delete', () => executor.runDelete(statement, args));
-
-  @override
-  Future<void> runCustom(
-    QueryExecutor executor,
-    String statement,
-    List<Object?> args,
-  ) => _run('custom', () => executor.runCustom(statement, args));
-
-  /// 开过的事务数（含嵌套事务的保存点）。
-  int transactions = 0;
-
-  @override
-  TransactionExecutor beginTransaction(QueryExecutor parent) {
-    transactions++;
-    return parent.beginTransaction();
-  }
-
-  @override
-  Future<void> runBatched(
-    QueryExecutor executor,
-    BatchedStatements statements,
-  ) => _run('batch', () => executor.runBatched(statements));
 }

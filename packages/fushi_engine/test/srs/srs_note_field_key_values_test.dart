@@ -17,38 +17,16 @@ import 'package:test/test.dart';
 
 import 'apkg/apkg_test_support.dart' show FakeFsrsEngine;
 import 'support/srs_test_storage.dart';
+import 'support/srs_query_counter.dart';
 
 const String kProfile = '01928c3e-0000-7000-8000-0000000000b7';
 
 /// 统计 SELECT 读回的字节（字符串按 UTF-8 长度、BLOB 按长度）。
-class _ByteCounter extends QueryInterceptor {
-  int bytes = 0;
-
-  @override
-  Future<List<Map<String, Object?>>> runSelect(
-    QueryExecutor executor,
-    String statement,
-    List<Object?> args,
-  ) async {
-    final List<Map<String, Object?>> rows = await executor.runSelect(
-      statement,
-      args,
-    );
-    for (final Map<String, Object?> r in rows) {
-      for (final Object? v in r.values) {
-        if (v is String) bytes += v.length;
-        if (v is Uint8List) bytes += v.length;
-      }
-    }
-    return rows;
-  }
-}
-
 void main() {
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
   int t = DateTime.utc(2026, 11, 1, 12).millisecondsSinceEpoch;
 
-  Future<(SrsDbStore, _ByteCounter)> open() async {
+  Future<(SrsDbStore, SrsReadCounter)> open() async {
     final Directory tmp = Directory.systemTemp.createTempSync('srs_fkv_');
     addTearDown(() {
       try {
@@ -57,13 +35,9 @@ void main() {
         // 句柄晚释放。
       }
     });
-    final _ByteCounter counter = _ByteCounter();
-    final TestSrs srs = await openTestSrsAt(
-      '${tmp.path}/srs.db',
-      interceptor: counter,
-    );
+    final SrsReadCounter counter = SrsReadCounter();
+    final TestSrs srs = await openTestSrsAt('${tmp.path}/srs.db');
     final SrsDbStore store = await SrsDbStore.open(
-      db: srs.db,
       core: srs.core,
       profileUid: kProfile,
       deviceId: 'dev',
@@ -133,7 +107,7 @@ void main() {
 
   test('20k-note library: reads only the source edits, independent of how '
       'large the note fields are', () async {
-    final (SrsDbStore s, _ByteCounter counter) = await open();
+    final (SrsDbStore s, SrsReadCounter counter) = await open();
     const int notes = 20000;
     // 每条笔记一段 4 KiB 的「释义 HTML」：整库字段正文约 80 MiB（真实反馈里是上 GB）。
     final String html = '<div class="gloss">${'意味の説明。' * 680}</div>';

@@ -111,12 +111,7 @@ class _FakeRwkvService extends SrsRwkvService {
 }
 
 Future<void> _settle(WidgetTester tester, {int rounds = 16}) async {
-  for (int i = 0; i < rounds; i++) {
-    await tester.runAsync(
-      () => Future<void>.delayed(const Duration(milliseconds: 5)),
-    );
-    await tester.pump(const Duration(milliseconds: 60));
-  }
+  await srsSettle(tester, minRounds: rounds);
 }
 
 /// 复习页的排队 / 读卡 / 渲染是真异步（原生库 + 内存库），完成要多少墙钟取决于机器负载：固定轮数的

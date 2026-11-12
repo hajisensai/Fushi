@@ -414,12 +414,9 @@ fn one_row(page: &[u8]) -> Result<Vec<rusqlite::types::Value>, String> {
     Ok(rows.pop().unwrap_or_default())
 }
 
-/// Drift 执行器的语句入口，**只读**。`select`：2 = 内联执行器的查询（[SrsCore::select]：专用只读连接）；3 = 查询道
-/// 的查询（[SrsCore::snapshot_select]：只读连接池，可并发；不是只读查询报 `NOT_SNAPSHOT`）。0 / 1 是以前 Drift 的
-/// 写语句 / `runCustom`（事务控制、PRAGMA）：一律报 [crate::store::READ_ONLY]、不执行——srs.db 的写入只有内核命令
-/// （`ffsrs_store_sync2`）。4 / 5 = 测试专用的原始通道（[SrsCore::exec_raw]，写连接；4 返回一行
-/// `[变更行数, last_insert_rowid]`，5 返回「列名行 + 结果行」）。2 / 3 / 5 返回「列名行 + 结果行」；缓冲区用
-/// `ffsrs_free_bytes` 释放。
+/// 测试专用的原始通道（[SrsCore::exec_raw]，写连接）：`select` 4 返回一行 `[变更行数, last_insert_rowid]`，5 返回
+/// 「列名行 + 结果行」；缓冲区用 `ffsrs_free_bytes` 释放。别的取值不认：0–3 是以前 Drift 执行器的语句入口，
+/// 已经没有了——srs.db 的写入只有内核命令，读只有内核的读命令（`ffsrs_store_sync2`；`read` 见 store/reads.rs）。
 #[no_mangle]
 pub extern "C" fn ffsrs_store_exec(
     core: *const SrsCoreHandle,
@@ -440,9 +437,6 @@ pub extern "C" fn ffsrs_store_exec(
         let s = utf8(sql, sql_len)?;
         let values = one_row(bytes(params, params_len).ok_or("null params")?)?;
         let page = match select {
-            0 | 1 => return Err(format!("{}: {s}", crate::store::READ_ONLY)),
-            2 => c.select(s, &values)?,
-            3 => c.snapshot_select(s, &values)?,
             4 => c.exec_raw(s, &values, false)?,
             5 => c.exec_raw(s, &values, true)?,
             m => return Err(format!("unknown exec mode {m}")),
@@ -452,8 +446,7 @@ pub extern "C" fn ffsrs_store_exec(
     })
 }
 
-/// 测试专用的原始通道的批量版（[SrsCore::exec_batch_raw]：整批在写连接的一个 SAVEPOINT 里）；Drift 执行器不用它
-/// （Drift 的批量语句在 Dart 侧就报只读）。`statements` 是单列文本页（每行一条 SQL）；`applications` 是两列页：
+/// 测试专用的原始通道的批量版（[SrsCore::exec_batch_raw]：整批在写连接的一个 SAVEPOINT 里）。`statements` 是单列文本页（每行一条 SQL）；`applications` 是两列页：
 /// `[语句下标 i64, 参数页 blob]`（参数页是一行的 rows.rs 页，可为空字节）。
 #[no_mangle]
 pub extern "C" fn ffsrs_store_exec_batch(
@@ -540,7 +533,7 @@ pub extern "C" fn ffsrs_store_diag_counts(out: *mut i64, n: usize) -> usize {
     .unwrap_or(0)
 }
 
-/// `*out` = Drift 执行器查询的并发上限（只读连接池的连接数上限，`SrsCore::read_concurrency`）：Dart 侧查询道的
+/// `*out` = 查询道的并发上限（查询道只读连接池的连接数上限，`SrsCore::read_concurrency`）：Dart 侧查询道的
 /// worker 数取它。
 #[no_mangle]
 pub extern "C" fn ffsrs_store_read_concurrency(
@@ -997,6 +990,10 @@ fn sync2_dispatch_op(
     // 不针对单个 profile 的命令（store/profile_data.rs 找无主数据；WAL 并回）。
     match s("op")? {
         "profile_uids" => return c.profile_uids(),
+        // 不针对单个 profile 的只读查询（store/reads.rs）：查询道的只读连接。
+        "read_lib" => {
+            return c.read_query(|conn| crate::store::reads::run_lib(conn, req, files));
+        }
         "orphan_sweep_done" => return c.orphan_sweep_done(i("now")?),
         // profile 并入 / 链接在 srs.db 里的写（store/profile_data.rs）：各自一次持写锁、一个 SAVEPOINT。
         "profile_merge_mark" => {
@@ -1261,7 +1258,7 @@ fn cache_config_of(
 /// 依次做完命令本体（[local_write_body]）、缓存刷新（store/caches.rs）、请求带 `study` 时的排队（store/study.rs，看得见
 /// 这笔还没提交的写入），以及本机状态行（store/local_state.rs `persist_projected`：修订号按投影
 /// 结果从库里的值推进，回包带 `localRevision` / `localEpoch`；请求带了校时状态 `anchor` 就一并写下）。任何一步出错整个 SAVEPOINT 回滚：命令、缓存行、本机状态行一起不落。写连接上
-/// 没有别人开着的事务（Drift 执行器只读，store/mod.rs `READ_ONLY`），这个 SAVEPOINT 就是一笔独立提交的事务。
+/// 没有别人开着的事务（Dart 没有别的入口能在写连接上开事务），这个 SAVEPOINT 就是一笔独立提交的事务。
 const LOCAL_WRITE_OPS: &[&str] = &[
     "apply",
     "import_drafts",
@@ -1615,6 +1612,7 @@ const CHANNEL_TRANSPARENT: &[&str] = &[
     "checkpoints",
     "history",
     "study",
+    "read",
     "card_columns",
     "stats_bundle",
     "anki_resolve",
@@ -1766,6 +1764,8 @@ fn sync2_command(
         "replay_all" => json!(c.sync2_replay_all(profile)?),
         // 排队：牌组计数 + 出卡（store/study.rs），只读快照。
         "study" => c.study(profile, req)?,
+        // 只读查询（store/reads.rs）：查询道的只读连接，一条命令一个读事务。
+        "read" => c.read_query(|conn| crate::store::reads::run(conn, profile, req, files))?,
         // 列式批量读（store/bulk.rs），只读快照：卡片缓存行、统计页三张表、AnkiConnect 数字 id 反查。
         "card_columns" => {
             files.push((
@@ -2677,6 +2677,7 @@ mod tests {
         // 不针对单个 profile 的命令在分发器开头就返回，不碰通道。
         for global in [
             "profile_uids",
+            "read_lib",
             "orphan_sweep_done",
             "profile_merge_mark",
             "profile_merge_commit",

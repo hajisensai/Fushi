@@ -71,12 +71,7 @@ void main() {
 
   Future<SrsDbStore> device(String id) async {
     final SrsStorage srs = await openSrsTestStorage();
-    return SrsDbStore.open(
-      db: srs.db,
-      core: srs.core,
-      profileUid: kProfile,
-      deviceId: id,
-    );
+    return SrsDbStore.open(core: srs.core, profileUid: kProfile, deviceId: id);
   }
 
   Future<String> addNote(SrsDbStore s, String expression) => s.createNote(
@@ -607,7 +602,6 @@ class _LinkedDevice {
   }
 
   Future<SrsDbStore> _openStore() async => SrsDbStore.open(
-    db: srs.db,
     core: srs.core,
     profileUid: await db.profileUidOf(profileId),
     deviceId: deviceId,

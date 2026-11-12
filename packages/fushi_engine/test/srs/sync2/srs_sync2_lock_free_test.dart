@@ -20,7 +20,6 @@ void main() {
   Future<SrsDbStore> open() async {
     final SrsStorage st = await openTestSrsStorage();
     return SrsDbStore.open(
-      db: st.db,
       core: st.core,
       profileUid: kProfile,
       deviceId: 'dev',
