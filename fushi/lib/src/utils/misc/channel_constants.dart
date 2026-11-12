@@ -7,6 +7,12 @@ abstract final class FushiChannels {
   static const String _prefix = 'app.fushi.reader';
 
   static const MethodChannel splash = MethodChannel('$_prefix/splash');
+
+  /// 冷启动原生段计时（进程创建到 Dart `main()` 之前），`get` 取一次。Windows runner
+  /// `startup_trace.cpp`、Android `StartupTrace.java`、iOS `FushiStartupTrace`。
+  static const MethodChannel startupTrace = MethodChannel(
+    '$_prefix/startup_trace',
+  );
   static const MethodChannel anki = MethodChannel('$_prefix/anki');
   static const MethodChannel popup = MethodChannel('$_prefix/popup');
   static const MethodChannel tts = MethodChannel('$_prefix/tts');
