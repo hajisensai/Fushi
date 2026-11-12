@@ -374,9 +374,12 @@ void main() {
             '源的档案会继续挂在列表上（BUG-1861）',
       );
 
-      final String remote = region(
-        '_remoteSubtitleUserDismissed = false;',
-        'final int initialPositionMs =',
+      // 取整个 _loadRemoteEpisode：`_remoteSubtitleUserDismissed = false;` 也是字段声明
+      // 的子串（indexOf 先命中声明），而赋值自 BUG-4304 起排在起播位置解析之后
+      // （先过 `_episodeLoadSeq` 作废检查再落），按两句锚点切窗口会把它切掉。
+      final String remote = methodBody(
+        code,
+        'Future<void> _loadRemoteEpisode(',
       );
       // 远端换集：整体替换成本集持久化列表（不是追加），上一集的档因此出局。
       expect(
@@ -386,9 +389,15 @@ void main() {
             '远端换集必须整体替换导入档（远端 _currentVideoPath 恒 null，走不到本地'
             '换源分支的那次清空；BUG-3984 起按集重建而不是清空）',
       );
+      // 本集起播字幕重放会把那条档前插进列表（`..._importedSubtitleSources`），那时列表
+      // 已是本集的；只要求替换先于任何展开——展开出现在替换之前才是把上一集的档并进来。
+      final int replaced = remote.indexOf(
+        '_importedSubtitleSources = restoredLocalSubtitles;',
+      );
+      final int firstSpread = remote.indexOf('..._importedSubtitleSources');
       expect(
-        remote.contains('..._importedSubtitleSources'),
-        isFalse,
+        firstSpread < 0 || firstSpread > replaced,
+        isTrue,
         reason: '换集不得把上一集的导入档并进新列表',
       );
 

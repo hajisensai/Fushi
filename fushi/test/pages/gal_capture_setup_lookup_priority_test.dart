@@ -27,6 +27,7 @@ class _RiskPendingSurfacePort implements GalAttachedTextSurfacePort {
     required List<GalAttachedMeasuredGlyph> glyphs,
     required int clientWidth,
     required int clientHeight,
+    required int clientSizeTolerance,
   }) async => const GalAttachedCallResult(error: 'measured_not_used');
 
   @override

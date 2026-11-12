@@ -11,12 +11,16 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/web_browser/web_browser_settings_page.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_schema_web_browser.dart';
 import 'package:fushi/src/settings/settings_schema_web_browser_extension.dart';
 import 'package:fushi/src/web_browser/features/extension_host/web_browser_extension_storage.dart';
 import 'package:fushi/src/web_browser/features/extension_host/web_browser_extension_storage_provider.dart';
 import 'package:fushi/src/web_browser/features/extension_host/web_browser_extension_strings.dart';
+import 'package:fushi/src/web_browser/web_browser_prefs.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -116,6 +120,39 @@ void main() {
         ? jsonDecode(raw) as Map<String, Object?>
         : <String, Object?>{};
   }
+
+  testWidgets('「下拉刷新」开关（反馈 wegu0vewts）：只在手机显示，读写设备本地偏好', (
+    WidgetTester tester,
+  ) async {
+    final AppModel appModel = await pumpPage(
+      tester,
+      size: const Size(1280, 900),
+    );
+    final SettingsSwitchItem item = buildWebBrowserSection().items
+        .whereType<SettingsSwitchItem>()
+        .singleWhere(
+          (SettingsSwitchItem i) =>
+              i.id == 'system.web_browser_pull_to_refresh',
+        );
+    final SettingsContext c = SettingsContext(
+      context: tester.element(find.byType(WebBrowserSettingsPage)),
+      appModel: appModel,
+      ref: tester.element(find.byType(WebBrowserSettingsPage)) as WidgetRef,
+      readerSource: ReaderFushiSource.instance,
+      refresh: () {},
+    );
+
+    expect(item.visible!(c), isMobilePlatform);
+    expect(item.defaultValue, kWebBrowserPullToRefreshDefault);
+    expect(item.value(c), isTrue);
+
+    await item.onChanged(c, false);
+    expect(appModel.prefsRepo.getPref(kWebBrowserPullToRefreshPref), isFalse);
+    expect(item.value(c), isFalse);
+
+    await item.onChanged(c, true);
+    expect(item.value(c), isTrue);
+  });
 
   testWidgets('改扩展设置：写穿扩展存储并发出变更（打开着的标签页据此收到 onChanged）', (
     WidgetTester tester,

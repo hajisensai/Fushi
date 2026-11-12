@@ -20,6 +20,7 @@ import 'package:html/dom.dart' as dom;
 import 'package:html/parser.dart' as html_parser;
 
 import 'package:fushi/src/srs/srs_html_card_css.dart';
+import 'package:fushi/src/srs/srs_sound_tag.dart';
 
 export 'package:fushi/src/srs/srs_html_card_css.dart'
     show SrsCssLength, SrsCssUnit, SrsHtmlUnsupported;
@@ -404,14 +405,7 @@ String _shellCss(int foreground) {
 
 // ---------------------------------------------------------------- 一面卡
 
-final RegExp _soundTag = RegExp(r'\[sound:([^\]]+)\]');
 final RegExp _scriptTag = RegExp(r'<script\b', caseSensitive: false);
-
-String _escapeAttr(String s) => s
-    .replaceAll('&', '&amp;')
-    .replaceAll('"', '&quot;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;');
 
 /// 一面卡的原生渲染源：解析好的 DOM（`html > body.card > #qa > 正文`）+ 样式表。
 class SrsHtmlCardFace {
@@ -425,14 +419,14 @@ class SrsHtmlCardFace {
   }) {
     if (_scriptTag.hasMatch(bodyHtml)) srsHtmlUnsupported('html: <script>');
     final String body = bodyHtml.replaceAllMapped(
-      _soundTag,
+      srsSoundTagPattern,
       (Match m) =>
-          '<fushi-sound data-name="${_escapeAttr(m.group(1)!.trim())}"></fushi-sound>',
+          '<fushi-sound data-name="${srsEscapeHtml(m.group(1)!.trim())}"></fushi-sound>',
     );
     final String lang = (languageCode ?? '').trim();
     final dom.Document doc = html_parser.parse(
       '<!doctype html><html><head></head><body class="card">'
-      '<div id="qa"${lang.isEmpty ? '' : ' lang="${_escapeAttr(lang)}"'}>'
+      '<div id="qa"${lang.isEmpty ? '' : ' lang="${srsEscapeHtml(lang)}"'}>'
       '$body</div></body></html>',
     );
     final List<String> bodyStyles = <String>[];

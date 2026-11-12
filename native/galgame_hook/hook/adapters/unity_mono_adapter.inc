@@ -66,8 +66,21 @@ constexpr LONG kUnityMonoFlagLookupInstalled = 0x10000000;
 constexpr LONG kUnityMonoFlagLookupRejected = 0x20000000;
 // Fungus SayDialog.DoSay 整句入口解析成功（框架结构判据成立）。
 constexpr LONG kUnityMonoFlagFungusSignature = 0x40000000;
-static_assert(fushi_voice_hook::kMonoTextHookCount <= 6,
-              "hook id bits must fit bits 8..13 / 16..21");
+// 诊断字位：bit 8..13 / 16..21 各 6 位。kTmpSetTextSingle（TMP 3.2 的独立
+// SetText(string)）与 kTmpSetTextBool 同属 TMP SetText 一族，共用后者的位。
+constexpr LONG UnityMonoHookFlagIndex(fushi_voice_hook::MonoTextHookId id) {
+  return id == fushi_voice_hook::MonoTextHookId::kTmpSetTextSingle
+             ? static_cast<LONG>(fushi_voice_hook::MonoTextHookId::kTmpSetTextBool)
+             : static_cast<LONG>(id);
+}
+static_assert(fushi_voice_hook::kMonoTextHookCount == 7 &&
+                  static_cast<LONG>(
+                      fushi_voice_hook::MonoTextHookId::kTmpSetTextSingle) == 6 &&
+                  static_cast<LONG>(
+                      fushi_voice_hook::MonoTextHookId::kFungusSayDialogDoSay) ==
+                      5,
+              "hook id bits must fit bits 8..13 / 16..21 via "
+              "UnityMonoHookFlagIndex");
 
 volatile LONG g_unity_mono_flags = 0;
 // detour 读字符串用的两个导出。HookFn 之前写好，之后只读。
@@ -135,6 +148,22 @@ void RememberUnityMonoFungusStoryText(void* dialog) {
   g_um_fungus_story_texts[slot].store(story, std::memory_order_release);
 }
 
+// 游戏内查词框架 3（裸 TMP，unity_mono_lookup.inc）：TMP setter 发布出一行后记下该
+// TextMeshProUGUI 对象，供每帧 Canvas.SendWillRenderCanvases 之后采样。主线程上调用。
+// lane 位：1 TMP SetText、2 TMP SetText(string,bool)、4 UI.Text.set_text（框架 4）、
+// 8 TMP SetText(string)（与 unity_mono_lookup.inc 的 kUm*Lane* 常量一致）。
+// 同时把这行（原始字符串，内部按文本道口径剥富文本）喂给对白面判定
+// （unity_mono_dialogue_core.h）；判定每帧在画布更新之后做一次（unity_mono_lookup.inc）。
+void RememberUmTmpCandidateGuarded(void* component, uint8_t lane,
+                                   const wchar_t* chars, int length);
+// 有界诊断日志（unity_mono_lookup.inc；只在 HookWorker 上调用，从不写台词）。
+void UmLookupLog(const wchar_t* format, ...);
+
+// TMP 1.x 的 SetText(string) 只是 SetText(text, true) 的转调：外层 detour 在调原函数
+// 期间置深度，内层 SetText(string,bool) detour 看到深度 > 0 就不再发布同一行
+// （外层返回后自己发布）。TMP 3.2+ 两者互不调用，深度恒为 0。
+thread_local int g_unity_mono_tmp_single_depth = 0;
+
 using UnityMonoTextSetter = void(FUSHI_MONO_MANAGED_CALL*)(void*, void*);
 using UnityMonoTextSetterWithFlag = void(FUSHI_MONO_MANAGED_CALL*)(void*, void*,
                                                                     uintptr_t);
@@ -142,6 +171,7 @@ using UnityMonoMessageRendererMes = void*(FUSHI_MONO_MANAGED_CALL*)(void*, void*
                                                                      uintptr_t);
 UnityMonoTextSetter g_orig_UnityMonoTmpSetText = nullptr;
 UnityMonoTextSetterWithFlag g_orig_UnityMonoTmpSetTextBool = nullptr;
+UnityMonoTextSetter g_orig_UnityMonoTmpSetTextSingle = nullptr;
 UnityMonoTextSetter g_orig_UnityMonoUiTextSetText = nullptr;
 UnityMonoTextSetter g_orig_UnityMonoTextMeshSetText = nullptr;
 UnityMonoMessageRendererMes g_orig_UnityMonoMessageRendererMes = nullptr;
@@ -151,13 +181,50 @@ using UnityMonoFungusDoSay = void*(FUSHI_MONO_MANAGED_CALL*)(
     void*);
 UnityMonoFungusDoSay g_orig_UnityMonoFungusDoSay = nullptr;
 
+// 对白面标记变化（unity_mono_dialogue_core.h）：失去标记的道与得到标记的道各发一条
+// 线程发现事件（WriteUnityTextEvent 按 g_unity_dialogue_surface_thread 当前值决定
+// 带不带 kTextEventFlagDialogueSurface），宿主据此更新这两条道的当前判定。标记本身已在
+// UpdateUmDialogueSurface（unity_mono_lookup.inc，每帧画布更新之后）里写好；这里只发布，
+// 在任何 SEH 保护区之外（进 g_cs）。主线程、有界、无 IO。
+// 画布文本组件某条 setter 道的线程 id：与 RecordUnityTextChars 同一推导（组件指针 +
+// 该 setter 的 hook code，非场景稳定身份）。lane 非法时返回 0。
+uint64_t UnityMonoLaneThreadId(uintptr_t object, uint8_t lane,
+                               const fushi_voice_hook::MonoTextHookSpec** out) {
+  fushi_voice_hook::MonoTextHookId id;
+  if (object == 0u ||
+      !fushi_voice_hook::unity_mono_dialogue::MonoTextHookIdForLane(lane,
+                                                                     &id)) {
+    return 0u;
+  }
+  const fushi_voice_hook::MonoTextHookSpec& spec =
+      fushi_voice_hook::MonoTextHookSpecFor(id);
+  if (out != nullptr) *out = &spec;
+  return fushi_voice_hook::NativeTextThreadIdFrom(
+      static_cast<uint64_t>(object), spec.hook_code, spec.hook_name);
+}
+
+void PublishUnityMonoDialogueLane(uintptr_t object, uint8_t lane) {
+  const fushi_voice_hook::MonoTextHookSpec* spec = nullptr;
+  const uint64_t thread_id = UnityMonoLaneThreadId(object, lane, &spec);
+  if (thread_id == 0u || spec == nullptr) return;
+  WriteUnityTextEvent(thread_id, reinterpret_cast<void*>(object), nullptr, 0,
+                      spec->hook_name, spec->hook_code,
+                      fushi_voice_hook::kTextEventThreadDiscovered);
+}
+
+void PublishUnityMonoDialogueSurfaceChange(
+    const fushi_voice_hook::unity_mono_dialogue::SurfaceChange& change) {
+  PublishUnityMonoDialogueLane(change.cleared_object, change.cleared_lane);
+  PublishUnityMonoDialogueLane(change.promoted_object, change.promoted_lane);
+}
+
 // 游戏线程上的唯一工作：经导出 accessor 取 UTF-16 视图（纯指针运算，不分配、不进 GC），
 // 交给与 IL2CPP 共用的有界发布（RecordUnityTextChars 内部拷进定长 clean[501] 再写共享
 // 内存道）。不 attach、不 runtime_invoke、不做 IO。
 void RecordUnityMonoText(fushi_voice_hook::MonoTextHookId id, void* component,
                          void* string_object) {
   MarkUnityMonoFlag(1L << (kUnityMonoFlagDetourFiredShift +
-                           static_cast<LONG>(id)));
+                           UnityMonoHookFlagIndex(id)));
   if (!g_capture_enabled) return;
   if (id == fushi_voice_hook::MonoTextHookId::kUiTextSetText &&
       UnityMonoIsFungusStoryText(component)) {
@@ -187,6 +254,15 @@ void RecordUnityMonoText(fushi_voice_hook::MonoTextHookId id, void* component,
   if (RecordUnityTextChars(component, chars, length, spec.hook_name,
                            spec.hook_code, spec.stable_identity, role)) {
     MarkUnityMonoFlag(kUnityMonoFlagTextPublished);
+    if (id == fushi_voice_hook::MonoTextHookId::kTmpSetText) {
+      RememberUmTmpCandidateGuarded(component, 1u, chars, length);
+    } else if (id == fushi_voice_hook::MonoTextHookId::kTmpSetTextBool) {
+      RememberUmTmpCandidateGuarded(component, 2u, chars, length);
+    } else if (id == fushi_voice_hook::MonoTextHookId::kUiTextSetText) {
+      RememberUmTmpCandidateGuarded(component, 4u, chars, length);
+    } else if (id == fushi_voice_hook::MonoTextHookId::kTmpSetTextSingle) {
+      RememberUmTmpCandidateGuarded(component, 8u, chars, length);
+    }
   }
 }
 
@@ -202,8 +278,18 @@ void FUSHI_MONO_MANAGED_CALL Detour_UnityMonoTmpSetText(void* self,
 void FUSHI_MONO_MANAGED_CALL Detour_UnityMonoTmpSetTextBool(
     void* self, void* text, uintptr_t sync_text_input_box) {
   g_orig_UnityMonoTmpSetTextBool(self, text, sync_text_input_box);
+  if (g_unity_mono_tmp_single_depth > 0) return;  // 外层 SetText(string) 发布
   RecordUnityMonoText(fushi_voice_hook::MonoTextHookId::kTmpSetTextBool, self,
                       text);
+}
+
+void FUSHI_MONO_MANAGED_CALL Detour_UnityMonoTmpSetTextSingle(void* self,
+                                                              void* text) {
+  ++g_unity_mono_tmp_single_depth;
+  g_orig_UnityMonoTmpSetTextSingle(self, text);
+  --g_unity_mono_tmp_single_depth;
+  RecordUnityMonoText(fushi_voice_hook::MonoTextHookId::kTmpSetTextSingle,
+                      self, text);
 }
 
 void FUSHI_MONO_MANAGED_CALL Detour_UnityMonoUiTextSetText(void* self,
@@ -268,6 +354,9 @@ const UnityMonoDetourBinding kUnityMonoDetours[] = {
     {fushi_voice_hook::MonoTextHookId::kFungusSayDialogDoSay,
      reinterpret_cast<void*>(&Detour_UnityMonoFungusDoSay),
      reinterpret_cast<void**>(&g_orig_UnityMonoFungusDoSay)},
+    {fushi_voice_hook::MonoTextHookId::kTmpSetTextSingle,
+     reinterpret_cast<void*>(&Detour_UnityMonoTmpSetTextSingle),
+     reinterpret_cast<void**>(&g_orig_UnityMonoTmpSetTextSingle)},
 };
 static_assert(sizeof(kUnityMonoDetours) / sizeof(kUnityMonoDetours[0]) ==
                   fushi_voice_hook::kMonoTextHookCount,
@@ -614,7 +703,7 @@ class UnityMonoAdapter final : public fushi_voice_hook::EngineAdapter {
                 fushi_voice_hook::HostExecutableSha256Hex(), _TRUNCATE);
       return report;
     }
-    // 托管解析已结束但脚本程序集里没有逐字消息框架：查词只覆盖这一框架。
+    // 托管解析已结束但三个查词框架（逐字消息 / Fungus / 裸 TMP）都不成立。
     if (text_done_ && !lookup_framework_) {
       report.state = fushi_voice_hook::kLookupAdmissionEngineUnsupported;
       return report;
@@ -677,6 +766,7 @@ class UnityMonoAdapter final : public fushi_voice_hook::EngineAdapter {
         umono_audio::AudioSiteResult::kApiIncomplete;
     void* writer_audio_code[umono_audio::kWriterAudioMethodCount] = {};
     bool fungus_framework = false;
+    bool tmp_framework = false;
     {
       fushi_voice_hook::MonoAttachedThreadScope managed_thread(api, domain);
       if (!managed_thread.attached()) {
@@ -710,13 +800,31 @@ class UnityMonoAdapter final : public fushi_voice_hook::EngineAdapter {
                       fushi_voice_hook::MonoTextHookId::kFungusSayDialogDoSay)) !=
               0;
       if (fungus_framework) MarkUnityMonoFlag(kUnityMonoFlagFungusSignature);
-      lookup_framework_ = message_framework || fungus_framework;
+      // 框架 3：两种脚本层框架都不成立、但 TMP setter 这一对都在计划里——对白就是
+      // 某个 TextMeshProUGUI，哪一个由宿主选定的那行文本决定（见 unity_mono_lookup_core.h）。
+      const uint32_t tmp_pair =
+          fushi_voice_hook::MonoTextHookBit(
+              fushi_voice_hook::MonoTextHookId::kTmpSetText) |
+          fushi_voice_hook::MonoTextHookBit(
+              fushi_voice_hook::MonoTextHookId::kTmpSetTextBool);
+      // 框架 4：同一套画布文本机制，对白是某个 UnityEngine.UI.Text（只有 UI.Text
+      // 道的作品）。两种画布文本各自解析，任一成立即可（见 ResolveUnityMonoTmpLookup）。
+      const bool want_tmp = (plan & tmp_pair) == tmp_pair;
+      const bool want_ui_text =
+          (plan & fushi_voice_hook::MonoTextHookBit(
+                      fushi_voice_hook::MonoTextHookId::kUiTextSetText)) != 0;
+      tmp_framework = !message_framework && !fungus_framework &&
+                      (want_tmp || want_ui_text);
+      lookup_framework_ = message_framework || fungus_framework || tmp_framework;
       if (message_framework) {
         get_name = fushi_voice_hook::unity_mono_lookup::ResolveObjectGetName(
             api, LoadUnityMonoLookupApi(runtime));
         lookup_code = ResolveUnityMonoLookup(api, runtime, domain);
       } else if (fungus_framework) {
         lookup_code = ResolveUnityMonoFungusLookup(api, runtime);
+      } else if (tmp_framework) {
+        lookup_code =
+            ResolveUnityMonoTmpLookup(api, runtime, want_tmp, want_ui_text);
       }
       // 逐句语音（所有 Unity Mono 构建）：AudioSource 播放内部调用 + 可选的 Fungus
       // WriterAudio 回调，同一个 attach 作用域里解析 / 编译。
@@ -744,7 +852,7 @@ class UnityMonoAdapter final : public fushi_voice_hook::EngineAdapter {
               ? 0
               : GetWindowThreadProcessId(unity_window, nullptr);
     }
-    if (lookup_framework_ && !fungus_framework) {
+    if (lookup_framework_ && !fungus_framework && !tmp_framework) {
       g_unity_mono_object_get_name =
           reinterpret_cast<fushi_voice_hook::unity_mono_lookup::IcallGetNameFn>(
               get_name);
@@ -755,14 +863,30 @@ class UnityMonoAdapter final : public fushi_voice_hook::EngineAdapter {
     if (audio_ready) g_um_audio = audio;
     MemoryBarrier();
     // 已 detach 之后才 HookFn：MH_EnableHook 会挂起全部线程，不在托管线程身份下做。
+    // 有界安装摘要（一行）：哪些 id 在计划里、编译出入口、挂上；第一个挂失败的 id
+    // 附 MinHook 的 create / enable 状态（kHookStepNotRun = 未走到该步）。
+    uint32_t compiled = 0u, hooked = 0u;
+    int failed_id = -1;
+    HookFnStatus failed_status;
     for (const UnityMonoDetourBinding& binding : kUnityMonoDetours) {
       const size_t index = static_cast<size_t>(binding.id);
       if (code[index] == nullptr) continue;
-      if (HookFn(code[index], binding.detour, binding.original)) {
+      compiled |= 1u << index;
+      HookFnStatus status;
+      if (HookFnEx(code[index], binding.detour, binding.original, &status)) {
+        hooked |= 1u << index;
         MarkUnityMonoFlag(1L << (kUnityMonoFlagHookInstalledShift +
-                                 static_cast<LONG>(index)));
+                                 UnityMonoHookFlagIndex(binding.id)));
+      } else if (failed_id < 0) {
+        failed_id = static_cast<int>(index);
+        failed_status = status;
       }
     }
+    UmLookupLog(
+        L"unity-mono-text: plan=0x%02x compiled=0x%02x hooked=0x%02x "
+        L"fail=%d create=%d enable=%d",
+        plan, compiled, hooked, failed_id, failed_status.create,
+        failed_status.enable);
     if (lookup_framework_) {
       MarkUnityMonoFlag(InstallUnityMonoLookupHooks(lookup_code)
                             ? kUnityMonoFlagLookupInstalled

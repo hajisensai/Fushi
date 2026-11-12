@@ -630,6 +630,11 @@ void main() {
       await open(tester, host.videoPage());
       await tester.tap(find.text(t.popup_ctx_next_plus));
       await tester.pumpAndSettle();
+      // 句子音频区默认挪到左栏（24b3690ddc）后，试听按钮在测试视口下方，先滚进视口再点。
+      await tester.ensureVisible(
+        find.byTooltip(t.popup_ctx_preview_audio).first,
+      );
+      await tester.pumpAndSettle();
       await tester.tap(find.byTooltip(t.popup_ctx_preview_audio).first);
       await tester.pumpAndSettle();
       await tester.tap(find.text(t.popup_ctx_cancel));
@@ -643,6 +648,11 @@ void main() {
       WidgetTester tester,
     ) async {
       await open(tester, host.videoPage());
+      // 句子音频区默认挪到左栏（24b3690ddc）后，试听按钮在测试视口下方，先滚进视口再点。
+      await tester.ensureVisible(
+        find.byTooltip(t.popup_ctx_preview_audio).first,
+      );
+      await tester.pumpAndSettle();
       await tester.tap(find.byTooltip(t.popup_ctx_preview_audio).first);
       await tester.pumpAndSettle();
       expect(find.byTooltip(t.popup_ctx_preview_stop), findsWidgets);
@@ -651,6 +661,11 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byTooltip(t.popup_ctx_preview_stop), findsNothing);
 
+      // 句子音频区默认挪到左栏（24b3690ddc）后，试听按钮在测试视口下方，先滚进视口再点。
+      await tester.ensureVisible(
+        find.byTooltip(t.popup_ctx_preview_audio).first,
+      );
+      await tester.pumpAndSettle();
       await tester.tap(find.byTooltip(t.popup_ctx_preview_audio).first);
       await tester.pumpAndSettle();
       expect(host.previewCalls, hasLength(2), reason: '一次点击就重新试听');
