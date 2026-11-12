@@ -1,4 +1,4 @@
-## BUG-4323 · SRS 同步 v2：旧小段可能先于引用它的旧 head 被删（保留代数写在 Dart，内核看不到）
+## BUG-4464 · SRS 同步 v2：旧小段可能先于引用它的旧 head 被删（保留代数写在 Dart，内核看不到）
 - **报告**：2026-11-11（代码审计：把「位置上哪些旧 head 可以删」收进内核时逐项对照 Dart 与内核两边的规则发现；没有现场报告）
 - **真实性**：✅ 真 bug。根因（修复前，基底 `8890d01a33d`）：
   - `packages/fushi_engine/lib/srs/sync2/srs_sync2_round.dart:409-431`：写完 head 的一轮里先 `srsDeleteAndAck(head.map['delete'])` 删内核给的旧小段并回执，**之后**才列本机目录按 `g < gen - 2` 删旧 head；旧 head 的删除不回执，`location.delete` 抛错后这一轮失败，而 head 没变的一轮（同文件 `368-384`）只删内核清单、根本不碰旧 head——没删成的旧 head 要等下一次**写** head 才重试。

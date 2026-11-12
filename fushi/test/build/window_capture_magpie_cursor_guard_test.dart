@@ -258,7 +258,7 @@ void main() {
       'ReleaseGdiOnOwnerThread',
       'bytes[i + 3] = 0xFF',
       'SameCaptureClient(initial_client, final_client)',
-      // BUG-4388: DPI-unaware windows paint their own (logical) client into
+      // BUG-4472: DPI-unaware windows paint their own (logical) client into
       // the physical DIB; completeness is judged in the window's DPI space.
       'GetWindowDpiAwarenessContext(hwnd)',
       'ReadNativeClientSize(hwnd, &native_width, &native_height',

@@ -1,4 +1,4 @@
-## BUG-4387 · CatSystem2 cs2 2.6.1.90 查词与语音站点全部 unresolved
+## BUG-4471 · CatSystem2 cs2 2.6.1.90 查词与语音站点全部 unresolved
 - **报告**：2026-11-11（用户：志愿者机 NOFJ 实测转述；cs2.exe FileVersion 2.6.1.90，x86，未加壳，2020 年作品，日文转区启动）
 - **真实性**：✅ 真 bug。注入日志 `catsystem2-lookup: sites unresolved result=4`（kRecordInvalid）与 `catsystem2-voice: sites unresolved result=5`（kPlainBlockMissing）；用样本 exe 与主模块 dump 离线跑同一份解析器（`tools/catsystem2_site_probe.cpp`）复现出完全相同的两个 result 码。根因是这一版换了新 MSVC 且对象布局整体挪了位，而 targeted-render 证明把这些都写成了固定字节 / 固定偏移：
   - 查词 `hook/adapters/catsystem2_lookup_core.h` `ResolveTargetedRenderSites`：GetCharImage 参数块多压两个记录字段、字体字段 +0xa0/+0xac→+0xc0/+0xcc（固定字节签名失配 → result=4）；其后各环同样失配：渲染器页尺寸 +0x14/+0x18→+0x10/+0x14、渐显页 +0x40→+0x3c（ClearPage 体）、窗口 renderer +0x2ac→+0x2b0（Update / ClearPage 调用点）、窗口 screen +0x68→+0x6c（SyncLayer / 层查询）、Screen::QueryLayer `dec eax`→`sub eax,1`、Scene::Find 换寄存器、Scene::Draw 对齐由短跳改多字节 nop、Input::Handle 序言溢出顺序变化；且第二个窗口类与本窗口共用 Update 和 ClearPage 函数体（Update 签名不再唯一）。运行期还按固定常量读这些字段，站点即使找到也会读错。

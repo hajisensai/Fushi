@@ -1,4 +1,4 @@
-## BUG-4387 · 查词弹窗滚动位跨查词残留（app 外 / galgame 根 iframe；同词缓存命中）
+## BUG-4467 · 查词弹窗滚动位跨查词残留（app 外 / galgame 根 iframe；同词缓存命中）
 - **报告**：2026-11-11（用户：「上一次查词滚动了一段，下一次还是那段」；怀疑弹窗一直重建）
 - **真实性**：✅ 真 bug（沿代码路径确认，两条独立路径）。
   1. app 外查词窗 / galgame 内嵌查词：TODO-1095 让根 iframe（固定 id `global-lookup-root`）跨查词、跨关窗常驻，但 `fushi/assets/popup/global_lookup_host.js` 的 `beginLookup`、根卡 renderJs、`renderPopup` 都不归零文档滚动——BUG-141 的 `__fushiResetPopupScroll` 只写在 in-app 注入块（`dictionary_popup_webview.dart` `_inAppStaticExtrasJs`）。同词命中缓存时 `renderPayload` 判 contentChanged=false 连重渲染都没有，原样停在上次位置；换词也只靠浏览器夹紧。

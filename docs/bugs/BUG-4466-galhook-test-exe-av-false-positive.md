@@ -1,4 +1,4 @@
-## BUG-4387 · Kaspersky 把 galgame hook 测试 exe 报为 Trojan.Win32.Sdum.gen 并删除
+## BUG-4466 · Kaspersky 把 galgame hook 测试 exe 报为 Trojan.Win32.Sdum.gen 并删除
 - **报告**：2026-11-11（用户：Kaspersky 弹窗「检测到 VHO:Trojan.Win32.Sdum.gen，位置 …Release\fushi_utterance_window_test.exe」）
 - **真实性**：✅ 真问题（杀软误报，非恶意代码）。`native/galgame_hook/CMakeLists.txt:461` 的
   `fushi_utterance_window_test` 与其余 ~140 个测试 exe 一样是不带任何版本资源的极小控制台程序；

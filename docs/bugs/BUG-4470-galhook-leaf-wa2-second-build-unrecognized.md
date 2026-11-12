@@ -1,4 +1,4 @@
-## BUG-4387 · Leaf/AQUAPLUS：WHITE ALBUM2 另一构建不被认领（准入钉在单个 exe 摘要 + glyph 返回点判据无选择性）
+## BUG-4470 · Leaf/AQUAPLUS：WHITE ALBUM2 另一构建不被认领（准入钉在单个 exe 摘要 + glyph 返回点判据无选择性）
 - **报告**：2026-11-11（引擎适配任务：WHITE ALBUM2 2011 PC 版另一构建，磁盘 exe SHA-256 `c395d93f74695d2bb7a4fb2fe30486a5d37715b4c30bf20451883569bba3990b`，x86）
 - **真实性**：✅ 真 bug，两处根因：
   1. 准入钉在单个 exe 摘要：旧 `native/galgame_hook/hook/adapters/leaf_aquaplus_adapter.inc:665`（develop@8603d1a764）`MatchesLeafAquaplusProfile(kWhiteAlbum2LeafAquaplusProfile, digest…)`，摘要不同直接 -1，结构门都没机会跑；违反「只做引擎级适配」硬规则。
