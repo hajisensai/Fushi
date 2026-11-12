@@ -834,6 +834,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       message:
           '${t.library_progress_reset_book_message}\n\n'
           '${t.library_progress_reset_batch_message(n: targets.length)}',
+      trackingOn: appModel.isMediaTrackingOn,
     );
     if (records == null || !mounted) return;
     int done = 0;
@@ -1645,6 +1646,16 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     );
   }
 
+  /// 书卡菜单「追踪」：关掉菜单后打开本书的追踪对话框（书 / 漫画同走 bookKey）。
+  Future<void> _openBookTracking(String bookKey) async {
+    Navigator.pop(context);
+    await showBookTrackingDialog(
+      context,
+      service: appModel.mediaTrackingService,
+      bookKey: bookKey,
+    );
+  }
+
   /// 书卡 / 配对字幕书卡「重置阅读状态」：先收起长按菜单，弹确认框（可选只撤最近
   /// 一次会话 / 全清学习记录，默认都不动），确认后经 [resetBookReadingState] 落库
   /// （位置写回开头而不是删行——删行会被同步通道从对端灌回，见该函数文件头），
@@ -1660,6 +1671,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       context,
       title: t.library_progress_reset_action,
       message: t.library_progress_reset_book_message,
+      trackingOn: appModel.isMediaTrackingOn,
       itemTitle: displayTitleForBook(item: item, rawTitle: item.title),
     );
     if (records == null || !mounted) return;

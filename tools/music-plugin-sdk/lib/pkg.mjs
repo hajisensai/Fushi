@@ -175,9 +175,8 @@ export function readZip(buf) {
   return entries;
 }
 
-/// Verifies a package exactly like the host's install step. Returns { manifest, digest, signer, files }.
-export function verifyEntries(all) {
-  const errors = [];
+/// Package-wide limits: file count, per-file and total size, and safe paths.
+function checkPackageLimits(all) {
   if (all.size > LIMITS.maxFiles + 2) throw new Error('too many files in the package');
   let total = 0;
   for (const [name, data] of all) {
@@ -186,12 +185,10 @@ export function verifyEntries(all) {
     total += data.length;
   }
   if (total > LIMITS.maxTotalBytes) throw new Error('package is larger than 16 MiB unpacked');
-  const files = new Map(all);
-  const filesRaw = files.get('files.json');
-  if (!filesRaw) throw new Error('files.json is missing');
-  files.delete('files.json');
-  const sigRaw = files.get('signature.json');
-  files.delete('signature.json');
+}
+
+/// files.json lists exactly the package's files, each with its sha256.
+function checkListing(filesRaw, files) {
   const listing = JSON.parse(filesRaw.toString('utf8'));
   const keys = Object.keys(listing);
   if (keys.length !== 1 || keys[0] !== 'files' || typeof listing.files !== 'object') throw new Error('files.json must be exactly {"files": {...}}');
@@ -202,21 +199,37 @@ export function verifyEntries(all) {
   for (const [p, want] of Object.entries(listing.files)) {
     if (sha256(files.get(p)) !== String(want).toLowerCase()) throw new Error(`${p}: sha256 mismatch`);
   }
-  let signer = null;
-  if (sigRaw) {
-    const sig = JSON.parse(sigRaw.toString('utf8'));
-    const pub = Buffer.from(sig.publicKey ?? '', 'base64');
-    const s = Buffer.from(sig.signature ?? '', 'base64');
-    if (pub.length !== 32) throw new Error('signature.json publicKey must be 32 bytes of base64');
-    if (s.length !== 64) throw new Error('signature.json signature must be 64 bytes of base64');
-    const key = crypto.createPublicKey({ key: { kty: 'OKP', crv: 'Ed25519', x: pub.toString('base64url') }, format: 'jwk' });
-    if (!crypto.verify(null, filesRaw, key, s)) throw new Error('signature verification failed');
-    signer = sig.publicKey;
-  }
+}
+
+/// Checks signature.json over files.json; returns the signer's public key (base64), or null when unsigned.
+function verifySignature(sigRaw, filesRaw) {
+  if (!sigRaw) return null;
+  const sig = JSON.parse(sigRaw.toString('utf8'));
+  const pub = Buffer.from(sig.publicKey ?? '', 'base64');
+  const s = Buffer.from(sig.signature ?? '', 'base64');
+  if (pub.length !== 32) throw new Error('signature.json publicKey must be 32 bytes of base64');
+  if (s.length !== 64) throw new Error('signature.json signature must be 64 bytes of base64');
+  const key = crypto.createPublicKey({ key: { kty: 'OKP', crv: 'Ed25519', x: pub.toString('base64url') }, format: 'jwk' });
+  if (!crypto.verify(null, filesRaw, key, s)) throw new Error('signature verification failed');
+  return sig.publicKey;
+}
+
+/// Verifies a package exactly like the host's install step. Returns { manifest, digest, signer, files }.
+/// [validate] checks the manifest (default: the music rules); the tracking kit passes its own.
+export function verifyEntries(all, { validate = validateManifest } = {}) {
+  checkPackageLimits(all);
+  const files = new Map(all);
+  const filesRaw = files.get('files.json');
+  if (!filesRaw) throw new Error('files.json is missing');
+  files.delete('files.json');
+  const sigRaw = files.get('signature.json');
+  files.delete('signature.json');
+  checkListing(filesRaw, files);
+  const signer = verifySignature(sigRaw, filesRaw);
   const manifestRaw = files.get('manifest.json');
   if (!manifestRaw) throw new Error('manifest.json is missing');
   const manifest = JSON.parse(manifestRaw.toString('utf8'));
-  errors.push(...validateManifest(manifest));
+  const errors = validate(manifest);
   if (errors.length) throw new Error(errors.join('\n'));
   if (!files.has(manifest.entry)) throw new Error(`entry ${manifest.entry} is not in the package`);
   return { manifest, digest: sha256(filesRaw), signer, files: [...files.keys()] };

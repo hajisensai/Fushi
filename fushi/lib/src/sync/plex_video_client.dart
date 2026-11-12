@@ -36,6 +36,8 @@ import 'package:fushi/src/media/video/media_server/media_server_config.dart';
 import 'package:fushi/src/media/video/media_server/media_server_search_match.dart';
 import 'package:fushi/src/sync/remote_cover_fetcher.dart';
 import 'package:fushi/src/sync/remote_video_client.dart';
+import 'package:fushi_engine/media/tracking/remote_anime_link.dart'
+    show RemoteAnimeEpisode;
 import 'package:fushi_engine/media/video/media_server/plex/plex_api.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show
@@ -196,6 +198,7 @@ class PlexVideoClient
         RemoteVideoDetailFetch,
         RemoteVideoPlaybackSession,
         RemoteVideoCollectionIsWork,
+        RemoteVideoTrackingEpisodeFetch,
         MediaServerBrowser {
   PlexVideoClient({
     required this.api,
@@ -271,6 +274,81 @@ class PlexVideoClient
         'collection' || 'playlist' => MediaServerItemType.folder,
         _ => null,
       };
+
+  /// Tracking identity: the episode's numbering, the season's and the show's
+  /// external ids (`includeGuids`), and the season's episode count.
+  @override
+  Future<RemoteAnimeEpisode?> remoteVideoTrackingEpisode(String id) async {
+    final PlexMetadata item = await api.metadata(id, includeGuids: true);
+    PlexMetadata? season;
+    PlexMetadata? show;
+    if (item.type == 'episode') {
+      final String? seasonKey = item.parentRatingKey;
+      final String? showKey = item.grandparentRatingKey;
+      if (seasonKey != null && seasonKey.isNotEmpty) {
+        season = await api.metadata(seasonKey, includeGuids: true);
+      }
+      if (showKey != null && showKey.isNotEmpty) {
+        show = await api.metadata(showKey, includeGuids: true);
+      }
+    }
+    return trackingEpisodeOf(
+      item,
+      season: season,
+      show: show,
+      mediaKey: trackingKeyFor(id),
+      // The server's own name only, never the host ([displayName] falls
+      // back to it): tracking shows no addresses.
+      serverName: serverName?.trim() ?? '',
+    );
+  }
+
+  /// Tracking key for item [id]: this server + account + the item.
+  String trackingKeyFor(String id) => 'plex|$machineIdentifier|$accountId|$id';
+
+  /// Pure part of [remoteVideoTrackingEpisode] (tests).
+  static RemoteAnimeEpisode? trackingEpisodeOf(
+    PlexMetadata item, {
+    PlexMetadata? season,
+    PlexMetadata? show,
+    required String mediaKey,
+    String serverName = '',
+  }) {
+    if (item.type == 'movie') {
+      return RemoteAnimeEpisode(
+        mediaKey: mediaKey,
+        title: item.title,
+        episodeNumber: 1,
+        isMovie: true,
+        seriesIds: item.providerIds,
+        seriesTitle: item.title,
+        serverName: serverName,
+      );
+    }
+    if (item.type != 'episode') return null;
+    final int? number = item.index;
+    if (number == null || number <= 0) return null;
+    final int? seasonNumber = item.parentIndex;
+    final String name = (item.grandparentTitle ?? show?.title ?? '').trim();
+    final String where = seasonNumber == null
+        ? 'E$number'
+        : 'S${seasonNumber}E$number';
+    final int? seasonCount = season?.leafCount;
+    return RemoteAnimeEpisode(
+      mediaKey: mediaKey,
+      title: name.isEmpty ? where : '$name $where',
+      episodeNumber: number,
+      seasonNumber: seasonNumber,
+      seasonIds: season?.providerIds ?? const <String, String>{},
+      seriesIds: show?.providerIds ?? const <String, String>{},
+      seasonEpisodeCount: seasonCount != null && seasonCount > 0
+          ? seasonCount
+          : null,
+      seriesId: item.grandparentRatingKey ?? show?.ratingKey,
+      seriesTitle: name,
+      serverName: serverName,
+    );
+  }
 
   static MediaServerItem mediaServerItemFrom(
     PlexMetadata m,

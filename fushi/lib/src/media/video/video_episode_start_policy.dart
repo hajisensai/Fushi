@@ -1,4 +1,7 @@
+import 'package:fushi_engine/media/video/episode_near_end.dart';
 import 'package:meta/meta.dart';
+
+export 'package:fushi_engine/media/video/episode_near_end.dart';
 
 enum EpisodeStartIntent {
   initialOpen,
@@ -8,9 +11,6 @@ enum EpisodeStartIntent {
   autoAdvance,
   explicitCue,
 }
-
-const double kEpisodeStartNearEndProgress = 0.9;
-const int kEpisodeStartNearEndRemainingMs = 3000;
 
 /// 纯音频（音乐库逐曲续播，`music_resume.dart`）的片尾区比例。视频的 90% 是给片尾曲 /
 /// 预告留的；音频没有这段，而广播剧 CD 单轨常有 60 分钟，90% 意味着停在最后 6 分钟
@@ -46,25 +46,6 @@ int resolveEpisodeStart(
       }
       return savedMs;
   }
-}
-
-/// 断点是否已到片尾区（≥ [kEpisodeStartNearEndProgress] 或只剩
-/// [kEpisodeStartNearEndRemainingMs]）：打开时从头放、合集续播视作「这一集已经
-/// 看完了」的同一个判据（BUG-3491：续播三层的「选条目」与「定起点」共用它，
-/// 不能一层说「停在这集」另一层却从头放）。时长未知 / 断点为 0 → false。
-/// [nearEndProgress] 见 [resolveEpisodeStart]。
-bool isEpisodePositionNearEnd({
-  required int savedMs,
-  required int? durationMs,
-  double nearEndProgress = kEpisodeStartNearEndProgress,
-}) {
-  if (savedMs <= 0 || durationMs == null || durationMs <= 0) {
-    return false;
-  }
-  final double progress = savedMs / durationMs;
-  final int remainingMs = durationMs - savedMs;
-  return progress >= nearEndProgress ||
-      remainingMs <= kEpisodeStartNearEndRemainingMs;
 }
 
 /// 一集播完后的自动连播倒计时秒数（TODO-639）。倒计时期间画面显示「N 秒后播放下一集

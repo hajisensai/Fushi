@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/library_finish_marks.dart';
 import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
 import 'package:fushi/src/media/video/media_server/media_server_config.dart';
 import 'package:fushi/src/media/video/media_server/media_server_library.dart';
@@ -257,6 +258,7 @@ void main() {
     final List<String> resolved = <String>[];
     final WatchedMarkResult result = await setVideosWatched(
       db: database,
+      tracking: LibraryFinishTracking.none,
       watched: true,
       localUids: <String>['e1', 'e2'],
       mediaServerMarker: (String serverId) async {

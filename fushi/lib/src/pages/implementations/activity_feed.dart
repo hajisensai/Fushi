@@ -1,3 +1,4 @@
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_engine/stats/study_sessions.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -235,4 +236,24 @@ int _countSessions(List<int> sortedAscTimestamps, Duration gap) {
     }
   }
   return sessions;
+}
+
+/// 相对时间外显：把 [activityRelativeTime] 的结构化结果套上 i18n 文案
+/// （刚刚 / N 分钟前 / N 小时前 / N 天前）。
+///
+/// [activityRelativeTime] 刻意留在纯数据层不碰 i18n，这里是它唯一的 widget 层
+/// 映射：首页活动时间轴与 Bangumi 同步卡的「上次同步」共用同一口径，不各写一份
+/// switch（否则单位阈值一改就只改到一处）。
+String formatActivityRelativeTime(int timestampMs, DateTime now) {
+  final ActivityRelativeTime rel = activityRelativeTime(timestampMs, now);
+  switch (rel.unit) {
+    case ActivityRelativeUnit.justNow:
+      return t.activity_just_now;
+    case ActivityRelativeUnit.minutesAgo:
+      return t.activity_minutes_ago(n: rel.value);
+    case ActivityRelativeUnit.hoursAgo:
+      return t.activity_hours_ago(n: rel.value);
+    case ActivityRelativeUnit.daysAgo:
+      return t.activity_days_ago(n: rel.value);
+  }
 }

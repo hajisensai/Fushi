@@ -100,6 +100,7 @@ import 'package:fushi_engine/epub/epub_storage.dart';
 import 'package:fushi/src/pages/implementations/book_css_editor_page.dart';
 import 'package:fushi/src/pages/implementations/illustrations_viewer_page.dart';
 import 'package:fushi/src/pages/implementations/media_item_stats_dialog.dart';
+import 'package:fushi/src/media/library_finish_marks.dart';
 import 'package:fushi/src/media/library_progress_reset.dart';
 import 'package:fushi/src/pages/implementations/library_progress_reset_dialog.dart';
 import 'package:fushi/src/media/collections/add_to_collection_dialog.dart';
@@ -207,6 +208,7 @@ import 'package:fushi/src/media/links/media_link_opener.dart'
     show mediaLinkSearchAction, openMediaLinkEntry;
 import 'package:fushi/src/media/links/media_links_section.dart'
     show showMediaLinksDialog;
+import 'package:fushi/src/media/tracking/book_tracking_dialog.dart';
 
 part 'reader_history/card_widgets.part.dart';
 part 'reader_history/remote.part.dart';
@@ -3054,9 +3056,12 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
           break;
       }
     }
-    for (final String bookKey in bookKeys) {
-      await db.setEpubBookCompleted(bookKey, completed ? DateTime.now() : null);
-    }
+    await setBooksFinished(
+      db: db,
+      tracking: appModel.libraryFinishTracking,
+      bookKeys: bookKeys,
+      finished: completed,
+    );
     if (!mounted) return;
     setState(() {
       _completedBookKeys = completed
@@ -3762,6 +3767,14 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         group: DialogActionGroup.progress,
         onPressed: () => _openItemStatistics(item, bookKey),
       ),
+      // 追踪（MangaBaka / AniList）：链接、待确认的匹配、手动搜索。
+      if (isMediaTrackingEnabled(modules))
+        DialogListAction(
+          label: t.media_tracking_track_action,
+          icon: FushiIcons.tracking,
+          group: DialogActionGroup.progress,
+          onPressed: () => _openBookTracking(bookKey),
+        ),
       DialogListAction(
         label: _completedBookKeys.contains(bookKey)
             ? t.book_mark_uncompleted_action
@@ -4038,9 +4051,11 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     Navigator.pop(context);
     if (bookKey.isEmpty) return;
     final bool wasCompleted = _completedBookKeys.contains(bookKey);
-    await appModel.database.setEpubBookCompleted(
-      bookKey,
-      wasCompleted ? null : DateTime.now(),
+    await setBooksFinished(
+      db: appModel.database,
+      tracking: appModel.libraryFinishTracking,
+      bookKeys: <String>[bookKey],
+      finished: !wasCompleted,
     );
     if (!mounted) return;
     _shelfMapsFuture = _loadShelfMaps();

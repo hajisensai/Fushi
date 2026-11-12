@@ -1,11 +1,11 @@
 /// `fushi_server tracking sync|status`：Bangumi 追番同步（引擎 `MediaTrackingService`）。
 ///
-/// **当前恒不可用**：所有者 2026-08-19 把 Bangumi 同步整体下线（引擎总开关
-/// `kMediaTrackingEnabled = false`，「匹配 / 同步效果太差，先撤下」），app 的四个生产
-/// 触发点都不进服务。CLI 是又一个生产触发点，同样尊重这道闸：闸关时在发任何请求
-/// 之前判 69 并说明原因。装配本身是完整的（`MediaTrackingRepository(db)` +
-/// 服务端偏好 + 引擎缺省 `BangumiApiClient` 经 `createAppHttpIoClient()` 出站），闸一
-/// 打开即可用，不用再改这里。
+/// The build flag `kMediaTrackingEnabled` that kept this command offline is
+/// gone (2026-11-10): in the app media tracking is now a user option (the
+/// Media tracking module). The server has no modules; running this command is
+/// the operator's explicit request, so it always runs. Assembly:
+/// `MediaTrackingRepository(db)` + server preferences + the engine's default
+/// `BangumiApiClient` going out through `createAppHttpIoClient()`.
 ///
 /// 令牌：读偏好 `media_tracking_bangumi_access_token`（与 app 同键）；环境变量
 /// `FUSHI_BANGUMI_TOKEN` 给了且与已存的不同时先 `connect`（校验后落盘、换号清水位）。
@@ -47,16 +47,14 @@ class TrackingModule extends CliModule {
     this.out,
     this.err,
     this.env,
-    this.enabled = kMediaTrackingEnabled,
     this.apiFactory,
   });
 
   final StringSink? out;
   final StringSink? err;
 
-  /// 测试注入点：环境变量 / 下线闸 / Bangumi 客户端。
+  /// 测试注入点：环境变量 / Bangumi 客户端。
   final Map<String, String>? env;
-  final bool enabled;
   final BangumiApiFactory? apiFactory;
 
   @override
@@ -84,12 +82,10 @@ class TrackingModule extends CliModule {
   String get usage => tr(
     '''
 tracking sync [--force] [--json] | tracking status [--json]
-    Bangumi 追番同步（令牌取偏好或环境变量 $kBangumiTokenEnv）。目前该功能被所有者
-    整体下线（kMediaTrackingEnabled = false），命令恒返回 69。''',
+    Bangumi 追番同步（令牌取偏好或环境变量 $kBangumiTokenEnv）。''',
     '''
 tracking sync [--force] [--json] | tracking status [--json]
-    Bangumi tracking sync (the token comes from the preference or the environment variable $kBangumiTokenEnv). This feature is currently
-    taken offline by the owner (kMediaTrackingEnabled = false); the command always returns 69.''',
+    Bangumi tracking sync (the token comes from the preference or the environment variable $kBangumiTokenEnv).''',
   );
 
   @override
@@ -105,17 +101,6 @@ tracking sync [--force] [--json] | tracking status [--json]
         ),
       );
       return _exitUsage;
-    }
-    if (!enabled) {
-      e.writeln(
-        tr(
-          'Bangumi 追番同步已被下线（kMediaTrackingEnabled = false，2026-08-19 所有者决定：'
-              '匹配 / 同步效果太差，改好后再开放）',
-          'Bangumi tracking sync has been taken offline (kMediaTrackingEnabled = false, owner decision of 2026-08-19: '
-              'matching / sync quality is too poor, it will be reopened once fixed)',
-        ),
-      );
-      return _exitUnavailable;
     }
     return ctx.withRuntime((ServerRuntime rt) async {
       final MediaTrackingService service = MediaTrackingService(

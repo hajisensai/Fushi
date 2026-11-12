@@ -58,6 +58,8 @@ String _moduleItemId(ModuleId module) => switch (module) {
   ModuleId.listening => 'system.module_listening',
   ModuleId.cardCreation => 'system.module_card_creation',
   ModuleId.services => 'system.module_services',
+  // 2026-11-10 新增（媒体追踪），跟随同一前缀。
+  ModuleId.tracking => 'system.module_tracking',
   // 2026-10-13 新增，跟随同一前缀。
   ModuleId.ai => 'system.module_ai',
   ModuleId.sync => 'system.module_sync',
@@ -88,6 +90,10 @@ String _moduleItemId(ModuleId module) => switch (module) {
     ModuleId.services => (
       label: t.settings_destination_services,
       icon: FushiIcons.cloud,
+    ),
+    ModuleId.tracking => (
+      label: t.settings_destination_tracking,
+      icon: FushiIcons.tracking,
     ),
     ModuleId.ai => (label: t.ai_settings_title, icon: FushiIcons.aiAssistant),
     ModuleId.sync => (
@@ -768,6 +774,12 @@ SettingsItem _homePanelModeItem(HomeDashboardPanel panel) {
       FushiIcons.repeat,
       ModuleId.srs,
     ),
+    HomeDashboardPanel.tracking => (
+      t.home_tracking_panel_title,
+      t.home_panel_tracking_hint,
+      FushiIcons.sync,
+      ModuleId.tracking,
+    ),
     HomeDashboardPanel.aiAgent => (
       t.ai_agent_title,
       t.home_panel_ai_agent_hint,
@@ -786,6 +798,8 @@ SettingsItem _homePanelModeItem(HomeDashboardPanel panel) {
     title: title,
     subtitle: hint,
     icon: icon,
+    // The tracking strip follows the Media tracking module
+    // ([isMediaTrackingEnabled] is `isEnabled(ModuleId.tracking)`).
     visible: (SettingsContext c) =>
         c.appModel.moduleVisibility.isEnabled(module),
     options: <SettingsSegmentOption<HomeDashboardPanelMode>>[

@@ -1,0 +1,6 @@
+## BUG-4396 · Watching a linked movie or episode again after a restart sent it to the site again
+- **报告**：2026-11-11（T1 F3 item 1e, found by tests: the hands-on test had no media server movie）
+- **真实性**：✅ 真 bug. The event path (`MediaTrackingService._enqueueAndSync`) only de-duplicated against its in-memory `_lastQueued`, which is empty after a restart; `MediaTrackingRepository.enqueueProgress` (`packages/fushi_engine/lib/media/tracking/media_tracking_repository.dart`) then queued a row although the link's `sentProgress` / `sentCompleted` (v152) already said the same. A replayed movie / episode / status went out again (an extra read on real sites, a second write and Activity entry where the site does not plan). The catch-up already used `sentProgress` for exactly this.
+- **[x] ① 已修复** — `enqueueProgress` queues nothing when the link's last send covers the event (`_sentCovers`, line ~2117: same status for a status link, else at least this progress and done when done); a row already queued still merges as before (T1 F3 item 1e commit).
+- **[x] ② 已加自动化测试** — `fushi/test/media/tracking/remote_anime_tracking_test.dart` ("a movie linked from server ids is sent once, not again on replay").
+- **备注**：a new account clears `sentProgress` (`clearSentProgress`), and a hand relink to another entry resets it, so those still send again.

@@ -32,6 +32,7 @@ List<CtlRoute> buildCollectionCtlRoutes(OpContext context) {
     shelf: () => LibraryCtlShelf(
       db: context.appModel.database,
       galgameRepo: context.appModel.galgameRepo,
+      finishTracking: context.appModel.libraryFinishTracking,
     ),
     aiSettings: () => context.appModel.prefsRepo,
     isReadonly: () => context.appModel.isMigrationReadonly,

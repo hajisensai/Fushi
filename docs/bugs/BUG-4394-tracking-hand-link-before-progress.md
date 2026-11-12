@@ -1,0 +1,6 @@
+## BUG-4394 · A video can be hand-linked only after progress, and starts at episode 1
+- **报告**：2026-11-11（T1 hands-on test, findings F6 + F7）
+- **真实性**：✅ 真 bug。F6: the link dialog's library picker (`fushi/lib/src/media/tracking/page/tracking_link_dialog.dart` `_loadTargets`) had no caller (every entry passed an item from "Needs attention" / Linked rows), so an item without progress could not be linked. F7: a single video's link sends its starting number as the episode (`localProgress 0 + progressOffset`, `media_tracking_repository.dart` `enqueueProgress`), but `loadMediaTrackingLocalTargets` / `listUnlinkedHistory` gave videos no starting number, so "Episode 46" defaulted to 1. A season link ("As Promised S1") correctly starts at 1 (it sends the highest remembered episode number + offset − 1): not a bug.
+- **[x] ① 已修复** — "Link an item" on the Tracking page opens the dialog with the library picker; a video's starting number is its episode by the same parse automatic linking uses (`videoEpisodeNumberForTracking`) (findings F6/F7 commit).
+- **[x] ② 已加自动化测试** — `fushi/test/media/tracking/tracking_page_test.dart` ("T1 F6 + F7 ...").
+- **备注**：no "Track" item in video / collection card menus yet (the Tracking page is the entry point).

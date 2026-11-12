@@ -107,10 +107,17 @@ void main() {
       isFalse,
       reason: 'BUG-3491：播放不再自动给库条目打「已看」勾（所有者拍板）',
     );
+    // 媒体服务器的集（直接播放或 media-server:// 入库行）按服务器 ids 上报
+    // （cffc64eb62 起）；本地链路上报仍只对有 VideoBooks 行的书架书。
     expect(
-      _flat(pageSrc).contains(_flat('onEpisodeCompleted: hasLibraryRow')),
+      _flat(pageSrc).contains(
+        _flat(
+          'onEpisodeCompleted: _remoteTrackingCompletion() ?? '
+          '(hasLibraryRow ? _libraryTrackingCompletion : null)',
+        ),
+      ),
       isTrue,
-      reason: '单集看完的媒体追踪上报只对有 VideoBooks 行的书架书（含流媒体书）',
+      reason: '单集看完的本地媒体追踪上报只对有 VideoBooks 行的书架书（含流媒体书）',
     );
   });
 }

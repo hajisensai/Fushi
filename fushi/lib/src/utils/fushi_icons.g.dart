@@ -2491,7 +2491,7 @@ kFushiSymbolAppleMap = <int, (IconData, IconData)>{
   0xe166: (CupertinoIcons.arrow_uturn_left, CupertinoIcons.arrow_uturn_left),
   0xe167: (CupertinoIcons.textformat, CupertinoIcons.textformat),
   0xe16c: (CupertinoIcons.trash, CupertinoIcons.trash_fill),
-  0xe16f: (CupertinoIcons.link, CupertinoIcons.link),
+  0xe16f: (CupertinoIcons.slash_circle, CupertinoIcons.slash_circle_fill),
   0xe174: (
     CupertinoIcons.person_crop_circle_badge_checkmark,
     CupertinoIcons.person_crop_circle_badge_checkmark,

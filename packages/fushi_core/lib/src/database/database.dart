@@ -829,6 +829,10 @@ void _requireOneVideoMetadataOwner({
     CollectionScrapeMeta,
     MediaTrackingMappings,
     MediaTrackingOutbox,
+    MediaTrackingSuggestions,
+    MediaTrackingIgnored,
+    MediaTrackingActivity,
+    MediaTrackingRemoteEpisodes,
     Galgames,
     GalgameSources,
     GalgameSessions,
@@ -945,7 +949,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 149;
+  int get schemaVersion => 152;
 
   /// v125–v128 四步的产物（全部幂等）：SRS 写路径索引、
   /// `collection_member_tombstones.published_at`、`bookmarks.char_offset` /
@@ -2986,6 +2990,65 @@ class FushiDatabase extends _$FushiDatabase
               await m.addColumn(musicRemoteTracks, c);
             }
           }
+        }
+      }
+      if (from < 150) {
+        // v150：追番/追书的标题匹配（MangaBaka / AniList 漫画与小说）。
+        // media_tracking_mappings 加 link_source（manual / id / auto / suggestion）
+        // 与 confidence（标题匹配分）；存量映射两列皆 NULL = v150 前建立、来源不明。
+        // 新表 media_tracking_suggestions 存待用户确认的候选。幂等：早期步骤按当前
+        // 定义建表时已带这两列 / 这张表，跳过。
+        if (await _tableExists('media_tracking_mappings')) {
+          for (final GeneratedColumn<Object> column
+              in <GeneratedColumn<Object>>[
+                mediaTrackingMappings.linkSource,
+                mediaTrackingMappings.confidence,
+              ]) {
+            if (!await _columnExists('media_tracking_mappings', column.name)) {
+              await m.addColumn(mediaTrackingMappings, column);
+            }
+          }
+        }
+        if (!await _tableExists('media_tracking_suggestions')) {
+          await m.createTable(mediaTrackingSuggestions);
+        }
+      }
+      if (from < 151) {
+        // v151：追番/追书三张新表——不追踪清单 media_tracking_ignored、发送记录
+        // media_tracking_activity（只留最新 500 行）、未能按服务器 id 关联的媒体
+        // 服务器剧集 media_tracking_remote_episodes。纯新增，幂等按表存在性守卫。
+        if (!await _tableExists('media_tracking_ignored')) {
+          await m.createTable(mediaTrackingIgnored);
+        }
+        if (!await _tableExists('media_tracking_activity')) {
+          await m.createTable(mediaTrackingActivity);
+        }
+        if (!await _tableExists('media_tracking_remote_episodes')) {
+          await m.createTable(mediaTrackingRemoteEpisodes);
+        }
+      }
+      if (from < 152) {
+        // v152：media_tracking_mappings 加 sent_progress / sent_completed（该映射
+        // 上次发送成功的进度），补发按「本地进度 vs 已发进度」逐映射判定，不再靠
+        // 全局时间水位（旧时间戳晚到的进度会被永久跳过）。存量映射记 -1 = v152 前
+        // 建立、未记录；首轮补发在旧水位已覆盖时直接采信当前进度，不整库重发。
+        // 幂等：列已存在（早期步骤按当前定义建表）时不动，也不改写已有值。
+        if (await _tableExists('media_tracking_mappings') &&
+            !await _columnExists('media_tracking_mappings', 'sent_progress')) {
+          await m.addColumn(
+            mediaTrackingMappings,
+            mediaTrackingMappings.sentProgress,
+          );
+          await customStatement(
+            'UPDATE media_tracking_mappings SET sent_progress = -1',
+          );
+        }
+        if (await _tableExists('media_tracking_mappings') &&
+            !await _columnExists('media_tracking_mappings', 'sent_completed')) {
+          await m.addColumn(
+            mediaTrackingMappings,
+            mediaTrackingMappings.sentCompleted,
+          );
         }
       }
     },

@@ -69,8 +69,8 @@ import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/media/favorites/favorite_lookup_context.dart';
 import 'package:fushi/src/models/module_id.dart';
-import 'package:fushi_engine/media/tracking/media_tracking_service.dart'
-    show kMediaTrackingEnabled;
+import 'package:fushi_engine/media/tracking/remote_anime_link.dart'
+    show RemoteAnimeEpisode;
 import 'package:fushi/src/pages/implementations/fushi_web_browser_page.dart'
     show fushiWebBrowserRoute;
 
@@ -6552,6 +6552,43 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   ({String bookKey, String title}) get _studyStatsIdentity =>
       (bookKey: _watchStatsIdentity.$1, title: _title ?? '');
 
+  /// Media server episodes (Jellyfin / Emby) report "watched to the end" to
+  /// media tracking, which links them from the server's ids. Null for other
+  /// remote sources (they have no ids to link from).
+  Future<void> Function()? _remoteTrackingCompletion() {
+    // Object? so the capability check below promotes it.
+    final Object? client = _effectiveRemoteClient;
+    final String? id = _effectiveRemoteInfo?.id;
+    if (!appModel.isMediaTrackingOn ||
+        client is! RemoteVideoTrackingEpisodeFetch ||
+        id == null ||
+        id.isEmpty) {
+      return null;
+    }
+    return () async {
+      final RemoteAnimeEpisode? episode = await client
+          .remoteVideoTrackingEpisode(id);
+      if (episode == null) return;
+      await appModel.mediaTrackingService.recordRemoteVideoCompleted(
+        episode,
+        libraryBookUid: _bookRow?.bookUid,
+      );
+    };
+  }
+
+  /// Library video watched to the end: media tracking links it from the
+  /// scraped metadata (or a mapping the user made).
+  Future<void> _libraryTrackingCompletion() async {
+    if (!appModel.isMediaTrackingOn) return;
+    await appModel.mediaTrackingService.recordVideoCompleted(
+      bookUid: _activeBookUid,
+      collectionId: widget.playlistCollectionId,
+      episodeIndex: _currentEpisode,
+      seriesCompleted:
+          _episodes.isNotEmpty && _currentEpisode == _episodes.length - 1,
+    );
+  }
+
   /// Start fresh at the explicit continue action; review playback never feeds
   /// the watch coverage ledger, completion callbacks, or study clock.
   void _ensureWatchTracker(VideoPlayerController controller, String title) {
@@ -6586,8 +6623,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       _studyStartModeApplied = true;
       _studyClockGate.applyStartMode(appModel.readerStudyClockStartMode);
     }
-    // 单集看完上报只对书架书：远端无库条目可报（与浏览器网页视频
-    // BrowserVideoStudyBridge 同律）；剧集面板的看完角标仍以 host 下发为准。
+    // 单集看完上报：媒体服务器的集（直接播放或已入库的 media-server:// 行）走
+    // [_remoteTrackingCompletion]（按服务器 ProviderIds 关联）；其余书架书走本地链路；
+    // 其余远端无可关联的身份，不报。
     final bool hasLibraryRow = _bookRow != null;
     _watchTrackerCoverageKey = coverageKey;
     _watchTracker =
@@ -6619,19 +6657,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
             // BUG-3491（所有者 2026-10-17 拍板）：播放不再给库条目自动打「已看」勾；
             // 列表显示时间进度 + 百分比，续播 / 已看计数认「手动标记或进度到片尾区」。
             // 只保留单集看完的媒体追踪上报。
-            onEpisodeCompleted: hasLibraryRow
-                ? () async {
-                    if (!kMediaTrackingEnabled) return;
-                    await appModel.mediaTrackingService.recordVideoCompleted(
-                      bookUid: _activeBookUid,
-                      collectionId: widget.playlistCollectionId,
-                      episodeIndex: _currentEpisode,
-                      seriesCompleted:
-                          _episodes.isNotEmpty &&
-                          _currentEpisode == _episodes.length - 1,
-                    );
-                  }
-                : null,
+            // A media server episode reports from the server's ids even when it
+            // was added to the library (`media-server://` rows): the library
+            // row has no scraped ids of its own.
+            onEpisodeCompleted:
+                _remoteTrackingCompletion() ??
+                (hasLibraryRow ? _libraryTrackingCompletion : null),
             onPlayingChanged: _studyClockGate.setPlaying,
           )
           ..attach(controller)

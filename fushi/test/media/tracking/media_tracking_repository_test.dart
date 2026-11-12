@@ -1,9 +1,13 @@
+import 'dart:math' as math;
+
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:test/test.dart';
 import 'package:fushi_engine/media/tracking/media_tracking_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/privacy/media_privacy.dart';
+import 'package:fushi/src/media/video/video_duration_pref.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
 
 void main() {
   late FushiDatabase db;
@@ -46,6 +50,62 @@ void main() {
 
     unlinked = await repository.listUnlinkedHistory();
     expect(unlinked, isEmpty);
+  });
+
+  test('a link on any site counts; played games stay listed', () async {
+    await db.insertEpubBook(
+      EpubBooksCompanion.insert(
+        bookKey: '化物語（上）',
+        title: '化物語（上）',
+        epubPath: 'x',
+        extractDir: 'd',
+        chapterCount: 10,
+        chaptersJson: '[]',
+        importedAt: 0,
+      ),
+    );
+    await db.setEpubBookCompleted('化物語（上）', DateTime(2026, 11, 6));
+    await db.upsertGalgame(
+      GalgamesCompanion.insert(
+        id: 'sstx',
+        name: 'sstx',
+        exePath: 'C:\\games\\sstx.exe',
+        workdir: 'C:\\games',
+        addedAt: 1000,
+        playStatus: const Value<int>(2),
+      ),
+    );
+    expect(
+      (await repository.listUnlinkedHistory()).map(
+        (MediaTrackingUnlinkedItem i) => i.mediaKey,
+      ),
+      <String>['化物語（上）', 'sstx'],
+    );
+
+    await repository.saveMapping(
+      mediaType: TrackingMediaType.book,
+      mediaKey: '化物語（上）',
+      mediaTitle: '化物語（上）',
+      kind: TrackingKind.novel,
+      subjectId: 84547,
+      subjectName: 'Bakemonogatari',
+      progressMode: TrackingProgressMode.volume,
+      progressOffset: 1,
+      provider: 'othersite',
+    );
+
+    expect(
+      (await repository.listUnlinkedHistory()).map(
+        (MediaTrackingUnlinkedItem i) => i.mediaKey,
+      ),
+      <String>['sstx'],
+      reason: 'games are linked on Bangumi only',
+    );
+    expect(
+      await repository.listUnlinkedHistory(provider: kTrackingProviderBangumi),
+      hasLength(2),
+      reason: 'still unlinked on Bangumi itself',
+    );
   });
 
   /// 按页翻的书（PDF / 漫画）没有「章」：`chaptersJson` 是 `'[]'`、`tocJson` 是 null，
@@ -627,6 +687,146 @@ void main() {
         await repository.loadPersistedGameTrackingStatus(afterMs: 2000),
         hasLength(1),
       );
+    });
+  });
+
+  group('BUG-4401：播放不再写 completedAt 后，看到片尾区的集仍算看完', () {
+    late PreferencesRepository prefs;
+
+    setUp(() async {
+      prefs = PreferencesRepository(db);
+      await prefs.loadFromDb();
+    });
+
+    tearDown(() => prefs.dispose());
+
+    /// A video as playback leaves it today: position + lastPlayedAt, no mark.
+    Future<void> watched(
+      String uid, {
+      required int positionMs,
+      int? durationMs,
+      int lastPlayedAt = 7000,
+      DateTime? completedAt,
+    }) async {
+      await db.upsertVideoBook(
+        VideoBooksCompanion.insert(
+          bookUid: uid,
+          title: uid,
+          videoPath: 'C:/Anime/$uid.mkv',
+          lastPositionMs: Value<int>(positionMs),
+          lastPlayedAt: Value<int?>(lastPlayedAt),
+          completedAt: Value<DateTime?>(completedAt),
+        ),
+      );
+      if (durationMs != null) {
+        // The same write the player does (PreferencesRepository encoding).
+        await prefs.setPref(videoDurationPrefKey(uid), durationMs);
+      }
+    }
+
+    Future<void> mapVideo(String uid) => repository
+        .saveMapping(
+          mediaType: TrackingMediaType.video,
+          mediaKey: uid,
+          mediaTitle: uid,
+          kind: TrackingKind.anime,
+          subjectId: 1,
+          subjectName: 'Remote',
+          progressMode: TrackingProgressMode.episode,
+          progressOffset: 1,
+        )
+        .then((_) {});
+
+    test('对账补发：片尾区断点 + 已知片长 = 看完，evidence 取 lastPlayedAt', () async {
+      await watched('ep', positionMs: 1380000, durationMs: 1440000);
+      await mapVideo('ep');
+
+      final List<CompletedVideoTrackingProgress> progress = await repository
+          .loadCompletedVideoTrackingProgress(afterMs: 0);
+
+      expect(progress, hasLength(1));
+      expect(progress.single.mediaKey, 'ep');
+      expect(progress.single.completed, isTrue);
+      final MediaTrackingMappingRow mapping = (await repository.findMapping(
+        mediaType: TrackingMediaType.video,
+        mediaKey: 'ep',
+      ))!;
+      expect(progress.single.evidenceAt, math.max(7000, mapping.updatedAt));
+    });
+
+    test('看到一半、或不知道片长：不推断看完', () async {
+      await watched('half', positionMs: 600000, durationMs: 1440000);
+      await watched('unknown', positionMs: 1430000);
+      await mapVideo('half');
+      await mapVideo('unknown');
+
+      expect(
+        await repository.loadCompletedVideoTrackingProgress(afterMs: 0),
+        isEmpty,
+      );
+    });
+
+    test('手动标记照旧算看完（重看到一半也不撤销）', () async {
+      await watched(
+        'marked',
+        positionMs: 60000,
+        durationMs: 1440000,
+        completedAt: DateTime.fromMillisecondsSinceEpoch(5000),
+      );
+      await mapVideo('marked');
+
+      final List<CompletedVideoTrackingProgress> progress = await repository
+          .loadCompletedVideoTrackingProgress(afterMs: 0);
+      expect(progress.single.mediaKey, 'marked');
+    });
+
+    test('合集映射按最高的「看完」成员报进度，片尾区成员也算', () async {
+      final int collectionId = await db.createMediaCollection('Show');
+      for (int index = 0; index < 3; index++) {
+        final String uid = 'show-$index';
+        await watched(
+          uid,
+          // ep1 marked, ep2 watched to the end, ep3 half way.
+          positionMs: index == 2 ? 300000 : 1430000,
+          durationMs: index == 0 ? null : 1440000,
+          completedAt: index == 0
+              ? DateTime.fromMillisecondsSinceEpoch(3000)
+              : null,
+          lastPlayedAt: 8000 + index,
+        );
+        await db.addToCollection(collectionId, MediaKind.video, uid);
+      }
+      await repository.saveMapping(
+        mediaType: TrackingMediaType.videoCollection,
+        mediaKey: '$collectionId',
+        mediaTitle: 'Show',
+        kind: TrackingKind.anime,
+        subjectId: 1,
+        subjectName: 'Remote',
+        progressMode: TrackingProgressMode.episode,
+        progressOffset: 1,
+      );
+
+      final CompletedVideoTrackingProgress progress =
+          (await repository.loadCompletedVideoTrackingProgress(
+            afterMs: 0,
+          )).single;
+      expect(progress.localProgress, 1, reason: 'ep2 (index 1) is the highest');
+      expect(progress.completed, isFalse);
+    });
+
+    test('待关联列表也列出看到片尾区的视频', () async {
+      await watched('ended', positionMs: 1438000, durationMs: 1440000);
+      await watched('half', positionMs: 600000, durationMs: 1440000);
+
+      final List<MediaTrackingUnlinkedItem> unlinked = await repository
+          .listUnlinkedHistory();
+
+      expect(
+        unlinked.map((MediaTrackingUnlinkedItem i) => i.mediaKey),
+        <String>['ended'],
+      );
+      expect(unlinked.single.lastActivityAt, 7000);
     });
   });
 }
