@@ -18,6 +18,7 @@ import android.provider.OpenableColumns;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.WindowManager;
+import android.window.SplashScreenView;
 import androidx.annotation.NonNull;
 import android.net.Uri;
 
@@ -158,6 +159,13 @@ public class MainActivity extends AudioServiceActivity {
         super.onCreate(savedInstanceState);
 
         disableSystemFocusHighlight();
+
+        // Android 12+ 的系统启动画面默认在 app 首帧画出后再淡出约 200 ms，首页（连同
+        // 侧栏、背景）是从启动底色里慢慢透出来的。启动画面本来就是纯色、与首帧同底色
+        // （launch_background），淡出没有东西可过渡：首帧一到直接撤掉。
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            getSplashScreen().setOnExitAnimationListener(SplashScreenView::remove);
+        }
         StartupTrace.mark("activity-super-create");
         // 阅读器主窗口请求系统最高刷新率（收敛到共享 HighRefreshRate，与查词弹窗
         // PopupDictFlutterActivity / 悬浮窗共用同一实现，见 HighRefreshRate.java）。

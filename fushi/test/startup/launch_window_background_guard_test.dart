@@ -89,6 +89,16 @@ void main() {
     }
   });
 
+  test('Android 12+：系统启动画面在首帧到达时直接撤掉，不做退出淡出', () {
+    // 启动画面与首帧同底色，默认的约 200 ms 淡出只会让首页晚一点看清。
+    expect(
+      read('android/app/src/main/java/app/fushi/reader/MainActivity.java'),
+      contains(
+        'getSplashScreen().setOnExitAnimationListener(SplashScreenView::remove)',
+      ),
+    );
+  });
+
   test('iOS：LaunchBackground 浅色 / 深色两张图各等于默认主题 surface', () {
     const String set = 'ios/Runner/Assets.xcassets/LaunchBackground.imageset';
     final String contents = read('$set/Contents.json');

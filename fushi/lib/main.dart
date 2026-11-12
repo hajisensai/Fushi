@@ -87,6 +87,7 @@ import 'package:fushi/src/utils/components/fushi_focus_ring.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_scrollbar.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/fushi_text_selection_controls.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
@@ -393,7 +394,11 @@ void main([List<String> args = const <String>[]]) {
           Platform.environment['FUSHI_TEST_HIDDEN']?.isNotEmpty == true ||
           Platform.environment.containsKey('HIBIKI_TEST_HIDDEN');
       _deferStartupFrame = !hiddenTestMode;
-      if (_deferStartupFrame) binding.deferFirstFrame();
+      if (_deferStartupFrame) {
+        binding.deferFirstFrame();
+        // 压住的这一帧就是用户看到的第一眼：首页直接显示终态，不再从透明淡入。
+        FushiColdStartEntrance.begin();
+      }
       // 测试根（FUSHI_TEST_ROOT）下 SharedPreferences 也要隔离，且必须抢在下面第一次
       // 读 prefs 之前：否则集成测试写的 Anki 设置会落进用户真实的 prefs 文件。
       isolateSharedPreferencesUnderTestRoot();
@@ -2589,6 +2594,8 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       }
       await _revealStartupWindowFallback();
     }
+    // 首帧已上屏（或放行失败走了兜底）：之后挂载的页面照常播进场。
+    FushiColdStartEntrance.finish();
     if (mounted) {
       setState(() => _initialThemePresented = true);
     }
