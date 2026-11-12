@@ -2301,11 +2301,16 @@ class AdapterStructureTest(unittest.TestCase):
         clear = self._function_body(core, "inline bool FindClearPageT(")
         for proof in ("ParseClearPageT(", "AnyCallTargets(", "CallerAlsoCalls("):
             self.assertIn(proof, clear)
-        for field in ("rt.sites.layout.page_width", "rt.sites.layout.page_height",
-                      "g_cs2_lookup.sites.layout.work_image",
-                      "rt.sites.layout.window_renderer",
-                      "rt.sites.layout.window_screen"):
+        for field in ("layout.page_width", "layout.page_height",
+                      "layout.work_image", "layout.window_renderer",
+                      "layout.window_screen"):
             self.assertIn(field, runtime)
+        # Every proven text-window class is hooked with its own layout (the
+        # VS2013 cs2 2.6.1.90 build draws dialogue through a second class).
+        self.assertIn("for (size_t c = 0u; c < class_count; ++c)", targeted)
+        self.assertIn("ProveRenderCharT(", targeted)
+        self.assertIn("g_cs2_lookup.sites.classes[K].layout", runtime)
+        self.assertIn("AppendCs2ClassSites<1u>(", runtime)
         self.assertIn("ProveCharImage(", self._function_body(
             core, "inline bool FindVirtualCharImage("))
         # Detours: bounded copies only; logging / file IO stays on the worker.

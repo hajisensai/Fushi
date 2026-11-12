@@ -198,6 +198,16 @@ int wmain(int argc, wchar_t** argv) {
       sites.layout.window_screen, sites.layout.window_renderer,
       sites.layout.page_width, sites.layout.page_height,
       sites.layout.work_image);
+  for (uint32_t index = 0u; index < sites.class_count; ++index) {
+    const cs2::TextClass& text = sites.classes[index];
+    std::printf(
+        "  class %u render_char=0x%zx clear_page=0x%zx window_update=0x%zx "
+        "screen=+0x%zx renderer=+0x%zx page=+0x%zx/+0x%zx work=+0x%zx\n",
+        index, Rva(image, text.render_char), Rva(image, text.clear_page),
+        Rva(image, text.window_update), text.layout.window_screen,
+        text.layout.window_renderer, text.layout.page_width,
+        text.layout.page_height, text.layout.work_image);
+  }
 
   cs2_voice::VoiceImportSlots voice_imports;
   voice_imports.set_file_pointer =
