@@ -1,5 +1,6 @@
 // 上次进程退出取证（反馈 WkL9BvD7Z9 / XDV7Mzc2gw / O2eI1Bewe_ 等「Dart 日志无栈」）：
 // 各平台摘要的解析、会话标记、Android 假通道，以及最终确实进了反馈上传的日志文本。
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -183,6 +184,52 @@ void main() {
         matches(RegExp(r'rss=\d+MB max=\d+MB probe=ok \(start\)$')),
       );
       expect(prev.memorySamples.last, endsWith('probe=ok (pressure)'));
+    });
+
+    test('firstSampleAfter：开头那一次等它完成才采，期间停掉就不补', () async {
+      await PreviousExitLog.collect(
+        appDir: tmp,
+        version: 'v',
+        isAndroid: false,
+        isWindows: false,
+        isMacOS: false,
+        isIOS: false,
+      );
+      addTearDown(PreviousExitLog.stopMemorySampling);
+      int probed = 0;
+      String probe() {
+        probed++;
+        return 'probe=ok';
+      }
+
+      List<String> samples() => PreviousSession.tryParse(
+        markerFile().readAsStringSync(),
+      )!.memorySamples;
+
+      final Completer<void> firstFrame = Completer<void>();
+      PreviousExitLog.startMemorySampling(
+        probes: <MemoryProbe>[probe],
+        firstSampleAfter: firstFrame.future,
+      );
+      expect(probed, 0, reason: '启动关键路径上不许同步读探针');
+      expect(samples(), isEmpty);
+
+      firstFrame.complete();
+      await pumpEventQueue();
+      expect(probed, 1);
+      expect(samples().single, endsWith('probe=ok (start)'));
+
+      // 等待期间被停掉：不补采。
+      PreviousExitLog.stopMemorySampling();
+      final Completer<void> never = Completer<void>();
+      PreviousExitLog.startMemorySampling(
+        probes: <MemoryProbe>[probe],
+        firstSampleAfter: never.future,
+      );
+      PreviousExitLog.stopMemorySampling();
+      never.complete();
+      await pumpEventQueue();
+      expect(probed, 1);
     });
 
     test('停在后台没了只算诊断；正常退出 / detached 不报', () {
