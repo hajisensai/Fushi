@@ -799,6 +799,8 @@ class SrsRemoteStore implements SrsDbStore, SrsRemoteForwarding {
     int durationMs = 0,
     String? studyDeckId,
     SrsCustomStudy? custom,
+    // 主机一侧的前置条件（路由按请求里的基准传给主机的库）；这一侧的基准是 [_bases]，不看这个参数。
+    ({String? lastLogId})? expectBase,
   }) async {
     final bool known = _bases.containsKey(cardId);
     final String? base = _bases.remove(cardId);
@@ -970,6 +972,67 @@ class SrsRemoteStore implements SrsDbStore, SrsRemoteForwarding {
     }, (Object? json) => json == null ? null : SrsRemoteWire.editsFrom(json));
   }
 
+  /// 条件写笔记字段（批量改字段的落计划与撤销）。主机没有「比对 + 写」一条路由：读一遍主机上的现值、在这一侧
+  /// 比对、再用 [editFieldsBatch] 写——比对与写入之间主机上别的写入插得进来（远程副本上一直如此；本机库上这是内核的
+  /// 一条命令）。规则与 [SrsDbStore.editNoteFieldsIf] 相同。
+  @override
+  Future<Set<String>> editNoteFieldsIf(
+    List<SrsNoteFieldWrite> writes, {
+    required bool wholeNote,
+  }) async {
+    final (Set<String> rejected, List<SrsFieldChange> changes) =
+        await _noteFieldsIfChanges(writes, wholeNote: wholeNote);
+    if (changes.isNotEmpty) await editFieldsBatch(changes);
+    return rejected;
+  }
+
+  /// 同 [editNoteFieldsIf] 的落计划模式，写入走 [editFieldsUndoable]（主机在它自己的写锁里记撤销凭据）。
+  @override
+  Future<(Set<String>, SrsEditUndo)> editNoteFieldsIfUndoable(
+    List<SrsNoteFieldWrite> writes,
+  ) async {
+    final (Set<String> rejected, List<SrsFieldChange> changes) =
+        await _noteFieldsIfChanges(writes, wholeNote: true);
+    return (
+      rejected,
+      changes.isEmpty ? SrsEditUndo.empty : await editFieldsUndoable(changes),
+    );
+  }
+
+  /// [editNoteFieldsIf] 的比对：读一遍主机上的现值，交回被拒的笔记与通过的写入。
+  Future<(Set<String>, List<SrsFieldChange>)> _noteFieldsIfChanges(
+    List<SrsNoteFieldWrite> writes, {
+    required bool wholeNote,
+  }) async {
+    if (writes.isEmpty) {
+      return (const <String>{}, const <SrsFieldChange>[]);
+    }
+    final Map<String, SrsNoteView?> views = await notes(<String>{
+      for (final SrsNoteFieldWrite w in writes) w.noteId,
+    });
+    final Set<String> rejected = <String>{};
+    final List<SrsNoteFieldWrite> passed = <SrsNoteFieldWrite>[];
+    for (final SrsNoteFieldWrite w in writes) {
+      final SrsNoteView? n = views[w.noteId];
+      if (n == null || n.deletedAt != null || n.field(w.fieldId) != w.expect) {
+        rejected.add(w.noteId);
+      } else {
+        passed.add(w);
+      }
+    }
+    final List<SrsFieldChange> changes = <SrsFieldChange>[
+      for (final SrsNoteFieldWrite w in passed)
+        if (!wholeNote || !rejected.contains(w.noteId))
+          SrsFieldChange(
+            SrsEntityKind.note,
+            w.noteId,
+            SrsFieldKeys.noteField(w.fieldId),
+            w.value,
+          ),
+    ];
+    return (rejected, changes);
+  }
+
   @override
   Future<List<SrsFieldEdit>> editFieldsBatch(List<SrsFieldChange> changes) {
     for (final SrsFieldChange c in changes) {
@@ -981,6 +1044,30 @@ class SrsRemoteStore implements SrsDbStore, SrsRemoteForwarding {
           SrsEditSpec(c.kind, c.entityId, c.key, c.value),
       ]),
     }, SrsRemoteWire.editsFrom);
+  }
+
+  @override
+  Future<SrsEditUndo> editFieldsUndoable(List<SrsFieldChange> changes) {
+    for (final SrsFieldChange c in changes) {
+      if (c.kind == SrsEntityKind.card) _bases.remove(c.entityId);
+    }
+    return _write('editFieldsUndoable', <String, Object?>{
+      'changes': SrsRemoteWire.editSpecs(<SrsEditSpec>[
+        for (final SrsFieldChange c in changes)
+          SrsEditSpec(c.kind, c.entityId, c.key, c.value),
+      ]),
+    }, SrsEditUndo.fromJson);
+  }
+
+  /// 撤销在主机的写锁里按主机库的修改记录裁决（撤销凭据里的 dot 是主机内核分配的）。
+  @override
+  Future<SrsEditUndoResult> revertEdits(SrsEditUndo undo) {
+    for (final SrsEditUndoItem i in undo.items) {
+      if (i.kind == SrsEntityKind.card) _bases.remove(i.entityId);
+    }
+    return _write('revertEdits', <String, Object?>{
+      'undo': undo.toJson(),
+    }, SrsEditUndoResult.fromJson);
   }
 
   @override

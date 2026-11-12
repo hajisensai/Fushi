@@ -41,56 +41,10 @@ class Hlc {
 }
 
 /// 排序与 HLC 推进共用的容差：发布时服务器时间 S 之后最多 10 分钟。
+///
+/// 本机 HLC 时钟（发出事件时取 max(可信时间, 已见过的最大 HLC)、收到对端事件时先钳位再推进）在内核里，与它的状态
+/// 一起（native/fushi_fsrs/src/store/legacy_clock.rs）；Dart 没有时钟的副本。
 const int srsClockToleranceMs = 10 * 60 * 1000;
-
-/// 本机 HLC 状态。只在本机发出事件与收到对端事件时推进。
-class HlcClock {
-  HlcClock(this.writerId, {Hlc? last}) : _last = last ?? Hlc(0, 0, writerId);
-
-  final String writerId;
-  Hlc _last;
-
-  Hlc get last => _last;
-
-  /// 本机发出事件：取 max(可信时间, 已见过的最大 HLC)。
-  Hlc tick(int trustedNowMs) {
-    if (trustedNowMs > _last.physical) {
-      _last = Hlc(trustedNowMs, 0, writerId);
-    } else {
-      _last = Hlc(_last.physical, _last.counter + 1, writerId);
-    }
-    return _last;
-  }
-
-  /// 本机事件由内核按 [tick] 的同一规则接着 [last] 推进过（`sched` 命令，native/fushi_fsrs/src/store/sync2/
-  /// sched_local.rs）：采用它交回的最后一个。不是本写入者的、或不比当前新的不动。
-  void adoptLocalTicks(Hlc advanced) {
-    if (advanced.writerId != writerId) return;
-    if (advanced.physical > _last.physical ||
-        (advanced.physical == _last.physical &&
-            advanced.counter > _last.counter)) {
-      _last = advanced;
-    }
-  }
-
-  /// 收到对端事件（第六轮审查第 3 条）：**先钳位再推进**。
-  ///
-  /// 用 `min(远端物理时间, S(e) + 10 分钟)` 推进；S 未知时只推进到 `本机可信时间 + 10 分钟`。
-  /// 不钳位的话，一台时钟快一年的设备会把所有收到它数据的设备的 HLC 推到一年后，
-  /// 之后所有人的事件都被钳到 S + 10 分钟，排序退化成「按批次 S」。
-  void receive(Hlc remote, {int? serverTimeMs, required int trustedNowMs}) {
-    final int bound = (serverTimeMs ?? trustedNowMs) + srsClockToleranceMs;
-    final int effective = remote.physical < bound ? remote.physical : bound;
-    if (effective > _last.physical) {
-      _last = Hlc(effective, 0, writerId);
-    } else if (effective == _last.physical && remote.physical == effective) {
-      final int c = remote.counter > _last.counter
-          ? remote.counter
-          : _last.counter;
-      _last = Hlc(effective, c, writerId);
-    }
-  }
-}
 
 /// 事件时间来源（铁律 F 第一层）。
 enum SrsTimeSource {

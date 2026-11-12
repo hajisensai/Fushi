@@ -575,7 +575,9 @@ fn world_of(seed: u64, shape: Shape) -> World {
 }
 
 /// 全部表（`sqlite_` 内部表除外）的全部列、逐行，排好序。缓存表的 `updated_at` 是刷新时的真实墙钟（两次运行必然
-/// 不同），不比。
+/// 不同），不比。本机状态行里两个键换成占位：纪元是每个库各自随机生成的；修订号是变化计数，可见性变了的实体按「每条
+/// 命令 / 每一片各算一次」计（local_state.rs `persist_projected_with` / `advance_revision`），切片不同数就不同——
+/// 通道与逐条两路只要求都前进了（[revision]）。
 fn dump(d: &Device) -> Vec<(String, Vec<String>)> {
     let tables: Vec<String> =
         d.rows("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name")[1..].iter().map(|r| r[0].clone()).collect();
@@ -587,7 +589,13 @@ fn dump(d: &Device) -> Vec<(String, Vec<String>)> {
             ))[1..]
                 .iter()
                 .filter(|r| !(t.ends_with("_cache") && r[0] == "updated_at"))
-                .map(|r| format!("quote({})", r[0]))
+                .map(|r| {
+                    if t == "srs_local_state" && r[0] == "json" {
+                        "quote(json_set(json, '$.epoch', '_', '$.revision', '_'))".to_owned()
+                    } else {
+                        format!("quote({})", r[0])
+                    }
+                })
                 .collect();
             let mut rows: Vec<String> = d
                 .rows(&format!("SELECT {} FROM {t}", cols.join(" || '|' || ")))[1..]
@@ -598,6 +606,16 @@ fn dump(d: &Device) -> Vec<(String, Vec<String>)> {
             (t, rows)
         })
         .collect()
+}
+
+/// 本机状态行里的修订号（没有行为 0）。
+fn revision(d: &Device) -> i64 {
+    d.rows(&format!(
+        "SELECT json_extract(json, '$.revision') FROM srs_local_state WHERE profile_uid = srs_id('{P}')"
+    ))
+    .get(1)
+    .and_then(|r| r[0].parse().ok())
+    .unwrap_or(0)
 }
 
 fn assert_same(a: &Device, b: &Device, what: &str) {
@@ -811,7 +829,7 @@ fn session(d: &Device, w: &World, per: usize, slice: Option<u64>, interrupt: Int
                     let input = json!([{"e": edit("note", &note_id(7), "f/fa", json!("typed mid-sync")), "note": note_id(7)}]).to_string();
                     cmd(
                         d,
-                        json!({"op": "apply", "now": NOW}),
+                        json!({"op": "apply", "now": NOW, "legacyDevice": "dev"}),
                         vec![input.into_bytes()],
                     );
                     let w = d.core.writer().unwrap();
@@ -965,6 +983,10 @@ fn compare_world(
         "{what}: world too small"
     );
     assert_same(&x, &y, what);
+    assert!(
+        revision(&x) > 0 && revision(&y) > 0,
+        "{what}: both ways advance the revision"
+    );
     assert_eq!(dirty(&x), dirty(&y), "{what}: study / browse touches");
     digest_is_consistent(&x);
     covered
@@ -1213,8 +1235,8 @@ fn a_local_write_settles_a_channel_holding_only_identity_records_already_there()
 /// 这个 profile 开不开通道（`ingest_begin` 的回报）；开了就原样做完，不留痕迹。
 fn opens_channel(d: &Device) -> bool {
     let w = d.core.writer().unwrap();
-    let opened = super::channel::begin(&w, P).unwrap();
-    super::channel::settle(&w, P).unwrap();
+    let opened = super::channel::begin(&w, P, &mut |_| {}).unwrap();
+    super::channel::settle(&w, P, &mut |_| {}).unwrap();
     assert!(!super::channel::active(&w, P).unwrap());
     opened
 }
@@ -1228,14 +1250,14 @@ fn channel_is_for_a_profile_holding_nothing_but_its_own_builtins() {
     {
         let w = bare.core.writer().unwrap();
         assert!(
-            super::channel::begin(&w, P).unwrap(),
+            super::channel::begin(&w, P, &mut |_| {}).unwrap(),
             "a bare profile opens the channel"
         );
         assert!(
-            super::channel::begin(&w, P).unwrap(),
+            super::channel::begin(&w, P, &mut |_| {}).unwrap(),
             "an appending channel resumes"
         );
-        super::channel::settle(&w, P).unwrap();
+        super::channel::settle(&w, P, &mut |_| {}).unwrap();
         assert!(
             !super::channel::active(&w, P).unwrap(),
             "settled channel leaves no rows"
@@ -1705,5 +1727,202 @@ fn settling_resumes_after_a_failure(start: Start, all: World) {
         }
     });
     assert_same(&x, &y, "settled slice by slice after a failure");
+    // 通道是在会话外做完的（没有哪条收段命令的回包带着这些变化）：修订号由 `settle` 的每一片自己推进。
+    assert!(revision(&x) > 0, "settling advances the revision");
+    assert!(revision(&y) > 0);
     digest_is_consistent(&x);
+}
+
+// ---------------------------------------------------------------- 通道自己做完的片交回 Dart
+
+/// 只收完各片、不收尾：通道停在追加阶段。
+fn appended(d: &Device, all: &Bucket) {
+    let (heads, segs) = heads_and_segments(all);
+    cmd(d, json!({"op": "plan"}), heads);
+    cmd(d, json!({"op": "ingest_begin"}), vec![]);
+    for chunk in segs.chunks(2) {
+        cmd(d, json!({"op": "ingest_prepare"}), chunk.to_vec());
+        while cmd(
+            d,
+            json!({"op": "ingest_commit", "now": NOW, "sliceOps": 7}),
+            vec![],
+        )["more"]
+            == json!(true)
+        {}
+    }
+    assert_eq!(boot_state(d), Some((0, 0)), "appending");
+}
+
+/// 回包里的 `settled`：落进投影的事件数（没有这个键 = 0）。带了就核对它与库里此刻的修订号 / 纪元一致。
+fn settled_landed(d: &Device, reply: &Value) -> u64 {
+    let Some(s) = reply.get("settled") else {
+        return 0;
+    };
+    assert_eq!(
+        s["localRevision"],
+        json!(revision(d)),
+        "the revision is the one in the database now: {s}"
+    );
+    assert!(s["localEpoch"].is_string(), "{s}");
+    assert!(s["changed"].is_array() && s["purged"].is_array(), "{s}");
+    let m = &s["marks"];
+    let landed = m["landed"].as_u64().unwrap();
+    assert!(
+        landed > 0 || !s["changed"].as_array().unwrap().is_empty(),
+        "an empty hand-over is not attached: {s}"
+    );
+    assert!(m["content"].as_u64().unwrap() <= landed, "{s}");
+    landed
+}
+
+/// 分发器在一条命令之前把通道做完（[super::channel::settle]）：那些片没有自己的回包，落进投影的变化攒在内核里，随
+/// 这个 profile 下一条**带 `settled: true`** 的命令的回包交回，只交一次。没带的命令不取（不吸收回包的调用方不会把
+/// 它丢掉）；失败的命令不取；中途出错时已提交的片照样交回。修复前这些变化从不到 Dart：Dart 按内容 / 视图修订号记的
+/// 牌组树、profile 修改记录、RWKV 分数表不失效。
+#[test]
+fn settled_slices_reach_the_next_command_that_asks_for_them() {
+    let all = world(43);
+    let x = Device::new("ch-handover-x");
+    x.core.sync2_identity(P, NOW).unwrap();
+    appended(&x, &all);
+    let before = revision(&x);
+    // 第三片报错：已提交的两片攒着。
+    super::channel::take_settle_slices();
+    super::channel::fail_settle_at(Some(2));
+    let err = cmd_err(&x, json!({"op": "channel_settle", "settled": true}));
+    super::channel::fail_settle_at(None);
+    assert!(err.contains("injected settle failure"), "{err}");
+    let partial = revision(&x) - before;
+    // 没带 `settled` 的命令不取。
+    let quiet = cmd(&x, json!({"op": "identity", "now": NOW}), vec![]);
+    assert!(quiet.get("settled").is_none(), "{quiet}");
+    // 带了的那条取走出错之前已提交的片（`identity` 对通道透明：不会接着做通道）。
+    let first = cmd(
+        &x,
+        json!({"op": "identity", "now": NOW, "settled": true}),
+        vec![],
+    );
+    let landed_first = settled_landed(&x, &first);
+    assert_eq!(
+        partial > 0,
+        first.get("settled").is_some(),
+        "the slices committed before the failure are handed over: {first}"
+    );
+    // 只交一次。
+    let again = cmd(
+        &x,
+        json!({"op": "identity", "now": NOW, "settled": true}),
+        vec![],
+    );
+    assert!(again.get("settled").is_none(), "{again}");
+    // 一条本机写入：分发器先把通道剩下的做完，回包带着那些片（连同这条命令自己的结果）。
+    let input = json!([{"e": edit("note", &note_id(7), "f/fa", json!("typed mid-sync")), "note": note_id(7)}])
+        .to_string();
+    let wrote = cmd(
+        &x,
+        json!({"op": "apply", "now": NOW, "legacyDevice": "dev", "settled": true}),
+        vec![input.into_bytes()],
+    );
+    assert!(boot_state(&x).is_none(), "settled");
+    let landed_rest = settled_landed(&x, &wrote);
+    assert!(landed_rest > 0, "{wrote}");
+    assert_eq!(
+        wrote["settled"]["localRevision"], wrote["localRevision"],
+        "the command's own reply and the hand-over agree on the revision"
+    );
+    assert!(
+        wrote["marks"]["landed"].as_u64().unwrap() >= 1,
+        "the command's own result is still its own: {wrote}"
+    );
+    // 交回的事件数 + 可见性变了的实体数 = 通道的片推进的修订号（同 `advance_revision` 的口径；可见性变化跨片去重，
+    // 所以只能是不多于）。
+    let own = wrote["localRevision"].as_i64().unwrap() - (revision_before_apply(&wrote));
+    assert!(own >= 1);
+    let handed = landed_first + landed_rest;
+    let advanced = (revision(&x) - before - own) as u64;
+    assert!(
+        handed <= advanced && handed > 0,
+        "handed over {handed}, the channel advanced the revision by {advanced}"
+    );
+}
+
+/// `apply` 回包里这条命令自己推进之前的修订号：`localRevision` − 自己落的事件数 − 自己改了可见性的实体数。
+fn revision_before_apply(reply: &Value) -> i64 {
+    reply["localRevision"].as_i64().unwrap()
+        - reply["marks"]["landed"].as_i64().unwrap()
+        - reply["changed"].as_array().map_or(0, |a| a.len() as i64)
+}
+
+/// 另外几条会自己把通道做完的路径同样交回：会话外投递（`import`）、新会话开始时上一次的收尾没做完
+/// （`ingest_begin`，channel.rs `begin`）、并入提交之前（`profile_merge_commit`：提交没成、旧 uid 还在时）。
+#[test]
+fn every_path_that_settles_the_channel_hands_its_slices_over() {
+    let all = world(47);
+    // 导入：分发器 / `local_write` 在导入之前做完通道。
+    let source = Device::new("ch-handover-src");
+    source.core.sync2_identity(P, NOW).unwrap();
+    let deck = super::config::default_deck_id(P);
+    local(&source, NOW, vec![(deck_entity(&deck), String::new())]);
+    let exported = source.core.sync2_export(P).unwrap();
+    let a = Device::new("ch-handover-import");
+    a.core.sync2_identity(P, NOW).unwrap();
+    appended(&a, &all);
+    let imported = cmd(
+        &a,
+        json!({"op": "import", "now": NOW + 1, "settled": true}),
+        vec![exported],
+    );
+    assert!(boot_state(&a).is_none());
+    assert!(settled_landed(&a, &imported) > 0, "{imported}");
+
+    // 收尾折到一半（App 在折叠途中被杀），新会话开始时先做完：`ingest_begin` 的回包带着。
+    let b = Device::new("ch-handover-begin");
+    b.core.sync2_identity(P, NOW).unwrap();
+    appended(&b, &all);
+    let r = cmd(
+        &b,
+        json!({"op": "ingest_finish", "now": NOW, "sliceOps": 5}),
+        vec![],
+    );
+    assert_eq!(r["more"], json!(true), "the fold is caught half-way: {r}");
+    assert!(
+        boot_state(&b).is_some_and(|(phase, _)| phase != 0),
+        "folding"
+    );
+    let begun = cmd(&b, json!({"op": "ingest_begin", "settled": true}), vec![]);
+    assert!(
+        boot_state(&b).is_none(),
+        "the next session settles it first"
+    );
+    assert!(settled_landed(&b, &begun) > 0, "{begun}");
+
+    // 并入提交：先把旧 uid 的通道做完再核对；核对没过（映射不全）旧 uid 还在，它的下一条命令拿到那些片。
+    let c = Device::new("ch-handover-merge");
+    c.core.sync2_identity(P, NOW).unwrap();
+    appended(&c, &all);
+    let out = c
+        .core
+        .profile_merge_commit(P, "ch-handover-merge-target", b"{}", None)
+        .unwrap();
+    assert_eq!(out["done"], json!(false), "{out}");
+    assert!(boot_state(&c).is_none(), "the commit settled the channel");
+    let next = cmd(
+        &c,
+        json!({"op": "identity", "now": NOW, "settled": true}),
+        vec![],
+    );
+    assert!(settled_landed(&c, &next) > 0, "{next}");
+    // 整份删掉的 uid：攒下的没有人要了，不会交给之后同一个 uid 的新数据。
+    let d = Device::new("ch-handover-purge");
+    d.core.sync2_identity(P, NOW).unwrap();
+    appended(&d, &all);
+    cmd(&d, json!({"op": "channel_settle"}), vec![]);
+    d.core.profile_purge(P).unwrap();
+    d.core.sync2_identity(P, NOW).unwrap();
+    let fresh = cmd(
+        &d,
+        json!({"op": "identity", "now": NOW, "settled": true}),
+        vec![],
+    );
+    assert!(fresh.get("settled").is_none(), "{fresh}");
 }

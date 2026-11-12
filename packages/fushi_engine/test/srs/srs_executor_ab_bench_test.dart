@@ -29,17 +29,18 @@ void main() {
       final String payload =
           '{"id":"x","kind":"review","res":{"queue":"review"},'
           '"note":"${'あ' * 120}"}';
-      await rust.db.batch((Batch b) {
-        for (int i = 0; i < rows; i++) {
+      rust.core.debugExecBatchRaw(
+        <String>[
           // `json` 是生成列（srs.db v18）：原文写进 `jslim`（不瘦也合法）。
-          b.customStatement(
-            'INSERT INTO srs_review_logs (id, profile_uid, card_id, kind, '
-            'occurred_at, review_type, origin, jslim) '
-            "VALUES (?, 'p', ?, 'review', ?, 'review', 'fushi', ?)",
-            <Object?>['log$i', 'card${i ~/ 10}', i, payload],
-          );
-        }
-      });
+          'INSERT INTO srs_review_logs (id, profile_uid, card_id, kind, '
+              'occurred_at, review_type, origin, jslim) '
+              "VALUES (?, 'p', ?, 'review', ?, 'review', 'fushi', ?)",
+        ],
+        <(int, List<Object?>)>[
+          for (int i = 0; i < rows; i++)
+            (0, <Object?>['log$i', 'card${i ~/ 10}', i, payload]),
+        ],
+      );
       await rust.close();
       final String dartPath = '${tmp.path}${Platform.pathSeparator}copy.db';
       File(rustPath).copySync(dartPath);

@@ -309,18 +309,18 @@ void main() {
       expect(r.mediaFiles, 1);
       expect(stale.existsSync(), isFalse, reason: '过了宽限期且无引用');
       expect(reused.existsSync(), isTrue, reason: '刚复用、引用可能还没提交');
-      expect(a.pendingMediaGc, <String>{'reused.png'});
+      expect(await a.pendingMediaGc(), <String>{'reused.png'});
 
       // 引用一直没提交（制卡被取消）：重开 store 后候选还在，过了宽限期照常回收。
       final SrsDbStore again = await open(srs, 'a');
-      expect(again.pendingMediaGc, <String>{'reused.png'});
+      expect(await again.pendingMediaGc(), <String>{'reused.png'});
       reused.setLastModifiedSync(old);
       expect(
         (await srsPurgeExpiredTombstones(again, mediaRoot: media)).mediaFiles,
         1,
       );
       expect(reused.existsSync(), isFalse);
-      expect(again.pendingMediaGc, isEmpty);
+      expect(await again.pendingMediaGc(), isEmpty);
     });
 
     test('候选在宽限期内被新笔记引用：不删，并移出待回收集合', () async {
@@ -333,7 +333,7 @@ void main() {
       await a.deleteNote(gone);
       f.setLastModifiedSync(DateTime.now());
       await srsPurgeNotesNow(a, <String>[gone], mediaRoot: media);
-      expect(a.pendingMediaGc, <String>{'cat.png'});
+      expect(await a.pendingMediaGc(), <String>{'cat.png'});
 
       await addNote(a, '虎', extra: '<img src="CAT.png">');
       f.setLastModifiedSync(old);
@@ -342,10 +342,10 @@ void main() {
         0,
       );
       expect(f.existsSync(), isTrue);
-      expect(a.pendingMediaGc, isEmpty);
+      expect(await a.pendingMediaGc(), isEmpty);
     });
 
-    test('扫描与删除在独占区里：排在前面的写入重新引用了候选，文件保留', () async {
+    test('核对与删除对写入原子：排在前面的写入重新引用了候选，文件保留', () async {
       final SrsDbStore a = await device('a');
       final Directory media = mediaDir();
       final File f = File(p.join(media.path, 'dog.png'))
