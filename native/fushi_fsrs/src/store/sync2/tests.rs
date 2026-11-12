@@ -280,7 +280,7 @@ impl Device {
 /// 命令本体、缓存刷新都已做完，用来验证整笔回滚。[mend_local_state] 撤掉。
 pub(crate) fn break_local_state(core: &SrsCore) {
     for (name, event) in [("ins", "INSERT"), ("upd", "UPDATE")] {
-        core.exec(
+        core.exec_raw(
             &format!(
                 "CREATE TRIGGER test_local_state_boom_{name} BEFORE {event} ON srs_local_state \
                  WHEN json_extract(NEW.json, '$.revision') IS NOT NULL \
@@ -295,7 +295,7 @@ pub(crate) fn break_local_state(core: &SrsCore) {
 
 pub(crate) fn mend_local_state(core: &SrsCore) {
     for name in ["ins", "upd"] {
-        core.exec(
+        core.exec_raw(
             &format!("DROP TRIGGER test_local_state_boom_{name}"),
             &[],
             false,
@@ -3317,6 +3317,53 @@ fn sliced_ingest_carries_waiting_ops_across_slices() {
     assert_eq!(projection(&z), projection(&whole));
 }
 
+/// 写锁被持着时来取写锁的线程自己记进让出信号（等待者计数）：持锁的切片命令看得到「有人在等」，等的人拿到锁
+/// 信号就回零——不留下没人认领的请求。别的副本对象 / 别的 isolate 的写命令不经 Dart 的排队，靠这个让收段的片早收。
+#[test]
+fn a_thread_blocked_on_the_write_lock_is_seen_by_the_running_slice() {
+    let d = std::sync::Arc::new(Device::new("yield-waiter"));
+    let signal = || d.core.ingest_yield_flag().wanted();
+    assert!(!signal());
+    let w = d.core.writer().unwrap();
+    assert!(!signal(), "the holder itself is not a waiter");
+    let (tx, rx) = std::sync::mpsc::channel::<()>();
+    let waiter = {
+        let d = std::sync::Arc::clone(&d);
+        std::thread::spawn(move || {
+            let _w = d.core.writer().unwrap();
+            tx.send(()).unwrap();
+        })
+    };
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while !signal() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the blocked writer never showed up in the yield signal"
+        );
+        std::thread::yield_now();
+    }
+    assert!(
+        !d.core.ingest_yield_flag().requested(),
+        "a waiter is not a Dart-side request"
+    );
+    // 切片的预算据此截停（做满保底条数之后）。
+    let mut budget = super::transport::CommitBudget::slice_within(
+        d.core.ingest_yield_flag(),
+        std::time::Duration::from_secs(3600),
+    );
+    let mut taken = 0;
+    while budget.take() {
+        taken += 1;
+        assert!(taken < 10_000, "the budget never stopped");
+    }
+    assert_eq!(taken, 64, "the floor, then the waiter cuts the slice");
+    drop(w);
+    rx.recv_timeout(std::time::Duration::from_secs(10))
+        .expect("the waiter got the lock");
+    waiter.join().unwrap();
+    assert!(!signal(), "nobody is waiting any more");
+}
+
 /// 有写入在等写锁（[SrsCore::sync2_ingest_yield]）：正在投的那一片做满保底条数就收，返回 `more`；收片后请求
 /// 清掉，下一片照常投，全部投完的条数不变。
 #[test]
@@ -3363,9 +3410,7 @@ fn ingest_yield_cuts_the_running_slice_short() {
     assert_eq!(first["applied"], json!(64), "{first}");
     assert_eq!(first["more"], json!(true), "{first}");
     assert!(
-        !b.core
-            .ingest_yield_flag()
-            .load(std::sync::atomic::Ordering::Relaxed),
+        !b.core.ingest_yield_flag().requested(),
         "the request is cleared"
     );
     let mut applied = 64;
@@ -4197,7 +4242,7 @@ fn ingest_slice_commits_on_its_own_with_the_local_state_row_sequential() {
     b.core.sync2_ingest_prepare(P, segs, None).unwrap();
     // 库里已有的行（修订号 40、去重游标 7、一个这一版不认识的键）：这一片从它推进，带来的校时状态一并写下。
     b.core
-        .exec(
+        .exec_raw(
             &format!(
                 "INSERT INTO srs_local_state (profile_uid, json) VALUES (srs_id('{P}'), \
                  '{{\"styleCursor\":7,\"revision\":40,\"epoch\":\"e1\",\"kernelOnly\":7}}')"

@@ -1118,13 +1118,65 @@ fn store_pending(
 pub struct CommitBudget<'a> {
     left: usize,
     deadline: Option<std::time::Instant>,
-    /// 置位 = 有别的写入在等写锁，这一片尽快收。
-    yield_to: Option<&'a std::sync::atomic::AtomicBool>,
+    /// 有别的写入在等写锁（[YieldSignal::wanted]），这一片尽快收。
+    yield_to: Option<&'a YieldSignal>,
     floor: usize,
     /// 这一片被预算截停过（还有没处理完的）。
     stopped: bool,
     /// 默认片长（[CommitBudget::slice]）：新设备的收段会话可以拉长它（[CommitBudget::stretch]）。
     stretchable: bool,
+}
+
+/// 「有别的写入在等写锁」的信号，切片的命令（收段的一片、收尾的重放 / 通道推进）据它提前收片。两个来源：
+///
+/// - **等待者计数**：有线程正阻塞在内核写锁上（[crate::store::SrsCore::writer] 取锁时 `try_lock` 失败就记一个，
+///   拿到锁或放弃时减掉）。别的副本对象、别的 isolate 的写命令直接到内核来等锁，这里看得见。是「此刻有没有人在等」
+///   的精确值：等的人走了它就回零，不会留下一个没人认领的请求让之后的片白白早收。
+/// - **请求标志**：Dart 那一侧的排队（同一个副本对象的写入在 `runExclusive` 里排在收段那一步后面，还没到内核）
+///   经 `ingest_yield` 命令置上，这一片收了就清。
+#[derive(Default)]
+pub struct YieldSignal {
+    requested: std::sync::atomic::AtomicBool,
+    waiters: std::sync::atomic::AtomicUsize,
+}
+
+impl YieldSignal {
+    pub(crate) fn request(&self) {
+        self.requested
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// 这一片收了：请求是冲着它来的（之后才到的最多让下一片早收）。
+    pub(crate) fn clear(&self) {
+        self.requested
+            .store(false, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    pub(crate) fn requested(&self) -> bool {
+        self.requested.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    pub(crate) fn wanted(&self) -> bool {
+        self.requested() || self.waiters.load(std::sync::atomic::Ordering::Relaxed) > 0
+    }
+
+    /// 记一个正在等写锁的线程；返回的守卫析构时减掉（拿到锁、取锁失败、panic 都走析构）。
+    pub(crate) fn waiting(&self) -> YieldWaiter<'_> {
+        self.waiters
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        YieldWaiter(self)
+    }
+}
+
+/// [YieldSignal::waiting] 的守卫。
+pub(crate) struct YieldWaiter<'a>(&'a YieldSignal);
+
+impl Drop for YieldWaiter<'_> {
+    fn drop(&mut self) {
+        self.0
+            .waiters
+            .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+    }
 }
 
 /// 一片投递的时间上限（写锁里投递 + 投影部分；同一片的缓存刷新与事务提交大约再占它的一半）。只在没人等锁时
@@ -1151,8 +1203,8 @@ impl<'a> CommitBudget<'a> {
         }
     }
 
-    /// 一片：最长 [COMMIT_SLICE]，[yield_to] 置位就提前收。
-    pub fn slice(yield_to: &'a std::sync::atomic::AtomicBool) -> CommitBudget<'a> {
+    /// 一片：最长 [COMMIT_SLICE]，[yield_to] 有人等（[YieldSignal::wanted]）就提前收。
+    pub fn slice(yield_to: &'a YieldSignal) -> CommitBudget<'a> {
         CommitBudget {
             stretchable: true,
             ..CommitBudget::slice_within(yield_to, COMMIT_SLICE)
@@ -1167,10 +1219,7 @@ impl<'a> CommitBudget<'a> {
     }
 
     /// 一片，时间上限另给（测试用：给得很长，切点就只来自让出请求）。
-    pub fn slice_within(
-        yield_to: &'a std::sync::atomic::AtomicBool,
-        max: std::time::Duration,
-    ) -> CommitBudget<'a> {
+    pub fn slice_within(yield_to: &'a YieldSignal, max: std::time::Duration) -> CommitBudget<'a> {
         CommitBudget {
             left: usize::MAX,
             deadline: Some(std::time::Instant::now() + max),
@@ -1224,9 +1273,7 @@ impl<'a> CommitBudget<'a> {
             && (self
                 .deadline
                 .is_some_and(|d| std::time::Instant::now() >= d)
-                || self
-                    .yield_to
-                    .is_some_and(|y| y.load(std::sync::atomic::Ordering::Relaxed)));
+                || self.yield_to.is_some_and(YieldSignal::wanted));
         if self.left == 0 || over {
             self.stopped = true;
             return false;
@@ -2678,7 +2725,7 @@ impl SrsCore {
         let fork_at = recorded_fork(&w, profile, &local.device)?;
         let bootstrap = !studied_here(&w, profile, &local.device)?;
         // 新设备第一次同步走收段通道（先追加后折叠，channel.rs）；上一次的收尾做到一半就先按片做完（各片自己提交）。
-        let channel = super::channel::begin(&w, profile)?;
+        let channel = super::channel::begin(&w, profile, &mut |t| self.note_settled(profile, t))?;
         if channel {
             self.note_channel_live();
         } else {
@@ -2695,7 +2742,6 @@ impl SrsCore {
         };
         let mut phase = self.ingest_phase()?;
         self.set_ingest_phase(&mut phase, IngestPhase::Open(session));
-        // Dart 据 `channel` 记下「开 Drift 事务前先 `channel_settle`」（srs_db_store.dart `_transactionOrReload`）。
         Ok(json!({"channel": channel}))
     }
 
@@ -2815,20 +2861,19 @@ impl SrsCore {
     ) -> Result<(String, crate::store::caches::Written), String> {
         let out = self.ingest_commit_slice(profile, now, budget, anchor, cache);
         // 这一片收了：让出请求是冲着它来的（之后才到的最多让下一片早收）。
-        self.ingest_yield
-            .store(false, std::sync::atomic::Ordering::Relaxed);
+        self.ingest_yield.clear();
         out
     }
 
     /// 有别的写入在等写锁：正在投的那一片（[SrsCore::sync2_ingest_commit]）尽快收。不拿任何连接锁，从等锁的
-    /// 那一侧（Dart 的写入排队）直接调。
+    /// 那一侧（Dart 的写入排队：同一个副本对象的写入排在收段那一步后面，还没到内核）直接调。已经到内核来等写锁的
+    /// 不用它：取写锁时自己记进等待者计数（[YieldSignal]）。
     pub fn sync2_ingest_yield(&self) {
-        self.ingest_yield
-            .store(true, std::sync::atomic::Ordering::Relaxed);
+        self.ingest_yield.request();
     }
 
-    /// 让出请求的标志（[CommitBudget::slice] 读它）。
-    pub(crate) fn ingest_yield_flag(&self) -> &std::sync::atomic::AtomicBool {
+    /// 让出信号（[CommitBudget::slice] 读它）。
+    pub(crate) fn ingest_yield_flag(&self) -> &YieldSignal {
         &self.ingest_yield
     }
 
@@ -2973,8 +3018,7 @@ impl SrsCore {
         if session.fork_at.is_some() {
             let settled = self.settle_channel_on(&w, profile);
             if let Err(e) = settled {
-                self.ingest_yield
-                    .store(false, std::sync::atomic::Ordering::Relaxed);
+                self.ingest_yield.clear();
                 self.set_ingest_phase(&mut guard, IngestPhase::Idle);
                 return Err(e);
             }
@@ -3015,8 +3059,7 @@ impl SrsCore {
             let drained = !more && !cache_is_pending(c, profile)?;
             Ok((persist_local_state(c, profile, anchor, r)?, drained))
         });
-        self.ingest_yield
-            .store(false, std::sync::atomic::Ordering::Relaxed);
+        self.ingest_yield.clear();
         match out {
             Ok((r, drained)) => {
                 if drained {
@@ -3060,8 +3103,7 @@ impl SrsCore {
             let r = ingest_result(c, profile, t, replayed, 0, Vec::new(), false, more, None)?;
             persist_local_state(c, profile, anchor, r)
         });
-        self.ingest_yield
-            .store(false, std::sync::atomic::Ordering::Relaxed);
+        self.ingest_yield.clear();
         out
     }
 
@@ -3659,7 +3701,6 @@ mod compaction_tests {
 #[cfg(test)]
 mod budget_tests {
     use super::*;
-    use std::sync::atomic::AtomicBool;
     use std::time::Duration;
 
     /// 能做多少条（最多 [cap]）。
@@ -3670,7 +3711,7 @@ mod budget_tests {
     /// 只有默认片能被新设备会话拉长；另给了时间（测试的 `sliceMs`）或条数（`sliceOps`）的片不动。
     #[test]
     fn only_the_default_slice_stretches() {
-        let flag = AtomicBool::new(false);
+        let flag = YieldSignal::default();
         let mut b = CommitBudget::slice(&flag);
         b.stretch(Duration::from_secs(3600));
         assert_eq!(takes(&mut b, 10_000), 10_000, "stretched default slice");
@@ -3687,7 +3728,7 @@ mod budget_tests {
         // 拉长的片照样响应让出请求（做满下限之后）。
         let mut b = CommitBudget::slice(&flag);
         b.stretch(Duration::from_secs(3600));
-        flag.store(true, std::sync::atomic::Ordering::Relaxed);
+        flag.request();
         assert_eq!(
             takes(&mut b, 10_000),
             COMMIT_SLICE_MIN_OPS,

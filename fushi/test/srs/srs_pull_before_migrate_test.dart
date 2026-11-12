@@ -33,7 +33,7 @@ const String kOnlyB = '0193a1b2-0000-7000-8000-0000000010b1';
 /// v2 之前的旧库：几条复习日志直接落在投影表里，没有操作。
 Future<SrsStorage> _legacyStorage(List<String> logIds) async {
   final SrsStorage st = await openSrsTestStorage();
-  st.core.execBatch(
+  st.core.debugExecBatchRaw(
     <String>[
       'INSERT INTO srs_review_logs (id, profile_uid, card_id, kind, rating, occurred_at, '
           'review_type, origin, duration_ms, jslim) VALUES (srs_id(?), srs_id(?), srs_id(?), ?, ?, ?, ?, ?, ?, ?)',

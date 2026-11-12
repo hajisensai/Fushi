@@ -3,7 +3,7 @@
 //! （整行只有内核写，store/local_state.rs）。
 //!
 //! 以前由 Dart 持有（`SrsDbStore._cacheRevision` / `_kCacheRevision` / `_upgradeCaches`）：打开时比内存里的版本，
-//! 低了就在一笔 Drift 事务里发一串 `refresh_caches` / `backfill_*`，再整行写一次本机状态。现在打开时 Dart 只发一条
+//! 低了就在一笔事务里发一串 `refresh_caches` / `backfill_*`，再整行写一次本机状态。现在打开时 Dart 只发一条
 //! `cache_config_set`（注册本 profile 的缓存配置，见 store/mod.rs `cache_configs`），内核在**同一个 SAVEPOINT** 里
 //! 读出存着的版本、补做落后的各级、记下 [CACHE_REVISION]（[upgrade]）；重建缓存（`rebuild_caches`）同样在它的
 //! SAVEPOINT 里记下当前版本（[record]）。

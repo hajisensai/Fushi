@@ -7,7 +7,8 @@
 //! - 远端操作（transport.rs）走同一条投影与重放路径；按设备连续前缀、因果满足才应用。
 //! - 卡片调度状态由重放推出（sync2::replay），写回投影行的 `res`。
 //!
-//! 所有命令在写连接上的一个 SAVEPOINT 里做：Dart 的 Drift 事务开着时嵌在里面，没开时自成事务。
+//! 所有命令在写连接上的一个 SAVEPOINT 里做：写连接上没有别人开着的事务（Drift 执行器只读），它自成一笔事务；
+//! 只有旧库搬迁那笔跨调用的事务开着时是嵌在里面。
 
 pub(crate) mod change;
 pub(crate) mod channel;
@@ -51,7 +52,7 @@ pub(crate) fn sql<E: std::fmt::Display>(e: E) -> String {
     e.to_string()
 }
 
-/// 在 SAVEPOINT 里跑（外面有 Drift 事务就嵌套，没有就自成事务）。
+/// 在 SAVEPOINT 里跑（外面有事务——旧库搬迁、调用方自己的 SAVEPOINT——就嵌套，没有就自成事务）。
 pub(crate) fn in_savepoint<T>(
     conn: &Connection,
     f: impl FnOnce(&Connection) -> Result<T, String>,
@@ -88,8 +89,6 @@ pub(crate) mod test_panic {
 
     /// [super::in_savepoint]：写完、RELEASE 之前。
     pub(crate) const BEFORE_RELEASE: &str = "in_savepoint.before_release";
-    /// `SrsCore::exec`：语句跑完、记下 Drift 事务状态之前。
-    pub(crate) const AFTER_EXEC: &str = "exec.after_statement";
 
     thread_local! {
         static ARMED: Cell<Option<&'static str>> = const { Cell::new(None) };
@@ -2147,7 +2146,7 @@ impl SrsCore {
     /// 本机身份（没有就建）。返回 `{device, collection, nextSeq, migrated, name}`。
     ///
     /// 身份已在（每轮同步、开库都走这里，绝大多数情况）只是一次读：走读连接的快照，不排写锁
-    /// （[SrsCore::read_visible]；Drift 事务开着时照旧在写连接上读）。只有还没有身份时才进写连接，
+    /// （[SrsCore::read_visible]）。只有还没有身份时才进写连接，
     /// 在 SAVEPOINT 里重查一遍再建（两个调用方同时看到「没有」，后进写锁的那个读到先建的那份，不会建两份）。
     pub fn sync2_identity(&self, profile: &str, now: i64) -> Result<Value, String> {
         if let Some(l) = self.read_visible(|c| Local::load(c, profile))? {
@@ -2511,7 +2510,7 @@ impl SrsCore {
     /// （与写进日志的 utcOff / rollover 相同）。
     ///
     /// 只读（牌组树、血统日志、修改记录全是 SELECT，重放与 FSRS 是纯计算）：走读连接的快照，复习时每张卡的
-    /// 预览不排在同步投递 / 缓存刷新这类长写后面（[SrsCore::read_visible]；Drift 事务开着时照旧在写连接上）。
+    /// 预览不排在同步投递 / 缓存刷新这类长写后面（[SrsCore::read_visible]）。
     pub fn sync2_preview(
         &self,
         profile: &str,

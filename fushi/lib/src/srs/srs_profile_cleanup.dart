@@ -146,16 +146,6 @@ class SrsProfileCleanup implements ProfileDeletionCascade {
     );
   }
 
-  /// 在当前副本的独占区里跑 [body]（[target] 就是当前副本时直接跑：它自己的命令已在它的独占区里排队）。
-  Future<T> _serialized<T>(
-    SrsDbStore? target,
-    Future<T> Function() body,
-  ) async {
-    final SrsDbStore? active = await _deps.activeStore();
-    if (active == null || identical(active, target)) return body();
-    return active.runExclusive(body);
-  }
-
   Future<ProfileDeletionCleanup> _prepareUid(
     String uid, {
     required String label,
@@ -184,20 +174,14 @@ class SrsProfileCleanup implements ProfileDeletionCascade {
       if (!isActive) await _deps.releaseForeign(uid);
       store = isActive
           ? active
-          : await _serialized(
-              null,
-              () async => SrsDbStore.open(
-                db: storage.db,
-                core: storage.core,
-                profileUid: uid,
-                deviceId: await _deps.deviceId(),
-              ),
+          : await SrsDbStore.open(
+              db: storage.db,
+              core: storage.core,
+              profileUid: uid,
+              deviceId: await _deps.deviceId(),
             );
       backup = await _backupFile(label);
-      await _serialized(
-        store,
-        () => srsExportFushiSrs(store, backup, mediaRoot: mediaDir),
-      );
+      await srsExportFushiSrs(store, backup, mediaRoot: mediaDir);
     } on Object catch (e, stack) {
       Error.throwWithStackTrace(ProfileDeletionBackupException(e), stack);
     }
@@ -299,10 +283,7 @@ class _SrsCleanup implements ProfileDeletionCleanup {
     final SrsStorage? s = storage;
     final SrsDbStore? target = store;
     if (s != null && target != null) {
-      await owner._serialized(
-        target,
-        () => target.retire(() => srsPurgeProfileRows(s.core, uid)),
-      );
+      await target.retire(() => srsPurgeProfileRows(s.core, uid));
     }
     if (mediaDir.existsSync()) await mediaDir.delete(recursive: true);
     await owner._deleteRwkvSnapshots(uid);

@@ -115,7 +115,6 @@ srsAppRuntimeProvider = Provider<SrsAppRuntime?>((Ref ref) {
         ref.invalidate(srsStoreProvider);
         return ref.read(srsStoreProvider.future);
       },
-      writeLock: ref.read(srsProfileStoresProvider).writeLock,
       mediaRoot: () async =>
           SrsMediaStore.mediaRootFor(await ref.read(srsSupportRootProvider)()),
       onError: ErrorLogService.instance.log,

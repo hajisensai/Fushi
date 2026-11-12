@@ -218,7 +218,7 @@ void main() {
       'rebuildCaches': await _cost(s, s.rebuildCaches),
       'open(current)': await openCost(),
     };
-    await f.db.customStatement(
+    f.store.core.debugExecRaw(
       r"UPDATE srs_local_state SET json = json_set(json, '$.cacheRev', 1)",
     );
     costs['open(cacheRev 1)'] = await openCost();
@@ -252,12 +252,13 @@ void main() {
     final BulkFixture f = await BulkFixture.open(notes: 1);
     final SrsDbStore s = f.store;
     Future<int> threshold() async =>
-        (await s.db.customSelect('PRAGMA wal_autocheckpoint').getSingle())
-                .data
-                .values
-                .first!
+        s.core.debugSelectRaw('PRAGMA wal_autocheckpoint').single.values.first!
             as int;
-    await s.db.customStatement('PRAGMA wal_autocheckpoint = 777');
+    s.core.debugExecRaw(
+      'PRAGMA wal_autocheckpoint = 777',
+      const <Object?>[],
+      true,
+    );
     await s.bulkWrites(() async {
       expect(await threshold(), 16384);
       await s.bulkWrites(() async {

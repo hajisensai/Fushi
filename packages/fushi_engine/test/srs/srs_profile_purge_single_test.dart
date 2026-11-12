@@ -10,9 +10,7 @@ import 'package:drift/native.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_backup_merge.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
-import 'package:fushi_engine/srs/srs_database_executor.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
-import 'package:fushi_engine/srs/srs_profile_data.dart';
 import 'package:fushi_engine/srs/srs_profile_link.dart';
 import 'package:fushi_engine/srs/srs_profile_merge.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
@@ -70,20 +68,6 @@ Future<Map<String, int>> _residue(SrsDatabase db, String uid) async {
   ];
   if (keys.isNotEmpty) out['srs_meta ${keys.join(', ')}'] = keys.length;
   return out;
-}
-
-/// 包一层写锁，每次进锁前回调 [onRun]（测试据此知道「这次删除走了写锁」）。
-class _ObservedLock implements SrsExclusiveOuter {
-  _ObservedLock(this._inner, this.onRun);
-
-  final SrsExclusiveOuter _inner;
-  final void Function() onRun;
-
-  @override
-  Future<T> run<T>(Future<T> Function() body) {
-    onRun();
-    return _inner.run(body);
-  }
 }
 
 /// 没有任何操作引用的因果上下文行数。
@@ -175,96 +159,114 @@ void main() {
     expect(await _unreferencedDeps(srs.db), lessThanOrEqualTo(depsBefore));
   });
 
-  // 并入的收尾以前在一笔 Drift 事务里发 `profile_purge`；第 11 步改成内核的一条 `profile_merge_commit`，此后没有调用方
-  // 在 Drift 事务里发它，守卫把它登记成 reject（native/fushi_fsrs/src/store/drift_guard.rs）。守卫目前只计数不拦：
-  // 真这么发，删除仍嵌在那笔事务里、随它回滚。
-  test('在 Drift 事务里删：守卫记成 reject；仍随那笔事务回滚', () async {
-    final SrsDbStore s = await open(oldUid);
-    await addNote(s, '雪');
-    final Map<String, int> before = await _residue(srs.db, oldUid);
-    expect(before, contains('srs_entities'));
-    await s.debugDriftTxGuardHits(reset: true);
-
-    await expectLater(
-      srs.db.transaction(() async {
-        // 先在事务里读一下：Drift 的 BEGIN 已经落到写连接上。
-        await srs.db.customSelect('SELECT 1').get();
-        await srsPurgeProfileRows(srs.core, oldUid);
-        expect(await _residue(srs.db, oldUid), isEmpty, reason: '事务里已删');
-        throw StateError('abort');
-      }),
-      throwsStateError,
+  // 采用删旧 uid（srs_profile_link.dart `_switchUid`）在旧副本的最后一段独占区里跑、之后副本作废
+  // （[SrsDbStore.retire]）：副本上在途的写入先写完再删；之后再来的写入明确失败，不会把行写回已删的 uid（内核写
+  // 本机状态行时没有行就新建：一条漏进来的写入会让退役的 uid 重新长出数据）。以前靠套在全部副本外面的一把写锁，
+  // 那把锁随 Drift 事务一起删了。
+  test('采用：删旧 uid 排在旧副本在途写入之后，删完副本作废、迟到的写入明确失败', () async {
+    final SrsDbStore old = await open(oldUid);
+    final List<String> order = <String>[];
+    final Completer<void> entered = Completer<void>();
+    final Completer<void> release = Completer<void>();
+    // 在途写入：占着旧副本的独占区。
+    final Future<void> inFlight = old.runExclusive(() async {
+      entered.complete();
+      await release.future;
+      order.add('write');
+    });
+    await entered.future;
+    final SrsDbProfileLinker linker = SrsDbProfileLinker(
+      db: main,
+      activeProfileId: () async => profileId,
+      reopenStore: () async {
+        order.add('reopen');
+        return open(await main.profileUidOf(profileId));
+      },
     );
+    final Future<SrsProfileAdoptResult> adopting = linker.adopt(old, _kNewUid);
+    // 给不排队的实现充分的机会先删（排队的实现无论等多久都不会先删）。
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+    expect(order, isEmpty);
+    expect(await _residue(srs.db, oldUid), isNotEmpty, reason: '在途写入还没做完就删了');
+    expect(await main.profileUidOf(profileId), oldUid);
+    release.complete();
+    await inFlight;
+    final SrsProfileAdoptResult result = await adopting;
 
-    expect(await _residue(srs.db, oldUid), before);
-    final Map<String, Map<String, int>> hits = await s.debugDriftTxGuardHits();
-    expect(hits['reject'], <String, int>{'profile_purge': 1});
-    expect(hits['join'], isEmpty);
+    expect(order, <String>['write', 'reopen']);
+    expect(result.store.profileUid, _kNewUid);
+    expect(await main.profileUidOf(profileId), _kNewUid);
+    expect(old.isUsable, isFalse);
+    await expectLater(
+      addNote(old, '迟到'),
+      throwsA(
+        isA<SrsStoreRetiredError>().having(
+          (SrsStoreRetiredError e) => e.message,
+          'message',
+          contains('adopted the uid'),
+        ),
+      ),
+    );
+    expect(
+      await _residue(srs.db, oldUid),
+      isEmpty,
+      reason: '迟到的写入把行写回了已删的 uid',
+    );
+    expect(await _residue(srs.db, _kNewUid), isNotEmpty);
   });
 
-  // 采用后重开对不上 → 回退删新 uid（srs_profile_link.dart `_switchUid`）。那一刻旧副本可能已交接作废、新 uid
-  // 的副本活着，连接上可能有别的写入者开着 Drift 事务（这里用同一条写连接上另一个 Drift 视图模拟：它的事务跨
-  // await 开着）。删除必须在写锁里等它结束，不能夹进去随它回滚。
-  test('采用回退：删新 uid 在写锁里等别的写入者的事务结束，不随它回滚', () async {
+  // 采用后重开的新副本没法用（这里让它的重建失败）→ 回退删新 uid。新 uid 的副本活着：删除在它的最后一段独占区
+  // 里跑、随后作废它，同样不与它自己的写入交错。
+  test('采用回退：删新 uid 在新副本的最后一段独占区里跑并作废它，回到原 uid', () async {
     final SrsDbStore old = await open(oldUid);
-    SrsDbStore current = old;
-    final SrsDatabase other = SrsDatabase(srsInlineExecutor(srs.core));
-    addTearDown(other.close);
-    final Completer<void> otherOpen = Completer<void>();
-    final Completer<void> release = Completer<void>();
-    Future<void> otherDone = Future<void>.value();
-    int locked = 0;
-    void releaseOther() {
-      if (!release.isCompleted) release.complete();
-    }
-
+    SrsDbStore? fresh;
     int reopens = 0;
     final SrsDbProfileLinker linker = SrsDbProfileLinker(
       db: main,
       activeProfileId: () async => profileId,
-      // 第二次进锁就是回退那次删除：放别的写入者收尾（它回滚、放锁），删除排在它之后。
-      writeLock: _ObservedLock(SrsCurrentStoreWriteLock(() => current), () {
-        if (++locked >= 2) releaseOther();
-      }),
       reopenStore: () async {
         reopens++;
         if (reopens == 1) {
-          // 新 uid 的副本开了（落下它的内置行），随后另一个写入者在它的独占区里开着一笔 Drift 事务。
-          current = await open(_kNewUid);
-          otherDone = current
-              .runExclusive(
-                () => other.transaction(() async {
-                  await other.customStatement(
-                    'INSERT OR REPLACE INTO srs_meta (key, value) '
-                    "VALUES ('purge_probe', '1')",
-                  );
-                  otherOpen.complete();
-                  await release.future;
-                  throw StateError('other writer rolls back');
-                }),
-              )
-              .then((_) {}, onError: (Object _) {});
-          await otherOpen.future;
-          return null; // 重开失败 → 回退
+          final SrsDbStore s = fresh = await open(_kNewUid);
+          // 之后的 afterRestore（重建缓存，连同本机状态行一个 SAVEPOINT）失败。
+          for (final String on in const <String>['INSERT', 'UPDATE']) {
+            srs.core.debugExecRaw(
+              'CREATE TRIGGER test_restore_boom_$on BEFORE $on ON srs_local_state '
+              "BEGIN SELECT RAISE(ABORT, 'restore refused'); END",
+            );
+          }
+          return s;
         }
-        // 回退里的再次重开：没走写锁的删除此刻已夹进那笔事务，放它回滚。
-        releaseOther();
-        return old;
+        for (final String on in const <String>['INSERT', 'UPDATE']) {
+          srs.core.debugExecRaw('DROP TRIGGER IF EXISTS test_restore_boom_$on');
+        }
+        return open(await main.profileUidOf(profileId));
       },
     );
     expect(await _residue(srs.db, _kNewUid), isEmpty);
 
-    await expectLater(linker.adopt(old, _kNewUid), throwsStateError);
-    await otherDone;
-
-    expect(await main.profileUidOf(profileId), oldUid, reason: '回到原 uid');
-    expect(
-      await srs.db
-          .customSelect("SELECT 1 FROM srs_meta WHERE key = 'purge_probe'")
-          .get(),
-      isEmpty,
-      reason: '别的写入者的事务确实回滚了',
+    await expectLater(
+      linker.adopt(old, _kNewUid),
+      throwsA(
+        predicate<Object>((Object e) => '$e'.contains('restore refused')),
+      ),
     );
-    expect(await _residue(srs.db, _kNewUid), isEmpty, reason: '回退的删除没随别的事务回滚');
+
+    expect(reopens, 2);
+    expect(await main.profileUidOf(profileId), oldUid, reason: '回到原 uid');
+    expect(await _residue(srs.db, _kNewUid), isEmpty);
+    expect(fresh!.isUsable, isFalse);
+    await expectLater(
+      addNote(fresh!, '迟到'),
+      throwsA(
+        isA<SrsStoreRetiredError>().having(
+          (SrsStoreRetiredError e) => e.message,
+          'message',
+          contains('was rolled back'),
+        ),
+      ),
+    );
+    expect(await _residue(srs.db, _kNewUid), isEmpty);
+    expect(await _residue(srs.db, oldUid), isNotEmpty, reason: '原 uid 重开后内置行在');
   });
 }

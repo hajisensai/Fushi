@@ -530,14 +530,6 @@ void main() {
     for (final String guid in <String>[rain, ...lateGuids]) {
       expect(await _noteByGuid(b.store, guid), isNotNull, reason: guid);
     }
-    // 整个并入没有一条命令落在 Drift 的事务里（收尾以前是一笔 Drift 事务里的 profile_purge）。
-    final Map<String, Map<String, int>> hits = await b.store
-        .debugDriftTxGuardHits();
-    expect(
-      hits.values.every((Map<String, int> m) => m.isEmpty),
-      isTrue,
-      reason: '$hits',
-    );
   });
 
   test('链接记的集合：并发增删不互相覆盖；与旧版本直写的形态互相读得懂', () async {
@@ -565,7 +557,7 @@ void main() {
     });
 
     // 旧版本（Dart 经 Drift 直写）写下的值：JSON 字符串数组。
-    await b.srs.db.customStatement(
+    b.srs.core.debugExecRaw(
       'INSERT OR REPLACE INTO srs_meta (key, value) VALUES (?, ?)',
       <Object>[
         kSrsRetiredProfileUidsKey,
@@ -1402,7 +1394,6 @@ void main() {
       db: b.db,
       activeProfileId: () async => b.profileId,
       reopenStore: () async => b.reopen(),
-      writeLock: SrsCurrentStoreWriteLock(() => b.store),
       onError: (String where, Object e, StackTrace _) => errors.add((where, e)),
     );
     for (int i = 1; i <= 2; i++) {
@@ -1457,7 +1448,6 @@ void main() {
       db: b.db,
       activeProfileId: () async => b.profileId,
       reopenStore: () async => b.reopen(),
-      writeLock: SrsCurrentStoreWriteLock(() => b.store),
       onError: (String where, Object e, StackTrace _) => errors.add((where, e)),
     );
     final SrsProfileLinkOutcome asked = await linker.link(dir, b.store);
@@ -1659,7 +1649,6 @@ void main() {
       db: b.db,
       activeProfileId: () async => b.profileId,
       reopenStore: () async => b.reopen(),
-      writeLock: SrsCurrentStoreWriteLock(() => b.store),
       onError: (String where, Object e, StackTrace _) => errors.add((where, e)),
     );
     for (int i = 1; i <= 2; i++) {

@@ -219,6 +219,7 @@ impl SrsCore {
         }
         let w = self.profile_writer()?;
         let out = in_savepoint(&w, |c| purge_on(c, profile))?;
+        self.forget_settled(profile);
         // 正在收这个 profile 的会话（或它的收尾）一起放掉，连同留着的页缓存。
         self.sync2_ingest_end(profile)?;
         Ok(out)
@@ -226,7 +227,7 @@ impl SrsCore {
 
     /// 写锁 + 旧库搬迁事务没开着（搬迁会整表重写）。
     fn profile_writer(&self) -> Result<super::Conn<'_>, String> {
-        // 先取写锁再看 `legacy_open`（同 [SrsCore::exec]）。
+        // 先取写锁再看 `legacy_open`（同 [SrsCore::legacy_page]）。
         let w = self.writer()?;
         if self.legacy_open.load(Ordering::SeqCst) {
             return Err("legacy import in progress".into());
@@ -273,8 +274,7 @@ impl SrsCore {
     ///
     /// 以前这是 Dart 的一笔 Drift 事务（两批读 + `profile_purge`），不在任何副本的独占区里：别的副本此时发的写命令
     /// 会落进那笔事务。现在核对与删除之间只有内核的写锁，没有别的写入。[from] 的收段通道没做完就先做完（通道里还没
-    /// 投影的操作进了投影才看得见；多出来的事件不在 [map] 里 → 再来一轮）。Drift 在写连接上开着事务时拒绝：不把这次
-    /// 删除嵌进别人的事务、跟着它回滚。[fail_after]（测试注入）= `"check"`：核对通过之后报错，验证整笔回滚。
+    /// 投影的操作进了投影才看得见；多出来的事件不在 [map] 里 → 再来一轮）。[fail_after]（测试注入）= `"check"`：核对通过之后报错，验证整笔回滚。
     pub fn profile_merge_commit(
         &self,
         from: &str,
@@ -288,11 +288,6 @@ impl SrsCore {
         let map: std::collections::HashMap<String, String> = serde_json::from_slice(map)
             .map_err(|e| format!("profile_merge_commit: bad map: {e}"))?;
         let w = self.profile_writer()?;
-        if self.drift_tx.load(Ordering::SeqCst) {
-            return Err(
-                "profile_merge_commit: a Drift transaction is open on the write connection".into(),
-            );
-        }
         self.settle_channel_on(&w, from)?;
         let out = in_savepoint(&w, |c| {
             let now_old = event_ids(c, from)?;
@@ -317,6 +312,7 @@ impl SrsCore {
             Ok(out)
         })?;
         if out["done"] == json!(true) {
+            self.forget_settled(from);
             // 正在收旧 uid 的会话（或它的收尾）一起放掉，同 [Self::profile_purge]。
             self.sync2_ingest_end(from)?;
         }
@@ -828,9 +824,9 @@ mod tests {
         assert_eq!(rows_of(&core, P), 0);
     }
 
-    /// 不嵌进 Drift 开着的事务（那笔事务回滚会把删除一起带走）；旧库搬迁开着时三条写命令都拒绝；参数不对报错。
+    /// 旧库搬迁开着（写连接上唯一能跨调用留着的事务）时几条写命令都拒绝；参数不对报错。
     #[test]
-    fn merge_commit_refuses_foreign_transactions_and_bad_arguments() {
+    fn merge_commit_refuses_the_legacy_transaction_and_bad_arguments() {
         let (core, _d) = open("commit-refuse");
         seed(&core, P, 1, 1);
         seed(&core, Q, 1, 1);
@@ -848,11 +844,10 @@ mod tests {
                 .unwrap_err()
                 .contains("bad map")
         );
-        core.exec("BEGIN", &[], false).unwrap();
-        let err = commit(&core, &map, None).unwrap_err();
-        assert!(err.contains("Drift transaction"), "{err}");
-        core.exec("ROLLBACK", &[], false).unwrap();
         assert_eq!(rows_of(&core, P), before);
+        // 参数都对时照常提交（上面的拒绝没有留下半截状态）。
+        assert_eq!(commit(&core, &map, None).unwrap()["done"], json!(true));
+        assert_eq!(rows_of(&core, P), 0);
 
         let (legacy, _d2) = open("commit-legacy");
         legacy.legacy_begin().unwrap();
@@ -918,23 +913,5 @@ mod tests {
             }
             assert_eq!(edit("retiredUids", Some("n"), None), want, "{bad}");
         }
-    }
-
-    /// 只读调用在 Drift 开着的事务里看得见那笔事务里未提交的值（走写连接），事务回滚后看到原值。
-    #[test]
-    fn meta_set_read_sees_the_open_transaction() {
-        let (core, _d) = open("meta-set-tx");
-        core.meta_set_edit("retiredUids", Some("a"), None).unwrap();
-        core.exec("BEGIN", &[], false).unwrap();
-        core.meta_set_edit("retiredUids", Some("b"), None).unwrap();
-        assert_eq!(
-            core.meta_set_edit("retiredUids", None, None).unwrap()["values"],
-            json!(["a", "b"])
-        );
-        core.exec("ROLLBACK", &[], false).unwrap();
-        assert_eq!(
-            core.meta_set_edit("retiredUids", None, None).unwrap()["values"],
-            json!(["a"])
-        );
     }
 }

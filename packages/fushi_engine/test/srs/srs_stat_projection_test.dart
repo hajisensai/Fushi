@@ -335,8 +335,8 @@ void main() {
     await scenario();
     final List<String> want = await projectionRows(db);
     expect(await cacheRev(), '${store.debugCacheRevision}');
-    await db.customStatement('DELETE FROM srs_stat_reviews');
-    await db.customStatement(
+    store.core.debugExecRaw('DELETE FROM srs_stat_reviews');
+    store.core.debugExecRaw(
       "UPDATE srs_local_state SET json = json_set(json, '\$.cacheRev', 1)",
     );
     expect(await projectionRows(db), isEmpty);
@@ -350,7 +350,7 @@ void main() {
   test('缓存修订号 2 → 当前的升级不动投影（只补笔记缓存的媒体引用）', () async {
     await scenario();
     final List<String> want = await projectionRows(db);
-    await db.customStatement(
+    store.core.debugExecRaw(
       "UPDATE srs_local_state SET json = json_set(json, '\$.cacheRev', 2)",
     );
     store = await open();

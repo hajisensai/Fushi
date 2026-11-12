@@ -414,10 +414,11 @@ fn one_row(page: &[u8]) -> Result<Vec<rusqlite::types::Value>, String> {
     Ok(rows.pop().unwrap_or_default())
 }
 
-/// Drift 执行器：执行一条语句。`select`：0 = 写语句（写连接，返回一行 `[变更行数, last_insert_rowid]`）；
-/// 1 = 写连接上的语句、返回结果行（`runCustom`：事务控制、PRAGMA）；2 = Drift 的查询（`runSelect`，
-/// [SrsCore::select]：Drift 事务外的只读查询走读连接的快照）；3 = Drift 事务外的查询（[SrsCore::snapshot_select]：
-/// 只读连接池，可并发；不是只读查询报 `NOT_SNAPSHOT`）。1 / 2 / 3 返回「列名行 + 结果行」；缓冲区用
+/// Drift 执行器的语句入口，**只读**。`select`：2 = 内联执行器的查询（[SrsCore::select]：专用只读连接）；3 = 查询道
+/// 的查询（[SrsCore::snapshot_select]：只读连接池，可并发；不是只读查询报 `NOT_SNAPSHOT`）。0 / 1 是以前 Drift 的
+/// 写语句 / `runCustom`（事务控制、PRAGMA）：一律报 [crate::store::READ_ONLY]、不执行——srs.db 的写入只有内核命令
+/// （`ffsrs_store_sync2`）。4 / 5 = 测试专用的原始通道（[SrsCore::exec_raw]，写连接；4 返回一行
+/// `[变更行数, last_insert_rowid]`，5 返回「列名行 + 结果行」）。2 / 3 / 5 返回「列名行 + 结果行」；缓冲区用
 /// `ffsrs_free_bytes` 释放。
 #[no_mangle]
 pub extern "C" fn ffsrs_store_exec(
@@ -439,10 +440,11 @@ pub extern "C" fn ffsrs_store_exec(
         let s = utf8(sql, sql_len)?;
         let values = one_row(bytes(params, params_len).ok_or("null params")?)?;
         let page = match select {
-            0 => c.exec(s, &values, false)?,
-            1 => c.exec(s, &values, true)?,
+            0 | 1 => return Err(format!("{}: {s}", crate::store::READ_ONLY)),
             2 => c.select(s, &values)?,
             3 => c.snapshot_select(s, &values)?,
+            4 => c.exec_raw(s, &values, false)?,
+            5 => c.exec_raw(s, &values, true)?,
             m => return Err(format!("unknown exec mode {m}")),
         };
         hand_out(page, out, out_len);
@@ -450,7 +452,8 @@ pub extern "C" fn ffsrs_store_exec(
     })
 }
 
-/// Drift 批量语句。`statements` 是单列文本页（每行一条 SQL）；`applications` 是两列页：
+/// 测试专用的原始通道的批量版（[SrsCore::exec_batch_raw]：整批在写连接的一个 SAVEPOINT 里）；Drift 执行器不用它
+/// （Drift 的批量语句在 Dart 侧就报只读）。`statements` 是单列文本页（每行一条 SQL）；`applications` 是两列页：
 /// `[语句下标 i64, 参数页 blob]`（参数页是一行的 rows.rs 页，可为空字节）。
 #[no_mangle]
 pub extern "C" fn ffsrs_store_exec_batch(
@@ -489,7 +492,7 @@ pub extern "C" fn ffsrs_store_exec_batch(
             apps.push((index, args));
         }
         let refs: Vec<&str> = sqls.iter().map(String::as_str).collect();
-        c.exec_batch(&refs, &apps)
+        c.exec_batch_raw(&refs, &apps)
     })
 }
 
@@ -537,7 +540,7 @@ pub extern "C" fn ffsrs_store_diag_counts(out: *mut i64, n: usize) -> usize {
     .unwrap_or(0)
 }
 
-/// `*out` = Drift 事务外查询的并发上限（只读连接池的连接数上限，`SrsCore::read_concurrency`）：Dart 侧查询道的
+/// `*out` = Drift 执行器查询的并发上限（只读连接池的连接数上限，`SrsCore::read_concurrency`）：Dart 侧查询道的
 /// worker 数取它。
 #[no_mangle]
 pub extern "C" fn ffsrs_store_read_concurrency(
@@ -954,7 +957,27 @@ fn key32(v: &serde_json::Value) -> Result<Option<[u8; 32]>, String> {
     }
 }
 
+/// 一条 JSON 命令（[sync2_dispatch_op]）。请求带 `settled: true` 的 profile 命令成功、且回包是 JSON 对象时，把收段
+/// 通道在这条命令之前（或更早）自己做完的片攒下的投影变化附在回包的 `settled` 键上交回（store/sync2/channel.rs
+/// `take_settled`）：那些片没有自己的回包，Dart 那一侧按刷新信号记的缓存要靠它失效。失败的命令不取（留给下一条）。
 pub(crate) fn sync2_dispatch(
+    c: &SrsCore,
+    req: &serde_json::Value,
+    blobs: &mut Vec<Vec<u8>>,
+    files: &mut Vec<(String, Vec<u8>)>,
+) -> Result<serde_json::Value, String> {
+    let mut v = sync2_dispatch_op(c, req, blobs, files)?;
+    if req.get("settled").and_then(serde_json::Value::as_bool) == Some(true) && v.is_object() {
+        if let Some(profile) = req.get("profile").and_then(serde_json::Value::as_str) {
+            if let Some(settled) = c.take_settled(profile) {
+                v["settled"] = settled;
+            }
+        }
+    }
+    Ok(v)
+}
+
+fn sync2_dispatch_op(
     c: &SrsCore,
     req: &serde_json::Value,
     blobs: &mut Vec<Vec<u8>>,
@@ -971,8 +994,6 @@ pub(crate) fn sync2_dispatch(
             .and_then(Value::as_i64)
             .ok_or_else(|| format!("sync2: missing {k}"))
     };
-    // Drift 事务守卫（store/drift_guard.rs）：开着时按命令的策略计数，首版不拦、不改行为。
-    c.note_drift_tx(s("op")?, req);
     // 不针对单个 profile 的命令（store/profile_data.rs 找无主数据；WAL 并回）。
     match s("op")? {
         "profile_uids" => return c.profile_uids(),
@@ -1014,10 +1035,6 @@ pub(crate) fn sync2_dispatch(
         "ingest_yield" => {
             c.sync2_ingest_yield();
             return Ok(json!({}));
-        }
-        // Drift 事务守卫的命中计数（`reset: true` 读完清零）：测试验收「Join 集合缩小了」用。
-        "drift_tx_guard" => {
-            return Ok(c.drift_tx_guard(req.get("reset") == Some(&Value::Bool(true))));
         }
         _ => {}
     }
@@ -1130,7 +1147,7 @@ pub(crate) fn sync2_dispatch(
             // 分批收段的一片：本机已有缓存行的在这一片的事务里当场刷新，新实体记进待刷新集合等收尾
             // （transport.rs `defer_cache_refresh`），这里不再刷。一次投一片（默认按时间切、有写入排队就让出；测试用
             // `sliceOps` 按条数切、`sliceMs` 改时间上限）；结果 `more` 为真 Dart 放开写锁再调。本机状态行与这一片
-            // 同一笔事务写下（收段不套 Drift 事务，见 `sync2_ingest_commit_persisting`）。
+            // 同一笔事务写下（见 `sync2_ingest_commit_persisting`）。
             "ingest_commit" => {
                 let now = req
                     .get("now")
@@ -1240,12 +1257,11 @@ fn cache_config_of(
     }
 }
 
-/// 本机写命令（收掉 Dart 写路径第 2 步）：Dart 不再为它们开 Drift 事务。分发器取**一次**写锁，在**一个** SAVEPOINT 里
+/// 本机写命令（收掉 Dart 写路径第 2 步）。分发器取**一次**写锁，在**一个** SAVEPOINT 里
 /// 依次做完命令本体（[local_write_body]）、缓存刷新（store/caches.rs）、请求带 `study` 时的排队（store/study.rs，看得见
 /// 这笔还没提交的写入），以及本机状态行（store/local_state.rs `persist_projected`：修订号按投影
-/// 结果从库里的值推进，回包带 `localRevision` / `localEpoch`；请求带了校时状态 `anchor` 就一并写下）。任何一步出错整个 SAVEPOINT 回滚：命令、缓存行、本机状态行一起不落。外面开着 Drift
-/// 事务时 SAVEPOINT 照旧嵌进那笔事务，随它提交或回滚（生产调用方已经没有这种形态，守卫按 Reject 计，
-/// store/drift_guard.rs）。
+/// 结果从库里的值推进，回包带 `localRevision` / `localEpoch`；请求带了校时状态 `anchor` 就一并写下）。任何一步出错整个 SAVEPOINT 回滚：命令、缓存行、本机状态行一起不落。写连接上
+/// 没有别人开着的事务（Drift 执行器只读，store/mod.rs `READ_ONLY`），这个 SAVEPOINT 就是一笔独立提交的事务。
 const LOCAL_WRITE_OPS: &[&str] = &[
     "apply",
     "import_drafts",
@@ -1710,12 +1726,12 @@ fn sync2_command(
                     crate::store::legacy_clock::writer_of(conn, profile, device)
                 })?);
             }
-            // 有没做完的收段通道（上次 App 在收段途中退出）：Dart 记下，开 Drift 事务前先 `channel_settle`。
+            // 有没做完的收段通道（上次 App 在收段途中退出）。诊断 / 测试用：分发器在每条要完整投影的命令之前自己按片收。
             v["channel"] = json!(c.sync2_channel_active(profile)?);
             v
         }
-        // 把没做完的收段通道按片做完（store/sync2/channel.rs `settle`，每片一个事务）。Dart 在开 Drift 事务之前发：
-        // 事务里的命令要先做完通道时只能整段塞进那笔事务。
+        // 把没做完的收段通道按片做完（store/sync2/channel.rs `settle`，每片一个事务）。这条命令本身什么都不做：
+        // 它登记在 [CHANNEL_SETTLES] 里，分发器在进来之前已经收完。测试 / 诊断用。
         "channel_settle" => {
             c.sync2_channel_settle(profile)?;
             json!({})
@@ -2644,7 +2660,6 @@ mod tests {
             "wal_checkpoint",
             "bulk_cache",
             "ingest_yield",
-            "drift_tx_guard",
         ] {
             assert!(
                 ops.remove(global),
@@ -2670,29 +2685,7 @@ mod tests {
         }
     }
 
-    /// Drift 事务守卫（store/drift_guard.rs）：每条 v2 命令（含不针对 profile 的前置命令）都在
-    /// [crate::store::drift_guard::DRIFT_TX_POLICY] 里恰好登记一次，表里也没有已不存在的命令。
-    #[test]
-    fn every_command_declares_its_drift_tx_policy() {
-        use crate::store::drift_guard::DRIFT_TX_POLICY;
-        let ops = dispatched_ops();
-        assert!(ops.len() > 50, "parsed too few commands: {ops:?}");
-        for op in &ops {
-            let n = DRIFT_TX_POLICY.iter().filter(|(o, _)| o == op).count();
-            assert_eq!(
-                n, 1,
-                "sync2 command `{op}` must be listed exactly once in DRIFT_TX_POLICY (found {n})"
-            );
-        }
-        for (listed, _) in DRIFT_TX_POLICY {
-            assert!(
-                ops.contains(*listed),
-                "`{listed}` is listed in DRIFT_TX_POLICY but no longer a command"
-            );
-        }
-    }
-
-    /// 按源码里 [sync2_dispatch] 与 [sync2_command] 顶层匹配臂（及分发器里的命令名比较）列出全部命令名。
+    /// 按源码里 [sync2_dispatch_op] 与 [sync2_command] 顶层匹配臂（及分发器里的命令名比较）列出全部命令名。
     fn dispatched_ops() -> std::collections::BTreeSet<String> {
         // 检出可能是 CRLF（Windows 工作区）：统一成 LF 再按行解析。
         let src = include_str!("ffi.rs").replace("\r\n", "\n");
@@ -2704,7 +2697,7 @@ mod tests {
         };
         let mut ops = std::collections::BTreeSet::new();
         for start in [
-            "pub(crate) fn sync2_dispatch(",
+            "fn sync2_dispatch_op(",
             "fn sync2_command(",
             "fn local_write_body(",
         ] {
@@ -2717,7 +2710,7 @@ mod tests {
                 // 分发器里改投影命令的 `match op`（12 个空格缩进：`ingest_commit` / `rebuild_caches` 等在那里直接处理）也算。
                 let top =
                     line.strip_prefix("        \"").is_some() && !line.starts_with("         ");
-                let projecting = start.starts_with("pub(crate) fn sync2_dispatch(")
+                let projecting = start.starts_with("fn sync2_dispatch_op(")
                     && line.strip_prefix("            \"").is_some()
                     && !line.starts_with("             ");
                 // rustfmt 把放不下一行的 `"a" | "b" | ...` 折成同缩进的 `| "c" ... =>` 续行：拼回一整条臂头再解析。

@@ -90,7 +90,7 @@ void main() {
 
     expect(await s.queueMediaGc(<String>['a.png']), <String>{'a.png'});
     // 库里多出一个这一版不认识的键（更新的版本写下的）：内核读改写整行，原样留着。
-    await storage.db.customStatement(
+    storage.core.debugExecRaw(
       r"UPDATE srs_local_state SET json = json_set(json, '$.stray', 1, '$.cacheRev', 5)",
     );
     await s.anchorTime(1700000001000, observedAtBootMs: 30);
@@ -124,16 +124,16 @@ void main() {
     expect(cards, 6);
     expect(notes, 3);
     // 样式去重游标推进过（恢复后要归零）。
-    await db.customStatement(
+    f.store.core.debugExecRaw(
       r"UPDATE srs_local_state SET json = json_set(json, '$.styleCursor', 9)",
     );
 
     // 恢复备份：本机状态行与缓存表被清空（备份快照剥掉设备本地表）。
-    await db.customStatement('DELETE FROM srs_local_state');
-    await db.customStatement('DELETE FROM srs_cards_cache');
-    await db.customStatement('DELETE FROM srs_notes_cache');
+    f.store.core.debugExecRaw('DELETE FROM srs_local_state');
+    f.store.core.debugExecRaw('DELETE FROM srs_cards_cache');
+    f.store.core.debugExecRaw('DELETE FROM srs_notes_cache');
     // 重建途中失败：行还不存在，下次开库照样判成「刚恢复」再来一遍。
-    await db.customStatement(
+    f.store.core.debugExecRaw(
       'CREATE TRIGGER test_rebuild_boom BEFORE INSERT ON srs_notes_cache '
       "BEGIN SELECT RAISE(ABORT, 'rebuild refused'); END",
     );
@@ -145,7 +145,7 @@ void main() {
     );
     expect(await _rowOf(db), isNull);
     expect(await _count(db, 'srs_notes_cache'), 0);
-    await db.customStatement('DROP TRIGGER test_rebuild_boom');
+    f.store.core.debugExecRaw('DROP TRIGGER test_rebuild_boom');
 
     final SrsDbStore restored = await open();
     final Map<String, Object?> row1 = (await _rowOf(db))!;
@@ -158,7 +158,7 @@ void main() {
     expect(await restored.changeFingerprint(), startsWith('$epoch1:'));
 
     // 再开一次：行已经在了——不再重建、纪元不变（以前恢复后到第一条写命令之前，每次开库都整份重建、每次都换纪元）。
-    await db.customStatement('DELETE FROM srs_notes_cache');
+    f.store.core.debugExecRaw('DELETE FROM srs_notes_cache');
     final SrsDbStore again = await open();
     expect((await _rowOf(db))!['epoch'], epoch1);
     expect(await again.changeFingerprint(), await restored.changeFingerprint());
@@ -177,7 +177,7 @@ void main() {
     await s.createDeck('甲');
     final int revision = s.revision;
     expect(revision, greaterThan(0));
-    await storage.db.customStatement(
+    storage.core.debugExecRaw(
       r"UPDATE srs_local_state SET json = json_remove(json, '$.epoch')",
     );
     final SrsDbStore a = await _open(storage);
@@ -235,7 +235,7 @@ void main() {
     final SrsDbStore s = await _open(storage);
     await s.createDeck('甲');
     final String fingerprint = await s.changeFingerprint();
-    await storage.db.customStatement('DELETE FROM srs_local_state');
+    storage.core.debugExecRaw('DELETE FROM srs_local_state');
     await s.reloadLocal();
     expect(await _row(storage), isNull);
     // 内存里是一个没落盘的新纪元、修订号从 0 起：指纹照样和删之前不同。

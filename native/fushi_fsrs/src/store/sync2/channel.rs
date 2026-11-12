@@ -136,9 +136,13 @@ fn fresh(c: &Connection, profile: &str) -> Result<bool, String> {
 /// 收段会话开始（transport.rs `sync2_ingest_begin`；[w] 是写连接，不在调用方的事务里）：通道还在追加阶段（上一个
 /// 会话被打断）就接着追加；没有通道而这个 profile 是新的就开一个；折叠 / 归并 / 逐条做到一半（收尾被打断）先按片
 /// 做完（[settle]，每片一个事务），这次按逐条投递收。返回这个会话走不走通道。
-pub(crate) fn begin(w: &Connection, profile: &str) -> Result<bool, String> {
+pub(crate) fn begin(
+    w: &Connection,
+    profile: &str,
+    settled: &mut dyn FnMut(&Touched),
+) -> Result<bool, String> {
     if boot(w, profile)?.is_some_and(|b| b.phase != PHASE_APPEND) {
-        settle(w, profile)?;
+        settle(w, profile, settled)?;
     }
     super::in_savepoint(w, |c| match boot(c, profile)? {
         Some(b) if b.phase == PHASE_APPEND => Ok(true),
@@ -1002,35 +1006,46 @@ fn settle_budget() -> CommitBudget<'static> {
     CommitBudget::ops(3)
 }
 
-/// 把通道做完：本机要写、会话外要投递之前（ffi.rs 分发器与 `channel_settle`、一次收完、导入、带分叉的收尾），以及
-/// 新会话开始时上一次的收尾没做完（[begin]）。[w] 是写连接，**不在调用方的事务里**。
+/// 把通道做完：本机要写、会话外要投递之前（ffi.rs 分发器与 `channel_settle`、一次收完、导入、带分叉的收尾、并入
+/// 提交），以及新会话开始时上一次的收尾没做完（[begin]）。[w] 是写连接，**不在调用方的事务里**。
 ///
 /// 与收尾（`ingest_finish` / `replay_pending`）同样按片：每片一个 SAVEPOINT，没有外层事务时就是一次提交——WAL 只装
 /// 一片（一个分区 / 至多 [MERGE_CHUNK] 行的一块归并）写的页，失败只回滚这一片，已做的留着、下次接着做。以前整段
 /// 在调用方的一个事务里做完：整份投影（真实全量数据约 1.1 GB）落进同一笔事务，WAL 要装下全部页，失败整段回滚、
 /// 下一条写命令又从头重做。
 ///
-/// 写连接上开着 Drift 事务（`is_autocommit` 为假）时中途提交不了，只能在那笔事务里一次做完：这是兜底。Dart 在开
-/// Drift 事务之前先发 `channel_settle`（srs_db_store.dart `_transactionOrReload`），正常路径走不到这里。
+/// 每片提交后把这一片落进投影的变化交给 [settled]：这些片没有自己的回包，Dart 那一侧按内容 / 视图 / RWKV 刷新信号
+/// 记的缓存（牌组树、profile 修改记录、分数表）不知道投影变了。调用方把它们攒在内核里，随这个 profile 的下一条命令
+/// 的回包交回（[crate::store::SrsCore::note_settled] / `take_settled`）。中途出错时已提交的片已经交过了。
+///
+/// 写连接上开着事务（`is_autocommit` 为假）时中途提交不了，只能在那笔事务里一次做完：这是兜底。写连接上唯一能
+/// 跨调用留着的事务是旧库搬迁（`legacy_open`），搬迁期间不该有这个 profile 的命令进来，正常路径走不到这里。
 ///
 /// 之后这个 profile 按逐条投递收；会话里缓存的投递队列（带着追加状态）作废重载（一开始就作废：做了一片之后出错，
 /// 通道也已不在追加阶段）。要刷新的缓存与要重放的卡留在待刷新 / 待重放集合里，与逐条投递收段途中一样等收尾。
-pub(crate) fn settle(w: &Connection, profile: &str) -> Result<(), String> {
+pub(crate) fn settle(
+    w: &Connection,
+    profile: &str,
+    settled: &mut dyn FnMut(&Touched),
+) -> Result<(), String> {
     if !active(w, profile)? {
         return Ok(());
     }
     super::transport::bump_delivery_epoch();
     if !w.is_autocommit() {
-        return super::in_savepoint(w, |c| {
-            settle_slice(c, profile, &mut CommitBudget::unlimited()).map(|_| ())
-        });
+        let (_, t) = super::in_savepoint(w, |c| {
+            settle_slice(c, profile, &mut CommitBudget::unlimited())
+        })?;
+        settled(&t);
+        return Ok(());
     }
     loop {
         #[cfg(test)]
         if FAIL_SETTLE_AT.with(|f| f.get()) == Some(SETTLE_SLICES.with(|s| s.get())) {
             return Err("sync2 channel: injected settle failure".to_owned());
         }
-        let done = super::in_savepoint(w, |c| settle_slice(c, profile, &mut settle_budget()))?;
+        let (done, t) = super::in_savepoint(w, |c| settle_slice(c, profile, &mut settle_budget()))?;
+        settled(&t);
         #[cfg(test)]
         SETTLE_SLICES.with(|s| s.set(s.get() + 1));
         if done {
@@ -1041,15 +1056,72 @@ pub(crate) fn settle(w: &Connection, profile: &str) -> Result<(), String> {
 
 /// [settle] 的一片：[advance]，这一片落进投影的变化在同一个 SAVEPOINT 里记进本机状态行的修订号——这里没有回包
 /// 可带（收段命令自己推进通道时并进它的结果，[absorb]），不记的话这些事件就从不推进修订号（自动备份据它判断
-/// 「有没有变动」）。返回通道做完了没有。
+/// 「有没有变动」）。返回通道做完了没有，以及这一片落进投影的变化。
 fn settle_slice(
     c: &Connection,
     profile: &str,
     budget: &mut CommitBudget<'_>,
-) -> Result<bool, String> {
+) -> Result<(bool, Touched), String> {
     let (done, t) = advance(c, profile, budget)?;
     crate::store::local_state::advance_revision(c, profile, &t)?;
-    Ok(done)
+    Ok((done, t))
+}
+
+/// 通道自己做完的片（[settle]）攒下的投影变化，等这个 profile 的下一条命令带回 Dart。只留 Dart 要的那几样：推进
+/// 内容 / 视图 / RWKV 刷新信号的计数、可见性变了的实体、被彻底清除的实体。要刷新的缓存行不在这里（留在待刷新集合里
+/// 等收尾）。
+#[derive(Default, Debug)]
+pub(crate) struct Settled {
+    landed: u64,
+    content: u64,
+    view: u64,
+    rwkv: u64,
+    changed: std::collections::BTreeSet<(String, String)>,
+    purged: std::collections::BTreeSet<(String, String)>,
+}
+
+impl Settled {
+    pub(crate) fn absorb(&mut self, t: &Touched) {
+        self.landed += t.marks.landed;
+        self.content += t.marks.content;
+        self.view += t.marks.view;
+        self.rwkv += t.marks.rwkv;
+        self.changed.extend(t.entities_changed.iter().cloned());
+        self.purged.extend(t.purged.iter().cloned());
+    }
+
+    pub(crate) fn merge(&mut self, o: Settled) {
+        self.landed += o.landed;
+        self.content += o.content;
+        self.view += o.view;
+        self.rwkv += o.rwkv;
+        self.changed.extend(o.changed);
+        self.purged.extend(o.purged);
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.landed == 0 && self.changed.is_empty() && self.purged.is_empty()
+    }
+
+    /// 与改投影命令的回包同形的那几个键（Dart `_absorbProjection` 直接读）：
+    /// `{"marks": {"landed", "content", "view", "rwkv"}, "changed": [[kind, id]], "purged": [[kind, id]]}`。
+    pub(crate) fn to_json(&self) -> serde_json::Value {
+        let pairs = |s: &std::collections::BTreeSet<(String, String)>| {
+            s.iter()
+                .map(|(k, e)| serde_json::json!([k, e]))
+                .collect::<Vec<_>>()
+        };
+        serde_json::json!({
+            "marks": {
+                "landed": self.landed,
+                "content": self.content,
+                "view": self.view,
+                "rwkv": self.rwkv,
+            },
+            "changed": pairs(&self.changed),
+            "purged": pairs(&self.purged),
+        })
+    }
 }
 
 /// [advance] 交回的投影变化并进调用方这一次的结果（计数相加、集合取并）。
@@ -1069,8 +1141,7 @@ pub(crate) fn absorb(t: &mut Touched, o: Touched) {
 }
 
 impl crate::store::SrsCore {
-    /// 分发器（ffi.rs）在会改投影 / 依赖完整投影的命令之前调，Dart 在开 Drift 事务之前调（`channel_settle`）：这个
-    /// profile 有没做完的收段通道就按片做完（[settle]）。没有任何通道时只读内存里的标记（[SrsCore::channel_live]），
+    /// 分发器（ffi.rs）在会改投影 / 依赖完整投影的命令之前调：这个 profile 有没做完的收段通道就按片做完（[settle]）。没有任何通道时只读内存里的标记（[SrsCore::channel_live]），
     /// 不拿写锁、不查表——只读命令（`digest` 等）不因此排在写锁后面。
     pub(crate) fn sync2_channel_settle(&self, profile: &str) -> Result<(), String> {
         if !self.channel_live.load(std::sync::atomic::Ordering::SeqCst) {
@@ -1085,8 +1156,64 @@ impl crate::store::SrsCore {
         if !self.channel_live.load(std::sync::atomic::Ordering::SeqCst) {
             return Ok(());
         }
-        settle(w, profile)?;
+        settle(w, profile, &mut |t| self.note_settled(profile, t))?;
         self.recheck_channel_live(w)
+    }
+
+    /// 通道自己做完的一片落进投影的变化：攒着，等 [profile] 的下一条命令带回 Dart（[Self::take_settled]）。什么都没
+    /// 落的片不记。
+    pub(crate) fn note_settled(&self, profile: &str, t: &Touched) {
+        let mut one = Settled::default();
+        one.absorb(t);
+        if one.is_empty() {
+            return;
+        }
+        // 只是几个计数与 ID：panic 毒化过照常用。
+        self.settled
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .entry(profile.to_owned())
+            .or_default()
+            .merge(one);
+    }
+
+    /// 取走 [profile] 攒下的通道变化（[Self::note_settled]），连同**此刻**库里的修订号与纪元（已提交快照；通道的片在
+    /// 自己的 SAVEPOINT 里推进过修订号，Dart 手里的还是推进之前的）：
+    /// `{"marks", "changed", "purged", "localRevision", "localEpoch"}`。没有攒下的 → None。
+    ///
+    /// 分发器在命令**成功**、回包是对象、且请求带了 `settled: true` 时调（ffi.rs `sync2_dispatch`）：不吸收回包的
+    /// 调用方不会把它取走丢掉。读修订号失败（库正被关）就放回去不带，留给下一条命令。
+    pub(crate) fn take_settled(&self, profile: &str) -> Option<serde_json::Value> {
+        let pending = self
+            .settled
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(profile)?;
+        let state = self.read_visible(|c| crate::store::local_state::read(c, profile));
+        let state = match state {
+            Ok(s) if s["exists"] == serde_json::json!(true) => s,
+            _ => {
+                self.settled
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .entry(profile.to_owned())
+                    .or_default()
+                    .merge(pending);
+                return None;
+            }
+        };
+        let mut v = pending.to_json();
+        v["localRevision"] = state["revision"].clone();
+        v["localEpoch"] = state["epoch"].clone();
+        Some(v)
+    }
+
+    /// [profile] 的数据整份删了（`profile_purge` / 并入提交）：攒下的通道变化没有人要了。
+    pub(crate) fn forget_settled(&self, profile: &str) {
+        self.settled
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(profile);
     }
 
     /// 收段会话开了通道（[begin] 返回真）：之后的命令要先看通道。
@@ -1108,7 +1235,7 @@ impl crate::store::SrsCore {
         Ok(())
     }
 
-    /// 这个 profile 有没有进行中的通道（`identity` 回报给 Dart，Dart 据此决定开 Drift 事务前要不要先 `channel_settle`）。
+    /// 这个 profile 有没有进行中的通道（`identity` 回报给 Dart；诊断 / 测试用）。
     pub(crate) fn sync2_channel_active(&self, profile: &str) -> Result<bool, String> {
         if !self.channel_live.load(std::sync::atomic::Ordering::SeqCst) {
             return Ok(false);

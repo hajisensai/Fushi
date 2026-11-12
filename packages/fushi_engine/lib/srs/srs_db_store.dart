@@ -341,13 +341,6 @@ class SrsPurgeChunk {
   final Set<String> mediaRefs;
 }
 
-/// 套在 [SrsDbStore.runExclusive] 外面的锁：几个 profile 的副本共用同一条 Rust 写连接，App 当前 profile 的
-/// 副本的数据库事务跨多个 await，别的 profile 的副本（浏览器扩展按所选配置制卡）的写入不能插进去。外层锁就是
-/// App 当前副本自己的 [SrsDbStore.runExclusive]，由装配处给出（随当前 profile 变）。
-abstract interface class SrsExclusiveOuter {
-  Future<T> run<T>(Future<T> Function() body);
-}
-
 /// 一条 Anki 导入的复习日志（[SrsDbStore.ankiImportedLogsAt]）：在哪张卡、对应哪条 revlog、内容，以及那张卡此刻
 /// 所属的笔记与是否可见（卡没有缓存行——笔记换了类型后不再属于它的旧卡——时 [noteId] 为 null、不可见）。
 class SrsAnkiLogAt {
@@ -394,19 +387,14 @@ class SrsDbStore implements SrsSync2Host {
     required int Function() fallbackRolloverHour,
     required int Function() localOffsetMin,
     this.styles,
-    SrsExclusiveOuter? exclusiveOuter,
   }) : _engine = engine,
        _trusted = trustedClock,
        _fallbackRollover = fallbackRolloverHour,
-       _localOffset = localOffsetMin,
-       _exclusiveOuter = exclusiveOuter;
+       _localOffset = localOffsetMin;
 
   /// 打开（或首次初始化）某 profile 的 SRS 副本。
   ///
   /// [localOffsetMin]：本机此刻的 UTC 偏移（分钟），「今天」的时区只取它（见 [dayContext]）；缺省读系统时区。
-  ///
-  /// [exclusiveOuter]：同一条连接上同时开着别的 profile 的副本（App 当前 profile 的那份）时，本副本的
-  /// 独占区要套在它外面的那把锁里（见 [SrsExclusiveOuter]）；null = 只用本副本自己的锁。
   static Future<SrsDbStore> open({
     required SrsDatabase db,
     required SrsCore core,
@@ -417,7 +405,6 @@ class SrsDbStore implements SrsSync2Host {
     int Function()? fallbackRolloverHour,
     int Function()? localOffsetMin,
     SrsStyleStore? styles,
-    SrsExclusiveOuter? exclusiveOuter,
     Future<void> Function(SrsDbStore store)? beforeMigrate,
     bool deferMigration = false,
   }) async {
@@ -432,7 +419,6 @@ class SrsDbStore implements SrsSync2Host {
           fallbackRolloverHour ?? () => SrsDayContext.defaultRolloverHour,
       localOffsetMin: localOffsetMin ?? SrsDayContext.localOffsetMin,
       styles: styles,
-      exclusiveOuter: exclusiveOuter,
     );
     final ({bool exists, bool epochStored}) local = await s._loadLocal();
     // 注册本 profile 的缓存配置（库重开后内核里就没了，每次打开都注册），内核顺带把缓存补到当前推导口径
@@ -477,8 +463,6 @@ class SrsDbStore implements SrsSync2Host {
     });
     _sync2Device = id['device'] as String?;
     _legacyWriter = id['legacyWriter'] as String?;
-    // 上次在新设备收段途中退出、通道没做完：下一条本机写命令前先按片做完（[_commandOrReload]）。
-    _channelLive = id['channel'] == true;
     _sync2Migrated = id['migrated'] == true;
     if (_sync2Migrated || deferMigration) return;
     if (beforeMigrate != null) await beforeMigrate(this);
@@ -537,8 +521,8 @@ class SrsDbStore implements SrsSync2Host {
 
   final SrsDatabase db;
 
-  /// [db] 底下的 Rust 句柄：缓存刷新等热路径直接在同一条写连接上读（看得见当前事务里未提交的
-  /// 行），日志原文不跨 isolate、不回 Dart（docs/specs/2026-10-23-srs-rust-store.md）。
+  /// [db] 底下的 Rust 句柄：全部写入与热路径的读都是它的命令（一条命令在内核里读、算、写完），日志原文不跨
+  /// isolate、不回 Dart（docs/specs/2026-10-23-srs-rust-store.md）。[db] 只读（srs_database_executor.dart）。
   final SrsCore core;
   @override
   final String profileUid;
@@ -597,22 +581,36 @@ class SrsDbStore implements SrsSync2Host {
   /// 结果是不是在某次写入之后取的。
   int get revision => _revision;
 
+  /// 本副本对象的实例号（只在内存、不落盘、不进纪元）：进程启动 ID + 进程内第几个副本对象。
+  ///
+  /// 内容 / 视图 / RWKV 刷新这三个计数只在对象的内存里、每个对象从头数，而纪元是落盘的：同一个 profile 换一个副本
+  /// 对象（进程重启，或同一进程里副本关掉重开——换 uid、交接、远程主机按 uid 现取）之后，`纪元:计数` 会回到以前
+  /// 出现过的值而内容已经不同。按「指纹相等 = 没变」跳过重读的读者（远程客户端缓存的 dayContext 与牌组树、同步调度
+  /// 记的上次媒体对账时的内容指纹、RWKV 分数表）就读到旧数据。凡是带内存计数的指纹都拼上它：换对象指纹必然不同，
+  /// 代价是这些缓存每换一次对象失效一次。只含落盘值的 [changeFingerprint] / [rwkvScoresClearKey] 不拼，跨对象可比。
+  final String _instance = '$_srsProcessBootId.${_nextInstance++}';
+  static int _nextInstance = 0;
+
+  /// [_epoch] + [_instance]：带内存计数的指纹的共同前缀。
+  String get _memoryKeyPrefix => '$_epoch:$_instance';
+
   /// 统计指纹：纪元 + 落库事件里会改变统计结果的那部分（复习日志、卡片 / 笔记 / 牌组 / 笔记类型的内容事件、冲突
   /// 扣住与解除）。界面状态类修改记录（牌组收起 / 展开，[SrsFieldClass.viewState]）不计入；没有事件落库的写入（同步
   /// 簿记、媒体、空轮）不改变它。统计页据此判断 [srsRevisionProvider] 的一跳要不要重读（见 `loadSrsStats`）。
-  String get statsFingerprint => '$_epoch:${_revision - _viewRevision}';
+  String get statsFingerprint =>
+      '$_memoryKeyPrefix:${_revision - _viewRevision}';
 
-  /// 内容指纹：纪元 + 内容修订号。相等 = 两次读之间没有落过日志 / 界面状态以外的事件、没有换过服务器
+  /// 内容指纹：纪元 + 实例号（[_instance]）+ 内容修订号。相等 = 两次读之间没有落过日志 / 界面状态以外的事件、没有换过服务器
   /// 时刻、没有重读过本机状态——同步冲突 / 待裁决 / 迁移提醒的计数不可能变。
-  String get contentFingerprint => '$_epoch:$_contentRevision';
+  String get contentFingerprint => '$_memoryKeyPrefix:$_contentRevision';
 
   /// RWKV-Instant 分数表的全量刷新信号（只在内存）：牌组 / 配置类事件落库（预设归属、排队设置可能
   /// 变了）、应用一批对端事件（同步合并）、重读本机状态时 +1。复习日志、卡片自己的修改（暂停 /
   /// 埋 / 旗标 / 换牌组——换牌组由分数表项的版本覆盖）不推进它。见 `SrsRwkvService` 文件头。
   int _rwkvScoresRevision = 0;
 
-  /// [_rwkvScoresRevision] 连同纪元：变了 = 分数表整表按此刻重查。
-  String get rwkvScoresKey => '$_epoch:$_rwkvScoresRevision';
+  /// [_rwkvScoresRevision] 连同纪元与实例号（[_instance]）：变了 = 分数表整表按此刻重查。
+  String get rwkvScoresKey => '$_memoryKeyPrefix:$_rwkvScoresRevision';
 
   /// 收段会话（[sync2IngestBegin] … [sync2IngestEnd]）期间攒下的分数表刷新：会话里每片投递 / 收尾重放都可能
   /// 推进它，以前每片 +1，整表重查跟着每片来一次、与下一片抢内存（35 万条日志的 iPhone 收尾 OOM）。会话结束时
@@ -688,17 +686,17 @@ class SrsDbStore implements SrsSync2Host {
   /// native/fushi_fsrs/src/store/legacy_clock.rs），Dart 不在内存里预分配——以前预分配时还有「后分配的先落库」的
   /// 窗口（BUG-3545）。
   ///
-  /// 可重入：独占区里再调别的写方法直接执行（按 Zone 认）。在外面先开了数据库事务、再在事务里调
-  /// 写方法的调用方（按时间点恢复）必须先进独占区再开事务，否则与排队等锁的写入互相等待。
+  /// 可重入：独占区里再调别的写方法直接执行（按 Zone 认）。
   ///
-  /// 有 [_exclusiveOuter] 时整段先进外层锁、再进本副本的锁：同一条连接上 App 当前 profile 的副本的写入
-  /// （它的数据库事务跨多个 await）与本副本的写入不会交错。
+  /// 这把锁只排**本副本对象**的写入：它保护的是本对象的「读 → 算 → 一条内核命令」不被本对象的另一笔写入插进来、
+  /// 以及本对象内存状态（缓存变更日志、修订号、收段会话）按回包的顺序推进。库本身的原子性不靠它——每条内核命令一次
+  /// 持写锁、一个 SAVEPOINT，别的副本对象（别的 profile、同一 profile 的另一个对象）的命令在内核的写锁上排队。以前
+  /// 还有一把套在外面、跨副本的锁（App 当前 profile 的副本的独占区）：那是因为写入经 Drift 事务跨多个 await 占着
+  /// 共用的写连接，别的副本的语句会落进那笔事务；Drift 只读、没有跨调用的事务之后那把锁没有要保护的东西，删了。
   Future<T> runExclusive<T>(Future<T> Function() body) async {
     final StateError? unusable = _unusable;
     if (unusable != null) throw unusable;
     if (identical(Zone.current[_writeZoneKey], this)) return body();
-    final SrsExclusiveOuter? outer = _exclusiveOuter;
-    if (outer != null) return outer.run(() => _runExclusiveOwn(body));
     return _runExclusiveOwn(body);
   }
 
@@ -783,9 +781,6 @@ class SrsDbStore implements SrsSync2Host {
   /// 排在最后的写入完成时完成（只会正常完成）。
   Future<void>? _writeTail;
 
-  /// 见 [open] 的 exclusiveOuter。
-  final SrsExclusiveOuter? _exclusiveOuter;
-
   /// 每个副本一把锁（嵌套打开的另一个副本不会误认成持锁）。
   final Object _writeZoneKey = Object();
 
@@ -843,6 +838,18 @@ class SrsDbStore implements SrsSync2Host {
     _epoch = j['epoch']! as String;
   }
 
+  /// 回包带回的修订号与纪元（内核写下 / 读到的）接进内存。同一纪元里修订号只增不减：回包按到达顺序吸收，而不排
+  /// 独占区的命令（[kSrsSync2LockFreeOps]）的回包可能比它之后提交的写命令的回包晚到，带着更旧的值。纪元不同 =
+  /// 本机状态行重建过，整体换成新的。
+  void _adoptRevision(int revision, String epoch) {
+    if (epoch != _epoch) {
+      _epoch = epoch;
+      _revision = revision;
+    } else if (revision > _revision) {
+      _revision = revision;
+    }
+  }
+
   /// 此刻的校时状态（`{o, b, s?, t?}`，见 [_loadLocal]）；没校过时为 null。改投影的命令随请求带上（`anchor`），内核
   /// 在命令的同一笔事务里写进本机状态行——o 是「可信时间 − 墙钟」，每次现算，内核算不出来。没带的命令不动行里的值。
   Map<String, Object?>? _anchorArg() => switch (_trusted.anchorState) {
@@ -863,7 +870,8 @@ class SrsDbStore implements SrsSync2Host {
   ({String key, SrsDeckTree tree})? _deckTreeCache;
   ({String key, SrsEntityEdits edits})? _profileEditsCache;
   int _viewRevision = 0;
-  String get _structureKey => '$_epoch:$_contentRevision:$_viewRevision';
+  String get _structureKey =>
+      '$_memoryKeyPrefix:$_contentRevision:$_viewRevision';
 
   Future<SrsEntityEdits> _profileEdits() async {
     final String key = _structureKey;
@@ -1184,7 +1192,7 @@ class SrsDbStore implements SrsSync2Host {
     while (shouldStop?.call() != true) {
       // 每批一个独占区：样式去重（会写样式文件）在 Dart 算，落库一半交内核（`edits_rewrite_repr`，
       // native/fushi_fsrs/src/store/repr_rewrite.rs）——改写表示、刷新这些笔记的缓存行、推进游标并写本机状态行在一个
-      // SAVEPOINT 里，不再套 Drift 事务、逐行 UPDATE。
+      // SAVEPOINT 里。
       final int done = await runExclusive(() async {
         int n = -1;
         await _commandOrReload(() async {
@@ -1621,13 +1629,8 @@ class SrsDbStore implements SrsSync2Host {
       final Completer<void>? replays = _rwkvReplaysIdle;
       if (replays != null) await replays.future;
       await runExclusive(() async {
-        final Map<String, Object?> r = await _sync2(const <String, Object?>{
-          'op': 'ingest_begin',
-        });
+        await _sync2(const <String, Object?>{'op': 'ingest_begin'});
         _ingestOpen = true;
-        // 新设备第一次同步走收段通道（native/fushi_fsrs/src/store/sync2/channel.rs）：之后的本机写命令前要先把它
-        // 按片做完（[_commandOrReload]）。
-        if (r['channel'] == true) _channelLive = true;
       });
     } catch (_) {
       _endIngestSession(session);
@@ -1824,12 +1827,9 @@ class SrsDbStore implements SrsSync2Host {
 
   /// 收段会话的一步（投递一片 / 收尾换身份 / 接着重放）：写锁里跑，投影变化接进本机缓存。
   ///
-  /// **不套 Drift 事务**（集成审查【中高】）：以前包在 Drift 事务里，Drift 的 BEGIN 让内核把写连接标成
-  /// 「挂着跨命令事务」（store/mod.rs `drift_tx`），整片期间所有只读命令与 Drift 查询都改走写连接——排在整片后面、
-  /// 还读得到没提交的行；而内核的收段会话（`prepared` / `delivery`）在内层 SAVEPOINT 释放时就推进了，外层事务若因
-  /// 写本机状态行失败回滚，库回到这一片之前、会话却停在之后。现在这一片由内核自己在一笔事务里提交（提交成功才推进
-  /// 会话），本机状态行（这一步只会推进其中的修订号）由内核在**同一笔事务**里写下并回报 `localRevision`
-  /// （[_absorbLocalWrite]）——要么一起落盘、要么一起不落，内存在命令成功之后才改。
+  /// 这一片由内核自己在一笔事务里提交（提交成功才推进内核的收段会话），本机状态行（这一步只会推进其中的修订号）由
+  /// 内核在**同一笔事务**里写下并回报 `localRevision`（[_absorbLocalWrite]）——要么一起落盘、要么一起不落，内存在命令
+  /// 成功之后才改。
   /// 命令失败时内存没动过，无需重读本机状态。
   Future<Map<String, Object?>> _sync2IngestStep(
     Map<String, Object?> request, [
@@ -2029,7 +2029,9 @@ class SrsDbStore implements SrsSync2Host {
       ) = await _coreColumns(core.address, core.libraryPath, <String, Object?>{
         ...request,
         'profile': profileUid,
+        'settled': true,
       });
+      if (json is Map) await _absorbSettled(json['settled']);
       final Map<String, SrsColumns> tables = <String, SrsColumns>{};
       for (final MapEntry<String, TransferableTypedData> f in files.entries) {
         final Uint8List b = f.value.materialize().asUint8List();
@@ -2044,16 +2046,18 @@ class SrsDbStore implements SrsSync2Host {
     }
   }
 
+  /// 发一条内核命令。请求一律带 `settled: true`：收段通道自己做完的片攒下的投影变化随回包交回，这里先接进内存
+  /// （[_absorbSettled]）再把回包交给调用方——那些片在这条命令之前就提交了，先于命令自己的结果。
   Future<SrsSync2Result> _sync2Raw(
     Map<String, Object?> request, {
     List<Uint8List> blobs = const <Uint8List>[],
-  }) {
+  }) async {
     assert(
       !kSrsSync2ProjectingOps.contains(request['op']) || holdsExclusive,
       'sync2 `${request['op']}` changes the projection outside runExclusive',
     );
     debugCoreCommands++;
-    return SrsOpLedger.track(
+    final SrsSync2Result r = await SrsOpLedger.track(
       'core:${request['op']}',
       () => _coreSync2(
         core.address,
@@ -2061,6 +2065,7 @@ class SrsDbStore implements SrsSync2Host {
         <String, Object?>{
           ...request,
           'profile': profileUid,
+          'settled': true,
           if (_kSync2CacheOps.contains(request['op'])) 'caches': _cacheConfig,
         },
         blobs,
@@ -2071,6 +2076,10 @@ class SrsDbStore implements SrsSync2Host {
         0,
       ),
     );
+    // 回包不是对象的命令（返回数组 / 空）内核不附 `settled`，那一份留给下一条。
+    final Object? json = r.json;
+    if (json is Map) await _absorbSettled(json['settled']);
+    return r;
   }
 
   /// 内核命令走哪条 worker 道（srs_core_workers.dart [SrsCoreLane]，集成审查【中】）：复习页的作答 / 排队 / 预览
@@ -2085,11 +2094,10 @@ class SrsDbStore implements SrsSync2Host {
   };
 
   /// 改投影的 v2 命令（与内核 native/fushi_fsrs/src/store/ffi.rs `PROJECTING_OPS` 同一组）：只能在本副本的独占区里发
-  /// （[_sync2Raw] 断言）。它们与 Drift 事务的关系由内核的守卫计数（store/drift_guard.rs，[debugDriftTxGuardHits]）。
+  /// （[_sync2Raw] 断言）：回包要按顺序接进本对象的内存（缓存变更日志、修订号）。
   ///
   /// 不在这里、也不排写锁却可能顺带写库的：`digest`（记一行摘要缓存）、`media_hash`、`plan_restore`（只读，但通道没做完时
-  /// 内核先收通道）——见 [kSrsSync2LockFreeOps] 与 [sync2PlanRestore]。它们恰好撞上别人开着的 Drift 事务时，内核守卫按
-  /// ReadVisible 计：顺带的写入只是可重做的进度 / 缓存，随那笔事务回滚无害。
+  /// 内核先收通道，收下的片经回包的 `settled` 交回，[_absorbSettled]）——见 [kSrsSync2LockFreeOps] 与 [sync2PlanRestore]。
   @visibleForTesting
   static const Set<String> kSrsSync2ProjectingOps = <String>{
     'apply',
@@ -2113,29 +2121,6 @@ class SrsDbStore implements SrsSync2Host {
     'restore',
     'dedup',
   };
-
-  /// 内核 Drift 事务守卫的命中计数（native/fushi_fsrs/src/store/drift_guard.rs）：Drift 在写连接上开着事务时来的
-  /// sync2 命令，按策略 `join` / `readVisible` / `reject` 分别记 `{命令: 次数}`。计数按库（[core]）记，不分 profile；
-  /// [reset] 读完清零。首版只计数，不拦命令。
-  @visibleForTesting
-  Future<Map<String, Map<String, int>>> debugDriftTxGuardHits({
-    bool reset = false,
-  }) async {
-    final SrsSync2Result r = await _coreSync2(
-      core.address,
-      core.libraryPath,
-      <String, Object?>{'op': 'drift_tx_guard', 'reset': reset},
-      const <Uint8List>[],
-    );
-    return <String, Map<String, int>>{
-      for (final MapEntry<String, Object?> e in r.map.entries)
-        e.key: <String, int>{
-          for (final MapEntry<Object?, Object?> h
-              in ((e.value as Map?) ?? const <Object?, Object?>{}).entries)
-            h.key! as String: (h.value! as num).toInt(),
-        },
-    };
-  }
 
   /// 发出过的内核命令数（`ffsrs_store_sync2` 一次算一条）：复习路径的 FFI 次数守卫 / 基准用。
   @visibleForTesting
@@ -5321,10 +5306,9 @@ class SrsDbStore implements SrsSync2Host {
 
   /// 一条本机写命令（[body] 发命令、把结果接进内存）；失败时从库里重读本机状态再抛出。
   ///
-  /// 不开 Drift 事务（收掉 Dart 写路径第 2 步）：内核在命令的同一个 SAVEPOINT 里做完命令本体、缓存刷新、排队与本机
-  /// 状态行（native/fushi_fsrs/src/store/ffi.rs `local_write`），要么全落、要么全不落。外面
-  /// 已开着 Drift 事务时那个 SAVEPOINT 嵌进外层事务，随它提交或回滚（生产调用方已经没有这种形态：最后一个是旧
-  /// Lapis 迁移，现在是一条 `change`，见 [writeChange]）。
+  /// 内核在命令的同一个 SAVEPOINT 里做完命令本体、缓存刷新、排队与本机状态行
+  /// （native/fushi_fsrs/src/store/ffi.rs `local_write`），要么全落、要么全不落。收段通道没做完时内核在命令之前先把它
+  /// 按片做完，那些片落进投影的变化随回包的 `settled` 交回（[_absorbSettled]）。
   ///
   /// 命令失败不回滚内存：攒下的影响面要丢掉、修订号等从库里重读（与 [reloadLocal] 同一理由）。调用方已在独占区里。
   ///
@@ -5333,7 +5317,6 @@ class SrsDbStore implements SrsSync2Host {
   /// 本机状态上继续写；也不拿重读的错误顶替原错误——以前日志里只剩 `_loadLocal` 上的
   /// 「connection was closed」，看不出是哪一步写失败。
   Future<void> _commandOrReload(Future<void> Function() body) async {
-    await _settleChannel();
     try {
       await body();
     } catch (error, stack) {
@@ -5374,35 +5357,37 @@ class SrsDbStore implements SrsSync2Host {
       );
     }
     final int landed = _absorbProjection(r);
-    _revision = revision;
-    _epoch = epoch;
+    _adoptRevision(revision, epoch);
     return landed;
   }
 
-  /// 内核里可能有没做完的新设备收段通道（native/fushi_fsrs/src/store/sync2/channel.rs）：打开时由 `identity`、
-  /// 开收段会话时由 `ingest_begin` 回报。
-  bool _channelLive = false;
-
-  /// 测试：[_channelLive]。
-  @visibleForTesting
-  bool get debugChannelLive => _channelLive;
-
-  /// 本机写命令之前把没做完的收段通道按片做完（`channel_settle`，内核每片一个事务）。写命令嵌在外层 Drift 事务里
-  /// 又要先做完通道时，内核只能把整段（真实数据约 1.1 GB 的投影）塞进那笔事务：WAL 要装下全部
-  /// 页，失败整段回滚、下一次写又从头重做。没有通道时不发命令（复习路径的 FFI 次数不变）。调用方已在独占区里。
-  Future<void> _settleChannel() async {
-    if (!_channelLive) return;
-    await _sync2(const <String, Object?>{'op': 'channel_settle'});
-    _channelLive = false;
+  /// 回包里的 `settled`：收段通道在这条命令之前自己做完的片（内核 store/sync2/channel.rs `settle`——分发器在要
+  /// 完整投影的命令之前、导入 / 停用设备之前、并入提交之前、新收段会话开始时）落进投影的变化。那些片没有自己的
+  /// 回包，内核攒着、随这个 profile 的下一条命令交回一次（请求带 `settled: true`，[_sync2Raw] / [_columnsCommand]
+  /// 统一带）。形态同改投影命令的回包（`marks` / `changed` / `purged` + 此刻库里的 `localRevision` / `localEpoch`），
+  /// 接法也相同（[_absorbProjection]）：不接的话 [_structureKey] / [contentFingerprint] / [rwkvScoresKey] 不动，
+  /// 牌组树、profile 修改记录、分数表读到的还是通道做完之前的。通道带来的是对端事件：落了就再推进一次分数表的
+  /// 全量刷新（同 [applyRemote]）。
+  Future<void> _absorbSettled(Object? settled) async {
+    if (settled is! Map) return;
+    final Map<String, Object?> r = settled.cast<String, Object?>();
+    final Object? revision = r['localRevision'];
+    final Object? epoch = r['localEpoch'];
+    if (revision is! int || epoch is! String) {
+      throw StateError(
+        'srs: a `settled` hand-over lacks `localRevision` / `localEpoch`',
+      );
+    }
+    final int landed = _absorbProjection(r);
+    _adoptRevision(revision, epoch);
+    if (landed > 0) _bumpRwkvScores();
+    await _notifyPurged();
   }
 
   /// 副本还能写（没有被 [retire]、也没有因重读失败作废）。
   bool get isUsable => _unusable == null;
 
   /// 当前代码正跑在本副本的独占区里（[runExclusive] 的 body 内，按 Zone 认）。
-  ///
-  /// 外层锁（[SrsExclusiveOuter]）的实现据此判断重入：已在激活副本独占区里的代码再调别的副本的写方法，
-  /// 必须直接执行，不能再排队等这把锁（否则自己等自己）。
   bool get holdsExclusive => identical(Zone.current[_writeZoneKey], this);
 
   Future<List<SrsEvent>> exportAll() async {
