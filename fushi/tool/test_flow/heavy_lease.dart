@@ -397,8 +397,29 @@ HeavyHolder? _holderInfo(Directory dir, int slot) {
   }
 }
 
+/// Windows `ERROR_SHARING_VIOLATION`.
+const int _windowsSharingViolation = 32;
+
+/// An exclusive lock on [f], or null while it is not this caller's to take.
+///
+/// Normally that means another process holds the lock. On Windows the open
+/// itself can also lose: deleting a file opens it with DELETE access, a Dart
+/// file handle does not share that access, so while a ticket is being deleted
+/// (its owner releasing it, or another waiter sweeping a dead one) every
+/// other open of it fails with a sharing violation. That file is on its way
+/// out, not free to lock, so it reads as held; the caller's next poll finds
+/// it gone. Any other failure to open is a real error and still throws.
 RandomAccessFile? _tryLock(File f) {
-  final RandomAccessFile raf = f.openSync(mode: FileMode.append);
+  final RandomAccessFile raf;
+  try {
+    raf = f.openSync(mode: FileMode.append);
+  } on FileSystemException catch (e) {
+    if (Platform.isWindows &&
+        e.osError?.errorCode == _windowsSharingViolation) {
+      return null;
+    }
+    rethrow;
+  }
   try {
     raf.lockSync(FileLock.exclusive);
     return raf;
