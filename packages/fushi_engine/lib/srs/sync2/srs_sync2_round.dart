@@ -74,7 +74,12 @@ const String kSrsSync2Stopped = 'srs sync round stopped';
 /// 发件的一批在上传与确认之间被内核改切（并发的另一轮跑了小段合并）：这一轮不写 head，下一轮从水位续发。
 const String kSrsSync2OutboxRecut = 'srs outbox batch was re-cut';
 
-/// 本协议版本（`meta.json` 的 `v`）与能读它的最低读者版本（与内核 segment.rs `PROTOCOL` / `MIN_READER` 同值）。
+/// 本协议版本（`meta.json` 的 `v`，与内核 segment.rs `PROTOCOL` 同值）与能读这个**目录布局**的最低读者版本
+/// （`meta.json` 的 `minReader`）。
+///
+/// [kSrsSync2MinReader] 只管目录布局层（集合根、文件命名、媒体寻址），布局不变就不动；段里**内容**要求的最低读者
+/// 由内核按本机实际写出的内容声明在 head 的 `minReader` 里（native/fushi_fsrs/src/sync2/min_reader.rs，地板值 3，
+/// 与这里同值但互不联动）。以后升协议只要布局没变，这里保持 3，v3.3.0 读者就能继续和没用到新内容的设备同步。
 ///
 /// 2 = 2026-10-30 断代：集合根从 `v2/` 挪到 `v3/`（srs_location_store.dart [kSrsSync2Folder]），媒体只剩内容寻址；
 /// 协议 1 的位置由一次性迁移搬过来（srs_location_migration.dart），旧根上只留一份 `minReader` = 2 的 `meta.json`
@@ -145,6 +150,10 @@ class SrsSync2Report {
 
   /// 非致命错误（段损坏 / 签名不符 / 解不开……）：记日志，不打断这一轮。
   final List<String> errors = <String>[];
+
+  /// 摘要不一致、自动重建修不好（内核 store/sync2/heal.rs `healFailed`）：每个对端每组集合内核只给一次，照报即可。
+  /// 每项 `{device, groups, rows: {e, f, l}, app, reason}`。
+  final List<Map<String, Object?>> healFailed = <Map<String, Object?>>[];
 }
 
 /// 跑一轮。[locationId] 是这个位置的稳定身份（本机记每个位置传到了哪）；[key] = 本机为这个位置记的密钥
@@ -329,6 +338,17 @@ Future<SrsSync2Report> srsSync2Round({
     'now': nowMs(),
     'minIntervalMs': kSrsSync2DigestInterval.inMilliseconds,
   });
+  // 同一进度下与别的设备摘要不同：按组指纹定位、重放本机落在不同组里的卡并当场重算摘要（内核 store/sync2/heal.rs，
+  // 每个对端每组集合最多一次）。修不好的交给调用方上报（[SrsSync2Report.healFailed]）。
+  final Map<String, Object?> heal = (await host.sync2Command(<String, Object?>{
+    'op': 'digest_heal',
+    'now': nowMs(),
+  })).map;
+  report.healFailed.addAll(<Map<String, Object?>>[
+    for (final Object? f in (heal['healFailed'] as List?) ?? const <Object?>[])
+      if (f is Map) f.cast<String, Object?>(),
+  ]);
+  if (((heal['replayed'] as List?)?.isNotEmpty ?? false)) report.changed = true;
   final String self =
       (await host.sync2Command(<String, Object?>{
             'op': 'identity',
