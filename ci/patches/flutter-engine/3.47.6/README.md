@@ -225,7 +225,7 @@ sRGB 合成，>1.0 全被钳掉（实测：backing store 里 2.57，桌面上 1.
 `<工作目录>\depot_tools`）：
 
 ```powershell
-tool/flutter_engine/build_patched_engine.ps1 -Root D:\fe -PatchVersion hdr-output-3   # 自动取 fushi/.fvmrc 的 Flutter 版本
+tool/flutter_engine/build_patched_engine.ps1 -Root D:\fe -PatchVersion hdr-output-4   # 自动取 fushi/.fvmrc 的 Flutter 版本
 # 只重编 / 只打包：-Steps build,stage,pack -Modes release
 # 本机 VS 缺 ATL 时：-AtlDir '<另一套 VS>\VC\Tools\MSVC\<ver>\atlmfc'
 # 机器忙时限并发：-Jobs 8（每个 clang-cl 最多吃约 1 GB）
@@ -247,17 +247,16 @@ pack（连同 pdb 打 zip——`flutter build windows` 要求缓存里有 `flutt
 
 ## 当前产物
 
-`artifacts.json` → release `flutter-engine-3.47.6-hdr-output-3`（prerelease、非 Latest；
-2026-11-05 编，含 `engine-hdr-output` + `engine-underlay-composition` + `engine-impeller-hdr` +
-`engine-d3d-keyed-mutex` 四份引擎补丁与 ANGLE 补丁；三种模式 + 匹配的 pdb——`flutter build windows`
+`artifacts.json` → release `flutter-engine-3.47.6-hdr-output-4`（prerelease、非 Latest；
+2026-11-12 编，含上面全部七份引擎补丁与 ANGLE 补丁；三种模式 + 匹配的 pdb——`flutter build windows`
 缺 pdb 会在 assemble 失败；tag 不以数字 / `v`+数字开头，app 更新检查与发布 workflow 都不会把它当
-app 版本）。**`hdr-output-3` 不含 `engine-a11y-tree-hardening.patch`（2026-11-10 加入）、
-`engine-program-binary-cache.patch`、`engine-resize-before-first-frame.patch`（2026-11-12 加入）**：
-下一次重编必须带上三者（`patchVersion` 取 `hdr-output-4`），发 release 后更新 `artifacts.json`，在那之前
-出的包仍是旧引擎、无障碍树加固、着色器程序缓存与首帧前 resize 不阻塞都不生效（runner 解析不到导出，
-照常每次编译）。重编后换一个新的 `patchVersion` 发新 release，再改本目录的 `artifacts.json`，旧 release
-留着给旧提交复现用（`hdr-output-2` 是前三份补丁、无 keyed mutex；`hdr-output-1` 只有 Skia 路径的
-HDR、不含 underlay；3.44.0 时代的是 `flutter-engine-3.44.0-hdr-output-2`）。
+app 版本）。相对 `hdr-output-3` 新带上 `engine-a11y-tree-hardening`（2026-11-10 加入）、
+`engine-program-binary-cache`、`engine-resize-before-first-frame`（2026-11-12 加入）三份。
+
+改补丁后重编要换一个新的 `patchVersion` 发新 release，再改本目录的 `artifacts.json`；在那之前出的包
+仍是旧引擎。旧 release 留着给旧提交复现用（`hdr-output-3` 是前四份补丁；`hdr-output-2` 是前三份、
+无 keyed mutex；`hdr-output-1` 只有 Skia 路径的 HDR、不含 underlay；3.44.0 时代的是
+`flutter-engine-3.44.0-hdr-output-2`）。
 
 注意：在**已经打过补丁**的源码树上重跑 `patch` 步骤会失败——`Invoke-Patch` 用「能否反向应用」判断
 已打过，但前几份补丁的改动被后几份覆盖后不能单独反向应用。增量重编时只打新补丁
