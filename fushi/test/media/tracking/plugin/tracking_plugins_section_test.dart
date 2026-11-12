@@ -472,6 +472,60 @@ void main() {
     expect(toggle, findsOneWidget);
   });
 
+  testSection('a plugin included with Fushi: labelled, removable; the removal '
+      'is remembered and it can be added back', (WidgetTester tester) async {
+    const String includedId = 'moe.fushi.tracking.anilist';
+    final Uint8List asset = engine.package(
+      fakeManifest(id: includedId, name: 'AniList', siteId: 'anilist'),
+    );
+    await tester.runAsync(() => manager.ensureBundled(asset, removable: true));
+    await pumpSection(tester);
+
+    expect(
+      subtitleOf(tester, includedId),
+      contains(t.media_tracking_plugins_included_label),
+    );
+    expect(
+      subtitleOf(tester, includedId),
+      contains(t.media_tracking_plugins_state_signed_out),
+    );
+    await tapKey(tester, 'tracking-plugin-remove-$includedId');
+    expect(
+      find.text(t.media_tracking_plugins_remove_included_message),
+      findsOneWidget,
+    );
+    await tester.tap(
+      find.descendant(
+        of: find.byType(Dialog),
+        matching: find.text(t.media_tracking_plugins_remove_action),
+      ),
+    );
+    await settle(tester);
+    expect(tile(includedId), findsNothing);
+    final Finder removed = find.byKey(
+      const ValueKey<String>('tracking-plugin-removed-$includedId'),
+    );
+    expect(removed, findsOneWidget);
+
+    // The next start does not add it back.
+    expect(
+      await tester.runAsync(
+        () => manager.ensureBundled(asset, removable: true),
+      ),
+      isFalse,
+    );
+    await settle(tester);
+    expect(tile(includedId), findsNothing);
+
+    await tapKey(tester, 'tracking-plugin-restore-$includedId');
+    expect(tile(includedId), findsOneWidget);
+    expect(removed, findsNothing);
+    expect(
+      subtitleOf(tester, includedId),
+      contains(t.media_tracking_plugins_included_label),
+    );
+  });
+
   testSection('installing a package that claims a built-in site says why it '
       'is refused', (WidgetTester tester) async {
     nextPick = engine.package(

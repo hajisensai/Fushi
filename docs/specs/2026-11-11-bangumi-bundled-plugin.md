@@ -2,8 +2,9 @@
 
 Status: steps 1 to 6 done; step 6 routes by platform instead of deleting (§5, §7). Not run against the real Bangumi API yet. Owner decision 2026-11-10 / 11: Bangumi
 becomes a tracking plugin like AniList and MangaBaka, and it is the **default** one: its source
-lives in this repository, it ships inside the app and is installed on first start. AniList and
-MangaBaka stay in the separate plugin repository. Base contract:
+lives in this repository, it ships inside the app and is installed on first start. Owner decision
+2026-11-11 (later): AniList and MangaBaka ship too, pre-installed and removable, with no reserved
+site id (§9). Base contract:
 [`2026-11-10-tracking-plugins.md`](2026-11-10-tracking-plugins.md) (spec v1).
 
 ## 1. What Bangumi does today (the parity bar)
@@ -170,3 +171,50 @@ site id and works for every plugin with `trackingList`). Guards: `ios_store_comp
 (1) this plan; (2) contract extensions + kit + tests; (3) the plugin + harness tests; (4) bundling,
 auto-install, reserved-id pin, iOS; (5) migration; (6) switch-over and deletion. Each step is a
 separate commit, green before the next.
+
+## 9. AniList and MangaBaka: included, removable
+
+Owner decision 2026-11-11: "AniList / MangaBaka pre-installed, removable, no reserved id".
+
+- Sources: `plugins/tracking/anilist/` and `plugins/tracking/mangabaka/` (tests in `test/*.test.mjs`
+  on the kit harness, run by `fushi/test/media/tracking/included_tracking_plugins_js_test.dart`);
+  packed, unsigned assets `fushi/assets/tracking_plugins/<id>.fushiplug`. The asset guard covers
+  every bundled plugin and checks that the assets folder holds exactly the bundled list.
+- One list: `kBundledTrackingPlugins` in `bundled_tracking_plugins.dart`, each entry with a policy:
+  `builtIn` (Bangumi: reserved site pinned by digest, can be turned off, not removed) or `included`
+  (AniList, MangaBaka). `installBundledTrackingPlugins` walks the list at start (built-in first);
+  one asset failing to load is reported and the others go on. `TrackingPluginManager.ensureBundled(zip,
+  removable:)` holds both rules.
+- Included rules, per device, recorded in `.state.json` (`included`: plugin id -> digest of the copy
+  Fushi installed; `declined`: ids the user removed):
+  - not installed and not declined: installed (first start, or the first start of an upgrade that
+    added it), unless another installed package already serves the same site (the user's own plugin
+    for that site keeps it; nothing is recorded, so removing that plugin lets the next start add it);
+  - installed copy identical to the asset: recorded as Fushi's copy (a user who installed the same
+    file by hand gets updates from then on);
+  - installed copy is Fushi's (digest equals the recorded one) or Fushi's copy no longer verifies:
+    replaced by the newer asset. Same (absent) signer, so the sign-in, storage and the enabled switch
+    stay;
+  - any other installed copy (another version or signer under the same id) is the user's: never
+    replaced. Installing a package under the id from a file records it as Fushi's only when it is
+    the asset;
+  - removed (Fushi's copy or the user's own under that id): `declined`. Never reinstalled, not even
+    by a later app version. Settings lists it as "Included with Fushi, removed from this device" with
+    **Add back** (`restoreIncluded`, installs the bundled asset); installing it from a file also
+    clears the removal.
+- No reserved site: a side-loaded plugin may serve `anilist` / `mangabaka` (the normal conflict rule
+  applies: two enabled plugins of one site, the id sorting first wins).
+- Not signed in after install: the row says "Not in use until you sign in" and nothing is sent until
+  the user signs in. Existing links and queued rows with provider id `anilist` / `mangabaka` are
+  served by them as soon as they are registered.
+- Sign-in: MangaBaka takes a pasted personal access token (no app registration). AniList only issues
+  tokens to a registered API client (implicit grant); Fushi ships **no** client registration: the
+  sign-in asks for the client ID of a client the user registers once (redirect URL
+  `https://anilist.co/api/v2/oauth/pin`), keeps it in the plugin vault across sign-outs, then opens
+  the authorize page and takes the pasted token. `DEFAULT_CLIENT_ID` in the plugin can prefill a
+  Fushi-owned client later.
+- Settings labels: "Built into Fushi: you can turn it off, but not remove it" (Bangumi) and "Included
+  with Fushi: you can turn it off or remove it" (AniList, MangaBaka); the details sheet says
+  "Included with Fushi." instead of the signer text. The remove dialog says the removal is
+  remembered.
+- iOS and the headless server: unchanged (no plugin engine; the manager does not exist there).

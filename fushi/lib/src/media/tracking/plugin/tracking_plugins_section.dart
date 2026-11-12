@@ -223,7 +223,11 @@ class _TrackingPluginsSectionState extends State<TrackingPluginsSection> {
     final bool ok = await showFushiConfirmDialog(
       context: context,
       title: t.media_tracking_plugins_remove_title(name: _nameOf(plugin)),
-      message: t.media_tracking_plugins_remove_message,
+      // Included with Fushi: the removal is remembered (no automatic
+      // reinstall), and "Add back" appears in this section.
+      message: _manager.isIncluded(plugin.id)
+          ? t.media_tracking_plugins_remove_included_message
+          : t.media_tracking_plugins_remove_message,
       confirmLabel: t.media_tracking_plugins_remove_action,
       cancelLabel: t.cancel,
       icon: FushiIcons.delete,
@@ -235,6 +239,35 @@ class _TrackingPluginsSectionState extends State<TrackingPluginsSection> {
       _accountErrors.remove(plugin.id);
     }, 'TrackingPlugins.uninstall');
   }
+
+  /// Installs a removed plugin included with Fushi again.
+  Future<void> _restore(TrackingPluginInfo info) async {
+    await _run(() async {
+      final TrackingPluginInfo installed = await _manager.restoreIncluded(
+        info.id,
+      );
+      _message(t.media_tracking_plugins_installed_done(name: installed.name));
+      unawaited(_refreshAccount(installed.id));
+    }, 'TrackingPlugins.restoreIncluded');
+  }
+
+  /// A plugin included with Fushi that the user removed on this device.
+  Widget _restoreRow(TrackingPluginInfo info) => AdaptiveSettingsRow(
+    key: ValueKey<String>('tracking-plugin-removed-${info.id}'),
+    icon: FushiIcons.browserExtension,
+    showIcon: true,
+    title: info.name,
+    subtitle: t.media_tracking_plugins_removed_included_label,
+    subtitleMaxLines: 3,
+    trailing: FushiPressScale(
+      child: FushiTextButton.icon(
+        key: ValueKey<String>('tracking-plugin-restore-${info.id}'),
+        onPressed: _busy ? null : () => unawaited(_restore(info)),
+        icon: const FushiIcon(FushiIcons.add),
+        label: Text(t.media_tracking_plugins_restore_action),
+      ),
+    ),
+  );
 
   Future<void> _signIn(InstalledTrackingPlugin plugin) async {
     final PluginTrackingProvider? provider = widget.providers.byPluginId(
@@ -340,6 +373,7 @@ class _TrackingPluginsSectionState extends State<TrackingPluginsSection> {
           if (info?.site != null) info!.site!.siteHost,
           _stateOf(plugin),
           if (plugin.builtIn) t.media_tracking_plugins_built_in_label,
+          if (plugin.included) t.media_tracking_plugins_included_label,
         ].join(' · '),
         subtitleMaxLines: 3,
         value: plugin.enabled,
@@ -426,6 +460,7 @@ class _TrackingPluginsSectionState extends State<TrackingPluginsSection> {
                       context,
                       info: info,
                       builtIn: plugin.builtIn,
+                      included: plugin.included,
                     ),
                   ),
                   icon: const FushiIcon(FushiIcons.info),
@@ -476,6 +511,9 @@ class _TrackingPluginsSectionState extends State<TrackingPluginsSection> {
         ),
       for (final InstalledTrackingPlugin plugin in plugins)
         ..._pluginRows(plugin),
+      if (!_loading)
+        for (final TrackingPluginInfo info in _manager.removedIncluded)
+          _restoreRow(info),
       // About installing a file, so it sits with the install button, not
       // above the bundled Bangumi plugin (T1 F11 a).
       AdaptiveSettingsRow(

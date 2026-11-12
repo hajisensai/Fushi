@@ -122,7 +122,8 @@ void main() {
       preferences: preferences,
       removePref: preferences.removePref,
       onError: (Object error, StackTrace _) => errors.add(error),
-      load: () async => asset(),
+      plugins: const <BundledTrackingPlugin>[kBundledBangumiPlugin],
+      load: (BundledTrackingPlugin _) async => asset(),
     );
     return (
       service: service,

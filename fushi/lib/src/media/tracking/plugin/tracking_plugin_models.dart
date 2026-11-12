@@ -414,6 +414,7 @@ final class InstalledTrackingPlugin {
     this.conflictsWith,
     this.reservedSite = false,
     this.builtIn = false,
+    this.included = false,
   });
 
   final String id;
@@ -434,6 +435,11 @@ final class InstalledTrackingPlugin {
   /// The exact package bundled with this app build (id and digest pinned at
   /// start): shown as built in, can be turned off but not removed.
   final bool builtIn;
+
+  /// Exactly the removable package bundled with this app under this id
+  /// (AniList, MangaBaka): shown as included with Fushi, can be turned off
+  /// and removed. Its site id is not reserved.
+  final bool included;
 
   /// Verified and has a usable site description.
   bool get valid => info != null && info!.site != null && info!.isTracking;

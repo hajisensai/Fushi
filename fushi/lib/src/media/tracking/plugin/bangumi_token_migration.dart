@@ -105,9 +105,16 @@ Future<BangumiTokenMigration> startBundledTrackingPlugins({
   required PrefStore preferences,
   required Future<void> Function(String key) removePref,
   required void Function(Object error, StackTrace stack) onError,
-  Future<Uint8List> Function() load = loadBundledBangumiPlugin,
+  List<BundledTrackingPlugin> plugins = kBundledTrackingPlugins,
+  Future<Uint8List> Function(BundledTrackingPlugin plugin) load =
+      loadBundledTrackingPlugin,
 }) async {
-  await installBundledTrackingPlugins(manager, load: load, onError: onError);
+  await installBundledTrackingPlugins(
+    manager,
+    plugins: plugins,
+    load: load,
+    onError: onError,
+  );
   return migrateBangumiTokenToPlugin(
     preferences: preferences,
     removePref: removePref,

@@ -17,8 +17,11 @@ import 'package:fushi_engine/media/tracking/tracking_rate_gate.dart';
 /// - `.storage/<id>.json`: the plugin's `fushi.storage`;
 /// - `.credentials/`: the engine's credential vault (tracking domain);
 /// - `.state.json`: `{"enabled": {id: bool}, "accounts": {id: {loggedIn,
-///   name}}}`. A missing enabled entry means enabled. Accounts are per device
-///   and never synced: each device signs in on its own.
+///   name}}, "included": {id: digest}, "declined": [id]}`. A missing enabled
+///   entry means enabled. Accounts are per device and never synced: each
+///   device signs in on its own. `included` / `declined` track the removable
+///   bundled plugins ([ensureBundled] with `removable: true`): the digest of
+///   the copy Fushi installed, and the ones the user removed.
 class TrackingPluginManager {
   TrackingPluginManager({
     required this.rootDir,
@@ -81,6 +84,22 @@ class TrackingPluginManager {
   bool isBundled(String id) => _bundled.values.any(
     (({String pluginId, String digest}) b) => b.pluginId == id,
   );
+
+  /// Removable packages bundled with this app, by plugin id: the asset and
+  /// what the engine read from it ([ensureBundled] with `removable: true`).
+  final Map<String, ({TrackingPluginInfo info, Uint8List zip})> _included =
+      <String, ({TrackingPluginInfo info, Uint8List zip})>{};
+
+  /// [id] is a removable package bundled with this app (installed or not).
+  bool isIncluded(String id) => _included.containsKey(id);
+
+  /// The removable bundled packages the user removed on this device (from
+  /// the last [list]); [restoreIncluded] adds one back.
+  List<TrackingPluginInfo> get removedIncluded => _removedIncluded;
+  List<TrackingPluginInfo> _removedIncluded = const <TrackingPluginInfo>[];
+
+  /// [list] has run at least once.
+  bool _listed = false;
 
   /// The installed copy of a bundled package is the pinned one.
   bool _isPinned(TrackingPluginInfo info) {
@@ -149,6 +168,17 @@ class TrackingPluginManager {
         found.add(await _describe(id, dir, state.enabled[id] ?? true));
       }
     }
+    final Set<String> foundIds = <String>{
+      for (final InstalledTrackingPlugin plugin in found) plugin.id,
+    };
+    _removedIncluded =
+        List<TrackingPluginInfo>.unmodifiable(<TrackingPluginInfo>[
+          for (final ({TrackingPluginInfo info, Uint8List zip}) b
+              in _included.values)
+            if (state.declined.contains(b.info.id) &&
+                !foundIds.contains(b.info.id))
+              b.info,
+        ]);
     final Map<String, String> siteOwner = <String, String>{};
     final List<InstalledTrackingPlugin> resolved = <InstalledTrackingPlugin>[
       for (final InstalledTrackingPlugin plugin in found)
@@ -174,6 +204,7 @@ class TrackingPluginManager {
             enabled: plugin.enabled,
             info: plugin.info,
             conflictsWith: owner,
+            included: plugin.included,
           )
         else
           _own(siteOwner, plugin),
@@ -185,6 +216,7 @@ class TrackingPluginManager {
           (a.info?.name ?? a.id).compareTo(b.info?.name ?? b.id),
     );
     _installed = List<InstalledTrackingPlugin>.unmodifiable(resolved);
+    _listed = true;
     _notify();
     return _installed;
   }
@@ -213,6 +245,7 @@ class TrackingPluginManager {
         enabled: enabled,
         info: problem == null ? info : null,
         error: problem,
+        included: problem == null && _isIncludedCopy(info),
       );
     } on TrackingPluginException catch (error) {
       return InstalledTrackingPlugin(
@@ -251,17 +284,25 @@ class TrackingPluginManager {
     return info;
   }
 
-  /// Pins [zip], a package bundled with the app, as the only package allowed
-  /// to serve its site, and installs it when the installed copy is missing or
-  /// is any other package (an app upgrade or downgrade replaces it; a
-  /// side-loaded package under the same id is replaced and, signed by someone
-  /// else, its data wiped). The enabled switch is kept, so a user who turned
-  /// the plugin off keeps it off. Returns true when it installed. Lists the
-  /// plugins either way.
-  Future<bool> ensureBundled(Uint8List zip) async {
+  /// Keeps [zip], a package bundled with the app, installed (spec
+  /// docs/specs/2026-11-11-bangumi-bundled-plugin.md §3 and §9). Returns true
+  /// when it installed. Lists the plugins either way.
+  ///
+  /// Built in ([removable] false, Bangumi): pins the package as the only one
+  /// allowed to serve its site, and installs it when the installed copy is
+  /// missing or is any other package (an app upgrade or downgrade replaces
+  /// it; a side-loaded package under the same id is replaced and, signed by
+  /// someone else, its data wiped).
+  ///
+  /// Included ([removable] true, AniList / MangaBaka): see [_ensureIncluded].
+  ///
+  /// The enabled switch is kept either way, so a user who turned the plugin
+  /// off keeps it off.
+  Future<bool> ensureBundled(Uint8List zip, {bool removable = false}) async {
     final TrackingPluginInfo info = _requireTracking(
       await _engine.inspect(zip),
     );
+    if (removable) return _ensureIncluded(info, zip);
     _bundled[info.site!.siteId] = (pluginId: info.id, digest: info.digest);
     String? installed;
     final Directory dir = _dirOf(info.id);
@@ -272,13 +313,114 @@ class TrackingPluginManager {
         installed = null;
       }
     }
-    if (installed != null &&
-        installed.toLowerCase() == info.digest.toLowerCase()) {
+    if (installed != null && _sameDigest(installed, info.digest)) {
       await list();
       return false;
     }
     await install(zip, info.digest);
     return true;
+  }
+
+  /// The included-plugin rules of [ensureBundled] (its site id is not
+  /// reserved):
+  /// - removed by the user on this device (`declined`): nothing, until the
+  ///   user adds it back ([restoreIncluded]) or installs it from a file;
+  /// - not installed: installed, unless another installed package already
+  ///   serves the same site (the user's own plugin for that site keeps it);
+  /// - installed copy identical to the asset: recorded as Fushi's copy;
+  /// - installed copy is the one Fushi installed before (its digest is
+  ///   recorded in `included`), or Fushi's copy no longer verifies: replaced
+  ///   by the asset (same signer, so the sign-in and data stay);
+  /// - any other installed copy is one the user installed (another version,
+  ///   another signer): left alone.
+  Future<bool> _ensureIncluded(TrackingPluginInfo info, Uint8List zip) async {
+    final String id = info.id;
+    _included[id] = (info: info, zip: zip);
+    if (!_listed) await list();
+    final _State state = await _loadState();
+    if (state.declined.contains(id)) {
+      await list();
+      return false;
+    }
+    final InstalledTrackingPlugin? current = _installed
+        .where((InstalledTrackingPlugin p) => p.id == id)
+        .firstOrNull;
+    final String? installedDigest = current?.info?.digest;
+    if (installedDigest != null && _sameDigest(installedDigest, info.digest)) {
+      if (state.included[id] != _key(info.digest)) {
+        state.included[id] = _key(info.digest);
+        await _writeState(state);
+      }
+      await list();
+      return false;
+    }
+    if (!_replacesIncluded(info, current, state.included[id])) {
+      await list();
+      return false;
+    }
+    await install(zip, info.digest);
+    return true;
+  }
+
+  /// Whether [_ensureIncluded] installs the asset of [info] over [current]
+  /// (null = not installed). [recorded] is the digest of the copy Fushi
+  /// installed last.
+  bool _replacesIncluded(
+    TrackingPluginInfo info,
+    InstalledTrackingPlugin? current,
+    String? recorded,
+  ) {
+    if (current == null) return !_siteTaken(info);
+    if (recorded == null) return false;
+    final String? installedDigest = current.info?.digest;
+    return installedDigest == null || _sameDigest(installedDigest, recorded);
+  }
+
+  /// Another installed, valid package claims [info]'s site.
+  bool _siteTaken(TrackingPluginInfo info) => _installed.any(
+    (InstalledTrackingPlugin p) =>
+        p.id != info.id && p.info?.site?.siteId == info.site!.siteId,
+  );
+
+  /// [info] is exactly the removable bundled package with its id.
+  bool _isIncludedCopy(TrackingPluginInfo info) {
+    final TrackingPluginInfo? bundled = _included[info.id]?.info;
+    return bundled != null && _sameDigest(bundled.digest, info.digest);
+  }
+
+  static String _key(String digest) => digest.toLowerCase();
+
+  static bool _sameDigest(String a, String b) => _key(a) == _key(b);
+
+  /// After an install under a removable bundled package's id: the user wants
+  /// it (no longer declined), and the copy counts as Fushi's only when it is
+  /// the asset.
+  Future<void> _recordInstalled(TrackingPluginInfo info) async {
+    final TrackingPluginInfo? bundled = _included[info.id]?.info;
+    if (bundled == null) return;
+    final _State state = await _loadState();
+    state.declined.remove(info.id);
+    if (_sameDigest(bundled.digest, info.digest)) {
+      state.included[info.id] = _key(info.digest);
+    } else {
+      state.included.remove(info.id);
+    }
+    await _writeState(state);
+  }
+
+  /// Installs the removable bundled package [id] again after the user
+  /// removed it. Throws [TrackingPluginErrorCode.notInstalled] when this app
+  /// build does not bundle [id] (or its asset failed to load at start).
+  Future<TrackingPluginInfo> restoreIncluded(String id) async {
+    final ({TrackingPluginInfo info, Uint8List zip})? bundled = _included[id];
+    if (bundled == null) {
+      throw TrackingPluginException(
+        TrackingPluginErrorCode.notInstalled,
+        'not a plugin included with this app',
+        pluginId: id,
+      );
+    }
+    return install(bundled.zip, bundled.info.digest);
   }
 
   static TrackingPluginInfo _requireTracking(TrackingPluginInfo info) {
@@ -332,6 +474,7 @@ class TrackingPluginManager {
         digest,
       );
       await _dropRuntime(info.id);
+      await _recordInstalled(info);
       await list();
       return info;
     } finally {
@@ -359,8 +502,10 @@ class TrackingPluginManager {
 
   /// Removes the package, its storage, its credentials and its account state.
   /// Links and queued updates in the database are kept (spec §4).
-  /// A bundled package cannot be removed
-  /// ([TrackingPluginErrorCode.builtIn]): turn it off instead.
+  /// A built-in bundled package cannot be removed
+  /// ([TrackingPluginErrorCode.builtIn]): turn it off instead. Removing a
+  /// removable bundled package's id (Fushi's copy or the user's own) is
+  /// remembered: [ensureBundled] does not add it back.
   Future<void> uninstall(String id) async {
     if (!_idPattern.hasMatch(id)) return;
     if (isBundled(id)) {
@@ -378,6 +523,10 @@ class TrackingPluginManager {
       await _clearData(id);
       final _State state = await _loadState();
       state.enabled.remove(id);
+      if (_included.containsKey(id) || state.included.containsKey(id)) {
+        state.declined.add(id);
+        state.included.remove(id);
+      }
       await _writeState(state);
     } finally {
       _blocked.remove(id);
@@ -526,15 +675,21 @@ final class _Changes extends ChangeNotifier {
 
 /// The contents of `.state.json`, kept in memory after the first read.
 final class _State {
-  _State(this.enabled, this.accounts);
+  _State(this.enabled, this.accounts, this.included, this.declined);
 
-  factory _State.empty() =>
-      _State(<String, bool>{}, <String, TrackingPluginAccount>{});
+  factory _State.empty() => _State(
+    <String, bool>{},
+    <String, TrackingPluginAccount>{},
+    <String, String>{},
+    <String>{},
+  );
 
   factory _State.fromJson(Object? json) {
     if (json is! Map) return _State.empty();
     final Object? enabled = json['enabled'];
     final Object? accounts = json['accounts'];
+    final Object? included = json['included'];
+    final Object? declined = json['declined'];
     return _State(
       <String, bool>{
         if (enabled is Map)
@@ -548,11 +703,27 @@ final class _State {
                 case final TrackingPluginAccount account when account.loggedIn)
               '${e.key}': account,
       },
+      <String, String>{
+        if (included is Map)
+          for (final MapEntry<Object?, Object?> e in included.entries)
+            if (e.value is String) '${e.key}': e.value! as String,
+      },
+      <String>{
+        if (declined is List)
+          for (final Object? id in declined)
+            if (id is String) id,
+      },
     );
   }
 
   final Map<String, bool> enabled;
   final Map<String, TrackingPluginAccount> accounts;
+
+  /// Removable bundled plugin id -> digest of the copy Fushi installed.
+  final Map<String, String> included;
+
+  /// Removable bundled plugin ids the user removed on this device.
+  final Set<String> declined;
 
   Map<String, Object?> toJson() => <String, Object?>{
     'enabled': enabled,
@@ -560,5 +731,7 @@ final class _State {
       for (final MapEntry<String, TrackingPluginAccount> e in accounts.entries)
         e.key: e.value.toJson(),
     },
+    'included': included,
+    'declined': declined.toList()..sort(),
   };
 }

@@ -447,10 +447,13 @@ void main() {
       final List<Object> errors = <Object>[];
       await installBundledTrackingPlugins(
         next,
-        load: () async => throw const FileSystemException('missing asset'),
+        load: (BundledTrackingPlugin _) async =>
+            throw const FileSystemException('missing asset'),
         onError: (Object error, StackTrace _) => errors.add(error),
       );
-      expect(errors.single, isA<FileSystemException>());
+      // Each one is reported; one failing does not stop the others.
+      expect(errors, hasLength(kBundledTrackingPlugins.length));
+      expect(errors, everyElement(isA<FileSystemException>()));
       expect(next.installed.single.id, fakePluginId);
     });
 
@@ -471,4 +474,250 @@ void main() {
       },
     );
   });
+
+  group(
+    'included package: removable, no reserved site (spec 2026-11-11 §9)',
+    () {
+      const String includedId = 'moe.fushi.tracking.anilist';
+      Map<String, Object?> includedManifest({String version = '0.1.0'}) =>
+          fakeManifest(
+            id: includedId,
+            siteId: 'anilist',
+            name: 'AniList',
+            version: version,
+          );
+      Uint8List asset({String version = '0.1.0'}) =>
+          buildPluginZip(includedManifest(version: version));
+
+      InstalledTrackingPlugin? copyOf(TrackingPluginManager manager) => manager
+          .installed
+          .where((InstalledTrackingPlugin p) => p.id == includedId)
+          .firstOrNull;
+
+      test('installed when missing: included, registered, not built in; not '
+          'reinstalled when unchanged', () async {
+        final TrackingPluginManager manager = makeManager();
+        expect(await manager.ensureBundled(asset(), removable: true), isTrue);
+        final InstalledTrackingPlugin plugin = copyOf(manager)!;
+        expect(plugin.included, isTrue);
+        expect(plugin.builtIn, isFalse);
+        expect(plugin.registered, isTrue);
+        expect(manager.isBundled(includedId), isFalse);
+        expect(manager.isIncluded(includedId), isTrue);
+        // Nothing is sent until the user signs in.
+        expect(manager.accountOf(includedId).loggedIn, isFalse);
+
+        final TrackingPluginManager next = makeManager();
+        expect(await next.ensureBundled(asset(), removable: true), isFalse);
+        expect(copyOf(next)!.included, isTrue);
+      });
+
+      test('a newer asset updates the copy Fushi installed, keeps its data and '
+          'keeps it turned off', () async {
+        final TrackingPluginManager manager = makeManager();
+        await manager.ensureBundled(asset(), removable: true);
+        await signIn(manager, includedId);
+        await manager.setEnabled(includedId, false);
+
+        final TrackingPluginManager upgraded = makeManager();
+        expect(
+          await upgraded.ensureBundled(
+            asset(version: '0.2.0'),
+            removable: true,
+          ),
+          isTrue,
+        );
+        final InstalledTrackingPlugin plugin = copyOf(upgraded)!;
+        expect(plugin.info!.version, '0.2.0');
+        expect(plugin.included, isTrue);
+        expect(plugin.enabled, isFalse);
+        expect(upgraded.accountOf(includedId).loggedIn, isTrue);
+        expect(credentialsFile(includedId).existsSync(), isTrue);
+      });
+
+      test('a copy the user installed is never replaced, before or after Fushi '
+          'installed its own', () async {
+        // Installed by the user before this app build bundled it.
+        final TrackingPluginManager manager = makeManager();
+        await install(manager, asset(version: '9.0.0'));
+        expect(await manager.ensureBundled(asset(), removable: true), isFalse);
+        expect(copyOf(manager)!.info!.version, '9.0.0');
+        expect(copyOf(manager)!.included, isFalse);
+        expect(copyOf(manager)!.registered, isTrue);
+
+        // Fushi's copy, then the user installs another version over it.
+        final Directory other = Directory.systemTemp.createTempSync(
+          'fushi-tp-',
+        );
+        addTearDown(() => other.deleteSync(recursive: true));
+        final TrackingPluginManager second = TrackingPluginManager(
+          rootDir: other,
+          engine: engine,
+        );
+        managers.add(second);
+        await second.ensureBundled(asset(), removable: true);
+        await install(second, asset(version: '0.1.5'));
+        final TrackingPluginManager upgraded = TrackingPluginManager(
+          rootDir: other,
+          engine: engine,
+        );
+        managers.add(upgraded);
+        expect(
+          await upgraded.ensureBundled(
+            asset(version: '0.2.0'),
+            removable: true,
+          ),
+          isFalse,
+        );
+        expect(copyOf(upgraded)!.info!.version, '0.1.5');
+      });
+
+      test('a copy identical to the asset counts as Fushi\'s and is updated '
+          'later', () async {
+        final TrackingPluginManager manager = makeManager();
+        await install(manager, asset());
+        expect(await manager.ensureBundled(asset(), removable: true), isFalse);
+        expect(copyOf(manager)!.included, isTrue);
+        final TrackingPluginManager upgraded = makeManager();
+        expect(
+          await upgraded.ensureBundled(
+            asset(version: '0.2.0'),
+            removable: true,
+          ),
+          isTrue,
+        );
+        expect(copyOf(upgraded)!.info!.version, '0.2.0');
+      });
+
+      test('a removal is remembered on the device: never reinstalled, not even '
+          'by a newer asset, until the user adds it back', () async {
+        final TrackingPluginManager manager = makeManager();
+        await manager.ensureBundled(asset(), removable: true);
+        await manager.uninstall(includedId);
+        expect(copyOf(manager), isNull);
+        expect(manager.removedIncluded.single.id, includedId);
+
+        final TrackingPluginManager next = makeManager();
+        expect(
+          await next.ensureBundled(asset(version: '0.2.0'), removable: true),
+          isFalse,
+        );
+        expect(copyOf(next), isNull);
+        expect(next.removedIncluded.single.version, '0.2.0');
+
+        final TrackingPluginInfo restored = await next.restoreIncluded(
+          includedId,
+        );
+        expect(restored.version, '0.2.0');
+        expect(copyOf(next)!.included, isTrue);
+        expect(next.removedIncluded, isEmpty);
+
+        // Added back: kept up to date again.
+        final TrackingPluginManager later = makeManager();
+        expect(
+          await later.ensureBundled(asset(version: '0.3.0'), removable: true),
+          isTrue,
+        );
+        expect(copyOf(later)!.info!.version, '0.3.0');
+      });
+
+      test(
+        'removing the user\'s own copy is remembered too; installing it from '
+        'a file clears the removal',
+        () async {
+          final TrackingPluginManager manager = makeManager();
+          await manager.ensureBundled(asset(), removable: true);
+          await install(manager, asset(version: '9.0.0'));
+          await manager.uninstall(includedId);
+          final TrackingPluginManager next = makeManager();
+          expect(await next.ensureBundled(asset(), removable: true), isFalse);
+          expect(copyOf(next), isNull);
+
+          await install(next, asset());
+          expect(copyOf(next)!.included, isTrue);
+          expect(next.removedIncluded, isEmpty);
+        },
+      );
+
+      test(
+        'not added while another installed plugin serves its site',
+        () async {
+          final TrackingPluginManager manager = makeManager();
+          await install(
+            manager,
+            buildPluginZip(
+              fakeManifest(id: 'org.someone.anilist', siteId: 'anilist'),
+            ),
+          );
+          expect(
+            await manager.ensureBundled(asset(), removable: true),
+            isFalse,
+          );
+          expect(copyOf(manager), isNull);
+          // Not a removal: nothing to add back.
+          expect(manager.removedIncluded, isEmpty);
+          expect(manager.installed.single.registered, isTrue);
+        },
+      );
+
+      test(
+        'its site is not reserved: another plugin for it can be installed',
+        () async {
+          final TrackingPluginManager manager = makeManager();
+          await manager.ensureBundled(asset(), removable: true);
+          final TrackingPluginInfo other = await manager.inspect(
+            buildPluginZip(
+              fakeManifest(id: 'org.someone.anilist', siteId: 'anilist'),
+            ),
+          );
+          expect(other.site!.siteId, 'anilist');
+        },
+      );
+
+      test(
+        'the real bundled assets install, register and wait for a sign-in',
+        () async {
+          final TrackingPluginManager manager = makeManager();
+          final List<Object> errors = <Object>[];
+          await installBundledTrackingPlugins(
+            manager,
+            load: (BundledTrackingPlugin plugin) async =>
+                File(plugin.asset).readAsBytesSync(),
+            onError: (Object error, StackTrace _) => errors.add(error),
+          );
+          expect(errors, isEmpty);
+          final Map<String, InstalledTrackingPlugin> byId =
+              <String, InstalledTrackingPlugin>{
+                for (final InstalledTrackingPlugin p in manager.installed)
+                  p.id: p,
+              };
+          expect(byId.keys.toSet(), <String>{
+            for (final BundledTrackingPlugin b in kBundledTrackingPlugins) b.id,
+          });
+          expect(byId[kBundledBangumiPluginId]!.builtIn, isTrue);
+          for (final BundledTrackingPlugin b in <BundledTrackingPlugin>[
+            kBundledAniListPlugin,
+            kBundledMangaBakaPlugin,
+          ]) {
+            final InstalledTrackingPlugin plugin = byId[b.id]!;
+            expect(plugin.registered, isTrue, reason: b.id);
+            expect(plugin.included, isTrue, reason: b.id);
+            expect(plugin.builtIn, isFalse, reason: b.id);
+            expect(manager.accountOf(b.id).loggedIn, isFalse, reason: b.id);
+          }
+          expect(byId[kBundledAniListPlugin.id]!.info!.site!.siteId, 'anilist');
+          expect(
+            byId[kBundledMangaBakaPlugin.id]!.info!.site!.siteId,
+            'mangabaka',
+          );
+          await expectLater(
+            manager.uninstall(kBundledBangumiPluginId),
+            throwsA(isA<TrackingPluginException>()),
+          );
+          await manager.uninstall(kBundledMangaBakaPlugin.id);
+          expect(manager.removedIncluded.single.id, kBundledMangaBakaPlugin.id);
+        },
+      );
+    },
+  );
 }

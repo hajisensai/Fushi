@@ -13,8 +13,10 @@ A music plugin can never be loaded as a tracking plugin, or the reverse.
 - A tracking plugin lets Fushi read and write the user's list entry on one site, look subjects up by
   id, and optionally search by title. Fushi keeps every decision: when to send, what to link, and
   the rule that progress is never lowered.
-- The repo ships no site plugin and no plugin repository. Install is from a local `.fushiplug` file
-  after the user confirms name, permissions, network domains and signer.
+- No plugin repository. The app bundles three site plugins (Bangumi built in; AniList and MangaBaka
+  included and removable: [`2026-11-11-bangumi-bundled-plugin.md`](2026-11-11-bangumi-bundled-plugin.md)
+  §3 and §9). Any other plugin is installed from a local `.fushiplug` file after the user confirms
+  name, permissions, network domains and signer.
 - Not on iOS (downloads and runs third-party code; gated like music plugins). Not in the headless
   server. No plugin UI: sign-in is rendered by the host from the plugin's data.
 

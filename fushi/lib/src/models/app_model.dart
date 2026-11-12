@@ -1910,7 +1910,8 @@ class AppModel
     manager.changes.addListener(_applyTrackingProviders);
   }
 
-  /// Pins and installs the bundled Bangumi plugin, lists the plugins, then
+  /// Pins / installs the bundled plugins (Bangumi built in; AniList and
+  /// MangaBaka included and removable), lists the plugins, then
   /// moves the built-in Bangumi token into the plugin
   /// ([startBundledTrackingPlugins]). The service was built without the
   /// built-in Bangumi on this path, so `bangumi` is served by the plugin as

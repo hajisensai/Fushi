@@ -45,18 +45,26 @@ Future<bool> confirmTrackingPluginInstall(
 
 /// The details of an installed plugin, read-only.
 ///
-/// [builtIn]: the plugin ships with Fushi (the bundled Bangumi plugin).
+/// [builtIn]: the plugin is built into Fushi (the bundled Bangumi plugin).
+/// [included]: the plugin is one of the removable plugins included with
+/// Fushi (AniList, MangaBaka).
 Future<void> showTrackingPluginDetails(
   BuildContext context, {
   required TrackingPluginInfo info,
   bool builtIn = false,
+  bool included = false,
 }) => showAppDialog<void>(
   context: context,
   builder: (BuildContext dialogContext) => FushiAlertDialog(
     icon: const FushiIcon(FushiIcons.browserExtension),
     title: Text(info.name),
     // The name is the dialog's title already.
-    content: TrackingPluginDetails(info: info, builtIn: builtIn, showName: false),
+    content: TrackingPluginDetails(
+      info: info,
+      builtIn: builtIn,
+      included: included,
+      showName: false,
+    ),
     actions: <Widget>[
       FushiTextButton(
         onPressed: () => Navigator.of(dialogContext).pop(),
@@ -73,6 +81,7 @@ class TrackingPluginDetails extends StatelessWidget {
     required this.info,
     this.signerChanged = false,
     this.builtIn = false,
+    this.included = false,
     this.showName = true,
     this.installedVersion,
     super.key,
@@ -86,11 +95,21 @@ class TrackingPluginDetails extends StatelessWidget {
   /// Ships with Fushi: who made it is not a question (T1 F11 b).
   final bool builtIn;
 
+  /// Included with Fushi (removable): who made it is not a question either.
+  final bool included;
+
   /// False where the name is already shown (the details dialog's title).
   final bool showName;
 
   /// The installed plugin with this id has another signer.
   final bool signerChanged;
+
+  /// Who stands behind the package: Fushi, or its signer.
+  String _originText() {
+    if (builtIn) return t.media_tracking_plugins_built_in_note;
+    if (included) return t.media_tracking_plugins_included_note;
+    return trackingPluginSignerText(info);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -140,12 +159,10 @@ class TrackingPluginDetails extends StatelessWidget {
           value: info.networkDomains.join('\n'),
         ),
       _Note(
-        icon: builtIn || info.trustedSigner
+        icon: builtIn || included || info.trustedSigner
             ? FushiIcons.verified
             : FushiIcons.warning,
-        text: builtIn
-            ? t.media_tracking_plugins_built_in_note
-            : trackingPluginSignerText(info),
+        text: _originText(),
       ),
       if (signerChanged)
         _Note(
