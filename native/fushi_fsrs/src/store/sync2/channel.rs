@@ -1014,9 +1014,9 @@ fn settle_budget() -> CommitBudget<'static> {
 /// 在调用方的一个事务里做完：整份投影（真实全量数据约 1.1 GB）落进同一笔事务，WAL 要装下全部页，失败整段回滚、
 /// 下一条写命令又从头重做。
 ///
-/// 每片提交后把这一片落进投影的变化交给 [settled]：这些片没有自己的回包，Dart 那一侧按内容 / 视图 / RWKV 刷新信号
-/// 记的缓存（牌组树、profile 修改记录、分数表）不知道投影变了。调用方把它们攒在内核里，随这个 profile 的下一条命令
-/// 的回包交回（[crate::store::SrsCore::note_settled] / `take_settled`）。中途出错时已提交的片已经交过了。
+/// 每片提交后把这一片落进投影的变化交给 [settled]：这些片没有自己的回包，调用方按它推进内核持有的刷新键
+/// （[crate::store::SrsCore::refresh_slice]，store/refresh.rs），Dart 按键记的缓存（牌组树、profile 修改记录、分数表）
+/// 下一次读键时就知道投影变了。中途出错时已提交的片已经交过了。
 ///
 /// 写连接上开着事务（`is_autocommit` 为假）时中途提交不了，只能在那笔事务里一次做完：这是兜底。写连接上唯一能
 /// 跨调用留着的事务是旧库搬迁（`legacy_open`），搬迁期间不该有这个 profile 的命令进来，正常路径走不到这里。
@@ -1067,63 +1067,6 @@ fn settle_slice(
     Ok((done, t))
 }
 
-/// 通道自己做完的片（[settle]）攒下的投影变化，等这个 profile 的下一条命令带回 Dart。只留 Dart 要的那几样：推进
-/// 内容 / 视图 / RWKV 刷新信号的计数、可见性变了的实体、被彻底清除的实体。要刷新的缓存行不在这里（留在待刷新集合里
-/// 等收尾）。
-#[derive(Default, Debug)]
-pub(crate) struct Settled {
-    landed: u64,
-    content: u64,
-    view: u64,
-    rwkv: u64,
-    changed: std::collections::BTreeSet<(String, String)>,
-    purged: std::collections::BTreeSet<(String, String)>,
-}
-
-impl Settled {
-    pub(crate) fn absorb(&mut self, t: &Touched) {
-        self.landed += t.marks.landed;
-        self.content += t.marks.content;
-        self.view += t.marks.view;
-        self.rwkv += t.marks.rwkv;
-        self.changed.extend(t.entities_changed.iter().cloned());
-        self.purged.extend(t.purged.iter().cloned());
-    }
-
-    pub(crate) fn merge(&mut self, o: Settled) {
-        self.landed += o.landed;
-        self.content += o.content;
-        self.view += o.view;
-        self.rwkv += o.rwkv;
-        self.changed.extend(o.changed);
-        self.purged.extend(o.purged);
-    }
-
-    pub(crate) fn is_empty(&self) -> bool {
-        self.landed == 0 && self.changed.is_empty() && self.purged.is_empty()
-    }
-
-    /// 与改投影命令的回包同形的那几个键（Dart `_absorbProjection` 直接读）：
-    /// `{"marks": {"landed", "content", "view", "rwkv"}, "changed": [[kind, id]], "purged": [[kind, id]]}`。
-    pub(crate) fn to_json(&self) -> serde_json::Value {
-        let pairs = |s: &std::collections::BTreeSet<(String, String)>| {
-            s.iter()
-                .map(|(k, e)| serde_json::json!([k, e]))
-                .collect::<Vec<_>>()
-        };
-        serde_json::json!({
-            "marks": {
-                "landed": self.landed,
-                "content": self.content,
-                "view": self.view,
-                "rwkv": self.rwkv,
-            },
-            "changed": pairs(&self.changed),
-            "purged": pairs(&self.purged),
-        })
-    }
-}
-
 /// [advance] 交回的投影变化并进调用方这一次的结果（计数相加、集合取并）。
 pub(crate) fn absorb(t: &mut Touched, o: Touched) {
     t.marks.notes.extend(o.marks.notes);
@@ -1156,64 +1099,8 @@ impl crate::store::SrsCore {
         if !self.channel_live.load(std::sync::atomic::Ordering::SeqCst) {
             return Ok(());
         }
-        settle(w, profile, &mut |t| self.note_settled(profile, t))?;
+        settle(w, profile, &mut |t| self.refresh_slice(profile, t))?;
         self.recheck_channel_live(w)
-    }
-
-    /// 通道自己做完的一片落进投影的变化：攒着，等 [profile] 的下一条命令带回 Dart（[Self::take_settled]）。什么都没
-    /// 落的片不记。
-    pub(crate) fn note_settled(&self, profile: &str, t: &Touched) {
-        let mut one = Settled::default();
-        one.absorb(t);
-        if one.is_empty() {
-            return;
-        }
-        // 只是几个计数与 ID：panic 毒化过照常用。
-        self.settled
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .entry(profile.to_owned())
-            .or_default()
-            .merge(one);
-    }
-
-    /// 取走 [profile] 攒下的通道变化（[Self::note_settled]），连同**此刻**库里的修订号与纪元（已提交快照；通道的片在
-    /// 自己的 SAVEPOINT 里推进过修订号，Dart 手里的还是推进之前的）：
-    /// `{"marks", "changed", "purged", "localRevision", "localEpoch"}`。没有攒下的 → None。
-    ///
-    /// 分发器在命令**成功**、回包是对象、且请求带了 `settled: true` 时调（ffi.rs `sync2_dispatch`）：不吸收回包的
-    /// 调用方不会把它取走丢掉。读修订号失败（库正被关）就放回去不带，留给下一条命令。
-    pub(crate) fn take_settled(&self, profile: &str) -> Option<serde_json::Value> {
-        let pending = self
-            .settled
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .remove(profile)?;
-        let state = self.read_visible(|c| crate::store::local_state::read(c, profile));
-        let state = match state {
-            Ok(s) if s["exists"] == serde_json::json!(true) => s,
-            _ => {
-                self.settled
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .entry(profile.to_owned())
-                    .or_default()
-                    .merge(pending);
-                return None;
-            }
-        };
-        let mut v = pending.to_json();
-        v["localRevision"] = state["revision"].clone();
-        v["localEpoch"] = state["epoch"].clone();
-        Some(v)
-    }
-
-    /// [profile] 的数据整份删了（`profile_purge` / 并入提交）：攒下的通道变化没有人要了。
-    pub(crate) fn forget_settled(&self, profile: &str) {
-        self.settled
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .remove(profile);
     }
 
     /// 收段会话开了通道（[begin] 返回真）：之后的命令要先看通道。

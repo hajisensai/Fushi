@@ -2718,14 +2718,26 @@ impl SrsCore {
     /// 为什么要会话：本机身份的段（数据目录被复制、另一个安装在用同一身份）只用来比链找分叉点，分叉点是**全部**
     /// 这类段里第一处不同的最小值；换身份（[rotate]）又要在**全部**远端操作都投递之后做（重签发的因果上下文按
     /// 那时已应用的版本向量截断）。两者都要看全一轮，所以分叉点跨批累积在这里（状态归内核），换身份推到收尾。
+    ///
+    /// 会话期间这个 profile 的 RWKV 刷新推进攒着（store/refresh.rs），[SrsCore::sync2_ingest_end] 时并成一次；从进来
+    /// 那一刻就攒（下面先做完上一次没收完的通道片），开不成就当场放掉。
     pub fn sync2_ingest_begin(&self, profile: &str) -> Result<Value, String> {
+        self.refresh_hold(profile);
+        let out = self.ingest_begin_held(profile);
+        if out.is_err() {
+            self.refresh_release(profile);
+        }
+        out
+    }
+
+    fn ingest_begin_held(&self, profile: &str) -> Result<Value, String> {
         let w = self.writer()?;
         let local = Local::load(&w, profile)?.ok_or("sync2 not initialised for this profile")?;
         // 之前被打断的会话已经找到的分叉点接着用（审查 S-12：plan 不再让 Dart 重下本机身份的段）。
         let fork_at = recorded_fork(&w, profile, &local.device)?;
         let bootstrap = !studied_here(&w, profile, &local.device)?;
         // 新设备第一次同步走收段通道（先追加后折叠，channel.rs）；上一次的收尾做到一半就先按片做完（各片自己提交）。
-        let channel = super::channel::begin(&w, profile, &mut |t| self.note_settled(profile, t))?;
+        let channel = super::channel::begin(&w, profile, &mut |t| self.refresh_slice(profile, t))?;
         if channel {
             self.note_channel_live();
         } else {
@@ -2749,6 +2761,7 @@ impl SrsCore {
     /// （`ingest_end`，srs_sync2_round.dart 的 finally），删 profile 时也调。会话里预处理好的段与留着的页缓存随之
     /// 放掉；各片已提交时记下的待重放 / 待刷新还在库里，下一轮 `plan` 报 `finishPending` 再收。收尾已收完时是空操作。
     pub fn sync2_ingest_end(&self, profile: &str) -> Result<Value, String> {
+        self.refresh_release(profile);
         let mut phase = self.ingest_phase()?;
         if phase.belongs_to(profile) {
             self.set_ingest_phase(&mut phase, IngestPhase::Idle);

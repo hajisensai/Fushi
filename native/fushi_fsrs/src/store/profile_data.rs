@@ -219,7 +219,7 @@ impl SrsCore {
         }
         let w = self.profile_writer()?;
         let out = in_savepoint(&w, |c| purge_on(c, profile))?;
-        self.forget_settled(profile);
+        self.refresh_replaced(profile);
         // 正在收这个 profile 的会话（或它的收尾）一起放掉，连同留着的页缓存。
         self.sync2_ingest_end(profile)?;
         Ok(out)
@@ -312,7 +312,8 @@ impl SrsCore {
             Ok(out)
         })?;
         if out["done"] == json!(true) {
-            self.forget_settled(from);
+            self.refresh_replaced(from);
+            self.refresh_replaced(to);
             // 正在收旧 uid 的会话（或它的收尾）一起放掉，同 [Self::profile_purge]。
             self.sync2_ingest_end(from)?;
         }

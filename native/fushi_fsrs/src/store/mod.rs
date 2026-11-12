@@ -39,6 +39,7 @@ mod projections;
 mod projections_scan_tests;
 pub(crate) mod queue;
 mod read_pool;
+mod refresh;
 pub(crate) mod repr_rewrite;
 pub mod rows;
 pub mod schema;
@@ -120,9 +121,9 @@ pub struct SrsCore {
     /// 时置位，做完通道后写连接不在事务里时按表重置。为假时分发器不必拿写锁查通道（只读命令不排在写锁后面）。
     /// 只能多不能少：库只由这一个 [SrsCore] 打开写（别的进程 / 实例开同一个库不在这个约定里）。
     channel_live: AtomicBool,
-    /// 收段通道自己做完的片（没有回包可带）攒下的投影变化，按 profile：随那个 profile 的下一条命令的回包交回 Dart
-    /// （store/sync2/channel.rs `note_settled` / `take_settled`）。只在内存：进程没了，Dart 那一侧记的缓存也没了。
-    settled: Mutex<std::collections::HashMap<String, sync2::channel::Settled>>,
+    /// 进程内刷新键（store/refresh.rs）：Dart 按它判断牌组树 / 修改记录 / 角标 / 统计 / RWKV 分数表的缓存还能不能用。
+    /// 只在内存、按 profile；每次打开库换一个随机前缀。
+    refresh: Mutex<refresh::Refresh>,
     /// 常驻复习队列（store/queue.rs）：写连接上的触发器记下写过的卡 / 日志，`study` 按 profile 增量排队。
     study_hub: Arc<queue::StudyHub>,
     /// 浏览页与 AnkiConnect 共用的常驻会话（store/browse.rs，按 profile）：搜索语料、列数据随写入增量更新；
@@ -549,7 +550,7 @@ impl SrsCore {
             cache_configs: Mutex::new(std::collections::HashMap::new()),
             writer_cache: Mutex::new(mem_budget::WriterCache::new()),
             channel_live: AtomicBool::new(channel_live),
-            settled: Mutex::new(std::collections::HashMap::new()),
+            refresh: Mutex::new(refresh::Refresh::new()),
             study_hub,
             browse: Mutex::new(browse::Sessions::default()),
             #[cfg(test)]
@@ -892,6 +893,9 @@ impl SrsCore {
             .and_then(|_| w.execute_batch("COMMIT").map_err(|e| e.to_string()));
         if result.is_err() {
             let _ = w.execute_batch("ROLLBACK");
+        } else {
+            // 搬进来的是整库的数据，分不出 profile：每个 profile 的刷新键都变。
+            self.refresh_all();
         }
         self.legacy_open.store(false, Ordering::SeqCst);
         result

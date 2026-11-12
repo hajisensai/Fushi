@@ -320,7 +320,7 @@ class SrsRwkvService implements SrsRwkvScheduling {
   /// 后台整表重查已排进 worker、还没跑完。
   bool _requeryPending = false;
 
-  /// [SrsDbStore.changeFingerprint] 上次核对时的值（状态与日志表一致时记下）。
+  /// [SrsDbStore.landedFingerprint] 上次核对时的值（状态与日志表一致时记下）。
   String? _checkedRevision;
   Future<void>? _preparing;
   Future<void> _queue = Future<void>.value();
@@ -947,8 +947,9 @@ class SrsRwkvService implements SrsRwkvScheduling {
         _current.phase != SrsRwkvPhase.ready) {
       return false;
     }
-    // 先比 store 的内存修订号（零成本）：没变就不必扫日志表（每张卡出题都会走到这里）。
-    final String revision = await store.changeFingerprint();
+    // 先比内核的落库计数（只读内存）：没变就不必扫日志表（每张卡出题都会走到这里）。含收段通道自己做完的片——
+    // 落盘修订号要等下一条改投影命令的回包才到 Dart。
+    final String revision = store.landedFingerprint;
     if (revision == _checkedRevision) return true;
     // 作答不等这里（`SrsDbStore.answer` 里 unawaited 的 onAnswered）：对齐途中用户可能又答了
     // 一题，读到的日志就比指纹新。这时按新指纹再对一次，而不是当成「历史被改写」去全量重建

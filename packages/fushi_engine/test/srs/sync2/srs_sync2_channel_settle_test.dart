@@ -1,7 +1,8 @@
 // 新设备收段通道（native/fushi_fsrs/src/store/sync2/channel.rs）没做完时来的命令：内核的分发器在要完整投影的命令之前
-// 先按片把通道做完（每片一个事务）。那些片没有自己的回包，落进投影的变化由内核攒着、随这个 profile 的下一条命令的
-// 回包交回（`settled`），SrsDbStore 接进内容 / 视图 / 分数表的刷新信号（srs_db_store.dart `_absorbSettled`）。
-// 修复前这些变化从不到 Dart：按 `deckTreeKey` / `contentFingerprint` / `rwkvScoresKey` 记的缓存不失效。
+// 先按片把通道做完（每片一个事务）。那些片没有自己的回包：内核在每片提交时推进它在内存里持有的刷新键
+// （native/fushi_fsrs/src/store/refresh.rs），SrsDbStore 的 `deckTreeKey` / `contentFingerprint` / `rwkvScoresKey` /
+// `statsFingerprint` 每次现读。第 13 步以前这些变化从不到 Dart，按这些键记的缓存不失效；第 13、14 步靠回包里的
+// `settled` 交回，第 15 步起不再交回。
 //
 // 场景：新设备第一次同步收尾做到一半时 App 被杀；重开后副本照常打开（通道还开着，由 `identity` 回报），之后来一条
 // 要完整投影的只读命令（`digest`）。全程真实 srs.db + Rust 内核；通道那一段直接对内核发收段命令（通道只在
@@ -221,9 +222,9 @@ void main() {
     expect(b.contentFingerprint, isNot(content), reason: '内容修订号没推进');
     expect(b.deckTreeKey, isNot(tree), reason: '牌组树的缓存键没变');
     expect(b.rwkvScoresKey, isNot(rwkv), reason: '分数表没有重新刷新');
-    expect(b.statsFingerprint, isNot(stats), reason: '库修订号没跟上');
+    expect(b.statsFingerprint, isNot(stats), reason: '统计指纹没跟上');
     expect(identical(await b.deckTree(), treeBefore), isFalse);
-    // 只交一次：再来一条命令，信号不再动。
+    // 只记一次：再来一条命令，信号不再动。
     final String content2 = b.contentFingerprint;
     final String rwkv2 = b.rwkvScoresKey;
     await b.sync2Command(const <String, Object?>{'op': 'digest'});

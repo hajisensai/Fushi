@@ -781,96 +781,86 @@ fn appended(d: &Device, all: &Bucket) {
     assert_eq!(boot_state(d), Some((0, 0)), "appending");
 }
 
-/// 回包里的 `settled`：落进投影的事件数（没有这个键 = 0）。带了就核对它与库里此刻的修订号 / 纪元一致。
-fn settled_landed(d: &Device, reply: &Value) -> u64 {
-    let Some(s) = reply.get("settled") else {
-        return 0;
-    };
-    assert_eq!(
-        s["localRevision"],
-        json!(revision(d)),
-        "the revision is the one in the database now: {s}"
-    );
-    assert!(s["localEpoch"].is_string(), "{s}");
-    assert!(s["changed"].is_array() && s["purged"].is_array(), "{s}");
-    let m = &s["marks"];
-    let landed = m["landed"].as_u64().unwrap();
-    assert!(
-        landed > 0 || !s["changed"].as_array().unwrap().is_empty(),
-        "an empty hand-over is not attached: {s}"
-    );
-    assert!(m["content"].as_u64().unwrap() <= landed, "{s}");
-    landed
+/// 进程内刷新键（store/refresh.rs）里 [k] 的计数（键形如 `<开库标识>:<计数>[:<视图计数>]`）。
+fn key_count(keys: &Value, k: &str) -> i64 {
+    keys[k]
+        .as_str()
+        .unwrap()
+        .split(':')
+        .nth(1)
+        .unwrap()
+        .parse()
+        .unwrap()
 }
 
-/// 分发器在一条命令之前把通道做完（[super::channel::settle]）：那些片没有自己的回包，落进投影的变化攒在内核里，随
-/// 这个 profile 下一条**带 `settled: true`** 的命令的回包交回，只交一次。没带的命令不取（不吸收回包的调用方不会把
-/// 它丢掉）；失败的命令不取；中途出错时已提交的片照样交回。修复前这些变化从不到 Dart：Dart 按内容 / 视图修订号记的
-/// 牌组树、profile 修改记录、RWKV 分数表不失效。
+/// 这个 profile 此刻的刷新键（`refresh_keys`，分发器开头的库级段）。
+fn refresh_keys(d: &Device) -> Value {
+    cmd(d, json!({"op": "refresh_keys"}), vec![])
+}
+
+/// 分发器在一条命令之前把通道做完（[super::channel::settle]）：那些片没有自己的回包，每片提交时由内核推进刷新键
+/// （[crate::store::SrsCore::refresh_slice]）。`landed` 计数与库里的修订号同口径（每条落进投影的事件、每个可见性变了
+/// 的实体各 +1），所以两者增量相等；中途出错时已提交的片已经记过。第 14 步及以前这些变化攒在内核里，要等这个
+/// profile 下一条带 `settled: true` 的命令的回包交回 Dart；没有下一条命令时 Dart 按刷新信号记的缓存一直不失效。
 #[test]
-fn settled_slices_reach_the_next_command_that_asks_for_them() {
+fn channel_slices_move_the_refresh_keys_as_they_commit() {
     let all = world(43);
     let x = Device::new("ch-handover-x");
     x.core.sync2_identity(P, NOW).unwrap();
     appended(&x, &all);
-    let before = revision(&x);
-    // 第三片报错：已提交的两片攒着。
+    // 收段会话放掉：之后通道的片推进 RWKV 刷新不再攒着。
+    cmd(&x, json!({"op": "ingest_end"}), vec![]);
+    let (rev0, k0) = (revision(&x), refresh_keys(&x));
+    // 第三片报错：出错之前已提交的片已经记过（前两片不一定落了投影：落了多少，`landed` 就推进多少）。
     super::channel::take_settle_slices();
     super::channel::fail_settle_at(Some(2));
-    let err = cmd_err(&x, json!({"op": "channel_settle", "settled": true}));
+    let err = cmd_err(&x, json!({"op": "channel_settle"}));
     super::channel::fail_settle_at(None);
     assert!(err.contains("injected settle failure"), "{err}");
-    let partial = revision(&x) - before;
-    // 没带 `settled` 的命令不取。
-    let quiet = cmd(&x, json!({"op": "identity", "now": NOW}), vec![]);
-    assert!(quiet.get("settled").is_none(), "{quiet}");
-    // 带了的那条取走出错之前已提交的片（`identity` 对通道透明：不会接着做通道）。
-    let first = cmd(
-        &x,
-        json!({"op": "identity", "now": NOW, "settled": true}),
-        vec![],
-    );
-    let landed_first = settled_landed(&x, &first);
+    let k1 = refresh_keys(&x);
+    let partial = revision(&x) - rev0;
     assert_eq!(
-        partial > 0,
-        first.get("settled").is_some(),
-        "the slices committed before the failure are handed over: {first}"
+        key_count(&k1, "landed") - key_count(&k0, "landed"),
+        partial,
+        "the landed key moves exactly as the persisted revision: {k0} -> {k1}"
     );
-    // 只交一次。
-    let again = cmd(
-        &x,
-        json!({"op": "identity", "now": NOW, "settled": true}),
-        vec![],
-    );
-    assert!(again.get("settled").is_none(), "{again}");
-    // 一条本机写入：分发器先把通道剩下的做完，回包带着那些片（连同这条命令自己的结果）。
+    if partial > 0 {
+        assert_ne!(k1["stats"], k0["stats"]);
+        assert_ne!(
+            k1["rwkv"], k0["rwkv"],
+            "peer events landed: the RWKV table is re-queried"
+        );
+    } else {
+        assert_eq!(k1, k0, "nothing landed, nothing moves");
+    }
+    // 对通道透明的只读命令不动键。
+    cmd(&x, json!({"op": "identity", "now": NOW}), vec![]);
+    assert_eq!(refresh_keys(&x), k1);
+    // 一条本机写入：分发器先把通道剩下的做完（每片记一次），再按这条命令自己的回包记一次。
     let input = json!([{"e": edit("note", &note_id(7), "f/fa", json!("typed mid-sync")), "note": note_id(7)}])
         .to_string();
     let wrote = cmd(
         &x,
-        json!({"op": "apply", "now": NOW, "legacyDevice": "dev", "settled": true}),
+        json!({"op": "apply", "now": NOW, "legacyDevice": "dev"}),
         vec![input.into_bytes()],
     );
     assert!(boot_state(&x).is_none(), "settled");
-    let landed_rest = settled_landed(&x, &wrote);
-    assert!(landed_rest > 0, "{wrote}");
+    assert!(
+        wrote.get("settled").is_none(),
+        "no hand-over any more: {wrote}"
+    );
+    let k2 = refresh_keys(&x);
     assert_eq!(
-        wrote["settled"]["localRevision"], wrote["localRevision"],
-        "the command's own reply and the hand-over agree on the revision"
+        key_count(&k2, "landed") - key_count(&k0, "landed"),
+        revision(&x) - rev0,
+        "slices + the command's own result, the same tally as the persisted revision"
     );
+    for k in ["content", "structure", "stats", "rwkv"] {
+        assert_ne!(k2[k], k1[k], "{k}: {k1} -> {k2}");
+    }
     assert!(
-        wrote["marks"]["landed"].as_u64().unwrap() >= 1,
-        "the command's own result is still its own: {wrote}"
-    );
-    // 交回的事件数 + 可见性变了的实体数 = 通道的片推进的修订号（同 `advance_revision` 的口径；可见性变化跨片去重，
-    // 所以只能是不多于）。
-    let own = wrote["localRevision"].as_i64().unwrap() - (revision_before_apply(&wrote));
-    assert!(own >= 1);
-    let handed = landed_first + landed_rest;
-    let advanced = (revision(&x) - before - own) as u64;
-    assert!(
-        handed <= advanced && handed > 0,
-        "handed over {handed}, the channel advanced the revision by {advanced}"
+        revision_before_apply(&wrote) > rev0 + partial,
+        "the rest of the channel settled before the command: {wrote}"
     );
 }
 
@@ -881,10 +871,11 @@ fn revision_before_apply(reply: &Value) -> i64 {
         - reply["changed"].as_array().map_or(0, |a| a.len() as i64)
 }
 
-/// 另外几条会自己把通道做完的路径同样交回：会话外投递（`import`）、新会话开始时上一次的收尾没做完
-/// （`ingest_begin`，channel.rs `begin`）、并入提交之前（`profile_merge_commit`：提交没成、旧 uid 还在时）。
+/// 另外几条会自己把通道做完的路径同样推进刷新键：会话外投递（`import`）、新会话开始时上一次的收尾没做完
+/// （`ingest_begin`，channel.rs `begin`：RWKV 的推进从会话一开始就攒着，`ingest_end` 并成一次）、并入提交之前
+/// （`profile_merge_commit`：提交没成、旧 uid 还在时）；整份删掉的 uid 一律作废。
 #[test]
-fn every_path_that_settles_the_channel_hands_its_slices_over() {
+fn every_path_that_settles_the_channel_moves_the_refresh_keys() {
     let all = world(47);
     // 导入：分发器 / `local_write` 在导入之前做完通道。
     let source = Device::new("ch-handover-src");
@@ -895,15 +886,20 @@ fn every_path_that_settles_the_channel_hands_its_slices_over() {
     let a = Device::new("ch-handover-import");
     a.core.sync2_identity(P, NOW).unwrap();
     appended(&a, &all);
-    let imported = cmd(
-        &a,
-        json!({"op": "import", "now": NOW + 1, "settled": true}),
-        vec![exported],
-    );
+    cmd(&a, json!({"op": "ingest_end"}), vec![]);
+    let (rev0, k0) = (revision(&a), refresh_keys(&a));
+    cmd(&a, json!({"op": "import", "now": NOW + 1}), vec![exported]);
     assert!(boot_state(&a).is_none());
-    assert!(settled_landed(&a, &imported) > 0, "{imported}");
+    let k1 = refresh_keys(&a);
+    assert!(revision(&a) > rev0);
+    assert_eq!(
+        key_count(&k1, "landed") - key_count(&k0, "landed"),
+        revision(&a) - rev0,
+        "{k0} -> {k1}"
+    );
+    assert_ne!(k1["rwkv"], k0["rwkv"]);
 
-    // 收尾折到一半（App 在折叠途中被杀），新会话开始时先做完：`ingest_begin` 的回包带着。
+    // 收尾折到一半（App 在折叠途中被杀），新会话开始时先做完：会话里的 RWKV 推进攒到 `ingest_end` 才放出一次。
     let b = Device::new("ch-handover-begin");
     b.core.sync2_identity(P, NOW).unwrap();
     appended(&b, &all);
@@ -917,40 +913,92 @@ fn every_path_that_settles_the_channel_hands_its_slices_over() {
         boot_state(&b).is_some_and(|(phase, _)| phase != 0),
         "folding"
     );
-    let begun = cmd(&b, json!({"op": "ingest_begin", "settled": true}), vec![]);
+    cmd(&b, json!({"op": "ingest_end"}), vec![]);
+    let k0 = refresh_keys(&b);
+    cmd(&b, json!({"op": "ingest_begin"}), vec![]);
     assert!(
         boot_state(&b).is_none(),
         "the next session settles it first"
     );
-    assert!(settled_landed(&b, &begun) > 0, "{begun}");
+    let k1 = refresh_keys(&b);
+    assert!(
+        key_count(&k1, "landed") > key_count(&k0, "landed"),
+        "{k0} -> {k1}"
+    );
+    assert_eq!(k1["rwkv"], k0["rwkv"], "held for the session");
+    cmd(&b, json!({"op": "ingest_end"}), vec![]);
+    assert_eq!(
+        key_count(&refresh_keys(&b), "rwkv"),
+        key_count(&k0, "rwkv") + 1,
+        "released as one"
+    );
 
-    // 并入提交：先把旧 uid 的通道做完再核对；核对没过（映射不全）旧 uid 还在，它的下一条命令拿到那些片。
+    // 并入提交：先把旧 uid 的通道做完再核对；核对没过（映射不全）旧 uid 还在，片照样记过。
     let c = Device::new("ch-handover-merge");
     c.core.sync2_identity(P, NOW).unwrap();
     appended(&c, &all);
+    let k0 = refresh_keys(&c);
     let out = c
         .core
         .profile_merge_commit(P, "ch-handover-merge-target", b"{}", None)
         .unwrap();
     assert_eq!(out["done"], json!(false), "{out}");
     assert!(boot_state(&c).is_none(), "the commit settled the channel");
-    let next = cmd(
-        &c,
-        json!({"op": "identity", "now": NOW, "settled": true}),
-        vec![],
+    let k1 = refresh_keys(&c);
+    assert!(
+        key_count(&k1, "landed") > key_count(&k0, "landed"),
+        "{k0} -> {k1}"
     );
-    assert!(settled_landed(&c, &next) > 0, "{next}");
-    // 整份删掉的 uid：攒下的没有人要了，不会交给之后同一个 uid 的新数据。
+    // 整份删掉的 uid：键全部作废，开着的收段会话攒下的也放掉。
     let d = Device::new("ch-handover-purge");
     d.core.sync2_identity(P, NOW).unwrap();
     appended(&d, &all);
     cmd(&d, json!({"op": "channel_settle"}), vec![]);
+    let k0 = refresh_keys(&d);
     d.core.profile_purge(P).unwrap();
-    d.core.sync2_identity(P, NOW).unwrap();
-    let fresh = cmd(
-        &d,
-        json!({"op": "identity", "now": NOW, "settled": true}),
-        vec![],
+    let k1 = refresh_keys(&d);
+    for k in ["content", "structure", "rwkv", "stats", "landed"] {
+        assert_ne!(k1[k], k0[k], "{k}");
+    }
+}
+
+/// 失败的改投影命令按「可能提交了一部分」作废一次；`local_state` 带 `reload: true`（Dart 开库、命令失败后的重读）
+/// 作废一次，不带的是纯读；读键本身不动键。键里的开库标识每次打开库都不同。
+#[test]
+fn failures_and_reloads_invalidate_and_reads_do_not() {
+    let x = Device::new("refresh-failure");
+    x.core.sync2_identity(P, NOW).unwrap();
+    let k0 = refresh_keys(&x);
+    assert_eq!(refresh_keys(&x), k0, "reading the keys does not move them");
+    // 改投影的命令失败（这里是缺缓存配置，命令什么都没做）：分发器不知道它提交了多少，按「可能提交了一部分」作废一次。
+    let err = cmd_err(
+        &x,
+        json!({"op": "apply", "now": NOW, "legacyDevice": "dev"}),
     );
-    assert!(fresh.get("settled").is_none(), "{fresh}");
+    assert!(!err.is_empty());
+    let k1 = refresh_keys(&x);
+    for k in ["content", "rwkv", "stats", "landed"] {
+        assert_eq!(key_count(&k1, k), key_count(&k0, k) + 1, "{k}");
+    }
+    cmd(&x, json!({"op": "local_state"}), vec![]);
+    assert_eq!(refresh_keys(&x), k1, "a plain read");
+    cmd(&x, json!({"op": "local_state", "reload": true}), vec![]);
+    let k2 = refresh_keys(&x);
+    assert_eq!(key_count(&k2, "content"), key_count(&k1, "content") + 1);
+    // 一条本机写入：落库的事件推进 `landed` 与内容键。
+    let input =
+        json!([{"e": edit("note", &note_id(3), "f/fa", json!("typed")), "note": note_id(3)}])
+            .to_string();
+    cmd(
+        &x,
+        json!({"op": "apply", "now": NOW, "legacyDevice": "dev"}),
+        vec![input.into_bytes()],
+    );
+    let k3 = refresh_keys(&x);
+    assert!(key_count(&k3, "landed") > key_count(&k2, "landed"));
+    assert!(key_count(&k3, "content") > key_count(&k2, "content"));
+    // 另一个库（另一次打开）的键不会与这一个相等。
+    let y = Device::new("refresh-failure-other");
+    y.core.sync2_identity(P, NOW).unwrap();
+    assert_ne!(refresh_keys(&y)["content"], k0["content"]);
 }
