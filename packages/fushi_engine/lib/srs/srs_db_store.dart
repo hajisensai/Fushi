@@ -22,6 +22,7 @@ import 'package:meta/meta.dart' show visibleForTesting;
 
 import 'package:fushi_engine/srs/srs_backup_snapshot.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
+import 'package:fushi_engine/srs/srs_collection_binding.dart';
 import 'package:fushi_engine/srs/srs_core_workers.dart';
 import 'package:fushi_engine/srs/srs_fushi_card_native_media.dart';
 import 'package:fushi_engine/srs/srs_op_ledger.dart';
@@ -864,6 +865,9 @@ class SrsDbStore implements SrsSync2Host {
   /// 每个副本一把锁（嵌套打开的另一个副本不会误认成持锁）。
   final Object _writeZoneKey = Object();
 
+  /// [withDeviceOffset] 的 Zone 键（每个副本一个：只换本副本的时区）。
+  final Object _deviceOffsetZoneKey = Object();
+
   // ------------------------------------------------------------------ 本机状态
 
   Future<bool> _hasAnyEvent() async =>
@@ -996,11 +1000,28 @@ class SrsDbStore implements SrsSync2Host {
   /// - 时区：恒为本机此刻的偏移（[SrsDayContext.localOffsetMin]）。时区不随同步：人带着设备换时区时「今天」跟着
   ///   本机走；每条复习日志自带作答时的偏移与翻日时刻，重放不读这里。旧版本库里可能有的 profile 键
   ///   `utcOffsetMin` 从没有写入方，现在也不再读。
+  ///   「本机」是用户手上那台设备：远程复习时主机替另一台设备跑这次调用，时区取那台设备报来的偏移
+  ///   （[withDeviceOffset]）。
   Future<SrsDayContext> dayContext() async {
     final int rollover =
         (await syncedDayRollover())?.hour ?? _fallbackRollover().clamp(0, 23);
-    return SrsDayContext(utcOffsetMin: _localOffset(), rolloverHour: rollover);
+    final Object? device = Zone.current[_deviceOffsetZoneKey];
+    return SrsDayContext(
+      utcOffsetMin: device is int ? device : _localOffset(),
+      rolloverHour: rollover,
+    );
   }
+
+  /// 在 [body] 这条异步调用链里，本副本「今天」的时区改取 [utcOffsetMin]（分钟），翻日时刻不变。
+  ///
+  /// 远程复习用（[SrsRemoteStoreService]）：手机连电脑上的库复习时，主机上的这次调用替手机执行，每日上限 /
+  /// 到期计数 / 作答日志记下的偏移都应按手机所在的时区算，而不是主机的。只作用于本副本，别的副本与 [body]
+  /// 之外的调用照旧取宿主给的 `localOffsetMin`。偏移的合法性由调用方先校验（远程端点只放行现实时区范围）。
+  Future<T> withDeviceOffset<T>(int utcOffsetMin, Future<T> Function() body) =>
+      runZoned(
+        body,
+        zoneValues: <Object, Object>{_deviceOffsetZoneKey: utcOffsetMin},
+      );
 
   /// profile 里显式写过的翻日时刻（0–23）与生效的那条修改记录 ID；从没写过为 null（[dayContext] 用宿主的回落值）。
   /// 修改记录 ID 让宿主分辨「同步带来了新的修改」与「还是本机见过的那条」。
@@ -1530,9 +1551,9 @@ class SrsDbStore implements SrsSync2Host {
     Map<String, Object?> request, {
     List<Uint8List> blobs = const <Uint8List>[],
   }) async {
-    if (request['op'] == 'dedup') {
-      // 重复流收敛（内核 store/sync2/dedup.rs）改投影（删并存的修改记录行、解除扣留）：与冲突解决同一条路径，
-      // 投影变化接进缓存。
+    if (request['op'] == 'dedup' || request['op'] == 'digest_heal') {
+      // 重复流收敛（内核 store/sync2/dedup.rs）改投影（删并存的修改记录行、解除扣留）、摘要不一致的自动重建
+      // （store/sync2/heal.rs）重放改写日志：与冲突解决同一条路径，投影变化接进缓存。
       return SrsSync2Result(
         await _sync2Write(request),
         const <(String, Uint8List)>[],
@@ -2089,6 +2110,7 @@ class SrsDbStore implements SrsSync2Host {
     'checkpoint',
     'restore',
     'dedup',
+    'digest_heal',
     'refresh_caches',
     'rebuild_caches',
     'backfill_dupe_norms',
@@ -5261,6 +5283,31 @@ class SrsDbStore implements SrsSync2Host {
     return any != null;
   }
 
+  /// 本 profile 有没有用户数据（[srsProfileHasUserData]：不只是笔记，自建牌组、改过的预设 / 内置笔记类型、
+  /// 复习日志都算）。决定换 uid 时能不能直接采用（删旧 uid 的全部行）还是必须并入。
+  Future<bool> hasUserData() => srsProfileHasUserData(db, profileUid);
+
+  /// 本 profile（集合）的绑定状态（内核 `binding_get`，见 srs_collection_binding.dart）；没有记录为 null。
+  Future<SrsCollectionBinding?> collectionBinding() async =>
+      SrsCollectionBinding.fromJson(
+        (await sync2Command(const <String, Object?>{
+          'op': 'binding_get',
+        })).map['binding'],
+      );
+
+  /// 写本 profile 的绑定状态（内核 `binding_set`：只进不退，已定下的不改），返回写完之后的状态。
+  Future<SrsCollectionBinding?> setCollectionBinding(
+    SrsCollectionBindingState state, {
+    required String via,
+  }) async => SrsCollectionBinding.fromJson(
+    (await sync2Command(<String, Object?>{
+      'op': 'binding_set',
+      'state': state.wire,
+      'via': via,
+      'now': now().$1,
+    })).map['binding'],
+  );
+
   /// 本 profile 的用户笔记数（铁律 E：内置行不算）。profile 冲突时给用户对比本机与候选（反馈 dOv8AdJ6yV）。
   Future<int> userNoteCount() async {
     final Expression<int> n = db.srsEntities.id.count();
@@ -6139,4 +6186,40 @@ class SrsAnkiNoteInfo {
 
   /// 同 [SrsNoteView.field]：没有 = 空串。
   String field(String fieldId) => fields[fieldId] ?? '';
+}
+
+/// [profileUid] 在 srs.db 里有没有用户数据（铁律 E 的「有数据」，决定换 uid 时能直接采用还是必须并入）：
+///
+/// - 内置 ID 集合（[srsBuiltinEntities]：内置默认牌组与内置笔记类型）之外的任何实体——笔记、自建牌组、自建笔记类型、
+///   profile 实体，含已删的墓碑；
+/// - 任何修改记录：没改过的内置定义不写修改记录（[SrsDbStore.ensureBuiltins]），所以改过内置牌组的预设 / 内置笔记
+///   类型 / 日界都会留下一条；
+/// - 任何复习日志、看不懂的事件（更新版本写的，同样是用户数据）。
+///
+/// 只有内置行 = 没有。以前只看笔记（[SrsDbStore.hasUserNotes]），只建了牌组 / 改了预设、还没有笔记的 profile 会被
+/// 当成空的直接采用对方 uid，删掉这些数据。
+Future<bool> srsProfileHasUserData(SrsDatabase db, String profileUid) async {
+  final List<String> builtin = <String>[
+    for (final SrsEntityRecord r in srsBuiltinEntities(profileUid)) r.id,
+  ];
+  final String marks = List<String>.filled(builtin.length, '?').join(', ');
+  final Variable<String> uid = Variable<String>(profileUid, srsIdType);
+  final QueryRow? row = await db
+      .customSelect(
+        'SELECT 1 WHERE '
+        'EXISTS (SELECT 1 FROM srs_entities WHERE profile_uid = ? '
+        'AND id NOT IN ($marks)) '
+        'OR EXISTS (SELECT 1 FROM srs_field_edits WHERE profile_uid = ?) '
+        'OR EXISTS (SELECT 1 FROM srs_review_logs WHERE profile_uid = ?) '
+        'OR EXISTS (SELECT 1 FROM srs_unknown_events WHERE profile_uid = ?)',
+        variables: <Variable<Object>>[
+          uid,
+          for (final String id in builtin) Variable<String>(id, srsIdType),
+          uid,
+          uid,
+          uid,
+        ],
+      )
+      .getSingleOrNull();
+  return row != null;
 }

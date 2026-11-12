@@ -297,8 +297,8 @@ constexpr uint32_t kDispatchRva = 0x1800u;
 
 ap::LeafAnchorDeltas SyntheticDeltas() {
   ap::LeafAnchorDeltas d;
-  d.glyph_dispatch_from_traversal = 0;  // 由解码得到，不参与
-  d.raster_glyph_return_from_traversal = 0x100;
+  d.glyph_dispatch_from_traversal = 0x400;  // kDispatchRva - kTraversalRva
+  d.raster_glyph_return_from_traversal = 0x500;  // 派发函数体内
   d.glyph_single_return_from_traversal = 0x200;
   d.glyph_double_first_return_from_traversal = 0x300;
   d.glyph_double_second_return_from_traversal = 0x400;
@@ -329,6 +329,20 @@ void PlaceRel32Call(SyntheticImage& image, uint32_t return_rva,
   std::memcpy(call + 1, &displacement, sizeof(displacement));
 }
 
+// 派发调用点前的「0x100 字节文字状态按值拷进参数区」帧形状。
+void PlaceStateCopyBeforeCall(SyntheticImage& image, uint32_t return_rva) {
+  static constexpr uint8_t kCopy[] = {0x81, 0xec, 0x00, 0x01, 0x00, 0x00,
+                                      0xb9, 0x40, 0x00, 0x00, 0x00, 0x8b,
+                                      0xfc, 0xf3, 0xa5};
+  std::memcpy(image.at(return_rva - 5u - sizeof(kCopy)), kCopy, sizeof(kCopy));
+}
+
+// raster 调用之后的 `add esp, 8; ret`。
+void PlaceFramelessReturnAfter(SyntheticImage& image, uint32_t return_rva) {
+  static constexpr uint8_t kTail[] = {0x83, 0xc4, 0x08, 0xc3};
+  std::memcpy(image.at(return_rva), kTail, sizeof(kTail));
+}
+
 void PlaceRegisterIndirect(SyntheticImage& image, uint32_t return_rva,
                            uint8_t modrm) {
   uint8_t* call = image.at(return_rva - 2u);
@@ -344,19 +358,26 @@ void PlaceAbsoluteIndirect(SyntheticImage& image, uint32_t return_rva,
   std::memcpy(call + 2, &slot_va, sizeof(slot_va));
 }
 
-PlantedSites PlantCallShapes(SyntheticImage& image, int32_t shift) {
+// shift：整体位移（所有 return site 一起动）。glyph_body_shift：只在 traversal 函数体内
+// 插入代码（三个 glyph 返回点一起动、派发函数与其余站点不动）——实测另一个白2 构建正是
+// 这种差异（+0x13）。
+PlantedSites PlantCallShapes(SyntheticImage& image, int32_t shift,
+                             int32_t glyph_body_shift = 0) {
   const ap::LeafAnchorDeltas d = SyntheticDeltas();
   const uint32_t poller_anchor = kPollerRva;
   const uint32_t embed_anchor = kEmbedRva;
   PlantedSites s;
   s.raster_glyph_return = static_cast<uint32_t>(
       kTraversalRva + d.raster_glyph_return_from_traversal + shift);
-  s.glyph_single_return = static_cast<uint32_t>(
-      kTraversalRva + d.glyph_single_return_from_traversal + shift);
+  s.glyph_single_return =
+      static_cast<uint32_t>(kTraversalRva + d.glyph_single_return_from_traversal +
+                            shift + glyph_body_shift);
   s.glyph_double_first = static_cast<uint32_t>(
-      kTraversalRva + d.glyph_double_first_return_from_traversal + shift);
+      kTraversalRva + d.glyph_double_first_return_from_traversal + shift +
+      glyph_body_shift);
   s.glyph_double_second = static_cast<uint32_t>(
-      kTraversalRva + d.glyph_double_second_return_from_traversal + shift);
+      kTraversalRva + d.glyph_double_second_return_from_traversal + shift +
+      glyph_body_shift);
   s.quad_draw_return =
       static_cast<uint32_t>(kRasterRva + d.quad_draw_return_from_raster + shift);
   s.alternate_quad_draw_return = static_cast<uint32_t>(
@@ -367,9 +388,12 @@ PlantedSites PlantCallShapes(SyntheticImage& image, int32_t shift) {
       embed_anchor + d.voice_archive_read_return_from_embed_anchor + shift);
 
   PlaceRel32Call(image, s.raster_glyph_return, kRasterRva);
-  PlaceRel32Call(image, s.glyph_single_return, kDispatchRva);
-  PlaceRel32Call(image, s.glyph_double_first, kDispatchRva);
-  PlaceRel32Call(image, s.glyph_double_second, kDispatchRva);
+  PlaceFramelessReturnAfter(image, s.raster_glyph_return);
+  for (uint32_t glyph_return :
+       {s.glyph_single_return, s.glyph_double_first, s.glyph_double_second}) {
+    PlaceStateCopyBeforeCall(image, glyph_return);
+    PlaceRel32Call(image, glyph_return, kDispatchRva);
+  }
   PlaceRegisterIndirect(image, s.quad_draw_return, 0xd0u);
   PlaceRegisterIndirect(image, s.alternate_quad_draw_return, 0xd0u);
   PlaceRegisterIndirect(image, s.poller_last_return, 0xd6u);
@@ -456,6 +480,161 @@ void RejectsGlyphReturnsWithDifferentTargets() {
   fushi_voice_hook::LeafAquaplusProfile resolved{};
   assert(!ap::ResolveLeafProfile(image, anchors, SyntheticDeltas(), &resolved));
 }
+
+// traversal 函数体内插入代码：三个 glyph 返回点整体后移、派发函数不动。旧判据（窗口内
+// 「任意 rel32 call」定单字节返回点）在真实函数体里会撞上多条 call 而整体拒绝；新判据
+// 先由调用图定派发函数，再找调向它的调用。
+void ResolvesAfterCodeInsertedInsideTheTraversalBody() {
+  SyntheticImage synthetic = MakeLeafLikeImage();
+  const PlantedSites planted = PlantCallShapes(synthetic, 0, 0x13);
+  // 单字节起点附近再放几条调向别处的 call：真实 traversal 每几个字节就一条。
+  PlaceRel32Call(synthetic, planted.glyph_single_return - 0x20u, kRasterRva);
+  PlaceRel32Call(synthetic, planted.glyph_single_return - 0x30u, kPollerRva);
+  el::LoadedPeImage image = synthetic.Open();
+  ap::DerivedAnchors anchors;
+  assert(ap::DeriveLeafAnchors(image, &anchors));
+  fushi_voice_hook::LeafAquaplusProfile resolved{};
+  assert(ap::ResolveLeafProfile(image, anchors, SyntheticDeltas(), &resolved));
+  ExpectResolved(resolved, planted);
+}
+
+// 三点间距是那段单 / 双字节分支自身的长度：窗口各自挑中了间距不对的调用 = 认错了。
+void RejectsGlyphReturnsWithWrongSpacing() {
+  SyntheticImage synthetic = MakeLeafLikeImage();
+  const PlantedSites planted = PlantCallShapes(synthetic, 0);
+  std::memset(synthetic.at(planted.glyph_double_second - 20u), 0, 20u);
+  PlaceStateCopyBeforeCall(synthetic, planted.glyph_double_second + 0x10u);
+  PlaceRel32Call(synthetic, planted.glyph_double_second + 0x10u, kDispatchRva);
+  el::LoadedPeImage image = synthetic.Open();
+  ap::DerivedAnchors anchors;
+  assert(ap::DeriveLeafAnchors(image, &anchors));
+  fushi_voice_hook::LeafAquaplusProfile resolved{};
+  ap::LeafResolveTrace trace;
+  assert(!ap::ResolveLeafProfile(image, anchors, SyntheticDeltas(), &resolved,
+                                 &trace));
+  assert(trace.failed_at == ap::LeafResolveStage::kGlyphDoubleReturns);
+}
+
+// 派发调用前没有 0x100 字节状态拷贝：栈偏移 0x110 失去结构依据，拒绝。
+void RejectsGlyphCallWithoutStateCopyFrame() {
+  SyntheticImage synthetic = MakeLeafLikeImage();
+  const PlantedSites planted = PlantCallShapes(synthetic, 0);
+  std::memset(synthetic.at(planted.glyph_single_return - 20u), 0x90, 15u);
+  el::LoadedPeImage image = synthetic.Open();
+  ap::DerivedAnchors anchors;
+  assert(ap::DeriveLeafAnchors(image, &anchors));
+  fushi_voice_hook::LeafAquaplusProfile resolved{};
+  ap::LeafResolveTrace trace;
+  assert(!ap::ResolveLeafProfile(image, anchors, SyntheticDeltas(), &resolved,
+                                 &trace));
+  assert(trace.failed_at == ap::LeafResolveStage::kGlyphSingleReturn);
+}
+
+// raster 调用之后不是 `add esp, 8; ret`：父返回槽偏移 0x0c 失去依据，拒绝。
+void RejectsRasterCallWithoutFramelessReturn() {
+  SyntheticImage synthetic = MakeLeafLikeImage();
+  const PlantedSites planted = PlantCallShapes(synthetic, 0);
+  synthetic.at(planted.raster_glyph_return)[2] = 0x0cu;  // add esp, 0x0c
+  el::LoadedPeImage image = synthetic.Open();
+  ap::DerivedAnchors anchors;
+  assert(ap::DeriveLeafAnchors(image, &anchors));
+  fushi_voice_hook::LeafAquaplusProfile resolved{};
+  ap::LeafResolveTrace trace;
+  assert(!ap::ResolveLeafProfile(image, anchors, SyntheticDeltas(), &resolved,
+                                 &trace));
+  assert(trace.failed_at == ap::LeafResolveStage::kRasterGlyphReturn);
+}
+
+void PlaceJmp(SyntheticImage& image, uint32_t at_rva, int64_t target_rva) {
+  uint8_t* jmp = image.at(at_rva);
+  jmp[0] = 0xe9u;
+  const int32_t displacement =
+      static_cast<int32_t>(target_rva - static_cast<int64_t>(at_rva) - 5);
+  std::memcpy(jmp + 1, &displacement, sizeof(displacement));
+}
+
+// 文本 hook 点已被注入模块 detour（跳出主映像）：运行时映像上这是同一个 hook 点，认；
+// 磁盘原始映像上不可能出现，不认。
+void EmbedSiteDetourIsAcceptedOnlyOnTheRuntimeImage() {
+  SyntheticImage synthetic = MakeLeafLikeImage();
+  const uint32_t hook = kEmbedRva + lx::kEmbedHookOffsetFromAnchor;
+  PlaceJmp(synthetic, hook, static_cast<int64_t>(kImageSize) + 0x10000000);
+  el::LoadedPeImage image = synthetic.Open();
+  ap::DerivedAnchors derived;
+  ap::LeafAnchorTrace trace;
+  assert(!ap::DeriveLeafAnchors(image, &derived, &trace,
+                                ap::LeafImageSource::kPristineFile));
+  assert(trace.embed_hits == 1u && trace.embed_site_detoured_rejected);
+  assert(ap::DeriveLeafAnchors(image, &derived, &trace,
+                               ap::LeafImageSource::kRuntimeImage));
+  ExpectDerived(derived);
+}
+
+// 跳回主映像内部的 jmp 不是 detour 形状：运行时映像上也不认。
+void EmbedSiteJumpInsideTheImageIsRejected() {
+  SyntheticImage synthetic = MakeLeafLikeImage();
+  const uint32_t hook = kEmbedRva + lx::kEmbedHookOffsetFromAnchor;
+  PlaceJmp(synthetic, hook, kRasterRva);
+  el::LoadedPeImage image = synthetic.Open();
+  ap::DerivedAnchors derived;
+  assert(!ap::DeriveLeafAnchors(image, &derived, nullptr,
+                                ap::LeafImageSource::kRuntimeImage));
+}
+
+// 总入口：锚点 → return site → 节角色，全过才产出 profile；设备槽落进可执行节即拒绝。
+void ProvesStructureEndToEndAndChecksSectionRoles() {
+  SyntheticImage synthetic = MakeLeafLikeImage();
+  PlantCallShapes(synthetic, 0);
+  // 总入口用的是已测量位移；合成映像放不下，故这里直接走分段 API 再查节角色。
+  el::LoadedPeImage image = synthetic.Open();
+  ap::DerivedAnchors anchors;
+  assert(ap::DeriveLeafAnchors(image, &anchors));
+  fushi_voice_hook::LeafAquaplusProfile resolved{};
+  assert(ap::ResolveLeafProfile(image, anchors, SyntheticDeltas(), &resolved));
+  assert(ap::LeafProfileSectionRolesValid(image, resolved));
+  fushi_voice_hook::LeafAquaplusProfile wrong = resolved;
+  wrong.d3d9_device_pointer_rva = kTraversalRva;  // 可执行节
+  assert(!ap::LeafProfileSectionRolesValid(image, wrong));
+  wrong = resolved;
+  wrong.voice_archive_read_return_rva = kCookieRva;  // 数据节
+  assert(!ap::LeafProfileSectionRolesValid(image, wrong));
+  // 已测量位移在这份小映像里全部落空：总入口必须拒绝而不是退回猜测。
+  fushi_voice_hook::LeafAquaplusProfile proven{};
+  ap::LeafStructureProof proof;
+  assert(!ap::ProveLeafStructure(image, ap::LeafImageSource::kPristineFile,
+                                 &proven, &proof));
+  assert(proof.anchors_ok && !proof.resolve_ok);
+}
+
+// 带壳判据：可执行节无原始数据，或原始字节高熵。普通代码字节不算。
+void DetectsPackedExecutableCode() {
+  {
+    SyntheticImage synthetic = MakeLeafLikeImage();
+    PlantCallShapes(synthetic, 0);
+    el::LoadedPeImage image = synthetic.Open();
+    assert(!ap::LeafExecutableCodeLooksPacked(image));
+  }
+  {
+    SyntheticImage synthetic = MakeLeafLikeImage();
+    IMAGE_SECTION_HEADER* text = IMAGE_FIRST_SECTION(synthetic.nt());
+    text->SizeOfRawData = 0u;  // UPX 式：运行期才填
+    el::LoadedPeImage image = synthetic.Open();
+    assert(ap::LeafExecutableCodeLooksPacked(image));
+  }
+  {
+    SyntheticImage synthetic = MakeLeafLikeImage();
+    uint32_t state = 0x12345678u;
+    for (uint32_t rva = kTextRva; rva < kTextRva + kTextSize; ++rva) {
+      state = state * 1664525u + 1013904223u;
+      *synthetic.at(rva) = static_cast<uint8_t>(state >> 24);
+    }
+    el::LoadedPeImage image = synthetic.Open();
+    assert(ap::LeafExecutableCodeLooksPacked(image));
+    // 加密后的代码里自然也找不到任何锚点。
+    ap::DerivedAnchors derived;
+    assert(!ap::DeriveLeafAnchors(image, &derived));
+  }
+}
 }  // namespace
 
 int main() {
@@ -472,5 +651,13 @@ int main() {
   RejectsWhenAShapeIsAbsent();
   RejectsAmbiguousWindow();
   RejectsGlyphReturnsWithDifferentTargets();
+  ResolvesAfterCodeInsertedInsideTheTraversalBody();
+  RejectsGlyphReturnsWithWrongSpacing();
+  RejectsGlyphCallWithoutStateCopyFrame();
+  RejectsRasterCallWithoutFramelessReturn();
+  EmbedSiteDetourIsAcceptedOnlyOnTheRuntimeImage();
+  EmbedSiteJumpInsideTheImageIsRejected();
+  ProvesStructureEndToEndAndChecksSectionRoles();
+  DetectsPackedExecutableCode();
   return 0;
 }

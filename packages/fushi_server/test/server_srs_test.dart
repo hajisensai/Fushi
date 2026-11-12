@@ -15,7 +15,7 @@ import 'package:fushi_engine/sync/local_directory_asset_store.dart';
 import 'package:fushi_server/src/config/server_srs_config.dart';
 import 'package:fushi_server/src/server_srs.dart';
 import 'package:fushi_core/fushi_core.dart' show SrsNoteCacheRow;
-import 'package:fushi_srs/fushi_srs.dart' show SrsNoteView;
+import 'package:fushi_srs/fushi_srs.dart' show SrsDayContext, SrsNoteView;
 import 'package:path/path.dart' as p;
 import 'package:shelf/shelf.dart' as shelf;
 import 'package:test/test.dart';
@@ -210,6 +210,35 @@ void main() {
     srs.onClientWrite('fushi-data/books/whatever.epub');
     expect(await changed.timeout(const Duration(seconds: 20)), kJa);
     expect(await expressions(srs.storeFor(kJa)!), <String>['飲む']);
+  });
+
+  test('远程复习的「今天」按客户端带来的偏移算；不带时按服务端时区', () async {
+    final SrsDbStore ja = await phone(kJa, 'phone-ja');
+    await addNote(ja, '食べる');
+    await phoneSync(ja);
+    config = const ServerSrsConfig(profiles: <String>[kJa]);
+    await srs.start();
+    await srs.syncNow();
+
+    final SrsRemoteStoreService remote = srs.remoteStore!;
+    final int hostOff = SrsDayContext.localOffsetMin();
+    final int off = hostOff == -300 ? 330 : -300;
+    Future<int> offsetOf(Map<String, Object?> body) async =>
+        SrsRemoteWire.dayContextFrom(
+          (await _call(remote, body))['result'],
+        ).utcOffsetMin;
+    expect(
+      await offsetOf(<String, Object?>{
+        'op': 'dayContext',
+        'profile': kJa,
+        kSrsRemoteDeviceOffsetKey: off,
+      }),
+      off,
+    );
+    expect(
+      await offsetOf(<String, Object?>{'op': 'dayContext', 'profile': kJa}),
+      hostOff,
+    );
   });
 
   test('远程复习：握手列出两份，点名中文那份读到中文；去掉那份后回 profile_changed', () async {
