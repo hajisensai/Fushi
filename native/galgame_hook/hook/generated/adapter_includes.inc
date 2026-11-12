@@ -20,3 +20,4 @@
 #include "../adapters/luca_adapter.inc"
 #include "../adapters/knife_adapter.inc"
 #include "../adapters/softpal_adapter.inc"
+#include "../adapters/system4_adapter.inc"

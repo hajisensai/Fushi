@@ -15,10 +15,10 @@ import 'package:fushi_engine/srs/apkg/srs_apkg_import.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_legacy_lapis_migration.dart';
-import 'package:fushi_engine/srs/srs_stats_loader.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:test/test.dart';
 
+import '../support/srs_stats_rows.dart';
 import 'apkg_test_support.dart';
 
 const String kProfile = '01928c3e-0000-7000-8000-000000000001';
@@ -182,7 +182,7 @@ void main() {
   }
 
   Future<int> reviews(SrsDbStore s) async =>
-      (await loadSrsStats(s)).data.reviews.length;
+      (await statsRowsOf(s)).reviews.length;
 
   /// 笔记 g0 的可见卡（都应有完整进度）。
   Future<List<SrsCardCacheRow>> visibleCardsOfG0(SrsDbStore s) async =>

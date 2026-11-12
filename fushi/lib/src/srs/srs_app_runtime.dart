@@ -24,8 +24,6 @@ import 'package:fushi_engine/srs/sync2/srs_host_directory.dart';
 import 'package:fushi_engine/srs/ankiconnect/srs_ankiconnect_endpoint.dart';
 import 'package:fushi_engine/srs/ankiconnect/srs_ankiconnect_handler.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
-import 'package:fushi_engine/srs/sync2/srs_sync2_pull_first.dart'
-    show kSrsPullBeforeMergeBudget;
 import 'package:fushi_engine/srs/srs_profile_link.dart';
 import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart'
     show SrsSync2Report;
@@ -119,16 +117,10 @@ srsAppRuntimeProvider = Provider<SrsAppRuntime?>((Ref ref) {
           SrsMediaStore.mediaRootFor(await ref.read(srsSupportRootProvider)()),
       onError: ErrorLogService.instance.log,
       // 并入之前先把目标 uid 已有的数据收进来（BUG-4011：合并沿用目标里已有的写入者，不再改名造出第二份）。
-      // 并入总在一轮同步 / [SrsSyncScheduler.adoptProfile] 的 [_serially] 里：只从正在跑的那条通道和本机目录 /
-      // 文件夹位置收，不再去取通道锁。
+      // 等多久、从哪收都在调度器里定（[SrsSyncScheduler.pullBeforeMerge]：按进度判，只从正在跑的那条通道和本机
+      // 目录 / 文件夹位置收）。
       pullBeforeMerge: (SrsDbStore target, SyncAssetStore? within) =>
-          runtime.sync.pullInto(
-            target,
-            budget: kSrsPullBeforeMergeBudget,
-            purpose: 'merge',
-            within: within,
-            channels: false,
-          ),
+          runtime.sync.pullBeforeMerge(target, within),
     ),
   );
   // 旧库迁移推迟到首次同步确认之后（BUG-4011）：store 打开时不迁移（srs_providers.dart `deferMigration`），

@@ -29,7 +29,13 @@
 //!   frwkv_runtime_scores_clear / frwkv_runtime_scores_lookup / frwkv_runtime_scores_update /
 //!   frwkv_runtime_scores_requery / frwkv_runtime_scores_remove /
 //!   frwkv_runtime_snapshot / frwkv_runtime_restore / frwkv_runtime_reset / frwkv_runtime_stats /
-//!   frwkv_last_error / frwkv_free_string / frwkv_free_bytes
+//!   frwkv_last_error / frwkv_free_string / frwkv_free_bytes /
+//!   frwkv_sched_alloc / frwkv_sched_new / frwkv_sched_step / frwkv_sched_free（排程内核，`sched/`）
+
+// 让 cargo 的新鲜度指纹带上「这是哪个 worktree」：多个 worktree 共用一个 CARGO_TARGET_DIR 时，没有它会把别的
+// worktree 编出的产物当成本 worktree 的直接用（假绿 / 假红）。值来自仓库根 .cargo/config.toml 的 [env]，不进产物。
+// 每个 native crate 的入口文件都要有这一行（守卫 fushi/test/build/native_crate_worktree_fingerprint_guard_test.dart）。
+const _: Option<&str> = option_env!("FUSHI_WORKTREE_ROOT");
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
@@ -45,11 +51,15 @@ mod curve;
 #[cfg_attr(test, allow(dead_code))]
 #[allow(clippy::let_and_return, clippy::manual_is_multiple_of)]
 mod rwkv;
+mod sched;
 
 pub use curve::{AnswerCurve, answer_intervals};
 pub use rwkv::small::{SmallHeads, SmallInference, SmallModel, SmallUndo};
 pub use rwkv::{
     ReviewInput, RwkvInference, RwkvModel, RwkvStats, StatePrecision, forecast_query, predict_curve,
+};
+pub use sched::{
+    FrwkvSched, frwkv_sched_alloc, frwkv_sched_free, frwkv_sched_new, frwkv_sched_step,
 };
 
 /// C ABI 版本。Dart 侧加载时比对，不一致视为库不可用（不崩）。
@@ -61,7 +71,9 @@ pub use rwkv::{
 /// （`frwkv_runtime_rewind_from`）。
 /// 5：快照直接走文件的流式接口（`frwkv_runtime_snapshot_to_file` /
 /// `frwkv_runtime_restore_from_file`），文件格式与 `frwkv_runtime_snapshot` 的字节逐位相同。
-pub const ABI_VERSION: i32 = 5;
+/// 6：排程内核（`frwkv_sched_alloc` / `frwkv_sched_new` / `frwkv_sched_step` / `frwkv_sched_free`，
+/// 见 `sched/mod.rs`）：RWKV 排程的编排状态机搬进本库，宿主只递命令、替它取数。
+pub const ABI_VERSION: i32 = 6;
 
 #[cfg(test)]
 mod snapshot_tests;

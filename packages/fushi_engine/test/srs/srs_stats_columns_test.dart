@@ -1,4 +1,4 @@
-// 内核列式读（store/bulk.rs）：统计指纹的订阅粒度、v13 出处列的升级回填、AnkiConnect 数字 id 反查、
+// 内核读：统计指纹的订阅粒度、v13 出处列的升级回填（统计「制卡来源」，store/stats.rs）、AnkiConnect 数字 id 反查、
 // `cardColumns` 与逐行读同值。
 import 'dart:convert';
 
@@ -53,7 +53,7 @@ void main() {
     expect(f1, isNot(f0));
     await s.setSuspended(card, true);
     expect(s.statsFingerprint, isNot(f1));
-    final SrsStatsBundle b = await loadSrsStats(s);
+    final SrsStatsLoad b = await loadSrsStats(s);
     expect(b.fingerprint, s.statsFingerprint);
   });
 
@@ -78,9 +78,9 @@ void main() {
       ),
       fallbackRolloverHour: () => 4,
     );
-    final SrsStatsData d = (await loadSrsStats(reopened)).data;
+    final SrsStatsReport d = await (await loadSrsStats(reopened)).report();
     expect(
-      d.sourceShares().map((SrsSourceShare x) => '${x.kind}/${x.title}'),
+      d.sources.map((SrsSourceShare x) => '${x.kind}/${x.title}'),
       <String>['${SrsSourceKind.book}/本'],
     );
     final String json =
@@ -111,18 +111,15 @@ void main() {
     await mined('猫', <String>['fushi', 'video', 'video::ゆるキャン△']);
     await mined('犬', <String>['hibiki', 'book']);
     await mined('鳥', <String>['video', 'mine']);
-    List<String> shares(SrsStatsData d) =>
-        d
-            .sourceShares()
-            .map((SrsSourceShare x) => '${x.kind}/${x.title}')
-            .toList()
+    List<String> shares(SrsStatsReport d) =>
+        d.sources.map((SrsSourceShare x) => '${x.kind}/${x.title}').toList()
           ..sort();
     final List<String> expected = <String>[
       '${SrsSourceKind.book}/',
       '${SrsSourceKind.video}/ゆるキャン△',
       '/', // 没有制卡标记：不认，仍是「无出处」。
     ]..sort();
-    expect(shares((await loadSrsStats(s)).data), expected);
+    expect(shares(await (await loadSrsStats(s)).report()), expected);
 
     s.core.debugExecRaw(
       "UPDATE srs_notes_cache SET source_kind = '', source_title = ''",
@@ -143,7 +140,7 @@ void main() {
       ),
       fallbackRolloverHour: () => 4,
     );
-    expect(shares((await loadSrsStats(reopened)).data), expected);
+    expect(shares(await (await loadSrsStats(reopened)).report()), expected);
   });
 
   test(

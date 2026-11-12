@@ -22,12 +22,15 @@ import 'package:path/path.dart' as p;
 import 'package:shelf/shelf.dart' as shelf;
 import 'package:test/test.dart';
 
+import 'support/fake_rwkv.dart';
+
 const String kJa = '01928c3e-0000-7000-8000-00000000a0a0';
 const String kZh = '01928c3e-0000-7000-8000-00000000b0b0';
 
 const List<String> kSrsOps = <String>[
   'server.srs.status',
   'server.srs.profiles',
+  'server.srs.devices',
   'server.srs.sync',
   'server.srs.mining-target.set',
   'server.srs.mining-deck.set',
@@ -58,6 +61,8 @@ void main() {
     final ServerPaths paths = ServerPaths(config.dataDir);
     await paths.ensureLayout();
     host = HeadlessHost(
+      // RWKV 权重不联网下载（下载当场失败 = RWKV 没就绪）。
+      srsRwkvHttpClient: noNetworkHttpClient,
       config: config,
       paths: paths,
       db: db,
@@ -147,13 +152,18 @@ void main() {
         jsonDecode(jsonEncode(record.payload)) as Map<String, Object?>,
       )).status;
 
-  test('目录：六条复习操作、风险分级；选 profile / 默认 / AnkiConnect 不进目录、不常驻', () {
+  test('目录：七条复习操作、风险分级；选 profile / 默认 / AnkiConnect / 信任设备不进目录、不常驻', () {
     final OpCatalog catalog = invoker.catalog;
     for (final String id in kSrsOps) {
       expect(catalog[id], isNotNull, reason: id);
     }
     expect(catalog['server.srs.status']!.risk, OpRisk.read);
     expect(catalog['server.srs.profiles']!.risk, OpRisk.read);
+    expect(catalog['server.srs.devices']!.risk, OpRisk.read);
+    // 信任设备（放行扣着的删除 / 彻底清除）是安全边界：只给管理员，不经 AI 会话（BUG-4306）。
+    for (final FushiOp op in catalog.ops) {
+      expect(op.spec.pattern, isNot(contains('devices/trust')), reason: op.id);
+    }
     expect(catalog['server.srs.sync']!.risk, OpRisk.irreversible);
     for (final String id in <String>[
       'server.srs.mining-target.set',
