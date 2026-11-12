@@ -327,7 +327,7 @@ pub fn translate_device(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use std::collections::{BTreeMap, BTreeSet};
 
     use rusqlite::params;
@@ -341,20 +341,20 @@ mod tests {
     };
     use crate::sync2::keys::DeviceKey;
 
-    const T0: i64 = 1_700_000_000_000;
+    pub(crate) const T0: i64 = 1_700_000_000_000;
 
     /// 旧事件 → 操作的迁移做完（新库里没有旧事件，一步就完；[preflight] 要求它做完）。
-    fn migrate(d: &Device) {
+    pub(crate) fn migrate(d: &Device) {
         while d.core.sync2_migrate(P, T0, None).unwrap()["done"] != json!(true) {}
     }
 
-    fn device() -> Device {
+    pub(crate) fn device() -> Device {
         let d = Device::new("g4");
         migrate(&d);
         d
     }
 
-    fn device_id(d: &Device) -> Id {
+    pub(crate) fn device_id(d: &Device) -> Id {
         Id::parse(
             d.core.sync2_identity(P, T0).unwrap()["device"]
                 .as_str()
@@ -368,7 +368,7 @@ mod tests {
     }
 
     /// 一台设备库里的全部槽：已应用的并成集合，待投递的另列。
-    fn read_all(d: &Device) -> (SlotSet, Vec<HeritageSlot>, Stats) {
+    pub(crate) fn read_all(d: &Device) -> (SlotSet, Vec<HeritageSlot>, Stats) {
         let w = d.core.writer().unwrap();
         assert_eq!(preflight(&w, P).unwrap(), Vec::<String>::new());
         let mut stats = Stats::default();
@@ -392,7 +392,7 @@ mod tests {
     }
 
     /// 两台设备：牌组配置、带配置快照的复习、笔记字段与标签、媒体。
-    fn pair() -> (Device, Device, Bucket) {
+    pub(crate) fn pair() -> (Device, Device, Bucket) {
         let (a, b) = (device(), device());
         let deck = crate::store::sync2::config::default_deck_id(P);
         let mut bucket = Bucket::default();
@@ -777,7 +777,7 @@ mod tests {
     // ------------------------------------------------------------ 真实样本（不进默认测试）
 
     #[cfg(windows)]
-    fn peak_mem_mb() -> (f64, f64) {
+    pub(crate) fn peak_mem_mb() -> (f64, f64) {
         #[repr(C)]
         #[derive(Default)]
         struct Counters {
@@ -814,11 +814,11 @@ mod tests {
     }
 
     #[cfg(not(windows))]
-    fn peak_mem_mb() -> (f64, f64) {
+    pub(crate) fn peak_mem_mb() -> (f64, f64) {
         (0.0, 0.0)
     }
 
-    fn sample() -> Option<Connection> {
+    pub(crate) fn sample() -> Option<Connection> {
         let path = std::env::var("FUSHI_GEN4_SAMPLE_DB").ok()?;
         let conn =
             Connection::open_with_flags(&path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
