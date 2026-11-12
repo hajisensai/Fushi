@@ -5,4 +5,8 @@
          启动器按系统 uiMode 解析 night 资源；是否随切换即时刷新取决于启动器的图标缓存。 -->
     <color name="ic_launcher_background">#2A2634</color>
     <color name="ic_launcher_squircle_background">#2A2634</color>
+    <!-- 启动窗口与 Activity 窗口的底色（深色）：app 默认主题的 surface。进程起来之前系统
+         只能按 manifest 主题画启动窗口，这里与首帧同色才不会先闪一下别的颜色。数值由
+         test/startup/launch_window_background_guard_test.dart 对着 Dart 侧默认主题钉住。 -->
+    <color name="launch_background">#081217</color>
 </resources>

@@ -4,11 +4,13 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/sync/interconnect_p2p_app.dart';
 import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi_engine/sync/interconnect_host_addresses.dart';
+import 'package:fushi_engine/sync/interconnect_p2p.dart';
 import 'package:fushi_engine/sync/tls/fushi_tls_identity.dart';
 import 'package:http/http.dart' as http;
 
@@ -148,9 +150,9 @@ void main() {
         list,
         probe: probe,
       );
+      // lan:1 是明文、核对没通过：扣下（V-B4），不再当后备候选。
       expect(ranked.map((FushiClientUrl u) => u.url), <String>[
         'http://v6:1',
-        'http://lan:1',
         'http://other:1',
       ]);
       expect(probes, 2);
@@ -185,6 +187,127 @@ void main() {
     });
   });
 
+  group('V-B4：明文地址拿凭据前必须当场核对 hostId', () {
+    final String p2pUrl = 'p2p://${'a' * 64}';
+    tearDown(() => setInterconnectP2pResolver(null));
+
+    List<String> urlsOf(List<FushiClientUrl> list) =>
+        list.map((FushiClientUrl u) => u.url).toList();
+
+    test('单条明文组核对失败：扣下，不原样返回', () async {
+      final ({List<FushiClientUrl> ranked, int withheld}) result =
+          await rankInterconnectCandidatesDetailed(<FushiClientUrl>[
+            url('http://lan:1', host: 'H'),
+          ], probe: (FushiClientUrl c, String? hostId) async => false);
+      expect(result.ranked, isEmpty);
+      expect(result.withheld, 1);
+    });
+
+    test('明文核对失败、https 钉扎成功：只留 https', () async {
+      final List<FushiClientUrl> ranked = await rankInterconnectCandidates(
+        <FushiClientUrl>[
+          url('http://lan:1', host: 'H'),
+          const FushiClientUrl(
+            url: 'https://wan:1',
+            hostId: 'H',
+            fingerprintSha256: 'ab',
+          ),
+        ],
+        probe: (FushiClientUrl c, String? hostId) async =>
+            c.url == 'https://wan:1',
+      );
+      expect(urlsOf(ranked), <String>['https://wan:1']);
+    });
+
+    test('单条明文组核对通过：保留', () async {
+      final ({List<FushiClientUrl> ranked, int withheld}) result =
+          await rankInterconnectCandidatesDetailed(<FushiClientUrl>[
+            url('http://lan:1', host: 'H'),
+          ], probe: (FushiClientUrl c, String? hostId) async => hostId == 'H');
+      expect(urlsOf(result.ranked), <String>['http://lan:1']);
+      expect(result.withheld, 0);
+    });
+
+    test('缓存窗口内沿用本轮核对通过的明文地址集', () async {
+      bool lanOk = true;
+      int probes = 0;
+      Future<bool> probe(FushiClientUrl c, String? hostId) async {
+        probes++;
+        if (c.url == 'http://lan:1') {
+          // LAN 稍后才回、但在宽限期内：仍按优先级胜出，VPN 也已核对通过。
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+          return lanOk;
+        }
+        return true;
+      }
+
+      final List<FushiClientUrl> list = <FushiClientUrl>[
+        url('http://lan:1', host: 'H'),
+        url('http://vpn:1', host: 'H'),
+      ];
+      expect(
+        urlsOf(await rankInterconnectCandidates(list, probe: probe)),
+        <String>['http://lan:1', 'http://vpn:1'],
+      );
+      lanOk = false;
+      final List<String> second = urlsOf(
+        await rankInterconnectCandidates(list, probe: probe),
+      );
+      expect(probes, 2, reason: '30 秒内命中缓存，不再探测');
+      expect(second, contains('http://vpn:1'));
+    });
+
+    test('死明文 LAN + P2P 隧道：转发口在竞速与缓存命中时都保留', () async {
+      // 真实装配路径：转发口由（假）端点开出，反查映射随口登记在 engine。
+      final InterconnectP2pNode node = InterconnectP2pNode.forTesting(
+        _FakeP2pPort(),
+        'self',
+      );
+      final InterconnectP2pRuntime runtime = InterconnectP2pRuntime(
+        loadSecret: () async => null,
+        saveSecret: (String _) async {},
+        loadRelayUrls: () async => const <String>[],
+      )..debugInstall(node);
+      bindInterconnectP2pClient(runtime);
+      addTearDown(() async {
+        await node.close();
+        debugResetAppInterconnectP2p();
+      });
+      Future<bool> probe(FushiClientUrl c, String? hostId) async =>
+          c.url == 'http://127.0.0.1:5001';
+      final List<FushiClientUrl> list = <FushiClientUrl>[
+        url('http://lan:1', host: 'H'),
+        url(p2pUrl, host: 'H'),
+      ];
+
+      final ({List<FushiClientUrl> ranked, int withheld}) first =
+          await rankInterconnectCandidatesDetailed(list, probe: probe);
+      expect(urlsOf(first.ranked), <String>['http://127.0.0.1:5001']);
+      expect(first.withheld, 1);
+      expect(interconnectPersistedUrl('http://127.0.0.1:5001'), p2pUrl);
+
+      final ({List<FushiClientUrl> ranked, int withheld}) cached =
+          await rankInterconnectCandidatesDetailed(list, probe: probe);
+      expect(urlsOf(cached.ranked), <String>['http://127.0.0.1:5001']);
+      expect(cached.withheld, 1);
+    });
+
+    test('老条目（无 hostId）语义不变：不探测、不扣', () async {
+      int probes = 0;
+      final ({List<FushiClientUrl> ranked, int withheld}) result =
+          await rankInterconnectCandidatesDetailed(
+            <FushiClientUrl>[url('http://old:1')],
+            probe: (FushiClientUrl c, String? hostId) async {
+              probes++;
+              return false;
+            },
+          );
+      expect(urlsOf(result.ranked), <String>['http://old:1']);
+      expect(result.withheld, 0);
+      expect(probes, 0);
+    });
+  });
+
   group('mergeLearnedHostAddresses', () {
     const List<InterconnectHostAddress> published = <InterconnectHostAddress>[
       InterconnectHostAddress(
@@ -195,10 +318,7 @@ void main() {
         url: 'https://[2408::5]:38765',
         kind: InterconnectAddressKind.ipv6,
       ),
-      InterconnectHostAddress(
-        url: 'p2p://node',
-        kind: InterconnectAddressKind.p2p,
-      ),
+      InterconnectHostAddress(url: _p2pNode, kind: InterconnectAddressKind.p2p),
     ];
 
     test('锚点标 hostId；新地址按优先级插入，继承 token 与指纹；p2p 默认不收', () {
@@ -317,7 +437,7 @@ void main() {
           kind: InterconnectAddressKind.public,
         ),
         InterconnectHostAddress(
-          url: 'p2p://node',
+          url: _p2pNode,
           kind: InterconnectAddressKind.p2p,
         ),
       ];
@@ -362,11 +482,17 @@ void main() {
       ]);
     });
 
-    test('手输的同一地址被 host 公布 → 归入该组（不重复添加）', () {
+    test('手输的同一地址被 host 公布且证书指纹相同 → 归入该组（不重复添加）', () {
       final List<FushiClientUrl> merged = mergeLearnedHostAddresses(
         <FushiClientUrl>[
-          url('https://192.168.1.5:38765'),
-          url('https://home.example'),
+          const FushiClientUrl(
+            url: 'https://192.168.1.5:38765',
+            fingerprintSha256: 'AA:BB',
+          ),
+          const FushiClientUrl(
+            url: 'https://home.example',
+            fingerprintSha256: 'aa:bb',
+          ),
         ],
         anchorUrl: 'https://home.example',
         hostId: 'A',
@@ -375,6 +501,61 @@ void main() {
       expect(merged, hasLength(2));
       expect(merged[0].hostId, 'A');
       expect(merged[0].learned, isFalse);
+    });
+
+    // C6：手输行只因 URL 恰好出现在公布集里就被收编，会把 A 的 token 写给那个
+    // URL 上实际应答的另一台机器。收编只认证书指纹（与锚点并组同一判据）。
+    test('C6：明文手输行被公布 → 不收编，hostId / token 保持原样', () {
+      final List<FushiClientUrl> merged = mergeLearnedHostAddresses(
+        <FushiClientUrl>[
+          const FushiClientUrl(url: 'http://192.168.1.5:38765', token: 'b'),
+          const FushiClientUrl(
+            url: 'https://home.example',
+            fingerprintSha256: 'aa:bb',
+            hostId: 'A',
+            token: 'a',
+          ),
+        ],
+        anchorUrl: 'https://home.example',
+        hostId: 'A',
+        addresses: const <InterconnectHostAddress>[
+          InterconnectHostAddress(
+            url: 'http://192.168.1.5:38765',
+            kind: InterconnectAddressKind.lan,
+          ),
+        ],
+      );
+      final FushiClientUrl manual = merged.firstWhere(
+        (FushiClientUrl u) => u.url == 'http://192.168.1.5:38765',
+      );
+      expect(manual.hostId, isNull);
+      expect(manual.token, 'b');
+    });
+
+    test('C6：https 手输行指纹与锚点不同 / 未钉扎 → 不收编', () {
+      final List<FushiClientUrl> merged = mergeLearnedHostAddresses(
+        <FushiClientUrl>[
+          const FushiClientUrl(
+            url: 'https://192.168.1.5:38765',
+            fingerprintSha256: 'cc:dd',
+            token: 'b',
+          ),
+          const FushiClientUrl(url: 'https://[2408::5]:38765', token: 'c'),
+          const FushiClientUrl(
+            url: 'https://home.example',
+            fingerprintSha256: 'aa:bb',
+            token: 'a',
+          ),
+        ],
+        anchorUrl: 'https://home.example',
+        hostId: 'A',
+        addresses: published.take(2).toList(),
+      );
+      expect(merged, hasLength(3));
+      expect(merged[0].hostId, isNull);
+      expect(merged[0].token, 'b');
+      expect(merged[1].hostId, isNull);
+      expect(merged[1].token, 'c');
     });
 
     test('已配对的别台 host 自报真 host 的 hostId：不并组、不删真 host 的地址（审查 B1）', () {
@@ -491,7 +672,7 @@ void main() {
         hostId: 'A',
         addresses: published,
       );
-      expect(merged.last.url, 'p2p://node');
+      expect(merged.last.url, _p2pNode);
     });
 
     test('组网私网段按 host 标注的种类排在物理 LAN 之后', () {
@@ -752,3 +933,43 @@ class _FakeInterfaceAddress implements InterfaceAddress {
   @override
   Future<InternetAddress> reverse() => _address.reverse();
 }
+
+/// 假 iroh 端点：转发口从 5001 起依次分配。
+final class _FakeP2pPort implements InterconnectP2pEndpointPort {
+  int _next = 5001;
+
+  @override
+  int clientForward(
+    String nodeId, {
+    List<String> directAddrs = const <String>[],
+    String? relayUrl,
+  }) => _next++;
+
+  @override
+  bool stopForward(int port) => true;
+
+  @override
+  FushiP2pConnStatus status(String nodeId) => throw UnimplementedError();
+
+  @override
+  FushiP2pInfo info() => throw UnimplementedError();
+
+  @override
+  void hostListen(int port) {}
+
+  @override
+  void hostStop() {}
+
+  @override
+  String? hostPeer(int port) => null;
+
+  @override
+  bool networkChange() => false;
+
+  @override
+  Future<void> closeAsync() async {}
+}
+
+/// 合法 p2p 地址（iroh 口径的 64 位 hex NodeId）。
+const String _p2pNode =
+    'p2p://0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
