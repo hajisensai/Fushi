@@ -1,6 +1,6 @@
-## BUG-4387 · 复习库按实体 ID 的读写不看 profile：点名 A 的命令能读 / 改 / 删 B 的笔记、卡片、牌组、笔记类型
+## BUG-4388 · 复习库按实体 ID 的读写不看 profile：点名 A 的命令能读 / 改 / 删 B 的笔记、卡片、牌组、笔记类型
 - **报告**：2026-11-11（代码审查发现，PR #3304 审到多 profile 宿主入口时提出；与该分支里的
-  `BUG-4387-srs-by-id-access-not-profile-scoped.md` 是**同一个问题**——那份只在无头服务端的控制通道入口加了核对，
+  `BUG-4388-srs-by-id-access-not-profile-scoped.md` 是**同一个问题**——那份只在无头服务端的控制通道入口加了核对，
   本条在根上收口。两份撞号，由 `bug.dart settle` 改号。）
 - **真实性**：✅ 真 bug（`packages/fushi_engine/test/srs/srs_profile_ownership_test.dart` 在修复前的 develop 上复现：
   一份 srs.db 开两个 profile 的 store，A 的 store 拿 B 的 ID 能读到 B 的笔记 / 卡片 / 修改记录 / 复习历史，
