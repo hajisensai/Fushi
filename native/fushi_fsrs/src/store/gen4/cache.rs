@@ -50,6 +50,10 @@
 //!   派生）时这条笔记没有行（也没有卡行），
 //!   笔记类型算不出时当作不在；协议 3 的 `caches::rebuild` / `refresh` 在这里整次失败。对拍在协议 3 这样失败时不比
 //!   缓存三类（`parity.rs` [cache_pairs] 的口径）。
+//! - 同一个旧修改记录 ID 下的两条不同修改（复制出来的两份旧库各自以同一个写入者续写了同一个 seq）：新代是两条独立的
+//!   操作，都进视图；协议 3 的投影表按修改记录 ID 只存一行，留哪条看先收到哪份。
+//! - 推迟的收尾：协议 3 收段会话里推迟的重放（`sync2_replay_pending`）没跑之前，缓存读到的是旧的重放结果；没刷新过的
+//!   旧合成标签行（`sync2:tags:<笔记>`）可能与标签 OR-Set 不一致。新代没有推迟的重放，标签直接取 OR-Set。
 //! - 重放写回：协议 3 只重放这一批碰到的卡的归属组，结果写回日志行、留到下次被碰到；一条日志落在两个链尾的归属组里
 //!   （一张卡被两张后继卡继承）时，留下的是最后一次重放它的那组的结果。这里每次都对整个连通分量按链尾 ID 升序重放，
 //!   后一组的结果为准（与协议 3 一次刷新里的顺序相同）。
@@ -1889,6 +1893,32 @@ mod tests {
                 rows(t.conn(), "SELECT sort_field, tags_json FROM notes"),
                 strs(&[["", "[]"]])
             );
+            assert_rebuild_is_identity(t, col);
+        });
+    }
+
+    /// 身份记录不成形的笔记（缺 `noteTypeId`）没有行，别的笔记照常物化，收尾不失败。
+    #[test]
+    fn a_malformed_note_gets_no_rows_and_does_not_block_the_rest() {
+        with(|t, col| {
+            put_cfg(t, col);
+            let (a, _) = script();
+            t.tx(|t| {
+                let mut ix = Index::new(t, col);
+                for s in &a[..7] {
+                    land(t, &mut ix, col, 0xa1, s);
+                }
+                let bad = entity(EntKind::Note, uuid(0x33), json!({"createdAt": 1}));
+                land(t, &mut ix, col, 0xb2, &(1, 900, vec![], bad));
+                ix.settle()?;
+                Ok(())
+            })
+            .unwrap();
+            assert_eq!(
+                rows(t.conn(), "SELECT id FROM notes"),
+                strs(&[[note().text().as_str()]])
+            );
+            assert_eq!(rows(t.conn(), "SELECT COUNT(*) FROM cards"), strs(&[["2"]]));
             assert_rebuild_is_identity(t, col);
         });
     }

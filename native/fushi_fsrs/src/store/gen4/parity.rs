@@ -8,7 +8,8 @@
 //! 3. 与协议 3 的投影对拍（[against_protocol_3]）没有差异；缓存层（笔记行 / 卡行 / 有效复习投影）按同一份缓存配置
 //!    （只有默认牌组）与协议 3 在 SAVEPOINT 里 `caches::rebuild` 出来的行逐列比，比完回滚。缓存层的有意差别与口径
 //!    （`cache.rs` 文件头「与协议 3 的差别」）：笔记行的 `updated_at` 不比；协议 3 因身份记录不成形整次重建失败时
-//!    缓存三类不比；有删除被扣住的笔记不比 `deleted_at` / `pending_decision` 与它的卡的 `hidden`（同 `edits` 的口径）。
+//!    缓存三类不比；有删除被扣住的笔记不比 `deleted_at` / `pending_decision` 与它的卡的 `hidden`（同 `edits` 的口径）；
+//!    同一个旧修改记录 ID 下有两条不同修改的笔记（复制出来的两份旧库各自续写）不比它与它的卡（[collided_notes]）。
 //!    协议 3 一侧先做完它自己欠着的收尾（待重放集合、没刷新的合成标签行）再重建（[protocol_3_caches]）。
 //!
 //! 库还没做完换代前必须做完的事（旧行没包成操作、去重作业没跑完）时，在一份拷贝上把它们做完再对拍；做不完的
@@ -304,10 +305,51 @@ fn malformed_definition(e: &str) -> bool {
     e.ends_with(" missing") || e.contains(": expected ") || e.starts_with("not a uuid: ")
 }
 
-/// 缓存层三类（`notes` / `cards` / `stats`）的对拍对：新代没设缓存配置时没有（不物化）。[held] 是有删除被扣住的
-/// 实体（`种类:ID`，任一边）：协议 3 的 `deleted` 寄存器里留着哪几条取决于被扣住的那条删除到的时候落没落过投影
-/// （[against_protocol_3] 的 `edits` 口径），所以这些笔记行的 `deleted_at` / `pending_decision` 与它们的卡的
-/// `hidden` 不比，其余列照比。
+/// 同一个旧修改记录 ID（旧戳的写入者 + seq）下有两条以上不同修改（不同实体或字段键）的笔记（`种类:ID`）：复制出来的
+/// 两份旧库各自又以同一个写入者写了同一个 seq。新代两条都是独立的操作、都进视图；协议 3 的投影表按修改记录 ID 只存
+/// 一行，留哪条看这台设备先收到哪份，所以这些笔记的内容（与由内容决定的卡）对不上协议 3 是到达顺序造成的。
+fn collided_notes(t: &Truth<'_>, col: i64) -> BTreeSet<String> {
+    let mut stmt = t
+        .conn()
+        .prepare("SELECT k FROM reg_ix WHERE col = ?1 AND state >= ?2")
+        .unwrap();
+    let ks: Vec<i64> = stmt
+        .query_map(params![col, R_LIVE], |r| r.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    let mut by_id: std::collections::BTreeMap<(String, i64), BTreeSet<(String, String)>> =
+        std::collections::BTreeMap::new();
+    for k in ks {
+        let e = t.entry_by_key(k).unwrap().unwrap();
+        let Some(Body4::Edit(ed)) = body_of(&e) else {
+            continue;
+        };
+        if let Some(st) = &ed.stamp {
+            by_id
+                .entry((st.writer.clone(), st.seq))
+                .or_default()
+                .insert((
+                    format!("{}:{}", ed.kind.wire(), Ref::of(&ed.entity).text()),
+                    ed.key.clone(),
+                ));
+        }
+    }
+    by_id
+        .into_values()
+        .filter(|edits| edits.len() > 1)
+        .flatten()
+        .map(|(ent, _)| ent)
+        .filter(|ent| ent.starts_with("note:"))
+        .collect()
+}
+
+/// 缓存层三类（`notes` / `cards` / `stats`）的对拍对：新代没设缓存配置时没有（不物化）。两种口径：
+///
+/// - [held] 是有删除被扣住的实体（`种类:ID`，任一边）：协议 3 的 `deleted` 寄存器里留着哪几条取决于被扣住的那条删除
+///   到的时候落没落过投影（[against_protocol_3] 的 `edits` 口径），所以这些笔记行的 `deleted_at` / `pending_decision`
+///   与它们的卡的 `hidden` 不比，其余列照比。
+/// - [collided_notes]：这些笔记的行与它们的卡行两边都不比（统计行的归属随卡的可见性变，归属卡是这些卡的也不比）。
 pub(crate) fn cache_pairs(
     src: &Connection,
     profile: &str,
@@ -334,8 +376,11 @@ pub(crate) fn cache_pairs(
         cols.iter().position(|c| c.0 == name).unwrap()
     };
     let held_note = |id: &str| held.contains(&format!("note:{id}"));
+    let collided = collided_notes(t, col);
+    let skip_note = |id: &str| collided.contains(&format!("note:{id}"));
     let notes = |rows: Vec<Vec<String>>| -> BTreeSet<String> {
         rows.into_iter()
+            .filter(|r| !skip_note(&r[0]))
             .map(|mut r| {
                 if held_note(&r[0]) {
                     r[at(NOTE_COLS, "deleted_at")] = "(held)".to_owned();
@@ -345,8 +390,15 @@ pub(crate) fn cache_pairs(
             })
             .collect()
     };
+    let skipped_cards: BTreeSet<String> = old_cards
+        .iter()
+        .chain(&new("cards", CARD_COLS))
+        .filter(|r| skip_note(&r[at(CARD_COLS, "note_id")]))
+        .map(|r| r[0].clone())
+        .collect();
     let cards = |rows: Vec<Vec<String>>| -> BTreeSet<String> {
         rows.into_iter()
+            .filter(|r| !skipped_cards.contains(&r[0]))
             .map(|mut r| {
                 if held_note(&r[at(CARD_COLS, "note_id")]) {
                     r[at(CARD_COLS, "hidden")] = "(held)".to_owned();
@@ -355,13 +407,16 @@ pub(crate) fn cache_pairs(
             })
             .collect()
     };
-    let plain = |rows: Vec<Vec<String>>| -> BTreeSet<String> {
-        rows.into_iter().map(|r| r.join(" | ")).collect()
+    let stats = |rows: Vec<Vec<String>>| -> BTreeSet<String> {
+        rows.into_iter()
+            .filter(|r| !skipped_cards.contains(&r[at(STAT_COLS, "card")]))
+            .map(|r| r.join(" | "))
+            .collect()
     };
     vec![
         ("notes", notes(old_notes), notes(new("notes", NOTE_COLS))),
         ("cards", cards(old_cards), cards(new("cards", CARD_COLS))),
-        ("stats", plain(old_stats), plain(new("stats", STAT_COLS))),
+        ("stats", stats(old_stats), stats(new("stats", STAT_COLS))),
     ]
 }
 
