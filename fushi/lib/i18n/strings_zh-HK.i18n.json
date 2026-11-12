@@ -8645,6 +8645,7 @@
   "srs_device_retire_confirm_title": "Stop waiting for $device?",
   "srs_device_retired_detail": "Not waited for since $time",
   "srs_device_retired_toast": "Stopped waiting for $device",
+  "srs_device_rules_differ": "Uses sync data rules v${theirs} (this device v${mine}); data is not compared until both match. Updating the older one fixes this.",
   "srs_device_seen": "Last online $time",
   "srs_device_state_behind": "Behind",
   "srs_device_state_missing": "Missing data",
