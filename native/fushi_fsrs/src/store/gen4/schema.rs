@@ -5,10 +5,14 @@
 //! - **真相**：`ops` / `op_alias` / `op_voids`（每台设备一条从 1 起连续的日志，一个 seq 恰好落在三张表之一）、
 //!   它们引用的内部化表 `op_deps` / `writers` / `snapshots`、原生日志的链值 `log_marks`、还没接上前缀的 `op_pending`、
 //!   分叉的另一支 `op_forks`。本机不可再生。
-//! - **派生**：索引与缓存。全部能从真相重建（`derive.rs`）。目前有索引：`ent_ix` / `reg_ix` / `log_ix`（带 `log_id` 索引）/
-//!   `closure_ix`；标签、媒体、别名与笔记 / 卡片缓存是后续 PR。
+//! - **派生**：索引与缓存。全部能从真相与本机状态重建（`derive.rs`）。索引：`ent_ix` / `reg_ix` / `log_ix`（带 `log_id`
+//!   索引）/ `closure_ix`；语义层（`weigh.rs`）：`tag_ix`（标签 OR-Set 与顺序提示）、`media_ix`（媒体名 → 内容）、
+//!   `purge_ix`（彻底清除）、`ent_ops`（实体 → 碰过它、别的索引里查不到的操作）、`hold_ix`（被并发改动扣住的删除）。
+//!   别名与笔记 / 卡片缓存是后续 PR。
 //! - **本机状态**：`collections`（profile ↔ 集合的绑定，设计 §5.1）、`devs`（设备 ↔ 小整数下标；`kind` 空 = 只被别的操作
-//!   点过名、还没见过它的日志，0 = 原生日志，1 = 承袭日志；`src` = 承袭日志的来源集合；`tail` = 原生日志末尾的链值）。
+//!   点过名、还没见过它的日志，0 = 原生日志，1 = 承袭日志；`src` = 承袭日志的来源集合；`tail` = 原生日志末尾的链值）、
+//!   `trust`（还没信任的设备：`state` 1 = 待确认，2 = 已拒绝；没有行 = 可信。纯本机，不同步，协议 3 的 `sync2_trust`）。
+//!   `derive_cfg`（派生层的输入里只有宿主知道的那部分，按名字存文本：内置笔记类型表、缓存配置；`truth.rs`）。
 //!
 //! 各列的取值见 `truth.rs`（落库规则）与 `pack.rs`（操作体的存储编码）。`writers.name` 存的是名字的紧凑字节形
 //! （`gen4::name`：一个文本只有一种字节形，所以按字节唯一就是按名字唯一）。
@@ -24,7 +28,7 @@ use std::path::Path;
 use rusqlite::Connection;
 
 /// 新代库的 schema 号。只要求远大于协议 3 的任何一个 schema 号（最后一个是 29）；万位是代，低位是这一代里的存储版本。
-pub const SCHEMA: i64 = 40_001;
+pub const SCHEMA: i64 = 40_002;
 
 const SEQ_BITS: u32 = 40;
 const SEQ_MASK: i64 = (1 << SEQ_BITS) - 1;
@@ -72,6 +76,19 @@ CREATE TABLE IF NOT EXISTS devs (
   tail BLOB,
   UNIQUE (col, id)
 );
+CREATE TABLE IF NOT EXISTS trust (
+  col INTEGER NOT NULL,
+  device BLOB NOT NULL,
+  state INTEGER NOT NULL,
+  since INTEGER NOT NULL,
+  PRIMARY KEY (col, device)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS derive_cfg (
+  col INTEGER NOT NULL,
+  key TEXT NOT NULL,
+  value TEXT NOT NULL,
+  PRIMARY KEY (col, key)
+) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS ops (
   k INTEGER PRIMARY KEY,
   wall INTEGER NOT NULL,
@@ -157,6 +174,7 @@ CREATE TABLE IF NOT EXISTS log_ix (
   PRIMARY KEY (col, card, at, k)
 ) WITHOUT ROWID;
 CREATE INDEX IF NOT EXISTS log_id ON log_ix (col, id, k);
+CREATE INDEX IF NOT EXISTS reg_set_aside ON reg_ix (col, state, k) WHERE state < 0;
 CREATE TABLE IF NOT EXISTS closure_ix (
   col INTEGER NOT NULL,
   device BLOB NOT NULL,
@@ -164,10 +182,63 @@ CREATE TABLE IF NOT EXISTS closure_ix (
   ctx TEXT NOT NULL,
   PRIMARY KEY (col, device)
 ) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS tag_ix (
+  col INTEGER NOT NULL,
+  note NOT NULL,
+  k INTEGER NOT NULL,
+  what INTEGER NOT NULL,
+  tag TEXT NOT NULL,
+  state INTEGER NOT NULL,
+  PRIMARY KEY (col, note, k, what, tag)
+) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS tag_set_aside ON tag_ix (col, state, k) WHERE state < 0;
+CREATE TABLE IF NOT EXISTS media_ix (
+  col INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  k INTEGER NOT NULL,
+  state INTEGER NOT NULL,
+  PRIMARY KEY (col, name, k)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS purge_ix (
+  col INTEGER NOT NULL,
+  ekind INTEGER NOT NULL,
+  ent NOT NULL,
+  k INTEGER NOT NULL,
+  state INTEGER NOT NULL,
+  PRIMARY KEY (col, ekind, ent, k)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS ent_ops (
+  col INTEGER NOT NULL,
+  ekind INTEGER NOT NULL,
+  ent NOT NULL,
+  what INTEGER NOT NULL,
+  k INTEGER NOT NULL,
+  PRIMARY KEY (col, ekind, ent, what, k)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS hold_ix (
+  col INTEGER NOT NULL,
+  ekind INTEGER NOT NULL,
+  ent NOT NULL,
+  k INTEGER NOT NULL,
+  edits INTEGER NOT NULL,
+  reviews INTEGER NOT NULL,
+  moves INTEGER NOT NULL,
+  PRIMARY KEY (col, ekind, ent, k)
+) WITHOUT ROWID;
 ";
 
 /// 派生表的名字（每张都有 `col` 列）。
-pub(crate) const DERIVED_TABLES: [&str; 4] = ["ent_ix", "reg_ix", "log_ix", "closure_ix"];
+pub(crate) const DERIVED_TABLES: [&str; 9] = [
+    "ent_ix",
+    "reg_ix",
+    "log_ix",
+    "closure_ix",
+    "tag_ix",
+    "media_ix",
+    "purge_ix",
+    "ent_ops",
+    "hold_ix",
+];
 
 /// 这个文件是不是新代的库：空文件（还没有任何表）或 `schema` 等于 [SCHEMA] 才是。只读。
 ///

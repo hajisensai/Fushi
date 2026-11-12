@@ -14,6 +14,10 @@
 //! - `closure_ix(col, device, upto, ctx)`：每台承袭设备的旧闭包（协议 3 的 `sync2_legacy`，改成可重建）：它日志里全部
 //!   旧戳的 dot 与上下文之并；`upto` = 带旧戳的最大 seq。
 //!
+//! 标签、媒体、彻底清除、被扣住的删除在 [super::weigh]（同一个 [Index]，表与规则见那里）。`reg_ix.state` 另有三个负值
+//! （[super::weigh::S_PURGED] / [super::weigh::S_HELD] / [super::weigh::S_DISTRUSTED]）：这条写入不参与寄存器的判定。
+//! 笔记的 `tags` 整列表写入不进 `reg_ix`——它是标签 OR-Set 的操作（协议 3 同）。
+//!
 //! 索引里的 ID 都是操作体里的原值，没有归一成规范 ID：别名是另一张派生表的事（设计 §5.3；§10 第 18 条未决，
 //! 不在这一层焊死任何一种答法）。
 //!
@@ -43,7 +47,8 @@ use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ToSql, ToSqlOutput, 
 use serde_json::{Map, Value, json};
 
 use super::schema::{DERIVED_TABLES, sql};
-use super::truth::{Entry, Truth};
+use super::truth::{Entry, Head, Truth};
+use super::weigh::{E_LOG, E_MOVE, S_HELD, T_ADD, T_INERT, T_ORDER, T_REMOVE};
 use crate::gen4::heritage::SlotBody;
 use crate::gen4::name::{read_edit_key, write_edit_key};
 use crate::gen4::op::{Body4, Edit4};
@@ -119,14 +124,14 @@ impl FromSql for Ref {
 
 /// 一个寄存器：(实体种类, 实体, 修改键的紧凑字节形)。
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-struct Reg {
-    ekind: i64,
-    ent: Ref,
-    key: Vec<u8>,
+pub(super) struct Reg {
+    pub(super) ekind: i64,
+    pub(super) ent: Ref,
+    pub(super) key: Vec<u8>,
 }
 
 impl Reg {
-    fn new(kind: EntKind, entity: &Key, key: &str) -> Reg {
+    pub(super) fn new(kind: EntKind, entity: &Key, key: &str) -> Reg {
         let mut w = Writer::new();
         write_edit_key(&mut w, key);
         Reg {
@@ -138,7 +143,7 @@ impl Reg {
 }
 
 /// 这一条应用成什么（副本记录、空洞、不认识的种类 = 不应用）。
-fn body_of(e: &Entry) -> Option<Body4> {
+pub(super) fn body_of(e: &Entry) -> Option<Body4> {
     match e.slot() {
         Some(slot) => applied_body(&slot),
         None => e
@@ -212,17 +217,35 @@ pub struct Settled {
     pub logs: u64,
     /// 变了的旧闭包。
     pub closures: u64,
+    /// 重看了彻底清除的实体、重看了删除该不该扣住的实体、重算了标签的笔记、重判了的媒体名。
+    pub purged: u64,
+    pub holds: u64,
+    pub notes: u64,
+    pub media: u64,
     /// 走过的日志条数（只有重建）。
     pub scanned: u64,
 }
 
 /// 一个集合的派生索引。
 pub struct Index<'t, 'c> {
-    t: &'t Truth<'c>,
-    col: i64,
-    regs: BTreeSet<Reg>,
+    pub(super) t: &'t Truth<'c>,
+    pub(super) col: i64,
+    pub(super) regs: BTreeSet<Reg>,
     ents: BTreeSet<Ref>,
     logs: BTreeSet<Ref>,
+    /// 这一批碰过的实体（种类, ID）：清除与扣住要重看。
+    pub(super) touched: BTreeSet<(i64, Ref)>,
+    /// 标签操作变了的笔记、绑定变了的媒体名。
+    pub(super) notes: BTreeSet<Ref>,
+    pub(super) names: BTreeSet<String>,
+    /// 有 Purge 操作进出，或信任状态变了：清除要整体重看。
+    pub(super) purge_changed: bool,
+    /// 信任状态变了：全部删除重看。
+    pub(super) trust_changed: bool,
+    /// 还没信任的设备（本机状态，用到时读一次）。
+    pub(super) untrusted: Option<BTreeSet<Id>>,
+    /// 这一轮收尾里读过的信封。
+    pub(super) heads: HashMap<i64, Head>,
     /// 旧戳变了、闭包要重算的设备。
     stale: BTreeSet<Id>,
     /// 有旧戳被拿走过（清除、换版本）：不是单纯往日志末尾添。
@@ -242,6 +265,13 @@ impl<'t, 'c> Index<'t, 'c> {
             regs: BTreeSet::new(),
             ents: BTreeSet::new(),
             logs: BTreeSet::new(),
+            touched: BTreeSet::new(),
+            notes: BTreeSet::new(),
+            names: BTreeSet::new(),
+            purge_changed: false,
+            trust_changed: false,
+            untrusted: None,
+            heads: HashMap::new(),
             stale: BTreeSet::new(),
             shrunk: false,
             bulk: None,
@@ -250,7 +280,7 @@ impl<'t, 'c> Index<'t, 'c> {
         }
     }
 
-    fn writing(&self) -> Result<(), String> {
+    pub(super) fn writing(&self) -> Result<(), String> {
         if self.t.conn().is_autocommit() {
             return Err("gen4 index: write outside a transaction".to_owned());
         }
@@ -324,8 +354,105 @@ impl<'t, 'c> Index<'t, 'c> {
                     self.ents.insert(id);
                 }
             }
+            Body4::Edit(ed) if ed.kind == EntKind::Note && ed.key == "tags" => {
+                // 整列表标签（迁移进来的旧记录）：标签 OR-Set 的操作，不是寄存器。旧戳照样进闭包。
+                let note = Ref::of(&ed.entity);
+                let mut rows: Vec<(i64, &str)> = Vec::new();
+                let parsed = serde_json::from_str::<Value>(&ed.value).ok();
+                match &parsed {
+                    Some(Value::Array(xs)) => {
+                        rows.extend(xs.iter().filter_map(Value::as_str).map(|x| (T_ADD, x)));
+                        rows.push((T_ORDER, ""));
+                    }
+                    _ => rows.push((T_INERT, "")),
+                }
+                self.tag_rows(&note, k, &rows, add)?;
+                if let Some(s) = &ed.stamp {
+                    self.stamp_changed(&e.id, s, add);
+                }
+                if !bulk {
+                    self.touched.insert((EntKind::Note as i64, note.clone()));
+                    self.notes.insert(note);
+                }
+            }
+            Body4::TagAdd { note, tag } | Body4::TagRemove { note, tag } => {
+                let note = Ref::of(note);
+                let what = if matches!(body, Body4::TagAdd { .. }) {
+                    T_ADD
+                } else {
+                    T_REMOVE
+                };
+                self.tag_rows(&note, k, &[(what, tag.as_str())], add)?;
+                if !bulk {
+                    self.touched.insert((EntKind::Note as i64, note.clone()));
+                    self.notes.insert(note);
+                }
+            }
+            Body4::TagOrder { note, .. } => {
+                let note = Ref::of(note);
+                self.tag_rows(&note, k, &[(T_ORDER, "")], add)?;
+                if !bulk {
+                    self.touched.insert((EntKind::Note as i64, note.clone()));
+                    self.notes.insert(note);
+                }
+            }
+            Body4::Purge { kind, entity } => {
+                let ent = Ref::of(entity);
+                if add {
+                    conn.prepare_cached(
+                        "INSERT INTO purge_ix (col, ekind, ent, k, state) VALUES (?1, ?2, ?3, ?4, 1)",
+                    )
+                    .map_err(sql)?
+                    .execute(params![self.col, *kind as i64, ent, k])
+                    .map_err(sql)?;
+                } else {
+                    conn.prepare_cached(
+                        "DELETE FROM purge_ix WHERE col = ?1 AND ekind = ?2 AND ent = ?3 AND k = ?4",
+                    )
+                    .map_err(sql)?
+                    .execute(params![self.col, *kind as i64, ent, k])
+                    .map_err(sql)?;
+                }
+                if !bulk {
+                    self.touched.insert((*kind as i64, ent));
+                    self.purge_changed = true;
+                }
+            }
+            Body4::Media { name, .. } => {
+                if add {
+                    conn.prepare_cached(
+                        "INSERT INTO media_ix (col, name, k, state) VALUES (?1, ?2, ?3, ?4)",
+                    )
+                    .map_err(sql)?
+                    .execute(params![self.col, name, k, R_WINNER])
+                    .map_err(sql)?;
+                } else {
+                    conn.prepare_cached(
+                        "DELETE FROM media_ix WHERE col = ?1 AND name = ?2 AND k = ?3",
+                    )
+                    .map_err(sql)?
+                    .execute(params![self.col, name, k])
+                    .map_err(sql)?;
+                }
+                if !bulk {
+                    self.names.insert(name.clone());
+                }
+            }
             Body4::Edit(ed) => {
                 let reg = Reg::new(ed.kind, &ed.entity, &ed.key);
+                // 卡挪进了哪个牌组：牌组那边要知道（协议 3 的 `#move`）。
+                if ed.kind == EntKind::Card && ed.key == "deck" {
+                    if let Ok(Value::String(d)) = serde_json::from_str::<Value>(&ed.value) {
+                        let deck = Ref::of(&Key::of(&d));
+                        self.ent_op(EntKind::Deck, &deck, E_MOVE, k, add)?;
+                        if !bulk {
+                            self.touched.insert((EntKind::Deck as i64, deck));
+                        }
+                    }
+                }
+                if !bulk {
+                    self.touched.insert((reg.ekind, reg.ent.clone()));
+                }
                 if add {
                     conn.prepare_cached(
                         "INSERT INTO reg_ix (col, ekind, ent, key, k, state) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
@@ -350,6 +477,16 @@ impl<'t, 'c> Index<'t, 'c> {
             }
             Body4::Log(l) => {
                 let (id, card) = (Ref::of(&l.id), Ref::of(&l.card));
+                if let Some(n) = &l.note {
+                    let note = Ref::of(n);
+                    self.ent_op(EntKind::Note, &note, E_LOG, k, add)?;
+                    if !bulk {
+                        self.touched.insert((EntKind::Note as i64, note));
+                    }
+                }
+                if !bulk {
+                    self.touched.insert((EntKind::Card as i64, card.clone()));
+                }
                 if add {
                     conn.prepare_cached(
                         "INSERT INTO log_ix (col, card, at, k, id, win) VALUES (?1, ?2, ?3, ?4, ?5, 1)",
@@ -493,7 +630,7 @@ impl<'t, 'c> Index<'t, 'c> {
 
     // ------------------------------------------------------------ 判定
 
-    fn reg_rows(&self, r: &Reg) -> Result<Vec<(i64, i64)>, String> {
+    pub(super) fn reg_rows(&self, r: &Reg) -> Result<Vec<(i64, i64)>, String> {
         let mut stmt = self
             .t
             .conn()
@@ -511,8 +648,44 @@ impl<'t, 'c> Index<'t, 'c> {
 
     /// 重判一个寄存器，把变了的状态写回去。返回它是不是真的过了判据（写入不止一条）。
     fn judge(&mut self, r: &Reg) -> Result<bool, String> {
-        let rows = self.reg_rows(r)?;
-        let want = if rows.len() <= 1 {
+        // 被清除的、作者不可信的（负状态，`weigh.rs`）不参与判定，状态原样留着。
+        let all = self.reg_rows(r)?;
+        let rows: Vec<(i64, i64)> = all
+            .iter()
+            .copied()
+            .filter(|&(_, state)| state >= R_DOMINATED)
+            .collect();
+        let held: Vec<(i64, i64)> = all
+            .iter()
+            .copied()
+            .filter(|&(_, state)| state == S_HELD)
+            .collect();
+        let want = if !held.is_empty() {
+            // 被并发改动扣住的删除：它自己不生效（不当胜者、不算活着），但它见过的写入照样被它盖掉——扣住只是
+            // 「这条删除等人裁决」，不是「当它没写过」（否则一条与别人的修改并发的旧删除会绕过扣住直接生效）。
+            let mut both = rows.clone();
+            both.extend(&held);
+            let first = self.states(&both)?;
+            let alive: Vec<(i64, i64)> = rows
+                .iter()
+                .zip(&first)
+                .filter(|&(_, &s)| s != R_DOMINATED)
+                .map(|(&row, _)| row)
+                .collect();
+            let mut second = if alive.len() <= 1 {
+                vec![R_WINNER; alive.len()]
+            } else {
+                self.states(&alive)?
+            }
+            .into_iter();
+            rows.iter()
+                .zip(&first)
+                .map(|(_, &s)| match s {
+                    R_DOMINATED => R_DOMINATED,
+                    _ => second.next().unwrap_or(R_DOMINATED),
+                })
+                .collect()
+        } else if rows.len() <= 1 {
             vec![R_WINNER; rows.len()]
         } else {
             self.states(&rows)?
@@ -772,6 +945,7 @@ impl<'t, 'c> Index<'t, 'c> {
                 out.closures += 1;
             }
         }
+        self.weigh(false, &mut out)?;
         let mut regs = std::mem::take(&mut self.regs);
         if out.closures > 0 || std::mem::take(&mut self.shrunk) {
             self.partial.clear();
@@ -791,10 +965,13 @@ impl<'t, 'c> Index<'t, 'c> {
             out.logs += 1;
             self.pick_log(&id)?;
         }
+        self.heads.clear();
         Ok(out)
     }
 
-    /// 清空这个集合的派生表，从日志重建（设计 §2.5）。盐集合只增不减：重建只会把带盐操作的盐再并一遍。
+    /// 清空这个集合的派生表，从日志与本机状态（设备信任）重建（设计 §2.5）。不改真相：该清成空洞而还没清的操作
+    /// 只是标成「已清除」、不参与任何判定，落库由 [Index::execute_purges] 做。盐集合只增不减：重建只会把带盐操作的盐
+    /// 再并一遍。
     pub fn rebuild_all(&mut self) -> Result<Settled, String> {
         self.writing()?;
         let t = self.t;
@@ -820,9 +997,12 @@ impl<'t, 'c> Index<'t, 'c> {
                 out.closures += 1;
             }
         }
-        for r in self.multi_regs()? {
+        self.weigh(true, &mut out)?;
+        let mut regs = std::mem::take(&mut self.regs);
+        regs.extend(self.multi_regs()?);
+        for r in &regs {
             out.registers += 1;
-            if self.judge(&r)? {
+            if self.judge(r)? {
                 out.judged += 1;
             }
         }
@@ -834,6 +1014,7 @@ impl<'t, 'c> Index<'t, 'c> {
             out.logs += 1;
             self.pick_log(&id)?;
         }
+        self.heads.clear();
         Ok(out)
     }
 
@@ -955,11 +1136,10 @@ pub(crate) mod tests {
     use crate::gen4::op::{Log4, Op4};
     use crate::gen4::stamp::{StampCtx, StampHlc};
     use crate::gen4::translate::T_VERSION;
-    use crate::store::gen4::import::import_legacy;
     use crate::store::gen4::legacy::tests::{T0, migrate, pair, peak_mem_mb, sample};
+    use crate::store::gen4::parity::{against_protocol_3, imported};
     use crate::store::gen4::schema::{open, open_in_memory, table_bytes};
     use crate::store::gen4::truth::tests::bound;
-    use crate::store::sync2::collection_of;
     use crate::store::sync2::tests::{Device, P, edit, legacy_library};
     use crate::sync2::hlc::Hlc;
 
@@ -1002,11 +1182,11 @@ pub(crate) mod tests {
         format!("f/{}", id(FIELD).text())
     }
 
-    fn note() -> Key {
+    pub(crate) fn note() -> Key {
         Key::Uuid(id(3))
     }
 
-    fn vv(deps: &[(u8, u64)]) -> Arc<Vv> {
+    pub(crate) fn vv(deps: &[(u8, u64)]) -> Arc<Vv> {
         let mut v = Vv::new();
         for &(d, s) in deps {
             v.set(id(d), s);
@@ -1014,7 +1194,7 @@ pub(crate) mod tests {
         Arc::new(v)
     }
 
-    fn op(dev: u8, seq: u64, wall: i64, deps: &[(u8, u64)], body: &Body4) -> Op4 {
+    pub(crate) fn op(dev: u8, seq: u64, wall: i64, deps: &[(u8, u64)], body: &Body4) -> Op4 {
         Op4::of(
             OpId {
                 device: id(dev),
@@ -1038,7 +1218,7 @@ pub(crate) mod tests {
         })
     }
 
-    fn stamp(writer: &str, seq: i64, ctx: &str, physical: i64) -> HeritageStamp {
+    pub(crate) fn stamp(writer: &str, seq: i64, ctx: &str, physical: i64) -> HeritageStamp {
         HeritageStamp {
             writer: writer.to_owned(),
             seq,
@@ -1051,13 +1231,13 @@ pub(crate) mod tests {
     /// [states] 等按操作主键列出来的顺序 = 设备第一次在这个库里出现的顺序、再按 seq。
     ///
     /// 原生日志追加一条并告诉索引。
-    fn native(t: &Truth<'_>, ix: &mut Index<'_, '_>, col: i64, o: &Op4) {
+    pub(crate) fn native(t: &Truth<'_>, ix: &mut Index<'_, '_>, col: i64, o: &Op4) {
         t.append_native(col, o).unwrap();
         ix.add(&t.entry(col, &o.id).unwrap().unwrap()).unwrap();
     }
 
     /// 承袭日志落一个槽并告诉索引。
-    fn heritage(t: &Truth<'_>, ix: &mut Index<'_, '_>, col: i64, o: Op4) {
+    pub(crate) fn heritage(t: &Truth<'_>, ix: &mut Index<'_, '_>, col: i64, o: Op4) {
         let fp = [o.id.seq as u8; 8];
         let oid = o.id;
         t.put_heritage(col, &id(0xc0), &HeritageSlot::op(fp, o), T_VERSION)
@@ -1073,7 +1253,7 @@ pub(crate) mod tests {
             .collect()
     }
 
-    fn with<T>(f: impl FnOnce(&Truth<'_>, i64) -> T) -> T {
+    pub(crate) fn with<T>(f: impl FnOnce(&Truth<'_>, i64) -> T) -> T {
         let conn = open_in_memory().unwrap();
         let t = Truth::new(&conn);
         let col = bound(&t);
@@ -1476,8 +1656,31 @@ pub(crate) mod tests {
     }
 
     /// 派生表的全部行，操作主键换成操作号（主键里的设备下标取决于设备谁先出现，不同的到达顺序之间不能直接比）。
-    fn canon(t: &Truth<'_>, col: i64) -> BTreeSet<String> {
+    pub(crate) fn canon(t: &Truth<'_>, col: i64) -> BTreeSet<String> {
         let mut out = BTreeSet::new();
+        canon_rows(t, col, &mut |_, row| {
+            out.insert(row);
+        });
+        out
+    }
+
+    /// 派生表每张的 (表名, 行数, 各行摘要之和)：行文本与 [canon] 相同，但不把行留在内存里（大库上比两份派生表用；
+    /// 和与顺序无关，两边相等 = 同一个行的多重集）。
+    pub(crate) fn digest(t: &Truth<'_>, col: i64) -> Vec<(&'static str, u64, u128)> {
+        let mut out: Vec<(&'static str, u64, u128)> =
+            DERIVED_TABLES.iter().map(|t| (*t, 0, 0)).collect();
+        canon_rows(t, col, &mut |table, row| {
+            let slot = out.iter_mut().find(|(t, ..)| *t == table).unwrap();
+            let h = blake3::hash(row.as_bytes());
+            slot.1 += 1;
+            slot.2 = slot
+                .2
+                .wrapping_add(u128::from_le_bytes(h.as_bytes()[..16].try_into().unwrap()));
+        });
+        out
+    }
+
+    fn canon_rows(t: &Truth<'_>, col: i64, f: &mut dyn FnMut(&'static str, String)) {
         for table in DERIVED_TABLES {
             let mut stmt = t
                 .conn()
@@ -1495,14 +1698,17 @@ pub(crate) mod tests {
                         _ => format!("{:?}", r.get::<_, rusqlite::types::Value>(i).unwrap()),
                     })
                     .collect();
-                out.insert(format!("{table} {}", cells.join(" | ")));
+                f(table, format!("{table} {}", cells.join(" | ")));
             }
         }
-        out
     }
 
     /// 按 [order] 给的顺序把各条日志交错灌进去（每条日志内部保持 seq 序），逐条维护索引；返回派生表。
-    fn build(logs: &[(bool, Vec<Op4>)], order: &[usize], settle_each: bool) -> BTreeSet<String> {
+    pub(crate) fn build(
+        logs: &[(bool, Vec<Op4>)],
+        order: &[usize],
+        settle_each: bool,
+    ) -> BTreeSet<String> {
         with(|t, col| {
             t.tx(|t| {
                 let mut ix = Index::new(t, col);
@@ -1555,112 +1761,7 @@ pub(crate) mod tests {
         }
     }
 
-    // ------------------------------------------------------------ 与协议 3 的投影对拍
-
-    /// 索引里没被支配的写入的修改记录 ID（协议 3 的 `srs_field_edits.id`：由 dot 决定）。
-    fn live_edit_ids(t: &Truth<'_>, col: i64) -> BTreeSet<String> {
-        let mut stmt = t
-            .conn()
-            .prepare("SELECT k FROM reg_ix WHERE col = ?1 AND state >= ?2")
-            .unwrap();
-        let ks: Vec<i64> = stmt
-            .query_map(params![col, R_LIVE], |r| r.get(0))
-            .unwrap()
-            .collect::<Result<_, _>>()
-            .unwrap();
-        ks.into_iter()
-            .map(|k| {
-                let e = t.entry_by_key(k).unwrap().unwrap();
-                let Some(Body4::Edit(ed)) = body_of(&e) else {
-                    panic!("register row {k} is not an edit")
-                };
-                match &ed.stamp {
-                    Some(s) => crate::registers::edit_id(&s.writer, s.seq),
-                    None => crate::registers::edit_id(&e.id.device.text(), e.id.seq as i64),
-                }
-            })
-            .collect()
-    }
-
-    fn texts(conn: &Connection, sql: &str, args: &[&dyn ToSql]) -> BTreeSet<String> {
-        conn.prepare(sql)
-            .unwrap()
-            .query_map(args, |r| r.get::<_, String>(0))
-            .unwrap()
-            .collect::<Result<_, _>>()
-            .unwrap()
-    }
-
-    fn refs(conn: &Connection, sql: &str, col: i64) -> BTreeSet<String> {
-        conn.prepare(sql)
-            .unwrap()
-            .query_map([col], |r| r.get::<_, Ref>(0))
-            .unwrap()
-            .map(|r| r.unwrap().text())
-            .collect()
-    }
-
-    /// 协议 3 投影里的三样东西，与同一份库灌进新存储、重建之后的索引比：(只在旧库, 只在新库) 各三组——
-    /// 活着的修改记录 ID（不算合成的标签行）、日志 ID、实体 ID。
-    type Diff = [(BTreeSet<String>, BTreeSet<String>); 3];
-
-    fn against_protocol_3(src: &Connection, profile: &str, t: &Truth<'_>, col: i64) -> Diff {
-        let old_edits = texts(
-            src,
-            "SELECT srs_idt(id) FROM srs_field_edits WHERE profile_uid = srs_id(?1) AND writer_id NOT LIKE 'sync2:%'",
-            &[&profile],
-        );
-        let old_logs = texts(
-            src,
-            "SELECT srs_idt(id) FROM srs_review_logs WHERE profile_uid = srs_id(?1)",
-            &[&profile],
-        );
-        let old_ents = texts(
-            src,
-            "SELECT srs_idt(id) FROM srs_entities WHERE profile_uid = srs_id(?1)",
-            &[&profile],
-        );
-        let new_edits = live_edit_ids(t, col);
-        let new_logs = refs(
-            t.conn(),
-            "SELECT DISTINCT id FROM log_ix WHERE col = ?1",
-            col,
-        );
-        let new_ents = refs(
-            t.conn(),
-            "SELECT DISTINCT id FROM ent_ix WHERE col = ?1",
-            col,
-        );
-        let diff = |a: &BTreeSet<String>, b: &BTreeSet<String>| {
-            (
-                a.difference(b).cloned().collect(),
-                b.difference(a).cloned().collect(),
-            )
-        };
-        [
-            diff(&old_edits, &new_edits),
-            diff(&old_logs, &new_logs),
-            diff(&old_ents, &new_ents),
-        ]
-    }
-
-    fn imported(d: &Device) -> (Connection, Diff) {
-        let conn = open_in_memory().unwrap();
-        let diff = {
-            let t = Truth::new(&conn);
-            let col = t.tx(|t| t.bind(P, &collection_of(P), P)).unwrap();
-            let w = d.core.writer().unwrap();
-            import_legacy(&w, P, &t, col, 1000).unwrap();
-            t.tx(|t| Index::new(t, col).rebuild_all()).unwrap();
-            assert_rebuild_is_identity(&t, col);
-            against_protocol_3(&w, P, &t, col)
-        };
-        (conn, diff)
-    }
-
-    fn nothing() -> Diff {
-        Default::default()
-    }
+    // ------------------------------------------------------------ 与协议 3 的投影对拍（`parity.rs`）
 
     #[test]
     fn the_index_agrees_with_the_protocol_3_projection() {
@@ -1676,7 +1777,7 @@ pub(crate) mod tests {
         a.apply(T0 + 300, vec![edit("note", "N1", "f/y", json!("after"))]);
         for d in [&a, &b] {
             let (_, diff) = imported(d);
-            assert_eq!(diff, nothing());
+            assert!(diff.is_empty(), "{diff:?}");
         }
         // 从协议 1 迁上来的库：旧戳、旧上下文、旧日志。
         let old = Device::new("g6ix");
@@ -1688,7 +1789,7 @@ pub(crate) mod tests {
             }
         }
         let (conn, diff) = imported(&old);
-        assert_eq!(diff, nothing());
+        assert!(diff.is_empty(), "{diff:?}");
         let stamped: i64 = conn
             .query_row("SELECT COUNT(*) FROM closure_ix", [], |r| r.get(0))
             .unwrap();
@@ -1784,13 +1885,14 @@ pub(crate) mod tests {
             // 对拍。
             let started = Instant::now();
             let diff = against_protocol_3(&src, &profile, &t, col);
-            for (what, (old_only, new_only)) in ["edits", "logs", "entities"].iter().zip(&diff) {
+            println!("SAMPLE parity differing_kinds {}", diff.len());
+            for (what, old_only, new_only) in &diff {
                 println!(
                     "SAMPLE parity {what} only_old {} only_new {} e.g. {:?} / {:?}",
                     old_only.len(),
                     new_only.len(),
-                    old_only.iter().next(),
-                    new_only.iter().next()
+                    old_only.first(),
+                    new_only.first()
                 );
             }
             println!("SAMPLE parity_s {:.1}", started.elapsed().as_secs_f64());

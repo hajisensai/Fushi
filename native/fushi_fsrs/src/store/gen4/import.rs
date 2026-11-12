@@ -8,6 +8,9 @@
 //!   链指纹（之后可以按链指纹核对着投递），验不出的不带（等同号的槽经承袭段到达再确认）——这是协议 3 「投递时才核对
 //!   链值」在过界之后的落点（设计 §10 第 12 条）。
 //!
+//! 本机状态里只有设备信任跟着过来（`sync2_trust` → `trust`）：哪些删除与清除不执行由它定，丢了它迁移前后的投影就
+//! 不一样。
+//!
 //! 这里只建真相；派生表由 `rebuild_all` 从真相建。整个过程可重放：同一份旧库再灌一遍，每个槽都是「已有」。
 //! 迁移流程本身（备份、对拍、切换文件）是 G7 的事。
 
@@ -46,6 +49,8 @@ pub struct Imported {
     pub replaced: u64,
     pub forks: u64,
     pub parked: u64,
+    /// 带过来的「还没信任的设备」。
+    pub untrusted: u64,
 }
 
 /// 把 [profile] 在旧库 [src] 里的全部操作灌进 [truth] 的集合 [col]。[batch] 条提交一次（不能在事务里调）。
@@ -129,6 +134,10 @@ pub fn import_legacy(
             if let Some((seq, chain)) = tail {
                 truth.set_mark(col, &d.device, seq, &chain)?;
             }
+        }
+        for (device, state, since) in legacy::untrusted(src, profile)? {
+            truth.set_trust(col, &device, Some(state), since)?;
+            out.untrusted += 1;
         }
         Ok(())
     })();
