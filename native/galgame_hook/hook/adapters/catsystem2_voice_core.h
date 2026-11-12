@@ -69,10 +69,15 @@ inline constexpr uint32_t kMaxMemberBytes = 16u * 1024u * 1024u;
 //     field at +8 (entry), and after the second it pushes the entry from eax
 //     and tail-calls `ReadEntry(entry, buf, len)` with `call rel32; ret 8`.
 //   * ReadEntry clamps len with the entry's size (+0x10) and offset (+0xc),
-//     tests the archive's encrypted flag (`cmp dword [archive+0x11c],0`),
-//     calls SetFilePointer, then ReadFile, through their import slots, and on
-//     failure logs the entry name it takes as `lea r,[entry+0x14]`.  The
-//     clamp loads and the name lea use the same entry register.
+//     tests the archive's encrypted flag (`cmp dword [archive+disp32],0`),
+//     pushes or loads the archive's handle (+0x10, same base register as the
+//     flag), calls SetFilePointer, then ReadFile, through their import slots,
+//     and on failure logs the entry name it takes as `lea r,[entry+0x14]`.
+//     The clamp loads and the name lea use the same entry register.
+// The flag offset is not fixed: +0x11c on both builds above, +0x220 on the
+// cs2 2.6.1.90 build (2020, newer MSVC; the archive object grew by one
+// 260-byte path buffer in front of it).  The runtime never reads the flag, so
+// the proof only bounds it (IsArchiveFlagOffset) and ties it to the handle.
 // No hash, file name or title is consulted; anything missing or ambiguous
 // installs nothing.
 
@@ -92,7 +97,10 @@ inline constexpr uint8_t kForwardTailBytes[] = {0xc2, 0x08, 0x00};  // ret 8
 // builds), its ReadFile and name lea right behind it.
 inline constexpr size_t kReadEntryScanBytes = 0x200u;
 inline constexpr size_t kFlagCompareBytes = 7u;  // 83 /7 disp32 imm8
-inline constexpr uint32_t kArchiveEncryptedOffset = 0x11cu;
+// The flag is a dword member behind the handle, inside an object of a few
+// hundred bytes (+0x11c / +0x220 measured).
+inline constexpr uint32_t kMinArchiveFlagOffset = 0x80u;
+inline constexpr uint32_t kMaxArchiveFlagOffset = 0x1000u;
 // The clamp loads sit this close before the flag compare (0x10 / 0xf).
 inline constexpr size_t kClampScanBytes = 0x18u;
 // SetFilePointer follows the flag compare, ReadFile follows SetFilePointer,
@@ -108,6 +116,7 @@ struct VoiceSites {
   uintptr_t big_read = 0u;     // proof only: the forwarder's ReadEntry call
   uintptr_t read_entry = 0u;   // hook target
   uintptr_t plain_block = 0u;  // proof only: the encrypted-flag compare
+  uint32_t archive_flag_offset = 0u;  // proof only: [archive+] encrypted
 };
 
 enum class VoiceSiteResult : uint32_t {
@@ -133,6 +142,29 @@ inline bool HasBaseDisp8(const uint8_t* code, size_t begin, size_t end,
     if (code[at] == opcode && IsBaseDisp8(code[at + 1u]) &&
         code[at + 2u] == disp &&
         (base == 8u || (code[at + 1u] & 0x07u) == base)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+inline bool IsArchiveFlagOffset(uint32_t offset) {
+  return offset >= kMinArchiveFlagOffset && offset < kMaxArchiveFlagOffset &&
+         offset % 4u == 0u;
+}
+
+// `mov r,[base+0x10]` or `push dword [base+0x10]` (the archive handle)
+// starting in [begin, end) of `code`.
+inline bool HasArchiveHandleLoad(const uint8_t* code, size_t begin, size_t end,
+                                 uint8_t base) {
+  for (size_t at = begin; at < end; ++at) {
+    const uint8_t modrm = code[at + 1u];
+    if (!IsBaseDisp8(modrm) || (modrm & 7u) != base ||
+        code[at + 2u] != kArchiveHandleOffset) {
+      continue;
+    }
+    if (code[at] == 0x8bu ||
+        (code[at] == 0xffu && ((modrm >> 3u) & 7u) == 6u)) {
       return true;
     }
   }
@@ -217,7 +249,7 @@ inline exact::UniquePatternMatch FindForwarder(
 inline bool MatchesPlainBlock(const exact::LoadedPeImage& image,
                               const uint8_t* code, size_t cmp,
                               const VoiceImportSlots& imports,
-                              bool* calls_valid) {
+                              bool* calls_valid, uint32_t* flag_offset) {
   *calls_valid = false;
   const uint8_t modrm = code[cmp + 1u];
   if (code[cmp] != 0x83u || (modrm & 0xf8u) != 0xb8u || (modrm & 7u) == 4u ||
@@ -226,7 +258,7 @@ inline bool MatchesPlainBlock(const exact::LoadedPeImage& image,
   }
   uint32_t disp = 0u;
   std::memcpy(&disp, code + cmp + 2u, sizeof(disp));
-  if (disp != kArchiveEncryptedOffset || cmp < kClampScanBytes) return false;
+  if (!IsArchiveFlagOffset(disp) || cmp < kClampScanBytes) return false;
   uint8_t entry = 8u;
   for (uint8_t base = 0u; base < 8u && entry == 8u; ++base) {
     if (base != 4u &&
@@ -239,6 +271,14 @@ inline bool MatchesPlainBlock(const exact::LoadedPeImage& image,
   const size_t after = cmp + kFlagCompareBytes;
   const size_t seek = FindImportCall(image, code, after, after + kCallScanBytes,
                                      imports.set_file_pointer);
+  // The plain path seeks the archive's own handle: the flag and the handle
+  // are fields of one object, so the handle is loaded (before the seek) from
+  // the compare's base register.
+  if (!HasArchiveHandleLoad(code, after, seek,
+                            static_cast<uint8_t>(modrm & 7u))) {
+    return false;
+  }
+  *flag_offset = disp;
   if (seek == after + kCallScanBytes) return true;
   const size_t read = FindImportCall(image, code, seek + 6u,
                                      seek + 6u + kCallScanBytes,
@@ -275,11 +315,16 @@ inline VoiceSiteResult ResolveVoiceSites(const exact::LoadedPeImage& image,
   size_t block = 0u;
   uint32_t blocks = 0u;
   bool block_calls_valid = false;
+  uint32_t flag_offset = 0u;
   for (size_t at = 0u; at < kReadEntryScanBytes; ++at) {
     bool calls_valid = false;
-    if (!MatchesPlainBlock(image, code, at, imports, &calls_valid)) continue;
+    uint32_t flag = 0u;
+    if (!MatchesPlainBlock(image, code, at, imports, &calls_valid, &flag)) {
+      continue;
+    }
     block = at;
     block_calls_valid = calls_valid;
+    flag_offset = flag;
     ++blocks;
   }
   if (blocks != 1u) return VoiceSiteResult::kPlainBlockMissing;
@@ -287,6 +332,7 @@ inline VoiceSiteResult ResolveVoiceSites(const exact::LoadedPeImage& image,
   sites->big_read = reinterpret_cast<uintptr_t>(big_read.address);
   sites->read_entry = read_entry;
   sites->plain_block = read_entry + block;
+  sites->archive_flag_offset = flag_offset;
   return VoiceSiteResult::kResolved;
 }
 

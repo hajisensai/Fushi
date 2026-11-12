@@ -111,8 +111,8 @@ fn cut_segments(conn: &Connection, local: &Local) -> Result<Vec<(u64, u64)>, Str
 /// 操作一生只被重写对数次。满段（≥ 目标一半）不再动。新设备 / 落后很多的设备因此只拉十几个文件，而不是上千个。
 ///
 /// 合并 = 同一 seq 区间、同样的操作按体积目标重新切、重新签名，名字随之变化。各位置上已经有旧段的：合并后的段
-/// 登记成「要重传」（[sync2_rewrites]），旧段登记成「待删」（[sync2_obsolete]）；待删的旧文件在新 head 写出、且
-/// 所有活跃设备的 ack 都越过它之后才删（`sync2_head` 返回），归档位置由 Dart 侧跳过删除。还没传过的位置直接拿
+/// 登记成「要重传」（[sync2_rewrites]），旧段登记成「待删」（[sync2_obsolete]）；待删的旧文件什么时候删由
+/// [SrsCore::sync2_obsolete] 定（[HEAD_KEEP_GENS]），归档位置由 Dart 侧跳过删除。还没传过的位置直接拿
 /// 合并后的段。升级前切的老段体积未知（0），先补算再分层。
 const COMPACT_FANOUT: usize = 4;
 const COMPACT_BASE: u64 = 16 * 1024;
@@ -255,27 +255,38 @@ fn compact_segments(conn: &Connection, local: &Local) -> Result<(), String> {
     Ok(())
 }
 
-/// 旧小段在第一份不再引用它的 head 之后，本机再写出多少代 head 才删（审查 S-5）。
+/// 位置上本机自己的旧 head 留几代（设计 §6.1 写入纪律 2）：位置上最新的本机 head 代号是 `G` 时，代号
+/// `< G - HEAD_KEEP_GENS` 的本机 head 该删（[head_retire_below]）。代号是本机全局的（[Local::head_gen]，各位置共用一个
+/// 计数），所以一个位置上的代号可以不连续，规则只看数值。
 ///
-/// 读者只认 head 列出的段（设计 §6.1 读取纪律），而 Dart 每轮写完 head 就删本机 `gen < 当前 - 2` 的旧 head
-/// （srs_sync2_round.dart 第 4 步）。旧小段被合并后第一份不再引用它的 head 代号记为 `since_gen`：引用它的只有更早的
-/// head（`gen < since_gen`），它们在当前代号到 `since_gen + 2` 时全部被删。所以从那一刻起位置上再没有任何 head 引用
-/// 这些段，删它们不会让读者从「head 列出的段」里少拿到任何东西。
-pub(crate) const OBSOLETE_KEEP_GENS: u64 = 2;
+/// **这是「位置上哪些旧文件可以删」唯一的一处策略**：旧 head 的清单与旧小段的清单都由 [SrsCore::sync2_obsolete] 按它
+/// 给出，Dart 只列目录、删文件、回执（srs_sync2_round.dart），不持有任何保留代数。旧版本（2026-11 之前）的 Dart 自己
+/// 按 `gen < 当前 - 2` 删旧 head，与这里是同一条数值规则。
+pub(crate) const HEAD_KEEP_GENS: u64 = 2;
+
+/// 位置上最新的本机 head 代号是 [newest] 时：代号低于返回值的本机 head 该删。
+pub(crate) fn head_retire_below(newest: u64) -> u64 {
+    newest.saturating_sub(HEAD_KEEP_GENS)
+}
 
 /// 旧小段在第一份不再引用它的 head 写出之后至少再留多久（审查 S-5）：给已经读到旧 head、正在下载它引用的段的读者，
 /// 以及列目录最终一致（Google Drive 可能几分钟里仍列出已删的旧 head）留余量。读者真的扑空也不丢数据：那台设备这一轮
 /// 跳过（§6.1：head 指向的段暂时读不到 → 下一轮再来），下一轮读到的新 head 引用的是合并后的段，同样的操作、同样的链值。
 pub(crate) const OBSOLETE_GRACE_MS: i64 = 24 * 60 * 60 * 1000;
 
-/// [location] 上可以删的旧小段（调用方在写出代号 [gen] 的 head 之后取）。以前要等所有没冻结的其它设备在 head 里 ack
-/// 越过它，而对端重装 / 换身份 / 长期休眠时它的 ack 永远不动（只有本机换身份才冻结旧身份）→ `devices/<本机>/` 只增
-/// 不减，每轮列目录越来越慢。删除安全只取决于「还有没有 head 引用它」，与别的设备应用到哪无关（它们缺的操作在合并
-/// 后的段里，同一 seq 区间），所以改为按代号与时间删（[OBSOLETE_KEEP_GENS] / [OBSOLETE_GRACE_MS]）。
+/// 待删表（`sync2_obsolete`）里旧 head 行的 `last`：旧小段行的 `last` 是段的末 seq（≥ 1），0 只用来标 head 行。
+const OBSOLETE_HEAD_ROW: i64 = 0;
+
+/// 写出代号 [gen] 的 head 时：给这个位置上还没定代号的待删旧小段记下 `since_gen` / `since_at`。
 ///
-/// 两段式（集成审查【中】）：这里只给清单、**不**从待删表移除。以前取出即删记录，而 Dart 之后才上传 head、最后才删
-/// 文件——head 上传或删除中途抛错，这批旧段就永远没人再删。现在记录留到 Dart 删成功后发 `obsolete_ack`
-/// （[SrsCore::sync2_obsolete_ack]）才移除；没 ack 的下一轮照样再给（删除对已不在的文件幂等）。
+/// `since_gen` 的含义对两种行相同：**位置上引用这个文件的本机 head 代号都 `< since_gen`**。
+/// - 旧小段：被合并后第一份不再引用它的 head 的代号（读者只认 head 列出的段，设计 §6.1 读取纪律；之后的 head 按合并后
+///   的切法写，不会再引用它，所以引用它的只有更早的 head）。
+/// - 旧 head（[SrsCore::sync2_obsolete] 登记）：它自己的代号 + 1。
+///
+/// 于是「该删」对两种行是同一个条件 `since_gen <= head_retire_below(最新代号)`：对 head 行就是 [HEAD_KEEP_GENS] 的保留
+/// 规则本身；对旧小段是从它推出来的「可能引用它的 head 按规则全都该删了」——旧小段多留几代不另立常量。按规则该删不等
+/// 于已经删掉：旧小段还要等那些 head **确认删掉**（[pending_deletes]）。
 fn stamp_obsolete(
     conn: &Connection,
     local: &Local,
@@ -292,27 +303,116 @@ fn stamp_obsolete(
     Ok(())
 }
 
-/// [location] 上此刻该删、还没确认删掉的文件：过了代号与宽限期的旧小段（[gen] = 本机在这个位置上最新的 head 代号），
-/// 加上转发清理（relay.rs `sync2_relay_ack`）留下的被取代的旧转发件 / 旧转发 head。只读，不改表。
-pub(crate) fn pending_deletes(
+/// [SrsCore::sync2_obsolete] 的回复。
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct Obsolete {
+    /// 此刻该删的文件（位置上的相对路径）。
+    pub delete: Vec<String>,
+    /// 还有旧小段只差 [Self::delete] 里的旧 head 确认删掉：这一份清单**全部**删成并回执（`obsolete_ack`）之后，同一轮
+    /// 里再问一次就给。没全部删成就不必再问（下一轮照样从头给）。
+    pub again: bool,
+    /// 本机的旧身份（换身份之前用的设备 id，设计 §7.3）里，这个位置上此刻该去看一眼目录的（former.rs）：调用方列
+    /// `devices/<它>/`、读其中的 head，交给 [SrsCore::sync2_obsolete_former]。没换过身份 / 还没到该看的时候 / 归档
+    /// 位置 = 空。
+    pub former: Vec<String>,
+}
+
+/// [location] 上此刻该删、还没确认删掉的文件。[below] = [head_retire_below]（位置上最新的本机 head 代号）。只读，不改表。
+///
+/// - 旧 head：登记过（[SrsCore::sync2_obsolete]）、`since_gen <= below` 的。
+/// - 旧小段：`since_gen <= below`、过了宽限期（[OBSOLETE_GRACE_MS]），**并且待删表里没有代号 `< since_gen` 的旧 head
+///   还等着确认**——可能引用它的 head 都确认删掉（或这一轮列目录时已经不在）之后才给。以前旧 head 由 Dart 自己删、不
+///   回执：同一轮里旧小段先删、引用它的旧 head 后删，旧 head 删失败也不拦旧小段（BUG-4464）。被这份清单里的旧 head
+///   拦住的旧小段记在 [Obsolete::again]：调用方把清单全部删成、回执后同一轮再问一次就拿到——正常情况下旧小段与
+///   以前在同一轮删掉，只是排在引用它的旧 head 之后。
+///   以前还要等所有没冻结的其它设备在 head 里 ack 越过它，而对端重装 / 换身份 / 长期休眠时它的 ack 永远不动 →
+///   `devices/<本机>/` 只增不减；删除安全只取决于「还有没有 head 引用它」，与别的设备应用到哪无关（它们缺的操作在
+///   合并后的段里，同一 seq 区间）（审查 S-5）。
+/// - 只给**本机当前身份目录**下的：换过身份（设计 §7.3，[rotate]）之后旧身份的目录不归这条规则清——那里留着的 head
+///   本机不再更新，同一身份的另一个安装还在往里写，上面的推理对它不成立（BUG-4465）。旧目录下的记录在换身份时就
+///   作废了，那个目录另按当场的证据清（former.rs：只删被盖过的旧 head，段不删）。
+/// - 加上转发清理（relay.rs `sync2_relay_ack`）留下的被取代的旧转发件 / 旧转发 head。
+///
+/// 归档位置（[archive]，只写不删）：Dart 对清单只回执、不删，旧 head 本来就都留着，不等它们。
+///
+/// 两段式（集成审查【中】）：这里只给清单、**不**从待删表移除，Dart 删成功后发 `obsolete_ack`
+/// （[SrsCore::sync2_obsolete_ack]）才移除；没 ack 的下一轮照样再给（删除对已不在的文件幂等）。
+fn pending_deletes(
     conn: &Connection,
-    profile: &str,
+    local: &Local,
     location: &str,
-    gen: u64,
+    below: u64,
     now: i64,
-) -> Result<Vec<String>, String> {
+    archive: bool,
+) -> Result<Obsolete, String> {
+    let own = format!("devices/{}/", local.device.text());
+    // 还等着确认的旧 head 里最小的 `since_gen`（= 代号 + 1）：`since_gen` 不小于它的旧小段可能还被它引用。
+    let oldest_head: Option<i64> = conn
+        .prepare_cached(
+            "SELECT MIN(since_gen) FROM sync2_obsolete WHERE profile_uid = srs_id(?1) AND location = ?2 AND last = ?3 \
+             AND substr(name, 1, length(?4)) = ?4",
+        )
+        .map_err(sql)?
+        .query_row(params![local.profile, location, OBSOLETE_HEAD_ROW, own], |r| r.get(0))
+        .map_err(sql)?;
+    let unreferenced_below = if archive {
+        i64::MAX
+    } else {
+        oldest_head.unwrap_or(i64::MAX)
+    };
     let mut names: Vec<String> = conn
         .prepare_cached(
-            "SELECT name FROM sync2_obsolete WHERE profile_uid = srs_id(?1) AND location = ?2 AND since_gen + ?3 <= ?4 AND since_at + ?5 <= ?6 \
+            "SELECT name FROM sync2_obsolete WHERE profile_uid = srs_id(?1) AND location = ?2 \
+             AND substr(name, 1, length(?3)) = ?3 AND since_gen <= ?4 \
+             AND (last = ?5 OR (since_at + ?6 <= ?7 AND since_gen < ?8)) \
              UNION SELECT path FROM sync2_relay_gone WHERE profile_uid = srs_id(?1) AND location = ?2 ORDER BY 1",
         )
         .map_err(sql)?
-        .query_map(params![profile, location, OBSOLETE_KEEP_GENS as i64, gen as i64, OBSOLETE_GRACE_MS, now], |r| r.get(0))
+        .query_map(
+            params![
+                local.profile,
+                location,
+                own,
+                below as i64,
+                OBSOLETE_HEAD_ROW,
+                OBSOLETE_GRACE_MS,
+                now,
+                unreferenced_below
+            ],
+            |r| r.get(0),
+        )
         .map_err(sql)?
         .collect::<Result<_, _>>()
         .map_err(sql)?;
     names.dedup();
-    Ok(names)
+    // 代号与宽限期都够、只被还没确认的旧 head 拦着的旧小段。拦它的 head 行 `since_gen <= 它的 since_gen <= below`，
+    // 都在上面这份清单里：清单全部确认后它就不再被拦。
+    let again: bool = conn
+        .prepare_cached(
+            "SELECT EXISTS (SELECT 1 FROM sync2_obsolete WHERE profile_uid = srs_id(?1) AND location = ?2 \
+             AND substr(name, 1, length(?3)) = ?3 AND since_gen <= ?4 AND last <> ?5 \
+             AND since_at + ?6 <= ?7 AND since_gen >= ?8)",
+        )
+        .map_err(sql)?
+        .query_row(
+            params![
+                local.profile,
+                location,
+                own,
+                below as i64,
+                OBSOLETE_HEAD_ROW,
+                OBSOLETE_GRACE_MS,
+                now,
+                unreferenced_below
+            ],
+            |r| r.get(0),
+        )
+        .map_err(sql)?;
+    Ok(Obsolete {
+        delete: names,
+        again,
+        former: Vec::new(),
+    })
 }
 
 fn hex(b: &[u8]) -> String {
@@ -359,9 +459,13 @@ fn record_head(conn: &Connection, profile: &str, h: &Head) -> Result<(), String>
         params![profile, h.device.0.to_vec(), h.gen as i64, h.seq as i64, h.at_ms, h.ack.encode(), h.digest, h.name],
     )
     .map_err(sql)?;
+    // 收下的 head 声明的 `minReader` 传递到本机的声明（store/sync2/min_reader.rs 文件头）。
+    super::min_reader::raise(conn, profile, h.min_reader)?;
     if n > 0 {
         // 型号 / 版本 / 协议（设备可识别，devices.rs）。
         super::devices::record_ext(conn, profile, h)?;
+        // 摘要的组指纹（自动重建比对用，heal.rs）。
+        super::heal::record_peer_dg(conn, profile, h)?;
     }
     Ok(())
 }
@@ -1814,7 +1918,10 @@ pub(crate) fn replay_pending(
         if take.is_empty() {
             return Ok((changed, true));
         }
-        changed.extend(replay_cards(c, &take)?);
+        {
+            let _p = crate::store::prof::span("replay");
+            changed.extend(replay_cards(c, &take)?);
+        }
         let mut del = c.prepare_cached("DELETE FROM sync2_replay_pending WHERE profile_uid = srs_id(?1) AND card_id = srs_id(?2)").map_err(sql)?;
         for id in &take {
             del.execute(params![profile, id]).map_err(sql)?;
@@ -2050,6 +2157,8 @@ pub(crate) fn rotate(
         params![profile, old.device.0.to_vec(), keep as i64, chain_at(conn, profile, &old.device, keep)?.unwrap_or(CHAIN_ZERO).to_vec()],
     )
     .map_err(sql)?;
+    // 旧身份目录下的待删记录作废：那个目录从此不归代号规则管（former.rs）。
+    super::former::drop_rows(conn, profile, &old.device)?;
     // 各位置的上传进度记的是本机身份的 seq：新身份从 1 开始，进度归零（否则新段会被当成已传过）。
     conn.execute(
         "UPDATE sync2_locations SET uploaded = 0 WHERE profile_uid = srs_id(?1)",
@@ -2093,6 +2202,7 @@ pub(crate) fn rotate(
         };
         let chain = chain_next(&fresh.chain, &re);
         insert_op(conn, profile, &re, &chain, now)?;
+        super::min_reader::raise(conn, profile, crate::sync2::min_reader::min_reader_of(&re))?;
         fresh.chain = chain;
         fresh.next_seq += 1;
         applied.set(fresh.device, seq);
@@ -2117,16 +2227,14 @@ pub const ACK_ONLY_HEAD_MS: i64 = 10 * 60 * 1000;
 
 /// [SrsCore::sync2_head_if_changed] 的结果。
 pub enum HeadWrite {
-    /// 写了新 head：`(相对路径, 字节, 代号, 可删的旧小段)`。
+    /// 写了新 head：`(相对路径, 字节, 代号)`。位置上该删的旧文件在 head 传上去之后另取（[SrsCore::sync2_obsolete]）。
     Written {
         path: String,
         bytes: Vec<u8>,
         gen: u64,
-        obsolete: Vec<String>,
     },
-    /// 内容与上次写出的相同、还没到期：没写，[path] 是上次写出的那个 head；[obsolete] 是此刻仍待删的文件（上一轮
-    /// 删到一半失败、还没 `obsolete_ack` 的那些照样给出）。
-    Unchanged { path: String, obsolete: Vec<String> },
+    /// 内容与上次写出的相同、还没到期：没写，[path] 是上次写出的那个 head。
+    Unchanged { path: String },
     /// 没写：head 要引用的段里还有没传到这个位置的（发件确认之后段被合并改切，见 [SrsCore::sync2_head_if_changed]）。
     /// 与发件确认时的「改切」同一处理：这一轮不写 head，下一轮从水位按当前切法补传。
     Recut,
@@ -2382,14 +2490,9 @@ impl SrsCore {
         location: &str,
         upto: u64,
         now: i64,
-    ) -> Result<(String, Vec<u8>, u64, Vec<String>), String> {
+    ) -> Result<(String, Vec<u8>, u64), String> {
         match self.sync2_head_if_changed(profile, location, upto, now, None)? {
-            HeadWrite::Written {
-                path,
-                bytes,
-                gen,
-                obsolete,
-            } => Ok((path, bytes, gen, obsolete)),
+            HeadWrite::Written { path, bytes, gen } => Ok((path, bytes, gen)),
             HeadWrite::Unchanged { .. } => Err("sync2_head: unexpected unchanged".to_owned()),
             HeadWrite::Recut => Err("sync2_head: recut".to_owned()),
         }
@@ -2460,7 +2563,7 @@ impl SrsCore {
             let mut head = Head {
                 gen: local.head_gen + 1,
                 protocol: segment::PROTOCOL,
-                min_reader: segment::MIN_READER,
+                min_reader: super::min_reader::declared(c, profile)?,
                 collection: local.collection,
                 device: local.device,
                 public: local.key.public(),
@@ -2468,10 +2571,15 @@ impl SrsCore {
                 chain,
                 segments: cuts,
                 ack,
-                digest: digest.unwrap_or_default(),
+                digest: digest.clone().unwrap_or_default(),
                 at_ms: now,
                 name: local.name.clone(),
-                ext: super::devices::self_ext(c, profile)?,
+                ext: super::heal::with_dg(
+                    super::devices::self_ext(c, profile)?,
+                    c,
+                    profile,
+                    digest.as_deref().unwrap_or_default(),
+                )?,
             };
             let sig = head.content_sig();
             // 不算 ack / 摘要的内容签名：只有它们变了（收到别人的操作、摘要重算）不急着写（审查 S-8）。
@@ -2479,6 +2587,13 @@ impl SrsCore {
                 let mut h = head.clone();
                 h.ack = Vv::default();
                 h.digest = String::new();
+                // 组指纹随摘要一起变（heal.rs）：同样不急着写。
+                if let Some(Value::Object(m)) = h.ext.as_mut() {
+                    m.remove("dg");
+                }
+                h.ext = h
+                    .ext
+                    .filter(|e| e.as_object().is_some_and(|m| !m.is_empty()));
                 h.content_sig()
             };
             let sig_key = format!("sync2_head_sig/{profile}/{location}");
@@ -2509,20 +2624,8 @@ impl SrsCore {
                         let ack_only_fresh = core == Some(core_sig.as_str())
                             && age.is_some_and(|a| a < ACK_ONLY_HEAD_MS.min(max_age));
                         if (s == sig && fresh) || ack_only_fresh {
-                            let gen: i64 = c
-                                .query_row(
-                                    "SELECT head_gen FROM sync2_locations WHERE profile_uid = srs_id(?1) AND location = ?2",
-                                    params![profile, location],
-                                    |r| r.get(0),
-                                )
-                                .optional()
-                                .map_err(sql)?
-                                .unwrap_or(0);
-                            let obsolete =
-                                pending_deletes(c, profile, location, gen.max(0) as u64, now)?;
                             return Ok(HeadWrite::Unchanged {
                                 path: path.to_owned(),
-                                obsolete,
                             });
                         }
                     }
@@ -2545,21 +2648,92 @@ impl SrsCore {
                 params![profile, location, seq as i64, head.gen as i64, now],
             )
             .map_err(sql)?;
-            // 新 head 已经不再引用合并掉的旧小段：已经没有任何留着的 head 引用、且过了宽限期的一并交给 Dart 删（S-5）。
-            // 只给清单，删成功后 Dart 发 `obsolete_ack` 才移除记录（两段式，见 [stamp_obsolete]）。
+            // 新 head 已经不再引用合并掉的旧小段：记下从哪一代起（[stamp_obsolete]）。位置上该删的文件等这份 head 传上去
+            // 之后由 [Self::sync2_obsolete] 给。
             stamp_obsolete(c, &local, location, head.gen, now)?;
-            let obsolete = pending_deletes(c, profile, location, head.gen, now)?;
             Ok(HeadWrite::Written {
                 path,
                 bytes,
                 gen: head.gen,
-                obsolete,
             })
         })
     }
 
-    /// 确认 [location] 上这些文件（`sync2_head` / `sync2_relay_ack` 给的待删清单里的相对路径）已经删掉（或在归档
-    /// 位置上按策略不删）：从待删记录里移除。没被确认的下一轮照样再给。返回移除的记录数。
+    /// 一轮收尾：[location] 上此刻该删的文件（相对路径）——本机的旧 head、合并换下来的旧小段、被取代的旧转发件。
+    /// [present] = 调用方**在这一轮的 head 已经在位置上之后**（刚传上去，或没变的一轮核对过上次那份还在）列
+    /// `devices/<本机>/` 得到的文件名；[archive] = 归档位置（只写不删：不给旧 head，其余清单调用方只回执不删）。
+    ///
+    /// 保留策略只在这里（[HEAD_KEEP_GENS]）：
+    /// - 以**列得到的**最新本机 head 为准（不超过本机记的这个位置写到的代号）：刚写的 head 还列不到（列目录最终一致）
+    ///   或不在了，就按位置上实际最新的那份算，宁可晚删——任何时候都不会把位置上最新的 head 删掉。
+    /// - 列到的本机 head 里代号低于 [head_retire_below] 的登记进待删表（head 行，见 [stamp_obsolete]），与旧小段同一
+    ///   张表、同一份清单、同样两段式：删成功后 `obsolete_ack`（[Self::sync2_obsolete_ack]）才移除，没确认的下一轮照样
+    ///   再给。别的设备转发进本机目录的本机旧 head（relay.rs）同样是列到就按代号处理。
+    /// - 换过身份的设备：旧身份的目录不在这份清单里（[pending_deletes]），该去看的旧身份列在 [Obsolete::former]，
+    ///   由 [Self::sync2_obsolete_former] 另判（former.rs）。
+    /// - 旧小段要等可能引用它的旧 head 都确认删掉才给（[pending_deletes]）：**段的删除永远不早于最后一份引用它的 head
+    ///   被删**。被这份清单里的旧 head 拦住的旧小段用 [Obsolete::again] 告诉调用方：清单全部删成并回执后，把删掉的
+    ///   文件从 [present] 里去掉再问一次（同一轮），旧小段就与以前在同一轮删掉。
+    pub fn sync2_obsolete(
+        &self,
+        profile: &str,
+        location: &str,
+        present: &[String],
+        archive: bool,
+        now: i64,
+    ) -> Result<Obsolete, String> {
+        let w = self.writer()?;
+        in_savepoint(&w, |c| {
+            let Some(local) = Local::load(c, profile)? else {
+                return Ok(Obsolete::default());
+            };
+            let written = c
+                .query_row(
+                    "SELECT head_gen FROM sync2_locations WHERE profile_uid = srs_id(?1) AND location = ?2",
+                    params![profile, location],
+                    |r| r.get::<_, i64>(0),
+                )
+                .optional()
+                .map_err(sql)?
+                .unwrap_or(0)
+                .max(0) as u64;
+            let heads: Vec<(u64, &str)> = present
+                .iter()
+                .filter_map(|n| segment::parse_head_file_name(n).map(|g| (g, n.as_str())))
+                .collect();
+            let newest = heads
+                .iter()
+                .map(|h| h.0)
+                .filter(|g| *g <= written)
+                .max()
+                .unwrap_or(0);
+            let below = head_retire_below(newest);
+            if !archive {
+                let dir = local.device.text();
+                for (g, name) in heads.iter().filter(|h| h.0 < below) {
+                    c.prepare_cached(
+                        "INSERT OR IGNORE INTO sync2_obsolete (profile_uid, location, name, last, since_gen, since_at) \
+                         VALUES (srs_id(?1), ?2, ?3, ?4, ?5, 0)",
+                    )
+                    .map_err(sql)?
+                    .execute(params![
+                        profile,
+                        location,
+                        format!("devices/{dir}/{name}"),
+                        OBSOLETE_HEAD_ROW,
+                        (*g + 1) as i64
+                    ])
+                    .map_err(sql)?;
+                }
+            }
+            let mut out = pending_deletes(c, &local, location, below, now, archive)?;
+            out.former = super::former::due(c, &local, location, archive, now)?;
+            Ok(out)
+        })
+    }
+
+    /// 确认 [location] 上这些文件（[Self::sync2_obsolete] / `sync2_relay_ack` 给的待删清单里的相对路径）已经删掉（或在
+    /// 归档位置上按策略不删）：从待删记录里移除。没被确认的下一轮照样再给。返回移除的记录数。
     pub fn sync2_obsolete_ack(
         &self,
         profile: &str,
@@ -2604,6 +2778,13 @@ impl SrsCore {
             return Ok(v);
         }
         let w = self.writer()?;
+        // 收段通道没做完（上一轮被打断）时第一次见到某台设备：它的信任判定要读完整的投影（trust.rs
+        // `note_new_device`）。先按片把通道做完，不让它在下面这笔事务里一次做完。
+        if self.channel_live.load(std::sync::atomic::Ordering::SeqCst)
+            && super::trust::sees_new_device(&w, profile, heads)?
+        {
+            self.settle_channel_on(&w, profile)?;
+        }
         in_savepoint(&w, |c| {
             Ok(plan(c, profile, heads, location, true)?.expect("writable plan always answers"))
         })
@@ -3145,30 +3326,30 @@ impl SrsCore {
             if same_vv || now - last_at < interval {
                 return Ok(json!({"skipped": true}));
             }
+            // 还有待重放的卡、等因果的缓冲或待刷新的缓存：投影还没收齐，这时的根与别的设备比只会比出假的不一致
+            // （再触发一次无用的自动重建，heal.rs）。等收齐了再算。
+            if super::heal::unsettled(&r, profile)? {
+                return Ok(json!({"skipped": true, "unsettled": true}));
+            }
         }
         // 桶表由触发器随每次写入维护（digest.rs，审查 S-7）：根只读 4096 行，不再全库扫描。读连接上一个读事务里取，
         // 根与版本向量出自同一快照。
-        let (d, vv, tag) = {
+        // 各组指纹（head `ext.dg`，heal.rs）与根出自同一次桶表读取，和版本向量在同一个读事务里。
+        let (d, groups, vv, tag) = {
             let r = self.reader()?;
             r.execute_batch("BEGIN").map_err(sql)?;
             let out = (|| {
                 let vv = applied_vv(&r, profile)?;
                 let tag = super::trust::digest_vv_tag(&r, profile, &vv)?;
-                Ok::<_, String>((super::digest::root(&r, profile)?, vv, tag))
+                let (d, groups) = super::digest::root_and_groups(&r, profile)?;
+                Ok::<_, String>((d, groups, vv, tag))
             })();
             r.execute_batch("COMMIT").map_err(sql)?;
             out?
         };
         let w = self.writer()?;
         in_savepoint(&w, |c| {
-            let value = format!("{d}@{tag}");
-            for (k, v) in [(&key, value), (&at_key, now.to_string())] {
-                c.execute(
-                    "INSERT INTO srs_meta (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-                    params![k, v],
-                )
-                .map_err(sql)?;
-            }
+            super::heal::store_digest(c, profile, now, &d, &groups, &tag)?;
             Ok(json!({"digest": d, "vv": vv.hash_hex()}))
         })
     }
@@ -3209,9 +3390,12 @@ impl SrsCore {
                 }
                 _ => false,
             };
+            let is_self = dev == local.device.0.to_vec();
+            // 对端的派生规则版本（摘要前缀，digest.rs）与本机不同：两边摘要永远不比，状态页提示「对方规则 vN」。
+            let rules = digest.as_deref().and_then(super::digest::derive_rules_of);
             let mut row = json!({
                 "device": hex_id(&dev),
-                "self": dev == local.device.0.to_vec(),
+                "self": is_self,
                 "applied": applied,
                 "behind": (head_seq - applied).max(0),
                 "seenAt": x.get::<_, Option<i64>>(3).map_err(sql)?,
@@ -3220,6 +3404,16 @@ impl SrsCore {
                 "warning": x.get::<_, Option<String>>(7).map_err(sql)?,
                 "digestMismatch": same_vv_mismatch,
             });
+            if let (false, Some(theirs), Some(m)) = (
+                is_self,
+                rules.filter(|r| *r != super::digest::DERIVE_RULES),
+                row.as_object_mut(),
+            ) {
+                m.insert(
+                    "rules".to_owned(),
+                    json!({"theirs": theirs, "mine": super::digest::DERIVE_RULES}),
+                );
+            }
             if let (Some(m), Some(Value::Object(x))) =
                 (row.as_object_mut(), extras.get(&hex_id(&dev)))
             {

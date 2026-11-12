@@ -3,8 +3,7 @@ import 'package:fushi_core/fushi_core.dart';
 
 import 'package:fushi/src/ops/ctl_media_links_routes.dart';
 import 'package:fushi/src/ops/op_describe_kit.dart';
-import 'package:fushi/src/ops/op_descriptions_library.dart'
-    show opCustomUndo, opUndoDisplay, opUndoStrings;
+import 'package:fushi/src/ops/op_descriptions_library.dart' show opUndoDisplay;
 
 /// 作品图谱（跨媒体关联建议的接受 / 拒绝）与人物的操作描述（spec §4）。
 ///

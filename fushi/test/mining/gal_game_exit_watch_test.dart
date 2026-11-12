@@ -32,6 +32,57 @@ void main() {
     }
   });
 
+  test('Fushi 自己拉起的 PID：第一次采样前就退出的同目录 stub 仍能交接给本体', () {
+    // ファタモルガーナ：fata_jp.exe 只 CreateProcessW 拉起同目录 fata.exe 就退出。
+    final _Probe probe = _Probe()..processes[200] = r'D:\Games\Title\fata.exe';
+    final GalGameExitWatch watch = GalGameExitWatch(
+      pid: 100,
+      group: GalgameProcessGroup.forExecutable(
+        r'D:\Games\Title\fata_jp.exe',
+        probe: probe,
+        selfPid: selfPid,
+      ),
+      confirmSamples: 2,
+      existenceConfirmed: true,
+    );
+    expect(watch.sample(), GalGameExitStatus.unconfirmed);
+    expect(watch.sample(), GalGameExitStatus.handedOff);
+    expect(watch.pid, 200);
+    expect(watch.sample(), GalGameExitStatus.alive);
+  });
+
+  test('Fushi 自己拉起的 PID 退出且没有接手进程：照常判退出', () {
+    final _Probe probe = _Probe();
+    final GalGameExitWatch watch = GalGameExitWatch(
+      pid: 100,
+      group: GalgameProcessGroup.forExecutable(
+        gameExe,
+        probe: probe,
+        selfPid: selfPid,
+      ),
+      confirmSamples: 2,
+      existenceConfirmed: true,
+    );
+    expect(watch.sample(), GalGameExitStatus.unconfirmed);
+    expect(watch.sample(), GalGameExitStatus.exited);
+  });
+
+  test('existenceConfirmed 不改变 PID 未知时的认领语义', () {
+    final _Probe probe = _Probe();
+    final GalGameExitWatch watch = GalGameExitWatch(
+      pid: 0,
+      group: GalgameProcessGroup.forExecutable(
+        gameExe,
+        probe: probe,
+        selfPid: selfPid,
+      ),
+      existenceConfirmed: true,
+    );
+    expect(watch.sample(), GalGameExitStatus.unconfirmed);
+    probe.processes[200] = gameExe;
+    expect(watch.sample(), GalGameExitStatus.adopted);
+  });
+
   test('连续 N 次失活才判退出；单次抖动不算', () {
     final _Probe probe = _Probe()..processes[100] = gameExe;
     final GalGameExitWatch watch = watchOf(probe);

@@ -45,7 +45,7 @@ dependencies:
   # package:flutter/material.dart / cupertino.dart（守卫
   # test/build/design_widgets_import_guard_test.dart）。
   cupertino_ui: ^1.1.6
-  material_ui: ^1.10.0
+  material_ui: ^1.11.0
   liquid_glass_widgets: ^1.8.1
   crop_image: ^1.0.4
   desktop_drop: ^0.5.0

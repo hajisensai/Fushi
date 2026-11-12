@@ -249,8 +249,12 @@ describe('视频配额池', () => {
     const attempts = Math.floor(FEEDBACK_LIMITS.videoBytesPerIpDay / big);
     expect(attempts).toBeGreaterThan(0);
     // 声明满额、实际只发 64 字节：每次都 400 bad_length，但当天字节额度照样记上。
-    for (let i = 0; i < attempts; i++) {
-      const r = await putVideo(env, f, MP4, { length: big, ip });
+    // 单个上限（1e8）不一定整除每 IP 日额度（200 MiB）：最后一次声明余数，把额度恰好占满（count == limit 不拒），
+    // 否则剩下的几 MB 够小文件传上去，下面的 429 就测不到。
+    const rest = FEEDBACK_LIMITS.videoBytesPerIpDay - attempts * big;
+    const lengths = [...Array(attempts).fill(big), ...(rest > 0 ? [rest] : [])];
+    for (const length of lengths) {
+      const r = await putVideo(env, f, MP4, { length, ip });
       expect(r.status).toBe(400);
       expect(r.data.error).toBe('bad_length');
     }

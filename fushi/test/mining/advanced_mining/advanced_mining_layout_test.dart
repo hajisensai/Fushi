@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_layout.dart';
 
 /// 「高级制卡」分区布局的纯逻辑（反馈 aZ99bm9R6K）：默认布局、按栏取分区、

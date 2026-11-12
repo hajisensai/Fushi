@@ -188,8 +188,8 @@ class AgentToolResult {
   bool get isError => errorCode != null;
 }
 
-/// 撤销结果（与 `fushi_cli` 的 `OpUndoStatus` 对应）。
-enum AgentUndoStatus { done, superseded, failed, notUndoable }
+/// 撤销结果（与 `fushi_cli` 的 `OpUndoStatus` 对应；[partial] = 部分撤销，之后又被改过的部分保留现值）。
+enum AgentUndoStatus { done, superseded, partial, failed, notUndoable }
 
 class AgentUndoResult {
   const AgentUndoResult(this.status, [this.message]);
