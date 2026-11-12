@@ -392,6 +392,10 @@ constexpr uint32_t kTextSourceFvp = 10;
 // PalSpriteUnlock transaction lays out with PalFontDrawText, speaker plate
 // excluded (16 = first unused id on every local branch, checked 2026-11-03).
 constexpr uint32_t kTextSourceSoftpal = 16;
+// EntisGLS (ECSSakura2 VM) exact text: the click unit the VM hands
+// SGLSpriteMessage::AddMessage, ruby readings removed.  22, not 17: 17-21
+// are left to the engine adapters in flight in parallel (2026-11-11).
+constexpr uint32_t kTextSourceEntisGls = 22;
 constexpr uint32_t kTextEventLine = 0;
 constexpr uint32_t kTextEventThreadDiscovered = 1;
 // Some Luna engine hooks expose scenario text and system controls from the

@@ -20,3 +20,4 @@
     luca_.shutdown();
     knife_.shutdown();
     softpal_.shutdown();
+    entisgls_.shutdown();

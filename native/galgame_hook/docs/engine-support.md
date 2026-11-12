@@ -35,6 +35,7 @@
 | `softpal` | SoftPal ADV System | `implemented_unverified` | softpal_text_sprite_hook (implemented_unverified)；ingame_lookup_geometry (implemented_unverified) | engine_resource_ogg (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
 | `luca` | LucaSystem (Prototype) | `implemented_unverified` | luca_message_text (implemented_unverified)；luna_auto_or_pc_hooks (implemented_unverified)；ingame_lookup_geometry (implemented_unverified) | luca_voice_pak_member (implemented_unverified)；directsound_pcm (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
 | `knife` | knife (Tsukihime -A piece of blue glass moon- Switch engine, Rust PC port) | `implemented_unverified` | knife_text_websocket (implemented_unverified)；luna_auto_or_pc_hooks (unavailable) | knife_stream_voice_file (implemented_unverified)；loopback (implemented_unverified) | 0 |
+| `entisgls` | EntisGLS (Cotopha / ECSSakura2) | `implemented_unverified` | entisgls_message_sprite_hook (implemented_unverified)；luna_auto_or_pc_hooks (implemented_unverified) | process_loopback (implemented_unverified) | 0 |
 
 ## 无 OCR 内嵌查词矩阵
 
@@ -1333,6 +1334,45 @@ Tests：`tests/luca_adapter_test.cpp`、`tests/luca_x64_text_test.cpp`、`tests/
 Fixtures：`tests/fixtures/knife_replay.json`
 
 Tests：`tests/knife_adapter_test.cpp`
+
+### EntisGLS (Cotopha / ECSSakura2) (`entisgls`)
+
+- 状态：`implemented_unverified`
+- 别名：Entis、EntisGLS、Cotopha、ECSSakura2
+- 家族：`entisgls`（Entis Cotopha engine (SakuraGL renderer, Rosetta script binding, scripts on the ECSSakura2 VM with JIT); the executable exports its runtime by MSVC-mangled names; one generation measured）
+- 当前 adapter：`hook/adapters/entisgls_adapter.inc`
+- 进程策略：launch=`create_suspended_early_injection`，attach=`supported`，follow-child=`false`
+
+识别签名（所有非空项均带真实样本或运行时观察证据）：
+
+- `executable_names`：ststeady.exe；证据：real_sample — Catalogue only: Marmalade スタディ§ステディ (Steam release) ststeady.exe. The adapter never matches on names; identity is the exported runtime (ECSSakura2Processor::entrySysCall, SakuraGL::SGLSpriteMessage and Rosetta::RSMessageSpriteClass runtime classes).
+- `pe_architectures`：x86；证据：real_sample — ststeady.exe is PE32 machine 0x14c, ASLR-enabled (relocations present)
+- `pe_imports`：emotedriver.dll、OPENGL32.dll、WINMM.dll、GDI32.dll、USER32.dll；证据：real_sample — ststeady.exe import table: E-mote (emotedriver.dll EmoteCreate), OpenGL presents, WINMM waveOut plays the engine's software-mixed sound lines (no DirectSound/XAudio2 import or literal), GDI GetGlyphOutlineW rasterises glyphs
+- `hashes`：ststeady.exe sha256:9750f67ae51ba158cda4f756ccbd0875fb837ddd15e84db713be53f8573d91b3；证据：real_sample — Catalogue only; the adapter does not hash-pin
+
+文本能力：
+
+- `entisgls_message_sprite_hook`：`implemented_unverified` — Native exact text lane (source kind 22, hook 'EntisGLS exact', ENGINE:ENTISGLS:message): SGLSpriteMessage::AddMessage(node) and ClearMessage() are detoured. Sites resolve only from structure (entisgls_core.h ResolveSites): the Rosetta registrations of addMessageText, addMessageXML and clearMessage (one registration shape, unique handler per name, UTF-16 literal matched by content) give three handlers that share one sprite getter; the text handler's and the clear handler's sprite calls give AddMessage and ClearMessage, and the XML handler's parse-then-add method must reach the same AddMessage; AddMessage must read the node type (+0x0c) and children (+0x50/+0x54) and end in the layout call that compares the tag (+0x10) with "ruby" and lays out a text node's string (+0x28). The detour walks the node tree on the game thread through a fault-safe reader (text nodes in order, element children, ruby readings never read, CR/LF dropped; bounded to 960 units, 512 nodes, 16 levels) into a fixed ring; the worker publishes per message sprite the text added since the page's previous publication once a whole worker interval passed without an add or clear on that sprite (one click unit per line), and a clear starts a new page. Offline: fushi_entisgls_adapter_test (synthetic images and node trees); site probe on the Steam ststeady.exe resolves AddMessage +0x338230, ClearMessage +0x338060, layout +0x338750; 19 other-engine PE32 images (BGI x2, CatSystem2, EAGLS, ExHIBIT, Kaguya, Leaf, Liar-soft, Navel, Nitroplus and others, with their DLLs) have no EntisGLS identity. No runtime text_ready run is recorded.
+- `luna_auto_or_pc_hooks`：`implemented_unverified` — Not measured. The engine rasterises glyphs itself (GetGlyphOutlineW into its own surfaces), so generic GDI hooks see single glyphs.
+- codepage：UTF-16
+- 线程提示：Select the 'EntisGLS exact' lane.
+
+音频优先级：
+
+1. `process_loopback` — `implemented_unverified`；格式：host PCM fallback；clean voice：否
+
+真实样本证据：
+
+
+已知限制：
+
+- Text only. Voice: the engine mixes its own sound lines (system/music/sound/voice) in SakuraGL's software mixer and plays the mix through WINMM waveOut; there is no DirectSound/XAudio2 producer for the generic PCM capture and no per-line resource producer is bound, so only the loopback fallback (mixed, not clean voice) reaches the host. The game's voice container (ERISA archive entries; no Ogg decoder in the image) is unmeasured.
+- In-game lookup is not implemented (lookupAdmission stays EngineUnsupported): the laid-out character records (SGLSpriteMessage +0x238/+0x23c) are known from code, but no sprite-to-screen projection or input gate is bound.
+- Single sample, no runtime run: the lane identity is one hook code for every message sprite, so a backlog or other window built on SGLSpriteMessage would publish on the same lane; the click-unit boundary (one worker interval without an add or clear) is unmeasured on the original path.
+
+Fixtures：`tests/fixtures/entisgls_replay.json`
+
+Tests：`tests/entisgls_adapter_test.cpp`
 
 ## 状态定义
 
