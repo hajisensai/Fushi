@@ -13,7 +13,6 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:fushi_engine/srs/srs_projections.dart';
-import 'package:fushi_engine/srs/srs_stats.dart';
 import 'package:fushi_rwkv/fushi_rwkv.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:test/test.dart';
@@ -35,19 +34,43 @@ SrsDayContext _day(Map<String, Object?> v) {
 
 List<int> _ids(int i) => <int>[1000 + i, 2000 + i, 7, 9];
 
-/// `SrsCore.statProjection` 的一行（9 列，见其文档）→ [SrsStatProjection]，归属卡 [owner]。
-SrsStatProjection _projectionOf(List<Object?> r, String owner) =>
-    SrsStatProjection(
-      logId: r[1]! as String,
-      cardId: owner,
-      occurredAt: r[2]! as int,
-      utcOffsetMin: r[3]! as int,
-      rating: r[4] as int?,
-      kind: SrsStatReviewKind.values[r[5]! as int],
-      durationMs: r[6]! as int,
-      prevDueDay: r[7] as int?,
-      maturityDelta: r[8]! as int,
-    );
+/// `SrsCore.statProjection` 的行（9 列，见其文档）按 [day] 的日界读成统计复习 `[at, day, hour, rating, kind, ms, early]`
+/// 与成熟变化 `[day, delta]`（读方口径；生产里由内核 store/stats.rs 的 `View::build` 做同一件事）。
+({List<List<Object?>> reviews, List<List<Object?>> maturity}) _readProjection(
+  List<List<Object?>> rows,
+  SrsDayContext day,
+) {
+  const List<String> kinds = <String>[
+    'newCard',
+    'learn',
+    'young',
+    'mature',
+    'relearn',
+    'filtered',
+  ];
+  final List<List<Object?>> reviews = <List<Object?>>[];
+  final List<List<Object?>> maturity = <List<Object?>>[];
+  for (final List<Object?> r in rows) {
+    final int at = r[2]! as int;
+    final int dayIndex = day.dayIndexOf(at);
+    final int? rating = r[4] as int?;
+    final int? prevDue = r[7] as int?;
+    if (rating != null) {
+      reviews.add(<Object?>[
+        at,
+        dayIndex,
+        ((at + (r[3]! as int) * 60000) % 86400000) ~/ 3600000,
+        rating,
+        kinds[r[5]! as int],
+        r[6]! as int,
+        prevDue != null && prevDue > dayIndex,
+      ]);
+    }
+    final int delta = r[8]! as int;
+    if (delta != 0) maturity.add(<Object?>[dayIndex, delta]);
+  }
+  return (reviews: reviews, maturity: maturity);
+}
 
 void main() {
   final List<Map<String, Object?>> vectors = _load(
@@ -291,41 +314,17 @@ void main() {
         ]),
       );
       expect(rows.every((List<Object?> r) => r[0] == 0), isTrue);
-      final ({List<SrsStatReview> reviews, List<SrsStatMaturityEvent> maturity})
-      got = srsStatsFromProjection(<SrsStatProjection>[
-        for (final List<Object?> r in rows) _projectionOf(r, 'v$i'),
-      ], _day(vectors[i]));
+      final ({List<List<Object?>> reviews, List<List<Object?>> maturity}) got =
+          _readProjection(rows, _day(vectors[i]));
       // 期望的 cardId 是向量日志 JSON 里的 card 字段；库里按 card_id 列分组（生产里两者相同）。
-      expect(
-        <List<Object?>>[
-          for (final SrsStatReview r in got.reviews)
-            <Object?>[
-              r.at,
-              r.day,
-              r.hour,
-              r.rating,
-              r.kind.name,
-              r.durationMs,
-              r.early,
-            ],
-        ],
-        <List<Object?>>[
-          for (final Object? r in want['reviews']! as List<Object?>)
-            (r! as List<Object?>).sublist(1),
-        ],
-        reason: 'vector $i reviews',
-      );
-      expect(
-        <List<Object?>>[
-          for (final SrsStatMaturityEvent m in got.maturity)
-            <Object?>[m.day, m.delta],
-        ],
-        <List<Object?>>[
-          for (final Object? m in want['maturity']! as List<Object?>)
-            (m! as List<Object?>).sublist(1),
-        ],
-        reason: 'vector $i maturity',
-      );
+      expect(got.reviews, <List<Object?>>[
+        for (final Object? r in want['reviews']! as List<Object?>)
+          (r! as List<Object?>).sublist(1),
+      ], reason: 'vector $i reviews');
+      expect(got.maturity, <List<Object?>>[
+        for (final Object? m in want['maturity']! as List<Object?>)
+          (m! as List<Object?>).sublist(1),
+      ], reason: 'vector $i maturity');
       // 记忆状态 = 同一份历史经 ffsrs_store_history_states 选取后最后一条有效结果的记忆。
       final SrsMemory? mem = srsDecodeHistoryStates(
         core.historyStates(<List<String>>[

@@ -39,6 +39,7 @@ import 'package:fushi_engine/sync/subscriptions/host_subscription_routes.dart'
     show HostSubscriptionRejected;
 import 'package:fushi_server/src/admin/admin_backups.dart';
 import 'package:fushi_server/src/admin/admin_srs.dart';
+import 'package:fushi_server/src/admin/admin_srs_ctl.dart';
 import 'package:fushi_server/src/admin/admin_context.dart';
 import 'package:fushi_server/src/admin/admin_dictionaries.dart';
 import 'package:fushi_server/src/admin/resource_indexer_settings.dart';
@@ -124,6 +125,10 @@ class AdminApi {
   /// 复习（SRS）端点（`/api/admin/srs*`，见 admin_srs.dart）。
   late final AdminSrs srs = AdminSrs(ctx);
 
+  /// 复习库内容端点（`/api/admin/srs/{decks,notes,stats,conflicts,duplicates}*`，见
+  /// admin_srs_ctl.dart）：与 app 同一份 engine 路由，按 `profile` 点名哪一份库。
+  late final AdminSrsCtl srsCtl = AdminSrsCtl(() => ctx.host.srs);
+
   /// 词典端点（`/api/admin/dictionaries*`，见 admin_dictionaries.dart）。
   late final AdminDictionaries dictionaries = AdminDictionaries(ctx);
 
@@ -138,6 +143,10 @@ class AdminApi {
     }
     if (path == kAdminSrsPath || path.startsWith('$kAdminSrsPath/')) {
       final shelf.Response? r = await srs.route(method, path, request);
+      if (r != null) return r;
+    }
+    if (path.startsWith('$kAdminSrsPath/')) {
+      final shelf.Response? r = await srsCtl.route(method, path, request);
       if (r != null) return r;
     }
     if (path == kAdminDictionariesPath ||

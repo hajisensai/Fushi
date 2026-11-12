@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 
 import 'package:fushi/src/srs/srs_field_markup.dart' show srsParseCssColor;
 import 'package:fushi/src/srs/srs_rich_format.dart' show kSrsHighlightDefault;
+import 'package:fushi/src/srs/srs_sound_tag.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// 一段行内文字（可带注音与强调）。`text == '\n'` 表示换行。
@@ -89,7 +90,6 @@ const Set<String> _allowedTags = <String>{
 const Set<String> _blockTags = <String>{'div', 'p'};
 
 final RegExp _tag = RegExp(r'<(/?)([a-zA-Z][a-zA-Z0-9]*)([^>]*)>');
-final RegExp _sound = RegExp(r'\[sound:([^\]]+)\]');
 final RegExp _ankiFurigana = RegExp(r' ?([^ >\[\]\n]+?)\[([^\]\[]+?)\]');
 
 final RegExp _backgroundDecl = RegExp(
@@ -121,7 +121,7 @@ String srsDecodeEntities(String s) => s
 /// 去掉全部标签（`<br>` 与块级标签换成换行）、去掉 `[sound:]`、解实体、收空白。
 String srsPlainText(String html) => srsDecodeEntities(
   html
-      .replaceAll(_sound, '')
+      .replaceAll(srsSoundTagPattern, '')
       .replaceAll(RegExp(r'<br\s*/?>', caseSensitive: false), '\n')
       .replaceAll(RegExp(r'</(div|p|li)>', caseSensitive: false), '\n')
       .replaceAll(RegExp(r'<[^>]+>'), ''),
@@ -129,7 +129,8 @@ String srsPlainText(String html) => srsDecodeEntities(
 
 /// 字段里的 `[sound:x]` 文件名（按出现顺序）。
 List<String> srsSoundNames(String field) => <String>[
-  for (final Match m in _sound.allMatches(field)) m.group(1)!.trim(),
+  for (final Match m in srsSoundTagPattern.allMatches(field))
+    m.group(1)!.trim(),
 ];
 
 /// 视频片段的扩展名：Picture 字段里的 `[sound:x.mp4]`（MP4 片段，Anki 惯例）按视频算。
@@ -164,7 +165,7 @@ final RegExp _imgTagSrc = RegExp(
 /// [tags] 限定取哪几种标签；`[sound:]` 总是算上。
 List<String> _mediaNames(String html, Set<String> tags) {
   final List<(int, String)> found = <(int, String)>[
-    for (final Match m in _sound.allMatches(html))
+    for (final Match m in srsSoundTagPattern.allMatches(html))
       (m.start, m.group(1)!.trim()),
     for (final Match m in _mediaTagSrc.allMatches(html))
       if (tags.contains(m.group(1)!.toLowerCase()))
@@ -215,7 +216,7 @@ List<SrsInline> _splitAnkiFurigana(SrsInline base) {
 /// 解析一段行内 HTML。遇到白名单外的标签（img / a / table / script…）整段退回纯文本
 /// （记一条日志），不尝试渲染。[ankiFurigana] 时把文字里的 `漢字[かな]` 拆成注音段。
 List<SrsInline> srsParseInline(String html, {bool ankiFurigana = true}) {
-  final String src = html.replaceAll(_sound, '').trim();
+  final String src = html.replaceAll(srsSoundTagPattern, '').trim();
   if (src.isEmpty) return const <SrsInline>[];
   for (final Match m in _tag.allMatches(src)) {
     final String name = m.group(2)!.toLowerCase();
@@ -408,7 +409,7 @@ bool srsFieldFilled(String? v) => (v ?? '').trim().isNotEmpty;
 /// Anki `kanji:` 过滤器的等价物：去掉振假名 `[かな]` 与标签，只留基字。
 String srsKanaFree(String field) => srsPlainText(
   field
-      .replaceAll(_sound, '')
+      .replaceAll(srsSoundTagPattern, '')
       .replaceAllMapped(
         _ankiFurigana,
         (Match m) =>
