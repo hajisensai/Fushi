@@ -23,6 +23,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart' show DateFormat;
 import 'package:fushi_engine/srs/apkg/srs_import_report.dart';
 import 'package:fushi_engine/srs/srs_browse.dart' show srsDeckQuery;
+import 'package:fushi_engine/srs/srs_collection_binding.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_legacy_lapis_migration.dart';
 import 'package:fushi_engine/srs/srs_remote_store.dart'
@@ -870,6 +871,9 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
         data: list,
         showImportTasks: ref.read(srsImportControllerProvider).tasks.isNotEmpty,
         lapisPending: ref.watch(srsLegacyLapisPendingProvider).valueOrNull ?? 0,
+        joinProvisional:
+            ref.watch(srsCollectionBindingProvider).valueOrNull?.state ==
+            SrsCollectionBindingState.provisional,
         onMigrateLapis: () => srsRunLogged(
           'SrsDeckList.lapisMigration',
           () => openSrsLegacyLapisMigrationPage(context),
