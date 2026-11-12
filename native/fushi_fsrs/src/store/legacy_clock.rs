@@ -12,7 +12,7 @@
 //! [LegacyClock::receive] 对拍 `tests/fixtures/legacy_clock_vectors.json`——搬之前用 Dart `HlcClock` 跑出来冻结的
 //! 向量（生成器 packages/fushi_engine/test/srs/fixtures/gen_legacy_clock_vectors.dart.txt）。
 //!
-//! 本机状态行里的键（都是内核持有，store/local_state.rs `KERNEL_HELD_KEYS`）：
+//! 本机状态行里的键（整行只有内核写，store/local_state.rs；这几个键只有这里写）：
 //! - `hlc`、`writerId`：这里读写。
 //! - `incarnation`：只读（没有 `writerId` 时拼缺省写入者）。它与 `lastSeq` / `applied` / `outboxSeq` 是旧版 Dart
 //!   写入者的状态，现在没有写入方：存量行里的值原样留着（降级回旧版本还读得到），新行没有这几个键（旧版本按缺省
@@ -183,21 +183,15 @@ impl LegacyClock {
         }
     }
 
-    /// 把时钟（与还没存过的写入者）写进本机状态行；库里已是这个值就不写。行还不存在时先按合并协议建行（内核持有的
-    /// 键取初值，见 local_state.rs `merge`），再写自己的键——不动别的键。`apply` / `sched` 每次都调：行里还没有
+    /// 把时钟（与还没存过的写入者）写进本机状态行；库里已是这个值就不写。行还不存在时先建行（local_state.rs `ensure_row`：当前缓存
+    /// 版本 + 新纪元），再写自己的键——不动别的键。`apply` / `sched` 每次都调：行里还没有
     /// `hlc` / `writerId`（新库第一次写、覆盖恢复之后）时即使时钟没推进也会写下 `(0, 0, 写入者)`，与以前 Dart 随
     /// 命令交来的整行相同。
     pub(crate) fn save(&mut self, c: &Connection, profile: &str) -> Result<(), String> {
         if !self.dirty && self.writer_stored {
             return Ok(());
         }
-        c.prepare_cached(
-            "INSERT OR IGNORE INTO srs_local_state (profile_uid, json) \
-             VALUES (srs_id(?1), srs_local_state_merge(NULL, '{}'))",
-        )
-        .map_err(sql)?
-        .execute([profile])
-        .map_err(sql)?;
+        crate::store::local_state::ensure_row(c, profile)?;
         c.prepare_cached(
             "UPDATE srs_local_state SET json = json_set(json, '$.hlc', ?2, '$.writerId', ?3) \
              WHERE profile_uid = srs_id(?1)",

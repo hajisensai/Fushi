@@ -45,7 +45,7 @@ fn apply_items(d: &Device, now: i64, items: Vec<Value>) -> Value {
         d,
         json!({
             "op": "apply", "profile": P, "now": now, "caches": {"defaultDeck": default_deck()},
-            "legacyDevice": "dev", "tickNow": now, "localState": "{}",
+            "legacyDevice": "dev", "tickNow": now,
         }),
         Some(Value::Array(items).to_string()),
     )
@@ -121,7 +121,7 @@ fn change_items() -> Vec<Value> {
 fn change_request(at: i64, with_move: bool) -> Value {
     let mut req = json!({
         "op": "change", "profile": P, "now": at, "caches": {"defaultDeck": default_deck()},
-        "legacyDevice": "dev", "tickNow": at, "ts": "anchored", "localState": "{}",
+        "legacyDevice": "dev", "tickNow": at, "ts": "anchored",
         "checkpoint": {"name": "B", "reason": "note_type"},
     });
     if with_move {
@@ -187,6 +187,7 @@ fn local_state(d: &Device) -> Value {
 fn one_command_changes_the_type_and_moves_the_notes_with_their_new_cards() {
     let d = library("chg-one");
     let before = ops(&d).parse::<i64>().unwrap();
+    let revision = local_state(&d)["revision"].as_i64().unwrap();
     let r = dispatch(
         &d,
         change_request(T0 + 10, true),
@@ -210,7 +211,7 @@ fn one_command_changes_the_type_and_moves_the_notes_with_their_new_cards() {
     // 回包是两段合起来的：十条落进投影的修改记录都算进修订号（还原点不进投影、不计，与单发 `checkpoint` 相同），
     // 第二次刷新写过的卡也在 `cache` 里。
     assert_eq!(r["marks"]["landed"], json!(10), "{r}");
-    assert_eq!(r["localRevision"], json!(10), "{r}");
+    assert_eq!(r["localRevision"].as_i64().unwrap() - revision, 10, "{r}");
     let cached: Vec<&str> = r["cache"]["cards"]
         .as_array()
         .unwrap()
@@ -251,7 +252,7 @@ fn the_edits_match_the_three_commands_it_replaces() {
         &three,
         json!({
             "op": "checkpoint", "profile": P, "now": T0 + 10, "caches": {"defaultDeck": default_deck()},
-            "name": "B", "reason": "note_type", "localState": "{}",
+            "name": "B", "reason": "note_type",
         }),
         None,
     );

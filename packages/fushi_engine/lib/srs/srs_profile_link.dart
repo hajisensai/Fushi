@@ -32,6 +32,8 @@ import 'package:fushi_core/fushi_core.dart' show FushiDatabase;
 import 'package:fushi_engine/srs/srs_backup_merge.dart' show srsAdoptProfileUid;
 import 'package:fushi_engine/srs/srs_collection_binding.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_profile_data.dart'
+    show SrsMetaSet, srsEditMetaSet;
 import 'package:fushi_engine/srs/srs_profile_merge.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_store.dart'
     show kSrsSync2Folder, kSrsSync2Namespace, kSrsSync2V1Folder;
@@ -39,13 +41,15 @@ import 'package:fushi_engine/sync/sync_asset_store.dart';
 
 /// srs.db `srs_meta`：本设备改用别的 uid 之前用过的同步 v2 设备身份（JSON 数组）。换 uid 后本机在新集合里是新的
 /// v2 设备，旧集合的本机身份行也随并入删掉了——不记下来就认不出同步目录里那个旧 uid 目录是自己留下的孤儿。
-/// 只存本机 srs.db（不进偏好表，不随偏好同步到别的设备）。
+/// 只存本机 srs.db（不进偏好表，不随偏好同步到别的设备）。读写都经内核的 `meta_set_edit`（[srsEditMetaSet]，
+/// [SrsMetaSet.retiredDevices]）。
 const String kSrsRetiredV2DevicesKey = 'srs_retired_v2_devices';
 
 /// srs.db `srs_meta`：本设备**改用别的 uid** 时离开的旧 profile uid（JSON 数组）。孤儿目录清理只认这里记着的 uid：
 /// 只有换 uid（采用 / 并入）才保证旧 uid 的数据已经搬到了新 uid 下。「只有本设备写过、本机又没有这个 uid 的
 /// profile」本身不是证据——删 profile（srs_profile_cleanup.dart 明确约定远端已同步的集合不动、只删本机）、恢复
-/// 旧备份之后都是这个样子，那时同步目录里的那份可能是唯一的副本。
+/// 旧备份之后都是这个样子，那时同步目录里的那份可能是唯一的副本。读写都经内核的 `meta_set_edit`
+/// （[SrsMetaSet.retiredUids]）。
 const String kSrsRetiredProfileUidsKey = 'srs_retired_profile_uids';
 
 /// 写入者目录里的 profile 说明文件。同步引擎只认 `batch-*` / `snapshot-*` / `cursor` / `probe`，
@@ -771,13 +775,13 @@ class SrsDbProfileLinker implements SrsProfileLinker {
     // 别的 profile），且只有本设备写过、本机也没有 profile 再用它。本机判定本来就不把它算作别人的数据，但别的设备会
     // 一直把它当成又一个有数据的候选，所以清掉。没记在退役名单里的一律不碰：删掉的 profile、恢复旧备份前的 uid
     // 同样「只有本设备写过、本机没有」，它们在同步目录里的那份可能是唯一的副本。
-    final Set<String> retired = await _readMetaSet(
-      store,
-      kSrsRetiredV2DevicesKey,
+    final Set<String> retired = await srsEditMetaSet(
+      store.core,
+      SrsMetaSet.retiredDevices,
     );
-    final Set<String> retiredUids = await _readMetaSet(
-      store,
-      kSrsRetiredProfileUidsKey,
+    final Set<String> retiredUids = await srsEditMetaSet(
+      store.core,
+      SrsMetaSet.retiredUids,
     );
     for (final SrsRemoteProfile r in <SrsRemoteProfile>[...remote]) {
       if (r.uid == store.profileUid || r.writers.isEmpty) continue;
@@ -843,54 +847,12 @@ class SrsDbProfileLinker implements SrsProfileLinker {
     }
   }
 
-  /// srs.db `srs_meta` 里 [key] 存的字符串集合（JSON 数组；没有 / 坏了为空）。
-  Future<Set<String>> _readMetaSet(SrsDbStore store, String key) async {
-    final QueryRow? row = await store.db
-        .customSelect(
-          'SELECT value FROM srs_meta WHERE key = ?',
-          variables: <Variable<Object>>[Variable<String>(key)],
-        )
-        .getSingleOrNull();
-    final String? raw = row?.read<String>('value');
-    if (raw == null) return <String>{};
-    try {
-      final Object? j = jsonDecode(raw);
-      return j is List ? <String>{for (final Object? x in j) '$x'} : <String>{};
-    } on FormatException {
-      return <String>{};
-    }
-  }
-
-  /// 往 srs.db `srs_meta` 的字符串集合 [key] 里加 [value]（已有就不写）。
-  Future<void> _addToMetaSet(SrsDbStore store, String key, String value) async {
-    final Set<String> values = await _readMetaSet(store, key);
-    if (!values.add(value)) return;
-    await store.db.customStatement(
-      'INSERT OR REPLACE INTO srs_meta (key, value) VALUES (?, ?)',
-      <Object>[key, jsonEncode(values.toList())],
-    );
-  }
-
-  /// 从 srs.db `srs_meta` 的字符串集合 [key] 里去掉 [value]。
-  Future<void> _removeFromMetaSet(
-    SrsDbStore store,
-    String key,
-    String value,
-  ) async {
-    final Set<String> values = await _readMetaSet(store, key);
-    if (!values.remove(value)) return;
-    await store.db.customStatement(
-      'INSERT OR REPLACE INTO srs_meta (key, value) VALUES (?, ?)',
-      <Object>[key, jsonEncode(values.toList())],
-    );
-  }
-
   /// 换 uid 之前记下本机在旧集合里的 v2 设备身份（[kSrsRetiredV2DevicesKey]）：并入会删掉旧 uid 的本机身份行，
   /// 之后（含中断后续做的并入）就再也查不到了。只凭它不会删任何目录，见 [kSrsRetiredProfileUidsKey]。
   Future<void> _retireV2Device(SrsDbStore store) async {
     final String? device = store.sync2Device;
     if (device != null) {
-      await _addToMetaSet(store, kSrsRetiredV2DevicesKey, device);
+      await srsEditMetaSet(store.core, SrsMetaSet.retiredDevices, add: device);
     }
   }
 
@@ -947,7 +909,7 @@ class SrsDbProfileLinker implements SrsProfileLinker {
         continue;
       }
       _deferred.remove(_mergeKey(m.profileId, m.oldUid, m.newUid));
-      await _addToMetaSet(store, kSrsRetiredProfileUidsKey, m.oldUid);
+      await srsEditMetaSet(store.core, SrsMetaSet.retiredUids, add: m.oldUid);
       resumed = true;
     }
     // 并入在改完主库 uid 之后才失败（第二遍并入 / 核对），而手里的 store 还是旧 uid 的：按 profiles 表的新 uid 重开，
@@ -1001,7 +963,7 @@ class SrsDbProfileLinker implements SrsProfileLinker {
     }
     // 主库已经改用 [uid]：旧 uid 的数据已在新 uid 下（并入）或本来只有内置行（采用），它在同步目录里的本设备
     // 目录可以由之后的 [link] 清掉。
-    await _addToMetaSet(store, kSrsRetiredProfileUidsKey, oldUid);
+    await srsEditMetaSet(store.core, SrsMetaSet.retiredUids, add: oldUid);
     try {
       final SrsDbStore? reopened = await reopenStore();
       if (reopened == null || reopened.profileUid != uid) {
@@ -1023,7 +985,11 @@ class SrsDbProfileLinker implements SrsProfileLinker {
             newUid: oldUid,
           ),
         );
-        await _removeFromMetaSet(store, kSrsRetiredProfileUidsKey, oldUid);
+        await srsEditMetaSet(
+          store.core,
+          SrsMetaSet.retiredUids,
+          remove: oldUid,
+        );
         await reopenStore();
       }
       rethrow;

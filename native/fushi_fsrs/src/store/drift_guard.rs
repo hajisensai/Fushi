@@ -74,8 +74,6 @@ pub(crate) const DRIFT_TX_POLICY: &[(&str, DriftTxPolicy)] = &[
     ("backfill_dupe_norms", Join),
     ("backfill_tag_sources", Join),
     ("backfill_source_keys", Join),
-    // profile 并入的核对 + 删除在一笔 Drift 事务里（srs_profile_merge.dart）。
-    ("profile_purge", Join),
     // ---- ReadVisible：只读，或不碰写连接上的事务。
     ("profile_uids", ReadVisible),
     ("wal_checkpoint", ReadVisible),
@@ -145,6 +143,24 @@ pub(crate) const DRIFT_TX_POLICY: &[(&str, DriftTxPolicy)] = &[
     // 摘要不一致的自动重建（store/sync2/heal.rs）：本机写命令，唯一的调用方是同步一轮的收尾（srs_sync2_round.dart），
     // 不开 Drift 事务。
     ("digest_heal", Reject),
+    // 条件写笔记字段、合并重复笔记的意图命令（store/sync2/note_fields_if.rs、merge_notes.rs）：比对 / 读与写在它们
+    // 自己的一笔里，调用方都不开 Drift 事务。
+    ("note_fields_if", Reject),
+    ("merge_notes", Reject),
+    // profile 的整体删除、并入的标记 / 收尾、链接记的集合（store/profile_data.rs）：并入的收尾以前是一笔 Drift 事务
+    // 里的 `profile_purge`，第 11 步改成一条 `profile_merge_commit`，之后没有调用方在 Drift 事务里发它们。
+    ("profile_purge", Reject),
+    ("profile_merge_mark", Reject),
+    ("profile_merge_commit", Reject),
+    ("meta_set_edit", Reject),
+    // 媒体回收（store/media_gc.rs）：待回收集合的写入与删文件不该随别人的事务回滚；存活引用只读。
+    ("media_gc_queue", Reject),
+    ("media_gc_collect", Reject),
+    ("media_live_refs", ReadVisible),
+    // 本机状态行（store/local_state.rs）：读只读；建行 / 写校时状态各自一笔，不随别人的事务回滚。
+    ("local_state", ReadVisible),
+    ("local_state_ensure", Reject),
+    ("local_anchor", Reject),
     ("identity", Reject),
     // 集合绑定状态只进不退（store/binding.rs）：与 `identity` 同属身份记账，随别人的 Drift 事务回滚就把「已定下」退回去了；
     // 调用方（srs_db_store.dart `setCollectionBinding`）走排队的 `sync2Command`，不开 Drift 事务。

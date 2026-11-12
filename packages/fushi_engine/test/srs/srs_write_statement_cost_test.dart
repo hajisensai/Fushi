@@ -238,10 +238,13 @@ void main() {
         'core=${e.value.core}',
       );
     }
+    // 第 12 步：开库读本机状态从一条 Drift 读变成一条内核命令（`local_state`），所以语句 4 → 3、命令 2 → 3
+    // （`local_state` + `cache_config_set` + `identity`）。新 profile / 覆盖恢复之后 / 老行没纪元时再多一条
+    // `local_state_ensure`（srs_local_state_kernel_test.dart）。
     expect(costs, <String, _Cost>{
       'rebuildCaches': (statements: 0, core: 1),
-      'open(current)': (statements: 4, core: 2),
-      'open(cacheRev 1)': (statements: 4, core: 2),
+      'open(current)': (statements: 3, core: 3),
+      'open(cacheRev 1)': (statements: 3, core: 3),
     });
   });
 

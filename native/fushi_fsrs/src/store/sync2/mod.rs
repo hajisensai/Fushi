@@ -19,8 +19,10 @@ pub mod digest;
 pub(crate) mod former;
 pub(crate) mod heal;
 pub mod media;
+pub(crate) mod merge_notes;
 pub(crate) mod min_reader;
 pub(crate) mod mvr;
+pub(crate) mod note_fields_if;
 pub mod relay;
 pub(crate) mod sched_local;
 pub mod schema;
@@ -2518,7 +2520,11 @@ mod tests_heal;
 #[cfg(test)]
 mod tests_local_write;
 #[cfg(test)]
+mod tests_merge_notes;
+#[cfg(test)]
 mod tests_migrate_dedup;
+#[cfg(test)]
+mod tests_note_fields_if;
 #[cfg(test)]
 mod tests_perf;
 #[cfg(test)]

@@ -181,7 +181,6 @@ fn bench_ingest_batches() {
     let cmd = |mut req: Value, blobs: Vec<Vec<u8>>| -> Value {
         req["profile"] = json!(P);
         req["caches"] = json!({"defaultDeck": deck});
-        req["localState"] = json!("{\"revision\":0}");
         let (mut blobs, mut files) = (blobs, Vec::new());
         crate::store::ffi::sync2_dispatch(&b.core, &req, &mut blobs, &mut files).unwrap()
     };

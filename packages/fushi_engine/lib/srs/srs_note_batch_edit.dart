@@ -338,10 +338,12 @@ class SrsNoteFieldApplied {
       SrsBatchOutcome(changed: noteCount, revert: srsEditRevert(undo));
 }
 
-/// 一个批次写下 [plan]，条件写（compare-and-set）：在写锁里重读这批笔记，只写当前值仍是
-/// 计划时的 `before` 的字段；计划之后又被改过（同步拉下、AI / 控制通道并发改）的字段不覆盖，
-/// 整条笔记计入 [SrsNoteFieldApplied.conflicts]（同一笔记的几个字段要么一起写、要么都不写，
-/// 不把卡型开关写成半套）。
+/// 一个批次写下 [plan]，条件写（compare-and-set）：只写当前值仍是计划时的 `before` 的字段；计划之后又被改过
+/// （同步拉下、AI / 控制通道并发改）的字段不覆盖，整条笔记计入 [SrsNoteFieldApplied.conflicts]（同一笔记的几个
+/// 字段要么一起写、要么都不写，不把卡型开关写成半套）。
+///
+/// 比对与写入是内核的一条命令（[SrsDbStore.editNoteFieldsIf]）：现值在内核的写锁里读，比对与写入之间插不进别的
+/// 写入。写下的修改记成撤销凭据（[SrsDbStore.undoable]），撤销按凭据还原（[SrsDbStore.revertEdits]）。
 Future<SrsNoteFieldApplied> srsApplyNoteFieldPlan(
   SrsDbStore store,
   SrsNoteFieldPlan plan,
@@ -352,39 +354,25 @@ Future<SrsNoteFieldApplied> srsApplyNoteFieldPlan(
       conflicts: 0,
     );
   }
-  return store.runExclusive(() async {
-    final Map<String, SrsNoteView?> notes = await store.notes(<String>{
-      for (final SrsNoteFieldChange c in plan.changes) c.noteId,
-    });
-    final Set<String> conflicted = <String>{
+  final (Set<String> conflicted, SrsEditUndo undo) = await store.undoable(
+    () => store.editNoteFieldsIf(<SrsNoteFieldWrite>[
       for (final SrsNoteFieldChange c in plan.changes)
-        if (notes[c.noteId] case final SrsNoteView? n
-            when n == null ||
-                n.deletedAt != null ||
-                n.field(c.fieldId) != c.before)
-          c.noteId,
-    };
-    final List<SrsNoteFieldChange> changes = <SrsNoteFieldChange>[
+        (
+          noteId: c.noteId,
+          fieldId: c.fieldId,
+          expect: c.before,
+          value: c.after,
+        ),
+    ], wholeNote: true),
+  );
+  return SrsNoteFieldApplied(
+    changes: <SrsNoteFieldChange>[
       for (final SrsNoteFieldChange c in plan.changes)
         if (!conflicted.contains(c.noteId)) c,
-    ];
-    final SrsEditUndo undo = changes.isEmpty
-        ? SrsEditUndo.empty
-        : await store.editFieldsUndoable(<SrsFieldChange>[
-            for (final SrsNoteFieldChange c in changes)
-              SrsFieldChange(
-                SrsEntityKind.note,
-                c.noteId,
-                SrsFieldKeys.noteField(c.fieldId),
-                c.after,
-              ),
-          ]);
-    return SrsNoteFieldApplied(
-      changes: changes,
-      conflicts: conflicted.length,
-      undo: undo,
-    );
-  });
+    ],
+    conflicts: conflicted.length,
+    undo: undo,
+  );
 }
 
 /// 这一版之前记下的撤销载荷（只有改动清单、没有 dot）换成撤销凭据：内核只能按值核对（字段唯一的现值仍是这批写下的值）。
@@ -399,3 +387,13 @@ SrsEditUndo srsLegacyNoteFieldUndo(List<SrsNoteFieldChange> changes) =>
           after: c.after,
         ),
     ]);
+
+/// 把 [changes] 写回原值。字段当前值已不是 `after`（之后又被改过 / 笔记被删）的不动；
+/// 返回撤不掉的笔记数。比对与写回同样是一条内核命令（见 [srsApplyNoteFieldPlan]）。
+Future<int> srsRevertNoteFieldChanges(
+  SrsDbStore store,
+  List<SrsNoteFieldChange> changes,
+) async => (await store.editNoteFieldsIf(<SrsNoteFieldWrite>[
+  for (final SrsNoteFieldChange c in changes)
+    (noteId: c.noteId, fieldId: c.fieldId, expect: c.after, value: c.before),
+], wholeNote: false)).length;
