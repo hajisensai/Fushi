@@ -33,6 +33,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
+> 共 3933 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4389](bugs/BUG-4389-gal-dom-no-voice-mining-spins.md) | ✅ | ✅ | TyranoScript 无语音行制卡时浮窗制卡按钮长时间转圈 |
+| [BUG-4388](bugs/BUG-4388-gal-measured-lookup-lost-after-screen-switch.md) | ✅ | ✅ | 切屏后游戏内查词（实测排版路线）失效，要到下一句才恢复 |
+| [BUG-4387](bugs/BUG-4387-gal-dom-text-waiting-thread.md) | ✅ | ✅ | TyranoScript DOM 正文在线时工作台仍显示等待选择台词线程 |
 > 共 3932 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |

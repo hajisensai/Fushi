@@ -1568,6 +1568,15 @@ class GalHookSessionController extends ChangeNotifier {
   bool get tyranoDomTextOnline =>
       _tyranoDomFeed != null && _tyranoDomDeliveredLine;
 
+  /// 本会话的正文是否要靠用户选定一条 LunaHook 文本线程才能进工作台。
+  ///
+  /// 只有引擎文本道才需要选线程；TyranoScript DOM 源在线（[tyranoDomTextOnline]）时
+  /// 正文与语音都由 DOM 源按句给出、根本不读引擎文本道，此时再报「等待选择台词线程」
+  /// 就与屏幕上正在流入的台词和音频自相矛盾（真机：yurialice 工作台满屏 tyrano_dom
+  /// 行，状态卡却停在「等待选择台词线程」）。
+  bool get requiresTextThreadSelection =>
+      hasEngineSource && !tyranoDomTextOnline;
+
   static Future<TyranoDomLaunchPlan?> _defaultTyranoDomLaunchPlanner(
     String exePath, {
     required List<String> userArgs,
@@ -1920,7 +1929,11 @@ class GalHookSessionController extends ChangeNotifier {
       audioStatus: initialStatus,
     );
     if (entry == null) return;
+    final bool firstDomLine = !_tyranoDomDeliveredLine;
     _tyranoDomDeliveredLine = true;
+    // 第一句 DOM 正文翻转了 [requiresTextThreadSelection]：工作台的「等待选择台词线程」
+    // 由会话通知驱动，必须在这里通知一次，不能等别的事件顺带刷新。
+    if (firstDomLine) notifyListeners();
     _redirectFoldedLines(_textService.lastFoldedLineIds, entry.id);
     _pendingResourceMatches.remove(entry.id);
     _recordEngineDelta(
@@ -4720,6 +4733,21 @@ class GalHookSessionController extends ChangeNotifier {
             : 'manual_recapture',
       );
     }
+    // TyranoScript DOM 语音仲裁已经定论「这句没有语音」（声明了语音缓冲区、这句一条
+    // 语音事件都没有、也没有在取的原件）：入库时就把它标成 unavailable、不借时间邻近的
+    // native 资源、不录 Loopback（见 [_onTyranoDomFrame]）。制卡取音必须服从同一结论：
+    // 以前这里照样空等资源等待窗（默认 1.2s）再走 PCM / Loopback 兜底链，而制卡动图
+    // 的采样又要等本句音频有结论才收口——用户看到的就是浮窗「制卡」按钮一直转。
+    if (_tyranoDomLineHasNoVoice(lineId)) {
+      _record(
+        GalHookEventSeverity.info,
+        'match',
+        'audio.dom_no_voice',
+        'TyranoScript DOM voice arbitration reports no voice for this line',
+        details: <String, Object?>{'lineId': lineId},
+      );
+      return null;
+    }
     final int timestamp = _lineTimestampCache[lineId] ?? 0;
     if (engine != null && _isWindows) {
       final Uint8List? paired = await _waitForPairedResourceAudio(
@@ -4955,6 +4983,20 @@ class GalHookSessionController extends ChangeNotifier {
         await jobDirectory.delete(recursive: true);
       } catch (_) {}
     }
+  }
+
+  /// [lineId] 是 DOM 语音仲裁管辖的行，且它的语音组已经定论无语音：一条语音事件
+  /// 都没收到、没有在取的原件、也没有已落盘的资源。语音组已被淘汰 / 文档已重载
+  /// （找不到组）时不下结论，返回 false，交给原有等待与兜底链。
+  bool _tyranoDomLineHasNoVoice(String lineId) {
+    if (!_tyranoDomVoiceOwnedLines.contains(lineId)) return false;
+    for (final _TyranoDomVoiceGroup group in _tyranoDomVoiceGroups.values) {
+      if (group.lineId != lineId) continue;
+      return group.events == 0 &&
+          group.inFlight == 0 &&
+          group.resourceIds.isEmpty;
+    }
+    return false;
   }
 
   /// 资源 hook 已就绪时，资源文件仍可能比文本环晚几十到几百毫秒落盘。制卡不能在第一次

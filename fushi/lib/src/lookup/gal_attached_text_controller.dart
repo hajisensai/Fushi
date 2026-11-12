@@ -386,6 +386,11 @@ class GalAttachedTextController extends ChangeNotifier {
   StreamSubscription<TyranoDomFrame>? _measuredFrameSubscription;
   GalAttachedMeasuredPayload? _measuredLastPayload;
   GalAttachedMeasuredPayload? _measuredRejectedPayload;
+
+  /// runner 拒收 [_measuredRejectedPayload] 时它报告的实时客户区尺寸。拒收只对**这个
+  /// 尺寸**成立：切屏时客户区会短暂变样（3840x2160 → 3840x2127）再变回来，变回之后
+  /// 被拒的那份测量重新有效，必须允许重发（BUG：切屏后查词要等下一句才恢复）。
+  ({int width, int height})? _measuredRejectedClientSize;
   String? _measuredStaleReason;
   TyranoDomFrame? _measuredPendingFrame;
   bool _measuredPendingForce = false;
@@ -2933,8 +2938,13 @@ class GalAttachedTextController extends ChangeNotifier {
         galAttachedMeasuredPayloadForFrame(frame);
     final GalAttachedMeasuredPayload sent =
         _measuredLastPayload ?? const GalAttachedMeasuredPayload.clear();
-    // 同一份测量已经被拒：不管是不是重发请求，都等一份新的 DOM 快照。
-    if (payload == _measuredRejectedPayload) return;
+    // 同一份测量在**同一客户区尺寸**下已经被拒：不管是不是重发请求，都等一份新的
+    // DOM 快照或一次客户区尺寸变化（runner 的状态签名带实时客户区尺寸，尺寸一变就
+    // 发状态事件，走 measuredLayoutStale 分支强制重发到这里）。
+    if (payload == _measuredRejectedPayload &&
+        _liveClientSize() == _measuredRejectedClientSize) {
+      return;
+    }
     if (!force && _measuredRejectedPayload == null && payload == sent) return;
     // 同一句重测（缩放 / 重排）沿用 generation——runner 只接受「同句同代或更新」。
     final bool sameLine =
@@ -2963,6 +2973,7 @@ class GalAttachedTextController extends ChangeNotifier {
       _latestSourceText = payload.sourceText;
       _measuredLastPayload = payload;
       _measuredRejectedPayload = null;
+      _measuredRejectedClientSize = null;
       _measuredStaleReason = null;
       _surfaceVisible = _activeCaptureLease == null && result.surfaceVisible;
       _refreshMeasuredStatus();
@@ -2979,6 +2990,7 @@ class GalAttachedTextController extends ChangeNotifier {
     }
     _measuredLastPayload = null;
     _measuredRejectedPayload = payload;
+    _measuredRejectedClientSize = _liveClientSize();
     _measuredStaleReason = reason;
     _surfaceVisible = false;
     // 视口尺寸与客户区不符（如 Electron 菜单栏占了客户区）只记诊断，不猜偏移。
@@ -2988,6 +3000,13 @@ class GalAttachedTextController extends ChangeNotifier {
       'gen=$generation',
     );
     _setStatus(GalAttachedTextStatus.suspended, reason: reason);
+  }
+
+  /// runner 最近一次报告的实时客户区尺寸（状态事件的 referenceClient）；未知为 null。
+  ({int width, int height})? _liveClientSize() {
+    final GalLookupReferenceClientV1? client = _currentClient;
+    if (client == null) return null;
+    return (width: client.widthPx, height: client.heightPx);
   }
 
   void _measuredDiagnostic(String message) {
@@ -3005,6 +3024,7 @@ class GalAttachedTextController extends ChangeNotifier {
     _measuredConfigured = false;
     _measuredLastPayload = null;
     _measuredRejectedPayload = null;
+    _measuredRejectedClientSize = null;
     _measuredStaleReason = null;
     _measuredPendingFrame = null;
     _measuredPendingForce = false;
