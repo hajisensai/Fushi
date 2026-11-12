@@ -81,6 +81,8 @@ class SrsDeviceView {
     this.trustSince,
     this.heldDeletes = 0,
     this.heldPurges = 0,
+    this.rulesTheirs,
+    this.rulesMine,
   });
 
   factory SrsDeviceView.fromStatus(Map<String, Object?> d) {
@@ -106,6 +108,8 @@ class SrsDeviceView {
       trustSince: (d['trustSince'] as num?)?.toInt(),
       heldDeletes: n('heldDeletes'),
       heldPurges: n('heldPurges'),
+      rulesTheirs: ((d['rules'] as Map?)?['theirs'] as num?)?.toInt(),
+      rulesMine: ((d['rules'] as Map?)?['mine'] as num?)?.toInt(),
     );
   }
 
@@ -142,6 +146,11 @@ class SrsDeviceView {
 
   /// 待本机确认（冲突中心的确认卡片与角标）。
   bool get needsTrust => trust == SrsDeviceTrust.pending;
+
+  /// 对端的派生规则版本与本机不同（内核 `rules`，从它摘要串的前缀解析，store/sync2/digest.rs）：两边的数据摘要
+  /// 不比对。规则相同 / 不知道时都是 null。
+  final int? rulesTheirs;
+  final int? rulesMine;
 
   /// 名称部分（不带版本）；没有名字返回空串。
   String get baseName => name.isNotEmpty ? name : hint;

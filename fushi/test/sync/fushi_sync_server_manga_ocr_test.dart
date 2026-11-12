@@ -110,6 +110,64 @@ class _FakeOcrService implements MangaOcrService {
   }
 }
 
+/// 共享卷目录用例的脚本化 fake：第 N 次 [ocrFolder] 取 [failFirst] 决定行为——
+/// true = 流立即抛错（任务进 error）；false = 流挂起不结束（任务停在 running）。
+class _ScriptedOcrService implements MangaOcrService {
+  _ScriptedOcrService(this.script);
+
+  final List<bool> script;
+  int _calls = 0;
+  final List<StreamController<MangaOcrVolumeEvent>> _hanging =
+      <StreamController<MangaOcrVolumeEvent>>[];
+
+  @override
+  bool get isSupportedPlatform => true;
+
+  @override
+  Future<MangaOcrModelStatus> modelStatus() async => const MangaOcrModelStatus(
+    detectorReady: true,
+    recognizerReady: true,
+    diskBytes: 1,
+    totalBytes: 1,
+  );
+
+  @override
+  Stream<MangaOcrDownloadEvent> downloadModels() =>
+      const Stream<MangaOcrDownloadEvent>.empty();
+
+  @override
+  Future<int> deleteModels() async => 0;
+
+  @override
+  Stream<MangaOcrVolumeEvent> ocrFolder({
+    required String imageDirPath,
+    String? volumeTitle,
+    int startPage = 0,
+  }) {
+    final bool fail = script[_calls++];
+    if (fail) {
+      return Stream<MangaOcrVolumeEvent>.error(StateError('scripted failure'));
+    }
+    final StreamController<MangaOcrVolumeEvent> controller =
+        StreamController<MangaOcrVolumeEvent>();
+    _hanging.add(controller);
+    return controller.stream;
+  }
+
+  Future<void> closeAll() async {
+    for (final StreamController<MangaOcrVolumeEvent> c in _hanging) {
+      await c.close();
+    }
+  }
+}
+
+Future<void> _waitState(MangaOcrHostJob job, MangaOcrHostJobState state) async {
+  for (int i = 0; i < 200 && job.state != state; i++) {
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+  }
+  expect(job.state, state);
+}
+
 Future<HttpClientResponse> _request(
   int port,
   String method,
@@ -598,5 +656,100 @@ void main() {
     manager.createJob(volumeTitle: 'fresh');
     expect(manager.jobCount, 1, reason: '过期半截任务出表');
     expect(job.dir.existsSync(), isFalse, reason: '目录一并删除');
+  });
+
+  group('shared volume dir', () {
+    late DateTime now;
+    late Directory jobRoot;
+
+    setUp(() {
+      now = DateTime(2026, 11, 10, 12);
+      jobRoot = Directory(p.join(tmpRoot.path, 'jobs'));
+    });
+
+    MangaOcrHostJobManager buildManager(_ScriptedOcrService service) {
+      final MangaOcrHostJobManager manager = MangaOcrHostJobManager(
+        service: service,
+        jobRoot: jobRoot,
+        now: () => now,
+      );
+      addTearDown(() async {
+        await manager.disposeAll();
+        await service.closeAll();
+      });
+      return manager;
+    }
+
+    /// 建一个同卷 `T` 的任务、上传 1 页、start，等它进 error。
+    Future<MangaOcrHostJob> failedJob(MangaOcrHostJobManager manager) async {
+      final MangaOcrHostJob job = manager.createJob(volumeTitle: 'T');
+      await manager.uploadPage(job, name: 'p1.png', bytes: <int>[1]);
+      expect(await manager.start(job), isNull);
+      await _waitState(job, MangaOcrHostJobState.error);
+      return job;
+    }
+
+    test('TTL of an old job does not delete the dir a new job uses', () async {
+      final _ScriptedOcrService service = _ScriptedOcrService(<bool>[
+        true,
+        false,
+      ]);
+      final MangaOcrHostJobManager manager = buildManager(service);
+      final MangaOcrHostJob a = await failedJob(manager);
+
+      now = now.add(const Duration(minutes: 30));
+      final MangaOcrHostJob b = manager.createJob(volumeTitle: 'T');
+      expect(p.canonicalize(b.dir.path), p.canonicalize(a.dir.path));
+      await manager.uploadPage(b, name: 'p2.png', bytes: <int>[2]);
+      expect(await manager.start(b), isNull);
+      await _waitState(b, MangaOcrHostJobState.running);
+
+      // A 超过 1h TTL；触达 housekeep。
+      now = now.add(const Duration(minutes: 31));
+      expect(manager.job(b.id), same(b));
+      expect(manager.job(a.id), isNull, reason: '过期旧任务出表');
+      expect(b.dir.existsSync(), isTrue, reason: '共享目录归仍在表里的 B');
+      expect(File(p.join(b.dir.path, 'p2.png')).existsSync(), isTrue);
+    });
+
+    test(
+      'cancelling an old job keeps pages of a live job in the same dir',
+      () async {
+        final _ScriptedOcrService service = _ScriptedOcrService(<bool>[true]);
+        final MangaOcrHostJobManager manager = buildManager(service);
+        final MangaOcrHostJob a = await failedJob(manager);
+
+        final MangaOcrHostJob b = manager.createJob(volumeTitle: 'T');
+        expect(p.canonicalize(b.dir.path), p.canonicalize(a.dir.path));
+        await manager.uploadPage(b, name: 'p2.png', bytes: <int>[2]);
+        final MangaOcrHostJobState before = b.state;
+
+        await manager.cancelAndCleanup(a);
+        expect(File(p.join(b.dir.path, 'p2.png')).existsSync(), isTrue);
+        expect(b.state, before);
+        expect(manager.job(b.id), same(b));
+      },
+    );
+
+    test('cancelling with only terminal sharers still deletes pages', () async {
+      final _ScriptedOcrService service = _ScriptedOcrService(<bool>[
+        true,
+        true,
+      ]);
+      final MangaOcrHostJobManager manager = buildManager(service);
+      final MangaOcrHostJob a = await failedJob(manager);
+      final MangaOcrHostJob b = manager.createJob(volumeTitle: 'T');
+      expect(p.canonicalize(b.dir.path), p.canonicalize(a.dir.path));
+      await manager.uploadPage(b, name: 'p2.png', bytes: <int>[2]);
+      expect(await manager.start(b), isNull);
+      await _waitState(b, MangaOcrHostJobState.error);
+      final Directory out = Directory(p.join(b.dir.path, kMangaOcrOutDirName))
+        ..createSync(recursive: true);
+
+      await manager.cancelAndCleanup(b);
+      expect(File(p.join(b.dir.path, 'p2.png')).existsSync(), isFalse);
+      expect(out.existsSync(), isTrue, reason: '断点缓存保留');
+      expect(manager.job(a.id), same(a));
+    });
   });
 }
