@@ -505,6 +505,9 @@ class _Fixture {
     }
 
     if (_services.isEmpty) return;
+    for (final SrsRwkvService s in _services) {
+      await _idle(s);
+    }
     await quiesce();
     for (final SrsRwkvService s in _services) {
       try {
@@ -671,6 +674,13 @@ class _Fixture {
 
   Future<int> reviewCount() async =>
       (await store.deckSummary(store.defaultDeckId))!.reviewCount;
+}
+
+/// 等编排的后台动作（整表重查、对齐、清除）跑完：排程内核在另一个 isolate 里，只 pump 事件队列等不到它。
+Future<void> _idle(SrsRwkvService service) async {
+  await pumpEventQueue();
+  await service.debugSettled();
+  await pumpEventQueue();
 }
 
 Future<void> _settled(SrsRwkvService service) async {
@@ -1711,7 +1721,7 @@ void main() {
       // 这一次排队不等整表重查：用表里现有的分数出卡，出完再在后台重查（不阻塞出卡的耗时由
       // srs_rwkv_answer_bench_test 真模型实测）。
       final String first = (await f.store.nextCard(deck))!;
-      await pumpEventQueue();
+      await _idle(service);
       expect(backend.requeries, 1);
       expect(backend.scores[lowId]!.$2, closeTo(0.3, 1e-9), reason: '后台重查完');
       // 下一题起用新分数：R 最低的那张先出。
@@ -1742,13 +1752,13 @@ void main() {
       f.advance(1000);
       expect(await service.refresh(), isTrue);
       await f.store.nextCard(deck);
-      await pumpEventQueue();
+      await _idle(service);
       expect(backend.requeries, 1, reason: '推进 1 次，没满 2 次');
       await f.store.answer(cards[1], 3);
       f.advance(1000);
       expect(await service.refresh(), isTrue);
       await f.store.nextCard(deck);
-      await pumpEventQueue();
+      await _idle(service);
       expect(backend.requeries, 2);
     });
 
@@ -1763,14 +1773,14 @@ void main() {
       }
       expect(await service.refresh(), isTrue);
       await f.store.nextCard(deck);
-      await pumpEventQueue();
+      await _idle(service);
       expect(backend.requeries, 0, reason: '推进 2 次，没满 3 次');
       // 第三次作答之前不排队：以前按「部分命中的查询」计数，这里一次都不算。
       await f.store.answer(cards[2], 3);
       f.advance(1000);
       expect(await service.refresh(), isTrue);
       await f.store.nextCard(deck);
-      await pumpEventQueue();
+      await _idle(service);
       expect(backend.requeries, 1);
       // 撤回也是状态推进。
       final SrsReviewLog l = await f.store.answer(cards[3], 3);
@@ -1779,13 +1789,13 @@ void main() {
       expect(await f.store.undo(cards[3], l.id), isTrue);
       expect(await service.refresh(), isTrue);
       await f.store.nextCard(deck);
-      await pumpEventQueue();
+      await _idle(service);
       expect(backend.requeries, 1, reason: '答 + 撤 = 2 次');
       await f.store.answer(cards[4], 3);
       f.advance(1000);
       expect(await service.refresh(), isTrue);
       await f.store.nextCard(deck);
-      await pumpEventQueue();
+      await _idle(service);
       expect(backend.requeries, 2);
     });
 
@@ -1802,7 +1812,7 @@ void main() {
         noteId,
       ]);
       expect(r.notes, 1);
-      await pumpEventQueue();
+      await _idle(service);
       expect(backend.removed, <int>[goneId]);
       expect(backend.scores.containsKey(goneId), isFalse);
       expect(backend.scores, hasLength(cards.length - 1));
@@ -2317,7 +2327,7 @@ void main() {
 
       await service.start();
       expect(service.status.phase, SrsRwkvPhase.failed);
-      await pumpEventQueue();
+      await _idle(service);
       expect(phases, <SrsRwkvPhase>[
         SrsRwkvPhase.downloading,
         SrsRwkvPhase.failed,
@@ -2332,12 +2342,12 @@ void main() {
         ),
         isNull,
       );
-      await pumpEventQueue();
+      await _idle(service);
       expect(phases, hasLength(2));
 
       // 设置 / 复习页的「重试」。
       await service.start(force: true);
-      await pumpEventQueue();
+      await _idle(service);
       expect(phases, <SrsRwkvPhase>[
         SrsRwkvPhase.downloading,
         SrsRwkvPhase.failed,

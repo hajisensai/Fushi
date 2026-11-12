@@ -713,7 +713,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
         srsRunLogged('SrsReviewPage.stopAudio', _audio.cancel);
         // 「就绪」可能在这次排队等结果时就已经来过：那时 [_finished] 还是 false，[_onRwkvStatus] 不重排，
         // 之后也不会再有就绪事件——页面会一直停在「等 RWKV」。所以 pending 落定后当场看一次服务：已就绪就
-        // 重排。不会空转：服务就绪时打分失败会转「出错」（`SrsRwkvService` 的 _scoringFailed），store 也不会
+        // 重排。不会空转：服务就绪时打分失败会转「出错」（RWKV 排程内核，native/fushi_rwkv 的 sched），store 也不会
         // 在 RWKV 就绪且打分成功时报 pending，所以「就绪 + pending」只可能是这个竞态。
         if (rwkvPending && (_rwkv?.ready ?? false)) {
           await _loadNext();

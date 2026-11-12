@@ -3,7 +3,8 @@
 // 把一条用例里「编排对外做了什么」记成与运行无关的规范形，和入库的夹具
 // `fixtures/srs_rwkv_orchestration.json` 逐值比较：
 //   - backends：每个替身后端收到的调用序列（操作、行、标签、时刻、参数、返回值）；
-//   - store：编排向复习库发的三条取数命令（rwkvLogTail / rwkvReplay / rwkvCardRows）的参数与结果摘要；
+//   - store：编排向复习库发的三条取数命令（rwkvLogTail / rwkvReplay（现在取未解码的
+//     rwkvReplayBytes，记法不变）/ rwkvCardRows）的参数与结果摘要；
 //   - status：每个服务的状态事件序列；
 //   - scores：排队 / 统计两个打分入口的参数与返回值；
 //   - files：用例结束时快照目录里的文件与元数据。
@@ -304,9 +305,28 @@ class SrsRwkvRecordingStore implements SrsDbStore {
     required int since,
     int? rebaseSince,
     int? rowsFrom,
+  }) async => srsDecodeRwkvReplay(
+    await rwkvReplayBytes(
+      cardIds,
+      ids,
+      day,
+      since: since,
+      rebaseSince: rebaseSince,
+      rowsFrom: rowsFrom,
+    ),
+  );
+
+  @override
+  Future<Uint8List> rwkvReplayBytes(
+    List<String> cardIds,
+    List<int> ids,
+    SrsDayContext day, {
+    required int since,
+    int? rebaseSince,
+    int? rowsFrom,
   }) async {
     await _delay();
-    final SrsRwkvReplay r = await _inner.rwkvReplay(
+    final Uint8List bytes = await _inner.rwkvReplayBytes(
       cardIds,
       ids,
       day,
@@ -314,6 +334,7 @@ class SrsRwkvRecordingStore implements SrsDbStore {
       rebaseSince: rebaseSince,
       rowsFrom: rowsFrom,
     );
+    final SrsRwkvReplay r = srsDecodeRwkvReplay(bytes);
     _t.events++;
     _log.add(<Object?>[
       'replay',
@@ -334,7 +355,7 @@ class SrsRwkvRecordingStore implements SrsDbStore {
         'tailRows': r.tailRows,
       },
     ]);
-    return r;
+    return bytes;
   }
 
   @override

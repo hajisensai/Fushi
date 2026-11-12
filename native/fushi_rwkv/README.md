@@ -80,7 +80,7 @@ Fushi 的 **RWKV 排程**原生推理库，两个网络：
 
 Fushi 的 RWKV 排程**编排**（什么时候下载权重、恢复快照 / 检查点还是全量回放、新日志是追加、撤回还是退回
 重放、分数表何时清空 / 整表重查、空闲存快照、失败后的重试间隔）整个在这里，供 app 与无头服务端共用
-（`packages/fushi_engine` 的 `SrsRwkvService` 接到它上面是紧跟着的改动）；「没就绪就不打分」只在这一处判断。内核自己持有 runtime，宿主（Dart）只做三件事：递命令、替内核取数
+（`packages/fushi_engine` 的 `SrsRwkvService` 是它的宿主，两边装配的都是这一个类）；「没就绪就不打分」只在这一处判断。内核自己持有 runtime，宿主（Dart）只做三件事：递命令、替内核取数
 （复习库里的日志指纹 / 回放行 / 查询行、权重在哪、下载）、把状态事件转给界面。两边之间是一条消息通道：
 `frwkv_sched_step(一条输入消息)` → 一段输出记录；布局的唯一说明在 `src/sched/mod.rs` 的模块注释，Dart 侧
 的编号镜像在 `packages/fushi_rwkv/lib/src/rwkv_sched.dart`。一个内核不是线程安全的，调用方串行化（Dart 侧

@@ -1,67 +1,18 @@
-// 手动基准：真库（后台 isolate 连接）+ 真 RWKV worker（小模型 int4）上「作答一次 → 出下一张」与
-// 「撤销 → 出下一张」的端到端耗时（含 FFI、isolate 往返、SQL）。默认跳过：
+// 手动基准：真库（后台 isolate 连接）+ 真 RWKV 排程内核（生产装配：内核自己持有 runtime，小模型 int4）上
+// 「作答一次 → 出下一张」与「撤销 → 出下一张」的端到端耗时（含 FFI、isolate 往返、SQL）。默认跳过：
 //   FUSHI_SRS_RWKV_BENCH=<笔记数>（每条两张卡）dart test test/srs/srs_rwkv_answer_bench_test.dart
 // 对比分数表整表重查频率：再加 FUSHI_SRS_RWKV_REQUERY=<每几题重查一次>；
 // FUSHI_SRS_RWKV_THINK_MS=<毫秒> 模拟每题之间看卡的工夫。
 // 权重：native/fushi_rwkv/model/sm72e25_weights.int8.bin（native/fushi_rwkv/fetch_model.*）。
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_rwkv_models.dart';
 import 'package:fushi_engine/srs/srs_rwkv_service.dart';
-import 'package:fushi_rwkv/fushi_rwkv.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:test/test.dart';
 
 import 'support/srs_bulk_fixture.dart';
-
-class _Worker implements SrsRwkvBackend {
-  _Worker(this.worker);
-  final RwkvWorker worker;
-  @override
-  Future<void> replay(RwkvRows rows) => worker.replay(rows);
-  @override
-  Future<Float32List> query(RwkvRows rows) => worker.query(rows);
-  @override
-  Future<Uint8List> snapshot() => worker.snapshot();
-  @override
-  Future<void> restore(Uint8List snapshot) => worker.restore(snapshot);
-  @override
-  Future<void> snapshotToFile(String path) => worker.snapshotToFile(path);
-  @override
-  Future<void> restoreFromFile(String path) => worker.restoreFromFile(path);
-  @override
-  Future<void> reset() => worker.reset();
-  @override
-  Future<void> close() => worker.close();
-  @override
-  Future<bool> append(RwkvRows rows, List<int> tags, List<int> ats) =>
-      worker.append(rows, tags, ats);
-  @override
-  Future<bool> unappend(int tag) => worker.unappend(tag);
-  @override
-  Future<int?> rewindFrom(int atMs, int floorMs) =>
-      worker.rewindFrom(atMs, floorMs);
-  @override
-  Future<void> clearScores() => worker.clearScores();
-  @override
-  Future<RwkvScoreLookup> lookupScores(
-    Int64List cardIds,
-    Uint64List versions,
-  ) => worker.lookupScores(cardIds, versions);
-  @override
-  Future<Float32List> updateScores(
-    RwkvRows rows,
-    Uint64List versions,
-    Int64List anchorsMs,
-  ) => worker.updateScores(rows, versions, anchorsMs);
-  @override
-  Future<int> requeryScores(int today, int nowMs) =>
-      worker.requeryScores(today, nowMs);
-  @override
-  Future<int> removeScores(Int64List cardIds) => worker.removeScores(cardIds);
-}
 
 String _weights() {
   Directory dir = Directory.current.absolute;
@@ -107,12 +58,6 @@ void main() {
         store: store,
         models: models,
         snapshotDir: Directory('${tmp.path}/state'),
-        openBackend: (File _) async => _Worker(
-          await RwkvWorker.spawn(
-            modelPath: weights,
-            precision: RwkvPrecision.int4,
-          ),
-        ),
       );
       // FUSHI_SRS_RWKV_REQUERY=<N>：牌组设置「每答几题刷新」（缺省 1，同上游）。
       final int? refreshEvery = int.tryParse(
