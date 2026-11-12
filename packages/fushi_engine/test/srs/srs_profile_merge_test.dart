@@ -220,7 +220,7 @@ void main() {
       expect(rainCards, hasLength(1), reason: who);
       expect(
         rainCards.single.deckId,
-        SrsIds.builtinDefaultDeck(aUid),
+        SrsKernelIds(aUid).defaultDeck,
         reason: '$who：「雨」在新 uid 的默认牌组',
       );
       final SrsScheduleResult got = (await d.store.history(
@@ -300,7 +300,7 @@ void main() {
     expect(first.fallbackIds, 1, reason: 'exact=${first.exactIds}');
     await b.reopen();
     await b.store.afterRestore(freshIncarnation: true);
-    final String newNote = SrsIds.note(target, guid);
+    final String newNote = SrsKernelIds(target).note(guid);
     final SrsNoteView? n = await b.store.note(newNote);
     expect(n?.noteTypeId, srsLapisNoteTypeId(target));
     final SrsCardCacheRow card = (await b.store.cardsOfNote(newNote)).single;
@@ -333,14 +333,14 @@ void main() {
   });
 
   test(
-    '批量派生（SrsIds.notes / cards / importedRevlogsOf / importAnchorsOf）与逐个派生同值',
+    '批量派生（SrsKernelIds.notes、SrsIds.cards / importedRevlogsOf / importAnchorsOf）与逐个派生同值',
     () {
       const String uid = '01900000-0000-7000-8000-00000000000a';
       final List<String> guids = <String>['abc', 'X#y!', '雨'];
-      expect(SrsIds.notes(uid, guids), <String>[
-        for (final String g in guids) SrsIds.note(uid, g),
+      expect(SrsKernelIds(uid).notes(guids), <String>[
+        for (final String g in guids) SrsKernelIds(uid).note(g),
       ]);
-      final String n = SrsIds.note(uid, 'abc');
+      final String n = SrsKernelIds(uid).note('abc');
       final String t = srsBuiltinLapis(uid).templates.single.id;
       expect(
         SrsIds.cards(<(String, String, int)>[(n, t, 0), (n, t, 3)]),
@@ -406,7 +406,7 @@ void main() {
     await b.reopen();
     await b.store.afterRestore(freshIncarnation: true);
     final String guid = (await b.store.note(
-      SrsIds.note(target, (await _guidOfOnly(b))),
+      SrsKernelIds(target).note((await _guidOfOnly(b))),
     ))!.guid;
     expect(guid, isNotEmpty);
   });
@@ -674,7 +674,7 @@ void main() {
           SrsFieldEdit(
             profileUid: uid,
             entityKind: SrsEntityKind.deck,
-            entityId: SrsIds.builtinDefaultDeck(uid),
+            entityId: SrsKernelIds(uid).defaultDeck,
             fieldKey: key,
             dot: SrsDot(w, seq),
             ctx: SrsCausalContext.empty(),
@@ -943,7 +943,7 @@ void main() {
     );
     await b.reopen();
     await b.store.afterRestore(freshIncarnation: true);
-    final String newNote = SrsIds.note(target, 'anki-guid-replay');
+    final String newNote = SrsKernelIds(target).note('anki-guid-replay');
     final String newCard = (await b.store.cardsOfNote(newNote)).single.id;
     final SrsCardHistory after = await b.store.history(newCard);
     expect(after.all, hasLength(6), reason: 'every log lands once');
@@ -1018,7 +1018,7 @@ void main() {
           SrsFieldEdit(
             profileUid: uid,
             entityKind: SrsEntityKind.deck,
-            entityId: SrsIds.builtinDefaultDeck(uid),
+            entityId: SrsKernelIds(uid).defaultDeck,
             fieldKey: 'x/$i',
             dot: SrsDot('phone#1', i),
             ctx: SrsCausalContext.empty(),
@@ -1049,7 +1049,7 @@ void main() {
 
   Future<String> chainCardIn(_Device d, String uid) async =>
       (await d.store.cardsOfNote(
-        SrsIds.note(uid, 'anki-guid-chain'),
+        SrsKernelIds(uid).note('anki-guid-chain'),
       )).single.id;
 
   // 有效历史的内容（不比 ID：链式与直接合并给原生日志的 ID 可以不同，读侧按内容身份合并副本，BUG-4218）。
@@ -1220,7 +1220,7 @@ void main() {
     // 同步把 r2 送进旧 profile（旧 uid 照常同步），重跑并入。
     final String pOld = partial.store.profileUid;
     final String pCard = (await partial.store.cardsOfNote(
-      SrsIds.note(pOld, 'anki-guid-chain'),
+      SrsKernelIds(pOld).note('anki-guid-chain'),
     )).single.id;
     await partial.store.applyRemote(<SrsEvent>[
       SrsLogEvent(chainLog(pOld, pCard, _kChainR2, _kChainT0 + 20)),
@@ -1390,7 +1390,7 @@ void main() {
     expect(await srsPendingProfileMerges(b.srs.core), hasLength(1));
 
     final String card = (await b.store.cardsOfNote(
-      SrsIds.note(bOld, 'anki-guid-chain'),
+      SrsKernelIds(bOld).note('anki-guid-chain'),
     )).single.id;
     await b.store.applyRemote(<SrsEvent>[
       SrsLogEvent(chainLog(bOld, card, _kChainR2, _kChainT0 + 20)),
@@ -1469,7 +1469,7 @@ void main() {
     }
 
     final String card = (await b.store.cardsOfNote(
-      SrsIds.note(bOld, 'anki-guid-chain'),
+      SrsKernelIds(bOld).note('anki-guid-chain'),
     )).single.id;
     await b.store.applyRemote(<SrsEvent>[
       SrsLogEvent(chainLog(bOld, card, _kChainR2, _kChainT0 + 20)),
@@ -1565,7 +1565,7 @@ void main() {
       SrsFieldEdit(
         profileUid: uid,
         entityKind: SrsEntityKind.deck,
-        entityId: SrsIds.builtinDefaultDeck(uid),
+        entityId: SrsKernelIds(uid).defaultDeck,
         fieldKey: key,
         dot: SrsDot(w, 1),
         ctx: SrsCausalContext.empty(),
@@ -1658,7 +1658,7 @@ void main() {
           SrsFieldEdit(
             profileUid: uid,
             entityKind: SrsEntityKind.deck,
-            entityId: SrsIds.builtinDefaultDeck(uid),
+            entityId: SrsKernelIds(uid).defaultDeck,
             fieldKey: 'x/$seq',
             dot: SrsDot(w, seq),
             ctx: SrsCausalContext.empty(),

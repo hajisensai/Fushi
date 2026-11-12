@@ -25,6 +25,7 @@ export 'src/history_kernel.dart'
         srsImportEquivalentAny;
 export 'src/hlc.dart';
 export 'src/ids.dart';
+export 'src/kernel_ids.dart';
 export 'src/new_card_budget.dart';
 export 'src/note_type_ops.dart';
 export 'src/ordering.dart';

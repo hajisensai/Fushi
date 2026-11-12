@@ -84,7 +84,7 @@ Future<String> deckId(SrsDbStore s, String fullName) async {
       .id;
 }
 
-String basicTypeId(SrsDbStore s) => SrsIds.noteType(s.profileUid, kBasic);
+String basicTypeId(SrsDbStore s) => SrsKernelIds(s.profileUid).noteType(kBasic);
 
 /// 「更改笔记类型」的一组参数。
 class ChangeSpec {

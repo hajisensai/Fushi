@@ -86,7 +86,7 @@ void main() {
       // Lapis 的 ID 与改造前完全一致（存量数据不动）。
       expect(
         a.lapisNoteTypeId,
-        SrsIds.noteType(kProfile, SrsIds.builtinNoteTypeAnkiNum('lapis')),
+        SrsKernelIds(kProfile).noteType(SrsIds.builtinNoteTypeAnkiNum('lapis')),
       );
       final Set<String> fushiFields = fushi.fields
           .map((SrsFieldDef f) => f.id)

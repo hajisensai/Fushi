@@ -168,8 +168,8 @@ void main() {
 
     final String stored = SrsMediaStore.contentName('a.png', <int>[1, 2, 3]);
     expect(await media.load(stored), <int>[1, 2, 3]);
-    final String nt = SrsIds.noteType(kSrsTestProfile, _kBasic);
-    final String noteId = SrsIds.note(kSrsTestProfile, 'g1');
+    final String nt = SrsKernelIds(kSrsTestProfile).noteType(_kBasic);
+    final String noteId = SrsKernelIds(kSrsTestProfile).note('g1');
     expect(
       (await store.note(noteId))!.field(SrsIds.field(nt, 111)),
       '猫<img src="$stored">',

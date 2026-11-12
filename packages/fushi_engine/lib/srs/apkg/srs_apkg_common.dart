@@ -66,10 +66,10 @@ SrsReviewCardOrder? srsReviewCardOrderOfAnki(int? v) => switch (v) {
   _ => null,
 };
 
-/// 从 Anki 导入时按全名新建的牌组 ID：与 Fushi 里新建牌组同一条规则（[SrsIds.deck]），
+/// 从 Anki 导入时按全名新建的牌组 ID：与 Fushi 里新建牌组同一条规则（向内核要，[SrsKernelIds.deck]），
 /// 多台设备各自导入同一个包、或一端导入一端手建同名牌组，合并后都是同一个牌组。
 String srsImportedDeckId(String profileUid, String fullName) =>
-    SrsIds.deck(profileUid, fullName);
+    SrsKernelIds(profileUid).deck(fullName);
 
 // Anki rslib text.rs 的 HTML 媒体引用：img/audio/video/object/source/iframe 的 src / data。
 final RegExp _htmlMediaRef = RegExp(
