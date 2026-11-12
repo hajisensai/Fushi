@@ -11,6 +11,8 @@ import 'package:fushi_server/src/server_srs.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
+import 'support/fake_rwkv.dart';
+
 const String kJa = '01928c3e-0000-7000-8000-00000000a0a0';
 
 void main() {
@@ -20,6 +22,8 @@ void main() {
   const ServerSrsConfig config = ServerSrsConfig(profiles: <String>[kJa]);
 
   ServerSrs srsAt(Directory support) => ServerSrs(
+    // RWKV 权重不联网下载（下载当场失败 = RWKV 没就绪）。
+    rwkvHttpClient: noNetworkHttpClient,
     support: support,
     syncData: Directory(p.join(tmp.path, 'interconnect'))
       ..createSync(recursive: true),

@@ -265,7 +265,7 @@ const double _kMaterialMenuPillHeight = 40;
 /// M3 Expressive「expressive」动效方案的 default spatial 弹簧（刚度 380、
 /// 阻尼比 0.8）：导航指示器选中时带一点回弹地展开，rail 展开 / 收起同用。
 /// 按压类形变用的 standard 方案见 fushi_expressive.dart。
-final SpringDescription _kNavExpressiveSpatial = kNavExpressiveSpatial;
+const SpringDescription _kNavExpressiveSpatial = kNavExpressiveSpatial;
 
 /// MD3 展开 rail 一行的高度与收起 rail / 底栏指示器药丸的尺寸（M3 Expressive：
 /// 行 56、药丸 56×32，全圆角）。

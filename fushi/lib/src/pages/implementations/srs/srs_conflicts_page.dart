@@ -280,14 +280,7 @@ class _SrsConflictsPageState extends ConsumerState<SrsConflictsPage> {
     final List<SrsDuplicateGroup> duplicates = await store
         .duplicateNoteGroups();
     final SrsDeviceDirectory devices = await srsLoadDeviceDirectory(store);
-    final List<SrsDeviceView> untrusted =
-        devices.all
-            .where((SrsDeviceView d) => d.trust != SrsDeviceTrust.trusted)
-            .toList()
-          ..sort(
-            (SrsDeviceView a, SrsDeviceView b) =>
-                a.trust.index.compareTo(b.trust.index),
-          );
+    final List<SrsDeviceView> untrusted = srsUntrustedDevices(devices.all);
     if (!mounted) return;
     setState(() {
       _devices = devices;
@@ -379,7 +372,7 @@ class _SrsConflictsPageState extends ConsumerState<SrsConflictsPage> {
       );
       if (!ok) return;
     }
-    await store.sync2Trust(d.id, trust: trust);
+    await srsSetDeviceTrust(store, d.id, trust: trust);
     FushiToast.show(
       msg: trust
           ? t.srs_trust_trusted_toast(device: name)

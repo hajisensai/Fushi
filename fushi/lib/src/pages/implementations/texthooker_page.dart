@@ -1572,7 +1572,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     final DateTime? sessionStartedAt = state.sessionStartedAt;
     if (!shouldPromptGalCaptureSetup(
       state: state,
-      hasEngineSource: _session.hasEngineSource,
+      requiresTextThread: _session.requiresTextThreadSelection,
       selectedTextThreadKey: _session.selectedTextThreadKey,
       textThreadCount: _session.textThreads.length,
       sessionAlreadyPrompted: _captureSetupShownForSession == sessionStartedAt,
@@ -1590,7 +1590,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       if (latest.sessionStartedAt != sessionStartedAt ||
           !shouldPromptGalCaptureSetup(
             state: latest,
-            hasEngineSource: _session.hasEngineSource,
+            requiresTextThread: _session.requiresTextThreadSelection,
             selectedTextThreadKey: _session.selectedTextThreadKey,
             textThreadCount: _session.textThreads.length,
             sessionAlreadyPrompted: false,
@@ -2086,7 +2086,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     final GalHookSessionState state = _session.state;
     final GalWorkbenchReadiness readiness = galWorkbenchReadiness(
       state: state,
-      hasEngineSource: _session.hasEngineSource,
+      requiresTextThread: _session.requiresTextThreadSelection,
       selectedTextThreadKey: selectedTextThreadKey,
     );
     final TexthookerLineEntry? selectedLine = _selectedLine(lines);

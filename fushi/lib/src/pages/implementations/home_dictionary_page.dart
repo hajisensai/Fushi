@@ -1149,9 +1149,15 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     );
   }
 
-  Widget _buildHistoryOrPlaceholder() => appModel.dictionaryHistory.isEmpty
-      ? _buildPlaceholder()
-      : _buildDictionaryHistory();
+  Widget _buildHistoryOrPlaceholder() {
+    if (appModel.dictionaryHistory.isNotEmpty) return _buildDictionaryHistory();
+    // 冷启动头几百毫秒历史还在后台装载：这时画「还没查过词」会先闪空态再跳成列表。
+    // 留白到装载落定（AppModel 会通知重画）；没装词典的引导不依赖历史，照常画。
+    if (appModel.dictionaryHistoryLoading && appModel.dictionaries.isNotEmpty) {
+      return const SizedBox.expand();
+    }
+    return _buildPlaceholder();
+  }
 
   /// 查询屏三态（结果 / 查询中 / 无结果）。每态一个 key：状态切换时新内容淡入
   /// 上移（[FushiStaggeredEntrance] 的单项用法——没有进场窗口祖先，挂载即播一次，
