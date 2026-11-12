@@ -1749,6 +1749,7 @@
   "book_import_duplicate_keep": "ใช่ เพิ่มคำต่อท้าย",
   "book_import_duplicate_message": "มีหนังสือชื่อ \"$name\" อยู่แล้ว นำเข้าต่อหรือไม่? \"ใช่\" จะนำเข้าพร้อมหมายเลขต่อท้าย; \"ไม่\" จะยกเลิก",
   "book_import_duplicate_title": "หนังสือซ้ำ",
+  "book_import_epub_corrupt": "This EPUB file is incomplete or corrupted (often an unfinished download). Download it again and retry.",
   "book_import_folder_as_source_hint": "สแกนโฟลเดอร์นี้อย่างต่อเนื่องเพื่อหาหนังสือใหม่",
   "book_import_no_book_notice_title": "No book selected",
   "book_import_no_book_subtitle_hint": "You can import with audio alone: pick a subtitle file for it and a book is generated from the subtitles when you import.",

@@ -1749,6 +1749,7 @@
   "book_import_duplicate_keep": "نعم، أضف لاحقة",
   "book_import_duplicate_message": "يوجد بالفعل كتاب باسم \"$name\". استيراده على أي حال؟ \"نعم\" يستورده بلاحقة رقمية؛ \"لا\" يلغي.",
   "book_import_duplicate_title": "كتاب مكرر",
+  "book_import_epub_corrupt": "This EPUB file is incomplete or corrupted (often an unfinished download). Download it again and retry.",
   "book_import_folder_as_source_hint": "الاستمرار في فحص هذا المجلد بحثاً عن كتب جديدة",
   "book_import_no_book_notice_title": "No book selected",
   "book_import_no_book_subtitle_hint": "You can import with audio alone: pick a subtitle file for it and a book is generated from the subtitles when you import.",

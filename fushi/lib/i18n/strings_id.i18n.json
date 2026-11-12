@@ -1749,6 +1749,7 @@
   "book_import_duplicate_keep": "Ya, tambahkan akhiran",
   "book_import_duplicate_message": "Buku bernama \"$name\" sudah ada. Tetap impor? \"Ya\" mengimpor dengan akhiran bernomor; \"Tidak\" membatalkan.",
   "book_import_duplicate_title": "Buku duplikat",
+  "book_import_epub_corrupt": "This EPUB file is incomplete or corrupted (often an unfinished download). Download it again and retry.",
   "book_import_folder_as_source_hint": "Terus pindai folder ini untuk buku baru",
   "book_import_no_book_notice_title": "No book selected",
   "book_import_no_book_subtitle_hint": "You can import with audio alone: pick a subtitle file for it and a book is generated from the subtitles when you import.",

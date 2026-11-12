@@ -1749,6 +1749,7 @@
   "book_import_duplicate_keep": "Oui, ajouter un suffixe",
   "book_import_duplicate_message": "Un livre nommé « $name » existe déjà. L'importer quand même ? « Oui » importe avec un suffixe numéroté ; « Non » annule.",
   "book_import_duplicate_title": "Livre en double",
+  "book_import_epub_corrupt": "This EPUB file is incomplete or corrupted (often an unfinished download). Download it again and retry.",
   "book_import_folder_as_source_hint": "Scanner continuellement ce dossier pour de nouveaux livres",
   "book_import_no_book_notice_title": "No book selected",
   "book_import_no_book_subtitle_hint": "You can import with audio alone: pick a subtitle file for it and a book is generated from the subtitles when you import.",

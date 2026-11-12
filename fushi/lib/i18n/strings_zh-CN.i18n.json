@@ -1749,6 +1749,7 @@
   "book_import_duplicate_keep": "是，加后缀",
   "book_import_duplicate_message": "书架中已存在《$name》。仍要导入吗？「是」会加序号后缀导入，「否」取消添加这本书。",
   "book_import_duplicate_title": "同名书籍",
+  "book_import_epub_corrupt": "EPUB 文件不完整或已损坏（常见于没下载完），请重新下载后再试。",
   "book_import_folder_as_source_hint": "以后自动扫描此文件夹里的新书",
   "book_import_no_book_notice_title": "没有选择书籍",
   "book_import_no_book_subtitle_hint": "没有书也能导入：为这段音频选一个字幕文件，导入时会据此自动生成一本书。",

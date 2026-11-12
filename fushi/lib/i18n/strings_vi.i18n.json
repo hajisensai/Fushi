@@ -1749,6 +1749,7 @@
   "book_import_duplicate_keep": "Có, thêm hậu tố",
   "book_import_duplicate_message": "Đã có sách tên \"$name\". Vẫn nhập? \"Có\" sẽ nhập với hậu tố đánh số; \"Không\" sẽ hủy.",
   "book_import_duplicate_title": "Sách trùng lặp",
+  "book_import_epub_corrupt": "This EPUB file is incomplete or corrupted (often an unfinished download). Download it again and retry.",
   "book_import_folder_as_source_hint": "Tiếp tục quét thư mục này để tìm sách mới",
   "book_import_no_book_notice_title": "No book selected",
   "book_import_no_book_subtitle_hint": "You can import with audio alone: pick a subtitle file for it and a book is generated from the subtitles when you import.",
