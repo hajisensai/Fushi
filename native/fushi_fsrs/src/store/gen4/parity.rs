@@ -57,7 +57,8 @@ const KNOWN: &[(&str, &str, &str)] = &[
     (
         "tests_channel::channel_is_for_a_profile_holding_nothing_but_its_own_builtins",
         "entities",
-        "the ch-missing-row device deletes the srs_entities row of a builtin note type by hand (to check that the          channel stays shut when a projected row is gone): its own log still holds the identity record",
+        "the ch-missing-row device deletes the srs_entities row of a builtin note type by hand (to check that the \
+         channel stays shut when a projected row is gone): its own log still holds the identity record",
     ),
 ];
 
