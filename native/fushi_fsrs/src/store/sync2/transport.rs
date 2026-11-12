@@ -422,7 +422,12 @@ fn hex(b: &[u8]) -> String {
 /// 校验一份 head 的设备公钥：认识的设备必须是同一把钥匙（防注入，设计 §9）；第一次见到的设备记下公钥。
 /// 本机库非空时第一次见到的设备记成待确认（trust.rs）：它的普通操作照收，删除与彻底清除扣到本机确认之后。
 /// 返回 false = 拒绝这份 head。
-fn trust_head(conn: &Connection, profile: &str, h: &Head) -> Result<bool, String> {
+fn trust_head(
+    conn: &Connection,
+    profile: &str,
+    h: &Head,
+    settled: &mut dyn FnMut(&Touched),
+) -> Result<bool, String> {
     let known: Option<(Option<Vec<u8>>, i64)> = conn
         .prepare_cached("SELECT public, frozen FROM sync2_devices WHERE profile_uid = srs_id(?1) AND device = ?2")
         .map_err(sql)?
@@ -446,7 +451,7 @@ fn trust_head(conn: &Connection, profile: &str, h: &Head) -> Result<bool, String
                 params![profile, h.device.0.to_vec(), h.public.to_vec()],
             )
             .map_err(sql)?;
-            super::trust::note_new_device(conn, profile, &h.device, h.at_ms)?;
+            super::trust::note_new_device(conn, profile, &h.device, h.at_ms, settled)?;
             Ok(true)
         }
     }
@@ -575,12 +580,14 @@ fn own_fork_files(
 }
 
 /// 看 head（[SrsCore::sync2_plan_at]）。[write] 为假时 [c] 是读连接：要记东西就返回 None（调用方进写锁重来）。
+/// [settled]：第一次见到某台设备时兜底做完的收段通道（trust.rs `note_new_device`）落进投影的变化；只读时用不到。
 fn plan(
     c: &Connection,
     profile: &str,
     heads: &[Vec<u8>],
     location: Option<&str>,
     write: bool,
+    settled: &mut dyn FnMut(&Touched),
 ) -> Result<Option<Value>, String> {
     let local = Local::load(c, profile)?.ok_or("sync2 not initialised for this profile")?;
     let mut fetch = Vec::new();
@@ -624,7 +631,7 @@ fn plan(
             continue;
         }
         if write {
-            if !trust_head(c, profile, h)? {
+            if !trust_head(c, profile, h, settled)? {
                 rejected.push(h.device.text());
                 continue;
             }
@@ -2829,7 +2836,10 @@ impl SrsCore {
             self.settle_channel_on(&w, profile)?;
         }
         in_savepoint(&w, |c| {
-            Ok(plan(c, profile, heads, location, true)?.expect("writable plan always answers"))
+            Ok(plan(c, profile, heads, location, true, &mut |t| {
+                self.note_settled(profile, t)
+            })?
+            .expect("writable plan always answers"))
         })
     }
 
@@ -2842,7 +2852,7 @@ impl SrsCore {
         location: Option<&str>,
     ) -> Result<Option<Value>, String> {
         let r = self.reader()?;
-        plan(&r, profile, heads, location, false)
+        plan(&r, profile, heads, location, false, &mut |_| {})
     }
 
     /// 收段：每项是一个段文件的字节（任意顺序、可重复）。校验（签名 / 链 / 解密）、按设备连续前缀 + 因果
