@@ -5,7 +5,8 @@
 // 却被异步回调重新启动的孤儿 ticker、非 State 的帧回调、render object 在帧外弄脏）全都经
 // [scheduleFrameCallback] / [scheduleFrame]，这里是唯一能在 release 包里把它们点名的位置。
 //
-// 只记账、不改行为：两个覆写都原样调 super。
+// 要帧入口只记账、不改行为：两个覆写都原样调 super。调度策略换成
+// [ambientAwareSchedulingStrategy]（BUG-4387），见 [ensureInitialized]。
 //
 // 另挂 [AxTreeDesyncSentinel]（BUG-4073）：桌面端逐帧复核发往引擎 AXTree 的语义更新，
 // 让引擎失步的帧记进错误日志（引擎自己的报错只进 stderr）。只诊断、不改下发内容。
@@ -18,15 +19,22 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/diagnostics/ui_activity_probe.dart';
 import 'package:fushi/src/utils/misc/semantics_ax_tree_contract.dart';
+import 'package:fushi/src/utils/scheduling/ambient_ticker.dart';
 
 /// [WidgetsFlutterBinding] + 要帧归因 + AXTree 失步哨兵。仍是 [WidgetsFlutterBinding] 子类（`is WidgetsFlutterBinding`
 /// 的判断不变）。
 class FushiWidgetsFlutterBinding extends WidgetsFlutterBinding {
   /// 还没有 binding 时建一个本类；已有（integration_test / flutter_test 先建了自己的 binding 再调
   /// `main()`）时原样返回已有的，不另建。
+  ///
+  /// 无论 binding 是谁建的，都把调度策略换成 [ambientAwareSchedulingStrategy]：常驻装饰
+  /// 动画不算「忙」，否则 [Priority.idle] 任务让调度器零延迟定时器无限空转、Windows
+  /// 主线程被 WM_NULL 唤醒淹没、输入全丢（BUG-4387）。集成测试走同一条入口，行为与生产一致。
   static WidgetsBinding ensureInitialized() {
     if (!_bindingExists()) FushiWidgetsFlutterBinding();
-    return WidgetsBinding.instance;
+    final WidgetsBinding binding = WidgetsBinding.instance;
+    binding.schedulingStrategy = ambientAwareSchedulingStrategy;
+    return binding;
   }
 
   /// [WidgetsBinding.instance] 在没有 binding 时 debug 抛 [FlutterError]、release 抛空值

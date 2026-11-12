@@ -16,6 +16,66 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 /// WebView rendering. The controller only owns the stack mechanism; whether a
 /// search-target is visible while searching is the host's choice (`visible`).
 void main() {
+  test('lookupSession：每个新查词会话全局唯一，load-more 不换会话', () {
+    final c = DictionaryPopupController(lowMemory: false)..seedWarmSlot();
+    final DictionaryPopupEntry slot = c.entries.first;
+    final DictionarySearchResult cached = DictionarySearchResult(
+      searchTerm: 'a',
+      entries: const <DictionaryEntry>[],
+    );
+    final Set<int> seen = <int>{slot.lookupSession};
+
+    // 热槽复用查 a → 新会话。
+    c.beginTop(
+      term: 'a',
+      rect: Rect.zero,
+      reuseWarmSlot: true,
+      replaceStack: true,
+      visible: false,
+    );
+    expect(seen.add(slot.lookupSession), isTrue);
+    c.fillResult(slot, result: cached, allLoaded: false);
+    final int afterFirst = slot.lookupSession;
+    // load-more（同一会话填更多结果）不换会话号。
+    c.fillResult(slot, result: cached, allLoaded: true);
+    expect(slot.lookupSession, afterFirst);
+
+    // 同一个词、同一个缓存结果对象再查：复位 + beginTop 都是新会话。
+    c.pruneToWarmSlot();
+    expect(seen.add(slot.lookupSession), isTrue);
+    c.beginTop(
+      term: 'a',
+      rect: Rect.zero,
+      reuseWarmSlot: true,
+      replaceStack: true,
+      visible: false,
+    );
+    expect(seen.add(slot.lookupSession), isTrue);
+    c.fillResult(slot, result: cached, allLoaded: true);
+
+    // 嵌套层（可能接管停驻 realm 的同一把 WebView 键）也拿全局新号，不与旧层撞号。
+    final DictionaryPopupEntry child = c.pushChild(
+      term: 'b',
+      rect: Rect.zero,
+      parentIndex: 0,
+      visible: true,
+    );
+    expect(seen.add(child.lookupSession), isTrue);
+    c.truncateTo(1);
+    final DictionaryPopupEntry child2 = c.pushChild(
+      term: 'c',
+      rect: Rect.zero,
+      parentIndex: 0,
+      visible: true,
+    );
+    expect(
+      identical(child2.webViewKey, child.webViewKey),
+      isTrue,
+      reason: '前置：第二个嵌套层接管了停驻 realm',
+    );
+    expect(seen.add(child2.lookupSession), isTrue);
+  });
+
   test('seedWarmSlot 放一个隐藏的常驻热槽（幂等、低内存跳过）', () {
     final c = DictionaryPopupController(lowMemory: false);
     c.seedWarmSlot();

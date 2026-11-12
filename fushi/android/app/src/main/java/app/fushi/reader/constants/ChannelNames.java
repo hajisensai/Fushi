@@ -5,6 +5,7 @@ public final class ChannelNames {
 
     public static final String PREFIX = "app.fushi.reader";
     public static final String SPLASH = PREFIX + "/splash";
+    public static final String STARTUP_TRACE = PREFIX + "/startup_trace";
     public static final String ANKI = PREFIX + "/anki";
     public static final String POPUP = PREFIX + "/popup";
     public static final String TTS = PREFIX + "/tts";
