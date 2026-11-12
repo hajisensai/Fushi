@@ -4616,6 +4616,251 @@ void _bug950Guard() {
     endpoints.dispose();
   });
 
+  group('engine exact thread versus remembered Luna thread', () {
+    GalHookedLine exact(int seq, String text) => GalHookedLine(
+      seq: seq,
+      timestampMs: 1000 + seq,
+      text: text,
+      threadId: 77,
+      threadAddress: 0x4b414733,
+      sourceKind: 18,
+      eventKind: text.isEmpty
+          ? GalTextEventKind.threadDiscovered
+          : GalTextEventKind.line,
+      hookName: 'KiriKiri KAG exact',
+      hookCode: 'ENGINE:KIRIKIRI:kag_message',
+    );
+    GalHookedLine luna(int seq, String text) => GalHookedLine(
+      seq: seq,
+      timestampMs: 1000 + seq,
+      text: text,
+      threadId: 5,
+      threadAddress: 0x1feb30,
+      sourceKind: 2,
+      eventKind: text.isEmpty
+          ? GalTextEventKind.threadDiscovered
+          : GalTextEventKind.line,
+      hookName: 'KiriKiriZX',
+      hookCode: 'HQX8@1FEB30',
+    );
+    // 真机 Role player とろろ姉妹 的时序：Luna 线程开局就出行（标题 / 序章的宏名），
+    // 引擎精确线程几十秒后第一页对白才出现。分两次 poll 交付，记忆恢复先发生。
+    List<GalHookedLine> staged(int invocation) {
+      if (invocation == 1) {
+        return <GalHookedLine>[
+          luna(1, ''),
+          luna(2, 'my_pagebreak'),
+          luna(3, 'g_frame_l'),
+          luna(4, 'my_pagebreak_a'),
+        ];
+      }
+      if (invocation == 3) {
+        return <GalHookedLine>[
+          exact(5, ''),
+          exact(6, '一ページ目'),
+          exact(7, '二ページ目'),
+          exact(8, '三ページ目'),
+        ];
+      }
+      return const <GalHookedLine>[];
+    }
+
+    Future<
+      ({
+        GalHookSessionController controller,
+        TexthookerService service,
+        ChangeNotifier endpoints,
+      })
+    >
+    start(Map<String, GalCaptureMemory> store) async {
+      final TexthookerService service = TexthookerService.test();
+      final ChangeNotifier endpoints = ChangeNotifier();
+      final _FakeEngineSource engine = _FakeEngineSource(
+        pairedBytes: Uint8List(0),
+        audioFormat: null,
+        textReady: true,
+        pollLinesForInvocation: staged,
+      );
+      final GalHookSessionController controller = GalHookSessionController(
+        textService: service,
+        isWindows: true,
+        targetWow64Probe: (_) async => false,
+        targetImagePathProbe: (int pid) => r'D:\gal\rp\rpsisters2.exe',
+        injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
+        engineSourceFactory:
+            ({
+              required int targetPid,
+              required String? launchExe,
+              required String injectorPath,
+              required bool lunaPcHooks,
+              int? lunaCodepage,
+              List<String> launchArguments = const <String>[],
+              String launchWorkdir = '',
+              GalJapaneseLocaleMode japaneseLocaleMode =
+                  kGalDefaultJapaneseLocaleMode,
+              String? contentLanguage,
+            }) => engine,
+        loopbackSourceFactory: _FakeLoopbackSource.new,
+        textPollInterval: const Duration(milliseconds: 5),
+        endpointListenable: endpoints,
+        endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+      );
+      controller.attachCaptureMemory(
+        load: (String gameKey) => store[gameKey] ?? const GalCaptureMemory(),
+        save: (String gameKey, GalCaptureMemory memory) =>
+            store[gameKey] = memory,
+      );
+      await controller.startAttachedCapture(
+        const ExternalWindowInfo(hwnd: 8, pid: 29856, title: 'rpsisters2'),
+      );
+      return (controller: controller, service: service, endpoints: endpoints);
+    }
+
+    Future<void> waitForSelected(
+      GalHookSessionController controller,
+      int threadId,
+    ) async {
+      for (
+        int i = 0;
+        i < 200 && controller.selectedNativeTextThreadId != threadId;
+        i++
+      ) {
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+    }
+
+    Future<TexthookerTextThread> waitForLines(
+      TexthookerService service,
+      int threadId,
+      int lines,
+    ) async {
+      for (int i = 0; i < 200; i++) {
+        final Iterable<TexthookerTextThread> found = service.textThreads.where(
+          (TexthookerTextThread t) => t.nativeThreadId == threadId,
+        );
+        if (found.isNotEmpty && found.first.observedLineCount >= lines) {
+          return found.first;
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+      fail('thread $threadId never reached $lines lines');
+    }
+
+    test(
+      'a later engine exact thread takes over a selection restored from memory',
+      () async {
+        final Map<String, GalCaptureMemory> store = <String, GalCaptureMemory>{
+          r'd:\gal\rp\rpsisters2.exe': const GalCaptureMemory(
+            textThreadFingerprint: 'code:HQX8@1FEB30',
+          ),
+        };
+        final session = await start(store);
+        final GalHookSessionController controller = session.controller;
+
+        // 先被记忆恢复到 Luna 线程——这一步正是真机看到的「Luna 是当前线程」。
+        await waitForSelected(controller, 5);
+        expect(controller.selectedNativeTextThreadId, 5);
+        final String lunaKey = controller.selectedTextThreadKey!;
+
+        // 引擎精确线程出满阈值后接管。
+        await waitForSelected(controller, 77);
+        expect(controller.selectedNativeTextThreadId, 77);
+        expect(isEngineExactTextThread(controller.selectedTextThread!), isTrue);
+        final GalHookEvent takeover = controller.events.lastWhere(
+          (GalHookEvent e) => e.code == 'text.thread_engine_exact_selected',
+        );
+        expect(takeover.details['replacedThreadKey'], lunaKey);
+        // 自动接管不是用户表态：不改写记忆。
+        expect(
+          store[r'd:\gal\rp\rpsisters2.exe']?.textThreadFingerprint,
+          'code:HQX8@1FEB30',
+        );
+        expect(
+          store[r'd:\gal\rp\rpsisters2.exe']?.engineExactDeclined,
+          isFalse,
+        );
+
+        // 用户在两者并存时亲手选回 Luna = 否决引擎精确线程，记进记忆；本会话也不再接管。
+        final TexthookerTextThread lunaThread = session.service.textThreads
+            .firstWhere((TexthookerTextThread t) => t.nativeThreadId == 5);
+        expect(
+          await controller.selectTextThread(
+            5,
+            threadKey: lunaThread.key,
+            remember: true,
+          ),
+          isTrue,
+        );
+        expect(store[r'd:\gal\rp\rpsisters2.exe']?.engineExactDeclined, isTrue);
+        await Future<void>.delayed(const Duration(milliseconds: 30));
+        expect(controller.selectedNativeTextThreadId, 5);
+
+        // 再选回引擎精确线程：否决撤销。
+        final TexthookerTextThread exactThread = session.service.textThreads
+            .firstWhere((TexthookerTextThread t) => t.nativeThreadId == 77);
+        await controller.selectTextThread(
+          77,
+          threadKey: exactThread.key,
+          remember: true,
+        );
+        expect(
+          store[r'd:\gal\rp\rpsisters2.exe']?.engineExactDeclined,
+          isFalse,
+        );
+        expect(
+          store[r'd:\gal\rp\rpsisters2.exe']?.textThreadFingerprint,
+          'code:ENGINE:KIRIKIRI:kag_message',
+        );
+
+        await controller.close();
+        session.endpoints.dispose();
+      },
+    );
+
+    test('a remembered refusal keeps the remembered Luna thread', () async {
+      final Map<String, GalCaptureMemory> store = <String, GalCaptureMemory>{
+        r'd:\gal\rp\rpsisters2.exe': const GalCaptureMemory(
+          textThreadFingerprint: 'code:HQX8@1FEB30',
+          engineExactDeclined: true,
+        ),
+      };
+      final session = await start(store);
+      final GalHookSessionController controller = session.controller;
+      await waitForSelected(controller, 5);
+      expect(controller.selectedNativeTextThreadId, 5);
+      // 等引擎精确线程真的出满阈值（接管判定在同一轮 poll 里跑完）再断言没被换掉。
+      await waitForLines(session.service, 77, 3);
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      expect(controller.selectedNativeTextThreadId, 5);
+      expect(
+        controller.events.map((GalHookEvent e) => e.code),
+        isNot(contains('text.thread_engine_exact_selected')),
+      );
+      await controller.close();
+      session.endpoints.dispose();
+    });
+
+    test('engineExactDeclined round-trips through the memory json', () {
+      const GalCaptureMemory declined = GalCaptureMemory(
+        textThreadFingerprint: 'code:HQX8@1FEB30',
+        engineExactDeclined: true,
+      );
+      final GalCaptureMemory back = GalCaptureMemory.fromJson(
+        declined.toJson(),
+      );
+      expect(back.engineExactDeclined, isTrue);
+      expect(back.textThreadFingerprint, 'code:HQX8@1FEB30');
+      expect(
+        const GalCaptureMemory().toJson(),
+        isNot(contains('engineExactDeclined')),
+      );
+      expect(
+        const GalCaptureMemory(engineExactDeclined: true).isEmpty,
+        isFalse,
+      );
+    });
+  });
+
   test('BUG-2069：配对到的资源语音必须把整句时长写回行条目（制卡动图靠它决定抓多长）', () async {
     final TexthookerService service = TexthookerService.test();
     final ChangeNotifier endpoints = ChangeNotifier();
