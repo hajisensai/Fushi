@@ -39,19 +39,32 @@ pub(crate) const ORPHAN_SWEEP_KEY: &str = "profile_orphan_sweep_v3";
 
 /// 按 profile 记的 `srs_meta` 键里，profile uid 是**最后一段**的前缀（`<前缀><uid>`；`sync2_sealed/` 中间还有一段
 /// 位置 ID，位置 ID 里可以有 `/`，uid 仍是最后一个 `/` 之后那段）。写的地方：sync2/devices.rs `self_key`，
-/// transport.rs `fork_key` / 状态摘要，sync2/mod.rs `MIGRATING_KEY`，sealed.rs `key`。
-const META_PROFILE_LAST: [&str; 6] = [
+/// transport.rs `fork_key` / 状态摘要，sync2/mod.rs `MIGRATING_KEY`，sealed.rs `key`；sync2/heal.rs 的本机组指纹
+/// （`sync2_digest_dg/<uid>`）、对端组指纹与自动重建去重记录（`sync2_dg_peer/<设备>/<uid>`、
+/// `sync2_heal/<设备>/<uid>`，中间是设备 ID），sync2/min_reader.rs 按内容声明的 minReader，binding.rs 的集合绑定状态
+/// （`BINDING_PREFIX`）。
+const META_PROFILE_LAST: [&str; 11] = [
     "sync2_self_info/",
     "sync2_fork_at/",
     "sync2_digest/",
     "sync2_digest_at/",
     "sync2_migrating/",
     "sync2_sealed/",
+    "sync2_digest_dg/",
+    "sync2_dg_peer/",
+    "sync2_heal/",
+    "sync2_min_reader/",
+    "srs_collection_bound/",
 ];
 
 /// 同上，profile uid 是前缀之后**第一段**的（`<前缀><uid>/<设备或位置>`；devices.rs `ext_prefix` /
-/// `retired_prefix`，transport.rs 的 head 签名）。
-const META_PROFILE_FIRST: [&str; 3] = ["sync2_device_ext/", "sync2_retired/", "sync2_head_sig/"];
+/// `retired_prefix`，transport.rs 的 head 签名，sync2/former.rs 的旧身份观察记录 `<前缀><uid>/<位置>/<设备>`）。
+const META_PROFILE_FIRST: [&str; 4] = [
+    "sync2_device_ext/",
+    "sync2_retired/",
+    "sync2_head_sig/",
+    "sync2_former/",
+];
 
 /// 带 UUID 但 [meta_only_uids] **不取** uid 的键前缀：
 /// - `sync2_device_hint/<设备>`（devices.rs `hint_key`）：设备 ID 全局唯一、不分 profile。把设备 ID 当成无主 profile
@@ -1189,10 +1202,15 @@ mod tests {
                     f.display()
                 );
             }
-            // `{MIGRATING_KEY}{profile}` 这种经常量拼的：常量只能是登记过的那一个。
+            // `{MIGRATING_KEY}{profile}` 这种经常量拼的：常量只能是登记过的那两个。
             for (at, _) in src.match_indices(concat!("}{", "profile}")) {
                 let open = src[..at].rfind('{').unwrap();
-                assert_eq!(&src[open + 1..at], "MIGRATING_KEY", "{}", f.display());
+                let name = &src[open + 1..at];
+                assert!(
+                    name == "MIGRATING_KEY" || name == "BINDING_PREFIX",
+                    "{}: {name}",
+                    f.display()
+                );
             }
         }
         // 扫描确实扫到了东西（键的拼法整体换掉时，这条测试不能悄悄变成空转）。
@@ -1214,6 +1232,7 @@ mod tests {
         .unwrap();
         assert!(mod_rs.contains("const MIGRATING_KEY: &str = \"sync2_migrating/\";"));
         assert!(META_PROFILE_LAST.contains(&"sync2_migrating/"));
+        assert!(META_PROFILE_LAST.contains(&crate::store::binding::BINDING_PREFIX));
     }
 
     /// 收尾清两类残留：只剩 meta 键的无主 uid 的键、没有任何操作引用的 `sync2_deps`。活 profile 名下带设备 ID 的键、
