@@ -3559,4 +3559,50 @@ function flushTimers() {
     'after a native reset the next real selection is reported again');
 }
 
+// 48. 换词 / 同词重查必须从顶部开始：TODO-1095 让根 iframe 跨查词（含关窗）常驻，
+//     而它的文档滚动位此前从不归零——上一次滚到哪，下一次热键 / 游戏内嵌查词就停在哪
+//     （同词命中缓存时 contentChanged=false，连重渲染都没有）。beginLookup 是唯一的新会话
+//     边界：它调 popup.js 的 __fushiResetPopupScroll；嵌套子卡的 renderStack 不经
+//     beginLookup，父卡滚动保持不动。
+{
+  const { host, document } = freshHost();
+  const stableRoot = { id: 'global-lookup-root', parentIndex: -1,
+    frame: { left: 0, top: 0, width: 360, height: 480 }, settingsJs: '' };
+  host.renderStack({ popups: [stableRoot] });
+  const rootIframe = shellsOf(document)[0].children.find((c) => c.tagName === 'IFRAME');
+  let resetCount = 0;
+  rootIframe.contentWindow.__fushiResetPopupScroll = () => { resetCount++; };
+
+  // 嵌套子卡开 / 关：不是新会话，父卡滚动不得被动。
+  const child = { id: 'frame-child', parentIndex: 0,
+    frame: { left: 40, top: 60, width: 300, height: 300 }, settingsJs: '' };
+  host.renderStack({ popups: [stableRoot, child] });
+  host.renderStack({ popups: [stableRoot] });
+  assert.strictEqual(resetCount, 0,
+    'nested child render / close keeps the parent card scroll position');
+
+  // 同词重查（payload 完全相同）与换词都经 beginLookup → 归零一次。
+  host.beginLookup('global-lookup-root');
+  host.renderStack({ popups: [stableRoot] });
+  assert.strictEqual(resetCount, 1,
+    'beginLookup resets the reused root iframe scroll (same-word re-lookup)');
+  host.beginLookup('global-lookup-root');
+  host.renderStack({ popups: [{ ...stableRoot, settingsJs: '/*B*/' }] });
+  assert.strictEqual(resetCount, 2,
+    'beginLookup resets the reused root iframe scroll (different word)');
+
+  // 旧缓存文档没有 popup.js 钩子：直接把文档滚动面归零。
+  delete rootIframe.contentWindow.__fushiResetPopupScroll;
+  const scrolled = [];
+  rootIframe.contentWindow.scrollTo = (x, y) => scrolled.push([x, y]);
+  rootIframe.contentWindow.document = {
+    documentElement: { scrollTop: 800 },
+    body: { scrollTop: 800 },
+  };
+  host.beginLookup('global-lookup-root');
+  assert.deepStrictEqual(scrolled, [[0, 0]]);
+  assert.strictEqual(rootIframe.contentWindow.document.documentElement.scrollTop, 0);
+  assert.strictEqual(rootIframe.contentWindow.document.body.scrollTop, 0);
+}
+
 console.log('global_lookup_host_test: PASS');
