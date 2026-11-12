@@ -65,6 +65,90 @@ fn ms(t: Instant) -> u128 {
     t.elapsed().as_millis()
 }
 
+/// 写连接至今写出的页数（`SQLITE_DBSTATUS_CACHE_WRITE`：提交时写进 WAL 的帧，加上页缓存放不下时提前写出的页）。
+/// 与机器当时忙不忙无关，前后两次相减就是这段时间的写入量。
+fn pages_written(core: &crate::store::SrsCore) -> i64 {
+    let w = core.writer().unwrap();
+    let (mut cur, mut high) = (0, 0);
+    // SAFETY: 句柄属于这里独占着的写连接，只读一项统计。
+    unsafe {
+        rusqlite::ffi::sqlite3_db_status(
+            w.handle(),
+            rusqlite::ffi::SQLITE_DBSTATUS_CACHE_WRITE,
+            &mut cur,
+            &mut high,
+            0,
+        );
+    }
+    i64::from(cur)
+}
+
+/// 各阶段的账：一条命令归到「这条命令里计时增长最多的那一段」（store/prof.rs）名字第一个 `.` 之前的部分
+/// （`append` / `fold` / `merge` / `one_by_one` / `replay` / `cache`），没有任何一段增长就归到调用方给的名字。
+/// 每个阶段记墙钟、写连接写出的页数、命令条数。
+#[derive(Default)]
+struct Phases(BTreeMap<String, (u128, i64, usize)>);
+
+impl Phases {
+    fn run<T>(&mut self, core: &crate::store::SrsCore, fallback: &str, f: impl FnOnce() -> T) -> T {
+        let before = crate::store::prof::totals();
+        let pages = pages_written(core);
+        let t = Instant::now();
+        let out = f();
+        let name = crate::store::prof::totals()
+            .iter()
+            .map(|(k, v)| (v.0 - before.get(k).map_or(0, |b| b.0), *k))
+            .filter(|(grown, _)| *grown > 0)
+            .max()
+            .map_or(fallback, |(_, k)| k.split('.').next().unwrap_or(k))
+            .to_owned();
+        let e = self.0.entry(name).or_default();
+        e.0 += ms(t);
+        e.1 += pages_written(core) - pages;
+        e.2 += 1;
+        out
+    }
+
+    fn dump(&self) {
+        for (name, (ms, pages, calls)) in &self.0 {
+            println!("PROBE phase {name:<11} {ms:>8} ms {pages:>9} pages {calls:>6} calls");
+        }
+    }
+}
+
+/// Dart `SrsWalCheckpointPacer`（packages/fushi_engine/lib/srs/sync2/srs_wal_checkpoint_pacer.dart）的同一节奏：
+/// 攒到约 [Pacer::target] 页再在写锁外并回一次 WAL。
+struct Pacer {
+    since: usize,
+    every: usize,
+    target: usize,
+}
+
+impl Pacer {
+    fn new(target: usize) -> Pacer {
+        Pacer {
+            since: 0,
+            every: 1,
+            target,
+        }
+    }
+
+    fn after_slice(&mut self) -> bool {
+        self.since += 1;
+        self.since >= self.every
+    }
+
+    fn checkpointed(&mut self, log: usize) {
+        let per = log / self.since.max(1);
+        self.since = 0;
+        self.every = if per == 0 {
+            64
+        } else {
+            (self.target / per).clamp(1, 64)
+        };
+    }
+}
+
 fn env_usize(k: &str) -> usize {
     std::env::var(k)
         .ok()
@@ -395,6 +479,7 @@ fn probe_sliced() {
     let run = || {
         let t0 = Instant::now();
         let (mut prepare, mut commit, mut ckpt, mut slices) = (0u128, 0u128, 0u128, 0usize);
+        let mut phases = Phases::default();
         cmd(serde_json::json!({"op": "plan"}), heads.clone());
         let begun = cmd(serde_json::json!({"op": "ingest_begin"}), vec![]);
         println!("PROBE sliced ingest_begin channel={}", begun["channel"]);
@@ -418,61 +503,64 @@ fn probe_sliced() {
         let mut bytes = 0usize;
         // 与 Dart `SrsDbStore.sync2IngestBatch` 相同：一批 = prepare + 若干片 commit，期间写连接的自动 checkpoint
         // 阈值调到 16384 页（`bulkWrites`），WAL 按 `SrsWalCheckpointPacer` 的节奏另开连接并回，批末并回一次再恢复。
-        let mut flush = |batch: Vec<Vec<u8>>| {
-            let t = Instant::now();
-            cmd(serde_json::json!({"op": "ingest_prepare"}), batch);
-            prepare += ms(t);
+        let checkpoint = |phases: &mut Phases| -> usize {
+            phases.run(&core, "checkpoint", || {
+                cmd(serde_json::json!({"op": "wal_checkpoint"}), vec![])["log"]
+                    .as_u64()
+                    .unwrap_or(0) as usize
+            })
+        };
+        let bulk = |on: bool| {
             core.writer()
                 .unwrap()
-                .execute_batch("PRAGMA wal_autocheckpoint = 16384")
+                .execute_batch(if on {
+                    "PRAGMA wal_autocheckpoint = 16384"
+                } else {
+                    "PRAGMA wal_autocheckpoint = 1000"
+                })
                 .unwrap();
-            let (mut every, mut since) = (1usize, 0usize);
+        };
+        let mut flush = |batch: Vec<Vec<u8>>, phases: &mut Phases| {
+            let t = Instant::now();
+            phases.run(&core, "prepare", || {
+                cmd(serde_json::json!({"op": "ingest_prepare"}), batch)
+            });
+            prepare += ms(t);
+            bulk(true);
+            let mut pacer = Pacer::new(pacer_pages);
             loop {
                 let t = Instant::now();
                 let mut req = serde_json::json!({"op": "ingest_commit", "now": now});
                 if let Some(s) = slice_ms {
                     req["sliceMs"] = serde_json::json!(s);
                 }
-                let r = cmd(req, vec![]);
+                let r = phases.run(&core, "commit", || cmd(req, vec![]));
                 commit += ms(t);
                 slices += 1;
                 if r["more"] != serde_json::json!(true) {
                     break;
                 }
-                since += 1;
-                if since >= every {
+                if pacer.after_slice() {
                     let t = Instant::now();
-                    let log = cmd(serde_json::json!({"op": "wal_checkpoint"}), vec![])["log"]
-                        .as_u64()
-                        .unwrap_or(0) as usize;
+                    pacer.checkpointed(checkpoint(phases));
                     ckpt += ms(t);
-                    let per = log / since.max(1);
-                    every = if per == 0 {
-                        64
-                    } else {
-                        (pacer_pages / per).clamp(1, 64)
-                    };
-                    since = 0;
                 }
             }
             let t = Instant::now();
-            cmd(serde_json::json!({"op": "wal_checkpoint"}), vec![]);
+            checkpoint(phases);
             ckpt += ms(t);
-            core.writer()
-                .unwrap()
-                .execute_batch("PRAGMA wal_autocheckpoint = 1000")
-                .unwrap();
+            bulk(false);
         };
         for s in &segs {
             bytes += s.len();
             batch.push(s.clone());
             if bytes >= 8 << 20 {
-                flush(std::mem::take(&mut batch));
+                flush(std::mem::take(&mut batch), &mut phases);
                 bytes = 0;
             }
         }
         if !batch.is_empty() {
-            flush(batch);
+            flush(batch, &mut phases);
         }
         if let Ok(keep) = std::env::var("PROBE_KEEP") {
             core.writer()
@@ -488,21 +576,46 @@ fn probe_sliced() {
                 return;
             }
         }
+        // 与 Dart `SrsDbStore.sync2IngestFinish` 相同：收尾各片也在 `bulkWrites` 里（自动 checkpoint 阈值 16384 页），
+        // WAL 按同一节奏在写锁外并回，收尾末并回一次再恢复。（以前这里各片照缺省的 1000 页自动并回：每片提交都在写
+        // 连接上并一遍，生产路径不是这样。`PROBE_FINISH_AUTOCKPT=1` 还原成那种做法，对照用。）
+        let paced = std::env::var("PROBE_FINISH_AUTOCKPT").as_deref() != Ok("1");
         let t = Instant::now();
-        let mut r = cmd(
-            serde_json::json!({"op": "ingest_finish", "now": now}),
-            vec![],
-        );
+        let mut finish_ckpt = 0u128;
+        if paced {
+            bulk(true);
+        }
+        let mut pacer = Pacer::new(pacer_pages);
+        let mut r = phases.run(&core, "finish", || {
+            cmd(
+                serde_json::json!({"op": "ingest_finish", "now": now}),
+                vec![],
+            )
+        });
         let mut finish_calls = 1usize;
         while r["more"] == serde_json::json!(true) {
-            r = cmd(serde_json::json!({"op": "replay_pending"}), vec![]);
+            if paced && pacer.after_slice() {
+                let t = Instant::now();
+                pacer.checkpointed(checkpoint(&mut phases));
+                finish_ckpt += ms(t);
+            }
+            r = phases.run(&core, "finish", || {
+                cmd(serde_json::json!({"op": "replay_pending"}), vec![])
+            });
             finish_calls += 1;
+        }
+        if paced {
+            let t = Instant::now();
+            checkpoint(&mut phases);
+            finish_ckpt += ms(t);
+            bulk(false);
         }
         let finish = ms(t);
         println!(
-            "PROBE sliced total={}ms prepare={prepare}ms commit={commit}ms slices={slices} checkpoint={ckpt}ms finish={finish}ms finish_calls={finish_calls}",
+            "PROBE sliced total={}ms prepare={prepare}ms commit={commit}ms slices={slices} checkpoint={ckpt}ms finish={finish}ms finish_calls={finish_calls} finish_checkpoint={finish_ckpt}ms",
             ms(t0)
         );
+        phases.dump();
     };
     if std::env::var("PROBE_SEQ").as_deref() == Ok("1") {
         println!("PROBE sliced mode=sequential");
@@ -517,6 +630,7 @@ fn probe_sliced() {
         size_mb(&db),
         size_mb(&tmp.0.join("srs.db-wal"))
     );
+    crate::store::prof::dump();
     table_hashes(&w);
 }
 
@@ -1644,5 +1758,6 @@ fn probe_channel_finish() {
         size_mb(&db),
         size_mb(&tmp.0.join("srs.db-wal"))
     );
+    crate::store::prof::dump();
     table_hashes(&w);
 }
