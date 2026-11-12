@@ -12,7 +12,9 @@
 //!   操作 / 存活修改 / 复习日志进一个新库（journal off、synchronous off）。
 //! - `probe_sliced`：生产形态端到端（8 MiB 一批、默认时间片、按节奏并回 WAL、收尾重放），`PROBE_SLICE_MS` 改片长；
 //!   末尾逐表打印行数与内容哈希，不同实现之间对比即真实数据上的等价回归。新设备默认走收段通道（channel.rs，先追加
-//!   后折叠），`PROBE_SEQ=1` 关掉通道、按逐条投递收（同一份代码的对照组）。
+//!   后折叠），`PROBE_SEQ=1` 关掉通道、按逐条投递收（同一份代码的对照组）。`PROBE_BUILTINS=1`：收之前本机先写下内置
+//!   身份记录（真实新设备的起点：Dart `SrsDbStore.open` 开库就写，BUG-4387；内容取自这份数据里别的设备写的那几条，
+//!   同 ID 同内容）。
 //! - `probe_ops_store`：只写操作日志（`sync2_ops`）的耗时与体积。
 //! - `probe_channel_floor`：收段通道的原型（与 channel.rs 同一套「追加 → 分区折叠 → 复杂实体逐条」，在探针里手写、
 //!   带分步计时），当时用来证可行性与量下限；生产实现以 `probe_sliced` 为准。
@@ -375,6 +377,12 @@ fn probe_sliced() {
     let db = tmp.0.join("srs.db");
     let core = crate::store::SrsCore::open(&db).unwrap();
     core.sync2_identity(&profile, now).unwrap();
+    if std::env::var("PROBE_BUILTINS").as_deref() == Ok("1") {
+        let events = builtin_events(&profile, &heads, &segs);
+        println!("PROBE sliced builtins={}", events.len());
+        core.sync2_apply_local(&profile, now, &serde_json::Value::Array(events).to_string())
+            .unwrap();
+    }
     let deck = super::config::default_deck_id(&profile);
     let cmd = |req: serde_json::Value, blobs: Vec<Vec<u8>>| -> serde_json::Value {
         let mut req = req;
@@ -388,7 +396,8 @@ fn probe_sliced() {
         let t0 = Instant::now();
         let (mut prepare, mut commit, mut ckpt, mut slices) = (0u128, 0u128, 0u128, 0usize);
         cmd(serde_json::json!({"op": "plan"}), heads.clone());
-        cmd(serde_json::json!({"op": "ingest_begin"}), vec![]);
+        let begun = cmd(serde_json::json!({"op": "ingest_begin"}), vec![]);
+        println!("PROBE sliced ingest_begin channel={}", begun["channel"]);
         let slice_ms: Option<u64> = std::env::var("PROBE_SLICE_MS")
             .ok()
             .and_then(|v| v.parse().ok());
@@ -509,6 +518,35 @@ fn probe_sliced() {
         size_mb(&tmp.0.join("srs.db-wal"))
     );
     table_hashes(&w);
+}
+
+/// 这份数据里的内置身份记录（载荷带 `builtin` 键：默认牌组、内置笔记类型），每个 ID 取先遇到的那份，写成本机事件
+/// （`sync2_apply_local` 的输入）。真实新设备开库时写的就是这几条（ID 由 profile uid 派生、内容每台设备相同）。
+fn builtin_events(profile: &str, heads: &[Vec<u8>], segs: &[Vec<u8>]) -> Vec<serde_json::Value> {
+    let pubs: HashMap<_, _> = heads
+        .iter()
+        .map(|h| {
+            let h = segment::Head::decode(h).unwrap();
+            (h.device, h.public)
+        })
+        .collect();
+    let mut seen: BTreeMap<String, serde_json::Value> = BTreeMap::new();
+    for s in segs {
+        let hdr = segment::peek_header(s).unwrap();
+        let open = segment::open_verified(s, &pubs[&hdr.device], None).unwrap();
+        for op in open.verify().unwrap() {
+            let Ok(Body::Entity { kind, id, data }) = op.unwrap().body() else {
+                continue;
+            };
+            let d: serde_json::Value = serde_json::from_str(&data).unwrap();
+            if d.get("builtin").is_some_and(|b| !b.is_null()) {
+                seen.entry(id.text()).or_insert_with(|| {
+                    serde_json::json!({"e": {"t": "entity", "x": {"id": id.text(), "p": profile, "k": kind.wire(), "d": d}}, "note": ""})
+                });
+            }
+        }
+    }
+    seen.into_values().collect()
 }
 
 /// 每张表的行数与无序内容哈希（各行 `quote()` 拼起来的 BLAKE3 前 16 字节回绕加和），不同实现之间逐表对比。

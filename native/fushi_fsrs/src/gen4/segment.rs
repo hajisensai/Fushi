@@ -959,6 +959,43 @@ pub(crate) mod tests {
         assert_eq!(items, vec![NativeItem::Op(unknown)]);
     }
 
+    /// 带盐的两种操作走原生段：作者签名、成链，读回逐字节相同。
+    #[test]
+    fn salt_carriers_travel_in_native_segments() {
+        let ops = vec![
+            op_of(id(DEV), 1, &Body4::salts(["u-old", "u-older"]).unwrap()),
+            op_of(
+                id(DEV),
+                2,
+                &Body4::Join(Join4 {
+                    from: id(0xb0),
+                    dir: "b".into(),
+                    salts: vec!["u-b".into()],
+                }),
+            ),
+        ];
+        let (header, bytes) = pack_native(
+            coll(),
+            id(DEV),
+            1,
+            &items_of(&ops),
+            [0; 32],
+            &signer(),
+            None,
+        )
+        .unwrap();
+        assert_eq!((header.first, header.last), (1, 2));
+        assert_eq!(header.last_chain, chain_of([0; 32], &ops));
+        let (_, items) = open_native(&bytes, &signer().public(), None).unwrap();
+        assert_eq!(items, items_of(&ops));
+        let bodies: Vec<Body4> = ops.iter().map(|op| op.body().unwrap()).collect();
+        let want: std::collections::BTreeSet<String> = ["u-b", "u-old", "u-older"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        assert_eq!(crate::gen4::op::salt_union(&bodies), want);
+    }
+
     /// 大段：超过留存上限的走第二遍流式，结果相同。
     #[test]
     fn big_segments_stream() {
