@@ -4070,11 +4070,21 @@ class SrsDbStore implements SrsSync2Host {
     final Map<String, SrsNoteView?> noteViews = noteIds.isEmpty
         ? const <String, SrsNoteView?>{}
         : await notes(noteIds);
-    final Map<String, SrsEntityEdits> registers = await _currentEditsOf(
-      <(SrsEntityKind, String)>{
-        for (final (SrsEntityKind k, String id, String _) in keys) (k, id),
-      },
-    );
+    // 修改记录寄存器按类型分组成批读（键为 `<kind>/<id>`）。
+    final Map<SrsEntityKind, Set<String>> byKind =
+        <SrsEntityKind, Set<String>>{};
+    for (final (SrsEntityKind k, String id, String _) in keys) {
+      (byKind[k] ??= <String>{}).add(id);
+    }
+    final Map<String, SrsEntityEdits> registers = <String, SrsEntityEdits>{};
+    for (final MapEntry<SrsEntityKind, Set<String>> k in byKind.entries) {
+      for (final MapEntry<String, SrsEntityEdits> e in (await _entityEditsMany(
+        k.key,
+        k.value,
+      )).entries) {
+        registers['${k.key.wire}/${e.key}'] = e.value;
+      }
+    }
     final String fieldPrefix = SrsFieldKeys.noteField('');
     final Map<String, Object?> out = <String, Object?>{};
     for (final (SrsEntityKind kind, String id, String key) in keys) {
