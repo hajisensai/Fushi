@@ -23,7 +23,7 @@ use std::sync::atomic::Ordering;
 
 /// `srs_meta` 里一次性存量无主数据扫描的完成标记（值 = 完成时刻毫秒）。
 ///
-/// v2（BUG-4387）：v1 记下之后，并入（srs_profile_merge.dart）与采用 uid（srs_backup_merge.dart）还各有一份手抄的
+/// v2（BUG-4463）：v1 记下之后，并入（srs_profile_merge.dart）与采用 uid（srs_backup_merge.dart）还各有一份手抄的
 /// 删除实现，直到 BUG-4292 才收成本文件的 [SrsCore::profile_purge]：采用只删 10 张 `srs_*` 表、`sync2_*` 一张不删，
 /// 并入按 `sqlite_master` 原序删、按 profile 的 `srs_meta` 键只删两个。v1 扫过的库里这些残留永远不会再被扫到，所以
 /// 换一个键让扫描（同一套判定、同一个 [SrsCore::profile_purge]）再跑一次。旧键留着不删（没人再读）。
@@ -428,7 +428,7 @@ mod tests {
             core.profile_uids().unwrap(),
             json!({"uids": [], "orphanSweptAt": null})
         );
-        // v1 的完成标记（BUG-4292 之前扫的）不算：残留要再扫一次（BUG-4387）。
+        // v1 的完成标记（BUG-4292 之前扫的）不算：残留要再扫一次（BUG-4463）。
         core.writer()
             .unwrap()
             .execute(

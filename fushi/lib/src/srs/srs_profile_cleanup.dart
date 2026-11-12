@@ -11,7 +11,7 @@
 ///    每张 `srs_*` / `sync2_*` 表里的行；再删 `srs_media/<uid>`（媒体与释义样式同目录）和这个 uid 的 RWKV 快照。
 ///    远端存储位置上已同步的集合不动（只删本机）。
 /// 4. **存量**（[sweepOrphans]）：进 Profile 管理时扫一次 srs.db 里不属于任何现存 profile 的 uid，同样先备份再清；
-///    全部清完在 srs.db 记下完成标记，之后不再扫。标记在 BUG-4387 换过一次键（`profile_orphan_sweep_v2`）：
+///    全部清完在 srs.db 记下完成标记，之后不再扫。标记在 BUG-4463 换过一次键（`profile_orphan_sweep_v2`）：
 ///    BUG-4292 之前采用 / 并入的手抄删除留下的残留，在已扫过的库里要再扫一次。进行中并入涉及的 uid 不算无主。
 ///
 /// 删数据的那一刻，这个 uid 的副本（[SrsDbStore]）先 [SrsDbStore.retire]：在途写入做完、之后的写入一律失败，
