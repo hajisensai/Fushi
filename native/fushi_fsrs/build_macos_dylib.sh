@@ -7,6 +7,9 @@
 # 前提: rustup target add aarch64-apple-darwin
 # 产物: prebuilt/macos/libfushi_fsrs.dylib（git 忽略，不入库；install name = @rpath/libfushi_fsrs.dylib）
 #
+# 环境变量 FUSHI_FSRS_FEATURES（可选，逗号分隔）：额外的 cargo feature，只给测试用的库（dist worker、本机备库
+# 脚本带 `raw_sql`，见 build_linux_so.sh）。随包发布的构建不设它。
+#
 # 部署目标与 fushi/macos/Runner.xcodeproj 的 MACOSX_DEPLOYMENT_TARGET 对齐（13.4），
 # 否则链接 Runner 时 ld 会对「dylib 比 app 要求更新的系统」报警、老系统上加载失败。
 set -euo pipefail
@@ -16,10 +19,14 @@ OUT_DIR="$SCRIPT_DIR/prebuilt/macos"
 export MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-13.4}"
 
 target=aarch64-apple-darwin
+FEATURES=()
+if [ -n "${FUSHI_FSRS_FEATURES:-}" ]; then
+  FEATURES=(--features "$FUSHI_FSRS_FEATURES")
+fi
 
 cd "$SCRIPT_DIR"
 # 只出 cdylib：Cargo.toml 同时声明了 staticlib / rlib（iOS 伞形库用），这里不必为它们再跑一遍 fat LTO。
-echo "==> cargo rustc --release --lib --target $target --crate-type cdylib (MACOSX_DEPLOYMENT_TARGET=$MACOSX_DEPLOYMENT_TARGET)"
+echo "==> cargo rustc --release --lib --target $target --crate-type cdylib ${FEATURES[*]:-} (MACOSX_DEPLOYMENT_TARGET=$MACOSX_DEPLOYMENT_TARGET)"
 # strip 与 install name 的做法有讲究（macOS 27.2 / Xcode 27.1 / rustc 1.95 实测，2026-10-24）：
 # dyld-27102 对链接 SDK ≥ 27 的 Mach-O 要求 LINKEDIT 的字符串表（string pool）起点 8 字节对齐，
 # 否则 dlopen 报「mis-aligned LINKEDIT string pool」。Apple ld 自己的输出是对齐的；弄坏它的是
@@ -32,7 +39,7 @@ echo "==> cargo rustc --release --lib --target $target --crate-type cdylib (MACO
 # 路径，免得 PATH 上的 llvm-strip 顶替）；install name 在链接时由 ld 的 -install_name 设好，不再
 # 事后 install_name_tool 改写。verify_abi.sh 按 dyld 的同一套规则静态核对对齐；下面的 dlopen
 # 冒烟只有在 macOS 27 上才测得出这一个问题。
-cargo rustc --release --lib --target "$target" --crate-type cdylib -- \
+cargo rustc --release --lib --target "$target" --crate-type cdylib ${FEATURES[@]+"${FEATURES[@]}"} -- \
   -C strip=none -C "link-arg=-Wl,-install_name,@rpath/libfushi_fsrs.dylib"
 built="target/$target/release/libfushi_fsrs.dylib"
 [[ -f "$built" ]] || { echo "missing $built" >&2; exit 1; }

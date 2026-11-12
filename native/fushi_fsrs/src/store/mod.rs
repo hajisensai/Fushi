@@ -66,6 +66,11 @@ pub(crate) const CLOSED: &str = "srs store is closed";
 /// 没有任何能跨调用留着的事务（旧库搬迁那一笔除外，[SrsCore] `legacy_open`）。Dart 侧按它认「只读」。
 pub const READ_ONLY: &str = "srs: srs.db is read-only through the Drift executor";
 
+/// 这个库没编进测试专用的原始 SQL 通道（cargo feature `raw_sql`，见 Cargo.toml）：`ffsrs_store_exec` mode 4 / 5 与
+/// `ffsrs_store_exec_batch` 报这个错误、不执行、不取写锁。发布 / 随包构建都是这样；Dart 同文（`kSrsRawSqlAbsent`）。
+pub const RAW_SQL_ABSENT: &str =
+    "srs: the raw SQL channel is not built into this library (cargo feature raw_sql)";
+
 /// 备份快照的目标卷空间不够（[SrsCore::snapshot_into]）：错误文本前缀，后面是 `{"need","free"}`。
 pub const SNAPSHOT_NO_SPACE: &str = "srs.db snapshot needs more free disk space: ";
 
@@ -1013,6 +1018,9 @@ impl SrsCore {
     /// 也不能在写连接上留下别的命令会落进去的事务。旧库搬迁进行中（`legacy_open`）同样拒绝。
     ///
     /// 返回页：[select] 为真 = 首行列名 + 结果行（PRAGMA 之类有结果行的语句）；否则一行 `[变更行数, last_insert_rowid]`。
+    ///
+    /// 只在测试构建与带 cargo feature `raw_sql` 的库里有（发布构建里能写库的这段代码不在，C 入口报 [RAW_SQL_ABSENT]）。
+    #[cfg(any(test, feature = "raw_sql"))]
     pub fn exec_raw(&self, sql: &str, params: &[Value], select: bool) -> Result<Vec<u8>, String> {
         // 先取写锁再看 `legacy_open`（同 [SrsCore::legacy_page]）：搬迁中 panic 后，恢复在取锁时才结束搬迁。
         let w = self.writer()?;
@@ -1160,7 +1168,9 @@ impl SrsCore {
     }
 
     /// [SrsCore::exec_raw] 的批量版（测试专用，`ffsrs_store_exec_batch`，Dart `SrsCore.debugExecBatchRaw`）：
-    /// `statements[i]` 配若干组参数，按给定顺序在**一个 SAVEPOINT** 里执行，任何一条出错整批回滚。
+    /// `statements[i]` 配若干组参数，按给定顺序在**一个 SAVEPOINT** 里执行，任何一条出错整批回滚。同 [SrsCore::exec_raw]
+    /// 只在测试构建与带 `raw_sql` 的库里有。
+    #[cfg(any(test, feature = "raw_sql"))]
     pub fn exec_batch_raw(
         &self,
         statements: &[&str],

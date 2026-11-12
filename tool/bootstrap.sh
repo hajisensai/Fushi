@@ -44,6 +44,9 @@ sh tool/git_hooks/install.sh
 # CMake / Xcode / Gradle 缺库直接构建失败，测试成片报库不可用。按主机平台各编一次；没有 cargo 就失败。
 # （Windows 的 tool/native_libs.ps1 还会复用兄弟 worktree 的同源码产物；这里只编。与它的 crate 清单保持一致。）
 # fushi_rwkv 是 RWKV-Instant 排程推理（AGPL-3.0-or-later）。
+# fushi_fsrs 带测试专用的原始 SQL 通道（cargo feature raw_sql，native/fushi_fsrs/Cargo.toml）：这份库同时给 flutter test 与本机
+# flutter run / build 用，所以本机自己编的 app 带它（与 tool/native_libs.ps1 同口径）。出发布包的调用方（tool/linux/build_bundle.sh）
+# 设 FUSHI_RELEASE_NATIVE=1：不带，并在出包前核对（verify_raw_sql.sh absent）。
 # 显式跳过：FUSHI_BOOTSTRAP_SKIP_NATIVE_COMPUTE=1（之后手动跑对应的 build_* 脚本）。
 if [ -n "${FUSHI_BOOTSTRAP_SKIP_NATIVE_COMPUTE:-}" ]; then
   echo "WARNING: skipped native/fushi_compute, fushi_fsrs, fushi_web_core, fushi_rwkv, fushi_music, fushi_corpus (required); run native/<crate>/build_<platform> before flutter build/test" >&2
@@ -53,11 +56,13 @@ else
     echo "       install Rust (https://rustup.rs) and re-run, or set FUSHI_BOOTSTRAP_SKIP_NATIVE_COMPUTE=1 to skip explicitly." >&2
     exit 1
   fi
+  fsrs_features=raw_sql
+  if [ "${FUSHI_RELEASE_NATIVE:-}" = 1 ]; then fsrs_features=""; fi
   case "$(uname -s)" in
     Darwin)
       echo "==> native Rust libraries (macOS arm64 dylib)"
       bash native/fushi_compute/build_macos_dylib.sh
-      bash native/fushi_fsrs/build_macos_dylib.sh
+      FUSHI_FSRS_FEATURES="$fsrs_features" bash native/fushi_fsrs/build_macos_dylib.sh
       bash native/fushi_web_core/build_macos_dylib.sh
       bash native/fushi_rwkv/build_macos_dylib.sh
       bash native/fushi_music/build_macos_dylib.sh
@@ -66,7 +71,7 @@ else
     *)
       echo "==> native Rust libraries (Linux x64 .so)"
       bash native/fushi_compute/build_linux_so.sh
-      bash native/fushi_fsrs/build_linux_so.sh
+      FUSHI_FSRS_FEATURES="$fsrs_features" bash native/fushi_fsrs/build_linux_so.sh
       bash native/fushi_web_core/build_linux_so.sh
       bash native/fushi_rwkv/build_linux_so.sh
       bash native/fushi_music/build_linux_so.sh

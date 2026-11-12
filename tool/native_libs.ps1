@@ -34,6 +34,13 @@ $root = Split-Path -Parent $PSScriptRoot
 # 在 CMake / Gradle / 加载器里才报错，离原因更远。
 $NativeTestCrates = @('fushi_compute', 'fushi_fsrs', 'fushi_web_core', 'fushi_rwkv', 'fushi_music', 'fushi_corpus')
 
+# 测试用的库要带的 cargo feature（经 FUSHI_FSRS_FEATURES 交给 build_* 脚本）：fushi_fsrs 的 `raw_sql` 是测试专用的原始
+# SQL 通道（native/fushi_fsrs/Cargo.toml），fushi_engine / fushi 的测试靠它直接改库造场景。feature 记进戳记（树哈希后接
+# `+<features>`）：不带它编出的旧产物不会被当成这棵树的、也不会被兄弟 worktree 拷走。
+# 注意：这里备的库同时是本机 `flutter run` / 本机 `flutter build` 随包的那一份，所以本机自己编的 app 带原始通道；
+# CI 出的发布包不带（verify_abi.sh / build_windows_dll.ps1 核对）。
+$NativeTestFeatures = @{ 'fushi_fsrs' = 'raw_sql' }
+
 function Get-NativeHostLayout {
     [OutputType([hashtable])]
     param()
@@ -161,7 +168,10 @@ function Invoke-NativeCrateBuild {
             Write-Host "  未装 sccache：依赖每个 worktree 都要从零编。装上（winget install Mozilla.sccache）后自动跨 worktree 共用缓存。" -ForegroundColor DarkYellow
         }
     }
-    Write-Host "Building native/$Crate (cargo: $($cargo.Source))..." -ForegroundColor Cyan
+    $features = $NativeTestFeatures[$Crate]
+    $previousFeatures = $env:FUSHI_FSRS_FEATURES
+    if ($features) { $env:FUSHI_FSRS_FEATURES = $features }
+    Write-Host "Building native/$Crate (cargo: $($cargo.Source))$(if ($features) { " features $features" })..." -ForegroundColor Cyan
     try {
         if ($Layout.Script.EndsWith('.ps1')) {
             & $script
@@ -172,6 +182,7 @@ function Invoke-NativeCrateBuild {
     }
     finally {
         $env:RUSTC_WRAPPER = $previousWrapper
+        $env:FUSHI_FSRS_FEATURES = $previousFeatures
     }
 }
 
@@ -183,6 +194,7 @@ function Install-NativeTestCrate {
     $relLib = "native/$Crate/prebuilt/$($layout.Dir)/$($layout.Prefix)$Crate$($layout.Ext)"
     $lib = Join-Path $RepoRoot $relLib
     $tree = Get-NativeSourceTree -RepoRoot $RepoRoot -Crate $Crate
+    if ($tree -and $NativeTestFeatures[$Crate]) { $tree = "$tree+$($NativeTestFeatures[$Crate])" }
 
     if (Test-NativeStamp -Lib $lib -Tree $tree) {
         Write-Host "OK native/$Crate 已是 HEAD 源码编出的产物，跳过。" -ForegroundColor DarkGray

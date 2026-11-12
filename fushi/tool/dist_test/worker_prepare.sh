@@ -91,8 +91,16 @@ esac
 # leaves its dylib/so absent on mac/linux workers, and every test that loads it
 # goes red only there (fushi_music → op_undo_music_test, fushi_corpus →
 # library_corpus_service_test).
+#
+# fushi_fsrs is built with its test-only cargo feature `raw_sql` (the raw SQL
+# channel that fushi_engine / fushi tests use to poke the database; release
+# builds leave it out). The feature set is part of the stamp key, so a library
+# built without it (an older worker state) is rebuilt.
 for crate in fushi_compute fushi_fsrs fushi_web_core fushi_rwkv fushi_music fushi_corpus; do
+  features=""
+  if [ "$crate" = fushi_fsrs ]; then features=raw_sql; fi
   key=$(git rev-parse "HEAD:native/$crate")
+  if [ -n "$features" ]; then key="$key+$features"; fi
   stamp="$state/native-$crate.key"
   if [ "$(cat "$stamp" 2>/dev/null || true)" != "$key" ] ||
      [ -z "$(ls "native/$crate/prebuilt/$plat" 2>/dev/null)" ]; then
@@ -107,8 +115,12 @@ for crate in fushi_compute fushi_fsrs fushi_web_core fushi_rwkv fushi_music fush
       rm -rf "native/$crate/prebuilt/$plat"
       cp -R "$peer/native/$crate/prebuilt/$plat" "native/$crate/prebuilt/$plat"
     else
-      echo "==> build native/$crate"
-      bash "native/$crate/$script"
+      echo "==> build native/$crate${features:+ (features $features)}"
+      if [ "$crate" = fushi_fsrs ]; then
+        FUSHI_FSRS_FEATURES="$features" bash "native/$crate/$script"
+      else
+        bash "native/$crate/$script"
+      fi
     fi
     echo "$key" > "$stamp"
   else
