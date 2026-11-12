@@ -21,6 +21,7 @@ import 'package:fushi_srs/fushi_srs.dart';
 import 'package:test/test.dart';
 
 import 'support/srs_fake_engine.dart';
+import 'support/srs_legacy_fixtures.dart';
 import 'support/srs_test_storage.dart';
 
 class _Device {
@@ -752,7 +753,7 @@ void main() {
     int nowMs = 1792500000000;
     final SrsLogContext ctx = SrsLogContext(
       profileUid: bOld,
-      clock: HlcClock('host#1'),
+      nextHlc: legacyTicker('host#1'),
       now: () => (nowMs, SrsTimeSource.wall),
       day: const SrsDayContext(utcOffsetMin: 0, rolloverHour: 4),
     );

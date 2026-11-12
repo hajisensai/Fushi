@@ -26,7 +26,7 @@ import 'dart:convert';
 
 import 'package:drift/drift.dart';
 import 'package:fushi_anki/fushi_anki_core.dart';
-import 'package:fushi_core/fushi_core.dart' show SrsCardCacheRow, srsIdType;
+import 'package:fushi_core/fushi_core.dart' show srsIdType;
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:meta/meta.dart' show visibleForTesting;
 
@@ -719,15 +719,15 @@ extension SrsLegacyLapisMigrationOps on SrsDbStore {
   /// 给了 [targetDeckId] 就顺手把这些笔记连同迁移后的卡片移到该牌组（笔记的首选牌组也改过去，
   /// 以后按模板新生成的卡同样落在那里）；缺省 = 牌组不动。
   ///
-  /// 换类型、补迁、移牌组在一个事务里：任何一步失败整次迁移都不落库，笔记仍是旧 Lapis、
-  /// 仍列在 [legacyLapisSources] 里，可以原样重试。分开写时，移牌组失败会留下「已是 Fushi
+  /// 换类型、补迁、移牌组是内核的一条命令、一笔（[SrsDbStore.writeChange]）：任何一步失败整次迁移都不落库，笔记
+  /// 仍是旧 Lapis、仍列在 [legacyLapisSources] 里，可以原样重试。分开写时，移牌组失败会留下「已是 Fushi
   /// 卡片、却还在原牌组」的笔记——它们不再是迁移源，迁移入口再也够不到它们。
-  /// [debugOnStage] 只给测试在步骤之间注入失败。
+  /// [debugFailAfter] 只给测试在步骤之间注入失败（见 [SrsDbStore.writeChange]）。
   Future<int> migrateLegacyLapis(
     String sourceTypeId, {
     List<String>? noteIds,
     String? targetDeckId,
-    @visibleForTesting Future<void> Function(String stage)? debugOnStage,
+    @visibleForTesting String? debugFailAfter,
   }) {
     final SrsDbStore self = this;
     if (self is SrsRemoteForwarding) {
@@ -741,7 +741,7 @@ extension SrsLegacyLapisMigrationOps on SrsDbStore {
       sourceTypeId,
       noteIds: noteIds,
       targetDeckId: targetDeckId,
-      debugOnStage: debugOnStage,
+      debugFailAfter: debugFailAfter,
     );
   }
 
@@ -749,7 +749,7 @@ extension SrsLegacyLapisMigrationOps on SrsDbStore {
     String sourceTypeId, {
     List<String>? noteIds,
     String? targetDeckId,
-    Future<void> Function(String stage)? debugOnStage,
+    String? debugFailAfter,
   }) => runExclusive(() async {
     final SrsNoteTypeView? from = await noteType(sourceTypeId);
     if (from == null || srsDetectLapisVariant(from) == null) {
@@ -766,28 +766,91 @@ extension SrsLegacyLapisMigrationOps on SrsDbStore {
     }
     final SrsNoteTypeView to = await _fushiCardType();
     final SrsLapisFieldPlan plan = srsLapisFieldPlan(profileUid, from, to);
-    // 已在独占区里再开事务（与按时间点恢复同一顺序，见 [runExclusive]）。
-    try {
-      await db.transaction(() async {
-        await changeNoteType(
-          noteIds: ids,
-          targetTypeId: to.id,
-          fieldMap: plan.fieldMap,
-          templateMap: srsLapisTemplateMap(from, to),
-        );
-        await debugOnStage?.call('noteType');
-        await applyLapisBackfill(noteIds: ids);
-        await debugOnStage?.call('backfill');
-        if (targetDeckId != null) await _moveNotesToDeck(ids, targetDeckId);
-      });
-    } catch (_) {
-      // 事务回滚了库，但写入者的因果上下文 / 时钟 / 发件箱序号已在内存里前进：从库重读
-      // （见 [SrsDbStore.reloadLocal]）。
-      await reloadLocal();
-      rethrow;
-    }
+    // 预演与写入在同一个独占区里：算计划时读到的现值就是落库时的现值。换类型与补迁的修改记录都基于迁移前的
+    // 状态一次算好；只有移牌组要看换完类型后生成的卡，交给内核在同一笔里做。
+    final SrsNoteTypeChangePreview change = await previewNoteTypeChange(
+      noteIds: ids,
+      targetTypeId: to.id,
+      fieldMap: plan.fieldMap,
+      templateMap: srsLapisTemplateMap(from, to),
+    );
+    final bool retype = change.from.id != change.to.id;
+    await writeChange(
+      <SrsEditSpec>[
+        if (retype) ...change.edits,
+        ...await _lapisFillAfterChange(
+          ids,
+          to,
+          retype ? change.plans : const <SrsNoteTypeChangePlan>[],
+        ),
+      ],
+      checkpoint: retype ? (name: change.to.name, reason: 'note_type') : null,
+      moveNotes: targetDeckId == null
+          ? null
+          : (deckId: targetDeckId, noteIds: ids),
+      debugFailAfter: debugFailAfter,
+    );
     return ids.length;
   });
+
+  /// [ids] 按 [plans] 换成 Fushi 卡片 [to] **之后**的「遗漏字段补迁」要写的修改记录，基于换类型之前的状态算：
+  /// 换类型只给每条笔记写 `plan.fieldValues` 这些字段，所以换完之后的字段值 = 现值叠上它们，「写过的字段」=
+  /// 已有修改记录的 ∪ 它们的键。判定与 [previewLapisBackfill] 逐条相同（那边的 SQL 预筛只是必要条件，这里的笔记
+  /// 反正都要读，不筛）。
+  Future<List<SrsEditSpec>> _lapisFillAfterChange(
+    List<String> ids,
+    SrsNoteTypeView to,
+    List<SrsNoteTypeChangePlan> plans,
+  ) async {
+    final Map<String, SrsLapisFieldCandidate> owners = await _lapisFieldOwners(
+      exceptTypeId: to.id,
+    );
+    if (owners.isEmpty) return const <SrsEditSpec>[];
+    final Map<String, Map<String, String>> written =
+        <String, Map<String, String>>{
+          for (final SrsNoteTypeChangePlan p in plans) p.noteId: p.fieldValues,
+        };
+    final Map<String, SrsNoteView?> views = await notes(ids);
+    final Map<String, Map<String, String>> fills =
+        <String, Map<String, String>>{};
+    for (final String id in ids) {
+      final SrsNoteView? n = views[id];
+      if (n == null || n.deletedAt != null) continue;
+      final Map<String, String> mapped =
+          written[id] ?? const <String, String>{};
+      final Map<String, String> current = <String, String>{
+        ...n.fields,
+        ...mapped,
+      };
+      final Map<String, String> fill = srsPlanLapisFieldFill(
+        profileUid: profileUid,
+        target: to,
+        current: current,
+        values: <SrsLapisFieldValue>[
+          for (final MapEntry<String, String> e in current.entries)
+            if (owners[e.key] case final SrsLapisFieldCandidate c)
+              SrsLapisFieldValue(c, e.value),
+        ],
+        authored: <String>{
+          for (final SrsFieldDef f in to.fields)
+            if (n.edits[SrsFieldKeys.noteField(f.id)] != null ||
+                mapped.containsKey(f.id))
+              f.id,
+        },
+      );
+      if (fill.isNotEmpty) fills[id] = fill;
+    }
+    return <SrsEditSpec>[
+      for (final MapEntry<String, Map<String, String>> n in fills.entries)
+        for (final MapEntry<String, String> f in n.value.entries)
+          SrsEditSpec(
+            SrsEntityKind.note,
+            n.key,
+            SrsFieldKeys.noteField(f.key),
+            f.value,
+          ),
+    ];
+  }
 
   /// 把名字里带独立单词「lapis」的牌组（不分大小写，只看牌组自己那一级的名字）改名：
   /// 「lapis」换成「Fushi Card」（[srsLapisDeckRenamed]）。改名后与同级已有牌组（或同级另一个改名结果）重名的跳过，不合并
@@ -817,29 +880,6 @@ extension SrsLegacyLapisMigrationOps on SrsDbStore {
     if (changes.isNotEmpty) await editFieldsBatch(changes);
     return changes.length;
   });
-
-  /// 把 [noteIds] 的首选牌组与它们现有的可见卡片都移到 [deckId]（已经在那里的不写）。
-  Future<void> _moveNotesToDeck(List<String> noteIds, String deckId) async {
-    final Map<String, SrsNoteView?> views = await notes(noteIds);
-    final Map<String, List<SrsCardCacheRow>> cards = await cardsOfNotes(
-      noteIds,
-    );
-    await editFieldsBatch(<SrsFieldChange>[
-      for (final String id in noteIds)
-        if (views[id] != null && views[id]!.deckId != deckId)
-          SrsFieldChange(SrsEntityKind.note, id, SrsFieldKeys.noteDeck, deckId),
-      for (final List<SrsCardCacheRow> rows in cards.values)
-        for (final SrsCardCacheRow c in rows)
-          // 隐藏的是被换掉的旧模板卡（只作新卡的前身留着历史），不动它。
-          if (!c.hidden && c.deckId != deckId)
-            SrsFieldChange(
-              SrsEntityKind.card,
-              c.id,
-              SrsFieldKeys.cardDeck,
-              deckId,
-            ),
-    ]);
-  }
 
   /// 预演「遗漏字段补迁」：当前是 Fushi 卡片的笔记（缺省全部，或只看 [noteIds]），新字段
   /// 为空、迁移前所属的旧 Lapis 变体里同语义的字段有内容的。不写库。

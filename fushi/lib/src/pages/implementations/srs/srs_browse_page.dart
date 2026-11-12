@@ -1617,12 +1617,15 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
       final _UndoEntry entry = _undo.removeLast();
       setState(() => _busy = true);
       try {
-        final int blocked = await entry.revert(store);
+        final SrsBatchRevertResult r = await entry.revert(store);
         FushiToast.show(
-          msg: blocked > 0
-              ? t.srs_browse_undo_partial(n: blocked)
+          msg: r.blockedLogs > 0
+              ? t.srs_browse_undo_partial(n: r.blockedLogs)
+              // 之后被别人（同步拉进来的别的设备 / AI / 别处）改过的字段保留了现值。
+              : !r.edits.complete
+              ? t.srs_undo_kept_changed(n: r.edits.kept.length)
               : t.srs_browse_undone,
-          severity: blocked > 0 ? ToastSeverity.warning : ToastSeverity.neutral,
+          severity: r.complete ? ToastSeverity.neutral : ToastSeverity.warning,
         );
         if (!mounted) return;
         await _afterWrite();

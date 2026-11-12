@@ -130,6 +130,26 @@ pub(crate) struct Written {
 }
 
 impl Written {
+    /// 并入同一笔里后一次刷新写过的（`change` 的移牌组段，store/ffi.rs `local_write`）：各自去重；后一次写了整行的卡
+    /// 不再算删掉的，后一次删掉的不再算写过的。
+    pub(crate) fn absorb(&mut self, later: Written) {
+        use std::collections::HashSet;
+        {
+            let rewritten: HashSet<&str> = later.cards.iter().map(String::as_str).collect();
+            let dropped: HashSet<&str> = later.removed.iter().map(String::as_str).collect();
+            self.removed.retain(|c| !rewritten.contains(c.as_str()));
+            self.cards.retain(|c| !dropped.contains(c.as_str()));
+        }
+        for (into, from) in [
+            (&mut self.notes, later.notes),
+            (&mut self.cards, later.cards),
+            (&mut self.removed, later.removed),
+        ] {
+            let have: HashSet<String> = into.iter().cloned().collect();
+            into.extend(from.into_iter().filter(|id| !have.contains(id)));
+        }
+    }
+
     pub(crate) fn to_json(&self) -> Value {
         serde_json::json!({"notes": self.notes, "cards": self.cards, "removed": self.removed})
     }
