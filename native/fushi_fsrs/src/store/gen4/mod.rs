@@ -9,7 +9,9 @@
 //! - [derive]：派生层的索引（实体、寄存器、日志、旧闭包）与 `rebuild_all`；冻结的旧判定从操作体读。
 //! - [weigh]：派生层的语义部分——标签 OR-Set、媒体绑定、彻底清除、被扣住的删除、设备信任。
 
+pub mod alias;
 pub mod derive;
+pub mod digest;
 pub mod import;
 pub mod legacy;
 pub(crate) mod pack;

@@ -8,7 +8,9 @@
 //! - **派生**：索引与缓存。全部能从真相与本机状态重建（`derive.rs`）。索引：`ent_ix` / `reg_ix` / `log_ix`（带 `log_id`
 //!   索引）/ `closure_ix`；语义层（`weigh.rs`）：`tag_ix`（标签 OR-Set 与顺序提示）、`media_ix`（媒体名 → 内容）、
 //!   `purge_ix`（彻底清除）、`ent_ops`（实体 → 碰过它、别的索引里查不到的操作）、`hold_ix`（被并发改动扣住的删除）。
-//!   别名与笔记 / 卡片缓存是后续 PR。
+//!   盐与别名（`alias.rs`）：`salt_ix`（带盐的操作）、`alias_ix`（出现过的 ID → 规范 ID）、`alias_writer_ix`（改了名的
+//!   旧写入者 → 最初的写入者）；语义摘要（`digest.rs`）：`dg_ix`（每个实体一行）、`dg_dirty`（等重算的实体，静止时为空；
+//!   由 `reg_ix` / `tag_ix` / `log_ix` / `ent_ix` / `media_ix` 上的触发器记）。笔记 / 卡片缓存是后续 PR。
 //! - **本机状态**：`collections`（profile ↔ 集合的绑定，设计 §5.1）、`devs`（设备 ↔ 小整数下标；`kind` 空 = 只被别的操作
 //!   点过名、还没见过它的日志，0 = 原生日志，1 = 承袭日志；`src` = 承袭日志的来源集合；`tail` = 原生日志末尾的链值）、
 //!   `trust`（还没信任的设备：`state` 1 = 待确认，2 = 已拒绝；没有行 = 可信。纯本机，不同步，协议 3 的 `sync2_trust`）。
@@ -28,7 +30,7 @@ use std::path::Path;
 use rusqlite::Connection;
 
 /// 新代库的 schema 号。只要求远大于协议 3 的任何一个 schema 号（最后一个是 29）；万位是代，低位是这一代里的存储版本。
-pub const SCHEMA: i64 = 40_002;
+pub const SCHEMA: i64 = 40_003;
 
 const SEQ_BITS: u32 = 40;
 const SEQ_MASK: i64 = (1 << SEQ_BITS) - 1;
@@ -225,10 +227,44 @@ CREATE TABLE IF NOT EXISTS hold_ix (
   moves INTEGER NOT NULL,
   PRIMARY KEY (col, ekind, ent, k)
 ) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS salt_ix (
+  col INTEGER NOT NULL,
+  k INTEGER NOT NULL,
+  salt TEXT NOT NULL,
+  PRIMARY KEY (col, k, salt)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS alias_ix (
+  col INTEGER NOT NULL,
+  id BLOB NOT NULL,
+  canon BLOB NOT NULL,
+  how INTEGER NOT NULL,
+  PRIMARY KEY (col, id)
+) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS alias_canon ON alias_ix (col, canon, id) WHERE canon != id;
+CREATE TABLE IF NOT EXISTS alias_writer_ix (
+  col INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  origin TEXT NOT NULL,
+  PRIMARY KEY (col, name)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS dg_ix (
+  col INTEGER NOT NULL,
+  ekind INTEGER NOT NULL,
+  ent NOT NULL,
+  sum BLOB NOT NULL,
+  n INTEGER NOT NULL,
+  PRIMARY KEY (col, ekind, ent)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS dg_dirty (
+  col INTEGER NOT NULL,
+  ekind INTEGER NOT NULL,
+  ent NOT NULL,
+  PRIMARY KEY (col, ekind, ent)
+) WITHOUT ROWID;
 ";
 
 /// 派生表的名字（每张都有 `col` 列）。
-pub(crate) const DERIVED_TABLES: [&str; 9] = [
+pub(crate) const DERIVED_TABLES: [&str; 14] = [
     "ent_ix",
     "reg_ix",
     "log_ix",
@@ -238,6 +274,11 @@ pub(crate) const DERIVED_TABLES: [&str; 9] = [
     "purge_ix",
     "ent_ops",
     "hold_ix",
+    "salt_ix",
+    "alias_ix",
+    "alias_writer_ix",
+    "dg_ix",
+    "dg_dirty",
 ];
 
 /// 这个文件是不是新代的库：空文件（还没有任何表）或 `schema` 等于 [SCHEMA] 才是。只读。
@@ -289,6 +330,7 @@ pub fn install(conn: &Connection) -> Result<(), String> {
     .map_err(sql)?;
     conn.execute_batch(TRUTH).map_err(sql)?;
     conn.execute_batch(DERIVED).map_err(sql)?;
+    super::digest::set_triggers(conn, true)?;
     conn.execute(
         "INSERT OR REPLACE INTO srs_meta (key, value) VALUES ('schema', ?1)",
         [SCHEMA.to_string()],
