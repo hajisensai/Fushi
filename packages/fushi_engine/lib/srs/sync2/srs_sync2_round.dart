@@ -150,6 +150,10 @@ class SrsSync2Report {
 
   /// 非致命错误（段损坏 / 签名不符 / 解不开……）：记日志，不打断这一轮。
   final List<String> errors = <String>[];
+
+  /// 摘要不一致、自动重建修不好（内核 store/sync2/heal.rs `healFailed`）：每个对端每组集合内核只给一次，照报即可。
+  /// 每项 `{device, groups, rows: {e, f, l}, app, reason}`。
+  final List<Map<String, Object?>> healFailed = <Map<String, Object?>>[];
 }
 
 /// 跑一轮。[locationId] 是这个位置的稳定身份（本机记每个位置传到了哪）；[key] = 本机为这个位置记的密钥
@@ -334,6 +338,17 @@ Future<SrsSync2Report> srsSync2Round({
     'now': nowMs(),
     'minIntervalMs': kSrsSync2DigestInterval.inMilliseconds,
   });
+  // 同一进度下与别的设备摘要不同：按组指纹定位、重放本机落在不同组里的卡并当场重算摘要（内核 store/sync2/heal.rs，
+  // 每个对端每组集合最多一次）。修不好的交给调用方上报（[SrsSync2Report.healFailed]）。
+  final Map<String, Object?> heal = (await host.sync2Command(<String, Object?>{
+    'op': 'digest_heal',
+    'now': nowMs(),
+  })).map;
+  report.healFailed.addAll(<Map<String, Object?>>[
+    for (final Object? f in (heal['healFailed'] as List?) ?? const <Object?>[])
+      if (f is Map) f.cast<String, Object?>(),
+  ]);
+  if (((heal['replayed'] as List?)?.isNotEmpty ?? false)) report.changed = true;
   final String self =
       (await host.sync2Command(<String, Object?>{
             'op': 'identity',

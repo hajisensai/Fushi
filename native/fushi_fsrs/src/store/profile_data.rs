@@ -275,6 +275,20 @@ mod tests {
             )
             .unwrap();
         }
+        // uid 在末尾、中间是别的设备的键（sync2/heal.rs 的对端组指纹 / 自动重建去重记录），与本机组指纹、
+        // 按内容声明的 minReader（sync2/min_reader.rs）。
+        for key in [
+            format!("sync2_dg_peer/0193a1b2-0000-7000-8000-0000000000d1/{profile}"),
+            format!("sync2_heal/0193a1b2-0000-7000-8000-0000000000d1/{profile}"),
+            format!("sync2_digest_dg/{profile}"),
+            format!("sync2_min_reader/{profile}"),
+        ] {
+            w.execute(
+                "INSERT OR REPLACE INTO srs_meta (key, value) VALUES (?1, '{}')",
+                [key],
+            )
+            .unwrap();
+        }
     }
 
     /// [profile] 名下按 profile 记的 `srs_meta` 键数（`…/<uid>` 或 `…/<uid>/…`）。
@@ -321,7 +335,7 @@ mod tests {
                 &format!("SELECT COUNT(*) FROM srs_meta WHERE key LIKE '%/{P}'")
             ) >= 2
         );
-        assert!(meta_of(&core, P) >= 5);
+        assert!(meta_of(&core, P) >= 9);
         let q_meta = meta_of(&core, Q);
 
         let out = core.profile_purge(P).unwrap();

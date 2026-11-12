@@ -280,6 +280,11 @@ pub fn buckets(c: &Connection, profile: &str) -> Result<Vec<(i64, String, i64)>,
 
 /// 根：全部桶值按桶号顺序（空桶 = 0）接起来 BLAKE3。
 pub fn root(c: &Connection, profile: &str) -> Result<String, String> {
+    Ok(root_of(&sums(c, profile)?))
+}
+
+/// 全部桶值（按桶号，空桶 = 0）。
+fn sums(c: &Connection, profile: &str) -> Result<Vec<Sum>, String> {
     let mut all = vec![[0u64; 4]; BUCKETS];
     let mut stmt = c
         .prepare_cached(
@@ -294,12 +299,60 @@ pub fn root(c: &Connection, profile: &str) -> Result<String, String> {
             *slot = sum_of(&s);
         }
     }
+    Ok(all)
+}
+
+fn root_of(all: &[Sum]) -> String {
     let mut h = blake3::Hasher::new();
     h.update(b"fushi-srs-digest-v2");
-    for s in &all {
+    for s in all {
         h.update(&bytes_of(s));
     }
-    Ok(h.finalize().to_hex().to_string())
+    h.finalize().to_hex().to_string()
+}
+
+/// 分组指纹的格式版本（head `ext.dg.dgv`）。分组方式（[GROUP_BUCKETS]、组指纹的算法）一改就升它：版本不同的两台
+/// 设备不比组指纹（store/sync2/heal.rs），免得在同一前缀下比出假的「不同组」。
+pub const DG_VERSION: u32 = 1;
+/// 每组多少个相邻桶。
+pub const GROUP_BUCKETS: usize = 16;
+/// 组数（[BUCKETS] / [GROUP_BUCKETS] = 256）。
+pub const GROUPS: usize = BUCKETS / GROUP_BUCKETS;
+/// 一组指纹的十六进制长度（blake3 前 8 字节）。
+pub const GROUP_HEX: usize = 16;
+
+/// 各组指纹，按组号接成一串十六进制（[GROUPS] × [GROUP_HEX] 个字符）。
+fn groups_of(all: &[Sum]) -> String {
+    let mut out = String::with_capacity(GROUPS * GROUP_HEX);
+    for g in all.chunks(GROUP_BUCKETS) {
+        let mut h = blake3::Hasher::new();
+        h.update(b"fushi-srs-digest-group-v1");
+        for s in g {
+            h.update(&bytes_of(s));
+        }
+        out.push_str(&h.finalize().to_hex()[..GROUP_HEX]);
+    }
+    out
+}
+
+/// 根与各组指纹（出自同一份桶表读取）。
+pub fn root_and_groups(c: &Connection, profile: &str) -> Result<(String, String), String> {
+    let all = sums(c, profile)?;
+    Ok((root_of(&all), groups_of(&all)))
+}
+
+/// 两串组指纹（[root_and_groups]）里不同的组号。长度不对返回 None。
+pub fn differing_groups(a: &str, b: &str) -> Option<Vec<usize>> {
+    if a.len() != GROUPS * GROUP_HEX || b.len() != a.len() {
+        return None;
+    }
+    Some(
+        (0..GROUPS)
+            .filter(|i| {
+                a[i * GROUP_HEX..(i + 1) * GROUP_HEX] != b[i * GROUP_HEX..(i + 1) * GROUP_HEX]
+            })
+            .collect(),
+    )
 }
 
 /// 全量扫描算同一个根（不读桶表）：测试对拍「增量维护 = 从头算」。
