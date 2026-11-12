@@ -25,6 +25,7 @@ pub(crate) mod merge_notes;
 pub(crate) mod min_reader;
 pub(crate) mod mvr;
 pub(crate) mod note_fields_if;
+pub(crate) mod ownership;
 pub mod relay;
 pub(crate) mod sched_local;
 pub mod schema;
@@ -2533,6 +2534,8 @@ mod tests_migrate_dedup;
 #[cfg(test)]
 mod tests_note_fields_if;
 #[cfg(test)]
+mod tests_ownership;
+#[cfg(test)]
 mod tests_perf;
 #[cfg(test)]
 mod tests_replay_pending;
@@ -2565,9 +2568,13 @@ impl SrsCore {
     ) -> Result<Value, String> {
         self.read_visible(|c| {
             let tree = config::DeckTree::load(c, profile)?;
+            // 别的 profile 的卡按「没有这张卡」算（ownership.rs）：不读它的笔记与日志，回包与不存在的卡同形。
+            let foreign = ownership::foreign(c, profile, EntKind::Card, card)?;
+            let note = if foreign { None } else { note };
             // 调用方没给笔记（作答路径不再先读一遍卡片缓存行）：按缓存行补上，结果里交回（落日志时要带上）。
             let looked_up: Option<String> = match note {
                 Some(_) => None,
+                None if foreign => None,
                 None => c
                     .prepare_cached("SELECT srs_idt(note_id) AS note_id FROM srs_cards_cache WHERE id = srs_id(?1)")
                     .map_err(sql)?
@@ -2576,7 +2583,11 @@ impl SrsCore {
                     .map_err(sql)?,
             };
             let note = note.or(looked_up.as_deref());
-            let Group { rows, note: group_note } = group_of(c, card, note)?;
+            let Group { rows, note: group_note } = if foreign {
+                Group { rows: Vec::new(), note: None }
+            } else {
+                group_of(c, card, note)?
+            };
             // 此刻的生效配置：预览的是「现在作答」，作答落库时 `sc` 记下的也是这一份（[stamp_config]）。
             let deck = if rows.is_empty() && note.is_none() { None } else { Some(config::card_deck(c, &tree, card, group_note.as_deref())?) };
             let cfg = match &deck {

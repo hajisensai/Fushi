@@ -195,7 +195,8 @@ extension SrsNoteTypeStoreOps on SrsDbStore {
       for (final SrsCardCacheRow c in await (db.select(
         db.srsCardsCache,
       )..where((x) => x.noteId.isIn(chunk))).get()) {
-        out[c.noteId]!.add(c);
+        // 只认本 profile 的卡（别的 profile 的笔记 ID 与不存在的一样，见 [SrsDbStore.cardsOfNote]）。
+        if (c.profileUid == profileUid) out[c.noteId]!.add(c);
       }
     }
     return out;
