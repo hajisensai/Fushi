@@ -10,7 +10,8 @@
 //!    同一个旧修改记录 ID 的不比（[collided_edit_ids]）；缓存层（笔记行 / 卡行 / 有效复习投影）按同一份缓存配置
 //!    （只有默认牌组）与协议 3 在 SAVEPOINT 里 `caches::rebuild` 出来的行逐列比，比完回滚。缓存层的有意差别与口径
 //!    （`cache.rs` 文件头「与协议 3 的差别」）：笔记行的 `updated_at` 不比；协议 3 因身份记录不成形整次重建失败时
-//!    缓存三类不比；有删除被扣住的笔记不比 `deleted_at` / `pending_decision` 与它的卡的 `hidden`（同 `edits` 的口径）；
+//!    缓存三类不比；有删除被扣住的笔记不比 `deleted_at` / `pending_decision` 与它的卡的 `hidden`、笔记类型的删除被扣住时
+//!    它的笔记的卡不比 `hidden`（同 `edits` 的口径）；
 //!    同一个旧修改记录 ID 下有两条不同修改的笔记（复制出来的两份旧库各自续写）不比它与它的卡（[collided_notes]）。
 //!    协议 3 一侧先做完它自己欠着的收尾（待重放集合、没刷新的合成标签行）再重建（[protocol_3_caches]）。
 //!
@@ -385,6 +386,19 @@ pub(crate) fn cache_pairs(
         cols.iter().position(|c| c.0 == name).unwrap()
     };
     let held_note = |id: &str| held.contains(&format!("note:{id}"));
+    // 笔记类型的删除被扣住时同理：卡的 `hidden` 跟着笔记类型删没删（`caches.rs` 笔记行的 `gone`），协议 3 的
+    // `deleted` 寄存器里留着哪几条同样取决于到达顺序，这些笔记的卡不比 `hidden`。
+    let type_of: std::collections::BTreeMap<String, String> = old_notes
+        .iter()
+        .chain(&new("notes", NOTE_COLS))
+        .map(|r| (r[0].clone(), r[at(NOTE_COLS, "note_type_id")].clone()))
+        .collect();
+    let held_card = |note: &str| {
+        held_note(note)
+            || type_of
+                .get(note)
+                .is_some_and(|nt| held.contains(&format!("notetype:{nt}")))
+    };
     let collided = collided_notes(t, col);
     let skip_note = |id: &str| collided.contains(&format!("note:{id}"));
     let notes = |rows: Vec<Vec<String>>| -> BTreeSet<String> {
@@ -409,7 +423,7 @@ pub(crate) fn cache_pairs(
         rows.into_iter()
             .filter(|r| !skipped_cards.contains(&r[0]))
             .map(|mut r| {
-                if held_note(&r[at(CARD_COLS, "note_id")]) {
+                if held_card(&r[at(CARD_COLS, "note_id")]) {
                     r[at(CARD_COLS, "hidden")] = "(held)".to_owned();
                 }
                 r.join(" | ")
