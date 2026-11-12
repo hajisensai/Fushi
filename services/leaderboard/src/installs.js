@@ -300,7 +300,7 @@ export async function purgeInstallStats(env, now) {
 
 /**
  * 读安装统计快照：{computedAt, stats}；还没有快照（刚迁移完、定时任务还没跑）→ null。
- * 处理台与 stats.json 只走这里，不现场调 installStats（见迁移 0020 文件头）。
+ * 处理台与 stats.json 只走这里，不现场调 installStats（见迁移 0021 文件头）。
  */
 export async function installStatsSnapshot(env) {
   const row = await env.DB.prepare('SELECT computed_at, data FROM install_stats_snapshot WHERE id = 1').first();

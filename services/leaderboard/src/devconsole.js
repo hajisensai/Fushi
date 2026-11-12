@@ -9,7 +9,7 @@
 //   POST /dev/f/:id  {status,reply}
 //   GET  /dev/project             项目数据：GitHub star / fork / Release 下载与官网访问量的每日快照（project_stats.js）
 //   POST /dev/project/refresh     立即重新取一遍外部数据（不等定时任务的节流间隔）
-//   GET  /dev/stats               安装统计（读定时快照，迁移 0020）：日活 / 周活 / 月活、近 30 天每日活跃与新增、平台 / 通道 / 版本分布（installs.js）
+//   GET  /dev/stats               安装统计（读定时快照，迁移 0021）：日活 / 周活 / 月活、近 30 天每日活跃与新增、平台 / 通道 / 版本分布（installs.js）
 //   GET  /dev/stats.json          同一份数据的 JSON（安装统计快照 + computedAt），给维护者自己的看板（Fushi Pulse）取数；没有会话 → 401 JSON
 //   POST /dev/stats/refresh       立即重算安装统计快照（距上次不足 15 分钟则不重算）
 //

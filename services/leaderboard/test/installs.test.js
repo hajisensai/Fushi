@@ -682,7 +682,7 @@ describe('统计', () => {
   });
 });
 
-describe('安装统计快照（迁移 0020）', () => {
+describe('安装统计快照（迁移 0021）', () => {
   const snapshotAt = (env) => env.DB.raw.prepare('SELECT computed_at FROM install_stats_snapshot').get()?.computed_at;
 
   it('处理台只读快照：快照之后的新心跳不进页面，直到重算', async () => {

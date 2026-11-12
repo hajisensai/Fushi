@@ -372,7 +372,7 @@ export default {
     await purgeFeedbackAttachments(env, now);
     await purgeFeedbackVideos(env, now);
     await purgeInstallStats(env, now);
-    // 安装统计快照：按 INSTALL_LIMITS.snapshotEveryMs 节流，不到期只读一行就返回（迁移 0020）。
+    // 安装统计快照：按 INSTALL_LIMITS.snapshotEveryMs 节流，不到期只读一行就返回（迁移 0021）。
     await refreshInstallStatsSnapshot(env, now);
     // 冷却期到期、没有新票的封面挑战者（cover_votes.js 文件头「替换门槛」）。
     await deleteMedia(env, (await settlePendingCovers(env.DB, now)).released);

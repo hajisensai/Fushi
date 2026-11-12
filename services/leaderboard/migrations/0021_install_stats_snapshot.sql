@@ -6,7 +6,7 @@
 -- 处理台的「立即刷新」另有冷却（snapshotRefreshCooldownMs）。
 --
 -- 单行表：id 恒为 1。
-CREATE TABLE install_stats_snapshot (
+CREATE TABLE IF NOT EXISTS install_stats_snapshot (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   computed_at INTEGER NOT NULL,
   data TEXT NOT NULL
