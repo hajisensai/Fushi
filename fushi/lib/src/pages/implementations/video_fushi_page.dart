@@ -12998,7 +12998,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
                 if (torrent != null && offerTorrentDownload)
                   FushiFilledButton.icon(
                     onPressed: () => unawaited(_downloadTorrentVideo(torrent)),
-                    icon: const FushiIcon(Icons.download_rounded),
+                    icon: const FushiIcon(FushiIcons.download),
                     label: Text(t.video_online_stream_torrent_download),
                   ),
                 FushiFilledButton.tonalIcon(

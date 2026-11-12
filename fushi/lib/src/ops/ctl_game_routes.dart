@@ -2501,6 +2501,7 @@ Map<String, Object?> galHookCtlThreadJson(
   if (t.nativeThreadId != null) 'nativeThreadId': t.nativeThreadId,
   'engineExact': isEngineExactTextThread(t),
   'hookCodeLaneUnique': t.hookCodeLaneUnique,
+  'dialogueSurface': t.dialogueSurface,
   'observedLines': t.observedLineCount,
   'observedArtifacts': t.observedArtifactCount,
   'publishedLines': t.lineCount,

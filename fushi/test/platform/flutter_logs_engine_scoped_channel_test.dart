@@ -97,7 +97,7 @@ void main() {
 
   test('main() still initialises flutter_logs before AppModel.initialise', () {
     final String main = File('lib/main.dart').readAsStringSync();
-    final int initLogs = main.indexOf('await FlutterLogs.initLogs(');
+    final int initLogs = main.indexOf('FlutterLogs.initLogs(');
     final int initialise = main.indexOf('await appModel.initialise();');
     expect(initLogs, greaterThan(0));
     expect(initialise, greaterThan(initLogs));

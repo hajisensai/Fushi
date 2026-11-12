@@ -105,6 +105,7 @@ void main() {
         glyphs: _glyphs,
         clientWidth: 1280,
         clientHeight: 720,
+        clientSizeTolerance: 2,
       );
       final MethodCall call = calls.single;
       expect(call.method, 'attachedUpdateMeasuredText');
@@ -118,6 +119,7 @@ void main() {
       expect(args['textGeneration'], 3);
       expect(args['clientWidth'], 1280);
       expect(args['clientHeight'], 720);
+      expect(args['clientSizeTolerance'], 2);
       // Must stay an Int32List through the standard codec so the runner reads
       // std::vector<int32_t>.
       expect(args['glyphs'], isA<Int32List>());
@@ -158,6 +160,7 @@ void main() {
             ],
             clientWidth: 10,
             clientHeight: 10,
+            clientSizeTolerance: 0,
           );
       expect(result.error, 'measured_glyphs_malformed');
       expect(calls, isEmpty);
@@ -189,6 +192,7 @@ void main() {
           ],
           clientWidth: 800,
           clientHeight: 600,
+          clientSizeTolerance: 0,
         );
     expect(result.ok, isFalse);
     expect(result.error, 'measured_client_size_mismatch');

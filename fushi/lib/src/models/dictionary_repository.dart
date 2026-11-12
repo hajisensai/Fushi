@@ -19,8 +19,10 @@ class DictionaryRepository {
   DictionaryRepository(
     this._db, {
     VoidCallback? onCacheRebuild,
+    VoidCallback? onHistoryLoaded,
     bool Function()? isLowMemory,
   }) : _onCacheRebuild = onCacheRebuild,
+       _onHistoryLoaded = onHistoryLoaded,
        _isLowMemory = isLowMemory ?? _neverLowMemory {
     // 退出前结算尚未进入 Drift 的 metadata 队列和 debounce 查词历史；
     // 否则 db.close 可能先于 metadata 队列里的第二笔写入。
@@ -29,6 +31,9 @@ class DictionaryRepository {
 
   final FushiDatabase _db;
   final VoidCallback? _onCacheRebuild;
+
+  /// 延后装载的查词历史落进内存后调用一次（见 [loadFromDb] 的 `deferHistory`）。
+  final VoidCallback? _onHistoryLoaded;
 
   /// 低内存模式信号（读 pref，惰性求值：主进程构造发生在 prefs 加载之前，
   /// 只能在每次缓存写入时现查）。未接线（旧调用点/测试）时视为非低内存。
@@ -173,24 +178,112 @@ class DictionaryRepository {
 
   // ── loadFromDb ───────────────────────────────────────────────────────
 
-  Future<void> loadFromDb() async {
+  /// [deferHistory]：查词历史不挡本次调用——词典元数据装完就返回，历史在后台
+  /// isolate 里反序列化，落进内存后回调 `onHistoryLoaded`。冷启动用它：历史每条是
+  /// 一整份查词结果（实测单条 0.26-1.5 MB JSON），十条就是几 MB，在 UI isolate 上
+  /// 同步解析要几百毫秒（手机上秒级），而首页首帧根本不需要它。装载期间
+  /// [dictionaryHistory] 为空、[dictionaryHistoryLoading] 为 true，改历史的操作排到
+  /// 装载完成之后按序执行（见 [_whenHistoryLoaded]）。
+  ///
+  /// 延后的装载连库都先不读，等 [startDeferredHistoryLoad] 放行：数据库在单独的
+  /// isolate 里按序执行查询，几 MB 的历史整表一读就是几十毫秒，排在它后面的启动
+  /// 查询全都得等（实测 Windows 上启动期的偏好迁移从 1 ms 涨到 34-160 ms）。
+  Future<void> loadFromDb({bool deferHistory = false}) async {
     // 历史落库是 debounce 写穿：重载（启动 no-op / Profile 切换 TODO-1077）前
     // 先 flush pending 变更，保持「变更先于重载落库」的旧语义，防旧快照复活。
     await flushPendingWritesNow();
     _applyMetadataRows(await _db.getAllDictionaryMetadata());
 
     _dictionaryHistoryResults.clear();
-    final histRows = await _db.getAllDictionaryHistory();
-    for (final row in histRows) {
-      try {
-        _dictionaryHistoryResults.add(
-          DictionarySearchResult.fromJson(row.resultJson),
-        );
-      } catch (e, stack) {
-        ErrorLogService.instance.log('DictRepo.historyLoad', e, stack);
-        debugPrint('[Fushi] skipping corrupted dictionary history: $e');
+    final Future<void> historyLoad = _loadHistoryFromDb(gated: deferHistory);
+    if (!deferHistory) await historyLoad;
+  }
+
+  /// 在途的历史装载；null = 内存里的历史已经和库对齐。
+  Future<void>? _historyLoad;
+
+  /// 延后装载的放行闸（见 [loadFromDb] 的 `deferHistory`）；null = 没有等放行的装载。
+  Completer<void>? _historyLoadGate;
+  bool _disposed = false;
+
+  /// 放行 `loadFromDb(deferHistory: true)` 延后的历史装载：启动关键路径上的查询
+  /// 都发完之后调一次。没有等放行的装载时是空操作。
+  void startDeferredHistoryLoad() {
+    final Completer<void>? gate = _historyLoadGate;
+    _historyLoadGate = null;
+    gate?.complete();
+  }
+
+  /// 查词历史是否还在装载（[dictionaryHistory] 暂时为空，不代表「没有历史」）。
+  bool get dictionaryHistoryLoading => _historyLoad != null;
+
+  /// 查词历史装载落定（没有在途装载时立即完成）。永不以错误结束。
+  Future<void> get dictionaryHistoryLoaded =>
+      _historyLoad ?? Future<void>.value();
+
+  /// 读整表 + 后台 isolate 反序列化 + 落进内存。返回的 future 永不以错误结束：
+  /// 排在它后面的历史操作（[_whenHistoryLoaded]）必须照常执行。
+  ///
+  /// [gated]：先不读库，等 [startDeferredHistoryLoad]。
+  Future<void> _loadHistoryFromDb({required bool gated}) {
+    // [loadFromDb] 开头的 flush 已经放行并等完上一轮装载，这里不会压着旧闸。
+    assert(_historyLoadGate == null);
+    final int clearEpoch = _historyClearEpoch;
+    final Completer<void>? gate = gated ? Completer<void>() : null;
+    _historyLoadGate = gate;
+    final Future<void> read = gate == null
+        ? _readAndDecodeHistory(clearEpoch)
+        : gate.future.then((_) => _readAndDecodeHistory(clearEpoch));
+    late final Future<void> loading;
+    loading = read.whenComplete(() {
+      if (identical(_historyLoad, loading)) _historyLoad = null;
+      if (!_disposed) _onHistoryLoaded?.call();
+    });
+    _historyLoad = loading;
+    return loading;
+  }
+
+  Future<void> _readAndDecodeHistory(int clearEpoch) async {
+    // 放行前就清过历史 / 已 dispose：不必再读这张表。
+    if (_historyClearEpoch != clearEpoch) return;
+    try {
+      final List<String> jsons = <String>[
+        for (final row in await _db.getAllDictionaryHistory()) row.resultJson,
+      ];
+      final List<DecodedDictionaryHistoryResult> decoded =
+          await decodeDictionaryHistoryResults(jsons);
+      // 装载期间清过历史 / 已 dispose：这份旧快照不得再落进内存。
+      if (_historyClearEpoch != clearEpoch) return;
+      for (final DecodedDictionaryHistoryResult item in decoded) {
+        final DictionarySearchResult? result = item.result;
+        if (result != null) {
+          _dictionaryHistoryResults.add(result);
+          continue;
+        }
+        final String error = item.error ?? 'unknown decode failure';
+        ErrorLogService.instance.log('DictRepo.historyLoad', error);
+        debugPrint('[Fushi] skipping corrupted dictionary history: $error');
       }
+    } catch (e, stack) {
+      ErrorLogService.instance.log('DictRepo.historyLoad', e, stack);
     }
+  }
+
+  /// 改查词历史的操作统一经这里：历史还在装载时排到装载完成之后（同一个 future 上
+  /// 的回调按登记顺序执行，调用顺序不变），否则立刻执行。直接改内存会让随后的整表
+  /// 写穿把还没装进来的旧历史覆盖掉。期间清过历史 / 已 dispose 的排队操作作废。
+  void _whenHistoryLoaded(void Function() op) {
+    final Future<void>? loading = _historyLoad;
+    if (loading == null) {
+      op();
+      return;
+    }
+    final int clearEpoch = _historyClearEpoch;
+    unawaited(
+      loading.then((_) {
+        if (_historyClearEpoch == clearEpoch) op();
+      }),
+    );
   }
 
   /// 上一次从 DB 整表装载 dictionary_metadata 时读到的行（按 name 排序），供
@@ -833,16 +926,18 @@ class DictionaryRepository {
   void addHistoryResult(DictionarySearchResult result, int maximumItems) {
     if (result.entries.isEmpty || result.searchTerm.isEmpty) return;
 
-    _dictionaryHistoryResults.removeWhere(
-      (r) => r.searchTerm == result.searchTerm,
-    );
-    _dictionaryHistoryResults.add(result);
+    _whenHistoryLoaded(() {
+      _dictionaryHistoryResults.removeWhere(
+        (r) => r.searchTerm == result.searchTerm,
+      );
+      _dictionaryHistoryResults.add(result);
 
-    while (_dictionaryHistoryResults.length > maximumItems) {
-      _dictionaryHistoryResults.removeAt(0);
-    }
+      while (_dictionaryHistoryResults.length > maximumItems) {
+        _dictionaryHistoryResults.removeAt(0);
+      }
 
-    _schedulePersistDictionaryHistory();
+      _schedulePersistDictionaryHistory();
+    });
   }
 
   void updateDictionaryResultScrollIndex({
@@ -852,16 +947,18 @@ class DictionaryRepository {
     result.scrollPosition = newIndex;
     // scrollPosition 编进 resultJson，就地变更必须失效该条 memo。
     _historyJsonMemo[result] = null;
-    _schedulePersistDictionaryHistory();
+    _whenHistoryLoaded(_schedulePersistDictionaryHistory);
   }
 
   /// 从查词历史里移除一条（按查询串）。与 [addHistoryResult] 同一条防抖落库。
   void removeHistoryResult(String searchTerm) {
-    final int before = _dictionaryHistoryResults.length;
-    _dictionaryHistoryResults.removeWhere((r) => r.searchTerm == searchTerm);
-    if (_dictionaryHistoryResults.length != before) {
-      _schedulePersistDictionaryHistory();
-    }
+    _whenHistoryLoaded(() {
+      final int before = _dictionaryHistoryResults.length;
+      _dictionaryHistoryResults.removeWhere((r) => r.searchTerm == searchTerm);
+      if (_dictionaryHistoryResults.length != before) {
+        _schedulePersistDictionaryHistory();
+      }
+    });
   }
 
   Future<void> clearDictionaryHistory() async {
@@ -907,6 +1004,12 @@ class DictionaryRepository {
   /// 立即写穿 pending 的历史变更；无 pending 时 no-op。退出 flush
   /// （[ExitFlushRegistry]）与 [loadFromDb] 重载前对齐用。
   Future<void> flushDictionaryHistoryNow() async {
+    // 历史还在装载时，排在它后面的变更尚未进内存、也还没标脏：等它们落定再判。
+    // 还没放行的装载在这里放行，否则下面永远等不到。
+    startDeferredHistoryLoad();
+    while (_historyLoad != null) {
+      await _historyLoad;
+    }
     while (_historyWrite != null || _historyDirtySince != null) {
       await (_historyWrite ?? _flushDictionaryHistory());
     }
@@ -986,6 +1089,9 @@ class DictionaryRepository {
   /// Release in-memory caches. Replaces the inherited ChangeNotifier.dispose
   /// that AppModel.dispose still calls (HBK-AUDIT-065).
   void dispose() {
+    _disposed = true;
+    // 等放行的装载就地了结（代次已变，它不会再读库），别留一个永不完成的 future。
+    startDeferredHistoryLoad();
     _cancelPendingHistoryPersist();
     ExitFlushRegistry.instance.unregister(_exitFlush);
     _dictionariesCache = const [];
@@ -1002,6 +1108,34 @@ class DictionaryRepository {
 //
 // 只服务 LruCache 的字节封顶决策，不追求精确 shallow-size：Dart String 为
 // UTF-16，每字符按 2 字节计；每个对象/列表再加固定开销。宁可高估。
+
+/// [decodeDictionaryHistoryResults] 的一条结果：解析成功给 [result]，失败给 [error]。
+typedef DecodedDictionaryHistoryResult = ({
+  DictionarySearchResult? result,
+  String? error,
+});
+
+/// 在一次性后台 isolate 里把查词历史的 `resultJson` 逐条解析回对象
+/// （[encodeDictionaryHistoryResults] 的反向）。坏行不抛，带着错误文本回来，由调用方
+/// 记日志并跳过。
+Future<List<DecodedDictionaryHistoryResult>> decodeDictionaryHistoryResults(
+  List<String> jsons,
+) async {
+  // 没有历史（新装 / 清空过）不值得起 isolate。
+  if (jsons.isEmpty) return const <DecodedDictionaryHistoryResult>[];
+  return Isolate.run(() {
+    final List<DecodedDictionaryHistoryResult> out =
+        <DecodedDictionaryHistoryResult>[];
+    for (final String json in jsons) {
+      try {
+        out.add((result: DictionarySearchResult.fromJson(json), error: null));
+      } catch (e) {
+        out.add((result: null, error: e.toString()));
+      }
+    }
+    return out;
+  }, debugName: 'fushi-dict-history-decode');
+}
 
 /// 每个 Dart 对象/列表头 + 字段引用的粗估固定开销（字节）。
 const int _kObjectOverheadBytes = 64;
