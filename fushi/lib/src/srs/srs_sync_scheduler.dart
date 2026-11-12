@@ -439,6 +439,23 @@ class SrsSyncScheduler {
 
   /// 坏文件只记一次日志（每轮都会再跳过同一个文件）。
   final Set<String> _loggedSkipped = <String>{};
+
+  /// 清本机旧身份目录没做成的原因（[SrsSync2Report.formerSweepErrors]）记日志：不算这一轮失败，同一个原因只记一次
+  /// （内核每个周期让看一次，持续性的故障每次都是同一句）。
+  void _logFormerSweep(String key, SrsSync2Report report) {
+    for (final String f in report.formerSweepErrors) {
+      if (_loggedSkipped.add('former|$key|$f')) {
+        ErrorLogService.instance.log(
+          'SrsSyncScheduler.formerIdentitySweep',
+          StateError(
+            'SRS sync could not tidy a former identity directory in $key: $f',
+          ),
+          StackTrace.current,
+        );
+      }
+    }
+  }
+
   final Future<List<SrsLocalDirectory>> Function()? _localDirectories;
   final Future<List<SrsFolderLocation>> Function()? _folderLocations;
 
@@ -1168,6 +1185,7 @@ class SrsSyncScheduler {
         );
       }
     }
+    _logFormerSweep(key, report);
     // 服务器时间与写 head 那次上传同一刻的开机时钟配对（[SrsSync2Report.serverTimeBootMs]），与这一轮跑了多久无关。
     final int? serverTime = report.serverTimeMs;
     final int? observedAt = report.serverTimeBootMs;
@@ -1676,6 +1694,8 @@ class SrsSyncScheduler {
           srsLogMigrationLeftover(prepared, l.locationId);
         }
         if (outcome.stopped) continue;
+        final SrsSync2Report? folderOps = r.ops;
+        if (folderOps != null) _logFormerSweep(l.locationId, folderOps);
         await _noteCrypto(l.locationId, r.crypto);
         _noteMediaKey(l.locationId, r.media);
         // 口令类问题不进 folderErrors，由 [locationCrypto] 显示（需要口令 / 口令不对 / 加密设置不见了）。

@@ -153,6 +153,11 @@ class SrsSync2Report {
   /// 非致命错误（段损坏 / 签名不符 / 解不开……）：记日志，不打断这一轮。
   final List<String> errors = <String>[];
 
+  /// 清位置上本机旧身份的目录（[srsSweepFormerIdentities]）时没做成的（列目录 / 读 head / 删文件失败），每项
+  /// `<旧身份>: <原因>`。不算这一轮失败、也不算跳过了段（不进 [errors]）：这一轮自己的收发与 head 都已完成，旧
+  /// 目录里多留几份旧 head 不影响任何设备读到的内容，内核过一个周期再让看。只供记日志。
+  final List<String> formerSweepErrors = <String>[];
+
   /// 摘要不一致、自动重建修不好（内核 store/sync2/heal.rs `healFailed`）：每个对端每组集合内核只给一次，照报即可。
   /// 每项 `{device, groups, rows: {e, f, l}, app, reason}`。
   final List<Map<String, Object?>> healFailed = <Map<String, Object?>>[];
@@ -373,14 +378,21 @@ Future<SrsSync2Report> srsSync2Round({
     final List<SrsLocationEntry> own = await location.list('devices/$self');
     if (own.any((SrsLocationEntry f) => f.name == lastName)) {
       // head 没变也收尾：上一轮删到一半失败（或 head 上传失败没走到删除）的旧 head / 旧段 / 旧转发件这一轮再删。
-      await srsSweepObsolete(
+      await srsSweepFormerIdentities(
         host: host,
         location: location,
         progressId: progressId,
-        self: self,
-        own: own,
-        archive: archive,
-        nowMs: nowMs(),
+        former: await srsSweepObsolete(
+          host: host,
+          location: location,
+          progressId: progressId,
+          self: self,
+          own: own,
+          archive: archive,
+          nowMs: nowMs(),
+        ),
+        nowMs: nowMs,
+        report: report,
       );
       return report;
     }
@@ -415,14 +427,21 @@ Future<SrsSync2Report> srsSync2Round({
         ..serverTimeBootMs = writtenAtBootMs;
     }
   }
-  await srsSweepObsolete(
+  await srsSweepFormerIdentities(
     host: host,
     location: location,
     progressId: progressId,
-    self: self,
-    own: own,
-    archive: archive,
-    nowMs: nowMs(),
+    former: await srsSweepObsolete(
+      host: host,
+      location: location,
+      progressId: progressId,
+      self: self,
+      own: own,
+      archive: archive,
+      nowMs: nowMs(),
+    ),
+    nowMs: nowMs,
+    report: report,
   );
   return report;
 }
@@ -438,7 +457,10 @@ Future<SrsSync2Report> srsSync2Round({
 /// 内核回 `again` = 还有旧小段只差这份清单里的旧 head 确认删掉：清单**全部**删成并回执之后（没删成的
 /// [srsDeleteAndAck] 已经抛出，走不到这里），把刚删掉的文件从列表里去掉再问一次，旧小段就在同一轮删掉——排在引用
 /// 它的旧 head 之后。内核保证第二次不再要求再问，这里也至多问两次。[self] = 本机的设备 id（[own] 所在的目录）。
-Future<void> srsSweepObsolete({
+///
+/// 返回内核点名的本机旧身份（回复里的 `former`：换过身份的设备在这个位置上此刻该去看一眼的旧身份目录，交给
+/// [srsSweepFormerIdentities]；没换过身份 / 没到该看的时候 / 归档位置 = 空）。
+Future<List<String>> srsSweepObsolete({
   required SrsSync2Host host,
   required SrsLocationStore location,
   required String progressId,
@@ -452,6 +474,7 @@ Future<void> srsSweepObsolete({
     for (final SrsLocationEntry f in own)
       if (!f.isFolder) f.name,
   };
+  List<String> former = const <String>[];
   for (int ask = 0; ask < 2; ask++) {
     final SrsSync2Result sweep = await host.sync2Command(<String, Object?>{
       'op': 'obsolete',
@@ -460,6 +483,7 @@ Future<void> srsSweepObsolete({
       'archive': archive,
       'now': nowMs,
     });
+    if (ask == 0) former = _pathsOf(sweep.map['former']);
     final List<String> paths = _pathsOf(sweep.map['delete']);
     await srsDeleteAndAck(
       host: host,
@@ -468,11 +492,67 @@ Future<void> srsSweepObsolete({
       paths: paths,
       archive: archive,
     );
-    if (archive || sweep.map['again'] != true) return;
+    if (archive || sweep.map['again'] != true) break;
     present.removeAll(<String>[
       for (final String p in paths)
         if (p.startsWith(dir)) p.substring(dir.length),
     ]);
+  }
+  return former;
+}
+
+/// 换过身份（设计 §7.3）的设备，在一轮收尾之后清位置上旧身份目录里证明得了可以删的文件——只会是被盖过的旧 head
+/// （内核 store/sync2/former.rs `sync2_obsolete_former`；旧目录里的段一个不删）。[former] = 内核在 `obsolete` 的回复里
+/// 点名的旧身份（[srsSweepObsolete] 的返回值；绝大多数设备、绝大多数轮次是空，这一步什么都不做）。
+///
+/// 这里只做三件事：**此刻**重新列 `devices/<旧身份>/`（不用一轮开头读 head 时那份：中间隔着整轮的收发）、读其中
+/// 每一份 head 文件、把列表与这些字节交给内核；内核给的清单照删。哪些能删、要等多久、证明不了时怎么办全在内核——
+/// 读不到的 head 不补、不猜，原样少交一份，内核据此判「证明不了」。内核不记待删清单（每次从目录现状重新推导），
+/// 删完不回执。
+///
+/// 这一步出错（列目录 / 读 / 删失败）不让这一轮失败：这一轮自己的收发、head、本机目录的收尾都已经完成。原因记进
+/// [SrsSync2Report.formerSweepErrors]，内核过一个周期再让看。
+Future<void> srsSweepFormerIdentities({
+  required SrsSync2Host host,
+  required SrsLocationStore location,
+  required String progressId,
+  required List<String> former,
+  required int Function() nowMs,
+  required SrsSync2Report report,
+}) async {
+  for (final String device in former) {
+    try {
+      final String dir = 'devices/$device';
+      final List<String> present = <String>[
+        for (final SrsLocationEntry f in await location.list(dir))
+          if (!f.isFolder) f.name,
+      ];
+      final List<Uint8List> heads = <Uint8List>[
+        for (final Uint8List? b in await srsRunPooled(
+          <String>[
+            for (final String name in present)
+              if (name.startsWith('head-')) '$dir/$name',
+          ],
+          kSrsSync2Concurrency,
+          location.get,
+        ))
+          ?b,
+      ];
+      final SrsSync2Result out = await host.sync2Command(<String, Object?>{
+        'op': 'obsolete_former',
+        'location': progressId,
+        'device': device,
+        'present': present,
+        'now': nowMs(),
+      }, blobs: heads);
+      await srsRunPooled(
+        _pathsOf(out.map['delete']),
+        kSrsSync2Concurrency,
+        location.delete,
+      );
+    } on Object catch (e) {
+      report.formerSweepErrors.add('$device: $e');
+    }
   }
 }
 

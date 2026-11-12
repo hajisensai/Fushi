@@ -504,8 +504,18 @@ fn files_under_a_rotated_away_identity_are_never_handed_out() {
             "round {k}: a file written under the old identity is handed out: {handed:?}"
         );
     }
+    // 旧目录另按当场的证据清（former.rs，同步助手与生产一样在收尾后跑它）：被盖过的旧 head 可以删，段一个不删，
+    // 留下的 head 引用的段都在。
+    let newest_old = heads_of(&l, &old)
+        .last()
+        .expect("the newest old head stays")
+        .1
+        .clone();
     for p in &under_old {
-        assert!(l.0.contains_key(p), "{p} was deleted");
+        let kept = !p.contains("/head-") || p.ends_with(&newest_old);
+        assert!(!kept || l.0.contains_key(p), "{p} was deleted");
     }
+    assert_eq!(heads_of(&l, &old).len(), 1, "covered old heads are gone");
+    assert_eq!(missing_referenced(&l), Vec::<String>::new());
     assert!(heads_of(&l, &new).len() <= 3);
 }
