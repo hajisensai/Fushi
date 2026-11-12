@@ -72,7 +72,7 @@ void main() {
     int purged = 0;
     await measure(
       'purge',
-      () => s.sync2Purge(SrsEntityKind.note, notes[purged++]),
+      () => s.sync2PurgeMany(SrsEntityKind.note, <String>[notes[purged++]]),
     );
     final Uint8List exported = await s.sync2ExportOps();
     await measure('import', () => s.sync2ImportOps(exported));
@@ -90,10 +90,11 @@ void main() {
         'core=${e.value.core}',
       );
     }
-    // 改动前（见文件头）各多 BEGIN / COMMIT / 本机状态 upsert 3 条；createNote / applyRemote 剩下的 1 条是发命令前的
-    // Drift 预读，不属于这一步。
+    // 改动前（见文件头）各多 BEGIN / COMMIT / 本机状态 upsert 3 条；applyRemote 剩下的 1 条是发命令前的 Drift 预读。
+    // createNote 的那 1 条预读（这条笔记已有的修改记录）在第 14 步收掉：值没变的键由内核落库时筛
+    // （srs_write_preread_cost_test.dart）。
     expect(costs, <String, _Cost>{
-      'createNote': (statements: 1, core: 1),
+      'createNote': (statements: 0, core: 1),
       'answer': (statements: 0, core: 2),
       'checkpoint': (statements: 0, core: 1),
       'purge': (statements: 0, core: 1),

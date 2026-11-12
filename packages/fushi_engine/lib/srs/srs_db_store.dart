@@ -285,7 +285,8 @@ final class SrsEditDraft extends SrsEventDraft {
     this.value, {
     this.machine = false,
     this.initial = false,
-  });
+    this.ifChanged = false,
+  }) : assert(!(initial && ifChanged), 'initial and ifChanged are exclusive');
 
   final SrsEntityKind kind;
   final String entityId;
@@ -298,6 +299,11 @@ final class SrsEditDraft extends SrsEventDraft {
   /// 期间同步把对端的同一实体（ID 由 guid / 全名确定性派生）应用进来了——这条初值就不落：
   /// 它在落库时才分配 HLC 与因果上下文，会支配对端的编辑、把用户的新值盖成源里的旧值。
   final bool initial;
+
+  /// 只有会改变现值时才落（值没变且无冲突的键不产生记录）：由内核在落库的那一笔里读现值判（`apply` / `change`
+  /// 输入项的 `chg`，native/fushi_fsrs/src/store/sync2/changing.rs）——判定与写入之间插不进别的写入，Dart 不为它
+  /// 预读修改记录。同一批里同一个键出现多次时按顺序判。导入的一批（[SrsDbStore.importDrafts]）不认它。
+  final bool ifChanged;
 }
 
 /// 长操作（删牌组）的进度：已完成 / 总数（同一单位，例如张卡）。
@@ -1363,6 +1369,7 @@ class SrsDbStore implements SrsSync2Host {
             'note': null,
             'clk': 't',
             if (initials && d.initial) 'init': true,
+            if (d.ifChanged) 'chg': true,
           });
       }
     }
@@ -1882,10 +1889,19 @@ class SrsDbStore implements SrsSync2Host {
         'delete': delete,
       });
 
-  /// 彻底清除一个实体（设计 §10.5；界面已二次确认）。
-  Future<void> sync2Purge(SrsEntityKind kind, String entityId) => _sync2Write(
-    <String, Object?>{'op': 'purge', 'kind': kind.wire, 'entity': entityId},
-  );
+  /// 彻底清除一批同类实体（设计 §10.5；界面已二次确认）：内核的一条命令、一笔——每个实体仍是「删除 + 清除」
+  /// 两条操作，按 [entityIds] 的顺序。空的一批不发命令。一笔的大小由调用方定（[srsPurgeNotesNow] 分块）。
+  Future<void> sync2PurgeMany(
+    SrsEntityKind kind,
+    List<String> entityIds,
+  ) async {
+    if (entityIds.isEmpty) return;
+    await _sync2Write(<String, Object?>{
+      'op': 'purge',
+      'kind': kind.wire,
+      'entities': entityIds,
+    });
+  }
 
   /// 打一个还原点（设计 §10.2：批量删除 / 导入 / 改笔记类型 / 重训参数之前自动打）。[reason] 是稳定短码：
   /// `bulk_delete` / `import` / `note_type` / `fsrs_params` / `manual`（`restore` 由内核自己打）。
@@ -3073,19 +3089,19 @@ class SrsDbStore implements SrsSync2Host {
     Map<String, Object?> values, {
     bool machine = false,
   }) => runExclusive(() async {
-    final SrsEntityEdits current = await _entityEdits(kind, entityId);
-    final List<SrsEditDraft> drafts =
-        _changing(<(SrsEntityEdits?, String, Object?, SrsEditDraft)>[
-          for (final MapEntry<String, Object?> e in values.entries)
-            (
-              current,
-              e.key,
-              e.value,
-              SrsEditDraft(kind, entityId, e.key, e.value, machine: machine),
-            ),
-        ]);
-    if (drafts.isEmpty) return const <SrsFieldEdit>[];
-    return _emit(drafts, stamps: true);
+    if (values.isEmpty) return const <SrsFieldEdit>[];
+    // 值没变的键由内核在落库的那一笔里筛掉（[SrsEditDraft.ifChanged]）：这里不预读现值。
+    return _emit(<SrsEditDraft>[
+      for (final MapEntry<String, Object?> e in values.entries)
+        SrsEditDraft(
+          kind,
+          entityId,
+          e.key,
+          e.value,
+          machine: machine,
+          ifChanged: true,
+        ),
+    ], stamps: true);
   });
 
   /// 一组候选写入 `(现值, 键, 新值, 草稿)` 里会改变现值的那些的草稿（值没变且无冲突的键不产生记录；
@@ -3102,60 +3118,31 @@ class SrsDbStore implements SrsSync2Host {
     ];
   }
 
-  /// 一组 (实体类型, 实体 ID) 各自的现值修改记录，键为 `<kind>/<id>`：按类型分组、按 ID 分块
-  /// 一次预读（[_entityEditsMany]）。
-  Future<Map<String, SrsEntityEdits>> _currentEditsOf(
-    Iterable<(SrsEntityKind, String)> entities,
-  ) async {
-    final Map<SrsEntityKind, Set<String>> byKind =
-        <SrsEntityKind, Set<String>>{};
-    for (final (SrsEntityKind kind, String id) in entities) {
-      (byKind[kind] ??= <String>{}).add(id);
-    }
-    final Map<String, SrsEntityEdits> out = <String, SrsEntityEdits>{};
-    for (final MapEntry<SrsEntityKind, Set<String>> k in byKind.entries) {
-      for (final MapEntry<String, SrsEntityEdits> e in (await _entityEditsMany(
-        k.key,
-        k.value,
-      )).entries) {
-        out['${k.key.wire}/${e.key}'] = e.value;
-      }
-    }
-    return out;
-  }
-
   /// 一次写多个实体的修改记录（可带新身份记录），同一个事务、同一次缓存刷新。
-  /// 值没变且无冲突的键不产生记录（与 [editFields] 同一规则）。
-  ///
-  /// 现值先按实体分块一次预读，序号再紧接着落库一次分配完（以前每个实体各查两次库，且「查一个
-  /// 实体、分配一个实体的序号」交替进行，分配与落库之间夹着几百次往返，BUG-3543）。
+  /// 值没变且无冲突的键不产生记录（与 [editFields] 同一规则）：内核在落库的那一笔里读现值判
+  /// （[SrsEditDraft.ifChanged]），序号紧接着分配——这里不预读（以前按实体分块预读一遍全部修改记录原文，
+  /// 再早是每个实体各查两次库，BUG-3543）。
   Future<List<SrsFieldEdit>> writeEdits(
     List<SrsEditSpec> specs, {
     List<SrsEntityRecord> records = const <SrsEntityRecord>[],
   }) => runExclusive(() async {
-    final Map<String, SrsEntityEdits> current = await _currentEditsOf(
-      <(SrsEntityKind, String)>[
-        for (final SrsEditSpec spec in specs) (spec.kind, spec.entityId),
-      ],
-    );
     final List<SrsEventDraft> drafts = <SrsEventDraft>[
       for (final SrsEntityRecord r in records) SrsReadyDraft(SrsEntityEvent(r)),
-      ..._changing(<(SrsEntityEdits?, String, Object?, SrsEditDraft)>[
-        for (final SrsEditSpec spec in specs)
-          (
-            current['${spec.kind.wire}/${spec.entityId}']!,
-            spec.key,
-            spec.value,
-            SrsEditDraft(spec.kind, spec.entityId, spec.key, spec.value),
-          ),
-      ]),
+      for (final SrsEditSpec spec in specs)
+        SrsEditDraft(
+          spec.kind,
+          spec.entityId,
+          spec.key,
+          spec.value,
+          ifChanged: true,
+        ),
     ];
     if (drafts.isEmpty) return const <SrsFieldEdit>[];
     return _emit(drafts, stamps: true);
   });
 
   /// 一次结构性改动（更改笔记类型、删除重复模板、旧 Lapis 迁移）：还原点 [checkpoint] + 一批修改记录 [specs]
-  /// （no-op 规则同 [writeEdits]）+ 可选的移牌组 [moveNotes]，内核 `change` **一条命令、一笔**
+  /// （no-op 规则同 [writeEdits]，同样由内核在这一笔里判）+ 可选的移牌组 [moveNotes]，内核 `change` **一条命令、一笔**
   /// （native/fushi_fsrs/src/store/sync2/change.rs）：任何一段失败整次改动都不落库。
   ///
   /// [moveNotes]：这批修改记录落库、缓存刷新（换了类型的笔记的新卡在这时生成）之后，把这些笔记的首选牌组与它们
@@ -3169,21 +3156,16 @@ class SrsDbStore implements SrsSync2Host {
     ({String deckId, List<String> noteIds})? moveNotes,
     String? debugFailAfter,
   }) => runExclusive(() async {
-    final Map<String, SrsEntityEdits> current = await _currentEditsOf(
-      <(SrsEntityKind, String)>[
-        for (final SrsEditSpec spec in specs) (spec.kind, spec.entityId),
-      ],
-    );
+    // 值没变的由内核在这条命令的那一笔里筛掉（[SrsEditDraft.ifChanged]），不预读现值。
     final List<SrsEventDraft> drafts = <SrsEventDraft>[
-      ..._changing(<(SrsEntityEdits?, String, Object?, SrsEditDraft)>[
-        for (final SrsEditSpec spec in specs)
-          (
-            current['${spec.kind.wire}/${spec.entityId}']!,
-            spec.key,
-            spec.value,
-            SrsEditDraft(spec.kind, spec.entityId, spec.key, spec.value),
-          ),
-      ]),
+      for (final SrsEditSpec spec in specs)
+        SrsEditDraft(
+          spec.kind,
+          spec.entityId,
+          spec.key,
+          spec.value,
+          ifChanged: true,
+        ),
     ];
     if (drafts.isEmpty && checkpoint == null && moveNotes == null) return;
     // 走一步用的「此刻」与修改记录的时间来源：落库前这一刻取（同 [_emit]）。
@@ -3577,8 +3559,8 @@ class SrsDbStore implements SrsSync2Host {
   }) => runExclusive(() async {
     final String g = guid ?? newNoteGuid();
     final String id = SrsIds.note(profileUid, g);
-    // 身份记录与字段修改记录同一个事务、同一次缓存刷新（以前分两次落库，笔记先以空字段生成一遍卡）。
-    final SrsEntityEdits current = await _entityEdits(SrsEntityKind.note, id);
+    // 身份记录与字段修改记录同一个事务、同一次缓存刷新（以前分两次落库，笔记先以空字段生成一遍卡）。这条笔记
+    // 已经在（同一个 guid 再建）时值没变的键不再写：内核在落库的那一笔里判，不预读它的修改记录。
     await _emit(
       newNoteDrafts(
         noteTypeId: noteTypeId,
@@ -3588,7 +3570,7 @@ class SrsDbStore implements SrsSync2Host {
         source: source,
         guid: g,
         createdAt: createdAt,
-        current: current,
+        ifChanged: true,
       ),
     );
     return id;
@@ -3598,7 +3580,8 @@ class SrsDbStore implements SrsSync2Host {
   /// 交给 [importDrafts] 与别的事件攒成一批，序号在落库时才分配（Anki 包导入每批几十条笔记一个事务）。
   ///
   /// [current] 是这条笔记已有的修改记录（值相同的键不再写）；null = 调用方确定本机还没有这条笔记
-  /// （导入先查过身份记录），跳过逐条读库。noteId = `SrsIds.note(profileUid, guid)`。
+  /// （导入先查过身份记录），跳过逐条读库。[ifChanged] 见 [newEditDrafts]。
+  /// noteId = `SrsIds.note(profileUid, guid)`。
   List<SrsEventDraft> newNoteDrafts({
     required String noteTypeId,
     required Map<String, String> fieldsById,
@@ -3608,6 +3591,7 @@ class SrsDbStore implements SrsSync2Host {
     SrsSourceRef? source,
     int? createdAt,
     SrsEntityEdits? current,
+    bool ifChanged = false,
   }) {
     final (int nowMs, _) = now();
     final String id = SrsIds.note(profileUid, guid);
@@ -3626,25 +3610,41 @@ class SrsDbStore implements SrsSync2Host {
           ),
         ),
       ),
-      ...newEditDrafts(SrsEntityKind.note, id, <String, Object?>{
-        for (final MapEntry<String, String> f in fieldsById.entries)
-          if (f.value.isNotEmpty) SrsFieldKeys.noteField(f.key): f.value,
-        if (tags.isNotEmpty) SrsFieldKeys.noteTags: tags,
-        if (source != null) SrsFieldKeys.noteSource: source.toJson(),
-        SrsFieldKeys.noteDeck: deckId ?? defaultDeckId,
-      }, current: current),
+      ...newEditDrafts(
+        SrsEntityKind.note,
+        id,
+        <String, Object?>{
+          for (final MapEntry<String, String> f in fieldsById.entries)
+            if (f.value.isNotEmpty) SrsFieldKeys.noteField(f.key): f.value,
+          if (tags.isNotEmpty) SrsFieldKeys.noteTags: tags,
+          if (source != null) SrsFieldKeys.noteSource: source.toJson(),
+          SrsFieldKeys.noteDeck: deckId ?? defaultDeckId,
+        },
+        current: current,
+        ifChanged: ifChanged,
+      ),
     ];
   }
 
   /// 一个实体若干字段的本机修改记录草稿，**不落库、不占序号**（交给 [importDrafts] 成批落）。
   /// [current] 同 [newNoteDrafts]：给了就跳过与现值相同的键；null = 实体刚由同一批事件新建、本机没有记录
   /// ——这时草稿标成初值（[SrsEditDraft.initial]），落库时键已有记录的不落。
+  ///
+  /// [ifChanged]（不与 [current] 同给）：不知道本机有没有这个实体、也不预读——草稿全出，标成「值变了才落」
+  /// （[SrsEditDraft.ifChanged]），由内核落库时判。这样的草稿只能交给本机写入（`apply`），不能进
+  /// [importDrafts] 的批。
   List<SrsEditDraft> newEditDrafts(
     SrsEntityKind kind,
     String entityId,
     Map<String, Object?> values, {
     SrsEntityEdits? current,
-  }) => current == null
+    bool ifChanged = false,
+  }) => ifChanged
+      ? <SrsEditDraft>[
+          for (final MapEntry<String, Object?> e in values.entries)
+            SrsEditDraft(kind, entityId, e.key, e.value, ifChanged: true),
+        ]
+      : current == null
       ? <SrsEditDraft>[
           for (final MapEntry<String, Object?> e in values.entries)
             SrsEditDraft(kind, entityId, e.key, e.value, initial: true),
@@ -3724,33 +3724,25 @@ class SrsDbStore implements SrsSync2Host {
   // ------------------------------------------------------------------ 批量（浏览页）
 
   /// 多个实体的多个字段一次写：一个事务、一次发件箱批次（浏览页的批量操作）。
-  /// no-op 不产生记录；返回实际写出的修改记录。现值按实体分块一次预读（以前每个实体各查两次）。
-  Future<List<SrsFieldEdit>> editFieldsBatch(
-    List<SrsFieldChange> changes,
-  ) => runExclusive(() async {
-    final Map<(SrsEntityKind, String), Map<String, Object?>> byEntity =
-        <(SrsEntityKind, String), Map<String, Object?>>{};
-    for (final SrsFieldChange c in changes) {
-      (byEntity[(c.kind, c.entityId)] ??= <String, Object?>{})[c.key] = c.value;
-    }
-    final Map<String, SrsEntityEdits> current = await _currentEditsOf(
-      byEntity.keys,
-    );
-    final List<SrsEditDraft> drafts =
-        _changing(<(SrsEntityEdits?, String, Object?, SrsEditDraft)>[
+  /// no-op 不产生记录（内核在落库的那一笔里判，[SrsEditDraft.ifChanged]；不预读现值）；返回实际写出的修改记录。
+  /// 同一个（实体, 键）给了多次的以最后一次为准、排在它第一次出现的位置。
+  Future<List<SrsFieldEdit>> editFieldsBatch(List<SrsFieldChange> changes) =>
+      runExclusive(() async {
+        final Map<(SrsEntityKind, String), Map<String, Object?>> byEntity =
+            <(SrsEntityKind, String), Map<String, Object?>>{};
+        for (final SrsFieldChange c in changes) {
+          (byEntity[(c.kind, c.entityId)] ??= <String, Object?>{})[c.key] =
+              c.value;
+        }
+        final List<SrsEditDraft> drafts = <SrsEditDraft>[
           for (final MapEntry<(SrsEntityKind, String), Map<String, Object?>> e
               in byEntity.entries)
             for (final MapEntry<String, Object?> v in e.value.entries)
-              (
-                current['${e.key.$1.wire}/${e.key.$2}']!,
-                v.key,
-                v.value,
-                SrsEditDraft(e.key.$1, e.key.$2, v.key, v.value),
-              ),
-        ]);
-    if (drafts.isEmpty) return const <SrsFieldEdit>[];
-    return _emit(drafts, stamps: true);
-  });
+              SrsEditDraft(e.key.$1, e.key.$2, v.key, v.value, ifChanged: true),
+        ];
+        if (drafts.isEmpty) return const <SrsFieldEdit>[];
+        return _emit(drafts, stamps: true);
+      });
 
   /// 一组卡片的缓存行（不存在的 ID 跳过）。
   Future<List<SrsCardCacheRow>> cardRows(Iterable<String> cardIds) async {

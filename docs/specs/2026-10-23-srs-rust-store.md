@@ -248,3 +248,14 @@
   副本之间由内核写锁排队。采用 uid 时删旧 uid 改在被删 uid 那份副本的 `retire` 里跑（它最后一段独占区，之后作废）。
 - 收段切片的让出信号（`YieldSignal`）多了一个来源：阻塞在内核写锁上的线程数。以前别的副本的写入靠 Dart 的外层锁排进同一个
   队列、由 Dart 发 `ingest_yield`；现在它们直接到内核来等锁，内核自己看得见。
+
+### 7.6 写入前的预读收进内核（写路径第 14 步，2026-11-12）
+
+- 「值没变就不写」：改字段的入口（`editFields` / `writeEdits` / `writeChange` / `editFieldsBatch` / `createNote`）不再在发命令
+  前把实体的全部修改记录原文读回 Dart 算现值。草稿全发、标 `chg`（Dart `SrsEditDraft.ifChanged`），内核在 `apply` / `change`
+  的那一笔里读现值并筛（`store/sync2/changing.rs`，判据 `registers::write_is_noop`）。判定与落库之间插不进别的写入；
+  同一批里同一个键出现多次按顺序判。筛到一项不剩时命令什么都不落（不占序号、旧版时钟不走、修订号不动），回包的
+  `landed` / `stamps` 仍按原输入的长度给。`import_drafts` 不认 `chg`（导入的草稿攒批时已按现值筛过或标了 `init`）。
+- 旧 Lapis 迁移 / 预演：同一批笔记只物化一次，换类型的计划与补迁用同一份视图（`previewNoteTypeChange(views:)`）。
+- 彻底清除：`purge` 收 `entities`（一批同类实体），一条命令、一笔；Dart 按每 200 条一块发（`kSrsPurgeChunk`）。每个实体
+  仍是「删除 + 清除」两条操作，线格式不变。

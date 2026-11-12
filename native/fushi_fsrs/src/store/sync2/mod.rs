@@ -11,6 +11,7 @@
 //! 只有旧库搬迁那笔跨调用的事务开着时是嵌在里面。
 
 pub(crate) mod change;
+pub(crate) mod changing;
 pub(crate) mod channel;
 pub mod config;
 pub(crate) mod deck_delete;
@@ -2468,6 +2469,8 @@ mod tests_causal;
 #[cfg(test)]
 mod tests_change;
 #[cfg(test)]
+mod tests_changing;
+#[cfg(test)]
 mod tests_channel;
 #[cfg(test)]
 mod tests_copy_migration_bench;
@@ -2835,6 +2838,10 @@ pub(crate) fn import_drafts_on(
     legacy: &LegacyApply<'_>,
 ) -> Result<Value, String> {
     use std::collections::{BTreeMap, HashSet};
+    // 「值没变就不写」（`chg`，changing.rs）是 `apply` / `change` 的：导入的草稿攒批时已经按现值筛过或标了 `init`。
+    if changing::any(items) {
+        return Err("import_drafts: chg items are not accepted".into());
+    }
     let entity_ids: Vec<&str> = items
         .iter()
         .filter(|it| it["e"]["t"].as_str() == Some("entity"))

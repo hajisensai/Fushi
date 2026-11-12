@@ -194,7 +194,7 @@ fn checkpoint_and_purge_persist_local_state_by_the_projection() {
     let bad = dispatch(
         &d,
         json!({"op": "purge", "profile": P, "now": T0 + 2, "caches": caches(&deck),
-               "kind": "note", "entity": NOTE}),
+               "kind": "note", "entities": [NOTE]}),
         None,
     );
     super::tests::mend_local_state(&d.core);
@@ -210,7 +210,7 @@ fn checkpoint_and_purge_persist_local_state_by_the_projection() {
     let r = dispatch(
         &d,
         json!({"op": "purge", "profile": P, "now": T0 + 2, "caches": caches(&deck),
-               "kind": "note", "entity": NOTE}),
+               "kind": "note", "entities": [NOTE]}),
         None,
     )
     .unwrap();

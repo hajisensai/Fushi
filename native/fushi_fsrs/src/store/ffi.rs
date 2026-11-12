@@ -1426,7 +1426,20 @@ fn local_write_body(
                 tick_now: req.get("tickNow").and_then(Value::as_i64),
                 stamps: req.get("stamps") == Some(&Value::Bool(true)),
             };
-            s2::apply_local_on(conn, profile, now, &pre.items, Some(&legacy))?
+            // 标了 `chg` 的修改记录草稿：值没变的不落（store/sync2/changing.rs）。一项不剩就什么都不做——不占序号、
+            // 旧版时钟不走；回包的 `landed` / `stamps` 仍按原输入的长度给。
+            match s2::changing::drop_noops(conn, &mut pre.items)? {
+                None => s2::apply_local_on(conn, profile, now, &pre.items, Some(&legacy))?,
+                Some(kept) => {
+                    let mut v = if pre.items.is_empty() {
+                        serde_json::json!({})
+                    } else {
+                        s2::apply_local_on(conn, profile, now, &pre.items, Some(&legacy))?
+                    };
+                    kept.widen(&mut v, legacy.stamps);
+                    v
+                }
+            }
         }
         // 导入攒的一批草稿（Anki 包、AnkiConnect）：`apply` 的本体，外加「初值」项的去留与「落库前已存在的实体」由内核在
         // 同一笔里判（store/sync2/mod.rs `import_drafts_on`）。
@@ -1441,7 +1454,7 @@ fn local_write_body(
         }
         // 结构性改动（更改笔记类型、删除重复模板、旧 Lapis 迁移）：还原点 + 一批修改记录（store/sync2/change.rs）；带
         // `move` 时 [local_write] 在缓存刷新之后接着做移牌组那一段。
-        "change" => s2::change::change_on(conn, profile, now, req, &pre.items)?,
+        "change" => s2::change::change_on(conn, profile, now, req, &mut pre.items)?,
         // 条件写笔记字段（批量改字段的落计划 / 撤销）：比对现值与写入在一笔里（store/sync2/note_fields_if.rs）。
         "note_fields_if" => {
             s2::note_fields_if::note_fields_if_on(conn, profile, now, req, &pre.items)?
@@ -1470,12 +1483,23 @@ fn local_write_body(
                 &s2::resolve_bodies(kind, &entity, delete, now),
             )?
         }
-        "purge" => s2::append_on(
-            conn,
-            profile,
-            now,
-            &s2::purge_bodies(s("kind")?, s("entity")?, now)?,
-        )?,
+        // 彻底清除一批同类实体：每个实体仍是「删除 + 清除」两条操作，按输入顺序，一笔落下（逐个发时每个实体一笔
+        // 事务、一次缓存刷新、一次本机状态行）。不存在 / 已清除过的 ID 照常追加（清除标记幂等，semantics.rs
+        // `purge_entity`）。
+        "purge" => {
+            let kind = s("kind")?;
+            let entities = req
+                .get("entities")
+                .and_then(Value::as_array)
+                .filter(|e| !e.is_empty())
+                .ok_or("purge: missing entities")?;
+            let mut bodies = Vec::with_capacity(entities.len() * 2);
+            for e in entities {
+                let e = e.as_str().ok_or("purge: entity is not a string")?;
+                bodies.extend(s2::purge_bodies(kind, e, now)?);
+            }
+            s2::append_on(conn, profile, now, &bodies)?
+        }
         "checkpoint" => s2::append_on(
             conn,
             profile,
