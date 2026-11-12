@@ -19,7 +19,7 @@ const LIST_PAGE = 50;
 /** @returns {Promise<string | null>} */
 async function savedToken() {
   const t = await fushi.credentials.get('token');
-  return t && t.trim() ? t.trim() : null;
+  return t?.trim() ? t.trim() : null;
 }
 
 /** @returns {Promise<string>} the saved token; throws unauthorized: when signed out. */
@@ -80,6 +80,38 @@ async function store(token, user, name) {
   return { state: /** @type {'done'} */ ('done'), account: name ? { loggedIn: true, name } : { loggedIn: true } };
 }
 
+/**
+ * The pasted token, checked against /v0/me before it is stored.
+ * @param {{ inputs?: { [fieldId: string]: string } }} args @returns {Promise<FushiTracking.Challenge>}
+ */
+async function submitToken(args) {
+  const token = (args.inputs?.token ?? '').trim();
+  if (!token) return tokenForm(`Paste the token first. ${HELP}`);
+  /** @type {any} */
+  let me;
+  try {
+    me = (await api('GET', '/v0/me', { token })).json;
+  } catch (e) {
+    const msg = /** @type {Error} */ (e).message;
+    if (msg.startsWith('unauthorized:')) return tokenForm(`Bangumi did not accept that token. Copy it again. ${HELP}`);
+    if (msg.startsWith('rate_limited:')) return tokenForm('Bangumi is busy right now. Try again in a minute.');
+    return tokenForm(`Could not reach Bangumi (${msg}). Try again.`);
+  }
+  const user = str(me?.username);
+  if (!user) return tokenForm(`Bangumi did not accept that token. Copy it again. ${HELP}`);
+  return store(token, user, str(me?.nickname) || user);
+}
+
+/**
+ * The host moves a token saved by Fushi's former built-in Bangumi: stored without a network check.
+ * @param {{ inputs?: { [fieldId: string]: string } }} args
+ */
+async function importToken(args) {
+  const token = (args.inputs?.token ?? '').trim();
+  if (!token) throw new Error('Nothing to import.');
+  return store(token, '', (args.inputs?.name ?? '').trim());
+}
+
 /** @type {FushiTracking.Plugin['login']} */
 async function login(args) {
   switch (args.op) {
@@ -87,31 +119,12 @@ async function login(args) {
       return { methods: [{ id: 'token', type: 'form', label: 'Sign in with an access token' }] };
     case 'begin':
       return tokenForm(HELP);
-    case 'submit': {
-      const token = (args.inputs?.token ?? '').trim();
-      if (!token) return tokenForm(`Paste the token first. ${HELP}`);
-      /** @type {any} */
-      let me;
-      try {
-        me = (await api('GET', '/v0/me', { token })).json;
-      } catch (e) {
-        const msg = /** @type {Error} */ (e).message;
-        if (msg.startsWith('unauthorized:')) return tokenForm(`Bangumi did not accept that token. Copy it again. ${HELP}`);
-        if (msg.startsWith('rate_limited:')) return tokenForm('Bangumi is busy right now. Try again in a minute.');
-        return tokenForm(`Could not reach Bangumi (${msg}). Try again.`);
-      }
-      const user = str(me?.username);
-      if (!user) return tokenForm(`Bangumi did not accept that token. Copy it again. ${HELP}`);
-      return store(token, user, str(me?.nickname) || user);
-    }
-    case 'import': {
-      // The host moves a token saved by Fushi's former built-in Bangumi: stored without a network check.
-      const token = (args.inputs?.token ?? '').trim();
-      if (!token) throw new Error('Nothing to import.');
-      return store(token, '', (args.inputs?.name ?? '').trim());
-    }
+    case 'submit':
+      return submitToken(args);
+    case 'import':
+      return importToken(args);
     case 'logout':
-      for (const k of ['token', 'username', 'name']) await fushi.credentials.remove(k);
+      await Promise.all(['token', 'username', 'name'].map((k) => fushi.credentials.remove(k)));
       return null;
     default:
       throw new Error('Unsupported sign-in step.');
@@ -271,7 +284,7 @@ async function trackingList({ kind, status, offset }) {
   for (const c of data) {
     const subject = toSubject(c?.subject, kind);
     const itemStatus = TYPE_TO_STATUS[int(c?.type)];
-    if (!subject || subject.kind !== kind || !itemStatus) continue;
+    if (subject?.kind !== kind || !itemStatus) continue;
     /** @type {FushiTracking.ListItem} */
     const item = { subject, status: itemStatus, progress: int(c.ep_status) };
     if (kind !== 'anime' && kind !== 'game') item.progressVolume = int(c.vol_status);

@@ -31,7 +31,10 @@ class MemoryStore {
   clear() {
     this.data = {};
   }
-  save() {}
+  save() {
+    // The runner calls save() after every change to persist its on-disk dev store; this store lives only in
+    // memory for the length of a test, so there is nothing to write.
+  }
 }
 
 /// A fixture answer: status + JSON body.

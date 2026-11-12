@@ -19,6 +19,13 @@ export const CAPS = {
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const posInt = (v) => Number.isInteger(v) && v > 0;
 const codePoints = (s) => [...s].length;
+const present = (v) => v !== undefined && v !== null;
+
+const SUBJECT_FIELDS = new Set(['id', 'name', 'kind', 'titles', 'authors', 'totalEpisodes', 'totalChapters', 'finalVolume', 'finished', 'singleVolume', 'linkedIds']);
+const COUNT_FIELDS = ['totalEpisodes', 'totalChapters', 'finalVolume'];
+const GAME_IGNORED_FIELDS = ['totalEpisodes', 'totalChapters', 'finalVolume', 'linkedIds'];
+const LOGIN_OPS = new Set(['methods', 'begin', 'poll', 'submit', 'logout', 'import']);
+const CHALLENGE_STATES = new Set(['pending', 'done', 'failed']);
 
 class Report {
   constructor(manifest, policy) {
@@ -71,6 +78,21 @@ class Report {
       this.warn(path, 'not an object — dropped');
       return false;
     }
+    if (!this.subjectRequired(path, s, kind)) return false;
+    this.textList(path, s.titles, 'titles', CAPS.titles);
+    this.textList(path, s.authors, 'authors', CAPS.authors);
+    for (const f of COUNT_FIELDS) this.count(path, s[f], f);
+    this.subjectFlags(path, s);
+    if (s.kind === 'game') for (const f of GAME_IGNORED_FIELDS) if (s[f] !== undefined) this.warn(path, `${f} is ignored for a game`);
+    if (present(s.linkedIds)) this.linkedIds(path, s);
+    for (const k of Object.keys(s)) {
+      if (!SUBJECT_FIELDS.has(k)) this.warn(path, `unknown field "${k}" — ignored`);
+    }
+    return true;
+  }
+
+  /// id, name and kind: without any of them the host drops the subject. Reports every problem.
+  subjectRequired(path, s, kind) {
     let keep = true;
     if (!posInt(s.id)) {
       const hint = typeof s.id === 'string' && /^\d+$/.test(s.id) ? ' (it is a string: use Number(x))' : '';
@@ -83,43 +105,35 @@ class Report {
     }
     if (!KNOWN_TRACKING_KINDS.includes(s.kind)) {
       this.warn(path, `kind must be one of ${KNOWN_TRACKING_KINDS.join(', ')} (got ${JSON.stringify(s.kind)}) — dropped`);
-      keep = false;
-    } else {
-      const declared = this.manifest.tracking?.kinds ?? [];
-      if (declared.length && !declared.includes(s.kind)) this.warn(path, `kind "${s.kind}" is not in manifest tracking.kinds [${declared.join(', ')}]`);
-      if (kind && s.kind !== kind) this.warn(path, `kind "${s.kind}" differs from the requested kind "${kind}"`);
+      return false;
     }
-    if (!keep) return false;
-    this.textList(path, s.titles, 'titles', CAPS.titles);
-    this.textList(path, s.authors, 'authors', CAPS.authors);
-    for (const f of ['totalEpisodes', 'totalChapters', 'finalVolume']) this.count(path, s[f], f);
-    if (s.finished !== undefined && s.finished !== null && typeof s.finished !== 'boolean') this.warn(path, 'finished must be a boolean — ignored');
-    if (s.singleVolume !== undefined && s.singleVolume !== null && typeof s.singleVolume !== 'boolean') this.warn(path, 'singleVolume must be a boolean — ignored');
+    const declared = this.manifest.tracking?.kinds ?? [];
+    if (declared.length && !declared.includes(s.kind)) this.warn(path, `kind "${s.kind}" is not in manifest tracking.kinds [${declared.join(', ')}]`);
+    if (kind && s.kind !== kind) this.warn(path, `kind "${s.kind}" differs from the requested kind "${kind}"`);
+    return keep;
+  }
+
+  subjectFlags(path, s) {
+    if (present(s.finished) && typeof s.finished !== 'boolean') this.warn(path, 'finished must be a boolean — ignored');
+    if (present(s.singleVolume) && typeof s.singleVolume !== 'boolean') this.warn(path, 'singleVolume must be a boolean — ignored');
     if (s.singleVolume === true && s.kind !== 'manga' && s.kind !== 'novel') this.warn(path, 'singleVolume is only read for manga and novels — ignored');
-    if (s.kind === 'game') for (const f of ['totalEpisodes', 'totalChapters', 'finalVolume', 'linkedIds']) if (s[f] !== undefined) this.warn(path, `${f} is ignored for a game`);
-    if (s.linkedIds !== undefined && s.linkedIds !== null) {
-      if (!isObj(s.linkedIds)) this.warn(path, 'linkedIds must be an object { idType: positive integer } — ignored');
-      else {
-        const good = [];
-        for (const [k, v] of Object.entries(s.linkedIds)) {
-          if (!posInt(v)) {
-            this.warn(`${path}.linkedIds`, `${k}: ${JSON.stringify(v)} is not a positive integer — dropped`);
-            continue;
-          }
-          if (!SITE_ID_PATTERN.test(k)) this.warn(`${path}.linkedIds`, `key "${k}" is not "mal" or a siteId ([a-z0-9]{2,32}); no site will ever look it up`);
-          good.push(k);
-        }
-        if (good.length > CAPS.linkedIds) this.warn(`${path}.linkedIds`, `${good.length} ids; the host keeps at most ${CAPS.linkedIds}`);
-        const own = this.manifest.tracking?.siteId;
-        if (own && Object.hasOwn(s.linkedIds, own) && s.linkedIds[own] !== s.id) this.warn(`${path}.linkedIds`, `"${own}" is this site's own siteId but differs from id`);
+  }
+
+  linkedIds(path, s) {
+    if (!isObj(s.linkedIds)) return this.warn(path, 'linkedIds must be an object { idType: positive integer } — ignored');
+    const p = `${path}.linkedIds`;
+    const good = [];
+    for (const [k, v] of Object.entries(s.linkedIds)) {
+      if (!posInt(v)) {
+        this.warn(p, `${k}: ${JSON.stringify(v)} is not a positive integer — dropped`);
+        continue;
       }
+      if (!SITE_ID_PATTERN.test(k)) this.warn(p, `key "${k}" is not "mal" or a siteId ([a-z0-9]{2,32}); no site will ever look it up`);
+      good.push(k);
     }
-    for (const k of Object.keys(s)) {
-      if (!['id', 'name', 'kind', 'titles', 'authors', 'totalEpisodes', 'totalChapters', 'finalVolume', 'finished', 'singleVolume', 'linkedIds'].includes(k)) {
-        this.warn(path, `unknown field "${k}" — ignored`);
-      }
-    }
-    return true;
+    if (good.length > CAPS.linkedIds) this.warn(p, `${good.length} ids; the host keeps at most ${CAPS.linkedIds}`);
+    const own = this.manifest.tracking?.siteId;
+    if (own && Object.hasOwn(s.linkedIds, own) && s.linkedIds[own] !== s.id) this.warn(p, `"${own}" is this site's own siteId but differs from id`);
   }
 
   items(path, v, { max, kind } = {}) {
@@ -173,21 +187,26 @@ class Report {
 
   challenge(path, c) {
     if (!isObj(c)) return this.error(path, 'login must return a Challenge object');
-    if (!['pending', 'done', 'failed'].includes(c.state)) this.error(path, `state must be pending | done | failed (got ${JSON.stringify(c.state)})`);
-    if (c.session !== undefined && c.session !== null && typeof c.session !== 'string') this.warn(path, 'session must be a string (opaque, passed back verbatim)');
-    if (c.message !== undefined && c.message !== null && typeof c.message !== 'string') this.warn(path, 'message must be a string — ignored');
+    if (!CHALLENGE_STATES.has(c.state)) this.error(path, `state must be pending | done | failed (got ${JSON.stringify(c.state)})`);
+    this.challengeExtras(path, c);
+    this.appUrl(path, c.appUrl);
+    if (c.state === 'pending') {
+      if (isObj(c.form)) this.form(`${path}.form`, c.form);
+      else this.error(path, 'a pending challenge needs a form (the tracking host renders nothing else)');
+    } else if (c.form !== undefined) this.warn(path, `form is ignored when state is ${c.state}`);
+    if (c.state === 'done') {
+      if (isObj(c.account)) this.account(`${path}.account`, c.account);
+      else this.warn(path, 'state=done should carry account { loggedIn: true, name? }');
+    }
+  }
+
+  /// Optional challenge fields the tracking host reads loosely or not at all.
+  challengeExtras(path, c) {
+    if (present(c.session) && typeof c.session !== 'string') this.warn(path, 'session must be a string (opaque, passed back verbatim)');
+    if (present(c.message) && typeof c.message !== 'string') this.warn(path, 'message must be a string — ignored');
     if (c.qr !== undefined) this.warn(path, 'qr is not rendered by the tracking host (v1 renders form sign-in only)');
     if (c.web !== undefined) this.warn(path, 'web is not rendered by the tracking host (v1 renders form sign-in only)');
     if (c.pollMs !== undefined) this.warn(path, 'pollMs is unused: the tracking host never polls');
-    this.appUrl(path, c.appUrl);
-    if (c.state === 'pending') {
-      if (!isObj(c.form)) this.error(path, 'a pending challenge needs a form (the tracking host renders nothing else)');
-      else this.form(`${path}.form`, c.form);
-    } else if (c.form !== undefined) this.warn(path, `form is ignored when state is ${c.state}`);
-    if (c.state === 'done') {
-      if (!isObj(c.account)) this.warn(path, 'state=done should carry account { loggedIn: true, name? }');
-      else this.account(`${path}.account`, c.account);
-    }
   }
 
   form(path, f) {
@@ -218,109 +237,133 @@ class Report {
   }
 }
 
+/// Collects warnings about one call's arguments.
+class ArgCheck {
+  constructor(args, manifest) {
+    this.a = isObj(args) ? args : {};
+    this.manifest = manifest;
+    this.kinds = manifest.tracking?.kinds ?? KNOWN_TRACKING_KINDS;
+    this.w = [];
+  }
+  kind(required) {
+    const { a, kinds } = this;
+    if (a.kind === undefined) {
+      if (required) this.w.push(`args.kind is required (one of ${kinds.join(', ')})`);
+    } else if (!kinds.includes(a.kind)) this.w.push(`args.kind ${JSON.stringify(a.kind)} is not in tracking.kinds [${kinds.join(', ')}]`);
+  }
+  id() {
+    if (!posInt(this.a.id)) this.w.push(`args.id must be a positive integer (got ${JSON.stringify(this.a.id)})`);
+  }
+  status() {
+    if (!ENTRY_STATUSES.includes(this.a.status)) this.w.push(`args.status must be one of ${ENTRY_STATUSES.join(', ')}`);
+  }
+}
+
+/// Per-capability argument checks (what the host sends, spec §3).
+const ARG_CHECKS = {
+  trackingSubject(c) {
+    c.id();
+    c.kind(false);
+  },
+  trackingSearch(c) {
+    if (typeof c.a.query !== 'string' || !c.a.query.trim()) c.w.push('args.query must be a non-empty string');
+    c.kind(true);
+  },
+  trackingLookup(c) {
+    const { a } = c;
+    if (typeof a.idType !== 'string' || !SITE_ID_PATTERN.test(a.idType)) c.w.push('args.idType must be "mal" or another site\'s siteId');
+    else if (a.idType === c.manifest.tracking?.siteId) c.w.push('args.idType is this site\'s own siteId; the host looks those up with trackingSubject');
+    c.id();
+    c.kind(false);
+  },
+  trackingEntry(c) {
+    const { a } = c;
+    if (a.op !== 'get' && a.op !== 'set') {
+      c.w.push('args.op must be "get" or "set"');
+      return;
+    }
+    c.id();
+    c.kind(true);
+    if (a.op === 'set') entrySetArgs(c);
+  },
+  trackingList(c) {
+    c.kind(true);
+    c.status();
+    if (!Number.isInteger(c.a.offset) || c.a.offset < 0) c.w.push('args.offset must be a non-negative integer (0 for the first page, then the previous "next")');
+  },
+  login(c) {
+    if (!LOGIN_OPS.has(c.a.op)) c.w.push('args.op must be methods | begin | submit | logout | import');
+    else if (c.a.op === 'poll') c.w.push('the tracking host never calls poll (form sign-in only)');
+  },
+};
+
+function entrySetArgs(c) {
+  const { a } = c;
+  if (typeof a.create !== 'boolean') c.w.push('args.create must be a boolean (true = the host saw no entry)');
+  c.status();
+  for (const f of ['progress', 'progressVolume']) if (a[f] !== undefined && (!Number.isInteger(a[f]) || a[f] < 0)) c.w.push(`args.${f} must be a non-negative integer`);
+  if (a.kind === 'game' && (a.progress !== undefined || a.progressVolume !== undefined)) c.w.push('a game write never carries progress (status only)');
+}
+
 /// Warns about arguments the host would never send, so a local `run` does not test an impossible input.
 export function validateArgs(method, args, manifest) {
-  const w = [];
-  const a = isObj(args) ? args : {};
-  const kinds = manifest.tracking?.kinds ?? KNOWN_TRACKING_KINDS;
-  const kindArg = (required) => {
-    if (a.kind === undefined) {
-      if (required) w.push(`args.kind is required (one of ${kinds.join(', ')})`);
-    } else if (!kinds.includes(a.kind)) w.push(`args.kind ${JSON.stringify(a.kind)} is not in tracking.kinds [${kinds.join(', ')}]`);
-  };
-  const id = () => {
-    if (!posInt(a.id)) w.push(`args.id must be a positive integer (got ${JSON.stringify(a.id)})`);
-  };
-  switch (method) {
-    case 'trackingSubject':
-      id();
-      kindArg(false);
-      break;
-    case 'trackingSearch':
-      if (typeof a.query !== 'string' || !a.query.trim()) w.push('args.query must be a non-empty string');
-      kindArg(true);
-      break;
-    case 'trackingLookup':
-      if (typeof a.idType !== 'string' || !SITE_ID_PATTERN.test(a.idType)) w.push('args.idType must be "mal" or another site\'s siteId');
-      else if (a.idType === manifest.tracking?.siteId) w.push('args.idType is this site\'s own siteId; the host looks those up with trackingSubject');
-      id();
-      kindArg(false);
-      break;
-    case 'trackingEntry':
-      if (a.op !== 'get' && a.op !== 'set') {
-        w.push('args.op must be "get" or "set"');
-        break;
-      }
-      id();
-      kindArg(true);
-      if (a.op === 'set') {
-        if (typeof a.create !== 'boolean') w.push('args.create must be a boolean (true = the host saw no entry)');
-        if (!ENTRY_STATUSES.includes(a.status)) w.push(`args.status must be one of ${ENTRY_STATUSES.join(', ')}`);
-        for (const f of ['progress', 'progressVolume']) if (a[f] !== undefined && (!Number.isInteger(a[f]) || a[f] < 0)) w.push(`args.${f} must be a non-negative integer`);
-        if (a.kind === 'game' && (a.progress !== undefined || a.progressVolume !== undefined)) w.push('a game write never carries progress (status only)');
-      }
-      break;
-    case 'trackingList':
-      kindArg(true);
-      if (!ENTRY_STATUSES.includes(a.status)) w.push(`args.status must be one of ${ENTRY_STATUSES.join(', ')}`);
-      if (!Number.isInteger(a.offset) || a.offset < 0) w.push('args.offset must be a non-negative integer (0 for the first page, then the previous "next")');
-      break;
-    case 'login':
-      if (!['methods', 'begin', 'poll', 'submit', 'logout', 'import'].includes(a.op)) w.push('args.op must be methods | begin | submit | logout | import');
-      else if (a.op === 'poll') w.push('the tracking host never calls poll (form sign-in only)');
-      break;
-  }
-  return w;
+  const c = new ArgCheck(args, manifest);
+  if (Object.hasOwn(ARG_CHECKS, method)) ARG_CHECKS[method](c);
+  return c.w;
 }
+
+function loginMethodsResult(r, p, value) {
+  if (!isObj(value) || !Array.isArray(value.methods) || value.methods.length === 0) {
+    return r.error(p, 'methods must return { methods: [...] } with at least one method');
+  }
+  let forms = 0;
+  value.methods.forEach((m, i) => {
+    const mp = `${p}.methods[${i}]`;
+    if (!isObj(m) || typeof m.id !== 'string' || !m.id || typeof m.label !== 'string' || !m.label) return r.warn(mp, 'needs string id, label and type — dropped');
+    if (m.type === 'form') forms++;
+    else r.warn(mp, `type ${JSON.stringify(m.type)} is not shown: the tracking host renders only "form" methods in v1`);
+  });
+  if (!forms) r.error(p, 'no "form" method: the user has no way to sign in from the tracking host');
+}
+
+function loginResult(r, p, args, value) {
+  switch (args?.op) {
+    case 'methods':
+      return loginMethodsResult(r, p, value);
+    case 'logout':
+      if (present(value)) r.warn(p, 'logout should return null — the value is ignored');
+      return;
+    case 'import':
+      if (!isObj(value) || value.state !== 'done') r.error(p, 'import must return { state: "done", account } (the host moves a saved sign-in, nothing to show)');
+      else if (isObj(value.account)) r.account(`${p}.account`, value.account);
+      return;
+    default:
+      r.challenge(p, value);
+  }
+}
+
+/// Per-capability result checks: (report, path, args, value).
+const RESULT_CHECKS = {
+  account: (r, p, _args, value) => r.account(p, value),
+  login: loginResult,
+  trackingSubject(r, p, args, value) {
+    if (value === null) return;
+    if (!r.subject(p, value, { kind: args?.kind })) r.warn(p, 'the subject is dropped, so the host treats the answer as null (not found)');
+    else if (posInt(args?.id) && value.id !== args.id) r.warn(p, `id ${value.id} differs from the requested id ${args.id}`);
+  },
+  trackingSearch: (r, p, args, value) => r.items(p, value, { max: CAPS.searchItems, kind: args?.kind }),
+  trackingLookup: (r, p, args, value) => r.items(p, value, { max: CAPS.searchItems, kind: args?.kind }),
+  trackingList: (r, p, args, value) => r.listPage(p, value, { kind: args?.kind, status: args?.status, offset: args?.offset }),
+  trackingEntry(r, p, args, value) {
+    if (args?.op === 'set') {
+      if (present(value)) r.warn(p, 'set should return null — the value is ignored');
+    } else if (value !== null) r.entry(p, value);
+  },
+};
 
 /// Validates the return value of [method] called with [args].
 export function validateResult(method, args, value, { manifest, policy }) {
   const r = new Report(manifest, policy);
-  const p = method;
-  switch (method) {
-    case 'account':
-      r.account(p, value);
-      break;
-    case 'login':
-      if (args?.op === 'methods') {
-        if (!isObj(value) || !Array.isArray(value.methods) || value.methods.length === 0) {
-          r.error(p, 'methods must return { methods: [...] } with at least one method');
-          break;
-        }
-        let forms = 0;
-        value.methods.forEach((m, i) => {
-          const mp = `${p}.methods[${i}]`;
-          if (!isObj(m) || typeof m.id !== 'string' || !m.id || typeof m.label !== 'string' || !m.label) return r.warn(mp, 'needs string id, label and type — dropped');
-          if (m.type === 'form') forms++;
-          else r.warn(mp, `type ${JSON.stringify(m.type)} is not shown: the tracking host renders only "form" methods in v1`);
-        });
-        if (!forms) r.error(p, 'no "form" method: the user has no way to sign in from the tracking host');
-      } else if (args?.op === 'logout') {
-        if (value !== null && value !== undefined) r.warn(p, 'logout should return null — the value is ignored');
-      } else if (args?.op === 'import') {
-        if (!isObj(value) || value.state !== 'done') r.error(p, 'import must return { state: "done", account } (the host moves a saved sign-in, nothing to show)');
-        else if (isObj(value.account)) r.account(`${p}.account`, value.account);
-      } else r.challenge(p, value);
-      break;
-    case 'trackingSubject':
-      if (value === null) break;
-      if (!r.subject(p, value, { kind: args?.kind })) r.warn(p, 'the subject is dropped, so the host treats the answer as null (not found)');
-      else if (posInt(args?.id) && value.id !== args.id) r.warn(p, `id ${value.id} differs from the requested id ${args.id}`);
-      break;
-    case 'trackingSearch':
-      r.items(p, value, { max: CAPS.searchItems, kind: args?.kind });
-      break;
-    case 'trackingLookup':
-      r.items(p, value, { max: CAPS.searchItems, kind: args?.kind });
-      break;
-    case 'trackingList':
-      r.listPage(p, value, { kind: args?.kind, status: args?.status, offset: args?.offset });
-      break;
-    case 'trackingEntry':
-      if (args?.op === 'set') {
-        if (value !== null && value !== undefined) r.warn(p, 'set should return null — the value is ignored');
-      } else if (value !== null) r.entry(p, value);
-      break;
-  }
+  if (Object.hasOwn(RESULT_CHECKS, method)) RESULT_CHECKS[method](r, method, args, value);
   return r;
 }

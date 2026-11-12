@@ -4,9 +4,9 @@
 // Every exported function named in manifest.capabilities is called by the app with one args object.
 'use strict';
 
-// TODO: replace with the real API. The host must be listed in manifest.network.domains.
+// Replace with your site's API address. The host must be listed in manifest.network.domains.
 const API = 'https://api.example.com';
-// TODO: the page where a user creates a personal access token (must also be inside network.domains).
+// Replace with your site's page where a user creates a personal access token (must also be inside network.domains).
 const TOKEN_PAGE = 'https://api.example.com/settings/tokens';
 
 /** @returns {Promise<string>} the saved token; throws the "sign in again" error when there is none. */
@@ -39,7 +39,7 @@ async function api(path, { method = 'GET', body, token } = {}) {
   return res.json;
 }
 
-/** @returns {FushiTracking.Subject} TODO: map the site's fields. Ids are positive integers. */
+/** @returns {FushiTracking.Subject} Map your site's fields here. Ids are positive integers. */
 function toSubject(/** @type {any} */ s) {
   return {
     id: Number(s.id),
@@ -86,7 +86,7 @@ async function login(args) {
       if (!t) return tokenForm('Paste a token first.');
       let me;
       try {
-        me = await api('/me', { token: t }); // TODO: the site's "current user" endpoint
+        me = await api('/me', { token: t }); // replace with your site's "current user" endpoint
       } catch (e) {
         return tokenForm(`The token was not accepted (${/** @type {Error} */ (e).message}).`);
       }
@@ -121,8 +121,9 @@ async function trackingSearch({ query, kind }) {
 
 /** @type {FushiTracking.Plugin['trackingLookup']} */
 async function trackingLookup({ idType, id, kind }) {
-  if (idType !== 'mal') return { items: [] }; // TODO: other id spaces the site can map
-  const j = await api(`/works?mal_id=${id}${kind ? `&type=${kind}` : ''}`);
+  if (idType !== 'mal') return { items: [] }; // add the other id spaces your site can map
+  const typeFilter = kind ? `&type=${kind}` : '';
+  const j = await api(`/works?mal_id=${id}${typeFilter}`);
   return { items: (j.results ?? []).map(toSubject) };
 }
 
@@ -138,7 +139,7 @@ async function trackingEntry(args) {
       throw e;
     });
     if (!j) return null;
-    return { status: j.status, progress: j.progress ?? 0, progressVolume: j.volumes ?? undefined }; // TODO: map statuses
+    return { status: j.status, progress: j.progress ?? 0, progressVolume: j.volumes ?? undefined }; // map your site's statuses to Fushi's
   }
   // set: write exactly the given fields; the host already decided (it never lowers progress).
   /** @type {{[k: string]: any}} */

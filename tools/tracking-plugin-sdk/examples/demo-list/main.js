@@ -8,7 +8,7 @@
 const { SUBJECTS, byId } = require('./catalog');
 
 const SITE = 'https://demolist.example.org';
-const STATUSES = ['planned', 'current', 'completed', 'paused', 'dropped', 'repeating'];
+const STATUSES = new Set(['planned', 'current', 'completed', 'paused', 'dropped', 'repeating']);
 
 /** @returns {Promise<string | null>} */
 async function token() {
@@ -105,7 +105,7 @@ async function trackingEntry(args) {
 
   // set: write exactly what the host asked for. The host already decided (it never lowers progress);
   // the plugin must not "improve" the values.
-  if (!STATUSES.includes(args.status)) throw new Error(`Unknown status ${args.status}`);
+  if (!STATUSES.has(args.status)) throw new Error(`Unknown status ${args.status}`);
   if (!current && !args.create) throw new Error('not_found: The entry is no longer on your list.');
   /** @type {FushiTracking.Entry} */
   const next = { ...(current ?? { status: args.status, progress: 0 }), status: args.status };

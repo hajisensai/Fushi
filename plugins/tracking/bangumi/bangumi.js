@@ -16,7 +16,9 @@ const TYPE_TO_STATUS = { 1: 'planned', 2: 'completed', 3: 'current', 4: 'paused'
 
 /** @param {unknown} v @returns {number} a non-negative integer, 0 for anything else */
 function int(v) {
-  const n = typeof v === 'number' ? v : typeof v === 'string' ? Number(v) : NaN;
+  let n = Number.NaN;
+  if (typeof v === 'number') n = v;
+  else if (typeof v === 'string') n = Number(v);
   return Number.isFinite(n) && n >= 0 ? Math.trunc(n) : 0;
 }
 
@@ -62,6 +64,52 @@ async function api(method, path, o = {}) {
 }
 
 /**
+ * A Bangumi book (type 1) is a manga or a novel: the kind asked for decides, else the platform label.
+ * @param {any} s @param {FushiTracking.Kind | undefined} kind @returns {FushiTracking.Kind}
+ */
+function bookKind(s, kind) {
+  if (kind === 'manga' || kind === 'novel') return kind;
+  return str(s.platform).includes('漫画') ? 'manga' : 'novel';
+}
+
+/**
+ * The Fushi kind of a Bangumi subject, or null for types Fushi does not track.
+ * @param {any} s @param {FushiTracking.Kind | undefined} kind @returns {FushiTracking.Kind | null}
+ */
+function kindOf(s, kind) {
+  switch (int(s.type)) {
+    case 2:
+      return 'anime';
+    case 4:
+      return 'game';
+    case 1:
+      return bookKind(s, kind);
+    default:
+      return null;
+  }
+}
+
+/** @param {FushiTracking.Subject} out @param {any} s */
+function addAnimeCounts(out, s) {
+  const eps = int(s.eps) || int(s.total_episodes);
+  if (eps > 0) out.totalEpisodes = eps;
+}
+
+/**
+ * Bangumi fills `volumes` once the work's volume count is known: the built-in provider completed a volume
+ * link only then, and treated a book of at most one volume as one book (finishing it finishes the subject).
+ * @param {FushiTracking.Subject} out @param {any} s
+ */
+function addBookCounts(out, s) {
+  const volumes = int(s.volumes);
+  if (volumes > 0) {
+    out.finalVolume = volumes;
+    out.finished = true;
+  }
+  out.singleVolume = volumes <= 1;
+}
+
+/**
  * Bangumi subject -> Fushi subject of [kind] (the kind asked for decides manga vs novel, as the built-in
  * provider did: Bangumi keeps both in one book type). Null for types Fushi does not track.
  * @param {any} s @param {FushiTracking.Kind | undefined} kind
@@ -70,34 +118,17 @@ async function api(method, path, o = {}) {
 function toSubject(s, kind) {
   if (!s || typeof s !== 'object') return null;
   const id = int(s.id);
-  const type = int(s.type);
   const name = str(s.name);
-  const nameCn = str(s.name_cn);
-  const display = nameCn || name;
+  const display = str(s.name_cn) || name;
   if (!id || !display) return null;
-  /** @type {FushiTracking.Kind} */
-  let k;
-  if (type === 2) k = 'anime';
-  else if (type === 4) k = 'game';
-  else if (type === 1) k = kind === 'manga' || kind === 'novel' ? kind : str(s.platform).includes('漫画') ? 'manga' : 'novel';
-  else return null;
+  const k = kindOf(s, kind);
+  if (!k) return null;
   const titles = [display];
   if (name && name !== display) titles.push(name);
   /** @type {FushiTracking.Subject} */
   const out = { id, name: display, kind: k, titles };
-  if (k === 'anime') {
-    const eps = int(s.eps) || int(s.total_episodes);
-    if (eps > 0) out.totalEpisodes = eps;
-  } else if (k !== 'game') {
-    // Bangumi fills `volumes` once the work's volume count is known: the built-in provider completed a volume
-    // link only then, and treated a book of at most one volume as one book (finishing it finishes the subject).
-    const volumes = int(s.volumes);
-    if (volumes > 0) {
-      out.finalVolume = volumes;
-      out.finished = true;
-    }
-    out.singleVolume = volumes <= 1;
-  }
+  if (k === 'anime') addAnimeCounts(out, s);
+  else if (k !== 'game') addBookCounts(out, s);
   return out;
 }
 

@@ -76,6 +76,13 @@ function loadManifest(dir) {
   }
 }
 
+/// Plugin log lines: errors red, warnings yellow, the rest plain.
+function colorLog(level, line) {
+  if (level === 'error') return c.red(line);
+  if (level === 'warn') return c.yellow(line);
+  return line;
+}
+
 function makeRunner(dir, manifest, flags) {
   return new PluginRunner(dir, manifest, {
     trace: !!flags.trace,
@@ -83,7 +90,7 @@ function makeRunner(dir, manifest, flags) {
     log: (level, msg) => {
       const tag = level === 'trace' ? 'http ' : `${level.padEnd(5)}`;
       const line = `${c.dim('[plugin]')} ${tag} ${msg}`;
-      process.stderr.write((level === 'error' ? c.red(line) : level === 'warn' ? c.yellow(line) : line) + '\n');
+      process.stderr.write(colorLog(level, line) + '\n');
     },
   });
 }
@@ -122,6 +129,49 @@ function show(value, full) {
   console.log(text);
 }
 
+/// Prints how the host reads an error the plugin threw, with hints for the common mistakes.
+function reportThrow(name, e) {
+  const [head, ...rest] = e.message.split('\n');
+  const frames = rest.filter((l) => /^\s+at /.test(l) && !/node:|[\\/]lib[\\/]runner\.mjs|fushi-tracking-plugin\.mjs|prelude\.js/.test(l));
+  const k = classifyError(e.message);
+  const stack = frames.length ? '\n' + c.dim(frames.join('\n')) : '';
+  const line = `${name} threw: ${head}${stack}`;
+  // A prefixed error is a deliberate answer (signed out / rate limited / gone); anything else is a failure.
+  if (k.kind === 'temporary') err(line);
+  else console.log(c.yellow(`THROW ${line}`));
+  note(`host reads this as: ${k.meaning}`);
+  note(`shown to the user: ${JSON.stringify(k.shown)}`);
+  warnThrowShape(name, k);
+  return k;
+}
+
+/// Warnings about how an error was thrown (custom class, non-Error value, a prefix that is almost right).
+function warnThrowShape(name, k) {
+  if (k.errorName && !STRIPPED_ERROR_NAMES.includes(k.errorName)) {
+    warn(`${name}: thrown as a custom ${k.errorName}; the host does not strip "${k.errorName}: ", so the user sees it and no prefix is recognized — throw a plain Error`);
+  } else if (k.errorName && k.errorName !== 'Error') warn(`${name}: thrown as ${k.errorName}; throw new Error('<prefix>: ...') for deliberate errors (a ${k.errorName} usually means a bug)`);
+  if (k.kind !== 'temporary') return;
+  if (!k.errorName) warn(`${name}: a non-Error value was thrown; throw new Error(...) so the message and stack reach the app log`);
+  if (/^(unauthori[sz]ed|rate.?limited|not.?found)\b/i.test(k.message)) {
+    warn(`${name}: the message looks like a prefixed error but is not exactly "unauthorized:", "rate_limited:" or "not_found:" — the host treats it as temporary`);
+  }
+}
+
+/// Prints the validation of a successful call's result. Returns whether the host can use it.
+function reportResult(runner, manifest, method, args, value, { name, started, httpBefore }) {
+  const r = validateResult(method, args, value, { manifest, policy: runner.policy });
+  r.errors.forEach((m) => err(m));
+  r.warnings.slice(0, 30).forEach((m) => warn(m));
+  if (r.warnings.length > 30) warn(`… ${r.warnings.length - 30} more warnings`);
+  const requests = runner.httpCount - httpBefore;
+  const rpm = manifest.tracking.requestsPerMinute;
+  if (requests > rpm) warn(`${name}: ${requests} HTTP requests in one call, more than requestsPerMinute=${rpm}; the host holds the extra requests back and a call gets 60 s in the app, so it can time out (use fewer requests per call)`);
+  if (r.errors.length) return false;
+  const httpNote = requests ? `, ${requests} HTTP` : '';
+  ok(`${name} (${Date.now() - started} ms${httpNote})`);
+  return true;
+}
+
 /// Invokes one capability, validates args + result, prints. Returns { value } on success, { error } when the
 /// plugin threw (classified like the host), or undefined on a validation failure.
 async function call(runner, manifest, method, args, { print = true, full = false, label } = {}) {
@@ -133,38 +183,12 @@ async function call(runner, manifest, method, args, { print = true, full = false
   try {
     value = await runner.invoke(method, args);
   } catch (e) {
-    if (!(e instanceof PluginError)) {
-      err(`${name}: ${e.message}`);
-      return undefined;
-    }
-    const [head, ...rest] = e.message.split('\n');
-    const frames = rest.filter((l) => /^\s+at /.test(l) && !/node:|[\\/]lib[\\/]runner\.mjs|fushi-tracking-plugin\.mjs|prelude\.js/.test(l));
-    const k = classifyError(e.message);
-    const line = `${name} threw: ${head}${frames.length ? '\n' + c.dim(frames.join('\n')) : ''}`;
-    // A prefixed error is a deliberate answer (signed out / rate limited / gone); anything else is a failure.
-    if (k.kind === 'temporary') err(line);
-    else console.log(c.yellow(`THROW ${line}`));
-    note(`host reads this as: ${k.meaning}`);
-    note(`shown to the user: ${JSON.stringify(k.shown)}`);
-    if (k.errorName && !STRIPPED_ERROR_NAMES.includes(k.errorName)) {
-      warn(`${name}: thrown as a custom ${k.errorName}; the host does not strip "${k.errorName}: ", so the user sees it and no prefix is recognized — throw a plain Error`);
-    } else if (k.errorName && k.errorName !== 'Error') warn(`${name}: thrown as ${k.errorName}; throw new Error('<prefix>: ...') for deliberate errors (a ${k.errorName} usually means a bug)`);
-    if (!k.errorName && k.kind === 'temporary') warn(`${name}: a non-Error value was thrown; throw new Error(...) so the message and stack reach the app log`);
-    if (k.kind === 'temporary' && /^(unauthori[sz]ed|rate.?limited|not.?found)\b/i.test(k.message)) {
-      warn(`${name}: the message looks like a prefixed error but is not exactly "unauthorized:", "rate_limited:" or "not_found:" — the host treats it as temporary`);
-    }
-    return { error: k };
+    if (e instanceof PluginError) return { error: reportThrow(name, e) };
+    err(`${name}: ${e.message}`);
+    return undefined;
   }
   if (print) show(value, full);
-  const r = validateResult(method, args, value, { manifest, policy: runner.policy });
-  r.errors.forEach((m) => err(m));
-  r.warnings.slice(0, 30).forEach((m) => warn(m));
-  if (r.warnings.length > 30) warn(`… ${r.warnings.length - 30} more warnings`);
-  const requests = runner.httpCount - httpBefore;
-  const rpm = manifest.tracking.requestsPerMinute;
-  if (requests > rpm) warn(`${name}: ${requests} HTTP requests in one call, more than requestsPerMinute=${rpm}; the host holds the extra requests back and a call gets 60 s in the app, so it can time out (use fewer requests per call)`);
-  if (!r.errors.length) ok(`${name} (${Date.now() - started} ms${requests ? `, ${requests} HTTP` : ''})`);
-  return r.errors.length ? undefined : { value };
+  return reportResult(runner, manifest, method, args, value, { name, started, httpBefore }) ? { value } : undefined;
 }
 
 function prepare(dir, flags) {
@@ -191,36 +215,44 @@ async function cmdRun(dir, method, argsJson, flags) {
   await call(ready.runner, ready.manifest, method, args, { full: flags.full });
 }
 
-async function cmdSmoke(dir, flags) {
-  const { manifest, runner: booted } = checkDir(dir);
-  if (!booted) return;
-  const runner = makeRunner(dir, manifest, flags);
-  runner.boot();
-  const caps = new Set(manifest.capabilities);
-  const kind = flags.kind ?? manifest.tracking.defaultKinds?.[0] ?? manifest.tracking.kinds[0];
-  const opt = { print: false };
-  const a = await call(runner, manifest, 'account', {}, opt);
-  const loggedIn = a?.value?.loggedIn === true;
-  if (a && !loggedIn) note('(signed out — run `login` to test trackingEntry)');
-  await call(runner, manifest, 'login', { op: 'methods', platform: platformName() }, opt);
+/// The subject the smoke tour continues with: --id, else the first usable trackingSearch hit.
+async function smokeSubject(runner, manifest, flags, kind, opt) {
   let subject = null;
   if (flags.id) subject = { id: Number(flags.id), kind };
-  if (caps.has('trackingSearch')) {
+  if (manifest.capabilities.includes('trackingSearch')) {
     const q = flags.query ?? 'a';
     const s = await call(runner, manifest, 'trackingSearch', { query: q, kind }, opt);
     const hit = s?.value?.items?.find((x) => Number.isInteger(x?.id) && x.id > 0);
     if (s?.value && !hit) warn(`trackingSearch "${q}" (${kind}) found nothing usable (try --query)`);
     subject ??= hit ?? null;
   }
+  return subject;
+}
+
+/// trackingLookup with the first linked id of another site, when the subject has one.
+async function smokeLookup(runner, manifest, subject, kind, opt) {
+  const linked = subject?.linkedIds ?? {};
+  const [idType, id] = Object.entries(linked).find(([k]) => k !== manifest.tracking.siteId) ?? [];
+  if (idType) await call(runner, manifest, 'trackingLookup', { idType, id, kind }, opt);
+  else note('(no linkedIds on the subject; skipped trackingLookup — try `run ... trackingLookup` by hand)');
+}
+
+async function cmdSmoke(dir, flags) {
+  const { manifest, runner: booted } = checkDir(dir);
+  if (!booted) return;
+  const runner = makeRunner(dir, manifest, flags);
+  runner.boot();
+  const kind = flags.kind ?? manifest.tracking.defaultKinds?.[0] ?? manifest.tracking.kinds[0];
+  const opt = { print: false };
+  const a = await call(runner, manifest, 'account', {}, opt);
+  const loggedIn = a?.value?.loggedIn === true;
+  if (a && !loggedIn) note('(signed out — run `login` to test trackingEntry)');
+  await call(runner, manifest, 'login', { op: 'methods', platform: platformName() }, opt);
+  const subject = await smokeSubject(runner, manifest, flags, kind, opt);
   if (!subject) return warn('no subject to continue with: pass --id <subject id> (or declare trackingSearch and pass --query)');
   const got = await call(runner, manifest, 'trackingSubject', { id: subject.id, kind }, opt);
   if (got?.value === null) warn(`trackingSubject ${subject.id} returned null`);
-  const linked = got?.value?.linkedIds ?? {};
-  if (caps.has('trackingLookup')) {
-    const [idType, id] = Object.entries(linked).find(([k]) => k !== manifest.tracking.siteId) ?? [];
-    if (idType) await call(runner, manifest, 'trackingLookup', { idType, id, kind }, opt);
-    else note('(no linkedIds on the subject; skipped trackingLookup — try `run ... trackingLookup` by hand)');
-  }
+  if (manifest.capabilities.includes('trackingLookup')) await smokeLookup(runner, manifest, got?.value, kind, opt);
   if (loggedIn) {
     const e = await call(runner, manifest, 'trackingEntry', { op: 'get', id: subject.id, kind }, opt);
     if (e?.value === null) note(`(subject ${subject.id} is not on the list)`);
@@ -232,13 +264,9 @@ function platformName() {
   return { win32: 'windows', darwin: 'macos', linux: 'linux' }[process.platform] ?? 'linux';
 }
 
-async function cmdLogin(dir, flags) {
-  const { manifest, runner: booted } = checkDir(dir, { quiet: true });
-  if (!booted) return;
-  const runner = makeRunner(dir, manifest, flags);
-  runner.boot();
-  const platform = platformName();
-  // Line queue instead of rl.question: works for a terminal and for piped answers (agents / scripts).
+/// A prompt reader over stdin. A line queue instead of rl.question: works for a terminal and for piped
+/// answers (agents / scripts). Returns { ask(prompt) => Promise<string>, close() }.
+function lineReader() {
   const rl = readline.createInterface({ input: process.stdin });
   const lines = [];
   const waiters = [];
@@ -248,34 +276,73 @@ async function cmdLogin(dir, flags) {
     process.stdout.write(prompt);
     return lines.length ? Promise.resolve(lines.shift()) : new Promise((r) => waiters.push(r));
   };
+  return { ask, close: () => rl.close() };
+}
+
+/// Lets the user pick one of [options] by number (the first when there is only one or the answer is unusable).
+async function choose(ask, options, prompt) {
+  if (options.length <= 1) return options[0];
+  return options[(Number(await ask(prompt)) || 1) - 1] ?? options[0];
+}
+
+function fieldPrompt(f) {
+  const placeholder = f.placeholder ? ` (${f.placeholder})` : '';
+  const preset = f.value ? ` [${f.value}]` : '';
+  return `  ${f.label}${placeholder}${preset}: `;
+}
+
+/// Asks each form field in turn (one prompt after the other); an empty answer keeps a preset value.
+async function askFields(ask, fields) {
+  const inputs = {};
+  let asked = Promise.resolve();
+  for (const f of fields) {
+    asked = asked.then(async () => {
+      const v = await ask(fieldPrompt(f));
+      inputs[f.id] = v === '' && typeof f.value === 'string' ? f.value : v;
+    });
+  }
+  await asked;
+  return inputs;
+}
+
+/// Shows a pending form challenge, submits the answers and continues with the next challenge until the
+/// plugin stops asking. Returns the last challenge (or undefined when a call failed).
+async function answerChallenges(ctx, ch) {
+  if (ch?.state !== 'pending' || !ch.form) return ch;
+  const { runner, manifest, ask, method, platform } = ctx;
+  if (ch.message) console.log(`  ${ch.message}`);
+  if (ch.appUrl) console.log(`  [Open site] ${ch.appUrl}`);
+  const inputs = await askFields(ask, ch.form.fields ?? []);
+  const actions = ch.form.actions ?? [];
+  actions.forEach((a, i) => console.log(`  ${i + 1}. ${a.label}${a.primary ? ' (primary)' : ''}`));
+  const action = await choose(ask, actions, '  Action: ');
+  const args = { op: 'submit', method, session: ch.session, platform, action: action?.id, inputs };
+  const r = await call(runner, manifest, 'login', args, { print: false, label: 'login submit' });
+  return answerChallenges(ctx, r?.value);
+}
+
+async function cmdLogin(dir, flags) {
+  const { manifest, runner: booted } = checkDir(dir, { quiet: true });
+  if (!booted) return;
+  const runner = makeRunner(dir, manifest, flags);
+  runner.boot();
+  const platform = platformName();
+  const reader = lineReader();
   try {
     const m = await call(runner, manifest, 'login', { op: 'methods', platform }, { print: false });
     const methods = (m?.value?.methods ?? []).filter((x) => x && typeof x.id === 'string' && x.type === 'form');
     if (!methods.length) return;
     methods.forEach((x, i) => console.log(`  ${i + 1}. ${x.label}${x.description ? ' — ' + x.description : ''}`));
-    const pick = methods.length > 1 ? (methods[(Number(await ask('Choose a method: ')) || 1) - 1] ?? methods[0]) : methods[0];
-    let r = await call(runner, manifest, 'login', { op: 'begin', method: pick.id, platform }, { print: false });
-    let ch = r?.value;
-    while (ch && ch.state === 'pending' && ch.form) {
-      if (ch.message) console.log(`  ${ch.message}`);
-      if (ch.appUrl) console.log(`  [Open site] ${ch.appUrl}`);
-      const inputs = {};
-      for (const f of ch.form.fields ?? []) {
-        const v = await ask(`  ${f.label}${f.placeholder ? ` (${f.placeholder})` : ''}${f.value ? ` [${f.value}]` : ''}: `);
-        inputs[f.id] = v === '' && typeof f.value === 'string' ? f.value : v;
-      }
-      const actions = ch.form.actions ?? [];
-      actions.forEach((a, i) => console.log(`  ${i + 1}. ${a.label}${a.primary ? ' (primary)' : ''}`));
-      const action = actions.length > 1 ? (actions[(Number(await ask('  Action: ')) || 1) - 1] ?? actions[0]) : actions[0];
-      r = await call(runner, manifest, 'login', { op: 'submit', method: pick.id, session: ch.session, platform, action: action?.id, inputs }, { print: false, label: 'login submit' });
-      ch = r?.value;
-    }
+    const pick = await choose(reader.ask, methods, 'Choose a method: ');
+    const r = await call(runner, manifest, 'login', { op: 'begin', method: pick.id, platform }, { print: false });
+    const ch = await answerChallenges({ runner, manifest, ask: reader.ask, method: pick.id, platform }, r?.value);
     if (ch?.state === 'done') {
-      ok(`signed in${ch.account?.name ? ' as ' + ch.account.name : ''} (credentials saved in ${path.join(dir, '.fushi-dev')})`);
+      const as = ch.account?.name ? ' as ' + ch.account.name : '';
+      ok(`signed in${as} (credentials saved in ${path.join(dir, '.fushi-dev')})`);
       await call(runner, manifest, 'account', {}, {});
     } else if (ch) err(`login ${ch.state}: ${ch.message ?? ''}`);
   } finally {
-    rl.close();
+    reader.close();
   }
 }
 
@@ -334,7 +401,8 @@ async function main() {
       if (!pos[0]) return err('usage: init <dir>');
       return cmdInit(pos[0], flags);
     case 'check':
-      return void checkDir(pos[0] ?? '.');
+      checkDir(pos[0] ?? '.');
+      return;
     case 'run':
       if (!pos[1]) return err('usage: run <dir> <capability> [argsJson]');
       return cmdRun(pos[0], pos[1], pos[2], flags);
@@ -363,8 +431,10 @@ async function main() {
   }
 }
 
-main()
-  .catch((e) => err(e.message))
-  .finally(() => {
-    process.exitCode = hadError || (hadWarning && process.argv.includes('--strict')) ? 1 : 0;
-  });
+try {
+  await main();
+} catch (e) {
+  err(e.message);
+} finally {
+  process.exitCode = hadError || (hadWarning && process.argv.includes('--strict')) ? 1 : 0;
+}

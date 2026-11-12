@@ -63,7 +63,7 @@ export const ERROR_PREFIXES = {
   'not_found:': 'not found — permanent for this item; the app stops asking about it',
 };
 
-const MANIFEST_FIELDS = [
+const MANIFEST_FIELDS = new Set([
   'schema',
   'kind',
   'id',
@@ -79,9 +79,9 @@ const MANIFEST_FIELDS = [
   'permissions',
   'network',
   'tracking',
-];
+]);
 
-const TRACKING_FIELDS = ['siteId', 'siteHost', 'kinds', 'defaultKinds', 'modes', 'requestsPerMinute', 'subjectUrl'];
+const TRACKING_FIELDS = new Set(['siteId', 'siteHost', 'kinds', 'defaultKinds', 'modes', 'requestsPerMinute', 'subjectUrl']);
 
 /// manifest.rs `check_subject_url`: https, host = siteHost or a subdomain, `{id}` present, only `{id}` /
 /// `{kind}` placeholders, at most 300 bytes, no whitespace. Returns the problem or null. Applied to the
@@ -95,162 +95,213 @@ export function subjectUrlProblem(url, siteHost) {
   if (!url.includes('{id}')) return 'missing {id}';
   const stripped = url.replaceAll('{id}', '').replaceAll('{kind}', '');
   if (/[{}]/.test(stripped) || host.includes('{')) return 'only {id} and {kind} placeholders, never in the host';
-  if (/[\s\x00-\x1f\x7f]/.test(url)) return 'contains whitespace or control characters';
+  if (/[\s\x00-\x08\x0e-\x1f\x7f]/.test(url)) return 'contains whitespace or control characters';
   return null;
 }
 
 /// Non-fatal notes from the last validateManifest call (e.g. a host-pinned siteId).
 export const warnings = [];
 
-/// Returns a list of error strings (empty = valid). Mirrors Manifest::validate + validate_tracking in
-/// manifest.rs (the host stops at the first error; this reports all of them).
-export function validateManifest(m) {
-  warnings.length = 0;
-  const errors = [];
-  const fail = (msg) => errors.push(msg);
-  if (m === null || typeof m !== 'object' || Array.isArray(m)) return ['manifest.json must be a JSON object'];
-  for (const k of Object.keys(m)) {
-    if (!MANIFEST_FIELDS.includes(k)) fail(`unknown manifest field "${k}" (unknown fields are rejected)`);
+/// Collects the problems of one validateManifest call.
+class ManifestCheck {
+  constructor() {
+    this.errors = [];
   }
-  if (m.kind === undefined || m.kind === 'music') {
-    fail('"kind" must be "tracking" (absent or "music" means a music plugin: build those with tools/music-plugin-sdk)');
-  } else if (m.kind !== PLUGIN_KIND) {
-    fail(`unknown plugin "kind" ${JSON.stringify(m.kind)} (a tracking plugin declares "kind": "tracking")`);
+  fail(msg) {
+    this.errors.push(msg);
   }
-  for (const k of ['schema', 'id', 'name', 'version', 'api', 'entry']) {
-    if (m[k] === undefined) fail(`missing required field "${k}"`);
-  }
-  for (const k of ['author', 'description', 'homepage']) {
-    if (m[k] !== undefined && m[k] !== null && typeof m[k] !== 'string') fail(`"${k}" must be a string`);
-  }
-  const arr = (obj, k, label = k) => {
+  /// `obj[k]` as a string array ([] when absent; reported and [] when not an array of strings).
+  strings(obj, k, label = k) {
     if (obj[k] === undefined) return [];
     if (!Array.isArray(obj[k]) || obj[k].some((x) => typeof x !== 'string')) {
-      fail(`"${label}" must be an array of strings`);
+      this.fail(`"${label}" must be an array of strings`);
       return [];
     }
     return obj[k];
-  };
-  const caps = arr(m, 'capabilities');
-  const perms = arr(m, 'permissions');
-  const searchTypes = arr(m, 'searchTypes');
-  const network = m.network ?? {};
-  if (typeof network !== 'object' || Array.isArray(network)) fail('"network" must be an object');
-  for (const k of Object.keys(network)) {
-    if (k !== 'domains' && k !== 'methods') fail(`unknown field network.${k}`);
   }
-  const domains = Array.isArray(network.domains) ? network.domains : [];
-  const methods = Array.isArray(network.methods) ? network.methods : [];
+  /// Every value is in [list] and none repeats.
+  known(label, values, list) {
+    for (const v of values) if (!list.includes(v)) this.fail(`unknown ${label} "${v}" (allowed: ${list.join(', ') || 'none'})`);
+    if (new Set(values).size !== values.length) this.fail(`duplicate ${label}`);
+  }
+}
 
-  if (m.schema !== 1) fail('"schema" must be 1');
-  if (!validId(m.id)) fail(`invalid "id" ${JSON.stringify(m.id)}: 2-64 chars of a-z 0-9 . _ -, starting and ending with a letter/digit, no ".."`);
-  if (typeof m.name !== 'string' || m.name.trim() === '' || [...m.name].length > 64) fail('"name" must be 1-64 characters');
-  if (typeof m.version !== 'string' || !/^\d{1,6}\.\d{1,6}\.\d{1,6}$/.test(m.version)) fail(`"version" must be X.Y.Z (got ${JSON.stringify(m.version)})`);
-  if (!Number.isInteger(m.api) || m.api < 1 || m.api > HOST_API_VERSION) fail(`"api" must be 1..${HOST_API_VERSION}`);
+/// Returns a list of error strings (empty = valid). Mirrors Manifest::validate + validate_tracking in
+/// manifest.rs (the host stops at the first error; this reports all of them, in this order).
+export function validateManifest(m) {
+  warnings.length = 0;
+  if (m === null || typeof m !== 'object' || Array.isArray(m)) return ['manifest.json must be a JSON object'];
+  const check = new ManifestCheck();
+  checkFieldsAndKind(check, m);
+  const caps = check.strings(m, 'capabilities');
+  const perms = check.strings(m, 'permissions');
+  const searchTypes = check.strings(m, 'searchTypes');
+  const network = checkNetworkShape(check, m);
+  checkIdentity(check, m);
+  checkCapabilities(check, caps);
+  checkPermissions(check, perms);
+  if ((network.domains.length > 0) !== perms.includes('network')) check.fail('the "network" permission and a non-empty network.domains must be declared together');
+  if (searchTypes.length > 0) check.fail('"searchTypes" must be absent or empty in a tracking plugin');
+  checkTracking(check, m.tracking);
+  checkNetworkRules(check, network);
+  return check.errors;
+}
+
+function checkFieldsAndKind(check, m) {
+  for (const k of Object.keys(m)) {
+    if (!MANIFEST_FIELDS.has(k)) check.fail(`unknown manifest field "${k}" (unknown fields are rejected)`);
+  }
+  if (m.kind === undefined || m.kind === 'music') {
+    check.fail('"kind" must be "tracking" (absent or "music" means a music plugin: build those with tools/music-plugin-sdk)');
+  } else if (m.kind !== PLUGIN_KIND) {
+    check.fail(`unknown plugin "kind" ${JSON.stringify(m.kind)} (a tracking plugin declares "kind": "tracking")`);
+  }
+  for (const k of ['schema', 'id', 'name', 'version', 'api', 'entry']) {
+    if (m[k] === undefined) check.fail(`missing required field "${k}"`);
+  }
+  for (const k of ['author', 'description', 'homepage']) {
+    if (m[k] !== undefined && m[k] !== null && typeof m[k] !== 'string') check.fail(`"${k}" must be a string`);
+  }
+}
+
+/// Returns { domains, methods } (arrays, empty when absent or malformed).
+function checkNetworkShape(check, m) {
+  const network = m.network ?? {};
+  if (typeof network !== 'object' || Array.isArray(network)) check.fail('"network" must be an object');
+  for (const k of Object.keys(network)) {
+    if (k !== 'domains' && k !== 'methods') check.fail(`unknown field network.${k}`);
+  }
+  return {
+    domains: Array.isArray(network.domains) ? network.domains : [],
+    methods: Array.isArray(network.methods) ? network.methods : [],
+  };
+}
+
+function checkIdentity(check, m) {
+  if (m.schema !== 1) check.fail('"schema" must be 1');
+  if (!validId(m.id)) check.fail(`invalid "id" ${JSON.stringify(m.id)}: 2-64 chars of a-z 0-9 . _ -, starting and ending with a letter/digit, no ".."`);
+  if (typeof m.name !== 'string' || m.name.trim() === '' || [...m.name].length > 64) check.fail('"name" must be 1-64 characters');
+  if (typeof m.version !== 'string' || !/^\d{1,6}\.\d{1,6}\.\d{1,6}$/.test(m.version)) check.fail(`"version" must be X.Y.Z (got ${JSON.stringify(m.version)})`);
+  if (!Number.isInteger(m.api) || m.api < 1 || m.api > HOST_API_VERSION) check.fail(`"api" must be 1..${HOST_API_VERSION}`);
   if (typeof m.entry === 'string') {
     try {
       checkRelPath(m.entry);
     } catch (e) {
-      fail(`"entry": ${e.message}`);
+      check.fail(`"entry": ${e.message}`);
     }
-    if (!m.entry.endsWith('.js')) fail('"entry" must be a .js file');
+    if (!m.entry.endsWith('.js')) check.fail('"entry" must be a .js file');
   }
+}
 
-  const known = (label, values, list) => {
-    for (const v of values) if (!list.includes(v)) fail(`unknown ${label} "${v}" (allowed: ${list.join(', ') || 'none'})`);
-    if (new Set(values).size !== values.length) fail(`duplicate ${label}`);
-  };
-  known('capability', caps, KNOWN_TRACKING_CAPABILITIES);
+function checkCapabilities(check, caps) {
+  check.known('capability', caps, KNOWN_TRACKING_CAPABILITIES);
   for (const c of REQUIRED_TRACKING_CAPABILITIES) {
-    if (!caps.includes(c)) fail(`missing capability "${c}" (a tracking plugin must declare ${REQUIRED_TRACKING_CAPABILITIES.join(', ')})`);
+    if (!caps.includes(c)) check.fail(`missing capability "${c}" (a tracking plugin must declare ${REQUIRED_TRACKING_CAPABILITIES.join(', ')})`);
   }
+}
+
+function checkPermissions(check, perms) {
   for (const p of perms) {
-    if (p === 'webAuth') fail('"webAuth" is not available to tracking plugins (the tracking host renders form sign-in only)');
-    else if (p === 'insecureHttp') fail('"insecureHttp" is not available to tracking plugins (https only)');
+    if (p === 'webAuth') check.fail('"webAuth" is not available to tracking plugins (the tracking host renders form sign-in only)');
+    else if (p === 'insecureHttp') check.fail('"insecureHttp" is not available to tracking plugins (https only)');
   }
-  known('permission', perms.filter((p) => p !== 'webAuth' && p !== 'insecureHttp'), KNOWN_TRACKING_PERMISSIONS);
+  check.known('permission', perms.filter((p) => p !== 'webAuth' && p !== 'insecureHttp'), KNOWN_TRACKING_PERMISSIONS);
   for (const p of REQUIRED_TRACKING_PERMISSIONS) {
-    if (!perms.includes(p)) fail(`missing permission "${p}" (a tracking plugin must declare ${REQUIRED_TRACKING_PERMISSIONS.join(', ')})`);
+    if (!perms.includes(p)) check.fail(`missing permission "${p}" (a tracking plugin must declare ${REQUIRED_TRACKING_PERMISSIONS.join(', ')})`);
   }
-  if ((domains.length > 0) !== perms.includes('network')) fail('the "network" permission and a non-empty network.domains must be declared together');
-  if (searchTypes.length > 0) fail('"searchTypes" must be absent or empty in a tracking plugin');
+}
 
-  const t = m.tracking;
-  if (t === undefined || t === null) fail('missing "tracking" (siteId, siteHost, kinds, modes, requestsPerMinute)');
-  else if (typeof t !== 'object' || Array.isArray(t)) fail('"tracking" must be an object');
-  else {
-    for (const k of Object.keys(t)) {
-      if (!TRACKING_FIELDS.includes(k)) fail(`unknown field tracking.${k} (unknown fields are rejected)`);
-    }
-    for (const k of ['siteId', 'siteHost', 'kinds', 'modes', 'requestsPerMinute']) {
-      if (t[k] === undefined) fail(`missing required field tracking.${k}`);
-    }
-    if (t.siteId !== undefined && (typeof t.siteId !== 'string' || !SITE_ID_PATTERN.test(t.siteId))) {
-      fail(`invalid tracking.siteId ${JSON.stringify(t.siteId)}: ${SITE_ID_MIN}-${SITE_ID_MAX} characters of a-z 0-9`);
-    }
-    if (typeof t.siteId === 'string' && RESERVED_SITE_IDS.includes(t.siteId)) {
-      fail(`tracking.siteId ${JSON.stringify(t.siteId)} is reserved (${RESERVED_SITE_IDS.join(', ')} are the host's own id spaces): pick another id`);
-    }
-    if (typeof t.siteId === 'string' && HOST_PINNED_SITE_IDS.includes(t.siteId)) {
-      warnings.push(`tracking.siteId ${JSON.stringify(t.siteId)} belongs to the plugin bundled with Fushi: the app registers only the bundled package for it, any other package is shown as "reserved site"`);
-    }
-    if (t.siteHost !== undefined) {
-      if (typeof t.siteHost !== 'string') fail('tracking.siteHost must be a string');
-      else if (t.siteHost.startsWith('*.')) fail(`tracking.siteHost must not be a wildcard: ${JSON.stringify(t.siteHost)}`);
-      else {
-        try {
-          validateDomainRule(t.siteHost);
-        } catch {
-          fail(`tracking.siteHost is not a plain lowercase host name (no scheme, path or port): ${JSON.stringify(t.siteHost)}`);
-        }
-      }
-    }
-    const kinds = arr(t, 'kinds', 'tracking.kinds');
-    known('tracking.kinds value', kinds, KNOWN_TRACKING_KINDS);
-    if (t.kinds !== undefined && kinds.length === 0) fail('tracking.kinds must not be empty');
-    const defaultKinds = arr(t, 'defaultKinds', 'tracking.defaultKinds');
-    for (const k of defaultKinds) if (!kinds.includes(k)) fail(`tracking.defaultKinds "${k}" is not in tracking.kinds (defaultKinds must be a subset of kinds)`);
-    if (new Set(defaultKinds).size !== defaultKinds.length) fail('duplicate tracking.defaultKinds value');
-    const modes = arr(t, 'modes', 'tracking.modes');
-    known('tracking.modes value', modes, KNOWN_TRACKING_MODES);
-    if (t.modes !== undefined && modes.length === 0) fail('tracking.modes must not be empty');
-    if (kinds.includes('game') !== modes.includes('status')) fail('tracking.kinds "game" and tracking.modes "status" must be declared together');
-    if (t.subjectUrl !== undefined) {
-      const su = t.subjectUrl;
-      if (su !== null && typeof su === 'object' && !Array.isArray(su)) {
-        // Per-kind form: { "<kind>": "<template>" }; a kind left out has no page address.
-        const entries = Object.entries(su);
-        if (entries.length === 0) fail('tracking.subjectUrl must not be an empty object');
-        for (const [kind, url] of entries) {
-          if (!kinds.includes(kind)) fail(`tracking.subjectUrl kind "${kind}" is not in tracking.kinds`);
-          const why = subjectUrlProblem(url, t.siteHost);
-          if (why) fail(`invalid tracking.subjectUrl.${kind} ${JSON.stringify(url)}: ${why}`);
-        }
-      } else {
-        const why = subjectUrlProblem(su, t.siteHost);
-        if (why) fail(`invalid tracking.subjectUrl ${JSON.stringify(su)}: ${why}`);
-      }
-    }
-    const rpm = t.requestsPerMinute;
-    if (rpm !== undefined && (!Number.isInteger(rpm) || rpm < REQUESTS_PER_MINUTE_MIN || rpm > REQUESTS_PER_MINUTE_MAX)) {
-      fail(`tracking.requestsPerMinute must be an integer ${REQUESTS_PER_MINUTE_MIN}-${REQUESTS_PER_MINUTE_MAX} (got ${JSON.stringify(rpm)})`);
-    }
+function checkTracking(check, t) {
+  if (t === undefined || t === null) return check.fail('missing "tracking" (siteId, siteHost, kinds, modes, requestsPerMinute)');
+  if (typeof t !== 'object' || Array.isArray(t)) return check.fail('"tracking" must be an object');
+  for (const k of Object.keys(t)) {
+    if (!TRACKING_FIELDS.has(k)) check.fail(`unknown field tracking.${k} (unknown fields are rejected)`);
   }
+  for (const k of ['siteId', 'siteHost', 'kinds', 'modes', 'requestsPerMinute']) {
+    if (t[k] === undefined) check.fail(`missing required field tracking.${k}`);
+  }
+  checkSiteId(check, t.siteId);
+  checkSiteHost(check, t.siteHost);
+  const kinds = checkKindsAndModes(check, t);
+  checkSubjectUrl(check, t, kinds);
+  const rpm = t.requestsPerMinute;
+  if (rpm !== undefined && (!Number.isInteger(rpm) || rpm < REQUESTS_PER_MINUTE_MIN || rpm > REQUESTS_PER_MINUTE_MAX)) {
+    check.fail(`tracking.requestsPerMinute must be an integer ${REQUESTS_PER_MINUTE_MIN}-${REQUESTS_PER_MINUTE_MAX} (got ${JSON.stringify(rpm)})`);
+  }
+}
 
-  if (domains.length > 32) fail('network.domains has more than 32 entries');
+function checkSiteId(check, siteId) {
+  if (siteId === undefined) return;
+  if (typeof siteId !== 'string' || !SITE_ID_PATTERN.test(siteId)) {
+    check.fail(`invalid tracking.siteId ${JSON.stringify(siteId)}: ${SITE_ID_MIN}-${SITE_ID_MAX} characters of a-z 0-9`);
+  }
+  if (typeof siteId !== 'string') return;
+  if (RESERVED_SITE_IDS.includes(siteId)) {
+    check.fail(`tracking.siteId ${JSON.stringify(siteId)} is reserved (${RESERVED_SITE_IDS.join(', ')} are the host's own id spaces): pick another id`);
+  }
+  if (HOST_PINNED_SITE_IDS.includes(siteId)) {
+    warnings.push(`tracking.siteId ${JSON.stringify(siteId)} belongs to the plugin bundled with Fushi: the app registers only the bundled package for it, any other package is shown as "reserved site"`);
+  }
+}
+
+function checkSiteHost(check, siteHost) {
+  if (siteHost === undefined) return;
+  if (typeof siteHost !== 'string') return check.fail('tracking.siteHost must be a string');
+  if (siteHost.startsWith('*.')) return check.fail(`tracking.siteHost must not be a wildcard: ${JSON.stringify(siteHost)}`);
+  try {
+    validateDomainRule(siteHost);
+  } catch {
+    check.fail(`tracking.siteHost is not a plain lowercase host name (no scheme, path or port): ${JSON.stringify(siteHost)}`);
+  }
+}
+
+/// Returns the declared kinds.
+function checkKindsAndModes(check, t) {
+  const kinds = check.strings(t, 'kinds', 'tracking.kinds');
+  check.known('tracking.kinds value', kinds, KNOWN_TRACKING_KINDS);
+  if (t.kinds !== undefined && kinds.length === 0) check.fail('tracking.kinds must not be empty');
+  const defaultKinds = check.strings(t, 'defaultKinds', 'tracking.defaultKinds');
+  for (const k of defaultKinds) if (!kinds.includes(k)) check.fail(`tracking.defaultKinds "${k}" is not in tracking.kinds (defaultKinds must be a subset of kinds)`);
+  if (new Set(defaultKinds).size !== defaultKinds.length) check.fail('duplicate tracking.defaultKinds value');
+  const modes = check.strings(t, 'modes', 'tracking.modes');
+  check.known('tracking.modes value', modes, KNOWN_TRACKING_MODES);
+  if (t.modes !== undefined && modes.length === 0) check.fail('tracking.modes must not be empty');
+  if (kinds.includes('game') !== modes.includes('status')) check.fail('tracking.kinds "game" and tracking.modes "status" must be declared together');
+  return kinds;
+}
+
+function checkSubjectUrl(check, t, kinds) {
+  const su = t.subjectUrl;
+  if (su === undefined) return;
+  if (su === null || typeof su !== 'object' || Array.isArray(su)) {
+    const why = subjectUrlProblem(su, t.siteHost);
+    if (why) check.fail(`invalid tracking.subjectUrl ${JSON.stringify(su)}: ${why}`);
+    return;
+  }
+  // Per-kind form: { "<kind>": "<template>" }; a kind left out has no page address.
+  const entries = Object.entries(su);
+  if (entries.length === 0) check.fail('tracking.subjectUrl must not be an empty object');
+  for (const [kind, url] of entries) {
+    if (!kinds.includes(kind)) check.fail(`tracking.subjectUrl kind "${kind}" is not in tracking.kinds`);
+    const why = subjectUrlProblem(url, t.siteHost);
+    if (why) check.fail(`invalid tracking.subjectUrl.${kind} ${JSON.stringify(url)}: ${why}`);
+  }
+}
+
+function checkNetworkRules(check, { domains, methods }) {
+  if (domains.length > 32) check.fail('network.domains has more than 32 entries');
   for (const d of domains) {
     if (typeof d !== 'string') {
-      fail('network.domains entries must be strings');
+      check.fail('network.domains entries must be strings');
       continue;
     }
     try {
       validateDomainRule(d);
     } catch (e) {
-      fail(e.message);
+      check.fail(e.message);
     }
   }
-  for (const x of methods) if (!KNOWN_METHODS.includes(x)) fail(`unknown HTTP method ${JSON.stringify(x)} (allowed: ${KNOWN_METHODS.join(', ')})`);
-  return errors;
+  for (const x of methods) if (!KNOWN_METHODS.includes(x)) check.fail(`unknown HTTP method ${JSON.stringify(x)} (allowed: ${KNOWN_METHODS.join(', ')})`);
 }
 
 /// JS error type prefixes the host strips from the first line of a thrown error
@@ -266,7 +317,7 @@ export function classifyError(raw) {
   const nameMatch = /^([A-Za-z_$][\w$]*): /.exec(head);
   const stripped = nameMatch && STRIPPED_ERROR_NAMES.includes(nameMatch[1]);
   const message = stripped ? head.slice(nameMatch[0].length) : head;
-  const errorName = nameMatch && /Error$/.test(nameMatch[1]) ? nameMatch[1] : null;
+  const errorName = nameMatch?.[1].endsWith('Error') ? nameMatch[1] : null;
   for (const [prefix, meaning] of Object.entries(ERROR_PREFIXES)) {
     if (message.startsWith(prefix)) return { kind: prefix.slice(0, -1), meaning, shown: message.slice(prefix.length).trim(), errorName, message };
   }
