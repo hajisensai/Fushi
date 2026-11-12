@@ -64,7 +64,7 @@ index 7ae9eec7..1ecc5ab4 100644
    // blocked while this is not done. Guarded by resize_mutex_.
    ResizeState resize_status_ = ResizeState::kDone;
 diff --git a/engine/src/flutter/shell/platform/windows/flutter_windows_view_unittests.cc b/engine/src/flutter/shell/platform/windows/flutter_windows_view_unittests.cc
-index b66b4205..b514bb76 100644
+index 8ebc511c..133c7fff 100644
 --- a/engine/src/flutter/shell/platform/windows/flutter_windows_view_unittests.cc
 +++ b/engine/src/flutter/shell/platform/windows/flutter_windows_view_unittests.cc
 @@ -9,6 +9,7 @@
@@ -75,9 +75,9 @@ index b66b4205..b514bb76 100644
  #include <future>
  #include <vector>
  
-@@ -996,6 +997,9 @@ TEST(FlutterWindowsViewTest, WindowResizeTests) {
-       engine->CreateView(std::make_unique<NiceMock<MockWindowBindingHandler>>(),
-                          /*is_sized_to_content=*/false, BoxConstraints());
+@@ -1005,6 +1006,9 @@ TEST(FlutterWindowsViewTest, WindowResizeTests) {
+                          /*is_sized_to_content=*/false, BoxConstraints(),
+                          /*allow_implicit_view=*/true);
  
 +  // A frame is already on screen, so the resize synchronizes with the next one.
 +  view->OnFramePresented();
@@ -85,7 +85,7 @@ index b66b4205..b514bb76 100644
    fml::AutoResetWaitableEvent metrics_sent_latch;
    engine_modifier.embedder_api().SendWindowMetricsEvent = MOCK_ENGINE_PROC(
        SendWindowMetricsEvent,
-@@ -1068,6 +1072,9 @@ TEST(FlutterWindowsViewTest, TestEmptyFrameResizes) {
+@@ -1078,6 +1082,9 @@ TEST(FlutterWindowsViewTest, TestEmptyFrameResizes) {
    engine_modifier.SetEGLManager(std::move(egl_manager));
    view_modifier.SetSurface(std::move(surface));
  
@@ -95,7 +95,7 @@ index b66b4205..b514bb76 100644
    // Simulate raster thread.
    std::thread frame_thread([&metrics_sent_latch, &view]() {
      metrics_sent_latch.Wait();
-@@ -1111,6 +1118,10 @@ TEST(FlutterWindowsViewTest, WindowResizeRace) {
+@@ -1122,6 +1129,10 @@ TEST(FlutterWindowsViewTest, WindowResizeRace) {
    engine_modifier.SetEGLManager(std::move(egl_manager));
    view_modifier.SetSurface(std::move(surface));
  
@@ -106,7 +106,7 @@ index b66b4205..b514bb76 100644
    // Begin a frame.
    ASSERT_TRUE(view->OnFrameGenerated(100, 100));
  
-@@ -1124,6 +1135,121 @@ TEST(FlutterWindowsViewTest, WindowResizeRace) {
+@@ -1135,6 +1146,123 @@ TEST(FlutterWindowsViewTest, WindowResizeRace) {
    view->OnFramePresented();
  }
  
@@ -155,7 +155,8 @@ index b66b4205..b514bb76 100644
 +
 +  std::unique_ptr<FlutterWindowsView> view =
 +      engine->CreateView(std::make_unique<NiceMock<MockWindowBindingHandler>>(),
-+                         /*is_sized_to_content=*/false, BoxConstraints());
++                         /*is_sized_to_content=*/false, BoxConstraints(),
++                         /*allow_implicit_view=*/true);
 +
 +  ViewModifier view_modifier{view.get()};
 +  engine_modifier.SetEGLManager(std::move(egl_manager));
@@ -211,7 +212,8 @@ index b66b4205..b514bb76 100644
 +
 +  std::unique_ptr<FlutterWindowsView> view =
 +      engine->CreateView(std::make_unique<NiceMock<MockWindowBindingHandler>>(),
-+                         /*is_sized_to_content=*/false, BoxConstraints());
++                         /*is_sized_to_content=*/false, BoxConstraints(),
++                         /*allow_implicit_view=*/true);
 +
 +  ViewModifier view_modifier{view.get()};
 +  engine_modifier.SetEGLManager(std::move(egl_manager));

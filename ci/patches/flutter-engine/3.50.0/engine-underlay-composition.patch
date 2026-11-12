@@ -1,8 +1,8 @@
 diff --git a/engine/src/flutter/shell/platform/windows/egl/manager.cc b/engine/src/flutter/shell/platform/windows/egl/manager.cc
-index 486f4914..fc8eb561 100644
+index b5ceb7c2..929fcc8d 100644
 --- a/engine/src/flutter/shell/platform/windows/egl/manager.cc
 +++ b/engine/src/flutter/shell/platform/windows/egl/manager.cc
-@@ -354,11 +354,20 @@ std::unique_ptr<WindowSurface> Manager::CreateHdrWindowSurface(HWND hwnd,
+@@ -460,11 +460,20 @@ std::unique_ptr<WindowSurface> Manager::CreateHdrWindowSurface(HWND hwnd,
    return CreateWindowSurfaceWithConfig(hwnd, width, height, /*hdr=*/true);
  }
  
@@ -24,38 +24,33 @@ index 486f4914..fc8eb561 100644
    if (!hwnd || !is_valid_) {
      return nullptr;
    }
-@@ -391,10 +400,28 @@ std::unique_ptr<WindowSurface> Manager::CreateWindowSurfaceWithConfig(
-                                            EGL_GL_COLORSPACE_SCRGB_LINEAR_EXT,
-                                            EGL_NONE};
+@@ -480,9 +489,9 @@ std::unique_ptr<WindowSurface> Manager::CreateWindowSurfaceWithConfig(
+       static_cast<EGLint>(width), EGL_HEIGHT, static_cast<EGLint>(height),
+   };
  
-+  // Fushi patch (underlay composition): ANGLE creates the swap chain for a
-+  // DComp visual on a topmost target of |hwnd| (CreateTargetForHwnd(hwnd,
-+  // TRUE)), premultiplied alpha because |config_| has an alpha channel.
-+  const EGLint composition_surface_attributes[] = {EGL_FIXED_SIZE_ANGLE,
-+                                                   EGL_TRUE,
-+                                                   EGL_WIDTH,
-+                                                   static_cast<EGLint>(width),
-+                                                   EGL_HEIGHT,
-+                                                   static_cast<EGLint>(height),
-+                                                   EGL_DIRECT_COMPOSITION_ANGLE,
-+                                                   EGL_TRUE,
-+                                                   EGL_NONE};
-+
-+  const EGLint* attributes = surface_attributes;
-+  if (hdr) {
-+    attributes = hdr_surface_attributes;
+-  // Fushi patch: the orientation applies to every window surface (8-bit and
+-  // HDR). Impeller is told once per engine that the default framebuffer is
+-  // top-left, so all of them must be created the same way.
++  // Fushi patch: the orientation applies to every window surface (8-bit, HDR,
++  // composition). Impeller is told once per engine that the default
++  // framebuffer is top-left, so all of them must be created the same way.
+   if (surface_orientation_ != 0) {
+     surface_attributes.push_back(EGL_SURFACE_ORIENTATION_ANGLE);
+     surface_attributes.push_back(surface_orientation_);
+@@ -495,6 +504,12 @@ std::unique_ptr<WindowSurface> Manager::CreateWindowSurfaceWithConfig(
+     // clamps everything above 1.0.
+     surface_attributes.push_back(EGL_GL_COLORSPACE_KHR);
+     surface_attributes.push_back(EGL_GL_COLORSPACE_SCRGB_LINEAR_EXT);
 +  } else if (composition) {
-+    attributes = composition_surface_attributes;
-+  }
-   auto const surface = ::eglCreateWindowSurface(
-       display_, hdr ? hdr_config_ : config_,
--      static_cast<EGLNativeWindowType>(hwnd),
--      hdr ? hdr_surface_attributes : surface_attributes);
-+      static_cast<EGLNativeWindowType>(hwnd), attributes);
-   if (surface == EGL_NO_SURFACE) {
-     LogEGLError("Surface creation failed.");
-     return nullptr;
-@@ -403,6 +430,7 @@ std::unique_ptr<WindowSurface> Manager::CreateWindowSurfaceWithConfig(
++    // Fushi patch (underlay composition): ANGLE creates the swap chain for a
++    // DComp visual on a topmost target of |hwnd| (CreateTargetForHwnd(hwnd,
++    // TRUE)), premultiplied alpha because |config_| has an alpha channel.
++    surface_attributes.push_back(EGL_DIRECT_COMPOSITION_ANGLE);
++    surface_attributes.push_back(EGL_TRUE);
+   }
+ 
+   surface_attributes.push_back(EGL_NONE);
+@@ -510,6 +525,7 @@ std::unique_ptr<WindowSurface> Manager::CreateWindowSurfaceWithConfig(
    auto window_surface = std::make_unique<WindowSurface>(
        display_, render_context_->GetHandle(), surface, width, height);
    window_surface->set_hdr(hdr);
@@ -64,10 +59,10 @@ index 486f4914..fc8eb561 100644
  }
  
 diff --git a/engine/src/flutter/shell/platform/windows/egl/manager.h b/engine/src/flutter/shell/platform/windows/egl/manager.h
-index 9327530c..89ad31d4 100644
+index eea5b744..c6b53bf9 100644
 --- a/engine/src/flutter/shell/platform/windows/egl/manager.h
 +++ b/engine/src/flutter/shell/platform/windows/egl/manager.h
-@@ -66,6 +66,16 @@ class Manager {
+@@ -86,6 +86,16 @@ class Manager {
                                                                  size_t width,
                                                                  size_t height);
  
@@ -84,7 +79,7 @@ index 9327530c..89ad31d4 100644
    // Check if the current thread has a context bound.
    bool HasContextCurrent();
  
-@@ -127,10 +137,12 @@ class Manager {
+@@ -159,10 +169,12 @@ class Manager {
    void InitializeHdrConfig();
  
    // Shared implementation of |CreateWindowSurface| / |CreateHdrWindowSurface|.
@@ -125,10 +120,10 @@ index e5c1c5ae..6ea6eca2 100644
    FML_DISALLOW_COPY_AND_ASSIGN(WindowSurface);
  };
 diff --git a/engine/src/flutter/shell/platform/windows/flutter_windows.cc b/engine/src/flutter/shell/platform/windows/flutter_windows.cc
-index afd18f68..2c05e8f4 100644
+index 37b496e4..2122b883 100644
 --- a/engine/src/flutter/shell/platform/windows/flutter_windows.cc
 +++ b/engine/src/flutter/shell/platform/windows/flutter_windows.cc
-@@ -293,6 +293,14 @@ bool FlutterDesktopViewSetHdrOutput(FlutterDesktopViewRef view,
+@@ -299,6 +299,14 @@ bool FlutterDesktopViewSetHdrOutput(FlutterDesktopViewRef view,
    return ViewFromHandle(view)->SetHdrOutput(enabled, sdr_white_nits);
  }
  
