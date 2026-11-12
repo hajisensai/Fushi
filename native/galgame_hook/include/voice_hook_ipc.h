@@ -392,6 +392,10 @@ constexpr uint32_t kTextSourceFvp = 10;
 // PalSpriteUnlock transaction lays out with PalFontDrawText, speaker plate
 // excluded (16 = first unused id on every local branch, checked 2026-11-03).
 constexpr uint32_t kTextSourceSoftpal = 16;
+// Nitroplus N2System (nss/.npa) exact text: one shown line of the engine's
+// backlog append stream (BacklogAppendChar), ended by its 0x0a (17 = first
+// unused id on origin/develop 8603d1a764, checked 2026-11-11).
+constexpr uint32_t kTextSourceNitroplus = 17;
 constexpr uint32_t kTextEventLine = 0;
 constexpr uint32_t kTextEventThreadDiscovered = 1;
 // Some Luna engine hooks expose scenario text and system controls from the

@@ -33,6 +33,7 @@
 | `fvp` | FVP (Favorite View Point) | `implemented_unverified` | fvp_text_print_hook (implemented_unverified)；ingame_lookup_geometry (implemented_unverified) | fvp_decoder_input_ogg_resource (implemented_unverified)；directsound_pcm (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
 | `kogado_hy` | Kogado Hy engine | `implemented_unverified` | kogado_hy_message_page_hook (implemented_unverified)；luna_auto_or_pc_hooks (implemented_unverified)；ingame_lookup_geometry (implemented_unverified) | directsound_pcm (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
 | `softpal` | SoftPal ADV System | `implemented_unverified` | softpal_text_sprite_hook (implemented_unverified)；ingame_lookup_geometry (implemented_unverified) | engine_resource_ogg (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
+| `nitroplus` | Nitroplus N2System (nss/.npa) | `implemented_unverified` | nitroplus_backlog_append_hook (implemented_unverified) | process_loopback (implemented_unverified) | 0 |
 | `luca` | LucaSystem (Prototype) | `implemented_unverified` | luca_message_text (implemented_unverified)；luna_auto_or_pc_hooks (implemented_unverified)；ingame_lookup_geometry (implemented_unverified) | luca_voice_pak_member (implemented_unverified)；directsound_pcm (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
 | `knife` | knife (Tsukihime -A piece of blue glass moon- Switch engine, Rust PC port) | `implemented_unverified` | knife_text_websocket (implemented_unverified)；luna_auto_or_pc_hooks (unavailable) | knife_stream_voice_file (implemented_unverified)；loopback (implemented_unverified) | 0 |
 
@@ -1243,6 +1244,46 @@ Tests：`tests/kogado_hy_adapter_test.cpp`
 Fixtures：`tests/fixtures/softpal_replay.json`
 
 Tests：`tests/softpal_adapter_test.cpp`
+
+### Nitroplus N2System (nss/.npa) (`nitroplus`)
+
+- 状态：`implemented_unverified`
+- 别名：NitroplusSystem2.0、N2System、Nitroplus、ニトロプラス
+- 家族：`nitroplus`（Nitroplus N2System script engine (nss scripts in .npa archives, Direct3D 9, GDI GetGlyphOutlineA glyphs); one generation measured: the 2011 鬼哭街 remake executable）
+- 当前 adapter：`hook/adapters/nitroplus_adapter.inc`
+- 进程策略：launch=`create_suspended_early_injection`，attach=`supported`，follow-child=`false`
+
+识别签名（所有非空项均带真实样本或运行时观察证据）：
+
+- `executable_names`：kikokugai_jp.exe；证据：real_sample — Catalogue only: 鬼哭街 リメイク kikokugai_jp.exe (original code; that install's nss.npa carries a Chinese patch, which does not change the executable). The adapter never matches on names; identity is the backlog append routine proved by structure (nitroplus_core.h ResolveBacklogAppend).
+- `pe_architectures`：x86；证据：real_sample — PE32 machine 0x14c, image base 0x400000, TimeDateStamp 1303661712 (2011-04-24)
+- `pe_imports`：d3d9.dll、DSOUND.dll、GDI32.dll；证据：real_sample — Import table of kikokugai_jp.exe: Direct3DCreate9, DSOUND by ordinal, GetGlyphOutlineA (glyph rasterising)
+- `resource_extensions`：.npa；证据：real_sample — nss.npa (scripts) and the other .npa archives next to the executable; entry names are keyed (the executable's name-key routine starts from 0x20101118)
+- `hashes`：kikokugai_jp.exe sha256:0665178b8703af8ca139a2c29e055052b1cdb0d4ed75731f1ed8680422cee4e5；证据：real_sample — Catalogue only; the adapter does not hash-pin
+
+文本能力：
+
+- `nitroplus_backlog_append_hook`：`implemented_unverified` — Native exact text lane (source kind 17, hook 'Nitroplus exact', ENGINE:NITROPLUS:backlog): the engine's BacklogAppendChar(code, voice) is resolved only by structure (nitroplus_core.h ResolveBacklogAppend): the 'no backlog' guard `cmp [state],imm; jne; xor eax,eax; ret` in front of `push edi; mov edi,[esp+8]`, the four tate-chu-yoko pair compares (0x210021, 0x21003f, 0x3f0021, 0x3f003f) branching to one block that splits the pair and re-enters the routine twice, `push ebp; mov ebp,[backlog]; mov eax,[ebp+W]`, and the VOICE tag writer (`mov ebx,[esp+0x18]`, tag 0x10 / separator 0x11, inline name `mov al,[ebx+N]`, file pointer `mov ecx,[ebx+F]`); not unique or any shape missing = refused, nothing installed. The detour calls the engine first and feeds only characters the engine logged (return 1); packed pairs are taken from the engine's own re-entry as their halves; a 0x0a ends the shown line, other control codes (the backlog's wrap marks) carry no text; a line over 512 codes or not clean CP932 is dropped. A voice tag (code 0 with the tag) names the voice of its line (first tag wins; name and file copied bounded under SEH). Offline: fushi_nitroplus_adapter_test (synthetic routine, six refusal shapes, line assembly, CP932) and its --probe on the 2011 kikokugai_jp.exe: append +0x3610, pair split +0x37cd, no-log state 0x61dff8 == 0x190, backlog global 0x6273ec (+0x24 write pointer), voice name +0x24, voice file +0x64; eight other-engine executables (BGI x2, CatSystem2, EAGLS, ExHIBIT, Kaguya, Leaf, Liar-soft) refuse with no anchor. No run in the game yet.
+- codepage：932
+- 线程提示：Select the 'Nitroplus exact' lane (ENGINE:NITROPLUS:backlog): it carries only lines the engine writes to its backlog.
+
+音频优先级：
+
+1. `process_loopback` — `implemented_unverified`；格式：host PCM fallback；clean voice：否
+
+真实样本证据：
+
+
+已知限制：
+
+- x86 only: one sample (2011 鬼哭街 remake); CHAOS;HEAD / 装甲悪鬼村正 executables not measured.
+- Voice: the voice tag name of each line is captured but the .npa entry bytes are not exported (the archive's keyed entries are not read yet), so no per-line engine resource is published; only the host's fallback applies.
+- No in-game lookup and no click shield: the text object's glyph records (stride 0x54 at +0x413c, glyph object x/y at +0x10/+0x14, per-glyph voice at +0x70144 in the 2011 sample) and its screen placement are not bound yet; vertical text geometry is not implemented.
+- Lines are published when the engine logs their end (0x0a after the reveal completes), so a line appears once fully shown, not per character.
+
+Fixtures：`tests/fixtures/nitroplus_replay.json`
+
+Tests：`tests/nitroplus_adapter_test.cpp`
 
 ### LucaSystem (Prototype) (`luca`)
 
