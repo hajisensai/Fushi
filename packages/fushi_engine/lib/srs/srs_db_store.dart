@@ -1491,8 +1491,8 @@ class SrsDbStore implements SrsSync2Host {
   /// 每条真落库的事件修订号 +1（[changeFingerprint]）。返回真正新落的事件数。
   ///
   /// 指向**别的 profile** 的实体（同一份 srs.db 里记在另一个 uid 名下的笔记 / 卡片 / 牌组 / 笔记类型）的事件内核
-  /// 不收（native/fushi_fsrs/src/store/sync2/ownership.rs）：不追加操作、不动对方的任何一行，事件 ID 记进
-  /// [refused]。实体 ID 是整库主键，profile 之间互不干扰靠的就是这一条。
+  /// 不收（native/fushi_fsrs/src/store/sync2/ownership.rs）：不追加操作、不动对方的任何一行，回包里那一项没有
+  /// 修改记录（[_emit] 只交回内核真写出的）。实体 ID 是整库主键，profile 之间互不干扰靠的就是这一条。
   ///
   /// 以前每条事件「先查再写」各两三次往返（库在后台 isolate，每次往返都是一次跨 isolate 消息），
   /// 导入一个几千条笔记的包、应用一批对端事件都要几万次往返（BUG-3549 / BUG-3543）。

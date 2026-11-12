@@ -8,11 +8,15 @@
 //! 点名 A 却带着 B 的 ID 的远程请求——内核就把一条 A 的操作投影到 B 的实体上：B 的笔记被删、字段被改、卡被重排，
 //! B 名下的修改记录还可能被这条「并发」的写入支配掉。
 //!
-//! 这里是这条前提的唯一判据（[foreign]），本机产生操作的三个入口在追加操作**之前**问它：
-//! - `apply`（[super::SrsCore::sync2_apply_local]）：指向别的 profile 实体的那一项不追加、不投影，回包的 `foreign`
-//!   里交回它在输入里的下标；
-//! - `sched`（sched_local.rs）：别的 profile 的卡按「没有这张卡」跳过（撤销计入撤不了的条数）；
-//! - 冲突解决 / 彻底清除（[super::SrsCore::sync2_append]）：跳过。
+//! 这里是这条前提的唯一判据（[foreign]），本机产生操作的三个本体在追加操作**之前**问它（内核的写命令都落在这三个
+//! 本体之一上，命令自己不再各判一遍）：
+//! - [super::apply_local_on]（`apply`、`change`、`import_drafts`、`note_fields_if`、`merge_notes`、`deck_delete`）：
+//!   指向别的 profile 实体的那一项不追加、不投影，回包的 `foreign` 里交回它在输入里的下标；
+//! - [super::sched_local::sched_local_on]（`sched`）：别的 profile 的卡按「没有这张卡」跳过（撤销计入撤不了的条数）；
+//! - [super::append_on]（冲突解决 / 彻底清除 / 还原点）：跳过。
+//!
+//! 先读笔记再决定写什么的意图命令（merge_notes.rs、note_fields_if.rs）在预读那一步就把别人的笔记当成不存在：
+//! 报错 / 进 `rejected` 的口径与不存在的 ID 相同，也不会为一次什么都不落的并入先打还原点。
 //!
 //! 评分预览（[super::SrsCore::sync2_preview]）是按卡 ID 读的命令，同样先问。
 //!
