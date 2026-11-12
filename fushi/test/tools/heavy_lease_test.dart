@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:test/test.dart';
@@ -282,6 +283,44 @@ void main() {
     expect(queue.listSync(), isEmpty);
     a.release();
   });
+
+  // Windows: deleting a file opens it with DELETE access, and until that
+  // handle closes every other open of it fails with a sharing violation. A
+  // waiter probing a ticket at that moment used to die with exit 255, however
+  // long it had already queued. Any handle opened without sharing refuses the
+  // probe the same way, which is what the helper process holds here.
+  test(
+    'a ticket another process has open unshared reads as live, not a crash',
+    () async {
+      final Directory state = Directory('${tmp.path}/state');
+      final Directory queue = Directory('${state.path}/queue')
+        ..createSync(recursive: true);
+      const String name = '00000000000000000001-1-0';
+      final File ticket = File('${queue.path}/$name.ticket')..createSync();
+      final Process holder = await Process.start(
+        'powershell.exe',
+        <String>['-NoProfile', '-NonInteractive', '-Command', _holdUnsharedPs],
+        environment: <String, String>{'HEAVY_TEST_FILE': ticket.path},
+      );
+      addTearDown(holder.kill);
+      final Stream<String> lines = holder.stdout
+          .transform(systemEncoding.decoder)
+          .transform(const LineSplitter());
+      expect(await lines.first, 'held');
+
+      expect(readHeavyQueue(state).map((HeavyQueued q) => q.name), <String>[
+        name,
+      ]);
+      expect(ticket.existsSync(), isTrue);
+
+      holder.kill();
+      await holder.exitCode;
+      // Nobody holds it now: an ordinary dead ticket, swept.
+      expect(readHeavyQueue(state), isEmpty);
+      expect(ticket.existsSync(), isFalse);
+    },
+    skip: Platform.isWindows ? false : 'sharing violations are Windows-only',
+  );
 
   // First come, first served across processes: a free slot goes to the oldest
   // live ticket, not to whoever polls first.
@@ -720,6 +759,13 @@ String? _dartExecutable() {
   final File f = File('$root/bin/cache/dart-sdk/bin/$exe');
   return f.existsSync() ? f.path : null;
 }
+
+/// PowerShell: holds `$env:HEAVY_TEST_FILE` open with no sharing until it is
+/// killed.
+const String _holdUnsharedPs =
+    r"$f = [IO.File]::Open($env:HEAVY_TEST_FILE, 'Open', 'ReadWrite', 'None'); "
+    r"[Console]::Out.WriteLine('held'); "
+    r'Start-Sleep -Seconds 600';
 
 /// Holds an exclusive lock on args[0] until its stdin closes.
 const String _holdLockScript = '''

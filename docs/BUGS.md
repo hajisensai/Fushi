@@ -33,10 +33,19 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3929 条。点号进各自文件。
+> 共 3931 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4387](bugs/BUG-4387-galhook-test-exe-av-false-positive.md) | ✅ | ✅ | Kaspersky 把 galgame hook 测试 exe 报为 Trojan.Win32.Sdum.gen 并删除 |
+> 共 3933 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4463](bugs/BUG-4463-srs-orphan-sweep-rerun-after-purge-unify.md) | ✅ | ✅ | 无主复习数据扫描在 BUG-4292 之前已扫过的库里不再跑，采用 / 并入旧实现的残留永远留下 |
+| [BUG-4388](bugs/BUG-4388-heavy-ticket-open-race.md) | ✅ | ✅ | heavy 租约的等待者探测排队票据时撞上别的进程删票据，排队中途崩溃退出 255 |
+| [BUG-4387](bugs/BUG-4387-windows-input-starved-by-engine-wakeups.md) | ✅ | ✅ | 启动时 WebView 预热的 idle 任务被常驻背景动画永久挡住，调度器空转饿死 Windows 输入 |
+| [BUG-4386](bugs/BUG-4386-anime-source-magnet-opened-as-file.md) | ✅ | ✅ | 视频源扩展（Torrentio）给的磁链被当本地文件打开，无限加载 |
 | [BUG-4385](bugs/BUG-4385-music-exclusive-pause-holds-device.md) | ✅ | ✅ | 音乐 WASAPI 独占输出暂停时不交还设备 |
 | [BUG-4384](bugs/BUG-4384-apple-music-preview-full-duration.md) | ✅ | ✅ | Apple Music 试听片段放约 30 秒就「回到开头」，进度条按整首时长画、无试听提示 |
 | [BUG-4383](bugs/BUG-4383-jellyfin-default-embedded-sub.md) | ✅ | ✅ | Jellyfin 服务器标为默认的内嵌字幕起播不显示 |

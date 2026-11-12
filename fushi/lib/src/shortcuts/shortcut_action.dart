@@ -240,15 +240,25 @@ enum ShortcutScope {
           ShortcutChannel.keyboard,
           ShortcutChannel.gamepad,
         };
-      // app 内浏览器：只开键盘。派发点是浏览器页的键事件节点
-      // （`resolveKeyboard(event, scope: webBrowser)` → 未命中兜底 universal）。
-      //   · 手柄**不开**：浏览器里手柄走普通焦点遍历（摇杆 / dpad → 焦点移动、A 确认），
-      //     没有 `resolveGamepad(scope: webBrowser)` 的派发点，开了就是死通道；
+      // app 内浏览器：键盘 + 手柄（反馈 wegu0vewts：「浏览器里的快捷键映射只能映射
+      // 键盘」）。
+      //   · 键盘：浏览器页的键事件节点 `resolveKeyboard(event, scope: webBrowser)`
+      //     （→ 未命中兜底 universal）；网页持焦时经键盘桥回传的 token 走同一个解析；
+      //   · 手柄：浏览器页根上的 `Actions(GamepadButtonIntent: …)` →
+      //     `_handleGamepadButton` → `resolveGamepad(scope: webBrowser)`（桌面轮询的
+      //     GamepadButtonIntent 与 Android gameButton* 键事件经全局 wrapper 汇合到同一
+      //     Intent，与 SRS 复习页同构）。未命中的按钮显式转发给祖先，焦点遍历 / B 返回
+      //     照旧。默认不给任何手柄绑定——浏览器里的手柄默认就是焦点导航，给默认值等于
+      //     抢走导航键。
       //   · 鼠标**不开**：正文是原生 WebView，指针归 WebView，侧键「后退 / 前进」由
       //     WebView 自己按浏览器语义处理，宿主没有 `resolveMouse(scope: webBrowser)`。
-      // 要开任一通道，先在页面里接上对应的解析入口（守卫
+      // 要开鼠标通道，先在页面里接上对应的解析入口（守卫
       // `shortcut_channel_wiring_guard_test` 盯着）。
       case webBrowser:
+        return const <ShortcutChannel>{
+          ShortcutChannel.keyboard,
+          ShortcutChannel.gamepad,
+        };
       // 音乐：只有键盘有解析入口（曲库页 / 歌词页的键事件节点 →
       // music_shortcuts.dart 的 `resolveKeyboard(scope: music)`）；手柄 / 鼠标还没有
       // 派发点，不开通道（歌词行中键跳转复用 audiobook 的点句绑定，不走 music scope）。

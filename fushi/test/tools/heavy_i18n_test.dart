@@ -136,10 +136,15 @@ void main() {
 
   test('heavy.dart 在本机运行前（offload 之后、lease 之前）接了生成，失败即失败', () {
     final String heavy = File('tool/heavy.dart').readAsStringSync();
-    final int offload = heavy.indexOf('if (remote != null) exit(remote);');
+    // 外包先问一次别的机器（它们接走就直接以其退出码结束）；没接走才在本机生成、再排本机的租约。
+    final int offload = heavy.indexOf('await _askElsewhere(offload,');
     final int gen = heavy.indexOf('heavyCommandNeedsI18n(');
-    final int lease = heavy.indexOf('lease = await acquireHeavyLease(');
+    final int lease = heavy.indexOf('admitted = await acquireHeavyLease(');
     expect(offload, greaterThan(0));
+    expect(
+      heavy.indexOf('case HeavyOffloadNext.done:'),
+      allOf(greaterThan(offload), lessThan(gen)),
+    );
     expect(gen, greaterThan(offload));
     expect(lease, greaterThan(gen));
     expect(heavy, contains('exit(gen);'));
