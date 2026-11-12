@@ -65,14 +65,16 @@ pub(crate) fn state(c: &Connection, profile: &str, device: &Id) -> Result<Option
 /// 「库非空」读的是投影。新设备收段通道（channel.rs）没做完时投影里还缺已收下的操作（追加阶段一条都没投）：同一批
 /// 操作逐条投递到这一刻库已非空，通道路径却读到空库、把这台设备当成可信，它的删除与清除就不扣了（BUG-4387）。所以
 /// 先把通道做完再判。[c] 在调用方的事务里，这里只能在那笔事务里一次做完：`sync2_plan_at` 进事务之前已按片做过
-/// （[sees_new_device]），正常走不到，这是兜底。
+/// （[sees_new_device]），正常走不到，这是兜底。做完的片落进投影的变化交给 [settled]（同
+/// [super::channel::settle]：调用方攒着、随下一条命令的回包带回 Dart）。
 pub(crate) fn note_new_device(
     c: &Connection,
     profile: &str,
     device: &Id,
     seen_at: i64,
+    settled: &mut dyn FnMut(&Touched),
 ) -> Result<(), String> {
-    super::channel::settle(c, profile)?;
+    super::channel::settle(c, profile, settled)?;
     if library_fresh(c, profile)? {
         return Ok(());
     }
