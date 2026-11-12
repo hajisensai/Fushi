@@ -1,5 +1,5 @@
 //! 本机写命令（store/ffi.rs `LOCAL_WRITE_OPS`，收掉 Dart 写路径第 2 步）：命令本体、缓存行与随命令交来的本机状态行
-//! 在同一次持写锁、同一个 SAVEPOINT 里落下；中途出错三者一起回滚；外层开着 Drift 事务时嵌进那笔事务。
+//! 在同一次持写锁、同一个 SAVEPOINT 里落下；中途出错三者一起回滚。
 
 use serde_json::{Value, json};
 
@@ -55,7 +55,7 @@ fn count(d: &Device, sql: &str) -> i64 {
 /// 直接写下本机状态行（模拟库里已有的行）。
 fn seed_local_state(d: &Device, row: Value) {
     d.core
-        .exec(
+        .exec_raw(
             "INSERT OR REPLACE INTO srs_local_state (profile_uid, json) VALUES (srs_id(?1), ?2)",
             &[
                 rusqlite::types::Value::Text(P.into()),
@@ -194,7 +194,7 @@ fn checkpoint_and_purge_persist_local_state_by_the_projection() {
     let bad = dispatch(
         &d,
         json!({"op": "purge", "profile": P, "now": T0 + 2, "caches": caches(&deck),
-               "kind": "note", "entity": NOTE}),
+               "kind": "note", "entities": [NOTE]}),
         None,
     );
     super::tests::mend_local_state(&d.core);
@@ -210,7 +210,7 @@ fn checkpoint_and_purge_persist_local_state_by_the_projection() {
     let r = dispatch(
         &d,
         json!({"op": "purge", "profile": P, "now": T0 + 2, "caches": caches(&deck),
-               "kind": "note", "entity": NOTE}),
+               "kind": "note", "entities": [NOTE]}),
         None,
     )
     .unwrap();
@@ -223,14 +223,14 @@ fn checkpoint_and_purge_persist_local_state_by_the_projection() {
 /// 把旧版时钟拨到 [hlc]（本机状态行里的键，store/legacy_clock.rs）。
 fn set_clock(d: &Device, hlc: &str) {
     d.core
-        .exec(
+        .exec_raw(
             "INSERT OR IGNORE INTO srs_local_state (profile_uid, json) VALUES (srs_id(?1), '{}')",
             &[rusqlite::types::Value::Text(P.into())],
             false,
         )
         .unwrap();
     d.core
-        .exec(
+        .exec_raw(
             "UPDATE srs_local_state SET json = json_set(json, '$.hlc', ?2) WHERE profile_uid = srs_id(?1)",
             &[
                 rusqlite::types::Value::Text(P.into()),
@@ -417,14 +417,14 @@ fn the_legacy_writer_comes_from_the_row_or_the_host_device() {
     let deck = super::config::default_deck_id(P);
     let put = |json: &str| {
         d.core
-            .exec(
+            .exec_raw(
                 "DELETE FROM srs_local_state WHERE profile_uid = srs_id(?1)",
                 &[rusqlite::types::Value::Text(P.into())],
                 false,
             )
             .unwrap();
         d.core
-            .exec(
+            .exec_raw(
                 "INSERT INTO srs_local_state (profile_uid, json) VALUES (srs_id(?1), ?2)",
                 &[
                     rusqlite::types::Value::Text(P.into()),
@@ -497,26 +497,6 @@ fn the_legacy_writer_comes_from_the_row_or_the_host_device() {
     .unwrap_err();
     assert!(err.contains("stored legacy clock"), "{err}");
     assert_eq!(footprint(&d), before);
-}
-
-#[test]
-fn local_write_joins_an_open_drift_transaction() {
-    let d = Device::new("lw-drift");
-    let deck = super::config::default_deck_id(P);
-    let before = footprint(&d);
-    d.core.exec("BEGIN", &[], true).unwrap();
-    dispatch(
-        &d,
-        json!({"op": "apply", "profile": P, "now": T0, "caches": caches(&deck), "legacyDevice": "dev"}),
-        Some(note_events(&deck)),
-    )
-    .unwrap();
-    d.core.exec("ROLLBACK", &[], true).unwrap();
-    assert_eq!(
-        footprint(&d),
-        before,
-        "the outer Drift transaction's rollback takes the command, caches and local state with it"
-    );
 }
 
 #[test]

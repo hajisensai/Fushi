@@ -1,7 +1,7 @@
-//! 只读连接池：Drift 执行器事务外查询（[super::SrsCore::snapshot_select]）与内核只读命令（[super::SrsCore::reader]，
+//! 只读连接池：Drift 执行器的查询（[super::SrsCore::snapshot_select]）与内核只读命令（[super::SrsCore::reader]，
 //! BUG-4298）各一个。
 //!
-//! 以前 Drift 的事务外查询只有一条读连接、外加 Dart 侧整条 Drift 连接是一个顺序队列：同步里一条几秒的长读
+//! 以前 Drift 的查询只有一条读连接、外加 Dart 侧整条 Drift 连接是一个顺序队列：同步里一条几秒的长读
 //! （全量冲突扫描、媒体对账）跑着时，打开卡片 / 牌组设置的毫秒级短读排在它后面等满全程。WAL 下只读连接互不
 //! 阻塞，这里按需开到 [ReadPool::cap] 条，同时在途的查询各占一条，用完放回。
 //!
@@ -17,7 +17,7 @@
 //!   返回时池子开过的连接一条不剩；之后取连接一律报「已关闭」。
 //! - 放回时连接还停在读事务里（借用方 panic 在 `BEGIN` 与 `ROLLBACK` 之间）就先结束它，结束不了就关掉不放回：池里
 //!   的空闲连接一律不在事务里（BUG-4297）。
-//! - 两个池用同一套机制（store/mod.rs）：内核读命令一个（[super::SrsCore::reader]）、Drift 事务外查询一个，上限都是
+//! - 两个池用同一套机制（store/mod.rs）：内核读命令一个（[super::SrsCore::reader]）、Drift 执行器的查询一个，上限都是
 //!   [read_concurrency]，互不占用。
 //! - Drift 那个池的每条连接每条语句自成一个读事务（语句跑完 rusqlite 即复位，不留跨调用的读事务）：开读事务时取最新的
 //!   WAL 尾，所以调用方等到写返回后再发的查询一定看得见它。不同连接上并行的两条查询各自看各自开始时刻的
@@ -287,7 +287,7 @@ mod tests {
     }
 
     fn insert(core: &SrsCore, id: &str) {
-        core.exec(
+        core.exec_raw(
             "INSERT INTO srs_unknown_events (id, profile_uid, json) VALUES (srs_id(?1), 'p', '{}')",
             &[Value::Text(id.into())],
             false,
@@ -302,7 +302,7 @@ mod tests {
 
     const COUNT: &str = "SELECT COUNT(*) FROM srs_unknown_events";
 
-    /// 一条借出的连接被长读占着（这里直接攥着它）时，另一条线程上的事务外查询照样立刻返回：它借到的是另一条连接。
+    /// 一条借出的连接被长读占着（这里直接攥着它）时，另一条线程上的查询照样立刻返回：它借到的是另一条连接。
     /// 以前只有一条 Drift 读连接（一把锁），这条查询要等长读跑完。
     #[test]
     fn a_query_does_not_wait_for_another_in_flight_query() {
@@ -365,41 +365,49 @@ mod tests {
         assert!(short < long / 4, "short {short:?} vs long {long:?}");
     }
 
-    /// Drift 事务开着（写连接上挂着 BEGIN、写了一行没提交）：事务外查询只看已提交的数据、不碰写连接；
-    /// 写连接那一路（mode 2）的查询看得见未提交的行（读己之写）。提交后事务外查询立刻看得见。
+    /// 一笔写命令的事务开着（写连接上写了一行没提交）：Drift 执行器的两条查询入口（查询道 mode 3、内联那一路
+    /// mode 2）都只看已提交的数据、不碰写连接。提交后立刻看得见。
     #[test]
-    fn outside_queries_see_committed_data_while_a_drift_transaction_is_open() {
+    fn queries_see_committed_data_while_a_write_transaction_is_open() {
         let core = open("tx");
         insert(&core, "a");
-        core.exec("BEGIN TRANSACTION", &[], true).unwrap();
-        insert(&core, "b");
-        assert_eq!(
-            scalar(&core.select(COUNT, &[]).unwrap()),
-            Value::Integer(2),
-            "read-your-writes in the transaction"
-        );
-        assert_eq!(
-            scalar(&core.snapshot_select(COUNT, &[]).unwrap()),
-            Value::Integer(1),
-            "outside query read dirty data"
-        );
-        assert_eq!(
-            scalar(
-                &core
-                    .snapshot_select("SELECT last_insert_rowid()", &[])
-                    .unwrap()
-            ),
-            Value::Integer(0),
-            "outside query ran on the writer"
-        );
-        core.exec("COMMIT TRANSACTION", &[], true).unwrap();
+        {
+            let w = core.writer().unwrap();
+            w.execute_batch(
+                "SAVEPOINT t; INSERT INTO srs_unknown_events (id, profile_uid, json) VALUES ('dirty', 'p', '{}')",
+            )
+            .unwrap();
+            assert_eq!(
+                scalar(&core.select(COUNT, &[]).unwrap()),
+                Value::Integer(1),
+                "the inline query read dirty data"
+            );
+            assert_eq!(
+                scalar(&core.snapshot_select(COUNT, &[]).unwrap()),
+                Value::Integer(1),
+                "the pooled query read dirty data"
+            );
+            for page in [
+                core.select("SELECT last_insert_rowid()", &[]).unwrap(),
+                core.snapshot_select("SELECT last_insert_rowid()", &[])
+                    .unwrap(),
+            ] {
+                assert_eq!(
+                    scalar(&page),
+                    Value::Integer(0),
+                    "the query ran on the writer"
+                );
+            }
+            w.execute_batch("RELEASE t").unwrap();
+        }
+        assert_eq!(scalar(&core.select(COUNT, &[]).unwrap()), Value::Integer(2));
         assert_eq!(
             scalar(&core.snapshot_select(COUNT, &[]).unwrap()),
             Value::Integer(2)
         );
     }
 
-    /// 不是只读查询的语句不执行、报 [NOT_SNAPSHOT]（Dart 改发写连接那一路）。
+    /// 不是只读查询的语句不执行、报 [NOT_SNAPSHOT]（Dart 侧当场报只读错误，不再改发别的入口）。
     #[test]
     fn non_queries_are_refused_without_running() {
         let core = open("refuse");
@@ -447,8 +455,8 @@ mod tests {
         assert_eq!(core.drift_readers.live(), cap);
     }
 
-    /// 查询道把池借满（几条长读各占一条）时，写那一路（mode 2，[SrsCore::select]）的事务外查询不在池上等：
-    /// 它有自己的一条只读连接，立即返回（PR 2771 审查：否则写 isolate 上排在它后面的所有写都跟着等长读）。
+    /// 查询道把池借满（几条长读各占一条）时，内联执行器（mode 2，[SrsCore::select]）的查询不在池上等：
+    /// 它有自己的一条只读连接，立即返回（PR 2771 审查：它是调用方 isolate 上的同步调用，不该等长读）。
     #[test]
     fn writer_lane_query_does_not_wait_for_a_full_pool() {
         let core = Arc::new(open("writer_lane"));
@@ -472,7 +480,7 @@ mod tests {
             cap,
             "writer-lane query borrowed from the read pool"
         );
-        // 写后立即读：写那一路的专用连接同样看得见刚提交的行。
+        // 写后立即读：内联执行器的专用连接同样看得见刚提交的行。
         insert(&core, "b");
         assert_eq!(scalar(&core.select(COUNT, &[]).unwrap()), Value::Integer(2));
         drop(held);

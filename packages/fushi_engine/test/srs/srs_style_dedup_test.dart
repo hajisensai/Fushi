@@ -347,7 +347,7 @@ void main() {
 
     final SrsDbStore s = await open(db, 'dev', styleDir: 'media');
     int batches = 0;
-    SrsRustDelegate.debugStatements = 0;
+    SrsInlineExecutor.debugStatements = 0;
     final int core0 = s.debugCoreCommands;
     final int first = await s.compactStoredStyles(
       batchSize: 4,
@@ -358,7 +358,7 @@ void main() {
     // 共 8 条语句）+ 内核 `refresh_caches` 1 条；改动后只剩选行 1 条语句 + 内核 `edits_rewrite_repr` 1 条。
     expect(
       (
-        statements: SrsRustDelegate.debugStatements,
+        statements: SrsInlineExecutor.debugStatements,
         core: s.debugCoreCommands - core0,
       ),
       (statements: 1, core: 1),
