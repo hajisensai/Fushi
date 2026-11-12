@@ -48,7 +48,7 @@ use std::sync::Arc;
 
 use rusqlite::{Connection, OptionalExtension, Row, params};
 
-use super::pack::{self, F_RAW3, Names, tv_bits, tv_of};
+use super::pack::{self, F_RAW3, F_STAMP, Names, tv_bits, tv_of};
 use super::schema::{in_tx, k_dev, k_range, k_seq, opk, sql};
 use crate::gen4::heritage::{Alias, Fp, HeritageSlot, Raw3, SlotBody, fingerprint};
 use crate::gen4::name::{read_name, write_name};
@@ -92,6 +92,36 @@ pub enum Put {
     Fork,
     /// 前面还缺：进了待投递。
     Pending,
+}
+
+/// 设备信任状态：待本机确认。
+pub const TRUST_PENDING: i64 = 1;
+/// 设备信任状态：本机拒绝了。
+pub const TRUST_REJECTED: i64 = 2;
+
+/// 一条完整操作的信封（[Truth::head_by_key]）。
+#[derive(Clone, Debug)]
+pub(crate) struct Head {
+    pub id: OpId,
+    pub wall: i64,
+    pub logical: i64,
+    pub deps: Arc<Vv>,
+    pub kind: u16,
+    /// 原样件：载荷是协议 3 的字节，带不带旧戳要解开才知道。
+    pub raw: bool,
+    /// 转译过的承袭修改，带旧戳。
+    pub stamped: bool,
+}
+
+impl Head {
+    /// 作者写这条时见过 [other]（协议 3 `Op::saw`）。
+    pub fn saw(&self, other: &OpId) -> bool {
+        if other.device == self.id.device {
+            other.seq < self.id.seq
+        } else {
+            self.deps.contains(other)
+        }
+    }
 }
 
 /// 日志里的一条：承袭日志的槽，或原生日志的操作 / 空洞。
@@ -1118,6 +1148,137 @@ impl<'c> Truth<'c> {
             Ok(Body4::Edit(e)) => Ok(Some(e.value)),
             _ => Ok(None),
         }
+    }
+
+    /// 一条完整操作的信封（不解操作体）：语义层判「谁见过谁」用。空洞、副本记录 = None。
+    pub(crate) fn head_by_key(&self, k: i64) -> Result<Option<Head>, String> {
+        let row: Option<(i64, i64, i64, i64, i64)> = self
+            .conn
+            .prepare_cached("SELECT wall, logical, deps, kind, flags FROM ops WHERE k = ?1")
+            .map_err(sql)?
+            .query_row([k], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
+            })
+            .optional()
+            .map_err(sql)?;
+        let Some((wall, logical, deps, kind, flags)) = row else {
+            return Ok(None);
+        };
+        Ok(Some(Head {
+            id: self.id_of_key(k)?,
+            wall,
+            logical,
+            deps: self.deps_of(deps)?,
+            kind: kind as u16,
+            raw: flags & F_RAW3 != 0,
+            stamped: flags & F_STAMP != 0,
+        }))
+    }
+
+    // ------------------------------------------------------------ 本机状态：派生层的宿主输入
+
+    /// 派生层的输入里只有宿主知道的那一部分（随应用版本走的表：内置笔记类型、缓存配置……），按名字存一份文本。
+    /// 派生表是「真相 + 本机信任状态 + 这些输入」的函数：重建与逐条维护读的是同一份，不靠调用方每次传对。
+    pub fn derive_cfg(&self, col: i64, key: &str) -> Result<Option<String>, String> {
+        self.conn
+            .prepare_cached("SELECT value FROM derive_cfg WHERE col = ?1 AND key = ?2")
+            .map_err(sql)?
+            .query_row(params![col, key], |r| r.get(0))
+            .optional()
+            .map_err(sql)
+    }
+
+    /// 改一项宿主输入（None = 删掉）。返回变没变；变了之后，用到它的派生表要由调用方重建。
+    pub fn set_derive_cfg(&self, col: i64, key: &str, value: Option<&str>) -> Result<bool, String> {
+        self.write(|| {
+            if self.derive_cfg(col, key)?.as_deref() == value {
+                return Ok(false);
+            }
+            match value {
+                Some(v) => self
+                    .conn
+                    .prepare_cached(
+                        "INSERT INTO derive_cfg (col, key, value) VALUES (?1, ?2, ?3) \
+                         ON CONFLICT (col, key) DO UPDATE SET value = excluded.value",
+                    )
+                    .map_err(sql)?
+                    .execute(params![col, key, v])
+                    .map_err(sql)?,
+                None => self
+                    .conn
+                    .prepare_cached("DELETE FROM derive_cfg WHERE col = ?1 AND key = ?2")
+                    .map_err(sql)?
+                    .execute(params![col, key])
+                    .map_err(sql)?,
+            };
+            Ok(true)
+        })
+    }
+
+    // ------------------------------------------------------------ 本机状态：设备信任
+
+    /// 一台设备的信任状态：[TRUST_PENDING] / [TRUST_REJECTED]；可信 = None。
+    pub fn trust_of(&self, col: i64, device: &Id) -> Result<Option<i64>, String> {
+        self.conn
+            .prepare_cached("SELECT state FROM trust WHERE col = ?1 AND device = ?2")
+            .map_err(sql)?
+            .query_row(params![col, &device.0[..]], |r| r.get(0))
+            .optional()
+            .map_err(sql)
+    }
+
+    /// 还没信任的设备：(设备, 状态)，按设备 ID 升序。
+    pub fn untrusted(&self, col: i64) -> Result<Vec<(Id, i64)>, String> {
+        let mut stmt = self
+            .conn
+            .prepare_cached("SELECT device, state FROM trust WHERE col = ?1 ORDER BY device")
+            .map_err(sql)?;
+        let rows = stmt
+            .query_map([col], |r| {
+                Ok((r.get::<_, Vec<u8>>(0)?, r.get::<_, i64>(1)?))
+            })
+            .map_err(sql)?;
+        let mut out = Vec::new();
+        for row in rows {
+            let (d, state) = row.map_err(sql)?;
+            out.push((id_of(&d)?, state));
+        }
+        Ok(out)
+    }
+
+    /// 改一台设备的信任状态（[state] = None：可信）。[since] 只在第一次记下时用（协议 3 的 `sync2_trust.since`）。
+    /// 返回变没变。纯本机状态；改完要告诉派生层（`derive::Index::trust_changed`），被扣住的删除与清除才会重判。
+    pub fn set_trust(
+        &self,
+        col: i64,
+        device: &Id,
+        state: Option<i64>,
+        since: i64,
+    ) -> Result<bool, String> {
+        self.write(|| {
+            if self.trust_of(col, device)? == state {
+                return Ok(false);
+            }
+            match state {
+                Some(s) if s == TRUST_PENDING || s == TRUST_REJECTED => self
+                    .conn
+                    .prepare_cached(
+                        "INSERT INTO trust (col, device, state, since) VALUES (?1, ?2, ?3, ?4) \
+                         ON CONFLICT (col, device) DO UPDATE SET state = excluded.state",
+                    )
+                    .map_err(sql)?
+                    .execute(params![col, &device.0[..], s, since])
+                    .map_err(sql)?,
+                Some(s) => return Err(format!("gen4 store: bad trust state {s}")),
+                None => self
+                    .conn
+                    .prepare_cached("DELETE FROM trust WHERE col = ?1 AND device = ?2")
+                    .map_err(sql)?
+                    .execute(params![col, &device.0[..]])
+                    .map_err(sql)?,
+            };
+            Ok(true)
+        })
     }
 
     /// 一台设备日志里 seq ≤ [upto] 的旧戳：承袭的修改（含原样件里的）与副本记录各自带的那个。先给操作上的、再给
