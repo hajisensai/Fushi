@@ -61,7 +61,8 @@ fn apply(d: &Device, profile: &str, now: i64, events: Vec<Value>) -> Value {
         .collect();
     dispatch(
         d,
-        json!({"op": "apply", "profile": profile, "now": now, "caches": {"defaultDeck": deck}}),
+        json!({"op": "apply", "profile": profile, "now": now, "caches": {"defaultDeck": deck},
+               "legacyDevice": "dev"}),
         Some(Value::Array(input).to_string()),
     )
 }
@@ -73,7 +74,7 @@ fn sched(d: &Device, profile: &str, at: i64, items: Value) -> Value {
         d,
         json!({
             "op": "sched", "profile": profile, "now": at, "caches": {"defaultDeck": deck},
-            "at": at, "ts": "anchored", "utcOff": 0, "rollover": 4, "hlc": format!("{at}:0:dev#1"),
+            "at": at, "ts": "anchored", "utcOff": 0, "rollover": 4, "legacyDevice": "dev",
             "items": items,
         }),
         None,
@@ -294,7 +295,7 @@ fn purge_and_preview_treat_another_profiles_ids_as_absent() {
     ] {
         dispatch(
             &d,
-            json!({"op": "purge", "profile": a.profile, "now": T0 + 5 * DAY, "kind": kind, "entity": id,
+            json!({"op": "purge", "profile": a.profile, "now": T0 + 5 * DAY, "kind": kind, "entities": [id],
                    "caches": {"defaultDeck": a.deck}}),
             None,
         );

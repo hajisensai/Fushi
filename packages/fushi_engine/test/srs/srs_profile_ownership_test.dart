@@ -329,13 +329,6 @@ final Map<String, _Write> _writes = <String, _Write>{
       (await s.answer(x.card, 3)).cardId,
   'answerAndStudy': (SrsDbStore s, _Side own, _Target x) async =>
       (await s.answerAndStudy(x.card, 1, studyDeckId: own.deck)).log.cardId,
-  'appendLocalLogs': (SrsDbStore s, _Side own, _Target x) async {
-    final SrsReviewLog like = (await own.store.logsOfCards(<String>[
-      own.card,
-    ]))[own.card]!.first;
-    await s.appendLocalLogs(<SrsReviewLog>[_logOn(like, x.card, s.profileUid)]);
-    return null;
-  },
   'importEvents 日志': (SrsDbStore s, _Side own, _Target x) async {
     final SrsReviewLog like = (await own.store.logsOfCards(<String>[
       own.card,
@@ -361,9 +354,9 @@ final Map<String, _Write> _writes = <String, _Write>{
   'extendTodayLimits': (SrsDbStore s, _Side own, _Target x) async =>
       (await s.extendTodayLimits(x.deck, newCards: 5)).newCards,
   'sync2Purge 笔记': (SrsDbStore s, _Side own, _Target x) =>
-      s.sync2Purge(SrsEntityKind.note, x.note),
+      s.sync2PurgeMany(SrsEntityKind.note, <String>[x.note]),
   'sync2Purge 卡片': (SrsDbStore s, _Side own, _Target x) =>
-      s.sync2Purge(SrsEntityKind.card, x.card),
+      s.sync2PurgeMany(SrsEntityKind.card, <String>[x.card]),
   'resolveConflict': (SrsDbStore s, _Side own, _Target x) =>
       s.resolveConflict(SrsEntityKind.card, x.card, SrsFieldKeys.flag, 4),
   'mergeNotes 吸收别人的笔记': (SrsDbStore s, _Side own, _Target x) async =>

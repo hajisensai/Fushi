@@ -75,9 +75,20 @@ pub(crate) fn note_fields_if_on(
         .filter(|it| seen.insert(it.note))
         .map(|it| it.note.to_owned())
         .collect();
+    // 别的 profile 的笔记按「没有这条笔记」算（ownership.rs）：进 `rejected`，与不存在 / 已删除的笔记同一个回答。
+    let mut owners = super::ownership::Seen::new();
     let mut views: HashMap<String, caches::NoteInfo> = HashMap::new();
     for chunk in notes.chunks(500) {
         for n in caches::note_infos(c, chunk)? {
+            if super::ownership::foreign_seen(
+                c,
+                profile,
+                crate::sync2::op::EntKind::Note,
+                &n.id,
+                &mut owners,
+            )? {
+                continue;
+            }
             views.insert(n.id.clone(), n);
         }
     }
