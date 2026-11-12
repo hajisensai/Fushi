@@ -99,9 +99,6 @@ const Map<String, String> kFilePickerAllowlist = <String, String>{
       '手动导入的 OCR 模型文件：FileType.any（模型文件无统一扩展名），选中即按清单'
       '校验字节数并拷进 app 的模型目录（MangaOcrModelImporter，原子 rename），'
       '原路径不入库。同一入口的「选择文件夹」走 pickRealDirectoryPath。',
-  'lib/src/pages/implementations/music/music_playlist_actions.dart':
-      '导入 .m3u / .m3u8 歌单：不按扩展名过滤（BUG-2099，选错按扩展名拒），选中当场读完字节'
-      '解析成本地歌单，条目对曲库，原路径不长期引用。',
   // Windows 专属入口（见 galgame SOP）：桌面原生对话框直接吃扩展名字符串，过滤
   // 可靠，且安卓那条腿根本跑不到。
   'lib/src/mining/galgame_add_flow.dart':
