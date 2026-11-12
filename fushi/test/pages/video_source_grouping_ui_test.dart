@@ -48,13 +48,16 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Enable scraping for this source'), findsNothing);
     await tester.tap(find.text('SAVE'));
+    // BUG-4349 起改分组方式即按新方式重扫该来源：重扫是真 IO（扫描根目录），只在
+    // runAsync 里推进；扫完通知一次媒体库，保存收尾再通知一次。
+    await _pumpRealUntil(tester, () => libraryChanges >= 2);
     await tester.pumpAndSettle();
     expect(
       (await db.getMediaSourceById(sourceId))!.videoGroupingMode,
       'folder',
     );
     expect(find.byTooltip('Scrape this source'), findsNothing);
-    expect(libraryChanges, 1);
+    expect(libraryChanges, 2, reason: '重扫完成一次 + 保存一次');
     await tester.tap(find.byTooltip('Source scrape settings'));
     await tester.pumpAndSettle();
     expect(find.text('By folder'), findsWidgets);
@@ -65,6 +68,16 @@ void main() {
       (await db.getMediaSourceById(sourceId))!.videoGroupingMode,
       'folder',
     );
-    expect(libraryChanges, 1, reason: '取消不触发媒体库刷新');
+    expect(libraryChanges, 2, reason: '取消不触发媒体库刷新');
   });
+}
+
+/// 交替推进真异步（扫描的文件系统 IO 只在 runAsync 里完成）与 fake 时钟（把 IO 回调
+/// 排进来的 microtask 跑掉），直到 [done]；有上限，到了仍未完成按失败报。
+Future<void> _pumpRealUntil(WidgetTester tester, bool Function() done) async {
+  for (int i = 0; i < 400 && !done(); i++) {
+    await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+    await tester.pump();
+  }
+  expect(done(), isTrue, reason: '重扫没有在上限内完成');
 }

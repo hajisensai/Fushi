@@ -135,8 +135,9 @@ void main() {
         }
       }
       final HeavyNeed analyze = heavyNeedFor(HeavyKind.analyze);
-      expect(analyze.capMb, 8192);
-      expect(analyze.bookedMb, 4608);
+      // 2026-11-10: the 8 GB ceiling killed one full analyze in five.
+      expect(analyze.capMb, 16384);
+      expect(analyze.bookedMb, 8192);
       // Still never three test runs at once on a 64 GB machine (2026-10-19);
       // two tests and an analyze fit, as do a test and both light slots.
       final int test = heavyNeedFor(HeavyKind.test).bookedMb;

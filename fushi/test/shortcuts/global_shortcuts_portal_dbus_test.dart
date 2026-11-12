@@ -203,9 +203,13 @@ void main() {
       await portal.open(appId: 'app.fushi.reader');
       final String session = await portal.createSession();
       final List<String> closed = <String>[];
-      final StreamSubscription<String> sub = portal.sessionClosed.listen(
-        closed.add,
-      );
+      final Completer<void> closeReported = Completer<void>();
+      final StreamSubscription<String> sub = portal.sessionClosed.listen((
+        String closedSession,
+      ) {
+        closed.add(closedSession);
+        if (!closeReported.isCompleted) closeReported.complete();
+      });
       addTearDown(sub.cancel);
 
       // The dialog is up and never answered; then the service dies.
@@ -214,7 +218,11 @@ void main() {
         session,
         const <PortalShortcut>[PortalShortcut(id: 'lookup', description: 'L')],
       );
-      await _settle(portalSide);
+      // bindShortcuts pings the bus on its own connection before it sends the
+      // call, so a ping from portalSide says nothing about whether the call has
+      // reached the fake yet (two connections, no cross-ordering). Wait for
+      // the fake to actually hold the dialog before killing the service.
+      await fake.bindReceived.future;
       expect(fake.calls, contains('BindShortcuts'));
       await portalSide.close();
       await expectLater(
@@ -227,6 +235,10 @@ void main() {
           ),
         ),
       );
+      // sessionClosed is a broadcast stream: its event is delivered in a later
+      // microtask than the failed request's error, so wait for it rather than
+      // reading the list right after the bind fails.
+      await closeReported.future;
       expect(closed, <String>[session]);
 
       // A new portal process (new unique name) takes over; its Responses must
@@ -332,6 +344,9 @@ class _FakeDesktopPortal extends DBusObject {
   /// Never answer BindShortcuts (a dialog the user leaves open).
   bool holdBind = false;
 
+  /// Completes when the first BindShortcuts call reaches this object.
+  final Completer<void> bindReceived = Completer<void>();
+
   @override
   Future<DBusMethodResponse> getProperty(String interface, String name) async {
     if (hasGlobalShortcuts &&
@@ -392,6 +407,7 @@ class _FakeDesktopPortal extends DBusObject {
             },
         };
         calls.add('BindShortcuts');
+        if (!bindReceived.isCompleted) bindReceived.complete();
         if (holdBind) {
           return DBusMethodSuccessResponse(<DBusValue>[
             DBusObjectPath(requestPath),
