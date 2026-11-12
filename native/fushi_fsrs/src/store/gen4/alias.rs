@@ -20,7 +20,8 @@
 //!   `collections.salts` 只是它的缓存。操作集合只增，所以信任状态不变时盐只增不减；作者被本机拒绝（或还没确认）时
 //!   它带来的盐不算，放行后算回来。信任状态不同的两台设备盐集合可以不同（与下面的清除同源：可检测，
 //!   [Index::withheld_salts]）。
-//! - 内置笔记类型表：宿主输入（[Index::set_builtins]，存在 `derive_cfg`），随应用版本走、只能追加。
+//! - 内置笔记类型表：内核持有（`gen4_ids::builtins`，只能追加）。不是宿主输入：别名表因此不随宿主版本、也不随哪台
+//!   设备先给了哪一版而变。
 //! - 笔记类型 / 笔记 / 牌组 / 卡 / profile 级实体：身份记录（`ent_ix`），并上修改记录里出现过的同种类实体（`reg_ix`）。
 //!   定义史（`fieldDef/` `tmplDef/` 的 `ankiNum` / `name`）、笔记的 `noteType` 史、牌组的 `name` / `parent` 史取寄存器的
 //!   **全部**写入（被支配的也算：证据是历史值）。卡再加 `historyFrom/<id>` 键里的 ID。
@@ -56,8 +57,8 @@ use crate::gen4::name::write_edit_key;
 use crate::gen4::op::{Body4, Log4};
 use crate::gen4::stamp::{HeritageStamp, StampHlc};
 use crate::gen4_ids::alias::{
-    BuiltinNoteType, DeckEv, DefEv, Dot, Evidence, How, Limits, LogEv, NoteEv, NoteTypeEv,
-    WriterEv, resolve, strict_id,
+    DeckEv, DefEv, Dot, Evidence, How, Limits, LogEv, NoteEv, NoteTypeEv, WriterEv, resolve,
+    strict_id,
 };
 use crate::gen4_ids::rules;
 use crate::sync2::codec::Writer;
@@ -73,9 +74,6 @@ pub const A_DERIVED: i64 = 2;
 pub const A_FALLBACK: i64 = 3;
 /// `alias_ix.how`：出现过、不是随机 ID、却没有一条规则验得上（`canon = id`）。
 pub const A_UNVERIFIED: i64 = 4;
-
-/// 宿主输入的名字（`derive_cfg`）：内置笔记类型表。
-const CFG_BUILTINS: &str = "builtins";
 
 /// 旧并入改名的写入者的前缀（`gen4_ids::alias`；这里只用来问「有没有这种形状的名字」，判定不在这里）。
 const MERGED_PREFIX: &str = "merged-";
@@ -115,44 +113,6 @@ fn evidence_key(ekind: i64, key: &[u8]) -> bool {
 /// 紧凑键里嵌的那个 ID（tag 不是 0 的键）。
 fn key_id(key: &[u8]) -> Option<Id> {
     <[u8; 16]>::try_from(key.get(1..17)?).ok().map(Id)
-}
-
-/// 内置笔记类型表 ↔ `derive_cfg` 里的文本。
-fn builtins_text(list: &[BuiltinNoteType]) -> String {
-    let mut list: Vec<&BuiltinNoteType> = list.iter().collect();
-    list.sort_by(|a, b| a.key.cmp(&b.key));
-    Value::Array(
-        list.into_iter()
-            .map(|b| json!({"key": b.key, "fieldSeeds": b.field_seeds, "templateKeys": b.template_keys}))
-            .collect(),
-    )
-    .to_string()
-}
-
-fn builtins_of(text: Option<&str>) -> Result<Vec<BuiltinNoteType>, String> {
-    let Some(text) = text else {
-        return Ok(Vec::new());
-    };
-    let bad = || "gen4 alias: bad builtin note type table".to_owned();
-    let v: Value = serde_json::from_str(text).map_err(|_| bad())?;
-    let strings = |v: &Value| -> Result<Vec<String>, String> {
-        v.as_array()
-            .ok_or_else(bad)?
-            .iter()
-            .map(|s| s.as_str().map(str::to_owned).ok_or_else(bad))
-            .collect()
-    };
-    v.as_array()
-        .ok_or_else(bad)?
-        .iter()
-        .map(|b| {
-            Ok(BuiltinNoteType {
-                key: b["key"].as_str().ok_or_else(bad)?.to_owned(),
-                field_seeds: strings(&b["fieldSeeds"])?,
-                template_keys: strings(&b["templateKeys"])?,
-            })
-        })
-        .collect()
 }
 
 /// 同一个日志（规范卡 + 规范日志 ID）的一份：操作里写的原值，与它在哪条操作里。
@@ -201,17 +161,6 @@ fn uuid(k: &Key) -> Option<[u8; 16]> {
 
 impl Index<'_, '_> {
     // ------------------------------------------------------------ 宿主输入
-
-    /// 给内置笔记类型表（宿主每次启动给一遍即可；没变就什么都不做）。返回变没变——变了的话下一次
-    /// [Index::settle] 重算别名表。
-    pub fn set_builtins(&mut self, list: &[BuiltinNoteType]) -> Result<bool, String> {
-        self.writing()?;
-        let changed = self
-            .t
-            .set_derive_cfg(self.col, CFG_BUILTINS, Some(&builtins_text(list)))?;
-        self.alias_dirty |= changed;
-        Ok(changed)
-    }
 
     /// 大批灌入时把别名表的重算攒到最后：打开期间 [Index::settle] 不重算，关掉后的下一次 [Index::settle] 补上。
     /// 攒着的时候别名表是旧的（[Index::aliases_stale]）；只在同一个 [Index] 活着的期间有效。
@@ -679,7 +628,7 @@ impl Index<'_, '_> {
 
         let mut ev = Evidence {
             salts: self.salts()?,
-            builtins: builtins_of(t.derive_cfg(col, CFG_BUILTINS)?.as_deref())?,
+            builtins: crate::gen4_ids::builtins::builtin_note_types(),
             writer_hints: devices.iter().map(|d| d.id.text()).collect(),
             ..Evidence::default()
         };
@@ -1020,28 +969,6 @@ pub(crate) mod tests {
         Key::Uuid(id)
     }
 
-    /// 冻结向量里的那份内置笔记类型表（`gen4_ids/golden_ids.json`；真正的宿主输入由 G9 接线时给）。
-    pub(crate) fn golden_builtins() -> Vec<BuiltinNoteType> {
-        let golden: Value = serde_json::from_str(crate::gen4_ids::GOLDEN).unwrap();
-        let strings = |v: &Value, field: &str| -> Vec<String> {
-            v.as_array()
-                .unwrap()
-                .iter()
-                .map(|f| f[field].as_str().unwrap().to_owned())
-                .collect()
-        };
-        golden["builtins"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|b| BuiltinNoteType {
-                key: b["key"].as_str().unwrap().to_owned(),
-                field_seeds: strings(&b["fields"], "seed"),
-                template_keys: strings(&b["templates"], "name"),
-            })
-            .collect()
-    }
-
     /// 样本库里一个 profile 的盐：它自己的 uid，加上这台设备记着的已退役 uid（G3 探针的同一个口径；迁移时由 G4
     /// 写成一条 Salts 操作）。
     pub(crate) fn sample_salts(src: &rusqlite::Connection, profile: &str) -> Vec<String> {
@@ -1058,36 +985,6 @@ pub(crate) mod tests {
             salts.extend(list);
         }
         salts.into_iter().collect()
-    }
-
-    #[test]
-    fn the_builtin_table_round_trips_through_the_host_input() {
-        with(|t, col| {
-            let list = golden_builtins();
-            assert!(!list.is_empty());
-            t.tx(|t| {
-                let mut ix = Index::new(t, col);
-                assert!(ix.set_builtins(&list)?);
-                assert!(ix.aliases_stale());
-                ix.settle()?;
-                assert!(!ix.set_builtins(&list)?);
-                assert!(!ix.aliases_stale());
-                let mut back = builtins_of(t.derive_cfg(col, CFG_BUILTINS)?.as_deref())?;
-                let mut want = list.clone();
-                back.sort_by(|a, b| a.key.cmp(&b.key));
-                want.sort_by(|a, b| a.key.cmp(&b.key));
-                assert_eq!(back.len(), want.len());
-                for (a, b) in back.iter().zip(&want) {
-                    assert_eq!(
-                        (&a.key, &a.field_seeds, &a.template_keys),
-                        (&b.key, &b.field_seeds, &b.template_keys)
-                    );
-                }
-                Ok(())
-            })
-            .unwrap();
-            assert_rebuild_is_identity(t, col);
-        });
     }
 
     fn r(id: Id) -> Ref {
@@ -1193,6 +1090,55 @@ pub(crate) mod tests {
         for (i, b) in bodies.iter().enumerate() {
             native(t, ix, col, &op(dev, i as u64 + 1, 100 + i as i64, &[], b));
         }
+    }
+
+    /// 内置笔记类型表由内核持有（`gen4_ids::builtins`）：不给任何宿主输入，存量库里内置类型的带盐 ID、
+    /// 只留了名字没留 `ankiNum` 的字段定义，也都按表里的种子归到规范 ID。
+    #[test]
+    fn builtin_note_types_resolve_without_any_host_input() {
+        with(|t, col| {
+            let n = rules::builtin_note_type_anki_num("lapis");
+            let salted = rules::note_type(Some(U1), n);
+            let field = rules::field(
+                &salted,
+                rules::builtin_field_anki_num("lapis", "Expression"),
+            );
+            let c_nt = rules::note_type(CANONICAL, n);
+            let c_field = rules::field(&c_nt, rules::builtin_field_anki_num("lapis", "Expression"));
+            t.tx(|t| {
+                let mut ix = Index::new(t, col);
+                feed(
+                    t,
+                    &mut ix,
+                    col,
+                    0xa1,
+                    &[
+                        Body4::salts([U1]).unwrap(),
+                        entity(
+                            EntKind::NoteType,
+                            salted,
+                            json!({"ankiNum": n, "builtin": "lapis"}),
+                        ),
+                        edit(
+                            EntKind::NoteType,
+                            salted,
+                            &format!("fieldDef/{}", field.text()),
+                            json!({"name": "Expression"}),
+                        ),
+                    ],
+                );
+                ix.settle()?;
+                assert!(t.derive_cfg(col, "builtins")?.is_none());
+                assert_eq!(ix.canonical(&r(salted))?, r(c_nt));
+                assert_eq!(
+                    ix.canonical_key(&format!("fieldDef/{}", field.text()))?,
+                    format!("fieldDef/{}", c_field.text())
+                );
+                Ok(())
+            })
+            .unwrap();
+            assert_rebuild_is_identity(t, col);
+        });
     }
 
     #[test]

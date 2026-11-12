@@ -1997,8 +1997,6 @@ pub(crate) mod tests {
                 t.append_native(col, &op).unwrap();
             }
             let mut ix = Index::new(&t, col);
-            ix.set_builtins(&crate::store::gen4::alias::tests::golden_builtins())
-                .unwrap();
             let did = ix.rebuild_all().unwrap();
             dst.execute_batch("COMMIT").unwrap();
             let rebuild_s = started.elapsed().as_secs_f64();
