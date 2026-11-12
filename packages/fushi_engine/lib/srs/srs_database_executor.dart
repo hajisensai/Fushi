@@ -31,58 +31,81 @@ final class SrsReadOnlyDatabaseError extends UnsupportedError {
   SrsReadOnlyDatabaseError(String what) : super('$kSrsReadOnlyExecutor: $what');
 }
 
-final class _FixedVersion extends DynamicVersionDelegate {
-  const _FixedVersion();
+/// 两个只读执行器共用的那一半：没有要打开的东西，写入口——写语句、`runCustom`、批量、事务、独占块——一律抛
+/// [SrsReadOnlyDatabaseError]，不到内核。事务在 [beginTransaction] 就拒绝，不让 Drift 的事务机器起步：Drift 自带的
+/// 语句式事务（`DelegatedDatabase` + `NoTransactionDelegate`）要等发 `BEGIN` 才知道被拒，它随后的回滚路径会把只读
+/// 错误盖成自己内部的 `StateError`（Future already completed）。
+abstract base class _SrsReadOnlyBase implements QueryExecutor {
+  @override
+  SqlDialect get dialect => SqlDialect.sqlite;
+
+  /// 没有要打开的东西：连接归内核（装配层已开好 [SrsCore]），Drift 侧没有迁移、没有打开时要跑的语句
+  /// （schema 归 Rust，Drift 侧版本恒为 [kSrsDriftSchemaVersion]）。
+  @override
+  Future<bool> ensureOpen(QueryExecutorUser user) async => true;
 
   @override
-  Future<int> get schemaVersion async => kSrsDriftSchemaVersion;
+  Future<int> runInsert(String statement, List<Object?> args) =>
+      Future<int>.error(SrsReadOnlyDatabaseError(statement));
 
   @override
-  Future<void> setSchemaVersion(int version) async {}
+  Future<int> runUpdate(String statement, List<Object?> args) =>
+      Future<int>.error(SrsReadOnlyDatabaseError(statement));
+
+  @override
+  Future<int> runDelete(String statement, List<Object?> args) =>
+      Future<int>.error(SrsReadOnlyDatabaseError(statement));
+
+  @override
+  Future<void> runCustom(String statement, [List<Object?>? args]) =>
+      Future<void>.error(SrsReadOnlyDatabaseError(statement));
+
+  @override
+  Future<void> runBatched(BatchedStatements statements) => Future<void>.error(
+    SrsReadOnlyDatabaseError(
+      'batch of ${statements.arguments.length} statements',
+    ),
+  );
+
+  @override
+  TransactionExecutor beginTransaction() =>
+      throw SrsReadOnlyDatabaseError('transaction');
+
+  @override
+  QueryExecutor beginExclusive() =>
+      throw SrsReadOnlyDatabaseError('exclusive block');
 }
 
-/// 同 isolate 的 [DatabaseDelegate]（[srsInlineExecutor]）：每条查询一次同步的 `ffsrs_store_exec`，在内核专用的
-/// 一条只读连接上跑（`SrsCore.execQuery`）；写入口一律抛 [SrsReadOnlyDatabaseError]，不到内核。
-final class SrsRustDelegate extends DatabaseDelegate {
-  SrsRustDelegate(this._address, this._libraryPath);
+/// 同 isolate 的只读执行器（[srsInlineExecutor]；测试与没有 worker 池的宿主用，省掉起 isolate 的开销）：每条查询
+/// 一次同步的 `ffsrs_store_exec`，在内核专用的一条只读连接上跑（`SrsCore.execQuery`）。
+final class SrsInlineExecutor extends _SrsReadOnlyBase {
+  SrsInlineExecutor(SrsCore core)
+    : _address = core.address,
+      _libraryPath = core.libraryPath;
 
   final int _address;
   final String? _libraryPath;
   SrsCore? _core;
+  bool _closed = false;
 
-  SrsCore get _c => _core ?? (throw StateError('srs delegate not open'));
-
-  /// 经执行器送进内核的查询数（写路径往返数的验收用：写操作发出的 Drift 读）。按 isolate 计，只在同 isolate 的
-  /// 执行器（[srsInlineExecutor]）上读得到。
+  /// 经执行器送进内核的查询数（写路径往返数的验收用：写操作发出的 Drift 读）。按 isolate 计。
   @visibleForTesting
   static int debugStatements = 0;
 
   @override
-  TransactionDelegate get transactionDelegate => const NoTransactionDelegate();
-
-  @override
-  DbVersionDelegate get versionDelegate => const _FixedVersion();
-
-  @override
-  bool get isOpen => _core != null;
-
-  @override
-  Future<void> open(QueryExecutorUser db) async {
-    _core = SrsCore.fromAddress(_address, libraryPath: _libraryPath);
-  }
-
-  @override
-  Future<void> close() async {
-    // 句柄归装配层（`SrsCore` 的拥有者）关闭。
-    _core = null;
-  }
-
-  @override
-  Future<QueryResult> runSelect(String statement, List<Object?> args) async {
+  Future<List<Map<String, Object?>>> runSelect(
+    String statement,
+    List<Object?> args,
+  ) async {
+    if (_closed) throw StateError('srs database is closed');
     debugStatements++;
+    final SrsCore core = _core ??= SrsCore.fromAddress(
+      _address,
+      libraryPath: _libraryPath,
+    );
     final Uint8List page;
     try {
-      page = _c.execQuery(statement, args);
+      page = core.execQuery(statement, args);
     } on SrsCoreException catch (e) {
       // 不是只读查询（PRAGMA、`… RETURNING`）：与写入口同一个错误类型。
       if (e.message.startsWith(kSrsReadOnlyExecutor)) {
@@ -91,27 +114,18 @@ final class SrsRustDelegate extends DatabaseDelegate {
       rethrow;
     }
     final (int _, List<List<Object?>> rows) = srsDecodeRows(page);
-    return QueryResult(rows.first.cast<String>(), rows.sublist(1));
+    return QueryResult(
+      rows.first.cast<String>(),
+      rows.sublist(1),
+    ).asMap.toList();
   }
 
+  /// 句柄归装配层（`SrsCore` 的拥有者）关闭。
   @override
-  Future<int> runInsert(String statement, List<Object?> args) async =>
-      throw SrsReadOnlyDatabaseError(statement);
-
-  @override
-  Future<int> runUpdate(String statement, List<Object?> args) async =>
-      throw SrsReadOnlyDatabaseError(statement);
-
-  /// Drift 用它发事务控制语句（`NoTransactionDelegate`：BEGIN / COMMIT / SAVEPOINT）与 `customStatement`。
-  @override
-  Future<void> runCustom(String statement, List<Object?> args) async =>
-      throw SrsReadOnlyDatabaseError(statement);
-
-  @override
-  Future<void> runBatched(BatchedStatements statements) async =>
-      throw SrsReadOnlyDatabaseError(
-        'batch of ${statements.arguments.length} statements',
-      );
+  Future<void> close() async {
+    _closed = true;
+    _core = null;
+  }
 }
 
 /// [core] 上的 Drift 连接（查询在内核命令 worker 上并发执行，写入口只读，见库注释）。[core] 必须比返回的连接
@@ -145,7 +159,7 @@ SrsCoreJob<SrsQueryPage?> _snapshotQueryJob(String sql, List<Object?> args) =>
 
 /// 只读的 Drift 执行器：查询走 [workers] 的查询道并发执行；写入口（写语句、`runCustom`、批量、事务、独占块）一律
 /// 抛 [SrsReadOnlyDatabaseError]。不执行任何打开语句（schema 归 Rust，Drift 侧没有迁移）。
-final class SrsReadOnlyExecutor implements QueryExecutor {
+final class SrsReadOnlyExecutor extends _SrsReadOnlyBase {
   SrsReadOnlyExecutor({required int address, required SrsCoreWorkers workers})
     : _address = address,
       _workers = workers;
@@ -173,13 +187,6 @@ final class SrsReadOnlyExecutor implements QueryExecutor {
     _inFlight--;
     if (_inFlight == 0) _drained?.complete();
   }
-
-  @override
-  SqlDialect get dialect => SqlDialect.sqlite;
-
-  /// 没有要打开的东西：连接归内核（装配层已开好 [SrsCore]），Drift 侧没有迁移、没有打开时要跑的语句。
-  @override
-  Future<bool> ensureOpen(QueryExecutorUser user) async => true;
 
   @override
   Future<List<Map<String, Object?>>> runSelect(
@@ -234,37 +241,6 @@ final class SrsReadOnlyExecutor implements QueryExecutor {
   }
 
   @override
-  Future<int> runInsert(String statement, List<Object?> args) =>
-      Future<int>.error(SrsReadOnlyDatabaseError(statement));
-
-  @override
-  Future<int> runUpdate(String statement, List<Object?> args) =>
-      Future<int>.error(SrsReadOnlyDatabaseError(statement));
-
-  @override
-  Future<int> runDelete(String statement, List<Object?> args) =>
-      Future<int>.error(SrsReadOnlyDatabaseError(statement));
-
-  @override
-  Future<void> runCustom(String statement, [List<Object?>? args]) =>
-      Future<void>.error(SrsReadOnlyDatabaseError(statement));
-
-  @override
-  Future<void> runBatched(BatchedStatements statements) => Future<void>.error(
-    SrsReadOnlyDatabaseError(
-      'batch of ${statements.arguments.length} statements',
-    ),
-  );
-
-  @override
-  TransactionExecutor beginTransaction() =>
-      throw SrsReadOnlyDatabaseError('transaction');
-
-  @override
-  QueryExecutor beginExclusive() =>
-      throw SrsReadOnlyDatabaseError('exclusive block');
-
-  @override
   Future<void> close() async {
     _closed = true;
     if (_inFlight > 0) {
@@ -276,10 +252,7 @@ final class SrsReadOnlyExecutor implements QueryExecutor {
 }
 
 /// 同一个 isolate 里直接执行查询（测试与没有 worker 池的宿主用：省掉起 isolate 的开销）。同样只读。
-QueryExecutor srsInlineExecutor(SrsCore core) => DelegatedDatabase(
-  SrsRustDelegate(core.address, core.libraryPath),
-  isSequential: true,
-);
+QueryExecutor srsInlineExecutor(SrsCore core) => SrsInlineExecutor(core);
 
 /// 一批查询结果读回的数据量（账本用）：字符串按 UTF-16 码元数、BLOB 按字节。
 int srsRowsLedgerBytes(List<Map<String, Object?>> rows) {

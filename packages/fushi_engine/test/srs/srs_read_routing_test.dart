@@ -10,7 +10,6 @@ import 'package:drift/drift.dart' show QueryRow;
 import 'package:fushi_core/fushi_core.dart' show SrsUnknownEventsCompanion;
 import 'package:fushi_engine/srs/srs_database_executor.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
-import 'package:fushi_srs/fushi_srs.dart' show kSrsReadOnlyExecutor;
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
@@ -72,12 +71,8 @@ void main() {
 
       test('写语句、批量、事务、PRAGMA 一律被拒，库没动、写连接没留下事务', () async {
         insert('a');
+        // 事务 / 批量在开事务那一步就被拒（两种执行器都不让 Drift 的事务机器起步），抛的同样是只读错误。
         final Matcher readOnly = throwsA(isA<SrsReadOnlyDatabaseError>());
-        // 事务 / 批量：内联执行器上 Drift 先发 BEGIN、被拒后再发 ROLLBACK（同样被拒），抛出来的是包着只读错误的
-        // 回滚失败；查询道执行器开事务当场抛只读错误。两种都认，认的是只读错误的消息。
-        final Matcher refused = throwsA(
-          predicate<Object>((Object e) => '$e'.contains(kSrsReadOnlyExecutor)),
-        );
         await expectLater(
           s.db.customStatement(
             'INSERT INTO srs_unknown_events (id, profile_uid, json) '
@@ -113,9 +108,9 @@ void main() {
               ),
             ),
           ),
-          refused,
+          readOnly,
         );
-        await expectLater(s.db.transaction(() => count()), refused);
+        await expectLater(s.db.transaction(() => count()), readOnly);
         // PRAGMA 与 `… RETURNING` 不是只读查询：以前回落到写连接上执行（Drift 靠它开关事务），现在不执行。
         await expectLater(
           s.db.customSelect('PRAGMA wal_autocheckpoint').get(),

@@ -701,7 +701,7 @@ final class SrsCore {
     ];
   }
 
-  /// Drift 内联执行器的查询（`runSelect`，fushi_engine `srs_database_executor.dart` 的 `SrsRustDelegate`）：在内核
+  /// Drift 内联执行器的查询（`runSelect`，fushi_engine `srs_database_executor.dart` 的 `SrsInlineExecutor`）：在内核
   /// 专用的一条只读连接上跑，只看已提交的数据、不排写锁（native/fushi_fsrs/src/store/mod.rs `SrsCore::select`）。
   /// 不是只读查询（写语句、PRAGMA、事务控制语句）不执行、抛 [SrsCoreException]，消息以 [kSrsReadOnlyExecutor] 开头。
   /// 返回页：列名行 + 结果行。

@@ -41,12 +41,16 @@ final class _CoreHost implements SrsSync2Host {
   @override
   String get profileUid => kProfile;
 
+  /// 没有 [SrsDbStore] 替它注册缓存配置：每条命令自己带（内核用带来的那份）。
+  static final Map<String, Object?> _caches = srsCacheConfigFor(kProfile);
+
   Map<String, Object?> _cmd(
     Map<String, Object?> request, [
     List<Uint8List> blobs = const <Uint8List>[],
   ]) => core.sync2(<String, Object?>{
     ...request,
     'profile': kProfile,
+    'caches': _caches,
   }, blobs: blobs).map;
 
   @override
@@ -56,6 +60,7 @@ final class _CoreHost implements SrsSync2Host {
   }) async => core.sync2(<String, Object?>{
     ...request,
     'profile': kProfile,
+    'caches': _caches,
   }, blobs: blobs);
 
   @override

@@ -71,14 +71,14 @@ void main() {
     expect(opened['cacheRev'], s.debugCacheRevision);
 
     final int commands = s.debugCoreCommands;
-    SrsRustDelegate.debugStatements = 0;
+    SrsInlineExecutor.debugStatements = 0;
     await s.anchorTime(1700000000000, observedAtBootMs: 20);
     // ignore: avoid_print
     print(
-      'WRITE_COST anchorTime: statements=${SrsRustDelegate.debugStatements} '
+      'WRITE_COST anchorTime: statements=${SrsInlineExecutor.debugStatements} '
       'core=${s.debugCoreCommands - commands}',
     );
-    expect(SrsRustDelegate.debugStatements, 0);
+    expect(SrsInlineExecutor.debugStatements, 0);
     expect(s.debugCoreCommands - commands, 1);
     // o = 可信时间 − 墙钟 = 1700000000000 + (50 − 20) − 1000。
     expect((await _row(storage))!['anchor'], <String, Object?>{
