@@ -49,6 +49,7 @@
 #include "adapters/unity_mono_text.h"
 #include "adapters/unity_mono_lookup_core.h"
 #include "adapters/unity_mono_audio.h"
+#include "adapters/unity_il2cpp_api.h"
 #include "adapter.h"
 #include "module_settle.h"
 #include "host_executable_digest.h"
@@ -416,7 +417,27 @@ void* VtableSlot(void* com_obj, size_t idx) {
 
 // 对函数地址 target 装 MinHook inline hook（去重 + 立即 enable）。多实例共享同一函数地址时只
 // hook 一次。原函数指针写进 *original（trampoline）。返回是否已就绪（含去重命中）。
+// HookFn 的失败原因（诊断用，有界）：create / enable 为 MinHook 的 MH_STATUS；
+// 未调用到该步时为 kHookStepNotRun。
+constexpr int kHookStepNotRun = 1000;
+struct HookFnStatus {
+  int create = kHookStepNotRun;
+  int enable = kHookStepNotRun;
+  bool deduped = false;
+};
+
+bool HookFnEx(void* target, void* detour, void** original,
+              HookFnStatus* status);
+
 bool HookFn(void* target, void* detour, void** original) {
+  return HookFnEx(target, detour, original, nullptr);
+}
+
+bool HookFnEx(void* target, void* detour, void** original,
+              HookFnStatus* status) {
+  HookFnStatus local;
+  HookFnStatus& st = status == nullptr ? local : *status;
+  st = HookFnStatus();
   if (target == nullptr || !g_cs_ready) {
     return false;
   }
@@ -430,11 +451,14 @@ bool HookFn(void* target, void* detour, void** original) {
     }
   }
   if (already) {
+    st.deduped = true;
     ok = true;
   } else {
     const MH_STATUS created = MH_CreateHook(target, detour, original);
+    st.create = static_cast<int>(created);
     if (created == MH_OK || created == MH_ERROR_ALREADY_CREATED) {
       const MH_STATUS enabled = MH_EnableHook(target);
+      st.enable = static_cast<int>(enabled);
       if (enabled == MH_OK || enabled == MH_ERROR_ENABLED) {
         if (g_hooked_count < 64) {
           g_hooked_fns[g_hooked_count++] = target;
@@ -642,6 +666,9 @@ bool SignalReady(DWORD pid) {
 #include "adapters/siglus_message_voice.inc"
 #include "adapters/loopback_adapter.inc"
 #include "generated/adapter_includes.inc"
+// The IL2CPP binding of the shared Unity canvas lookup: needs the IL2CPP text
+// path (unity_adapter.inc) and the shared runtime (unity_mono_adapter.inc).
+#include "adapters/unity_il2cpp_lookup.inc"
 
 #include "generic_input_shield.inc"
 #include "overlay_cursor_guard.inc"

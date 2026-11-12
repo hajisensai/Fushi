@@ -1849,7 +1849,13 @@ class AdapterStructureTest(unittest.TestCase):
             source,
         )
         self.assertIn("Detour_UnityUiTextSetText", source)
-        self.assertIn('L"UnityEngine.UI.Text.set_text"', source)
+        # 文本道身份（hook_code / hook_name）只在 IL2CPP 访问层写一次，
+        # 文本 detour 与查词候选共用同一份。
+        self.assertIn("uil2cpp::kLaneUiTextSetText", source)
+        lanes = (
+            ROOT / "hook" / "adapters" / "unity_il2cpp_api.h"
+        ).read_text(encoding="utf-8")
+        self.assertIn('L"UnityEngine.UI.Text.set_text"', lanes)
         self.assertIn(
             "tmp_text_ready || ui_text_ready || text_mesh_ready ||",
             source,
@@ -1931,7 +1937,7 @@ class AdapterStructureTest(unittest.TestCase):
             "ResolveUnityMonoTextMethods(api)",
             "PlanUnityMonoTextHooks(resolution)",
             "api.compile_method(",
-            "HookFn(",
+            "HookFnEx(code[index]",
         ]
         positions = [install.index(marker) for marker in order]
         self.assertEqual(positions, sorted(positions))
@@ -1939,11 +1945,14 @@ class AdapterStructureTest(unittest.TestCase):
         scope = install.split("MonoAttachedThreadScope managed_thread", 1)[1]
         scope = scope.split("text_done_ = true;", 1)[0]
         self.assertNotIn("HookFn(", scope)
+        self.assertNotIn("HookFnEx(", scope)
         # 字符串 accessor 在第一个 hook 生效前就位。
         self.assertLess(
             install.index("g_unity_mono_string_chars = api.string_chars;"),
-            install.index("HookFn("),
+            install.index("HookFnEx(code[index]"),
         )
+        # 安装摘要日志只在 HookWorker 的安装路径上（detour 里没有日志）。
+        self.assertIn("unity-mono-text: plan=", install)
         # 有界重试：预算耗尽即停。
         self.assertIn("kMaxResolveAttempts", install)
         self.assertIn("kUnityMonoFlagResolveExhausted", install)
@@ -1967,14 +1976,22 @@ class AdapterStructureTest(unittest.TestCase):
         self.assertIn("RecordUnityTextChars(", detours)
         # Mono 托管签名没有 IL2CPP 的尾随 MethodInfo*。
         self.assertNotIn("const void* method", detours)
-        self.assertEqual(detours.count("FUSHI_MONO_MANAGED_CALL Detour_"), 6)
+        self.assertEqual(detours.count("FUSHI_MONO_MANAGED_CALL Detour_"), 7)
+        self.assertNotIn("UmLookupLog(", detours)
+        # TMP 1.x：SetText(string) 转调 SetText(string,bool)，内层不重复发布。
+        single = detours.split("Detour_UnityMonoTmpSetTextSingle(", 1)[1]
+        self.assertIn("++g_unity_mono_tmp_single_depth;", single)
+        self.assertIn("--g_unity_mono_tmp_single_depth;", single)
+        pair = detours.split("Detour_UnityMonoTmpSetTextBool(", 1)[1]
+        pair = pair.split("Detour_UnityMonoTmpSetTextSingle(", 1)[0]
+        self.assertIn("g_unity_mono_tmp_single_depth > 0", pair)
         # Fungus 整句先剥框架自己的 {...} 标记，再走共用发布入口。
         self.assertIn("StripFungusTextTags(", detours)
         # IL2CPP 与 Mono 共用同一发布入口，过滤口径不分叉。
         unity = (
             ROOT / "hook" / "adapters" / "unity_adapter.inc"
         ).read_text(encoding="utf-8")
-        tmp = unity.split("void RecordUnityTmpText(", 1)[1]
+        tmp = unity.split("bool RecordUnityTmpText(", 1)[1]
         tmp = tmp.split("void FlushUnityTextMeshLine()", 1)[0]
         self.assertIn("RecordUnityTextChars(", tmp)
         registry = (
@@ -2842,10 +2859,152 @@ class AdapterStructureTest(unittest.TestCase):
         fungus = self._function_body(
             core, "inline FungusSiteResolution ResolveFungusSites(")
         for proof in ("FindClassInImages(", "MonoTextHookId::kFungusSayDialogDoSay",
-                      "LateUpdate", "ListLayout(", "ResolveFungusIcall(",
-                      "class_value_size(", "m_LastString"):
+                      "LateUpdate", "ResolveUguiTextLayout("):
             self.assertIn(proof, fungus)
+        # The UGUI Text layout reading shared by frameworks 2 and 4.
+        layout = self._function_body(
+            core, "inline FungusSiteResolution ResolveUguiTextLayout(")
+        for proof in ("ListLayout(", "ResolveFungusIcall(", "class_value_size(",
+                      "m_LastString"):
+            self.assertIn(proof, layout)
+        # Framework 4: UI.Text by the text path's own spec, the managed
+        # SendWillRenderCanvases, the shared layout; nothing title-specific.
+        ui_text = self._function_body(
+            core, "inline UiTextSiteResolution ResolveUiTextSites(")
+        for proof in ("MonoTextHookId::kUiTextSetText", "FindClassInImages(",
+                      "ResolveWillRenderCanvases(", "ResolveUguiTextLayout("):
+            self.assertIn(proof, ui_text)
+        will_render = self._function_body(
+            core, "inline void* ResolveWillRenderCanvases(")
+        self.assertIn("kMethodImplInternalCall", will_render)
+        # Candidates are admitted by class, and the selected lane is never
+        # evicted (a full table of UI texts pushed the dialogue out).
+        remember = self._function_body(
+            runtime, "void RememberUmTmpCandidateOnMain(")
+        for proof in ("ClassDerivesFrom(", "rt.fungus.text_class",
+                      "rt.tmp.ugui_class", "UmLanesSelected(",
+                      "SelectedTextThreadId("):
+            self.assertIn(proof, remember)
+        for forbidden in ("UmLookupLog(", "CreateFile", "Sleep("):
+            self.assertNotIn(forbidden, remember)
         self.assertIn("ResolveUnityMonoFungusLookup(api, runtime)", scope)
+
+    def test_unity_il2cpp_lookup_is_structural_and_shares_the_mono_core(
+        self,
+    ) -> None:
+        """Unity IL2CPP 查词：结构识别 + 共用 Mono 解析器 / 运行时；失败即拒、不认标题。"""
+        api = self._strip_comments(
+            (ROOT / "hook" / "adapters" / "unity_il2cpp_api.h").read_text(
+                encoding="utf-8"
+            )
+        )
+        lookup = self._strip_comments(
+            (ROOT / "hook" / "adapters" / "unity_il2cpp_lookup.inc").read_text(
+                encoding="utf-8"
+            )
+        )
+        runtime = self._strip_comments(
+            (ROOT / "hook" / "adapters" / "unity_mono_lookup.inc").read_text(
+                encoding="utf-8"
+            )
+        )
+        adapter = self._strip_comments(
+            (ROOT / "hook" / "adapters" / "unity_adapter.inc").read_text(
+                encoding="utf-8"
+            )
+        )
+        registry = (ROOT / "hook" / "adapter_registry.inc").read_text(
+            encoding="utf-8"
+        )
+        # Identity is structural: no title, digest or vendor special case.
+        for forbidden in ("sha256", "bcrypt", "road59", "paranormasight",
+                          "getmodulefilename(game", "sleep("):
+            self.assertNotIn(forbidden, api.lower())
+            self.assertNotIn(forbidden, lookup.lower())
+        layout = self._function_body(
+            api, "inline LayoutReport MatchUnityIl2CppLayout(")
+        for proof in ("GameAssembly.dll", "_Data", "il2cpp_data", "true"):
+            self.assertIn(proof, layout)
+        # The AOT entry is MethodInfo.methodPointer, accepted only inside
+        # GameAssembly's image; internal calls by il2cpp_resolve_icall with an
+        # unambiguous "Ns.Class::Method" name.
+        entry = self._function_body(api, "inline void* ManagedEntry(")
+        self.assertIn("CodeRangeContains(entry)", entry)
+        contains = self._function_body(api, "inline bool CodeRangeContains(")
+        for proof in ("g_code_begin", "g_code_end"):
+            self.assertIn(proof, contains)
+        short = self._function_body(api, "inline bool IcallShortName(")
+        self.assertIn("kMethodImplInternalCall", short)
+        self.assertIn("::", short)
+        facade = self._function_body(api, "inline FacadeResult InstallFacade(")
+        for proof in ("report.Complete()", "kArrayHeaderBytes",
+                      "array_object_header_size"):
+            self.assertIn(proof, facade)
+        # One resolution path for both backends; no duplicated resolvers.
+        for resolver in ("ResolveTmpSites(", "ResolveUiTextSites(",
+                         "ResolveSites(", "ResolveFungusSites("):
+            self.assertNotIn(resolver, lookup)
+            self.assertNotIn(resolver, api)
+        canvas_src = "void* ResolveUmCanvasLookup(" + runtime.rsplit(
+            "void* ResolveUmCanvasLookup(", 1)[1]
+        canvas = self._function_body(canvas_src, "void* ResolveUmCanvasLookup(")
+        for proof in ("ResolveTmpSites(", "ResolveUiTextSites("):
+            self.assertIn(proof, canvas)
+        mono = self._function_body(runtime, "void* ResolveUnityMonoTmpLookup(")
+        self.assertIn("ResolveUmCanvasLookup(", mono)
+        # Lookup starts only after the text scan, resolves inside the IL2CPP
+        # attach scope and hooks only after detach.
+        install = self._function_body(lookup, "void TryInstallUnityIl2CppLookup(")
+        self.assertIn("scan.scanned", install)
+        self.assertIn("HasCurrentProcessTopLevelWindow()", install)
+        scope = install.split("Il2CppManagedThreadScope managed_thread", 1)[1]
+        scope = scope.split("InstallUnityMonoLookupHooks(code);", 1)[0]
+        self.assertIn("ResolveUmCanvasLookup(", scope)
+        self.assertNotIn("InstallUnityMonoLookupHooks(", scope)
+        self.assertIn("rt.runtime = kUmRuntimeIl2Cpp;", install)
+        self.assertNotIn("PublishHit(", lookup)
+        self.assertNotIn("OfferReady", lookup)
+        # The sampling detour carries IL2CPP's trailing MethodInfo and only
+        # reaches the shared bounded sampler.
+        detour = self._function_body(
+            runtime, "void UmIl2CppWillRenderDetour(const void* method)")
+        self.assertIn("UmSampleCanvasCandidates()", detour)
+        sampler = self._function_body(runtime, "void UmSampleCanvasCandidates() {")
+        for forbidden in ("UmLookupLog(", "CreateFile", "WriteFile", "malloc(",
+                          "std::wstring", "PublishHit(", "thread_attach",
+                          "Sleep("):
+            self.assertNotIn(forbidden, detour)
+            self.assertNotIn(forbidden, sampler)
+        # Canvas text detours publish through the lane spec and hand the
+        # candidate to the shared runtime; SetText(string) nests correctly.
+        record = self._function_body(adapter, "void RecordUnityCanvasText(")
+        self.assertIn("RememberUmTmpCandidateGuarded(", record)
+        self.assertIn("lane.bit", record)
+        single = self._function_body(adapter, "void Detour_UnityTmpSetTextSingle(")
+        for proof in ("EnterTmpSingle(", "LeaveTmpSingle(",
+                      "uil2cpp::kLaneTmpSetTextSingle"):
+            self.assertIn(proof, single)
+        self.assertIn("ShouldHookTmpSetTextSingle(", adapter)
+        # Naninovel's printer keeps its scene-stable lane (BUG-1646) and joins
+        # the canvas lookup; its object's class picks TMP or UI.Text.
+        naninovel = self._function_body(
+            adapter, "void Detour_NaninovelRevealableSetText(")
+        self.assertIn("uil2cpp::kLaneNaninovelSetText", naninovel)
+        self.assertIn("lane.stable", record)
+        remember = self._function_body(
+            runtime, "void RememberUmTmpCandidateOnMain(")
+        self.assertIn("kUmLaneClassDecided", remember)
+        self.assertIn("scan.naninovel_set_text", install)
+        # The registry ticks / admits / shuts down only its own runtime owner.
+        il2cpp = registry.split("class UnityIl2CppAdapter", 1)[1]
+        il2cpp = il2cpp.split("\nclass ", 1)[0]
+        for proof in ("TryInstallUnityIl2CppLookup()",
+                      "ProcessUnityMonoLookupTick(kUmRuntimeIl2Cpp)",
+                      "ShutdownUnityMonoLookup(kUmRuntimeIl2Cpp)",
+                      "UnityIl2CppLookupSensorInstalled()",
+                      "UnityIl2CppLookupRejected()",
+                      "UnityIl2CppLookupUnsupported()"):
+            self.assertIn(proof, il2cpp)
 
     def test_unity_mono_voice_is_bundle_proven_and_callbacks_stay_bounded(
         self,

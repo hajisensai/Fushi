@@ -1027,6 +1027,21 @@ target_compile_definitions(fushi_unity_mono_lookup_test PRIVATE
 add_test(NAME fushi_unity_mono_lookup_test
   COMMAND fushi_unity_mono_lookup_test)
 
+# Unity IL2CPP in-game lookup accessor layer (unity_il2cpp_api.h): export
+# loading / missing-name report, facade refusals, the il2cpp_* shims behind the
+# shared TMP / UI.Text site resolvers (methodPointer inside GameAssembly,
+# resolve_icall by "Ns.Class::Method", overloaded internal calls refused),
+# canvas lane identity, TMP SetText(string) nesting and the disk layout -- on a
+# fake il2cpp export table.
+add_executable(fushi_unity_il2cpp_lookup_test
+  "tests/unity_il2cpp_lookup_test.cpp")
+target_include_directories(fushi_unity_il2cpp_lookup_test PRIVATE
+  "hook" "include")
+target_compile_definitions(fushi_unity_il2cpp_lookup_test PRIVATE
+  UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_unity_il2cpp_lookup_test
+  COMMAND fushi_unity_il2cpp_lookup_test)
+
 add_executable(fushi_engine_identity_layout_test
   "tests/engine_identity_layout_test.cpp")
 target_include_directories(fushi_engine_identity_layout_test PRIVATE
