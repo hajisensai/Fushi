@@ -111,7 +111,6 @@ void main() {
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
 
   Future<SrsDbStore> openOn(SrsStorage st, String deviceId) => SrsDbStore.open(
-    db: st.db,
     core: st.core,
     profileUid: kProfile,
     deviceId: deviceId,
@@ -198,7 +197,6 @@ void main() {
     // 重开：内置实体都在（不补写），迁移推迟（app 打开时同样推迟到首次同步确认之后）——打开不碰通道。
     final TestSrs t = await openTestSrsAt(path);
     final SrsDbStore b = await SrsDbStore.open(
-      db: t.db,
       core: t.core,
       profileUid: kProfile,
       deviceId: 'B',

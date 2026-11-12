@@ -73,9 +73,7 @@ void main() {
 
   Future<String?> deckOfOnlyNote(String uid) async {
     final SrsDbStore store = srs.storeFor(uid)!;
-    final List<SrsNoteCacheRow> rows = await (store.db.select(
-      store.db.srsNotesCache,
-    )..where((n) => n.profileUid.equals(uid))).get();
+    final List<SrsNoteCacheRow> rows = await store.noteRows();
     final List<String> cardDecks = <String>[
       for (final SrsNoteCacheRow r in rows)
         for (final c in await store.cardsOfNote(r.id)) c.deckId,

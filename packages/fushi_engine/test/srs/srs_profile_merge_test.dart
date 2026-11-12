@@ -6,11 +6,10 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:drift/drift.dart' show QueryRow, Variable, driftRuntimeOptions;
+import 'package:drift/drift.dart' show Variable, driftRuntimeOptions;
 import 'package:drift/native.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
-import 'package:fushi_engine/srs/srs_database_executor.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_profile_data.dart';
 import 'package:fushi_engine/srs/srs_profile_link.dart';
@@ -26,6 +25,8 @@ import 'package:test/test.dart';
 import 'support/srs_fake_engine.dart';
 import 'support/srs_legacy_fixtures.dart';
 import 'support/srs_test_storage.dart';
+import 'support/srs_raw_sql.dart';
+import 'package:fushi_engine/srs/srs_reads.dart';
 
 class _Device {
   _Device._(this.db, this.srs, this.deviceId, this.profileId);
@@ -51,7 +52,6 @@ class _Device {
 
   /// 按 profiles 表里的 uid 重开（调用方并入 / 采用之后做的事）。
   Future<SrsDbStore> reopen() async => store = await SrsDbStore.open(
-    db: srs.db,
     core: srs.core,
     profileUid: await db.profileUidOf(profileId),
     deviceId: deviceId,
@@ -93,7 +93,7 @@ class _Device {
       'sync2_ops',
       'sync2_self',
     ]) {
-      final QueryRow r = await srs.db
+      final SrsRawRow r = await srs.core
           .customSelect(
             'SELECT COUNT(*) AS c FROM $t WHERE profile_uid = ?',
             variables: <Variable<Object>>[Variable<String>(uid, srsIdType)],
@@ -176,7 +176,6 @@ void main() {
 
     final SrsProfileMergeResult r = await srsMergeProfileUid(
       b.db,
-      b.srs.db,
       core: b.srs.core,
       profileId: b.profileId,
       oldUid: bOld,
@@ -186,7 +185,7 @@ void main() {
     expect(r.appliedEvents, greaterThan(0));
     expect(await b.db.profileUidOf(b.profileId), aUid);
     expect(await b.rowsOf(bOld), 0, reason: '并入成功后旧 uid 的本机行全部删掉');
-    expect(await srsPendingProfileMerges(b.srs.db), isEmpty);
+    expect(await srsPendingProfileMerges(b.srs.core), isEmpty);
 
     await b.reopen();
     await b.store.afterRestore(freshIncarnation: true);
@@ -267,7 +266,7 @@ void main() {
     // BUG-3959：并入带过来的合成标签行（写入者 `sync2:tags:<笔记>`）不进任何因果上下文——以前它进了 B 的
     // legacy 闭包，此后 B 的每条新修改 ctx 都带上一条笔记一项（真实库 15027 项、≈780 KB / 条）。
     for (final _Device d in <_Device>[a, b]) {
-      final QueryRow bloat = await d.srs.db
+      final SrsRawRow bloat = await d.srs.core
           .customSelect(
             'SELECT (SELECT COUNT(*) FROM srs_field_edits '
             "WHERE instr(json_extract(json, '\$.ctx'), '\"sync2:') > 0) AS e, "
@@ -290,7 +289,6 @@ void main() {
 
     final SrsProfileMergeResult first = await srsMergeProfileUid(
       b.db,
-      b.srs.db,
       core: b.srs.core,
       profileId: b.profileId,
       oldUid: bOld,
@@ -310,7 +308,7 @@ void main() {
     expect(card.id, SrsIds.card(newNote, lapisTpl, 0));
     expect((await b.store.history(card.id)).state.reps, 1);
 
-    final QueryRow ops0 = await b.srs.db
+    final SrsRawRow ops0 = await b.srs.core
         .customSelect(
           'SELECT COUNT(*) AS c FROM sync2_ops WHERE profile_uid = ?',
           variables: <Variable<Object>>[Variable<String>(target, srsIdType)],
@@ -318,7 +316,6 @@ void main() {
         .getSingle();
     final SrsProfileMergeResult again = await srsMergeProfileUid(
       b.db,
-      b.srs.db,
       core: b.srs.core,
       profileId: b.profileId,
       oldUid: bOld,
@@ -326,7 +323,7 @@ void main() {
       deviceId: b.deviceId,
     );
     expect(again.appliedEvents, 0);
-    final QueryRow ops1 = await b.srs.db
+    final SrsRawRow ops1 = await b.srs.core
         .customSelect(
           'SELECT COUNT(*) AS c FROM sync2_ops WHERE profile_uid = ?',
           variables: <Variable<Object>>[Variable<String>(target, srsIdType)],
@@ -371,7 +368,6 @@ void main() {
     await expectLater(
       srsMergeProfileUid(
         b.db,
-        b.srs.db,
         core: b.srs.core,
         profileId: b.profileId,
         oldUid: bOld,
@@ -392,14 +388,13 @@ void main() {
       '雨',
     );
     expect((await b.store.history(await b.cardOf(note))).state.reps, 1);
-    expect(await srsPendingProfileMerges(b.srs.db), hasLength(1));
+    expect(await srsPendingProfileMerges(b.srs.core), hasLength(1));
 
     final SrsPendingProfileMerge p = (await srsPendingProfileMerges(
-      b.srs.db,
+      b.srs.core,
     )).single;
     await srsMergeProfileUid(
       b.db,
-      b.srs.db,
       core: b.srs.core,
       profileId: p.profileId,
       oldUid: p.oldUid,
@@ -428,7 +423,6 @@ void main() {
     await expectLater(
       srsMergeProfileUid(
         b.db,
-        b.srs.db,
         core: b.srs.core,
         profileId: b.profileId,
         oldUid: bOld,
@@ -442,7 +436,7 @@ void main() {
     );
     expect(await b.db.profileUidOf(b.profileId), target);
     expect(await b.rowsOf(bOld), before, reason: '收尾命令整笔回滚，旧行一行不少');
-    expect(await srsPendingProfileMerges(b.srs.db), hasLength(1));
+    expect(await srsPendingProfileMerges(b.srs.core), hasLength(1));
     await b.reopen();
     final SrsNoteView? n = await _noteByGuid(b.store, guid);
     expect(n?.field(srsLapisFieldId(target, 'Expression')), '雨');
@@ -450,7 +444,6 @@ void main() {
 
     await srsMergeProfileUid(
       b.db,
-      b.srs.db,
       core: b.srs.core,
       profileId: b.profileId,
       oldUid: bOld,
@@ -458,7 +451,7 @@ void main() {
       deviceId: b.deviceId,
     );
     expect(await b.rowsOf(bOld), 0);
-    expect(await srsPendingProfileMerges(b.srs.db), isEmpty);
+    expect(await srsPendingProfileMerges(b.srs.core), isEmpty);
     await b.reopen();
     expect(
       (await _noteByGuid(
@@ -482,7 +475,6 @@ void main() {
     await expectLater(
       srsMergeProfileUid(
         b.db,
-        b.srs.db,
         core: b.srs.core,
         profileId: b.profileId,
         oldUid: bOld,
@@ -505,12 +497,11 @@ void main() {
     );
     expect(await b.db.profileUidOf(b.profileId), target);
     expect(await b.rowsOf(bOld), greaterThan(0), reason: '没核对过，旧行留着');
-    expect(await srsPendingProfileMerges(b.srs.db), hasLength(1));
+    expect(await srsPendingProfileMerges(b.srs.core), hasLength(1));
 
     int commits = 0;
     await srsMergeProfileUid(
       b.db,
-      b.srs.db,
       core: b.srs.core,
       profileId: b.profileId,
       oldUid: bOld,
@@ -524,7 +515,7 @@ void main() {
     );
     expect(commits, 2, reason: '第一轮收尾被拒，第二轮带上晚到的笔记');
     expect(await b.rowsOf(bOld), 0);
-    expect(await srsPendingProfileMerges(b.srs.db), isEmpty);
+    expect(await srsPendingProfileMerges(b.srs.core), isEmpty);
     await b.reopen();
     expect(lateGuids, hasLength(2));
     for (final String guid in <String>[rain, ...lateGuids]) {
@@ -569,7 +560,7 @@ void main() {
       <String>{'a', 'b', 'c'},
     );
     final String raw =
-        (await b.srs.db
+        (await b.srs.core
                 .customSelect(
                   'SELECT value FROM srs_meta WHERE key = ?',
                   variables: <Variable<Object>>[
@@ -588,11 +579,10 @@ void main() {
       await b.store.answer(await b.cardOf(await b.addNote(e)), 3);
     }
     const String target = '01900000-0000-7000-8000-000000000014';
-    SrsInlineExecutor.debugStatements = 0;
+    srsDebugReadCommands = 0;
     int atCommit = -1;
     await srsMergeProfileUid(
       b.db,
-      b.srs.db,
       core: b.srs.core,
       profileId: b.profileId,
       oldUid: bOld,
@@ -600,22 +590,22 @@ void main() {
       deviceId: b.deviceId,
       debugFault: (SrsProfileMergeStage s) async {
         if (s == SrsProfileMergeStage.beforeCommit) {
-          atCommit = SrsInlineExecutor.debugStatements;
+          atCommit = srsDebugReadCommands;
         }
       },
     );
-    final int total = SrsInlineExecutor.debugStatements;
+    final int total = srsDebugReadCommands;
     // ignore: avoid_print
     print('WRITE_COST merge: statements=$total commit=${total - atCommit}');
     expect(atCommit, greaterThan(0));
     expect(total - atCommit, 0, reason: '收尾是一条内核命令');
     expect(await b.rowsOf(bOld), 0);
 
-    SrsInlineExecutor.debugStatements = 0;
+    srsDebugReadCommands = 0;
     await srsEditMetaSet(b.srs.core, SrsMetaSet.retiredUids, add: bOld);
     await srsEditMetaSet(b.srs.core, SrsMetaSet.retiredUids, remove: bOld);
     await srsEditMetaSet(b.srs.core, SrsMetaSet.retiredUids);
-    expect(SrsInlineExecutor.debugStatements, 0);
+    expect(srsDebugReadCommands, 0);
   });
 
   test('媒体与共享样式文件跟着搬到新 uid 目录', () async {
@@ -629,7 +619,6 @@ void main() {
     const String target = '01900000-0000-7000-8000-000000000004';
     await srsMergeProfileUid(
       b.db,
-      b.srs.db,
       core: b.srs.core,
       profileId: b.profileId,
       oldUid: bOld,
@@ -654,7 +643,6 @@ void main() {
     await expectLater(
       srsMergeProfileUid(
         b.db,
-        b.srs.db,
         core: b.srs.core,
         profileId: b.profileId,
         oldUid: bOld,
@@ -675,7 +663,6 @@ void main() {
     final String bOld = b.store.profileUid;
     const String target = '01900000-0000-7000-8000-0000000000aa';
     final SrsDbStore t = await SrsDbStore.open(
-      db: b.srs.db,
       core: b.srs.core,
       profileUid: target,
       deviceId: b.deviceId,
@@ -709,14 +696,13 @@ void main() {
 
     await srsMergeProfileUid(
       b.db,
-      b.srs.db,
       core: b.srs.core,
       profileId: b.profileId,
       oldUid: bOld,
       newUid: target,
       deviceId: b.deviceId,
     );
-    final List<QueryRow> rows = await b.srs.db
+    final List<SrsRawRow> rows = await b.srs.core
         .customSelect(
           'SELECT srs_idt(writer_id) AS w, field_key AS k FROM srs_field_edits '
           "WHERE profile_uid = ? AND (field_key LIKE 'x/%' OR field_key LIKE 'c/%') "
@@ -725,7 +711,7 @@ void main() {
         )
         .get();
     final List<String> got = <String>[
-      for (final QueryRow r in rows)
+      for (final SrsRawRow r in rows)
         '${r.read<String>('k')} ${r.read<String>('w')}',
     ];
     final String merged = got
@@ -755,7 +741,6 @@ void main() {
     final String bOld = b.store.profileUid;
     const String target = '01900000-0000-7000-8000-0000000000bb';
     final SrsDbStore t = await SrsDbStore.open(
-      db: b.srs.db,
       core: b.srs.core,
       profileUid: target,
       deviceId: b.deviceId,
@@ -809,8 +794,8 @@ void main() {
     ]);
 
     Future<List<String>> logsOf(String card) async => <String>[
-      for (final QueryRow r
-          in await b.srs.db
+      for (final SrsRawRow r
+          in await b.srs.core
               .customSelect(
                 'SELECT srs_idt(id) AS id FROM srs_review_logs '
                 'WHERE profile_uid = ? AND card_id = ? ORDER BY id',
@@ -825,7 +810,6 @@ void main() {
 
     Future<SrsProfileMergeResult> merge() => srsMergeProfileUid(
       b.db,
-      b.srs.db,
       core: b.srs.core,
       profileId: b.profileId,
       oldUid: bOld,
@@ -951,7 +935,6 @@ void main() {
 
     await srsMergeProfileUid(
       b.db,
-      b.srs.db,
       core: b.srs.core,
       profileId: b.profileId,
       oldUid: bOld,
@@ -1054,7 +1037,6 @@ void main() {
   Future<void> mergeInto(_Device d, String newUid) async {
     await srsMergeProfileUid(
       d.db,
-      d.srs.db,
       core: d.srs.core,
       profileId: d.profileId,
       oldUid: d.store.profileUid,
@@ -1084,8 +1066,8 @@ void main() {
     const String c = '01900000-0000-7000-8000-0000000000e2';
 
     Future<List<String>> writersOf(_Device d) async => <String>[
-      for (final QueryRow r
-          in await d.srs.db
+      for (final SrsRawRow r
+          in await d.srs.core
               .customSelect(
                 'SELECT field_key AS k, srs_idt(writer_id) AS w '
                 "FROM srs_field_edits WHERE profile_uid = ? AND field_key LIKE 'x/%' "
@@ -1177,7 +1159,7 @@ void main() {
       uuidV5(srsNamespace, 'profile-merge/$uid/${oldId.toLowerCase()}');
 
   Future<int> logRowsUnder(_Device d, String uid) async =>
-      (await d.srs.db
+      (await d.srs.core
               .customSelect(
                 'SELECT (SELECT COUNT(*) FROM srs_review_logs WHERE profile_uid = ?) + '
                 '(SELECT COUNT(*) FROM sync2_log_meta WHERE profile_uid = ?) AS c',
@@ -1197,7 +1179,6 @@ void main() {
     await expectLater(
       srsMergeProfileUid(
         d.db,
-        d.srs.db,
         core: d.srs.core,
         profileId: d.profileId,
         oldUid: old,
@@ -1222,7 +1203,7 @@ void main() {
     expect(await d.rowsOf(old), before, reason: 'old rows untouched');
     expect(await logRowsUnder(d, newUid), 0, reason: 'nothing merged');
     final List<SrsPendingProfileMerge> pending = await srsPendingProfileMerges(
-      d.srs.db,
+      d.srs.core,
     );
     expect(pending, hasLength(1));
     expect(pending.single.oldUid, old);
@@ -1245,7 +1226,7 @@ void main() {
       SrsLogEvent(chainLog(pOld, pCard, _kChainR2, _kChainT0 + 20)),
     ]);
     await mergeInto(partial, c);
-    expect(await srsPendingProfileMerges(partial.srs.db), isEmpty);
+    expect(await srsPendingProfileMerges(partial.srs.core), isEmpty);
 
     final Map<String, SrsReviewLog> a = await logsOfCard(full, c);
     final Map<String, SrsReviewLog> p = await logsOfCard(partial, c);
@@ -1271,7 +1252,6 @@ void main() {
 
     await srsMergeProfileUid(
       partial.db,
-      partial.srs.db,
       core: partial.srs.core,
       profileId: partial.profileId,
       oldUid: partial.store.profileUid,
@@ -1407,7 +1387,7 @@ void main() {
       expect(errors.single.$2, isA<SrsProfileMergeDeferred>());
       expect((await b.round(dir)).error, isNull, reason: 'sync still runs');
     }
-    expect(await srsPendingProfileMerges(b.srs.db), hasLength(1));
+    expect(await srsPendingProfileMerges(b.srs.core), hasLength(1));
 
     final String card = (await b.store.cardsOfNote(
       SrsIds.note(bOld, 'anki-guid-chain'),
@@ -1420,7 +1400,7 @@ void main() {
     expect(out.store.profileUid, c);
     expect(errors, hasLength(1));
     expect(await b.db.profileUidOf(b.profileId), c);
-    expect(await srsPendingProfileMerges(b.srs.db), isEmpty);
+    expect(await srsPendingProfileMerges(b.srs.core), isEmpty);
     expect(
       (await out.store.history(await chainCardIn(b, c))).revoked,
       contains(fallbackIn(c, _kChainR2)),
@@ -1465,7 +1445,7 @@ void main() {
     expect(d.missingRevoked, <String>[_kChainR2.toLowerCase()]);
     expect(await b.db.profileUidOf(b.profileId), bOld);
     final List<SrsPendingProfileMerge> pending = await srsPendingProfileMerges(
-      b.srs.db,
+      b.srs.core,
     );
     expect(pending, hasLength(1), reason: 'merge marker written');
     expect(pending.single.oldUid, bOld);
@@ -1498,7 +1478,7 @@ void main() {
     expect(done.linked, isTrue);
     expect(done.store.profileUid, c);
     expect(await b.db.profileUidOf(b.profileId), c);
-    expect(await srsPendingProfileMerges(b.srs.db), isEmpty);
+    expect(await srsPendingProfileMerges(b.srs.core), isEmpty);
     expect(await linker.deferredMerge(done.store), isNull);
     expect(errors, hasLength(1));
   });
@@ -1547,7 +1527,6 @@ void main() {
     await expectLater(
       srsMergeProfileUid(
         b.db,
-        b.srs.db,
         core: b.srs.core,
         profileId: b.profileId,
         oldUid: bOld,
@@ -1576,7 +1555,6 @@ void main() {
         '$kSrsMergedWriterPrefix'
         '${uuidV5(srsNamespace, 'profile-merge/$target/writer/w-old#1')}~w-old#1';
     final SrsDbStore t = await SrsDbStore.open(
-      db: b.srs.db,
       core: b.srs.core,
       profileUid: target,
       deviceId: b.deviceId,
@@ -1605,7 +1583,6 @@ void main() {
     await expectLater(
       srsMergeProfileUid(
         b.db,
-        b.srs.db,
         core: b.srs.core,
         profileId: b.profileId,
         oldUid: bOld,
@@ -1633,7 +1610,6 @@ void main() {
     await expectLater(
       srsMergeProfileUid(
         b.db,
-        b.srs.db,
         core: b.srs.core,
         profileId: b.profileId,
         oldUid: bOld,
@@ -1642,7 +1618,7 @@ void main() {
       ),
       throwsStateError,
     );
-    expect(await srsPendingProfileMerges(b.srs.db), hasLength(1));
+    expect(await srsPendingProfileMerges(b.srs.core), hasLength(1));
 
     final List<(String, Object)> errors = <(String, Object)>[];
     final SrsDbProfileLinker linker = SrsDbProfileLinker(
@@ -1660,7 +1636,7 @@ void main() {
       expect((await b.round(dir)).error, isNull, reason: 'sync still runs');
     }
     expect(await b.db.profileUidOf(b.profileId), bOld);
-    expect(await srsPendingProfileMerges(b.srs.db), hasLength(1));
+    expect(await srsPendingProfileMerges(b.srs.core), hasLength(1));
     // 同步只会给旧 uid 加本设备的 sync2 行，旧 profile 的数据一行不少。
     expect(await b.rowsOf(bOld), greaterThanOrEqualTo(before));
   });
@@ -1701,7 +1677,6 @@ void main() {
 
         await srsMergeProfileUid(
           b.db,
-          b.srs.db,
           core: b.srs.core,
           profileId: b.profileId,
           oldUid: bOld,
@@ -1733,7 +1708,7 @@ void main() {
                 }
               : null,
         );
-        final List<QueryRow> rows = await b.srs.db
+        final List<SrsRawRow> rows = await b.srs.core
             .customSelect(
               'SELECT srs_idt(writer_id) AS w FROM srs_field_edits '
               "WHERE profile_uid = ? AND field_key LIKE 'x/%'",
@@ -1743,7 +1718,7 @@ void main() {
             )
             .get();
         final List<String> writers = <String>[
-          for (final QueryRow r in rows) r.read<String>('w'),
+          for (final SrsRawRow r in rows) r.read<String>('w'),
         ];
         final int merged = writers
             .where((String w) => w.startsWith(kSrsMergedWriterPrefix))
@@ -1761,7 +1736,7 @@ void main() {
 
 /// 设备上唯一一条笔记的 guid（按缓存表读，不经 uid）。
 Future<String> _guidOfOnly(_Device d) async =>
-    (await d.srs.db
+    (await d.srs.core
             .customSelect(
               'SELECT guid FROM srs_notes_cache WHERE profile_uid = ?',
               variables: <Variable<Object>>[

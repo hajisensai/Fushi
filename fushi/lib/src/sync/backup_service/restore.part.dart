@@ -751,7 +751,7 @@ class BackupRestoreService {
         await srcMigrate.close();
       }
       if (srsEntryName != null) {
-        srcSrs = await SrsStorage.open(path: srcSrsPath, inline: true);
+        srcSrs = await SrsStorage.open(path: srcSrsPath);
       }
       final FushiDatabase db = FushiDatabase(dbDirectory);
       try {
@@ -777,7 +777,7 @@ class BackupRestoreService {
                   ? SrsBackupSource.split(
                       profiles: db,
                       profilesSchema: 'srssrc',
-                      srs: split.db,
+                      srs: split.core,
                     )
                   : SrsBackupSource.attached(db, 'srssrc'),
             );
@@ -1684,10 +1684,7 @@ class BackupRestoreService {
             legacy: db,
           );
           if (srsFile != null) {
-            sourceSrs = await SrsStorage.open(
-              path: mergeSrcSrsPath,
-              inline: true,
-            );
+            sourceSrs = await SrsStorage.open(path: mergeSrcSrsPath);
           }
         }
         final String safeSrc = mergeSrcPath
@@ -1706,7 +1703,7 @@ class BackupRestoreService {
             adoptSourcePreferences: adoptSourcePreferences,
             mergePortableSettings: mergePortableSettings,
             localSrs: localSrs,
-            sourceSrs: sourceSrs?.db,
+            sourceSrs: sourceSrs?.core,
           ).merge();
         } finally {
           await db.customStatement('DETACH DATABASE mergesrc');

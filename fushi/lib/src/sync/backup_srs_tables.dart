@@ -3,7 +3,8 @@
 /// SRS 的表归 Rust 的 `srs.db`；app 侧只在两种场合碰表名：
 /// - **老形态**：2026-10-23 之前的备份 / 还没搬迁的本机主库里，9 张 `srs_*` 表在 `fushi.db` 里
 ///   （迁移阶梯照旧建出它们，见 fushi_core `kLegacySrsTableDdl`）。导出要剥掉、恢复要识别它们。
-/// - **新形态**：经 [SrsDatabase]（语句在 Rust 连接上执行）读 srs.db 里的计数 / profile uid。
+/// - **新形态**：srs.db 里的计数 / profile uid 走内核读命令 `read_lib`（[srsUserNoteCountIn] /
+///   [srsProfileUidsIn]，native/fushi_fsrs/src/store/reads.rs），这里不写 srs.db 的 SQL。
 ///
 /// 守卫 `test/build/srs_store_ownership_guard_test.dart` 只放行本文件写 SRS 表名。
 library;
@@ -11,9 +12,9 @@ library;
 import 'dart:io';
 
 import 'package:drift/drift.dart';
-import 'package:fushi_core/fushi_core.dart'
-    show SrsDatabase, kLegacySrsTableDdl;
-import 'package:fushi_srs/fushi_srs.dart' show SrsEntityKind;
+import 'package:fushi_core/fushi_core.dart' show kLegacySrsTableDdl;
+import 'package:fushi_engine/srs/srs_reads.dart';
+import 'package:fushi_srs/fushi_srs.dart' show SrsCore, SrsEntityKind;
 import 'package:sqlite3/sqlite3.dart' as sqlite;
 
 /// 9 张 SRS 表（老形态下在主库里；新形态下在 srs.db 里）。
@@ -88,10 +89,13 @@ Future<void> clearLegacySrsDeviceLocalTables(DatabaseConnectionUser db) async {
   }
 }
 
-/// SRS 用户笔记数：[db] 是 srs.db 的 [SrsDatabase]，或带老形态 SRS 表的主库。
-/// 主库里没有 SRS 表时为 0。
+/// srs.db（[core]）里的 SRS 用户笔记数（`read_lib` 的 `user_note_count`）。
+Future<int> srsUserNoteCountIn(SrsCore core) async =>
+    (await srsReadLib(core, 'user_note_count')).json['n']! as int;
+
+/// 带老形态 SRS 表的主库 [db] 里的 SRS 用户笔记数；主库里没有 SRS 表时为 0。
 Future<int> srsUserNoteCount(DatabaseConnectionUser db) async {
-  if (db is! SrsDatabase && !await hasLegacySrsTables(db)) return 0;
+  if (!await hasLegacySrsTables(db)) return 0;
   final QueryRow row = await db
       .customSelect('SELECT COUNT(*) AS c FROM $_entities WHERE $_userNoteSql')
       .getSingle();
@@ -111,10 +115,15 @@ int srsUserNoteCountInLegacyBlob(sqlite.Database db) {
       as int;
 }
 
-/// 出现过 SRS 数据的 profile uid：[db] 是 srs.db 的 [SrsDatabase]，或带老形态 SRS 表的主库
-/// （没有表时为空）。
+/// srs.db（[core]）里出现过 SRS 数据的 profile uid（`read_lib` 的 `entity_owners`）。
+Future<Set<String>> srsProfileUidsIn(SrsCore core) async => (await srsReadLib(
+  core,
+  'entity_owners',
+)).table.strings('uid').toList().toSet();
+
+/// 带老形态 SRS 表的主库 [db] 里出现过 SRS 数据的 profile uid（没有表时为空）。
 Future<Set<String>> srsProfileUids(DatabaseConnectionUser db) async {
-  if (db is! SrsDatabase && !await hasLegacySrsTables(db)) {
+  if (!await hasLegacySrsTables(db)) {
     return const <String>{};
   }
   final List<QueryRow> rows = await db

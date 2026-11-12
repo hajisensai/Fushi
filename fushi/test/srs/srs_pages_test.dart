@@ -267,7 +267,6 @@ Future<SrsDbStore> _openStore(WidgetTester tester) async {
   final SrsStorage srs = (await tester.runAsync(openSrsTestStorage))!;
   return (await tester.runAsync(
     () => SrsDbStore.open(
-      db: srs.db,
       core: srs.core,
       profileUid: _kProfile,
       deviceId: 'test-device',
@@ -3059,12 +3058,8 @@ void main() {
   testWidgets('排程内核不可用：横幅提示，复习页不给评分', (WidgetTester tester) async {
     final SrsStorage srs = (await tester.runAsync(openSrsTestStorage))!;
     final SrsDbStore store = (await tester.runAsync(
-      () => SrsDbStore.open(
-        db: srs.db,
-        core: srs.core,
-        profileUid: _kProfile,
-        deviceId: 'd',
-      ),
+      () =>
+          SrsDbStore.open(core: srs.core, profileUid: _kProfile, deviceId: 'd'),
     ))!;
     await _pumpPage(
       tester,

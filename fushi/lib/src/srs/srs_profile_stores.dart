@@ -24,7 +24,7 @@ library;
 import 'dart:async';
 import 'dart:io';
 
-import 'package:fushi_core/fushi_core.dart' show SrsDatabase;
+import 'package:fushi_engine/srs/srs_reads.dart';
 import 'package:fushi_engine/srs/srs_miner.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
@@ -219,11 +219,13 @@ class SrsProfileStores {
   Future<bool> hasReviewData(String profileUid) async {
     final SrsStorage? storage = await _deps.storage();
     if (storage == null) return false;
-    final SrsDatabase db = storage.db;
-    final query = db.select(db.srsEntities)
-      ..where((t) => t.profileUid.equals(profileUid))
-      ..limit(1);
-    return await query.getSingleOrNull() != null;
+    final SrsReadResult r = await srsRead(
+      storage.core,
+      profileUid,
+      'entity_count',
+      const <String, Object?>{'limit': 1},
+    );
+    return (r.json['n']! as int) > 0;
   }
 
   /// [profileUid] 的副本（见 [minerFor]）；复习模块关着时为 null。
@@ -268,7 +270,6 @@ class SrsProfileStores {
     final String deviceId = await _deps.deviceId();
     final Directory support = await _deps.supportRoot();
     return SrsDbStore.open(
-      db: storage.db,
       core: storage.core,
       profileUid: profileUid,
       deviceId: deviceId,

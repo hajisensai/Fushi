@@ -11,6 +11,7 @@ import 'package:test/test.dart';
 
 import 'support/srs_sync2_peers.dart';
 import 'support/srs_test_storage.dart';
+import 'support/srs_raw_sql.dart';
 
 /// 铁律 E：备份合并导入的 SRS 专用步骤（profiles 在主库、SRS 在各自的 srs.db，纯逻辑）。
 void main() {
@@ -62,12 +63,7 @@ void main() {
           .read<int>('c');
 
   Future<SrsDbStore> store(SrsStorage st, String uid, String device) =>
-      SrsDbStore.open(
-        db: st.db,
-        core: st.core,
-        profileUid: uid,
-        deviceId: device,
-      );
+      SrsDbStore.open(core: st.core, profileUid: uid, deviceId: device);
 
   Future<String> addNote(SrsDbStore s, String text) => s.createNote(
     noteTypeId: s.lapisNoteTypeId,
@@ -110,7 +106,7 @@ void main() {
         ],
       );
     }
-    await copySrsRowsToLegacyTables(backupSrs.db, legacy);
+    await copySrsRowsToLegacyTables(backupSrs.core, legacy);
     return legacy;
   }
 
@@ -118,7 +114,7 @@ void main() {
       mergeSrsFromBackup(
         source: legacy
             ? SrsBackupSource.database(await legacyBackupDb())
-            : SrsBackupSource.split(profiles: backup, srs: backupSrs.db),
+            : SrsBackupSource.split(profiles: backup, srs: backupSrs.core),
         local: local,
         localSrs: localSrs,
         deviceId: 'devA',
@@ -176,7 +172,7 @@ void main() {
       'srs_notes_cache',
       'srs_cards_cache',
     ]) {
-      final QueryRow c = await localSrs.db
+      final SrsRawRow c = await localSrs.core
           .customSelect(
             'SELECT COUNT(*) AS c FROM $table WHERE profile_uid = ?',
             variables: <Variable<Object>>[Variable<String>(oldUid, srsIdType)],
@@ -209,7 +205,7 @@ void main() {
 
     // 事件 ID 全局唯一、不重映射：按 srs_entities.profile_uid 看归属。
     Future<String?> ownerOf(String id) async =>
-        (await localSrs.db
+        (await localSrs.core
                 .customSelect(
                   'SELECT profile_uid FROM srs_entities WHERE id = ?',
                   variables: <Variable<Object>>[
@@ -305,15 +301,15 @@ void main() {
     final String uid = await local.profileUidOf(localId);
     await store(localSrs, uid, 'devA');
     Future<List<Object?>> snapshot() async => <Object?>[
-      for (final QueryRow r
-          in await localSrs.db
+      for (final SrsRawRow r
+          in await localSrs.core
               .customSelect(
                 'SELECT json FROM srs_local_state WHERE profile_uid = ?',
                 variables: <Variable<Object>>[Variable<String>(uid, srsIdType)],
               )
               .get())
         r.read<String>('json'),
-      (await localSrs.db
+      (await localSrs.core
               .customSelect(
                 'SELECT (SELECT COUNT(*) FROM srs_entities) + '
                 '(SELECT COUNT(*) FROM srs_field_edits) + '
@@ -348,7 +344,7 @@ void main() {
       newUid: 'new-uid',
     );
     expect(await uidOfName(local, '日语'), 'new-uid');
-    final QueryRow c = await localSrs.db
+    final SrsRawRow c = await localSrs.core
         .customSelect(
           'SELECT COUNT(*) AS c FROM srs_entities WHERE profile_uid = ?',
           variables: <Variable<Object>>[Variable<String>(oldUid, srsIdType)],

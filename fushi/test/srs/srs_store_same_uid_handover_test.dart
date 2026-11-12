@@ -82,7 +82,6 @@ void main() {
   );
 
   Future<SrsDbStore> openOn(String uid) => SrsDbStore.open(
-    db: storage.db,
     core: storage.core,
     profileUid: uid,
     deviceId: 'dev',

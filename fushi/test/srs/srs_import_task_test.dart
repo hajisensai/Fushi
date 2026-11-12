@@ -491,7 +491,6 @@ void main() {
           return (
             db,
             await SrsDbStore.open(
-              db: srs.db,
               core: srs.core,
               profileUid: kSrsTestProfile,
               deviceId: 'dev',
@@ -784,7 +783,6 @@ void main() {
           return (
             db,
             await SrsDbStore.open(
-              db: srs.db,
               core: srs.core,
               profileUid: kSrsTestProfile,
               deviceId: 'dev',

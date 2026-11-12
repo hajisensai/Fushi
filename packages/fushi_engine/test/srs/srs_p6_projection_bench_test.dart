@@ -169,10 +169,7 @@ void main() {
         Platform.environment['FUSHI_SRS_P6_BENCH_REVS'] ?? '10',
       );
       final Directory tmp = Directory.systemTemp.createTempSync('srs_p6_');
-      final TestSrs srs = await openTestSrsAt(
-        '${tmp.path}/srs.db',
-        inline: false,
-      );
+      final TestSrs srs = await openTestSrsAt('${tmp.path}/srs.db');
       addTearDown(() async {
         try {
           tmp.deleteSync(recursive: true);
@@ -181,7 +178,6 @@ void main() {
         }
       });
       final SrsDbStore store = await SrsDbStore.open(
-        db: srs.db,
         core: srs.core,
         profileUid: '01928c3e-0000-7000-8000-0000000be4c8',
         deviceId: 'bench',

@@ -1277,10 +1277,11 @@ class _Importer {
 
   /// 身份记录已存在、却不在牌组树里 = 先前导入过、后来被删。
   Future<bool> _deckDeleted(String id) async {
-    final SrsEntityRow? row = await (store.db.select(
-      store.db.srsEntities,
-    )..where(($SrsEntitiesTable t) => t.id.equals(id))).getSingleOrNull();
-    if (row == null) return false;
+    final SrsColumns row = await store.readTable('entities', <String, Object?>{
+      'ids': <String>[id],
+      'bare': true,
+    });
+    if (row.rows == 0) return false;
     return (await store.deckTree())[id] == null;
   }
 

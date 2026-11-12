@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:drift/drift.dart' show QueryRow, Variable, driftRuntimeOptions;
-import 'package:fushi_core/fushi_core.dart' show SrsCardCacheRow, srsIdType;
+import 'package:drift/drift.dart' show Variable, driftRuntimeOptions;
+import 'package:fushi_core/fushi_core.dart' show SrsCardCacheRow;
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_media_sync.dart' show kSrsMediaRetention;
@@ -16,6 +16,7 @@ import 'package:test/test.dart';
 import 'support/srs_fake_engine.dart';
 import 'support/srs_sync2_peers.dart';
 import 'support/srs_test_storage.dart';
+import 'support/srs_raw_sql.dart';
 
 const String kProfile = '01928c3e-0000-7000-8000-0000000000e5';
 const int kDay = 24 * 60 * 60 * 1000;
@@ -43,7 +44,6 @@ void main() {
   });
 
   Future<SrsDbStore> open(SrsStorage srs, String id) => SrsDbStore.open(
-    db: srs.db,
     core: srs.core,
     profileUid: kProfile,
     deviceId: id,
@@ -87,14 +87,14 @@ void main() {
       (await s.cardsOfNote(noteId)).single.id;
 
   Future<int> logCount(SrsDbStore s, String cardId) async =>
-      (await (s.db.select(
-        s.db.srsReviewLogs,
-      )..where((r) => r.cardId.equals(cardId))).get()).length;
+      (await s.readTable('logs', <String, Object?>{
+        'cards': <String>[cardId],
+      })).rows;
 
   Future<List<String>> noteEditKeys(SrsDbStore s, String noteId) async =>
       <String>[
-        for (final QueryRow r
-            in await s.db
+        for (final SrsRawRow r
+            in await s.core
                 .customSelect(
                   'SELECT field_key FROM srs_field_edits WHERE entity_id = ? '
                   'ORDER BY field_key',
@@ -108,7 +108,7 @@ void main() {
 
   /// 本机操作日志里还带着 [text] 的操作条数（载荷原字节里按字节子串找；载荷开头是二进制头、含 NUL，不能 CAST 成 TEXT 再 LIKE）。
   Future<int> opsCarrying(SrsDbStore s, String text) async =>
-      (await s.db
+      (await s.core
               .customSelect(
                 'SELECT COUNT(*) AS c FROM sync2_ops WHERE profile_uid = ? '
                 'AND instr(payload, CAST(? AS BLOB)) > 0',

@@ -1,4 +1,4 @@
-/// Fushi SRS 的数据库副本：事件落 Drift（schema v117 的 srs_* 表），行为与
+/// Fushi SRS 的数据库副本：事件落 Rust 独占的 srs.db（读写都是内核命令），行为与
 /// fushi_srs 的 SrsMemoryReplica / SrsEventStore 一致（同一套合并函数），外加本机缓存与 app 用的查询 / 操作 API。
 ///
 /// - 同步的只有三种事件：身份记录、修改记录、复习日志（另有不认识的事件原样保留）。
@@ -11,21 +11,20 @@ library;
 import 'dart:async';
 import 'dart:convert';
 import 'dart:isolate' show TransferableTypedData;
-import 'dart:typed_data' show TypedData;
+import 'dart:typed_data' show TypedData, Uint8List;
 import 'dart:math';
 
-import 'package:drift/drift.dart';
 import 'package:fushi_anki/fushi_anki_core.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:meta/meta.dart' show visibleForTesting;
 
-import 'package:fushi_engine/srs/srs_backup_snapshot.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_core_workers.dart';
 import 'package:fushi_engine/srs/srs_fushi_card_native_media.dart';
 import 'package:fushi_engine/srs/srs_op_ledger.dart';
 import 'package:fushi_engine/srs/srs_projections.dart';
+import 'package:fushi_engine/srs/srs_reads.dart';
 import 'package:fushi_engine/srs/srs_rwkv_scheduling.dart';
 import 'package:fushi_engine/srs/srs_style_store.dart';
 import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart';
@@ -399,7 +398,6 @@ typedef SrsDayRollover = ({int hour, String editId});
 
 class SrsDbStore implements SrsSync2Host {
   SrsDbStore._({
-    required this.db,
     required this.core,
     required this.profileUid,
     required this.deviceId,
@@ -417,7 +415,6 @@ class SrsDbStore implements SrsSync2Host {
   ///
   /// [localOffsetMin]：本机此刻的 UTC 偏移（分钟），「今天」的时区只取它（见 [dayContext]）；缺省读系统时区。
   static Future<SrsDbStore> open({
-    required SrsDatabase db,
     required SrsCore core,
     required String profileUid,
     required String deviceId,
@@ -430,7 +427,6 @@ class SrsDbStore implements SrsSync2Host {
     bool deferMigration = false,
   }) async {
     final SrsDbStore s = SrsDbStore._(
-      db: db,
       core: core,
       profileUid: profileUid,
       deviceId: deviceId,
@@ -540,11 +536,184 @@ class SrsDbStore implements SrsSync2Host {
   String? get sync2Device => _sync2Device;
   String? _sync2Device;
 
-  final SrsDatabase db;
-
-  /// [db] 底下的 Rust 句柄：全部写入与热路径的读都是它的命令（一条命令在内核里读、算、写完），日志原文不跨
-  /// isolate、不回 Dart（docs/specs/2026-10-23-srs-rust-store.md）。[db] 只读（srs_database_executor.dart）。
+  /// srs.db 的 Rust 句柄：全部读写都是它的命令（写命令在内核里读、算、写完；读命令见 srs_reads.dart），
+  /// 表结构与 SQL 只在内核里（docs/specs/2026-10-23-srs-rust-store.md）。
   final SrsCore core;
+
+  /// 本 profile 的一条只读查询（内核 `read`，native/fushi_fsrs/src/store/reads.rs）。
+  Future<SrsReadResult> _read(
+    String q, [
+    Map<String, Object?> args = const <String, Object?>{},
+  ]) => srsRead(core, profileUid, q, args);
+
+  /// 同 [_read]，只要它的那一张表。
+  Future<SrsColumns> _readTable(
+    String q, [
+    Map<String, Object?> args = const <String, Object?>{},
+  ]) async => (await _read(q, args)).table;
+
+  /// 身份记录（`read` 的 `entities`，不带 `bare` 时三列都在）。
+  List<_EntityRow> _entityRowsOf(SrsColumns c) {
+    final SrsStringColumn id = c.strings('id');
+    final SrsStringColumn kind = c.strings('kind');
+    final SrsStringColumn payload = c.strings('payload_json');
+    return <_EntityRow>[
+      for (int i = 0; i < c.rows; i++)
+        (id: id[i], kind: kind[i], payloadJson: payload[i]),
+    ];
+  }
+
+  /// 一类实体（或 [ids] 里的那些）的 ID（`read` 的 `entities` + `bare`）。
+  Future<List<String>> _entityIdsWhere({
+    SrsEntityKind? kind,
+    Iterable<String>? ids,
+  }) async => (await _readTable('entities', <String, Object?>{
+    'bare': true,
+    'kind': ?kind?.wire,
+    if (ids != null) 'ids': ids.toList(),
+  })).strings('id').toList();
+
+  /// 卡片缓存行（`read` 的 `cards` / `card_columns`：全部列）。
+  List<SrsCardCacheRow> _cardRowsOf(SrsColumns c) {
+    final SrsStringColumn id = c.strings('id');
+    final SrsStringColumn note = c.strings('note_id');
+    final SrsStringColumn template = c.strings('template_id');
+    final SrsIntColumn ord = c.ints('cloze_ord');
+    final SrsStringColumn deck = c.strings('deck_id');
+    final SrsIntColumn suspended = c.ints('suspended');
+    final SrsIntColumn buried = c.ints('buried_until_day');
+    final SrsIntColumn flag = c.ints('flag');
+    final SrsIntColumn hidden = c.ints('hidden');
+    final SrsStringColumn queue = c.strings('queue');
+    final SrsIntColumn dueDay = c.ints('due_day');
+    final SrsIntColumn dueAt = c.ints('due_at');
+    final SrsIntColumn days = c.ints('scheduled_days');
+    final SrsIntColumn reps = c.ints('reps');
+    final SrsIntColumn lapses = c.ints('lapses');
+    final SrsDoubleColumn stability = c.doubles('stability');
+    final SrsDoubleColumn difficulty = c.doubles('difficulty');
+    final SrsIntColumn last = c.ints('last_reviewed_at');
+    final SrsStringColumn lastLog = c.strings('last_log_id');
+    final SrsStringColumn scheduler = c.strings('scheduler');
+    final SrsIntColumn created = c.ints('note_created_at');
+    final SrsIntColumn position = c.ints('new_position');
+    final SrsIntColumn freq = c.ints('freq_rank');
+    return <SrsCardCacheRow>[
+      for (int i = 0; i < c.rows; i++)
+        SrsCardCacheRow(
+          id: id[i],
+          profileUid: profileUid,
+          noteId: note[i],
+          templateId: template[i],
+          clozeOrd: ord[i],
+          deckId: deck[i],
+          suspended: suspended.flag(i),
+          buriedUntilDay: buried.at(i),
+          flag: flag[i],
+          hidden: hidden.flag(i),
+          queue: queue[i],
+          dueDay: dueDay.at(i),
+          dueAt: dueAt.at(i),
+          scheduledDays: days[i],
+          reps: reps[i],
+          lapses: lapses[i],
+          stability: stability.at(i),
+          difficulty: difficulty.at(i),
+          lastReviewedAt: last.at(i),
+          lastLogId: lastLog.at(i),
+          scheduler: scheduler[i],
+          noteCreatedAt: created[i],
+          newPosition: position.at(i),
+          freqRank: freq.at(i),
+        ),
+    ];
+  }
+
+  /// 笔记缓存行（`read` 的 `notes`：全部列）。
+  List<SrsNoteCacheRow> _noteRowsOf(SrsColumns c) {
+    final SrsStringColumn id = c.strings('id');
+    final SrsStringColumn type = c.strings('note_type_id');
+    final SrsStringColumn guid = c.strings('guid');
+    final SrsIntColumn created = c.ints('created_at');
+    final SrsStringColumn deck = c.strings('deck_id');
+    final SrsIntColumn deleted = c.ints('deleted_at');
+    final SrsStringColumn term = c.strings('term_key');
+    final SrsStringColumn reading = c.strings('reading_key');
+    final SrsStringColumn sort = c.strings('sort_field');
+    final SrsStringColumn tags = c.strings('tags_json');
+    final SrsIntColumn pending = c.ints('pending_decision');
+    final SrsIntColumn updated = c.ints('updated_at');
+    final SrsStringColumn media = c.strings('media_refs');
+    return <SrsNoteCacheRow>[
+      for (int i = 0; i < c.rows; i++)
+        SrsNoteCacheRow(
+          id: id[i],
+          profileUid: profileUid,
+          noteTypeId: type[i],
+          guid: guid[i],
+          createdAt: created[i],
+          deckId: deck.at(i),
+          deletedAt: deleted.at(i),
+          termKey: term[i],
+          readingKey: reading[i],
+          sortField: sort[i],
+          tagsJson: tags[i],
+          pendingDecision: pending.flag(i),
+          updatedAt: updated[i],
+          mediaRefs: media[i],
+        ),
+    ];
+  }
+
+  /// 笔记缓存行（`read` 的 `notes`，参数见 native/fushi_fsrs/src/store/reads.rs `notes`）。
+  Future<List<SrsNoteCacheRow>> noteRows([
+    Map<String, Object?> query = const <String, Object?>{},
+  ]) async => _noteRowsOf(await _readTable('notes', query));
+
+  /// 一列笔记缓存（`read` 的 `notes` + `fields: [column]`，其余参数同 [noteRows]）。
+  Future<SrsColumns> noteColumns(
+    List<String> columns, [
+    Map<String, Object?> query = const <String, Object?>{},
+  ]) => _readTable('notes', <String, Object?>{...query, 'fields': columns});
+
+  /// 卡片缓存行（`read` 的 `cards`，参数见 native/fushi_fsrs/src/store/reads.rs `cards`）。
+  Future<List<SrsCardCacheRow>> cardRowsWhere(
+    Map<String, Object?> query,
+  ) async => _cardRowsOf(await _readTable('cards', query));
+
+  /// 几列卡片缓存（`read` 的 `cards` + `fields`，其余参数同 [cardRowsWhere]）。
+  Future<SrsColumns> cardColumnsWhere(
+    List<String> columns,
+    Map<String, Object?> query,
+  ) => _readTable('cards', <String, Object?>{...query, 'fields': columns});
+
+  /// 只要 ID 列的卡片查询。
+  Future<List<String>> _cardIdsWhere(Map<String, Object?> query) async =>
+      (await cardColumnsWhere(const <String>[
+        'id',
+      ], query)).strings('id').toList();
+
+  /// 本 profile 的一条只读查询的那一张表（给本文件之外的 store 扩展用：srs_note_type_store.dart 等）。
+  Future<SrsColumns> readTable(
+    String q, [
+    Map<String, Object?> args = const <String, Object?>{},
+  ]) => _readTable(q, args);
+
+  /// 本 profile 的一条只读查询（含回包 JSON；参数见 native/fushi_fsrs/src/store/reads.rs）。
+  Future<SrsReadResult> read(
+    String q, [
+    Map<String, Object?> args = const <String, Object?>{},
+  ]) => _read(q, args);
+
+  /// 笔记字段修改里含 [needle] 的笔记 ID（去重；`read` 的 `source_note_candidates`）。
+  Future<List<String>> sourceNoteCandidates(String needle) async =>
+      (await _readTable('source_note_candidates', <String, Object?>{
+        'needle': needle,
+      })).strings('id').toList();
+
+  /// 未删除笔记按笔记类型的计数（`read` 的 `note_type_counts`：列 t、c）。
+  Future<SrsColumns> readNoteTypeCounts() => _readTable('note_type_counts');
+
   @override
   final String profileUid;
   final String deviceId;
@@ -808,11 +977,11 @@ class SrsDbStore implements SrsSync2Host {
   // ------------------------------------------------------------------ 本机状态
 
   Future<bool> _hasAnyEvent() async =>
-      await (db.select(db.srsEntities)
-            ..where((t) => t.profileUid.equals(profileUid))
-            ..limit(1))
-          .getSingleOrNull() !=
-      null;
+      ((await _read('entity_count', const <String, Object?>{
+            'limit': 1,
+          })).json['n']!
+          as int) >
+      0;
 
   /// 读本机状态（内核 `local_state`，只读：不建行、不补纪元）。`exists`：库里有没有这一行；`epochStored`：行里有没有
   /// 纪元（没有时 [_epoch] 是内核现给的、没落盘的一个）。
@@ -944,31 +1113,6 @@ class SrsDbStore implements SrsSync2Host {
 
   // ------------------------------------------------------------------ 事件落库
 
-  Future<Map<String, int>> _serverTimesFor(Iterable<String> ids) async {
-    final _RefreshPrefetch? pre = _RefreshPrefetch.current;
-    final List<String> list = ids.toList();
-    if (pre != null && list.every(pre.serverTimesKnown.contains)) {
-      return <String, int>{
-        for (final String id in list)
-          if (pre.serverTimes[id] != null) id: pre.serverTimes[id]!,
-      };
-    }
-    if (list.isEmpty) return const <String, int>{};
-    final Map<String, int> out = <String, int>{};
-    for (int i = 0; i < list.length; i += 500) {
-      final List<SrsEventLocalRow> rows =
-          await (db.select(db.srsEventLocal)..where(
-                (t) =>
-                    t.eventId.isIn(list.sublist(i, min(i + 500, list.length))),
-              ))
-              .get();
-      for (final SrsEventLocalRow r in rows) {
-        if (r.serverTime != null) out[r.eventId] = r.serverTime!;
-      }
-    }
-    return out;
-  }
-
   /// 一个实体的全部修改记录（只读；导入按记录时刻判断本机改动是否比来源新）。
   Future<SrsEntityEdits> entityEdits(SrsEntityKind kind, String id) =>
       _entityEdits(kind, id);
@@ -995,32 +1139,9 @@ class SrsDbStore implements SrsSync2Host {
     final Map<String, Object?> out = <String, Object?>{};
     final String kind = SrsEntityKind.note.wire;
     for (final List<String> chunk in _chunks(ids.toSet())) {
-      final Map<String, List<SrsEditItem>> byId = <String, List<SrsEditItem>>{};
-      for (final QueryRow q
-          in await db
-              .customSelect(
-                'SELECT f.entity_id AS e, '
-                'CAST(f.json AS BLOB) AS j, s.server_time AS st '
-                'FROM srs_field_edits f '
-                'LEFT JOIN srs_event_local s ON s.event_id = f.id '
-                'WHERE f.entity_kind = ? AND f.field_key = ? '
-                'AND f.entity_id IN (${_marks(chunk)})',
-                variables: <Variable<Object>>[
-                  Variable<String>(kind),
-                  Variable<String>(fieldKey),
-                  for (final String id in chunk)
-                    Variable<String>(id, srsIdType),
-                ],
-                readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
-                  db.srsFieldEdits,
-                  db.srsEventLocal,
-                },
-              )
-              .get()) {
-        (byId[q.read<String>('e')] ??= <SrsEditItem>[]).add(
-          SrsEditItem.stored(q.read<Uint8List>('j'), q.readNullable<int>('st')),
-        );
-      }
+      final Map<String, List<SrsEditItem>> byId = await _editItemsById(
+        <String, Object?>{'kind': kind, 'ids': chunk, 'key': fieldKey},
+      );
       if (byId.isEmpty) continue;
       final List<String> order = byId.keys.toList();
       final List<SrsEntityEdits> edits = srsEntityEditsOf(<List<SrsEditItem>>[
@@ -1048,44 +1169,16 @@ class SrsDbStore implements SrsSync2Host {
     if (prefix.isEmpty) {
       throw ArgumentError.value(prefix, 'prefix', 'must not be empty');
     }
-    // 前缀区间的上界：最后一个字符加一（`notDup/` → `notDup0`）。
-    final String upper =
-        prefix.substring(0, prefix.length - 1) +
-        String.fromCharCode(prefix.codeUnitAt(prefix.length - 1) + 1);
     final Map<String, Map<String, Object?>> out =
         <String, Map<String, Object?>>{};
     final String kind = SrsEntityKind.note.wire;
     int rowsRead = 0;
     for (final List<String> chunk in _chunks(ids.toSet())) {
-      final Map<String, List<SrsEditItem>> byId = <String, List<SrsEditItem>>{};
-      for (final QueryRow q
-          in await db
-              .customSelect(
-                'SELECT f.entity_id AS e, '
-                'CAST(f.json AS BLOB) AS j, s.server_time AS st '
-                'FROM srs_field_edits f '
-                'LEFT JOIN srs_event_local s ON s.event_id = f.id '
-                'WHERE f.profile_uid = ? AND f.entity_kind = ? '
-                'AND f.entity_id IN (${_marks(chunk)}) '
-                'AND f.field_key >= ? AND f.field_key < ?',
-                variables: <Variable<Object>>[
-                  Variable<String>(profileUid, srsIdType),
-                  Variable<String>(kind),
-                  for (final String id in chunk)
-                    Variable<String>(id, srsIdType),
-                  Variable<String>(prefix),
-                  Variable<String>(upper),
-                ],
-                readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
-                  db.srsFieldEdits,
-                  db.srsEventLocal,
-                },
-              )
-              .get()) {
-        rowsRead++;
-        (byId[q.read<String>('e')] ??= <SrsEditItem>[]).add(
-          SrsEditItem.stored(q.read<Uint8List>('j'), q.readNullable<int>('st')),
-        );
+      final Map<String, List<SrsEditItem>> byId = await _editItemsById(
+        <String, Object?>{'kind': kind, 'ids': chunk, 'prefix': prefix},
+      );
+      for (final List<SrsEditItem> items in byId.values) {
+        rowsRead += items.length;
       }
       if (byId.isEmpty) continue;
       final List<String> order = byId.keys.toList();
@@ -1107,6 +1200,24 @@ class SrsDbStore implements SrsSync2Host {
   /// 最近一次 [noteFieldKeyPrefixValues] 从库里读回的修改记录条数（测试核对没把字段正文读回来）。
   @visibleForTesting
   int debugKeyPrefixRowsRead = 0;
+
+  /// 修改记录原文 + 服务器时刻按实体 ID 分组（`read` 的 `edits`，参数见 store/reads.rs `edits`）。没有记录的 ID
+  /// 不出现。
+  Future<Map<String, List<SrsEditItem>>> _editItemsById(
+    Map<String, Object?> query,
+  ) async {
+    final SrsColumns c = await _readTable('edits', query);
+    final SrsStringColumn e = c.strings('e');
+    final SrsStringColumn j = c.strings('j');
+    final SrsIntColumn st = c.ints('st');
+    final Map<String, List<SrsEditItem>> byId = <String, List<SrsEditItem>>{};
+    for (int i = 0; i < c.rows; i++) {
+      (byId[e[i]] ??= <SrsEditItem>[]).add(
+        SrsEditItem.stored(j.bytes(i), st.at(i)),
+      );
+    }
+    return byId;
+  }
 
   Future<SrsEntityEdits> _entityEdits(SrsEntityKind kind, String id) async =>
       srsEntityEditsOf(<List<SrsEditItem>>[await _editItems(kind, id)]).single;
@@ -1217,36 +1328,27 @@ class SrsDbStore implements SrsSync2Host {
       final int done = await runExclusive(() async {
         int n = -1;
         await _commandOrReload(() async {
-          final List<QueryRow> rows = await db
-              .customSelect(
-                'SELECT rowid AS rid, id, json FROM srs_field_edits '
-                'WHERE profile_uid = ? AND entity_kind = ? AND rowid > ? '
-                "AND field_key LIKE 'f/%' AND instr(json, '<style>') > 0 "
-                'ORDER BY rowid LIMIT ?',
-                variables: <Variable<Object>>[
-                  Variable<String>(profileUid, srsIdType),
-                  Variable<String>(SrsEntityKind.note.wire),
-                  Variable<int>(_styleCursor),
-                  Variable<int>(batchSize),
-                ],
-              )
-              .get();
-          if (rows.isEmpty) return;
+          final SrsColumns rows = await _readTable(
+            'style_candidates',
+            <String, Object?>{'after': _styleCursor, 'limit': batchSize},
+          );
+          if (rows.rows == 0) return;
+          final SrsIntColumn rid = rows.ints('rid');
+          final SrsStringColumn json = rows.strings('json');
           final List<List<Object>> rewrites = <List<Object>>[];
-          for (final QueryRow r in rows) {
+          for (int i = 0; i < rows.rows; i++) {
             final SrsFieldEdit e = SrsFieldEdit.fromJson(
-              (jsonDecode(r.read<String>('json')) as Map)
-                  .cast<String, Object?>(),
+              (jsonDecode(json[i]) as Map).cast<String, Object?>(),
             );
             final FutureOr<SrsFieldEdit> pending = _compactEdit(e);
             final SrsFieldEdit c = pending is SrsFieldEdit
                 ? pending
                 : await pending;
             if (!identical(c, e)) {
-              rewrites.add(<Object>[r.read<int>('rid'), c.canonical()]);
+              rewrites.add(<Object>[rid[i], c.canonical()]);
             }
           }
-          final int cursor = rows.last.read<int>('rid');
+          final int cursor = rid[rows.rows - 1];
           _absorbLocalWrite(
             await _sync2(<String, Object?>{
               'op': 'edits_rewrite_repr',
@@ -1540,12 +1642,8 @@ class SrsDbStore implements SrsSync2Host {
       for (final (SrsEntityKind k, String id) in pending)
         if (k == SrsEntityKind.note) id,
     ];
-    for (final List<String> chunk in _chunks(notes)) {
-      for (final SrsCardCacheRow c in await (db.select(
-        db.srsCardsCache,
-      )..where((x) => x.noteId.isIn(chunk))).get()) {
-        cards.add(c.id);
-      }
+    if (notes.isNotEmpty) {
+      cards.addAll(await _cardIdsWhere(<String, Object?>{'notes': notes}));
     }
     if (cards.isNotEmpty) await r.onCardsPurged(cards.toList());
   }
@@ -2231,9 +2329,9 @@ class SrsDbStore implements SrsSync2Host {
     });
   }
 
-  SrsEntityRecord _entityFromRow(SrsEntityRow r) => SrsEntityRecord(
+  SrsEntityRecord _entityFromRow(_EntityRow r) => SrsEntityRecord(
     id: r.id,
-    profileUid: r.profileUid,
+    profileUid: profileUid,
     kind: SrsEntityKind.tryParse(r.kind) ?? SrsEntityKind.note,
     payload: (jsonDecode(r.payloadJson) as Map).cast<String, Object?>(),
   );
@@ -2242,13 +2340,14 @@ class SrsDbStore implements SrsSync2Host {
 
   /// 内置默认牌组与内置笔记类型（Lapis、Fushi 卡片；确定性 ID，每台设备都生成同一份；没改过的内置定义不写修改记录）。
   Future<void> ensureBuiltins() => runExclusive(() async {
-    final List<SrsEventDraft> missing = <SrsEventDraft>[];
-    for (final SrsEntityRecord r in srsBuiltinEntities(profileUid)) {
-      final SrsEntityRow? row = await (db.select(
-        db.srsEntities,
-      )..where((t) => t.id.equals(r.id))).getSingleOrNull();
-      if (row == null) missing.add(SrsReadyDraft(SrsEntityEvent(r)));
-    }
+    final List<SrsEntityRecord> builtins = srsBuiltinEntities(profileUid);
+    final Set<String> present = (await _entityIdsWhere(
+      ids: <String>[for (final SrsEntityRecord r in builtins) r.id],
+    )).toSet();
+    final List<SrsEventDraft> missing = <SrsEventDraft>[
+      for (final SrsEntityRecord r in builtins)
+        if (!present.contains(r.id)) SrsReadyDraft(SrsEntityEvent(r)),
+    ];
     if (missing.isNotEmpty) await _emit(missing);
   });
 
@@ -2259,7 +2358,7 @@ class SrsDbStore implements SrsSync2Host {
   // ------------------------------------------------------------------ 物化
 
   /// [noteType] / [noteTypes] 的物化缓存（卡片详情每次 [cardDetail]、制卡选项每次库版本变动都要物化，每次两三次
-  /// Drift 往返 + 一次寄存器内核）。键是 [contentFingerprint]，与笔记类型的结构写入严格对应：
+  /// 读命令往返 + 一次寄存器内核）。键是 [contentFingerprint]，与笔记类型的结构写入严格对应：
   /// - 笔记类型只由它的身份记录与修改记录决定；这两类记录落进投影（本机写入、收段、导入、恢复、冲突解决、清除，
   ///   全是内核命令）一律经 [_absorbProjection] 推进内容修订号（内核 `Marks::entity` / `Marks::edit`：笔记类型
   ///   上没有界面状态类字段键，见 `is_view_state`）。Dart 侧对这两张表的直写只有 [compactStoredStyles]（只动笔记的
@@ -2298,7 +2397,7 @@ class SrsDbStore implements SrsSync2Host {
         <(SrsEntitySource, SrsBuiltinNoteType?)>[];
     for (final String id in ids) {
       out[id] = null;
-      final SrsEntityRow? row = await _entityRow(id);
+      final _EntityRow? row = await _entityRow(id);
       if (row == null) continue;
       src.add((
         SrsEntitySource(
@@ -2325,15 +2424,8 @@ class SrsDbStore implements SrsSync2Host {
     final _NoteTypeCache cache = _noteTypeCacheAt(key);
     final List<SrsNoteTypeView>? cached = cache.all;
     if (cached != null) return List<SrsNoteTypeView>.of(cached);
-    final List<SrsEntityRow> rows =
-        await (db.select(db.srsEntities)..where(
-              (t) =>
-                  t.profileUid.equals(profileUid) &
-                  t.kind.equals(SrsEntityKind.noteType.wire),
-            ))
-            .get();
     final Map<String, SrsNoteTypeView?> byId = await noteTypesById(
-      rows.map((SrsEntityRow r) => r.id),
+      await _entityIdsWhere(kind: SrsEntityKind.noteType),
     );
     final List<SrsNoteTypeView> out = <SrsNoteTypeView>[
       for (final SrsNoteTypeView? v in byId.values)
@@ -2377,7 +2469,7 @@ class SrsDbStore implements SrsSync2Host {
     final List<SrsEntitySource> src = <SrsEntitySource>[];
     for (final String id in ids) {
       out[id] = null;
-      final SrsEntityRow? row = await _entityRow(id);
+      final _EntityRow? row = await _entityRow(id);
       if (row == null) continue;
       src.add(
         SrsEntitySource(
@@ -2415,17 +2507,7 @@ class SrsDbStore implements SrsSync2Host {
     Iterable<String>? ids,
   }) async {
     final List<String> wanted =
-        ids?.toSet().toList() ??
-        <String>[
-          for (final SrsEntityRow r
-              in await (db.select(db.srsEntities)..where(
-                    (t) =>
-                        t.profileUid.equals(profileUid) &
-                        t.kind.equals(kind.wire),
-                  ))
-                  .get())
-            r.id,
-        ];
+        ids?.toSet().toList() ?? await _entityIdsWhere(kind: kind);
     final List<SrsEntitySource> out = <SrsEntitySource>[];
     for (final List<String> chunk in _chunks(wanted)) {
       final _RefreshPrefetch pre = _RefreshPrefetch();
@@ -2433,7 +2515,7 @@ class SrsDbStore implements SrsSync2Host {
       await _prefetchEdits(pre, kind, chunk);
       await _readWith(pre, () async {
         for (final String id in chunk) {
-          final SrsEntityRow? row = await _entityRow(id);
+          final _EntityRow? row = await _entityRow(id);
           if (row == null) continue;
           out.add(
             SrsEntitySource(id, row.payloadJson, await _editItems(kind, id)),
@@ -2464,16 +2546,14 @@ class SrsDbStore implements SrsSync2Host {
   }
 
   Future<SrsDeckTree> _loadDeckTree() async {
-    final List<SrsEntityRow> rows =
-        await (db.select(db.srsEntities)..where(
-              (t) =>
-                  t.profileUid.equals(profileUid) &
-                  t.kind.equals(SrsEntityKind.deck.wire),
-            ))
-            .get();
+    final List<_EntityRow> rows = _entityRowsOf(
+      await _readTable('entities', <String, Object?>{
+        'kind': SrsEntityKind.deck.wire,
+      }),
+    );
     final List<SrsDeckView> views = <SrsDeckView>[];
     for (final List<String> chunk in _chunks(
-      rows.map((SrsEntityRow r) => r.id),
+      rows.map((_EntityRow r) => r.id),
     )) {
       final _RefreshPrefetch pre = _RefreshPrefetch();
       await _prefetchEdits(pre, SrsEntityKind.deck, chunk);
@@ -2481,7 +2561,7 @@ class SrsDbStore implements SrsSync2Host {
       // 整块一次 FFI 调用（字段寄存器内核）。
       views.addAll(
         srsMaterializeDecks(<SrsEntitySource>[
-          for (final SrsEntityRow r in rows)
+          for (final _EntityRow r in rows)
             if (ids.contains(r.id))
               SrsEntitySource(
                 r.id,
@@ -2545,12 +2625,14 @@ class SrsDbStore implements SrsSync2Host {
   static const int _refreshChunk = 200;
 
   /// 身份记录行（刷新期间先查预读）。
-  Future<SrsEntityRow?> _entityRow(String id) async {
+  Future<_EntityRow?> _entityRow(String id) async {
     final _RefreshPrefetch? pre = _RefreshPrefetch.current;
     if (pre != null && pre.entities.containsKey(id)) return pre.entities[id];
-    return (db.select(
-      db.srsEntities,
-    )..where((t) => t.id.equals(id))).getSingleOrNull();
+    return _entityRowsOf(
+      await _readTable('entities', <String, Object?>{
+        'ids': <String>[id],
+      }),
+    ).firstOrNull;
   }
 
   Future<void> _prefetchEntities(
@@ -2561,9 +2643,9 @@ class SrsDbStore implements SrsSync2Host {
       for (final String id in chunk) {
         pre.entities[id] = null;
       }
-      for (final SrsEntityRow r in await (db.select(
-        db.srsEntities,
-      )..where((t) => t.id.isIn(chunk))).get()) {
+      for (final _EntityRow r in _entityRowsOf(
+        await _readTable('entities', <String, Object?>{'ids': chunk}),
+      )) {
         pre.entities[r.id] = r;
       }
     }
@@ -2580,35 +2662,14 @@ class SrsDbStore implements SrsSync2Host {
       for (final String id in chunk) {
         pre.edits['${kind.wire}/$id'] = <SrsEditItem>[];
       }
-      for (final QueryRow q
-          in await db
-              .customSelect(
-                'SELECT f.entity_id AS e, '
-                'CAST(f.json AS BLOB) AS j, s.server_time AS st '
-                'FROM srs_field_edits f '
-                'LEFT JOIN srs_event_local s ON s.event_id = f.id '
-                'WHERE f.entity_kind = ? AND f.entity_id IN (${_marks(chunk)})',
-                variables: <Variable<Object>>[
-                  Variable<String>(kind.wire),
-                  for (final String id in chunk)
-                    Variable<String>(id, srsIdType),
-                ],
-                readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
-                  db.srsFieldEdits,
-                  db.srsEventLocal,
-                },
-              )
-              .get()) {
-        final String key = '${kind.wire}/${q.read<String>('e')}';
-        pre.edits[key]!.add(
-          SrsEditItem.stored(q.read<Uint8List>('j'), q.readNullable<int>('st')),
-        );
+      final Map<String, List<SrsEditItem>> byId = await _editItemsById(
+        <String, Object?>{'kind': kind.wire, 'ids': chunk},
+      );
+      for (final MapEntry<String, List<SrsEditItem>> e in byId.entries) {
+        pre.edits['${kind.wire}/${e.key}']!.addAll(e.value);
       }
     }
   }
-
-  static String _marks(List<String> ids) =>
-      List<String>.filled(ids.length, '?').join(',');
 
   static void _noteServerTime(_RefreshPrefetch pre, String id, int? s) {
     pre.serverTimesKnown.add(id);
@@ -2622,27 +2683,18 @@ class SrsDbStore implements SrsSync2Host {
   ) async {
     for (final List<String> chunk in _chunks(cardIds)) {
       for (final String id in chunk) {
-        pre.logsByCard[id] = <SrsReviewLogRow>[];
+        pre.logsByCard[id] = <String>[];
       }
-      for (final QueryRow q
-          in await db
-              .customSelect(
-                'SELECT l.*, e.server_time AS st__ FROM srs_review_logs l '
-                'LEFT JOIN srs_event_local e ON e.event_id = l.id '
-                'WHERE l.card_id IN (${_marks(chunk)})',
-                variables: <Variable<Object>>[
-                  for (final String id in chunk)
-                    Variable<String>(id, srsIdType),
-                ],
-                readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
-                  db.srsReviewLogs,
-                  db.srsEventLocal,
-                },
-              )
-              .get()) {
-        final SrsReviewLogRow r = db.srsReviewLogs.map(q.data);
-        pre.logsByCard[r.cardId]!.add(r);
-        _noteServerTime(pre, r.id, q.readNullable<int>('st__'));
+      final SrsColumns c = await _readTable('logs', <String, Object?>{
+        'cards': chunk,
+      });
+      final SrsStringColumn id = c.strings('id');
+      final SrsStringColumn card = c.strings('card_id');
+      final SrsStringColumn json = c.strings('json');
+      final SrsIntColumn st = c.ints('st');
+      for (int i = 0; i < c.rows; i++) {
+        pre.logsByCard[card[i]]!.add(json[i]);
+        _noteServerTime(pre, id[i], st.at(i));
       }
     }
   }
@@ -2652,46 +2704,32 @@ class SrsDbStore implements SrsSync2Host {
   /// 里、只是落在另一张卡上」（BUG-4254）。走 `idx_srs_review_logs_profile_kind_time`，按块一次查。
   Future<List<SrsAnkiLogAt>> ankiImportedLogsAt(Iterable<int> revlogIds) async {
     final List<int> ids = revlogIds.toSet().toList();
-    final List<SrsAnkiLogAt> out = <SrsAnkiLogAt>[];
-    for (int i = 0; i < ids.length; i += 500) {
-      final List<int> chunk = ids.sublist(i, min(i + 500, ids.length));
-      for (final QueryRow q
-          in await db
-              .customSelect(
-                'SELECT l.card_id AS card_id, l.occurred_at AS at, l.rating AS rating, '
-                'l.review_type AS rtype, l.duration_ms AS dur, c.note_id AS note_id, '
-                'c.hidden AS hidden FROM srs_review_logs l '
-                'LEFT JOIN srs_cards_cache c ON c.id = l.card_id '
-                "WHERE l.profile_uid = ? AND l.kind IN ('review', 'manual') "
-                "AND l.occurred_at IN (${List<String>.filled(chunk.length, '?').join(', ')}) "
-                "AND l.origin = 'anki'",
-                variables: <Variable<Object>>[
-                  Variable<String>(profileUid, srsIdType),
-                  for (final int id in chunk) Variable<int>(id),
-                ],
-                readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
-                  db.srsReviewLogs,
-                  db.srsCardsCache,
-                },
-              )
-              .get()) {
-        out.add(
-          SrsAnkiLogAt(
-            cardId: q.readWithType<String>(srsIdType, 'card_id'),
-            revlogId: q.read<int>('at'),
-            rating: q.readNullable<int>('rating'),
-            reviewType: q.read<String>('rtype'),
-            durationMs: q.read<int>('dur'),
-            noteId: q.readNullableWithType<String>(srsIdType, 'note_id'),
-            visible: switch (q.readNullable<bool>('hidden')) {
-              null => false,
-              final bool hidden => !hidden,
-            },
-          ),
-        );
-      }
-    }
-    return out;
+    if (ids.isEmpty) return const <SrsAnkiLogAt>[];
+    final SrsColumns c = await _readTable('anki_logs_at', <String, Object?>{
+      'at': ids,
+    });
+    final SrsStringColumn card = c.strings('card_id');
+    final SrsIntColumn at = c.ints('at');
+    final SrsIntColumn rating = c.ints('rating');
+    final SrsStringColumn rtype = c.strings('rtype');
+    final SrsIntColumn dur = c.ints('dur');
+    final SrsStringColumn note = c.strings('note_id');
+    final SrsIntColumn hidden = c.ints('hidden');
+    return <SrsAnkiLogAt>[
+      for (int i = 0; i < c.rows; i++)
+        SrsAnkiLogAt(
+          cardId: card[i],
+          revlogId: at[i],
+          rating: rating.at(i),
+          reviewType: rtype[i],
+          durationMs: dur[i],
+          noteId: note.at(i),
+          visible: switch (hidden.at(i)) {
+            null => false,
+            final int h => h == 0,
+          },
+        ),
+    ];
   }
 
   /// 全部「前身卡 → 后继卡」链接（卡的 `historyFrom/<前身>` 修改记录）。
@@ -2702,20 +2740,12 @@ class SrsDbStore implements SrsSync2Host {
   /// 增长——每次缓存刷新（每次评分、每次改卡）都要读一遍（BUG-3543，以前全表扫描）。
   Future<Map<String, List<String>>> _successorIndex() async {
     const String prefix = SrsFieldKeys.cardHistoryFromPrefix;
-    final List<QueryRow> rows = await db
-        .customSelect(
-          'SELECT entity_id, field_key FROM srs_field_edits '
-          'WHERE $kSrsHistoryFromCondition '
-          "AND +entity_kind = '${SrsEntityKind.card.wire}'",
-          readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
-            db.srsFieldEdits,
-          },
-        )
-        .get();
+    final SrsColumns c = await _readTable('successors');
+    final SrsStringColumn entity = c.strings('entity_id');
+    final SrsStringColumn key = c.strings('field_key');
     final Map<String, List<String>> out = <String, List<String>>{};
-    for (final QueryRow r in rows) {
-      final String pred = r.read<String>('field_key').substring(prefix.length);
-      (out[pred] ??= <String>[]).add(r.read<String>('entity_id'));
+    for (int i = 0; i < c.rows; i++) {
+      (out[key[i].substring(prefix.length)] ??= <String>[]).add(entity[i]);
     }
     return out;
   }
@@ -2769,20 +2799,7 @@ class SrsDbStore implements SrsSync2Host {
   /// 删除时刻不晚于 [deletedBeforeMs] 的已删笔记引用的媒体（过了保留期、可以回收的候选；是否真删由调用方
   /// 再扣掉存活引用）。
   Future<Set<String>> expiredNoteMediaRefs(int deletedBeforeMs) async {
-    final $SrsNotesCacheTable t = db.srsNotesCache;
-    final Set<String> out = <String>{};
-    for (final TypedResult r
-        in await (db.selectOnly(t)
-              ..addColumns(<Expression<Object>>[t.mediaRefs])
-              ..where(
-                t.profileUid.equals(profileUid) &
-                    t.deletedAt.isSmallerOrEqualValue(deletedBeforeMs) &
-                    t.mediaRefs.equals('').not(),
-              ))
-            .get()) {
-      out.addAll(r.read(t.mediaRefs)!.split('\n'));
-    }
-    return out;
+    return _mediaRefs(<String, Object?>{'deletedBefore': deletedBeforeMs});
   }
 
   /// 本 profile 未删除笔记当前引用的全部媒体文件名（读笔记缓存的 media_refs 列，不解析字段值）。
@@ -2790,23 +2807,14 @@ class SrsDbStore implements SrsSync2Host {
   /// [deletedAfterMs] 给出时，删除时刻晚于它的已删笔记也算（媒体保留期，设计 §10.5：被删笔记独占的媒体满
   /// 90 天才清，期间恢复笔记媒体还在）。
   Future<Set<String>> noteMediaRefs({int? deletedAfterMs}) async {
-    final $SrsNotesCacheTable t = db.srsNotesCache;
-    final Set<String> out = <String>{};
-    final Expression<bool> alive = deletedAfterMs == null
-        ? t.deletedAt.isNull()
-        : t.deletedAt.isNull() | t.deletedAt.isBiggerThanValue(deletedAfterMs);
-    for (final TypedResult r
-        in await (db.selectOnly(t)
-              ..addColumns(<Expression<Object>>[t.mediaRefs])
-              ..where(
-                t.profileUid.equals(profileUid) &
-                    alive &
-                    t.mediaRefs.equals('').not(),
-              ))
-            .get()) {
-      out.addAll(r.read(t.mediaRefs)!.split('\n'));
-    }
-    return out;
+    return _mediaRefs(<String, Object?>{'deletedAfter': ?deletedAfterMs});
+  }
+
+  /// 笔记缓存里非空的媒体引用列拆成文件名（`read` 的 `media_refs`）。
+  Future<Set<String>> _mediaRefs(Map<String, Object?> query) async {
+    final SrsColumns c = await _readTable('media_refs', query);
+    final SrsStringColumn refs = c.strings('refs');
+    return <String>{for (int i = 0; i < c.rows; i++) ...refs[i].split('\n')};
   }
 
   /// 一张卡的复习历史：自己的日志 + 全部前身卡（更改笔记类型继承来的）的日志。
@@ -3048,23 +3056,24 @@ class SrsDbStore implements SrsSync2Host {
 
   /// 一组卡（一张卡的血统）的全部日志与服务器时刻：[SrsCardHistory] 的输入。
   Future<SrsHistoryInput> _historyInput(List<String> cardIds) async {
-    final _RefreshPrefetch? pre = _RefreshPrefetch.current;
-    final List<SrsReviewLogRow> rows =
-        pre != null && cardIds.every(pre.logsByCard.containsKey)
-        ? <SrsReviewLogRow>[
-            for (final String c in cardIds) ...pre.logsByCard[c]!,
-          ]
-        : await (db.select(
-            db.srsReviewLogs,
-          )..where((t) => t.cardId.isIn(cardIds))).get();
+    _RefreshPrefetch? pre = _RefreshPrefetch.current;
+    if (pre == null || !cardIds.every(pre.logsByCard.containsKey)) {
+      // 没预读：这几张卡的日志与服务器时刻一条读命令取回（同 [_prefetchLogs]）。
+      pre = _RefreshPrefetch();
+      await _prefetchLogs(pre, cardIds);
+    }
+    final _RefreshPrefetch p = pre;
     final List<SrsReviewLog> logs = <SrsReviewLog>[
-      for (final SrsReviewLogRow r in rows)
-        SrsReviewLog.fromJson(
-          (jsonDecode(r.json) as Map).cast<String, Object?>(),
-        ),
+      for (final String c in cardIds)
+        for (final String json in p.logsByCard[c]!)
+          SrsReviewLog.fromJson(
+            (jsonDecode(json) as Map).cast<String, Object?>(),
+          ),
     ];
-    final Map<String, int> s = await _serverTimesFor(logs.map((l) => l.id));
-    return (logs, (String id) => s[id]);
+    return (
+      logs,
+      (String id) => p.serverTimesKnown.contains(id) ? p.serverTimes[id] : null,
+    );
   }
 
   // ------------------------------------------------------------------ 修改记录
@@ -3664,17 +3673,8 @@ class SrsDbStore implements SrsSync2Host {
         ]);
 
   /// 本 profile 某类实体的全部 ID（只读 ID 列；导入据此一次判断哪些笔记本机已有）。
-  Future<Set<String>> entityIds(SrsEntityKind kind) async {
-    final $SrsEntitiesTable t = db.srsEntities;
-    final List<TypedResult> rows =
-        await (db.selectOnly(t)
-              ..addColumns(<Expression<Object>>[t.id])
-              ..where(
-                t.profileUid.equals(profileUid) & t.kind.equals(kind.wire),
-              ))
-            .get();
-    return <String>{for (final TypedResult r in rows) r.read(t.id)!};
-  }
+  Future<Set<String>> entityIds(SrsEntityKind kind) async =>
+      (await _entityIdsWhere(kind: kind)).toSet();
 
   Future<void> updateNote(
     String noteId, {
@@ -3701,10 +3701,7 @@ class SrsDbStore implements SrsSync2Host {
   /// 按 guid 找已存在的笔记（导入去重）。
   Future<String?> noteIdByGuid(String guid) async {
     final String id = SrsIds.note(profileUid, guid);
-    final SrsEntityRow? row = await (db.select(
-      db.srsEntities,
-    )..where((t) => t.id.equals(id))).getSingleOrNull();
-    return row?.id;
+    return (await _entityIdsWhere(ids: <String>[id])).firstOrNull;
   }
 
   // ------------------------------------------------------------------ 卡片标志
@@ -3751,16 +3748,8 @@ class SrsDbStore implements SrsSync2Host {
   /// 一组卡片的缓存行（不存在的 ID 跳过）。
   Future<List<SrsCardCacheRow>> cardRows(Iterable<String> cardIds) async {
     final List<String> ids = cardIds.toSet().toList();
-    final List<SrsCardCacheRow> out = <SrsCardCacheRow>[];
-    for (int i = 0; i < ids.length; i += 500) {
-      final List<String> chunk = ids.sublist(i, min(i + 500, ids.length));
-      out.addAll(
-        await (db.select(
-          db.srsCardsCache,
-        )..where((c) => c.id.isIn(chunk))).get(),
-      );
-    }
-    return out;
+    if (ids.isEmpty) return <SrsCardCacheRow>[];
+    return cardRowsWhere(<String, Object?>{'ids': ids});
   }
 
   /// 批量重置为新卡：每张一条 manual 日志，一次内核命令落库。已经是新卡的跳过。返回写出的日志（撤销用），
@@ -3833,9 +3822,10 @@ class SrsDbStore implements SrsSync2Host {
 
   // ------------------------------------------------------------------ 复习
 
-  Future<SrsCardCacheRow?> cardRow(String cardId) => (db.select(
-    db.srsCardsCache,
-  )..where((c) => c.id.equals(cardId))).getSingleOrNull();
+  Future<SrsCardCacheRow?> cardRow(String cardId) async =>
+      (await cardRowsWhere(<String, Object?>{
+        'ids': <String>[cardId],
+      })).firstOrNull;
 
   /// 四个评分的预览。走 Rust 的重放路径（`preview`）：按钮上显示的间隔与之后合并重放出的到期是同一段
   /// 代码、同一套确定性浮点运算（设计 §4.5）；记忆状态 / 参数也由它给出，RWKV 是否可用只决定日志的 `alg`。
@@ -4244,26 +4234,17 @@ class SrsDbStore implements SrsSync2Host {
   Future<SrsTodayReviewSummary> todayReviewSummary() async {
     final SrsDayContext day = await dayContext();
     final int today = day.dayIndexOf(now().$1);
-    final $SrsStatReviewsTable t = db.srsStatReviews;
-    final Expression<int> n = countAll();
-    final Expression<int> ms = t.durationMs.sum();
-    final Expression<int> again = const CustomExpression<int>(
-      'SUM(CASE WHEN rating = 1 THEN 1 ELSE 0 END)',
-    );
-    final TypedResult row =
-        await (db.selectOnly(t)
-              ..addColumns(<Expression<Object>>[n, ms, again])
-              ..where(
-                t.profileUid.equals(profileUid) &
-                    t.rating.isNotNull() &
-                    t.occurredAt.isBiggerOrEqualValue(day.dayStartMs(today)) &
-                    t.occurredAt.isSmallerThanValue(day.dayStartMs(today + 1)),
-              ))
-            .getSingle();
+    final Map<String, Object?> row = (await _read(
+      'today_reviews',
+      <String, Object?>{
+        'from': day.dayStartMs(today),
+        'to': day.dayStartMs(today + 1),
+      },
+    )).json;
     return SrsTodayReviewSummary(
-      count: row.read(n) ?? 0,
-      durationMs: row.read(ms) ?? 0,
-      again: row.read(again) ?? 0,
+      count: row['n']! as int,
+      durationMs: row['ms']! as int,
+      again: row['again']! as int,
     );
   }
 
@@ -4420,9 +4401,7 @@ class SrsDbStore implements SrsSync2Host {
     final Set<String> sub = await _deckSubtreeByFullName(deckFullName);
     if (sub.isEmpty) return const <SrsNewCardEntry>[];
     final List<SrsCardCacheRow> rows =
-        await (db.select(
-            db.srsCardsCache,
-          )..where((c) => _visibleNewCardIn(c, sub))).get()
+        await cardRowsWhere(_visibleNewCardIn(sub))
           ..sort(compareNewCardOrder);
     if (rows.isEmpty) return const <SrsNewCardEntry>[];
     final Map<String, SrsNoteView?> notesById = await notes(<String>[
@@ -4471,13 +4450,7 @@ class SrsDbStore implements SrsSync2Host {
   Future<Set<String>> newCardIdsInDeck(String deckFullName) async {
     final Set<String> sub = await _deckSubtreeByFullName(deckFullName);
     if (sub.isEmpty) return const <String>{};
-    final $SrsCardsCacheTable t = db.srsCardsCache;
-    final List<TypedResult> rows =
-        await (db.selectOnly(t)
-              ..addColumns(<Expression<Object>>[t.id])
-              ..where(_visibleNewCardIn(t, sub)))
-            .get();
-    return <String>{for (final TypedResult r in rows) r.read(t.id)!};
+    return (await _cardIdsWhere(_visibleNewCardIn(sub))).toSet();
   }
 
   /// 全名为 [deckFullName] 的牌组（同名的全部算上）及其子孙的 ID；没有为空。
@@ -4489,15 +4462,13 @@ class SrsDbStore implements SrsSync2Host {
     };
   }
 
-  /// 本 profile、牌组在 [decks] 里的可见新卡。
-  Expression<bool> _visibleNewCardIn(
-    $SrsCardsCacheTable c,
-    Set<String> decks,
-  ) =>
-      c.profileUid.equals(profileUid) &
-      c.deckId.isIn(decks) &
-      c.hidden.equals(false) &
-      c.queue.equals(SrsQueue.newCard.wire);
+  /// 本 profile、牌组在 [decks] 里的可见新卡（`read` 的 `cards` 的条件）。
+  Map<String, Object?> _visibleNewCardIn(Set<String> decks) =>
+      <String, Object?>{
+        'decks': decks.toList(),
+        'visibleOnly': true,
+        'queue': SrsQueue.newCard.wire,
+      };
 
   /// 写新卡位置（cardId → 位置）：一个事务、一次发件箱批次，每张卡一条 `newPos` 修改记录
   /// （值没变的不写）。**只写此刻仍是可见新卡的那些**——学过的卡位置不起作用，写了只是
@@ -4757,34 +4728,37 @@ class SrsDbStore implements SrsSync2Host {
     List<String>? ids,
   }) async {
     if (decks.isEmpty) return const <_RwkvCandidate>[];
-    String marks(int n) => List<String>.filled(n, '?').join(', ');
-    final List<QueryRow> rows = await db
-        .customSelect(
-          'SELECT id, note_id, deck_id, last_log_id, last_reviewed_at '
-          'FROM srs_cards_cache WHERE profile_uid = ? AND hidden = 0 '
-          "AND suspended = 0 AND scheduler = '${SrsScheduler.fushi}' "
-          'AND (buried_until_day IS NULL OR buried_until_day <= ?) '
-          "AND queue = 'review' AND deck_id IN (${marks(decks.length)})"
-          '${ids == null ? '' : ' AND id IN (${marks(ids.length)})'}',
-          variables: <Variable<Object>>[
-            Variable<String>(profileUid, srsIdType),
-            Variable<int>(today),
-            for (final String d in decks) Variable<String>(d, srsIdType),
-            for (final String id in ids ?? const <String>[])
-              Variable<String>(id, srsIdType),
-          ],
-        )
-        .get();
+    final SrsColumns c = await cardColumnsWhere(
+      const <String>[
+        'id',
+        'note_id',
+        'deck_id',
+        'last_log_id',
+        'last_reviewed_at',
+      ],
+      <String, Object?>{
+        'decks': decks,
+        'ids': ?ids,
+        'visibleOnly': true,
+        'studyableOn': today,
+        'queue': SrsQueue.review.wire,
+      },
+    );
+    final SrsStringColumn id = c.strings('id');
+    final SrsStringColumn note = c.strings('note_id');
+    final SrsStringColumn deck = c.strings('deck_id');
+    final SrsStringColumn lastLog = c.strings('last_log_id');
+    final SrsIntColumn last = c.ints('last_reviewed_at');
     return <_RwkvCandidate>[
-      for (final QueryRow r in rows)
+      for (int i = 0; i < c.rows; i++)
         (
           card: SrsRwkvCandidate(
-            id: r.read<String>('id'),
-            noteId: r.read<String>('note_id'),
-            deckId: r.read<String>('deck_id'),
-            lastLogId: r.read<String?>('last_log_id'),
+            id: id[i],
+            noteId: note[i],
+            deckId: deck[i],
+            lastLogId: lastLog.at(i),
           ),
-          lastReviewedAt: r.read<int?>('last_reviewed_at'),
+          lastReviewedAt: last.at(i),
         ),
     ];
   }
@@ -4950,60 +4924,46 @@ class SrsDbStore implements SrsSync2Host {
         if (q.termKey.isNotEmpty) q.termKey,
     };
     if (keys.isEmpty) return out;
-    // termKey → 命中的可见卡（带笔记的读音键）。
-    final Map<String, List<({String readingKey, QueryRow row})>> byKey =
-        <String, List<({String readingKey, QueryRow row})>>{};
+    // termKey → 命中的可见卡（带笔记的读音键）：(读音键, 结果表, 行号)。
+    final Map<String, List<(String, SrsColumns, int)>> byKey =
+        <String, List<(String, SrsColumns, int)>>{};
     for (final List<String> chunk in _chunks(keys)) {
-      final List<QueryRow> rows = await db
-          .customSelect(
-            'SELECT n.term_key AS term_key, n.reading_key AS reading_key, '
-            'c.id AS id, c.note_id AS note_id, c.queue AS queue, '
-            'c.suspended AS suspended, c.deck_id AS deck_id, '
-            'c.due_day AS due_day, c.due_at AS due_at '
-            'FROM srs_notes_cache n '
-            'JOIN srs_cards_cache c ON c.note_id = n.id '
-            'WHERE n.profile_uid = ? '
-            'AND n.term_key IN (SELECT value FROM json_each(?)) '
-            'AND n.deleted_at IS NULL AND c.hidden = 0',
-            variables: <Variable<Object>>[
-              Variable<String>(profileUid, srsIdType),
-              Variable<String>(jsonEncode(chunk)),
-            ],
-            readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
-              db.srsNotesCache,
-              db.srsCardsCache,
-            },
-          )
-          .get();
-      for (final QueryRow r in rows) {
-        (byKey[r.read<String>('term_key')] ??=
-                <({String readingKey, QueryRow row})>[])
-            .add((readingKey: r.read<String>('reading_key'), row: r));
+      final SrsColumns c = await _readTable('term_status', <String, Object?>{
+        'terms': chunk,
+      });
+      final SrsStringColumn term = c.strings('term_key');
+      final SrsStringColumn reading = c.strings('reading_key');
+      for (int i = 0; i < c.rows; i++) {
+        (byKey[term[i]] ??= <(String, SrsColumns, int)>[]).add((
+          reading[i],
+          c,
+          i,
+        ));
       }
     }
     if (byKey.isEmpty) return out;
     final SrsDeckTree tree = await deckTree();
     for (final SrsTermQuery q in terms) {
-      final List<({String readingKey, QueryRow row})>? hits = byKey[q.termKey];
+      final List<(String, SrsColumns, int)>? hits = byKey[q.termKey];
       if (hits == null) continue;
       final String rk = q.readingKey;
-      final List<QueryRow> cards = <QueryRow>[
-        for (final ({String readingKey, QueryRow row}) h in hits)
-          if (rk.isEmpty || h.readingKey.isEmpty || h.readingKey == rk) h.row,
+      final List<(SrsColumns, int)> cards = <(SrsColumns, int)>[
+        for (final (String reading, SrsColumns c, int i) in hits)
+          if (rk.isEmpty || reading.isEmpty || reading == rk) (c, i),
       ];
       if (cards.isEmpty) continue;
       final List<SrsTermStatus> st = <SrsTermStatus>[
-        for (final QueryRow c in cards)
+        for (final (SrsColumns c, int i) in cards)
           SrsTermStatus(
-            cardId: c.read<String>('id'),
-            noteId: c.read<String>('note_id'),
-            queue: SrsQueue.parse(c.read<String>('queue')),
-            suspended: c.read<bool>('suspended'),
-            deckId: c.read<String>('deck_id'),
+            cardId: c.strings('id')[i],
+            noteId: c.strings('note_id')[i],
+            queue: SrsQueue.parse(c.strings('queue')[i]),
+            suspended: c.ints('suspended').flag(i),
+            deckId: c.strings('deck_id')[i],
             cardCount: cards.length,
-            dueDay: c.read<int?>('due_day'),
-            dueAt: c.read<int?>('due_at'),
-            byRecall: instantActiveFor(tree, c.read<String>('deck_id')),
+            dueDay: c.ints('due_day').at(i),
+            dueAt: c.ints('due_at').at(i),
+            byRecall: instantActiveFor(tree, c.strings('deck_id')[i]),
           ),
       ]..sort(srsTermUrgencyCompare);
       out[q.expression] = st.first;
@@ -5018,23 +4978,19 @@ class SrsDbStore implements SrsSync2Host {
     int limit = 500,
     int offset = 0,
   }) async {
-    final SimpleSelectStatement<$SrsNotesCacheTable, SrsNoteCacheRow> q =
-        db.select(db.srsNotesCache)
-          ..where((n) => n.profileUid.equals(profileUid) & n.deletedAt.isNull())
-          ..orderBy(<OrderClauseGenerator<$SrsNotesCacheTable>>[
-            (n) => OrderingTerm.desc(n.createdAt),
-          ])
-          ..limit(limit, offset: offset);
-    List<SrsNoteCacheRow> rows = await q.get();
+    List<SrsNoteCacheRow> rows = await noteRows(<String, Object?>{
+      'alive': true,
+      'order': 'created_desc',
+      'limit': limit,
+      'offset': offset,
+    });
     if (deckId != null) {
       final SrsDeckTree tree = await deckTree();
       final Set<String> sub = tree.subtree(deckId).toSet();
-      final Set<String> inDeck =
-          (await (db.select(
-                db.srsCardsCache,
-              )..where((c) => c.deckId.isIn(sub))).get())
-              .map((SrsCardCacheRow c) => c.noteId)
-              .toSet();
+      final Set<String> inDeck = (await cardColumnsWhere(
+        const <String>['note_id'],
+        <String, Object?>{'decks': sub.toList()},
+      )).strings('note_id').toList().toSet();
       rows = rows.where((SrsNoteCacheRow n) => inDeck.contains(n.id)).toList();
     }
     final String? text = textQuery?.trim().toLowerCase();
@@ -5051,47 +5007,25 @@ class SrsDbStore implements SrsSync2Host {
   /// 这些牌组里全部可见卡片的 ID（优化器训练范围）。
   /// 只读 id 列（以前整行读回再取 id）。
   Future<List<String>> cardIdsInDecks(Set<String> deckIds) async {
-    final $SrsCardsCacheTable c = db.srsCardsCache;
-    final List<String> out = <String>[];
-    for (final List<String> chunk in _chunks(deckIds)) {
-      final List<TypedResult> rows =
-          await (db.selectOnly(c)
-                ..addColumns(<Expression<Object>>[c.id])
-                ..where(c.deckId.isIn(chunk) & c.hidden.equals(false)))
-              .get();
-      out.addAll(rows.map((TypedResult r) => r.read(c.id)!));
-    }
-    return out;
+    if (deckIds.isEmpty) return <String>[];
+    return _cardIdsWhere(<String, Object?>{
+      'decks': deckIds.toList(),
+      'visibleOnly': true,
+    });
   }
 
-  Future<List<SrsCardCacheRow>> cardsOfNote(String noteId) => (db.select(
-    db.srsCardsCache,
-  )..where((c) => c.noteId.equals(noteId))).get();
+  Future<List<SrsCardCacheRow>> cardsOfNote(String noteId) =>
+      cardRowsWhere(<String, Object?>{
+        'notes': <String>[noteId],
+      });
 
   /// 待裁决笔记数（冲突角标；走 v125 的部分索引 idx_srs_notes_cache_pending，不读回行）。
   Future<int> pendingDecisionCount() async =>
-      (await db
-              .customSelect(
-                'SELECT COUNT(*) AS c FROM srs_notes_cache '
-                'WHERE profile_uid = ? AND pending_decision = 1',
-                variables: <Variable<Object>>[
-                  Variable<String>(profileUid, srsIdType),
-                ],
-                readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
-                  db.srsNotesCache,
-                },
-              )
-              .getSingle())
-          .read<int>('c');
+      (await _read('pending_notes')).json['n']! as int;
 
   /// 有待裁决（内容类冲突 / 删除与并发修改）的笔记。
   Future<List<SrsNoteCacheRow>> notesPendingDecision() =>
-      (db.select(db.srsNotesCache)..where(
-            (n) =>
-                n.profileUid.equals(profileUid) &
-                n.pendingDecision.equals(true),
-          ))
-          .get();
+      noteRows(const <String, Object?>{'pending': true});
 
   /// 标志类 / 设置类的同步冲突（被覆盖的候选），不含机器产出（第六轮审查第 10 条）与界面状态（折叠）。
   ///
@@ -5100,7 +5034,7 @@ class SrsDbStore implements SrsSync2Host {
   /// 记录（含每条笔记的字段正文）整表读回 UI isolate 逐条 JSON 解析，牌组列表每次重读都付一遍
   /// O(全部修改记录) 的代价（BUG-3548）。
   ///
-  /// 只读标志类 / 设置类的字段键（[srsFieldClassSqlFilter]，与 [srsFieldClassOf] 同一张表）：内容类（笔记字段
+  /// 只读标志类 / 设置类的字段键（[srsFieldClassRules]，与 [srsFieldClassOf] 同一张表）：内容类（笔记字段
   /// 正文）的并发候选不进这份清单（它们走待裁决），以前却连同正文全部读回来再丢掉。两台设备各自导入同一个
   /// 包（笔记 ID 由 guid 确定）后，每条笔记的每个字段都留着两条互不支配的记录——这条查询一次读回整库正文两遍
   /// （1.9 万张卡的库上过 GB），牌组列表的冲突角标每次重读都跑，原生分配失败闪退（BUG-3947）。
@@ -5112,56 +5046,37 @@ class SrsDbStore implements SrsSync2Host {
   Future<List<(SrsEntityKind, String, SrsRegister)>> syncConflicts({
     ({SrsEntityKind kind, String id})? entity,
   }) async {
-    final String tracked = srsFieldClassSqlFilter(
-      _kSyncConflictClasses,
-      kindColumn: 'entity_kind',
-      keyColumn: 'field_key',
+    // 内核按字段类别筛、只取还留着两条以上记录的字段键（store/reads.rs `conflict_edits`）。
+    final SrsColumns rows = await _readTable(
+      'conflict_edits',
+      <String, Object?>{
+        'rules': srsFieldClassRules(_kSyncConflictClasses),
+        if (entity != null) ...<String, Object?>{
+          'kind': entity.kind.wire,
+          'id': entity.id,
+        },
+      },
     );
-    final List<QueryRow> rows = await db
-        .customSelect(
-          'SELECT e.entity_kind AS k, e.entity_id AS i, e.field_key AS f, '
-          'CAST(e.json AS BLOB) AS j, s.server_time AS st '
-          // CROSS JOIN 钉死连接顺序：先挑出多记录的字段键（m），再按完整索引键逐个取记录。
-          // 写成普通 JOIN 时 SQLite 把 e 放外层、按 profile_uid 扫本 profile 全部修改记录
-          // 再去探 m，[entity] 只筛一个实体也付整表的代价。
-          'FROM (SELECT entity_kind AS k, entity_id AS i, field_key AS f '
-          'FROM srs_field_edits WHERE profile_uid = ? AND $tracked '
-          '${entity == null ? '' : 'AND entity_kind = ? AND entity_id = ? '}'
-          'GROUP BY entity_kind, entity_id, field_key HAVING COUNT(*) > 1) m '
-          'CROSS JOIN srs_field_edits e ON e.profile_uid = ? '
-          'AND e.entity_kind = m.k AND e.entity_id = m.i AND e.field_key = m.f '
-          'LEFT JOIN srs_event_local s ON s.event_id = e.id',
-          variables: <Variable<Object>>[
-            Variable<String>(profileUid, srsIdType),
-            if (entity != null) ...<Variable<Object>>[
-              Variable<String>(entity.kind.wire),
-              Variable<String>(entity.id, srsIdType),
-            ],
-            Variable<String>(profileUid, srsIdType),
-          ],
-          readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
-            db.srsFieldEdits,
-            db.srsEventLocal,
-          },
-        )
-        .get();
+    final SrsStringColumn k = rows.strings('k');
+    final SrsStringColumn i = rows.strings('i');
+    final SrsStringColumn fk = rows.strings('f');
+    final SrsStringColumn j = rows.strings('j');
+    final SrsIntColumn st = rows.ints('st');
     // 每个多于一条记录的字段键一组：原文 + 服务器时刻整批一次交给字段寄存器内核。
     final Map<String, (String, List<SrsEditItem>)> byReg =
         <String, (String, List<SrsEditItem>)>{};
-    for (final QueryRow r in rows) {
-      final String f = r.read<String>('f');
-      (byReg['${r.read<String>('k')}/${r.read<String>('i')}/$f'] ??= (
+    for (int r = 0; r < rows.rows; r++) {
+      final String f = fk[r];
+      (byReg['${k[r]}/${i[r]}/$f'] ??= (
         f,
         <SrsEditItem>[],
-      )).$2.add(
-        SrsEditItem.stored(r.read<Uint8List>('j'), r.readNullable<int>('st')),
-      );
+      )).$2.add(SrsEditItem.stored(j.bytes(r), st.at(r)));
     }
     final List<(String, List<SrsEditItem>)> regs = byReg.values.toList();
     final List<SrsEntityEdits> built = srsEntityEditsOf(<List<SrsEditItem>>[
       for (final (String _, List<SrsEditItem> items) in regs) items,
     ]);
-    debugSyncConflictRowsRead = rows.length;
+    debugSyncConflictRowsRead = rows.rows;
     final List<(SrsEntityKind, String, SrsRegister)> out =
         <(SrsEntityKind, String, SrsRegister)>[];
     for (int i = 0; i < regs.length; i++) {
@@ -5206,58 +5121,21 @@ class SrsDbStore implements SrsSync2Host {
     await _loadLocal();
   });
 
-  /// 备份清单里显示的计数：未删除的笔记、可见的卡片、有效的复习（评分且没被撤销）。
-  Future<({int notes, int cards, int reviews})> backupCounts() =>
-      srsBackupCounts(backupSelect, profileUid);
-
-  /// 主连接上的只读查询（[SrsSqlSelect]）：备份读快照的几个函数在主连接与后台独立连接上共用。
-  SrsSqlSelect get backupSelect =>
-      (String sql, List<Object?> args) async => <Map<String, Object?>>[
-        for (final QueryRow r
-            in await db
-                .customSelect(
-                  sql,
-                  variables: <Variable<Object>>[
-                    for (final Object? a in args)
-                      switch (a) {
-                        final int v => Variable<int>(v),
-                        final SrsId v => Variable<String>(v.value, srsIdType),
-                        final String v => Variable<String>(v),
-                        _ => throw ArgumentError.value(a, 'args'),
-                      },
-                  ],
-                )
-                .get())
-          r.data,
-      ];
-
   /// 本 profile 是否有用户笔记（铁律 E：只有内置行不算有数据）。
-  Future<bool> hasUserNotes() async {
-    final SrsEntityRow? any =
-        await (db.select(db.srsEntities)
-              ..where(
-                (t) =>
-                    t.profileUid.equals(profileUid) &
-                    t.kind.equals(SrsEntityKind.note.wire),
-              )
-              ..limit(1))
-            .getSingleOrNull();
-    return any != null;
-  }
+  Future<bool> hasUserNotes() async =>
+      ((await _read('entity_count', <String, Object?>{
+            'kind': SrsEntityKind.note.wire,
+            'limit': 1,
+          })).json['n']!
+          as int) >
+      0;
 
   /// 本 profile 的用户笔记数（铁律 E：内置行不算）。profile 冲突时给用户对比本机与候选（反馈 dOv8AdJ6yV）。
-  Future<int> userNoteCount() async {
-    final Expression<int> n = db.srsEntities.id.count();
-    final TypedResult row =
-        await (db.selectOnly(db.srsEntities)
-              ..addColumns(<Expression<Object>>[n])
-              ..where(
-                db.srsEntities.profileUid.equals(profileUid) &
-                    db.srsEntities.kind.equals(SrsEntityKind.note.wire),
-              ))
-            .getSingle();
-    return row.read(n) ?? 0;
-  }
+  Future<int> userNoteCount() async =>
+      (await _read('entity_count', <String, Object?>{
+            'kind': SrsEntityKind.note.wire,
+          })).json['n']!
+          as int;
 
   // ------------------------------------------------------------------ SrsSyncReplica
 
@@ -5386,64 +5264,43 @@ class SrsDbStore implements SrsSync2Host {
   /// 当前代码正跑在本副本的独占区里（[runExclusive] 的 body 内，按 Zone 认）。
   bool get holdsExclusive => identical(Zone.current[_writeZoneKey], this);
 
-  Future<List<SrsEvent>> exportAll() async {
-    final List<SrsEvent> out = await exportEntitiesAndEdits();
-    for (final SrsReviewLogRow r in await (db.select(
-      db.srsReviewLogs,
-    )..where((t) => t.profileUid.equals(profileUid))).get()) {
-      out.add(
-        SrsLogEvent(
-          SrsReviewLog.fromJson(
-            (jsonDecode(r.json) as Map).cast<String, Object?>(),
-          ),
-        ),
-      );
-    }
-    for (final SrsUnknownEventRow r in await (db.select(
-      db.srsUnknownEvents,
-    )..where((t) => t.profileUid.equals(profileUid))).get()) {
-      out.add(
-        SrsUnknownEvent((jsonDecode(r.json) as Map).cast<String, Object?>()),
-      );
-    }
-    return out;
-  }
+  Future<List<SrsEvent>> exportAll() => _exportEvents(null);
 
   /// 本 profile 的全部身份记录与修改记录（[exportAll] 去掉复习日志与不认识的事件）。按时间点恢复
   /// 改回字段只要这两类；日志是库里最大的一块，不必整份读回来逐条解码。
-  Future<List<SrsEvent>> exportEntitiesAndEdits() async {
-    final List<SrsEvent> out = <SrsEvent>[];
-    for (final SrsEntityRow r in await (db.select(
-      db.srsEntities,
-    )..where((t) => t.profileUid.equals(profileUid))).get()) {
-      out.add(SrsEntityEvent(_entityFromRow(r)));
-    }
-    for (final SrsFieldEditRow r in await (db.select(
-      db.srsFieldEdits,
-    )..where((t) => t.profileUid.equals(profileUid))).get()) {
-      out.add(
-        SrsEditEvent(
-          SrsFieldEdit.fromJson(
-            (jsonDecode(r.json) as Map).cast<String, Object?>(),
-          ),
-        ),
-      );
-    }
-    return out;
-  }
+  Future<List<SrsEvent>> exportEntitiesAndEdits() =>
+      _exportEvents(const <String>['entities', 'edits']);
 
-  /// 本 profile 每张卡的复习日志 ID（只读 id / card_id 两列，不读正文）。
-  Future<Map<String, List<String>>> logIdsByCard() async {
-    final $SrsReviewLogsTable t = db.srsReviewLogs;
-    final Map<String, List<String>> out = <String, List<String>>{};
-    for (final TypedResult r
-        in await (db.selectOnly(t)
-              ..addColumns(<Expression<Object>>[t.id, t.cardId])
-              ..where(t.profileUid.equals(profileUid)))
-            .get()) {
-      final String card = r.read(t.cardId)!;
-      final String id = r.read(t.id)!;
-      (out[card] ??= <String>[]).add(id);
+  /// 本 profile 的全部事件（`read` 的 `events`；[parts] 为 null = 四张表都要），按身份记录、修改记录、复习日志、
+  /// 不认识的事件的顺序。
+  Future<List<SrsEvent>> _exportEvents(List<String>? parts) async {
+    final Map<String, SrsColumns> t = (await _read('events', <String, Object?>{
+      'parts': ?parts,
+    })).tables;
+    final List<SrsEvent> out = <SrsEvent>[];
+    final SrsColumns? entities = t['entities'];
+    if (entities != null) {
+      for (final _EntityRow r in _entityRowsOf(entities)) {
+        out.add(SrsEntityEvent(_entityFromRow(r)));
+      }
+    }
+    Iterable<Map<String, Object?>> jsons(String name) sync* {
+      final SrsColumns? c = t[name];
+      if (c == null) return;
+      final SrsStringColumn json = c.strings('json');
+      for (int i = 0; i < c.rows; i++) {
+        yield (jsonDecode(json[i]) as Map).cast<String, Object?>();
+      }
+    }
+
+    for (final Map<String, Object?> m in jsons('edits')) {
+      out.add(SrsEditEvent(SrsFieldEdit.fromJson(m)));
+    }
+    for (final Map<String, Object?> m in jsons('logs')) {
+      out.add(SrsLogEvent(SrsReviewLog.fromJson(m)));
+    }
+    for (final Map<String, Object?> m in jsons('unknown')) {
+      out.add(SrsUnknownEvent(m));
     }
     return out;
   }
@@ -5454,14 +5311,15 @@ class SrsDbStore implements SrsSync2Host {
   ) async {
     final Map<String, List<SrsReviewLog>> out = <String, List<SrsReviewLog>>{};
     for (final List<String> chunk in _chunks(cardIds)) {
-      for (final SrsReviewLogRow r
-          in await (db.select(db.srsReviewLogs)..where(
-                (t) => t.profileUid.equals(profileUid) & t.cardId.isIn(chunk),
-              ))
-              .get()) {
-        (out[r.cardId] ??= <SrsReviewLog>[]).add(
+      final SrsColumns c = await _readTable('logs', <String, Object?>{
+        'cards': chunk,
+      });
+      final SrsStringColumn card = c.strings('card_id');
+      final SrsStringColumn json = c.strings('json');
+      for (int i = 0; i < c.rows; i++) {
+        (out[card[i]] ??= <SrsReviewLog>[]).add(
           SrsReviewLog.fromJson(
-            (jsonDecode(r.json) as Map).cast<String, Object?>(),
+            (jsonDecode(json[i]) as Map).cast<String, Object?>(),
           ),
         );
       }
@@ -5471,62 +5329,6 @@ class SrsDbStore implements SrsSync2Host {
 
   /// 卡片的「前身 → 后继」链接（更改笔记类型 / Lapis 迁移的 historyFrom 修改记录，只扫部分索引）。
   Future<Map<String, List<String>>> successorIndex() => _successorIndex();
-
-  /// 全部事件的规范 JSON 行（与 `SrsEvent.canonical()` 逐字节相同；按表、表内按 rowid 排）。
-  /// 一次全进内存，只给测试 / 小规模调用；备份走分页的 [forEachCanonicalLinePage]。
-  Future<List<String>> exportCanonicalLines() async {
-    final List<String> out = <String>[];
-    await forEachCanonicalLinePage(
-      (List<String> page) async => out.addAll(page),
-    );
-    return out;
-  }
-
-  /// 按页导出全部事件的规范 JSON 行（备份用，见 [srsForEachCanonicalLinePage]）。
-  /// 要一致快照就在同一个事务里调用（各页之间插不进别的写入）。
-  Future<void> forEachCanonicalLinePage(
-    Future<void> Function(List<String> lines) onPage, {
-    int pageSize = 2000,
-  }) => srsForEachCanonicalLinePage(
-    backupSelect,
-    profileUid,
-    onPage,
-    pageSize: pageSize,
-  );
-
-  /// 本 profile 在 [table] 里的行，按 rowid 键集分页（不用 OFFSET：深页不退化成 O(n²)）。
-  ///
-  /// `+profile_uid` 的一元加号让 SQLite 不走 profile_uid 前缀索引：走那条索引时每页都要
-  /// 从该 profile 的第一行扫起再按 rowid 过滤，整体随数据量平方增长（实测 20 万行日志
-  /// 慢 26–58 倍）；去掉后按 rowid 主键做范围扫描，每页只读本页的行。
-  Future<void> _pageRows(
-    String table,
-    String columns,
-    int pageSize,
-    Future<void> Function(List<QueryRow> rows) onPage, {
-    String? extraWhere,
-  }) async {
-    int after = -1 << 62;
-    while (true) {
-      final List<QueryRow> rows = await db
-          .customSelect(
-            'SELECT rowid AS rid_, $columns FROM $table '
-            'WHERE +profile_uid = ? AND rowid > ?'
-            '${extraWhere == null ? '' : ' AND $extraWhere'} '
-            'ORDER BY rowid LIMIT ?',
-            variables: <Variable<Object>>[
-              Variable<String>(profileUid, srsIdType),
-              Variable<int>(after),
-              Variable<int>(pageSize),
-            ],
-          )
-          .get();
-      if (rows.isEmpty) return;
-      await onPage(rows);
-      if (rows.length < pageSize) return;
-      after = rows.last.read<int>('rid_');
-    }
-  }
 
   /// 同步成功拿到服务器时间后校时。[observedAtBootMs] 见 [SrsTrustedClock.anchor]。
   Future<void> anchorTime(int serverTimeMs, {required int observedAtBootMs}) =>
@@ -5550,118 +5352,8 @@ class SrsDbStore implements SrsSync2Host {
       // 恢复进来的行可能还是内联样式：存量去重从头再查一遍（游标随重建在同一个 SAVEPOINT 里归零）。
       _rebuildCaches(resetStyles: true);
 
-  /// 笔记字段（`f/` 键）的值，按页交出（媒体引用扫描用）：直接按 rowid 分页读修改记录，
-  /// 不物化笔记——以前每轮同步后都经 `allNoteViews`（已删）把整库笔记连同每条修改记录、整张服务器时间表
-  /// 一次读进调用方 isolate（大库上单段阻塞数百毫秒、每轮都来一次，反馈 OMWOurRQKb）。
-  ///
-  /// 只看有身份记录的笔记（与 [notes] 物化的同一范围）。被支配的修改记录落库时就删了，一个字段键上
-  /// 留下的每一条都是生效候选（[SrsRegister.live]）。
-  ///
-  /// - [currentOnly] 为假（回收媒体前的保守口径）：已删未清的笔记也算，每个字段的全部候选值都交出；
-  /// - 为真（同步口径，与 [notes] 物化后 `deletedAt == null` 的笔记的 `fields` 同值）：跳过已删
-  ///   笔记（删除键上有任一候选值是时刻，见 [srsEffectiveDeletedAt]），每个字段只交生效值——只有一条
-  ///   候选的直接取它，有并发候选的（少数）按 [srsResolveRegister] 裁决后取胜者。
-  Future<void> forEachNoteFieldValuePage(
-    Future<void> Function(List<String> values) onPage, {
-    required bool currentOnly,
-    int pageSize = 1000,
-  }) async {
-    final String noteKind = SrsEntityKind.note.wire;
-    final String scope =
-        "entity_kind = '$noteKind' AND EXISTS (SELECT 1 FROM srs_entities n "
-        "WHERE n.id = srs_field_edits.entity_id AND n.kind = '$noteKind')";
-    final Set<String> deleted = <String>{};
-    final Set<String> contested = <String>{};
-    String reg(String noteId, String key) => '$noteId\u0000$key';
-    if (currentOnly) {
-      await _pageRows('srs_field_edits', 'entity_id, json', pageSize, (
-        List<QueryRow> rows,
-      ) async {
-        for (final QueryRow r in rows) {
-          final Object? v = (jsonDecode(r.read<String>('json')) as Map)['v'];
-          if (v is int) deleted.add(r.read<String>('entity_id'));
-        }
-      }, extraWhere: "$scope AND field_key = '${SrsFieldKeys.deleted}'");
-      for (final QueryRow r
-          in await db
-              .customSelect(
-                'SELECT entity_id, field_key FROM srs_field_edits '
-                "WHERE profile_uid = ? AND entity_kind = '$noteKind' "
-                "AND substr(field_key, 1, 2) = 'f/' "
-                'GROUP BY entity_id, field_key HAVING COUNT(*) > 1',
-                variables: <Variable<Object>>[
-                  Variable<String>(profileUid, srsIdType),
-                ],
-              )
-              .get()) {
-        contested.add(
-          reg(r.read<String>('entity_id'), r.read<String>('field_key')),
-        );
-      }
-    }
-    await _pageRows('srs_field_edits', 'entity_id, field_key, json', pageSize, (
-      List<QueryRow> rows,
-    ) async {
-      final List<String> values = <String>[];
-      for (final QueryRow r in rows) {
-        final String id = r.read<String>('entity_id');
-        if (currentOnly &&
-            (deleted.contains(id) ||
-                contested.contains(reg(id, r.read<String>('field_key'))))) {
-          continue;
-        }
-        final Object? v = (jsonDecode(r.read<String>('json')) as Map)['v'];
-        if (v is String) values.add(v);
-      }
-      await onPage(values);
-    }, extraWhere: "$scope AND substr(field_key, 1, 2) = 'f/'");
-    if (contested.isEmpty) return;
-    // 有并发候选的字段：读回这些笔记的候选、按服务器时间裁决（与物化同一规则）。
-    final Set<String> notes = <String>{
-      for (final String k in contested)
-        if (!deleted.contains(k.substring(0, k.indexOf('\u0000'))))
-          k.substring(0, k.indexOf('\u0000')),
-    };
-    for (final List<String> chunk in _chunks(notes)) {
-      final Map<String, List<SrsFieldEdit>> byReg =
-          <String, List<SrsFieldEdit>>{};
-      for (final SrsFieldEditRow r
-          in await (db.select(db.srsFieldEdits)..where(
-                (t) =>
-                    t.profileUid.equals(profileUid) &
-                    t.entityKind.equals(noteKind) &
-                    t.entityId.isIn(chunk),
-              ))
-              .get()) {
-        final String k = reg(r.entityId, r.fieldKey);
-        if (!contested.contains(k)) continue;
-        (byReg[k] ??= <SrsFieldEdit>[]).add(
-          SrsFieldEdit.fromJson(
-            (jsonDecode(r.json) as Map).cast<String, Object?>(),
-          ),
-        );
-      }
-      final List<String> values = <String>[];
-      final List<List<SrsFieldEdit>> regs = byReg.values.toList();
-      final Map<String, int> s = await _serverTimesFor(<String>[
-        for (final List<SrsFieldEdit> edits in regs)
-          for (final SrsFieldEdit e in edits) e.id,
-      ]);
-      // 每个有争议的寄存器单独成一组，整块一次内核调用（与物化同一裁决规则）。
-      final List<SrsEntityEdits> resolved = SrsEntityEdits.buildMany(
-        regs,
-        serverTimeOf: (String id) => s[id],
-      );
-      for (int k = 0; k < regs.length; k++) {
-        final Object? v = resolved[k].value(regs[k].first.fieldKey);
-        if (v is String) values.add(v);
-      }
-      await onPage(values);
-    }
-  }
-
   /// 本 profile 的卡片缓存行按列（内核 `card_columns`，native/fushi_fsrs/src/store/bulk.rs）：只读快照里一次读完，
-  /// 列式字节经 [TransferableTypedData] 从 worker 原样交过来，不再经 Drift 解码成行对象、再 SendPort 深拷贝。
+  /// 列式字节经 [TransferableTypedData] 从 worker 原样交过来，不再解码成行对象、再 SendPort 深拷贝。
   /// [fields] 限定要哪几列（缓存表列名，如 `id` / `note_id` / `deck_id`；缺省全部）；[visibleOnly] 只要可见卡。
   Future<SrsColumns> cardColumns({
     List<String>? fields,
@@ -5680,61 +5372,8 @@ class SrsDbStore implements SrsSync2Host {
       })).tables;
 
   /// 本 profile 的全部卡片缓存行（含隐藏）。由 [cardColumns] 组装；只要几列的调用方直接用 [cardColumns]。
-  Future<List<SrsCardCacheRow>> allCardRows() async {
-    final SrsColumns c = await cardColumns();
-    final SrsStringColumn id = c.strings('id');
-    final SrsStringColumn note = c.strings('note_id');
-    final SrsStringColumn template = c.strings('template_id');
-    final SrsIntColumn ord = c.ints('cloze_ord');
-    final SrsStringColumn deck = c.strings('deck_id');
-    final SrsIntColumn suspended = c.ints('suspended');
-    final SrsIntColumn buried = c.ints('buried_until_day');
-    final SrsIntColumn flag = c.ints('flag');
-    final SrsIntColumn hidden = c.ints('hidden');
-    final SrsStringColumn queue = c.strings('queue');
-    final SrsIntColumn dueDay = c.ints('due_day');
-    final SrsIntColumn dueAt = c.ints('due_at');
-    final SrsIntColumn days = c.ints('scheduled_days');
-    final SrsIntColumn reps = c.ints('reps');
-    final SrsIntColumn lapses = c.ints('lapses');
-    final SrsDoubleColumn stability = c.doubles('stability');
-    final SrsDoubleColumn difficulty = c.doubles('difficulty');
-    final SrsIntColumn last = c.ints('last_reviewed_at');
-    final SrsStringColumn lastLog = c.strings('last_log_id');
-    final SrsStringColumn scheduler = c.strings('scheduler');
-    final SrsIntColumn created = c.ints('note_created_at');
-    final SrsIntColumn position = c.ints('new_position');
-    final SrsIntColumn freq = c.ints('freq_rank');
-    return <SrsCardCacheRow>[
-      for (int i = 0; i < c.rows; i++)
-        SrsCardCacheRow(
-          id: id[i],
-          profileUid: profileUid,
-          noteId: note[i],
-          templateId: template[i],
-          clozeOrd: ord[i],
-          deckId: deck[i],
-          suspended: suspended.flag(i),
-          buriedUntilDay: buried.at(i),
-          flag: flag[i],
-          hidden: hidden.flag(i),
-          queue: queue[i],
-          dueDay: dueDay.at(i),
-          dueAt: dueAt.at(i),
-          scheduledDays: days[i],
-          reps: reps[i],
-          lapses: lapses[i],
-          stability: stability.at(i),
-          difficulty: difficulty.at(i),
-          lastReviewedAt: last.at(i),
-          lastLogId: lastLog.at(i),
-          scheduler: scheduler[i],
-          noteCreatedAt: created[i],
-          newPosition: position.at(i),
-          freqRank: freq.at(i),
-        ),
-    ];
-  }
+  Future<List<SrsCardCacheRow>> allCardRows() async =>
+      _cardRowsOf(await cardColumns());
 
   /// AnkiConnect 整数笔记 id（[SrsIds.ankiNumericId]）→ noteId；没有这条笔记为 null。
   ///
@@ -5925,6 +5564,9 @@ typedef _PreviewRaw = ({
   SrsDayContext day,
 });
 
+/// 一条身份记录（`read` 的 `entities`）。
+typedef _EntityRow = ({String id, String kind, String payloadJson});
+
 /// 一次批量读的预读（见 [SrsDbStore._readWith]）：只在那次读的 Zone 里可见。
 /// 各 Map 里「有键」= 已预读（值可能为空 / null）；没键的照常查库。
 class _RefreshPrefetch {
@@ -5933,12 +5575,13 @@ class _RefreshPrefetch {
   static _RefreshPrefetch? get current =>
       Zone.current[zoneKey] as _RefreshPrefetch?;
 
-  final Map<String, SrsEntityRow?> entities = <String, SrsEntityRow?>{};
+  final Map<String, _EntityRow?> entities = <String, _EntityRow?>{};
 
   /// `<kind>/<entityId>` → 修改记录原文 + 服务器时刻（[SrsDbStore._prefetchEdits]）。
   final Map<String, List<SrsEditItem>> edits = <String, List<SrsEditItem>>{};
-  final Map<String, List<SrsReviewLogRow>> logsByCard =
-      <String, List<SrsReviewLogRow>>{};
+
+  /// 卡 → 它的复习日志原文（canonical JSON；[SrsDbStore._prefetchLogs]）。
+  final Map<String, List<String>> logsByCard = <String, List<String>>{};
 
   final Map<String, int> serverTimes = <String, int>{};
   final Set<String> serverTimesKnown = <String>{};

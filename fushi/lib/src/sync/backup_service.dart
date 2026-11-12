@@ -1129,7 +1129,7 @@ class BackupService {
   /// SRS 用户笔记数（本机 srs.db；还没搬迁时读主库里的老表）。
   Future<int> _countSrsNotes() async {
     final SrsStorage? srs = await _srsStorage?.call();
-    return srsUserNoteCount(srs?.db ?? _db);
+    return srs != null ? srsUserNoteCountIn(srs.core) : srsUserNoteCount(_db);
   }
 
   /// 音乐用户数据行数（活库）：[musicUserTables] 合计。
@@ -1268,7 +1268,7 @@ class BackupService {
       if (srs != null) {
         srsSnapshotPath = p.join(tmpDir.path, _srsDbName);
         await _snapshotSrs(srs, srsSnapshotPath);
-        srsProfileUidSet = await srsProfileUids(srs.db);
+        srsProfileUidSet = await srsProfileUidsIn(srs.core);
       }
 
       // Strip sync credentials from the copy before it leaves the device.

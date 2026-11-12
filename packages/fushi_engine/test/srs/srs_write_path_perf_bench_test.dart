@@ -26,7 +26,7 @@ void main() {
     '写入路径读放大',
     () async {
       final int notes = int.parse(n!);
-      final CountingInterceptor counter = CountingInterceptor();
+      final SrsReadCounter counter = SrsReadCounter();
       final Directory tmp = Directory.systemTemp.createTempSync('srs_wp_');
       addTearDown(() {
         try {
@@ -35,14 +35,9 @@ void main() {
           // 句柄晚释放。
         }
       });
-      final TestSrs srs = await openTestSrsAt(
-        '${tmp.path}/b.db',
-        interceptor: counter,
-        inline: false,
-      );
+      final TestSrs srs = await openTestSrsAt('${tmp.path}/b.db');
       const String uid = '01928c3e-0000-7000-8000-0000000be4c7';
       final SrsDbStore store = await SrsDbStore.open(
-        db: srs.db,
         core: srs.core,
         profileUid: uid,
         deviceId: 'bench',

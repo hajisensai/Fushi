@@ -12,7 +12,6 @@
 ///   模板顺序也不会把复习记录对到别的模板上。
 library;
 
-import 'package:drift/drift.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
@@ -140,13 +139,9 @@ extension SrsTemplateDuplicates on SrsDbStore {
     final Set<String> dropIds = <String>{
       for (final SrsTemplateDef d in drop) d.id,
     };
-    final List<SrsCardCacheRow> rows =
-        await (db.select(db.srsCardsCache)..where(
-              (c) =>
-                  c.profileUid.equals(profileUid) &
-                  c.templateId.isIn(<String>[keep.id, ...dropIds]),
-            ))
-            .get();
+    final List<SrsCardCacheRow> rows = await cardRowsWhere(<String, Object?>{
+      'templates': <String>[keep.id, ...dropIds],
+    });
     bool reviewed(SrsCardCacheRow c) => c.reps > 0 || c.lastReviewedAt != null;
     final Map<String, SrsCardCacheRow> keepByNote = <String, SrsCardCacheRow>{
       for (final SrsCardCacheRow c in rows)

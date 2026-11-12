@@ -18,7 +18,6 @@ void main() {
   test('冲突角标：修订信号递增但内容指纹没变 → 复用；内容变了 → 重算', () async {
     final SrsStorage srs = await openSrsTestStorage();
     final SrsDbStore store = await SrsDbStore.open(
-      db: srs.db,
       core: srs.core,
       profileUid: _kProfile,
       deviceId: 'memo-test',

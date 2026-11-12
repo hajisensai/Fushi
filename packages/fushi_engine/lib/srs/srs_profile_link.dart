@@ -622,7 +622,7 @@ class SrsDbProfileLinker implements SrsProfileLinker {
     if (_deferred.isEmpty) return null;
     final int profileId = await activeProfileId();
     for (final SrsPendingProfileMerge m in await srsPendingProfileMerges(
-      store.db,
+      store.core,
     )) {
       if (m.profileId != profileId) continue;
       final SrsDeferredProfileMerge? d =
@@ -830,13 +830,12 @@ class SrsDbProfileLinker implements SrsProfileLinker {
     final int profileId = await activeProfileId();
     bool resumed = false;
     for (final SrsPendingProfileMerge m in await srsPendingProfileMerges(
-      store.db,
+      store.core,
     )) {
       if (m.profileId != profileId) continue;
       try {
         await srsMergeProfileUid(
           db,
-          store.db,
           core: store.core,
           profileId: m.profileId,
           oldUid: m.oldUid,
@@ -896,7 +895,6 @@ class SrsDbProfileLinker implements SrsProfileLinker {
     if (merge) {
       await srsMergeProfileUid(
         db,
-        store.db,
         core: store.core,
         profileId: profileId,
         oldUid: oldUid,
@@ -1012,7 +1010,7 @@ class SrsDbProfileLinker implements SrsProfileLinker {
   Future<String?> _mergingInto(SrsDbStore store) async {
     final int profileId = await activeProfileId();
     for (final SrsPendingProfileMerge m in await srsPendingProfileMerges(
-      store.db,
+      store.core,
     )) {
       if (m.profileId == profileId && m.oldUid == store.profileUid) {
         return m.newUid;

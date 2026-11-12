@@ -1,5 +1,8 @@
 import 'package:drift/drift.dart';
+import 'package:fushi_engine/srs/srs_reads.dart';
 import 'package:fushi_engine/stats/study_sessions.dart';
+import 'package:fushi_srs/fushi_srs.dart'
+    show SrsColumns, SrsCore, SrsIntColumn;
 import 'package:fushi_core/fushi_core.dart';
 // 引擎只准 import 纯 Dart 子 barrel（全 barrel 会导出 just_audio 等插件，
 // 把 Flutter 拖进无头服务端的 AOT 编译）。
@@ -340,7 +343,7 @@ Future<StatFacts> loadStatFacts(
   int activityLimit = 200,
   bool includeCounters = false,
   int? profileId,
-  SrsDatabase? reviewsFrom,
+  SrsCore? reviewsFrom,
 }) async {
   final int scope = profileId ?? await db.resolveActiveProfileId();
   final bool legacyVisible = await db.legacyStatsVisibleTo(scope);
@@ -389,7 +392,7 @@ Future<StatFacts> loadStatFacts(
   final Future<StatCounterFacts> countersF = includeCounters
       ? _loadCounterFacts(db)
       : Future<StatCounterFacts>.value(StatCounterFacts.empty);
-  final SrsDatabase? srs = reviewsFrom;
+  final SrsCore? srs = reviewsFrom;
   final Future<List<StatFact>> reviewsF = srs != null
       ? loadStatReviewFacts(db, srs, profileId: scope)
       : Future<List<StatFact>>.value(const <StatFact>[]);
@@ -597,7 +600,7 @@ Future<StatFacts> loadStatFacts(
 /// （mediaKind [kStatMediaReview]、mediaKey [kStatReviewMediaKey]，字数 / 页数为 0）。
 ///
 /// 口径：
-/// - **只算有效复习**：读 srs.db 的有效复习投影（`SrsStatReviews`：被 undo 撤销的、与原生复习等价
+/// - **只算有效复习**：读 srs.db 的有效复习投影（`srs_stat_reviews`：被 undo 撤销的、与原生复习等价
 ///   的导入日志都不在），评分复习（rating 非空）的 `durationMs` 求和；导入的 Anki revlog
 ///   保留了 Anki 的 `time`，照样计入。时长为 0 的格子不出（与写零的段同律）。
 /// - **身份**：统计域按主库 `profiles.id` 分区，SRS 按全局 `profiles.uid`；先在主库 [db] 把 id
@@ -613,7 +616,7 @@ Future<StatFacts> loadStatFacts(
 ///   不碰复习（复习数据归 SRS 管）。
 Future<List<StatFact>> loadStatReviewFacts(
   FushiDatabase db,
-  SrsDatabase srs, {
+  SrsCore srs, {
   required int profileId,
 }) async {
   final QueryRow? profile = await db
@@ -624,43 +627,35 @@ Future<List<StatFact>> loadStatReviewFacts(
       .getSingleOrNull();
   final String? uid = profile?.read<String?>('uid');
   if (uid == null || uid.isEmpty) return const <StatFact>[];
-  const int dayMs = 86400000;
   const int hourMs = 3600000;
-  final int resetMs = FushiDatabase.statDayResetHour * hourMs;
-  final $SrsStatReviewsTable t = srs.srsStatReviews;
-  // 本地毫秒（日志自己的 UTC 偏移）；SQLite 整数除法向零取整，时刻都在纪元之后。
-  final Expression<int> local =
-      t.occurredAt + t.utcOffsetMin * const Constant<int>(60000);
-  final Expression<int> day =
-      (local - Constant<int>(resetMs)) / const Constant<int>(dayMs);
-  final Expression<int> hour =
-      local / const Constant<int>(hourMs) -
-      local / const Constant<int>(dayMs) * const Constant<int>(24);
-  final Expression<int> ms = t.durationMs.sum();
-  final Expression<int> last = t.occurredAt.max();
-  final List<TypedResult> rows =
-      await (srs.selectOnly(t)
-            ..addColumns(<Expression<Object>>[day, hour, ms, last])
-            ..where(t.profileUid.equals(uid) & t.rating.isNotNull())
-            ..groupBy(<Expression<Object>>[day, hour]))
-          .get();
+  // 按（统计日, 小时）聚合在内核里（`review_grid`，native/fushi_fsrs/src/store/reads.rs）。
+  final SrsColumns c = (await srsRead(
+    srs,
+    uid,
+    'review_grid',
+    <String, Object?>{'resetMs': FushiDatabase.statDayResetHour * hourMs},
+  )).table;
+  final SrsIntColumn day = c.ints('day');
+  final SrsIntColumn hour = c.ints('hour');
+  final SrsIntColumn ms = c.ints('ms');
+  final SrsIntColumn last = c.ints('last');
   final DateTime epoch = DateTime.utc(1970);
   return <StatFact>[
-    for (final TypedResult r in rows)
-      if ((r.read(ms) ?? 0) > 0)
+    for (int i = 0; i < c.rows; i++)
+      if (ms[i] > 0)
         StatFact(
           mediaKind: kStatMediaReview,
           mediaKey: kStatReviewMediaKey,
           title: '',
           format: '',
           dateKey: FushiDatabase.statCalendarDayKeyOf(
-            epoch.add(Duration(days: r.read(day)!)),
+            epoch.add(Duration(days: day[i])),
           ),
-          hour: r.read(hour)!,
-          ms: r.read(ms)!,
+          hour: hour[i],
+          ms: ms[i],
           chars: 0,
           pages: 0,
-          lastActiveMs: r.read(last)!,
+          lastActiveMs: last[i],
         ),
   ];
 }

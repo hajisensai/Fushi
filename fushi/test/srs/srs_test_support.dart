@@ -10,9 +10,10 @@ import 'package:flutter/foundation.dart' show TargetPlatform;
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_op_ledger.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:fushi_engine/srs/srs_style_store.dart';
-import 'package:flutter_test/flutter_test.dart' show addTearDown;
+import 'package:flutter_test/flutter_test.dart' show WidgetTester, addTearDown;
 import 'package:fushi_srs/fushi_srs.dart';
 
 import '../helpers/test_platform_services.dart';
@@ -25,6 +26,31 @@ import '../helpers/test_platform_services.dart';
 ///
 /// 快捷键注册表装出厂默认（真 app 在 `initialise` 里装）：复习页的键盘 / 手柄按
 /// `ShortcutScope.srsReview` 解析，未装载的注册表对每个动作都是空绑定。
+/// widget 测试里推进到 SRS 内核往返全部落地：每轮放一小段真实时间（[real]）让查询 / 写工作 isolate 回包，
+/// 再 pump 一帧（[frame]）让 fake zone 里的后续跑起来。至少 [minRounds] 轮；之后连续 3 轮既没有在途的内核操作
+/// （[SrsOpLedger.inflightCount]，读命令与写命令都记账）、也没有排着的帧（数据到了之后的切换动画还在走）就停，
+/// 最多 [maxRounds] 轮。
+///
+/// 读命令在查询工作 isolate 上跑（store/reads.rs），每次往返都要一段真实时间；页面一次加载串着好几次读，
+/// 固定轮数在慢机器上不够（G5 删掉 srs.db 的同步 Drift 读之后）。
+Future<void> srsSettle(
+  WidgetTester tester, {
+  int minRounds = 12,
+  int maxRounds = 400,
+  Duration real = const Duration(milliseconds: 5),
+  Duration frame = const Duration(milliseconds: 60),
+}) async {
+  int quiet = 0;
+  for (int i = 0; i < maxRounds; i++) {
+    await tester.runAsync(() => Future<void>.delayed(real));
+    await tester.pump(frame);
+    quiet = SrsOpLedger.inflightCount == 0 && !tester.binding.hasScheduledFrame
+        ? quiet + 1
+        : 0;
+    if (i + 1 >= minRounds && quiet >= 3) return;
+  }
+}
+
 class SrsTestAppModel extends AppModel {
   SrsTestAppModel() : super(testPlatformServices()) {
     shortcutRegistry.loadDefaults(TargetPlatform.windows);
@@ -142,7 +168,6 @@ Future<SrsStorage> openSrsTestStorage() async {
   final Directory dir = Directory.systemTemp.createTempSync('fushi_srs_test_');
   final SrsStorage storage = await SrsStorage.open(
     path: SrsStorage.pathIn(dir.path),
-    inline: true,
   );
   addTearDown(() async {
     await storage.close();
@@ -169,7 +194,6 @@ Future<(FushiDatabase, SrsDbStore)> openSrsTestStore({
   final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
   final SrsStorage srs = storage ?? await openSrsTestStorage();
   final SrsDbStore store = await SrsDbStore.open(
-    db: srs.db,
     core: srs.core,
     profileUid: profileUid,
     deviceId: deviceId,

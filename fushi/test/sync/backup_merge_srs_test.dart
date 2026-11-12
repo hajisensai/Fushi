@@ -14,6 +14,7 @@ import 'package:path/path.dart' as p;
 
 import '../srs/srs_test_support.dart' show openSrsTestStorage;
 import 'temp_dir_cleanup.dart';
+import '../../../packages/fushi_engine/test/srs/support/srs_raw_sql.dart';
 
 /// 备份的两种形态（docs/specs/2026-10-23-srs-rust-store.md §4）。
 enum _Shape {
@@ -74,7 +75,7 @@ void main() {
           ?.read<String?>('uid');
 
   Future<String?> ownerOf(String entityId) async =>
-      (await targetSrs.db
+      (await targetSrs.core
               .customSelect(
                 'SELECT profile_uid FROM srs_entities WHERE id = ?',
                 variables: <Variable<Object>>[
@@ -85,7 +86,7 @@ void main() {
           ?.read<String>('profile_uid');
 
   Future<int> srsCount(String sql) async =>
-      (await targetSrs.db.customSelect(sql).getSingle()).read<int>('c');
+      (await targetSrs.core.customSelect(sql).getSingle()).read<int>('c');
 
   Future<int> profileCount() async =>
       (await target
@@ -94,7 +95,6 @@ void main() {
           .read<int>('c');
 
   Future<SrsDbStore> store(String uid) => SrsDbStore.open(
-    db: targetSrs.db,
     core: targetSrs.core,
     profileUid: uid,
     deviceId: 'dev-target',
@@ -116,10 +116,8 @@ void main() {
     final String uid = await src.profileUidOf(id);
     final SrsStorage srcSrs = await SrsStorage.open(
       path: SrsStorage.pathIn(dir.path),
-      inline: true,
     );
     final SrsDbStore s = await SrsDbStore.open(
-      db: srcSrs.db,
       core: srcSrs.core,
       profileUid: uid,
       deviceId: 'dev-src',
@@ -135,8 +133,8 @@ void main() {
               in await src.customSelect('PRAGMA table_info(${t.key})').get())
             c.read<String>('name'),
         };
-        for (final QueryRow r
-            in await srcSrs.db.customSelect('SELECT * FROM ${t.key}').get()) {
+        for (final SrsRawRow r
+            in await srcSrs.core.customSelect('SELECT * FROM ${t.key}').get()) {
           final List<String> cols = <String>[
             for (final String c in r.data.keys)
               if (legacyCols.contains(c)) c,
@@ -164,13 +162,13 @@ void main() {
     // 新形态：备份 srs.db 的副本由 Rust 打开（与 mergeRestoreBackup 一样，Dart 不碰它）。
     final SrsStorage? source = b.srsPath == null
         ? null
-        : await SrsStorage.open(path: b.srsPath!, inline: true);
+        : await SrsStorage.open(path: b.srsPath!);
     await target.customStatement("ATTACH DATABASE '$safe' AS mergesrc");
     try {
       await BackupMergeEngine(
         target,
         localSrs: targetSrs,
-        sourceSrs: source?.db,
+        sourceSrs: source?.core,
       ).merge();
     } finally {
       await target.customStatement('DETACH DATABASE mergesrc');

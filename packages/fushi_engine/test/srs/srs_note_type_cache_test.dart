@@ -32,8 +32,8 @@ void main() {
     bootId: 'boot-$id',
   );
 
-  Future<(SrsDbStore, CountingInterceptor)> counted(String id) async {
-    final CountingInterceptor counter = CountingInterceptor();
+  Future<(SrsDbStore, SrsReadCounter)> counted(String id) async {
+    final SrsReadCounter counter = SrsReadCounter();
     final Directory tmp = Directory.systemTemp.createTempSync('srs_ntc_');
     addTearDown(() {
       try {
@@ -44,10 +44,8 @@ void main() {
     });
     final TestSrs srs = await openTestSrsAt(
       '${tmp.path}/$kSrsDatabaseFileName',
-      interceptor: counter,
     );
     final SrsDbStore s = await SrsDbStore.open(
-      db: srs.db,
       core: srs.core,
       profileUid: kNtProfile,
       deviceId: id,
@@ -61,7 +59,6 @@ void main() {
   Future<SrsDbStore> plain(String id) async {
     final SrsStorage storage = await openTestSrsStorage();
     return SrsDbStore.open(
-      db: storage.db,
       core: storage.core,
       profileUid: kNtProfile,
       deviceId: id,
@@ -80,7 +77,7 @@ void main() {
   ];
 
   test('同一内容版本下重复读不碰库；作答不失效；本机结构写入后立刻读到新值', () async {
-    final (SrsDbStore s, CountingInterceptor counter) = await counted('a');
+    final (SrsDbStore s, SrsReadCounter counter) = await counted('a');
     final String lapis = s.lapisNoteTypeId;
     final SrsNoteTypeView first = (await s.noteType(lapis))!;
     final List<SrsNoteTypeView> all = await s.noteTypes();
@@ -146,7 +143,7 @@ void main() {
 
   test('同步收来的笔记类型修改立刻可见', () async {
     final SrsMemoryLocationStore loc = SrsMemoryLocationStore();
-    final (SrsDbStore a, CountingInterceptor _) = await counted('a');
+    final (SrsDbStore a, SrsReadCounter _) = await counted('a');
     final SrsDbStore b = await plain('b');
     Future<void> sync() async {
       for (int round = 0; round < 3; round++) {

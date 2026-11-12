@@ -12,6 +12,7 @@ import 'package:test/test.dart';
 
 import 'apkg/apkg_test_support.dart' show FakeFsrsEngine;
 import 'support/srs_test_storage.dart';
+import 'support/srs_raw_sql.dart';
 
 void main() {
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
@@ -20,9 +21,9 @@ void main() {
   test(
     '长读进行中的短读延迟',
     () async {
-      final TestSrs srs = await openTestSrsAt(path!, inline: false);
+      final TestSrs srs = await openTestSrsAt(path!);
       final String uid =
-          (await srs.db
+          (await srs.core
                   .customSelect(
                     'SELECT profile_uid AS u FROM srs_entities '
                     "WHERE kind = 'deck' LIMIT 1",
@@ -30,14 +31,13 @@ void main() {
                   .getSingle())
               .read<String>('u');
       final SrsDbStore store = await SrsDbStore.open(
-        db: srs.db,
         core: srs.core,
         profileUid: uid,
         deviceId: 'bench',
         engine: const FakeFsrsEngine(),
         fallbackRolloverHour: () => 4,
       );
-      final QueryRow pick = await srs.db
+      final SrsRawRow pick = await srs.core
           .customSelect(
             'SELECT id AS c, note_id AS n FROM srs_cards_cache '
             'LIMIT 1 OFFSET 500',

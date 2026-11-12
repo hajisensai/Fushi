@@ -63,7 +63,6 @@ void main() {
       );
       addTearDown(srs.close);
       final SrsDbStore store = await SrsDbStore.open(
-        db: srs.db,
         core: srs.core,
         profileUid: uid,
         deviceId: 'bench',
