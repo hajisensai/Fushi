@@ -10,7 +10,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../helpers/source_guard.dart';
 
-/// BUG-4388：有声书歌词模式（及其它隐形拖动条页）里查词弹窗打开时，点窗口最顶部
+/// BUG-4475：有声书歌词模式（及其它隐形拖动条页）里查词弹窗打开时，点窗口最顶部
 /// 关不掉弹窗。
 ///
 /// 标题行叠在整个 Navigator 之上，隐形拖动条的 `DragToMoveArea` 常驻可命中，

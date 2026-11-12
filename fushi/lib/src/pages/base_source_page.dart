@@ -148,7 +148,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     });
   }
 
-  /// BUG-4388：标题行（含沉浸页的隐形拖动条）叠在 Navigator 之上，弹窗的
+  /// BUG-4475：标题行（含沉浸页的隐形拖动条）叠在 Navigator 之上，弹窗的
   /// dismiss barrier 在那一条里命中不到。标题行上的单击按「点在弹窗外」走
   /// barrier 同一钩子；只有当前路由上、弹窗可见的页面响应（被盖住的页面不动）。
   void _onCaptionTap(Offset globalPosition) {

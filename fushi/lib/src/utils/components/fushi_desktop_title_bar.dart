@@ -295,7 +295,7 @@ class FushiDesktopTitleBar extends StatefulWidget {
   /// 标题行叠在整个 Navigator 之上：页面里的全屏层（查词弹窗的 dismiss
   /// barrier）在这一条里命中不到——拖动区先吃掉了指针。沉浸页的隐形拖动条
   /// （[setCaptionDragBand]）更是常驻可命中，点窗口最顶部关不掉查词弹窗
-  /// （BUG-4388）。单击转发给订阅者，由页面按「点在弹窗外」处理；拖动 / 双击
+  /// （BUG-4475）。单击转发给订阅者，由页面按「点在弹窗外」处理；拖动 / 双击
   /// 最大化照旧归窗口。
   static final Set<ValueChanged<Offset>> _captionTapListeners =
       <ValueChanged<Offset>>{};
@@ -2006,7 +2006,7 @@ class FushiWindowDragArea extends StatelessWidget {
 }
 
 /// 包在标题行拖动区（`DragToMoveArea`）外面，把**单击**转发给
-/// [FushiDesktopTitleBar.addCaptionTapListener] 的订阅者（BUG-4388）。拖动 /
+/// [FushiDesktopTitleBar.addCaptionTapListener] 的订阅者（BUG-4475）。拖动 /
 /// 双击最大化仍由里面的 `DragToMoveArea` 赢下手势竞技场；单击要等双击判定
 /// 超时（[kDoubleTapTimeout]）才落到这里，与系统标题栏同一手感。
 class _CaptionTapForwarder extends StatelessWidget {

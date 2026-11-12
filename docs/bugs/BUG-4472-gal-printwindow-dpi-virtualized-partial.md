@@ -1,4 +1,4 @@
-## BUG-4388 · DPI-unaware 游戏在缩放屏上 WGC 失败后 PrintWindow 兜底把逻辑尺寸整帧误判为 partial，制卡无图失败
+## BUG-4472 · DPI-unaware 游戏在缩放屏上 WGC 失败后 PrintWindow 兜底把逻辑尺寸整帧误判为 partial，制卡无图失败
 - **报告**：2026-11-12（志愿者机 Windows 11、显示缩放 300%；经典 KiriKiri2 游戏，窗口化，经 Locale Emulator 启动，32 位）
 - **真实性**：✅ 真 bug（PrintWindow 判据部分）。宿主 `error_log.txt` 每次制卡都是 `CreateForWindow returned no item hr=0x80070057; PrintWindow produced partial client pixels; source WGC item rejected and no verified Magpie presentation mapping was found`，同机 KiriKiriZ 游戏 WGC 正常。被绑定窗口是被同进程 Delphi `TApplication`（可见、零尺寸 `WS_POPUP`）owned 的顶层 VCL 窗体，`dpi_awareness=0(unaware)`。
   - 根因：`fushi/windows/runner/window_capture.cpp` 旧 `TryCapturePrintWindow`（develop `:877-896`）用本进程（PerMonitorV2）读到的**物理**客户区尺寸分配 DIB 并预填哨兵；DPI-unaware 窗口在缩放屏上由 DWM 位图拉伸，PrintWindow 只按窗口**自身（逻辑）**客户区尺寸画到 DIB 左上角（300% 时约 1/9 面积），其余像素保持哨兵（**推断**：本机单显示器 96 DPI 无法实测缩放屏；与诊断是 `partial` 而非 `no pixels` 一致，新增诊断字段用于真机证实）。旧 `ValidatePrintWindowPixels`（develop `:636-676`，判据 `:665` `untouched_pixels != 0`）只要有任何哨兵残留就判 `kPartialPixels`——坐标系错配，不是画面不完整。
