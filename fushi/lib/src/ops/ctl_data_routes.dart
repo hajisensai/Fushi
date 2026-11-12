@@ -26,6 +26,7 @@ import 'package:fushi_engine/sync/pairing/fushi_pair_link.dart';
 import 'package:fushi_engine/sync/sync_backend_type.dart';
 import 'package:path/path.dart' as p;
 
+import 'package:fushi/src/media/downloads/download_execution_target.dart';
 import 'package:fushi/src/media/discovery/direct_link_download.dart';
 import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
 import 'package:fushi/src/media/video/media_server/media_server_config.dart';
@@ -570,19 +571,23 @@ List<CtlRoute> _downloadRoutes(OpContext context) => <CtlRoute>[
       call.optString('device'),
     );
     if (remote != null) {
-      final List<HostDownloadJob> jobs = await mapCtlHostErrors(
-        remote.target,
-        () => remote.client.listJobs(remote.target),
-      );
-      return <String, Object?>{
-        'device': remote.target.label,
-        'remote': true,
-        'backend': remote.target.backend,
-        'jobs': <Map<String, Object?>>[
-          for (final HostDownloadJob job in jobs)
-            hostDownloadJobToWire(job, device: remote.target.label),
-        ],
-      };
+      try {
+        final List<HostDownloadJob> jobs = await mapCtlHostErrors(
+          remote.target,
+          () => remote.client.listJobs(remote.target),
+        );
+        return <String, Object?>{
+          'device': remote.target.label,
+          'remote': true,
+          'backend': remote.target.backend,
+          'jobs': <Map<String, Object?>>[
+            for (final HostDownloadJob job in jobs)
+              hostDownloadJobToWire(job, device: remote.target.label),
+          ],
+        };
+      } finally {
+        remote.release();
+      }
     }
     return <String, Object?>{
       ...await appModel.appDownloadHost.capability(),
@@ -604,10 +609,14 @@ List<CtlRoute> _downloadRoutes(OpContext context) => <CtlRoute>[
       call.optString('device'),
     );
     if (remote != null) {
-      return hostDownloadJobToWire(
-        await requireCtlHostJob(remote, id),
-        device: remote.target.label,
-      );
+      try {
+        return hostDownloadJobToWire(
+          await requireCtlHostJob(remote, id),
+          device: remote.target.label,
+        );
+      } finally {
+        remote.release();
+      }
     }
     final int? directId = parseDirectDownloadTaskId(id);
     if (directId != null) {
@@ -708,16 +717,20 @@ List<CtlRoute> _downloadRoutes(OpContext context) => <CtlRoute>[
       call.optString('device'),
     );
     if (remote != null) {
-      // 远端任务卡同一判据：只有未结束的任务有「取消」。
-      final HostDownloadJob job = await requireCtlHostJob(remote, id);
-      if (hostDownloadJobFinished(job)) {
-        throw CtlFailure.conflict('任务已结束，不能取消（当前：${job.lifecycle}）');
+      try {
+        // 远端任务卡同一判据：只有未结束的任务有「取消」。
+        final HostDownloadJob job = await requireCtlHostJob(remote, id);
+        if (hostDownloadJobFinished(job)) {
+          throw CtlFailure.conflict('任务已结束，不能取消（当前：${job.lifecycle}）');
+        }
+        await mapCtlHostErrors(
+          remote.target,
+          () => remote.client.cancel(remote.target, id),
+        );
+        return null;
+      } finally {
+        remote.release();
       }
-      await mapCtlHostErrors(
-        remote.target,
-        () => remote.client.cancel(remote.target, id),
-      );
-      return null;
     }
     final int? directId = parseDirectDownloadTaskId(id);
     if (directId != null) {
@@ -738,15 +751,19 @@ List<CtlRoute> _downloadRoutes(OpContext context) => <CtlRoute>[
       call.optString('device'),
     );
     if (remote != null) {
-      final HostDownloadJob job = await requireCtlHostJob(remote, id);
-      if (!hostDownloadJobRetryable(job)) {
-        throw CtlFailure.conflict('只有失败 / 需要处理的任务能重试（当前：${job.lifecycle}）');
+      try {
+        final HostDownloadJob job = await requireCtlHostJob(remote, id);
+        if (!hostDownloadJobRetryable(job)) {
+          throw CtlFailure.conflict('只有失败 / 需要处理的任务能重试（当前：${job.lifecycle}）');
+        }
+        await mapCtlHostErrors(
+          remote.target,
+          () => remote.client.retry(remote.target, id),
+        );
+        return null;
+      } finally {
+        remote.release();
       }
-      await mapCtlHostErrors(
-        remote.target,
-        () => remote.client.retry(remote.target, id),
-      );
-      return null;
     }
     final int? directId = parseDirectDownloadTaskId(id);
     if (directId != null) {
@@ -846,42 +863,46 @@ List<CtlRoute> _downloadRoutes(OpContext context) => <CtlRoute>[
       call.optString('device'),
     );
     if (remote != null) {
-      // 远端任务卡同一判据：只有已结束的任务有「删除」。host 宣告 deleteFilesParam
-      // 时 --delete-files 按字面生效（不给 = 保留文件，与下载页勾选框同义，
-      // BUG-3437）；老 host 不认这个参数，给了就明确拒绝，不给则按它的历史缺省。
-      final bool supported = remote.target.deleteFilesParam;
-      if (deleteFiles && !supported) {
-        throw CtlFailure.rejected(
-          'host「${remote.target.label}」版本较旧，不支持选择是否删除文件（--delete-files）；'
-          '不加这个参数时按它的缺省处理：Fushi app 当 host 保留文件、无头 fushi_server 连数据一起删',
-        );
-      }
-      final String id = call.params['id']!;
-      final HostDownloadJob job = await requireCtlHostJob(remote, id);
-      if (!hostDownloadJobFinished(job)) {
-        throw CtlFailure.conflict('任务还没结束，先 dl cancel（当前：${job.lifecycle}）');
-      }
-      await mapCtlHostErrors(
-        remote.target,
-        () => remote.client.delete(
+      try {
+        // 远端任务卡同一判据：只有已结束的任务有「删除」。host 宣告 deleteFilesParam
+        // 时 --delete-files 按字面生效（不给 = 保留文件，与下载页勾选框同义，
+        // BUG-3437）；老 host 不认这个参数，给了就明确拒绝，不给则按它的历史缺省。
+        final bool supported = remote.target.deleteFilesParam;
+        if (deleteFiles && !supported) {
+          throw CtlFailure.rejected(
+            'host「${remote.target.label}」版本较旧，不支持选择是否删除文件（--delete-files）；'
+            '不加这个参数时按它的缺省处理：Fushi app 当 host 保留文件、无头 fushi_server 连数据一起删',
+          );
+        }
+        final String id = call.params['id']!;
+        final HostDownloadJob job = await requireCtlHostJob(remote, id);
+        if (!hostDownloadJobFinished(job)) {
+          throw CtlFailure.conflict('任务还没结束，先 dl cancel（当前：${job.lifecycle}）');
+        }
+        await mapCtlHostErrors(
           remote.target,
-          id,
-          deleteFiles: supported ? deleteFiles : null,
-        ),
-      );
-      return <String, Object?>{
-        'ok': true,
-        'jobId': id,
-        'device': remote.target.label,
-        'remote': true,
-        // 老 host：删不删由它决定、这里分不出是哪种 → null，如实说明。
-        'deletedFiles': supported ? deleteFiles : null,
-        'message': supported
-            ? '已删除 host「${remote.target.label}」上的任务'
-                  '${deleteFiles ? '，并删除了已下载文件' : '，已下载文件保留'}'
-            : '已删除 host「${remote.target.label}」上的任务。这台 host 版本较旧，'
-                  '文件去留由它决定：Fushi app 当 host 保留文件，无头 fushi_server 连下载数据一起删除',
-      };
+          () => remote.client.delete(
+            remote.target,
+            id,
+            deleteFiles: supported ? deleteFiles : null,
+          ),
+        );
+        return <String, Object?>{
+          'ok': true,
+          'jobId': id,
+          'device': remote.target.label,
+          'remote': true,
+          // 老 host：删不删由它决定、这里分不出是哪种 → null，如实说明。
+          'deletedFiles': supported ? deleteFiles : null,
+          'message': supported
+              ? '已删除 host「${remote.target.label}」上的任务'
+                    '${deleteFiles ? '，并删除了已下载文件' : '，已下载文件保留'}'
+              : '已删除 host「${remote.target.label}」上的任务。这台 host 版本较旧，'
+                    '文件去留由它决定：Fushi app 当 host 保留文件，无头 fushi_server 连下载数据一起删除',
+        };
+      } finally {
+        remote.release();
+      }
     }
     final int? directId = parseDirectDownloadTaskId(call.params['id']!);
     if (directId != null) {
@@ -1104,7 +1125,18 @@ List<CtlRoute> _peerRoutes(OpContext context) => <CtlRoute>[
         case InterconnectLinkPaired(
           :final String baseUrl,
           :final String? deviceName,
+          :final String? reassignedFromHostId,
         ):
+          // 终端不给确认回调：归属冲突时拿到 address_owner_conflict，走不到这里；
+          // 保留对称的收尾，免得以后接了确认后漏改偏好。
+          if (reassignedFromHostId != null) {
+            await reconcileDownloadExecutionHostAfterReassign(
+              appModel.prefsRepo,
+              await repo.getFushiClientUrls(),
+              url: baseUrl,
+              previousHostId: reassignedFromHostId,
+            );
+          }
           return <String, Object?>{
             'ok': true,
             'paired': true,

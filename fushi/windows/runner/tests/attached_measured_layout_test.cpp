@@ -108,12 +108,28 @@ void TestDecodeRejections() {
 
 void TestClientSizeMatches() {
   const RECT client{100, 200, 900, 800};
-  assert(measured::ClientSizeMatches(800, 600, client));
+  assert(measured::ClientSizeMatches(800, 600, 0, client));
   // Only the size matters; the measurement is client-relative.
-  assert(measured::ClientSizeMatches(800, 600, RECT{-500, 0, 300, 600}));
-  assert(!measured::ClientSizeMatches(801, 600, client));
-  assert(!measured::ClientSizeMatches(800, 599, client));
-  assert(!measured::ClientSizeMatches(0, 0, RECT{0, 0, 0, 0}));
+  assert(measured::ClientSizeMatches(800, 600, 0, RECT{-500, 0, 300, 600}));
+  assert(!measured::ClientSizeMatches(801, 600, 0, client));
+  assert(!measured::ClientSizeMatches(800, 599, 0, client));
+  assert(!measured::ClientSizeMatches(0, 0, 0, RECT{0, 0, 0, 0}));
+  assert(!measured::ClientSizeMatches(0, 0, 4, RECT{0, 0, 2, 2}));
+  // Electron fullscreen at 150%: the live client is one row shorter than the
+  // CSS viewport (2560x1440) times the DPR.  Within the declared quantization
+  // it is the same layout.
+  const RECT electron_fullscreen{0, 0, 3840, 2159};
+  assert(!measured::ClientSizeMatches(3840, 2160, 0, electron_fullscreen));
+  assert(measured::ClientSizeMatches(3840, 2160, 2, electron_fullscreen));
+  assert(measured::ClientSizeMatches(3840, 2158, 1, electron_fullscreen));
+  // A menu bar / real reflow (tens of px) is never absorbed, and the declared
+  // tolerance is clamped so a bogus producer value cannot widen the band.
+  assert(!measured::ClientSizeMatches(3840, 2127, 2, electron_fullscreen));
+  assert(!measured::ClientSizeMatches(3840, 2149, 1000, electron_fullscreen));
+  assert(measured::ClientSizeMatches(
+      3840, 2159 - measured::kMaxClientSizeTolerance, 1000,
+      electron_fullscreen));
+  assert(!measured::ClientSizeMatches(3840, 2160, -3, electron_fullscreen));
 }
 
 void TestIdentityMapping() {

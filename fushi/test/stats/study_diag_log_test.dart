@@ -82,7 +82,7 @@ void main() {
   group('源码守卫', () {
     test('main 装 StudyDiagLog + StudyClock.trace；时钟有静态 sink', () {
       final String main = File('lib/main.dart').readAsStringSync();
-      expect(main, contains('await StudyDiagLog.instance.init();'));
+      expect(main, contains('StudyDiagLog.instance.init(),'));
       // 赋值在 tall style 下会折行，钉去空白后的文本。
       expect(
         compactCode(main),
