@@ -103,6 +103,15 @@ fn texts(conn: &Connection, sql: &str, args: &[&dyn ToSql]) -> BTreeSet<String> 
 }
 
 fn ops(conn: &Connection, table: &str, profile: &str) -> BTreeSet<String> {
+    // 这张表比库新（真实样本是加这个功能之前的 schema）：那时没有这类行。
+    let exists = conn
+        .prepare("SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = ?1")
+        .unwrap()
+        .exists([table])
+        .unwrap();
+    if !exists {
+        return BTreeSet::new();
+    }
     conn.prepare(&format!(
         "SELECT device, seq FROM {table} WHERE profile_uid = srs_id(?1)"
     ))

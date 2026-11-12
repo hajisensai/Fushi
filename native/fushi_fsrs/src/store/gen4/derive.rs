@@ -1012,8 +1012,8 @@ impl<'t, 'c> Index<'t, 'c> {
     }
 
     /// 清空这个集合的派生表，从日志与本机状态（设备信任）重建（设计 §2.5）。不改真相：该清成空洞而还没清的操作
-    /// 只是标成「已清除」、不参与任何判定，落库由 [Index::execute_purges] 做。盐集合只增不减：重建只会把带盐操作的盐
-    /// 再并一遍。
+    /// 只是标成「已清除」、不参与任何判定，落库由 [Index::execute_purges] 做。盐集合也从操作重算（`alias.rs`
+    /// [Index::settle_salts]：本机信任的作者写的带盐操作之并）。
     pub fn rebuild_all(&mut self) -> Result<Settled, String> {
         self.writing()?;
         let t = self.t;
