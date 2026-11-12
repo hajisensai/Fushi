@@ -430,7 +430,7 @@ void main() {
                     .getSingle())
                 .read<int>('c');
         if (exists == 0) continue;
-        await storage.db.customStatement(
+        storage.core.debugExecRaw(
           'DELETE FROM $t WHERE profile_uid = srs_id(?)',
           <Object>[residue],
         );
@@ -440,7 +440,7 @@ void main() {
       expect(left['sync2_self'], 1);
       expect(left['srs_entities'], 0);
       // v1 已经扫过（BUG-4292 之前进过 Profile 管理）。
-      await storage.db.customStatement(
+      storage.core.debugExecRaw(
         "INSERT INTO srs_meta (key, value) VALUES ('profile_orphan_sweep_v1', '1')",
       );
       expect((await srsStoredProfiles(storage.core)).orphanSweptAt, isNull);
@@ -481,7 +481,7 @@ void main() {
       await seed(oldUid, notes: 2, reviews: 1);
       await seed(newUid, notes: 1, reviews: 1);
       await seed(orphan, notes: 1, reviews: 0);
-      await storage.db.customStatement(
+      storage.core.debugExecRaw(
         'INSERT INTO srs_meta (key, value) VALUES (?, ?)',
         <Object>['profile_merge/$oldUid', '{"profileId":1,"newUid":"$newUid"}'],
       );
@@ -501,10 +501,12 @@ void main() {
   Future<int> countAll(String sql) async =>
       (await storage.db.customSelect(sql).getSingle()).read<int>('c');
 
-  Future<void> putMeta(String key) => storage.db.customStatement(
-    "INSERT INTO srs_meta (key, value) VALUES (?, '{}')",
-    <Object>[key],
-  );
+  Future<void> putMeta(String key) async {
+    storage.core.debugExecRaw(
+      "INSERT INTO srs_meta (key, value) VALUES (?, '{}')",
+      <Object>[key],
+    );
+  }
 
   /// 旧版删除实现删过的 uid：表里一行不剩，按 profile 记的键留下四个（三个 uid 在中间的是 Rust 旧
   /// `profile_purge` 漏的，状态摘要是并入旧实现漏的）。不为它开副本——开了就有行了。
@@ -535,7 +537,7 @@ void main() {
       await putMeta('sync2_retired/$liveUid/$device');
       await putMeta('sync2_device_hint/$device');
       await leaveMetaOnly(gone, device);
-      await storage.db.customStatement(
+      storage.core.debugExecRaw(
         "INSERT INTO sync2_deps (vv) VALUES (x'DEADBEEF')",
       );
       // v2 已经扫过。
@@ -594,7 +596,7 @@ void main() {
       // 已扫过：不再跑。
       expect(await vm.sweepOrphanProfileData(), 0);
       // 幂等：去掉完成标记硬再扫一遍，也没有可清的、什么都不变。
-      await storage.db.customStatement(
+      storage.core.debugExecRaw(
         "DELETE FROM srs_meta WHERE key = 'profile_orphan_sweep_v3'",
       );
       expect(await vm.sweepOrphanProfileData(), 0);
@@ -617,7 +619,7 @@ void main() {
     const String gone = '0193a1b2-0000-7000-8000-0000000003e0';
     await leaveMetaOnly(target, device);
     await leaveMetaOnly(gone, device);
-    await storage.db.customStatement(
+    storage.core.debugExecRaw(
       'INSERT INTO srs_meta (key, value) VALUES (?, ?)',
       <Object>['profile_merge/$liveUid', '{"profileId":1,"newUid":"$target"}'],
     );
@@ -633,10 +635,9 @@ void main() {
     expect((await srsStoredProfiles(storage.core)).orphanSweptAt, isNull);
 
     // 并入不做了（标记撤掉）、目标 uid 也没成为本机 profile：下一次扫描才把它当无主清掉，并记完成。
-    await storage.db.customStatement(
-      'DELETE FROM srs_meta WHERE key = ?',
-      <Object>['profile_merge/$liveUid'],
-    );
+    storage.core.debugExecRaw('DELETE FROM srs_meta WHERE key = ?', <Object>[
+      'profile_merge/$liveUid',
+    ]);
     expect(await vm.sweepOrphanProfileData(), 1);
     expect(await metaOf(target), 0);
     expect(await tableRows(liveUid), liveBefore);

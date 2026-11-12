@@ -128,14 +128,11 @@ class SrsProfileCleanup implements ProfileDeletionCascade {
     // 收尾：表里已经没有任何行、只剩 srs_meta 键的无主 uid（旧版删除实现留下的 `…/<uid>/…` 键；没有行就没有可备份
     // 的东西，也不为它开副本），和没有任何操作引用的 sync2_deps。判定与删除在内核的一个 savepoint 里；进行中并入
     // 的 uid 同样不动，那时也不记完成标记。
-    final SrsOrphanSweepRest rest = await _serialized(
-      null,
-      () => srsFinishOrphanSweep(
-        storage.core,
-        _deps.clock().millisecondsSinceEpoch,
-        keep: <String>{...liveUids, ...merging},
-        mark: merging.isEmpty,
-      ),
+    final SrsOrphanSweepRest rest = await srsFinishOrphanSweep(
+      storage.core,
+      _deps.clock().millisecondsSinceEpoch,
+      keep: <String>{...liveUids, ...merging},
+      mark: merging.isEmpty,
     );
     return orphans.length + rest.metaUids.length;
   }
