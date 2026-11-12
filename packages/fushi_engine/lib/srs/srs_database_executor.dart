@@ -49,6 +49,11 @@ final class SrsRustDelegate extends DatabaseDelegate {
 
   SrsCore get _c => _core ?? (throw StateError('srs delegate not open'));
 
+  /// 经执行器送进内核的语句数（含 Drift 用来开关事务的 BEGIN / COMMIT / SAVEPOINT、本机状态行的 upsert；批量语句
+  /// 按条计）：写路径往返数的验收用。按 isolate 计，只在同 isolate 的执行器（`srsInlineExecutor`）上读得到。
+  @visibleForTesting
+  static int debugStatements = 0;
+
   @override
   TransactionDelegate get transactionDelegate => const NoTransactionDelegate();
 
@@ -71,6 +76,7 @@ final class SrsRustDelegate extends DatabaseDelegate {
 
   @override
   Future<QueryResult> runSelect(String statement, List<Object?> args) async {
+    debugStatements++;
     final (int _, List<List<Object?>> rows) = srsDecodeRows(
       _c.execQuery(statement, args),
     );
@@ -78,6 +84,7 @@ final class SrsRustDelegate extends DatabaseDelegate {
   }
 
   (int, int) _write(String statement, List<Object?> args) {
+    debugStatements++;
     final (int _, List<List<Object?>> rows) = srsDecodeRows(
       _c.exec(statement, args, select: false),
     );
@@ -96,11 +103,13 @@ final class SrsRustDelegate extends DatabaseDelegate {
   Future<void> runCustom(String statement, List<Object?> args) async {
     // 写连接上、按查询执行：PRAGMA 之类有结果行的语句也能执行（结果丢弃）。事务控制语句必须走这里
     // （内核据此记下 Drift 事务开没开，[runSelect] 的选路靠它），不能走 runSelect 的读连接。
+    debugStatements++;
     _c.exec(statement, args, select: true);
   }
 
   @override
   Future<void> runBatched(BatchedStatements statements) async {
+    debugStatements += statements.arguments.length;
     _c.execBatch(statements.statements, <(int, List<Object?>)>[
       for (final ArgumentsForBatchedStatement a in statements.arguments)
         (a.statementIndex, a.arguments),

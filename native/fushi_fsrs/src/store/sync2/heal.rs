@@ -274,159 +274,161 @@ impl SrsCore {
     /// 刷新缓存。`healFailed` 每个 (对端, 组集合) 只出现一次，调用方照报即可。
     pub fn sync2_digest_heal(&self, profile: &str, now: i64) -> Result<Value, String> {
         let w = self.writer()?;
-        in_savepoint(&w, |c| {
-            let mut replayed: BTreeSet<String> = BTreeSet::new();
-            let mut healed: Vec<Value> = Vec::new();
-            let mut failed: Vec<Value> = Vec::new();
-            let out = |replayed: BTreeSet<String>, healed, failed| {
-                Ok(json!({"replayed": replayed, "healed": healed, "healFailed": failed}))
-            };
-            let Some(local) = Local::load(c, profile)? else {
-                return out(replayed, healed, failed);
-            };
-            if unsettled(c, profile)? {
-                return out(replayed, healed, failed);
-            }
-            let Some((mut root, tag, mut groups)) = own_digest(c, profile)? else {
-                return out(replayed, healed, failed);
-            };
-            let rules = digest::derive_rules_of(&format!("@{tag}"));
-            let retired = super::devices::retired_set(c, profile)?;
-            let peers: Vec<(Vec<u8>, String)> = c
-                .prepare_cached(
-                    "SELECT device, digest FROM sync2_devices WHERE profile_uid = srs_id(?1) AND digest IS NOT NULL AND digest != ''",
-                )
+        in_savepoint(&w, |c| digest_heal_on(c, profile, now))
+    }
+}
+
+/// [SrsCore::sync2_digest_heal] 的本体：在调用方的写连接、调用方开的 SAVEPOINT 里做（不自己取锁）。分发器把它与缓存
+/// 刷新、本机状态行合进同一个 SAVEPOINT（store/ffi.rs `local_write`）。
+pub(crate) fn digest_heal_on(c: &Connection, profile: &str, now: i64) -> Result<Value, String> {
+    let mut replayed: BTreeSet<String> = BTreeSet::new();
+    let mut healed: Vec<Value> = Vec::new();
+    let mut failed: Vec<Value> = Vec::new();
+    let out = |replayed: BTreeSet<String>, healed, failed| {
+        Ok(json!({"replayed": replayed, "healed": healed, "healFailed": failed}))
+    };
+    let Some(local) = Local::load(c, profile)? else {
+        return out(replayed, healed, failed);
+    };
+    if unsettled(c, profile)? {
+        return out(replayed, healed, failed);
+    }
+    let Some((mut root, tag, mut groups)) = own_digest(c, profile)? else {
+        return out(replayed, healed, failed);
+    };
+    let rules = digest::derive_rules_of(&format!("@{tag}"));
+    let retired = super::devices::retired_set(c, profile)?;
+    let peers: Vec<(Vec<u8>, String)> = c
+        .prepare_cached(
+            "SELECT device, digest FROM sync2_devices WHERE profile_uid = srs_id(?1) AND digest IS NOT NULL AND digest != ''",
+        )
+        .map_err(sql)?
+        .query_map([profile], |r| Ok((r.get(0)?, r.get(1)?)))
+        .map_err(sql)?
+        .collect::<Result<_, _>>()
+        .map_err(sql)?;
+    for (dev, peer_digest) in peers {
+        let Ok(arr) = <[u8; 16]>::try_from(dev.as_slice()) else {
+            continue;
+        };
+        let device = Id(arr);
+        if device == local.device || retired.contains(&device) {
+            continue;
+        }
+        let Some((peer_root, peer_tag)) = peer_digest.split_once('@') else {
+            continue;
+        };
+        // 只比派生规则、版本向量（与扣留指纹）逐字相同的。
+        if peer_tag != tag {
+            continue;
+        }
+        if peer_root == root {
+            // 同一进度下确认一致：去重记录作废，之后再不一致重新走一遍（文件头）。
+            c.prepare_cached("DELETE FROM srs_meta WHERE key = ?1")
                 .map_err(sql)?
-                .query_map([profile], |r| Ok((r.get(0)?, r.get(1)?)))
-                .map_err(sql)?
-                .collect::<Result<_, _>>()
+                .execute([heal_key(profile, &device)])
                 .map_err(sql)?;
-            for (dev, peer_digest) in peers {
-                let Ok(arr) = <[u8; 16]>::try_from(dev.as_slice()) else {
-                    continue;
-                };
-                let device = Id(arr);
-                if device == local.device || retired.contains(&device) {
-                    continue;
-                }
-                let Some((peer_root, peer_tag)) = peer_digest.split_once('@') else {
-                    continue;
-                };
-                // 只比派生规则、版本向量（与扣留指纹）逐字相同的。
-                if peer_tag != tag {
-                    continue;
-                }
-                if peer_root == root {
-                    // 同一进度下确认一致：去重记录作废，之后再不一致重新走一遍（文件头）。
-                    c.prepare_cached("DELETE FROM srs_meta WHERE key = ?1")
-                        .map_err(sql)?
-                        .execute([heal_key(profile, &device)])
-                        .map_err(sql)?;
-                    continue;
-                }
-                let peer_dg = meta_get(c, &peer_dg_key(profile, &device))?
-                    .and_then(|s| serde_json::from_str::<Value>(&s).ok())
-                    .filter(|v| v["digest"].as_str() == Some(peer_digest.as_str()));
-                let app = super::devices::peer_app(c, profile, &device)?;
-                let key = heal_key(profile, &device);
-                let rec = meta_get(c, &key)?.and_then(|s| Rec::parse(&s));
-                let (Some(mine), Some(peer)) = (groups.as_deref(), peer_dg.as_ref()) else {
-                    // 对端没有组指纹（旧版本）/ 本机组指纹缺：定位不了，不重放，按规则只报一次。
-                    let r = Rec {
-                        rules,
-                        dgv: None,
-                        groups: None,
-                        fp: String::new(),
-                        verified: true,
-                    };
-                    if rec.as_ref() != Some(&r) {
-                        failed.push(json!({"device": device.text(), "groups": Value::Null, "app": app, "reason": "noGroups"}));
-                        meta_set(c, &key, &r.to_json())?;
-                    }
-                    continue;
-                };
-                // 组指纹版本不同：分组方式不同，比出来的「不同组」不可信，不比。
-                if peer["dgv"].as_u64() != Some(DG_VERSION.into()) {
-                    continue;
-                }
-                let Some(g) = peer["g"]
-                    .as_str()
-                    .and_then(|pg| digest::differing_groups(mine, pg))
-                    .filter(|g| !g.is_empty())
-                else {
-                    continue;
-                };
-                let fp = fp_of(mine, &g);
-                let same_set = rec.as_ref().is_some_and(|r| {
-                    r.rules == rules
-                        && r.dgv == Some(DG_VERSION.into())
-                        && r.groups.as_ref() == Some(&g)
-                });
-                if same_set {
-                    let r = rec.as_ref().expect("same set");
-                    if r.verified {
-                        continue;
-                    }
-                    if r.fp == fp {
-                        // 上次重放修好了本机这一侧、对端在同一组上仍不一致：报一次，之后只看不动。
-                        failed.push(json!({"device": device.text(), "groups": g, "rows": rows_in(c, profile, &g)?, "app": app, "reason": "peerStillDiffers"}));
-                        meta_set(
-                            c,
-                            &key,
-                            &Rec {
-                                verified: true,
-                                ..r.clone()
-                            }
-                            .to_json(),
-                        )?;
-                        continue;
-                    }
-                }
-                let cards = cards_in(c, profile, &g)?;
-                let changed = replay_cards(c, &cards)?;
-                if changed.is_empty() {
-                    // 本机这些组重放不出任何变化：不一致不在本机日志的派生上，只报一次。
-                    failed.push(json!({"device": device.text(), "groups": g, "rows": rows_in(c, profile, &g)?, "app": app, "reason": "replayChangedNothing"}));
-                    meta_set(
-                        c,
-                        &key,
-                        &Rec {
-                            rules,
-                            dgv: Some(DG_VERSION.into()),
-                            groups: Some(g),
-                            fp,
-                            verified: true,
-                        }
-                        .to_json(),
-                    )?;
-                    continue;
-                }
-                // 修了：同一命令里重算摘要（版本向量没变，tag 不变；不删键），记下修复后的指纹。
-                let (r2, g2) = digest::root_and_groups(c, profile)?;
-                let vv = applied_vv(c, profile)?;
-                let tag2 = super::trust::digest_vv_tag(c, profile, &vv)?;
-                store_digest(c, profile, now, &r2, &g2, &tag2)?;
-                healed.push(json!({"device": device.text(), "groups": g, "cards": changed.len()}));
+            continue;
+        }
+        let peer_dg = meta_get(c, &peer_dg_key(profile, &device))?
+            .and_then(|s| serde_json::from_str::<Value>(&s).ok())
+            .filter(|v| v["digest"].as_str() == Some(peer_digest.as_str()));
+        let app = super::devices::peer_app(c, profile, &device)?;
+        let key = heal_key(profile, &device);
+        let rec = meta_get(c, &key)?.and_then(|s| Rec::parse(&s));
+        let (Some(mine), Some(peer)) = (groups.as_deref(), peer_dg.as_ref()) else {
+            // 对端没有组指纹（旧版本）/ 本机组指纹缺：定位不了，不重放，按规则只报一次。
+            let r = Rec {
+                rules,
+                dgv: None,
+                groups: None,
+                fp: String::new(),
+                verified: true,
+            };
+            if rec.as_ref() != Some(&r) {
+                failed.push(json!({"device": device.text(), "groups": Value::Null, "app": app, "reason": "noGroups"}));
+                meta_set(c, &key, &r.to_json())?;
+            }
+            continue;
+        };
+        // 组指纹版本不同：分组方式不同，比出来的「不同组」不可信，不比。
+        if peer["dgv"].as_u64() != Some(DG_VERSION.into()) {
+            continue;
+        }
+        let Some(g) = peer["g"]
+            .as_str()
+            .and_then(|pg| digest::differing_groups(mine, pg))
+            .filter(|g| !g.is_empty())
+        else {
+            continue;
+        };
+        let fp = fp_of(mine, &g);
+        let same_set = rec.as_ref().is_some_and(|r| {
+            r.rules == rules && r.dgv == Some(DG_VERSION.into()) && r.groups.as_ref() == Some(&g)
+        });
+        if same_set {
+            let r = rec.as_ref().expect("same set");
+            if r.verified {
+                continue;
+            }
+            if r.fp == fp {
+                // 上次重放修好了本机这一侧、对端在同一组上仍不一致：报一次，之后只看不动。
+                failed.push(json!({"device": device.text(), "groups": g, "rows": rows_in(c, profile, &g)?, "app": app, "reason": "peerStillDiffers"}));
                 meta_set(
                     c,
                     &key,
                     &Rec {
-                        rules,
-                        dgv: Some(DG_VERSION.into()),
-                        groups: Some(g.clone()),
-                        fp: fp_of(&g2, &g),
-                        verified: false,
+                        verified: true,
+                        ..r.clone()
                     }
                     .to_json(),
                 )?;
-                replayed.extend(changed);
-                root = r2;
-                groups = Some(g2);
-                if tag2 != tag {
-                    break;
-                }
+                continue;
             }
-            out(replayed, healed, failed)
-        })
+        }
+        let cards = cards_in(c, profile, &g)?;
+        let changed = replay_cards(c, &cards)?;
+        if changed.is_empty() {
+            // 本机这些组重放不出任何变化：不一致不在本机日志的派生上，只报一次。
+            failed.push(json!({"device": device.text(), "groups": g, "rows": rows_in(c, profile, &g)?, "app": app, "reason": "replayChangedNothing"}));
+            meta_set(
+                c,
+                &key,
+                &Rec {
+                    rules,
+                    dgv: Some(DG_VERSION.into()),
+                    groups: Some(g),
+                    fp,
+                    verified: true,
+                }
+                .to_json(),
+            )?;
+            continue;
+        }
+        // 修了：同一命令里重算摘要（版本向量没变，tag 不变；不删键），记下修复后的指纹。
+        let (r2, g2) = digest::root_and_groups(c, profile)?;
+        let vv = applied_vv(c, profile)?;
+        let tag2 = super::trust::digest_vv_tag(c, profile, &vv)?;
+        store_digest(c, profile, now, &r2, &g2, &tag2)?;
+        healed.push(json!({"device": device.text(), "groups": g, "cards": changed.len()}));
+        meta_set(
+            c,
+            &key,
+            &Rec {
+                rules,
+                dgv: Some(DG_VERSION.into()),
+                groups: Some(g.clone()),
+                fp: fp_of(&g2, &g),
+                verified: false,
+            }
+            .to_json(),
+        )?;
+        replayed.extend(changed);
+        root = r2;
+        groups = Some(g2);
+        if tag2 != tag {
+            break;
+        }
     }
+    out(replayed, healed, failed)
 }
