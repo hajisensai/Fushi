@@ -717,11 +717,25 @@ fn gen4_sample_incremental() {
             let started = Instant::now();
             let mut n = 0u64;
             inc.execute_batch("BEGIN IMMEDIATE").unwrap();
+            // 派生层的宿主输入照搬。别名表只有全量重算，灌的时候攒着、最后算一次。
+            for key in ["builtins", "caches"] {
+                let value = t.derive_cfg(col, key).unwrap();
+                t2.set_derive_cfg(col2, key, value.as_deref()).unwrap();
+            }
             let mut ix = Index::new(&t2, col2);
+            ix.hold_aliases(true);
             for d in t.devices(col).unwrap() {
                 t.for_each(col, &d.id, 1, |e| {
-                    let slot = e.slot().ok_or("an imported entry is not a heritage slot")?;
-                    t2.put_heritage(col2, &source, &slot, e.tv)?;
+                    match (e.slot(), e.op()) {
+                        (Some(slot), _) => {
+                            t2.put_heritage(col2, &source, &slot, e.tv)?;
+                        }
+                        // 探针写的那条原生 Salts 操作。
+                        (None, Some(op)) => {
+                            t2.append_native(col2, op)?;
+                        }
+                        (None, None) => return Err("a native void in the sample".to_owned()),
+                    }
                     if let Some(now) = t2.entry(col2, &e.id)? {
                         ix.add(&now)?;
                     }
@@ -743,8 +757,16 @@ fn gen4_sample_incremental() {
             }
             ix.trust_changed();
             ix.settle().unwrap();
+            let held_s = started.elapsed().as_secs_f64();
+            ix.hold_aliases(false);
+            let last = ix.settle().unwrap();
             inc.execute_batch("COMMIT").unwrap();
             let maintain_s = started.elapsed().as_secs_f64();
+            println!(
+                "SAMPLE incremental alias_rows {} alias_s {:.1}",
+                last.aliases,
+                maintain_s - held_s
+            );
             let (ws1, _) = peak_mem_mb();
             println!(
                 "SAMPLE incremental profile {} ops {n} maintain_s {maintain_s:.1} peak_working_set_mb {ws1:.0}",

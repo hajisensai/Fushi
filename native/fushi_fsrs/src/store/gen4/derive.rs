@@ -153,12 +153,14 @@ pub(super) fn body_of(e: &Entry) -> Option<Body4> {
     }
 }
 
-/// 盐的读入点：操作集合里所有带盐操作的盐之并就是集合的盐集合（设计 §5.1）。现在只有 Join 带盐；携带初始盐集合的
-/// 那个种类（G1b）出来之后加在这里，别处不用动。
-fn salts_of(body: &Body4) -> Option<&[String]> {
+/// 盐的读入点：带盐的种类只有两个——Salts（种类 15，集合自己的初始盐）与 Join（被并入集合带来的盐表）。别处不读盐。
+/// 读到的记进 `salt_ix`；集合的盐集合 = 其中**本机信任的作者**写的那些之并（`alias.rs` 的 `settle_salts`；设计 §5.1、
+/// `gen4::op` 文件头「盐集合」）。
+fn salts_of(body: &Body4) -> Vec<&str> {
     match body {
-        Body4::Join(j) => Some(&j.salts),
-        _ => None,
+        Body4::Salts { salts } => salts.iter().map(String::as_str).collect(),
+        Body4::Join(j) => j.salts.iter().map(String::as_str).collect(),
+        _ => Vec::new(),
     }
 }
 
@@ -224,6 +226,9 @@ pub struct Settled {
     pub media: u64,
     /// 走过的日志条数（只有重建）。
     pub scanned: u64,
+    /// 别名表重算后写的行数（没重算 = 0）、重算了语义摘要的实体数。
+    pub aliases: u64,
+    pub digests: u64,
 }
 
 /// 一个集合的派生索引。
@@ -255,6 +260,12 @@ pub struct Index<'t, 'c> {
     closures: Option<HashMap<Id, (u64, Dvv)>>,
     /// 只覆盖了一台设备旧戳的一部分时的闭包（少见），按 (设备, seq) 记。
     partial: HashMap<(Id, u64), Dvv>,
+    /// 别名证据变了，别名表要重算（`alias.rs`）。
+    pub(super) alias_dirty: bool,
+    /// 重算先攒着（[Index::hold_aliases]）。
+    pub(super) alias_held: bool,
+    /// 带盐的操作进出过，或信任状态变了：盐集合要重算。
+    pub(super) salts_dirty: bool,
 }
 
 impl<'t, 'c> Index<'t, 'c> {
@@ -277,6 +288,9 @@ impl<'t, 'c> Index<'t, 'c> {
             bulk: None,
             closures: None,
             partial: HashMap::new(),
+            alias_dirty: false,
+            alias_held: false,
+            salts_dirty: false,
         }
     }
 
@@ -289,7 +303,9 @@ impl<'t, 'c> Index<'t, 'c> {
 
     /// 丢掉内存里的状态（事务回滚之后必须调）。
     pub fn reset(&mut self) {
+        let held = self.alias_held;
         *self = Index::new(self.t, self.col);
+        self.alias_held = held;
     }
 
     // ------------------------------------------------------------ 逐条维护
@@ -319,6 +335,9 @@ impl<'t, 'c> Index<'t, 'c> {
         if let SlotBody::Alias(a) = &e.body {
             // 副本记录不应用，但它的旧戳算进闭包（协议 3 的副本骨架同理）。
             if let Some(s) = &a.stamp {
+                if self.bulk.is_none() {
+                    self.alias_stamp(s)?;
+                }
                 self.stamp_changed(&e.id, s, add);
             }
             return Ok(());
@@ -334,6 +353,9 @@ impl<'t, 'c> Index<'t, 'c> {
         })?;
         let conn = self.t.conn();
         let bulk = self.bulk.is_some();
+        if !bulk {
+            self.alias_touch(k, &body, add)?;
+        }
         match &body {
             Body4::Entity { kind, id, .. } => {
                 let id = Ref::of(id);
@@ -508,18 +530,31 @@ impl<'t, 'c> Index<'t, 'c> {
             }
             _ => {}
         }
-        if add {
-            if let Some(salts) = salts_of(&body) {
-                let salts: Vec<&str> = salts.iter().map(String::as_str).collect();
-                self.t.add_salts(self.col, &salts)?;
+        let salts = salts_of(&body);
+        if !salts.is_empty() {
+            if add {
+                let mut put = conn
+                    .prepare_cached(
+                        "INSERT OR IGNORE INTO salt_ix (col, k, salt) VALUES (?1, ?2, ?3)",
+                    )
+                    .map_err(sql)?;
+                for s in salts {
+                    put.execute(params![self.col, k, s]).map_err(sql)?;
+                }
+            } else {
+                conn.prepare_cached("DELETE FROM salt_ix WHERE col = ?1 AND k = ?2")
+                    .map_err(sql)?
+                    .execute(params![self.col, k])
+                    .map_err(sql)?;
             }
+            self.salts_dirty = true;
         }
         Ok(())
     }
 
     // ------------------------------------------------------------ 旧闭包
 
-    fn closures(&mut self) -> Result<&mut HashMap<Id, (u64, Dvv)>, String> {
+    pub(super) fn closures(&mut self) -> Result<&mut HashMap<Id, (u64, Dvv)>, String> {
         if self.closures.is_none() {
             let mut map = HashMap::new();
             let mut stmt = self
@@ -966,6 +1001,13 @@ impl<'t, 'c> Index<'t, 'c> {
             self.pick_log(&id)?;
         }
         self.heads.clear();
+        out.digests = self.digest_flush()?;
+        if std::mem::take(&mut self.salts_dirty) {
+            self.settle_salts()?;
+        }
+        if self.alias_dirty && !self.alias_held {
+            out.aliases = self.rebuild_aliases()?;
+        }
         Ok(out)
     }
 
@@ -977,6 +1019,8 @@ impl<'t, 'c> Index<'t, 'c> {
         let t = self.t;
         let conn = t.conn();
         self.reset();
+        // 语义摘要的标脏触发器逐行收一次费，重建不需要（最后整个重算）：先摘掉，收尾时装回。
+        super::digest::set_triggers(conn, false)?;
         for table in DERIVED_TABLES {
             conn.execute(&format!("DELETE FROM {table} WHERE col = ?1"), [self.col])
                 .map_err(sql)?;
@@ -1015,6 +1059,10 @@ impl<'t, 'c> Index<'t, 'c> {
             self.pick_log(&id)?;
         }
         self.heads.clear();
+        super::digest::set_triggers(conn, true)?;
+        out.digests = self.digest_rebuild()?;
+        self.settle_salts()?;
+        out.aliases = self.rebuild_aliases()?;
         Ok(out)
     }
 
@@ -1258,6 +1306,53 @@ pub(crate) mod tests {
         let t = Truth::new(&conn);
         let col = bound(&t);
         f(&t, col)
+    }
+
+    /// 旧设备分叉过：两支不管谁先到，派生表逐行相同（真相层按链指纹定日志里是哪一条，`truth.rs` 文件头）。
+    #[test]
+    fn a_forked_log_gives_the_same_index_whichever_branch_arrived_first() {
+        use crate::store::gen4::truth::Put;
+        let slot = |seq: u64, fp: u8, value: &str| {
+            let s = stamp("w1", seq as i64, r#"{"vv":{}}"#, 100 + seq as i64);
+            HeritageSlot::op(
+                [fp; 8],
+                op(0xd1, seq, seq as i64, &[], &write(value, Some(s))),
+            )
+        };
+        let a = [slot(1, 9, "a1"), slot(2, 9, "a2"), slot(3, 1, "a3")];
+        let b = [slot(1, 5, "b1"), slot(2, 12, "b2"), slot(3, 7, "b3")];
+        let run = |order: &[&HeritageSlot]| -> (BTreeSet<String>, Option<String>) {
+            with(|t, col| {
+                let value = t
+                    .tx(|t| {
+                        let mut ix = Index::new(t, col);
+                        for s in order {
+                            let before = t.entry(col, &s.id)?;
+                            match t.put_heritage(col, &id(0xc0), s, T_VERSION)? {
+                                Put::Inserted | Put::Yielded => {
+                                    ix.add(&t.entry(col, &s.id)?.expect("put"))?
+                                }
+                                Put::Replaced => {
+                                    ix.remove(&before.expect("replaced"))?;
+                                    ix.add(&t.entry(col, &s.id)?.expect("put"))?;
+                                }
+                                _ => {}
+                            }
+                            ix.settle()?;
+                        }
+                        ix.value(EntKind::Note, &note(), &field())
+                    })
+                    .unwrap();
+                let got = canon(t, col);
+                assert_rebuild_is_identity(t, col);
+                (got, value)
+            })
+        };
+        let first = run(&[&a[0], &a[1], &a[2], &b[0], &b[1], &b[2]]);
+        // 日志里是 b1、a2、a3（各操作号上链指纹最小的）；最后一条旧修改见过的只有它自己，按 HLC 是 a3 胜。
+        assert_eq!(first.1.as_deref(), Some("\"a3\""));
+        assert_eq!(first, run(&[&b[0], &b[1], &b[2], &a[0], &a[1], &a[2]]));
+        assert_eq!(first, run(&[&a[0], &b[0], &b[1], &a[1], &b[2], &a[2]]));
     }
 
     #[test]
@@ -1816,9 +1911,57 @@ pub(crate) mod tests {
             let col = t.binding_of(&profile).unwrap().expect("imported").col;
             let started = Instant::now();
             dst.execute_batch("BEGIN IMMEDIATE").unwrap();
-            let did = Index::new(&t, col).rebuild_all().unwrap();
+            // 别名层的两样输入：盐（迁移时 G4 写的那条 Salts 操作——这里由一台假想的迁移设备写进它的原生日志）
+            // 与内置笔记类型表。
+            let salts = crate::store::gen4::alias::tests::sample_salts(&src, &profile);
+            let migrator = Id([0x6d; 16]);
+            if t.last_of(col, &migrator).unwrap() == 0 {
+                let body = Body4::salts(salts.iter().cloned()).unwrap();
+                let op = Op4::of(
+                    OpId {
+                        device: migrator,
+                        seq: 1,
+                    },
+                    Hlc {
+                        wall: T0,
+                        logical: 0,
+                        device: migrator,
+                    },
+                    Arc::new(t.applied(col).unwrap()),
+                    &body,
+                );
+                t.append_native(col, &op).unwrap();
+            }
+            let mut ix = Index::new(&t, col);
+            ix.set_builtins(&crate::store::gen4::alias::tests::golden_builtins())
+                .unwrap();
+            let did = ix.rebuild_all().unwrap();
             dst.execute_batch("COMMIT").unwrap();
             let rebuild_s = started.elapsed().as_secs_f64();
+            // 其中别名表与语义摘要各占多少：各自再单独算一遍（结果相同）。
+            let (ws_a, _) = peak_mem_mb();
+            dst.execute_batch("BEGIN IMMEDIATE").unwrap();
+            let started = Instant::now();
+            let alias_rows = ix.rebuild_aliases().unwrap();
+            let alias_s = started.elapsed().as_secs_f64();
+            let (ws_b, _) = peak_mem_mb();
+            let started = Instant::now();
+            let digest_units = ix.digest_rebuild().unwrap();
+            let digest_s = started.elapsed().as_secs_f64();
+            dst.execute_batch("COMMIT").unwrap();
+            let started = Instant::now();
+            let digest = ix.digest().unwrap();
+            println!(
+                "SAMPLE alias salts {} rows {alias_rows} s {alias_s:.1} peak_working_set_mb_before {ws_a:.0} after {ws_b:.0} {:?}",
+                salts.len(),
+                ix.alias_counts().unwrap()
+            );
+            println!(
+                "SAMPLE digest units {digest_units} rebuild_s {digest_s:.1} read_s {:.3} {digest}",
+                started.elapsed().as_secs_f64()
+            );
+            println!("SAMPLE hollowed {}", ix.hollowed().unwrap().len());
+            drop(ix);
             let (ws1, commit1) = peak_mem_mb();
             println!(
                 "SAMPLE index profile {profile} {did:?} rebuild_s {rebuild_s:.1} peak_working_set_mb {ws1:.0} peak_commit_mb {commit1:.0}"

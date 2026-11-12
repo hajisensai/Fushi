@@ -13,14 +13,19 @@
 //!
 //! | 本机这个操作号 | 结果 |
 //! |---|---|
-//! | 没有，且正好接在末尾 | 收什么留什么（[Put::Inserted]） |
+//! | 没有，且正好接在末尾 | 收什么留什么（[Put::Inserted]）；同号有待投递的槽、链指纹更小时见「分叉」一行（[Put::Yielded]） |
 //! | 没有，前面还缺 | 报错——前面缺一段的槽走 [Truth::put_pending] |
-//! | 有，链指纹不同 | 那台旧设备分叉过：另一支存进 `op_forks`，本机的不动（[Put::Fork]） |
+//! | 有，链指纹不同 | 那台旧设备分叉过。**链指纹字节序最小的那个槽在日志里，其余在 `op_forks`**：来的更小就与本机的对调（[Put::Replaced]），否则存进 `op_forks`（[Put::Fork]） |
 //! | 有，链指纹相同，逐字节相同 | [Put::Same] |
 //! | 有，链指纹相同，一边完整、一边是空洞 / 副本记录（或空洞对副本记录） | **本机的不动**（[Put::Kept]）。本机的槽只由本机自己应用 Purge / Dedup 推进（[Truth::advance_purge] / [Truth::advance_dedup]） |
 //! | 有，链指纹相同，同秩而内容不同，来的 T 版本更高 | 换成来的（[Put::Replaced]） |
 //! | 同上，来的 T 版本更低 | 本机的不动（[Put::Kept]） |
 //! | 同上，T 版本相同 | 异常：报错、不落库 |
+//!
+//! 分叉时谁在日志里只看链指纹，不看谁先到：同一批槽不管按什么顺序收，日志与 `op_forks` 都一样（派生层只读日志，
+//! 所以派生结果也一样）。选择是逐个操作号做的——转译之后没有办法重算协议 3 的链，槽与槽之间「同一支」的关系只剩
+//! 每个槽自己的链指纹，所以两支都很长时日志里可以是两支交错的；它不是哪一台旧设备真实写出过的一条链，只是全集的
+//! 一个确定的函数。被对调出去的那一条若是本机推进过的（空洞 / 副本记录），原样挪进 `op_forks`。
 //!
 //! 「完整 < 空洞 < 副本记录」的并（`gen4::translate::join_slots`）只用在本机还**没应用**的槽上：待投递的与分叉的另一支
 //! （它们没有被本机的 Purge / Dedup 推进过，同一个 `(操作号, 链指纹)` 来了两份就留靠后的）。
@@ -82,13 +87,16 @@ const CACHE_MAX: usize = 65_536;
 pub enum Put {
     /// 接在日志末尾，落库了。
     Inserted,
+    /// 接在日志末尾，但同一个操作号上早有一个待投递的槽、链指纹更小：日志里是那一个，来的这份成了分叉的另一支。
+    /// 派生层照 [Put::Inserted] 处理（把日志里现在的那一条加进去）；来的这份的链值不是日志里那一条的。
+    Yielded,
     /// 本机已有逐字节相同的一份。
     Same,
     /// 本机已有同一个操作号、同一个链指纹的槽，来的这份不改它。
     Kept,
-    /// 来的这份（更高的 T 版本）换掉了本机的。派生层要重算这个操作号。
+    /// 来的这份换掉了本机的（同一个链指纹、更高的 T 版本；或者分叉的另一支、链指纹更小）。派生层要重算这个操作号。
     Replaced,
-    /// 链指纹与本机的不同：记成分叉的另一支。
+    /// 链指纹与本机的不同、且不比本机的小：记成分叉的另一支。
     Fork,
     /// 前面还缺：进了待投递。
     Pending,
@@ -190,9 +198,8 @@ pub struct Binding {
     pub collection: Id,
     /// 位置目录名。
     pub dir: String,
-    /// 盐集合（这个集合里出现过的旧 uid）。它是派生值：= 操作集合里所有带盐操作的并（设计 §5.1；所有者 2026-11-12：
-    /// 初始盐由迁移的那台设备写的一条专门操作携带，`Join` 带被并入集合的盐，两者取并，只增不减）。这一列只是那个并的
-    /// 缓存，读入点只有派生层应用操作的那一处（[Truth::add_salts]）。
+    /// 盐集合（这个集合里出现过的旧 uid）。它是派生值：= 本机信任的作者写的带盐操作（Salts、Join）的盐之并（设计
+    /// §5.1）。这一列只是那个并的缓存，由派生层写（`alias.rs` 的 `settle_salts`，[Truth::set_salts]）。
     pub salts: BTreeSet<String>,
 }
 
@@ -497,18 +504,16 @@ impl<'c> Truth<'c> {
         })
     }
 
-    /// 往盐集合里加（只增不减）。返回有没有变。调用方只有一处：派生层应用到一条带盐的操作时。
-    pub fn add_salts(&self, col: i64, salts: &[&str]) -> Result<bool, String> {
+    /// 把盐集合的缓存写成 [salts]。返回有没有变。调用方只有一处：派生层算完「受信作者的带盐操作之并」之后。
+    pub fn set_salts(&self, col: i64, salts: &BTreeSet<String>) -> Result<bool, String> {
         self.write(|| {
-            let mut b = self
+            let b = self
                 .binding(col)?
                 .ok_or_else(|| format!("gen4 store: no collection {col}"))?;
-            let before = b.salts.len();
-            b.salts.extend(salts.iter().map(|s| (*s).to_owned()));
-            if b.salts.len() == before {
+            if b.salts == *salts {
                 return Ok(false);
             }
-            let text = serde_json::to_string(&b.salts).map_err(sql)?;
+            let text = serde_json::to_string(salts).map_err(sql)?;
             self.conn
                 .prepare_cached("UPDATE collections SET salts = ?2 WHERE col = ?1")
                 .map_err(sql)?
@@ -1723,6 +1728,98 @@ impl<'c> Truth<'c> {
         Ok(())
     }
 
+    /// 一个操作号上见过的所有链指纹里，字节序最小的那个槽在日志里（文件头）：`op_forks` 里有比日志里那条更小的，
+    /// 就对调。返回对调了没有。
+    fn rebalance(&self, col: i64, dev: i64, seq: u64) -> Result<bool, String> {
+        let k = opk(dev, seq)?;
+        let least: Option<(Vec<u8>, i64, Vec<u8>)> = self
+            .conn
+            .prepare_cached("SELECT fp, tv, slot FROM op_forks WHERE k = ?1 ORDER BY fp LIMIT 1")
+            .map_err(sql)?
+            .query_row([k], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+            .optional()
+            .map_err(sql)?;
+        let Some((fp, tv, bytes)) = least else {
+            return Ok(false);
+        };
+        let have = self
+            .entry_at(dev, seq)?
+            .ok_or_else(|| format!("gen4 store: no log entry under a fork at {seq}"))?;
+        let have_slot = have
+            .slot()
+            .ok_or("gen4 store: heritage log holds a native entry")?;
+        if fp.as_slice() >= have_slot.fp.as_slice() {
+            return Ok(false);
+        }
+        let winner = slot_of(&bytes)?;
+        match have.body {
+            SlotBody::Void => self.remove_void_at(dev, seq)?,
+            _ => self.delete_at(dev, seq)?,
+        }
+        self.conn
+            .prepare_cached("DELETE FROM op_forks WHERE k = ?1 AND fp = ?2")
+            .map_err(sql)?
+            .execute(params![k, fp])
+            .map_err(sql)?;
+        self.conn
+            .prepare_cached("INSERT INTO op_forks (k, fp, tv, slot) VALUES (?1, ?2, ?3, ?4)")
+            .map_err(sql)?
+            .execute(params![
+                k,
+                have_slot.fp.to_vec(),
+                have.tv,
+                have_slot.encode()
+            ])
+            .map_err(sql)?;
+        // 这个 seq 上记着的完整链值是被换出去的那一支的。
+        self.conn
+            .prepare_cached("DELETE FROM log_marks WHERE dev = ?1 AND seq = ?2")
+            .map_err(sql)?
+            .execute(params![dev, seq as i64])
+            .map_err(sql)?;
+        self.store_slot(col, dev, &winner, tv as u32, false)?;
+        Ok(true)
+    }
+
+    /// 把一个空洞区间里的 [seq] 这一格拿掉（两边剩下的各成一段）。只有承袭日志的空洞（逐格带链指纹）用得到。
+    fn remove_void_at(&self, dev: i64, seq: u64) -> Result<(), String> {
+        let run = self
+            .run_at_or_before(dev, seq)?
+            .filter(|r| r.end() >= seq)
+            .ok_or_else(|| format!("gen4 store: no void run covers {seq}"))?;
+        let fps = run
+            .fps
+            .as_ref()
+            .ok_or("gen4 store: a native void run cannot be split")?;
+        let first = k_seq(run.k);
+        let cut = ((seq - first) * 8) as usize;
+        if fps.len() as u64 != run.n * 8 {
+            return Err("gen4 store: void run has too few fingerprints".to_owned());
+        }
+        self.delete_run(run.k)?;
+        if seq > first {
+            self.insert_void_run(
+                dev,
+                first,
+                seq - first,
+                Some(fps[..cut].to_vec()),
+                None,
+                run.flags,
+            )?;
+        }
+        if run.end() > seq {
+            self.insert_void_run(
+                dev,
+                seq + 1,
+                run.end() - seq,
+                Some(fps[cut + 8..].to_vec()),
+                None,
+                run.flags,
+            )?;
+        }
+        Ok(())
+    }
+
     fn heritage_dev(
         &self,
         col: i64,
@@ -1753,7 +1850,11 @@ impl<'c> Truth<'c> {
             self.store_slot(col, dev, slot, tv, false)?;
             self.with_dev(dev, |d| d.last = Some(seq))?;
             self.settle_pending(dev, seq, &slot.fp)?;
-            return Ok(Put::Inserted);
+            return Ok(if self.rebalance(col, dev, seq)? {
+                Put::Yielded
+            } else {
+                Put::Inserted
+            });
         }
         let have = self
             .entry_at(dev, seq)?
@@ -1764,7 +1865,11 @@ impl<'c> Truth<'c> {
         match join_slots(&have_slot, slot) {
             Joined::Fork => {
                 self.put_fork(dev, slot, tv)?;
-                Ok(Put::Fork)
+                Ok(if self.rebalance(col, dev, seq)? {
+                    Put::Replaced
+                } else {
+                    Put::Fork
+                })
             }
             Joined::One(_) if have_slot == *slot => {
                 if tv > have.tv {
@@ -2449,6 +2554,83 @@ pub(crate) mod tests {
         assert_eq!(t.audit(col).unwrap(), 8);
     }
 
+    /// 分叉时谁在日志里只看链指纹：两支不管谁先到，日志与另一支都一样。被换出去的是空洞 / 副本记录也一样。
+    #[test]
+    fn the_log_under_a_fork_does_not_depend_on_which_branch_arrived_first() {
+        let s = slots();
+        let low = |x: &HeritageSlot, text: &str| {
+            let mut b = other_edit(x, text);
+            b.fp = [0; 8];
+            b
+        };
+        // 另一支：操作号 1（本机是操作）、5（副本记录）、6（空洞区间的第一格）各有一条链指纹更小的。
+        const AT: [usize; 3] = [0, 4, 5];
+        let branch: Vec<HeritageSlot> = AT.iter().map(|&i| low(&s[i], "\"branch\"")).collect();
+        let state = |order: &[&HeritageSlot]| {
+            let conn = open_in_memory().unwrap();
+            let t = Truth::new(&conn);
+            let col = bound(&t);
+            let mut puts = Vec::new();
+            for x in order {
+                let p = if x.id.seq > t.last_of(col, &id(OLD)).unwrap() + 1 {
+                    t.tx(|t| t.put_pending(col, &src(), x, 1, None)).unwrap()
+                } else {
+                    put(&t, col, x, 1).unwrap()
+                };
+                puts.push(p);
+            }
+            // 待投递的补上之后也一样。
+            while let Some(ready) = t
+                .pending(col)
+                .unwrap()
+                .into_iter()
+                .find(|p| p.slot.id.seq == t.last_of(col, &id(OLD)).unwrap() + 1)
+            {
+                put(&t, col, &ready.slot, ready.tv).unwrap();
+            }
+            assert_eq!(t.audit(col).unwrap(), s.len() as u64);
+            (all(&t, col, &id(OLD)), t.forks(col).unwrap(), puts)
+        };
+        let main_first: Vec<&HeritageSlot> = s.iter().chain(&branch).collect();
+        let branch_first: Vec<&HeritageSlot> = branch.iter().chain(&s).collect();
+        let mixed: Vec<&HeritageSlot> = vec![
+            &s[0], &branch[0], &s[1], &branch[1], &s[2], &s[3], &s[4], &branch[2], &s[5],
+        ]
+        .into_iter()
+        .chain(&s[6..])
+        .collect();
+        let (log, forks, puts) = state(&main_first);
+        // 链指纹更小的那三条进了日志，原来的三条成了另一支。
+        for (b, i) in branch.iter().zip(AT) {
+            assert_eq!(log[i].slot().unwrap(), *b);
+            assert!(forks.iter().any(|f| f.slot == s[i]));
+        }
+        assert_eq!(forks.len(), 3);
+        assert_eq!(&puts[s.len()..], [Put::Replaced; 3]);
+        for order in [&branch_first, &mixed] {
+            let (log2, forks2, puts2) = state(order);
+            // 待投递的那几条链指纹更小：后到的同号槽接在末尾时让位。
+            assert!(puts2.contains(&Put::Yielded));
+            assert_eq!(log2, log);
+            assert_eq!(forks2, forks);
+        }
+        // 来的那支不比本机的小：只记下，日志不动。
+        let high: Vec<HeritageSlot> = s
+            .iter()
+            .take(2)
+            .map(|x| {
+                let mut b = other_edit(x, "\"high\"");
+                b.fp = [0xff; 8];
+                b
+            })
+            .collect();
+        let with_high: Vec<&HeritageSlot> = main_first.iter().copied().chain(&high).collect();
+        let (log3, forks3, puts3) = state(&with_high);
+        assert_eq!(log3, log);
+        assert_eq!(forks3.len(), 5);
+        assert_eq!(&puts3[puts3.len() - 2..], [Put::Fork; 2]);
+    }
+
     #[test]
     fn a_different_fingerprint_is_a_fork_and_both_branches_are_kept() {
         let conn = open_in_memory().unwrap();
@@ -2840,8 +3022,10 @@ pub(crate) mod tests {
                 .unwrap_err()
                 .contains("already bound")
         );
-        assert_eq!(t.tx(|t| t.add_salts(col, &["u2", "u1"])), Ok(true));
-        assert_eq!(t.tx(|t| t.add_salts(col, &["u1"])), Ok(false));
+        let salts =
+            |list: &[&str]| -> BTreeSet<String> { list.iter().map(|s| (*s).to_owned()).collect() };
+        assert_eq!(t.tx(|t| t.set_salts(col, &salts(&["u2", "u1"]))), Ok(true));
+        assert_eq!(t.tx(|t| t.set_salts(col, &salts(&["u1", "u2"]))), Ok(false));
         let b = t.binding_of(P).unwrap().unwrap();
         assert_eq!(
             (
