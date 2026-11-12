@@ -114,8 +114,9 @@ class _RecordingLinker implements SrsProfileLinker {
   @override
   Future<SrsProfileLinkOutcome> link(
     SyncAssetStore backend,
-    SrsDbStore store,
-  ) async => SrsProfileLinkOutcome(
+    SrsDbStore store, {
+    String? directoryKey,
+  }) async => SrsProfileLinkOutcome(
     store,
     choose: candidates,
     localHasNotes: candidates != null,
@@ -126,6 +127,7 @@ class _RecordingLinker implements SrsProfileLinker {
     SrsDbStore store,
     String uid, {
     SyncAssetStore? within,
+    String? directoryKey,
   }) async {
     adoptedWithin.add(within);
     return SrsProfileAdopted(store);

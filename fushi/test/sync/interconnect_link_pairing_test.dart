@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/sync/interconnect_link_pairing.dart';
 import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
@@ -9,6 +10,8 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi_engine/sync/interconnect_host_addresses.dart';
 import 'package:fushi_engine/sync/pairing/fushi_pair_link.dart';
+import 'package:fushi_engine/sync/pairing/fushi_pair_v2_client.dart';
+import 'package:fushi_engine/sync/pairing/interconnect_device_key.dart';
 import 'package:fushi_engine/sync/pairing/fushi_pairing_protocol.dart';
 import 'package:http/http.dart' as http;
 
@@ -350,4 +353,139 @@ void main() {
       expect((result as InterconnectLinkPairingFailed).reason, 'unreachable');
     });
   });
+
+  // V-A2 / C14：链接选中的地址此刻已归另一台已配对 host（A）时，没有用户确认就
+  // 不发配对请求、不写任何凭据；确认后只有这一行改归链接里的 host。
+  group('地址归属闸', () {
+    const String plain = 'http://127.0.0.1:9';
+    const List<FushiClientUrl> owned = <FushiClientUrl>[
+      FushiClientUrl(url: plain, hostId: 'A', token: 'a', deviceName: 'PC-A'),
+      FushiClientUrl(
+        url: 'https://a.example',
+        hostId: 'A',
+        fingerprintSha256: 'aa:aa',
+        token: 'a',
+      ),
+    ];
+    const FushiPairLink link = FushiPairLink(
+      hostId: 'B',
+      deviceName: 'PC-B',
+      addresses: <InterconnectHostAddress>[
+        InterconnectHostAddress(url: plain, kind: InterconnectAddressKind.lan),
+      ],
+    );
+
+    late FushiDatabase db;
+    late SyncRepository repo;
+    late int pairCalls;
+
+    setUp(() async {
+      resetInterconnectRaceCache();
+      db = FushiDatabase.forTesting(NativeDatabase.memory());
+      repo = SyncRepository(db);
+      await repo.setFushiClientUrls(owned);
+      pairCalls = 0;
+    });
+
+    tearDown(() => db.close());
+
+    FushiPairV2Client fakeClient(String baseUrl, String fp) =>
+        _FakePairClient(baseUrl, () => pairCalls++);
+
+    Future<bool> probeOk(FushiClientUrl c, String? hostId) async => true;
+
+    test('不给确认回调 → address_owner_conflict，不发配对、A 的凭据不动', () async {
+      final InterconnectLinkPairingResult result =
+          await pairWithInterconnectLink(
+            repo: repo,
+            link: link,
+            localDeviceName: 'Phone',
+            pinProvider: () async => null,
+            probe: probeOk,
+            clientFactory: fakeClient,
+          );
+      expect(result, isA<InterconnectLinkPairingFailed>());
+      expect(
+        (result as InterconnectLinkPairingFailed).reason,
+        'address_owner_conflict',
+      );
+      expect(pairCalls, 0);
+      final List<FushiClientUrl> rows = await repo.getFushiClientUrls();
+      expect(rows.map((FushiClientUrl u) => u.hostId), <String?>['A', 'A']);
+      expect(rows.map((FushiClientUrl u) => u.token), <String?>['a', 'a']);
+    });
+
+    test('回调拒绝 → 同样中止', () async {
+      final InterconnectLinkPairingResult result =
+          await pairWithInterconnectLink(
+            repo: repo,
+            link: link,
+            localDeviceName: 'Phone',
+            pinProvider: () async => null,
+            probe: probeOk,
+            clientFactory: fakeClient,
+            confirmAddressReassign: (FushiClientUrl owner) async => false,
+          );
+      expect(
+        (result as InterconnectLinkPairingFailed).reason,
+        'address_owner_conflict',
+      );
+      expect(pairCalls, 0);
+    });
+
+    test('确认改归属 → 这一行改归 B，A 的其余地址不变', () async {
+      FushiClientUrl? asked;
+      final InterconnectLinkPairingResult result =
+          await pairWithInterconnectLink(
+            repo: repo,
+            link: link,
+            localDeviceName: 'Phone',
+            pinProvider: () async => null,
+            probe: probeOk,
+            clientFactory: fakeClient,
+            confirmAddressReassign: (FushiClientUrl owner) async {
+              asked = owner;
+              return true;
+            },
+          );
+      expect(result, isA<InterconnectLinkPaired>());
+      expect((result as InterconnectLinkPaired).reassignedFromHostId, 'A');
+      expect(asked?.deviceName, 'PC-A');
+      expect(pairCalls, 1);
+      final List<FushiClientUrl> rows = await repo.getFushiClientUrls();
+      final FushiClientUrl moved = rows.firstWhere(
+        (FushiClientUrl u) => u.url == plain,
+      );
+      expect(moved.hostId, 'B');
+      expect(moved.token, 'b-token');
+      final FushiClientUrl kept = rows.firstWhere(
+        (FushiClientUrl u) => u.url == 'https://a.example',
+      );
+      expect(kept.hostId, 'A');
+      expect(kept.token, 'a');
+      expect(
+        rows.map((FushiClientUrl u) => u.url).toSet(),
+        hasLength(rows.length),
+      );
+    });
+  });
+}
+
+class _FakePairClient extends FushiPairV2Client {
+  _FakePairClient(String baseUrl, this._onPair)
+    : super(baseUrl: baseUrl, expectedFingerprint: '');
+
+  final void Function() _onPair;
+
+  @override
+  Future<FushiPairV2Outcome> pair({
+    required String deviceName,
+    Future<String?> Function()? pinProvider,
+    String? clientDeviceId,
+    String? ticketId,
+    InterconnectDeviceKey? deviceKey,
+  }) async {
+    _onPair();
+    return const FushiPairV2Success(token: 'b-token');
+  }
 }

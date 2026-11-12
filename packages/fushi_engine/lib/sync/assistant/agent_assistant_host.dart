@@ -9,12 +9,15 @@
 ///        pending?: {kind: confirm|choice, entryId}, tools?: {source, count},
 ///        lastUndo?: {seq, results: [{entryId?, status, message?}]}}
 /// 动作  {type: text, text, context?}
-///       {type: answerConfirm, approve}
-///       {type: answerChoice, choice?}
+///       {type: answerConfirm, approve, entryId?}
+///       {type: answerChoice, choice?, entryId?}
 ///       {type: undo, entryId}
 ///       {type: undoAll}
 ///       {type: cancel}
 /// ```
+///
+/// 作答带 `entryId` 时只答那一张卡片，与此刻待答的不符（晚到 / 点的是旧卡）即原样
+/// 忽略；不带时答当前那张（旧客户端）。
 ///
 /// 条目里没有 UI 文案（停止原因是短码、工具名是目录 id），手机按自己的语言渲染。
 /// 确认卡片与候选卡片由一个 Completer 型 [AgentHost] 等手机作答；会话关闭 / 取消时
@@ -400,9 +403,15 @@ class AgentCompleterHost implements AgentHost {
   /// 待答状态变化（开始等 / 已作答）时调用：会话据此推一版新快照。
   void Function()? onChanged;
 
+  /// 开卡片时查这张卡片的条目 id（会话先把 pending 条目放进对话再调
+  /// [confirm] / [askChoice]，此刻最后一张该类卡片就是它）；由会话注入。
+  String? Function(AgentEntryKind kind)? pendingEntryOf;
+
   Completer<bool>? _confirm;
   Completer<String?>? _choice;
   Set<String> _choiceIds = const <String>{};
+  String? _confirmEntryId;
+  String? _choiceEntryId;
   bool _closed = false;
 
   bool get awaitingConfirm => _confirm != null;
@@ -414,6 +423,7 @@ class AgentCompleterHost implements AgentHost {
     if (_closed) return Future<bool>.value(false);
     final Completer<bool> completer = Completer<bool>();
     _confirm = completer;
+    _confirmEntryId = pendingEntryOf?.call(AgentEntryKind.confirm);
     onChanged?.call();
     return completer.future;
   }
@@ -424,29 +434,37 @@ class AgentCompleterHost implements AgentHost {
     final Completer<String?> completer = Completer<String?>();
     _choice = completer;
     _choiceIds = <String>{for (final AgentChoiceOption o in options) o.id};
+    _choiceEntryId = pendingEntryOf?.call(AgentEntryKind.choice);
     onChanged?.call();
     return completer.future;
   }
 
-  /// 作答确认卡片；没有待答的确认卡片返回 false（动作晚到，原样忽略）。
-  bool answerConfirm(bool approved) {
+  /// 作答确认卡片；没有待答的确认卡片、或 [entryId] 不是待答的那张时返回 false
+  /// （动作晚到 / 点的是旧卡，原样忽略）。
+  bool answerConfirm(bool approved, {String? entryId}) {
     final Completer<bool>? completer = _confirm;
     if (completer == null) return false;
+    if (entryId != null && entryId != _confirmEntryId) return false;
     _confirm = null;
+    _confirmEntryId = null;
     if (!completer.isCompleted) completer.complete(approved);
     onChanged?.call();
     return true;
   }
 
-  /// 作答候选卡片（null = 都不是）；选了不在候选里的 id 抛 [ArgumentError]。
-  bool answerChoice(String? id) {
+  /// 作答候选卡片（null = 都不是）；[entryId] 不是待答的那张时返回 false（先于
+  /// 选项校验：旧卡的晚到作答不因新卡选项不同而报错）；选了不在候选里的 id 抛
+  /// [ArgumentError]。
+  bool answerChoice(String? id, {String? entryId}) {
     final Completer<String?>? completer = _choice;
     if (completer == null) return false;
+    if (entryId != null && entryId != _choiceEntryId) return false;
     if (id != null && !_choiceIds.contains(id)) {
       throw ArgumentError.value(id, 'choice', 'not one of the options');
     }
     _choice = null;
     _choiceIds = const <String>{};
+    _choiceEntryId = null;
     if (!completer.isCompleted) completer.complete(id);
     onChanged?.call();
     return true;
@@ -459,6 +477,8 @@ class AgentCompleterHost implements AgentHost {
     _confirm = null;
     _choice = null;
     _choiceIds = const <String>{};
+    _confirmEntryId = null;
+    _choiceEntryId = null;
     if (confirm != null && !confirm.isCompleted) confirm.complete(false);
     if (choice != null && !choice.isCompleted) choice.complete(null);
     if (confirm != null || choice != null) onChanged?.call();
@@ -485,6 +505,7 @@ class AgentAssistantHostSession
        _persist = persist,
        _onClose = onClose {
     _host.onChanged = _bump;
+    _host.pendingEntryOf = _lastPendingEntry;
     _subscription = _session.changes.listen((_) => _bump());
   }
 
@@ -586,13 +607,13 @@ class AgentAssistantHostSession
         if (approve is! bool) {
           throw ArgumentError('answerConfirm needs a bool approve');
         }
-        _host.answerConfirm(approve);
+        _host.answerConfirm(approve, entryId: _actionEntryId(action));
       case 'answerChoice':
         final Object? choice = action['choice'];
         if (choice != null && (choice is! String || choice.isEmpty)) {
           throw ArgumentError('choice must be a non-empty string or null');
         }
-        _host.answerChoice(choice as String?);
+        _host.answerChoice(choice as String?, entryId: _actionEntryId(action));
       case 'undo':
         final Object? entryId = action['entryId'];
         if (entryId is! String || entryId.isEmpty) {
@@ -622,6 +643,16 @@ class AgentAssistantHostSession
       default:
         throw ArgumentError('unknown action type: ${action['type']}');
     }
+  }
+
+  /// 作答动作的可选卡片 id：缺省或非空字符串，否则 [ArgumentError]（路由 400）。
+  static String? _actionEntryId(Map<String, Object?> action) {
+    final Object? entryId = action['entryId'];
+    if (entryId == null) return null;
+    if (entryId is! String || entryId.isEmpty) {
+      throw ArgumentError('entryId must be a non-empty string');
+    }
+    return entryId;
   }
 
   Future<void> _runGuarded(String what, Future<void> Function() run) async {
