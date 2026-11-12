@@ -1,5 +1,6 @@
 // BUG-4005：一轮同步在收完段之后、发件之前推进重复流收敛作业（内核 store/sync2/dedup.rs），`done` 明确为假才再发；
-// 发件带上位置是不是归档（归档位置不同名重写副本收敛换下的段）。
+// 发件带上位置是不是归档（归档位置不同名重写副本收敛换下的段）。同一个脚本宿主也钉住摘要之后的自动重建
+// （`digest_heal`，内核 store/sync2/heal.rs）的接线。
 
 import 'dart:typed_data';
 
@@ -18,6 +19,9 @@ class _Host implements SrsSync2Host {
 
   /// 作业还要几步才做完（每步回 `done: false`）；null = 内核不认识这条命令（回空对象）。
   int? dedupSteps;
+
+  /// `digest_heal` 的回复；null = 回空对象（内核不认识这条命令）。
+  Map<String, Object?>? heal;
   final List<Map<String, Object?>> requests = <Map<String, Object?>>[];
 
   @override
@@ -46,6 +50,10 @@ class _Host implements SrsSync2Host {
         return SrsSync2Result(<String, Object?>{
           'done': left <= 0,
         }, const <(String, Uint8List)>[]);
+      case 'digest_heal':
+        final Map<String, Object?>? h = heal;
+        if (h == null) return _empty;
+        return SrsSync2Result(h, const <(String, Uint8List)>[]);
       case 'outbox':
         return const SrsSync2Result(<String, Object?>{
           'upto': 0,
@@ -129,5 +137,55 @@ void main() {
     );
     expect(r.error, kSrsSync2Stopped);
     expect(clock.elapsed, lessThan(kSrsSync2DedupBudget));
+  });
+
+  test('摘要之后、写 head 之前调自动重建：修不好的交给 report.healFailed，重放过就算 changed', () async {
+    final _Host host = _Host(null)
+      ..heal = <String, Object?>{
+        'replayed': <Object?>['C'],
+        'healed': <Object?>[
+          <String, Object?>{
+            'device': 'D1',
+            'groups': <Object?>[3],
+            'cards': 1,
+          },
+        ],
+        'healFailed': <Object?>[
+          <String, Object?>{
+            'device': 'D2',
+            'groups': <Object?>[7],
+            'reason': 'replayChangedNothing',
+          },
+        ],
+      };
+    final SrsSync2Report r = await srsSync2Round(
+      host: host,
+      location: SrsMemoryLocationStore(),
+      locationId: 'loc',
+      nowMs: () => 0,
+    );
+    expect(r.error, isNull);
+    final List<String> ops = host.ops;
+    expect(ops.where((String o) => o == 'digest_heal').length, 1);
+    expect(ops.indexOf('digest_heal'), greaterThan(ops.indexOf('digest')));
+    expect(ops.indexOf('digest_heal'), lessThan(ops.indexOf('head')));
+    expect(r.healFailed, hasLength(1));
+    expect(r.healFailed.single['device'], 'D2');
+    expect(r.healFailed.single['reason'], 'replayChangedNothing');
+    expect(r.changed, isTrue);
+  });
+
+  test('内核不认识 `digest_heal`（回空对象）：什么都不报、不算 changed', () async {
+    final _Host host = _Host(null);
+    final SrsSync2Report r = await srsSync2Round(
+      host: host,
+      location: SrsMemoryLocationStore(),
+      locationId: 'loc',
+      nowMs: () => 0,
+    );
+    expect(r.error, isNull);
+    expect(host.ops, contains('digest_heal'));
+    expect(r.healFailed, isEmpty);
+    expect(r.changed, isFalse);
   });
 }
