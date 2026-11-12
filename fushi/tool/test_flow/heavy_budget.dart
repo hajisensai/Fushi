@@ -306,6 +306,63 @@ String? heavyBudgetBlocker({
   return 'memory budget: $booked MB booked + $needMb MB > $budgetMb MB';
 }
 
+/// A waiter ahead in the queue, as a later waiter sees it: what it books
+/// (null: an older checkout's tool recorded none) and when it queued.
+typedef HeavyEarlier = ({int? bookedMb, int enqueuedUs});
+
+/// Whether a queued run booking [needMb] may take a free slot ahead of the
+/// [earlier] waiters (oldest first, not empty) -- 2026-11-11: a 7.5 GB test
+/// at the head that did not fit the budget kept seven 2 GB `dart test` runs
+/// waiting behind it with two of three slots idle.
+///
+/// Only past waiters that cannot start right now: each one's booking is known
+/// and does not fit next to the [holders]. And only while the head keeps its
+/// place: the runs that started after the head queued (those that went ahead,
+/// and analyze runs, which never queue) plus this one must leave the head's
+/// booking free, so the head starts as soon as the runs that were there
+/// before it are done -- going ahead never delays it.
+bool heavyMayGoAhead({
+  required int needMb,
+  required List<HeavyEarlier> earlier,
+  required List<HeavyHolder> holders,
+  required int? budgetMb,
+}) {
+  // No budget: slots alone pace the runs and the head takes the free one.
+  if (budgetMb == null || earlier.isEmpty) return false;
+  final List<int> held = <int>[for (final HeavyHolder h in holders) h.bookedMb];
+  for (final HeavyEarlier e in earlier) {
+    final int? booked = e.bookedMb;
+    if (booked == null) return false;
+    if (heavyBudgetBlocker(
+          needMb: booked,
+          heldCapsMb: held,
+          budgetMb: budgetMb,
+        ) ==
+        null) {
+      return false;
+    }
+  }
+  final HeavyEarlier head = earlier.first;
+  int sinceHeadQueued = 0;
+  for (final HeavyHolder h in holders) {
+    if (h.startedAtMs * 1000 > head.enqueuedUs) sinceHeadQueued += h.bookedMb;
+  }
+  return sinceHeadQueued + needMb <= budgetMb - head.bookedMb!;
+}
+
+/// What makes two submissions the same run: the directory and the wrapped
+/// command, with the tool named as typed or by full path (`flutter`,
+/// `D:/sdk/bin/flutter.bat`) counting as one. Compared case-insensitively on
+/// Windows paths only through the directory; arguments are compared as given.
+String heavyRunKey({required String cwd, required List<String> argv}) {
+  final String dir = cwd.replaceAll(r'\', '/').toLowerCase();
+  final String trimmed = dir.endsWith('/')
+      ? dir.substring(0, dir.length - 1)
+      : dir;
+  if (argv.isEmpty) return trimmed;
+  return <String>[trimmed, _base(argv.first), ...argv.skip(1)].join('\n');
+}
+
 /// A reading of the machine's memory, in MB. [availCommitMb] is commit
 /// limit minus commit charge (Windows); null where the OS has no such notion.
 class MemorySnapshot {
