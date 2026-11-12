@@ -1109,6 +1109,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // bool：已删除的浏览器「生词高亮」开关（2026-10-27 用户要求移除）。存量键冻结、
   // 不再读写；留在这里只为键名不被别的功能复用。
   'web_browser_known_words',
+  // bool（默认 true）：浏览器手机上网页顶部下拉刷新（web_browser_prefs.dart，设备本地；
+  // 反馈 wegu0vewts：误触多可关）。
+  'web_browser_pull_to_refresh',
   // bool（默认 true）：浏览器重启后恢复上次的标签页（web_browser_prefs.dart，设备本地）。
   'web_browser_restore_tabs',
   // string（内置引擎名 / custom:<id>，默认 google）：浏览器当前搜索引擎（设备本地）。

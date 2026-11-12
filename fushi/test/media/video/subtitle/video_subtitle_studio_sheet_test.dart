@@ -115,6 +115,10 @@ void main() {
       final List<AudioCue> sec = secondary ?? _secondary;
       await tester.pumpWidget(
         MaterialApp(
+          // 每次 pump 都是一棵新 app：同一个测试里第二次 pump 时，不换 key 的话
+          // MaterialApp 原地复用，上一次打开的工作台路由还开着，「open」点到的是
+          // 那张旧工作台（旧语言、旧回调），新参数的工作台根本没打开。
+          key: UniqueKey(),
           home: Builder(
             builder: (BuildContext context) => Scaffold(
               body: Center(

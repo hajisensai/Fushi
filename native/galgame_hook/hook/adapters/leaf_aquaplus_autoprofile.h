@@ -12,6 +12,8 @@
 //
 // 所有读取都对 image.size 做边界校验：这段代码跑在玩家的游戏进程里。
 
+#include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 
@@ -30,6 +32,19 @@ struct DerivedAnchors {
   uintptr_t input_poller_first_return_rva = 0;
   uintptr_t embed_leaf_hook_rva = 0;
   uintptr_t d3d9_device_pointer_rva = 0;
+};
+
+// 推导断在哪一步的**事实**（只记录，不参与判定）。离线探针与运行期诊断共用：
+// 认领失败时唯一能推进事情的信息就是「五处签名各命中几次、交叉校验断在哪」。
+struct LeafAnchorTrace {
+  uint32_t traversal_hits = 0;
+  uint32_t raster_hits = 0;
+  uint32_t poller_hits = 0;
+  uint32_t embed_hits = 0;
+  uint32_t device_hits = 0;
+  bool cookie_agree = false;
+  bool iat_found = false;
+  bool embed_site_detoured_rejected = false;
 };
 
 inline uintptr_t AbsoluteBaseOf(const exact_lookup::LoadedPeImage& image) {
@@ -174,9 +189,11 @@ inline uintptr_t DeriveSecurityCookieRva(
 inline bool LocateUniqueSignature(const exact_lookup::LoadedPeImage& image,
                                   const exact_lookup::MaskedPattern& pattern,
                                   uintptr_t* site_rva, size_t operand_offset,
-                                  uint32_t* operand) {
+                                  uint32_t* operand,
+                                  uint32_t* hit_count = nullptr) {
   const auto hit =
       exact_lookup::FindUniquePatternInExecutableSections(image, pattern);
+  if (hit_count != nullptr) *hit_count = hit.count;
   if (hit.count != 1u || hit.address == nullptr || site_rva == nullptr)
     return false;
   const uintptr_t rva = static_cast<uintptr_t>(hit.address - image.base);
@@ -191,26 +208,53 @@ inline bool LocateUniqueSignature(const exact_lookup::LoadedPeImage& image,
   return true;
 }
 
+// 结构证明读的是哪一份字节。
+//   kPristineFile：磁盘 exe 手工按节展开的私有副本（不经加载器、无任何 detour）。
+//   kRuntimeImage：本进程已加载的主模块。带壳 / 运行期解密的构建只有这一份是真代码，
+//                  但它可能已被注入的 hook 改写过（见 EmbedHookSiteIsIntact）。
+enum class LeafImageSource : uint8_t { kPristineFile, kRuntimeImage };
+
+// hook 点的两字节：原样 `2b c3`（sub eax, ebx），或（仅运行时映像）一条目标落在主映像
+// 之外的 rel32 jmp——注入模块的 detour。跳回映像内部的 jmp 不是 detour 形状，拒绝。
+inline bool EmbedHookSiteIsIntact(const exact_lookup::LoadedPeImage& image,
+                                  uintptr_t hook_rva, LeafImageSource source) {
+  const uint8_t* site = AtRva(image, hook_rva, 5u);
+  if (site == nullptr) return false;
+  if (site[0] == 0x2bu && site[1] == 0xc3u) return true;
+  if (source != LeafImageSource::kRuntimeImage || site[0] != 0xe9u) return false;
+  int32_t displacement = 0;
+  std::memcpy(&displacement, site + 1, sizeof(displacement));
+  const int64_t target = static_cast<int64_t>(hook_rva) + 5 +
+                         static_cast<int64_t>(displacement);
+  return target < 0 || static_cast<uint64_t>(target) >= image.size;
+}
+
 inline bool DeriveLeafAnchors(const exact_lookup::LoadedPeImage& image,
-                              DerivedAnchors* out) {
+                              DerivedAnchors* out,
+                              LeafAnchorTrace* trace = nullptr,
+                              LeafImageSource source =
+                                  LeafImageSource::kPristineFile) {
   if (out == nullptr) return false;
   *out = {};
+  LeafAnchorTrace local_trace;
+  LeafAnchorTrace& t = trace != nullptr ? *trace : local_trace;
+  t = {};
   const uintptr_t absolute_base = AbsoluteBaseOf(image);
 
   uintptr_t traversal_rva = 0u;
   uint32_t traversal_cookie = 0u;
   uintptr_t raster_rva = 0u;
   uint32_t raster_cookie = 0u;
-  if (!LocateUniqueSignature(image, leaf_exact::kTextTraversalEntryPattern,
-                             &traversal_rva,
-                             leaf_exact::kTextTraversalCookieOperandOffset,
-                             &traversal_cookie) ||
-      !LocateUniqueSignature(image, leaf_exact::kRasterDrawEntryPattern,
-                             &raster_rva,
-                             leaf_exact::kRasterDrawCookieOperandOffset,
-                             &raster_cookie)) {
-    return false;
-  }
+  // 两处都要扫完再判：命中计数是诊断事实，短路会让第二处永远记成 0。
+  const bool traversal_ok = LocateUniqueSignature(
+      image, leaf_exact::kTextTraversalEntryPattern, &traversal_rva,
+      leaf_exact::kTextTraversalCookieOperandOffset, &traversal_cookie,
+      &t.traversal_hits);
+  const bool raster_ok = LocateUniqueSignature(
+      image, leaf_exact::kRasterDrawEntryPattern, &raster_rva,
+      leaf_exact::kRasterDrawCookieOperandOffset, &raster_cookie,
+      &t.raster_hits);
+  if (!traversal_ok || !raster_ok) return false;
   // 两处**互相独立**的签名必须读出同一个 cookie。这既是 cookie 的来源，也是"这份二进制
   // 确实是这套引擎"的交叉校验——不一致就说明识别不可信，宁可不认领。
   if (traversal_cookie != raster_cookie) return false;
@@ -222,27 +266,39 @@ inline bool DeriveLeafAnchors(const exact_lookup::LoadedPeImage& image,
       static_cast<uintptr_t>(traversal_cookie) - absolute_base;
   const uintptr_t load_config_cookie = DeriveSecurityCookieRva(image);
   if (load_config_cookie != 0u && load_config_cookie != cookie_rva) return false;
+  t.cookie_agree = true;
 
   const uintptr_t key_state_iat =
       DeriveImportThunkRva(image, "user32.dll", "GetAsyncKeyState");
   const uintptr_t read_file_iat =
       DeriveImportThunkRva(image, "kernel32.dll", "ReadFile");
   if (key_state_iat == 0u || read_file_iat == 0u) return false;
+  t.iat_found = true;
 
   uintptr_t poller_anchor = 0u;
   uint32_t poller_operand = 0u;
   if (!LocateUniqueSignature(image, leaf_exact::kInputPollerEntryPattern,
                              &poller_anchor,
                              leaf_exact::kInputPollerIatOperandOffset,
-                             &poller_operand)) {
+                             &poller_operand, &t.poller_hits)) {
     return false;
   }
   // 输入轮询签名里的操作数必须正好是导入表推出的那个 IAT 槽。
   if (poller_operand != absolute_base + key_state_iat) return false;
 
+  // 文本 hook 点前 23 字节（对象字段 + NUL 扫描循环）唯一定位锚点；hook 点本身的两字节
+  // 单独判。磁盘原始映像上它必须原样是 `sub eax, ebx`；运行时映像上它可能已被注入的文本
+  // hook（Fushi 自己选给 LunaHook 的 HSX0:0 就落在这里）换成一条跳出主映像的 rel32 jmp
+  // ——那是「这里正是那个 hook 点」的又一条证据，不是结构不符。
   uintptr_t embed_anchor = 0u;
-  if (!LocateUniqueSignature(image, leaf_exact::kEmbedLoopAnchorPattern,
-                             &embed_anchor, 0u, nullptr)) {
+  if (!LocateUniqueSignature(image, leaf_exact::kEmbedLoopPrefixPattern,
+                             &embed_anchor, 0u, nullptr, &t.embed_hits)) {
+    return false;
+  }
+  if (!EmbedHookSiteIsIntact(image,
+                             embed_anchor + leaf_exact::kEmbedHookOffsetFromAnchor,
+                             source)) {
+    t.embed_site_detoured_rejected = true;
     return false;
   }
 
@@ -251,7 +307,7 @@ inline bool DeriveLeafAnchors(const exact_lookup::LoadedPeImage& image,
   if (!LocateUniqueSignature(image, leaf_exact::kD3dDeviceAccessPattern,
                              &device_site,
                              leaf_exact::kD3dDevicePointerOperandOffset,
-                             &device_operand)) {
+                             &device_operand, &t.device_hits)) {
     return false;
   }
   if (device_operand < absolute_base ||
@@ -365,16 +421,92 @@ inline uintptr_t OffsetRva(uintptr_t anchor, intptr_t delta) {
   return value > 0 ? static_cast<uintptr_t>(value) : 0u;
 }
 
+// traversal 函数体的扫描上界。WA2 的 26-dword 文本遍历函数体约 0x1600 字节；上界只用于
+// 「派发函数被它调用了几次」这一计数，略大于函数体不影响判定（外面的调用者也必须调同一
+// 目标才会被计入，且只做下限判断）。
+constexpr uintptr_t kLeafTraversalBodyBytes = 0x2000u;
+
+// [begin, begin+bytes) 内以 rel32 call 调向 target_rva 的位置数。
+inline uint32_t CountRel32CallersInRange(
+    const exact_lookup::LoadedPeImage& image, uintptr_t target_rva,
+    uintptr_t begin, uintptr_t bytes) {
+  uint32_t count = 0u;
+  const uintptr_t end =
+      begin + bytes < image.size ? begin + bytes : static_cast<uintptr_t>(image.size);
+  for (uintptr_t rva = begin + 5u; rva <= end; ++rva) {
+    if (exact_lookup::MatchesRel32CallEndingAt(image, rva, target_rva)) ++count;
+  }
+  return count;
+}
+
+// `sub esp, 0x100; mov ecx, 0x40; mov edi, esp; rep movsd` 紧贴在结束于 return_rva 的
+// rel32 call 之前：把 0x100 字节（0x40 dword）文字状态按值拷进参数区。
+inline bool HasGlyphStateCopyBeforeCall(const exact_lookup::LoadedPeImage& image,
+                                        uintptr_t return_rva) {
+  static constexpr uint8_t kCopy[] = {0x81, 0xec, 0x00, 0x01, 0x00, 0x00,
+                                      0xb9, 0x40, 0x00, 0x00, 0x00, 0x8b,
+                                      0xfc, 0xf3, 0xa5};
+  if (return_rva < 5u + sizeof(kCopy)) return false;
+  const uint8_t* bytes = AtRva(image, return_rva - 5u - sizeof(kCopy),
+                               sizeof(kCopy));
+  return bytes != nullptr && std::memcmp(bytes, kCopy, sizeof(kCopy)) == 0;
+}
+
+// 结束于 return_rva 的调用之后紧跟 `add esp, 8; ret`：两个 cdecl 参数、调用者无局部帧。
+inline bool HasTwoArgumentFramelessReturnAfter(
+    const exact_lookup::LoadedPeImage& image, uintptr_t return_rva) {
+  const uint8_t* bytes = AtRva(image, return_rva, 4u);
+  return bytes != nullptr && bytes[0] == 0x83u && bytes[1] == 0xc4u &&
+         bytes[2] == 0x08u && bytes[3] == 0xc3u;
+}
+
 // 用推导出的锚点 + 形状校验解析出一份完整 profile。
 // 成功返回 true，且 out 里除栈帧偏移/顶点格式外的每个 RVA 都经过形状判定。
+enum class LeafResolveStage : uint8_t {
+  kNone = 0,
+  kInvalidInput,
+  kGlyphSingleReturn,
+  kGlyphDispatch,
+  kGlyphDoubleReturns,
+  kRasterGlyphReturn,
+  kIndirectCallReturns,
+  kVoiceArchiveReadReturn,
+};
+
+struct LeafResolveTrace {
+  LeafResolveStage failed_at = LeafResolveStage::kNone;
+};
+
+inline const char* LeafResolveStageName(LeafResolveStage stage) {
+  switch (stage) {
+    case LeafResolveStage::kNone: return "none";
+    case LeafResolveStage::kInvalidInput: return "invalid_input";
+    case LeafResolveStage::kGlyphSingleReturn: return "glyph_single_return";
+    case LeafResolveStage::kGlyphDispatch: return "glyph_dispatch";
+    case LeafResolveStage::kGlyphDoubleReturns: return "glyph_double_returns";
+    case LeafResolveStage::kRasterGlyphReturn: return "raster_glyph_return";
+    case LeafResolveStage::kIndirectCallReturns: return "indirect_call_returns";
+    case LeafResolveStage::kVoiceArchiveReadReturn:
+      return "voice_archive_read_return";
+  }
+  return "unknown";
+}
+
+inline bool FailResolve(LeafResolveTrace* trace, LeafResolveStage stage) {
+  if (trace != nullptr) trace->failed_at = stage;
+  return false;
+}
+
 inline bool ResolveLeafProfile(const exact_lookup::LoadedPeImage& image,
                                const DerivedAnchors& anchors,
                                const LeafAnchorDeltas& deltas,
-                               LeafAquaplusProfile* out) {
-  if (out == nullptr || image.base == nullptr) return false;
+                               LeafAquaplusProfile* out,
+                               LeafResolveTrace* trace = nullptr) {
+  if (trace != nullptr) *trace = {};
+  if (out == nullptr || image.base == nullptr) return FailResolve(trace, LeafResolveStage::kInvalidInput);
   const uintptr_t traversal = anchors.text_traversal_rva;
   const uintptr_t raster = anchors.raster_draw_rva;
-  if (traversal == 0u || raster == 0u) return false;
+  if (traversal == 0u || raster == 0u) return FailResolve(trace, LeafResolveStage::kInvalidInput);
   const uintptr_t poller_anchor =
       anchors.input_poller_first_return_rva >= 10u
           ? anchors.input_poller_first_return_rva - 10u
@@ -383,32 +515,43 @@ inline bool ResolveLeafProfile(const exact_lookup::LoadedPeImage& image,
       anchors.embed_leaf_hook_rva >= leaf_exact::kEmbedHookOffsetFromAnchor
           ? anchors.embed_leaf_hook_rva - leaf_exact::kEmbedHookOffsetFromAnchor
           : 0u;
-  if (poller_anchor == 0u || embed_anchor == 0u) return false;
+  if (poller_anchor == 0u || embed_anchor == 0u) return FailResolve(trace, LeafResolveStage::kInvalidInput);
 
-  // 单字节 glyph 返回点先定下来，glyph 派发地址由它的 rel32 目标**解码**得到，
-  // 而不是再猜一个位移；随后要求另外两个返回点调用同一个目标。
-  uintptr_t glyph_single = 0u;
-  if (!ResolveNearCandidate(
-          OffsetRva(traversal, deltas.glyph_single_return_from_traversal),
-          kLeafResolveWindow, image.size,
-          [&image](uintptr_t rva) {
-            uintptr_t target = 0u;
-            return DecodeRel32CallTarget(image, rva, &target);
-          },
-          &glyph_single)) {
-    return false;
-  }
+  // glyph 派发函数先定下来：位移起点 + 「被 traversal 函数体内至少三处 rel32 调用」这一
+  // 调用图判据。旧实现先用「任意一条 rel32 call」去定单字节返回点、再解码其目标——那条判据
+  // 在 traversal 这种每几字节就一条 call 的函数里毫无选择性：函数体内只要有一段代码插入，
+  // 窗口里就会出现多条 call，于是整体拒绝（另一个 WA2 构建就是在这里断的）。
   uintptr_t glyph_dispatch = 0u;
-  if (!DecodeRel32CallTarget(image, glyph_single, &glyph_dispatch)) return false;
+  if (!ResolveNearCandidate(
+          OffsetRva(traversal, deltas.glyph_dispatch_from_traversal),
+          kLeafResolveWindow, image.size,
+          [&image, traversal](uintptr_t rva) {
+            return CountRel32CallersInRange(image, rva, traversal,
+                                            kLeafTraversalBodyBytes) >= 3u;
+          },
+          &glyph_dispatch)) {
+    return FailResolve(trace, LeafResolveStage::kGlyphDispatch);
+  }
   if (!exact_lookup::SectionHasRole(
           exact_lookup::FindSectionForRva(image, glyph_dispatch, 1u),
           IMAGE_SCN_MEM_EXECUTE)) {
-    return false;
+    return FailResolve(trace, LeafResolveStage::kGlyphDispatch);
   }
 
+  // 三个准入的 glyph 返回点：判据是「调向派发函数」（每个窗口里这种调用至多一条），
+  // 且调用点前是把 0x100 字节文字状态按值拷进参数区的 rep movsd 帧形状——
+  // raster_packed_cp932_stack_offset 的 0x110 正是由这 0x100 字节 + 两个压栈参数撑出来的，
+  // 形状对上了这条栈偏移才有结构依据，而不只是「已测量构建上是这个数」。
   const auto calls_dispatch = [&image, glyph_dispatch](uintptr_t rva) {
-    return exact_lookup::MatchesRel32CallEndingAt(image, rva, glyph_dispatch);
+    return exact_lookup::MatchesRel32CallEndingAt(image, rva, glyph_dispatch) &&
+           HasGlyphStateCopyBeforeCall(image, rva);
   };
+  uintptr_t glyph_single = 0u;
+  if (!ResolveNearCandidate(
+          OffsetRva(traversal, deltas.glyph_single_return_from_traversal),
+          kLeafResolveWindow, image.size, calls_dispatch, &glyph_single)) {
+    return FailResolve(trace, LeafResolveStage::kGlyphSingleReturn);
+  }
   uintptr_t glyph_double_first = 0u;
   uintptr_t glyph_double_second = 0u;
   if (!ResolveNearCandidate(
@@ -420,18 +563,39 @@ inline bool ResolveLeafProfile(const exact_lookup::LoadedPeImage& image,
                     deltas.glyph_double_second_return_from_traversal),
           kLeafResolveWindow, image.size, calls_dispatch,
           &glyph_double_second)) {
-    return false;
+    return FailResolve(trace, LeafResolveStage::kGlyphDoubleReturns);
+  }
+  // 三点是同一段单字节 / 双字节分支：彼此间距是那段代码自身的长度，与函数体前面插入了多少
+  // 代码无关。间距对不上 = 窗口各自挑中了不相干的调用，拒绝。
+  const intptr_t single_to_first =
+      deltas.glyph_double_first_return_from_traversal -
+      deltas.glyph_single_return_from_traversal;
+  const intptr_t first_to_second =
+      deltas.glyph_double_second_return_from_traversal -
+      deltas.glyph_double_first_return_from_traversal;
+  if (static_cast<intptr_t>(glyph_double_first - glyph_single) !=
+          single_to_first ||
+      static_cast<intptr_t>(glyph_double_second - glyph_double_first) !=
+          first_to_second) {
+    return FailResolve(trace, LeafResolveStage::kGlyphDoubleReturns);
   }
 
+  // 派发函数里那一处 raster 调用：`call raster; add esp, 8; ret`。两个参数、无局部帧，
+  // raster_parent_return_stack_offset 的 0x0c（返回槽 + 两个参数）由此得到结构依据。
   uintptr_t raster_glyph_return = 0u;
   if (!ResolveNearCandidate(
           OffsetRva(traversal, deltas.raster_glyph_return_from_traversal),
           kLeafResolveWindow, image.size,
           [&image, raster](uintptr_t rva) {
-            return exact_lookup::MatchesRel32CallEndingAt(image, rva, raster);
+            return exact_lookup::MatchesRel32CallEndingAt(image, rva, raster) &&
+                   HasTwoArgumentFramelessReturnAfter(image, rva);
           },
           &raster_glyph_return)) {
-    return false;
+    return FailResolve(trace, LeafResolveStage::kRasterGlyphReturn);
+  }
+  if (raster_glyph_return <= glyph_dispatch ||
+      raster_glyph_return - glyph_dispatch > kLeafTraversalBodyBytes) {
+    return FailResolve(trace, LeafResolveStage::kRasterGlyphReturn);
   }
 
   const auto indirect_d0 = [&image](uintptr_t rva) {
@@ -454,9 +618,9 @@ inline bool ResolveLeafProfile(const exact_lookup::LoadedPeImage& image,
           OffsetRva(poller_anchor,
                     deltas.input_poller_last_return_from_anchor),
           kLeafResolveWindow, image.size, indirect_d6, &poller_last_return)) {
-    return false;
+    return FailResolve(trace, LeafResolveStage::kIndirectCallReturns);
   }
-  if (quad_draw_return == alternate_quad_draw_return) return false;
+  if (quad_draw_return == alternate_quad_draw_return) return FailResolve(trace, LeafResolveStage::kIndirectCallReturns);
 
   const uintptr_t read_file_iat = anchors.read_file_iat_rva;
   uintptr_t voice_read_return = 0u;
@@ -469,7 +633,7 @@ inline bool ResolveLeafProfile(const exact_lookup::LoadedPeImage& image,
                 image, rva, read_file_iat);
           },
           &voice_read_return)) {
-    return false;
+    return FailResolve(trace, LeafResolveStage::kVoiceArchiveReadReturn);
   }
 
   *out = kWhiteAlbum2LeafAquaplusProfile;  // 栈帧偏移/顶点格式沿用已测量值
@@ -492,6 +656,140 @@ inline bool ResolveLeafProfile(const exact_lookup::LoadedPeImage& image,
   out->alternate_quad_draw_return_rva = alternate_quad_draw_return;
   out->voice_archive_read_return_rva = voice_read_return;
   return true;
+}
+
+// 解析出的每个 RVA 落在角色正确的节里：代码点在可执行节，D3D 设备槽 / cookie 在可写数据节，
+// IAT 槽在可读非执行节。结构门的最后一道，防止「形状碰巧对上、却落在资源节」这类误认。
+inline bool LeafProfileSectionRolesValid(
+    const exact_lookup::LoadedPeImage& image,
+    const LeafAquaplusProfile& profile) {
+  const auto executable_rva = [&image](uintptr_t rva, size_t bytes = 1u) {
+    return exact_lookup::SectionHasRole(
+        exact_lookup::FindSectionForRva(image, rva, bytes),
+        IMAGE_SCN_MEM_EXECUTE);
+  };
+  const auto data_rva = [&image](uintptr_t rva, size_t bytes,
+                                 uint32_t required) {
+    return exact_lookup::SectionHasRole(
+        exact_lookup::FindSectionForRva(image, rva, bytes), required,
+        IMAGE_SCN_MEM_EXECUTE);
+  };
+  return profile.input_poller_first_return_rva >= 10u &&
+         profile.input_poller_last_return_rva >
+             profile.input_poller_first_return_rva &&
+         executable_rva(profile.embed_leaf_hook_rva) &&
+         executable_rva(profile.text_traversal_rva,
+                        sizeof(leaf_exact::kTextTraversalEntryBytes)) &&
+         executable_rva(profile.raster_draw_rva,
+                        sizeof(leaf_exact::kRasterDrawEntryBytes)) &&
+         executable_rva(profile.glyph_dispatch_rva) &&
+         executable_rva(profile.input_poller_first_return_rva) &&
+         executable_rva(profile.input_poller_last_return_rva) &&
+         executable_rva(profile.raster_glyph_return_rva) &&
+         executable_rva(profile.glyph_single_return_rva) &&
+         executable_rva(profile.glyph_double_first_return_rva) &&
+         executable_rva(profile.glyph_double_second_return_rva) &&
+         executable_rva(profile.quad_draw_return_rva) &&
+         executable_rva(profile.alternate_quad_draw_return_rva) &&
+         executable_rva(profile.voice_archive_read_return_rva) &&
+         data_rva(profile.d3d9_device_pointer_rva, sizeof(uint32_t),
+                  IMAGE_SCN_MEM_WRITE) &&
+         data_rva(profile.stack_cookie_rva, sizeof(uint32_t),
+                  IMAGE_SCN_MEM_WRITE) &&
+         data_rva(profile.get_async_key_state_iat_rva, sizeof(uint32_t),
+                  IMAGE_SCN_MEM_READ) &&
+         data_rva(profile.read_file_iat_rva, sizeof(uint32_t),
+                  IMAGE_SCN_MEM_READ);
+}
+
+// 一次完整的结构证明：锚点推导 → return site 解析 → 节角色。三段全过才产出 profile。
+struct LeafStructureProof {
+  LeafAnchorTrace anchors;
+  LeafResolveTrace resolve;
+  bool anchors_ok = false;
+  bool resolve_ok = false;
+  bool section_roles_ok = false;
+};
+
+inline bool ProveLeafStructure(const exact_lookup::LoadedPeImage& image,
+                               LeafImageSource source,
+                               LeafAquaplusProfile* out,
+                               LeafStructureProof* proof) {
+  LeafStructureProof local;
+  LeafStructureProof& p = proof != nullptr ? *proof : local;
+  p = {};
+  if (out == nullptr || image.base == nullptr ||
+      image.machine != IMAGE_FILE_MACHINE_I386 || image.pointer_bits != 32u) {
+    return false;
+  }
+  DerivedAnchors anchors;
+  p.anchors_ok = DeriveLeafAnchors(image, &anchors, &p.anchors, source);
+  if (!p.anchors_ok) return false;
+  LeafAquaplusProfile resolved;
+  p.resolve_ok = ResolveLeafProfile(image, anchors, kMeasuredLeafAnchorDeltas,
+                                    &resolved, &p.resolve);
+  if (!p.resolve_ok) return false;
+  p.section_roles_ok = LeafProfileSectionRolesValid(image, resolved);
+  if (!p.section_roles_ok) return false;
+  *out = resolved;
+  return true;
+}
+
+// ── 磁盘代码是否「替运行期代码说了算」 ───────────────────────────────────
+//
+// 带壳 / 运行期解密的构建，磁盘上的可执行节要么没有原始数据（UPX 式空节，运行期才填），
+// 要么是压缩 / 加密后的高熵字节。两种情况下对磁盘副本的结构证明都必然失败，但那不是
+// 「这不是 Leaf」——真代码只在运行时映像里。这一判据与引擎无关（只看节表与字节分布），
+// 只用来决定要不要转去运行时映像并按生命周期重扫，**从不**单独决定认领。
+//
+// 熵阈值：x86 机器码约 6~6.8 bit/byte（白2 实测 6.74），压缩 / 加密数据 ≥7.5。
+inline constexpr double kLeafPackedEntropyBitsPerByte = 7.2;
+
+inline double ShannonEntropyBitsPerByte(const uint8_t* bytes, size_t size) {
+  if (bytes == nullptr || size == 0u) return 0.0;
+  uint32_t counts[256] = {};
+  for (size_t index = 0; index < size; ++index) ++counts[bytes[index]];
+  double entropy = 0.0;
+  const double total = static_cast<double>(size);
+  for (uint32_t count : counts) {
+    if (count == 0u) continue;
+    const double p = static_cast<double>(count) / total;
+    entropy -= p * std::log2(p);
+  }
+  return entropy;
+}
+
+inline bool LeafExecutableCodeLooksPacked(
+    const exact_lookup::LoadedPeImage& image) {
+  const auto* nt = NtHeaders32(image);
+  if (nt == nullptr) return false;
+  const uint64_t table =
+      static_cast<uint64_t>(reinterpret_cast<const uint8_t*>(nt) - image.base) +
+      offsetof(IMAGE_NT_HEADERS32, OptionalHeader) +
+      nt->FileHeader.SizeOfOptionalHeader;
+  const WORD count = nt->FileHeader.NumberOfSections;
+  for (WORD index = 0; index < count; ++index) {
+    const uint8_t* bytes =
+        AtRva(image, table + index * sizeof(IMAGE_SECTION_HEADER),
+              sizeof(IMAGE_SECTION_HEADER));
+    if (bytes == nullptr) return false;
+    IMAGE_SECTION_HEADER section;
+    std::memcpy(&section, bytes, sizeof(section));
+    if ((section.Characteristics & IMAGE_SCN_MEM_EXECUTE) == 0u) continue;
+    const uint32_t virtual_size = section.Misc.VirtualSize != 0u
+                                      ? section.Misc.VirtualSize
+                                      : section.SizeOfRawData;
+    if (virtual_size == 0u) continue;
+    if (section.SizeOfRawData == 0u) return true;  // 运行期才填的空代码节
+    const uint32_t span = section.SizeOfRawData < virtual_size
+                              ? section.SizeOfRawData
+                              : virtual_size;
+    const uint8_t* code = AtRva(image, section.VirtualAddress, span);
+    if (code == nullptr) continue;
+    if (ShannonEntropyBitsPerByte(code, span) >= kLeafPackedEntropyBitsPerByte)
+      return true;
+  }
+  return false;
 }
 
 }  // namespace leaf_autoprofile

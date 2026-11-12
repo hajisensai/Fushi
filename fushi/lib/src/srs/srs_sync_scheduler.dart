@@ -439,6 +439,23 @@ class SrsSyncScheduler {
 
   /// 坏文件只记一次日志（每轮都会再跳过同一个文件）。
   final Set<String> _loggedSkipped = <String>{};
+
+  /// 清本机旧身份目录没做成的原因（[SrsSync2Report.formerSweepErrors]）记日志：不算这一轮失败，同一个原因只记一次
+  /// （内核每个周期让看一次，持续性的故障每次都是同一句）。
+  void _logFormerSweep(String key, SrsSync2Report report) {
+    for (final String f in report.formerSweepErrors) {
+      if (_loggedSkipped.add('former|$key|$f')) {
+        ErrorLogService.instance.log(
+          'SrsSyncScheduler.formerIdentitySweep',
+          StateError(
+            'SRS sync could not tidy a former identity directory in $key: $f',
+          ),
+          StackTrace.current,
+        );
+      }
+    }
+  }
+
   final Future<List<SrsLocalDirectory>> Function()? _localDirectories;
   final Future<List<SrsFolderLocation>> Function()? _folderLocations;
 
@@ -676,28 +693,20 @@ class SrsSyncScheduler {
   final Map<String, SrsLocationCryptoState> locationCrypto =
       <String, SrsLocationCryptoState>{};
 
-  /// 已经上报过摘要不一致的设备（每次启动每台只报一次）。
-  final Set<String> _digestReported = <String>{};
-
-  /// 设计 §4.5：两台设备在同一版本向量下派生状态摘要不同 = 确定性 bug，自动上报日志（不让用户处理）。
-  Future<void> _reportDigestMismatch(SrsDbStore store) async {
-    try {
-      final Map<String, Object?> status = await store.sync2Status();
-      for (final Object? d
-          in (status['devices'] as List?) ?? const <Object?>[]) {
-        if (d is! Map || d['digestMismatch'] != true) continue;
-        final String id = d['device'] as String? ?? '';
-        if (!_digestReported.add(id)) continue;
-        ErrorLogService.instance.log(
-          'SrsSync2.digestMismatch',
-          StateError(
-            'SRS state digest differs from device $id at the same version vector',
-          ),
-          StackTrace.current,
-        );
-      }
-    } catch (e, stack) {
-      ErrorLogService.instance.log('SrsSyncScheduler.digest', e, stack);
+  /// 设计 §4.5：两台设备在同一进度下派生状态摘要不同 = 有一边的派生行是旧的或确定性 bug。内核先自动重建（按组指纹
+  /// 定位、重放本机落在不同组里的卡，store/sync2/heal.rs），只把修不好的交出来（[SrsSync2Report.healFailed]，每个对端
+  /// 每组集合只给一次），这里只记这些（不让用户处理）。
+  void _reportHealFailed(SrsSync2Report report) {
+    for (final Map<String, Object?> f in report.healFailed) {
+      ErrorLogService.instance.log(
+        'SrsSync2.healFailed',
+        StateError(
+          'SRS state digest differs from device ${f['device']} at the same version vector '
+          'and replaying did not converge: reason=${f['reason']} groups=${f['groups']} '
+          'rows=${f['rows']} peerApp=${f['app']}',
+        ),
+        StackTrace.current,
+      );
     }
   }
 
@@ -1176,6 +1185,7 @@ class SrsSyncScheduler {
         );
       }
     }
+    _logFormerSweep(key, report);
     // 服务器时间与写 head 那次上传同一刻的开机时钟配对（[SrsSync2Report.serverTimeBootMs]），与这一轮跑了多久无关。
     final int? serverTime = report.serverTimeMs;
     final int? observedAt = report.serverTimeBootMs;
@@ -1189,7 +1199,7 @@ class SrsSyncScheduler {
     if (report.error == kSrsSyncNeedsUpgrade) {
       _noticeOnce(SrsSyncNotice.backendUnsupported);
     }
-    if (report.error == null && !_halted) await _reportDigestMismatch(store);
+    _reportHealFailed(report);
     bool mediaChanged = false;
     final Future<Directory?> Function()? readMediaRoot = _readMediaRoot;
     // 媒体对账要逐个过一遍全部引用的媒体、扫三遍笔记引用：只在媒体引用可能变了（本机或别的设备改了笔记 / 笔记类型
@@ -1689,6 +1699,8 @@ class SrsSyncScheduler {
           srsLogMigrationLeftover(prepared, l.locationId);
         }
         if (outcome.stopped) continue;
+        final SrsSync2Report? folderOps = r.ops;
+        if (folderOps != null) _logFormerSweep(l.locationId, folderOps);
         await _noteCrypto(l.locationId, r.crypto);
         _noteMediaKey(l.locationId, r.media);
         // 口令类问题不进 folderErrors，由 [locationCrypto] 显示（需要口令 / 口令不对 / 加密设置不见了）。

@@ -55,7 +55,10 @@ SrsRemoteMediaStore (extends SrsMediaStore) ─GET /api/srs/remote/media/<名字
 鉴权与其它互联端点相同（配对 token，HTTPS 时按配对指纹钉证书）。主机在 `GET /api/capabilities` 声明
 `srsRemoteStoreV1: true`；复习模块关着时不声明、端点 404。
 
-- `POST /api/srs/remote/call`，体 `{profile?, op, args, request?}`。
+- `POST /api/srs/remote/call`，体 `{profile?, op, args, request?, tz?}`。`tz` 是客户端设备此刻的 UTC 偏移（分钟）：
+  「今天」的时区取用户手上那台设备，主机按它算这次调用的日界（每日上限、到期计数、作答日志记下的偏移）；
+  翻日时刻仍取 profile 同步的那一份。向后兼容、不动能力位：旧客户端不带 → 按主机偏移；旧主机不认 → 忽略，
+  同样按主机偏移；越出 UTC−12:00…+14:00 的整数当没带（客户端也不发），不是整数回 `bad_request`。
 - 回包信封 `{profile, rev, fp, tt, now, ts, sched, rwkv, dev, result}`：主机 profile uid、复习库版本、排程指纹、
   牌组树标签、主机此刻 / 时间源、排程是否可用、RWKV 是否就绪、主机在同步集合里的设备 id、操作结果。
   客户端每次回包都吸收信封：`now()` 按主机时钟偏移算（日界、到期显示与主机同口径）。
