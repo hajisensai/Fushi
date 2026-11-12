@@ -23,6 +23,7 @@ import 'package:fushi/src/media/downloads/download_execution_target.dart';
 import 'package:fushi/src/media/torrent/torrent_file_selection.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/sync/interconnect_download_client.dart';
+import 'package:fushi/src/sync/interconnect_host_failure_text.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/pages/implementations/download_backend_setup_dialog.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -97,9 +98,34 @@ Future<void> showManualDownloadTaskDialog({
 }) async {
   // 互联 host 代下载（设计 §3.3）：有已配对 host 宣告 downloads 能力时，本机没配
   // 下载后端也能打开对话框，把磁链交给 host。探测失败按「没有远端」处理。
+  // 传入的 client 归调用方；自建的在整个对话框流程结束后关掉。
   final InterconnectDownloadClient remote =
       remoteClient ??
       InterconnectDownloadClient(repo: SyncRepository(appModel.database));
+  try {
+    await _showManualDownloadTaskDialogWith(
+      context: context,
+      appModel: appModel,
+      remote: remote,
+      torrentPaths: torrentPaths,
+      initialDiscoveryKind: initialDiscoveryKind,
+      initialMagnet: initialMagnet,
+      initialTitle: initialTitle,
+    );
+  } finally {
+    if (remoteClient == null) remote.close();
+  }
+}
+
+Future<void> _showManualDownloadTaskDialogWith({
+  required BuildContext context,
+  required AppModel appModel,
+  required InterconnectDownloadClient remote,
+  required List<String> torrentPaths,
+  required DiscoveryMediaKind? initialDiscoveryKind,
+  required String? initialMagnet,
+  required String? initialTitle,
+}) async {
   // 「下载执行设备」偏好指向的 host 优先（并作为对话框的默认落点）；没设 / 连不上
   // 时退回「第一台宣告能力的 host」——对话框里有下拉，用户看得见投给了谁。
   final DownloadExecutionResolution execution = await resolveDownloadExecution(
@@ -118,6 +144,16 @@ Future<void> showManualDownloadTaskDialog({
   }
   final bool preferRemote = execution is DownloadExecutionRemote;
   if (!context.mounted) return;
+  // 偏好指向的 host 因凭据 / 证书 / 版本这类用户能解决的原因不可用：对话框照开
+  // （可能退到别的 host 或本机），但先把原因说出来，免得用户以为投给了点名的设备。
+  if (execution is DownloadExecutionUnreachable &&
+      interconnectHostFailureWorthTelling(execution.failure)) {
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      FushiSnackBar(
+        content: Text(downloadExecutionUnreachableMessage(execution)),
+      ),
+    );
+  }
   _ManualDownloadBackend resolved = await _resolveBackend(appModel);
   // 远端只收磁链（`_canSubmit` 的远端分支拒绝 `.torrent`）：带种子进来时不走
   // 「仅远端」捷径，否则开出来的框一个都提交不了；照常引导配本机后端。
