@@ -1716,8 +1716,11 @@ class SrsDbStore implements SrsSync2Host {
       final Completer<void>? replays = _rwkvReplaysIdle;
       if (replays != null) await replays.future;
       await runExclusive(() async {
-        await _sync2(const <String, Object?>{'op': 'ingest_begin'});
+        final Map<String, Object?> begun = await _sync2(const <String, Object?>{
+          'op': 'ingest_begin',
+        });
         _ingestOpen = true;
+        _debugIngestChannel = begun['channel'] == true;
       });
     } catch (_) {
       _endIngestSession(session);
@@ -1732,6 +1735,12 @@ class SrsDbStore implements SrsSync2Host {
   /// 测试：[_ingestOpen]。
   @visibleForTesting
   bool get debugIngestOpen => _ingestOpen;
+
+  /// 测试：开着的这场收段会话走不走收段通道——`ingest_begin` 回包里内核的判定，只记录、不参与任何逻辑
+  /// （通道状态由内核持有；会话外问内核用 `identity` 回包的 `channel`）。会话放掉后为 false。
+  @visibleForTesting
+  bool get debugIngestChannel => _ingestOpen && _debugIngestChannel;
+  bool _debugIngestChannel = false;
 
   /// 结束收段会话：会话里攒下的分数表刷新并成一次（[_rwkvScoresDeferred]），等着的 RWKV 回放放行；内核命令失败
   /// 也照样结束 Dart 侧会话。副本在这一轮途中被作废时，[retire] 已在它最后一段独占区里放掉了内核会话：这里不再进
