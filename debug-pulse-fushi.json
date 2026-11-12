@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-12T22:26:25Z",
+ "generatedAt": "2026-11-12T23:11:59Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "6867ab80d73be4442de068c9c926837210850d00",
@@ -12,7 +12,7 @@
    "version": "3.3.0",
    "sha": "cb7c567d60589c1db492a461cada1b2b51283a5d",
    "unknown": false,
-   "publishedAt": "2026-11-12T22:26:13Z",
+   "publishedAt": "2026-11-12T23:11:46Z",
    "testflight": false,
    "baseSeq": 26471,
    "prs": [
@@ -90,16 +90,13 @@
      "state": "ok"
     },
     "windows": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43289888867"
+     "state": "ok"
     },
     "macos": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43289888867"
+     "state": "ok"
     },
     "ios": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43289888867"
+     "state": "ok"
     }
    }
   },
@@ -144,42 +141,13 @@
    "unknown": false,
    "publishedAt": "2026-11-11T14:05:47Z",
    "testflight": true,
-   "baseSeq": 26444,
-   "prs": [
-    3341
-   ],
-   "direct": [],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "ok"
-    },
-    "windows": {
-     "state": "ok"
-    },
-    "macos": {
-     "state": "ok"
-    },
-    "ios": {
-     "state": "ok"
-    }
-   }
-  },
-  {
-   "seq": 26444,
-   "version": "3.3.0",
-   "sha": "8603d1a7644363acc0bd973f79588ac140f4af5f",
-   "unknown": false,
-   "publishedAt": "2026-11-11T05:42:57Z",
-   "testflight": true,
    "baseSeq": null,
    "prs": [],
    "direct": [],
    "truncated": false,
    "platforms": {
     "android": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/42959750767"
+     "state": "ok"
     },
     "windows": {
      "state": "ok"
@@ -551,15 +519,6 @@
    "mergedAt": "2026-11-12T18:37:02Z",
    "additions": 373,
    "deletions": 0,
-   "labels": []
-  },
-  "3341": {
-   "number": 3341,
-   "title": "fix(scheduler): 常驻背景动画挡住 idle 任务致调度器空转、Windows 输入全失灵（BUG-4387）",
-   "author": "W1ght",
-   "mergedAt": "2026-11-11T13:00:57Z",
-   "additions": 344,
-   "deletions": 6,
    "labels": []
   },
   "3345": {
