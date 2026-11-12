@@ -42,6 +42,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4387](bugs/BUG-4387-popup-scroll-leaks-across-lookups.md) | ✅ | ✅ | 查词弹窗滚动位跨查词残留（app 外 / galgame 根 iframe；同词缓存命中） |
 | [BUG-4387](bugs/BUG-4387-galhook-test-exe-av-false-positive.md) | ✅ | ✅ | Kaspersky 把 galgame hook 测试 exe 报为 Trojan.Win32.Sdum.gen 并删除 |
 > 共 3933 条。点号进各自文件。
 
