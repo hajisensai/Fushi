@@ -1963,7 +1963,7 @@ class AdapterStructureTest(unittest.TestCase):
             "ResolveUnityMonoTextMethods(api)",
             "PlanUnityMonoTextHooks(resolution)",
             "api.compile_method(",
-            "HookFn(",
+            "HookFnEx(code[index]",
         ]
         positions = [install.index(marker) for marker in order]
         self.assertEqual(positions, sorted(positions))
@@ -1971,11 +1971,14 @@ class AdapterStructureTest(unittest.TestCase):
         scope = install.split("MonoAttachedThreadScope managed_thread", 1)[1]
         scope = scope.split("text_done_ = true;", 1)[0]
         self.assertNotIn("HookFn(", scope)
+        self.assertNotIn("HookFnEx(", scope)
         # 字符串 accessor 在第一个 hook 生效前就位。
         self.assertLess(
             install.index("g_unity_mono_string_chars = api.string_chars;"),
-            install.index("HookFn("),
+            install.index("HookFnEx(code[index]"),
         )
+        # 安装摘要日志只在 HookWorker 的安装路径上（detour 里没有日志）。
+        self.assertIn("unity-mono-text: plan=", install)
         # 有界重试：预算耗尽即停。
         self.assertIn("kMaxResolveAttempts", install)
         self.assertIn("kUnityMonoFlagResolveExhausted", install)
@@ -1999,7 +2002,15 @@ class AdapterStructureTest(unittest.TestCase):
         self.assertIn("RecordUnityTextChars(", detours)
         # Mono 托管签名没有 IL2CPP 的尾随 MethodInfo*。
         self.assertNotIn("const void* method", detours)
-        self.assertEqual(detours.count("FUSHI_MONO_MANAGED_CALL Detour_"), 6)
+        self.assertEqual(detours.count("FUSHI_MONO_MANAGED_CALL Detour_"), 7)
+        self.assertNotIn("UmLookupLog(", detours)
+        # TMP 1.x：SetText(string) 转调 SetText(string,bool)，内层不重复发布。
+        single = detours.split("Detour_UnityMonoTmpSetTextSingle(", 1)[1]
+        self.assertIn("++g_unity_mono_tmp_single_depth;", single)
+        self.assertIn("--g_unity_mono_tmp_single_depth;", single)
+        pair = detours.split("Detour_UnityMonoTmpSetTextBool(", 1)[1]
+        pair = pair.split("Detour_UnityMonoTmpSetTextSingle(", 1)[0]
+        self.assertIn("g_unity_mono_tmp_single_depth > 0", pair)
         # Fungus 整句先剥框架自己的 {...} 标记，再走共用发布入口。
         self.assertIn("StripFungusTextTags(", detours)
         # IL2CPP 与 Mono 共用同一发布入口，过滤口径不分叉。
@@ -2923,9 +2934,34 @@ class AdapterStructureTest(unittest.TestCase):
         fungus = self._function_body(
             core, "inline FungusSiteResolution ResolveFungusSites(")
         for proof in ("FindClassInImages(", "MonoTextHookId::kFungusSayDialogDoSay",
-                      "LateUpdate", "ListLayout(", "ResolveFungusIcall(",
-                      "class_value_size(", "m_LastString"):
+                      "LateUpdate", "ResolveUguiTextLayout("):
             self.assertIn(proof, fungus)
+        # The UGUI Text layout reading shared by frameworks 2 and 4.
+        layout = self._function_body(
+            core, "inline FungusSiteResolution ResolveUguiTextLayout(")
+        for proof in ("ListLayout(", "ResolveFungusIcall(", "class_value_size(",
+                      "m_LastString"):
+            self.assertIn(proof, layout)
+        # Framework 4: UI.Text by the text path's own spec, the managed
+        # SendWillRenderCanvases, the shared layout; nothing title-specific.
+        ui_text = self._function_body(
+            core, "inline UiTextSiteResolution ResolveUiTextSites(")
+        for proof in ("MonoTextHookId::kUiTextSetText", "FindClassInImages(",
+                      "ResolveWillRenderCanvases(", "ResolveUguiTextLayout("):
+            self.assertIn(proof, ui_text)
+        will_render = self._function_body(
+            core, "inline void* ResolveWillRenderCanvases(")
+        self.assertIn("kMethodImplInternalCall", will_render)
+        # Candidates are admitted by class, and the selected lane is never
+        # evicted (a full table of UI texts pushed the dialogue out).
+        remember = self._function_body(
+            runtime, "void RememberUmTmpCandidateOnMain(")
+        for proof in ("ClassDerivesFrom(", "rt.fungus.text_class",
+                      "rt.tmp.ugui_class", "UmLanesSelected(",
+                      "SelectedTextThreadId("):
+            self.assertIn(proof, remember)
+        for forbidden in ("UmLookupLog(", "CreateFile", "Sleep("):
+            self.assertNotIn(forbidden, remember)
         self.assertIn("ResolveUnityMonoFungusLookup(api, runtime)", scope)
 
     def test_unity_mono_voice_is_bundle_proven_and_callbacks_stay_bounded(
