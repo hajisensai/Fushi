@@ -2600,6 +2600,8 @@ mod tests_perf;
 #[cfg(test)]
 mod tests_replay_pending;
 #[cfg(test)]
+mod tests_retention;
+#[cfg(test)]
 mod tests_sched_local;
 #[cfg(test)]
 mod tests_synthetic_ctx;

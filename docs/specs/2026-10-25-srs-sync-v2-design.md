@@ -221,7 +221,7 @@ fushi-srs/<profileUid>/v2/          # 协议 1 的旧根：只剩围栏
 
 **写入纪律**
 1. 先写段（新文件名，写完即不可变；支持 rename 的后端先写临时名再 rename）。
-2. 段写成功后再写新的 `head-<seq>.json`；旧 head 保留最近 2 个再删。
+2. 段写成功后再写新的 `head-<seq>.json`；旧 head 留到代号落后位置上最新一份两代以上再删。留几代旧 head、合并换下来的旧小段何时可删只由内核定（`native/fushi_fsrs/src/store/sync2/transport.rs` `HEAD_KEEP_GENS` / `sync2_obsolete`）：客户端一轮收尾时列本机目录交给内核，照内核给的清单删、删成功的回执；**段的删除永远不早于最后一份引用它的 head 被删**。
 3. 媒体先于引用它的段上传。
 
 **读取纪律**

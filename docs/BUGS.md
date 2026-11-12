@@ -33,6 +33,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
+> 共 3873 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4324](bugs/BUG-4324-srs-sync2-rotated-identity-segments-deleted.md) | ✅ | ✅ | SRS 同步 v2：换身份后仍删旧身份目录里的旧小段，旧身份留着的 head 引用落空 |
+| [BUG-4323](bugs/BUG-4323-srs-sync2-segment-deleted-before-referencing-head.md) | ✅ | ✅ | SRS 同步 v2：旧小段可能先于引用它的旧 head 被删（保留代数写在 Dart，内核看不到） |
 > 共 3931 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
