@@ -57,7 +57,9 @@ use super::pack::{self, F_RAW3, F_STAMP, Names, tv_bits, tv_of};
 use super::schema::{in_tx, k_dev, k_range, k_seq, opk, sql};
 use crate::gen4::heritage::{Alias, Fp, HeritageSlot, Raw3, SlotBody, fingerprint};
 use crate::gen4::name::{read_name, write_name};
-use crate::gen4::op::{Body4, Edit4, KIND_EDIT, Op4, chain_next4, native_allowed};
+use crate::gen4::op::{
+    Body4, Edit4, KIND_EDIT, KIND_JOIN, KIND_SALTS, Op4, chain_next4, native_allowed,
+};
 use crate::gen4::stamp::HeritageStamp;
 use crate::gen4::translate::{Joined, applied_body, dedup_slot, join_slots};
 use crate::sync2::codec::{Reader, Writer};
@@ -2142,6 +2144,11 @@ impl<'c> Truth<'c> {
     /// 操作同理，空洞记下该处的链值）。已经是空洞 / 副本记录、或本机没有这个操作号的不动。返回有没有变。
     ///
     /// 执行不执行一条 Purge 由调用方按本机的信任状态决定（设计 §3.2）；这里只管落库。
+    ///
+    /// **带盐的操作（Salts、Join）永远不清成空洞**（设计 §10 第 17 条）：空洞不带操作体，一台设备把它清掉，之后才
+    /// 收到这一段的设备就少了这几个盐、别名表从此与别人不同。它们不属于任何实体，Purge 本来指不到；走到这里是调用方
+    /// 的错，报错（整个事务回滚），不静默跳过。只有原生日志有这两种操作（承袭段拒收），副本记录（[Truth::advance_dedup]）
+    /// 因此也碰不到它们。
     pub fn advance_purge(&self, col: i64, target: &OpId) -> Result<bool, String> {
         self.write(|| {
             let Some(dev) = self.dev_find(col, &target.device)? else {
@@ -2152,6 +2159,14 @@ impl<'c> Truth<'c> {
             };
             if !e.is_whole() {
                 return Ok(false);
+            }
+            if let Some(op) = e.op() {
+                if op.kind == KIND_SALTS || op.kind == KIND_JOIN {
+                    return Err(format!(
+                        "gen4 store: {}:{} carries salts and is never purged",
+                        target.device, target.seq
+                    ));
+                }
             }
             match e.fp {
                 Some(fp) => {
@@ -2892,6 +2907,29 @@ pub(crate) mod tests {
                 ..native_edit()
             }),
         )
+    }
+
+    #[test]
+    fn ops_that_carry_salts_are_never_purged() {
+        let conn = open_in_memory().unwrap();
+        let t = Truth::new(&conn);
+        let col = bound(&t);
+        let salts = op_of(id(0xa1), 1, &Body4::salts(["u1"]).unwrap());
+        t.tx(|t| {
+            t.append_native(col, &salts)?;
+            t.append_native(col, &native(2, "\"x\""))
+        })
+        .unwrap();
+        let target = |seq| OpId {
+            device: id(0xa1),
+            seq,
+        };
+        let e = t.tx(|t| t.advance_purge(col, &target(1))).unwrap_err();
+        assert!(e.contains("never purged"), "{e}");
+        // 事务回滚、会话已 reset：那一条还是完整内容，旁边的照常能清。
+        assert!(t.entry(col, &target(1)).unwrap().unwrap().is_whole());
+        assert_eq!(t.tx(|t| t.advance_purge(col, &target(2))), Ok(true));
+        assert!(t.entry(col, &target(1)).unwrap().unwrap().is_whole());
     }
 
     #[test]
