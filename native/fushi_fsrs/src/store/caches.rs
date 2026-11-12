@@ -130,6 +130,26 @@ pub(crate) struct Written {
 }
 
 impl Written {
+    /// 并入同一笔里后一次刷新写过的（`change` 的移牌组段，store/ffi.rs `local_write`）：各自去重；后一次写了整行的卡
+    /// 不再算删掉的，后一次删掉的不再算写过的。
+    pub(crate) fn absorb(&mut self, later: Written) {
+        use std::collections::HashSet;
+        {
+            let rewritten: HashSet<&str> = later.cards.iter().map(String::as_str).collect();
+            let dropped: HashSet<&str> = later.removed.iter().map(String::as_str).collect();
+            self.removed.retain(|c| !rewritten.contains(c.as_str()));
+            self.cards.retain(|c| !dropped.contains(c.as_str()));
+        }
+        for (into, from) in [
+            (&mut self.notes, later.notes),
+            (&mut self.cards, later.cards),
+            (&mut self.removed, later.removed),
+        ] {
+            let have: HashSet<String> = into.iter().cloned().collect();
+            into.extend(from.into_iter().filter(|id| !have.contains(id)));
+        }
+    }
+
     pub(crate) fn to_json(&self) -> Value {
         serde_json::json!({"notes": self.notes, "cards": self.cards, "removed": self.removed})
     }
@@ -197,6 +217,7 @@ pub(crate) fn refresh(
     // 一次刷新内同一笔记类型只物化一次。
     let mut types: HashMap<String, Option<TypeInfo>> = HashMap::new();
     let notes: Vec<String> = notes.into_iter().collect();
+    let p_notes = super::prof::span("cache.notes");
     for chunk in notes.chunks(CHUNK) {
         flush_notes(
             c,
@@ -209,6 +230,8 @@ pub(crate) fn refresh(
             &mut out,
         )?;
     }
+    drop(p_notes);
+    let p_cards = super::prof::span("cache.cards");
     // 卡片的历史 / 标志沿「前身」继承：前身变了，后继卡也要重算。链接从种子卡按需查（[Links]）：一次作答只碰
     // 这张卡的血统，不再把全库的前身链接读进内存；全量重建投影（`all_stats`）本来就要走遍全库，一次读完。
     let mut links = if dirty.all_stats {
@@ -225,6 +248,8 @@ pub(crate) fn refresh(
     for chunk in rest.chunks(CHUNK) {
         flush_cards(c, profile, cfg, chunk, &mut out)?;
     }
+    drop(p_cards);
+    let _p_stats = super::prof::span("cache.stats");
     // 投影在全部缓存行（可见性）写完之后再算：归属看的是这一轮之后的可见性。还没有缓存行的卡也算。
     stat_seeds.extend(closure);
     stat_seeds.extend(out.cards.iter().cloned());
@@ -397,7 +422,7 @@ impl NoteInfo {
     }
 
     /// Dart `SrsNoteView.field`：没有 = 空串。
-    fn field(&self, id: &str) -> &str {
+    pub(crate) fn field(&self, id: &str) -> &str {
         self.fields
             .iter()
             .rev()
@@ -524,6 +549,53 @@ fn load_types<'a>(
     Ok(())
 }
 
+/// 本 profile 全部笔记类型（含已删除的）物化视图里的文本：每个现行模板的正面、背面，再加 CSS（媒体回收的存活引用
+/// 扫这些，store/media_gc.rs）。与 Dart `SrsDbStore.noteTypesById` 物化出的 `templates` / `css` 同一份视图（内置类型的
+/// 代码默认值取缓存配置）。
+pub(crate) fn note_type_texts(
+    c: &Connection,
+    profile: &str,
+    cfg: &CacheConfig,
+) -> Result<Vec<String>, String> {
+    let ids = strings(
+        c,
+        "SELECT srs_idt(id) AS id FROM srs_entities WHERE profile_uid = srs_id(?1) AND kind = 'notetype' ORDER BY rowid",
+        &[profile],
+    )?;
+    let rows = entity_rows(c, &ids)?;
+    let edits = edits_of(c, "notetype", &ids)?;
+    let mut out = Vec::new();
+    for id in &ids {
+        let Some(payload) = rows.get(id) else {
+            continue;
+        };
+        let es: Vec<StoredEdit<'_>> = edits
+            .get(id)
+            .map(|v| {
+                v.iter()
+                    .map(|e| (e.1.as_str(), e.2, e.3.as_ref()))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let builtin = payload["builtin"]
+            .as_str()
+            .and_then(|k| cfg.builtins.get(k))
+            .map_or(Value::Null, |b| b.0.clone());
+        let view = registers::note_type_view_of(payload, &es, &builtin)?;
+        for t in view["ts"].as_array().into_iter().flatten() {
+            for side in ["front", "back"] {
+                if let Some(s) = t[side].as_str() {
+                    out.push(s.to_owned());
+                }
+            }
+        }
+        if let Some(css) = view["css"].as_str() {
+            out.push(css.to_owned());
+        }
+    }
+    Ok(out)
+}
+
 /// 笔记缓存行的 `dupe_norm`（srs.db v15）：首字段（笔记类型字段顺序第一个）的 AnkiConnect 查重规范形
 /// （`search::dupe_norm`，与 canAddNotes 给候选首字段算的同一个函数）。笔记类型不在 / 没有字段 = 空串
 /// （查重只拿非空规范形去比，空串永远不命中）。
@@ -640,9 +712,12 @@ fn flush_notes(
     now: i64,
     out: &mut Written,
 ) -> Result<(), String> {
+    let p_views = super::prof::span("cache.notes.views");
     let views = note_infos(c, chunk)?;
     let existing = cards_of_notes(c, chunk)?;
     load_types(c, cfg, views.iter().map(|v| &v.note_type), types)?;
+    drop(p_views);
+    let p_rows = super::prof::span("cache.notes.rows");
     // 笔记缓存行与应有的卡。
     // (笔记下标, 应有的卡, 笔记已不在, 词频名次)。
     let mut plans: Vec<(usize, Vec<(String, String, i64, bool)>, bool, Option<i64>)> =
@@ -717,7 +792,9 @@ fn flush_notes(
     }
     delete_cards(c, &gone_cards)?;
     out.removed.extend(gone_cards);
+    drop(p_rows);
     let materials = card_materials(c, cfg, &want)?;
+    let _p_cards = super::prof::span("cache.notes.card_rows");
     let mut card_stmt = c.prepare_cached(CARD_UPSERT).map_err(sql)?;
     for (k, expected, gone, freq) in &plans {
         let n = &views[*k];
@@ -757,9 +834,14 @@ fn card_materials(
     cfg: &CacheConfig,
     want: &[(String, Option<String>)],
 ) -> Result<HashMap<String, Material>, String> {
+    let p_lineages = super::prof::span("cache.material.lineages");
     let lineages = lineages(c, cfg, want)?;
+    drop(p_lineages);
     let groups: Vec<Vec<String>> = lineages.iter().map(|l| l.0.clone()).collect();
+    let p_logs = super::prof::span("cache.material.logs");
     let logs = logs_of(c, &groups)?;
+    drop(p_logs);
+    let _p_state = super::prof::span("cache.material.state");
     let empty: Vec<LogRow> = Vec::new();
     let mut out = HashMap::with_capacity(want.len());
     for ((card, _), (lineage, flags)) in want.iter().zip(lineages) {
@@ -1272,6 +1354,7 @@ fn refresh_stats(
     seeds: &BTreeSet<String>,
     expand: bool,
 ) -> Result<(), String> {
+    let p_family = super::prof::span("cache.stats.family");
     // 连通分量：沿链接双向扩（链接表是超集；真正的血统下面按修改记录的生效值算）。
     let mut family = link_family(c, links, seeds)?;
     if expand {
@@ -1284,6 +1367,8 @@ fn refresh_stats(
             family = link_family(c, links, &grown)?;
         }
     }
+    drop(p_family);
+    let p_owners = super::prof::span("cache.stats.owners");
     let mut ids: Vec<String> = family.iter().cloned().collect();
     ids.sort_by(|a, b| cmp_utf16(a, b));
     let mut visible: HashSet<String> = HashSet::new();
@@ -1356,6 +1441,8 @@ fn refresh_stats(
             g.push(id.clone());
         }
     }
+    drop(p_owners);
+    let p_delete = super::prof::span("cache.stats.delete");
     let family: Vec<&String> = family.iter().collect();
     for chunk in family.chunks(500) {
         let q = format!(
@@ -1367,6 +1454,7 @@ fn refresh_stats(
             .execute(params_from_iter(chunk.iter()))
             .map_err(sql)?;
     }
+    drop(p_delete);
     let mut ins = c
         .prepare_cached(
             "INSERT INTO srs_stat_reviews (log_id, profile_uid, card_id, occurred_at, utc_offset_min, rating, kind, \
@@ -1383,7 +1471,10 @@ fn refresh_stats(
     let mut anki_keys: Vec<AnkiStatKey> = Vec::new();
     for (base, owners) in order.chunks(500).enumerate().map(|(k, o)| (k * 500, o)) {
         let batch: Vec<Vec<String>> = owners.iter().map(|o| groups[o].clone()).collect();
+        let p_logs = super::prof::span("cache.stats.logs");
         let logs = logs_of(c, &batch)?;
+        drop(p_logs);
+        let _p_rows = super::prof::span("cache.stats.rows");
         for (k, (o, g)) in owners.iter().zip(&batch).enumerate() {
             let mut stored: Vec<crate::history::StoredLog<'_>> = Vec::new();
             for id in g {

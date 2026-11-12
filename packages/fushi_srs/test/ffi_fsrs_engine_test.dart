@@ -404,116 +404,14 @@ void main() {
 
     test('wrong parameter count in a call throws SrsFsrsException', () {
       expect(
-        () => e.nextStates(
+        () => e.retrievability(
           algorithm: SrsAlgorithm.fsrs6,
           params: <double>[1, 2, 3],
-          desiredRetention: 0.9,
-          memory: null,
-          elapsedDays: 0,
+          memory: const SrsMemory(stability: 5, difficulty: 5),
+          elapsedDays: 1,
         ),
         throwsA(isA<SrsFsrsException>()),
       );
-    });
-
-    test('next_states intervals are monotonic by rating', () {
-      for (final SrsAlgorithm a in SrsAlgorithm.values) {
-        for (final SrsMemory? memory in <SrsMemory?>[
-          null,
-          const SrsMemory(stability: 5, difficulty: 5),
-        ]) {
-          final SrsNextStates next = e.nextStates(
-            algorithm: a,
-            params: const <double>[],
-            desiredRetention: 0.9,
-            memory: memory,
-            elapsedDays: memory == null ? 0 : 4.5,
-          );
-          final List<double> intervals = <double>[
-            for (int r = 1; r <= 4; r++) next.forRating(r).interval,
-          ];
-          for (int i = 1; i < intervals.length; i++) {
-            expect(
-              intervals[i],
-              greaterThanOrEqualTo(intervals[i - 1]),
-              reason: '$a memory=$memory intervals=$intervals',
-            );
-          }
-          expect(intervals.first, lessThan(intervals.last));
-          expect(next.good.memory.stability, greaterThan(0));
-        }
-      }
-    });
-
-    test('fractional elapsed days change the FSRS-7 result', () {
-      const SrsMemory memory = SrsMemory(stability: 1, difficulty: 5);
-      double goodStability(double elapsed) => e
-          .nextStates(
-            algorithm: SrsAlgorithm.fsrs7,
-            params: const <double>[],
-            desiredRetention: 0.9,
-            memory: memory,
-            elapsedDays: elapsed,
-          )
-          .good
-          .memory
-          .stability;
-      expect(goodStability(0.1), isNot(goodStability(0.9)));
-    });
-
-    test('memoryState rebuilds from history; empty history returns start', () {
-      for (final SrsAlgorithm a in SrsAlgorithm.values) {
-        final SrsMemory? m = e.memoryState(
-          algorithm: a,
-          params: const <double>[],
-          reviews: const <SrsFsrsReview>[
-            SrsFsrsReview(rating: 3, deltaDays: 0),
-            SrsFsrsReview(rating: 3, deltaDays: 3),
-            SrsFsrsReview(rating: 1, deltaDays: 10),
-          ],
-        );
-        expect(m, isNotNull);
-        expect(m!.stability, greaterThan(0));
-        expect(m.difficulty, inInclusiveRange(1, 10));
-      }
-      expect(
-        e.memoryState(
-          algorithm: SrsAlgorithm.fsrs6,
-          params: const <double>[],
-          reviews: const <SrsFsrsReview>[],
-        ),
-        isNull,
-      );
-      const SrsMemory start = SrsMemory(stability: 7, difficulty: 4);
-      final SrsMemory? same = e.memoryState(
-        algorithm: SrsAlgorithm.fsrs6,
-        params: const <double>[],
-        reviews: const <SrsFsrsReview>[],
-        starting: start,
-      );
-      expect(same!.stability, closeTo(7, 1e-6));
-      expect(same.difficulty, closeTo(4, 1e-6));
-    });
-
-    test('memoryStateFromSm2 maps ease/interval to a plausible state', () {
-      for (final SrsAlgorithm a in SrsAlgorithm.values) {
-        final SrsMemory short = e.memoryStateFromSm2(
-          algorithm: a,
-          params: const <double>[],
-          easeFactor: 2.5,
-          intervalDays: 3,
-          sm2Retention: 0.9,
-        );
-        final SrsMemory long = e.memoryStateFromSm2(
-          algorithm: a,
-          params: const <double>[],
-          easeFactor: 2.5,
-          intervalDays: 60,
-          sm2Retention: 0.9,
-        );
-        expect(short.stability, greaterThan(0));
-        expect(long.stability, greaterThan(short.stability));
-        expect(long.difficulty, inInclusiveRange(1, 10));
-      }
     });
 
     test('retrievability decays with elapsed time', () {

@@ -642,9 +642,8 @@ void main() {
     final AdvancedMiningAudioSection audio = sections.audio!;
 
     // 单行：区间就是这一行（前后各扩 0.5 s）。
-    AdvancedMiningAudioWindow? window = await tester.runAsync(
-      () => audio.describe(0, 0),
-    );
+    AdvancedMiningAudioWindow? window = await tester
+        .runAsync<AdvancedMiningAudioWindow?>(() => audio.describe(0, 0));
     expect((window!.startMs, window.endMs), (3500, 8500));
 
     // 上 1 行 + 下 1 行。
@@ -661,13 +660,18 @@ void main() {
 
     // 试听与写卡同一段；关窗停试听、播放头回到查词时的位置（打开时没在播：保持暂停）。
     backend.log.clear();
-    final RangePlayback? playback = await tester.runAsync(
+    final RangePlayback? playback = await tester.runAsync<RangePlayback?>(
       () => audio.preview(-200, 300),
     );
     expect(playback, isNotNull);
     expect(backend.log, <String>['seek:300', 'play']);
     await tester.runAsync(() => sections.onClosed!());
-    expect(await playback!.ended, RangePlaybackEnd.interrupted);
+    // ended 的 Completer 是在 runAsync（真实 zone）里建的，在 fake-async 测试体里
+    // 直接 await 它，回调永远排不上队（实测卡满 10 分钟超时）；同样包进 runAsync。
+    expect(
+      await tester.runAsync(() => playback!.ended),
+      RangePlaybackEnd.interrupted,
+    );
     expect(backend.log, <String>['seek:300', 'play', 'pause', 'seek:4200']);
 
     // 确认制卡：覆盖项里的起止微调进片段，句子按「上 → 本行 → 下」合成。

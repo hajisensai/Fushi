@@ -2,10 +2,9 @@
 /// 由电脑的 AI 与下载管线去办；手机只收快照、发动作。
 library;
 
-import 'dart:convert';
-
+import 'package:fushi/src/sync/interconnect_host_channel.dart';
+import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
-import 'package:fushi/src/sync/webdav_ops.dart';
 import 'package:fushi_core/fushi_core.dart' show AiAgentSessionSummary;
 import 'package:fushi_engine/ai/agent/agent_session_archive.dart'
     show kAiAgentRemoteScene;
@@ -15,7 +14,6 @@ import 'package:fushi_engine/sync/assistant/agent_assistant_host.dart'
         kHostAssistantAgentHistoryVersion,
         kHostAssistantReasonsKey;
 import 'package:fushi_engine/sync/assistant/host_assistant.dart';
-import 'package:fushi_engine/sync/tls/fushi_pinning_http.dart';
 import 'package:http/http.dart' as http;
 
 /// 一台已配对 host 的助手能力。
@@ -29,8 +27,19 @@ class HostAssistantTarget {
     this.fingerprintSha256,
     this.agentHistoryVersion = 0,
     this.pairedToken = false,
+    this.host,
   });
 
+  /// 这台 host 的身份（client 产出的 target 一律带上）。null = 调用方直接构造的
+  /// 老形状 target，按 [baseUrl] 认（见 [hostRef]）。
+  final InterconnectHostRef? host;
+
+  /// 请求按它选路 / 取凭据 / 钉扎，而不是按 [baseUrl] 那一条地址：会话期间同一台
+  /// host 换了可达地址（LAN 断了、改走 IPv6 / 组网 / P2P）照样续得上。
+  InterconnectHostRef get hostRef =>
+      host ?? InterconnectHostRef.legacyUrl(interconnectPersistedUrl(baseUrl));
+
+  /// 这台 host 的持久代表地址（`p2p://` 而非本次的本地转发口）。
   final String baseUrl;
   final String? deviceName;
 
@@ -101,16 +110,31 @@ class HostAssistantEnvelope {
 class HostAssistantException implements Exception {
   const HostAssistantException(this.code, [this.detail]);
 
-  /// `http_<status>` / `no_host`；409 时 [detail] 是 host 给的 reason 短码。
+  /// `http_<status>`，或通道的 `no_host` / `unreachable` / `auth_rejected` /
+  /// `certificate_mismatch` / `cancelled`；409 时 [detail] 是 host 给的 reason 短码。
   final String code;
   final String? detail;
 
   bool get sessionGone => code == 'http_404';
 
+  /// 再试也不会好：凭据被拒 / 证书不符 / 已不在配对表 / host 拒绝（401、403）。
+  bool get permanent => const <String>{
+    'auth_rejected',
+    'certificate_mismatch',
+    'no_host',
+    'http_401',
+    'http_403',
+  }.contains(code);
+
+  /// 本机 client 已关闭（调用方 dispose），不是 host 的问题。
+  bool get cancelled => code == 'cancelled';
+
   @override
   String toString() => detail == null ? code : '$code: $detail';
 }
 
+/// AI 助手 client。传输层（选路、凭据、钉扎、整段超时、client 生命周期、错误
+/// 分型）全部走 [InterconnectHostChannel]，每台 host 一条通道、复用到 [close]。
 class InterconnectAssistantClient {
   InterconnectAssistantClient({
     required SyncRepository repo,
@@ -119,58 +143,134 @@ class InterconnectAssistantClient {
     Duration probeTimeout = const Duration(seconds: 4),
     Duration requestTimeout = const Duration(seconds: 30),
   }) : _repo = repo,
-       _httpClient = httpClient ?? http.Client(),
-       _pinnedClientFactory = pinnedClientFactory ?? _defaultPinnedClient,
+       _borrowedPlain = httpClient,
+       _pinnedClientFactory = pinnedClientFactory,
        _probeTimeout = probeTimeout,
        _requestTimeout = requestTimeout;
 
   final SyncRepository _repo;
-  final http.Client _httpClient;
-  final http.Client Function(String expectedFingerprint) _pinnedClientFactory;
+
+  /// 借用的明文 client（测试缝 / 调用方共享）：本 client 不关它。
+  final http.Client? _borrowedPlain;
+
+  /// 没借到时自建、各通道共用，[close] 时关。
+  http.Client? _ownedPlain;
+  final http.Client Function(String expectedFingerprint)? _pinnedClientFactory;
   final Duration _probeTimeout;
   final Duration _requestTimeout;
+  final Map<String, InterconnectHostChannel> _channels =
+      <String, InterconnectHostChannel>{};
+  bool _closed = false;
 
   /// 长轮询一次等多久（host 侧另有 25 秒上限）。
   static const Duration longPollWait = Duration(seconds: 20);
 
-  static http.Client _defaultPinnedClient(String expectedFingerprint) =>
-      createPinnedHttpPackageClient(expectedFingerprint: expectedFingerprint);
+  InterconnectHostChannel _channel(InterconnectHostRef host) {
+    if (_closed) {
+      throw const InterconnectChannelException(
+        InterconnectChannelFailure.cancelled,
+      );
+    }
+    return _channels.putIfAbsent(
+      host.key,
+      () => InterconnectHostChannel(
+        repo: _repo,
+        host: host,
+        plainClient: _borrowedPlain ?? (_ownedPlain ??= http.Client()),
+        pinnedClientFactory: _pinnedClientFactory,
+      ),
+    );
+  }
+
+  /// 关掉全部通道与自建的明文 client；在途与之后的请求抛
+  /// `HostAssistantException('cancelled')`。（叫 dispose 而不是 close：[close]
+  /// 早就是「关 host 上的会话」那条请求。）
+  void dispose() {
+    if (_closed) return;
+    _closed = true;
+    for (final InterconnectHostChannel c in _channels.values) {
+      c.close();
+    }
+    _channels.clear();
+    _ownedPlain?.close();
+    _ownedPlain = null;
+  }
 
   /// 只探这一台（「下载执行设备」点名的那台）。不在配对清单里 / 连不上 → null；
   /// 连得上但老 host 没有助手能力位 → reason = [kHostAssistantReasonUnsupported]。
-  Future<HostAssistantTarget?> probeUrl(String baseUrl) async {
-    final String? fallbackToken = await _repo.getFushiClientToken();
-    for (final FushiClientUrl candidate in await _repo.getFushiClientUrls()) {
-      if (!candidate.enabled || candidate.url != baseUrl) continue;
-      final Uri? uri = _uri(candidate.url, '/api/capabilities');
-      final String? token = interconnectTokenFor(candidate, fallbackToken);
-      if (uri == null || token == null) return null;
-      final (http.Client client, bool closeAfter) = _clientFor(
-        candidate.url,
-        fingerprint: candidate.fingerprintSha256,
+  /// 要失败原因用 [probeUrlOutcome]。
+  Future<HostAssistantTarget?> probeUrl(String url) async {
+    final InterconnectCapabilityOutcome<HostAssistantTarget> outcome =
+        await probeUrlOutcome(url);
+    return outcome is InterconnectCapabilityAvailable<HostAssistantTarget>
+        ? outcome.target
+        : null;
+  }
+
+  /// [url] 认的是「那台 host」而不是那一条地址：偏好里存的是用户当初选中时的地址
+  /// （在家可能是 LAN），出门后同一台 host 仍可经 IPv6 / 组网 / P2P 到达，由通道
+  /// 在组内选路。[url] 不在配对清单里 → notPaired。
+  Future<InterconnectCapabilityOutcome<HostAssistantTarget>> probeUrlOutcome(
+    String url,
+  ) async {
+    final InterconnectHostRef? host = interconnectHostRefForUrl(
+      await _repo.getFushiClientUrls(),
+      url,
+    );
+    if (host == null) {
+      return InterconnectCapabilityUnavailable<HostAssistantTarget>(
+        host: InterconnectHostRef.legacyUrl(interconnectPersistedUrl(url)),
+        label: url,
+        failure: InterconnectHostFailure.notPaired,
       );
-      try {
-        final http.Response response = await client
-            .get(uri, headers: _headers(token))
-            .timeout(_probeTimeout);
-        if (response.statusCode != 200) return null;
-        final dynamic decoded = jsonDecode(utf8.decode(response.bodyBytes));
-        if (decoded is! Map) return null;
-        final Object? assistant = decoded['assistant'];
+    }
+    return probeHost(host);
+  }
+
+  /// 探一台 host 的助手能力。老 host（200 但没有 `assistant` 能力位）按原语义给
+  /// Available + reason = [kHostAssistantReasonUnsupported]。
+  Future<InterconnectCapabilityOutcome<HostAssistantTarget>> probeHost(
+    InterconnectHostRef host,
+  ) async {
+    final List<FushiClientUrl> rows = await _repo.getFushiClientUrls();
+    String? pin;
+    String? rawName;
+    for (final FushiClientUrl u in rows) {
+      if (!host.matches(u)) continue;
+      final String? fp = u.fingerprintSha256;
+      if (pin == null && fp != null && fp.isNotEmpty) pin = fp;
+      final String? name = u.deviceName;
+      if (rawName == null && name != null && name.isNotEmpty) rawName = name;
+    }
+    final String? groupPin = pin;
+    final String? groupName = rawName;
+    // per-peer 口令按组内代表行判定（配对时同步给全组），不看这次碰巧走的那条。
+    final bool pairedToken =
+        (interconnectPeerRepresentativeOf(rows, host.anchorUrl)?.token ?? '')
+            .isNotEmpty;
+    return probeInterconnectCapability<HostAssistantTarget>(
+      _channel(host),
+      label: interconnectHostLabel(rows, host),
+      timeout: _probeTimeout,
+      parse: (Map<String, dynamic> caps, FushiClientUrl via) {
+        final String? deviceName = via.deviceName ?? groupName;
+        final Object? assistant = caps['assistant'];
         if (assistant is! Map) {
           return HostAssistantTarget(
-            baseUrl: candidate.url,
-            deviceName: candidate.deviceName,
+            host: host,
+            baseUrl: host.anchorUrl,
+            deviceName: deviceName,
             features: const <String>[],
             reason: kHostAssistantReasonUnsupported,
-            fingerprintSha256: candidate.fingerprintSha256,
+            fingerprintSha256: groupPin,
           );
         }
         final Object? features = assistant['features'];
         final Object? reasons = assistant[kHostAssistantReasonsKey];
         return HostAssistantTarget(
-          baseUrl: candidate.url,
-          deviceName: candidate.deviceName,
+          host: host,
+          baseUrl: host.anchorUrl,
+          deviceName: deviceName,
           features: assistant['supported'] == true && features is List
               ? features.map((Object? f) => '$f').toList(growable: false)
               : const <String>[],
@@ -181,18 +281,13 @@ class InterconnectAssistantClient {
                     '${e.key}': '${e.value}',
                 }
               : const <String, String>{},
-          fingerprintSha256: candidate.fingerprintSha256,
+          fingerprintSha256: groupPin,
           agentHistoryVersion:
               (assistant[kHostAssistantAgentHistoryKey] as num?)?.toInt() ?? 0,
-          pairedToken: (candidate.token ?? '').isNotEmpty,
+          pairedToken: pairedToken,
         );
-      } catch (_) {
-        return null;
-      } finally {
-        if (closeAfter) client.close();
-      }
-    }
-    return null;
+      },
+    );
   }
 
   /// 开会话；[resume] 非空 = 续接 host 上这场存档会话（只在
@@ -339,89 +434,25 @@ class InterconnectAssistantClient {
     Map<String, String> query = const <String, String>{},
     Duration? timeout,
   }) async {
-    final String? token = await _tokenForBaseUrl(target.baseUrl);
-    if (token == null || token.isEmpty) {
-      throw const HostAssistantException('no_host');
-    }
-    final Uri? uri = _uri(target.baseUrl, path, query: query);
-    if (uri == null) throw const HostAssistantException('http', 'bad host url');
-    final (http.Client client, bool closeAfter) = _clientFor(
-      target.baseUrl,
-      fingerprint: target.fingerprintSha256,
-    );
+    final InterconnectChannelResponse r;
     try {
-      final http.Request req = http.Request(method, uri)
-        ..headers.addAll(_headers(token));
-      if (jsonBody != null) {
-        req.headers['Content-Type'] = 'application/json';
-        req.body = jsonEncode(jsonBody);
-      }
-      final http.Response response = await http.Response.fromStream(
-        await client.send(req).timeout(timeout ?? _requestTimeout),
+      r = await _channel(target.hostRef).send(
+        method,
+        path,
+        query: query,
+        body: jsonBody == null ? null : InterconnectRequestBody.json(jsonBody),
+        timeout: timeout ?? _requestTimeout,
       );
-      final String text = utf8.decode(response.bodyBytes, allowMalformed: true);
-      if (response.statusCode >= 400) {
-        String detail = text;
-        try {
-          final dynamic decoded = jsonDecode(text);
-          if (decoded is Map && decoded['reason'] != null) {
-            detail = decoded['reason'].toString();
-          }
-        } catch (_) {
-          // 非 JSON 错误体原样带回。
-        }
-        throw HostAssistantException('http_${response.statusCode}', detail);
-      }
-      final dynamic decoded = text.isEmpty
-          ? <String, dynamic>{}
-          : jsonDecode(text);
-      if (decoded is! Map) return <String, dynamic>{};
-      return Map<String, dynamic>.from(decoded);
-    } finally {
-      if (closeAfter) client.close();
+    } on InterconnectChannelException catch (e) {
+      throw HostAssistantException(e.code);
     }
-  }
-
-  Future<String?> _tokenForBaseUrl(String baseUrl) async {
-    final String? fallbackToken = await _repo.getFushiClientToken();
-    for (final FushiClientUrl u in await _repo.getFushiClientUrls()) {
-      if (u.url == baseUrl) return interconnectTokenFor(u, fallbackToken);
+    if (r.statusCode >= 400) {
+      // 错误体按本路由原来的字段取（`{reason}`），非 JSON 原样带回。
+      throw HostAssistantException(
+        'http_${r.statusCode}',
+        r.jsonString('reason') ?? r.text,
+      );
     }
-    return (fallbackToken != null && fallbackToken.isNotEmpty)
-        ? fallbackToken
-        : null;
-  }
-
-  Map<String, String> _headers(String token) => <String, String>{
-    'Authorization': 'Basic ${base64Encode(utf8.encode('hibiki:$token'))}',
-  };
-
-  (http.Client, bool) _clientFor(String baseUrl, {String? fingerprint}) {
-    final Uri? base = _parse(baseUrl);
-    final bool usePinned =
-        base != null &&
-        base.isScheme('https') &&
-        fingerprint != null &&
-        fingerprint.isNotEmpty;
-    if (usePinned) return (_pinnedClientFactory(fingerprint), true);
-    return (_httpClient, false);
-  }
-
-  static Uri? _parse(String baseUrl) {
-    try {
-      return Uri.parse(WebDavOps.normalizeUrl(baseUrl));
-    } catch (_) {
-      return null;
-    }
-  }
-
-  Uri? _uri(
-    String baseUrl,
-    String path, {
-    Map<String, String> query = const <String, String>{},
-  }) {
-    final Uri? base = _parse(baseUrl);
-    if (base == null) return null;
-    return base.replace(path: path, queryParameters: query);
+    return r.jsonObject ?? <String, dynamic>{};
   }
 }

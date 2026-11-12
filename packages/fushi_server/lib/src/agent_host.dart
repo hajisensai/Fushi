@@ -32,6 +32,7 @@ import 'package:fushi_engine/sync/assistant/video_acquisition_assistant_host.dar
 import 'package:fushi_server/src/admin/admin_ops.dart';
 import 'package:fushi_server/src/config/server_ai_config.dart';
 import 'package:fushi_server/src/config/server_config.dart';
+import 'package:fushi_server/src/server_srs.dart';
 
 /// 常驻工具（每轮都带上）；其余经 `ops.search` → `ops.describe` 现取。
 const List<String> kServerAgentResidentOps = <String>[
@@ -203,11 +204,11 @@ class ServerAgentToolbox implements AgentToolbox {
       return const AgentUndoResult(AgentUndoStatus.notUndoable);
     }
     if (row.undoneAt != null) {
-      return AgentUndoResult(
-        row.undoStatus == 'superseded'
-            ? AgentUndoStatus.superseded
-            : AgentUndoStatus.done,
-      );
+      return AgentUndoResult(switch (row.undoStatus) {
+        'superseded' => AgentUndoStatus.superseded,
+        'partial' => AgentUndoStatus.partial,
+        _ => AgentUndoStatus.done,
+      });
     }
     final OpUndo? undo = catalog[row.opId]?.undo;
     if (undo == null) return const AgentUndoResult(AgentUndoStatus.notUndoable);
@@ -224,6 +225,7 @@ class ServerAgentToolbox implements AgentToolbox {
     final AgentUndoStatus status = switch (outcome.status) {
       OpUndoStatus.done => AgentUndoStatus.done,
       OpUndoStatus.superseded => AgentUndoStatus.superseded,
+      OpUndoStatus.partial => AgentUndoStatus.partial,
       OpUndoStatus.failed => AgentUndoStatus.failed,
     };
     if (status != AgentUndoStatus.failed) {
@@ -296,11 +298,13 @@ AiProviderConfig? resolveServerAgentProvider(ServerAiSettings settings) =>
     );
 
 /// 装配服务端的 AI 助手 provider。[dispatch] 现取：admin API 在 host 启动之后才建，
-/// 还没接上时报 `not_ready`。[llmFactory] / [clock] 只给测试注入。
+/// 还没接上时报 `not_ready`。[srs] 现取复习库：给了才带复习库内容的操作
+/// （admin_srs_ctl.dart）。[llmFactory] / [clock] 只给测试注入。
 AgentAssistantHost createServerAgentAssistantHost({
   required ServerConfig Function() config,
   required FushiDatabase db,
   required AdminDispatch? Function() dispatch,
+  ServerSrs? Function()? srs,
   AgentLlm Function(AiProviderConfig provider)? llmFactory,
   DateTime Function()? clock,
 }) {
@@ -312,7 +316,9 @@ AgentAssistantHost createServerAgentAssistantHost({
     if (current == null) return null;
     if (cached != null && identical(cachedFor, current)) return cached;
     cachedFor = current;
-    return cached = OpInvoker(buildServerAdminOpCatalog(() => current));
+    return cached = OpInvoker(
+      buildServerAdminOpCatalog(() => current, srs: srs),
+    );
   }
 
   Future<String?> blocker() async {

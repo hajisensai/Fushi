@@ -246,7 +246,9 @@ class _AudiobookshelfItemPageState
       // 播客请求非展开形状：展开的单集清单体积大、慢服务器上会超时。
       widget.api.itemDetail(widget.item.id, expanded: !_isPodcast);
 
-  void _reload() => setState(() => _detail = _loadDetail());
+  void _reload() => setState(() {
+    _detail = _loadDetail();
+  });
 
   AudiobookshelfStreamService _service() => AudiobookshelfStreamService(
     db: _appModel.database,
