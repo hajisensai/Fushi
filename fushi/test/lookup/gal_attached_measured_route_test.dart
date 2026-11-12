@@ -32,6 +32,7 @@ typedef _MeasuredCall = ({
   List<GalAttachedMeasuredGlyph> glyphs,
   int width,
   int height,
+  int tolerance,
 });
 
 class _MeasuredPort implements GalAttachedTextSurfacePort {
@@ -84,6 +85,7 @@ class _MeasuredPort implements GalAttachedTextSurfacePort {
     required List<GalAttachedMeasuredGlyph> glyphs,
     required int clientWidth,
     required int clientHeight,
+    required int clientSizeTolerance,
   }) async {
     calls.add('updateMeasuredText');
     final _MeasuredCall call = (
@@ -92,6 +94,7 @@ class _MeasuredPort implements GalAttachedTextSurfacePort {
       glyphs: glyphs,
       width: clientWidth,
       height: clientHeight,
+      tolerance: clientSizeTolerance,
     );
     measured.add(call);
     return updateMeasuredResult(call);
@@ -203,6 +206,7 @@ TyranoDomFrame _frame(
   List<TyranoDomGlyph>? glyphs,
   int width = 1280,
   int height = 720,
+  double dpr = 1,
 }) => TyranoDomFrame(
   text: text,
   generation: generation,
@@ -213,7 +217,7 @@ TyranoDomFrame _frame(
       <TyranoDomGlyph>[
         for (int i = 0; i < text.length; i++) _glyph(i, 100.6 + 32 * i),
       ],
-  devicePixelRatio: 1,
+  devicePixelRatio: dpr,
   clientWidth: width,
   clientHeight: height,
   vertical: false,
@@ -284,6 +288,36 @@ void main() {
             ),
           );
       expect(payload.glyphs.single.right, 120);
+    });
+
+    test('量化容差：整数 dpr 只容 dpr-1，小数 dpr 容 ceil(dpr)', () {
+      expect(galAttachedMeasuredClientSizeTolerance(1), 0);
+      expect(galAttachedMeasuredClientSizeTolerance(2), 1);
+      expect(galAttachedMeasuredClientSizeTolerance(1.25), 2);
+      expect(galAttachedMeasuredClientSizeTolerance(1.5), 2);
+      expect(galAttachedMeasuredClientSizeTolerance(1.75), 2);
+      expect(galAttachedMeasuredClientSizeTolerance(2.5), 3);
+      expect(galAttachedMeasuredClientSizeTolerance(0), 0);
+      expect(galAttachedMeasuredClientSizeTolerance(double.nan), 0);
+    });
+
+    test('Electron 全屏 150%：载荷带上 dpr 的取整容差', () {
+      // 实测：客户区 3840x2159，视口 2560x1440 CSS × 1.5 = 3840x2160。
+      final GalAttachedMeasuredPayload payload =
+          galAttachedMeasuredPayloadForFrame(
+            _frame('abc', width: 3840, height: 2160, dpr: 1.5),
+          );
+      expect(payload.clientWidth, 3840);
+      expect(payload.clientHeight, 2160);
+      expect(payload.clientSizeTolerance, 2);
+      expect(
+        payload,
+        isNot(
+          galAttachedMeasuredPayloadForFrame(
+            _frame('abc', width: 3840, height: 2160),
+          ),
+        ),
+      );
     });
   });
 
@@ -381,6 +415,7 @@ void main() {
       expect(call.generation, 1);
       expect(call.width, 1280);
       expect(call.height, 720);
+      expect(call.tolerance, 0);
       expect(call.glyphs.first.left, 100);
       expect(call.glyphs.first.right, 132);
       expect(controller.status, GalAttachedTextStatus.activeAttached);

@@ -138,6 +138,7 @@ abstract interface class GalAttachedTextSurfacePort {
     required List<GalAttachedMeasuredGlyph> glyphs,
     required int clientWidth,
     required int clientHeight,
+    required int clientSizeTolerance,
   });
 }
 
@@ -272,6 +273,7 @@ class GalAttachedMethodChannelSurfacePort
     required List<GalAttachedMeasuredGlyph> glyphs,
     required int clientWidth,
     required int clientHeight,
+    required int clientSizeTolerance,
   }) => GalHookTextOverlayChannel.attachedUpdateMeasuredText(
     target: target,
     sourceText: sourceText,
@@ -279,6 +281,7 @@ class GalAttachedMethodChannelSurfacePort
     glyphs: glyphs,
     clientWidth: clientWidth,
     clientHeight: clientHeight,
+    clientSizeTolerance: clientSizeTolerance,
   );
 }
 
@@ -2964,6 +2967,9 @@ class GalAttachedTextController extends ChangeNotifier {
       glyphs: payload.glyphs,
       clientWidth: clientWidth,
       clientHeight: clientHeight,
+      clientSizeTolerance: payload.isClear
+          ? galAttachedMeasuredClientSizeTolerance(frame.devicePixelRatio)
+          : payload.clientSizeTolerance,
     );
     if (!_isCurrentSurface(target) || !_measuredConfigured) return;
     _adoptNativeMetadata(result);
@@ -2996,7 +3002,8 @@ class GalAttachedTextController extends ChangeNotifier {
     // 视口尺寸与客户区不符（如 Electron 菜单栏占了客户区）只记诊断，不猜偏移。
     _measuredDiagnostic(
       'update_rejected reason=$reason '
-      'measured=${clientWidth}x$clientHeight glyphs=${payload.glyphs.length} '
+      'measured=${clientWidth}x$clientHeight '
+      'tolerance=${payload.clientSizeTolerance} glyphs=${payload.glyphs.length} '
       'gen=$generation',
     );
     _setStatus(GalAttachedTextStatus.suspended, reason: reason);
