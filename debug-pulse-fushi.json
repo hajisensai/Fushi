@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-12T18:23:50Z",
+ "generatedAt": "2026-11-12T18:30:24Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "fc0324791feb75b18ac79d6fe14d2e6e125a2569",
-  "seq": 26468
+  "sha": "1456a386936508e92966d7cde6c6b9bd75bd0674",
+  "seq": 26472
  },
  "builds": [
   {
@@ -92,9 +92,10 @@
   }
  ],
  "pending": {
-  "headSha": "fc0324791feb75b18ac79d6fe14d2e6e125a2569",
-  "headSeq": 26468,
+  "headSha": "1456a386936508e92966d7cde6c6b9bd75bd0674",
+  "headSeq": 26472,
   "prs": [
+   3295,
    3274,
    3347,
    3336,
@@ -102,24 +103,29 @@
    3358,
    3349
   ],
-  "direct": [],
+  "direct": [
+   {
+    "sha": "1456a386936508e92966d7cde6c6b9bd75bd0674",
+    "subject": "chore(bugs): settle BUG number collisions on 935a18f78"
+   }
+  ],
   "truncated": false,
   "platforms": {
    "android": {
     "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43278884365"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43279840519"
    },
    "windows": {
     "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43278884763"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43279840072"
    },
    "macos": {
     "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43278884763"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43279840072"
    },
    "ios": {
     "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43278884763"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43279840072"
    }
   }
  },
@@ -149,6 +155,15 @@
    "mergedAt": "2026-11-12T18:19:48Z",
    "additions": 175,
    "deletions": 28,
+   "labels": []
+  },
+  "3295": {
+   "number": 3295,
+   "title": "fix(srs): 无主复习数据扫描在已扫过的库里再跑一次，进行中并入的 uid 不算无主（BUG-4387）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-12T18:26:22Z",
+   "additions": 269,
+   "deletions": 17,
    "labels": []
   },
   "3336": {
