@@ -19,6 +19,7 @@ import getpass
 import json
 import os
 import platform
+import queue
 import re
 import socket
 import subprocess
@@ -36,7 +37,7 @@ from websockets.asyncio.client import connect
 import fleet_protocol as proto
 from galdriver_host import GalDriverHost
 
-AGENT_VERSION = "1.0.0"
+AGENT_VERSION = "1.0.1"
 OUTPUT_LIMIT = 60_000
 
 
@@ -91,8 +92,49 @@ class AgentConfig:
         )
 
 
+# 控制台输出只由这个后台线程写：志愿者在窗口里点一下（快速编辑选择态）、按 Ctrl+S 或
+# 拖滚动条都会让 WriteConsole 阻塞；若在事件循环线程里同步 print，整个 asyncio 循环随之
+# 卡死、心跳超时被网关判掉线。队列有界，满了丢最旧之外的新行，绝不反压网络。
+_LOG_QUEUE: "queue.Queue[str]" = queue.Queue(maxsize=2000)
+_log_dropped = 0
+
+
+def _log_writer() -> None:
+    global _log_dropped
+    while True:
+        line = _LOG_QUEUE.get()
+        dropped, _log_dropped = _log_dropped, 0
+        try:
+            if dropped:
+                print(f"…（控制台繁忙，省略 {dropped} 行）", flush=True)
+            print(line, flush=True)
+        except Exception:  # noqa: BLE001 - 控制台已关 / 被重定向坏掉时日志丢弃即可
+            pass
+
+
+threading.Thread(target=_log_writer, name="console-log", daemon=True).start()
+
+
 def log(message: str) -> None:
-    print(f"[{time.strftime('%H:%M:%S')}] {message}", flush=True)
+    global _log_dropped
+    try:
+        _LOG_QUEUE.put_nowait(f"[{time.strftime('%H:%M:%S')}] {message}")
+    except queue.Full:
+        _log_dropped += 1
+
+
+def disable_console_quick_edit() -> bool:
+    """关掉控制台「快速编辑模式」：否则鼠标一点窗口就进入选择态，进程写控制台被挂起。"""
+    if sys.platform != "win32":
+        return False
+    kernel32 = ctypes.windll.kernel32
+    handle = kernel32.GetStdHandle(-10)  # STD_INPUT_HANDLE
+    mode = ctypes.c_uint32()
+    if not handle or handle == -1 or not kernel32.GetConsoleMode(handle, ctypes.byref(mode)):
+        return False  # 没有控制台（被重定向 / 无窗口）
+    enable_quick_edit, enable_extended_flags = 0x0040, 0x0080
+    new_mode = (mode.value & ~enable_quick_edit) | enable_extended_flags
+    return bool(kernel32.SetConsoleMode(handle, new_mode))
 
 
 def is_admin() -> bool:
@@ -392,17 +434,9 @@ class Agent:
         if not new_exe.is_file():
             raise FileNotFoundError(new_exe)
         cur = Path(sys.executable).resolve()
-        script = self.config.workdir / "self_update.cmd"
-        script.write_text(
-            "@echo off\r\n"
-            f":wait\r\ntasklist /FI \"PID eq {os.getpid()}\" | find \"{os.getpid()}\" >nul "
-            "&& (timeout /t 1 /nobreak >nul & goto wait)\r\n"
-            f"move /Y \"{new_exe}\" \"{cur}\"\r\n"
-            f"start \"\" \"{cur}\"\r\n",
-            encoding="ascii",
-        )
         subprocess.Popen(
-            ["cmd", "/c", str(script)],
+            ["powershell", "-NoProfile", "-NonInteractive", "-EncodedCommand",
+             self_update_command(os.getpid(), new_exe, cur)],
             creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
             close_fds=True,
         )
@@ -498,6 +532,24 @@ def _clip(data: Optional[bytes]) -> str:
     return text
 
 
+def _ps_quote(value: object) -> str:
+    return "'" + str(value).replace("'", "''") + "'"
+
+
+def self_update_command(pid: int, new_exe: Path, cur: Path) -> str:
+    """自更新脚本编成 PowerShell -EncodedCommand（UTF-16LE base64）。
+
+    志愿者包目录名含中文（「志愿者」），批处理按 OEM 码页解析、ascii 根本写不出；
+    EncodedCommand 不经任何码页，路径里什么字符都原样到达。
+    """
+    script = (
+        f"Wait-Process -Id {int(pid)} -ErrorAction SilentlyContinue; "
+        f"Move-Item -LiteralPath {_ps_quote(new_exe)} -Destination {_ps_quote(cur)} -Force; "
+        f"Start-Process -FilePath {_ps_quote(cur)}"
+    )
+    return base64.b64encode(script.encode("utf-16-le")).decode("ascii")
+
+
 def _single_instance(name: str) -> object:
     kernel32 = ctypes.windll.kernel32
     handle = kernel32.CreateMutexW(None, False, f"Local\\fushi-adapt-agent-{name}")
@@ -521,6 +573,7 @@ def main(argv: Optional[list[str]] = None) -> None:
     _mutex = _single_instance(config.name)  # noqa: F841 - 进程存活期间持有
     if sys.platform == "win32":
         ctypes.windll.kernel32.SetConsoleTitleW(f"Fushi 远程适配 agent - {config.name}（关闭即断开）")
+        disable_console_quick_edit()
     agent = Agent(config, win_desktop)
     log(f"Fushi 远程适配 agent {AGENT_VERSION}  机器名={config.name}  管理员={is_admin()}")
     asyncio.run(agent.run_forever())

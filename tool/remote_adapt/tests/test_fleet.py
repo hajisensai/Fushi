@@ -332,3 +332,36 @@ async def test_end_to_end(tmp_path: Path) -> None:
                 t.cancel()
             server_task.cancel()
             await asyncio.gather(*agent_tasks, server_task, return_exceptions=True)
+
+
+def test_log_never_blocks_event_loop_when_console_is_stuck(monkeypatch: pytest.MonkeyPatch) -> None:
+    """快速编辑选择态下写控制台会挂起；log() 只入队，不能把阻塞带进 asyncio 循环。"""
+    import queue as _queue
+    import time as _time
+
+    stuck: "_queue.Queue[str]" = _queue.Queue(maxsize=3)  # 没有消费者 = 控制台一直卡着
+    monkeypatch.setattr(fleet_agent, "_LOG_QUEUE", stuck)
+    monkeypatch.setattr(fleet_agent, "_log_dropped", 0)
+    start = _time.monotonic()
+    for i in range(50):
+        fleet_agent.log(f"line {i}")
+    assert _time.monotonic() - start < 0.5
+    assert stuck.qsize() == 3
+    assert fleet_agent._log_dropped == 47
+
+
+def test_disable_console_quick_edit_without_console_is_harmless() -> None:
+    # pytest 下 stdin 不是控制台：应安静返回 False，而不是抛错。
+    assert fleet_agent.disable_console_quick_edit() in (True, False)
+
+
+def test_self_update_command_survives_non_ascii_and_quotes() -> None:
+    import base64 as _b64
+
+    new_exe = Path(r"X:\fushi-adapt-志愿者-20261111\work\new agent's.exe")
+    cur = Path(r"X:\fushi-adapt-志愿者-20261111\双击开始适配.exe")
+    encoded = fleet_agent.self_update_command(1234, new_exe, cur)
+    script = _b64.b64decode(encoded).decode("utf-16-le")
+    assert "Wait-Process -Id 1234" in script
+    assert r"'X:\fushi-adapt-志愿者-20261111\work\new agent''s.exe'" in script
+    assert r"Start-Process -FilePath 'X:\fushi-adapt-志愿者-20261111\双击开始适配.exe'" in script

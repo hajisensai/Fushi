@@ -8,8 +8,10 @@
 #
 # token 与网关证书存在 ~/.fushi-fleet/（没有就生成），两个包配套；换掉任一个都会让旧志愿者包失效。
 # 主控端包里有 token 和证书私钥，只留在自己手里。
-# 驱动 = fushi/integration_test/gal_realgame_driver_itest.dart 打成的 Debug 版 fushi.exe，
-# 志愿者电脑不需要 Flutter SDK。
+# 驱动 = fushi/integration_test/gal_realgame_driver_itest.dart 打成的 Profile 版 fushi.exe，
+# 随包带正式版 VC++ 运行库，志愿者电脑不需要 Flutter SDK、VS 或 VC++ Redistributable。
+# 不能用 Debug 版：Debug 链接调试版 CRT（VCRUNTIME140_1D.dll / ucrtbased.dll 等），只有装了 VS 的
+# 电脑才有，且不可再分发——志愿者一启动就弹「找不到 VCRUNTIME140_1D.dll」卡死。
 param(
   [Parameter(Mandatory = $true)][string]$Gateway,
   [int]$Port = 8765,          # 志愿者连的公网端口（路由器对外端口）
@@ -44,10 +46,44 @@ $CertDir = Join-Path $env:USERPROFILE ".fushi-fleet"
 $CertPem = (& python (Join-Path $Here "fleet_gateway.py") --print-cert --cert-dir $CertDir) -join "`n"
 if ($LASTEXITCODE -ne 0 -or $CertPem -notmatch "BEGIN CERTIFICATE") { throw "生成网关证书失败" }
 
+$DriverBuild = Join-Path $App "build\windows\x64\runner\Profile"
+
+# 把 VS 自带的正式版 VC++ CRT 拷到驱动目录（与 release-desktop.yml「Bundle VC++ CRT runtime」同一做法：
+# 应用目录先于 System32 被搜索，不依赖志愿者电脑上系统 redist 的版本）。
+function Copy-VcRuntime([string]$Dest) {
+  $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
+  if (-not (Test-Path -LiteralPath $vswhere)) { throw "找不到 vswhere: $vswhere" }
+  # 不用 -latest：它可能挑中只有空 Redist 目录的 BuildTools，CRT 只在装了「C++ 桌面开发」的那个实例里。
+  $vsInstalls = @(& $vswhere -all -products * -property installationPath | Where-Object { $_ })
+  if ($vsInstalls.Count -eq 0) { throw "vswhere 找不到 Visual Studio" }
+  $crtDir = $vsInstalls |
+    ForEach-Object { Get-ChildItem -LiteralPath (Join-Path $_ "VC\Redist\MSVC") -Directory -ErrorAction SilentlyContinue } |
+    Sort-Object Name -Descending |
+    ForEach-Object { Get-ChildItem -Path (Join-Path $_.FullName "x64") -Directory -Filter "Microsoft.VC*.CRT" -ErrorAction SilentlyContinue } |
+    Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName "msvcp140.dll") } |
+    Select-Object -First 1
+  if ($null -eq $crtDir) { throw "VS redist 下找不到含 msvcp140.dll 的 Microsoft.VC*.CRT" }
+  foreach ($dll in @("msvcp140.dll", "vcruntime140.dll", "vcruntime140_1.dll")) {
+    Copy-Item -LiteralPath (Join-Path $crtDir.FullName $dll) -Destination (Join-Path $Dest $dll) -Force
+  }
+  foreach ($dll in @("msvcp140_1.dll", "msvcp140_2.dll", "msvcp140_codecvt_ids.dll", "concrt140.dll")) {
+    $src = Join-Path $crtDir.FullName $dll
+    if (Test-Path -LiteralPath $src) { Copy-Item -LiteralPath $src -Destination (Join-Path $Dest $dll) -Force }
+  }
+}
+
 if ($BuildDriver) {
+  # Profile 构建的 install 守卫要求 libtorrent 的 4 个预编译 DLL（git 忽略、各 checkout 各自一份），
+  # 缺了要编译十几分钟才在 install 步失败，而且 flutter 吞掉 cmake 原文。先在这里查。
+  $TorrentDir = Join-Path $Repo "native\fushi_torrent\prebuilt\windows-x64"
+  $missing = @("fushi_torrent_ffi.dll", "torrent-rasterbar.dll", "libssl-3-x64.dll", "libcrypto-3-x64.dll") |
+    Where-Object { -not (Test-Path -LiteralPath (Join-Path $TorrentDir $_)) }
+  if ($missing) {
+    throw "缺 $TorrentDir\$($missing -join ', ')：先跑 native/fushi_torrent/build_windows_dll.ps1，或从已有 checkout 的同一目录复制"
+  }
   Push-Location $App
   try {
-    & dart tool/heavy.dart --check-only -- flutter build windows --debug `
+    & dart tool/heavy.dart --check-only -- flutter build windows --profile `
       -t integration_test/gal_realgame_driver_itest.dart
     if ($LASTEXITCODE -ne 0) { throw "驱动构建失败 exit=$LASTEXITCODE" }
     # flutter build 只在 native/galgame_hook/dist 已有双架构 zip 时才装 voice_hook/；新工作区补齐。
@@ -56,7 +92,7 @@ if ($BuildDriver) {
       -File (Join-Path $HookRoot "tools\build_distribution.ps1")
     if ($LASTEXITCODE -ne 0) { throw "galgame helper 构建失败 exit=$LASTEXITCODE" }
     & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $HookRoot "tools\install_into_bundle.ps1") `
-      -BundleDirectory (Join-Path $App "build\windows\x64\runner\Debug") `
+      -BundleDirectory $DriverBuild `
       -DistDirectory (Join-Path $HookRoot "dist")
     if ($LASTEXITCODE -ne 0) { throw "helper 装入驱动目录失败 exit=$LASTEXITCODE" }
   } finally { Pop-Location }
@@ -86,15 +122,21 @@ Write-Utf8 (Join-Path $Vol "agent.json") $agentJson
 Copy-Item (Join-Path $Here "VOLUNTEER.txt") (Join-Path $Vol "说明.txt")
 
 if (-not $SkipDriver) {
-  $DriverSrc = Join-Path $App "build\windows\x64\runner\Debug"
+  $DriverSrc = $DriverBuild
   if (-not (Test-Path (Join-Path $DriverSrc "fushi.exe"))) {
     throw "找不到驱动构建 $DriverSrc\fushi.exe；加 -BuildDriver 先构建"
   }
-  # 确认这份 Debug 构建的入口确实是驱动，而不是别人留下的普通 Debug 构建。
-  $kernel = Join-Path $DriverSrc "data\flutter_assets\kernel_blob.bin"
-  if (-not (Select-String -Path $kernel -Pattern "galgame 真机交互驱动" -SimpleMatch -Quiet -Encoding UTF8)) {
+  # 确认这份 Profile 构建的入口确实是驱动，而不是别人留下的普通 Profile 构建：
+  # AOT 快照里只有驱动才有 GALDRIVER_DIR 这个字符串字面量（注释不进快照）。
+  $aot = Join-Path $DriverSrc "data\app.so"
+  if (-not (Test-Path $aot) -or
+      -not (Select-String -Path $aot -Pattern "GALDRIVER_DIR" -SimpleMatch -Quiet -Encoding Default)) {
     throw "$DriverSrc 不是 gal_realgame_driver 构建；加 -BuildDriver 重打"
   }
+  # 调试版 CRT 混进来说明拿错了构建（志愿者电脑没有它们）。
+  $debugCrt = Get-ChildItem $DriverSrc -Filter "*.dll" | Where-Object { $_.Name -match '^(vcruntime140(_1)?d|msvcp140d|ucrtbased)\.dll$' }
+  if ($debugCrt) { throw "驱动目录混有调试版 CRT: $($debugCrt.Name -join ', ')" }
+  Copy-VcRuntime $DriverSrc
   if (-not (Test-Path (Join-Path $DriverSrc "voice_hook\x64")) -or
       -not (Test-Path (Join-Path $DriverSrc "voice_hook\x86"))) {
     throw "驱动构建缺 voice_hook\x64 或 voice_hook\x86；加 -BuildDriver 重打"
