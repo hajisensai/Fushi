@@ -146,9 +146,6 @@ void main() {
                 .customSelect('SELECT json FROM srs_local_state')
                 .getSingle())
             .read<String>('json');
-    expect(
-      (jsonDecode(json) as Map)['cacheRev'],
-      SrsDbStore.currentCacheRevision,
-    );
+    expect((jsonDecode(json) as Map)['cacheRev'], reopened.debugCacheRevision);
   });
 }

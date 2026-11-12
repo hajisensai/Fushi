@@ -575,7 +575,9 @@ fn world_of(seed: u64, shape: Shape) -> World {
 }
 
 /// 全部表（`sqlite_` 内部表除外）的全部列、逐行，排好序。缓存表的 `updated_at` 是刷新时的真实墙钟（两次运行必然
-/// 不同），不比。
+/// 不同），不比。本机状态行里两个键换成占位：纪元是每个库各自随机生成的；修订号是变化计数，可见性变了的实体按「每条
+/// 命令 / 每一片各算一次」计（local_state.rs `persist_projected_with` / `advance_revision`），切片不同数就不同——
+/// 通道与逐条两路只要求都前进了（[revision]）。
 fn dump(d: &Device) -> Vec<(String, Vec<String>)> {
     let tables: Vec<String> =
         d.rows("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name")[1..].iter().map(|r| r[0].clone()).collect();
@@ -587,7 +589,13 @@ fn dump(d: &Device) -> Vec<(String, Vec<String>)> {
             ))[1..]
                 .iter()
                 .filter(|r| !(t.ends_with("_cache") && r[0] == "updated_at"))
-                .map(|r| format!("quote({})", r[0]))
+                .map(|r| {
+                    if t == "srs_local_state" && r[0] == "json" {
+                        "quote(json_set(json, '$.epoch', '_', '$.revision', '_'))".to_owned()
+                    } else {
+                        format!("quote({})", r[0])
+                    }
+                })
                 .collect();
             let mut rows: Vec<String> = d
                 .rows(&format!("SELECT {} FROM {t}", cols.join(" || '|' || ")))[1..]
@@ -598,6 +606,16 @@ fn dump(d: &Device) -> Vec<(String, Vec<String>)> {
             (t, rows)
         })
         .collect()
+}
+
+/// 本机状态行里的修订号（没有行为 0）。
+fn revision(d: &Device) -> i64 {
+    d.rows(&format!(
+        "SELECT json_extract(json, '$.revision') FROM srs_local_state WHERE profile_uid = srs_id('{P}')"
+    ))
+    .get(1)
+    .and_then(|r| r[0].parse().ok())
+    .unwrap_or(0)
 }
 
 fn assert_same(a: &Device, b: &Device, what: &str) {
@@ -811,7 +829,7 @@ fn session(d: &Device, w: &World, per: usize, slice: Option<u64>, interrupt: Int
                     let input = json!([{"e": edit("note", &note_id(7), "f/fa", json!("typed mid-sync")), "note": note_id(7)}]).to_string();
                     cmd(
                         d,
-                        json!({"op": "apply", "now": NOW}),
+                        json!({"op": "apply", "now": NOW, "legacyDevice": "dev"}),
                         vec![input.into_bytes()],
                     );
                     let w = d.core.writer().unwrap();
@@ -965,6 +983,10 @@ fn compare_world(
         "{what}: world too small"
     );
     assert_same(&x, &y, what);
+    assert!(
+        revision(&x) > 0 && revision(&y) > 0,
+        "{what}: both ways advance the revision"
+    );
     assert_eq!(dirty(&x), dirty(&y), "{what}: study / browse touches");
     digest_is_consistent(&x);
     covered
@@ -1705,5 +1727,8 @@ fn settling_resumes_after_a_failure(start: Start, all: World) {
         }
     });
     assert_same(&x, &y, "settled slice by slice after a failure");
+    // 通道是在会话外做完的（没有哪条收段命令的回包带着这些变化）：修订号由 `settle` 的每一片自己推进。
+    assert!(revision(&x) > 0, "settling advances the revision");
+    assert!(revision(&y) > 0);
     digest_is_consistent(&x);
 }

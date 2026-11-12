@@ -66,7 +66,7 @@ import 'package:fushi_engine/srs/srs_backup_merge.dart' show SrsBackupSource;
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_profile_data.dart'
-    show srsPurgeProfileRows;
+    show srsCommitProfileMerge, srsMarkProfileMerge;
 
 /// srs.db `srs_meta` 里「这个旧 uid 的并入进行中」标记的键前缀（值 = `{"profileId":..,"newUid":..}`）。
 const String kSrsProfileMergeMarkerPrefix = 'profile_merge/';
@@ -193,8 +193,8 @@ enum SrsProfileMergeStage {
   /// 主库 uid 已改、删旧行之前。
   afterUidSwitch,
 
-  /// 删旧行的事务里，核对通过之后、删除之前（抛出 = 事务回滚）。
-  beforeDelete,
+  /// 每一轮：这一轮的计划已落进新 uid、收尾命令（核对 + 删旧 uid）发出之前。
+  beforeCommit,
 }
 
 /// srs.db 里记着、还没做完的并入。
@@ -237,7 +237,8 @@ Future<List<SrsPendingProfileMerge>> srsPendingProfileMerges(
 /// （`<support>/srs_media`，见 app 的 `SrsMediaStore.mediaRootFor`）：给了就把 `<旧 uid>/` 下的媒体与共享样式
 /// 文件拷进 `<新 uid>/`（内容寻址，同名即同内容，不覆盖），删旧行之后删旧目录；不给则不动媒体。
 ///
-/// 中途失败可以用同样的参数重跑（也可以在 profile 已经是 [newUid] 时重跑：只做收尾）。
+/// 中途失败可以用同样的参数重跑（也可以在 profile 已经是 [newUid] 时重跑：只做收尾）。[debugFailCommit]（测试）：
+/// 让收尾那条内核命令在核对通过之后报错（整笔回滚，旧行一行不少）。
 ///
 /// [pullTarget]：第一遍并入之前，先把同步位置上 [newUid] 已有的数据收进目标 store（调用方给有界的只拉不发，
 /// sync2/srs_sync2_pull_first.dart）。目标里已有同一批修改记录时并入沿用目标的写入者（[_Writers.alias]），不再
@@ -254,6 +255,7 @@ Future<SrsProfileMergeResult> srsMergeProfileUid(
   required String deviceId,
   Directory? mediaRoot,
   Future<void> Function(SrsProfileMergeStage stage)? debugFault,
+  bool debugFailCommit = false,
   Future<void> Function(SrsDbStore target)? pullTarget,
   int maxConvergeRounds = 3,
 }) async {
@@ -283,12 +285,11 @@ Future<SrsProfileMergeResult> srsMergeProfileUid(
     );
   }
 
-  await srs.customStatement(
-    'INSERT OR REPLACE INTO srs_meta (key, value) VALUES (?, ?)',
-    <Object>[
-      '$kSrsProfileMergeMarkerPrefix$oldUid',
-      jsonEncode(<String, Object?>{'profileId': profileId, 'newUid': newUid}),
-    ],
+  await srsMarkProfileMerge(
+    core,
+    profileId: profileId,
+    oldUid: oldUid,
+    newUid: newUid,
   );
   if (mediaRoot != null) await _copyMedia(mediaRoot, oldUid, newUid);
 
@@ -323,29 +324,25 @@ Future<SrsProfileMergeResult> srsMergeProfileUid(
     );
     applied += await _applyMissing(target, plan);
     if (mediaRoot != null) await _copyMedia(mediaRoot, oldUid, newUid);
-    final _MergePlan settled = plan;
-    final bool done = await srs.transaction(() async {
-      // 核对：旧 uid 此刻的每条事件都在这一轮的计划里（之后没有新写入），且计划里的每条都已在新 uid 下。
-      final Set<String> nowOld = await _eventIds(srs, oldUid);
-      if (!settled.oldToNew.keys.toSet().containsAll(nowOld)) return false;
-      final Set<String> want = <String>{
-        for (final String id in nowOld) settled.oldToNew[id]!,
-      };
-      final Set<String> have = await _presentIn(srs, newUid, want);
-      if (have.length != want.length) {
-        throw StateError(
-          'profile merge $oldUid -> $newUid: ${want.length - have.length} '
-          'events did not land under the new uid; old rows kept',
-        );
-      }
-      await debugFault?.call(SrsProfileMergeStage.beforeDelete);
-      // 删旧 uid 的一切（每张带 profile_uid 的表、按 profile 记的 srs_meta 键含并入标记、没人引用的 sync2_deps）：
-      // 唯一实现在 Rust（native/fushi_fsrs/src/store/profile_data.rs）。它跑在写连接上、这笔 Drift 事务里
-      // （嵌一个 savepoint），这笔事务回滚它就一起回滚。
-      await srsPurgeProfileRows(core, oldUid);
-      return true;
-    });
-    if (done) break;
+    // 收尾：核对「旧 uid 此刻的每条事件都在这一轮的计划里（之后没有新写入），且计划里的每条都已在新 uid 下」并删掉
+    // 旧 uid 的一切（每张带 profile_uid 的表、按 profile 记的 srs_meta 键含并入标记、没人引用的 sync2_deps）——内核的
+    // 一条命令、一次持写锁、一个 savepoint（native/fushi_fsrs/src/store/profile_data.rs `profile_merge_commit`）：
+    // 核对与删除之间没有别的写入，出错整笔回滚。
+    await debugFault?.call(SrsProfileMergeStage.beforeCommit);
+    final ({bool done, int missing}) commit = await srsCommitProfileMerge(
+      core,
+      oldUid: oldUid,
+      newUid: newUid,
+      oldToNew: plan.oldToNew,
+      debugFailAfterCheck: debugFailCommit,
+    );
+    if (commit.missing > 0) {
+      throw StateError(
+        'profile merge $oldUid -> $newUid: ${commit.missing} '
+        'events did not land under the new uid; old rows kept',
+      );
+    }
+    if (commit.done) break;
     if (round + 1 >= maxConvergeRounds) {
       throw StateError(
         'profile $oldUid kept changing during the merge; old rows kept, '
@@ -1166,30 +1163,6 @@ Future<Set<String>> _presentIn(
               .get()) {
         out.add(r.read<String>('i'));
       }
-    }
-  }
-  return out;
-}
-
-/// [profileUid] 名下投影里的全部事件 ID。
-Future<Set<String>> _eventIds(SrsDatabase db, String profileUid) async {
-  final Set<String> out = <String>{};
-  for (final String table in const <String>[
-    'srs_entities',
-    'srs_field_edits',
-    'srs_review_logs',
-    'srs_unknown_events',
-  ]) {
-    for (final QueryRow r
-        in await db
-            .customSelect(
-              'SELECT id FROM $table WHERE profile_uid = ?',
-              variables: <Variable<Object>>[
-                Variable<String>(profileUid, srsIdType),
-              ],
-            )
-            .get()) {
-      out.add(r.read<String>('id'));
     }
   }
   return out;
