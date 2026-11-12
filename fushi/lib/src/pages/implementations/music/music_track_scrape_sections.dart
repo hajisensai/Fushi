@@ -159,7 +159,9 @@ class _MusicTrackIdentificationSectionState
       widget.database.getMusicScrapeMeta(widget.track.trackUid);
 
   void _reload() {
-    setState(() => _meta = _load());
+    setState(() {
+      _meta = _load();
+    });
     widget.onChanged?.call();
   }
 

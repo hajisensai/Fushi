@@ -26,23 +26,14 @@ import 'package:fushi/src/srs/srs_fushi_card_media.dart'
     show srsDedupeMediaNames;
 import 'package:fushi_engine/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
+import 'package:fushi/src/srs/srs_sound_tag.dart';
 import 'package:fushi/src/utils/misc/desktop_audio_playback.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
-final RegExp _soundTag = RegExp(r'\[sound:([^\]]+)\]');
-
-String _htmlUnescape(String s) => s
-    .replaceAll('&quot;', '"')
-    .replaceAll('&#39;', "'")
-    .replaceAll('&lt;', '<')
-    .replaceAll('&gt;', '>')
-    .replaceAll('&amp;', '&');
-
 /// 卡面 HTML 里的 `[sound:x]` 文件名，按出现顺序（与卡面播放按钮同一套解码）。
 List<String> srsCardSoundNames(String html) => <String>[
-  for (final Match m in _soundTag.allMatches(html))
-    if (_htmlUnescape(m.group(1)!.trim()).isNotEmpty)
-      _htmlUnescape(m.group(1)!.trim()),
+  for (final Match m in srsSoundTagPattern.allMatches(html))
+    if (srsSoundTagName(m.group(1)!).isNotEmpty) srsSoundTagName(m.group(1)!),
 ];
 
 final RegExp _inlineMediaTag = RegExp(
@@ -64,13 +55,13 @@ final RegExp _classAttr = RegExp(
 /// 片段自带句子声音。整面 WebView 卡面里这些标签由页内脚本自己播，不走这里。
 List<String> srsCardMediaNames(String html) {
   final List<(int, String, String)> found = <(int, String, String)>[
-    for (final Match m in _soundTag.allMatches(html))
-      (m.start, _htmlUnescape(m.group(1)!.trim()), 'sound'),
+    for (final Match m in srsSoundTagPattern.allMatches(html))
+      (m.start, srsSoundTagName(m.group(1)!), 'sound'),
     for (final Match m in _inlineMediaTag.allMatches(html))
       if (_srcAttr.firstMatch(m.group(2)!) case final Match src)
         (
           m.start,
-          _htmlUnescape((src.group(2) ?? src.group(3)!).trim()),
+          srsUnescapeMediaName((src.group(2) ?? src.group(3)!).trim()),
           m.group(1)!.toLowerCase() == 'video'
               ? 'video'
               : (_classAttr.firstMatch(m.group(2)!)?.group(2) ?? '').contains(

@@ -19,7 +19,10 @@ import 'package:path/path.dart' as p;
 /// 内容通道。这里钉住新通道的每一段：清单内容位、导出字节、按内容嗅探的导入分流、
 /// 能力位协商、wire 字段向后兼容。
 void main() {
+  // binding 会把 HttpClient 换成恒回 400 的假实现；能力位协商要打真的本机互联
+  // server（liveLibraryOf），所以换回真实实现。
   TestWidgetsFlutterBinding.ensureInitialized();
+  HttpOverrides.global = null;
 
   /// 最小的「看起来像 PDF」的字节：头部魔数 + 一点正文。导出 / 嗅探只认头部，不解析。
   final List<int> pdfBytes = utf8.encode(

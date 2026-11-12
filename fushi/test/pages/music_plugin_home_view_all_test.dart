@@ -10,7 +10,6 @@ import 'package:fushi/src/media/music/music_player_engine.dart';
 import 'package:fushi/src/media/music/music_session.dart';
 import 'package:fushi/src/media/music/music_signal_path.dart';
 import 'package:fushi/src/media/music/plugin/music_plugin_favorites.dart';
-import 'package:fushi/src/media/music/plugin/music_plugins.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/music/music_plugin_pages.dart';
@@ -29,6 +28,10 @@ import '../helpers/test_platform_services.dart';
 const String _pluginId = 'asmr';
 const String _albumSectionId = 'new-albums';
 const String _playlistSectionId = 'hot-playlists';
+
+/// 第一个曲目段被推荐页拿去做主卡（`_RecommendHero.tracks`，自带播放），不出段落头；
+/// 第二个曲目段才走普通段落头，验证它仍是「播放全部」而不是「查看全部」。
+const String _heroTrackSectionId = 'hero-tracks';
 const String _trackSectionId = 'daily';
 const int _albumCount = 20;
 
@@ -48,6 +51,15 @@ MusicPluginPlaylist _playlist(int i) =>
     MusicPluginPlaylist(id: 'p$i', title: 'Playlist $i');
 
 final List<MusicPluginHomeSection> _sections = <MusicPluginHomeSection>[
+  MusicPluginHomeSection(
+    id: _heroTrackSectionId,
+    title: 'For you',
+    kind: MusicPluginHomeKind.tracks,
+    items: <Object>[
+      for (int i = 0; i < 3; i++)
+        MusicPluginTrack(id: 'h$i', title: 'Hero $i', artists: const []),
+    ],
+  ),
   MusicPluginHomeSection(
     id: _trackSectionId,
     title: 'Daily',
@@ -285,8 +297,10 @@ void main() {
     testWidgets('歌单 / 专辑栏目有「查看全部」，曲目栏目仍是「播放全部」', (WidgetTester tester) async {
       await pumpRecommend(tester);
 
-      await tester.scrollUntilVisible(
-        viewAll(_playlistSectionId),
+      // 推荐页是懒构建的 ListView：每个断言前先把目标段落滚进视口，滚过头的段落
+      // 会被回收，不能在滚到底之后再回头断言上面的段落。
+      Future<void> scrollTo(Finder target) => tester.scrollUntilVisible(
+        target,
         200,
         scrollable: find
             .descendant(
@@ -295,17 +309,22 @@ void main() {
             )
             .first,
       );
-      expect(viewAll(_albumSectionId), findsOneWidget);
-      expect(viewAll(_playlistSectionId), findsOneWidget);
-      expect(viewAll(_trackSectionId), findsNothing);
-      expect(
-        find.byKey(
-          const ValueKey<String>(
-            'music-plugin-home-play-$_pluginId-$_trackSectionId',
-          ),
+
+      final Finder playTracks = find.byKey(
+        const ValueKey<String>(
+          'music-plugin-home-play-$_pluginId-$_trackSectionId',
         ),
-        findsOneWidget,
       );
+      await scrollTo(playTracks);
+      expect(playTracks, findsOneWidget);
+      expect(viewAll(_trackSectionId), findsNothing);
+      expect(viewAll(_heroTrackSectionId), findsNothing);
+
+      await scrollTo(viewAll(_albumSectionId));
+      expect(viewAll(_albumSectionId), findsOneWidget);
+
+      await scrollTo(viewAll(_playlistSectionId));
+      expect(viewAll(_playlistSectionId), findsOneWidget);
 
       await tester.pumpWidget(const SizedBox.shrink());
     });
@@ -338,12 +357,16 @@ void main() {
           .first;
 
       // 横排只到第 12 张；网格里第 20 张（超出横排上限的那部分）也在。
-      final String lastId = 'album-a${_albumCount - 1}';
+      const String lastId = 'album-a${_albumCount - 1}';
       await tester.scrollUntilVisible(
         gridCard(lastId),
         300,
         scrollable: gridScrollable,
       );
+      // scrollUntilVisible 在卡片落进缓存区（已构建、仍在视口外）时就停，这里再把它
+      // 完整滚进视口，点击才命中卡片本身。
+      await tester.ensureVisible(gridCard(lastId));
+      await tester.pumpAndSettle();
       expect(gridCard(lastId), findsOneWidget);
 
       await tester.tap(gridCard(lastId));

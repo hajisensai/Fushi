@@ -1211,6 +1211,7 @@ const LOCAL_WRITE_OPS: &[&str] = &[
     "restore",
     "retire",
     "dedup",
+    "digest_heal",
     "trust",
 ];
 
@@ -1357,6 +1358,8 @@ fn local_write_body(
         "deck_delete" => s2::deck_delete::deck_delete_on(conn, profile, now, req)?,
         // 存量重复流收敛作业推进一步（store/sync2/dedup.rs）；`done` 为假就再发。
         "dedup" => s2::dedup::dedup_on(conn, profile, now)?,
+        // 摘要不一致的自动重建（store/sync2/heal.rs）：重放改写的卡随这次命令刷新缓存。
+        "digest_heal" => s2::heal::digest_heal_on(conn, profile, now)?,
         "import" => s2::transport::import_on(
             conn,
             profile,
@@ -1515,11 +1518,15 @@ const CHANNEL_TRANSPARENT: &[&str] = &[
     "outbox_ack",
     "head",
     "relay_outbox",
+    "obsolete",
+    "obsolete_former",
     "obsolete_ack",
     "relay_ack",
     "media_known",
     "profile_footprint",
     "profile_purge",
+    "binding_get",
+    "binding_set",
     "derive_key",
     "seal",
     "open",
@@ -1551,6 +1558,7 @@ const CHANNEL_SETTLES: &[&str] = &[
     "import",
     "digest",
     "digest_buckets",
+    "digest_heal",
     "media_record",
     "media_hash",
     "media_scan",
@@ -1588,6 +1596,7 @@ const PROJECTING_OPS: &[&str] = &[
     "checkpoint",
     "restore",
     "dedup",
+    "digest_heal",
 ];
 
 fn sync2_command(
@@ -1746,17 +1755,12 @@ fn sync2_command(
                 i("now")?,
                 skip,
             )? {
-                crate::store::sync2::transport::HeadWrite::Written {
-                    path,
-                    bytes,
-                    gen,
-                    obsolete,
-                } => {
+                crate::store::sync2::transport::HeadWrite::Written { path, bytes, gen } => {
                     files.push((path, bytes));
-                    json!({"gen": gen, "delete": obsolete})
+                    json!({"gen": gen})
                 }
-                crate::store::sync2::transport::HeadWrite::Unchanged { path, obsolete } => {
-                    json!({"unchanged": true, "path": path, "delete": obsolete})
+                crate::store::sync2::transport::HeadWrite::Unchanged { path } => {
+                    json!({"unchanged": true, "path": path})
                 }
                 // 要引用的段还有没传到这个位置的（发件确认后被合并改切）：不写，Dart 按「改切」结束这一轮。
                 crate::store::sync2::transport::HeadWrite::Recut => json!({"recut": true}),
@@ -1790,7 +1794,46 @@ fn sync2_command(
             *files = batch.files;
             json!({"more": batch.more})
         }
-        // 两段式删除：`head` / `relay_ack` 给的待删清单里 Dart 已经删掉（归档位置：按策略不删）的那些，内核移除记录。
+        // 一轮收尾：位置上此刻该删的文件（本机的旧 head、合并换下来的旧小段、旧转发件），保留策略只在内核
+        // （transport.rs `sync2_obsolete` / `HEAD_KEEP_GENS`）。`present`：head 已经在位置上之后列 `devices/<本机>/`
+        // 得到的文件名；`archive`：归档位置（不给旧 head）。Dart 删成功的发 `obsolete_ack`。
+        "obsolete" => {
+            let present: Vec<String> = req
+                .get("present")
+                .and_then(Value::as_array)
+                .ok_or("sync2: missing present")?
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_owned)
+                .collect();
+            let archive = req.get("archive") == Some(&Value::Bool(true));
+            let out = c.sync2_obsolete(profile, s("location")?, &present, archive, i("now")?)?;
+            json!({"delete": out.delete, "again": out.again, "former": out.former})
+        }
+        // 换过身份的设备清旧身份的目录（store/sync2/former.rs）：`obsolete` 回复的 `former` 里点名的旧身份，Dart 列
+        // `devices/<device>/`（`present`）、读其中每一份 head（blobs），这里给出证明得了可以删的（只会是被盖过的旧
+        // head）。没有待删记录，删完不必回执。
+        "obsolete_former" => {
+            let present: Vec<String> = req
+                .get("present")
+                .and_then(Value::as_array)
+                .ok_or("sync2: missing present")?
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_owned)
+                .collect();
+            let archive = req.get("archive") == Some(&Value::Bool(true));
+            json!({"delete": c.sync2_obsolete_former(
+                profile,
+                s("location")?,
+                s("device")?,
+                &present,
+                blobs,
+                archive,
+                i("now")?,
+            )?})
+        }
+        // 两段式删除：`obsolete` / `relay_ack` 给的待删清单里 Dart 已经删掉（归档位置：按策略不删）的那些，内核移除记录。
         "obsolete_ack" => {
             let deleted: Vec<String> = req
                 .get("deleted")
@@ -2068,6 +2111,9 @@ fn sync2_command(
         // 删 profile 的级联清理（store/profile_data.rs）：确认框的规模、一个事务里删光本机数据。
         "profile_footprint" => c.profile_footprint(profile)?,
         "profile_purge" => c.profile_purge(profile)?,
+        // 本机 profile（集合）的绑定状态（store/binding.rs）：只读 / 只写 srs_meta 的一个键，不碰投影。
+        "binding_get" => c.binding_get(profile)?,
+        "binding_set" => c.binding_set(profile, s("state")?, s("via")?, i("now")?)?,
         "conflicts" => c.sync2_conflicts(profile)?,
         "checkpoints" => c.sync2_checkpoints(profile)?,
         "history" => c.sync2_history(profile, s("kind")?, s("entity")?)?,
