@@ -153,11 +153,16 @@ class MusicPluginManager {
         e.path,
       );
       final Object? error = r['error'];
+      final MusicPluginPackageInfo? info = error == null
+          ? MusicPluginPackageInfo.fromJson(r)
+          : null;
+      // 别的插件体系（追踪插件）的包不属于音乐宿主：不列出，也就不会被打开。
+      if (info != null && !info.manifest.isMusic) continue;
       out.add(
         InstalledMusicPlugin(
           id: id,
           enabled: enabled[id] ?? true,
-          info: error == null ? MusicPluginPackageInfo.fromJson(r) : null,
+          info: info,
           error: error is String ? error : null,
         ),
       );
@@ -171,11 +176,21 @@ class MusicPluginManager {
     return out;
   }
 
-  /// 校验一个待安装包（不写盘），供确认弹窗展示。坏包抛 [MusicPluginException]。
+  /// 校验一个待安装包（不写盘），供确认弹窗展示。坏包、不是音乐插件的包抛
+  /// [MusicPluginException]。
   Future<MusicPluginPackageInfo> inspect(Uint8List zip) async {
     final Map<String, Object?> r = await MusicPluginNativeAsync.inspect(zip);
     if (r['error'] case final String e) throw MusicPluginException(e);
-    return MusicPluginPackageInfo.fromJson(r);
+    return _requireMusic(MusicPluginPackageInfo.fromJson(r));
+  }
+
+  /// 音乐宿主只装 / 开音乐插件：别的种类（追踪插件）在这里拒掉。
+  static MusicPluginPackageInfo _requireMusic(MusicPluginPackageInfo info) {
+    if (info.manifest.isMusic) return info;
+    throw MusicPluginException(
+      '这不是音乐插件（kind: ${info.manifest.kind}），不能装进音乐插件',
+      pluginId: info.manifest.id,
+    );
   }
 
   /// 待装包 [info] 与已装的同 id 插件是否换了签名者（含「有签名 ↔ 无签名」、已装包校验失败）。
@@ -290,8 +305,20 @@ class MusicPluginManager {
     }
     // 从这里到登记新实例之间没有 await：判定与登记对其它调用方是原子的。
     _requireUsable(id, enabled);
-    final Future<MusicPluginInstance> opening = MusicPluginInstance.open(
-      dir: '${rootDir.path}/$id',
+    final Future<MusicPluginInstance> opening = _openMusic(id);
+    _instances[id] = opening;
+    return opening;
+  }
+
+  /// 打开已装插件 [id]；目录里若是别的种类（追踪插件）的包，先校验出来、不建实例就拒。
+  Future<MusicPluginInstance> _openMusic(String id) async {
+    final String dir = '${rootDir.path}/$id';
+    final Map<String, Object?> v = await MusicPluginNativeAsync.verify(dir);
+    // 与 [MusicPluginInstance.open] 打开失败时同样的异常形态（校验失败的文案也相同）。
+    if (v['error'] case final String e) throw MusicPluginException(e);
+    _requireMusic(MusicPluginPackageInfo.fromJson(v));
+    final MusicPluginInstance inst = await MusicPluginInstance.open(
+      dir: dir,
       storageFile: storageFileFor(id),
       httpClientFactory: _httpClientFactory,
       log: _log,
@@ -303,8 +330,12 @@ class MusicPluginManager {
       addressBlocker: _addressBlocker,
       mediaProbe: _mediaProbe,
     );
-    _instances[id] = opening;
-    return opening;
+    // 校验与打开之间目录可能被整个换掉：以打开时的摘要为准再核一次。
+    if (!inst.info.manifest.isMusic) {
+      await inst.close();
+      _requireMusic(inst.info);
+    }
+    return inst;
   }
 
   void _requireUsable(String id, Map<String, bool> enabled) {

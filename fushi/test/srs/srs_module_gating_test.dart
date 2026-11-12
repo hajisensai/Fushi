@@ -166,8 +166,9 @@ void main() {
 
   group('出厂默认', () {
     test('出厂默认全开（含复习），复习五端都存在（不是商店受限能力）', () {
+      // Media tracking is the one module that is off by default.
       for (final ModuleId m in ModuleId.values) {
-        expect(m.defaultEnabled, isTrue, reason: '$m');
+        expect(m.defaultEnabled, m != ModuleId.tracking, reason: '$m');
       }
       for (final (bool w, bool d, bool i, bool a) p
           in <(bool, bool, bool, bool)>[

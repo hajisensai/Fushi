@@ -33,10 +33,23 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3931 条。点号进各自文件。
+> 共 3944 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4402](bugs/BUG-4402-manual-finish-mark-not-tracked.md) | ✅ | ✅ | Marked Finished / watched by hand is not sent to the tracking site |
+| [BUG-4401](bugs/BUG-4401-tracking-reconcile-misses-watched-episodes.md) | ✅ | ✅ | 媒体追踪对账与待关联列表漏掉播放看完的集（BUG-3491 后不再写 completedAt） |
+| [BUG-4400](bugs/BUG-4400-tracking-same-link-resent.md) | ✅ | ✅ | Linking again to the same entry and number sent the progress again |
+| [BUG-4399](bugs/BUG-4399-tracking-relink-book-number-reverts.md) | ✅ | ✅ | Reopening a book link showed the planned volume, and Link silently put it back |
+| [BUG-4398](bugs/BUG-4398-tracking-search-focus-lost.md) | ✅ | ✅ | Tracking page search box lost focus when the list turned empty or back |
+| [BUG-4397](bugs/BUG-4397-apple-dialog-segmented-intrinsic.md) | ✅ | ✅ | Apple segmented control in a dialog broke layout: no intrinsic size inside IntrinsicWidth |
+| [BUG-4396](bugs/BUG-4396-tracking-replay-resent.md) | ✅ | ✅ | Watching a linked movie or episode again after a restart sent it to the site again |
+| [BUG-4395](bugs/BUG-4395-tracking-sign-in-state-cleared.md) | ✅ | ✅ | A rejected sign-in looked fixed after any sync, and signing in again did not send what waited |
+| [BUG-4394](bugs/BUG-4394-tracking-hand-link-before-progress.md) | ✅ | ✅ | A video can be hand-linked only after progress, and starts at episode 1 |
+| [BUG-4393](bugs/BUG-4393-tracking-sync-status-bangumi-only.md) | ✅ | ✅ | Settings Sync section and control status report Bangumi only |
+| [BUG-4392](bugs/BUG-4392-tracking-book-series-ignore.md) | ✅ | ✅ | "Don't track the series" is never offered for a book series made by rule |
+| [BUG-4391](bugs/BUG-4391-tracking-multi-season-collection-link.md) | ✅ | ✅ | A hand link of a multi-season video collection is saved and never sends |
+| [BUG-4390](bugs/BUG-4390-tracking-search-video-file-names.md) | ✅ | ✅ | Tracking link search pre-fill keeps episode / group noise of video file names |
 | [BUG-4387](bugs/BUG-4387-windows-input-starved-by-engine-wakeups.md) | ✅ | ✅ | 启动时 WebView 预热的 idle 任务被常驻背景动画永久挡住，调度器空转饿死 Windows 输入 |
 | [BUG-4386](bugs/BUG-4386-anime-source-magnet-opened-as-file.md) | ✅ | ✅ | 视频源扩展（Torrentio）给的磁链被当本地文件打开，无限加载 |
 | [BUG-4385](bugs/BUG-4385-music-exclusive-pause-holds-device.md) | ✅ | ✅ | 音乐 WASAPI 独占输出暂停时不交还设备 |

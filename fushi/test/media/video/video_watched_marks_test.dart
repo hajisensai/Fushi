@@ -1,6 +1,7 @@
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/library_finish_marks.dart';
 import 'package:fushi/src/media/collections/collection_continue.dart';
 import 'package:fushi/src/media/video/media_server/media_server_library.dart'
     show MediaServerBookSpec;
@@ -48,6 +49,7 @@ void main() {
 
     final WatchedMarkResult result = await setVideosWatched(
       db: db,
+      tracking: LibraryFinishTracking.none,
       watched: true,
       localUids: <String>['ep1'],
     );
@@ -72,7 +74,12 @@ void main() {
     await seed(db, 'ep1', positionMs: durationMs - 1000);
     await db.markVideoCompleted('ep1', DateTime.now());
 
-    await setVideosWatched(db: db, watched: false, localUids: <String>['ep1']);
+    await setVideosWatched(
+      db: db,
+      tracking: LibraryFinishTracking.none,
+      watched: false,
+      localUids: <String>['ep1'],
+    );
 
     final VideoBookRow ep1 = (await db.getVideoBookByBookUid('ep1'))!;
     expect(ep1.completedAt, isNull);
@@ -86,7 +93,12 @@ void main() {
     final DateTime first = DateTime.fromMillisecondsSinceEpoch(1700000000000);
     await db.markVideoCompleted('ep1', first);
 
-    await setVideosWatched(db: db, watched: true, localUids: <String>['ep1']);
+    await setVideosWatched(
+      db: db,
+      tracking: LibraryFinishTracking.none,
+      watched: true,
+      localUids: <String>['ep1'],
+    );
 
     final VideoBookRow ep1 = (await db.getVideoBookByBookUid('ep1'))!;
     expect(ep1.completedAt, first);
@@ -100,6 +112,7 @@ void main() {
     }
     await setVideosWatched(
       db: db,
+      tracking: LibraryFinishTracking.none,
       watched: true,
       localUids: <String>['a', 'b'],
     );
@@ -114,6 +127,7 @@ void main() {
 
     final WatchedMarkResult result = await setVideosWatched(
       db: db,
+      tracking: LibraryFinishTracking.none,
       watched: true,
       remoteIds: <String>['r1', 'bad', 'r2'],
       remoteMarker: marker,
@@ -131,6 +145,7 @@ void main() {
 
     final WatchedMarkResult result = await setVideosWatched(
       db: db,
+      tracking: LibraryFinishTracking.none,
       watched: true,
       localUids: <String>['ep1'],
       remoteIds: <String>['r1'],
@@ -149,6 +164,7 @@ void main() {
 
     await setVideosWatched(
       db: db,
+      tracking: LibraryFinishTracking.none,
       watched: true,
       localUids: <String>['ep1', 'missing'],
       now: now,
@@ -179,6 +195,7 @@ void main() {
     final DateTime later = now.add(const Duration(minutes: 1));
     await setVideosWatched(
       db: db,
+      tracking: LibraryFinishTracking.none,
       watched: false,
       localUids: <String>['ep1'],
       now: later,
@@ -197,7 +214,12 @@ void main() {
   test('restoreWatchState：原样写回看完时刻与断点并盖新戳（撤销用）', () async {
     final FushiDatabase db = openDb();
     await seed(db, 'ep1', positionMs: 90 * 1000);
-    await setVideosWatched(db: db, watched: false, localUids: <String>['ep1']);
+    await setVideosWatched(
+      db: db,
+      tracking: LibraryFinishTracking.none,
+      watched: false,
+      localUids: <String>['ep1'],
+    );
     final DateTime done = DateTime.fromMillisecondsSinceEpoch(1700000000000);
 
     await VideoBookRepository(
@@ -240,6 +262,7 @@ void main() {
 
     final WatchedMarkResult result = await setVideosWatched(
       db: db,
+      tracking: LibraryFinishTracking.none,
       watched: true,
       localUids: <String>['item-1'],
       // 当前来源也镜像着同一条目：不该再发一次。
@@ -276,6 +299,7 @@ void main() {
 
     final WatchedMarkResult localKept = await setVideosWatched(
       db: db,
+      tracking: LibraryFinishTracking.none,
       watched: true,
       localUids: <String>['item-1'],
       mediaServerMarker: (String _) async => throw StateError('signed out'),
@@ -285,6 +309,7 @@ void main() {
 
     final WatchedMarkResult pureRemote = await setVideosWatched(
       db: db,
+      tracking: LibraryFinishTracking.none,
       watched: true,
       remoteIds: <String>['r1'],
       remoteMarker: _FakeMarker(failOn: <String>{'r1'}),
@@ -314,6 +339,7 @@ void main() {
     );
     final WatchedMarkResult result = await setVideosWatched(
       db: db,
+      tracking: LibraryFinishTracking.none,
       watched: true,
       localUids: <String>['plex-1'],
       mediaServerMarker: (String _) async => null,

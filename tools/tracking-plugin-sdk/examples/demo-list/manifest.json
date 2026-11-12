@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "kind": "tracking",
+  "id": "dev.fushi.example.tracking.demolist",
+  "name": "Demo List (offline example)",
+  "version": "1.0.0",
+  "api": 1,
+  "entry": "main.js",
+  "author": "Fushi",
+  "description": "Example tracking plugin: a made-up site kept in plugin storage. No account, no network traffic.",
+  "capabilities": ["login", "account", "trackingEntry", "trackingSubject", "trackingSearch", "trackingLookup"],
+  "permissions": ["network", "storage", "credentials"],
+  "network": { "domains": ["demolist.example.org"], "methods": ["GET", "POST"] },
+  "tracking": {
+    "siteId": "demolist",
+    "siteHost": "demolist.example.org",
+    "kinds": ["anime", "manga", "novel"],
+    "defaultKinds": ["anime", "manga"],
+    "modes": ["episode", "chapter", "volume"],
+    "requestsPerMinute": 30
+  }
+}

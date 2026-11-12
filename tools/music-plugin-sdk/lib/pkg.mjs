@@ -176,7 +176,8 @@ export function readZip(buf) {
 }
 
 /// Verifies a package exactly like the host's install step. Returns { manifest, digest, signer, files }.
-export function verifyEntries(all) {
+/// [validate] checks the manifest (default: the music rules); the tracking kit passes its own.
+export function verifyEntries(all, { validate = validateManifest } = {}) {
   const errors = [];
   if (all.size > LIMITS.maxFiles + 2) throw new Error('too many files in the package');
   let total = 0;
@@ -216,7 +217,7 @@ export function verifyEntries(all) {
   const manifestRaw = files.get('manifest.json');
   if (!manifestRaw) throw new Error('manifest.json is missing');
   const manifest = JSON.parse(manifestRaw.toString('utf8'));
-  errors.push(...validateManifest(manifest));
+  errors.push(...validate(manifest));
   if (errors.length) throw new Error(errors.join('\n'));
   if (!files.has(manifest.entry)) throw new Error(`entry ${manifest.entry} is not in the package`);
   return { manifest, digest: sha256(filesRaw), signer, files: [...files.keys()] };

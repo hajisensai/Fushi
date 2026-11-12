@@ -324,14 +324,41 @@ void main() {
 
     test('成对分类挂同一个模块（关一半比不关更糟）', () {
       expect(
-        moduleOfSettingsDestination(SettingsDestinationId.mediaTracking),
-        moduleOfSettingsDestination(SettingsDestinationId.services),
-        reason: '媒体追踪靠在线服务的凭据跑，分成两个开关只会让用户关了一半',
-      );
-      expect(
         moduleOfSettingsDestination(SettingsDestinationId.interconnect),
         moduleOfSettingsDestination(SettingsDestinationId.syncBackup),
         reason: '互联是从同步备份拆出去的分类，共享同一套后端',
+      );
+    });
+
+    test('Media tracking is its own module: the settings category follows '
+        'it, not Services', () {
+      expect(
+        moduleOfSettingsDestination(SettingsDestinationId.mediaTracking),
+        ModuleId.tracking,
+      );
+      expect(ModuleId.tracking.defaultEnabled, isFalse);
+      expect(homeTabOfModule(ModuleId.tracking), isNull);
+      final ModuleVisibility noTracking = ModuleVisibility(
+        ModuleId.values.toSet()..remove(ModuleId.tracking),
+      );
+      expect(isMediaTrackingEnabled(noTracking), isFalse);
+      expect(
+        isSettingsDestinationVisible(
+          SettingsDestinationId.mediaTracking,
+          noTracking,
+        ),
+        isFalse,
+      );
+      final ModuleVisibility noServices = ModuleVisibility(
+        ModuleId.values.toSet()..remove(ModuleId.services),
+      );
+      expect(isMediaTrackingEnabled(noServices), isTrue);
+      expect(
+        isSettingsDestinationVisible(
+          SettingsDestinationId.mediaTracking,
+          noServices,
+        ),
+        isTrue,
       );
     });
 

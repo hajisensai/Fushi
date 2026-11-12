@@ -119,6 +119,14 @@ import 'package:fushi/src/stats/study_diag_log.dart';
 import 'package:fushi_audio/fushi_audio.dart' show StudyClock;
 import 'package:fushi/src/settings/settings_schema.dart'
     show resetSettingsSchemaCache;
+import 'package:fushi/src/settings/settings_detail_page.dart';
+import 'package:fushi/src/settings/settings_schema_tracking.dart'
+    show buildMediaTrackingDestination;
+import 'package:fushi/src/media/tracking/page/tracking_page.dart'
+    show openTrackingPage;
+import 'package:fushi/src/media/tracking/page/tracking_page_data.dart'
+    show TrackingPageTab;
+import 'package:fushi/src/media/tracking/tracking_auto_link_notice.dart';
 import 'package:fushi/src/storage/data_root_migration_view.dart';
 import 'package:fushi/src/startup/loading_watchdog_view.dart';
 import 'package:fushi/src/sync/backup_import_overlay_view.dart';
@@ -1049,6 +1057,43 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
   bool _startupPendingMinesFlushed = false;
   bool _startupFeedbackChecked = false;
 
+  /// Notices for links media tracking made by itself ([TrackingAutoLinkNotices]).
+  TrackingAutoLinkNotices? _trackingAutoLinks;
+
+  void _listenTrackingAutoLinks() {
+    if (_trackingAutoLinks != null) return;
+    final AppModel appModel = ref.read(appProvider);
+    _trackingAutoLinks = TrackingAutoLinkNotices(
+      links: appModel.mediaTrackingService.autoLinks,
+      messenger: appModel.scaffoldMessengerKey,
+      onReview: () {
+        final BuildContext? navContext = appModel.navigatorKey.currentContext;
+        if (navContext == null || !navContext.mounted) return;
+        unawaited(
+          openTrackingPage(
+            navContext,
+            service: appModel.mediaTrackingService,
+            database: appModel.database,
+            initialTab: TrackingPageTab.linked,
+            onOpenSettings: () {
+              final NavigatorState? navigator =
+                  appModel.navigatorKey.currentState;
+              unawaited(
+                navigator?.push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => SettingsDetailPage(
+                      destination: buildMediaTrackingDestination(),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+
   /// 长按 app 图标点下的快捷方式（`fushi://shortcut/<id>`）。冷启动时 URL 比
   /// `initialise()` 先到，而 HomePage.initState 会把 [homeShellTabNotifier]
   /// 重置成启动 tab，所以先排队，等 home 挂载后的首帧再落地。
@@ -1727,6 +1772,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     for (final StreamSubscription<String> s in _remotePushSubs) {
       unawaited(s.cancel());
     }
+    _trackingAutoLinks?.dispose();
     _exitRequestListener?.dispose();
     unawaited(_ctlServer?.stop());
     _ctlServer = null;
@@ -3070,6 +3116,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
         // 首页出来了：之后再没了不算「启动即闪退」。
         PreviousExitLog.markInitialised();
         _listenRemotePush();
+        _listenTrackingAutoLinks();
         unawaited(_checkFeedbackReplies());
         unawaited(
           offerCrashReportAfterStartup(

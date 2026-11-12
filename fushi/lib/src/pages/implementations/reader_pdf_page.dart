@@ -334,6 +334,9 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
     });
   }
 
+  /// Tracking was told this session that the PDF was finished.
+  bool _trackingReportedEnd = false;
+
   Future<void> _persistPosition(int pageIndex) async {
     _lastSavedPageIndex = pageIndex;
     final FushiDatabase db = appModel.database;
@@ -365,6 +368,11 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
         await db.markEpubBookCompletedIfUnset(widget.bookKey, DateTime.now());
       } catch (e, stack) {
         ErrorLogService.instance.log('ReaderPdfPage.markCompleted', e, stack);
+      }
+      // One PDF = one volume: only finishing it is worth reporting, once.
+      if (!_trackingReportedEnd) {
+        _trackingReportedEnd = true;
+        appModel.reportPagedBookTrackingProgress(widget.bookKey);
       }
     }
   }

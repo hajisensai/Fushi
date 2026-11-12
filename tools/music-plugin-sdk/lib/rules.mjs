@@ -78,6 +78,7 @@ export const APP_URL_SCHEMES = ['orpheus', 'qqmusic', 'mqqapi', 'wtloginmqq', 'k
 
 const MANIFEST_FIELDS = [
   'schema',
+  'kind',
   'id',
   'name',
   'version',
@@ -130,6 +131,11 @@ export function validateManifest(m) {
   const errors = [];
   const fail = (msg) => errors.push(msg);
   if (m === null || typeof m !== 'object' || Array.isArray(m)) return ['manifest.json must be a JSON object'];
+  // manifest.rs: "kind" defaults to "music"; the host also knows "tracking", a separate plugin system.
+  if (m.kind !== undefined && m.kind !== 'music') {
+    if (m.kind === 'tracking') fail('"kind": "tracking" is a tracking plugin, not a music plugin: use the tracking kit (tools/tracking-plugin-sdk/fushi-tracking-plugin.mjs)');
+    else fail(`unknown plugin "kind" ${JSON.stringify(m.kind)}: omit it or use "music" (tracking plugins use tools/tracking-plugin-sdk)`);
+  }
   for (const k of Object.keys(m)) {
     if (!MANIFEST_FIELDS.includes(k)) fail(`unknown manifest field "${k}" (unknown fields are rejected)`);
   }

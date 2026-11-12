@@ -4034,8 +4034,12 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     _reportKavitaMangaPage(chapterKey, _currentPage);
   }
 
-  Future<void> _markCurrentChapterRead() =>
-      _saveCurrentChapterState(readAt: DateTime.now().millisecondsSinceEpoch);
+  Future<void> _markCurrentChapterRead() async {
+    await _saveCurrentChapterState(
+      readAt: DateTime.now().millisecondsSinceEpoch,
+    );
+    _reportTracking(reachedEnd: true);
+  }
 
   /// Keep one spread worth of precise OCR hit targets in the stable manga
   /// document. All page images stay in the same lazy-loaded strip, so changing
@@ -5901,7 +5905,10 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     // 每章状态跟着同一个收口走：位置写哪儿、章状态就写哪儿，不另开一条会漏的
     // 时机。书架在线条目才有「章」，本地卷 _shelfChapterKey 恒 null 自然跳过。
     final String? chapterKey = _shelfChapterKey;
-    if (chapterKey == null) return;
+    if (chapterKey == null) {
+      _reportTracking(reachedEnd: atLastPage);
+      return;
+    }
     try {
       await db.saveMangaChapterState(
         bookUid: bookUid,
@@ -5917,6 +5924,22 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     } catch (e, stack) {
       ErrorLogService.instance.log('MangaFushiPage.saveChapterState', e, stack);
     }
+    _reportTracking(reachedEnd: atLastPage);
+  }
+
+  /// What this reading session already told tracking: `open`, and one
+  /// `end:<chapter>` per chapter (or `end:` for a local volume) reached.
+  final Set<String> _trackingReported = <String>{};
+
+  /// Tells tracking about the read state after a page save: once when reading
+  /// starts (a local volume N then counts N-1 volumes as read) and once per
+  /// chapter or volume end reached. Tracking reads the state itself.
+  void _reportTracking({required bool reachedEnd}) {
+    final String key = reachedEnd ? 'end:${_shelfChapterKey ?? ''}' : 'open';
+    if (!_trackingReported.add(key)) return;
+    // Reaching an end also counts as having started.
+    _trackingReported.add('open');
+    appModel.reportPagedBookTrackingProgress(widget.bookKey);
   }
 
   /// 进程退出 / 退后台的统一 flush（[ExitFlushRegistry]）：只落位置。退出不是翻走，

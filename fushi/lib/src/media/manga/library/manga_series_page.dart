@@ -81,6 +81,8 @@ import 'package:fushi/src/media/links/media_link_opener.dart'
     show mediaLinkSearchAction, openMediaLinkEntry;
 import 'package:fushi/src/media/links/media_links_section.dart'
     show MediaLinksSection;
+import 'package:fushi/src/media/tracking/book_tracking_dialog.dart';
+import 'package:fushi/src/models/module_id.dart' show isMediaTrackingEnabled;
 
 /// 作品页要显示**哪一部**作品。
 ///
@@ -1184,6 +1186,8 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
               ) >
               0) {
         reconciled = await _readChapterStates(row);
+        // A bulk import of server read marks: one report, highest chapter.
+        _appModel.reportPagedBookTrackingProgress(bookKey);
       }
       if (!mounted) return;
       setState(() {
@@ -1616,6 +1620,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     if (await _markKavitaChapters(chapters, read: read)) {
       // Kavita：本地状态已由 alignKavitaMangaChapterMark 写好（含页与基线）。
       await _reloadChapterStates();
+      _reportTracking();
       return;
     }
     final List<String> keys = <String>[
@@ -1633,6 +1638,14 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
       );
     }
     await _reloadChapterStates();
+    _reportTracking();
+  }
+
+  /// Chapters were marked read / unread here (or by a Kavita refresh). Unread
+  /// never lowers tracker progress; tracking works that out itself.
+  void _reportTracking() {
+    final String? bookKey = _bookKey;
+    if (bookKey != null) _appModel.reportPagedBookTrackingProgress(bookKey);
   }
 
   // ── 章节多选 ────────────────────────────────────────────────────────
@@ -1784,6 +1797,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     final List<OnlineMangaChapter> targets = entry.chapters.sublist(index);
     if (await _markKavitaChapters(targets, read: true)) {
       await _reloadChapterStates();
+      _reportTracking();
       return;
     }
     await _appModel.database.markMangaChaptersRead(
@@ -1791,6 +1805,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
       chapterKeys: <String>[for (final c in targets) c.key],
     );
     await _reloadChapterStates();
+    _reportTracking();
   }
 
   Future<void> _reloadChapterStates() async {
@@ -2462,6 +2477,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
               : () => unawaited(_ocrLocalVolume()),
         ),
         _ocrSettingsButton(),
+        ?_trackButton(),
       ];
     }
     final OnlineMangaLibraryEntry? entry = _entry;
@@ -2518,7 +2534,32 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
               ? null
               : () => unawaited(_loginToSource(login)),
         ),
+      ?_trackButton(),
     ];
+  }
+
+  /// 追踪（MangaBaka / AniList）：只对书架上的条目（有 bookKey）给。
+  Widget? _trackButton() {
+    final String? bookKey = _bookKey;
+    final AppModel? appModel = _appModelOrNull;
+    if (bookKey == null ||
+        appModel == null ||
+        !isMediaTrackingEnabled(appModel.moduleVisibility)) {
+      return null;
+    }
+    return MediaDetailSecondaryButton(
+      buttonKey: const ValueKey<String>('manga_series_track'),
+      icon: FushiIcons.tracking,
+      label: t.media_tracking_track_action,
+      iconOnly: true,
+      onPressed: () => unawaited(
+        showBookTrackingDialog(
+          context,
+          service: appModel.mediaTrackingService,
+          bookKey: bookKey,
+        ),
+      ),
+    );
   }
 
   /// 「⋯」：在网站打开、刷新章节、新章自动下载（订阅中）、下载后自动识别、

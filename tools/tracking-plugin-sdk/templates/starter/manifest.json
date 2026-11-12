@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "kind": "tracking",
+  "id": "__PLUGIN_ID__",
+  "name": "__PLUGIN_NAME__",
+  "version": "0.1.0",
+  "api": 1,
+  "entry": "main.js",
+  "description": "TODO: one line about the site",
+  "capabilities": ["login", "account", "trackingEntry", "trackingSubject", "trackingSearch", "trackingLookup"],
+  "permissions": ["network", "credentials"],
+  "network": { "domains": ["api.example.com"], "methods": ["GET", "POST"] },
+  "tracking": {
+    "siteId": "example",
+    "siteHost": "example.com",
+    "kinds": ["anime", "manga"],
+    "defaultKinds": ["anime"],
+    "modes": ["episode", "chapter"],
+    "requestsPerMinute": 30
+  }
+}

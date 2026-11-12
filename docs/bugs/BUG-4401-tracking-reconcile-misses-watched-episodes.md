@@ -1,0 +1,14 @@
+## BUG-4401 · 媒体追踪对账与待关联列表漏掉播放看完的集（BUG-3491 后不再写 completedAt）
+- **报告**：2026-11-06（多追踪服务方案审查时发现，非用户报告）
+- **真实性**：✅ 真 bug。BUG-3491（所有者 2026-10-17 拍板）后播放不再写 `video_books.completed_at`，「看完」改为「手动标记，或断点落在已知片长的片尾区」（`CollectionMemberProgress.countsAsWatched`）。但媒体追踪仍只认 `completed_at`：
+  - 对账补发 `loadCompletedVideoTrackingProgress`（`packages/fushi_engine/lib/media/tracking/media_tracking_repository.dart`，单集分支与合集分支）——播放当下的即时上报（`onEpisodeCompleted`）失败、离线、或作品之后才建映射时，这些集**永远补发不出去**；手动关联后的「补发当前进度」（`_enqueueCurrentProgress`）同样拿不到。
+  - 设置页「待关联」列表 `listUnlinkedHistory` 的视频 / 合集部分——看完但没打勾的视频不出现，用户无从手动关联。
+  - 判据 `isEpisodePositionNearEnd` 与片长偏好 `video_duration_ms_<uid>` 都在 app 包里，纯 Dart 的 `fushi_engine` 引用不到，这是两边口径分叉的结构原因。
+- **[x] ① 根因修复** —
+  - 判据与片长偏好读取搬进 `fushi_engine`（`media/video/episode_near_end.dart`、`media/video/video_duration_pref.dart`），app 原文件改为 re-export，全仓仍只有一份定义。
+  - 仓库加 `_videoWatchedAtMs`：手动标记 → `completedAt`；否则断点在片尾区（同一判据）→ `lastPlayedAt`（与断点同一事务写入；旧行没有则 0，只靠 `mapping.updatedAt` 触发）。对账单集 / 合集分支与待关联列表三处统一走它；片长一次 `getPrefsByPrefix` 取全，不按集 N+1。
+  - 只认「已知片长 + 片尾区」，片长未知的旧数据不推断，与 BUG-3491 的展示 / 续播口径一致。
+- **[x] ② 自动化测试** — `fushi/test/media/tracking/media_tracking_repository_test.dart`「BUG-4401」组：片尾区 + 已知片长算看完且 evidence 取 lastPlayedAt；看到一半 / 片长未知不推断；手动标记照旧；合集按最高看完成员（含片尾区成员）；待关联列表列出片尾区视频。
+- **备注**：
+  - 互联远端集、媒体服务器集不经本地对账，不在范围。
+  - 未改播放器与 UI；片长偏好仍由播放器第一次落断点时写入，从没在新版本播过的旧集没有片长，仍不会被补发（与 BUG-3491 同口径）。

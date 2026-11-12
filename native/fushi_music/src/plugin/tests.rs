@@ -536,3 +536,104 @@ fn http_bodies_travel_as_bytes() {
     );
     assert_eq!(out["settled"][0]["value"], "响应体引用越界", "{out}");
 }
+
+/// 追踪插件（`kind: "tracking"`）走同一个引擎：装、开、调 `trackingEntry`；未声明的能力照样拒，
+/// 宿主凭据调用照常往返；摘要带 `kind` 与 `tracking`。
+#[test]
+fn tracking_kind_package_opens_and_invokes() {
+    let m = json!({
+        "schema": 1, "kind": "tracking", "id": "moe.test", "name": "Test", "version": "0.1.0",
+        "api": 1, "entry": "main.js",
+        "capabilities": ["login", "account", "trackingEntry", "trackingSubject"],
+        "permissions": ["network", "credentials"],
+        "network": { "domains": ["api.example.org"], "methods": ["GET", "POST"] },
+        "tracking": {
+            "siteId": "example", "siteHost": "example.org", "kinds": ["anime"],
+            "defaultKinds": ["anime"], "modes": ["episode"], "requestsPerMinute": 30
+        }
+    })
+    .to_string();
+    let js = r#"
+        module.exports = {
+          login() { return { methods: [] }; },
+          async account() { return { loggedIn: !!(await fushi.credentials.get('token')) }; },
+          async trackingEntry(a) {
+            if (a.op === 'get') return { status: 'current', progress: a.id * 2 };
+            return null;
+          },
+          trackingSubject(a) { return { id: a.id, name: 'S', kind: 'anime' }; },
+          trackingSearch() { return { items: [] }; },
+        };
+    "#;
+    let mut all: Vec<(&str, &[u8])> = vec![("manifest.json", m.as_bytes())];
+    all.push(("main.js", js.as_bytes()));
+    let zip = build_zip(&all, Sign::None, None);
+    let summary = inspect_zip(&zip).unwrap().summary_json();
+    assert_eq!(summary["manifest"]["kind"], "tracking");
+    assert_eq!(summary["manifest"]["tracking"]["siteId"], "example");
+    let mut inst = open("tracking", &m, &[("main.js", js)], 2000).unwrap();
+    assert_eq!(inst.manifest().kind, "tracking");
+
+    let out = step(
+        &mut inst,
+        json!([
+            { "op": "invoke", "inv": 1, "method": "trackingEntry", "args": { "op": "get", "id": 21 } },
+            // 入口导出了 trackingSearch 但清单没声明：拒。
+            { "op": "invoke", "inv": 2, "method": "trackingSearch", "args": { "query": "x", "kind": "anime" } },
+            // 音乐能力名在追踪插件上同样不存在。
+            { "op": "invoke", "inv": 3, "method": "search", "args": {} },
+            { "op": "invoke", "inv": 4, "method": "account", "args": {} },
+        ]),
+    );
+    let settled = out["settled"].as_array().unwrap();
+    let by_inv = |i: u64| settled.iter().find(|s| s["inv"] == i).cloned();
+    assert_eq!(
+        by_inv(1).unwrap()["value"],
+        json!({ "status": "current", "progress": 42 }),
+        "{out}"
+    );
+    for i in [2, 3] {
+        let s = by_inv(i).unwrap();
+        assert_eq!(s["ok"], false);
+        assert!(s["error"].as_str().unwrap().contains("没有声明能力"), "{s}");
+    }
+    // account 走宿主凭据调用往返。
+    let call = &out["calls"][0];
+    assert_eq!(call["op"], "credentials.get", "{out}");
+    let out = step(
+        &mut inst,
+        json!([{ "op": "complete", "call": call["id"], "ok": true, "value": "tok" }]),
+    );
+    assert_eq!(
+        out["settled"][0]["value"],
+        json!({ "loggedIn": true }),
+        "{out}"
+    );
+}
+
+/// 追踪插件不能用音乐插件的权限：`webAuth` 在 inspect 时就拒。
+#[test]
+fn tracking_kind_rejects_music_vocabulary_at_inspect() {
+    let m = json!({
+        "schema": 1, "kind": "tracking", "id": "moe.test", "name": "Test", "version": "0.1.0",
+        "api": 1, "entry": "main.js",
+        "capabilities": ["login", "account", "trackingEntry", "trackingSubject"],
+        "permissions": ["network", "credentials", "webAuth"],
+        "network": { "domains": ["api.example.org"] },
+        "tracking": {
+            "siteId": "example", "siteHost": "example.org", "kinds": ["anime"],
+            "modes": ["episode"], "requestsPerMinute": 30
+        }
+    })
+    .to_string();
+    let zip = build_zip(
+        &[
+            ("manifest.json", m.as_bytes()),
+            ("main.js", b"module.exports = {};"),
+        ],
+        Sign::None,
+        None,
+    );
+    let err = inspect_zip(&zip).err().unwrap();
+    assert!(err.contains("webAuth"), "{err}");
+}

@@ -13,6 +13,7 @@ import 'dart:io';
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/library_finish_marks.dart';
 import 'package:fushi/src/media/video/video_watched_marks.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/sync_orchestrator.dart';
@@ -133,6 +134,7 @@ void main() {
   test('本机标已看 → 同步后断点不被 host 旧值灌回，host 也收到「已看 + 断点 0」', () async {
     await setVideosWatched(
       db: localDb,
+      tracking: LibraryFinishTracking.none,
       watched: true,
       localUids: <String>[_uid],
     );
@@ -175,6 +177,7 @@ void main() {
 
     await setVideosWatched(
       db: localDb,
+      tracking: LibraryFinishTracking.none,
       watched: false,
       localUids: <String>[_uid],
     );

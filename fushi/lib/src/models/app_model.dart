@@ -13,6 +13,7 @@ import 'package:fushi/src/anki/mined_card_tap_policy.dart';
 import 'package:fushi/src/anki/mined_card_undo.dart';
 import 'package:fushi/src/corpus/library_corpus_service.dart';
 import 'package:fushi/src/leaderboard/leaderboard_paired_login.dart';
+import 'package:fushi/src/media/library_finish_marks.dart';
 import 'package:fushi/src/media/source_library/source_folder_access.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart'
     show applyBlurayDiscCollectionArtwork;
@@ -27,6 +28,8 @@ import 'package:fushi/src/updates/usage_heartbeat.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi/src/models/preference_keys.dart';
 import 'package:fushi_engine/srs/srs_miner.dart';
+import 'package:fushi_engine/media/video/media_server_video_path.dart'
+    show isMediaServerVideoPath;
 import 'package:fushi_engine/media/video/media_server/media_server_client_identity.dart'
     show mediaServerClientIdentity, resolveMediaServerClientIdentity;
 import 'package:fushi_engine/media/video/video_member_file.dart';
@@ -219,6 +222,13 @@ import 'package:fushi/src/models/dictionary_repository.dart';
 import 'package:fushi/src/models/media_history_repository.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/media/manga/cookie/manga_cookie_jar.dart';
+import 'package:fushi/src/media/manga/library/manga_tracking_progress.dart';
+import 'package:fushi/src/media/tracking/book_link_hints.dart';
+import 'package:fushi/src/media/tracking/plugin/bangumi_token_migration.dart';
+import 'package:fushi/src/media/tracking/plugin/plugin_tracking_provider.dart';
+import 'package:fushi/src/media/tracking/plugin/tracking_plugin_engine.dart';
+import 'package:fushi/src/media/tracking/plugin/tracking_plugin_gate.dart';
+import 'package:fushi/src/media/tracking/plugin/tracking_plugin_manager.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/manga_view_prefs.dart';
 import 'package:fushi/src/media/manga/library/manga_resume_point.dart';
@@ -355,7 +365,11 @@ import 'package:fushi/src/media/video/video_immersive_control_layout.dart';
 import 'package:fushi/src/media/video/video_subtitle_mask_config.dart';
 import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
 import 'package:fushi_engine/media/tracking/media_tracking_repository.dart';
+import 'package:fushi_engine/media/tracking/tracking_provider.dart'
+    show TrackingProvider;
 import 'package:fushi_engine/media/tracking/media_tracking_service.dart';
+import 'package:fushi_engine/media/tracking/remote_anime_link.dart';
+import 'package:fushi_engine/media/video/metadata/anime_identity_mapping.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart'
     show VideoSourceScrapeTaskController;
 import 'package:fushi_engine/sync/local_library_host_service.dart';
@@ -405,6 +419,8 @@ import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_conflict_prompter.dart';
 import 'package:fushi/src/sync/sync_orchestrator.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi/src/media/video/media_server/media_server_library.dart'
+    show mediaServerTrackingEpisodeOf;
 import 'package:fushi/src/sync/sync_state_apply_lock.dart';
 import 'package:fushi/src/sync/video_remote_host.dart';
 import 'package:fushi/src/sync/video_remote_library_port.dart';
@@ -1864,11 +1880,193 @@ class AppModel
   /// 番剧/小说/漫画进度的可靠 Bangumi 同步入口。
   MediaTrackingService? _mediaTrackingService;
   MediaTrackingService get mediaTrackingService =>
-      _mediaTrackingService ??= MediaTrackingService(
-        repository: MediaTrackingRepository(_database),
+      _mediaTrackingService ??= _buildMediaTrackingService();
+
+  /// Installed tracking plugins (docs/specs/2026-11-10-tracking-plugins.md):
+  /// packages, storage and credentials under
+  /// `<database dir>/tracking_plugins/`, not in Drift. Created by
+  /// [_startTrackingPlugins] in the main process; null before that and where
+  /// [isTrackingPluginsAvailable] is false.
+  TrackingPluginManager? _trackingPluginManager;
+  TrackingPluginManager? get trackingPluginManager => _trackingPluginManager;
+
+  /// One provider per enabled plugin package (sign-in goes through these).
+  PluginTrackingProviders? _trackingPluginProviders;
+  PluginTrackingProviders? get trackingPluginProviders =>
+      _trackingPluginProviders;
+
+  /// Creates the plugin manager; the plugin list arriving (from
+  /// [_installBundledTrackingPlugins]) and every later change re-apply the
+  /// providers.
+  void _startTrackingPlugins() {
+    if (_trackingPluginManager != null) return;
+    final TrackingPluginManager? manager = _createTrackingPluginManager();
+    if (manager == null) return;
+    _trackingPluginManager = manager;
+    _trackingPluginProviders = PluginTrackingProviders(
+      manager: manager,
+      onAccountChanged: () => _mediaTrackingService?.notifyStatusChanged(),
+    );
+    manager.changes.addListener(_applyTrackingProviders);
+  }
+
+  /// Pins and installs the bundled Bangumi plugin, lists the plugins, then
+  /// moves the built-in Bangumi token into the plugin
+  /// ([startBundledTrackingPlugins]). The service was built without the
+  /// built-in Bangumi on this path, so `bangumi` is served by the plugin as
+  /// soon as it is registered and by nothing before. A moved token syncs at
+  /// once.
+  void _installBundledTrackingPlugins() {
+    final TrackingPluginManager? manager = _trackingPluginManager;
+    final PluginTrackingProviders? providers = _trackingPluginProviders;
+    if (manager == null || providers == null) return;
+    unawaited(
+      startBundledTrackingPlugins(
+        manager: manager,
+        providers: providers,
         preferences: prefsRepo,
-        userAgent: _mediaTrackingUserAgent,
+        removePref: prefsRepo.removePref,
+        onError: (Object error, StackTrace stack) => ErrorLogService.instance
+            .log('AppModel.startBundledTrackingPlugins', error, stack),
+      ).then((BangumiTokenMigration result) {
+        if (result == BangumiTokenMigration.moved) {
+          unawaited(_mediaTrackingService?.syncNow());
+        }
+      }),
+    );
+  }
+
+  TrackingPluginManager? _createTrackingPluginManager() {
+    if (!isTrackingPluginsAvailable) return null;
+    final String root = path.join(databaseDirectory.path, 'tracking_plugins');
+    return TrackingPluginManager(
+      rootDir: Directory(root),
+      engine: SharedTrackingPluginEngine.forApp(
+        rootDir: root,
+        httpClientFactory: createAppHttpClient,
+        // Plugin logs are untrusted text: diagnostics only, never UI.
+        log: (String id, String level, String message) =>
+            debugPrint('[tracking-plugin] $id $level: $message'),
+      ),
+    );
+  }
+
+  /// The sites besides Bangumi: one per enabled tracking plugin.
+  List<TrackingProvider> _trackingExtraProviders() =>
+      _trackingPluginProviders?.current() ?? const <TrackingProvider>[];
+
+  void _applyTrackingProviders() {
+    _mediaTrackingService?.setExtraProviders(_trackingExtraProviders());
+  }
+
+  /// The one place the tracking service and its providers are assembled.
+  MediaTrackingService _buildMediaTrackingService() => MediaTrackingService(
+    repository: MediaTrackingRepository(_database),
+    preferences: prefsRepo,
+    userAgent: _mediaTrackingUserAgent,
+    extraProviders: _trackingExtraProviders(),
+    // The one platform decision: where tracking plugins run, the bundled
+    // Bangumi plugin serves `bangumi` and the Dart provider is not built.
+    builtInBangumi: !isBangumiServedByPlugin,
+    trackingOn: () => isMediaTrackingOn,
+    mangaReadProgress: (EpubBookRow book) =>
+        mangaReadProgressOf(_database, book),
+    bookLinkHints: (EpubBookRow book) async => bookLinkHintsOf(
+      book,
+      displayTitle: ReaderFushiSource.instance.overrideTitleForBookKey(
+        book.bookKey,
+      ),
+    ),
+    animeCrossIds: AnimeCrossIds(
+      entryForAnidb: (int id) => _trackingAnimeIds.entryForAnidb(id),
+      entriesForTmdbTv: (int id) => _trackingAnimeIds.entriesForTmdbTv(id),
+      entriesForTvdb: (int id) => _trackingAnimeIds.entriesForTvdb(id),
+      entriesForTmdbMovie: (int id) =>
+          _trackingAnimeIds.entriesForTmdbMovie(id),
+    ),
+  );
+
+  /// Offline anime id list for linking media server episodes. Created (and
+  /// downloaded) only when an episode has no AniList / MAL id of its own.
+  AnimeIdentityMapping? _trackingAnimeIdsOrNull;
+  AnimeIdentityMapping get _trackingAnimeIds =>
+      _trackingAnimeIdsOrNull ??= AnimeIdentityMapping();
+
+  /// A manga's or PDF's read state changed (reader reached a chapter / volume
+  /// end, or chapters were marked on the series page / by a Kavita refresh).
+  /// Fire and forget: tracking never blocks or breaks reading.
+  void reportPagedBookTrackingProgress(String bookKey) {
+    if (!isMediaTrackingOn) return;
+    unawaited(
+      mediaTrackingService.recordPagedBookProgress(bookKey).catchError((
+        Object error,
+        StackTrace stack,
+      ) {
+        ErrorLogService.instance.log(
+          'AppModel.reportPagedBookTrackingProgress',
+          error,
+          stack,
+        );
+      }),
+    );
+  }
+
+  /// Finished / watched marks set by hand (shelf, video library, CLI / AI)
+  /// reach media tracking through this; see [setBooksFinished] and
+  /// [setVideosWatched]. Books are reported like a reader reaching the end;
+  /// videos start a sync whose catch-up sends every linked video watched
+  /// since the last one.
+  late final LibraryFinishTracking libraryFinishTracking =
+      LibraryFinishTracking(
+        onBooksFinished: (List<String> bookKeys) async {
+          for (final String bookKey in bookKeys) {
+            reportPagedBookTrackingProgress(bookKey);
+          }
+        },
+        onVideosWatched: (List<String> videoUids) async {
+          if (!isMediaTrackingOn) return;
+          unawaited(
+            _reportVideosWatched(videoUids).then<void>(
+              (_) {},
+              onError: (Object error, StackTrace stack) {
+                ErrorLogService.instance.log(
+                  'AppModel.libraryFinishTracking',
+                  error,
+                  stack,
+                );
+              },
+            ),
+          );
+        },
       );
+
+  /// Videos marked watched by hand: a row added from a media server reports
+  /// its server identity (asked from the server, as playing it to the end
+  /// does: T1 F3, one identity per watched thing); then a sync, whose
+  /// catch-up sends every linked local video. One row's server failing does
+  /// not stop the others.
+  Future<void> _reportVideosWatched(List<String> videoUids) async {
+    final MediaTrackingService service = mediaTrackingService;
+    for (final String uid in videoUids) {
+      final VideoBookRow? row = await _database.getVideoBookByBookUid(uid);
+      if (row == null || !isMediaServerVideoPath(row.videoPath)) continue;
+      try {
+        final RemoteAnimeEpisode? episode = await mediaServerTrackingEpisodeOf(
+          row: row,
+          loadConfigs: SyncRepository(_database).getMediaServers,
+        );
+        if (episode == null) continue;
+        await service.recordRemoteVideoCompleted(episode, libraryBookUid: uid);
+      } catch (error, stack) {
+        ErrorLogService.instance.log(
+          'AppModel.reportVideosWatched',
+          error,
+          stack,
+        );
+      }
+    }
+    await service.syncNow();
+  }
 
   String _mediaTrackingAppVersion = 'unknown';
   String get _mediaTrackingUserAgent =>
@@ -4628,14 +4826,19 @@ class AppModel
       // BUG-1647：lazy getter 可能已提前建过实例；替换前先取消其重试定时器，
       // 否则旧定时器会拿着旧 repository 继续同步。
       _mediaTrackingService?.dispose();
-      _mediaTrackingService = MediaTrackingService(
-        repository: MediaTrackingRepository(_database),
-        preferences: prefsRepo,
-        userAgent: _mediaTrackingUserAgent,
+      _mediaTrackingService = _buildMediaTrackingService();
+      _startTrackingPlugins();
+      // Media tracking module: decided once from existing sign-ins (before
+      // the first sync asks the switch).
+      await prefsRepo.settleTrackingModuleInstallDefault(
+        hasPluginSignIn:
+            await _trackingPluginManager?.hasAnySignIn() ?? false,
       );
-      if (kMediaTrackingEnabled) {
-        unawaited(mediaTrackingService.syncNow());
-      }
+      // After the module default is settled: the token move below removes
+      // the Bangumi token preference that decision reads.
+      _installBundledTrackingPlugins();
+      // Does nothing while the module is off (the service asks the switch).
+      unawaited(mediaTrackingService.syncNow());
 
       final Map<String, String> prefsSnapshot = prefsRepo.prefsSnapshot;
 
@@ -5174,11 +5377,7 @@ class AppModel
       prefsRepo.addListener(notifyListeners);
       // BUG-1647：同主进程路径，替换前取消旧实例可能挂起的重试定时器。
       _mediaTrackingService?.dispose();
-      _mediaTrackingService = MediaTrackingService(
-        repository: MediaTrackingRepository(_database),
-        preferences: prefsRepo,
-        userAgent: _mediaTrackingUserAgent,
-      );
+      _mediaTrackingService = _buildMediaTrackingService();
 
       dictRepo = DictionaryRepository(
         _database,
@@ -10733,6 +10932,12 @@ class AppModel
     if (module == ModuleId.browse && value) {
       unawaited(ensureAnimeDownloadServiceRunning());
     }
+    // Media tracking back on: the first sync catches up what happened while it
+    // was off (reconcile watermarks did not move); the screens re-read status.
+    if (module == ModuleId.tracking) {
+      _mediaTrackingService?.notifyStatusChanged();
+      if (value) unawaited(mediaTrackingService.syncNow());
+    }
     notifyListeners();
   }
 
@@ -10790,6 +10995,10 @@ class AppModel
     isIOS: platformServices.isIOS,
     isAndroid: platformServices.isAndroid,
   );
+
+  /// Media tracking is on ([isMediaTrackingEnabled], the one answer). The
+  /// tracking service reads it through its `trackingOn` switch.
+  bool get isMediaTrackingOn => isMediaTrackingEnabled(moduleVisibility);
 
   /// games 模块在本平台上的形态（本机 galgame 库 / 串流接收端）。平台判据同样
   /// 取自 [PlatformServices]，理由同上。
@@ -10986,6 +11195,8 @@ class AppModel
   void dispose() {
     unawaited(_extensionImageOcr?.close());
     _extensionImageOcr = null;
+    _trackingAnimeIdsOrNull?.close();
+    _trackingAnimeIdsOrNull = null;
     // BUG-913：对称释放 initialise() 起的 4 个 app-wide 常驻子系统。dispose 是同步的、
     // 这些 stop 多为 Future → fire-and-forget（unawaited）；先停常驻服务，再走现有
     // notifier/repo dispose，最后 super.dispose()。
@@ -11036,6 +11247,10 @@ class AppModel
     _lnReaderManager = null;
     unawaited(_musicPluginManager?.dispose());
     _musicPluginManager = null;
+    _trackingPluginManager?.changes.removeListener(_applyTrackingProviders);
+    unawaited(_trackingPluginManager?.dispose());
+    _trackingPluginManager = null;
+    _trackingPluginProviders = null;
     // Apple Music 账号持有桥订阅；网页桥还持有隐藏的 HeadlessInAppWebView（播放后端只借用桥）。
     _appleMusicAccount?.dispose();
     _appleMusicAccount = null;
@@ -11857,7 +12072,7 @@ class AppModel
     // 游玩状态改动上报媒体记录（Bangumi 收藏 type）。fail-open：同步不可用时
     // 本地状态照常生效，事件留在 outbox 由后续同步重试。
     onPlayStatusChanged: (String id, GalgamePlayStatus status) {
-      if (!kMediaTrackingEnabled) return;
+      if (!isMediaTrackingOn) return;
       unawaited(
         mediaTrackingService.recordGameStatus(gameId: id, status: status.value),
       );

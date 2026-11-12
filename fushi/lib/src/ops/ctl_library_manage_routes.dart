@@ -117,7 +117,11 @@ class _LibraryManageHandlers {
   FushiDatabase get _db => _app.database;
 
   LibraryCtlShelf get _shelf =>
-      LibraryCtlShelf(db: _db, galgameRepo: _app.galgameRepo);
+      LibraryCtlShelf(
+        db: _db,
+        galgameRepo: _app.galgameRepo,
+        finishTracking: _app.libraryFinishTracking,
+      );
 
   void _requireWritable() {
     if (_app.isMigrationReadonly) {

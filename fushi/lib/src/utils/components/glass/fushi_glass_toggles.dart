@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/physics.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
@@ -3929,17 +3930,27 @@ class _FushiSegmentedButtonState<T> extends State<FushiSegmentedButton<T>> {
             child: control,
           )
         : _appleGlassTrack(context, radius: height / 2, child: control);
-    return LayoutBuilder(
-      builder: (BuildContext context, BoxConstraints constraints) {
-        final bool bounded = constraints.maxWidth.isFinite;
-        if (widget.expandedInsets != null && bounded) {
-          return Padding(padding: widget.expandedInsets!, child: track);
-        }
-        final double width = bounded && intrinsic > constraints.maxWidth
-            ? constraints.maxWidth
-            : intrinsic;
-        return SizedBox(width: width, child: track);
-      },
+    final EdgeInsets? insets = widget.expandedInsets;
+    // The width is decided from the constraints (fill when bounded and
+    // expanded, else the content width), but the control also answers
+    // intrinsic size queries itself: inside a dialog that sizes its content
+    // with IntrinsicWidth a bare LayoutBuilder throws (BUG-4397).
+    return _AppleSegmentedIntrinsics(
+      width: intrinsic + (insets?.horizontal ?? 0),
+      height: height + (insets?.vertical ?? 0),
+      fillsBoundedWidth: insets != null,
+      child: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints constraints) {
+          final bool bounded = constraints.maxWidth.isFinite;
+          if (insets != null && bounded) {
+            return Padding(padding: insets, child: track);
+          }
+          final double width = bounded && intrinsic > constraints.maxWidth
+              ? constraints.maxWidth
+              : intrinsic;
+          return SizedBox(width: width, child: track);
+        },
+      ),
     );
   }
 
@@ -4643,5 +4654,91 @@ class _AppleSegmentState extends State<_AppleSegment> {
         ),
       ),
     );
+  }
+}
+
+/// Reports the Apple segmented control's known content size as its intrinsic
+/// size (and dry layout), so hosts that measure their content (a form dialog's
+/// IntrinsicWidth, BUG-4397) never reach the LayoutBuilder below.
+class _AppleSegmentedIntrinsics extends SingleChildRenderObjectWidget {
+  const _AppleSegmentedIntrinsics({
+    required this.width,
+    required this.height,
+    required this.fillsBoundedWidth,
+    required super.child,
+  });
+
+  final double width;
+  final double height;
+  final bool fillsBoundedWidth;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderAppleSegmentedIntrinsics(
+        width: width,
+        height: height,
+        fillsBoundedWidth: fillsBoundedWidth,
+      );
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderAppleSegmentedIntrinsics renderObject,
+  ) {
+    renderObject
+      ..intrinsicWidth = width
+      ..intrinsicHeight = height
+      ..fillsBoundedWidth = fillsBoundedWidth;
+  }
+}
+
+class _RenderAppleSegmentedIntrinsics extends RenderProxyBox {
+  _RenderAppleSegmentedIntrinsics({
+    required double width,
+    required double height,
+    required bool fillsBoundedWidth,
+  }) : _width = width,
+       _height = height,
+       _fillsBoundedWidth = fillsBoundedWidth;
+
+  double _width;
+  set intrinsicWidth(double value) {
+    if (value == _width) return;
+    _width = value;
+    markNeedsLayout();
+  }
+
+  double _height;
+  set intrinsicHeight(double value) {
+    if (value == _height) return;
+    _height = value;
+    markNeedsLayout();
+  }
+
+  bool _fillsBoundedWidth;
+  set fillsBoundedWidth(bool value) {
+    if (value == _fillsBoundedWidth) return;
+    _fillsBoundedWidth = value;
+    markNeedsLayout();
+  }
+
+  @override
+  double computeMinIntrinsicWidth(double height) => _width;
+
+  @override
+  double computeMaxIntrinsicWidth(double height) => _width;
+
+  @override
+  double computeMinIntrinsicHeight(double width) => _height;
+
+  @override
+  double computeMaxIntrinsicHeight(double width) => _height;
+
+  @override
+  Size computeDryLayout(BoxConstraints constraints) {
+    final double width = _fillsBoundedWidth && constraints.hasBoundedWidth
+        ? constraints.maxWidth
+        : _width;
+    return constraints.constrain(Size(width, _height));
   }
 }

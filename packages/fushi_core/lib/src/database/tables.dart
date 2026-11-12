@@ -425,9 +425,60 @@ class MediaTrackingMappings extends Table {
   IntColumn get createdAt => integer()();
   IntColumn get updatedAt => integer()();
 
+  /// v145: how the link was made: `manual` (picked by the user), `id` (from
+  /// an id another source gave, e.g. MAL or MangaBaka → AniList), `auto` (title
+  /// match ≥ 0.90), `suggestion` (a title match the user approved). Null for
+  /// links made before v145.
+  TextColumn get linkSource => text().nullable()();
+
+  /// v145: title match score (0..1) for `auto` / `suggestion` links.
+  RealColumn get confidence => real().nullable()();
+
+  /// v152: what a send of this link last succeeded with, in the site's units
+  /// (after [progressOffset]): the highest progress, or for a `status` link
+  /// the last status. The catch-up compares local progress with it (and with
+  /// a queued row) instead of a time watermark, so progress that arrives late
+  /// with an old timestamp is still sent once. Null = nothing sent yet (a new
+  /// or changed link). -1 = a link made before v152, nothing recorded: the
+  /// first catch-up takes the current progress as sent when the old
+  /// watermark had covered it, and queues it otherwise.
+  IntColumn get sentProgress => integer().nullable()();
+
+  /// v152: a send of this link succeeded with `completed` (see
+  /// [sentProgress]).
+  BoolColumn get sentCompleted =>
+      boolean().withDefault(const Constant(false))();
+
   @override
   List<Set<Column>> get uniqueKeys => [
     {provider, mediaType, mediaKey},
+  ];
+}
+
+/// v145: title matches waiting for the user (score 0.60–0.90, or a close
+/// second). One row per local item × provider × remote subject. Dismissed rows
+/// stay so the same match is not suggested again.
+@DataClassName('MediaTrackingSuggestionRow')
+class MediaTrackingSuggestions extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  TextColumn get provider => text()();
+  TextColumn get mediaType => text()();
+  TextColumn get mediaKey => text()();
+  IntColumn get subjectId => integer()();
+  TextColumn get subjectName => text()();
+
+  /// `TrackingKind.value` of the remote subject (novel / manga).
+  TextColumn get subjectKind => text()();
+  RealColumn get score => real()();
+
+  /// Provider facts for the review UI (titles, authors, totals, cover). JSON.
+  TextColumn get detailsJson => text().withDefault(const Constant('{}'))();
+  IntColumn get createdAt => integer()();
+  IntColumn get dismissedAt => integer().nullable()();
+
+  @override
+  List<Set<Column>> get uniqueKeys => [
+    {provider, mediaType, mediaKey, subjectId},
   ];
 }
 
@@ -447,6 +498,92 @@ class MediaTrackingOutbox extends Table {
   IntColumn get nextAttemptAt => integer().withDefault(const Constant(0))();
   TextColumn get lastError => text().nullable()();
   IntColumn get updatedAt => integer()();
+}
+
+/// v151: the do-not-track list. One row per local item the user asked not to
+/// track, keyed like a link (`TrackingMediaType.value` + media key). A
+/// collection row (`video_collection` / `book_collection` + collection id)
+/// covers every member, also members added later; a `remote_series` row
+/// covers every episode of that media server season. Ignored items are never
+/// linked automatically, queued or sent; their links stay, paused.
+@DataClassName('MediaTrackingIgnoredRow')
+class MediaTrackingIgnored extends Table {
+  @override
+  String get tableName => 'media_tracking_ignored';
+
+  IntColumn get id => integer().autoIncrement()();
+  TextColumn get mediaType => text()();
+  TextColumn get mediaKey => text()();
+
+  /// The local title when it was ignored (the "Ignored" view shows it).
+  TextColumn get mediaTitle => text().withDefault(const Constant(''))();
+
+  /// `TrackingKind.value`, when known.
+  TextColumn get kind => text().nullable()();
+  IntColumn get createdAt => integer()();
+
+  @override
+  List<Set<Column>> get uniqueKeys => [
+    {mediaType, mediaKey},
+  ];
+}
+
+/// v151: local log of sends to tracking sites (the Tracking page's
+/// "Activity"), one row per outbox row marked sent or failed. Capped: only
+/// the newest 500 rows are kept (trimmed on write).
+@DataClassName('MediaTrackingActivityRow')
+class MediaTrackingActivity extends Table {
+  @override
+  String get tableName => 'media_tracking_activity';
+
+  IntColumn get id => integer().autoIncrement()();
+  TextColumn get provider => text()();
+  TextColumn get mediaType => text()();
+  TextColumn get mediaKey => text()();
+  TextColumn get mediaTitle => text()();
+
+  /// `TrackingKind.value` of the link.
+  TextColumn get kind => text()();
+
+  /// `TrackingProgressMode.value` of the link (`status` = a game status).
+  TextColumn get progressMode => text()();
+
+  /// The remote progress (or status code) that was sent.
+  IntColumn get progress => integer()();
+  BoolColumn get completed => boolean().withDefault(const Constant(false))();
+  BoolColumn get ok => boolean()();
+
+  /// The error text when [ok] is false.
+  TextColumn get error => text().nullable()();
+  IntColumn get createdAt => integer()();
+}
+
+/// v151: media server episodes (Jellyfin / Emby / Plex) watched to the end
+/// that no tracking site could be linked to from the server's ids. Listed
+/// under "Needs attention" (grouped by [groupKey]) so the user can link them
+/// by hand; a row is removed once its group is linked or ignored.
+@DataClassName('MediaTrackingRemoteEpisodeRow')
+class MediaTrackingRemoteEpisodes extends Table {
+  @override
+  String get tableName => 'media_tracking_remote_episodes';
+
+  IntColumn get id => integer().autoIncrement()();
+
+  /// `RemoteAnimeEpisode.mediaKey` (server + user + item).
+  TextColumn get mediaKey => text().unique()();
+
+  /// One link covers the group: server + series + season for episodes
+  /// (`remote_series` links), the item's own key for a movie.
+  TextColumn get groupKey => text()();
+  TextColumn get seriesTitle => text().withDefault(const Constant(''))();
+
+  /// The episode as the server names it, e.g. "Frieren S1E3".
+  TextColumn get title => text()();
+  IntColumn get seasonNumber => integer().nullable()();
+  IntColumn get episodeNumber => integer()();
+  BoolColumn get isMovie => boolean().withDefault(const Constant(false))();
+  TextColumn get serverName => text().withDefault(const Constant(''))();
+  IntColumn get watchedAt => integer()();
 }
 
 // ── epub_books ─────────────────────────────────────────────────────

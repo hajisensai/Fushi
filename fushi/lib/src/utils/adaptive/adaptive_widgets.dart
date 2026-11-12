@@ -746,20 +746,17 @@ Widget adaptiveSegmentedButton<T extends Object>({
     // Apple 设计系统：委托给 FushiSegmentedButton 的 iOS 分段（systemFill 灰轨 +
     // 白色滑块），与 FushiSegmentedButton 调用点同一个观感。有界宽下撑满（沿用
     // 以前玻璃分段的布局），无界宽（横向滚动的分段条宿主）按内容取宽。
-    return LayoutBuilder(
-      builder: (BuildContext context, BoxConstraints constraints) {
-        return FushiSegmentedButton<T>(
-          segments: segments,
-          selected: selected,
-          onSelectionChanged: onSelectionChanged,
-          emptySelectionAllowed: selected.isEmpty,
-          showSelectedIcon: false,
-          expandedInsets: constraints.maxWidth.isFinite
-              ? EdgeInsets.zero
-              : null,
-          style: style,
-        );
-      },
+    // expandedInsets = fill when the width is bounded, content width when it
+    // is not (both Apple forms decide this from their own constraints and
+    // still answer intrinsic size queries; no LayoutBuilder here, BUG-4397).
+    return FushiSegmentedButton<T>(
+      segments: segments,
+      selected: selected,
+      onSelectionChanged: onSelectionChanged,
+      emptySelectionAllowed: selected.isEmpty,
+      showSelectedIcon: false,
+      expandedInsets: EdgeInsets.zero,
+      style: style,
     );
   }
   // Material（M3E）：胶囊轨道 + 选中胶囊，与浏览页二级页签同一形态
