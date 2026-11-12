@@ -3,13 +3,16 @@
 // 两台设备各自随机生成 profileUid、各自有笔记和复习记录；B 把自己并入 A 的 uid 后按调用方的顺序重开 store、
 // afterRestore(freshIncarnation: true)、同步 v2：两边都看到全部笔记，B 原来的笔记仍在新 uid 的默认牌组 / 内置
 // Lapis 类型下、字段内容与复习历史都在；中途失败（注入）不丢数据，重跑收敛。
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show QueryRow, Variable, driftRuntimeOptions;
 import 'package:drift/native.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
+import 'package:fushi_engine/srs/srs_database_executor.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_profile_data.dart';
 import 'package:fushi_engine/srs/srs_profile_link.dart';
 import 'package:fushi_engine/srs/srs_profile_merge.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
@@ -21,6 +24,7 @@ import 'package:fushi_srs/fushi_srs.dart';
 import 'package:test/test.dart';
 
 import 'support/srs_fake_engine.dart';
+import 'support/srs_legacy_fixtures.dart';
 import 'support/srs_test_storage.dart';
 
 class _Device {
@@ -418,7 +422,7 @@ void main() {
     expect(guid, isNotEmpty);
   });
 
-  test('删旧行的事务里失败：旧行一行不少（回滚），新 uid 下数据齐全；重跑删掉旧行', () async {
+  test('收尾命令在核对之后失败：旧行一行不少（整笔回滚），新 uid 下数据齐全；重跑删掉旧行', () async {
     final _Device b = await _Device.open('iphone');
     final String bOld = b.store.profileUid;
     final String note = await b.addNote('雨');
@@ -436,16 +440,15 @@ void main() {
         oldUid: bOld,
         newUid: target,
         deviceId: b.deviceId,
-        debugFault: (SrsProfileMergeStage s) async {
-          if (s == SrsProfileMergeStage.beforeDelete) {
-            throw StateError('injected');
-          }
-        },
+        debugFailCommit: true,
       ),
-      throwsStateError,
+      throwsA(
+        predicate<Object>((Object e) => '$e'.contains('injected failure')),
+      ),
     );
     expect(await b.db.profileUidOf(b.profileId), target);
-    expect(await b.rowsOf(bOld), before, reason: '删除事务回滚，旧行一行不少');
+    expect(await b.rowsOf(bOld), before, reason: '收尾命令整笔回滚，旧行一行不少');
+    expect(await srsPendingProfileMerges(b.srs.db), hasLength(1));
     await b.reopen();
     final SrsNoteView? n = await _noteByGuid(b.store, guid);
     expect(n?.field(srsLapisFieldId(target, 'Expression')), '雨');
@@ -470,6 +473,163 @@ void main() {
       ))?.field(srsLapisFieldId(target, 'Expression')),
       '雨',
     );
+  });
+
+  test('计划之后旧 uid 又被写：这一轮不删，下一轮带上再删；轮数用完报错、旧行留着', () async {
+    final _Device b = await _Device.open('iphone');
+    final String bOld = b.store.profileUid;
+    final SrsDbStore old = b.store;
+    Future<String> late(String expression) async =>
+        (await old.note(await b.addNote(expression)))!.guid;
+    final String rain = await late('雨');
+    const String target = '01900000-0000-7000-8000-000000000013';
+    final List<String> lateGuids = <String>[];
+
+    await expectLater(
+      srsMergeProfileUid(
+        b.db,
+        b.srs.db,
+        core: b.srs.core,
+        profileId: b.profileId,
+        oldUid: bOld,
+        newUid: target,
+        deviceId: b.deviceId,
+        maxConvergeRounds: 1,
+        debugFault: (SrsProfileMergeStage s) async {
+          if (s == SrsProfileMergeStage.beforeCommit) {
+            lateGuids.add(await late('雪'));
+          }
+        },
+      ),
+      throwsA(
+        isA<StateError>().having(
+          (StateError e) => e.message,
+          'message',
+          contains('kept changing'),
+        ),
+      ),
+    );
+    expect(await b.db.profileUidOf(b.profileId), target);
+    expect(await b.rowsOf(bOld), greaterThan(0), reason: '没核对过，旧行留着');
+    expect(await srsPendingProfileMerges(b.srs.db), hasLength(1));
+
+    int commits = 0;
+    await srsMergeProfileUid(
+      b.db,
+      b.srs.db,
+      core: b.srs.core,
+      profileId: b.profileId,
+      oldUid: bOld,
+      newUid: target,
+      deviceId: b.deviceId,
+      debugFault: (SrsProfileMergeStage s) async {
+        if (s == SrsProfileMergeStage.beforeCommit && commits++ == 0) {
+          lateGuids.add(await late('雲'));
+        }
+      },
+    );
+    expect(commits, 2, reason: '第一轮收尾被拒，第二轮带上晚到的笔记');
+    expect(await b.rowsOf(bOld), 0);
+    expect(await srsPendingProfileMerges(b.srs.db), isEmpty);
+    await b.reopen();
+    expect(lateGuids, hasLength(2));
+    for (final String guid in <String>[rain, ...lateGuids]) {
+      expect(await _noteByGuid(b.store, guid), isNotNull, reason: guid);
+    }
+    // 整个并入没有一条命令落在 Drift 的事务里（收尾以前是一笔 Drift 事务里的 profile_purge）。
+    final Map<String, Map<String, int>> hits = await b.store
+        .debugDriftTxGuardHits();
+    expect(
+      hits.values.every((Map<String, int> m) => m.isEmpty),
+      isTrue,
+      reason: '$hits',
+    );
+  });
+
+  test('链接记的集合：并发增删不互相覆盖；与旧版本直写的形态互相读得懂', () async {
+    final _Device b = await _Device.open('iphone');
+    final SrsCore core = b.srs.core;
+    await Future.wait(<Future<Set<String>>>[
+      for (int i = 0; i < 16; i++)
+        srsEditMetaSet(core, SrsMetaSet.retiredUids, add: 'u$i'),
+    ]);
+    expect(await srsEditMetaSet(core, SrsMetaSet.retiredUids), <String>{
+      for (int i = 0; i < 16; i++) 'u$i',
+    });
+    await Future.wait(<Future<Set<String>>>[
+      for (int i = 0; i < 16; i += 2)
+        srsEditMetaSet(core, SrsMetaSet.retiredUids, remove: 'u$i'),
+      srsEditMetaSet(core, SrsMetaSet.retiredDevices, add: 'd'),
+      srsEditMetaSet(core, SrsMetaSet.retiredUids, add: 'x'),
+    ]);
+    expect(await srsEditMetaSet(core, SrsMetaSet.retiredUids), <String>{
+      for (int i = 1; i < 16; i += 2) 'u$i',
+      'x',
+    });
+    expect(await srsEditMetaSet(core, SrsMetaSet.retiredDevices), <String>{
+      'd',
+    });
+
+    // 旧版本（Dart 经 Drift 直写）写下的值：JSON 字符串数组。
+    await b.srs.db.customStatement(
+      'INSERT OR REPLACE INTO srs_meta (key, value) VALUES (?, ?)',
+      <Object>[
+        kSrsRetiredProfileUidsKey,
+        jsonEncode(<String>['a', 'b']),
+      ],
+    );
+    expect(
+      await srsEditMetaSet(core, SrsMetaSet.retiredUids, add: 'c'),
+      <String>{'a', 'b', 'c'},
+    );
+    final String raw =
+        (await b.srs.db
+                .customSelect(
+                  'SELECT value FROM srs_meta WHERE key = ?',
+                  variables: <Variable<Object>>[
+                    Variable<String>(kSrsRetiredProfileUidsKey),
+                  ],
+                )
+                .getSingle())
+            .read<String>('value');
+    expect(jsonDecode(raw), <String>['a', 'b', 'c']);
+  });
+
+  test('第 11 步成本：并入的收尾与集合增删不再经 Drift 执行器', () async {
+    final _Device b = await _Device.open('iphone');
+    final String bOld = b.store.profileUid;
+    for (final String e in const <String>['雨', '雪', '雲']) {
+      await b.store.answer(await b.cardOf(await b.addNote(e)), 3);
+    }
+    const String target = '01900000-0000-7000-8000-000000000014';
+    SrsRustDelegate.debugStatements = 0;
+    int atCommit = -1;
+    await srsMergeProfileUid(
+      b.db,
+      b.srs.db,
+      core: b.srs.core,
+      profileId: b.profileId,
+      oldUid: bOld,
+      newUid: target,
+      deviceId: b.deviceId,
+      debugFault: (SrsProfileMergeStage s) async {
+        if (s == SrsProfileMergeStage.beforeCommit) {
+          atCommit = SrsRustDelegate.debugStatements;
+        }
+      },
+    );
+    final int total = SrsRustDelegate.debugStatements;
+    // ignore: avoid_print
+    print('WRITE_COST merge: statements=$total commit=${total - atCommit}');
+    expect(atCommit, greaterThan(0));
+    expect(total - atCommit, 0, reason: '收尾是一条内核命令');
+    expect(await b.rowsOf(bOld), 0);
+
+    SrsRustDelegate.debugStatements = 0;
+    await srsEditMetaSet(b.srs.core, SrsMetaSet.retiredUids, add: bOld);
+    await srsEditMetaSet(b.srs.core, SrsMetaSet.retiredUids, remove: bOld);
+    await srsEditMetaSet(b.srs.core, SrsMetaSet.retiredUids);
+    expect(SrsRustDelegate.debugStatements, 0);
   });
 
   test('媒体与共享样式文件跟着搬到新 uid 目录', () async {
@@ -758,7 +918,7 @@ void main() {
     int nowMs = 1792500000000;
     final SrsLogContext ctx = SrsLogContext(
       profileUid: bOld,
-      clock: HlcClock('host#1'),
+      nextHlc: legacyTicker('host#1'),
       now: () => (nowMs, SrsTimeSource.wall),
       day: const SrsDayContext(utcOffsetMin: 0, rolloverHour: 4),
     );

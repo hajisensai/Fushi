@@ -136,11 +136,22 @@ void main() {
             reason: '↶ 与 × 同在动作区那一排',
           );
           expect(back.center.dx, lessThan(close.center.dx), reason: '排在动作区最前');
-          expect(
-            back.center.dx,
-            greaterThan(layout.size.width / 2),
-            reason: '在右侧动作区',
-          );
+          // 「在右侧动作区」= 不进标题区：同一排上的标题文字都在 ↶ 左边。不拿
+          // 屏宽一半当界——窄屏胶囊里动作随布局增加（2026-11-10 起 × 前加了
+          // 「书籍模式」键），390 宽时胶囊左缘本来就会越过中线。
+          for (final Element title in find.text('無職転生').evaluate()) {
+            final Rect titleRect = tester.getRect(
+              find.byElementPredicate((Element e) => identical(e, title)),
+            );
+            if (titleRect.bottom <= back.top || titleRect.top >= back.bottom) {
+              continue;
+            }
+            expect(
+              back.left,
+              greaterThanOrEqualTo(titleRect.right - 0.5),
+              reason: '在右侧动作区，不压进标题区',
+            );
+          }
 
           await tester.tap(find.byKey(_backKey));
           await tester.pump();

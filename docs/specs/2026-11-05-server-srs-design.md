@@ -28,7 +28,7 @@ Non-goals (v1):
 
 - No review UI in the WebUI. The server is a store and sync point, not a review client.
 - No cloud sync channels on the server (Dropbox / WebDAV / …). It only syncs its own local directory, which is the one the clients write into.
-- No RWKV scheduling on the server. FSRS only; the envelope reports `rwkv: false`, which clients already handle.
+- ~~No RWKV scheduling on the server.~~ Superseded 2026-11-11: the server attaches the same RWKV scheduling as the app (`fushi_engine/srs/srs_rwkv_attach.dart`), so RWKV decks are queued by RWKV retrievability on both. While RWKV is not ready (weights not downloaded, replay in progress, error) those decks give out no review cards; they never fall back to the stored FSRS due dates. The envelope carries `rwkv` plus the preparation status `rk`. See the addendum at the end.
 - No encrypted sync locations. v1 refuses them with a clear status (owner decision 2026-11-06, §4.3).
 - No AnkiConnect GUI actions (`guiBrowse`, `guiEditNote` …): there is no GUI. They return the standard "unsupported" error.
 
@@ -369,3 +369,16 @@ Problems found:
 - Server backups now carry a consistent `srs.db` snapshot instead of the raw file and its `-wal` / `-shm`.
 - CI: `server-gate.yml` builds `native/fushi_fsrs` and exports `FUSHI_FSRS_LIB` for the server tests.
 - App behaviour change: with "mine to paired device" on, duplicate checks and cards go to the host instead of the phone's own review copy.
+
+## Addendum: RWKV scheduling on the server (2026-11-11)
+
+The server serves RWKV decks the same way the app does. There is one assembly, `srsAttachRwkv` in `packages/fushi_engine/lib/srs/srs_rwkv_attach.dart`, called by the app's `srsRwkvServiceProvider` and by `ServerSrs` right after a profile's store opens and before the store is handed to anything. The rule "RWKV not ready means no review cards from RWKV decks, never the FSRS due dates" lives in one place, `SrsDbStore._instantInput`, and applies to both hosts.
+
+- Weights: `<data>/support/srs_rwkv/models/sm72e25_weights.int8.bin` (436 KB), downloaded on first use through the global proxy settings. A server without internet access can be given the file by hand; it is used once its SHA-256 checks out.
+- State snapshots: `<data>/support/srs_rwkv/state/` (one main snapshot and up to two checkpoints per profile).
+- Start: after a sync round succeeds and the collection has a deck scheduled by RWKV. Otherwise on the first queue request for such a deck.
+- Close: `ServerSrsProfile._close` closes the RWKV service (saves the snapshot, stops the background runtime) before it retires the store.
+- Status: `ServerSrsProfile.toJson` reports `rwkv` (`idle` / `downloading` / `preparing` / `ready` / `failed`) and `rwkvError`.
+- Remote review: the envelope's `rk` carries phase, progress and error. The client shows them on the "waiting for RWKV" screen, asks the host again every 2 s while that screen is up, re-queues when the host turns ready, and forwards "Retry" as the `rwkvStart` operation.
+- Review logs written on the server record `alg = rwkv` for RWKV decks, as on the app. Logs the server wrote before this change keep `FSRS-7`.
+- Licence note: `libfushi_rwkv` is AGPL-3.0-or-later. Section 13 applies to operators who run a modified version for remote users; the source is this repository.
