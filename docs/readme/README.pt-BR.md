@@ -6,7 +6,7 @@
 
 ![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Windows%20%7C%20macOS%20%7C%20iOS%20%7C%20Linux-lightgrey)
 ![License](https://img.shields.io/badge/license-GPLv3-blue)
-![Flutter](https://img.shields.io/badge/Flutter-3.47.6-02569B?logo=flutter&logoColor=white)
+![Flutter](https://img.shields.io/badge/Flutter-3.50.0-02569B?logo=flutter&logoColor=white)
 
 [简体中文](../../README.zh-CN.md) | [English](../../README.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Español](README.es.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | **Português** | [Русский](README.ru.md) | [Tiếng Việt](README.vi.md) | [ภาษาไทย](README.th.md) | [Bahasa Indonesia](README.id.md) | [Italiano](README.it.md) | [Nederlands](README.nl.md) | [Türkçe](README.tr.md) | [العربية](README.ar.md)
 
@@ -67,14 +67,14 @@ flutter build ipa --release
 dart build cli
 ```
 
-`tool/bootstrap.sh` / `tool/bootstrap.ps1` reúnem `flutter pub get` e `ci/apply-patches.sh` em um único comando. Este projeto está fixado no Flutter 3.47.6 (Dart SDK `>=3.8.0 <4.0.0`); versões anteriores do Flutter não conseguem compilá-lo porque o Material e o Cupertino são consumidos como os pacotes `material_ui` / `cupertino_ui`. Algumas dependências upstream estão incluídas em `third_party/` ou recebem patch de `ci/apply-patches.sh`; consulte [docs/agent/build.md](../agent/build.md) para mais detalhes, incluindo as dependências de compilação do desktop Linux.
+`tool/bootstrap.sh` / `tool/bootstrap.ps1` reúnem `flutter pub get` e `ci/apply-patches.sh` em um único comando. Este projeto está fixado no Flutter 3.50.0 (Dart SDK `>=3.8.0 <4.0.0`); versões anteriores do Flutter não conseguem compilá-lo porque o Material e o Cupertino são consumidos como os pacotes `material_ui` / `cupertino_ui`. Algumas dependências upstream estão incluídas em `third_party/` ou recebem patch de `ci/apply-patches.sh`; consulte [docs/agent/build.md](../agent/build.md) para mais detalhes, incluindo as dependências de compilação do desktop Linux.
 
 <details>
 <summary><b>Pilha de tecnologias</b></summary>
 
 | Camada | Tecnologia |
 |---|---|
-| Framework | Flutter 3.47.6 (Dart SDK `>=3.8.0 <4.0.0`), Riverpod |
+| Framework | Flutter 3.50.0 (Dart SDK `>=3.8.0 <4.0.0`), Riverpod |
 | Plataformas | Android / Windows / macOS / iOS / Linux, mais um servidor sem interface |
 | UI | `material_ui` (Material 3 Expressive) / `cupertino_ui` (Cupertino) |
 | Leitor | Motor de paginação WebView (derivado da família Hoshi Reader) |

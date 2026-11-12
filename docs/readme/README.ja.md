@@ -6,7 +6,7 @@
 
 ![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Windows%20%7C%20macOS%20%7C%20iOS%20%7C%20Linux-lightgrey)
 ![License](https://img.shields.io/badge/license-GPLv3-blue)
-![Flutter](https://img.shields.io/badge/Flutter-3.47.6-02569B?logo=flutter&logoColor=white)
+![Flutter](https://img.shields.io/badge/Flutter-3.50.0-02569B?logo=flutter&logoColor=white)
 
 [简体中文](../../README.zh-CN.md) | [English](../../README.md) | [繁體中文](README.zh-Hant.md) | **日本語** | [한국어](README.ko.md) | [Español](README.es.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md) | [Tiếng Việt](README.vi.md) | [ภาษาไทย](README.th.md) | [Bahasa Indonesia](README.id.md) | [Italiano](README.it.md) | [Nederlands](README.nl.md) | [Türkçe](README.tr.md) | [العربية](README.ar.md)
 
@@ -67,14 +67,14 @@ flutter build ipa --release
 dart build cli
 ```
 
-`tool/bootstrap.sh` / `tool/bootstrap.ps1` は `flutter pub get` と `ci/apply-patches.sh` を一つのコマンドにまとめます。本プロジェクトは Flutter 3.47.6（Dart SDK `>=3.8.0 <4.0.0`）に固定されています。Material と Cupertino は `material_ui` / `cupertino_ui` パッケージ経由で利用するため、それより古い Flutter ではビルドできません。一部の上流依存は `third_party/` に vendored されているか、`ci/apply-patches.sh` によってパッチが当てられます。Linux デスクトップのビルド依存を含む詳細は [docs/agent/build.md](../agent/build.md) を参照してください。
+`tool/bootstrap.sh` / `tool/bootstrap.ps1` は `flutter pub get` と `ci/apply-patches.sh` を一つのコマンドにまとめます。本プロジェクトは Flutter 3.50.0（Dart SDK `>=3.8.0 <4.0.0`）に固定されています。Material と Cupertino は `material_ui` / `cupertino_ui` パッケージ経由で利用するため、それより古い Flutter ではビルドできません。一部の上流依存は `third_party/` に vendored されているか、`ci/apply-patches.sh` によってパッチが当てられます。Linux デスクトップのビルド依存を含む詳細は [docs/agent/build.md](../agent/build.md) を参照してください。
 
 <details>
 <summary><b>技術スタック</b></summary>
 
 | レイヤー | 技術 |
 |---|---|
-| フレームワーク | Flutter 3.47.6（Dart SDK `>=3.8.0 <4.0.0`）、Riverpod |
+| フレームワーク | Flutter 3.50.0（Dart SDK `>=3.8.0 <4.0.0`）、Riverpod |
 | プラットフォーム | Android / Windows / macOS / iOS / Linux、およびヘッドレスサーバー |
 | UI | `material_ui`（Material 3 Expressive）/ `cupertino_ui`（Cupertino） |
 | リーダー | WebView ページングエンジン（Hoshi Reader 系統から派生） |

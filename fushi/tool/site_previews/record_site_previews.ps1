@@ -42,7 +42,7 @@ New-Item -ItemType Directory -Force $Cache | Out-Null
 $Cache = (Resolve-Path $Cache).Path
 if ($Cache -match '[^\x00-\x7F]') { throw "-Cache 路径含非 ASCII 字符：$Cache" }
 
-$flutterBin = "D:\flutter_sdk\flutter_3.47.6\bin"
+$flutterBin = "D:\flutter_sdk\flutter_3.50.0\bin"
 $dart = if (Test-Path "$flutterBin\dart.bat") { "$flutterBin\dart.bat" } else { "dart" }
 if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) { throw "PATH 上没有 ffmpeg" }
 
