@@ -38,6 +38,65 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-4387](bugs/BUG-4387-srs-by-id-access-not-profile-scoped.md) | 🚧 | 🚧 | 复习库按 id 的读写不按 profile 过滤：点名的 profile 与 id 不属于同一份时写错库 |
+| [BUG-4386](bugs/BUG-4386-srs-edit-undo-blind-overwrite.md) | ✅ | ✅ | srs-edit-undo-blind-overwrite |
+| [BUG-4386](bugs/BUG-4386-srs-adopt-deletes-decks-without-notes.md) | ✅ | ✅ | 复习同步关联只看笔记，只建了牌组 / 改了预设的设备被自动采用对方 uid，自建牌组与预设被删 |
+> 共 3873 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4324](bugs/BUG-4324-srs-sync2-rotated-identity-segments-deleted.md) | ✅ | ✅ | SRS 同步 v2：换身份后仍删旧身份目录里的旧小段，旧身份留着的 head 引用落空 |
+| [BUG-4323](bugs/BUG-4323-srs-sync2-segment-deleted-before-referencing-head.md) | ✅ | ✅ | SRS 同步 v2：旧小段可能先于引用它的旧 head 被删（保留代数写在 Dart，内核看不到） |
+> 共 3931 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4387](bugs/BUG-4387-catsystem2-2-6-1-90-sites-unresolved.md) | ✅ | ✅ | CatSystem2 cs2 2.6.1.90 查词与语音站点全部 unresolved |
+| [BUG-4387](bugs/BUG-4387-galhook-leaf-wa2-second-build-unrecognized.md) | ✅ | ✅ | Leaf/AQUAPLUS：WHITE ALBUM2 另一构建不被认领（准入钉在单个 exe 摘要 + glyph 返回点判据无选择性） |
+| [BUG-4387](bugs/BUG-4387-tyrano-measured-client-size-dpr-rounding.md) | ✅ | ✅ | TyranoScript 内嵌查词在 Electron 全屏 + 小数缩放下永远不出卡：DOM 推算的客户区与真实客户区差 1px 被逐像素拒收 |
+> 共 3933 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4389](bugs/BUG-4389-gal-dom-no-voice-mining-spins.md) | ✅ | ✅ | TyranoScript 无语音行制卡时浮窗制卡按钮长时间转圈 |
+| [BUG-4388](bugs/BUG-4388-gal-measured-lookup-lost-after-screen-switch.md) | ✅ | ✅ | 切屏后游戏内查词（实测排版路线）失效，要到下一句才恢复 |
+| [BUG-4387](bugs/BUG-4387-gal-dom-text-waiting-thread.md) | ✅ | ✅ | TyranoScript DOM 正文在线时工作台仍显示等待选择台词线程 |
+> 共 3932 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4388](bugs/BUG-4388-gal-printwindow-dpi-virtualized-partial.md) | ✅ | ✅ | DPI-unaware 游戏在缩放屏上 WGC 失败后 PrintWindow 兜底把逻辑尺寸整帧误判为 partial，制卡无图失败 |
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4389](bugs/BUG-4389-srs-profile-conflict-dialog-freeze.md) | ✅ | ✅ | SRS profile conflict dialog never lays out; desktop app stops reacting to the mouse |
+> 共 3931 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4387](bugs/BUG-4387-popup-scroll-leaks-across-lookups.md) | ✅ | ✅ | 查词弹窗滚动位跨查词残留（app 外 / galgame 根 iframe；同词缓存命中） |
+| [BUG-4387](bugs/BUG-4387-galhook-test-exe-av-false-positive.md) | ✅ | ✅ | Kaspersky 把 galgame hook 测试 exe 报为 Trojan.Win32.Sdum.gen 并删除 |
+> 共 3933 条。点号进各自文件。
+> 共 3947 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4476](bugs/BUG-4476-gal-dom-no-voice-mining-spins.md) | ✅ | ✅ | TyranoScript 无语音行制卡时浮窗制卡按钮长时间转圈 |
+| [BUG-4475](bugs/BUG-4475-lookup-caption-tap-no-dismiss.md) | ✅ | ✅ | 查词弹窗打开时点窗口最顶部关不掉弹窗 |
+| [BUG-4474](bugs/BUG-4474-cold-start-dict-history-decode-on-ui-isolate.md) | ✅ | ✅ | 冷启动白屏：十条查词历史（几 MB JSON）每次都在 UI 线程同步解析，挡住首帧 |
+| [BUG-4473](bugs/BUG-4473-gal-measured-lookup-lost-after-screen-switch.md) | ✅ | ✅ | 切屏后游戏内查词（实测排版路线）失效，要到下一句才恢复 |
+| [BUG-4472](bugs/BUG-4472-gal-printwindow-dpi-virtualized-partial.md) | ✅ | ✅ | DPI-unaware 游戏在缩放屏上 WGC 失败后 PrintWindow 兜底把逻辑尺寸整帧误判为 partial，制卡无图失败 |
+| [BUG-4471](bugs/BUG-4471-catsystem2-2-6-1-90-sites-unresolved.md) | ✅ | ✅ | CatSystem2 cs2 2.6.1.90 查词与语音站点全部 unresolved |
+| [BUG-4470](bugs/BUG-4470-galhook-leaf-wa2-second-build-unrecognized.md) | ✅ | ✅ | Leaf/AQUAPLUS：WHITE ALBUM2 另一构建不被认领（准入钉在单个 exe 摘要 + glyph 返回点判据无选择性） |
+| [BUG-4469](bugs/BUG-4469-tyrano-measured-client-size-dpr-rounding.md) | ✅ | ✅ | TyranoScript 内嵌查词在 Electron 全屏 + 小数缩放下永远不出卡：DOM 推算的客户区与真实客户区差 1px 被逐像素拒收 |
+| [BUG-4468](bugs/BUG-4468-gal-dom-text-waiting-thread.md) | ✅ | ✅ | TyranoScript DOM 正文在线时工作台仍显示等待选择台词线程 |
+| [BUG-4467](bugs/BUG-4467-popup-scroll-leaks-across-lookups.md) | ✅ | ✅ | 查词弹窗滚动位跨查词残留（app 外 / galgame 根 iframe；同词缓存命中） |
+| [BUG-4466](bugs/BUG-4466-galhook-test-exe-av-false-positive.md) | ✅ | ✅ | Kaspersky 把 galgame hook 测试 exe 报为 Trojan.Win32.Sdum.gen 并删除 |
+| [BUG-4465](bugs/BUG-4465-srs-sync2-rotated-identity-segments-deleted.md) | ✅ | ✅ | SRS 同步 v2：换身份后仍删旧身份目录里的旧小段，旧身份留着的 head 引用落空 |
+| [BUG-4464](bugs/BUG-4464-srs-sync2-segment-deleted-before-referencing-head.md) | ✅ | ✅ | SRS 同步 v2：旧小段可能先于引用它的旧 head 被删（保留代数写在 Dart，内核看不到） |
+| [BUG-4463](bugs/BUG-4463-srs-orphan-sweep-rerun-after-purge-unify.md) | ✅ | ✅ | 无主复习数据扫描在 BUG-4292 之前已扫过的库里不再跑，采用 / 并入旧实现的残留永远留下 |
+| [BUG-4389](bugs/BUG-4389-srs-profile-conflict-dialog-freeze.md) | ✅ | ✅ | SRS profile conflict dialog never lays out; desktop app stops reacting to the mouse |
+| [BUG-4388](bugs/BUG-4388-heavy-ticket-open-race.md) | ✅ | ✅ | heavy 租约的等待者探测排队票据时撞上别的进程删票据，排队中途崩溃退出 255 |
+| [BUG-4387](bugs/BUG-4387-windows-input-starved-by-engine-wakeups.md) | ✅ | ✅ | 启动时 WebView 预热的 idle 任务被常驻背景动画永久挡住，调度器空转饿死 Windows 输入 |
 | [BUG-4386](bugs/BUG-4386-anime-source-magnet-opened-as-file.md) | ✅ | ✅ | 视频源扩展（Torrentio）给的磁链被当本地文件打开，无限加载 |
 | [BUG-4385](bugs/BUG-4385-music-exclusive-pause-holds-device.md) | ✅ | ✅ | 音乐 WASAPI 独占输出暂停时不交还设备 |
 | [BUG-4384](bugs/BUG-4384-apple-music-preview-full-duration.md) | ✅ | ✅ | Apple Music 试听片段放约 30 秒就「回到开头」，进度条按整首时长画、无试听提示 |

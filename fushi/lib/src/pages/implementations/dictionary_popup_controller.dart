@@ -173,6 +173,15 @@ class DictionaryPopupEntry {
   int get lookupGeneration => _lookupGeneration;
   int _lookupGeneration = 0;
 
+  /// 本层当前查词会话的**全局唯一**编号，交给 [DictionaryPopupWebView.lookupSession]：
+  /// WebView 据此判「这是新会话、要全量重画并从顶部开始」，而不是靠结果对象身份去猜——
+  /// 本地查词缓存命中时同一个词再查会拿回**同一个**结果对象，只比身份就不推送、不归零，
+  /// 弹窗带着上一次的滚动位翻出。全局（而非每层各自的 [lookupGeneration]）是因为停驻
+  /// realm 的 WebView 键会换给新建 entry，各层自增代次可能前后撞号。
+  int get lookupSession => _lookupSession;
+  int _lookupSession = ++_lookupSessionSeq;
+  static int _lookupSessionSeq = 0;
+
   /// 查询已结束、且没有任何可渲染结果（无词条也无汉字卡）。与
   /// `DictionaryPopupLayer` 画「未找到」的判据同口径：搜索期占位单例不算空。
   bool get isRealEmptyResult {
@@ -528,6 +537,7 @@ class DictionaryPopupController extends ChangeNotifier {
   /// [e] 换成一个新的查词会话：代次 +1，在途的旧查询回来后 [isCurrentLookup] 落 false。
   void _bumpLookupGeneration(DictionaryPopupEntry e) {
     e._lookupGeneration++;
+    e._lookupSession = ++DictionaryPopupEntry._lookupSessionSeq;
   }
 
   /// [e] 仍在栈内、且仍是发起查询时（代次 [generation]）的那一次查词会话。

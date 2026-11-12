@@ -831,6 +831,7 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
     final String? message = switch (result.status) {
       AgentUndoStatus.done => null,
       AgentUndoStatus.superseded => t.ai_agent_superseded,
+      AgentUndoStatus.partial => t.ai_agent_undo_partial,
       AgentUndoStatus.failed || AgentUndoStatus.notUndoable =>
         t.ai_agent_undo_failed(reason: result.message ?? result.status.name),
     };
@@ -843,7 +844,14 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
     final int superseded = results
         .where((AgentUndoResult r) => r.status == AgentUndoStatus.superseded)
         .length;
-    if (superseded > 0) FushiToast.show(msg: t.ai_agent_superseded);
+    final bool partial = results.any(
+      (AgentUndoResult r) => r.status == AgentUndoStatus.partial,
+    );
+    if (superseded > 0) {
+      FushiToast.show(msg: t.ai_agent_superseded);
+    } else if (partial) {
+      FushiToast.show(msg: t.ai_agent_undo_partial);
+    }
   }
 
   @override

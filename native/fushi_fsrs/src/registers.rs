@@ -1276,6 +1276,64 @@ pub(crate) fn register_value(edits: &[StoredEdit<'_>], key: &str) -> Result<Valu
     Ok(ent.value(key).clone())
 }
 
+/// 往某实体的字段键 [key] 写 [value] 是不是什么都不改（Dart 旧 `srsEditIsNoop`）：这个键有生效记录、没有冲突，且
+/// 生效值与它「相同」（[same_value]）。没有记录、或有冲突待裁决的一律要写。
+pub(crate) fn write_is_noop(
+    edits: &[StoredEdit<'_>],
+    key: &str,
+    value: &Value,
+) -> Result<bool, String> {
+    let parsed = parse_stored(edits)?;
+    let ent = Entity::build(&parsed);
+    Ok(match ent.reg(key) {
+        Some(r) if !r.conflicted => r
+            .live
+            .first()
+            .is_some_and(|&i| same_value(&parsed[i].value, value)),
+        _ => false,
+    })
+}
+
+/// 撤销校验里「我们写的那条」：dot（写入者, 序号）与它落库的值。
+pub(crate) struct UndoTarget<'v> {
+    pub writer: &'v str,
+    pub seq: i64,
+    pub value: &'v Value,
+}
+
+/// 撤销校验（store/sync2/undo_check.rs）：某字段键自 [ours] 那次写入以来有没有被别人动过，只看库里的修改记录。
+///
+/// 可以撤 ⇔ 这个键只剩一条没被支配的记录（没有并发候选），且它
+/// - 就是 [ours]；或
+/// - 因果上见过 [ours]（ctx 含它的 dot），且值与 [ours] 相同——之后的改动又全部改回了 [ours] 写下的值
+///   （典型：先撤了更晚的那一步，撤销写下的记录把值还原成 [ours] 的值），现值仍是这次操作的结果。
+///
+/// [ours] 为 None（这一版之前记下的撤销载荷没有 dot）时只能按值：唯一的记录值与 [after] 相同。
+/// 返回 (能不能撤, 现值)。
+pub(crate) fn undo_verdict(
+    edits: &[StoredEdit<'_>],
+    key: &str,
+    ours: Option<&UndoTarget<'_>>,
+    after: Option<&Value>,
+) -> Result<(bool, Value), String> {
+    let parsed = parse_stored(edits)?;
+    let ent = Entity::build(&parsed);
+    let current = ent.value(key).clone();
+    let live: &[usize] = ent.reg(key).map_or(&[], |r| r.live.as_slice());
+    let [only] = live else {
+        return Ok((false, current));
+    };
+    let x = &parsed[*only];
+    let ok = match ours {
+        Some(o) => {
+            (x.writer == o.writer && x.seq == o.seq)
+                || (x.ctx.contains(o.writer, o.seq) && same_value(&x.value, o.value))
+        }
+        None => after.is_some_and(|a| same_value(&x.value, a)),
+    };
+    Ok((ok, current))
+}
+
 /// 测试用：一个实体全部寄存器的裁决（按记录 ID 而不是下标）——每个键的未被支配者（排序后，首个是胜者）、是否冲突、
 /// 可见败者，以及与删除并发的内容修改。两份只差 ctx 的记录集比这个就知道支配 / 胜负有没有变。
 #[cfg(test)]
