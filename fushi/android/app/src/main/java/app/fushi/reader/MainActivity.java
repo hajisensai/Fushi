@@ -119,6 +119,7 @@ public class MainActivity extends AudioServiceActivity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        StartupTrace.mark("activity-enter");
         // Splash 缓存只设置窗口背景；保留系统 uiMode，让 Flutter 正确跟随系统明暗。
         SharedPreferences splashPrefs = getSharedPreferences(SPLASH_PREFS, MODE_PRIVATE);
         int bgColor = splashPrefs.getInt(PreferenceKeys.SPLASH_BG_COLOR, 0);
@@ -153,9 +154,11 @@ public class MainActivity extends AudioServiceActivity {
                 "Mihon runtime init failed; manga extensions disabled this session", e);
         }
 
+        StartupTrace.mark("activity-pre-super");
         super.onCreate(savedInstanceState);
 
         disableSystemFocusHighlight();
+        StartupTrace.mark("activity-super-create");
         // 阅读器主窗口请求系统最高刷新率（收敛到共享 HighRefreshRate，与查词弹窗
         // PopupDictFlutterActivity / 悬浮窗共用同一实现，见 HighRefreshRate.java）。
         HighRefreshRate.applyToActivity(this);
@@ -613,7 +616,10 @@ public class MainActivity extends AudioServiceActivity {
 
     @Override
     public void configureFlutterEngine(@NonNull FlutterEngine flutterEngine) {
+        StartupTrace.mark("engine-ready");
         super.configureFlutterEngine(flutterEngine);
+        StartupTrace.mark("plugins-registered");
+        StartupTrace.registerWith(flutterEngine.getDartExecutor().getBinaryMessenger());
         FloatingDictService.initEngineGroup(getApplicationContext());
         // 反馈回复后台检查的排程：纯原生 Worker，不起 Flutter 引擎（反馈 yjn-3h8B-7）。
         app.fushi.reader.feedback.FeedbackReplyWorkChannel.registerWith(
@@ -1247,6 +1253,7 @@ public class MainActivity extends AudioServiceActivity {
                         break;
                 }
             });
+        StartupTrace.mark("channels-installed");
     }
 
     private void persistFloatingLyricOptions(Object rawArgs) {

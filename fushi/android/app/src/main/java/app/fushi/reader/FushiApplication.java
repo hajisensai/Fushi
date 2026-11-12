@@ -15,5 +15,6 @@ public class FushiApplication extends Application {
         // 最先装：之后任何初始化里的 Java 未捕获异常都要留下栈。
         JavaCrashCapture.install(this);
         super.onCreate();
+        StartupTrace.mark("application-create");
     }
 }

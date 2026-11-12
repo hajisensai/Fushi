@@ -128,6 +128,7 @@ import 'package:fushi/src/sync/sync_settings_schema.dart'
         dataRootMigrationRestart,
         runInterconnectLinkPairingFlow;
 import 'package:fushi/src/startup/webview_prewarm.dart';
+import 'package:fushi/src/startup/startup_timeline.dart';
 import 'package:fushi/src/startup/headless_launch_gate.dart';
 import 'package:fushi/src/startup/exit_flush_registry.dart';
 import 'package:fushi/src/startup/android_view_lifecycle.dart';
@@ -302,6 +303,37 @@ void secondScreenMain() {
   second_screen_entrypoint.secondScreenMain();
 }
 
+/// 冷启动恢复 Windows 窗口 / 任务栏图标的在途操作；显窗前等它落定。永不以错误结束。
+Future<void>? _startupWindowIconRestore;
+
+Future<void> _restoreWindowsWindowIcon(AppIconSelection selection) async {
+  try {
+    final String? iconPath = selection.usesCustomFile
+        ? selection.customPath
+        : await exportPresetIconToFile(selection.presetKey);
+    if (iconPath != null && File(iconPath).existsSync()) {
+      final bool applied = await WindowCaptionChannel.setWindowIcon(iconPath);
+      if (applied) {
+        // TODO-901：安装器更新可能把桌面 / 开始菜单 / 任务栏固定项的
+        // IconLocation 重置回 exe；同一档图标又不能靠重新点选触发设置页同步。
+        // 冷启动成功恢复窗口图标后，用同一源文件字节重写 .lnk 以自愈。
+        // 不 await：这里还在 runApp 之前，.lnk 自愈是尽力而为、与首帧无关，
+        // 没有理由让每次启动都等它（编码 + 原生改写 + shell 通知）。
+        unawaited(() async {
+          try {
+            final Uint8List iconBytes = await File(iconPath).readAsBytes();
+            await syncWindowsShortcutIcons(iconBytes);
+          } catch (e) {
+            debugPrint('[Fushi] shortcut icon sync failed: $e');
+          }
+        }());
+      }
+    }
+  } catch (e) {
+    debugPrint('[Fushi] window icon restore failed: $e');
+  }
+}
+
 /// Application execution starts here.
 ///
 /// [args] are the Dart entrypoint arguments. On Windows the runner forwards the
@@ -310,6 +342,7 @@ void secondScreenMain() {
 /// video path here. We stash the first supported video path for the widget tree
 /// to act on once the app has finished initialising.
 void main([List<String> args = const <String>[]]) {
+  StartupTimeline.begin();
   // 桌面端：从 args 里挑出外部打开的视频路径（Windows / Linux runner 传 argv）。
   if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
     final String? videoArg = firstExternalVideoArg(args);
@@ -355,6 +388,7 @@ void main([List<String> args = const <String>[]]) {
       // 不 auto_send、不碰 MainActivity 才注册的通道、不开数据库。必须是 binding 之后的
       // 第一步（守卫 test/startup/headless_launch_entry_guard_test.dart）。
       await holdHeadlessLaunchUntilUi(binding: binding);
+      StartupTimeline.mark('binding+headless-gate');
       final bool hiddenTestMode =
           Platform.environment['FUSHI_TEST_HIDDEN']?.isNotEmpty == true ||
           Platform.environment.containsKey('HIBIKI_TEST_HIDDEN');
@@ -382,6 +416,7 @@ void main([List<String> args = const <String>[]]) {
       // 由宿主装上。放在这里而不是 `AppModel.initialise()`：装的全是同步工厂，没有
       // 时序前置条件，而 `initialise()` 有两个 entry point 绕开它（弹窗词典与悬浮
       // 词典），写在 main 里哪个入口都不会漏。
+      StartupTimeline.mark('support-dir-migration');
       installEngineHostBindings();
       installAsrHostBindings();
       // 丢了抬起事件的指针补发取消，免得拖动识别器一直卡在「按着」（见该函数注释）。
@@ -391,6 +426,7 @@ void main([List<String> args = const <String>[]]) {
       // 数据根解析器装好之后。
       await selectGpuRuntimeAtStartup();
       // BUG-3286：Windows 系统文件对话框以主窗为 owner，视频全屏（TOPMOST）时不被压住。
+      StartupTimeline.mark('gpu-runtime');
       installWindowsOwnedFilePicker();
       // BUG-3315：按 DXGI 显卡身份判定 NVDEC 能否硬解 H.264 High 10，确认支持才在
       // auto-safe 候选表末尾加 nvdec-copy（resolvePlatformHwdec 同步读这份装配值）。
@@ -399,10 +435,12 @@ void main([List<String> args = const <String>[]]) {
       // 单词音频据此改走不申请音频焦点的原生播放器（BUG-3311）。
       TtsChannel.markHostPlaybackRegistered();
       // 系统「降低透明度」信号（Windows / macOS / iOS），玻璃设计系统据此回退实心。
+      StartupTimeline.mark('win-installs');
       unawaited(SystemTransparency.initialize());
       // 用户的模型选择 / 自带模型包住在数据根下，必须在装完数据根解析器之后读。
       // 不 await 的话第一次转录会按内置表规划，用户的选择要等下一次才生效。
       await loadAsrModelCatalog();
+      StartupTimeline.mark('asr-catalog');
       // 老用户：语音模型早已下好、不会再经过「下模型阶段」，以前靠随包的 DirectML
       // 跑 GPU。后台补下 15 MB 的 DirectML 环境，不补就会悄悄掉到 CPU。
       unawaited(
@@ -450,6 +488,7 @@ void main([List<String> args = const <String>[]]) {
       }
       // BUG-2462：Windows 子窗 resize 闸门的确认信号。必须在 runApp 之前挂——
       // 首帧起 runner 就在等这条上报来确认它交付的第一个尺寸。
+      StartupTimeline.mark('app-icon');
       installRasterizedFrameSizeReporter();
       if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
         await windowManager.ensureInitialized();
@@ -476,6 +515,7 @@ void main([List<String> args = const <String>[]]) {
           }
           // BUG-1619：主窗前台真值的唯一来源，必须在 window_manager 初始化之后、
           // 任何页面挂载之前起来——焦点闸门与焦点控制器都读它。
+          StartupTimeline.mark('wm-init+titlebar');
           MainWindowForegroundWatcher.instance.start();
           await DesktopWindowPlacement.applyInitialPlacement();
         } finally {
@@ -487,49 +527,27 @@ void main([List<String> args = const <String>[]]) {
         // messenger crashes the process on exit (TODO-036, Windows). The actual
         // event-source cut + fast exit runs in
         // [_FushiReaderAppState.onWindowClose] (TODO-086).
+        StartupTimeline.mark('window-placement');
         await windowManager.setPreventClose(true);
         // Windows runner keeps the main window hidden until the first usable
         // home or error frame has reached the raster thread.
         // 热重载清理残留全局热键（hotkey_manager 的初始化约定）。Linux Wayland
         // 桌面的热键走 GlobalShortcuts portal，不碰 X11 keybinder。
+        StartupTimeline.mark('prevent-close');
         if (GlobalLookupController.platformHotKeyBackendKind ==
             GlobalHotKeyBackendKind.native) {
           await hotKeyManager.unregisterAll();
         }
+        StartupTimeline.mark('hotkey-reset');
         // 运行时按持久化偏好重应用窗口/任务栏图标（Windows exe 静态图标改不了，
         // 启动后由 setWindowIcon 覆盖成用户所选预设/自定义图）。失败静默降级。
+        // 不在这里 await：窗口此刻还藏着，图标只需在显窗前就位（[_releaseStartupFrame]
+        // 显窗前等它），让导出图标文件 + 原生设置与后面的初始化并行（实测 22-30 ms）。
         if (Platform.isWindows) {
-          try {
-            final String? iconPath = startupAppIcon.usesCustomFile
-                ? startupAppIcon.customPath
-                : await exportPresetIconToFile(startupAppIcon.presetKey);
-            if (iconPath != null && File(iconPath).existsSync()) {
-              final bool applied = await WindowCaptionChannel.setWindowIcon(
-                iconPath,
-              );
-              if (applied) {
-                // TODO-901：安装器更新可能把桌面 / 开始菜单 / 任务栏固定项的
-                // IconLocation 重置回 exe；同一档图标又不能靠重新点选触发设置页同步。
-                // 冷启动成功恢复窗口图标后，用同一源文件字节重写 .lnk 以自愈。
-                // 不 await：这里还在 runApp 之前，.lnk 自愈是尽力而为、与首帧无关，
-                // 没有理由让每次启动都等它（编码 + 原生改写 + shell 通知）。
-                unawaited(() async {
-                  try {
-                    final Uint8List iconBytes = await File(
-                      iconPath,
-                    ).readAsBytes();
-                    await syncWindowsShortcutIcons(iconBytes);
-                  } catch (e) {
-                    debugPrint('[Fushi] shortcut icon sync failed: $e');
-                  }
-                }());
-              }
-            }
-          } catch (e) {
-            debugPrint('[Fushi] window icon restore failed: $e');
-          }
+          _startupWindowIconRestore = _restoreWindowsWindowIcon(startupAppIcon);
         }
       }
+      StartupTimeline.mark('window-icon');
       JustAudioMediaKit.title = 'Fushi';
       // 关闭 pitch-shift 控制（默认 true）。开启时 media_kit 的 setRate 会在每次调速时
       // 重写 mpv 的 `af` 音频滤镜图（scaletempo:scale=…）；在 Windows 上播放过程中反复
@@ -542,6 +560,7 @@ void main([List<String> args = const <String>[]]) {
       // 液态玻璃材质的着色器预热：只把 FragmentProgram 读进内存，免得第一次打开
       // 弹层时闪一帧占位。纯 IO、与启动无依赖，后台跑不挡首帧；没开 liquid 档的
       // 用户也只是多读几个着色器文件。
+      StartupTimeline.mark('media-kit');
       unawaited(LiquidGlassWidgets.initialize(enablePerformanceMonitor: false));
 
       // BUG-1015 的查词播放器冷启动静音预热**不在启动路径**（BUG-1690）：预热要在真实
@@ -625,6 +644,7 @@ void main([List<String> args = const <String>[]]) {
       /// opposed to the format generated by Dart. This function allows the
       /// Flutter framework to handle such formats so they can be displayed
       /// appropriately.
+      StartupTimeline.mark('system-ui');
       FlutterError.demangleStackTrace = (stack) {
         if (stack is Trace) {
           return stack.vmTrace;
@@ -660,6 +680,8 @@ void main([List<String> args = const <String>[]]) {
       /// Navigator 交给页面 PopScope、把浮层连同菜单一起关掉。
       LookupOverlayNavigator.installSystemBackInterceptor();
 
+      StartupTimeline.mark('pre-runapp');
+
       /// Start the application immediately so the user sees the loading page
       /// rather than a blank white screen while initialisation is in progress.
       runApp(
@@ -668,6 +690,8 @@ void main([List<String> args = const <String>[]]) {
           child: const FushiReaderApp(),
         ),
       );
+
+      StartupTimeline.mark('runApp');
 
       /// Initialise error log service.
       await ErrorLogService.instance.init();
@@ -685,12 +709,15 @@ void main([List<String> args = const <String>[]]) {
       }
       // 统计诊断流水（用户 2026-09-12：导出日志排查阅读速度异常）。StudyClock 在
       // fushi_audio 包里，靠静态 sink 接进来——五个装配点一处不改。
-      await StudyDiagLog.instance.init();
-      StudyClock.trace = (String line) =>
-          StudyDiagLog.instance.add('clock', line);
-      // 下面四步都只依赖错误日志已就绪、彼此独立（各自读写自己的文件 / 通道），
-      // 并发跑；串行 await 四段小 IO 是启动到 LoadingPage 之前的纯等待。
+      StartupTimeline.mark('error-log');
+      // 下面几步都只依赖错误日志已就绪、彼此独立（各自读写自己的文件 / 通道 / 资源），
+      // 并发跑；串行 await 这些小 IO 是首帧之前的纯等待（实测串行时统计诊断 15-21 ms、
+      // 变形表 17-29 ms 各自白等一轮）。
       await Future.wait<void>(<Future<void>>[
+        StudyDiagLog.instance.init(),
+        // 去屈折规则表（随包资源）：之后新建的词典引擎实例才装得上，须先于
+        // AppModel.initialise()。
+        FushiDicts.preloadTransforms(),
         DebugLogService.instance.init(),
         // 用户 2026-09-22：视频卡顿 / 查词卡的分析日志。默认关闭（开关在设置 › 诊断），
         // init 只读一次偏好 + 解析日志文件位置，关着时后续全链路零开销。
@@ -710,9 +737,12 @@ void main([List<String> args = const <String>[]]) {
         // 日志，随反馈日志上传（Dart 接不到的原生崩溃 / 被系统杀）。
         PreviousExitLog.foldIntoErrorLog(),
       ]);
+      StudyClock.trace = (String line) =>
+          StudyDiagLog.instance.add('clock', line);
       // BUG-4075：周期内存采样写进会话标记（进程 RSS + SRS 原生内核计数），下次启动的
       // 「上次未正常退出」带上崩前几分钟的内存曲线。
       // 帧数 + 可见页面：停着不动时是否仍在逐帧重绘、停在哪一页（BUG-4075 证据缺口 ⑥）。
+      StartupTimeline.mark('log-fold');
       UiActivityProbe.install();
       PreviousExitLog.startMemorySampling(
         probes: const <MemoryProbe>[
@@ -751,6 +781,8 @@ void main([List<String> args = const <String>[]]) {
           ..recordVerdict(PreviousExitLog.verdict);
       }
 
+      StartupTimeline.mark('probes');
+
       /// Initialise local file-based logging (mobile only).
       if (Platform.isAndroid || Platform.isIOS) {
         await FlutterLogs.initLogs(
@@ -770,14 +802,14 @@ void main([List<String> args = const <String>[]]) {
 
       // 上次死在初始化完成之前（启动即闪退）：这次的初始化多半还会死、首页出不来，
       // 闪退报告的提示必须在初始化之前出现——在加载页上问、等用户选完再往下走。
+      StartupTimeline.mark('flutter-logs');
       await runCrashReportStartupGate(CrashReporter.instance);
 
       /// Run the heavy initialisation after the first frame has been scheduled.
       /// [AppModel.isInitialised] will flip to true and notify listeners when
       /// done, causing [FushiReaderApp] to navigate from [LoadingPage] to
       /// [HomePage].
-      await FushiDicts.preloadTransforms();
-
+      StartupTimeline.mark('crash-gate');
       final appModel = container.read(appProvider);
       // 反馈 biLEesNqWb（并入 TODO-2936 的「浏览器」媒体类型绑定）：扩展请求按哪份配置处理
       // ——扩展手动所选 > 「浏览器」绑定 > 跟随 App；都只影响扩展请求、按该配置的只读设置
@@ -817,6 +849,7 @@ void main([List<String> args = const <String>[]]) {
       // 复习模块（SRS，默认关）的常驻装配：模块开着时装上 AnkiConnect 兼容端点、同步
       // 后置步骤与自动优化调度；关着时 provider 为 null，什么也不装（零开销）。开关切换
       // 时 provider 随 srsModuleEnabledProvider 重建 / 销毁。
+      StartupTimeline.mark('app-model-init');
       installSrsAppRuntime(container);
       // issue #1949：用户打开了「启动 Fushi 时自动启动 Anki」且本机 AnkiConnect
       // 没在监听时拉起 Anki 桌面版；不等它就绪，不阻塞启动。
@@ -2509,10 +2542,16 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
   /// 所以失败后不复位调度标志（重调度会二次 allow 触发断言），而是直接兜底显窗——
   /// runner 普通启动隐藏建窗，这里不显窗进程就永远不可见。
   void _scheduleStartupFrameRelease() {
-    if (!_deferStartupFrame || _startupFrameReleaseScheduled) {
+    if (_startupFrameReleaseScheduled) return;
+    _startupFrameReleaseScheduled = true;
+    if (!_deferStartupFrame) {
+      // 离屏测试模式没压首帧、也没藏窗：没有要放的东西，只把启动计时收尾。
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        StartupTimeline.mark('home-build');
+        unawaited(_sealStartupTimeline());
+      });
       return;
     }
-    _startupFrameReleaseScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(_releaseStartupFrame());
     });
@@ -2522,11 +2561,16 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     final WidgetsBinding binding = WidgetsBinding.instance;
     bool firstFrameAllowed = false;
     try {
+      StartupTimeline.mark('home-build');
       binding.allowFirstFrame();
       firstFrameAllowed = true;
       await binding.waitUntilFirstFrameRasterized;
+      StartupTimeline.mark('first-frame-raster');
       if (!mounted) return;
+      await _startupWindowIconRestore;
       await _revealStartupWindow();
+      StartupTimeline.mark('window-shown');
+      await _sealStartupTimeline();
     } catch (e) {
       debugPrint('[Fushi] startup presentation release failed: $e');
       if (!firstFrameAllowed) {
@@ -2540,6 +2584,38 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     }
     if (mounted) {
       setState(() => _initialThemePresented = true);
+    }
+  }
+
+  /// 取回原生侧那一段（没实现通道的平台没有），和 Dart 段拼成一行上报。
+  Future<void> _sealStartupTimeline() async {
+    NativeStartupTrace? native;
+    try {
+      native = NativeStartupTrace.tryParse(
+        await FushiChannels.startupTrace.invokeMethod<Object?>('get'),
+      );
+    } on MissingPluginException {
+      native = null;
+    } on PlatformException catch (e) {
+      debugPrint('[Fushi] native startup trace unavailable: $e');
+    }
+    final String? timeline = StartupTimeline.seal(native: native);
+    if (timeline != null) _reportStartupTimeline(timeline);
+  }
+
+  /// 启动阶段计时落三处：诊断日志（随反馈上传）、控制台（logcat / syslog）、以及
+  /// `FUSHI_STARTUP_TRACE` 指向的文件（桌面 release 没有控制台，测速脚本读它）。
+  void _reportStartupTimeline(String timeline) {
+    ErrorLogService.instance.logDiagnostic('Startup.timeline', timeline);
+    debugPrint('[Fushi] startup timeline: $timeline');
+    final String? tracePath = Platform.environment['FUSHI_STARTUP_TRACE'];
+    if (tracePath == null || tracePath.isEmpty) return;
+    try {
+      File(
+        tracePath,
+      ).writeAsStringSync('$timeline\n', mode: FileMode.append, flush: true);
+    } on FileSystemException catch (e) {
+      debugPrint('[Fushi] startup trace write failed: $e');
     }
   }
 
