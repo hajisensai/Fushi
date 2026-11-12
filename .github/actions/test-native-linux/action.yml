@@ -21,9 +21,16 @@ runs:
       with:
         workspaces: native/fushi_fsrs -> target
         key: fushi-fsrs-linux-x64
-    - name: Build fushi_fsrs (linux-x64 .so)
+    # 测试用的库带测试专用的原始 SQL 通道（cargo feature raw_sql，Cargo.toml）：fushi/test/srs 里有测试靠它直接改库
+    # 造场景。这份 .so 只进单测矩阵（`fushi-test-native-linux-x64` artifact），不进任何发布 / 随包产物。
+    - name: Build fushi_fsrs (linux-x64 .so, raw_sql)
       shell: bash
-      run: bash native/fushi_fsrs/build_linux_so.sh
+      env:
+        FUSHI_FSRS_FEATURES: raw_sql
+      run: |
+        set -euo pipefail
+        bash native/fushi_fsrs/build_linux_so.sh
+        bash native/fushi_fsrs/verify_raw_sql.sh native/fushi_fsrs/prebuilt/linux-x64/libfushi_fsrs.so present
     - name: Build fushi_compute (linux-x64 .so)
       uses: ./.github/actions/setup-fushi-compute
     # RWKV-Instant 排程推理 fushi_rwkv 同为硬依赖（无 Dart 回退）：同样的输入。

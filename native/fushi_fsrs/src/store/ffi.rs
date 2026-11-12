@@ -418,8 +418,8 @@ fn one_row(page: &[u8]) -> Result<Vec<rusqlite::types::Value>, String> {
 /// 的查询（[SrsCore::snapshot_select]：只读连接池，可并发；不是只读查询报 `NOT_SNAPSHOT`）。0 / 1 是以前 Drift 的
 /// 写语句 / `runCustom`（事务控制、PRAGMA）：一律报 [crate::store::READ_ONLY]、不执行——srs.db 的写入只有内核命令
 /// （`ffsrs_store_sync2`）。4 / 5 = 测试专用的原始通道（[SrsCore::exec_raw]，写连接；4 返回一行
-/// `[变更行数, last_insert_rowid]`，5 返回「列名行 + 结果行」）。2 / 3 / 5 返回「列名行 + 结果行」；缓冲区用
-/// `ffsrs_free_bytes` 释放。
+/// `[变更行数, last_insert_rowid]`，5 返回「列名行 + 结果行」），只有带 cargo feature `raw_sql` 的库里有，别的构建报
+/// [crate::store::RAW_SQL_ABSENT]、不执行。2 / 3 / 5 返回「列名行 + 结果行」；缓冲区用 `ffsrs_free_bytes` 释放。
 #[no_mangle]
 pub extern "C" fn ffsrs_store_exec(
     core: *const SrsCoreHandle,
@@ -443,8 +443,12 @@ pub extern "C" fn ffsrs_store_exec(
             0 | 1 => return Err(format!("{}: {s}", crate::store::READ_ONLY)),
             2 => c.select(s, &values)?,
             3 => c.snapshot_select(s, &values)?,
+            #[cfg(any(test, feature = "raw_sql"))]
             4 => c.exec_raw(s, &values, false)?,
+            #[cfg(any(test, feature = "raw_sql"))]
             5 => c.exec_raw(s, &values, true)?,
+            #[cfg(not(any(test, feature = "raw_sql")))]
+            4 | 5 => return Err(crate::store::RAW_SQL_ABSENT.to_string()),
             m => return Err(format!("unknown exec mode {m}")),
         };
         hand_out(page, out, out_len);
@@ -455,8 +459,38 @@ pub extern "C" fn ffsrs_store_exec(
 /// 测试专用的原始通道的批量版（[SrsCore::exec_batch_raw]：整批在写连接的一个 SAVEPOINT 里）；Drift 执行器不用它
 /// （Drift 的批量语句在 Dart 侧就报只读）。`statements` 是单列文本页（每行一条 SQL）；`applications` 是两列页：
 /// `[语句下标 i64, 参数页 blob]`（参数页是一行的 rows.rs 页，可为空字节）。
+///
+/// 只有带 cargo feature `raw_sql` 的库里有；别的构建报 [crate::store::RAW_SQL_ABSENT]、什么都不解析、不取写锁。符号
+/// 照常导出：Dart 绑定构造时 lookup 全部符号，`verify_abi.sh` 按绑定核对导出面——发布构建里不在的是能写库的代码。
 #[no_mangle]
 pub extern "C" fn ffsrs_store_exec_batch(
+    core: *const SrsCoreHandle,
+    statements: *const u8,
+    statements_len: usize,
+    applications: *const u8,
+    applications_len: usize,
+    error_out: *mut *mut c_char,
+) -> i32 {
+    #[cfg(not(any(test, feature = "raw_sql")))]
+    {
+        let _ = (statements, statements_len, applications, applications_len);
+        return run_core(core, error_out, |_| {
+            Err(crate::store::RAW_SQL_ABSENT.to_string())
+        });
+    }
+    #[cfg(any(test, feature = "raw_sql"))]
+    exec_batch_raw_entry(
+        core,
+        statements,
+        statements_len,
+        applications,
+        applications_len,
+        error_out,
+    )
+}
+
+#[cfg(any(test, feature = "raw_sql"))]
+fn exec_batch_raw_entry(
     core: *const SrsCoreHandle,
     statements: *const u8,
     statements_len: usize,

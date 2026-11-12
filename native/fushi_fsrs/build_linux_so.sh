@@ -4,9 +4,9 @@
 #
 # 用法: build_linux_so.sh [target]   缺省 x86_64-unknown-linux-gnu
 # 产物: prebuilt/linux-x64/libfushi_fsrs.so（git 忽略，不入库）
-# 环境变量 FUSHI_FSRS_FEATURES（可选）：额外的 cargo feature，只给测试用的库——CI 包测试用
-# `id_audit` 编（Dart 经桥执行的 SQL 绑了文本 UUID / 写进文本 UUID 就报错，见 src/store/ids.rs `audit`）。
-# 随包发布的构建不设它。
+# 环境变量 FUSHI_FSRS_FEATURES（可选，逗号分隔）：额外的 cargo feature，只给测试用的库——`raw_sql`（测试专用的原始
+# SQL 通道，Cargo.toml）、`id_audit`（Dart 经桥执行的 SQL 绑了文本 UUID / 写进文本 UUID 就报错，见 src/store/ids.rs
+# `audit`）。随包发布的构建不设它（verify_abi.sh 核对产物里没有原始通道）。
 set -euo pipefail
 
 TARGET="${1:-x86_64-unknown-linux-gnu}"
