@@ -15,6 +15,7 @@ pub(crate) mod dedup;
 pub(crate) mod devices;
 pub mod digest;
 pub mod media;
+pub(crate) mod min_reader;
 pub(crate) mod mvr;
 pub mod relay;
 pub(crate) mod sched_local;
@@ -1568,7 +1569,7 @@ fn log_holds(
     semantics::evaluate_holds(conn, profile, kind, entity, now, t)
 }
 
-fn intent_code(i: &Intent) -> (i64, Option<i64>) {
+pub(crate) fn intent_code(i: &Intent) -> (i64, Option<i64>) {
     match i {
         Intent::Absolute => (0, None),
         Intent::Answer => (1, None),
@@ -1579,7 +1580,7 @@ fn intent_code(i: &Intent) -> (i64, Option<i64>) {
     }
 }
 
-fn intent_of(code: i64, arg: Option<i64>) -> Intent {
+pub(crate) fn intent_of(code: i64, arg: Option<i64>) -> Intent {
     match code {
         1 => Intent::Answer,
         2 => Intent::SetDue {
@@ -2121,6 +2122,12 @@ pub(crate) fn append_local_cached(
     };
     let chain = chain_next(&local.chain, &op);
     insert_op_cached(conn, &local.profile, &op, &chain, now, deps_row)?;
+    // head 的 `minReader` 按本机写过的内容声明（sync2/min_reader.rs）；载荷就是 [body] 的规范编码，不用再解一遍。
+    min_reader::raise(
+        conn,
+        &local.profile,
+        crate::sync2::min_reader::min_reader_of_body(body),
+    )?;
     local.chain = chain;
     local.next_seq += 1;
     applied.set(local.device, seq);
