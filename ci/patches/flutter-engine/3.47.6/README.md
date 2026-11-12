@@ -180,6 +180,34 @@ DXBC——每次启动全量重编，Release 实测主线程阻塞约 1 秒（58
 **删除条件**：上游 Windows 嵌入层自己接上 `EGL_ANDROID_blob_cache`（或 Impeller GLES 自带程序二进制
 缓存）时删掉。
 
+### `engine-resize-before-first-frame.patch`（flutter 仓库根目录，叠在前六份之上）
+
+首帧前改窗口尺寸不再阻塞平台线程。原版 `FlutterWindowsView::OnWindowSizeChanged`
+（`shell/platform/windows/flutter_windows_view.cc:209` 起）在 surface 有效且尺寸会变时置
+`kResizeStarted`、发 metrics，然后 `PollOnce` 循环等 raster 线程把状态推到 `kDone`，最多等
+`kWindowResizeTimeout{100}`（`:30`）。`kDone` 只由 `OnFramePresented`（`:748`）在
+`OnFrameGenerated` / `OnEmptyFrameGenerated` 按目标尺寸重建 surface（`kFrameGenerated`）之后置上。
+框架还没出过帧时（Fushi 冷启动 `binding.deferFirstFrame()` 压着首帧，`main.dart` 还在
+`DesktopWindowPlacement.applyInitialPlacement()` 里），没有任何帧会来，平台线程每次都干等满
+100 ms：`window_manager` 的 `setBounds` 是同步 `SetWindowPos`（WM_SIZE 在调用内送达 → 这一等就压在
+`await setBounds` 上）；`maximize` 是 `PostMessage(WM_SYSCOMMAND, SC_MAXIMIZE)`，`await` 本身不等，
+但它的 WM_SIZE 稍后在平台线程上再等一次 100 ms，期间平台消息全部停摆。
+
+补丁：`FlutterWindowsView` 加 `has_presented_frame_`（`resize_mutex_` 保护），`OnFramePresented`
+一进锁就置真。`OnWindowSizeChanged` 在同一把锁里置 `kResizeStarted` + 目标尺寸时顺带读它；从未呈现过
+帧就发完 metrics 直接返回 `false`（返回值无人消费，`flutter_window.cc` `OnResize` 忽略它），不进
+等待循环。resize 保持挂起，与原版「超时之后」完全同一条路径：之后第一帧若是目标尺寸，raster 线程在
+`OnFrameGenerated` 里先 `ResizeRenderSurface` 再呈现；别的尺寸的帧被拒（`:187`），不会画在旧尺寸
+surface 上。呈现过任意一帧之后行为与原版逐字相同。
+
+引擎单测（`flutter_windows_view_unittests.cc`）：新增 `WindowResizeBeforeFirstFrameDoesNotBlock`
+（两次首帧前改尺寸各 <50 ms 返回、旧尺寸帧被拒、首帧按新尺寸重建 surface 并完成 resize）与
+`WindowResizeAfterFirstFrameStillBlocks`（呈现过一帧后照旧等满 100 ms）；原有
+`WindowResizeTests` / `TestEmptyFrameResizes` / `WindowResizeRace` 测的是同步路径，开头补一次
+`OnFramePresented()` 让它们仍走同步。
+
+**删除条件**：上游让首帧前的 resize 不再同步等待（或整个 resize 同步改成不阻塞平台线程）时删掉。
+
 ### `angle-scrgb-swapchain.patch`（ANGLE 仓库根目录 `git apply`）
 
 ANGLE 的 D3D11 后端原本**从不设置交换链色彩空间**，也不声明
@@ -205,7 +233,7 @@ tool/flutter_engine/build_patched_engine.ps1 -Root D:\fe -PatchVersion hdr-outpu
 #   目录里用 junction 指回真 SDK 的各子目录，再放一份 Debuggers\x64\dbghelp.dll（只被拷进 out 目录，不进产物）
 ```
 
-步骤：sync（clone `.fvmrc` 版本 + `gclient sync`；已有源码树就 fetch 新 tag 切过去再增量 sync）→ patch（六份引擎补丁 + ANGLE 一份，干净树上按序打）→
+步骤：sync（clone `.fvmrc` 版本 + `gclient sync`；已有源码树就 fetch 新 tag 切过去再增量 sync）→ patch（七份引擎补丁 + ANGLE 一份，干净树上按序打）→
 build（`gn --runtime-mode <mode>` + `ninja flutter_windows`，与官方产物同配置）→
 stage（按 `windows-x64{,-profile,-release}` 布局 + `engine-overlay.json`）→
 pack（连同 pdb 打 zip——`flutter build windows` 要求缓存里有 `flutter_windows.dll.pdb`，
@@ -223,10 +251,11 @@ pack（连同 pdb 打 zip——`flutter build windows` 要求缓存里有 `flutt
 2026-11-05 编，含 `engine-hdr-output` + `engine-underlay-composition` + `engine-impeller-hdr` +
 `engine-d3d-keyed-mutex` 四份引擎补丁与 ANGLE 补丁；三种模式 + 匹配的 pdb——`flutter build windows`
 缺 pdb 会在 assemble 失败；tag 不以数字 / `v`+数字开头，app 更新检查与发布 workflow 都不会把它当
-app 版本）。**`hdr-output-3` 不含 `engine-a11y-tree-hardening.patch`（2026-11-10 加入）与
-`engine-program-binary-cache.patch`（2026-11-12 加入）**：下一次重编必须带上两者（`patchVersion` 取
-`hdr-output-4`），发 release 后更新 `artifacts.json`，在那之前出的包仍是旧引擎、无障碍树加固与着色器
-程序缓存都不生效（runner 解析不到导出，照常每次编译）。重编后换一个新的 `patchVersion` 发新 release，再改本目录的 `artifacts.json`，旧 release
+app 版本）。**`hdr-output-3` 不含 `engine-a11y-tree-hardening.patch`（2026-11-10 加入）、
+`engine-program-binary-cache.patch`、`engine-resize-before-first-frame.patch`（2026-11-12 加入）**：
+下一次重编必须带上三者（`patchVersion` 取 `hdr-output-4`），发 release 后更新 `artifacts.json`，在那之前
+出的包仍是旧引擎、无障碍树加固、着色器程序缓存与首帧前 resize 不阻塞都不生效（runner 解析不到导出，
+照常每次编译）。重编后换一个新的 `patchVersion` 发新 release，再改本目录的 `artifacts.json`，旧 release
 留着给旧提交复现用（`hdr-output-2` 是前三份补丁、无 keyed mutex；`hdr-output-1` 只有 Skia 路径的
 HDR、不含 underlay；3.44.0 时代的是 `flutter-engine-3.44.0-hdr-output-2`）。
 

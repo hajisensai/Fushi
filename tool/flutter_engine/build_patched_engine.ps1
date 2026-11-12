@@ -171,6 +171,10 @@ if ($Steps -contains 'patch') {
   # BUILD.gn): persists ANGLE's linked programs (EGL_ANDROID_blob_cache) so
   # Impeller stops recompiling every pipeline on each cold start.
   Invoke-Patch $flutter (Join-Path $patchDir 'engine-program-binary-cache.patch')
+  # Applies on top of all of the above (FlutterWindowsView resize sync): a
+  # window resize before any frame was presented no longer blocks the platform
+  # thread for the 100 ms resize timeout (startup window placement).
+  Invoke-Patch $flutter (Join-Path $patchDir 'engine-resize-before-first-frame.patch')
   Invoke-Patch (Join-Path $src 'flutter\third_party\angle') (Join-Path $patchDir 'angle-scrgb-swapchain.patch')
 }
 
