@@ -37,6 +37,10 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4388](bugs/BUG-4388-gal-printwindow-dpi-virtualized-partial.md) | ✅ | ✅ | DPI-unaware 游戏在缩放屏上 WGC 失败后 PrintWindow 兜底把逻辑尺寸整帧误判为 partial，制卡无图失败 |
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
 | [BUG-4389](bugs/BUG-4389-srs-profile-conflict-dialog-freeze.md) | ✅ | ✅ | SRS profile conflict dialog never lays out; desktop app stops reacting to the mouse |
 > 共 3931 条。点号进各自文件。
 
