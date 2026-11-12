@@ -5,7 +5,7 @@ import 'package:args/args.dart';
 import '../ctl_commands.dart';
 import '../ops/op_routes.dart';
 
-/// `fushi_cli srs …`：复习：牌组 / 笔记 / 统计 / 冲突 / 重复笔记合并（app 侧路由见 `fushi/lib/src/ops/ctl_srs_routes.dart`）。
+/// `fushi_cli srs …`：复习：牌组 / 笔记 / 统计 / 冲突 / 重复笔记合并（路由在 engine `packages/fushi_engine/lib/srs/srs_ctl_routes.dart`，app 侧装配见 `fushi/lib/src/ops/ctl_srs_routes.dart`）。
 ///
 /// 云同步（书 / 进度）中途的冲突走 `sync run --conflicts <策略>`（data_commands.dart）。
 const List<CtlCommandGroup> srsCommandGroups = <CtlCommandGroup>[

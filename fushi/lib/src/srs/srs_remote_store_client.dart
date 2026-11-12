@@ -40,7 +40,15 @@ class SrsRemoteHostClient extends InterconnectHostClient {
     required super.peer,
     super.httpClient,
     super.pinnedClientFactory,
-  });
+    int Function()? localOffsetMin,
+  }) : localOffsetMin = localOffsetMin ?? SrsDayContext.localOffsetMin;
+
+  /// 本机此刻的 UTC 偏移（分钟）。远程会话里「今天」的时区取用户手上这台设备：每次调用都带上
+  /// （[kSrsRemoteDeviceOffsetKey]），主机按它算日界；翻日时刻仍是 profile 同步的那一份。
+  final int Function() localOffsetMin;
+
+  /// 这次调用要带给主机的偏移：越出现实时区范围时不带（主机按自己的偏移算，与旧客户端相同）。
+  int? get deviceOffsetMin => srsRemoteDeviceOffset(localOffsetMin());
 
   /// 一次调用；回包是整个信封（`result` 之外还有主机的修订号、牌组树标签、时钟）。
   Future<Map<String, dynamic>> call(
@@ -55,6 +63,7 @@ class SrsRemoteHostClient extends InterconnectHostClient {
       'args': args,
       'profile': ?profile,
       'request': ?request,
+      kSrsRemoteDeviceOffsetKey: ?deviceOffsetMin,
     },
     timeout: const Duration(seconds: 30),
     authErrorMessage: 'SRS remote store authentication rejected',
@@ -230,7 +239,7 @@ class SrsRemoteStore implements SrsDbStore, SrsRemoteForwarding {
   SrsTimeSource _timeSource = SrsTimeSource.wall;
 
   _RemoteTree? _tree;
-  ({String fp, SrsDayContext day})? _day;
+  ({String fp, int? tz, SrsDayContext day})? _day;
   final Map<String, ({String tag, SrsNoteTypeView view})> _types =
       <String, ({String tag, SrsNoteTypeView view})>{};
 
@@ -243,12 +252,17 @@ class SrsRemoteStore implements SrsDbStore, SrsRemoteForwarding {
   @override
   SrsRwkvScheduling? rwkv;
 
+  /// 主机 RWKV 的准备状态（信封里的 `rwkv` / `rk`）：复习页「等 RWKV」时显示它、听它的「就绪」重新排队、
+  /// 出错时经它让主机重试。作用域里由 `srsRwkvStatusProvider` 交给页面。
+  late final SrsRemoteRwkvStatus hostRwkv = SrsRemoteRwkvStatus._(this);
+
   void _absorb(SrsRemoteEnvelope e) {
     _revision = e.revision ?? _revision;
     _fingerprint = e.fingerprint ?? _fingerprint;
     _treeTag = e.treeTag ?? _treeTag;
     _canSchedule = e.canSchedule;
     _rwkvReady = e.rwkvReady;
+    hostRwkv._absorb(e.rwkvReady, e.rwkvStatus);
     _device = e.device ?? _device;
     final int? now = e.nowMs;
     if (now != null) {
@@ -379,7 +393,8 @@ class SrsRemoteStore implements SrsDbStore, SrsRemoteForwarding {
 
   /// 复习的翻日时刻是本机设置的同步那一份：只由本机激活副本读写（`AppModel.setStatDayResetHourByUser` /
   /// `adoptSyncedDayRollover`，都走 `SrsProfileStores` 的本地副本）。远程复习库是主机的数据，本机日界设置不读
-  /// 也不改它；远程会话里的「今天」照旧取主机的 [dayContext]。
+  /// 也不改它；远程会话里的「今天」取主机的 [dayContext]：翻日时刻是主机 profile 的，时区是本机报过去的偏移
+  /// （[SrsRemoteHostClient.localOffsetMin]）。
   @override
   Future<SrsDayRollover?> syncedDayRollover() => throw UnsupportedError(
     'SrsRemoteStore: the day rollover setting is local-only; read it from '
@@ -469,14 +484,18 @@ class SrsRemoteStore implements SrsDbStore, SrsRemoteForwarding {
 
   @override
   Future<SrsDayContext> dayContext() async {
-    final ({String fp, SrsDayContext day})? cached = _day;
-    if (cached != null && cached.fp == _fingerprint) return cached.day;
+    // 本机换了时区（带的偏移变了）也要重取：主机按每次调用带的偏移算。
+    final int? tz = _client.deviceOffsetMin;
+    final ({String fp, int? tz, SrsDayContext day})? cached = _day;
+    if (cached != null && cached.fp == _fingerprint && cached.tz == tz) {
+      return cached.day;
+    }
     final SrsDayContext day = await _read(
       'dayContext',
       null,
       SrsRemoteWire.dayContextFrom,
     );
-    _day = (fp: _fingerprint, day: day);
+    _day = (fp: _fingerprint, tz: tz, day: day);
     return day;
   }
 
@@ -1003,6 +1022,30 @@ class SrsRemoteStore implements SrsDbStore, SrsRemoteForwarding {
   }
 
   @override
+  Future<SrsEditUndo> editFieldsUndoable(List<SrsFieldChange> changes) {
+    for (final SrsFieldChange c in changes) {
+      if (c.kind == SrsEntityKind.card) _bases.remove(c.entityId);
+    }
+    return _write('editFieldsUndoable', <String, Object?>{
+      'changes': SrsRemoteWire.editSpecs(<SrsEditSpec>[
+        for (final SrsFieldChange c in changes)
+          SrsEditSpec(c.kind, c.entityId, c.key, c.value),
+      ]),
+    }, SrsEditUndo.fromJson);
+  }
+
+  /// 撤销在主机的写锁里按主机库的修改记录裁决（撤销凭据里的 dot 是主机内核分配的）。
+  @override
+  Future<SrsEditUndoResult> revertEdits(SrsEditUndo undo) {
+    for (final SrsEditUndoItem i in undo.items) {
+      if (i.kind == SrsEntityKind.card) _bases.remove(i.entityId);
+    }
+    return _write('revertEdits', <String, Object?>{
+      'undo': undo.toJson(),
+    }, SrsEditUndoResult.fromJson);
+  }
+
+  @override
   Future<List<SrsFieldEdit>> writeEdits(
     List<SrsEditSpec> specs, {
     List<SrsEntityRecord> records = const <SrsEntityRecord>[],
@@ -1079,5 +1122,88 @@ class SrsRemoteMediaStore extends SrsMediaStore {
         unawaited(Future<void>(() => _fetching.remove(name)));
       }
     });
+  }
+}
+
+/// 主机 RWKV 准备状态在客户端的影子（[SrsRemoteStore.hostRwkv]）。
+///
+/// 状态随每次回包的信封更新。主机 RWKV 就绪不是库的写入、不推进修订号，客户端没有别的途径得知，所以**有人在听
+/// [statusChanges] 且主机还没就绪**时每 [pollEvery] 问一次主机（一次握手）；就绪后停。复习页 / 牌组列表只在
+/// 「等 RWKV」时订阅，平时不轮询。
+class SrsRemoteRwkvStatus implements SrsRwkvStatusSource {
+  SrsRemoteRwkvStatus._(this._store);
+
+  final SrsRemoteStore _store;
+
+  static const Duration pollEvery = Duration(seconds: 2);
+
+  SrsRwkvStatus _status = const SrsRwkvStatus(SrsRwkvPhase.idle);
+  late final StreamController<SrsRwkvStatus> _changes =
+      StreamController<SrsRwkvStatus>.broadcast(
+        onListen: _arm,
+        onCancel: _disarm,
+      );
+  Timer? _poll;
+  bool _asking = false;
+
+  @override
+  SrsRwkvStatus get status => _status;
+
+  @override
+  Stream<SrsRwkvStatus> get statusChanges => _changes.stream;
+
+  @override
+  bool get ready => _status.phase == SrsRwkvPhase.ready;
+
+  /// 让主机（重新）准备；回包的信封带回主机此刻的状态。
+  @override
+  Future<void> start({bool force = false}) => _store._read(
+    'rwkvStart',
+    <String, Object?>{'force': force},
+    SrsRemoteStore._ignore,
+  );
+
+  /// [host] 为 null = 主机没报状态（老主机）：只按就绪与否分「就绪」与「还没开始」。
+  void _absorb(bool ready, SrsRwkvStatus? host) {
+    final SrsRwkvStatus next = ready
+        ? const SrsRwkvStatus(SrsRwkvPhase.ready)
+        : host != null && host.phase != SrsRwkvPhase.ready
+        ? host
+        : const SrsRwkvStatus(SrsRwkvPhase.idle);
+    final SrsRwkvStatus prev = _status;
+    _status = next;
+    if (prev.phase == next.phase &&
+        prev.done == next.done &&
+        prev.total == next.total &&
+        '${prev.error}' == '${next.error}') {
+      return;
+    }
+    if (_changes.hasListener) _changes.add(next);
+    if (ready) {
+      _disarm();
+    } else {
+      _arm();
+    }
+  }
+
+  void _arm() {
+    if (_poll != null || _asking || ready || !_changes.hasListener) return;
+    _poll = Timer(pollEvery, () async {
+      _poll = null;
+      _asking = true;
+      try {
+        await _store._read('hello', null, SrsRemoteStore._ignore);
+      } on Object {
+        // 主机暂时连不上：下一轮再问（页面上别的调用会报连接错误）。
+      } finally {
+        _asking = false;
+      }
+      _arm();
+    });
+  }
+
+  void _disarm() {
+    _poll?.cancel();
+    _poll = null;
   }
 }

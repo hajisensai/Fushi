@@ -1269,6 +1269,16 @@ pub(crate) fn card_id(note_id: &str, template_id: &str, cloze_ord: i64) -> Resul
     ))
 }
 
+/// 一个寄存器的裁决（[resolve]，与读路径同一个函数）：[edits] 是同一个字段键上的全部写入；返回没被支配的那些
+/// （下标，按排序键从大到小，第一条是胜者）与是否冲突。协议 4 的派生索引（store/gen4/derive.rs）从操作体拼出
+/// 这里要的行再来判，判据只有这一份。
+pub(crate) fn judge_register(edits: &[StoredEdit<'_>]) -> Result<(Vec<usize>, bool), String> {
+    let parsed = parse_stored(edits)?;
+    let idx: Vec<usize> = (0..parsed.len()).collect();
+    let r = resolve("", &parsed, &idx);
+    Ok((r.live, r.conflicted))
+}
+
 /// 某实体某字段键的生效值（多值寄存器按读路径的规则取胜者；没有记录 = null）。
 pub(crate) fn register_value(edits: &[StoredEdit<'_>], key: &str) -> Result<Value, String> {
     let parsed = parse_stored(edits)?;
@@ -1292,6 +1302,46 @@ pub(crate) fn write_is_noop(
             .is_some_and(|&i| same_value(&parsed[i].value, value)),
         _ => false,
     })
+}
+
+/// 撤销校验里「我们写的那条」：dot（写入者, 序号）与它落库的值。
+pub(crate) struct UndoTarget<'v> {
+    pub writer: &'v str,
+    pub seq: i64,
+    pub value: &'v Value,
+}
+
+/// 撤销校验（store/sync2/undo_check.rs）：某字段键自 [ours] 那次写入以来有没有被别人动过，只看库里的修改记录。
+///
+/// 可以撤 ⇔ 这个键只剩一条没被支配的记录（没有并发候选），且它
+/// - 就是 [ours]；或
+/// - 因果上见过 [ours]（ctx 含它的 dot），且值与 [ours] 相同——之后的改动又全部改回了 [ours] 写下的值
+///   （典型：先撤了更晚的那一步，撤销写下的记录把值还原成 [ours] 的值），现值仍是这次操作的结果。
+///
+/// [ours] 为 None（这一版之前记下的撤销载荷没有 dot）时只能按值：唯一的记录值与 [after] 相同。
+/// 返回 (能不能撤, 现值)。
+pub(crate) fn undo_verdict(
+    edits: &[StoredEdit<'_>],
+    key: &str,
+    ours: Option<&UndoTarget<'_>>,
+    after: Option<&Value>,
+) -> Result<(bool, Value), String> {
+    let parsed = parse_stored(edits)?;
+    let ent = Entity::build(&parsed);
+    let current = ent.value(key).clone();
+    let live: &[usize] = ent.reg(key).map_or(&[], |r| r.live.as_slice());
+    let [only] = live else {
+        return Ok((false, current));
+    };
+    let x = &parsed[*only];
+    let ok = match ours {
+        Some(o) => {
+            (x.writer == o.writer && x.seq == o.seq)
+                || (x.ctx.contains(o.writer, o.seq) && same_value(&x.value, o.value))
+        }
+        None => after.is_some_and(|a| same_value(&x.value, a)),
+    };
+    Ok((ok, current))
 }
 
 /// 测试用：一个实体全部寄存器的裁决（按记录 ID 而不是下标）——每个键的未被支配者（排序后，首个是胜者）、是否冲突、
