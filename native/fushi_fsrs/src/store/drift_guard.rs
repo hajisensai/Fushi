@@ -67,6 +67,9 @@ pub(crate) const DRIFT_TX_POLICY: &[(&str, DriftTxPolicy)] = &[
     ("retire", Join),
     ("dedup", Join),
     ("trust", Join),
+    // 一轮收尾的自愈（store/sync2/heal.rs `sync2_digest_heal`，#3248）：这一步仍经 `_sync2Write` 在 Drift 事务里发，
+    // 与 `dedup` 同属改投影的写；写路径 2 起改成内核本机写命令、策略改 Reject。
+    ("digest_heal", Join),
     // 缓存维护的 Drift 事务（`_upgradeCaches` / `rebuildCaches` / `compactStoredStyles`）与上面各事务里的刷新。
     ("refresh_caches", Join),
     ("rebuild_caches", Join),
@@ -107,6 +110,8 @@ pub(crate) const DRIFT_TX_POLICY: &[(&str, DriftTxPolicy)] = &[
     ("location_sealed", ReadVisible),
     ("media_known", ReadVisible),
     ("profile_footprint", ReadVisible),
+    // 集合绑定状态（store/binding.rs）：只读一行 `srs_meta`。
+    ("binding_get", ReadVisible),
     ("ingest_prepare", ReadVisible),
     ("derive_key", ReadVisible),
     ("seal", ReadVisible),
@@ -122,6 +127,9 @@ pub(crate) const DRIFT_TX_POLICY: &[(&str, DriftTxPolicy)] = &[
     // ---- Reject：不该落进别人的 Drift 事务。`plan` 只有 `readOnly` 那一路是读（[policy_of]）。
     ("plan", Reject),
     ("identity", Reject),
+    // 集合绑定状态只进不退（store/binding.rs）：与 `identity` 同属身份记账，随别人的 Drift 事务回滚就把「已定下」退回去了；
+    // 调用方（srs_db_store.dart `setCollectionBinding`）走排队的 `sync2Command`，不开 Drift 事务。
+    ("binding_set", Reject),
     ("channel_settle", Reject),
     ("migrate", Reject),
     ("replay_all", Reject),
@@ -130,7 +138,12 @@ pub(crate) const DRIFT_TX_POLICY: &[(&str, DriftTxPolicy)] = &[
     ("outbox_ack", Reject),
     ("head", Reject),
     ("relay_outbox", Reject),
+    // 一轮收尾问「位置上此刻该删什么」（transport.rs `sync2_obsolete`）：登记待删的旧 head，与 `obsolete_ack` 同属传输记账。
+    ("obsolete", Reject),
     ("obsolete_ack", Reject),
+    // 换过身份的设备清旧身份目录（store/sync2/former.rs `sync2_obsolete_former`）：一轮收尾之后发，写的是「这个目录多久
+    // 没变过」的观察记录（srs_meta），同属传输记账。
+    ("obsolete_former", Reject),
     ("relay_ack", Reject),
     ("ingest", Reject),
     ("ingest_begin", Reject),

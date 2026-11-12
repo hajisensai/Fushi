@@ -270,14 +270,48 @@ inline DrawResult ResolveDraw(const exact::LoadedPeImage& image,
   return DrawResult::kResolved;
 }
 
+// ── identity: either engine structure is enough ───────────────────────────
+//
+// Two independent structures name the engine: the "CFI" I/O scheme table
+// (malie_engine_io_core.h ResolveScheme) and the RICHTEXT3D text node class
+// with its glyph pass (ResolveDraw).  Builds differ in which archive schemes
+// they compile in — a build without the CFI scheme still registers the
+// RICHTEXT3D class — so either full structural resolution is a match.  A
+// missing name literal or name copy is "image not ready" (not unpacked yet)
+// only when both say so; any other refusal is final.
+inline bool DrawImageNotReady(DrawResult result) {
+  return result == DrawResult::kNoClassName ||
+         result == DrawResult::kNoClassTable;
+}
+
+inline mio::ProfileState ClassifyIdentity(mio::SchemeResult scheme,
+                                          DrawResult draw) {
+  if (scheme == mio::SchemeResult::kResolved ||
+      draw == DrawResult::kResolved) {
+    return mio::ProfileState::kMatched;
+  }
+  if (mio::ClassifyScheme(scheme) == mio::ProfileState::kImageNotReady &&
+      DrawImageNotReady(draw)) {
+    return mio::ProfileState::kImageNotReady;
+  }
+  return mio::ProfileState::kRejected;
+}
+
+// Diagnostic word for the identity log: scheme result | draw result << 8.
+inline uint32_t PackIdentityResult(mio::SchemeResult scheme, DrawResult draw) {
+  return static_cast<uint32_t>(scheme) | (static_cast<uint32_t>(draw) << 8u);
+}
+
 // ── segment lane: parser and reveal setter ─────────────────────────────────
 //
 // The message window advances one click unit at a time.  Its progress
 // function asks the segment parser for the next unit of the formatted page
 // text: `end = parse(page, start, &glyphs)` returns the end index of the unit
 // and the number of glyphs it adds, then hands [shown, shown + glyphs) to the
-// text node's reveal setter `set_reveal(node, shown, shown + glyphs)`.  The
-// parser has exactly that one caller.
+// text node's reveal setter `set_reveal(node, shown, shown + glyphs)`.
+// Exactly one parser call site is followed by a reveal call; builds may also
+// call the parser elsewhere (measuring a page without revealing it), and
+// those call sites are not the progress function.
 
 // set_reveal(node, start, end):
 //   push ebp; mov ebp,esp; mov edx,[ebp+8]; test edx,edx; je +x;
@@ -349,8 +383,19 @@ inline SegmentResult ResolveSegment(const exact::LoadedPeImage& image,
   const auto parsers = mio::FindShapes(image, kParserBytes, kParserMask,
                                        sizeof(kParserBytes), 4u);
   if (parsers.size() != 1u) return SegmentResult::kNoParser;
-  size_t caller = SIZE_MAX;
-  size_t callers = 0u;
+  const auto reveal_follows = [&](size_t caller) {
+    for (size_t at = caller + 5u; at + 5u <= image.size &&
+                                  at <= caller + kRevealAfterParseScan;
+         ++at) {
+      size_t target = 0u;
+      if (image.base[at] == 0xe8u && mio::Rel32Target(image, at, &target) &&
+          target == reveal) {
+        return true;
+      }
+    }
+    return false;
+  };
+  size_t revealing = 0u;
   for (size_t s = 0u; s < image.section_count; ++s) {
     const auto& section = image.sections[s];
     if ((section.characteristics & IMAGE_SCN_MEM_EXECUTE) == 0u) continue;
@@ -358,23 +403,13 @@ inline SegmentResult ResolveSegment(const exact::LoadedPeImage& image,
       size_t target = 0u;
       if (section.bytes[at] == 0xe8u &&
           mio::Rel32Target(image, section.rva + at, &target) &&
-          target == parsers[0]) {
-        caller = section.rva + at;
-        ++callers;
+          target == parsers[0] && reveal_follows(section.rva + at)) {
+        ++revealing;
       }
     }
   }
-  if (callers != 1u) return SegmentResult::kParserCallers;
-  bool reveal_follows = false;
-  for (size_t at = caller + 5u; at + 5u <= image.size &&
-                                at <= caller + kRevealAfterParseScan;
-       ++at) {
-    size_t target = 0u;
-    reveal_follows = reveal_follows ||
-                     (image.base[at] == 0xe8u &&
-                      mio::Rel32Target(image, at, &target) && target == reveal);
-  }
-  if (!reveal_follows) return SegmentResult::kNoRevealAfterParse;
+  if (revealing == 0u) return SegmentResult::kNoRevealAfterParse;
+  if (revealing != 1u) return SegmentResult::kParserCallers;
   out->parser = reinterpret_cast<uintptr_t>(image.base) + parsers[0];
   out->reveal = reinterpret_cast<uintptr_t>(image.base) + reveal;
   return SegmentResult::kResolved;
