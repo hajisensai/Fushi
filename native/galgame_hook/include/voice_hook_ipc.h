@@ -392,6 +392,10 @@ constexpr uint32_t kTextSourceFvp = 10;
 // PalSpriteUnlock transaction lays out with PalFontDrawText, speaker plate
 // excluded (16 = first unused id on every local branch, checked 2026-11-03).
 constexpr uint32_t kTextSourceSoftpal = 16;
+// AliceSoft System 4 exact text: the lines of one page as the VM's MSG
+// instruction hands them to the game's message function (17 = first unused
+// id on develop and every open PR, checked 2026-11-11).
+constexpr uint32_t kTextSourceSystem4 = 17;
 constexpr uint32_t kTextEventLine = 0;
 constexpr uint32_t kTextEventThreadDiscovered = 1;
 // Some Luna engine hooks expose scenario text and system controls from the
@@ -966,6 +970,9 @@ constexpr uint32_t kLookupGeometryProviderIdFvp = 23u;
 // SoftPal ADV System (Pal.dll) sprite text-transaction exact layout provider
 // (append-only id; 29 = first unused id on every local branch, 2026-11-03).
 constexpr uint32_t kLookupGeometryProviderIdSoftpal = 29u;
+// AliceSoft System 4 SACT2 sprite text exact layout provider (append-only id;
+// 30 = first unused id on develop and every open PR, 2026-11-11).
+constexpr uint32_t kLookupGeometryProviderIdSystem4 = 30u;
 
 constexpr uint32_t kLookupGeometryStatusUnavailable = 0u;
 constexpr uint32_t kLookupGeometryStatusReady = 1u;
