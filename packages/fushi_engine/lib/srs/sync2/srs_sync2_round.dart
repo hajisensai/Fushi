@@ -74,7 +74,12 @@ const String kSrsSync2Stopped = 'srs sync round stopped';
 /// 发件的一批在上传与确认之间被内核改切（并发的另一轮跑了小段合并）：这一轮不写 head，下一轮从水位续发。
 const String kSrsSync2OutboxRecut = 'srs outbox batch was re-cut';
 
-/// 本协议版本（`meta.json` 的 `v`）与能读它的最低读者版本（与内核 segment.rs `PROTOCOL` / `MIN_READER` 同值）。
+/// 本协议版本（`meta.json` 的 `v`，与内核 segment.rs `PROTOCOL` 同值）与能读这个**目录布局**的最低读者版本
+/// （`meta.json` 的 `minReader`）。
+///
+/// [kSrsSync2MinReader] 只管目录布局层（集合根、文件命名、媒体寻址），布局不变就不动；段里**内容**要求的最低读者
+/// 由内核按本机实际写出的内容声明在 head 的 `minReader` 里（native/fushi_fsrs/src/sync2/min_reader.rs，地板值 3，
+/// 与这里同值但互不联动）。以后升协议只要布局没变，这里保持 3，v3.3.0 读者就能继续和没用到新内容的设备同步。
 ///
 /// 2 = 2026-10-30 断代：集合根从 `v2/` 挪到 `v3/`（srs_location_store.dart [kSrsSync2Folder]），媒体只剩内容寻址；
 /// 协议 1 的位置由一次性迁移搬过来（srs_location_migration.dart），旧根上只留一份 `minReader` = 2 的 `meta.json`

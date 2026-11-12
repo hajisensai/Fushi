@@ -2492,8 +2492,20 @@ class AdapterStructureTest(unittest.TestCase):
         for proof in ("ResolveImpl(", "ResolveExVtable(", "ResolveScreenTables("):
             self.assertIn(proof, resolve)
         vtable = self._function_body(core, "inline SiteResult ResolveExVtable(")
-        for proof in ("kAnchor", "EnclosingFunction(", "layout_slot_disp"):
+        for proof in ("FindAnchorRvas(", "EnclosingFunction(", "layout_slot_disp",
+                      "IsVtableRva("):
             self.assertIn(proof, vtable)
+        # The anchor may only be split by a flag-neutral `mov r32,imm32` that
+        # leaves al alone; a vtable outside read-only data must be all code
+        # pointers up to the layout slot.
+        anchor = self._function_body(core, "inline bool AnchorAt(")
+        for proof in ("ShapeAt(at, end, kAnchor)", "0xb8u", "0xbcu"):
+            self.assertIn(proof, anchor)
+        table = self._function_body(core, "inline bool IsVtableRva(")
+        self.assertIn("IsDataRva(", table)
+        self.assertIn("IsExecutableRva(image, function", table)
+        screen = self._function_body(core, "inline SiteResult ResolveScreenTables(")
+        self.assertIn("PlausibleScreenTables(", screen)
         owner = self._function_body(core, "bool DecodeOwnerAbi(")
         for proof in ("DecodeDrawable(", "DecodeTerm(", "best_function"):
             self.assertIn(proof, owner)
@@ -2530,7 +2542,26 @@ class AdapterStructureTest(unittest.TestCase):
         self.assertNotIn("rt.model.", publish)
         # The adapter installs the lane only when its structural identity holds.
         install = self._function_body(adapter, "  bool install() override {")
-        self.assertIn("if (probe()) text_installed_ = InstallBgiLookup()", install)
+        self.assertIn("if (probe()) {", install)
+        self.assertIn("text_installed_ = InstallBgiLookup()", install)
+        # install() runs once at startup, before a protected image hydrates: a
+        # pending site scan is advanced by the worker poll, scheduled by the
+        # tested core (bounded window, no sleep / blind retry), and only a
+        # settled scan is ever reported as a rejection.
+        pending = self._function_body(adapter, "  void ProcessPendingEvents() {")
+        self.assertIn("BgiLookupSitesPending()", pending)
+        self.assertIn("InstallBgiLookup()", pending)
+        lookup = self._function_body(runtime, "bool InstallBgiLookup() {")
+        self.assertIn("rt.scan.Due(", lookup)
+        self.assertIn("rt.scan.Record(", lookup)
+        for forbidden in ("Sleep(", "WaitForSingleObject("):
+            self.assertNotIn(forbidden, lookup)
+            self.assertNotIn(forbidden, pending)
+        rejected = self._function_body(runtime, "bool BgiLookupSitesRejected() {")
+        self.assertIn("scan.settled()", rejected)
+        schedule = self._function_body(core, "  SiteScanVerdict Record(")
+        self.assertIn("IsHydrationPendingResult(", schedule)
+        self.assertIn("kSiteRetryWindowMs", schedule)
 
     def test_malie_is_structural_keyless_and_callbacks_stay_bounded(self) -> None:
         """Malie：身份 / 语音 / 文本 / 查词站点只来自结构；不含归档密钥与解密；回调只做有界拷贝。"""

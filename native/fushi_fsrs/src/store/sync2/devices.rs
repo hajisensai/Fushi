@@ -238,6 +238,7 @@ pub(crate) fn status_extras(
     };
     let retired: BTreeSet<Id> = retired_rows.keys().filter_map(|k| Id::parse(k)).collect();
     let (gap, blocking) = stuck(c, profile, &vv, &retired)?;
+    let declared = super::min_reader::declared(c, profile)?;
     let exts: BTreeMap<String, Map<String, Value>> = {
         let prefix = ext_prefix(profile);
         meta_prefixed(c, &prefix)?
@@ -306,8 +307,8 @@ pub(crate) fn status_extras(
             "ok"
         } else if retired_at.is_some() {
             "retired"
-        } else if protocol.is_some_and(|p| p < segment::MIN_READER as i64) {
-            // 它的协议比本机写出的数据要求的最低读者还旧：它读不了本机（以及同代设备）的数据，要升级。
+        } else if protocol.is_some_and(|p| p < declared as i64) {
+            // 它的协议比本机 head 声明的最低读者（按本机写过 / 收下的内容，min_reader.rs）还旧：它读不了本机的数据，要升级。
             "upgrade"
         } else if g > 0 || b > 0 {
             "missing"

@@ -359,6 +359,8 @@ fn record_head(conn: &Connection, profile: &str, h: &Head) -> Result<(), String>
         params![profile, h.device.0.to_vec(), h.gen as i64, h.seq as i64, h.at_ms, h.ack.encode(), h.digest, h.name],
     )
     .map_err(sql)?;
+    // 收下的 head 声明的 `minReader` 传递到本机的声明（store/sync2/min_reader.rs 文件头）。
+    super::min_reader::raise(conn, profile, h.min_reader)?;
     if n > 0 {
         // 型号 / 版本 / 协议（设备可识别，devices.rs）。
         super::devices::record_ext(conn, profile, h)?;
@@ -2109,6 +2111,7 @@ pub(crate) fn rotate(
         };
         let chain = chain_next(&fresh.chain, &re);
         insert_op(conn, profile, &re, &chain, now)?;
+        super::min_reader::raise(conn, profile, crate::sync2::min_reader::min_reader_of(&re))?;
         fresh.chain = chain;
         fresh.next_seq += 1;
         applied.set(fresh.device, seq);
@@ -2476,7 +2479,7 @@ impl SrsCore {
             let mut head = Head {
                 gen: local.head_gen + 1,
                 protocol: segment::PROTOCOL,
-                min_reader: segment::MIN_READER,
+                min_reader: super::min_reader::declared(c, profile)?,
                 collection: local.collection,
                 device: local.device,
                 public: local.key.public(),
@@ -3259,9 +3262,12 @@ impl SrsCore {
                 }
                 _ => false,
             };
+            let is_self = dev == local.device.0.to_vec();
+            // 对端的派生规则版本（摘要前缀，digest.rs）与本机不同：两边摘要永远不比，状态页提示「对方规则 vN」。
+            let rules = digest.as_deref().and_then(super::digest::derive_rules_of);
             let mut row = json!({
                 "device": hex_id(&dev),
-                "self": dev == local.device.0.to_vec(),
+                "self": is_self,
                 "applied": applied,
                 "behind": (head_seq - applied).max(0),
                 "seenAt": x.get::<_, Option<i64>>(3).map_err(sql)?,
@@ -3270,6 +3276,16 @@ impl SrsCore {
                 "warning": x.get::<_, Option<String>>(7).map_err(sql)?,
                 "digestMismatch": same_vv_mismatch,
             });
+            if let (false, Some(theirs), Some(m)) = (
+                is_self,
+                rules.filter(|r| *r != super::digest::DERIVE_RULES),
+                row.as_object_mut(),
+            ) {
+                m.insert(
+                    "rules".to_owned(),
+                    json!({"theirs": theirs, "mine": super::digest::DERIVE_RULES}),
+                );
+            }
             if let (Some(m), Some(Value::Object(x))) =
                 (row.as_object_mut(), extras.get(&hex_id(&dev)))
             {
