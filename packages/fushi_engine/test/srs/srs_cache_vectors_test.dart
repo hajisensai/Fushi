@@ -134,22 +134,20 @@ void main() {
   Future<(SrsStorage, SrsDbStore)> loaded() async {
     final SrsStorage st = await openTestSrsStorage();
     final SrsDbStore s = await openOn(st);
-    await s.db.transaction(() async {
-      for (final String name in kRawTables) {
-        final Table tb = _table(raw[name]);
-        await s.db.customStatement('DELETE FROM $name');
-        final Set<String> idCols = _kIdColumns[name]!;
-        final String sql =
-            // 两张投影表的 `json` 是生成列（srs.db v18）：原文写进 `jslim`（不瘦也合法）。
-            'INSERT INTO $name (${tb.columns.map((String c) => c == 'json' && _kSlimTables.contains(name) ? '"jslim"' : '"$c"').join(', ')}) '
-            'VALUES (${tb.columns.map((String c) => idCols.contains(c) ? 'srs_id(?)' : '?').join(', ')})';
-        for (final List<Object?> r in tb.rows) {
-          await s.db.customStatement(sql, <Object?>[
-            for (final Object? v in r) _cellIn(v),
-          ]);
-        }
+    for (final String name in kRawTables) {
+      final Table tb = _table(raw[name]);
+      s.core.debugExecRaw('DELETE FROM $name');
+      final Set<String> idCols = _kIdColumns[name]!;
+      final String sql =
+          // 两张投影表的 `json` 是生成列（srs.db v18）：原文写进 `jslim`（不瘦也合法）。
+          'INSERT INTO $name (${tb.columns.map((String c) => c == 'json' && _kSlimTables.contains(name) ? '"jslim"' : '"$c"').join(', ')}) '
+          'VALUES (${tb.columns.map((String c) => idCols.contains(c) ? 'srs_id(?)' : '?').join(', ')})';
+      for (final List<Object?> r in tb.rows) {
+        s.core.debugExecRaw(sql, <Object?>[
+          for (final Object? v in r) _cellIn(v),
+        ]);
       }
-    });
+    }
     for (final String name in kRawTables) {
       final int n =
           (await s.db
@@ -235,18 +233,18 @@ void main() {
       String where(String c, List<String>? ids) => ids == null
           ? ''
           : ' AND $c IN (${ids.map((String i) => "srs_id('$i')").join(',')})';
-      await s.db.customStatement(
+      s.core.debugExecRaw(
         "UPDATE srs_notes_cache SET guid = '#', created_at = -1, deck_id = '#', deleted_at = -1, "
         "term_key = '#', reading_key = '#', sort_field = '#', tags_json = '[\"#\"]', "
         "media_refs = '#' WHERE 1 = 1${where('id', noteIds)}",
       );
-      await s.db.customStatement(
+      s.core.debugExecRaw(
         "UPDATE srs_cards_cache SET deck_id = '#', suspended = 1 - suspended, buried_until_day = -1, "
         "flag = 99, queue = '#', due_day = -1, due_at = -1, scheduled_days = -1, reps = -1, lapses = -1, "
         "stability = -1.0, difficulty = -1.0, last_reviewed_at = -1, last_log_id = '#', scheduler = '#', "
         'note_created_at = -1, new_position = -1 WHERE 1 = 1${where('id', cardIds)}',
       );
-      await s.db.customStatement(
+      s.core.debugExecRaw(
         'UPDATE srs_stat_reviews SET occurred_at = -1, utc_offset_min = -1, rating = -1, kind = -1, '
         'duration_ms = -1, prev_due_day = -1, maturity_delta = 99 WHERE 1 = 1${where('card_id', cardIds)}',
       );
@@ -255,11 +253,10 @@ void main() {
     /// 给 [noteIds] 各塞一张不该有的卡：复制它的第一张卡、卡 ID 换成固定前缀（不会与真卡撞）。返回塞了几张。
     Future<int> plantStale(Iterable<String> noteIds) async {
       final List<String> all = <String>[
-        for (final QueryRow r
-            in await s.db
-                .customSelect('PRAGMA table_info(srs_cards_cache)')
-                .get())
-          '"${r.read<String>('name')}"',
+        for (final Map<String, Object?> r in s.core.debugSelectRaw(
+          'PRAGMA table_info(srs_cards_cache)',
+        ))
+          '"${r['name']! as String}"',
       ];
       final String rest = all.where((String c) => c != '"id"').join(', ');
       final Set<String> want = noteIds.toSet();
@@ -267,7 +264,7 @@ void main() {
       for (final List<Object?> c in cards.rows) {
         final String note = c[col(cards, 'note_id')]! as String;
         if (!want.contains(note) || !done.add(note)) continue;
-        await s.db.customStatement(
+        s.core.debugExecRaw(
           'INSERT INTO srs_cards_cache ("id", $rest) '
           'SELECT srs_id(?), $rest FROM srs_cards_cache WHERE id = srs_id(?)',
           <Object?>['stale-$note', c[col(cards, 'id')]],
@@ -343,7 +340,7 @@ void main() {
             .cast<String, Object?>();
     expect(j['cacheRev'], isA<int>());
     j['cacheRev'] = 0;
-    await s.db.customStatement(
+    s.core.debugExecRaw(
       'UPDATE srs_local_state SET json = ? WHERE profile_uid = srs_id(?)',
       <Object?>[jsonEncode(j), profile],
     );

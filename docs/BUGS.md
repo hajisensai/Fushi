@@ -33,12 +33,19 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3931 条。点号进各自文件。
+> 共 3932 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4387](bugs/BUG-4387-srs-orphan-sweep-rerun-after-purge-unify.md) | ✅ | ✅ | 无主复习数据扫描在 BUG-4292 之前已扫过的库里不再跑，采用 / 并入旧实现的残留永远留下 |
+| [BUG-4387](bugs/BUG-4387-srs-by-id-access-not-profile-scoped.md) | 🚧 | 🚧 | 复习库按 id 的读写不按 profile 过滤：点名的 profile 与 id 不属于同一份时写错库 |
+| [BUG-4387](bugs/BUG-4387-srs-sync2-bootstrap-channel-never-selected.md) | ✅ | ✅ | 复习同步 v2 的新设备收段通道在生产里一次都不会被选中 |
+| [BUG-4388](bugs/BUG-4388-heavy-ticket-open-race.md) | ✅ | ✅ | heavy 租约的等待者探测排队票据时撞上别的进程删票据，排队中途崩溃退出 255 |
+| [BUG-4388](bugs/BUG-4388-srs-by-id-cross-profile.md) | ✅ | ✅ | 复习库按实体 ID 的读写不看 profile：点名 A 的命令能读 / 改 / 删 B 的笔记、卡片、牌组、笔记类型 |
 | [BUG-4387](bugs/BUG-4387-windows-input-starved-by-engine-wakeups.md) | ✅ | ✅ | 启动时 WebView 预热的 idle 任务被常驻背景动画永久挡住，调度器空转饿死 Windows 输入 |
 | [BUG-4386](bugs/BUG-4386-anime-source-magnet-opened-as-file.md) | ✅ | ✅ | 视频源扩展（Torrentio）给的磁链被当本地文件打开，无限加载 |
+| [BUG-4386](bugs/BUG-4386-srs-adopt-deletes-decks-without-notes.md) | ✅ | ✅ | 复习同步关联只看笔记，只建了牌组 / 改了预设的设备被自动采用对方 uid，自建牌组与预设被删 |
+| [BUG-4386](bugs/BUG-4386-srs-edit-undo-blind-overwrite.md) | ✅ | ✅ | srs-edit-undo-blind-overwrite |
 | [BUG-4385](bugs/BUG-4385-music-exclusive-pause-holds-device.md) | ✅ | ✅ | 音乐 WASAPI 独占输出暂停时不交还设备 |
 | [BUG-4384](bugs/BUG-4384-apple-music-preview-full-duration.md) | ✅ | ✅ | Apple Music 试听片段放约 30 秒就「回到开头」，进度条按整首时长画、无试听提示 |
 | [BUG-4383](bugs/BUG-4383-jellyfin-default-embedded-sub.md) | ✅ | ✅ | Jellyfin 服务器标为默认的内嵌字幕起播不显示 |
@@ -97,6 +104,12 @@
 | [BUG-4325](bugs/BUG-4325-collection-member-cover-no-tilt.md) | ✅ | ✅ | collection-member-cover-no-tilt |
 | [BUG-4324](bugs/BUG-4324-ext-popup-page-backdrop.md) | ✅ | ✅ | app 外查词 / 悬浮词典浮窗卡片外铺了页面底色和 M3E 形状背景 |
 | [BUG-4323](bugs/BUG-4323-android-exit-permission-kill-misreport.md) | ✅ | ✅ | Android 权限变更导致的系统杀进程被误报为闪退 |
+> 共 3873 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4324](bugs/BUG-4324-srs-sync2-rotated-identity-segments-deleted.md) | ✅ | ✅ | SRS 同步 v2：换身份后仍删旧身份目录里的旧小段，旧身份留着的 head 引用落空 |
+| [BUG-4323](bugs/BUG-4323-srs-sync2-segment-deleted-before-referencing-head.md) | ✅ | ✅ | SRS 同步 v2：旧小段可能先于引用它的旧 head 被删（保留代数写在 Dart，内核看不到） |
 | [BUG-4322](bugs/BUG-4322-manual-address-host-no-device-name.md) | ✅ | ✅ | 手动地址添加的 host 没有设备名：peer ls 不列出、远端复习标题显示 host.docker.internal |
 | [BUG-4321](bugs/BUG-4321-cli-anki-mine-ignores-remote-lookup.md) | ✅ | ✅ | fushi_cli anki mine 在依赖远端查词的客户端上释义为空（只查本地词典） |
 | [BUG-4320](bugs/BUG-4320-srs-sync-v2-host-not-joined-silent.md) | ✅ | ✅ | SRS 同步 v2：host 未点「开始同步」时客户端显示「全部已同步」、什么都没同步且无提示 |

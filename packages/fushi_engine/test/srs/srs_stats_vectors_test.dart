@@ -3,15 +3,20 @@
 // 输入是冻结的库：下面的场景造出的 srs.db 原样（gzip）存成 fixtures/srs_stats_vectors.db.gz（排程带 fuzz、种子是随机
 // 生成的卡 ID，每次重造的库都不一样，所以冻结库本身）；两种装载条件（FSRS / 挂上 RWKV-Instant 假打分器）读同一份库。输出由**旧的 Dart 实现**（`allNoteViews` 物化全部笔记取
 // 出处 + Drift 整表读卡片缓存 / 笔记缓存 / 有效复习投影，2026-10-29 L3 之前）在这些库上算出，存进
-// fixtures/srs_stats_vectors.json；统计装载搬进 Rust（`stats_bundle` 命令，列式结果）之后，新实现必须在同一份库上
-// 逐项给出同样的结果：每张可见卡的统计视图（状态 / 暂停 / 搁置 / 排程归属 / 间隔 / 到期 / 记忆状态 / 可提取度 /
+// fixtures/srs_stats_vectors.json；统计装载与聚合搬进 Rust（store/stats.rs，`stats_rows` 是归一化之后的逐卡 / 逐条视图）
+// 之后，新实现必须在同一份库上逐项给出同样的结果：每张可见卡的统计视图（状态 / 暂停 / 搁置 / 排程归属 / 间隔 / 到期 / 记忆状态 / 可提取度 /
 // 遗忘 / 次数 / 加入日 / 目标保留率 / 是否按回忆率）、全部有效复习（时刻 / 日 / 小时 / 评分 / 种类 / 用时 / 提前）、
 // 成熟事件、出处分组、每个牌组子树里的卡、牌组列表。
 //
 // 场景覆盖：多层牌组、多种出处（有 / 无标题、标题两侧空白、无出处）、多日评分与撤销、暂停、搁置、改到期日、重置、
 // 删除笔记（隐藏卡）、移动卡片、跨日界（翻日时刻 + UTC 偏移）、RWKV-Instant 牌组（假打分器）。
 //
+// 唯一的例外是 FSRS 卡的可提取度一列：期望值是旧实现拿假引擎（FakeFsrsEngine，恒 0.9）算的，内核按真 FSRS
+// 公式算（不回调 Dart 引擎），所以这一列只核对「有没有值」与取值范围；数值本身由 srs_stats_report_parity_test
+// （真引擎下旧 Dart 冻结结果的可提取度分布 / 均值 / 中位数 / 合计）逐值钉住。按 RWKV 回忆率的卡照旧逐值核对。
+//
 // 重新生成（只在有意改变统计语义时）：SRS_STATS_VECTORS_WRITE=1 跑本文件（重造库并重算输出）。
+// 输出改由内核给出之后，重新生成只重算输出（造库要旧实现的同一份写入序列，冻结库不再重造）。
 import 'dart:convert';
 import 'dart:io';
 
@@ -19,13 +24,13 @@ import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_rwkv_scheduling.dart';
-import 'package:fushi_engine/srs/srs_stats.dart';
 import 'package:fushi_engine/srs/srs_stats_loader.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 import 'apkg/apkg_test_support.dart';
+import 'support/srs_stats_rows.dart';
 import 'support/srs_test_storage.dart';
 
 const String kStatsVecProfile = '01928c3e-0000-7000-8000-0000000000c3';
@@ -245,41 +250,34 @@ void main() {
     if (rwkv) s.rwkv = _FakeRwkv();
     final int now = DateTime.utc(2026, 10, 6, 9).millisecondsSinceEpoch;
     t = now;
-    final SrsStatsBundle bundle = await loadSrsStats(s, nowMs: now);
-    final SrsStatsData d = bundle.data;
+    final SrsStatsLoad load = await loadSrsStats(s, nowMs: now);
+    final StatsRows d = StatsRows(await load.rows());
     String fmt(double? v) => v == null ? '-' : v.toStringAsFixed(9);
-    final List<SrsStatCard> cards = List<SrsStatCard>.of(d.cards)
-      ..sort((SrsStatCard x, SrsStatCard y) => x.id.compareTo(y.id));
+    String? num9(Object? v) => fmt((v as num?)?.toDouble());
+    final List<StatCardRow> cards = List<StatCardRow>.of(d.cards)
+      ..sort((StatCardRow x, StatCardRow y) => x.id.compareTo(y.id));
     final Map<String, String> deckName = <String, String>{
-      for (final (String, String) e in bundle.index.decks) e.$1: e.$2,
+      for (final (String, String) e in load.decks) e.$1: e.$2,
     };
     produced[name] = <String, Object?>{
       'today': d.today,
       'cards': <Object?>[
-        for (final SrsStatCard c in cards)
+        for (final StatCardRow c in cards)
           <Object?>[
             c.id,
             c.noteId,
             deckName[c.deckId] ?? '?',
-            c.state.name,
-            c.suspended,
-            c.buried,
-            c.fushiScheduled,
-            c.intervalDays,
-            c.dueDay,
-            c.dueAt,
-            fmt(c.stability),
-            fmt(c.difficulty),
-            fmt(c.retrievability),
-            c.lapses,
-            c.reps,
-            c.addedDay,
-            fmt(c.desiredRetention),
-            c.byRecall,
+            for (int k = 3; k < 10; k++) c.raw[k],
+            num9(c.raw[10]),
+            num9(c.raw[11]),
+            num9(c.raw[12]),
+            for (int k = 13; k < 16; k++) c.raw[k],
+            num9(c.raw[16]),
+            c.raw[17],
           ],
       ],
       'reviews': <Object?>[
-        for (final SrsStatReview r in d.reviews)
+        for (final StatReviewRow r in d.reviews)
           <Object?>[
             r.cardId,
             r.at,
@@ -292,25 +290,45 @@ void main() {
           ],
       ],
       'maturity': <Object?>[
-        for (final SrsStatMaturityEvent e in d.maturityEvents)
+        for (final StatMaturityRow e in d.maturity)
           <Object?>[e.cardId, e.day, e.delta],
       ],
       'sources': <Object?>[
-        for (final SrsSourceShare x in d.sourceShares())
-          <Object?>[x.kind, x.title, x.notes],
+        for (final x in d.sources) <Object?>[x.kind, x.title, x.notes],
       ],
       'decks': <Object?>[
-        for (final (String, String) e in bundle.index.decks)
-          <Object?>[e.$2, (bundle.index.cardIdsInDeck(e.$1).toList()..sort())],
+        for (final (String, String) e in load.decks)
+          <Object?>[e.$2, (await load.cardIdsInDeck(e.$1))..sort()],
       ],
       'retrievabilityAvailable': d.retrievabilityAvailable,
     };
     if (!write) {
-      expect(
-        jsonDecode(jsonEncode(produced[name])),
-        expected[name],
-        reason: name,
-      );
+      // FSRS 卡（不按回忆率）的可提取度：只核对有没有值与取值范围（见文件头）；其余逐值。
+      const int rCol = 12;
+      final Map<String, Object?> got =
+          (jsonDecode(jsonEncode(produced[name])) as Map)
+              .cast<String, Object?>();
+      final Map<String, Object?> want = (expected[name]! as Map)
+          .cast<String, Object?>();
+      final List<Object?> gotCards = got['cards']! as List<Object?>;
+      final List<Object?> wantCards = want['cards']! as List<Object?>;
+      expect(gotCards.length, wantCards.length, reason: '$name cards');
+      int fsrsR = 0;
+      for (int k = 0; k < gotCards.length; k++) {
+        final List<Object?> g = gotCards[k]! as List<Object?>;
+        final List<Object?> w = wantCards[k]! as List<Object?>;
+        if (g.last != true && w[rCol] != '-') {
+          fsrsR++;
+          final double r = double.parse(g[rCol]! as String);
+          expect(r > 0 && r <= 1, isTrue, reason: '$name ${g[0]} R=$r');
+          g[rCol] = w[rCol];
+        }
+        expect(g, w, reason: '$name card ${w[0]}');
+      }
+      expect(fsrsR, greaterThan(0), reason: '$name：至少一张 FSRS 卡有可提取度');
+      got.remove('cards');
+      want.remove('cards');
+      expect(got, want, reason: name);
     }
   }
 

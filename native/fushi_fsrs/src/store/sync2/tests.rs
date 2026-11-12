@@ -37,6 +37,74 @@ fn delete_and_ack(core: &SrsCore, bucket: &mut Bucket, location: &str, paths: &[
     core.sync2_obsolete_ack(P, location, paths).unwrap();
 }
 
+/// [bucket] 上 `devices/<device>/` 里的文件名（生产里 Dart 列目录得到的那一份）。
+pub(crate) fn listed(bucket: &Bucket, device: &str) -> Vec<String> {
+    let dir = format!("devices/{device}/");
+    bucket
+        .0
+        .keys()
+        .filter_map(|k| k.strip_prefix(&dir))
+        .map(str::to_owned)
+        .collect()
+}
+
+/// 一轮收尾，按生产（srs_sync2_round.dart `srsSweepObsolete`）：head 传上去之后列本机目录 → 内核给该删的清单
+/// （transport.rs `sync2_obsolete`：旧 head + 旧小段 + 旧转发件）→ 两段式删；清单全部删成、内核说还有只差这份清单
+/// 确认的旧小段（`again`）就再问一次。内核点名的旧身份目录（`former`）接着照 [sweep_former] 清。返回内核两次给的
+/// 本机目录的清单（不含旧身份目录里删的）。
+pub(crate) fn sweep(core: &SrsCore, bucket: &mut Bucket, location: &str, now: i64) -> Vec<String> {
+    let device = core.sync2_identity(P, now).unwrap()["device"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let mut given = Vec::new();
+    let mut former = Vec::new();
+    for ask in 0..2 {
+        let out = core
+            .sync2_obsolete(P, location, &listed(bucket, &device), false, now)
+            .unwrap();
+        if ask == 0 {
+            former = out.former;
+        }
+        delete_and_ack(core, bucket, location, &out.delete);
+        given.extend(out.delete);
+        if !out.again || FAIL_DELETES.with(|f| f.get()) {
+            break;
+        }
+    }
+    for old in former {
+        sweep_former(core, bucket, location, &old, now);
+    }
+    given
+}
+
+/// 换过身份的设备清一个旧身份目录，按生产（srs_sync2_round.dart `srsSweepFormerIdentities`）：**此刻**列
+/// `devices/<旧身份>/`、读其中每一份 head、交给内核（former.rs `sync2_obsolete_former`），内核给的清单照删（没有待删
+/// 记录，不回执）。返回内核给的清单。
+pub(crate) fn sweep_former(
+    core: &SrsCore,
+    bucket: &mut Bucket,
+    location: &str,
+    device: &str,
+    now: i64,
+) -> Vec<String> {
+    let present = listed(bucket, device);
+    let heads: Vec<Vec<u8>> = present
+        .iter()
+        .filter(|n| n.starts_with("head-"))
+        .map(|n| bucket.0[&format!("devices/{device}/{n}")].clone())
+        .collect();
+    let given = core
+        .sync2_obsolete_former(P, location, device, &present, &heads, false, now)
+        .unwrap();
+    if !FAIL_DELETES.with(|f| f.get()) {
+        for p in &given {
+            bucket.0.remove(p);
+        }
+    }
+    given
+}
+
 pub(crate) mod tempdir {
     pub struct Dir(pub std::path::PathBuf);
     impl Drop for Dir {
@@ -137,18 +205,9 @@ impl Device {
         let out: Value =
             serde_json::from_str(&self.core.sync2_ingest(P, &fetched, key, now).unwrap()).unwrap();
         let upto = self.upload_all_keyed(bucket, location, key);
-        let (path, bytes, gen, obsolete) = self.core.sync2_head(P, location, upto, now).unwrap();
-        let dir = path.rsplit_once('/').unwrap().0.to_owned();
+        let (path, bytes, _gen) = self.core.sync2_head(P, location, upto, now).unwrap();
         bucket.0.insert(path, bytes);
-        delete_and_ack(&self.core, bucket, location, &obsolete);
-        // 与生产（srs_sync2_round.dart 第 4 步）同样：删本机两代以前的 head。
-        bucket.0.retain(|k, _| {
-            !(k.starts_with(&format!("{dir}/"))
-                && k.rsplit('/')
-                    .next()
-                    .and_then(crate::sync2::segment::parse_head_file_name)
-                    .is_some_and(|g| g + 2 < gen))
-        });
+        sweep(&self.core, bucket, location, now);
         self.relay_all(bucket, location, key);
         // 与生产同一节奏：版本向量变了且到期才重算（测试里间隔为 0 = 变了就算）。
         self.core.sync2_digest_due(P, now, Some(0)).unwrap();
@@ -273,6 +332,34 @@ impl Device {
             .as_str()
             .unwrap()
             .to_owned()
+    }
+}
+
+/// 测试：让改投影的命令在「写本机状态行」那一步失败（`local_state::persist_projected` 写下带修订号的整行时触发）。
+/// 命令本体、缓存刷新都已做完，用来验证整笔回滚。[mend_local_state] 撤掉。
+pub(crate) fn break_local_state(core: &SrsCore) {
+    for (name, event) in [("ins", "INSERT"), ("upd", "UPDATE")] {
+        core.exec_raw(
+            &format!(
+                "CREATE TRIGGER test_local_state_boom_{name} BEFORE {event} ON srs_local_state \
+                 WHEN json_extract(NEW.json, '$.revision') IS NOT NULL \
+                 BEGIN SELECT RAISE(ABORT, 'local state row refused'); END"
+            ),
+            &[],
+            false,
+        )
+        .unwrap();
+    }
+}
+
+pub(crate) fn mend_local_state(core: &SrsCore) {
+    for name in ["ins", "upd"] {
+        core.exec_raw(
+            &format!("DROP TRIGGER test_local_state_boom_{name}"),
+            &[],
+            false,
+        )
+        .unwrap();
     }
 }
 
@@ -3289,6 +3376,53 @@ fn sliced_ingest_carries_waiting_ops_across_slices() {
     assert_eq!(projection(&z), projection(&whole));
 }
 
+/// 写锁被持着时来取写锁的线程自己记进让出信号（等待者计数）：持锁的切片命令看得到「有人在等」，等的人拿到锁
+/// 信号就回零——不留下没人认领的请求。别的副本对象 / 别的 isolate 的写命令不经 Dart 的排队，靠这个让收段的片早收。
+#[test]
+fn a_thread_blocked_on_the_write_lock_is_seen_by_the_running_slice() {
+    let d = std::sync::Arc::new(Device::new("yield-waiter"));
+    let signal = || d.core.ingest_yield_flag().wanted();
+    assert!(!signal());
+    let w = d.core.writer().unwrap();
+    assert!(!signal(), "the holder itself is not a waiter");
+    let (tx, rx) = std::sync::mpsc::channel::<()>();
+    let waiter = {
+        let d = std::sync::Arc::clone(&d);
+        std::thread::spawn(move || {
+            let _w = d.core.writer().unwrap();
+            tx.send(()).unwrap();
+        })
+    };
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while !signal() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the blocked writer never showed up in the yield signal"
+        );
+        std::thread::yield_now();
+    }
+    assert!(
+        !d.core.ingest_yield_flag().requested(),
+        "a waiter is not a Dart-side request"
+    );
+    // 切片的预算据此截停（做满保底条数之后）。
+    let mut budget = super::transport::CommitBudget::slice_within(
+        d.core.ingest_yield_flag(),
+        std::time::Duration::from_secs(3600),
+    );
+    let mut taken = 0;
+    while budget.take() {
+        taken += 1;
+        assert!(taken < 10_000, "the budget never stopped");
+    }
+    assert_eq!(taken, 64, "the floor, then the waiter cuts the slice");
+    drop(w);
+    rx.recv_timeout(std::time::Duration::from_secs(10))
+        .expect("the waiter got the lock");
+    waiter.join().unwrap();
+    assert!(!signal(), "nobody is waiting any more");
+}
+
 /// 有写入在等写锁（[SrsCore::sync2_ingest_yield]）：正在投的那一片做满保底条数就收，返回 `more`；收片后请求
 /// 清掉，下一片照常投，全部投完的条数不变。
 #[test]
@@ -3335,9 +3469,7 @@ fn ingest_yield_cuts_the_running_slice_short() {
     assert_eq!(first["applied"], json!(64), "{first}");
     assert_eq!(first["more"], json!(true), "{first}");
     assert!(
-        !b.core
-            .ingest_yield_flag()
-            .load(std::sync::atomic::Ordering::Relaxed),
+        !b.core.ingest_yield_flag().requested(),
         "the request is cleared"
     );
     let mut applied = 64;
@@ -4082,10 +4214,10 @@ fn ingest_commit_rechecks_device_keys_that_changed_after_prepare() {
     b.core.sync2_ingest_finish(P, T0 + 31).unwrap();
 }
 
-/// 集成审查【中高】：收段的一片不套 Drift 事务，由内核在一笔事务里提交，Dart 的本机状态行同一笔写下。
+/// 集成审查【中高】：收段的一片不套 Drift 事务，由内核在一笔事务里提交，本机状态行同一笔写下。
 /// - 片投递完、提交之前（写锁仍被占着），并发的只读命令走读连接：不被阻塞、看不到这一片没提交的行；
-/// - 提交后本机状态行的修订号 = 调用时的值 + 落库的事件 + 变化的实体（`localRevision` 同值）；
-/// - 本机状态行写不下（坏 JSON）时整片回滚：库与本机状态行都停在这一片之前，会话作废；重开会话同样的段照样收齐。
+/// - 提交后本机状态行的修订号 = 库里原来的值 + 落库的事件 + 变化的实体（`localRevision` 同值），别的键原样；
+/// - 本机状态行写不下时整片回滚：库与本机状态行都停在这一片之前，会话作废；重开会话同样的段照样收齐。
 #[test]
 fn ingest_slice_commits_on_its_own_with_the_local_state_row() {
     // 逐条投递的一片（各片当场落投影、推进修订号）；新设备收段通道的各片只追加，见 tests_channel.rs。
@@ -4135,13 +4267,12 @@ fn ingest_slice_commits_on_its_own_with_the_local_state_row_sequential() {
     // 本机状态行写不下：整片回滚，会话作废。
     b.core.sync2_ingest_begin(P).unwrap();
     b.core.sync2_ingest_prepare(P, segs.clone(), None).unwrap();
-    let bad = b.core.sync2_ingest_commit_persisting(
-        P,
-        T0 + 30,
-        super::transport::CommitBudget::unlimited(),
-        Some("not json"),
-    );
-    assert!(bad.is_err());
+    break_local_state(&b.core);
+    let bad = b
+        .core
+        .sync2_ingest_commit(P, T0 + 30, super::transport::CommitBudget::unlimited());
+    mend_local_state(&b.core);
+    assert!(bad.unwrap_err().contains("local state row refused"));
     assert_eq!(logs(&b), 0, "the failed slice rolled back as a whole");
     assert_eq!(local_json(&b), None);
     assert!(
@@ -4168,14 +4299,25 @@ fn ingest_slice_commits_on_its_own_with_the_local_state_row_sequential() {
     }));
     b.core.sync2_ingest_begin(P).unwrap();
     b.core.sync2_ingest_prepare(P, segs, None).unwrap();
-    let before = json!({"writerId": "w", "revision": 40, "epoch": "e1"}).to_string();
+    // 库里已有的行（修订号 40、去重游标 7、一个这一版不认识的键）：这一片从它推进，带来的校时状态一并写下。
+    b.core
+        .exec_raw(
+            &format!(
+                "INSERT INTO srs_local_state (profile_uid, json) VALUES (srs_id('{P}'), \
+                 '{{\"styleCursor\":7,\"revision\":40,\"epoch\":\"e1\",\"kernelOnly\":7}}')"
+            ),
+            &[],
+            false,
+        )
+        .unwrap();
+    let anchor = json!({"o": 12, "b": "boot"});
     let r: Value = serde_json::from_str(
         &b.core
             .sync2_ingest_commit_persisting(
                 P,
                 T0 + 40,
                 super::transport::CommitBudget::unlimited(),
-                Some(&before),
+                Some(&anchor),
             )
             .unwrap(),
     )
@@ -4193,24 +4335,26 @@ fn ingest_slice_commits_on_its_own_with_the_local_state_row_sequential() {
     let stored: Value = serde_json::from_str(&local_json(&b).unwrap()).unwrap();
     assert_eq!(stored["revision"], json!(40 + landed + changed));
     assert_eq!(r["localRevision"], stored["revision"]);
-    assert_eq!(
-        stored["writerId"],
-        json!("w"),
-        "the rest of the row is written as given"
-    );
-    // 收尾同样在一笔事务里写本机状态行。
+    assert_eq!(r["localEpoch"], json!("e1"));
+    assert_eq!(stored["styleCursor"], json!(7), "the rest of the row stays");
+    assert_eq!(stored["anchor"], anchor);
+    // 收尾同样在一笔事务里写本机状态行：没带校时状态就不动它，别的键原样。
     let fin: Value = serde_json::from_str(
         &b.core
             .sync2_ingest_finish_persisting(
                 P,
                 T0 + 41,
                 super::transport::CommitBudget::unlimited(),
-                Some(&stored.to_string()),
+                None,
             )
             .unwrap(),
     )
     .unwrap();
     assert!(fin["localRevision"].as_i64().unwrap() >= stored["revision"].as_i64().unwrap());
+    let after: Value = serde_json::from_str(&local_json(&b).unwrap()).unwrap();
+    assert_eq!(after["anchor"], anchor, "{after}");
+    assert_eq!(after["kernelOnly"], json!(7), "unknown key kept: {after}");
+    assert_eq!(after["styleCursor"], json!(7));
 }
 
 /// 集成审查【中】：旧小段删除两段式。过了宽限期该删的旧小段这一轮删除失败（head 上传 / `location.delete` 抛错），
@@ -4243,20 +4387,31 @@ fn failed_obsolete_deletes_are_retried_next_round() {
     assert_eq!(segment_files(&bucket, &a), before, "nothing was deleted");
     let pending = rows_pending(&a);
     assert!(pending > 0, "the failed deletes are still on record");
-    // head 没变、不写的一轮也把待删清单交出来。
+    // head 没变、不写的一轮也把待删清单交出来（旧 head 也在这张清单里；它们没确认删掉之前，可能被它们引用的旧小段
+    // 留在记录里不给，见 tests_retention.rs）。
     let w = a
         .core
         .sync2_head_if_changed(P, "loc", u64::MAX, T0 + DAY + 70_000, Some(DAY))
         .unwrap();
     match w {
-        super::transport::HeadWrite::Unchanged { obsolete, .. } => {
-            assert_eq!(obsolete.len(), pending)
-        }
+        super::transport::HeadWrite::Unchanged { .. } => {}
         super::transport::HeadWrite::Written { .. } | super::transport::HeadWrite::Recut => {
             panic!("head content did not change")
         }
     }
-    // 下一轮正常：删光并确认。
+    FAIL_DELETES.with(|f| f.set(true));
+    let again = sweep(&a.core, &mut bucket, "loc", T0 + DAY + 70_000);
+    FAIL_DELETES.with(|f| f.set(false));
+    assert!(
+        again.iter().any(|p| p.contains("/seg-")) && again.len() <= pending,
+        "{again:?}"
+    );
+    assert_eq!(
+        rows_pending(&a),
+        pending,
+        "handing the list out removes nothing"
+    );
+    // 下一轮正常：先删掉没删成的旧 head，再删它们可能引用的旧小段，全部确认。
     a.sync(&mut bucket, "loc", T0 + DAY + 80_000);
     assert_eq!(rows_pending(&a), 0);
     let rows = a.rows("SELECT COUNT(*) FROM sync2_segments")[1][0]
