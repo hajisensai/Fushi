@@ -175,11 +175,15 @@ void main() {
     expect(await _unreferencedDeps(srs.db), lessThanOrEqualTo(depsBefore));
   });
 
-  test('在调用方的 Drift 事务里删：事务回滚时删除一起回滚', () async {
+  // 并入的收尾以前在一笔 Drift 事务里发 `profile_purge`；第 11 步改成内核的一条 `profile_merge_commit`，此后没有调用方
+  // 在 Drift 事务里发它，守卫把它登记成 reject（native/fushi_fsrs/src/store/drift_guard.rs）。守卫目前只计数不拦：
+  // 真这么发，删除仍嵌在那笔事务里、随它回滚。
+  test('在 Drift 事务里删：守卫记成 reject；仍随那笔事务回滚', () async {
     final SrsDbStore s = await open(oldUid);
     await addNote(s, '雪');
     final Map<String, int> before = await _residue(srs.db, oldUid);
     expect(before, contains('srs_entities'));
+    await s.debugDriftTxGuardHits(reset: true);
 
     await expectLater(
       srs.db.transaction(() async {
@@ -193,6 +197,9 @@ void main() {
     );
 
     expect(await _residue(srs.db, oldUid), before);
+    final Map<String, Map<String, int>> hits = await s.debugDriftTxGuardHits();
+    expect(hits['reject'], <String, int>{'profile_purge': 1});
+    expect(hits['join'], isEmpty);
   });
 
   // 采用后重开对不上 → 回退删新 uid（srs_profile_link.dart `_switchUid`）。那一刻旧副本可能已交接作废、新 uid

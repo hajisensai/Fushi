@@ -387,7 +387,7 @@ void main() {
     },
   );
 
-  // BUG-4387：BUG-4292 之前「采用 uid」的手抄删除只删 10 张 srs_* 表，sync2_* 全留下；那之前已经扫过（v1 标记）
+  // BUG-4463：BUG-4292 之前「采用 uid」的手抄删除只删 10 张 srs_* 表，sync2_* 全留下；那之前已经扫过（v1 标记）
   // 的库里这些残留永远扫不到。换了标记键后再扫一次，经同一个 profile_purge 清干净。
   test(
     'the sweep re-runs once over a v1-swept library and clears residue left by '
@@ -517,7 +517,7 @@ void main() {
     expect(await metaOf(uid), 4);
   }
 
-  // BUG-4387 跟进：第一版扫描只认「表里还有行」的 uid，只剩 srs_meta 键的 uid 与没人引用的 sync2_deps 不在清理面
+  // BUG-4463 跟进：第一版扫描只认「表里还有行」的 uid，只剩 srs_meta 键的 uid 与没人引用的 sync2_deps 不在清理面
   // 里。完成标记再换一次键（v3），v2 扫过的库再扫一次，收尾把这两类清掉。
   test(
     'the sweep re-runs once over a v2-swept library and clears meta-only orphan '
