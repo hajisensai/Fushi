@@ -89,6 +89,15 @@ void main() {
     expect(a.landed, isNot(b.landed), reason: 'landed: $why');
   }
 
+  // 新建一条笔记：内容 / 统计 / 牌组树 / 落库都推进；RWKV 分数表只随牌组 / 配置类事件与别的设备的事件整表重查，不动。
+  void expectNoteLanded(_Keys after, _Keys before, String why) {
+    expect(after.content, isNot(before.content), reason: 'content: $why');
+    expect(after.stats, isNot(before.stats), reason: 'stats: $why');
+    expect(after.tree, isNot(before.tree), reason: 'tree: $why');
+    expect(after.landed, isNot(before.landed), reason: 'landed: $why');
+    expect(after.rwkv, before.rwkv, reason: 'rwkv: $why');
+  }
+
   test('关库重开之后，五个键都不会与关之前出现过的值相同', () async {
     // 第一次打开只为把库初始化好（内置笔记类型、本机状态行、纪元），之后每次打开都从同一个起点数。
     await close(await open());
@@ -98,7 +107,7 @@ void main() {
     final String change0 = await a.store.changeFingerprint();
     await addNote(a.store, '一');
     final _Keys k1 = _keys(a.store);
-    expectAllDiffer(k1, k0, '一条内容写入');
+    expectNoteLanded(k1, k0, '一条内容写入');
     await close(a);
     expect(_keys(a.store), k1, reason: '库关了之后不再变：停在关之前最后读到的那一组');
 
@@ -127,7 +136,7 @@ void main() {
     await addNote(a.store, '一');
     final _Keys k1 = _keys(b);
     expect(_keys(a.store), k1);
-    expectAllDiffer(k1, k0, 'a 写了一条笔记，b 读到的键也变了');
+    expectNoteLanded(k1, k0, 'a 写了一条笔记，b 读到的键也变了');
   });
 
   test('同一个副本对象上：没有写入不变，只落日志不动内容指纹', () async {
