@@ -17,6 +17,7 @@
 #include "flutter_window.h"
 #include "hang_watchdog.h"
 #include "single_instance_mutex.h"
+#include "startup_trace.h"
 #include "utils.h"
 #include "window_capture.h"
 
@@ -326,6 +327,7 @@ void ConfigureProgramBinaryCache() {
 
 int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
                       _In_ wchar_t *command_line, _In_ int show_command) {
+  ::fushi::StartupTraceMark("winmain");
   // PrintWindow can synchronously enter an unresponsive target window. Keep
   // that call in a killable helper process before any Flutter, WebView2, or
   // single-instance initialization so a timeout cannot strand the app's
@@ -436,7 +438,9 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
 
   // BUG-1483：必须在 Flutter engine（进而 WebView2 环境）创建之前决定用户数据
   // 目录，见函数注释。
+  ::fushi::StartupTraceMark("single-instance");
   EnsureWritableWebView2UserDataFolder();
+  ::fushi::StartupTraceMark("webview2-folder");
 
   // 同理必须在引擎（进而 ANGLE 显示）创建之前：第一个管线链接就要走缓存。
   ConfigureProgramBinaryCache();
@@ -462,6 +466,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
     test_audio_mute = std::make_unique<TestRunnerAudioMute>();
   }
 
+  ::fushi::StartupTraceMark("crash-handler+com");
   flutter::DartProject project(L"data");
   // 全线 Impeller，不留 Skia 回退（docs/specs/2026-10-23-music-module-design.md
   // D13）。显式钉住而不是依赖引擎默认：环境变量 FLUTTER_ENGINE_SWITCHES 的
@@ -485,6 +490,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
     return EXIT_FAILURE;
   }
   window.SetQuitOnClose(true);
+  ::fushi::StartupTraceMark("window-ready");
 
   // BUG-2588：主线程停泵看门狗——卡死（非崩溃）时从旁路线程抓一份全线程栈
   // minidump 到 crashdumps 目录，让「查词后整机卡死、只能强杀」的报告有可分析
