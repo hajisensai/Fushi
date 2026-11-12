@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-11T14:06:05Z",
+ "generatedAt": "2026-11-12T18:22:28Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "75bd2199c533eef92dbaa126f439f9c7617ac271",
-  "seq": 26447
+  "sha": "fc0324791feb75b18ac79d6fe14d2e6e125a2569",
+  "seq": 26468
  },
  "builds": [
   {
@@ -13,7 +13,7 @@
    "sha": "75bd2199c533eef92dbaa126f439f9c7617ac271",
    "unknown": false,
    "publishedAt": "2026-11-11T14:05:47Z",
-   "testflight": false,
+   "testflight": true,
    "baseSeq": 26444,
    "prs": [
     3341
@@ -91,7 +91,38 @@
    }
   }
  ],
- "pending": null,
+ "pending": {
+  "headSha": "fc0324791feb75b18ac79d6fe14d2e6e125a2569",
+  "headSeq": 26468,
+  "prs": [
+   3274,
+   3347,
+   3336,
+   3278,
+   3358,
+   3349
+  ],
+  "direct": [],
+  "truncated": false,
+  "platforms": {
+   "android": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43278884365"
+   },
+   "windows": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43278884763"
+   },
+   "macos": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43278884763"
+   },
+   "ios": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43278884763"
+   }
+  }
+ },
  "prs": {
   "3250": {
    "number": 3250,
@@ -102,6 +133,33 @@
    "deletions": 136,
    "labels": []
   },
+  "3274": {
+   "number": 3274,
+   "title": "fix(srs): 远程复习的「今天」按客户端设备的时区算",
+   "author": "W1ght",
+   "mergedAt": "2026-11-12T18:20:54Z",
+   "additions": 327,
+   "deletions": 22,
+   "labels": []
+  },
+  "3278": {
+   "number": 3278,
+   "title": "fix(srs): 复习完页在库变化后出现「有新的到期卡」入口",
+   "author": "W1ght",
+   "mergedAt": "2026-11-12T18:19:48Z",
+   "additions": 175,
+   "deletions": 28,
+   "labels": []
+  },
+  "3336": {
+   "number": 3336,
+   "title": "refactor(srs): 删掉已无调用方的四个排程 FFI op（next_states / memory_state / memory_state_from_sm2 / next_interval）与 Dart 绑定",
+   "author": "W1ght",
+   "mergedAt": "2026-11-12T18:20:09Z",
+   "additions": 12,
+   "deletions": 754,
+   "labels": []
+  },
   "3341": {
    "number": 3341,
    "title": "fix(scheduler): 常驻背景动画挡住 idle 任务致调度器空转、Windows 输入全失灵（BUG-4387）",
@@ -109,6 +167,33 @@
    "mergedAt": "2026-11-11T13:00:57Z",
    "additions": 344,
    "deletions": 6,
+   "labels": []
+  },
+  "3347": {
+   "number": 3347,
+   "title": "refactor(srs): 三套卡面各抄一份的共用逻辑收成一份（不动分派，渲染结果不变）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-12T18:20:29Z",
+   "additions": 1286,
+   "deletions": 292,
+   "labels": []
+  },
+  "3349": {
+   "number": 3349,
+   "title": "test: 修 develop CI 上三处测试自身的红（portal dbus / 字幕内置 key / glue seek 回执）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-12T18:18:11Z",
+   "additions": 34,
+   "deletions": 6,
+   "labels": []
+  },
+  "3358": {
+   "number": 3358,
+   "title": "fix(tool): heavy 等待者探测正在被删的排队票据时不再崩溃（BUG-4388）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-12T18:19:26Z",
+   "additions": 78,
+   "deletions": 2,
    "labels": []
   }
  }
