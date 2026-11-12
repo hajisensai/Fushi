@@ -324,6 +324,54 @@ fn purge_and_preview_treat_another_profiles_ids_as_absent() {
     assert_eq!(own["current"]["reps"], json!(3), "own card: {own}");
 }
 
+/// `change`：修改记录经 apply_local_on 逐项判；输入项全指向别人的实体时整条命令什么都不落——连还原点也不打。夹着
+/// 自己的一项时照常：还原点 + 自己那一项。
+#[test]
+fn change_writes_nothing_when_every_item_is_another_profiles() {
+    let (d, a, b) = two_profiles("own-change");
+    let item = |note: &str, v: &str| {
+        json!({
+            "e": {"t": "edit", "x": {"p": a.profile, "k": "note", "e": note, "f": "f/fa", "v": v, "ts": "anchored"}},
+            "note": null, "clk": "t",
+        })
+    };
+    let change = |items: Vec<Value>| {
+        dispatch(
+            &d,
+            json!({
+                "op": "change", "profile": a.profile, "now": T0 + 6 * DAY, "caches": {"defaultDeck": a.deck},
+                "legacyDevice": "dev", "tickNow": T0 + 6 * DAY, "ts": "anchored",
+                "checkpoint": {"name": "cp", "reason": "note_type"},
+            }),
+            Some(Value::Array(items).to_string()),
+        )
+    };
+    let before = state(&d);
+    let r = change(vec![item(&b.note, "hijacked")]);
+    assert_eq!(r["foreign"], json!([0]), "{r}");
+    assert_eq!(state(&d), before, "no checkpoint, no edit");
+
+    let ops = |d: &Device| d.rows("SELECT COUNT(*) AS n FROM sync2_ops")[1][0].clone();
+    let n0: i64 = ops(&d).parse().unwrap();
+    let r = change(vec![item(&b.note, "hijacked"), item(&a.note, "mine now")]);
+    assert_eq!(r["foreign"], json!([0]), "{r}");
+    let n1: i64 = ops(&d).parse().unwrap();
+    assert_eq!(n1 - n0, 2, "checkpoint + A's own edit: {r}");
+    let after = state(&d);
+    assert!(
+        after
+            .iter()
+            .any(|row| row.iter().any(|v| v.contains("mine now"))),
+        "A's own edit landed"
+    );
+    assert!(
+        !after
+            .iter()
+            .any(|row| row.iter().any(|v| v.contains("hijacked"))),
+        "B's field untouched"
+    );
+}
+
 /// 哪里都没有的 ID 不拒绝：给还没有身份记录的实体写修改记录照旧落（换笔记类型时给还没生成的卡写血统）；落了以后
 /// 它归写它的 profile，另一个 profile 再写同一个 ID 就被拒绝。
 #[test]
