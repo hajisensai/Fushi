@@ -264,7 +264,7 @@ class SrsEditSpec {
 /// 内核缓存刷新的配置（内核命令的 `caches`；[SrsDbStore] 打开时注册一次，`cache_config_set`）：[profileUid] 的默认
 /// 牌组与各内置笔记类型（代码默认值 + 读音字段，readingKey 的来源）。只由 profile 的 uid 决定。
 Map<String, Object?> srsCacheConfigFor(String profileUid) => <String, Object?>{
-  'defaultDeck': SrsIds.builtinDefaultDeck(profileUid),
+  'defaultDeck': SrsKernelIds(profileUid).defaultDeck,
   'builtins': <String, Object?>{
     for (final SrsBuiltinNoteTypeSpec spec in kSrsBuiltinNoteTypes)
       spec.key: <String, Object?>{
@@ -2351,9 +2351,16 @@ class SrsDbStore implements SrsSync2Host {
     if (missing.isNotEmpty) await _emit(missing);
   });
 
-  String get defaultDeckId => SrsIds.builtinDefaultDeck(profileUid);
-  String get lapisNoteTypeId => srsLapisNoteTypeId(profileUid);
-  String get fushiCardNoteTypeId => srsFushiCardNoteTypeId(profileUid);
+  /// 本 profile 的根上 ID 与同步目录名（向内核要，见 [SrsKernelIds]）。
+  late final SrsKernelIds kernelIds = SrsKernelIds(profileUid);
+
+  late final String defaultDeckId = kernelIds.defaultDeck;
+  late final String lapisNoteTypeId = kernelIds.builtinNoteType(
+    kSrsBuiltinLapisKey,
+  );
+  late final String fushiCardNoteTypeId = kernelIds.builtinNoteType(
+    kSrsBuiltinFushiCardKey,
+  );
 
   // ------------------------------------------------------------------ 物化
 
@@ -3308,12 +3315,12 @@ class SrsDbStore implements SrsSync2Host {
   // ------------------------------------------------------------------ 牌组
 
   /// 按名字 [name] 在 [parentId] 下（null = 顶层）新建或复活牌组时用的 ID（[createDeck] 与
-  /// Anki 导入共用）。先取「父::子」全名确定性派生的 [SrsIds.deck]：多台设备离线各建同名牌组
+  /// Anki 导入共用）。先取「父::子」全名确定性派生的牌组 ID（[SrsKernelIds.deck]）：多台设备离线各建同名牌组
   /// 落在同一个 ID 上。
   ///
   /// 「同名」按牌组此刻的名字与父牌组认，不按 ID：牌组改过名或挪过父牌组后 ID 不变，按它原来
   /// 的全名再新建时派生 ID 落在它身上——那不是同一个牌组，沿用就会把它改名 / 拽回原处（BUG：
-  /// 拖放挪走 A 后再按「A」建牌组，挪走的那个被拽回顶层）。这时依次试 [SrsIds.deckAlternate]
+  /// 拖放挪走 A 后再按「A」建牌组，挪走的那个被拽回顶层）。这时依次试 [SrsKernelIds.deckAlternate]
   /// 的备选 ID，取第一个没被用过的、或名字与父牌组都一致（可沿用 / 复活）的。只由本机牌组状态
   /// 决定：看到同样牌组状态的设备（含收下了挪动 / 改名记录的其它设备）得到同一个 ID。
   Future<String> deckIdForNew(String name, {String? parentId}) async {
@@ -3323,7 +3330,7 @@ class SrsDbStore implements SrsSync2Host {
         : '${tree.fullName(parentId)}::';
     final String fullPath = '$parentPath$name';
     final String trimmed = name.trim();
-    String id = SrsIds.deck(profileUid, fullPath);
+    String id = kernelIds.deck(fullPath);
     for (int n = 1; ; n++) {
       final SrsEntityEdits current = await _entityEdits(SrsEntityKind.deck, id);
       if (current.keys.isEmpty ||
@@ -3331,7 +3338,7 @@ class SrsDbStore implements SrsSync2Host {
               current.value(SrsFieldKeys.deckParent) == parentId)) {
         return id;
       }
-      id = SrsIds.deckAlternate(profileUid, fullPath, n);
+      id = kernelIds.deckAlternate(fullPath, n);
     }
   }
 
@@ -3571,7 +3578,7 @@ class SrsDbStore implements SrsSync2Host {
     int? createdAt,
   }) => runExclusive(() async {
     final String g = guid ?? newNoteGuid();
-    final String id = SrsIds.note(profileUid, g);
+    final String id = kernelIds.note(g);
     // 身份记录与字段修改记录同一个事务、同一次缓存刷新（以前分两次落库，笔记先以空字段生成一遍卡）。这条笔记
     // 已经在（同一个 guid 再建）时值没变的键不再写：内核在落库的那一笔里判，不预读它的修改记录。
     await _emit(
@@ -3594,7 +3601,7 @@ class SrsDbStore implements SrsSync2Host {
   ///
   /// [current] 是这条笔记已有的修改记录（值相同的键不再写）；null = 调用方确定本机还没有这条笔记
   /// （导入先查过身份记录），跳过逐条读库。[ifChanged] 见 [newEditDrafts]。
-  /// noteId = `SrsIds.note(profileUid, guid)`。
+  /// noteId = [SrsKernelIds.note]（[noteId] 已算好时传进来，批量导入整块一次 FFI）。
   List<SrsEventDraft> newNoteDrafts({
     required String noteTypeId,
     required Map<String, String> fieldsById,
@@ -3605,9 +3612,10 @@ class SrsDbStore implements SrsSync2Host {
     int? createdAt,
     SrsEntityEdits? current,
     bool ifChanged = false,
+    String? noteId,
   }) {
     final (int nowMs, _) = now();
-    final String id = SrsIds.note(profileUid, guid);
+    final String id = noteId ?? kernelIds.note(guid);
     return <SrsEventDraft>[
       SrsReadyDraft(
         SrsEntityEvent(
@@ -3700,7 +3708,7 @@ class SrsDbStore implements SrsSync2Host {
 
   /// 按 guid 找已存在的笔记（导入去重）。
   Future<String?> noteIdByGuid(String guid) async {
-    final String id = SrsIds.note(profileUid, guid);
+    final String id = kernelIds.note(guid);
     return (await _entityIdsWhere(ids: <String>[id])).firstOrNull;
   }
 

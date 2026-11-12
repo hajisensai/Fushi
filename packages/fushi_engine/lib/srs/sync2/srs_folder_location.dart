@@ -77,7 +77,12 @@ Directory srsFolderCollectionRoot(
   SrsFolderLocation location,
   String profileUid,
 ) => Directory(
-  p.join(location.path, kSrsSync2Namespace, profileUid, kSrsSync2Folder),
+  p.join(
+    location.path,
+    kSrsSync2Namespace,
+    srsLocationDirOf(profileUid),
+    kSrsSync2Folder,
+  ),
 );
 
 /// [location] 上协议 1 的旧集合根（`<文件夹>/fushi-srs/<profileUid>/v2/`，迁移之后只剩围栏）。
@@ -85,7 +90,12 @@ Directory srsFolderV1CollectionRoot(
   SrsFolderLocation location,
   String profileUid,
 ) => Directory(
-  p.join(location.path, kSrsSync2Namespace, profileUid, kSrsSync2V1Folder),
+  p.join(
+    location.path,
+    kSrsSync2Namespace,
+    srsLocationDirOf(profileUid),
+    kSrsSync2V1Folder,
+  ),
 );
 
 /// 一个文件夹位置这一轮的结果（[ops] 里带加密握手的结论：kdf / encryptionEnabled / 口令错误）。

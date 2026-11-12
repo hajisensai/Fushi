@@ -839,16 +839,23 @@ class _Importer {
   /// 「不合并笔记类型」时另建的那一份的 ankiNum：由来源身份 + 字段 / 模板组成确定性派生，
   /// 两台设备导入同一个包得到同一个 ID（铁律 C）；同一种结构再导入回到同一份副本
   /// （对应 Anki 的 get_previously_duplicated_notetype）。
-  static int _duplicateAnkiNum(SrsAnkiNoteType src) => hash53(
-    'notetype-dup/${src.ankiNum}/${srsCanonicalJson(<String, Object?>{
-      'cloze': src.isCloze,
-      'fields': <Object?>[for (final SrsAnkiField f in src.fields) f.configId ?? 'name:${f.name}'],
-      'tmpls': <Object?>[for (final SrsAnkiTemplate t in src.templates) t.configId ?? 'name:${t.name}'],
-    })}',
-  );
+  /// 规则在内核（gen4_ids/rules.rs `duplicate_note_type_anki_num`）。
+  static int _duplicateAnkiNum(SrsAnkiNoteType src) =>
+      SrsKernelIds.duplicateNoteTypeAnkiNum(
+        sourceAnkiNum: src.ankiNum,
+        cloze: src.isCloze,
+        fields: <SrsDupPart>[
+          for (final SrsAnkiField f in src.fields)
+            (configId: f.configId, name: f.name),
+        ],
+        templates: <SrsDupPart>[
+          for (final SrsAnkiTemplate t in src.templates)
+            (configId: t.configId, name: t.name),
+        ],
+      );
 
   Future<_NtMap> _mapNoteType(SrsAnkiNoteType src) async {
-    final String baseId = SrsIds.noteType(profileUid, src.ankiNum);
+    final String baseId = store.kernelIds.noteType(src.ankiNum);
     final String kind = src.isCloze
         ? SrsNoteTypeKind.cloze
         : SrsNoteTypeKind.standard;
@@ -870,7 +877,7 @@ class _Importer {
         !_equalSchema(base, src)) {
       // 不合并：本机那一个不动，来源笔记类型另建一份。
       final int dupNum = _duplicateAnkiNum(src);
-      final String dupId = SrsIds.noteType(profileUid, dupNum);
+      final String dupId = store.kernelIds.noteType(dupNum);
       final SrsNoteTypeView? dup = await store.noteType(dupId);
       if (dup == null) report.noteTypesDuplicated.add(src.name);
       return _mapInto(src, dupId, dupNum, dup);
@@ -1549,10 +1556,16 @@ class _Importer {
     final List<String> noteIds = <String>[];
     final List<String> cardIds = <String>[];
     final List<int> revlogIds = <int>[];
+    // 整块的笔记 ID 一次向内核要。
+    final List<String> chunkNoteIds = store.kernelIds.notes(<String>[
+      for (final (Row n, _) in chunk) n['guid'] as String,
+    ]);
+    int at = -1;
     for (final (Row n, List<_SrcCard> cards) in chunk) {
+      at++;
       final _NtMap? nt = _nts[n['mid'] as int];
       if (nt == null || nt.conflict != null) continue;
-      final String noteId = SrsIds.note(profileUid, n['guid'] as String);
+      final String noteId = chunkNoteIds[at];
       if (!_existingNotes.contains(noteId)) continue;
       noteIds.add(noteId);
       for (final (_SrcCard c, String cardId) in _cardIdsOf(nt, noteId, cards)) {
@@ -1656,7 +1669,7 @@ class _Importer {
               !_schedulingTags.contains(t.toLowerCase()),
         )
         .toList();
-    final String noteId = SrsIds.note(profileUid, guid);
+    final String noteId = store.kernelIds.note(guid);
     final SrsNoteView? existing = !_existingNotes.contains(noteId)
         ? null
         : pre.notes.containsKey(noteId)

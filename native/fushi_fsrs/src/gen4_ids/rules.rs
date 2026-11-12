@@ -185,6 +185,41 @@ pub fn builtin_template_anki_num(note_type_key: &str, template_key: &str) -> i64
     ))
 }
 
+/// 来源笔记类型里一个字段 / 模板在 [duplicate_note_type_anki_num] 里的身份：有配置 ID 用它，没有用名字。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DupPart<'a> {
+    Config(i64),
+    Name(&'a str),
+}
+
+/// 导入时「不合并笔记类型」另建的那一份的 ankiNum（以前在 Dart `SrsApkgImporter._duplicateAnkiNum`，G5 收进来）：
+/// `hash53("notetype-dup/<来源 ankiNum>/<J>")`，J 是 `{"cloze":…,"fields":[…],"tmpls":[…]}` 的规范 JSON——键按字典序、
+/// 紧凑、非 ASCII 原样，字符串转义与 Dart `jsonEncode` 相同；每项是配置 ID（数字）或 `"name:<名字>"`。
+/// 由来源身份 + 结构确定性派生：两台设备导入同一个包得到同一个值，同一种结构再导入回到同一份副本。
+/// 它再经 [note_type] 成为笔记类型 ID。
+pub fn duplicate_note_type_anki_num(
+    src_anki_num: i64,
+    cloze: bool,
+    fields: &[DupPart<'_>],
+    templates: &[DupPart<'_>],
+) -> i64 {
+    let parts = |ps: &[DupPart<'_>]| -> Vec<serde_json::Value> {
+        ps.iter()
+            .map(|p| match p {
+                DupPart::Config(n) => serde_json::Value::from(*n),
+                DupPart::Name(name) => serde_json::Value::from(format!("name:{name}")),
+            })
+            .collect()
+    };
+    // json! 的对象是有序映射（serde_json 没开 preserve_order），键按字典序输出。
+    let body = serde_json::json!({
+        "cloze": cloze,
+        "fields": parts(fields),
+        "tmpls": parts(templates),
+    });
+    hash53(&format!("notetype-dup/{src_anki_num}/{body}"))
+}
+
 /// 导出到 Anki 的笔记 / 卡片数字 id：`hash53("anki-id/<UUID 文本>")`（与 store/schema.rs `anki_numeric_id` 同值）。
 pub fn anki_numeric_id(uuid: &str) -> i64 {
     hash53(&format!("anki-id/{uuid}"))

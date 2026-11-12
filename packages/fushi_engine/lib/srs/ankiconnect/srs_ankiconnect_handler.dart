@@ -1093,7 +1093,7 @@ class SrsAnkiConnectHandler {
           ),
         );
         accepted.add((c, norm));
-        created.add((i, SrsIds.note(s.store.profileUid, guid)));
+        created.add((i, s.store.kernelIds.note(guid)));
       } on Object {
         // 与逐条加一样：这一条算失败（null），不影响别的。
       }

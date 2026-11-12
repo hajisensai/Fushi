@@ -187,7 +187,7 @@ void main() {
   /// 笔记 g0 的可见卡（都应有完整进度）。
   Future<List<SrsCardCacheRow>> visibleCardsOfG0(SrsDbStore s) async =>
       (await s.cardsOfNote(
-        SrsIds.note(kProfile, 'g0'),
+        SrsKernelIds(kProfile).note('g0'),
       )).where((SrsCardCacheRow c) => !c.hidden).toList();
 
   /// 一张卡历史里有效的 Anki 评分复习数。
@@ -273,7 +273,7 @@ void main() {
       final SrsDbStore s = await open();
       await imp(s, apkg(lapisModel(), notesOf(kLapisMid, 4)));
       final String lapisCard = (await s.cardsOfNote(
-        SrsIds.note(kProfile, 'g0'),
+        SrsKernelIds(kProfile).note('g0'),
       )).single.id;
       await convertLapis(s);
       final String heir = (await visibleCardsOfG0(s)).single.id;
@@ -371,7 +371,7 @@ void main() {
       final SrsDbStore s = await open();
       await imp(s, apkg(lapisModel(), notesOf(kLapisMid, 4)));
       final String lapisCard = (await s.cardsOfNote(
-        SrsIds.note(kProfile, 'g0'),
+        SrsKernelIds(kProfile).note('g0'),
       )).single.id;
       await convertLapis(s);
       final SrsCardCacheRow before = (await visibleCardsOfG0(s)).single;

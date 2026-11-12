@@ -35,7 +35,11 @@ import 'package:fushi_engine/srs/srs_profile_data.dart'
     show SrsMetaSet, srsEditMetaSet;
 import 'package:fushi_engine/srs/srs_profile_merge.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_store.dart'
-    show kSrsSync2Folder, kSrsSync2Namespace, kSrsSync2V1Folder;
+    show
+        kSrsSync2Folder,
+        kSrsSync2Namespace,
+        kSrsSync2V1Folder,
+        srsLocationDirOf;
 import 'package:fushi_engine/sync/sync_asset_store.dart';
 
 /// srs.db `srs_meta`：本设备改用别的 uid 之前用过的同步 v2 设备身份（JSON 数组）。换 uid 后本机在新集合里是新的
@@ -343,7 +347,10 @@ Future<void> srsPublishProfileInfo(
   Directory? tempDir,
 }) async {
   final String ns = await store.ensureNamespace(kSrsSync2Namespace);
-  final String profile = await store.ensureFolder(ns, profileUid);
+  final String profile = await store.ensureFolder(
+    ns,
+    srsLocationDirOf(profileUid),
+  );
   final String v2 = await store.ensureFolder(profile, kSrsSync2Folder);
   final String devices = await store.ensureFolder(v2, 'devices');
   final String writer = await store.ensureFolder(devices, writerId);
@@ -390,8 +397,9 @@ Future<void> srsRemoveOwnProfileFolder(
 }) async {
   final String ns = await store.ensureNamespace(kSrsSync2Namespace);
   AssetEntry? profile;
+  final String dir = srsLocationDirOf(profileUid);
   for (final AssetEntry e in await store.listChildren(ns)) {
-    if (e.isFolder && e.name == profileUid) profile = e;
+    if (e.isFolder && e.name == dir) profile = e;
   }
   if (profile == null) return;
   bool foreign = false;

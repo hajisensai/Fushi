@@ -101,10 +101,7 @@ String _mergedWriterOrigin(String w) {
 /// FFI）。哈希输入与 2026-11 之前的 `merged-<UUIDv5>` 相同，后缀把最初的写入者带下去，下一次合并据此剥回最初的写入者
 /// 再算，名字与合并路径无关。
 List<String> _mergedWriterNames(String newUid, List<String> origins) {
-  final List<String> h = uuidV5Batch(<(String, String)>[
-    for (final String o in origins)
-      (srsNamespace, 'profile-merge/$newUid/writer/$o'),
-  ]);
+  final List<String> h = SrsKernelIds.mergedWriterHashes(newUid, origins);
   return <String>[
     for (int i = 0; i < origins.length; i++)
       '$kSrsMergedWriterPrefix${h[i]}$_kMergedWriterOriginSeparator${origins[i]}',
@@ -418,10 +415,9 @@ Future<_MergePlan> _plan(
   final _Registers regs = _Registers(edits);
 
   // 1. 内置实体（代码按 uid 现算，必须落在新 uid 的同一批 ID 上）。
-  ids.exactly(
-    SrsIds.builtinDefaultDeck(oldUid),
-    SrsIds.builtinDefaultDeck(newUid),
-  );
+  final SrsKernelIds oldIds = SrsKernelIds(oldUid);
+  final SrsKernelIds newIds = SrsKernelIds(newUid);
+  ids.exactly(oldIds.defaultDeck, newIds.defaultDeck);
   for (final SrsBuiltinNoteTypeSpec spec in kSrsBuiltinNoteTypes) {
     final SrsBuiltinNoteType o = srsBuiltinNoteType(oldUid, spec);
     final SrsBuiltinNoteType n = srsBuiltinNoteType(newUid, spec);
@@ -441,8 +437,8 @@ Future<_MergePlan> _plan(
   for (final SrsEntityRecord r in entities) {
     if (r.kind != SrsEntityKind.noteType || ids.has(r.id)) continue;
     final Object? num = r.payload['ankiNum'];
-    if (num is int && SrsIds.noteType(oldUid, num) == r.id) {
-      ids.exactly(r.id, SrsIds.noteType(newUid, num));
+    if (num is int && oldIds.noteType(num) == r.id) {
+      ids.exactly(r.id, newIds.noteType(num));
     }
   }
   ids.fallbackAll(<String>[
@@ -506,16 +502,10 @@ Future<_MergePlan> _plan(
     if (ids.has(d)) continue;
     final String? path = regs.deckPath(d);
     if (path == null) continue;
-    if (SrsIds.deck(oldUid, path) == d) {
-      ids.exactly(d, SrsIds.deck(newUid, path));
-      continue;
-    }
-    for (int n = 1; n <= 8; n++) {
-      if (SrsIds.deckAlternate(oldUid, path, n) == d) {
-        ids.exactly(d, SrsIds.deckAlternate(newUid, path, n));
-        break;
-      }
-    }
+    // 正名与前 8 个备选，旧 uid 与新 uid 各一次 FFI。
+    final List<String> was = oldIds.deckCandidates(path, 8);
+    final int hit = was.indexOf(d);
+    if (hit >= 0) ids.exactly(d, newIds.deckCandidates(path, 8)[hit]);
   }
   ids.fallbackAll(<String>[
     ...deckIds,
@@ -539,8 +529,8 @@ Future<_MergePlan> _plan(
   final List<String> guids = <String>[
     for (final SrsEntityRecord r in notes) r.payload['guid']! as String,
   ];
-  final List<String> oldNotes = SrsIds.notes(oldUid, guids);
-  final List<String> newNotes = SrsIds.notes(newUid, guids);
+  final List<String> oldNotes = oldIds.notes(guids);
+  final List<String> newNotes = newIds.notes(guids);
   for (int i = 0; i < notes.length; i++) {
     if (oldNotes[i] == notes[i].id) ids.exactly(notes[i].id, newNotes[i]);
   }
@@ -852,9 +842,7 @@ class _IdMap {
         if (!_m.containsKey(id.toLowerCase())) id.toLowerCase(),
     }.toList();
     if (todo.isEmpty) return;
-    final List<String> out = uuidV5Batch(<(String, String)>[
-      for (final String id in todo) (srsNamespace, 'profile-merge/$newUid/$id'),
-    ]);
+    final List<String> out = SrsKernelIds.mergeFallbacks(newUid, todo);
     for (int i = 0; i < todo.length; i++) {
       _m[todo[i]] = out[i];
     }

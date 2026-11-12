@@ -153,7 +153,10 @@ class SrsAssetV1Writers implements SrsV1Writers {
   @override
   Future<List<String>> writers() async {
     final String ns = await store.ensureNamespace(kSrsSync2Namespace);
-    final String profile = await store.ensureFolder(ns, profileUid);
+    final String profile = await store.ensureFolder(
+      ns,
+      srsLocationDirOf(profileUid),
+    );
     _writerIds.clear();
     for (final AssetEntry w in await store.listChildren(profile)) {
       if (!w.isFolder ||

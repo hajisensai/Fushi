@@ -38,7 +38,7 @@ pub mod store;
 pub mod style_dedup;
 pub mod sync2;
 
-/// 协议 4 的规范 ID 与别名规则（还没有接线，见模块说明）。
+/// 协议 4 的规范 ID 与别名规则；Dart 经 `ffsrs_call` 的 `ids` 向它要 ID（见模块说明）。
 pub mod gen4_ids;
 
 use std::ffi::{CStr, CString, c_char};
@@ -267,6 +267,8 @@ fn dispatch(req: &Value) -> Result<Value, String> {
     let op = str_field(req, "op")?;
     match op {
         "version" => Ok(json!({ "abi": ABI_VERSION, "fsrsRev": FSRS_RS_REV })),
+        // 根上的 ID 与同步目录名（gen4_ids/derive.rs）。
+        "ids" => gen4_ids::derive::derive(req),
         "defaults" => {
             let algorithm = Algorithm::parse(str_field(req, "algorithm")?)?;
             Ok(json!({ "params": algorithm.defaults(), "count": algorithm.param_len() }))

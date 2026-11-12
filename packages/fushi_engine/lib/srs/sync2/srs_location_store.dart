@@ -16,6 +16,7 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:fushi_engine/sync/sync_asset_store.dart';
+import 'package:fushi_srs/fushi_srs.dart' show SrsKernelIds;
 import 'package:path/path.dart' as p;
 
 /// 目录里的一项。
@@ -145,8 +146,13 @@ Future<List<R>> srsRunPooled<T, R>(
   return <R>[for (final R? r in out) r as R];
 }
 
-/// 集合根在现有同步后端上的位置：`fushi-srs/<profileUid>/v3/`（协议 2）。
+/// 集合根在现有同步后端上的位置：`fushi-srs/<目录名>/v3/`（协议 2）；目录名见 [srsLocationDirOf]。
 const String kSrsSync2Namespace = 'fushi-srs';
+
+/// [profileUid] 的集合根在同步位置上的目录名（`fushi-srs/<它>/`）：向内核要（[SrsKernelIds.locationDir]），
+/// Dart 不按 uid 自己拼（docs/specs/2026-11-11-srs-generation-break.md §5.1）。G7 之前内核答的就是 uid 本身。
+String srsLocationDirOf(String profileUid) =>
+    SrsKernelIds(profileUid).locationDir;
 const String kSrsSync2Folder = 'v3';
 
 /// 协议 1 的集合根（`fushi-srs/<profileUid>/v2/`）：旧版本只认这里。新版本只在这里写一份让旧版本停下的 `meta.json`，
@@ -301,7 +307,7 @@ class SrsAssetLocationStore implements SrsLocationStore, SrsLocationFileStore {
     );
     final List<String> profiles = await _childFoldersOrCreate(<String>[
       ns,
-    ], profileUid);
+    ], srsLocationDirOf(profileUid));
     return _childFoldersOrCreate(profiles, folder);
   }
 
