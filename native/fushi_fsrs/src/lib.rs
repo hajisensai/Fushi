@@ -38,6 +38,9 @@ pub mod store;
 pub mod style_dedup;
 pub mod sync2;
 
+/// 协议 4 的规范 ID 与别名规则（还没有接线，见模块说明）。
+pub mod gen4_ids;
+
 use std::ffi::{CStr, CString, c_char};
 use std::io::Read;
 use std::panic::{AssertUnwindSafe, catch_unwind};
