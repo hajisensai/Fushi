@@ -24,6 +24,7 @@ import 'package:flutter/foundation.dart'
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:fushi_engine/srs/srs_miner.dart';
+import 'package:fushi_engine/srs/srs_collection_binding.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_legacy_lapis_migration.dart';
 import 'package:fushi_engine/srs/srs_purge.dart';
@@ -769,6 +770,15 @@ Future<int> _srsMemoByContent(
 
 /// 还能迁到 Fushi 卡片的旧 Lapis 笔记 + 可补迁遗漏字段的笔记，合计（牌组列表的迁移提醒）。
 /// 提醒关着时不算（不为看不见的提示扫库）。内容没变时复用上次结果（[_srsMemoByContent]）。
+/// 当前 profile 的集合绑定状态（内核持有，见 srs_collection_binding.dart；这里只是每次修订号变化时现读一次）。
+/// 复习页据此提示「还没加入同步位置上已有的复习数据」（`provisional`）。
+final FutureProvider<SrsCollectionBinding?> srsCollectionBindingProvider =
+    FutureProvider<SrsCollectionBinding?>((Ref ref) async {
+      ref.watch(srsRevisionProvider);
+      final SrsDbStore? store = await ref.watch(srsStoreProvider.future);
+      return store?.collectionBinding();
+    });
+
 final FutureProvider<int> srsLegacyLapisPendingProvider = FutureProvider<int>((
   Ref ref,
 ) async {

@@ -56,7 +56,7 @@ pub enum Kind {
 }
 
 impl Kind {
-    fn parse(wire: &str) -> Self {
+    pub(crate) fn parse(wire: &str) -> Self {
         match wire {
             "review" => Kind::Review,
             "manual" => Kind::Manual,

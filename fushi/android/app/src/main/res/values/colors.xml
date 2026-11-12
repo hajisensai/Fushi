@@ -5,4 +5,8 @@
          底层上，纯透明会被多数启动器渲染成纯黑（TODO-1269 回归）。 -->
     <color name="ic_launcher_background">#E6E2F6</color>
     <color name="ic_launcher_squircle_background">#E6E2F6</color>
+    <!-- 启动窗口与 Activity 窗口的底色（浅色）：app 默认主题的 surface。进程起来之前系统
+         只能按 manifest 主题画启动窗口，这里与首帧同色才不会先闪一下别的颜色。数值由
+         test/startup/launch_window_background_guard_test.dart 对着 Dart 侧默认主题钉住。 -->
+    <color name="launch_background">#FDFEFF</color>
 </resources>

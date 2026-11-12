@@ -25,7 +25,7 @@ import 'package:fushi_engine/srs/ankiconnect/srs_ankiconnect_endpoint.dart';
 import 'package:fushi_engine/srs/ankiconnect/srs_ankiconnect_handler.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/sync2/srs_sync2_pull_first.dart'
-    show kSrsPullBeforeMergeBudget;
+    show SrsPullBound, kSrsPullBeforeMergeBudget;
 import 'package:fushi_engine/srs/srs_profile_link.dart';
 import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart'
     show SrsSync2Report;
@@ -125,7 +125,7 @@ srsAppRuntimeProvider = Provider<SrsAppRuntime?>((Ref ref) {
       pullBeforeMerge: (SrsDbStore target, SyncAssetStore? within) =>
           runtime.sync.pullInto(
             target,
-            budget: kSrsPullBeforeMergeBudget,
+            bound: const SrsPullBound.budget(kSrsPullBeforeMergeBudget),
             purpose: 'merge',
             within: within,
             channels: false,
