@@ -37,6 +37,10 @@ Future<void> _seedUserData(
             sourceKey: 'youtube',
             itemId: r.key,
             title: 'R${r.value.at}',
+            // v149 三列同样带 updated_at，认得出合并后是哪边的。
+            coverRef: Value<String?>('C${r.value.at}'),
+            albumId: Value<String?>('A${r.value.at}'),
+            artistRefs: Value<String?>('[{"name":"N${r.value.at}"}]'),
             libraryAddedAt: Value<int?>(r.value.inLibrary ? r.value.at : null),
             createdAt: 1,
             updatedAt: r.value.at,
@@ -247,6 +251,13 @@ void main() {
     final MusicRemoteTrackRow a = (await cur.getMusicRemoteTrack('srv-a'))!;
     expect(a.title, 'R200');
     expect(a.libraryAddedAt, 200);
+    // v149 的服务器封面引用 / 专辑 id / 艺人引用随胜者一起走。
+    expect(a.coverRef, 'C200');
+    expect(a.albumId, 'A200');
+    expect(a.artistRefs, '[{"name":"N200"}]');
+    final MusicRemoteTrackRow b = (await cur.getMusicRemoteTrack('srv-b'))!;
+    expect(b.coverRef, 'C90');
+    expect(b.albumId, 'A90');
     expect((await cur.getMusicRemoteTrack('srv-b'))?.title, 'R90');
     expect((await cur.getMusicRemoteTrack('srv-c'))?.title, 'R5');
     final MusicRemoteTrackRow d = (await cur.getMusicRemoteTrack('srv-d'))!;

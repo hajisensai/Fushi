@@ -19,6 +19,16 @@ String _srtDisplayTitle(SrtBook book) => displayTitleForBook(
   rawTitle: book.title,
 );
 
+/// SRT 卡（[SrtBook]）该用哪个阅读器打开：配对书的 [BookFormat] 经唯一派生点
+/// [ReaderFushiSource.mediaSourceKeyFor] 现算（反馈 Ndnxy3mNdG）。[formatOf] 查不到
+/// （standalone 字幕书、正文还没生成）按 EPUB——生成的正文就是 EPUB。
+String srtBookMediaSourceKey(
+  SrtBook book, {
+  required BookFormat? Function(String bookKey) formatOf,
+}) => ReaderFushiSource.mediaSourceKeyFor(
+  (book.bookKey.isEmpty ? null : formatOf(book.bookKey)) ?? BookFormat.epub,
+);
+
 bool isEpubBackedAudiobookSrt(SrtBook book) {
   if (book.bookKey.isEmpty) return false;
   final List<String>? audioPaths = book.audioPaths;
@@ -224,7 +234,14 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       // 保存按 bookKey 写穿），此处不冒充。
       author: book.bookKey.isEmpty ? book.author : null,
       mediaTypeIdentifier: ReaderFushiSource.instance.mediaType.uniqueKey,
-      mediaSourceIdentifier: ReaderFushiSource.instance.uniqueKey,
+      // 反馈 Ndnxy3mNdG：阅读器只能由配对书**当前**的 format 经唯一派生点
+      // [ReaderFushiSource.mediaSourceKeyFor] 现算。以前写死 EPUB 阅读器，旧版
+      // 给 PDF 挂上的有声书一打开就是 EPUB 阅读器 + 白屏正文。书架上还没有配对书
+      // 行（standalone 字幕书正文未生成）时按 EPUB——生成的正文本就是 EPUB。
+      mediaSourceIdentifier: srtBookMediaSourceKey(
+        book,
+        formatOf: (String key) => _bookFormatByBookKey[key],
+      ),
       position: prog?.position ?? 0,
       duration: prog?.duration ?? 1,
       canDelete: false,
@@ -246,11 +263,14 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       return;
     }
     // BUG-456: SRT books must use the normal media entry so AppModel registers
-    // ReaderFushiSource; direct page pushes leave currentMediaSource null.
+    // the reader source; direct page pushes leave currentMediaSource null.
+    // 反馈 Ndnxy3mNdG：源按卡上派生好的 mediaSourceIdentifier 取（与 EPUB 卡
+    // `item.getMediaSource` 同一条路），不写死 [ReaderFushiSource]。
+    final MediaItem item = _srtBookMediaItem(book);
     await appModel.openMedia(
       ref: ref,
-      mediaSource: ReaderFushiSource.instance,
-      item: _srtBookMediaItem(book),
+      mediaSource: item.getMediaSource(appModel: appModel),
+      item: item,
     );
   }
 

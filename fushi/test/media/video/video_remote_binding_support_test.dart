@@ -255,4 +255,56 @@ void main() {
     expect(videoRemoteMineSentence(plain, '手机'), '手机');
     expect(videoRemoteMineSentence(plain, null), '原句');
   });
+
+  // 反馈 rLCxUJ-2i4：ASS 把一句拆成几条起止相同、同 Style 的 Dialogue 时，手机列表仍逐行，
+  // 但每行带整句与同句共用的 sentenceId（只在宿主侧，不上线），查词制卡取整句。
+  group('videoRemoteTrackRows 同时显示的多行合成一句', () {
+    const SubtitleCueStyle style = SubtitleCueStyle(fontName: 'Default');
+    AudioCue ass(String text, double y, {int start = 1000, int end = 2000}) {
+      final AudioCue cue = _cue(start, end, text);
+      cue.markup = SubtitleMarkup(
+        plainText: text,
+        spans: const <SubtitleSpan>[],
+        posFraction: SubtitlePos(0.5, y),
+        cueStyle: style,
+      );
+      return cue;
+    }
+
+    test('同句两行共享整句与 sentenceId；单独成句的行不带', () {
+      final List<VideoRemoteCue> rows = videoRemoteTrackRows(
+        <AudioCue>[
+          ass('呼び出しをくらった＞', 0.94),
+          ass('＜俺は 浩一に', 0.83),
+          ass('次の句', 0.9, start: 3000, end: 4000),
+        ],
+        'primary',
+        0,
+      );
+      expect(rows.map((VideoRemoteCue r) => r.text), <String>[
+        '呼び出しをくらった＞',
+        '＜俺は 浩一に',
+        '次の句',
+      ]);
+      const String whole = '＜俺は 浩一に 呼び出しをくらった＞';
+      expect(rows[0].mineText, whole);
+      expect(rows[1].mineText, whole);
+      expect(rows[0].sentenceKey, rows[1].sentenceKey);
+      expect(rows[2].sentence, isNull);
+      expect(rows[2].mineText, '次の句');
+      expect(rows[2].sentenceKey, rows[2].id);
+      // 线上形状不变：整句只在宿主侧用。
+      expect(rows[0].toJson().containsKey('sentence'), isFalse);
+    });
+
+    test('srt（无 Style）同时显示的两行不合并', () {
+      final List<VideoRemoteCue> rows = videoRemoteTrackRows(
+        <AudioCue>[_cue(1000, 2000, '- はい'), _cue(1000, 2000, '- いいえ')],
+        'primary',
+        0,
+      );
+      expect(rows.every((VideoRemoteCue r) => r.sentence == null), isTrue);
+      expect(rows[0].sentenceKey, isNot(rows[1].sentenceKey));
+    });
+  });
 }

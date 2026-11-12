@@ -180,6 +180,8 @@ class MusicAudioIntake implements MusicAudioIntakePort {
     }
     final AddLocalFolderResult r = await addLocalFolderAsSource(
       db: _db,
+      // 音乐来源不扫书，没有有声书要转录。
+      transcribeAudiobook: null,
       mediaKind: SourceLibraryKind.music.dbValue,
       path: rootPath,
       recursive: recursive,
@@ -196,6 +198,7 @@ class MusicAudioIntake implements MusicAudioIntakePort {
     if (injected != null) return injected(path, recursive: recursive);
     final SourceScanSummary? summary = await importLocalFolderOnceAt(
       db: _db,
+      transcribeAudiobook: null,
       mediaKind: SourceLibraryKind.music.dbValue,
       path: path,
       recursive: recursive,
@@ -206,7 +209,10 @@ class MusicAudioIntake implements MusicAudioIntakePort {
   Future<String?> _rescan(SourceLibraryRow source) async {
     final MusicSourceRescanner? injected = _rescanSource;
     if (injected != null) return injected(source);
-    return (await SourceLibraryScanner(_db).scan(source)).error;
+    return (await SourceLibraryScanner(
+      _db,
+      transcribeAudiobook: null,
+    ).scan(source)).error;
   }
 
   Future<void> _retire(Set<int> ids) async {

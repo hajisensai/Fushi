@@ -11,6 +11,8 @@ import 'test_flow/dist_snapshot.dart';
 import 'test_flow/dist_stop.dart';
 import 'test_flow/dist_workers.dart';
 import 'test_flow/flutter_test_failure_filter.dart';
+import 'test_flow/heavy_offload_rival.dart'
+    show DistOffloadTally, HeavyOffloadClaim;
 import 'test_flow/suite_timings.dart';
 
 /// Runs the unit tests spread over several machines.
@@ -42,6 +44,11 @@ import 'test_flow/suite_timings.dart';
 /// the `flutter test` / `dart test` / `flutter analyze` / compile checks it
 /// would otherwise run here (test_flow/heavy_offload.dart); exit code
 /// [kDistOffloadDeclined] then means no other machine took any of it.
+/// With `--offload-claim=<file>` (heavy.dart, test_flow/heavy_offload_rival.dart)
+/// a worker that locked its remote checkout first creates that file
+/// exclusively and backs out when heavy.dart admitted the run here first;
+/// a run that only found busy / paused / unreachable machines then exits
+/// [kDistOffloadBusy] instead, so heavy.dart asks again while it queues.
 ///
 /// Any other `--flag` is passed to every `flutter test` (e.g.
 /// `--exclude-tags golden`). Workers: tool/dist_test/workers.local.json.
@@ -76,6 +83,9 @@ Future<void> main(List<String> args) async {
   }
   await _stop.dispose();
 }
+
+/// The claim and the decline code of an off-machine run (`--offload-claim`).
+DistOffloadTally _tally = DistOffloadTally(null);
 
 /// The one stopper of this run: Ctrl-C, the deadline and internal errors all
 /// end the run through it (test_flow/dist_stop.dart).
@@ -222,6 +232,13 @@ Future<void> _main(_Options options) async {
           ...createDistWorkers(c, repoRoot: repoRoot),
   ];
   _stop.register(<DistWorker>[...workers, ...fallback]);
+  final String? claimPath = options.offloadClaim;
+  if (offMachine && claimPath != null) {
+    _tally = DistOffloadTally(HeavyOffloadClaim(claimPath));
+    for (final DistWorker w in workers) {
+      w.onLocked = _tally.locked;
+    }
+  }
   if (workers.isEmpty) {
     if (offMachine) {
       stdout.writeln('DIST OFFLOAD: no other machine is configured');
@@ -254,6 +271,7 @@ Future<void> _main(_Options options) async {
         out: out,
         paths: options.paths,
         options: options.flutterArgs,
+        busyRetries: options.busyRetries,
       ),
     );
   }
@@ -363,7 +381,7 @@ Future<void> _main(_Options options) async {
       for (final DistWorker w in everyWorker) w.finish(runId),
     ]);
     stdout.writeln('DIST OFFLOAD: no other machine took any suite');
-    exit(kDistOffloadDeclined);
+    exit(_tally.declineCode);
   }
   if (queue.remaining.isNotEmpty && fallback.isNotEmpty) {
     stdout.writeln(
@@ -532,7 +550,7 @@ class _Scheduler {
     final Stopwatch prep = Stopwatch()..start();
     try {
       stdout.writeln('[${worker.name}] preparing');
-      if (!await _prepareWhileNeeded(worker, prepLog)) {
+      if (!await _prepareAskingAgain(worker, prepLog)) {
         // The others ran everything this worker could have (a slow first
         // prepare must not hold up a run that is otherwise done).
         stdout.writeln(
@@ -547,6 +565,7 @@ class _Scheduler {
       }
       stdout.writeln('[${worker.name}] ready after ${prep.elapsed.inSeconds}s');
     } on Object catch (e) {
+      if (e is! DistWorkerBusy) _tally.failed(worker);
       stdout.writeln(
         '[${worker.name}] DROPPED: prepare failed: $e '
         '(see prepare.${worker.name}.log)',
@@ -639,6 +658,7 @@ class _Scheduler {
         infraStreak++;
         _notify();
         if (infraStreak >= 2) {
+          _tally.failed(worker);
           stdout.writeln(
             '[${worker.name}] DROPPED after two infrastructure '
             'failures in a row',
@@ -696,6 +716,25 @@ class _Scheduler {
     }
     _notify();
   }
+
+  /// [_prepareWhileNeeded], asking a worker that turned the run down before
+  /// taking anything ([DistWorkerBusy]: its checkout locked by another run,
+  /// paused) again after [kBusyWait], at most [busyRetries] times in a row --
+  /// the same patience as for a batch it turns down. False when the others
+  /// meanwhile ran everything it could have.
+  Future<bool> _prepareAskingAgain(DistWorker worker, IOSink log) async =>
+      await distRetryWhileBusy<bool>(
+        () async {
+          await _stop.holdIfStopping();
+          return _prepareWhileNeeded(worker, log);
+        },
+        retries: busyRetries,
+        wait: kBusyWait,
+        stillWanted: () =>
+            _inFlight > 0 || queue.remaining.any(worker.eligible),
+        said: (String l) => stdout.writeln('[${worker.name}] $l'),
+      ) ??
+      false;
 
   /// Prepares [worker]; false as soon as nothing it may run is left in the
   /// queue and no batch is in flight (whose infrastructure failure could
@@ -894,8 +933,57 @@ Future<DistSnapshot> _snapshot(String repoRoot, _Options options) async {
 /// [job] (`flutter analyze` of [paths] with [options], or a compile check) on
 /// the first of [workers] (config order) that prepares and takes it; its
 /// output goes to stdout and its exit code is returned.
-/// [kDistOffloadDeclined] when none did.
+/// [kDistOffloadDeclined] when none did. When some only turned it down for
+/// now (busy, paused, unreachable), every worker is asked again after
+/// [_Scheduler.kBusyWait], at most [busyRetries] more rounds -- the same
+/// patience `--busy-retries` gives the test path.
 Future<int> _jobOffMachine(
+  DistJob job,
+  List<DistWorker> workers, {
+  required DistSnapshot snapshot,
+  required String runId,
+  required Directory out,
+  required List<String> paths,
+  required List<String> options,
+  required int busyRetries,
+}) async {
+  for (int round = 0; ; round++) {
+    final ({int? code, bool busy}) r = await _jobRound(
+      job,
+      workers,
+      snapshot: snapshot,
+      runId: runId,
+      out: out,
+      paths: paths,
+      options: options,
+    );
+    if (r.code != null) return r.code!;
+    if (!distJobAskAgain(
+      busy: r.busy,
+      round: round,
+      retries: busyRetries,
+      lost: _tally.lost,
+    )) {
+      break;
+    }
+    stdout.writeln(
+      'every machine turned the ${job.build == null ? 'analyze' : 'build'} '
+      'down for now; asking again in ${_Scheduler.kBusyWait.inSeconds}s '
+      '(${round + 1}/$busyRetries)',
+    );
+    await Future<void>.delayed(_Scheduler.kBusyWait);
+    await _stop.holdIfStopping();
+  }
+  stdout.writeln(
+    'DIST OFFLOAD: no other machine took the '
+    '${job.build == null ? 'analyze' : 'build'}',
+  );
+  return _tally.declineCode;
+}
+
+/// One pass of [_jobOffMachine] over [workers]: the exit code of the first
+/// that ran the job, else null and whether any turned it down only for now.
+Future<({int? code, bool busy})> _jobRound(
   DistJob job,
   List<DistWorker> workers, {
   required DistSnapshot snapshot,
@@ -906,10 +994,16 @@ Future<int> _jobOffMachine(
 }) async {
   final DistBuild? build = job.build;
   final String tag = build == null ? 'analyze' : 'build';
+  bool busy = false;
   for (final DistWorker w in workers) {
     await _stop.holdIfStopping();
     final String? blocker = await w.jobBlocker(job);
     if (blocker != null) {
+      if (distJobBlockerIsTransient(blocker)) {
+        busy = true;
+      } else {
+        _tally.cannotTake();
+      }
       stdout.writeln('[${w.name}] skipped: $blocker');
       continue;
     }
@@ -922,6 +1016,11 @@ Future<int> _jobOffMachine(
       await w.prepare(snapshot, runId, prepLog);
       stdout.writeln('[${w.name}] ready after ${prep.elapsed.inSeconds}s');
     } on Object catch (e) {
+      if (e is DistWorkerBusy) {
+        busy = true;
+      } else {
+        _tally.failed(w);
+      }
       stdout.writeln('[${w.name}] skipped: prepare failed: $e');
       await prepLog.close();
       await w.finish(runId);
@@ -954,6 +1053,11 @@ Future<int> _jobOffMachine(
     await _stop.holdIfStopping();
     await w.finish(runId);
     final String? skipped = run.busy ?? run.infraError;
+    if (run.busy != null) {
+      busy = true;
+    } else if (run.infraError != null) {
+      _tally.failed(w);
+    }
     if (skipped != null) {
       stdout.writeln('[${w.name}] skipped: $skipped');
       continue;
@@ -970,10 +1074,9 @@ Future<int> _jobOffMachine(
         '${sw.elapsed.inSeconds}s -> exit ${run.exitCode}',
       );
     await stdout.flush();
-    return run.exitCode;
+    return (code: run.exitCode, busy: false);
   }
-  stdout.writeln('DIST OFFLOAD: no other machine took the $tag');
-  return kDistOffloadDeclined;
+  return (code: null, busy: busy);
 }
 
 /// Merges the batches' lcov into [to] (only `lib/` records of [package] are
@@ -1010,6 +1113,7 @@ class _Options {
     required this.analyze,
     required this.offload,
     required this.busyRetries,
+    required this.offloadClaim,
     required this.package,
     required this.coverageOut,
     required this.buildCommand,
@@ -1052,6 +1156,10 @@ class _Options {
   /// How often in a row a busy worker is asked again before it is dropped.
   final int busyRetries;
 
+  /// `--offload-claim=<file>`: heavy.dart's claim file for this attempt
+  /// (test_flow/heavy_offload_rival.dart); null otherwise.
+  final String? offloadClaim;
+
   /// Whose test/ this run covers: [kDistAppPackage] or `packages/<name>`.
   final String package;
 
@@ -1079,6 +1187,7 @@ class _Options {
     bool analyze = false;
     bool offload = false;
     int busyRetries = _Scheduler.kBusyRetries;
+    String? offloadClaim;
     String package = kDistAppPackage;
     String? coverageOut;
     bool build = false;
@@ -1114,6 +1223,8 @@ class _Options {
         busyRetries =
             int.tryParse(arg.substring('--busy-retries='.length)) ??
             busyRetries;
+      } else if (arg.startsWith('--offload-claim=')) {
+        offloadClaim = arg.substring('--offload-claim='.length);
       } else if (arg.startsWith('--max-minutes=')) {
         maxMinutes = int.tryParse(arg.substring('--max-minutes='.length)) ?? 0;
       } else if (arg.startsWith('--concurrency=')) {
@@ -1154,6 +1265,7 @@ class _Options {
       analyze: analyze,
       offload: offload,
       busyRetries: busyRetries,
+      offloadClaim: offloadClaim,
       package: package,
       coverageOut: coverageOut,
       buildCommand: buildCommand,

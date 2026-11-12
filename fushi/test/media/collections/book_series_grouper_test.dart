@@ -5,6 +5,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/epub_series.dart';
 import 'package:fushi_engine/media/collections/book_series_grouper.dart';
 import 'package:fushi_engine/media/collections/book_series_key.dart';
+import 'package:fushi_engine/sync/override_title_db.dart';
 
 /// 书架 / 漫画库分卷按系列自动收进合集（用户漫画库「志乃と恋」1–4 卷散成四张卡；
 /// 小说「安達としまむら」1–13 卷）。
@@ -108,6 +109,82 @@ void main() {
         parseBookSeriesKey('志乃と恋 Future')!.key,
         isNot(parseBookSeriesKey('志乃と恋 3')!.key),
       );
+    });
+
+    // vECncM6f8Y：mokuro.moe 内置下载的卷名是连字符 slug，`…-02` 以前不认。
+    test('连字符 / 下划线卷号：字母后的 `-02` / `_02` 是卷号', () {
+      const String takagi =
+          'Karakai Jouzu no Takagi-san Karakai-Jouzu-Takagi-san';
+      for (final int n in <int>[2, 3, 10]) {
+        final String nn = n.toString().padLeft(2, '0');
+        final BookSeriesKey key = parseBookSeriesKey('$takagi-$nn')!;
+        expect(key.seriesTitle, takagi);
+        expect(key.key, takagi.toLowerCase());
+        expect(key.volume, n);
+      }
+      expect(parseBookSeriesKey('One_Piece_101')!.seriesTitle, 'One_Piece');
+      expect(parseBookSeriesKey('One_Piece_101')!.volume, 101);
+      expect(parseBookSeriesKey('志乃と恋-4')!.key, '志乃と恋');
+      expect(parseBookSeriesKey('志乃と恋-4')!.volume, 4);
+      // 带连字符但没有卷号的书名不变。
+      expect(parseBookSeriesKey('Takagi-san')!.key, 'takagi-san');
+      expect(parseBookSeriesKey('Takagi-san')!.volume, isNull);
+    });
+
+    test('连字符卷号的反例：字母贴数字、纯数字、数字后的连字符不吃', () {
+      expect(parseBookSeriesKey('Catch22')!.volume, isNull);
+      expect(parseBookSeriesKey('86')!.volume, isNull);
+      expect(parseBookSeriesKey('86-エイティシックス')!.volume, isNull);
+      // `2-02` 是编号，不拆成「2」系列的第 2 卷。
+      expect(parseBookSeriesKey('Title 2-02')!.volume, isNull);
+      // 「Spider-Man 2099」「Spider-Man-2099」会读成第 2099 卷（4 位数字上限内）：
+      // 可接受——归组要求同系列 ≥2 卷，单本不建合集（见下方 grouper 用例）。
+      expect(parseBookSeriesKey('Spider-Man 2099')!.volume, 2099);
+      expect(parseBookSeriesKey('Spider-Man-2099')!.volume, 2099);
+      expect(parseBookSeriesKey('Spider-Man-2099')!.seriesTitle, 'Spider-Man');
+      // 5 位数字不是卷号。
+      expect(parseBookSeriesKey('Area-51234')!.volume, isNull);
+    });
+
+    // vECncM6f8Y 后续拍板：自动合集名里的网址 slug 规整成可读名。
+    test('readableSeriesTitle：系列名后挂着的自身 slug 去掉，整串 slug 换空格', () {
+      expect(
+        readableSeriesTitle(
+          'Karakai Jouzu no Takagi-san Karakai-Jouzu-Takagi-san',
+        ),
+        'Karakai Jouzu no Takagi-san',
+      );
+      expect(readableSeriesTitle('one_piece'), 'One Piece');
+      expect(readableSeriesTitle('One_Piece'), 'One Piece');
+      expect(
+        readableSeriesTitle('karakai-jouzu-takagi-san'),
+        'Karakai Jouzu Takagi San',
+      );
+      expect(
+        readableSeriesTitle('Karakai-Jouzu-Takagi-san'),
+        'Karakai Jouzu Takagi san',
+      );
+      expect(readableSeriesTitle('  one_piece  '), 'One Piece');
+    });
+
+    test('readableSeriesTitle 反例：正常拼写与不相干的尾词不动', () {
+      // 只有一个连字符的是正常拼写。
+      expect(readableSeriesTitle('Spider-Man'), 'Spider-Man');
+      expect(readableSeriesTitle('Takagi-san'), 'Takagi-san');
+      // 尾部 slug 的词不全在前缀里：是副标题，不是重复的 slug。
+      expect(
+        readableSeriesTitle('Karakai Jouzu no Takagi-san Another-Story'),
+        'Karakai Jouzu no Takagi-san Another-Story',
+      );
+      // 日文前缀切不出拉丁词，不动。
+      expect(
+        readableSeriesTitle('からかい上手の高木さん Takagi-san'),
+        'からかい上手の高木さん Takagi-san',
+      );
+      expect(readableSeriesTitle('志乃と恋'), '志乃と恋');
+      expect(readableSeriesTitle('86'), '86');
+      expect(readableSeriesTitle('2-0-1'), '2-0-1');
+      expect(readableSeriesTitle('ONE PIECE'), 'ONE PIECE');
     });
   });
 
@@ -302,6 +379,134 @@ void main() {
       expect(id, isNot(yuri));
       expect(await members(id), <String>['志乃と恋 1', '志乃と恋 2']);
       expect(await members(yuri), <String>['志乃と恋 3']);
+    });
+
+    // vECncM6f8Y：mokuro.moe 旧口径入库的两卷（`<系列> <slug>-NN`）以前各自成卡。
+    test('mokuro.moe 连字符卷号的两卷归进同一合集，按卷号排；单本 Spider-Man-2099 不建合集', () async {
+      const String takagi =
+          'Karakai Jouzu no Takagi-san Karakai-Jouzu-Takagi-san';
+      await addBook('$takagi-03', importedAt: 1);
+      await addBook('$takagi-02', importedAt: 2);
+      await addBook('Spider-Man-2099');
+
+      final summary = await grouper.groupAll();
+
+      expect(summary.createdCollectionIds, hasLength(1));
+      final MediaCollectionRow collection = (await db.getMediaCollectionById(
+        summary.createdCollectionIds.single,
+      ))!;
+      // 合集名去掉了系列名后挂着的 slug（书名 / 归组键不变）。
+      expect(collection.name, 'Karakai Jouzu no Takagi-san');
+      expect(await members(collection.id), <String>[
+        '$takagi-02',
+        '$takagi-03',
+      ]);
+      expect(await db.getAllMediaCollections(), hasLength(1));
+    });
+
+    test('规整前按 slug 名建的规则合集改成可读名，来源仍是 rule', () async {
+      const String takagi =
+          'Karakai Jouzu no Takagi-san Karakai-Jouzu-Takagi-san';
+      final int id = await db.createMediaCollection(
+        takagi,
+        collectionType: 'playlist',
+        origin: CollectionOrigin.rule,
+      );
+      for (final String nn in <String>['02', '03']) {
+        await db.addToCollection(
+          id,
+          MediaKind.epub,
+          await addBook('$takagi-$nn'),
+          userIntent: false,
+        );
+      }
+
+      final summary = await grouper.groupAll();
+
+      expect(summary.createdCollectionIds, isEmpty);
+      expect(summary.updatedCollectionIds, contains(id));
+      final MediaCollectionRow collection = (await db.getMediaCollectionById(
+        id,
+      ))!;
+      expect(collection.name, 'Karakai Jouzu no Takagi-san');
+      expect(CollectionOrigin.parse(collection.origin), CollectionOrigin.rule);
+      expect(await members(id), <String>['$takagi-02', '$takagi-03']);
+      expect(await db.getAllMediaCollections(), hasLength(1));
+
+      // 幂等：再跑一次不再改。
+      final again = await grouper.groupAll();
+      expect(again.updatedCollectionIds, isNot(contains(id)));
+    });
+
+    test('用户的合集、可读名已被占用的合集不改名', () async {
+      const String takagi =
+          'Karakai Jouzu no Takagi-san Karakai-Jouzu-Takagi-san';
+      final int user = await db.createMediaCollection(
+        takagi,
+        collectionType: 'playlist',
+      );
+      for (final String nn in <String>['02', '03']) {
+        await db.addToCollection(
+          user,
+          MediaKind.epub,
+          await addBook('$takagi-$nn'),
+          userIntent: false,
+        );
+      }
+      const String other = 'one_piece';
+      final int rule = await db.createMediaCollection(
+        other,
+        collectionType: 'playlist',
+        origin: CollectionOrigin.rule,
+      );
+      final int taken = await db.createMediaCollection(
+        'One Piece',
+        collectionType: 'playlist',
+      );
+      for (final String nn in <String>['01', '02']) {
+        await db.addToCollection(
+          rule,
+          MediaKind.epub,
+          await addBook('${other}_$nn'),
+          userIntent: false,
+        );
+      }
+
+      await grouper.groupAll();
+
+      expect((await db.getMediaCollectionById(user))!.name, takagi);
+      expect((await db.getMediaCollectionById(rule))!.name, other);
+      expect((await db.getMediaCollectionById(taken))!.name, 'One Piece');
+    });
+
+    // vECncM6f8Y：用户把各卷改名成 `… 2` / `… 3`（显示名覆盖），归组以前只看原名。
+    test('改名覆盖后的显示名参与归组，合集名取显示名的系列名', () async {
+      await addBook('Takagi raw-a');
+      await addBook('Takagi raw-b');
+      await adoptOverrideTitleInDb(
+        db,
+        bookKey: 'Takagi raw-a',
+        title: 'Karakai Jouzu no Takagi-san 2',
+        updatedAt: 1,
+      );
+      await adoptOverrideTitleInDb(
+        db,
+        bookKey: 'Takagi raw-b',
+        title: 'Karakai Jouzu no Takagi-san 3',
+        updatedAt: 1,
+      );
+
+      final summary = await grouper.groupAll();
+
+      expect(summary.createdCollectionIds, hasLength(1));
+      final MediaCollectionRow collection = (await db.getMediaCollectionById(
+        summary.createdCollectionIds.single,
+      ))!;
+      expect(collection.name, 'Karakai Jouzu no Takagi-san');
+      expect(await members(collection.id), <String>[
+        'Takagi raw-a',
+        'Takagi raw-b',
+      ]);
     });
 
     test('幂等；后来导入的单卷补进已有合集', () async {

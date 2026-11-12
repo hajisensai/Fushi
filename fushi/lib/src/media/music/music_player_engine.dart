@@ -500,6 +500,20 @@ class MusicPlayerEngine extends ChangeNotifier {
   /// 睡眠定时：播完本曲停。
   bool get stopAfterCurrent => _stopAfterCurrent;
 
+  /// 当前曲已播到文件末尾、后端已卸载（队列播完 / 播完本曲停 / 区间试听按住时播到头）。
+  bool get ended => _ended;
+
+  /// 区间试听是否正按住当前曲（[setHoldAtTrackEnd]）。
+  bool get holdAtTrackEnd => _holdAtTrackEnd;
+
+  /// 按住 / 放开当前曲：按住期间后端不预排下一首，当前曲播到头即停（[ended]），队列不推进；
+  /// 放开时把下一首补回去。与 [stopAfterCurrent] 不同，不改睡眠定时、也不在播完时挪队列位置。
+  Future<void> setHoldAtTrackEnd(bool hold) async {
+    if (_holdAtTrackEnd == hold) return;
+    _holdAtTrackEnd = hold;
+    await _syncNext();
+  }
+
   /// 睡眠定时器的到点时刻（到点后播完正在放的那首停）；null = 没开。
   DateTime? get sleepDeadline => _sleepDeadline;
 
@@ -590,6 +604,14 @@ class MusicPlayerEngine extends ChangeNotifier {
   /// 最近一次发给后端的 [crossfadeToNext]（设置变了才重发「下一首」）。
   bool _sentCrossfadeNext = false;
 
+  /// 区间试听（[MusicRangePreview]）期间按住当前曲：后端不预排下一首，播到文件末尾只报
+  /// [MusicBackendCompleted]，不会无缝 / 交叉淡入推进到队列下一首（反馈 l8XrV_IfXH）。
+  bool _holdAtTrackEnd = false;
+
+  /// 交给后端预排的「下一首」：播完本曲停 / 区间试听按住时为 null。
+  MusicPlayItem? get _upcomingForBackend =>
+      _stopAfterCurrent || _holdAtTrackEnd ? null : next;
+
   /// 最近一次发给后端的「下一首」（[openPair] / [replaceNext]）；队列编辑后与 [next] 比对，
   /// 变了才重发（[_syncNext]）。
   MusicPlayItem? _sentNext;
@@ -611,7 +633,7 @@ class MusicPlayerEngine extends ChangeNotifier {
     final bool crossfade = crossfadeToNext;
     _sentCrossfadeNext = crossfade;
     return backend.replaceNext(
-      _recordSentNext(_stopAfterCurrent ? null : next, reset: false),
+      _recordSentNext(_upcomingForBackend, reset: false),
       crossfadeNext: crossfade,
     );
   }
@@ -628,7 +650,7 @@ class MusicPlayerEngine extends ChangeNotifier {
         current == null) {
       return;
     }
-    final MusicPlayItem? want = _stopAfterCurrent ? null : next;
+    final MusicPlayItem? want = _upcomingForBackend;
     if (identical(want, _sentNext) && crossfadeToNext == _sentCrossfadeNext) {
       return;
     }
@@ -720,7 +742,7 @@ class MusicPlayerEngine extends ChangeNotifier {
       return;
     }
     final MusicOutputBackend? backend = _backend;
-    final MusicPlayItem? upcoming = _stopAfterCurrent ? null : next;
+    final MusicPlayItem? upcoming = _upcomingForBackend;
     if (backend != null && upcoming != null && where(upcoming)) {
       await _sendNext(backend);
     }
@@ -747,9 +769,7 @@ class MusicPlayerEngine extends ChangeNotifier {
     final MusicOutputBackend backend = _ensureBackend();
     _dropAbLoopForTrackChange();
     _zeroPosition();
-    _duration = item.durationMs == null
-        ? null
-        : Duration(milliseconds: item.durationMs!);
+    _duration = item.playbackDuration;
     _lastError = null;
     _ended = false;
     _needsReopen = false;
@@ -782,7 +802,7 @@ class MusicPlayerEngine extends ChangeNotifier {
       _sentCrossfadeNext = crossfade;
       await backend.openPair(
         item,
-        _recordSentNext(_stopAfterCurrent ? null : next, reset: true),
+        _recordSentNext(_upcomingForBackend, reset: true),
         play: play,
         crossfadeNext: crossfade,
         startAt: startFrom,
@@ -839,7 +859,8 @@ class MusicPlayerEngine extends ChangeNotifier {
         autoSkip &&
         failed != null &&
         failure.reason == MusicPlaybackFailure.trackUnavailable &&
-        !_stopAfterCurrent;
+        !_stopAfterCurrent &&
+        !_holdAtTrackEnd;
     if (skippable) {
       _consecutiveUnavailable++;
       if (_consecutiveUnavailable < kMusicMaxConsecutiveUnavailable &&
@@ -1331,9 +1352,7 @@ class MusicPlayerEngine extends ChangeNotifier {
         _needsReopen = false;
         _lastError = null;
         _zeroPosition(completed: true);
-        _duration = item?.durationMs == null
-            ? null
-            : Duration(milliseconds: item!.durationMs!);
+        _duration = item?.playbackDuration;
         if (item != null) _announceStarted(item);
         notifyListeners();
         final MusicOutputBackend? backend = _backend;
@@ -1353,9 +1372,7 @@ class MusicPlayerEngine extends ChangeNotifier {
             _unmarkCurrent();
             final MusicPlayItem? item = current;
             _zeroPosition();
-            _duration = item?.durationMs == null
-                ? null
-                : Duration(milliseconds: item!.durationMs!);
+            _duration = item?.playbackDuration;
           }
         }
         notifyListeners();
@@ -1457,9 +1474,7 @@ class MusicPlayerEngine extends ChangeNotifier {
     }
     _needsReopen = false;
     _lastError = null;
-    _duration = item.durationMs == null
-        ? null
-        : Duration(milliseconds: item.durationMs!);
+    _duration = item.playbackDuration;
     if (start) _announceStarted(item);
     notifyListeners();
   }
@@ -1513,9 +1528,7 @@ class MusicPlayerEngine extends ChangeNotifier {
       _dropAbLoopForTrackChange();
       _zeroPosition();
       final MusicPlayItem? item = current;
-      _duration = item?.durationMs == null
-          ? null
-          : Duration(milliseconds: item!.durationMs!);
+      _duration = item?.playbackDuration;
       _onTrackFailed(event, autoSkip: wanted);
     }
   }
