@@ -12,13 +12,11 @@
 library;
 
 import 'dart:async';
-import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart'
     show ValueListenable, defaultTargetPlatform;
 import 'package:flutter/gestures.dart' show TapGestureRecognizer;
-import 'package:flutter/rendering.dart' show SelectedContent;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_anki/fushi_anki.dart' show CardSourceLink;
 import 'package:fushi_dictionary/fushi_dictionary.dart' show FushiRubySpan;
@@ -29,7 +27,7 @@ import 'package:fushi/src/models/content_font_chain.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_fushi_card_view.dart'
-    show SrsNoBaseline, showSrsCardImageViewer, srsCardImageWidget;
+    show showSrsCardImageViewer, srsCardImageWidget, srsRubyWidgetSpan;
 import 'package:fushi/src/srs/srs_card_appearance.dart'
     show SrsCardAppearance, kSrsCardDefaultFontZh;
 import 'package:fushi/src/srs/srs_card_design_skin.dart'
@@ -41,7 +39,6 @@ import 'package:fushi/src/srs/srs_html_card.dart';
 import 'package:fushi_engine/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_providers.dart'
     show srsCardAppearanceProvider, srsMediaStoreProvider, srsRunLogged;
-import 'package:fushi/src/srs/srs_review_edit.dart' show SrsCardSelection;
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
@@ -51,8 +48,6 @@ import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/dictionary_external_link.dart';
-import 'package:fushi/src/utils/misc/error_log_service.dart';
-import 'package:fushi/src/utils/misc/fushi_toast.dart';
 
 /// 卡面上的链接：`fushi://` 来源链接跳回原处（[onSourceLink]），http(s) 外链系统浏览器打开，
 /// 其余不处理。
@@ -221,18 +216,7 @@ class _SrsHtmlCardViewState extends ConsumerState<SrsHtmlCardView> {
       host(<String>[name]);
       return;
     }
-    SrsMediaStore? store;
-    try {
-      store = await ref.read(srsMediaStoreProvider.future);
-    } catch (e, stack) {
-      ErrorLogService.instance.log('SrsHtmlCardView.mediaStore', e, stack);
-    }
-    final File? file = store?.resolve(name);
-    if (file == null || !await file.exists()) {
-      FushiToast.show(msg: t.srs_media_missing(name: name));
-      return;
-    }
-    await ref.read(srsSoundPlayerProvider)(file.path);
+    await srsPlayCardSoundFile(ref, name, logTag: 'SrsHtmlCardView.mediaStore');
   }
 
   void _openLink(String href) =>
@@ -325,13 +309,7 @@ class _SrsHtmlCardViewState extends ConsumerState<SrsHtmlCardView> {
 
   Widget _selectable(Widget child) => SelectionArea(
     focusNode: _selectionFocus,
-    onSelectionChanged: widget.face.onEditSelection == null
-        ? null
-        : (SelectedContent? content) {
-            final String text = content?.plainText ?? '';
-            if (text.trim().isEmpty) return;
-            widget.face.onEditSelection!(SrsCardSelection(text));
-          },
+    onSelectionChanged: srsCardSelectionReporter(widget.face),
     child: child,
   );
 }
@@ -1080,44 +1058,13 @@ class _FlowViewState extends State<_FlowView> {
               ),
             );
           }
-          Widget tag(Widget child, {required bool isRuby}) => MetaData(
-            metaData: SrsLookupRubySegment(
-              fullStart: fullStart,
-              isRuby: isRuby,
-            ),
-            child: child,
-          );
           spans.add(
-            WidgetSpan(
-              alignment: PlaceholderAlignment.baseline,
-              baseline: TextBaseline.alphabetic,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  SrsNoBaseline(
-                    child: tag(
-                      Text(
-                        r.reading,
-                        style: ruby.copyWith(height: 1.1),
-                        maxLines: 1,
-                        softWrap: false,
-                        textScaler: TextScaler.noScaling,
-                      ),
-                      isRuby: true,
-                    ),
-                  ),
-                  tag(
-                    Text(
-                      r.base,
-                      style: base,
-                      maxLines: 1,
-                      softWrap: false,
-                      textScaler: TextScaler.noScaling,
-                    ),
-                    isRuby: false,
-                  ),
-                ],
-              ),
+            srsRubyWidgetSpan(
+              reading: r.reading,
+              base: r.base,
+              rubyStyle: ruby,
+              baseStyle: base,
+              lookupFullStart: fullStart,
             ),
           );
           segments.add(

@@ -82,8 +82,13 @@ void main() {
         '<style id="fushi-reader-style">$css</style>'
         // 段落离开页顶 / 页右：连续模式页顶有渐隐，着重号取样带不能落在里面。
         '<style>.em { text-emphasis: sesame; } p { margin-block-start: 4em; }</style>'
-        '<script>window.flutter_inappwebview = { callHandler: function() '
-        '{ return Promise.resolve(null); } };'
+        // The bridge stub records onRestoreComplete -- the engine's content-ready signal that
+        // lifts the app's loading mask -- so the harness waits on it, not on a fixed sleep.
+        '<script>window.__fushiRestored = new Promise(function(r) '
+        '{ window.__fushiMarkRestored = r; });'
+        'window.flutter_inappwebview = { callHandler: function(name) '
+        '{ if (name === "onRestoreComplete") window.__fushiMarkRestored(); '
+        'return Promise.resolve(null); } };'
         'window.__fushiApplyReaderMargins = function() {};</script>'
         '</head><body><p>$paragraph</p>'
         '<script>${ReaderSelectionScripts.source()}</script>$engine'

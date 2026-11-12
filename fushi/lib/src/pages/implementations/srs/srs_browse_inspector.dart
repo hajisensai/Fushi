@@ -36,6 +36,7 @@ import 'package:fushi/src/pages/implementations/srs/srs_field_editors.dart';
 import 'package:fushi/src/srs/srs_fushi_card_fields.dart' show srsPlainText;
 import 'package:fushi_engine/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
+import 'package:fushi/src/srs/srs_sound_tag.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -111,8 +112,6 @@ String? srsBrowseSentenceAudioFieldId(SrsNoteTypeView type) {
   }
   return null;
 }
-
-final RegExp _sound = RegExp(r'\[sound:([^\]]+)\]');
 
 /// 检查器。
 class SrsBrowseInspector extends ConsumerStatefulWidget {
@@ -386,7 +385,9 @@ class _PreviewTab extends ConsumerWidget {
         if (plain.isNotEmpty) sentence = plain;
       }
       final String? aid = srsBrowseSentenceAudioFieldId(d.noteType);
-      if (aid != null) clip = _sound.firstMatch(d.note.field(aid))?.group(1);
+      if (aid != null) {
+        clip = srsSoundTagPattern.firstMatch(d.note.field(aid))?.group(1);
+      }
     }
     final String term = inspector.row.sortText;
     final ColorScheme scheme = Theme.of(context).colorScheme;
