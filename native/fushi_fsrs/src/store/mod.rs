@@ -23,6 +23,7 @@ pub mod bulk;
 pub(crate) mod caches;
 pub(crate) mod compact;
 pub mod ffi;
+pub mod gen4;
 pub(crate) mod ids;
 #[cfg(test)]
 mod kernel_reads_tests;

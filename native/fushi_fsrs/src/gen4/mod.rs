@@ -18,6 +18,7 @@ pub mod name;
 pub mod op;
 pub mod segment;
 pub mod stamp;
+pub mod translate;
 
 use crate::sync2::codec::{DResult, DecodeError, Reader, Writer};
 use crate::sync2::hlc::Hlc;
