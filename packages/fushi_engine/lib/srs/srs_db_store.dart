@@ -3397,8 +3397,25 @@ class SrsDbStore implements SrsSync2Host {
       },
       blobs: <Uint8List>[utf8.encode(jsonEncode(items))],
     );
+    // 在 [undoable] 里：把这条命令写下的修改记进撤销凭据。改前值不必再从库读——内核只写现值 == `expect` 的项，
+    // 写下的键的改前值就是它的 `expect`（同一个键出现几次时各项的 `expect` 相同，否则过不了比对）。
+    if (_undoRecorder case final _SrsUndoRecorder recorder) {
+      final List<Object?> edits =
+          (r['edits'] as List<Object?>?) ?? const <Object?>[];
+      recorder.noteKnownBefore(<(SrsEntityKind, String, String), Object?>{
+        for (final SrsNoteFieldWrite w in writes)
+          (SrsEntityKind.note, w.noteId, SrsFieldKeys.noteField(w.fieldId)):
+              w.expect,
+      }, edits);
+      recorder.noteWritten(edits);
+    }
     return <String>{...(r['rejected']! as List).cast<String>()};
   }
+
+  /// [editNoteFieldsIf] 的落计划模式（整条笔记），并交回这次写入的撤销凭据（[revertEdits]）。返回被拒的笔记与凭据。
+  Future<(Set<String>, SrsEditUndo)> editNoteFieldsIfUndoable(
+    List<SrsNoteFieldWrite> writes,
+  ) => undoable(() => editNoteFieldsIf(writes, wholeNote: true));
 
   /// 把 [absorbIds] 并进 [keepId]（重复笔记的合并，规则见 srs_duplicate_notes.dart 的库注释）：还原点、前身链接、
   /// 补空字段 / 并标签、删除被吸收的笔记是内核的一条命令（`merge_notes`）、一笔——笔记与卡在写锁里读，任何一步出错
@@ -3407,7 +3424,65 @@ class SrsDbStore implements SrsSync2Host {
   Future<({int linked, int unmatched})> mergeNotesInto(
     String keepId,
     List<String> absorbIds,
-  ) async {
+  ) {
+    final _SrsUndoRecorder? recorder = _undoRecorder;
+    if (recorder == null) return _mergeNotesCommand(keepId, absorbIds);
+    // 在 [undoable] 里：内核自己读现值、自己判、自己写，录制器要的改前值在发命令之前、同一个独占区里读——可能被
+    // 写到的键（保留笔记上被吸收笔记带着的字段与标签、保留卡上指向被吸收卡的前身链接、被吸收笔记的删除标记），
+    // 实际写了哪些以命令回包的 `edits` 为准。整列表标签内核不报 dot（展开成了 OR-Set 操作），按合并前后的差量记。
+    return runExclusive(() async {
+      final Map<String, SrsNoteView?> views = await notes(<String>{
+        keepId,
+        ...absorbIds,
+      });
+      final List<SrsCardCacheRow> keepCards = await cardsOfNote(keepId);
+      final List<(SrsEntityKind, String, String)> keys =
+          <(SrsEntityKind, String, String)>[
+            (SrsEntityKind.note, keepId, SrsFieldKeys.noteTags),
+          ];
+      final Set<String> fields = <String>{};
+      for (final String id in absorbIds) {
+        if (id == keepId) continue;
+        keys.add((SrsEntityKind.note, id, SrsFieldKeys.deleted));
+        for (final String f
+            in views[id]?.fields.keys ?? const Iterable<String>.empty()) {
+          if (fields.add(f)) {
+            keys.add((SrsEntityKind.note, keepId, SrsFieldKeys.noteField(f)));
+          }
+        }
+        for (final SrsCardCacheRow absorbed in await cardsOfNote(id)) {
+          for (final SrsCardCacheRow kept in keepCards) {
+            keys.add((
+              SrsEntityKind.card,
+              kept.id,
+              SrsFieldKeys.cardHistoryFrom(absorbed.id),
+            ));
+          }
+        }
+      }
+      await recorder.noteBefore(keys);
+      final ({int linked, int unmatched}) out = await _mergeNotesCommand(
+        keepId,
+        absorbIds,
+        onEdits: recorder.noteWritten,
+      );
+      final SrsNoteView? after = (await notes(<String>{keepId}))[keepId];
+      final List<String> tagsBefore = views[keepId]?.tags ?? const <String>[];
+      if (after != null &&
+          (after.tags.length != tagsBefore.length ||
+              !after.tags.toSet().containsAll(tagsBefore))) {
+        recorder.noteTags(keepId, after.tags);
+      }
+      return out;
+    });
+  }
+
+  /// [mergeNotesInto] 的那一条内核命令。[onEdits] 收回包里写下的字段修改（`edits`，见 [_SrsUndoRecorder.noteWritten]）。
+  Future<({int linked, int unmatched})> _mergeNotesCommand(
+    String keepId,
+    List<String> absorbIds, {
+    void Function(List<Object?> edits)? onEdits,
+  }) async {
     late Map<String, Object?> r;
     try {
       r = await _intentWrite(<String, Object?>{
@@ -3424,6 +3499,7 @@ class SrsDbStore implements SrsSync2Host {
       }
       rethrow;
     }
+    onEdits?.call((r['edits'] as List<Object?>?) ?? const <Object?>[]);
     return (linked: r['linked']! as int, unmatched: r['unmatched']! as int);
   }
 
@@ -6580,6 +6656,23 @@ class _SrsUndoRecorder {
         ];
     if (missing.isEmpty) return;
     _before.addAll(await store._currentValues(missing));
+  }
+
+  /// 改前值已由内核在写锁里核对过的键（条件写 `note_fields_if`：现值 == 期望值才写）：[edits] 里写下的那些直接记
+  /// [known] 给的改前值，不再从库读；没写下的不记（它的期望值未必是现值）。
+  void noteKnownBefore(
+    Map<(SrsEntityKind, String, String), Object?> known,
+    List<Object?> edits,
+  ) {
+    for (final Object? raw in edits) {
+      if (raw is! List || raw.length < 3) continue;
+      final SrsEntityKind? kind = SrsEntityKind.tryParse(raw[0] as String?);
+      final Object? id = raw[1], key = raw[2];
+      if (kind == null || id is! String || key is! String) continue;
+      final (SrsEntityKind, String, String) at = (kind, id, key);
+      if (!known.containsKey(at)) continue;
+      _before.putIfAbsent(_key(kind, id, key), () => known[at]);
+    }
   }
 
   /// 落库之后：内核报告的 `edits`（`[种类, 实体, 字段键, 设备, 序号, 值]`，store/sync2/mod.rs `note_written_edit`）。

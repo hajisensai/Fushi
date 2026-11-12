@@ -980,7 +980,33 @@ class SrsRemoteStore implements SrsDbStore, SrsRemoteForwarding {
     List<SrsNoteFieldWrite> writes, {
     required bool wholeNote,
   }) async {
-    if (writes.isEmpty) return const <String>{};
+    final (Set<String> rejected, List<SrsFieldChange> changes) =
+        await _noteFieldsIfChanges(writes, wholeNote: wholeNote);
+    if (changes.isNotEmpty) await editFieldsBatch(changes);
+    return rejected;
+  }
+
+  /// 同 [editNoteFieldsIf] 的落计划模式，写入走 [editFieldsUndoable]（主机在它自己的写锁里记撤销凭据）。
+  @override
+  Future<(Set<String>, SrsEditUndo)> editNoteFieldsIfUndoable(
+    List<SrsNoteFieldWrite> writes,
+  ) async {
+    final (Set<String> rejected, List<SrsFieldChange> changes) =
+        await _noteFieldsIfChanges(writes, wholeNote: true);
+    return (
+      rejected,
+      changes.isEmpty ? SrsEditUndo.empty : await editFieldsUndoable(changes),
+    );
+  }
+
+  /// [editNoteFieldsIf] 的比对：读一遍主机上的现值，交回被拒的笔记与通过的写入。
+  Future<(Set<String>, List<SrsFieldChange>)> _noteFieldsIfChanges(
+    List<SrsNoteFieldWrite> writes, {
+    required bool wholeNote,
+  }) async {
+    if (writes.isEmpty) {
+      return (const <String>{}, const <SrsFieldChange>[]);
+    }
     final Map<String, SrsNoteView?> views = await notes(<String>{
       for (final SrsNoteFieldWrite w in writes) w.noteId,
     });
@@ -1004,8 +1030,7 @@ class SrsRemoteStore implements SrsDbStore, SrsRemoteForwarding {
             w.value,
           ),
     ];
-    if (changes.isNotEmpty) await editFieldsBatch(changes);
-    return rejected;
+    return (rejected, changes);
   }
 
   @override
