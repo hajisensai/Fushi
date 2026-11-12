@@ -244,6 +244,7 @@ extension _VideoWebSource on _VideoFushiPageState {
       _title = row.title;
       _failed = false;
       _failReason = null;
+      _failTorrentVideo = null;
       _currentVideoPath = null;
       // 页级加载态到此为止：视频区从这一帧起就是站点页面（登录 / 选人），有了 <video>
       // 再挂播放器控件。

@@ -8014,6 +8014,21 @@ function __fushiReportedContentHeight(){
 // 每个尾批切片后都试一次「够高就恢复」，尾批全部完成（final）时不管够不够高都
 // 应用一次兜底（浏览器自行夹紧）。应用后清零，同一份 pending 绝不影响下一次渲染。
 window.__fushiPendingScrollTop = 0;
+
+// 「新查词会话从顶部开始」的唯一实现：in-app 热槽（dictionary_popup_webview.dart 全量
+// 推送前调用）与 app 外查词窗 / galgame 内嵌查词的常驻根 iframe（global_lookup_host.js
+// beginLookup / 停驻 realm 复位）共用这一份。BUG-141 只在 in-app 注入块里归零，TODO-1095
+// 让 global 根 iframe 跨查词复用后没跟过去，上一次滚到哪下一次就停在哪。顺带停掉滚轮缓动
+// 与待恢复位，否则上一次在途的 rAF / pending 会在归零后把页面又滚回去。
+window.__fushiResetPopupScroll = function() {
+    popupWheelEaseStop();
+    window.__fushiPendingScrollTop = 0;
+    window.scrollTo(0, 0);
+    const el = document.scrollingElement || document.documentElement;
+    if (el) el.scrollTop = 0;
+    if (document.body) document.body.scrollTop = 0;
+};
+
 function __fushiApplyPendingScrollTop(isFinal) {
     const y = window.__fushiPendingScrollTop || 0;
     if (!(y > 0)) return;

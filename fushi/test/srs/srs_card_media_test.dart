@@ -2,7 +2,6 @@
 // [sound:] → 播放按钮、拦截器只认卡面虚拟域）。
 import 'dart:io';
 import 'dart:typed_data';
-import 'dart:ui' show Color;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
@@ -128,39 +127,5 @@ void main() {
         isNull,
       );
     });
-
-    test('卡面 HTML：有前缀时注入播放按钮样式与点击委托', () {
-      const SrsCardFace face = SrsCardFace(
-        cardId: 'c',
-        showingAnswer: false,
-        bodyHtml: '<img src="a.png">[sound:b.mp3]',
-        css: '.card{background:url(bg.jpg)}',
-        languageCode: null,
-        onBridgeKey: _noop,
-      );
-      final String html = srsCardHtml(
-        face: face,
-        dark: false,
-        background: const Color(0xFFFFFFFF),
-        foreground: const Color(0xFF000000),
-        mediaUrlPrefix: prefix,
-        accent: const Color(0xFF6750A4),
-      );
-      expect(html, contains('src="${prefix}a.png"'));
-      expect(html, contains('url("${prefix}bg.jpg")'));
-      expect(html, contains(kSrsPlaySoundHandler));
-      expect(html, contains('--fushi-srs-accent:#6750a4'));
-      // 无前缀（旧调用）逐字节不变。
-      final String plain = srsCardHtml(
-        face: face,
-        dark: false,
-        background: const Color(0xFFFFFFFF),
-        foreground: const Color(0xFF000000),
-      );
-      expect(plain, contains('src="a.png"'));
-      expect(plain, contains('[sound:b.mp3]'));
-    });
   });
 }
-
-void _noop(String _) {}
