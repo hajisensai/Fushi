@@ -33,6 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
+> 共 3932 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4388](bugs/BUG-4388-cold-start-dict-history-decode-on-ui-isolate.md) | ✅ | ✅ | 冷启动白屏：十条查词历史（几 MB JSON）每次都在 UI 线程同步解析，挡住首帧 |
 > 共 3873 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
