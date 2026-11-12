@@ -15,6 +15,9 @@
 //! - [super::sched_local::sched_local_on]（`sched`）：别的 profile 的卡按「没有这张卡」跳过（撤销计入撤不了的条数）；
 //! - [super::append_on]（冲突解决 / 彻底清除 / 还原点）：跳过。
 //!
+//! `change`（change.rs）的修改记录经 [super::apply_local_on]；它的还原点是整条命令的附带写入，输入项全是别人的
+//! （[items_all_foreign]）时不打。
+//!
 //! 先读笔记再决定写什么的意图命令（merge_notes.rs、note_fields_if.rs）在预读那一步就把别人的笔记当成不存在：
 //! 报错 / 进 `rejected` 的口径与不存在的 ID 相同，也不会为一次什么都不落的并入先打还原点。
 //!
@@ -136,4 +139,29 @@ pub(crate) fn targets_foreign(
         _ => return Ok(false),
     };
     foreign_seen(c, profile, kind, &id, seen)
+}
+
+/// `apply` 形状的输入项（[super::apply_local_on] 的 [items]）每一项都指向别的 profile 的实体。空批为否。意图命令
+/// 在落库前用它决定要不要做「整条命令的附带写入」（`change` 的还原点）：全是别人的就什么都不写。
+pub(crate) fn items_all_foreign(
+    c: &Connection,
+    profile: &str,
+    items: &[serde_json::Value],
+) -> Result<bool, String> {
+    if items.is_empty() {
+        return Ok(false);
+    }
+    let mut seen = Seen::new();
+    for it in items {
+        let body = super::body_of_event(
+            &it["e"],
+            it["note"].as_str(),
+            it["stamped"] == serde_json::Value::Bool(true),
+            it["server"].as_i64(),
+        )?;
+        if !targets_foreign(c, profile, &body, &mut seen)? {
+            return Ok(false);
+        }
+    }
+    Ok(true)
 }

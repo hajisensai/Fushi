@@ -99,7 +99,15 @@ pub(crate) fn change_on(
     req: &Value,
     items: &mut Vec<Value>,
 ) -> Result<Value, String> {
-    let mut v = match req.get("checkpoint").filter(|cp| cp.is_object()) {
+    super::changing::drop_noops(c, items)?;
+    // 归属（ownership.rs）：这批输入项全都指向别的 profile 的实体时，这条命令什么都不会落——不为它打还原点（与
+    // merge_notes 预读时把别人的笔记当成不存在同一口径）。只有一部分指向别人的照常：还原点 + 本 profile 的那些项
+    // （apply_local_on 逐项判，别人的进回包 `foreign`）。筛完没有输入项的仍打还原点（上面的 noop 规则，不变）。
+    let all_foreign = !items.is_empty() && super::ownership::items_all_foreign(c, profile, items)?;
+    let mut v = match req
+        .get("checkpoint")
+        .filter(|cp| cp.is_object() && !all_foreign)
+    {
         Some(cp) => append_on(
             c,
             profile,
@@ -115,7 +123,6 @@ pub(crate) fn change_on(
         )?,
         None => json!({}),
     };
-    super::changing::drop_noops(c, items)?;
     if !items.is_empty() {
         merge_results(
             &mut v,
