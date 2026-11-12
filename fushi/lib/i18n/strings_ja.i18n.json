@@ -1749,6 +1749,7 @@
   "book_import_duplicate_keep": "はい、接尾辞を付ける",
   "book_import_duplicate_message": "「$name」という書籍は既に存在します。それでもインポートしますか？「はい」で連番の接尾辞を付けてインポート、「いいえ」でキャンセルします。",
   "book_import_duplicate_title": "重複した書籍",
+  "book_import_epub_corrupt": "This EPUB file is incomplete or corrupted (often an unfinished download). Download it again and retry.",
   "book_import_folder_as_source_hint": "このフォルダを継続的にスキャンして新しい本を検出します",
   "book_import_no_book_notice_title": "No book selected",
   "book_import_no_book_subtitle_hint": "You can import with audio alone: pick a subtitle file for it and a book is generated from the subtitles when you import.",

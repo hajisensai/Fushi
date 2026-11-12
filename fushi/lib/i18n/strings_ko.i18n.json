@@ -1749,6 +1749,7 @@
   "book_import_duplicate_keep": "예, 접미사 추가",
   "book_import_duplicate_message": "\"$name\"(이)라는 책이 이미 있습니다. 그래도 가져올까요? \"예\"는 번호 접미사를 붙여 가져오고, \"아니요\"는 취소합니다.",
   "book_import_duplicate_title": "중복된 책",
+  "book_import_epub_corrupt": "This EPUB file is incomplete or corrupted (often an unfinished download). Download it again and retry.",
   "book_import_folder_as_source_hint": "이 폴더를 계속 스캔하여 새 책을 찾습니다",
   "book_import_no_book_notice_title": "No book selected",
   "book_import_no_book_subtitle_hint": "You can import with audio alone: pick a subtitle file for it and a book is generated from the subtitles when you import.",

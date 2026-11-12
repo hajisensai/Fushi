@@ -1749,6 +1749,7 @@
   "book_import_duplicate_keep": "是，加上後綴",
   "book_import_duplicate_message": "書架中已有名為「$name」的書籍。仍要匯入嗎？「是」會加上編號後綴匯入，「否」則取消。",
   "book_import_duplicate_title": "同名書籍",
+  "book_import_epub_corrupt": "This EPUB file is incomplete or corrupted (often an unfinished download). Download it again and retry.",
   "book_import_folder_as_source_hint": "以後自動掃描此資料夾裡的新書",
   "book_import_no_book_notice_title": "沒有選擇書籍",
   "book_import_no_book_subtitle_hint": "沒有書也能匯入：為這段音訊選一個字幕檔，匯入時會據此自動生成一本書。",

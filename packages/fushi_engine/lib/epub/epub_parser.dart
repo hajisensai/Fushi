@@ -18,18 +18,42 @@ import 'package:fushi_engine/foundation/engine_log.dart';
 /// - [parse]: takes raw ZIP bytes, extracts to `extractDir`, returns [EpubBook].
 /// - [parseFromExtracted]: re-parses an already-extracted directory (e.g. after
 ///   app restart, when the book is already on disk).
+/// EPUB 本身的 zip 容器坏了：下载被截断（缺中央目录 / 尾记录）、条目 CRC 不符、
+/// deflate 流损坏等。与「EPUB 结构不合规」（缺 OPF 等）区分开，UI 据此提示用户
+/// 「文件不完整或已损坏，请重新下载」，而不是甩出 archive 包的英文异常原文。
+///
+/// 继承 [FormatException]：替换的正是 archive 抛的 `FormatException` /
+/// `ArchiveException`（后者也继承 [FormatException]），既有 `on FormatException`
+/// 的捕获照常命中。只带字符串字段，可原样穿过 `Isolate.run` 的边界。
+class EpubArchiveCorruptException extends FormatException {
+  const EpubArchiveCorruptException(super.message);
+
+  @override
+  String toString() => 'EpubArchiveCorruptException: $message';
+}
+
 class EpubParser {
   /// `ZipDecoder().decodeBytes(bytes, verify: true)` 的等价物：先不校验地解码，再在
   /// 返回前逐条解压并用 native/fushi_compute 的 CRC-32 核对（包内纯 Dart CRC 是瓶颈）。
-  /// 与 `verify: true` 一致：全部条目都核对、任何一条不符抛同一个
-  /// `ArchiveException('Invalid CRC for file in archive.')`，核对完才交给调用方解压落盘。
+  /// 与 `verify: true` 一致：全部条目都核对，核对完才交给调用方解压落盘。
+  /// zip 层的任何失败（找不到尾记录、条目解压失败、CRC 不符）统一抛
+  /// [EpubArchiveCorruptException]，`message` 保留 archive 的原始原因供日志诊断。
   static Archive _decodeVerified(Uint8List bytes) {
-    final Archive archive = ZipDecoder().decodeBytes(bytes);
-    for (final ArchiveFile file in archive.files) {
-      final Object? content = file.content;
-      if (content is List<int> && ffcCrc32(content) != file.crc32) {
-        throw ArchiveException('Invalid CRC for file in archive.');
+    final Archive archive;
+    try {
+      archive = ZipDecoder().decodeBytes(bytes);
+      for (final ArchiveFile file in archive.files) {
+        final Object? content = file.content;
+        if (content is List<int> && ffcCrc32(content) != file.crc32) {
+          throw EpubArchiveCorruptException(
+            'Invalid CRC for file in archive: ${file.name}',
+          );
+        }
       }
+    } on EpubArchiveCorruptException {
+      rethrow;
+    } on FormatException catch (e) {
+      throw EpubArchiveCorruptException(e.message);
     }
     return archive;
   }

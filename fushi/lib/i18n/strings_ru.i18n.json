@@ -1749,6 +1749,7 @@
   "book_import_duplicate_keep": "Да, добавить суффикс",
   "book_import_duplicate_message": "Книга с названием «$name» уже существует. Всё равно импортировать? «Да» — импорт с числовым суффиксом; «Нет» — отмена.",
   "book_import_duplicate_title": "Дубликат книги",
+  "book_import_epub_corrupt": "This EPUB file is incomplete or corrupted (often an unfinished download). Download it again and retry.",
   "book_import_folder_as_source_hint": "Продолжать сканировать эту папку на наличие новых книг",
   "book_import_no_book_notice_title": "No book selected",
   "book_import_no_book_subtitle_hint": "You can import with audio alone: pick a subtitle file for it and a book is generated from the subtitles when you import.",
