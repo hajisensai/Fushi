@@ -104,6 +104,10 @@ The full plan needs its own design spec under `docs/specs/`. Size: L/XL.
     `srs_devices.dart` (`srsUntrustedDevices` / `srsSetDeviceTrust`), shared with the app's
     Conflict Center. Trusting a device in the app still does not reach the server's srs.db
     (trust is local per replica, by design).
+  - RWKV scheduling runs on the server since 2026-11-11 (spec addendum), through the same
+    `srsAttachRwkv` as the app. Still open: the WebUI does not show the per-profile `rwkv` /
+    `rwkvError` status that `ServerSrsProfile.toJson` now reports, and there is no setting for
+    the native thread count (it uses all cores, like the app).
   - The FSRS optimizer is not run on the server yet (spec §4.6). `SrsOptimizationScheduler`
     already lives in the engine; the server's collections pick up parameters optimized on
     other devices through the normal sync.

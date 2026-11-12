@@ -37,6 +37,7 @@ import 'package:fushi_engine/srs/srs_edit_history.dart';
 import 'package:fushi_engine/srs/srs_note_type_store.dart';
 import 'package:fushi_engine/srs/srs_remote_store.dart';
 import 'package:fushi_engine/srs/srs_remote_store_routes.dart';
+import 'package:fushi_engine/srs/srs_rwkv_scheduling.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -153,8 +154,53 @@ class _Host {
   Future<SrsRemoteStore> remote() => SrsRemoteStore.connect(client());
 }
 
-Future<_Host> _openHost(List<String> expressions) async {
-  final (FushiDatabase db, SrsDbStore store) = await openSrsTestStore();
+/// 主机上的 RWKV 替身：状态由测试拨，记下收到的「开始准备」。
+class _HostRwkv implements SrsRwkvScheduling, SrsRwkvStatusSource {
+  SrsRwkvStatus now = const SrsRwkvStatus(
+    SrsRwkvPhase.preparing,
+    done: 3,
+    total: 10,
+  );
+
+  /// 每次 [start] 的 force。
+  final List<bool> starts = <bool>[];
+
+  @override
+  SrsRwkvStatus get status => now;
+
+  @override
+  Stream<SrsRwkvStatus> get statusChanges =>
+      const Stream<SrsRwkvStatus>.empty();
+
+  @override
+  bool get ready => now.phase == SrsRwkvPhase.ready;
+
+  @override
+  Future<void> start({bool force = false}) async => starts.add(force);
+
+  @override
+  Future<List<double>?> instantRetrievability(
+    List<SrsRwkvCandidate> cards, {
+    required int atMs,
+  }) async => ready ? List<double>.filled(cards.length, 0.1) : null;
+
+  @override
+  Future<List<double>?> currentRetrievability(
+    List<SrsRwkvCandidate> cards, {
+    required int nowMs,
+  }) async => ready ? List<double>.filled(cards.length, 0.1) : null;
+
+  @override
+  Future<void> onAnswered(String cardId, SrsReviewLog log) async {}
+
+  @override
+  Future<void> onCardsPurged(List<String> cardIds) async {}
+}
+
+Future<_Host> _openHost(List<String> expressions, {SrsTestClock? clock}) async {
+  final (FushiDatabase db, SrsDbStore store) = await openSrsTestStore(
+    clock: clock,
+  );
   for (int i = 0; i < expressions.length; i++) {
     await store.createNote(
       noteTypeId: store.lapisNoteTypeId,
@@ -365,6 +411,80 @@ void main() {
       host = await _openHost(<String>['犬', '猫', '鳥']);
     });
     tearDown(() => host.db.close());
+
+    test('主机 RWKV 的准备状态随信封到客户端：进度 / 错误、重试转给主机、就绪由客户端自己发现', () async {
+      final _HostRwkv rwkv = _HostRwkv();
+      host.store.rwkv = rwkv;
+      final SrsRemoteStore remote = await host.remote();
+      final SrsRemoteRwkvStatus shadow = remote.hostRwkv;
+      expect(shadow.ready, isFalse);
+      expect(shadow.status.phase, SrsRwkvPhase.preparing);
+      expect(shadow.status.done, 3);
+      expect(shadow.status.total, 10);
+
+      // 出错：错误文本跟着下一次回包过来；「重试」转给主机（不受失败后的重试间隔限制）。
+      rwkv.now = SrsRwkvStatus(
+        SrsRwkvPhase.failed,
+        error: StateError('weights unreachable'),
+      );
+      await remote.deckSummaries();
+      expect(shadow.status.phase, SrsRwkvPhase.failed);
+      expect('${shadow.status.error}', contains('weights unreachable'));
+      await shadow.start(force: true);
+      expect(rwkv.starts, <bool>[true]);
+      expect(host.ops.last, 'rwkvStart');
+
+      // 主机就绪不是库的写入、不推进修订号：有人在听时客户端自己定时问主机，问到就绪就停。
+      final List<SrsRwkvPhase> events = <SrsRwkvPhase>[];
+      final StreamSubscription<SrsRwkvStatus> sub = shadow.statusChanges.listen(
+        (SrsRwkvStatus s) => events.add(s.phase),
+      );
+      addTearDown(sub.cancel);
+      rwkv.now = const SrsRwkvStatus(SrsRwkvPhase.ready);
+      // 等到客户端自己问到（墙钟定时器 + 一次真实握手，耗时随机器负载）；等不到由下面的断言报红。
+      final Stopwatch waited = Stopwatch()..start();
+      while (events.isEmpty && waited.elapsed < const Duration(seconds: 30)) {
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+      }
+      expect(events, <SrsRwkvPhase>[SrsRwkvPhase.ready]);
+      expect(shadow.ready, isTrue);
+      expect(
+        remote.instantActiveFor(await remote.deckTree(), remote.defaultDeckId),
+        isTrue,
+      );
+      final int asked = host.ops.length;
+      await Future<void>.delayed(
+        SrsRemoteRwkvStatus.pollEvery + const Duration(milliseconds: 600),
+      );
+      expect(host.ops.length, asked, reason: '就绪后不再轮询');
+    });
+
+    test('主机没报 RWKV 状态（老主机 / 没有运行时）：只按就绪与否', () async {
+      final SrsRemoteStore remote = await host.remote();
+      expect(remote.hostRwkv.ready, isFalse);
+      expect(remote.hostRwkv.status.phase, SrsRwkvPhase.idle);
+      expect(
+        SrsRemoteWire.envelopeFrom(const <String, Object?>{
+          'rwkv': true,
+        }).rwkvStatus,
+        isNull,
+      );
+      // 更新的主机报了这一版不认识的阶段：当没有。
+      expect(
+        SrsRemoteWire.envelopeFrom(const <String, Object?>{
+          'rk': <String, Object?>{'p': 'migrating', 'd': 1, 't': 2},
+        }).rwkvStatus,
+        isNull,
+      );
+      final SrsRwkvStatus round = SrsRemoteWire.rwkvStatusFrom(
+        SrsRemoteWire.rwkvStatus(
+          const SrsRwkvStatus(SrsRwkvPhase.downloading, done: 5, total: 9),
+        ),
+      )!;
+      expect(round.phase, SrsRwkvPhase.downloading);
+      expect(round.done, 5);
+      expect(round.total, 9);
+    });
 
     test('读到的与主机库相同；笔记类型按标签缓存只搬一次', () async {
       final SrsRemoteStore remote = await host.remote();
@@ -1368,6 +1488,107 @@ void main() {
       await settle(tester);
       expect(retry, findsNothing);
       expect(faces, isNotEmpty, reason: '主机恢复后重试出卡');
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 1));
+    });
+
+    testWidgets('主机的 RWKV 没就绪：远程复习页显示主机的状态与错误，重试转给主机；主机就绪后自己重排出卡', (
+      WidgetTester tester,
+    ) async {
+      tester.view.physicalSize = const Size(900, 1400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final SrsTestClock clock = SrsTestClock();
+      final _HostRwkv rwkv = _HostRwkv()
+        ..now = SrsRwkvStatus(
+          SrsRwkvPhase.failed,
+          error: StateError('weights unreachable'),
+        );
+      // 主机上只有一张复习卡（两天前毕业），默认牌组按 RWKV 排：主机的 RWKV 没就绪时它不出。
+      final _Host host = (await tester.runAsync(() async {
+        final _Host h = await _openHost(<String>['犬'], clock: clock);
+        final String card = (await h.store.nextCard(h.store.defaultDeckId))!;
+        await h.store.answer(card, 4);
+        clock.advance(const Duration(days: 2));
+        h.store.rwkv = rwkv;
+        return h;
+      }))!;
+      addTearDown(() => tester.runAsync(host.db.close));
+      final Directory dir = Directory.systemTemp.createTempSync('srs_rpk_');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final SrsRemoteHostClient client = host.client();
+      final SrsRemoteMediaStore media = SrsRemoteMediaStore(dir, client);
+      final SrsRemoteStore remote = (await tester.runAsync(
+        () => SrsRemoteStore.connect(client, prefetchMedia: media.prefetch),
+      ))!;
+      final AppModel app = AppModel(testPlatformServices())
+        ..shortcutRegistry.loadDefaults(TargetPlatform.windows);
+      final List<SrsCardFace> faces = <SrsCardFace>[];
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: <Override>[
+            appProvider.overrideWith((Ref ref) => app),
+            srsCardFaceBuilderProvider.overrideWithValue((
+              BuildContext context,
+              SrsCardFace face,
+            ) {
+              // 卡面占位（还没有卡）的 id 是空串：只记真正上屏的卡。
+              if (face.cardId.isNotEmpty) faces.add(face);
+              return SrsPlainCardFace(face: face);
+            }),
+          ],
+          child: TranslationProvider(
+            child: MaterialApp(
+              theme: buildFushiThemeData(
+                scheme: ColorScheme.fromSeed(seedColor: Colors.teal),
+                textTheme: Typography.material2021().black,
+                designSystem: FushiDesignSystem.material,
+                glass: FushiGlassMaterial.off,
+                glassDesign: false,
+              ),
+              builder: (BuildContext context, Widget? child) =>
+                  FushiGlassScope(child: child!),
+              home: SrsRemoteCollectionScope(
+                store: remote,
+                media: media,
+                child: SrsReviewPage(
+                  deckId: remote.defaultDeckId,
+                  deckName: 'Default',
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await settle(tester);
+      final Finder pending = find.byKey(
+        const ValueKey<String>('srs-review-rwkv-pending'),
+      );
+      final Finder retry = find.byKey(
+        const ValueKey<String>('srs-review-rwkv-retry'),
+      );
+      expect(pending, findsOneWidget, reason: '等主机的 RWKV，不按 FSRS-7 的到期日出');
+      expect(faces, isEmpty);
+      expect(find.textContaining('weights unreachable'), findsOneWidget);
+      expect(retry, findsOneWidget, reason: '主机出错时给重试');
+
+      await tester.tap(retry);
+      await settle(tester, rounds: 6);
+      expect(rwkv.starts, <bool>[true], reason: '重试转给主机，不受失败后的重试间隔限制');
+
+      // 主机就绪：没有任何写入推进修订号，客户端靠自己的定时握手发现，复习页随即重排。
+      rwkv.now = const SrsRwkvStatus(SrsRwkvPhase.ready);
+      await tester.pump(SrsRemoteRwkvStatus.pollEvery);
+      // 握手与重排是真异步（主机的库），耗时随机器负载：按轮推进到卡上屏，到不了由下面的断言报红。
+      final Stopwatch waited = Stopwatch()..start();
+      while (faces.isEmpty && waited.elapsed < const Duration(seconds: 30)) {
+        await settle(tester, rounds: 2);
+      }
+      // 卡上屏后「等 RWKV」的占位还要走完切换动效才离开树。
+      await settle(tester);
+      expect(pending, findsNothing);
+      expect(faces, isNotEmpty, reason: '主机就绪后出卡');
 
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump(const Duration(seconds: 1));
