@@ -4616,6 +4616,225 @@ void _bug950Guard() {
     endpoints.dispose();
   });
 
+  group('Unity 对白面道自动选中（kTextEventFlagDialogueSurface）', () {
+    // 三种真机证据形状的合成重放（不含真实台词）。Unity 画布文本一组件一道：
+    // sourceKind 3（unity_tmp）、thread id = 组件指针 + setter hook code。
+    const int kUnityTmp = 3;
+    const String kSetText = 'Mono:TMPro.TMP_Text.set_text';
+    const String kSetTextBool = 'Mono:TMPro.TMP_Text.SetText(string,bool)';
+    const String kSetTextSingle = 'Mono:TMPro.TMP_Text.SetText(string)';
+    const String kUiText = 'Mono:UnityEngine.UI.Text.set_text';
+
+    GalHookedLine unity(
+      int seq,
+      int threadId,
+      String hookCode,
+      String text, {
+      bool dialogue = false,
+    }) => GalHookedLine(
+      seq: seq,
+      timestampMs: 1000 + seq,
+      text: text,
+      threadId: threadId,
+      threadAddress: 0x7ff000000000 + threadId,
+      sourceKind: kUnityTmp,
+      eventKind: text.isEmpty
+          ? GalTextEventKind.threadDiscovered
+          : GalTextEventKind.line,
+      eventFlags: dialogue ? GalHookedLine.flagDialogueSurface : 0,
+      hookName: hookCode == kUiText
+          ? 'Unity Mono UI.Text'
+          : 'Unity Mono TMP_Text',
+      hookCode: hookCode,
+    );
+
+    GalHookSessionController controllerFor(
+      TexthookerService service,
+      ChangeNotifier endpoints,
+      _FakeEngineSource engine,
+    ) => GalHookSessionController(
+      textService: service,
+      isWindows: true,
+      targetWow64Probe: (_) async => false,
+      injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
+      engineSourceFactory:
+          ({
+            required int targetPid,
+            required String? launchExe,
+            required String injectorPath,
+            required bool lunaPcHooks,
+            int? lunaCodepage,
+            List<String> launchArguments = const <String>[],
+            String launchWorkdir = '',
+            GalJapaneseLocaleMode japaneseLocaleMode =
+                kGalDefaultJapaneseLocaleMode,
+            String? contentLanguage,
+          }) => engine,
+      loopbackSourceFactory: _FakeLoopbackSource.new,
+      textPollInterval: const Duration(milliseconds: 5),
+      endpointListenable: endpoints,
+      endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+    );
+
+    // 形状 1（TMP）：~50 条 set_text UI 标签各 1 行 + 对白在一条
+    // SetText(string,bool) 道上；第 4 句时 native 判定成对白面。
+    List<GalHookedLine> manyLabelsShape({required bool promoted}) {
+      int seq = 0;
+      const int dialogue = 9001;
+      return <GalHookedLine>[
+        for (int i = 0; i < 50; i++) unity(++seq, 100 + i, kSetText, 'ラベル$i'),
+        for (int n = 1; n <= 4; n++)
+          unity(++seq, dialogue, kSetTextBool, '「合成の台詞その$nです」'),
+        if (promoted) unity(++seq, dialogue, kSetTextBool, '', dialogue: true),
+        if (promoted)
+          unity(++seq, dialogue, kSetTextBool, '「合成の台詞その5です」', dialogue: true),
+      ];
+    }
+
+    // 形状 2（TMP 3.2）：设置页 UI.Text 打字机预览逐字增长、循环同一句——观测数
+    // 最多（这里 1000+ 行）；对白在 SetText(string) 道上逐字增长，后来被判成对白面。
+    List<GalHookedLine> loopingPreviewShape() {
+      int seq = 0;
+      const int preview = 300;
+      const int dialogue = 9002;
+      const String sentence = 'プレビュー用の合成文です';
+      final List<GalHookedLine> lines = <GalHookedLine>[];
+      for (int cycle = 0; cycle < 90; cycle++) {
+        for (int n = 1; n <= sentence.length; n++) {
+          lines.add(unity(++seq, preview, kUiText, sentence.substring(0, n)));
+        }
+      }
+      for (int line = 1; line <= 5; line++) {
+        final String text = '「合成の台詞その$lineです」';
+        for (int n = 1; n <= text.length; n++) {
+          lines.add(
+            unity(
+              ++seq,
+              dialogue,
+              kSetTextSingle,
+              text.substring(0, n),
+              dialogue: line == 5,
+            ),
+          );
+        }
+        if (line == 4) {
+          lines.add(unity(++seq, dialogue, kSetTextSingle, '', dialogue: true));
+        }
+      }
+      return lines;
+    }
+
+    // 形状 3（UI.Text）：只有一条 UI.Text 道出叙述。
+    List<GalHookedLine> singleNarrationShape() {
+      int seq = 0;
+      const int narration = 9003;
+      return <GalHookedLine>[
+        for (int n = 1; n <= 4; n++)
+          unity(++seq, narration, kUiText, '合成の地の文その$n。'),
+        unity(++seq, narration, kUiText, '', dialogue: true),
+        unity(++seq, narration, kUiText, '合成の地の文その5。', dialogue: true),
+      ];
+    }
+
+    for (final (String name, List<GalHookedLine> Function() shape, int wanted)
+        in <(String, List<GalHookedLine> Function(), int)>[
+          ('many TMP labels', () => manyLabelsShape(promoted: true), 9001),
+          ('looping UI.Text preview', loopingPreviewShape, 9002),
+          ('single UI.Text narration', singleNarrationShape, 9003),
+        ]) {
+      test('$name：native 标成对白面的道被自动选中', () async {
+        final TexthookerService service = TexthookerService.test();
+        final ChangeNotifier endpoints = ChangeNotifier();
+        final _FakeEngineSource engine = _FakeEngineSource(
+          pairedBytes: Uint8List(0),
+          audioFormat: null,
+          textReady: true,
+          polledLines: shape(),
+        );
+        final GalHookSessionController controller = controllerFor(
+          service,
+          endpoints,
+          engine,
+        );
+        await controller.startAttachedCapture(
+          const ExternalWindowInfo(hwnd: 8, pid: 909, title: 'Unity'),
+        );
+        for (
+          int i = 0;
+          i < 200 && controller.selectedNativeTextThreadId != wanted;
+          i++
+        ) {
+          await Future<void>.delayed(const Duration(milliseconds: 5));
+        }
+
+        expect(controller.selectedNativeTextThreadId, wanted);
+        final TexthookerTextThread chosen = service.textThreads.firstWhere(
+          (TexthookerTextThread thread) => thread.nativeThreadId == wanted,
+        );
+        expect(chosen.dialogueSurface, isTrue);
+        expect(isEngineExactTextThread(chosen), isTrue);
+        expect(controller.selectedTextThreadKey, chosen.key);
+        // 其它 Unity 道（含观测数最多的预览道）都没有被当成对白面。
+        for (final TexthookerTextThread other in service.textThreads) {
+          if (other.nativeThreadId == wanted) continue;
+          expect(other.dialogueSurface, isFalse, reason: other.key);
+          expect(isEngineExactTextThread(other), isFalse, reason: other.key);
+        }
+        expect(
+          controller.events.map((GalHookEvent event) => event.code),
+          contains('text.thread_engine_exact_selected'),
+        );
+
+        await controller.close();
+        endpoints.dispose();
+      });
+    }
+
+    test('没有对白面标记时，几十条 Unity 道一条都不自动选（频率不是判据）', () async {
+      final TexthookerService service = TexthookerService.test();
+      final ChangeNotifier endpoints = ChangeNotifier();
+      final List<GalHookedLine> lines = <GalHookedLine>[
+        ...manyLabelsShape(promoted: false),
+        // 再叠一条出行最多的打字机预览道。
+        for (int n = 1; n <= 12; n++)
+          unity(54 + n, 300, kUiText, 'プレビュー用の合成文です'.substring(0, n)),
+      ];
+      final _FakeEngineSource engine = _FakeEngineSource(
+        pairedBytes: Uint8List(0),
+        audioFormat: null,
+        textReady: true,
+        polledLines: lines,
+      );
+      final GalHookSessionController controller = controllerFor(
+        service,
+        endpoints,
+        engine,
+      );
+      await controller.startAttachedCapture(
+        const ExternalWindowInfo(hwnd: 8, pid: 909, title: 'Unity'),
+      );
+      // 等到最后一行确实被摄入（自动选线程的判定就在同一轮 poll 里跑完）。
+      for (int i = 0; i < 200; i++) {
+        final Iterable<TexthookerTextThread> preview = service.textThreads
+            .where((TexthookerTextThread t) => t.nativeThreadId == 300);
+        if (preview.isNotEmpty && preview.first.observedLineCount >= 12) break;
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+      final TexthookerTextThread preview = service.textThreads.firstWhere(
+        (TexthookerTextThread t) => t.nativeThreadId == 300,
+      );
+      expect(preview.observedLineCount, 12);
+      expect(controller.selectedNativeTextThreadId, isNull);
+      expect(
+        controller.events.map((GalHookEvent event) => event.code),
+        isNot(contains('text.thread_engine_exact_selected')),
+      );
+
+      await controller.close();
+      endpoints.dispose();
+    });
+  });
+
   test('BUG-2069：配对到的资源语音必须把整句时长写回行条目（制卡动图靠它决定抓多长）', () async {
     final TexthookerService service = TexthookerService.test();
     final ChangeNotifier endpoints = ChangeNotifier();

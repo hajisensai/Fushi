@@ -410,6 +410,16 @@ constexpr uint32_t kTextEventFlagExactThreadContext = 0x00000002u;
 // keep one hook code for several lanes (FVP per text buffer, Luca, BGI,
 // YU-RIS, Kogado Hy per identity) must not set it.
 constexpr uint32_t kTextEventFlagLaneUniqueHookCode = 0x00000004u;
+// The writer proved structurally that this lane is the game's dialogue
+// surface *now* (Unity Mono canvas texts: unity_mono_dialogue_core.h -- the
+// shown line is replaced after the player's advance inputs, strictly more
+// often than any other canvas text).  The mark is current state, not
+// history: every event of the lane carries the writer's current verdict, and
+// a lane that loses the mark gets one thread-discovered event without it.
+// Consumers treat a marked lane like an engine-exact thread (auto-select it,
+// respecting the user's own choice) and the latest event of a lane wins.
+// 0x8 = first unused bit on every local/remote ref (checked 2026-11-11).
+constexpr uint32_t kTextEventFlagDialogueSurface = 0x00000008u;
 
 // 语音 clip 索引：最近 kClipCount 条语音片段的位置记录（按 source voice / DirectSound buffer
 // 的一次提交切一条；galgame 一句台词≈一条语音）。指向音频环形里的 [ring_offset, byte_len)。

@@ -48,6 +48,7 @@
 #include "immediate_text_repeat_filter.h"
 #include "adapters/unity_mono_text.h"
 #include "adapters/unity_mono_lookup_core.h"
+#include "adapters/unity_mono_dialogue_core.h"
 #include "adapters/unity_mono_audio.h"
 #include "adapter.h"
 #include "module_settle.h"

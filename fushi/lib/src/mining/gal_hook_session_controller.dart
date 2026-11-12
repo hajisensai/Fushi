@@ -6526,6 +6526,7 @@ class GalHookSessionController extends ChangeNotifier {
               text: line.text,
               hookCode: line.hookCode.isEmpty ? null : line.hookCode,
               hookCodeLaneUnique: line.hookCodeIsLaneUnique,
+              dialogueSurface: line.isDialogueSurface,
               nativeThreadId: line.threadId == 0 ? null : line.threadId,
               notify: false,
             );
@@ -6551,6 +6552,7 @@ class GalHookSessionController extends ChangeNotifier {
               label: threadLabel,
               hookCode: line.hookCode.isEmpty ? null : line.hookCode,
               hookCodeLaneUnique: line.hookCodeIsLaneUnique,
+              dialogueSurface: line.isDialogueSurface,
               nativeThreadId: line.threadId,
             );
           }

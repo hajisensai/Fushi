@@ -67,6 +67,7 @@ add_library(fushi_voice_hook SHARED
   "hook/adapters/unity_mono_text.h"
   "hook/adapters/unity_mono_lookup.inc"
   "hook/adapters/unity_mono_lookup_core.h"
+  "hook/adapters/unity_mono_dialogue_core.h"
   "hook/adapters/windows_audio_adapter.inc"
   "hook/adapters/siglus_adapter.inc"
   "hook/adapters/exact_lookup_signature.h"
@@ -1050,6 +1051,15 @@ target_compile_definitions(fushi_unity_mono_lookup_test PRIVATE
   UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 add_test(NAME fushi_unity_mono_lookup_test
   COMMAND fushi_unity_mono_lookup_test)
+# Unity Mono dialogue-surface proof: typewriter growth, shown / input-caused /
+# distinct commits, the per-frame leader with its margin, replayed on the
+# three measured lane shapes (many UI labels, a looping settings preview,
+# a single UI.Text narration) plus name plates, auto mode and eviction.
+add_executable(fushi_unity_mono_dialogue_test
+  "tests/unity_mono_dialogue_test.cpp")
+target_include_directories(fushi_unity_mono_dialogue_test PRIVATE "hook")
+add_test(NAME fushi_unity_mono_dialogue_test
+  COMMAND fushi_unity_mono_dialogue_test)
 
 add_executable(fushi_engine_identity_layout_test
   "tests/engine_identity_layout_test.cpp")
