@@ -745,7 +745,7 @@ void main() {
     expect(b.sync2Migrated, isFalse);
     // 收段的每一片开投之前：这个会话走不走通道（`ingest_begin` 的回报）。
     final List<bool> slices = <bool>[];
-    b.debugOnIngestSlice = () => slices.add(b.debugChannelLive);
+    b.debugOnIngestSlice = () => slices.add(b.debugIngestChannel);
     // 正式一轮开跑时：迁移做了没有、A 的复习收到了没有、之前投过几片。
     final List<({bool migrated, int ops, int slices})> formal =
         <({bool migrated, int ops, int slices})>[];
@@ -891,7 +891,6 @@ void main() {
         db: db,
         activeProfileId: () async => profileId,
         reopenStore: () async => store = await open(),
-        writeLock: SrsCurrentStoreWriteLock(() => store),
         onError: (String where, Object e, StackTrace _) => fail('$where: $e'),
         pullBeforeMerge: (SrsDbStore target, SyncAssetStore? within) async {
           await s.pullBeforeMerge(target, within);
