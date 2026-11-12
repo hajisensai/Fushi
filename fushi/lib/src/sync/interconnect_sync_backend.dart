@@ -231,6 +231,7 @@ class InterconnectSyncBackend extends SyncBackend
         RemoteVideoGraphicSubtitleTrackFetch,
         RemoteVideoSidecarSubtitleFetch,
         RemoteVideoPlaybackSync,
+        RemoteVideoPlaybackRelease,
         RemoteVideoQualityLimit,
         RemoteVideoDanmakuKeyFetch,
         RemoteVideoWorkMetadataFetch,
@@ -1258,19 +1259,27 @@ class InterconnectSyncBackend extends SyncBackend
 
   /// 互联「主机版本」：取 host 的 app 版本、可用更新与更新进度（反馈 Pp8XPyve0N）。
   ///
-  /// 返回 null = host 不提供远程更新（老 host / 无头服务端 404）。host 明确拒绝
+  /// `status` 为 null = host 不提供远程更新（老 host / 无头服务端 404）。host 明确拒绝
   /// （未开开关 / 共享 token / 平台不支持）抛 [HostUpdateRejected]，其余错误照
   /// [WebDavOps.checkStatus] 抛。响应里的 `nonce` 是下一次 [triggerRemoteHostUpdate]
   /// 要带的一次性票据。[refresh] = 让 host 先（节流地）去更新源查一次。
   ///
   /// 与配置搬运不同，这里不要求 https：只读版本号不敏感，触发另有一次性 nonce +
   /// host 开关几道门（明文会话上的 token 本就在同一信任级别；不按来源网络区分）。
-  Future<HostUpdateStatus?> getRemoteHostUpdateStatus({
+  ///
+  /// 应答带上答话那台 host 的身份（[connectedHostIdentity] 口径）。本类是单例、会话
+  /// 落在「此刻可达的那台」上：已配对多台 host 时，前后两次调用可能问到不同的 host。
+  /// [onlyHost] 非 null = 只认这台——会话此刻连的是另一台时抛 [HostUpdateOtherHost]，
+  /// 不发请求（BUG-4457：跟踪一轮更新期间被更新的 host 在重启，会话换到另一台，
+  /// 它的版本号被当成「已更新到 X」）。
+  Future<HostUpdateAnswer> getRemoteHostUpdateStatus({
     required SyncRepository repo,
     bool refresh = false,
+    String? onlyHost,
   }) async {
     await _reloadSessionFrom(repo);
     await _ensureResolved();
+    final String host = _hostUpdateSessionHost(onlyHost);
     final HttpClientRequest req = await _ops!.buildRequest(
       'GET',
       '$_apiBase$kHostUpdatePath${refresh ? '?refresh=1' : ''}',
@@ -1278,20 +1287,38 @@ class InterconnectSyncBackend extends SyncBackend
     final HttpClientResponse res = await _sendBounded(req);
     if (res.statusCode == 404) {
       await res.drain<void>();
-      return null;
+      return (host: host, status: null);
     }
     await _checkHostUpdateResponse(res, 'GET $kHostUpdatePath');
-    return _parseHostUpdateStatus(await _readBodyBounded(res));
+    return (
+      host: host,
+      status: _parseHostUpdateStatus(await _readBodyBounded(res)),
+    );
+  }
+
+  /// 会话解析完后取所连 host 的身份；[onlyHost] 非 null 且不是这台时抛
+  /// [HostUpdateOtherHost]。必须紧跟 [_ensureResolved]、中间不隔 await：之后建的
+  /// 请求用的就是这一刻的 [_ops]。
+  String _hostUpdateSessionHost(String? onlyHost) {
+    final String host = _activeHostIdentity!;
+    if (onlyHost != null && onlyHost != host) {
+      throw HostUpdateOtherHost(expected: onlyHost, actual: host);
+    }
+    return host;
   }
 
   /// 让 host 开始更新自己（反馈 Pp8XPyve0N）。[nonce] 取自刚拿到的
-  /// [getRemoteHostUpdateStatus] 响应，单次有效。
+  /// [getRemoteHostUpdateStatus] 响应，单次有效。[onlyHost] 同
+  /// [getRemoteHostUpdateStatus]：用户确认的是那台 host 的更新，会话换到了另一台就
+  /// 不发请求。
   Future<HostUpdateStatus> triggerRemoteHostUpdate({
     required SyncRepository repo,
     required String nonce,
+    String? onlyHost,
   }) async {
     await _reloadSessionFrom(repo);
     await _ensureResolved();
+    _hostUpdateSessionHost(onlyHost);
     final HttpClientRequest req = await _ops!.buildRequest(
       'POST',
       '$_apiBase$kHostUpdatePath',
@@ -2800,23 +2827,113 @@ class InterconnectSyncBackend extends SyncBackend
   /// 或不肯转（用户关了开关 / 跑不了 ffmpeg）时会照旧回直传 URL，client 无需分支。
   ///
   /// 「自动」档对一个新的源起播时先按链路定起点（[_startAutoQuality]）。
+  ///
+  /// 每次调用开一个**播放会话**（BUG-4461）：本次签的流票记在会话名下，页面丢掉
+  /// 这次播放的流时（[releaseRemoteVideoPlayback]）一并释放。会话在入口**同步**登记，
+  /// 不等任何 await——页面在换集 / 换档 / 退出边界上先同步发起释放、再起新的播放，
+  /// 两者顺序与调用顺序一致。同一 [id] 的新会话顶替旧会话的登记但不释放旧票：旧会话若是另一个
+  /// 仍在播的页面（例如在播放页之上打开同一视频的卡片回看），释放会掐断它的流；没人
+  /// 停的旧票按 host 的 TTL 过期，与此前相同。
   @override
   Future<RemoteVideoStreamUrls> remoteVideoStreamUrls(
     String id, {
     int episodeIndex = 0,
   }) async {
+    final _PlaybackTicketSession session = _PlaybackTicketSession();
+    _playbackSessions[id] = session;
     await _ensureResolved();
     if (_isAutoQuality) {
       final String scope = _adaptiveScopeFor(id, episodeIndex);
       if (adaptiveQualityIndex == null || adaptiveQualityScope != scope) {
-        return _startAutoQuality(id, episodeIndex: episodeIndex, scope: scope);
+        return _startAutoQuality(
+          id,
+          episodeIndex: episodeIndex,
+          scope: scope,
+          session: session,
+        );
       }
     }
-    return _fetchVideoStreamUrls(
+    return _fetchPlaybackStreamUrls(
+      session,
       id,
       episodeIndex: episodeIndex,
       preset: effectiveQualityPreset(hostUrl: _apiBase),
     );
+  }
+
+  /// 各视频 id 当前的播放会话（BUG-4461）。只在进程内存，不持久化。
+  final Map<String, _PlaybackTicketSession> _playbackSessions =
+      <String, _PlaybackTicketSession>{};
+
+  /// 页面丢掉这次播放的流（退出 / 换集 / 换档前）：释放这次播放签的流票，host 立刻
+  /// 停掉它们排队与在跑的转码（BUG-4461）。老 host 不回 ticket，这里没有可释放的，
+  /// 什么也不发。自然播完不走这里（页面仍可回拖 / 重看），见 [RemoteVideoPlaybackRelease]。
+  ///
+  /// 会话同步摘下并标记为已释放（之后才签回来的票由 [_fetchPlaybackStreamUrls] 收到
+  /// 即释放）；各票的 `/streamrelease` 并发发出，不串行排队——调用方本就不等它。
+  @override
+  Future<void> releaseRemoteVideoPlayback(String id) {
+    final _PlaybackTicketSession? session = _playbackSessions.remove(id);
+    if (session == null) return Future<void>.value();
+    session.released = true;
+    final List<({String base, String ticket})> tickets =
+        List<({String base, String ticket})>.of(session.tickets);
+    session.tickets.clear();
+    return Future.wait<void>(<Future<void>>[
+      for (final ({String base, String ticket}) t in tickets)
+        _releaseVideoTicket(id, t),
+    ]);
+  }
+
+  /// 向签发 [t] 的那个 host 基址发 `/streamrelease`。尽力清理：失败只记日志，
+  /// host 的 TTL 兜底，不影响离开 / 换集。
+  Future<void> _releaseVideoTicket(
+    String id,
+    ({String base, String ticket}) t,
+  ) async {
+    final WebDavOps? ops = _ops;
+    if (ops == null) return;
+    try {
+      final HttpClientRequest req = await ops.buildRequest(
+        'POST',
+        '${t.base}/api/library/videos/${_encodeVideoId(id)}/streamrelease'
+            '?ticket=${Uri.encodeQueryComponent(t.ticket)}',
+      );
+      final HttpClientResponse res = await _sendBounded(req);
+      await res.drain<void>();
+      if (res.statusCode >= 300) {
+        debugPrint('[InterconnectVideo] stream release HTTP ${res.statusCode}');
+      }
+    } on Object catch (e) {
+      debugPrint('[InterconnectVideo] stream release failed: $e');
+    }
+  }
+
+  /// 为播放会话 [session] 取流并记下流票。会话已在途中被停掉时，这张票收到即释放
+  /// （调用方的这次载入已作废），URL 照常返回。
+  Future<RemoteVideoStreamUrls> _fetchPlaybackStreamUrls(
+    _PlaybackTicketSession session,
+    String id, {
+    int episodeIndex = 0,
+    required MediaServerQualityPreset? preset,
+  }) async {
+    final String base = _apiBase;
+    final ({RemoteVideoStreamUrls urls, String? ticket}) result =
+        await _fetchVideoStreamTicket(
+          id,
+          episodeIndex: episodeIndex,
+          preset: preset,
+        );
+    final String? ticket = result.ticket;
+    if (ticket != null) {
+      final ({String base, String ticket}) entry = (base: base, ticket: ticket);
+      if (session.released) {
+        await _releaseVideoTicket(id, entry);
+      } else {
+        session.tickets.add(entry);
+      }
+    }
+    return result.urls;
   }
 
   /// 「自动」档对 [scope] 这个源的起点（反馈 uaBRMzK_WM：内网应能看 BD 满码率）。
@@ -2835,18 +2952,22 @@ class InterconnectSyncBackend extends SyncBackend
     String id, {
     required int episodeIndex,
     required String scope,
+    required _PlaybackTicketSession session,
   }) async {
     final String base = _apiBase;
     if (privateNetworkHostJudge(base)) {
       adaptiveQualityIndex = -1;
       adaptiveQualityScope = scope;
-      return _fetchVideoStreamUrls(
+      return _fetchPlaybackStreamUrls(
+        session,
         id,
         episodeIndex: episodeIndex,
         preset: null,
       );
     }
-    final RemoteVideoStreamUrls original = await _fetchVideoStreamUrls(
+    // 测链路用的原画票也记进会话：撑得住原片时它就是播放流本身。
+    final RemoteVideoStreamUrls original = await _fetchPlaybackStreamUrls(
+      session,
       id,
       episodeIndex: episodeIndex,
       preset: null,
@@ -2873,7 +2994,8 @@ class InterconnectSyncBackend extends SyncBackend
     adaptiveQualityIndex = start;
     adaptiveQualityScope = scope;
     if (start < 0) return original;
-    return _fetchVideoStreamUrls(
+    return _fetchPlaybackStreamUrls(
+      session,
       id,
       episodeIndex: episodeIndex,
       preset: kInterconnectQualityPresets[start],
@@ -2954,7 +3076,21 @@ class InterconnectSyncBackend extends SyncBackend
   /// 向 host 签发 stream URL；[preset] 为 null = 不报画质档，host 回原文件直传。
   /// 下载入库恒走 null（画质档是**播放**的弱网策略，下载要的是原片，见
   /// [downloadRemoteVideo]）。
+  ///
+  /// 不记流票（BUG-4461）：下载不是播放会话，播放停止不该作废下载正在用的票。
   Future<RemoteVideoStreamUrls> _fetchVideoStreamUrls(
+    String id, {
+    int episodeIndex = 0,
+    required MediaServerQualityPreset? preset,
+  }) async => (await _fetchVideoStreamTicket(
+    id,
+    episodeIndex: episodeIndex,
+    preset: preset,
+  )).urls;
+
+  /// [_fetchVideoStreamUrls] 连同 host 回的流票（`ticket`，老 host 不回 → null）。
+  Future<({RemoteVideoStreamUrls urls, String? ticket})>
+  _fetchVideoStreamTicket(
     String id, {
     int episodeIndex = 0,
     required MediaServerQualityPreset? preset,
@@ -2982,7 +3118,11 @@ class InterconnectSyncBackend extends SyncBackend
     _hostTranscodeAvailable = json['transcodeAvailable'] == true;
     final Object? bitrate = json['sourceBitrate'];
     _sourceBitrate = bitrate is int && bitrate > 0 ? bitrate : null;
-    return RemoteVideoStreamUrls.fromJson(json);
+    final Object? ticket = json['ticket'];
+    return (
+      urls: RemoteVideoStreamUrls.fromJson(json),
+      ticket: ticket is String && ticket.isNotEmpty ? ticket : null,
+    );
   }
 
   /// media_kit 兼容接口：当前协议走 token URL，因此无需额外 HTTP headers。
@@ -3686,4 +3826,29 @@ class InterconnectSyncBackend extends SyncBackend
       ops.close(force: true);
     }
   }
+}
+
+/// 一次远端播放会话签下的流票（BUG-4461）。[released] 之后再签回来的票收到即释放。
+final class _PlaybackTicketSession {
+  bool released = false;
+  final List<({String base, String ticket})> tickets =
+      <({String base, String ticket})>[];
+}
+
+/// 一次主机版本应答：答话那台 host 的身份（`InterconnectSyncBackend
+/// .connectedHostIdentity` 口径）与它的状态；`status == null` = 这台 host 不提供
+/// 远程更新（老 host / 无头服务端 404）。
+typedef HostUpdateAnswer = ({String host, HostUpdateStatus? status});
+
+/// 主机版本请求被钉在 [expected] 这台 host 上，而会话此刻连的是 [actual]：请求没有
+/// 发出。对调用方等同于「那台 host 现在问不到」（BUG-4457）。
+class HostUpdateOtherHost implements Exception {
+  const HostUpdateOtherHost({required this.expected, required this.actual});
+
+  final String expected;
+  final String actual;
+
+  @override
+  String toString() =>
+      'HostUpdateOtherHost(expected: $expected, actual: $actual)';
 }
