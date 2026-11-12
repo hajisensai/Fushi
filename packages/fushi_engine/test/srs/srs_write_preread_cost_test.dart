@@ -10,8 +10,8 @@
 // | editFieldsBatch（3 张卡） | (1, 1) | (0, 1) |
 // | writeEdits（3 条笔记） | (1, 1) | (0, 1) |
 // | createNote | (1, 1) | (0, 1) |
-// | changeNoteType（6 条笔记） | (7, 1) | (6, 1)：少现值预读 1 条 |
-// | migrateLegacyLapis（6 条笔记） | (15, 1) | (12, 1)：少第二遍物化 2 条 + 现值预读 1 条 |
+// | changeNoteType（6 条笔记） | (7, 1) | (5, 1)：少现值预读 2 条（笔记、卡片各一条） |
+// | migrateLegacyLapis（6 条笔记） | (15, 1) | (11, 1)：少第二遍物化 2 条 + 现值预读 2 条 |
 // | applyLapisBackfill（2 条要补） | (9, 1) | (8, 1)：少现值预读 1 条 |
 // | srsPurgeNotesNow（5 条 / 205 条笔记） | (0, 5) / (0, 205) | (0, 1) / (0, 2) |
 //
@@ -352,8 +352,8 @@ void main() {
   });
 }
 
-/// 这三条路径改动后的 Drift 语句数（只读查询；每条是什么见各自的实现）。改动前各多：换笔记类型 1 条（现值预读）、
-/// 旧 Lapis 迁移 3 条（第二遍物化的 2 条 + 现值预读 1 条）、补迁 1 条（现值预读）。
-const int kChangeNoteTypeStatements = 6;
-const int kMigrateLegacyLapisStatements = 12;
+/// 这三条路径改动后的 Drift 语句数（只读查询；每条是什么见各自的实现）。改动前各多：换笔记类型 2 条（现值预读：
+/// 笔记、卡片两类实体各一条）、旧 Lapis 迁移 4 条（第二遍物化的 2 条 + 现值预读 2 条）、补迁 1 条（现值预读，只有笔记）。
+const int kChangeNoteTypeStatements = 5;
+const int kMigrateLegacyLapisStatements = 11;
 const int kApplyLapisBackfillStatements = 8;
