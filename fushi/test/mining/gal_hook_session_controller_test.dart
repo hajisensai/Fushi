@@ -5157,6 +5157,44 @@ void _gameExitWatchTests() {
     endpoints.dispose();
   });
 
+  test('同目录启动器 stub 在第一次采样前就退出：launch 会话交接给它拉起的本体', () async {
+    // ファタモルガーナ：原始入口 fata_jp.exe 只 CreateProcessW 拉起同目录的
+    // fata.exe -language=jp 就退出，注入器回报的 LAUNCH pid（假引擎 4242）一次也
+    // 没被判活过。旧实现套「从没见过活着就永不判死」，会话永远停在已退出的 stub 上。
+    final ChangeNotifier endpoints = ChangeNotifier();
+    final _FakeGameProcessProbe probe = _FakeGameProcessProbe()
+      ..alive.add(5001)
+      ..processes.add(
+        const GalgameProcessInfo(
+          pid: 5001,
+          imagePath: r'D:\Games\Fata\fata.exe',
+        ),
+      );
+    final List<int> engineTargetPids = <int>[];
+    final GalHookSessionController controller = buildController(
+      probe: probe,
+      endpoints: endpoints,
+      engineTargetPids: engineTargetPids,
+    );
+    expect(
+      (await controller.launchGame(r'D:\Games\Fata\fata_jp.exe')).launched,
+      isTrue,
+    );
+    await pumpUntil(
+      () => codes(controller).contains('session.game_process_handoff'),
+    );
+    expect(codes(controller), contains('session.game_process_handoff'));
+    await pumpUntil(() => engineTargetPids.contains(5001));
+    expect(engineTargetPids.last, 5001);
+    expect(controller.state.gamePid, 5001);
+    expect(controller.state.isActive, isTrue);
+    expect(controller.gameExitedCount.value, 0);
+    expect(codes(controller), isNot(contains('session.game_exited')));
+
+    await controller.close();
+    endpoints.dispose();
+  });
+
   test('BUG-4002：游戏目录下有接手进程（自重启）时整条会话跟到新进程', () async {
     final ChangeNotifier endpoints = ChangeNotifier();
     final _FakeGameProcessProbe probe = _FakeGameProcessProbe()

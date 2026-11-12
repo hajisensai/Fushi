@@ -2756,6 +2756,7 @@ class GalHookSessionController extends ChangeNotifier {
           generation: generation,
           pid: runningPid,
           identity: identity,
+          launchedByFushi: true,
         );
         if (tyranoDomPlan != null) {
           _startTyranoDom(
@@ -2868,6 +2869,7 @@ class GalHookSessionController extends ChangeNotifier {
       generation: generation,
       pid: gamePid,
       identity: identity,
+      launchedByFushi: true,
     );
     if (tyranoDomPlan != null) {
       _startTyranoDom(generation, port: tyranoDomPlan.port, pid: gamePid);
@@ -2889,10 +2891,16 @@ class GalHookSessionController extends ChangeNotifier {
   /// 不受 `canTrackPlaytime` 限制：库外附着的游戏同样要在退出时结束会话。
   /// 会话被换代（stop、重启、attach、接手）即自停；源停止时（[_stopSourcesInternal]）
   /// 一并取消。
+  ///
+  /// [launchedByFushi]：[pid] 是注入器 `LAUNCH pid=` 回报的、Fushi 自己拉起的进程，
+  /// 它存在过是事实（见 [GalGameExitWatch] 的 `existenceConfirmed`）——转手即退的同目录
+  /// 启动器 stub 在第一次采样前就死了，也必须能交接给它拉起的本体。附着路径不传：那里
+  /// 的 PID 可能属于判活恒失败的受保护进程。
   void _startGameExitWatch({
     required int generation,
     required int? pid,
     required GalHookSessionIdentity identity,
+    bool launchedByFushi = false,
   }) {
     _gameExitTimer?.cancel();
     _gameExitTimer = null;
@@ -2906,6 +2914,7 @@ class GalHookSessionController extends ChangeNotifier {
         probe: probe,
       ),
       confirmSamples: _gameExitConfirmSamples,
+      existenceConfirmed: launchedByFushi,
     );
     // PID 未知又没有游戏目录可认领：没有任何判据，不起空转的定时器。
     if (watch.pid <= 0 && watch.group.gameDirectory == null) return;
@@ -3021,9 +3030,23 @@ class GalHookSessionController extends ChangeNotifier {
     _gameExitedCount.value++;
   }
 
+  /// 测试套件级默认：构造时没注入 `gameProcessProbe` 的控制器用它代替真实 Windows probe。
+  ///
+  /// `test/flutter_test_config.dart` 把它钉成「没有 probe」——与 Linux CI 上
+  /// `Platform.isWindows == false` 的行为一致。否则 Windows 开发机上每个只造了假引擎
+  /// （假 PID）的用例都会去读**真实进程表**：假 PID 在真机上不存在（或碰巧属于别的
+  /// 进程），launch 路径又把注入器回报的 PID 视为确实存在过（`existenceConfirmed`），
+  /// 跑得久一点的用例就会被判「游戏已退出」而中途停会话。要测退出监视的用例显式注入
+  /// probe，优先于这里。生产代码从不设置它。
+  @visibleForTesting
+  static GalgameProcessProbe? Function()? debugDefaultGameProcessProbe;
+
   GalgameProcessProbe? _resolveGameProcessProbe() {
     final GalgameProcessProbe? injected = _gameProcessProbeOverride;
     if (injected != null) return injected;
+    final GalgameProcessProbe? Function()? debugDefault =
+        debugDefaultGameProcessProbe;
+    if (debugDefault != null) return debugDefault();
     if (!_isWindows || !Platform.isWindows) return null;
     try {
       return _sharedProcessProbe ??= GalgameWindowsProcessProbe();
