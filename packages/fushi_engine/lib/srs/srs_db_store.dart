@@ -262,6 +262,21 @@ class SrsEditSpec {
   final Object? value;
 }
 
+/// 内核缓存刷新的配置（内核命令的 `caches`；[SrsDbStore] 打开时注册一次，`cache_config_set`）：[profileUid] 的默认
+/// 牌组与各内置笔记类型（代码默认值 + 读音字段，readingKey 的来源）。只由 profile 的 uid 决定。
+Map<String, Object?> srsCacheConfigFor(String profileUid) => <String, Object?>{
+  'defaultDeck': SrsIds.builtinDefaultDeck(profileUid),
+  'builtins': <String, Object?>{
+    for (final SrsBuiltinNoteTypeSpec spec in kSrsBuiltinNoteTypes)
+      spec.key: <String, Object?>{
+        'b': srsBuiltinNoteTypeKernelValue(
+          srsBuiltinNoteType(profileUid, spec),
+        ),
+        'reading': srsBuiltinReadingFieldId(profileUid, spec.key),
+      },
+  },
+};
+
 /// 本机事件的草稿（[SrsDbStore.importDrafts]）：修改记录只记「给哪个实体的哪个字段键写什么值」，
 /// 写入者序号与 HLC 等到落库的同一个独占区里才分配；其余事件（身份记录、来源给定 HLC 的日志）
 /// 已定稿，原样带上。
@@ -2174,19 +2189,8 @@ class SrsDbStore implements SrsSync2Host {
     'media_live_refs',
   };
 
-  /// 缓存刷新的配置：本 profile 的默认牌组与各内置笔记类型（代码默认值 + 读音字段，readingKey 的来源）。
-  late final Map<String, Object?> _cacheConfig = <String, Object?>{
-    'defaultDeck': defaultDeckId,
-    'builtins': <String, Object?>{
-      for (final SrsBuiltinNoteTypeSpec spec in kSrsBuiltinNoteTypes)
-        spec.key: <String, Object?>{
-          'b': srsBuiltinNoteTypeKernelValue(
-            srsBuiltinNoteType(profileUid, spec),
-          ),
-          'reading': srsBuiltinReadingFieldId(profileUid, spec.key),
-        },
-    },
-  };
+  /// 缓存刷新的配置（[srsCacheConfigFor]）。
+  late final Map<String, Object?> _cacheConfig = srsCacheConfigFor(profileUid);
 
   /// 按 SQLite 变量上限分块（IN 列表）。
   static Iterable<List<String>> _chunks(Iterable<String> ids) sync* {

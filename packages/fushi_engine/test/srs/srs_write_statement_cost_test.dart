@@ -1,5 +1,5 @@
 // 本机写路径的往返验收（SRS 收掉 Dart 写路径第 2 步，M3）：每种写操作经 Drift 执行器送进内核的语句数
-// （`SrsRustDelegate.debugStatements`，含 BEGIN / COMMIT / 本机状态行 upsert）与内核命令数（`debugCoreCommands`）。
+// （`SrsInlineExecutor.debugStatements`，含 BEGIN / COMMIT / 本机状态行 upsert）与内核命令数（`debugCoreCommands`）。
 //
 // 写命令（apply / sched / import / resolve / purge / checkpoint / restore / retire / dedup / trust）由内核在同一个
 // savepoint 里完成命令本体、缓存刷新、排队与本机状态行（native/fushi_fsrs/src/store/ffi.rs `local_write`）：Dart 不再
@@ -26,10 +26,10 @@ typedef _Cost = ({int statements, int core});
 /// 跑一次 [op]，返回它送进内核的语句数与内核命令数。
 Future<_Cost> _cost(SrsDbStore store, Future<void> Function() op) async {
   final int core = store.debugCoreCommands;
-  SrsRustDelegate.debugStatements = 0;
+  SrsInlineExecutor.debugStatements = 0;
   await op();
   return (
-    statements: SrsRustDelegate.debugStatements,
+    statements: SrsInlineExecutor.debugStatements,
     core: store.debugCoreCommands - core,
   );
 }
@@ -198,7 +198,7 @@ void main() {
     final BulkFixture f = await BulkFixture.open(notes: 6);
     final SrsDbStore s = f.store;
     Future<_Cost> openCost() async {
-      SrsRustDelegate.debugStatements = 0;
+      SrsInlineExecutor.debugStatements = 0;
       final SrsDbStore r = await SrsDbStore.open(
         db: f.db,
         core: s.core,
@@ -209,7 +209,7 @@ void main() {
         fallbackRolloverHour: () => 4,
       );
       return (
-        statements: SrsRustDelegate.debugStatements,
+        statements: SrsInlineExecutor.debugStatements,
         core: r.debugCoreCommands,
       );
     }
