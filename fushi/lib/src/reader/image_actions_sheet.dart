@@ -2,7 +2,8 @@
 /// 书架端插图册、歌词模式插图——凡是「长按一张磁盘上的图片」都走这一个面板，
 /// 面板里的动作本体也各只有一份（保存 = [saveImageFileWithFeedback]，分享 =
 /// [shareImageFile]，复制 = [copyImageFileToClipboard]）。宿主只负责把图解析成
-/// [File]。
+/// [File]，可另外在前面挂几项宿主自己的动作（[ImageSheetExtraAction]，如漫画页
+/// 的「复制文字」）。
 library;
 
 import 'dart:io';
@@ -38,23 +39,50 @@ List<ImageAction> imageActionsFor(TargetPlatform platform) =>
       _ => const <ImageAction>[ImageAction.save],
     };
 
-/// 弹出长按图片面板并执行用户选中的动作；返回选中的动作（关掉面板 = null）。
-/// [platform] 只给测试用，生产按真实操作系统取。
+/// 宿主附加在图片动作**之前**的非图片动作（例如漫画长按 OCR 文本块时的「复制
+/// 文字」）。面板只负责列出它、点中后关面板再调 [run]；动作本体归宿主。
+class ImageSheetExtraAction {
+  const ImageSheetExtraAction({
+    required this.id,
+    required this.icon,
+    required this.label,
+    required this.run,
+  });
+
+  /// 列表项 key 为 `image_extra_action_<id>`。
+  final String id;
+  final IconData icon;
+  final String label;
+  final Future<void> Function() run;
+}
+
+/// 弹出长按图片面板并执行用户选中的动作；返回选中的图片动作（关掉面板、或选的
+/// 是 [extraActions] 里的宿主动作 = null）。[platform] 只给测试用，生产按真实操作
+/// 系统取。
 Future<ImageAction?> showImageActionsSheet(
   BuildContext context, {
   required File file,
+  List<ImageSheetExtraAction> extraActions = const <ImageSheetExtraAction>[],
   TargetPlatform? platform,
 }) async {
   final List<ImageAction> actions = imageActionsFor(
     platform ?? defaultTargetPlatformForImageSave(),
   );
-  final ImageAction? picked = await adaptiveModalSheet<ImageAction>(
+  final Object? picked = await adaptiveModalSheet<Object>(
     context: context,
     isScrollControlled: false,
-    builder: (BuildContext sheetContext) =>
-        ImageActionsSheet(fileName: p.basename(file.path), actions: actions),
+    builder: (BuildContext sheetContext) => ImageActionsSheet(
+      fileName: p.basename(file.path),
+      actions: actions,
+      extraActions: extraActions,
+    ),
   );
-  if (picked != null) await runImageAction(picked, file);
+  if (picked is ImageSheetExtraAction) {
+    await picked.run();
+    return null;
+  }
+  if (picked is! ImageAction) return null;
+  await runImageAction(picked, file);
   return picked;
 }
 
@@ -70,14 +98,35 @@ class ImageActionsSheet extends StatelessWidget {
   const ImageActionsSheet({
     required this.fileName,
     required this.actions,
+    this.extraActions = const <ImageSheetExtraAction>[],
     super.key,
   });
 
   final String fileName;
   final List<ImageAction> actions;
 
+  /// 列在图片动作之前的宿主动作；点中时面板以该对象出栈。
+  final List<ImageSheetExtraAction> extraActions;
+
   @override
   Widget build(BuildContext context) {
+    final List<({Key key, IconData icon, String label, Object value})> entries =
+        <({Key key, IconData icon, String label, Object value})>[
+          for (final ImageSheetExtraAction extra in extraActions)
+            (
+              key: ValueKey<String>('image_extra_action_${extra.id}'),
+              icon: extra.icon,
+              label: extra.label,
+              value: extra,
+            ),
+          for (final ImageAction action in actions)
+            (
+              key: ValueKey<String>('image_action_${action.name}'),
+              icon: imageActionIcon(action),
+              label: imageActionLabel(action),
+              value: action,
+            ),
+        ];
     return FushiModalSheetFrame(
       title: t.reader_image_actions_title,
       subtitle: fileName,
@@ -88,17 +137,17 @@ class ImageActionsSheet extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            for (int i = 0; i < actions.length; i++)
+            for (int i = 0; i < entries.length; i++)
               FushiStaggeredEntrance(
                 index: i,
                 child: FushiGroupedListItem(
                   index: i,
-                  count: actions.length,
+                  count: entries.length,
                   child: FushiListItem(
-                    key: ValueKey<String>('image_action_${actions[i].name}'),
+                    key: entries[i].key,
                     autofocus: i == 0,
                     leading: FushiListLeadingIcon(
-                      imageActionIcon(actions[i]),
+                      entries[i].icon,
                       shape: i == 0
                           ? FushiLeadingShape.cookie
                           : FushiLeadingShape.circle,
@@ -106,8 +155,8 @@ class ImageActionsSheet extends StatelessWidget {
                           ? FushiCardTone.primary
                           : FushiCardTone.secondary,
                     ),
-                    title: Text(imageActionLabel(actions[i])),
-                    onTap: () => Navigator.of(context).pop(actions[i]),
+                    title: Text(entries[i].label),
+                    onTap: () => Navigator.of(context).pop(entries[i].value),
                   ),
                 ),
               ),

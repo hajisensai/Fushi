@@ -105,6 +105,10 @@ void main() {
     await tester.tap(
       find.byKey(const ValueKey<String>('manga_ocr_manager_pause_all')),
     );
+    // 停运行中的任务要 await 源流订阅的 cancel()（没有 onCancel）：实测它的续体
+    // 只在真实事件循环里跑，FakeAsync 的 pump 推不动，「全部暂停」就一直忙着、
+    // 两个批量按钮都灰着。让出一次真实事件循环把它送达。
+    await tester.runAsync(() async {});
     await tester.pumpAndSettle();
     expect(
       registry.entries().map((MangaOcrJobEntry e) => e.status),
@@ -121,14 +125,17 @@ void main() {
     await tester.tap(
       find.byKey(const ValueKey<String>('manga_ocr_manager_resume_all')),
     );
-    await tester.pumpAndSettle();
+    // 继续后 c1 重建开跑、还没有进度事件：行上是不定进度条，动画不会停，
+    // 这里只推一帧（断言看注册表，不看动画）。
+    await tester.pump();
     expect(
       registry.entries().where(
         (MangaOcrJobEntry e) => e.status == MangaOcrJobStatus.paused,
       ),
       isEmpty,
     );
-    await registry.cancelAll();
+    // cancelAll 同样 await 源流订阅的 cancel()（见上），在真实事件循环里收尾。
+    await tester.runAsync(registry.cancelAll);
     await tester.pumpAndSettle();
   });
 }

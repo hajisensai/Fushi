@@ -3651,9 +3651,15 @@ ThemeData buildFushiThemeData({
         iconSize: 18,
       ),
     ),
+    // MD3 设计系统的 ElevatedButton 走官方 M3 Expressive 实现（material_ui 1.11：
+    // 尺寸 / 形状变体、按压形变与选中态），与 iconButtonTheme 同口径；Apple 与
+    // 墨水屏保持 M3 原件。M3E 下不写 shape：静止态本就是全圆角，写死
+    // StadiumBorder 会盖掉官方的按压 / 选中形变。其余尺寸、字重沿用 2026-10-04
+    // 的按钮统一口径。
     elevatedButtonTheme: ElevatedButtonThemeData(
+      variant: appleDesign || eink ? null : StyleVariant.material3Expressive,
       style: ElevatedButton.styleFrom(
-        shape: const StadiumBorder(),
+        shape: appleDesign || eink ? const StadiumBorder() : null,
         minimumSize: const Size(64, 40),
         padding: const EdgeInsets.symmetric(horizontal: 20),
         textStyle: tt.labelLarge?.copyWith(

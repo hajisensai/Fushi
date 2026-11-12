@@ -1,7 +1,7 @@
 // 添加种子时的文件勾选模型（反馈 pR-icPGMJD：333 个文件的有声书合集只想下其中
 // 一两本）。对话框只画，筛选 / 勾选 / 汇总 / 提交参数都在 TorrentFileSelection。
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/media/torrent/torrent_file_selection.dart';
 import 'package:fushi_engine/media/torrent/torrent_metainfo.dart';
 

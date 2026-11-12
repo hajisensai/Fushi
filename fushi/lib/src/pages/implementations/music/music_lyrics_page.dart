@@ -8,7 +8,8 @@
 /// - 查词：长按 / 点词 → 既有查词弹窗（本页是 [BaseSourcePage]，弹窗层就在树里），
 ///   查词时按设置自动暂停；
 /// - 制卡（§12）：句子 = 查词所在那行，音频片段 = 该行前后各扩 0.5 s，卡图 = 封面，出处 =
-///   `music` 来源链接 + 制卡历史 `position_ms` / `duration_ms`（L3）；
+///   `music` 来源链接 + 制卡历史 `position_ms` / `duration_ms`（L3）；「高级制卡」可加减
+///   前后文行（句子与音频片段跟着合并）、微调片段起止并试听（反馈 l8XrV_IfXH）；
 /// - AB 循环一行 / 多行（mpv 原生 ab-loop）；
 /// - 来源：选来源（本地候选 + 在线模糊搜索）写成用户行，可恢复自动来源，可显式导出 TTML。
 ///   不做歌词编辑与自动注音（所有者 2026-10-24 拍板，设计 D11）；
@@ -31,9 +32,14 @@ import 'package:fushi_core/fushi_core.dart'
     show FushiDatabase, kStatSourceMusic;
 import 'package:fushi_engine/mining/immersion_mining_request.dart'
     show immersionMiningAudioExtension;
+import 'package:fushi_audio/fushi_audio.dart' show AudioPlaybackRange;
 import 'package:fushi_music/fushi_music.dart';
 
 import 'package:fushi/src/anki/mined_card_undo.dart';
+import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart';
+import 'package:fushi/src/media/music/music_range_preview.dart';
+import 'package:fushi/src/media/range_playback.dart';
+import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_channel.dart';
 import 'package:fushi/src/media/favorites/favorite_lookup_context.dart';
@@ -269,6 +275,22 @@ MusicPluginStreamResolver? musicLyricsClipPluginResolver;
 @visibleForTesting
 RemoteAudioMaterializer? musicLyricsClipMaterializer;
 
+/// 一次「高级制卡」对话框会话的音乐侧状态：打开时的曲目与播放位置 / 播放态、试听前
+/// 撤下的 A-B 循环（循环覆盖的行）、是否试听过（挪过播放头）。
+typedef _MusicAdvancedMiningSession = ({
+  String trackUid,
+  Duration lookupPosition,
+  bool wasPlaying,
+  (int, int)? suspendedLoop,
+  bool previewed,
+});
+
+/// 一行歌词时间窗 → 制卡草稿用的音频区间（曲目时间；一首歌只有一个时间轴，
+/// `audioFileIndex` 恒 0）。零长窗口（没有可用终点）不给区间，只合文本。
+AudioPlaybackRange? _musicLineRange(MusicLyricLineWindow w) => w.durationMs > 0
+    ? AudioPlaybackRange(audioFileIndex: 0, startMs: w.startMs, endMs: w.endMs)
+    : null;
+
 class MusicLyricsPage extends BaseSourcePage {
   const MusicLyricsPage({super.key, this.startWithLyrics = true})
     : super(item: null);
@@ -301,6 +323,21 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
 
   /// 最近一次查词所在的行（制卡的句子 / 音频片段取它）。
   int? _lookupLine;
+
+  /// 最近一次查词在 [_lookupLine] 行内的字符位置（高级制卡句子分区高亮查到的词）。
+  int? _lookupCharIndex;
+
+  /// 「高级制卡」选的前后文行（反馈 l8XrV_IfXH）：与阅读器 / 视频同一套草稿模型，
+  /// 每句的音频区间是该行自己的曲目时间窗（`audioFileIndex` 恒 0：一首歌一个时间轴）。
+  /// 换词查询 / 换曲 / 查词浮层栈全关 / 制卡成功时清空。
+  final MiningSentenceDraft _miningDraft = MiningSentenceDraft();
+
+  /// 高级制卡对话框里的句子音频试听（只播写进卡片的那一段）。
+  late final MusicRangePreview _rangePreview = MusicRangePreview(_engine);
+
+  /// 当前这次高级制卡对话框（关窗时据此停试听、放回循环与播放头，与视频车道同一语义：
+  /// 用户回到查词时那一刻）；没开对话框为 null。
+  _MusicAdvancedMiningSession? _advancedMiningSession;
 
   /// AB 循环覆盖的行（含）；没开为 null。
   (int, int)? _loopLines;
@@ -399,6 +436,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
     _controllerLookupTarget._detached = true;
     ControllerLookupMode.instance.detach(_controllerLookupTarget);
     _lookupCursor.dispose();
+    _rangePreview.dispose();
     _companion.dispose();
     _playbackRouteMark.dispose();
     _engine.removeListener(_onEngine);
@@ -511,8 +549,11 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
       _lyrics = null;
       _cdgPath = null;
       _lookupLine = null;
+      _lookupCharIndex = null;
       _loopLines = null;
     });
+    // 换曲：上一首选的前后文行属于旧时间轴。
+    _miningDraft.clear();
     // 换曲：旧歌词上的手柄查词光标作废（模式仍开着时下一次输入落到新歌词的当前行）。
     _lookupCursor.clear();
     MusicLyricsResolution? r;
@@ -558,6 +599,9 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
 
   Future<void> _onLookup(KaraokeLookupHit hit) async {
     _lookupLine = hit.lineIndex;
+    _lookupCharIndex = hit.charIndexInLine;
+    // 换词查询：上下文从零开始，不带上一个词选的前后文（与阅读器 / 视频同语义）。
+    _miningDraft.clear();
     appModel.musicStudy.noteLearningAction();
     // 副屏在用：查词结果显示在副屏「查词」页，本页不弹窗；否则照常弹窗（未启用副屏
     // 时这里只是一次同步判断，不多等一拍）。「查词时暂停」两边同一入口：副屏接手查词
@@ -602,6 +646,14 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
     // 副屏查词页上为本页打开的查词还开着：暂停归它，关它时再续播。
     if (_companion.lookupOpen) return;
     _releaseLookupPause(resume: true);
+  }
+
+  /// 整条查词浮层栈关闭 = 一次查词会话结束：丢掉没用上的前后文选择（制卡成功已清过，
+  /// 这里兜住「选了前后文但没制卡就关掉」）。
+  @override
+  void onAllPopupsDismissed() {
+    _miningDraft.clear();
+    super.onAllPopupsDismissed();
   }
 
   /// 副屏查词关闭（[resume]：用户关的）或随副屏消失（false：只撤标记、保持暂停）。
@@ -653,13 +705,203 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
     );
   }
 
+  // ── 高级制卡：前后文行 + 句子音频区间（反馈 l8XrV_IfXH）────────────────────
+
+  /// 查词那一行并上高级制卡选的前后文：句子 = 「上文 → 本行 → 下文」合成，时间窗 =
+  /// 各行时间窗合并（首行起 → 末行止，被移除的行不参与）。没选前后文时就是本行。
+  /// 对话框的区间显示、试听与 [onMineFromPopup] 写卡都只经这里（试听与写卡同源）。
+  MusicLyricLineWindow? get _miningWindow {
+    final MusicLyricLineWindow? line = _lookupWindow;
+    if (line == null) return null;
+    final AudioPlaybackRange? merged = _miningDraft.composeAudioRange(
+      _musicLineRange(line),
+    );
+    return line.withContext(
+      text: _miningDraft.composeText(line.text),
+      startMs: merged?.startMs,
+      endMs: merged?.endMs,
+    );
+  }
+
+  /// 写进卡片的句子音频区间（曲目时间加 [fileOffsetMs] = 文件时间）：[_miningWindow]
+  /// 前后扩留白再加本次起止微调。没有可截的区间（零长）时为 null。
+  ({int startMs, int endMs})? _miningClip({
+    required int startDeltaMs,
+    required int endDeltaMs,
+    int fileOffsetMs = 0,
+  }) {
+    final MusicLyricLineWindow? w = _miningWindow;
+    if (w == null || w.durationMs <= 0) return null;
+    return w.clipInFile(
+      fileOffsetMs: fileOffsetMs,
+      trackDurationMs: _engine.current?.durationMs,
+      startDeltaMs: startDeltaMs,
+      endDeltaMs: endDeltaMs,
+    );
+  }
+
+  /// 高级制卡「上 N 句 / 下 N 句」：以查词那一行为锚取相邻主行（整体替换），返回上下文
+  /// 行数。每行的音频区间是它自己的曲目时间窗，不经文本匹配推断。
+  Future<int> _setMiningContext(int prevCount, int nextCount) async {
+    final LyricTimeline? t = _timeline;
+    final int? line = _lookupLine;
+    if (t == null || line == null) {
+      _miningDraft.setContext();
+      return 0;
+    }
+    final ({List<int> prev, List<int> next}) around = musicLyricContextLines(
+      t,
+      line,
+      prevCount: prevCount,
+      nextCount: nextCount,
+    );
+    final int? trackDurationMs = _engine.duration?.inMilliseconds;
+    MiningDraftSentence entry(int index) {
+      final MusicLyricLineWindow? w = musicLyricLineWindow(
+        t,
+        index,
+        trackDurationMs: trackDurationMs,
+      );
+      return MiningDraftSentence(
+        sentence: w?.text ?? t.lines[index].text.trim(),
+        audioRange: w == null ? null : _musicLineRange(w),
+      );
+    }
+
+    _miningDraft.setContext(
+      prev: <MiningDraftSentence>[for (final int i in around.prev) entry(i)],
+      next: <MiningDraftSentence>[for (final int i in around.next) entry(i)],
+    );
+    return _miningDraft.length;
+  }
+
+  /// 「高级制卡」对话框里本页提供的分区：句子（前后文行，与阅读器 / 视频同一套草稿
+  /// 回调）+ 句子音频（区间显示、起止微调、试听）。卡图只有封面，「不要图片」由覆盖项
+  /// 的 omitImage 承载，不给图片分区。没有带时间的查词行（无时间歌词 / 还没查词）时
+  /// 两个分区都没有意义，对话框只剩卡组与字段。
+  @override
+  Future<AdvancedMiningSections> buildAdvancedMiningSections({
+    required String matched,
+  }) async {
+    final MusicPlayItem? item = _engine.current;
+    if (item == null || _lookupWindow == null) {
+      return AdvancedMiningSections.none;
+    }
+    _advancedMiningSession = (
+      trackUid: item.trackUid,
+      lookupPosition: _engine.position,
+      wasPlaying: _engine.isPlaying,
+      suspendedLoop: null,
+      previewed: false,
+    );
+    return AdvancedMiningSections(
+      sentence: AdvancedMiningSentenceSection(
+        fetchPreview: () async => buildSentenceContextPreview(
+          draft: _miningDraft,
+          current: _lookupWindow?.text ?? '',
+          currentOffset: _lookupCharIndex,
+        ),
+        setContext: _setMiningContext,
+        editSentence: (SentenceContextSlot slot, int index, String text) async {
+          _miningDraft.editSentence(slot: slot, index: index, text: text);
+        },
+        removeSentence:
+            (SentenceContextSlot slot, int index, bool removed) async {
+              _miningDraft.setSentenceRemoved(
+                slot: slot,
+                index: index,
+                removed: removed,
+              );
+            },
+      ),
+      audio: AdvancedMiningAudioSection(
+        describe: (int startDeltaMs, int endDeltaMs) async {
+          final ({int startMs, int endMs})? clip = _miningClip(
+            startDeltaMs: startDeltaMs,
+            endDeltaMs: endDeltaMs,
+          );
+          if (clip == null || clip.endMs <= clip.startMs) return null;
+          return AdvancedMiningAudioWindow(
+            startMs: clip.startMs,
+            endMs: clip.endMs,
+          );
+        },
+        preview: _previewMiningAudio,
+        stopPreview: _rangePreview.stop,
+        nudgeStepMs: appModel.advancedMiningAudioNudgeStepMs,
+        onNudgeStepChanged: appModel.setAdvancedMiningAudioNudgeStepMs,
+      ),
+      onClosed: _closeAdvancedMiningSession,
+    );
+  }
+
+  /// 试听写进卡片的那一段（曲目时间，与 [_miningClip] 同一个值）。A-B 循环会把播放头
+  /// 拽回循环起点：区间越出循环就先撤下，关窗时恢复（[_closeAdvancedMiningSession]）。
+  Future<RangePlayback?> _previewMiningAudio(
+    int startDeltaMs,
+    int endDeltaMs,
+  ) async {
+    final ({int startMs, int endMs})? clip = _miningClip(
+      startDeltaMs: startDeltaMs,
+      endDeltaMs: endDeltaMs,
+    );
+    final _MusicAdvancedMiningSession? session = _advancedMiningSession;
+    if (clip == null || session == null || clip.endMs <= clip.startMs) {
+      return null;
+    }
+    final Duration start = Duration(milliseconds: clip.startMs);
+    final Duration end = Duration(milliseconds: clip.endMs);
+    (int, int)? suspended = session.suspendedLoop;
+    final MusicAbLoop? loop = _engine.abLoop;
+    if (loop != null && (start < loop.a || end > loop.b)) {
+      suspended ??= _loopLines;
+      await _engine.setAbLoop(null);
+    }
+    _advancedMiningSession = (
+      trackUid: session.trackUid,
+      lookupPosition: session.lookupPosition,
+      wasPlaying: session.wasPlaying,
+      suspendedLoop: suspended,
+      previewed: true,
+    );
+    return _rangePreview.play(start, end);
+  }
+
+  /// 对话框关闭（确认或取消）：试听过的，停试听、恢复撤下的 A-B 循环、把播放头放回
+  /// 查词时的位置；打开对话框时正在播的接着播（查词暂停的由关查词弹窗统一续播）。
+  Future<void> _closeAdvancedMiningSession() async {
+    final _MusicAdvancedMiningSession? session = _advancedMiningSession;
+    _advancedMiningSession = null;
+    if (session == null || !session.previewed) return;
+    await _rangePreview.stop();
+    if (!mounted || _engine.current?.trackUid != session.trackUid) return;
+    final (int, int)? loop = session.suspendedLoop;
+    if (loop != null) await _applyLoop(loop.$1, loop.$2);
+    await _engine.seek(session.lookupPosition);
+    if (session.wasPlaying && !_engine.isPlaying) await _engine.play();
+  }
+
   /// 查词弹窗点「+」制卡（设计 §12）：句子 = 查词那行，音频片段 = 该行（前后扩 0.5 s），
   /// 卡图 = 封面，出处 = `music` 来源链接（复习时「回到出处」按它播原曲片段）。
+  ///
+  /// 「高级制卡」（反馈 l8XrV_IfXH）：选了前后文时句子与时间窗换成合并后的
+  /// [_miningWindow]；覆盖项（[MiningRequestOverrides]，随 fields 走）里的起止微调加在
+  /// 音频片段上，不要音频 / 不要图片各自跳过。卡组与手改字段由后端从同一份 fields 读。
   @override
   Future<MinePopupResult> onMineFromPopup(Map<String, String> fields) async {
     // 第一个 await 之前把这次制卡用到的状态读齐：排队期间用户可能已经点了别的行。
     final MusicPlayItem? item = _engine.current;
-    final MusicLyricLineWindow? window = _lookupWindow;
+    final MiningRequestOverrides? overrides = MiningRequestOverrides.readFrom(
+      fields,
+    );
+    final MusicLyricLineWindow? window = _miningWindow;
+    final ({int startMs, int endMs})? trackClip = _miningClip(
+      startDeltaMs: overrides?.audioStartDeltaMs ?? 0,
+      endDeltaMs: overrides?.audioEndDeltaMs ?? 0,
+    );
+    final bool wantAudio = !(overrides?.omitAudio ?? false);
+    final bool wantImage = !(overrides?.omitImage ?? false);
+    final int lookupGeneration = activeLookupGeneration;
     final String sentence = window?.text.isNotEmpty ?? false
         ? window!.text
         : (fields['sentence'] ?? '');
@@ -673,7 +915,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
       // 成功提示里说明原因。
       bool audioProtected = false;
       MusicClipSource? source;
-      if (item != null && window != null && window.durationMs > 0) {
+      if (wantAudio && item != null && window != null && trackClip != null) {
         // 逻辑曲目路径（插件 / CD / 光盘章节 / Apple Music）不能直接交给 ffmpeg：先解析成可读源。
         try {
           source = await resolveMusicClipSource(
@@ -691,10 +933,11 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
           );
         }
       }
-      if (item != null && window != null && source != null) {
-        final ({int startMs, int endMs}) clip = window.clipInFile(
-          fileOffsetMs: source.fileOffsetMs,
-          trackDurationMs: item.durationMs,
+      if (item != null && trackClip != null && source != null) {
+        // 曲目时间 → 文件时间（CUE 段首）：与对话框显示 / 试听的是同一段。
+        final ({int startMs, int endMs}) clip = (
+          startMs: trackClip.startMs + source.fileOffsetMs,
+          endMs: trackClip.endMs + source.fileOffsetMs,
         );
         final MiningMediaCompression compression =
             MiningMediaCompression.resolve(
@@ -752,7 +995,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
           );
         }
       }
-      final String? cover = item?.coverPath;
+      final String? cover = wantImage ? item?.coverPath : null;
       final AnkiMiningContext miningContext = AnkiMiningContext(
         sentence: sentence,
         cueSentence: audioPath != null && sentence.isNotEmpty ? sentence : null,
@@ -796,6 +1039,11 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
         );
       }
       if (described.success) {
+        // 选的前后文已经进卡：清掉，下一次「+」回到单行。期间换过词（代次变了）就不碰
+        // ——那份草稿属于新的查词。
+        if (mounted && lookupGeneration == activeLookupGeneration) {
+          _miningDraft.clear();
+        }
         FushiToast.showMine(
           msg: audioProtected
               ? '${described.message}\n${t.music_apple_music_card_audio_unavailable}'
