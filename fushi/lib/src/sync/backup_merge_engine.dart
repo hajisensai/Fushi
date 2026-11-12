@@ -19,6 +19,7 @@ import 'package:fushi_engine/media/video/anime_source_video_path.dart';
 import 'package:fushi_engine/srs/srs_backup_merge.dart'
     show SrsBackupSource, mergeSrsFromBackup;
 import 'package:fushi_engine/srs/srs_storage.dart';
+import 'package:fushi_srs/fushi_srs.dart' show SrsCore;
 
 /// ATTACH-then-upsert merge engine for backup "merge" import (TODO-888).
 ///
@@ -69,7 +70,7 @@ class BackupMergeEngine {
     bool adoptSourcePreferences = false,
     bool mergePortableSettings = false,
     SrsStorage? localSrs,
-    SrsDatabase? sourceSrs,
+    SrsCore? sourceSrs,
   }) : _srcAlias = srcAlias,
        _mergePortableSettings = mergePortableSettings,
        _carriedVideoSourcePaths = carriedVideoSourcePaths,
@@ -84,9 +85,9 @@ class BackupMergeEngine {
   /// 本机 SRS 存储（srs.db）。null = 不合并 SRS（调用方没打开它，例如只做预览）。
   final SrsStorage? _localSrs;
 
-  /// 新形态备份里 `srs.db` 解出的副本（Rust 打开，Drift 视图跑在它的连接上）。null = 备份是老
+  /// 新形态备份里 `srs.db` 解出的副本的内核句柄（Rust 打开，事件经读命令读）。null = 备份是老
   /// 形态（SRS 表在 ATTACH 的备份主库里）或没有 SRS 数据。
-  final SrsDatabase? _sourceSrs;
+  final SrsCore? _sourceSrs;
 
   /// 是否把源库的 `preferences` 整体接管过来（**只有同机换包名的迁移**该开）。
   ///
@@ -1840,7 +1841,7 @@ class BackupMergeEngine {
   Future<void> _mergeSrs() async {
     final SrsStorage? local = _localSrs;
     if (local == null) return;
-    final SrsDatabase? sourceSrs = _sourceSrs;
+    final SrsCore? sourceSrs = _sourceSrs;
     final SrsBackupSource source;
     if (sourceSrs != null) {
       source = SrsBackupSource.split(

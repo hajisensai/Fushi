@@ -1,5 +1,5 @@
 // 本机写路径的往返验收（SRS 收掉 Dart 写路径第 2 步，M3）：每种写操作经 Drift 执行器送进内核的语句数
-// （`SrsInlineExecutor.debugStatements`，含 BEGIN / COMMIT / 本机状态行 upsert）与内核命令数（`debugCoreCommands`）。
+// （`srsDebugReadCommands`，含 BEGIN / COMMIT / 本机状态行 upsert）与内核命令数（`debugCoreCommands`）。
 //
 // 写命令（apply / sched / import / resolve / purge / checkpoint / restore / retire / dedup / trust）由内核在同一个
 // savepoint 里完成命令本体、缓存刷新、排队与本机状态行（native/fushi_fsrs/src/store/ffi.rs `local_write`）：Dart 不再
@@ -12,7 +12,6 @@
 // `wal_checkpoint` / `bulk_cache` 关），改动后 0 + 2（并回 WAL 在 `bulk_cache` 关里做）。
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:fushi_core/fushi_core.dart';
-import 'package:fushi_engine/srs/srs_database_executor.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_note_type_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
@@ -20,16 +19,18 @@ import 'package:test/test.dart';
 
 import 'apkg/apkg_test_support.dart' show FakeFsrsEngine;
 import 'support/srs_bulk_fixture.dart';
+import 'support/srs_raw_sql.dart';
+import 'package:fushi_engine/srs/srs_reads.dart';
 
 typedef _Cost = ({int statements, int core});
 
 /// 跑一次 [op]，返回它送进内核的语句数与内核命令数。
 Future<_Cost> _cost(SrsDbStore store, Future<void> Function() op) async {
   final int core = store.debugCoreCommands;
-  SrsInlineExecutor.debugStatements = 0;
+  srsDebugReadCommands = 0;
   await op();
   return (
-    statements: SrsInlineExecutor.debugStatements,
+    statements: srsDebugReadCommands,
     core: store.debugCoreCommands - core,
   );
 }
@@ -198,9 +199,8 @@ void main() {
     final BulkFixture f = await BulkFixture.open(notes: 6);
     final SrsDbStore s = f.store;
     Future<_Cost> openCost() async {
-      SrsInlineExecutor.debugStatements = 0;
+      srsDebugReadCommands = 0;
       final SrsDbStore r = await SrsDbStore.open(
-        db: f.db,
         core: s.core,
         profileUid: kBulkUid,
         deviceId: 'dev',
@@ -208,10 +208,7 @@ void main() {
         trustedClock: fixedTrustedClock(),
         fallbackRolloverHour: () => 4,
       );
-      return (
-        statements: SrsInlineExecutor.debugStatements,
-        core: r.debugCoreCommands,
-      );
+      return (statements: srsDebugReadCommands, core: r.debugCoreCommands);
     }
 
     await s.rebuildCaches();
@@ -225,7 +222,7 @@ void main() {
     costs['open(cacheRev 1)'] = await openCost();
     // 旧版本号的那次打开确实由内核补跑了升级、记下了当前版本号（同一条命令里，语句数不多一条）。
     final int rev =
-        (await f.db
+        (await f.core
                 .customSelect(
                   r"SELECT json_extract(json, '$.cacheRev') AS v FROM srs_local_state",
                 )
@@ -242,10 +239,12 @@ void main() {
     // 第 12 步：开库读本机状态从一条 Drift 读变成一条内核命令（`local_state`），所以语句 4 → 3、命令 2 → 3
     // （`local_state` + `cache_config_set` + `identity`）。新 profile / 覆盖恢复之后 / 老行没纪元时再多一条
     // `local_state_ensure`（srs_local_state_kernel_test.dart）。
+    // G5：srs.db 的 Drift 执行器删了，「语句」改数内核读命令。开库剩下的读只有补内置实体前查哪几个已在（以前三个
+    // 内置实体各一条 SELECT，现在一条 `entities {ids}`），所以 3 → 1。
     expect(costs, <String, _Cost>{
       'rebuildCaches': (statements: 0, core: 1),
-      'open(current)': (statements: 3, core: 3),
-      'open(cacheRev 1)': (statements: 3, core: 3),
+      'open(current)': (statements: 1, core: 3),
+      'open(cacheRev 1)': (statements: 1, core: 3),
     });
   });
 

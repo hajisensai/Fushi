@@ -47,7 +47,8 @@ import 'package:fushi_engine/srs/srs_browse.dart' show srsDeckQuery;
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_note_type_store.dart';
-import 'srs_test_support.dart' show SrsTestAppModel, openSrsTestStorage;
+import 'srs_test_support.dart'
+    show SrsTestAppModel, openSrsTestStorage, srsSettle;
 import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:fushi_engine/srs/srs_rwkv_scheduling.dart';
 import 'package:fushi_srs/fushi_srs.dart';
@@ -267,7 +268,6 @@ Future<SrsDbStore> _openStore(WidgetTester tester) async {
   final SrsStorage srs = (await tester.runAsync(openSrsTestStorage))!;
   return (await tester.runAsync(
     () => SrsDbStore.open(
-      db: srs.db,
       core: srs.core,
       profileUid: _kProfile,
       deviceId: 'test-device',
@@ -296,12 +296,7 @@ const int _kTreeSettleRounds = 20;
 
 /// 让真异步（drift）与帧都推进：DB 读在 runAsync 里跑一小段真实时间。
 Future<void> _settle(WidgetTester tester, {int rounds = 12}) async {
-  for (int i = 0; i < rounds; i++) {
-    await tester.runAsync(
-      () => Future<void>.delayed(const Duration(milliseconds: 5)),
-    );
-    await tester.pump(const Duration(milliseconds: 60));
-  }
+  await srsSettle(tester, minRounds: rounds);
 }
 
 Future<void> _pumpPage(
@@ -3059,12 +3054,8 @@ void main() {
   testWidgets('排程内核不可用：横幅提示，复习页不给评分', (WidgetTester tester) async {
     final SrsStorage srs = (await tester.runAsync(openSrsTestStorage))!;
     final SrsDbStore store = (await tester.runAsync(
-      () => SrsDbStore.open(
-        db: srs.db,
-        core: srs.core,
-        profileUid: _kProfile,
-        deviceId: 'd',
-      ),
+      () =>
+          SrsDbStore.open(core: srs.core, profileUid: _kProfile, deviceId: 'd'),
     ))!;
     await _pumpPage(
       tester,

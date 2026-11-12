@@ -202,11 +202,9 @@ class _Exporter {
         : tree.subtree(deckId).toSet();
 
     // 范围内的笔记。
-    final List<SrsCardCacheRow> all =
-        await (store.db.select(store.db.srsCardsCache)..where(
-              ($SrsCardsCacheTable c) => c.profileUid.equals(store.profileUid),
-            ))
-            .get();
+    final List<SrsCardCacheRow> all = await store.cardRowsWhere(
+      const <String, Object?>{},
+    );
     final Set<String> noteIds = <String>{
       for (final SrsCardCacheRow c in all)
         if (!c.hidden && (scope == null || scope.contains(c.deckId))) c.noteId,

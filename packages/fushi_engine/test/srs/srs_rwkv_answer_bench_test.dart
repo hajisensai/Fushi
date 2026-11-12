@@ -15,6 +15,7 @@ import 'package:fushi_srs/fushi_srs.dart';
 import 'package:test/test.dart';
 
 import 'support/srs_bulk_fixture.dart';
+import 'support/srs_raw_sql.dart';
 
 class _Worker implements SrsRwkvBackend {
   _Worker(this.worker);
@@ -91,10 +92,7 @@ void main() {
   test(
     'RWKV 作答 / 撤销端到端耗时',
     () async {
-      final BulkFixture f = await BulkFixture.open(
-        notes: notes!,
-        background: true,
-      );
+      final BulkFixture f = await BulkFixture.open(notes: notes!);
       final SrsDbStore store = f.store;
       final String weights = _weights();
       final Directory tmp = Directory.systemTemp.createTempSync('rwkv_bench');
@@ -140,7 +138,7 @@ void main() {
       await store.nextCard(deck);
       final List<String> pool = <String>[
         for (final r
-            in await store.db
+            in await store.core
                 .customSelect(
                   "SELECT id FROM srs_cards_cache WHERE queue = 'review' ORDER BY id LIMIT 8",
                 )
@@ -148,7 +146,7 @@ void main() {
           r.read<String>('id'),
       ];
       final int reviewCards =
-          (await store.db
+          (await store.core
                   .customSelect(
                     "SELECT COUNT(*) AS c FROM srs_cards_cache WHERE queue = 'review'",
                   )

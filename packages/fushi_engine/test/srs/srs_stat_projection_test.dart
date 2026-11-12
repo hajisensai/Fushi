@@ -25,30 +25,18 @@ import 'apkg/apkg_test_support.dart' show FakeFsrsEngine, openTestStore;
 import 'support/srs_bulk_fixture.dart' show importBench;
 import 'support/srs_test_storage.dart';
 import 'support/srs_sync2_peers.dart';
+import 'support/srs_query_counter.dart';
+import 'support/srs_raw_sql.dart';
 
 const String _uid = '01928c3e-0000-7000-8000-00000000a682';
 
 /// 记下每条 SELECT 的 SQL（判「读取路径碰没碰日志表」）。
-class _SqlLog extends QueryInterceptor {
-  final List<String> selects = <String>[];
-
-  @override
-  Future<List<Map<String, Object?>>> runSelect(
-    QueryExecutor executor,
-    String statement,
-    List<Object?> args,
-  ) {
-    selects.add(statement);
-    return executor.runSelect(statement, args);
-  }
-}
-
 const int _dayMs = 86400000;
 const int _hourMs = 3600000;
 
 /// 投影表原样的行（按日志 ID 排序；一条日志至多一行）。
-Future<List<String>> projectionRows(SrsDatabase db) async => <String>[
-  for (final QueryRow r
+Future<List<String>> projectionRows(SrsCore db) async => <String>[
+  for (final SrsRawRow r
       in await db
           .customSelect(
             'SELECT log_id, card_id, occurred_at, utc_offset_min, rating, kind, '
@@ -76,8 +64,8 @@ Future<List<String>> fromLoader(SrsDbStore s, SrsDayContext day) async {
 /// - 每个归属组的日志合成一份 [SrsCardHistory] 选取有效日志，按合并历史分类；记录的卡 = 归属卡。
 Future<List<String>> fromReference(SrsDbStore s, SrsDayContext day) async {
   final Map<String, List<SrsReviewLog>> byCard = <String, List<SrsReviewLog>>{};
-  for (final QueryRow r
-      in await s.db
+  for (final SrsRawRow r
+      in await s.core
           .customSelect(
             'SELECT card_id, json FROM srs_review_logs WHERE profile_uid = ?',
             variables: <Variable<Object>>[
@@ -92,8 +80,8 @@ Future<List<String>> fromReference(SrsDbStore s, SrsDayContext day) async {
     );
   }
   final Map<String, int> serverTimes = <String, int>{
-    for (final QueryRow r
-        in await s.db
+    for (final SrsRawRow r
+        in await s.core
             .customSelect(
               'SELECT event_id, server_time FROM srs_event_local '
               'WHERE server_time IS NOT NULL',
@@ -227,13 +215,12 @@ void main() {
   int now = DateTime.utc(2026, 10, 14, 1).millisecondsSinceEpoch;
   const SrsDayContext jst = SrsDayContext(rolloverHour: 4, utcOffsetMin: 540);
 
-  late _SqlLog sql;
+  late SrsReadCounter reads;
   late TestSrs srs;
-  late SrsDatabase db;
+  late SrsCore db;
   late SrsDbStore store;
 
   Future<SrsDbStore> open() => SrsDbStore.open(
-    db: db,
     core: srs.core,
     profileUid: _uid,
     deviceId: 'dev',
@@ -248,7 +235,7 @@ void main() {
 
   setUp(() async {
     now = DateTime.utc(2026, 10, 14, 1).millisecondsSinceEpoch;
-    sql = _SqlLog();
+    reads = SrsReadCounter();
     final Directory tmp = Directory.systemTemp.createTempSync('srs_stat_proj_');
     addTearDown(() {
       try {
@@ -257,8 +244,8 @@ void main() {
         // 句柄晚释放。
       }
     });
-    srs = await openTestSrsAt('${tmp.path}/srs.db', interceptor: sql);
-    db = srs.db;
+    srs = await openTestSrsAt('${tmp.path}/srs.db');
+    db = srs.core;
     store = await open();
   });
 
@@ -301,7 +288,7 @@ void main() {
     // JST 次日凌晨 2 点：按 4 点翻日算 10/14，按 0 点翻日算 10/15。
     now = DateTime.utc(2026, 10, 14, 17).millisecondsSinceEpoch;
     final SrsReviewLog again = await store.answer(card, 3, durationMs: 777);
-    final QueryRow row = await db
+    final SrsRawRow row = await db
         .customSelect(
           'SELECT occurred_at, duration_ms FROM srs_stat_reviews '
           'WHERE log_id = ?',
@@ -366,13 +353,17 @@ void main() {
                 .getSingle())
             .read<int>('c');
     expect(logs, greaterThanOrEqualTo(1440));
-    sql.selects.clear();
+    reads.reset();
     final SrsStatsBundle b = await loadSrsStats(store, day: jst, nowMs: now);
     expect(b.data.reviews, hasLength(240 * 2 * 3));
+    // 读复习日志原文的读命令（`logs` / `anki_logs_at` / `events`）一条都不该发。
     expect(
-      sql.selects.where((String s) => s.contains('srs_review_logs')),
+      <String>[
+        for (final String q in reads.counts.keys)
+          if (q == 'logs' || q == 'anki_logs_at' || q == 'events') q,
+      ],
       isEmpty,
-      reason: '统计页回到全量读日志 + 逐条 jsonDecode，就会随日志量线性变慢',
+      reason: '统计页回到全量读日志 + 逐条 jsonDecode，就会随日志量线性变慢（${reads.summary()}）',
     );
     expect(await fromLoader(store, jst), await fromReference(store, jst));
   });
@@ -473,7 +464,7 @@ void main() {
       final String newCard = SrsIds.card(note, vt.templates[0].id, 0);
       expect(await a.cardRow(card2), isNull, reason: '前身卡不再生成，删缓存行；增量与重建同一张表');
 
-      final List<String> incremental = await projectionRows(a.db);
+      final List<String> incremental = await projectionRows(a.core);
       final List<String> stats = await fromLoader(a, jst);
       final List<String> reviews = <String>[
         for (final String s in stats)
@@ -488,23 +479,23 @@ void main() {
       expect(stats, await fromReference(a, jst));
 
       await a.rebuildCaches();
-      expect(await projectionRows(a.db), incremental);
+      expect(await projectionRows(a.core), incremental);
       expect(await fromLoader(a, jst), stats);
 
       final SrsDbStore b = await device('b');
       await syncAll(<SrsDbStore>[a, b]);
-      expect(await projectionRows(b.db), incremental);
+      expect(await projectionRows(b.core), incremental);
       expect(await fromLoader(b, jst), stats);
       expect(await fromReference(b, jst), stats);
 
       // 新规则：换类型后又删笔记，前身与新卡都不可见 → 旧卡的复习归链尾（新卡），不回落到旧卡名下。
       await b.deleteNote(note);
       expect((await b.cardRow(newCard))!.hidden, isTrue);
-      expect(await projectionRows(b.db), incremental);
+      expect(await projectionRows(b.core), incremental);
       expect(await fromLoader(b, jst), stats);
       expect(await fromReference(b, jst), stats);
       await b.rebuildCaches();
-      expect(await projectionRows(b.db), incremental);
+      expect(await projectionRows(b.core), incremental);
     });
 
     test('对端并发复习旧卡（还没收到换类型）：分类与成熟净值按合并历史', () async {
@@ -582,12 +573,12 @@ void main() {
         reason: '成熟净值 = 新卡当前是否成熟（按合并历史的最后状态）',
       );
 
-      expect(await projectionRows(b.db), await projectionRows(a.db));
+      expect(await projectionRows(b.core), await projectionRows(a.core));
       expect(await fromLoader(b, jst), stats);
       expect(await fromReference(b, jst), stats);
-      final List<String> incremental = await projectionRows(a.db);
+      final List<String> incremental = await projectionRows(a.core);
       await a.rebuildCaches();
-      expect(await projectionRows(a.db), incremental);
+      expect(await projectionRows(a.core), incremental);
     });
   });
 }

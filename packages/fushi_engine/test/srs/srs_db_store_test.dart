@@ -8,6 +8,7 @@ import 'package:fushi_srs/fushi_srs.dart';
 import 'package:test/test.dart';
 import 'support/srs_test_storage.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
+import 'support/srs_raw_sql.dart';
 
 /// 协议测试用的确定性假引擎（真实数值见 packages/fushi_srs 的 FFI 测试）。
 class _FakeEngine implements FsrsEngine {
@@ -107,7 +108,6 @@ void main() {
       bootId: 'boot-$id',
     );
     return SrsDbStore.open(
-      db: srsStorage.db,
       core: srsStorage.core,
       profileUid: kProfile,
       deviceId: id,
@@ -295,7 +295,7 @@ void main() {
     await syncAll(<SrsDbStore>[a, b]);
 
     final int concurrentContent =
-        (await a.db
+        (await a.core
                 .customSelect(
                   'SELECT COUNT(*) AS c FROM (SELECT 1 FROM srs_field_edits '
                   "WHERE entity_kind = 'note' AND field_key = ? "
@@ -507,7 +507,6 @@ void main() {
       bootId: 'boot',
     );
     final SrsDbStore a = await SrsDbStore.open(
-      db: srsStorage.db,
       core: srsStorage.core,
       profileUid: kProfile,
       deviceId: 'a',
@@ -534,7 +533,6 @@ void main() {
     srsStorage.core.debugExecRaw('DELETE FROM srs_notes_cache');
     srsStorage.core.debugExecRaw('DELETE FROM sync2_self');
     final SrsDbStore restored = await SrsDbStore.open(
-      db: srsStorage.db,
       core: srsStorage.core,
       profileUid: kProfile,
       deviceId: 'a',

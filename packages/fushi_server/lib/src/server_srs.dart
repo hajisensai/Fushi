@@ -477,7 +477,6 @@ class ServerSrs {
       if (prof._store != null) continue;
       try {
         prof._store = await SrsDbStore.open(
-          db: storage.db,
           core: storage.core,
           profileUid: uid,
           deviceId: deviceId,

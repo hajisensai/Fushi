@@ -175,7 +175,6 @@ class SrsProfileCleanup implements ProfileDeletionCascade {
       store = isActive
           ? active
           : await SrsDbStore.open(
-              db: storage.db,
               core: storage.core,
               profileUid: uid,
               deviceId: await _deps.deviceId(),

@@ -68,12 +68,7 @@ Future<void> _addFushiCard(
 }
 
 Future<void> _settle(WidgetTester tester, {int rounds = 12}) async {
-  for (int i = 0; i < rounds; i++) {
-    await tester.runAsync(
-      () => Future<void>.delayed(const Duration(milliseconds: 5)),
-    );
-    await tester.pump(const Duration(milliseconds: 60));
-  }
+  await srsSettle(tester, minRounds: rounds);
 }
 
 /// 底栏重播键位置偏好钉在内存里（测试里偏好层没初始化）。

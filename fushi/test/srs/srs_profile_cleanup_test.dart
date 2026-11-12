@@ -5,7 +5,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:archive/archive.dart';
-import 'package:drift/drift.dart' show QueryRow, Variable;
+import 'package:drift/drift.dart' show Variable;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/profile/profile_deletion_cascade.dart';
@@ -23,6 +23,7 @@ import 'package:path/path.dart' as p;
 
 import '../helpers/fake_anki_repository.dart';
 import 'srs_test_support.dart';
+import '../../../packages/fushi_engine/test/srs/support/srs_raw_sql.dart';
 
 void main() {
   late FushiDatabase db;
@@ -39,7 +40,6 @@ void main() {
   Future<SrsDbStore> activeStore() async {
     final String uid = await uidOf(await repo.getActiveProfileId());
     return stores[uid] ??= await SrsDbStore.open(
-      db: storage.db,
       core: storage.core,
       profileUid: uid,
       deviceId: 'dev',
@@ -79,7 +79,6 @@ void main() {
     required int reviews,
   }) async {
     final SrsDbStore s = stores[uid] ??= await SrsDbStore.open(
-      db: storage.db,
       core: storage.core,
       profileUid: uid,
       deviceId: 'dev',
@@ -112,7 +111,7 @@ void main() {
   }
 
   Future<int> sqlCount(String sql, String uid) async {
-    final QueryRow r = await storage.db
+    final SrsRawRow r = await storage.core
         .customSelect(
           sql,
           variables: <Variable<Object>>[Variable<String>(uid, srsIdType)],
@@ -226,7 +225,6 @@ void main() {
       // 撤销途径：同 uid 的 profile 导回这份备份，笔记与复习记录都回来。
       final SrsStorage fresh = await openSrsTestStorage();
       final SrsDbStore restored = await SrsDbStore.open(
-        db: fresh.db,
         core: fresh.core,
         profileUid: goneUid,
         deviceId: 'dev2',

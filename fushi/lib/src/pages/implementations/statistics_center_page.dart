@@ -264,7 +264,7 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
         db,
         activityLimit: 0,
         includeCounters: true,
-        reviewsFrom: srs?.db,
+        reviewsFrom: srs?.core,
       );
       _daily = facts.daily;
       _byDay = sumStatDaysByKey(_daily);

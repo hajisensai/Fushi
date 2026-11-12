@@ -14,7 +14,6 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/drift.dart' hide isNull, isNotNull;
-import 'package:fushi_engine/srs/srs_database_executor.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_duplicate_notes.dart';
 import 'package:fushi_engine/srs/srs_note_batch_edit.dart';
@@ -28,15 +27,16 @@ import 'package:shelf/shelf.dart' as shelf;
 import 'package:test/test.dart';
 
 import 'support/srs_bulk_fixture.dart';
+import 'package:fushi_engine/srs/srs_reads.dart';
 
 typedef _Cost = ({int statements, int core});
 
 Future<_Cost> _cost(SrsDbStore store, Future<void> Function() op) async {
   final int core = store.debugCoreCommands;
-  SrsInlineExecutor.debugStatements = 0;
+  srsDebugReadCommands = 0;
   await op();
   return (
-    statements: SrsInlineExecutor.debugStatements,
+    statements: srsDebugReadCommands,
     core: store.debugCoreCommands - core,
   );
 }
@@ -176,9 +176,12 @@ void main() {
       status = res.statusCode;
     });
     expect(status, 200);
-    expect(f.counter.counts.keys, <String>[
-      'select',
-    ], reason: '路由上剩下的语句都是读：${f.counter.summary()}');
+    // 路由上剩下的 srs.db 往返都是内核读命令（计数器只数读命令；写在内核命令里），以前是 Drift 的 SELECT。
+    // 钉住读了哪几种：多出别的读（例如整表扫日志）就是路由变重了。
+    expect(f.counter.counts.keys.toSet(), <String>{
+      'edits',
+      'entities',
+    }, reason: f.counter.summary());
 
     for (final MapEntry<String, _Cost> e in costs.entries) {
       // ignore: avoid_print

@@ -476,6 +476,15 @@ class FfiFsrsEngine implements FsrsBatchEngine {
     }
   }
 
+  /// 向内核要 ID（`ids`，native/fushi_fsrs/src/gen4_ids/derive.rs）：[items] 逐项对应结果。经 [SrsKernelIds] 调。
+  List<Object?> deriveIds(String? profile, List<List<Object?>> items) =>
+      _call(<String, Object?>{
+            'op': 'ids',
+            'profile': ?profile,
+            'items': items,
+          })!
+          as List<Object?>;
+
   // ---- JSON 往返 ----
 
   Object? _call(Map<String, Object?> request) {

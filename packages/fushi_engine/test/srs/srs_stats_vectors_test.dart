@@ -228,7 +228,6 @@ void main() {
       File(path).writeAsBytesSync(gzip.decode(db.readAsBytesSync()));
       final TestSrs srs = await openTestSrsAt(path);
       s = await SrsDbStore.open(
-        db: srs.db,
         core: srs.core,
         profileUid: kStatsVecProfile,
         deviceId: 'v',

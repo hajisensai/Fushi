@@ -243,9 +243,10 @@ void main() {
       addTearDown(core.close);
       const String uuid = '0193a1b2-0005-7000-8000-00000000ffff';
       expect(
-        () => core.execQuery(
+        () => core.debugExecRaw(
           "SELECT COUNT(*) FROM srs_review_logs WHERE id = '$uuid'",
           const <Object?>[],
+          true,
         ),
         throwsA(
           isA<SrsCoreException>().having(
@@ -256,9 +257,10 @@ void main() {
         ),
       );
       final (int _, List<List<Object?>> rows) = srsDecodeRows(
-        core.execQuery(
+        core.debugExecRaw(
           'SELECT COUNT(*) AS n FROM srs_review_logs WHERE id = srs_id(?)',
           const <Object?>[uuid],
+          true,
         ),
       );
       expect(rows[1], <Object?>[0]);

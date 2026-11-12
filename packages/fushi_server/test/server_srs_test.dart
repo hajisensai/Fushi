@@ -65,11 +65,9 @@ void main() {
       ..createSync();
     final SrsStorage storage = await SrsStorage.open(
       path: SrsStorage.pathIn(dir.path),
-      inline: true,
     );
     addTearDown(storage.close);
     return SrsDbStore.open(
-      db: storage.db,
       core: storage.core,
       profileUid: uid,
       deviceId: deviceId,
@@ -91,9 +89,7 @@ void main() {
 
   Future<List<String>> expressions(SrsDbStore s) async {
     final List<String> out = <String>[];
-    for (final SrsNoteCacheRow row in await (s.db.select(
-      s.db.srsNotesCache,
-    )..where((n) => n.profileUid.equals(s.profileUid))).get()) {
+    for (final SrsNoteCacheRow row in await s.noteRows()) {
       final SrsNoteView? n = await s.note(row.id);
       final String? e = n?.field(srsLapisFieldId(s.profileUid, 'Expression'));
       if (e != null) out.add(e);

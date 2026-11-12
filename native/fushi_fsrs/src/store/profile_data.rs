@@ -70,7 +70,7 @@ fn footprint(c: &Connection, profile: &str) -> Result<Value, String> {
 }
 
 /// 并入标记的键前缀（Dart `kSrsProfileMergeMarkerPrefix`）：`profile_merge/<旧 uid>` → `{"profileId":..,"newUid":..}`。
-const MERGE_MARKER_PREFIX: &str = "profile_merge/";
+pub(crate) const MERGE_MARKER_PREFIX: &str = "profile_merge/";
 
 /// [SrsCore::meta_set_edit] 认得的集合 → `srs_meta` 的键（Dart `kSrsRetiredV2DevicesKey` / `kSrsRetiredProfileUidsKey`）。
 fn meta_set_key(set: &str) -> Result<&'static str, String> {

@@ -7,10 +7,9 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:drift/drift.dart' show QueryRow, Variable;
+import 'package:drift/drift.dart' show Variable;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/srs/srs_sync_scheduler.dart';
-import 'package:fushi_core/fushi_core.dart' show srsIdType;
 import 'package:fushi_engine/srs/srs_builtin.dart' show srsLapisFieldId;
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_profile_link.dart';
@@ -21,6 +20,7 @@ import 'package:fushi_engine/sync/local_directory_asset_store.dart';
 import 'package:fushi_engine/sync/sync_asset_store.dart';
 
 import 'srs_test_support.dart';
+import '../../../packages/fushi_engine/test/srs/support/srs_raw_sql.dart';
 
 const String kProfile = '01928c3e-0000-7000-8000-0000000000e9';
 const int kT0 = 1700000000000;
@@ -76,7 +76,7 @@ Future<SrsStorage> _legacyStorage(List<String> logIds) async {
 
 /// 本 profile 的日志操作：条数与来自几台设备。
 Future<({int ops, int devices})> _logOps(SrsStorage st) async {
-  final QueryRow r = await st.db
+  final SrsRawRow r = await st.core
       .customSelect(
         'SELECT COUNT(*) AS c, COUNT(DISTINCT device) AS d FROM sync2_ops '
         'WHERE profile_uid = ? AND kind = 3',
@@ -91,7 +91,6 @@ Future<SrsDbStore> _open(
   String device, {
   bool deferMigration = false,
 }) => SrsDbStore.open(
-  db: st.db,
   core: st.core,
   profileUid: kProfile,
   deviceId: device,
@@ -362,7 +361,7 @@ void main() {
     });
     int? queuedAfterAnswer;
     final Future<void> probe = b.runExclusive(() async {
-      final QueryRow r = await st.db
+      final SrsRawRow r = await st.core
           .customSelect('SELECT COUNT(*) AS c FROM sync2_migrate_queue')
           .getSingle();
       queuedAfterAnswer = r.read<int>('c');
