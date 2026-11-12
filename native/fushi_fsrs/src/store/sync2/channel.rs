@@ -32,9 +32,23 @@
 //! 跳过已清除的载荷）——要同时有迁移进来的旧记录被清除、且 v2 写入只见过那台设备迁移操作的一部分，逐条投递在这种
 //! 情形下本身也随到达顺序而变。
 //!
-//! 走不走通道：会话开始时（[begin]）这个 profile 的操作日志与投影都是空的才走（新设备第一次同步）。折叠完之前本机
+//! 走不走通道：会话开始时（[begin]）这个 profile 是新设备第一次同步才走（[fresh]：本机只有开库时自己写下的内置
+//! 身份记录，或什么都没有）。折叠完之前本机
 //! 要写 / 会话外要投递，先把通道做完（[settle]，ffi.rs 分发器与 `channel_settle`、一次收完、导入），之后按逐条投递收。
 //! 做完通道与收尾一样按片、每片一个事务（[settle]），不把整份投影塞进调用方的一笔事务。
+//!
+//! 开通道时投影里已有的行（BUG-4387）：真实的新设备不是空的——Dart 开库就写下内置身份记录（默认牌组、内置笔记
+//! 类型，`SrsDbStore.ensureBuiltins`），每台设备各写一份、ID 相同，所以远端一定带着同 ID 的身份记录。[fresh] 保证
+//! 这时本机除了这几行身份记录什么都没有：没有修改记录、日志、实体 → 操作索引、清除、挂起、标签（身份记录不进
+//! 索引，`project_entity` 只写 `srs_entities`）。逐条投影里读「现存行」的地方因此只剩一处：`project_entity` 按 ID
+//! 比内容（同内容不写、不同内容取规范文本小者）。折叠遇到投影里已有同 ID 行的身份记录就不折，挪到逐条区交给生产
+//! 的 `project_entity`（[fold_part]）；同 ID 的身份记录总在同一区、逐条区按投递顺序，结果与逐条投递相同。内置实体
+//! 上的修改（改名、改模板）照常折：它们的寄存器在本机是空的。折叠期间 `srs_entities` 不变（归并在全部分区折完
+//! 之后，本机写入先 [settle]）。
+//!
+//! 信任（trust.rs）：第一次见到某台设备时按投影判「本机库里有没有用户的东西」，而 `plan` 不先做完通道。通道没做完
+//! 时投影不全，所以这种时候先把通道做完再判（transport.rs `sync2_plan_at` 按片做，`note_new_device` 兜底）——之后
+//! 这个 profile 按逐条投递收。
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
@@ -120,17 +134,86 @@ pub(crate) fn active(c: &Connection, profile: &str) -> Result<bool, String> {
     Ok(boot(c, profile)?.is_some())
 }
 
-/// 操作日志与投影都是空的（新设备第一次同步）。
+/// 新设备第一次同步：这个 profile 在本机只有开库时自己写下的内置身份记录（或什么都没有）——没有用户数据，也没收过
+/// 别的设备的操作。以前要求操作日志与投影全空，而 Dart `SrsDbStore.open` 在任何同步之前就写下内置身份记录
+/// （`ensureBuiltins`），生产里这条判据恒为假、通道从不打开（BUG-4387）。
+///
+/// 三条全成立才算：
+/// 1. 投影里没有用户的东西（[super::trust::library_fresh]：没有复习日志、没有修改记录，身份记录的载荷全带 `builtin`
+///    键——只有 `srs_builtin.dart` `srsBuiltinEntities` 写这个键），也没有不认识的事件，本机没换过身份；
+/// 2. 操作日志里每一条都是**本机当前身份**写的**身份记录**；
+/// 3. 这些操作与投影里的身份记录行一一对应：同一个 ID、同样的种类与内容。
+///
+/// 凭什么区分内置实体与用户数据——三样一起：来源设备（没有别的设备的操作 = 没收过）、操作种类（改名、改模板、删除、
+/// 复习、标签、媒体、清除、还原点都是别的种类的操作：身份记录不可变，用户对内置实体的任何改动都另是一条操作，所以
+/// 改过内置牌组名 / 内置笔记类型模板的不算新设备）、内容标记（`builtin`：用户自建的牌组 / 笔记类型没有）。不靠 ID
+/// 清单：内核只知道默认牌组的 ID，内置笔记类型的 ID 只有 Dart 知道，以后加内置类型也不用改这里。第 3 条挡掉不经
+/// 操作日志的投影行（v2 之前的旧库还没迁移）。拿不准的一律不算（只是照旧逐条投递）。
 fn fresh(c: &Connection, profile: &str) -> Result<bool, String> {
-    c.query_row(
-        "SELECT NOT EXISTS (SELECT 1 FROM sync2_ops WHERE profile_uid = srs_id(?1)) \
-           AND NOT EXISTS (SELECT 1 FROM srs_entities WHERE profile_uid = srs_id(?1)) \
-           AND NOT EXISTS (SELECT 1 FROM srs_field_edits WHERE profile_uid = srs_id(?1)) \
-           AND NOT EXISTS (SELECT 1 FROM srs_review_logs WHERE profile_uid = srs_id(?1))",
-        [profile],
-        |r| r.get(0),
-    )
-    .map_err(sql)
+    if !super::trust::library_fresh(c, profile)? {
+        return Ok(false);
+    }
+    let untouched: bool = c
+        .query_row(
+            "SELECT NOT EXISTS (SELECT 1 FROM srs_unknown_events WHERE profile_uid = srs_id(?1)) \
+               AND NOT EXISTS (SELECT 1 FROM sync2_devices WHERE profile_uid = srs_id(?1) AND frozen != 0)",
+            [profile],
+            |r| r.get(0),
+        )
+        .map_err(sql)?;
+    if !untouched {
+        return Ok(false);
+    }
+    // 身份记录行：ID → (种类, 载荷)。上面已判过全是内置的，只有几行。
+    let mut rows: BTreeMap<String, (String, String)> = c
+        .prepare_cached("SELECT srs_idt(id) AS id, kind, payload_json FROM srs_entities WHERE profile_uid = srs_id(?1)")
+        .map_err(sql)?
+        .query_map([profile], |r| Ok((r.get(0)?, (r.get(1)?, r.get(2)?))))
+        .map_err(sql)?
+        .collect::<Result<_, _>>()
+        .map_err(sql)?;
+    // 操作日志至多读「行数 + 1」条：多出一条就不是一一对应（老设备的日志有几十万条，不整表数）。
+    let ops: Vec<(Vec<u8>, i64)> = c
+        .prepare_cached("SELECT device, seq FROM sync2_ops WHERE profile_uid = srs_id(?1) LIMIT ?2")
+        .map_err(sql)?
+        .query_map(params![profile, rows.len() as i64 + 1], |r| {
+            Ok((r.get(0)?, r.get(1)?))
+        })
+        .map_err(sql)?
+        .collect::<Result<_, _>>()
+        .map_err(sql)?;
+    if ops.len() != rows.len() {
+        return Ok(false);
+    }
+    if ops.is_empty() {
+        return Ok(true);
+    }
+    let own: Option<Vec<u8>> = c
+        .prepare_cached("SELECT device FROM sync2_self WHERE profile_uid = srs_id(?1)")
+        .map_err(sql)?
+        .query_row([profile], |r| r.get(0))
+        .optional()
+        .map_err(sql)?;
+    for (device, seq) in ops {
+        if own.as_ref() != Some(&device) {
+            return Ok(false);
+        }
+        let id = OpId {
+            device: Id(device.try_into().map_err(|_| "bad device".to_string())?),
+            seq: seq as u64,
+        };
+        let Some(Ok(Body::Entity { kind, id, data })) =
+            super::load_op(c, profile, &id)?.map(|op| op.body())
+        else {
+            return Ok(false);
+        };
+        let d: Value = serde_json::from_str(&data).unwrap_or(Value::Null);
+        match rows.remove(&id.text()) {
+            Some((k, payload)) if k == kind.wire() && payload == canonical(&d) => {}
+            _ => return Ok(false),
+        }
+    }
+    Ok(rows.is_empty())
 }
 
 /// 收段会话开始（transport.rs `sync2_ingest_begin`；[w] 是写连接，不在调用方的事务里）：通道还在追加阶段（上一个
@@ -701,7 +784,16 @@ fn fold_part(c: &Connection, profile: &str, part: i64, t: &mut Touched) -> Resul
             }
             Body::Entity { kind, id, data } => {
                 let idt = id.text();
-                if is_complex(kind.wire(), &idt) {
+                // 投影里已有这个 ID 的行（开通道前本机写下的内置身份记录，见文件头）：不折，交给生产的
+                // `project_entity` 比内容。查法与它相同（只按 ID，不分 profile、不分种类）。
+                let taken = c
+                    .prepare_cached("SELECT 1 FROM srs_entities WHERE id = srs_id(?1)")
+                    .map_err(sql)?
+                    .exists([&idt])
+                    .map_err(sql)?;
+                #[cfg(test)]
+                cover(4, usize::from(taken));
+                if taken || is_complex(kind.wire(), &idt) {
                     deferred.push((*rank, dev, seq));
                     continue;
                 }
@@ -1109,7 +1201,7 @@ impl crate::store::SrsCore {
 #[cfg(test)]
 thread_local! {
     static OFF: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-    static COVER: std::cell::Cell<[usize; 4]> = const { std::cell::Cell::new([0; 4]) };
+    static COVER: std::cell::Cell<[usize; 5]> = const { std::cell::Cell::new([0; 5]) };
     /// [settle] 提交过的片数（[SETTLE_SLICES]，[take_settle_slices] 清零后从 0 数）到这个值时报错（测试：中途失败只丢那一片）。
     static FAIL_SETTLE_AT: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
     /// [settle] 按片提交的累计片数。
@@ -1156,8 +1248,9 @@ fn cover(k: usize, n: usize) {
     });
 }
 
-/// 测试：各分支走过几次——（折叠的操作, 复杂实体逐条的操作, 折叠里落了又被支配的, 移进复杂牌组的卡），取走清零。
+/// 测试：各分支走过几次——（折叠的操作, 挪去逐条的操作, 折叠里落了又被支配的, 移进复杂牌组的卡, 投影里已有同 ID 行
+/// 的身份记录），取走清零。
 #[cfg(test)]
-pub(crate) fn take_coverage() -> [usize; 4] {
-    COVER.with(|c| c.replace([0; 4]))
+pub(crate) fn take_coverage() -> [usize; 5] {
+    COVER.with(|c| c.replace([0; 5]))
 }

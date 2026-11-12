@@ -290,6 +290,30 @@ class FushiDesktopTitleBar extends StatefulWidget {
   static bool get windowDragAvailable =>
       _isEnabled && !_contentFullscreen.value;
 
+  /// 标题行拖动区上的**单击**（没拖、也不是双击）的订阅者，参数是全局坐标。
+  ///
+  /// 标题行叠在整个 Navigator 之上：页面里的全屏层（查词弹窗的 dismiss
+  /// barrier）在这一条里命中不到——拖动区先吃掉了指针。沉浸页的隐形拖动条
+  /// （[setCaptionDragBand]）更是常驻可命中，点窗口最顶部关不掉查词弹窗
+  /// （BUG-4475）。单击转发给订阅者，由页面按「点在弹窗外」处理；拖动 / 双击
+  /// 最大化照旧归窗口。
+  static final Set<ValueChanged<Offset>> _captionTapListeners =
+      <ValueChanged<Offset>>{};
+
+  static void addCaptionTapListener(ValueChanged<Offset> listener) =>
+      _captionTapListeners.add(listener);
+
+  static void removeCaptionTapListener(ValueChanged<Offset> listener) =>
+      _captionTapListeners.remove(listener);
+
+  static void _notifyCaptionTap(Offset globalPosition) {
+    for (final ValueChanged<Offset> listener in List<ValueChanged<Offset>>.of(
+      _captionTapListeners,
+    )) {
+      listener(globalPosition);
+    }
+  }
+
   /// 接管标题行的页面必须让开的左右宽度：macOS 左侧系统红绿灯留位；
   /// Windows / Linux 右侧 MD3 窗口按钮组 + 组右侧页边。未装自绘顶栏时为零。
   static EdgeInsets captionReservedInsets(BuildContext context) {
@@ -732,26 +756,28 @@ class _FushiDesktopTitleBarState extends State<FushiDesktopTitleBar>
           const Expanded(child: SizedBox.shrink())
         else
           Expanded(
-            child: DragToMoveArea(
-              // 拖动区必须撑满整条标题栏高度：去掉标题文字后 Row 里只剩无高度的
-              // 占位（SizedBox 宽 / Spacer），Row 会塌成 0 高，命中测试永远落不进
-              // DragToMoveArea，顶栏就拖不动了（2026-10-04 用户报）。
-              child: SizedBox.expand(
-                child: Row(
-                  children: <Widget>[
-                    SizedBox(
-                      width: trafficLights
-                          ? math.max(
-                              0,
-                              widget.leadingInset - _kTrafficLightsReserve,
-                            )
-                          : widget.leadingInset,
-                    ),
-                    // 顶部控制条只做拖动区 + 窗口按钮，不显示页面标题（用户
-                    // 2026-10-04）；页面自己的大标题 / 顶栏负责标题。[title] 仍
-                    // 保留在参数里，供无障碍窗口名等后续用途。
-                    const Spacer(),
-                  ],
+            child: _CaptionTapForwarder(
+              child: DragToMoveArea(
+                // 拖动区必须撑满整条标题栏高度：去掉标题文字后 Row 里只剩无高度的
+                // 占位（SizedBox 宽 / Spacer），Row 会塌成 0 高，命中测试永远落不进
+                // DragToMoveArea，顶栏就拖不动了（2026-10-04 用户报）。
+                child: SizedBox.expand(
+                  child: Row(
+                    children: <Widget>[
+                      SizedBox(
+                        width: trafficLights
+                            ? math.max(
+                                0,
+                                widget.leadingInset - _kTrafficLightsReserve,
+                              )
+                            : widget.leadingInset,
+                      ),
+                      // 顶部控制条只做拖动区 + 窗口按钮，不显示页面标题（用户
+                      // 2026-10-04）；页面自己的大标题 / 顶栏负责标题。[title] 仍
+                      // 保留在参数里，供无障碍窗口名等后续用途。
+                      const Spacer(),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -794,10 +820,12 @@ class _FushiDesktopTitleBarState extends State<FushiDesktopTitleBar>
             ),
           ),
           // 组右侧的页边留白仍是拖动区（右上角另有顶边 resize 把手）。
-          DragToMoveArea(
-            child: SizedBox(
-              width: FushiDesignTokens.of(context).spacing.page,
-              height: FushiDesktopTitleBar.height,
+          _CaptionTapForwarder(
+            child: DragToMoveArea(
+              child: SizedBox(
+                width: FushiDesignTokens.of(context).spacing.page,
+                height: FushiDesktopTitleBar.height,
+              ),
             ),
           ),
         ],
@@ -1973,6 +2001,24 @@ class FushiWindowDragArea extends StatelessWidget {
           : null,
       child: child,
     ),
+    child: child,
+  );
+}
+
+/// 包在标题行拖动区（`DragToMoveArea`）外面，把**单击**转发给
+/// [FushiDesktopTitleBar.addCaptionTapListener] 的订阅者（BUG-4475）。拖动 /
+/// 双击最大化仍由里面的 `DragToMoveArea` 赢下手势竞技场；单击要等双击判定
+/// 超时（[kDoubleTapTimeout]）才落到这里，与系统标题栏同一手感。
+class _CaptionTapForwarder extends StatelessWidget {
+  const _CaptionTapForwarder({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => GestureDetector(
+    behavior: HitTestBehavior.translucent,
+    onTapUp: (TapUpDetails details) =>
+        FushiDesktopTitleBar._notifyCaptionTap(details.globalPosition),
     child: child,
   );
 }

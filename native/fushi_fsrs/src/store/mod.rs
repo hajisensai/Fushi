@@ -18,6 +18,7 @@
 //! 只打开 `srs.db`、它的备份快照副本或自己生成的临时文件；绝不打开主库 `fushi.db`（同一进程里
 //! Drift 那份 SQLite 与这里自带的一份同开一个文件，会在 POSIX 平台上互相清掉文件锁）。
 
+pub(crate) mod binding;
 pub(crate) mod browse;
 pub mod bulk;
 pub(crate) mod caches;
@@ -904,6 +905,7 @@ impl SrsCore {
                  DELETE FROM sync2_self; DELETE FROM sync2_pending; DELETE FROM sync2_segments; \
                  DELETE FROM sync2_locations; DELETE FROM sync2_rewrites; DELETE FROM sync2_obsolete; \
                  DELETE FROM srs_meta WHERE key LIKE 'sync2_digest/%'; \
+                 DELETE FROM srs_meta WHERE key LIKE 'sync2_former/%'; \
                  COMMIT;",
             )
             .map_err(|e| e.to_string())?;
