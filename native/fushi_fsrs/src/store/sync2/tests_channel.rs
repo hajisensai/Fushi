@@ -811,7 +811,7 @@ fn session(d: &Device, w: &World, per: usize, slice: Option<u64>, interrupt: Int
                     let input = json!([{"e": edit("note", &note_id(7), "f/fa", json!("typed mid-sync")), "note": note_id(7)}]).to_string();
                     cmd(
                         d,
-                        json!({"op": "apply", "now": NOW}),
+                        json!({"op": "apply", "now": NOW, "legacyDevice": "dev"}),
                         vec![input.into_bytes()],
                     );
                     let w = d.core.writer().unwrap();

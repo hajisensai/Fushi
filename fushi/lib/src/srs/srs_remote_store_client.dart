@@ -984,6 +984,30 @@ class SrsRemoteStore implements SrsDbStore, SrsRemoteForwarding {
   }
 
   @override
+  Future<SrsEditUndo> editFieldsUndoable(List<SrsFieldChange> changes) {
+    for (final SrsFieldChange c in changes) {
+      if (c.kind == SrsEntityKind.card) _bases.remove(c.entityId);
+    }
+    return _write('editFieldsUndoable', <String, Object?>{
+      'changes': SrsRemoteWire.editSpecs(<SrsEditSpec>[
+        for (final SrsFieldChange c in changes)
+          SrsEditSpec(c.kind, c.entityId, c.key, c.value),
+      ]),
+    }, SrsEditUndo.fromJson);
+  }
+
+  /// 撤销在主机的写锁里按主机库的修改记录裁决（撤销凭据里的 dot 是主机内核分配的）。
+  @override
+  Future<SrsEditUndoResult> revertEdits(SrsEditUndo undo) {
+    for (final SrsEditUndoItem i in undo.items) {
+      if (i.kind == SrsEntityKind.card) _bases.remove(i.entityId);
+    }
+    return _write('revertEdits', <String, Object?>{
+      'undo': undo.toJson(),
+    }, SrsEditUndoResult.fromJson);
+  }
+
+  @override
   Future<List<SrsFieldEdit>> writeEdits(
     List<SrsEditSpec> specs, {
     List<SrsEntityRecord> records = const <SrsEntityRecord>[],

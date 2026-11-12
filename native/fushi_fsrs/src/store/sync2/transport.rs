@@ -1849,9 +1849,8 @@ fn ingest_result(
 }
 
 /// 收段的一步在同一笔事务里写下 Dart 的本机状态行（`srs_local_state`，集成审查【中高】）。[local_state] 是 Dart 调用
-/// 那一刻内存里的本机状态（`_saveLocal` 写的同一份 JSON）；这一步只会改变其中的修订号 `revision`（Dart
-/// `_absorbProjection`：每条落库的事件、每个变化的实体各 +1），这里按 [result] 的 `marks.landed` 与 `changed` 条数
-/// 同样推进后写下，并把写下的值放进结果的 `localRevision`（Dart 以它为准，内存与库里的一致）。[local_state] 为 None
+/// 那一刻内存里的本机状态（`_saveLocal` 写的同一份 JSON）；修订号按 [result] 推进后写下、结果带 `localRevision`，与本机
+/// 写命令同一个函数（store/local_state.rs [crate::store::local_state::persist_projected]）。[local_state] 为 None
 /// （测试、旧调用方）就不写，结果原样返回。
 fn persist_local_state(
     c: &Connection,
@@ -1863,22 +1862,7 @@ fn persist_local_state(
         return Ok(result);
     };
     let mut r: Value = serde_json::from_str(&result).map_err(|e| e.to_string())?;
-    let mut state: Value =
-        serde_json::from_str(local).map_err(|e| format!("sync2 ingest: bad localState: {e}"))?;
-    let landed = r["marks"]["landed"].as_i64().unwrap_or(0);
-    let changed = r["changed"].as_array().map_or(0, |a| a.len() as i64);
-    let revision = state.get("revision").and_then(Value::as_i64).unwrap_or(0) + landed + changed;
-    state
-        .as_object_mut()
-        .ok_or("sync2 ingest: localState must be a JSON object")?
-        .insert("revision".to_owned(), json!(revision));
-    c.prepare_cached(
-        "INSERT INTO srs_local_state (profile_uid, json) VALUES (srs_id(?1), ?2) ON CONFLICT(profile_uid) DO UPDATE SET json = excluded.json",
-    )
-    .map_err(sql)?
-    .execute(params![profile, state.to_string()])
-    .map_err(sql)?;
-    r["localRevision"] = json!(revision);
+    crate::store::local_state::persist_projected(c, profile, local, &mut r)?;
     Ok(r.to_string())
 }
 
@@ -2837,45 +2821,11 @@ impl SrsCore {
         let w = self.writer()?;
         // 会话外投递：新设备收段通道没做完就先按片做完（各片自己提交），之后逐条投递（channel.rs `settle`）。
         self.settle_channel_on(&w, profile)?;
-        in_savepoint(&w, |c| {
-            let local = Local::load(c, profile)?.ok_or("sync2 not initialised for this profile")?;
-            let mut t = Touched::default();
-            let mut errors = Vec::new();
-            let mut fork_at: Option<u64> = None;
-            let (applied_n, _, _) = deliver_prepared(
-                c,
-                profile,
-                &local,
-                &mut prepared,
-                &mut CommitBudget::unlimited(),
-                now,
-                &mut t,
-                &mut errors,
-                &mut fork_at,
-                &mut None,
-                false,
-            )?;
-            bump_delivery_epoch();
-            if let Some(k) = fork_at {
-                rotate(c, profile, k, now, &mut t)?;
-            }
-            let replayed = replay_touched(c, &t)?;
-            ingest_result(
-                c,
-                profile,
-                t,
-                replayed,
-                applied_n,
-                errors,
-                fork_at.is_some(),
-                false,
-                None,
-            )
-        })
+        in_savepoint(&w, |c| ingest_on(c, profile, &mut prepared, now))
     }
 
     /// 收段的锁外一半：读连接上取本机身份与各设备公钥（查完就放），再不持任何锁地验签、解密、解压、重算链。
-    fn prepare_unlocked<'a>(
+    pub(crate) fn prepare_unlocked<'a>(
         &self,
         profile: &str,
         segments: std::borrow::Cow<'a, [Vec<u8>]>,
@@ -3728,115 +3678,117 @@ impl SrsCore {
     /// 明文、全部操作、再拷一份待投递三份同时在内存。
     pub fn sync2_import(&self, profile: &str, bytes: &[u8], now: i64) -> Result<String, String> {
         let w = self.writer()?;
-        // 会话外投递：新设备收段通道没做完就先按片做完（channel.rs `settle`；Dart 的导入在 Drift 事务里，已在开事务
-        // 前发过 `channel_settle`，这里通常没有通道）。
+        // 会话外投递：新设备收段通道没做完就先按片做完（channel.rs `settle`；分发器已在取写锁前收过通道，这里通常
+        // 没有通道）。
         self.settle_channel_on(&w, profile)?;
-        in_savepoint(&w, |c| {
-            let local = match Local::load(c, profile)? {
-                Some(l) => l,
-                None => Local::create(c, profile, now)?,
-            };
-            let mut reader = ExportReader::open(bytes)?;
-            if reader.collection != local.collection {
-                return Err("this .fushisrs belongs to another profile".into());
+        in_savepoint(&w, |c| import_on(c, profile, bytes, now)).map(|v| v.to_string())
+    }
+}
+
+/// [SrsCore::sync2_import] 的本体：在调用方的写连接、调用方开的 SAVEPOINT 里并入（不自己取锁、不收通道——调用方在开
+/// SAVEPOINT 之前收，见 [SrsCore::settle_channel_on]）。
+pub(crate) fn import_on(
+    c: &Connection,
+    profile: &str,
+    bytes: &[u8],
+    now: i64,
+) -> Result<Value, String> {
+    let local = match Local::load(c, profile)? {
+        Some(l) => l,
+        None => Local::create(c, profile, now)?,
+    };
+    let mut reader = ExportReader::open(bytes)?;
+    if reader.collection != local.collection {
+        return Err("this .fushisrs belongs to another profile".into());
+    }
+    // 第一遍：校验、收集设备抬头、算本机身份与包的共同前缀 k。
+    let mut runs: Vec<(Id, Vec<u8>)> = Vec::new();
+    let mut own: Option<(u64, u64, bool, Chain)> = None; // (包里条数, k, 仍然对得上, 链)
+    while let Some(item) = reader.next_item()? {
+        match item {
+            ExportItem::Device {
+                device,
+                public,
+                count,
+            } => {
+                if device == local.device {
+                    own = Some((count, 0, true, CHAIN_ZERO));
+                }
+                runs.push((device, public));
             }
-            // 第一遍：校验、收集设备抬头、算本机身份与包的共同前缀 k。
-            let mut runs: Vec<(Id, Vec<u8>)> = Vec::new();
-            let mut own: Option<(u64, u64, bool, Chain)> = None; // (包里条数, k, 仍然对得上, 链)
-            while let Some(item) = reader.next_item()? {
-                match item {
-                    ExportItem::Device {
-                        device,
-                        public,
-                        count,
-                    } => {
-                        if device == local.device {
-                            own = Some((count, 0, true, CHAIN_ZERO));
-                        }
-                        runs.push((device, public));
-                    }
-                    ExportItem::Op(op) => {
-                        if let Some((_, k, matching, chain)) =
-                            own.as_mut().filter(|_| op.id.device == local.device)
-                        {
-                            if *matching {
-                                *chain = chain_next(chain, &op);
-                                if chain_at(c, profile, &local.device, op.id.seq)? == Some(*chain) {
-                                    *k = op.id.seq;
-                                } else {
-                                    *matching = false;
-                                }
-                            }
+            ExportItem::Op(op) => {
+                if let Some((_, k, matching, chain)) =
+                    own.as_mut().filter(|_| op.id.device == local.device)
+                {
+                    if *matching {
+                        *chain = chain_next(chain, &op);
+                        if chain_at(c, profile, &local.device, op.id.seq)? == Some(*chain) {
+                            *k = op.id.seq;
+                        } else {
+                            *matching = false;
                         }
                     }
                 }
             }
-            let mut t = Touched::default();
-            // 包是本机更早的前缀（全部对得上）不用换；有分歧或包里更长（另一个安装接着写过）才换。
-            if let Some((count, k, _, _)) = own {
-                if k < count {
-                    rotate(c, profile, k, now, &mut t)?;
-                }
-            }
-            for (device, public) in &runs {
-                c.execute(
+        }
+    }
+    let mut t = Touched::default();
+    // 包是本机更早的前缀（全部对得上）不用换；有分歧或包里更长（另一个安装接着写过）才换。
+    if let Some((count, k, _, _)) = own {
+        if k < count {
+            rotate(c, profile, k, now, &mut t)?;
+        }
+    }
+    for (device, public) in &runs {
+        c.execute(
                     "INSERT INTO sync2_devices (profile_uid, device, public, applied) VALUES (srs_id(?1), ?2, ?3, 0) \
                      ON CONFLICT(profile_uid, device) DO UPDATE SET public = COALESCE(sync2_devices.public, excluded.public)",
                     params![profile, device.0.to_vec(), if public.is_empty() { None } else { Some(public.clone()) }],
                 )
                 .map_err(sql)?;
-            }
-            // 第二遍：按块投递。
-            let mut delivery = Delivery::load(c, profile)?;
-            let mut reader = ExportReader::open(bytes)?;
-            let mut chain = CHAIN_ZERO;
-            let mut chunk: Vec<(Op, Chain)> = Vec::new();
-            let mut chunk_raw = 0usize;
-            while let Some(item) = reader.next_item()? {
-                match item {
-                    ExportItem::Device { .. } => chain = CHAIN_ZERO,
-                    ExportItem::Op(op) => {
-                        chain = chain_next(&chain, &op);
-                        chunk_raw += held_bytes(&op);
-                        chunk.push((op, chain));
-                        if chunk.len() >= DELIVERY_CHUNK_OPS || chunk_raw >= DELIVERY_CHUNK_RAW {
-                            delivery.push(std::mem::take(&mut chunk));
-                            chunk_raw = 0;
-                            delivery.drain(
-                                c,
-                                profile,
-                                now,
-                                &mut t,
-                                &mut CommitBudget::unlimited(),
-                            )?;
-                        }
-                    }
+    }
+    // 第二遍：按块投递。
+    let mut delivery = Delivery::load(c, profile)?;
+    let mut reader = ExportReader::open(bytes)?;
+    let mut chain = CHAIN_ZERO;
+    let mut chunk: Vec<(Op, Chain)> = Vec::new();
+    let mut chunk_raw = 0usize;
+    while let Some(item) = reader.next_item()? {
+        match item {
+            ExportItem::Device { .. } => chain = CHAIN_ZERO,
+            ExportItem::Op(op) => {
+                chain = chain_next(&chain, &op);
+                chunk_raw += held_bytes(&op);
+                chunk.push((op, chain));
+                if chunk.len() >= DELIVERY_CHUNK_OPS || chunk_raw >= DELIVERY_CHUNK_RAW {
+                    delivery.push(std::mem::take(&mut chunk));
+                    chunk_raw = 0;
+                    delivery.drain(c, profile, now, &mut t, &mut CommitBudget::unlimited())?;
                 }
             }
-            delivery.push(chunk);
-            delivery.drain(c, profile, now, &mut t, &mut CommitBudget::unlimited())?;
-            let applied = delivery.finish(c, profile, now)?;
-            let replayed = replay_touched(c, &t)?;
-            let pending: i64 = c
-                .query_row(
-                    "SELECT COUNT(*) FROM sync2_pending WHERE profile_uid = srs_id(?1)",
-                    [profile],
-                    |r| r.get(0),
-                )
-                .map_err(sql)?;
-            Ok(json!({
-                "marks": t.marks.to_json(),
-                "replayed": replayed,
-                "applied": applied,
-                "pending": pending,
-                "errors": [],
-                "fork": false,
-                "changed": t.entities_changed.iter().map(|(k, e)| json!([k, e])).collect::<Vec<_>>(),
-                "purged": t.purged.iter().map(|(k, e)| json!([k, e])).collect::<Vec<_>>(),
-            })
-            .to_string())
-        })
+        }
     }
+    delivery.push(chunk);
+    delivery.drain(c, profile, now, &mut t, &mut CommitBudget::unlimited())?;
+    let applied = delivery.finish(c, profile, now)?;
+    let replayed = replay_touched(c, &t)?;
+    let pending: i64 = c
+        .query_row(
+            "SELECT COUNT(*) FROM sync2_pending WHERE profile_uid = srs_id(?1)",
+            [profile],
+            |r| r.get(0),
+        )
+        .map_err(sql)?;
+    Ok(json!({
+        "marks": t.marks.to_json(),
+        "replayed": replayed,
+        "applied": applied,
+        "pending": pending,
+        "errors": [],
+        "fork": false,
+        "changed": t.entities_changed.iter().map(|(k, e)| json!([k, e])).collect::<Vec<_>>(),
+        "purged": t.purged.iter().map(|(k, e)| json!([k, e])).collect::<Vec<_>>(),
+    }))
 }
 
 #[cfg(test)]
@@ -3990,4 +3942,47 @@ mod budget_tests {
             "a device that reviewed uses the default slice"
         );
     }
+}
+
+/// [SrsCore::sync2_ingest] 的写锁内一半：在调用方的写连接、调用方开的 SAVEPOINT 里投递预处理好的段（不自己取锁、不收
+/// 通道）。`retire` 用它在同一个 SAVEPOINT 里紧接着投一遍缓冲（store/ffi.rs `local_write`）。
+pub(crate) fn ingest_on(
+    c: &Connection,
+    profile: &str,
+    prepared: &mut PreparedIngest<'_>,
+    now: i64,
+) -> Result<String, String> {
+    let local = Local::load(c, profile)?.ok_or("sync2 not initialised for this profile")?;
+    let mut t = Touched::default();
+    let mut errors = Vec::new();
+    let mut fork_at: Option<u64> = None;
+    let (applied_n, _, _) = deliver_prepared(
+        c,
+        profile,
+        &local,
+        prepared,
+        &mut CommitBudget::unlimited(),
+        now,
+        &mut t,
+        &mut errors,
+        &mut fork_at,
+        &mut None,
+        false,
+    )?;
+    bump_delivery_epoch();
+    if let Some(k) = fork_at {
+        rotate(c, profile, k, now, &mut t)?;
+    }
+    let replayed = replay_touched(c, &t)?;
+    ingest_result(
+        c,
+        profile,
+        t,
+        replayed,
+        applied_n,
+        errors,
+        fork_at.is_some(),
+        false,
+        None,
+    )
 }
