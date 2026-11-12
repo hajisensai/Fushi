@@ -50,12 +50,29 @@ class SyncAssetRangeNotSatisfiable implements Exception {
   String toString() => 'SyncAssetRangeNotSatisfiable(total: $totalBytes)';
 }
 
+/// 服务器无视 `Range`、对部分区间请求回了整文件（HTTP 200）。
+///
+/// 路径式后端（WebDAV）的服务器配置五花八门，个别不支持区间读。这类服务器上**不**
+/// 退化成「把整文件拉下来再自己截」：判型 / 流播的调用方据此明确放弃（不判型、
+/// 起播失败），而不是悄悄下完整个漫画包 / 视频。请求 `[0, 文件尾]` 时 200 就是所求
+/// 区间本身，不算这种情况。
+class SyncAssetRangeUnsupported implements Exception {
+  const SyncAssetRangeUnsupported(this.message);
+
+  final String message;
+
+  @override
+  String toString() => 'SyncAssetRangeUnsupported: $message';
+}
+
 /// 「按字节区间读云端资产」的可选能力（云盘视频流播）。
 ///
-/// 只有能廉价做 `Range` 读的后端实现：OneDrive（Graph 预签名 downloadUrl）、
-/// Dropbox（`files/get_temporary_link`）、Google Drive（`alt=media` + Range）。
-/// 不并进 [SyncAssetStore]：WebDAV / FTP / SFTP 与十余个测试 fake 都实现那份契约，
-/// 硬扩面只会逼它们写一个抛异常的桩；消费方用 `is SyncAssetRangeReader` 判能力。
+/// 能廉价做区间读的后端实现：OneDrive（Graph 预签名 downloadUrl）、Dropbox
+/// （`files/get_temporary_link`）、Google Drive（`alt=media` + Range）、WebDAV
+/// （`GET` + `Range`，服务器不支持时抛 [SyncAssetRangeUnsupported]）、SFTP（按偏移
+/// 读）。FTP 用的库不能从偏移量下载，不实现。
+/// 不并进 [SyncAssetStore]：FTP 与十余个测试 fake 都实现那份契约，硬扩面只会逼它们
+/// 写一个抛异常的桩；消费方用 `is SyncAssetRangeReader` 判能力。
 ///
 /// 实现给出的是**云端原样字节**（混淆产物带 header），明文视图见
 /// [plainAssetRangeReaderOf]。
@@ -254,7 +271,7 @@ Future<SyncAssetRange> openPresignedAssetRange({
     await body.drain<void>();
     if (status == 416) {
       throw SyncAssetRangeNotSatisfiable(
-        _unsatisfiedTotal(response.headers['content-range']),
+        unsatisfiedRangeTotal(response.headers['content-range']),
       );
     }
     if (isPresignedLinkRejected(status) && attempt == 0) {
@@ -335,7 +352,8 @@ SyncAssetRange _rangeFromResponse(
   );
 }
 
-int? _unsatisfiedTotal(String? contentRange) {
+/// 416 响应的 `Content-Range: bytes */<total>` 里的总长；没有 / 解析不了为 null。
+int? unsatisfiedRangeTotal(String? contentRange) {
   if (contentRange == null) return null;
   final RegExpMatch? m = RegExp(r'/(\d+)\s*$').firstMatch(contentRange);
   return m == null ? null : int.parse(m.group(1)!);

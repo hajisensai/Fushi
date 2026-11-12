@@ -5,8 +5,11 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:fushi/src/media/video/audio_energy_probe.dart'
+    show kSubtitleAutoAlignProbeLimitMs;
 import 'package:fushi/src/media/video/subtitle_waveform_align_panel.dart';
 import 'package:fushi/src/media/video/subtitle_waveform_painter.dart';
+import 'package:fushi/src/media/video/subtitle_waveform_segments.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_audio/fushi_audio.dart';
@@ -28,6 +31,7 @@ Widget _host({
   required List<AudioCue> cues,
   required Future<List<double>> Function() loadWaveform,
   int initialDelayMs = 0,
+  int durationMs = 60000,
   Future<void> Function(int delayMs)? onCommitDelay,
   Future<int?> Function()? onAutoAlign,
   Future<void> Function(int startMs)? onPlayCue,
@@ -46,8 +50,9 @@ Widget _host({
           child: SubtitleWaveformAlignPanel(
             initialDelayMs: initialDelayMs,
             cues: cues,
-            durationMs: 60000,
-            loadWaveform: loadWaveform,
+            durationMs: durationMs,
+            // 60 秒的片子只有一段：每次点开恰好抽一次（下面的 loads 计数据此）。
+            loadWaveformSegment: (int start, int end) => loadWaveform(),
             onCommitDelay: onCommitDelay,
             onAutoAlign: onAutoAlign,
             onPlayCue: onPlayCue,
@@ -1088,6 +1093,132 @@ void main() {
   });
 
   // ---------------------------------------------------------------------
+  // 反馈 EUvw-RjUE4：波形对轴视图只显示到约 20:17，24 分钟的一集后面拉不过去——视图
+  // 沿用了自动对轴的 20 分钟探测上界。现在时间窗 = 片长全程，包络按段懒抽：点开只抽
+  // 播放头所在段，滚到片尾才抽末段。
+  // ---------------------------------------------------------------------
+  group('EUvw-RjUE4: full-duration window with lazy segments', () {
+    const int duration = 24 * 60 * 1000;
+
+    Widget fullHost(SubtitleWaveformSegmentLoader loader) => MaterialApp(
+      home: Scaffold(
+        body: Center(
+          child: SizedBox(
+            width: 400,
+            child: SubtitleWaveformAlignPanel(
+              initialDelayMs: 0,
+              cues: <AudioCue>[
+                _cue(1000, 2000, text: 'first'),
+                _cue(23 * 60000, 23 * 60000 + 1500, text: 'last'),
+              ],
+              durationMs: duration,
+              loadWaveformSegment: loader,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    ScrollController hscroll(WidgetTester tester) => tester
+        .widget<SingleChildScrollView>(
+          find.descendant(
+            of: find.byKey(_hscrollKey),
+            matching: find.byType(SingleChildScrollView),
+          ),
+        )
+        .controller!;
+
+    testWidgets(
+      'window end = full duration; open loads only the anchor segment',
+      (WidgetTester tester) async {
+        final List<(int, int)> requested = <(int, int)>[];
+        await tester.pumpWidget(
+          fullHost((int start, int end) async {
+            requested.add((start, end));
+            return <double>[-60, -20, -40, -10];
+          }),
+        );
+        await tester.pumpAndSettle();
+        await _openZoom(tester);
+
+        expect(_zoomPainter(tester).windowEndMs, duration);
+        expect(
+          _zoomPainter(tester).windowEndMs,
+          greaterThan(kSubtitleAutoAlignProbeLimitMs),
+        );
+        // 视口在片头：只抽第 0 段，不会一打开就把整集抽下来。
+        expect(requested, <(int, int)>[(0, kSubtitleWaveformSegmentMs)]);
+      },
+    );
+
+    testWidgets(
+      'scrolling to the end loads the last segment (with loading state)',
+      (WidgetTester tester) async {
+        final List<int> requestedStarts = <int>[];
+        final Completer<List<double>> lastGate = Completer<List<double>>();
+        const int lastStart = 22 * 60 * 1000;
+        await tester.pumpWidget(
+          fullHost((int start, int end) {
+            requestedStarts.add(start);
+            if (start == lastStart) return lastGate.future;
+            return Future<List<double>>.value(<double>[-60, -20, -40, -10]);
+          }),
+        );
+        await tester.pumpAndSettle();
+        await _openZoom(tester);
+        expect(requestedStarts, <int>[0]);
+
+        final ScrollController controller = hscroll(tester);
+        controller.jumpTo(controller.position.maxScrollExtent);
+        await tester.pump(); // 重建：帧末按新视口请求段
+        await tester.pump(); // 段进入 loading，遮罩上墙
+
+        // 滚到片尾才抽末段 [22:00, 24:00)，中间各段一段都没抽。
+        expect(requestedStarts, <int>[0, lastStart]);
+        const Key loadingKey = ValueKey<String>(
+          'subtitle-waveform-segment-loading-11',
+        );
+        expect(find.byKey(loadingKey), findsOneWidget);
+        expect(
+          find.text(t.video_subtitle_waveform_segment_loading),
+          findsOneWidget,
+        );
+
+        lastGate.complete(<double>[-60, -10, -30, -5]);
+        await tester.pumpAndSettle();
+        expect(find.byKey(loadingKey), findsNothing);
+        expect(requestedStarts, <int>[0, lastStart]);
+      },
+    );
+  });
+
+  test(
+    'waveformViewportRangeMs maps scroll position to a padded time range',
+    () {
+      // 整条 24 分钟铺在 144000px 上（0.1px/ms，1px = 10ms），视口 600px 在最右端。
+      const int windowEnd = 24 * 60 * 1000;
+      const double content = 144000;
+      final ({int startMs, int endMs}) atEnd = waveformViewportRangeMs(
+        scrollOffset: content - 600,
+        viewportWidth: 600,
+        contentWidth: content,
+        windowEndMs: windowEnd,
+      );
+      expect(atEnd.endMs, windowEnd);
+      // 视口 600px = 6000ms，左边再放半个视口宽（300px = 3000ms）的预取余量。
+      expect(atEnd.startMs, windowEnd - 6000 - 3000);
+      final ({int startMs, int endMs}) atStart = waveformViewportRangeMs(
+        scrollOffset: 0,
+        viewportWidth: 600,
+        contentWidth: content,
+        windowEndMs: windowEnd,
+      );
+      expect(atStart.startMs, 0);
+      expect(atStart.endMs, 9000);
+    },
+  );
+
+  // ---------------------------------------------------------------------
   // 字幕波形对轴全平台化：放大视图在手机竖屏 / 横屏（看视频的常态）逻辑尺寸下完整
   // 可用——不溢出、调轴控件与关闭按钮都在树里。此前移动端根本拿不到波形、从未打开过
   // 这个弹窗，布局只在桌面尺寸下被验证过。
@@ -1103,15 +1234,18 @@ void main() {
         MaterialApp(
           home: Scaffold(
             body: SubtitleWaveformZoomView(
-              rawEnvelope: List<double>.generate(
-                3000,
-                (int i) => i.isEven ? -60.0 : -12.0,
+              segments: SubtitleWaveformSegments(
+                durationMs: 60000,
+                loadSegment: (int start, int end) async =>
+                    List<double>.generate(
+                      3000,
+                      (int i) => i.isEven ? -60.0 : -12.0,
+                    ),
               ),
               cues: <AudioCue>[
                 for (int s = 0; s < 60; s++)
                   _cue(s * 1000, s * 1000 + 800, text: 'S$s'),
               ],
-              windowEndMs: 60000,
               initialDelayMs: 0,
               onCommitDelay: (int _) async {},
               onAutoAlign: () async => null,

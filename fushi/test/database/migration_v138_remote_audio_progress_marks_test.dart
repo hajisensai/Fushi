@@ -57,7 +57,7 @@ void main() {
         path,
         isMainProcess: false,
       );
-      expect(migrated.schemaVersion, 148);
+      expect(migrated.schemaVersion, 149);
       final RemoteAudioBindingRow row = await migrated
           .select(migrated.remoteAudioBindings)
           .getSingle();
@@ -86,7 +86,7 @@ void main() {
 
       final sqlite.Database probe = sqlite.sqlite3.open(path);
       addTearDown(probe.dispose);
-      expect(probe.select('PRAGMA user_version').first.values.first, 148);
+      expect(probe.select('PRAGMA user_version').first.values.first, 149);
       expect(
         columnsOf(probe),
         containsAll(<String>['server_progress_at', 'progress_synced_at']),
@@ -114,6 +114,6 @@ void main() {
 
     final sqlite.Database probe = sqlite.sqlite3.open(path);
     addTearDown(probe.dispose);
-    expect(probe.select('PRAGMA user_version').first.values.first, 148);
+    expect(probe.select('PRAGMA user_version').first.values.first, 149);
   });
 }

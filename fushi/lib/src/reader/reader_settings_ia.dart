@@ -129,6 +129,7 @@ final List<ReaderSettingsSectionSpec> kReaderSettingsSections =
         title: () => t.reader_panel_section_common,
         itemIds: const <String>[
           'reading_display.view_mode',
+          'reading_display.follow_book_layout',
           'reading_display.writing_mode',
           'reading_display.line_height',
           'reading_display.page_columns',

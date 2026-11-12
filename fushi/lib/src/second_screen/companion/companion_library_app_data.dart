@@ -196,10 +196,19 @@ class AppCompanionLibraryData implements CompanionLibraryData {
       final String? key = ReaderFushiSource.parseBookKey(item.mediaIdentifier);
       if (key != null) byKey[key] = item;
     }
-    final Set<String> audiobookKeys = <String>{
-      for (final SrtBook b in srtBooks)
-        if (b.bookKey.isNotEmpty) b.bookKey,
-    };
+    // 与书架同一隐藏规则：有声书配对行只顶替能挂有声书的书（反馈 Ndnxy3mNdG）。
+    final Set<String> audiobookKeys =
+        ReaderFushiSource.audiobookShadowedBookKeys(
+          srtBooks,
+          formatOf: (String key) {
+            final MediaItem? item = byKey[key];
+            return item == null
+                ? null
+                : ReaderFushiSource.formatForMediaSourceKey(
+                    item.mediaSourceIdentifier,
+                  );
+          },
+        );
     final List<CompanionLibraryRecord> out = <CompanionLibraryRecord>[];
     for (final MediaItem item in items) {
       final String bookKey =
@@ -1419,10 +1428,7 @@ class AppCompanionLibraryData implements CompanionLibraryData {
       case CompanionLibraryItemKind.book ||
           CompanionLibraryItemKind.manga ||
           CompanionLibraryItemKind.audiobook:
-        return _openBook(
-          key,
-          audiobook: kind == CompanionLibraryItemKind.audiobook,
-        );
+        return _openBook(key);
       case CompanionLibraryItemKind.video:
         return _openVideo(entry ?? key);
       case CompanionLibraryItemKind.collection:
@@ -1444,7 +1450,7 @@ class AppCompanionLibraryData implements CompanionLibraryData {
                 target,
                 collectionId: int.tryParse(key.split('/').last),
               )
-            : _openBook(target, audiobook: false);
+            : _openBook(target);
       case CompanionLibraryItemKind.musicAlbum:
         return _playAlbum(key, startTrack: entry);
       case CompanionLibraryItemKind.musicTrack:
@@ -1471,12 +1477,9 @@ class AppCompanionLibraryData implements CompanionLibraryData {
   }
 
   /// The books shelf's card path ([AppModel.openMedia]; audiobooks through
-  /// the reader source like `_openSrtBook`). Does not wait for the book to
-  /// close.
-  Future<bool> _openBook(
-    String mediaIdentifier, {
-    required bool audiobook,
-  }) async {
+  /// the source derived from the paired book's format, like `_openSrtBook`).
+  /// Does not wait for the book to close.
+  Future<bool> _openBook(String mediaIdentifier) async {
     final List<MediaItem> items = await readCompanionProviderFuture(
       _ref,
       fushiBooksProvider(JapaneseLanguage.instance).future,
@@ -1486,11 +1489,11 @@ class AppCompanionLibraryData implements CompanionLibraryData {
       if (i.mediaIdentifier == mediaIdentifier) item = i;
     }
     if (item == null) return false;
+    // 反馈 Ndnxy3mNdG：有声书也按书卡派生好的源打开（EPUB 书本来就是
+    // ReaderFushiSource；旧版给 PDF 挂上的有声书若写死 EPUB 源会白屏）。
     await _app.openMedia(
       ref: _widgetRef(),
-      mediaSource: audiobook
-          ? ReaderFushiSource.instance
-          : item.getMediaSource(appModel: _app),
+      mediaSource: item.getMediaSource(appModel: _app),
       item: item,
       waitUntilClosed: false,
     );

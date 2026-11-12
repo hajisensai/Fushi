@@ -141,6 +141,13 @@ abstract final class SrsFieldKeys {
   /// 新卡出卡顺序（[SrsNewCardOrder.wire]；缺省 = 按词频）。随参数继承走 own 祖先。
   static const String deckNewOrder = 'newOrder';
 
+  /// 复习顺序（[SrsReviewCardOrder.wire]；缺省 = 可提取度从低到高）。随参数继承走 own 祖先；
+  /// own 祖先按 RWKV 排程时整棵子树按可提取度。
+  static const String deckReviewOrder = 'reviewOrder';
+
+  /// 新卡与复习怎么排（[SrsNewCardMix.wire]；缺省 = 复习之后）。随参数继承走 own 祖先。
+  static const String deckNewMix = 'newMix';
+
   /// 新卡计划（Map，见 [SrsNewCardPlan]）：`auto` 按复习量自动调整、
   /// `budget` 复习预算百分比、`boost` 复习少时多出新卡的百分比。一起写、一起合并；
   /// 与 [deckLimits] 一样是牌组自己的值，不随参数继承。

@@ -46,8 +46,9 @@ Fushi SRS（间隔重复）的排程内核：[fsrs-rs](https://github.com/open-s
 
 响应恒为 `{"ok": …}` 或 `{"error": "…"}`；panic 一律接住转成 error，不越过 FFI。每个 op 带
 `algorithm`（`"fsrs6"` 21 参 / `"fsrs7"` 34 参），`params` 空或缺省 = 该算法默认参数；elapsed
-一律**小数天**。`op`：`version` / `defaults` / `validate` / `next_states` / `memory_state` /
-`memory_state_from_sm2` / `retrievability` / `next_interval`。
+一律**小数天**。`op`：`version` / `defaults` / `validate` / `retrievability`。
+排程（四个评分的下一状态与间隔）、由历史重建记忆状态、SM-2 起点换算不在这里：由内核的确定性 FSRS
+（`src/sync2/fsrs_det.rs`）在作答 / 回放里算，与 fsrs-rs 的对拍也在那个文件的单元测试里。
 
 `ffsrs_fit` 的训练集（BUG-3745）：每张卡只传一份完整历史（`ratings` / `delta_days` 按 `card_offsets`
 切段，长 `n_cards + 1`），外加按评分时刻排好序的条目 `(item_cards[i], item_lengths[i])` = 卡
@@ -169,8 +170,7 @@ FUSHI_FSRS_LIB=<绝对路径>/fushi_fsrs.dll dart test test/ffi_fsrs_engine_test
 ```
 
 不设环境变量时测试按平台找本目录 `prebuilt/` 下的产物。覆盖：默认参数 21 / 34、参数校验
-（个数错、FSRS-6/7 参数互换、NaN）、next_states 按评分单调、FSRS-7 小数天敏感、由历史重建
-记忆状态、SM-2 换算、可提取度衰减、两种算法在合成数据上的参数优化、从另一个 isolate 在进度
+（个数错、FSRS-6/7 参数互换、NaN）、可提取度衰减、两种算法在合成数据上的参数优化、从另一个 isolate 在进度
 > 0 后取消、外样本 / 训练集内评估、zstd 解码（预生成帧）与坏帧返回 null。库缺失时整组 skip。
 Rust 侧单元测试：`cargo test --release`（本目录）。
 

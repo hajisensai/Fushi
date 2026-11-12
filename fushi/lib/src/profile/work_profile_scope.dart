@@ -2,7 +2,12 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:fushi_engine/media/media_pref_keys.dart'
-    show dbSourcePrefKey, kReaderSourcePersistedKey;
+    show
+        dbSourcePrefKey,
+        kGamepadGlyphBrandPrefShortKey,
+        kLyricsModeHintShownPrefShortKey,
+        kReaderSourcePersistedKey,
+        kShortcutBindingsPrefShortKey;
 
 import 'package:fushi/src/models/preference_keys.dart'
     show kWorkProfileSessionPrefKey;
@@ -122,6 +127,30 @@ class WorkProfileScope extends ChangeNotifier {
     '',
   );
 
+  /// 阅读器命名空间 `src:reader_fushi:*` 里**不属于作品**的键（完整 `preferences` 表键）。
+  ///
+  /// 判据：这个设置描述的是用户 / 输入设备 / 本安装，而不是「怎么读这部作品」——打开
+  /// 哪部作品都不该换掉它，在作品里改它也必须改到 App 当前生效的那一份。它们照常随
+  /// **激活配置**快照（切 App 配置时跟着换，见 `AppModel.refreshPrefCache`），只是不进
+  /// 作品会话覆盖层：会话期间读写都直达全局 `preferences`。
+  ///
+  /// GitHub #3089（反馈 e4QDDy1tKZ）：此前整个阅读器前缀都算作品级键，从播放器设置面板
+  /// 进快捷键页改键时 `MediaSource.setPreference` 把绑定写进作品绑定配置的快照，启动时
+  /// `loadShortcutRegistry` 读全局，于是重启后改的键「失效」。
+  ///
+  /// * 快捷键绑定 JSON：快捷键是全 App 的输入映射（阅读器 / 视频 / 漫画 / 全局共用一份）；
+  /// * 手柄按钮图品牌：只决定快捷键设置页的显示，跟手柄走；
+  /// * 歌词模式一次性提示标记：「看过提示」是用户状态，写进某部作品的配置会让别的场合
+  ///   再弹一次。
+  static final Set<String> appLevelReaderPrefKeys = <String>{
+    for (final String shortKey in <String>[
+      kShortcutBindingsPrefShortKey,
+      kGamepadGlyphBrandPrefShortKey,
+      kLyricsModeHintShownPrefShortKey,
+    ])
+      dbSourcePrefKey(kReaderSourcePersistedKey, shortKey),
+  };
+
   /// 视频字幕样式（字幕外观 JSON + 「尊重 ASS 自带样式」）。字幕字体在阅读器命名空间的
   /// `video_sub_fonts`，随字体一起走。
   static const Set<String> videoSubtitleStylePrefKeys = <String>{
@@ -139,10 +168,13 @@ class WorkProfileScope extends ChangeNotifier {
   };
 
   /// [key]（`preferences` 表键）是否作品级键：会话期间读写都走覆盖层。设备本地键
-  /// （[ProfileKeys.isExcludedPref]）从不随配置走，也就从不进覆盖层。
+  /// （[ProfileKeys.isExcludedPref]）从不随配置走，也就从不进覆盖层；阅读器命名空间里
+  /// 的应用级键（[appLevelReaderPrefKeys]）随激活配置走、不随作品走。
   static bool isWorkScopedPrefKey(String key) {
     if (ProfileKeys.isExcludedPref(key)) return false;
-    if (key.startsWith(_readerPrefix)) return true;
+    if (key.startsWith(_readerPrefix)) {
+      return !appLevelReaderPrefKeys.contains(key);
+    }
     if (key.startsWith('floating_lyric_')) {
       return key != kFloatingLyricWindowRectPrefKey;
     }

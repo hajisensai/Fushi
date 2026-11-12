@@ -69,10 +69,72 @@ h1 { margin: 0; font-size: 18px; line-height: 1.3; }
 
 .offset-row {
   display: grid;
-  grid-template-columns: repeat(2, minmax(42px, 1fr)) minmax(58px, auto) repeat(3, minmax(42px, 1fr));
+  /* −0.5 −0.1 [秒数] +0.1 +0.5 复位 自动对轴 波形对轴 */
+  grid-template-columns: repeat(2, minmax(38px, 1fr)) minmax(58px, auto) repeat(5, minmax(36px, 1fr));
   gap: 5px;
   align-items: center;
   margin-top: 8px;
+}
+
+/* ── 波形对轴（反馈 0wkJImhZUp，subtitle-align.js 听声音 → 这里画）──
+   上半是 20ms 一根的音量柱（与 app 波形视图同密度），下半是当前轨的字幕条；按住拖字幕条 = 改偏移，
+   松手落盘。展开用空间弹簧（两套外观各取自己的 --fushi-dur / --fushi-ease token），减少动效时直接出现。 */
+.align-pane {
+  display: grid;
+  gap: 4px;
+  margin-top: 8px;
+  transform-origin: top center;
+  animation: sp-align-in var(--fushi-dur-medium) var(--fushi-ease-spatial) both;
+}
+
+.align-pane[hidden] { display: none; }
+
+@keyframes sp-align-in {
+  from { opacity: 0; transform: translateY(-6px) scaleY(0.94); }
+  to { opacity: 1; transform: none; }
+}
+
+.align-canvas {
+  display: block;
+  width: 100%;
+  height: 112px;
+  border: 1px solid var(--line);
+  border-radius: var(--fushi-shape-item);
+  background: var(--surface);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  overscroll-behavior: contain;
+  transition: border-color var(--fushi-dur-short) var(--fushi-ease);
+}
+
+.align-canvas:hover { border-color: var(--accent); }
+.align-canvas.is-dragging { cursor: grabbing; border-color: var(--accent); }
+.align-canvas:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.align-status,
+.align-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.align-status { min-height: 1.4em; }
+.align-status.is-error { color: var(--fushi-danger); }
+.align-hint { font-size: 11px; }
+
+#align-auto.is-busy { color: var(--accent); }
+#align-auto.is-busy .msr { animation: sp-align-pulse 1.2s var(--fushi-ease) infinite; }
+
+@keyframes sp-align-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .align-pane { animation: none; }
+  #align-auto.is-busy .msr { animation: none; }
 }
 
 /* ── 查字幕（asb 式云端字幕搜索；来源 = app 里配好的全部在线字幕源） ── */

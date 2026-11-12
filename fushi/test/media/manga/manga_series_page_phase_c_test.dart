@@ -704,7 +704,20 @@ void main() {
       ),
       findsOneWidget,
     );
-    expect(find.byTooltip(t.manga_chapter_status_ocr_done), findsOneWidget);
+    // 状态图标的 tooltip 关了自身语义（无障碍名由外层 Semantics 显式给），这时
+    // find.byTooltip 只认 package:flutter 的 Tooltip 类，认不出 material_ui 的 Tooltip，
+    // 所以按 material_ui Tooltip 的 message 直接找，并核对读屏名。
+    expect(
+      find.byWidgetPredicate(
+        (Widget w) =>
+            w is Tooltip && w.message == t.manga_chapter_status_ocr_done,
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.bySemanticsLabel(t.manga_chapter_status_ocr_done),
+      findsOneWidget,
+    );
   });
 
   // 反馈 wCgL364tgM ④：长按进多选，点行切换，底栏批量标已读 / 未读。
