@@ -172,7 +172,8 @@ FUSHI_FSRS_LIB=<绝对路径>/fushi_fsrs.dll dart test test/ffi_fsrs_engine_test
 不设环境变量时测试按平台找本目录 `prebuilt/` 下的产物。覆盖：默认参数 21 / 34、参数校验
 （个数错、FSRS-6/7 参数互换、NaN）、可提取度衰减、两种算法在合成数据上的参数优化、从另一个 isolate 在进度
 > 0 后取消、外样本 / 训练集内评估、zstd 解码（预生成帧）与坏帧返回 null。库缺失时整组 skip。
-Rust 侧单元测试：`cargo test --release`（本目录）。
+Rust 侧单元测试（本目录）：开发时 `cargo test --profile quick --lib <过滤>`（不做 fat LTO、增量编译，见
+[docs/agent/build.md](../../docs/agent/build.md)「Rust 本地开发循环」）；CI 跑的是 `cargo test --release --locked`。
 
 `packages/fushi_srs/test/search/`、`packages/fushi_engine/test/srs/`（浏览 / 统计 / AnkiConnect）与主应用
 `fushi/test/srs/srs_browse_page_test.dart` 的搜索测试同样要真实库，但**加载失败直接判红、不 skip**：搜索没有
