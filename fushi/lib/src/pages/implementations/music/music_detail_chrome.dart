@@ -26,8 +26,8 @@ import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_poster_block.dart'
-import 'package:fushi/src/utils/components/fushi_typography.dart';
     show FushiPosterBlock, FushiPosterChip, fushiPosterColors, fushiPosterHue;
+import 'package:fushi/src/utils/components/fushi_typography.dart';
 
 // =============================================================================
 // 封面取色

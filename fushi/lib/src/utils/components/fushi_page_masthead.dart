@@ -16,8 +16,8 @@ import 'package:fushi/src/utils/components/library_section_tab.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart'
     show WindowSizeClass, windowSizeClassReal;
 import 'package:fushi/src/utils/system_transparency.dart'
-import 'package:fushi/src/utils/components/fushi_typography.dart';
     show SystemTransparency;
+import 'package:fushi/src/utils/components/fushi_typography.dart';
 
 // 库页「页头大字」顶栏（重设计外壳，[shellRedesignActive] 为 true 时才生效）。
 //
