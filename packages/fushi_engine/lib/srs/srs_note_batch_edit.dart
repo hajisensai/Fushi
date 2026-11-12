@@ -343,7 +343,7 @@ class SrsNoteFieldApplied {
 /// 字段要么一起写、要么都不写，不把卡型开关写成半套）。
 ///
 /// 比对与写入是内核的一条命令（[SrsDbStore.editNoteFieldsIf]）：现值在内核的写锁里读，比对与写入之间插不进别的
-/// 写入。写下的修改记成撤销凭据（[SrsDbStore.undoable]），撤销按凭据还原（[SrsDbStore.revertEdits]）。
+/// 写入。写下的修改记成撤销凭据（[SrsDbStore.editNoteFieldsIfUndoable]），撤销按凭据还原（[SrsDbStore.revertEdits]）。
 Future<SrsNoteFieldApplied> srsApplyNoteFieldPlan(
   SrsDbStore store,
   SrsNoteFieldPlan plan,
@@ -354,17 +354,13 @@ Future<SrsNoteFieldApplied> srsApplyNoteFieldPlan(
       conflicts: 0,
     );
   }
-  final (Set<String> conflicted, SrsEditUndo undo) = await store.undoable(
-    () => store.editNoteFieldsIf(<SrsNoteFieldWrite>[
-      for (final SrsNoteFieldChange c in plan.changes)
-        (
-          noteId: c.noteId,
-          fieldId: c.fieldId,
-          expect: c.before,
-          value: c.after,
-        ),
-    ], wholeNote: true),
-  );
+  final (
+    Set<String> conflicted,
+    SrsEditUndo undo,
+  ) = await store.editNoteFieldsIfUndoable(<SrsNoteFieldWrite>[
+    for (final SrsNoteFieldChange c in plan.changes)
+      (noteId: c.noteId, fieldId: c.fieldId, expect: c.before, value: c.after),
+  ]);
   return SrsNoteFieldApplied(
     changes: <SrsNoteFieldChange>[
       for (final SrsNoteFieldChange c in plan.changes)
