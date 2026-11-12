@@ -43,16 +43,17 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6
-      # Claude Code 子代理分流 hook（tool/claude_hooks）与 .claude/agents 定义的一致性：
-      # node:test、零依赖、秒级，放最前面先红。这批测试以前只在作者本机手跑。
-      - name: Run Claude hook tests
-        shell: bash
-        run: node --test tool/claude_hooks/*.test.mjs
       # Prebuilt third-party binaries are not in git (tool/vendored_binaries.json).
+      # 必须紧跟 checkout（vendored_binaries_manifest_guard_test 钉住）。
       - name: Fetch vendored binaries
         uses: ./.github/actions/fetch-vendored-binaries
         with:
           groups: all
+      # Claude Code 子代理分流 hook（tool/claude_hooks）与 .claude/agents 定义的一致性：
+      # node:test、零依赖、秒级，放在其余守卫前面先红。这批测试以前只在作者本机手跑。
+      - name: Run Claude hook tests
+        shell: bash
+        run: node --test tool/claude_hooks/*.test.mjs
       - name: Validate unified release policy
         shell: pwsh
         run: ./tool/check_release_policy.ps1

@@ -5925,6 +5925,10 @@ function createEntryHeader(entry, idx) {
                     // latest word (only one editable card at a time).
                     rememberLatestMined(expression, reading, result.noteId);
                     await refreshFromAnki();
+                    // BUG-4287：成功结果带回的提示（如「保存到」被主机退回默认）。只有 app 外
+                    // 浮窗的宿主会在成功回包里放 message（它那边没有结果 toast）；应用内表面
+                    // 成功不带 message，由宿主 toast 说，这里不会重复。
+                    if (result.message) showInlineHint(mineButton, result.message);
                 } else {
                     // BUG-1908：制卡失败必须**就地**说出来。
                     //
@@ -8010,6 +8014,21 @@ function __fushiReportedContentHeight(){
 // 每个尾批切片后都试一次「够高就恢复」，尾批全部完成（final）时不管够不够高都
 // 应用一次兜底（浏览器自行夹紧）。应用后清零，同一份 pending 绝不影响下一次渲染。
 window.__fushiPendingScrollTop = 0;
+
+// 「新查词会话从顶部开始」的唯一实现：in-app 热槽（dictionary_popup_webview.dart 全量
+// 推送前调用）与 app 外查词窗 / galgame 内嵌查词的常驻根 iframe（global_lookup_host.js
+// beginLookup / 停驻 realm 复位）共用这一份。BUG-141 只在 in-app 注入块里归零，TODO-1095
+// 让 global 根 iframe 跨查词复用后没跟过去，上一次滚到哪下一次就停在哪。顺带停掉滚轮缓动
+// 与待恢复位，否则上一次在途的 rAF / pending 会在归零后把页面又滚回去。
+window.__fushiResetPopupScroll = function() {
+    popupWheelEaseStop();
+    window.__fushiPendingScrollTop = 0;
+    window.scrollTo(0, 0);
+    const el = document.scrollingElement || document.documentElement;
+    if (el) el.scrollTop = 0;
+    if (document.body) document.body.scrollTop = 0;
+};
+
 function __fushiApplyPendingScrollTop(isFinal) {
     const y = window.__fushiPendingScrollTop || 0;
     if (!(y > 0)) return;
