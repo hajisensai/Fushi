@@ -254,7 +254,7 @@ type CacheRows = (Vec<Vec<String>>, Vec<Vec<String>>, Vec<Vec<String>>);
 /// refresh_tags_row`：`tags` 修改行是 OR-Set 的投影，没被刷新过的旧合成行与 OR-Set 不一致）——再按同一份缓存配置
 /// `caches::rebuild` 一遍、读行、整个回滚（库原样不动）。新代没有推迟的重放、标签直接取 OR-Set，比的是两边各自收尾
 /// 做完的样子。只读打开的库（真实样本）动不了，读它现有的缓存表——那是 app 用自己的配置写的，新代那边要给同一份
-/// 配置（`gen4_sample_index` 的 `FUSHI_GEN4_CACHE_CFG`）。
+/// 配置（`gen4_sample_index` 的 `FUSHI_GEN4_CACHE_CFG_FILE`）。
 fn protocol_3_caches(src: &Connection, profile: &str, cfg: &str) -> Result<CacheRows, String> {
     let read = || -> Result<CacheRows, String> {
         let olds = |cols: &[(&'static str, &'static str)]| -> Vec<&'static str> {
@@ -1017,10 +1017,6 @@ fn gen4_sample_incremental() {
             let col2 = t2
                 .tx(|x| x.bind(&b.profile, &b.collection, &b.dir))
                 .unwrap();
-            if let Some(cfg) = t.derive_cfg(col, CFG_KEY).unwrap() {
-                t2.tx(|x| x.set_derive_cfg(col2, CFG_KEY, Some(&cfg)))
-                    .unwrap();
-            }
             let started = Instant::now();
             let mut n = 0u64;
             inc.execute_batch("BEGIN IMMEDIATE").unwrap();

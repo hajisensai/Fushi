@@ -1962,13 +1962,15 @@ pub(crate) mod tests {
         for profile in crate::store::gen4::legacy::profiles(&src).unwrap() {
             let col = t.binding_of(&profile).unwrap().expect("imported").col;
             // 缓存配置：样本库里现有的缓存表是 app 按自己的配置（含内置笔记类型的代码默认值）写的，对拍要给同一份——
-            // `FUSHI_GEN4_CACHE_CFG=<CacheConfig JSON>`；没给就只有默认牌组（内置类型的笔记行会对不上，差异数照报）。
-            let cfg = std::env::var("FUSHI_GEN4_CACHE_CFG").unwrap_or_else(|_| {
-                serde_json::json!({
+            // `FUSHI_GEN4_CACHE_CFG_FILE=<放着 CacheConfig JSON 的文件>`（内置类型的默认值有一百多 KB，放不进环境变量）；
+            // 没给就只有默认牌组（内置类型的笔记行会对不上，差异数照报）。
+            let cfg = match std::env::var("FUSHI_GEN4_CACHE_CFG_FILE") {
+                Ok(path) => std::fs::read_to_string(path).unwrap(),
+                Err(_) => serde_json::json!({
                     "defaultDeck": crate::store::sync2::config::default_deck_id(&profile)
                 })
-                .to_string()
-            });
+                .to_string(),
+            };
             t.tx(|t| t.set_derive_cfg(col, super::super::cache::CFG_KEY, Some(&cfg)))
                 .unwrap();
             let started = Instant::now();
