@@ -736,6 +736,21 @@ void main([List<String> args = const <String>[]]) {
         // onTrimMemory、Windows 崩溃摘要、macOS .ips、iOS MetricKit 的摘要折进错误
         // 日志，随反馈日志上传（Dart 接不到的原生崩溃 / 被系统杀）。
         PreviousExitLog.foldIntoErrorLog(),
+        // 本地文件日志（仅移动端）：原生侧建目录 + 清过期文件，与上面几项互不相干。
+        if (Platform.isAndroid || Platform.isIOS)
+          FlutterLogs.initLogs(
+            logLevelsEnabled: [
+              LogLevel.INFO,
+              LogLevel.WARNING,
+              LogLevel.ERROR,
+              LogLevel.SEVERE,
+            ],
+            timeStampFormat: TimeStampFormat.DATE_FORMAT_1,
+            directoryStructure: DirectoryStructure.FOR_DATE,
+            logTypesEnabled: ['device', 'network', 'errors'],
+            logFileExtension: LogFileExtension.LOG,
+            logsRetentionPeriodInDays: 7,
+          ),
       ]);
       StudyClock.trace = (String line) =>
           StudyDiagLog.instance.add('clock', line);
@@ -744,7 +759,16 @@ void main([List<String> args = const <String>[]]) {
       // 帧数 + 可见页面：停着不动时是否仍在逐帧重绘、停在哪一页（BUG-4075 证据缺口 ⑥）。
       StartupTimeline.mark('log-fold');
       UiActivityProbe.install();
+      // 开始采样时立即采的那一次要同步读一遍 /proc（各线程 CPU、匿名映射分组…），小米
+      // 平板 5 上占启动 60-70 ms：等首帧上屏、入场动效跑完再采（周期采样照旧立即开始）。
+      // 启动即闪退由会话标记另行判定，不靠这一次采样。
       PreviousExitLog.startMemorySampling(
+        firstSampleAfter: binding.waitUntilFirstFrameRasterized.then(
+          (_) => SchedulerBinding.instance.scheduleTask<void>(
+            () {},
+            Priority.idle,
+          ),
+        ),
         probes: const <MemoryProbe>[
           processRssBreakdownProbe,
           nativeHeapProbe,
@@ -782,23 +806,6 @@ void main([List<String> args = const <String>[]]) {
       }
 
       StartupTimeline.mark('probes');
-
-      /// Initialise local file-based logging (mobile only).
-      if (Platform.isAndroid || Platform.isIOS) {
-        await FlutterLogs.initLogs(
-          logLevelsEnabled: [
-            LogLevel.INFO,
-            LogLevel.WARNING,
-            LogLevel.ERROR,
-            LogLevel.SEVERE,
-          ],
-          timeStampFormat: TimeStampFormat.DATE_FORMAT_1,
-          directoryStructure: DirectoryStructure.FOR_DATE,
-          logTypesEnabled: ['device', 'network', 'errors'],
-          logFileExtension: LogFileExtension.LOG,
-          logsRetentionPeriodInDays: 7,
-        );
-      }
 
       // 上次死在初始化完成之前（启动即闪退）：这次的初始化多半还会死、首页出不来，
       // 闪退报告的提示必须在初始化之前出现——在加载页上问、等用户选完再往下走。

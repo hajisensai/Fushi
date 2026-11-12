@@ -324,8 +324,10 @@ final class FushiRemotePush {
     splashChannel.setMethodCallHandler { (call, result) in
       switch call.method {
       case "getSplashColor":
-        // LaunchScreen.storyboard uses a white root view / LaunchBackground.
-        result(0xFFFFFFFF)
+        // 0 = 没有记忆的底色：Dart 侧回落到默认主题的 surface，与 LaunchScreen 的 LaunchBackground
+        // （浅色 / 深色各一张，同为默认主题 surface）一致。以前恒返回白色，深色模式下
+        // 首帧前的加载 / 错误页是白底配深色主题的浅色字。
+        result(0)
       default:
         result(FlutterMethodNotImplemented)
       }

@@ -1,5 +1,5 @@
-import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/startup/startup_timeline.dart';
+import 'package:test/test.dart';
 
 void main() {
   setUp(StartupTimeline.debugReset);
