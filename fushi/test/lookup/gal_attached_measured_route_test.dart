@@ -527,6 +527,68 @@ void main() {
       expect(controller.status, GalAttachedTextStatus.activeAttached);
     });
 
+    test('切屏：客户区短暂变样时被拒的测量，尺寸变回后重发（不等下一句）', () async {
+      // 真机日志：全屏 3840x2160 的 Electron 游戏切到后台时客户区变 3840x2127，
+      // runner 报 measuredLayoutStale，Dart 强制重发的 2160 测量被拒；切回前台尺寸
+      // 变回 2160，DOM 快照没变所以不会推新帧——此时必须凭客户区变化重发同一份测量。
+      GalLookupReferenceClientV1 live = _client;
+      port.updateMeasuredResult = (_MeasuredCall call) =>
+          call.width == live.widthPx && call.height == live.heightPx
+          ? const GalAttachedCallResult(
+              status: 'visible',
+              surfaceVisible: true,
+              providerKind: 4,
+              providerId: 11,
+              providerStatus: 2,
+            )
+          : const GalAttachedCallResult(error: 'measured_client_size_mismatch');
+      await activate();
+      await emit(_frame('abc'));
+      expect(controller.status, GalAttachedTextStatus.activeAttached);
+      final GalAttachedSurfaceTarget target = controller.target!;
+
+      Future<void> stale(GalLookupReferenceClientV1 client) async {
+        live = client;
+        controller.handleSurfaceStateChanged(
+          GalAttachedSurfaceStateEvent(
+            target: target,
+            state: 'suspended',
+            status: 'measuredLayoutStale',
+            reason: 'measured_client_size_mismatch',
+            providerKind: 4,
+            providerId: 11,
+            providerStatus: 2,
+            referenceClient: client,
+            layoutSource: galAttachedLayoutSourceMeasured,
+            measuredSource: galAttachedMeasuredSourceTyranoDom,
+          ),
+        );
+        await pumpEventQueue();
+        await controller.measuredPushIdle;
+      }
+
+      const GalLookupReferenceClientV1 shrunk = GalLookupReferenceClientV1(
+        widthPx: 1280,
+        heightPx: 700,
+        dpi: 96,
+      );
+      await stale(shrunk);
+      expect(port.measured, hasLength(2));
+      expect(controller.status, GalAttachedTextStatus.suspended);
+      expect(controller.statusReason, 'measured_client_size_mismatch');
+
+      // 同一尺寸下的重复状态事件不重发同一份已被拒的测量。
+      await stale(shrunk);
+      expect(port.measured, hasLength(2));
+
+      // 切回前台：尺寸变回测量时的 1280x720，同一份测量重新有效。
+      await stale(_client);
+      expect(port.measured, hasLength(3));
+      expect(port.measured.last.text, 'abc');
+      expect(port.measured.last.generation, 1);
+      expect(controller.status, GalAttachedTextStatus.activeAttached);
+    });
+
     test('feed 结束（CDP 断开）→ attachedDetach', () async {
       await activate();
       await emit(_frame('abc'));

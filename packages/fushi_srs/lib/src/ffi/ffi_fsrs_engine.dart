@@ -72,72 +72,6 @@ class FfiFsrsEngine implements FsrsBatchEngine {
   }
 
   @override
-  SrsNextStates nextStates({
-    required SrsAlgorithm algorithm,
-    required List<double> params,
-    required double desiredRetention,
-    required SrsMemory? memory,
-    required double elapsedDays,
-  }) {
-    final Object? result = _call(<String, Object?>{
-      'op': 'next_states',
-      'algorithm': algorithm.memoryAlgorithm.wire,
-      'params': params,
-      'desiredRetention': desiredRetention,
-      'elapsedDays': elapsedDays,
-      'memory': memory?.toJson(),
-    });
-    if (result is! Map) {
-      throw SrsFsrsException('bad next_states response: $result');
-    }
-    return SrsNextStates(
-      again: _itemState(result['again']),
-      hard: _itemState(result['hard']),
-      good: _itemState(result['good']),
-      easy: _itemState(result['easy']),
-    );
-  }
-
-  @override
-  SrsMemory? memoryState({
-    required SrsAlgorithm algorithm,
-    required List<double> params,
-    required List<SrsFsrsReview> reviews,
-    SrsMemory? starting,
-  }) {
-    final Object? result = _call(<String, Object?>{
-      'op': 'memory_state',
-      'algorithm': algorithm.memoryAlgorithm.wire,
-      'params': params,
-      'reviews': <Map<String, Object?>>[
-        for (final SrsFsrsReview r in reviews) r.toJson(),
-      ],
-      'starting': starting?.toJson(),
-    });
-    if (result == null) return null;
-    return _memory(result, 'memory_state');
-  }
-
-  @override
-  SrsMemory memoryStateFromSm2({
-    required SrsAlgorithm algorithm,
-    required List<double> params,
-    required double easeFactor,
-    required double intervalDays,
-    required double sm2Retention,
-  }) {
-    final Object? result = _call(<String, Object?>{
-      'op': 'memory_state_from_sm2',
-      'algorithm': algorithm.memoryAlgorithm.wire,
-      'params': params,
-      'easeFactor': easeFactor,
-      'interval': intervalDays,
-      'sm2Retention': sm2Retention,
-    });
-    return _memory(result, 'memory_state_from_sm2');
-  }
-
-  @override
   double retrievability({
     required SrsAlgorithm algorithm,
     required List<double> params,
@@ -530,22 +464,6 @@ class FfiFsrsEngine implements FsrsBatchEngine {
         else
           throw SrsFsrsException('bad $op response: $value'),
     ];
-  }
-
-  static SrsMemory _memory(Object? value, String op) {
-    final SrsMemory? memory = SrsMemory.fromJson(value);
-    if (memory == null) throw SrsFsrsException('bad $op response: $value');
-    return memory;
-  }
-
-  static SrsItemState _itemState(Object? value) {
-    if (value is! Map) throw SrsFsrsException('bad item state: $value');
-    final Object? interval = value['interval'];
-    if (interval is! num) throw SrsFsrsException('bad item state: $value');
-    return SrsItemState(
-      memory: _memory(value['memory'], 'next_states'),
-      interval: interval.toDouble(),
-    );
   }
 
   static SrsEvaluation _evaluation(Object? value, String op) {
