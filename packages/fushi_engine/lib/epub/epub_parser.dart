@@ -12,12 +12,6 @@ import 'package:fushi_engine/epub/epub_series.dart';
 import 'package:fushi_engine/epub/isbn.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
 
-/// Pure Dart EPUB parser — no native FFI, no WebView, no IndexedDB.
-///
-/// Two entry points:
-/// - [parse]: takes raw ZIP bytes, extracts to `extractDir`, returns [EpubBook].
-/// - [parseFromExtracted]: re-parses an already-extracted directory (e.g. after
-///   app restart, when the book is already on disk).
 /// EPUB 本身的 zip 容器坏了：下载被截断（缺中央目录 / 尾记录）、条目 CRC 不符、
 /// deflate 流损坏等。与「EPUB 结构不合规」（缺 OPF 等）区分开，UI 据此提示用户
 /// 「文件不完整或已损坏，请重新下载」，而不是甩出 archive 包的英文异常原文。
@@ -32,6 +26,12 @@ class EpubArchiveCorruptException extends FormatException {
   String toString() => 'EpubArchiveCorruptException: $message';
 }
 
+/// Pure Dart EPUB parser — no native FFI, no WebView, no IndexedDB.
+///
+/// Two entry points:
+/// - [parse]: takes raw ZIP bytes, extracts to `extractDir`, returns [EpubBook].
+/// - [parseFromExtracted]: re-parses an already-extracted directory (e.g. after
+///   app restart, when the book is already on disk).
 class EpubParser {
   /// `ZipDecoder().decodeBytes(bytes, verify: true)` 的等价物：先不校验地解码，再在
   /// 返回前逐条解压并用 native/fushi_compute 的 CRC-32 核对（包内纯 Dart CRC 是瓶颈）。
