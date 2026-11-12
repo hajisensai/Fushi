@@ -1644,13 +1644,32 @@ abstract final class PreviousExitLog {
   /// 开始周期内存采样（[foldIntoErrorLog] 之后、生产启动时调一次；重复调用只换探针）：每
   /// [kMemorySampleInterval] 把进程 RSS 与 [probes] 的读数写进会话标记，下次启动若上次没正常
   /// 退出，「上次未正常退出」那条带上崩前最近几次采样。
+  ///
+  /// 开始时那一次采样默认立即采。它要同步读一遍各探针（Android 上含 /proc 的各线程
+  /// CPU、匿名映射分组，小米平板 5 实测 60–70 ms），所以生产启动传 [firstSampleAfter]
+  /// （首帧上屏且入场动效跑完）把它挪出首帧关键路径；周期定时器照旧立即开始，
+  /// [firstSampleAfter] 一直不完成也只是少了开头这一次。
   static void startMemorySampling({
     List<MemoryProbe> probes = const <MemoryProbe>[],
+    Future<void>? firstSampleAfter,
   }) {
     _memoryProbes = probes;
     if (_marker == null || _memoryTimer != null) return;
-    sampleMemory(trigger: 'start');
-    _memoryTimer = Timer.periodic(kMemorySampleInterval, (_) => sampleMemory());
+    final Timer timer = Timer.periodic(
+      kMemorySampleInterval,
+      (_) => sampleMemory(),
+    );
+    _memoryTimer = timer;
+    if (firstSampleAfter == null) {
+      sampleMemory(trigger: 'start');
+      return;
+    }
+    unawaited(
+      firstSampleAfter.then((_) {
+        // 等待期间采样被停掉（测试收尾）就不再补这一次。
+        if (identical(_memoryTimer, timer)) sampleMemory(trigger: 'start');
+      }),
+    );
   }
 
   /// 停止周期采样（测试收尾用）。

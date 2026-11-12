@@ -12,6 +12,8 @@
 //   GET  /dev/stats               安装统计（读定时快照，迁移 0021）：日活 / 周活 / 月活、近 30 天每日活跃与新增、平台 / 通道 / 版本分布（installs.js）
 //   GET  /dev/stats.json          同一份数据的 JSON（安装统计快照 + computedAt），给维护者自己的看板（Fushi Pulse）取数；没有会话 → 401 JSON
 //   POST /dev/stats/refresh       立即重算安装统计快照（距上次不足 15 分钟则不重算）
+//   GET  /dev/decisions           拍板台：AI 代理写入的待拍事项（decisions.js）
+//   POST /dev/d/:id  {v,text,back} 拍板并 / 或留言
 //
 // 安全：页面无脚本（CSP script-src 为 none）；会话 Cookie HttpOnly + Secure + SameSite=Strict，
 // 只发往 /dev；所有 POST 另验 Origin 与本站一致（双保险防 CSRF）。会话 7 天，库里只存 token 哈希。
@@ -33,6 +35,9 @@ import {
 } from './feedback.js';
 import { PING_PLATFORMS, loadInstallStats, refreshInstallStatsSnapshot, versionIncludes } from './installs.js';
 import { RELEASE_PLATFORMS, projectStats, refreshProjectStats } from './project_stats.js';
+import {
+  DECISIONS_STYLE, DECISION_LIMITS, decisionStageParam, listDecisions, renderDecisions, submitDecision,
+} from './decisions.js';
 
 export const SESSION_COOKIE = 'fushi_dev';
 export const SESSION_TTL_MS = 7 * 24 * 3600 * 1000;
@@ -111,7 +116,7 @@ function fmtBytes(n) {
 
 function layout(title, body, { signedIn = false } = {}) {
   const logout = signedIn
-    ? '<nav class="top"><a href="/dev">反馈</a><a href="/dev/stats">统计</a><a href="/dev/project">项目</a>'
+    ? '<nav class="top"><a href="/dev">反馈</a><a href="/dev/decisions">拍板</a><a href="/dev/stats">统计</a><a href="/dev/project">项目</a>'
       + '<form method="post" action="/dev/logout" class="inline"><button class="link">退出</button></form></nav>'
     : '';
   return `<!doctype html>
@@ -122,7 +127,7 @@ function layout(title, body, { signedIn = false } = {}) {
 <meta name="color-scheme" content="light dark">
 <meta name="robots" content="noindex">
 <title>${esc(title)} · Fushi 反馈处理台</title>
-<style>${STYLE}</style>
+<style>${STYLE}${DECISIONS_STYLE}</style>
 </head>
 <body>
 <header><a class="brand" href="/dev">Fushi 反馈处理台</a>${logout}</header>
@@ -889,6 +894,16 @@ export async function routeDevConsole(request, env, url, now, ctx, ip) {
   }
   if (method === 'GET' && (m = /^\/dev\/f\/([A-Za-z0-9_-]{8,16})\.json$/.exec(path))) {
     return json(await devView(env, await feedbackById(env, m[1])));
+  }
+  if (method === 'GET' && path === '/dev/decisions') {
+    const stage = decisionStageParam(url.searchParams.get('stage'));
+    return html(layout('拍板台', renderDecisions(await listDecisions(env), stage), { signedIn: true }));
+  }
+  if (method === 'POST' && (m = /^\/dev\/d\/([A-Za-z0-9_-]{1,40})$/.exec(path))) {
+    const form = await readForm(request, formLimit(DECISION_LIMITS.noteMax));
+    await submitDecision(env, dev, m[1], { v: form.get('v') || 'note', text: form.get('text') || '' }, now);
+    // 回到原来那一栏、定位到这条（拍完它可能已离开当前栏，锚点找不到就停在栏顶）。
+    return redirect(`/dev/decisions?stage=${decisionStageParam(form.get('back'))}#d-${m[1]}`);
   }
   if (method === 'GET' && path === '/dev/project') return projectPage(env, now);
   if (method === 'POST' && path === '/dev/project/refresh') {
