@@ -640,6 +640,46 @@ fn assert_same(a: &Device, b: &Device, what: &str) {
     }
 }
 
+/// 归并各表的写入语句都是读一行写一行，不把暂存的行先整份物化进临时表（`OpenEphemeral`；临时表超过页缓存落临时
+/// 文件）。目标表上有行触发器时 SQLite 一定物化——归并时摘要触发器关着、复习队列 / 浏览的插入触发器拿掉改成块登记
+/// （channel.rs `ROW_TRIGGERS`）。以后给哪张目标表加了行触发器而归并没跟上，这里会红。登记的集合与触发器逐行登记的
+/// 相同由各条「通道 ≡ 逐条投递」对拍守着（[dirty]）。
+#[test]
+fn merge_statements_never_materialize_their_rows() {
+    let d = Device::new("ch-merge-plan");
+    let w = d.core.writer().unwrap();
+    let triggers = |w: &rusqlite::Connection| -> i64 {
+        w.query_row(
+            "SELECT COUNT(*) FROM sqlite_temp_master WHERE type = 'trigger'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap()
+    };
+    let installed = triggers(&w);
+    assert_eq!(
+        installed as usize,
+        crate::store::queue::TRIGGERS
+            .matches("CREATE TEMP TRIGGER")
+            .count()
+    );
+    let ephemeral = |ops: &[String]| ops.iter().any(|op| op == "OpenEphemeral");
+    let mut materialized_as_is = 0;
+    for tbl in 0..super::channel::MERGED_TABLES {
+        let merged = super::channel::merge_plan(&w, P, tbl, true).unwrap();
+        assert!(
+            !ephemeral(&merged),
+            "table {tbl} is materialized while merging: {merged:?}"
+        );
+        let as_is = super::channel::merge_plan(&w, P, tbl, false).unwrap();
+        materialized_as_is += usize::from(ephemeral(&as_is));
+    }
+    // 对照：触发器都在时，带摘要触发器 / 行触发器的四张表（实体、修改记录、日志、到达戳）确实要物化。
+    assert_eq!(materialized_as_is, 4);
+    // 行触发器都装回去了。
+    assert_eq!(triggers(&w), installed);
+}
+
 /// 复习队列（卡 / 日志）与浏览（卡 / 笔记）的待重读：取走。
 fn dirty(d: &Device) -> [BTreeSet<String>; 4] {
     let s = d.core.study_hub.take_study(P);

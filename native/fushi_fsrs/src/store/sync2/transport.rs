@@ -1914,7 +1914,10 @@ pub(crate) fn replay_pending(
         if take.is_empty() {
             return Ok((changed, true));
         }
-        changed.extend(replay_cards(c, &take)?);
+        {
+            let _p = crate::store::prof::span("replay");
+            changed.extend(replay_cards(c, &take)?);
+        }
         let mut del = c.prepare_cached("DELETE FROM sync2_replay_pending WHERE profile_uid = srs_id(?1) AND card_id = srs_id(?2)").map_err(sql)?;
         for id in &take {
             del.execute(params![profile, id]).map_err(sql)?;

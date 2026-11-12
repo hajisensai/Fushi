@@ -61,6 +61,7 @@ use super::digest::Deltas;
 use super::transport::{CommitBudget, defer_cache_refresh, defer_replay};
 use super::{Touched, canonical, snapshots, sql};
 use crate::store::caches::Dirty;
+use crate::store::prof;
 use crate::sync2::dvv::Dvv;
 use crate::sync2::hlc::Hlc;
 use crate::sync2::id::Id;
@@ -290,7 +291,11 @@ impl Append {
                 d
             }
         };
-        super::insert_op_at(c, profile, op, chain, now, deps)?;
+        {
+            let _p = prof::span("append.op_log");
+            super::insert_op_at(c, profile, op, chain, now, deps)?;
+        }
+        let _p = prof::span("append.order");
         let part = match op.body().map_err(|e| e.to_string())? {
             Body::Edit(e) => {
                 if let Some(l) = &e.legacy {
@@ -490,6 +495,7 @@ fn advance_into(
             return Ok(false);
         }
     }
+    let _p = prof::span("one_by_one");
     loop {
         let batch = read_ops(
             c,
@@ -678,7 +684,9 @@ struct LogRow {
 
 /// 一个分区折完写进投影（一个事务里：调用方的 savepoint）。返回处理的操作条数。
 fn fold_part(c: &Connection, profile: &str, part: i64, t: &mut Touched) -> Result<usize, String> {
+    let p_read = prof::span("fold.read");
     let ops = read_ops(c, "b.part = ?2 ORDER BY b.rank", params![profile, part])?;
+    drop(p_read);
     let n = ops.len();
     let complex: HashSet<(String, String)> = c
         .prepare_cached("SELECT kind, srs_idt(entity) AS entity FROM sync2_boot_complex WHERE profile_uid = srs_id(?1)")
@@ -705,6 +713,7 @@ fn fold_part(c: &Connection, profile: &str, part: i64, t: &mut Touched) -> Resul
     };
     let mut deferred: Vec<(i64, Vec<u8>, i64)> = Vec::new();
 
+    let p_rows = prof::span("fold.rows");
     for (rank, op, now) in &ops {
         let dev = op.id.device.0.to_vec();
         let seq = op.id.seq as i64;
@@ -833,6 +842,8 @@ fn fold_part(c: &Connection, profile: &str, part: i64, t: &mut Touched) -> Resul
         cover(1, deferred.len());
     }
 
+    drop(p_rows);
+    let p_land = prof::span("fold.land");
     // 寄存器：同一实体的到达按投递顺序一次落（`land_edit` 逐条落的同一判据）。
     let mut deltas = Deltas::default();
     let mut edits: Vec<(String, EntKind, String, String, String, i64, String)> = Vec::new();
@@ -868,7 +879,9 @@ fn fold_part(c: &Connection, profile: &str, part: i64, t: &mut Touched) -> Resul
         }
     }
     edits.sort_by(|a, b| a.0.cmp(&b.0));
+    drop(p_land);
 
+    let p_stage = prof::span("fold.stage_rows");
     // 投影行按存储形态追加进暂存表（列序见 [TARGETS]），归并时按表成块写进投影（[merge]）。
     let mut s = stage(c, T_ENTITY, 4, "srs_id(?1), ?2, ?3, ?4")?;
     for (id, (kind, _, payload, created)) in &entities {
@@ -899,8 +912,12 @@ fn fold_part(c: &Connection, profile: &str, part: i64, t: &mut Touched) -> Resul
         .map_err(sql)?;
         deltas.add(profile, b'l', lid, &r.text);
     }
+    drop(p_stage);
+    let p_digest = prof::span("fold.digest");
     deltas.write(c)?;
+    drop(p_digest);
 
+    let _p_index = prof::span("fold.stage_index");
     let mut s = stage(c, T_STAMP, 3, "srs_id(?1), ?2, ?3")?;
     for (id, (server, now)) in &stamps {
         s.execute(rusqlite::named_params! {"?1": id, "?2": server, "?3": now, "?20": profile})
@@ -979,6 +996,16 @@ const TARGETS: [(&str, &str, bool); 7] = [
         false,
     ),
 ];
+/// 各表归并的计时名（[prof]）。
+const MERGE_SPANS: [&str; 7] = [
+    "merge.entities",
+    "merge.field_edits",
+    "merge.review_logs",
+    "merge.event_local",
+    "merge.edit_ops",
+    "merge.ent_ops",
+    "merge.log_meta",
+];
 const T_ENTITY: usize = 0;
 const T_EDIT: usize = 1;
 const T_LOG: usize = 2;
@@ -1015,6 +1042,7 @@ const MERGE_CHUNK: i64 = 4;
 /// （实体、日志、修改按分区归属），直接插入。返回（写的行数, 这张表归并完了没有）。
 fn merge(c: &Connection, profile: &str, tbl: usize) -> Result<(usize, bool), String> {
     let (target, cols, digest) = TARGETS[tbl];
+    let _p = prof::span(MERGE_SPANS[tbl]);
     let last: Option<i64> = c
         .prepare_cached("SELECT rowid FROM sync2_boot_rows WHERE profile_uid = srs_id(?1) AND tbl = ?2 ORDER BY rowid LIMIT 1 OFFSET ?3")
         .map_err(sql)?
@@ -1022,9 +1050,8 @@ fn merge(c: &Connection, profile: &str, tbl: usize) -> Result<(usize, bool), Str
         .optional()
         .map_err(sql)?;
     let upto = last.unwrap_or(i64::MAX);
-    let q = format!(
-        "INSERT INTO {target} SELECT {cols} FROM sync2_boot_rows WHERE profile_uid = srs_id(?1) AND tbl = ?2 AND rowid <= ?3"
-    );
+    let q = merge_sql(target, cols);
+    let touched = RowTriggerOff::new(c, tbl)?;
     let n = if digest {
         let triggers = DigestTriggersOff::new(c)?;
         let n = c
@@ -1036,6 +1063,7 @@ fn merge(c: &Connection, profile: &str, tbl: usize) -> Result<(usize, bool), Str
         c.execute(&q, params![profile, tbl as i64, upto])
             .map_err(sql)?
     };
+    touched.restore(profile, tbl, upto)?;
     c.prepare_cached(
         "DELETE FROM sync2_boot_rows WHERE profile_uid = srs_id(?1) AND tbl = ?2 AND rowid <= ?3",
     )
@@ -1043,6 +1071,154 @@ fn merge(c: &Connection, profile: &str, tbl: usize) -> Result<(usize, bool), Str
     .execute(params![profile, tbl as i64, upto])
     .map_err(sql)?;
     Ok((n, last.is_none()))
+}
+
+/// [merge] 的写入语句。
+fn merge_sql(target: &str, cols: &str) -> String {
+    format!("INSERT INTO {target} SELECT {cols} {STAGED}")
+}
+
+/// 测试：[merge] 写的表有几张。
+#[cfg(test)]
+pub(crate) const MERGED_TABLES: usize = TARGETS.len();
+
+/// 测试：[merge] 写第 [tbl] 张表的语句的 `EXPLAIN` 操作码。[as_merged] 时在归并的条件下看（行触发器拿掉、摘要
+/// 触发器关着，看完照 [merge] 的做法恢复），否则原样（触发器都在）。
+#[cfg(test)]
+pub(crate) fn merge_plan(
+    c: &Connection,
+    profile: &str,
+    tbl: usize,
+    as_merged: bool,
+) -> Result<Vec<String>, String> {
+    let (target, cols, digest) = TARGETS[tbl];
+    let explain = || -> Result<Vec<String>, String> {
+        let mut s = c
+            .prepare(&format!("EXPLAIN {}", merge_sql(target, cols)))
+            .map_err(sql)?;
+        let unbound = std::iter::repeat_n(rusqlite::types::Null, s.parameter_count());
+        let ops: Result<Vec<String>, rusqlite::Error> = s
+            .query_map(rusqlite::params_from_iter(unbound), |r| {
+                r.get::<_, String>(1)
+            })
+            .map_err(sql)?
+            .collect();
+        ops.map_err(sql)
+    };
+    if !as_merged {
+        return explain();
+    }
+    let touched = RowTriggerOff::new(c, tbl)?;
+    let ops = if digest {
+        let triggers = DigestTriggersOff::new(c)?;
+        let ops = explain()?;
+        triggers.restore()?;
+        ops
+    } else {
+        explain()?
+    };
+    // 没有暂存行：只把触发器装回去。
+    touched.restore(profile, tbl, -1)?;
+    Ok(ops)
+}
+
+/// 暂存表里一张表到某个 rowid 为止的行（?1 = profile, ?2 = 表的下标, ?3 = rowid 上界）。
+const STAGED: &str =
+    "FROM sync2_boot_rows WHERE profile_uid = srs_id(?1) AND tbl = ?2 AND rowid <= ?3";
+
+/// 归并的目标表里，写连接上装着「插入一行登记一个待重读」的 TEMP 触发器的那几张（queue.rs [TRIGGERS]：复习队列 /
+/// 浏览会话）：（[TARGETS] 下标, 触发器名, 对暂存的这一块行做同样登记的一条查询）。
+///
+/// 目标表上只要有行触发器，SQLite 的 `INSERT … SELECT` 就先把 SELECT 的结果整份物化进一张临时表、再从临时表逐行
+/// 插（insert.c：触发器可能读到正在写的表）；临时表超过页缓存就落临时文件。归并一块几万行、每行带着整份载荷
+/// （笔记字段的修改记录一行可以几 KB），等于把这一块多写、多读一遍。归并这几张表时先把触发器拿掉、写完按同一批行
+/// 成块登记、再装回去（[RowTriggerOff]）：登记的是同一批 (种类, profile, id)，登记本身是往一个集合里加，与顺序无关。
+/// 都在调用方的 savepoint 里，中途失败连同触发器一起回滚。
+///
+/// `merge_statements_never_materialize_their_rows` 按 `EXPLAIN` 核对每张表的写入语句都不开临时表（以后给哪张表加了
+/// 行触发器而这里没跟上会红），`merging_registers_the_same_rows_as_the_row_triggers` 核对登记的集合与触发器逐行
+/// 登记的相同。
+const ROW_TRIGGERS: [(usize, &str, &str); 3] = [
+    (
+        T_EDIT,
+        "srs_browse_edit_ins",
+        "SELECT srs_study_touch(2, profile_uid, c3) FROM sync2_boot_rows \
+         WHERE profile_uid = srs_id(?1) AND tbl = ?2 AND rowid <= ?3 AND c2 = 'note'",
+    ),
+    (
+        T_LOG,
+        "srs_study_log_ins",
+        "SELECT srs_study_touch(1, profile_uid, c1) FROM sync2_boot_rows \
+         WHERE profile_uid = srs_id(?1) AND tbl = ?2 AND rowid <= ?3",
+    ),
+    (
+        T_STAMP,
+        "srs_browse_stamp_ins",
+        "SELECT srs_study_touch(2, f.profile_uid, f.entity_id) FROM sync2_boot_rows b \
+         JOIN main.srs_field_edits f ON f.id = b.c1 \
+         WHERE b.profile_uid = srs_id(?1) AND b.tbl = ?2 AND b.rowid <= ?3 AND b.c2 IS NOT NULL \
+           AND f.entity_kind = 'note'",
+    ),
+];
+
+/// 归并一张表期间拿掉它的插入行触发器（[ROW_TRIGGERS]）；[RowTriggerOff::restore] 按写进去的那批行成块登记并把
+/// 触发器装回去。这条连接上没装触发器（没有复习队列的连接）或这张表没有行触发器时什么也不做。
+///
+/// 中途出错时调用方的 savepoint 回滚会连触发器一起恢复（TEMP 库的结构改动也在事务里）；丢弃守卫时仍再装一次
+/// （`IF NOT EXISTS`），不把「触发器还在不在」押在调用方一定回滚上——少了它复习队列 / 浏览就再也看不到新写的行。
+struct RowTriggerOff<'a> {
+    c: &'a Connection,
+    /// 拿掉了触发器、还没装回去时：对写进去的那批行做同样登记的查询。
+    touch: Option<&'static str>,
+}
+
+impl<'a> RowTriggerOff<'a> {
+    fn new(c: &'a Connection, tbl: usize) -> Result<Self, String> {
+        let Some(&(_, name, touch)) = ROW_TRIGGERS.iter().find(|t| t.0 == tbl) else {
+            return Ok(RowTriggerOff { c, touch: None });
+        };
+        let installed: bool = c
+            .prepare_cached(
+                "SELECT EXISTS (SELECT 1 FROM sqlite_temp_master WHERE type = 'trigger' AND name = ?1)",
+            )
+            .map_err(sql)?
+            .query_row([name], |r| r.get(0))
+            .map_err(sql)?;
+        if !installed {
+            return Ok(RowTriggerOff { c, touch: None });
+        }
+        c.execute_batch(&format!("DROP TRIGGER temp.{name}"))
+            .map_err(sql)?;
+        Ok(RowTriggerOff {
+            c,
+            touch: Some(touch),
+        })
+    }
+
+    fn restore(mut self, profile: &str, tbl: usize, upto: i64) -> Result<(), String> {
+        let Some(touch) = self.touch else {
+            return Ok(());
+        };
+        {
+            let mut s = self.c.prepare(touch).map_err(sql)?;
+            let mut rows = s.query(params![profile, tbl as i64, upto]).map_err(sql)?;
+            while rows.next().map_err(sql)?.is_some() {}
+        }
+        self.c
+            .execute_batch(crate::store::queue::TRIGGERS)
+            .map_err(sql)?;
+        // 装回去成功才算恢复：失败时丢弃守卫还会再试一次。
+        self.touch = None;
+        Ok(())
+    }
+}
+
+impl Drop for RowTriggerOff<'_> {
+    fn drop(&mut self) {
+        if self.touch.is_some() {
+            let _ = self.c.execute_batch(crate::store::queue::TRIGGERS);
+        }
+    }
 }
 
 /// 关掉这条连接上主库的触发器（摘要桶，digest.rs）；[DigestTriggersOff::restore] 或出错丢弃时打开。TEMP 触发器
