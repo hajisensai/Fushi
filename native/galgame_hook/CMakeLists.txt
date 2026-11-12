@@ -1187,6 +1187,18 @@ target_compile_definitions(fushi_catsystem2_voice_test PRIVATE
 add_test(NAME fushi_catsystem2_voice_test
   COMMAND fushi_catsystem2_voice_test)
 
+# CatSystem2 offline site probe: runs the two resolvers above over a game exe
+# (or a flat dump of its main module) read from disk and prints the resolved
+# RVAs.  Diagnostic only (needs a real game image, so no add_test); reads the
+# file into a private buffer, never loads or runs it.
+add_executable(fushi_catsystem2_site_probe
+  "tools/catsystem2_site_probe.cpp"
+)
+target_include_directories(fushi_catsystem2_site_probe PRIVATE
+  "hook/adapters")
+target_compile_definitions(fushi_catsystem2_site_probe PRIVATE
+  UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+
 # CMVS per-line voice: group-loader site proof from the x64 exception
 # directory (both toolchain shapes, chained fragments, overflow) and the
 # voice-group / member-name classification.
