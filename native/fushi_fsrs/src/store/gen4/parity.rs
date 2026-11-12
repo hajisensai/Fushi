@@ -5,7 +5,9 @@
 //!
 //! 1. `rebuild_all` 再做一遍，派生表逐行不变；
 //! 2. 换一种到达方式（一台设备一台设备地逐条落、逐条维护，信任状态最后才给），派生表与重建出来的逐行相同；
-//! 3. 与协议 3 的投影对拍（[against_protocol_3]）没有差异。
+//! 3. 与协议 3 的投影对拍（[against_protocol_3]）没有差异。协议 3 一侧比的是「它自己的规则作用在全集上」：扣住在
+//!    全集上重判（[rejudge_holds]），活着的修改记录按它自己的寄存器判据取（[protocol_3_live_edits]）；两份旧库撞了
+//!    同一个旧修改记录 ID 的不比（[collided_edit_ids]）。
 //!
 //! 库还没做完换代前必须做完的事（旧行没包成操作、去重作业没跑完）时，在一份拷贝上把它们做完再对拍；做不完的
 //! （新设备收段通道还开着）跳过。与协议 3 有意不同的场景列在 [KNOWN]，逐条写原因。
@@ -37,8 +39,8 @@ use crate::sync2::vv::OpId;
 /// 有差异的类别：(类别, 只在旧库, 只在新库)。空 = 完全一致。
 pub(crate) type Diff = Vec<(&'static str, Vec<String>, Vec<String>)>;
 
-/// 对不上、而且不该对上的场景：(测试名的结尾, 类别——[against_protocol_3] 的类别或 `error`, 原因)。两条都是测试
-/// 手改了协议 3 的日志表、库自己已经不自洽。
+/// 对不上、而且不该对上的场景：(测试名的结尾, 类别——[against_protocol_3] 的类别或 `error`, 原因)。都是测试
+/// 手改了协议 3 的日志表 / 投影表、库自己已经不自洽。
 const KNOWN: &[(&str, &str, &str)] = &[
     (
         "legacy::tests::a_duplicate_skeleton_in_the_log_becomes_an_alias",
@@ -51,6 +53,11 @@ const KNOWN: &[(&str, &str, &str)] = &[
         "error",
         "the test drops sync2_ops.sc / sc_at by hand: the ops whose payload was packed against a config snapshot \
          lose the reference, so their bytes no longer hash to the stored chain (the reader refuses them)",
+    ),
+    (
+        "tests_channel::channel_is_for_a_profile_holding_nothing_but_its_own_builtins",
+        "entities",
+        "the ch-missing-row device deletes the srs_entities row of a builtin note type by hand (to check that the          channel stays shut when a projected row is gone): its own log still holds the identity record",
     ),
 ];
 
@@ -137,7 +144,122 @@ fn hex(b: &[u8]) -> String {
 /// 协议 3 的投影，与同一份库灌进新存储、重建之后的派生层比。类别：活着的修改记录 ID（`edits`，不算合成的标签行）、
 /// 日志 ID（`logs`）、实体 ID（`entities`）、每条笔记现在的标签与顺序（`tags`）、媒体名绑定的内容（`media`）、
 /// 被并发改动扣住的删除（`held`）、因设备不可信没执行的删除与清除（`distrusted`）、清除过的实体（`purged`）。
+///
+/// 协议 3 一侧先在一个 SAVEPOINT 里把扣住按它自己的规则在全集上重判一遍（[rejudge_holds]）再读投影，比完整个回滚
+/// （库原样不动；只读打开的真实样本库不重判）。
 pub(crate) fn against_protocol_3(src: &Connection, profile: &str, t: &Truth<'_>, col: i64) -> Diff {
+    // 只读打开的库（真实样本）动不了，比它落库时的判定。
+    if src.is_readonly("main").unwrap() {
+        return compare_with_protocol_3(src, profile, t, col);
+    }
+    src.execute_batch("SAVEPOINT gen4_parity_holds").unwrap();
+    rejudge_holds(src, profile);
+    let diff = compare_with_protocol_3(src, profile, t, col);
+    src.execute_batch("ROLLBACK TO gen4_parity_holds; RELEASE gen4_parity_holds")
+        .unwrap();
+    diff
+}
+
+/// 协议 3 只在有操作落到一个实体上时重判这个实体上的删除该不该扣住（`semantics::evaluate_holds`），而把卡挪进牌组
+/// 的修改只重判那张卡、不重判目标牌组（`store/sync2/mod.rs` `project_edit_noted`；移卡只记进牌组的实体操作索引）。
+/// 于是牌组的删除先到、与它并发的移卡后到时删除不被扣住；反过来的顺序就扣住——扣不扣取决于到达顺序（设计 §2.5
+/// 差别表「重判扣住的时机」）。新存储对全集判。对拍时协议 3 一侧对每个有删除的实体照它自己的规则重判一遍，比的是
+/// 「协议 3 的规则作用在全集上」，不是它落库那一刻的判定。
+fn rejudge_holds(src: &Connection, profile: &str) {
+    let ents: Vec<(String, String)> = src
+        .prepare(
+            "SELECT DISTINCT kind, srs_idt(entity) FROM sync2_ent_ops WHERE profile_uid = srs_id(?1) AND what = 'deleted'",
+        )
+        .unwrap()
+        .query_map([profile], |r| Ok((r.get(0)?, r.get(1)?)))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    let mut touched = crate::store::sync2::Touched::default();
+    for (kind, ent) in ents {
+        crate::store::sync2::semantics::evaluate_holds(src, profile, &kind, &ent, 0, &mut touched)
+            .unwrap();
+    }
+}
+
+/// 协议 3 投影里活着的修改记录 ID（不算合成写入者的标签行）：按协议 3 自己的寄存器判据（`registers::judge_register`）
+/// 判过的。协议 3 落库时就裁掉被支配的（`land_stored`），自己写出来的投影里每个寄存器本来就只有活着的；测试直接往
+/// `srs_field_edits` 插旧行造出来的旧库（例如 `tests_channel` 的 `legacy_library`：同一个旧写入者先后两条、后一条的
+/// 上下文含前一条）会留着被支配的那条，它对协议 3 自己的读路径也不生效。
+fn protocol_3_live_edits(src: &Connection, profile: &str) -> Vec<(String, String, String)> {
+    type Row = (String, String, String, String, Option<i64>);
+    let rows: Vec<Row> = src
+        .prepare(
+            "SELECT srs_idt(f.id), f.entity_kind || ':' || srs_idt(f.entity_id), f.field_key, f.json, l.server_time \
+             FROM srs_field_edits f LEFT JOIN srs_event_local l ON l.event_id = f.id \
+             WHERE f.profile_uid = srs_id(?1) AND f.writer_id NOT LIKE 'sync2:%'",
+        )
+        .unwrap()
+        .query_map([profile], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
+        })
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    let mut regs: std::collections::BTreeMap<(&str, &str), Vec<&Row>> =
+        std::collections::BTreeMap::new();
+    for row in &rows {
+        regs.entry((&row.1, &row.2)).or_default().push(row);
+    }
+    let mut out = Vec::new();
+    for ((ent, key), xs) in regs {
+        let live: Vec<usize> = if xs.len() == 1 {
+            vec![0]
+        } else {
+            let items: Vec<crate::registers::StoredEdit<'_>> =
+                xs.iter().map(|x| (x.3.as_str(), x.4, None)).collect();
+            crate::registers::judge_register(&items).unwrap().0
+        };
+        for i in live {
+            out.push((xs[i].0.clone(), ent.to_owned(), key.to_owned()));
+        }
+    }
+    out
+}
+
+/// 同一个旧修改记录 ID（旧戳的写入者 + seq）下有两条以上不同修改（不同实体或字段键）的 ID：复制出来的两份旧库各自又以
+/// 同一个写入者写了同一个 seq（`tests_channel` 的 `ch-l1` / `ch-l2`）。新代两条是独立的操作、各自进自己的寄存器；
+/// 协议 3 的投影表按修改记录 ID 只存一行，留哪条看这台设备先收到哪份（设计 §2.5 差别表「同一个旧修改记录 ID 下两条
+/// 不同修改」）。`edits` 不比这些 ID。不看状态：撞车的另一条在新代里被支配了也一样（协议 3 可能留的正是那条）。
+fn collided_edit_ids(t: &Truth<'_>, col: i64) -> BTreeSet<String> {
+    let ks: Vec<i64> = t
+        .conn()
+        .prepare("SELECT k FROM reg_ix WHERE col = ?1")
+        .unwrap()
+        .query_map([col], |r| r.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    let mut by_dot: std::collections::BTreeMap<(String, i64), BTreeSet<(String, String)>> =
+        std::collections::BTreeMap::new();
+    for k in ks {
+        let e = t.entry_by_key(k).unwrap().unwrap();
+        let Some(Body4::Edit(ed)) = body_of(&e) else {
+            continue;
+        };
+        if let Some(st) = &ed.stamp {
+            by_dot
+                .entry((st.writer.clone(), st.seq))
+                .or_default()
+                .insert((
+                    format!("{}:{}", ed.kind.wire(), Ref::of(&ed.entity).text()),
+                    ed.key.clone(),
+                ));
+        }
+    }
+    by_dot
+        .into_iter()
+        .filter(|(_, edits)| edits.len() > 1)
+        .map(|((writer, seq), _)| crate::registers::edit_id(&writer, seq))
+        .collect()
+}
+
+fn compare_with_protocol_3(src: &Connection, profile: &str, t: &Truth<'_>, col: i64) -> Diff {
     let ix = Index::new(t, col);
     let refs = |sql: &str| -> BTreeSet<String> {
         t.conn()
@@ -214,26 +336,20 @@ pub(crate) fn against_protocol_3(src: &Connection, profile: &str, t: &Truth<'_>,
             .map(|(op, _)| op.clone())
             .collect()
     };
-    let old_edits: BTreeSet<String> = src
-        .prepare(
-            "SELECT srs_idt(id), entity_kind || ':' || srs_idt(entity_id), field_key FROM srs_field_edits \
-             WHERE profile_uid = srs_id(?1) AND writer_id NOT LIKE 'sync2:%'",
-        )
-        .unwrap()
-        .query_map([profile], |r| {
-            Ok((
-                r.get::<_, String>(0)?,
-                r.get::<_, String>(1)?,
-                r.get::<_, String>(2)?,
-            ))
-        })
-        .unwrap()
-        .map(Result::unwrap)
+    // 撞车的旧修改记录 ID 两边都不比（[collided_edit_ids]）。
+    let collided = collided_edit_ids(t, col);
+    let old_edits: BTreeSet<String> = protocol_3_live_edits(src, profile)
+        .into_iter()
         .filter(|(_, ent, key)| !(key == "deleted" && held_ents.contains(ent)))
         .map(|(id, ..)| id)
+        .filter(|id| !collided.contains(id))
+        .collect();
+    let new_edits: BTreeSet<String> = live_edit_ids(t, col, &held_ents)
+        .into_iter()
+        .filter(|id| !collided.contains(id))
         .collect();
     let pairs: Vec<(&'static str, BTreeSet<String>, BTreeSet<String>)> = vec![
-        ("edits", old_edits, live_edit_ids(t, col, &held_ents)),
+        ("edits", old_edits, new_edits),
         (
             "logs",
             texts(
