@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// fushi_fsrs 的 ID 审计（cargo feature `id_audit`，native/fushi_fsrs/src/store/ids.rs `audit`）只给测试与本机
 /// 调试构建用：带审计的库落在 `native/fushi_fsrs/prebuilt/<平台>/id_audit/`，由调试构建 / 测试宿主的加载器从仓库里
