@@ -1169,6 +1169,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       child: DictionaryPopupLayer(
         result: item.result,
         restoreScrollTop: item.restoreScrollTop,
+        lookupSession: item.lookupSession,
         webViewKey: item.webViewKey,
         keepWebViewWarm: item.isWarmSlot,
         // TODO-869：本层有后代弹窗时注入 __hasChildPopup，点卡片本体留白才能关子窗。
