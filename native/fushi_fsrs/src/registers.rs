@@ -1276,6 +1276,24 @@ pub(crate) fn register_value(edits: &[StoredEdit<'_>], key: &str) -> Result<Valu
     Ok(ent.value(key).clone())
 }
 
+/// 往某实体的字段键 [key] 写 [value] 是不是什么都不改（Dart 旧 `srsEditIsNoop`）：这个键有生效记录、没有冲突，且
+/// 生效值与它「相同」（[same_value]）。没有记录、或有冲突待裁决的一律要写。
+pub(crate) fn write_is_noop(
+    edits: &[StoredEdit<'_>],
+    key: &str,
+    value: &Value,
+) -> Result<bool, String> {
+    let parsed = parse_stored(edits)?;
+    let ent = Entity::build(&parsed);
+    Ok(match ent.reg(key) {
+        Some(r) if !r.conflicted => r
+            .live
+            .first()
+            .is_some_and(|&i| same_value(&parsed[i].value, value)),
+        _ => false,
+    })
+}
+
 /// 撤销校验里「我们写的那条」：dot（写入者, 序号）与它落库的值。
 pub(crate) struct UndoTarget<'v> {
     pub writer: &'v str,

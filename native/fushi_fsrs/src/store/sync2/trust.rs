@@ -272,30 +272,39 @@ impl crate::store::SrsCore {
     ) -> Result<Value, String> {
         let id = Id::parse(device).ok_or("trust: bad device")?;
         let w = self.writer()?;
-        super::in_savepoint(&w, |c| {
-            let local =
-                super::Local::load(c, profile)?.ok_or("sync2 not initialised for this profile")?;
-            if id == local.device {
-                return Err("trust: this device is always trusted".into());
-            }
-            let mut t = Touched::default();
-            let released = if trust {
-                release(c, profile, &id, now, &mut t)?
-            } else {
-                reject(c, profile, &id)?;
-                0
-            };
-            let replayed = super::replay_touched(c, &t)?;
-            Ok(serde_json::json!({
-                "trusted": trust,
-                "released": released,
-                "marks": t.marks.to_json(),
-                "replayed": replayed,
-                "changed": t.entities_changed.iter().map(|(k, e)| serde_json::json!([k, e])).collect::<Vec<_>>(),
-                "purged": t.purged.iter().map(|(k, e)| serde_json::json!([k, e])).collect::<Vec<_>>(),
-            }))
-        })
+        super::in_savepoint(&w, |c| trust_on(c, profile, &id, trust, now))
     }
+}
+
+/// [crate::store::SrsCore::sync2_trust] 的本体：在调用方持着的写连接、开好的 SAVEPOINT 里做（不自己取锁）。本机写命令
+/// 分发（store/ffi.rs `local_write_body`）把它与缓存刷新、本机状态行放进同一个 SAVEPOINT。
+pub(crate) fn trust_on(
+    c: &Connection,
+    profile: &str,
+    id: &Id,
+    trust: bool,
+    now: i64,
+) -> Result<Value, String> {
+    let local = super::Local::load(c, profile)?.ok_or("sync2 not initialised for this profile")?;
+    if *id == local.device {
+        return Err("trust: this device is always trusted".into());
+    }
+    let mut t = Touched::default();
+    let released = if trust {
+        release(c, profile, id, now, &mut t)?
+    } else {
+        reject(c, profile, id)?;
+        0
+    };
+    let replayed = super::replay_touched(c, &t)?;
+    Ok(serde_json::json!({
+        "trusted": trust,
+        "released": released,
+        "marks": t.marks.to_json(),
+        "replayed": replayed,
+        "changed": t.entities_changed.iter().map(|(k, e)| serde_json::json!([k, e])).collect::<Vec<_>>(),
+        "purged": t.purged.iter().map(|(k, e)| serde_json::json!([k, e])).collect::<Vec<_>>(),
+    }))
 }
 
 /// 测试：信任此刻全部待确认的设备（端到端助手模拟「用户每次都点了信任」，见 tests.rs `AUTO_TRUST`）。

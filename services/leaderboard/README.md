@@ -85,6 +85,7 @@ dashboard 的 Email Sending 里 Onboard 发件域名），否则用 Resend（`wr
 > `0013_install_verified.sql`（`installs.verified` / `install_days.verified` / `feedback.install_verified`，安装证明）：没迁移就部署时心跳、反馈提交、`/dev/stats` 与反馈详情都会 500——**同样碰了反馈提交，务必先迁移**。只加带默认值的列，旧 Worker 在线时先迁移不受影响。
 > `0017_install_dimensions.sql`（`installs` / `install_days` 各加可空列 `country` / `locale` / `arch` / `os_version` / `source`）：没迁移就部署时心跳与 `/dev/stats` 会 500（反馈提交不受影响）——**先迁移**。纯增量，旧 Worker 在线时先迁移不受影响；迁移前的历史记录这些列为 NULL，统计页显示「未记录 / 未上报」。
 > `0018_project_stats.sql`（新表 `repo_daily` / `site_daily` / `project_meta`，处理台 `/dev/project`）：没迁移就部署时定时任务的最后一步与 `/dev/project` 会 500（其余接口不受影响）——**先迁移**。纯新表。
+> `0020_decisions.sql`（新表 `decisions` / `decision_notes`，处理台 `/dev/decisions`）：没迁移就部署时只有 `/dev/decisions` 与拍板提交会 500（其余接口不受影响）。纯新表。
 > `0009_feedback_release.sql`（修复 / 发布追踪列）同理：处理台列表显式选 `fix_*` 列，`/v1/ci/feedback/**` 也读写这些列，没迁移就部署时都会 500（反馈人接口 `SELECT *` 不受影响，`fix` 恒为 null）。
 
 部署后还要知道的：
@@ -178,7 +179,7 @@ Run workflow），push / PR 永远不会部署。维护者不需要在自己机�
 | POST | `/v1/ci/feedback/fixed` `{sha, ids ≤ 50, scope: app\|none}` | Bearer `FEEDBACK_CI_TOKEN` | CI 标记修复 commit → `{updated, unchanged, missing}`（open / 处理中 → 已解决并记时间线；换了 sha 或 scope 会清空已发布记录，sha 与 scope 都没变的幂等跳过、进 `unchanged`）。没配 secret 时 `/v1/ci/**` 一律 404。手动兜底：`node scripts/feedback.mjs fixed <id> --sha <commit> [--no-app]` |
 | GET | `/v1/ci/feedback/pending?channel&platform` | Bearer | 180 天内、需要新 App、该通道 / 平台还没回填的修复 `{items:[{id, sha}]}`（≤ 500） |
 | POST | `/v1/ci/feedback/released` `{channel, platform, version, ids: [{id, sha}] ≤ 500}` | Bearer | 回填「哪个版本已包含修复」，只记首次 → `{updated}`；行的当前 `fix_sha` 与该条 `sha` 不同（其间被重新标记修复）的静默跳过。只写 `fixed_in`，不刷 `dev_reply_at` / `updated_at`（回填不是开发者回复，不影响红点、「新消息」与处理台排序）。反馈人 / 开发者接口的摘要带 `fix: {sha, scope, at, releases}` |
-| GET/POST | `/dev/**` | 会话 Cookie | 开发者网页处理台（邮箱验证码登录，仅 role = dev；无脚本、POST 验 Origin）：`/dev` 反馈（`/dev/feedback.json?status&cursor&q`、`/dev/f/:id.json` 同数据的 JSON）、`/dev/stats` 安装统计（`/dev/stats.json` 同一份数据的 JSON，供维护者看板 Fushi Pulse 用同一会话取数，没会话回 401 而不是跳登录页）、`/dev/project` 项目数据（GitHub star / fork / 关注 / issue、App Release 各平台下载、官网 fushi.moe 每日页面浏览 / 访客 / 流量 / 国家；定时任务每 3 / 6 小时取一次存成每日快照画趋势，页面可「立即刷新」；细节见 `src/project_stats.js` 文件头） |
+| GET/POST | `/dev/**` | 会话 Cookie | 开发者网页处理台（邮箱验证码登录，仅 role = dev；无脚本、POST 验 Origin）：`/dev` 反馈（`/dev/feedback.json?status&cursor&q`、`/dev/f/:id.json` 同数据的 JSON）、`/dev/stats` 安装统计（`/dev/stats.json` 同一份数据的 JSON，供维护者看板 Fushi Pulse 用同一会话取数，没会话回 401 而不是跳登录页）、`/dev/project` 项目数据（GitHub star / fork / 关注 / issue、App Release 各平台下载、官网 fushi.moe 每日页面浏览 / 访客 / 流量 / 国家；定时任务每 3 / 6 小时取一次存成每日快照画趋势，页面可「立即刷新」；细节见 `src/project_stats.js` 文件头）、`/dev/decisions` 拍板台（AI 代理经 `node scripts/decisions.mjs` 写入待拍事项，开发者点做 / 不做 / 以后 / 永远不做 / 没看懂 / 你定并留言；`POST /dev/d/:id`；规则见 `docs/agent/decision-board.md`） |
 
 「ticket 或同账户签名」：带了非空 `X-Fushi-Ticket` 就只认 ticket；否则验 `X-Fushi-Account` 签名，反馈须是该账户提交的。
 不存在 / 不是你的 / 匿名提交的 / 什么都没带一律 404（不区分）；匿名提交的反馈只能凭 ticket。

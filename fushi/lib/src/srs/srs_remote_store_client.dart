@@ -40,7 +40,15 @@ class SrsRemoteHostClient extends InterconnectHostClient {
     required super.peer,
     super.httpClient,
     super.pinnedClientFactory,
-  });
+    int Function()? localOffsetMin,
+  }) : localOffsetMin = localOffsetMin ?? SrsDayContext.localOffsetMin;
+
+  /// 本机此刻的 UTC 偏移（分钟）。远程会话里「今天」的时区取用户手上这台设备：每次调用都带上
+  /// （[kSrsRemoteDeviceOffsetKey]），主机按它算日界；翻日时刻仍是 profile 同步的那一份。
+  final int Function() localOffsetMin;
+
+  /// 这次调用要带给主机的偏移：越出现实时区范围时不带（主机按自己的偏移算，与旧客户端相同）。
+  int? get deviceOffsetMin => srsRemoteDeviceOffset(localOffsetMin());
 
   /// 一次调用；回包是整个信封（`result` 之外还有主机的修订号、牌组树标签、时钟）。
   Future<Map<String, dynamic>> call(
@@ -55,6 +63,7 @@ class SrsRemoteHostClient extends InterconnectHostClient {
       'args': args,
       'profile': ?profile,
       'request': ?request,
+      kSrsRemoteDeviceOffsetKey: ?deviceOffsetMin,
     },
     timeout: const Duration(seconds: 30),
     authErrorMessage: 'SRS remote store authentication rejected',
@@ -230,7 +239,7 @@ class SrsRemoteStore implements SrsDbStore, SrsRemoteForwarding {
   SrsTimeSource _timeSource = SrsTimeSource.wall;
 
   _RemoteTree? _tree;
-  ({String fp, SrsDayContext day})? _day;
+  ({String fp, int? tz, SrsDayContext day})? _day;
   final Map<String, ({String tag, SrsNoteTypeView view})> _types =
       <String, ({String tag, SrsNoteTypeView view})>{};
 
@@ -379,7 +388,8 @@ class SrsRemoteStore implements SrsDbStore, SrsRemoteForwarding {
 
   /// 复习的翻日时刻是本机设置的同步那一份：只由本机激活副本读写（`AppModel.setStatDayResetHourByUser` /
   /// `adoptSyncedDayRollover`，都走 `SrsProfileStores` 的本地副本）。远程复习库是主机的数据，本机日界设置不读
-  /// 也不改它；远程会话里的「今天」照旧取主机的 [dayContext]。
+  /// 也不改它；远程会话里的「今天」取主机的 [dayContext]：翻日时刻是主机 profile 的，时区是本机报过去的偏移
+  /// （[SrsRemoteHostClient.localOffsetMin]）。
   @override
   Future<SrsDayRollover?> syncedDayRollover() => throw UnsupportedError(
     'SrsRemoteStore: the day rollover setting is local-only; read it from '
@@ -469,14 +479,18 @@ class SrsRemoteStore implements SrsDbStore, SrsRemoteForwarding {
 
   @override
   Future<SrsDayContext> dayContext() async {
-    final ({String fp, SrsDayContext day})? cached = _day;
-    if (cached != null && cached.fp == _fingerprint) return cached.day;
+    // 本机换了时区（带的偏移变了）也要重取：主机按每次调用带的偏移算。
+    final int? tz = _client.deviceOffsetMin;
+    final ({String fp, int? tz, SrsDayContext day})? cached = _day;
+    if (cached != null && cached.fp == _fingerprint && cached.tz == tz) {
+      return cached.day;
+    }
     final SrsDayContext day = await _read(
       'dayContext',
       null,
       SrsRemoteWire.dayContextFrom,
     );
-    _day = (fp: _fingerprint, day: day);
+    _day = (fp: _fingerprint, tz: tz, day: day);
     return day;
   }
 

@@ -24,6 +24,9 @@ import 'package:fushi/src/pages/implementations/fushi_web_browser_page.dart';
 import 'package:fushi/src/pages/implementations/web_hub_page.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
     show FushiFloatingChromeInset;
+import 'package:fushi/src/shortcuts/gamepad_service.dart'
+    show GamepadButtonIntent;
+import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart';
@@ -667,6 +670,48 @@ void main() {
     expect(byKey('web-browser-tab-grid'), findsNothing);
     expect(state.tabsController.activeTab, first);
     expect(byKey('stub-webview'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  // 反馈 wegu0vewts：浏览器快捷键映射只能映射键盘键。webBrowser scope 现在开了手柄
+  // 通道，浏览页根上的 Actions 把 GamepadButtonIntent 按 webBrowser scope 解析；没绑的
+  // 按钮原样往上交（焦点导航 / B 返回不能被这层吞掉）。
+  testWidgets('手柄键：绑到浏览器动作的按钮执行动作，没绑的按钮不消费', (WidgetTester tester) async {
+    expect(
+      ShortcutScope.webBrowser.channels,
+      contains(ShortcutChannel.gamepad),
+    );
+    appModel.shortcutRegistry.loadDefaults(TargetPlatform.android);
+    appModel.shortcutRegistry.updateBinding(
+      ShortcutAction.webBrowserNewTab,
+      const ShortcutBindingSet(
+        gamepadBindings: <GamepadBinding>[GamepadBinding(GamepadButton.rb)],
+      ),
+    );
+    await pumpBrowser(tester, const Size(1280, 720));
+    final FushiWebBrowserPageState state = page(tester);
+    expect(state.tabsController.length, 1);
+
+    final BuildContext focusContext =
+        FocusManager.instance.primaryFocus!.context!;
+    final Object? bound = Actions.maybeInvoke<GamepadButtonIntent>(
+      focusContext,
+      const GamepadButtonIntent(GamepadButton.rb),
+    );
+    await tester.pumpAndSettle();
+    expect(bound, isTrue);
+    expect(state.tabsController.length, 2);
+
+    // 没绑到 webBrowser 的按钮：本层不消费（返回非 true），标签页不变。
+    final BuildContext again = FocusManager.instance.primaryFocus!.context!;
+    final Object? unbound = Actions.maybeInvoke<GamepadButtonIntent>(
+      again,
+      const GamepadButtonIntent(GamepadButton.lt),
+    );
+    await tester.pumpAndSettle();
+    expect(unbound, isNot(true));
+    expect(state.tabsController.length, 2);
+    expect(state.handleGamepadButton(GamepadButton.lt), isFalse);
     expect(tester.takeException(), isNull);
   });
 
