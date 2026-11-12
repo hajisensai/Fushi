@@ -592,62 +592,39 @@ class SrsDbStore implements SrsSync2Host {
   /// [_absorbLocalWrite]），Dart 自己不加。
   int _revision = 0;
 
-  /// 内容修订号（只在内存）：修订号的子集——复习日志与界面状态类修改记录（牌组收起 / 展开，
-  /// [SrsFieldClass.viewState]）不推进它。同步冲突、待裁决笔记、旧 Lapis 迁移提醒这类「整库扫一遍」
-  /// 的角标只随它变（见 [contentFingerprint]）：评分一次只落日志，牌组列表 / 首页面板跟着重读计数时
-  /// 不必把这些角标再扫一遍。
-  int _contentRevision = 0;
-
   /// 当前修订号（同步可读；与 [changeFingerprint] 同一个数，不含纪元）。牌组列表据此判断一份重读
-  /// 结果是不是在某次写入之后取的。
+  /// 结果是不是在某次写入之后取的。收段通道自己做完的片推进的修订号要等下一条改投影命令的回包才到这里；要「任何
+  /// 落库都变」的判据读 [landedFingerprint]。
   int get revision => _revision;
 
-  /// 本副本对象的实例号（只在内存、不落盘、不进纪元）：进程启动 ID + 进程内第几个副本对象。
-  ///
-  /// 内容 / 视图 / RWKV 刷新这三个计数只在对象的内存里、每个对象从头数，而纪元是落盘的：同一个 profile 换一个副本
-  /// 对象（进程重启，或同一进程里副本关掉重开——换 uid、交接、远程主机按 uid 现取）之后，`纪元:计数` 会回到以前
-  /// 出现过的值而内容已经不同。按「指纹相等 = 没变」跳过重读的读者（远程客户端缓存的 dayContext 与牌组树、同步调度
-  /// 记的上次媒体对账时的内容指纹、RWKV 分数表）就读到旧数据。凡是带内存计数的指纹都拼上它：换对象指纹必然不同，
-  /// 代价是这些缓存每换一次对象失效一次。只含落盘值的 [changeFingerprint] / [rwkvScoresClearKey] 不拼，跨对象可比。
-  final String _instance = '$_srsProcessBootId.${_nextInstance++}';
-  static int _nextInstance = 0;
+  /// 内核持有的进程内刷新键（[SrsCore.refreshKeys]，native/fushi_fsrs/src/store/refresh.rs）。每次现读、不存：计数
+  /// 按 profile 归内核，在每次提交之后推进（本机写命令、收段的每一步、收段通道自己做完的每一片、导入、重读本机
+  /// 状态、删 / 并入 profile），同一个 profile 的所有副本对象读到同一组值；键里的前缀每次打开库随机生成，进程重启、
+  /// 关库重开之后不会回到以前出现过的值。库已关时这几个指纹都是 [_closedKey]。
+  SrsRefreshKeys? get _refreshKeys => core.refreshKeys(profileUid);
 
-  /// [_epoch] + [_instance]：带内存计数的指纹的共同前缀。
-  String get _memoryKeyPrefix => '$_epoch:$_instance';
+  /// 库已关时的指纹（与任何开着时的值都不等：开着时的键形如 `<16 位十六进制>:<计数>`）。
+  static const String _closedKey = 'closed';
 
-  /// 统计指纹：纪元 + 落库事件里会改变统计结果的那部分（复习日志、卡片 / 笔记 / 牌组 / 笔记类型的内容事件、冲突
-  /// 扣住与解除）。界面状态类修改记录（牌组收起 / 展开，[SrsFieldClass.viewState]）不计入；没有事件落库的写入（同步
-  /// 簿记、媒体、空轮）不改变它。统计页据此判断 [srsRevisionProvider] 的一跳要不要重读（见 `loadSrsStats`）。
-  String get statsFingerprint =>
-      '$_memoryKeyPrefix:${_revision - _viewRevision}';
+  /// 统计指纹：落库事件里会改变统计结果的那部分（复习日志、卡片 / 笔记 / 牌组 / 笔记类型的内容事件、冲突扣住与
+  /// 解除）。界面状态类修改记录（牌组收起 / 展开，[SrsFieldClass.viewState]）不计入；没有事件落库的写入（同步簿记、
+  /// 媒体、空轮）不改变它。统计页据此判断 [srsRevisionProvider] 的一跳要不要重读（见 `loadSrsStats`）。
+  String get statsFingerprint => _refreshKeys?.stats ?? _closedKey;
 
-  /// 内容指纹：纪元 + 实例号（[_instance]）+ 内容修订号。相等 = 两次读之间没有落过日志 / 界面状态以外的事件、没有换过服务器
-  /// 时刻、没有重读过本机状态——同步冲突 / 待裁决 / 迁移提醒的计数不可能变。
-  String get contentFingerprint => '$_memoryKeyPrefix:$_contentRevision';
+  /// 内容指纹：相等 = 两次读之间没有落过复习日志 / 界面状态以外的事件、没有冲突扣住 / 解除、没有重读过本机状态——
+  /// 同步冲突 / 待裁决 / 迁移提醒这类「整库扫一遍」的角标不可能变。评分一次只落日志，牌组列表 / 首页面板跟着重读
+  /// 计数时不必把这些角标再扫一遍。
+  String get contentFingerprint => _refreshKeys?.content ?? _closedKey;
 
-  /// RWKV-Instant 分数表的全量刷新信号（只在内存）：牌组 / 配置类事件落库（预设归属、排队设置可能
-  /// 变了）、应用一批对端事件（同步合并）、重读本机状态时 +1。复习日志、卡片自己的修改（暂停 /
-  /// 埋 / 旗标 / 换牌组——换牌组由分数表项的版本覆盖）不推进它。见 `SrsRwkvService` 文件头。
-  int _rwkvScoresRevision = 0;
+  /// RWKV-Instant 分数表的全量刷新信号：牌组 / 配置类事件落库（预设归属、排队设置可能变了）、应用一批对端事件（同步
+  /// 合并、导入）、重读本机状态时变。复习日志、卡片自己的修改（暂停 / 埋 / 旗标 / 换牌组——换牌组由分数表项的版本
+  /// 覆盖）不动它。收段会话（内核 `ingest_begin` … `ingest_end`）期间的推进攒着、会话结束时并成一次：以前每片一次，
+  /// 整表重查跟着每片来、与下一片抢内存（35 万条日志的 iPhone 收尾 OOM）。见 `SrsRwkvService` 文件头。
+  String get rwkvScoresKey => _refreshKeys?.rwkv ?? _closedKey;
 
-  /// [_rwkvScoresRevision] 连同纪元与实例号（[_instance]）：变了 = 分数表整表按此刻重查。
-  String get rwkvScoresKey => '$_memoryKeyPrefix:$_rwkvScoresRevision';
-
-  /// 收段会话（[sync2IngestBegin] … [sync2IngestEnd]）期间攒下的分数表刷新：会话里每片投递 / 收尾重放都可能
-  /// 推进它，以前每片 +1，整表重查跟着每片来一次、与下一片抢内存（35 万条日志的 iPhone 收尾 OOM）。会话结束时
-  /// 并成一次（[_endIngestSession]）。只在内存：进程死在会话中途时下次启动 [_loadLocal] 本来就 +1、原生分数表
-  /// 也是空的，不会漏刷新。
-  int _rwkvScoresDeferred = 0;
-
-  /// 推进 [_rwkvScoresRevision]；收段会话里先攒着，会话结束时并成一次。
-  void _bumpRwkvScores([int n = 1]) {
-    if (n <= 0) return;
-    if (_ingestSession != null) {
-      _rwkvScoresDeferred += n;
-    } else {
-      _rwkvScoresRevision += n;
-    }
-  }
+  /// 任何事件落库（含收段通道自己做完的片）或可见性变化都变：与落盘修订号同口径，但不必等下一条回包。RWKV 服务据此
+  /// 判断「有没有新日志」（不变就不扫日志表）。
+  String get landedFingerprint => _refreshKeys?.landed ?? _closedKey;
 
   /// 正在进行的收段会话；完成 = 会话结束。RWKV 回放（[rwkvReplay]，整 profile 扫一遍日志）等它结束才跑，
   /// 会话开始前等在途的回放跑完（[_rwkvReplaysIdle]）：两者都随日志总量线性占内存，不能叠在一起。
@@ -671,10 +648,6 @@ class SrsDbStore implements SrsSync2Host {
   void _endIngestSession(Completer<void> session) {
     if (!identical(_ingestSession, session)) return;
     _ingestSession = null;
-    if (_rwkvScoresDeferred > 0) {
-      _rwkvScoresDeferred = 0;
-      _rwkvScoresRevision++;
-    }
     session.complete();
   }
 
@@ -820,10 +793,11 @@ class SrsDbStore implements SrsSync2Host {
   /// 重读路径（[reloadLocal]、命令失败后的 [_commandOrReload]）也走这里，所以不能顺手建行：这个 profile 的数据可能
   /// 刚被整份删掉（`profile_purge` / 并入收尾），建回一行它就又被当成有数据的 profile。
   Future<({bool exists, bool epochStored})> _loadLocal() async {
-    _contentRevision++;
-    _bumpRwkvScores();
+    // `reload`：内核按「这个 profile 按刷新键记的缓存全部作废」推进一次键（store/refresh.rs）——开库（新的副本对象）、
+    // [reloadLocal]、命令失败后的重读都是这个意思。
     final Map<String, Object?> j = await _sync2(const <String, Object?>{
       'op': 'local_state',
+      'reload': true,
     });
     _absorbLocalState(j);
     final Object? anchor = j['anchor'];
@@ -886,13 +860,11 @@ class SrsDbStore implements SrsSync2Host {
   (int, SrsTimeSource) now() => _trusted.now();
 
   /// [deckTree] 与 profile 修改记录的缓存（作答一次以前要物化牌组树 / 日界 8–10 次）。键是
-  /// [_structureKey]：内容修订号覆盖了除复习日志与界面状态外的一切落库、服务器时刻变化、重读
-  /// 本机状态与清除；界面状态（牌组收起 / 展开）另由 [_viewRevision] 计。
+  /// [_structureKey]：内核的内容计数覆盖了除复习日志与界面状态外的一切落库、重读本机状态与清除，再加上界面状态
+  /// （牌组收起 / 展开）的计数（[SrsRefreshKeys.structure]）。
   ({String key, SrsDeckTree tree})? _deckTreeCache;
   ({String key, SrsEntityEdits edits})? _profileEditsCache;
-  int _viewRevision = 0;
-  String get _structureKey =>
-      '$_memoryKeyPrefix:$_contentRevision:$_viewRevision';
+  String get _structureKey => _refreshKeys?.structure ?? _closedKey;
 
   Future<SrsEntityEdits> _profileEdits() async {
     final String key = _structureKey;
@@ -1448,10 +1420,12 @@ class SrsDbStore implements SrsSync2Host {
     Map<String, Object?>? study,
     void Function(Map<String, Object?> study)? onStudy,
     Map<String, Object?>? expectLast,
+    bool remote = false,
   }) async {
     final Map<String, Object?> r = await _sync2(
       <String, Object?>{
         'op': existed == null ? 'apply' : 'import_drafts',
+        if (remote) 'remote': true,
         'now': now().$1,
         'legacyDevice': deviceId,
         'recvNow': ?recvNow,
@@ -1489,27 +1463,17 @@ class SrsDbStore implements SrsSync2Host {
     return _Applied(landed, got is List ? got : const <Object?>[]);
   }
 
-  /// 把一次 sync2 命令（本机 apply、远端 ingest、冲突解决、恢复……）的结果接进修订号与本机缓存的变更日志：
-  /// 内核已把落进投影的事件折成粗粒度摘要 `marks`（native/fushi_fsrs/src/store/sync2/mod.rs `Marks`），并在
-  /// 同一次调用里按它刷新了缓存行（store/caches.rs），交回写过哪些笔记 / 卡（`cache`）。这里只加计数、记日志——
-  /// 不收事件全文，也不在 UI isolate 上重算缓存行（大同步曾因此卡死 / OOM）。冲突扣住 / 解除改变了可见性的
-  /// 实体各推进一次内容修订号。修订号本身不在这里加：内核按同一份结果推进并写下，回包带回（[_absorbLocalWrite]）。
+  /// 把一次 sync2 命令（本机 apply、远端 ingest、冲突解决、恢复……）的结果接进本机缓存的变更日志：内核已把落进
+  /// 投影的事件折成粗粒度摘要 `marks`（native/fushi_fsrs/src/store/sync2/mod.rs `Marks`），并在同一次调用里按它
+  /// 刷新了缓存行（store/caches.rs），交回写过哪些笔记 / 卡（`cache`）。这里只记被彻底清除的实体、接缓存日志——
+  /// 不收事件全文，也不在 UI isolate 上重算缓存行（大同步曾因此卡死 / OOM）。修订号与刷新键都不在这里加：内核按
+  /// 同一份结果推进（修订号写进本机状态行、回包带回，[_absorbLocalWrite]；刷新键在内存，[contentFingerprint] 等现读）。
   /// 返回落进投影的事件数。
   int _absorbProjection(Map<String, Object?> r) {
     final Map<String, Object?> m =
         (r['marks'] as Map?)?.cast<String, Object?>() ??
         const <String, Object?>{};
     final int landed = (m['landed'] as int?) ?? 0;
-    _contentRevision += (m['content'] as int?) ?? 0;
-    _viewRevision += (m['view'] as int?) ?? 0;
-    _bumpRwkvScores((m['rwkv'] as int?) ?? 0);
-    for (final Object? c in (r['changed'] as List?) ?? const <Object?>[]) {
-      if (c is List &&
-          c.length == 2 &&
-          SrsEntityKind.tryParse(c[0] as String?) != null) {
-        _contentRevision++;
-      }
-    }
     for (final Object? c in (r['purged'] as List?) ?? const <Object?>[]) {
       if (c is List && c.length == 2) {
         final SrsEntityKind? kind = SrsEntityKind.tryParse(c[0] as String?);
@@ -1661,14 +1625,14 @@ class SrsDbStore implements SrsSync2Host {
   }
 
   /// 本副本开着内核收段会话（[sync2IngestBegin] 之后、[sync2IngestEnd] / [retire] 放掉之前）。
-  /// [_ingestSession] 是 Dart 侧的会话（攒分数表刷新、让 RWKV 回放排队），比它早开、不晚于它结束。
+  /// [_ingestSession] 是 Dart 侧的会话（让 RWKV 回放排队），比它早开、不晚于它结束。
   bool _ingestOpen = false;
 
   /// 测试：[_ingestOpen]。
   @visibleForTesting
   bool get debugIngestOpen => _ingestOpen;
 
-  /// 结束收段会话：会话里攒下的分数表刷新并成一次（[_rwkvScoresDeferred]），等着的 RWKV 回放放行；内核命令失败
+  /// 结束收段会话：等着的 RWKV 回放放行（会话里攒下的分数表刷新由内核在 `ingest_end` 时并成一次）；内核命令失败
   /// 也照样结束 Dart 侧会话。副本在这一轮途中被作废时，[retire] 已在它最后一段独占区里放掉了内核会话：这里不再进
   /// 独占区（进了也只会抛作废错误，而 `ingest_end` 已经发到内核）。
   @override
@@ -1862,10 +1826,7 @@ class SrsDbStore implements SrsSync2Host {
       'now': now().$1,
       'anchor': ?_anchorArg(),
     }, blobs: segments);
-    final int landed = _absorbLocalWrite(r);
-    if (landed > 0 || ((r['replayed'] as List?)?.isNotEmpty ?? false)) {
-      _bumpRwkvScores();
-    }
+    _absorbLocalWrite(r);
     await _notifyPurged();
     return r;
   });
@@ -1982,7 +1943,6 @@ class SrsDbStore implements SrsSync2Host {
         blobs: <Uint8List>[bytes],
       );
       _absorbLocalWrite(r);
-      _bumpRwkvScores();
     });
     final Map<String, Object?> id = await _sync2(<String, Object?>{
       'op': 'identity',
@@ -2060,9 +2020,7 @@ class SrsDbStore implements SrsSync2Host {
       ) = await _coreColumns(core.address, core.libraryPath, <String, Object?>{
         ...request,
         'profile': profileUid,
-        'settled': true,
       });
-      if (json is Map) await _absorbSettled(json['settled']);
       final Map<String, SrsColumns> tables = <String, SrsColumns>{};
       for (final MapEntry<String, TransferableTypedData> f in files.entries) {
         final Uint8List b = f.value.materialize().asUint8List();
@@ -2077,8 +2035,8 @@ class SrsDbStore implements SrsSync2Host {
     }
   }
 
-  /// 发一条内核命令。请求一律带 `settled: true`：收段通道自己做完的片攒下的投影变化随回包交回，这里先接进内存
-  /// （[_absorbSettled]）再把回包交给调用方——那些片在这条命令之前就提交了，先于命令自己的结果。
+  /// 发一条内核命令。收段通道在这条命令之前自己做完的片没有回包：内核在每片提交时推进刷新键（[contentFingerprint]
+  /// 等现读），这里不用接。
   Future<SrsSync2Result> _sync2Raw(
     Map<String, Object?> request, {
     List<Uint8List> blobs = const <Uint8List>[],
@@ -2096,7 +2054,6 @@ class SrsDbStore implements SrsSync2Host {
         <String, Object?>{
           ...request,
           'profile': profileUid,
-          'settled': true,
           if (_kSync2CacheOps.contains(request['op'])) 'caches': _cacheConfig,
         },
         blobs,
@@ -2107,9 +2064,6 @@ class SrsDbStore implements SrsSync2Host {
         0,
       ),
     );
-    // 回包不是对象的命令（返回数组 / 空）内核不附 `settled`，那一份留给下一条。
-    final Object? json = r.json;
-    if (json is Map) await _absorbSettled(json['settled']);
     return r;
   }
 
@@ -2128,7 +2082,7 @@ class SrsDbStore implements SrsSync2Host {
   /// （[_sync2Raw] 断言）：回包要按顺序接进本对象的内存（缓存变更日志、修订号）。
   ///
   /// 不在这里、也不排写锁却可能顺带写库的：`digest`（记一行摘要缓存）、`media_hash`、`plan_restore`（只读，但通道没做完时
-  /// 内核先收通道，收下的片经回包的 `settled` 交回，[_absorbSettled]）——见 [kSrsSync2LockFreeOps] 与 [sync2PlanRestore]。
+  /// 内核先收通道，收下的片在内核里推进刷新键）——见 [kSrsSync2LockFreeOps] 与 [sync2PlanRestore]。
   @visibleForTesting
   static const Set<String> kSrsSync2ProjectingOps = <String>{
     'apply',
@@ -2261,13 +2215,13 @@ class SrsDbStore implements SrsSync2Host {
   /// [noteType] / [noteTypes] 的物化缓存（卡片详情每次 [cardDetail]、制卡选项每次库版本变动都要物化，每次两三次
   /// Drift 往返 + 一次寄存器内核）。键是 [contentFingerprint]，与笔记类型的结构写入严格对应：
   /// - 笔记类型只由它的身份记录与修改记录决定；这两类记录落进投影（本机写入、收段、导入、恢复、冲突解决、清除，
-  ///   全是内核命令）一律经 [_absorbProjection] 推进内容修订号（内核 `Marks::entity` / `Marks::edit`：笔记类型
+  ///   全是内核命令）一律在提交之后推进内核的内容计数（store/refresh.rs；内核 `Marks::entity` / `Marks::edit`：笔记类型
   ///   上没有界面状态类字段键，见 `is_view_state`）。Dart 侧对这两张表的直写只有 [compactStoredStyles]（只动笔记的
   ///   修改记录、只换表示不换值）与 profile 合并删整个旧 profile 的行（之后按新 uid 重开），都碰不到本 profile 的
   ///   笔记类型；
   /// - 重读本机状态（开库、覆盖恢复后、写事务回滚后的 [_loadLocal]）推进它，纪元随覆盖恢复更换；
   /// - 复习日志与界面状态（牌组收起 / 排序位、新卡位置）不推进它——它们碰不到笔记类型，所以不在键里
-  ///   （[_structureKey] 多出的 [_viewRevision] 只关牌组树）。
+  ///   （[_structureKey] 多出的界面状态计数只关牌组树）。
   /// 读的途中键变了就不存（同 [deckTree]）。缓存的视图是不可变的，[noteTypes] 返回副本列表。
   _NoteTypeCache? _noteTypeCache;
 
@@ -5294,9 +5248,9 @@ class SrsDbStore implements SrsSync2Host {
       });
     }
     await _commandOrReload(() async {
-      final _Applied applied = await _applyLocal(input, recvNow: nowMs);
-      // 同步合并：别的设备的作答带动了牌组 / 全局状态，RWKV 分数表整表重查（见 rwkvScoresKey）。
-      if (applied.landed > 0) _bumpRwkvScores();
+      // `remote`：这批是别的设备的事件（同步合并），落了就带动牌组 / 全局状态，内核让 RWKV 分数表整表重查一次
+      // （[rwkvScoresKey]，store/refresh.rs）。
+      await _applyLocal(input, recvNow: nowMs, remote: true);
     });
   });
 
@@ -5304,7 +5258,7 @@ class SrsDbStore implements SrsSync2Host {
   ///
   /// 内核在命令的同一个 SAVEPOINT 里做完命令本体、缓存刷新、排队与本机状态行
   /// （native/fushi_fsrs/src/store/ffi.rs `local_write`），要么全落、要么全不落。收段通道没做完时内核在命令之前先把它
-  /// 按片做完，那些片落进投影的变化随回包的 `settled` 交回（[_absorbSettled]）。
+  /// 按片做完，每片提交时内核推进刷新键（[contentFingerprint] 等）。
   ///
   /// 命令失败不回滚内存：攒下的影响面要丢掉、修订号等从库里重读（与 [reloadLocal] 同一理由）。调用方已在独占区里。
   ///
@@ -5355,29 +5309,6 @@ class SrsDbStore implements SrsSync2Host {
     final int landed = _absorbProjection(r);
     _adoptRevision(revision, epoch);
     return landed;
-  }
-
-  /// 回包里的 `settled`：收段通道在这条命令之前自己做完的片（内核 store/sync2/channel.rs `settle`——分发器在要
-  /// 完整投影的命令之前、导入 / 停用设备之前、并入提交之前、新收段会话开始时）落进投影的变化。那些片没有自己的
-  /// 回包，内核攒着、随这个 profile 的下一条命令交回一次（请求带 `settled: true`，[_sync2Raw] / [_columnsCommand]
-  /// 统一带）。形态同改投影命令的回包（`marks` / `changed` / `purged` + 此刻库里的 `localRevision` / `localEpoch`），
-  /// 接法也相同（[_absorbProjection]）：不接的话 [_structureKey] / [contentFingerprint] / [rwkvScoresKey] 不动，
-  /// 牌组树、profile 修改记录、分数表读到的还是通道做完之前的。通道带来的是对端事件：落了就再推进一次分数表的
-  /// 全量刷新（同 [applyRemote]）。
-  Future<void> _absorbSettled(Object? settled) async {
-    if (settled is! Map) return;
-    final Map<String, Object?> r = settled.cast<String, Object?>();
-    final Object? revision = r['localRevision'];
-    final Object? epoch = r['localEpoch'];
-    if (revision is! int || epoch is! String) {
-      throw StateError(
-        'srs: a `settled` hand-over lacks `localRevision` / `localEpoch`',
-      );
-    }
-    final int landed = _absorbProjection(r);
-    _adoptRevision(revision, epoch);
-    if (landed > 0) _bumpRwkvScores();
-    await _notifyPurged();
   }
 
   /// 副本还能写（没有被 [retire]、也没有因重读失败作废）。

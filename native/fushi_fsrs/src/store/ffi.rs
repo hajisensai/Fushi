@@ -957,24 +957,21 @@ fn key32(v: &serde_json::Value) -> Result<Option<[u8; 32]>, String> {
     }
 }
 
-/// 一条 JSON 命令（[sync2_dispatch_op]）。请求带 `settled: true` 的 profile 命令成功、且回包是 JSON 对象时，把收段
-/// 通道在这条命令之前（或更早）自己做完的片攒下的投影变化附在回包的 `settled` 键上交回（store/sync2/channel.rs
-/// `take_settled`）：那些片没有自己的回包，Dart 那一侧按刷新信号记的缓存要靠它失效。失败的命令不取（留给下一条）。
+/// 一条 JSON 命令（[sync2_dispatch_op]）。返回之后（命令自己的写入已提交或已回滚）按请求与结果推进这个 profile 的
+/// 进程内刷新键（store/refresh.rs [SrsCore::refresh_after]）；收段通道在命令之前自己做完的片在每片提交时已经记过。
 pub(crate) fn sync2_dispatch(
     c: &SrsCore,
     req: &serde_json::Value,
     blobs: &mut Vec<Vec<u8>>,
     files: &mut Vec<(String, Vec<u8>)>,
 ) -> Result<serde_json::Value, String> {
-    let mut v = sync2_dispatch_op(c, req, blobs, files)?;
-    if req.get("settled").and_then(serde_json::Value::as_bool) == Some(true) && v.is_object() {
-        if let Some(profile) = req.get("profile").and_then(serde_json::Value::as_str) {
-            if let Some(settled) = c.take_settled(profile) {
-                v["settled"] = settled;
-            }
-        }
-    }
-    Ok(v)
+    let out = sync2_dispatch_op(c, req, blobs, files);
+    let projecting = req
+        .get("op")
+        .and_then(serde_json::Value::as_str)
+        .is_some_and(|op| PROJECTING_OPS.contains(&op));
+    c.refresh_after(req, out.as_ref().map_err(|_| ()), projecting);
+    out
 }
 
 fn sync2_dispatch_op(
@@ -1036,6 +1033,8 @@ fn sync2_dispatch_op(
             c.sync2_ingest_yield();
             return Ok(json!({}));
         }
+        // 进程内刷新键（store/refresh.rs）：只读内存，不碰通道、不拿写锁、不读库。Dart 在 UI isolate 上同步调（指纹 getter）。
+        "refresh_keys" => return Ok(c.refresh_keys(s("profile")?)),
         _ => {}
     }
     let profile = s("profile")?;
@@ -2684,6 +2683,7 @@ mod tests {
             "wal_checkpoint",
             "bulk_cache",
             "ingest_yield",
+            "refresh_keys",
         ] {
             assert!(
                 ops.remove(global),

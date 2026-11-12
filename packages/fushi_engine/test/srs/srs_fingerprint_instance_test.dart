@@ -1,8 +1,10 @@
-// 内容指纹 / 统计指纹 / RWKV 刷新键里的计数只在 SrsDbStore 对象的内存里、每个对象从头数，而纪元是落盘的：同一个
-// profile 换一个副本对象（进程重启，或同一进程里副本关掉重开）之后，计数会回到以前出现过的值而内容已经不同
-// （ABA）。读者按「指纹相等 = 没变」跳过重读：远程客户端按主机回包的 `fp` 缓存 dayContext、同步调度按位置记上次
-// 媒体对账时的内容指纹、RWKV 服务按 rwkvScoresKey 决定要不要整表重查。指纹里拼上副本对象的实例号之后，换对象
-// 指纹必然不同。
+// 内容指纹 / 统计指纹 / RWKV 刷新键 / 牌组树键 / 落库指纹是内核在内存里按 profile 持有的计数（native/fushi_fsrs/src/store/
+// refresh.rs，`refresh_keys`），SrsDbStore 每次现读、不存。读者按「指纹相等 = 没变」跳过重读：远程客户端按主机回包的
+// `fp` 缓存 dayContext、同步调度按位置记上次媒体对账时的内容指纹、RWKV 服务按 rwkvScoresKey 决定要不要整表重查。
+//
+// 第 14 步及以前这些计数在 SrsDbStore 对象的内存里、每个对象从头数：换一个副本对象计数回到以前出现过的值而内容已经
+// 不同（ABA），于是指纹里拼了进程启动 ID 与对象序号；同一个 profile 的两个副本对象各数各的，一方写了另一方的指纹不动。
+// 现在：同一次打开库里计数只增不减、所有副本对象读到同一组值；每次打开库换一个随机前缀。
 import 'dart:io';
 
 import 'package:drift/drift.dart' show driftRuntimeOptions;
@@ -17,6 +19,22 @@ import 'package:test/test.dart';
 const String kProfile = '01928c3e-0000-7000-8000-0000000000f1';
 
 typedef _Opened = ({SrsDbStore store, SrsDatabase db, SrsCore core});
+
+typedef _Keys = ({
+  String content,
+  String stats,
+  String rwkv,
+  String tree,
+  String landed,
+});
+
+_Keys _keys(SrsDbStore s) => (
+  content: s.contentFingerprint,
+  stats: s.statsFingerprint,
+  rwkv: s.rwkvScoresKey,
+  tree: s.deckTreeKey,
+  landed: s.landedFingerprint,
+);
 
 void main() {
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
@@ -37,17 +55,18 @@ void main() {
     }
   });
 
+  Future<SrsDbStore> openOn(SrsCore core, SrsDatabase db) => SrsDbStore.open(
+    db: db,
+    core: core,
+    profileUid: kProfile,
+    deviceId: 'A',
+    engine: FfiFsrsEngine.tryCreate(),
+  );
+
   Future<_Opened> open() async {
     final SrsCore core = SrsCore.open(path);
     final SrsDatabase db = SrsDatabase(srsInlineExecutor(core));
-    final SrsDbStore store = await SrsDbStore.open(
-      db: db,
-      core: core,
-      profileUid: kProfile,
-      deviceId: 'A',
-      engine: FfiFsrsEngine.tryCreate(),
-    );
-    return (store: store, db: db, core: core);
+    return (store: await openOn(core, db), db: db, core: core);
   }
 
   Future<void> close(_Opened o) async {
@@ -62,52 +81,70 @@ void main() {
     },
   );
 
-  test('换一个副本对象之后，三个带内存计数的指纹都不会与换之前的值相同', () async {
+  void expectAllDiffer(_Keys a, _Keys b, String why) {
+    expect(a.content, isNot(b.content), reason: 'content: $why');
+    expect(a.stats, isNot(b.stats), reason: 'stats: $why');
+    expect(a.rwkv, isNot(b.rwkv), reason: 'rwkv: $why');
+    expect(a.tree, isNot(b.tree), reason: 'tree: $why');
+    expect(a.landed, isNot(b.landed), reason: 'landed: $why');
+  }
+
+  test('关库重开之后，五个键都不会与关之前出现过的值相同', () async {
     // 第一次打开只为把库初始化好（内置笔记类型、本机状态行、纪元），之后每次打开都从同一个起点数。
     await close(await open());
 
     final _Opened a = await open();
-    final String content0 = a.store.contentFingerprint;
-    final String stats0 = a.store.statsFingerprint;
-    final String rwkv0 = a.store.rwkvScoresKey;
+    final _Keys k0 = _keys(a.store);
     final String change0 = await a.store.changeFingerprint();
-    // 一条内容写入：落了笔记与卡，内容、统计都变了。
     await addNote(a.store, '一');
-    expect(a.store.contentFingerprint, isNot(content0));
+    final _Keys k1 = _keys(a.store);
+    expectAllDiffer(k1, k0, '一条内容写入');
     await close(a);
+    expect(a.store.contentFingerprint, 'closed', reason: '库已关');
 
-    // 同一个库再开一个副本对象（纪元相同）：内存计数从头数，回到 [a] 刚打开时的值；但库里多了一条笔记。
+    // 同一个库再开一次（纪元相同）：计数从头数，但前缀换了；库里多了一条笔记。
     final _Opened b = await open();
     addTearDown(() => close(b));
     expect(
       b.store.rwkvScoresClearKey,
       a.store.rwkvScoresClearKey,
-      reason: '纪元落盘，换对象不换纪元（换纪元 = RWKV 分数表清空重算）',
+      reason: '纪元落盘，重开不换纪元（换纪元 = RWKV 分数表清空重算）',
     );
-    expect(
-      b.store.contentFingerprint,
-      isNot(content0),
-      reason: '内容已经不同（多了一条笔记），内容指纹却与写入之前的那个相同',
-    );
-    expect(b.store.statsFingerprint, isNot(stats0));
-    expect(b.store.rwkvScoresKey, isNot(rwkv0));
-    // 变化指纹（纪元 + 落盘的修订号）本来就不会撞：它不带实例号，跨对象可比。
+    final _Keys kb = _keys(b.store);
+    expectAllDiffer(kb, k0, '重开之后与写入之前那次打开的值');
+    expectAllDiffer(kb, k1, '重开之后与写入之后那次打开的值');
+    // 变化指纹（纪元 + 落盘的修订号）本来就不会撞。
     expect(await b.store.changeFingerprint(), isNot(change0));
   });
 
-  test('同一个副本对象上指纹照旧：没有写入不变，只落日志不动内容指纹', () async {
+  test('同一个库上的两个副本对象读到同一组键，一方写了另一方跟着变', () async {
     final _Opened a = await open();
     addTearDown(() => close(a));
-    final String content0 = a.store.contentFingerprint;
-    final String stats0 = a.store.statsFingerprint;
-    expect(a.store.contentFingerprint, content0);
-    expect(a.store.statsFingerprint, stats0);
+    final SrsDbStore b = await openOn(a.core, a.db);
+    // 新开的副本对象（`local_state` 带 `reload`）让这个 profile 按键记的缓存作废一次：两个对象此刻读到同一组新值。
+    final _Keys k0 = _keys(a.store);
+    expect(_keys(b), k0);
     await addNote(a.store, '一');
-    final String content1 = a.store.contentFingerprint;
-    final String stats1 = a.store.statsFingerprint;
-    expect(content1, isNot(content0));
-    expect(stats1, isNot(stats0));
-    expect(a.store.contentFingerprint, content1);
-    expect(a.store.statsFingerprint, stats1);
+    final _Keys k1 = _keys(b);
+    expect(_keys(a.store), k1);
+    expectAllDiffer(k1, k0, 'a 写了一条笔记，b 读到的键也变了');
+  });
+
+  test('同一个副本对象上：没有写入不变，只落日志不动内容指纹', () async {
+    final _Opened a = await open();
+    addTearDown(() => close(a));
+    final _Keys k0 = _keys(a.store);
+    expect(_keys(a.store), k0, reason: '读键本身不动键');
+    await addNote(a.store, '一');
+    final _Keys k1 = _keys(a.store);
+    expect(k1.content, isNot(k0.content));
+    expect(k1.stats, isNot(k0.stats));
+    expect(_keys(a.store), k1);
+    // 重读本机状态：按键记的缓存一律作废。
+    await a.store.reloadLocal();
+    final _Keys k2 = _keys(a.store);
+    expect(k2.content, isNot(k1.content));
+    expect(k2.rwkv, isNot(k1.rwkv));
+    expect(k2.tree, isNot(k1.tree));
   });
 }
