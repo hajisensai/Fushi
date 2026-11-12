@@ -1300,3 +1300,23 @@ add_executable(fushi_lookup_hover_highlight_state_test "tests/lookup_hover_highl
 target_include_directories(fushi_lookup_hover_highlight_state_test PRIVATE "hook")
 target_compile_definitions(fushi_lookup_hover_highlight_state_test PRIVATE UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 add_test(NAME fushi_lookup_hover_highlight_state_test COMMAND fushi_lookup_hover_highlight_state_test)
+
+add_executable(fushi_test_version_resource_test "tests/test_version_resource_test.cpp")
+target_compile_definitions(fushi_test_version_resource_test PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+target_link_libraries(fushi_test_version_resource_test PRIVATE version)
+add_test(NAME fushi_test_version_resource_test COMMAND fushi_test_version_resource_test)
+
+# 所有 *_test 可执行文件统一挂 VERSIONINFO。不带版本资源的极小 x64 Release 控制台 exe
+# 会撞杀软泛型启发式（实测 Kaspersky 把 fushi_utterance_window_test.exe 报
+# VHO:Trojan.Win32.Sdum.gen 并删除，CTest 静默少跑一条）。必须留在文件末尾：
+# BUILDSYSTEM_TARGETS 只含此前已定义的目标。守卫：fushi_test_version_resource_test。
+if(MSVC)
+  enable_language(RC)
+  get_property(_fushi_all_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
+  foreach(_fushi_target IN LISTS _fushi_all_targets)
+    get_target_property(_fushi_type ${_fushi_target} TYPE)
+    if(_fushi_type STREQUAL "EXECUTABLE" AND _fushi_target MATCHES "_test$")
+      target_sources(${_fushi_target} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_version.rc")
+    endif()
+  endforeach()
+endif()

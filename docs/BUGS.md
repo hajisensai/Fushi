@@ -38,6 +38,11 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-4389](bugs/BUG-4389-srs-profile-conflict-dialog-freeze.md) | ✅ | ✅ | SRS profile conflict dialog never lays out; desktop app stops reacting to the mouse |
+> 共 3931 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4387](bugs/BUG-4387-galhook-test-exe-av-false-positive.md) | ✅ | ✅ | Kaspersky 把 galgame hook 测试 exe 报为 Trojan.Win32.Sdum.gen 并删除 |
 > 共 3933 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
