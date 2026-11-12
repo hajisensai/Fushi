@@ -33,6 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
+> 共 3932 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4389](bugs/BUG-4389-srs-profile-conflict-dialog-freeze.md) | ✅ | ✅ | SRS profile conflict dialog never lays out; desktop app stops reacting to the mouse |
 > 共 3931 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
