@@ -22,7 +22,12 @@ use super::sync2::{in_savepoint, sql};
 use std::sync::atomic::Ordering;
 
 /// `srs_meta` 里一次性存量无主数据扫描的完成标记（值 = 完成时刻毫秒）。
-pub(crate) const ORPHAN_SWEEP_KEY: &str = "profile_orphan_sweep_v1";
+///
+/// v2（BUG-4463）：v1 记下之后，并入（srs_profile_merge.dart）与采用 uid（srs_backup_merge.dart）还各有一份手抄的
+/// 删除实现，直到 BUG-4292 才收成本文件的 [SrsCore::profile_purge]：采用只删 10 张 `srs_*` 表、`sync2_*` 一张不删，
+/// 并入按 `sqlite_master` 原序删、按 profile 的 `srs_meta` 键只删两个。v1 扫过的库里这些残留永远不会再被扫到，所以
+/// 换一个键让扫描（同一套判定、同一个 [SrsCore::profile_purge]）再跑一次。旧键留着不删（没人再读）。
+pub(crate) const ORPHAN_SWEEP_KEY: &str = "profile_orphan_sweep_v2";
 
 /// 带 `profile_uid` 列的 `srs_*` / `sync2_*` 表（按名字排序）。删除按这个顺序：投影表（`srs_entities` /
 /// `srs_field_edits` / `srs_review_logs`）的删除触发器往 `sync2_digest_buckets` 记负项（sync2/digest.rs），按名字它排在
@@ -423,6 +428,15 @@ mod tests {
             core.profile_uids().unwrap(),
             json!({"uids": [], "orphanSweptAt": null})
         );
+        // v1 的完成标记（BUG-4292 之前扫的）不算：残留要再扫一次（BUG-4463）。
+        core.writer()
+            .unwrap()
+            .execute(
+                "INSERT INTO srs_meta (key, value) VALUES ('profile_orphan_sweep_v1', '7')",
+                [],
+            )
+            .unwrap();
+        assert_eq!(core.profile_uids().unwrap()["orphanSweptAt"], Value::Null);
         seed(&core, P, 1, 1);
         seed(&core, Q, 1, 0);
         let mut want = vec![P, Q];
