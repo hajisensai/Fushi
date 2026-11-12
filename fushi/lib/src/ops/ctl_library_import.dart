@@ -24,6 +24,8 @@ import 'package:fushi_dictionary/fushi_dictionary.dart'
 import 'package:fushi_engine/epub/book_title_conflict.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi_engine/media/video/external_video.dart';
+import 'package:fushi_engine/media/audiobook/book_audiobook_pairing.dart'
+    show BookAudiobookTranscribePort;
 import 'package:fushi_engine/media/audiobook/text_to_epub.dart';
 import 'package:fushi_engine/media/discovery/discovery_models.dart'
     show DiscoveryMediaKind;
@@ -69,7 +71,9 @@ class LibraryCtlImporter {
     Future<String?> Function(String path)? ingestVideoFile,
     AskOnDuplicate? askOnDuplicate,
     LibraryCtlEnqueueTranscription? enqueueTranscription,
+    required BookAudiobookTranscribePort? folderTranscribeAudiobook,
   }) : _ingestVideoFile = ingestVideoFile,
+       _folderTranscribeAudiobook = folderTranscribeAudiobook,
        _enqueueTranscription = enqueueTranscription,
        _db = db,
        _galgameRepo = galgameRepo,
@@ -88,6 +92,10 @@ class LibraryCtlImporter {
   final DuplicatePolicy _policy;
   final Future<String?> Function(String path)? _ingestVideoFile;
   final LibraryCtlEnqueueTranscription? _enqueueTranscription;
+
+  /// 书目录登记成来源时，扫描器把「配上了有声书音频却没有字幕」的书交给的转录端口
+  /// （`AppModel.folderImportTranscribePort`，与 app 内导入文件夹同一个）。
+  final BookAudiobookTranscribePort? _folderTranscribeAudiobook;
 
   /// 视频单文件：走外部打开同一个入库入口（按路径去重，同一文件重复导入复用旧条目）。
   Future<LibraryCtlImportResult> _importVideoFile(String path) async {
@@ -454,6 +462,9 @@ class LibraryCtlImporter {
     if (gated != null) return gated;
     final AddLocalFolderResult result = await addLocalFolderAsSource(
       db: _db,
+      transcribeAudiobook: sourceKind == SourceLibraryKind.book
+          ? _folderTranscribeAudiobook
+          : null,
       mediaKind: sourceKind.dbValue,
       path: path,
     );

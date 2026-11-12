@@ -391,18 +391,9 @@ extension _ReaderLookup on _ReaderFushiPageState {
     // ② 没有 payload 的书（DOM 里不带 cue id）退到按**音频坐标** matchableOffset
     //    在本章 cue 的 fragment 区间里反查——比原先按句子文本找精确；
     // ③ 仍无命中再退到句子文本匹配（见下方 _findCueForSentence）。
-    final List<AudioCue>? allCues = _cachedAllCues;
-    if (data.audioCuePayload != null && allCues != null) {
-      _lookupCue = cueForPointerPayload(data.audioCuePayload!, allCues);
-    } else {
-      _lookupCue = null;
-    }
-    _lookupCue ??= data.matchableOffset != null
-        ? _findCueForOffset(data.matchableOffset!)
-        : null;
-    if (_lookupCue == null && _srtBookUid != null) {
-      _lookupCue = _findCueForSentence(data.sentence);
-    }
+    // 与选区操作条「从此句播放」/ 查词状态填充共用 [_cueForSelectionData]，三条路径对
+    // 同一处选区永远认同一句。
+    _lookupCue = _cueForSelectionData(data);
     if (_pausedForLookup) _lookupRestartCue = _lookupCue;
     _syncCueSentence();
 

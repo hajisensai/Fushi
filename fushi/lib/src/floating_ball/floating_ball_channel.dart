@@ -408,11 +408,17 @@ class DesktopScreenOcrCapture {
     required Uint8List this.png,
     required Rect this.screen,
     this.diagnostic,
+    this.dpi,
+    this.hdrMonitor,
+    this.capturePath,
   }) : error = null;
 
   const DesktopScreenOcrCapture.failure(String this.error, {this.diagnostic})
     : png = null,
-      screen = null;
+      screen = null,
+      dpi = null,
+      hdrMonitor = null,
+      capturePath = null;
 
   /// 原生回话 → 结果；形状不对一律当截屏失败。
   factory DesktopScreenOcrCapture.fromWire(Map<Object?, Object?>? raw) {
@@ -436,10 +442,18 @@ class DesktopScreenOcrCapture {
         diagnostic: diagnostic,
       );
     }
+    final Object? dpi = raw['dpi'];
+    final Object? hdrMonitor = raw['hdrMonitor'];
+    final Object? capturePath = raw['capturePath'];
     return DesktopScreenOcrCapture.success(
       png: png,
       screen: screen,
       diagnostic: diagnostic,
+      dpi: dpi is num && dpi > 0 ? dpi.toInt() : null,
+      hdrMonitor: hdrMonitor is bool ? hdrMonitor : null,
+      capturePath: capturePath is String && capturePath.isNotEmpty
+          ? capturePath
+          : null,
     );
   }
 
@@ -459,4 +473,10 @@ class DesktopScreenOcrCapture {
   /// 原生取帧路径的诊断（Windows：HDR 显示器走了 DXGI scRGB 取帧，或为什么回落
   /// GDI）；普通 SDR 截屏为 null。只进诊断日志，不影响流程。
   final String? diagnostic;
+
+  /// 取证字段（BUG-4367，Windows 报，其它平台为 null）：被截显示器的 DPI（96 =
+  /// 100%）、是否开着 HDR、这帧走的取帧路径（`gdi` / `dxgi`）。只进诊断日志。
+  final int? dpi;
+  final bool? hdrMonitor;
+  final String? capturePath;
 }

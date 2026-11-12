@@ -156,6 +156,27 @@ class HeavyLeaseTimeout implements Exception {
   String toString() => message;
 }
 
+/// The run is offered elsewhere while it waits here (tool/heavy.dart asking
+/// the other machines, test_flow/heavy_offload_rival.dart): whichever side
+/// comes first runs it.
+abstract interface class HeavyLeaseRival {
+  /// The other side took the run: stop waiting and leave the queue.
+  bool get tookIt;
+
+  /// Called under the admission gate once a free slot is locked, before it
+  /// is used: true when the run is now this machine's, false when the other
+  /// side took it first (the slot is let go again).
+  bool claimHere();
+}
+
+/// Thrown when the [HeavyLeaseRival] took the run: no slot is held and the
+/// queue ticket (and worktree lock) are gone.
+class HeavyLeaseWithdrawn implements Exception {
+  const HeavyLeaseWithdrawn();
+  @override
+  String toString() => 'heavy: taken elsewhere while queued here';
+}
+
 /// Slots this process holds. POSIX record locks do not conflict within one
 /// process (and closing any descriptor of the file drops them), so a process
 /// that runs two lanes at once must never reopen a slot it holds.
@@ -167,11 +188,15 @@ Future<void> _admissionChain = Future<void>.value();
 /// Takes a lease for [need]. [worktreeRoot] (the repo root) is required for
 /// worktree-exclusive needs; [waitMax] bounds the queueing (null: no bound).
 /// [environment] / [readMemory] default to the real ones (tests inject).
+/// With a [rival] the wait ends in [HeavyLeaseWithdrawn] as soon as the rival
+/// took the run, and a slot is only used once [HeavyLeaseRival.claimHere]
+/// said so.
 Future<HeavyLease> acquireHeavyLease({
   required HeavyNeed need,
   required String label,
   String? worktreeRoot,
   Duration? waitMax,
+  HeavyLeaseRival? rival,
   void Function(String line)? log,
   Map<String, String>? environment,
   MemorySnapshot? Function() readMemory = readMemorySnapshot,
@@ -188,7 +213,14 @@ Future<HeavyLease> acquireHeavyLease({
 
   _WorktreeLock? worktree;
   if (need.worktreeExclusive && worktreeRoot != null) {
-    worktree = await _waitWorktreeLock(worktreeRoot, label, sw, waitMax, say);
+    worktree = await _waitWorktreeLock(
+      worktreeRoot,
+      label,
+      sw,
+      waitMax,
+      say,
+      rival,
+    );
   }
   try {
     // A light run neither queues nor waits behind this process's other lanes:
@@ -208,6 +240,7 @@ Future<HeavyLease> acquireHeavyLease({
         env: env,
         readMemory: readMemory,
         poll: poll,
+        rival: rival,
       );
     }
     final Completer<void> mine = Completer<void>();
@@ -226,6 +259,7 @@ Future<HeavyLease> acquireHeavyLease({
         env: env,
         readMemory: readMemory,
         poll: poll,
+        rival: rival,
       );
     } finally {
       mine.complete();
@@ -256,6 +290,7 @@ Future<_WorktreeLock> _waitWorktreeLock(
   Stopwatch sw,
   Duration? waitMax,
   void Function(String) say,
+  HeavyLeaseRival? rival,
 ) async {
   final Directory d = Directory('$root/.codex-test/heavy')
     ..createSync(recursive: true);
@@ -264,6 +299,7 @@ Future<_WorktreeLock> _waitWorktreeLock(
   final String key = lockFile.absolute.path.toLowerCase();
   bool told = false;
   while (true) {
+    if (rival != null && rival.tookIt) throw const HeavyLeaseWithdrawn();
     // Held by this very process (another lane): do not even open the file --
     // POSIX would grant the lock again, and closing the probe would drop it.
     final RandomAccessFile? f = _heldWorktrees.contains(key)
@@ -361,8 +397,29 @@ HeavyHolder? _holderInfo(Directory dir, int slot) {
   }
 }
 
+/// Windows `ERROR_SHARING_VIOLATION`.
+const int _windowsSharingViolation = 32;
+
+/// An exclusive lock on [f], or null while it is not this caller's to take.
+///
+/// Normally that means another process holds the lock. On Windows the open
+/// itself can also lose: deleting a file opens it with DELETE access, a Dart
+/// file handle does not share that access, so while a ticket is being deleted
+/// (its owner releasing it, or another waiter sweeping a dead one) every
+/// other open of it fails with a sharing violation. That file is on its way
+/// out, not free to lock, so it reads as held; the caller's next poll finds
+/// it gone. Any other failure to open is a real error and still throws.
 RandomAccessFile? _tryLock(File f) {
-  final RandomAccessFile raf = f.openSync(mode: FileMode.append);
+  final RandomAccessFile raf;
+  try {
+    raf = f.openSync(mode: FileMode.append);
+  } on FileSystemException catch (e) {
+    if (Platform.isWindows &&
+        e.osError?.errorCode == _windowsSharingViolation) {
+      return null;
+    }
+    rethrow;
+  }
   try {
     raf.lockSync(FileLock.exclusive);
     return raf;
@@ -383,11 +440,15 @@ Future<HeavyLease> _waitSlot(
   required Map<String, String> env,
   required MemorySnapshot? Function() readMemory,
   required Duration poll,
+  HeavyLeaseRival? rival,
 }) async {
   String? lastReason;
   _Ticket? ticket;
   try {
     while (true) {
+      // Taken elsewhere: the ticket goes in the finally below, so --status
+      // no longer lists the run as waiting here.
+      if (rival != null && rival.tookIt) throw const HeavyLeaseWithdrawn();
       // One admission at a time across the machine: two waiters must not both
       // read the same slot as free and race over its holder info, and a
       // ticket is created, locked and swept only under this gate.
@@ -410,6 +471,7 @@ Future<HeavyLease> _waitSlot(
           worktree,
           env: env,
           readMemory: readMemory,
+          rival: rival,
         );
         if (lease != null) return lease;
         reason = blocker;
@@ -446,6 +508,7 @@ Future<HeavyLease> _waitSlot(
   _WorktreeLock? worktree, {
   required Map<String, String> env,
   required MemorySnapshot? Function() readMemory,
+  HeavyLeaseRival? rival,
 }) {
   if (ticket != null) {
     final List<HeavyQueued> queue = readHeavyQueue(dir);
@@ -498,6 +561,12 @@ Future<HeavyLease> _waitSlot(
     if (busy.contains(i) || _heldInProcess.contains(i)) continue;
     final RandomAccessFile? lock = _tryLock(File('${dir.path}/slot-$i.lock'));
     if (lock == null) continue;
+    // The rival may have taken the run since the last look: then this slot
+    // is not used (the caller follows the run there instead).
+    if (rival != null && !rival.claimHere()) {
+      lock.closeSync();
+      throw const HeavyLeaseWithdrawn();
+    }
     _heldInProcess.add(i);
     final File info = File('${dir.path}/slot-$i.json');
     try {

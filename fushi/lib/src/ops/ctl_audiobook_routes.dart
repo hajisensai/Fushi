@@ -272,8 +272,8 @@ class _AudiobookHandlers {
 
     final EpubBookRow? row = await _db.getEpubBook(bookKey);
     if (row == null) throw CtlFailure.notFound('书架里没有 book:$bookKey');
-    if (BookFormat.parseOrEpub(row.format) != BookFormat.epub) {
-      throw const CtlFailure.rejected('有声书只支持 EPUB 书（PDF / 漫画不能挂音频）');
+    if (!BookFormat.parseOrEpub(row.format).supportsAudiobook) {
+      throw const CtlFailure.rejected('有声书只支持 EPUB / PDF 书（漫画不能挂音频）');
     }
 
     if (subtitle == null) {
@@ -385,7 +385,7 @@ class _AudiobookHandlers {
         ? null
         : await repo.findByBookKey(bookKey);
     if (ab == null) {
-      throw const CtlFailure.rejected('只有挂在 EPUB 正文上的有声书才能重新匹配');
+      throw const CtlFailure.rejected('只有挂在书正文（EPUB / PDF）上的有声书才能重新匹配');
     }
     if (!SubtitleRematchPolicy.isEligible(ab)) {
       throw const CtlFailure.rejected('SMIL / JSON 对齐自带时间锚点，不需要重新匹配');
@@ -408,7 +408,6 @@ class _AudiobookHandlers {
     if (threshold <= 0 || threshold > 1) {
       throw const CtlFailure.badRequest('threshold 必须在 (0, 1] 之间');
     }
-    final String extractDir = row.extractDir;
     return _startTask(
       call,
       kind: 'rematch',
@@ -417,7 +416,6 @@ class _AudiobookHandlers {
         final SubtitleRematchOutcome outcome = await rematchStoredAudiobookCues(
           repo: repo,
           bookKey: bookKey,
-          extractDir: extractDir,
           searchWindow: window,
           similarityThreshold: threshold,
           isCancelled: () => task.cancelRequested,
@@ -569,8 +567,8 @@ class _AudiobookHandlers {
     }
     final EpubBookRow? row = await _db.getEpubBook(bookKey);
     if (row == null) throw CtlFailure.notFound('书架里没有 book:$bookKey');
-    if (BookFormat.parseOrEpub(row.format) != BookFormat.epub) {
-      throw const CtlFailure.rejected('有声书只支持 EPUB 书（PDF / 漫画不能挂音频）');
+    if (!BookFormat.parseOrEpub(row.format).supportsAudiobook) {
+      throw const CtlFailure.rejected('有声书只支持 EPUB / PDF 书（漫画不能挂音频）');
     }
     return (bookKey, row.title);
   }

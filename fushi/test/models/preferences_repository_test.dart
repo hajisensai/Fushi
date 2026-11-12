@@ -7,6 +7,7 @@ import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/stats/study_goal_period.dart';
 import 'package:fushi/src/lookup/effective_lookup_size.dart'
     show kLookupPopupDefaultHeight, kLookupPopupDefaultWidth;
 
@@ -1113,6 +1114,47 @@ void main() {
       expect(repo.readingGoalDailyChars, 0);
       await repo.setReadingGoalDailyChars(9999999);
       expect(repo.readingGoalDailyChars, 1000000);
+    });
+
+    // 反馈 CjIr9RGSCe：日目标 / 周目标二选一。
+    test('period defaults to daily; active goal follows the period', () async {
+      expect(repo.readingGoalPeriod, StudyGoalPeriod.daily);
+      expect(repo.readingGoalWeeklyChars, 0);
+      await repo.setReadingGoalDailyChars(3000);
+      await repo.setReadingGoalWeeklyChars(20000);
+      expect(repo.readingGoalActiveChars, 3000);
+
+      await repo.setReadingGoalPeriod(StudyGoalPeriod.weekly);
+      expect(repo.readingGoalActiveChars, 20000);
+      // 切周期不清另一份数值。
+      expect(repo.readingGoalDailyChars, 3000);
+
+      final PreferencesRepository repo2 = PreferencesRepository(db);
+      await repo2.loadFromDb();
+      addTearDown(repo2.dispose);
+      expect(repo2.readingGoalPeriod, StudyGoalPeriod.weekly);
+      expect(repo2.readingGoalWeeklyChars, 20000);
+    });
+
+    test('setReadingGoalActiveChars writes the active period only', () async {
+      await repo.setReadingGoalPeriod(StudyGoalPeriod.weekly);
+      await repo.setReadingGoalActiveChars(35000);
+      expect(repo.readingGoalWeeklyChars, 35000);
+      expect(repo.readingGoalDailyChars, 0);
+      await repo.setReadingGoalPeriod(StudyGoalPeriod.daily);
+      await repo.setReadingGoalActiveChars(4000);
+      expect(repo.readingGoalDailyChars, 4000);
+      expect(repo.readingGoalWeeklyChars, 35000);
+    });
+
+    test('weekly goal clamps into 0..7000000', () async {
+      await repo.setReadingGoalWeeklyChars(-1);
+      expect(repo.readingGoalWeeklyChars, 0);
+      await repo.setReadingGoalWeeklyChars(99999999);
+      expect(
+        repo.readingGoalWeeklyChars,
+        PreferencesRepository.readingGoalWeeklyCharsMax,
+      );
     });
   });
 

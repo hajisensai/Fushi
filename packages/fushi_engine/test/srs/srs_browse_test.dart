@@ -27,53 +27,6 @@ class _FakeEngine implements FsrsEngine {
       List<double>.filled(a.paramCount, 1);
   @override
   String? validateParams(SrsAlgorithm a, List<double> p) => null;
-  SrsMemory _step(SrsMemory? m, int r) => SrsMemory(
-    stability: switch (r) {
-      1 => 0.3,
-      2 => 1.5 + (m?.stability ?? 0),
-      3 => 3 + (m?.stability ?? 0) * 2,
-      _ => 6 + (m?.stability ?? 0) * 3,
-    },
-    difficulty: r == 1 ? 9 : 5,
-  );
-  @override
-  SrsNextStates nextStates({
-    required SrsAlgorithm algorithm,
-    required List<double> params,
-    required double desiredRetention,
-    required SrsMemory? memory,
-    required double elapsedDays,
-  }) {
-    SrsItemState st(int r) {
-      final SrsMemory m = _step(memory, r);
-      return SrsItemState(memory: m, interval: m.stability);
-    }
-
-    return SrsNextStates(again: st(1), hard: st(2), good: st(3), easy: st(4));
-  }
-
-  @override
-  SrsMemory? memoryState({
-    required SrsAlgorithm algorithm,
-    required List<double> params,
-    required List<SrsFsrsReview> reviews,
-    SrsMemory? starting,
-  }) {
-    SrsMemory? m = starting;
-    for (final SrsFsrsReview r in reviews) {
-      m = _step(m, r.rating);
-    }
-    return m;
-  }
-
-  @override
-  SrsMemory memoryStateFromSm2({
-    required SrsAlgorithm algorithm,
-    required List<double> params,
-    required double easeFactor,
-    required double intervalDays,
-    required double sm2Retention,
-  }) => SrsMemory(stability: intervalDays, difficulty: 5);
   @override
   double retrievability({
     required SrsAlgorithm algorithm,
@@ -363,6 +316,95 @@ void main() {
       expect(groups[1].preview, <int>[2, 3]);
       expect(groups[1].data, isNull);
       expect(groups[0].deckIds, <String>[ra.deckId]);
+      expect(groups[0].isSeries, isFalse);
+      expect(groups[0].children, isEmpty);
+    });
+
+    test('出处「系列 → 集」（反馈 MCJLSBR5Wg）：系列组带系列名与各集，src: 认系列键也认集的键', () async {
+      final SrsDbStore s = await device('a');
+      Future<void> addEp(
+        String expr,
+        String media,
+        String? series,
+        String title,
+      ) async {
+        await s.createNote(
+          noteTypeId: s.lapisNoteTypeId,
+          fieldsById: <String, String>{
+            srsLapisFieldId(kProfile, 'Expression'): expr,
+            srsLapisFieldId(kProfile, 'MainDefinition'): 'd',
+          },
+          source: SrsSourceRef.media(
+            kind: SrsSourceKind.video,
+            mediaKey: media,
+            startMs: 0,
+            title: title,
+            seriesTitle: series,
+          ),
+        );
+        t += 1000;
+      }
+
+      await addEp('一', 'e1', 'RWBY', 'RWBY - S01E01');
+      await addEp('二', 'e2', 'RWBY', 'RWBY - S02E01');
+      await addEp('三', 'e1', 'RWBY', 'RWBY - S01E01');
+      await addEp('四', 'e9', null, 'Solo');
+
+      final SrsBrowseSession b = SrsBrowseSession(s);
+      addTearDown(b.close);
+      final SrsBrowseResult res = await b.query(
+        sort: const SrsBrowseSort(
+          column: SrsBrowseSortColumn.created,
+          ascending: true,
+        ),
+      );
+      final List<SrsBrowseRow> rows = await res.all();
+      expect(exprs(rows), <String>['一', '二', '三', '四']);
+      expect(
+        <String?>[for (final SrsBrowseRow r in rows) r.sourceKey],
+        <String?>['video::RWBY', 'video::RWBY', 'video::RWBY', 'video:e9'],
+      );
+      // 定位不变：行里的出处仍是那一集。
+      expect(rows[1].source?.data['mediaKey'], 'e2');
+      expect(rows[1].source?.seriesTitle, 'RWBY');
+
+      final List<SrsBrowseSourceGroup> groups = await res.sources();
+      // 最近添加的在前：「四」最后加。
+      expect(
+        <String?>[for (final SrsBrowseSourceGroup g in groups) g.key],
+        <String?>['video:e9', 'video::RWBY'],
+      );
+      expect(groups[0].isSeries, isFalse);
+      expect(groups[0].children, isEmpty);
+      final SrsBrowseSourceGroup series = groups[1];
+      expect(series.isSeries, isTrue);
+      expect(series.seriesTitle, 'RWBY');
+      expect(series.kind, SrsSourceKind.video);
+      expect(series.count, 3);
+      expect(series.preview, <int>[0, 1, 2]);
+      // 各集按最近添加排：e1 的「三」比 e2 的「二」晚。
+      expect(
+        <String?>[for (final SrsBrowseSourceGroup c in series.children) c.key],
+        <String?>['video:e1', 'video:e2'],
+      );
+      expect(
+        <int>[for (final SrsBrowseSourceGroup c in series.children) c.count],
+        <int>[2, 1],
+      );
+      expect(series.children[0].preview, <int>[0, 2]);
+      expect(series.children[1].preview, <int>[1]);
+      expect(series.children[0].source?.title, 'RWBY - S01E01');
+      expect(series.children[0].isSeries, isFalse);
+      expect(series.children[0].children, isEmpty);
+
+      expect(
+        exprs(await rowsOf(b, query: srsSourceQuery('video::RWBY'))).toSet(),
+        <String>{'一', '二', '三'},
+      );
+      expect(
+        exprs(await rowsOf(b, query: srsSourceQuery('video:e1'))).toSet(),
+        <String>{'一', '三'},
+      );
     });
 
     test('排序：排序字段 / 指定字段 / 到期 / 复习次数 / 修改时间，升降序', () async {

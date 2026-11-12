@@ -309,10 +309,14 @@ test('menuModel：总开关关掉时从属项置灰，隐藏字幕不受影响',
   const on = PC.menuModel({ overlayOn: true });
   assert.deepStrictEqual(
     on.map((i) => i.id),
-    ['overlay', 'replaceNative', 'allTracks', 'background', 'hidden', 'mask', 'maskEdit', 'study', 'favLine', 'favVideo', 'track', 'list', 'offset', 'style', 'settings'],
+    ['overlay', 'replaceNative', 'allTracks', 'background', 'hidden', 'mask', 'maskEdit', 'study', 'favLine', 'favVideo', 'track', 'list', 'offset', 'autoAlign', 'style', 'settings'],
   );
-  // 「收藏当前句」只在有当前句时可点（KGC1ifR1a3），其余项开总开关时全可用。
-  assert.ok(on.every((i) => i.id === 'favLine' || !i.disabled));
+  // 「收藏当前句」只在有当前句时可点（KGC1ifR1a3）、「自动对轴」只在有 Fushi 字幕轨时可点
+  // （0wkJImhZUp：没轨就没东西可对），其余项开总开关时全可用。
+  assert.ok(on.every((i) => i.id === 'favLine' || i.id === 'autoAlign' || !i.disabled));
+  const withTrack = Object.fromEntries(PC.menuModel({ overlayOn: true, hasTrack: true }).map((i) => [i.id, i]));
+  assert.ok(!withTrack.autoAlign.disabled);
+  assert.strictEqual(withTrack.autoAlign.icon, 'auto_awesome');
 
   const off = PC.menuModel({ overlayOn: false });
   const byId = Object.fromEntries(off.map((i) => [i.id, i]));

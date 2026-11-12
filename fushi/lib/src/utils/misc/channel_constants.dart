@@ -55,6 +55,13 @@ abstract final class FushiChannels {
   /// native side (`widgets/WidgetChannel.kt`). Dart facade
   /// `lib/src/platform/widget_snapshot.dart`.
   static const MethodChannel widgets = MethodChannel('$_prefix/widgets');
+
+  /// 反馈回复后台检查（反馈 yjn-3h8B-7）：主引擎上排 / 撤 Android 纯原生的
+  /// `FeedbackReplyWorker`（`feedback/FeedbackReplyWorkChannel.kt`）。Dart 门面
+  /// `lib/src/feedback/feedback_reply_background.dart`。
+  static const MethodChannel feedbackReplyWork = MethodChannel(
+    '$_prefix/feedback_reply_work',
+  );
   static const MethodChannel clipboardImage = MethodChannel(
     '$_prefix/clipboard_image',
   );

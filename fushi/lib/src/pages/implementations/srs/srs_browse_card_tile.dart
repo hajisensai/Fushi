@@ -69,6 +69,23 @@ String srsBrowseSourceTitle(SrsSourceRef? source, String? kind) {
   return srsBrowseSourceKindLabel(source?.kind ?? kind);
 }
 
+/// 出处分组（出处视图的组头、表格按出处分组的组头）的标题：带系列的出处是系列名（分组键是系列键，反馈
+/// MCJLSBR5Wg），否则同 [srsBrowseSourceTitle]。
+String srsBrowseSourceGroupTitle(SrsSourceRef? source, String? kind) =>
+    source?.seriesTitle?.trim() ?? srsBrowseSourceTitle(source, kind);
+
+/// 系列下一集的标题：出处标题去掉开头的「系列名 - 」（视频制卡的标题是「系列名 - 剧集名」，见
+/// `composeVideoMiningDocumentTitle`；放在系列组头下面不必再重复系列名）。去掉后为空就保留原标题。
+String srsBrowseSourceItemTitle(SrsSourceRef? source, String? kind) {
+  final String title = srsBrowseSourceTitle(source, kind);
+  final String? series = source?.seriesTitle?.trim();
+  if (series == null) return title;
+  final String prefix = '$series - ';
+  if (!title.startsWith(prefix)) return title;
+  final String rest = title.substring(prefix.length).trim();
+  return rest.isEmpty ? title : rest;
+}
+
 /// 出处里的位置（「p.97」「12:48」「§3」）；没有 null。只读出处数据里现成的定位，不查库。
 String? srsBrowseSourceLocator(SrsSourceRef? source) {
   if (source == null) return null;
