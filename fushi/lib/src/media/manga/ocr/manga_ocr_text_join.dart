@@ -53,9 +53,11 @@ const String kMangaDehyphenationHyphens = '-\u2010\u2011';
 /// 判据只用 OCR 自带的行 / 块边界，不依赖字框几何：行是 OCR 分好的，不存在「坐标猜错
 /// 行」。已知取舍：真复合词恰好断在两行时也会被合并（`well-` / `known` → `wellknown`）；
 /// 同一行内的连字符保持原样。
+/// 连字符后的尾随空白只在确认断词时一并移除；其它 OCR 空白保持原样。
 bool mangaOcrIsDehyphenationBreak(String before, String after) {
-  if (before.isEmpty || after.isEmpty) return false;
-  if (!kMangaDehyphenationHyphens.contains(before.characters.last)) {
+  final String trimmed = before.trimRight();
+  if (trimmed.isEmpty || after.isEmpty) return false;
+  if (!kMangaDehyphenationHyphens.contains(trimmed.characters.last)) {
     return false;
   }
   return _spaceDelimitedLetterOnly.hasMatch(after.characters.first);
@@ -70,12 +72,12 @@ String mangaJoinOcrText(Iterable<String> parts) {
   for (final String part in parts) {
     if (part.isEmpty) continue;
     if (mangaOcrIsDehyphenationBreak(previous, part)) {
-      // 去掉上一段末尾的连字符：`Under-` + `stands` → `Understands`。
+      // 去掉上一段末尾的连字符及其尾随空白。
       final String text = buffer.toString();
-      final String hyphen = previous.characters.last;
+      final int removed = previous.length - previous.trimRight().length + 1;
       buffer
         ..clear()
-        ..write(text.substring(0, text.length - hyphen.length));
+        ..write(text.substring(0, text.length - removed));
     } else if (mangaOcrNeedsWordGap(previous, part)) {
       buffer.write(' ');
     }

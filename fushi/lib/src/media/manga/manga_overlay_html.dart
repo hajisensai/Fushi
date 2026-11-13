@@ -431,11 +431,11 @@ MangaBlockTextLayout mangaBlockTextLayout(MokuroBlock block) {
     if (mangaOcrIsDehyphenationBreak(previous, raw)) {
       // `Under-` + `stands` → `Understands`：删掉**上一行**末尾的连字符再拼。
       // 当前行原样写入——截当前行会把 `stands` 的尾字削掉（少一个 s）。
-      final String hyphen = previous.characters.last;
+      final int removed = previous.length - previous.trimRight().length + 1;
       final String text = buffer.toString();
       buffer
         ..clear()
-        ..write(text.substring(0, text.length - hyphen.length));
+        ..write(text.substring(0, text.length - removed));
       int lastIndex = lines.length - 1;
       // 空行记录不承载连字符：跳到最近一条非空行（空行不更新 previous，只有它可能带 `-`）。
       while (lastIndex >= 0 && lines[lastIndex].text.isEmpty) {
@@ -446,7 +446,7 @@ MangaBlockTextLayout mangaBlockTextLayout(MokuroBlock block) {
         start: previousLine.start,
         text: previousLine.text.substring(
           0,
-          previousLine.text.length - hyphen.length,
+          previousLine.text.length - removed,
         ),
       );
       // 空行也指向删掉连字符后的行界，避免产生越界或虚假的词界。
@@ -471,23 +471,64 @@ MangaBlockTextLayout mangaBlockTextLayout(MokuroBlock block) {
 
 /// Returns character-level hit regions for every OCR producer.
 ///
-/// Supplied Lens regions must cover the rendered text on grapheme boundaries
-/// ([mangaTextRegionsMatchSentence]). Stale cached offsets, local ONNX and
-/// legacy mokuro blocks fall back to `lines_coords` or the block rectangle.
-/// Replacing the whole set keeps every visible character hittable.
+/// Supplied regions index the raw joined lines. Map their offsets through the
+/// layout's deletions and inserted spaces, retaining their original geometry.
+/// Invalid or incomplete regions fall back to `lines_coords` or the block
+/// rectangle, so every visible character remains hittable.
 List<MangaOcrTextRegion> mangaEffectiveTextRegions(MokuroBlock block) {
   final List<MangaOcrTextRegion>? supplied = block.regions;
   final MangaBlockTextLayout layout = mangaBlockTextLayout(block);
+  final String original = block.lines.join();
   if (supplied != null &&
       supplied.isNotEmpty &&
-      // Persisted regions index the raw joined lines. A removed hyphen and an
-      // inserted space can cancel out in length, leaving stale ranges that
-      // pass the coverage check but point at the wrong printed characters.
-      layout.text == block.lines.join() &&
-      mangaTextRegionsMatchSentence(supplied, layout.text)) {
-    return supplied;
+      mangaTextRegionsMatchSentence(supplied, original)) {
+    if (layout.text == original) return supplied;
+    final List<MangaOcrTextRegion> mapped = _mangaRemapTextRegions(
+      block,
+      layout,
+      supplied,
+    );
+    if (mangaTextRegionsMatchSentence(mapped, layout.text)) return mapped;
   }
   return _mangaGeometryTextRegions(block);
+}
+
+/// Each retained UTF-16 code unit keeps its printed rectangle. Deleted suffixes
+/// have no destination; inserted spaces have no source rectangle. Deriving the
+/// map from effective lines also handles edits whose length changes cancel out.
+List<MangaOcrTextRegion> _mangaRemapTextRegions(
+  MokuroBlock block,
+  MangaBlockTextLayout layout,
+  List<MangaOcrTextRegion> supplied,
+) {
+  final List<int?> destinations = <int?>[];
+  for (int i = 0; i < block.lines.length; i++) {
+    final MangaBlockTextLine line = layout.lines[i];
+    for (int j = 0; j < block.lines[i].length; j++) {
+      destinations.add(j < line.text.length ? line.start + j : null);
+    }
+  }
+  final List<MangaOcrTextRegion> result = <MangaOcrTextRegion>[];
+  for (final MangaOcrTextRegion region in supplied) {
+    int? start;
+    int? end;
+    for (int i = region.utf16Start; i < region.utf16End; i++) {
+      final int? destination = destinations[i];
+      if (destination == null) continue;
+      start ??= destination;
+      end = destination + 1;
+    }
+    if (start == null || end == null) continue;
+    result.add(
+      MangaOcrTextRegion(
+        rectangle: region.rectangle,
+        utf16Start: start,
+        utf16End: end,
+        rotation: region.rotation,
+      ),
+    );
+  }
+  return result;
 }
 
 /// Whether [regions] can stand for [sentence] character by character.

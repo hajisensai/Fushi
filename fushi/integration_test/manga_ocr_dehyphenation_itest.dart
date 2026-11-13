@@ -27,7 +27,7 @@ import 'support/test_app_launcher.dart';
 import 'test_helpers.dart';
 
 const List<List<String>> _lines = <List<String>>[
-  <String>['Under-', 'stands', 'the tree'],
+  <String>['Under- \t', 'stands', 'the tree'],
   <String>['EVERY-', "ONE'S"],
   <String>['well-known', '1990-1995'],
   <String>["EVERYONE'S"],
@@ -39,8 +39,11 @@ Future<void> _writeFixture(Directory book) async {
   canvas.drawColor(const Color(0xFFFFFFFF), BlendMode.src);
   final List<List<Object?>> lineCoords = <List<Object?>>[];
   final List<double> blockWidths = <double>[];
+  final List<List<Object?>> regions = <List<Object?>>[];
   for (int block = 0; block < _lines.length; block++) {
     lineCoords.add(<Object?>[]);
+    regions.add(<Object?>[]);
+    int rawOffset = 0;
     double blockWidth = 0;
     for (int line = 0; line < _lines[block].length; line++) {
       final ui.Paragraph paragraph =
@@ -53,6 +56,21 @@ Future<void> _writeFixture(Directory book) async {
       final double width = paragraph.longestLine;
       if (width > blockWidth) blockWidth = width;
       canvas.drawParagraph(paragraph, Offset(100, top));
+      for (int i = 0; i < _lines[block][line].length; i++) {
+        if (_lines[block][line][i].trim().isEmpty) continue;
+        final ui.TextBox glyph = paragraph.getBoxesForRange(i, i + 1).single;
+        regions[block].add(<String, Object?>{
+          'box': <double>[
+            100 + glyph.left,
+            top + glyph.top,
+            100 + glyph.right,
+            top + glyph.bottom,
+          ],
+          'utf16_start': rawOffset + i,
+          'utf16_end': rawOffset + i + 1,
+        });
+      }
+      rawOffset += _lines[block][line].length;
       lineCoords[block].add(<List<double>>[
         <double>[100, top],
         <double>[100 + width, top],
@@ -92,6 +110,7 @@ Future<void> _writeFixture(Directory book) async {
                 'font_size': 36,
                 'lines': _lines[b],
                 'lines_coords': lineCoords[b],
+                'regions': regions[b],
               },
           ],
         },
@@ -169,17 +188,49 @@ void main() {
         }
         expect(ready, isTrue, reason: 'reader OCR DOM must load');
         final List<Object?> evidence = <Object?>[];
-        for (final ({int block, int offset, String char, String word}) probe
-            in <({int block, int offset, String char, String word})>[
-              (block: 0, offset: 1, char: 'n', word: 'Understands'),
-              (block: 0, offset: 5, char: 's', word: 'Understands'),
-              (block: 0, offset: 8, char: 'n', word: 'Understands'),
-              (block: 0, offset: 12, char: 't', word: 'the'),
+        final Map<String, dynamic> fixture =
+            jsonDecode(File(p.join(book.path, 'manga.json')).readAsStringSync())
+                as Map<String, dynamic>;
+        final List<dynamic> fixtureBlocks =
+            fixture['pages'][0]['blocks'] as List<dynamic>;
+        for (final ({
+              int block,
+              int offset,
+              int rawOffset,
+              String char,
+              String word,
+            })
+            probe
+            in <
+              ({int block, int offset, int rawOffset, String char, String word})
+            >[
+              (
+                block: 0,
+                offset: 1,
+                rawOffset: 1,
+                char: 'n',
+                word: 'Understands',
+              ),
+              (
+                block: 0,
+                offset: 5,
+                rawOffset: 8,
+                char: 's',
+                word: 'Understands',
+              ),
+              (
+                block: 0,
+                offset: 8,
+                rawOffset: 11,
+                char: 'n',
+                word: 'Understands',
+              ),
+              (block: 0, offset: 12, rawOffset: 14, char: 't', word: 'the'),
               // The existing scanner stops at a standalone apostrophe cell.
               // The unsplit control must select the same word, while both
               // complete block strings below retain the possessive suffix.
-              (block: 1, offset: 5, char: 'O', word: 'EVERYONE'),
-              (block: 3, offset: 5, char: 'O', word: 'EVERYONE'),
+              (block: 1, offset: 5, rawOffset: 6, char: 'O', word: 'EVERYONE'),
+              (block: 3, offset: 5, rawOffset: 5, char: 'O', word: 'EVERYONE'),
             ]) {
           final String source = MangaControllerCursorScripts.place(
             page: 0,
@@ -188,17 +239,49 @@ void main() {
             color: 'red',
             lookup: true,
           );
-          expect(await reader.debugEvaluateJavascript(source), 'lookup');
           final Object? raw = await reader.debugEvaluateJavascript('''
-JSON.stringify({
-  char: document.querySelector('[data-fushi-ctl-cursor]').textContent,
+JSON.stringify((function(){
+ const status = $source;
+ const cursor = document.querySelector('[data-fushi-ctl-cursor]');
+ return {status: status,
+  char: cursor.textContent,
+  geometry: [cursor.style.left, cursor.style.top, cursor.style.width, cursor.style.height].map(parseFloat),
   text: window.fushiSelection.selection && window.fushiSelection.selection.text,
   blocks: Array.from(document.querySelectorAll('.ocr-box')).map(b => b.textContent)
-})''');
+ };})())''');
           final Map<String, Object?> result =
               (jsonDecode(raw! as String) as Map).cast<String, Object?>();
           expect(result['char'], probe.char);
+          expect(result['status'], 'lookup');
           expect(result['text'], probe.word);
+          final Map<String, dynamic> fixtureBlock =
+              fixtureBlocks[probe.block] as Map<String, dynamic>;
+          final List<dynamic> blockBox = fixtureBlock['box'] as List<dynamic>;
+          final Map<String, dynamic> glyph =
+              (fixtureBlock['regions'] as List<dynamic>)
+                  .cast<Map<String, dynamic>>()
+                  .singleWhere(
+                    (Map<String, dynamic> r) =>
+                        r['utf16_start'] == probe.rawOffset,
+                  );
+          final List<dynamic> glyphBox = glyph['box'] as List<dynamic>;
+          final double width =
+              (blockBox[2] as num).toDouble() - (blockBox[0] as num).toDouble();
+          final double height =
+              (blockBox[3] as num).toDouble() - (blockBox[1] as num).toDouble();
+          final List<double> expectedGeometry = <double>[
+            ((glyphBox[0] as num) - (blockBox[0] as num)) / width * 100,
+            ((glyphBox[1] as num) - (blockBox[1] as num)) / height * 100,
+            ((glyphBox[2] as num) - (glyphBox[0] as num)) / width * 100,
+            ((glyphBox[3] as num) - (glyphBox[1] as num)) / height * 100,
+          ];
+          for (int i = 0; i < 4; i++) {
+            expect(
+              (result['geometry'] as List)[i],
+              closeTo(expectedGeometry[i], 0.001),
+              reason: 'cursor must retain the printed glyph rectangle',
+            );
+          }
           expect(result['blocks'], <String>[
             'Understands the tree',
             "EVERYONE'S",

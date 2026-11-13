@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:characters/characters.dart';
 import 'package:fushi/src/media/manga/manga_overlay_html.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_text_join.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
@@ -19,6 +20,38 @@ void main() {
         lines: lines,
       );
 
+  MokuroBlock withRegions(List<String> lines, {bool vertical = false}) {
+    int offset = 0;
+    final List<MangaOcrTextRegion> regions = <MangaOcrTextRegion>[];
+    for (final String char in lines.join().characters) {
+      final int end = offset + char.length;
+      if (char.trim().isNotEmpty) {
+        regions.add(
+          MangaOcrTextRegion(
+            rectangle: MokuroRect.fromLTWH(
+              offset * 7.0,
+              offset * 3.0,
+              5 + offset * 1.0,
+              12,
+            ),
+            utf16Start: offset,
+            utf16End: end,
+            rotation: 0.1,
+          ),
+        );
+      }
+      offset = end;
+    }
+    return MokuroBlock(
+      rectangle: const MokuroRect.fromLTWH(0, 0, 600, 120),
+      isVertical: vertical,
+      fontSize: 10,
+      zIndex: 0,
+      lines: lines,
+      regions: regions,
+    );
+  }
+
   group('mangaJoinOcrText 断字', () {
     test('行尾连字符去掉并与下一行直接拼接', () {
       expect(mangaJoinOcrText(<String>['Under-', 'stands']), 'Understands');
@@ -37,6 +70,39 @@ void main() {
         mangaJoinOcrText(<String>['INTER-', 'NATION-', 'AL!']),
         'INTERNATIONAL!',
       );
+    });
+
+    test('断词连字符后的尾随空白一并删除，其它行的空白保留', () {
+      for (final String hyphen in <String>['-', '\u2010', '\u2011']) {
+        final List<String> parts = <String>[
+          'Under$hyphen \t\u3000',
+          '',
+          'stands',
+        ];
+        final MangaBlockTextLayout layout = mangaBlockTextLayout(
+          blockOf(parts),
+        );
+        expect(mangaJoinOcrText(parts), 'Understands');
+        expect(layout.text, 'Understands');
+        expect(layout.lines.map((MangaBlockTextLine line) => line.start), <int>[
+          0,
+          5,
+          5,
+        ]);
+        expect(layout.lines.first.text, 'Under');
+        expect(layout.dehyphenatedBreaks, <int>{5});
+      }
+      for (final List<String> parts in <List<String>>[
+        <String>['日本語- ', '続き'],
+        <String>['スーパー ', 'マーケット'],
+        <String>['1990- ', '1995'],
+        <String>['wait— ', 'please'],
+        <String>['well-known ', 'fact'],
+        <String>[' \t', 'hello'],
+      ]) {
+        expect(mangaJoinOcrText(parts), parts.join());
+        expect(mangaBlockTextLayout(blockOf(parts)).text, parts.join());
+      }
     });
 
     test('词内连字符（同一行）保持原样', () {
@@ -173,7 +239,7 @@ void main() {
       expect(sentence.substring(n.utf16Start, n.utf16End), 'n');
     });
 
-    test('OCR 自带的旧 regions（按原始 sentence）不再匹配时回退几何重算', () {
+    test('OCR 自带 regions 映射偏移并保留原始字框', () {
       final MokuroBlock raw = blockOf(<String>['Under-', 'stands']);
       final String rawSentence = raw.lines.join();
       final MokuroBlock withStaleRegions = MokuroBlock(
@@ -202,9 +268,17 @@ void main() {
         sentence.substring(regions[8].utf16Start, regions[8].utf16End),
         'n',
       );
+      expect(
+        regions[5].rectangle,
+        same(withStaleRegions.regions![6].rectangle),
+      );
+      expect(
+        regions[8].rectangle,
+        same(withStaleRegions.regions![9].rectangle),
+      );
     });
 
-    test('删连字符与补空格抵消长度变化时仍丢弃旧偏移', () {
+    test('删连字符与补空格抵消长度变化时仍映射旧偏移', () {
       final MokuroBlock block = MokuroBlock(
         rectangle: const MokuroRect.fromLTWH(0, 0, 600, 120),
         isVertical: false,
@@ -238,10 +312,125 @@ void main() {
         isTrue,
       );
       expect(
-        regions[3].rectangle.top,
-        greaterThan(0),
-        reason: '首个 T 必须在第二行，不能沿用第一行连字符的字框',
+        regions[3].rectangle,
+        same(block.regions![4].rectangle),
+        reason: '首个 T 保留自己的字框，不能沿用第一行连字符的字框',
       );
+      expect(regions[6].utf16Start, 7);
+      expect(regions[6].rectangle, same(block.regions![7].rectangle));
+    });
+
+    test('多次断词、尾随空白、空行和 Unicode 字素保留原字框与旋转', () {
+      final MokuroBlock block = withRegions(<String>[
+        '😀 INTER- \t',
+        '',
+        'NATION\u2010',
+        'AL caf\u2011 ',
+        'e\u0301',
+        'time',
+      ]);
+      final String original = block.lines.join();
+      final String text = mangaBlockTextLayout(block).text;
+      expect(text, '😀 INTERNATIONAL cafe\u0301 time');
+      final List<MangaOcrTextRegion> mapped = mangaEffectiveTextRegions(block);
+      final List<MangaOcrTextRegion> retained = block.regions!
+          .where(
+            (MangaOcrTextRegion r) => !kMangaDehyphenationHyphens.contains(
+              original.substring(r.utf16Start, r.utf16End),
+            ),
+          )
+          .toList();
+      expect(mapped, hasLength(retained.length));
+      for (int i = 0; i < mapped.length; i++) {
+        expect(mapped[i].rectangle, same(retained[i].rectangle));
+        expect(mapped[i].rotation, retained[i].rotation);
+        expect(
+          text.substring(mapped[i].utf16Start, mapped[i].utf16End),
+          original.substring(retained[i].utf16Start, retained[i].utf16End),
+        );
+      }
+      expect(mangaTextRegionsMatchSentence(mapped, text), isTrue);
+    });
+
+    test('日语混排补空格只调整偏移，长音符和竖排字框不变', () {
+      final MokuroBlock block = withRegions(<String>[
+        'カレー…',
+        '50mです',
+      ], vertical: true);
+      final List<MangaOcrTextRegion> mapped = mangaEffectiveTextRegions(block);
+      expect(mangaBlockTextLayout(block).text, 'カレー… 50mです');
+      expect(mapped, hasLength(block.regions!.length));
+      for (int i = 0; i < mapped.length; i++) {
+        expect(mapped[i].rectangle, same(block.regions![i].rectangle));
+        expect(mapped[i].rotation, block.regions![i].rotation);
+        expect(mapped[i].utf16Start, i < 4 ? i : i + 1);
+      }
+    });
+
+    test('跨行复合区域保留几何，仅含被删后缀的区域消失', () {
+      final MokuroBlock block = MokuroBlock(
+        rectangle: const MokuroRect.fromLTWH(0, 0, 600, 120),
+        isVertical: false,
+        fontSize: 10,
+        zIndex: 0,
+        lines: const <String>['Under- ', 'stands'],
+        regions: const <MangaOcrTextRegion>[
+          MangaOcrTextRegion(
+            rectangle: MokuroRect.fromLTWH(20, 30, 55, 18),
+            utf16Start: 0,
+            utf16End: 5,
+          ),
+          MangaOcrTextRegion(
+            rectangle: MokuroRect.fromLTWH(75, 30, 4, 18),
+            utf16Start: 5,
+            utf16End: 7,
+          ),
+          MangaOcrTextRegion(
+            rectangle: MokuroRect.fromLTWH(20, 60, 60, 18),
+            utf16Start: 7,
+            utf16End: 13,
+          ),
+        ],
+      );
+      final List<MangaOcrTextRegion> mapped = mangaEffectiveTextRegions(block);
+      expect(mapped, hasLength(2));
+      expect(mapped[0].rectangle, same(block.regions![0].rectangle));
+      expect(mapped[1].rectangle, same(block.regions![2].rectangle));
+      expect(mapped[1].utf16Start, 5);
+      expect(mapped[1].utf16End, 11);
+    });
+
+    test('不完整或不在字素边界上的原始字框仍整块回退', () {
+      for (final int start in <int>[-1, 1, 2]) {
+        final MokuroBlock block = MokuroBlock(
+          rectangle: const MokuroRect.fromLTWH(0, 0, 600, 120),
+          isVertical: false,
+          fontSize: 10,
+          zIndex: 0,
+          lines: const <String>['😀 Under-', 'stands'],
+          regions: <MangaOcrTextRegion>[
+            MangaOcrTextRegion(
+              rectangle: const MokuroRect.fromLTWH(-500, -500, 1, 1),
+              utf16Start: start,
+              utf16End: 4,
+            ),
+          ],
+        );
+        final List<MangaOcrTextRegion> regions = mangaEffectiveTextRegions(
+          block,
+        );
+        expect(
+          mangaTextRegionsMatchSentence(
+            regions,
+            mangaBlockTextLayout(block).text,
+          ),
+          isTrue,
+        );
+        expect(
+          regions.every((MangaOcrTextRegion r) => r.rectangle.left >= 0),
+          isTrue,
+        );
+      }
     });
 
     test('overlay 的 data-utf16-start 与整串一致', () {
