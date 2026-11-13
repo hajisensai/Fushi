@@ -2094,19 +2094,8 @@ class SrsDbStore implements SrsSync2Host {
     'backfill_dupe_norms',
   };
 
-  /// 缓存刷新的配置：本 profile 的默认牌组与各内置笔记类型（代码默认值 + 读音字段，readingKey 的来源）。
-  late final Map<String, Object?> _cacheConfig = <String, Object?>{
-    'defaultDeck': defaultDeckId,
-    'builtins': <String, Object?>{
-      for (final SrsBuiltinNoteTypeSpec spec in kSrsBuiltinNoteTypes)
-        spec.key: <String, Object?>{
-          'b': srsBuiltinNoteTypeKernelValue(
-            srsBuiltinNoteType(profileUid, spec),
-          ),
-          'reading': srsBuiltinReadingFieldId(profileUid, spec.key),
-        },
-    },
-  };
+  /// 缓存刷新的配置（[srsCacheConfigOf]）。
+  late final Map<String, Object?> _cacheConfig = srsCacheConfigOf(profileUid);
 
   /// 按 SQLite 变量上限分块（IN 列表）。
   static Iterable<List<String>> _chunks(Iterable<String> ids) sync* {
@@ -6056,6 +6045,21 @@ Future<(Object?, Map<String, TransferableTypedData>)> _coreColumns(
         },
       );
     });
+
+/// 内核刷新缓存要的配置：[profileUid] 的默认牌组与各内置笔记类型（代码默认值 + 读音字段，readingKey 的来源）。只由
+/// profile uid 决定；换代预演（sync2/srs_gen4_rehearsal.dart）给库里每个 profile 各算一份。
+Map<String, Object?> srsCacheConfigOf(String profileUid) => <String, Object?>{
+  'defaultDeck': SrsIds.builtinDefaultDeck(profileUid),
+  'builtins': <String, Object?>{
+    for (final SrsBuiltinNoteTypeSpec spec in kSrsBuiltinNoteTypes)
+      spec.key: <String, Object?>{
+        'b': srsBuiltinNoteTypeKernelValue(
+          srsBuiltinNoteType(profileUid, spec),
+        ),
+        'reading': srsBuiltinReadingFieldId(profileUid, spec.key),
+      },
+  },
+};
 
 Future<SrsSync2Result> _coreSync2(
   int address,

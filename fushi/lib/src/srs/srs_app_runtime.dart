@@ -4,7 +4,8 @@
 /// - [SrsAppHost.current]：app 外查词窗 deferred 桥与 Fushi API `/api/srs/*` 的入口；
 /// - AnkiConnect v6 兼容端点（Fushi API 根路径）+ `fushiAnkiConnectCompatInstanceId`；
 /// - 常规同步的通道后置步骤（`syncChannelPostRunHook`）+ 进入复习 tab 的节流同步；
-/// - 自动优化的空闲调度（前台、不在复习页、最多每 6 小时检查一次）。
+/// - 自动优化的空闲调度（前台、不在复习页、最多每 6 小时检查一次）；
+/// - 存储换代的预演（同样只在空闲时跑，每个版本一次，见 sync2/srs_gen4_rehearsal.dart）。
 ///
 /// 模块关掉（或 provider 被销毁）时 [SrsAppRuntime.dispose] 把上面全部卸下、置回 null：
 /// 关着时 app 里没有任何 SRS 定时器、监听、端点或同步步骤（用户硬要求：零行为变化、
@@ -49,6 +50,7 @@ import 'package:fushi/src/srs/srs_interconnect_watch.dart';
 import 'package:fushi_engine/srs/srs_remote_store.dart';
 import 'package:fushi_engine/srs/srs_media_store.dart';
 import 'package:fushi_engine/srs/srs_optimization_scheduler.dart';
+import 'package:fushi_engine/srs/sync2/srs_gen4_rehearsal.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/srs/srs_sync_scheduler.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
@@ -368,6 +370,20 @@ class SrsAppRuntime {
     onApplied: _bumpRevision,
   );
 
+  /// 存储换代的预演（设计 §8 G4b）：空闲时只读地对正在用的库走一遍换代，每个 app 版本一次；报告在同步与历史页。
+  late final SrsGen4RehearsalScheduler rehearsal = SrsGen4RehearsalScheduler(
+    readRunner: srsGen4RehearsalRunnerOf(_readStore),
+    appVersion: () =>
+        '${app.packageInfo.version}+${app.packageInfo.buildNumber}',
+    // 库关着（备份恢复 / 数据根迁移 / 退出）时不开新的一次。
+    canRunNow: () => app.isInitialised && _idleForOptimization(),
+    onError: (Object e, StackTrace stack) =>
+        ErrorLogService.instance.log('SrsAppRuntime.gen4Rehearsal', e, stack),
+  );
+
+  /// 关库前停下预演并等它放开连接（登记到 [AppModel.addDatabaseCloseQuiescer]）。
+  late final Future<void> Function() _quiesceRehearsal = rehearsal.quiesce;
+
   AppLifecycleListener? _lifecycle;
   bool _installed = false;
   SrsAnkiConnectEndpoint? _endpoint;
@@ -454,7 +470,9 @@ class SrsAppRuntime {
     srsActiveReviewSessions.addListener(_onReviewSessionsChanged);
     _lifecycle = AppLifecycleListener(onStateChange: _onLifecycle);
     optimizer.start();
+    rehearsal.start();
     app.addDatabaseCloseQuiescer(_quiesceSync);
+    app.addDatabaseCloseQuiescer(_quiesceRehearsal);
     _hostWrites = app.syncServerController.clientSyncWrites.listen(
       _onHostClientWrite,
     );
@@ -480,7 +498,9 @@ class SrsAppRuntime {
     _lifecycle?.dispose();
     _lifecycle = null;
     optimizer.dispose();
+    rehearsal.dispose();
     app.removeDatabaseCloseQuiescer(_quiesceSync);
+    app.removeDatabaseCloseQuiescer(_quiesceRehearsal);
     unawaited(_hostWrites?.cancel());
     _hostWrites = null;
     unawaited(_hostUploads?.cancel());
@@ -570,7 +590,10 @@ class SrsAppRuntime {
 
   void _onReviewSessionsChanged() {
     final int now = srsActiveReviewSessions.value;
-    if (now > 0) optimizer.cancel();
+    if (now > 0) {
+      optimizer.cancel();
+      rehearsal.cancel();
+    }
     // 离开复习页：复习中攒着的变动立即推（审查 S-8）。
     if (now == 0) {
       localPush.flush();
@@ -579,7 +602,10 @@ class SrsAppRuntime {
   }
 
   void _onLifecycle(AppLifecycleState state) {
-    if (state != AppLifecycleState.resumed) optimizer.cancel();
+    if (state != AppLifecycleState.resumed) {
+      optimizer.cancel();
+      rehearsal.cancel();
+    }
     // 正在进后台：待推的立即推（之后前台检查会挡住推送，后台也可能很快被挂起）。
     if (state == AppLifecycleState.inactive ||
         state == AppLifecycleState.hidden) {

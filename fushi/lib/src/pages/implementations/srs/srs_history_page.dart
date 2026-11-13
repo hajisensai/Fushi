@@ -29,6 +29,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_conflicts_page.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_gen4_rehearsal_section.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_sync_devices_section.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_sync_settings.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
@@ -1132,6 +1133,8 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
       if (_status['enabled'] == true && _devices.isNotEmpty)
         _buildDevices(context),
       _buildLocations(context),
+      // 上一次存储换代预演的结论与诊断报告（没跑过就不显示）。
+      const SrsGen4RehearsalSection(),
       AdaptiveSettingsSection(
         title: t.srs_timeline_section,
         children: <Widget>[
