@@ -250,11 +250,10 @@ pack（连同 pdb 打 zip——`flutter build windows` 要求缓存里有 `flutt
 
 3.50.0 的第一份补丁引擎是 `hdr-output-1`（2026-11-13 本机编，含上面全部七份引擎补丁与 ANGLE 补丁；
 三种模式 + 匹配的 pdb，`flutter-engine-windows-3.50.0-hdr-output-1.zip`，SHA-256
-`079bb3a75fc07217b52a6b3f3842dd69cce021c27aea6e6387334430ae750a0b`）。**尚未发 release**：本目录的
-`artifacts.json` 仍是从 3.47.6 搬过来的 `flutter-engine-3.47.6-hdr-output-4`（引擎版本
-`692136cb…`），`tool/engine_overlay.ps1` 会因引擎版本不符拒装到 3.50.0 SDK；发布 release
-`flutter-engine-3.50.0-hdr-output-1`（prerelease、非 Latest；tag 不以数字 / `v`+数字开头）后把 url 与 sha256
-写进 `artifacts.json`，CI 才会用上补丁引擎。
+`079bb3a75fc07217b52a6b3f3842dd69cce021c27aea6e6387334430ae750a0b`）。已发 release
+`flutter-engine-3.50.0-hdr-output-1`（prerelease、非 Latest；tag 不以数字 / `v`+数字开头），
+`artifacts.json` 的 `engineVersion` / `url` / `sha256` 均指向它，CI 与
+`tool/engine_overlay.ps1 -Manifest` 可直接安装。
 
 改补丁后重编要换一个新的 `patchVersion` 发新 release，再改本目录的 `artifacts.json`；在那之前出的包
 仍是旧引擎。旧 release 留着给旧提交复现用（3.47.6 时代：`flutter-engine-3.47.6-hdr-output-4` 是全部七份，
