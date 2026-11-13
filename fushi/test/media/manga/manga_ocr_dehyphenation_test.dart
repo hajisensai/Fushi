@@ -57,6 +57,23 @@ void main() {
       expect(mangaJoinOcrText(<String>['一行目', '二行目']), '一行目二行目');
     });
 
+    test('日文长音符与中日韩行首不会误删连接符', () {
+      for (final List<String> lines in <List<String>>[
+        <String>['スーパー', 'マーケット'],
+        <String>['カレー', 'ライス'],
+        <String>['言葉-', '続き'],
+        <String>['中文-', '续行'],
+        <String>['한국어-', '다음'],
+      ]) {
+        final MokuroBlock block = blockOf(lines, vertical: true);
+        expect(mangaJoinOcrText(lines), lines.join());
+        final MangaBlockTextLayout layout = mangaBlockTextLayout(block);
+        expect(layout.text, lines.join());
+        expect(layout.dehyphenatedBreaks, isEmpty);
+        expect(layout.lines[1].start, lines[0].length);
+      }
+    });
+
     test('破折号和非字母脚本字符不作为断词续接', () {
       expect(mangaJoinOcrText(<String>['wait–', 'please']), 'wait–please');
       expect(mangaJoinOcrText(<String>['wait—', 'please']), 'wait—please');
