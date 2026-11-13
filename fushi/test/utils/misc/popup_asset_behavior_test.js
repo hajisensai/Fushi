@@ -4443,7 +4443,93 @@ async function testShortcutMineCapturesLiveSelection() {
     'shortcut mining must carry what is selected right now');
 }
 
+// 快捷键 / 手柄制卡跟随当前词条：Alt+滚轮 / 十字键把 .entry-current 移到第 3 个词条后
+// 按 Ctrl+Enter / X，制的必须是第 3 个词条（旧实现永远点全文第一颗「+」）。
+function entryNodes(context) {
+  return context.window.__fushiRoot.children[0].children;
+}
+
+async function testShortcutMineFollowsFocusedEntry() {
+  const context = loadPopup();
+  const mined = [];
+  stubMineBridge(context, mined);
+  mountEntriesWith(context, ['辞書', '事典', '事項']);
+  await flush();
+
+  // 还没移动过：第一个词条。
+  assert.equal(await context.window.fushiPopupMineFirstEntry(), true);
+  await flush();
+  assert.equal(mined[0].expression, '辞書');
+
+  entryNodes(context)[2].classList.add('entry-current');
+  assert.equal(await context.window.fushiPopupMineFirstEntry(), true);
+  await flush();
+  assert.equal(mined.length, 2);
+  assert.equal(mined[1].expression, '事項',
+    'shortcut mining must create the card for the focused entry');
+}
+
+async function testShortcutMineNeverFallsBackFromFocusedEntry() {
+  const context = loadPopup();
+  const mined = [];
+  stubMineBridge(context, mined);
+  const buttons = mountEntriesWith(context, ['辞書', '事典']);
+  await flush();
+  const focused = entryNodes(context)[1];
+  focused.classList.add('entry-current');
+  buttons[1].remove();
+  assert.equal(await context.window.fushiPopupMineFirstEntry(), false,
+    'a focused entry without a + must not mine a different entry');
+  await flush();
+  assert.equal(mined.length, 0);
+}
+
+async function testShortcutAudioFollowsFocusedEntry() {
+  const context = loadPopup();
+  stubMineBridge(context, []);
+  context.window.audioSources = ['https://audio.example/?term={term}'];
+  mountEntriesWith(context, ['辞書', '事典']);
+  await flush();
+  const played = [];
+  const entries = entryNodes(context);
+  for (let i = 0; i < entries.length; i++) {
+    const audio = findByClassName(entries[i], 'audio-button');
+    assert.ok(audio, `audio button missing for entry ${i}`);
+    audio.onclick = () => { played.push(i); };
+  }
+  entries[1].classList.add('entry-current');
+  assert.equal(await context.window.fushiPopupPlayFirstAudio(), true);
+  assert.deepEqual(played, [1], 'audio shortcut must play the focused entry');
+}
+
+// 「＋」的快捷键提示：宿主注入整句才显示；没注入（浏览器扩展）/ 空串 = 不提示。
+async function testMineButtonShowsShortcutHint() {
+  const hinted = loadPopup();
+  stubMineBridge(hinted, []);
+  hinted.window.i18nMineShortcutHint = 'Create card (Ctrl+Enter)';
+  const [button] = mountEntriesWith(hinted, ['辞書']);
+  assert.equal(button.dataset.fushiTip, 'Create card (Ctrl+Enter)',
+    'the + carries the hint before the lazy duplicate probe answers');
+  await flush();
+  assert.equal(button.dataset.fushiTip, 'Create card (Ctrl+Enter)');
+  assert.equal(button.getAttribute('aria-label'), 'Create card (Ctrl+Enter)');
+
+  for (const value of [undefined, '']) {
+    const bare = loadPopup();
+    stubMineBridge(bare, []);
+    if (value !== undefined) bare.window.i18nMineShortcutHint = value;
+    const [plain] = mountEntriesWith(bare, ['辞書']);
+    await flush();
+    assert.equal(plain.dataset.fushiTip, undefined,
+      'no injected hint → no tooltip on the +');
+  }
+}
+
 Promise.all([
+  testShortcutMineFollowsFocusedEntry(),
+  testShortcutMineNeverFallsBackFromFocusedEntry(),
+  testShortcutAudioFollowsFocusedEntry(),
+  testMineButtonShowsShortcutHint(),
   testNewLookupDropsPreviousSelectionSnapshot(),
   testAdjustContextButtonSnapshotsSelectionForConfirm(),
   testAdvancedMiningButtonOpensHostDialog(),

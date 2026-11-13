@@ -7091,6 +7091,7 @@
   "popup_max_height": "Açılır pencere maksimum yüksekliği",
   "popup_max_width": "Açılır pencere maks. genişlik",
   "popup_mine_overwrite_queued": "Will overwrite once saved to Anki.",
+  "popup_mine_shortcut_hint": "Create card (${shortcut})",
   "popup_mine_still_queued": "Still saving to Anki. Try again shortly.",
   "popup_mining_target_empty": "No profiles or decks yet. Connect Anki in settings first.",
   "popup_mining_target_switch": "Switch profile or deck",

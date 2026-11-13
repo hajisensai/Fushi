@@ -7091,6 +7091,7 @@
   "popup_max_height": "查词窗口最大高度",
   "popup_max_width": "查词窗口最大宽度",
   "popup_mine_overwrite_queued": "写入 Anki 后自动覆盖",
+  "popup_mine_shortcut_hint": "制卡（${shortcut}）",
   "popup_mine_still_queued": "还在写入 Anki，稍后再试",
   "popup_mining_target_empty": "还没有可选的配置或牌组，请先在设置里连接 Anki。",
   "popup_mining_target_switch": "切换配置或牌组",
