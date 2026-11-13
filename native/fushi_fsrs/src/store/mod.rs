@@ -687,6 +687,8 @@ impl SrsCore {
         // 测试构建：关之前与协议 4 的新存储对拍（见 `Drop for SrsCore`）。
         #[cfg(test)]
         gen4::parity::check_core(self);
+        // 换代前的预演自己开着一条只读连接（store/gen4/dryrun.rs）：先停下它、等它放开，关完库文件才能被换掉。
+        gen4::dryrun::stop_rehearsal(&self.path);
         // 先关内核读连接池（等借出的放回）：此后 read_session 报已关闭，下面拿到的会话清单就是全部。
         // 下面各把锁被 panic 毒化过也照拿：连接随即丢掉，关闭时 SQLite 回滚连接上没结束的事务。
         self.readers.close();

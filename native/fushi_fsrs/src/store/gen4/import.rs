@@ -63,6 +63,18 @@ pub fn import_legacy(
     col: i64,
     batch: u64,
 ) -> Result<Imported, String> {
+    import_legacy_checked(src, profile, truth, col, batch, &mut || Ok(()))
+}
+
+/// [import_legacy]，每批提交之前先问一次 [check]：它报错就把这一批回滚、整个灌入报那个错（干跑的中断，`dryrun.rs`）。
+pub fn import_legacy_checked(
+    src: &Connection,
+    profile: &str,
+    truth: &Truth<'_>,
+    col: i64,
+    batch: u64,
+    check: &mut dyn FnMut() -> Result<(), String>,
+) -> Result<Imported, String> {
     let dst = truth.conn();
     if !dst.is_autocommit() {
         return Err("gen4 import: must not run inside a transaction".to_owned());
@@ -126,6 +138,7 @@ pub fn import_legacy(
                 }
                 in_batch += 1;
                 if in_batch >= batch.max(1) {
+                    check()?;
                     dst.execute_batch("COMMIT; BEGIN IMMEDIATE").map_err(sql)?;
                     in_batch = 0;
                 }

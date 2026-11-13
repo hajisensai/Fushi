@@ -1416,19 +1416,7 @@ pub(crate) mod tests {
     /// 样本库里一个 profile 的盐：它自己的 uid，加上这台设备记着的已退役 uid（G3 探针的同一个口径；迁移时由 G4
     /// 写成一条 Salts 操作）。
     pub(crate) fn sample_salts(src: &rusqlite::Connection, profile: &str) -> Vec<String> {
-        let mut salts: BTreeSet<String> = BTreeSet::from([profile.to_owned()]);
-        let retired: Option<String> = src
-            .query_row(
-                "SELECT value FROM srs_meta WHERE key = 'srs_retired_profile_uids'",
-                [],
-                |r| r.get(0),
-            )
-            .optional()
-            .unwrap();
-        if let Some(list) = retired.and_then(|s| serde_json::from_str::<Vec<String>>(&s).ok()) {
-            salts.extend(list);
-        }
-        salts.into_iter().collect()
+        crate::store::gen4::legacy::salts(src, profile).unwrap()
     }
 
     fn r(id: Id) -> Ref {

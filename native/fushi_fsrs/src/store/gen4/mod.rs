@@ -9,11 +9,15 @@
 //! - [derive]：派生层的索引（实体、寄存器、日志、旧闭包）与 `rebuild_all`；冻结的旧判定从操作体读。
 //! - [cache]：缓存层——笔记 / 卡片缓存、逐卡重放、有效复习投影（统计列）。
 //! - [weigh]：派生层的语义部分——标签 OR-Set、媒体绑定、彻底清除、被扣住的删除、设备信任。
+//! - `compare`：协议 3 的投影与新代派生层逐类对拍（干跑与测试装置共用）。
+//! - [dryrun]：真实库干跑（设计 §8 G4）：旧库只读 → 临时新库 → 重建 → 对拍报告；也是换代前版本里的预演自检（G4b）。
 
 pub mod alias;
 pub mod cache;
+pub(crate) mod compare;
 pub mod derive;
 pub mod digest;
+pub mod dryrun;
 pub mod import;
 pub mod legacy;
 pub(crate) mod pack;

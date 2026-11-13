@@ -18,6 +18,6 @@ pub mod rules;
 pub(crate) const GOLDEN: &str = include_str!("golden_ids.json");
 
 #[cfg(test)]
-mod probe;
+pub(crate) mod probe;
 #[cfg(test)]
 mod tests;
