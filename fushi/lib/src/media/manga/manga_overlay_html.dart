@@ -56,7 +56,9 @@ String mangaOcrBoxesHtml(MokuroImage page) {
     final bool hasRegions = regions.isNotEmpty;
     final String inner = hasRegions
         ? _mangaCharacterRegionsHtml(block: block, regions: regions)
-        : block.lines.map(_escapeHtml).join('<br>');
+        : mangaBlockTextLayout(block).lines
+              .map((MangaBlockTextLine line) => _escapeHtml(line.text))
+              .join('<br>');
     buffer.write(
       '<p class="ocr-box" '
       'data-ocr-orientation="$orientation" '
@@ -399,26 +401,90 @@ int _compareMangaBlockReadingOrder(MokuroBlock a, MokuroBlock b) {
 bool _mangaEndsSentence(String text) =>
     RegExp(r'[。！？.!?‼⁉][」』）)\]】〉》〕｝}］”’]*$').hasMatch(text);
 
+/// [mangaBlockTextLayout] 的一行：有效文本（行尾断字连字符已去掉）与它在整串里的起点。
+typedef MangaBlockTextLine = ({int start, String text});
+
+/// 块内文本布局：`text` 是拼好的整串，`lines` 与 `block.lines` 一一对应；
+/// `dehyphenatedBreaks` 是"被断字吃掉连字符"的行界在 `text` 里的偏移（这些行界不能再当
+/// 词间空格补空白节点）。
+typedef MangaBlockTextLayout = ({
+  String text,
+  List<MangaBlockTextLine> lines,
+  Set<int> dehyphenatedBreaks,
+});
+
+/// 块内文本布局：与 [mangaJoinOcrText] 同一拼接规则（行尾断字连字符去掉、拉丁行界补
+/// 词间空格），同时给出每行有效文本与它在整串里的起点。
+///
+/// 字格 [MangaOcrTextRegion] 的 utf16 区间必须落在 `text` 上，所以整串与偏移由**同一次**
+/// 拼接产出——分开算会在断字处差一个字符，点「n」会选中隔壁字。
+MangaBlockTextLayout mangaBlockTextLayout(MokuroBlock block) {
+  final StringBuffer buffer = StringBuffer();
+  final List<MangaBlockTextLine> lines = <MangaBlockTextLine>[];
+  final Set<int> dehyphenatedBreaks = <int>{};
+  String previous = '';
+  for (final String raw in block.lines) {
+    if (raw.isEmpty) {
+      lines.add((start: buffer.length, text: raw));
+      continue;
+    }
+    if (mangaOcrIsDehyphenationBreak(previous, raw)) {
+      // `Under-` + `stands` → `Understands`：删掉**上一行**末尾的连字符再拼。
+      // 当前行原样写入——截当前行会把 `stands` 的尾字削掉（少一个 s）。
+      final String hyphen = previous.characters.last;
+      final String text = buffer.toString();
+      buffer
+        ..clear()
+        ..write(text.substring(0, text.length - hyphen.length));
+      int lastIndex = lines.length - 1;
+      // 空行记录不承载连字符：跳到最近一条非空行（空行不更新 previous，只有它可能带 `-`）。
+      while (lastIndex >= 0 && lines[lastIndex].text.isEmpty) {
+        lastIndex--;
+      }
+      final MangaBlockTextLine previousLine = lines[lastIndex];
+      lines[lastIndex] = (
+        start: previousLine.start,
+        text: previousLine.text.substring(
+          0,
+          previousLine.text.length - hyphen.length,
+        ),
+      );
+      // 空行也指向删掉连字符后的行界，避免产生越界或虚假的词界。
+      for (int i = lastIndex + 1; i < lines.length; i++) {
+        lines[i] = (start: buffer.length, text: '');
+      }
+      dehyphenatedBreaks.add(buffer.length);
+    } else if (mangaOcrNeedsWordGap(previous, raw)) {
+      buffer.write(' ');
+    }
+    lines.add((start: buffer.length, text: raw));
+    buffer.write(raw);
+    // 断词判定用**原始**行（带连字符），与 [mangaJoinOcrText] 的 previous 语义一致。
+    previous = raw;
+  }
+  return (
+    text: buffer.toString(),
+    lines: lines,
+    dehyphenatedBreaks: dehyphenatedBreaks,
+  );
+}
+
 /// Returns character-level hit regions for every OCR producer.
 ///
-/// Lens already supplies line-derived regions. Local ONNX and legacy mokuro
-/// blocks do not, so they are subdivided here using `lines_coords` when
-/// available and the block rectangle otherwise. This mirrors Niratan's native
-/// reader: hit testing is based on explicit character geometry instead of
-/// asking browser typography to approximate where transparent text landed.
-///
-/// Supplied regions are used only when they match the block text as a whole:
-/// every region lies on grapheme boundaries inside the sentence and every
-/// visible grapheme is covered ([mangaTextRegionsMatchSentence]). Otherwise —
-/// for example a manga.json whose text was rewritten while the regions still
-/// carry the old offsets — the whole block falls back to line geometry.
-/// Dropping the mismatched regions one by one would leave characters with no
-/// hit target (or, when all of them miss, a block that cannot be clicked).
+/// Supplied Lens regions must cover the rendered text on grapheme boundaries
+/// ([mangaTextRegionsMatchSentence]). Stale cached offsets, local ONNX and
+/// legacy mokuro blocks fall back to `lines_coords` or the block rectangle.
+/// Replacing the whole set keeps every visible character hittable.
 List<MangaOcrTextRegion> mangaEffectiveTextRegions(MokuroBlock block) {
   final List<MangaOcrTextRegion>? supplied = block.regions;
+  final MangaBlockTextLayout layout = mangaBlockTextLayout(block);
   if (supplied != null &&
       supplied.isNotEmpty &&
-      mangaTextRegionsMatchSentence(supplied, block.lines.join())) {
+      // Persisted regions index the raw joined lines. A removed hyphen and an
+      // inserted space can cancel out in length, leaving stale ranges that
+      // pass the coverage check but point at the wrong printed characters.
+      layout.text == block.lines.join() &&
+      mangaTextRegionsMatchSentence(supplied, layout.text)) {
     return supplied;
   }
   return _mangaGeometryTextRegions(block);
@@ -460,14 +526,14 @@ List<MangaOcrTextRegion> _mangaGeometryTextRegions(MokuroBlock block) {
     return const <MangaOcrTextRegion>[];
   }
   final List<MokuroOrientedRect> lineRects = _mangaLineRects(block);
+  final MangaBlockTextLayout layout = mangaBlockTextLayout(block);
   final List<MangaOcrTextRegion> result = <MangaOcrTextRegion>[];
-  int utf16Base = 0;
-  for (int lineIndex = 0; lineIndex < block.lines.length; lineIndex++) {
-    final String line = block.lines[lineIndex];
+  for (int lineIndex = 0; lineIndex < layout.lines.length; lineIndex++) {
+    final MangaBlockTextLine effectiveLine = layout.lines[lineIndex];
     final List<({String text, int start, int end})> characters =
         <({String text, int start, int end})>[];
-    int offset = utf16Base;
-    for (final String character in line.characters) {
+    int offset = effectiveLine.start;
+    for (final String character in effectiveLine.text.characters) {
       final int end = offset + character.length;
       if (character.trim().isNotEmpty) {
         characters.add((text: character, start: offset, end: end));
@@ -518,7 +584,6 @@ List<MangaOcrTextRegion> _mangaGeometryTextRegions(MokuroBlock block) {
         );
       }
     }
-    utf16Base += line.length;
   }
   return result;
 }
@@ -601,17 +666,21 @@ String _mangaCharacterRegionsHtml({
   required MokuroBlock block,
   required List<MangaOcrTextRegion> regions,
 }) {
-  final String sentence = block.lines.join();
+  final MangaBlockTextLayout layout = mangaBlockTextLayout(block);
+  final String sentence = layout.text;
   final MokuroRect parent = block.rectangle;
   final double parentWidth = parent.width <= 0 ? 1 : parent.width;
   final double parentHeight = parent.height <= 0 ? 1 : parent.height;
   final StringBuffer buffer = StringBuffer();
-  // 各行在 [sentence] 里的分界（UTF-16）：行与行直接拼接，行尾不带空格。
+  // 各行在 [sentence] 里的分界（UTF-16）：拉丁行界已补空格；行尾断字连字符
+  // 已去掉，所以分界取有效行的终点（不是原始行长度）。断词行界不参与"补词间空格"
+  // 判定——`LET-` / `TER` 拼成的是一个词，补空格会把 `LETTER` 拆成 `LET TER`。
   final List<int> lineBreaks = <int>[];
-  int lineEnd = 0;
-  for (int i = 0; i < block.lines.length - 1; i++) {
-    lineEnd += block.lines[i].length;
-    lineBreaks.add(lineEnd);
+  for (int i = 0; i < layout.lines.length - 1; i++) {
+    final MangaBlockTextLine line = layout.lines[i];
+    final int breakAt = line.start + line.text.length;
+    if (layout.dehyphenatedBreaks.contains(breakAt)) continue;
+    lineBreaks.add(breakAt);
   }
   int? previousEnd;
   // [regions] comes from [mangaEffectiveTextRegions]: every range is already

@@ -113,13 +113,13 @@ void main() {
         isFalse,
       );
 
-      // 断字连字符不补空格。
+      // 行尾断字：去掉连字符再拼（`LET-` / `TER` → `LETTER`），不补空格。
       final List<Map<String, String>> hyphen = itemsOf(
         htmlOf(blockOf(<String>['A LET-', 'TER'])),
       );
       expect(
         hyphen.map((Map<String, String> i) => i['char'] ?? '|').join(),
-        'A|LET-TER',
+        'A|LETTER',
       );
     });
 
@@ -132,7 +132,7 @@ void main() {
         mangaJoinOcrText(<String>['A LETTER.', 'HAVE YOU']),
         'A LETTER. HAVE YOU',
       );
-      expect(mangaJoinOcrText(<String>['LET-', 'TER']), 'LET-TER');
+      expect(mangaJoinOcrText(<String>['LET-', 'TER']), 'LETTER');
       expect(mangaJoinOcrText(<String>['日本語の', '勉強です。']), '日本語の勉強です。');
       expect(mangaJoinOcrText(<String>['。', 'OK']), '。OK');
 
@@ -224,13 +224,15 @@ void main() {
         },
       ];
 
-      // BUG-4361：词首界（连字符）照样截住跨字格回退。
+      // 行尾断字拼成一个词（`LET-` / `TER` → `LETTER`）：点任意字格都取整词。
+      // 连字符不再是词首界——它已经不在 DOM 里，跨字格回退会一路退到 L。
       cases.add(<String, Object>{
-        'name': 'hyphen stops cross-glyph back-off',
+        'name': 'dehyphenated word is one token',
         'items': itemsOf(htmlOf(blockOf(<String>['A LET-', 'TER']))),
         'cases': <Map<String, Object>>[
-          <String, Object>{'char': 6, 'expect': 'TER'},
-          <String, Object>{'char': 2, 'expect': 'LET-TER'},
+          <String, Object>{'char': 6, 'expect': 'LETTER'},
+          <String, Object>{'char': 2, 'expect': 'LETTER'},
+          <String, Object>{'char': 0, 'expect': 'A'},
         ],
       });
       // BUG-4361：相邻两个 OCR 块（两个 <p class="ocr-box">）之间不回退。
@@ -291,7 +293,7 @@ void main() {
         );
         expect(
           result.stdout.toString(),
-          contains('all assertions passed (21)'),
+          contains('all assertions passed (22)'),
         );
       } finally {
         tmp.deleteSync(recursive: true);

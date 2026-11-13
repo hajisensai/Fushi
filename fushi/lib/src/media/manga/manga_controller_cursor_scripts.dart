@@ -5,7 +5,8 @@ import 'dart:convert';
 /// (`mangaWindowDocument`).
 ///
 /// The cursor is a logical position in the page's OCR blocks (page, block
-/// index in reading order, UTF-16 offset into `block.lines.join()`), kept on
+/// index in reading order, UTF-16 offset into `mangaBlockTextLayout(block).text`
+/// — the dehyphenated block text, not the raw `block.lines.join()`), kept on
 /// the Dart side. The document already renders each block as one
 /// `.ocr-box` paragraph (in payload order, inside `.manga-page[data-page]`)
 /// whose characters are `.ocr-char` spans tagged with `data-utf16-start`;
