@@ -7091,7 +7091,7 @@
   "popup_max_height": "查詞視窗最大高度",
   "popup_max_width": "查詞視窗最大寬度",
   "popup_mine_overwrite_queued": "寫入 Anki 後自動覆蓋",
-  "popup_mine_shortcut_hint": "Create card (${shortcut})",
+  "popup_mine_shortcut_hint": "製卡（${shortcut}）",
   "popup_mine_still_queued": "仍在寫入 Anki，稍後再試",
   "popup_mining_target_empty": "No profiles or decks yet. Connect Anki in settings first.",
   "popup_mining_target_switch": "Switch profile or deck",
