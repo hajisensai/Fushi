@@ -674,6 +674,11 @@ class InAppWebView {
   void SetupMonitorChangeHandlers();
   void CleanupMonitorChangeHandlers();
   void UpdateMonitorRefreshRate();
+#ifdef HAVE_WPE_PLATFORM
+  // Caller holds wpe_buffer_mutex_.
+  void DestroyCurrentEglImageLocked();
+  WPEBuffer* TakeCurrentWpeBufferLocked();
+#endif
 
  public:
 #ifdef HAVE_WPE_BACKEND_LEGACY

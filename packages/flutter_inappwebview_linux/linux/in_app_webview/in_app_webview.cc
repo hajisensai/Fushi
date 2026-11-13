@@ -576,18 +576,8 @@ InAppWebView::~InAppWebView() {
   {
     std::lock_guard<std::mutex> lock(wpe_buffer_mutex_);
     
-    // Clean up EGL image first (while display is still valid)
-    if (current_egl_image_ != nullptr && egl_display_ != nullptr) {
-      static PFNEGLDESTROYIMAGEKHRPROC eglDestroyImageKHR = nullptr;
-      if (eglDestroyImageKHR == nullptr) {
-        eglDestroyImageKHR = (PFNEGLDESTROYIMAGEKHRPROC)eglGetProcAddress("eglDestroyImageKHR");
-      }
-      if (eglDestroyImageKHR != nullptr) {
-        eglDestroyImageKHR(static_cast<EGLDisplay>(egl_display_), 
-                           static_cast<EGLImageKHR>(current_egl_image_));
-      }
-      current_egl_image_ = nullptr;
-    }
+    // Clean up EGL image first (while display is still valid).
+    DestroyCurrentEglImageLocked();
     
     // Release pending buffer back to WPE
     if (current_buffer_ != nullptr && wpe_view_ != nullptr) {
@@ -1367,6 +1357,30 @@ void InAppWebView::OnExportDmaBuf(::wpe_fdo_egl_exported_image* image) {
 #endif
 
 #ifdef HAVE_WPE_PLATFORM
+void InAppWebView::DestroyCurrentEglImageLocked() {
+  if (current_egl_image_ != nullptr && egl_display_ != nullptr) {
+    static PFNEGLDESTROYIMAGEKHRPROC eglDestroyImageKHR = nullptr;
+    if (eglDestroyImageKHR == nullptr) {
+      eglDestroyImageKHR =
+          (PFNEGLDESTROYIMAGEKHRPROC)eglGetProcAddress("eglDestroyImageKHR");
+    }
+    if (eglDestroyImageKHR != nullptr) {
+      eglDestroyImageKHR(static_cast<EGLDisplay>(egl_display_),
+                         static_cast<EGLImageKHR>(current_egl_image_));
+    }
+    current_egl_image_ = nullptr;
+  }
+}
+
+WPEBuffer* InAppWebView::TakeCurrentWpeBufferLocked() {
+  WPEBuffer* buffer_to_release = current_buffer_;
+  current_buffer_ = nullptr;
+  current_buffer_width_ = 0;
+  current_buffer_height_ = 0;
+  DestroyCurrentEglImageLocked();
+  return buffer_to_release;
+}
+
 void InAppWebView::SetUsePixelBufferTexture(bool use) {
   WPEBuffer* buffer_to_release = nullptr;
   {
@@ -1376,23 +1390,7 @@ void InAppWebView::SetUsePixelBufferTexture(bool use) {
       return;
     }
 
-    buffer_to_release = current_buffer_;
-    current_buffer_ = nullptr;
-    current_buffer_width_ = 0;
-    current_buffer_height_ = 0;
-
-    if (current_egl_image_ != nullptr && egl_display_ != nullptr) {
-      static PFNEGLDESTROYIMAGEKHRPROC eglDestroyImageKHR = nullptr;
-      if (eglDestroyImageKHR == nullptr) {
-        eglDestroyImageKHR =
-            (PFNEGLDESTROYIMAGEKHRPROC)eglGetProcAddress("eglDestroyImageKHR");
-      }
-      if (eglDestroyImageKHR != nullptr) {
-        eglDestroyImageKHR(static_cast<EGLDisplay>(egl_display_),
-                           static_cast<EGLImageKHR>(current_egl_image_));
-      }
-      current_egl_image_ = nullptr;
-    }
+    buffer_to_release = TakeCurrentWpeBufferLocked();
   }
 
   if (buffer_to_release != nullptr && wpe_view_ != nullptr) {
@@ -1418,23 +1416,7 @@ void InAppWebView::OnWpePlatformBuffersChanged(gpointer buffers_data,
     // frame. Retire the held buffer before WPE destroys buffers omitted from
     // the new pool (count == 0 means every buffer is being retired).
     if (current_buffer_ != nullptr && !current_buffer_is_configured) {
-      buffer_to_release = current_buffer_;
-      current_buffer_ = nullptr;
-      current_buffer_width_ = 0;
-      current_buffer_height_ = 0;
-
-      if (current_egl_image_ != nullptr && egl_display_ != nullptr) {
-        static PFNEGLDESTROYIMAGEKHRPROC eglDestroyImageKHR = nullptr;
-        if (eglDestroyImageKHR == nullptr) {
-          eglDestroyImageKHR =
-              (PFNEGLDESTROYIMAGEKHRPROC)eglGetProcAddress("eglDestroyImageKHR");
-        }
-        if (eglDestroyImageKHR != nullptr) {
-          eglDestroyImageKHR(static_cast<EGLDisplay>(egl_display_),
-                             static_cast<EGLImageKHR>(current_egl_image_));
-        }
-        current_egl_image_ = nullptr;
-      }
+      buffer_to_release = TakeCurrentWpeBufferLocked();
     }
   }
 
@@ -1477,18 +1459,8 @@ void InAppWebView::OnWpePlatformBufferRendered(WPEBuffer* buffer) {
     // This ensures the EGL image's backing memory stays valid until we have a new frame
     previous_buffer = current_buffer_;
     
-    // Destroy previous EGL image if we created one
-    if (current_egl_image_ != nullptr && egl_display_ != nullptr) {
-      static PFNEGLDESTROYIMAGEKHRPROC eglDestroyImageKHR = nullptr;
-      if (eglDestroyImageKHR == nullptr) {
-        eglDestroyImageKHR = (PFNEGLDESTROYIMAGEKHRPROC)eglGetProcAddress("eglDestroyImageKHR");
-      }
-      if (eglDestroyImageKHR != nullptr) {
-        eglDestroyImageKHR(static_cast<EGLDisplay>(egl_display_), 
-                           static_cast<EGLImageKHR>(current_egl_image_));
-      }
-      current_egl_image_ = nullptr;
-    }
+    // Destroy previous EGL image if we created one.
+    DestroyCurrentEglImageLocked();
     
     // Check buffer type to determine best rendering path
     bool is_dma_buf = WPE_IS_BUFFER_DMA_BUF(buffer);
