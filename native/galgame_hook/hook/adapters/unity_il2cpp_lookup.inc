@@ -26,7 +26,8 @@
 // Bounded diagnostics (one line each, never dialogue text), in the same file
 // and format as the Mono backend:
 //   unity-il2cpp: runtime GameAssembly=.. il2cpp_data=.. exports=found/required
-//                 missing=<names> header_export=.. image=<base>+<size> arch=..
+//                 missing=<names> header_export=.. gchandle=.. image=<base>+<size>
+//                 arch=..
 //   unity-il2cpp-text: classes ... hooked ...
 //   unity-il2cpp-lookup: gate=runtime-unsupported reason=...   (terminal)
 //   unity-il2cpp-lookup: gate=no-canvas-text-hooks ...          (terminal)
@@ -98,10 +99,10 @@ void TryInstallUnityIl2CppLookup() {
   const bool image = UnityIl2CppImageRange(game, &image_begin, &image_end);
   UmLookupLog(
       L"unity-il2cpp: runtime GameAssembly=%d il2cpp_data=%d exports=%u/%u "
-      L"missing=%hs header_export=%d image=%p+0x%Ix arch=%s",
+      L"missing=%hs header_export=%d gchandle=%d image=%p+0x%Ix arch=%s",
       layout.game_assembly ? 1 : 0, layout.il2cpp_data ? 1 : 0, report.found,
       report.required, report.missing[0] == 0 ? "-" : report.missing,
-      report.header_size_export ? 1 : 0,
+      report.header_size_export ? 1 : 0, report.gchandle_exports ? 1 : 0,
       reinterpret_cast<void*>(image_begin), image_end - image_begin,
 #if defined(_M_IX86)
       L"x86"
