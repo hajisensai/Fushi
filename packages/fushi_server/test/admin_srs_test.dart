@@ -17,6 +17,8 @@ import 'package:path/path.dart' as p;
 import 'package:shelf/shelf.dart' as shelf;
 import 'package:test/test.dart';
 
+import 'support/fake_rwkv.dart';
+
 const String kJa = '01928c3e-0000-7000-8000-00000000a0a0';
 const String kZh = '01928c3e-0000-7000-8000-00000000b0b0';
 
@@ -40,6 +42,8 @@ void main() {
     final ServerPaths paths = ServerPaths(config.dataDir);
     await paths.ensureLayout();
     host = HeadlessHost(
+      // RWKV 权重不联网下载（下载当场失败 = RWKV 没就绪）。
+      srsRwkvHttpClient: noNetworkHttpClient,
       config: config,
       paths: paths,
       db: db,
@@ -281,5 +285,14 @@ void main() {
     );
     expect((cleared['ankiConnect'] as Map)['apiKeySet'], isFalse);
     expect(host.config.ankiConnect.profileKeys[kJa], 'ja-key');
+  });
+
+  test('牌组建议：没提供的 profile → 404', () async {
+    final (int status, Map<String, dynamic> body) = await call(
+      'GET',
+      'srs/decks?profile=$kJa',
+    );
+    expect(status, 404);
+    expect(body['error'], 'profile_not_served');
   });
 }

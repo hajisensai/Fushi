@@ -30,7 +30,7 @@ import 'package:fushi/src/sync/remote_audiobook_revision.dart'
     show kInterconnectAudiobookRevisionsPrefKey;
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/interconnect_peer_addresses.dart'
-    show applyIssuedInterconnectToken;
+    show applyIssuedInterconnectToken, InterconnectAddressOwnerConflict;
 import 'package:fushi_engine/sync/tls/fushi_pinning_http.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/sync/interconnect_host_addresses.dart'
@@ -94,8 +94,8 @@ class FushiClientUrl {
   /// 携带出设备（与全局 token 键同待遇）。
   final String? token;
 
-  /// 这条地址属于哪台 host（host 的稳定设备 id，来自 `/api/capabilities` 的
-  /// `hostId`）。同 hostId 的多条地址是**同一台机器**的不同路径（LAN / IPv6 /
+  /// 这条地址属于哪台 host（host 的稳定设备 id，来自 `/api/ping` 与
+  /// `/api/host/addresses` 回报的 `hostId`）。同 hostId 的多条地址是**同一台机器**的不同路径（LAN / IPv6 /
   /// 组网 / 公网 / P2P），选路时组内并发、列设备时合并为一台。null = 老条目或
   /// 老 host，单独成组，行为与升级前逐字一致
   /// （docs/specs/2026-09-28-interconnect-remote-reach.md §1）。
@@ -1721,10 +1721,15 @@ class SyncRepository {
   /// 53NT7G_tSO：host 按设备只认一份 token（重新配对即作废旧的），所以新 token 同时
   /// 写到**同一台 host 的全部地址**；[hostId]（配对时 ping 回报的身份）让还没归组的
   /// 新地址先按指纹判据归组，见 [applyIssuedInterconnectToken]。
+  ///
+  /// 地址归属闸：[url] 已归另一台 host 而 [reassignOwner] 为 false 时，变换里抛
+  /// [InterconnectAddressOwnerConflict]（与 [addFushiClientUrl] 抛
+  /// [FushiFingerprintMismatchException] 同一模式），列表与全局 token 键都不写。
   Future<void> setFushiClientTokenForUrl(
     String url,
     String token, {
     String? hostId,
+    bool reassignOwner = false,
   }) async {
     await updateFushiClientUrls(
       (List<FushiClientUrl> urls) => applyIssuedInterconnectToken(
@@ -1732,6 +1737,7 @@ class SyncRepository {
         url: url,
         token: token,
         hostId: hostId,
+        reassignOwner: reassignOwner,
       ),
     );
     await setFushiClientToken(token);
@@ -2040,6 +2046,9 @@ class SyncRepository {
     // 那台设备成立。分段方式 / MOSS 后端取决于这台机器的显卡，换设备没有意义。
     'video_subtitle_ai_proofread',
     'video_subtitle_ai_consented',
+    // 画面参考（AI 校对时附上视频画面）与它的同意：发图的同意同样只对点它的那台设备成立。
+    'video_subtitle_ai_frames',
+    'video_subtitle_ai_frames_consented',
     // AI 整理库：自动整理开关、开关时刻与「会发送什么」的同意——与上两条同理只对
     // 点它的那台设备成立（只在一台设备上开就够，结果靠合集同步传播）。
     'library_organize_allowed_keys',

@@ -17,6 +17,7 @@ import 'package:flutter/gestures.dart'
         OneSequenceGestureRecognizer,
         PointerHoverEvent,
         VerticalDragGestureRecognizer;
+import 'package:flutter/rendering.dart' show SelectedContent;
 import 'package:flutter/services.dart' show HardwareKeyboard;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
@@ -26,8 +27,7 @@ import 'package:fushi_anki/fushi_anki_core.dart'
         CardSourceLink,
         ankiFillTypeAnswer,
         ankiHasTypeAnswerSlot,
-        kAnkiTypeAnswerInputId,
-        wrapAnkiCardHtmlWithLang;
+        kAnkiTypeAnswerInputId;
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/focus/webview_key_bridge.dart';
@@ -820,47 +820,6 @@ String srsCardFaceBridgeScriptFor(List<String> keys) =>
 
 String _cssColor(Color c) =>
     '#${(c.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0')}';
-
-/// 拼出整页 HTML：卡片 CSS + `<div class="card">` 包裹的正文（Anki 的卡面约定）。
-///
-/// 深色主题下同时挂 Anki 的两种夜间类名（`nightMode` / `night_mode`），卡片 CSS
-/// 里写的夜间样式照常生效。
-///
-/// [mediaUrlPrefix] 非空时把正文与 CSS 里的媒体库引用改写到卡面虚拟域，`[sound:]`
-/// 换成播放按钮（见 srs_card_media.dart）；[accent] / [onAccent] 是播放按钮的配色。
-String srsCardHtml({
-  required SrsCardFace face,
-  required bool dark,
-  required Color background,
-  required Color foreground,
-  String? mediaUrlPrefix,
-  Color? accent,
-  Color? onAccent,
-}) {
-  final String night = dark ? ' nightMode night_mode' : '';
-  final String rawBody = mediaUrlPrefix == null
-      ? face.bodyHtml
-      : srsLocalizeCardHtml(face.bodyHtml, urlPrefix: mediaUrlPrefix);
-  final String css = mediaUrlPrefix == null
-      ? face.css
-      : srsLocalizeCardCss(face.css, urlPrefix: mediaUrlPrefix);
-  final String body = wrapAnkiCardHtmlWithLang(rawBody, face.languageCode);
-  final String accentVars = accent == null
-      ? ''
-      : ':root{--fushi-srs-accent:${_cssColor(accent)};'
-            '--fushi-srs-on-accent:${_cssColor(onAccent ?? foreground)};}';
-  final String media = mediaUrlPrefix == null
-      ? ''
-      : '<style>$accentVars$kSrsCardMediaCss</style>'
-            '<script>$kSrsCardMediaScript</script>';
-  return '<!doctype html><html><head><meta charset="utf-8">'
-      '<meta name="viewport" content="width=device-width, initial-scale=1">'
-      '<style>html,body{margin:0;padding:0;background:${_cssColor(background)};'
-      'color:${_cssColor(foreground)};}'
-      'body{padding:16px;box-sizing:border-box;}</style>'
-      '$media<style>$css</style></head>'
-      '<body class="card$night"><div class="card$night">$body</div></body></html>';
-}
 
 // ---------------------------------------------------------------- 外壳 + 原地换内容
 //
@@ -1703,6 +1662,40 @@ final Provider<SrsSoundPlayer> srsSoundPlayerProvider =
           ),
     );
 
+/// 卡面发音键在没有宿主播放序列（[SrsCardFace.onPlayAudio]）时的落地，三套卡面共用：媒体库里
+/// 找 [name] 直接播，找不到就提示。[logTag] 是取媒体库失败时记日志用的来源名。
+Future<void> srsPlayCardSoundFile(
+  WidgetRef ref,
+  String name, {
+  required String logTag,
+}) async {
+  SrsMediaStore? store;
+  try {
+    store = await ref.read(srsMediaStoreProvider.future);
+  } catch (e, stack) {
+    ErrorLogService.instance.log(logTag, e, stack);
+  }
+  final File? file = store?.resolve(name);
+  if (file == null || !await file.exists()) {
+    FushiToast.show(msg: t.srs_media_missing(name: name));
+    return;
+  }
+  await ref.read(srsSoundPlayerProvider)(file.path);
+}
+
+/// 原生卡面（[SelectionArea]）的选区上报，两套原生卡面共用：复习时编辑把选中的文字交给宿主
+/// （没有序号；整页清空选区不报）。宿主没接 [SrsCardFace.onEditSelection] 时返回 null。
+ValueChanged<SelectedContent?>? srsCardSelectionReporter(SrsCardFace face) {
+  final void Function(SrsCardSelection selection)? report =
+      face.onEditSelection;
+  if (report == null) return null;
+  return (SelectedContent? content) {
+    final String text = content?.plainText ?? '';
+    if (text.trim().isEmpty) return;
+    report(SrsCardSelection(text));
+  };
+}
+
 /// 卡面媒体请求的响应：[store] 里按名字取字节；不是卡面媒体 URL 时返回 null。
 @visibleForTesting
 Future<WebResourceResponse?> srsCardMediaResponse(
@@ -2160,15 +2153,8 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
     );
   }
 
-  Future<void> _playSound(String name) async {
-    final SrsMediaStore? store = await _mediaStore();
-    final File? file = store?.resolve(name);
-    if (file == null || !await file.exists()) {
-      FushiToast.show(msg: t.srs_media_missing(name: name));
-      return;
-    }
-    await ref.read(srsSoundPlayerProvider)(file.path);
-  }
+  Future<void> _playSound(String name) =>
+      srsPlayCardSoundFile(ref, name, logTag: 'SrsWebCardFace.mediaStore');
 
   @override
   void initState() {

@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:test/test.dart';
 import 'package:fushi_asr_core/asr_core.dart'
@@ -10,8 +11,10 @@ import 'package:fushi_asr_core/asr_core.dart'
         parseAsrCueTokenTimings,
         serializeAsrCueTokens,
         serializeAsrCuesToSrt;
+import 'package:fushi_engine/ai/ai_chat_client.dart' show AiChatImage;
 import 'package:fushi_engine/asr/asr_transcript_proofreader.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/ai_text_completer.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_frame_reference.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_pipeline_cancel.dart';
 import 'package:path/path.dart' as p;
 
@@ -192,6 +195,70 @@ void main() {
   });
 
   group('AsrTranscriptProofreader.proofread', () {
+    test('画面参考：每批附上对应时刻的画面与清单，取不到的那批照常纯文字；没开时提示词不带画面', () async {
+      final List<AsrCue> cues = <AsrCue>[
+        for (int i = 0; i < _texts.length; i++) _cue(i, _texts[i]),
+      ];
+      final FakeAiCompleter plain = FakeAiCompleter(_addPeriods);
+      await AsrTranscriptProofreader(
+        completer: plain,
+        batchSize: 2,
+        contextLines: 1,
+        concurrency: 1,
+        languageTag: 'ja',
+      ).proofread(cues);
+
+      final List<(String, int)> asked = <(String, int)>[];
+      final FakeAiCompleter fake = FakeAiCompleter(_addPeriods);
+      final AsrTranscriptProofreadOutcome out = await AsrTranscriptProofreader(
+        completer: fake,
+        batchSize: 2,
+        contextLines: 1,
+        concurrency: 1,
+        languageTag: 'ja',
+        frames: SubtitleProofreadFrames(
+          videoPath: 'ep01.mkv',
+          source: (String videoPath, int atMs) async {
+            asked.add((videoPath, atMs));
+            // 第二批那张取不到。
+            return atMs == 4750 ? null : Uint8List.fromList(<int>[atMs ~/ 250]);
+          },
+        ),
+      ).proofread(cues);
+
+      // 行是 2 秒一条、各 1.5 秒：每行取中点，相邻不足 4 秒的跳过。
+      expect(asked, <(String, int)>[
+        ('ep01.mkv', 750),
+        ('ep01.mkv', 4750),
+        ('ep01.mkv', 8750),
+      ]);
+      expect(out.changedCues, 5);
+      expect(out.skippedBatches, 0);
+      expect(fake.images.map((List<AiChatImage> batch) => batch.length), <int>[
+        1,
+        0,
+        1,
+      ]);
+      expect(fake.images.first.single.bytes, <int>[3]);
+      expect(fake.images.first.single.mimeType, 'image/jpeg');
+      // 规则前缀各批逐字相同（提示缓存），并带画面规则。
+      expect(fake.prefixes.toSet().length, 1);
+      expect(fake.prefixes.first, contains(kAsrProofreadFramesHeader));
+      expect(
+        fake.bodies[0],
+        endsWith('$kAsrProofreadFramesHeader\nimage 1: 00:00.75'),
+      );
+      expect(fake.bodies[2], endsWith('image 1: 00:08.75'));
+      // 一张都没取到的批：正文与没开画面时逐字相同。
+      expect(fake.bodies[1], plain.bodies[1]);
+
+      // 没开：规则里没有画面那条，也不附图。
+      expect(plain.prefixes.first, isNot(contains(kAsrProofreadFramesHeader)));
+      expect(plain.prefixes.first, isNot(contains('6. ')));
+      expect(plain.images.every((List<AiChatImage> b) => b.isEmpty), isTrue);
+      expect(plain.bodies[0], isNot(contains(kAsrProofreadFramesHeader)));
+    });
+
     test('补标点：cue 数与时间不变、token 重建合法、提示前缀各批一致', () async {
       final List<AsrCue> cues = <AsrCue>[
         for (int i = 0; i < _texts.length; i++) _cue(i, _texts[i]),

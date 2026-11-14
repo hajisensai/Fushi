@@ -8,16 +8,17 @@
 /// 读写的对象。所以给别的配置制卡**不开第二个库**，而是在同一个句柄上为那个 uid 开一份副本
 /// （与删配置时的级联清理 `srs_profile_cleanup.dart` 同一做法）。
 ///
-/// 并发规则（两条都由本类保证）：
-/// 1. **同一个 uid 同一时刻只有一份活副本**：副本把 HLC / 序号缓存在内存里，两份副本各自分配
+/// 并发规则（由本类保证）：**同一个 uid 同一时刻只有一份活副本**：副本把 HLC / 序号缓存在内存里，两份副本各自分配
 ///    序号会撞号。App 把某个配置切成激活时（`srsStoreProvider` 经 [activate] 打开它），先把这个
 ///    uid 的扩展副本作废（[SrsDbStore.retire]：排在它已排队的写入之后），再把**旧激活副本**排空并
 ///    作废、在它最后一段独占区里打开新激活副本（交接，[_handOver]）。旧激活副本作废后，之后为它的 uid
 ///    来的扩展请求开的是新的扩展副本，读到的是旧副本写完之后的本机状态；旧副本若还活着，两份副本会
 ///    各自分配 HLC / 写入者序号，在 `sync2_ops` 里撞号。激活 / 交接过程中来的请求等它做完：同 uid 的
-///    直接用新激活副本，别的 uid（包括正被交出去的旧激活 uid）等交接完再取副本 / 进外层锁。
-/// 2. **扩展副本的写入不插进激活副本的事务**：激活副本的数据库事务跨多个 await，扩展副本的独占区
-///    套在激活副本的独占区里（[SrsExclusiveOuter]），整段排在它后面。
+///    直接用新激活副本，别的 uid（包括正被交出去的旧激活 uid）等交接完再取副本。
+///
+/// 不同 uid 的副本之间不用再排队：每笔写入是一条内核命令（一次持写锁、一个 SAVEPOINT），各写各的 uid 分区，在内核
+/// 的写锁上排。以前扩展副本的独占区套在激活副本的独占区里（外层锁），因为激活副本的写入经 Drift 事务跨多个 await
+/// 占着共用的写连接；Drift 只读之后那把锁没有要保护的东西，删了。
 library;
 
 import 'dart:async';
@@ -77,39 +78,12 @@ class SrsProfileStores {
   /// 激活 / 卸下激活副本串行进行：每一次等前一次做完。
   Future<void> _switchTail = Future<void>.value();
 
-  /// 交接激活副本期间（[_handOver]）非 null，交接做完时完成；期间来的扩展写入等它，再排进新激活副本。
-  Future<void>? _handoff;
-
   /// 扩展副本（uid → 打开中 / 已打开）。
   final Map<String, Future<SrsDbStore>> _foreign =
       <String, Future<SrsDbStore>>{};
 
   /// 扩展副本的回退日界（每次取副本时按那份配置的设置更新）。
   final Map<String, int Function()> _rollover = <String, int Function()>{};
-
-  late final SrsExclusiveOuter _outer = _ActiveStoreOuter(this);
-
-  /// 共用写连接的写锁：此刻激活副本的独占区（[_underActive]）。所有副本的写都在它里面（扩展副本经外层锁），
-  /// 持有期间连接上没有别的副本开着的 Drift 事务；直接上写连接的内核命令（采用 uid 时删旧 uid，
-  /// `SrsDbProfileLinker.writeLock`）在这里面跑。随激活副本交接而换，不会去拿已作废副本的锁。
-  SrsExclusiveOuter get writeLock => _outer;
-
-  /// 在激活副本的独占区里跑 [body]。还没有激活副本、或它已作废（不会再写这条连接）时直接跑。
-  ///
-  /// 已在激活副本独占区里（重入，例如交接时在旧激活副本最后一段独占区里打开新副本）直接跑；交接
-  /// 进行中则先等交接做完——交接排在旧激活副本已排队写入之后、并在最后作废它，此时再排进旧副本的
-  /// 锁只会在它作废后失败。
-  Future<T> _underActive<T>(Future<T> Function() body) async {
-    final SrsDbStore? current = _active;
-    if (current != null && current.holdsExclusive) return body();
-    for (Future<void>? h = _handoff; h != null; h = _handoff) {
-      await h;
-    }
-    final SrsDbStore? active = _active;
-    return active == null || !active.isUsable
-        ? body()
-        : active.runExclusive(body);
-  }
 
   /// 串行跑一次激活 / 卸下（等前一次做完）。
   Future<T> _serialSwitch<T>(Future<T> Function() body) {
@@ -128,14 +102,11 @@ class SrsProfileStores {
 
   /// 把激活副本换成 [next] 打开的那份（null = 不再有激活副本）。
   ///
-  /// 旧激活副本还能写时：[next] 作为它的 [SrsDbStore.retire] 体跑——排在它已排队的写入（以及套在它
-  /// 外层锁里的扩展副本写入）之后，新副本的打开写这条连接也不与它们交错；跑完旧副本作废，之后再用它
-  /// 的写入明确失败，不会在过期的 HLC / 序号上与这个 uid 的新副本各写各的。[next] 失败旧副本同样作废、
-  /// 不再有激活副本（下次激活重开）。交接期间来的扩展写入等交接做完（[_underActive]）。
+  /// 旧激活副本还能写时：[next] 作为它的 [SrsDbStore.retire] 体跑——排在它已排队的写入之后；跑完旧副本作废，
+  /// 之后再用它的写入明确失败，不会在过期的 HLC / 序号上与这个 uid 的新副本各写各的。[next] 失败旧副本同样作废、
+  /// 不再有激活副本（下次激活重开）。
   Future<SrsDbStore?> _handOver(Future<SrsDbStore?> Function() next) async {
     final SrsDbStore? previous = _active;
-    final Completer<void> handoff = Completer<void>();
-    _handoff = handoff.future;
     SrsDbStore? store;
     try {
       store = previous != null && previous.isUsable
@@ -149,8 +120,6 @@ class SrsProfileStores {
       return store;
     } finally {
       _active = store;
-      _handoff = null;
-      handoff.complete();
     }
   }
 
@@ -298,31 +267,16 @@ class SrsProfileStores {
   Future<SrsDbStore> _openForeign(SrsStorage storage, String profileUid) async {
     final String deviceId = await _deps.deviceId();
     final Directory support = await _deps.supportRoot();
-    // 打开本身（读本机状态、首次初始化）也在激活副本的独占区里：它同样写这条连接。
-    return _underActive(
-      () => SrsDbStore.open(
-        db: storage.db,
-        core: storage.core,
-        profileUid: profileUid,
-        deviceId: deviceId,
-        engine: _deps.engine(),
-        fallbackRolloverHour: () =>
-            (_rollover[profileUid] ?? _defaultRollover)(),
-        styles: SrsStyleStore(SrsStyleStore.directoryFor(support, profileUid)),
-        exclusiveOuter: _outer,
-      ),
+    return SrsDbStore.open(
+      db: storage.db,
+      core: storage.core,
+      profileUid: profileUid,
+      deviceId: deviceId,
+      engine: _deps.engine(),
+      fallbackRolloverHour: () => (_rollover[profileUid] ?? _defaultRollover)(),
+      styles: SrsStyleStore(SrsStyleStore.directoryFor(support, profileUid)),
     );
   }
 
   static int _defaultRollover() => 0;
-}
-
-/// 扩展副本的外层锁 = 此刻 App 激活副本的独占区（随激活配置变）。
-class _ActiveStoreOuter implements SrsExclusiveOuter {
-  _ActiveStoreOuter(this._owner);
-
-  final SrsProfileStores _owner;
-
-  @override
-  Future<T> run<T>(Future<T> Function() body) => _owner._underActive(body);
 }

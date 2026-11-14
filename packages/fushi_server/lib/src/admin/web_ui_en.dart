@@ -263,7 +263,8 @@ const Map<String, String> kWebUiEnglish = <String, String>{
   '地址（https://…/api；带 ?apikey= 会自动拆进 key 栏）':
       'Address (https://…/api; a ?apikey= part moves into the key field)',
   '优先级（小的先搜）': 'Priority (lower is searched first)',
-  '分类（逗号分隔，可空）': 'Categories (comma-separated, optional)',
+  '分类（不选 = 全部）': 'Categories (none selected = all)',
+  '其他分类 ID（逗号分隔，可空）': 'Other category IDs (comma-separated, optional)',
   '清除已存的 key': 'Clear the stored key',
   // ── 在线字幕来源 ──
   '在线字幕来源': 'Online subtitle sources',
@@ -375,6 +376,22 @@ const Map<String, String> kWebUiEnglish = <String, String>{
   '{0} 条笔记': '{0} notes',
   '同步目录里还没有任何配置文件：先让一台设备经互联同步一次复习数据。':
       'The sync folder has no profiles yet: sync review data from a device over interconnect once first.',
+  '待确认的设备': 'Devices waiting for confirmation',
+  '本机开始提供某份配置文件之后才第一次同步过来的设备，它的普通修改照常生效，删除与彻底清除先扣在本机，确认是你自己的设备后再生效。拒绝 = 继续扣着，之后仍可改为信任。':
+      'A device that first syncs after this server started serving a profile has its ordinary changes applied as usual, but its deletes and purges are held here until you confirm it is your own device. Reject = keep holding them; you can still trust it later.',
+  '{0}（Fushi {1}）': '{0} (Fushi {1})',
+  '未命名设备': 'Unnamed device',
+  '扣着 {0} 条删除、{1} 条彻底清除': 'Holding {0} deletes, {1} purges',
+  '首次出现 {0}': 'First seen {0}',
+  '待确认': 'Waiting',
+  '已拒绝': 'Rejected',
+  '信任': 'Trust',
+  '拒绝': 'Reject',
+  '没有待确认的设备': 'No devices waiting for confirmation',
+  '信任「{0}」？它扣着的 {1} 条删除与彻底清除会立即生效。':
+      'Trust "{0}"? Its {1} held deletes and purges take effect immediately.',
+  '已信任': 'Trusted',
+  '已拒绝，删除继续扣着': 'Rejected; its deletes stay held',
   '已开始提供': 'Now serving',
   '已停止提供': 'Stopped serving',
   '已设为默认': 'Set as default',
@@ -382,9 +399,9 @@ const Map<String, String> kWebUiEnglish = <String, String>{
       'Where cards go when a paired device uses "Save to paired device". A phone can choose otherwise in its own settings; if it has not, cards go to the phone\'s current profile when this server has it, otherwise to the default profile.',
   '落到': 'Save to',
   '自动（没配好 Anki 时进复习）': 'Automatic (Review when Anki is not set up)',
-  '换日时刻（0–23 点）': 'Day starts at (hour, 0–23)',
+  '换日时刻': 'Day starts at',
   '{0} 的制卡牌组（空 = 默认牌组）': 'Deck for {0} (empty = default deck)',
-  '监听地址（127.0.0.1 = 只限本机）': 'Listen address (127.0.0.1 = this machine only)',
+  '监听地址': 'Listen address',
   '共用 key（落到默认配置文件）': 'Shared key (goes to the default profile)',
   '{0} 专用 key': 'Key for {0}',
   '清除共用 key': 'Clear shared key',
@@ -416,7 +433,6 @@ const Map<String, String> kWebUiEnglish = <String, String>{
   'ffmpeg 路径（空=PATH）': 'ffmpeg path (empty = PATH)',
   'ffprobe 路径（空=PATH）': 'ffprobe path (empty = PATH)',
   'onnxruntime 动态库': 'onnxruntime library',
-  '上传配额（字节）': 'Upload quota (bytes)',
   'WebUI 端口': 'WebUI port',
   'torrent 引擎': 'Torrent engine',
   '内置引擎库路径（空=随包/系统）': 'Embedded engine library path (empty = bundled / system)',
@@ -432,6 +448,8 @@ const Map<String, String> kWebUiEnglish = <String, String>{
   'AI 推理档位': 'AI reasoning effort',
   'AI 允许明文 HTTP（本地推理服务）': 'AI: allow plain HTTP (local inference servers)',
   'AI 联网资料（维基辅助识别作品）': 'AI web knowledge (Wikipedia helps identify titles)',
+  'AI 模型能看图（字幕校对会附上视频画面）':
+      'AI model accepts images (subtitle proofreading sends video frames)',
   '扫描入库后自动 AI 整理库（把该在一起的归进合集，按量计费）':
       'Organize the library with AI after scans (groups related items into collections; billed per use)',
 
@@ -570,4 +588,11 @@ const Map<String, String> kWebUiEnglish = <String, String>{
   '全部': 'All',
   '仅错误': 'Errors only',
   '没有错误': 'No errors',
+  // ── 下拉选项 ──
+  '其他…': 'Other…',
+  '单位': 'Unit',
+  '所有网络（0.0.0.0）': 'All networks (0.0.0.0)',
+  '仅本机（127.0.0.1）': 'This machine only (127.0.0.1)',
+  '不用 AI': 'No AI',
+  '自定义': 'Custom',
 };

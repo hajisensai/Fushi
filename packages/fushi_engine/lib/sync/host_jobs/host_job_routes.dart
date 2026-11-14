@@ -47,7 +47,7 @@ Future<shelf.Response> handleHostJobRequest(
   String method,
   String reqPath,
 ) async {
-  await jobs.load();
+  await jobs.housekeep();
   final List<String> seg = reqPath
       .substring('/api/jobs'.length)
       .split('/')

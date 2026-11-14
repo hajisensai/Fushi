@@ -12,6 +12,7 @@ import 'dart:io';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 
 import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart'
@@ -26,6 +27,58 @@ import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi/src/sync/interconnect_manga_ocr_client.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 
+/// 在真 http client 前面注入故障的包装：[onSend] 返回非 null 就用它代替真实交换，
+/// 返回 null 则转发给真 client。另记录每一次 DELETE 的路径。
+class _FaultClient extends http.BaseClient {
+  _FaultClient(this.onSend);
+
+  final http.Client _inner = http.Client();
+  final Future<http.StreamedResponse>? Function(
+    http.BaseRequest request,
+    http.Client inner,
+  )
+  onSend;
+  final List<String> deletes = <String>[];
+
+  /// 第 n 次（从 1 起）`GET /api/ocr/job/<id>`（状态，不含 /result）。
+  int statusGets = 0;
+
+  static bool isStatusGet(http.BaseRequest r) =>
+      r.method == 'GET' && RegExp(r'^/api/ocr/job/[^/]+$').hasMatch(r.url.path);
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) {
+    if (request.method == 'DELETE') deletes.add(request.url.path);
+    if (isStatusGet(request)) statusGets += 1;
+    return onSend(request, _inner) ?? _inner.send(request);
+  }
+
+  /// 同一个实例经 `plainClientFactory` 交给 probe 与 run，各自用完会调 [close]：
+  /// 这里只计数，真正的底层 client 由测试的 tearDown 调 [shutdown] 关。
+  int closeCalls = 0;
+
+  @override
+  void close() => closeCalls += 1;
+
+  void shutdown() => _inner.close();
+}
+
+/// 工厂建出的明文 client：转发给自己的真 client，记下是否被关。
+class _OwnedClient extends http.BaseClient {
+  final http.Client _inner = http.Client();
+  bool closed = false;
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) =>
+      _inner.send(request);
+
+  @override
+  void close() {
+    closed = true;
+    _inner.close();
+  }
+}
+
 class _FakeOcrService implements MangaOcrService {
   _FakeOcrService({this.ready = true});
 
@@ -34,6 +87,9 @@ class _FakeOcrService implements MangaOcrService {
   bool cancelled = false;
   int ocrCalls = 0;
   Completer<void>? gate;
+
+  /// 非 null：第一页之后以此错误结束 OCR 流（host 侧任务进 error）。
+  Object? failWith;
 
   @override
   bool get isSupportedPlatform => supported;
@@ -72,6 +128,12 @@ class _FakeOcrService implements MangaOcrService {
           controller.add(
             MangaOcrVolumeEvent.page(pagesDone: 1, pagesTotal: pages.length),
           );
+        }
+        final Object? failure = failWith;
+        if (failure != null) {
+          controller.addError(failure);
+          await controller.close();
+          return;
         }
         final Completer<void>? g = gate;
         if (g != null) await g.future;
@@ -148,12 +210,17 @@ void main() {
     return server;
   }
 
-  InterconnectMangaOcrClient buildClient({String? preferredModel}) =>
-      InterconnectMangaOcrClient(
-        repo: repo,
-        pollDelay: (int attempt) => const Duration(milliseconds: 10),
-        preferredModel: () => preferredModel,
-      );
+  InterconnectMangaOcrClient buildClient({
+    String? preferredModel,
+    http.Client Function()? plainClientFactory,
+    Duration requestTimeout = const Duration(seconds: 30),
+  }) => InterconnectMangaOcrClient(
+    repo: repo,
+    plainClientFactory: plainClientFactory,
+    requestTimeout: requestTimeout,
+    pollDelay: (int attempt) => const Duration(milliseconds: 10),
+    preferredModel: () => preferredModel,
+  );
 
   Directory writeVolume() {
     final Directory dir = Directory(p.join(tmpRoot.path, 'vol'))
@@ -505,6 +572,266 @@ void main() {
     service.gate = null;
   });
 
+  // remote-job-client-lifecycle（OCR 部分）：提交 / 观测 / 取回三阶段，观测失败
+  // （传输层）≠ 任务失败；任务失败与协议错要清理 host 任务，create 在途取消也不留孤儿。
+  group('remote job lifecycle', () {
+    late _FakeOcrService service;
+    late MangaOcrHostJobManager manager;
+
+    Future<void> startManagedHost() async {
+      service = _FakeOcrService();
+      manager = MangaOcrHostJobManager(
+        service: service,
+        jobRoot: Directory(p.join(tmpRoot.path, 'jobs')),
+      );
+      await startHost(service, manager: manager);
+    }
+
+    /// host 侧清理走真 socket，给它有限的时间落地。
+    Future<void> expectHostJobsGone() async {
+      for (int i = 0; i < 150 && manager.jobCount > 0; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+      expect(manager.jobCount, 0, reason: 'host 任务应被 client DELETE');
+    }
+
+    Matcher failsWithCode(String code) => throwsA(
+      isA<MangaOcrRemoteException>().having(
+        (MangaOcrRemoteException e) => e.code,
+        'code',
+        code,
+      ),
+    );
+
+    test('protocol error while observing deletes the host job', () async {
+      await startManagedHost();
+      service.gate = Completer<void>();
+      addTearDown(() {
+        if (!(service.gate?.isCompleted ?? true)) service.gate!.complete();
+      });
+      late _FaultClient wire;
+      wire = _FaultClient((http.BaseRequest r, http.Client inner) {
+        if (_FaultClient.isStatusGet(r) && wire.statusGets == 1) {
+          return Future<http.StreamedResponse>.value(
+            http.StreamedResponse(
+              Stream<List<int>>.value(utf8.encode('<html>')),
+              200,
+            ),
+          );
+        }
+        return null;
+      });
+      addTearDown(wire.shutdown);
+      final InterconnectMangaOcrClient client = buildClient(
+        plainClientFactory: () => wire,
+      );
+      final MangaOcrRemoteTarget target = (await client.probe())!;
+
+      await expectLater(
+        client
+            .run(target: target, imageDirPath: writeVolume().path)
+            .drain<void>(),
+        failsWithCode('http'),
+      );
+      await expectHostJobsGone();
+      expect(service.cancelled, isTrue);
+    });
+
+    test('host-side OCR failure also deletes the host job', () async {
+      await startManagedHost();
+      service.failWith = StateError('ocr exploded');
+      final InterconnectMangaOcrClient client = buildClient();
+      final MangaOcrRemoteTarget target = (await client.probe())!;
+
+      await expectLater(
+        client
+            .run(target: target, imageDirPath: writeVolume().path)
+            .drain<void>(),
+        failsWithCode('remote_failed'),
+      );
+      await expectHostJobsGone();
+    });
+
+    test('cancelling while create is in flight leaves no orphan', () async {
+      await startManagedHost();
+      final Completer<void> createReachedHost = Completer<void>();
+      final Completer<void> releaseCreate = Completer<void>();
+      final _FaultClient wire = _FaultClient((
+        http.BaseRequest r,
+        http.Client inner,
+      ) {
+        if (r.method == 'POST' && r.url.path == '/api/ocr/job') {
+          return () async {
+            final http.StreamedResponse real = await inner.send(r);
+            final List<int> body = await real.stream.toBytes();
+            createReachedHost.complete();
+            await releaseCreate.future;
+            return http.StreamedResponse(
+              Stream<List<int>>.value(body),
+              real.statusCode,
+              headers: real.headers,
+            );
+          }();
+        }
+        return null;
+      });
+      addTearDown(wire.shutdown);
+      final InterconnectMangaOcrClient client = buildClient(
+        plainClientFactory: () => wire,
+      );
+      final MangaOcrRemoteTarget target = (await client.probe())!;
+
+      final StreamSubscription<MangaOcrRemoteEvent> sub = client
+          .run(target: target, imageDirPath: writeVolume().path)
+          .listen((_) {}, onError: (_) {});
+      await createReachedHost.future.timeout(const Duration(seconds: 10));
+      expect(manager.jobCount, 1);
+      await sub.cancel();
+      releaseCreate.complete();
+      await expectHostJobsGone();
+    });
+
+    test('transient socket failures while observing do not abort', () async {
+      await startManagedHost();
+      late _FaultClient wire;
+      wire = _FaultClient((http.BaseRequest r, http.Client inner) {
+        if (_FaultClient.isStatusGet(r) && wire.statusGets <= 2) {
+          return Future<http.StreamedResponse>.error(
+            const SocketException('link dropped'),
+          );
+        }
+        return null;
+      });
+      addTearDown(wire.shutdown);
+      final InterconnectMangaOcrClient client = buildClient(
+        plainClientFactory: () => wire,
+      );
+      final MangaOcrRemoteTarget target = (await client.probe())!;
+
+      final List<MangaOcrRemoteEvent> events = <MangaOcrRemoteEvent>[];
+      await client
+          .run(target: target, imageDirPath: writeVolume().path)
+          .forEach(events.add);
+      expect(events.last.finished, isTrue);
+      await expectHostJobsGone();
+    });
+
+    test('a stalled response body is bounded by requestTimeout', () async {
+      await startManagedHost();
+      final StreamController<List<int>> stalled = StreamController<List<int>>();
+      addTearDown(stalled.close);
+      late _FaultClient wire;
+      wire = _FaultClient((http.BaseRequest r, http.Client inner) {
+        if (_FaultClient.isStatusGet(r) && wire.statusGets == 1) {
+          // 只回响应头，响应体永不结束。
+          return Future<http.StreamedResponse>.value(
+            http.StreamedResponse(stalled.stream, 200),
+          );
+        }
+        return null;
+      });
+      addTearDown(wire.shutdown);
+      final InterconnectMangaOcrClient client = buildClient(
+        plainClientFactory: () => wire,
+        requestTimeout: const Duration(milliseconds: 500),
+      );
+      final MangaOcrRemoteTarget target = (await client.probe())!;
+
+      final List<MangaOcrRemoteEvent> events = <MangaOcrRemoteEvent>[];
+      await client
+          .run(target: target, imageDirPath: writeVolume().path)
+          .forEach(events.add)
+          .timeout(const Duration(seconds: 10));
+      expect(events.last.finished, isTrue);
+    });
+  });
+
+  // BUG-4403（remote-tasks 步骤 13）：OCR client 的传输走共享 host 通道——每次
+  // probe / run 各一条通道，工厂建出的明文 client 归那一次、用完必关。
+  group('shared host channel lifecycle', () {
+    Future<void> eventually(bool Function() condition, String reason) async {
+      for (int i = 0; i < 500 && !condition(); i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      expect(condition(), isTrue, reason: reason);
+    }
+
+    test('probe + full run close every client the factory built', () async {
+      await startHost(_FakeOcrService());
+      final List<_OwnedClient> made = <_OwnedClient>[];
+      final InterconnectMangaOcrClient client = buildClient(
+        plainClientFactory: () {
+          final _OwnedClient c = _OwnedClient();
+          made.add(c);
+          return c;
+        },
+      );
+
+      final MangaOcrRemoteTarget target = (await client.probe())!;
+      expect(made, hasLength(1));
+      expect(made.single.closed, isTrue, reason: 'probe 用完就关');
+
+      final List<MangaOcrRemoteEvent> events = await client
+          .run(target: target, imageDirPath: writeVolume().path)
+          .toList()
+          .timeout(const Duration(seconds: 10));
+      expect(events.last.finished, isTrue);
+      expect(made, hasLength(2));
+      await eventually(
+        () => made.every((_OwnedClient c) => c.closed),
+        '一次 run 建出的明文 client 必须在 run 收尾时关掉',
+      );
+    });
+
+    test(
+      'cancelling mid-run deletes the host job, then closes the client',
+      () async {
+        final _FakeOcrService service = _FakeOcrService()
+          ..gate = Completer<void>();
+        addTearDown(() {
+          if (!(service.gate?.isCompleted ?? true)) service.gate!.complete();
+        });
+        final MangaOcrHostJobManager manager = MangaOcrHostJobManager(
+          service: service,
+          jobRoot: Directory(p.join(tmpRoot.path, 'jobs')),
+        );
+        await startHost(service, manager: manager);
+        final List<_OwnedClient> made = <_OwnedClient>[];
+        final InterconnectMangaOcrClient client = buildClient(
+          plainClientFactory: () {
+            final _OwnedClient c = _OwnedClient();
+            made.add(c);
+            return c;
+          },
+        );
+        final MangaOcrRemoteTarget target = (await client.probe())!;
+
+        final Completer<void> sawRemote = Completer<void>();
+        final StreamSubscription<MangaOcrRemoteEvent> sub = client
+            .run(target: target, imageDirPath: writeVolume().path)
+            .listen((MangaOcrRemoteEvent event) {
+              if (!event.uploading &&
+                  !event.finished &&
+                  !sawRemote.isCompleted) {
+                sawRemote.complete();
+              }
+            }, onError: (Object _) {});
+        await sawRemote.future.timeout(const Duration(seconds: 10));
+        await sub.cancel();
+
+        // 关 client 不能掐掉在途的清理：host 任务照样被 DELETE 出表。
+        await eventually(
+          () => manager.jobCount == 0,
+          'host 任务应被 client DELETE',
+        );
+        await eventually(
+          () => made.length == 2 && made.every((_OwnedClient c) => c.closed),
+          '取消后的 run 也必须关掉它建出的明文 client',
+        );
+      },
+    );
+  });
+
   test('poll delay backs off monotonically and caps at 5s', () {
     Duration previous = Duration.zero;
     for (int attempt = 0; attempt < 30; attempt++) {
@@ -515,5 +842,18 @@ void main() {
     }
     expect(mangaOcrPollDelay(0), const Duration(milliseconds: 500));
     expect(mangaOcrPollDelay(29), const Duration(milliseconds: 5000));
+  });
+
+  test('poll delay never throws for very large attempts', () {
+    const List<int> expectedMs = <int>[500, 750, 1125, 1688, 2531, 3797, 5000];
+    for (int attempt = 0; attempt < expectedMs.length; attempt++) {
+      expect(
+        mangaOcrPollDelay(attempt),
+        Duration(milliseconds: expectedMs[attempt]),
+      );
+    }
+    for (final int attempt in <int>[1736, 5000, 1 << 40]) {
+      expect(mangaOcrPollDelay(attempt), const Duration(milliseconds: 5000));
+    }
   });
 }

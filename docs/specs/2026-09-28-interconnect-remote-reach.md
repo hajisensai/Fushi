@@ -39,11 +39,14 @@
 
 现状：同步 backend、POST 传输、漫画 OCR、任务、订阅、下载 6 处各写一个串行循环，死地址逐个吃超时。学到 LAN 地址后在外网会更糟——所以 §1 与 §2 必须同批落地。
 
-改为一个共享函数 `rankInterconnectCandidates(candidates, fallbackToken)`：
-- 对全部候选**同时**发起可达性探测（https+指纹 → 钉扎连接；http → 普通连接；p2p → 先确保隧道再探测），2s 超时。
-- **按列表顺序依次 await**：第一个成功者即返回，优先级语义与今天完全一致，总延迟 ≤ 单个超时（今天是 N×超时）。
-- 返回重排后的列表（可达者在前、其余保持原序），各消费方循环不改结构，只把数据源换成它。
-- 鉴权失败语义保持 BUG-1550：记下、继续下一台。
+实际算法（`interconnect_peer_addresses.dart` 的 `rankInterconnectCandidates(candidates, {probe, grace, now})` / `rankInterconnectCandidatesDetailed`；签名里**没有** fallbackToken，凭据由消费方按 `interconnectTokenFor` 逐行取）：
+- **按 hostId 分组**，只在**同一台 host** 的地址之间竞速（跨 host 抢先会把用户换到另一个媒体库）；组与组之间保持首次出现的顺序。
+- **组内竞速**：直连地址（LAN / IPv6 / 组网 / 公网）同时探测 `/api/ping`（https+指纹走钉扎连接），2s 超时；按列表优先级裁决——排前面的成功立即胜出，排后面的先成功时最多再给前面的 **300 ms grace**。**直连全部失败才建 P2P 隧道**再探测（§5）。
+- **30 秒缓存**：每台 host 记胜出地址（持久 URL，P2P 记 `p2p://` 不记本次转发口）**与本轮核对通过的明文地址集合**；缓存窗口内不再探测。
+- **明文地址当场核对 hostId**：带 hostId 的组里只要有明文成员（含单地址组）就必须探测，ping 回报的 hostId 不等于组的 hostId（或没机会核对）的明文地址被扣下、不拿凭据；https+指纹与 `p2p://` 自带密码学身份，不需要核对。选路结果带出被扣下的地址数，候选全被扣下时报「不可达」（而非「未配对」）。hostId 是公开值，明文下只挡得住「另一个网络里别人的 host」这类误撞，挡不住主动冒充。
+- **没有 hostId 的老条目不探测**，原样返回，语义与升级前一致。
+- 消费方：跨 host 的 JSON POST fallback（查词、制卡）用 `InterconnectPostTransport.post`；「到某一台 host」的请求一律走 `InterconnectHostChannel`。两者经同一个 `interconnectRankedCandidates(repo, {onlyCandidate, member, probe})` 取候选（启用 → 成员筛选 → 组内选路），不再各写一份筛选。
+- 鉴权失败语义保持 BUG-1550：401 记下、换下一条地址 / 下一台。
 
 ## 3. IPv6 双栈
 
@@ -75,7 +78,7 @@ fushi://pair?v=1&h=<hostId>&n=<展示名>&fp=<证书指纹>&k=<ticketId>.<secret
   - 客户端：`connect(nodeId)` → 本机 `127.0.0.1:<随机端口>` 监听，每条本地 TCP → 一条双向流。
 - **信任区（安全关键）**：隧道流量在服务端看来来自 127.0.0.1，会被当成 LAN 免 PIN。故服务端为隧道单独起一个 loopback 监听口，同一个 handler，请求 context 标 `fushi.zone=p2p`；配对判据对 p2p 区一律视为非 LAN（强制 PIN / ticket）。原主监听口不受影响。
 - 设备身份：iroh secret key 存设备本地偏好（加入 `deviceLocalPrefKeys`，绝不随备份外带，否则两台设备同一 NodeId）。
-- 地址集里以 `p2p://<nodeId>` 出现，rank 最低（直连全失败才走）。选择器遇到 `p2p://` 先确保隧道、再把该候选的 url 改写为本地转发地址后探测；改写只存在于内存，不落库。
+- 地址集里以 `p2p://<nodeId>` 出现，rank 最低：**同组直连地址全部失败才建 P2P 隧道**（避免每次选路都去连一次中继）。选择器遇到 `p2p://` 先确保隧道、再把该候选的 url 改写为本地转发地址后探测；改写只存在于内存，不落库。「转发口 → `p2p://`」的反查映射由 engine 随转发口持有，撤口 / 关端点时一并回收。
 - 中继：默认 iroh 公共中继（限速，仅适合同步/查词/看书）；设置里可填**自建 iroh-relay** 地址（§6）。
 - 已知坑：桌面开 Clash TUN 模式时 UDP 源端口被改写 → 100% 走中继。检测到只走中继时在 UI 提示。
 - 平台：Windows / Android 本机可编；macOS / iOS / Linux 走 CI。库缺失 → 该能力判不可用，其余互联照旧。
@@ -127,6 +130,15 @@ fushi://pair?v=1&h=<hostId>&n=<展示名>&fp=<证书指纹>&k=<ticketId>.<secret
 - **CI / 发布接入 Rust 构建**：Android 三 ABI、Windows DLL、macOS dylib（进 `Contents/Frameworks`；当时是 universal，2026-10 起 macOS 版只出 arm64）、iOS 静态库（`-force_load`，出包查符号防 dead-strip）、Linux 桌面与无头服务端 `.so`；构建失败即 job 失败（与内置 libtorrent 同口径），出包后核对库确实进包，真隧道测试额外核日志无 skip 防缺库伪绿。iOS 出口合规维持 `ITSAppUsesNonExemptEncryption=false`：iroh 走标准 TLS 1.3（rustls），与互联既有的自签 TLS 同属标准协议加密。
 - **无头服务端 WebUI**：「远程访问」卡片管理公网地址 / P2P 开关 / 自建中继，admin API 同名字段，改完即生效（`HeadlessHost.applyConfig`，配置不再是启动快照）；P2P 起停与换中继串行。
 - **持续走中继提示**：设置页 `p2p://` 地址行显示「P2P 直连 / 经中继 · RTT」；连上后持续 20 秒仍只有中继路径（iroh 先走中继再升级，刚连上不误报）时，说明任一端开着 Clash TUN / 全局 VPN 等改写 UDP 端口的工具会让打洞失败及处理办法。
+
+client 选路修正（2026-11-10，均已落地并有测试）：
+- **URL 唯一与地址归属闸**：地址列表里 URL 仍是行主键（不允许同一 URL 两行）；新增「这一行此刻属于哪台 host」的闸——某 URL 已归另一台 host 时，任何写凭据的路径都不得静默写入，交互路径弹「作为新设备配对」确认（确认后该行脱离旧组改归新 host，旧组其余行不动），ctl / 链接配对等非交互路径拒绝（`address_owner_conflict`）。明文手输行不再因 URL 出现在公布集里被学习合并收编。TOFU 与 MITM 守卫仍按 URL 判。
+- **明文地址拿凭据前当场核对 hostId**（见 §2），单地址组也探测。
+- **转发口映射与转发口同生命周期**（见 §5）；学习器按持久 URL 认 P2P 锚点，存活的隧道（含明文隧道，隧道按 NodeId 认证）可以用来学地址集。
+- `p2p://` 解析时按 iroh 口径校验 NodeId（64 hex 或 52 base32）；路径徽章接住 FFI 异常继续轮询。
+- **network_change**：新增 `fp2p_network_change`（投到端点 runtime 异步执行，Dart 可选查找），Android 默认网络回调 / iOS NWPathMonitor 与回到前台转成通知；桌面与无头服务端由 iroh 自检。
+- **共享 host 通道** `InterconnectHostChannel`：到某一台 host 的请求统一负责成员筛选（可带会话绑定）、选路、per-peer token、钉扎闸、建连到读完响应体的整段超时、client 生命周期（close 关掉自建 client、在途请求以 cancelled 收尾）与错误分型（notPaired / unreachable / authRejected / certificateMismatch / cancelled + `mayHaveDelivered`）。非幂等请求只发一次、不换地址重发；只有真正的指纹不符才算 certificateMismatch。代下载、订阅、AI 助手、视频遥控 / 远程复习（`InterconnectHostClient`，会话绑定 token 与指纹，重新配对即失效、绝不换库）已迁上；能力探测返回带失败原因的 `InterconnectCapabilityOutcome`。
+- 局域网发现以 `host:port` 端点为键，mDNS 回退缓存只收本服务记录。
 
 仍需外部条件：
 1. ~~macOS / iOS 构建链路以 CI 首跑为准~~ → **已由 PR #1734 的 CI 验证**：iOS 静态库编译、`-force_load` 链进 Runner 且 `fp2p_*` 符号在（未被 dead-strip），macOS universal dylib 进 `Contents/Frameworks` 并过冒烟；Linux / Windows 用新编的库跑了真隧道 FFI 测试，Android 三 ABI 交叉编译通过。首跑暴露并已修的两处：rustc 的 native-static-libs 行在 `CARGO_TERM_COLOR=always` 下带 ANSI 转义（链接报 `Library 'm…' not found`，脚本改 `--color never` 并校验 token）；universal dylib 的 `otool -D` 按架构分段输出（核对改为逐段）。iOS 真机运行时（端点能否在 iOS 后台 / 蜂窝下保持）未测。

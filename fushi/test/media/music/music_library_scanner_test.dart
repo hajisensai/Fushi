@@ -5,6 +5,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/music/music_format_badge.dart';
 import 'package:fushi/src/media/music/music_library_data.dart';
 import 'package:fushi/src/media/music/music_library_scanner.dart';
+import 'package:fushi/src/models/preference_keys.dart';
+import 'package:fushi/src/sync/pref_redaction_policy.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_music/fushi_music.dart';
 
@@ -16,6 +18,10 @@ MusicScannedTrack _track(
   String? cover,
   bool embedded = false,
   int? start,
+  List<MusicScanCredit> credits = const <MusicScanCredit>[
+    MusicScanCredit(role: 'artist', name: 'X', artistUid: 'ax'),
+    MusicScanCredit(role: 'album_artist', name: 'X', artistUid: 'ax'),
+  ],
 }) => MusicScannedTrack(
   path: path,
   trackUid: uid,
@@ -55,10 +61,7 @@ MusicScannedTrack _track(
   hasEmbeddedCover: embedded,
   folderCoverPath: cover,
   cueSheetPath: null,
-  credits: const <MusicScanCredit>[
-    MusicScanCredit(role: 'artist', name: 'X', artistUid: 'ax'),
-    MusicScanCredit(role: 'album_artist', name: 'X', artistUid: 'ax'),
-  ],
+  credits: credits,
 );
 
 /// 按顺序把预设批次喂给扫描器，并记下扫描器传来的已知文件清单。
@@ -120,6 +123,75 @@ void main() {
       now: 5,
     );
     expect(none.albums.single.coverPath.present, isFalse);
+  });
+
+  test('BUG-4493 存量：解析修订号变了就不传已知文件、整源重新解析，'
+      '已入库的合写署名被重写成一人一位艺人；修订号没变照常增量', () async {
+    const List<MusicScanCredit> combined = <MusicScanCredit>[
+      MusicScanCredit(role: 'artist', name: '藤澤慶昌&加藤達也', artistUid: 'combo'),
+    ];
+    const List<MusicScanCredit> split = <MusicScanCredit>[
+      MusicScanCredit(role: 'artist', name: '藤澤慶昌', artistUid: 'fuji'),
+      MusicScanCredit(role: 'artist', name: '加藤達也', artistUid: 'kato'),
+    ];
+    Future<_ScriptedScanner> scan(
+      int revision,
+      List<MusicScanRecord> records,
+    ) async {
+      final _ScriptedScanner s = _ScriptedScanner(<List<MusicScanRecord>>[
+        records,
+      ]);
+      await MusicLibraryScanner(
+        db,
+        scanner: s.call,
+        parserRevision: () => revision,
+      ).scanSource(sourceId: 3, rootPath: '/m');
+      return s;
+    }
+
+    Future<Set<String>> artistNames() async =>
+        (await db.listMusicArtists()).map((MusicArtistRow a) => a.name).toSet();
+    const String key = '${kMusicScanParserRevisionPrefKeyPrefix}3';
+
+    // 旧解析器（修订号 0）入的库：合写串整个是一位艺人。
+    final _ScriptedScanner old = await scan(0, <MusicScanRecord>[
+      _track('a1', credits: combined),
+    ]);
+    expect(old.lastKnown, isEmpty);
+    expect(await artistNames(), <String>{'藤澤慶昌&加藤達也'});
+    expect(await db.getPref(key), '0');
+
+    // 修订号没变：增量，文件没动就只报 unchanged，署名原样。
+    final _ScriptedScanner same = await scan(0, <MusicScanRecord>[
+      const MusicScanUnchanged('/m/a.flac'),
+    ]);
+    expect(same.lastKnown?.keys.toSet(), <String>{'/m/a.flac'});
+    expect(await artistNames(), <String>{'藤澤慶昌&加藤達也'});
+
+    // 升级到新解析器：文件 mtime / size 没变也不传已知清单，重新解析后 credits 重写。
+    final _ScriptedScanner bumped = await scan(1, <MusicScanRecord>[
+      _track('a1', credits: split),
+    ]);
+    expect(bumped.lastKnown, isEmpty);
+    expect(await artistNames(), <String>{'藤澤慶昌', '加藤達也'});
+    expect(await db.getPref(key), '1');
+    expect((await db.listMusicTracks()).single.trackUid, 'a1');
+
+    // 记下新修订号之后回到增量。
+    final _ScriptedScanner after = await scan(1, <MusicScanRecord>[
+      const MusicScanUnchanged('/m/a.flac'),
+    ]);
+    expect(after.lastKnown?.keys.toSet(), <String>{'/m/a.flac'});
+    expect(await artistNames(), <String>{'藤澤慶昌', '加藤達也'});
+  });
+
+  test('解析修订号偏好是设备本地状态：不进备份 / Profile 快照 / 设置同步', () {
+    expect(
+      PrefRedactionPolicy.isDeviceLocalOrCredential(
+        '${kMusicScanParserRevisionPrefKeyPrefix}3',
+      ),
+      isTrue,
+    );
   });
 
   test('重扫：没变的文件经 unchanged 保留（含 CUE 多首），消失的软删', () async {

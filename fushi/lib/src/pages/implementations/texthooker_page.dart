@@ -1568,7 +1568,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     final DateTime? sessionStartedAt = state.sessionStartedAt;
     if (!shouldPromptGalCaptureSetup(
       state: state,
-      hasEngineSource: _session.hasEngineSource,
+      requiresTextThread: _session.requiresTextThreadSelection,
       selectedTextThreadKey: _session.selectedTextThreadKey,
       textThreadCount: _session.textThreads.length,
       sessionAlreadyPrompted: _captureSetupShownForSession == sessionStartedAt,
@@ -1586,7 +1586,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       if (latest.sessionStartedAt != sessionStartedAt ||
           !shouldPromptGalCaptureSetup(
             state: latest,
-            hasEngineSource: _session.hasEngineSource,
+            requiresTextThread: _session.requiresTextThreadSelection,
             selectedTextThreadKey: _session.selectedTextThreadKey,
             textThreadCount: _session.textThreads.length,
             sessionAlreadyPrompted: false,
@@ -1658,6 +1658,11 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       _activeSentence = sentence;
     });
   }
+
+  // 「＋」按钮的快捷键提示跟随下面 [_handlePopupMineHardwareKey] 实际派发的动作。
+  @override
+  ShortcutAction? get dictionaryPopupMineShortcutAction =>
+      ShortcutAction.popupMineEntry;
 
   /// App 内查词 WebView 不在 JS 侧处理制卡快捷键，避免同一次按键同时被
   /// WebView 与 Flutter 消费后制出两张卡。因此 texthooker 必须像视频页一样，
@@ -2067,7 +2072,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     final GalHookSessionState state = _session.state;
     final GalWorkbenchReadiness readiness = galWorkbenchReadiness(
       state: state,
-      hasEngineSource: _session.hasEngineSource,
+      requiresTextThread: _session.requiresTextThreadSelection,
       selectedTextThreadKey: selectedTextThreadKey,
     );
     final TexthookerLineEntry? selectedLine = _selectedLine(lines);
