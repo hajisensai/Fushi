@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-12T23:11:59Z",
+ "generatedAt": "2026-11-14T14:16:11Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "6867ab80d73be4442de068c9c926837210850d00",
-  "seq": 26793
+  "sha": "e88fbfc053abda2c089f928bed83cae8b3802734",
+  "seq": 26805
  },
  "builds": [
   {
@@ -13,7 +13,7 @@
    "sha": "cb7c567d60589c1db492a461cada1b2b51283a5d",
    "unknown": false,
    "publishedAt": "2026-11-12T23:11:46Z",
-   "testflight": false,
+   "testflight": true,
    "baseSeq": 26471,
    "prs": [
     3325,
@@ -162,9 +162,12 @@
   }
  ],
  "pending": {
-  "headSha": "6867ab80d73be4442de068c9c926837210850d00",
-  "headSeq": 26793,
-  "prs": [],
+  "headSha": "e88fbfc053abda2c089f928bed83cae8b3802734",
+  "headSeq": 26805,
+  "prs": [
+   3286,
+   3340
+  ],
   "direct": [
    {
     "sha": "6867ab80d73be4442de068c9c926837210850d00",
@@ -174,16 +177,20 @@
   "truncated": false,
   "platforms": {
    "android": {
-    "state": "none"
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43603825644"
    },
    "windows": {
-    "state": "none"
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43603825667"
    },
    "macos": {
-    "state": "none"
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43603825667"
    },
    "ios": {
-    "state": "none"
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43603825667"
    }
   }
  },
@@ -285,6 +292,15 @@
    "mergedAt": "2026-11-12T18:41:19Z",
    "additions": 756,
    "deletions": 38,
+   "labels": []
+  },
+  "3286": {
+   "number": 3286,
+   "title": "test(srs): 冻结复习统计聚合结果的对拍向量（统计聚合搬进内核 1/2）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-14T14:14:27Z",
+   "additions": 359,
+   "deletions": 0,
    "labels": []
   },
   "3294": {
@@ -518,6 +534,15 @@
    "author": "hajisensai",
    "mergedAt": "2026-11-12T18:37:02Z",
    "additions": 373,
+   "deletions": 0,
+   "labels": []
+  },
+  "3340": {
+   "number": 3340,
+   "title": "docs(srs): 存储与同步换代（协议 4）设计稿",
+   "author": "W1ght",
+   "mergedAt": "2026-11-14T14:13:31Z",
+   "additions": 1468,
    "deletions": 0,
    "labels": []
   },
