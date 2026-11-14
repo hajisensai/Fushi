@@ -1,12 +1,52 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-14T22:34:12Z",
+ "generatedAt": "2026-11-14T23:04:58Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "2dd79f45d107940ee7262294ce834417728e2e76",
-  "seq": 27079
+  "sha": "819b3132402ebe0295a843a420a12f452cfd743e",
+  "seq": 27112
  },
  "builds": [
+  {
+   "seq": 27021,
+   "version": "3.3.0",
+   "sha": "e2066cb5e14b68e8602cb1036c4dc89a6cbe0aa1",
+   "unknown": false,
+   "publishedAt": "2026-11-14T23:04:48Z",
+   "testflight": false,
+   "baseSeq": 26884,
+   "prs": [
+    3299,
+    3284,
+    3418,
+    3420,
+    3301
+   ],
+   "direct": [
+    {
+     "sha": "dc70a7d6ca8ea009326a74a0f47d6a7a57216364",
+     "subject": "chore(bugs): settle BUG number collisions on 03bcc3a1a"
+    }
+   ],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "ok"
+    },
+    "windows": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43646046566"
+    },
+    "macos": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43646046566"
+    },
+    "ios": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43646046566"
+    }
+   }
+  },
   {
    "seq": 26884,
    "version": "3.3.0",
@@ -135,43 +175,15 @@
      "state": "ok"
     }
    }
-  },
-  {
-   "seq": 26834,
-   "version": "3.3.0",
-   "sha": "017cdcf5de029db052c8846344f30867e3de005f",
-   "unknown": false,
-   "publishedAt": "2026-11-14T16:22:51Z",
-   "testflight": false,
-   "baseSeq": 26805,
-   "prs": [
-    3383
-   ],
-   "direct": [],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "ok"
-    },
-    "windows": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43605197415"
-    },
-    "macos": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43605197415"
-    },
-    "ios": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43605197415"
-    }
-   }
   }
  ],
  "pending": {
-  "headSha": "2dd79f45d107940ee7262294ce834417728e2e76",
-  "headSeq": 27079,
+  "headSha": "819b3132402ebe0295a843a420a12f452cfd743e",
+  "headSeq": 27112,
   "prs": [
+   3368,
+   3343,
+   3402,
    3426,
    3419,
    3417,
@@ -184,36 +196,26 @@
    3334,
    3415,
    3412,
-   3332,
-   3299,
-   3284,
-   3418,
-   3420,
-   3301
+   3332
   ],
-  "direct": [
-   {
-    "sha": "dc70a7d6ca8ea009326a74a0f47d6a7a57216364",
-    "subject": "chore(bugs): settle BUG number collisions on 03bcc3a1a"
-   }
-  ],
+  "direct": [],
   "truncated": false,
   "platforms": {
    "android": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43648633567"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43649783893"
    },
    "windows": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43648633584"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43650822169"
    },
    "macos": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43648633584"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43650822169"
    },
    "ios": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43648633584"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43650822169"
    }
   }
  },
@@ -281,6 +283,15 @@
    "deletions": 1,
    "labels": []
   },
+  "3343": {
+   "number": 3343,
+   "title": "galhook(kirikiri)：KAG 消息流水线的引擎精确文本道 ENGINE:KIRIKIRI:kag_message",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-14T22:45:50Z",
+   "additions": 2889,
+   "deletions": 77,
+   "labels": []
+  },
   "3355": {
    "number": 3355,
    "title": "feat(music): 在线插件曲目下载成本地曲目（含歌词 sidecar）",
@@ -288,6 +299,15 @@
    "mergedAt": "2026-11-14T18:06:38Z",
    "additions": 1828,
    "deletions": 17,
+   "labels": []
+  },
+  "3368": {
+   "number": 3368,
+   "title": "galhook(kirikiri)：查词 / KAG 文本道 bootstrap 分阶段诊断 + addHook 逐名挂接（BUG-4388）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-14T22:58:15Z",
+   "additions": 1010,
+   "deletions": 27,
    "labels": []
   },
   "3369": {
@@ -299,15 +319,6 @@
    "deletions": 161,
    "labels": []
   },
-  "3383": {
-   "number": 3383,
-   "title": "feat(srs): 协议 4 新存储的语义层与全场景对拍（G6c-1，叠在 #3379 上，不接线）",
-   "author": "W1ght",
-   "mergedAt": "2026-11-14T14:30:20Z",
-   "additions": 9251,
-   "deletions": 327,
-   "labels": []
-  },
   "3398": {
    "number": 3398,
    "title": "fix(popup): mine/audio shortcuts follow the focused entry; + shows the mine shortcut (BUG-4479)",
@@ -315,6 +326,17 @@
    "mergedAt": "2026-11-14T18:08:12Z",
    "additions": 604,
    "deletions": 20,
+   "labels": [
+    "merge-approved"
+   ]
+  },
+  "3402": {
+   "number": 3402,
+   "title": "fix(linux): stabilize WPE rendering and input",
+   "author": "gab3-dev",
+   "mergedAt": "2026-11-14T22:36:52Z",
+   "additions": 493,
+   "deletions": 113,
    "labels": [
     "merge-approved"
    ]
