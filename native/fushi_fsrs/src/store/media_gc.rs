@@ -4,7 +4,7 @@
 //! 文件，按过期的结论删掉它就无从找回（HBK-AUDIT-014）。以前靠 Dart 的独占区把「Drift 读 + Dart 删文件 + 写本机状态
 //! 行」包起来；现在整段在内核的写锁里、一个 SAVEPOINT 里做（[collect]），文件也在这里删。
 //!
-//! - 待回收集合是本机状态行里内核持有的键 [KEY]（store/local_state.rs `KERNEL_HELD_KEYS`）：排序的字符串数组，空集合
+//! - 待回收集合是本机状态行里的键 [KEY]（整行只有内核写，store/local_state.rs；这个键只有这里写）：排序的字符串数组，空集合
 //!   时没有这个键（与以前 Dart 写下的形态相同）。持久化是为了被跳过（宽限期内）、被叫停或中途崩溃的名字下次接着
 //!   处理——笔记已清、候选只在那一轮内存里的话，文件就永远没人回收了。
 //! - 存活引用（[live_refs]）= 存活笔记与删除未满保留期的笔记的 `media_refs`（笔记缓存，与缓存行同一次刷新算出）∪
@@ -66,7 +66,7 @@ pub(crate) fn pending(c: &Connection, profile: &str) -> Result<BTreeSet<String>,
         .collect())
 }
 
-/// 写下待回收集合（只动 [KEY] 这一个键）。还没有本机状态行且集合非空时先建行（合并协议给内核持有的键补初值）。
+/// 写下待回收集合（只动 [KEY] 这一个键）。还没有本机状态行且集合非空时先建行（local_state.rs `ensure_row`）。
 fn save(c: &Connection, profile: &str, names: &BTreeSet<String>) -> Result<(), String> {
     if names.is_empty() {
         c.prepare_cached(
@@ -78,13 +78,7 @@ fn save(c: &Connection, profile: &str, names: &BTreeSet<String>) -> Result<(), S
         .map_err(sql)?;
         return Ok(());
     }
-    c.prepare_cached(
-        "INSERT OR IGNORE INTO srs_local_state (profile_uid, json) \
-         VALUES (srs_id(?1), srs_local_state_merge(NULL, '{}'))",
-    )
-    .map_err(sql)?
-    .execute(params![profile])
-    .map_err(sql)?;
+    crate::store::local_state::ensure_row(c, profile)?;
     c.prepare_cached(
         "UPDATE srs_local_state SET json = json_set(json, '$.mediaGc', json(?2)) \
          WHERE profile_uid = srs_id(?1)",
@@ -312,7 +306,7 @@ mod tests {
             &d.core,
             &json!({
                 "op": "apply", "profile": P, "now": now, "caches": {"defaultDeck": default_deck()},
-                "legacyDevice": "dev", "tickNow": now, "localState": "{}",
+                "legacyDevice": "dev", "tickNow": now,
             }),
             &mut blobs,
             &mut Vec::new(),
@@ -493,7 +487,7 @@ mod tests {
         );
         let row = state_row(&d).unwrap();
         assert_eq!(row["mediaGc"], r["pending"]);
-        // Dart 交来的本机状态行不带这个键（它不持有）：合并协议保留库里的值。
+        // 改投影的命令读改写整行（修订号）：这个键原样留着。
         apply(
             &d,
             T0 + 1,

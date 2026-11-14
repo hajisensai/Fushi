@@ -31,7 +31,7 @@ fn apply(d: &Device, now: i64, events: Vec<Value>) -> Value {
         d,
         json!({
             "op": "apply", "profile": P, "now": now, "caches": {"defaultDeck": default_deck()},
-            "legacyDevice": "dev", "tickNow": now, "localState": "{}",
+            "legacyDevice": "dev", "tickNow": now,
         }),
         Some(Value::Array(items).to_string()),
     )
@@ -70,7 +70,7 @@ fn item(note: &str, field: &str, expect: &str, value: &str) -> Value {
 fn request(mode: &str, at: i64) -> Value {
     json!({
         "op": "note_fields_if", "profile": P, "now": at, "caches": {"defaultDeck": default_deck()},
-        "legacyDevice": "dev", "tickNow": at, "ts": "anchored", "mode": mode, "localState": "{}",
+        "legacyDevice": "dev", "tickNow": at, "ts": "anchored", "mode": mode,
     })
 }
 
@@ -110,6 +110,7 @@ fn local_state(d: &Device) -> Value {
 fn a_plan_is_written_per_note_all_or_nothing() {
     let d = library("nfi-note");
     let before = ops(&d);
+    let revision = local_state(&d)["revision"].as_i64().unwrap();
     let r = run(
         &d,
         "note",
@@ -129,7 +130,7 @@ fn a_plan_is_written_per_note_all_or_nothing() {
     assert_eq!(r["rejected"], json!([N2, N3, GONE]), "{r}");
     assert_eq!(ops(&d) - before, 2, "two edits of N1");
     assert_eq!(r["marks"]["landed"], json!(2), "{r}");
-    assert_eq!(r["localRevision"], json!(2), "{r}");
+    assert_eq!(r["localRevision"].as_i64().unwrap() - revision, 2, "{r}");
     assert_eq!(field(&d, N1, "f/a").as_deref(), Some("ONE"));
     assert_eq!(field(&d, N1, "f/b").as_deref(), Some("X"));
     assert_eq!(field(&d, N2, "f/a").as_deref(), Some("two"));
@@ -186,8 +187,8 @@ fn a_missing_field_reads_as_empty_and_unchanged_values_are_not_written() {
     assert_eq!(r["rejected"], json!([N2]), "{r}");
     assert_eq!(ops(&d), now);
     assert_eq!(local_state(&d)["hlc"], state["hlc"]);
-    // 修订号按交来的本机状态（这里是空的）推进：没有东西落库就不动。
-    assert_eq!(r["localRevision"], json!(0), "{r}");
+    // 没有东西落库：修订号不动（回包照样带库里的当前值）。
+    assert_eq!(r["localRevision"], state["revision"], "{r}");
 }
 
 #[test]
@@ -216,7 +217,7 @@ fn the_edits_match_the_apply_it_replaces() {
         &two,
         json!({
             "op": "apply", "profile": P, "now": T0 + 10, "caches": {"defaultDeck": default_deck()},
-            "legacyDevice": "dev", "tickNow": T0 + 10, "localState": "{}",
+            "legacyDevice": "dev", "tickNow": T0 + 10,
         }),
         Some(
             json!([

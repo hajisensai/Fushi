@@ -287,7 +287,7 @@ void main() {
     final int ops = await _ops(s);
     final int revision = s.revision;
     final int core = s.debugCoreCommands;
-    SrsRustDelegate.debugStatements = 0;
+    SrsInlineExecutor.debugStatements = 0;
     await expectLater(
       s.answerAndStudy(card, 4, expectBase: (lastLogId: base)),
       throwsA(
@@ -300,7 +300,7 @@ void main() {
     );
     // 预览 + 被拒的 `apply`；没有写失败后的重读（那是 Drift 读）。
     expect(s.debugCoreCommands - core, 2);
-    expect(SrsRustDelegate.debugStatements, 0);
+    expect(SrsInlineExecutor.debugStatements, 0);
     expect(await _ops(s), ops);
     expect(s.revision, revision);
     expect((await s.cardRow(card))!.lastLogId, first.id);

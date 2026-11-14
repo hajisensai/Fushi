@@ -562,7 +562,6 @@ class SrsDbProfileLinker implements SrsProfileLinker {
     required this.db,
     required this.activeProfileId,
     required this.reopenStore,
-    required this.writeLock,
     this.mediaRoot,
     this.onError,
     this.pullBeforeMerge,
@@ -595,12 +594,6 @@ class SrsDbProfileLinker implements SrsProfileLinker {
 
   /// 让当前 profile 的 store 按 profiles 表里的新 uid 重开，返回新 store。
   final Future<SrsDbStore?> Function() reopenStore;
-
-  /// 共用写连接上的写锁：持有期间连接上没有别的 Dart 写入者（任何副本的写都在它里面：app 里是激活副本的
-  /// 独占区，扩展副本的独占区套在它里面，见 `SrsProfileStores`；随激活副本交接而换，旧副本作废后拿的是新的
-  /// 那把）。采用时删 uid（[srsAdoptProfileUid]）是内核命令、直接在写连接上跑，必须在这把锁里：否则会夹进
-  /// 别的副本开着的 Drift 事务、随它回滚（BUG-4296）。
-  final SrsExclusiveOuter writeLock;
 
   /// 目录 → 上次发布的说明内容（同一进程里不重复写）。
   final Map<String, String> _published = <String, String>{};
@@ -949,42 +942,61 @@ class SrsDbProfileLinker implements SrsProfileLinker {
         pullTarget: _pullTarget(within),
       );
     } else {
-      // 删旧 uid 是内核命令、直接在共用写连接上跑（一个 savepoint）：在 [writeLock] 里跑，不夹进别的副本开着的
-      // Drift 事务里随之回滚（以前经 Drift 的事务删，由 Drift 的事务锁排队）。
-      await writeLock.run(
-        () => srsAdoptProfileUid(
-          db,
-          store.core,
-          profileId: profileId,
-          oldUid: oldUid,
-          newUid: uid,
-        ),
-      );
+      // 删旧 uid 在它自己那份副本的最后一段独占区里跑、之后副本作废（[SrsDbStore.retire]）：副本已经读完现值、
+      // 正等着发命令的写入（制卡、作答）先写完再删；排在后面的、以后再来的一律明确失败，不会把行写回一个已删的
+      // uid（内核写本机状态行时没有行就新建，一条漏进来的写入会让退役的 uid 重新长出数据与纪元）。
+      try {
+        await store.retire(
+          () => srsAdoptProfileUid(
+            db,
+            store.core,
+            profileId: profileId,
+            oldUid: oldUid,
+            newUid: uid,
+          ),
+          reason: 'profile $oldUid adopted the uid $uid',
+        );
+      } catch (_) {
+        // 没采用成（主库的 uid 没改；旧 uid 的行可能已删，只有内置行 / 本机状态，重开时重建）：副本已作废，按原
+        // uid 重开一份。
+        await reopenStore();
+        rethrow;
+      }
     }
     // 主库已经改用 [uid]：旧 uid 的数据已在新 uid 下（并入）或本来只有内置行（采用），它在同步目录里的本设备
     // 目录可以由之后的 [link] 清掉。
     await srsEditMetaSet(store.core, SrsMetaSet.retiredUids, add: oldUid);
+    SrsDbStore? adopted;
     try {
       final SrsDbStore? reopened = await reopenStore();
       if (reopened == null || reopened.profileUid != uid) {
         throw StateError('store did not reopen under the adopted profile');
       }
+      adopted = reopened;
       // 新写入者化身：本设备可能早年在这个 profile 下写过（重装等），不沿用旧 writerId。
       await reopened.afterRestore(freshIncarnation: true);
       return reopened;
     } catch (_) {
       if (!merge) {
-        // 采用要么整体成功、要么回到原样（旧 uid 下只有内置行 / 本机状态，重开时重建）。[store] 此时可能已在
-        // 重开时交接作废、[uid] 的新副本可能活着：删除在 [writeLock]（此刻有效的那把）里跑，不拿旧副本的锁。
-        await writeLock.run(
-          () => srsAdoptProfileUid(
-            db,
-            store.core,
-            profileId: profileId,
-            oldUid: uid,
-            newUid: oldUid,
-          ),
+        // 采用要么整体成功、要么回到原样（旧 uid 下只有内置行 / 本机状态，重开时重建）。[uid] 的新副本开出来了
+        // 就在它的最后一段独占区里删、随后作废它（同上，不与它自己的写入交错）；没开出来就没有副本会写 [uid]，
+        // 直接删。
+        Future<void> revert() => srsAdoptProfileUid(
+          db,
+          store.core,
+          profileId: profileId,
+          oldUid: uid,
+          newUid: oldUid,
         );
+        final SrsDbStore? live = adopted;
+        if (live != null && live.isUsable) {
+          await live.retire(
+            revert,
+            reason: 'adopting the uid $uid was rolled back',
+          );
+        } else {
+          await revert();
+        }
         await srsEditMetaSet(
           store.core,
           SrsMetaSet.retiredUids,
@@ -1046,22 +1058,5 @@ class SrsDbProfileLinker implements SrsProfileLinker {
       }
     }
     return null;
-  }
-}
-
-/// [SrsDbProfileLinker.writeLock] 的简单实现：锁就是 [current] 此刻返回的副本的独占区（单副本的装配与测试用；
-/// app 用 `SrsProfileStores` 的激活副本锁）。已在它的独占区里直接跑；没有可用副本时报错，不在锁外写。
-class SrsCurrentStoreWriteLock implements SrsExclusiveOuter {
-  SrsCurrentStoreWriteLock(this.current);
-
-  final SrsDbStore? Function() current;
-
-  @override
-  Future<T> run<T>(Future<T> Function() body) {
-    final SrsDbStore? store = current();
-    if (store == null || !store.isUsable) {
-      throw StateError('no usable SRS store holds the write lock');
-    }
-    return store.holdsExclusive ? body() : store.runExclusive(body);
   }
 }

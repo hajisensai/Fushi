@@ -2,7 +2,7 @@
 //!
 //! 一条写连接（在一把 Mutex 里）+ 两个只读连接池：写命令 = 写连接上的一个事务（这把锁就是 SRS 的写锁），
 //! 读命令从内核读连接池（[SrsCore::reader]）借一条连接、在它的 WAL 快照上读，不被长写挡住、读命令之间也不排队
-//! （全库统计读着时复习排队照常，BUG-4298）；Drift 执行器在事务外的查询走它自己的只读连接池
+//! （全库统计读着时复习排队照常，BUG-4298）；Drift 执行器（只读，[READ_ONLY]）的查询走它自己的只读连接池
 //! （[SrsCore::snapshot_select]），两边互不占用（store/read_pool.rs）。对象可以从任意线程 / isolate 调用。
 //!
 //! 一次命令 panic（FFI 接成 -100）之后库自行恢复，不需要重开（BUG-4297）：持着的连接锁被毒化，下一个取这把锁的
@@ -24,7 +24,6 @@ pub mod bulk;
 pub(crate) mod cache_rev;
 pub(crate) mod caches;
 pub(crate) mod compact;
-pub(crate) mod drift_guard;
 pub mod ffi;
 pub mod gen4;
 pub(crate) mod ids;
@@ -65,8 +64,10 @@ const LEGACY_KEY: &str = "legacy_import";
 /// 已关闭的库上任何命令的错误文本（Dart 侧按它认「已关闭」）。
 pub(crate) const CLOSED: &str = "srs store is closed";
 
-/// Drift 事务在 panic 后已被整笔回滚（[SrsCore] `drift_aborted`）时，那笔事务里后续语句的错误文本。
-pub(crate) const DRIFT_TX_ABORTED: &str = "srs: the open transaction was rolled back after a panic; roll it back before running more statements";
+/// Drift 执行器的入口（[SrsCore::select] / [SrsCore::snapshot_select]）只读：写语句、事务控制语句、PRAGMA 一律报这个
+/// 错误、不执行。srs.db 的每一笔写入都是一条内核命令（`ffsrs_store_sync2`），在一次调用里提交或回滚；写连接上
+/// 没有任何能跨调用留着的事务（旧库搬迁那一笔除外，[SrsCore] `legacy_open`）。Dart 侧按它认「只读」。
+pub const READ_ONLY: &str = "srs: srs.db is read-only through the Drift executor";
 
 /// 备份快照的目标卷空间不够（[SrsCore::snapshot_into]）：错误文本前缀，后面是 `{"need","free"}`。
 pub const SNAPSHOT_NO_SPACE: &str = "srs.db snapshot needs more free disk space: ";
@@ -79,26 +80,17 @@ pub struct SrsCore {
     /// 不挡复习排队（BUG-4298）。不与 [SrsCore::drift_readers] 合用：Dart 查询道的 worker 数等于那个池的上限，几条
     /// Drift 长读（同步冲突扫描）就能把它借满，复习排队若去那里等连接就又排在长读后面。
     readers: read_pool::ReadPool,
-    /// Drift 执行器事务外查询专用的只读连接池（[SrsCore::snapshot_select]）。
+    /// Drift 执行器查询道专用的只读连接池（[SrsCore::snapshot_select]）。
     drift_readers: read_pool::ReadPool,
-    /// Drift 写那一路（顺序执行器，`ffsrs_store_exec` mode 2）在事务外的查询专用的一条只读连接（[SrsCore::select]）。
-    /// 不从 [SrsCore::drift_readers] 借：Dart 查询道的 worker 数等于池上限，几条长读就能把池借满，写 isolate 上的
-    /// 查询若去池里等连接，排在它后面的所有写都跟着等（PR 2771 审查）。写那一路一次只跑一条语句，一条连接就不会等。
+    /// Drift 内联执行器（同 isolate 的顺序执行器，`ffsrs_store_exec` mode 2）的查询专用的一条只读连接
+    /// （[SrsCore::select]）。不从 [SrsCore::drift_readers] 借：Dart 查询道的 worker 数等于池上限，几条长读就能把
+    /// 池借满，内联执行器的查询是调用方 isolate 上的同步调用，不该去池里等连接（PR 2771 审查）。它一次只跑一条
+    /// 语句，一条连接就不会等。
     drift_write_reader: Mutex<Option<Connection>>,
     writer: Mutex<Option<Connection>>,
-    /// Drift 在写连接上开着事务（它用 BEGIN / SAVEPOINT 语句经 [SrsCore::exec] 开关）。每条经 [SrsCore::exec] /
-    /// [SrsCore::exec_batch] 跑完的语句之后按写连接的 autocommit 状态更新；只有这两个入口能让事务跨命令留着
-    /// （Rust 自己的写命令在一次调用里提交或回滚），所以写锁空闲时它与写连接的状态一致。开着时 Drift 的查询与
-    /// 只读命令都留在写连接上（看得见事务里未提交的行），否则走读连接的 WAL 快照。
-    drift_tx: AtomicBool,
-    /// 旧库搬迁的事务开着（写连接上挂着一个 BEGIN）：别的写命令一律拒绝。
+    /// 旧库搬迁的事务开着（写连接上挂着一个 BEGIN）：别的写命令一律拒绝。写连接上唯一能跨调用留着的事务——
+    /// Drift 执行器不能写、不能开事务（[READ_ONLY]），其余写入都是一次调用里提交或回滚的内核命令。
     legacy_open: AtomicBool,
-    /// Drift 的事务在 panic 后被整笔回滚了（[SrsCore::recover_writer]），Drift 还以为它开着：那笔事务后续的语句（含
-    /// COMMIT）与 Rust 写命令一律报 [DRIFT_TX_ABORTED]，直到 Drift 发来 ROLLBACK（它在出错时本来就发）。只在持写锁时
-    /// 改。
-    drift_aborted: AtomicBool,
-    /// Drift 事务开着时来的 sync2 命令按策略计数（store/drift_guard.rs，只计数不拦）。
-    drift_tx_hits: drift_guard::DriftTxHits,
     /// 库文件路径（[SrsCore::read_session] 另开只读连接用）。
     path: PathBuf,
     /// 开过的只读会话（弱引用）：[SrsCore::close] 逐个关掉还没结束的。只在借着一条内核读连接时登记，close
@@ -107,8 +99,9 @@ pub struct SrsCore {
     /// 分批收段的阶段（[sync2::transport::IngestPhase]：没有 / 会话开着 / 收尾刷缓存中）。只经
     /// [SrsCore::set_ingest_phase] 转换。
     ingest: Mutex<sync2::transport::IngestPhase>,
-    /// 有写入在等写锁，正在投的收段那一片尽快收（[SrsCore::sync2_ingest_yield]）。
-    ingest_yield: AtomicBool,
+    /// 有写入在等写锁，正在投的收段那一片尽快收：等在内核写锁上的线程数（[SrsCore::writer] 记）+ Dart 侧排队置的
+    /// 请求（[SrsCore::sync2_ingest_yield]）。
+    ingest_yield: sync2::transport::YieldSignal,
     /// [SrsCore] `ingest` 不是 `Idle` 时为真：写连接放回时不还页缓存（[trim_idle_cache]），每 150 ms 一片的投递与
     /// 收尾的各块就不反复从盘上读回同一批索引页。它只是阶段的无锁镜像（写连接守卫析构时不能去拿会话锁），只由
     /// [SrsCore::set_ingest_phase] 与阶段一起写，不单独置位；会话怎么结束（收尾刷完、出错作废、Dart 收手发
@@ -131,6 +124,9 @@ pub struct SrsCore {
     /// 时置位，做完通道后写连接不在事务里时按表重置。为假时分发器不必拿写锁查通道（只读命令不排在写锁后面）。
     /// 只能多不能少：库只由这一个 [SrsCore] 打开写（别的进程 / 实例开同一个库不在这个约定里）。
     channel_live: AtomicBool,
+    /// 收段通道自己做完的片（没有回包可带）攒下的投影变化，按 profile：随那个 profile 的下一条命令的回包交回 Dart
+    /// （store/sync2/channel.rs `note_settled` / `take_settled`）。只在内存：进程没了，Dart 那一侧记的缓存也没了。
+    settled: Mutex<std::collections::HashMap<String, sync2::channel::Settled>>,
     /// 常驻复习队列（store/queue.rs）：写连接上的触发器记下写过的卡 / 日志，`study` 按 profile 增量排队。
     study_hub: Arc<queue::StudyHub>,
     /// 浏览页与 AnkiConnect 共用的常驻会话（store/browse.rs，按 profile）：搜索语料、列数据随写入增量更新；
@@ -400,33 +396,11 @@ fn end_read_tx_of(c: &mut Option<Connection>) -> Result<(), String> {
     c.as_ref().map_or(Ok(()), end_read_tx)
 }
 
-/// [sql] 是不是整笔事务的 ROLLBACK（`ROLLBACK` / `ROLLBACK TRANSACTION`，Drift 用后者；不含 `ROLLBACK TO`）。
-fn is_rollback(sql: &str) -> bool {
-    let words: Vec<String> = sql
-        .trim()
-        .trim_end_matches(';')
-        .split_whitespace()
-        .map(str::to_ascii_uppercase)
-        .collect();
-    matches!(
-        words
-            .iter()
-            .map(String::as_str)
-            .collect::<Vec<_>>()
-            .as_slice(),
-        ["ROLLBACK"] | ["ROLLBACK", "TRANSACTION"]
-    )
-}
-
 impl SrsCore {
     /// 写连接的恢复（一次命令持着写锁 panic，[lock_recovering]）。panic 跳过了那条命令自己的提交 / 回滚
     /// （`sync2::in_savepoint` 不在 panic 时 `ROLLBACK TO`），连接上可能还挂着它开的事务 / SAVEPOINT。不回滚的话，
     /// 下一条命令的写入落进这笔半截事务、由它的提交一起交上去。所以整笔回滚：
     /// - 命令自己开的事务：回到命令之前（与命令报错时一样，什么都没写）。
-    /// - 嵌在 Drift 的事务里（`drift_tx`：Drift 以为事务开着）：Drift 已写的部分与半截命令分不开，整笔一起回滚，并记下
-    ///   `drift_aborted`：那笔事务后续的语句与 Rust 写命令一律拒绝，直到 Drift 发来 ROLLBACK——它在事务体或 COMMIT
-    ///   出错时本来就发；不拦的话后续语句会在 autocommit 下逐条提交。panic 的正是 Drift 开事务那一条时 `drift_tx` 还没
-    ///   置位（[SrsCore::exec] 跑完才记），Drift 收到的是「开事务失败」、不会再发 ROLLBACK，这里也就不进待回滚状态。
     /// - 旧库搬迁事务（`legacy_open`）：回滚并结束；之后 legacy_page / legacy_commit 报「未开始」，legacy_abort 照常成功。
     ///
     /// 复习队列 / 浏览会话的待重读 id 不丢：被回滚的行照样在待重读里，写锁守卫放回时（已回到 autocommit）挪成已提交，
@@ -436,15 +410,12 @@ impl SrsCore {
             c.execute_batch("ROLLBACK")
                 .map_err(|e| format!("srs: roll back a write left open by a panic: {e}"))?;
         }
-        if self.drift_tx.swap(false, Ordering::SeqCst) {
-            self.drift_aborted.store(true, Ordering::SeqCst);
-        }
         self.legacy_open.store(false, Ordering::SeqCst);
         Ok(())
     }
 }
 
-/// [read_pool::ReadPool]（内核读连接池与 Drift 的事务外查询池）的开连接函数：只读打开、配置同读连接（mmap 按次要
+/// [read_pool::ReadPool]（内核读连接池与 Drift 执行器的查询池）的开连接函数：只读打开、配置同读连接（mmap 按次要
 /// 连接，见 [MmapRole]）。
 fn open_drift_reader(path: &Path) -> Result<Connection, String> {
     let conn = Connection::open_with_flags(
@@ -459,7 +430,7 @@ fn open_drift_reader(path: &Path) -> Result<Connection, String> {
 }
 
 /// 一条连接在 mmap 预算里的角色（BUG-4013）。SQLite 的 mmap 是**每条连接各映射一份**主库文件：写连接 + 两个
-/// 读连接池（内核读命令、Drift 事务外查询，各至多 [read_pool::READERS_MAX] 条）+ 写那一路的只读连接 + 读会话，每条至多 256 MB 的**虚拟地址**（物理
+/// 读连接池（内核读命令、Drift 执行器的查询，各至多 [read_pool::READERS_MAX] 条）+ 内联执行器的只读连接 + 读会话，每条至多 256 MB 的**虚拟地址**（物理
 /// 页是系统文件缓存，各连接共享、干净可回收，不是每条连接真占 256 MB 内存）。
 ///
 /// 64 位进程（含 iOS，配合 extended-virtual-addressing）地址空间远大于此，全部连接照旧映射：关掉 mmap 反而让每条
@@ -470,7 +441,7 @@ fn open_drift_reader(path: &Path) -> Result<Connection, String> {
 pub(crate) enum MmapRole {
     /// 写连接。
     Primary,
-    /// 读连接池、写那一路的只读连接、读会话、快照整理。
+    /// 读连接池、内联执行器的只读连接、读会话、快照整理。
     Secondary,
 }
 
@@ -498,8 +469,6 @@ fn configure_as(conn: &Connection, role: MmapRole) -> Result<(), String> {
     // ID 列编码（store/ids.rs）：`srs_id` / `srs_idt`，Rust 与 Dart 的 SQL 都用。
     ids::register(conn).map_err(|e| e.to_string())?;
     slim::register(conn).map_err(|e| e.to_string())?;
-    // 本机状态行的合并（store/local_state.rs）：Dart 的 `_saveLocal` 与内核写这一行共用。
-    local_state::register(conn).map_err(|e| e.to_string())?;
     // mmap + 64 MB 页缓存：缓存刷新 / 历史这类一次读几万行日志的命令，默认 2 MB 页缓存下每页一次
     // 系统调用（3000 笔记 / 6.6 万条日志实测读取 320–400 ms → 158 ms）。mmap 只占虚拟地址，
     // 上限 256 MB；WAL 模式下 SQLite 照常处理。哪些连接映射见 [MmapRole]。
@@ -575,20 +544,18 @@ impl SrsCore {
             readers,
             drift_readers,
             drift_write_reader: Mutex::new(Some(drift_write_reader)),
-            drift_tx: AtomicBool::new(false),
             legacy_open: AtomicBool::new(false),
-            drift_aborted: AtomicBool::new(false),
-            drift_tx_hits: drift_guard::DriftTxHits::default(),
             path: path.to_path_buf(),
             sessions: Mutex::new(Vec::new()),
             ingest: Mutex::new(sync2::transport::IngestPhase::Idle),
-            ingest_yield: AtomicBool::new(false),
+            ingest_yield: sync2::transport::YieldSignal::default(),
             ingest_holds_cache: AtomicBool::new(false),
             bulk_holds_cache: AtomicBool::new(false),
             bulk: Mutex::new(BulkDepth::default()),
             cache_configs: Mutex::new(std::collections::HashMap::new()),
             writer_cache: Mutex::new(mem_budget::WriterCache::new()),
             channel_live: AtomicBool::new(channel_live),
+            settled: Mutex::new(std::collections::HashMap::new()),
             study_hub,
             browse: Mutex::new(browse::Sessions::default()),
             #[cfg(test)]
@@ -599,22 +566,31 @@ impl SrsCore {
         })
     }
 
-    /// 取写连接（持写锁）。Drift 的事务在 panic 后被回滚、还没等到它的 ROLLBACK 时（[SrsCore] `drift_aborted`）报
-    /// [DRIFT_TX_ABORTED]：这时的写命令属于那笔已经没了的事务，不能在 autocommit 下自行提交。
+    /// 取写连接（持写锁）。
+    ///
+    /// 锁正被别人持着时先记一个等待者再阻塞（[sync2::transport::YieldSignal]）：持锁的若是切片的命令（收段的一片、
+    /// 收尾的重放），它看到有人等就当场收片。以前这个信号只来自 Dart 的写入排队（同一个副本对象的独占区），别的
+    /// 副本对象的写入靠 Dart 的外层锁排进同一个队才看得见；外层锁没有了，等锁的一侧在这里自己报。
     pub(crate) fn writer(&self) -> Result<Conn<'_>, String> {
-        let w = self.writer_conn()?;
-        if self.drift_aborted.load(Ordering::SeqCst) {
-            return Err(DRIFT_TX_ABORTED.to_string());
-        }
-        Ok(w)
-    }
-
-    /// [SrsCore::writer]，不看 `drift_aborted`（[SrsCore::exec] 自己处理那笔事务的 ROLLBACK）。
-    fn writer_conn(&self) -> Result<Conn<'_>, String> {
-        let guard = lock_recovering(&self.writer, |w| match w.as_ref() {
+        let recover = |w: &mut Option<Connection>| match w.as_ref() {
             Some(c) => self.recover_writer(c),
             None => Ok(()),
-        })?;
+        };
+        let guard = match self.writer.try_lock() {
+            Ok(g) => g,
+            Err(std::sync::TryLockError::WouldBlock) => {
+                let _waiting = self.ingest_yield.waiting();
+                lock_recovering(&self.writer, recover)?
+            }
+            // 毒化：锁此刻已经在手里（`try_lock` 把守卫包在错误里交出来），就地恢复（回滚 panic 留下的事务，同
+            // [lock_recovering]）。不能再去 `lock`：守卫还活着，那是自己等自己。
+            Err(std::sync::TryLockError::Poisoned(poisoned)) => {
+                let mut g = poisoned.into_inner();
+                recover(&mut g)?;
+                self.writer.clear_poison();
+                g
+            }
+        };
         let mut w = Conn::with_hub(guard, Some(&self.study_hub))?;
         w.2 = Some(&self.ingest_holds_cache);
         w.3 = Some(&self.bulk_holds_cache);
@@ -754,10 +730,10 @@ impl SrsCore {
         self.readers.get()
     }
 
-    /// 写连接上是否挂着跨命令的事务（Drift 的事务或旧库搬迁）：挂着时只读命令也必须在写连接上读，
-    /// 才看得见那笔事务里未提交的行。
+    /// 写连接上是否挂着跨命令的事务（只有旧库搬迁）：挂着时只读命令也必须在写连接上读，才看得见那笔事务里
+    /// 未提交的行。
     fn writer_tx_open(&self) -> bool {
-        self.drift_tx.load(Ordering::SeqCst) || self.legacy_open.load(Ordering::SeqCst)
+        self.legacy_open.load(Ordering::SeqCst)
     }
 
     /// 只读命令的连接选择：写连接上挂着事务（[SrsCore::writer_tx_open]）时在写连接的 SAVEPOINT 里读（嵌在那笔
@@ -794,9 +770,9 @@ impl SrsCore {
         // 先关内核读连接池（等借出的放回）：此后 read_session 报已关闭，下面拿到的会话清单就是全部。
         // 下面各把锁被 panic 毒化过也照拿：连接随即丢掉，关闭时 SQLite 回滚连接上没结束的事务。
         self.readers.close();
-        // 等在途的 Drift 事务外查询把连接放回（放回即关）。
+        // 等在途的 Drift 执行器查询把连接放回（放回即关）。
         self.drift_readers.close();
-        // 写那一路的事务外查询连接：拿锁即等在途的那条查询跑完。
+        // 内联执行器的查询连接：拿锁即等在途的那条查询跑完。
         let drift_write_reader = self
             .drift_write_reader
             .lock()
@@ -1030,83 +1006,60 @@ impl SrsCore {
         Ok(())
     }
 
-    // ------------------------------------------------------------ Drift 执行器（§5 过渡层）
+    // ------------------------------------------------------------ Drift 执行器（只读）与测试用的原始通道
 
-    /// 在写连接上执行一条语句（Drift `QueryDelegate` 的写语句与 `runCustom` 的后端；事务由 Drift 用 BEGIN /
-    /// COMMIT / SAVEPOINT 语句经这里开关，同一条连接上的 Rust 命令看得见事务里未提交的行）。跑完按写连接的
-    /// autocommit 状态记下 Drift 事务是否开着（[SrsCore::select] 据此选连接）。
+    /// 测试专用的原始通道：在写连接上执行一条任意语句（测试里直接改库造场景——改缓存行、删本机状态行、装触发器；
+    /// `ffsrs_store_exec` mode 4，Dart `SrsCore.debugExecRaw`）。**不是 Drift 执行器的后端**：Drift 那几个入口只读
+    /// （[READ_ONLY]），生产代码的每一笔写入都是内核命令。
     ///
-    /// 返回页：查询 = 首行列名 + 结果行；其它 = 一行 `[变更行数, last_insert_rowid]`。
-    pub fn exec(&self, sql: &str, params: &[Value], select: bool) -> Result<Vec<u8>, String> {
+    /// 语句跑完写连接必须回到 autocommit：BEGIN / SAVEPOINT 之类会让事务跨调用留着的语句当场回滚并报错——原始通道
+    /// 也不能在写连接上留下别的命令会落进去的事务。旧库搬迁进行中（`legacy_open`）同样拒绝。
+    ///
+    /// 返回页：[select] 为真 = 首行列名 + 结果行（PRAGMA 之类有结果行的语句）；否则一行 `[变更行数, last_insert_rowid]`。
+    pub fn exec_raw(&self, sql: &str, params: &[Value], select: bool) -> Result<Vec<u8>, String> {
         // 先取写锁再看 `legacy_open`（同 [SrsCore::legacy_page]）：搬迁中 panic 后，恢复在取锁时才结束搬迁。
-        let w = self.writer_conn()?;
+        let w = self.writer()?;
         if self.legacy_open.load(Ordering::SeqCst) {
             return Err("legacy import in progress".into());
         }
-        if self.drift_aborted.load(Ordering::SeqCst) {
-            // Drift 那笔事务在 panic 后已被整笔回滚：只收它的 ROLLBACK（连接上已没有事务，直接算完成），别的语句
-            // （含 COMMIT、嵌套的 ROLLBACK TO）一律拒绝。
-            if !is_rollback(sql) {
-                return Err(DRIFT_TX_ABORTED.into());
-            }
-            self.drift_aborted.store(false, Ordering::SeqCst);
-            return Ok(rows::encode(
-                2,
-                &[vec![
-                    Value::Integer(0),
-                    Value::Integer(w.last_insert_rowid()),
-                ]],
+        let out = Self::exec_on(&w, sql, params, select);
+        if !w.is_autocommit() {
+            w.execute_batch("ROLLBACK")
+                .map_err(|e| format!("srs: raw exec: roll back a transaction left open: {e}"))?;
+            return Err(format!(
+                "srs: raw exec must not leave a transaction open on the write connection: {sql}"
             ));
         }
-        let out = Self::exec_on(&w, sql, params, select);
-        #[cfg(test)]
-        sync2::test_panic::hit(sync2::test_panic::AFTER_EXEC);
-        // panic 跳过这一句是有意的：drift_tx 记的是 Drift 以为的事务状态，那条语句报了错（-100），Drift 不认它的效果。
-        self.drift_tx.store(!w.is_autocommit(), Ordering::SeqCst);
         #[cfg(feature = "id_audit")]
         ids::audit::take(&w, sql)?;
         out
     }
 
-    /// Drift 写连接那一路的查询（`ffsrs_store_exec` mode 2：事务里的查询、`RETURNING`、PRAGMA、内联执行器）：
-    /// Drift 事务开着（[SrsCore::writer_tx_open]）时在写连接上跑，看得见那笔事务里未提交的行；否则只读查询走
-    /// 写那一路专用的只读连接（[SrsCore::drift_write_reader]，不进查询道的连接池、不在池上限上等），不排写锁（Rust
-    /// 的长写命令、收段投递进行中照样能读），读到的是此刻已提交的数据。
+    /// Drift 内联执行器的查询（`ffsrs_store_exec` mode 2）：只读查询在它专用的只读连接上跑
+    /// （[SrsCore::drift_write_reader]，不进查询道的连接池、不在池上限上等），不排写锁（Rust 的长写命令、收段投递
+    /// 进行中照样能读），读到的是此刻已提交的数据。不是只读查询（写语句、`… RETURNING`、PRAGMA、事务控制语句）
+    /// 报 [READ_ONLY]、不执行——以前这类语句回落到写连接上执行，Drift 靠它开关事务。
     ///
-    /// 写后立即读成立：Drift 的写语句（autocommit）与 COMMIT 都在 [SrsCore::exec] 返回前提交完；读连接每条语句
-    /// 自成一个读事务（语句跑完即复位，不留跨调用的读事务），开读事务时取最新的 WAL 尾，所以 Dart 等到写返回后
-    /// 再发的查询一定看得见它。Rust 写命令同理（返回前提交）。
-    ///
-    /// 走读连接的只有以 SELECT / WITH / VALUES 开头且 SQLite 判为只读的语句：`… RETURNING` 这类写语句、PRAGMA
-    /// （读的是写连接自己的设置，如 `wal_autocheckpoint`）、事务控制语句（SQLite 把 BEGIN 也判为只读）一律留在
-    /// 写连接上。返回页同 [SrsCore::exec] 的查询。
+    /// 写后立即读成立：内核写命令在返回前提交完；读连接每条语句自成一个读事务（语句跑完即复位，不留跨调用的读
+    /// 事务），开读事务时取最新的 WAL 尾，所以 Dart 等到写命令返回后再发的查询一定看得见它。返回页：首行列名 +
+    /// 结果行。
     pub fn select(&self, sql: &str, params: &[Value]) -> Result<Vec<u8>, String> {
         if self.legacy_open.load(Ordering::SeqCst) {
             return Err("legacy import in progress".into());
         }
-        // 写那一路的查询属于 Drift 那笔已被回滚的事务：不拿已提交的数据冒充事务里的视图。
-        if self.drift_aborted.load(Ordering::SeqCst) {
-            return Err(DRIFT_TX_ABORTED.into());
+        let guard = lock_recovering(&self.drift_write_reader, end_read_tx_of)?;
+        let r = guard.as_ref().ok_or_else(|| CLOSED.to_string())?;
+        let out = Self::snapshot_on(r, sql, params);
+        // 常驻的这条只读连接和 Conn / 读连接池放回时同一约定：查询之间页缓存收到 IDLE_CACHE_BYTES 以内，
+        // 做过一次大读后不常驻最多 64 MB（cache_size）。
+        trim_idle_cache(r);
+        match out {
+            Err(e) if e == NOT_SNAPSHOT => Err(format!("{READ_ONLY}: {sql}")),
+            out => out,
         }
-        if !self.writer_tx_open() {
-            let done = {
-                let guard = lock_recovering(&self.drift_write_reader, end_read_tx_of)?;
-                let r = guard.as_ref().ok_or_else(|| CLOSED.to_string())?;
-                let out = Self::snapshot_on(r, sql, params);
-                // 常驻的这条只读连接和 Conn / 读连接池放回时同一约定：查询之间页缓存收到 IDLE_CACHE_BYTES 以内，
-                // 写那一路做过一次大读后不常驻最多 64 MB（cache_size）。
-                trim_idle_cache(r);
-                out
-            };
-            match done {
-                Err(e) if e == NOT_SNAPSHOT => {}
-                done => return done,
-            }
-        }
-        self.exec(sql, params, true)
     }
 
-    /// Drift 事务外查询的并发上限（只读连接池的连接数上限，store/read_pool.rs `read_concurrency`）：Dart 侧
+    /// Drift 执行器查询的并发上限（只读连接池的连接数上限，store/read_pool.rs `read_concurrency`）：Dart 侧
     /// 查询道的 worker 数取它（`ffsrs_store_read_concurrency`），两边不各写一份常量。
     pub fn read_concurrency(&self) -> usize {
         self.drift_readers.cap()
@@ -1125,10 +1078,9 @@ impl SrsCore {
         (len(&self.path), len(Path::new(&wal)))
     }
 
-    /// Drift 事务**外**的查询（`ffsrs_store_exec` mode 3，Dart 读查询那一路）：一律在只读连接池
-    /// （store/read_pool.rs）里借一条连接执行，不看 Drift 事务开没开、不碰写连接——事务外的读本来就只该看已提交
-    /// 的数据；并发的查询各占一条连接并行执行。语句不是以 SELECT / WITH / VALUES 开头、或 SQLite 判为非只读，
-    /// 报 [NOT_SNAPSHOT]（不执行），由调用方改走写连接那一路（[SrsCore::select]）。
+    /// Drift 查询道的查询（`ffsrs_store_exec` mode 3）：一律在只读连接池（store/read_pool.rs）里借一条连接执行，
+    /// 不碰写连接、只看已提交的数据；并发的查询各占一条连接并行执行。语句不是以 SELECT / WITH / VALUES 开头、
+    /// 或 SQLite 判为非只读，报 [NOT_SNAPSHOT]（不执行）；调用方（Dart 的只读执行器）把它报成只读错误。
     pub fn snapshot_select(&self, sql: &str, params: &[Value]) -> Result<Vec<u8>, String> {
         if self.legacy_open.load(Ordering::SeqCst) {
             return Err("legacy import in progress".into());
@@ -1140,7 +1092,7 @@ impl SrsCore {
         Self::snapshot_on(&r, sql, params)
     }
 
-    /// 在只读连接 [r] 上执行一条事务外查询；不是 SQLite 判为只读的查询报 [NOT_SNAPSHOT]（不执行）。
+    /// 在只读连接 [r] 上执行一条查询；不是 SQLite 判为只读的查询报 [NOT_SNAPSHOT]（不执行）。
     fn snapshot_on(r: &Connection, sql: &str, params: &[Value]) -> Result<Vec<u8>, String> {
         if !snapshot_query(sql) {
             return Err(NOT_SNAPSHOT.into());
@@ -1210,43 +1162,42 @@ impl SrsCore {
         Ok(out)
     }
 
-    /// Drift 的批量语句：`statements[i]` 配若干组参数，按给定顺序执行（调用方已在事务里）。
-    pub fn exec_batch(
+    /// [SrsCore::exec_raw] 的批量版（测试专用，`ffsrs_store_exec_batch`，Dart `SrsCore.debugExecBatchRaw`）：
+    /// `statements[i]` 配若干组参数，按给定顺序在**一个 SAVEPOINT** 里执行，任何一条出错整批回滚。
+    pub fn exec_batch_raw(
         &self,
         statements: &[&str],
         applications: &[(usize, Vec<Value>)],
     ) -> Result<(), String> {
-        // 先取写锁再看 `legacy_open`（同 [SrsCore::exec]）。
+        // 先取写锁再看 `legacy_open`（同 [SrsCore::exec_raw]）。
         let w = self.writer()?;
         if self.legacy_open.load(Ordering::SeqCst) {
             return Err("legacy import in progress".into());
         }
-        let run = || -> Result<(), String> {
+        let out = sync2::in_savepoint(&w, |c| {
             for (index, args) in applications {
                 let sql = statements
                     .get(*index)
                     .ok_or_else(|| format!("batch statement index {index} out of range"))?;
-                let mut stmt = w.prepare_cached(sql).map_err(|e| format!("{e} in {sql}"))?;
+                let mut stmt = c.prepare_cached(sql).map_err(|e| format!("{e} in {sql}"))?;
                 stmt.execute(rusqlite::params_from_iter(args.iter()))
                     .map_err(|e| format!("{e} in {sql}"))?;
             }
             Ok(())
-        };
-        let out = run();
-        self.drift_tx.store(!w.is_autocommit(), Ordering::SeqCst);
+        });
         #[cfg(feature = "id_audit")]
         ids::audit::take(&w, "")?;
         out
     }
 
-    /// 写连接当前是否在事务里（Drift 打开时校验、测试用）。
+    /// 写连接当前是否在事务里（测试用）。
     pub fn in_transaction(&self) -> Result<bool, String> {
         Ok(!self.writer()?.is_autocommit())
     }
 
     // ------------------------------------------------------------ 直读命令
 
-    /// 卡片历史的当前状态，直接从写连接读日志（看得见 Drift 事务里未提交的行）：
+    /// 卡片历史的当前状态，直接从写连接读日志：
     /// `groups[g]` 是第 g 份历史的血统（自己 + 全部前身的卡 ID）。输出布局同
     /// `history::encode_states`。日志原文与服务器时刻一条 JOIN 取出，不跨 isolate、不回 Dart。
     pub fn history_states(&self, groups: &[Vec<String>]) -> Result<Vec<u8>, String> {
@@ -1392,7 +1343,7 @@ impl SrsCore {
     }
 }
 
-/// 这些组里全部卡的日志原文 + 服务器时刻（[conn] 上一条 JOIN 按块取；写连接看得见 Drift 事务里未提交的行）。
+/// 这些组里全部卡的日志原文 + 服务器时刻（[conn] 上一条 JOIN 按块取）。
 /// [logs_of] 的一条：(存储值, 服务器时刻, 瘦存时的列)。读 `jslim` + 列（store/slim.rs `LOG_READ`），不经逐行
 /// 拼回的 `json`。
 pub(crate) type LogRow = (String, Option<i64>, Option<crate::history::LogCols>);
@@ -1887,28 +1838,42 @@ mod tests {
 mod exec_tests {
     use super::*;
 
-    #[test]
-    fn exec_select_insert_and_transactions() {
-        let dir = std::env::temp_dir().join(format!("ffsrs_exec_{}", std::process::id()));
+    fn open(name: &str) -> SrsCore {
+        let dir = std::env::temp_dir().join(format!("ffsrs_exec_{name}_{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let p = dir.join("srs.db");
         let _ = std::fs::remove_file(&p);
+        let _ = std::fs::remove_file(dir.join("srs.db-wal"));
         let core = SrsCore::open(&p).unwrap();
         core.legacy_mark_none().unwrap();
-        core.exec("BEGIN", &[], false).unwrap();
-        assert!(core.in_transaction().unwrap());
+        core
+    }
+
+    const INSERT: &str =
+        "INSERT INTO srs_unknown_events (id, profile_uid, json) VALUES (srs_id(?1), 'p', '{}')";
+
+    fn count(core: &SrsCore) -> Value {
+        let (_, rows) = rows::decode(
+            &core
+                .select("SELECT COUNT(*) FROM srs_unknown_events", &[])
+                .unwrap(),
+        )
+        .unwrap();
+        rows[1][0].clone()
+    }
+
+    /// 原始通道（测试专用）：写语句返回 `[变更行数, last_insert_rowid]`，查询返回列名行 + 结果行；批量的整批一个
+    /// SAVEPOINT，一条出错整批不落。
+    #[test]
+    fn raw_exec_runs_statements_on_the_writer_and_batches_atomically() {
+        let core = open("raw");
         let r = core
-            .exec(
-                "INSERT INTO srs_unknown_events (id, profile_uid, json) VALUES (srs_id(?1), srs_id(?2), ?3)",
-                &[Value::Text("a".into()), Value::Text("p".into()), Value::Text("{}".into())],
-                false,
-            )
+            .exec_raw(INSERT, &[Value::Text("a".into())], false)
             .unwrap();
         let (_, rows) = rows::decode(&r).unwrap();
         assert_eq!(rows[0][0], Value::Integer(1));
-        // 同一条连接，事务里看得见。
         let s = core
-            .exec(
+            .exec_raw(
                 "SELECT srs_idt(id) AS id FROM srs_unknown_events",
                 &[],
                 true,
@@ -1917,19 +1882,77 @@ mod exec_tests {
         let (cols, rows) = rows::decode(&s).unwrap();
         assert_eq!(cols, 1);
         assert_eq!(rows.len(), 2);
-        core.exec("ROLLBACK", &[], false).unwrap();
-        assert!(!core.in_transaction().unwrap());
-        core.exec_batch(
-            &["INSERT INTO srs_unknown_events (id, profile_uid, json) VALUES (srs_id(?), 'p', '{}')"],
-            &[(0, vec![Value::Text("b".into())]), (0, vec![Value::Text("c".into())])],
+        core.exec_batch_raw(
+            &[INSERT],
+            &[
+                (0, vec![Value::Text("b".into())]),
+                (0, vec![Value::Text("c".into())]),
+            ],
         )
         .unwrap();
-        let s = core
-            .exec("SELECT COUNT(*) FROM srs_unknown_events", &[], true)
+        assert_eq!(count(&core), Value::Integer(3));
+        assert!(
+            core.exec_batch_raw(
+                &[INSERT, "INSERT INTO nope VALUES (1)"],
+                &[(0, vec![Value::Text("d".into())]), (1, vec![])],
+            )
+            .is_err()
+        );
+        assert_eq!(
+            count(&core),
+            Value::Integer(3),
+            "the failed batch left a row"
+        );
+        assert!(core.exec_raw("SELECT nope", &[], true).is_err());
+        assert!(!core.in_transaction().unwrap());
+    }
+
+    /// 原始通道也不能在写连接上留下跨调用的事务：BEGIN / SAVEPOINT 当场回滚并报错，之后的命令照常自己提交。
+    #[test]
+    fn raw_exec_refuses_to_leave_a_transaction_open() {
+        let core = open("raw_tx");
+        for sql in ["BEGIN", "BEGIN TRANSACTION", "SAVEPOINT s1"] {
+            let err = core.exec_raw(sql, &[], true).unwrap_err();
+            assert!(err.contains("must not leave a transaction open"), "{err}");
+            assert!(!core.in_transaction().unwrap(), "{sql} left a transaction");
+        }
+        core.exec_raw(INSERT, &[Value::Text("a".into())], false)
             .unwrap();
-        let (_, rows) = rows::decode(&s).unwrap();
-        assert_eq!(rows[1][0], Value::Integer(2));
-        assert!(core.exec("SELECT nope", &[], true).is_err());
+        assert_eq!(count(&core), Value::Integer(1));
+    }
+
+    /// Drift 执行器的入口只读（`ffsrs_store_exec` mode 2 = [SrsCore::select]）：写语句、`… RETURNING`、PRAGMA、
+    /// 事务控制语句都报 [READ_ONLY]、不执行；只读查询照常。
+    #[test]
+    fn the_drift_select_entry_is_read_only() {
+        let core = open("readonly");
+        core.exec_raw(INSERT, &[Value::Text("a".into())], false)
+            .unwrap();
+        for sql in [
+            "BEGIN",
+            "BEGIN TRANSACTION",
+            "SAVEPOINT s1",
+            "COMMIT",
+            "ROLLBACK",
+            "PRAGMA wal_autocheckpoint",
+            "PRAGMA wal_autocheckpoint = 0",
+            "INSERT INTO srs_unknown_events (id, profile_uid, json) VALUES ('r', 'p', '{}')",
+            "INSERT INTO srs_unknown_events (id, profile_uid, json) VALUES ('r', 'p', '{}') RETURNING id",
+            "WITH x AS (SELECT 1) INSERT INTO srs_unknown_events (id, profile_uid, json) SELECT 'w', 'p', '{}' FROM x",
+            "UPDATE srs_unknown_events SET json = '[]'",
+            "DELETE FROM srs_unknown_events",
+        ] {
+            let err = core.select(sql, &[]).unwrap_err();
+            assert!(err.starts_with(READ_ONLY), "{sql}: {err}");
+        }
+        assert_eq!(count(&core), Value::Integer(1));
+        assert!(!core.in_transaction().unwrap());
+        let wal: i64 = core
+            .writer()
+            .unwrap()
+            .query_row("PRAGMA wal_autocheckpoint", [], |r| r.get(0))
+            .unwrap();
+        assert_ne!(wal, 0, "the PRAGMA write ran");
     }
 }
 
@@ -1951,7 +1974,7 @@ mod read_routing_tests {
     }
 
     fn insert(core: &SrsCore, id: &str) {
-        core.exec(
+        core.exec_raw(
             "INSERT INTO srs_unknown_events (id, profile_uid, json) VALUES (srs_id(?1), 'p', '{}')",
             &[Value::Text(id.into())],
             false,
@@ -1993,7 +2016,7 @@ mod read_routing_tests {
         used
     }
 
-    /// 写那一路的常驻只读连接（drift_write_reader）和 Conn / 读连接池同一约定：一条大查询跑完，页缓存收到
+    /// 内联执行器的常驻只读连接（drift_write_reader）和 Conn / 读连接池同一约定：一条大查询跑完，页缓存收到
     /// IDLE_CACHE_BYTES（8 MB）以内，不常驻到 cache_size（64 MB）。对照：同样的查询在一条不收缓存的只读连接上
     /// 跑完会留 8 MB 以上，证明这条查询确实把缓存撑过了上限。
     #[test]
@@ -2035,7 +2058,7 @@ mod read_routing_tests {
         );
     }
 
-    /// BUG-4013：SQLite 每条连接各映射一份主库文件。只有写连接按 [MMAP_BYTES] 映射；两个读连接池、写那一路的只读连接
+    /// BUG-4013：SQLite 每条连接各映射一份主库文件。只有写连接按 [MMAP_BYTES] 映射；两个读连接池、内联执行器的只读连接
     /// 等次要连接只在 32 位进程上不映射（合计地址占用从 6–7 × 256 MB 收到 1 × 256 MB），64 位（含 iOS）照旧。
     #[test]
     fn only_primary_connections_reserve_mmap_address_space_on_32_bit() {
@@ -2085,18 +2108,15 @@ mod read_routing_tests {
         }
     }
 
-    /// Drift 事务外：查询走读连接的已提交快照——写后立即读得到；一笔 Rust 写命令攥着写锁、事务还没提交时，
+    /// 查询走读连接的已提交快照——写后立即读得到；一笔 Rust 写命令攥着写锁、事务还没提交时，
     /// 查询不排队（在写锁释放前就返回）也读不到那笔未提交的行；那笔提交后立刻读得到。
     #[test]
-    fn select_outside_a_drift_transaction_reads_the_committed_snapshot_without_the_write_lock() {
+    fn select_reads_the_committed_snapshot_without_the_write_lock() {
         let core = Arc::new(open("outside"));
         insert(&core, "a");
-        // 写后立即读（read-your-writes）：autocommit 写在 exec 返回前已提交，读连接新开的读事务看得见。
+        // 写后立即读（read-your-writes）：写在返回前已提交，读连接新开的读事务看得见。
         assert_eq!(count(&core), Value::Integer(1));
-        assert!(
-            !on_writer(&core),
-            "out-of-transaction query ran on the writer"
-        );
+        assert!(!on_writer(&core), "the query ran on the writer");
         // 另一条线程攥着写锁、开着一笔没提交的写事务（Rust 写命令的形态：in_savepoint 在 autocommit 连接上自成事务）。
         let (held_tx, held_rx) = mpsc::channel::<()>();
         let (release_tx, release_rx) = mpsc::channel::<()>();
@@ -2135,89 +2155,6 @@ mod read_routing_tests {
         body();
         conn.execute_batch("RELEASE t").unwrap();
     }
-
-    /// Drift 事务内（BEGIN 经 runCustom = exec(select) 开）：查询留在写连接上，同事务读得到刚写的未提交行；
-    /// 同一时刻读连接上的只读命令只看已提交的；回滚后查询回到读连接，未提交的行消失。嵌套 SAVEPOINT 同样。
-    #[test]
-    fn select_inside_a_drift_transaction_sees_its_uncommitted_rows() {
-        let core = open("inside");
-        insert(&core, "a");
-        core.exec("BEGIN TRANSACTION", &[], true).unwrap();
-        insert(&core, "b");
-        assert_eq!(
-            count(&core),
-            Value::Integer(2),
-            "transaction did not see its own write"
-        );
-        assert!(on_writer(&core), "in-transaction query left the writer");
-        // 事务外的读（读连接上的 Rust 只读命令 / 诊断查询）不读脏数据。
-        assert_eq!(
-            scalar(
-                &core
-                    .debug_query("SELECT COUNT(*) FROM srs_unknown_events", &[])
-                    .unwrap()
-            ),
-            Value::Integer(1)
-        );
-        assert_eq!(
-            core.read_visible(|c| c
-                .query_row("SELECT COUNT(*) FROM srs_unknown_events", [], |r| r
-                    .get::<_, i64>(0))
-                .map_err(|e| e.to_string()))
-                .unwrap(),
-            2,
-            "a read-only command inside the Drift transaction must read on the writer"
-        );
-        core.exec("SAVEPOINT s1", &[], true).unwrap();
-        insert(&core, "c");
-        assert_eq!(count(&core), Value::Integer(3));
-        core.exec("ROLLBACK TO s1", &[], true).unwrap();
-        core.exec("RELEASE s1", &[], true).unwrap();
-        assert_eq!(count(&core), Value::Integer(2));
-        core.exec("ROLLBACK TRANSACTION", &[], true).unwrap();
-        assert!(!core.in_transaction().unwrap());
-        assert_eq!(count(&core), Value::Integer(1));
-        assert!(!on_writer(&core));
-        core.exec("BEGIN TRANSACTION", &[], true).unwrap();
-        insert(&core, "d");
-        core.exec("COMMIT TRANSACTION", &[], true).unwrap();
-        assert_eq!(
-            count(&core),
-            Value::Integer(2),
-            "committed Drift transaction not visible to the next query"
-        );
-        assert!(!on_writer(&core));
-        // 批量语句里出错、事务没了：路由跟着写连接的真实状态走。
-        core.exec("BEGIN TRANSACTION", &[], true).unwrap();
-        assert!(
-            core.exec_batch(
-                &["COMMIT", "INSERT INTO nope VALUES (1)"],
-                &[(0, vec![]), (1, vec![])]
-            )
-            .is_err()
-        );
-        assert!(!core.in_transaction().unwrap());
-        assert!(!on_writer(&core));
-    }
-
-    /// 留在写连接上的「查询」：PRAGMA 读写连接自己的设置；`… RETURNING` 是写语句。
-    #[test]
-    fn pragmas_and_returning_stay_on_the_writer() {
-        let core = open("pragma");
-        core.exec("PRAGMA wal_autocheckpoint = 0", &[], true)
-            .unwrap();
-        assert_eq!(
-            scalar(&core.select("PRAGMA wal_autocheckpoint", &[]).unwrap()),
-            Value::Integer(0)
-        );
-        core.exec("PRAGMA wal_autocheckpoint = 1000", &[], true)
-            .unwrap();
-        let page = core
-            .select("INSERT INTO srs_unknown_events (id, profile_uid, json) VALUES ('r', 'p', '{}') RETURNING id", &[])
-            .unwrap();
-        assert_eq!(scalar(&page), Value::Text("r".into()));
-        assert_eq!(count(&core), Value::Integer(1));
-    }
 }
 
 #[cfg(test)]
@@ -2225,7 +2162,7 @@ mod direct_tests {
     use super::*;
 
     #[test]
-    fn history_states_reads_uncommitted_logs_on_the_writer() {
+    fn history_states_reads_the_logs_on_the_writer() {
         let dir = std::env::temp_dir().join(format!("ffsrs_hist_{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let p = dir.join("srs.db");
@@ -2237,17 +2174,17 @@ mod direct_tests {
         let expect_new =
             crate::history::encode_states(&[crate::history::state_from_json(&[], &[]).unwrap()]);
         assert_eq!(empty, expect_new);
-        core.exec("BEGIN", &[], false).unwrap();
-        core.exec(
+        core.exec_raw(
             "INSERT INTO srs_review_logs (id, profile_uid, card_id, kind, rating, occurred_at, \
              review_type, origin, duration_ms, jslim) VALUES ('x', 'p', 'c1', 'k', NULL, 0, 'r', 'o', 0, 'not json')",
             &[],
             false,
         )
         .unwrap();
-        // 事务里新插的那行（坏 JSON）被读到了 → 解析报错。
+        // 新插的那行（坏 JSON）被读到了 → 解析报错。
         assert!(core.history_states(&[vec!["c1".into()]]).is_err());
-        core.exec("ROLLBACK", &[], false).unwrap();
+        core.exec_raw("DELETE FROM srs_review_logs WHERE id = 'x'", &[], false)
+            .unwrap();
         assert_eq!(
             core.history_states(&[vec!["c1".into()]]).unwrap(),
             expect_new
@@ -2287,7 +2224,7 @@ mod direct_tests {
             ("c", "c1", c.as_str()),
             ("u", "c1", undo),
         ] {
-            core.exec(
+            core.exec_raw(
                 "INSERT INTO srs_review_logs (id, profile_uid, card_id, kind, rating, occurred_at, \
                  review_type, origin, duration_ms, jslim) VALUES (srs_id(?1), 'p', srs_id(?2), 'k', NULL, 0, 'r', 'o', 0, ?3)",
                 &[Value::Text(id.into()), Value::Text(card.into()), Value::Text(json.into())],
@@ -2339,7 +2276,7 @@ mod close_tests {
         {
             let core = SrsCore::open(&p).unwrap();
             core.legacy_mark_none().unwrap();
-            core.exec(
+            core.exec_raw(
                 "INSERT INTO srs_unknown_events (id, profile_uid, json) VALUES ('a', 'p', '{}')",
                 &[],
                 false,

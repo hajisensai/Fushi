@@ -5,14 +5,14 @@
 //! （`SrsDbStore._clock` / `HlcClock`，状态存在本机状态行的 `hlc` / `writerId`）：作答时 Dart 打 HLC，手动排程操作
 //! （`sched`）把时钟交进来让内核接着推进再交回去。现在状态与推进规则都在这里：`apply` / `sched` 在命令的同一个
 //! SAVEPOINT 里 [LegacyClock::load] → 推进 → [LegacyClock::save]，命令回滚时钟随之回滚。Dart 不再有时钟的内存副本：
-//! 同一个库上开着两个副本对象（备份并入 / 档案并入各自另开一个）、或外层 Drift 事务回滚时，以前两份内存时钟各走
+//! 同一个库上开着两个副本对象（备份并入 / 档案并入各自另开一个）、或写入回滚时，以前两份内存时钟各走
 //! 各的、回滚后要靠 `reloadLocal` 对齐，现在只有库里这一份。
 //!
 //! **推进规则与 Dart 旧实现逐值相同**（已落库的 HLC 的字节表示与排序语义不变）：[LegacyClock::tick] /
 //! [LegacyClock::receive] 对拍 `tests/fixtures/legacy_clock_vectors.json`——搬之前用 Dart `HlcClock` 跑出来冻结的
 //! 向量（生成器 packages/fushi_engine/test/srs/fixtures/gen_legacy_clock_vectors.dart.txt）。
 //!
-//! 本机状态行里的键（都是内核持有，store/local_state.rs `KERNEL_HELD_KEYS`）：
+//! 本机状态行里的键（整行只有内核写，store/local_state.rs；这几个键只有这里写）：
 //! - `hlc`、`writerId`：这里读写。
 //! - `incarnation`：只读（没有 `writerId` 时拼缺省写入者）。它与 `lastSeq` / `applied` / `outboxSeq` 是旧版 Dart
 //!   写入者的状态，现在没有写入方：存量行里的值原样留着（降级回旧版本还读得到），新行没有这几个键（旧版本按缺省
@@ -183,21 +183,15 @@ impl LegacyClock {
         }
     }
 
-    /// 把时钟（与还没存过的写入者）写进本机状态行；库里已是这个值就不写。行还不存在时先按合并协议建行（内核持有的
-    /// 键取初值，见 local_state.rs `merge`），再写自己的键——不动别的键。`apply` / `sched` 每次都调：行里还没有
+    /// 把时钟（与还没存过的写入者）写进本机状态行；库里已是这个值就不写。行还不存在时先建行（local_state.rs `ensure_row`：当前缓存
+    /// 版本 + 新纪元），再写自己的键——不动别的键。`apply` / `sched` 每次都调：行里还没有
     /// `hlc` / `writerId`（新库第一次写、覆盖恢复之后）时即使时钟没推进也会写下 `(0, 0, 写入者)`，与以前 Dart 随
     /// 命令交来的整行相同。
     pub(crate) fn save(&mut self, c: &Connection, profile: &str) -> Result<(), String> {
         if !self.dirty && self.writer_stored {
             return Ok(());
         }
-        c.prepare_cached(
-            "INSERT OR IGNORE INTO srs_local_state (profile_uid, json) \
-             VALUES (srs_id(?1), srs_local_state_merge(NULL, '{}'))",
-        )
-        .map_err(sql)?
-        .execute([profile])
-        .map_err(sql)?;
+        crate::store::local_state::ensure_row(c, profile)?;
         c.prepare_cached(
             "UPDATE srs_local_state SET json = json_set(json, '$.hlc', ?2, '$.writerId', ?3) \
              WHERE profile_uid = srs_id(?1)",
