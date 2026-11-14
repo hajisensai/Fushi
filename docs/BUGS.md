@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3971 条。点号进各自文件。
+> 共 3972 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4480](bugs/BUG-4480-manga-ocr-apostrophe.md) | ✅ | ✅ | 漫画 OCR 逐字节点的词内撇号扫描与小说不一致 |
 | [BUG-4479](bugs/BUG-4479-manga-ocr-dehyphenation.md) | ✅ | ✅ | 漫画 OCR 行尾断字导致整词查词失败 |
 | [BUG-4478](bugs/BUG-4478-srs-sync2-bootstrap-channel-never-selected.md) | ✅ | ✅ | 复习同步 v2 的新设备收段通道在生产里一次都不会被选中 |
 | [BUG-4477](bugs/BUG-4477-srs-adopt-deletes-decks-without-notes.md) | ✅ | ✅ | 复习同步关联只看笔记，只建了牌组 / 改了预设的设备被自动采用对方 uid，自建牌组与预设被删 |

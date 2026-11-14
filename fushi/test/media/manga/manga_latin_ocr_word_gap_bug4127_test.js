@@ -46,6 +46,10 @@ class FakeElement {
     return this.childNodes.map((child) => child.textContent).join('');
   }
 
+  get classList() {
+    return { contains: (name) => (this.className || '').split(/\s+/).includes(name) };
+  }
+
   // 只认标签名选择器（类 / 属性选择器一律视为不匹配，与叠加层取词无关）。
   closest(selector) {
     const wanted = new Set(
@@ -103,14 +107,16 @@ function fakeDocument(body) {
 ///
 /// BUG-4361：`{box: true}` 另起一个 <p class="ocr-box">（相邻两个 OCR 块），验证跨字格的
 /// 词首回退不越过块界。
-function mountOcrBox(items) {
+function mountOcrBox(items, plain = false) {
   const body = new FakeElement('body', null);
   let box = new FakeElement('p', body);
+  box.className = plain ? '' : 'ocr-box';
   body.childNodes.push(box);
   const glyphs = [];
   for (const item of items) {
     if (item.box) {
       box = new FakeElement('p', body);
+      box.className = plain ? '' : 'ocr-box';
       body.childNodes.push(box);
       continue;
     }
@@ -127,8 +133,8 @@ function mountOcrBox(items) {
   return { body, glyphs };
 }
 
-function tap(items, glyphIndex, offset) {
-  const { body, glyphs } = mountOcrBox(items);
+function tap(items, glyphIndex, offset, plain = false) {
+  const { body, glyphs } = mountOcrBox(items, plain);
   const window = {
     getComputedStyle: () => ({ display: 'inline', content: 'none' }),
     getSelection: () => ({ removeAllRanges() {} }),
@@ -141,6 +147,11 @@ function tap(items, glyphIndex, offset) {
   selection.selection = null;
   // offset：被点字格文本节点内的偏移（漫画宿主恒为 0；阅读器单节点用例给非 0）。
   selection.selectFromPosition(glyphs[glyphIndex], offset || 0, 24);
+  if (selection.selection) {
+    assert.strictEqual(selection.selection.ranges
+      .map((r) => r.node.textContent.slice(r.start, r.end)).join(''),
+      selection.selection.text, 'query and DOM ranges use identical characters');
+  }
   return selection.selection ? selection.selection.text : null;
 }
 
@@ -154,3 +165,33 @@ for (const block of MANGA_OCR_CASES) {
 }
 assert.ok(executed > 0, 'no cases executed');
 console.log(`all assertions passed (${executed})`);
+
+// BUG-4480: a word split into OCR glyphs must have exactly the same apostrophe
+// boundaries as the novel's single text node, including its suffix-only rewind.
+let apostropheChecks = 0;
+for (const mark of ["'", '\u2018', '\u2019', '\u02bc']) {
+  for (const word of [`don${mark}t`, `I${mark}m`, `she${mark}s`, `l${mark}homme`,
+    `${mark}hello${mark}`, `日${mark}本`, `a${mark}7`, `a${mark}${mark}b`]) {
+    const items = Array.from(word, (char) => ({ char }));
+    for (let at = 0; at < word.length; at++) {
+      assert.strictEqual(tap(items, at, 0), tap([{ char: word }], 0, at, true),
+        `OCR/novel apostrophe mismatch ${JSON.stringify(word)} at ${at}`);
+      apostropheChecks++;
+    }
+  }
+}
+for (const items of [
+  [{ char: 'don' }, { char: "'t" }],
+  [{ char: "don'" }, { char: 't' }],
+  [{ char: 'don' }, { gap: ' ' }, { char: "'" }, { char: 't' }],
+  [{ char: 'don' }, { char: "'" }, { gap: ' ' }, { char: 't' }],
+  [{ char: 'don' }, { box: true }, { char: "'" }, { char: 't' }],
+  [{ char: 'don' }, { char: "'" }, { box: true }, { char: 't' }],
+]) {
+  assert.strictEqual(tap(items, 0, 0), items.length === 2 ? "don't" : 'don');
+  apostropheChecks++;
+}
+// The new cross-node context is limited to OCR boxes. EPUB inline nodes keep
+// their existing behavior, rather than changing novel/audiobook word scanning.
+assert.strictEqual(tap([{ char: 'don' }, { char: "'t" }], 0, 0, true), 'don');
+console.log(`apostrophe assertions passed (${apostropheChecks + 1})`);

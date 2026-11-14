@@ -295,6 +295,10 @@ void main() {
           result.stdout.toString(),
           contains('all assertions passed (22)'),
         );
+        expect(
+          result.stdout.toString(),
+          contains('apostrophe assertions passed (155)'),
+        );
       } finally {
         tmp.deleteSync(recursive: true);
       }

@@ -2024,6 +2024,34 @@ window.fushiSelection = {
       this.isSpaceDelimitedLetter(text[index - 1]) &&
       this.isSpaceDelimitedLetter(text[index + 1]);
   },
+  // BUG-4480：OCR 每个字格是独立文本节点，词内撇号的两侧字母可能在相邻字格。
+  // 只在同一 OCR 块内补齐上下文，再复用小说的字符判据；空白缝、块界仍然阻断。
+  // 不改变词首回退：小说点击 l'homme 的 h 也从 homme 开始，漫画保持同一语义。
+  isIntraWordApostropheAt: function(node, index) {
+    var content = node.textContent;
+    if (!this.intraWordApostrophePattern.test(content[index] || '')) return false;
+    if (this.isIntraWordApostrophe(content, index)) return true;
+    var container = this.findParagraph(node);
+    if (!container || !container.classList || !container.classList.contains('ocr-box')) return false;
+    var before = content[index - 1];
+    var after = content[index + 1];
+    var walker = this.createWalker(container);
+    if (before === undefined) {
+      walker.currentNode = node;
+      var prev = walker.previousNode();
+      if (!prev || this.findParagraph(prev) !== container ||
+          this.hasSkippedWhitespaceBetween(prev, node)) return false;
+      before = prev.textContent.slice(-1);
+    }
+    if (after === undefined) {
+      walker.currentNode = node;
+      var next = walker.nextNode();
+      if (!next || this.findParagraph(next) !== container ||
+          this.hasSkippedWhitespaceBetween(node, next)) return false;
+      after = next.textContent[0];
+    }
+    return this.isIntraWordApostrophe(before + content[index] + after, 1);
+  },
   isFurigana: function(node) {
     var el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
     return !!(el && el.closest('rt, rp'));
@@ -3428,7 +3456,7 @@ window.fushiSelection = {
       while (scanOffset < content.length && text.length < maxLength) {
         var char = content[scanOffset];
         // BUG-2056：词内撇号先于终点判定跨过去（don’t 不被截成 don）。
-        if (this.isIntraWordApostrophe(content, scanOffset)) {
+        if (this.isIntraWordApostropheAt(scanNode, scanOffset)) {
           text += char;
           scanOffset++;
           continue;
