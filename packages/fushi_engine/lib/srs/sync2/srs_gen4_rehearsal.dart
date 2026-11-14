@@ -80,11 +80,11 @@ class SrsGen4RehearsalReport {
   final Map<String, Object?> raw;
 }
 
-/// 预演的缓存配置：库里每个出现过数据的 profile 一份，与 app 交给旧内核的同一份（[srsCacheConfigOf]）。
+/// 预演的缓存配置：库里每个出现过数据的 profile 一份，与 app 交给旧内核的同一份（[srsCacheConfigFor]）。
 Future<Map<String, Object?>> _rehearsalCaches(SrsCore core) async {
   final SrsStoredProfiles stored = await srsStoredProfiles(core);
   return <String, Object?>{
-    for (final String uid in stored.uids) uid: srsCacheConfigOf(uid),
+    for (final String uid in stored.uids) uid: srsCacheConfigFor(uid),
   };
 }
 

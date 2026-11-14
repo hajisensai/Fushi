@@ -1822,6 +1822,46 @@ mod tests {
         assert!(!work.join(WORK_FILE).exists());
     }
 
+    /// 设计 §10 第 14 条的合成实测：协议 3 迁移过的旧修改记录（带旧戳）被清除之后，从槽重建的旧戳闭包比老设备累计的
+    /// `sync2_legacy` 小——空洞不带旧戳，`sync2_legacy` 只增不减。干跑照报（`closures`），不计入判定。
+    #[test]
+    fn a_purged_heritage_edit_shrinks_the_rebuilt_closure() {
+        let d = Device::new("g4dryclosure");
+        let legacy = |writer: &str, s: i64, note: &str, vv: Value| {
+            let id = crate::registers::edit_id(writer, s);
+            let j = json!({"ctx": {"vv": vv}, "e": note, "f": "f/fa", "hlc": format!("{}:0:{writer}", T0 - 1000 + s),
+                           "id": id, "k": "note", "p": P, "s": s, "ts": "wall", "v": format!("v{s}"), "w": writer});
+            d.core
+                .writer()
+                .unwrap()
+                .execute(
+                    "INSERT INTO srs_field_edits (id, profile_uid, entity_kind, entity_id, field_key, writer_id, seq, jslim) \
+                     VALUES (srs_id(?1), srs_id(?2), 'note', srs_id(?3), 'f/fa', ?4, ?5, ?6)",
+                    params![id, P, note, writer, s, j.to_string()],
+                )
+                .unwrap();
+        };
+        // 旧写入者 old1 只写过 N1（seq 1、2），old2 只写过 N2、没见过 old1。
+        legacy("old1", 1, N1, json!({}));
+        legacy("old1", 2, N1, json!({"old1": 1}));
+        legacy("old2", 1, N2, json!({}));
+        d.core.sync2_identity(P, T0).unwrap();
+        d.core.sync2_migrate(P, T0, None).unwrap();
+        let before = dry(&d, &Stop::new(), &mut |_, _| {});
+        assert_eq!(
+            before["profiles"][0]["closures"]["different"], 0,
+            "{before:#}"
+        );
+        d.core.sync2_purge(P, "note", N1, T0 + 1).unwrap();
+        let after = dry(&d, &Stop::new(), &mut |_, _| {});
+        let c = &after["profiles"][0]["closures"];
+        assert_eq!(c["different"], 1, "{after:#}");
+        let dev = &c["devices"][0];
+        // 老设备累计的仍见过 old1 的 1、2；从槽重建的只剩 N2 上 old2 那条的旧戳。
+        assert_eq!(dev["dotsOnlyOld"], 2, "{after:#}");
+        assert_eq!(dev["dotsOnlyNew"], 0, "{after:#}");
+    }
+
     /// 真实样本库的私有拷贝上干跑一遍，打印报告；别名各类的数与 G3 探针（证据取旧投影表、另一份实现）同口径对照。
     ///
     /// `FUSHI_GEN4_SAMPLE_DB=<srs.db 的私有拷贝> [FUSHI_GEN4_CACHE_CFG_FILE=<CacheConfig JSON>] [FUSHI_GEN4_WORK=<目录>]
