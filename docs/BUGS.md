@@ -33,12 +33,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3931 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-4388](bugs/BUG-4388-gal-kirikiri-bootstrap-silent-stall.md) | ✅ | ✅ | KiriKiri 查词 / KAG 文本道 bootstrap 静默停住：addHook 一个钩子名被拒即整个传感器作废，安装链各出口无诊断 |
-> 共 4001 条。点号进各自文件。
+> 共 4002 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -48,6 +43,7 @@
 | [BUG-4622](bugs/BUG-4622-manga-ocr-apostrophe.md) | ✅ | ✅ | 漫画 OCR 逐字节点的词内撇号扫描与小说不一致 |
 | [BUG-4621](bugs/BUG-4621-manga-ocr-dehyphenation.md) | ✅ | ✅ | 漫画 OCR 行尾断字导致整词查词失败 |
 | [BUG-4620](bugs/BUG-4620-cuda-budget-read-from-igpu-adapter.md) | ✅ | ✅ | CUDA 转录的显存预算读的是 DXGI 适配器 0，混合显卡笔记本上是核显 |
+| [BUG-4557](bugs/BUG-4557-gal-kirikiri-bootstrap-silent-stall.md) | ✅ | ✅ | KiriKiri 查词 / KAG 文本道 bootstrap 静默停住：addHook 一个钩子名被拒即整个传感器作废，安装链各出口无诊断 |
 | [BUG-4533](bugs/BUG-4533-flatpak-x11-mesa-crash.md) | ✅ | ✅ | flatpak-x11-mesa-crash |
 | [BUG-4521](bugs/BUG-4521-mokuro-import-volumes-not-grouped.md) | ✅ | ✅ | mokuro catalog import does not group volumes into a series |
 | [BUG-4510](bugs/BUG-4510-dict-materialize-reprobe-loop.md) | ✅ | ✅ | 词典物化探测自我喂养：预算后回报触发重装，重装又对全部目录起新 worker，启动卡在 rebuild-dict-paths、窗口无响应 |

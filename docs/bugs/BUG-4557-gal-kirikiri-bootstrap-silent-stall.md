@@ -1,4 +1,4 @@
-## BUG-4388 · KiriKiri 查词 / KAG 文本道 bootstrap 静默停住：addHook 一个钩子名被拒即整个传感器作废，安装链各出口无诊断
+## BUG-4557 · KiriKiri 查词 / KAG 文本道 bootstrap 静默停住：addHook 一个钩子名被拒即整个传感器作废，安装链各出口无诊断
 - **报告**：2026-11-12（用户：志愿者机真机两例，经协调会话转来）
   - 出会って5分は俺のもの！時間停止と不可避な運命（KiriKiri Z 1.3.3.7 x86，TVPMainWindow 全屏，windowEx / KAGParserEx）：KAG 文本道与查词传感器都没装上，日志里没有 `[FushiKagText] bootstrap installed=`，readiness 停在 `lookup_diag=0xb0000040 diag2=0xa584000c`。
   - ひこうき雲の向こう側（经典 KiriKiri2 x86，TTVPWindowForm，Locale Emulator 启动）：文本道正常（installed=127），查词传感器从不建立，`diag2` 最终是 `0x1d96000c`（kag 与 kag.addHook 都在、TJS bootstrap 函数仍挂着），点击未被认领、剧情推进。
