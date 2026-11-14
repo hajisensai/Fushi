@@ -30,9 +30,13 @@ class HeavyOffload {
   final List<String> distArgs;
 }
 
-/// How often a busy remote worker is asked again before it is given up on
-/// (30 s apart): heavy.dart would rather run here than wait long.
-const int kHeavyOffloadBusyRetries = 2;
+/// How often a busy remote worker is asked again within one dist_test
+/// attempt (30 s apart): none (2026-11-10, was 2). heavy.dart would rather
+/// run here than wait long, and a run that cannot start here at once keeps
+/// asking the other machines while it queues instead
+/// (test_flow/heavy_offload_rival.dart), so waiting inside the attempt only
+/// held up a run a free slot here could have started.
+const int kHeavyOffloadBusyRetries = 0;
 
 /// How long heavy.dart lets an offloaded run go past `--max-minutes` before
 /// it kills it: dist_test enforces the same limit itself (killing the remote
@@ -165,6 +169,7 @@ HeavyOffload? planHeavyOffload(
       kind: HeavyOffloadKind.build,
       distArgs: <String>[
         '--build',
+        '--busy-retries=$kHeavyOffloadBusyRetries',
         '--',
         if (build.tool == 'flutter') ...<String>['flutter', 'build'],
         if (build.tool == 'gradle') 'gradlew',
@@ -323,6 +328,11 @@ HeavyOffload? _planAnalyze(List<String> args, bool Function(String) exists) {
   }
   return HeavyOffload(
     kind: HeavyOffloadKind.analyze,
-    distArgs: <String>['--analyze', ...paths, ...options],
+    distArgs: <String>[
+      '--analyze',
+      '--busy-retries=$kHeavyOffloadBusyRetries',
+      ...paths,
+      ...options,
+    ],
   );
 }

@@ -11,7 +11,9 @@
 //!   记「并入进行中」的标记、收尾的「核对 + 删旧 uid」（一笔）；[SrsCore::meta_set_edit]：profile 链接记的两个字符串
 //!   集合的原子增删。它们取代了 Dart 经 Drift 的直写与那笔 Drift 事务（收掉 Dart 写路径第 11 步）；
 //! - [SrsCore::profile_uids]：库里出现过的全部 uid（Dart 与主库现存 profile 比对得出无主 uid）+ 一次性存量扫描的
-//!   完成标记（[SrsCore::orphan_sweep_done] 写）。
+//!   完成标记；
+//! - [SrsCore::orphan_sweep_done]：存量扫描的收尾——表里已经没有任何行、只剩 `srs_meta` 键的无主 uid 的键，和没有
+//!   任何操作引用的 `sync2_deps`，清完写完成标记。
 //!
 //! 表清单按 `sqlite_master` + `pragma_table_info` 现查，不手抄：以后加的按 profile 分的表自动落进删除面
 //! （回归测试 `every_profile_table_is_purged` 钉住「除 `srs_meta` / `sync2_deps` 外每张表都有 `profile_uid`」）。
@@ -25,7 +27,52 @@ use super::sync2::{in_savepoint, sql};
 use std::sync::atomic::Ordering;
 
 /// `srs_meta` 里一次性存量无主数据扫描的完成标记（值 = 完成时刻毫秒）。
-pub(crate) const ORPHAN_SWEEP_KEY: &str = "profile_orphan_sweep_v1";
+///
+/// v2（BUG-4463）：v1 记下之后，并入（srs_profile_merge.dart）与采用 uid（srs_backup_merge.dart）还各有一份手抄的
+/// 删除实现，直到 BUG-4292 才收成本文件的 [SrsCore::profile_purge]：采用只删 10 张 `srs_*` 表、`sync2_*` 一张不删，
+/// 并入按 `sqlite_master` 原序删、按 profile 的 `srs_meta` 键只删两个。v1 扫过的库里这些残留永远不会再被扫到，所以
+/// 换一个键让扫描（同一套判定、同一个 [SrsCore::profile_purge]）再跑一次。旧键留着不删（没人再读）。
+///
+/// v3：v2 的扫描只认「表里还有行」的 uid，表里已经没有行、只剩 `srs_meta` 键的 uid（[meta_only_uids]）与没人引用的
+/// `sync2_deps` 不在它的清理面里；收尾（[SrsCore::orphan_sweep_done]）补上这两类之后再换一次键，v2 扫过的库再扫一次。
+pub(crate) const ORPHAN_SWEEP_KEY: &str = "profile_orphan_sweep_v3";
+
+/// 按 profile 记的 `srs_meta` 键里，profile uid 是**最后一段**的前缀（`<前缀><uid>`；`sync2_sealed/` 中间还有一段
+/// 位置 ID，位置 ID 里可以有 `/`，uid 仍是最后一个 `/` 之后那段）。写的地方：sync2/devices.rs `self_key`，
+/// transport.rs `fork_key` / 状态摘要，sync2/mod.rs `MIGRATING_KEY`，sealed.rs `key`；sync2/heal.rs 的本机组指纹
+/// （`sync2_digest_dg/<uid>`）、对端组指纹与自动重建去重记录（`sync2_dg_peer/<设备>/<uid>`、
+/// `sync2_heal/<设备>/<uid>`，中间是设备 ID），sync2/min_reader.rs 按内容声明的 minReader，binding.rs 的集合绑定状态
+/// （`BINDING_PREFIX`）。
+const META_PROFILE_LAST: [&str; 11] = [
+    "sync2_self_info/",
+    "sync2_fork_at/",
+    "sync2_digest/",
+    "sync2_digest_at/",
+    "sync2_migrating/",
+    "sync2_sealed/",
+    "sync2_digest_dg/",
+    "sync2_dg_peer/",
+    "sync2_heal/",
+    "sync2_min_reader/",
+    "srs_collection_bound/",
+];
+
+/// 同上，profile uid 是前缀之后**第一段**的（`<前缀><uid>/<设备或位置>`；devices.rs `ext_prefix` /
+/// `retired_prefix`，transport.rs 的 head 签名，sync2/former.rs 的旧身份观察记录 `<前缀><uid>/<位置>/<设备>`）。
+const META_PROFILE_FIRST: [&str; 4] = [
+    "sync2_device_ext/",
+    "sync2_retired/",
+    "sync2_head_sig/",
+    "sync2_former/",
+];
+
+/// 带 UUID 但 [meta_only_uids] **不取** uid 的键前缀：
+/// - `sync2_device_hint/<设备>`（devices.rs `hint_key`）：设备 ID 全局唯一、不分 profile。把设备 ID 当成无主 profile
+///   去删，会连带删掉活 profile 名下 `sync2_device_ext/<profile>/<设备>`、`sync2_retired/<profile>/<设备>`
+///   （[delete_profile_meta] 按 `…/<uid>` 结尾匹配）；
+/// - 并入标记 `profile_merge/<旧 uid>`（Dart srs_profile_merge.dart）：没做完的并入从来不是这里要清的残留。
+#[cfg(test)]
+const META_NOT_PROFILE: [&str; 2] = ["sync2_device_hint/", "profile_merge/"];
 
 /// 带 `profile_uid` 列的 `srs_*` / `sync2_*` 表（按名字排序）。删除按这个顺序：投影表（`srs_entities` /
 /// `srs_field_edits` / `srs_review_logs`）的删除触发器往 `sync2_digest_buckets` 记负项（sync2/digest.rs），按名字它排在
@@ -48,6 +95,92 @@ fn profile_tables(c: &Connection) -> Result<Vec<String>, String> {
     Ok(names)
 }
 
+/// [profile] 在各张按 profile 分的表里的总行数。
+fn table_rows(c: &Connection, profile: &str) -> Result<i64, String> {
+    let mut rows = 0i64;
+    for t in profile_tables(c)? {
+        rows += c
+            .query_row(
+                &format!("SELECT COUNT(*) FROM \"{t}\" WHERE profile_uid = srs_id(?1)"),
+                [profile],
+                |r| r.get::<_, i64>(0),
+            )
+            .map_err(sql)?;
+    }
+    Ok(rows)
+}
+
+/// 删掉按 [profile] 记的元数据键：`<前缀>/<uid>`（迁移进度、状态摘要、并入标记…）或 `<前缀>/<uid>/<下级>`（别的
+/// 设备的扩展 / 停用标记、各位置的 head 签名，sync2/devices.rs、transport.rs）；uid 是 UUID，不会误伤别的键。
+/// 返回删掉的键数。
+fn delete_profile_meta(c: &Connection, profile: &str) -> Result<i64, String> {
+    c.execute(
+        "DELETE FROM srs_meta WHERE substr(key, -length(?1) - 1) = '/' || ?1 \
+         OR instr(key, '/' || ?1 || '/') > 0",
+        [profile],
+    )
+    .map(|n| n as i64)
+    .map_err(sql)
+}
+
+/// 回收没有任何操作引用的因果上下文（`sync2_deps` 跨 profile 共用，按引用回收）。返回删掉的行数。
+///
+/// 为什么随时可以删：一行 `sync2_deps` 只经 `sync2_ops.deps` 被读到（sync2/mod.rs `load_op`、mvr.rs、channel.rs
+/// `read_ops` 都是从操作连过来），没有操作引用的行谁也读不到；之后再有操作带同样的版本向量，`intern_deps` 重新
+/// 插一行。内存里记着行号的只有收段会话的 `Append::deps`（channel.rs）：它记下的每个行号都是本会话刚插的操作引用
+/// 着的，那些操作只会被 [SrsCore::profile_purge]（同时作废该会话）删掉，所以这里删不到它记着的行。
+fn gc_deps(c: &Connection) -> Result<i64, String> {
+    c.execute(
+        "DELETE FROM sync2_deps WHERE id NOT IN (SELECT deps FROM sync2_ops)",
+        [],
+    )
+    .map(|n| n as i64)
+    .map_err(sql)
+}
+
+/// [key] 是按 profile 记的键时，取出其中的 profile uid（只认 [META_PROFILE_LAST] / [META_PROFILE_FIRST] 里登记过
+/// 写法的键，且那一段是规范 UUID 文本）；别的键 None。
+fn meta_profile_of(key: &str) -> Option<&str> {
+    let uid = META_PROFILE_FIRST
+        .iter()
+        .find_map(|p| key.strip_prefix(p)?.split_once('/').map(|(uid, _)| uid))
+        .or_else(|| {
+            META_PROFILE_LAST
+                .iter()
+                .find_map(|p| key.strip_prefix(p)?.rsplit('/').next())
+        })?;
+    super::ids::pack(uid).map(|_| uid)
+}
+
+/// 表里已经没有任何行、只剩按 profile 记的 `srs_meta` 键的 uid（排序、去重）。
+///
+/// 怎么来的：BUG-4292 之前删 profile 的 Rust 实现只删 `…/<uid>` 结尾的键，uid 在中间的
+/// （`sync2_device_ext/<uid>/…`、`sync2_retired/<uid>/…`、`sync2_head_sig/<uid>/…`）留下；同期并入的手抄删除按
+/// profile 的键只删两个。表行删光之后这些 uid 不再出现在 [SrsCore::profile_uids] 里，没有任何清理路径看得到它们。
+fn meta_only_uids(c: &Connection) -> Result<Vec<String>, String> {
+    let keys: Vec<String> = c
+        .prepare("SELECT key FROM srs_meta")
+        .map_err(sql)?
+        .query_map([], |r| r.get(0))
+        .map_err(sql)?
+        .collect::<Result<_, _>>()
+        .map_err(sql)?;
+    let mut uids: Vec<String> = keys
+        .iter()
+        .filter_map(|k| meta_profile_of(k))
+        .map(str::to_owned)
+        .collect();
+    uids.sort();
+    uids.dedup();
+    let mut out = Vec::new();
+    for uid in uids {
+        if table_rows(c, &uid)? == 0 {
+            out.push(uid);
+        }
+    }
+    Ok(out)
+}
+
 /// 用户看得见的规模：未删除的笔记、它们的卡、全部复习记录；外加该 uid 在各表里的总行数。
 fn footprint(c: &Connection, profile: &str) -> Result<Value, String> {
     let count =
@@ -60,12 +193,7 @@ fn footprint(c: &Connection, profile: &str) -> Result<Value, String> {
          (SELECT 1 FROM srs_notes_cache n WHERE n.id = c.note_id AND n.deleted_at IS NULL)",
     )?;
     let reviews = count("SELECT COUNT(*) FROM srs_review_logs WHERE profile_uid = srs_id(?1)")?;
-    let mut rows = 0i64;
-    for t in profile_tables(c)? {
-        rows += count(&format!(
-            "SELECT COUNT(*) FROM \"{t}\" WHERE profile_uid = srs_id(?1)"
-        ))?;
-    }
+    let rows = table_rows(c, profile)?;
     Ok(json!({"notes": notes, "cards": cards, "reviews": reviews, "rows": rows}))
 }
 
@@ -171,27 +299,13 @@ fn purge_on(c: &Connection, profile: &str) -> Result<Value, String> {
         }
         deleted += n;
     }
-    // 按 profile 记的元数据键是 `<前缀>/<uid>`（迁移进度、状态摘要、并入标记…）或 `<前缀>/<uid>/<下级>`
-    // （别的设备的扩展 / 停用标记、各位置的 head 签名，sync2/devices.rs、transport.rs）；uid 是 UUID，
-    // 不会误伤别的键。
-    let meta = c
-        .execute(
-            "DELETE FROM srs_meta WHERE substr(key, -length(?1) - 1) = '/' || ?1 \
-             OR instr(key, '/' || ?1 || '/') > 0",
-            [profile],
-        )
-        .map_err(sql)? as i64;
+    let meta = delete_profile_meta(c, profile)?;
     if meta > 0 {
         tables.insert("srs_meta".into(), json!(meta));
     }
     // 迁移队列是按需建的表（没迁移过的库里没有它），表清单查询已经把它算进去了；因果上下文跨 profile 共用，
     // 只回收已经没有任何操作引用的。
-    let deps = c
-        .execute(
-            "DELETE FROM sync2_deps WHERE id NOT IN (SELECT deps FROM sync2_ops)",
-            [],
-        )
-        .map_err(sql)? as i64;
+    let deps = gc_deps(c)?;
     if deps > 0 {
         tables.insert("sync2_deps".into(), json!(deps));
     }
@@ -391,15 +505,44 @@ impl SrsCore {
         out
     }
 
-    /// 记下一次性存量扫描已完成（[ORPHAN_SWEEP_KEY]）。
-    pub fn orphan_sweep_done(&self, now: i64) -> Result<Value, String> {
-        let w = self.writer()?;
-        w.execute(
-            "INSERT INTO srs_meta (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-            params![ORPHAN_SWEEP_KEY, now.to_string()],
-        )
-        .map_err(sql)?;
-        Ok(json!({}))
+    /// 存量扫描的收尾（Dart 逐个清完表里还有行的无主 uid 之后调；一个 savepoint）：
+    ///
+    /// 1. 表里已经没有任何行、只剩 `srs_meta` 键的 uid（[meta_only_uids]）里，不在 [keep] 中的，删掉它名下的键
+    ///    （与 [Self::profile_purge] 同一条删除，[delete_profile_meta]）。[keep] = 主库现存 profile 的 uid 加进行中
+    ///    并入涉及的 uid（Dart 给：并入标记的格式归 srs_profile_merge.dart）。「表里没有行」与删除在同一个 savepoint
+    ///    里判：Dart 算 [keep] 之后才开始的并入，目标 uid 一开副本就有了行，这里就不再动它；
+    /// 2. 回收没有任何操作引用的 `sync2_deps`（[gc_deps]）；
+    /// 3. [mark] 为真时写完成标记（[ORPHAN_SWEEP_KEY]，之后不再扫）；有进行中的并入时 Dart 传 false，下次再扫。
+    ///
+    /// 返回 `{metaUids: [清掉键的 uid…], meta: 删掉的键数, deps: 回收的行数}`。旧库搬迁事务开着时拒绝（同
+    /// [Self::profile_purge]）。重复调用幂等：第二次没有可清的。
+    pub fn orphan_sweep_done(
+        &self,
+        now: i64,
+        keep: &[String],
+        mark: bool,
+    ) -> Result<Value, String> {
+        let w = self.profile_writer()?;
+        in_savepoint(&w, |c| {
+            let mut cleared: Vec<String> = Vec::new();
+            let mut meta = 0i64;
+            for uid in meta_only_uids(c)? {
+                if keep.contains(&uid) {
+                    continue;
+                }
+                meta += delete_profile_meta(c, &uid)?;
+                cleared.push(uid);
+            }
+            let deps = gc_deps(c)?;
+            if mark {
+                c.execute(
+                    "INSERT INTO srs_meta (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                    params![ORPHAN_SWEEP_KEY, now.to_string()],
+                )
+                .map_err(sql)?;
+            }
+            Ok(json!({"metaUids": cleared, "meta": meta, "deps": deps}))
+        })
     }
 }
 
@@ -408,6 +551,7 @@ mod tests {
     use super::*;
     use crate::store::sync2::tests::{P, deck_entity, review, tempdir};
     use serde_json::json;
+    use std::collections::BTreeSet;
 
     const Q: &str = "0193a1b2-0000-7000-8000-00000000cafe";
 
@@ -489,6 +633,20 @@ mod tests {
             )
             .unwrap();
         }
+        // uid 在末尾、中间是别的设备的键（sync2/heal.rs 的对端组指纹 / 自动重建去重记录），与本机组指纹、
+        // 按内容声明的 minReader（sync2/min_reader.rs）。
+        for key in [
+            format!("sync2_dg_peer/0193a1b2-0000-7000-8000-0000000000d1/{profile}"),
+            format!("sync2_heal/0193a1b2-0000-7000-8000-0000000000d1/{profile}"),
+            format!("sync2_digest_dg/{profile}"),
+            format!("sync2_min_reader/{profile}"),
+        ] {
+            w.execute(
+                "INSERT OR REPLACE INTO srs_meta (key, value) VALUES (?1, '{}')",
+                [key],
+            )
+            .unwrap();
+        }
     }
 
     /// [profile] 名下按 profile 记的 `srs_meta` 键数（`…/<uid>` 或 `…/<uid>/…`）。
@@ -535,7 +693,7 @@ mod tests {
                 &format!("SELECT COUNT(*) FROM srs_meta WHERE key LIKE '%/{P}'")
             ) >= 2
         );
-        assert!(meta_of(&core, P) >= 5);
+        assert!(meta_of(&core, P) >= 9);
         let q_meta = meta_of(&core, Q);
 
         let out = core.profile_purge(P).unwrap();
@@ -642,12 +800,21 @@ mod tests {
             core.profile_uids().unwrap(),
             json!({"uids": [], "orphanSweptAt": null})
         );
+        // v1 / v2 的完成标记（清理面还不全时扫的）不算：残留要再扫一次（BUG-4463）。
+        for old in ["profile_orphan_sweep_v1", "profile_orphan_sweep_v2"] {
+            core.writer()
+                .unwrap()
+                .execute("INSERT INTO srs_meta (key, value) VALUES (?1, '7')", [old])
+                .unwrap();
+        }
+        assert_eq!(core.profile_uids().unwrap()["orphanSweptAt"], Value::Null);
         seed(&core, P, 1, 1);
         seed(&core, Q, 1, 0);
         let mut want = vec![P, Q];
         want.sort();
         assert_eq!(core.profile_uids().unwrap()["uids"], json!(want));
-        core.orphan_sweep_done(42).unwrap();
+        core.orphan_sweep_done(42, &[P.to_owned(), Q.to_owned()], true)
+            .unwrap();
         assert_eq!(core.profile_uids().unwrap()["orphanSweptAt"], json!(42));
         core.profile_purge(P).unwrap();
         assert_eq!(core.profile_uids().unwrap()["uids"], json!([Q]));
@@ -913,5 +1080,261 @@ mod tests {
             }
             assert_eq!(edit("retiredUids", Some("n"), None), want, "{bad}");
         }
+    }
+
+    /// 另一个无主 uid。
+    const R: &str = "0193a1b2-0000-7000-8000-00000000f00d";
+    /// 一台别的设备的 ID：UUID 形状，不是任何 profile 的 uid。
+    const DEV: &str = "0193a1b2-0000-7000-8000-0000000d0001";
+
+    fn put_meta(core: &SrsCore, key: &str) {
+        core.writer()
+            .unwrap()
+            .execute("INSERT INTO srs_meta (key, value) VALUES (?1, '{}')", [key])
+            .unwrap();
+    }
+
+    fn has_meta(core: &SrsCore, key: &str) -> bool {
+        let w = core.writer().unwrap();
+        w.query_row("SELECT COUNT(*) FROM srs_meta WHERE key = ?1", [key], |r| {
+            r.get::<_, i64>(0)
+        })
+        .unwrap()
+            == 1
+    }
+
+    /// 旧版删除实现删过的 uid：表行一行不剩，按 profile 记的键留下四个（三个 uid 在中间的 + 一个并入旧实现没删的
+    /// 状态摘要）。
+    fn leave_meta_only(core: &SrsCore, profile: &str) {
+        seed(core, profile, 1, 1);
+        core.profile_purge(profile).unwrap();
+        for key in [
+            format!("sync2_device_ext/{profile}/{DEV}"),
+            format!("sync2_retired/{profile}/{DEV}"),
+            format!("sync2_head_sig/{profile}/local:/srv/sync"),
+            format!("sync2_digest/{profile}"),
+        ] {
+            put_meta(core, &key);
+        }
+        assert_eq!(rows_of(core, profile), 0);
+        assert_eq!(meta_of(core, profile), 4);
+    }
+
+    fn sweep_marker(core: &SrsCore) -> Value {
+        core.profile_uids().unwrap()["orphanSweptAt"].clone()
+    }
+
+    /// 键里 profile 的位置只按登记过的写法取：设备 ID、位置 ID 里的 UUID、并入标记、非规范 UUID 都不是 profile。
+    #[test]
+    fn meta_profile_of_reads_only_registered_positions() {
+        for key in [
+            format!("sync2_self_info/{P}"),
+            format!("sync2_fork_at/{P}"),
+            format!("sync2_digest/{P}"),
+            format!("sync2_digest_at/{P}"),
+            format!("sync2_migrating/{P}"),
+            format!("sync2_sealed/local:/a/b/{P}"),
+            format!("sync2_sealed/folder:{DEV}/x/{P}"),
+            format!("sync2_device_ext/{P}/{DEV}"),
+            format!("sync2_retired/{P}/{DEV}"),
+            format!("sync2_head_sig/{P}/local:/x/{DEV}/y"),
+        ] {
+            assert_eq!(meta_profile_of(&key), Some(P), "{key}");
+        }
+        for key in [
+            format!("sync2_device_hint/{DEV}"),
+            format!("profile_merge/{P}"),
+            format!("sync2_digest/{}", P.to_uppercase()),
+            "sync2_digest/not-a-uuid".to_owned(),
+            format!("sync2_device_ext/{P}"),
+            format!("unknown_prefix/{P}"),
+            "schema".to_owned(),
+            ORPHAN_SWEEP_KEY.to_owned(),
+        ] {
+            assert_eq!(meta_profile_of(&key), None, "{key}");
+        }
+    }
+
+    /// 内核里每个往 `srs_meta` 写按 profile 记的键的地方，前缀都登记在 [META_PROFILE_LAST] / [META_PROFILE_FIRST]
+    /// 里（[meta_only_uids] 只认登记过的）。键都是 `format!("<前缀>/…{profile}…")` 拼的：扫 `src/store` 下的源码，
+    /// 字符串字面量里出现 `/{profile}` 的，开头那段前缀必须登记过。新加一种按 profile 记的键而没登记，这里红。
+    #[test]
+    fn every_profile_meta_key_prefix_is_classified() {
+        // 不是 `srs_meta` 键的 `…/{profile}` 字面量：集合 ID 的派生名（sync2/mod.rs `collection_of`）。
+        const NOT_META: [&str; 1] = ["sync2/"];
+        fn walk(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+            for e in std::fs::read_dir(dir).unwrap() {
+                let path = e.unwrap().path();
+                if path.is_dir() {
+                    walk(&path, out);
+                } else if path.extension().is_some_and(|x| x == "rs") {
+                    out.push(path);
+                }
+            }
+        }
+        let mut files = Vec::new();
+        walk(
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/store"),
+            &mut files,
+        );
+        assert!(files.len() > 20, "{}", files.len());
+        let mut seen: BTreeSet<String> = BTreeSet::new();
+        let needle = concat!("/{", "profile}");
+        for f in files {
+            let src = std::fs::read_to_string(&f).unwrap();
+            for (at, _) in src.match_indices(needle) {
+                // 注释里举的例子不是代码。
+                let line = src[..at].rfind('\n').map_or(0, |n| n + 1);
+                if src[line..at].trim_start().starts_with("//") {
+                    continue;
+                }
+                // 字面量开头：往回找最近的引号；前缀 = 引号后到第一个 `/`（含）。
+                let start = src[..at].rfind('"').map_or(0, |q| q + 1);
+                let literal = &src[start..at + 1];
+                let prefix = &literal[..literal.find('/').unwrap() + 1];
+                seen.insert(prefix.to_owned());
+                assert!(
+                    META_PROFILE_LAST.contains(&prefix)
+                        || META_PROFILE_FIRST.contains(&prefix)
+                        || META_NOT_PROFILE.contains(&prefix)
+                        || NOT_META.contains(&prefix),
+                    "{}: per-profile key prefix {prefix:?} is not classified in profile_data.rs",
+                    f.display()
+                );
+            }
+            // `{MIGRATING_KEY}{profile}` 这种经常量拼的：常量只能是登记过的那两个。
+            for (at, _) in src.match_indices(concat!("}{", "profile}")) {
+                let open = src[..at].rfind('{').unwrap();
+                let name = &src[open + 1..at];
+                assert!(
+                    name == "MIGRATING_KEY" || name == "BINDING_PREFIX",
+                    "{}: {name}",
+                    f.display()
+                );
+            }
+        }
+        // 扫描确实扫到了东西（键的拼法整体换掉时，这条测试不能悄悄变成空转）。
+        for p in META_PROFILE_FIRST {
+            assert!(seen.contains(p), "{p} is registered but no longer written");
+        }
+        for p in [
+            "sync2_self_info/",
+            "sync2_fork_at/",
+            "sync2_digest/",
+            "sync2_digest_at/",
+            "sync2_sealed/",
+        ] {
+            assert!(seen.contains(p), "{p} is registered but no longer written");
+        }
+        let mod_rs = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/store/sync2/mod.rs"),
+        )
+        .unwrap();
+        assert!(mod_rs.contains("const MIGRATING_KEY: &str = \"sync2_migrating/\";"));
+        assert!(META_PROFILE_LAST.contains(&"sync2_migrating/"));
+        assert!(META_PROFILE_LAST.contains(&crate::store::binding::BINDING_PREFIX));
+    }
+
+    /// 收尾清两类残留：只剩 meta 键的无主 uid 的键、没有任何操作引用的 `sync2_deps`。活 profile 名下带设备 ID 的键、
+    /// 不分 profile 的设备键、被引用的因果上下文一个不动；再调一次什么都不变。
+    #[test]
+    fn sweep_rest_clears_meta_only_uids_and_orphan_deps() {
+        let (core, _d) = open("sweep_rest");
+        seed(&core, P, 2, 3);
+        put_meta(&core, &format!("sync2_device_ext/{P}/{DEV}"));
+        put_meta(&core, &format!("sync2_retired/{P}/{DEV}"));
+        put_meta(&core, &format!("sync2_device_hint/{DEV}"));
+        leave_meta_only(&core, Q);
+        core.writer()
+            .unwrap()
+            .execute("INSERT INTO sync2_deps (vv) VALUES (x'DEADBEEF')", [])
+            .unwrap();
+        let p_before = core.profile_footprint(P).unwrap();
+        let p_meta = meta_of(&core, P);
+        let deps_before = count(&core, "SELECT COUNT(*) FROM sync2_deps");
+        assert!(deps_before >= 2, "{deps_before}");
+        // 表行并集里已经没有 Q：原扫描看不到它。
+        assert_eq!(core.profile_uids().unwrap()["uids"], json!([P]));
+
+        let out = core.orphan_sweep_done(9, &[P.to_owned()], true).unwrap();
+        assert_eq!(out, json!({"metaUids": [Q], "meta": 4, "deps": 1}));
+
+        assert_eq!(meta_of(&core, Q), 0);
+        assert_eq!(meta_of(&core, P), p_meta, "the live profile's keys stay");
+        assert!(has_meta(&core, &format!("sync2_device_ext/{P}/{DEV}")));
+        assert!(has_meta(&core, &format!("sync2_retired/{P}/{DEV}")));
+        assert!(has_meta(&core, &format!("sync2_device_hint/{DEV}")));
+        assert_eq!(core.profile_footprint(P).unwrap(), p_before);
+        assert_eq!(
+            count(&core, "SELECT COUNT(*) FROM sync2_deps"),
+            deps_before - 1
+        );
+        assert_eq!(
+            count(
+                &core,
+                "SELECT COUNT(*) FROM sync2_ops WHERE deps NOT IN (SELECT id FROM sync2_deps)"
+            ),
+            0,
+            "every op still has its causal context"
+        );
+        assert_eq!(sweep_marker(&core), json!(9));
+        // 活 profile 照常能写（它的因果上下文还在、之后要用的重新插）。
+        core.sync2_apply_local(P, 3, &json!([{"e": {"t": "entity", "x": {"id": "D2", "p": P, "k": "deck", "d": {"createdAt": 1}}}}]).to_string())
+            .unwrap();
+
+        // 幂等：再调一次没有可清的，库不变。
+        let again = core.orphan_sweep_done(10, &[P.to_owned()], true).unwrap();
+        assert_eq!(again, json!({"metaUids": [], "meta": 0, "deps": 0}));
+        assert_eq!(meta_of(&core, P), p_meta);
+        assert_eq!(sweep_marker(&core), json!(10));
+    }
+
+    /// 不许动的：`keep` 里的 uid（主库现存的 / 进行中并入涉及的）哪怕只剩 meta 键；表里还有行的 uid 哪怕不在 `keep`
+    /// 里（那是 Dart 先备份再经 `profile_purge` 清的）。`mark` 为 false 时不写完成标记。
+    #[test]
+    fn sweep_rest_keeps_kept_uids_and_uids_that_still_have_rows() {
+        let (core, _d) = open("sweep_keep");
+        seed(&core, P, 1, 1);
+        leave_meta_only(&core, Q);
+        seed(&core, R, 1, 1);
+        let r_rows = rows_of(&core, R);
+        let r_meta = meta_of(&core, R);
+        assert!(r_rows > 0 && r_meta > 0);
+
+        // Q 是进行中并入的目标（Dart 把它放进 keep）：不动；R 不在 keep 里但表里有行：这条命令不碰。
+        let out = core
+            .orphan_sweep_done(5, &[P.to_owned(), Q.to_owned()], false)
+            .unwrap();
+        assert_eq!(out["metaUids"], json!([]));
+        assert_eq!(out["meta"], json!(0));
+        assert_eq!(meta_of(&core, Q), 4);
+        assert_eq!(rows_of(&core, R), r_rows);
+        assert_eq!(meta_of(&core, R), r_meta);
+        assert_eq!(sweep_marker(&core), Value::Null, "mark = false");
+
+        // 并入做完之后（Q 不再受保护）下一次扫描清掉它；R 仍然不归这条命令管。
+        let out = core.orphan_sweep_done(6, &[P.to_owned()], true).unwrap();
+        assert_eq!(out["metaUids"], json!([Q]));
+        assert_eq!(meta_of(&core, Q), 0);
+        assert_eq!(rows_of(&core, R), r_rows);
+        assert_eq!(meta_of(&core, R), r_meta);
+        assert_eq!(sweep_marker(&core), json!(6));
+    }
+
+    /// 「表里没有行」在删除的同一个 savepoint 里判：一个 uid 的键算进了候选之后才有了行（并入刚为目标 uid 开了
+    /// 副本），它就不是只剩 meta 键的 uid，键不动。
+    #[test]
+    fn sweep_rest_leaves_a_uid_that_gained_rows() {
+        let (core, _d) = open("sweep_rows");
+        seed(&core, P, 1, 0);
+        leave_meta_only(&core, Q);
+        // 目标 uid 的副本打开：有了同步身份行。
+        core.sync2_identity(Q, 1).unwrap();
+        assert!(rows_of(&core, Q) > 0);
+        let q_meta = meta_of(&core, Q);
+
+        let out = core.orphan_sweep_done(7, &[P.to_owned()], true).unwrap();
+        assert_eq!(out["metaUids"], json!([]));
+        assert_eq!(meta_of(&core, Q), q_meta);
     }
 }

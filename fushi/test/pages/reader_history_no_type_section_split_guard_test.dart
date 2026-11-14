@@ -54,28 +54,50 @@ void main() {
     );
   });
 
+  /// BUG-4277 起「本地 SRT / EPUB 卡 + 远端占位卡 → 合集组与散卡组」的折叠抽成
+  /// `_foldShelfUnits`（主网格与「管理合集」页共用），body 只调用它。
+  String readFold() {
+    final String source = File(path).readAsStringSync();
+    const String start =
+        'List<CollectionGroup<_ShelfBookSlot>> _foldShelfUnits(';
+    final int startIdx = source.indexOf(start);
+    expect(startIdx, greaterThanOrEqualTo(0), reason: '_foldShelfUnits 应存在');
+    final int endIdx = source.indexOf(
+      'Widget _buildBodyWithSrtBooks(',
+      startIdx,
+    );
+    expect(endIdx, greaterThan(startIdx));
+    return source.substring(startIdx, endIdx);
+  }
+
   test('书架 body 把 SRT 与 EPUB 合并进单一网格', () {
     final String body = readBody();
+    final String fold = readFold();
+    expect(
+      body.contains('_foldShelfUnits('),
+      isTrue,
+      reason: '书架 body 的分组必须来自共用折叠 _foldShelfUnits',
+    );
     // 单一 mergedBooks 列表经 groupByCollections 分组：srtBooks / epubBooks 各自构造
     // 成 CollectionOrderingItem<_ShelfBookSlot>（payload 仍是 _ShelfBookSlot，srt/epub
     // 各填一个），合进单一 shelfItems → shelfGroups 交错渲染。散书每条单独成 group、
     // 合集聚成一行，但**依旧无类型分区头**。下列共同证明「SRT + EPUB 进同一合并列表、
     // 不再按类型拆」的合并不变式。
     expect(
-      body.contains('_ShelfBookSlot(srt: srt)'),
+      fold.contains('_ShelfBookSlot(srt: srt)'),
       isTrue,
       reason: 'SRT 卡应作为 _ShelfBookSlot payload 进入合并列表',
     );
     expect(
-      body.contains('_ShelfBookSlot(epub: epub)'),
+      fold.contains('_ShelfBookSlot(epub: epub)'),
       isTrue,
       reason: 'EPUB 卡应作为 _ShelfBookSlot payload 进入同一合并列表',
     );
     // BUG-777：seq 假名次已删——两类同进一个 shelfItems 列表（SRT 段在前、EPUB
     // 段在后的字面顺序即合并证据），排序量纲改由 compareShelfSortKeys 推导。
     expect(
-      body.contains('for (final SrtBook srt in srtBooks)') &&
-          body.contains('for (final MediaItem epub in epubBooks)'),
+      fold.contains('for (final SrtBook srt in srtBooks)') &&
+          fold.contains('for (final MediaItem epub in epubBooks)'),
       isTrue,
       reason: 'SRT 与 EPUB 必须构造进同一合并列表（无类型分区）',
     );

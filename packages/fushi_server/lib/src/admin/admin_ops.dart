@@ -12,19 +12,28 @@
 ///   管理员能力）、AnkiWeb 登录登出与资源索引器 / AI 提供商 / qBittorrent 等带凭据的
 ///   设置、监听地址 / 端口 / TLS 这类要重启的设置、上传、互联代调、配置方案寄存、日志
 ///   （可能含路径与令牌片段）。不追求与 app 的操作一一对应。
-/// - 复习（SRS，`/api/admin/srs*`）只描述状态 / profile 列表 / 立即同步 / 制卡落点 /
+/// - 复习库**内容**（牌组 / 笔记搜索 / 统计 / 冲突中心 / 重复笔记合并 / 批量改笔记，
+///   `server.srs.decks.list` 等）是例外，不走转发：路由、描述与撤销是 engine 里与 app 共用
+///   的那一份（admin_srs_ctl.dart 的 [buildServerSrsCtlOps]），只有装配方接了复习库
+///   （[buildServerAdminOps] 的 `srs`）才进目录。写操作与 app 同一套撤销；已配对设备
+///   经远程复习本来就能改 / 删这几份库里的笔记，这里没有多给权限。
+/// - 复习（SRS，`/api/admin/srs*`）的配置面只描述状态 / profile 列表 / 立即同步 / 制卡落点 /
 ///   每份的制卡牌组 / 翻日时刻兜底。**不描述**：AnkiConnect 整块（开关、监听地址、
 ///   端口、共用 key 与每份 key、CORS——凭据 + 监听设置；状态回包里也收窄到开没开 /
 ///   在不在监听 / 最近错误，见 [srsAgentView]）；选提供哪几份 profile、默认那份
 ///   （spec `2026-11-05-server-srs-design.md` §9：选哪几份复习库给互联设备用是所有者
-///   的决定，不经已配对设备的 AI 会话改）。
+///   的决定，不经已配对设备的 AI 会话改）；信任 / 拒绝复习同步设备
+///   （`/api/admin/srs/devices/trust`，BUG-4306：放行一台没确认过的设备扣着的删除与彻底清除，
+///   是安全边界，同配对 / 吊销一样只给管理员，AI 只能读待确认列表）。
 library;
 
 import 'dart:convert';
 
 import 'package:fushi_cli/fushi_cli.dart';
+import 'package:fushi_server/src/admin/admin_srs_ctl.dart';
 import 'package:fushi_server/src/config/server_config.dart'
     show kServerLibraryRootKinds;
+import 'package:fushi_server/src/server_srs.dart';
 import 'package:shelf/shelf.dart' as shelf;
 
 /// 进程内调 admin API 的入口（生产是 `AdminApi.handle`）。
@@ -309,10 +318,12 @@ Future<Object?> _srsSetDeck(AdminDispatch dispatch, String uid, String deck) =>
       },
     );
 
-/// 服务端操作目录的描述 + 路由（路由 handler 全是 [_forward]）。
+/// 服务端操作目录的描述 + 路由（路由 handler 全是 [_forward]；复习库内容那一组除外，见
+/// 文件头）。[srs]：现取复习库，给了才带复习库内容的操作。
 ({List<CtlRoute> routes, List<OpDescription> descriptions}) buildServerAdminOps(
-  AdminDispatch Function() dispatch,
-) {
+  AdminDispatch Function() dispatch, {
+  ServerSrs? Function()? srs,
+}) {
   final List<CtlRoute> routes = <CtlRoute>[];
   final List<OpDescription> descriptions = <OpDescription>[];
 
@@ -444,6 +455,11 @@ Future<Object?> _srsSetDeck(AdminDispatch dispatch, String uid, String deck) =>
     'server.srs.profiles',
     '$_kSrsPath/profiles',
     'List the Fushi review (SRS) profiles found in the sync folder (uid, name, devices, note count, last update) and whether the server serves each one. Served profiles that vanished from the sync folder are listed with missing: true.',
+  );
+  read(
+    'server.srs.devices',
+    '$_kSrsPath/devices',
+    'List the review (SRS) sync devices the server has not trusted yet, per served profile: device id, name, when it first appeared, whether it is pending or rejected, and how many of its deletes / purges are held on the server until the owner trusts it in the server admin page.',
   );
 
   // ── 可撤销的写 ─────────────────────────────────────────────────────
@@ -1273,12 +1289,23 @@ Future<Object?> _srsSetDeck(AdminDispatch dispatch, String uid, String deck) =>
     longRunning: true,
   );
 
+  // ── 复习库内容（与 app 同一份 engine 路由 / 描述 / 撤销）────────────────
+  if (srs != null) {
+    final ({List<CtlRoute> routes, List<OpDescription> descriptions}) srsCtl =
+        buildServerSrsCtlOps(srs);
+    routes.addAll(srsCtl.routes);
+    descriptions.addAll(srsCtl.descriptions);
+  }
+
   return (routes: routes, descriptions: descriptions);
 }
 
 /// 服务端操作目录（远端 AI 助手的工具集）。
-OpCatalog buildServerAdminOpCatalog(AdminDispatch Function() dispatch) {
+OpCatalog buildServerAdminOpCatalog(
+  AdminDispatch Function() dispatch, {
+  ServerSrs? Function()? srs,
+}) {
   final ({List<CtlRoute> routes, List<OpDescription> descriptions}) ops =
-      buildServerAdminOps(dispatch);
+      buildServerAdminOps(dispatch, srs: srs);
   return OpCatalog.build(ops.routes, ops.descriptions);
 }

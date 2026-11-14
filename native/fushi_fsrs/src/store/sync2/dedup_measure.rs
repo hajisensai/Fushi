@@ -93,7 +93,7 @@ fn world(core: &SrsCore, profile: &str) -> (Vec<Vec<u8>>, Vec<Vec<u8>>, Vec<(Str
         let head = Head {
             gen: 1,
             protocol: segment::PROTOCOL,
-            min_reader: segment::MIN_READER,
+            min_reader: segment::CONTENT_FLOOR,
             collection: local.collection,
             device,
             public: local.key.public(),

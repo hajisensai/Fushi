@@ -291,7 +291,9 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
     unawaited(_detailsUpdates?.cancel());
     _detailsUpdates = widget.actions.detailsUpdates?.listen((_) {
       if (!mounted) return;
-      setState(() => _detailsFuture = _loadDetails());
+      setState(() {
+        _detailsFuture = _loadDetails();
+      });
     });
   }
 

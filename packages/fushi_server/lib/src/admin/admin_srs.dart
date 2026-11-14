@@ -7,13 +7,21 @@
 ///                                   那几份，空串 = 删掉那一项）、`ankiConnect: {enabled, bind, port, apiKey,
 ///                                   profileKeys, corsOrigins}`；
 /// - `GET  /api/admin/srs/profiles`  同步目录里能选的 profile（名字、设备、笔记数、是否已提供）；
-/// - `POST /api/admin/srs/sync`      立即同步（正文 `{"profile": uid}` 只同步那份）。
+/// - `POST /api/admin/srs/sync`      立即同步（正文 `{"profile": uid}` 只同步那份）；
+/// - `GET  /api/admin/srs/devices`   各份可用 profile 里还没信任的设备（`?profile=uid` 只看那份）：设备 ID、名字、
+///                                   首次出现、扣着几条删除 / 彻底清除、待确认还是已拒绝；
+/// - `POST /api/admin/srs/devices/trust`  信任 / 拒绝一台：`{"device": id, "trust": true|false, "profile": uid}`；
+///                                   `profile` 可省（只在一份里待确认 / 已拒绝时自动认出那份）。
+///
+/// 设备信任（BUG-4306，native/fushi_fsrs/src/store/sync2/trust.rs）：服务端开库后第一次见到的设备，它的删除与彻底
+/// 清除在服务端的库里扣着，直到这里确认。逻辑在 engine `srs_devices.dart`，与 app 冲突中心同一条路径。
 ///
 /// AnkiConnect 的 key 是凭据：读的时候只报「设没设」，不回显；写的时候空串 = 清掉，不给 = 不动。
 library;
 
 import 'dart:convert';
 
+import 'package:fushi_engine/srs/srs_devices.dart';
 import 'package:fushi_engine/srs/srs_profile_link.dart';
 import 'package:fushi_server/src/admin/admin_context.dart';
 import 'package:fushi_server/src/config/server_config.dart';
@@ -55,8 +63,96 @@ class AdminSrs {
         }
         await srs.syncNow(uid as String?);
         return _json(status());
+      case ('GET', '$kAdminSrsPath/devices'):
+        return _devices(request.url.queryParameters['profile']);
+      case ('POST', '$kAdminSrsPath/devices/trust'):
+        return _trust(await _body(request));
     }
     return null;
+  }
+
+  /// `GET /api/admin/srs/devices`（`ctl srs devices` 也用它）。
+  Future<shelf.Response> _devices(String? uid) async {
+    final ServerSrs? srs = ctx.host.srs;
+    if (srs == null) return _err(409, 'srs_unavailable');
+    final List<ServerSrsProfile> targets;
+    if (uid == null || uid.isEmpty) {
+      targets = srs.readyProfiles;
+    } else {
+      final ServerSrsProfile? prof = srs.profile(uid);
+      if (prof == null) return _err(404, 'profile_not_served');
+      if (prof.store == null) return _err(409, 'profile_unavailable');
+      targets = <ServerSrsProfile>[prof];
+    }
+    return _json(<String, Object?>{
+      'profiles': <Map<String, Object?>>[
+        for (final ServerSrsProfile prof in targets)
+          await _profileDevices(srs, prof),
+      ],
+    });
+  }
+
+  Future<Map<String, Object?>> _profileDevices(
+    ServerSrs srs,
+    ServerSrsProfile prof,
+  ) async => <String, Object?>{
+    'uid': prof.uid,
+    'name': prof.name,
+    'untrusted': <Map<String, Object?>>[
+      for (final SrsDeviceView d
+          in await srs.untrustedDevices(prof.uid) ?? const <SrsDeviceView>[])
+        d.toJson(),
+    ],
+  };
+
+  /// `POST /api/admin/srs/devices/trust`。
+  Future<shelf.Response> _trust(Map<String, dynamic> body) async {
+    final Object? device = body['device'];
+    if (device is! String || device.trim().isEmpty) {
+      throw const FormatException('device must be a device id');
+    }
+    final Object? trust = body['trust'];
+    if (trust is! bool) {
+      throw const FormatException('trust must be true or false');
+    }
+    final Object? uid = body['profile'];
+    if (uid != null && uid is! String) {
+      throw const FormatException('profile must be a profile uid');
+    }
+    final ServerSrs? srs = ctx.host.srs;
+    if (srs == null) return _err(409, 'srs_unavailable');
+    final ServerSrsProfile prof;
+    if (uid is String && uid.isNotEmpty) {
+      final ServerSrsProfile? hit = srs.profile(uid);
+      if (hit == null) return _err(404, 'profile_not_served');
+      if (hit.store == null) return _err(409, 'profile_unavailable');
+      prof = hit;
+    } else {
+      // 没点名：在哪份里还没信任就是哪份；几份里都有（同一台设备在几门语言里都待确认）要点名。
+      final String key = srsDeviceKey(device);
+      final List<ServerSrsProfile> hits = <ServerSrsProfile>[
+        for (final ServerSrsProfile p in srs.readyProfiles)
+          if ((await srs.untrustedDevices(p.uid) ?? const <SrsDeviceView>[])
+              .any((SrsDeviceView d) => srsDeviceKey(d.id) == key))
+            p,
+      ];
+      if (hits.isEmpty) return _err(404, 'device_unknown');
+      if (hits.length > 1) return _err(409, 'profile_required');
+      prof = hits.single;
+    }
+    final SrsDeviceView view;
+    try {
+      view = await srs.setDeviceTrust(prof.uid, device.trim(), trust: trust);
+    } on SrsDeviceTrustException catch (e) {
+      return _err(
+        e.refusal == SrsDeviceTrustRefusal.unknownDevice ? 404 : 409,
+        e.refusal.reason,
+      );
+    }
+    return _json(<String, Object?>{
+      'device': view.toJson(),
+      'profile': await _profileDevices(srs, prof),
+    });
   }
 
   /// `GET /api/admin/srs` 的回包（`ctl srs status` 也用它）。
