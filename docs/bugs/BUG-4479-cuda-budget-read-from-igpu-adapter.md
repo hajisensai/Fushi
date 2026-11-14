@@ -1,0 +1,9 @@
+## BUG-4479 · CUDA 转录的显存预算读的是 DXGI 适配器 0，混合显卡笔记本上是核显
+- **报告**：2026-11-13（排查 issue #3380「设备端语音转录 Parakeet + CUDA 在 RTX 3060 Laptop 上卡死」时沿代码路径发现；#3380 本身的根因是上游 `fushi-subtitles` 的成批行数不看显存，另行在上游修）
+- **真实性**：✅ 真 bug（代码路径确认；手头没有混合显卡机器，未在真机上复现错误的预算数字）。根因 `third_party/flutter_onnxruntime/windows/flutter_onnxruntime_plugin.cpp:774`（修复前）：`getDeviceMemoryInfo` 恒按 `deviceId`（缺省 0）去 `EnumAdapters1`（`windows/src/dxgi_memory.cc:19`），而应用侧 `OrtOnnxSessionFactory.deviceMemoryBudgetBytes()`（`fushi/lib/src/onnx/onnx_inference_ort.dart:127`）从不传 `deviceId`。DirectML 的设备 0 就是适配器 0，没问题；CUDA 会话跑在 N 卡上，而混合显卡笔记本的适配器 0 通常是核显，它的本地段「预算」是一部分系统内存（常见 8 GB 上下）。于是三处拿错数：Parakeet fp32 的 4 GiB 显存门槛、Omnilingual 的门槛与静态桶选表、以及上游新加的 NeMo CTC GPU 成批上限——预算看着充裕，N 卡实际溢出（溢出不报错，表现是极慢 / 卡死）。
+- **[x] ① 已修复** — 不传 `deviceId` 时回答「GPU 会话实际跑在的那块适配器」：CUDA 插件 EP 已注册（同一进程要么 CUDA 要么 DirectML，不会并存）就用 `nvcuda.dll` 的 `cuDeviceGetLuid` 取 CUDA 设备 0 的 LUID，与 `DXGI_ADAPTER_DESC1::AdapterLuid` 对上那块适配器；对不上退到第一块 PCI 厂商号 0x10DE 的硬件适配器，再不行才是适配器 0。显式传 `deviceId` 语义不变。Dart 侧 `deviceId` 改为可空、为空时不发这个键（原生侧靠「缺席」区分显式 0）；回包多了 `adapterName` 与 `selection`（`explicit` / `cuda-luid` / `cuda-vendor` / `default`）供日志与探针用。`CudaPluginRegistry::IsRegistered` 改成无锁（`std::atomic<bool>`）：它现在在平台线程上被问，而 `Register` 装载约 1 GB 的 DLL 期间一直持有那把锁。vendored 插件 delta #16（`PATCHES.md`）。
+- **[x] ② 已加自动化测试** — `fushi/test/onnx/onnxruntime_device_memory_guard_test.dart`（源码扫描守卫：原生处理函数在 CUDA 已注册且未传 `deviceId` 时先 LUID 后厂商号、`cuDeviceGetLuid` 入口、无锁的 `IsRegistered`、Dart 侧为空不发键、应用侧不显式点名适配器 0、`PATCHES.md` 记了 delta #16）。适配器匹配本身是 DXGI / 驱动调用，只能真机验：见备注。
+- **备注**：
+  - 真机验证（RTX 4070 Ti 台式机，单 N 卡，2026-11-13）：注册 CUDA 前 `selection=default`，注册后 `selection=cuda-luid`、适配器名是 N 卡——说明驱动给的 LUID 确实对得上 DXGI 适配器（对不上会落到 `cuda-vendor`）；显式 `deviceId: 0 / 1` 仍各回各的（1 是 Microsoft Basic Render Driver，`isSoftware=true`）。
+  - **未验**：混合显卡笔记本（适配器 0 是核显）上的实际数字。本机做不了；逻辑上该场景走的就是上面验过的 LUID 分支。
+  - 多块 N 卡时按 CUDA 设备 0 取（应用建会话从不传 CUDA `deviceId`，用的就是设备 0）。
