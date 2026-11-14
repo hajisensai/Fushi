@@ -1,5 +1,5 @@
-// 旧库迁移之前那轮只拉不发按进度判（[srsSync2PullBounded] + [SrsPullBound.progress]）：还在收就一直等，连续
-// [SrsPullBound.stall] 没有任何进展才放弃，[SrsPullBound.cap] 只防挂死；位置上没有集合时立即做完。
+// 只拉不发（旧库迁移之前、档案合并之前）按进度判（[srsSync2PullBounded] + [SrsPullBound.progress]）：还在收就
+// 一直等，连续 [SrsPullBound.stall] 没有任何进展才放弃，[SrsPullBound.cap] 只防挂死；位置上没有集合时立即做完。
 //
 // 时钟全是假的（[_FakeTime] 交给 `timer:`），「网络」是按假时钟才返回的读取：不做任何真实等待。
 import 'dart:async';
@@ -247,7 +247,12 @@ void main() {
     expect(run.errors, isEmpty);
   });
 
-  test('对照：同样的传输按旧的固定 2 分钟预算会在 120 秒时放弃', () async {
+  test('取值：档案合并之前与迁移之前同一套（停滞 2 分钟、总上限 30 分钟），不再有固定 2 分钟预算', () {
+    expect(kSrsPullBeforeMergeStall, kSrsPullBeforeMigrateStall);
+    expect(kSrsPullBeforeMergeCap, kSrsPullBeforeMigrateCap);
+  });
+
+  test('对照：同样的传输，总上限只有 2 分钟（旧的固定预算）会在 120 秒时放弃', () async {
     final _FakeTime time = _FakeTime();
     final _Host host = _Host(<String>[
       for (int i = 0; i < 12; i++) 'devices/d1/s$i',
@@ -256,7 +261,10 @@ void main() {
       time,
       host,
       _Location(time, segmentDelay: (int _) => const Duration(seconds: 90)),
-      bound: const SrsPullBound.budget(Duration(minutes: 2)),
+      bound: const SrsPullBound.progress(
+        stall: Duration(minutes: 2),
+        cap: Duration(minutes: 2),
+      ),
     );
     final (SrsPullOutcome outcome, Duration at) = await _runUntilDone(
       time,
