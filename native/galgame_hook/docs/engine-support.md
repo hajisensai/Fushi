@@ -12,7 +12,7 @@
 | `elf_ai6` | elf AI6 | `implemented_unverified` | luna_textouta_hook (implemented_unverified) | ai6_voice_arc_resource (implemented_unverified)；directsound_pcm (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
 | `reallive` | RealLive / old VisualArt's | `implemented_unverified` | luna_hook (implemented_unverified) | reallive_nwk_nwa_resource (implemented_unverified)；visual_arts_ovk_resource (implemented_unverified)；xaudio2_or_directsound_pcm (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
 | `cmvs` | CMVS (Purple Software) | `implemented_unverified` | luna_hook (implemented_unverified) | cmvs_group_loader_voice_ogg_resource (implemented_unverified)；xaudio2_or_directsound_pcm (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
-| `kirikiri_z` | KiriKiri2 / KiriKiriZ | `partial` | luna_auto_or_pc_hooks (implemented_unverified)；ingame_lookup_geometry (implemented_unverified) | kirikiri_resource_stream (implemented_unverified)；kirikiri_decoder_pcm (implemented_unverified)；directsound_pcm (verified)；process_loopback (verified) | 2 |
+| `kirikiri_z` | KiriKiri2 / KiriKiriZ | `partial` | luna_auto_or_pc_hooks (implemented_unverified)；ingame_lookup_geometry (implemented_unverified)；kirikiri_kag_message_text (implemented_unverified) | kirikiri_resource_stream (implemented_unverified)；kirikiri_decoder_pcm (implemented_unverified)；directsound_pcm (verified)；process_loopback (verified) | 2 |
 | `xaudio2_directsound` | XAudio2 / DirectSound generic capture | `verified` | — | xaudio2_source_voice_pcm (verified)；directsound_buffer_pcm (verified)；xwma_compressed_resource (implemented_unverified) | 1 |
 | `renpy_ffmpeg` | Ren'Py / FFmpeg | `implemented_unverified` | luna_auto_or_pc_hooks (implemented_unverified) | ffmpeg_resource_event (implemented_unverified)；ffmpeg54_decoder_pcm (implemented_unverified)；process_loopback (verified) | 1 |
 | `tyrano_nwjs` | TyranoScript / NW.js | `partial` | luna_auto_or_pc_hooks (implemented_unverified) | tyrano_asar_voice_resource (verified)；ffmpeg_resource_event (implemented_unverified)；process_loopback (verified) | 1 |
@@ -34,8 +34,10 @@
 | `kogado_hy` | Kogado Hy engine | `implemented_unverified` | kogado_hy_message_page_hook (implemented_unverified)；luna_auto_or_pc_hooks (implemented_unverified)；ingame_lookup_geometry (implemented_unverified) | directsound_pcm (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
 | `softpal` | SoftPal ADV System | `implemented_unverified` | softpal_text_sprite_hook (implemented_unverified)；ingame_lookup_geometry (implemented_unverified) | engine_resource_ogg (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
 | `system4` | AliceSoft System 4 | `implemented_unverified` | system4_msg_hook (implemented_unverified)；ingame_lookup_geometry (implemented_unverified) | process_loopback (implemented_unverified) | 0 |
+| `nitroplus` | Nitroplus N2System (nss/.npa) | `implemented_unverified` | nitroplus_backlog_append_hook (implemented_unverified) | process_loopback (implemented_unverified) | 0 |
 | `luca` | LucaSystem (Prototype) | `implemented_unverified` | luca_message_text (implemented_unverified)；luna_auto_or_pc_hooks (implemented_unverified)；ingame_lookup_geometry (implemented_unverified) | luca_voice_pak_member (implemented_unverified)；directsound_pcm (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
 | `knife` | knife (Tsukihime -A piece of blue glass moon- Switch engine, Rust PC port) | `implemented_unverified` | knife_text_websocket (implemented_unverified)；luna_auto_or_pc_hooks (unavailable) | knife_stream_voice_file (implemented_unverified)；loopback (implemented_unverified) | 0 |
+| `entisgls` | EntisGLS (Cotopha / ECSSakura2) | `implemented_unverified` | entisgls_message_sprite_hook (implemented_unverified)；luna_auto_or_pc_hooks (implemented_unverified) | process_loopback (implemented_unverified) | 0 |
 
 ## 无 OCR 内嵌查词矩阵
 
@@ -333,6 +335,7 @@ Tests：`tests/cmvs_adapter_test.cpp`、`../../fushi/test/mining/cmvs_pairing_te
 
 - `luna_auto_or_pc_hooks`：`implemented_unverified` — Generic Luna plumbing exists; the P0 baseline does not record a versioned text-thread replay.
 - `ingame_lookup_geometry`：`implemented_unverified` — In-game dictionary lookup is implemented but remains capability-level unverified: the KiriKiri sensor supplies per-glyph geometry and paints the selection highlight, while Hibiki reuses its existing popup in a dedicated off-screen galCard WebView2 surface, captures BGRA, and presents that bitmap through the v15 shared-memory frame route into a game Layer. During mining, the v15 exact CaptureSuppress control frame temporarily hides the game-side card and highlight without destroying the off-screen popup state; the hook alone advances lookup_frame_applied_seq after a later continuous callback, so ordinary present/dismiss/highlight frames cannot satisfy the capture barrier. Embedded mode suppresses only the popup sentence banner; dictionary, audio, mining, theme, and nested-card rendering remain shared with the normal Fushi popup. A 2026-08-13 Windows/KiriKiri same-session E2E on the target game observed applied_seq 0→76, a later full restore frame at 80, a real Anki card with a 480×286 AVIF, and an original-resolution image containing no Fushi popup or selection highlight. Coordinate conversion, KAG message-layer identity, submit/hover fencing, off-screen resize handling, and the v15 wire contract have source-level guards, but by explicit request no automated tests, generators, guards, or CTest were run; no broad KiriKiri support upgrade is claimed.
+- `kirikiri_kag_message_text`：`implemented_unverified` — Native exact text lane (source kind 19, hook 'KiriKiri KAG exact', ENGINE:KIRIKIRI:kag_message), installed wherever the adapter holds the engine's TJS function exporter and independent of lookup_enabled or the lookup sensor's readiness. A TJS bootstrap wraps, per instance, the KAG message layers' processCh / clear / setRuby the KAG window's click waits (showLineBreak, showPageBreak, showPageBreakAndClear, waitClick) and the conductors' wait(until), which commits only when until holds exactly one key, click -- the primitive every KAG3 reader click wait (including custom-macro waits) ends in, while skippable effect waits ([wt]/[wm]/[wait canskip]) carry other triggers and never commit -- and forwards them as a bounded event string; HookWorker assembles lines in kirikiri_kag_text_core.h: only characters drawn on kag.current count (the currentWithBack back-page copy and overflowed characters never enter), the characters since the previous boundary are committed at each click wait, clear() discards uncommitted text (choice links, [s] system text), ruby annotations are dropped, edge whitespace and control units are removed, and an overflow, malformed batch or over-long line drops the affected line instead of publishing a prefix. The script refuses to patch anything unless kag.showLineBreak and kag.showPageBreak exist. Offline: tests/kirikiri_kag_text_test.cpp with tests/fixtures/kirikiri_kag_text_replay.tsv and the KagTextLaneGuardTest source guards. The frame pump applies backpressure (it takes the TJS buffer only when the 8-slot mailbox has room; otherwise events stay queued in TJS) and consecutive characters travel as one run record, so a maximal page costs about 500 UTF-16 units against a 4094-unit TJS buffer; only more than several pages between two worker drains (skip mode) can overflow, and that drops whole lines. Every 60 frames a bounded stats read re-sweeps new message layers and HookWorker logs '[FushiKagText] stats ...' (TJS hit counters, pump, core outcome and publish counters) only when they change. Real machine with the first build (2026-11): rpsisters2.exe and fata.exe both reported bootstrap installed=23 but published no line; root cause not yet proven, the stats line exists to locate it. Motivating real-machine observations (2026-11): classic KAG3 KiriKiri2/BCB (fata.exe, monobeno) and a KiriKiri Z build (rpsisters2.exe) where every Luna thread carried only script metadata or per-character fragments while the adapter's processCh wrapper saw each dialogue character. Not verified on any real game.
 - codepage：game-specific
 - 线程提示：Reject metadata/per-character noise and select the stable dialogue thread manually when auto-selection is ambiguous.
 
@@ -360,9 +363,9 @@ Tests：`tests/cmvs_adapter_test.cpp`、`../../fushi/test/mining/cmvs_pairing_te
 - 2026-09-26 measurement, Yuzusoft KiriKiri Z variant plus launch lifecycle (BUG-2701/2702). Samples, all x86: 喫茶ステラと死神の蝶 original CafeStella.exe (SHA-256 0dd0b3bcc5dcdda257f50ef52f121f919a7453c2afa614f8f82124cb92351d50; no exe exports, exporter obtained by the linked-plugin scan; plugins PackinOne/yuzuex decrypt hashed archive members), the same package's Enigma-packed Chinese exe (7e6106bbfd82b0635ecbb2c9308cb3ddd5661d8fb89ee7f22e58e40f9764fc31; one TLS callback), PARQUET Steam build with SteamStub removed (83c40f84b722be859531795d0afd2722182cbf09f041a60916279b1103153d00), and 夏空カナタ KiriKiri2/BCB (2485542046550c6bd9c026fecd95b73493c2cf1def36eb211cfe9bc3f4714afe). The Enigma exe hung the remote LoadLibraryW under create-suspended early injection because the injector thread ran the process's TLS callbacks; the injector now parks the primary thread at the entry point when the exe declares TLS callbacks and its directory carries the KiriKiri XP3 archive signature (engine launch profile admission, no title or hash; owner 2026-09-26 narrowed it from every TLS-callback exe to KiriKiri, and a packer that rewrites the entry leaves the primary thread running and the game attached as a running process), after which it reached OK hooked, EmbedKrkrZ dialogue text and decdiag 0x031e0903. On the original exe every named voice open also produced a same-length ciphertext copy under the hashed physical name; the named-storage enqueue now requires an Ogg or RIFF/WAVE container, after which only the decrypted noz001_*.ogg files were published. Observed stages on the original exe: process_found, helper_ready, ipc_ready, text_ready (EmbedKrkrZ thread; KiriKiriZ threads carry the known doubled artifacts), and resource files whose ticks follow the matching dialogue lines. Not run: card write E2E. Japanese-named SE files still reach the consumer as voice candidates (BUG-2703). Measurement only; no status or capability upgrade is claimed.
 - 2026-09-26 measurement, Senren Banka disc release (BUG-2704/2705/2706/2708). Samples, x86: SenrenBanka.exe (SHA-256 5b9cdea0a8c5b22cfb1a7df2ecb2e01484a190dce31b2cd6d6b101b178645727; KAGEX CustomMessageLayer with a MessageTextLayer child, textrender.dll loaded but no TextRender instance bound to any message layer) and the package's Enigma-packed Chinese exe SenrenBankaCHS.exe (2369627f97a0de5222781e456e4abe9679d24a39e0b35f15e04f4184a59f3153; TLS callback shows a translator notice before the entry point). Original path via the rebuilt Fushi itest host (launchoff): the remembered EmbedKrkrZ thread restored to the current session, text lines arrive single and without the sticky looping-sound suffix, voiced lines pair as game_resource, and in-game lookup captured glyph geometry through the classic processCh fallback: clicking a glyph highlighted it, opened the Fushi lookup card for the clicked word, and the host line list did not advance. Not run: card write E2E. The Chinese exe was verified only up to the loader gate waiting on its notice (the sample itself then reports a missing patch.xp3 without Fushi). One extra click is swallowed right after dismissing a card (BUG-2710). Measurement only; no status or capability upgrade is claimed.
 
-Fixtures：`tests/fixtures/kirikiri_lookup_replay.tsv`
+Fixtures：`tests/fixtures/kirikiri_lookup_replay.tsv`、`tests/fixtures/kirikiri_kag_text_replay.tsv`
 
-Tests：`tests/resource_audio_ready_test.cpp`、`tests/lookup_ipc_contract_test.cpp`、`tests/lookup_session_replay_test.cpp`、`tests/kirikiri_lookup_source_guard_test.py`
+Tests：`tests/resource_audio_ready_test.cpp`、`tests/lookup_ipc_contract_test.cpp`、`tests/lookup_session_replay_test.cpp`、`tests/kirikiri_lookup_source_guard_test.py`、`tests/kirikiri_kag_text_test.cpp`
 
 ### XAudio2 / DirectSound generic capture (`xaudio2_directsound`)
 
@@ -1295,6 +1298,46 @@ Fixtures：`tests/fixtures/system4_replay.json`
 
 Tests：`tests/system4_adapter_test.cpp`
 
+### Nitroplus N2System (nss/.npa) (`nitroplus`)
+
+- 状态：`implemented_unverified`
+- 别名：NitroplusSystem2.0、N2System、Nitroplus、ニトロプラス
+- 家族：`nitroplus`（Nitroplus N2System script engine (nss scripts in .npa archives, Direct3D 9, GDI GetGlyphOutlineA glyphs); one generation measured: the 2011 鬼哭街 remake executable）
+- 当前 adapter：`hook/adapters/nitroplus_adapter.inc`
+- 进程策略：launch=`create_suspended_early_injection`，attach=`supported`，follow-child=`false`
+
+识别签名（所有非空项均带真实样本或运行时观察证据）：
+
+- `executable_names`：kikokugai_jp.exe；证据：real_sample — Catalogue only: 鬼哭街 リメイク kikokugai_jp.exe (original code; that install's nss.npa carries a Chinese patch, which does not change the executable). The adapter never matches on names; identity is the backlog append routine proved by structure (nitroplus_core.h ResolveBacklogAppend).
+- `pe_architectures`：x86；证据：real_sample — PE32 machine 0x14c, image base 0x400000, TimeDateStamp 1303661712 (2011-04-24)
+- `pe_imports`：d3d9.dll、DSOUND.dll、GDI32.dll；证据：real_sample — Import table of kikokugai_jp.exe: Direct3DCreate9, DSOUND by ordinal, GetGlyphOutlineA (glyph rasterising)
+- `resource_extensions`：.npa；证据：real_sample — nss.npa (scripts) and the other .npa archives next to the executable; entry names are keyed (the executable's name-key routine starts from 0x20101118)
+- `hashes`：kikokugai_jp.exe sha256:0665178b8703af8ca139a2c29e055052b1cdb0d4ed75731f1ed8680422cee4e5；证据：real_sample — Catalogue only; the adapter does not hash-pin
+
+文本能力：
+
+- `nitroplus_backlog_append_hook`：`implemented_unverified` — Native exact text lane (source kind 18, hook 'Nitroplus exact', ENGINE:NITROPLUS:backlog): the engine's BacklogAppendChar(code, voice) is resolved only by structure (nitroplus_core.h ResolveBacklogAppend): the 'no backlog' guard `cmp [state],imm; jne; xor eax,eax; ret` in front of `push edi; mov edi,[esp+8]`, the four tate-chu-yoko pair compares (0x210021, 0x21003f, 0x3f0021, 0x3f003f) branching to one block that splits the pair and re-enters the routine twice, `push ebp; mov ebp,[backlog]; mov eax,[ebp+W]`, and the VOICE tag writer (`mov ebx,[esp+0x18]`, tag 0x10 / separator 0x11, inline name `mov al,[ebx+N]`, file pointer `mov ecx,[ebx+F]`); not unique or any shape missing = refused, nothing installed. The detour calls the engine first and feeds only characters the engine logged (return 1); packed pairs are taken from the engine's own re-entry as their halves; a 0x0a ends the shown line, other control codes (the backlog's wrap marks) carry no text; a line over 512 codes or not clean CP932 is dropped. A voice tag (code 0 with the tag) names the voice of its line (first tag wins; name and file copied bounded under SEH). Offline: fushi_nitroplus_adapter_test (synthetic routine, six refusal shapes, line assembly, CP932) and its --probe on the 2011 kikokugai_jp.exe: append +0x3610, pair split +0x37cd, no-log state 0x61dff8 == 0x190, backlog global 0x6273ec (+0x24 write pointer), voice name +0x24, voice file +0x64; eight other-engine executables (BGI x2, CatSystem2, EAGLS, ExHIBIT, Kaguya, Leaf, Liar-soft) refuse with no anchor. No run in the game yet.
+- codepage：932
+- 线程提示：Select the 'Nitroplus exact' lane (ENGINE:NITROPLUS:backlog): it carries only lines the engine writes to its backlog.
+
+音频优先级：
+
+1. `process_loopback` — `implemented_unverified`；格式：host PCM fallback；clean voice：否
+
+真实样本证据：
+
+
+已知限制：
+
+- x86 only: one sample (2011 鬼哭街 remake); CHAOS;HEAD / 装甲悪鬼村正 executables not measured.
+- Voice: the voice tag name of each line is captured but the .npa entry bytes are not exported (the archive's keyed entries are not read yet), so no per-line engine resource is published; only the host's fallback applies.
+- No in-game lookup and no click shield: the text object's glyph records (stride 0x54 at +0x413c, glyph object x/y at +0x10/+0x14, per-glyph voice at +0x70144 in the 2011 sample) and its screen placement are not bound yet; vertical text geometry is not implemented.
+- Lines are published when the engine logs their end (0x0a after the reveal completes), so a line appears once fully shown, not per character.
+
+Fixtures：`tests/fixtures/nitroplus_replay.json`
+
+Tests：`tests/nitroplus_adapter_test.cpp`
+
 ### LucaSystem (Prototype) (`luca`)
 
 - 状态：`implemented_unverified`
@@ -1384,6 +1427,45 @@ Tests：`tests/luca_adapter_test.cpp`、`tests/luca_x64_text_test.cpp`、`tests/
 Fixtures：`tests/fixtures/knife_replay.json`
 
 Tests：`tests/knife_adapter_test.cpp`
+
+### EntisGLS (Cotopha / ECSSakura2) (`entisgls`)
+
+- 状态：`implemented_unverified`
+- 别名：Entis、EntisGLS、Cotopha、ECSSakura2
+- 家族：`entisgls`（Entis Cotopha engine (SakuraGL renderer, Rosetta script binding, scripts on the ECSSakura2 VM with JIT); the executable exports its runtime by MSVC-mangled names; one generation measured）
+- 当前 adapter：`hook/adapters/entisgls_adapter.inc`
+- 进程策略：launch=`create_suspended_early_injection`，attach=`supported`，follow-child=`false`
+
+识别签名（所有非空项均带真实样本或运行时观察证据）：
+
+- `executable_names`：ststeady.exe；证据：real_sample — Catalogue only: Marmalade スタディ§ステディ (Steam release) ststeady.exe. The adapter never matches on names; identity is the exported runtime (ECSSakura2Processor::entrySysCall, SakuraGL::SGLSpriteMessage and Rosetta::RSMessageSpriteClass runtime classes).
+- `pe_architectures`：x86；证据：real_sample — ststeady.exe is PE32 machine 0x14c, ASLR-enabled (relocations present)
+- `pe_imports`：emotedriver.dll、OPENGL32.dll、WINMM.dll、GDI32.dll、USER32.dll；证据：real_sample — ststeady.exe import table: E-mote (emotedriver.dll EmoteCreate), OpenGL presents, WINMM waveOut plays the engine's software-mixed sound lines (no DirectSound/XAudio2 import or literal), GDI GetGlyphOutlineW rasterises glyphs
+- `hashes`：ststeady.exe sha256:9750f67ae51ba158cda4f756ccbd0875fb837ddd15e84db713be53f8573d91b3；证据：real_sample — Catalogue only; the adapter does not hash-pin
+
+文本能力：
+
+- `entisgls_message_sprite_hook`：`implemented_unverified` — Native exact text lane (source kind 22, hook 'EntisGLS exact', ENGINE:ENTISGLS:message): SGLSpriteMessage::AddMessage(node) and ClearMessage() are detoured. Sites resolve only from structure (entisgls_core.h ResolveSites): the Rosetta registrations of addMessageText, addMessageXML and clearMessage (one registration shape, unique handler per name, UTF-16 literal matched by content) give three handlers that share one sprite getter; the text handler's and the clear handler's sprite calls give AddMessage and ClearMessage, and the XML handler's parse-then-add method must reach the same AddMessage; AddMessage must read the node type (+0x0c) and children (+0x50/+0x54) and end in the layout call that compares the tag (+0x10) with "ruby" and lays out a text node's string (+0x28). The detour walks the node tree on the game thread through a fault-safe reader (text nodes in order, element children, ruby readings never read, CR/LF dropped; bounded to 960 units, 512 nodes, 16 levels) into a fixed ring; the worker publishes per message sprite the text added since the page's previous publication once a whole worker interval passed without an add or clear on that sprite (one click unit per line), and a clear starts a new page. Offline: fushi_entisgls_adapter_test (synthetic images and node trees); site probe on the Steam ststeady.exe resolves AddMessage +0x338230, ClearMessage +0x338060, layout +0x338750; 19 other-engine PE32 images (BGI x2, CatSystem2, EAGLS, ExHIBIT, Kaguya, Leaf, Liar-soft, Navel, Nitroplus and others, with their DLLs) have no EntisGLS identity. No runtime text_ready run is recorded.
+- `luna_auto_or_pc_hooks`：`implemented_unverified` — Not measured. The engine rasterises glyphs itself (GetGlyphOutlineW into its own surfaces), so generic GDI hooks see single glyphs.
+- codepage：UTF-16
+- 线程提示：Select the 'EntisGLS exact' lane.
+
+音频优先级：
+
+1. `process_loopback` — `implemented_unverified`；格式：host PCM fallback；clean voice：否
+
+真实样本证据：
+
+
+已知限制：
+
+- Text only. Voice: the engine mixes its own sound lines (system/music/sound/voice) in SakuraGL's software mixer and plays the mix through WINMM waveOut; there is no DirectSound/XAudio2 producer for the generic PCM capture and no per-line resource producer is bound, so only the loopback fallback (mixed, not clean voice) reaches the host. The game's voice container (ERISA archive entries; no Ogg decoder in the image) is unmeasured.
+- In-game lookup is not implemented (lookupAdmission stays EngineUnsupported): the laid-out character records (SGLSpriteMessage +0x238/+0x23c) are known from code, but no sprite-to-screen projection or input gate is bound.
+- Single sample, no runtime run: the lane identity is one hook code for every message sprite, so a backlog or other window built on SGLSpriteMessage would publish on the same lane; the click-unit boundary (one worker interval without an add or clear) is unmeasured on the original path.
+
+Fixtures：`tests/fixtures/entisgls_replay.json`
+
+Tests：`tests/entisgls_adapter_test.cpp`
 
 ## 状态定义
 

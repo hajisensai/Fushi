@@ -453,12 +453,8 @@ impl<'t, 'c> Index<'t, 'c> {
                 let mut purged = self.unseen(k, own)?;
                 if !purged && any_deck && *ekind == card && key == deck_key {
                     // 挪进被清除牌组的修改，牌组那边的清除也管它。
-                    if let Some(Value::String(d)) = self
-                        .t
-                        .edit_value(k)?
-                        .and_then(|v| serde_json::from_str::<Value>(&v).ok())
-                    {
-                        let theirs = eff.get(&(deck, Ref::of(&Key::of(&d)))).unwrap_or(&none);
+                    if let Some(d) = self.move_target(k)? {
+                        let theirs = eff.get(&(deck, d)).unwrap_or(&none);
                         purged = self.unseen(k, theirs)?;
                     }
                 }
@@ -514,9 +510,30 @@ impl<'t, 'c> Index<'t, 'c> {
         };
         self.set_reg_state(&reg, k, want)?;
         self.alias_purge_flipped();
+        // 挪卡修改清除与否，决定它算不算目标牌组上与删除并发的改动（`others_of` 的 [E_MOVE]）：
+        // 牌组的扣住也得重看，和写入挪卡修改时（`derive.rs`）一样把牌组记进这一批。
+        if reg.ekind == EntKind::Card as i64 && reg.key == key_bytes("deck") {
+            if let Some(d) = self.move_target(k)? {
+                self.touched.insert((EntKind::Deck as i64, d));
+            }
+        }
         self.touched.insert((reg.ekind, reg.ent.clone()));
         self.regs.insert(reg);
         Ok(())
+    }
+
+    /// 卡的 `deck` 写入 [k] 挪进了哪个牌组；值不是字符串就不算挪卡（与 `derive.rs` 记 [E_MOVE] 时同一种解析）。
+    fn move_target(&self, k: i64) -> Result<Option<Ref>, String> {
+        Ok(
+            match self
+                .t
+                .edit_value(k)?
+                .and_then(|v| serde_json::from_str::<Value>(&v).ok())
+            {
+                Some(Value::String(d)) => Some(Ref::of(&Key::of(&d))),
+                _ => None,
+            },
+        )
     }
 
     fn set_tag_state(
@@ -1293,6 +1310,123 @@ mod tests {
         });
     }
 
+    fn deck_edit(deck: &str, key: &str, value: &str) -> Body4 {
+        Body4::Edit(Edit4 {
+            kind: EntKind::Deck,
+            entity: Key::of(deck),
+            key: key.to_owned(),
+            value: value.to_owned(),
+            ..native_edit()
+        })
+    }
+
+    fn deck_hold_moves(ix: &Index<'_, '_>) -> Vec<(EntKind, OpId, u64)> {
+        ix.holds()
+            .unwrap()
+            .iter()
+            .map(|h| (h.kind, h.op, h.moves))
+            .collect()
+    }
+
+    /// 牌组的删除被并发的挪卡扣住；之后那张卡被清除、挪卡修改跟着清掉：牌组上不再有并发的改动，删除生效。
+    /// 逐条维护要和重建一样重看牌组的扣住（清除只碰了卡，牌组上没有 Purge）。
+    #[test]
+    fn purging_a_card_releases_the_deck_delete_its_move_held() {
+        with(|t, col| {
+            let card = Key::Uuid(id(CARD));
+            let d = Key::of("D");
+            t.tx(|t| {
+                let mut ix = Index::new(t, col);
+                native(
+                    t,
+                    &mut ix,
+                    col,
+                    &op(0xa1, 1, 100, &[], &deck_edit("D", "deleted", "100")),
+                );
+                native(
+                    t,
+                    &mut ix,
+                    col,
+                    &op(0xa2, 1, 110, &[], &card_edit("deck", "\"D\"")),
+                );
+                ix.settle()?;
+                assert_eq!(deck_hold_moves(&ix), [(EntKind::Deck, oid(0xa1, 1), 1)]);
+                assert_eq!(ix.value(EntKind::Deck, &d, "deleted")?, None);
+                native(
+                    t,
+                    &mut ix,
+                    col,
+                    &op(0xa3, 1, 120, &[], &purge(EntKind::Card, card.clone())),
+                );
+                ix.settle()?;
+                assert!(deck_hold_moves(&ix).is_empty());
+                assert_eq!(ix.value(EntKind::Deck, &d, "deleted")?, Some("100".into()));
+                Ok(())
+            })
+            .unwrap();
+            assert_rebuild_is_identity(t, col);
+        });
+    }
+
+    /// 反方向：清除卡的那条被分叉对调换掉，挪卡修改恢复，牌组的删除要重新被扣住。
+    #[test]
+    fn a_fork_swapping_out_a_card_purge_holds_the_deck_delete_again() {
+        use crate::gen4::heritage::HeritageSlot;
+        use crate::gen4::translate::T_VERSION;
+        use crate::store::gen4::truth::Put;
+        let card = Key::Uuid(id(CARD));
+        let slot = |fp: u8, body: &Body4| HeritageSlot::op([fp; 8], op(0xd1, 1, 120, &[], body));
+        let purge_slot = slot(9, &purge(EntKind::Card, card.clone()));
+        let other_slot = slot(1, &edit(&native_edit().key, "\"x\""));
+        let mut replaced = 0;
+        let mut outcomes = Vec::new();
+        for order in [[&purge_slot, &other_slot], [&other_slot, &purge_slot]] {
+            outcomes.push(with(|t, col| {
+                let got = t
+                    .tx(|t| {
+                        let mut ix = Index::new(t, col);
+                        native(
+                            t,
+                            &mut ix,
+                            col,
+                            &op(0xa1, 1, 100, &[], &deck_edit("D", "deleted", "100")),
+                        );
+                        native(
+                            t,
+                            &mut ix,
+                            col,
+                            &op(0xa2, 1, 110, &[], &card_edit("deck", "\"D\"")),
+                        );
+                        ix.settle()?;
+                        for s in order {
+                            let before = t.entry(col, &s.id)?;
+                            match t.put_heritage(col, &id(0xc0), s, T_VERSION)? {
+                                Put::Inserted | Put::Yielded => {
+                                    ix.add(&t.entry(col, &s.id)?.expect("put"))?
+                                }
+                                Put::Replaced => {
+                                    replaced += 1;
+                                    ix.remove(&before.expect("replaced"))?;
+                                    ix.add(&t.entry(col, &s.id)?.expect("put"))?;
+                                }
+                                _ => {}
+                            }
+                            ix.settle()?;
+                        }
+                        Ok((
+                            deck_hold_moves(&ix),
+                            ix.value(EntKind::Deck, &Key::of("D"), "deleted")?,
+                        ))
+                    })
+                    .unwrap();
+                assert_rebuild_is_identity(t, col);
+                (canon(t, col), got)
+            }));
+        }
+        assert!(replaced > 0, "neither order swapped the slot");
+        assert_eq!(outcomes[0], outcomes[1]);
+    }
+
     #[test]
     fn a_delete_concurrent_with_other_work_is_held_until_someone_settles_it() {
         with(|t, col| {
@@ -1417,7 +1551,7 @@ mod tests {
         proptest::collection::vec(
             (
                 0u8..3,
-                0u8..12,
+                0u8..14,
                 proptest::collection::vec((0u8..3, 0u8..5), 0..3),
                 0u16..40,
                 0u8..2,
@@ -1453,6 +1587,8 @@ mod tests {
                 },
                 9 => card_edit("deck", &format!("\"D{arg}\"")),
                 10 => purge(EntKind::Deck, Key::of(&format!("D{arg}"))),
+                11 => deck_edit(&format!("D{arg}"), "deleted", &wall.to_string()),
+                12 => purge(EntKind::Card, Key::Uuid(id(CARD))),
                 _ => card_edit("deleted", &wall.to_string()),
             };
             log.push(op(0xa0 + dev, seq, i64::from(*wall), &seen, &body));

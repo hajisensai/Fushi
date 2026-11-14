@@ -124,6 +124,14 @@ add_library(fushi_voice_hook SHARED
   "hook/adapters/softpal_lookup.inc"
   "hook/adapters/softpal_profile.h"
   "hook/adapters/softpal_text.inc"
+  "hook/adapters/entisgls_adapter.inc"
+  "hook/adapters/entisgls_core.h"
+  "hook/adapters/entisgls_profile.h"
+  "hook/adapters/entisgls_text.inc"
+  "hook/adapters/nitroplus_adapter.inc"
+  "hook/adapters/nitroplus_core.h"
+  "hook/adapters/nitroplus_profile.h"
+  "hook/adapters/nitroplus_text.inc"
   "hook/adapters/system4_adapter.inc"
   "hook/adapters/system4_core.h"
   "hook/adapters/system4_lookup.inc"
@@ -154,6 +162,7 @@ add_library(fushi_voice_hook SHARED
   "hook/adapters/qlie_adapter.inc"
   "hook/adapters/qlie_profile.h"
   "hook/adapters/kirikiri_adapter.inc"
+  "hook/adapters/kirikiri_kag_text_core.h"
   "hook/adapters/renpy_adapter.inc"
   "hook/adapters/text_render_adapter.inc"
   "hook/adapters/loopback_adapter.inc"
@@ -720,6 +729,16 @@ add_executable(fushi_kirikiri_exporter_scan_test
 target_include_directories(fushi_kirikiri_exporter_scan_test PRIVATE "hook" "include")
 add_test(NAME fushi_kirikiri_exporter_scan_test
   COMMAND fushi_kirikiri_exporter_scan_test)
+
+# KiriKiri classic KAG3 ENGINE text lane: wire parsing, commit at KAG click waits,
+# reset on clear, ruby dropped, dedupe, overflow fail-closed, admission, lane write.
+add_executable(fushi_kirikiri_kag_text_test "tests/kirikiri_kag_text_test.cpp")
+target_include_directories(fushi_kirikiri_kag_text_test PRIVATE "hook" "include")
+target_compile_definitions(fushi_kirikiri_kag_text_test
+  PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_kirikiri_kag_text_test
+  COMMAND fushi_kirikiri_kag_text_test
+  "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/kirikiri_kag_text_replay.tsv")
 
 # 通用位图呈现器的几何换算（卡片飘出游戏窗口 == 用户看不见卡片，与"没投帧"同形）。
 add_executable(fushi_lookup_overlay_geometry_test
@@ -1341,6 +1360,14 @@ add_executable(fushi_lookup_hover_highlight_state_test "tests/lookup_hover_highl
 target_include_directories(fushi_lookup_hover_highlight_state_test PRIVATE "hook")
 target_compile_definitions(fushi_lookup_hover_highlight_state_test PRIVATE UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 add_test(NAME fushi_lookup_hover_highlight_state_test COMMAND fushi_lookup_hover_highlight_state_test)
+add_executable(fushi_entisgls_adapter_test "tests/entisgls_adapter_test.cpp")
+target_include_directories(fushi_entisgls_adapter_test PRIVATE "hook" "hook/adapters")
+target_compile_definitions(fushi_entisgls_adapter_test PRIVATE UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_entisgls_adapter_test COMMAND fushi_entisgls_adapter_test)
+add_executable(fushi_nitroplus_adapter_test "tests/nitroplus_adapter_test.cpp")
+target_include_directories(fushi_nitroplus_adapter_test PRIVATE "hook" "hook/adapters")
+target_compile_definitions(fushi_nitroplus_adapter_test PRIVATE UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_nitroplus_adapter_test COMMAND fushi_nitroplus_adapter_test)
 
 add_executable(fushi_test_version_resource_test "tests/test_version_resource_test.cpp")
 target_compile_definitions(fushi_test_version_resource_test PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)

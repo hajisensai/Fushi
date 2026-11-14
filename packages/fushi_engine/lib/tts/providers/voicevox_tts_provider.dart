@@ -272,9 +272,15 @@ class VoicevoxCompatibleTtsProvider extends TtsProvider {
   Future<void> dispose() async => _client.close(force: true);
 }
 
-/// `/speakers` → 「角色 / 风格」列表，id 是 style id。只收朗读用的风格：`type`
-/// 缺省（旧引擎 / AivisSpeech）或 `talk`；歌唱（`sing` / `frame_decode`）与哼唱
+/// VOICEVOX engine `StyleType` 里能走 `/audio_query` + `/synthesis` 的「talk 系」
+/// 风格，与引擎 `metas_store._TALK_STYLE_TYPES` 同一集合。`streaming_talk` 是
+/// 0.25+ 引擎给支持流式合成的风格报的类型（0.26 起默认角色全是它），同样能
+/// 普通合成。歌唱（`singing_teacher` / `frame_decode` / `sing`）与哼唱
 /// （`humming`）走的是另一套接口，选了也合成不出来。
+const Set<String> voicevoxTalkStyleTypes = <String>{'talk', 'streaming_talk'};
+
+/// `/speakers` → 「角色 / 风格」列表，id 是 style id。只收朗读用的风格：`type`
+/// 缺省（旧引擎 / AivisSpeech）或属于 [voicevoxTalkStyleTypes]。
 List<TtsVoice> parseVoicevoxSpeakers(Object? raw) => <TtsVoice>[
   if (raw is List)
     for (final Object? speaker in raw)
@@ -282,7 +288,8 @@ List<TtsVoice> parseVoicevoxSpeakers(Object? raw) => <TtsVoice>[
         for (final Object? style in speaker['styles'] as List)
           if (style is Map &&
               style['id'] is int &&
-              (style['type'] == null || style['type'] == 'talk'))
+              (style['type'] == null ||
+                  voicevoxTalkStyleTypes.contains(style['type'])))
             TtsVoice(
               id: '${style['id']}',
               displayName:

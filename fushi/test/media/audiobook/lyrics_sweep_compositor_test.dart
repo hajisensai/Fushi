@@ -92,8 +92,8 @@ const assert=require('node:assert/strict');
 const SCALE=1.25, OX=100, OY=50;
 function rect(l,t,r,b){ return {left:OX+l*SCALE, top:OY+t*SCALE, right:OX+r*SCALE,
   bottom:OY+b*SCALE, width:(r-l)*SCALE, height:(b-t)*SCALE}; }
-function textNode(rects, inRt){ return {rects:rects,
-  parentElement:{closest:function(){ return inRt ? {} : null; }}}; }
+function textNode(rects, anno){ return {rects:rects,
+  parentElement:{closest:function(){ return anno ? {tagName:anno} : null; }}}; }
 function classList(){ const s=new Set(); return {add:(...a)=>a.forEach(x=>s.add(x)),
   remove:(...a)=>a.forEach(x=>s.delete(x)), contains:(x)=>s.has(x),
   toggle:(x,on)=>{ if(on===undefined) on=!s.has(x); if(on) s.add(x); else s.delete(x); }}; }
@@ -113,7 +113,11 @@ function makeEl(tag){
   el.classList={contains:(x)=>el.className.split(' ').indexOf(x)>=0};
   return el;
 }
-const tx={nodes:[ $lines textNode([rect(0,-12,20,0)], true) ], cloneNode(){ return {clone:true}; }};
+// 注音：横排在首行上方、竖排在右列右侧（rt）；rp 不显示、整段跳过。
+const tx={nodes:[ $lines
+  textNode([${vertical ? 'rect(120,0,132,40)' : 'rect(0,-12,40,0)'}], 'rt'),
+  textNode([rect(-500,-500,-400,-400)], 'rp') ],
+  cloneNode(){ return {clone:true}; }};
 const cue=makeEl('div');
 cue.classList=classList();
 cue.classList.add('cue','current');
@@ -171,6 +175,12 @@ void main() {
       }
     });
 
+    test('$tag：注音不在底层单独钉成当前色（BUG-4504）', () {
+      // 扫过期间底层整句（含 rt）是未读色，注音只由上层窗口随基字点亮。
+      expect(doc, isNot(contains('.ly-sw-on:not(.ly-nosweep) .tx rt')));
+      expect(RegExp(r'\.tx rt\s*\{[^}]*--ly-current').hasMatch(doc), isFalse);
+    });
+
     test('$tag：搭出的动画只动 transform、窗口与副本反向、时长按进度与倍速', () async {
       await _runJs('''
 ${_domHarness(vertical: vertical, sweepJs: sweep)}
@@ -180,7 +190,7 @@ assert.equal(animations.length, 0);
 assert.equal(cue.classList.contains('ly-sw-on'), false);
 window.__lyricsSetPlaying(true);
 window.__lyricsSetProgress(0, 0.25, 0.5);
-// 两行（列）× 窗口 + 副本。
+// 两行（列）× 窗口 + 副本；注音并进所注那一行，不另起一行，rp 不参与。
 assert.equal(animations.length, 4);
 assert.equal(cue.classList.contains('ly-sw-on'), true);
 // Dart 每次同步都先重复下发播放态：没翻转就不重搭、不取消在跑的动画。
@@ -209,6 +219,16 @@ const host = cue.children[0];
 assert.equal(host.className, 'ly-sw');
 assert.equal(host.attrs['aria-hidden'], 'true');
 const inner0 = host.shadow.children[1].children[0];
+// BUG-4504：首行（右列）窗口的条带盖住注音，注音随基字一起扫亮。
+const win0 = host.shadow.children[1];
+if (__lyricsVertical) {
+  // 右列 v∈[80,132]（含注音）→ 条带 [80, 132 + 26]。
+  assert.match(win0.style.cssText, /left:80px;/);
+  assert.match(win0.style.cssText, /width:78px;/);
+} else {
+  // 首行 v∈[-12,40]（含注音）→ 条带上缘 -12 - 26 = -38。
+  assert.match(win0.style.cssText, /top:-38px;/);
+}
 assert.match(inner0.style.cssText, /width:300px;height:${vertical ? 400 : 120}px;/);
 // seek / 倍速：重搭，旧动画取消。
 const old = animations.slice();
@@ -264,6 +284,18 @@ assert.deepEqual(v.map((c) => [c.v0, c.v1, c.u0, c.u1]),
   [[80,120,0,400],[40,80,0,400],[0,40,0,100]]);
 // 条带：相邻列中线分界，首尾外扩半列。
 assert.deepEqual(v.map((c) => [c.b0, c.b1]), [[80,140],[40,80],[-20,40]]);
+// BUG-4504：注音不参与分行，并进它所注的那一行（行内重叠、交叉方向最近）。
+// 竖排注音在列右侧：所注列的条带随之外扩，行内范围也盖住越出基字的注音。
+const vr = __lyricsSweepLines([
+  {l:60,r:100,t:0,b:200}, {l:0,r:40,t:0,b:200},
+], true, [{l:100,r:112,t:10,b:50}, {l:40,r:52,t:100,b:140}, {l:40,r:52,t:190,b:230}]);
+assert.equal(vr.length, 2);
+assert.deepEqual(vr.map((c) => [c.v0, c.v1, c.u0, c.u1]), [[60,112,0,200],[0,52,0,230]]);
+// 横排注音在行上方：第二行注音把它的条带上缘推到与首行的中线。
+const hr = __lyricsSweepLines([
+  {l:0,r:300,t:20,b:60}, {l:0,r:100,t:90,b:130},
+], false, [{l:0,r:40,t:8,b:20}, {l:50,r:90,t:78,b:90}]);
+assert.deepEqual(hr.map((c) => [c.v0, c.v1, c.b0, c.b1]), [[8,60,-18,69],[78,130,69,156]]);
 // 横排：自上而下。
 const h = __lyricsSweepLines([
   {l:0,r:100,t:40,b:80}, {l:0,r:300,t:0,b:40},
