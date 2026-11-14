@@ -10,6 +10,7 @@
 //! 用现有 `SrsIds` 对同一个冻结向量文件（`golden_ids.json`）重算，本模块的测试也对着它重算。
 
 pub mod alias;
+pub mod builtins;
 pub mod rules;
 
 /// 冻结的向量文件（由上面那个 Dart 测试生成）。

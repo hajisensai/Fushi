@@ -481,11 +481,11 @@ void main() {
     );
     final String? oldDevice = a.sync2Device;
     // 恢复备份：本机状态、缓存表与同步 v2 的本机身份被清空（备份快照剥掉设备本地表，见 SrsCore.snapshotInto）。
-    await srsStorage.db.delete(srsStorage.db.srsLocalState).go();
-    await srsStorage.db.delete(srsStorage.db.srsEventLocal).go();
-    await srsStorage.db.delete(srsStorage.db.srsCardsCache).go();
-    await srsStorage.db.delete(srsStorage.db.srsNotesCache).go();
-    await srsStorage.db.customStatement('DELETE FROM sync2_self');
+    srsStorage.core.debugExecRaw('DELETE FROM srs_local_state');
+    srsStorage.core.debugExecRaw('DELETE FROM srs_event_local');
+    srsStorage.core.debugExecRaw('DELETE FROM srs_cards_cache');
+    srsStorage.core.debugExecRaw('DELETE FROM srs_notes_cache');
+    srsStorage.core.debugExecRaw('DELETE FROM sync2_self');
     final SrsDbStore restored = await SrsDbStore.open(
       db: srsStorage.db,
       core: srsStorage.core,

@@ -20,3 +20,4 @@
 #include "../adapters/knife_profile.h"
 #include "../adapters/softpal_profile.h"
 #include "../adapters/system4_profile.h"
+#include "../adapters/nitroplus_profile.h"

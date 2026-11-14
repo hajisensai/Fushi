@@ -233,7 +233,8 @@ void main() {
   // ID 列存 16 字节 BLOB（schema v17）：Dart 原生 SQL 里拼 / 绑 ID 必须过 `srs_id()`，漏了查不到也写错形状。
   // 审计只在 `--features id_audit` 构建的库里装（native/fushi_fsrs/src/store/ids.rs `audit`）；CI 的 Dart 单测
   // 库就是这么编的，并设 FUSHI_FSRS_ID_AUDIT=1——这条金丝雀钉住「审计真的开着」，库被换成不带审计的构建就红，
-  // 否则整套 SRS 测试会在没有审计的情况下静默变绿。
+  // 否则整套 SRS 测试会在没有审计的情况下静默变绿。本机 / 测试 worker 上加载到的是 prebuilt/<平台>/id_audit/
+  // 那份（调试构建与测试宿主默认用它）时同样跑。
   test(
     'the id audit is live in audited builds',
     () {
@@ -263,10 +264,12 @@ void main() {
       );
       expect(rows[1], <Object?>[0]);
     },
-    skip: Platform.environment['FUSHI_FSRS_ID_AUDIT'] == '1'
+    skip:
+        Platform.environment['FUSHI_FSRS_ID_AUDIT'] == '1' ||
+            (FushiFsrs.instance?.isIdAuditVariant ?? false)
         ? false
         : 'needs a fushi_fsrs built with --features id_audit '
-              '(FUSHI_FSRS_ID_AUDIT=1)',
+              '(FUSHI_FSRS_ID_AUDIT=1, or the prebuilt id_audit variant)',
   );
 
   test('an upgrade refused for disk space surfaces as a typed, readable error', () {

@@ -17,7 +17,7 @@
 //! - 写入者改名的归并比 ID 多一道条件：哈希验上之外，还要有「是同一套 seq」的正面证据（[WriterHow]）。
 
 use std::borrow::Cow;
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 
 use crate::sync2::id::{Id, Key};
 
@@ -138,7 +138,8 @@ pub struct Limits {
     /// 填空类型的卡序号枚举 `0..=这个数`（导入的是 Anki 的 ord + 1，Fushi 自己解析的从 1 起、没有上限；
     /// 更大的由 [NoteEv::cloze_ords] 给）。
     pub cloze_ords: i64,
-    /// 「认出兜底别名 → 别名类变大 → 再枚举」最多几轮。
+    /// 叶子（卡、日志、牌组……）上的兜底链（兜底的兜底）最多追几轮。会派生别的 ID 的类（笔记类型、笔记、字段 / 模板）
+    /// 的兜底链在派生之前一次追到头，不受它限制（每一步都要认出一个新的观察到的 ID，必然停）。
     pub rounds: usize,
     /// 改名写入者最多追几跳（中间那个名字不在集合里的链式并入）。
     pub writer_hops: usize,
@@ -299,6 +300,28 @@ impl Aliases {
         v
     }
 
+    /// 表里的全部条目：(ID, 规范 ID, 怎么认的)，按 ID 升序。给存储层把表落成派生表用。
+    pub fn entries(&self) -> Vec<(Id, Id, How)> {
+        let mut v: Vec<(Id, Id, How)> = self
+            .map
+            .iter()
+            .map(|(id, e)| (*id, e.canonical, e.how))
+            .collect();
+        v.sort_by_key(|(id, _, _)| *id);
+        v
+    }
+
+    /// 判过的 `merged-…` 写入者：(名字, 哈希验上的最初写入者, 怎么判的)，按名字排序。
+    pub fn judged_writers(&self) -> Vec<(&str, &str, WriterHow)> {
+        let mut v: Vec<(&str, &str, WriterHow)> = self
+            .writers
+            .iter()
+            .map(|(a, e)| (a.as_str(), e.origin.as_str(), e.how))
+            .collect();
+        v.sort();
+        v
+    }
+
     /// 同一个 ID 被两条规则给出两个不同规范 ID 的次数（只可能是哈希碰撞；正常是 0）。
     pub fn conflicts(&self) -> usize {
         self.conflicts
@@ -360,13 +383,24 @@ struct DefClass {
     aliases: Vec<Id>,
 }
 
-/// 兜底 ID 归到的那个 ID 属于哪种类：决定别名类变大后要不要再枚举。
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Kind {
-    /// 笔记类型、字段 / 模板、笔记：它的别名会派生出别的 ID。
-    Branch,
-    /// 牌组、卡、日志、其它：没有东西由它派生。
-    Leaf,
+/// 兜底闭包的结果（[Resolver::fallback_closure]）。
+#[derive(Debug, Default)]
+struct Closure {
+    /// 被认成兜底别名、整个并进别的类的类 → 认出它的那个类（可能自己也被并了，用 [Closure::find]）。
+    joined: BTreeMap<Id, Id>,
+    /// 最终的类 → 认进来的兜底别名。
+    members: BTreeMap<Id, BTreeSet<Id>>,
+}
+
+impl Closure {
+    /// [c] 最终所在的类。
+    fn find(&self, c: Id) -> Id {
+        let mut cur = c;
+        while let Some(next) = self.joined.get(&cur) {
+            cur = *next;
+        }
+        cur
+    }
 }
 
 struct Resolver<'a> {
@@ -376,7 +410,7 @@ struct Resolver<'a> {
     salt_ids: Vec<Option<Id>>,
     nt: BTreeMap<Id, NtClass>,
     notes: BTreeMap<Id, NoteClass>,
-    /// 认出来的兜底别名：类的规范 ID → 多出来的别名。
+    /// 认出来的兜底别名：笔记类型 / 笔记类的规范 ID → 多出来的别名（[Resolver::root_fallbacks]）。
     extra: BTreeMap<Id, BTreeSet<Id>>,
     /// 牌组、内置牌组、profile 实体：算一次就不变的别名（别名, 规范）。
     static_aliases: Vec<(Id, Id)>,
@@ -387,8 +421,8 @@ struct Resolver<'a> {
     why: HashMap<Id, Why>,
 }
 
-/// 一轮里新认出的兜底别名：(别名, 它归到的类的规范 ID——叶子上是 None，收尾时沿 `via` 取, 种类)。
-type Fresh = Vec<(Id, Option<Id>, Kind)>;
+/// 一轮里新认出的叶子上的兜底别名：(别名, 它归到的规范 ID——观察到的叶子自己当原 ID 时是 None，收尾时沿 `via` 取)。
+type Fresh = Vec<(Id, Option<Id>)>;
 
 /// 由证据算别名表。
 pub fn resolve(ev: &Evidence, limits: &Limits) -> Aliases {
@@ -397,6 +431,7 @@ pub fn resolve(ev: &Evidence, limits: &Limits) -> Aliases {
     r.root_notes();
     r.decks();
     r.profile_entities();
+    r.root_fallbacks();
     r.rounds();
     r.flatten();
     r.derived_logs();
@@ -790,66 +825,178 @@ impl<'a> Resolver<'a> {
         }
     }
 
-    // ---------------------------------------------------------------- 枚举 + 兜底 ID
+    // ---------------------------------------------------------------- 兜底 ID
 
-    /// [x] 在每个盐下的兜底 ID 若被观察到，就是 [x] 的别名。[canonical] 是 [x] 所在类的规范 ID；叶子上传 None
-    /// （它自己的规范 ID 可能后面才定，收尾时沿 `via` 取）。
-    fn try_fallback(
-        &mut self,
-        x: &Id,
-        canonical: Option<&Id>,
-        kind: Kind,
-        fresh: &mut Fresh,
-        dirty: &mut bool,
-    ) {
+    /// [x] 在每个盐下、观察到且还没认过的兜底 ID：(兜底 ID, 盐的下标)。
+    fn fallbacks_of(&mut self, x: &Id) -> Vec<(Id, u16)> {
         let text = x.text();
+        let mut v: Vec<(Id, u16)> = Vec::new();
         for i in 0..self.out.salts.len() {
             let f = rules::merge_fallback(&self.out.salts[i], &text);
             self.out.hashes += 1;
-            if f == *x || !self.observed.contains(&f) || self.out.map.contains_key(&f) {
-                continue;
+            if f != *x && self.observed.contains(&f) && !self.out.map.contains_key(&f) {
+                v.push((f, i as u16));
             }
+        }
+        v
+    }
+
+    /// 会派生出别的 ID 的类（笔记类型、笔记、字段 / 模板）的兜底闭包：从每个类的别名出发试兜底 ID，认出来的再接着
+    /// 试（兜底的兜底）。认出的兜底 ID 若自己就是 [classes] 里的一个类（验不上、各自成类的观察到的 ID——旧并入
+    /// 把它的记录和派生行一起带了过来），整个类并进认出它的那个类。
+    ///
+    /// 必须在用类的别名派生任何东西之前做完：先派生、后认出，同一个子 ID 就会按两个父各算一次，被记成冲突。
+    /// 认出的兜底 ID 写进表（规范 ID = 它最终所在的类）。[classes] 按类排好序、别名排好序，结果与证据顺序无关。
+    fn fallback_closure(&mut self, classes: &[(Id, Vec<Id>)]) -> Closure {
+        let keys: HashSet<Id> = classes.iter().map(|(c, _)| *c).collect();
+        let mut work: VecDeque<(Id, Id)> = classes
+            .iter()
+            .flat_map(|(c, aliases)| aliases.iter().map(move |a| (*a, *c)))
+            .collect();
+        let mut closure = Closure::default();
+        let mut found: Vec<(Id, Id, u16)> = Vec::new();
+        let mut claimed: HashSet<Id> = HashSet::new();
+        while let Some((a, c)) = work.pop_front() {
+            for (f, salt) in self.fallbacks_of(&a) {
+                if !claimed.insert(f) {
+                    continue;
+                }
+                if keys.contains(&f) {
+                    // 它自己的别名已经（或将要）以它自己的类出发试过，不用再排；整个类并进来。
+                    if f != c && closure.find(c) != f {
+                        closure.joined.insert(f, c);
+                    }
+                } else {
+                    work.push_back((f, c));
+                }
+                found.push((f, c, salt));
+            }
+        }
+        for (f, c, salt) in found {
+            let canonical = closure.find(c);
+            self.out.map.insert(
+                f,
+                Entry {
+                    canonical,
+                    how: How::Fallback { salt },
+                    via: None,
+                },
+            );
+            closure.members.entry(canonical).or_default().insert(f);
+        }
+        closure
+    }
+
+    /// 笔记类型与笔记（根）的兜底闭包；被认成兜底别名的验不上的类并进去（身份记录、定义、笔记类型史一起）。
+    fn root_fallbacks(&mut self) {
+        let classes: Vec<Id> = self.nt.keys().copied().collect();
+        let mut work: Vec<(Id, Vec<Id>)> = Vec::new();
+        for canonical in &classes {
+            let (anki_num, members) = {
+                let c = &self.nt[canonical];
+                (c.anki_num, c.members.clone())
+            };
+            let computed: Vec<Id> = match anki_num {
+                Some(n) => self
+                    .rooted_aliases(|s| rules::note_type(s, n))
+                    .into_iter()
+                    .map(|(a, _)| a)
+                    .collect(),
+                None => Vec::new(),
+            };
+            work.push((
+                *canonical,
+                self.class_aliases(canonical, computed, &members),
+            ));
+        }
+        let closure = self.fallback_closure(&work);
+        for gone in closure.joined.keys() {
+            let into = closure.find(*gone);
+            let Some(g) = self.nt.remove(gone) else {
+                continue;
+            };
+            let c = self.nt.entry(into).or_default();
+            c.members.extend(g.members);
+            c.cloze |= g.cloze;
+            c.fields.extend(g.fields);
+            c.templates.extend(g.templates);
+            for (id, has_key) in g.seen_fields {
+                *c.seen_fields.entry(id).or_default() |= has_key;
+            }
+            for (id, has_key) in g.seen_templates {
+                *c.seen_templates.entry(id).or_default() |= has_key;
+            }
+        }
+        for (c, fs) in closure.members {
+            self.extra.entry(c).or_default().extend(fs);
+        }
+
+        let classes: Vec<Id> = self.notes.keys().copied().collect();
+        let mut work: Vec<(Id, Vec<Id>)> = Vec::new();
+        for canonical in &classes {
+            let n = self.notes[canonical].clone();
+            let computed: Vec<Id> = match &n.guid {
+                Some(g) => self
+                    .rooted_aliases(|s| rules::note(s, g))
+                    .into_iter()
+                    .map(|(a, _)| a)
+                    .collect(),
+                None => Vec::new(),
+            };
+            work.push((
+                *canonical,
+                self.class_aliases(canonical, computed, &n.members),
+            ));
+        }
+        let closure = self.fallback_closure(&work);
+        for gone in closure.joined.keys() {
+            let into = closure.find(*gone);
+            let Some(g) = self.notes.remove(gone) else {
+                continue;
+            };
+            let c = self.notes.entry(into).or_default();
+            c.members.extend(g.members);
+            c.note_types.extend(g.note_types);
+            c.cloze_ords.extend(g.cloze_ords);
+        }
+        for (c, fs) in closure.members {
+            self.extra.entry(c).or_default().extend(fs);
+        }
+    }
+
+    /// 叶子（卡、日志、牌组、其它：没有东西由它派生）[x] 的兜底 ID 若被观察到，就是 [x] 的别名。[canonical] 是
+    /// [x] 的规范 ID；观察到的叶子自己当原 ID 时传 None（它自己的规范 ID 可能后面才定，收尾时沿 `via` 取）。
+    fn try_fallback(&mut self, x: &Id, canonical: Option<&Id>, fresh: &mut Fresh) {
+        for (f, salt) in self.fallbacks_of(x) {
             self.out.map.insert(
                 f,
                 Entry {
                     canonical: canonical.copied().unwrap_or(*x),
-                    how: How::Fallback { salt: i as u16 },
+                    how: How::Fallback { salt },
                     via: canonical.is_none().then_some(*x),
                 },
             );
-            fresh.push((f, canonical.copied(), kind));
-            if let (Kind::Branch, Some(c)) = (kind, canonical) {
-                self.extra.entry(*c).or_default().insert(f);
-                *dirty = true;
-            }
+            fresh.push((f, canonical.copied()));
         }
     }
 
+    /// 枚举一遍（会派生别的 ID 的类到这里都已定型），再沿叶子上的兜底链（兜底的兜底）一轮轮追。
     fn rounds(&mut self) {
         let mut fresh: Fresh = Vec::new();
-        let mut dirty = true;
-        while self.out.rounds < self.limits.rounds.max(1) {
+        self.out.rounds = 1;
+        self.full_pass(&mut fresh);
+        while !fresh.is_empty() && self.out.rounds < self.limits.rounds.max(1) {
             self.out.rounds += 1;
             let mut next: Fresh = Vec::new();
-            let mut next_dirty = false;
-            if dirty {
-                self.full_pass(&mut next, &mut next_dirty);
-            } else {
-                // 上一轮只认出了叶子上的兜底 ID：只需要再试它们自己的兜底（链式并入 A→B→C）。
-                for (f, canonical, kind) in std::mem::take(&mut fresh) {
-                    self.try_fallback(&f, canonical.as_ref(), kind, &mut next, &mut next_dirty);
-                }
-            }
-            if next.is_empty() && !next_dirty {
-                break;
+            for (f, canonical) in std::mem::take(&mut fresh) {
+                self.try_fallback(&f, canonical.as_ref(), &mut next);
             }
             fresh = next;
-            dirty = next_dirty;
         }
     }
 
-    fn full_pass(&mut self, fresh: &mut Fresh, dirty: &mut bool) {
-        // 1. 笔记类型的别名。
+    fn full_pass(&mut self, fresh: &mut Fresh) {
+        // 1. 笔记类型的别名（兜底别名已由 root_fallbacks 认完）。
         let classes: Vec<Id> = self.nt.keys().copied().collect();
         let mut nt_aliases: BTreeMap<Id, Vec<Id>> = BTreeMap::new();
         let mut nt_member: HashMap<Id, Id> = HashMap::new();
@@ -871,15 +1018,15 @@ impl<'a> Resolver<'a> {
             let aliases = self.class_aliases(canonical, computed, &members);
             for a in &aliases {
                 nt_member.insert(*a, *canonical);
-                self.try_fallback(a, Some(canonical), Kind::Branch, fresh, dirty);
             }
             nt_aliases.insert(*canonical, aliases);
         }
 
-        // 2. 字段 / 模板。先把每个类里每个自然键在笔记类型每个别名下的值都认了，再看剩下的：验不上的观察到的
-        //    定义各自成类（它也是一个模板，卡要用它）。
+        // 2. 字段 / 模板。每个类里每个自然键在笔记类型每个别名下的值是一个定义类；验不上的观察到的定义各自成类
+        //    （它也是一个模板，卡要用它）。全部定义类的兜底闭包做完（验不上的定义可能正是别的定义的兜底 ID）再给卡用。
         let none = BTreeSet::new();
-        let mut templates: BTreeMap<Id, Vec<DefClass>> = BTreeMap::new();
+        // (定义类, 它的别名, 所属的笔记类型类, 是不是模板)
+        let mut defs: Vec<(Id, Vec<Id>, Id, bool)> = Vec::new();
         for class in &classes {
             let c = self.nt[class].clone();
             let aliases = &nt_aliases[class];
@@ -898,40 +1045,38 @@ impl<'a> Resolver<'a> {
                     let all = self.class_aliases(&canonical, computed, &none);
                     for a in &all {
                         self.set(*a, canonical, How::Derived);
-                        self.try_fallback(a, Some(&canonical), Kind::Branch, fresh, dirty);
                     }
-                    if !is_field {
-                        templates.entry(*class).or_default().push(DefClass {
-                            canonical,
-                            aliases: all,
-                        });
-                    }
+                    defs.push((canonical, all, *class, !is_field));
                 }
             }
         }
         for class in &classes {
             let c = self.nt[class].clone();
-            for is_field in [true, false] {
-                let seen = if is_field {
-                    &c.seen_fields
-                } else {
-                    &c.seen_templates
-                };
+            for (seen, is_template) in [(&c.seen_fields, false), (&c.seen_templates, true)] {
                 for id in seen.keys() {
-                    if self.out.map.contains_key(id) {
-                        continue;
-                    }
-                    let all = self.class_aliases(id, Vec::new(), &none);
-                    for a in &all {
-                        self.try_fallback(a, Some(id), Kind::Branch, fresh, dirty);
-                    }
-                    if !is_field {
-                        templates.entry(*class).or_default().push(DefClass {
-                            canonical: *id,
-                            aliases: all,
-                        });
+                    if !self.out.map.contains_key(id) {
+                        defs.push((*id, vec![*id], *class, is_template));
                     }
                 }
+            }
+        }
+        let work: Vec<(Id, Vec<Id>)> = defs.iter().map(|(c, a, _, _)| (*c, a.clone())).collect();
+        let closure = self.fallback_closure(&work);
+        let mut templates: BTreeMap<Id, Vec<DefClass>> = BTreeMap::new();
+        for (canonical, mut aliases, class, is_template) in defs {
+            if closure.joined.contains_key(&canonical) {
+                continue;
+            }
+            if let Some(fs) = closure.members.get(&canonical) {
+                aliases.extend(fs.iter().copied());
+                aliases.sort_unstable();
+                aliases.dedup();
+            }
+            if is_template {
+                templates
+                    .entry(class)
+                    .or_default()
+                    .push(DefClass { canonical, aliases });
             }
         }
 
@@ -951,9 +1096,6 @@ impl<'a> Resolver<'a> {
                 None => Vec::new(),
             };
             let aliases = self.class_aliases(canonical, computed, &n.members);
-            for a in &aliases {
-                self.try_fallback(a, Some(canonical), Kind::Branch, fresh, dirty);
-            }
             let types: BTreeSet<Id> = n
                 .note_types
                 .iter()
@@ -985,13 +1127,7 @@ impl<'a> Resolver<'a> {
                                     self.set(c, card_canonical, How::Derived);
                                 }
                                 if seen || self.limits.virtual_aliases {
-                                    self.try_fallback(
-                                        &c,
-                                        Some(&card_canonical),
-                                        Kind::Leaf,
-                                        fresh,
-                                        dirty,
-                                    );
+                                    self.try_fallback(&c, Some(&card_canonical), fresh);
                                 }
                             }
                         }
@@ -1003,13 +1139,13 @@ impl<'a> Resolver<'a> {
         // 5. 牌组 / 内置牌组 / profile 实体的别名（算好的）。
         for i in 0..self.static_aliases.len() {
             let (a, canonical) = self.static_aliases[i];
-            self.try_fallback(&a, Some(&canonical), Kind::Leaf, fresh, dirty);
+            self.try_fallback(&a, Some(&canonical), fresh);
         }
 
         // 6. 观察到的叶子（卡、日志、牌组、其它）自己当原 ID。
         for i in 0..self.leaves.len() {
             let x = self.leaves[i];
-            self.try_fallback(&x, None, Kind::Leaf, fresh, dirty);
+            self.try_fallback(&x, None, fresh);
         }
     }
 
