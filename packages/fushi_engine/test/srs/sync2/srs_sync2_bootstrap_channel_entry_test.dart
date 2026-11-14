@@ -1,4 +1,4 @@
-// BUG-4387：新设备收段通道（native/fushi_fsrs/src/store/sync2/channel.rs，先追加后折叠）在真实新设备上要能被
+// BUG-4478：新设备收段通道（native/fushi_fsrs/src/store/sync2/channel.rs，先追加后折叠）在真实新设备上要能被
 // **自然**选中。`SrsDbStore.open` 在任何同步之前就写下内置身份记录（默认牌组 + 两个内置笔记类型，`ensureBuiltins`），
 // 以前的判据要求操作日志与投影全空，所以生产里通道一次都没开过；别的通道测试要么用不带内置实体的裸内核库
 // （Rust `tests_channel.rs` 的裸起点），要么手工往 `sync2_boot` 插行（srs_sync2_channel_settle_test.dart）。

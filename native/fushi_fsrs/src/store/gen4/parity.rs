@@ -1153,7 +1153,7 @@ fn gen4_sample_incremental() {
             let mut n = 0u64;
             inc.execute_batch("BEGIN IMMEDIATE").unwrap();
             // 派生层的宿主输入照搬。别名表只有全量重算，灌的时候攒着、最后算一次。
-            for key in ["builtins", "caches"] {
+            for key in ["caches"] {
                 let value = t.derive_cfg(col, key).unwrap();
                 t2.set_derive_cfg(col2, key, value.as_deref()).unwrap();
             }

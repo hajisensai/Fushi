@@ -12,6 +12,8 @@ library;
 
 import 'dart:math' as math;
 
+import 'package:meta/meta.dart' show visibleForTesting;
+
 /// 单次操作超过这个时长或交回超过 [kSrsOpHeavyBytes]：另记一条诊断日志（[SrsOpLedger.onHeavy]）。
 const Duration kSrsOpHeavyAfter = Duration(seconds: 3);
 
@@ -164,6 +166,20 @@ abstract final class SrsOpLedger {
     }
     return b.toString();
   }
+
+  /// 基准 / 测试：当前窗口里每项操作的次数、总用时、单次最长用时（微秒）与交回字节，不清零、不截断
+  /// （[takeSummary] 只列前 [kSrsOpSummaryTop] 项）。
+  @visibleForTesting
+  static Map<String, ({int count, int totalUs, int maxUs, int bytes})>
+  debugWindow() => <String, ({int count, int totalUs, int maxUs, int bytes})>{
+    for (final MapEntry<String, _OpStat> e in _window.entries)
+      e.key: (
+        count: e.value.count,
+        totalUs: e.value.totalUs,
+        maxUs: e.value.maxUs,
+        bytes: e.value.bytes,
+      ),
+  };
 
   /// 测试收尾：清空全部状态。
   static void reset() {
