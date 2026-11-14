@@ -56,7 +56,13 @@ void main() {
       'Future<ManualSyncOutcome> runPullToRefreshSync({',
       span: 1200,
     );
-    final int end = span.indexOf('\n}\n');
+    // 块体以列首 `}` 收尾；2026-11-10 模块门下沉到同步层后它成了表达式体
+    // （`}) => runManualSyncWithFeedback(...)`），以列首 `);` 收尾。取先出现的那个。
+    final List<int> ends = <int>[
+      span.indexOf('\n}\n'),
+      span.indexOf('\n);\n'),
+    ].where((int i) => i >= 0).toList()..sort();
+    final int end = ends.isEmpty ? -1 : ends.first;
     expect(end, isNonNegative, reason: '找不到 runPullToRefreshSync 的函数结尾');
     return span.substring(0, end);
   }

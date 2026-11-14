@@ -13,6 +13,7 @@ import 'package:flutter/foundation.dart';
 
 import 'package:fushi/src/srs/srs_fushi_card_fields.dart'
     show srsDecodeEntities;
+import 'package:fushi/src/srs/srs_sound_tag.dart';
 
 /// 字段在编辑页里用哪种编辑器。
 enum SrsFieldKind {
@@ -40,7 +41,6 @@ final RegExp _imgSrc = RegExp(
   r'''\ssrc\s*=\s*(?:(["'])([^"']*)\1|([^\s"'=<>`]+))''',
   caseSensitive: false,
 );
-final RegExp _soundTag = RegExp(r'\[sound:([^\]]+)\]');
 final RegExp _filler = RegExp(r'<br\s*/?>|&nbsp;|\s', caseSensitive: false);
 
 /// Anki 振假名：可选的前导空格（分词）+ 基字 + `[读音]`。基字不跨标签。
@@ -51,7 +51,7 @@ bool _onlyImages(String v) =>
     v.replaceAll(_imgTag, '').replaceAll(_filler, '').isEmpty;
 
 bool _onlySounds(String v) =>
-    v.replaceAll(_soundTag, '').replaceAll(_filler, '').isEmpty;
+    v.replaceAll(srsSoundTagPattern, '').replaceAll(_filler, '').isEmpty;
 
 bool _nameHas(String name, List<String> words) {
   final String n = name.toLowerCase();
@@ -62,7 +62,7 @@ bool _nameHas(String name, List<String> words) {
 SrsFieldKind srsFieldKindOf(String name, String value, {bool toggle = false}) {
   final String v = value.trim();
   final bool hasImg = _imgTag.hasMatch(v);
-  final bool hasSound = _soundTag.hasMatch(v);
+  final bool hasSound = srsSoundTagPattern.hasMatch(v);
   if (toggle && !hasImg && !hasSound && !v.contains('<')) {
     return SrsFieldKind.toggle;
   }
@@ -303,12 +303,6 @@ String _escapeText(String s) => s
     .replaceAll('>', '&gt;')
     .replaceAll(' ', '&nbsp;');
 
-String _escapeAttr(String s) => s
-    .replaceAll('&', '&amp;')
-    .replaceAll('"', '&quot;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;');
-
 /// 富文本 → HTML（Anki 的写法：`<b>` / `<i>` / `<u>` / `<span style="color: …">` / `<br>`）。
 String srsRichToHtml(String text, List<SrsRichStyle> styles) {
   assert(text.length == styles.length);
@@ -357,7 +351,7 @@ String srsReplaceImage(String html, int index, String? name) {
     if (_imgSrc.hasMatch(tag)) {
       return tag.replaceFirstMapped(
         _imgSrc,
-        (Match s) => ' src="${_escapeAttr(name)}"',
+        (Match s) => ' src="${srsEscapeHtml(name)}"',
       );
     }
     return srsImageTag(name);
@@ -365,7 +359,7 @@ String srsReplaceImage(String html, int index, String? name) {
 }
 
 /// 一张媒体库图片的 `<img>`。
-String srsImageTag(String name) => '<img src="${_escapeAttr(name)}">';
+String srsImageTag(String name) => '<img src="${srsEscapeHtml(name)}">';
 
 /// 字段末尾追加一张图片。
 String srsAppendImage(String html, String name) =>
@@ -379,7 +373,7 @@ String srsSoundTag(String name) => '[sound:$name]';
 /// 字段里第 [index] 个 `[sound:]` 换成 [name]；null = 删除。
 String srsReplaceSound(String field, int index, String? name) {
   int k = 0;
-  return field.replaceAllMapped(_soundTag, (Match m) {
+  return field.replaceAllMapped(srsSoundTagPattern, (Match m) {
     if (k++ != index) return m.group(0)!;
     return name == null ? '' : srsSoundTag(name);
   });

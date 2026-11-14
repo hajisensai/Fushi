@@ -1,18 +1,24 @@
 // Malie（light / Greenwood 系）身份探测。
 //
-// 结构判据：主模块里能从结构唯一解析出名为 "CFI" 的引擎 I/O scheme 表（见
-// malie_engine_io_core.h）：UTF-16 名字字面量 → 唯一的逐字拷贝点 → 同一帧函数里
-// `lea r,[ebp+T]; push r; call registrar` 的表交接 → T+0..0x1c 六个槽位都是帧函数、
-// tell 槽是 `mov eax,[arg+pos]` 的形状、getc 槽直接调用 read 槽、registrar 同时也
-// 被别的 scheme（WC_I / TC_I / LFILE_I …）的表构造调用。只用判定结果，槽位一个都不挂。
+// 结构判据（任一完整解析即命中，见 malie_lookup_core.h ClassifyIdentity）：
+//  * 主模块里能从结构唯一解析出名为 "CFI" 的引擎 I/O scheme 表（见
+//    malie_engine_io_core.h）：UTF-16 名字字面量 → 唯一的逐字拷贝点 → 同一帧函数里
+//    `lea r,[ebp+T]; push r; call registrar` 的表交接 → T+0..0x1c 六个槽位都是帧函数、
+//    tell 槽是 `mov eax,[arg+pos]` 的形状、getc 槽直接调用 read 槽、registrar 同时也
+//    被别的 scheme（WC_I / TC_I / LFILE_I …）的表构造调用；
+//  * 或 RICHTEXT3D 文本节点类表 + 其逐帧绘制方法的字形循环（U+2015 连写判定、
+//    reveal 区间、平移读取）能唯一解析（malie_lookup_core.h ResolveDraw）。
+//    不编入 CFI scheme 的版本（2026-11-11 实测一个 Steam 根目录 exe 没有 "CFI"
+//    字面量）照样注册 RICHTEXT3D，引擎身份不能只押在某一种归档 scheme 上。
+// 只用判定结果，scheme 槽位一个都不挂。
 //
 // exe 名、归档文件名、标题与归档密钥都不进判据。旧实现用写死的作品 CFI 密钥去解归档头
 // 来认引擎，并在 worker 上自己解密归档取语音——那只认得一个作品系列。现在身份按 exe
 // 结构、语音取 Ogg 解码器输入（malie_adapter.inc），密钥常量与解密代码已整体删除。
 //
 // 判定区分「未匹配」与「镜像未就绪」（malie_engine_io_core.h ProfileState）：首次探测
-// 在游戏主线程恢复之前，加壳 / 自解密 exe 此时还没展开，找不到名字字面量或其拷贝点只
-// 说明镜像未就绪；镜像（代码与只读节）采样指纹变化后重新判定——由
+// 在游戏主线程恢复之前，加壳 / 自解密 exe 此时还没展开，两种结构都找不到名字字面量或其
+// 拷贝点只说明镜像未就绪；镜像（代码与只读节）采样指纹变化后重新判定——由
 // MalieLibpAdapter::ProcessPendingEvents 每秒检查一次（registry 不向本 adapter 派发
 // onModuleLoaded）。结构性拒绝是终局。
 #pragma once
@@ -65,12 +71,15 @@ inline malie_io::ProfileState MeasureMalieProfile() {
   } else {
     const uint64_t fingerprint = malie_io::ImageFingerprint(image);
     if (malie_io::ShouldMeasureProfile(state, cache.fingerprint, fingerprint)) {
-      const malie_io::SchemeResult result =
+      const malie_io::SchemeResult scheme =
           malie_io::ResolveScheme(image, malie_io::kArchiveSchemeName);
+      malie_lookup::DrawSites draw_sites;
+      const malie_lookup::DrawResult draw =
+          malie_lookup::ResolveDraw(image, &draw_sites);
       cache.fingerprint = fingerprint;
-      cache.last_result.store(static_cast<uint32_t>(result),
+      cache.last_result.store(malie_lookup::PackIdentityResult(scheme, draw),
                               std::memory_order_release);
-      next = malie_io::ClassifyScheme(result);
+      next = malie_lookup::ClassifyIdentity(scheme, draw);
     }
   }
   cache.state.store(static_cast<uint32_t>(next), std::memory_order_release);

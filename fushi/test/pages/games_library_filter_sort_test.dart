@@ -18,6 +18,10 @@ import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/games_library_page.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
+    show FushiFloatingChromeBar;
+import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart'
+    show FushiShellActionsSlot, FushiShellTitleScope;
 
 import '../helpers/test_platform_services.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -104,17 +108,37 @@ void main() {
   }) async {
     navKey = GlobalKey<NavigatorState>();
     FushiToast.navigatorKey = navKey;
+    final FushiShellActionsSlot shellSlot = FushiShellActionsSlot();
+    addTearDown(shellSlot.dispose);
     await tester.pumpWidget(
       ProviderScope(
         overrides: <Override>[appProvider.overrideWith((_) => appModel)],
         child: TranslationProvider(
           child: MaterialApp(
             navigatorKey: navKey,
-            // 嵌入版不自带 Scaffold：生产里由游戏 tab（home_game_page）的 Material 托着，
-            // harness 照样给一层，页头搜索框的 TextField 才有 Material 祖先。
+            // 嵌入模式照游戏 tab 外壳（home_game_page）搭：页面不自带 Scaffold，
+            // 页头动作（含 🔍 与「管理合集」）登记进外壳的动作槽，由外壳的浮动
+            // 工具栏画——搜索展开时动作照样在。不搭外壳的话页头独立使用，展开
+            // 搜索会把整行换成搜索栏，够不到「管理合集」。
             home: FushiFocusRoot(
               child: embedded
-                  ? const Material(child: GamesLibraryPage(embedded: true))
+                  ? Scaffold(
+                      body: FushiShellTitleScope(
+                        title: '',
+                        actionsSlot: shellSlot,
+                        child: Column(
+                          children: <Widget>[
+                            FushiFloatingChromeBar(
+                              tabs: const SizedBox(height: 40),
+                              slot: shellSlot,
+                            ),
+                            const Expanded(
+                              child: GamesLibraryPage(embedded: true),
+                            ),
+                          ],
+                        ),
+                      ),
+                    )
                   : const GamesLibraryPage(),
             ),
           ),
@@ -243,7 +267,7 @@ void main() {
   // 折叠结果。旧实现在网格 sliver 里发布筛选后的折叠：库页一搜索，合集卡只剩
   // 命中的那一张，管理页就跟着变成「共 1 项」（其它合集 0 项、旁边挂着删除）；
   // 筛选空态不建网格，又会留着上一次的旧数。
-  testWidgets('管理合集页成员数不随库页搜索变', (WidgetTester tester) async {
+  testWidgets('管理合集页成员数不随库页筛选变', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1600, 1000);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -252,15 +276,19 @@ void main() {
     final int series = await db.createMediaCollection('series');
     await db.addToCollection(series, MediaKind.game, 'g1');
     await db.addToCollection(series, MediaKind.game, 'g2');
-    // 「管理合集」入口在游戏 tab 的单行页头里（embedded），搜索也是页头 🔍。
+    // 「管理合集」入口在游戏 tab 的单行页头里（embedded），由外壳动作组画。
     await pumpPage(tester, appModel, embedded: true);
 
-    // 只有 alpha 命中：库页合集卡此刻只折进 1 个成员。
+    // 库页筛到只剩 alpha（在玩）：库页合集卡此刻只折进 1 个成员。用筛选而不是
+    // 搜索：页头搜索展开时整行（含「管理合集」）换成搜索栏、收起即清空搜索词，
+    // 搜索生效期间够不到「管理合集」；筛选生效时页头动作照常在。
+    await tester.tap(find.byKey(const ValueKey<String>('games_filter_button')));
+    await tester.pumpAndSettle();
     await tester.tap(
-      find.byKey(const ValueKey<String>('fushi-header-search-button')),
+      find.text(galgamePlayStatusLabel(GalgamePlayStatus.playing)).last,
     );
     await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextField), 'alpha');
+    navKey.currentState!.pop();
     await tester.pumpAndSettle();
     expect(cardTitle('贝塔物语'), findsNothing);
     await tester.tap(

@@ -1421,12 +1421,44 @@
           'window.__fushiWordAudio.load();window.__fushiWordAudio=null;}}catch(_e){}' +
           'try{var s=window.getSelection&&window.getSelection();' +
           'if(s&&s.removeAllRanges)s.removeAllRanges();}catch(_e){}' +
-          'try{window.scrollTo(0,0);}catch(_e){}' +
-          'try{document.documentElement.scrollTop=0;document.body.scrollTop=0;}' +
-          'catch(_e){}' +
           '})();');
     } catch (e) {
       // A not-yet-loaded standby has no realm state to clear.
+    }
+    resetRealmScroll(record);
+  }
+
+  // A new lookup session starts at the top of the card. popup.js owns the single
+  // implementation (window.__fushiResetPopupScroll, shared with the in-app warm
+  // slot); an older cached document without it falls back to zeroing the
+  // document scroll surface directly. Called for parked / standby realms being
+  // reused AND for the stable-id root on every beginLookup (TODO-1095 keeps that
+  // iframe alive across lookups and hides, so its scrollTop otherwise leaked into
+  // the next hotkey / in-game lookup — a same-word re-lookup does not even
+  // re-render, contentChanged=false).
+  function resetRealmScroll(record) {
+    var win = null;
+    try {
+      win = record.iframe.contentWindow;
+    } catch (e) {
+      win = null;
+    }
+    if (!win) {
+      return;
+    }
+    if (typeof win.__fushiResetPopupScroll === 'function') {
+      win.__fushiResetPopupScroll();
+      return;
+    }
+    var doc = win.document || record.iframe.contentDocument;
+    if (typeof win.scrollTo === 'function') {
+      win.scrollTo(0, 0);
+    }
+    if (doc && doc.documentElement) {
+      doc.documentElement.scrollTop = 0;
+    }
+    if (doc && doc.body) {
+      doc.body.scrollTop = 0;
     }
   }
 
@@ -2811,6 +2843,12 @@
     if (!record) {
       return; // First-ever lookup for this id: createRecord gates it fresh.
     }
+    // The reused root iframe still holds the previous lookup's scroll offset;
+    // reset it before the following renderStack injects (or, for an unchanged
+    // same-word body, markContentReady's) the fresh card. Not done in renderJs
+    // (must stay byte-stable) nor on hide (nested child open/close keeps the
+    // parent's scroll) — beginLookup is the one new-session boundary.
+    resetRealmScroll(record);
     // Re-arm the content half of the reveal gate for the reused shell.
     record.contentReady = false;
     if (record.shell && typeof record.shell.setAttribute === 'function') {

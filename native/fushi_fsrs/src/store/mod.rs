@@ -18,12 +18,14 @@
 //! 只打开 `srs.db`、它的备份快照副本或自己生成的临时文件；绝不打开主库 `fushi.db`（同一进程里
 //! Drift 那份 SQLite 与这里自带的一份同开一个文件，会在 POSIX 平台上互相清掉文件锁）。
 
+pub(crate) mod binding;
 pub(crate) mod browse;
 pub mod bulk;
 pub(crate) mod cache_rev;
 pub(crate) mod caches;
 pub(crate) mod compact;
 pub mod ffi;
+pub mod gen4;
 pub(crate) mod ids;
 #[cfg(test)]
 mod kernel_reads_tests;
@@ -33,6 +35,7 @@ pub(crate) mod media_gc;
 mod mem_budget;
 #[cfg(test)]
 mod panic_recovery_tests;
+mod prof;
 mod profile_data;
 mod projections;
 #[cfg(test)]
@@ -44,6 +47,7 @@ pub(crate) mod repr_rewrite;
 pub mod rows;
 pub mod schema;
 pub(crate) mod slim;
+pub(crate) mod stats;
 pub mod study;
 pub mod sync2;
 
@@ -348,10 +352,12 @@ fn query_rows(conn: &Connection, sql: &str, params: &[Value]) -> Result<Vec<u8>,
     Ok(rows::encode(n, &out))
 }
 
-/// 测试构建：关库时查 ID 绑定审计（store/ids.rs `audit`）。
+/// 测试构建：关库时查 ID 绑定审计（store/ids.rs `audit`）；关之前把库灌进协议 4 的新存储对拍一遍（`gen4/parity.rs`，
+/// 换代设计 §8 G6 行的验收）。
 #[cfg(test)]
 impl Drop for SrsCore {
     fn drop(&mut self) {
+        gen4::parity::check_core(self);
         if let Ok(w) = self.writer() {
             ids::audit::check_stored(&w);
         }
@@ -501,7 +507,9 @@ impl SrsCore {
             )
             .map_err(|e| format!("open {}: {e}", path.display()))?;
             configure_as(&writer, MmapRole::Primary)?;
-            #[cfg(any(test, feature = "id_audit"))]
+            // 探针构建（`--cfg srs_probe`）不装审计：它让每条语句执行前都把绑定参数展开成 SQL 文本，逐行执行的语句
+            // 越多越吃亏（收段探针的 12～17%），量到的就不是 app 的耗时了。
+            #[cfg(all(any(test, feature = "id_audit"), not(srs_probe)))]
             ids::audit::install(&mut writer);
             // 新库建表前定成 INCREMENTAL：升级腾出的页以后原地收缩（store/compact.rs），不用整库重写。老库上这句只
             // 是记下「下次整库重写时改成 INCREMENTAL」，由 compact 的重写换文件那一步落实。
@@ -762,6 +770,9 @@ impl SrsCore {
     /// srs.db）。写连接最后关：最后关的连接负责把 WAL 并回主文件并删掉 -wal。之后的命令与会话查询
     /// 一律报「已关闭」。
     pub fn close(&self) {
+        // 测试构建：关之前与协议 4 的新存储对拍（见 `Drop for SrsCore`）。
+        #[cfg(test)]
+        gen4::parity::check_core(self);
         // 先关内核读连接池（等借出的放回）：此后 read_session 报已关闭，下面拿到的会话清单就是全部。
         // 下面各把锁被 panic 毒化过也照拿：连接随即丢掉，关闭时 SQLite 回滚连接上没结束的事务。
         self.readers.close();
@@ -982,6 +993,7 @@ impl SrsCore {
                  DELETE FROM sync2_self; DELETE FROM sync2_pending; DELETE FROM sync2_segments; \
                  DELETE FROM sync2_locations; DELETE FROM sync2_rewrites; DELETE FROM sync2_obsolete; \
                  DELETE FROM srs_meta WHERE key LIKE 'sync2_digest/%'; \
+                 DELETE FROM srs_meta WHERE key LIKE 'sync2_former/%'; \
                  COMMIT;",
             )
             .map_err(|e| e.to_string())?;

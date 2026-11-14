@@ -1,6 +1,6 @@
 /// 批量改笔记字段：设卡型（Lapis / Fushi 卡片的正面开关）、给字段设值 / 清空、查找替换。
 ///
-/// 浏览页的批量菜单与控制通道（`fushi/lib/src/ops/ctl_srs_routes.dart`，供 AI / `fushi_cli`）
+/// 浏览页的批量菜单与控制通道（`srs_ctl_routes.dart`，供 AI / `fushi_cli` / 服务端 `ctl`）
 /// 调同一组函数：先 `srsPlan*` 算出一份 [SrsNoteFieldPlan]（只读，可当预览 / dry-run），
 /// 再 [srsApplyNoteFieldPlan] 一个批次条件写落库（[SrsDbStore.editFieldsBatch]，走同步日志；计划之后
 /// 又被改过的字段不覆盖）。
@@ -9,8 +9,8 @@
 /// Fushi 卡片和导入的 Anki 类型；某条笔记的类型没有这个字段就记进 [SrsNoteFieldPlan.skipped]，
 /// 不报错也不乱写。
 ///
-/// 撤销：把改过的字段写回原值；写回前核对字段当前值仍是这批写下的值，之后又被改过的字段
-/// 不动、计入「撤不掉」的条数（与 [SrsBatchRevert] 同一约定）。
+/// 撤销：落库时记下撤销凭据（[SrsDbStore.editFieldsUndoable]），撤销按凭据还原（[SrsDbStore.revertEdits]）：
+/// 只还原之后没被别人动过的字段，被动过的保留现值并列出来（srs_edit_undo.dart）。
 library;
 
 import 'package:fushi_srs/fushi_srs.dart';
@@ -314,33 +314,36 @@ String _expand(String replace, Match m) {
 
 /// 一次落库的结果（[srsApplyNoteFieldPlan]）。
 class SrsNoteFieldApplied {
-  const SrsNoteFieldApplied({required this.changes, required this.conflicts});
+  const SrsNoteFieldApplied({
+    required this.changes,
+    required this.conflicts,
+    this.undo = SrsEditUndo.empty,
+  });
 
-  /// 实际写下的修改（计划里、落库时当前值仍是 `before` 的那些）。撤销就按它写回。
+  /// 实际写下的修改（计划里、落库时当前值仍是 `before` 的那些）。
   final List<SrsNoteFieldChange> changes;
 
   /// 计划算好之后、落库之前字段又被改过（同步拉下 / 别处并发改）因而**没写**的笔记数。
   final int conflicts;
+
+  /// 这次写入的撤销凭据（[SrsDbStore.revertEdits]）。
+  final SrsEditUndo undo;
 
   /// 实际改到的笔记数。
   int get noteCount =>
       <String>{for (final SrsNoteFieldChange c in changes) c.noteId}.length;
 
   /// 交给浏览页撤销栈的形状。
-  SrsBatchOutcome get outcome => SrsBatchOutcome(
-    changed: noteCount,
-    revert: changes.isEmpty
-        ? null
-        : (SrsDbStore s) => srsRevertNoteFieldChanges(s, changes),
-  );
+  SrsBatchOutcome get outcome =>
+      SrsBatchOutcome(changed: noteCount, revert: srsEditRevert(undo));
 }
 
 /// 一个批次写下 [plan]，条件写（compare-and-set）：只写当前值仍是计划时的 `before` 的字段；计划之后又被改过
 /// （同步拉下、AI / 控制通道并发改）的字段不覆盖，整条笔记计入 [SrsNoteFieldApplied.conflicts]（同一笔记的几个
-/// 字段要么一起写、要么都不写，不把卡型开关写成半套）。与撤销的「当前值 == after 才写回」对称。
+/// 字段要么一起写、要么都不写，不把卡型开关写成半套）。
 ///
 /// 比对与写入是内核的一条命令（[SrsDbStore.editNoteFieldsIf]）：现值在内核的写锁里读，比对与写入之间插不进别的
-/// 写入。
+/// 写入。写下的修改记成撤销凭据（[SrsDbStore.editNoteFieldsIfUndoable]），撤销按凭据还原（[SrsDbStore.revertEdits]）。
 Future<SrsNoteFieldApplied> srsApplyNoteFieldPlan(
   SrsDbStore store,
   SrsNoteFieldPlan plan,
@@ -351,24 +354,35 @@ Future<SrsNoteFieldApplied> srsApplyNoteFieldPlan(
       conflicts: 0,
     );
   }
-  final Set<String> conflicted = await store
-      .editNoteFieldsIf(<SrsNoteFieldWrite>[
-        for (final SrsNoteFieldChange c in plan.changes)
-          (
-            noteId: c.noteId,
-            fieldId: c.fieldId,
-            expect: c.before,
-            value: c.after,
-          ),
-      ], wholeNote: true);
+  final (
+    Set<String> conflicted,
+    SrsEditUndo undo,
+  ) = await store.editNoteFieldsIfUndoable(<SrsNoteFieldWrite>[
+    for (final SrsNoteFieldChange c in plan.changes)
+      (noteId: c.noteId, fieldId: c.fieldId, expect: c.before, value: c.after),
+  ]);
   return SrsNoteFieldApplied(
     changes: <SrsNoteFieldChange>[
       for (final SrsNoteFieldChange c in plan.changes)
         if (!conflicted.contains(c.noteId)) c,
     ],
     conflicts: conflicted.length,
+    undo: undo,
   );
 }
+
+/// 这一版之前记下的撤销载荷（只有改动清单、没有 dot）换成撤销凭据：内核只能按值核对（字段唯一的现值仍是这批写下的值）。
+SrsEditUndo srsLegacyNoteFieldUndo(List<SrsNoteFieldChange> changes) =>
+    SrsEditUndo(<SrsEditUndoItem>[
+      for (final SrsNoteFieldChange c in changes)
+        SrsEditUndoItem(
+          kind: SrsEntityKind.note,
+          entityId: c.noteId,
+          key: SrsFieldKeys.noteField(c.fieldId),
+          before: c.before,
+          after: c.after,
+        ),
+    ]);
 
 /// 把 [changes] 写回原值。字段当前值已不是 `after`（之后又被改过 / 笔记被删）的不动；
 /// 返回撤不掉的笔记数。比对与写回同样是一条内核命令（见 [srsApplyNoteFieldPlan]）。

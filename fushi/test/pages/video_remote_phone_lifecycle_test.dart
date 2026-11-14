@@ -16,6 +16,7 @@ import 'package:fushi/src/pages/implementations/video_remote/video_remote_models
 import 'package:fushi/src/pages/implementations/video_remote/video_remote_scaffold.dart';
 import 'package:fushi/src/pages/implementations/video_remote_page.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
+import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/video_remote_client.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -69,6 +70,17 @@ class _RemotePageAppModel extends AppModel {
 }
 
 void main() {
+  // V-B4：明文地址拿凭据前要当场 ping 核对 hostId；这些用例的对端是 MockClient，
+  // 把身份核对视为通过。
+  setUp(() {
+    resetInterconnectRaceCache();
+    debugInterconnectAddressProbeOverride =
+        (FushiClientUrl candidate, String? hostId) async => true;
+  });
+  tearDown(() {
+    debugInterconnectAddressProbeOverride = null;
+    resetInterconnectRaceCache();
+  });
   setUpAll(installFakeInAppWebViewPlatform);
   const FushiClientUrl peer = FushiClientUrl(
     url: 'http://phone-test:8765',

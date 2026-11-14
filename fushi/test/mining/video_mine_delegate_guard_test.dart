@@ -51,6 +51,13 @@ void main() {
   });
 
   test('aborted branch still surfaces an OSD (no silent failure)', () {
-    expect(RegExp(r'res\.aborted[\s\S]{0,200}_showOsd').hasMatch(src), isTrue);
+    // 不陪等的制卡（带 retry）走结果卡 _showMineOsd，其余走 _showOsd：两条都是可见提示。
+    final int at = src.indexOf('if (res.aborted) {');
+    expect(at, isNonNegative);
+    final int end = src.indexOf('return const MinePopupResult();', at);
+    expect(end, greaterThan(at));
+    final String branch = src.substring(at, end);
+    expect(branch, contains('_showOsd('));
+    expect(branch, contains('_showMineOsd('));
   });
 }

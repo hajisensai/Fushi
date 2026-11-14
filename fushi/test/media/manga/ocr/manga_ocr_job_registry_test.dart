@@ -339,6 +339,32 @@ void main() {
       await registry.cancelAll();
     });
 
+    test('cancelAll 整体拆栈也放弃排队者：运行中的停掉后排队的不启动', () async {
+      final MangaOcrJobRegistry registry = MangaOcrJobRegistry();
+      final _FakeSource first = _FakeSource();
+      final _FakeSource second = _FakeSource();
+      final String dirA = p.join(tmp.path, 'a');
+      final String dirB = p.join(tmp.path, 'b');
+      final Future<MangaOcrRunningJob?> startedA = registry.enqueue(
+        job: first.job('book', dirA),
+        mangaJsonPath: mangaJsonPath,
+      );
+      final Future<MangaOcrRunningJob?> startedB = registry.enqueue(
+        job: second.job('book', dirB),
+        mangaJsonPath: mangaJsonPath,
+      );
+      expect(await startedA, isNotNull);
+      expect(registry.queuedDirectories('book'), <String>[dirB]);
+
+      await registry.cancelAll();
+      expect(first.cancelled, isTrue);
+      expect(registry.entries(), isEmpty);
+      expect(await startedB, isNull, reason: '拆栈后排队者不该启动');
+      await Future<void>.delayed(Duration.zero);
+      expect(registry.running('book'), isNull);
+      expect(second.controller.hasListener, isFalse, reason: '订阅即启动：B 根本不该被订阅');
+    });
+
     test('跨书全局名额：上限 1 时第二本书等第一本结束才启动，等名额期间算排队中', () async {
       final MangaOcrJobRegistry registry = MangaOcrJobRegistry(
         maxConcurrentJobs: () => 1,

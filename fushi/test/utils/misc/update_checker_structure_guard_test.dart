@@ -20,6 +20,8 @@ void main() {
   // 反馈 Pp8XPyve0N：下载会话（浮层 + 取消）与不经对话框的远程更新入口独立成 part，
   // release part 不再为互联远程更新长行数（PR #2100 审查：不上调 release 天花板）。
   const String headless = '$dir/update_checker_headless.dart';
+  // release part 触到行数天花板后，版本 / 通道 / 序号的纯比较逻辑拆成独立 part。
+  const String version = '$dir/update_checker_version.dart';
   const List<String> parts = <String>[
     net,
     download,
@@ -27,12 +29,13 @@ void main() {
     release,
     ui,
     headless,
+    version,
   ];
 
   String read(String path) => File(path).readAsStringSync();
   int lineCount(String path) => File(path).readAsLinesSync().length;
 
-  test('barrel + 6 part files all exist', () {
+  test('barrel + 7 part files all exist', () {
     for (final String path in <String>[barrel, ...parts]) {
       expect(File(path).existsSync(), isTrue, reason: '$path must exist');
     }
@@ -257,13 +260,10 @@ void main() {
     expect(source, contains('_kFirstByteTimeout'));
   });
 
-  test('release part owns the UpdateChecker facade + version logic', () {
+  test('release part owns the UpdateChecker facade + release selection', () {
     final String source = read(release);
     expect(source, contains('class UpdateChecker {'));
     expect(source, contains('selectUpdateReleaseForCurrentPlatform('));
-    expect(source, contains('bool isUpdateVersionNewer('));
-    expect(source, contains('releaseMatchesUpdateChannel('));
-    expect(source, contains('normalizeReleaseVersionTag('));
     // TODO-705: beta/debug mirror-manifest reading lives in the release part.
     expect(source, contains('Map<String, dynamic>? buildReleaseFromManifest('));
     expect(source, contains('String? manifestUrlForChannel('));
@@ -274,6 +274,27 @@ void main() {
     expect(source, contains('const String kDebugManifestUrl ='));
     expect(source, contains('kUpdateManifestSchemaVersion'));
   });
+
+  test(
+    'version part owns the pure version / channel / sequence comparison',
+    () {
+      final String source = read(version);
+      expect(source, contains('bool isUpdateVersionNewer('));
+      expect(source, contains('releaseMatchesUpdateChannel('));
+      expect(source, contains('normalizeReleaseVersionTag('));
+      expect(source, contains('int? currentReleaseSequence('));
+      expect(source, contains('UpdateChannel channelForUpdateVersion('));
+      // 纯比较：不碰网络 / 文件。
+      expect(source, isNot(contains('HttpClient')));
+      expect(source, isNot(contains('File(')));
+      final String releaseSource = read(release);
+      expect(
+        releaseSource,
+        isNot(contains('bool isUpdateVersionNewer(')),
+        reason: 'version comparison lives in the version part, not twice',
+      );
+    },
+  );
 
   /// 反馈 Pp8XPyve0N（PR #2100 审查）：远程触发的下载在 host 上必须与本机 UI 流用
   /// **同一个**下载浮层 / 取消路径，不另写一套；两条流都经 `_UpdateDownloadSession`。
