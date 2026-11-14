@@ -4864,6 +4864,11 @@ void _bug950Guard() {
     );
     // 真机 Role player とろろ姉妹 的时序：Luna 线程开局就出行（标题 / 序章的宏名），
     // 引擎精确线程几十秒后第一页对白才出现。分两次 poll 交付，记忆恢复先发生。
+    // 精确线程的那批由测试在看到记忆恢复后显式放行（[releaseExact]），不按 poll 次数
+    // 计时：Windows 定时器粒度约 15 ms，按次数交付时几轮 poll 会挤进一次等待，
+    // 「恢复到 Luna」这一瞬态可能还没被观察到就被接管覆盖。
+    bool releaseExact = false;
+    bool exactDelivered = false;
     List<GalHookedLine> staged(int invocation) {
       if (invocation == 1) {
         return <GalHookedLine>[
@@ -4873,7 +4878,8 @@ void _bug950Guard() {
           luna(4, 'my_pagebreak_a'),
         ];
       }
-      if (invocation == 3) {
+      if (releaseExact && !exactDelivered) {
+        exactDelivered = true;
         return <GalHookedLine>[
           exact(5, ''),
           exact(6, '一ページ目'),
@@ -4892,6 +4898,8 @@ void _bug950Guard() {
       })
     >
     start(Map<String, GalCaptureMemory> store) async {
+      releaseExact = false;
+      exactDelivered = false;
       final TexthookerService service = TexthookerService.test();
       final ChangeNotifier endpoints = ChangeNotifier();
       final _FakeEngineSource engine = _FakeEngineSource(
@@ -4980,6 +4988,7 @@ void _bug950Guard() {
         await waitForSelected(controller, 5);
         expect(controller.selectedNativeTextThreadId, 5);
         final String lunaKey = controller.selectedTextThreadKey!;
+        releaseExact = true;
 
         // 引擎精确线程出满阈值后接管。
         await waitForSelected(controller, 77);
@@ -5047,6 +5056,7 @@ void _bug950Guard() {
       final GalHookSessionController controller = session.controller;
       await waitForSelected(controller, 5);
       expect(controller.selectedNativeTextThreadId, 5);
+      releaseExact = true;
       // 等引擎精确线程真的出满阈值（接管判定在同一轮 poll 里跑完）再断言没被换掉。
       await waitForLines(session.service, 77, 3);
       await Future<void>.delayed(const Duration(milliseconds: 30));
