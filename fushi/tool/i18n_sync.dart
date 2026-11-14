@@ -3,7 +3,9 @@
 /// Syncs i18n keys across all language files.
 ///
 /// Usage:
-///   dart tool/i18n_sync.dart                      # fill missing keys with zh-CN value (or base EN)
+///   dart tool/i18n_sync.dart                      # fill missing keys (Chinese files from
+///                                                  # zh-CN, every other file from base EN;
+///                                                  # see [missingKeyFillValue])
 ///   dart tool/i18n_sync.dart --add key en zh       # add a new key to all files, right
 ///                                                  # after its alphabetical predecessor
 ///                                                  # (see [insertKeyAfterPredecessor])
@@ -44,7 +46,7 @@ const String _zhCnFile = 'strings_zh-CN.i18n.json';
 
 const String usage = '''
 Usage:
-  dart tool/i18n_sync.dart                      fill missing keys from zh-CN (or base EN)
+  dart tool/i18n_sync.dart                      fill missing keys (zh-* from zh-CN, others from EN)
   dart tool/i18n_sync.dart --add <key> <en> <zh>
   dart tool/i18n_sync.dart --remove <key>
   dart tool/i18n_sync.dart --rename <old_key> <new_key>
@@ -649,7 +651,28 @@ void _runOps(I18nCommand command) {
   );
 }
 
-/// Fill missing keys in translation files using zh-CN value, falling back to base EN.
+/// Placeholder value for [key] when the file of [locale] lacks it.
+///
+/// Only Chinese files (`zh-*`) may borrow the zh-CN text; every other language
+/// gets the English base. Borrowing zh-CN everywhere (the old behaviour) is how
+/// Simplified Chinese ended up on the Japanese / Korean / German ... Anime4K
+/// first-use prompt (BUG-4505): an untranslated key must read as English, not as
+/// a language the user never picked.
+String missingKeyFillValue(
+  String locale,
+  String key,
+  Map<String, dynamic> baseJson,
+  Map<String, dynamic> zhCnJson,
+) {
+  final String baseValue = baseJson[key] as String? ?? '';
+  if (locale.startsWith('zh')) {
+    return zhCnJson[key] as String? ?? baseValue;
+  }
+  return baseValue;
+}
+
+/// Fill missing keys in translation files: Chinese files from zh-CN, every
+/// other file from base EN ([missingKeyFillValue]).
 void _syncMissing(bool dryRun) {
   final File baseFile = File('$_i18nDir/$_baseFile');
   final File zhCnFile = File('$_i18nDir/$_zhCnFile');
@@ -671,8 +694,12 @@ void _syncMissing(bool dryRun) {
     final Map<String, dynamic> json = fillMissingKeysInBaseOrder(
       original,
       baseJson.keys.toList(),
-      (String key) =>
-          (zhCnJson[key] as String?) ?? (baseJson[key] as String? ?? ''),
+      (String key) => missingKeyFillValue(
+        i18nLocaleOfPath(file.path),
+        key,
+        baseJson,
+        zhCnJson,
+      ),
     );
     totalAdded += missing.length;
 

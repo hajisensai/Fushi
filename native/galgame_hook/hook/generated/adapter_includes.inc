@@ -21,3 +21,5 @@
 #include "../adapters/knife_adapter.inc"
 #include "../adapters/softpal_adapter.inc"
 #include "../adapters/system4_adapter.inc"
+#include "../adapters/nitroplus_adapter.inc"
+#include "../adapters/entisgls_adapter.inc"

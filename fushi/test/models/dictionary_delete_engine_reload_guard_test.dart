@@ -94,24 +94,32 @@ void main() {
     );
   });
 
-  test('A2: _rebuildDictPathsCacheAsync also rebuilds unconditionally', () {
-    final String body = bodyOf('Future<void> _rebuildDictPathsCacheAsync(');
+  test('A2: async rebuild schedules unconditionally, then settles the load', () {
+    // 异步重建拆成两段（BUG-4510）：_scheduleDictPathsAsync 负责探测 + 排期，
+    // _rebuildDictPathsCacheAsync 先 await 排期再装载。
+    final String schedule = bodyOf('Future<void> _scheduleDictPathsAsync(');
     expect(
-      body.contains('FushiDicts.scheduleTyped') ||
-          body.contains('FushiDicts.initializeTyped'),
+      schedule.contains('FushiDicts.scheduleTyped') ||
+          schedule.contains('FushiDicts.initializeTyped'),
       isTrue,
+      reason: 'the async schedule half must drive the engine',
     );
     // 启动路径必须**真的把它装完**，而不是只排期就走人：排期没结算时引擎里还是
     // 空的/旧的，第一次查词才补装——那笔成本会掉在用户脸上。
+    final String rebuild = bodyOf('Future<void> _rebuildDictPathsCacheAsync(');
+    final int scheduled = rebuild.indexOf('await _scheduleDictPathsAsync()');
+    final int loaded = rebuild.indexOf('FushiDicts.loadPendingAsync()');
     expect(
-      body.contains('FushiDicts.loadPendingAsync()'),
+      scheduled >= 0 && loaded > scheduled,
       isTrue,
-      reason: 'the startup path must settle the pending load itself',
+      reason:
+          'the rebuild must await the schedule half and then settle the '
+          'pending load itself',
     );
     expect(
       RegExp(
         r'isNotEmpty\s*\)\s*\{?\s*FushiDicts\.(scheduleTyped|initializeTyped)',
-      ).hasMatch(body.replaceAll(RegExp(r'\s+'), ' ')),
+      ).hasMatch(schedule.replaceAll(RegExp(r'\s+'), ' ')),
       isFalse,
       reason:
           'async rebuild must not skip the engine on empty path set '

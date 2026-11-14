@@ -19,7 +19,7 @@ extension _SyncOrchestratorSettings on SyncOrchestrator {
       final String ownName = settingsSnapshotNameFor(deviceId);
 
       final List<SettingsSnapshot> peers = <SettingsSnapshot>[];
-      String? ownCanonical;
+      SettingsSnapshot? ownPrev;
       for (final AssetEntry e in await _backend.listChildren(ns)) {
         if (e.isFolder || !isSettingsSnapshotName(e.name)) continue;
         try {
@@ -27,7 +27,7 @@ extension _SyncOrchestratorSettings on SyncOrchestrator {
             await _backend.getJsonAsset(e.id),
           );
           if (e.name == ownName) {
-            ownCanonical = s.canonicalJson();
+            ownPrev = s;
           } else {
             peers.add(s);
           }
@@ -57,8 +57,15 @@ extension _SyncOrchestratorSettings on SyncOrchestrator {
         deviceId: deviceId,
         entries: await loadLocalPortableSettings(_db),
       );
-      if (own.canonicalJson() != ownCanonical) {
+      if (own.canonicalJson() != ownPrev?.canonicalJson()) {
         await _backend.putJsonAsset(ns, ownName, own.toJson());
+        // BUG-4501：本机改过的设置随这份快照发出去了，计入本轮摘要。刚从对端采纳
+        // 的值只是回写合并结果，不算本机发出的变更。
+        report.settingsExported += countOutgoingSettingChanges(
+          previous: ownPrev?.entries ?? const <String, PortableSettingValue>{},
+          current: own.entries,
+          adopted: adopt.keys.toSet(),
+        );
       }
     } catch (e) {
       report.noteError('settings sync', e);
