@@ -130,16 +130,32 @@ inline bool DecodeGlyphs(const int32_t *words, size_t word_count,
   return true;
 }
 
-// A measurement is only valid for the exact source client size it was taken
-// against.  Position changes are harmless (the rectangles are client-relative);
-// a size change means the DOM reflowed or the window is mid-resize.
+// Upper bound for the caller-declared size quantization (physical px).  The
+// DOM source derives its client size from an integer CSS viewport times a
+// fractional devicePixelRatio, so the real client can differ by less than one
+// CSS pixel (e.g. Electron fullscreen at 150%: client 3840x2159, viewport
+// 2560x1440 CSS -> 3840x2160).  Anything larger is a real layout difference
+// (menu bar, mid-resize) and must still be rejected.
+inline constexpr int kMaxClientSizeTolerance = 4;
+
+// A measurement is only valid for the source client size it was taken
+// against, up to |tolerance| physical pixels of quantization declared by the
+// producer (clamped to [0, kMaxClientSizeTolerance]).  Position changes are
+// harmless (the rectangles are client-relative); a larger size change means
+// the DOM reflowed or the window is mid-resize.
 inline bool ClientSizeMatches(int measured_width, int measured_height,
+                              int tolerance,
                               const RECT &source_client_screen) {
-  return measured_width > 0 && measured_height > 0 &&
-         source_client_screen.right - source_client_screen.left ==
-             measured_width &&
-         source_client_screen.bottom - source_client_screen.top ==
-             measured_height;
+  if (measured_width <= 0 || measured_height <= 0)
+    return false;
+  const int slack = tolerance < 0                         ? 0
+                    : tolerance > kMaxClientSizeTolerance ? kMaxClientSizeTolerance
+                                                          : tolerance;
+  const int dw =
+      (source_client_screen.right - source_client_screen.left) - measured_width;
+  const int dh =
+      (source_client_screen.bottom - source_client_screen.top) - measured_height;
+  return dw >= -slack && dw <= slack && dh >= -slack && dh <= slack;
 }
 
 // Source-client rectangle -> source screen (client origin) -> presentation

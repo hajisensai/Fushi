@@ -167,7 +167,11 @@ void main() {
     );
     expect(c.shouldRevealCurrentCue, isFalse, reason: '当前句仍在本屏');
 
-    // 越过屏末后不再停（这次越过不是从屏内播到屏末）：播进下一屏首句。
+    // 越过屏末后不再停（这次越过不是从屏内播到屏末）：播进下一屏首句。平台位置
+    // 也要真的走到那里——翻屏决策（onReaderPageBounds）读的是平台位置，不是 tick；
+    // 只推 tick、平台还停在 1520 的话，换屏上报时音频「仍在上一屏末」，会被拉回新屏首。
+    player.emitPosition(0, const Duration(milliseconds: 2100));
+    await pumpEventQueue();
     c.positionTickForTesting(2100);
     expect(c.isPlaying, isTrue);
     expect(c.currentCue, same(cues[2]));

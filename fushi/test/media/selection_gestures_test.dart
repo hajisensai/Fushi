@@ -350,11 +350,18 @@ void main() {
       // 横向也拉开一段：纯竖线的框面积为零，不画。
       await gesture.moveTo(cardRect(tester, 2).center + const Offset(40, 0));
       await tester.pump();
-      // 拖动中：前景层画着选框（卡片自身也是 drawRect，按选框填充色区分）。
-      expect(find.byType(SelectionDragArea), paints..rect(color: fill));
+      // 拖动中：前景层画着选框。卡片自身也是 drawRect 且先于前景层画出，而
+      // `paints..rect(color:)` 只比对遇到的第一个 drawRect（颜色不符直接判失败、
+      // 不往后找），所以按「任意一次 drawRect 用了选框填充色」来认。
+      // Paint 内部按 float32 存色，取回的分量与 double 算出的 fill 不再逐位相等，
+      // 按 8 位 ARGB 比。
+      bool boxFill(Symbol method, List<dynamic> args) =>
+          method == #drawRect &&
+          (args[1] as Paint).color.toARGB32() == fill.toARGB32();
+      expect(find.byType(SelectionDragArea), paints..something(boxFill));
       await gesture.up();
       await tester.pumpAndSettle();
-      expect(find.byType(SelectionDragArea), isNot(paints..rect(color: fill)));
+      expect(find.byType(SelectionDragArea), isNot(paints..something(boxFill)));
     });
   });
 

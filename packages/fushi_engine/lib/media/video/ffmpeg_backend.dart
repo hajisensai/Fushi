@@ -418,6 +418,19 @@ enum _ToolOutputStreams {
   stdoutThenStderr,
 }
 
+/// 起 ffmpeg / ffprobe 子进程时追加的环境变量；null = 原样继承。
+///
+/// `-http_proxy` 是 app 已经做完的出站裁决（宿主本机中继，或按 app 代理设置与
+/// 绕过规则算出的代理，见 `buildFfmpegRemoteInputArgs`）。ffmpeg 的 http 协议还会
+/// 拿继承来的 `no_proxy` 再筛一遍主机：用户环境的 NO_PROXY 列了 127.0.0.1 / 局域网
+/// 段时，中继形式的明文地址被它绕开中继直连，对着 https 原点说明文，抽取以
+/// `Error opening input files: End of file` 失败、原点一个请求也没收到。与 mpv 子进程
+/// （`appNativeProxyEnvironment`）同一口径：带 `-http_proxy` 时清掉继承的绕过规则。
+Map<String, String>? ffmpegChildEnvironment(List<String> args) =>
+    args.contains('-http_proxy')
+    ? const <String, String>{'NO_PROXY': '', 'no_proxy': ''}
+    : null;
+
 /// 三个顶层 runner 的唯一实现：起进程、按 [streams] 收集 / drain 两条管道、
 /// `exitCode.timeout` 超时则 SIGKILL 并等进程退出后返回 `returnCode:null`。
 /// 可执行文件不存在时 `Process.start` 抛 [ProcessException]，**向上传播**。
@@ -431,6 +444,7 @@ Future<FfmpegRunResult> _runToolProcess(
   final Process process = await HelperProcessRegistry.instance.start(
     executable,
     args,
+    environment: ffmpegChildEnvironment(args),
   );
   Future<String> collect(Stream<List<int>> stream) =>
       stream.transform(const Utf8Decoder(allowMalformed: true)).join();

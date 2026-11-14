@@ -545,11 +545,26 @@ inline SiteResult ResolveSites(const exact::LoadedPeImage& image,
   return SiteResult::kResolved;
 }
 
-// ── one-character factory argument ──────────────────────────────────────────
+// ── factory text argument ──────────────────────────────────────────────────
 
-// The factory is handed exactly one character, NUL terminated.  Artemis
-// titles store scripts as UTF-8 or Shift_JIS; the two single-character forms
-// cannot collide (a lone Shift_JIS character is never a complete UTF-8
+// The factory is handed one NUL-terminated string per glyph node.  Plain text
+// is one character per node.  A ruby base is one node for the whole base, so
+// the reading can be centred over it (inferred from the x64 build on
+// 2026-11-12: a wrapped line whose ruby base sits between creation seqs 296
+// and 307 has exactly one creation for the base, and the reading has none of
+// its own).  The node's text is therefore kept as up to kMaxGlyphUnits UTF-16
+// units; a longer string stays unknown and fails closed.
+inline constexpr size_t kMaxGlyphUnits = 8u;
+// Longest factory string inspected: kMaxGlyphUnits BMP characters in UTF-8.
+inline constexpr size_t kMaxFactoryTextBytes = 3u * kMaxGlyphUnits;
+
+struct GlyphText {
+  std::array<wchar_t, kMaxGlyphUnits> units{};
+  uint8_t count = 0u;  // 0 = unknown
+};
+
+// Artemis titles store scripts as UTF-8 or Shift_JIS; the two single-character
+// forms cannot collide (a lone Shift_JIS character is never a complete UTF-8
 // scalar), so the strict UTF-8 decode is tried first.  Anything else yields 0
 // ("unknown"), which keeps that glyph out of every text match.
 inline uint32_t DecodeSingleUtf8Scalar(const uint8_t* bytes, size_t length) {
@@ -622,12 +637,172 @@ inline uint32_t DecodeFactoryCharacter(const uint8_t* bytes) {
 // character that failed to decode, which must never be skipped silently).
 inline constexpr uint32_t kCreatedControl = 0x110000u;
 
-inline uint32_t FactoryCreationCode(const uint8_t* bytes) {
-  if (bytes == nullptr) return 0u;
-  if (bytes[0] == 0u || (bytes[0] < 0x20u && bytes[1] == 0u)) {
-    return kCreatedControl;
+// A visible creation of several characters (a ruby base).  Like every
+// visible character it is never an invisible hole.
+inline constexpr uint32_t kCreatedText = 0x110001u;
+
+inline bool IsDrawnScalar(uint32_t scalar) {
+  return scalar >= 0x20u && !(scalar >= 0x7fu && scalar <= 0x9fu) &&
+         scalar <= 0x10ffffu && !(scalar >= 0xd800u && scalar <= 0xdfffu);
+}
+
+inline size_t Utf16Units(uint32_t codepoint, wchar_t units[2]);
+
+// Strict UTF-8 of drawable characters into at most kMaxGlyphUnits units.
+inline bool DecodeUtf8Text(const uint8_t* bytes, size_t length,
+                           GlyphText* out) {
+  GlyphText text;
+  size_t at = 0u;
+  while (at < length) {
+    const uint8_t first = bytes[at];
+    size_t units = 0u;
+    uint32_t scalar = 0u;
+    if (first < 0x80u) {
+      units = 1u, scalar = first;
+    } else if (first >= 0xc2u && first <= 0xdfu) {
+      units = 2u, scalar = first & 0x1fu;
+    } else if (first >= 0xe0u && first <= 0xefu) {
+      units = 3u, scalar = first & 0x0fu;
+    } else if (first >= 0xf0u && first <= 0xf4u) {
+      units = 4u, scalar = first & 0x07u;
+    } else {
+      return false;
+    }
+    if (length - at < units) return false;
+    for (size_t index = 1u; index < units; ++index) {
+      const uint8_t next = bytes[at + index];
+      if ((next & 0xc0u) != 0x80u) return false;
+      scalar = (scalar << 6u) | (next & 0x3fu);
+    }
+    if ((units == 3u && scalar < 0x800u) || (units == 4u && scalar < 0x10000u) ||
+        !IsDrawnScalar(scalar)) {
+      return false;
+    }
+    wchar_t pair[2] = {};
+    const size_t produced = Utf16Units(scalar, pair);
+    if (produced == 0u || text.count + produced > kMaxGlyphUnits) return false;
+    for (size_t index = 0u; index < produced; ++index) {
+      text.units[text.count++] = pair[index];
+    }
+    at += units;
   }
-  return DecodeFactoryCharacter(bytes);
+  if (text.count == 0u) return false;
+  *out = text;
+  return true;
+}
+
+// Strict CP932 of drawable characters into at most kMaxGlyphUnits units.
+inline bool DecodeCp932Text(const uint8_t* bytes, size_t length,
+                            GlyphText* out) {
+  if (length == 0u || length > 2u * kMaxGlyphUnits) return false;
+  wchar_t decoded[2u * kMaxGlyphUnits] = {};
+  const int count = MultiByteToWideChar(
+      932, MB_ERR_INVALID_CHARS, reinterpret_cast<const char*>(bytes),
+      static_cast<int>(length), decoded, static_cast<int>(2u * kMaxGlyphUnits));
+  if (count <= 0 || static_cast<size_t>(count) > kMaxGlyphUnits) return false;
+  GlyphText text;
+  for (int index = 0; index < count; ++index) {
+    if (decoded[index] == 0xfffd || !IsDrawnScalar(decoded[index])) {
+      return false;
+    }
+    text.units[text.count++] = decoded[index];
+  }
+  *out = text;
+  return true;
+}
+
+inline bool SameGlyphText(const GlyphText& left, const GlyphText& right) {
+  return left.count == right.count &&
+         std::equal(left.units.begin(), left.units.begin() + left.count,
+                    right.units.begin());
+}
+
+inline GlyphText GlyphTextOf(uint32_t codepoint) {
+  GlyphText text;
+  wchar_t pair[2] = {};
+  const size_t produced = Utf16Units(codepoint, pair);
+  for (size_t index = 0u; index < produced; ++index) {
+    text.units[text.count++] = pair[index];
+  }
+  return text;
+}
+
+// Characters (not UTF-16 units) in `text`.
+inline size_t GlyphTextCharacters(const GlyphText& text) {
+  size_t characters = 0u;
+  for (size_t index = 0u; index < text.count; ++index) {
+    if (text.units[index] < 0xdc00u || text.units[index] > 0xdfffu) {
+      ++characters;
+    }
+  }
+  return characters;
+}
+
+enum class FactoryEncoding : uint8_t { kUnknown, kUtf8, kCp932 };
+
+// Decodes factory strings and learns the script encoding.  The two encodings
+// can read the same bytes differently: two Shift_JIS characters can form one
+// UTF-8 scalar (lead 0xe0..0xef, trail 0x80..0xbf, then a lead 0x81..0x9f),
+// and a UTF-8 kanji ending in 0xa1..0xbf reads as a Shift_JIS kanji plus a
+// half-width kana.  So a string that decodes in exactly one encoding, with a
+// non-ASCII character, teaches it, and once learned only that encoding is
+// used.  Before that, a string valid in both keeps the historical rule for a
+// single character (UTF-8 first) and is unknown when it has several.  Game
+// thread only.
+struct FactoryTextDecoder {
+  FactoryEncoding encoding = FactoryEncoding::kUnknown;
+
+  // `bytes` must point at readable memory; at most kMaxFactoryTextBytes + 1
+  // bytes are inspected.  Returns the creation code (kCreatedControl, 0 for
+  // unknown, the scalar of one character or kCreatedText) and the text.
+  uint32_t Decode(const uint8_t* bytes, GlyphText* out) {
+    if (out == nullptr) return 0u;
+    *out = GlyphText();
+    if (bytes == nullptr) return 0u;
+    if (bytes[0] == 0u || (bytes[0] < 0x20u && bytes[1] == 0u)) {
+      return kCreatedControl;
+    }
+    size_t length = 0u;
+    while (length <= kMaxFactoryTextBytes && bytes[length] != 0u) ++length;
+    if (length > kMaxFactoryTextBytes) return 0u;
+    GlyphText utf8, cp932;
+    const bool utf8_ok = encoding != FactoryEncoding::kCp932 &&
+                         DecodeUtf8Text(bytes, length, &utf8);
+    const bool cp932_ok = encoding != FactoryEncoding::kUtf8 &&
+                          DecodeCp932Text(bytes, length, &cp932);
+    GlyphText text;
+    if (utf8_ok && cp932_ok) {
+      if (SameGlyphText(utf8, cp932)) {
+        text = utf8;  // ASCII
+      } else if (GlyphTextCharacters(utf8) == 1u) {
+        text = utf8;
+      } else {
+        return 0u;
+      }
+    } else if (utf8_ok || cp932_ok) {
+      text = utf8_ok ? utf8 : cp932;
+      const bool non_ascii = static_cast<size_t>(length) != text.count;
+      if (encoding == FactoryEncoding::kUnknown && non_ascii) {
+        encoding = utf8_ok ? FactoryEncoding::kUtf8 : FactoryEncoding::kCp932;
+      }
+    } else {
+      return 0u;
+    }
+    *out = text;
+    if (GlyphTextCharacters(text) > 1u) return kCreatedText;
+    return text.count == 2u
+               ? 0x10000u + ((static_cast<uint32_t>(text.units[0]) - 0xd800u)
+                             << 10u) +
+                     (static_cast<uint32_t>(text.units[1]) - 0xdc00u)
+               : static_cast<uint32_t>(text.units[0]);
+  }
+};
+
+// Stateless form (encoding unknown), for tests and diagnostics.
+inline uint32_t FactoryCreationCode(const uint8_t* bytes) {
+  FactoryTextDecoder decoder;
+  GlyphText text;
+  return decoder.Decode(bytes, &text);
 }
 
 // The codes of the most recent creations, indexed by creation seq (game
@@ -671,7 +846,7 @@ struct CreationLog {
 struct GlyphCode {
   uintptr_t glyph = 0u;
   uint64_t seq = 0u;
-  uint32_t codepoint = 0u;
+  GlyphText text;  // count 0 = unknown
 };
 
 // Glyph objects are freed without notification, so the table is keyed by the
@@ -686,21 +861,21 @@ class GlyphCodeTable {
  public:
   void Clear() { entries_.fill(GlyphCode{}); }
 
-  void Remember(uintptr_t glyph, uint32_t codepoint, uint64_t seq) {
+  void Remember(uintptr_t glyph, const GlyphText& text, uint64_t seq) {
     if (glyph == 0u || seq == 0u) return;
     const size_t home = Home(glyph);
     size_t victim = home;
     for (size_t probe = 0u; probe < Probe; ++probe) {
       GlyphCode& entry = entries_[(home + probe) & (Capacity - 1u)];
       if (entry.glyph == glyph || entry.glyph == 0u) {
-        entry = {glyph, seq, codepoint};
+        entry = {glyph, seq, text};
         return;
       }
       if (entry.seq < entries_[victim].seq) {
         victim = (home + probe) & (Capacity - 1u);
       }
     }
-    entries_[victim] = {glyph, seq, codepoint};
+    entries_[victim] = {glyph, seq, text};
   }
 
   bool Find(uintptr_t glyph, GlyphCode* out) const {
@@ -710,7 +885,7 @@ class GlyphCodeTable {
       const GlyphCode& entry = entries_[(home + probe) & (Capacity - 1u)];
       if (entry.glyph == glyph) {
         *out = entry;
-        return entry.codepoint != 0u;
+        return entry.text.count != 0u;
       }
     }
     return false;
@@ -737,7 +912,7 @@ struct CellBounds {
 
 struct FrameGlyph {
   uint64_t seq = 0u;
-  uint32_t codepoint = 0u;
+  GlyphText text;  // one character, or a ruby base's characters
   float matrix[6] = {};  // world {a, b, tx, c, d, ty} at draw time
   CellBounds bounds;
 };
@@ -871,7 +1046,7 @@ inline size_t OrderFrameGlyphs(FrameGlyph* glyphs, size_t count) {
             });
   size_t kept = 0u;
   for (size_t index = 0u; index < count; ++index) {
-    if (glyphs[index].codepoint == 0u || glyphs[index].seq == 0u) continue;
+    if (glyphs[index].text.count == 0u || glyphs[index].seq == 0u) continue;
     if (kept != 0u && glyphs[kept - 1u].seq == glyphs[index].seq) continue;
     glyphs[kept++] = glyphs[index];
   }
@@ -885,6 +1060,7 @@ inline constexpr uint16_t kNoSource = 0xffffu;
 struct TextMapping {
   size_t first_glyph = 0u;  // glyphs before it are older, unrelated text
   std::array<uint16_t, kMaxFrameGlyphs> source_index{};
+  // UTF-16 length of the glyph's first character (its lookup start).
   std::array<uint8_t, kMaxFrameGlyphs> source_length{};
 };
 
@@ -930,9 +1106,9 @@ inline bool ResolveSelectedSuffix(const FrameGlyph* glyphs, size_t count,
     if (source == 0u) break;
     if (glyph == 0u) return false;
     const FrameGlyph& candidate = glyphs[glyph - 1u];
-    wchar_t units[2] = {};
-    const size_t unit_count = Utf16Units(candidate.codepoint, units);
-    if (unit_count == 0u) return false;
+    const wchar_t* units = candidate.text.units.data();
+    const size_t unit_count = candidate.text.count;
+    if (unit_count == 0u || unit_count > kMaxGlyphUnits) return false;
     if (unit_count == 1u && IsLookupLineWhitespace(units[0])) {
       --glyph;
       continue;
@@ -942,8 +1118,11 @@ inline bool ResolveSelectedSuffix(const FrameGlyph* glyphs, size_t count,
       if (selected[source - unit_count + unit] != units[unit]) return false;
     }
     source -= unit_count;
+    // A ruby base is one node: a click anywhere on it looks up from its first
+    // character.
+    const bool pair = units[0] >= 0xd800u && units[0] <= 0xdbffu;
     mapping.source_index[glyph - 1u] = static_cast<uint16_t>(source);
-    mapping.source_length[glyph - 1u] = static_cast<uint8_t>(unit_count);
+    mapping.source_length[glyph - 1u] = static_cast<uint8_t>(pair ? 2u : 1u);
     any = true;
     --glyph;
   }
@@ -1013,7 +1192,12 @@ inline bool CreationsInvisible(const CreationLog& log, uint64_t begin,
 // layer, like a hover tooltip, follows the line's seqs without a hole), and it
 // is fully revealed exactly when that suffix reaches the newest glyph the
 // engine created: a choice menu or a title label whose later-created glyphs
-// are not drawn is not a revealed line.  `glyphs` must be ordered by
+// are not drawn is not a revealed line.  A ruby base is one drawn glyph whose
+// text is the whole base (FactoryTextDecoder); were it unknown, it would drop
+// out of the frame and leave a visible hole that cuts the line right after
+// it.  The reading is not a creation of its own and never enters the line, so
+// the line is published as its base text, like every engine-exact lane.
+// `glyphs` must be ordered by
 // OrderFrameGlyphs.  Returns the run as UTF-16 (spaces in holes kept, line
 // breaks dropped) with whitespace trimmed at both ends and the seq of its
 // first glyph.
@@ -1045,9 +1229,11 @@ inline bool ComposeRevealedLine(const FrameGlyph* glyphs, size_t count,
         if (code != kCreatedControl) line.append(units, Utf16Units(code, units));
       }
     }
-    const size_t unit_count = Utf16Units(glyphs[index].codepoint, units);
-    if (unit_count == 0u) return false;
-    line.append(units, unit_count);
+    const GlyphText& glyph_text = glyphs[index].text;
+    if (glyph_text.count == 0u || glyph_text.count > kMaxGlyphUnits) {
+      return false;
+    }
+    line.append(glyph_text.units.data(), glyph_text.count);
   }
   size_t begin = 0u, end = line.size();
   while (begin < end && IsLookupLineWhitespace(line[begin])) ++begin;

@@ -14,12 +14,15 @@ import 'dart:typed_data';
 
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_devices.dart';
 import 'package:fushi_engine/srs/srs_media_store.dart';
 import 'package:fushi_engine/srs/srs_media_sync.dart';
 import 'package:fushi_engine/srs/srs_miner.dart';
 import 'package:fushi_engine/srs/srs_mining_target.dart';
 import 'package:fushi_engine/srs/srs_profile_link.dart';
 import 'package:fushi_engine/srs/srs_remote_store.dart';
+import 'package:fushi_engine/srs/srs_rwkv_attach.dart';
+import 'package:fushi_engine/srs/srs_rwkv_service.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:fushi_engine/srs/srs_style_store.dart';
 import 'package:fushi_engine/srs/sync2/srs_host_directory.dart';
@@ -28,6 +31,7 @@ import 'package:fushi_engine/srs/sync2/srs_location_runner.dart';
 import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart';
 import 'package:fushi_engine/sync/local_directory_asset_store.dart';
 import 'package:fushi_engine/sync/sync_root_folder.dart';
+import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:fushi_server/src/config/server_srs_config.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:path/path.dart' as p;
@@ -72,6 +76,12 @@ class ServerSrsProfile {
 
   SrsDbStore? _store;
   SrsMediaStore? _media;
+
+  /// 这份库的 RWKV 排程服务：库一打开就挂上（[ServerSrs._reconcile]），与 app 同一份装配（srs_rwkv_attach.dart）。
+  /// RWKV 牌组在服务端与在 app 上同一个出卡口径：按 RWKV 回忆率出，没就绪（权重没下到 / 正在回放 / 出错）就不出
+  /// 复习卡，不退回按 FSRS-7 存下的到期日。
+  SrsRwkvService? _rwkv;
+  bool _rwkvStarted = false;
   ServerSrsProfileState state = ServerSrsProfileState.opening;
   String? lastError;
   DateTime? lastSyncAt;
@@ -95,6 +105,22 @@ class ServerSrsProfile {
   SrsDbStore? get store => state == ServerSrsProfileState.ready ? _store : null;
   SrsMediaStore? get media =>
       state == ServerSrsProfileState.ready ? _media : null;
+
+  /// 这份库的 RWKV 准备状态（WebUI / admin API 显示；库没打开时 null）。
+  SrsRwkvStatus? get rwkvStatus => _rwkv?.status;
+
+  /// 库里有 RWKV 牌组就开始准备 RWKV（下载权重 / 恢复快照 / 全量回放），一轮同步成功后调：第一轮之前库是空的，
+  /// 不知道有没有 RWKV 牌组。没有 RWKV 牌组时不启动，之后每轮再看一次（客户端可能刚把牌组改成 RWKV）。
+  Future<void> _startRwkvIfUsed(SrsDbStore s) async {
+    final SrsRwkvService? rwkv = _rwkv;
+    if (rwkv == null || _rwkvStarted || _closed) return;
+    _rwkvStarted = await srsRwkvStartIfUsed(
+      s,
+      rwkv,
+      onError: (Object e, StackTrace stack) =>
+          engineLog.log('ServerSrs.rwkv', e, stack),
+    );
+  }
 
   /// 去抖后跑一轮（已配对设备写了文件 / 服务端自己写了库）。
   void scheduleSync({Duration delay = kServerSrsWriteDebounce}) {
@@ -169,6 +195,7 @@ class ServerSrsProfile {
       if (error == null) {
         lastError = null;
         noteCount = await s.userNoteCount();
+        await _startRwkvIfUsed(s);
         if (state != ServerSrsProfileState.ready) {
           _setState(ServerSrsProfileState.ready, null);
         }
@@ -226,12 +253,20 @@ class ServerSrsProfile {
     _closed = true;
     _debounce?.cancel();
     await _running;
+    // 先关 RWKV（存快照、等在途的回放取数结束、关后台 runtime），再退役库：反过来的话它在已关的库上取数。
+    // 关了的服务永远「没就绪」，退役完成之前到来的排队不出 RWKV 牌组的复习卡（不会落到 FSRS-7 的到期日上）。
+    try {
+      await _rwkv?.close();
+    } catch (e, stack) {
+      engineLog.log('ServerSrs.rwkv', e, stack);
+    }
     await _store?.retire<void>(
       () async {},
       reason: 'profile $uid is no longer served by fushi_server',
     );
     _store = null;
     _media = null;
+    _rwkv = null;
   }
 
   Map<String, Object?> toJson({required bool isDefault}) => <String, Object?>{
@@ -242,6 +277,12 @@ class ServerSrsProfile {
     'default': isDefault,
     'lastSyncAt': lastSyncAt?.toUtc().toIso8601String(),
     'lastError': lastError,
+    // RWKV 排程的准备状态：idle（库里没有 RWKV 牌组 / 还没开始）/ downloading / preparing / ready / failed。
+    // 没就绪时 RWKV 牌组不出复习卡（远程复习页显示「准备中」/ 错误与重试）。
+    if (_rwkv?.status case final SrsRwkvStatus rwkv) ...<String, Object?>{
+      'rwkv': rwkv.phase.name,
+      if (rwkv.error != null) 'rwkvError': '${rwkv.error}',
+    },
   };
 }
 
@@ -283,13 +324,17 @@ class ServerSrs {
     required ServerSrsConfig Function() config,
     FsrsEngine? Function()? engine,
     void Function()? onPublished,
+    HttpClient Function()? rwkvHttpClient,
+    Future<SrsRwkvBackend> Function(File weights)? rwkvBackend,
   }) : syncRoot = Directory(
          p.join(syncData.path, 'sync-data', kSyncRootFolderName),
        ),
        directoryKey = srsInterconnectDirectoryKey(hostId),
        _config = config,
        _engineFactory = engine ?? FfiFsrsEngine.tryCreate,
-       _onPublishedCb = onPublished;
+       _onPublishedCb = onPublished,
+       _rwkvHttpClient = rwkvHttpClient ?? createAppHttpClient,
+       _rwkvBackend = rwkvBackend;
 
   /// `<support>`：srs.db、`srs_media/<uid>/`、`srs_styles/<uid>/` 在这里。
   final Directory support;
@@ -303,6 +348,22 @@ class ServerSrs {
   final ServerSrsConfig Function() _config;
   final FsrsEngine? Function() _engineFactory;
   final void Function()? _onPublishedCb;
+
+  /// 下载 RWKV 权重用的 HTTP 客户端（缺省走全局代理设置；测试注入一个不碰网络的）。
+  final HttpClient Function() _rwkvHttpClient;
+
+  /// 测试接缝：RWKV 的后台 runtime 换成替身。
+  final Future<SrsRwkvBackend> Function(File weights)? _rwkvBackend;
+
+  /// 给刚打开的库挂上 RWKV 排程（与 app 共用 [srsAttachRwkv]）：权重在 `<support>/srs_rwkv/models`（按需下载；
+  /// 不能出网的机器可以事先把权重文件放进去，校验通过即用），状态快照在 `<support>/srs_rwkv/state`。
+  SrsRwkvService _attachRwkv(SrsDbStore store) => srsAttachRwkv(
+    store,
+    support: support,
+    createClient: _rwkvHttpClient,
+    openBackend: _rwkvBackend,
+    log: (String message) => engineLog.logDiagnostic('ServerSrs.rwkv', message),
+  );
 
   SrsStorage? _storage;
   FsrsEngine? _engine;
@@ -486,6 +547,8 @@ class ServerSrs {
           styles: SrsStyleStore(SrsStyleStore.directoryFor(support, uid)),
         );
         prof._media = SrsMediaStore(SrsMediaStore.directoryFor(support, uid));
+        // 库交出去之前就挂上：没挂 RWKV 的库会把 RWKV 牌组按 FSRS-7 的到期日排（见 srs_rwkv_attach.dart 文件头）。
+        prof._rwkv = _attachRwkv(prof._store!);
       } catch (e, stack) {
         prof._setState(ServerSrsProfileState.failed, '$e');
         engineLog.log('ServerSrs.open', e, stack);
@@ -550,6 +613,29 @@ class ServerSrs {
     await Future.wait(<Future<void>>[
       for (final ServerSrsProfile prof in targets) prof.syncNow(),
     ]);
+  }
+
+  /// [uid] 那份里还没信任的设备（待确认在前）：服务端第一轮同步之后才第一次出现的设备，它的删除与彻底清除在服务端
+  /// 的库里扣着（native/fushi_fsrs/src/store/sync2/trust.rs），要管理员确认。那份不可用时 null。
+  Future<List<SrsDeviceView>?> untrustedDevices(String uid) async {
+    final SrsDbStore? s = _profiles[uid]?.store;
+    if (s == null) return null;
+    return srsUntrustedDevices(await srsLoadDevices(s));
+  }
+
+  /// 信任 / 拒绝 [uid] 那份里的一台设备（与 app 冲突中心的「待确认的设备」同一条 engine 路径）。信任 = 扣着的删除与
+  /// 彻底清除立即生效，库有变化，通知远程复习等重读。那份不可用时抛 [StateError]；设备不对抛
+  /// [SrsDeviceTrustException]。
+  Future<SrsDeviceView> setDeviceTrust(
+    String uid,
+    String device, {
+    required bool trust,
+  }) async {
+    final SrsDbStore? s = _profiles[uid]?.store;
+    if (s == null) throw StateError('profile $uid is not available');
+    final SrsDeviceView view = await srsSetDeviceTrust(s, device, trust: trust);
+    if (trust) _onChanged(uid);
+    return view;
   }
 
   /// 服务端自己写了 [uid] 的库（AnkiConnect / 互联制卡）：去抖后发出去。

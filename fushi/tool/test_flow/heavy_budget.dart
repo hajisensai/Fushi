@@ -62,8 +62,9 @@ class HeavyNeed {
 /// all slot files, so they book the budget for every checkout's tool.
 const int kLightSlotBase = 100;
 
-/// At most this many light runs at once (two analyzes book 9 GB; they still
-/// have to fit the budget next to the tests and builds).
+/// At most this many light runs at once (two analyzes book 16 GB: all of a
+/// 32 GB machine's budget, half a 64 GB one's; they still have to fit the
+/// budget next to the tests and builds).
 const int kLightSlotCount = 2;
 
 const HeavyNeed _test = HeavyNeed(
@@ -132,10 +133,16 @@ int? testConcurrencyOf(List<String> argv) {
 // server averages under one core. Holding a regular slot and booking the
 // full ceiling made tests queue behind it (11 h of queueing on analyze across
 // those runs) for a job that is mostly memory, so it books ~p90 and is light.
+// 2026-11-10 the app had grown: of 201 full analyzes under the 8 GB ceiling
+// since 10-25, 42 died on it (0xC0000409, dartvm `Could not start thread`);
+// the 159 that finished peaked at p50 7.0 / p90 8.0 GB, and 20 runs with a
+// higher --cap-mb went up to 8.7 GB (p50 7.4). The ceiling is now 16 GB
+// (owner's call, "32 GB machine, give it at least 16 GB") and it books 8 GB,
+// ~p90: booking 4.5 GB had let the budget promise memory analyze then used.
 const HeavyNeed _analyze = HeavyNeed(
   kind: HeavyKind.analyze,
-  capMb: 8192,
-  bookMb: 4608,
+  capMb: 16384,
+  bookMb: 8192,
   worktreeExclusive: false,
   light: true,
 );
@@ -297,6 +304,63 @@ String? heavyBudgetBlocker({
   final int booked = heldCapsMb.fold(0, (int a, int b) => a + b);
   if (booked + needMb <= budgetMb) return null;
   return 'memory budget: $booked MB booked + $needMb MB > $budgetMb MB';
+}
+
+/// A waiter ahead in the queue, as a later waiter sees it: what it books
+/// (null: an older checkout's tool recorded none) and when it queued.
+typedef HeavyEarlier = ({int? bookedMb, int enqueuedUs});
+
+/// Whether a queued run booking [needMb] may take a free slot ahead of the
+/// [earlier] waiters (oldest first, not empty) -- 2026-11-11: a 7.5 GB test
+/// at the head that did not fit the budget kept seven 2 GB `dart test` runs
+/// waiting behind it with two of three slots idle.
+///
+/// Only past waiters that cannot start right now: each one's booking is known
+/// and does not fit next to the [holders]. And only while the head keeps its
+/// place: the runs that started after the head queued (those that went ahead,
+/// and analyze runs, which never queue) plus this one must leave the head's
+/// booking free, so the head starts as soon as the runs that were there
+/// before it are done -- going ahead never delays it.
+bool heavyMayGoAhead({
+  required int needMb,
+  required List<HeavyEarlier> earlier,
+  required List<HeavyHolder> holders,
+  required int? budgetMb,
+}) {
+  // No budget: slots alone pace the runs and the head takes the free one.
+  if (budgetMb == null || earlier.isEmpty) return false;
+  final List<int> held = <int>[for (final HeavyHolder h in holders) h.bookedMb];
+  for (final HeavyEarlier e in earlier) {
+    final int? booked = e.bookedMb;
+    if (booked == null) return false;
+    if (heavyBudgetBlocker(
+          needMb: booked,
+          heldCapsMb: held,
+          budgetMb: budgetMb,
+        ) ==
+        null) {
+      return false;
+    }
+  }
+  final HeavyEarlier head = earlier.first;
+  int sinceHeadQueued = 0;
+  for (final HeavyHolder h in holders) {
+    if (h.startedAtMs * 1000 > head.enqueuedUs) sinceHeadQueued += h.bookedMb;
+  }
+  return sinceHeadQueued + needMb <= budgetMb - head.bookedMb!;
+}
+
+/// What makes two submissions the same run: the directory and the wrapped
+/// command, with the tool named as typed or by full path (`flutter`,
+/// `D:/sdk/bin/flutter.bat`) counting as one. Compared case-insensitively on
+/// Windows paths only through the directory; arguments are compared as given.
+String heavyRunKey({required String cwd, required List<String> argv}) {
+  final String dir = cwd.replaceAll(r'\', '/').toLowerCase();
+  final String trimmed = dir.endsWith('/')
+      ? dir.substring(0, dir.length - 1)
+      : dir;
+  if (argv.isEmpty) return trimmed;
+  return <String>[trimmed, _base(argv.first), ...argv.skip(1)].join('\n');
 }
 
 /// A reading of the machine's memory, in MB. [availCommitMb] is commit

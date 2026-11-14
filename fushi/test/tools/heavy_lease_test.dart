@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:test/test.dart';
@@ -135,14 +136,14 @@ void main() {
         ),
       );
       // An analyze still fits next to the two test runs, booked at its
-      // measured footprint rather than its 8 GB ceiling.
+      // measured footprint (8 GB) rather than its 16 GB ceiling.
       final HeavyLease a = await take(4, kind: HeavyKind.analyze);
       expect(
         readHeavyHolders(
           Directory('${tmp.path}/state'),
           4,
         ).map((HeavyHolder h) => h.bookedMb).fold(0, (int s, int m) => s + m),
-        24576 + 4608,
+        24576 + 8192,
       );
       a.release();
       t2.release();
@@ -283,6 +284,44 @@ void main() {
     a.release();
   });
 
+  // Windows: deleting a file opens it with DELETE access, and until that
+  // handle closes every other open of it fails with a sharing violation. A
+  // waiter probing a ticket at that moment used to die with exit 255, however
+  // long it had already queued. Any handle opened without sharing refuses the
+  // probe the same way, which is what the helper process holds here.
+  test(
+    'a ticket another process has open unshared reads as live, not a crash',
+    () async {
+      final Directory state = Directory('${tmp.path}/state');
+      final Directory queue = Directory('${state.path}/queue')
+        ..createSync(recursive: true);
+      const String name = '00000000000000000001-1-0';
+      final File ticket = File('${queue.path}/$name.ticket')..createSync();
+      final Process holder = await Process.start(
+        'powershell.exe',
+        <String>['-NoProfile', '-NonInteractive', '-Command', _holdUnsharedPs],
+        environment: <String, String>{'HEAVY_TEST_FILE': ticket.path},
+      );
+      addTearDown(holder.kill);
+      final Stream<String> lines = holder.stdout
+          .transform(systemEncoding.decoder)
+          .transform(const LineSplitter());
+      expect(await lines.first, 'held');
+
+      expect(readHeavyQueue(state).map((HeavyQueued q) => q.name), <String>[
+        name,
+      ]);
+      expect(ticket.existsSync(), isTrue);
+
+      holder.kill();
+      await holder.exitCode;
+      // Nobody holds it now: an ordinary dead ticket, swept.
+      expect(readHeavyQueue(state), isEmpty);
+      expect(ticket.existsSync(), isFalse);
+    },
+    skip: Platform.isWindows ? false : 'sharing violations are Windows-only',
+  );
+
   // First come, first served across processes: a free slot goes to the oldest
   // live ticket, not to whoever polls first.
   test(
@@ -375,14 +414,14 @@ void main() {
         ),
       ),
     );
-    // Two analyzes (9216 MB) + a test (12288 MB) > a 16 GB budget.
+    // Two analyzes (16384 MB) + a test (12288 MB) > a 16 GB budget.
     await expectLater(
       take(1, kind: HeavyKind.test, budgetMb: 16384),
       throwsA(
         isA<HeavyLeaseTimeout>().having(
           (HeavyLeaseTimeout e) => e.message,
           'message',
-          contains('9216 MB booked + 12288 MB > 16384 MB'),
+          contains('16384 MB booked + 12288 MB > 16384 MB'),
         ),
       ),
     );
@@ -406,6 +445,294 @@ void main() {
     expect(nested.childEnvironment, isEmpty);
     nested.release();
     a.release();
+  });
+
+  // 2026-11-11 (owner's call after a night of 20-run queues): a 7.5 GB test at
+  // the head that did not fit the budget kept seven 2 GB `dart test` runs
+  // waiting behind it with two of three slots idle.
+  group('going ahead of a run that does not fit the budget', () {
+    HeavyNeed booking(int mb) =>
+        HeavyNeed(kind: HeavyKind.test, capMb: mb, worktreeExclusive: false);
+
+    Future<HeavyLease> submit(
+      HeavyNeed need, {
+      List<String>? said,
+      Duration? waitMax = const Duration(seconds: 1),
+    }) async {
+      final HeavyLease lease = await acquireHeavyLease(
+        need: need,
+        label: 'books-${need.bookedMb}',
+        waitMax: waitMax,
+        environment: env(3, budgetMb: 16384),
+        readMemory: () => roomy,
+        poll: const Duration(milliseconds: 50),
+        log: (String l) => said?.add(l),
+      );
+      addTearDown(lease.release);
+      return lease;
+    }
+
+    /// A live ticket of another process that queued just now and books
+    /// [bookedMb]; the returned callback ends that process.
+    Future<Future<void> Function()> queuedElsewhere(int bookedMb) async {
+      final Directory queue = Directory('${tmp.path}/state/queue')
+        ..createSync(recursive: true);
+      final String name =
+          '${'${DateTime.now().microsecondsSinceEpoch}'.padLeft(20, '0')}-1-0';
+      File(
+        '${queue.path}/$name.json',
+      ).writeAsStringSync('{"pid":1,"label":"big test","bookedMb":$bookedMb}');
+      final File holder = File('${tmp.path}/hold.dart')
+        ..writeAsStringSync(_holdLockScript);
+      final Process child = await Process.start(_dartExecutable()!, <String>[
+        holder.path,
+        '${queue.path}/$name.ticket',
+      ]);
+      await child.stdout
+          .transform(const SystemEncoding().decoder)
+          .firstWhere((String l) => l.contains('locked'))
+          .timeout(const Duration(seconds: 60));
+      return () async {
+        await child.stdin.close();
+        await child.exitCode.timeout(const Duration(seconds: 30));
+      };
+    }
+
+    test(
+      'a small run takes a free slot ahead of it; the head keeps its place',
+      () async {
+        if (_dartExecutable() == null) {
+          markTestSkipped('no dart executable to hold a ticket in a child');
+          return;
+        }
+        final HeavyLease running = await submit(booking(10240));
+        final Future<void> Function() endHead = await queuedElsewhere(7680);
+        try {
+          final List<String> said = <String>[];
+          final HeavyLease small = await submit(booking(2048), said: said);
+          expect(small.slot, 1);
+          expect(said.join('\n'), contains('goes ahead of 1 earlier run(s)'));
+          expect(
+            readHeavyQueue(
+              Directory('${tmp.path}/state'),
+            ).map((HeavyQueued q) => q.label),
+            <String>['big test'],
+          );
+          // As large as the head: it does not fit either, and waits its turn.
+          await expectLater(
+            submit(booking(7680)),
+            throwsA(
+              isA<HeavyLeaseTimeout>().having(
+                (HeavyLeaseTimeout e) => e.message,
+                'message',
+                contains('queued behind 1'),
+              ),
+            ),
+          );
+          small.release();
+        } finally {
+          await endHead();
+        }
+        running.release();
+      },
+      timeout: const Timeout(Duration(seconds: 90)),
+    );
+
+    test(
+      'not when the head could start, nor into the room the head needs',
+      () async {
+        if (_dartExecutable() == null) {
+          markTestSkipped('no dart executable to hold a ticket in a child');
+          return;
+        }
+        final HeavyLease running = await submit(booking(6000));
+        final Future<void> Function() endHead = await queuedElsewhere(7680);
+        try {
+          // 6000 + 7680 fits: the head starts at its next look, nobody
+          // slips in front of it meanwhile.
+          await expectLater(
+            submit(booking(2048)),
+            throwsA(isA<HeavyLeaseTimeout>()),
+          );
+          // An analyze (never queues, books 8192) started after the head
+          // queued: the head is blocked now, and 8192 + 2048 more would leave
+          // less than its 7680 of the 16384 once the older run is done.
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+          final HeavyLease analyze = await acquireHeavyLease(
+            need: heavyNeedFor(HeavyKind.analyze),
+            label: 'analyze',
+            environment: env(3, budgetMb: 16384),
+            readMemory: () => roomy,
+            log: (_) {},
+          );
+          addTearDown(analyze.release);
+          await expectLater(
+            submit(booking(2048)),
+            throwsA(
+              isA<HeavyLeaseTimeout>().having(
+                (HeavyLeaseTimeout e) => e.message,
+                'message',
+                contains('queued behind 1'),
+              ),
+            ),
+          );
+          analyze.release();
+        } finally {
+          await endHead();
+        }
+        running.release();
+      },
+      timeout: const Timeout(Duration(seconds: 90)),
+    );
+  });
+
+  // 2026-11-11: stopping a tool call does not reach a heavy.dart below a
+  // `bash script.sh` hop on Windows, so a re-launched script queued the same
+  // run again next to the one nobody was reading any more (four instances of
+  // one script that night).
+  group('the same command submitted again from the same directory', () {
+    Future<HeavyLease> submit(
+      String runKey, {
+      String? worktree,
+      List<String>? said,
+      Duration? waitMax,
+    }) => acquireHeavyLease(
+      need: HeavyNeed(
+        kind: HeavyKind.test,
+        capMb: 2048,
+        worktreeExclusive: worktree != null,
+      ),
+      label: 'run-$runKey',
+      worktreeRoot: worktree,
+      runKey: runKey,
+      waitMax: waitMax,
+      environment: env(1),
+      readMemory: () => roomy,
+      poll: const Duration(milliseconds: 50),
+      log: (String l) => said?.add(l),
+    );
+
+    Future<void> until(bool Function() ok) async {
+      final Stopwatch sw = Stopwatch()..start();
+      while (!ok()) {
+        if (sw.elapsed > const Duration(seconds: 20)) fail('timed out');
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+    }
+
+    test('takes the queued one\'s place; that one leaves', () async {
+      final Directory state = Directory('${tmp.path}/state');
+      final String wt = '${tmp.path}/wt';
+      final HeavyLease busy = await take(1);
+      final Future<HeavyLease> first = submit('k', worktree: wt);
+      final Future<void> firstLeaves = expectLater(
+        first,
+        throwsA(
+          isA<HeavyLeaseSuperseded>().having(
+            (HeavyLeaseSuperseded e) => e.byPid,
+            'byPid',
+            pid,
+          ),
+        ),
+      );
+      await until(() => readHeavyQueue(state).length == 1);
+      final HeavyQueued was = readHeavyQueue(state).single;
+
+      final List<String> said = <String>[];
+      final Future<HeavyLease> again = submit('k', worktree: wt, said: said);
+      await firstLeaves;
+      await until(
+        () =>
+            readHeavyQueue(state).length == 1 &&
+            readHeavyQueue(state).single.name != was.name,
+      );
+      final HeavyQueued now = readHeavyQueue(state).single;
+      expect(now.enqueuedUs, was.enqueuedUs);
+      expect(now.runKey, 'k');
+      expect(said.join('\n'), contains('taking its place in the queue'));
+
+      busy.release();
+      final HeavyLease lease = await again;
+      expect(lease.slot, 0);
+      lease.release();
+      expect(
+        Directory('${state.path}/queue').listSync(),
+        isEmpty,
+        reason: 'ticket or .superseded marker left behind',
+      );
+    });
+
+    test('another command in the same worktree just waits its turn', () async {
+      final Directory state = Directory('${tmp.path}/state');
+      final String wt = '${tmp.path}/wt';
+      final HeavyLease busy = await take(1);
+      bool firstDone = false;
+      final Future<HeavyLease> first = submit('k', worktree: wt)
+        ..then((_) => firstDone = true);
+      await until(() => readHeavyQueue(state).length == 1);
+      await expectLater(
+        submit('other', worktree: wt, waitMax: const Duration(seconds: 1)),
+        throwsA(
+          isA<HeavyLeaseTimeout>().having(
+            (HeavyLeaseTimeout e) => e.message,
+            'message',
+            contains('worktree still busy'),
+          ),
+        ),
+      );
+      expect(firstDone, isFalse);
+      busy.release();
+      (await first).release();
+    });
+
+    test(
+      'a queued run in another process is told through its ticket',
+      () async {
+        final String? dart = _dartExecutable();
+        if (dart == null) {
+          markTestSkipped('no dart executable to hold a ticket in a child');
+          return;
+        }
+        final Directory state = Directory('${tmp.path}/state');
+        final Directory queue = Directory('${state.path}/queue')
+          ..createSync(recursive: true);
+        const String early = '00000000000000000007-4242-0';
+        File('${queue.path}/$early.json').writeAsStringSync(
+          '{"pid":4242,"label":"first","bookedMb":2048,"runKey":"k"}',
+        );
+        final File holder = File('${tmp.path}/hold.dart')
+          ..writeAsStringSync(_holdLockScript);
+        final Process child = await Process.start(dart, <String>[
+          holder.path,
+          '${queue.path}/$early.ticket',
+        ]);
+        final HeavyLease busy = await take(1);
+        final Future<HeavyLease> again;
+        try {
+          await child.stdout
+              .transform(const SystemEncoding().decoder)
+              .firstWhere((String l) => l.contains('locked'))
+              .timeout(const Duration(seconds: 60));
+          again = submit('k');
+          final File marker = File('${queue.path}/$early.superseded');
+          await until(marker.existsSync);
+          expect(marker.readAsStringSync(), '$pid');
+          // Queued under the superseded run's time, so in its place.
+          expect(
+            readHeavyQueue(state).map((HeavyQueued q) => q.name),
+            contains(startsWith('00000000000000000007-$pid-')),
+          );
+        } finally {
+          await child.stdin.close();
+          await child.exitCode.timeout(const Duration(seconds: 30));
+        }
+        busy.release();
+        final HeavyLease lease = await again;
+        lease.release();
+        expect(queue.listSync(), isEmpty);
+      },
+      timeout: const Timeout(Duration(seconds: 90)),
+    );
   });
 
   // pre_push_check --no-lease (2026-10-02): a caller that schedules runs
@@ -432,6 +759,13 @@ String? _dartExecutable() {
   final File f = File('$root/bin/cache/dart-sdk/bin/$exe');
   return f.existsSync() ? f.path : null;
 }
+
+/// PowerShell: holds `$env:HEAVY_TEST_FILE` open with no sharing until it is
+/// killed.
+const String _holdUnsharedPs =
+    r"$f = [IO.File]::Open($env:HEAVY_TEST_FILE, 'Open', 'ReadWrite', 'None'); "
+    r"[Console]::Out.WriteLine('held'); "
+    r'Start-Sleep -Seconds 600';
 
 /// Holds an exclusive lock on args[0] until its stdin closes.
 const String _holdLockScript = '''

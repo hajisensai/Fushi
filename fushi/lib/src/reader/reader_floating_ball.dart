@@ -9,6 +9,7 @@ import 'package:fushi/src/media/video/underlay_composition.dart'
         underlayCompositionActive;
 import 'package:fushi/src/reader/reader_desktop_chrome.dart';
 import 'package:fushi/src/utils/components/accent_logo_image.dart';
+import 'package:fushi/src/utils/components/mascot_glow.dart';
 import 'package:fushi/src/utils/misc/logo_accent_tint.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -944,13 +945,18 @@ class _BallFace extends StatelessWidget {
                     scale: kReaderFloatingBallMascotScale,
                     child: AccentLogoTintBuilder(
                       accent: einkMode ? cs.surface : cs.primary,
+                      // 「吉祥物光晕」开着时轮廓外一圈呼吸光（后台同步时更亮）；
+                      // 关着 / 墨水屏原样返回吉祥物。
                       builder: (BuildContext context, LogoAccentTint tint) =>
-                          Image(
-                            image: readerFloatingBallMascotImage(tint),
-                            fit: BoxFit.contain,
-                            filterQuality: FilterQuality.medium,
-                            // 换主题时无缝切到新配色的吉祥物，不闪空。
-                            gaplessPlayback: true,
+                          MascotGlow(
+                            color: apple ? appleColorsOf(context).accent : null,
+                            child: Image(
+                              image: readerFloatingBallMascotImage(tint),
+                              fit: BoxFit.contain,
+                              filterQuality: FilterQuality.medium,
+                              // 换主题时无缝切到新配色的吉祥物，不闪空。
+                              gaplessPlayback: true,
+                            ),
                           ),
                     ),
                   ),

@@ -2,9 +2,11 @@
 /// 鉴权由 FushiSyncServer 的 middleware 统一做，这里不豁免任何端点。
 ///
 /// ```
-/// POST /api/srs/remote/call          {profile?, op, args, request?}   → {profile, rev, fp, tt, now, ts, sched, rwkv, result}
+/// POST /api/srs/remote/call          {profile?, op, args, request?, tz?}   → {profile, rev, fp, tt, now, ts, sched, rwkv, result}
 /// GET  /api/srs/remote/media/<名字>                                    → 字节
 /// ```
+/// `tz` 是客户端设备此刻的 UTC 偏移（分钟，[kSrsRemoteDeviceOffsetKey]）：不是整数 → 400；整数但越界 → 当没带，
+/// 按主机自己的偏移算（[SrsRemoteStoreService.call]）。其余不认识的顶层键一律忽略（新客户端连旧主机即如此）。
 /// 失败一律 `{error: <机读码>}`（[SrsRemoteStoreError]）。
 library;
 
@@ -62,10 +64,12 @@ Future<shelf.Response> handleSrsRemoteStoreRequest(
     final Object? args = body['args'];
     final Object? profile = body['profile'];
     final Object? requestId = body['request'];
+    final Object? deviceOffset = body[kSrsRemoteDeviceOffsetKey];
     if (name is! String ||
         (args != null && args is! Map) ||
         (profile != null && profile is! String) ||
-        (requestId != null && requestId is! String)) {
+        (requestId != null && requestId is! String) ||
+        (deviceOffset != null && deviceOffset is! int)) {
       return _error(400, SrsRemoteStoreError.badRequest);
     }
     op = name;
@@ -77,6 +81,7 @@ Future<shelf.Response> handleSrsRemoteStoreRequest(
             ? const <String, Object?>{}
             : (args as Map).cast<String, Object?>(),
         request: requestId as String?,
+        deviceOffsetMin: deviceOffset as int?,
       ),
     );
   } on SrsRemoteStoreError catch (e) {

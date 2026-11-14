@@ -1,15 +1,13 @@
 /// 互联「内容订阅」客户端（`/api/subscriptions`）：订阅在已配对 host 上创建并由
 /// host 自己周期跑（搜资源 → 投 host 的下载管线）；本机只做浏览/启停/删除。
 ///
-/// 与 `InterconnectDownloadClient` 同一形状（探测能力位 → pinned client 打请求）。
+/// 与 `InterconnectDownloadClient` 同一形状：传输层（选路、凭据、钉扎、整段超时、
+/// client 生命周期、错误分型）全部走 [InterconnectHostChannel]。
 library;
 
-import 'dart:convert';
-
+import 'package:fushi/src/sync/interconnect_host_channel.dart';
 import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
-import 'package:fushi/src/sync/webdav_ops.dart';
-import 'package:fushi_engine/sync/tls/fushi_pinning_http.dart';
 import 'package:http/http.dart' as http;
 
 class HostSubscriptionTarget {
@@ -19,8 +17,18 @@ class HostSubscriptionTarget {
     required this.backend,
     required this.providers,
     this.fingerprintSha256,
+    this.host,
   });
 
+  /// 这台 host 的身份（client 产出的 target 一律带上）。null = 调用方直接构造的
+  /// 老形状 target，按 [baseUrl] 认（见 [hostRef]）。
+  final InterconnectHostRef? host;
+
+  /// 请求按它选路 / 取凭据 / 钉扎，而不是按 [baseUrl] 那一条地址。
+  InterconnectHostRef get hostRef =>
+      host ?? InterconnectHostRef.legacyUrl(interconnectPersistedUrl(baseUrl));
+
+  /// 这台 host 的持久代表地址（`p2p://` 而非本次的本地转发口）。
   final String baseUrl;
   final String? deviceName;
 
@@ -169,6 +177,7 @@ class HostSubscriptionException implements Exception {
   String toString() => detail == null ? code : '$code: $detail';
 }
 
+/// 内容订阅 client。每台 host 一条 [InterconnectHostChannel]，复用到 [close]。
 class InterconnectSubscriptionClient {
   InterconnectSubscriptionClient({
     required SyncRepository repo,
@@ -177,83 +186,116 @@ class InterconnectSubscriptionClient {
     Duration probeTimeout = const Duration(seconds: 4),
     Duration requestTimeout = const Duration(seconds: 30),
   }) : _repo = repo,
-       _httpClient = httpClient ?? http.Client(),
-       _pinnedClientFactory = pinnedClientFactory ?? _defaultPinnedClient,
+       _borrowedPlain = httpClient,
+       _pinnedClientFactory = pinnedClientFactory,
        _probeTimeout = probeTimeout,
        _requestTimeout = requestTimeout;
 
   final SyncRepository _repo;
-  final http.Client _httpClient;
-  final http.Client Function(String expectedFingerprint) _pinnedClientFactory;
+
+  /// 借用的明文 client（测试缝 / 调用方共享）：本 client 不关它。
+  final http.Client? _borrowedPlain;
+
+  /// 没借到时自建、各通道共用，[close] 时关。
+  http.Client? _ownedPlain;
+  final http.Client Function(String expectedFingerprint)? _pinnedClientFactory;
   final Duration _probeTimeout;
   final Duration _requestTimeout;
+  final Map<String, InterconnectHostChannel> _channels =
+      <String, InterconnectHostChannel>{};
+  bool _closed = false;
 
-  static http.Client _defaultPinnedClient(String expectedFingerprint) =>
-      createPinnedHttpPackageClient(expectedFingerprint: expectedFingerprint);
-
-  /// 所有宣告 `subscriptions.supported` 的已配对 host（一个用户可能配多台）。
-  ///
-  /// 按 host 去重：同一台 host 的多条地址（LAN / IPv6 / 组网）只产出一个目标，
-  /// 取组内第一条能答复的地址（组内已按可达性排好序）。
-  Future<List<HostSubscriptionTarget>> probeAll() async {
-    final List<FushiClientUrl> candidates = await rankInterconnectCandidates(
-      (await _repo.getFushiClientUrls())
-          .where((FushiClientUrl u) => u.enabled)
-          .toList(growable: false),
-    );
-    final String? fallbackToken = await _repo.getFushiClientToken();
-    final List<HostSubscriptionTarget> targets = <HostSubscriptionTarget>[];
-    for (final List<FushiClientUrl> host in groupInterconnectPeers(
-      candidates,
-    )) {
-      for (final FushiClientUrl candidate in host) {
-        final HostSubscriptionTarget? target = await _probeCandidate(
-          candidate,
-          fallbackToken,
-        );
-        if (target == null) continue;
-        targets.add(target);
-        break;
-      }
+  InterconnectHostChannel _channel(InterconnectHostRef host) {
+    if (_closed) {
+      throw const InterconnectChannelException(
+        InterconnectChannelFailure.cancelled,
+      );
     }
-    return targets;
+    return _channels.putIfAbsent(
+      host.key,
+      () => InterconnectHostChannel(
+        repo: _repo,
+        host: host,
+        plainClient: _borrowedPlain ?? (_ownedPlain ??= http.Client()),
+        pinnedClientFactory: _pinnedClientFactory,
+      ),
+    );
   }
 
-  Future<HostSubscriptionTarget?> _probeCandidate(
-    FushiClientUrl candidate,
-    String? fallbackToken,
-  ) async {
-    final Uri? uri = _uri(candidate.url, '/api/capabilities');
-    final String? token = interconnectTokenFor(candidate, fallbackToken);
-    if (uri == null || token == null) return null;
-    final (http.Client client, bool closeAfter) = _clientFor(
-      candidate.url,
-      fingerprint: candidate.fingerprintSha256,
-    );
-    try {
-      final http.Response response = await client
-          .get(uri, headers: _headers(token))
-          .timeout(_probeTimeout);
-      if (response.statusCode != 200) return null;
-      final dynamic decoded = jsonDecode(utf8.decode(response.bodyBytes));
-      if (decoded is! Map) return null;
-      final Object? subs = decoded['subscriptions'];
-      if (subs is! Map || subs['supported'] != true) return null;
-      final Object? providers = subs['providers'];
-      return HostSubscriptionTarget(
-        baseUrl: candidate.url,
-        deviceName: candidate.deviceName,
-        backend: (subs['backend'] ?? '').toString(),
-        providers: providers is List
-            ? providers.map((dynamic e) => e.toString()).toList(growable: false)
-            : const <String>[],
-        fingerprintSha256: candidate.fingerprintSha256,
-      );
-    } catch (_) {
-      return null;
-    } finally {
-      if (closeAfter) client.close();
+  /// 关掉全部通道与自建的明文 client；在途与之后的请求抛
+  /// `HostSubscriptionException('cancelled')`。
+  void close() {
+    if (_closed) return;
+    _closed = true;
+    for (final InterconnectHostChannel c in _channels.values) {
+      c.close();
     }
+    _channels.clear();
+    _ownedPlain?.close();
+    _ownedPlain = null;
+  }
+
+  /// 所有宣告 `subscriptions.supported` 的已配对 host（一个用户可能配多台）。
+  /// 每台 host 只产出一个目标；探不到的原因见 [probeAllOutcomes]。
+  Future<List<HostSubscriptionTarget>> probeAll() async =>
+      <HostSubscriptionTarget>[
+        for (final InterconnectCapabilityOutcome<HostSubscriptionTarget> o
+            in await probeAllOutcomes())
+          if (o is InterconnectCapabilityAvailable<HostSubscriptionTarget>)
+            o.target,
+      ];
+
+  /// 每台已启用 host 的探测结局（含失败原因），并发探、按配对清单的组序返回。
+  Future<List<InterconnectCapabilityOutcome<HostSubscriptionTarget>>>
+  probeAllOutcomes() async {
+    final List<InterconnectHostRef> hosts = interconnectPairedHostRefs(
+      await _repo.getFushiClientUrls(),
+    );
+    return Future.wait(
+      <Future<InterconnectCapabilityOutcome<HostSubscriptionTarget>>>[
+        for (final InterconnectHostRef h in hosts) probeHost(h),
+      ],
+    );
+  }
+
+  /// 探一台 host 的订阅能力（`subscriptions.supported`）。
+  Future<InterconnectCapabilityOutcome<HostSubscriptionTarget>> probeHost(
+    InterconnectHostRef host,
+  ) async {
+    final List<FushiClientUrl> rows = await _repo.getFushiClientUrls();
+    String? pin;
+    String? rawName;
+    for (final FushiClientUrl u in rows) {
+      if (!host.matches(u)) continue;
+      final String? fp = u.fingerprintSha256;
+      if (pin == null && fp != null && fp.isNotEmpty) pin = fp;
+      final String? name = u.deviceName;
+      if (rawName == null && name != null && name.isNotEmpty) rawName = name;
+    }
+    final String? groupPin = pin;
+    final String? groupName = rawName;
+    return probeInterconnectCapability<HostSubscriptionTarget>(
+      _channel(host),
+      label: interconnectHostLabel(rows, host),
+      timeout: _probeTimeout,
+      parse: (Map<String, dynamic> caps, FushiClientUrl via) {
+        final Object? subs = caps['subscriptions'];
+        if (subs is! Map || subs['supported'] != true) return null;
+        final Object? providers = subs['providers'];
+        return HostSubscriptionTarget(
+          host: host,
+          baseUrl: host.anchorUrl,
+          deviceName: via.deviceName ?? groupName,
+          backend: (subs['backend'] ?? '').toString(),
+          providers: providers is List
+              ? providers
+                    .map((Object? e) => e.toString())
+                    .toList(growable: false)
+              : const <String>[],
+          fingerprintSha256: groupPin,
+        );
+      },
+    );
   }
 
   Future<HostSubscription> create(
@@ -320,98 +362,36 @@ class InterconnectSubscriptionClient {
     String path, {
     Map<String, Object?>? jsonBody,
   }) async {
-    final String? token = await _tokenForBaseUrl(target.baseUrl);
-    if (token == null || token.isEmpty) {
-      throw const HostSubscriptionException('no_host');
-    }
-    final Uri? uri = _uri(target.baseUrl, path);
-    if (uri == null) {
-      throw const HostSubscriptionException('http', 'bad host url');
-    }
-    final (http.Client client, bool closeAfter) = _clientFor(
-      target.baseUrl,
-      fingerprint: target.fingerprintSha256,
-    );
+    final InterconnectChannelResponse r;
     try {
-      final http.Request req = http.Request(method, uri)
-        ..headers.addAll(_headers(token));
-      if (jsonBody != null) {
-        req.headers['Content-Type'] = 'application/json';
-        req.body = jsonEncode(jsonBody);
-      }
-      final http.Response response = await http.Response.fromStream(
-        await client.send(req).timeout(_requestTimeout),
+      r = await _channel(await _hostOf(target)).send(
+        method,
+        path,
+        body: jsonBody == null ? null : InterconnectRequestBody.json(jsonBody),
+        timeout: _requestTimeout,
       );
-      final String text = utf8.decode(response.bodyBytes, allowMalformed: true);
-      if (response.statusCode >= 400) {
-        String detail = text;
-        String? reason;
-        try {
-          final dynamic decoded = jsonDecode(text);
-          if (decoded is Map) {
-            if (decoded['message'] != null) {
-              detail = decoded['message'].toString();
-            }
-            reason = decoded['reason']?.toString();
-          }
-        } catch (_) {
-          // 非 JSON 错误体原样带回。
-        }
-        throw HostSubscriptionException(
-          'http_${response.statusCode}',
-          detail,
-          reason,
-        );
-      }
-      final dynamic decoded = text.isEmpty
-          ? <String, dynamic>{}
-          : jsonDecode(text);
-      if (decoded is! Map) return <String, dynamic>{};
-      return Map<String, dynamic>.from(decoded);
-    } finally {
-      if (closeAfter) client.close();
+    } on InterconnectChannelException catch (e) {
+      throw HostSubscriptionException(e.code);
     }
-  }
-
-  Future<String?> _tokenForBaseUrl(String baseUrl) async {
-    final String? fallbackToken = await _repo.getFushiClientToken();
-    for (final FushiClientUrl u in await _repo.getFushiClientUrls()) {
-      // 走 P2P 时 baseUrl 是本次的本地转发口，换回持久的 p2p:// 再认。
-      if (u.url == interconnectPersistedUrl(baseUrl)) {
-        return interconnectTokenFor(u, fallbackToken);
-      }
+    if (r.statusCode >= 400) {
+      // 错误体按本路由原来的字段取（`{message, reason}`），非 JSON 原样带回。
+      throw HostSubscriptionException(
+        'http_${r.statusCode}',
+        r.jsonString('message') ?? r.text,
+        r.jsonString('reason'),
+      );
     }
-    return (fallbackToken != null && fallbackToken.isNotEmpty)
-        ? fallbackToken
-        : null;
+    return r.jsonObject ?? <String, dynamic>{};
   }
 
-  Map<String, String> _headers(String token) => <String, String>{
-    'Authorization': 'Basic ${base64Encode(utf8.encode('hibiki:$token'))}',
-  };
-
-  (http.Client, bool) _clientFor(String baseUrl, {String? fingerprint}) {
-    final Uri? base = _parse(baseUrl);
-    final bool usePinned =
-        base != null &&
-        base.isScheme('https') &&
-        fingerprint != null &&
-        fingerprint.isNotEmpty;
-    if (usePinned) return (_pinnedClientFactory(fingerprint), true);
-    return (_httpClient, false);
-  }
-
-  static Uri? _parse(String baseUrl) {
-    try {
-      return Uri.parse(WebDavOps.normalizeUrl(baseUrl));
-    } catch (_) {
-      return null;
-    }
-  }
-
-  Uri? _uri(String baseUrl, String path) {
-    final Uri? base = _parse(baseUrl);
-    if (base == null) return null;
-    return base.replace(path: path, queryParameters: const <String, String>{});
-  }
+  /// client 产出的 target 自带 host 身份；调用方直接构造的老形状 target 按它的
+  /// 地址在配对清单里认那台 host（行带 hostId 时按 hostId 选路），清单里没有才
+  /// 退回按 URL 认。
+  Future<InterconnectHostRef> _hostOf(HostSubscriptionTarget target) async =>
+      target.host ??
+      interconnectHostRefForUrl(
+        await _repo.getFushiClientUrls(),
+        target.baseUrl,
+      ) ??
+      target.hostRef;
 }
