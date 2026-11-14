@@ -3,7 +3,7 @@
 /// ```
 /// subgen <视频或目录>... [--title T] [--no-ai] [--segmenter auto|moss|window]
 ///        [--moss-backend auto|cuda|vulkan|cpu] [--language ja|zh] [--suffix ja]
-///        [--regen-glossary]
+///        [--regen-glossary] [--no-frames]
 ///        [--glossary g.json] [--dry-run] [--season] [--out-dir D]
 ///        [--moss-cli audiocpp_cli] [--moss-model moss.gguf] [--json]
 /// ```
@@ -15,6 +15,8 @@
 ///   日文名），否则 `--title` 或目录名 + `fallbackSubtitleWorkKey`。
 /// - AI：配置文件 `ai:` 段那一家（`ServerAiSettings` 把字幕校对指给它）；没配又没给
 ///   `--no-ai` 时直接报错（69），不悄悄跳过校对。
+/// - 画面参考：配置 `ai:` 段写了 `images: true`（模型能看图）时，AI 校对每批附上
+///   对应时刻的视频画面；`--no-frames` 关掉。没写 `images: true` 时不发画面。
 /// - `--glossary`：导入 / 覆盖这部作品的专名表（JSON：`{"entries":[...]}` 或条目
 ///   数组），条目一律标成用户编辑过、资料指纹按当前资料算——之后不会被自动重新
 ///   生成覆盖（除非 `--regen-glossary`，那也会保留这些条目）。
@@ -42,6 +44,7 @@ import 'package:fushi_engine/ai/web_search.dart';
 import 'package:fushi_engine/media/media_extensions.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/ai_text_completer.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_draft.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_frame_reference.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_glossary.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_glossary_builder.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_glossary_drift_store.dart';
@@ -66,14 +69,14 @@ String get _usage => tr(
   '''
 subgen <视频或目录>... [--title T] [--no-ai] [--segmenter auto|moss|window]
        [--moss-backend auto|cuda|vulkan|cpu] [--language ja|zh] [--suffix ja]
-       [--regen-glossary] [--glossary g.json] [--dry-run] [--season] [--out-dir D]
-       [--moss-cli audiocpp_cli] [--moss-model moss.gguf] [--json]
+       [--regen-glossary] [--no-frames] [--glossary g.json] [--dry-run] [--season]
+       [--out-dir D] [--moss-cli audiocpp_cli] [--moss-model moss.gguf] [--json]
   目录 = 递归找视频、默认整季（已有字幕的集跳过）；AI 用配置 ai: 段那一家''',
   '''
 subgen <video-or-folder>... [--title T] [--no-ai] [--segmenter auto|moss|window]
        [--moss-backend auto|cuda|vulkan|cpu] [--language ja|zh] [--suffix ja]
-       [--regen-glossary] [--glossary g.json] [--dry-run] [--season] [--out-dir D]
-       [--moss-cli audiocpp_cli] [--moss-model moss.gguf] [--json]
+       [--regen-glossary] [--no-frames] [--glossary g.json] [--dry-run] [--season]
+       [--out-dir D] [--moss-cli audiocpp_cli] [--moss-model moss.gguf] [--json]
   A folder = find videos recursively, whole season by default (episodes that already have subtitles are skipped); AI uses the provider from the ai: section of the config''',
 );
 
@@ -88,6 +91,7 @@ class SubgenOptions {
     this.language = VideoSubtitleLanguage.japanese,
     String? suffix,
     this.regenerateGlossary = false,
+    this.frames = true,
     this.glossaryFile,
     this.dryRun = false,
     this.season = false,
@@ -108,6 +112,9 @@ class SubgenOptions {
   /// 输出后缀；没给时取 [language] 的标签。
   String get suffix => _suffix ?? language.tag;
   final bool regenerateGlossary;
+
+  /// 画面参考（`--no-frames` 关）：只在配置的提供商写了 `images: true` 时真的带画面。
+  final bool frames;
   final String? glossaryFile;
   final bool dryRun;
   final bool season;
@@ -182,6 +189,14 @@ void buildSubgenParser(ArgParser parser) {
       help: tr(
         '资料没变也重新生成专名表',
         'Regenerate the glossary even if the material is unchanged',
+      ),
+    )
+    ..addFlag(
+      'frames',
+      defaultsTo: true,
+      help: tr(
+        'AI 校对附上视频画面（要配置 ai: 段写 images: true；--no-frames 关）',
+        'Send video frames with AI proofreading (needs images: true in the ai: section; --no-frames turns it off)',
       ),
     )
     ..addOption(
@@ -260,6 +275,7 @@ SubgenOptions parseSubgenOptions(ArgResults command) {
     language: language,
     suffix: suffix,
     regenerateGlossary: command['regen-glossary'] as bool,
+    frames: command['frames'] as bool,
     glossaryFile: command['glossary'] as String?,
     dryRun: command['dry-run'] as bool,
     season: command['season'] as bool,
@@ -368,6 +384,7 @@ class SubgenDeps {
     this.resolveRecognizer = _resolveRecognizer,
     this.probeDurationMs = probeVideoDurationMs,
     this.completerFactory,
+    this.frameSource = ffmpegSubtitleFrameSource,
   });
 
   final Future<VideoSubtitleRecognizerChoice> Function(
@@ -383,6 +400,9 @@ class SubgenDeps {
 
   /// null = 用 [AiChatTextCompleter]（配置 `ai:` 段那一家）。
   final AiTextCompleter Function(AiProviderConfig provider)? completerFactory;
+
+  /// 画面参考的取帧。
+  final SubtitleFrameSource frameSource;
 }
 
 Future<VideoSubtitleRecognizerChoice> _resolveRecognizer(
@@ -609,6 +629,9 @@ Future<int> runSubgen(
               webKnowledge: web,
               proofreadConcurrency: provider.batchConcurrency,
               regenerateGlossary: options.regenerateGlossary,
+              frames: options.frames && provider.acceptsImages
+                  ? deps.frameSource
+                  : null,
             ),
       // 歌词补齐要 AI 认歌 / 对齐：没开 AI（含 dry-run）不装。
       lyricsFinder: provider == null || options.dryRun
@@ -618,7 +641,16 @@ Future<int> runSubgen(
     try {
       if (options.dryRun) {
         report.add(
-          await _dryRun(pipeline, group, work, options, deps, io, choice),
+          await _dryRun(
+            pipeline,
+            group,
+            work,
+            options,
+            deps,
+            io,
+            choice,
+            frames: options.frames && (provider?.acceptsImages ?? false),
+          ),
         );
         continue;
       }
@@ -868,8 +900,9 @@ Future<Map<String, Object?>> _dryRun(
   SubgenOptions options,
   SubgenDeps deps,
   CommandIo io,
-  VideoSubtitleRecognizerChoice choice,
-) async {
+  VideoSubtitleRecognizerChoice choice, {
+  required bool frames,
+}) async {
   final List<Map<String, Object?>> episodes = <Map<String, Object?>>[];
   final List<List<SubtitleDraftCue>> toProofread = <List<SubtitleDraftCue>>[];
   bool estimated = false;
@@ -920,11 +953,13 @@ Future<Map<String, Object?>> _dryRun(
       episodes: toProofread,
       title: options.language.workTitle(work),
       language: options.language,
+      frames: frames,
     );
     out['estimate'] = <String, Object?>{
       'batches': cost.batches,
       'inputTokens': cost.inputTokens,
       'outputTokens': cost.outputTokens,
+      if (frames) 'frames': cost.frames,
       'fromDuration': estimated,
     };
   }
@@ -1017,10 +1052,12 @@ void _printReport(
         tr(
           '  校对预估: ${estimate['batches']} 批，输入约 ${estimate['inputTokens']} token、'
               '输出约 ${estimate['outputTokens']} token'
+              '${estimate['frames'] != null ? '，附 ${estimate['frames']} 张画面（已计入输入）' : ''}'
               '${estimate['fromDuration'] == true ? '（部分按时长估）' : ''}；'
               '专名表每作品另计一次，写法统一只送可疑行',
           '  Proofreading estimate: ${estimate['batches']} batches, about ${estimate['inputTokens']} input tokens, '
               'about ${estimate['outputTokens']} output tokens'
+              '${estimate['frames'] != null ? ', with ${estimate['frames']} video frames (counted in the input)' : ''}'
               '${estimate['fromDuration'] == true ? ' (partly estimated from duration)' : ''}; '
               'the glossary is counted once per work, and consistency checks only send suspicious lines',
         ),

@@ -283,9 +283,13 @@ class _FailAfter implements AiTextCompleter {
   int _calls = 0;
 
   @override
-  Future<AiChatCompletion> complete(String prompt, {String stablePrefix = ''}) {
+  Future<AiChatCompletion> complete(
+    String prompt, {
+    String stablePrefix = '',
+    List<AiChatImage> images = const <AiChatImage>[],
+  }) {
     if (_calls++ < okCalls) {
-      return inner.complete(prompt, stablePrefix: stablePrefix);
+      return inner.complete(prompt, stablePrefix: stablePrefix, images: images);
     }
     throw const SubtitleAiRequestFailure('quota_exhausted');
   }

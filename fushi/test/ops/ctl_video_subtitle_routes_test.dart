@@ -25,6 +25,8 @@ void main() {
   late AppVideoSubtitleService service;
   late CtlVideoSubtitleHandlers handlers;
   late bool consented;
+  late bool framesPref;
+  late bool framesConsented;
   late bool videoModule;
   late List<VideoSubtitleSegmenterMode> resolvedModes;
   late List<MossBackendPreference> resolvedBackends;
@@ -35,6 +37,8 @@ void main() {
     settings = FakeVideoSubtitleSettings();
     store = MemoryGlossaryStore();
     consented = false;
+    framesPref = true;
+    framesConsented = false;
     videoModule = true;
     resolvedModes = <VideoSubtitleSegmenterMode>[];
     resolvedBackends = <MossBackendPreference>[];
@@ -61,11 +65,18 @@ void main() {
           },
       completerFactory: (AiProviderConfig _) =>
           (completer: FakeAiCompleter(answerAll), close: () {}),
+      // 测试里不起真 ffmpeg。
+      frameSource: (String videoPath, int atMs) async => null,
     );
     handlers = CtlVideoSubtitleHandlers(
       service: () => service,
       consented: () => consented,
-      acceptConsent: () async => consented = true,
+      acceptConsent: () async {
+        consented = true;
+        framesConsented = true;
+      },
+      defaultFrames: () => framesPref,
+      framesConsented: () => framesConsented,
       defaultSegmenter: () => VideoSubtitleSegmenterMode.window,
       defaultMossBackend: () => MossBackendPreference.cpu,
       videoModuleEnabled: () => videoModule,
@@ -155,6 +166,75 @@ void main() {
     expect(resolvedBackends, <MossBackendPreference>[
       MossBackendPreference.cpu,
     ], reason: '没给 mossBackend 用设置里的值');
+  });
+
+  group('画面参考（frames）', () {
+    Future<Map<String, Object?>> gen(Map<String, Object?> extra) async =>
+        (await handlers.generate(
+              post(<String, Object?>{'bookUid': 'a', 'wait': true, ...extra}),
+            ))!
+            as Map<String, Object?>;
+
+    test('首次同意（consentAi）的说明写明了画面：缺省取「参考画面」偏好，同意即带画面', () async {
+      settings.provider = testProvider().copyWith(acceptsImages: true);
+      final Map<String, Object?> json = await gen(<String, Object?>{
+        'consentAi': true,
+      });
+      expect(json['frames'], isTrue);
+      expect(framesConsented, isTrue);
+    });
+
+    test('在旧说明下同意过的用户：缺省不带画面（不打断老脚本）；明说 frames=true 要 consentAi', () async {
+      settings.provider = testProvider().copyWith(acceptsImages: true);
+      consented = true;
+      expect((await gen(const <String, Object?>{}))['frames'], isFalse);
+      expect(framesConsented, isFalse);
+      await expectLater(
+        handlers.generate(
+          post(<String, Object?>{'bookUid': 'a', 'frames': true}),
+        ),
+        failure(422, 'rejected'),
+      );
+      expect(
+        (await gen(<String, Object?>{
+          'frames': true,
+          'consentAi': true,
+        }))['frames'],
+        isTrue,
+      );
+      expect(framesConsented, isTrue);
+    });
+
+    test('frames=false、偏好关、提供商收不了图、--no-ai：都不带画面', () async {
+      consented = true;
+      framesConsented = true;
+      settings.provider = testProvider().copyWith(acceptsImages: true);
+      expect(
+        (await gen(const <String, Object?>{'frames': false}))['frames'],
+        isFalse,
+      );
+      framesPref = false;
+      expect((await gen(const <String, Object?>{}))['frames'], isFalse);
+      expect(
+        (await gen(const <String, Object?>{'frames': true}))['frames'],
+        isTrue,
+        reason: '显式参数压过偏好',
+      );
+      framesPref = true;
+      settings.provider = testProvider();
+      expect(
+        (await gen(const <String, Object?>{'frames': true}))['frames'],
+        isFalse,
+        reason: '提供商没开图片输入',
+      );
+      settings.provider = testProvider().copyWith(acceptsImages: true);
+      expect(
+        (await gen(const <String, Object?>{
+          'proofread': false,
+        })).containsKey('frames'),
+        isFalse,
+      );
+    });
   });
 
   test('--no-ai：不要提供商也不要同意；segmenter 显式值透传，非法值 400', () async {

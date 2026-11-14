@@ -2,6 +2,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/subtitle/video_subtitle_studio_sheet.dart';
 import 'package:fushi_audio/fushi_audio.dart' show AudioCue;
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_evidence.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_content_language.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -90,6 +91,58 @@ void main() {
     );
   });
 
+  group('videoSubtitleStudioEvidenceTrack', () {
+    test('cues land on video time with the track delay; language is detected '
+        'from the text', () {
+      final SubtitleEvidenceTrack track = videoSubtitleStudioEvidenceTrack(
+        cues: _secondary,
+        delayMs: -500,
+        label: 'player-secondary',
+      )!;
+      expect(track.label, 'player-secondary');
+      expect(track.language, 'en');
+      expect(track.kind, SubtitleEvidenceKind.text);
+      expect(track.cues, hasLength(8));
+      expect(track.cues[1].startMs, 1500);
+      expect(track.cues[1].endMs, 3000);
+      expect(track.cues[1].text, 'English 1');
+    });
+
+    test('empty lines are dropped, lines are sorted, and a track whose '
+        'language cannot be told is not handed over', () {
+      final SubtitleEvidenceTrack track = videoSubtitleStudioEvidenceTrack(
+        cues: <AudioCue>[
+          _cue(4000, 5000, 'second line of the track'),
+          _cue(2000, 3000, '   '),
+          _cue(0, 1000, 'first line of the track'),
+          _cue(6000, 6000, 'zero length'),
+        ],
+        delayMs: 0,
+        label: 'x',
+      )!;
+      expect(track.cues.map((SubtitleEvidenceCue c) => c.text), <String>[
+        'first line of the track',
+        'second line of the track',
+      ]);
+      expect(
+        videoSubtitleStudioEvidenceTrack(
+          cues: <AudioCue>[_cue(0, 1000, '…')],
+          delayMs: 0,
+          label: 'x',
+        ),
+        isNull,
+      );
+      expect(
+        videoSubtitleStudioEvidenceTrack(
+          cues: const <AudioCue>[],
+          delayMs: 0,
+          label: 'x',
+        ),
+        isNull,
+      );
+    });
+  });
+
   test('videoSubtitleStudioClock', () {
     expect(videoSubtitleStudioClock(65000), '1:05');
     expect(videoSubtitleStudioClock(3723000), '1:02:03');
@@ -105,6 +158,7 @@ void main() {
       List<AudioCue>? secondary,
       bool withRetime = true,
       ValueNotifier<int>? position,
+      VideoSubtitleStudioAiReference? ai,
     }) async {
       tester.view
         ..physicalSize = const Size(900, 1600)
@@ -144,6 +198,7 @@ void main() {
                           : null,
                       alignEmbedded: () async => calls.add('align'),
                     ),
+                    aiReference: ai,
                   ),
                   child: const Text('open'),
                 ),
@@ -156,6 +211,160 @@ void main() {
       await tester.pumpAndSettle();
       return calls;
     }
+
+    testWidgets('without an AI pipeline the "given to the AI" section is not '
+        'shown', (WidgetTester tester) async {
+      await pump(tester, language: SubtitleContentLanguage.japanese);
+      expect(byKey('video-subtitle-studio-ai-frames'), findsNothing);
+      expect(byKey('video-subtitle-studio-ai-subtitles'), findsNothing);
+    });
+
+    testWidgets('the frames switch reads and writes the shared setting', (
+      WidgetTester tester,
+    ) async {
+      bool frames = false;
+      final List<bool> asked = <bool>[];
+      await pump(
+        tester,
+        language: SubtitleContentLanguage.japanese,
+        ai: VideoSubtitleStudioAiReference(
+          framesEnabled: () => frames,
+          setFramesEnabled: (BuildContext context, bool value) async {
+            asked.add(value);
+            frames = value;
+          },
+          framesProblem: () => null,
+        ),
+      );
+      Switch control() => tester.widget<Switch>(
+        find.descendant(
+          of: byKey('video-subtitle-studio-ai-frames-switch'),
+          matching: find.byType(Switch),
+        ),
+      );
+      expect(control().value, isFalse);
+      await tester.ensureVisible(
+        byKey('video-subtitle-studio-ai-frames-switch'),
+      );
+      await tester.tap(byKey('video-subtitle-studio-ai-frames-switch'));
+      await tester.pumpAndSettle();
+      expect(asked, <bool>[true]);
+      expect(control().value, isTrue);
+      // 说明这两样什么时候会被用到。
+      expect(byKey('video-subtitle-studio-ai-scope'), findsOneWidget);
+    });
+
+    testWidgets('a declined consent leaves the frames switch off', (
+      WidgetTester tester,
+    ) async {
+      await pump(
+        tester,
+        language: SubtitleContentLanguage.japanese,
+        ai: VideoSubtitleStudioAiReference(
+          framesEnabled: () => false,
+          // 用户在说明弹窗里点了取消：实现不改值。
+          setFramesEnabled: (BuildContext context, bool value) async {},
+          framesProblem: () => null,
+        ),
+      );
+      await tester.ensureVisible(
+        byKey('video-subtitle-studio-ai-frames-switch'),
+      );
+      await tester.tap(byKey('video-subtitle-studio-ai-frames-switch'));
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<Switch>(
+              find.descendant(
+                of: byKey('video-subtitle-studio-ai-frames-switch'),
+                matching: find.byType(Switch),
+              ),
+            )
+            .value,
+        isFalse,
+      );
+    });
+
+    testWidgets('says why frames cannot reach the AI; a non-local video locks '
+        'the switch', (WidgetTester tester) async {
+      String hint() => tester
+          .widget<Text>(byKey('video-subtitle-studio-ai-frames-hint'))
+          .data!;
+      VideoSubtitleStudioAiReference ai(
+        VideoSubtitleStudioFramesProblem? problem,
+        List<bool> asked,
+      ) => VideoSubtitleStudioAiReference(
+        framesEnabled: () => true,
+        setFramesEnabled: (BuildContext context, bool value) async =>
+            asked.add(value),
+        framesProblem: () => problem,
+      );
+      final List<bool> asked = <bool>[];
+      await pump(
+        tester,
+        language: SubtitleContentLanguage.japanese,
+        ai: ai(null, asked),
+      );
+      final String normal = hint();
+
+      await pump(
+        tester,
+        language: SubtitleContentLanguage.japanese,
+        ai: ai(VideoSubtitleStudioFramesProblem.providerRejectsImages, asked),
+      );
+      final String rejects = hint();
+      expect(rejects, isNot(normal));
+
+      await pump(
+        tester,
+        language: SubtitleContentLanguage.japanese,
+        ai: ai(VideoSubtitleStudioFramesProblem.noProvider, asked),
+      );
+      expect(hint(), isNot(normal));
+      expect(hint(), isNot(rejects));
+
+      await pump(
+        tester,
+        language: SubtitleContentLanguage.japanese,
+        ai: ai(VideoSubtitleStudioFramesProblem.notLocalFile, asked),
+      );
+      expect(hint(), isNot(normal));
+      await tester.ensureVisible(
+        byKey('video-subtitle-studio-ai-frames-switch'),
+      );
+      await tester.tap(
+        byKey('video-subtitle-studio-ai-frames-switch'),
+        warnIfMissed: false,
+      );
+      await tester.pumpAndSettle();
+      expect(asked, isEmpty);
+    });
+
+    testWidgets('the other-language row names the secondary subtitle being '
+        'handed over, or says what is used automatically', (
+      WidgetTester tester,
+    ) async {
+      String hint() => tester
+          .widget<Text>(byKey('video-subtitle-studio-ai-subtitles-hint'))
+          .data!;
+      VideoSubtitleStudioAiReference ai() => VideoSubtitleStudioAiReference(
+        framesEnabled: () => false,
+        setFramesEnabled: (BuildContext context, bool value) async {},
+        framesProblem: () => null,
+      );
+      await pump(tester, language: SubtitleContentLanguage.japanese, ai: ai());
+      final String withSecondary = hint();
+      expect(withSecondary, contains('English'));
+
+      await pump(
+        tester,
+        language: SubtitleContentLanguage.japanese,
+        secondary: const <AudioCue>[],
+        ai: ai(),
+      );
+      expect(hint(), isNot(withSecondary));
+      expect(hint(), isNot(contains('English')));
+    });
 
     testWidgets('reference shows the language, lines around the playhead and '
         'the other-language subtitle', (WidgetTester tester) async {

@@ -120,9 +120,14 @@ class RemoteVideoSubtitleOptions {
     this.proofread = false,
     this.segmenter = VideoSubtitleSegmenterMode.auto,
     this.mossBackend = MossBackendPreference.auto,
+    this.frames = false,
   });
 
   final bool proofread;
+
+  /// 画面参考：host 的 AI 校对每批附上它那边这个视频的画面（host 的提供商能收图时
+  /// 才生效；老 host 不认这个参数，照常纯文字校对）。
+  final bool frames;
   final VideoSubtitleSegmenterMode segmenter;
   final MossBackendPreference mossBackend;
 }
@@ -374,6 +379,7 @@ class RemoteVideoSubtitleService {
         'proofread': job.options.proofread,
         'segmenter': job.options.segmenter.name,
         'mossBackend': job.options.mossBackend.name,
+        if (job.options.proofread && job.options.frames) 'frames': true,
       },
       outputDir: out,
     );

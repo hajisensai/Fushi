@@ -39,6 +39,7 @@ import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_draft.d
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_evidence.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_evidence_fusion.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_evidence_loader.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_frame_reference.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_song_lyrics.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_glossary.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_glossary_builder.dart';
@@ -210,11 +211,17 @@ class VideoSubtitleAiConfig {
     this.webKnowledge,
     this.proofreadConcurrency = 4,
     this.regenerateGlossary = false,
+    this.frames,
   });
 
   final AiTextCompleter completer;
   final SubtitleGlossaryStore glossaryStore;
   final WebKnowledgeClient? webKnowledge;
+
+  /// 画面参考的取帧来源：非 null = S3 每批附上对应时刻的画面
+  /// （`subtitle_frame_reference.dart`）。**装配方只在提供商能收图
+  /// （`AiProviderConfig.acceptsImages`）且用户开了画面参考时才给**；null = 纯文字校对。
+  final SubtitleFrameSource? frames;
 
   /// S3 同时在途的批数（提供商 rpm 由 `AiChatClient` 限频器把关）。
   final int proofreadConcurrency;
@@ -573,6 +580,15 @@ class VideoSubtitlePipeline {
         state.evidenceFingerprint = fingerprint;
         await state.save(dir);
       }
+      // 画面参考开关变了：看过画面与没看过画面的校对结果不能混用，从 S3 起作废。
+      // 只在开着 AI 时比——关 AI 跑一遍不应清掉花钱换来的批缓存。
+      final VideoSubtitleAiConfig? aiForFrames = ai;
+      if (aiForFrames != null &&
+          (state.frames ?? false) != (aiForFrames.frames != null)) {
+        await resetVideoSubtitleJobFrom(dir, VideoSubtitleStage.proofread);
+        state.frames = aiForFrames.frames != null;
+        await state.save(dir);
+      }
       final SubtitleEvidenceIndex index = SubtitleEvidenceIndex(
         tracks,
         targetLanguage: _targetLanguage,
@@ -616,6 +632,7 @@ class VideoSubtitlePipeline {
         proofread: aiConfig != null,
         evidence: e.state.evidenceFingerprint ?? '',
         lyrics: _lyricsEnabled,
+        frames: aiConfig?.frames != null,
       );
       if (done == null) {
         pending.add(e);
@@ -686,6 +703,13 @@ class VideoSubtitlePipeline {
               p.join(e.dir.path, VideoSubtitleJobFiles.proofreadDir),
             ),
             evidence: e.evidenceIndex,
+            frames: switch (aiConfig.frames) {
+              null => null,
+              final SubtitleFrameSource source => SubtitleProofreadFrames(
+                videoPath: e.video,
+                source: source,
+              ),
+            },
             cancel: cancel,
             onProgress: (int done, int total) => report(
               VideoSubtitleStage.proofread,
@@ -819,6 +843,8 @@ class VideoSubtitlePipeline {
             // 用了哪份证据、有没有补歌词：证据变了 / 后装上歌词后端，旧 final 不算完成。
             'evidence': e.state.evidenceFingerprint ?? '',
             'lyrics': _lyricsEnabled,
+            // 校对时有没有看画面：开关变了，旧 final 不算完成。
+            if (aiConfig?.frames != null) 'frames': true,
           }),
         );
         usage.addTally(e.usage);
@@ -1120,16 +1146,19 @@ class VideoSubtitlePipeline {
     required bool proofread,
     required String evidence,
     required bool lyrics,
+    required bool frames,
   }) {
     if (!f.existsSync()) return null;
     try {
       final Object? decoded = jsonDecode(f.readAsStringSync());
       if (decoded is! Map) return null;
-      // 改版前的 final 没记证据 / 歌词：按「无证据、无歌词」认，免得升级后整季重做。
+      // 改版前的 final 没记证据 / 歌词 / 画面：按「无证据、无歌词、没看画面」认，免得
+      // 升级后整季重做。
       if (decoded['recognizer'] != recognizerId ||
           decoded['proofread'] != proofread ||
           (decoded['evidence'] ?? '') != evidence ||
-          (decoded['lyrics'] ?? false) != lyrics) {
+          (decoded['lyrics'] ?? false) != lyrics ||
+          (decoded['frames'] ?? false) != frames) {
         return null;
       }
       final Object? u = decoded['usage'];
@@ -1212,7 +1241,8 @@ class _JobState {
         ..videoPath = decoded['videoPath'] as String?
         ..recognizerId = decoded['recognizer'] as String?
         ..durationMs = (decoded['durationMs'] as num?)?.round()
-        ..evidenceFingerprint = decoded['evidence'] as String?;
+        ..evidenceFingerprint = decoded['evidence'] as String?
+        ..frames = decoded['frames'] as bool?;
       final Object? exports = decoded['exports'];
       if (exports is Map) {
         exports.forEach((Object? k, Object? v) {
@@ -1231,6 +1261,9 @@ class _JobState {
 
   /// 上一次 S3 用的证据指纹（[subtitleEvidenceFingerprint]；空 = 无证据）。
   String? evidenceFingerprint;
+
+  /// 上一次 S3 有没有带画面参考（null = 改版前的任务 / 没开过 AI，按没带认）。
+  bool? frames;
   final Map<String, String> exports = <String, String>{};
 
   /// [path] 现在的内容是不是本管线上次写进去的那份。
@@ -1249,6 +1282,7 @@ class _JobState {
       'recognizer': recognizerId,
       'durationMs': durationMs,
       if (evidenceFingerprint != null) 'evidence': evidenceFingerprint,
+      if (frames != null) 'frames': frames,
       'exports': exports,
     }),
   );
@@ -1276,10 +1310,14 @@ class SubtitleProofreadCostEstimate {
     required this.promptChars,
     required this.inputTokens,
     required this.outputTokens,
+    this.frames = 0,
   });
 
   final int batches;
   final int promptChars;
+
+  /// 画面参考要发的图片张数（没开 = 0）；它们的 token 已算进 [inputTokens]。
+  final int frames;
 
   /// 全部输入 token（未区分缓存：缓存命中率取决于提供商与是否开了提示缓存）。
   final int inputTokens;
@@ -1288,6 +1326,8 @@ class SubtitleProofreadCostEstimate {
 
 /// 按待校对的字幕稿估 S3 的输入 / 输出 token：逐批重建真实提示词量字符，再乘标定
 /// 系数。[glossary] 为 null 时按 [assumedGlossaryEntries] 条、每条 40 字估专名表。
+/// [frames] = 开了画面参考：按 [planSubtitleReferenceFrames] 实际会取的张数、每张
+/// [kSubtitleReferenceFrameTokens] 个输入 token 加进去。
 SubtitleProofreadCostEstimate estimateSubtitleProofreadCost({
   required List<List<SubtitleDraftCue>> episodes,
   String title = '',
@@ -1295,6 +1335,7 @@ SubtitleProofreadCostEstimate estimateSubtitleProofreadCost({
   int assumedGlossaryEntries = 40,
   int batchSize = 30,
   VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+  bool frames = false,
 }) {
   final String glossaryText = glossary == null
       ? List<String>.filled(assumedGlossaryEntries, '人' * 40).join('\n')
@@ -1302,12 +1343,16 @@ SubtitleProofreadCostEstimate estimateSubtitleProofreadCost({
   int batches = 0;
   int promptChars = 0;
   int replyChars = 0;
+  int frameCount = 0;
   for (final List<SubtitleDraftCue> cues in episodes) {
     for (int lo = 0; lo < cues.length; lo += batchSize) {
       final int hi = lo + batchSize > cues.length
           ? cues.length
           : lo + batchSize;
       batches++;
+      if (frames) {
+        frameCount += planSubtitleReferenceFrames(cues, lo, hi).length;
+      }
       promptChars += buildProofreadBatchPrompt(
         cues: cues,
         lo: lo,
@@ -1324,7 +1369,10 @@ SubtitleProofreadCostEstimate estimateSubtitleProofreadCost({
   return SubtitleProofreadCostEstimate(
     batches: batches,
     promptChars: promptChars,
-    inputTokens: (promptChars * kSubtitleProofreadInputTokensPerChar).round(),
+    inputTokens:
+        (promptChars * kSubtitleProofreadInputTokensPerChar).round() +
+        frameCount * kSubtitleReferenceFrameTokens,
     outputTokens: (replyChars * kSubtitleProofreadOutputTokensPerChar).round(),
+    frames: frameCount,
   );
 }
