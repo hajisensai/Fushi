@@ -22,3 +22,4 @@
         softpal_.onModuleLoaded(entry.szModule);
         system4_.onModuleLoaded(entry.szModule);
         nitroplus_.onModuleLoaded(entry.szModule);
+        entisgls_.onModuleLoaded(entry.szModule);
