@@ -7,18 +7,24 @@
 //! - 远端操作（transport.rs）走同一条投影与重放路径；按设备连续前缀、因果满足才应用。
 //! - 卡片调度状态由重放推出（sync2::replay），写回投影行的 `res`。
 //!
-//! 所有命令在写连接上的一个 SAVEPOINT 里做：Dart 的 Drift 事务开着时嵌在里面，没开时自成事务。
+//! 所有命令在写连接上的一个 SAVEPOINT 里做：写连接上没有别人开着的事务（Drift 执行器只读），它自成一笔事务；
+//! 只有旧库搬迁那笔跨调用的事务开着时是嵌在里面。
 
+pub(crate) mod change;
+pub(crate) mod changing;
 pub(crate) mod channel;
 pub mod config;
+pub(crate) mod deck_delete;
 pub(crate) mod dedup;
 pub(crate) mod devices;
 pub mod digest;
 pub(crate) mod former;
 pub(crate) mod heal;
 pub mod media;
+pub(crate) mod merge_notes;
 pub(crate) mod min_reader;
 pub(crate) mod mvr;
+pub(crate) mod note_fields_if;
 pub mod relay;
 pub(crate) mod sched_local;
 pub mod schema;
@@ -28,6 +34,7 @@ pub(crate) mod snapshots;
 pub mod timeline;
 pub mod transport;
 pub(crate) mod trust;
+pub(crate) mod undo_check;
 
 use std::collections::BTreeSet;
 use std::sync::Arc;
@@ -50,7 +57,7 @@ pub(crate) fn sql<E: std::fmt::Display>(e: E) -> String {
     e.to_string()
 }
 
-/// 在 SAVEPOINT 里跑（外面有 Drift 事务就嵌套，没有就自成事务）。
+/// 在 SAVEPOINT 里跑（外面有事务——旧库搬迁、调用方自己的 SAVEPOINT——就嵌套，没有就自成事务）。
 pub(crate) fn in_savepoint<T>(
     conn: &Connection,
     f: impl FnOnce(&Connection) -> Result<T, String>,
@@ -87,8 +94,6 @@ pub(crate) mod test_panic {
 
     /// [super::in_savepoint]：写完、RELEASE 之前。
     pub(crate) const BEFORE_RELEASE: &str = "in_savepoint.before_release";
-    /// `SrsCore::exec`：语句跑完、记下 Drift 事务状态之前。
-    pub(crate) const AFTER_EXEC: &str = "exec.after_statement";
 
     thread_local! {
         static ARMED: Cell<Option<&'static str>> = const { Cell::new(None) };
@@ -2166,6 +2171,23 @@ pub(crate) fn append_local_cached(
     Ok(op)
 }
 
+/// 本机刚写下的一条字段修改（不含整列表 `tags`：它已展开成 OR-Set 的标签操作）记进命令结果的 `edits`：
+/// `[种类, 实体, 字段键, 设备, 序号, 落库的值]`。编辑类撤销据这个 dot 判断之后有没有被别人动过（undo_check.rs）。
+fn note_written_edit(out: &mut Vec<Value>, op: &Op, b: &Body) {
+    if let Body::Edit(e) = b {
+        if e.legacy.is_none() {
+            out.push(json!([
+                e.kind.wire(),
+                e.entity.text(),
+                e.key,
+                op.id.device.text(),
+                op.id.seq,
+                serde_json::from_str::<Value>(&e.value).unwrap_or(Value::Null),
+            ]));
+        }
+    }
+}
+
 /// [SrsCore::sync2_identity] 的结果。
 fn identity_json(l: &Local) -> Value {
     json!({
@@ -2182,7 +2204,7 @@ impl SrsCore {
     /// 本机身份（没有就建）。返回 `{device, collection, nextSeq, migrated, name}`。
     ///
     /// 身份已在（每轮同步、开库都走这里，绝大多数情况）只是一次读：走读连接的快照，不排写锁
-    /// （[SrsCore::read_visible]；Drift 事务开着时照旧在写连接上读）。只有还没有身份时才进写连接，
+    /// （[SrsCore::read_visible]）。只有还没有身份时才进写连接，
     /// 在 SAVEPOINT 里重查一遍再建（两个调用方同时看到「没有」，后进写锁的那个读到先建的那份，不会建两份）。
     pub fn sync2_identity(&self, profile: &str, now: i64) -> Result<Value, String> {
         if let Some(l) = self.read_visible(|c| Local::load(c, profile))? {
@@ -2201,78 +2223,18 @@ impl SrsCore {
     /// 本机写入（设计 §6.2 第 1 步之前：复习立即本地落盘）。[input] 是 JSON 数组，每项
     /// `{"e": <SrsEvent JSON>, "note": <日志卡片的笔记 ID | null>, "intent"?: "answer"}`。返回
     /// `{"marks":{..见 [Marks::to_json]}, "landed":[每项是否落了], "replayed":[...]}`。
+    ///
+    /// 不带旧版时钟（[apply_local_on] 的 `legacy` 为 None）：内核自己的测试 / 基准用。宿主的 `apply` 命令走分发器
+    /// （store/ffi.rs `local_write`），那里必带。
     pub fn sync2_apply_local(
         &self,
         profile: &str,
         now: i64,
         input: &str,
     ) -> Result<String, String> {
-        let items: Vec<Value> =
-            serde_json::from_str(input).map_err(|e| format!("bad apply input: {e}"))?;
+        let items = parse_apply_input(input)?;
         let w = self.writer()?;
-        in_savepoint(&w, |c| {
-            let mut local = match Local::load(c, profile)? {
-                Some(l) => l,
-                None => Local::create(c, profile, now)?,
-            };
-            let mut applied = applied_vv(c, profile)?;
-            let mut t = Touched {
-                log_no_delete: Some(Default::default()),
-                ..Touched::default()
-            };
-            let mut deps_row: Option<(Vec<u8>, i64)> = None;
-            let mut landed = Vec::with_capacity(items.len());
-            // 牌组树（配置快照用）：这一批里落过非日志操作（可能改了配置 / 归属）就重读。
-            let mut tree: Option<config::DeckTree> = None;
-            for it in &items {
-                let stamped = it["stamped"] == Value::Bool(true);
-                let body = body_of_event(
-                    &it["e"],
-                    it["note"].as_str(),
-                    stamped,
-                    it["server"].as_i64(),
-                )?;
-                // 本机作答显式声明意图（Dart `answerAndStudy`），不从日志形状反推；不带的（导入、恢复、并入的旧形态
-                // 日志）照旧按 [infer_intent]。手动排程操作走 `sched`（sched_local.rs）。
-                let body = match (body, it["intent"].as_str()) {
-                    (Body::Log(mut l), Some("answer")) => {
-                        l.intent = Intent::Answer;
-                        Body::Log(l)
-                    }
-                    (_, Some(other)) => return Err(format!("apply: unknown intent {other}")),
-                    (b, None) => b,
-                };
-                let body = stamp_local_config(c, profile, body, stamped, &mut tree)?;
-                let before = t.marks.landed;
-                let bodies = expand_tags(c, profile, body)?;
-                for b in &bodies {
-                    let op =
-                        append_local_cached(c, &mut local, &mut applied, b, now, &mut deps_row)?;
-                    if !matches!(b, Body::Log(_)) {
-                        // 非日志操作可能写下删除：批内「没有删除」的记忆作废（[Touched::log_no_delete]）。
-                        if let Some(k) = t.log_no_delete.as_mut() {
-                            k.clear();
-                        }
-                    }
-                    // 载荷刚由 [b] 编码而来，直接投 [b]，不再把它解码一遍（与 [project] 解出的相同）。
-                    debug_assert_eq!(op.body().ok().as_ref(), Some(b));
-                    project_body(c, profile, &op, b.clone(), now, true, &mut t)?;
-                }
-                landed.push(t.marks.landed > before);
-            }
-            local.save(c)?;
-            let replayed = replay_touched(c, &t)?;
-            Ok(json!({
-                "marks": t.marks.to_json(),
-                "landed": landed,
-                "replayed": replayed,
-                "diagnostics": t.diagnostics,
-                "changed": t.entities_changed.iter().map(|(k, e)| json!([k, e])).collect::<Vec<_>>(),
-                "purged": t.purged.iter().map(|(k, e)| json!([k, e])).collect::<Vec<_>>(),
-                "nextSeq": local.next_seq,
-            })
-            .to_string())
-        })
+        in_savepoint(&w, |c| apply_local_on(c, profile, now, &items, None)).map(|v| v.to_string())
     }
 
     /// 旧库并入（计划 P3.2；拍板 5）：把本 profile 现有的身份记录、修改记录、日志、不认识的事件逐条包成
@@ -2430,26 +2392,7 @@ impl SrsCore {
         bodies: Vec<Body>,
     ) -> Result<Value, String> {
         let w = self.writer()?;
-        in_savepoint(&w, |c| {
-            let mut local = match Local::load(c, profile)? {
-                Some(l) => l,
-                None => Local::create(c, profile, now)?,
-            };
-            let mut applied = applied_vv(c, profile)?;
-            let mut t = Touched::default();
-            for b in &bodies {
-                let op = append_local(c, &mut local, &mut applied, b, now)?;
-                project(c, profile, &op, now, true, &mut t)?;
-            }
-            local.save(c)?;
-            let replayed = replay_touched(c, &t)?;
-            Ok(json!({
-                "marks": t.marks.to_json(),
-                "replayed": replayed,
-                "changed": t.entities_changed.iter().map(|(k, e)| json!([k, e])).collect::<Vec<_>>(),
-                "purged": t.purged.iter().map(|(k, e)| json!([k, e])).collect::<Vec<_>>(),
-            }))
-        })
+        in_savepoint(&w, |c| append_on(c, profile, now, &bodies))
     }
 
     /// 冲突中心（设计 §5.3）：待用户定的破坏性并发。每项
@@ -2489,6 +2432,17 @@ impl SrsCore {
         delete: bool,
         now: i64,
     ) -> Result<Value, String> {
+        let (kind, entity) = self.sync2_conflict_target(profile, conflict)?;
+        self.sync2_append(profile, now, resolve_bodies(kind, &entity, delete, now))
+    }
+
+    /// 冲突 [conflict] 的实体（[SrsCore::sync2_resolve] 的预读）：在读连接上读已提交的冲突表，写锁外做。命令本身还没写过
+    /// 任何东西，读不到「本命令内未提交」的行是对的；冲突行只由投影写入、只在写锁里改，读到的就是写锁里会看到的。
+    pub(crate) fn sync2_conflict_target(
+        &self,
+        profile: &str,
+        conflict: &str,
+    ) -> Result<(EntKind, String), String> {
         let (kind, entity): (String, String) = {
             let r = self.reader()?;
             r.query_row(
@@ -2498,21 +2452,10 @@ impl SrsCore {
             )
             .map_err(|e| format!("no such conflict {conflict}: {e}"))?
         };
-        let kind = EntKind::parse(&kind).ok_or("bad conflict entity kind")?;
-        let value = if delete { json!(now) } else { Value::Null };
-        self.sync2_append(
-            profile,
-            now,
-            vec![Body::Edit(EditBody {
-                kind,
-                entity: Key::of(&entity),
-                key: "deleted".into(),
-                value: canonical(&value),
-                machine: false,
-                ts: 0,
-                legacy: None,
-            })],
-        )
+        Ok((
+            EntKind::parse(&kind).ok_or("bad conflict entity kind")?,
+            entity,
+        ))
     }
 
     /// 彻底清除（设计 §10.5）：二次确认由界面做。先删除（保证实体不可见），再追加清除操作。
@@ -2523,26 +2466,7 @@ impl SrsCore {
         entity: &str,
         now: i64,
     ) -> Result<Value, String> {
-        let k = EntKind::parse(kind).ok_or("bad entity kind")?;
-        self.sync2_append(
-            profile,
-            now,
-            vec![
-                Body::Edit(EditBody {
-                    kind: k,
-                    entity: Key::of(entity),
-                    key: "deleted".into(),
-                    value: canonical(&json!(now)),
-                    machine: false,
-                    ts: 0,
-                    legacy: None,
-                }),
-                Body::Purge {
-                    kind: k,
-                    entity: Key::of(entity),
-                },
-            ],
-        )
+        self.sync2_append(profile, now, purge_bodies(kind, entity, now)?)
     }
 
     /// 自动 / 手动还原点（设计 §10.2）。
@@ -2553,14 +2477,7 @@ impl SrsCore {
         reason: &str,
         now: i64,
     ) -> Result<Value, String> {
-        self.sync2_append(
-            profile,
-            now,
-            vec![Body::Checkpoint {
-                name: name.to_owned(),
-                reason: reason.to_owned(),
-            }],
-        )
+        self.sync2_append(profile, now, checkpoint_bodies(name, reason))
     }
 
     /// 全量重放一个 profile 的全部卡（参数整体变更、自检用；设计 §3.4 `rebuild_all` 的调度部分）。
@@ -2607,9 +2524,15 @@ mod tests_cache_pending;
 #[cfg(test)]
 mod tests_causal;
 #[cfg(test)]
+mod tests_change;
+#[cfg(test)]
+mod tests_changing;
+#[cfg(test)]
 mod tests_channel;
 #[cfg(test)]
 mod tests_copy_migration_bench;
+#[cfg(test)]
+mod tests_deck_delete;
 #[cfg(test)]
 mod tests_dedup;
 #[cfg(test)]
@@ -2627,7 +2550,13 @@ mod tests_head_gap;
 #[cfg(test)]
 mod tests_heal;
 #[cfg(test)]
+mod tests_local_write;
+#[cfg(test)]
+mod tests_merge_notes;
+#[cfg(test)]
 mod tests_migrate_dedup;
+#[cfg(test)]
+mod tests_note_fields_if;
 #[cfg(test)]
 mod tests_perf;
 #[cfg(test)]
@@ -2640,6 +2569,8 @@ mod tests_sched_local;
 mod tests_synthetic_ctx;
 #[cfg(test)]
 mod tests_trust;
+#[cfg(test)]
+mod tests_undo_check;
 
 impl SrsCore {
     /// 评分预览（原 Dart `SrsCardOps.preview` 的 v2 实现）：在这张卡的归属组重放到此刻的状态上，用当前牌组配置与
@@ -2647,7 +2578,7 @@ impl SrsCore {
     /// （与写进日志的 utcOff / rollover 相同）。
     ///
     /// 只读（牌组树、血统日志、修改记录全是 SELECT，重放与 FSRS 是纯计算）：走读连接的快照，复习时每张卡的
-    /// 预览不排在同步投递 / 缓存刷新这类长写后面（[SrsCore::read_visible]；Drift 事务开着时照旧在写连接上）。
+    /// 预览不排在同步投递 / 缓存刷新这类长写后面（[SrsCore::read_visible]）。
     pub fn sync2_preview(
         &self,
         profile: &str,
@@ -2775,4 +2706,354 @@ fn expand_tags(c: &Connection, profile: &str, body: Body) -> Result<Vec<Body>, S
         });
     }
     Ok(out)
+}
+
+/// `apply` 的输入（[SrsCore::sync2_apply_local]）：JSON 数组。在写锁外解析。
+pub(crate) fn parse_apply_input(input: &str) -> Result<Vec<Value>, String> {
+    serde_json::from_str(input).map_err(|e| format!("bad apply input: {e}"))
+}
+
+/// `apply` 的旧版时钟部分（store/legacy_clock.rs；宿主的 `apply` 命令必带，见 store/ffi.rs `local_write_body`）。
+///
+/// 输入项的 `clk` 是这一项对旧版时钟的指令（与以前 Dart `SrsDbStore` 发命令前在内存时钟上做的逐值相同）：
+/// - `"r"`：这一项带着来源给的 HLC（导入的日志 / 记录、并入的外来事件）——按收到对端事件的规则推进（先钳位，
+///   `S(e)` = 这一项的 `server`，此刻 = [recv_now]）。**整批的 `"r"` 先于任何 `"t"` 做**（Dart 旧 `_receiveAll` 在
+///   `_finalize` 之前）。
+/// - `"t"`：本机此刻新写的一项——时钟按 [tick_now] 走一步；是日志的话这一步的值就是它的 HLC（写进 `x.hlc`，输入里
+///   不带），是修改记录的话只推进时钟（修改记录的 HLC 是操作的，见 [edit_row]）。
+/// - 不带：不动时钟（身份记录、不认识的事件）。
+pub(crate) struct LegacyApply<'a> {
+    /// 宿主的设备 ID（Dart `SrsDbStore.deviceId`）：行里还没有 `writerId` 时拼缺省写入者。
+    pub device: &'a str,
+    pub recv_now: Option<i64>,
+    pub tick_now: Option<i64>,
+    /// 回包带 `stamps`（与输入等长）：日志 = 它的 HLC（字符串）；修改记录 = 落库用的投影行（[edit_row]，Dart
+    /// `SrsFieldEdit.toJson` 的线格式；标签写入取展开出的最后一条操作的身份，展开为空 = null）；其余 = null。
+    pub stamps: bool,
+}
+
+/// 一项的 `clk`（见 [LegacyApply]）。
+fn clk_of(it: &Value) -> Result<Option<char>, String> {
+    match it.get("clk").and_then(Value::as_str) {
+        None => Ok(None),
+        Some("r") => Ok(Some('r')),
+        Some("t") => Ok(Some('t')),
+        Some(other) => Err(format!("apply: unknown clk {other}")),
+    }
+}
+
+/// [SrsCore::sync2_apply_local] 的本体：在调用方持着的写连接、调用方开的 SAVEPOINT 里做（不自己取锁），分发器把它与
+/// 缓存刷新、排队、本机状态行合进同一个 SAVEPOINT（store/ffi.rs `local_write`）。[legacy]：旧版时钟（见
+/// [LegacyApply]）；None 时输入里不得有 `clk`。
+pub(crate) fn apply_local_on(
+    c: &Connection,
+    profile: &str,
+    now: i64,
+    items: &[Value],
+    legacy: Option<&LegacyApply<'_>>,
+) -> Result<Value, String> {
+    use crate::store::legacy_clock::{LegacyClock, LegacyHlc};
+    let mut clock = match legacy {
+        Some(l) => Some(LegacyClock::load(c, profile, l.device)?),
+        None => None,
+    };
+    // 先收：整批带来源 HLC 的项按序推进时钟（事件类别与 Dart 旧 `_receiveAll` 相同：修改记录与日志）。
+    for it in items {
+        if clk_of(it)? != Some('r') {
+            continue;
+        }
+        let (Some(clock), Some(l)) = (clock.as_mut(), legacy) else {
+            return Err("apply: clk without legacyDevice".into());
+        };
+        let ev = &it["e"];
+        if !matches!(ev["t"].as_str(), Some("edit" | "log")) {
+            continue;
+        }
+        let Some(h) = ev["x"].get("hlc").and_then(Value::as_str) else {
+            continue;
+        };
+        clock.receive(
+            &LegacyHlc::parse(h)?,
+            it["server"].as_i64(),
+            l.recv_now.ok_or("apply: missing recvNow")?,
+        );
+    }
+    let want_stamps = legacy.is_some_and(|l| l.stamps);
+    let mut stamps: Vec<Value> = Vec::with_capacity(if want_stamps { items.len() } else { 0 });
+    let mut local = match Local::load(c, profile)? {
+        Some(l) => l,
+        None => Local::create(c, profile, now)?,
+    };
+    let mut applied = applied_vv(c, profile)?;
+    let mut t = Touched {
+        log_no_delete: Some(Default::default()),
+        ..Touched::default()
+    };
+    let mut deps_row: Option<(Vec<u8>, i64)> = None;
+    let mut landed = Vec::with_capacity(items.len());
+    let mut edits: Vec<Value> = Vec::new();
+    // 牌组树（配置快照用）：这一批里落过非日志操作（可能改了配置 / 归属）就重读。
+    let mut tree: Option<config::DeckTree> = None;
+    for it in items {
+        let stamped = it["stamped"] == Value::Bool(true);
+        // 本机此刻新写的一项：时钟走一步；日志的 HLC 就是这一步的值。
+        let ticked: Option<Value> = if clk_of(it)? == Some('t') {
+            let (Some(clock), Some(l)) = (clock.as_mut(), legacy) else {
+                return Err("apply: clk without legacyDevice".into());
+            };
+            if stamped {
+                return Err("apply: a stamped event cannot tick the clock".into());
+            }
+            let hlc = clock.tick(l.tick_now.ok_or("apply: missing tickNow")?);
+            if it["e"]["t"].as_str() == Some("log") {
+                let mut ev = it["e"].clone();
+                ev["x"]["hlc"] = json!(hlc);
+                Some(ev)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        let body = body_of_event(
+            ticked.as_ref().unwrap_or(&it["e"]),
+            it["note"].as_str(),
+            stamped,
+            it["server"].as_i64(),
+        )?;
+        // 本机作答显式声明意图（Dart `answerAndStudy`），不从日志形状反推；不带的（导入、恢复、并入的旧形态
+        // 日志）照旧按 [infer_intent]。手动排程操作走 `sched`（sched_local.rs）。
+        let body = match (body, it["intent"].as_str()) {
+            (Body::Log(mut l), Some("answer")) => {
+                l.intent = Intent::Answer;
+                Body::Log(l)
+            }
+            (_, Some(other)) => return Err(format!("apply: unknown intent {other}")),
+            (b, None) => b,
+        };
+        let body = stamp_local_config(c, profile, body, stamped, &mut tree)?;
+        let before = t.marks.landed;
+        // 戳（见 [LegacyApply::stamps]）：日志的 HLC 现在就有；修改记录的等操作追加出来再取。
+        let mut stamp = Value::Null;
+        let mut stamp_edit: Option<EditBody> = None;
+        if want_stamps {
+            match &body {
+                Body::Log(l) => stamp = json!(l.legacy_hlc),
+                Body::Edit(e) => stamp_edit = Some(e.clone()),
+                _ => {}
+            }
+        }
+        let bodies = expand_tags(c, profile, body)?;
+        for b in &bodies {
+            let op = append_local_cached(c, &mut local, &mut applied, b, now, &mut deps_row)?;
+            if let Some(e) = &stamp_edit {
+                // 每条都算、留最后一条：普通修改记录只有一条操作；标签写入展开成若干条，取最后一条的身份。
+                stamp = edit_row(c, profile, &op, e)?.1;
+            }
+            if !matches!(b, Body::Log(_)) {
+                // 非日志操作可能写下删除：批内「没有删除」的记忆作废（[Touched::log_no_delete]）。
+                if let Some(k) = t.log_no_delete.as_mut() {
+                    k.clear();
+                }
+            }
+            // 载荷刚由 [b] 编码而来，直接投 [b]，不再把它解码一遍（与 [project] 解出的相同）。
+            debug_assert_eq!(op.body().ok().as_ref(), Some(b));
+            note_written_edit(&mut edits, &op, b);
+            project_body(c, profile, &op, b.clone(), now, true, &mut t)?;
+        }
+        landed.push(t.marks.landed > before);
+        if want_stamps {
+            stamps.push(stamp);
+        }
+    }
+    local.save(c)?;
+    // 宿主的 `apply` 每次都把旧版时钟写下（没推进、但行里还没有 `hlc` / `writerId` 时也写，见 `LegacyClock::save`）。
+    if let Some(clock) = clock.as_mut() {
+        clock.save(c, profile)?;
+    }
+    let replayed = replay_touched(c, &t)?;
+    let mut out = json!({
+        "marks": t.marks.to_json(),
+        "landed": landed,
+        "replayed": replayed,
+        "diagnostics": t.diagnostics,
+        "changed": t.entities_changed.iter().map(|(k, e)| json!([k, e])).collect::<Vec<_>>(),
+        "purged": t.purged.iter().map(|(k, e)| json!([k, e])).collect::<Vec<_>>(),
+        "nextSeq": local.next_seq,
+        "edits": edits,
+    });
+    if want_stamps {
+        out["stamps"] = Value::Array(stamps);
+    }
+    Ok(out)
+}
+
+/// `import_drafts`（导入攒的一批草稿：Anki 包、AnkiConnect）：[apply_local_on] 的本体，外加两件以前 Dart 在命令之前
+/// 各读一遍库才知道的事，现在与落库在同一笔里判——读与写之间插不进别的写入：
+///
+/// - 输入项 `init: true` 是「新建实体的初值」（Dart `SrsEditDraft.initial`）：攒批时以为本机还没有这个实体的记录。
+///   落库这一刻这个（类别, 实体, 字段键）已经有修改记录（攒批期间同步把对端的同一实体应用进来了——实体 ID 由 guid /
+///   全名确定性派生）就不落：它此刻才分配 HLC 与因果上下文，会支配对端的编辑、把用户的新值盖成源里的旧值。不落的项
+///   旧版时钟也不走。判据是这一批落库之前的库（同一批里先落的项不算）。
+/// - 回包 `existed`：这批身份记录里落库前就已存在的实体 ID（导入据此按实际新建数计数）。
+///
+/// 其余回包与 `apply` 同形；`landed` 按去掉不落的项之后的顺序。
+pub(crate) fn import_drafts_on(
+    c: &Connection,
+    profile: &str,
+    now: i64,
+    items: &mut Vec<Value>,
+    legacy: &LegacyApply<'_>,
+) -> Result<Value, String> {
+    use std::collections::{BTreeMap, HashSet};
+    // 「值没变就不写」（`chg`，changing.rs）是 `apply` / `change` 的：导入的草稿攒批时已经按现值筛过或标了 `init`。
+    if changing::any(items) {
+        return Err("import_drafts: chg items are not accepted".into());
+    }
+    let entity_ids: Vec<&str> = items
+        .iter()
+        .filter(|it| it["e"]["t"].as_str() == Some("entity"))
+        .filter_map(|it| it["e"]["x"]["id"].as_str())
+        .collect();
+    let mut existed: Vec<String> = Vec::new();
+    for chunk in entity_ids.chunks(400) {
+        let marks = vec!["srs_id(?)"; chunk.len()].join(",");
+        let mut stmt = c
+            .prepare_cached(&format!(
+                "SELECT srs_idt(id) AS id FROM srs_entities WHERE id IN ({marks})"
+            ))
+            .map_err(sql)?;
+        let rows = stmt
+            .query_map(rusqlite::params_from_iter(chunk.iter()), |r| {
+                r.get::<_, String>(0)
+            })
+            .map_err(sql)?;
+        for id in rows {
+            existed.push(id.map_err(sql)?);
+        }
+    }
+    existed.sort();
+    existed.dedup();
+    // 初值项涉及的实体，按类别分组，各自已有修改记录的字段键。
+    let is_init =
+        |it: &Value| it["init"] == Value::Bool(true) && it["e"]["t"].as_str() == Some("edit");
+    let mut by_kind: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    for it in items.iter().filter(|it| is_init(it)) {
+        let x = &it["e"]["x"];
+        if let (Some(k), Some(e)) = (x["k"].as_str(), x["e"].as_str()) {
+            by_kind
+                .entry(k.to_owned())
+                .or_default()
+                .insert(e.to_owned());
+        }
+    }
+    let mut authored: HashSet<(String, String, String)> = HashSet::new();
+    for (kind, entities) in &by_kind {
+        let entities: Vec<&String> = entities.iter().collect();
+        for chunk in entities.chunks(400) {
+            let marks = vec!["srs_id(?)"; chunk.len()].join(",");
+            let mut stmt = c
+                .prepare_cached(&format!(
+                    "SELECT DISTINCT srs_idt(entity_id) AS e, field_key FROM srs_field_edits                      WHERE profile_uid = srs_id(?) AND entity_kind = ? AND entity_id IN ({marks})"
+                ))
+                .map_err(sql)?;
+            let mut args: Vec<&dyn rusqlite::ToSql> = vec![&profile, kind];
+            for e in chunk {
+                args.push(*e);
+            }
+            let mut q = stmt.query(args.as_slice()).map_err(sql)?;
+            while let Some(r) = q.next().map_err(sql)? {
+                authored.insert((kind.clone(), r.get(0).map_err(sql)?, r.get(1).map_err(sql)?));
+            }
+        }
+    }
+    if !authored.is_empty() {
+        items.retain(|it| {
+            if !is_init(it) {
+                return true;
+            }
+            let x = &it["e"]["x"];
+            match (x["k"].as_str(), x["e"].as_str(), x["f"].as_str()) {
+                (Some(k), Some(e), Some(f)) => {
+                    !authored.contains(&(k.to_owned(), e.to_owned(), f.to_owned()))
+                }
+                _ => true,
+            }
+        });
+    }
+    let mut v = apply_local_on(c, profile, now, items, Some(legacy))?;
+    v["existed"] = json!(existed);
+    Ok(v)
+}
+
+/// [SrsCore::sync2_append] 的本体：在调用方的写连接、调用方开的 SAVEPOINT 里追加并投影（不自己取锁）。
+pub(crate) fn append_on(
+    c: &Connection,
+    profile: &str,
+    now: i64,
+    bodies: &[Body],
+) -> Result<Value, String> {
+    let mut local = match Local::load(c, profile)? {
+        Some(l) => l,
+        None => Local::create(c, profile, now)?,
+    };
+    let mut applied = applied_vv(c, profile)?;
+    let mut t = Touched::default();
+    let mut edits: Vec<Value> = Vec::new();
+    for b in bodies {
+        let op = append_local(c, &mut local, &mut applied, b, now)?;
+        note_written_edit(&mut edits, &op, b);
+        project(c, profile, &op, now, true, &mut t)?;
+    }
+    local.save(c)?;
+    let replayed = replay_touched(c, &t)?;
+    Ok(json!({
+        "marks": t.marks.to_json(),
+        "replayed": replayed,
+        "edits": edits,
+        "changed": t.entities_changed.iter().map(|(k, e)| json!([k, e])).collect::<Vec<_>>(),
+        "purged": t.purged.iter().map(|(k, e)| json!([k, e])).collect::<Vec<_>>(),
+    }))
+}
+
+/// 解决冲突的结论（[SrsCore::sync2_resolve]）：`delete` = 一条因果覆盖并发方的新删除；否则一条覆盖删除的恢复。
+pub(crate) fn resolve_bodies(kind: EntKind, entity: &str, delete: bool, now: i64) -> Vec<Body> {
+    let value = if delete { json!(now) } else { Value::Null };
+    vec![Body::Edit(EditBody {
+        kind,
+        entity: Key::of(entity),
+        key: "deleted".into(),
+        value: canonical(&value),
+        machine: false,
+        ts: 0,
+        legacy: None,
+    })]
+}
+
+/// 彻底清除（[SrsCore::sync2_purge]）：先删除（保证实体不可见），再追加清除操作。
+pub(crate) fn purge_bodies(kind: &str, entity: &str, now: i64) -> Result<Vec<Body>, String> {
+    let k = EntKind::parse(kind).ok_or("bad entity kind")?;
+    Ok(vec![
+        Body::Edit(EditBody {
+            kind: k,
+            entity: Key::of(entity),
+            key: "deleted".into(),
+            value: canonical(&json!(now)),
+            machine: false,
+            ts: 0,
+            legacy: None,
+        }),
+        Body::Purge {
+            kind: k,
+            entity: Key::of(entity),
+        },
+    ])
+}
+
+/// 还原点（[SrsCore::sync2_checkpoint]）。
+pub(crate) fn checkpoint_bodies(name: &str, reason: &str) -> Vec<Body> {
+    vec![Body::Checkpoint {
+        name: name.to_owned(),
+        reason: reason.to_owned(),
+    }]
 }

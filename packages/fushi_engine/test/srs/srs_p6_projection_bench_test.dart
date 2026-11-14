@@ -19,12 +19,12 @@ import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_optimizer.dart';
 import 'package:fushi_engine/srs/srs_rwkv_models.dart';
 import 'package:fushi_engine/srs/srs_rwkv_service.dart';
-import 'package:fushi_engine/srs/srs_stats_loader.dart';
 import 'package:fushi_rwkv/fushi_rwkv.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:test/test.dart';
 
 import 'apkg/apkg_test_support.dart';
+import 'support/srs_stats_rows.dart';
 import 'support/srs_test_storage.dart';
 import 'apkg/srs_apkg_import_test.dart'
     show
@@ -244,7 +244,7 @@ void main() {
         final int replay = await timed(rwkv.rebuild);
         int reviews = 0;
         final int stats = await timed(() async {
-          reviews = (await loadSrsStats(store)).data.reviews.length;
+          reviews = (await statsRowsOf(store)).reviews.length;
         });
         // ignore: avoid_print
         print(

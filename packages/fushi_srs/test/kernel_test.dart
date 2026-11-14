@@ -6,6 +6,49 @@ const int kT0 = 1700000000000;
 const int kDayMs = 86400000;
 const SrsDayContext kDayCtx = SrsDayContext(utcOffsetMin: 0, rolloverHour: 4);
 
+/// 测试夹具：按旧协议写入者的规则造修改记录（按序分配 dot，因果上下文覆盖此前写过的全部）。本机的写入者与 HLC
+/// 时钟在内核里，生产代码没有 Dart 版。
+class _EditWriter {
+  _EditWriter(this.writerId);
+
+  final String writerId;
+  int _lastSeq = 0;
+  SrsCausalContext _applied = SrsCausalContext.empty();
+
+  SrsFieldEdit create({
+    required String profileUid,
+    required SrsEntityKind entityKind,
+    required String entityId,
+    required String fieldKey,
+    required Object? value,
+    required Hlc hlc,
+    required SrsTimeSource timeSource,
+  }) {
+    _lastSeq += 1;
+    final SrsFieldEdit edit = SrsFieldEdit(
+      profileUid: profileUid,
+      entityKind: entityKind,
+      entityId: entityId,
+      fieldKey: fieldKey,
+      dot: SrsDot(writerId, _lastSeq),
+      ctx: _applied,
+      value: value,
+      hlc: hlc,
+      timeSource: timeSource,
+    );
+    _applied = _applied.merge(edit.ctx).add(edit.dot);
+    return edit;
+  }
+}
+
+/// 测试夹具：写入者 [writerId] 的 HLC 来源（发出事件时取 max(可信时间, 已见过的最大 HLC)）。
+Hlc Function(int nowMs) _ticker(String writerId) {
+  Hlc cur = Hlc(0, 0, writerId);
+  return (int nowMs) => cur = nowMs > cur.physical
+      ? Hlc(nowMs, 0, writerId)
+      : Hlc(cur.physical, cur.counter + 1, writerId);
+}
+
 int _seq = 0;
 
 SrsReviewLog _log({
@@ -503,7 +546,7 @@ void main() {
         ],
         css: 'code css',
       );
-      final SrsEditWriter w = SrsEditWriter(writerId: 'w');
+      final _EditWriter w = _EditWriter('w');
       final SrsFieldEdit rename = w.create(
         profileUid: kP,
         entityKind: SrsEntityKind.noteType,
@@ -540,7 +583,7 @@ void main() {
 
     test('牌组树：成环确定性打破；参数继承', () {
       SrsDeckView deck(String id, String? parent, {bool own = false}) {
-        final SrsEditWriter w = SrsEditWriter(writerId: 'w$id');
+        final _EditWriter w = _EditWriter('w$id');
         final List<SrsFieldEdit> e = <SrsFieldEdit>[
           w.create(
             profileUid: kP,
@@ -623,7 +666,7 @@ void main() {
   group('恢复计划（重放副本优先，旧版本客户端不分歧）', () {
     SrsLogContext ctx() => SrsLogContext(
       profileUid: kP,
-      clock: HlcClock('dev#9'),
+      nextHlc: _ticker('dev#9'),
       now: () => (kT0 + 30 * kDayMs, SrsTimeSource.anchored),
       day: kDayCtx,
     );

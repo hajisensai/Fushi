@@ -294,25 +294,6 @@ const Set<String> kServerSrsCryptoErrors = <String>{
   kSrsSync2BadKdf,
 };
 
-/// 同一条连接上几份 profile 的副本：独占区（跨多个 await 的事务）彼此不能交错，共用一把进程内锁。
-class _SharedExclusive implements SrsExclusiveOuter {
-  Future<void> _tail = Future<void>.value();
-  static final Object _zoneKey = Object();
-
-  @override
-  Future<T> run<T>(Future<T> Function() body) {
-    if (identical(Zone.current[_zoneKey], this)) return body();
-    final Completer<void> done = Completer<void>();
-    final Future<void> prev = _tail;
-    _tail = done.future;
-    return prev
-        .then(
-          (_) => runZoned(body, zoneValues: <Object, Object>{_zoneKey: this}),
-        )
-        .whenComplete(done.complete);
-  }
-}
-
 /// 后台 isolate 里对 [address] 那份 Rust 连接出快照（顶层函数：闭包里不能捎带 [ServerSrs]，它带着不可跨 isolate 的
 /// Future）。设备本地表照留。
 Future<void> _snapshotSrsCore(int address, String? libraryPath, String path) =>
@@ -400,7 +381,6 @@ class ServerSrs {
   }
 
   final Map<String, ServerSrsProfile> _profiles = <String, ServerSrsProfile>{};
-  final _SharedExclusive _exclusive = _SharedExclusive();
   final _SerialQueue _rounds = _SerialQueue();
   Timer? _safety;
   Future<void> _ops = Future<void>.value();
@@ -565,7 +545,6 @@ class ServerSrs {
           engine: _engine,
           fallbackRolloverHour: () => _config().rolloverHour,
           styles: SrsStyleStore(SrsStyleStore.directoryFor(support, uid)),
-          exclusiveOuter: _exclusive,
         );
         prof._media = SrsMediaStore(SrsMediaStore.directoryFor(support, uid));
         // 库交出去之前就挂上：没挂 RWKV 的库会把 RWKV 牌组按 FSRS-7 的到期日排（见 srs_rwkv_attach.dart 文件头）。

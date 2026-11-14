@@ -34,6 +34,14 @@ Future<int> _count(SrsStorage st, String table) async {
   return r.read<int>('c');
 }
 
+/// 内核里这个 profile 的收段通道是否开着（`identity` 对通道透明：不会接着把通道做完）。
+Future<bool> _channelInCore(SrsDbStore s) async =>
+    (await s.sync2Command(<String, Object?>{
+      'op': 'identity',
+      'now': DateTime.now().millisecondsSinceEpoch,
+    })).map['channel'] ==
+    true;
+
 /// 投影三张表（身份记录、修改记录、复习日志）逐行，排好序。
 Future<List<String>> _projection(SrsStorage st) async {
   final List<String> out = <String>[];
@@ -84,7 +92,7 @@ class _ProbeHost implements SrsSync2Host {
   @override
   Future<void> sync2IngestBegin() async {
     await inner.sync2IngestBegin();
-    channelAtBegin.add(inner.debugChannelLive);
+    channelAtBegin.add(await _channelInCore(inner));
   }
 
   @override
@@ -174,7 +182,7 @@ void main() {
     expect(await _count(b.storage, 'srs_entities'), 3);
     expect(await _count(b.storage, 'srs_field_edits'), 0);
     expect(await _count(b.storage, 'srs_review_logs'), 0);
-    expect(b.store.debugChannelLive, isFalse);
+    expect(await _channelInCore(b.store), isFalse);
 
     final _ProbeHost probe = _ProbeHost(b.store, b.storage);
     final SrsSync2Report r = await round(probe, loc);
@@ -237,7 +245,7 @@ void main() {
 
     // 通道做完之后本机照常写、照常同步。
     final String mine = await addNote(b.store, '後');
-    expect(b.store.debugChannelLive, isFalse);
+    expect(await _channelInCore(b.store), isFalse);
     expect((await round(b.store, loc)).error, isNull);
     expect((await round(a.store, loc)).error, isNull);
     expect(await a.store.note(mine), isNotNull);
@@ -286,7 +294,7 @@ void main() {
     final _Device b = await device('B');
     await b.store.sync2Command(<String, Object?>{'op': 'plan'}, blobs: heads);
     await b.store.sync2IngestBegin();
-    expect(b.store.debugChannelLive, isTrue);
+    expect(await _channelInCore(b.store), isTrue);
     await b.store.sync2IngestBatch(segments);
     expect(await _count(b.storage, 'sync2_boot_order'), greaterThan(50));
     expect(await b.store.note(notes.first), isNull);
@@ -294,7 +302,7 @@ void main() {
     // App 没等收尾：会话放掉，用户制了一张卡。
     await b.store.sync2IngestEnd();
     final String mine = await addNote(b.store, '中');
-    expect(b.store.debugChannelLive, isFalse);
+    expect(await _channelInCore(b.store), isFalse);
     expect(await _count(b.storage, 'sync2_boot'), 0);
     expect(await b.store.note(notes.first), isNotNull);
     expect(await b.store.note(mine), isNotNull);

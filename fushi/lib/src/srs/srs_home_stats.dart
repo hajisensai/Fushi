@@ -5,9 +5,9 @@
 /// - 热力图卡：逐日复习数 + 当前 / 最长连续天数；
 /// - 未来 7 天卡：全库逐日到期预测；
 /// - 选中牌组的详情：该牌组（含子牌组）的到期预测、保持率、新卡 / 已掌握张数
-///   （[SrsHomeStats.detailFor]，按需算一次并记住）。
+///   （[SrsHomeStats.detailFor]，按需向内核要一次并记住）。
 ///
-/// 数据来自统计页同一份装载（[loadSrsStats]），装载按批让出事件循环，大集合不卡界面。
+/// 数据来自统计页同一条内核命令（[loadSrsStats] → `stats_report`，聚合在 Rust 里做完，后台 isolate）。
 /// 首页先按牌组计数画出来，这份统计到了再补上进度、时长与图表。
 library;
 
@@ -67,8 +67,8 @@ class SrsHomeStats {
     this.countsByDay = const <int, int>{},
     this.forecast = const <int>[],
     this.doneTodayByDeck = const <String, int>{},
-    SrsStatsData? data,
-  }) : _data = data;
+    SrsStatsLoad? load,
+  }) : _load = load;
 
   /// 今天已经评过分的次数（同一张卡重复学习按次数计，与统计页「今天」同口径）。
   final int doneToday;
@@ -94,10 +94,11 @@ class SrsHomeStats {
   /// 牌组 id（卡片直接所在的牌组，不含子牌组）→ 今天的复习次数。
   final Map<String, int> doneTodayByDeck;
 
-  /// 原始统计数据：详情面板按牌组取子集用；测试直接构造时可为 null。
-  final SrsStatsData? _data;
+  /// 这次装载的统计口径：详情面板按牌组向内核要子集用；测试直接构造时可为 null。
+  final SrsStatsLoad? _load;
 
-  final Map<String, SrsHomeDeckDetail> _details = <String, SrsHomeDeckDetail>{};
+  final Map<String, Future<SrsHomeDeckDetail>> _details =
+      <String, Future<SrsHomeDeckDetail>>{};
 
   /// 估算平均用时所看的天数。
   static const int recentDays = 14;
@@ -123,11 +124,11 @@ class SrsHomeStats {
   }
 
   /// [deckIds]（一个牌组连同全部子牌组）的详情。按 [cacheKey]（通常是牌组 id）记住：
-  /// 同一份快照里切回已看过的牌组不再重算。没有原始数据时返回 null。
-  SrsHomeDeckDetail? detailFor(String cacheKey, Set<String> deckIds) {
-    final SrsStatsData? data = _data;
-    if (data == null) return null;
-    return _details[cacheKey] ??= srsHomeDeckDetailOf(data, deckIds);
+  /// 同一份快照里切回已看过的牌组不再重算。没有装载时返回 null。
+  Future<SrsHomeDeckDetail>? detailFor(String cacheKey, Set<String> deckIds) {
+    final SrsStatsLoad? load = _load;
+    if (load == null) return null;
+    return _details[cacheKey] ??= srsHomeDeckDetailOf(load, deckIds);
   }
 }
 
@@ -148,53 +149,52 @@ List<int> srsHomeForecastOf(SrsFutureDue due) => <int>[
     i == 0 ? due.perDay[0] + due.overdue : due.perDay[i],
 ];
 
-/// 一个牌组（[deckIds] = 它与全部子牌组）的详情：取这些牌组里的卡做统计子集。
-SrsHomeDeckDetail srsHomeDeckDetailOf(SrsStatsData data, Set<String> deckIds) {
-  final SrsStatsData sub = data.subset(<String>{
-    for (final SrsStatCard c in data.cards)
-      if (deckIds.contains(c.deckId)) c.id,
-  });
-  final int first = sub.today - kSrsHomeRetentionDays + 1;
-  final SrsCardCounts counts = sub.cardCounts();
+/// 一个牌组（[deckIds] = 它与全部子牌组）的详情：内核按这些牌组里的卡出一份统计。
+Future<SrsHomeDeckDetail> srsHomeDeckDetailOf(
+  SrsStatsLoad load,
+  Set<String> deckIds,
+) async {
+  final SrsStatsReport r = await load.report(
+    decks: deckIds,
+    futureDays: kSrsHomeForecastDays,
+    windows: const <String, SrsStatsWindow>{
+      _kRecent: SrsStatsWindow.last(kSrsHomeRetentionDays),
+    },
+  );
+  final SrsStatsWindowResult recent = r.windows[_kRecent]!;
   return SrsHomeDeckDetail(
-    newCards: counts.newCards,
-    matureCards: counts.mature,
-    forecast: srsHomeForecastOf(sub.futureDue(kSrsHomeForecastDays)),
-    retention: sub.retentionBetween(first, sub.today).rate,
-    reviewsRecent: sub.reviewTotalsBetween(first, sub.today).count,
-    desiredRetention: sub.desiredRetention(),
+    newCards: r.cardCounts.newCards,
+    matureCards: r.cardCounts.mature,
+    forecast: srsHomeForecastOf(r.future),
+    retention: recent.retention.rate,
+    reviewsRecent: recent.totals.count,
+    desiredRetention: r.desiredRetention,
   );
 }
 
-/// 从统计数据里取首页要的数（纯函数，测试直接喂 [SrsStatsData]）。
-SrsHomeStats srsHomeStatsOf(SrsStatsData data) {
-  final int today = data.today;
-  final SrsReviewTotals recent = data.reviewTotalsBetween(
-    today - SrsHomeStats.recentDays + 1,
-    today,
-  );
-  final SrsStreak streak = data.streak();
-  final Map<String, String> deckOfCard = <String, String>{
-    for (final SrsStatCard c in data.cards) c.id: c.deckId,
-  };
-  final Map<String, int> doneByDeck = <String, int>{};
-  for (final SrsStatReview r in data.reviewsBetween(today, today)) {
-    final String? deck = deckOfCard[r.cardId];
-    if (deck == null) continue;
-    doneByDeck[deck] = (doneByDeck[deck] ?? 0) + 1;
-  }
-  return SrsHomeStats(
-    doneToday: data.todayStats().count,
-    averageMsPerCard: recent.averageMsPerCard,
-    streak: streak.current,
-    longestStreak: streak.longest,
-    today: today,
-    countsByDay: data.countsByDay(),
-    forecast: srsHomeForecastOf(data.futureDue(kSrsHomeForecastDays)),
-    doneTodayByDeck: doneByDeck,
-    data: data,
-  );
-}
+const String _kRecent = 'recent';
+
+/// 首页要的那份统计（全库）：今天、最近 [SrsHomeStats.recentDays] 天、未来 [kSrsHomeForecastDays] 天。
+Future<SrsStatsReport> srsHomeReportOf(SrsStatsLoad load) => load.report(
+  futureDays: kSrsHomeForecastDays,
+  windows: const <String, SrsStatsWindow>{
+    _kRecent: SrsStatsWindow.last(SrsHomeStats.recentDays),
+  },
+);
+
+/// 从统计结果里取首页要的数（纯函数，[r] 是 [srsHomeReportOf] 的结果）。
+SrsHomeStats srsHomeStatsOf(SrsStatsReport r, {SrsStatsLoad? load}) =>
+    SrsHomeStats(
+      doneToday: r.todayStats.count,
+      averageMsPerCard: r.windows[_kRecent]!.totals.averageMsPerCard,
+      streak: r.streak.current,
+      longestStreak: r.streak.longest,
+      today: r.today,
+      countsByDay: r.countsByDay,
+      forecast: srsHomeForecastOf(r.future),
+      doneTodayByDeck: r.todayByDeck,
+      load: load,
+    );
 
 /// 首页统计：随 [srsRevisionProvider] 重读（复习 / 编辑回来时 [bumpSrsRevision]）。
 ///
@@ -205,7 +205,8 @@ final FutureProvider<SrsHomeStats?> srsHomeStatsProvider =
       SrsOpLedger.mark('home_stats');
       final SrsDbStore? store = await ref.watch(srsStoreProvider.future);
       if (store == null) return null;
-      final SrsStatsBundle bundle = await loadSrsStats(store);
+      final SrsStatsLoad load = await loadSrsStats(store);
+      final SrsStatsReport report = await srsHomeReportOf(load);
       await initializeDateFormatting();
-      return srsHomeStatsOf(bundle.data);
+      return srsHomeStatsOf(report, load: load);
     });

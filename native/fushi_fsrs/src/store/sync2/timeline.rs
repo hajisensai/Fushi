@@ -636,26 +636,8 @@ impl SrsCore {
         retract_reviews: bool,
         now: i64,
     ) -> Result<Value, String> {
-        let bodies = {
-            let w = self.writer()?;
-            in_savepoint(&w, |c| {
-                Local::load(c, profile)?.ok_or("sync2 not initialised for this profile")?;
-                let target = target_cut(c, profile, to)?;
-                Ok(plan(c, profile, &target, retract_reviews, now)?.bodies)
-            })?
-        };
-        let label = match to {
-            RestoreTarget::At(t) => format!("before restore to {t}"),
-            RestoreTarget::Checkpoint(id) => {
-                format!("before restore to {}:{}", id.device.text(), id.seq)
-            }
-        };
-        let mut all = vec![Body::Checkpoint {
-            name: label,
-            reason: "restore".into(),
-        }];
-        all.extend(bodies);
-        self.sync2_append(profile, now, all)
+        let w = self.writer()?;
+        in_savepoint(&w, |c| restore_on(c, profile, to, retract_reviews, now))
     }
 
     /// 还原点列表（新的在前）。
@@ -738,3 +720,29 @@ impl SrsCore {
 #[cfg(test)]
 #[path = "tests_timeline.rs"]
 mod tests;
+
+/// [SrsCore::sync2_restore] 的本体：在调用方的写连接、调用方开的 SAVEPOINT 里算补偿操作、打还原点并追加（不自己取锁）。
+/// 算与写在同一个 SAVEPOINT 里：补偿操作针对的就是写入时的投影。
+pub(crate) fn restore_on(
+    c: &Connection,
+    profile: &str,
+    to: &RestoreTarget,
+    retract_reviews: bool,
+    now: i64,
+) -> Result<Value, String> {
+    Local::load(c, profile)?.ok_or("sync2 not initialised for this profile")?;
+    let target = target_cut(c, profile, to)?;
+    let bodies = plan(c, profile, &target, retract_reviews, now)?.bodies;
+    let label = match to {
+        RestoreTarget::At(t) => format!("before restore to {t}"),
+        RestoreTarget::Checkpoint(id) => {
+            format!("before restore to {}:{}", id.device.text(), id.seq)
+        }
+    };
+    let mut all = vec![Body::Checkpoint {
+        name: label,
+        reason: "restore".into(),
+    }];
+    all.extend(bodies);
+    super::append_on(c, profile, now, &all)
+}

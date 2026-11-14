@@ -1433,23 +1433,23 @@ class SrsRemoteStoreService {
       final SrsCustomStudy? custom = SrsRemoteWire.customStudyFrom(
         a.raw('custom'),
       );
-      // 核对基准与记日志在同一个写独占区里：否则两次 await 之间主机本机（或另一台客户端）作答落库，
-      // 同一张卡会记两条日志——基准要防的正是这个。runExclusive 可重入，内层 answerAndStudy 直接执行。
-      final SrsAnswerOutcome out = await s.runExclusive(() async {
-        if (a.raw('checkBase') == true) {
-          final SrsCardCacheRow? row = await s.cardRow(card);
-          if (row == null || row.lastLogId != a.optStr('base')) {
-            throw const SrsRemoteStoreError(409, SrsRemoteStoreError.stale);
-          }
-        }
-        return s.answerAndStudy(
+      // 核对基准与记日志是内核的一条命令（`apply` 的 `expectLast`）：否则两步之间主机本机（或另一台客户端）作答
+      // 落库，同一张卡会记两条日志——基准要防的正是这个。
+      final SrsAnswerOutcome out;
+      try {
+        out = await s.answerAndStudy(
           card,
           rating,
           durationMs: durationMs,
           studyDeckId: deck,
           custom: custom,
+          expectBase: a.raw('checkBase') == true
+              ? (lastLogId: a.optStr('base'))
+              : null,
         );
-      });
+      } on SrsStaleCardError {
+        throw const SrsRemoteStoreError(409, SrsRemoteStoreError.stale);
+      }
       final SrsStudyState? study = out.study;
       return <String, Object?>{
         'log': out.log.toJson(),
@@ -1582,6 +1582,23 @@ class SrsRemoteStoreService {
         ]))
           e.toJson(),
       ],
+    ),
+    // 编辑类撤销（srs_edit_undo.dart）：写入交回撤销凭据、撤销在主机的写锁里按修改记录裁决。
+    'editFieldsUndoable': _Op(
+      write: true,
+      (SrsDbStore s, _Args a) async =>
+          (await s.editFieldsUndoable(<SrsFieldChange>[
+            for (final SrsEditSpec x in SrsRemoteWire.editSpecsFrom(
+              a.raw('changes'),
+              'changes',
+            ))
+              SrsFieldChange(x.kind, x.entityId, x.key, x.value),
+          ])).toJson(),
+    ),
+    'revertEdits': _Op(
+      write: true,
+      (SrsDbStore s, _Args a) async =>
+          (await s.revertEdits(SrsEditUndo.fromJson(a.raw('undo')))).toJson(),
     ),
     'writeEdits': _Op(
       write: true,
