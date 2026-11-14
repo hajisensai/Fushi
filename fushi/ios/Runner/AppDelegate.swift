@@ -115,6 +115,7 @@ final class FushiRemotePush {
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
+    FushiStartupTrace.mark("did-finish-launching-enter")
     // 「反馈有新回复时通知我」的后台检查（BGAppRefreshTask；Dart 侧
     // lib/src/feedback/feedback_reply_background.dart）。UIScene 生命周期下插件在
     // didFinishLaunching 返回之后才注册，系统在后台拉起 app 时要求 launch handler
@@ -135,7 +136,10 @@ final class FushiRemotePush {
     // MetricKit 崩溃诊断：系统在下次启动后交付上次的 MXCrashDiagnostic，落盘给 Dart
     // previous_exit_log.dart 摘要进错误日志（Dart 接不到的原生崩溃 / 被系统杀）。
     FushiCrashDiagnostics.shared.start()
-    return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+    FushiStartupTrace.mark("pre-super-launch")
+    let launched = super.application(application, didFinishLaunchingWithOptions: launchOptions)
+    FushiStartupTrace.mark("did-finish-launching")
+    return launched
   }
 
   /// 后台 URLSession 下完（app 已挂起 / 被回收）时系统把 app 唤醒到后台交付，
@@ -205,13 +209,17 @@ final class FushiRemotePush {
   }
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
+    FushiStartupTrace.mark("engine-ready")
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
+    FushiStartupTrace.mark("plugins-registered")
     // 查词浮层的真模糊背衬：WebView 下方的 UIVisualEffectView 平台视图
     // （apple/FushiNativeMaterialView.swift，Dart 侧 fushi_native_material.dart）。
     if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "FushiNativeMaterial") {
       FushiNativeMaterial.register(with: registrar)
     }
     installChannels(binaryMessenger: engineBridge.applicationRegistrar.messenger())
+    FushiStartupTrace.register(binaryMessenger: engineBridge.applicationRegistrar.messenger())
+    FushiStartupTrace.mark("channels-installed")
   }
 
   /// 安装来源判据 = 系统写进 bundle 的 App Store 收据文件，不是猜测：
@@ -242,6 +250,8 @@ final class FushiRemotePush {
     // 系统语音（AVSpeechSynthesizer 合成到 WAV）：朗读声音的「系统语音」与制卡发音
     // 兜底。只实现 ttsToFile / getVoices，见 FushiSystemTts.swift。
     FushiSystemTts.register(binaryMessenger: binaryMessenger)
+    // 系统默认网络变化 → 互联 P2P 隧道重新探测路径（FushiNetworkChange.swift）。
+    FushiNetworkChange.register(binaryMessenger: binaryMessenger)
     // 复制图片到剪贴板（视频截图 / 阅读器内联图）。与 macOS 同一份实现，
     // 方法名与入参逐字对齐 Windows 那份 CF_DIB 实现。
     FushiClipboardImage.register(binaryMessenger: binaryMessenger)
@@ -316,8 +326,10 @@ final class FushiRemotePush {
     splashChannel.setMethodCallHandler { (call, result) in
       switch call.method {
       case "getSplashColor":
-        // LaunchScreen.storyboard uses a white root view / LaunchBackground.
-        result(0xFFFFFFFF)
+        // 0 = 没有记忆的底色：Dart 侧回落到默认主题的 surface，与 LaunchScreen 的 LaunchBackground
+        // （浅色 / 深色各一张，同为默认主题 surface）一致。以前恒返回白色，深色模式下
+        // 首帧前的加载 / 错误页是白底配深色主题的浅色字。
+        result(0)
       default:
         result(FlutterMethodNotImplemented)
       }
@@ -815,5 +827,53 @@ enum FushiLaunchPresence {
       "detail":
         "applicationState=\(state) scenes=\(app.connectedScenes.count) foregroundScene=\(foregroundScene)",
     ]
+  }
+}
+
+/// 冷启动原生段计时：进程创建到 Dart `main()` 之前，UIKit 启动 / 引擎装配各花了多久。
+/// Dart 侧（lib/src/startup/startup_timeline.dart）在首页画出来之后经
+/// `app.fushi.reader/startup_trace` 取一次，和它自己的阶段拼成一行写进诊断日志。
+/// 时间一律是 Unix epoch 微秒（墙钟），这样才能和 Dart 的 `DateTime.now()` 对上。
+enum FushiStartupTrace {
+  private static let lock = NSLock()
+  private static var marks: [[Any]] = []
+
+  /// 记「`name` 这一段刚结束」。任何线程可调。
+  static func mark(_ name: String) {
+    let nowMicros = Int64(Date().timeIntervalSince1970 * 1_000_000)
+    lock.lock()
+    marks.append([name, nowMicros])
+    lock.unlock()
+  }
+
+  /// 进程创建时刻（epoch 微秒），取自内核的进程表；取不到返回 0（Dart 侧按「没有原生段」处理）。
+  private static func processStartMicros() -> Int64 {
+    var info = kinfo_proc()
+    var size = MemoryLayout<kinfo_proc>.stride
+    var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, getpid()]
+    guard sysctl(&mib, UInt32(mib.count), &info, &size, nil, 0) == 0, size > 0 else {
+      return 0
+    }
+    let start = info.kp_proc.p_starttime
+    return Int64(start.tv_sec) * 1_000_000 + Int64(start.tv_usec)
+  }
+
+  static func register(binaryMessenger: FlutterBinaryMessenger) {
+    let channel = FlutterMethodChannel(
+      name: "app.fushi.reader/startup_trace", binaryMessenger: binaryMessenger)
+    channel.setMethodCallHandler { call, result in
+      guard call.method == "get" else {
+        result(FlutterMethodNotImplemented)
+        return
+      }
+      lock.lock()
+      let snapshot = marks
+      lock.unlock()
+      let payload: [String: Any] = [
+        "processStartMicros": processStartMicros(),
+        "marks": snapshot,
+      ]
+      result(payload)
+    }
   }
 }

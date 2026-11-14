@@ -1377,6 +1377,7 @@ class DictionaryPopupLayer extends StatelessWidget {
     this.onBack,
     this.historyNav,
     this.restoreScrollTop,
+    this.lookupSession = 0,
     this.transparentDocumentBackground = false,
     this.showResizeGrip = false,
     this.onResizeStart,
@@ -1559,6 +1560,10 @@ class DictionaryPopupLayer extends StatelessWidget {
   /// 透传 [DictionaryPopupWebView.restoreScrollTop]：后退 / 前进回到历史页时该页离开
   /// 时的滚动位（[DictionaryPopupEntry.restoreScrollTop]）；常态 null。
   final double? restoreScrollTop;
+
+  /// 透传 [DictionaryPopupWebView.lookupSession]（[DictionaryPopupEntry.lookupSession]）。
+  /// 不按 entry 驱动的宿主（串流页等）留默认 0。
+  final int lookupSession;
 
   /// TODO-1065：转发给 [DictionaryPopupWebView] —— 本层属「app 外 / 悬浮字幕」独立
   /// 查词窗（popup_main 宿主）时 true，令弹窗 `<html>` 透明消除整窗泛白（默认 false =
@@ -2203,6 +2208,7 @@ class DictionaryPopupLayer extends StatelessWidget {
               result: result ?? kPopupSearchingPlaceholderResult,
               lookupPending: lookupPending,
               restoreScrollTop: restoreScrollTop,
+              lookupSession: lookupSession,
               hasChildPopup: hasChildPopup,
               onTapOutside: onTapOutside,
               onTextSelected: onTextSelected,

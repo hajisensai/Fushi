@@ -374,12 +374,12 @@ function wrangler(args, { binary = false } = {}) {
 }
 
 /** 读：--command（远程 --file 走的是导入流程，不回查询行）。 */
-function d1(sql, where) {
+export function d1(sql, where) {
   return parseWranglerJson(wrangler(['d1', 'execute', DATABASE, where, '--json', '--command', sql]));
 }
 
 /** 写：--file，长 SQL（总结的十六进制）不受 Windows 命令行长度限制。 */
-function d1Write(sql, where) {
+export function d1Write(sql, where) {
   const dir = mkdtempSync(join(tmpdir(), 'fushi-feedback-'));
   try {
     const file = join(dir, 'q.sql');

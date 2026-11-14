@@ -112,38 +112,106 @@ fn compute_memory(
     input: &MemoryInput,
     model: &super::fsrs_det::Model,
 ) -> Option<super::fsrs_det::Memory> {
-    use super::fsrs_det::Memory;
-    let mut starting = input.starting.map(|(s, d, sf)| Memory {
-        s: s as f32,
-        d: d as f32,
-        sf: sf as f32,
-    });
-    if starting.is_none() {
-        if let Some((ease, ivl)) = input.sm2 {
-            starting = model
-                .memory_state_from_sm2(ease as f32, ivl as f32, 0.9)
-                .ok();
+    MemoryMemo::default().compute(input, model)
+}
+
+/// [compute_memory] 的续算。重放一个归属组时，每条派生日志都要「作答前」的记忆状态，它的输入（[memory_input]）
+/// 几乎总是上一条日志的输入再多一次评审：同一个起点、同样的前几次。每条都从头算的话，一张复习过 n 次的卡要做
+/// 1 + 2 + … + n 次 `Model::step`（新设备收几十万条日志，重放的计算有三成花在这上面）；这里记下上一次的输入与
+/// 逐次评审之后的状态，下一次的输入是它的延伸就只算多出来的那几次。
+///
+/// 结果与每次从头算逐位相同：状态按顺序递推（`Model::forward`），「是不是延伸」按位比（起点的三个分量、每次的评分
+/// 与间隔的 f32 位模式），任何一处不同——重置 / 锚点换了窗口、日界口径变了让间隔变了、起点有无变了——就从头算。
+/// 模型换了（配置快照变了）由调用方换一份新的（[fold]）。
+#[derive(Default)]
+struct MemoryMemo {
+    /// 上一次的起点（位模式）。
+    starting: Option<[u32; 3]>,
+    /// 上一次的评审：(评分, 间隔的位模式)。
+    reviews: Vec<(u32, u32)>,
+    /// 这些评审之后的状态（未校验）。
+    state: Option<super::fsrs_det::Memory>,
+}
+
+#[cfg(test)]
+thread_local! {
+    /// 测试：关掉续算（每次从头算，对照组）。
+    static MEMO_OFF: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// 测试：（接着上一次算了几回, 从头算了几回）。
+    static MEMO_RUNS: std::cell::Cell<(usize, usize)> = const { std::cell::Cell::new((0, 0)) };
+}
+
+impl MemoryMemo {
+    fn compute(
+        &mut self,
+        input: &MemoryInput,
+        model: &super::fsrs_det::Model,
+    ) -> Option<super::fsrs_det::Memory> {
+        use super::fsrs_det::Memory;
+        let mut starting = input.starting.map(|(s, d, sf)| Memory {
+            s: s as f32,
+            d: d as f32,
+            sf: sf as f32,
+        });
+        if starting.is_none() {
+            if let Some((ease, ivl)) = input.sm2 {
+                starting = model
+                    .memory_state_from_sm2(ease as f32, ivl as f32, 0.9)
+                    .ok();
+            }
         }
+        if input.reviews.is_empty() {
+            return starting;
+        }
+        let reviews: Vec<(u32, f32)> = input
+            .reviews
+            .iter()
+            .enumerate()
+            .map(|(i, &(r, dt))| {
+                (
+                    r.clamp(0, 4) as u32,
+                    if i == 0 && starting.is_none() {
+                        0.0
+                    } else {
+                        dt as f32
+                    },
+                )
+            })
+            .collect();
+        let bits = starting.map(|m| [m.s.to_bits(), m.d.to_bits(), m.sf.to_bits()]);
+        let resume = match self.state {
+            Some(state)
+                if self.starting == bits
+                    && !self.reviews.is_empty()
+                    && self.reviews.len() <= reviews.len()
+                    && self
+                        .reviews
+                        .iter()
+                        .zip(&reviews)
+                        .all(|(a, b)| a.0 == b.0 && a.1 == b.1.to_bits()) =>
+            {
+                Some((self.reviews.len(), state))
+            }
+            _ => None,
+        };
+        #[cfg(test)]
+        let resume = resume.filter(|_| !MEMO_OFF.with(std::cell::Cell::get));
+        #[cfg(test)]
+        MEMO_RUNS.with(|c| {
+            let (resumed, scratch) = c.get();
+            c.set(match resume {
+                Some(_) => (resumed + 1, scratch),
+                None => (resumed, scratch + 1),
+            });
+        });
+        let state = model.forward(&reviews, starting, resume);
+        self.starting = bits;
+        self.reviews.clear();
+        self.reviews
+            .extend(reviews.iter().map(|r| (r.0, r.1.to_bits())));
+        self.state = Some(state);
+        model.validate(state).ok()
     }
-    if input.reviews.is_empty() {
-        return starting;
-    }
-    let reviews: Vec<(u32, f32)> = input
-        .reviews
-        .iter()
-        .enumerate()
-        .map(|(i, &(r, dt))| {
-            (
-                r.clamp(0, 4) as u32,
-                if i == 0 && starting.is_none() {
-                    0.0
-                } else {
-                    dt as f32
-                },
-            )
-        })
-        .collect();
-    model.memory_state(&reviews, starting).ok()
 }
 
 /// 重放一个归属组。[rows] 顺序任意（排序由选取规则定）；同 ID 的多行按选取规则只认最后一行。派生日志按
@@ -241,8 +309,9 @@ struct Folded {
 }
 
 fn fold(rows: &[Row<'_>]) -> Result<Folded, String> {
-    // 同一归属组的日志几乎总是同一份配置：上一份的模型留着复用。
+    // 同一归属组的日志几乎总是同一份配置：上一份的模型留着复用，记忆状态接着上一条日志的算（[MemoryMemo]）。
     let mut models: Option<(Config, super::fsrs_det::Model)> = None;
+    let mut memo = MemoryMemo::default();
     let mut values: Vec<Map<String, Value>> = Vec::with_capacity(rows.len());
     let mut parsed = Vec::with_capacity(rows.len());
     for r in rows {
@@ -296,6 +365,7 @@ fn fold(rows: &[Row<'_>]) -> Result<Folded, String> {
                 if models.as_ref().is_none_or(|(k, _)| *k != c) {
                     let m = c.model()?;
                     models = Some((c, m));
+                    memo = MemoryMemo::default();
                 }
                 let (c, m) = models.as_ref().expect("model just cached");
                 (Some(c), Some(m))
@@ -310,7 +380,7 @@ fn fold(rows: &[Row<'_>]) -> Result<Folded, String> {
                     None
                 } else {
                     let input = memory_input(&prefix, cfg.alg.projection_alg(), &day)?;
-                    let memory = compute_memory(&input, model);
+                    let memory = memo.compute(&input, model);
                     let elapsed =
                         sched::elapsed_days(cfg.alg, cur.last_reviewed_at, at, &day) as f32;
                     Some(
@@ -332,7 +402,7 @@ fn fold(rows: &[Row<'_>]) -> Result<Folded, String> {
             (Intent::HandOff { to_anki }, _, _) => Some(Some(sched::hand_off(&cur, *to_anki))),
             (Intent::Reschedule, Some(cfg), Some(model)) => {
                 let input = memory_input(&prefix, cfg.alg.projection_alg(), &day)?;
-                let memory = compute_memory(&input, model);
+                let memory = memo.compute(&input, model);
                 Some(Some(sched::reschedule(
                     card, &cur, memory, model, cfg, &day,
                 )))
@@ -545,6 +615,165 @@ pub(crate) mod tests {
         h["kind"] = json!("handOff");
         h["res"]["scheduler"] = json!("anki");
         assert_eq!(infer_intent(&h), Intent::HandOff { to_anki: true });
+    }
+
+    /// 重放一遍 [rows]（各行自带配置快照），返回结果与期间记忆状态（接着上一次算, 从头算）的回数。[resume] 为假时
+    /// 关掉续算：每条日志都从头算（对照组）。
+    fn replay_counting(rows: &[Value], resume: bool) -> (Replayed, (usize, usize)) {
+        let texts: Vec<String> = rows.iter().map(Value::to_string).collect();
+        let input: Vec<Row<'_>> = texts
+            .iter()
+            .zip(rows)
+            .map(|(t, v)| Row {
+                json: t,
+                server_time: None,
+                intent: infer_intent(v),
+            })
+            .collect();
+        MEMO_OFF.with(|o| o.set(!resume));
+        MEMO_RUNS.with(|c| c.set((0, 0)));
+        let out = replay(&input).unwrap();
+        MEMO_OFF.with(|o| o.set(false));
+        (out, MEMO_RUNS.with(std::cell::Cell::get))
+    }
+
+    fn manual_reset(id: &str, at: i64) -> Value {
+        let mut reset = review(id, "C", "B", at, 0, "manual");
+        reset["kind"] = json!("manual");
+        reset.as_object_mut().unwrap().remove("rating");
+        reset["res"] = json!({"queue": "new", "ivl": 0, "step": 0, "reps": 0, "lapses": 0, "scheduler": "fushi"});
+        reset
+    }
+
+    /// 重放时每条日志的记忆状态接着上一条的算（[MemoryMemo]），结果与每条都从头算逐位相同。顺序作答的历史上
+    /// 只有第一次要从头算；设为新卡换了窗口、之后的第一次又从头算。
+    #[test]
+    fn memory_state_carries_over_between_the_logs_of_a_replay() {
+        let cfg = Config::default().to_json();
+        let t0 = 1_700_000_000_000i64;
+        let mut rows: Vec<Value> = (0..10)
+            .map(|k| {
+                let mut r = review(
+                    &format!("l{k}"),
+                    "C",
+                    "A",
+                    t0 + k * 3 * DAY,
+                    1 + (k % 4),
+                    if k == 0 { "learn" } else { "review" },
+                );
+                r[SNAPSHOT_KEY] = cfg.clone();
+                r
+            })
+            .collect();
+        let (resumed, runs) = replay_counting(&rows, true);
+        let (scratch, off) = replay_counting(&rows, false);
+        assert_eq!(resumed, scratch);
+        // 第 0 条作答前没有评审（不算）；第 1 条从头算；其余 8 条各接着算 1 次。
+        assert_eq!(runs, (8, 1));
+        assert_eq!(off, (0, 9));
+
+        let mut reset = manual_reset("reset", t0 + 5 * 3 * DAY + 1);
+        reset[SNAPSHOT_KEY] = cfg.clone();
+        rows.push(reset);
+        let (resumed, runs) = replay_counting(&rows, true);
+        let (scratch, _) = replay_counting(&rows, false);
+        assert_eq!(resumed, scratch);
+        // 重置前：1 回从头 + 4 回接着；重置后的第一条没有评审（不算），第二条从头，再 2 回接着。
+        assert_eq!(runs, (6, 2));
+    }
+
+    /// 伪随机的历史——两种算法、中途换配置快照（换模型）、换日界口径（间隔按新口径重算）、设为新卡、撤销、乱序
+    /// 输入：续算与每条从头算的重放结果逐字节相同。
+    #[test]
+    fn carried_over_memory_state_matches_recomputing_on_random_histories() {
+        let mut seed = 0x9E37_79B9_7F4A_7C15u64;
+        let mut next = move |n: u64| -> u64 {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed % n
+        };
+        let cfgs: Vec<Value> = vec![
+            Config::default().to_json(),
+            Config {
+                alg: super::super::sched::MemAlg::Fsrs6,
+                ..Config::default()
+            }
+            .to_json(),
+            Config {
+                desired_retention: 0.9,
+                learn_steps: Vec::new(),
+                relearn_steps: Vec::new(),
+                ..Config::default()
+            }
+            .to_json(),
+        ];
+        let (mut resumed_runs, mut scratch_runs) = (0usize, 0usize);
+        for h in 0..120 {
+            let len = 1 + next(40);
+            let mut cfg = next(cfgs.len() as u64) as usize;
+            let (mut off, mut rollover) = (0i64, 4i64);
+            let mut at = 1_700_000_000_000i64 + next(DAY as u64) as i64;
+            let mut rows: Vec<Value> = Vec::new();
+            let mut last_review: Option<String> = None;
+            for k in 0..len {
+                at += match next(4) {
+                    0 => 60_000 + next(3_600_000) as i64,
+                    1 => next(DAY as u64) as i64,
+                    _ => DAY + next(20 * DAY as u64) as i64,
+                };
+                if next(20) == 0 {
+                    cfg = next(cfgs.len() as u64) as usize;
+                }
+                if next(12) == 0 {
+                    off = [0, 480, -300, 60][next(4) as usize];
+                    rollover = [4, 0, 6][next(3) as usize];
+                }
+                let id = format!("h{h}-{k}");
+                let mut row = match next(25) {
+                    0 => manual_reset(&id, at),
+                    1 if last_review.is_some() => json!({
+                        "id": id, "p": "P", "card": "C", "kind": "undo", "revokes": last_review.take().unwrap(),
+                        "hlc": format!("{at}:0:A"), "at": at, "ts": "anchored", "origin": "fushi",
+                        "rtype": "manual", "fv": 1,
+                    }),
+                    _ => {
+                        last_review = Some(id.clone());
+                        review(
+                            &id,
+                            "C",
+                            ["A", "B"][next(2) as usize],
+                            at,
+                            1 + next(4) as i64,
+                            if k == 0 { "learn" } else { "review" },
+                        )
+                    }
+                };
+                row["utcOff"] = json!(off);
+                row["rollover"] = json!(rollover);
+                row[SNAPSHOT_KEY] = cfgs[cfg].clone();
+                rows.push(row);
+            }
+            // 输入顺序任意（排序由选取规则定）。
+            if next(2) == 0 {
+                rows.reverse();
+            }
+            let (resumed, runs) = replay_counting(&rows, true);
+            let (scratch, _) = replay_counting(&rows, false);
+            assert_eq!(resumed.rows, scratch.rows, "history {h}");
+            assert_eq!(
+                format!("{:?}", resumed.state),
+                format!("{:?}", scratch.state),
+                "history {h}"
+            );
+            assert_eq!(resumed.uncomputable, scratch.uncomputable, "history {h}");
+            resumed_runs += runs.0;
+            scratch_runs += runs.1;
+        }
+        assert!(
+            resumed_runs > 500 && scratch_runs > 100,
+            "both paths must be exercised (resumed {resumed_runs}, from scratch {scratch_runs})"
+        );
     }
 
     /// 设为新卡与另一台设备并发的复习：按时间先后重放，重置之后的复习从新卡算起。

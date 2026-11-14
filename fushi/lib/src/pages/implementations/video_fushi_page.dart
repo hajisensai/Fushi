@@ -1253,6 +1253,11 @@ abstract class VideoFushiTestHooks {
   /// 当前 controller 读到的媒体时长（毫秒）；未就绪为 null/0。
   int? get debugDurationMs;
 
+  /// 播放器此刻是否在缓冲 / 网络流的缓冲深度（秒；非网络流或尚无读数为 null）——
+  /// 自适应画质判据的两个输入（BUG-4459），真机取证时逐秒留痕用。
+  bool get debugIsBuffering;
+  double? get debugNetworkCacheSeconds;
+
   /// 制卡 GIF/帧的抽取源（YouTube=低分辨率 miningVideoUrl；本地=videoPath）。
   String? get debugMiningSource;
 
@@ -1840,6 +1845,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   @override
   int? get debugPositionMs => _controller?.positionMs;
+
+  @override
+  bool get debugIsBuffering => _controller?.isBuffering ?? false;
+
+  @override
+  double? get debugNetworkCacheSeconds =>
+      _controller?.networkCacheSeconds.value;
 
   @override
   bool get debugIsWebBackend => _controller?.isWebBackend ?? false;
@@ -3749,6 +3761,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   int _remotePlaybackGeneration = 0;
   final Set<int> _remotePlaybackStopGenerations = <int>{};
 
+  /// 已释放服务端资源的远端播放 generation（[_releaseRemotePlayback]，BUG-4461）。
+  final Set<int> _remotePlaybackReleaseGenerations = <int>{};
+
   /// 有效远端 info/client：合集连播优先返回当前成员 [_activeRemoteMember]（换成员即跟随）；
   /// 否则 LAN 远端书用构造器传入的 widget.remote*，书架流媒体书用 [_init] 重建的
   /// _resolvedStream*。二者互斥、至多一个非空。
@@ -5644,6 +5659,26 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     } catch (e) {
       debugPrint('[VideoFushiPage] remote playback stop upload failed: $e');
     }
+  }
+
+  /// 本页丢掉第 [generation] 次远端播放的流（退出 / 换集 / 换档、换线路重载之前）：
+  /// 让来源释放这次播放在服务端占着的资源（BUG-4461，互联 host 的流票与转码）。
+  ///
+  /// 与 [_reportRemotePlaybackStopped] 分开：停止上报在自然播完时也发，那时页面
+  /// 还开着、可回拖重看，流不能作废。这里**同步**调用、不等结果——来源在第一个
+  /// await 之前就摘下这次会话的登记，紧接着起的新播放（同一视频 id）不受影响；
+  /// 按 generation 去重，晚到的重复调用不会摘掉新会话。回看模式与停止上报同口径
+  /// 不发（票按 TTL 过期）。
+  void _releaseRemotePlayback({
+    required RemoteVideoInfo? info,
+    required RemoteVideoClient? client,
+    required int generation,
+  }) {
+    if (_sourceReviewActive) return;
+    final Object? releaseClient = client;
+    if (info == null || releaseClient is! RemoteVideoPlaybackRelease) return;
+    if (!_remotePlaybackReleaseGenerations.add(generation)) return;
+    unawaited(releaseClient.releaseRemoteVideoPlayback(info.id));
   }
 
   /// Flush the local position and then report the remote session stop.
@@ -8531,6 +8566,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     final RemoteVideoInfo? remoteInfo = _effectiveRemoteInfo;
     final RemoteVideoClient? remoteClient = _effectiveRemoteClient;
     final int remoteGeneration = _remotePlaybackGeneration;
+    _releaseRemotePlayback(
+      info: remoteInfo,
+      client: remoteClient,
+      generation: remoteGeneration,
+    );
     exitAfterPersist(
       persist: () => _flushPositionAndReportRemotePlaybackStopped(
         controller: controller,
@@ -8607,6 +8647,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       if (_webWindowFullscreen) await _toggleWebWindowFullscreen();
       if (!mounted) return true;
       if (!route.isCurrent) return false;
+      // 导航到此才确定要关本页：上面任一处取消导航，本页留下且流仍可用（BUG-4461）。
+      _releaseRemotePlayback(
+        info: _effectiveRemoteInfo,
+        client: _effectiveRemoteClient,
+        generation: _remotePlaybackGeneration,
+      );
       await _watchTracker?.stop();
       navigator.pop();
       await route.completed;

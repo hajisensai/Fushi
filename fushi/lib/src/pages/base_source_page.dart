@@ -35,6 +35,8 @@ import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart';
 import 'package:fushi/src/utils/components/fushi_deferred_loading.dart';
+import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart'
+    show FushiDesktopTitleBar;
 import 'package:fushi/src/lookup/lookup_audio_playback.dart';
 import 'package:fushi/src/utils/misc/lookup_auto_read_coordinator.dart';
 import 'package:fushi/src/utils/misc/lookup_dismiss_barrier.dart';
@@ -139,9 +141,20 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
           mounted && identical(ModalRoute.of(context), route),
     );
 
+    FushiDesktopTitleBar.addCaptionTapListener(_onCaptionTap);
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _seedWarmPopup();
     });
+  }
+
+  /// BUG-4475：标题行（含沉浸页的隐形拖动条）叠在 Navigator 之上，弹窗的
+  /// dismiss barrier 在那一条里命中不到。标题行上的单击按「点在弹窗外」走
+  /// barrier 同一钩子；只有当前路由上、弹窗可见的页面响应（被盖住的页面不动）。
+  void _onCaptionTap(Offset globalPosition) {
+    if (!mounted || !isDictionaryShown) return;
+    if (!(ModalRoute.of(context)?.isCurrent ?? true)) return;
+    onDismissBarrierTap(globalPosition);
   }
 
   /// BUG-092: seed a single persistent, hidden popup slot on open so its
@@ -163,6 +176,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
 
   @override
   void dispose() {
+    FushiDesktopTitleBar.removeCaptionTapListener(_onCaptionTap);
     ExternalMediaNavigation.instance.unregister(this);
     _visibleRenderFailsafeTimer?.cancel();
     // TODO-058：controller 现持有挂起层兜底 Timer，作为其所有者必须 dispose 取消，防泄漏。
@@ -1155,6 +1169,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       child: DictionaryPopupLayer(
         result: item.result,
         restoreScrollTop: item.restoreScrollTop,
+        lookupSession: item.lookupSession,
         webViewKey: item.webViewKey,
         keepWebViewWarm: item.isWarmSlot,
         // TODO-869：本层有后代弹窗时注入 __hasChildPopup，点卡片本体留白才能关子窗。

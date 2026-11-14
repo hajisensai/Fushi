@@ -5,11 +5,14 @@
 //!
 //! 1. `rebuild_all` 再做一遍，派生表逐行不变；
 //! 2. 换一种到达方式（一台设备一台设备地逐条落、逐条维护，信任状态最后才给），派生表与重建出来的逐行相同；
-//! 3. 与协议 3 的投影对拍（[against_protocol_3]）没有差异；缓存层（笔记行 / 卡行 / 有效复习投影）按同一份缓存配置
-//!    （只有默认牌组）与协议 3 在 SAVEPOINT 里 `caches::rebuild` 出来的行逐列比，比完回滚。缓存层的有意差别与口径
-//!    （`cache.rs` 文件头「与协议 3 的差别」）：笔记行的 `updated_at` 不比；协议 3 因身份记录不成形整次重建失败时
-//!    缓存三类不比；有删除被扣住的笔记不比 `deleted_at` / `pending_decision` 与它的卡的 `hidden`（同 `edits` 的口径）；
-//!    同一个旧修改记录 ID 下有两条不同修改的笔记（复制出来的两份旧库各自续写）不比它与它的卡（[collided_notes]）。
+//! 3. 与协议 3 的投影对拍（[against_protocol_3]，比法在 `compare.rs`，干跑共用）没有差异——协议 3 一侧比的是「它自己的
+//!    规则作用在全集上」：扣住在全集上重判（[rejudge_holds]），活着的修改记录按它自己的寄存器判据取
+//!    （`compare::protocol_3_live_edits`）；两份旧库撞了同一个旧修改记录 ID 的不比（`compare::Collisions`）；缓存层（笔记行 /
+//!    卡行 / 有效复习投影）按同一份缓存配置（只有默认牌组）与协议 3 在 SAVEPOINT 里 `caches::rebuild` 出来的行逐列比，
+//!    比完回滚。缓存层的有意差别与口径（`cache.rs` 文件头「与协议 3 的差别」）：笔记行的 `updated_at` 不比；协议 3 因
+//!    身份记录不成形整次重建失败时缓存三类不比；有删除被扣住的笔记不比 `deleted_at` / `pending_decision` 与它的卡的
+//!    `hidden`、笔记类型的删除被扣住时它的笔记的卡不比 `hidden`（同 `edits` 的口径）；同一个旧修改记录 ID 下有两条
+//!    不同修改的笔记（复制出来的两份旧库各自续写）不比它与它的卡。
 //!    协议 3 一侧先做完它自己欠着的收尾（待重放集合、没刷新的合成标签行）再重建（[protocol_3_caches]）。
 //!
 //! 库还没做完换代前必须做完的事（旧行没包成操作、去重作业没跑完）时，在一份拷贝上把它们做完再对拍；做不完的
@@ -48,17 +51,20 @@ const KNOWN: &[(&str, &str, &str)] = &[
     (
         "dryrun::tests::a_projection_that_disagrees_with_the_log_fails",
         "edits",
-        "the test deletes one live srs_field_edits row by hand to prove the dry run catches a projection that          disagrees with its own log; the field, the note row and its cards differ on purpose",
+        "the test deletes one live srs_field_edits row by hand to prove the dry run catches a projection that \
+         disagrees with its own log; the field, the note row and its cards differ on purpose",
     ),
     (
         "dryrun::tests::a_projection_that_disagrees_with_the_log_fails",
         "notes",
-        "the test deletes one live srs_field_edits row by hand to prove the dry run catches a projection that          disagrees with its own log; the field, the note row and its cards differ on purpose",
+        "the test deletes one live srs_field_edits row by hand to prove the dry run catches a projection that \
+         disagrees with its own log; the field, the note row and its cards differ on purpose",
     ),
     (
         "dryrun::tests::a_projection_that_disagrees_with_the_log_fails",
         "cards",
-        "the test deletes one live srs_field_edits row by hand to prove the dry run catches a projection that          disagrees with its own log; the field, the note row and its cards differ on purpose",
+        "the test deletes one live srs_field_edits row by hand to prove the dry run catches a projection that \
+         disagrees with its own log; the field, the note row and its cards differ on purpose",
     ),
     (
         "legacy::tests::a_duplicate_skeleton_in_the_log_becomes_an_alias",
@@ -69,13 +75,20 @@ const KNOWN: &[(&str, &str, &str)] = &[
     (
         "tests_digest::diverged_devices_locate_the_differing_bucket",
         "stats",
-        "the test rewrites one srs_review_logs row's rating by hand (a silent divergence that never went through          sync), so the protocol 3 projection no longer matches the log op the new store reads",
+        "the test rewrites one srs_review_logs row's rating by hand (a silent divergence that never went through \
+         sync), so the protocol 3 projection no longer matches the log op the new store reads",
     ),
     (
         "tests_footprint::upgrading_from_before_v16_adds_the_snapshot_columns_before_reading_ops",
         "error",
         "the test drops sync2_ops.sc / sc_at by hand: the ops whose payload was packed against a config snapshot \
          lose the reference, so their bytes no longer hash to the stored chain (the reader refuses them)",
+    ),
+    (
+        "tests_channel::channel_is_for_a_profile_holding_nothing_but_its_own_builtins",
+        "entities",
+        "the ch-missing-row device deletes the srs_entities row of a builtin note type by hand (to check that the \
+         channel stays shut when a projected row is gone): its own log still holds the identity record",
     ),
 ];
 
@@ -131,17 +144,53 @@ fn protocol_3_caches(src: &Connection, profile: &str, cfg: &str) -> Result<Cache
 
 /// [compare::against_protocol_3] 的测试口径：协议 3 一侧的缓存行取 [protocol_3_caches]（可写连接上先收尾再重建、
 /// 整个回滚；只读连接读现有的缓存表），不另外跳过什么；出错直接让测试失败。
+///
+/// 可写连接上先在一个 SAVEPOINT 里把扣住按协议 3 自己的规则在全集上重判一遍（[rejudge_holds]）再比，比完整个回滚
+/// （库原样不动）；只读打开的库（真实样本、干跑）动不了，比它落库时的判定。
 pub(crate) fn against_protocol_3(src: &Connection, profile: &str, t: &Truth<'_>, col: i64) -> Diff {
-    compare::against_protocol_3(
-        src,
-        profile,
-        t,
-        col,
-        &mut |src: &Connection, profile: &str, cfg: &str| protocol_3_caches(src, profile, cfg),
-        &compare::Skip::default(),
-    )
-    .unwrap()
-    .0
+    let compare = || {
+        compare::against_protocol_3(
+            src,
+            profile,
+            t,
+            col,
+            &mut |src: &Connection, profile: &str, cfg: &str| protocol_3_caches(src, profile, cfg),
+            &compare::Skip::default(),
+        )
+        .unwrap()
+        .0
+    };
+    if src.is_readonly("main").unwrap() {
+        return compare();
+    }
+    src.execute_batch("SAVEPOINT gen4_parity_holds").unwrap();
+    rejudge_holds(src, profile);
+    let diff = compare();
+    src.execute_batch("ROLLBACK TO gen4_parity_holds; RELEASE gen4_parity_holds")
+        .unwrap();
+    diff
+}
+
+/// 协议 3 只在有操作落到一个实体上时重判这个实体上的删除该不该扣住（`semantics::evaluate_holds`），而把卡挪进牌组
+/// 的修改只重判那张卡、不重判目标牌组（`store/sync2/mod.rs` `project_edit_noted`；移卡只记进牌组的实体操作索引）。
+/// 于是牌组的删除先到、与它并发的移卡后到时删除不被扣住；反过来的顺序就扣住——扣不扣取决于到达顺序（设计 §2.5
+/// 差别表「重判扣住的时机」）。新存储对全集判。对拍时协议 3 一侧对每个有删除的实体照它自己的规则重判一遍，比的是
+/// 「协议 3 的规则作用在全集上」，不是它落库那一刻的判定。
+fn rejudge_holds(src: &Connection, profile: &str) {
+    let ents: Vec<(String, String)> = src
+        .prepare(
+            "SELECT DISTINCT kind, srs_idt(entity) FROM sync2_ent_ops WHERE profile_uid = srs_id(?1) AND what = 'deleted'",
+        )
+        .unwrap()
+        .query_map([profile], |r| Ok((r.get(0)?, r.get(1)?)))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    let mut touched = crate::store::sync2::Touched::default();
+    for (kind, ent) in ents {
+        crate::store::sync2::semantics::evaluate_holds(src, profile, &kind, &ent, 0, &mut touched)
+            .unwrap();
+    }
 }
 
 /// 把 [t] 里的日志换一种到达方式再建一遍：新开一个库，一台设备一台设备地逐条落、逐条告诉索引（别的设备的依赖
@@ -265,7 +314,8 @@ fn explain(
         for id in old_only {
             let row: Option<(String, String, String, String, i64, String)> = src
                 .prepare(
-                    "SELECT entity_kind, srs_idt(entity_id), field_key, srs_idt(writer_id), seq, json FROM srs_field_edits                      WHERE profile_uid = srs_id(?1) AND srs_idt(id) = ?2",
+                    "SELECT entity_kind, srs_idt(entity_id), field_key, srs_idt(writer_id), seq, json FROM srs_field_edits \
+                     WHERE profile_uid = srs_id(?1) AND srs_idt(id) = ?2",
                 )
                 .unwrap()
                 .query_row([profile, id.as_str()], |r| {

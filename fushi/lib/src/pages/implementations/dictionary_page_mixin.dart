@@ -1230,6 +1230,7 @@ mixin DictionaryPageMixin {
         DictionaryPopupLayer(
           result: entry.result,
           restoreScrollTop: entry.restoreScrollTop,
+          lookupSession: entry.lookupSession,
           isSearching: entry.isSearching,
           keepWebViewWarm: entry.isWarmSlot,
           webViewKey: entry.webViewKey,

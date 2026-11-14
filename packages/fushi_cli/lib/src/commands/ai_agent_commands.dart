@@ -86,6 +86,11 @@ Future<int> _followAsk(CtlFollowContext c, Object? first) async {
         entries,
         pending['entryId'],
       );
+      // 作答带上看到的这张卡片的 id：等终端输入期间卡片可能已经换了（别处答过、
+      // 会话被取消后又走到下一张），app 回 409 而不是把回答落到别的卡片上。
+      final Map<String, Object?> cardRef = <String, Object?>{
+        if (pending['entryId'] is String) 'entryId': pending['entryId'],
+      };
       if (pending['kind'] == 'confirm') {
         c.out.writeln(_confirmText(card));
         bool approve = autoYes;
@@ -98,7 +103,7 @@ Future<int> _followAsk(CtlFollowContext c, Object? first) async {
         await c.call(
           'POST',
           '$path/answer',
-          body: <String, Object?>{'approve': approve},
+          body: <String, Object?>{'approve': approve, ...cardRef},
         );
       } else {
         final List<Object?> options =
@@ -123,6 +128,7 @@ Future<int> _followAsk(CtlFollowContext c, Object? first) async {
           '$path/answer',
           body: <String, Object?>{
             if (picked is Map) 'choice': '${picked['id']}',
+            ...cardRef,
           },
         );
       }

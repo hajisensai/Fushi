@@ -264,6 +264,13 @@ void TestResolutionFailsClosed() {
     assert(core::ResolveSites(img.image, &sites) ==
            core::SiteResult::kAnchorMissing);
   }
+  {  // two anchors: ambiguity, not absence
+    SyntheticImage img;
+    BuildEngine(&img, core::Generation::kThiscall);
+    img.PutShape(0x4800u, core::kAnchor);
+    assert(core::ResolveSites(img.image, &sites) ==
+           core::SiteResult::kAnchorAmbiguous);
+  }
   {  // the vtable slot does not reach the anchored layout
     SyntheticImage img;
     BuildEngine(&img, core::Generation::kThiscall);
@@ -307,6 +314,271 @@ void TestResolutionFailsClosed() {
     assert(!core::DesignSizeFrom(6u, widths, heights, &w, &h));
     assert(!core::DesignSizeFrom(8u, widths, heights, &w, &h));
   }
+}
+
+// ── 1.566.3 code shapes (Settec-wrapped retail build) ──────────────────────
+
+// The layout switch head with `mov <reg>,1` scheduled between `cmp al,0x20`
+// and the `jge` consuming its flags.
+void PutInterposedAnchor(SyntheticImage* img, size_t at, uint8_t mov_op) {
+  img->Put(at, {0x3c, 0x20, mov_op, 0x01, 0x00, 0x00, 0x00});
+  img->Put(at + 7u, core::kAnchorBytes + 2u, core::kAnchor.size - 2u);
+  img->base[at + 7u + 1u] = 0x6eu;
+  img->base[at + 7u + 12u] = 0x63u;
+}
+
+void ReplaceAnchor(SyntheticImage* img, uint8_t mov_op) {
+  std::memset(img->base + kLayout + 0x76u, 0xcc, 0x20u);
+  PutInterposedAnchor(img, kLayout + 0x76u, mov_op);
+}
+
+void TestInterposedAnchor() {
+  core::Sites sites;
+  for (uint8_t op : {0xb9, 0xba, 0xbb, 0xbd, 0xbe, 0xbf}) {
+    for (core::Generation generation :
+         {core::Generation::kThiscall, core::Generation::kStdcall}) {
+      SyntheticImage img;
+      BuildEngine(&img, generation);
+      ReplaceAnchor(&img, op);
+      assert(core::ResolveSites(img.image, &sites) ==
+             core::SiteResult::kResolved);
+      assert(sites.layout == kLayout && sites.ex_vtable == kExVtable);
+    }
+  }
+  // `mov eax,imm` would clobber al; `mov esp,imm` is no codegen.
+  for (uint8_t op : {0xb8, 0xbc}) {
+    SyntheticImage img;
+    BuildEngine(&img, core::Generation::kThiscall);
+    ReplaceAnchor(&img, op);
+    assert(core::ResolveSites(img.image, &sites) ==
+           core::SiteResult::kAnchorMissing);
+  }
+  {  // an interposed instruction that writes the flags is not the switch
+    SyntheticImage img;
+    BuildEngine(&img, core::Generation::kThiscall);
+    ReplaceAnchor(&img, 0xb9);
+    img.Put(kLayout + 0x76u + 2u, {0x83, 0xc1, 0x01, 0x90, 0x90});
+    assert(core::ResolveSites(img.image, &sites) ==
+           core::SiteResult::kAnchorMissing);
+  }
+  {  // one contiguous and one interposed anchor: ambiguous, final
+    SyntheticImage img;
+    BuildEngine(&img, core::Generation::kThiscall);
+    PutInterposedAnchor(&img, 0x4800u, 0xb9);
+    const core::SiteResult result = core::ResolveSites(img.image, &sites);
+    assert(result == core::SiteResult::kAnchorAmbiguous);
+    core::SiteScanSchedule schedule;
+    assert(schedule.Record(result, 0u) == core::SiteScanVerdict::kRejected);
+  }
+}
+
+// Read-only data linked into the code section: the Ex vtable and the screen
+// tables live there, proven by their contents.
+constexpr size_t kCodeVtable = 0x5000u;
+constexpr size_t kCodeScreenIndex = 0x57fcu;
+constexpr size_t kCodeScreenWidths = 0x5800u;
+
+void MoveTablesIntoCode(SyntheticImage* img) {
+  img->base[kCtor] = 0x90u;  // the data-section Ex vtable is no class now
+  for (uint32_t disp = 0u; disp < 0x30u; disp += 4u) {
+    img->Va(kCodeVtable + disp, 0x2c00u);
+  }
+  img->Va(kCodeVtable + 0x30u, kWrapper);
+  img->Put(kCtor + 0x20u, {0xc7, 0x06});
+  img->Va(kCtor + 0x22u, kCodeVtable);
+  const uint32_t widths[8] = {320, 640, 800, 1024, 1024, 1024, 1280, 1280};
+  const uint32_t heights[8] = {240, 480, 600, 768, 576, 600, 720, 960};
+  img->Dword(kCodeScreenIndex, 6u);
+  img->Put(kCodeScreenWidths, reinterpret_cast<const uint8_t*>(widths),
+           sizeof(widths));
+  img->Put(kCodeScreenWidths + 0x20u, reinterpret_cast<const uint8_t*>(heights),
+           sizeof(heights));
+  img->Va(kScreenCode + 3u, kCodeScreenWidths);
+  img->Va(kScreenCode + 0x13u, kCodeScreenWidths + 0x20u);
+  img->Va(kScreenCode + 0x21u, kCodeScreenIndex);
+}
+
+void TestTablesInCodeSection() {
+  core::Sites sites;
+  {
+    SyntheticImage img;
+    BuildEngine(&img, core::Generation::kThiscall);
+    ReplaceAnchor(&img, 0xb9);
+    MoveTablesIntoCode(&img);
+    assert(core::ResolveSites(img.image, &sites) ==
+           core::SiteResult::kResolved);
+    assert(sites.ex_vtable == kCodeVtable);
+    assert(sites.screen_widths == kCodeScreenWidths);
+    assert(sites.screen_index == kCodeScreenIndex);
+  }
+  {  // a slot before the layout slot that is no code pointer: not a vtable
+    SyntheticImage img;
+    BuildEngine(&img, core::Generation::kThiscall);
+    MoveTablesIntoCode(&img);
+    img.Va(kCodeVtable + 0x8u, kExVtable);
+    assert(core::ResolveSites(img.image, &sites) ==
+           core::SiteResult::kVtableMissing);
+  }
+  {  // a null slot is no code pointer either
+    SyntheticImage img;
+    BuildEngine(&img, core::Generation::kThiscall);
+    MoveTablesIntoCode(&img);
+    img.Dword(kCodeVtable + 0x4u, 0u);
+    assert(core::ResolveSites(img.image, &sites) ==
+           core::SiteResult::kVtableMissing);
+  }
+  {  // code-section screen tables with an implausible size are refused
+    SyntheticImage img;
+    BuildEngine(&img, core::Generation::kThiscall);
+    MoveTablesIntoCode(&img);
+    img.Dword(kCodeScreenWidths + 0x3cu, 20000u);
+    assert(core::ResolveSites(img.image, &sites) ==
+           core::SiteResult::kScreenMissing);
+  }
+  {  // data-section and code-section Ex vtables both reaching the layout
+    SyntheticImage img;
+    BuildEngine(&img, core::Generation::kThiscall);
+    MoveTablesIntoCode(&img);
+    img.base[kCtor] = 0xc7u;
+    assert(core::ResolveSites(img.image, &sites) ==
+           core::SiteResult::kVtableAmbiguous);
+  }
+}
+
+// ── scan lifecycle (protected builds hydrate after injection) ──────────────
+
+// Only zero-match stages wait for hydration; everything describing present
+// code is final.
+void TestHydrationPendingClassification() {
+  using R = core::SiteResult;
+  for (R pending : {R::kImageUnavailable, R::kVcallMissing, R::kAnchorMissing,
+                    R::kVtableMissing, R::kScreenMissing}) {
+    assert(core::IsHydrationPendingResult(pending));
+  }
+  for (R final_result :
+       {R::kResolved, R::kNotX86, R::kVcallAmbiguous, R::kImplMissing,
+        R::kImplShape, R::kAnchorAmbiguous, R::kLayoutMissing,
+        R::kVtableAmbiguous, R::kScreenAmbiguous}) {
+    assert(!core::IsHydrationPendingResult(final_result));
+  }
+}
+
+// The first scan runs before the stub has decrypted the code: no vcall.  The
+// same mapping later holds the hydrated code and the re-scan resolves.
+void TestRescanResolvesAfterHydration() {
+  SyntheticImage img;
+  BuildEngine(&img, core::Generation::kThiscall);
+  uint8_t hydrated[core::kVcallThis.size] = {};
+  std::memcpy(hydrated, img.base + kImpl + 0xb2u, sizeof(hydrated));
+  // Encrypted: the vcall bytes are not there yet.
+  std::memset(img.base + kImpl + 0xb2u, 0x5au, sizeof(hydrated));
+
+  core::SiteScanSchedule schedule;
+  core::Sites sites;
+  const uint64_t t0 = 1000u;
+  assert(schedule.Due(t0));
+  assert(!schedule.scanned() && !schedule.pending() && !schedule.settled());
+  core::SiteResult result = core::ResolveSites(img.image, &sites);
+  assert(result == core::SiteResult::kVcallMissing);
+  assert(schedule.Record(result, t0) == core::SiteScanVerdict::kRetry);
+  assert(schedule.pending() && !schedule.rejected() && !schedule.settled());
+  // Bounded interval: no re-scan before it has elapsed.
+  assert(!schedule.Due(t0 + core::kSiteRetryIntervalMs - 1u));
+  assert(schedule.Due(t0 + core::kSiteRetryIntervalMs));
+  result = core::ResolveSites(img.image, &sites);
+  assert(schedule.Record(result, t0 + core::kSiteRetryIntervalMs) ==
+         core::SiteScanVerdict::kRetry);
+
+  // The stub hydrates the code in place.
+  std::memcpy(img.base + kImpl + 0xb2u, hydrated, sizeof(hydrated));
+  const uint64_t t2 = t0 + 2u * core::kSiteRetryIntervalMs;
+  assert(schedule.Due(t2));
+  result = core::ResolveSites(img.image, &sites);
+  assert(result == core::SiteResult::kResolved);
+  assert(schedule.Record(result, t2) == core::SiteScanVerdict::kResolved);
+  assert(schedule.settled() && !schedule.pending() && !schedule.rejected());
+  assert(schedule.scans() == 3u);
+  assert(schedule.elapsed_ms() == 2u * core::kSiteRetryIntervalMs);
+  assert(!schedule.Due(t2 + core::kSiteRetryIntervalMs));
+  assert(sites.set_text_impl == kImpl && sites.ex_vtable == kExVtable);
+}
+
+// A protected build whose code section is not even readable yet: the loaded
+// image hands the section over without bytes, which is the same zero-match.
+void TestRescanResolvesAfterSectionBecomesReadable() {
+  SyntheticImage img;
+  BuildEngine(&img, core::Generation::kThiscall);
+  const exact::LoadedPeSection code = img.image.sections[0];
+  img.image.sections[0].bytes = nullptr;
+  img.image.sections[0].size = 0u;
+  core::SiteScanSchedule schedule;
+  core::Sites sites;
+  core::SiteResult result = core::ResolveSites(img.image, &sites);
+  assert(result == core::SiteResult::kVcallMissing);
+  assert(schedule.Record(result, 0u) == core::SiteScanVerdict::kRetry);
+  img.image.sections[0] = code;
+  assert(schedule.Due(core::kSiteRetryIntervalMs));
+  result = core::ResolveSites(img.image, &sites);
+  assert(schedule.Record(result, core::kSiteRetryIntervalMs) ==
+         core::SiteScanVerdict::kResolved);
+}
+
+// A structural rejection of present code is final at the first scan, and a
+// later change of the image cannot revive it.
+void TestAmbiguityStaysFinal() {
+  SyntheticImage img;
+  BuildEngine(&img, core::Generation::kThiscall);
+  img.Put(0x4000u, {0x8d, 0x73, 0x7c, 0x56, 0x8b, 0xcb, 0xff, 0xd0});
+  core::SiteScanSchedule schedule;
+  core::Sites sites;
+  core::SiteResult result = core::ResolveSites(img.image, &sites);
+  assert(result == core::SiteResult::kVcallAmbiguous);
+  assert(schedule.Record(result, 0u) == core::SiteScanVerdict::kRejected);
+  assert(schedule.settled() && schedule.rejected() && !schedule.pending());
+  assert(schedule.scans() == 1u);
+  assert(!schedule.Due(core::kSiteRetryIntervalMs));
+  assert(!schedule.Due(core::kSiteRetryWindowMs * 2u));
+  // Even if the decoy disappeared, the verdict does not change.
+  img.Put(0x4000u, {0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc});
+  assert(core::ResolveSites(img.image, &sites) == core::SiteResult::kResolved);
+  assert(schedule.Record(core::SiteResult::kResolved,
+                         core::kSiteRetryIntervalMs) ==
+         core::SiteScanVerdict::kRejected);
+  assert(schedule.rejected());
+
+  // Two anchors are ambiguity, not absence: also final at once.
+  SyntheticImage twin;
+  BuildEngine(&twin, core::Generation::kThiscall);
+  twin.PutShape(0x4800u, core::kAnchor);
+  core::SiteScanSchedule anchors;
+  assert(anchors.Record(core::ResolveSites(twin.image, &sites), 0u) ==
+         core::SiteScanVerdict::kRejected);
+}
+
+// A zero match that never hydrates is rejected once the window has run out.
+void TestMissingIsRejectedAfterWindow() {
+  SyntheticImage img;
+  BuildEngine(&img, core::Generation::kThiscall);
+  img.base[kImpl + 0xb2u] = 0x90u;
+  core::SiteScanSchedule schedule;
+  core::Sites sites;
+  const uint64_t t0 = 50u;
+  uint64_t now = t0;
+  uint32_t scans = 0u;
+  core::SiteScanVerdict verdict = core::SiteScanVerdict::kRetry;
+  while (verdict == core::SiteScanVerdict::kRetry) {
+    assert(schedule.Due(now));
+    verdict = schedule.Record(core::ResolveSites(img.image, &sites), now);
+    ++scans;
+    assert(scans <= core::kSiteRetryWindowMs / core::kSiteRetryIntervalMs + 1u);
+    now += core::kSiteRetryIntervalMs;
+  }
+  assert(verdict == core::SiteScanVerdict::kRejected);
+  assert(schedule.rejected());
+  assert(schedule.elapsed_ms() >= core::kSiteRetryWindowMs);
+  assert(schedule.elapsed_ms() <
+         core::kSiteRetryWindowMs + core::kSiteRetryIntervalMs);
+  assert(!schedule.Due(now));
 }
 
 // ── owner ABI ──────────────────────────────────────────────────────────────
@@ -729,6 +1001,13 @@ int main() {
   TestResolvesThiscallGeneration();
   TestResolvesStdcallGeneration();
   TestResolutionFailsClosed();
+  TestInterposedAnchor();
+  TestTablesInCodeSection();
+  TestHydrationPendingClassification();
+  TestRescanResolvesAfterHydration();
+  TestRescanResolvesAfterSectionBecomesReadable();
+  TestAmbiguityStaysFinal();
+  TestMissingIsRejectedAfterWindow();
   TestDecodesThiscallOwner();
   TestDecodesStdcallOwner();
   TestOwnerDecodingFailsClosed();

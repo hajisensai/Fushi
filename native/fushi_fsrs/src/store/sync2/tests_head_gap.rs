@@ -53,26 +53,10 @@ fn write_head(d: &Device, bucket: &mut Bucket, location: &str, upto: u64, now: i
         .sync2_head_if_changed(P, location, upto, now, None)
         .unwrap()
     {
-        HeadWrite::Written {
-            path,
-            bytes,
-            obsolete,
-            gen,
-        } => {
-            let dir = path.rsplit_once('/').unwrap().0.to_owned();
+        HeadWrite::Written { path, bytes, .. } => {
             bucket.0.insert(path, bytes);
-            for p in &obsolete {
-                bucket.0.remove(p);
-            }
-            d.core.sync2_obsolete_ack(P, location, &obsolete).unwrap();
-            // 与生产（srs_sync2_round.dart 第 4 步）同样：删本机两代以前的 head。
-            bucket.0.retain(|k, _| {
-                !(k.starts_with(&format!("{dir}/"))
-                    && k.rsplit('/')
-                        .next()
-                        .and_then(crate::sync2::segment::parse_head_file_name)
-                        .is_some_and(|g| g + 2 < gen))
-            });
+            // 与生产（srs_sync2_round.dart 第 4 步）同样：内核给该删的旧 head / 旧小段，删成功的才确认。
+            super::tests::sweep(&d.core, bucket, location, now);
             true
         }
         HeadWrite::Recut => false,

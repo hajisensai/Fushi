@@ -225,35 +225,67 @@ pub(crate) fn malformed_definition(e: &str) -> bool {
     e.ends_with(" missing") || e.contains(": expected ") || e.starts_with("not a uuid: ")
 }
 
-/// 同一个旧修改记录 ID（旧戳的写入者 + seq）下有两条以上不同修改（不同实体或字段键）的笔记（`种类:ID`）：复制出来的
-/// 两份旧库各自又以同一个写入者写了同一个 seq。新代两条都是独立的操作、都进视图；协议 3 的投影表按修改记录 ID 只存
-/// 一行，留哪条看这台设备先收到哪份，所以这些笔记的内容（与由内容决定的卡）对不上协议 3 是到达顺序造成的。
-pub(crate) fn collided_notes(t: &Truth<'_>, col: i64) -> Result<BTreeSet<String>, String> {
-    let mut by_id: BTreeMap<(String, i64), BTreeSet<(String, String)>> = BTreeMap::new();
-    for k in live_keys(t, col)? {
+/// 同一个旧修改记录 ID（旧戳的写入者 + seq）下有两条以上不同修改（不同实体或字段键）：复制出来的两份旧库各自又以
+/// 同一个写入者写了同一个 seq（`tests_channel` 的 `ch-l1` / `ch-l2`）。新代两条都是独立的操作、各自进自己的寄存器；
+/// 协议 3 的投影表按修改记录 ID 只存一行，留哪条看这台设备先收到哪份（设计 §2.5 差别表第 15 条）。
+#[derive(Clone, Debug, Default)]
+pub(crate) struct Collisions {
+    /// 撞车的修改记录 ID：`edits` 两边都不比。不看状态——撞车的另一条在新代里被支配了也一样（协议 3 可能留的正是那条）。
+    pub edit_ids: BTreeSet<Ref>,
+    /// 撞车、且在新代里活着的修改落在的笔记（`note:ID`）：这些笔记的内容（与由内容决定的卡）对不上协议 3 是到达顺序
+    /// 造成的，缓存层不比它们与它们的卡。
+    pub notes: BTreeSet<String>,
+}
+
+/// 扫一遍 `reg_ix` 的全部写入，找出 [Collisions]。同时在内存里的只有每个旧 dot 的第一条修改（大库三十多万个）。
+pub(crate) fn collisions(t: &Truth<'_>, col: i64) -> Result<Collisions, String> {
+    type Edit = (String, String, bool);
+    let mut first: BTreeMap<(String, i64), Edit> = BTreeMap::new();
+    let mut more: BTreeMap<(String, i64), Vec<Edit>> = BTreeMap::new();
+    let rows: Vec<(i64, i64)> = t
+        .conn()
+        .prepare("SELECT k, state FROM reg_ix WHERE col = ?1")
+        .map_err(sql)?
+        .query_map([col], |r| Ok((r.get(0)?, r.get(1)?)))
+        .map_err(sql)?
+        .collect::<Result<_, _>>()
+        .map_err(sql)?;
+    for (k, state) in rows {
         let e = t
             .entry_by_key(k)?
             .ok_or_else(|| format!("gen4 compare: register row {k} has no op"))?;
         let Some(Body4::Edit(ed)) = body_of(&e) else {
             continue;
         };
-        if let Some(st) = &ed.stamp {
-            by_id
-                .entry((st.writer.clone(), st.seq))
-                .or_default()
-                .insert((
-                    format!("{}:{}", ed.kind.wire(), Ref::of(&ed.entity).text()),
-                    ed.key.clone(),
-                ));
+        let Some(st) = &ed.stamp else {
+            continue;
+        };
+        let edit = (
+            format!("{}:{}", ed.kind.wire(), Ref::of(&ed.entity).text()),
+            ed.key.clone(),
+            state >= R_LIVE,
+        );
+        let dot = (st.writer.clone(), st.seq);
+        match first.get(&dot) {
+            None => {
+                first.insert(dot, edit);
+            }
+            Some(f) if (&f.0, &f.1) == (&edit.0, &edit.1) => {}
+            Some(_) => more.entry(dot).or_default().push(edit),
         }
     }
-    Ok(by_id
-        .into_values()
-        .filter(|edits| edits.len() > 1)
-        .flatten()
-        .map(|(ent, _)| ent)
-        .filter(|ent| ent.starts_with("note:"))
-        .collect())
+    let mut out = Collisions::default();
+    for (dot, rest) in more {
+        out.edit_ids
+            .insert(Ref::of(&Key::of(&crate::registers::edit_id(&dot.0, dot.1))));
+        let f = first.remove(&dot).expect("a collision has a first edit");
+        for (ent, _, live) in std::iter::once(f).chain(rest) {
+            if live && ent.starts_with("note:") {
+                out.notes.insert(ent);
+            }
+        }
+    }
+    Ok(out)
 }
 
 /// 缓存层三类（`notes` / `cards` / `stats`）的对拍对：新代没设缓存配置时没有（不物化）。两种口径：
@@ -270,6 +302,7 @@ pub(crate) fn cache_pairs(
     t: &Truth<'_>,
     col: i64,
     held: &BTreeSet<String>,
+    collided: &BTreeSet<String>,
     old_caches: &mut OldCaches<'_>,
     skip: &Skip,
     diff: &mut Diff,
@@ -300,7 +333,6 @@ pub(crate) fn cache_pairs(
             .expect("column listed in the constant")
     };
     let held_note = |id: &str| held.contains(&format!("note:{id}"));
-    let collided = collided_notes(t, col)?;
     let skip_note = |id: &str| collided.contains(&format!("note:{id}")) || skip.notes.contains(id);
     // 三张表一张一张比：同时在内存里的只有一张表两侧的行。
     let notes = |rows: &[Vec<String>]| -> BTreeSet<String> {
@@ -322,6 +354,23 @@ pub(crate) fn cache_pairs(
     push_pair(diff, ("notes", notes(old_notes), notes(&new_notes)));
     drop(new_notes);
     let new_cards = new("cards", CARD_COLS)?;
+    // 笔记类型的删除被扣住时同理：卡的 `hidden` 跟着笔记类型删没删（`caches.rs` 笔记行的 `gone`），协议 3 的
+    // `deleted` 寄存器里留着哪几条同样取决于到达顺序，这些笔记的卡不比 `hidden`。
+    let held_types: BTreeSet<&str> = held
+        .iter()
+        .filter_map(|e| e.strip_prefix("notetype:"))
+        .collect();
+    let type_held: BTreeSet<String> = if held_types.is_empty() {
+        BTreeSet::new()
+    } else {
+        old_notes
+            .iter()
+            .chain(&new("notes", NOTE_COLS)?)
+            .filter(|r| held_types.contains(r[at(NOTE_COLS, "note_type_id")].as_str()))
+            .map(|r| r[0].clone())
+            .collect()
+    };
+    let held_card = |note: &str| held_note(note) || type_held.contains(note);
     let skipped_cards: BTreeSet<String> = old_cards
         .iter()
         .chain(&new_cards)
@@ -333,7 +382,7 @@ pub(crate) fn cache_pairs(
         rows.iter()
             .filter(|r| !skipped_cards.contains(&r[0]))
             .map(|r| {
-                if held_note(&r[at(CARD_COLS, "note_id")]) {
+                if held_card(&r[at(CARD_COLS, "note_id")]) {
                     let mut r = r.clone();
                     r[at(CARD_COLS, "hidden")] = "(held)".to_owned();
                     r.join(" | ")
@@ -420,7 +469,8 @@ pub(crate) fn against_protocol_3(
     let new_holds = ix.holds()?;
     let old_held_ents: Vec<(String, String)> = src
         .prepare(
-            "SELECT srs_idt(device) || ':' || seq, kind || ':' || srs_idt(entity) FROM sync2_held              WHERE profile_uid = srs_id(?1)",
+            "SELECT srs_idt(device) || ':' || seq, kind || ':' || srs_idt(entity) FROM sync2_held \
+             WHERE profile_uid = srs_id(?1)",
         )
         .map_err(sql)?
         .query_map([profile], |r| Ok((r.get(0)?, r.get(1)?)))
@@ -457,28 +507,13 @@ pub(crate) fn against_protocol_3(
             .map(|(op, _)| op.clone())
             .collect()
     };
-    let mut old_edits: BTreeSet<Ref> = BTreeSet::new();
-    {
-        let mut stmt = src
-            .prepare(
-                "SELECT id, entity_kind || ':' || srs_idt(entity_id), field_key FROM srs_field_edits              WHERE profile_uid = srs_id(?1) AND writer_id NOT LIKE 'sync2:%'",
-            )
-            .map_err(sql)?;
-        let mut rows = stmt.query([profile]).map_err(sql)?;
-        while let Some(r) = rows.next().map_err(sql)? {
-            let key: String = r.get(2).map_err(sql)?;
-            if key == "deleted" && held_ents.contains(&r.get::<_, String>(1).map_err(sql)?) {
-                continue;
-            }
-            old_edits.insert(r.get(0).map_err(sql)?);
-        }
-    }
-    push_refs(
-        &mut diff,
-        "edits",
-        old_edits,
-        live_edit_ids(t, col, &held_ents)?,
-    );
+    // 撞车的旧修改记录 ID 两边都不比（[Collisions]）。
+    let collided = collisions(t, col)?;
+    let mut old_edits = protocol_3_live_edits(src, profile, &held_ents)?;
+    let mut new_edits = live_edit_ids(t, col, &held_ents)?;
+    old_edits.retain(|id| !collided.edit_ids.contains(id));
+    new_edits.retain(|id| !collided.edit_ids.contains(id));
+    push_refs(&mut diff, "edits", old_edits, new_edits);
     let logs = old_refs(
         src,
         "SELECT id FROM srs_review_logs WHERE profile_uid = srs_id(?1)",
@@ -539,9 +574,81 @@ pub(crate) fn against_protocol_3(
         ("purged", old_purged.clone(), new_purged.clone()),
     );
     let rows = cache_pairs(
-        src, profile, t, col, &held_ents, old_caches, skip, &mut diff,
+        src,
+        profile,
+        t,
+        col,
+        &held_ents,
+        &collided.notes,
+        old_caches,
+        skip,
+        &mut diff,
     )?;
     Ok((diff, rows))
+}
+
+/// 协议 3 投影里活着的修改记录 ID（不算合成写入者的标签行）：按协议 3 自己的寄存器判据（`registers::judge_register`）
+/// 判过的。协议 3 落库时就裁掉被支配的（`land_stored`），自己写出来的投影里每个寄存器本来就只有活着的；测试直接往
+/// `srs_field_edits` 插旧行造出来的旧库（例如 `tests_channel` 的 `legacy_library`：同一个旧写入者先后两条、后一条的
+/// 上下文含前一条）会留着被支配的那条，它对协议 3 自己的读路径也不生效。[held] 里的实体的 `deleted` 寄存器不算。
+///
+/// 按寄存器顺序流式读：同时在内存里的只有一个寄存器的写入（大库的修改记录正文合计几百 MB）。
+fn protocol_3_live_edits(
+    src: &Connection,
+    profile: &str,
+    held: &BTreeSet<String>,
+) -> Result<BTreeSet<Ref>, String> {
+    type Row = (Ref, String, Option<i64>);
+    fn flush(
+        reg: &Option<(String, String)>,
+        group: &mut Vec<Row>,
+        held: &BTreeSet<String>,
+        out: &mut BTreeSet<Ref>,
+    ) -> Result<(), String> {
+        let Some((ent, key)) = reg else {
+            return Ok(());
+        };
+        if key == "deleted" && held.contains(ent) {
+            // 不比（[against_protocol_3] 的 `edits` 口径）。
+        } else if group.len() == 1 {
+            out.insert(group[0].0.clone());
+        } else {
+            let items: Vec<crate::registers::StoredEdit<'_>> =
+                group.iter().map(|g| (g.1.as_str(), g.2, None)).collect();
+            for i in crate::registers::judge_register(&items)?.0 {
+                out.insert(group[i].0.clone());
+            }
+        }
+        group.clear();
+        Ok(())
+    }
+    let mut out = BTreeSet::new();
+    let mut stmt = src
+        .prepare(
+            "SELECT f.id, f.entity_kind || ':' || srs_idt(f.entity_id), f.field_key, f.json, l.server_time \
+             FROM srs_field_edits f LEFT JOIN srs_event_local l ON l.event_id = f.id \
+             WHERE f.profile_uid = srs_id(?1) AND f.writer_id NOT LIKE 'sync2:%' \
+             ORDER BY f.entity_kind, f.entity_id, f.field_key",
+        )
+        .map_err(sql)?;
+    let mut rows = stmt.query([profile]).map_err(sql)?;
+    let mut reg: Option<(String, String)> = None;
+    let mut group: Vec<Row> = Vec::new();
+    while let Some(r) = rows.next().map_err(sql)? {
+        let ent: String = r.get(1).map_err(sql)?;
+        let key: String = r.get(2).map_err(sql)?;
+        if reg.as_ref().is_none_or(|(e, k)| *e != ent || *k != key) {
+            flush(&reg, &mut group, held, &mut out)?;
+            reg = Some((ent, key));
+        }
+        group.push((
+            r.get(0).map_err(sql)?,
+            r.get(3).map_err(sql)?,
+            r.get(4).map_err(sql)?,
+        ));
+    }
+    flush(&reg, &mut group, held, &mut out)?;
+    Ok(out)
 }
 
 /// 协议 3 一侧的一列 ID（存的是 `srs_id` 的形：规范 UUID 为 16 字节，其余为文本），按 [Ref] 收。

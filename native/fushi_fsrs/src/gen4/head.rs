@@ -761,7 +761,7 @@ mod tests {
         v3::Head {
             gen: 1,
             protocol: v3::PROTOCOL,
-            min_reader: v3::MIN_READER,
+            min_reader: v3::CONTENT_FLOOR,
             collection: coll(),
             device: id(0xa1),
             public: signer().public(),
