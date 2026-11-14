@@ -15,7 +15,11 @@ import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_source_browse_page.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_web_login_page.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_web_url.dart';
+import 'package:fushi/src/media/detail/media_poster_detail.dart';
 import 'package:fushi/src/media/online/online_work_detail.dart';
+import 'package:fushi/src/utils/adaptive/fushi_page_backdrop.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show shellRedesignActive;
 import 'package:fushi/src/media/video/online/anime_source_library.dart';
 import 'package:fushi/src/sync/interconnect_download_manager.dart';
 import 'package:fushi/src/media/video/online/anime_source_video_client.dart';
@@ -541,69 +545,101 @@ class _AnimeSourceDetailPageState extends ConsumerState<AnimeSourceDetailPage> {
       onPopInvokedWithResult: (bool didPop, Object? result) {
         if (!didPop) _exitSelection();
       },
-      child: FushiPageScaffold(
-        // hero 里已有大标题：顶栏标题等它滚出视口再淡入（不同屏重复）。
-        revealTitleAfterScroll: kMediaDetailTitleRevealOffset,
-        title: _anime.title,
-        subtitle: widget.sourceContext.source.name,
-        // 正文铺到悬浮页头底下（脚手架默认）：背景一直画到窗口顶端。
-        bottomNavigationBar: selection == null
-            ? null
-            : _buildBatchActionBar(selection),
-        body: _buildBody(context),
-      ),
+      // 重设计外壳：海报面板版式（与漫画系列 / 视频作品详情同一套，见
+      // media_poster_detail.dart），返回键是 [MediaPosterDetailChrome] 的裸图标
+      // 页头。扩展源封面是字节流取图、拿不到 ImageProvider，面板按作品名折出
+      // 色相。墨水屏走下面的原版式。
+      child: shellRedesignActive(context)
+          ? Scaffold(
+              backgroundColor: fushiPageBackgroundColor(context),
+              bottomNavigationBar: selection == null
+                  ? null
+                  : _buildBatchActionBar(selection),
+              body: MediaPosterDetailTheme(
+                image: null,
+                fallbackKey: _anime.title,
+                child: MediaPosterDetailChrome(
+                  title: _anime.title,
+                  ownPrimaryScroll: true,
+                  child: _buildBody(context, poster: true),
+                ),
+              ),
+            )
+          : FushiPageScaffold(
+              // hero 里已有大标题：顶栏标题等它滚出视口再淡入（不同屏重复）。
+              revealTitleAfterScroll: kMediaDetailTitleRevealOffset,
+              title: _anime.title,
+              subtitle: widget.sourceContext.source.name,
+              // 正文铺到悬浮页头底下（脚手架默认）：背景一直画到窗口顶端。
+              bottomNavigationBar: selection == null
+                  ? null
+                  : _buildBatchActionBar(selection),
+              body: _buildBody(context, poster: false),
+            ),
     );
   }
 
-  Widget _buildBody(BuildContext context) {
+  Widget _buildBody(BuildContext context, {required bool poster}) {
     final double page = FushiDesignTokens.of(context).spacing.page;
     final bool selecting = _selection != null;
     final int resume = _resumeIndex;
     final bool started = resume >= 0 && resume < _episodes.length;
-    return MediaDetailLayout(
-      // 「继续 / 开始观看」悬浮按钮：与 hero 主按钮同一集；没有分集 / 多选时不出。
-      fab: _loading || _episodes.isEmpty || selecting
-          ? null
-          : MediaDetailResumeFab(
-              buttonKey: const ValueKey<String>('anime_source_resume_fab'),
-              watching: true,
-              started: started,
-              itemLabel: _episodeTitle(_episodes[started ? resume : 0]),
-              onPressed: () => unawaited(_play(started ? resume : 0)),
-            ),
-      header: _buildHeader(),
-      slivers: <Widget>[
-        SliverPadding(
-          padding: EdgeInsets.symmetric(horizontal: page),
-          sliver: SliverToBoxAdapter(
-            child: OnlineWorkSectionTitle(
-              t.video_online_episodes_title,
-              count: _episodes.isEmpty ? null : _episodes.length,
-              trailing: _episodes.isEmpty || _client == null
-                  ? null
-                  : FushiIconButtonControl(
-                      key: const ValueKey<String>('anime_source_select'),
-                      tooltip: selecting ? t.dialog_cancel : t.batch_select,
-                      isSelected: selecting,
-                      onPressed: selecting
-                          ? _exitSelection
-                          : () => _enterSelection(),
-                      icon: FushiIcon(
-                        selecting ? FushiIcons.close : FushiIcons.checklist,
-                      ),
+    // 「继续 / 开始观看」悬浮按钮：与 hero 主按钮同一集；没有分集 / 多选时不出。
+    final Widget? fab = _loading || _episodes.isEmpty || selecting
+        ? null
+        : MediaDetailResumeFab(
+            buttonKey: const ValueKey<String>('anime_source_resume_fab'),
+            watching: true,
+            started: started,
+            itemLabel: _episodeTitle(_episodes[started ? resume : 0]),
+            onPressed: () => unawaited(_play(started ? resume : 0)),
+          );
+    final List<Widget> slivers = <Widget>[
+      SliverPadding(
+        padding: EdgeInsets.symmetric(horizontal: page),
+        sliver: SliverToBoxAdapter(
+          child: OnlineWorkSectionTitle(
+            t.video_online_episodes_title,
+            count: _episodes.isEmpty ? null : _episodes.length,
+            trailing: _episodes.isEmpty || _client == null
+                ? null
+                : FushiIconButtonControl(
+                    key: const ValueKey<String>('anime_source_select'),
+                    tooltip: selecting ? t.dialog_cancel : t.batch_select,
+                    isSelected: selecting,
+                    onPressed: selecting
+                        ? _exitSelection
+                        : () => _enterSelection(),
+                    icon: FushiIcon(
+                      selecting ? FushiIcons.close : FushiIcons.checklist,
                     ),
-            ),
+                  ),
           ),
         ),
-        SliverPadding(
-          padding: EdgeInsets.symmetric(horizontal: page),
-          sliver: _buildEpisodeList(),
+      ),
+      SliverPadding(
+        padding: EdgeInsets.symmetric(horizontal: page),
+        sliver: _buildEpisodeList(),
+      ),
+    ];
+    if (poster) {
+      return FushiEntranceScope(
+        child: MediaPosterDetailLayout(
+          bottomPadding: page,
+          fab: fab,
+          header: _buildHeader(poster: true),
+          slivers: slivers,
         ),
-      ],
+      );
+    }
+    return MediaDetailLayout(
+      fab: fab,
+      header: _buildHeader(poster: false),
+      slivers: slivers,
     );
   }
 
-  Widget _buildHeader() {
+  Widget _buildHeader({required bool poster}) {
     final Object? error = _error;
     final int resume = _resumeIndex;
     final bool canPlay = !_loading && _episodes.isNotEmpty;
@@ -622,6 +658,7 @@ class _AnimeSourceDetailPageState extends ConsumerState<AnimeSourceDetailPage> {
             ),
           );
     return OnlineWorkHeader(
+      posterPanel: poster,
       coverMaterial: ShelfCoverMaterial.glossyPoster,
       cover: MihonSourceImage(
         runtime: widget.manager.runtime,

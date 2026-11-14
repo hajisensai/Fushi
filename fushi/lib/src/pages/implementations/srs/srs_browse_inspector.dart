@@ -37,6 +37,8 @@ import 'package:fushi/src/srs/srs_fushi_card_fields.dart' show srsPlainText;
 import 'package:fushi_engine/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/srs/srs_sound_tag.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show shellRedesignActive;
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -1278,7 +1280,8 @@ class _SrsBrowseDetailPageState extends ConsumerState<SrsBrowseDetailPage> {
       child: FushiPageScaffold(
         title: title,
         subtitle: position,
-        actions: apple
+        masthead: true,
+        actions: apple || shellRedesignActive(context)
             ? <Widget>[
                 for (final FushiToolbarItem i in nav)
                   FushiIconButton(

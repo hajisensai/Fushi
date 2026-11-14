@@ -31,9 +31,23 @@ import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart'
+    show FushiM3eShape;
 import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
     show FushiFloatingChromeInset;
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show
+        ShellContentLayout,
+        shellContentLayoutOf,
+        shellRedesignActive,
+        shellShape;
+import 'package:fushi/src/utils/components/fushi_cover_block.dart'
+    show FushiCoverBlockColors;
+import 'package:fushi/src/utils/components/fushi_poster_block.dart'
+    show FushiPosterBlock, FushiPosterText, fushiPosterColors, fushiPosterHue;
+import 'package:fushi/src/utils/components/shelf_card_widgets.dart'
+    show shelfCoverCard;
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
@@ -417,6 +431,11 @@ class _FushiWebBrowserHomePageState
     final double top =
         MediaQuery.paddingOf(context).top +
         FushiFloatingChromeInset.of(context);
+    // 重设计外壳（墨水屏除外）：分区标题换粗大字；布局偏好不是「封面网格」时
+    // 站点卡再换成色块卡（[_WebBrowserSiteBlock]），选了封面网格保留旧卡片。
+    final bool redesign = shellRedesignActive(context);
+    final bool blocks =
+        shellContentLayoutOf(context) != ShellContentLayout.grid;
     return CustomScrollView(
       key: const ValueKey<String>('web-browser-site-list'),
       slivers: <Widget>[
@@ -437,12 +456,20 @@ class _FushiWebBrowserHomePageState
                 Expanded(
                   child: Text(
                     t.web_browser_sites_title,
-                    style: theme.textTheme.titleSmall?.copyWith(
-                      color: isGlassDesign(context)
-                          ? appleColorsOf(context).secondaryLabel
-                          : theme.colorScheme.primary,
-                      fontWeight: FontWeight.w600,
-                    ),
+                    // 重设计外壳：分区标题与库页分区同一档粗大字（设计稿
+                    // `.secH b`）。
+                    style: redesign
+                        ? theme.textTheme.headlineSmall?.copyWith(
+                            color: theme.colorScheme.onSurface,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: -0.5,
+                          )
+                        : theme.textTheme.titleSmall?.copyWith(
+                            color: isGlassDesign(context)
+                                ? appleColorsOf(context).secondaryLabel
+                                : theme.colorScheme.primary,
+                            fontWeight: FontWeight.w600,
+                          ),
                   ),
                 ),
                 FushiTextButton.icon(
@@ -475,19 +502,32 @@ class _FushiWebBrowserHomePageState
               EdgeInsets.fromLTRB(page, 0, page, page),
             ),
             sliver: SliverGrid(
-              gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                maxCrossAxisExtent: 200,
-                mainAxisExtent: 116,
-                mainAxisSpacing: 12,
-                crossAxisSpacing: 12,
-              ),
+              gridDelegate: blocks
+                  ? const SliverGridDelegateWithMaxCrossAxisExtent(
+                      maxCrossAxisExtent: _kSiteBlockMaxWidth,
+                      mainAxisExtent: _kSiteBlockHeight,
+                      mainAxisSpacing: _kSiteBlockSpacing,
+                      crossAxisSpacing: _kSiteBlockSpacing,
+                    )
+                  : const SliverGridDelegateWithMaxCrossAxisExtent(
+                      maxCrossAxisExtent: 200,
+                      mainAxisExtent: 116,
+                      mainAxisSpacing: 12,
+                      crossAxisSpacing: 12,
+                    ),
               delegate: SliverChildBuilderDelegate(
                 fushiStaggeredItemBuilder(
-                  (BuildContext context, int i) => _WebBrowserSiteTile(
-                    site: _sites[i],
-                    onOpen: () => unawaited(_openSite(_sites[i])),
-                    onActions: () => unawaited(_siteActions(_sites[i])),
-                  ),
+                  (BuildContext context, int i) => blocks
+                      ? _WebBrowserSiteBlock(
+                          site: _sites[i],
+                          onOpen: () => unawaited(_openSite(_sites[i])),
+                          onActions: () => unawaited(_siteActions(_sites[i])),
+                        )
+                      : _WebBrowserSiteTile(
+                          site: _sites[i],
+                          onOpen: () => unawaited(_openSite(_sites[i])),
+                          onActions: () => unawaited(_siteActions(_sites[i])),
+                        ),
                 ),
                 childCount: _sites.length,
               ),
@@ -520,6 +560,178 @@ class _FushiWebBrowserHomePageState
 /// 站点卡片长按 / 右键菜单的动作。
 enum _SiteAction { togglePlayer, edit, remove }
 
+/// 站点色块卡（重设计外壳）的最大宽、高与间距：间距与库页规整色块同一档
+/// （`kFushiCoverBlockSpacing`）；块比库页矮——站点卡只有名字与地址。
+const double _kSiteBlockMaxWidth = 320;
+const double _kSiteBlockHeight = 168;
+const double _kSiteBlockSpacing = 14;
+const double _kSiteBlockRadius = 26;
+
+/// 站点名首字（大写）；站点名与域名都空时给占位字，不让 `characters.first`
+/// 在空串上抛 [StateError]。
+String _siteInitial(String name) {
+  final Characters chars = name.trim().characters;
+  return chars.isEmpty ? '?' : chars.first.toUpperCase();
+}
+
+/// 站点色块卡（重设计外壳，与设计稿浏览页 `.box.src` 同一套语言）：按站点域名
+/// 折叠色相（[fushiPosterHue]）取色的 [FushiPosterBlock]——与浏览 / 查词等页的
+/// 海报色块同一套配色、站点名大字水印（悬停横移、RTL 镜像）与悬停抬升；块里是
+/// 首字圆章 + 「交给 Fushi 播放」chip，底部是站点名大字与域名。点按 / 长按 /
+/// 右键 / 焦点沿用 [shelfCoverCard]；信息与 [_WebBrowserSiteTile] 完全相同，只换
+/// 视觉。
+class _WebBrowserSiteBlock extends StatelessWidget {
+  const _WebBrowserSiteBlock({
+    required this.site,
+    required this.onOpen,
+    required this.onActions,
+  });
+
+  final WebBrowserSite site;
+  final VoidCallback onOpen;
+  final VoidCallback onActions;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final String trimmed = site.name.trim();
+    final String name = trimmed.isEmpty ? site.url.host : trimmed;
+    final String initial = _siteInitial(name);
+    final String? playerBadge = switch (webBrowserSitePlayerModeOf(site.url)) {
+      WebBrowserSitePlayerMode.always => t.web_browser_site_auto_play_on,
+      WebBrowserSitePlayerMode.autoPlayWatchPages when site.openInPlayer =>
+        t.web_browser_site_auto_play_on,
+      WebBrowserSitePlayerMode.toolbarShortcut when site.openInPlayer =>
+        t.web_browser_play_in_fushi,
+      _ => null,
+    };
+    final FushiCoverBlockColors colors = fushiPosterColors(
+      context,
+      fushiPosterHue(site.url.host),
+    );
+    final BorderRadius radius = BorderRadius.circular(_kSiteBlockRadius);
+    final TextStyle base = theme.textTheme.bodyMedium ?? const TextStyle();
+    return shelfCoverCard(
+      key: ValueKey<String>('web-browser-site-${site.url}'),
+      borderRadius: radius,
+      onTap: onOpen,
+      onLongPress: onActions,
+      onSecondaryTap: onActions,
+      child: Semantics(
+        label: name,
+        button: true,
+        excludeSemantics: true,
+        child: FushiPosterBlock(
+          watermark: name,
+          colors: colors,
+          watermarkFontSize: _kSiteBlockHeight * 0.62,
+          watermarkStart: -6,
+          radius: _kSiteBlockRadius,
+          padding: const EdgeInsetsDirectional.fromSTEB(18, 16, 16, 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  // 首字圆章：不取网站 favicon（入口页不为几个字节去联网）。
+                  SizedBox.square(
+                    dimension: 44,
+                    child: DecoratedBox(
+                      decoration: ShapeDecoration(
+                        shape: shellShape(context, FushiM3eShape.smallRadius),
+                        color: colors.accent,
+                      ),
+                      child: Center(
+                        child: Text(
+                          initial,
+                          style: FushiPosterText.name
+                              .on(base)
+                              .copyWith(color: colors.container),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  const Spacer(),
+                  if (playerBadge != null)
+                    Flexible(
+                      flex: 4,
+                      child: FushiTooltip(
+                        message: playerBadge,
+                        child: DecoratedBox(
+                          key: ValueKey<String>(
+                            'web-browser-site-player-${site.url}',
+                          ),
+                          decoration: ShapeDecoration(
+                            shape: const StadiumBorder(),
+                            color: colors.onContainer.withValues(alpha: 0.12),
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 4,
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: <Widget>[
+                                FushiIcon(
+                                  FushiIcons.playCircle,
+                                  size: 14,
+                                  color: colors.onContainer,
+                                ),
+                                const SizedBox(width: 4),
+                                Flexible(
+                                  child: Text(
+                                    playerBadge,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: FushiPosterText.badge
+                                        .on(base)
+                                        .copyWith(color: colors.onContainer),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              const Spacer(),
+              Text(
+                name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: FushiPosterText.section
+                    .on(base)
+                    .copyWith(
+                      height: 1.1,
+                      letterSpacing: -0.4,
+                      color: colors.onContainer,
+                    ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                site.url.host,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: FushiPosterText.meta
+                    .on(base)
+                    .copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: colors.onContainer.withValues(alpha: 0.72),
+                    ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// 入口页与新标签页起始页共用的站点卡片。
 class _WebBrowserSiteTile extends StatelessWidget {
   const _WebBrowserSiteTile({
@@ -539,7 +751,7 @@ class _WebBrowserSiteTile extends StatelessWidget {
     final bool glass = isGlassDesign(context);
     final String trimmed = site.name.trim();
     final String name = trimmed.isEmpty ? site.url.host : trimmed;
-    final String initial = name.characters.first.toUpperCase();
+    final String initial = _siteInitial(name);
     final String? playerBadge = switch (webBrowserSitePlayerModeOf(site.url)) {
       WebBrowserSitePlayerMode.always => t.web_browser_site_auto_play_on,
       WebBrowserSitePlayerMode.autoPlayWatchPages when site.openInPlayer =>

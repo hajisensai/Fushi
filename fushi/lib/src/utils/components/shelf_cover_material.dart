@@ -944,7 +944,7 @@ class ShelfCardMeta extends StatelessWidget {
   }
 
   static const double _kProgressHeight = 4;
-  static const double _kProgressGap = 5;
+  static const double _kProgressGap = 4;
 
   /// 副行高度：副行文字一行，与尾部角标（原盘 / 规格 [CoverBadge]：角标字行高 + 内边距，比副行文字高）取大。
   /// 布局与 [heightFor] 共用这一个值：以前只按文字算，带角标的卡片溢出几像素——单行标题时被标题下面空着的
@@ -1028,6 +1028,10 @@ class ShelfCardMeta extends StatelessWidget {
               child: LayoutBuilder(
                 builder: (BuildContext context, BoxConstraints constraints) =>
                     Row(
+                      // 副行行高按角标留（比副行文字高）：文字贴底排，紧挨下面
+                      // 的进度条，不悬在行中间与进度条隔一道缝（合集详情反馈
+                      //「70% 和进度条之间空隙太大」）。
+                      crossAxisAlignment: CrossAxisAlignment.end,
                       children: <Widget>[
                         if (leadingIcon != null) ...<Widget>[
                           FushiIcon(

@@ -4,6 +4,8 @@ import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/pages/implementations/browser_extension_page.dart';
 import 'package:fushi/src/pages/implementations/fushi_web_browser_page.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show shellRedesignActive;
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
     show
         FushiFloatingChromeBar,
@@ -136,7 +138,10 @@ class _WebHubPageState extends State<WebHubPage> {
   /// 工具栏行：既没有页签、外壳也不把标题交给本行时（窄窗 M3E / Apple 的单子页）
   /// 整行为空，不占高度。
   Widget _chromeBar(BuildContext context) {
-    final String? shellTitle = FushiShellInlineTitle.of(context)
+    // 重设计外壳下这一行是页头大字（[FushiFloatingChromeOverlay.masthead]）：
+    // 外壳给了页名就画（窄窗 / Apple 同样画大字页名，与库页一致）。
+    final String? shellTitle =
+        shellRedesignActive(context) || FushiShellInlineTitle.of(context)
         ? FushiShellTitleScope.maybeTitleOf(context)
         : null;
     final bool hasTitle = shellTitle != null && shellTitle.isNotEmpty;
@@ -165,6 +170,8 @@ class _WebHubPageState extends State<WebHubPage> {
         controller: _chrome,
         // 工具栏叠在子页上，收起只滑出画面、不改子页视口高度。
         child: FushiFloatingChromeOverlay(
+          // 重设计外壳下画成页头大字（`fushi_page_masthead.dart`），与库页同一套。
+          masthead: true,
           chrome: _chromeBar(context),
           child: NotificationListener<ScrollNotification>(
             onNotification: _onScroll,

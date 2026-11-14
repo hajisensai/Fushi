@@ -49,7 +49,9 @@ import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
+import 'package:fushi/src/utils/components/fushi_continue_blocks.dart';
 import 'package:fushi/src/utils/components/fushi_continue_hero.dart';
+import 'package:fushi/src/utils/components/fushi_cover_block.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
     show FushiFloatingChromePinnedOffset;
@@ -640,10 +642,14 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
         final List<GalgameEntry> heroSide = hero == null
             ? const <GalgameEntry>[]
             : recent.where((GalgameEntry g) => g.id != hero.id).toList();
-        final bool heroSideBySide = FushiContinueSpotlight.sideBySide(
-          constraints.maxWidth - page * 2,
-          heroSide.length,
-        );
+        // 封面色块版式（[FushiContinueBlocks.active]）：主卡与其余最近玩过的
+        // 游戏都排成色块（最近玩过至多 4 个，全在里面），「最近玩过」行同样不画。
+        final bool heroSideBySide =
+            (hero != null && FushiContinueBlocks.active(context)) ||
+            FushiContinueSpotlight.sideBySide(
+              constraints.maxWidth - page * 2,
+              heroSide.length,
+            );
         final GalgameEntry? randomGame = _random;
         final Widget? random = randomGame == null
             ? null
@@ -829,16 +835,28 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
     final String statusLabel = game.playStatus == GalgamePlayStatus.playing
         ? t.game_status_playing
         : (hasPlayed ? t.game_focus_continue : t.game_launch);
+    // 封面色块版式下用的裸封面 / 取色图源（与 [_GameCoverArt] 同一条来源链）。
+    ImageProvider? tintOf(GalgameEntry g) => resolveMediaCoverImage(
+      kind: MediaKind.game,
+      localPath: g.coverPath,
+      decodeWidth: kLocalCoverDecodePixelWidth,
+    );
     return FushiContinueSpotlight(
       sideRowKey: const ValueKey<String>('games_home_continue_side_row'),
       // 调用处已包在 FushiStaggeredEntrance(index: 4) 里整块进场。
       staggerEntrance: false,
+      // 封面色块版式：一行色块横滑，上方分区标题「继续游戏」。
+      blockLabel: t.game_focus_continue,
       main: FushiContinueEntry(
         key: ValueKey<String>('games_home_hero_${game.id}'),
         focusId: FushiFocusId('game-dashboard-hero-${game.id}'),
         cover: _gameCaseFrame(_GameCoverArt(game: game)),
         frameCover: false,
         coverAspectRatio: kShelfGameCaseAspectRatio,
+        blockArt: FushiCoverBlockArt.box,
+        blockCover: _GameCoverArt(game: game),
+        colorSource: tintOf(game),
+        blockEyebrow: statusLabel,
         eyebrow: statusLabel,
         title: game.displayName,
         metaLines: <String>[
@@ -857,6 +875,9 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
             cover: _gameCaseFrame(_GameCoverArt(game: g)),
             frameCover: false,
             coverAspectRatio: kShelfGameCaseAspectRatio,
+            blockArt: FushiCoverBlockArt.box,
+            blockCover: _GameCoverArt(game: g),
+            colorSource: tintOf(g),
             title: g.displayName,
             subtitle: g.lastPlayedMs > 0 ? _formatDay(g.lastPlayedMs) : null,
             onOpen: () => unawaited(_launchGame(g)),

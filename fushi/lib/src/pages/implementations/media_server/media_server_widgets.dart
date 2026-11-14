@@ -1,9 +1,21 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/focus/fushi_focus_target.dart';
+import 'package:fushi/src/media/video/cover_ui/cover_orientation_builder.dart';
 import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
 import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
+import 'package:fushi/src/media/video/video_home_layout.dart'
+    show VideoCardOrientation;
 import 'package:fushi/src/sync/remote_cover_image.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show ShellContentLayout, shellContentLayoutOf, shellRedesignActive;
+import 'package:fushi/src/utils/components/fushi_masthead_scaffold.dart'
+    show FushiMastheadScaffold;
+import 'package:fushi/src/utils/components/fushi_continue_blocks.dart'
+    show FushiBlockSectionTitle;
+import 'package:fushi/src/utils/components/fushi_cover_block.dart';
+import 'package:fushi/src/utils/components/fushi_cover_block_layout.dart'
+    show fushiCoverBlockFirstRowHeight, kFushiCoverBlockSpacing;
 import 'package:fushi/src/utils/cover_image.dart'
     show kLocalCoverDecodePixelWidth;
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
@@ -1160,6 +1172,443 @@ class MediaServerListRowSkeleton extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// =============================================================================
+// 重设计外壳（「海报大字」，[shellRedesignActive]）。墨水屏不走这里，保持上面
+// 的原版式原样。
+// =============================================================================
+
+/// 服务器首页 / 库网格 / 聚合搜索的条目用封面色块（库页布局为拼贴 / 规整色块），
+/// 还是原海报卡（墨水屏，或用户在外壳设置里选了封面网格）。与本地视频库同一判据
+/// （[shellContentLayoutOf]）。只在 build 期间读。
+bool mediaServerBlocksActive(BuildContext context) =>
+    shellContentLayoutOf(context) != ShellContentLayout.grid;
+
+/// 服务器二级页（服务器首页 / 库网格 / 聚合搜索）的页面外壳：重设计外壳下是页头
+/// 大字（[FushiMastheadScaffold]：返回键 + 页名大字 + 右侧连体动作组，滚动后页名
+/// 收缩、页头垫一层高斯模糊底板——与音乐服务器 / 设置二级页同一套），墨水屏照旧
+/// [MediaServerPageFrame]（悬浮胶囊页头 [legacyHeader]）。
+///
+/// [body] 拿到的 `top` 是正文的顶部让位（页头大字的展开高度 / 原悬浮页头高度），
+/// 两套外壳同一个口：主滚动视图加成顶部内边距，空态 / 错误整体下移。
+class MediaServerPageShell extends StatelessWidget {
+  const MediaServerPageShell({
+    required this.title,
+    required this.legacyHeader,
+    required this.body,
+    this.actions = const <Widget>[],
+    super.key,
+  });
+
+  /// 页名（大字）。
+  final String title;
+
+  /// 墨水屏的悬浮胶囊页头（通常是 [FushiPageHeader]）。
+  final Widget legacyHeader;
+
+  /// 页头大字右侧的动作（图标按钮原样，key / tooltip / 焦点 id 由调用页给）。
+  final List<Widget> actions;
+
+  final Widget Function(BuildContext context, double top) body;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!shellRedesignActive(context)) {
+      return MediaServerPageFrame(
+        header: legacyHeader,
+        body: MediaServerBodyInset(builder: body),
+      );
+    }
+    // 页头大字外壳把正文的 MediaQuery 顶部 padding 改成「状态栏 + 页头展开高」，
+    // 正文据此让位；海报卡（封面网格布局）仍是光面海报材质。
+    return ShelfCoverMaterialScope(
+      material: ShelfCoverMaterial.glossyPoster,
+      child: FushiMastheadScaffold(
+        title: title,
+        actions: actions,
+        body: Builder(
+          builder: (BuildContext context) =>
+              body(context, MediaQuery.paddingOf(context).top),
+        ),
+      ),
+    );
+  }
+}
+
+/// 色块版式的分区标题（与库页 / 首页仪表盘色块分区同一款 [FushiBlockSectionTitle]），
+/// 可带行尾「查看全部」。上下只留卡片级间距：分区之间不再隔一大段空白。
+class MediaServerBlockSectionTitle extends StatelessWidget {
+  const MediaServerBlockSectionTitle(
+    this.title, {
+    this.onViewAll,
+    this.viewAllFocusId,
+    super.key,
+  });
+
+  final String title;
+  final VoidCallback? onViewAll;
+  final FushiFocusId? viewAllFocusId;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final VoidCallback? viewAll = onViewAll;
+    return FushiStaggeredEntrance(
+      index: 0,
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(
+          tokens.spacing.page,
+          tokens.spacing.card,
+          tokens.spacing.page,
+          tokens.spacing.gap,
+        ),
+        child: Row(
+          children: <Widget>[
+            Expanded(child: FushiBlockSectionTitle(title)),
+            if (viewAll != null)
+              MediaServerViewAllButton(
+                onPressed: viewAll,
+                focusId: viewAllFocusId,
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 色块加载骨架：[rows] 条整行圆角块，高度与真色块首行一致
+/// （[fushiCoverBlockFirstRowHeight]），数据回来时版面不跳。
+class MediaServerBlockSkeleton extends StatelessWidget {
+  const MediaServerBlockSkeleton({this.rows = 1, super.key});
+
+  final int rows;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints box) {
+        final double height = fushiCoverBlockFirstRowHeight(
+          width: box.maxWidth,
+          layout: shellContentLayoutOf(context),
+        );
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            for (int i = 0; i < rows; i++) ...<Widget>[
+              if (i > 0) const SizedBox(height: kFushiCoverBlockSpacing),
+              FushiSkeleton(
+                width: box.maxWidth,
+                height: height,
+                borderRadius: BorderRadius.circular(
+                  fushiCoverBlockRadius(FushiCoverBlockSize.hero, height),
+                ),
+              ),
+            ],
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// 色块的卡壳：[shelfCoverCard]（焦点站点、点按 / 长按 / 右键）+ 悬停抬升，圆角
+/// 随色块尺寸档（[fushiCoverBlockRadius]）。与视频库 / 「继续」色块同一套。
+Widget _mediaServerBlockShell({
+  required FushiCoverBlockSize size,
+  required Widget block,
+  required VoidCallback onTap,
+  VoidCallback? onLongPress,
+  FushiFocusId? focusId,
+}) {
+  return LayoutBuilder(
+    builder: (BuildContext context, BoxConstraints box) {
+      final BorderRadius radius = BorderRadius.circular(
+        fushiCoverBlockRadius(size, box.maxHeight),
+      );
+      return FushiHoverLift(
+        builder: (BuildContext _, bool _) => shelfCoverCard(
+          focusId: focusId,
+          borderRadius: radius,
+          onTap: onTap,
+          onLongPress: onLongPress,
+          onSecondaryTap: onLongPress,
+          child: block,
+        ),
+      );
+    },
+  );
+}
+
+/// 条目的横版背景图（无字剧照）：自身有就用自身的，集借所属剧的
+/// （[MediaServerItem.parentBackdropItemId]）。没有为 null。
+ImageProvider? mediaServerBackdropImage(
+  MediaServerBrowser browser,
+  MediaServerItem item,
+) {
+  if (item.hasBackdrop) {
+    return mediaServerCoverImage(
+      browser,
+      item,
+      kind: MediaServerImageKind.backdrop,
+    );
+  }
+  final String? parent = item.parentBackdropItemId;
+  if (parent == null || parent.isEmpty) return null;
+  return mediaServerCoverImage(
+    browser,
+    MediaServerItem(
+      id: parent,
+      name: '',
+      type: MediaServerItemType.series,
+      hasBackdrop: true,
+    ),
+    kind: MediaServerImageKind.backdrop,
+  );
+}
+
+/// 一个服务器条目的封面色块（重设计外壳，库页布局为拼贴 / 规整色块时代替
+/// [MediaServerItemCard] / [MediaServerContinueCard]）：封面取色底 + 作品名大字
+/// 水印，信息与原卡同一份（[mediaServerItemCardStatus] /
+/// [mediaServerContinueMetaLine]），封面上不压角标。
+///
+/// 竖版位只放海报（仓库所有者「竖版的应该是海报而不是横版剧照」）：主图按固有
+/// 朝向判定（[CoverOrientationBuilder]，与视频库色块同一个探针）——竖图斜放在
+/// 左、背景图铺右侧；横图（集截帧、没有海报的条目）改走横版摆法整张铺右侧，不裁
+/// 进竖版位。没有主图时按候选图逐张回落（[MediaServerFallbackImage]）。
+///
+/// [resume]（「继续观看」）：副行是「剩余 N 分钟 · S01E02 集名」，拼贴首块带
+/// 「继续」主按钮外观（纯视觉，点卡就是续播）。
+class MediaServerItemBlock extends StatelessWidget {
+  const MediaServerItemBlock({
+    required this.browser,
+    required this.item,
+    required this.size,
+    required this.onTap,
+    this.onLongPress,
+    this.focusId,
+    this.resume = false,
+    super.key,
+  });
+
+  final MediaServerBrowser browser;
+  final MediaServerItem item;
+  final FushiCoverBlockSize size;
+  final VoidCallback onTap;
+  final VoidCallback? onLongPress;
+  final FushiFocusId? focusId;
+  final bool resume;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool hero = size == FushiCoverBlockSize.hero;
+    final String title =
+        item.type == MediaServerItemType.episode &&
+            (item.seriesName?.isNotEmpty ?? false)
+        ? item.seriesName!
+        : item.name;
+    final MediaServerCardStatus status = resume
+        ? (
+            subtitle: mediaServerContinueMetaLine(item),
+            progress: mediaServerProgress(item),
+            completed: false,
+          )
+        : mediaServerItemCardStatus(item);
+    final String? rawSubtitle = status.subtitle;
+    final String? subtitle = rawSubtitle == null || rawSubtitle.isEmpty
+        ? null
+        : rawSubtitle;
+    // 拼贴首块：观看状态升格成顶上的状态 chip（与视频库色块同口径）。
+    final bool statusAsEyebrow = hero && subtitle != null;
+    final double? rating = item.communityRating;
+    final String overview = <String>[
+      ...item.genres.take(3),
+      if (rating != null && rating > 0) '★ ${rating.toStringAsFixed(1)}',
+    ].join(' · ');
+    final ImageProvider? logo = item.hasLogo
+        ? mediaServerHeroImage(browser, item, kind: MediaServerImageKind.logo)
+        : null;
+    final IconData placeholderIcon = MediaServerItemCard._placeholderIcon(
+      item.type,
+    );
+    final ImageProvider? poster = mediaServerCoverImage(
+      browser,
+      item.coverItem,
+    );
+    final ImageProvider? backdropImage = mediaServerBackdropImage(
+      browser,
+      item,
+    );
+    final Widget? backdrop = backdropImage == null
+        ? null
+        : Image(
+            image: backdropImage,
+            fit: BoxFit.cover,
+            excludeFromSemantics: true,
+            gaplessPlayback: true,
+            errorBuilder: (BuildContext _, Object __, StackTrace? ___) =>
+                const SizedBox.shrink(),
+          );
+    // 主图取不回来（兼容层报了 tag 却 404，BUG-2602）时逐张回落的候选：继续观看
+    // 沿用横卡那条候选链，其余只剩背景图。
+    final List<ImageProvider> candidates = resume
+        ? mediaServerContinueImages(browser, item)
+        : <ImageProvider>[?backdropImage];
+    final List<ImageProvider> fallbacks = <ImageProvider>[
+      for (final ImageProvider image in candidates)
+        if (image != poster) image,
+    ];
+
+    Widget block({
+      required FushiCoverBlockArt art,
+      required List<Widget> covers,
+      required ImageProvider? tint,
+      Widget? backdrop,
+    }) => FushiCoverBlock(
+      size: size,
+      art: art,
+      title: title,
+      covers: covers,
+      backdrop: backdrop,
+      logo: logo,
+      tintImage: tint,
+      eyebrow: statusAsEyebrow ? subtitle : null,
+      subtitle: statusAsEyebrow ? null : subtitle,
+      overview: overview.isEmpty ? null : overview,
+      progress: status.progress,
+      completed: status.completed,
+      action: resume && hero
+          ? FushiCoverBlockAction(icon: FushiIcons.play, label: t.home_continue)
+          : null,
+      metaKey: resume
+          ? const ValueKey<String>('media-server-continue-meta')
+          : ValueKey<String>('media-server-item-meta-${item.id}'),
+    );
+
+    Widget fallbackCover() => MediaServerFallbackImage(
+      images: fallbacks,
+      placeholderIcon: placeholderIcon,
+    );
+
+    final Widget content;
+    if (poster == null) {
+      content = block(
+        art: FushiCoverBlockArt.landscape,
+        covers: <Widget>[fallbackCover()],
+        tint: fallbacks.isEmpty ? null : fallbacks.first,
+      );
+    } else {
+      content = CoverOrientationBuilder(
+        image: poster,
+        builder: (BuildContext context, VideoCardOrientation orientation) {
+          if (orientation == VideoCardOrientation.portrait) {
+            return block(
+              art: FushiCoverBlockArt.portrait,
+              covers: <Widget>[
+                PortraitCoverImage(
+                  image: poster,
+                  errorBuilder: (BuildContext _) => fallbacks.isEmpty
+                      ? ShelfCoverPlaceholder(icon: placeholderIcon)
+                      : fallbackCover(),
+                ),
+              ],
+              backdrop: backdrop,
+              tint: poster,
+            );
+          }
+          // 横图不裁进竖版位：整张铺右侧（有无字背景图时用背景图，构图更完整）。
+          return block(
+            art: FushiCoverBlockArt.landscape,
+            covers: <Widget>[
+              backdrop ??
+                  PortraitCoverImage(
+                    image: poster,
+                    landscapeSlot: true,
+                    errorBuilder: (BuildContext _) => fallbackCover(),
+                  ),
+            ],
+            tint: poster,
+          );
+        },
+      );
+    }
+    return _mediaServerBlockShell(
+      size: size,
+      block: content,
+      onTap: onTap,
+      onLongPress: onLongPress,
+      focusId: focusId,
+    );
+  }
+}
+
+/// 媒体库的封面色块（重设计外壳，代替 [MediaServerLibraryCard]）：库封面（16:9）
+/// 横版铺右侧，库名大字水印，副行是库类型。库自身没图 / 图取不回来时与原卡同样
+/// 退回条目海报拼贴（[MediaServerLibraryCollage]，BUG-2602）；取色用库封面，没有
+/// 就用拼贴里第一张海报。
+class MediaServerLibraryBlock extends StatelessWidget {
+  const MediaServerLibraryBlock({
+    required this.browser,
+    required this.library,
+    required this.size,
+    required this.onTap,
+    this.fallbackItems = const <MediaServerItem>[],
+    this.focusId,
+    super.key,
+  });
+
+  final MediaServerBrowser browser;
+  final MediaServerLibrary library;
+  final FushiCoverBlockSize size;
+  final VoidCallback onTap;
+  final List<MediaServerItem> fallbackItems;
+  final FushiFocusId? focusId;
+
+  @override
+  Widget build(BuildContext context) {
+    final ImageProvider? image = mediaServerLibraryCoverImage(browser, library);
+    final IconData icon = MediaServerLibraryCard.iconFor(library.kind);
+    final Widget collage = MediaServerLibraryCollage(
+      browser: browser,
+      items: fallbackItems,
+      placeholderIcon: icon,
+    );
+    ImageProvider? firstPoster;
+    for (final MediaServerItem item in fallbackItems) {
+      firstPoster = mediaServerCoverImage(browser, item.coverItem);
+      if (firstPoster != null) break;
+    }
+    final String? kindLabel = switch (library.kind) {
+      MediaServerLibraryKind.movies => t.collection_relation_movie,
+      MediaServerLibraryKind.tvShows => t.series,
+      MediaServerLibraryKind.mixed => null,
+    };
+    return _mediaServerBlockShell(
+      size: size,
+      onTap: onTap,
+      focusId: focusId,
+      block: FushiCoverBlock(
+        size: size,
+        art: FushiCoverBlockArt.landscape,
+        title: library.name,
+        covers: <Widget>[
+          if (image == null)
+            collage
+          else
+            PortraitCoverImage(
+              image: image,
+              landscapeSlot: true,
+              errorBuilder: (BuildContext _) => collage,
+            ),
+        ],
+        tintImage: image ?? firstPoster,
+        subtitle: kindLabel,
+        leadingIcon: icon,
       ),
     );
   }

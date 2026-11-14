@@ -121,6 +121,7 @@ class _WebBrowserSearchEnginesPageState
   Widget build(BuildContext context) {
     return FushiPageScaffold(
       title: t.web_browser_search_engine,
+      masthead: true,
       actions: <Widget>[
         FushiIconButton(
           key: const ValueKey<String>('web_browser_search_engine_add'),

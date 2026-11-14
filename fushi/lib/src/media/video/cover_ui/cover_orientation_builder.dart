@@ -17,10 +17,15 @@ class CoverOrientationBuilder extends StatelessWidget {
     super.key,
     required this.image,
     required this.builder,
+    this.unknownOrientation = VideoCardOrientation.portrait,
   });
 
-  /// 封面源；null = 无封面（恒竖卡）。
+  /// 封面源；null = 无封面（恒 [unknownOrientation]）。
   final ImageProvider? image;
+
+  /// 朝向未知（无封面 / 首帧未解码 / 解码失败）时按哪种朝向画。默认竖卡（拍板）；
+  /// 横版槽里的调用方传横卡，免得每张横图解码前先闪一下竖版摆法。
+  final VideoCardOrientation unknownOrientation;
 
   /// 以当前朝向重建子树。
   final Widget Function(BuildContext context, VideoCardOrientation orientation)
@@ -30,16 +35,25 @@ class CoverOrientationBuilder extends StatelessWidget {
   Widget build(BuildContext context) {
     final ImageProvider? provider = image;
     if (provider == null) {
-      return builder(context, VideoCardOrientation.portrait);
+      return builder(context, unknownOrientation);
     }
-    return _CoverOrientationProbe(image: provider, builder: builder);
+    return _CoverOrientationProbe(
+      image: provider,
+      builder: builder,
+      unknownOrientation: unknownOrientation,
+    );
   }
 }
 
 class _CoverOrientationProbe extends StatefulWidget {
-  const _CoverOrientationProbe({required this.image, required this.builder});
+  const _CoverOrientationProbe({
+    required this.image,
+    required this.builder,
+    required this.unknownOrientation,
+  });
 
   final ImageProvider image;
+  final VideoCardOrientation unknownOrientation;
   final Widget Function(BuildContext context, VideoCardOrientation orientation)
   builder;
 
@@ -61,6 +75,11 @@ class _CoverOrientationProbeState extends State<_CoverOrientationProbe>
   Widget build(BuildContext context) {
     // 解码失败按竖卡渲染（卡内封面组件自会走占位 errorBuilder）。
     final double? aspect = coverFailed ? null : coverAspect;
-    return widget.builder(context, videoCardOrientationForAspect(aspect));
+    return widget.builder(
+      context,
+      aspect == null
+          ? widget.unknownOrientation
+          : videoCardOrientationForAspect(aspect),
+    );
   }
 }

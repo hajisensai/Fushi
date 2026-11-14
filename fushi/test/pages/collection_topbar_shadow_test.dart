@@ -1,18 +1,16 @@
-import 'dart:typed_data';
-import 'dart:ui' as ui;
-
 import 'package:drift/native.dart';
-import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/pages/implementations/media_collection_grid_detail_page.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
+    show FushiEinkTheme;
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart';
 import 'package:fushi/src/utils/components/fushi_floating_page_chrome.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:material_ui/material_ui.dart';
 
-/// BUG-3075：书架 / 漫画 / 游戏使用的真实网格合集页是普通 Scaffold。
-/// 滚动使栏下沿遮罩淡入后，返回圆落在栏外的投影仍应可见。
+/// BUG-3075：书架 / 漫画 / 游戏使用的真实网格合集页（墨水屏分支）是普通
+/// Scaffold。滚动使栏下沿遮罩淡入后，遮罩必须画在栏之下、不截返回圆投影。
 void main() {
   testWidgets('BUG-3075 网格合集滚动后遮罩不截断返回圆投影', (WidgetTester tester) async {
     LocaleSettings.setLocale(AppLocale.zhCn);
@@ -39,9 +37,12 @@ void main() {
           child: MaterialApp(
             navigatorKey: navigatorKey,
             debugShowCheckedModeBanner: false,
+            // 重设计外壳（海报面板 + 裸图标页头）不挂 AppBar；带 AppBar 与返回圆
+            // 的普通 Scaffold 分支只剩墨水屏在走，按墨水屏主题覆盖它。
             theme: ThemeData(
               useMaterial3: true,
               scaffoldBackgroundColor: Colors.white,
+              extensions: const <ThemeExtension<dynamic>>[FushiEinkTheme(true)],
             ),
             home: const Scaffold(body: SizedBox.shrink()),
           ),
@@ -144,39 +145,11 @@ void main() {
       reason: '遮罩必须先画、胶囊后画，否则返回圆投影在栏下沿被盖成一条直线',
     );
 
-    final ({ByteData bytes, int width}) pixels = (await tester.runAsync(
-      () async {
-        final RenderRepaintBoundary boundary =
-            boundaryKey.currentContext!.findRenderObject()!
-                as RenderRepaintBoundary;
-        final ui.Image image = await boundary.toImage();
-        final ByteData bytes = (await image.toByteData(
-          format: ui.ImageByteFormat.rawRgba,
-        ))!;
-        final int width = image.width;
-        image.dispose();
-        return (bytes: bytes, width: width);
-      },
-    ))!;
-    int luminanceAt(Offset point) {
-      final int offset =
-          (point.dy.round() * pixels.width + point.dx.round()) * 4;
-      return pixels.bytes.getUint8(offset) +
-          pixels.bytes.getUint8(offset + 1) +
-          pixels.bytes.getUint8(offset + 2);
-    }
-
-    // 返回圆下沿外 2 px：投影在且没被任何东西（遮罩 / 栏裁切）盖成页面底色，
-    // 而同一行远离胶囊的对照点仍为页面底色。
-    final double y = circle.bottom + 2;
-    final int underCircle = luminanceAt(Offset(circle.center.dx, y));
-    final int awayFromChrome = luminanceAt(Offset(bar.right * 0.75, y));
-    expect(awayFromChrome, greaterThanOrEqualTo(3 * 250));
-    expect(
-      underCircle,
-      lessThan(awayFromChrome - 6),
-      reason: '真实合集页返回圆下沿外仍有投影，不能被渐隐遮罩截平',
-    );
+    // 栏外投影的像素断言不在这里做：墨水屏不画投影（像素上本就看不出），
+    // 有投影的 M3E 悬浮栏的像素对比由
+    // test/widgets/floating_app_bar_scrim_shadow_test.dart 覆盖。本页在非墨水屏
+    // 已改走海报面板的裸图标页头（不挂 AppBar、没有返回圆），这里只钉住仍带
+    // AppBar 的墨水屏分支的叠放顺序。
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpAndSettle();
   });

@@ -30,6 +30,8 @@ import 'package:fushi/src/srs/srs_import_entry.dart' show srsImportReportLines;
 import 'package:fushi/src/srs/srs_import_task.dart';
 import 'package:fushi_engine/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show shellRedesignActive;
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -449,10 +451,12 @@ class _SrsAnkiMigrationPageState extends ConsumerState<SrsAnkiMigrationPage>
   @override
   Widget build(BuildContext context) {
     final bool apple = isGlassDesign(context);
+    final bool masthead = shellRedesignActive(context);
     return FushiPageScaffold(
       title: t.srs_anki_migrate,
+      masthead: true,
       header: apple ? null : _buildTopBar(context),
-      actions: apple
+      actions: apple || masthead
           ? <Widget>[
               for (final FushiToolbarItem a in _actions)
                 FushiIconButton(

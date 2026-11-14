@@ -108,11 +108,28 @@ void main() {
     matching: find.byType(TextField),
   );
 
+  /// 重设计外壳下页签内容接在 hero 下面、与 hero 同一条滚动（海报面板版式，
+  /// 不再是各 tab 自滚的 ListView）：按整页滚动容器定位。
+  final Finder pageScroll = find.byKey(
+    const ValueKey<String>('media-poster-detail-scroll'),
+  );
+
+  /// 把 [finder] 滚进视口再操作（tab 内容不懒建，「找得到」不等于「在屏上」）。
+  Future<void> revealInPage(WidgetTester tester, Finder finder) async {
+    await tester.ensureVisible(finder);
+    await tester.pumpAndSettle();
+  }
+
   Future<void> pumpPage(
     WidgetTester tester,
     AppModel appModel, {
     int initialTab = 0,
   }) async {
+    // 海报面板版式下 tab 内容排在高大的 hero 下面（同一条滚动），默认 800×600
+    // 的视口装不下 hero + 页签内容；用一块高视口让断言看得到 tab 内容。
+    tester.view.physicalSize = const Size(1000, 2400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
     final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
     FushiToast.navigatorKey = navKey;
     await tester.pumpWidget(
@@ -140,7 +157,8 @@ void main() {
 
     // KPI：累计 5400 秒 = 1h30m、2 次。
     expect(find.text(t.game_stat_total_time), findsOneWidget);
-    expect(find.text(formatStatTime(5400 * 1000)), findsOneWidget);
+    // 累计时长同时出现在 hero 信息胶囊与 KPI 格。
+    expect(find.text(formatStatTime(5400 * 1000)), findsNWidgets(2));
     expect(find.text(t.game_stat_sessions), findsOneWidget);
     expect(find.text('2'), findsOneWidget);
 
@@ -151,7 +169,7 @@ void main() {
       ),
       findsOneWidget,
     );
-    await tester.drag(find.byType(ListView), const Offset(0, -400));
+    await tester.drag(pageScroll, const Offset(0, -400));
     await tester.pumpAndSettle();
     expect(find.byIcon(FushiIcons.delete), findsNWidgets(2));
   });
@@ -159,7 +177,7 @@ void main() {
   testWidgets('无会话时给空态而不是崩', (WidgetTester tester) async {
     await pumpPage(tester, await buildModel(withSessions: false));
     expect(find.text(t.game_never_played), findsOneWidget);
-    await tester.drag(find.byType(ListView), const Offset(0, -400));
+    await tester.drag(pageScroll, const Offset(0, -400));
     await tester.pumpAndSettle();
     expect(find.text(t.game_stat_no_sessions), findsOneWidget);
   });
@@ -224,20 +242,14 @@ void main() {
     expect(find.text(t.game_edit_save), findsOneWidget);
     expect(find.text(t.game_scrape), findsOneWidget);
 
+    await revealInPage(tester, editField('name'));
     await tester.enterText(editField('name'), '我的名字');
-    await tester.dragUntilVisible(
+    await revealInPage(
+      tester,
       find.byKey(const ValueKey<String>('galgame-edit-exePath')),
-      find.byType(ListView),
-      const Offset(0, -120),
     );
     await tester.enterText(editField('exePath'), r'Z:\a\new.exe');
-    await tester.dragUntilVisible(
-      find.text(t.game_edit_save),
-      find.byType(ListView),
-      const Offset(0, 120),
-    );
-    // ensureVisible 的跳转要下一帧才落到布局上，先 settle 再点。
-    await tester.pumpAndSettle();
+    await revealInPage(tester, find.text(t.game_edit_save));
     await tester.tap(find.text(t.game_edit_save));
     await tester.pumpAndSettle();
 
@@ -256,22 +268,15 @@ void main() {
     final AppModel appModel = await buildModel();
     await pumpPage(tester, appModel, initialTab: 2);
 
-    await tester.dragUntilVisible(
+    await revealInPage(
+      tester,
       find.byKey(const ValueKey<String>('galgame-edit-launchArgs')),
-      find.byType(ListView),
-      const Offset(0, -120),
     );
     await tester.enterText(
       editField('launchArgs'),
       r'-windowed --save="Z:\My Saves"',
     );
-    await tester.dragUntilVisible(
-      find.text(t.game_edit_save),
-      find.byType(ListView),
-      const Offset(0, 120),
-    );
-    // ensureVisible 的跳转要下一帧才落到布局上，先 settle 再点。
-    await tester.pumpAndSettle();
+    await revealInPage(tester, find.text(t.game_edit_save));
     await tester.tap(find.text(t.game_edit_save));
     await tester.pumpAndSettle();
 
@@ -296,14 +301,9 @@ void main() {
     final AppModel appModel = await buildModel();
     await pumpPage(tester, appModel, initialTab: 2);
 
+    await revealInPage(tester, editField('name'));
     await tester.enterText(editField('name'), 'x');
-    await tester.dragUntilVisible(
-      find.text(t.game_edit_save),
-      find.byType(ListView),
-      const Offset(0, 120),
-    );
-    // ensureVisible 的跳转要下一帧才落到布局上，先 settle 再点。
-    await tester.pumpAndSettle();
+    await revealInPage(tester, find.text(t.game_edit_save));
     await tester.tap(find.text(t.game_edit_save));
     await tester.pumpAndSettle();
 
@@ -323,14 +323,9 @@ void main() {
     await appModel.galgameRepo.load();
     await pumpPage(tester, appModel, initialTab: 2);
 
+    await revealInPage(tester, editField('name'));
     await tester.enterText(editField('name'), '改个名');
-    await tester.dragUntilVisible(
-      find.text(t.game_edit_save),
-      find.byType(ListView),
-      const Offset(0, 120),
-    );
-    // ensureVisible 的跳转要下一帧才落到布局上，先 settle 再点。
-    await tester.pumpAndSettle();
+    await revealInPage(tester, find.text(t.game_edit_save));
     await tester.tap(find.text(t.game_edit_save));
     await tester.pumpAndSettle();
 
@@ -345,19 +340,12 @@ void main() {
     final AppModel appModel = await buildModel();
     await pumpPage(tester, appModel, initialTab: 2);
 
-    await tester.dragUntilVisible(
+    await revealInPage(
+      tester,
       find.byKey(const ValueKey<String>('galgame-edit-releaseDate')),
-      find.byType(ListView),
-      const Offset(0, -120),
     );
     await tester.enterText(editField('releaseDate'), '2024');
-    await tester.dragUntilVisible(
-      find.text(t.game_edit_save),
-      find.byType(ListView),
-      const Offset(0, 120),
-    );
-    // ensureVisible 的跳转要下一帧才落到布局上，先 settle 再点。
-    await tester.pumpAndSettle();
+    await revealInPage(tester, find.text(t.game_edit_save));
     await tester.tap(find.text(t.game_edit_save));
     await tester.pumpAndSettle();
 

@@ -495,7 +495,11 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
       contentBuilder: _buildContent,
     );
     if (widget.embedded) return buildEmbeddedStatTab(context, body);
-    return FushiPageScaffold(title: t.reading_statistics, body: body);
+    return FushiPageScaffold(
+      masthead: true,
+      title: t.reading_statistics,
+      body: body,
+    );
   }
 
   /// 页面骨架与总览 / 观看 / 游戏 tab 同一套（2026-10 统计中心重设计，

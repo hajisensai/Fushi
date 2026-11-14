@@ -248,6 +248,94 @@ class _SrsHomeView extends StatelessWidget {
     ];
   }
 
+  /// 重设计外壳的宽屏版式（用户 2026-11-13「复习还是有点不协调」）：整页一种色块
+  /// 语言、一条滚动——
+  ///
+  /// - 首行 = 等高三块（[HomePosterRows]，与首页仪表盘同一套按行拉齐的排布，
+  ///   底边对齐）：今日计划 · 选中牌组（保持率 + 未来 7 天到期 + 复习 / 浏览 /
+  ///   选项）· 连续天数热力图；放不下三列时排成 2 + 1；
+  /// - 下面是「牌组」分区标题 + 整宽牌组树（点行 = 首行中间那块换成该牌组）。
+  ///
+  /// 未来 7 天到期只在牌组块里出现一次（单牌组时它就是全库）；「开始复习」只在
+  /// 页头主按钮。
+  Widget _buildPosterWide(
+    BuildContext context,
+    Map<String, SrsDeckSummary> byId,
+    double top,
+  ) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final SrsDeckSummary? selected = _selection(byId);
+    final SrsHomeStats? s = stats;
+    final Widget? detail = selected == null
+        ? null
+        : AnimatedSwitcher(
+            duration: fushiMotionDuration(context, FushiMotion.medium),
+            switchInCurve: FushiMotion.enter,
+            switchOutCurve: FushiMotion.exit,
+            // passthrough：行高拉齐的最小高度要传到色块本身，新旧两层都撑满。
+            layoutBuilder: (Widget? current, List<Widget> previous) => Stack(
+              fit: StackFit.passthrough,
+              alignment: AlignmentDirectional.topCenter,
+              children: <Widget>[...previous, ?current],
+            ),
+            child: KeyedSubtree(
+              key: ValueKey<String>('srs-home-detail-pane-${selected.deck.id}'),
+              child: _detail(selected, byId),
+            ),
+          );
+    final List<Widget> band = <Widget>[
+      if (data.totalCards > 0)
+        _SrsTodayPlan(
+          key: const ValueKey<String>('srs-home-today'),
+          data: data,
+          stats: s,
+          horizontal: true,
+          onReview: onReview,
+        ),
+      ?detail,
+      if (s != null)
+        _SrsHeatmapCard(
+          key: const ValueKey<String>('srs-home-heatmap'),
+          stats: s,
+        ),
+    ];
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final double content = math.min(
+          constraints.maxWidth - tokens.spacing.page * 2,
+          _kSrsHomeContentMaxWidth,
+        );
+        final double side = math.max(0, (constraints.maxWidth - content) / 2);
+        return _tree(
+          rootId: null,
+          selectedId: selected?.deck.id,
+          header: <Widget>[
+            ...banners,
+            if (band.isNotEmpty)
+              HomePosterRows(
+                key: const ValueKey<String>('srs-home-band'),
+                gap: kFushiCoverBlockSpacing,
+                minColumnWidth: 340,
+                children: band,
+              ),
+            if (data.decks.isNotEmpty)
+              _SrsHomeSectionHeader(
+                key: const ValueKey<String>('srs-home-decks-header'),
+                title: t.srs_home_decks_header,
+                trailing: t.srs_home_deck_cards(n: data.totalCards),
+              ),
+          ],
+          footer: _pairedSection(),
+          padding: withBottomSafeInset(
+            context,
+            EdgeInsets.fromLTRB(side, top, side, tokens.spacing.section),
+          ),
+          onOpen: (SrsDeckSummary d) => onSelect(d.deck.id),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
@@ -257,6 +345,10 @@ class _SrsHomeView extends StatelessWidget {
     // 正文滚到浮动页头底下：顶部让出「状态栏 + 页头」。
     final double top = tokens.spacing.gap + MediaQuery.paddingOf(context).top;
     final SrsHomeStats? s = stats;
+
+    if (wide && shellRedesignActive(context)) {
+      return _buildPosterWide(context, byId, top);
+    }
 
     if (wide) {
       final SrsDeckSummary? selected = _selection(byId);
@@ -437,6 +529,16 @@ class _SrsHomeSectionHeader extends StatelessWidget {
         ? appleColorsOf(context).secondaryLabel
         : Theme.of(context).colorScheme.onSurfaceVariant;
     final String? more = trailing;
+    if (shellRedesignActive(context)) {
+      // 色块版式的分区标题（与书架 / 视频 / 音乐「最近添加」同一款）。
+      return Padding(
+        padding: EdgeInsetsDirectional.only(
+          start: tokens.spacing.gap / 2,
+          top: tokens.spacing.gap,
+        ),
+        child: FushiBlockSectionTitle(more == null ? title : '$title · $more'),
+      );
+    }
     return Padding(
       padding: EdgeInsets.fromLTRB(
         tokens.spacing.gap,
@@ -592,6 +694,25 @@ class _SrsTodayPlan extends StatelessWidget {
         ? Text(t.srs_home_start_from(name: go.deck.name), style: sub)
         : null;
 
+    if (shellRedesignActive(context)) {
+      return _SrsTodayPoster(
+        remaining: remaining,
+        pending: pending,
+        allDone: allDone,
+        title: title,
+        minutes: minutes != null && !allDone
+            ? t.srs_home_minutes(n: minutes)
+            : null,
+        startFrom: go != null && rootsWithWork > 1
+            ? t.srs_home_start_from(name: go.deck.name)
+            : null,
+        data: data,
+        stats: s,
+        target: go,
+        horizontal: horizontal,
+      );
+    }
+
     return FushiCard(
       tone: FushiCardTone.primary,
       pressScale: false,
@@ -625,6 +746,167 @@ class _SrsTodayPlan extends StatelessWidget {
             start,
             if (from != null) Center(child: from),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+/// 重设计外壳的今日计划（复习页首块）：按「从哪个牌组开始」取色的海报色块（与
+/// 首页仪表盘复习块同色）。左上是事实 chip（约几分钟 / 多个顶层牌组有活时「从
+/// 哪个开始」），右上是今日进度圆环（已完成 ÷ 已完成 + 剩余，中间带 %），正下方
+/// 一行「已完成 N 张」点明圆环的含义；正中是今天还剩的张数大字（全部完成 / 准备
+/// 中时换成状态大字），下面到期 / 学习中 / 新卡三个计数 chip。
+///
+/// 不画水印（用户 2026-11-13：被块裁掉半个字、压在内容上），也不放「开始复习」：
+/// 页头主按钮（[FushiMastheadCtaButton]，同一口径 [SrsDeckListData.firstRootWithWork]）
+/// 是这页唯一的开始入口；未来 7 天到期归牌组色块 / 窄屏的到期块，这里不再重复。
+class _SrsTodayPoster extends StatelessWidget {
+  const _SrsTodayPoster({
+    required this.remaining,
+    required this.pending,
+    required this.allDone,
+    required this.title,
+    required this.minutes,
+    required this.startFrom,
+    required this.data,
+    required this.stats,
+    required this.target,
+    required this.horizontal,
+  });
+
+  final int remaining;
+  final bool pending;
+  final bool allDone;
+
+  /// 没有剩余时的大字文案（「准备中」/「今天全部完成」）。
+  final String? title;
+
+  /// 「约 N 分钟」；算不出或全部完成时为 null。
+  final String? minutes;
+
+  /// 多个顶层牌组有活时「从「X」开始」；否则 null。
+  final String? startFrom;
+  final SrsDeckListData data;
+  final SrsHomeStats? stats;
+
+  /// 页头「开始复习」从哪个顶层牌组开始（取色用）；null = 今天没有活。
+  final SrsDeckSummary? target;
+  final bool horizontal;
+
+  @override
+  Widget build(BuildContext context) {
+    final SrsDeckSummary? go = target;
+    final FushiCoverBlockColors colors = fushiPosterColors(
+      context,
+      fushiPosterHue(go?.deck.id ?? 'srs-today'),
+    );
+    final int done = stats?.doneToday ?? 0;
+    final int total = done + remaining;
+    final double ratio = total == 0 ? (allDone ? 1 : 0) : done / total;
+    final TextStyle base =
+        Theme.of(context).textTheme.bodyMedium ?? const TextStyle();
+    final TextStyle caption = FushiPosterText.caption
+        .on(base)
+        .copyWith(color: colors.onContainer.withValues(alpha: 0.85));
+    final String? headline = title;
+    final Widget figure = headline != null
+        ? Text(
+            headline,
+            key: const ValueKey<String>('srs-home-today-title'),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style:
+                (horizontal
+                        ? FushiPosterText.display
+                        : FushiPosterText.headline)
+                    .on(base)
+                    .copyWith(color: colors.accent),
+          )
+        : FushiPosterFigure(
+            value: '$remaining',
+            unit: t.widget_settings_unit_cards,
+            colors: colors,
+            size: horizontal
+                ? FushiPosterFigureSize.large
+                : FushiPosterFigureSize.regular,
+          );
+    final List<String> facts = <String>[?minutes, ?startFrom];
+    final String doneLabel = t.srs_home_done_count(n: done);
+    return FushiPosterBlock(
+      key: const ValueKey<String>('srs-home-today-poster'),
+      watermark: '',
+      colors: colors,
+      // 块里没有点按目标（开始入口在页头），不随悬停抬升。
+      hoverEnabled: false,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        spacing: 12,
+        children: <Widget>[
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            spacing: 12,
+            children: <Widget>[
+              Expanded(
+                child: Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: <Widget>[
+                    FushiPosterChip(
+                      colors: colors,
+                      icon: FushiIcons.repeat,
+                      label: t.stat_today,
+                    ),
+                    for (final String fact in facts)
+                      FushiPosterChip(colors: colors, label: fact),
+                  ],
+                ),
+              ),
+              Semantics(
+                key: const ValueKey<String>('srs-home-today-ring'),
+                container: true,
+                label: '$doneLabel · ${_srsPercent(ratio)}',
+                excludeSemantics: true,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  spacing: 6,
+                  children: <Widget>[
+                    FushiPosterRing(
+                      value: ratio,
+                      colors: colors,
+                      size: horizontal ? 72 : 60,
+                    ),
+                    Text(doneLabel, maxLines: 1, style: caption),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          figure,
+          if (!allDone)
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: <Widget>[
+                FushiPosterChip(
+                  colors: colors,
+                  solid: true,
+                  label: pending && data.todayReview == 0
+                      ? '${t.srs_home_meta_due(n: 0)} '
+                            '(${t.srs_home_meta_pending})'
+                      : t.srs_home_meta_due(n: data.todayReview),
+                ),
+                FushiPosterChip(
+                  colors: colors,
+                  label: t.srs_home_meta_learning(n: data.todayLearn),
+                ),
+                FushiPosterChip(
+                  colors: colors,
+                  label: t.srs_home_meta_new(n: data.todayNew),
+                ),
+              ],
+            ),
         ],
       ),
     );
@@ -787,10 +1069,16 @@ class _SrsDeckBadge extends StatelessWidget {
     required this.size,
     required this.label,
     this.done = false,
+    this.fill,
+    this.ink,
   });
 
   final RoundedPolygon shape;
   final double size;
+
+  /// 色块里的徽章：底色 / 字色取块的配色（不传 = 主题色）。
+  final Color? fill;
+  final Color? ink;
 
   /// 徽章里的字（牌组名首字）。
   final String label;
@@ -802,12 +1090,20 @@ class _SrsDeckBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final bool apple = isGlassDesign(context);
     final ColorScheme scheme = Theme.of(context).colorScheme;
-    final Color fill = apple
-        ? appleColorsOf(context).accent.withValues(alpha: done ? 0.08 : 0.18)
-        : (done ? scheme.surfaceContainerHighest : scheme.primaryContainer);
-    final Color ink = apple
-        ? appleColorsOf(context).accent
-        : (done ? scheme.onSurfaceVariant : scheme.onPrimaryContainer);
+    final Color fill =
+        this.fill ??
+        (apple
+            ? appleColorsOf(
+                context,
+              ).accent.withValues(alpha: done ? 0.08 : 0.18)
+            : (done
+                  ? scheme.surfaceContainerHighest
+                  : scheme.primaryContainer));
+    final Color ink =
+        this.ink ??
+        (apple
+            ? appleColorsOf(context).accent
+            : (done ? scheme.onSurfaceVariant : scheme.onPrimaryContainer));
     final ShapeBorder border = apple
         ? RoundedRectangleBorder(borderRadius: BorderRadius.circular(size / 4))
         : MaterialShapeBorder(shape: shape);
@@ -864,6 +1160,19 @@ class _SrsDeckDetail extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (shellRedesignActive(context)) {
+      return _SrsDeckPoster(
+        deck: deck,
+        detail: detail,
+        today: today,
+        shape: shape,
+        isDefault: isDefault,
+        canMoveUp: canMoveUp,
+        canMoveDown: canMoveDown,
+        onReview: onReview,
+        onAction: onAction,
+      );
+    }
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final Color muted = isGlassDesign(context)
         ? appleColorsOf(context).secondaryLabel
@@ -1042,6 +1351,288 @@ class _SrsDeckDetail extends StatelessWidget {
   }
 }
 
+/// 重设计外壳的牌组详情（宽屏首行中间那块 / 手机牌组详情页）：按牌组 id 取色的
+/// 海报色块，信息与 [_SrsDeckDetail] 的卡片形态一一对应——形状徽章 + 名字 + 张数
+/// 统计；保持率大字（原来孤零零的「保持率」小卡并进来）；未来 7 天逐日到期的小柱
+/// （悬停看当天张数）+「明天 N 张」；按钮「复习这个牌组」「浏览卡片」「选项」，
+/// 配色取块自己的取色方案。不画水印。
+class _SrsDeckPoster extends StatelessWidget {
+  const _SrsDeckPoster({
+    required this.deck,
+    required this.detail,
+    required this.today,
+    required this.shape,
+    required this.isDefault,
+    required this.canMoveUp,
+    required this.canMoveDown,
+    required this.onReview,
+    required this.onAction,
+  });
+
+  final SrsDeckSummary deck;
+  final SrsHomeDeckDetail? detail;
+  final int? today;
+  final RoundedPolygon shape;
+  final bool isDefault;
+  final bool canMoveUp;
+  final bool canMoveDown;
+  final void Function(SrsDeckSummary deck) onReview;
+  final void Function(SrsDeckSummary deck, _DeckAction action) onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    // 色相键与今日计划块（按牌组 id）错开：只有一个牌组时两块并排也不同色。
+    final FushiCoverBlockColors colors = fushiPosterColors(
+      context,
+      fushiPosterHue('srs-deck:${deck.deck.id}'),
+    );
+    final TextStyle base =
+        Theme.of(context).textTheme.bodyMedium ?? const TextStyle();
+    final TextStyle caption = FushiPosterText.caption
+        .on(base)
+        .copyWith(color: colors.onContainer.withValues(alpha: 0.85));
+    final TextStyle tick = FushiPosterText.badge
+        .on(base)
+        .copyWith(color: colors.onContainer.withValues(alpha: 0.7));
+    final SrsHomeDeckDetail? d = detail;
+    final int? day = today;
+    final bool work = _srsDeckHasWork(deck);
+    final List<int>? days = d?.forecast;
+    final double? retention = d?.retention;
+    final double? target = d?.desiredRetention;
+
+    final Widget head = Row(
+      spacing: 14,
+      children: <Widget>[
+        _SrsDeckBadge(
+          shape: shape,
+          size: 52,
+          label: _srsDeckInitial(deck),
+          fill: colors.accent,
+          ink: colors.container,
+        ),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            spacing: 2,
+            children: <Widget>[
+              FushiTooltip(
+                message: deck.fullName,
+                child: Text(
+                  deck.deck.name,
+                  key: ValueKey<String>('srs-home-detail-name-${deck.deck.id}'),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: FushiPosterText.name
+                      .on(base)
+                      .copyWith(color: colors.onContainer),
+                ),
+              ),
+              Text(
+                d == null
+                    ? t.srs_home_deck_cards(n: deck.totalCards)
+                    : t.srs_home_deck_card_counts(
+                        n: deck.totalCards,
+                        fresh: d.newCards,
+                        mature: d.matureCards,
+                      ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: caption,
+              ),
+              Text(
+                _srsDeckMeta(deck),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: caption,
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+
+    final Widget retentionPart;
+    if (d == null) {
+      retentionPart = const SizedBox(height: 56);
+    } else if (retention == null) {
+      retentionPart = Wrap(
+        spacing: 8,
+        runSpacing: 6,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: <Widget>[
+          FushiPosterChip(colors: colors, label: t.srs_home_retention_title),
+          Text(t.srs_home_retention_none, style: caption),
+        ],
+      );
+    } else {
+      retentionPart = Semantics(
+        container: true,
+        label: '${t.srs_home_retention_title} ${_srsPercent(retention)}',
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          spacing: 6,
+          children: <Widget>[
+            ExcludeSemantics(
+              child: FushiPosterFigure(
+                value: _srsPercent(retention),
+                unit: t.srs_home_retention_title,
+                colors: colors,
+                size: FushiPosterFigureSize.compact,
+              ),
+            ),
+            Text(
+              t.srs_home_retention_detail(
+                target: target == null ? '—' : _srsPercent(target),
+                n: d.reviewsRecent,
+              ),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: caption,
+            ),
+          ],
+        ),
+      );
+    }
+
+    final Widget forecastPart;
+    if (days == null || day == null || days.isEmpty) {
+      forecastPart = const SizedBox(height: 46);
+    } else {
+      forecastPart = Semantics(
+        container: true,
+        label: days.length > 1
+            ? '${t.srs_home_forecast_title} · '
+                  '${t.srs_home_forecast_tomorrow(n: days[1])}'
+            : t.srs_home_forecast_title,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          spacing: 6,
+          children: <Widget>[
+            ExcludeSemantics(
+              child: Row(
+                spacing: 8,
+                children: <Widget>[
+                  Expanded(
+                    child: Text(
+                      t.srs_home_forecast_title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: caption,
+                    ),
+                  ),
+                  if (days.length > 1)
+                    Text(
+                      t.srs_home_forecast_tomorrow(n: days[1]),
+                      maxLines: 1,
+                      style: caption,
+                    ),
+                ],
+              ),
+            ),
+            FushiPosterBars(
+              values: days,
+              colors: colors,
+              labels: <String>[
+                for (int i = 0; i < days.length; i++)
+                  '${_srsForecastTitle(day, i)} · '
+                      '${t.srs_home_deck_cards(n: days[i])}',
+              ],
+            ),
+            ExcludeSemantics(
+              child: Row(
+                spacing: 5,
+                children: <Widget>[
+                  for (int i = 0; i < days.length; i++)
+                    Expanded(
+                      child: Text(
+                        _srsForecastLabel(day, i),
+                        maxLines: 1,
+                        overflow: TextOverflow.clip,
+                        textAlign: TextAlign.center,
+                        style: tick,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final Widget actions = Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: <Widget>[
+        FushiPressScale(
+          child: FushiFilledButton.icon(
+            key: const ValueKey<String>('srs-home-detail-review'),
+            style: fushiPosterButtonStyle(colors),
+            onPressed: work ? () => onReview(deck) : null,
+            icon: const FushiIcon(FushiIcons.play),
+            label: Text(t.srs_home_review_deck),
+          ),
+        ),
+        FushiPressScale(
+          child: FushiFilledButton.tonalIcon(
+            key: const ValueKey<String>('srs-home-detail-browse'),
+            style: fushiPosterButtonStyle(colors, tonal: true),
+            onPressed: () => onAction(deck, _DeckAction.browse),
+            icon: const FushiIcon(FushiIcons.search),
+            label: Text(t.srs_home_browse_cards),
+          ),
+        ),
+        Builder(
+          builder: (BuildContext anchor) => FushiPressScale(
+            child: FushiFilledButton.tonalIcon(
+              key: const ValueKey<String>('srs-home-detail-options'),
+              style: fushiPosterButtonStyle(colors, tonal: true),
+              onPressed: () => unawaited(
+                _showDeckMenu(
+                  anchor,
+                  deck: deck,
+                  isDefault: isDefault,
+                  canMoveUp: canMoveUp,
+                  canMoveDown: canMoveDown,
+                  onAction: onAction,
+                ),
+              ),
+              icon: const FushiIcon(FushiIcons.settings),
+              label: Text(t.srs_home_deck_options),
+            ),
+          ),
+        ),
+      ],
+    );
+
+    return FushiPosterBlock(
+      key: const ValueKey<String>('srs-home-deck-poster'),
+      watermark: '',
+      colors: colors,
+      // 块里有自己的按钮，整块不是点按目标，不随悬停抬升。
+      hoverEnabled: false,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        spacing: 16,
+        children: <Widget>[
+          head,
+          KeyedSubtree(
+            key: const ValueKey<String>('srs-home-detail-retention'),
+            child: retentionPart,
+          ),
+          forecastPart,
+          actions,
+        ],
+      ),
+    );
+  }
+}
+
 /// 未来几天逐日到期的小柱状图（复用统计页的 [SrsBarChart]：点按 / 悬停看当天张数）。
 class _SrsForecastChart extends StatelessWidget {
   const _SrsForecastChart({required this.values, required this.today});
@@ -1084,6 +1675,76 @@ class _SrsHeatmapCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final Widget heatmap = SrsCalendarHeatmap(
+      countsByDay: stats.countsByDay,
+      today: stats.today,
+      dayLabel: (int day) => _srsHomeDate(day, DateFormat.yMd),
+      monthLabel: (int day) => _srsHomeDate(day, DateFormat.MMM),
+    );
+    if (shellRedesignActive(context)) {
+      // 「连续天数」色块：连续天数大字 + 最长连续 + 统计页同款热力图。不画水印
+      // （用户 2026-11-13：裁成半个字、压在内容上）。
+      final FushiCoverBlockColors colors = fushiPosterColors(
+        context,
+        fushiPosterHue('srs-home-heatmap'),
+      );
+      final TextStyle base =
+          Theme.of(context).textTheme.bodyMedium ?? const TextStyle();
+      return FushiPosterBlock(
+        watermark: '',
+        colors: colors,
+        hoverEnabled: false,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          spacing: 12,
+          children: <Widget>[
+            Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: FushiPosterChip(
+                colors: colors,
+                icon: FushiIcons.streak,
+                label: t.stat_streak,
+              ),
+            ),
+            Semantics(
+              label: t.srs_home_streak_longest(
+                n: stats.streak,
+                m: stats.longestStreak,
+              ),
+              excludeSemantics: true,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                spacing: 12,
+                children: <Widget>[
+                  FushiPosterFigure(
+                    value: '${stats.streak}',
+                    unit: t.widget_label_streak_days,
+                    colors: colors,
+                    size: FushiPosterFigureSize.compact,
+                  ),
+                  Expanded(
+                    child: Text(
+                      '${t.srs_stats_streak_longest} · '
+                      '${stats.longestStreak} ${t.widget_label_streak_days}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.end,
+                      style: FushiPosterText.caption
+                          .on(base)
+                          .copyWith(
+                            color: colors.onContainer.withValues(alpha: 0.85),
+                          ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            heatmap,
+          ],
+        ),
+      );
+    }
     return FushiHoverLift(
       builder: (BuildContext context, bool _) => FushiCard(
         pressScale: false,
@@ -1101,12 +1762,7 @@ class _SrsHeatmapCard extends StatelessWidget {
               ),
               style: context.fushiType.titleSmallEmphasized,
             ),
-            SrsCalendarHeatmap(
-              countsByDay: stats.countsByDay,
-              today: stats.today,
-              dayLabel: (int day) => _srsHomeDate(day, DateFormat.yMd),
-              monthLabel: (int day) => _srsHomeDate(day, DateFormat.MMM),
-            ),
+            heatmap,
           ],
         ),
       ),
@@ -1127,6 +1783,48 @@ class _SrsForecastCard extends StatelessWidget {
         ? appleColorsOf(context).secondaryLabel
         : Theme.of(context).colorScheme.onSurfaceVariant;
     final List<int> forecast = stats.forecast;
+    if (shellRedesignActive(context)) {
+      // 全库未来 7 天（只在窄屏根层出现；宽屏由牌组色块带这张图，不重复）：
+      // 「明日到期」大字 + 逐日柱状图（点按 / 悬停看张数）。不画水印。
+      final FushiCoverBlockColors colors = fushiPosterColors(
+        context,
+        fushiPosterHue('srs-home-forecast'),
+      );
+      return FushiPosterBlock(
+        watermark: '',
+        colors: colors,
+        hoverEnabled: false,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          spacing: 12,
+          children: <Widget>[
+            Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: FushiPosterChip(
+                colors: colors,
+                icon: FushiIcons.calendar,
+                label: t.srs_home_forecast_title,
+              ),
+            ),
+            if (forecast.length > 1)
+              Semantics(
+                label: t.srs_home_forecast_tomorrow(n: forecast[1]),
+                child: ExcludeSemantics(
+                  child: FushiPosterFigure(
+                    value: '${forecast[1]}',
+                    unit: t.widget_label_due_tomorrow,
+                    colors: colors,
+                    size: FushiPosterFigureSize.compact,
+                  ),
+                ),
+              ),
+            if (forecast.isNotEmpty)
+              _SrsForecastChart(values: forecast, today: stats.today),
+          ],
+        ),
+      );
+    }
     return FushiHoverLift(
       builder: (BuildContext context, bool _) => FushiCard(
         pressScale: false,

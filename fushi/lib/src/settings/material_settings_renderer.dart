@@ -70,6 +70,7 @@ class MaterialSettingsRenderer implements SettingsRenderer {
     // 分类列表的内边距按外层 context 算、不含页头让位：整体让开叠放的页头
     // （FushiPageScaffold 默认正文铺到页头底下）。
     return FushiPageScaffold(
+      masthead: true,
       title: settingsContext.context.t.settings,
       body: SafeArea(bottom: false, child: list),
     );

@@ -6,6 +6,7 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_continue_blocks.dart';
 import 'package:fushi/src/utils/components/fushi_continue_hero.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
@@ -122,6 +123,18 @@ class FushiContinueCardRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final String? label = this.label;
+    // 重设计外壳 + 色块布局：整排换成一行封面色块横滑（[FushiContinueBlocks]，
+    // 与库墙 / 首页仪表盘同一套色块视觉，[label] 画成分区标题）；封面网格布局
+    // 与墨水屏保留下面的取色并列卡。
+    if (FushiContinueBlocks.active(context)) {
+      return FushiContinueBlocks(
+        groupKey: rowKey,
+        entries: entries,
+        label: label,
+        showLabel: label != null,
+      );
+    }
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final double pad = tokens.spacing.gap * 2;
     final _CardTextStyles styles = _CardTextStyles.of(tokens, null);
@@ -132,7 +145,6 @@ class FushiContinueCardRow extends StatelessWidget {
       Directionality.of(context),
     );
     final double baseCardHeight = math.max(coverHeight, infoMin) + pad * 2;
-    final String? label = this.label;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,

@@ -27,14 +27,13 @@ import 'package:fushi/src/media/music/asr/music_subtitle_target.dart'
 import 'package:fushi/src/pages/implementations/music/music_playlist_actions.dart'
     show musicAddLocalTracksToPlaylist;
 import 'package:fushi/src/pages/implementations/music/music_subtitle_actions.dart';
-import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart'
-    show MusicFloatingBarHost;
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
+import 'package:fushi/src/pages/implementations/music/music_server_pages.dart'
+    show MusicDetailHero, musicBrowseScaffold, musicDetailHeroGap;
 import 'package:fushi/src/pages/implementations/music/music_track_list.dart'
     show musicTrackResumeOf, watchMusicResumeMode;
 import 'package:fushi/src/pages/implementations/music/music_track_scrape_sections.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
-import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -201,9 +200,7 @@ class _MusicTrackDetailPageState extends ConsumerState<MusicTrackDetailPage> {
 
   @override
   Widget build(BuildContext context) {
-    final bool apple = isGlassDesign(context);
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final NavigatorState? navigator = Navigator.maybeOf(context);
     return FutureBuilder<
       ({MusicTrackRow? track, MusicAlbumRow? album, String? cover})
     >(
@@ -219,37 +216,15 @@ class _MusicTrackDetailPageState extends ConsumerState<MusicTrackDetailPage> {
             final MusicTrackRow? track = snap.data?.track;
             final MusicAlbumRow? album = snap.data?.album;
             final String title = track?.title ?? '';
-            return MusicFloatingBarHost(
-              child: FushiPageScaffold(
-                title: title,
-                header: apple
-                    ? null
-                    : Padding(
-                        padding: EdgeInsets.fromLTRB(
-                          tokens.spacing.page,
-                          tokens.spacing.gap,
-                          tokens.spacing.page,
-                          tokens.spacing.gap,
-                        ),
-                        child: FushiFloatingTopBar(
-                          title: title,
-                          leading: <FushiToolbarItem>[
-                            if (navigator != null && navigator.canPop())
-                              FushiToolbarItem(
-                                icon: FushiIcons.back,
-                                label: MaterialLocalizations.of(
-                                  context,
-                                ).backButtonTooltip,
-                                onPressed: () =>
-                                    unawaited(navigator.maybePop()),
-                              ),
-                          ],
-                        ),
-                      ),
-                body: track == null
-                    ? const SizedBox.shrink()
-                    : _body(context, tokens, track, album, snap.data?.cover),
-              ),
+            // 外壳与专辑 / 歌单详情同一份（[musicBrowseScaffold]）：重设计外壳下
+            // 是页头大字（曲名已在色块里，滚过色块后页名淡入）；墨水屏照旧。
+            return musicBrowseScaffold(
+              context,
+              title: title,
+              titleInBody: true,
+              body: track == null
+                  ? const SizedBox.shrink()
+                  : _body(context, tokens, track, album, snap.data?.cover),
             );
           },
     );
@@ -273,114 +248,110 @@ class _MusicTrackDetailPageState extends ConsumerState<MusicTrackDetailPage> {
     String? embeddedCover,
   ) {
     final MusicPlayerEngine engine = ref.read(appProvider).musicSession.engine;
+    final String meta = <String>[
+      track.artistCredit ?? album?.albumArtistCredit ?? t.music_artist_unknown,
+      if (album != null) album.title,
+    ].join(' · ');
+    final String embedded = embeddedCover ?? track.path;
+    final List<Widget> actions = <Widget>[
+      FushiPressScale(
+        child: FushiFilledButton.icon(
+          size: FushiButtonSize.m,
+          key: const ValueKey<String>('music_track_play'),
+          onPressed: () => unawaited(
+            engine.playQueue(<MusicPlayItem>[
+              musicPlayItemOf(track, album: album),
+            ], context: MusicQueueContext.mixed),
+          ),
+          icon: const FushiIcon(FushiIcons.play),
+          label: Text(t.music_play_all),
+        ),
+      ),
+      ..._resumeActions(track, album),
+      FushiPressScale(
+        child: FushiFilledButton.tonalIcon(
+          size: FushiButtonSize.m,
+          key: const ValueKey<String>('music_track_add_to_playlist'),
+          onPressed: () => unawaited(
+            musicAddLocalTracksToPlaylist(context, <String>[track.trackUid]),
+          ),
+          icon: const FushiIcon(FushiIcons.playlist),
+          label: Text(t.music_action_add_to_playlist),
+        ),
+      ),
+      FushiPressScale(
+        child: FushiFilledButton.tonalIcon(
+          size: FushiButtonSize.m,
+          key: const ValueKey<String>('music_track_detect_theme_song'),
+          onPressed: _detecting ? null : () => unawaited(_detect()),
+          icon: const FushiIcon(FushiIcons.refresh),
+          label: Text(
+            _detecting
+                ? t.music_theme_song_detecting
+                : t.music_theme_song_detect,
+          ),
+        ),
+      ),
+      if (musicSubtitleGenerationAvailable(track.path))
+        FushiPressScale(
+          child: FushiFilledButton.tonalIcon(
+            size: FushiButtonSize.m,
+            key: const ValueKey<String>('music_track_generate_subtitles'),
+            onPressed: () => unawaited(
+              openMusicSubtitleGenerateSheet(
+                context: context,
+                appModel: ref.read(appProvider),
+                resolve: (MusicSubtitleTargets targets) =>
+                    targets.forTrack(track.trackUid),
+              ),
+            ),
+            icon: const FushiIcon(FushiIcons.subtitles),
+            label: Text(t.music_subtitle_generate),
+          ),
+        ),
+    ];
     final List<Widget> children = <Widget>[
-      Wrap(
-        spacing: tokens.spacing.section,
-        runSpacing: tokens.spacing.gap,
-        crossAxisAlignment: WrapCrossAlignment.end,
-        children: <Widget>[
-          musicMaterialCover(
-            MusicCover(
-              coverPath: album?.coverPath,
-              embeddedFromPath: embeddedCover ?? track.path,
+      MusicDetailHero(
+        title: track.title,
+        coverPath: album?.coverPath,
+        embeddedFromPath: embedded,
+        eyebrow: t.music_section_songs,
+        meta: meta,
+        actions: actions,
+        legacy: Wrap(
+          spacing: tokens.spacing.section,
+          runSpacing: tokens.spacing.gap,
+          crossAxisAlignment: WrapCrossAlignment.end,
+          children: <Widget>[
+            musicMaterialCover(
+              MusicCover(
+                coverPath: album?.coverPath,
+                embeddedFromPath: embedded,
+                size: 160,
+              ),
               size: 160,
+              tilt: true,
             ),
-            size: 160,
-            tilt: true,
-          ),
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 420),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              spacing: tokens.spacing.gap * 0.5,
-              children: <Widget>[
-                Text(track.title, style: context.fushiType.headlineSmall),
-                Text(
-                  <String>[
-                    track.artistCredit ??
-                        album?.albumArtistCredit ??
-                        t.music_artist_unknown,
-                    if (album != null) album.title,
-                  ].join(' · '),
-                  style: context.fushiType.bodyMedium,
-                ),
-                const SizedBox(height: 4),
-                Wrap(
-                  spacing: tokens.spacing.gap,
-                  runSpacing: tokens.spacing.gap,
-                  children: <Widget>[
-                    FushiPressScale(
-                      child: FushiFilledButton.icon(
-                        size: FushiButtonSize.m,
-                        key: const ValueKey<String>('music_track_play'),
-                        onPressed: () => unawaited(
-                          engine.playQueue(<MusicPlayItem>[
-                            musicPlayItemOf(track, album: album),
-                          ], context: MusicQueueContext.mixed),
-                        ),
-                        icon: const FushiIcon(FushiIcons.play),
-                        label: Text(t.music_play_all),
-                      ),
-                    ),
-                    ..._resumeActions(track, album),
-                    FushiPressScale(
-                      child: FushiFilledButton.tonalIcon(
-                        size: FushiButtonSize.m,
-                        key: const ValueKey<String>(
-                          'music_track_add_to_playlist',
-                        ),
-                        onPressed: () => unawaited(
-                          musicAddLocalTracksToPlaylist(context, <String>[
-                            track.trackUid,
-                          ]),
-                        ),
-                        icon: const FushiIcon(FushiIcons.playlist),
-                        label: Text(t.music_action_add_to_playlist),
-                      ),
-                    ),
-                    FushiPressScale(
-                      child: FushiFilledButton.tonalIcon(
-                        size: FushiButtonSize.m,
-                        key: const ValueKey<String>(
-                          'music_track_detect_theme_song',
-                        ),
-                        onPressed: _detecting
-                            ? null
-                            : () => unawaited(_detect()),
-                        icon: const FushiIcon(FushiIcons.refresh),
-                        label: Text(
-                          _detecting
-                              ? t.music_theme_song_detecting
-                              : t.music_theme_song_detect,
-                        ),
-                      ),
-                    ),
-                    if (musicSubtitleGenerationAvailable(track.path))
-                      FushiPressScale(
-                        child: FushiFilledButton.tonalIcon(
-                          size: FushiButtonSize.m,
-                          key: const ValueKey<String>(
-                            'music_track_generate_subtitles',
-                          ),
-                          onPressed: () => unawaited(
-                            openMusicSubtitleGenerateSheet(
-                              context: context,
-                              appModel: ref.read(appProvider),
-                              resolve: (MusicSubtitleTargets targets) =>
-                                  targets.forTrack(track.trackUid),
-                            ),
-                          ),
-                          icon: const FushiIcon(FushiIcons.subtitles),
-                          label: Text(t.music_subtitle_generate),
-                        ),
-                      ),
-                  ],
-                ),
-              ],
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 420),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                spacing: tokens.spacing.gap * 0.5,
+                children: <Widget>[
+                  Text(track.title, style: context.fushiType.headlineSmall),
+                  Text(meta, style: context.fushiType.bodyMedium),
+                  const SizedBox(height: 4),
+                  Wrap(
+                    spacing: tokens.spacing.gap,
+                    runSpacing: tokens.spacing.gap,
+                    children: actions,
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
       FutureBuilder<List<ThemeSongAppearance>>(
         future: _appearances,
@@ -465,6 +436,7 @@ class _MusicTrackDetailPageState extends ConsumerState<MusicTrackDetailPage> {
             mediaLinkSearchAction(context: context, ref: ref, kind: k),
       ),
     ];
+    final double heroGap = musicDetailHeroGap(context, tokens.spacing.gap);
     return FushiEntranceScope(
       // Builder：顶部让位读脚手架给正文的 MediaQuery（含页头高度）；[_body] 的
       // context 是脚手架外层的。
@@ -474,16 +446,17 @@ class _MusicTrackDetailPageState extends ConsumerState<MusicTrackDetailPage> {
             context,
             EdgeInsets.fromLTRB(
               tokens.spacing.page,
-              // MD3 下 FushiPageScaffold 把正文铺到悬浮页头底下，页头高度经
-              // MediaQuery 顶部 padding 传下来，必须让出，否则封面被顶栏盖住
-              // （反馈 yglXWr9DTq）。与同目录其它页同一约定。
+              // 外壳把正文铺到悬浮页头底下，页头高度经 MediaQuery 顶部 padding
+              // 传下来，必须让出，否则封面被顶栏盖住（反馈 yglXWr9DTq）。与同目录
+              // 其它页同一约定。
               MediaQuery.paddingOf(context).top + tokens.spacing.gap,
               tokens.spacing.page,
               tokens.spacing.section,
             ),
           ),
           itemCount: children.length,
-          separatorBuilder: (_, _) => SizedBox(height: tokens.spacing.gap),
+          separatorBuilder: (_, int i) =>
+              SizedBox(height: i == 0 ? heroGap : tokens.spacing.gap),
           itemBuilder: fushiStaggeredItemBuilder(
             (BuildContext context, int i) => children[i],
           ),

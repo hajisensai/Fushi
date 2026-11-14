@@ -20,6 +20,8 @@ import 'package:fushi_engine/srs/srs_optimization_scheduler.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_rwkv_panel.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show shellRedesignActive;
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -646,12 +648,26 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
   @override
   Widget build(BuildContext context) {
     final bool apple = isGlassDesign(context);
+    final bool masthead = shellRedesignActive(context);
     final String title = t.srs_deck_settings;
+    final String? deckName = _deck?.name;
     return FushiPageScaffold(
       title: title,
-      subtitle: _deck?.name,
+      subtitle: deckName,
+      masthead: true,
+      // 页头大字形态不画副标题：牌组名作页名下一行。
+      mastheadBottom: deckName == null
+          ? null
+          : Text(
+              deckName,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: context.fushiType.titleMedium.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
       header: apple ? null : _buildTopBar(context, title),
-      actions: apple
+      actions: apple || masthead
           ? <Widget>[
               FushiIconButton(
                 key: _saveItem.key,

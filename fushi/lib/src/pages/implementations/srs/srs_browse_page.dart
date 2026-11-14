@@ -50,6 +50,8 @@ import 'package:fushi/src/pages/implementations/srs/srs_note_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_review_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show shellRedesignActive;
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -1793,6 +1795,7 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
   @override
   Widget build(BuildContext context) {
     final bool apple = isGlassDesign(context);
+    final bool masthead = shellRedesignActive(context);
     final bool wide =
         MediaQuery.sizeOf(context).width >= kSrsBrowseSplitMinWidth;
     final Widget controls = _buildControls(context, wide: wide);
@@ -1806,11 +1809,23 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
       child: FushiPageScaffold(
         title: title,
         subtitle: apple ? _countText : null,
+        // 页头大字形态（重设计外壳）：视图切换与其余动作一起平铺成裸图标，放不下
+        // 从尾部收进「⋯」；搜索积木栏等控件留在正文顶部（同 MD3 浮动顶栏形态）。
+        masthead: true,
+        leading: masthead && _selecting
+            ? FushiIconButton(
+                key: const ValueKey<String>('srs_browse_clear_selection'),
+                icon: FushiIcons.close,
+                tooltip: t.srs_browse_select_none,
+                onTap: _clearSelection,
+              )
+            : null,
         header: apple ? null : _buildTopBar(context, wide: wide),
-        actions: apple
+        actions: apple || masthead
             ? <Widget>[
                 for (final FushiToolbarItem item in <FushiToolbarItem>[
                   ..._toolbarItems(),
+                  if (masthead) ..._layoutItems(wide),
                   ..._overflowItems(),
                 ])
                   FushiIconButton(
@@ -1823,7 +1838,7 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
                   ),
               ]
             : const <Widget>[],
-        headerBottom: apple
+        headerBottom: apple && !masthead
             ? Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1838,7 +1853,7 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
           builder: (BuildContext context) {
             final Widget main = _buildMain(
               context,
-              apple ? null : controls,
+              apple && !masthead ? null : controls,
               wide: wide,
             );
             if (!wide) return main;

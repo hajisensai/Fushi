@@ -44,6 +44,8 @@ import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/sync/sync_progress_banner.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show shellRedesignActive;
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -893,10 +895,12 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
   @override
   Widget build(BuildContext context) {
     final bool apple = isGlassDesign(context);
+    final bool masthead = shellRedesignActive(context);
     return FushiPageScaffold(
       title: t.srs_timeline_title,
+      masthead: true,
       header: apple ? null : _buildTopBar(context),
-      actions: apple
+      actions: apple || masthead
           ? <Widget>[
               for (final FushiToolbarItem a in _actions)
                 FushiIconButton(

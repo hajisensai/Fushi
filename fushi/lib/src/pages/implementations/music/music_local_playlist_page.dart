@@ -26,11 +26,15 @@ import 'package:fushi/src/pages/implementations/music/music_playlist_actions.dar
     show musicExportPlaylistM3u8, musicPlaylistErrorText;
 import 'package:fushi/src/pages/implementations/music/music_server_pages.dart'
     show
+        MusicDetailHero,
         kMusicAlbumDetailCoverSize,
         musicAlbumDetailCover,
         musicBrowsePagePadding,
         musicBrowseScaffold;
 import 'package:fushi/src/pages/implementations/music/music_track_list.dart';
+import 'package:fushi/src/pages/implementations/music/music_collection_view.dart';
+import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
+    show FushiToolbarItem;
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_loading_view.dart';
@@ -260,11 +264,25 @@ class _MusicLocalPlaylistPageState
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => MusicViewStyleBuilder(
+    kind: MusicViewKind.tracks,
+    fallback: MusicViewStyle.list,
+    builder: _buildPage,
+  );
+
+  /// [style]：曲目排成单列曲目行（原有，可拖动排序）或多列封面色块（不能拖动
+  /// 排序：要排序切回列表；「从这个歌单移除」照旧在右键 / 「⋯」菜单里）。
+  Widget _buildPage(BuildContext context, MusicViewStyle style) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final bool blocks = style == MusicViewStyle.blocks;
     return musicBrowseScaffold(
       context,
       title: _shown?.playlist?.name ?? widget.playlist.name,
+      titleInBody: true,
+      actions: <FushiToolbarItem>[
+        if (musicViewStyleSwitchable(context))
+          musicViewStyleToggle(MusicViewKind.tracks, style),
+      ],
       body: FutureBuilder<_PlaylistData>(
         future: _data,
         builder: (BuildContext context, AsyncSnapshot<_PlaylistData> snap) {
@@ -281,104 +299,106 @@ class _MusicLocalPlaylistPageState
                   d.albums[track.albumUid]?.coverPath,
               },
           ].nonNulls.firstOrNull;
+          final List<Widget> actions = <Widget>[
+            FushiPressScale(
+              child: FushiFilledButton.icon(
+                size: FushiButtonSize.m,
+                key: const ValueKey<String>('music_local_playlist_play'),
+                onPressed: items.isEmpty ? null : () => _playAll(d),
+                icon: const FushiIcon(FushiIcons.play),
+                label: Text(t.music_play_all),
+              ),
+            ),
+            FushiPressScale(
+              child: FushiFilledButton.tonalIcon(
+                size: FushiButtonSize.m,
+                key: const ValueKey<String>('music_local_playlist_shuffle'),
+                onPressed: items.isEmpty
+                    ? null
+                    : () => _playAll(d, shuffle: true),
+                icon: const FushiIcon(FushiIcons.shuffle),
+                label: Text(t.music_shuffle_play),
+              ),
+            ),
+            FushiPressScale(
+              child: FushiFilledButton.tonalIcon(
+                size: FushiButtonSize.m,
+                key: const ValueKey<String>('music_local_playlist_rename'),
+                onPressed: () => unawaited(_rename(p)),
+                icon: const FushiIcon(FushiIcons.edit),
+                label: Text(t.music_action_rename_playlist),
+              ),
+            ),
+            FushiPressScale(
+              child: FushiFilledButton.tonalIcon(
+                size: FushiButtonSize.m,
+                key: const ValueKey<String>('music_local_playlist_export'),
+                onPressed: items.isEmpty ? null : () => _export(d),
+                icon: const FushiIcon(FushiIcons.share),
+                label: Text(t.music_action_export_playlist),
+              ),
+            ),
+            FushiPressScale(
+              child: FushiFilledButton.tonalIcon(
+                size: FushiButtonSize.m,
+                key: const ValueKey<String>('music_local_playlist_delete'),
+                onPressed: () => unawaited(_delete(p)),
+                icon: const FushiIcon(FushiIcons.delete),
+                label: Text(t.music_action_delete_playlist),
+              ),
+            ),
+          ];
+          final String meta = <String>[
+            t.music_playlists_local,
+            t.music_tracks_count(count: items.length),
+          ].join(' · ');
           final List<Widget> children = <Widget>[
-            Wrap(
-              spacing: tokens.spacing.section,
-              runSpacing: tokens.spacing.gap,
-              crossAxisAlignment: WrapCrossAlignment.end,
-              children: <Widget>[
-                musicAlbumDetailCover(
-                  MusicCover(
-                    coverPath: cover,
-                    size: kMusicAlbumDetailCoverSize,
+            MusicDetailHero(
+              title: p.name,
+              coverPath: cover,
+              // 歌单里只有带内嵌封面的本地曲目时，色块取它的封面色。
+              embeddedFromPath: cover != null
+                  ? null
+                  : <String?>[
+                      for (final MusicPlaylistItem i in items)
+                        if (i.entry case MusicLocalEntry(
+                          :final MusicTrackRow track,
+                        ))
+                          track.path,
+                    ].nonNulls.firstOrNull,
+              eyebrow: t.music_playlists_local,
+              meta: t.music_tracks_count(count: items.length),
+              actions: actions,
+              legacy: Wrap(
+                spacing: tokens.spacing.section,
+                runSpacing: tokens.spacing.gap,
+                crossAxisAlignment: WrapCrossAlignment.end,
+                children: <Widget>[
+                  musicAlbumDetailCover(
+                    MusicCover(
+                      coverPath: cover,
+                      size: kMusicAlbumDetailCoverSize,
+                    ),
                   ),
-                ),
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 420),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    spacing: tokens.spacing.gap * 0.5,
-                    children: <Widget>[
-                      Text(p.name, style: context.fushiType.headlineSmall),
-                      Text(
-                        <String>[
-                          t.music_playlists_local,
-                          t.music_tracks_count(count: items.length),
-                        ].join(' · '),
-                        style: context.fushiType.bodyMedium,
-                      ),
-                      Wrap(
-                        spacing: tokens.spacing.gap,
-                        runSpacing: tokens.spacing.gap,
-                        children: <Widget>[
-                          FushiPressScale(
-                            child: FushiFilledButton.icon(
-                              size: FushiButtonSize.m,
-                              key: const ValueKey<String>(
-                                'music_local_playlist_play',
-                              ),
-                              onPressed: items.isEmpty
-                                  ? null
-                                  : () => _playAll(d),
-                              icon: const FushiIcon(FushiIcons.play),
-                              label: Text(t.music_play_all),
-                            ),
-                          ),
-                          FushiPressScale(
-                            child: FushiFilledButton.tonalIcon(
-                              size: FushiButtonSize.m,
-                              key: const ValueKey<String>(
-                                'music_local_playlist_shuffle',
-                              ),
-                              onPressed: items.isEmpty
-                                  ? null
-                                  : () => _playAll(d, shuffle: true),
-                              icon: const FushiIcon(FushiIcons.shuffle),
-                              label: Text(t.music_shuffle_play),
-                            ),
-                          ),
-                          FushiPressScale(
-                            child: FushiFilledButton.tonalIcon(
-                              size: FushiButtonSize.m,
-                              key: const ValueKey<String>(
-                                'music_local_playlist_rename',
-                              ),
-                              onPressed: () => unawaited(_rename(p)),
-                              icon: const FushiIcon(FushiIcons.edit),
-                              label: Text(t.music_action_rename_playlist),
-                            ),
-                          ),
-                          FushiPressScale(
-                            child: FushiFilledButton.tonalIcon(
-                              size: FushiButtonSize.m,
-                              key: const ValueKey<String>(
-                                'music_local_playlist_export',
-                              ),
-                              onPressed: items.isEmpty
-                                  ? null
-                                  : () => _export(d),
-                              icon: const FushiIcon(FushiIcons.share),
-                              label: Text(t.music_action_export_playlist),
-                            ),
-                          ),
-                          FushiPressScale(
-                            child: FushiFilledButton.tonalIcon(
-                              size: FushiButtonSize.m,
-                              key: const ValueKey<String>(
-                                'music_local_playlist_delete',
-                              ),
-                              onPressed: () => unawaited(_delete(p)),
-                              icon: const FushiIcon(FushiIcons.delete),
-                              label: Text(t.music_action_delete_playlist),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 420),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      spacing: tokens.spacing.gap * 0.5,
+                      children: <Widget>[
+                        Text(p.name, style: context.fushiType.headlineSmall),
+                        Text(meta, style: context.fushiType.bodyMedium),
+                        Wrap(
+                          spacing: tokens.spacing.gap,
+                          runSpacing: tokens.spacing.gap,
+                          children: actions,
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
             if (items.isEmpty)
               FushiPlaceholderMessage(
@@ -394,12 +414,13 @@ class _MusicLocalPlaylistPageState
                 albums: d.albums,
                 context: MusicQueueContext.mixed,
                 shrinkWrap: true,
+                style: style,
                 playlist: MusicTrackListPlaylist(
                   playlist: p,
                   entryIds: <int>[
                     for (final MusicPlaylistItem i in items) i.entryId,
                   ],
-                  onReorder: widget.itemsLoader == null
+                  onReorder: widget.itemsLoader == null && !blocks
                       ? (int from, int to) => unawaited(_reorder(d, from, to))
                       : null,
                 ),

@@ -7,6 +7,12 @@ import 'package:fushi/src/pages/implementations/media_server/media_server_aggreg
 import 'package:fushi/src/pages/implementations/media_server/media_server_routes.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_session.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_widgets.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show ShellContentLayout, shellContentLayoutOf, shellRedesignActive;
+import 'package:fushi/src/utils/components/fushi_cover_block.dart'
+    show FushiCoverBlockSize;
+import 'package:fushi/src/utils/components/fushi_cover_block_layout.dart'
+    show SliverFushiCoverBlocks;
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -196,10 +202,19 @@ class _MediaServerHomeViewState extends State<MediaServerHomeView> {
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final FushiMotionScheme motion = context.fushiMotion;
-    // 本视图是嵌套 Navigator 里的一条路由：页面外壳自带 Scaffold（Material 祖先）
-    // 与 M3E 悬浮页头（随滚动收起）。
-    return MediaServerPageFrame(
-      header: FushiPageHeader.customTitle(
+    final List<Widget> actions = _headerActions();
+    final bool canSwitch =
+        widget.onSwitchServer != null && widget.servers.length > 1;
+    // 页面外壳自带 Scaffold（Material 祖先）。重设计外壳下是页头大字（服务器名
+    // 大字 + 连体动作组，切换服务器菜单并进动作组；连接状态点改在正文顶上的
+    // 状态行）；墨水屏照旧 M3E 悬浮页头（随滚动收起）。
+    return MediaServerPageShell(
+      title: _browser.displayName,
+      actions: <Widget>[
+        if (canSwitch) _switchServerMenu(const FushiIcon(FushiIcons.swap)),
+        ...actions,
+      ],
+      legacyHeader: FushiPageHeader.customTitle(
         title: _buildTitle(context, tokens),
         padding: EdgeInsets.fromLTRB(
           tokens.spacing.page,
@@ -210,56 +225,113 @@ class _MediaServerHomeViewState extends State<MediaServerHomeView> {
         leading: widget.showBackButton
             ? BackButton(onPressed: () => Navigator.of(context).maybePop())
             : null,
-        actions: <Widget>[
-          FushiIconButton(
-            key: const ValueKey<String>('media-server-home-search'),
-            icon: FushiIcons.search,
-            tooltip: t.search,
-            label: t.search,
-            focusId: FushiFocusId('${widget.session.serverId}-home-search'),
-            onTap: () => openMediaServerGrid(
-              context,
-              widget.session,
-              parentId: null,
-              title: t.search,
-            ),
-          ),
-          if (widget.servers.length > 1)
-            FushiIconButton(
-              key: const ValueKey<String>('media-server-home-search-all'),
-              icon: FushiIcons.travelExplore,
-              tooltip: t.media_server_search_all,
-              focusId: FushiFocusId(
-                '${widget.session.serverId}-home-search-all',
-              ),
-              onTap: () =>
-                  openMediaServerAggregateSearch(context, <MediaServerSession>[
-                    for (final MediaServerBrowser browser in widget.servers)
-                      MediaServerSession(
-                        browser: browser,
-                        play: widget.session.play,
-                        library: widget.session.library,
-                      ),
-                  ]),
-            ),
-          FushiIconButton(
-            key: const ValueKey<String>('media-server-home-refresh'),
-            icon: FushiIcons.refresh,
-            tooltip: t.refresh,
-            focusId: FushiFocusId('${widget.session.serverId}-home-refresh'),
-            onTap: () => unawaited(_load()),
-          ),
-        ],
+        actions: actions,
       ),
       // 骨架 / 错误 / 正文之间交叉淡入（effects 弹簧，不过冲）。页头叠在正文
       // 上：滚动视图把让位加成顶部内边距，错误态整体让开。
-      body: MediaServerBodyInset(
-        builder: (BuildContext context, double top) => AnimatedSwitcher(
-          duration: motion.effectsDefault.duration,
-          switchInCurve: motion.effectsDefault.curve,
-          switchOutCurve: motion.effectsDefault.curve,
-          child: _buildBody(top),
+      body: (BuildContext context, double top) => AnimatedSwitcher(
+        duration: motion.effectsDefault.duration,
+        switchInCurve: motion.effectsDefault.curve,
+        switchOutCurve: motion.effectsDefault.curve,
+        child: _buildBody(top),
+      ),
+    );
+  }
+
+  /// 页头动作：搜索 / 搜索所有服务器（多台时）/ 刷新。两套页头同一组按钮。
+  List<Widget> _headerActions() {
+    return <Widget>[
+      FushiIconButton(
+        key: const ValueKey<String>('media-server-home-search'),
+        icon: FushiIcons.search,
+        tooltip: t.search,
+        label: t.search,
+        focusId: FushiFocusId('${widget.session.serverId}-home-search'),
+        onTap: () => openMediaServerGrid(
+          context,
+          widget.session,
+          parentId: null,
+          title: t.search,
         ),
+      ),
+      if (widget.servers.length > 1)
+        FushiIconButton(
+          key: const ValueKey<String>('media-server-home-search-all'),
+          icon: FushiIcons.travelExplore,
+          tooltip: t.media_server_search_all,
+          focusId: FushiFocusId('${widget.session.serverId}-home-search-all'),
+          onTap: () =>
+              openMediaServerAggregateSearch(context, <MediaServerSession>[
+                for (final MediaServerBrowser browser in widget.servers)
+                  MediaServerSession(
+                    browser: browser,
+                    play: widget.session.play,
+                    library: widget.session.library,
+                  ),
+              ]),
+        ),
+      FushiIconButton(
+        key: const ValueKey<String>('media-server-home-refresh'),
+        icon: FushiIcons.refresh,
+        tooltip: t.refresh,
+        focusId: FushiFocusId('${widget.session.serverId}-home-refresh'),
+        onTap: () => unawaited(_load()),
+      ),
+    ];
+  }
+
+  /// 「切换服务器」菜单（多台服务器时）：原版式挂在页头服务器名旁，页头大字下
+  /// 并进动作组。[icon] 是菜单钮的图标。
+  Widget _switchServerMenu(Widget icon) {
+    final ValueChanged<MediaServerBrowser> onSwitch = widget.onSwitchServer!;
+    return FushiPopupMenuButton<String>(
+      key: const ValueKey<String>('media-server-home-switch'),
+      tooltip: t.media_server_servers_title,
+      icon: icon,
+      initialValue: _browser.serverId,
+      onSelected: (String id) {
+        if (id == _browser.serverId) return;
+        for (final MediaServerBrowser browser in widget.servers) {
+          if (browser.serverId == id) onSwitch(browser);
+        }
+      },
+      itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+        for (final MediaServerBrowser browser in widget.servers)
+          CheckedPopupMenuItem<String>(
+            value: browser.serverId,
+            checked: browser.serverId == _browser.serverId,
+            child: Text(
+              browser.displayName,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+      ],
+    );
+  }
+
+  /// 重设计外壳下正文顶上的状态行：连接状态点 + 服务器类型 · 地址（原版式里
+  /// 状态点在页头服务器名前；页头大字只放纯文字页名）。
+  Widget _statusLine(FushiDesignTokens tokens) {
+    final MediaServerFamily family = mediaServerFamilyOf(_browser.serverId);
+    return Padding(
+      key: const ValueKey<String>('media-server-home-status'),
+      padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
+      child: Row(
+        children: <Widget>[
+          MediaServerStatusDot(status: _status),
+          SizedBox(width: tokens.spacing.gap),
+          Flexible(
+            child: Text(
+              '${mediaServerFamilyLabel(family)} · ${_browser.serverUrl}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: tokens.type.metadata.copyWith(
+                color: tokens.surfaces.onVariant,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -291,34 +363,13 @@ class _MediaServerHomeViewState extends State<MediaServerHomeView> {
           ),
         ),
         if (canSwitch)
-          FushiPopupMenuButton<String>(
-            key: const ValueKey<String>('media-server-home-switch'),
-            tooltip: t.media_server_servers_title,
-            icon: FushiIcon(
+          _switchServerMenu(
+            FushiIcon(
               FushiIcons.expandMore,
               color: apple
                   ? appleColorsOf(context).secondaryLabel
                   : tokens.surfaces.onVariant,
             ),
-            initialValue: _browser.serverId,
-            onSelected: (String id) {
-              if (id == _browser.serverId) return;
-              for (final MediaServerBrowser browser in widget.servers) {
-                if (browser.serverId == id) onSwitch(browser);
-              }
-            },
-            itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
-              for (final MediaServerBrowser browser in widget.servers)
-                CheckedPopupMenuItem<String>(
-                  value: browser.serverId,
-                  checked: browser.serverId == _browser.serverId,
-                  child: Text(
-                    browser.displayName,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-            ],
           ),
       ],
     );
@@ -354,7 +405,13 @@ class _MediaServerHomeViewState extends State<MediaServerHomeView> {
       );
     }
     final List<MediaServerLibrary>? libraries = _libraries;
-    if (libraries == null) return _buildSkeleton(tokens, top);
+    final bool blocks = mediaServerBlocksActive(context);
+    if (libraries == null) {
+      return blocks
+          ? _buildBlockSkeleton(tokens, top)
+          : _buildSkeleton(tokens, top);
+    }
+    if (blocks) return _buildBlockContent(libraries, tokens, top);
     final String prefix = widget.session.serverId;
     final double cardHeight = mediaServerRowCardHeight(context);
     return FushiEntranceScope(
@@ -365,6 +422,9 @@ class _MediaServerHomeViewState extends State<MediaServerHomeView> {
         slivers: <Widget>[
           // 让开叠在上面的页头（内容滚到胶囊底下）。
           SliverToBoxAdapter(child: SizedBox(height: top)),
+          // 页头大字（封面网格布局）：连接状态点不在页头里，挂在正文顶上。
+          if (shellRedesignActive(context))
+            SliverToBoxAdapter(child: _statusLine(tokens)),
           if (_continueWatching.isNotEmpty)
             SliverToBoxAdapter(child: _continueRow(prefix)),
           SliverToBoxAdapter(
@@ -413,6 +473,225 @@ class _MediaServerHomeViewState extends State<MediaServerHomeView> {
           ),
         ],
       ),
+    );
+  }
+
+  /// 重设计外壳、库页布局为拼贴 / 规整色块时的正文：状态行 →「继续观看」色块
+  /// （只排一行：拼贴是首块加大 + 旁边半高卡，不占满半屏）→「媒体库」规整色块
+  /// → 每个库一段「该库最新」色块（同样只排一行，行尾「查看全部」进库网格）。
+  /// 分区之间只隔卡片级间距；左右页边与库页色块墙一致。
+  Widget _buildBlockContent(
+    List<MediaServerLibrary> libraries,
+    FushiDesignTokens tokens,
+    double top,
+  ) {
+    final String prefix = widget.session.serverId;
+    final ShellContentLayout layout = shellContentLayoutOf(context);
+    final EdgeInsets inset = EdgeInsets.symmetric(
+      horizontal: tokens.spacing.page,
+    );
+    final String continueKey = '$prefix-home-continue';
+    final List<MediaServerItem> continueItems = _continueWatching;
+    return FushiEntranceScope(
+      key: ValueKey<String>('media-server-home-content-$_generation'),
+      replayKey: _generation,
+      child: CustomScrollView(
+        key: PageStorageKey<String>('$prefix-home'),
+        slivers: <Widget>[
+          SliverToBoxAdapter(child: SizedBox(height: top)),
+          SliverToBoxAdapter(child: _statusLine(tokens)),
+          if (continueItems.isNotEmpty) ...<Widget>[
+            SliverToBoxAdapter(
+              key: const ValueKey<String>('media-server-home-continue'),
+              child: MediaServerBlockSectionTitle(t.video_continue_watching),
+            ),
+            SliverPadding(
+              padding: inset,
+              sliver: SliverFushiCoverBlocks(
+                layout: layout,
+                itemCount: continueItems.length,
+                maxRows: 1,
+                itemBuilder:
+                    (
+                      BuildContext context,
+                      int index,
+                      FushiCoverBlockSize size,
+                    ) {
+                      final MediaServerItem item = continueItems[index];
+                      // 菜单要锚在这块色块上：包一层 Builder 取色块自己的 context。
+                      return Builder(
+                        key: ValueKey<String>('$continueKey-card-${item.id}'),
+                        builder: (BuildContext context) => MediaServerItemBlock(
+                          browser: _browser,
+                          item: item,
+                          size: size,
+                          resume: true,
+                          focusId: FushiFocusId('$continueKey-card-${item.id}'),
+                          onTap: () => resumeMediaServerItem(
+                            context,
+                            widget.session,
+                            item,
+                            siblings: continueItems,
+                          ),
+                          onLongPress: () => unawaited(
+                            showMediaServerContinueMenu(
+                              context,
+                              widget.session,
+                              item,
+                              siblings: continueItems,
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+              ),
+            ),
+          ],
+          SliverToBoxAdapter(
+            key: const ValueKey<String>('media-server-home-libraries'),
+            child: MediaServerBlockSectionTitle(t.media_server_libraries_title),
+          ),
+          if (libraries.isEmpty)
+            SliverToBoxAdapter(
+              child: FushiPlaceholderMessage(
+                icon: FushiIcons.collection,
+                message: t.media_server_items_empty,
+              ),
+            )
+          else
+            SliverPadding(
+              padding: inset,
+              // 媒体库是入口而不是作品：等尺寸规整色块，不做拼贴首块。
+              sliver: SliverFushiCoverBlocks(
+                itemCount: libraries.length,
+                itemBuilder:
+                    (
+                      BuildContext context,
+                      int index,
+                      FushiCoverBlockSize size,
+                    ) {
+                      final MediaServerLibrary library = libraries[index];
+                      return MediaServerLibraryBlock(
+                        key: ValueKey<String>(
+                          'media-server-library-${library.id}',
+                        ),
+                        browser: _browser,
+                        library: library,
+                        size: size,
+                        fallbackItems:
+                            _libraryRows[library.id] ??
+                            const <MediaServerItem>[],
+                        focusId: FushiFocusId('$prefix-library-${library.id}'),
+                        onTap: () => _openLibrary(library),
+                      );
+                    },
+              ),
+            ),
+          for (final MediaServerLibrary library in libraries)
+            if ((_libraryRows[library.id] ?? const <MediaServerItem>[])
+                .isNotEmpty) ...<Widget>[
+              SliverToBoxAdapter(
+                key: ValueKey<String>('media-server-home-row-${library.id}'),
+                child: MediaServerBlockSectionTitle(
+                  library.name,
+                  onViewAll: () => _openLibrary(library),
+                  viewAllFocusId: FushiFocusId('$prefix-row-all-${library.id}'),
+                ),
+              ),
+              SliverPadding(
+                padding: inset,
+                sliver: _latestBlocks(
+                  layout: layout,
+                  storageKey: '$prefix-home-row-${library.id}',
+                  items: _libraryRows[library.id]!,
+                ),
+              ),
+            ],
+          SliverSafeArea(
+            top: false,
+            sliver: SliverToBoxAdapter(
+              child: SizedBox(height: tokens.spacing.section),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 一个库的「最新」色块：只排一行（拼贴首块 + 半高卡 / 一行规整块），其余进
+  /// 「查看全部」。点按与原海报卡同义（电影 / 剧进详情，集直接播），长按进详情。
+  Widget _latestBlocks({
+    required ShellContentLayout layout,
+    required String storageKey,
+    required List<MediaServerItem> items,
+  }) {
+    return SliverFushiCoverBlocks(
+      layout: layout,
+      itemCount: items.length,
+      maxRows: 1,
+      itemBuilder: (BuildContext context, int index, FushiCoverBlockSize size) {
+        final MediaServerItem item = items[index];
+        return MediaServerItemBlock(
+          key: ValueKey<String>('$storageKey-card-${item.id}'),
+          browser: _browser,
+          item: item,
+          size: size,
+          focusId: FushiFocusId('$storageKey-card-${item.id}'),
+          onTap: () => openMediaServerItem(
+            context,
+            widget.session,
+            item,
+            siblings: items,
+          ),
+          onLongPress: () =>
+              openMediaServerItemDetail(context, widget.session, item),
+        );
+      },
+    );
+  }
+
+  /// 色块版式的加载骨架：状态行 + 「标题条 + 一行色块」两段，与正文同几何。
+  Widget _buildBlockSkeleton(FushiDesignTokens tokens, double top) {
+    Widget titleBar() => Padding(
+      padding: EdgeInsets.only(
+        top: tokens.spacing.card,
+        bottom: tokens.spacing.gap,
+      ),
+      child: Align(
+        alignment: AlignmentDirectional.centerStart,
+        child: FushiSkeleton(
+          width: 140,
+          height: 22,
+          borderRadius: FushiM3eShape.smallRadius,
+        ),
+      ),
+    );
+    return Column(
+      key: ValueKey<String>('media-server-home-skeleton-$_generation'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        SizedBox(height: top),
+        _statusLine(tokens),
+        Expanded(
+          child: FushiSkeletonShimmer(
+            child: ListView(
+              physics: const NeverScrollableScrollPhysics(),
+              padding: EdgeInsets.fromLTRB(
+                tokens.spacing.page,
+                0,
+                tokens.spacing.page,
+                tokens.spacing.section,
+              ),
+              children: <Widget>[
+                titleBar(),
+                const MediaServerBlockSkeleton(),
+                titleBar(),
+                const MediaServerBlockSkeleton(),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 

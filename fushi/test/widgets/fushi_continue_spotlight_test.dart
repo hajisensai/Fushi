@@ -9,7 +9,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/media/video/cover_ui/cover_aspect_probe.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart';
+import 'package:fushi/src/utils/components/fushi_continue_blocks.dart';
 import 'package:fushi/src/utils/components/fushi_continue_hero.dart';
+import 'package:fushi/src/utils/components/fushi_cover_block_layout.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/cover_provider_epoch.dart';
@@ -35,14 +38,22 @@ void main() {
     onLongPress: () => menus.add('$i'),
   );
 
+  // 主卡 / 封面行是封面网格布局（与墨水屏）下的皮；重设计外壳的色块布局下整段
+  // 换成一行色块横滑（见文件末尾那条用例），所以默认钉在网格布局。
   Widget harness(
     double width,
     List<FushiContinueEntry> entries, {
     bool showSideWhenNarrow = true,
     bool staggerEntrance = true,
+    ShellContentLayout layout = ShellContentLayout.grid,
+    String? blockLabel,
+    bool blockLeadingHero = false,
   }) => MaterialApp(
     theme: ThemeData(
-      extensions: const <ThemeExtension<dynamic>>[FushiEinkTheme(false)],
+      extensions: <ThemeExtension<dynamic>>[
+        const FushiEinkTheme(false),
+        FushiShellTheme(contentLayout: layout),
+      ],
     ),
     home: Scaffold(
       body: SingleChildScrollView(
@@ -55,6 +66,8 @@ void main() {
               side: entries.sublist(1),
               showSideWhenNarrow: showSideWhenNarrow,
               staggerEntrance: staggerEntrance,
+              blockLabel: blockLabel,
+              blockLeadingHero: blockLeadingHero,
             ),
           ),
         ),
@@ -467,6 +480,85 @@ void main() {
     expect(lifted.width, greaterThan(rest.width));
     expect(lifted.left, greaterThanOrEqualTo(viewport.left - 0.01));
     expect(lifted.right, lessThanOrEqualTo(viewport.right + 0.01));
+  });
+
+  // 2026-11-12 用户：「继续阅读占空间太大了还是保持跟之前一样侧滑」——色块布局下
+  // 「继续」区是一行半高色块横滑（书架 / 漫画 / 视频 / 游戏 / 音乐同一个组件），
+  // 不再是拼贴主块 + 多行大色块。
+  for (final ShellContentLayout layout in <ShellContentLayout>[
+    ShellContentLayout.collage,
+  ]) {
+    testWidgets('色块布局（${layout.name}）：全部条目一行横滑，上方分区标题', (
+      WidgetTester tester,
+    ) async {
+      final List<FushiContinueEntry> entries = <FushiContinueEntry>[
+        for (int i = 0; i < 6; i++) entry(i),
+      ];
+      await tester.pumpWidget(
+        harness(1200, entries, layout: layout, blockLabel: 'Continue'),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Continue'), findsOneWidget);
+      final Finder row = find.byKey(
+        const ValueKey<String>('fushi-continue-side-row'),
+      );
+      expect(row, findsOneWidget);
+      expect(tester.getSize(row).height, FushiCoverBlockStrip.rowHeight());
+      final Rect first = tester.getRect(
+        find.byKey(const ValueKey<String>('spot-0')),
+      );
+      final Rect second = tester.getRect(
+        find.byKey(const ValueKey<String>('spot-1')),
+      );
+      expect(
+        first.size,
+        Size(kFushiCoverBlockStripTileWidth, FushiCoverBlockStrip.rowHeight()),
+      );
+      expect(second.top, first.top, reason: '同一行');
+      expect(second.left, greaterThan(first.right));
+      expect(
+        tester
+            .widgetList<ListView>(
+              find.descendant(of: row, matching: find.byType(ListView)),
+            )
+            .single
+            .scrollDirection,
+        Axis.horizontal,
+      );
+    });
+  }
+
+  testWidgets('色块布局 + blockLeadingHero（视频首页）：首条是大封面主块，其余在旁边横滑', (
+    WidgetTester tester,
+  ) async {
+    final List<FushiContinueEntry> entries = <FushiContinueEntry>[
+      for (int i = 0; i < 8; i++) entry(i),
+    ];
+    await tester.pumpWidget(
+      harness(
+        1200,
+        entries,
+        layout: ShellContentLayout.collage,
+        blockLabel: 'Watching',
+        blockLeadingHero: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 区块名作主块的状态 chip，不另画分区标题。
+    expect(find.text('Watching'), findsOneWidget);
+    expect(find.byType(FushiBlockSectionTitle), findsNothing);
+    final Rect hero = tester.getRect(
+      find.byKey(const ValueKey<String>('spot-0')),
+    );
+    final Rect side = tester.getRect(
+      find.byKey(const ValueKey<String>('spot-1')),
+    );
+    expect(hero.height, kFushiCoverBlockHeroHeight);
+    expect(side.height, FushiCoverBlockStrip.rowHeight());
+    expect(side.left, greaterThan(hero.right), reason: '其余条目在主块旁边');
+    expect(side.top, hero.top);
   });
 }
 

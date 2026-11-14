@@ -6,6 +6,7 @@ library;
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/rendering.dart' show SliverConstraints;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_core/fushi_core.dart'
     show
@@ -41,6 +42,27 @@ import 'package:fushi/src/media/music/music_remote_tracks.dart'
     show musicRemoteTracksAvailable;
 import 'package:fushi/src/pages/implementations/music/music_track_actions.dart';
 import 'package:fushi/src/pages/implementations/music/music_track_list.dart';
+import 'package:fushi/src/pages/implementations/music/music_track_row_surface.dart';
+import 'package:fushi/src/pages/implementations/music/music_collection_view.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show
+        ShellClip,
+        ShellContentLayout,
+        shellContentLayoutOf,
+        shellRedesignActive,
+        shellShape;
+import 'package:fushi/src/pages/shared/library_section_tabs.dart';
+import 'package:fushi/src/utils/components/library_section_tab.dart';
+import 'package:fushi/src/utils/components/fushi_cover_block.dart';
+import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
+    show FushiToolbarItem;
+import 'package:fushi/src/utils/components/fushi_cover_block_layout.dart';
+import 'package:fushi/src/utils/components/fushi_poster_block.dart'
+    show
+        FushiPosterBlock,
+        FushiPosterChip,
+        FushiPosterText,
+        FushiPosterWatermarkEdge;
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -187,6 +209,8 @@ class _TrackRow extends StatelessWidget {
     this.leadingNumber = false,
     this.onPlayMv,
     this.menu,
+    this.pluginId,
+    this.block,
   });
 
   final MusicPluginTrack track;
@@ -195,11 +219,93 @@ class _TrackRow extends StatelessWidget {
   final VoidCallback onTap;
   final bool leadingNumber;
 
+  /// 非 null（且重设计外壳生效）时这首画成歌单详情网格里的一格封面色块
+  /// （[MusicTrackBlock]），值是这一格的尺寸档；null = 曲目行。
+  final FushiCoverBlockSize? block;
+
   /// 这首歌有 MV 且插件能取 MV 流时的「播放 MV」（[_mvAction]）。
   final VoidCallback? onPlayMv;
 
   /// 行尾「更多」+ 整行右键（[musicPluginTrackMenu]）；没有可做的动作时为 null。
   final MusicItemMenu? menu;
+
+  /// 这首所属的插件：给了才能认出「正在播放」（引擎里的曲目按插件 + 曲目 id 的
+  /// trackUid 记，[musicPluginTrackUid]）。没给的调用点不画正在播放态。
+  final String? pluginId;
+
+  /// 重设计外壳的曲目行（[MusicTrackRowSurface]）：独立圆角条、悬停 / 焦点铺封面
+  /// 取色、正在播放常驻色块 + 标题水印。key / MV 键 / 菜单 / 右键与原行同一套。
+  Widget _buildSurface(BuildContext context, String subtitle) {
+    Widget row(bool playing) => MusicTrackRowSurface(
+      key: ValueKey<String>('music-plugin-track-${track.id}'),
+      title: track.title,
+      subtitle: subtitle,
+      coverPath: track.coverUrl,
+      playing: playing,
+      ordinal: leadingNumber ? '${track.trackNo ?? index + 1}' : null,
+      leading: leadingNumber ? null : _thumb(track.coverUrl),
+      durationText: formatMusicDuration(track.durationMs),
+      onTap: track.playable ? onTap : null,
+      trailing: <Widget>[
+        if (onPlayMv case final VoidCallback playMv)
+          FushiIconButton(
+            key: ValueKey<String>('music-plugin-track-mv-${track.id}'),
+            icon: FushiIcons.video,
+            tooltip: t.music_mv_play,
+            onTap: playMv,
+          ),
+        ?menu?.button(),
+      ],
+    );
+    return _withPlaying(row);
+  }
+
+  /// 歌单详情网格里的一格（[block]）：封面色块，点块从这首起播，右键是行菜单。
+  Widget _buildBlock(
+    BuildContext context,
+    String subtitle,
+    FushiCoverBlockSize size,
+  ) => _withPlaying(
+    (bool playing) => MusicTrackBlock(
+      key: ValueKey<String>('music-plugin-track-${track.id}'),
+      size: size,
+      title: track.title,
+      subtitle: subtitle,
+      coverPath: track.coverUrl,
+      durationText: formatMusicDuration(track.durationMs),
+      playing: playing,
+      onTap: track.playable ? onTap : null,
+    ),
+  );
+
+  /// 重设计外壳的外观件共用的外层：不可播半透明、整块右键菜单、按插件 + 曲目 id
+  /// 认「正在播放」。
+  Widget _withPlaying(Widget Function(bool playing) row) {
+    final String? plugin = pluginId;
+    return Opacity(
+      opacity: track.playable ? 1 : 0.5,
+      child: musicWithContextMenu(
+        menu,
+        plugin == null
+            ? row(false)
+            : Consumer(
+                builder: (BuildContext context, WidgetRef ref, Widget? _) {
+                  final MusicPlayerEngine engine = ref
+                      .read(appProvider)
+                      .musicSession
+                      .engine;
+                  final String uid = musicPluginTrackUid(plugin, track.id);
+                  return MusicNowPlayingMatch(
+                    listenable: engine,
+                    isCurrent: () => engine.current?.trackUid == uid,
+                    builder: (BuildContext context, bool playing) =>
+                        row(playing),
+                  );
+                },
+              ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -208,6 +314,12 @@ class _TrackRow extends StatelessWidget {
       ?track.albumTitle,
       if (!track.playable) t.music_plugin_unplayable else ?track.note,
     ].join(' · ');
+    if (musicTrackRowSurfaceActive(context)) {
+      final FushiCoverBlockSize? size = block;
+      return size == null
+          ? _buildSurface(context, subtitle)
+          : _buildBlock(context, subtitle, size);
+    }
     return Opacity(
       opacity: track.playable ? 1 : 0.5,
       child: musicWithContextMenu(
@@ -407,9 +519,31 @@ class _MusicPluginBrowsePageState extends ConsumerState<MusicPluginBrowsePage> {
       musicPluginItemTile(context, ref, widget.manifest, _items, i);
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: MusicViewStyleStore.instance,
+    builder: (BuildContext context, Widget? _) => _buildPage(context),
+  );
+
+  Widget _buildPage(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final List<MusicPluginSearchType> types = _types;
+    // 结果按当前搜索类型记「色块 / 列表」（原有画法是单列行）。
+    final MusicViewKind viewKind = _pluginSearchViewKind(_type);
+    final MusicViewStyle style = musicViewStyleOf(
+      context,
+      viewKind,
+      MusicViewStyle.list,
+    );
+    // 重设计外壳（页头大字）：搜索框 + 类型页签整块进页名下一行
+    // （[musicBrowseScaffold] 的 mastheadBottom），类型页签与库页二级页签同一组件
+    // （[LibrarySectionTabs] 在页头下方一行里画成连体按钮组）。墨水屏照旧在正文顶。
+    final bool masthead = shellRedesignActive(context);
+    void selectType(MusicPluginSearchType type) {
+      if (type == _type) return;
+      _type = type;
+      _restart();
+    }
+
     final Widget header = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       spacing: tokens.spacing.gap,
@@ -423,7 +557,23 @@ class _MusicPluginBrowsePageState extends ConsumerState<MusicPluginBrowsePage> {
           onChanged: (_) {},
           onSubmitted: _submit,
         ),
-        if (types.length > 1)
+        if (types.length > 1 && masthead)
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: LibrarySectionTabs<MusicPluginSearchType>(
+              tabs: <LibrarySectionTab<MusicPluginSearchType>>[
+                for (final MusicPluginSearchType st in types)
+                  LibrarySectionTab<MusicPluginSearchType>(
+                    value: st,
+                    label: _typeLabel(st),
+                  ),
+              ],
+              selected: _type,
+              onChanged: selectType,
+              focusIdPrefix: 'music-plugin-search-type',
+            ),
+          )
+        else if (types.length > 1)
           Align(
             alignment: Alignment.centerLeft,
             child: adaptiveSegmentedButton<MusicPluginSearchType>(
@@ -436,11 +586,8 @@ class _MusicPluginBrowsePageState extends ConsumerState<MusicPluginBrowsePage> {
                   ),
               ],
               selected: <MusicPluginSearchType>{_type},
-              onSelectionChanged: (Set<MusicPluginSearchType> v) {
-                if (v.first == _type) return;
-                _type = v.first;
-                _restart();
-              },
+              onSelectionChanged: (Set<MusicPluginSearchType> v) =>
+                  selectType(v.first),
             ),
           ),
       ],
@@ -463,6 +610,44 @@ class _MusicPluginBrowsePageState extends ConsumerState<MusicPluginBrowsePage> {
           message: _query.isEmpty
               ? t.music_plugin_search_prompt
               : t.music_server_search_empty,
+        ),
+      );
+    } else if (style == MusicViewStyle.blocks) {
+      results = NotificationListener<ScrollNotification>(
+        onNotification: (ScrollNotification n) {
+          if (_hasMore && n.metrics.extentAfter < 600) unawaited(_loadMore());
+          return false;
+        },
+        child: MusicStyledCollection(
+          scrollKey: ValueKey<String>('music-plugin-results-${_type.wire}'),
+          style: style,
+          itemCount: _items.length,
+          padding: withBottomSafeInset(
+            context,
+            EdgeInsets.fromLTRB(
+              tokens.spacing.page,
+              tokens.spacing.gap,
+              tokens.spacing.page,
+              tokens.spacing.section,
+            ),
+          ),
+          rowBuilder: _itemTile,
+          blockBuilder:
+              (BuildContext context, int i, FushiCoverBlockSize size) =>
+                  musicPluginItemBlock(
+                    context,
+                    ref,
+                    widget.manifest,
+                    _items,
+                    i,
+                    size,
+                  ),
+          footer: _loading || _hasMore
+              ? Padding(
+                  padding: EdgeInsets.all(tokens.spacing.gap),
+                  child: const FushiLinearProgressIndicator(),
+                )
+              : null,
         ),
       );
     } else {
@@ -503,6 +688,11 @@ class _MusicPluginBrowsePageState extends ConsumerState<MusicPluginBrowsePage> {
     return musicBrowseScaffold(
       context,
       title: widget.manifest.name,
+      actions: <FushiToolbarItem>[
+        if (musicViewStyleSwitchable(context))
+          musicViewStyleToggle(viewKind, style),
+      ],
+      mastheadBottom: masthead ? header : null,
       body: Builder(
         builder: (BuildContext context) => Padding(
           padding: EdgeInsets.only(top: MediaQuery.paddingOf(context).top),
@@ -512,13 +702,14 @@ class _MusicPluginBrowsePageState extends ConsumerState<MusicPluginBrowsePage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
-                Padding(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: tokens.spacing.page,
-                    vertical: tokens.spacing.gap,
+                if (!masthead)
+                  Padding(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: tokens.spacing.page,
+                      vertical: tokens.spacing.gap,
+                    ),
+                    child: header,
                   ),
-                  child: header,
-                ),
                 Expanded(
                   child: AnimatedSwitcher(
                     duration: fushiMotionDuration(context, FushiMotion.medium),
@@ -559,7 +750,20 @@ class _EntityRow extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) => FushiPressScale(
+  Widget build(BuildContext context) => musicTrackRowSurfaceActive(context)
+      // 与曲目行混排在同一列表（搜索结果 / 推荐段）里：同一种圆角条，悬停铺
+      // 封面取色。
+      ? MusicTrackRowSurface(
+          title: title,
+          subtitle: subtitle,
+          coverPath: cover,
+          leading: _thumb(cover, round: roundCover),
+          onTap: onTap,
+          trailing: const <Widget>[FushiIcon(FushiIcons.chevronRight)],
+        )
+      : _buildClassic(context);
+
+  Widget _buildClassic(BuildContext context) => FushiPressScale(
     child: FushiGroupedListItem(
       index: index,
       count: count,
@@ -596,6 +800,7 @@ Widget musicPluginItemTile(
     track: item,
     index: i,
     count: items.length,
+    pluginId: pluginId,
     onPlayMv: _mvAction(context, ref, manifest, item),
     menu: musicPluginTrackMenu(context, ref, manifest, item),
     onTap: () => _playTracks(
@@ -622,10 +827,7 @@ Widget _pluginEntityTile(
       count: items.length,
       cover: album.coverUrl,
       title: album.title,
-      subtitle: <String>[
-        if (album.artists.isNotEmpty) album.artistText,
-        if (album.year != null) '${album.year}',
-      ].join(' · '),
+      subtitle: _pluginAlbumSubtitle(album),
       onTap: () => unawaited(
         _push(
           context,
@@ -640,6 +842,7 @@ Widget _pluginEntityTile(
       cover: artist.coverUrl,
       roundCover: true,
       title: artist.name,
+      subtitle: _pluginArtistSubtitle(artist) ?? '',
       onTap: () => unawaited(
         _push(
           context,
@@ -653,11 +856,7 @@ Widget _pluginEntityTile(
       count: items.length,
       cover: playlist.coverUrl,
       title: playlist.title,
-      subtitle: <String>[
-        ?playlist.owner,
-        if (playlist.trackCount != null)
-          t.music_tracks_count(count: playlist.trackCount!),
-      ].join(' · '),
+      subtitle: _pluginPlaylistSubtitle(playlist),
       onTap: () => unawaited(
         _push(
           context,
@@ -671,6 +870,116 @@ Widget _pluginEntityTile(
     _ => const SizedBox.shrink(),
   };
 }
+
+/// 插件专辑的副行：艺人 · 年份 · 曲目数。
+String _pluginAlbumSubtitle(MusicPluginAlbum album) => <String>[
+  if (album.artists.isNotEmpty) album.artistText,
+  if (album.year != null) '${album.year}',
+  if (album.trackCount != null) t.music_tracks_count(count: album.trackCount!),
+].join(' · ');
+
+/// 插件艺人的副行：专辑数（插件没给为 null）。
+String? _pluginArtistSubtitle(MusicPluginArtist artist) =>
+    switch (artist.stats.albumCount) {
+      final int n => t.music_server_album_count(count: n),
+      null => null,
+    };
+
+/// 插件歌单的副行：作者 · 曲目数。
+String _pluginPlaylistSubtitle(MusicPluginPlaylist playlist) => <String>[
+  ?playlist.owner,
+  if (playlist.trackCount != null)
+    t.music_tracks_count(count: playlist.trackCount!),
+].join(' · ');
+
+/// 插件条目的「色块」样式一格（[musicPluginItemTile] 的色块版）：曲目是
+/// [MusicTrackBlock]（点块起播、右键菜单、正在播放），专辑 / 艺人 / 歌单是
+/// [MusicCollectionBlock]（去处、右键菜单与行同一套；艺人是圆形头像）。key 与行相同。
+Widget musicPluginItemBlock(
+  BuildContext context,
+  WidgetRef ref,
+  MusicPluginManifest manifest,
+  List<Object> items,
+  int i,
+  FushiCoverBlockSize size,
+) {
+  final Object item = items[i];
+  if (item is MusicPluginTrack) {
+    return _TrackRow(
+      track: item,
+      index: i,
+      count: items.length,
+      pluginId: manifest.id,
+      block: size,
+      menu: musicPluginTrackMenu(context, ref, manifest, item),
+      onTap: () => _playTracks(
+        ref,
+        manifest.id,
+        items.whereType<MusicPluginTrack>().toList(),
+        start: items.take(i).whereType<MusicPluginTrack>().length,
+      ),
+    );
+  }
+  return musicWithContextMenu(
+    musicPluginEntityMenu(context, ref, manifest, item),
+    switch (item) {
+      MusicPluginAlbum album => MusicCollectionBlock(
+        key: ValueKey<String>('music-plugin-album-${album.id}'),
+        size: size,
+        title: album.title,
+        subtitle: _pluginAlbumSubtitle(album),
+        coverPath: album.coverUrl,
+        onTap: () => unawaited(
+          _push(
+            context,
+            MusicPluginCollectionPage.album(manifest: manifest, album: album),
+          ),
+        ),
+      ),
+      MusicPluginArtist artist => MusicCollectionBlock(
+        key: ValueKey<String>('music-plugin-artist-${artist.id}'),
+        size: size,
+        title: artist.name,
+        subtitle: _pluginArtistSubtitle(artist),
+        coverPath: artist.coverUrl,
+        circular: true,
+        onTap: () => unawaited(
+          _push(
+            context,
+            MusicPluginArtistPage(manifest: manifest, artist: artist),
+          ),
+        ),
+      ),
+      MusicPluginPlaylist playlist => MusicCollectionBlock(
+        key: ValueKey<String>('music-plugin-playlist-${playlist.id}'),
+        size: size,
+        title: playlist.title,
+        subtitle: _pluginPlaylistSubtitle(playlist),
+        coverPath: playlist.coverUrl,
+        leadingIcon: FushiIcons.playlist,
+        onTap: () => unawaited(
+          _push(
+            context,
+            MusicPluginCollectionPage.playlist(
+              manifest: manifest,
+              playlist: playlist,
+            ),
+          ),
+        ),
+      ),
+      _ => const SizedBox.shrink(),
+    },
+  );
+}
+
+/// 插件搜索类型对应的记样式视图种类。
+MusicViewKind _pluginSearchViewKind(MusicPluginSearchType type) =>
+    switch (type) {
+      MusicPluginSearchType.song => MusicViewKind.tracks,
+      MusicPluginSearchType.album => MusicViewKind.albums,
+      MusicPluginSearchType.artist => MusicViewKind.artists,
+      MusicPluginSearchType.playlist => MusicViewKind.playlists,
+    };
 
 /// 推荐页段落标题（插件段与服务器来源段同一套样式）。
 Widget musicRecommendSectionHeader({
@@ -760,6 +1069,275 @@ List<Object> musicPluginShelfPreview(List<Object> items) =>
     items.length <= kMusicPluginShelfPreview
     ? items
     : items.take(kMusicPluginShelfPreview).toList();
+
+// -------------------------------------------------------------------------
+// 推荐页的色块版式（重设计外壳「海报大字」）
+// -------------------------------------------------------------------------
+
+/// 推荐页（及其「查看全部」二级页）是否按重设计外壳的色块语言画：库页布局是拼贴 /
+/// 规整色块时为 true；「封面网格（现有）」与墨水屏（[shellContentLayoutOf] 恒给
+/// grid）保持原卡片 / 横排样式。与曲库专辑网格（`music_library_page.dart`）同一判据。
+bool musicRecommendPosterMode(BuildContext context) =>
+    shellContentLayoutOf(context) != ShellContentLayout.grid;
+
+/// 推荐页歌单 / 专辑栏目在色块版式下最多排几行（其余进「查看全部」）。
+const int kMusicRecommendShelfRows = 2;
+
+/// [width] 宽、[layout] 布局（null = 等尺寸色块）下前 [rows] 行能放下几块色块（[computeFushiCoverBlockPlan]
+/// 同一份几何，目标块宽取音乐的 [kFushiCoverBlockTargetWidthMedia]）。
+int musicCoverBlockRowCapacity({
+  required double width,
+  required int itemCount,
+  required ShellContentLayout? layout,
+  required int rows,
+}) =>
+    computeFushiCoverBlockPlan(
+          width: width,
+          itemCount: itemCount,
+          layout: layout,
+          targetWidth: kFushiCoverBlockTargetWidthMedia,
+        )
+        .take(rows)
+        .fold<int>(0, (int n, FushiCoverBlockRow row) => n + row.cells.length);
+
+/// 推荐页一段封面色块：[SliverFushiCoverBlocks]（摆放 / 错峰进场都在里面），只排
+/// 前 [maxRows] 行。默认等尺寸色块——拼贴首块留给页首的「最近播放」与每日推荐，栏目
+/// 里不再各起一块加大块。
+class SliverMusicRecommendBlocks extends StatelessWidget {
+  const SliverMusicRecommendBlocks({
+    super.key,
+    required this.itemCount,
+    required this.itemBuilder,
+    this.layout,
+    this.maxRows = kMusicRecommendShelfRows,
+  });
+
+  final int itemCount;
+  final FushiCoverBlockItemBuilder itemBuilder;
+
+  /// null = 等尺寸色块（默认）；[ShellContentLayout.collage] = 拼贴。
+  final ShellContentLayout? layout;
+  final int maxRows;
+
+  @override
+  Widget build(BuildContext context) => SliverLayoutBuilder(
+    builder: (BuildContext context, SliverConstraints constraints) =>
+        SliverFushiCoverBlocks(
+          layout: layout,
+          itemCount: musicCoverBlockRowCapacity(
+            width: constraints.crossAxisExtent,
+            itemCount: itemCount,
+            layout: layout,
+            rows: maxRows,
+          ),
+          itemBuilder: itemBuilder,
+        ),
+  );
+}
+
+/// 封面取色后的色块配色（[FushiCoverBlockColors.resolve]，与 [FushiCoverBlock] 同一份
+/// [coverColorSchemeCache] 与同一套 HSL）：给带按钮、不能整块套 [FushiCoverBlock] 的
+/// 海报块（每日推荐主卡、榜单卡）用。与 [FushiCoverTint] 不同，Apple 设计系统下照样
+/// 取色（色块在两套设计系统下都取封面色）；还没算好 / 没封面给中性色。
+class _RecommendCoverPalette extends StatefulWidget {
+  const _RecommendCoverPalette({required this.image, required this.builder});
+
+  final ImageProvider? image;
+  final Widget Function(BuildContext context, FushiCoverBlockColors colors)
+  builder;
+
+  @override
+  State<_RecommendCoverPalette> createState() => _RecommendCoverPaletteState();
+}
+
+class _RecommendCoverPaletteState extends State<_RecommendCoverPalette> {
+  ColorScheme? _scheme;
+  ImageProvider? _resolvedFor;
+  Brightness? _resolvedBrightness;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _resolve();
+  }
+
+  @override
+  void didUpdateWidget(_RecommendCoverPalette oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _resolve();
+  }
+
+  void _resolve() {
+    final ImageProvider? image = widget.image;
+    final Brightness brightness = Theme.of(context).brightness;
+    if (image == _resolvedFor && brightness == _resolvedBrightness) return;
+    _resolvedFor = image;
+    _resolvedBrightness = brightness;
+    if (image == null) {
+      _scheme = null;
+      return;
+    }
+    // 换了封面：先取缓存里的（没有就 null = 中性色），不留上一张的配色。
+    _scheme = coverColorSchemeCache.peek(image, brightness);
+    if (_scheme != null) return;
+    coverColorSchemeCache.resolve(image, brightness).then((ColorScheme? s) {
+      if (!mounted ||
+          _resolvedFor != image ||
+          _resolvedBrightness != brightness) {
+        return;
+      }
+      setState(() => _scheme = s);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.builder(
+    context,
+    FushiCoverBlockColors.resolve(Theme.of(context), _scheme),
+  );
+}
+
+/// 海报块里压在色块上的一张方形封面（平滑圆角 + 投影，与 [FushiCoverBlock] 的前景
+/// 封面同一套外观）。
+class _RecommendPosterCover extends StatelessWidget {
+  const _RecommendPosterCover({required this.cover, required this.size});
+
+  final String? cover;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final BorderRadius radius = BorderRadius.circular(size >= 120 ? 16 : 12);
+    return DecoratedBox(
+      decoration: ShapeDecoration(
+        shape: shellShape(context, radius),
+        shadows: const <BoxShadow>[
+          BoxShadow(
+            color: Color(0x80000000),
+            offset: Offset(0, 12),
+            blurRadius: 28,
+          ),
+        ],
+      ),
+      child: ShellClip(
+        radius: radius,
+        child: SizedBox.square(
+          dimension: size,
+          child: MusicCover(
+            coverPath: cover,
+            size: size,
+            borderRadius: BorderRadius.zero,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 每日推荐主卡右侧的封面扇（最多三张，最前那张在起始边、其余依次往后叠、各转
+/// 一点；设计稿书架 `.bk .fan` 的摆法换成方形专辑封面）。
+class _RecommendCoverFan extends StatelessWidget {
+  const _RecommendCoverFan({required this.covers});
+
+  final List<String> covers;
+
+  /// 首个（最前）到最后一张的旋转角（度）。
+  static const List<double> _rotation = <double>[-5, 4, 11];
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (BuildContext context, BoxConstraints c) {
+      final int n = math.min(covers.length, _rotation.length);
+      if (n == 0) return const SizedBox.shrink();
+      final double size = math.min(c.maxHeight, c.maxWidth * 0.62);
+      final double step = n == 1 ? 0 : (c.maxWidth - size) / (n - 1);
+      return Stack(
+        clipBehavior: Clip.none,
+        children: <Widget>[
+          // 后面的先画，最前那张最后画（压在最上面）。
+          for (int i = n - 1; i >= 0; i--)
+            PositionedDirectional(
+              start: i * step,
+              top: (c.maxHeight - size) / 2,
+              width: size,
+              height: size,
+              child: Transform.rotate(
+                angle: _rotation[i] * math.pi / 180,
+                child: _RecommendPosterCover(cover: covers[i], size: size),
+              ),
+            ),
+        ],
+      );
+    },
+  );
+}
+
+/// 推荐页一块封面色块卡（歌单 / 专辑栏目、「最近播放」、「查看全部」网格）：
+/// [FushiCoverBlock] 方形专辑摆法套在封面卡外壳里（点按 / 焦点 / 键盘激活由
+/// [shelfCoverCard] 负责），悬停抬升走 [FushiHoverLift]。
+Widget _musicRecommendCoverBlock({
+  Key? key,
+  required FushiCoverBlockSize size,
+  required String title,
+  required String? subtitle,
+  required String? cover,
+  required VoidCallback onTap,
+  FushiCoverBlockAction? action,
+}) => FushiHoverLift(
+  scale: kMusicHoverLiftScale,
+  builder: (BuildContext context, bool _) => shelfCoverCard(
+    key: key,
+    shape: fushiCoverBlockShape(context, size),
+    onTap: onTap,
+    child: FushiCoverBlock(
+      size: size,
+      art: FushiCoverBlockArt.square,
+      title: title,
+      subtitle: subtitle == null || subtitle.isEmpty ? null : subtitle,
+      covers: <Widget>[
+        MusicCover(coverPath: cover, borderRadius: BorderRadius.zero),
+      ],
+      tintImage: musicCoverImageProvider(cover, size: 128),
+      // 主按钮外观只在拼贴首块画，且只是视觉（点卡就是这个动作）。
+      action: size == FushiCoverBlockSize.hero ? action : null,
+    ),
+  ),
+);
+
+/// 插件歌单 / 专辑的封面色块卡（[_pluginCoverTarget] 同一份要素与去处，同一份右键 /
+/// 长按菜单）。不是歌单 / 专辑的条目不画。
+class _PluginCoverBlockCard extends ConsumerWidget {
+  const _PluginCoverBlockCard({
+    super.key,
+    required this.manifest,
+    required this.item,
+    required this.size,
+  });
+
+  final MusicPluginManifest manifest;
+  final Object item;
+  final FushiCoverBlockSize size;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final _PluginCoverTarget? target = _pluginCoverTarget(manifest, item);
+    if (target == null) return const SizedBox.shrink();
+    return musicWithContextMenu(
+      musicPluginEntityMenu(context, ref, manifest, item),
+      _musicRecommendCoverBlock(
+        size: size,
+        title: target.title,
+        subtitle: target.subtitle,
+        cover: target.cover,
+        onTap: () => unawaited(_push(context, target.page)),
+        action: FushiCoverBlockAction(
+          icon: FushiIcons.playlist,
+          label: t.music_plugin_hero_open,
+        ),
+      ),
+    );
+  }
+}
 
 /// 歌单 / 专辑卡的展示要素与点开后的详情页。
 typedef _PluginCoverTarget = ({
@@ -889,55 +1467,73 @@ class MusicPluginHomeSectionPage extends StatelessWidget {
     final List<Object> items = section.items
         .where((Object o) => _pluginCoverTarget(manifest, o) != null)
         .toList();
-    return musicBrowseScaffold(
-      context,
-      title: section.title,
-      // 留白要在脚手架之下量：页头让位（MediaQuery 顶部 padding）只在那里才有。
-      body: Builder(
-        builder: (BuildContext context) {
-          final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-          if (items.isEmpty) {
-            return Center(
-              child: FushiPlaceholderMessage(
-                icon: FushiIcons.music,
-                message: t.music_plugin_home_empty,
-              ),
-            );
-          }
-          return ShelfCoverMaterialScope(
-            material: ShelfCoverMaterial.glossyAlbum,
-            child: FushiEntranceScope(
-              child: LayoutBuilder(
-                builder: (BuildContext context, BoxConstraints constraints) =>
-                    GridView.builder(
-                      key: ValueKey<String>(
-                        'music-plugin-section-grid-${manifest.id}-${section.id}',
-                      ),
-                      padding: withBottomSafeInset(
-                        context,
-                        EdgeInsets.fromLTRB(
-                          tokens.spacing.page,
-                          MediaQuery.paddingOf(context).top +
-                              tokens.spacing.gap,
-                          tokens.spacing.page,
-                          tokens.spacing.section,
-                        ),
-                      ),
-                      gridDelegate: musicAlbumGridDelegate(
-                        context,
-                        constraints.maxWidth,
-                      ),
-                      itemCount: items.length,
-                      itemBuilder: fushiStaggeredItemBuilder(
-                        (BuildContext context, int i) =>
-                            _PluginGridCard(manifest: manifest, item: items[i]),
-                      ),
+    // 栏目是专辑（新碟）还是歌单（推荐歌单 / 榜单）：按首项记样式。
+    final MusicViewKind kind = items.firstOrNull is MusicPluginAlbum
+        ? MusicViewKind.albums
+        : MusicViewKind.playlists;
+    return MusicViewStyleBuilder(
+      kind: kind,
+      fallback: MusicViewStyle.blocks,
+      builder: (BuildContext context, MusicViewStyle style) =>
+          musicBrowseScaffold(
+            context,
+            title: section.title,
+            actions: <FushiToolbarItem>[
+              if (musicViewStyleSwitchable(context))
+                musicViewStyleToggle(kind, style),
+            ],
+            // 留白要在脚手架之下量：页头让位（MediaQuery 顶部 padding）只在那里才有。
+            body: Builder(
+              builder: (BuildContext context) {
+                final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+                if (items.isEmpty) {
+                  return Center(
+                    child: FushiPlaceholderMessage(
+                      icon: FushiIcons.music,
+                      message: t.music_plugin_home_empty,
                     ),
-              ),
+                  );
+                }
+                // 色块：封面网格布局下是原有的唱片网格卡，色块布局下（拼贴 / 规整）
+                // 与曲库专辑网格同一套色块；列表：单列行（与搜索结果同一种行）。
+                return MusicStyledCollection(
+                  scrollKey: ValueKey<String>(
+                    'music-plugin-section-grid-${manifest.id}-${section.id}',
+                  ),
+                  style: style,
+                  itemCount: items.length,
+                  padding: withBottomSafeInset(
+                    context,
+                    EdgeInsets.fromLTRB(
+                      tokens.spacing.page,
+                      MediaQuery.paddingOf(context).top + tokens.spacing.gap,
+                      tokens.spacing.page,
+                      tokens.spacing.section,
+                    ),
+                  ),
+                  gridMaterial: ShelfCoverMaterial.glossyAlbum,
+                  gridDelegate: musicAlbumGridDelegate,
+                  gridCardBuilder: (BuildContext context, int i) =>
+                      _PluginGridCard(manifest: manifest, item: items[i]),
+                  blockBuilder:
+                      (BuildContext context, int i, FushiCoverBlockSize size) =>
+                          _PluginCoverBlockCard(
+                            key: ValueKey<String>(
+                              'music-plugin-grid-card-'
+                              '${_pluginCoverTarget(manifest, items[i])!.id}',
+                            ),
+                            manifest: manifest,
+                            item: items[i],
+                            size: size,
+                          ),
+                  rowBuilder: (BuildContext context, int i) => Consumer(
+                    builder: (BuildContext context, WidgetRef ref, Widget? _) =>
+                        musicPluginItemTile(context, ref, manifest, items, i),
+                  ),
+                );
+              },
             ),
-          );
-        },
-      ),
+          ),
     );
   }
 }
@@ -1002,14 +1598,21 @@ class MusicPluginRecommendView extends ConsumerStatefulWidget {
   const MusicPluginRecommendView({
     super.key,
     required this.sources,
-    this.trailing = const <Widget>[],
+    this.trailing,
     this.showPersonal = true,
+    this.leading,
   });
 
   final List<MusicPluginManifest> sources;
 
-  /// 插件段落之后追加的块（「推荐 › 全部」里各服务器来源的一排专辑）。
-  final List<Widget> trailing;
+  /// 列表最前面跟着滚动的一块（音乐页把曲库「继续收听」交进来，见
+  /// `MusicSourcesRecommendView.leading`）；null 不画。
+  final Widget? leading;
+
+  /// 插件段落之后追加的块（「推荐 › 全部」里各服务器来源的一排专辑）。参数是本页
+  /// 这次用不用色块版式（[musicRecommendPosterMode]）：true 时页面是
+  /// [CustomScrollView]，返回的必须是 sliver；false 时是原 [ListView] 的盒子。
+  final List<Widget> Function(bool sliver)? trailing;
 
   /// 是否显示「我喜欢 / 最近播放」两行（只看单个来源时不显示）。
   final bool showPersonal;
@@ -1088,9 +1691,24 @@ class _MusicPluginRecommendViewState
     );
   }
 
-  List<Widget> _pluginBlocks(BuildContext context, _HomeResult r) {
+  /// 一个插件的推荐段落。[sliver] = 色块版式（[musicRecommendPosterMode]）：返回
+  /// sliver，盒子段落包一层 [SliverToBoxAdapter] + 错峰进场，歌单 / 专辑栏目换成
+  /// 封面色块（[SliverMusicRecommendBlocks]）；否则是原 [ListView] 的盒子。
+  List<Widget> _pluginBlocks(
+    BuildContext context,
+    _HomeResult r, {
+    bool sliver = false,
+  }) {
     final MusicPluginManifest m = r.manifest;
-    final List<Widget> out = <Widget>[
+    final List<Widget> out = <Widget>[];
+    void add(Widget w) => out.add(
+      sliver
+          ? SliverToBoxAdapter(
+              child: FushiStaggeredEntrance(index: out.length, child: w),
+            )
+          : w,
+    );
+    add(
       _SectionHeader(
         title: m.name,
         eyebrow: true,
@@ -1117,9 +1735,9 @@ class _MusicPluginRecommendViewState
             ),
         ],
       ),
-    ];
+    );
     if (r.error != null) {
-      out.add(
+      add(
         Padding(
           padding: EdgeInsets.only(
             bottom: FushiDesignTokens.of(context).spacing.gap,
@@ -1133,9 +1751,7 @@ class _MusicPluginRecommendViewState
       return out;
     }
     if (r.sections.isEmpty) {
-      out.add(
-        Text(t.music_plugin_home_empty, style: context.fushiType.bodySmall),
-      );
+      add(Text(t.music_plugin_home_empty, style: context.fushiType.bodySmall));
       return out;
     }
     // 推荐页 A（用户 2026-10-29 定版，设计稿
@@ -1191,7 +1807,7 @@ class _MusicPluginRecommendViewState
             manifest: m,
             section: heroPlaylists,
           );
-    out.add(
+    add(
       _HeroRow(
         hero: hero,
         side: <Widget>[
@@ -1215,57 +1831,135 @@ class _MusicPluginRecommendViewState
       final List<MusicPluginTrack> tracks = items
           .whereType<MusicPluginTrack>()
           .toList();
-      out.add(
+      add(
         _SectionHeader(
           title: sec.title,
           subtitle: sec.subtitle,
           actions: <Widget>[
+            // 「播放」与「查看全部」同一种样式（[musicSectionAction]）。
             if (sec.kind == MusicPluginHomeKind.tracks)
-              FushiPressScale(
-                child: FushiTextButton.icon(
-                  key: ValueKey<String>(
-                    'music-plugin-home-play-${m.id}-${sec.id}',
-                  ),
-                  onPressed: () => _playTracks(ref, m.id, tracks),
-                  icon: const FushiIcon(FushiIcons.play),
-                  label: Text(t.music_play_all),
+              musicSectionAction(
+                key: ValueKey<String>(
+                  'music-plugin-home-play-${m.id}-${sec.id}',
                 ),
+                kind: MusicSectionActionKind.play,
+                label: t.music_play_all,
+                onPressed: () => _playTracks(ref, m.id, tracks),
               )
             else
               // 歌单 / 专辑栏目：与服务器来源那一排（`_ServerShelf`）同一个出口，
               // 进网格页看该栏目的完整列表（含被主卡 / 榜单卡占去的条目）。
-              FushiPressScale(
-                child: FushiTextButton(
-                  key: ValueKey<String>(
-                    'music-plugin-home-view-all-${m.id}-${sec.id}',
+              musicSectionAction(
+                key: ValueKey<String>(
+                  'music-plugin-home-view-all-${m.id}-${sec.id}',
+                ),
+                kind: MusicSectionActionKind.viewAll,
+                label: t.music_sources_view_all,
+                onPressed: () => unawaited(
+                  _push(
+                    context,
+                    MusicPluginHomeSectionPage(manifest: m, section: sec),
                   ),
-                  onPressed: () => unawaited(
-                    _push(
-                      context,
-                      MusicPluginHomeSectionPage(manifest: m, section: sec),
-                    ),
-                  ),
-                  child: Text(t.music_sources_view_all),
                 ),
               ),
           ],
         ),
       );
-      out.add(switch (sec.kind) {
-        MusicPluginHomeKind.tracks => _TrackGrid(
-          key: ValueKey<String>('music-plugin-home-${m.id}-${sec.id}'),
-          manifest: m,
-          items: tracks.take(_trackPreview).toList(),
-        ),
-        MusicPluginHomeKind.playlists ||
-        MusicPluginHomeKind.albums => _CoverCarousel(
-          key: ValueKey<String>('music-plugin-home-${m.id}-${sec.id}'),
-          manifest: m,
-          items: musicPluginShelfPreview(items),
-        ),
-      });
+      switch (sec.kind) {
+        case MusicPluginHomeKind.tracks:
+          // 曲目段是可播的行（行尾 MV / 更多菜单），不是封面卡，两种版式同一份：
+          // 重设计外壳下整段装进一块色块面板（[MusicTrackGridPanel]）。
+          add(
+            _TrackGrid(
+              key: ValueKey<String>('music-plugin-home-${m.id}-${sec.id}'),
+              title: sec.title,
+              manifest: m,
+              items: tracks.take(_trackPreview).toList(),
+            ),
+          );
+        case MusicPluginHomeKind.playlists || MusicPluginHomeKind.albums:
+          if (sliver) {
+            out.add(_shelfBlocks(m, sec, musicPluginShelfPreview(items)));
+          } else {
+            add(
+              _CoverCarousel(
+                key: ValueKey<String>('music-plugin-home-${m.id}-${sec.id}'),
+                manifest: m,
+                items: musicPluginShelfPreview(items),
+              ),
+            );
+          }
+      }
     }
     return out;
+  }
+
+  /// 色块版式下的歌单 / 专辑栏目：横排换成封面色块，只排前
+  /// [kMusicRecommendShelfRows] 行，其余照旧进「查看全部」。
+  Widget _shelfBlocks(
+    MusicPluginManifest m,
+    MusicPluginHomeSection sec,
+    List<Object> preview,
+  ) {
+    final List<Object> cards = <Object>[
+      for (final Object o in preview)
+        if (_pluginCoverTarget(m, o) != null) o,
+    ];
+    return SliverMusicRecommendBlocks(
+      key: ValueKey<String>('music-plugin-home-${m.id}-${sec.id}'),
+      itemCount: cards.length,
+      itemBuilder: (BuildContext context, int i, FushiCoverBlockSize size) =>
+          _PluginCoverBlockCard(
+            key: ValueKey<String>(
+              'music-plugin-card-${_pluginCoverTarget(m, cards[i])!.id}',
+            ),
+            manifest: m,
+            item: cards[i],
+            size: size,
+          ),
+    );
+  }
+
+  /// 色块版式（[musicRecommendPosterMode]）：同一组段落排进 [CustomScrollView]，
+  /// 「最近播放」与歌单 / 专辑栏目是封面色块 sliver，其余盒子段落逐个错峰进场。
+  Widget _buildPoster(BuildContext context, List<_HomeResult> data) {
+    final List<Widget> slivers = <Widget>[
+      if (widget.leading case final Widget leading)
+        SliverToBoxAdapter(
+          child: FushiStaggeredEntrance(index: 0, child: leading),
+        ),
+      if (widget.showPersonal) ...<Widget>[
+        SliverToBoxAdapter(
+          child: FushiStaggeredEntrance(
+            index: 0,
+            child: _LikedMusic(
+              key: const ValueKey<String>('music-liked'),
+              sources: widget.sources,
+            ),
+          ),
+        ),
+        _RecentPlays(
+          key: const ValueKey<String>('music-recent-plays'),
+          generation: _generation,
+          sources: widget.sources,
+          sliver: true,
+        ),
+      ],
+      for (final _HomeResult r in data)
+        ..._pluginBlocks(context, r, sliver: true),
+      ...?widget.trailing?.call(true),
+    ];
+    return FushiEntranceScope(
+      child: CustomScrollView(
+        key: const ValueKey<String>('music-plugin-recommend'),
+        slivers: <Widget>[
+          SliverPadding(
+            padding: musicBrowsePagePadding(context),
+            sliver: SliverMainAxisGroup(slivers: slivers),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -1276,7 +1970,11 @@ class _MusicPluginRecommendViewState
         if (snap.hasData) _shown = snap.data;
         final List<_HomeResult>? data = snap.data ?? _shown;
         if (data == null) return const FushiLoadingView();
+        if (musicRecommendPosterMode(context)) {
+          return _buildPoster(context, data);
+        }
         final List<Widget> blocks = <Widget>[
+          ?widget.leading,
           // 不按刷新代数换 key：换 key 会重建、加载期间整行塌成 0 高，下面所有
           // 内容先上跳再落回（用户 2026-10-29 录屏「刷新抖动」）。
           if (widget.showPersonal) ...<Widget>[
@@ -1291,7 +1989,7 @@ class _MusicPluginRecommendViewState
             ),
           ],
           for (final _HomeResult r in data) ..._pluginBlocks(context, r),
-          ...widget.trailing,
+          ...?widget.trailing?.call(false),
         ];
         return FushiEntranceScope(
           child: ListView.builder(
@@ -1410,7 +2108,32 @@ class _MusicPluginLibrarySectionState
                     style: context.fushiType.bodySmall,
                   );
                 }
-                return _ItemColumn(manifest: m, items: lists);
+                // 与曲库本地歌单同一份「色块 / 列表」样式（曲库页头的切换键）。
+                return MusicViewStyleBuilder(
+                  kind: MusicViewKind.playlists,
+                  fallback: MusicViewStyle.list,
+                  builder: (BuildContext context, MusicViewStyle style) =>
+                      style == MusicViewStyle.blocks
+                      ? FushiCoverBlocks(
+                          layout: shellContentLayoutOf(context),
+                          staggerEntrance: false,
+                          itemCount: lists.length,
+                          itemBuilder:
+                              (
+                                BuildContext context,
+                                int i,
+                                FushiCoverBlockSize size,
+                              ) => musicPluginItemBlock(
+                                context,
+                                ref,
+                                m,
+                                lists,
+                                i,
+                                size,
+                              ),
+                        )
+                      : _ItemColumn(manifest: m, items: lists),
+                );
               },
         ),
       ],
@@ -1425,8 +2148,54 @@ class _HeroRow extends StatelessWidget {
   final Widget hero;
   final List<Widget> side;
 
+  /// 色块版式：主卡与拼贴首块同高（[kFushiCoverBlockHeroHeight]，窄窗
+  /// [kFushiCoverBlockHeroHeightCompact]），榜单卡是旁边叠放的半高卡，间距与色块
+  /// 布局同一档——与曲库 / 首页拼贴首行同一副骨架。高度钉死，不走 IntrinsicHeight。
+  Widget _buildPoster(BuildContext context) => LayoutBuilder(
+    builder: (BuildContext context, BoxConstraints c) {
+      const double gap = kFushiCoverBlockSpacing;
+      final bool narrow = c.maxWidth < 720;
+      final double heroHeight = narrow
+          ? kFushiCoverBlockHeroHeightCompact
+          : kFushiCoverBlockHeroHeight;
+      final double halfHeight = (heroHeight - gap) / 2;
+      if (side.isEmpty) return SizedBox(height: heroHeight, child: hero);
+      if (narrow) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          spacing: gap,
+          children: <Widget>[
+            SizedBox(height: heroHeight, child: hero),
+            for (final Widget w in side) SizedBox(height: halfHeight, child: w),
+          ],
+        );
+      }
+      return SizedBox(
+        height: heroHeight,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          spacing: gap,
+          children: <Widget>[
+            Expanded(flex: 135, child: hero),
+            Expanded(
+              flex: 100,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                spacing: gap,
+                children: <Widget>[
+                  for (final Widget w in side) Expanded(child: w),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    },
+  );
+
   @override
   Widget build(BuildContext context) {
+    if (musicRecommendPosterMode(context)) return _buildPoster(context);
     final double gap = FushiDesignTokens.of(context).spacing.gap;
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints c) {
@@ -1542,6 +2311,92 @@ class _RecommendHero extends ConsumerWidget {
   final void Function({bool shuffle})? onPlay;
   final bool playlistMode;
 
+  /// 色块版式的主卡（与拼贴首块同一语言）：取头一张封面的色做底，段名（每日推荐）
+  /// 是 900 字重的大字水印；左边插件名 chip + 大标题 + 首数 + 原样的「播放 / 随机」
+  /// （或「打开」）按钮组，右边是这一段的封面扇压在色块上。块里有真按钮，整块不是
+  /// 点按目标、不随悬停抬升（与复习页今日计划同一做法）。
+  Widget _buildPoster({
+    required String eyebrow,
+    required String title,
+    required String meta,
+    required List<String> wall,
+    required Widget buttons,
+  }) => _RecommendCoverPalette(
+    image: musicCoverImageProvider(wall.firstOrNull, size: 128),
+    builder: (BuildContext context, FushiCoverBlockColors colors) =>
+        LayoutBuilder(
+          builder: (BuildContext context, BoxConstraints c) {
+            final bool compact = c.maxHeight < kFushiCoverBlockHeroHeight;
+            final double pad = compact ? 18 : 22;
+            final bool fan = wall.isNotEmpty && c.maxWidth >= 440;
+            final TextStyle base =
+                Theme.of(context).textTheme.bodyMedium ?? const TextStyle();
+            return FushiPosterBlock(
+              key: ValueKey<String>('music-plugin-hero-poster-${manifest.id}'),
+              watermark: title,
+              colors: colors,
+              watermarkFontSize: c.maxHeight * 0.62,
+              watermarkEdge: FushiPosterWatermarkEdge.bottom,
+              hoverEnabled: false,
+              padding: EdgeInsets.all(pad),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                spacing: pad,
+                children: <Widget>[
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        FushiPosterChip(
+                          label: eyebrow,
+                          colors: colors,
+                          solid: true,
+                        ),
+                        SizedBox(height: compact ? 8 : 12),
+                        Text(
+                          title,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style:
+                              (compact
+                                      ? FushiPosterText.titleCompact
+                                      : FushiPosterText.title)
+                                  .on(base)
+                                  .copyWith(color: colors.onContainer),
+                        ),
+                        if (meta.isNotEmpty) ...<Widget>[
+                          const SizedBox(height: 6),
+                          Text(
+                            meta,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: FushiPosterText.caption
+                                .on(base)
+                                .copyWith(
+                                  fontWeight: FontWeight.w700,
+                                  color: colors.onContainer.withValues(
+                                    alpha: 0.85,
+                                  ),
+                                ),
+                          ),
+                        ],
+                        const Spacer(),
+                        buttons,
+                      ],
+                    ),
+                  ),
+                  if (fan)
+                    SizedBox(
+                      width: c.maxWidth * 0.4,
+                      child: _RecommendCoverFan(covers: wall),
+                    ),
+                ],
+              ),
+            );
+          },
+        ),
+  );
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final ColorScheme cs = Theme.of(context).colorScheme;
@@ -1611,6 +2466,15 @@ class _RecommendHero extends ConsumerWidget {
               ),
             ],
           );
+    if (musicRecommendPosterMode(context)) {
+      return _buildPoster(
+        eyebrow: eyebrow,
+        title: title,
+        meta: meta,
+        wall: wall,
+        buttons: buttons,
+      );
+    }
     return _MorphCard(
       color: cs.primaryContainer,
       radius: const BorderRadius.only(
@@ -1696,7 +2560,60 @@ class _RankCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) => musicWithContextMenu(
     musicPluginEntityMenu(context, ref, manifest, playlist),
-    _card(context),
+    musicRecommendPosterMode(context) ? _poster(context) : _card(context),
+  );
+
+  void _open(BuildContext context) => unawaited(
+    _push(
+      context,
+      MusicPluginCollectionPage.playlist(
+        manifest: manifest,
+        playlist: playlist,
+      ),
+    ),
+  );
+
+  /// 色块版式：主卡旁的半高色块。底色取榜单封面，榜名做大字水印；封面斜压在
+  /// 色块左侧，右边榜名 + 放得下的前几首（名次用强调色大号数字，代替饼干徽章）。
+  /// 整块是一个点按目标（进歌单），悬停抬升由 [FushiPosterBlock] 给。
+  Widget _poster(BuildContext context) => _RecommendCoverPalette(
+    image: musicCoverImageProvider(playlist.coverUrl, size: 128),
+    builder: (BuildContext context, FushiCoverBlockColors colors) =>
+        shelfCoverCard(
+          shape: fushiCoverBlockShape(context, FushiCoverBlockSize.half),
+          onTap: () => _open(context),
+          child: LayoutBuilder(
+            builder: (BuildContext context, BoxConstraints c) {
+              const double pad = 14;
+              final double cover = math.min(c.maxHeight - pad * 2, 120);
+              return FushiPosterBlock(
+                watermark: playlist.title,
+                colors: colors,
+                watermarkFontSize: c.maxHeight * 0.62,
+                blockSize: FushiCoverBlockSize.half,
+                padding: const EdgeInsets.all(pad),
+                child: Row(
+                  spacing: 18,
+                  children: <Widget>[
+                    Transform.rotate(
+                      angle: -5 * math.pi / 180,
+                      child: _RecommendPosterCover(
+                        cover: playlist.coverUrl,
+                        size: cover,
+                      ),
+                    ),
+                    Expanded(
+                      child: _RankPosterText(
+                        playlist: playlist,
+                        colors: colors,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
   );
 
   Widget _card(BuildContext context) {
@@ -1773,6 +2690,79 @@ class _RankCard extends ConsumerWidget {
   }
 }
 
+/// 色块榜单卡的文字区：榜名 + 前几首。行数按可用高度与文字缩放算（半高卡在窄窗
+/// 只有一百来 dp），放不下的预览行整行不画，不溢出。
+class _RankPosterText extends StatelessWidget {
+  const _RankPosterText({required this.playlist, required this.colors});
+
+  final MusicPluginPlaylist playlist;
+  final FushiCoverBlockColors colors;
+
+  @override
+  Widget build(BuildContext context) {
+    final TextScaler scaler = MediaQuery.textScalerOf(context);
+    final TextStyle base =
+        Theme.of(context).textTheme.bodyMedium ?? const TextStyle();
+    const double titleSize = 17;
+    const double lineSize = 12.5;
+    const double gap = 4;
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints c) {
+        final double titleHeight = scaler.scale(titleSize) * 1.15;
+        final double lineHeight = scaler.scale(lineSize) * 1.35 + gap;
+        final int lines = c.maxHeight.isFinite
+            ? ((c.maxHeight - titleHeight - gap) / lineHeight).floor().clamp(
+                0,
+                playlist.previewTracks.length,
+              )
+            : playlist.previewTracks.length;
+        return Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          spacing: gap,
+          children: <Widget>[
+            Text(
+              playlist.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: FushiPosterText.label
+                  .on(base)
+                  .copyWith(color: colors.onContainer),
+            ),
+            for (int i = 0; i < lines; i++)
+              Text.rich(
+                TextSpan(
+                  children: <InlineSpan>[
+                    TextSpan(
+                      text: '${i + 1}  ',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        color: colors.accent,
+                      ),
+                    ),
+                    TextSpan(text: playlist.previewTracks[i].title),
+                    TextSpan(
+                      text: '  ${playlist.previewTracks[i].artistText}',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        color: colors.onContainer.withValues(alpha: 0.7),
+                      ),
+                    ),
+                  ],
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: FushiPosterText.line
+                    .on(base)
+                    .copyWith(color: colors.onContainer),
+              ),
+          ],
+        );
+      },
+    );
+  }
+}
+
 /// 榜单名次徽章：第一名饼干形 tertiary，其余圆形 tertiaryContainer。
 class _RankBadge extends StatelessWidget {
   const _RankBadge({required this.rank});
@@ -1806,44 +2796,63 @@ class _RankBadge extends StatelessWidget {
 
 /// 曲目段：宽屏三列网格，窄屏单列（新歌速递等）。
 class _TrackGrid extends ConsumerWidget {
-  const _TrackGrid({super.key, required this.manifest, required this.items});
+  const _TrackGrid({
+    super.key,
+    required this.title,
+    required this.manifest,
+    required this.items,
+  });
 
+  /// 段标题（色块面板的水印字）。
+  final String title;
   final MusicPluginManifest manifest;
   final List<Object> items;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) => LayoutBuilder(
-    builder: (BuildContext context, BoxConstraints c) {
-      final int cols = c.maxWidth >= 960
-          ? 3
-          : c.maxWidth >= 600
-          ? 2
-          : 1;
-      final int rows = (items.length / cols).ceil();
-      return Column(
-        children: <Widget>[
-          for (int r = 0; r < rows; r++)
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                for (int k = 0; k < cols; k++)
-                  Expanded(
-                    child: r * cols + k < items.length
-                        ? musicPluginItemTile(
-                            context,
-                            ref,
-                            manifest,
-                            items,
-                            r * cols + k,
-                          )
-                        : const SizedBox.shrink(),
-                  ),
-              ],
-            ),
-        ],
+  Widget build(BuildContext context, WidgetRef ref) {
+    Widget tile(BuildContext context, int i) =>
+        musicPluginItemTile(context, ref, manifest, items, i);
+    // 重设计外壳（两种库页布局同一份）：整段装进与上下封面色块同一层级的色块
+    // 面板，底色取首曲封面，列数按面板内宽自适应（[MusicTrackGridPanel]）。
+    if (musicTrackRowSurfaceActive(context)) {
+      return MusicTrackGridPanel(
+        title: title,
+        coverPath: items.whereType<MusicPluginTrack>().firstOrNull?.coverUrl,
+        itemCount: items.length,
+        itemBuilder: tile,
       );
-    },
-  );
+    }
+    return _legacy(context, tile);
+  }
+
+  /// 墨水屏：原分组卡行网格。
+  Widget _legacy(BuildContext context, IndexedWidgetBuilder tile) =>
+      LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints c) {
+          final int cols = c.maxWidth >= 960
+              ? 3
+              : c.maxWidth >= 600
+              ? 2
+              : 1;
+          final int rows = (items.length / cols).ceil();
+          return Column(
+            children: <Widget>[
+              for (int r = 0; r < rows; r++)
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    for (int k = 0; k < cols; k++)
+                      Expanded(
+                        child: r * cols + k < items.length
+                            ? tile(context, r * cols + k)
+                            : const SizedBox.shrink(),
+                      ),
+                  ],
+                ),
+            ],
+          );
+        },
+      );
 }
 
 /// 推荐页「最近播放」快捷格（用户 2026-10-29：「B 播放历史也加一下」）：最近
@@ -1855,7 +2864,12 @@ class _RecentPlays extends ConsumerStatefulWidget {
     required this.generation,
     required this.sources,
     this.full = false,
+    this.sliver = false,
   });
+
+  /// true：色块版式（[musicRecommendPosterMode]），build 出 sliver——格子是封面色块
+  /// （推荐页按库页布局排，拼贴首块 = 最近一条）；false：原快捷格，build 出盒子。
+  final bool sliver;
 
   /// 推荐页刷新代数：变了就重读最近播放（读到之前继续显示旧的）。
   final int generation;
@@ -1873,6 +2887,17 @@ class _RecentPlays extends ConsumerStatefulWidget {
 typedef _Recent = ({
   List<MusicRecentPlaySource> sources,
   List<MusicRecentTrack> tracks,
+});
+
+/// 「最近播放」的一格（快捷格与封面色块共用的要素）。[play]：点了是从这首起播
+/// （单曲）；否则是进专辑 / 歌单详情。
+typedef _RecentEntry = ({
+  Key key,
+  String title,
+  String? subtitle,
+  String? cover,
+  VoidCallback onTap,
+  bool play,
 });
 
 class _RecentPlaysState extends ConsumerState<_RecentPlays> {
@@ -1981,6 +3006,115 @@ class _RecentPlaysState extends ConsumerState<_RecentPlays> {
     );
   }
 
+  /// 最近播放的格子：来源（专辑 / 歌单）在前，不够再补最近播放的单曲，最多 [_max]。
+  List<_RecentEntry> _entries(_Recent r) {
+    final List<_RecentEntry> out = <_RecentEntry>[
+      for (final MusicRecentPlaySource src in r.sources)
+        (
+          key: ValueKey<String>(
+            'music-recent-source-${src.source.kind.wire}-${src.source.id}',
+          ),
+          title: src.source.title ?? '',
+          subtitle: null,
+          cover: src.source.cover,
+          onTap: () => unawaited(_openSource(src.source)),
+          play: false,
+        ),
+    ];
+    for (int i = 0; i < r.tracks.length && out.length < _max; i++) {
+      final MusicRecentTrack tr = r.tracks[i];
+      // 来源已在格子里的单曲不重复列。
+      if (tr.source != null &&
+          r.sources.any((MusicRecentPlaySource s) => s.source == tr.source)) {
+        continue;
+      }
+      out.add((
+        key: ValueKey<String>('music-recent-track-${tr.item.trackUid}'),
+        title: tr.item.title,
+        subtitle: tr.item.artist,
+        cover: tr.item.coverPath,
+        onTap: () => _playTrack(r.tracks, i),
+        play: true,
+      ));
+    }
+    return out;
+  }
+
+  /// 段标题（推荐页里才有；[more] = 还有没露出来的，给「查看全部」）。
+  Widget _header(BuildContext context, {required bool more}) => _SectionHeader(
+    title: t.music_recent_plays_title,
+    actions: <Widget>[
+      if (more)
+        musicSectionAction(
+          key: const ValueKey<String>('music-recent-view-all'),
+          kind: MusicSectionActionKind.viewAll,
+          label: t.music_sources_view_all,
+          onPressed: () => unawaited(
+            _push(
+              context,
+              _RecentPlaysPage(
+                generation: widget.generation,
+                sources: widget.sources,
+              ),
+            ),
+          ),
+        ),
+    ],
+  );
+
+  /// 色块版式的一格：方形专辑摆法的封面色块，拼贴首块带「播放 / 打开」主按钮外观
+  /// （点卡就是这个动作）。
+  Widget _block(_RecentEntry e, FushiCoverBlockSize size) =>
+      _musicRecommendCoverBlock(
+        key: e.key,
+        size: size,
+        title: e.title,
+        subtitle: e.subtitle,
+        cover: e.cover,
+        onTap: e.onTap,
+        action: FushiCoverBlockAction(
+          icon: e.play ? FushiIcons.play : FushiIcons.playlist,
+          label: e.play ? t.music_play_all : t.music_plugin_hero_open,
+        ),
+      );
+
+  /// 色块版式：推荐页按库页布局排一行（拼贴 = 最近一条是加大块、旁边叠半高卡），
+  /// 其余进「查看全部」；二级页（[_RecentPlays.full]）全部列出。
+  Widget _buildSliver(BuildContext context, List<_RecentEntry> entries) {
+    final ShellContentLayout layout = shellContentLayoutOf(context);
+    Widget block(BuildContext context, int i, FushiCoverBlockSize size) =>
+        _block(entries[i], size);
+    if (widget.full) {
+      return SliverFushiCoverBlocks(
+        layout: layout,
+        itemCount: entries.length,
+        itemBuilder: block,
+      );
+    }
+    return SliverLayoutBuilder(
+      builder: (BuildContext context, SliverConstraints constraints) {
+        final int shown = musicCoverBlockRowCapacity(
+          width: constraints.crossAxisExtent,
+          itemCount: entries.length,
+          layout: layout,
+          rows: 1,
+        );
+        return SliverMainAxisGroup(
+          slivers: <Widget>[
+            SliverToBoxAdapter(
+              child: _header(context, more: entries.length > shown),
+            ),
+            SliverFushiCoverBlocks(
+              layout: layout,
+              itemCount: shown,
+              itemBuilder: block,
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) => FutureBuilder<_Recent>(
     future: _data,
@@ -1988,39 +3122,24 @@ class _RecentPlaysState extends ConsumerState<_RecentPlays> {
       if (snap.hasData) _shown = snap.data;
       final _Recent? r = snap.data ?? _shown;
       if (r == null || (r.sources.isEmpty && r.tracks.isEmpty)) {
-        return const SizedBox.shrink();
+        return widget.sliver
+            ? const SliverToBoxAdapter(child: SizedBox.shrink())
+            : const SizedBox.shrink();
       }
+      final List<_RecentEntry> entries = _entries(r);
+      if (widget.sliver) return _buildSliver(context, entries);
       final List<Widget> tiles = <Widget>[
-        for (final MusicRecentPlaySource src in r.sources)
+        for (final _RecentEntry e in entries)
           _QuickTile(
-            key: ValueKey<String>(
-              'music-recent-source-${src.source.kind.wire}-${src.source.id}',
-            ),
-            title: src.source.title ?? '',
-            cover: src.source.cover,
+            key: e.key,
+            title: e.title,
+            subtitle: e.subtitle,
+            cover: e.cover,
             tinted: true,
-            onTap: () => unawaited(_openSource(src.source)),
+            onTap: e.onTap,
+            playOnTap: e.play,
           ),
       ];
-      for (int i = 0; i < r.tracks.length && tiles.length < _max; i++) {
-        final MusicRecentTrack tr = r.tracks[i];
-        // 来源已在格子里的单曲不重复列。
-        if (tr.source != null &&
-            r.sources.any((MusicRecentPlaySource s) => s.source == tr.source)) {
-          continue;
-        }
-        tiles.add(
-          _QuickTile(
-            key: ValueKey<String>('music-recent-track-${tr.item.trackUid}'),
-            title: tr.item.title,
-            subtitle: tr.item.artist,
-            cover: tr.item.coverPath,
-            tinted: true,
-            onTap: () => _playTrack(r.tracks, i),
-            playOnTap: true,
-          ),
-        );
-      }
       final double gap = FushiDesignTokens.of(context).spacing.gap;
       return LayoutBuilder(
         builder: (BuildContext context, BoxConstraints c) {
@@ -2040,27 +3159,7 @@ class _RecentPlaysState extends ConsumerState<_RecentPlays> {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
-              _SectionHeader(
-                title: t.music_recent_plays_title,
-                actions: <Widget>[
-                  if (tiles.length > shown)
-                    FushiPressScale(
-                      child: FushiTextButton(
-                        key: const ValueKey<String>('music-recent-view-all'),
-                        onPressed: () => unawaited(
-                          _push(
-                            context,
-                            _RecentPlaysPage(
-                              generation: widget.generation,
-                              sources: widget.sources,
-                            ),
-                          ),
-                        ),
-                        child: Text(t.collection_view_all),
-                      ),
-                    ),
-                ],
-              ),
+              _header(context, more: tiles.length > shown),
               grid,
             ],
           );
@@ -2082,16 +3181,33 @@ class _RecentPlaysPage extends StatelessWidget {
     context,
     title: t.music_recent_plays_title,
     body: Builder(
-      builder: (BuildContext context) => SingleChildScrollView(
-        padding: musicBrowsePagePadding(context),
-        child: FushiEntranceScope(
-          child: _RecentPlays(
-            generation: generation,
-            sources: sources,
-            full: true,
-          ),
-        ),
-      ),
+      builder: (BuildContext context) => musicRecommendPosterMode(context)
+          // 色块版式：与推荐页同一套封面色块，按库页布局排全部。
+          ? FushiEntranceScope(
+              child: CustomScrollView(
+                slivers: <Widget>[
+                  SliverPadding(
+                    padding: musicBrowsePagePadding(context),
+                    sliver: _RecentPlays(
+                      generation: generation,
+                      sources: sources,
+                      full: true,
+                      sliver: true,
+                    ),
+                  ),
+                ],
+              ),
+            )
+          : SingleChildScrollView(
+              padding: musicBrowsePagePadding(context),
+              child: FushiEntranceScope(
+                child: _RecentPlays(
+                  generation: generation,
+                  sources: sources,
+                  full: true,
+                ),
+              ),
+            ),
     ),
   );
 }
@@ -2134,6 +3250,46 @@ class _LikedMusic extends ConsumerWidget {
     );
   }
 
+  /// 色块版式：每个插件一块半高封面色块（拼贴首行旁叠的半高卡那一档），按音乐的
+  /// 目标块宽定列——是页首的一条入口带，不抢下面「最近播放」拼贴首块的分量。
+  Widget _posterStrip(
+    BuildContext context,
+    AppModel app,
+    List<MusicPluginLikeState> states,
+  ) => LayoutBuilder(
+    builder: (BuildContext context, BoxConstraints c) {
+      const double spacing = kFushiCoverBlockSpacing;
+      final int cols = fushiCoverBlockColumns(
+        c.maxWidth,
+        kFushiCoverBlockTargetWidthMedia,
+        spacing,
+      );
+      final double w = (c.maxWidth - spacing * (cols - 1)) / cols;
+      const double h = (kFushiCoverBlockHeroHeight - spacing) / 2;
+      return Wrap(
+        spacing: spacing,
+        runSpacing: spacing,
+        children: <Widget>[
+          for (final MusicPluginLikeState s in states)
+            SizedBox(
+              width: w,
+              height: h,
+              child: _musicRecommendCoverBlock(
+                key: ValueKey<String>('music-liked-${s.manifest.id}'),
+                size: FushiCoverBlockSize.half,
+                title: t.music_liked_title,
+                subtitle: s.loggedIn
+                    ? s.manifest.name
+                    : t.music_liked_login_hint(name: s.manifest.name),
+                cover: s.playlist?.coverUrl,
+                onTap: () => unawaited(_open(context, app, s)),
+              ),
+            ),
+        ],
+      );
+    },
+  );
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final AppModel app = ref.watch(appProvider);
@@ -2149,6 +3305,12 @@ class _LikedMusic extends ConsumerWidget {
         ];
         if (states.isEmpty) return const SizedBox.shrink();
         final double gap = FushiDesignTokens.of(context).spacing.gap;
+        if (musicRecommendPosterMode(context)) {
+          return Padding(
+            padding: EdgeInsets.only(top: gap),
+            child: _posterStrip(context, app, states),
+          );
+        }
         // 推荐页第一块：离上方来源筛选条再空一个 gap（列表顶已有一个 gap，合 16dp）；
         // 底下不留白，与下一段（「最近播放」段头自带 section 上边距）之间正好一个 section，
         // 与其余各段同一节奏（用户 2026-11-06 截图：首块贴着筛选条、这里却多出 8dp）。

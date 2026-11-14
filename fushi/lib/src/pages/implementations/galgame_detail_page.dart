@@ -14,6 +14,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/media/collections/add_to_collection_dialog.dart';
 import 'package:fushi/src/media/detail/media_detail_kit.dart';
+import 'package:fushi/src/media/detail/media_poster_detail.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/mining/galgame_repository.dart';
@@ -51,6 +52,8 @@ import 'package:fushi/src/media/people/person_entry_sections.dart'
     show GameVoiceCastSection;
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show shellRedesignActive;
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
@@ -261,12 +264,14 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
   @override
   Widget build(BuildContext context) {
     final GalgameEntry? game = _game;
+    final bool redesign = shellRedesignActive(context);
     if (_loading) {
-      return Scaffold(appBar: FushiAppBar(), body: buildLoading());
+      return _stateScaffold(context, redesign: redesign, body: buildLoading());
     }
     if (game == null) {
-      return Scaffold(
-        appBar: FushiAppBar(),
+      return _stateScaffold(
+        context,
+        redesign: redesign,
         body: Center(
           child: FushiPlaceholderMessage(
             icon: FushiIcons.games,
@@ -275,6 +280,7 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
         ),
       );
     }
+    if (redesign) return _buildPosterPage(context, game);
     // 背景铺到窗口顶端：hero 的模糊 key art / 色晕从 y = 0 画起，浮动顶栏只是
     // 几颗胶囊。曾经正文从顶栏下沿开始，hero 背景（左上角散开的色晕）在栏
     // 下沿被齐刷刷切出一块发白的矩形色区（2026-10-06 用户截图）。hero 自己按
@@ -287,15 +293,7 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
-        actions: <Widget>[
-          // 「加入合集」：与库页卡片菜单同一入口语义（mediaType='game'，entryKey=
-          // galgames.id），落库同走 addToCollection DAO；库页返回后 _reload 刷新分组。
-          FushiIconButtonControl(
-            tooltip: t.add_to_collection,
-            icon: const FushiIcon(FushiIcons.collection),
-            onPressed: () => unawaited(_addToCollection(game)),
-          ),
-        ],
+        actions: <Widget>[_addToCollectionAction(game)],
       ),
       // 与其它作品详情页同一套骨架（[MediaDetailLayout]）：窄屏 hero 在顶、页签
       // 吃掉剩余高度；横屏 / 宽屏两栏，左栏 hero、右栏页签。
@@ -332,6 +330,198 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
           ],
         ),
       ),
+    );
+  }
+
+  /// 「加入合集」页头动作：与库页卡片菜单同一入口语义（mediaType='game'，
+  /// entryKey=galgames.id），落库同走 addToCollection DAO；库页返回后 _reload
+  /// 刷新分组。两种版式（浮动顶栏 / 海报面板裸图标页头）共用。
+  Widget _addToCollectionAction(GalgameEntry game) => FushiIconButtonControl(
+    key: const ValueKey<String>('galgame_detail_add_to_collection'),
+    tooltip: t.add_to_collection,
+    icon: const FushiIcon(FushiIcons.collection),
+    onPressed: () => unawaited(_addToCollection(game)),
+  );
+
+  /// 加载中 / 找不到条目的页面外壳：重设计外壳下与加载完成后同一个裸图标页头
+  /// （[MediaPosterDetailChrome]），顶栏不在加载完成时跳一下；墨水屏照旧挂
+  /// [FushiAppBar]。
+  Widget _stateScaffold(
+    BuildContext context, {
+    required bool redesign,
+    required Widget body,
+  }) {
+    if (!redesign) return Scaffold(appBar: FushiAppBar(), body: body);
+    return Scaffold(
+      backgroundColor: fushiPageBackgroundColor(context),
+      body: MediaPosterDetailChrome(child: body),
+    );
+  }
+
+  /// 重设计外壳：海报面板版式（与漫画系列 / 视频作品详情同一套，见
+  /// media_poster_detail.dart）。封面取色铺满整页，封面作斜放海报、同时重模糊
+  /// 垫背景带（游戏没有横版 key art 字段）；标题 / 开发商在海报旁，状态 / 累计
+  /// 游玩 / 发行日 / 评分进信息胶囊；「启动游戏」是主按钮（滚出视口后右下角
+  /// 悬浮按钮接上）。页签与三个 tab 的内容接在 hero 下面、同一条滚动里（不再是
+  /// 定高 TabBarView：tab 内容跟 hero 一起滚）。
+  Widget _buildPosterPage(BuildContext context, GalgameEntry game) {
+    final ImageProvider? cover = _coverImage(game);
+    final VoidCallback? onLaunch = widget.onLaunch;
+    return Scaffold(
+      backgroundColor: fushiPageBackgroundColor(context),
+      body: MediaPosterDetailTheme(
+        image: cover,
+        fallbackKey: game.displayName,
+        child: MediaPosterDetailChrome(
+          title: game.displayName,
+          actions: <Widget>[_addToCollectionAction(game)],
+          child: FushiEntranceScope(
+            child: MediaPosterDetailLayout(
+              bottomPadding: FushiDesignTokens.of(context).spacing.page,
+              fab: onLaunch == null
+                  ? null
+                  : MediaDetailResumeFab(
+                      buttonKey: const ValueKey<String>(
+                        'galgame_detail_launch_fab',
+                      ),
+                      watching: false,
+                      started: game.lastPlayedMs > 0,
+                      labelOverride: t.game_launch,
+                      icon: FushiIcons.play,
+                      onPressed: onLaunch,
+                    ),
+              header: _buildPosterHero(context, game, cover),
+              slivers: _buildPosterTabSlivers(context, game),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 海报面板 hero：数据与 [_buildHero] 同源（同一个封面 / 开发商 / 状态 / 评分 /
+  /// 主按钮 / 「⋯」），只换视觉；标题与开发商仍可选择复制、沿用原 key。
+  Widget _buildPosterHero(
+    BuildContext context,
+    GalgameEntry game,
+    ImageProvider? cover,
+  ) {
+    final String? release = game.effectiveReleaseDate;
+    return MediaPosterDetailHero(
+      title: game.displayName,
+      titleKey: const ValueKey<String>('galgame-hero-title'),
+      originalTitle: game.developer,
+      originalTitleKey: const ValueKey<String>('galgame-hero-developer'),
+      selectableHeading: true,
+      poster: SizedBox.expand(child: _buildCover(context, game)),
+      posterImage: cover,
+      backdropFallback: cover,
+      pills: <MediaDetailChip>[
+        MediaDetailChip(
+          galgamePlayStatusLabel(game.playStatus),
+          icon: FushiIcons.games,
+          tone: MediaDetailChipTone.primary,
+        ),
+        if (game.totalPlaySeconds > 0)
+          MediaDetailChip(
+            formatStatTime(game.totalPlaySeconds * 1000),
+            icon: FushiIcons.timer,
+          ),
+        if (release != null) MediaDetailChip(release),
+        if (game.siteScore != null)
+          MediaDetailChip(
+            '${t.game_site_score} ${game.siteScore!.toStringAsFixed(1)}',
+          ),
+        if (game.userRating != null)
+          MediaDetailChip(
+            '${t.game_user_rating} ${game.userRating!.toStringAsFixed(1)}',
+          ),
+      ],
+      summary: game.metadata.summary,
+      summaryKey: const ValueKey<String>('galgame-hero-summary'),
+      primaryAction: _primaryAction(game),
+      secondaryActions: _secondaryActions(game),
+      more: _moreButton(game),
+    );
+  }
+
+  /// 页签轨道（海报面板版式）：「⋯ › 编辑」切 tab 时滚到它。
+  final GlobalKey _posterTabsKey = GlobalKey(debugLabel: 'galgame-poster-tabs');
+
+  /// 切到第 [index] 个 tab。海报面板版式下 tab 内容接在 hero 下面，可能在视口
+  /// 外，顺手把页签滚进视口（否则「⋯ › 编辑」点了看不到变化）。
+  void _showTab(int index) {
+    _tabs.animateTo(index);
+    final BuildContext? tabs = _posterTabsKey.currentContext;
+    if (tabs == null) return;
+    unawaited(
+      Scrollable.ensureVisible(
+        tabs,
+        duration: fushiMotionDuration(context, FushiMotion.medium),
+        curve: FushiMotion.standard,
+      ),
+    );
+  }
+
+  /// hero 下面的页签 + 当前 tab 内容（海报面板版式）。内容不懒建（与原 tab 里
+  /// 的 ListView 一样每段都是整块 widget），切 tab 时整段错峰重新入场。
+  List<Widget> _buildPosterTabSlivers(BuildContext context, GalgameEntry game) {
+    final double page = FushiDesignTokens.of(context).spacing.page;
+    return <Widget>[
+      SliverToBoxAdapter(
+        child: Padding(
+          key: _posterTabsKey,
+          padding: EdgeInsets.fromLTRB(page, 8, page, 0),
+          child: FushiTabBar(
+            controller: _tabs,
+            trackInset: 0,
+            tabs: <Widget>[
+              Tab(text: t.game_detail_tab_stats),
+              Tab(text: t.game_detail_tab_summary),
+              Tab(text: t.game_detail_tab_edit),
+            ],
+          ),
+        ),
+      ),
+      ListenableBuilder(
+        listenable: _tabs,
+        builder: (BuildContext context, Widget? _) {
+          final int index = _tabs.index;
+          final Widget content = switch (index) {
+            0 => _sectionColumn(_statsSections(context, game), gap: 0),
+            1 => _sectionColumn(_summarySections(context, game), gap: 12),
+            _ => _GalgameEditTab(
+              game: game,
+              repo: _repo,
+              onSaved: _load,
+              inline: true,
+            ),
+          };
+          return SliverPadding(
+            padding: EdgeInsets.fromLTRB(page, 12, page, 0),
+            sliver: SliverToBoxAdapter(
+              child: FushiEntranceScope(
+                key: ValueKey<int>(index),
+                child: content,
+              ),
+            ),
+          );
+        },
+      ),
+    ];
+  }
+
+  /// 把 tab 的分段排成一列并错峰入场（海报面板版式；原版式是 ListView）。
+  Widget _sectionColumn(List<Widget> sections, {required double gap}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        for (int i = 0; i < sections.length; i++)
+          Padding(
+            padding: EdgeInsets.only(top: i == 0 ? 0 : gap),
+            child: FushiStaggeredEntrance(index: i, child: sections[i]),
+          ),
+      ],
     );
   }
 
@@ -507,50 +697,63 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
   /// [GalgameDetailPage.onLaunch] 时，否则「管理标签」顶上）+ 次按钮「管理标签」+
   /// 更多（刮削元数据 / 编辑 / 加入合集，放得下就平铺）。
   Widget _heroActions(BuildContext context, GalgameEntry game) {
-    final VoidCallback? onLaunch = widget.onLaunch;
-    void editTags() => unawaited(_editUserTags(game));
     return MediaDetailActionBar(
-      primary: onLaunch != null
-          ? MediaDetailPrimaryButton(
-              buttonKey: const ValueKey<String>('galgame_detail_launch'),
-              icon: FushiIcons.play,
-              label: t.game_launch,
-              onPressed: onLaunch,
-            )
-          : MediaDetailPrimaryButton(
-              icon: FushiIcons.tag,
-              label: t.tag_manage,
-              onPressed: editTags,
-            ),
-      secondary: <Widget>[
-        if (onLaunch != null)
-          MediaDetailSecondaryButton(
+      primary: _primaryAction(game),
+      secondary: _secondaryActions(game),
+      more: _moreButton(game),
+    );
+  }
+
+  /// 主按钮：「启动游戏」（有 [GalgameDetailPage.onLaunch] 时），否则「管理标签」
+  /// 顶上。两种版式共用。
+  Widget _primaryAction(GalgameEntry game) {
+    final VoidCallback? onLaunch = widget.onLaunch;
+    return onLaunch != null
+        ? MediaDetailPrimaryButton(
+            buttonKey: const ValueKey<String>('galgame_detail_launch'),
+            icon: FushiIcons.play,
+            label: t.game_launch,
+            onPressed: onLaunch,
+          )
+        : MediaDetailPrimaryButton(
             icon: FushiIcons.tag,
             label: t.tag_manage,
-            onPressed: editTags,
-          ),
-      ],
-      more: MediaDetailMoreButton(
-        buttonKey: const ValueKey<String>('galgame_detail_more'),
-        tooltip: t.common_more_actions,
-        items: <MediaDetailMenuItem>[
-          MediaDetailMenuItem(
-            icon: FushiIcons.cloudDownload,
-            label: t.game_scrape,
-            onSelected: () => unawaited(_scrapeFromHero(game)),
-          ),
-          MediaDetailMenuItem(
-            icon: FushiIcons.edit,
-            label: t.game_detail_tab_edit,
-            onSelected: () => _tabs.animateTo(2),
-          ),
-          MediaDetailMenuItem(
-            icon: FushiIcons.collection,
-            label: t.add_to_collection,
-            onSelected: () => unawaited(_addToCollection(game)),
-          ),
-        ],
+            onPressed: () => unawaited(_editUserTags(game)),
+          );
+  }
+
+  /// 次按钮：有启动按钮时「管理标签」退到这里。
+  List<Widget> _secondaryActions(GalgameEntry game) => <Widget>[
+    if (widget.onLaunch != null)
+      MediaDetailSecondaryButton(
+        icon: FushiIcons.tag,
+        label: t.tag_manage,
+        onPressed: () => unawaited(_editUserTags(game)),
       ),
+  ];
+
+  /// 「⋯」：刮削元数据 / 编辑 / 加入合集。
+  Widget _moreButton(GalgameEntry game) {
+    return MediaDetailMoreButton(
+      buttonKey: const ValueKey<String>('galgame_detail_more'),
+      tooltip: t.common_more_actions,
+      items: <MediaDetailMenuItem>[
+        MediaDetailMenuItem(
+          icon: FushiIcons.cloudDownload,
+          label: t.game_scrape,
+          onSelected: () => unawaited(_scrapeFromHero(game)),
+        ),
+        MediaDetailMenuItem(
+          icon: FushiIcons.edit,
+          label: t.game_detail_tab_edit,
+          onSelected: () => _showTab(2),
+        ),
+        MediaDetailMenuItem(
+          icon: FushiIcons.collection,
+          label: t.add_to_collection,
+          onSelected: () => unawaited(_addToCollection(game)),
+        ),
+      ],
     );
   }
 
@@ -850,8 +1053,22 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
   /// 统计 tab：KPI 统计卡 + 每日时长折线图（分组卡）+ 会话流水（分组列表，可删
   /// 单条）。三段在进场窗口内错峰淡入（与库页网格同一套动效）。
   Widget _buildStatsTab(BuildContext context, GalgameEntry game) {
+    final List<Widget> sections = _statsSections(context, game);
+    return FushiEntranceScope(
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+        children: <Widget>[
+          for (int i = 0; i < sections.length; i++)
+            FushiStaggeredEntrance(index: i, child: sections[i]),
+        ],
+      ),
+    );
+  }
+
+  /// 统计 tab 的分段（两种版式共用）。
+  List<Widget> _statsSections(BuildContext context, GalgameEntry game) {
     final ThemeData theme = Theme.of(context);
-    final List<Widget> sections = <Widget>[
+    return <Widget>[
       // 只读 Hook 状态：本游戏正在捕获会话里时才出现（不改任何 hook 逻辑）。
       if (Platform.isWindows) _GalgameHookStatusCard(game: game),
       _buildKpis(theme, game),
@@ -887,15 +1104,6 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
         ],
       ),
     ];
-    return FushiEntranceScope(
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-        children: <Widget>[
-          for (int i = 0; i < sections.length; i++)
-            FushiStaggeredEntrance(index: i, child: sections[i]),
-        ],
-      ),
-    );
   }
 
   /// 会话流水：M3E 分段列表（[FushiGroupedList]）。每行行首是时钟形状底图标，
@@ -1130,6 +1338,23 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
   /// 开发商 / 发行日 / 添加时间 / 通关时长 / 排行 / 用户标签）+ 元数据标签卡。资料与
   /// 标签原先常驻在头部，Hero 收窄后移到这里（功能不变）。
   Widget _buildSummaryTab(BuildContext context, GalgameEntry game) {
+    final List<Widget> sections = _summarySections(context, game);
+    return FushiEntranceScope(
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+        children: <Widget>[
+          for (int i = 0; i < sections.length; i++)
+            Padding(
+              padding: EdgeInsets.only(top: i == 0 ? 0 : 12),
+              child: FushiStaggeredEntrance(index: i, child: sections[i]),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// 简介 tab 的分段（两种版式共用）。
+  List<Widget> _summarySections(BuildContext context, GalgameEntry game) {
     final ThemeData theme = Theme.of(context);
     final GalgameMetadataDraft meta = game.metadata;
     final String? summary = meta.summary;
@@ -1161,7 +1386,7 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
           game.customData.userReview!,
         ),
     ];
-    final List<Widget> sections = <Widget>[
+    return <Widget>[
       _sectionCard(
         context,
         // 刮削来的简介要能复制去编辑 tab 改写（反馈 2DmrXg-wtD）：用可选择文本。
@@ -1212,18 +1437,6 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
         ),
       ),
     ];
-    return FushiEntranceScope(
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-        children: <Widget>[
-          for (int i = 0; i < sections.length; i++)
-            Padding(
-              padding: EdgeInsets.only(top: i == 0 ? 0 : 12),
-              child: FushiStaggeredEntrance(index: i, child: sections[i]),
-            ),
-        ],
-      ),
-    );
   }
 
   Widget _summarySection(ThemeData theme, String label, String value) {
@@ -1396,11 +1609,16 @@ class _GalgameEditTab extends StatefulWidget {
     required this.game,
     required this.repo,
     required this.onSaved,
+    this.inline = false,
   });
 
   final GalgameEntry game;
   final GalgameRepository repo;
   final Future<void> Function() onSaved;
+
+  /// true = 排进外层滚动（海报面板版式：tab 内容接在 hero 下同一条滚动里），
+  /// 返回不自滚的 Column；false = 原 TabBarView 页里自滚的 ListView。
+  final bool inline;
 
   @override
   State<_GalgameEditTab> createState() => _GalgameEditTabState();
@@ -1530,55 +1748,65 @@ class _GalgameEditTabState extends State<_GalgameEditTab> {
 
   @override
   Widget build(BuildContext context) {
+    final List<Widget> children = <Widget>[
+      Row(
+        children: <Widget>[
+          Expanded(
+            child: FushiFilledButton.tonalIcon(
+              // 再入守卫在统一弹窗内（每行「使用」行内转圈），按钮无需禁用态。
+              onPressed: () => unawaited(_scrape()),
+              icon: const FushiIcon(FushiIcons.cloudDownload),
+              label: Text(t.game_scrape),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: FushiFilledButton.icon(
+              onPressed: () => unawaited(_save()),
+              icon: const FushiIcon(FushiIcons.save),
+              label: Text(t.game_edit_save),
+            ),
+          ),
+        ],
+      ),
+      const SizedBox(height: 8),
+      _field('name', _name, t.game_edit_display_name),
+      _field('summary', _summary, t.game_edit_summary, maxLines: 4),
+      _field('tags', _tags, t.game_edit_tags),
+      _field('developer', _developer, t.game_edit_developer),
+      _field('releaseDate', _releaseDate, t.game_edit_release_date),
+      _field('rating', _rating, t.game_edit_user_rating),
+      _field('review', _review, t.game_edit_user_review, maxLines: 3),
+      AdaptiveSettingsSwitchRow(
+        title: t.game_edit_nsfw,
+        value: _nsfw,
+        onChanged: (bool v) => setState(() => _nsfw = v),
+      ),
+      _field('exePath', _exePath, t.game_edit_exe_path),
+      _field('workdir', _workdir, t.game_edit_workdir),
+      _field(
+        'launchArgs',
+        _launchArgs,
+        t.game_edit_launch_args,
+        helperText: t.game_edit_launch_args_hint,
+      ),
+      // 本游戏制卡设置（反馈 3dRZdakRdJ）：gal 制卡只在 Windows 上有，其它端不显示。
+      // 即时生效，不走上面的「保存」（覆盖层不在游戏条目上）。
+      if (Platform.isWindows)
+        _GalgameMiningOverridesHost(gameId: widget.game.id),
+    ];
+    if (widget.inline) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          for (int i = 0; i < children.length; i++)
+            FushiStaggeredEntrance(index: i, child: children[i]),
+        ],
+      );
+    }
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
-      children: <Widget>[
-        Row(
-          children: <Widget>[
-            Expanded(
-              child: FushiFilledButton.tonalIcon(
-                // 再入守卫在统一弹窗内（每行「使用」行内转圈），按钮无需禁用态。
-                onPressed: () => unawaited(_scrape()),
-                icon: const FushiIcon(FushiIcons.cloudDownload),
-                label: Text(t.game_scrape),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: FushiFilledButton.icon(
-                onPressed: () => unawaited(_save()),
-                icon: const FushiIcon(FushiIcons.save),
-                label: Text(t.game_edit_save),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        _field('name', _name, t.game_edit_display_name),
-        _field('summary', _summary, t.game_edit_summary, maxLines: 4),
-        _field('tags', _tags, t.game_edit_tags),
-        _field('developer', _developer, t.game_edit_developer),
-        _field('releaseDate', _releaseDate, t.game_edit_release_date),
-        _field('rating', _rating, t.game_edit_user_rating),
-        _field('review', _review, t.game_edit_user_review, maxLines: 3),
-        AdaptiveSettingsSwitchRow(
-          title: t.game_edit_nsfw,
-          value: _nsfw,
-          onChanged: (bool v) => setState(() => _nsfw = v),
-        ),
-        _field('exePath', _exePath, t.game_edit_exe_path),
-        _field('workdir', _workdir, t.game_edit_workdir),
-        _field(
-          'launchArgs',
-          _launchArgs,
-          t.game_edit_launch_args,
-          helperText: t.game_edit_launch_args_hint,
-        ),
-        // 本游戏制卡设置（反馈 3dRZdakRdJ）：gal 制卡只在 Windows 上有，其它端不显示。
-        // 即时生效，不走上面的「保存」（覆盖层不在游戏条目上）。
-        if (Platform.isWindows)
-          _GalgameMiningOverridesHost(gameId: widget.game.id),
-      ],
+      children: children,
     );
   }
 

@@ -8,7 +8,13 @@ import 'package:fushi/src/media/collections/collection_member_view.dart'
 import 'package:fushi/src/media/collections/collection_one_key_sort.dart'
     show collectionDetailSortPrefKey, kCollectionDetailManualSortValue;
 import 'package:fushi/src/pages/implementations/media_collection_grid_detail_page.dart';
+import 'package:fushi/src/media/detail/media_poster_detail.dart'
+    show MediaPosterDetailChrome;
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
+import 'package:fushi/src/utils/components/fushi_cover_block.dart'
+    show FushiCoverBlockScope;
+import 'package:fushi/src/utils/components/fushi_cover_block_layout.dart'
+    show SliverFushiCoverBlocks;
 import 'package:fushi/src/utils/components/library_reorder.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -673,17 +679,21 @@ void main() {
       expect(percent.data, '50%');
     });
 
-    testWidgets('hero 不再有「继续」按钮（2026-10-28 砍掉，点成员卡读）', (
-      WidgetTester tester,
-    ) async {
+    testWidgets('海报 hero 的「继续」主按钮打开续读目标（最后读的那本）', (WidgetTester tester) async {
+      // 重设计外壳（非墨水屏）的海报 hero 与视频 / 漫画详情同一套，主按钮是
+      // 「继续」；旧 hero 卡（墨水屏）仍是整卡点按续读、不放按钮。
       useDesktopView(tester);
-      await tester.pumpWidget(seriesPage(await seedSeries()));
+      final List<String> opened = <String>[];
+      await tester.pumpWidget(seriesPage(await seedSeries(), opened: opened));
       await tester.pumpAndSettle();
 
-      expect(
-        find.byKey(const ValueKey<String>('collection_detail_continue')),
-        findsNothing,
+      final Finder button = find.byKey(
+        const ValueKey<String>('collection_detail_continue'),
       );
+      expect(button, findsOneWidget);
+      await tester.tap(button);
+      await tester.pumpAndSettle();
+      expect(opened, <String>['k2']);
     });
 
     testWidgets('非拖排网格触屏长按弹库页同一份卡片菜单，不进多选', (WidgetTester tester) async {
@@ -811,5 +821,52 @@ void main() {
         findsOneWidget,
       );
     });
+  });
+
+  testWidgets('重设计外壳：裸图标页头 + 合集头部，拼贴布局下成员排库墙同款色块', (WidgetTester tester) async {
+    useDesktopView(tester);
+    final ({FushiDatabase db, MediaCollectionRow col}) s = await seed();
+    final List<String> opened = <String>[];
+    await tester.pumpWidget(
+      TranslationProvider(
+        child: MaterialApp(
+          home: MediaCollectionGridDetailPage(
+            database: s.db,
+            collection: s.col,
+            memberCardBuilder: cardBuilder,
+            onOpenMember: (String mediaType, String entryKey) =>
+                opened.add(entryKey),
+            onChanged: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 页头：不挂 AppBar，合集管理动作是裸图标（tooltip 不变）。
+    expect(find.byType(AppBar), findsNothing);
+    expect(find.byType(MediaPosterDetailChrome), findsOneWidget);
+    expect(find.byTooltip(t.rename_collection), findsOneWidget);
+    expect(find.byTooltip(t.delete_collection), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('collection_detail_poster_hero')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('collection_detail_edit_tags')),
+      findsOneWidget,
+    );
+    // 默认库页布局是拼贴：成员格在色块布局里，卡片收到色块尺寸档。
+    expect(find.byType(SliverFushiCoverBlocks), findsOneWidget);
+    expect(
+      find.ancestor(
+        of: find.byKey(const ValueKey<String>('member-k1')),
+        matching: find.byType(FushiCoverBlockScope),
+      ),
+      findsOneWidget,
+    );
+    await tester.tap(find.byKey(const ValueKey<String>('member-k2')));
+    await tester.pumpAndSettle();
+    expect(opened, <String>['k2']);
   });
 }

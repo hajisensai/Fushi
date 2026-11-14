@@ -10,6 +10,7 @@ import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/jump_history.dart'
     show kJumpHistoryAutoHideDefaultSeconds, kJumpHistoryAutoHideOptions;
 import 'package:fushi/src/utils/adaptive/nav_bar_style.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/pages/implementations/custom_fonts_page.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart';
@@ -651,6 +652,108 @@ SettingsDestination buildAppearanceDestination() {
                         .setNavBarStyle(value)
                         .then((_) => settingsContext.refresh()),
             defaultValue: AdaptiveNavBarStyle.defaultStyle,
+          ),
+          // 外壳重设计的四项：生效范围同 `shellRedesignActive`——非墨水屏一律生效
+          // （MD3 与 Apple 都是），墨水屏保持原外壳（库页恒为封面网格），所以四项在
+          // 墨水屏下都不显示。侧栏样式另外只管 MD3 侧栏：Apple 设计系统用系统
+          // 侧栏，不读它。色块摆放只对拼贴布局有意义，封面网格下置灰。
+          SettingsSegmentedItem<ShellRailStyle>(
+            id: 'appearance.shell_rail_style',
+            title: t.home_nav_rail_style,
+            icon: FushiIcons.widgets,
+            visible: (SettingsContext c) =>
+                !isGlassDesign(c.context) && !isEinkTheme(c.context),
+            options: <SettingsSegmentOption<ShellRailStyle>>[
+              SettingsSegmentOption<ShellRailStyle>(
+                value: ShellRailStyle.notch,
+                label: t.home_nav_rail_style_notch,
+              ),
+              SettingsSegmentOption<ShellRailStyle>(
+                value: ShellRailStyle.spine,
+                label: t.home_nav_rail_style_spine,
+              ),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                settingsContext.appModel.shellRailStyle,
+            onChanged:
+                (SettingsContext settingsContext, ShellRailStyle value) =>
+                    settingsContext.appModel
+                        .setShellRailStyle(value)
+                        .then((_) => settingsContext.refresh()),
+            defaultValue: ShellRailStyle.defaultStyle,
+          ),
+          SettingsSegmentedItem<ShellContentLayout>(
+            id: 'appearance.shell_content_layout',
+            title: t.library_layout,
+            icon: FushiIcons.widgets,
+            visible: (SettingsContext c) => !isEinkTheme(c.context),
+            options: <SettingsSegmentOption<ShellContentLayout>>[
+              SettingsSegmentOption<ShellContentLayout>(
+                value: ShellContentLayout.collage,
+                label: t.library_layout_collage,
+              ),
+              SettingsSegmentOption<ShellContentLayout>(
+                value: ShellContentLayout.grid,
+                label: t.library_layout_grid,
+              ),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                settingsContext.appModel.shellContentLayout,
+            onChanged:
+                (SettingsContext settingsContext, ShellContentLayout value) =>
+                    settingsContext.appModel
+                        .setShellContentLayout(value)
+                        .then((_) => settingsContext.refresh()),
+            defaultValue: ShellContentLayout.defaultLayout,
+          ),
+          SettingsSegmentedItem<ShellBlockArrangement>(
+            id: 'appearance.shell_block_arrangement',
+            title: t.library_arrangement,
+            subtitle: t.library_arrangement_hint,
+            icon: FushiIcons.widgets,
+            visible: (SettingsContext c) => !isEinkTheme(c.context),
+            enabled: (SettingsContext c) =>
+                c.appModel.shellContentLayout != ShellContentLayout.grid,
+            options: <SettingsSegmentOption<ShellBlockArrangement>>[
+              SettingsSegmentOption<ShellBlockArrangement>(
+                value: ShellBlockArrangement.aligned,
+                label: t.library_arrangement_aligned,
+              ),
+              SettingsSegmentOption<ShellBlockArrangement>(
+                value: ShellBlockArrangement.staggered,
+                label: t.library_arrangement_staggered,
+              ),
+              SettingsSegmentOption<ShellBlockArrangement>(
+                value: ShellBlockArrangement.scattered,
+                label: t.library_arrangement_scattered,
+              ),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                settingsContext.appModel.shellBlockArrangement,
+            onChanged:
+                (
+                  SettingsContext settingsContext,
+                  ShellBlockArrangement value,
+                ) => settingsContext.appModel
+                    .setShellBlockArrangement(value)
+                    .then((_) => settingsContext.refresh()),
+            defaultValue: ShellBlockArrangement.defaultFor(
+              ShellContentLayout.defaultLayout,
+            ),
+          ),
+          SettingsSwitchItem(
+            id: 'appearance.shell_smooth_corners',
+            title: t.theme_smooth_corners,
+            subtitle: t.theme_smooth_corners_hint,
+            icon: FushiIcons.widgets,
+            visible: (SettingsContext c) => !isEinkTheme(c.context),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.shellSmoothCorners,
+            onChanged: (SettingsContext settingsContext, bool value) =>
+                settingsContext.appModel
+                    .setShellSmoothCorners(value)
+                    .then((_) => settingsContext.refresh()),
+            defaultValue: true,
           ),
           // 第二块屏（双屏掌机下屏 / 外接显示器）：只在系统报告有可用副屏时出现。
           SettingsSegmentedItem<SecondScreenMode>(

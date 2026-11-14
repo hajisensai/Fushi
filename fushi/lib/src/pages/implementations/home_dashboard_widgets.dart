@@ -711,6 +711,190 @@ class _RenderPanelFlow extends RenderBox
       defaultHitTestChildren(result, position: position);
 }
 
+/// 重设计外壳下首页色块面板的排布（设计稿首页 `.stat` 一排 `s2` 色块）：按行排，
+/// 同一行的色块**等高**（按行里最高的那块拉齐），每行列数均分——
+///
+/// - 每行最多放得下几列 = 按 [minColumnWidth] 取整，且不超过 [maxColumns]；
+/// - 行数 = 面板数 ÷ 每行上限向上取整，再把面板尽量均分到各行（[rowSizes]：
+///   4 块排成 2 + 2 而不是 3 + 1，5 块排成 3 + 2），最后一行不会剩一块孤零零
+///   挂在左边、右边一大片空；
+/// - 窄屏（放不下两列）就是一列竖排。
+///
+/// 与 [HomePanelFlow]（按高度分列的瀑布流）不同：色块是一整块底色，列底参差
+/// 会露出锯齿状的空白，所以这里按行拉齐。行内顺序 = 子节点顺序，Tab 与方向键
+/// 走几何遍历。
+class HomePosterRows extends MultiChildRenderObjectWidget {
+  const HomePosterRows({
+    super.key,
+    required super.children,
+    required this.gap,
+    this.minColumnWidth = 300,
+    this.maxColumns = 3,
+  });
+
+  final double gap;
+  final double minColumnWidth;
+  final int maxColumns;
+
+  /// 宽 [width] 下 [count] 块面板逐行各放几块（纯函数，测试与版面共用）。
+  static List<int> rowSizes({
+    required double width,
+    required int count,
+    required double gap,
+    double minColumnWidth = 300,
+    int maxColumns = 3,
+  }) {
+    if (count <= 0) return const <int>[];
+    final int fit = ((width + gap) / (minColumnWidth + gap)).floor().clamp(
+      1,
+      math.max(1, maxColumns),
+    );
+    final int rows = (count + fit - 1) ~/ fit;
+    final int base = count ~/ rows;
+    final int extra = count % rows;
+    return <int>[for (int r = 0; r < rows; r++) base + (r < extra ? 1 : 0)];
+  }
+
+  @override
+  RenderObject createRenderObject(BuildContext context) => _RenderPosterRows(
+    gap: gap,
+    minColumnWidth: minColumnWidth,
+    maxColumns: maxColumns,
+    textDirection: Directionality.of(context),
+  );
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderPosterRows renderObject,
+  ) {
+    renderObject
+      ..gap = gap
+      ..minColumnWidth = minColumnWidth
+      ..maxColumns = maxColumns
+      ..textDirection = Directionality.of(context);
+  }
+}
+
+class _PosterRowsParentData extends ContainerBoxParentData<RenderBox> {}
+
+class _RenderPosterRows extends RenderBox
+    with
+        ContainerRenderObjectMixin<RenderBox, _PosterRowsParentData>,
+        RenderBoxContainerDefaultsMixin<RenderBox, _PosterRowsParentData> {
+  _RenderPosterRows({
+    required double gap,
+    required double minColumnWidth,
+    required int maxColumns,
+    required TextDirection textDirection,
+  }) : _gap = gap,
+       _minColumnWidth = minColumnWidth,
+       _maxColumns = maxColumns,
+       _textDirection = textDirection;
+
+  double _gap;
+  set gap(double v) {
+    if (v == _gap) return;
+    _gap = v;
+    markNeedsLayout();
+  }
+
+  double _minColumnWidth;
+  set minColumnWidth(double v) {
+    if (v == _minColumnWidth) return;
+    _minColumnWidth = v;
+    markNeedsLayout();
+  }
+
+  int _maxColumns;
+  set maxColumns(int v) {
+    if (v == _maxColumns) return;
+    _maxColumns = v;
+    markNeedsLayout();
+  }
+
+  TextDirection _textDirection;
+  set textDirection(TextDirection v) {
+    if (v == _textDirection) return;
+    _textDirection = v;
+    markNeedsLayout();
+  }
+
+  @override
+  void setupParentData(RenderBox child) {
+    if (child.parentData is! _PosterRowsParentData) {
+      child.parentData = _PosterRowsParentData();
+    }
+  }
+
+  @override
+  void performLayout() {
+    final List<RenderBox> kids = <RenderBox>[];
+    RenderBox? child = firstChild;
+    while (child != null) {
+      kids.add(child);
+      child = childAfter(child);
+    }
+    final double width = constraints.maxWidth;
+    final List<int> rows = HomePosterRows.rowSizes(
+      width: width,
+      count: kids.length,
+      gap: _gap,
+      minColumnWidth: _minColumnWidth,
+      maxColumns: _maxColumns,
+    );
+    final bool rtl = _textDirection == TextDirection.rtl;
+    double y = 0;
+    int next = 0;
+    for (final int n in rows) {
+      final double colWidth = (width - _gap * (n - 1)) / n;
+      // 先按列宽量自然高度（面板里有 LayoutBuilder，不支持 dry layout），再按
+      // 行里最高的那块统一定高重排一遍。
+      double rowHeight = 0;
+      for (int k = 0; k < n; k++) {
+        final RenderBox kid = kids[next + k]
+          ..layout(
+            BoxConstraints.tightFor(width: colWidth),
+            parentUsesSize: true,
+          );
+        rowHeight = math.max(rowHeight, kid.size.height);
+      }
+      for (int k = 0; k < n; k++) {
+        final RenderBox kid = kids[next + k]
+          ..layout(
+            // 只抬到行高、不封顶：两遍量高都在「高度不设上限」下进行，面板里按
+            // 约束分支的内容（LayoutBuilder、进场包装）两遍给出同一份版面。
+            // 曾用紧约束重排：第二遍的内容比第一遍量出的高，整块在里面溢出。
+            BoxConstraints(
+              minWidth: colWidth,
+              maxWidth: colWidth,
+              minHeight: rowHeight,
+            ),
+            parentUsesSize: true,
+          );
+        final double x = k * (colWidth + _gap);
+        (kid.parentData! as _PosterRowsParentData).offset = Offset(
+          rtl ? width - x - colWidth : x,
+          y,
+        );
+      }
+      y += rowHeight + _gap;
+      next += n;
+    }
+    size = constraints.constrain(
+      Size(width, rows.isEmpty ? 0 : math.max(0, y - _gap)),
+    );
+  }
+
+  @override
+  void paint(PaintingContext context, Offset offset) =>
+      defaultPaint(context, offset);
+
+  @override
+  bool hitTestChildren(BoxHitTestResult result, {required Offset position}) =>
+      defaultHitTestChildren(result, position: position);
+}
+
 /// 「今日」面板宽屏时的近 7 天柱条（2026-10-31 方案 A 补齐「今日」）：每天一根，
 /// 高度按 7 天里的最大值归一，今天用强调色、其余用浅一档；悬停提示是当天字数。
 /// 全为 0 时柱条贴底一线（不画空白）。

@@ -34,6 +34,13 @@ import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
+import 'package:fushi/src/utils/components/glass/fushi_expressive_controls.dart'
+    show FushiButtonSize;
+import 'package:fushi/src/utils/components/fushi_cover_block.dart'
+    show FushiCoverBlockColors, FushiCoverBlockSize, fushiCoverBlockShape;
+import 'package:fushi/src/utils/components/fushi_poster_block.dart';
+import 'package:fushi/src/utils/components/shelf_card_widgets.dart'
+    show shelfCoverCard;
 
 /// 首页此刻是否真被看着（首页 dashboard 按 TickerMode 写入：所在 tab 隐藏、或被别的页面盖住时为 false）。
 final StateProvider<bool> homeSrsLiveProvider = StateProvider<bool>(
@@ -68,6 +75,16 @@ final Provider<AsyncValue<SrsTodayReviewSummary?>> homeSrsTodayReviewsProvider =
     );
 
 /// 首页复习条「今日」一行的文字：已复习张数 · 用时，有复习时再加正确率（与统计页今天一节同口径）。
+/// 「N 张」类已译计数文案（如 `srs_home_deck_cards`）拆出排在大数字后面的小单位：
+/// 文案以 [number] 开头时取其余部分（「84 张」→「张」、「84 cards」→「cards」）；
+/// 数字不在开头（俄语「Карт: 84」这类单位前置的语言）时返回 null，大字只画数字，
+/// 完整文案由调用点放进读屏标签。复用已有译文，不另立一份未翻译的单位 key。
+String? homePosterUnitOf(String counted, String number) {
+  if (!counted.startsWith(number)) return null;
+  final String rest = counted.substring(number.length).trim();
+  return rest.isEmpty ? null : rest;
+}
+
 String homeSrsTodayLine(SrsTodayReviewSummary s) {
   final String time = s.durationMs < 60000
       ? t.srs_stats_seconds(n: (s.durationMs / 1000).round())
@@ -136,6 +153,7 @@ class HomeSrsPanel extends ConsumerWidget {
     super.key,
     required this.onOpenDecks,
     required this.onStartReview,
+    this.poster = false,
   });
 
   /// 点条目本身：进牌组列表。
@@ -143,6 +161,10 @@ class HomeSrsPanel extends ConsumerWidget {
 
   /// 点「开始复习」：直接复习这个牌组（[SrsDeckListData.firstRootWithWork]）。
   final void Function(SrsDeckSummary deck) onStartReview;
+
+  /// true = 重设计外壳的海报色块形态（[_HomeSrsPoster]，与复习页「今日计划」
+  /// 色块同一套件）；false = 原一行条。由首页按外壳门控传入。
+  final bool poster;
 
   /// 内容行的固定高度：骨架 / 计数 / 已完成三态同高，切换时不跳布局。
   static const double rowHeight = 44;
@@ -153,6 +175,19 @@ class HomeSrsPanel extends ConsumerWidget {
     final SrsDeckListData? data = ref
         .watch(homeSrsDeckListProvider)
         .valueOrNull;
+    final SrsDeckSummary? target = data?.firstRootWithWork;
+    final SrsTodayReviewSummary? today = ref
+        .watch(homeSrsTodayReviewsProvider)
+        .valueOrNull;
+    if (poster) {
+      return _HomeSrsPoster(
+        data: data,
+        target: target,
+        today: today,
+        onOpenDecks: onOpenDecks,
+        onStartReview: onStartReview,
+      );
+    }
     final bool apple = isGlassDesign(context);
     final bool eink = isEinkTheme(context);
     final BorderRadius radius = apple
@@ -161,10 +196,6 @@ class HomeSrsPanel extends ConsumerWidget {
     final Color fill = apple
         ? appleColorsOf(context).secondaryGroupedBackground
         : tokens.surfaces.group;
-    final SrsDeckSummary? target = data?.firstRootWithWork;
-    final SrsTodayReviewSummary? today = ref
-        .watch(homeSrsTodayReviewsProvider)
-        .valueOrNull;
 
     final Widget status;
     if (data == null) {
@@ -340,6 +371,215 @@ class _HomeSrsTodayLine extends StatelessWidget {
                   style: tokens.type.metadata,
                 ),
         ),
+      ),
+    );
+  }
+}
+
+/// 重设计外壳下的首页复习面板（[HomeSrsPanel.poster]）：与复习页首块「今日计划」
+/// （`srs_deck_home.dart` 的 `_SrsTodayPoster`）同一套海报色块——按「从哪个牌组
+/// 开始」的牌组 id 取色（两页同一张色块同一个色），「复习」大字水印；左上是
+/// 「复习」chip、右上是今日完成度圆环；中间是今天还剩的张数大字（全部完成时换成
+/// 「今日已完成」）；下面到期 / 学习中 / 新卡三个计数 chip；底行是今日已复习
+/// 张数 · 用时 · 正确率 + 「开始复习」。点色块本身进牌组列表。
+///
+/// 信息与原一行条一一对应，key 沿用（`home-srs-panel` / `-open` / `-counts` /
+/// `-start` / `-done` / `-today` / `-skeleton`）。
+class _HomeSrsPoster extends StatelessWidget {
+  const _HomeSrsPoster({
+    required this.data,
+    required this.target,
+    required this.today,
+    required this.onOpenDecks,
+    required this.onStartReview,
+  });
+
+  final SrsDeckListData? data;
+  final SrsDeckSummary? target;
+  final SrsTodayReviewSummary? today;
+  final VoidCallback onOpenDecks;
+  final void Function(SrsDeckSummary deck) onStartReview;
+
+  @override
+  Widget build(BuildContext context) {
+    final SrsDeckListData? d = data;
+    final SrsDeckSummary? go = target;
+    final SrsTodayReviewSummary? s = today;
+    final FushiCoverBlockColors colors = fushiPosterColors(
+      context,
+      fushiPosterHue(go?.deck.id ?? 'srs-today'),
+    );
+    final TextStyle base =
+        Theme.of(context).textTheme.bodyMedium ?? const TextStyle();
+    final TextStyle caption = FushiPosterText.caption
+        .on(base)
+        .copyWith(color: colors.onContainer.withValues(alpha: 0.85));
+    final bool allDone = d != null && !d.hasWorkToday && !d.rwkvPending;
+    final int remaining = d == null
+        ? 0
+        : d.todayNew + d.todayLearn + d.todayReview;
+    final int done = s?.count ?? 0;
+    final int total = done + remaining;
+    final double ratio = total == 0 ? (allDone ? 1 : 0) : done / total;
+    final Duration swap = fushiMotionDuration(context, FushiMotion.short);
+
+    final Widget figure;
+    if (d == null) {
+      figure = const FushiSkeletonShimmer(
+        key: ValueKey<String>('home-srs-panel-skeleton'),
+        child: FushiSkeleton(width: 140, height: 56),
+      );
+    } else if (allDone) {
+      figure = Text(
+        t.home_srs_panel_done,
+        key: const ValueKey<String>('home-srs-panel-done'),
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        style: FushiPosterText.headline.on(base).copyWith(color: colors.accent),
+      );
+    } else {
+      final String counted = t.srs_home_deck_cards(n: remaining);
+      figure = Semantics(
+        key: const ValueKey<String>('home-srs-panel-remaining'),
+        label: counted,
+        excludeSemantics: true,
+        child: FushiPosterFigure(
+          value: '$remaining',
+          unit: homePosterUnitOf(counted, '$remaining'),
+          colors: colors,
+          size: FushiPosterFigureSize.compact,
+        ),
+      );
+    }
+
+    final Widget? start = go == null || allDone
+        ? null
+        : FushiPressScale(
+            child: FushiFilledButton.icon(
+              key: const ValueKey<String>('home-srs-panel-start'),
+              size: FushiButtonSize.m,
+              // 按钮色取块自己的配色（与「继续」主块同口径），不用主题紫。
+              style: fushiPosterButtonStyle(colors),
+              onPressed: () => onStartReview(go),
+              icon: const FushiIcon(FushiIcons.play),
+              label: Text(
+                t.home_srs_panel_start,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          );
+
+    final Widget poster = FushiPosterBlock(
+      watermark: t.nav_srs,
+      colors: colors,
+      watermarkFontSize: 110,
+      watermarkEdge: FushiPosterWatermarkEdge.bottom,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        spacing: 10,
+        children: <Widget>[
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Expanded(
+                child: Align(
+                  alignment: AlignmentDirectional.centerStart,
+                  child: FushiPosterChip(
+                    colors: colors,
+                    icon: FushiIcons.repeat,
+                    label: t.nav_srs,
+                  ),
+                ),
+              ),
+              if (d != null)
+                Semantics(
+                  label: t.srs_home_done_count(n: done),
+                  child: FushiPosterRing(
+                    value: ratio,
+                    colors: colors,
+                    size: 56,
+                  ),
+                ),
+            ],
+          ),
+          AnimatedSwitcher(
+            duration: swap,
+            switchInCurve: FushiMotion.enter,
+            switchOutCurve: FushiMotion.exit,
+            layoutBuilder: (Widget? current, List<Widget> previous) => Stack(
+              alignment: AlignmentDirectional.centerStart,
+              children: <Widget>[...previous, ?current],
+            ),
+            child: figure,
+          ),
+          if (d != null && !allDone)
+            Wrap(
+              key: const ValueKey<String>('home-srs-panel-counts'),
+              spacing: 6,
+              runSpacing: 6,
+              children: <Widget>[
+                FushiPosterChip(
+                  colors: colors,
+                  solid: true,
+                  label: d.rwkvPending && d.todayReview == 0
+                      ? '${t.srs_home_meta_due(n: 0)} '
+                            '(${t.srs_home_meta_pending})'
+                      : t.srs_home_meta_due(n: d.todayReview),
+                ),
+                FushiPosterChip(
+                  colors: colors,
+                  label: t.srs_home_meta_learning(n: d.todayLearn),
+                ),
+                FushiPosterChip(
+                  colors: colors,
+                  label: t.srs_home_meta_new(n: d.todayNew),
+                ),
+              ],
+            ),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            spacing: 12,
+            children: <Widget>[
+              Expanded(
+                child: AnimatedSwitcher(
+                  duration: swap,
+                  switchInCurve: FushiMotion.enter,
+                  switchOutCurve: FushiMotion.exit,
+                  layoutBuilder: (Widget? current, List<Widget> previous) =>
+                      Stack(
+                        alignment: AlignmentDirectional.centerStart,
+                        children: <Widget>[...previous, ?current],
+                      ),
+                  child: s == null
+                      ? const FushiSkeletonShimmer(
+                          key: ValueKey<String>('home-srs-today-skeleton'),
+                          child: FushiSkeleton(width: 140, height: 12),
+                        )
+                      : Text(
+                          homeSrsTodayLine(s),
+                          key: const ValueKey<String>('home-srs-panel-today'),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: caption,
+                        ),
+                ),
+              ),
+              ?start,
+            ],
+          ),
+        ],
+      ),
+    );
+
+    return KeyedSubtree(
+      key: const ValueKey<String>('home-srs-panel'),
+      child: shelfCoverCard(
+        key: const ValueKey<String>('home-srs-panel-open'),
+        shape: fushiCoverBlockShape(context, FushiCoverBlockSize.regular),
+        onTap: onOpenDecks,
+        child: poster,
       ),
     );
   }
