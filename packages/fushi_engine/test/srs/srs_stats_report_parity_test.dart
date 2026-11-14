@@ -6,9 +6,10 @@
 // 4 点 + UTC+9；0 点 + UTC−5）× 四个范围 × 全部牌组与每个牌组子树。
 //
 // 期望值 fixtures/srs_stats_report_vectors.json.gz 由**聚合搬进内核之前的 Dart 实现**（`SrsStatsData` 的各个方法，
-// 2026-11-10）算出；聚合搬进 Rust 之后，新实现必须在同一份库、同一组条件下逐值给出同样的结果。
+// 2026-11-10；生成它的测试版本见引入夹具的提交）算出；现在由内核 `stats_report`（store/stats.rs）给出，必须在同一份
+// 库、同一组条件下逐值相同。
 //
-// 重新生成（只在有意改变统计语义时）：SRS_STATS_REPORT_WRITE=1 跑本文件。
+// 重新生成（只在有意改变统计语义时）：SRS_STATS_REPORT_WRITE=1 跑本文件（之后的期望值就是内核的结果）。
 import 'dart:convert';
 import 'dart:io';
 
@@ -70,12 +71,15 @@ final List<int> _nows = <int>[
 /// 日界：(UTC 偏移分钟, 翻日小时)。
 const List<(int, int)> _days = <(int, int)>[(540, 4), (-300, 0)];
 
-/// 统计页「未来到期」看几天（与 srs_statistics_page.dart `_futureDays` 同一张表；「全部」= 最晚到期日）。
-int _futureDaysOf(SrsStatsData d, SrsStatsRange range) => switch (range) {
-  SrsStatsRange.month => 31,
-  SrsStatsRange.threeMonths => 91,
-  SrsStatsRange.year => 366,
-  SrsStatsRange.all => d.furthestDueOffset(),
+/// 每次请求的时间窗（统计页的保留率表 + 首页的两周；范围窗由 [SrsStatsLoad.report] 恒带）。
+const Map<String, SrsStatsWindow> _windows = <String, SrsStatsWindow>{
+  'today': SrsStatsWindow(0, 0),
+  'yesterday': SrsStatsWindow(1, 1),
+  'week': SrsStatsWindow.last(7),
+  'fortnight': SrsStatsWindow.last(14),
+  'month': SrsStatsWindow.last(30),
+  'year': SrsStatsWindow.last(365),
+  'all': SrsStatsWindow.all(),
 };
 
 List<Object?> _hist(SrsHistogram h) => <Object?>[
@@ -89,89 +93,48 @@ List<Object?> _hist(SrsHistogram h) => <Object?>[
   h.sum,
 ];
 
-/// 一个时间窗（[firstDay]..[lastDay]）的保留率与复习合计。
-List<Object?> _window(SrsStatsData d, int firstDay, int lastDay) {
-  final SrsRetention r = d.retentionBetween(firstDay, lastDay);
-  final SrsReviewTotals t = d.reviewTotalsBetween(firstDay, lastDay);
-  return <Object?>[
-    r.youngCorrect,
-    r.youngTotal,
-    r.matureCorrect,
-    r.matureTotal,
-    t.count,
-    t.durationMs,
-    t.daysStudied,
-    t.days,
-  ];
-}
+/// 一个时间窗的保留率与复习合计。
+List<Object?> _window(SrsStatsWindowResult w) => <Object?>[
+  w.retention.youngCorrect,
+  w.retention.youngTotal,
+  w.retention.matureCorrect,
+  w.retention.matureTotal,
+  w.totals.count,
+  w.totals.durationMs,
+  w.totals.daysStudied,
+  w.totals.days,
+];
 
-/// 一份数据在一个范围下的全部聚合值（规范形：与实现无关，只有数）。
-Map<String, Object?> _report(SrsStatsData d, SrsStatsRange range) {
-  final int today = d.today;
-  final int first = d.firstDayOf(range);
-  final SrsTodayStats ts = d.todayStats();
-  final SrsStreak streak = d.streak();
-  final Map<int, int> byDay = d.countsByDay();
-  final SrsFutureDue f = d.futureDue(_futureDaysOf(d, range));
-  final (SrsBucketUnit futureUnit, List<SrsDayBucket> futureSpans) =
-      srsStatsBuckets(today, today + f.perDay.length - 1);
+/// 内核的一份聚合结果写成规范形（与实现无关，只有数；与冻结向量同一结构）。
+Map<String, Object?> _report(SrsStatsReport d) {
+  final SrsTodayStats ts = d.todayStats;
+  final SrsFutureDue f = d.future;
   final SrsRwkvNow? now = d.rwkvNow;
-  final (SrsBucketUnit unit, List<SrsReviewBucket> buckets) = d.reviewBuckets(
-    range,
-  );
   final List<SrsDayBucket> spans = <SrsDayBucket>[
-    for (final SrsReviewBucket b in buckets) b.bucket,
+    for (final SrsReviewBucket b in d.reviewBuckets) b.bucket,
   ];
-  final (_, List<SrsDayBucket> addedSpans) = srsStatsBuckets(first, today);
-  final SrsCardCounts cc = d.cardCounts();
-  final SrsHourly hourly = d.hourly(range);
-  final SrsButtons buttons = d.buttons(range);
-  // 首页：卡片直接所在的牌组 → 今天的复习数（srs_home_stats.dart `srsHomeStatsOf`）。
-  final Map<String, String> deckOfCard = <String, String>{
-    for (final SrsStatCard c in d.cards) c.id: c.deckId,
-  };
-  final Map<String, int> todayByDeck = <String, int>{};
-  for (final SrsStatReview r in d.reviewsBetween(today, today)) {
-    final String? deck = deckOfCard[r.cardId];
-    if (deck == null) continue;
-    todayByDeck[deck] = (todayByDeck[deck] ?? 0) + 1;
-  }
-  // 桌面小组件（widget_snapshot_source.dart `_srsStatsDigest`）。
-  final List<int> learningDueAts = <int>[];
-  int reviewsNextDay = 0;
-  for (final SrsStatCard card in d.cards) {
-    if (!card.fushiScheduled || card.suspended || card.buried) continue;
-    switch (card.state) {
-      case SrsStatCardState.learning || SrsStatCardState.relearning:
-        final int? at = card.dueAt;
-        if (at != null && at > d.nowMs) learningDueAts.add(at);
-      case SrsStatCardState.young || SrsStatCardState.mature:
-        if (!card.byRecall && card.dueDay == today + 1) reviewsNextDay++;
-      case SrsStatCardState.newCard:
-        break;
-    }
-  }
   return <String, Object?>{
-    'today': today,
+    'today': d.today,
     'empty': d.isEmpty,
     'earliestDay': d.earliestDay,
-    'firstDay': first,
+    'firstDay': d.firstDay,
     'retrievabilityAvailable': d.retrievabilityAvailable,
     'todayStats': <Object?>[
       ts.count,
       ts.durationMs,
       ts.ratings,
       <int>[
-        for (final SrsStatReviewKind k in SrsStatReviewKind.values) ts.kind(k),
+        for (final SrsStatReviewKind k in SrsStatReviewKind.values)
+          ts.byKind[k] ?? 0,
       ],
       ts.early,
       ts.matureCorrect,
       ts.matureTotal,
     ],
-    'streak': <int>[streak.current, streak.longest],
+    'streak': <int>[d.streak.current, d.streak.longest],
     'countsByDay': <Object?>[
-      for (final int day in byDay.keys.toList()..sort())
-        <int>[day, byDay[day]!],
+      for (final int day in d.countsByDay.keys.toList()..sort())
+        <int>[day, d.countsByDay[day]!],
     ],
     'future': <String, Object?>{
       'days': f.perDay.length,
@@ -182,28 +145,21 @@ Map<String, Object?> _report(SrsStatsData d, SrsStatsRange range) {
         for (int i = 0; i < f.perDay.length; i++)
           if (f.perDay[i] != 0) <int>[i, f.perDay[i], f.youngPerDay[i]],
       ],
-      'unit': futureUnit.name,
+      'unit': f.unit.name,
       'buckets': <Object?>[
-        for (final SrsDayBucket b in futureSpans)
-          () {
-            int all = 0, young = 0;
-            for (int x = b.firstDay; x <= b.lastDay; x++) {
-              all += f.perDay[x - today];
-              young += f.youngPerDay[x - today];
-            }
-            return <int>[b.firstDay, b.lastDay, all, young];
-          }(),
+        for (final SrsFutureBucket b in f.buckets)
+          <int>[b.bucket.firstDay, b.bucket.lastDay, b.all, b.young],
       ],
     },
-    'furthestDue': d.furthestDueOffset(),
+    'furthestDue': d.furthestDueOffset,
     'rwkvNow': now == null
         ? null
         : <Object?>[now.total, now.due, now.near, now.dailyAverage],
     'hasDueDateCards': d.hasDueDateCards,
     'reviews': <String, Object?>{
-      'unit': unit.name,
+      'unit': d.reviewUnit.name,
       'buckets': <Object?>[
-        for (final SrsReviewBucket b in buckets)
+        for (final SrsReviewBucket b in d.reviewBuckets)
           <Object?>[
             b.bucket.firstDay,
             b.bucket.lastDay,
@@ -218,53 +174,47 @@ Map<String, Object?> _report(SrsStatsData d, SrsStatsRange range) {
           ],
       ],
     },
-    'matureAt': d.matureCountsAt(spans),
+    'matureAt': d.matureCounts,
     'added': <Object?>[
-      for (final SrsDayBucket b in addedSpans) <int>[b.firstDay, b.lastDay],
-      d.addedCounts(addedSpans),
+      for (final SrsDayBucket b in spans) <int>[b.firstDay, b.lastDay],
+      d.addedCounts,
     ],
     'cardCounts': <int>[
-      cc.newCards,
-      cc.learning,
-      cc.relearning,
-      cc.young,
-      cc.mature,
-      cc.suspended,
-      cc.buried,
+      d.cardCounts.newCards,
+      d.cardCounts.learning,
+      d.cardCounts.relearning,
+      d.cardCounts.young,
+      d.cardCounts.mature,
+      d.cardCounts.suspended,
+      d.cardCounts.buried,
     ],
     'hist': <String, Object?>{
-      'interval': _hist(d.intervalHistogram()),
-      'stability': _hist(d.stabilityHistogram()),
-      'difficulty': _hist(d.difficultyHistogram()),
-      'retrievability': _hist(d.retrievabilityHistogram()),
+      'interval': _hist(d.intervalHistogram),
+      'stability': _hist(d.stabilityHistogram),
+      'difficulty': _hist(d.difficultyHistogram),
+      'retrievability': _hist(d.retrievabilityHistogram),
     },
-    'hourly': <Object?>[hourly.counts, hourly.correct],
+    'hourly': <Object?>[d.hourly.counts, d.hourly.correct],
     'buttons': <Object?>[
-      buttons.learning.ratings,
-      buttons.young.ratings,
-      buttons.mature.ratings,
+      d.buttons.learning.ratings,
+      d.buttons.young.ratings,
+      d.buttons.mature.ratings,
     ],
     'windows': <String, Object?>{
-      'today': _window(d, today, today),
-      'yesterday': _window(d, today - 1, today - 1),
-      'week': _window(d, today - 6, today),
-      'fortnight': _window(d, today - 13, today),
-      'month': _window(d, today - 29, today),
-      'year': _window(d, today - 364, today),
-      'all': _window(d, d.earliestDay, today),
-      'range': _window(d, first, today),
+      for (final String k in <String>[..._windows.keys, kSrsStatsRangeWindow])
+        k: _window(d.windows[k]!),
     },
-    'desiredRetention': d.desiredRetention(),
+    'desiredRetention': d.desiredRetention,
     'sources': <Object?>[
-      for (final SrsSourceShare s in d.sourceShares())
+      for (final SrsSourceShare s in d.sources)
         <Object?>[s.kind, s.title, s.notes],
     ],
     'todayByDeck': <String, Object?>{
-      for (final String k in todayByDeck.keys.toList()..sort())
-        k: todayByDeck[k],
+      for (final String k in d.todayByDeck.keys.toList()..sort())
+        k: d.todayByDeck[k],
     },
-    'learningDueAts': learningDueAts..sort(),
-    'reviewsNextDay': reviewsNextDay,
+    'learningDueAts': List<int>.of(d.learningDueAts)..sort(),
+    'reviewsNextDay': d.reviewsNextDay,
   };
 }
 
@@ -322,21 +272,24 @@ void main() {
     for (final int now in _nows) {
       t = now;
       for (final (int off, int roll) in _days) {
-        final SrsStatsBundle b = await loadSrsStats(
+        final SrsStatsLoad b = await loadSrsStats(
           s,
           nowMs: now,
           day: SrsDayContext(utcOffsetMin: off, rolloverHour: roll),
         );
         final List<(String, String)> decks = <(String, String)>[
           ('', '*'),
-          ...b.index.decks,
+          ...b.decks,
         ];
         for (final (String deckId, String deckName) in decks) {
-          final SrsStatsData d = deckId.isEmpty
-              ? b.data
-              : b.data.subset(b.index.cardIdsInDeck(deckId));
           for (final SrsStatsRange range in SrsStatsRange.values) {
-            out['$now|$off|$roll|$deckName|${range.name}'] = _report(d, range);
+            out['$now|$off|$roll|$deckName|${range.name}'] = _report(
+              await b.report(
+                range: range,
+                decks: deckId.isEmpty ? null : b.subtree(deckId),
+                windows: _windows,
+              ),
+            );
           }
         }
       }
