@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-14T21:59:49Z",
+ "generatedAt": "2026-11-14T22:10:16Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "dc70a7d6ca8ea009326a74a0f47d6a7a57216364",
-  "seq": 27013
+  "sha": "e2066cb5e14b68e8602cb1036c4dc89a6cbe0aa1",
+  "seq": 27021
  },
  "builds": [
   {
@@ -31,11 +31,11 @@
      "state": "ok"
     },
     "windows": {
-     "state": "built",
+     "state": "building",
      "url": "https://github.com/hajisensai/Fushi/actions/runs/43639943062"
     },
     "macos": {
-     "state": "built",
+     "state": "building",
      "url": "https://github.com/hajisensai/Fushi/actions/runs/43639943062"
     },
     "ios": {
@@ -169,9 +169,10 @@
   }
  ],
  "pending": {
-  "headSha": "dc70a7d6ca8ea009326a74a0f47d6a7a57216364",
-  "headSeq": 27013,
+  "headSha": "e2066cb5e14b68e8602cb1036c4dc89a6cbe0aa1",
+  "headSeq": 27021,
   "prs": [
+   3299,
    3284,
    3418,
    3420,
@@ -187,19 +188,19 @@
   "platforms": {
    "android": {
     "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43644974249"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43646046811"
    },
    "windows": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43644974708"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43646046566"
    },
    "macos": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43644974708"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43646046566"
    },
    "ios": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43644974708"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43646046566"
    }
   }
  },
@@ -211,6 +212,15 @@
    "mergedAt": "2026-11-14T21:50:57Z",
    "additions": 25947,
    "deletions": 8041,
+   "labels": []
+  },
+  "3299": {
+   "number": 3299,
+   "title": "fix(linux): fall back to Wayland when the Flatpak's X11 drawing crashes (BUG-4387, temporary)",
+   "author": "samutw",
+   "mergedAt": "2026-11-14T22:03:28Z",
+   "additions": 368,
+   "deletions": 5,
    "labels": []
   },
   "3301": {
