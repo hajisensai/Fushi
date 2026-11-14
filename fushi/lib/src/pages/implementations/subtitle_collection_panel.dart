@@ -284,6 +284,7 @@ class SubtitleCollectionPanel extends StatefulWidget {
     required this.onApiKeyChanged,
     required this.saveDirectory,
     required this.onRemoteSubtitlePersist,
+    this.onSubtitlePersisted,
     this.initialPreferredLanguage,
     this.onPreferredLanguageChanged,
     this.globalDefaultContentLanguage,
@@ -315,6 +316,13 @@ class SubtitleCollectionPanel extends StatefulWidget {
   /// 远端/流媒体集的持久化（无本地 DB 行可写 → prefs）。
   final Future<void> Function(String bookUid, String path)
   onRemoteSubtitlePersist;
+
+  /// 某集字幕已落盘并持久化（本地写 DB / 远端写 prefs）之后回调 `(bookUid, 路径)`。
+  ///
+  /// 持久化只改存储，不会通知正在播这一集的播放页：播放页的字幕列表与当前 cue
+  /// 都是打开视频时读进内存的。从播放页打开工作台时由它订阅，关闭后把落到当前集的
+  /// 那条当场登记并应用（BUG-4496）；媒体库 / 合集页入口没有在播的视频，不传。
+  final void Function(String bookUid, String path)? onSubtitlePersisted;
 
   /// 该系列的语言记忆（prefs，按番名 key）；合集列 `subtitleLanguage` 非空时优先于它。
   final String? initialPreferredLanguage;
@@ -1084,18 +1092,19 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
     final String path = item.subtitlePath!;
     if (target.isStream) {
       await widget.onRemoteSubtitlePersist(target.bookUid, path);
-      return;
+    } else {
+      final List<AudioCue> cues = await loadCuesForSource(
+        SubtitleSource.external(externalPath: path, label: p.basename(path)),
+        target.videoPath,
+        target.bookUid,
+      );
+      await _repo.saveSubtitleSelection(
+        bookUid: target.bookUid,
+        subtitleSource: path,
+        cues: cues,
+      );
     }
-    final List<AudioCue> cues = await loadCuesForSource(
-      SubtitleSource.external(externalPath: path, label: p.basename(path)),
-      target.videoPath,
-      target.bookUid,
-    );
-    await _repo.saveSubtitleSelection(
-      bookUid: target.bookUid,
-      subtitleSource: path,
-      cues: cues,
-    );
+    widget.onSubtitlePersisted?.call(target.bookUid, path);
   }
 
   // ---------------------------------------------------------------- UI

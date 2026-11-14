@@ -603,7 +603,7 @@ void main() {
       expect(s.lastDurationMs, 70000);
     });
 
-    test('暂停超过空闲阈值：那一窗不再入账（挂机不计）', () async {
+    test('暂停超过空闲阈值：只计到阈值，超出部分不入账（挂机不计）', () async {
       final _Session s = await _Session.start(
         _Coverage(),
         idleTimeout: const Duration(seconds: 60),
@@ -613,7 +613,34 @@ void main() {
       s.src.isPlaying = false;
       s.tick(wallMs: 90000); // 暂停 90s 不动
       await s.tracker.stop();
-      expect(s.lastDurationMs, 30000, reason: '最后一次 touch 之后 > 60s，整窗拒');
+      expect(
+        s.lastDurationMs,
+        90000,
+        reason: '阈值内 60s 暂停照计，最后一次 touch 60s 之后的 30s 不计（BUG-4498）',
+      );
+    });
+
+    test('BUG-4498：暂停超过空闲阈值后恢复播放，超出阈值的暂停不回到时长里', () async {
+      final _Session s = await _Session.start(
+        _Coverage(),
+        idleTimeout: const Duration(seconds: 60),
+      );
+      s.play(fromMs: 0, toMs: 10000, wallMs: 10000);
+      s.src.isPlaying = false;
+      s.tick(wallMs: 50000); // 暂停到 60s
+      await s.tracker.clock.flushNow(); // 60s 的 tick：门内暂停照计
+      s.tick(wallMs: 40000); // 继续暂停到 100s（门在 70s 到期）
+      s.play(fromMs: 10000, toMs: 20000, wallMs: 10000); // 恢复播放 10s
+      await s.tracker.stop();
+      final Map<String, int> byUid = <String, int>{
+        for (final StudySegmentsCompanion w in s.sink.writes)
+          w.uid.value: w.durationMs.value,
+      };
+      expect(
+        byUid.values.fold<int>(0, (int a, int b) => a + b),
+        80000,
+        reason: '0~70s（含门内暂停）+ 恢复后 10s；70~100s 的超阈值暂停不得在恢复时算回来',
+      );
     });
 
     test('播放中每个采样点 touch 空闲门：长段连续播放不被截断', () async {
