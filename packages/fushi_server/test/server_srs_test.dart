@@ -21,6 +21,8 @@ import 'package:shelf/shelf.dart' as shelf;
 import 'package:test/test.dart';
 import 'dart:convert';
 
+import 'support/fake_rwkv.dart';
+
 const String kJa = '01928c3e-0000-7000-8000-00000000a0a0';
 const String kZh = '01928c3e-0000-7000-8000-00000000b0b0';
 const String kHostId = 'server-srs-test-host';
@@ -40,6 +42,8 @@ void main() {
     config = const ServerSrsConfig();
     published = 0;
     srs = ServerSrs(
+      // RWKV 权重不联网下载（下载当场失败 = RWKV 没就绪）。
+      rwkvHttpClient: noNetworkHttpClient,
       support: support,
       syncData: syncData,
       deviceId: 'server-device',
@@ -112,6 +116,8 @@ void main() {
     final Directory bad = Directory(p.join(tmp.path, 'not-a-dir'));
     File(bad.path).writeAsStringSync('this is a file, not a directory');
     final ServerSrs broken = ServerSrs(
+      // RWKV 权重不联网下载（下载当场失败 = RWKV 没就绪）。
+      rwkvHttpClient: noNetworkHttpClient,
       support: bad,
       syncData: syncData,
       deviceId: 'server-device',
