@@ -429,6 +429,8 @@ const Map<String, String> kWebUiEnglish = <String, String>{
   'AI 推理档位': 'AI reasoning effort',
   'AI 允许明文 HTTP（本地推理服务）': 'AI: allow plain HTTP (local inference servers)',
   'AI 联网资料（维基辅助识别作品）': 'AI web knowledge (Wikipedia helps identify titles)',
+  'AI 模型能看图（字幕校对会附上视频画面）':
+      'AI model accepts images (subtitle proofreading sends video frames)',
   '扫描入库后自动 AI 整理库（把该在一起的归进合集，按量计费）':
       'Organize the library with AI after scans (groups related items into collections; billed per use)',
 

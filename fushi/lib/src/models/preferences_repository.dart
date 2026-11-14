@@ -3536,6 +3536,30 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// AI 校对时是否附上视频画面（画面参考，spec
+  /// `2026-11-11-video-subtitle-ai-reference`）。**默认开**（所有者 2026-11-11 拍板）；
+  /// 设备本地：开着就是「把视频画面发给所选提供商」，这种选择只对点它的那台设备成立。
+  /// 真的发图还要两个条件：指派的提供商开了图片输入，且用户看过写明「会发画面」的
+  /// 说明（[videoSubtitleAiFramesConsented]）。
+  bool get videoSubtitleAiFrames =>
+      getPref('video_subtitle_ai_frames', defaultValue: true) as bool;
+
+  Future<void> setVideoSubtitleAiFrames(bool enabled) async {
+    await setPref('video_subtitle_ai_frames', enabled);
+    notifyListeners();
+  }
+
+  /// 用户是否已看过写明「会发画面」的说明：首次开 AI 校对的说明里就有（同意即记下）；
+  /// 在旧版说明（写着「不发送画面」）下同意过的用户，第一次真要发画面前补看一次。
+  bool get videoSubtitleAiFramesConsented =>
+      getPref('video_subtitle_ai_frames_consented', defaultValue: false)
+          as bool;
+
+  Future<void> setVideoSubtitleAiFramesConsented(bool consented) async {
+    await setPref('video_subtitle_ai_frames_consented', consented);
+    notifyListeners();
+  }
+
   /// 生成日语字幕的分段方式（`VideoSubtitleSegmenterMode.name`：auto / moss /
   /// window）；不认识的值按 auto。设备本地：能不能跑 MOSS 取决于这台机器的显卡。
   VideoSubtitleSegmenterMode get videoSubtitleSegmenter {

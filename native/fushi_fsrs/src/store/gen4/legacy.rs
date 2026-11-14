@@ -145,6 +145,28 @@ pub fn devices(conn: &Connection, profile: &str) -> Result<Vec<LegacyDevice>, St
     Ok(by.into_values().collect())
 }
 
+/// 这个 profile 还没信任的设备（协议 3 的 `sync2_trust`，纯本机状态）：(设备, 状态, 第一次见到的时刻)，按设备 ID 升序。
+pub fn untrusted(conn: &Connection, profile: &str) -> Result<Vec<(Id, i64, i64)>, String> {
+    if !table_exists(conn, "sync2_trust")? {
+        return Ok(Vec::new());
+    }
+    let mut stmt = conn
+        .prepare(
+            "SELECT device, state, since FROM sync2_trust WHERE profile_uid = srs_id(?1) ORDER BY device",
+        )
+        .map_err(sql)?;
+    let mut rows = stmt.query([profile]).map_err(sql)?;
+    let mut out = Vec::new();
+    while let Some(r) = rows.next().map_err(sql)? {
+        out.push((
+            id_of(&r.get::<_, Vec<u8>>(0).map_err(sql)?)?,
+            r.get(1).map_err(sql)?,
+            r.get(2).map_err(sql)?,
+        ));
+    }
+    Ok(out)
+}
+
 /// 一条旧操作在旧库里的位置。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Placement {
@@ -813,7 +835,24 @@ pub(crate) mod tests {
         )
     }
 
-    #[cfg(not(windows))]
+    /// Unix 上只有常驻内存的峰值（`ru_maxrss`：macOS 给字节、其余给 KiB）；没有提交量，第二个数是 0。
+    #[cfg(unix)]
+    pub(crate) fn peak_mem_mb() -> (f64, f64) {
+        // SAFETY: 输出结构体是本函数的局部变量；全零是 rusage 的合法值。
+        let mut u: libc::rusage = unsafe { std::mem::zeroed() };
+        // SAFETY: 指针指向上面那个局部变量。
+        if unsafe { libc::getrusage(libc::RUSAGE_SELF, &mut u) } != 0 {
+            return (0.0, 0.0);
+        }
+        let unit = if cfg!(target_os = "macos") {
+            1.0
+        } else {
+            1024.0
+        };
+        (u.ru_maxrss as f64 * unit / 1048576.0, 0.0)
+    }
+
+    #[cfg(not(any(windows, unix)))]
     pub(crate) fn peak_mem_mb() -> (f64, f64) {
         (0.0, 0.0)
     }

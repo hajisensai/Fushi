@@ -327,10 +327,12 @@ fn query_rows(conn: &Connection, sql: &str, params: &[Value]) -> Result<Vec<u8>,
     Ok(rows::encode(n, &out))
 }
 
-/// 测试构建：关库时查 ID 绑定审计（store/ids.rs `audit`）。
+/// 测试构建：关库时查 ID 绑定审计（store/ids.rs `audit`）；关之前把库灌进协议 4 的新存储对拍一遍（`gen4/parity.rs`，
+/// 换代设计 §8 G6 行的验收）。
 #[cfg(test)]
 impl Drop for SrsCore {
     fn drop(&mut self) {
+        gen4::parity::check_core(self);
         if let Ok(w) = self.writer() {
             ids::audit::check_stored(&w);
         }
@@ -686,6 +688,9 @@ impl SrsCore {
     /// srs.db）。写连接最后关：最后关的连接负责把 WAL 并回主文件并删掉 -wal。之后的命令与会话查询
     /// 一律报「已关闭」。
     pub fn close(&self) {
+        // 测试构建：关之前与协议 4 的新存储对拍（见 `Drop for SrsCore`）。
+        #[cfg(test)]
+        gen4::parity::check_core(self);
         // 先关内核读连接池（等借出的放回）：此后 read_session 报已关闭，下面拿到的会话清单就是全部。
         // 下面各把锁被 panic 毒化过也照拿：连接随即丢掉，关闭时 SQLite 回滚连接上没结束的事务。
         self.readers.close();
