@@ -20,7 +20,8 @@
 //!   `collections.salts` 只是它的缓存。操作集合只增，所以信任状态不变时盐只增不减；作者被本机拒绝（或还没确认）时
 //!   它带来的盐不算，放行后算回来。信任状态不同的两台设备盐集合可以不同（与下面的清除同源：可检测，
 //!   [Index::withheld_salts]）。
-//! - 内置笔记类型表：宿主输入（[Index::set_builtins]，存在 `derive_cfg`），随应用版本走、只能追加。
+//! - 内置笔记类型表：内核持有（`gen4_ids::builtins`，只能追加）。不是宿主输入：别名表因此不随宿主版本、也不随哪台
+//!   设备先给了哪一版而变。
 //! - 笔记类型 / 笔记 / 牌组 / 卡 / profile 级实体：身份记录（`ent_ix`），并上修改记录里出现过的同种类实体（`reg_ix`）。
 //!   定义史（`fieldDef/` `tmplDef/` 的 `ankiNum` / `name`）、笔记的 `noteType` 史、牌组的 `name` / `parent` 史取寄存器的
 //!   **全部**写入（被支配的也算：证据是历史值）。卡再加 `historyFrom/<id>` 键里的 ID。
@@ -37,12 +38,34 @@
 //! 身份记录不受清除影响（`weigh.rs`），所以笔记的 `guid`、笔记类型的 `ankiNum` 清除后还在；丢的是定义史、
 //! `noteType` 史、牌组的名字与父牌组史（设计 §10 第 19 条：证据变少时规范 ID 退回它自己）。
 //!
-//! # 重算
+//! # 重算与增量（设计 §10 第 13 条）
 //!
-//! 只有全量判定（`gen4_ids::alias::resolve`；设计 §10 第 13 条）。逐条维护做的是**判断这条操作会不会改变证据**：
-//! 不会的（复习日志、对已出现过的实体改非证据键、标签、媒体……）不重算；会的（新的身份记录、证据键上的写入、
-//! 没见过的实体、带盐的操作、拿走一条操作、清除状态变了……）在 [Index::settle] 里整表重算一次。大批灌入时用
-//! [Index::hold_aliases] 攒到最后。
+//! 判定只有一份（`gen4_ids::alias::resolve`，纯函数）。逐条维护分三档：
+//!
+//! 1. **不改证据**（复习日志落在出现过的卡上、对出现过的实体改非证据键、标签、媒体……）：什么都不做。
+//! 2. **只添了笔记 / 牌组 / 卡 / 日志的证据**（新建笔记、新卡的第一条复习、牌组改名……，记在 [AliasDelta]）：
+//!    收尾时先试**增量证明**（[Index::alias_probe]），证得出只写这一批自己的行，证不出退回第 3 档。
+//! 3. 其余（拿走任何东西、清除状态或盐集合变了、写入者证据变了、笔记类型 / 字段 / 模板定义变了、别的种类的实体）：
+//!    整表重算一次。大批灌入时用 [Index::hold_aliases] 攒到最后。
+//!
+//! 增量证明不另写一套判定：拿同一个 `resolve` 在一小份证据 P 上跑——P = 盐 + 内置表 + **全部**笔记类型与牌组 +
+//! 这一批的笔记与「新卡的提示笔记」的全部证据 + 新卡 + 这一批的日志 + 表里全部「候选行」（[A_UNVERIFIED] 与
+//! [A_FALLBACK]，既当卡又当叶子）。证得出的条件（任何一条不成立就整表重算）：
+//!
+//! - a. 候选行在 P 里一行不变（兜底行可以验不上：它归到的那个类不在 P 里）；
+//! - b. 这一批自己的 ID 在 P 里都验上了（随机 ID 除外：它验不上，也不会是谁的别名）；
+//! - c. P 里每条笔记的别名类是全的：表里归到同一个规范 ID 的笔记都在 P 里，规范 ID 本身若是出现过的笔记也在 P 里；
+//! - d. 借来的上下文（提示笔记、日志落的已出现过的卡、undo 点名的日志）在 P 里的规范 ID 与表里的相同。
+//!
+//! 为什么这样就与整表重算逐行相同：表里一行的值只取决于它自己的自然键 + 盐（根规则）、它的父类（派生：字段 /
+//! 模板看笔记类型，卡看笔记与模板，导入日志看卡，补的 undo 看被点名的日志）、或「它是哪个别名的兜底 ID」。
+//! 这一批只添了笔记 / 牌组 / 卡 / 日志的证据，笔记类型没变，所以①根规则验上的旧行不变（哈希相等是逐个 ID 的事）；
+//! ②牌组的证据全在 P 里，牌组的结果就是整表重算的结果；③派生行只可能因为父类变了而变——变了父类的只有这一批的笔记，
+//! 它们的类按 c 在 P 里是全的，由它们派生出来的、此前出现过的 ID 此前都验不上（父类不全）、都在候选行里，a 看着；
+//! ④一个 ID 成了新的兜底 ID，它此前必是「出现过、验不上」的，也在候选行里，a 看着；⑤这一批自己的 ID 的结果在 P 里
+//! 算得全（b、c、d 保证它用到的父类与上下文在 P 里与整表相同）。哈希碰撞（两个不同的规则输入得到同一个 ID）不在论证里，
+//! 与整表重算本身对它的处理（记冲突、按验不上算）一样不追求。逐条维护 == 整表重算由 `parity.rs` 的到达方式重排
+//! 与本文件的性质测试对所有场景钉住。
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
@@ -56,8 +79,8 @@ use crate::gen4::name::write_edit_key;
 use crate::gen4::op::{Body4, Log4};
 use crate::gen4::stamp::{HeritageStamp, StampHlc};
 use crate::gen4_ids::alias::{
-    BuiltinNoteType, DeckEv, DefEv, Dot, Evidence, How, Limits, LogEv, NoteEv, NoteTypeEv,
-    WriterEv, resolve, strict_id,
+    DeckEv, DefEv, Dot, Evidence, How, Limits, LogEv, NoteEv, NoteTypeEv, WriterEv, resolve,
+    strict_id,
 };
 use crate::gen4_ids::rules;
 use crate::sync2::codec::Writer;
@@ -73,9 +96,6 @@ pub const A_DERIVED: i64 = 2;
 pub const A_FALLBACK: i64 = 3;
 /// `alias_ix.how`：出现过、不是随机 ID、却没有一条规则验得上（`canon = id`）。
 pub const A_UNVERIFIED: i64 = 4;
-
-/// 宿主输入的名字（`derive_cfg`）：内置笔记类型表。
-const CFG_BUILTINS: &str = "builtins";
 
 /// 旧并入改名的写入者的前缀（`gen4_ids::alias`；这里只用来问「有没有这种形状的名字」，判定不在这里）。
 const MERGED_PREFIX: &str = "merged-";
@@ -115,44 +135,6 @@ fn evidence_key(ekind: i64, key: &[u8]) -> bool {
 /// 紧凑键里嵌的那个 ID（tag 不是 0 的键）。
 fn key_id(key: &[u8]) -> Option<Id> {
     <[u8; 16]>::try_from(key.get(1..17)?).ok().map(Id)
-}
-
-/// 内置笔记类型表 ↔ `derive_cfg` 里的文本。
-fn builtins_text(list: &[BuiltinNoteType]) -> String {
-    let mut list: Vec<&BuiltinNoteType> = list.iter().collect();
-    list.sort_by(|a, b| a.key.cmp(&b.key));
-    Value::Array(
-        list.into_iter()
-            .map(|b| json!({"key": b.key, "fieldSeeds": b.field_seeds, "templateKeys": b.template_keys}))
-            .collect(),
-    )
-    .to_string()
-}
-
-fn builtins_of(text: Option<&str>) -> Result<Vec<BuiltinNoteType>, String> {
-    let Some(text) = text else {
-        return Ok(Vec::new());
-    };
-    let bad = || "gen4 alias: bad builtin note type table".to_owned();
-    let v: Value = serde_json::from_str(text).map_err(|_| bad())?;
-    let strings = |v: &Value| -> Result<Vec<String>, String> {
-        v.as_array()
-            .ok_or_else(bad)?
-            .iter()
-            .map(|s| s.as_str().map(str::to_owned).ok_or_else(bad))
-            .collect()
-    };
-    v.as_array()
-        .ok_or_else(bad)?
-        .iter()
-        .map(|b| {
-            Ok(BuiltinNoteType {
-                key: b["key"].as_str().ok_or_else(bad)?.to_owned(),
-                field_seeds: strings(&b["fieldSeeds"])?,
-                template_keys: strings(&b["templateKeys"])?,
-            })
-        })
-        .collect()
 }
 
 /// 同一个日志（规范卡 + 规范日志 ID）的一份：操作里写的原值，与它在哪条操作里。
@@ -199,19 +181,272 @@ fn uuid(k: &Key) -> Option<[u8; 16]> {
     }
 }
 
+/// 别名证据的半成品。整个集合（[Index::alias_evidence]）与证明增量的那一小份（[Index::alias_probe]）共用这一套
+/// 「索引的一行 → 证据」的拼法，两边不会各拼各的。
+struct EvBuild {
+    seen: HashSet<Id>,
+    note_types: BTreeMap<Id, NoteTypeEv>,
+    notes: BTreeMap<(Id, Option<String>), Vec<Id>>,
+    note_ids: BTreeSet<Id>,
+    note_history: BTreeMap<Id, Vec<Id>>,
+    decks: BTreeMap<Id, DeckEv>,
+    cards: BTreeSet<Id>,
+    other: BTreeSet<Id>,
+    defs: BTreeMap<(Id, bool, Id), DefEv>,
+    k_name: Vec<u8>,
+    k_parent: Vec<u8>,
+    k_note_type: Vec<u8>,
+}
+
+impl EvBuild {
+    fn new() -> Self {
+        EvBuild {
+            seen: HashSet::new(),
+            note_types: BTreeMap::new(),
+            notes: BTreeMap::new(),
+            note_ids: BTreeSet::new(),
+            note_history: BTreeMap::new(),
+            decks: BTreeMap::new(),
+            cards: BTreeSet::new(),
+            other: BTreeSet::new(),
+            defs: BTreeMap::new(),
+            k_name: key_bytes("name"),
+            k_parent: key_bytes("parent"),
+            k_note_type: key_bytes("noteType"),
+        }
+    }
+
+    fn note_type(&mut self, id: Id) -> &mut NoteTypeEv {
+        self.note_types.entry(id).or_insert_with(|| NoteTypeEv {
+            id,
+            ..NoteTypeEv::default()
+        })
+    }
+
+    fn deck(&mut self, id: Id) -> &mut DeckEv {
+        self.decks.entry(id).or_insert_with(|| DeckEv {
+            id,
+            ..DeckEv::default()
+        })
+    }
+
+    /// `ent_ix` 的一行（身份记录）。
+    fn entity(&mut self, ix: &Index<'_, '_>, id: Id, kind: i64, k: i64) -> Result<(), String> {
+        self.seen.insert(id);
+        match kind {
+            NOTE => {
+                let p = ix.entity_data(k)?;
+                self.note_ids.insert(id);
+                let of = self
+                    .notes
+                    .entry((id, p["guid"].as_str().map(str::to_owned)))
+                    .or_default();
+                of.extend(p["noteTypeId"].as_str().and_then(strict_id));
+            }
+            NOTE_TYPE => {
+                let p = ix.entity_data(k)?;
+                let nt = self.note_type(id);
+                nt.anki_num = nt.anki_num.or(p["ankiNum"].as_i64());
+                nt.cloze |= p["ntKind"].as_str() == Some("cloze");
+            }
+            DECK => {
+                self.deck(id);
+            }
+            CARD => {
+                self.cards.insert(id);
+            }
+            _ => {
+                self.other.insert(id);
+            }
+        }
+        Ok(())
+    }
+
+    /// `reg_ix` 的一行（没被清除的修改记录；被支配的也是历史值）。
+    fn register(
+        &mut self,
+        ix: &Index<'_, '_>,
+        ekind: i64,
+        ent: Id,
+        key: &[u8],
+        k: i64,
+    ) -> Result<(), String> {
+        self.seen.insert(ent);
+        match ekind {
+            DECK => {
+                if key == self.k_name.as_slice() {
+                    let name = ix.value_at(k)?;
+                    self.deck(ent)
+                        .names
+                        .extend(name.as_str().map(str::to_owned));
+                } else if key == self.k_parent.as_slice() {
+                    let parent = ix.value_at(k)?;
+                    self.deck(ent)
+                        .parents
+                        .extend(parent.as_str().and_then(strict_id));
+                } else {
+                    self.deck(ent);
+                }
+            }
+            NOTE_TYPE => {
+                self.note_type(ent);
+                let is_field = match key.first() {
+                    Some(&K_FIELD_DEF) => true,
+                    Some(&K_TMPL_DEF) => false,
+                    _ => return Ok(()),
+                };
+                let Some(def) = key_id(key) else {
+                    return Ok(());
+                };
+                let v = ix.value_at(k)?;
+                let d = self
+                    .defs
+                    .entry((ent, is_field, def))
+                    .or_insert_with(|| DefEv {
+                        id: def,
+                        ..DefEv::default()
+                    });
+                d.anki_nums.extend(v["ankiNum"].as_i64());
+                d.names.extend(v["name"].as_str().map(str::to_owned));
+                self.seen.insert(def);
+            }
+            NOTE => {
+                self.note_ids.insert(ent);
+                if key == self.k_note_type.as_slice() {
+                    let v = ix.value_at(k)?;
+                    self.note_history
+                        .entry(ent)
+                        .or_default()
+                        .extend(v.as_str().and_then(strict_id));
+                }
+            }
+            CARD => {
+                self.cards.insert(ent);
+                if key.first() == Some(&K_HISTORY_FROM) {
+                    if let Some(from) = key_id(key) {
+                        self.cards.insert(from);
+                        self.seen.insert(from);
+                    }
+                }
+            }
+            _ => {
+                self.other.insert(ent);
+            }
+        }
+        Ok(())
+    }
+
+    /// 一条日志操作（`log_ix` 里 ID 与卡都是 UUID 的那种）。
+    fn log(&mut self, id: Id, card: Id, l: &Log4) -> LogEv {
+        let revokes = l.revokes.as_ref().and_then(uuid).map(Id);
+        if !random(&id.0) {
+            self.seen.insert(id);
+        }
+        self.seen.insert(card);
+        self.seen.extend(revokes.filter(|x| !random(&x.0)));
+        LogEv {
+            id,
+            card,
+            anki_revlog_id: l.anki_id,
+            anchor_at: (l.kind == "importAnchor").then_some(l.at),
+            revokes,
+        }
+    }
+
+    /// 收尾：[ev] 带着盐、内置表、日志、写入者，这里补上实体那几类。
+    fn finish(self, mut ev: Evidence) -> (Evidence, HashSet<Id>) {
+        let EvBuild {
+            mut seen,
+            mut note_types,
+            mut notes,
+            note_ids,
+            note_history,
+            decks,
+            cards,
+            other,
+            defs,
+            ..
+        } = self;
+        for ((nt, is_field, _), d) in defs {
+            let t = note_types.entry(nt).or_insert_with(|| NoteTypeEv {
+                id: nt,
+                ..NoteTypeEv::default()
+            });
+            if is_field {
+                t.fields.push(d);
+            } else {
+                t.templates.push(d);
+            }
+        }
+        let recorded: BTreeSet<Id> = notes.keys().map(|(id, _)| *id).collect();
+        for id in note_ids {
+            if !recorded.contains(&id) {
+                notes.insert((id, None), Vec::new());
+            }
+        }
+        ev.notes = notes
+            .into_iter()
+            .map(|((id, guid), mut note_types)| {
+                note_types.extend(note_history.get(&id).into_iter().flatten().copied());
+                NoteEv {
+                    id,
+                    guid,
+                    note_types,
+                    cloze_ords: Vec::new(),
+                }
+            })
+            .collect();
+        ev.note_types = note_types.into_values().collect();
+        ev.decks = decks.into_values().collect();
+        ev.cards = cards.into_iter().collect();
+        ev.other_ids = other.into_iter().collect();
+        seen.extend(ev.cards.iter().copied());
+        (ev, seen)
+    }
+}
+
+/// 别名表里一个 ID 的那一行（`how` 码）；None = 不存（规范 ID 是它自己且验上了 / 随机 ID / 没在操作里出现过）。
+/// 整表重算与增量写回共用。
+fn alias_row(id: &Id, canon: &Id, how: How, seen: &HashSet<Id>) -> Option<i64> {
+    let code = match how {
+        How::Salted { .. } => A_SALTED,
+        How::Derived => A_DERIVED,
+        How::Fallback { .. } => A_FALLBACK,
+        How::Unverified(_) if !random(&id.0) => A_UNVERIFIED,
+        How::Unverified(_) | How::Canonical | How::Unknown => return None,
+    };
+    // 规范 ID 是它自己的验上了也不用记；算得出、却没在操作里出现过的（别的盐下的值）没有人会来查。
+    if (canon == id && code != A_UNVERIFIED) || !seen.contains(id) {
+        return None;
+    }
+    Some(code)
+}
+
+/// 这一批里改了别名证据、但未必要整表重算的东西（[Index::alias_probe] 来证明）。只收「添」：拿走任何东西、清除
+/// 状态或盐集合变了、写入者的证据变了、笔记类型（字段 / 模板定义）变了、别的种类的实体，一律整表重算。
+#[derive(Default)]
+pub(crate) struct AliasDelta {
+    /// 身份记录或 `noteType` 史变了的笔记。
+    notes: BTreeSet<Id>,
+    /// 身份记录或名字 / 父牌组史变了的牌组。
+    decks: BTreeSet<Id>,
+    /// 新出现的卡 → 它可能属于的笔记（日志里写的 `note`；只是提示：猜错了证明不过、退回整表重算）。
+    cards: BTreeMap<Id, BTreeSet<Id>>,
+    /// 改了证据的日志（落在没出现过的卡上，或 ID 是派生形状的）。
+    logs: Vec<LogEv>,
+}
+
+impl AliasDelta {
+    pub(crate) fn is_empty(&self) -> bool {
+        self.notes.is_empty()
+            && self.decks.is_empty()
+            && self.cards.is_empty()
+            && self.logs.is_empty()
+    }
+}
+
 impl Index<'_, '_> {
     // ------------------------------------------------------------ 宿主输入
-
-    /// 给内置笔记类型表（宿主每次启动给一遍即可；没变就什么都不做）。返回变没变——变了的话下一次
-    /// [Index::settle] 重算别名表。
-    pub fn set_builtins(&mut self, list: &[BuiltinNoteType]) -> Result<bool, String> {
-        self.writing()?;
-        let changed = self
-            .t
-            .set_derive_cfg(self.col, CFG_BUILTINS, Some(&builtins_text(list)))?;
-        self.alias_dirty |= changed;
-        Ok(changed)
-    }
 
     /// 大批灌入时把别名表的重算攒到最后：打开期间 [Index::settle] 不重算，关掉后的下一次 [Index::settle] 补上。
     /// 攒着的时候别名表是旧的（[Index::aliases_stale]）；只在同一个 [Index] 活着的期间有效。
@@ -221,7 +456,7 @@ impl Index<'_, '_> {
 
     /// 证据变了（或者带盐的操作进出过、还没看盐集合变没变），别名表还没重算。
     pub fn aliases_stale(&self) -> bool {
-        self.alias_dirty || self.salts_dirty
+        self.alias_dirty || self.salts_dirty || !self.alias_delta.is_empty()
     }
 
     // ------------------------------------------------------------ 盐集合
@@ -274,8 +509,11 @@ impl Index<'_, '_> {
 
     /// `touch` 在动索引之前调（[add] = 进日志，否则是拿走）。
     pub(super) fn alias_touch(&mut self, k: i64, body: &Body4, add: bool) -> Result<(), String> {
-        if !self.alias_dirty {
-            self.alias_dirty = !self.alias_neutral(k, body, add)?;
+        if self.alias_dirty || self.alias_neutral(k, body, add)? {
+            return Ok(());
+        }
+        if !(add && self.alias_delta_take(body)?) {
+            self.alias_dirty = true;
         }
         Ok(())
     }
@@ -459,31 +697,11 @@ impl Index<'_, '_> {
             .unwrap_or(Value::Null))
     }
 
-    /// 装证据。第二项是「出现过的 ID」里可能有别名行的那些（日志的随机 ID 不收：它们不会是别名）。
+    /// 装证据（整个集合）。第二项是「出现过的 ID」里可能有别名行的那些（日志的随机 ID 不收：它们不会是别名）。
     fn alias_evidence(&mut self) -> Result<(Evidence, HashSet<Id>), String> {
         let (t, col) = (self.t, self.col);
         let conn = t.conn();
-        let mut seen: HashSet<Id> = HashSet::new();
-        let mut note_types: BTreeMap<Id, NoteTypeEv> = BTreeMap::new();
-        let mut notes: BTreeMap<(Id, Option<String>), Vec<Id>> = BTreeMap::new();
-        let mut note_ids: BTreeSet<Id> = BTreeSet::new();
-        let mut note_history: BTreeMap<Id, Vec<Id>> = BTreeMap::new();
-        let mut decks: BTreeMap<Id, DeckEv> = BTreeMap::new();
-        let mut cards: BTreeSet<Id> = BTreeSet::new();
-        let mut other: BTreeSet<Id> = BTreeSet::new();
-        let mut defs: BTreeMap<(Id, bool, Id), DefEv> = BTreeMap::new();
-        fn note_type(m: &mut BTreeMap<Id, NoteTypeEv>, id: Id) -> &mut NoteTypeEv {
-            m.entry(id).or_insert_with(|| NoteTypeEv {
-                id,
-                ..NoteTypeEv::default()
-            })
-        }
-        fn deck(m: &mut BTreeMap<Id, DeckEv>, id: Id) -> &mut DeckEv {
-            m.entry(id).or_insert_with(|| DeckEv {
-                id,
-                ..DeckEv::default()
-            })
-        }
+        let mut b = EvBuild::new();
 
         // 身份记录（清除不碰它们）。
         {
@@ -496,42 +714,12 @@ impl Index<'_, '_> {
             while let Some(r) = rows.next().map_err(sql)? {
                 let id = Id(r.get::<_, [u8; 16]>(0).map_err(sql)?);
                 let (kind, k): (i64, i64) = (r.get(1).map_err(sql)?, r.get(2).map_err(sql)?);
-                seen.insert(id);
-                match kind {
-                    NOTE => {
-                        let p = self.entity_data(k)?;
-                        note_ids.insert(id);
-                        let of = notes
-                            .entry((id, p["guid"].as_str().map(str::to_owned)))
-                            .or_default();
-                        of.extend(p["noteTypeId"].as_str().and_then(strict_id));
-                    }
-                    NOTE_TYPE => {
-                        let p = self.entity_data(k)?;
-                        let nt = note_type(&mut note_types, id);
-                        nt.anki_num = nt.anki_num.or(p["ankiNum"].as_i64());
-                        nt.cloze |= p["ntKind"].as_str() == Some("cloze");
-                    }
-                    DECK => {
-                        deck(&mut decks, id);
-                    }
-                    CARD => {
-                        cards.insert(id);
-                    }
-                    _ => {
-                        other.insert(id);
-                    }
-                }
+                b.entity(self, id, kind, k)?;
             }
         }
 
         // 修改记录：没被清除的全部写入（被支配的也是历史值）。
         {
-            let (name, parent, of_type) = (
-                key_bytes("name"),
-                key_bytes("parent"),
-                key_bytes("noteType"),
-            );
             let mut stmt = conn
                 .prepare_cached(
                     "SELECT ekind, ent, key, k FROM reg_ix \
@@ -539,7 +727,6 @@ impl Index<'_, '_> {
                 )
                 .map_err(sql)?;
             let mut rows = stmt.query(params![col, S_PURGED]).map_err(sql)?;
-            let mut last: Option<(i64, Id)> = None;
             while let Some(r) = rows.next().map_err(sql)? {
                 let ekind: i64 = r.get(0).map_err(sql)?;
                 let ent = Id(r.get::<_, [u8; 16]>(1).map_err(sql)?);
@@ -548,71 +735,8 @@ impl Index<'_, '_> {
                     .map_err(sql)?
                     .as_blob()
                     .map_err(|e| e.to_string())?;
-                let first = last != Some((ekind, ent));
-                if first {
-                    last = Some((ekind, ent));
-                    seen.insert(ent);
-                }
-                match ekind {
-                    DECK => {
-                        let d = deck(&mut decks, ent);
-                        if key == name {
-                            let k: i64 = r.get(3).map_err(sql)?;
-                            d.names
-                                .extend(self.value_at(k)?.as_str().map(str::to_owned));
-                        } else if key == parent {
-                            let k: i64 = r.get(3).map_err(sql)?;
-                            d.parents
-                                .extend(self.value_at(k)?.as_str().and_then(strict_id));
-                        }
-                    }
-                    NOTE_TYPE => {
-                        note_type(&mut note_types, ent);
-                        let is_field = match key.first() {
-                            Some(&K_FIELD_DEF) => true,
-                            Some(&K_TMPL_DEF) => false,
-                            _ => continue,
-                        };
-                        let Some(def) = key_id(key) else {
-                            continue;
-                        };
-                        let k: i64 = r.get(3).map_err(sql)?;
-                        let v = self.value_at(k)?;
-                        let d = defs.entry((ent, is_field, def)).or_insert_with(|| DefEv {
-                            id: def,
-                            ..DefEv::default()
-                        });
-                        d.anki_nums.extend(v["ankiNum"].as_i64());
-                        d.names.extend(v["name"].as_str().map(str::to_owned));
-                        seen.insert(def);
-                    }
-                    NOTE => {
-                        if first {
-                            note_ids.insert(ent);
-                        }
-                        if key == of_type {
-                            let k: i64 = r.get(3).map_err(sql)?;
-                            note_history
-                                .entry(ent)
-                                .or_default()
-                                .extend(self.value_at(k)?.as_str().and_then(strict_id));
-                        }
-                    }
-                    CARD => {
-                        if first {
-                            cards.insert(ent);
-                        }
-                        if key.first() == Some(&K_HISTORY_FROM) {
-                            if let Some(from) = key_id(key) {
-                                cards.insert(from);
-                                seen.insert(from);
-                            }
-                        }
-                    }
-                    _ => {
-                        other.insert(ent);
-                    }
-                }
+                let k: i64 = r.get(3).map_err(sql)?;
+                b.register(self, ekind, ent, key, k)?;
             }
         }
 
@@ -633,19 +757,7 @@ impl Index<'_, '_> {
                 let Some(Body4::Log(l)) = t.entry_by_key(k)?.and_then(|e| body_of(&e)) else {
                     return Err(format!("gen4 alias: log_ix row {k} is not a log"));
                 };
-                let revokes = l.revokes.as_ref().and_then(uuid).map(Id);
-                if !random(&id.0) {
-                    seen.insert(id);
-                }
-                seen.insert(card);
-                seen.extend(revokes.filter(|x| !random(&x.0)));
-                logs.push(LogEv {
-                    id,
-                    card,
-                    anki_revlog_id: l.anki_id,
-                    anchor_at: (l.kind == "importAnchor").then_some(l.at),
-                    revokes,
-                });
+                logs.push(b.log(id, card, &l));
             }
         }
 
@@ -677,49 +789,327 @@ impl Index<'_, '_> {
             }
         }
 
-        let mut ev = Evidence {
+        let ev = Evidence {
             salts: self.salts()?,
-            builtins: builtins_of(t.derive_cfg(col, CFG_BUILTINS)?.as_deref())?,
+            builtins: crate::gen4_ids::builtins::builtin_note_types(),
             writer_hints: devices.iter().map(|d| d.id.text()).collect(),
+            logs,
+            writers: writers
+                .into_iter()
+                .map(|(name, dots)| WriterEv { name, dots })
+                .collect(),
             ..Evidence::default()
         };
-        for ((nt, is_field, _), d) in defs {
-            let t = note_type(&mut note_types, nt);
-            if is_field {
-                t.fields.push(d);
-            } else {
-                t.templates.push(d);
-            }
-        }
-        let recorded: BTreeSet<Id> = notes.keys().map(|(id, _)| *id).collect();
-        for id in note_ids {
-            if !recorded.contains(&id) {
-                notes.insert((id, None), Vec::new());
-            }
-        }
-        ev.notes = notes
-            .into_iter()
-            .map(|((id, guid), mut note_types)| {
-                note_types.extend(note_history.get(&id).into_iter().flatten().copied());
-                NoteEv {
-                    id,
-                    guid,
-                    note_types,
-                    cloze_ords: Vec::new(),
+        Ok(b.finish(ev))
+    }
+
+    /// 一条改了证据的「添」能不能记进 [AliasDelta]（false = 这一批整表重算）。
+    fn alias_delta_take(&mut self, body: &Body4) -> Result<bool, String> {
+        match body {
+            Body4::Entity { kind, id, .. } => {
+                let Some(id) = uuid(id).map(Id) else {
+                    return Ok(true);
+                };
+                match kind {
+                    EntKind::Note => {
+                        self.alias_delta.notes.insert(id);
+                    }
+                    EntKind::Deck => {
+                        self.alias_delta.decks.insert(id);
+                    }
+                    EntKind::Card => {
+                        self.alias_delta.cards.entry(id).or_default();
+                    }
+                    _ => return Ok(false),
                 }
+                Ok(true)
+            }
+            Body4::Edit(ed) => {
+                if let Some(s) = &ed.stamp {
+                    if self.writer_sensitive(s)? {
+                        return Ok(false);
+                    }
+                }
+                let Some(ent) = uuid(&ed.entity).map(Id) else {
+                    return Ok(true);
+                };
+                match ed.kind {
+                    EntKind::Note => {
+                        self.alias_delta.notes.insert(ent);
+                    }
+                    EntKind::Deck => {
+                        self.alias_delta.decks.insert(ent);
+                    }
+                    EntKind::Card => {
+                        self.alias_delta.cards.entry(ent).or_default();
+                        let reg = Reg::new(ed.kind, &ed.entity, &ed.key);
+                        if reg.key.first() == Some(&K_HISTORY_FROM) {
+                            if let Some(from) = key_id(&reg.key) {
+                                self.alias_delta.cards.entry(from).or_default();
+                            }
+                        }
+                    }
+                    _ => return Ok(false),
+                }
+                Ok(true)
+            }
+            Body4::Log(l) => {
+                let (Some(id), Some(card)) = (uuid(&l.id), uuid(&l.card)) else {
+                    return Ok(true);
+                };
+                let revokes = l.revokes.as_ref().and_then(uuid);
+                if let Some(r) = revokes {
+                    // undo 点名一条还没出现过的派生日志：那条日志的规范 ID 证明里拿不到。
+                    if !random(&r) && !self.log_observed(&Ref::Uuid(r))? {
+                        return Ok(false);
+                    }
+                }
+                if !self.card_observed(&Ref::Uuid(card))? {
+                    let hints = self.alias_delta.cards.entry(Id(card)).or_default();
+                    hints.extend(l.note.as_ref().and_then(uuid).map(Id));
+                }
+                self.alias_delta.logs.push(LogEv {
+                    id: Id(id),
+                    card: Id(card),
+                    anki_revlog_id: l.anki_id,
+                    anchor_at: (l.kind == "importAnchor").then_some(l.at),
+                    revokes: revokes.map(Id),
+                });
+                Ok(true)
+            }
+            _ => Ok(false),
+        }
+    }
+
+    /// 收尾时的别名表：证据「只添了 [AliasDelta] 里那些」就先试着证明不必整表重算（[Index::alias_probe]），证不出、
+    /// 或有别的变化就整表重算。返回 (写了几行, 是不是证出来的)。
+    pub(super) fn settle_aliases(&mut self) -> Result<(u64, bool), String> {
+        if self.alias_held {
+            return Ok((0, false));
+        }
+        if !self.alias_dirty && !self.alias_delta.is_empty() {
+            let delta = std::mem::take(&mut self.alias_delta);
+            if let Some(n) = self.alias_probe(&delta)? {
+                return Ok((n, true));
+            }
+            self.alias_dirty = true;
+        }
+        if self.alias_dirty {
+            return Ok((self.rebuild_aliases()?, false));
+        }
+        Ok((0, false))
+    }
+
+    fn stored_canon(&self, id: &Id) -> Result<Option<Id>, String> {
+        self.t
+            .conn()
+            .prepare_cached("SELECT canon FROM alias_ix WHERE col = ?1 AND id = ?2")
+            .map_err(sql)?
+            .query_row(params![self.col, id.0.as_slice()], |r| {
+                r.get::<_, [u8; 16]>(0)
             })
-            .collect();
-        ev.note_types = note_types.into_values().collect();
-        ev.decks = decks.into_values().collect();
-        ev.cards = cards.into_iter().collect();
-        ev.other_ids = other.into_iter().collect();
-        ev.logs = logs;
-        ev.writers = writers
-            .into_iter()
-            .map(|(name, dots)| WriterEv { name, dots })
-            .collect();
-        seen.extend(ev.cards.iter().copied());
-        Ok((ev, seen))
+            .optional()
+            .map_err(sql)
+            .map(|c| c.map(Id))
+    }
+
+    /// 增量的证明（设计 §10 第 13 条；论证见文件头「增量」一节）。证得出就写这一批自己的行、返回写了几行；
+    /// 证不出返回 None，表一行没动。
+    fn alias_probe(&mut self, d: &AliasDelta) -> Result<Option<u64>, String> {
+        let (t, col) = (self.t, self.col);
+        let conn = t.conn();
+        // 1. 唯一可能被新证据牵动的那些现存行：出现过却没验上的、旧并入的兜底 ID。
+        let pool: Vec<(Id, Id, i64)> = {
+            let mut stmt = conn
+                .prepare_cached("SELECT id, canon, how FROM alias_ix WHERE col = ?1 AND how >= 3")
+                .map_err(sql)?;
+            let rows = stmt
+                .query_map([col], |r| {
+                    Ok((
+                        Id(r.get::<_, [u8; 16]>(0)?),
+                        Id(r.get::<_, [u8; 16]>(1)?),
+                        r.get::<_, i64>(2)?,
+                    ))
+                })
+                .map_err(sql)?;
+            rows.collect::<Result<_, _>>().map_err(sql)?
+        };
+        let mut b = EvBuild::new();
+        // 2. 全部笔记类型与牌组（量小；它们的判定只看彼此与盐）。
+        for kind in [NOTE_TYPE, DECK] {
+            {
+                let mut stmt = conn
+                    .prepare_cached(
+                        "SELECT id, k FROM ent_ix WHERE col = ?1 AND kind = ?2 AND typeof(id) = 'blob' ORDER BY id, k",
+                    )
+                    .map_err(sql)?;
+                let mut rows = stmt.query(params![col, kind]).map_err(sql)?;
+                while let Some(r) = rows.next().map_err(sql)? {
+                    let id = Id(r.get::<_, [u8; 16]>(0).map_err(sql)?);
+                    let k: i64 = r.get(1).map_err(sql)?;
+                    b.entity(self, id, kind, k)?;
+                }
+            }
+            let mut stmt = conn
+                .prepare_cached(
+                    "SELECT ent, key, k FROM reg_ix \
+                     WHERE col = ?1 AND ekind = ?2 AND state != ?3 AND typeof(ent) = 'blob' ORDER BY ent, key, k",
+                )
+                .map_err(sql)?;
+            let mut rows = stmt.query(params![col, kind, S_PURGED]).map_err(sql)?;
+            while let Some(r) = rows.next().map_err(sql)? {
+                let ent = Id(r.get::<_, [u8; 16]>(0).map_err(sql)?);
+                let key = r
+                    .get_ref(1)
+                    .map_err(sql)?
+                    .as_blob()
+                    .map_err(|e| e.to_string())?;
+                let k: i64 = r.get(2).map_err(sql)?;
+                b.register(self, kind, ent, key, k)?;
+            }
+        }
+        // 3. 这一批的笔记，加上新卡的提示里的笔记（全部证据）。
+        let mut notes: BTreeSet<Id> = d.notes.clone();
+        for hints in d.cards.values() {
+            notes.extend(hints.iter().copied());
+        }
+        for n in &notes {
+            {
+                let mut stmt = conn
+                    .prepare_cached(
+                        "SELECT kind, k FROM ent_ix WHERE col = ?1 AND id = ?2 ORDER BY k",
+                    )
+                    .map_err(sql)?;
+                let mut rows = stmt.query(params![col, n.0.as_slice()]).map_err(sql)?;
+                while let Some(r) = rows.next().map_err(sql)? {
+                    let (kind, k): (i64, i64) = (r.get(0).map_err(sql)?, r.get(1).map_err(sql)?);
+                    b.entity(self, *n, kind, k)?;
+                }
+            }
+            let mut stmt = conn
+                .prepare_cached(
+                    "SELECT key, k FROM reg_ix WHERE col = ?1 AND ekind = ?2 AND ent = ?3 AND state != ?4 ORDER BY key, k",
+                )
+                .map_err(sql)?;
+            let mut rows = stmt
+                .query(params![col, NOTE, n.0.as_slice(), S_PURGED])
+                .map_err(sql)?;
+            while let Some(r) = rows.next().map_err(sql)? {
+                let key = r
+                    .get_ref(0)
+                    .map_err(sql)?
+                    .as_blob()
+                    .map_err(|e| e.to_string())?;
+                let k: i64 = r.get(1).map_err(sql)?;
+                b.register(self, NOTE, *n, key, k)?;
+            }
+        }
+        // 4. 新卡、这一批的日志；候选行既当卡也当叶子（它们可能是新笔记的卡，也可能是新别名的兜底 ID）。
+        for c in d.cards.keys() {
+            b.cards.insert(*c);
+        }
+        for l in &d.logs {
+            if !random(&l.id.0) {
+                b.seen.insert(l.id);
+            }
+            b.seen.insert(l.card);
+            b.seen.extend(l.revokes.filter(|x| !random(&x.0)));
+        }
+        for (p, _, _) in &pool {
+            b.cards.insert(*p);
+            b.other.insert(*p);
+            b.seen.insert(*p);
+        }
+        let ev = Evidence {
+            salts: self.salts()?,
+            builtins: crate::gen4_ids::builtins::builtin_note_types(),
+            logs: d.logs.clone(),
+            ..Evidence::default()
+        };
+        let (ev, seen) = b.finish(ev);
+        let aliases = resolve(&ev, &Limits::default());
+        drop(ev);
+
+        // 5a. 候选行一行不变（兜底行在这一小份里可以验不上：它归到的那个类不在这里）。
+        for (p, canon, how) in &pool {
+            let same = match aliases.how(p) {
+                How::Unverified(_) => true,
+                How::Fallback { .. } => *how == A_FALLBACK && aliases.canonical(p) == *canon,
+                _ => false,
+            };
+            if !same {
+                return Ok(None);
+            }
+        }
+        // 5b. 这一批自己的 ID 都验上了（随机 ID 本来就验不上，也不会是谁的别名）。
+        let mut own: BTreeSet<Id> = d.notes.clone();
+        own.extend(d.decks.iter().copied());
+        own.extend(d.cards.keys().copied());
+        own.extend(d.logs.iter().map(|l| l.id).filter(|x| !random(&x.0)));
+        for x in &own {
+            if matches!(aliases.how(x), How::Unverified(_) | How::Unknown) && !random(&x.0) {
+                return Ok(None);
+            }
+        }
+        // 5c. 这一小份里每条笔记的别名类是全的：表里归到同一个规范 ID 的都在这一小份里。
+        for x in &notes {
+            let c = aliases.canonical(x);
+            {
+                let mut stmt = conn
+                    .prepare_cached(
+                        "SELECT id FROM alias_ix WHERE col = ?1 AND canon = ?2 AND canon != id ORDER BY id",
+                    )
+                    .map_err(sql)?;
+                let mut rows = stmt.query(params![col, c.0.as_slice()]).map_err(sql)?;
+                while let Some(r) = rows.next().map_err(sql)? {
+                    let m = Id(r.get::<_, [u8; 16]>(0).map_err(sql)?);
+                    if !notes.contains(&m) {
+                        return Ok(None);
+                    }
+                }
+            }
+            if c != *x && !notes.contains(&c) && self.entity_observed(NOTE, &Ref::Uuid(c.0))? {
+                return Ok(None);
+            }
+        }
+        // 5d. 借来的上下文（提示里的笔记、日志落的已出现过的卡、undo 点名的日志）的规范 ID 与表里的相同。
+        let mut ctx: BTreeSet<Id> = notes.difference(&d.notes).copied().collect();
+        for l in &d.logs {
+            if !d.cards.contains_key(&l.card) {
+                ctx.insert(l.card);
+            }
+            ctx.extend(l.revokes);
+        }
+        for x in &ctx {
+            let have = self.stored_canon(x)?.unwrap_or(*x);
+            let want = match aliases.how(x) {
+                How::Unknown => *x,
+                _ => aliases.canonical(x),
+            };
+            if have != want {
+                return Ok(None);
+            }
+        }
+
+        // 6. 写这一批自己的行。
+        let mut n = 0;
+        for x in &own {
+            conn.prepare_cached("DELETE FROM alias_ix WHERE col = ?1 AND id = ?2")
+                .map_err(sql)?
+                .execute(params![col, x.0.as_slice()])
+                .map_err(sql)?;
+            let canon = aliases.canonical(x);
+            if let Some(code) = alias_row(x, &canon, aliases.how(x), &seen) {
+                conn.prepare_cached(
+                    "INSERT INTO alias_ix (col, id, canon, how) VALUES (?1, ?2, ?3, ?4)",
+                )
+                .map_err(sql)?
+                .execute(params![col, x.0.as_slice(), canon.0.as_slice(), code])
+                .map_err(sql)?;
+                n += 1;
+            }
+        }
+        Ok(Some(n))
     }
 
     /// 整表重算。返回写了几行。
@@ -745,17 +1135,9 @@ impl Index<'_, '_> {
                 )
                 .map_err(sql)?;
             for (id, canon, how) in aliases.entries() {
-                let code = match how {
-                    How::Salted { .. } => A_SALTED,
-                    How::Derived => A_DERIVED,
-                    How::Fallback { .. } => A_FALLBACK,
-                    How::Unverified(_) if !random(&id.0) => A_UNVERIFIED,
-                    How::Unverified(_) | How::Canonical | How::Unknown => continue,
-                };
-                // 规范 ID 是它自己的验上了也不用记；算得出、却没在操作里出现过的（别的盐下的值）没有人会来查。
-                if (canon == id && code != A_UNVERIFIED) || !seen.contains(&id) {
+                let Some(code) = alias_row(&id, &canon, how, &seen) else {
                     continue;
-                }
+                };
                 put.execute(params![self.col, id.0.as_slice(), canon.0.as_slice(), code])
                     .map_err(sql)?;
                 n += 1;
@@ -771,6 +1153,7 @@ impl Index<'_, '_> {
             }
         }
         self.alias_dirty = false;
+        self.alias_delta = AliasDelta::default();
         Ok(n)
     }
 
@@ -1005,6 +1388,7 @@ pub(crate) mod tests {
     use crate::gen4::op::tests::{id, native_edit, sample_log};
     use crate::gen4::op::{Edit4, Join4};
     use crate::gen4_ids::rules::CANONICAL;
+    use crate::store::gen4::derive::Settled;
     use crate::store::gen4::derive::tests::{
         assert_rebuild_is_identity, dump, heritage, native, op, stamp, with,
     };
@@ -1016,30 +1400,17 @@ pub(crate) mod tests {
     const GUID: &str = "guid-1";
     const ANKI_NT: i64 = 1_700_000_000_001;
 
-    pub(crate) fn key(id: Id) -> Key {
-        Key::Uuid(id)
+    /// 样本探针：把 [notes] 当「这一批的笔记」证一次。
+    pub(crate) fn probe_notes(ix: &mut Index<'_, '_>, notes: &[Id]) -> Result<Option<u64>, String> {
+        let d = AliasDelta {
+            notes: notes.iter().copied().collect(),
+            ..AliasDelta::default()
+        };
+        ix.alias_probe(&d)
     }
 
-    /// 冻结向量里的那份内置笔记类型表（`gen4_ids/golden_ids.json`；真正的宿主输入由 G9 接线时给）。
-    pub(crate) fn golden_builtins() -> Vec<BuiltinNoteType> {
-        let golden: Value = serde_json::from_str(crate::gen4_ids::GOLDEN).unwrap();
-        let strings = |v: &Value, field: &str| -> Vec<String> {
-            v.as_array()
-                .unwrap()
-                .iter()
-                .map(|f| f[field].as_str().unwrap().to_owned())
-                .collect()
-        };
-        golden["builtins"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|b| BuiltinNoteType {
-                key: b["key"].as_str().unwrap().to_owned(),
-                field_seeds: strings(&b["fields"], "seed"),
-                template_keys: strings(&b["templates"], "name"),
-            })
-            .collect()
+    pub(crate) fn key(id: Id) -> Key {
+        Key::Uuid(id)
     }
 
     /// 样本库里一个 profile 的盐：它自己的 uid，加上这台设备记着的已退役 uid（G3 探针的同一个口径；迁移时由 G4
@@ -1058,36 +1429,6 @@ pub(crate) mod tests {
             salts.extend(list);
         }
         salts.into_iter().collect()
-    }
-
-    #[test]
-    fn the_builtin_table_round_trips_through_the_host_input() {
-        with(|t, col| {
-            let list = golden_builtins();
-            assert!(!list.is_empty());
-            t.tx(|t| {
-                let mut ix = Index::new(t, col);
-                assert!(ix.set_builtins(&list)?);
-                assert!(ix.aliases_stale());
-                ix.settle()?;
-                assert!(!ix.set_builtins(&list)?);
-                assert!(!ix.aliases_stale());
-                let mut back = builtins_of(t.derive_cfg(col, CFG_BUILTINS)?.as_deref())?;
-                let mut want = list.clone();
-                back.sort_by(|a, b| a.key.cmp(&b.key));
-                want.sort_by(|a, b| a.key.cmp(&b.key));
-                assert_eq!(back.len(), want.len());
-                for (a, b) in back.iter().zip(&want) {
-                    assert_eq!(
-                        (&a.key, &a.field_seeds, &a.template_keys),
-                        (&b.key, &b.field_seeds, &b.template_keys)
-                    );
-                }
-                Ok(())
-            })
-            .unwrap();
-            assert_rebuild_is_identity(t, col);
-        });
     }
 
     fn r(id: Id) -> Ref {
@@ -1193,6 +1534,55 @@ pub(crate) mod tests {
         for (i, b) in bodies.iter().enumerate() {
             native(t, ix, col, &op(dev, i as u64 + 1, 100 + i as i64, &[], b));
         }
+    }
+
+    /// 内置笔记类型表由内核持有（`gen4_ids::builtins`）：不给任何宿主输入，存量库里内置类型的带盐 ID、
+    /// 只留了名字没留 `ankiNum` 的字段定义，也都按表里的种子归到规范 ID。
+    #[test]
+    fn builtin_note_types_resolve_without_any_host_input() {
+        with(|t, col| {
+            let n = rules::builtin_note_type_anki_num("lapis");
+            let salted = rules::note_type(Some(U1), n);
+            let field = rules::field(
+                &salted,
+                rules::builtin_field_anki_num("lapis", "Expression"),
+            );
+            let c_nt = rules::note_type(CANONICAL, n);
+            let c_field = rules::field(&c_nt, rules::builtin_field_anki_num("lapis", "Expression"));
+            t.tx(|t| {
+                let mut ix = Index::new(t, col);
+                feed(
+                    t,
+                    &mut ix,
+                    col,
+                    0xa1,
+                    &[
+                        Body4::salts([U1]).unwrap(),
+                        entity(
+                            EntKind::NoteType,
+                            salted,
+                            json!({"ankiNum": n, "builtin": "lapis"}),
+                        ),
+                        edit(
+                            EntKind::NoteType,
+                            salted,
+                            &format!("fieldDef/{}", field.text()),
+                            json!({"name": "Expression"}),
+                        ),
+                    ],
+                );
+                ix.settle()?;
+                assert!(t.derive_cfg(col, "builtins")?.is_none());
+                assert_eq!(ix.canonical(&r(salted))?, r(c_nt));
+                assert_eq!(
+                    ix.canonical_key(&format!("fieldDef/{}", field.text()))?,
+                    format!("fieldDef/{}", c_field.text())
+                );
+                Ok(())
+            })
+            .unwrap();
+            assert_rebuild_is_identity(t, col);
+        });
     }
 
     #[test]
@@ -1444,6 +1834,116 @@ pub(crate) mod tests {
                     })
                 };
                 assert!(put(&mut ix, undo(v7(8))));
+                Ok(())
+            })
+            .unwrap();
+            assert_rebuild_is_identity(t, col);
+        });
+    }
+
+    /// 证据只添了笔记 / 牌组 / 卡 / 日志时，别名表靠增量证明维护（不整表重算）；证不出的情形退回整表重算。两条路
+    /// 出来的表都与从空重建逐行相同（[assert_rebuild_is_identity]）。
+    #[test]
+    fn new_native_entities_are_proven_without_a_full_recompute() {
+        with(|t, col| {
+            let w = world();
+            t.tx(|t| {
+                let mut ix = Index::new(t, col);
+                feed(t, &mut ix, col, 0xa1, &ops_of(&w));
+                ix.settle()?;
+                let c_nt = rules::note_type(CANONICAL, ANKI_NT);
+                let c_tmpl = rules::template(&c_nt, 0);
+                let mut seq = 0;
+                let mut put = |ix: &mut Index<'_, '_>, bodies: &[Body4]| -> Settled {
+                    for b in bodies {
+                        seq += 1;
+                        native(t, ix, col, &op(0xa3, seq, 5000 + seq as i64, &[], b));
+                    }
+                    ix.settle().unwrap()
+                };
+                let first_review = |id: u64, card: Id, note: Option<Id>| -> Body4 {
+                    match log(Id::new_v7(1_700_000_200_000 + id), card, 7000 + id as i64) {
+                        Body4::Log(l) => Body4::Log(Log4 {
+                            note: note.map(key),
+                            ..l
+                        }),
+                        _ => unreachable!(),
+                    }
+                };
+                // 新建笔记（规范 ID）、它的卡的第一条复习（日志里带着笔记）：证得出，表里不多一行。
+                let x = rules::note(CANONICAL, "guid-new");
+                let xc = rules::card(&x, &c_tmpl, 0);
+                let s = put(
+                    &mut ix,
+                    &[entity(
+                        EntKind::Note,
+                        x,
+                        json!({"guid": "guid-new", "noteTypeId": c_nt.text()}),
+                    )],
+                );
+                assert_eq!((s.aliases_proven, s.aliases), (1, 0));
+                let s = put(&mut ix, &[first_review(1, xc, Some(x))]);
+                assert_eq!((s.aliases_proven, s.aliases), (1, 0));
+                assert_eq!(ix.canonical(&r(xc))?, r(xc));
+                // 新建牌组、改名：证得出。
+                let d = rules::deck(CANONICAL, "Deck A");
+                let s = put(
+                    &mut ix,
+                    &[
+                        entity(EntKind::Deck, d, json!({})),
+                        edit(EntKind::Deck, d, "name", json!("Deck A")),
+                    ],
+                );
+                assert_eq!(s.aliases_proven, 1);
+                let s = put(&mut ix, &[edit(EntKind::Deck, d, "name", json!("Deck B"))]);
+                assert_eq!(s.aliases_proven, 1);
+                // 同 guid 的笔记已经有带盐的成员：这一小份里类不全，整表重算。
+                let s = put(
+                    &mut ix,
+                    &[entity(
+                        EntKind::Note,
+                        w.c_note,
+                        json!({"guid": GUID, "noteTypeId": c_nt.text()}),
+                    )],
+                );
+                assert_eq!(s.aliases_proven, 0);
+                assert!(s.aliases > 0);
+                // 卡先到（日志里没写笔记）：证不出，整表重算，卡成了「出现过、验不上」的候选行。
+                let y = rules::note(CANONICAL, "guid-late");
+                let yc = rules::card(&y, &c_tmpl, 0);
+                let s = put(&mut ix, &[first_review(2, yc, None)]);
+                assert_eq!(s.aliases_proven, 0);
+                assert_eq!(ix.alias_how(&yc)?, Some(A_UNVERIFIED));
+                // 笔记后到：候选行在这一小份里验上了——不能只写这一批，整表重算。
+                let s = put(
+                    &mut ix,
+                    &[entity(
+                        EntKind::Note,
+                        y,
+                        json!({"guid": "guid-late", "noteTypeId": c_nt.text()}),
+                    )],
+                );
+                assert_eq!(s.aliases_proven, 0);
+                assert_eq!(ix.alias_how(&yc)?, None);
+                // 新笔记在另一个盐下的值，它的兜底 ID 早就作为卡出现过（验不上）：新笔记一到它就成了兜底别名，
+                // 这一小份里的候选行变了，整表重算。
+                let f = rules::merge_fallback(U1, &rules::note(Some(U1), "guid-fb").text());
+                put(&mut ix, &[first_review(4, f, None)]);
+                assert_eq!(ix.alias_how(&f)?, Some(A_UNVERIFIED));
+                let z = rules::note(CANONICAL, "guid-fb");
+                let s = put(
+                    &mut ix,
+                    &[entity(
+                        EntKind::Note,
+                        z,
+                        json!({"guid": "guid-fb", "noteTypeId": c_nt.text()}),
+                    )],
+                );
+                assert_eq!(s.aliases_proven, 0);
+                assert_eq!(ix.alias_how(&f)?, Some(A_FALLBACK));
+                // 不改证据的照旧什么都不做。
+                let s = put(&mut ix, &[first_review(3, xc, Some(x))]);
+                assert_eq!((s.aliases_proven, s.aliases), (0, 0));
                 Ok(())
             })
             .unwrap();

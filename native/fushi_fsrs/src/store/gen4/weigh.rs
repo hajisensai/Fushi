@@ -317,6 +317,7 @@ impl<'t, 'c> Index<'t, 'c> {
         let purges = std::mem::take(&mut self.purge_changed);
         out.purged += self.weigh_purges(bulk || purges || trust)?;
         let mut ents = std::mem::take(&mut self.touched);
+        self.dirt.entities.extend(ents.iter().cloned());
         if bulk || trust {
             ents.extend(self.deleted_entities()?);
         }
@@ -332,6 +333,7 @@ impl<'t, 'c> Index<'t, 'c> {
         }
         for n in &notes {
             self.weigh_tags(n)?;
+            self.dirt.entity(EntKind::Note as i64, n);
             out.notes += 1;
         }
         let mut names = std::mem::take(&mut self.names);

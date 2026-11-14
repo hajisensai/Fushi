@@ -39,6 +39,9 @@
 //!
 //! 真相层每落一条 / 推进一条之后告诉索引：新落的 [Index::add]；被换掉、被清除、认了副本的，改之前的样子
 //! [Index::remove]、改之后的样子 [Index::add]。一批做完 [Index::settle]。都在调用方的事务里。
+//!
+//! 笔记 / 卡片缓存与统计行（`cache.rs`）在索引之上：[Index::settle] 收尾时只重算这一批碰到的，[Index::rebuild_all]
+//! 最后整份物化。
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
@@ -46,6 +49,7 @@ use rusqlite::params;
 use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ToSql, ToSqlOutput, ValueRef};
 use serde_json::{Map, Value, json};
 
+use super::cache::Dirt;
 use super::schema::{DERIVED_TABLES, sql};
 use super::truth::{Entry, Head, Truth};
 use super::weigh::{E_LOG, E_MOVE, S_HELD, T_ADD, T_INERT, T_ORDER, T_REMOVE};
@@ -207,6 +211,16 @@ impl Acc {
     }
 }
 
+/// 一条拼好的落库修改行（[Index::edit_lines]）。
+pub(super) struct Line {
+    pub(super) json: String,
+    pub(super) server_time: Option<i64>,
+    /// 代表在输入里的下标。
+    pub(super) rep: usize,
+    /// 这一行判定用的 HLC 物理时刻（带旧戳的取旧戳的）。
+    pub(super) physical: i64,
+}
+
 /// [Index::settle] / [Index::rebuild_all] 做了多少。
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Settled {
@@ -228,7 +242,13 @@ pub struct Settled {
     pub scanned: u64,
     /// 别名表重算后写的行数（没重算 = 0）、重算了语义摘要的实体数。
     pub aliases: u64,
+    /// 别名表这一批是增量证明出来的（1），不是整表重算（`alias.rs`「重算与增量」）。
+    pub aliases_proven: u64,
     pub digests: u64,
+    /// 缓存层（`cache.rs`）重算了的笔记行 / 卡行 / 统计行。
+    pub cache_notes: u64,
+    pub cache_cards: u64,
+    pub cache_stats: u64,
 }
 
 /// 一个集合的派生索引。
@@ -264,8 +284,12 @@ pub struct Index<'t, 'c> {
     pub(super) alias_dirty: bool,
     /// 重算先攒着（[Index::hold_aliases]）。
     pub(super) alias_held: bool,
+    /// 只添了证据、等收尾时试增量证明的那些（`alias.rs`）。
+    pub(super) alias_delta: super::alias::AliasDelta,
     /// 带盐的操作进出过，或信任状态变了：盐集合要重算。
     pub(super) salts_dirty: bool,
+    /// 这一批里缓存层要重看的（`cache.rs`）。
+    pub(super) dirt: Dirt,
 }
 
 impl<'t, 'c> Index<'t, 'c> {
@@ -290,7 +314,9 @@ impl<'t, 'c> Index<'t, 'c> {
             partial: HashMap::new(),
             alias_dirty: false,
             alias_held: false,
+            alias_delta: Default::default(),
             salts_dirty: false,
+            dirt: Dirt::default(),
         }
     }
 
@@ -728,6 +754,7 @@ impl<'t, 'c> Index<'t, 'c> {
         let conn = self.t.conn();
         for (&(k, have), &want) in rows.iter().zip(&want) {
             if have != want {
+                self.dirt.entity(r.ekind, &r.ent);
                 conn.prepare_cached(
                     "UPDATE reg_ix SET state = ?6 WHERE col = ?1 AND ekind = ?2 AND ent = ?3 AND key = ?4 AND k = ?5",
                 )
@@ -741,6 +768,34 @@ impl<'t, 'c> Index<'t, 'c> {
 
     /// 一个寄存器里每条写入的状态（与 [rows] 对齐）。
     fn states(&mut self, rows: &[(i64, i64)]) -> Result<Vec<i64>, String> {
+        let ks: Vec<i64> = rows.iter().map(|r| r.0).collect();
+        let lines = self.edit_lines(&ks, &|_| true)?;
+        let stored: Vec<StoredEdit<'_>> = lines
+            .iter()
+            .map(|l| (l.json.as_str(), l.server_time, None))
+            .collect();
+        let (live, conflicted) = judge_register(&stored)
+            .map_err(|e| format!("gen4 index: register of op {}: {e}", rows[0].0))?;
+        let mut out = vec![R_DOMINATED; rows.len()];
+        for (n, &i) in live.iter().enumerate() {
+            out[lines[i].rep] = match (n, conflicted) {
+                (0, true) => R_CONFLICT,
+                (0, false) => R_WINNER,
+                _ => R_LIVE,
+            };
+        }
+        Ok(out)
+    }
+
+    /// [ks] 这几条修改操作拼成寄存器内核（`crate::registers`）要的落库行（冻结的旧判定，见文件头）：同一个 dot 的
+    /// 并成一行（代表取操作号最小的，`server_time` 取最小值）；[emit] 按代表在 [ks] 里的下标决定这一行要不要，
+    /// 不带旧戳的写入的上下文只回答「见没见过别的**要的**行的 dot」。寄存器判定（全要）与缓存层（只要活着的，
+    /// `cache.rs`）共用这一份。
+    pub(super) fn edit_lines(
+        &mut self,
+        ks: &[i64],
+        emit: &dyn Fn(usize) -> bool,
+    ) -> Result<Vec<Line>, String> {
         struct Write {
             id: OpId,
             ed: Edit4,
@@ -748,8 +803,8 @@ impl<'t, 'c> Index<'t, 'c> {
             logical: u32,
             full: Vv,
         }
-        let mut writes = Vec::with_capacity(rows.len());
-        for &(k, _) in rows {
+        let mut writes = Vec::with_capacity(ks.len());
+        for &k in ks {
             let e = self
                 .t
                 .entry_by_key(k)?
@@ -797,11 +852,16 @@ impl<'t, 'c> Index<'t, 'c> {
                 })
                 .or_insert((i, st));
         }
+        by_dot.retain(|_, (rep, _)| emit(*rep));
         let mut lines = Vec::with_capacity(by_dot.len());
         for ((writer, seq), &(rep, st)) in &by_dot {
             let w = &writes[rep];
-            let (ctx, hlc) = match &w.ed.stamp {
-                Some(s) => (s.ctx.to_dvv().to_json(), s.hlc.text()),
+            let (ctx, hlc, physical) = match &w.ed.stamp {
+                Some(s) => {
+                    let text = s.hlc.text();
+                    let physical = crate::history::parse_hlc(&text).map_or(0, |h| h.0);
+                    (s.ctx.to_dvv().to_json(), text, physical)
+                }
                 None => {
                     let mut cloud = Map::new();
                     for (ow, oq) in by_dot.keys() {
@@ -813,6 +873,7 @@ impl<'t, 'c> Index<'t, 'c> {
                     (
                         json!({"vv": {}, "cloud": cloud}),
                         format!("{}:{}:{}", w.wall, w.logical, w.id.device.text()),
+                        w.wall,
                     )
                 }
             };
@@ -832,23 +893,14 @@ impl<'t, 'c> Index<'t, 'c> {
             if w.ed.machine {
                 m.insert("m".into(), json!(true));
             }
-            lines.push((Value::Object(m).to_string(), st, rep));
+            lines.push(Line {
+                json: Value::Object(m).to_string(),
+                server_time: st,
+                rep,
+                physical,
+            });
         }
-        let stored: Vec<StoredEdit<'_>> = lines
-            .iter()
-            .map(|(j, st, _)| (j.as_str(), *st, None))
-            .collect();
-        let (live, conflicted) = judge_register(&stored)
-            .map_err(|e| format!("gen4 index: register of op {}: {e}", rows[0].0))?;
-        let mut out = vec![R_DOMINATED; rows.len()];
-        for (n, &i) in live.iter().enumerate() {
-            out[lines[i].2] = match (n, conflicted) {
-                (0, true) => R_CONFLICT,
-                (0, false) => R_WINNER,
-                _ => R_LIVE,
-            };
-        }
-        Ok(out)
+        Ok(lines)
     }
 
     /// 写入不止一条的寄存器。
@@ -982,7 +1034,10 @@ impl<'t, 'c> Index<'t, 'c> {
         }
         self.weigh(false, &mut out)?;
         let mut regs = std::mem::take(&mut self.regs);
+        self.dirt.registers(&regs);
+        self.dirt.ids.extend(self.ents.iter().cloned());
         if out.closures > 0 || std::mem::take(&mut self.shrunk) {
+            self.dirt.closure = true;
             self.partial.clear();
             regs.extend(self.multi_regs()?);
         }
@@ -1005,9 +1060,10 @@ impl<'t, 'c> Index<'t, 'c> {
         if std::mem::take(&mut self.salts_dirty) {
             self.settle_salts()?;
         }
-        if self.alias_dirty && !self.alias_held {
-            out.aliases = self.rebuild_aliases()?;
-        }
+        let (rows, proven) = self.settle_aliases()?;
+        out.aliases = rows;
+        out.aliases_proven = u64::from(proven);
+        self.refresh_caches(&mut out)?;
         Ok(out)
     }
 
@@ -1063,6 +1119,7 @@ impl<'t, 'c> Index<'t, 'c> {
         out.digests = self.digest_rebuild()?;
         self.settle_salts()?;
         out.aliases = self.rebuild_aliases()?;
+        self.materialize_caches(&mut out)?;
         Ok(out)
     }
 
@@ -1909,6 +1966,18 @@ pub(crate) mod tests {
         let t = Truth::new(&dst);
         for profile in crate::store::gen4::legacy::profiles(&src).unwrap() {
             let col = t.binding_of(&profile).unwrap().expect("imported").col;
+            // 缓存配置：样本库里现有的缓存表是 app 按自己的配置（含内置笔记类型的代码默认值）写的，对拍要给同一份——
+            // `FUSHI_GEN4_CACHE_CFG_FILE=<放着 CacheConfig JSON 的文件>`（内置类型的默认值有一百多 KB，放不进环境变量）；
+            // 没给就只有默认牌组（内置类型的笔记行会对不上，差异数照报）。
+            let cfg = match std::env::var("FUSHI_GEN4_CACHE_CFG_FILE") {
+                Ok(path) => std::fs::read_to_string(path).unwrap(),
+                Err(_) => serde_json::json!({
+                    "defaultDeck": crate::store::sync2::config::default_deck_id(&profile)
+                })
+                .to_string(),
+            };
+            t.tx(|t| t.set_derive_cfg(col, super::super::cache::CFG_KEY, Some(&cfg)))
+                .unwrap();
             let started = Instant::now();
             dst.execute_batch("BEGIN IMMEDIATE").unwrap();
             // 别名层的两样输入：盐（迁移时 G4 写的那条 Salts 操作——这里由一台假想的迁移设备写进它的原生日志）
@@ -1933,8 +2002,6 @@ pub(crate) mod tests {
                 t.append_native(col, &op).unwrap();
             }
             let mut ix = Index::new(&t, col);
-            ix.set_builtins(&crate::store::gen4::alias::tests::golden_builtins())
-                .unwrap();
             let did = ix.rebuild_all().unwrap();
             dst.execute_batch("COMMIT").unwrap();
             let rebuild_s = started.elapsed().as_secs_f64();
@@ -1966,6 +2033,64 @@ pub(crate) mod tests {
             println!(
                 "SAMPLE index profile {profile} {did:?} rebuild_s {rebuild_s:.1} peak_working_set_mb {ws1:.0} peak_commit_mb {commit1:.0}"
             );
+            // 只重建缓存层（物化：笔记行、卡行、逐卡重放、有效复习投影）单独计时。
+            let started = Instant::now();
+            dst.execute_batch("BEGIN IMMEDIATE").unwrap();
+            let cached = Index::new(&t, col).rebuild_caches().unwrap();
+            dst.execute_batch("COMMIT").unwrap();
+            let (ws1, commit1) = peak_mem_mb();
+            println!(
+                "SAMPLE caches materialize_s {:.1} notes {} cards {} stats {} peak_working_set_mb {ws1:.0} peak_commit_mb {commit1:.0}",
+                started.elapsed().as_secs_f64(),
+                cached.cache_notes,
+                cached.cache_cards,
+                cached.cache_stats
+            );
+            // 别名增量证明在真实规模上的耗时：拿已有的笔记当「这一批的笔记」证一遍（证据没变，写回的行应与原来相同）。
+            {
+                let dump = |c: &Connection| -> Vec<(Vec<u8>, Vec<u8>, i64)> {
+                    c.prepare("SELECT id, canon, how FROM alias_ix WHERE col = ?1 ORDER BY id")
+                        .unwrap()
+                        .query_map([col], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+                        .unwrap()
+                        .map(Result::unwrap)
+                        .collect()
+                };
+                let ids: Vec<Id> = dst
+                    .prepare(
+                        "SELECT id FROM ent_ix WHERE col = ?1 AND kind = ?2 AND typeof(id) = 'blob' ORDER BY id LIMIT 50",
+                    )
+                    .unwrap()
+                    .query_map(params![col, EntKind::Note as i64], |r| {
+                        r.get::<_, [u8; 16]>(0)
+                    })
+                    .unwrap()
+                    .map(|r| Id(r.unwrap()))
+                    .collect();
+                let before = dump(&dst);
+                dst.execute_batch("BEGIN IMMEDIATE").unwrap();
+                let mut ix = Index::new(&t, col);
+                let started = Instant::now();
+                let mut proven = 0;
+                for n in &ids {
+                    if crate::store::gen4::alias::tests::probe_notes(&mut ix, &[*n])
+                        .unwrap()
+                        .is_some()
+                    {
+                        proven += 1;
+                    }
+                }
+                let probe_s = started.elapsed().as_secs_f64();
+                drop(ix);
+                let same = dump(&dst) == before;
+                dst.execute_batch("ROLLBACK").unwrap();
+                t.reset();
+                println!(
+                    "SAMPLE alias_probe notes {} proven {proven} avg_ms {:.1} table_unchanged {same}",
+                    ids.len(),
+                    probe_s * 1000.0 / ids.len().max(1) as f64
+                );
+            }
             for table in DERIVED_TABLES {
                 let n: i64 = dst
                     .query_row(

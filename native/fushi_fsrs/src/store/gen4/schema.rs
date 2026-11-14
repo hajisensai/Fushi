@@ -10,7 +10,8 @@
 //!   `purge_ix`（彻底清除）、`ent_ops`（实体 → 碰过它、别的索引里查不到的操作）、`hold_ix`（被并发改动扣住的删除）。
 //!   盐与别名（`alias.rs`）：`salt_ix`（带盐的操作）、`alias_ix`（出现过的 ID → 规范 ID）、`alias_writer_ix`（改了名的
 //!   旧写入者 → 最初的写入者）；语义摘要（`digest.rs`）：`dg_ix`（每个实体一行）、`dg_dirty`（等重算的实体，静止时为空；
-//!   由 `reg_ix` / `tag_ix` / `log_ix` / `ent_ix` / `media_ix` 上的触发器记）。笔记 / 卡片缓存是后续 PR。
+//!   由 `reg_ix` / `tag_ix` / `log_ix` / `ent_ix` / `media_ix` 上的触发器记）。
+//!   缓存层（`cache.rs`）：`notes` / `cards`（出卡、浏览读的缓存，列同协议 3 的两张缓存表）、`stats`（有效复习投影）。
 //! - **本机状态**：`collections`（profile ↔ 集合的绑定，设计 §5.1）、`devs`（设备 ↔ 小整数下标；`kind` 空 = 只被别的操作
 //!   点过名、还没见过它的日志，0 = 原生日志，1 = 承袭日志；`src` = 承袭日志的来源集合；`tail` = 原生日志末尾的链值）、
 //!   `trust`（还没信任的设备：`state` 1 = 待确认，2 = 已拒绝；没有行 = 可信。纯本机，不同步，协议 3 的 `sync2_trust`）。
@@ -30,7 +31,7 @@ use std::path::Path;
 use rusqlite::Connection;
 
 /// 新代库的 schema 号。只要求远大于协议 3 的任何一个 schema 号（最后一个是 29）；万位是代，低位是这一代里的存储版本。
-pub const SCHEMA: i64 = 40_003;
+pub const SCHEMA: i64 = 40_005;
 
 const SEQ_BITS: u32 = 40;
 const SEQ_MASK: i64 = (1 << SEQ_BITS) - 1;
@@ -241,6 +242,7 @@ CREATE TABLE IF NOT EXISTS alias_ix (
   PRIMARY KEY (col, id)
 ) WITHOUT ROWID;
 CREATE INDEX IF NOT EXISTS alias_canon ON alias_ix (col, canon, id) WHERE canon != id;
+CREATE INDEX IF NOT EXISTS alias_pool ON alias_ix (col, id) WHERE how >= 3;
 CREATE TABLE IF NOT EXISTS alias_writer_ix (
   col INTEGER NOT NULL,
   name TEXT NOT NULL,
@@ -264,7 +266,7 @@ CREATE TABLE IF NOT EXISTS dg_dirty (
 ";
 
 /// 派生表的名字（每张都有 `col` 列）。
-pub(crate) const DERIVED_TABLES: [&str; 14] = [
+pub(crate) const DERIVED_TABLES: [&str; 17] = [
     "ent_ix",
     "reg_ix",
     "log_ix",
@@ -279,6 +281,9 @@ pub(crate) const DERIVED_TABLES: [&str; 14] = [
     "alias_writer_ix",
     "dg_ix",
     "dg_dirty",
+    "notes",
+    "cards",
+    "stats",
 ];
 
 /// 这个文件是不是新代的库：空文件（还没有任何表）或 `schema` 等于 [SCHEMA] 才是。只读。
@@ -330,17 +335,26 @@ fn check_kind(conn: &Connection) -> Result<(), String> {
 /// 平均剩下的行数；`WITHOUT ROWID` 表的主键那一行 `idx` = 表名。量级取样本库，数字只表达形状、不随数据更新：计划因此
 /// 是 schema 的函数，不因某台设备数据多少而变（`tests::lookups_with_a_key_never_walk_the_whole_collection` 钉住）。
 /// 对这个文件跑 `ANALYZE` / `PRAGMA optimize` 会把它们换成随数据变的统计——下次打开时 [install] 会写回来。
-const PLANNER_STATS: [(&str, &str, &str); 12] = [
+const PLANNER_STATS: [(&str, &str, &str); 21] = [
     ("alias_ix", "alias_canon", "1000000 1000000 2 1"),
     ("alias_ix", "alias_ix", "1000000 1000000 1"),
+    ("alias_ix", "alias_pool", "5000 5000 1"),
+    ("cards", "cards", "100000 100000 1"),
+    ("cards", "cards_note", "100000 100000 2"),
     ("dg_ix", "dg_ix", "200000 200000 40000 1"),
     ("ent_ix", "ent_ix", "50000 50000 1 1"),
     ("ent_ops", "ent_ops", "1000000 1000000 500000 20 20 1"),
+    ("log_ix", "log_at", "1000000 1000000 2"),
     ("log_ix", "log_id", "1000000 1000000 1 1"),
     ("log_ix", "log_ix", "1000000 1000000 20 1 1"),
     ("media_ix", "media_ix", "100000 100000 1 1"),
+    ("notes", "notes", "50000 50000 1"),
+    ("notes", "notes_type", "50000 50000 1000"),
+    ("reg_ix", "reg_card_key", "50000 50000 3"),
     ("reg_ix", "reg_ix", "1000000 1000000 250000 13 1 1"),
     ("reg_ix", "reg_set_aside", "1000 1000 500 1"),
+    ("stats", "stats", "1000000 1000000 2 1"),
+    ("stats", "stats_card", "1000000 1000000 20"),
     ("tag_ix", "tag_ix", "300000 300000 7 4 2 1"),
     ("tag_ix", "tag_set_aside", "1000 1000 500 1"),
 ];
@@ -394,6 +408,7 @@ pub fn install(conn: &Connection) -> Result<(), String> {
     conn.execute_batch(TRUTH).map_err(sql)?;
     conn.execute_batch(DERIVED).map_err(sql)?;
     super::digest::set_triggers(conn, true)?;
+    conn.execute_batch(super::cache::DDL).map_err(sql)?;
     planner_stats(conn)?;
     conn.execute(
         "INSERT OR REPLACE INTO srs_meta (key, value) VALUES ('schema', ?1)",
@@ -528,13 +543,17 @@ mod tests {
     #[test]
     fn lookups_with_a_key_never_walk_the_whole_collection() {
         // 本来就是对整个集合做的（多出来的相等条件是 `state` / `kind` / 键名这类过滤，不是定位）。
-        const WHOLE: [&str; 6] = [
+        const WHOLE: [&str; 8] = [
             "SELECT DISTINCT ekind, ent FROM reg_ix WHERE col = ?1 AND key = ?2",
             "SELECT k FROM reg_ix WHERE col = ?1 AND state = ?2 UNION SELECT k FROM tag_ix WHERE col = ?1 AND state = ?2",
             "SELECT k FROM reg_ix WHERE col = ?1 AND state = ?2 UNION SELECT k FROM purge_ix WHERE col = ?1 AND state = ?2",
             "SELECT name, k FROM media_ix WHERE col = ?1 AND state = ?2 ORDER BY name",
             "SELECT id, kind, k FROM ent_ix WHERE col = ?1 AND typeof(id) = 'blob' ORDER BY id, k",
             "SELECT ekind, ent, key, k FROM reg_ix WHERE col = ?1 AND state != ?2 AND typeof(ent) = 'blob' ORDER BY ekind, ent, key, k",
+            // 整份物化：本来就要列出集合里全部活着的笔记。
+            "SELECT id FROM ent_ix WHERE col = ?1 AND kind = ?2 AND win = 1",
+            // 别名增量证明：全部笔记类型 / 牌组的身份记录（量小，扫的是身份记录表）。
+            "SELECT id, k FROM ent_ix WHERE col = ?1 AND kind = ?2 AND typeof(id) = 'blob' ORDER BY id, k",
         ];
         let conn = open_in_memory().unwrap();
         let mut seen = 0;
@@ -544,6 +563,7 @@ mod tests {
             include_str!("weigh.rs"),
             include_str!("alias.rs"),
             include_str!("digest.rs"),
+            include_str!("cache.rs"),
         ] {
             for q in statements(src) {
                 seen += 1;
