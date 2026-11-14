@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-14T16:34:44Z",
+ "generatedAt": "2026-11-14T18:10:26Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "017cdcf5de029db052c8846344f30867e3de005f",
-  "seq": 26834
+  "sha": "9977d6515f2cdfeb11f9cc775dd9f4a7a10da922",
+  "seq": 26854
  },
  "builds": [
   {
@@ -13,7 +13,7 @@
    "sha": "017cdcf5de029db052c8846344f30867e3de005f",
    "unknown": false,
    "publishedAt": "2026-11-14T16:34:32Z",
-   "testflight": false,
+   "testflight": true,
    "baseSeq": 26805,
    "prs": [
     3383
@@ -96,7 +96,37 @@
    }
   }
  ],
- "pending": null,
+ "pending": {
+  "headSha": "9977d6515f2cdfeb11f9cc775dd9f4a7a10da922",
+  "headSeq": 26854,
+  "prs": [
+   3398,
+   3333,
+   3355,
+   3369,
+   3408
+  ],
+  "direct": [],
+  "truncated": false,
+  "platforms": {
+   "android": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43624891591"
+   },
+   "windows": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43624891582"
+   },
+   "macos": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43624891582"
+   },
+   "ios": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43624891582"
+   }
+  }
+ },
  "prs": {
   "3286": {
    "number": 3286,
@@ -105,6 +135,15 @@
    "mergedAt": "2026-11-14T14:14:27Z",
    "additions": 359,
    "deletions": 0,
+   "labels": []
+  },
+  "3333": {
+   "number": 3333,
+   "title": "feat(floating-ball): 吉祥物呼吸光晕（默认关）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-14T18:06:43Z",
+   "additions": 460,
+   "deletions": 20,
    "labels": []
   },
   "3340": {
@@ -116,6 +155,24 @@
    "deletions": 0,
    "labels": []
   },
+  "3355": {
+   "number": 3355,
+   "title": "feat(music): 在线插件曲目下载成本地曲目（含歌词 sidecar）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-14T18:06:38Z",
+   "additions": 1828,
+   "deletions": 17,
+   "labels": []
+  },
+  "3369": {
+   "number": 3369,
+   "title": "字幕 AI 校对真正用上参考：视频画面（默认开）+ 播放器里选的参考字幕",
+   "author": "W1ght",
+   "mergedAt": "2026-11-14T18:06:33Z",
+   "additions": 3157,
+   "deletions": 161,
+   "labels": []
+  },
   "3383": {
    "number": 3383,
    "title": "feat(srs): 协议 4 新存储的语义层与全场景对拍（G6c-1，叠在 #3379 上，不接线）",
@@ -123,6 +180,26 @@
    "mergedAt": "2026-11-14T14:30:20Z",
    "additions": 9251,
    "deletions": 327,
+   "labels": []
+  },
+  "3398": {
+   "number": 3398,
+   "title": "fix(popup): mine/audio shortcuts follow the focused entry; + shows the mine shortcut (BUG-4479)",
+   "author": "samutw",
+   "mergedAt": "2026-11-14T18:08:12Z",
+   "additions": 604,
+   "deletions": 20,
+   "labels": [
+    "merge-approved"
+   ]
+  },
+  "3408": {
+   "number": 3408,
+   "title": "fix(feedback-cli): list 默认不再截断条数",
+   "author": "W1ght",
+   "mergedAt": "2026-11-14T18:06:29Z",
+   "additions": 14,
+   "deletions": 2,
    "labels": []
   }
  }
