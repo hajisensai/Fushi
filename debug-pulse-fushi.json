@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-14T18:10:54Z",
+ "generatedAt": "2026-11-14T18:16:13Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "9977d6515f2cdfeb11f9cc775dd9f4a7a10da922",
-  "seq": 26854
+  "sha": "b024998652ce86bd1d87d844a67f560e7e661171",
+  "seq": 26869
  },
  "builds": [
   {
@@ -97,9 +97,11 @@
   }
  ],
  "pending": {
-  "headSha": "9977d6515f2cdfeb11f9cc775dd9f4a7a10da922",
-  "headSeq": 26854,
+  "headSha": "b024998652ce86bd1d87d844a67f560e7e661171",
+  "headSeq": 26869,
   "prs": [
+   3403,
+   3404,
    3398,
    3333,
    3355,
@@ -111,19 +113,19 @@
   "platforms": {
    "android": {
     "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43624891591"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43625409738"
    },
    "windows": {
     "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43624891582"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43625409756"
    },
    "macos": {
     "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43624891582"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43625409756"
    },
    "ios": {
     "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43624891582"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43625409756"
    }
   }
  },
@@ -189,6 +191,28 @@
    "mergedAt": "2026-11-14T18:08:12Z",
    "additions": 604,
    "deletions": 20,
+   "labels": [
+    "merge-approved"
+   ]
+  },
+  "3403": {
+   "number": 3403,
+   "title": "fix(manga): 修复 OCR 断词、撇号与词组查词",
+   "author": "zitons",
+   "mergedAt": "2026-11-14T18:13:41Z",
+   "additions": 1529,
+   "deletions": 237,
+   "labels": [
+    "merge-approved"
+   ]
+  },
+  "3404": {
+   "number": 3404,
+   "title": "fix(onnx): read the GPU memory budget from the CUDA device's adapter",
+   "author": "samutw",
+   "mergedAt": "2026-11-14T18:11:29Z",
+   "additions": 287,
+   "deletions": 36,
    "labels": [
     "merge-approved"
    ]
