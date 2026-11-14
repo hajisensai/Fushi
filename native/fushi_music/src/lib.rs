@@ -20,6 +20,7 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 
 pub mod ac3;
 pub mod cd;
+pub mod credit;
 pub mod cue;
 pub mod dsf;
 pub mod fingerprint;

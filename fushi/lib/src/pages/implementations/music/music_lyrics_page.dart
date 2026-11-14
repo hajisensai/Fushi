@@ -43,6 +43,7 @@ import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.da
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_channel.dart';
 import 'package:fushi/src/media/favorites/favorite_lookup_context.dart';
+import 'package:fushi/src/lookup/latin_word_lookup.dart';
 import 'package:fushi/src/media/music/lyrics/karaoke/karaoke_lyrics_view.dart';
 import 'package:fushi/src/media/music/lyrics/karaoke/karaoke_stage_plan.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_clock.dart';
@@ -186,16 +187,23 @@ String? musicCdgCompanionOf(MusicPlayItem item) {
   return pickCdgCompanion(item.path, siblings);
 }
 
-/// 纯函数：查词命中 → 查词起点文本（从命中字符到行尾，查词引擎自己取最长匹配）。
-String musicLyricsLookupTerm(KaraokeLookupHit hit) {
+/// 纯函数：查词命中 → 查词起点在行内的下标。拉丁单词字符回退到词首（点 `world` 的
+/// `r` 从 `w` 起查，与视频字幕 / 截屏识字同一规则 [latinWordRangeAt]）；其余脚本
+/// 起点就是被点字本身。越界夹到 `[0, 行长]`。
+int musicLyricsLookupStart(KaraokeLookupHit hit) {
   final int at = hit.charIndexInLine.clamp(0, hit.lineText.length);
-  return hit.lineText.substring(at);
+  return latinWordRangeAt(hit.lineText, at)?.start ?? at;
 }
+
+/// 纯函数：查词命中 → 查词起点文本（从 [musicLyricsLookupStart] 到行尾，查词引擎
+/// 自己取最长匹配）。
+String musicLyricsLookupTerm(KaraokeLookupHit hit) =>
+    hit.lineText.substring(musicLyricsLookupStart(hit));
 
 /// 纯函数：[musicLyricsLookupTerm] 查词串上的源注音区间（坐标系 = 查词串）。
 ///
 /// [syllables] 是命中行的音节（行文本 = 音节文本拼接），只取起点不早于
-/// [charIndexInLine] 的音节：被查词起点截断的注音基字丢弃。只用解析器读出的
+/// [charIndexInLine]（= [musicLyricsLookupStart]）的音节：被查词起点截断的注音基字丢弃。只用解析器读出的
 /// `LyricSyllable.ruby`，不推断读音。
 List<FushiRubySpan> musicLyricsRubySpans(
   List<LyricSyllable> syllables,
@@ -599,7 +607,8 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
 
   Future<void> _onLookup(KaraokeLookupHit hit) async {
     _lookupLine = hit.lineIndex;
-    _lookupCharIndex = hit.charIndexInLine;
+    final int lookupStart = musicLyricsLookupStart(hit);
+    _lookupCharIndex = lookupStart;
     // 换词查询：上下文从零开始，不带上一个词选的前后文（与阅读器 / 视频同语义）。
     _miningDraft.clear();
     appModel.musicStudy.noteLearningAction();
@@ -621,7 +630,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
     await searchDictionaryResult(
       searchTerm: musicLyricsLookupTerm(hit),
       rubySpans: line != null && line.text == hit.lineText
-          ? musicLyricsRubySpans(line.syllables, hit.charIndexInLine)
+          ? musicLyricsRubySpans(line.syllables, lookupStart)
           : const <FushiRubySpan>[],
       selectionRect: hit.globalRect,
     );
