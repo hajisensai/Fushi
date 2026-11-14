@@ -18,17 +18,20 @@
 //! 只打开 `srs.db`、它的备份快照副本或自己生成的临时文件；绝不打开主库 `fushi.db`（同一进程里
 //! Drift 那份 SQLite 与这里自带的一份同开一个文件，会在 POSIX 平台上互相清掉文件锁）。
 
+pub(crate) mod binding;
 pub(crate) mod browse;
 pub mod bulk;
 pub(crate) mod caches;
 pub(crate) mod compact;
 pub mod ffi;
+pub mod gen4;
 pub(crate) mod ids;
 #[cfg(test)]
 mod kernel_reads_tests;
 mod mem_budget;
 #[cfg(test)]
 mod panic_recovery_tests;
+mod prof;
 mod profile_data;
 mod projections;
 #[cfg(test)]
@@ -502,7 +505,9 @@ impl SrsCore {
             )
             .map_err(|e| format!("open {}: {e}", path.display()))?;
             configure_as(&writer, MmapRole::Primary)?;
-            #[cfg(any(test, feature = "id_audit"))]
+            // 探针构建（`--cfg srs_probe`）不装审计：它让每条语句执行前都把绑定参数展开成 SQL 文本，逐行执行的语句
+            // 越多越吃亏（收段探针的 12～17%），量到的就不是 app 的耗时了。
+            #[cfg(all(any(test, feature = "id_audit"), not(srs_probe)))]
             ids::audit::install(&mut writer);
             // 新库建表前定成 INCREMENTAL：升级腾出的页以后原地收缩（store/compact.rs），不用整库重写。老库上这句只
             // 是记下「下次整库重写时改成 INCREMENTAL」，由 compact 的重写换文件那一步落实。
@@ -898,6 +903,7 @@ impl SrsCore {
                  DELETE FROM sync2_self; DELETE FROM sync2_pending; DELETE FROM sync2_segments; \
                  DELETE FROM sync2_locations; DELETE FROM sync2_rewrites; DELETE FROM sync2_obsolete; \
                  DELETE FROM srs_meta WHERE key LIKE 'sync2_digest/%'; \
+                 DELETE FROM srs_meta WHERE key LIKE 'sync2_former/%'; \
                  COMMIT;",
             )
             .map_err(|e| e.to_string())?;

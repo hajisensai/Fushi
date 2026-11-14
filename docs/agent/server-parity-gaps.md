@@ -95,22 +95,29 @@ The full plan needs its own design spec under `docs/specs/`. Size: L/XL.
   - Profiles whose sync location is end-to-end encrypted are not served in v1. Serving them
     would need the passphrase on the server.
   - AnkiConnect `getProfiles` reports one profile per key.
-  - No device-trust entry (srs.db v29, BUG-4306, `native/fushi_fsrs/src/store/sync2/trust.rs`).
-    The server is a full sync v2 replica. A device that first syncs after the server's copy of
-    the profile already has data stays "pending" on the server for good: its deletions and
-    permanent removals are held there and never reach the server's projection, so remote
-    review and AnkiConnect clients of the server keep seeing those notes. The app can only
-    trust the device in its own Conflict Center, which does not reach the server's srs.db.
-    Closing this needs a server op / admin page that calls the `trust` sync2 command.
+  - Device trust (srs.db v29, BUG-4306, `native/fushi_fsrs/src/store/sync2/trust.rs`) is
+    confirmed on the server itself: a device that first syncs after the server's copy of a
+    profile already has data stays "pending" there, its deletions and permanent removals held
+    until the admin trusts it. Entries: `GET /api/admin/srs/devices`,
+    `POST /api/admin/srs/devices/trust`, the WebUI Review page ("Devices waiting for
+    confirmation"), `fushi_server ctl srs devices|trust|reject`. The logic is the engine's
+    `srs_devices.dart` (`srsUntrustedDevices` / `srsSetDeviceTrust`), shared with the app's
+    Conflict Center. Trusting a device in the app still does not reach the server's srs.db
+    (trust is local per replica, by design).
+  - RWKV scheduling runs on the server since 2026-11-11 (spec addendum), through the same
+    `srsAttachRwkv` as the app. Still open: the WebUI does not show the per-profile `rwkv` /
+    `rwkvError` status that `ServerSrsProfile.toJson` now reports, and there is no setting for
+    the native thread count (it uses all cores, like the app).
   - The FSRS optimizer is not run on the server yet (spec §4.6). `SrsOptimizationScheduler`
     already lives in the engine; the server's collections pick up parameters optimized on
     other devices through the normal sync.
   - The server op catalog (`admin_ops.dart`) describes `server.srs.status`, `.profiles`,
-    `.sync` (irreversible, user confirms), `.mining-target.set`, `.mining-deck.set` and
+    `.devices` (read only), `.sync` (irreversible, user confirms), `.mining-target.set`, `.mining-deck.set` and
     `.rollover-hour.set` (undoable). Left out on purpose: the AnkiConnect settings (keys are
     credentials, bind / port are listen settings; the status the AI sees is cut down to
     enabled / listening / last error), and choosing which profiles are served or the default
-    one (spec §9: an owner decision, not something a paired device's AI session changes).
+    one (spec §9: an owner decision, not something a paired device's AI session changes), and
+    trusting / rejecting a sync device (a security boundary, like pairing).
 - **Jellyfin / Emby / Plex as library sources**: the `MediaServerBrowser` implementations
   live in `fushi/lib/src/sync/`, not in the engine. The server only has read-only Plex
   browsing (`media-server plex`). It cannot register a media server as a library source.

@@ -242,6 +242,8 @@ fushi_server ctl <action> [args] --interconnect https://127.0.0.1:38765 --passwo
   srs add|remove|default <uid> | off       提供哪几份 profile（off = 全部不提供）
   srs sync [<uid>] | ankiconnect on|off    立即同步 / AnkiConnect 监听（默认关）
   srs config '<json>'                      其余配置（rolloverHour、miningTarget、miningDecks、ankiConnect…）
+  srs devices [<uid>]                      还没信任的复习同步设备（扣着的删除 / 彻底清除）
+  srs trust|reject <设备 ID> [<uid>]       信任（扣着的立即生效）/ 拒绝（继续扣着）一台设备
   profiles [ls] | share|rm <id>
   backup [ls] | create [--no-documents] | rm <name>
                                            整机备份（落 <data>/backups/；下载走
@@ -286,6 +288,8 @@ fushi_server ctl <action> [args] --interconnect https://127.0.0.1:38765 --passwo
   srs add|remove|default <uid> | off       Which profiles to provide (off = provide none)
   srs sync [<uid>] | ankiconnect on|off    Sync now / AnkiConnect listener (off by default)
   srs config '<json>'                      Other settings (rolloverHour, miningTarget, miningDecks, ankiConnect...)
+  srs devices [<uid>]                      Review sync devices not trusted yet (their held deletes / purges)
+  srs trust|reject <device id> [<uid>]     Trust (held changes apply now) / reject (keep holding) a device
   profiles [ls] | share|rm <id>
   backup [ls] | create [--no-documents] | rm <name>
                                            Whole-machine backup (stored in <data>/backups/; download via
@@ -1105,10 +1109,29 @@ _CtlRequest? _parseAction(
           return body == null
               ? null
               : _CtlRequest('PUT', '$_api/srs', body: body);
+        case 'devices':
+          return _CtlRequest(
+            'GET',
+            '$_api/srs/devices',
+            query: arg(0) == null ? null : <String, String>{'profile': arg(0)!},
+            render: _renderSrsDevices,
+          );
+        case 'trust' || 'reject' when arg(0) != null:
+          return _CtlRequest(
+            'POST',
+            '$_api/srs/devices/trust',
+            body: <String, Object?>{
+              'device': arg(0),
+              'trust': sub == 'trust',
+              'profile': ?arg(1),
+            },
+            render: _renderSrsDevices,
+          );
       }
       return usage(
         'srs [status] | srs profiles | srs add|remove|default <uid> | srs off | '
-        "srs sync [<uid>] | srs ankiconnect on|off | srs config '<json>'",
+        "srs sync [<uid>] | srs ankiconnect on|off | srs config '<json>' | "
+        'srs devices [<uid>] | srs trust|reject <device> [<uid>]',
       );
 
     case 'profiles':
@@ -1286,6 +1309,57 @@ void _renderPairing(Object? response, StringSink out) {
     );
   }
   _listRenderer('peers')(response, out);
+}
+
+/// `srs devices` / `srs trust|reject`：每份 profile 一段，还没信任的设备一行一台。
+void _renderSrsDevices(Object? response, StringSink out) {
+  if (response is! Map) return _renderGeneric(response, out);
+  void line(Object? d) {
+    if (d is! Map) return;
+    final String trust = switch (d['trust']) {
+      'pending' => tr('待确认', 'pending'),
+      'rejected' => tr('已拒绝', 'rejected'),
+      _ => tr('已信任', 'trusted'),
+    };
+    final String name = '${d['name'] ?? ''}'.isEmpty
+        ? tr('未命名设备', 'Unnamed device')
+        : '${d['name']}${'${d['app'] ?? ''}'.isEmpty ? '' : ' (Fushi ${d['app']})'}';
+    final Object? since = d['trustSince'];
+    out.writeln(
+      '  ${d['device']}  [$trust]  $name  '
+      '${tr('扣着 ${d['heldDeletes']} 条删除、${d['heldPurges']} 条彻底清除', 'holding ${d['heldDeletes']} deletes, ${d['heldPurges']} purges')}'
+      '${since is num ? tr('  首次出现 ${DateTime.fromMillisecondsSinceEpoch(since.toInt()).toIso8601String()}', '  first seen ${DateTime.fromMillisecondsSinceEpoch(since.toInt()).toIso8601String()}') : ''}',
+    );
+  }
+
+  void profile(Object? p) {
+    if (p is! Map) return;
+    final String name = '${p['name'] ?? ''}';
+    out.writeln(name.isEmpty ? '${p['uid']}' : '$name (${p['uid']})');
+    final Object? untrusted = p['untrusted'];
+    if (untrusted is! List || untrusted.isEmpty) {
+      out.writeln(tr('  （没有待确认的设备）', '  (no devices waiting)'));
+      return;
+    }
+    untrusted.forEach(line);
+  }
+
+  final Object? device = response['device'];
+  if (device is Map) {
+    out.writeln(
+      device['trust'] == 'trusted'
+          ? tr('已信任 ${device['device']}', 'Trusted ${device['device']}')
+          : tr('已拒绝 ${device['device']}', 'Rejected ${device['device']}'),
+    );
+    profile(response['profile']);
+    return;
+  }
+  final Object? profiles = response['profiles'];
+  if (profiles is! List) return _renderGeneric(response, out);
+  if (profiles.isEmpty) {
+    out.writeln(tr('  （没有可用的复习配置文件）', '  (no review profile available)'));
+  }
+  profiles.forEach(profile);
 }
 
 /// `downloads subtitles <id>`：一行一条字幕行。

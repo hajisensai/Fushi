@@ -12,6 +12,11 @@
 //     otherwise its schema never matches the server and every later sync is blocked;
 //   * a full download discards local notes that were not pushed yet — the caller keeps
 //     its own queue as the source of truth and replays after a download.
+
+// 让 cargo 的新鲜度指纹带上「这是哪个 worktree」：多个 worktree 共用一个 CARGO_TARGET_DIR 时，没有它会把别的
+// worktree 编出的产物当成本 worktree 的直接用（假绿 / 假红）。值来自仓库根 .cargo/config.toml 的 [env]，不进产物。
+// 每个 native crate 的入口文件都要有这一行（守卫 fushi/test/build/native_crate_worktree_fingerprint_guard_test.dart）。
+const _: Option<&str> = option_env!("FUSHI_WORKTREE_ROOT");
 use std::io::{BufRead, Write};
 
 use anki::collection::CollectionBuilder;
