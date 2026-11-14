@@ -1,3 +1,4 @@
+import 'package:audio_service/audio_service.dart' as ag;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/misc/fushi_audio_handler.dart';
 
@@ -108,6 +109,44 @@ void main() {
       expect(pushed, hasLength(2));
       await sub.cancel();
     });
+
+    // 音乐会话每个进度 tick 都重组卡片：基础信息 + 歌词行一次传齐，重复 N 次只推
+    // 一次。旧写法「setMediaItemInfo 后再 updateNotificationSubtitle」两张卡交替，
+    // 每 tick 真推两次。
+    test(
+      'media info with lyric subtitle repeated per tick is pushed once',
+      () async {
+        final FushiAudioHandler handler = buildHandler();
+        final List<ag.MediaItem?> pushed = <ag.MediaItem?>[];
+        final sub = handler.mediaItem.skip(1).listen(pushed.add);
+
+        void publish(String? line) => handler.setMediaItemInfo(
+          title: 'Song',
+          artist: 'Singer',
+          duration: const Duration(minutes: 4),
+          subtitle: line,
+        );
+
+        for (int i = 0; i < 300; i++) {
+          publish('歌詞の一行目');
+        }
+        await Future<void>.delayed(Duration.zero);
+        expect(pushed, hasLength(1));
+        expect(pushed.single!.artist, '歌詞の一行目');
+        expect(pushed.single!.displaySubtitle, '歌詞の一行目');
+        expect(pushed.single!.displayDescription, '歌詞の一行目');
+
+        for (int i = 0; i < 300; i++) {
+          publish('歌詞の二行目');
+        }
+        publish(null);
+        await Future<void>.delayed(Duration.zero);
+        expect(pushed, hasLength(3));
+        expect(pushed.last!.artist, 'Singer');
+        expect(pushed.last!.displaySubtitle, isNull);
+        await sub.cancel();
+      },
+    );
 
     test('after clearing the notification the same item is pushed again', () {
       final FushiAudioHandler handler = buildHandler();

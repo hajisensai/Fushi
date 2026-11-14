@@ -151,19 +151,28 @@ class FushiAudioHandler extends ag.BaseAudioHandler {
     );
   }
 
+  /// 推一张完整媒体卡片。[subtitle] 非空（清洗后）时与 [updateNotificationSubtitle]
+  /// 同样把当前句放进 `artist` / `displaySubtitle` / `displayDescription`，否则用
+  /// [artist]。每次刷新既要基础信息又要当前句的调用方（音乐会话）必须一次传齐、
+  /// 只推一张最终卡片：分两次调用会让「无副标题卡」与「有副标题卡」交替推送，
+  /// [_pushMediaItem] 的去重永远命中不了（BUG-4507）。
   void setMediaItemInfo({
     required String title,
     String? artist,
     Duration? duration,
     Uri? artUri,
+    String? subtitle,
   }) {
+    final String? cleanedSubtitle = _cleanNotificationSubtitle(subtitle);
     _pushMediaItem(
       ag.MediaItem(
         id: 'fushi_audiobook',
         title: title,
-        artist: artist,
+        artist: cleanedSubtitle ?? artist,
         duration: duration,
         artUri: artUri,
+        displaySubtitle: cleanedSubtitle,
+        displayDescription: cleanedSubtitle,
       ),
     );
   }
