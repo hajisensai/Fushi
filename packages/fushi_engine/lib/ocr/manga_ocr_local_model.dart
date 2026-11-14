@@ -196,9 +196,13 @@ Future<int> _deleteRemovedMangaOcrLegacyFiles(Directory legacy) async {
 /// 漫画逐列 CTC 的列识别权重：Kellenok/PP-OCRv6_manga 的 rec v0.2（Apache-2.0，在
 /// PP-OCRv6 small rec 上用 Manga109-s 与 AnimeText 微调）。与 PP-OCRv6 small rec 同
 /// 输入契约、同一份 18710 项词表，字典沿用 [kPpOcrRecDictFileName]。钉 revision 的
-/// 理由同 PP-OCRv6（`main` 可变）；该 revision 下 LFS sha256 为
-/// de12c84c63e62c80339e882e675983d886670dcb6f0147e1ed041afd6fa81888。
-const String kMangaCtcRecRevision = 'ba1d479e8a61a20e8318c9758c73fbbbd290b98d';
+/// 理由同 PP-OCRv6（`main` 可变：2026-11-05 上游发 v0.3 把词表扩到 19053 项，与这里
+/// 沿用的 18710 项 PP-OCRv6 词表不兼容；11-06 又改成去版本号的文件名）。钉的是
+/// `main` 历史里的「Release v0.2」提交，该提交下 `rec/manga_rec_v0.2.onnx` 的 LFS
+/// sha256 为 de12c84c63e62c80339e882e675983d886670dcb6f0147e1ed041afd6fa81888
+/// （`v0.2` 分支 a172b33d 的 `rec/manga_rec.onnx` 是同一份字节）。原先钉的
+/// ba1d479e 已随上游改写历史消失，整个 revision 404（BUG-4492）。
+const String kMangaCtcRecRevision = 'd090c421598eadd2e179ad62c29ff0767492072c';
 const String kMangaCtcRecFileName = 'kellenok_manga_rec_v0.2.onnx';
 
 /// 逐列 CTC：检测器 + PP-OCRv6 small det（列 / 行检测）+ 字典 + 漫画 rec（竖列与横行

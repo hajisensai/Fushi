@@ -17,7 +17,6 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi_engine/srs/srs_db_store.dart';
-import 'package:fushi_engine/srs/srs_note_type_store.dart';
 
 /// 一组疑似重复的笔记（同类型、同词形、同读音）。
 class SrsDuplicateGroup {
@@ -172,81 +171,11 @@ extension SrsDuplicateNotes on SrsDbStore {
   Future<SrsMergeReport> mergeNotes({
     required String keepId,
     required List<String> absorbIds,
-  }) => runExclusive(() async {
-    final List<String> absorb = <String>[
-      for (final String id in absorbIds)
-        if (id != keepId) id,
-    ];
-    if (absorb.isEmpty) {
-      return const SrsMergeReport(linkedCards: 0, unmatchedCards: 0);
-    }
-    final Map<String, SrsNoteView?> views = await notes(<String>[
+  }) async {
+    final ({int linked, int unmatched}) r = await mergeNotesInto(
       keepId,
-      ...absorb,
-    ]);
-    final SrsNoteView? keep = views[keepId];
-    if (keep == null) throw StateError('note $keepId not found');
-    for (final String id in absorb) {
-      final SrsNoteView? n = views[id];
-      if (n == null) throw StateError('note $id not found');
-      if (n.noteTypeId != keep.noteTypeId) {
-        throw StateError('notes of different note types cannot be merged');
-      }
-    }
-    await sync2Checkpoint(
-      keep.fields.values.firstOrNull ?? keepId,
-      'merge_notes',
+      absorbIds,
     );
-    final Map<String, List<SrsCardCacheRow>> cards = await cardsOfNotes(
-      <String>[keepId, ...absorb],
-    );
-    final Map<(String, int), String> keepCards = <(String, int), String>{
-      for (final SrsCardCacheRow c in cards[keepId]!)
-        (c.templateId, c.clozeOrd): c.id,
-    };
-    int linked = 0;
-    int unmatched = 0;
-    final List<SrsEditSpec> specs = <SrsEditSpec>[];
-    final Map<String, String> filled = <String, String>{};
-    final Set<String> tags = <String>{...keep.tags};
-    for (final String id in absorb) {
-      final SrsNoteView n = views[id]!;
-      for (final SrsCardCacheRow c in cards[id]!) {
-        final String? target = keepCards[(c.templateId, c.clozeOrd)];
-        if (target == null) {
-          unmatched++;
-          continue;
-        }
-        specs.add(
-          SrsEditSpec(
-            SrsEntityKind.card,
-            target,
-            SrsFieldKeys.cardHistoryFrom(c.id),
-            true,
-          ),
-        );
-        linked++;
-      }
-      for (final MapEntry<String, String> f in n.fields.entries) {
-        if ((keep.fields[f.key] ?? '').trim().isEmpty &&
-            f.value.trim().isNotEmpty &&
-            !filled.containsKey(f.key)) {
-          filled[f.key] = f.value;
-        }
-      }
-      tags.addAll(n.tags);
-    }
-    if (specs.isNotEmpty) await writeEdits(specs);
-    if (filled.isNotEmpty || tags.length != keep.tags.length) {
-      await updateNote(
-        keepId,
-        fieldsById: filled.isEmpty ? null : filled,
-        tags: tags.length == keep.tags.length ? null : tags.toList(),
-      );
-    }
-    for (final String id in absorb) {
-      await deleteNote(id);
-    }
-    return SrsMergeReport(linkedCards: linked, unmatchedCards: unmatched);
-  });
+    return SrsMergeReport(linkedCards: r.linked, unmatchedCards: r.unmatched);
+  }
 }
