@@ -1,12 +1,47 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-14T18:35:17Z",
+ "generatedAt": "2026-11-14T19:13:42Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "0ec4f96a5ac63a48b6b0f0b948af8d53be36584e",
-  "seq": 26871
+  "sha": "593237ff49c7ae0bdfe9283b81827a292ea850c1",
+  "seq": 26873
  },
  "builds": [
+  {
+   "seq": 26869,
+   "version": "3.3.0",
+   "sha": "b024998652ce86bd1d87d844a67f560e7e661171",
+   "unknown": false,
+   "publishedAt": "2026-11-14T19:13:30Z",
+   "testflight": false,
+   "baseSeq": 26834,
+   "prs": [
+    3403,
+    3404,
+    3398,
+    3333,
+    3355,
+    3369,
+    3408
+   ],
+   "direct": [],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "failed",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43625409738"
+    },
+    "windows": {
+     "state": "ok"
+    },
+    "macos": {
+     "state": "ok"
+    },
+    "ios": {
+     "state": "ok"
+    }
+   }
+  },
   {
    "seq": 26834,
    "version": "3.3.0",
@@ -74,8 +109,8 @@
    "version": "3.3.0",
    "sha": "cb7c567d60589c1db492a461cada1b2b51283a5d",
    "unknown": false,
-   "publishedAt": "2026-11-12T23:11:46Z",
-   "testflight": true,
+   "publishedAt": "2026-11-12T22:26:13Z",
+   "testflight": false,
    "baseSeq": null,
    "prs": [],
    "direct": [],
@@ -85,36 +120,32 @@
      "state": "ok"
     },
     "windows": {
-     "state": "ok"
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43289888867"
     },
     "macos": {
-     "state": "ok"
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43289888867"
     },
     "ios": {
-     "state": "ok"
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43289888867"
     }
    }
   }
  ],
  "pending": {
-  "headSha": "0ec4f96a5ac63a48b6b0f0b948af8d53be36584e",
-  "headSeq": 26871,
+  "headSha": "593237ff49c7ae0bdfe9283b81827a292ea850c1",
+  "headSeq": 26873,
   "prs": [
-   3409,
-   3403,
-   3404,
-   3398,
-   3333,
-   3355,
-   3369,
-   3408
+   3406,
+   3409
   ],
   "direct": [],
   "truncated": false,
   "platforms": {
    "android": {
-    "state": "failed",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43625409738"
+    "state": "none"
    },
    "windows": {
     "state": "queued",
@@ -217,6 +248,15 @@
    "labels": [
     "merge-approved"
    ]
+  },
+  "3406": {
+   "number": 3406,
+   "title": "ci(windows): appSmoke 失败时重放 cmake --install，印出被吞掉的 CMake 报错",
+   "author": "W1ght",
+   "mergedAt": "2026-11-14T18:35:22Z",
+   "additions": 10,
+   "deletions": 0,
+   "labels": []
   },
   "3408": {
    "number": 3408,
