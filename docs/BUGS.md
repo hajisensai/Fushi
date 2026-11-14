@@ -33,13 +33,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3972 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-4491](bugs/BUG-4491-android-permission-kill-no-killuid-prefix-misreport.md) | ✅ | ✅ | 华为改所有文件访问权限后被系统结束报成意外退出 |
-| [BUG-4490](bugs/BUG-4490-android-exit-schedulecrash-failed-misreport.md) | ✅ | ✅ | Android 系统 scheduleCrash 失败结束冻结进程被报成崩溃 |
-> 共 3978 条。点号进各自文件。
+> 共 3980 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -48,6 +42,8 @@
 | [BUG-4620](bugs/BUG-4620-cuda-budget-read-from-igpu-adapter.md) | ✅ | ✅ | CUDA 转录的显存预算读的是 DXGI 适配器 0，混合显卡笔记本上是核显 |
 | [BUG-4533](bugs/BUG-4533-flatpak-x11-mesa-crash.md) | ✅ | ✅ | flatpak-x11-mesa-crash |
 | [BUG-4521](bugs/BUG-4521-mokuro-import-volumes-not-grouped.md) | ✅ | ✅ | mokuro catalog import does not group volumes into a series |
+| [BUG-4491](bugs/BUG-4491-android-permission-kill-no-killuid-prefix-misreport.md) | ✅ | ✅ | 华为改所有文件访问权限后被系统结束报成意外退出 |
+| [BUG-4490](bugs/BUG-4490-android-exit-schedulecrash-failed-misreport.md) | ✅ | ✅ | Android 系统 scheduleCrash 失败结束冻结进程被报成崩溃 |
 | [BUG-4481](bugs/BUG-4481-srs-edit-undo-blind-overwrite.md) | ✅ | ✅ | srs-edit-undo-blind-overwrite |
 | [BUG-4480](bugs/BUG-4480-srs-by-id-access-not-profile-scoped.md) | 🚧 | 🚧 | 复习库按 id 的读写不按 profile 过滤：点名的 profile 与 id 不属于同一份时写错库 |
 | [BUG-4479](bugs/BUG-4479-mine-shortcut-focused-entry.md) | ✅ | ✅ | mine-shortcut-focused-entry |
