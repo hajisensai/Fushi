@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-14T23:04:58Z",
+ "generatedAt": "2026-11-14T23:52:24Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "819b3132402ebe0295a843a420a12f452cfd743e",
-  "seq": 27112
+  "sha": "262391b32640eec669f74723163cad3b11b7b39d",
+  "seq": 27210
  },
  "builds": [
   {
@@ -178,9 +178,13 @@
   }
  ],
  "pending": {
-  "headSha": "819b3132402ebe0295a843a420a12f452cfd743e",
-  "headSeq": 27112,
+  "headSha": "262391b32640eec669f74723163cad3b11b7b39d",
+  "headSeq": 27210,
   "prs": [
+   3318,
+   3321,
+   3365,
+   3357,
    3368,
    3343,
    3402,
@@ -203,19 +207,19 @@
   "platforms": {
    "android": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43649783893"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43654446387"
    },
    "windows": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43650822169"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43654446353"
    },
    "macos": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43650822169"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43654446353"
    },
    "ios": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43650822169"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43654446353"
    }
   }
  },
@@ -254,6 +258,24 @@
    "mergedAt": "2026-11-14T20:04:23Z",
    "additions": 193,
    "deletions": 1,
+   "labels": []
+  },
+  "3318": {
+   "number": 3318,
+   "title": "fix(sync): 互联 live 进度的写入契约、基线按远端分槽、三方判定统一（BUG-4429..4436）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-14T23:40:54Z",
+   "additions": 8935,
+   "deletions": 515,
+   "labels": []
+  },
+  "3321": {
+   "number": 3321,
+   "title": "fix(interconnect): host 配对 / 鉴权 / 监听口加固——可吊销派生凭据、PIN 防爆破、来源分类、bind 范围（BUG-4387..4396）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-14T23:30:16Z",
+   "additions": 6355,
+   "deletions": 535,
    "labels": []
   },
   "3332": {
@@ -299,6 +321,24 @@
    "mergedAt": "2026-11-14T18:06:38Z",
    "additions": 1828,
    "deletions": 17,
+   "labels": []
+  },
+  "3357": {
+   "number": 3357,
+   "title": "feat(galhook/unity_il2cpp): IL2CPP 游戏内查词（共用 Mono 画布查词核心，implemented_unverified）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-14T23:17:53Z",
+   "additions": 2071,
+   "deletions": 53,
+   "labels": []
+  },
+  "3365": {
+   "number": 3365,
+   "title": "galhook/unity: 引擎绑定同时支持经典 extern 与 Unity 6 <method>_Injected 形态（implemented_unverified）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-14T23:23:26Z",
+   "additions": 1379,
+   "deletions": 262,
    "labels": []
   },
   "3368": {
