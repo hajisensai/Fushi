@@ -19,7 +19,7 @@ import 'package:fushi/src/sync/sync_error_messages.dart';
 enum InterconnectDownloadStatus { running, paused, completed, failed }
 
 /// 任务的内容域（下载中心按它选图标 / 分类）。
-enum InterconnectDownloadKind { video, book, audiobook }
+enum InterconnectDownloadKind { video, book, audiobook, music }
 
 /// 任务的数据来自哪里（下载中心按它标下载方式 / 外部来源）。
 enum InterconnectDownloadOrigin {
@@ -28,6 +28,9 @@ enum InterconnectDownloadOrigin {
 
   /// 在线视频扩展源（Aniyomi）：扩展从第三方站点取流。
   extension,
+
+  /// 在线音源插件（docs/specs/2026-10-28-music-plugins.md §5）：插件从第三方平台取流。
+  musicPlugin,
 }
 
 /// 一个互联下载任务的不可变快照。UI 只读这个渲染进度/状态。
@@ -546,6 +549,30 @@ class InterconnectDownloadManager extends ChangeNotifier {
       run: run,
       onComplete: onComplete,
       pausable: true,
+      discardLeftovers: discard,
+    ),
+  );
+
+  /// 启动一个在线音源插件曲目下载（键 = `music-plugin:<曲目播放身份>`，
+  /// music_plugin_download.dart）。与视频任务同一套生命周期：可暂停 / 继续 / 取消、失败可重试；
+  /// [discard] 放弃任务时清掉暂存字节与没导入成功的成品。
+  Future<InterconnectDownloadTask> startMusicDownload({
+    required String id,
+    required String title,
+    required File dest,
+    required InterconnectVideoDownloadRunner run,
+    required Future<bool> Function() discard,
+    InterconnectDownloadComplete? onComplete,
+  }) => _startDownload(
+    id,
+    _DownloadSpec(
+      title: title,
+      kind: InterconnectDownloadKind.music,
+      dest: dest,
+      run: run,
+      onComplete: onComplete,
+      pausable: true,
+      origin: InterconnectDownloadOrigin.musicPlugin,
       discardLeftovers: discard,
     ),
   );
