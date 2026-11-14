@@ -452,7 +452,7 @@ fn profile_run(
     let mut mark = |what: &str| {
         peaks.insert(what.into(), json!(mb(peak_mem_mb().0)));
     };
-    let (diff, baseline) = compare::against_protocol_3(
+    let (diff, baseline, collided) = compare::against_protocol_3(
         src,
         profile,
         t,
@@ -475,8 +475,34 @@ fn profile_run(
     opts.stop.check()?;
     let started = Instant::now();
     let canon = Canon::load(t, col)?;
+    // 撞车的旧修改记录 ID 落在的笔记与它们的卡，按规范 ID 比的几类也不比（同 `compare::cache_pairs` 的口径）。
+    let mut skip = skip;
+    if !collided.notes.is_empty() {
+        skip.notes.extend(
+            collided
+                .notes
+                .iter()
+                .filter_map(|n| n.strip_prefix("note:"))
+                .map(str::to_owned),
+        );
+        let note_at = CARD_COLS
+            .iter()
+            .position(|c| c.0 == "note_id")
+            .expect("listed column");
+        let news: Vec<&str> = CARD_COLS.iter().map(|c| c.0).collect();
+        let new_cards = rows_of(t.conn(), "cards", &news, "col = ?1", &col)?;
+        let cards: Vec<String> = baseline
+            .iter()
+            .flat_map(|old| old.1.iter())
+            .chain(&new_cards)
+            .filter(|r| skip.notes.contains(&r[note_at]))
+            .map(|r| r[0].clone())
+            .collect();
+        skip.cards.extend(cards);
+    }
+    out.insert("collidedNotes".into(), json!(collided.notes.len()));
     mark("canonLoad");
-    let regs = registers(src, profile, t, col)?;
+    let regs = registers(src, profile, t, col, &collided)?;
     mark("registerWinners");
     let mut canonical_diff = differences_of(regs);
     match &baseline {
@@ -749,44 +775,42 @@ fn existing_vs_rebuilt(
             .map(|r| r.join(" | "))
             .collect()
     };
-    let notes = rows_of(
-        src,
-        "main.srs_notes_cache",
-        &olds(NOTE_COLS),
-        filter,
-        &profile,
-    )?;
-    let cards = rows_of(
-        src,
-        "main.srs_cards_cache",
-        &olds(CARD_COLS),
-        filter,
-        &profile,
-    )?;
-    let stats = rows_of(
-        src,
-        "main.srs_stat_reviews",
-        &olds(STAT_COLS),
-        filter,
-        &profile,
-    )?;
-    Ok(differences_of([
+    // 一张表一张表比、比完就放掉（同 `compare::cache_pairs`）：三张表两侧同时在内存里，大库的这一步会把峰值抬高一倍。
+    let mut diff = Diff::new();
+    let tables: [(
+        &'static str,
+        &str,
+        &[(&'static str, &'static str)],
+        &dyn Fn(&Vec<String>) -> bool,
+        &Vec<Vec<String>>,
+    ); 3] = [
         (
             "notes",
-            set(&notes, &keep_note),
-            set(&rebuilt.0, &keep_note),
+            "main.srs_notes_cache",
+            NOTE_COLS,
+            &keep_note,
+            &rebuilt.0,
         ),
         (
             "cards",
-            set(&cards, &keep_card),
-            set(&rebuilt.1, &keep_card),
+            "main.srs_cards_cache",
+            CARD_COLS,
+            &keep_card,
+            &rebuilt.1,
         ),
         (
             "stats",
-            set(&stats, &keep_stat),
-            set(&rebuilt.2, &keep_stat),
+            "main.srs_stat_reviews",
+            STAT_COLS,
+            &keep_stat,
+            &rebuilt.2,
         ),
-    ]))
+    ];
+    for (what, table, cols, keep, rebuilt) in tables {
+        let existing = set(&rows_of(src, table, &olds(cols), filter, &profile)?, keep);
+        compare::push_pair(&mut diff, (what, existing, set(rebuilt, keep)));
+    }
+    Ok(diff)
 }
 
 // ---------------------------------------------------------------- 寄存器
@@ -800,6 +824,7 @@ fn registers(
     profile: &str,
     t: &Truth<'_>,
     col: i64,
+    collided: &compare::Collisions,
 ) -> Result<Vec<Pair>, String> {
     let ix = Index::new(t, col);
     let held: BTreeSet<String> = ix
@@ -812,7 +837,14 @@ fn registers(
             &[&profile],
         )?)
         .collect();
-    let skip = |ent: &str, key: &str| key == "tags" || (key == "deleted" && held.contains(ent));
+    // 撞车的旧修改记录 ID 落在的寄存器不比（`compare::Collisions`，同 `edits` 的口径）。
+    let skip = |ent: &str, key: &str| {
+        key == "tags"
+            || (key == "deleted" && held.contains(ent))
+            || collided
+                .registers
+                .contains(&(ent.to_owned(), key.to_owned()))
+    };
     // 协议 3：按实体分块读（同 `caches::edits_of` 的那条 JOIN），每块在内存里按键分组判。
     let ents: Vec<(String, String)> = src
         .prepare(

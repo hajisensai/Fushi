@@ -235,6 +235,9 @@ pub(crate) struct Collisions {
     /// 撞车、且在新代里活着的修改落在的笔记（`note:ID`）：这些笔记的内容（与由内容决定的卡）对不上协议 3 是到达顺序
     /// 造成的，缓存层不比它们与它们的卡。
     pub notes: BTreeSet<String>,
+    /// 撞车的修改落在的寄存器（`种类:ID`, 键），两条都算：协议 3 只存了其中一条，另一个寄存器的胜者随之不同（干跑的
+    /// `registerWinners` 不比这些寄存器）。
+    pub registers: BTreeSet<(String, String)>,
 }
 
 /// 扫一遍 `reg_ix` 的全部写入，找出 [Collisions]。同时在内存里的只有每个旧 dot 的第一条修改（大库三十多万个）。
@@ -279,10 +282,11 @@ pub(crate) fn collisions(t: &Truth<'_>, col: i64) -> Result<Collisions, String> 
         out.edit_ids
             .insert(Ref::of(&Key::of(&crate::registers::edit_id(&dot.0, dot.1))));
         let f = first.remove(&dot).expect("a collision has a first edit");
-        for (ent, _, live) in std::iter::once(f).chain(rest) {
+        for (ent, key, live) in std::iter::once(f).chain(rest) {
             if live && ent.starts_with("note:") {
-                out.notes.insert(ent);
+                out.notes.insert(ent.clone());
             }
+            out.registers.insert((ent, key));
         }
     }
     Ok(out)
@@ -430,7 +434,7 @@ pub(crate) fn against_protocol_3(
     col: i64,
     old_caches: &mut OldCaches<'_>,
     skip: &Skip,
-) -> Result<(Diff, Option<CacheRows>), String> {
+) -> Result<(Diff, Option<CacheRows>, Collisions), String> {
     // 每一类算出来马上化成差异、放掉两侧的集合：同时在内存里的只有一类（大库的修改记录 ID 一类就有上百万条）。
     let mut diff = Diff::new();
     let ix = Index::new(t, col);
@@ -584,7 +588,7 @@ pub(crate) fn against_protocol_3(
         skip,
         &mut diff,
     )?;
-    Ok((diff, rows))
+    Ok((diff, rows, collided))
 }
 
 /// 协议 3 投影里活着的修改记录 ID（不算合成写入者的标签行）：按协议 3 自己的寄存器判据（`registers::judge_register`）
