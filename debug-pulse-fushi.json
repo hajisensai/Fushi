@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-14T18:17:07Z",
+ "generatedAt": "2026-11-14T18:35:17Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "b024998652ce86bd1d87d844a67f560e7e661171",
-  "seq": 26869
+  "sha": "0ec4f96a5ac63a48b6b0f0b948af8d53be36584e",
+  "seq": 26871
  },
  "builds": [
   {
@@ -97,9 +97,10 @@
   }
  ],
  "pending": {
-  "headSha": "b024998652ce86bd1d87d844a67f560e7e661171",
-  "headSeq": 26869,
+  "headSha": "0ec4f96a5ac63a48b6b0f0b948af8d53be36584e",
+  "headSeq": 26871,
   "prs": [
+   3409,
    3403,
    3404,
    3398,
@@ -112,20 +113,20 @@
   "truncated": false,
   "platforms": {
    "android": {
-    "state": "building",
+    "state": "failed",
     "url": "https://github.com/hajisensai/Fushi/actions/runs/43625409738"
    },
    "windows": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43625409756"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43627404095"
    },
    "macos": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43625409756"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43627404095"
    },
    "ios": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43625409756"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43627404095"
    }
   }
  },
@@ -224,6 +225,15 @@
    "mergedAt": "2026-11-14T18:06:29Z",
    "additions": 14,
    "deletions": 2,
+   "labels": []
+  },
+  "3409": {
+   "number": 3409,
+   "title": "fix(windows): galgame helper 解包改用 ZipFile，修所有 PR 的 windows appSmoke 红",
+   "author": "W1ght",
+   "mergedAt": "2026-11-14T18:34:58Z",
+   "additions": 11,
+   "deletions": 3,
    "labels": []
   }
  }
