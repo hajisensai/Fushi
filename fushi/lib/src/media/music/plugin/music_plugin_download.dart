@@ -32,17 +32,12 @@ import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
-import 'package:fushi_core/fushi_core.dart'
-    show FushiDatabase, SourceLibraryKind;
 import 'package:fushi_engine/utils/misc/safe_file_name.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:fushi_music/fushi_music.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/music/plugin/music_plugins.dart';
-import 'package:fushi/src/media/source_library/add_local_folder_source.dart';
-import 'package:fushi/src/media/source_library/source_library_scanner.dart'
-    show SourceScanSummary;
 import 'package:fushi/src/media/video/online/anime_episode_downloader.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/sync/interconnect_download_manager.dart';
@@ -397,12 +392,14 @@ class MusicPluginDownloadService {
        _writeTags = writeTags ?? _rustWriteTags,
        _softError = softError ?? _logSoftError;
 
-  /// 生产装配：插件管理器取流（用户默认在线音质）、按「仅此一次」导入 [database]。
+  /// 生产装配：插件管理器取流（用户默认在线音质）；成品入库由调用方经 [import] 注入
+  /// （来源库「仅此一次」导入住在 UI / AppModel 那一侧的大 import 环里，本层不直接依赖，
+  /// 见 test/build/import_cycle_guard_test.dart）。
   factory MusicPluginDownloadService.forApp({
     required InterconnectDownloadManager downloads,
     required MusicPluginManager Function() plugins,
     required MusicPluginQuality Function() quality,
-    required FushiDatabase database,
+    required MusicPluginDownloadImporter import,
   }) => MusicPluginDownloadService(
     downloads: downloads,
     root: () => AppPaths.documentsSubdirectory(kMusicDownloadsDirName),
@@ -411,17 +408,7 @@ class MusicPluginDownloadService {
       trackId,
       quality: quality(),
     ),
-    import: (String path) async {
-      final SourceScanSummary? summary = await importLocalFolderOnceAt(
-        db: database,
-        // 音乐来源不扫书，没有有声书要转录。
-        transcribeAudiobook: null,
-        mediaKind: SourceLibraryKind.music.dbValue,
-        path: path,
-        recursive: false,
-      );
-      return summary?.error;
-    },
+    import: import,
   );
 
   final InterconnectDownloadManager downloads;

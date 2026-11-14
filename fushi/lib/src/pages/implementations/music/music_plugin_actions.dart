@@ -719,7 +719,17 @@ MusicPluginDownloadService? _pluginDownloads(WidgetRef ref) {
     downloads: ref.read(interconnectDownloadManagerProvider),
     plugins: () => app.musicPluginManager,
     quality: () => app.musicPluginQuality,
-    database: app.database,
+    import: (String path) async {
+      final SourceScanSummary? summary = await importLocalFolderOnceAt(
+        db: app.database,
+        // 音乐来源不扫书，没有有声书要转录。
+        transcribeAudiobook: null,
+        mediaKind: SourceLibraryKind.music.dbValue,
+        path: path,
+        recursive: false,
+      );
+      return summary?.error;
+    },
   );
 }
 

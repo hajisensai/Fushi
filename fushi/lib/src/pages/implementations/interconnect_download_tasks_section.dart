@@ -28,6 +28,7 @@ import 'package:fushi_engine/sync/deletion_propagation.dart'
     show DeleteDecision, DeleteScope;
 import 'package:fushi/src/media/downloads/download_source_method.dart';
 import 'package:fushi/src/media/downloads/download_task_card.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/media/downloads/download_task_entry.dart';
 import 'package:fushi/src/sync/interconnect_download_manager.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -282,10 +283,10 @@ DownloadTaskEntry interconnectDownloadTaskEntry(
       leading: FushiIcon(switch (task.kind) {
         InterconnectDownloadKind.video when fromExtension =>
           DownloadTransferMethod.extension.icon,
-        InterconnectDownloadKind.video => Icons.devices_outlined,
-        InterconnectDownloadKind.book => Icons.menu_book_outlined,
-        InterconnectDownloadKind.audiobook => Icons.headphones_outlined,
-        InterconnectDownloadKind.music => Icons.music_note_outlined,
+        InterconnectDownloadKind.video => FushiIcons.devices,
+        InterconnectDownloadKind.book => FushiIcons.books,
+        InterconnectDownloadKind.audiobook => FushiIcons.audiobook,
+        InterconnectDownloadKind.music => FushiIcons.music,
       }),
       details: _InterconnectTaskDetails(task: task),
     ),
