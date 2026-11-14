@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-14T21:09:47Z",
+ "generatedAt": "2026-11-14T21:11:34Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "ca22b87417ba71ae354ba73e3c3ffd801ff00dea",
-  "seq": 26884
+  "sha": "a62fd0dcec320c9e208968f70957cc0ef48c6577",
+  "seq": 26889
  },
  "builds": [
   {
@@ -161,9 +161,10 @@
   }
  ],
  "pending": {
-  "headSha": "ca22b87417ba71ae354ba73e3c3ffd801ff00dea",
-  "headSeq": 26884,
+  "headSha": "a62fd0dcec320c9e208968f70957cc0ef48c6577",
+  "headSeq": 26889,
   "prs": [
+   3301,
    3413,
    3411
   ],
@@ -176,7 +177,7 @@
   "truncated": false,
   "platforms": {
    "android": {
-    "state": "queued",
+    "state": "building",
     "url": "https://github.com/hajisensai/Fushi/actions/runs/43639943017"
    },
    "windows": {
@@ -194,6 +195,15 @@
   }
  },
  "prs": {
+  "3301": {
+   "number": 3301,
+   "title": "feat(server): WebUI dropdowns and suggestions instead of free text / WebUI 下拉与建议，减少手填",
+   "author": "samutw",
+   "mergedAt": "2026-11-14T21:10:49Z",
+   "additions": 266,
+   "deletions": 22,
+   "labels": []
+  },
   "3317": {
    "number": 3317,
    "title": "fix(shelf): group volumes imported while the shelf is open (BUG-4388)",
