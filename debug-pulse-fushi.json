@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-14T22:13:46Z",
+ "generatedAt": "2026-11-14T22:34:12Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "e2066cb5e14b68e8602cb1036c4dc89a6cbe0aa1",
-  "seq": 27021
+  "sha": "2dd79f45d107940ee7262294ce834417728e2e76",
+  "seq": 27079
  },
  "builds": [
   {
@@ -13,7 +13,7 @@
    "sha": "ca22b87417ba71ae354ba73e3c3ffd801ff00dea",
    "unknown": false,
    "publishedAt": "2026-11-14T22:13:29Z",
-   "testflight": false,
+   "testflight": true,
    "baseSeq": 26879,
    "prs": [
     3413,
@@ -169,9 +169,22 @@
   }
  ],
  "pending": {
-  "headSha": "e2066cb5e14b68e8602cb1036c4dc89a6cbe0aa1",
-  "headSeq": 27021,
+  "headSha": "2dd79f45d107940ee7262294ce834417728e2e76",
+  "headSeq": 27079,
   "prs": [
+   3426,
+   3419,
+   3417,
+   3421,
+   3416,
+   3410,
+   3423,
+   3422,
+   3414,
+   3334,
+   3415,
+   3412,
+   3332,
    3299,
    3284,
    3418,
@@ -187,20 +200,20 @@
   "truncated": false,
   "platforms": {
    "android": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43646046811"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43648633567"
    },
    "windows": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43646046566"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43648633584"
    },
    "macos": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43646046566"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43648633584"
    },
    "ios": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43646046566"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43648633584"
    }
   }
  },
@@ -241,6 +254,15 @@
    "deletions": 1,
    "labels": []
   },
+  "3332": {
+   "number": 3332,
+   "title": "feat(galhook): Nitroplus N2System adapter (backlog text lane)",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-14T22:16:24Z",
+   "additions": 1378,
+   "deletions": 1,
+   "labels": []
+  },
   "3333": {
    "number": 3333,
    "title": "feat(floating-ball): 吉祥物呼吸光晕（默认关）",
@@ -248,6 +270,15 @@
    "mergedAt": "2026-11-14T18:06:43Z",
    "additions": 460,
    "deletions": 20,
+   "labels": []
+  },
+  "3334": {
+   "number": 3334,
+   "title": "feat(galhook/entisgls): EntisGLS 消息文本道 adapter（implemented_unverified，仅文本）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-14T22:24:02Z",
+   "additions": 2228,
+   "deletions": 1,
    "labels": []
   },
   "3355": {
@@ -337,6 +368,15 @@
    "deletions": 3,
    "labels": []
   },
+  "3410": {
+   "number": 3410,
+   "title": "修复查词弹窗放大图跨查词残留（BUG-4499）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-14T22:28:11Z",
+   "additions": 162,
+   "deletions": 1,
+   "labels": []
+  },
   "3411": {
    "number": 3411,
    "title": "fix(srs gen4): Purge(Card) 清掉挪卡后重看目标牌组的删除扣住（增量==重建）",
@@ -344,6 +384,15 @@
    "mergedAt": "2026-11-14T20:29:21Z",
    "additions": 143,
    "deletions": 7,
+   "labels": []
+  },
+  "3412": {
+   "number": 3412,
+   "title": "fix(diagnostics): Android scheduleCrash 失败与无前缀权限 killUid 不再误报闪退",
+   "author": "W1ght",
+   "mergedAt": "2026-11-14T22:23:09Z",
+   "additions": 162,
+   "deletions": 4,
    "labels": []
   },
   "3413": {
@@ -355,6 +404,42 @@
    "deletions": 120,
    "labels": []
   },
+  "3414": {
+   "number": 3414,
+   "title": "修复同步摘要漏数设置、反馈账户条目重启后已读丢失（BUG-4501/4502）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-14T22:25:10Z",
+   "additions": 205,
+   "deletions": 21,
+   "labels": []
+  },
+  "3415": {
+   "number": 3415,
+   "title": "修复漫画 CTC OCR 模型下载 404（BUG-4492）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-14T22:23:54Z",
+   "additions": 26,
+   "deletions": 5,
+   "labels": []
+  },
+  "3416": {
+   "number": 3416,
+   "title": "修复主库损坏无限重试与词典物化探测自我喂养致启动无响应（BUG-4509/4510）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-14T22:29:16Z",
+   "additions": 634,
+   "deletions": 129,
+   "labels": []
+  },
+  "3417": {
+   "number": 3417,
+   "title": "fix(video): 整季批量下载字幕后当前集当场登记并应用（BUG-4496）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-14T22:30:48Z",
+   "additions": 447,
+   "deletions": 18,
+   "labels": []
+  },
   "3418": {
    "number": 3418,
    "title": "fushi_fsrs gen4 parity: 跳过的场景逐个列出，未列 / 过时的跳过让测试失败",
@@ -364,6 +449,15 @@
    "deletions": 25,
    "labels": []
   },
+  "3419": {
+   "number": 3419,
+   "title": "fix(music): 艺人合写署名拆分、歌曲行封面、歌词英文点词回退词首（BUG-4493/4494/4495）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-14T22:31:32Z",
+   "additions": 723,
+   "deletions": 31,
+   "labels": []
+  },
   "3420": {
    "number": 3420,
    "title": "tool(srs): 冻结的真实旧版本二进制实测装置（G7/G8/G11 合并条件）",
@@ -371,6 +465,42 @@
    "mergedAt": "2026-11-14T21:21:00Z",
    "additions": 1444,
    "deletions": 0,
+   "labels": []
+  },
+  "3421": {
+   "number": 3421,
+   "title": "修复迁移卸载按钮无反应与有声书媒体通知元数据洪泛 ANR（BUG-4506/4507）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-14T22:30:04Z",
+   "additions": 215,
+   "deletions": 13,
+   "labels": []
+  },
+  "3422": {
+   "number": 3422,
+   "title": "修复 VOICEVOX 0.26 风格列表为空与歌词扫过时振假名提前点亮",
+   "author": "W1ght",
+   "mergedAt": "2026-11-14T22:25:59Z",
+   "additions": 116,
+   "deletions": 21,
+   "labels": []
+  },
+  "3423": {
+   "number": 3423,
+   "title": "fix(i18n): 非中文语言不再显示简体中文（BUG-4505）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-14T22:27:15Z",
+   "additions": 267,
+   "deletions": 93,
+   "labels": []
+  },
+  "3426": {
+   "number": 3426,
+   "title": "fix(stats): 空闲门按时刻裁剪，恢复输入不再把超阈值的暂停算回时长 (BUG-4498)",
+   "author": "W1ght",
+   "mergedAt": "2026-11-14T22:32:31Z",
+   "additions": 178,
+   "deletions": 30,
    "labels": []
   }
  }
