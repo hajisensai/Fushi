@@ -1,6 +1,7 @@
 import 'package:fushi/src/models/preference_keys.dart'
     show
         kAnkiSettingsPrefKey,
+        kMusicScanParserRevisionPrefKeyPrefix,
         kSrsDayRolloverPendingPrefKeyPrefix,
         kSrsDayRolloverSeenPrefKeyPrefix;
 import 'package:fushi/src/sync/sync_repository.dart';
@@ -132,7 +133,10 @@ abstract final class PrefRedactionPolicy {
   /// - 复习翻日时刻的待写标记 / 已见修改记录（后缀 = profile uid，`AppModel.setStatDayResetHourByUser` /
   ///   `adoptSyncedDayRollover`）：描述的是「这台设备有没有把用户的修改写进复习」「这台设备见过哪条修改」，
   ///   带到别的设备会让那台设备补写一个不是它的用户刚改的值，或把真正新来的修改当成见过的。
+  /// - 音乐来源上次全量解析的扫描修订号（后缀 = 本机来源 id，`MusicLibraryScanner`）：描述的是这台设备的曲库
+  ///   （设备本地表）用哪版解析器入的库；带到别的设备会让那台设备以为自己已经重新解析过、存量曲目永远不更新。
   static const List<String> deviceLocalKeyPrefixes = <String>[
+    kMusicScanParserRevisionPrefKeyPrefix,
     kSrsDayRolloverPendingPrefKeyPrefix,
     kSrsDayRolloverSeenPrefKeyPrefix,
   ];

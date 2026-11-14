@@ -93,6 +93,13 @@ pub extern "C" fn ffm_abi_version() -> i32 {
     ABI_VERSION
 }
 
+/// 扫描解析修订号（[scan::PARSER_REVISION]）。调用方按来源记下上次全量解析时的值，变了就
+/// 不传已知文件清单、整源重新解析，让解析改动落到已入库的曲目上。
+#[no_mangle]
+pub extern "C" fn ffm_scan_parser_revision() -> i32 {
+    scan::PARSER_REVISION
+}
+
 /// 释放本库分配并交给调用方的缓冲区（长度必须与交出时一致）。
 #[no_mangle]
 pub extern "C" fn ffm_free_bytes(ptr: *mut u8, len: usize) {
