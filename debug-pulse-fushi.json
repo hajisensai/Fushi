@@ -1,12 +1,43 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-14T15:26:09Z",
+ "generatedAt": "2026-11-14T16:23:01Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "017cdcf5de029db052c8846344f30867e3de005f",
   "seq": 26834
  },
  "builds": [
+  {
+   "seq": 26834,
+   "version": "3.3.0",
+   "sha": "017cdcf5de029db052c8846344f30867e3de005f",
+   "unknown": false,
+   "publishedAt": "2026-11-14T16:22:51Z",
+   "testflight": false,
+   "baseSeq": 26805,
+   "prs": [
+    3383
+   ],
+   "direct": [],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "ok"
+    },
+    "windows": {
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43605197415"
+    },
+    "macos": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43605197415"
+    },
+    "ios": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43605197415"
+    }
+   }
+  },
   {
    "seq": 26805,
    "version": "3.3.0",
@@ -147,7 +178,8 @@
    "truncated": false,
    "platforms": {
     "android": {
-     "state": "ok"
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43279840519"
     },
     "windows": {
      "state": "ok"
@@ -161,33 +193,7 @@
    }
   }
  ],
- "pending": {
-  "headSha": "017cdcf5de029db052c8846344f30867e3de005f",
-  "headSeq": 26834,
-  "prs": [
-   3383
-  ],
-  "direct": [],
-  "truncated": false,
-  "platforms": {
-   "android": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43605197443"
-   },
-   "windows": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43605197415"
-   },
-   "macos": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43605197415"
-   },
-   "ios": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43605197415"
-   }
-  }
- },
+ "pending": null,
  "prs": {
   "3198": {
    "number": 3198,
