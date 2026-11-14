@@ -3068,6 +3068,15 @@ class GalHookedLine {
   /// Kogado Hy) do not set it.
   static const int flagLaneUniqueHookCode = 0x4;
 
+  /// Native event flag (`kTextEventFlagDialogueSurface`): the writer proved
+  /// structurally that this lane is the game's dialogue surface **now**
+  /// (Unity Mono canvas texts, `unity_mono_dialogue_core.h`: the shown line
+  /// is replaced after the player's advance inputs, clearly more often than
+  /// any other canvas text). Current state, not history: every event of the
+  /// lane carries the writer's current verdict, and a lane that loses it gets
+  /// one thread-discovered event without the flag.
+  static const int flagDialogueSurface = 0x8;
+
   const GalHookedLine({
     required this.seq,
     required this.timestampMs,
@@ -3115,6 +3124,8 @@ class GalHookedLine {
 
   bool get hookCodeIsLaneUnique => (eventFlags & flagLaneUniqueHookCode) != 0;
 
+  bool get isDialogueSurface => (eventFlags & flagDialogueSurface) != 0;
+
   String? get textThreadKey {
     if (threadId == 0) return null;
     final String source = switch (sourceKind) {
@@ -3133,6 +3144,7 @@ class GalHookedLine {
       13 => 'knife',
       15 => 'malie',
       16 => 'softpal',
+      17 => 'system4',
       _ => 'hook',
     };
     return '$source:${threadId.toUnsigned(64).toRadixString(16)}';
@@ -3158,6 +3170,7 @@ class GalHookedLine {
             13 => 'knife exact',
             15 => 'Malie exact',
             16 => 'SoftPal exact',
+            17 => 'System4 exact',
             _ => 'Text hook',
           };
     if (threadAddress == 0) return source;

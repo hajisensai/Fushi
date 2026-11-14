@@ -61,12 +61,18 @@ pub(crate) fn state(c: &Connection, profile: &str, device: &Id) -> Result<Option
 
 /// 第一次见到 [device]（transport.rs `trust_head` 刚插入它的设备行）：本机库非空就记成待确认。[seen_at] = 它那份 head
 /// 的写出时刻（界面显示「首次出现」）。
+///
+/// 「库非空」读的是投影。新设备收段通道（channel.rs）没做完时投影里还缺已收下的操作（追加阶段一条都没投）：同一批
+/// 操作逐条投递到这一刻库已非空，通道路径却读到空库、把这台设备当成可信，它的删除与清除就不扣了（BUG-4478）。所以
+/// 先把通道做完再判。[c] 在调用方的事务里，这里只能在那笔事务里一次做完：`sync2_plan_at` 进事务之前已按片做过
+/// （[sees_new_device]），正常走不到，这是兜底。
 pub(crate) fn note_new_device(
     c: &Connection,
     profile: &str,
     device: &Id,
     seen_at: i64,
 ) -> Result<(), String> {
+    super::channel::settle(c, profile)?;
     if library_fresh(c, profile)? {
         return Ok(());
     }
@@ -77,6 +83,35 @@ pub(crate) fn note_new_device(
     .execute(params![profile, device.0.to_vec(), PENDING, seen_at])
     .map_err(sql)?;
     Ok(())
+}
+
+/// [heads] 里有没有本机还不认识的设备（`plan` 会为它调 [note_new_device] 的那种；只多不少：别的集合的、要更新
+/// 版本才读得了的 head 也算）。`sync2_plan_at` 据此在进写事务之前先把没做完的收段通道按片做完。
+pub(crate) fn sees_new_device(
+    c: &Connection,
+    profile: &str,
+    heads: &[Vec<u8>],
+) -> Result<bool, String> {
+    let mut known = c
+        .prepare_cached(
+            "SELECT EXISTS (SELECT 1 FROM sync2_devices WHERE profile_uid = srs_id(?1) AND device = ?2) \
+                 OR EXISTS (SELECT 1 FROM sync2_self WHERE profile_uid = srs_id(?1) AND device = ?2)",
+        )
+        .map_err(sql)?;
+    for bytes in heads {
+        let Ok(h) = crate::sync2::segment::Head::decode(bytes) else {
+            continue;
+        };
+        if !known
+            .query_row(params![profile, h.device.0.to_vec()], |r| {
+                r.get::<_, bool>(0)
+            })
+            .map_err(sql)?
+        {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 /// 一条修改是不是删除（`deleted` 写成时刻；写成 null 是恢复，不算）。迁移进来的旧删除同样算。

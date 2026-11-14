@@ -145,6 +145,16 @@ class ServerConfig {
   /// 用户无处可改的才是 BUG-2454 修掉的东西。
   static const String defaultMetadataLocale = 'zh-CN';
 
+  /// WebUI 资料语言下拉的常用项（BCP-47）；不在表里的照样可手填。
+  static const List<String> metadataLocaleSuggestions = <String>[
+    'zh-CN',
+    'zh-TW',
+    'zh-HK',
+    'ja',
+    'en',
+    'ko',
+  ];
+
   /// `language`：WebUI（以及服务端面向人的输出）用的界面语言。
   static const String languageEnglish = 'en';
   static const String languageChinese = 'zh';

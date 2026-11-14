@@ -421,6 +421,14 @@ const Duration kDistAnalyzeTimeout = Duration(minutes: 30);
 /// Nothing ran; tool/heavy.dart runs the command on this machine instead.
 const int kDistOffloadDeclined = 75;
 
+/// Like [kDistOffloadDeclined], but only because the other machines were
+/// busy for now: every one of them was locked by another run, paused,
+/// unreachable or short of memory (shim exit 75) before it began the work,
+/// and none failed after taking it. Only with `--offload-claim=<file>`
+/// (tool/heavy.dart while the run queues here, test_flow/
+/// heavy_offload_rival.dart): asking again later may find one free.
+const int kDistOffloadBusy = 76;
+
 /// The directory (relative to the repo root) whose test/ a run covers: the
 /// app, or a workspace package (`dist_test.dart --package=packages/<name>`).
 const String kDistAppPackage = 'fushi';

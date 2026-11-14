@@ -3142,6 +3142,60 @@ extension _VideoSubtitle on _VideoFushiPageState {
       _currentVideoPath != null ||
       controller.cues.isNotEmpty;
 
+  /// 「交给 AI 的参考」区（[VideoSubtitleStudioAiReference]）：只有本机能跑带 AI 校对的
+  /// 生成管线时才有（互联远端的管线在 host 上跑，用 host 自己的文件与指派）。「参考
+  /// 画面」是与生成面板共用的偏好；发不出去的原因现读（提供商指派 / 图片输入可能在
+  /// 面板开着时被改掉）。
+  Future<VideoSubtitleStudioAiReference?> _subtitleStudioAiReference() async {
+    final String? videoPath = _currentVideoPath;
+    if (videoPath == null || _isRemote || !_canRunSubtitlePipeline) return null;
+    final PrefsRepoVideoSubtitleGeneratePrefs prefs =
+        PrefsRepoVideoSubtitleGeneratePrefs(appModel.prefsRepo);
+    final AppVideoSubtitleService service = appVideoSubtitleService(appModel);
+    // 异步 stat：视频在网络盘上时同步 stat 会冻结 UI isolate（BUG-3756）。
+    final bool localFile =
+        !isNetworkMediaPath(videoPath) && await hasLocalMediaFile(videoPath);
+    return VideoSubtitleStudioAiReference(
+      framesEnabled: () => prefs.frames,
+      setFramesEnabled: (BuildContext context, bool value) async {
+        if (value && !await confirmVideoSubtitleAiFrames(context, prefs)) {
+          return;
+        }
+        await prefs.setFrames(value);
+      },
+      framesProblem: () => !localFile
+          ? VideoSubtitleStudioFramesProblem.notLocalFile
+          : service.proofreadProvider == null
+          ? VideoSubtitleStudioFramesProblem.noProvider
+          : !service.proofreadAcceptsImages
+          ? VideoSubtitleStudioFramesProblem.providerRejectsImages
+          : null,
+    );
+  }
+
+  /// 播放器里正显示的主 / 副字幕 → 交给 AI 校对的参考轨（视频路径 → 轨），各自按
+  /// 当前的调轴偏移摆到视频时间上。与目标语言相同的轨由管线丢掉（只收其它语言）。
+  Map<String, List<SubtitleEvidenceTrack>> _playerSubtitleEvidence(
+    VideoPlayerController controller,
+    String videoPath,
+  ) {
+    final List<SubtitleEvidenceTrack> tracks = <SubtitleEvidenceTrack>[
+      ?videoSubtitleStudioEvidenceTrack(
+        cues: controller.secondaryCues,
+        delayMs: controller.effectiveSecondaryDelayMs,
+        label: 'player-secondary',
+      ),
+      ?videoSubtitleStudioEvidenceTrack(
+        cues: controller.cues,
+        delayMs: controller.delayMs,
+        label: 'player-primary',
+      ),
+    ];
+    return tracks.isEmpty
+        ? const <String, List<SubtitleEvidenceTrack>>{}
+        : <String, List<SubtitleEvidenceTrack>>{videoPath: tracks};
+  }
+
   /// 打开字幕工作台（[showVideoSubtitleStudioSheet]）。参考区读的都是播放器的现值
   /// （主 / 副字幕 cue、各自扣过调轴的等效位置、裸画面截图），面板开着时随播放实时
   /// 刷新；工具全部复用本页既有路径，面板只负责分派。
@@ -3155,6 +3209,9 @@ extension _VideoSubtitle on _VideoFushiPageState {
     );
     final bool canGenerate =
         _canTranscribeVideoSpeech || _canRunSubtitlePipeline;
+    final VideoSubtitleStudioAiReference? aiReference =
+        await _subtitleStudioAiReference();
+    if (!context.mounted || !identical(_controller, controller)) return;
     await showVideoSubtitleStudioSheet(
       context: context,
       reference: VideoSubtitleStudioReference(
@@ -3173,6 +3230,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
         captureFrame: controller.screenshot,
         jumpToCue: (AudioCue cue) => unawaited(controller.skipToCue(cue)),
       ),
+      aiReference: aiReference,
       actions: VideoSubtitleStudioActions(
         generate: canGenerate
             ? () => _openSubtitleGeneration(controller)
@@ -3404,6 +3462,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
       onJobStarted: (AppVideoSubtitleJob job) =>
           unawaited(_applyPipelineSubtitleWhenDone(controller, job, videoPath)),
       onTranscribeInApp: onTranscribeInApp,
+      // 播放器里正对照着的其它语言字幕交给 AI 校对当参考（工作台的「参考」不只给人看）。
+      pinnedEvidence: _playerSubtitleEvidence(controller, videoPath),
     );
   }
 
@@ -3594,6 +3654,12 @@ extension _VideoSubtitle on _VideoFushiPageState {
         audioProfile: AsrAudioProfile.mixedAudio,
       ),
       autoProofread: autoProofread,
+      // 转录稿的时间轴就是视频时间（音轨从 0 抽到片尾）：校对时可以附上这个视频的
+      // 画面。取不到本机字节的路径（远端 / 流）取帧那边自己跳过。
+      proofreadHost: appAsrProofreadHost(
+        appModel.prefsRepo,
+        framesVideoPath: _currentVideoPath,
+      ),
     );
   }
 

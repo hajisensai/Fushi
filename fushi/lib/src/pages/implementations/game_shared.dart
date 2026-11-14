@@ -41,16 +41,18 @@ final ValueNotifier<GameSection> gameSectionNotifier =
     ValueNotifier<GameSection>(GameSection.dashboard);
 
 /// 捕获工作台对用户可宣称的阶段。helper/音频源已启动不等于已经能消费台词：
-/// 引擎会话必须先选定文本线程，之后才可能产生与该线程台词绑定的句级音频。
+/// 正文走引擎文本道的会话必须先选定文本线程，之后才可能产生与该线程台词绑定的
+/// 句级音频。[requiresTextThread] 取 [GalHookSessionController.requiresTextThreadSelection]
+/// （正文来自 TyranoScript DOM 源时为 false，不需要选线程）。
 enum GalWorkbenchReadiness { idle, waitingForThread, listening }
 
 GalWorkbenchReadiness galWorkbenchReadiness({
   required GalHookSessionState state,
-  required bool hasEngineSource,
+  required bool requiresTextThread,
   required String? selectedTextThreadKey,
 }) {
   if (!state.isActive) return GalWorkbenchReadiness.idle;
-  if (hasEngineSource && selectedTextThreadKey == null) {
+  if (requiresTextThread && selectedTextThreadKey == null) {
     return GalWorkbenchReadiness.waitingForThread;
   }
   return GalWorkbenchReadiness.listening;
@@ -60,7 +62,7 @@ GalWorkbenchReadiness galWorkbenchReadiness({
 /// 将判定收敛为纯函数，避免 session/listener 的多次通知重复弹窗。
 bool shouldPromptGalCaptureSetup({
   required GalHookSessionState state,
-  required bool hasEngineSource,
+  required bool requiresTextThread,
   required String? selectedTextThreadKey,
   required int textThreadCount,
   required bool sessionAlreadyPrompted,
@@ -73,7 +75,7 @@ bool shouldPromptGalCaptureSetup({
       GalHookSessionPhase.degraded => true,
       _ => false,
     } &&
-    hasEngineSource &&
+    requiresTextThread &&
     selectedTextThreadKey == null &&
     textThreadCount > 0 &&
     !lookupRiskAcceptancePending &&

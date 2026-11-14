@@ -219,16 +219,22 @@ const String kGalResourceNotPairedReason = 'game_resource_not_paired';
 /// 先按线程取行，再按本枚举过滤。
 enum TexthookerLineFilter { all, withAudio, mined, favorited }
 
-/// 引擎适配器自产的**精确文本线程**：hook code 以 `ENGINE:` 为前缀，与 Luna 启发式
-/// hook 的 `HQFN-24@...` 一类码区分。
+/// 引擎适配器自产的**精确文本线程**：适配器在已证明的边界上产出、内容就是屏幕上
+/// 那句的线程。两种来源：
 ///
-/// 带这个前缀的是各引擎适配器在已证明边界上产出的线程（SGRE / BGI / Artemis /
-/// YU-RIS / FVP / Luca / Malie / Siglus 原生消息 `ENGINE:SIGLUS:message` 等，
-/// native 侧命名契约见各 adapter 的 hook code 常量）。Siglus 的 TextRender
-/// （`EXBWX0@%llX:SiglusEngine.exe`）与 Unity（`UnityEngine.TextMesh.set_text(glyphs)`）
-/// **不**带该前缀、不走自动选中——别把它们写成同样受益。
+/// - hook code 以 `ENGINE:` 为前缀（与 Luna 启发式 hook 的 `HQFN-24@...` 一类码区分）：
+///   SGRE / BGI / Artemis / YU-RIS / FVP / Luca / Malie / Siglus 原生消息
+///   `ENGINE:SIGLUS:message` 等，native 侧命名契约见各 adapter 的 hook code 常量；
+/// - native **当前**判定为对白面的道（[TexthookerTextThread.dialogueSurface]，
+///   `kTextEventFlagDialogueSurface`）：Unity Mono 画布文本一组件一道、hook code 全是
+///   `Mono:...`，靠「显示中的整句在玩家推进输入后被换掉、且明显多于其它画布文本」
+///   这一结构判据挑出对白那一道（`unity_mono_dialogue_core.h`）。
+///
+/// Siglus 的 TextRender（`EXBWX0@%llX:SiglusEngine.exe`）、Unity TextMesh 逐字重组
+/// （`UnityEngine.TextMesh.set_text(glyphs)`）与**没被判成对白面**的 Unity 画布文本道
+/// 都不算——别把它们写成同样受益。
 bool isEngineExactTextThread(TexthookerTextThread thread) =>
-    (thread.hookCode ?? '').startsWith('ENGINE:');
+    (thread.hookCode ?? '').startsWith('ENGINE:') || thread.dialogueSurface;
 
 /// 一条可由用户选择的文本 Hook 线程。
 ///
@@ -243,6 +249,7 @@ class TexthookerTextThread {
     required this.latestAt,
     this.hookCode,
     this.hookCodeLaneUnique = false,
+    this.dialogueSurface = false,
     this.nativeThreadId,
     this.latestText,
     this.audioLineCount = 0,
@@ -270,6 +277,7 @@ class TexthookerTextThread {
     label: label ?? this.label,
     hookCode: hookCode,
     hookCodeLaneUnique: hookCodeLaneUnique,
+    dialogueSurface: dialogueSurface,
     nativeThreadId: nativeThreadId,
     lineCount: lineCount,
     latestAt: latestAt,
@@ -292,6 +300,11 @@ class TexthookerTextThread {
   /// FVP / Luca / BGI / YU-RIS / Kogado Hy 都是一个 hook code 下多条 lane（正文 +
   /// 名字牌）。
   final bool hookCodeLaneUnique;
+
+  /// native 当前判定这条道是游戏的对白面（`kTextEventFlagDialogueSurface`，见
+  /// [GalHookedLine.isDialogueSurface]）。**以这条道最新一条事件为准**，不是粘滞位：
+  /// 判定移到别的组件时，native 给旧道补发一条不带该位的线程发现事件把它清掉。
+  final bool dialogueSurface;
   final int? nativeThreadId;
 
   /// 已**发布**到文本环的行数（即当前生效线程的行）。v12 起未被选中的线程恒为 0，
@@ -611,6 +624,7 @@ class TexthookerService extends ChangeNotifier {
         label: entry.textThreadLabel ?? previous?.label ?? key,
         hookCode: entry.textHookCode ?? previous?.hookCode,
         hookCodeLaneUnique: previous?.hookCodeLaneUnique ?? false,
+        dialogueSurface: previous?.dialogueSurface ?? false,
         nativeThreadId: entry.nativeTextThreadId ?? previous?.nativeThreadId,
         lineCount: (previous?.lineCount ?? 0) + 1,
         latestAt: entry.receivedAt,
@@ -790,6 +804,7 @@ class TexthookerService extends ChangeNotifier {
     required String label,
     String? hookCode,
     bool hookCodeLaneUnique = false,
+    bool? dialogueSurface,
     int? nativeThreadId,
     DateTime? discoveredAt,
   }) {
@@ -806,6 +821,8 @@ class TexthookerService extends ChangeNotifier {
       hookCode: hookCode ?? previous?.hookCode,
       hookCodeLaneUnique:
           hookCodeLaneUnique || (previous?.hookCodeLaneUnique ?? false),
+      // 当前判定：本事件带了就以本事件为准（null = 来源不报这一位，沿用）。
+      dialogueSurface: dialogueSurface ?? previous?.dialogueSurface ?? false,
       nativeThreadId: nativeThreadId ?? previous?.nativeThreadId,
       lineCount: 0,
       latestAt: previous != null && previous.latestAt.isAfter(observedAt)
@@ -840,6 +857,7 @@ class TexthookerService extends ChangeNotifier {
     required String text,
     String? hookCode,
     bool hookCodeLaneUnique = false,
+    bool? dialogueSurface,
     int? nativeThreadId,
     DateTime? observedAt,
     bool notify = true,
@@ -858,6 +876,8 @@ class TexthookerService extends ChangeNotifier {
       hookCode: hookCode ?? previous?.hookCode,
       hookCodeLaneUnique:
           hookCodeLaneUnique || (previous?.hookCodeLaneUnique ?? false),
+      // 当前判定：本事件带了就以本事件为准（null = 来源不报这一位，沿用）。
+      dialogueSurface: dialogueSurface ?? previous?.dialogueSurface ?? false,
       nativeThreadId: nativeThreadId ?? previous?.nativeThreadId,
       lineCount: previous?.lineCount ?? 0,
       latestAt: now,

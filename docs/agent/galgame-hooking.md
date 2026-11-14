@@ -165,6 +165,8 @@ ctest --test-dir build-x86 -C Release --output-on-failure
 - 原始逐句资源时的格式、大小/哈希一致性证据；否则明确说明是否含混音；
 - 失败、降级与已知限制，以及证据日期。
 
+游戏在社区志愿者电脑上时，用 [remote-adapt.md](remote-adapt.md) 的机群网关远程跑下面这套驱动指令与触摸验收（对方电脑就是原始启动路径）。
+
 四条标准 + 真卡的逐条判定用真机驱动的一条命令完成（`fushi/integration_test/gal_realgame_driver_itest.dart`，启动方式见其文件头）：先 `fakeanki` 把制卡指到 loopback 假 AnkiConnect（不碰用户真实集合），游戏停在一句对白上后 `accept4 <字形屏幕 x> <y> [关卡点 x y]`，输出每条 `ACCEPT4 <项>=PASS|FAIL <证据>` 与末行 `verdict=full|partial missing=…`。`verdict=full` 才能作为「四条 + 真卡」的运行证据写进台账；它不替代身份台账与原始资源哈希一致性。
 
 ### Windows 触屏 / 滑动验收

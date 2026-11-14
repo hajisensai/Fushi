@@ -1,9 +1,13 @@
 // TyranoScript DOM 帧 → attached surface 实测排版载荷（纯函数）。
 //
 // 坐标契约（runner `attached_measured_layout.h`）：原点是游戏顶层窗口客户区左上角，物理
-// 像素，right/bottom 不含；[GalAttachedMeasuredPayload.clientWidth]/[clientHeight] 必须
-// 等于源客户区物理尺寸，不一致 runner 拒收（`measured_client_size_mismatch`）——这里不猜
-// 偏移（Electron 菜单栏等让视口小于客户区时就是拒收 + 诊断）。
+// 像素，right/bottom 不含；[GalAttachedMeasuredPayload.clientWidth]/[clientHeight] 是
+// 「整数 CSS 视口 × devicePixelRatio」推出来的，与真实客户区物理尺寸最多差不到一个 CSS
+// 像素（小数 dpr 下的取整：Electron 全屏 150% 时客户区 3840x2159、视口 2560x1440 CSS →
+// 3840x2160）。这份量化容差随载荷一起交给 runner
+// （[GalAttachedMeasuredPayload.clientSizeTolerance]），超出容差 runner 拒收
+// （`measured_client_size_mismatch`）——这里不猜偏移（Electron 菜单栏等让视口比客户区小
+// 几十像素时就是拒收 + 诊断）。
 //
 // 文本契约：查词命中回调要求 `hit.sourceText == texthooker 最新行文本`（见
 // `GalHookTextOverlayController._onAttachedLookupText`），而 DOM 行进 texthooker 时
@@ -29,6 +33,7 @@ class GalAttachedMeasuredPayload {
     required this.glyphs,
     required this.clientWidth,
     required this.clientHeight,
+    required this.clientSizeTolerance,
   });
 
   /// 清空当前行（撤掉旧句的命中框）。
@@ -36,7 +41,8 @@ class GalAttachedMeasuredPayload {
     : sourceText = '',
       glyphs = const <GalAttachedMeasuredGlyph>[],
       clientWidth = 0,
-      clientHeight = 0;
+      clientHeight = 0,
+      clientSizeTolerance = 0;
 
   /// 当前行文本（与 texthooker 行文本逐字一致）。
   final String sourceText;
@@ -49,6 +55,10 @@ class GalAttachedMeasuredPayload {
 
   /// 测量时的视口物理高。
   final int clientHeight;
+
+  /// [clientWidth]/[clientHeight] 与真实客户区之间允许的取整误差（物理像素），见
+  /// [galAttachedMeasuredClientSizeTolerance]。
+  final int clientSizeTolerance;
 
   /// 是否为清空。
   bool get isClear => sourceText.isEmpty;
@@ -63,6 +73,7 @@ class GalAttachedMeasuredPayload {
     if (isClear) return true;
     return other.clientWidth == clientWidth &&
         other.clientHeight == clientHeight &&
+        other.clientSizeTolerance == clientSizeTolerance &&
         listEquals(other.glyphs, glyphs);
   }
 
@@ -73,8 +84,21 @@ class GalAttachedMeasuredPayload {
           sourceText,
           clientWidth,
           clientHeight,
+          clientSizeTolerance,
           Object.hashAll(glyphs),
         );
+}
+
+/// 「整数 CSS 视口 × [devicePixelRatio]」推出的客户区物理尺寸相对真实客户区的最大取整
+/// 误差（物理像素）。
+///
+/// Chromium 把物理客户区 P 换成整数 CSS 视口 V（向上 / 就近取整），所以
+/// `|V × dpr − P| < dpr`；Dart 再 `round(V × dpr)`。整数 dpr 时误差是整数，最多
+/// `dpr − 1`（dpr = 1 时为 0，逐像素相等）；小数 dpr 时取整后最多 `ceil(dpr)`。
+int galAttachedMeasuredClientSizeTolerance(double devicePixelRatio) {
+  if (!devicePixelRatio.isFinite || devicePixelRatio <= 0) return 0;
+  final int ceiled = devicePixelRatio.ceil();
+  return devicePixelRatio == ceiled ? ceiled - 1 : ceiled;
 }
 
 /// DOM 正文进 texthooker 后的行文本（`appendLine` 同一收口）；收口带出注音 span 时返回 null。
@@ -143,5 +167,8 @@ GalAttachedMeasuredPayload galAttachedMeasuredPayloadForFrame(
     glyphs: List<GalAttachedMeasuredGlyph>.unmodifiable(glyphs),
     clientWidth: width,
     clientHeight: height,
+    clientSizeTolerance: galAttachedMeasuredClientSizeTolerance(
+      frame.devicePixelRatio,
+    ),
   );
 }
