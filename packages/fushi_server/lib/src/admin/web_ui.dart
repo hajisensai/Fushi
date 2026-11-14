@@ -536,6 +536,10 @@ table.rt,.rt tbody,.rt tr,.rt td{display:block;width:100%}
 <div class="grid" id="srs-status"></div>
 <div id="srs-profiles" style="margin-top:12px"></div>
 </div>
+<h3 class="sh">待确认的设备</h3>
+<div class="card">
+<p class="sup" style="margin:0">本机开始提供某份配置文件之后才第一次同步过来的设备，它的普通修改照常生效，删除与彻底清除先扣在本机，确认是你自己的设备后再生效。拒绝 = 继续扣着，之后仍可改为信任。</p>
+<div id="srs-devices"></div></div>
 <h3 class="sh">制卡落点</h3>
 <div class="card" id="srs-mining"></div>
 <h3 class="sh">AnkiConnect 兼容接口</h3>
@@ -1043,8 +1047,27 @@ $('#btn-anki-retry').onclick = guard(async()=>{ const r = await post('anki/retry
 // ── 复习 ──
 const SRS_STATE = {opening:T('打开中'), ready:T('可用'), encrypted:T('同步位置已加密（暂不支持）'), needs_upgrade:T('数据来自更新版本的 Fushi，请升级服务端'), failed:T('出错')};
 let srsFormKey = null;
+// 待确认 / 已拒绝的设备（服务端开库后第一次同步过来的；删除与彻底清除在本机扣着，engine srs_devices.dart）。
+function renderSrsDevices(devs){
+  const rows = [];
+  (devs.profiles||[]).forEach(p=>(p.untrusted||[]).forEach(d=>rows.push([p, d])));
+  const many = (devs.profiles||[]).length > 1;
+  $('#srs-devices').innerHTML = rows.map(([p, d])=>{
+    const name = d.name ? (d.app ? T('{0}（Fushi {1}）', d.name, d.app) : d.name) : T('未命名设备');
+    const held = T('扣着 {0} 条删除、{1} 条彻底清除', d.heldDeletes, d.heldPurges);
+    const seen = d.trustSince ? T('首次出现 {0}', fmtTime(d.trustSince)) : '';
+    return `<div class="lrow"><div class="lead">${icon('device')}</div><div class="txt"><div class="t">${esc(name)}${d.trust==='pending'?tag('warn', T('待确认')):tag('', T('已拒绝'))}</div><div class="s">${esc([held, seen, many?(p.name||p.uid):''].filter(Boolean).join(' · '))}</div><div class="s mono">${esc(d.device)}</div></div><div class="trail"><button class="b sec" data-srs-trust="${esc(d.device)}" data-uid="${esc(p.uid)}" data-name="${esc(name)}" data-held="${d.heldDeletes+d.heldPurges}" data-purges="${d.heldPurges}">${esc(T('信任'))}</button>${d.trust==='pending'?`<button class="b text danger" data-srs-reject="${esc(d.device)}" data-uid="${esc(p.uid)}">${esc(T('拒绝'))}</button>`:''}</div></div>`;
+  }).join('') || empty(T('没有待确认的设备'), 'device');
+  document.querySelectorAll('[data-srs-trust]').forEach(el=>el.onclick = guard(async()=>{
+    if (!await ask(T('信任「{0}」？它扣着的 {1} 条删除与彻底清除会立即生效。', el.dataset.name, el.dataset.held), Number(el.dataset.purges) > 0)) return;
+    await post('srs/devices/trust', {profile: el.dataset.uid, device: el.dataset.srsTrust, trust: true}); toast(T('已信任')); loadSrs();
+  }));
+  document.querySelectorAll('[data-srs-reject]').forEach(el=>el.onclick = guard(async()=>{
+    await post('srs/devices/trust', {profile: el.dataset.uid, device: el.dataset.srsReject, trust: false}); toast(T('已拒绝，删除继续扣着')); loadSrs();
+  }));
+}
 async function loadSrs(){
-  const [st, found] = await Promise.all([api('srs'), api('srs/profiles')]);
+  const [st, found, devs] = await Promise.all([api('srs'), api('srs/profiles'), api('srs/devices').catch(()=>({profiles:[]}))]);
   const ac = st.ankiConnect || {};
   const kv = [
     [T('状态'), st.enabled ? T('已开启') : T('未开启（没有勾选配置文件）')],
@@ -1052,6 +1075,7 @@ async function loadSrs(){
     ['AnkiConnect', ac.listening ? T('监听 {0}:{1}', ac.bind, ac.listeningPort) : (ac.enabled ? T('未监听') + (ac.lastError ? T('：') + ac.lastError : '') : T('关闭'))],
   ];
   $('#srs-status').innerHTML = kvHtml(kv);
+  renderSrsDevices(devs);
   const served = {}; (st.profiles||[]).forEach(p=>served[p.uid]=p);
   const list = found.profiles || [];
   const key = JSON.stringify([list.map(p=>[p.uid,p.name,p.served,p.missing]), st.config, ac.enabled, ac.bind, ac.port, ac.apiKeySet, ac.profileKeysSet]);

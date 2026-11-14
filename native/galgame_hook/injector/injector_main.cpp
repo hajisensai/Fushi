@@ -36,6 +36,7 @@
 #include "siglus_launch_win32.h"
 #include "unreal_launch.h"
 #include "steam_launch.h"
+#include "steam_stub_unpack.h"
 #include "luna_bridge.h"
 #include "luna_hook_config.h"
 #include "luna_text_selector.h"
@@ -3082,6 +3083,65 @@ bool WaitForReadyGameWindow(HANDLE process, DWORD pid, DWORD timeout_ms,
   return false;
 }
 
+// 往已在运行的进程里注入前，等 SteamStub 壳把代码段原地解密完（判据见 steam_stub_unpack.h）。
+// 不带 `.bind` 节的 exe 立即返回。字节比较不适用（映像被重定位）时退回通用主窗口就绪门。
+// 超时不判失败：注入照常进行，只是 LunaHook 可能认不出引擎——与没有这道门时一样，不会更糟。
+void WaitForSteamStubUnpacked(HANDLE process, DWORD pid,
+                              const std::wstring& exe, DWORD timeout_ms) {
+  if (exe.empty()) return;
+  std::ifstream in(exe, std::ios::binary);
+  if (!in) return;
+  std::vector<uint8_t> bytes(16u << 20);
+  in.read(reinterpret_cast<char*>(bytes.data()),
+          static_cast<std::streamsize>(bytes.size()));
+  bytes.resize(static_cast<size_t>(in.gcount()));
+  const fushi_voice_hook::SteamStubCodeProbe probe =
+      fushi_voice_hook::SelectSteamStubCodeProbe(bytes.data(), bytes.size());
+  if (!probe.valid) return;
+  const uint8_t* file_bytes = bytes.data() + probe.file_offset;
+  std::vector<uint8_t> memory(probe.length);
+  const ULONGLONG started = GetTickCount64();
+  const ULONGLONG deadline = started + timeout_ms;
+  while (GetTickCount64() < deadline) {
+    if (WaitForSingleObject(process, 0) == WAIT_OBJECT_0) return;
+    const uintptr_t base = RemoteImageBase(process);
+    SIZE_T read = 0;
+    const bool got =
+        base != 0 &&
+        ReadProcessMemory(process,
+                          reinterpret_cast<const void*>(base + probe.rva),
+                          memory.data(), memory.size(), &read) &&
+        read == memory.size();
+    const fushi_voice_hook::SteamStubCodeState state =
+        got ? fushi_voice_hook::ClassifySteamStubCode(
+                  probe, base, file_bytes, memory.data(), read)
+            : fushi_voice_hook::SteamStubCodeState::kUnknown;
+    if (state == fushi_voice_hook::SteamStubCodeState::kUnpacked) {
+      fprintf(stderr,
+              "[steamstub] code section decrypted after %llu ms pid=%lu\n",
+              static_cast<unsigned long long>(GetTickCount64() - started), pid);
+      return;
+    }
+    if (state == fushi_voice_hook::SteamStubCodeState::kUnknown && base != 0) {
+      const ULONGLONG now = GetTickCount64();
+      const DWORD remaining =
+          now < deadline ? static_cast<DWORD>(deadline - now) : 0;
+      fprintf(stderr,
+              "[steamstub] byte probe not applicable (base=%p file_base=0x%llx); "
+              "waiting for the main window pid=%lu\n",
+              reinterpret_cast<void*>(base),
+              static_cast<unsigned long long>(probe.file_image_base), pid);
+      WaitForReadyGameWindow(process, pid, remaining);
+      return;
+    }
+    Sleep(15);
+  }
+  fprintf(stderr,
+          "[steamstub] code section still packed after %lu ms; injecting "
+          "anyway pid=%lu\n",
+          timeout_ms, pid);
+}
+
 bool ReadSmallUtf8File(const std::wstring& path, std::wstring* out) {
   if (out == nullptr) return false;
   HANDLE file = CreateFileW(path.c_str(), GENERIC_READ,
@@ -3244,6 +3304,9 @@ int RunSteamLaunch(const std::wstring& exe, const std::wstring& app_id,
   // 与 PID 附着共用同一个就绪门，不另写一份等待逻辑。
   const std::wstring& target_exe = expected_exe;
 #include "attached_siglus_readiness.inc"
+  // 15 ms 轮询发现的进程常还在 SteamStub 壳里：等代码段解密完再注入，否则 LunaHook 一次性
+  // 的引擎识别扫到密文，整局只剩通用 hook。
+  WaitForSteamStubUnpacked(target, pid, expected_exe, 20000);
   ApplyLunaProfiles(expected_exe, pid, luna.profile_path, &luna);
   // Steam 路径的游戏由客户端启动、始终处于运行态，没有可恢复的挂起主线程；但失败原因
   // 同样必须回报，否则 host 只能看到一个没有原因的非零退出。
@@ -3790,6 +3853,8 @@ int main() {
   LunaOptions effective_luna = luna;
   const std::wstring target_exe = ProcessImagePath(target);
 #include "attached_siglus_readiness.inc"
+  // 自动恢复 / host 的跟随附着也可能赶上刚起的 SteamStub 进程；已解密的进程这里立即返回。
+  WaitForSteamStubUnpacked(target, pid, target_exe, 20000);
   ApplyLunaProfiles(target_exe, pid, effective_luna.profile_path,
                     &effective_luna);
   if (!effective_luna.pc_hooks && !target_exe.empty() &&

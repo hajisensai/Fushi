@@ -1,0 +1,230 @@
+diff --git a/engine/src/flutter/shell/platform/windows/flutter_windows_view.cc b/engine/src/flutter/shell/platform/windows/flutter_windows_view.cc
+index 8661bb5a..922930d4 100644
+--- a/engine/src/flutter/shell/platform/windows/flutter_windows_view.cc
++++ b/engine/src/flutter/shell/platform/windows/flutter_windows_view.cc
+@@ -234,15 +234,28 @@ bool FlutterWindowsView::OnWindowSizeChanged(size_t width, size_t height) {
+     return true;
+   }
+ 
++  bool has_presented_frame;
+   {
+     std::unique_lock<std::mutex> lock(resize_mutex_);
+     resize_status_ = ResizeState::kResizeStarted;
+     resize_target_width_ = width;
+     resize_target_height_ = height;
++    has_presented_frame = has_presented_frame_;
+   }
+ 
+   SendWindowMetrics(width, height, binding_handler_->GetDpiScale());
+ 
++  if (!has_presented_frame) {
++    // Nothing has been presented yet, so there is no on-screen frame to keep
++    // in sync with the window and possibly no frame coming soon at all (the
++    // framework may be deferring its first frame). Waiting here would only
++    // stall the platform thread until the timeout below. The resize stays
++    // pending exactly as it does after that timeout: the first frame generated
++    // at the new size resizes the surface on the raster thread before it is
++    // presented, and frames of any other size are rejected.
++    return false;
++  }
++
+   std::chrono::time_point<std::chrono::steady_clock> start_time =
+       std::chrono::steady_clock::now();
+ 
+@@ -751,6 +764,8 @@ void FlutterWindowsView::OnFramePresented() {
+ 
+   std::unique_lock<std::mutex> lock(resize_mutex_);
+ 
++  has_presented_frame_ = true;
++
+   switch (resize_status_) {
+     case ResizeState::kResizeStarted:
+       // The caller must first call |OnFrameGenerated| or
+diff --git a/engine/src/flutter/shell/platform/windows/flutter_windows_view.h b/engine/src/flutter/shell/platform/windows/flutter_windows_view.h
+index 7ae9eec7..1ecc5ab4 100644
+--- a/engine/src/flutter/shell/platform/windows/flutter_windows_view.h
++++ b/engine/src/flutter/shell/platform/windows/flutter_windows_view.h
+@@ -539,9 +539,17 @@ class FlutterWindowsView : public WindowBindingHandlerDelegate {
+   // Currently configured WindowBindingHandler for view.
+   std::unique_ptr<WindowBindingHandler> binding_handler_;
+ 
+-  // Protects resize_status_, resize_target_width_ and resize_target_height_.
++  // Protects resize_status_, resize_target_width_, resize_target_height_ and
++  // has_presented_frame_.
+   std::mutex resize_mutex_;
+ 
++  // True once the raster thread has presented any frame to this view's
++  // surface. Until then a window resize has no frame to synchronize with (the
++  // framework may legitimately not render yet, e.g. while its first frame is
++  // deferred), so the platform thread must not block waiting for one. Guarded
++  // by resize_mutex_.
++  bool has_presented_frame_ = false;
++
+   // Indicates the state of a window resize event. Platform thread will be
+   // blocked while this is not done. Guarded by resize_mutex_.
+   ResizeState resize_status_ = ResizeState::kDone;
+diff --git a/engine/src/flutter/shell/platform/windows/flutter_windows_view_unittests.cc b/engine/src/flutter/shell/platform/windows/flutter_windows_view_unittests.cc
+index b66b4205..b514bb76 100644
+--- a/engine/src/flutter/shell/platform/windows/flutter_windows_view_unittests.cc
++++ b/engine/src/flutter/shell/platform/windows/flutter_windows_view_unittests.cc
+@@ -9,6 +9,7 @@
+ #include <comutil.h>
+ #include <oleacc.h>
+ 
++#include <chrono>
+ #include <future>
+ #include <vector>
+ 
+@@ -996,6 +997,9 @@ TEST(FlutterWindowsViewTest, WindowResizeTests) {
+       engine->CreateView(std::make_unique<NiceMock<MockWindowBindingHandler>>(),
+                          /*is_sized_to_content=*/false, BoxConstraints());
+ 
++  // A frame is already on screen, so the resize synchronizes with the next one.
++  view->OnFramePresented();
++
+   fml::AutoResetWaitableEvent metrics_sent_latch;
+   engine_modifier.embedder_api().SendWindowMetricsEvent = MOCK_ENGINE_PROC(
+       SendWindowMetricsEvent,
+@@ -1068,6 +1072,9 @@ TEST(FlutterWindowsViewTest, TestEmptyFrameResizes) {
+   engine_modifier.SetEGLManager(std::move(egl_manager));
+   view_modifier.SetSurface(std::move(surface));
+ 
++  // A frame is already on screen, so the resize synchronizes with the next one.
++  view->OnFramePresented();
++
+   // Simulate raster thread.
+   std::thread frame_thread([&metrics_sent_latch, &view]() {
+     metrics_sent_latch.Wait();
+@@ -1111,6 +1118,10 @@ TEST(FlutterWindowsViewTest, WindowResizeRace) {
+   engine_modifier.SetEGLManager(std::move(egl_manager));
+   view_modifier.SetSurface(std::move(surface));
+ 
++  // A frame is already on screen, so the resize below synchronizes (and times
++  // out, since the in-flight frame has the old size).
++  view->OnFramePresented();
++
+   // Begin a frame.
+   ASSERT_TRUE(view->OnFrameGenerated(100, 100));
+ 
+@@ -1124,6 +1135,121 @@ TEST(FlutterWindowsViewTest, WindowResizeRace) {
+   view->OnFramePresented();
+ }
+ 
++// Before any frame has been presented (e.g. the framework defers its first
++// frame) a window resize has nothing to synchronize with: it must not block
++// the platform thread, and the first frame must still land on a surface of the
++// new size.
++TEST(FlutterWindowsViewTest, WindowResizeBeforeFirstFrameDoesNotBlock) {
++  auto windows_proc_table = std::make_shared<NiceMock<MockWindowsProcTable>>();
++  std::unique_ptr<FlutterWindowsEngine> engine =
++      GetTestEngine(windows_proc_table);
++
++  EngineModifier engine_modifier{engine.get()};
++  engine_modifier.embedder_api().PostRenderThreadTask = MOCK_ENGINE_PROC(
++      PostRenderThreadTask,
++      ([](auto engine, VoidCallback callback, void* user_data) {
++        callback(user_data);
++        return kSuccess;
++      }));
++
++  auto egl_manager = std::make_unique<egl::MockManager>();
++  auto surface = std::make_unique<egl::MockWindowSurface>();
++  auto resized_surface = std::make_unique<egl::MockWindowSurface>();
++  auto resized_surface_ptr = resized_surface.get();
++
++  EXPECT_CALL(*surface.get(), IsValid).WillRepeatedly(Return(true));
++  EXPECT_CALL(*surface.get(), Destroy).WillOnce(Return(true));
++
++  // The only surface created is the one of the new size.
++  EXPECT_CALL(*egl_manager.get(),
++              CreateWindowSurface(_, /*width=*/500, /*height=*/300))
++      .WillOnce(Return(std::move((resized_surface))));
++  EXPECT_CALL(*resized_surface_ptr, IsValid).WillRepeatedly(Return(true));
++  EXPECT_CALL(*resized_surface_ptr, MakeCurrent).WillOnce(Return(true));
++  EXPECT_CALL(*resized_surface_ptr, SetVSyncEnabled).WillOnce(Return(true));
++  EXPECT_CALL(*windows_proc_table.get(), DwmFlush).WillOnce(Return(S_OK));
++  EXPECT_CALL(*resized_surface_ptr, Destroy).WillOnce(Return(true));
++
++  int metrics_sent = 0;
++  engine_modifier.embedder_api().SendWindowMetricsEvent = MOCK_ENGINE_PROC(
++      SendWindowMetricsEvent,
++      ([&metrics_sent](auto engine, const FlutterWindowMetricsEvent* event) {
++        metrics_sent++;
++        return kSuccess;
++      }));
++
++  std::unique_ptr<FlutterWindowsView> view =
++      engine->CreateView(std::make_unique<NiceMock<MockWindowBindingHandler>>(),
++                         /*is_sized_to_content=*/false, BoxConstraints());
++
++  ViewModifier view_modifier{view.get()};
++  engine_modifier.SetEGLManager(std::move(egl_manager));
++  view_modifier.SetSurface(std::move(surface));
++  metrics_sent = 0;
++
++  // No raster thread produces a frame. The resize returns right away (well
++  // under the 100 ms synchronization timeout) after sending the metrics.
++  auto start = std::chrono::steady_clock::now();
++  EXPECT_FALSE(view->OnWindowSizeChanged(500, 300));
++  auto elapsed = std::chrono::steady_clock::now() - start;
++  EXPECT_LT(elapsed, std::chrono::milliseconds(50));
++  EXPECT_EQ(metrics_sent, 1);
++
++  // A second size change before the first frame (e.g. a maximize after a
++  // setBounds) does not block either; the latest size wins.
++  start = std::chrono::steady_clock::now();
++  EXPECT_FALSE(view->OnWindowSizeChanged(400, 200));
++  EXPECT_FALSE(view->OnWindowSizeChanged(500, 300));
++  elapsed = std::chrono::steady_clock::now() - start;
++  EXPECT_LT(elapsed, std::chrono::milliseconds(50));
++
++  // The resize is still pending: a stale frame of another size is rejected
++  // instead of being drawn on the old surface...
++  EXPECT_FALSE(view->OnFrameGenerated(400, 200));
++
++  // ...and the first frame of the new size resizes the surface on the raster
++  // thread before it is presented, completing the resize.
++  EXPECT_TRUE(view->OnFrameGenerated(500, 300));
++  view->OnFramePresented();
++  EXPECT_EQ(view->surface(), resized_surface_ptr);
++}
++
++// Once a frame has been presented, a window resize keeps synchronizing with
++// the next frame exactly as before: with no frame coming it waits for the
++// full timeout.
++TEST(FlutterWindowsViewTest, WindowResizeAfterFirstFrameStillBlocks) {
++  std::unique_ptr<FlutterWindowsEngine> engine = GetTestEngine();
++
++  EngineModifier engine_modifier(engine.get());
++  engine_modifier.embedder_api().PostRenderThreadTask = MOCK_ENGINE_PROC(
++      PostRenderThreadTask,
++      ([](auto engine, VoidCallback callback, void* user_data) {
++        callback(user_data);
++        return kSuccess;
++      }));
++
++  auto egl_manager = std::make_unique<egl::MockManager>();
++  auto surface = std::make_unique<egl::MockWindowSurface>();
++
++  EXPECT_CALL(*surface.get(), IsValid).WillRepeatedly(Return(true));
++  EXPECT_CALL(*surface.get(), Destroy).WillOnce(Return(true));
++
++  std::unique_ptr<FlutterWindowsView> view =
++      engine->CreateView(std::make_unique<NiceMock<MockWindowBindingHandler>>(),
++                         /*is_sized_to_content=*/false, BoxConstraints());
++
++  ViewModifier view_modifier{view.get()};
++  engine_modifier.SetEGLManager(std::move(egl_manager));
++  view_modifier.SetSurface(std::move(surface));
++
++  view->OnFramePresented();
++
++  auto start = std::chrono::steady_clock::now();
++  EXPECT_FALSE(view->OnWindowSizeChanged(500, 500));
++  auto elapsed = std::chrono::steady_clock::now() - start;
++  EXPECT_GE(elapsed, std::chrono::milliseconds(100));
++}
++
+ // Window resize should succeed even if the render surface could not be created
+ // even though EGL initialized successfully.
+ TEST(FlutterWindowsViewTest, WindowResizeInvalidSurface) {

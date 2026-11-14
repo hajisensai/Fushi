@@ -29,6 +29,12 @@ enum GalGameExitStatus {
 /// 三条纪律：
 /// - **从没见过它活着就永不判死**：判活靠 `OpenProcess`，受保护进程可能恒打不开，
 ///   恒 false 不能被当成「退出」把正在玩的会话停掉——那种情况退回手动停止。
+///   例外是 [existenceConfirmed]：PID 来自 Fushi 自己的 launch（注入器 `LAUNCH pid=`
+///   回报的是它刚 `CreateProcess` 出来、并以注入权限打开过的进程），「它存在过」是
+///   事实而不是需要采样去证明的东西。同目录「转手即退」的启动器 stub（ファタモルガーナ
+///   的 `fata_jp.exe`：只 `CreateProcessW` 拉起 `fata.exe -language=jp` 就退出，第一次
+///   采样前已死）若仍套这条纪律，会永远停在 [GalGameExitStatus.unconfirmed]，接手进程
+///   永远等不到，hook 留在已退出的 stub 上。
 /// - **连续 [confirmSamples] 次失活才算**：单次打不开可能只是句柄瞬时抖动。
 /// - **先找接手进程再判死**：游戏目录下仍有别的存活进程（游戏改设置后自重启、
 ///   启动器拉起本体后退出）说明用户还在玩。归属判据走 [GalgameProcessGroup]。
@@ -37,7 +43,9 @@ class GalGameExitWatch {
     required int pid,
     required this.group,
     this.confirmSamples = kMaxConsecutiveFailures,
-  }) : _pid = pid;
+    bool existenceConfirmed = false,
+  }) : _pid = pid,
+       _seenAlive = existenceConfirmed && pid > 0;
 
   /// 本局游戏的进程组（判活、认领 / 接手进程的归属）。
   final GalgameProcessGroup group;
@@ -46,7 +54,7 @@ class GalGameExitWatch {
   final int confirmSamples;
 
   int _pid;
-  bool _seenAlive = false;
+  bool _seenAlive;
   int _misses = 0;
 
   /// 当前盯着的进程（认领 / 接手后会变；未知时 ≤ 0）。
