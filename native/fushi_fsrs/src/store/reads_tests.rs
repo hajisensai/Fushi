@@ -505,13 +505,14 @@ fn conflict_edits_returns_only_registers_with_two_or_more_edits() {
     let rules = json!([{"kind": "note", "drop": []}]);
     assert!(column(&core, P, "conflict_edits", json!({"rules": rules}), "f").is_empty());
     // 同一个字段键上补第二条互不支配的记录（直接写投影表：另一台设备并发写下的形态）。
+    // ID 由 dot 派生（与真实投影行同一个函数）：关库时与协议 4 的对拍按 dot 核对 ID。
     {
         let w = core.writer().unwrap();
         w.execute(
             "INSERT INTO srs_field_edits (id, profile_uid, entity_kind, entity_id, field_key, writer_id, seq, jslim) \
-             SELECT srs_id('E-extra'), profile_uid, entity_kind, entity_id, field_key, srs_id('other'), 9, jslim \
+             SELECT srs_id(?3), profile_uid, entity_kind, entity_id, field_key, srs_id('other'), 9, jslim \
              FROM srs_field_edits WHERE profile_uid = srs_id(?1) AND entity_id = srs_id(?2) AND field_key = 'f/a'",
-            params![P, note_id(P, 0)],
+            params![P, note_id(P, 0), crate::registers::edit_id("other", 9)],
         )
         .unwrap();
     }
