@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -37,6 +38,11 @@ class _Cand extends VideoSubtitleCandidate {
 }
 
 class _Provider implements VideoSubtitleProvider {
+  _Provider({this.gate});
+
+  /// 非空时下载等它完成，用来在落盘前先关掉面板。
+  final Completer<void>? gate;
+
   @override
   String get id => 'fake';
   @override
@@ -54,11 +60,14 @@ class _Provider implements VideoSubtitleProvider {
   @override
   Future<VideoSubtitleDownload> download(
     VideoSubtitleCandidate candidate,
-  ) async => VideoSubtitleDownload(
-    bytes: Uint8List.fromList(utf8.encode(_srt)),
-    fileName: candidate.fileName,
-    language: 'ja',
-  );
+  ) async {
+    await gate?.future;
+    return VideoSubtitleDownload(
+      bytes: Uint8List.fromList(utf8.encode(_srt)),
+      fileName: candidate.fileName,
+      language: 'ja',
+    );
+  }
 }
 
 void main() {
@@ -146,6 +155,110 @@ void main() {
     expect(File(persisted.single.$2).existsSync(), isTrue);
   });
 
+  testWidgets('BUG-4496 批量途中关闭工作台、之后才落盘：按事件到达直接应用', (
+    WidgetTester tester,
+  ) async {
+    await db.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: const Value<String>('video/show-01'),
+        title: const Value<String>('Show - 01'),
+        videoPath: Value<String>('${tempDir.path}/Show - 01.mkv'),
+      ),
+    );
+    final VideoBookRepository repo = VideoBookRepository(db);
+    final VideoBookRow member = (await repo.getByBookUid('video/show-01'))!;
+    final int collectionId = await db.createMediaCollection(
+      'Show',
+      collectionType: 'collection',
+    );
+    await db.setMediaCollectionAnilistId(collectionId, 21);
+    final MediaCollectionRow collection = (await db.getMediaCollectionById(
+      collectionId,
+    ))!;
+    final Completer<void> gate = Completer<void>();
+    final VideoSubtitleRegistry registry = VideoSubtitleRegistry(
+      <VideoSubtitleProvider>[_Provider(gate: gate)],
+    );
+    final List<String> appliedLate = <String>[];
+    final WorkbenchCollectionPersistRouter router =
+        WorkbenchCollectionPersistRouter(
+          workbenchBookUid: 'video/show-01',
+          applyLate: appliedLate.add,
+        );
+
+    await tester.pumpWidget(
+      TranslationProvider(
+        child: MaterialApp(
+          home: Scaffold(
+            body: SubtitleCollectionPanel(
+              database: db,
+              collection: collection,
+              members: <VideoBookRow>[member],
+              subtitleRegistry: () async => registry,
+              initialApiKey: 'test-key',
+              onApiKeyChanged: (_) async {},
+              saveDirectory: tempDir.path,
+              onRemoteSubtitlePersist: (_, __) async {},
+              onSubtitlePersisted: router.onPersisted,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      glassUnwrap<FilledButton>(
+        find.byKey(const ValueKey<String>('subtitle-collection-download-all')),
+      ),
+    );
+    await tester.pump();
+
+    // 批量卡在下载上时关掉工作台（面板卸载），播放页此刻读到的快照为空。
+    await tester.pumpWidget(const SizedBox.shrink());
+    expect(router.close(), isNull);
+    expect(appliedLate, isEmpty);
+
+    gate.complete();
+    for (int i = 0; i < 50 && appliedLate.isEmpty; i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 20)),
+      );
+      await tester.pump();
+    }
+
+    expect(appliedLate, hasLength(1));
+    final VideoBookRow? saved = await repo.getByBookUid('video/show-01');
+    expect(saved?.subtitleSource, appliedLate.single);
+  });
+
+  group('WorkbenchCollectionPersistRouter', () {
+    test('关闭前到达：由 close 交出，不走 applyLate', () {
+      final List<String> late = <String>[];
+      final WorkbenchCollectionPersistRouter router =
+          WorkbenchCollectionPersistRouter(
+            workbenchBookUid: 'ep1',
+            applyLate: late.add,
+          );
+      router.onPersisted('ep2', '/s/ep2.srt');
+      router.onPersisted('ep1', '/s/ep1.srt');
+      expect(router.close(), '/s/ep1.srt');
+      expect(late, isEmpty);
+    });
+
+    test('关闭后到达：直接 applyLate；其他集忽略', () {
+      final List<String> late = <String>[];
+      final WorkbenchCollectionPersistRouter router =
+          WorkbenchCollectionPersistRouter(
+            workbenchBookUid: 'ep1',
+            applyLate: late.add,
+          );
+      expect(router.close(), isNull);
+      router.onPersisted('ep2', '/s/ep2.srt');
+      router.onPersisted('ep1', '/s/ep1.srt');
+      expect(late, <String>['/s/ep1.srt']);
+    });
+  });
+
   group('workbenchPathsToApply', () {
     test('只有合集批量落到当前集：应用它', () {
       expect(
@@ -189,11 +302,19 @@ void main() {
     final String src = File(
       'lib/src/pages/implementations/video_fushi/subtitle.part.dart',
     ).readAsStringSync();
+    final int routerAt = src.indexOf('WorkbenchCollectionPersistRouter(');
+    expect(routerAt, isNonNegative);
+    final String late = src.substring(routerAt, routerAt + 600);
+    expect(late, contains('_activeBookUid != workbenchBookUid'));
+    expect(late, contains('_applyDownloadedSubtitles(controller'));
     final int open = src.indexOf('SubtitleWorkbenchPage.open(');
     expect(open, isNonNegative);
     final String body = src.substring(open, open + 1600);
-    expect(body, contains('onCollectionSubtitlePersisted:'));
-    expect(body, contains('bookUid == workbenchBookUid'));
+    expect(
+      body,
+      contains('onCollectionSubtitlePersisted: collectionRouter.onPersisted'),
+    );
+    expect(body, contains('collectionRouter.close()'));
     expect(body, contains('workbenchPathsToApply('));
     expect(body, contains('_applyDownloadedSubtitles(controller, toApply)'));
     final String workbench = File(

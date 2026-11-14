@@ -1587,9 +1587,21 @@ extension _VideoSubtitle on _VideoFushiPageState {
     // BUG-4496：「整个合集」批量下载只把字幕写进存储（本地 DB / 远端 prefs），本页
     // 的字幕列表与 cue 是开视频时读进内存的，不会自己变——当前集下好了字幕，列表
     // 仍是空的，要重开视频才有。工作台盖着本页期间不会换集，按打开时的当前集收下
-    // 落到它的那条，关闭后与「本集」下载同一条链路登记并应用。
+    // 落到它的那条，关闭后与「本集」下载同一条链路登记并应用。批量途中关掉工作台
+    // 时批量不取消、之后才落盘，那条按事件到达时直接应用（仍在同一集才应用）。
     final String workbenchBookUid = _activeBookUid;
-    String? collectionPathForCurrent;
+    final WorkbenchCollectionPersistRouter collectionRouter =
+        WorkbenchCollectionPersistRouter(
+          workbenchBookUid: workbenchBookUid,
+          applyLate: (String path) {
+            if (!mounted ||
+                _activeBookUid != workbenchBookUid ||
+                !identical(_controller, controller)) {
+              return;
+            }
+            unawaited(_applyDownloadedSubtitles(controller, <String>[path]));
+          },
+        );
     final List<String>? downloadedPaths = await SubtitleWorkbenchPage.open(
       context,
       host: AppSubtitleWorkbenchHost(appModel),
@@ -1606,10 +1618,9 @@ extension _VideoSubtitle on _VideoFushiPageState {
         videoPath: _isRemote ? null : _currentVideoPath,
       ),
       collection: collection,
-      onCollectionSubtitlePersisted: (String bookUid, String path) {
-        if (bookUid == workbenchBookUid) collectionPathForCurrent = path;
-      },
+      onCollectionSubtitlePersisted: collectionRouter.onPersisted,
     );
+    final String? collectionPathForCurrent = collectionRouter.close();
     // 工作台内含联网搜索/下载，会夺焦；关闭后把焦点还给 Video。
     _focusOwnership.reclaim(FocusReclaimCause.overlayClosed);
     final List<String> toApply = workbenchPathsToApply(

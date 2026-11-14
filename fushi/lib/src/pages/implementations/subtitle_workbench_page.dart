@@ -40,6 +40,46 @@ List<String> workbenchPathsToApply({
     collectionPathForCurrent,
 ];
 
+/// BUG-4496：把「整个合集」批量的逐集持久化回调路由到播放页。
+///
+/// 批量不随工作台关闭而取消（页头返回 / 系统返回在批量途中照样能 pop，
+/// [SubtitleCollectionPanel] 的落盘在 dispose 之后仍会跑完并回调），所以应用时机
+/// 必须跟「持久化完成」这个事件走，而不是只在关闭时读一次快照：
+/// - 工作台还开着：先收下，关闭时由 [close] 交给播放页，与「本集」下载合并应用；
+/// - 工作台已关：直接交给 [applyLate]（播放页自己再判是否仍在同一集）。
+/// 只认打开工作台时的那一集 [workbenchBookUid]，其余集的回调忽略。
+class WorkbenchCollectionPersistRouter {
+  WorkbenchCollectionPersistRouter({
+    required this.workbenchBookUid,
+    required this.applyLate,
+  });
+
+  final String workbenchBookUid;
+  final void Function(String path) applyLate;
+
+  bool _closed = false;
+  String? _pathForCurrent;
+
+  /// 面板 `onSubtitlePersisted` 的订阅入口。
+  void onPersisted(String bookUid, String path) {
+    if (bookUid != workbenchBookUid) return;
+    if (_closed) {
+      applyLate(path);
+      return;
+    }
+    _pathForCurrent = path;
+  }
+
+  /// 工作台关闭：返回关闭前已落到当前集的那条（没有为 null），此后到达的回调
+  /// 改走 [applyLate]。
+  String? close() {
+    _closed = true;
+    final String? path = _pathForCurrent;
+    _pathForCurrent = null;
+    return path;
+  }
+}
+
 /// 「本集」作用域的输入：搜索种子 + 记忆键。
 class SubtitleEpisodeSearchSpec {
   const SubtitleEpisodeSearchSpec({
