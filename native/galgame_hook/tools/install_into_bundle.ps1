@@ -297,11 +297,17 @@ foreach ($arch in @('x86', 'x64')) {
   $target = Join-Path $BundleDirectory "voice_hook\$arch"
   # Same reasoning as the purge paths above: a previously injected hook DLL is
   # still mapped into the game the developer just closed, so the old directory has
-  # to be moved aside rather than deleted in place.  Expand-Archive then writes
+  # to be moved aside rather than deleted in place.  Extraction then writes
   # into a directory nothing holds.
   Disable-FushiStaleHelper -Path $target -Reason "replacing $arch with the freshly built helper"
   New-Item -ItemType Directory -Force -Path $target | Out-Null
-  Expand-Archive -LiteralPath $zip -DestinationPath $target -Force
+  # Not Expand-Archive: on the Windows runner image 20261112+ the bundled
+  # Microsoft.PowerShell.Archive calls a 3-argument ZipFile.ExtractToDirectory that
+  # .NET Framework does not have, so every Windows build failed at INSTALL. The
+  # 2-argument overload exists on .NET Framework 4.5+ and .NET; $target was just
+  # recreated empty above, so the no-overwrite overload is exactly right.
+  Add-Type -AssemblyName System.IO.Compression.FileSystem
+  [System.IO.Compression.ZipFile]::ExtractToDirectory($zip, $target)
 
   $missing = @()
   foreach ($relative in $RequiredFiles[$arch]) {
