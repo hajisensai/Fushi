@@ -1,12 +1,49 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-14T21:11:34Z",
+ "generatedAt": "2026-11-14T21:58:14Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "a62fd0dcec320c9e208968f70957cc0ef48c6577",
-  "seq": 26889
+  "sha": "dc70a7d6ca8ea009326a74a0f47d6a7a57216364",
+  "seq": 27013
  },
  "builds": [
+  {
+   "seq": 26884,
+   "version": "3.3.0",
+   "sha": "ca22b87417ba71ae354ba73e3c3ffd801ff00dea",
+   "unknown": false,
+   "publishedAt": "2026-11-14T21:58:02Z",
+   "testflight": false,
+   "baseSeq": 26879,
+   "prs": [
+    3413,
+    3411
+   ],
+   "direct": [
+    {
+     "sha": "ac1c45827bbeb2017fe9f623fb6a305d8d657a18",
+     "subject": "chore(bugs): settle BUG number collisions on 1d164f2e7"
+    }
+   ],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "ok"
+    },
+    "windows": {
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43639943062"
+    },
+    "macos": {
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43639943062"
+    },
+    "ios": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43639943062"
+    }
+   }
+  },
   {
    "seq": 26879,
    "version": "3.3.0",
@@ -129,72 +166,53 @@
      "state": "ok"
     }
    }
-  },
-  {
-   "seq": 26805,
-   "version": "3.3.0",
-   "sha": "e88fbfc053abda2c089f928bed83cae8b3802734",
-   "unknown": false,
-   "publishedAt": "2026-11-14T15:09:06Z",
-   "testflight": false,
-   "baseSeq": null,
-   "prs": [],
-   "direct": [],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "ok"
-    },
-    "windows": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43603825667"
-    },
-    "macos": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43603825667"
-    },
-    "ios": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43603825667"
-    }
-   }
   }
  ],
  "pending": {
-  "headSha": "a62fd0dcec320c9e208968f70957cc0ef48c6577",
-  "headSeq": 26889,
+  "headSha": "dc70a7d6ca8ea009326a74a0f47d6a7a57216364",
+  "headSeq": 27013,
   "prs": [
-   3301,
-   3413,
-   3411
+   3284,
+   3418,
+   3420,
+   3301
   ],
   "direct": [
    {
-    "sha": "ac1c45827bbeb2017fe9f623fb6a305d8d657a18",
-    "subject": "chore(bugs): settle BUG number collisions on 1d164f2e7"
+    "sha": "dc70a7d6ca8ea009326a74a0f47d6a7a57216364",
+    "subject": "chore(bugs): settle BUG number collisions on 03bcc3a1a"
    }
   ],
   "truncated": false,
   "platforms": {
    "android": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43639943017"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43644974249"
    },
    "windows": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43639943062"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43644974708"
    },
    "macos": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43639943062"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43644974708"
    },
    "ios": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43639943062"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43644974708"
    }
   }
  },
  "prs": {
+  "3284": {
+   "number": 3284,
+   "title": "srs: 内核 Drift 事务守卫（只计数、只打日志）— 收 Dart 写路径第 1 步",
+   "author": "W1ght",
+   "mergedAt": "2026-11-14T21:50:57Z",
+   "additions": 25947,
+   "deletions": 8041,
+   "labels": []
+  },
   "3301": {
    "number": 3301,
    "title": "feat(server): WebUI dropdowns and suggestions instead of free text / WebUI 下拉与建议，减少手填",
@@ -325,6 +343,24 @@
    "mergedAt": "2026-11-14T20:54:17Z",
    "additions": 521,
    "deletions": 120,
+   "labels": []
+  },
+  "3418": {
+   "number": 3418,
+   "title": "fushi_fsrs gen4 parity: 跳过的场景逐个列出，未列 / 过时的跳过让测试失败",
+   "author": "W1ght",
+   "mergedAt": "2026-11-14T21:44:12Z",
+   "additions": 170,
+   "deletions": 25,
+   "labels": []
+  },
+  "3420": {
+   "number": 3420,
+   "title": "tool(srs): 冻结的真实旧版本二进制实测装置（G7/G8/G11 合并条件）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-14T21:21:00Z",
+   "additions": 1444,
+   "deletions": 0,
    "labels": []
   }
  }
