@@ -84,26 +84,14 @@ Future<Set<String>> srsReferencedMedia(
 }
 
 /// 媒体回收 / 位置清理用的「存活引用」：存活笔记、删除未满 [retention] 的笔记、全部笔记类型（含已删除的）的
-/// 模板与 CSS。比 [srsReferencedMedia] 多算已删除的笔记类型（可能被恢复）。
+/// 模板与 CSS。比 [srsReferencedMedia] 多算已删除的笔记类型（可能被恢复）。口径只在内核一处
+/// （[SrsDbStore.liveMediaRefs]），本机媒体回收用的是同一份。
 Future<Set<String>> srsLiveMediaReferences(
   SrsDbStore store, {
   Duration retention = kSrsMediaRetention,
-}) async {
-  final int cutoff = store.now().$1 - retention.inMilliseconds;
-  final Set<String> out = await store.noteMediaRefs(deletedAfterMs: cutoff);
-  final Map<String, SrsNoteTypeView?> types = await store.noteTypesById(
-    await store.entityIds(SrsEntityKind.noteType),
-  );
-  for (final SrsNoteTypeView? t in types.values) {
-    if (t == null) continue;
-    for (final SrsTemplateDef tpl in t.templates) {
-      out.addAll(srsMediaRefsIn(tpl.front, includeStatic: true));
-      out.addAll(srsMediaRefsIn(tpl.back, includeStatic: true));
-    }
-    out.addAll(srsMediaRefsIn(t.css, includeStatic: true));
-  }
-  return out.where(srsIsBareMediaName).toSet();
-}
+}) => store.liveMediaRefs(
+  aliveAfterMs: store.now().$1 - retention.inMilliseconds,
+);
 
 /// 只认裸文件名（不含路径分隔、不是 `.` / `..`）：媒体目录外的路径一律不碰。
 bool srsIsBareMediaName(String n) =>

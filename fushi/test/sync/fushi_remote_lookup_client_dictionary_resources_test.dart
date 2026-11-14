@@ -5,6 +5,7 @@ import 'package:drift/drift.dart' hide isNotNull, isNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/sync/fushi_remote_lookup_client.dart';
+import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:http/http.dart' as http;
@@ -13,6 +14,17 @@ import 'package:http/testing.dart';
 /// [FushiRemoteLookupClient.dictionaryStyles] / [FushiRemoteLookupClient.dictionaryMedia]：
 /// 手机遥控查电脑词典时，弹框的样式与媒体只问钉住的那台电脑。
 void main() {
+  // V-B4：明文地址拿凭据前要当场 ping 核对 hostId；这些用例的对端是 MockClient，
+  // 把身份核对视为通过。
+  setUp(() {
+    resetInterconnectRaceCache();
+    debugInterconnectAddressProbeOverride =
+        (FushiClientUrl candidate, String? hostId) async => true;
+  });
+  tearDown(() {
+    debugInterconnectAddressProbeOverride = null;
+    resetInterconnectRaceCache();
+  });
   const FushiClientUrl pinned = FushiClientUrl(
     url: 'http://desk:8765',
     hostId: 'desk',

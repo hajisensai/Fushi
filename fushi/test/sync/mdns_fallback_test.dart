@@ -282,6 +282,95 @@ void main() {
       await browser.stop();
     });
 
+    // C10：SRV / TXT / A 曾不分来源全进缓存，同网段任何 mDNS 服务（打印机、
+    // AirPlay……）都会把缓存撑大且永不回收。
+    test('records of other services and their hosts are never cached', () {
+      final MdnsServiceBrowser browser = MdnsServiceBrowser(
+        transport: _InertMdnsTransport(),
+        serviceType: '_fushi-sync._tcp',
+      );
+      final MdnsName otherService = MdnsName.parse('_other._tcp.local');
+      final MdnsName otherInstance = otherService.child('Printer');
+      final MdnsName otherHost = MdnsName(const <String>['printer', 'local']);
+      browser.debugReceive(
+        encodeMdnsMessage(
+          MdnsMessage(
+            isResponse: true,
+            answers: <MdnsRecord>[
+              MdnsPtrRecord(otherService, 4500, otherInstance),
+            ],
+            additionals: <MdnsRecord>[
+              MdnsSrvRecord(otherInstance, 120, port: 631, target: otherHost),
+              MdnsTxtRecord(otherInstance, 4500, const <String, String>{
+                'id': 'x',
+              }),
+              MdnsARecord(otherHost, 120, InternetAddress('10.254.0.77')),
+            ],
+          ),
+        ),
+      );
+      expect(browser.debugCacheSizes, (srv: 0, txt: 0, a: 0));
+    });
+
+    test('an expired host name is reclaimed, not left as an empty entry', () {
+      DateTime now = DateTime(2026, 11, 10, 9);
+      final MdnsServiceBrowser browser = MdnsServiceBrowser(
+        transport: _InertMdnsTransport(),
+        serviceType: '_fushi-sync._tcp',
+        clock: () => now,
+      );
+      final MdnsName instance = _service.child('Phone');
+      final MdnsName host = MdnsName(const <String>['phone', 'local']);
+      browser.debugReceive(
+        encodeMdnsMessage(
+          MdnsMessage(
+            isResponse: true,
+            answers: <MdnsRecord>[MdnsPtrRecord(_service, 4500, instance)],
+            additionals: <MdnsRecord>[
+              MdnsSrvRecord(instance, 120, port: 8765, target: host),
+              MdnsARecord(host, 120, InternetAddress('10.254.0.50')),
+            ],
+          ),
+        ),
+      );
+      expect(browser.debugCacheSizes, (srv: 1, txt: 0, a: 1));
+      now = now.add(const Duration(seconds: 121));
+      browser.debugSweep();
+      expect(browser.debugCacheSizes.a, 0);
+    });
+
+    test('an A goodbye that empties a host name drops the name', () {
+      final MdnsServiceBrowser browser = MdnsServiceBrowser(
+        transport: _InertMdnsTransport(),
+        serviceType: '_fushi-sync._tcp',
+      );
+      final MdnsName instance = _service.child('Phone');
+      final MdnsName host = MdnsName(const <String>['phone', 'local']);
+      browser.debugReceive(
+        encodeMdnsMessage(
+          MdnsMessage(
+            isResponse: true,
+            answers: <MdnsRecord>[MdnsPtrRecord(_service, 4500, instance)],
+            additionals: <MdnsRecord>[
+              MdnsSrvRecord(instance, 120, port: 8765, target: host),
+              MdnsARecord(host, 120, InternetAddress('10.254.0.50')),
+            ],
+          ),
+        ),
+      );
+      browser.debugReceive(
+        encodeMdnsMessage(
+          MdnsMessage(
+            isResponse: true,
+            answers: <MdnsRecord>[
+              MdnsARecord(host, 0, InternetAddress('10.254.0.50')),
+            ],
+          ),
+        ),
+      );
+      expect(browser.debugCacheSizes.a, 0);
+    });
+
     test('legacy unicast queriers (source port != 5353) get a unicast reply '
         'echoing the id', () async {
       final _FakeLan lan = _FakeLan();
@@ -435,4 +524,22 @@ class _FailingBroadcast implements BonsoirBroadcast {
   @override
   dynamic noSuchMethod(Invocation invocation) =>
       throw StateError('never initialised: ${invocation.memberName}');
+}
+
+/// A socket that never delivers or sends anything (cache-only tests).
+class _InertMdnsTransport implements MdnsTransport {
+  @override
+  Stream<MdnsDatagram> get datagrams => const Stream<MdnsDatagram>.empty();
+
+  @override
+  void sendMulticast(Uint8List data) {}
+
+  @override
+  void sendTo(Uint8List data, InternetAddress address, int port) {}
+
+  @override
+  Future<List<InternetAddress>> localAddresses() async => <InternetAddress>[];
+
+  @override
+  void close() {}
 }

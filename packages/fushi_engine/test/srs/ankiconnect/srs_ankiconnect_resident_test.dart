@@ -452,7 +452,8 @@ void main() {
             }))!
             as List<Object?>;
     expect(added.whereType<int>(), hasLength(50));
-    expect(f.counter.transactions, 1, reason: f.counter.summary());
+    // 50 条一次落库：一条 `apply`，内核在它自己的 SAVEPOINT 里连同缓存与本机状态行一起提交，不开 Drift 事务。
+    expect(f.counter.transactions, 0, reason: f.counter.summary());
 
     // 写后的下一次请求只补读变了的 50 条（连同它们的卡），不整库重读。
     f.counter.reset();
