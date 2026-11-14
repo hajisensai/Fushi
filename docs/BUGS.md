@@ -33,10 +33,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3970 条。点号进各自文件。
+> 共 3973 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4508](bugs/BUG-4508-screen-ocr-mlkit-unavailable-despite-ready.md) | 🚧 | 🚧 | 悬浮球截屏 OCR 一直报「系统 OCR 模型未就绪」，配置弹窗却说已就绪 |
+| [BUG-4507](bugs/BUG-4507-audiobook-notification-metadata-flood-anr.md) | ✅ | ✅ | 有声书播放中 Android 无响应（ANR）：媒体通知元数据被重复推送几千次 |
+| [BUG-4506](bugs/BUG-4506-migration-uninstall-hibiki-button-noop.md) | ✅ | ✅ | 首页「卸载 Hibiki」按钮点了没反应，迁移完成提示关不掉 |
 | [BUG-4478](bugs/BUG-4478-srs-sync2-bootstrap-channel-never-selected.md) | ✅ | ✅ | 复习同步 v2 的新设备收段通道在生产里一次都不会被选中 |
 | [BUG-4477](bugs/BUG-4477-srs-adopt-deletes-decks-without-notes.md) | ✅ | ✅ | 复习同步关联只看笔记，只建了牌组 / 改了预设的设备被自动采用对方 uid，自建牌组与预设被删 |
 | [BUG-4476](bugs/BUG-4476-gal-dom-no-voice-mining-spins.md) | ✅ | ✅ | TyranoScript 无语音行制卡时浮窗制卡按钮长时间转圈 |
