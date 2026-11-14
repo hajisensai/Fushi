@@ -3410,6 +3410,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       pageNumbers: pageNumbers,
       currentSpread: _currentSpread,
       restoreFraction: isWebtoon ? _currentFraction : 0,
+      enableMouseTextSelection:
+          Platform.isLinux || Platform.isWindows || Platform.isMacOS,
       documentGeneration: documentGeneration,
       ocrPageIndices: keptPages,
       zoomSensitivity: _zoomSensitivity,
