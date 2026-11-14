@@ -70,6 +70,11 @@ describe('scripts/feedback.mjs', () => {
     expect(need).toEqual([b]);
     expect(env.DB.raw.prepare(listSql({ status: 'all' })).all()).toHaveLength(2);
     expect(() => listSql({ status: "open' OR 1=1 --" })).toThrow(/未知状态/);
+    // 默认不截断（旧版默认 100 / 最多 500）；显式 --limit 才限条数。
+    expect(listSql({ status: 'all' })).not.toMatch(/LIMIT/);
+    expect(env.DB.raw.prepare(listSql({ status: 'all', limit: '1' })).all()).toHaveLength(1);
+    expect(listSql({ status: 'all', limit: '2000' })).toMatch(/LIMIT 2000$/);
+    expect(listSql({ status: 'all', limit: 'abc' })).not.toMatch(/LIMIT/);
 
     const [rowSql, msgSql] = showSql(a);
     const row = env.DB.raw.prepare(rowSql).get();
