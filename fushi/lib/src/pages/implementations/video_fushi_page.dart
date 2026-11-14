@@ -8739,6 +8739,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   @override
   ShortcutScope? get dictionaryPopupInputScope => ShortcutScope.video;
 
+  // 视频页读 popupMineEntry 的键盘绑定派发制卡（video_player_shortcuts.dart）。
+  @override
+  ShortcutAction? get dictionaryPopupMineShortcutAction =>
+      ShortcutAction.popupMineEntry;
+
   /// 与 [guardVideoShortcutsWithPopupDismiss] 同语义：浮层可见时**任一**已映射的视频
   /// 快捷键都先关顶层浮层。故整份 video scope 都要转发——弹窗内动作
   /// （dictionaryPopup scope 的切词条 / 制卡）由 [dictionaryPopupInputSpecFor] 统一减掉，
