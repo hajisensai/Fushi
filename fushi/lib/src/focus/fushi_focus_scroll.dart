@@ -192,7 +192,7 @@ class FushiFocusScroll {
   /// [widget] 是否把整棵子树藏起来了：`Offstage(offstage: true)`，或不可见的
   /// [Visibility]（它的 maintainSize 形态仍有几何，光看 Offstage 抓不到）。
   ///
-  /// [IndexedStack] 的非当前 child 从 Flutter 3.47 起**不再**包 `Visibility`
+  /// [IndexedStack] 的非当前 child 从 Flutter 3.47 起（3.50.0 仍是）**不再**包 `Visibility`
   /// widget，而是直接包私有的 `_VisibilityScope`（+ `ExcludeFocus`），按 widget
   /// 类型认不出来；那一路由调用方对 Scrollable 的 context 查 [Visibility.of]
   /// （SDK 公开的「这里是否可见」判据，`Visibility` 与 IndexedStack 都经它上报），

@@ -5,7 +5,8 @@ import 'package:flutter/services.dart';
 ///
 /// ## 为什么不用 Flutter 自带的 [PredictiveBackPageTransitionsBuilder]
 ///
-/// Flutter 3.44 的自带实现把「手势开始 / 提交 / 取消」这三个平台事件**直接**转成
+/// Flutter 3.44 – 3.50.0 的自带实现（3.50.0 的 `routes.dart` 这段仍逐字相同）把
+/// 「手势开始 / 提交 / 取消」这三个平台事件**直接**转成
 /// [NavigatorState.didStartUserGesture] / [NavigatorState.didStopUserGesture] 的
 /// 全局计数增减（`widgets/routes.dart` 的 `TransitionRoute.handleStartBackGesture`
 /// 与 `_handleDragEnd`），中间没有任何状态机去保证两者配对。而这个计数一旦失配，
