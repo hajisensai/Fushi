@@ -33,12 +33,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3971 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-4498](bugs/BUG-4498-study-clock-idle-resume-recredits.md) | ✅ | ✅ | 空闲门过期后恢复输入，超出阈值的暂停被整段算回学习时长 |
-> 共 3997 条。点号进各自文件。
+> 共 3998 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -59,6 +54,7 @@
 | [BUG-4501](bugs/BUG-4501-sync-summary-ignores-settings.md) | ✅ | ✅ | sync-summary-ignores-settings |
 | [BUG-4500](bugs/BUG-4500-srs-native-card-summary-tap-triggers-lookup.md) | 🚧 | 🚧 | 复习原生卡面点「语法详情」折叠标题会同时弹出查词 |
 | [BUG-4499](bugs/BUG-4499-popup-image-lightbox-persists-across-lookups.md) | ✅ | ✅ | 查词弹窗里点开的放大图跨查词残留，下次查别的词仍盖在结果上 |
+| [BUG-4498](bugs/BUG-4498-study-clock-idle-resume-recredits.md) | ✅ | ✅ | 空闲门过期后恢复输入，超出阈值的暂停被整段算回学习时长 |
 | [BUG-4496](bugs/BUG-4496-collection-subtitle-batch-player-not-refreshed.md) | ✅ | ✅ | 整季下载字幕后当前视频的字幕列表仍为空，要重开视频才有 |
 | [BUG-4495](bugs/BUG-4495-music-lyrics-latin-lookup-mid-word.md) | ✅ | ✅ | 音乐歌词点英文单词中间的字母只查到后半截 |
 | [BUG-4494](bugs/BUG-4494-music-song-list-local-rows-no-cover.md) | ✅ | ✅ | 音乐「歌曲」分区本地曲目行全是音符图标，不显示封面 |
