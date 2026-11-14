@@ -80,6 +80,37 @@ void main() {
   Map<String, dynamic>? aiOf(String text) =>
       (jsonDecode(text) as Map<String, dynamic>)['ai'] as Map<String, dynamic>?;
 
+  test('images（模型能看图）：缺省关；打开后写进 yaml、提供商带图片输入', () async {
+    final (:AdminApi api, :AdminContext ctx) = await build();
+    final ({int status, String text}) set = await call(
+      api,
+      'PUT',
+      <String, Object?>{
+        'ai': <String, Object?>{'preset': 'openai', 'apiKey': 'sk-secret'},
+      },
+    );
+    expect(set.status, 200, reason: set.text);
+    expect(aiOf(set.text)!['images'], isFalse);
+    expect(ctx.config.ai!.provider()!.acceptsImages, isFalse);
+
+    final ({int status, String text}) on = await call(
+      api,
+      'PUT',
+      <String, Object?>{
+        'ai': <String, Object?>{
+          'preset': 'openai',
+          'apiKey': null,
+          'images': true,
+        },
+      },
+    );
+    expect(on.status, 200, reason: on.text);
+    expect(aiOf(on.text)!['images'], isTrue);
+    expect(ctx.config.ai!.provider()!.acceptsImages, isTrue);
+    expect(await configFile.readAsString(), contains('images: true'));
+    expect((await ServerConfig.load(configFile)).ai!.images, isTrue);
+  });
+
   test('默认没有 AI；设上 → key 只报 apiKeySet、写进 yaml；留空不改；预设置空即关', () async {
     final (:AdminApi api, :AdminContext ctx) = await build();
     final ({int status, String text}) initial = await call(api, 'GET');
@@ -186,6 +217,38 @@ void main() {
       ctx.config.ai!.provider(),
       isNull,
       reason: '没 key 的提供商不可用 → 能力位 no_provider',
+    );
+  });
+
+  test('设置里带 WebUI 下拉用的选项：预设显示名 + 起点模型、字幕 / 资料语言母语名', () async {
+    final (:AdminApi api, ctx: _) = await build();
+    final ({int status, String text}) r = await call(api, 'GET');
+    expect(r.status, 200);
+    final Map<String, dynamic> json =
+        jsonDecode(r.text) as Map<String, dynamic>;
+
+    final List<dynamic> presets = json['aiPresetOptions'] as List<dynamic>;
+    final Map<String, dynamic> openai = presets
+        .cast<Map<String, dynamic>>()
+        .firstWhere((Map<String, dynamic> o) => o['id'] == 'openai');
+    expect(openai['name'], isNotEmpty);
+    expect(openai['name'], isNot('openai'), reason: '显示名而不是 id');
+    expect(openai.containsKey('model'), isTrue);
+    expect(
+      presets.map((dynamic o) => (o as Map<String, dynamic>)['id']),
+      everyElement(isIn(json['aiPresets'] as List<dynamic>)),
+      reason: '与 aiPresets 同一份清单',
+    );
+
+    final List<dynamic> subs = json['subtitleLanguageOptions'] as List<dynamic>;
+    expect(subs.first, <String, String>{'code': 'ja', 'name': '日本語'});
+
+    final List<dynamic> locales =
+        json['metadataLocaleOptions'] as List<dynamic>;
+    expect(
+      locales.map((dynamic o) => (o as Map<String, dynamic>)['code']),
+      contains(ServerConfig.defaultMetadataLocale),
+      reason: '默认值必须能在下拉里直接选中',
     );
   });
 }
