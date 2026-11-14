@@ -73,7 +73,7 @@ pub fn edits_of(
     Ok(out)
 }
 
-fn stored(v: &[(String, Option<i64>)]) -> Vec<crate::registers::StoredEdit<'_>> {
+pub(crate) fn stored(v: &[(String, Option<i64>)]) -> Vec<crate::registers::StoredEdit<'_>> {
     v.iter().map(|(j, s)| (j.as_str(), *s, None)).collect()
 }
 

@@ -1,5 +1,6 @@
 //! 本机手动排程命令 `sched`（sched_local.rs）：显式意图写出的日志与旧路径（Dart 组好日志、内核按结果形状反推意图）
-//! 落出同样的投影、同样的意图、同样的缓存行；撤销只认最后一条有效日志；HLC 按 Dart 时钟的规则推进。
+//! 落出同样的投影、同样的意图、同样的缓存行；撤销只认最后一条有效日志；HLC 按旧版时钟的规则推进（时钟在本机状态行里，
+//! store/legacy_clock.rs）。
 
 use serde_json::{Value, json};
 
@@ -36,21 +37,51 @@ fn apply(d: &Device, deck: &str, now: i64, events: Vec<Value>) -> Value {
         .collect();
     dispatch(
         d,
-        json!({"op": "apply", "profile": P, "now": now, "caches": caches(deck)}),
+        json!({"op": "apply", "profile": P, "now": now, "caches": caches(deck), "legacyDevice": "dev"}),
         Some(Value::Array(input).to_string()),
     )
 }
 
-/// 新路径：显式意图命令。
+/// 本机状态行里的旧版时钟。
+fn clock(d: &Device) -> String {
+    let row: Value = serde_json::from_str(
+        &d.rows(&format!(
+            "SELECT json FROM srs_local_state WHERE profile_uid = srs_id('{P}')"
+        ))[1][0],
+    )
+    .unwrap();
+    row["hlc"].as_str().unwrap().to_owned()
+}
+
+/// 新路径：显式意图命令。先把旧版时钟拨到 [hlc]（时钟在本机状态行里），做完把推进后的时钟放进结果的 `hlc`。
 fn sched(d: &Device, deck: &str, at: i64, hlc: &str, items: Value) -> Value {
-    dispatch(
+    for (sql, args) in [
+        (
+            "INSERT OR IGNORE INTO srs_local_state (profile_uid, json) VALUES (srs_id(?1), '{}')",
+            vec![P],
+        ),
+        (
+            "UPDATE srs_local_state SET json = json_set(json, '$.hlc', ?2) WHERE profile_uid = srs_id(?1)",
+            vec![P, hlc],
+        ),
+    ] {
+        let args: Vec<rusqlite::types::Value> = args
+            .into_iter()
+            .map(|a| rusqlite::types::Value::Text(a.into()))
+            .collect();
+        d.core.exec_raw(sql, &args, false).unwrap();
+    }
+    let mut r = dispatch(
         d,
         json!({
             "op": "sched", "profile": P, "now": at, "caches": caches(deck),
-            "at": at, "ts": "anchored", "utcOff": 0, "rollover": 4, "hlc": hlc, "items": items,
+            "at": at, "ts": "anchored", "utcOff": 0, "rollover": 4, "legacyDevice": "dev", "items": items,
         }),
         None,
-    )
+    );
+    assert_eq!(r.get("hlc"), None, "the clock is not handed back: {r}");
+    r["hlc"] = json!(clock(d));
+    r
 }
 
 fn note_of(d: &Device, card: &str) -> Option<String> {
@@ -306,7 +337,7 @@ fn explicit_intents_write_the_same_op_bytes_as_the_legacy_path() {
     let note = note_of(&b, &cards[2]);
     dispatch(
         &b,
-        json!({"op": "apply", "profile": P, "now": at, "caches": caches(&deck)}),
+        json!({"op": "apply", "profile": P, "now": at, "caches": caches(&deck), "legacyDevice": "dev"}),
         Some(json!([{"e": answer, "note": note, "intent": "answer"}]).to_string()),
     );
     apply(&a, &deck, at, vec![answer.clone()]);
@@ -417,5 +448,9 @@ fn single_card_reset_and_in_batch_visibility() {
         json!([{"a": "reset", "card": cards[2], "skipNew": true}]),
     );
     assert_eq!(none["logs"], json!([]));
-    assert_eq!(none["hlc"], Value::Null, "nothing written, clock untouched");
+    assert_eq!(
+        none["hlc"],
+        json!(format!("0:0:{WRITER}")),
+        "nothing written: the clock does not advance (only its writer is rehomed)"
+    );
 }

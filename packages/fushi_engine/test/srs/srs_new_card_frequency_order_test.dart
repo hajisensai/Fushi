@@ -172,8 +172,8 @@ void main() {
       ('雪', '300'),
       ('上手', '100'),
     ]);
-    await st.db.customStatement('UPDATE srs_cards_cache SET freq_rank = NULL');
-    await st.db.customStatement(
+    st.core.debugExecRaw('UPDATE srs_cards_cache SET freq_rank = NULL');
+    st.core.debugExecRaw(
       "UPDATE srs_local_state SET json = json_set(json, '\$.cacheRev', 5)",
     );
 
