@@ -38,6 +38,15 @@ class ManifestTest(unittest.TestCase):
         self.assertEqual({v["srs_protocol"] for v in versions if v.get("default")},
                          {"pre-sync2", "2", "3"})
 
+    def test_unsafe_manifest_values_are_refused(self) -> None:
+        good = h.load_manifest()[0]
+        for patch in ({"asset": "../evil.exe"}, {"asset": "-oProxyCommand"}, {"tag": "a b"}):
+            v = {**good, "source": {**good["source"], **patch}}
+            with self.assertRaises(SystemExit):
+                h._check_version(v)
+        with self.assertRaises(SystemExit):
+            h._check_version({**good, "installer_sha256": "zz"})
+
     def test_select_versions(self) -> None:
         self.assertEqual(len(h.select_versions(None)), 4)
         self.assertEqual(len(h.select_versions("all")), len(h.load_manifest()))

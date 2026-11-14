@@ -45,6 +45,11 @@ PROMPT_RE = re.compile(
     r"backendUnsupported|升级|更新版本|比本版本新|不支持|不是有效",
     re.IGNORECASE,
 )
+SRS_DB = "srs.db"
+CTL_DECKS = "/api/admin/srs/decks"
+CTL_NAVIGATION = "/api/admin/navigation"
+NAV_SRS = {"page": "srs"}
+SAFE_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 LOG_FILES = ("app-documents/error_log.txt", "app-documents/study_diag_log.txt")
 
 
@@ -56,8 +61,22 @@ def cache_root() -> Path:
     return Path(env) if env else HERE / ".cache"
 
 
+def _check_version(v: dict[str, Any]) -> dict[str, Any]:
+    """versions.json 的值会进文件路径与 gh 的命令行：只认安全的名字、整数 run id、64 位十六进制 sha256。"""
+    src = v["source"]
+    names = [v["id"], src["asset"]] + [src[k] for k in ("tag", "artifact") if k in src]
+    bad = [n for n in names if not isinstance(n, str) or not SAFE_NAME.fullmatch(n)]
+    if bad or not re.fullmatch(r"[0-9a-f]{64}", v["installer_sha256"]):
+        raise SystemExit(f"versions.json 里 {v.get('id')} 有不安全的值：{bad or v['installer_sha256']}")
+    if src["kind"] == "actions-artifact" and not isinstance(src.get("run_id"), int):
+        raise SystemExit(f"versions.json 里 {v['id']} 的 run_id 必须是整数")
+    if src["kind"] not in ("release", "actions-artifact"):
+        raise SystemExit(f"versions.json 里 {v['id']} 的来源未知：{src['kind']}")
+    return v
+
+
 def load_manifest() -> list[dict[str, Any]]:
-    return json.loads(MANIFEST.read_text(encoding="utf-8"))["versions"]
+    return [_check_version(v) for v in json.loads(MANIFEST.read_text(encoding="utf-8"))["versions"]]
 
 
 def select_versions(spec: Optional[str]) -> list[dict[str, Any]]:
@@ -214,14 +233,14 @@ def _hash_tables(con: sqlite3.Connection, h: "hashlib._Hash") -> None:
             "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
     ])
     for t in tables:
-        cols = _with_stub_functions(con, lambda: [
+        cols = _with_stub_functions(con, lambda t=t: [
             r[1] for r in con.execute(f'PRAGMA table_xinfo("{t}")') if r[6] in (0, 3)
         ])
         h.update(f"|table {t} {cols}|".encode())
         if not cols:
             continue
         sel = ", ".join(f'"{c}"' for c in cols)
-        def rows() -> list[Any]:
+        def rows(t: str = t, sel: str = sel) -> list[Any]:
             try:
                 return con.execute(f'SELECT {sel} FROM "{t}" ORDER BY rowid').fetchall()
             except sqlite3.OperationalError as e:
@@ -241,7 +260,7 @@ def srs_meta(db: Path) -> Optional[dict[str, str]]:
         try:
             con = sqlite3.connect(str(copy))
             try:
-                return {k: v for k, v in con.execute("SELECT key, value FROM srs_meta")}
+                return dict(con.execute("SELECT key, value FROM srs_meta").fetchall())
             finally:
                 con.close()
         except sqlite3.DatabaseError as e:
@@ -293,10 +312,10 @@ def fetch_one(v: dict[str, Any]) -> Path:
     dl = vd / "download"
     dl.mkdir(parents=True, exist_ok=True)
     src = v["source"]
-    installer = dl / src["asset"]
+    installer = dl / src["asset"]  # NOSONAR —— asset 已经 _check_version 校验成安全文件名
     want = v["installer_sha256"]
     stamp = vd / "app" / ".installer_sha256"
-    if stamp.is_file() and stamp.read_text().strip() == want and app_exe(v).is_file():
+    if stamp.is_file() and stamp.read_text().strip() == want and app_exe(v).is_file():  # NOSONAR —— 缓存目录内的自写戳
         return app_exe(v)
     for attempt in range(5):
         if installer.is_file() and sha256_file(installer) == want:
@@ -312,7 +331,7 @@ def fetch_one(v: dict[str, Any]) -> Path:
                    "-n", src["artifact"], "-D", str(dl)]
         else:
             raise SystemExit(f"未知来源：{src['kind']}")
-        subprocess.run(cmd, check=False)
+        subprocess.run(cmd, check=False)  # NOSONAR —— 参数列表不经 shell，值已 _check_version 校验
     else:
         if not installer.is_file() or sha256_file(installer) != want:
             raise SystemExit(
@@ -327,9 +346,9 @@ def fetch_one(v: dict[str, Any]) -> Path:
     if app.exists():
         shutil.rmtree(app)
     log(f"{v['id']}: innounp 解包")
-    r = subprocess.run([innounp, "-x", "-y", f"-d{app}", "-c{app}", str(installer)],
+    r = subprocess.run([innounp, "-x", "-y", f"-d{app}", "-c{app}", str(installer)],  # NOSONAR —— 同上
                        capture_output=True, text=True, errors="replace")
-    if r.returncode != 0 or not app_exe(v).is_file():
+    if r.returncode != 0 or not app_exe(v).is_file():  # NOSONAR —— 路径来自校验过的 id
         raise SystemExit(f"{v['id']}: 解包失败\n{r.stdout[-2000:]}\n{r.stderr[-2000:]}")
     stamp.write_text(want)
     return app_exe(v)
@@ -451,7 +470,7 @@ class App:
                 status, raw = r.status, r.read().decode("utf-8", "replace")
         except urllib.error.HTTPError as e:
             status, raw = e.code, e.read().decode("utf-8", "replace")
-        except (urllib.error.URLError, OSError) as e:
+        except OSError as e:  # URLError 是 OSError 的子类
             return {"method": method, "path": path, "status": None, "error": str(e), "json": None}
         try:
             js = json.loads(raw)
@@ -489,7 +508,7 @@ def support_dir(app: App) -> Path:
 def local_db_state(app: App) -> dict[str, Any]:
     sd = support_dir(app)
     files = {k: v for k, v in snapshot(sd).items()
-             if "/" not in k and (k.startswith("srs.db") or k.startswith("srs"))}
+             if "/" not in k and k.startswith("srs")}
     return {
         "files": files,
         "srs_meta": srs_meta(sd / "srs.db"),
@@ -609,7 +628,7 @@ def control_launch(app: App, action: str, args: argparse.Namespace) -> dict[str,
     s0 = local_db_state(app)
     app.start()
     if action == "sync-location":
-        app.call("POST", "/api/admin/navigation", {"page": "srs"})
+        app.call("POST", CTL_NAVIGATION, NAV_SRS)
     wait_quiet([support_dir(app)], quiet=10, max_wait=min(args.settle, 60))
     app.quit()
     s1 = local_db_state(app)
@@ -630,24 +649,21 @@ def prepare_root(app: App, state: Optional[Path]) -> str:
     return "fresh"
 
 
-def place_db(app: App, target: Path) -> Path:
+def place_db(app: App, target: Path) -> None:
     """open-db：目标是文件 → 放成 app-support/srs.db（连同同名 -wal / -shm）；是目录 → 目录里的文件原样拷进 app-support。"""
     sd = support_dir(app)
     for p in sd.glob("srs.db*"):
         p.unlink()
-    dest = app.run_dir / "target"
-    dest.mkdir(parents=True, exist_ok=True)
     if target.is_file():
         shutil.copy2(target, sd / "srs.db")
         for side in ("-wal", "-shm"):
             s = target.with_name(target.name + side)
             if s.is_file():
                 shutil.copy2(s, sd / ("srs.db" + side))
-        return sd
+        return
     for p in target.iterdir():
         if p.is_file():
             shutil.copy2(p, sd / p.name)
-    return sd
 
 
 def target_files(app: App, target: Path) -> list[Path]:
@@ -691,7 +707,7 @@ def run_version(v: dict[str, Any], action: str, target: Path, args: argparse.Nam
             noise = control_launch(app, action, args)
             rep["control_noise"] = {k: sorted(v) for k, v in noise.items()}
             if action == "sync-location":
-                # 对照那一轮往占位位置写了东西 = 这个版本的文件夹位置同步确实在跑（「没写目标」不是因为根本没跑）。
+                # 对照那一轮往占位位置写了东西，说明这个版本的文件夹位置同步确实在跑（「没写目标」不是因为根本没跑）。
                 rep["control_location_files"] = len(snapshot(run_dir / "control-location"))
         # ── 放目标 ──
         if action == "open-db":
@@ -726,16 +742,16 @@ def run_version(v: dict[str, Any], action: str, target: Path, args: argparse.Nam
             rep["notes"].append("此版本没有复习同步的文件夹位置，sync-location 不适用：只记位置是否被碰")
         restarted = False
         if action == "open-db":
-            rep["ctl"].append(app.call("GET", "/api/admin/srs/decks"))
-            rep["ctl"].append(app.call("POST", "/api/admin/navigation", {"page": "srs"}))
+            rep["ctl"].append(app.call("GET", CTL_DECKS))
+            rep["ctl"].append(app.call("POST", CTL_NAVIGATION, NAV_SRS))
             time.sleep(3)
-            rep["ctl"].append(app.call("GET", "/api/admin/srs/decks"))
+            rep["ctl"].append(app.call("GET", CTL_DECKS))
             rep["waited_s"] = wait_quiet(watch, quiet=5, max_wait=args.settle)
         elif action == "sync-location":
-            rep["ctl"].append(app.call("POST", "/api/admin/navigation", {"page": "srs"}))
+            rep["ctl"].append(app.call("POST", CTL_NAVIGATION, NAV_SRS))
             rep["waited_s"] = wait_quiet(watch + [app.data / "app-documents"], quiet=10,
                                          max_wait=args.settle)
-            rep["ctl"].append(app.call("GET", "/api/admin/srs/decks"))
+            rep["ctl"].append(app.call("GET", CTL_DECKS))
         elif action == "restore-backup":
             pkg = watch[0]
             rep["ctl"].append(app.call("GET", "/api/admin/backups/info", query={"path": str(pkg)}))
@@ -748,7 +764,7 @@ def run_version(v: dict[str, Any], action: str, target: Path, args: argparse.Nam
                 try:
                     app.wait_ready(args.settle, not_pid=old_pid)
                     restarted = True
-                    rep["ctl"].append(app.call("GET", "/api/admin/srs/decks"))
+                    rep["ctl"].append(app.call("GET", CTL_DECKS))
                 except RuntimeError as e:
                     rep["notes"].append(f"恢复后没等到重启就绪：{e}")
             else:
@@ -820,12 +836,11 @@ def judge(action: str, v: dict[str, Any], rep: dict[str, Any]) -> str:
         local_changed = bool(ld["unexplained_tables"] or ld["unexplained_srs_meta_keys"])
     else:
         local_changed = not ld["logical_unchanged"]
-    ctl_err = [c for c in rep["ctl"] if c.get("status") not in (200, 202, None)]
     prompts = bool(rep["prompt_lines"])
     if action == "open-db":
         if not v.get("has_srs_db"):
             return "n/a-touched" if touched else "n/a-untouched"
-        refused = any(c["path"].endswith("/srs/decks") and c.get("status") != 200 for c in rep["ctl"])
+        refused = any(c["path"] == CTL_DECKS and c.get("status") != 200 for c in rep["ctl"])
         if refused:
             if not touched:
                 return "rejected"
@@ -904,7 +919,8 @@ def cmd_run(args: argparse.Namespace) -> int:
     }
     report_path = Path(args.report) if args.report else runs_root / "report.json"
     report_path.parent.mkdir(parents=True, exist_ok=True)
-    report_path.write_text(json.dumps(out, ensure_ascii=False, indent=1), encoding="utf-8")
+    report_path.write_text(json.dumps(out, ensure_ascii=False, indent=1),  # NOSONAR —— 操作者给的报告路径
+                           encoding="utf-8")
     print(summary_table(out))
     log(f"报告：{report_path}")
     bad = [r for r in reports if r["verdict"] in ("harness-error",)]
@@ -958,7 +974,7 @@ def cmd_seed(args: argparse.Namespace) -> int:
         result["profile_uid"] = args.profile_uid
     app.start()
     if loc is not None:
-        result["navigate"] = app.call("POST", "/api/admin/navigation", {"page": "srs"})["status"]
+        result["navigate"] = app.call("POST", CTL_NAVIGATION, NAV_SRS)["status"]
         result["waited_s"] = wait_quiet([loc], quiet=10, max_wait=args.settle)
         result["location_files"] = len(snapshot(loc))
     if args.backup_out:
@@ -967,7 +983,7 @@ def cmd_seed(args: argparse.Namespace) -> int:
         r = app.call("POST", "/api/admin/backups", {"output": str(bo), "all": True}, timeout=600)
         result["backup"] = {"path": str(bo), "status": r["status"],
                             "response": r.get("json") or r.get("body") or r.get("error")}
-    result["decks"] = app.call("GET", "/api/admin/srs/decks").get("json")
+    result["decks"] = app.call("GET", CTL_DECKS).get("json")
     app.quit()
     shutil.copytree(app.data, out / "data")
     meta = srs_meta(out / "data" / "app-support" / "srs.db") or {}
