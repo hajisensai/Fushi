@@ -33,13 +33,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3972 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-4502](bugs/BUG-4502-feedback-account-seen-lost-on-relaunch.md) | ✅ | ✅ | feedback-account-seen-lost-on-relaunch |
-| [BUG-4501](bugs/BUG-4501-sync-summary-ignores-settings.md) | ✅ | ✅ | sync-summary-ignores-settings |
-> 共 3981 条。点号进各自文件。
+> 共 3983 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -48,6 +42,8 @@
 | [BUG-4620](bugs/BUG-4620-cuda-budget-read-from-igpu-adapter.md) | ✅ | ✅ | CUDA 转录的显存预算读的是 DXGI 适配器 0，混合显卡笔记本上是核显 |
 | [BUG-4533](bugs/BUG-4533-flatpak-x11-mesa-crash.md) | ✅ | ✅ | flatpak-x11-mesa-crash |
 | [BUG-4521](bugs/BUG-4521-mokuro-import-volumes-not-grouped.md) | ✅ | ✅ | mokuro catalog import does not group volumes into a series |
+| [BUG-4502](bugs/BUG-4502-feedback-account-seen-lost-on-relaunch.md) | ✅ | ✅ | feedback-account-seen-lost-on-relaunch |
+| [BUG-4501](bugs/BUG-4501-sync-summary-ignores-settings.md) | ✅ | ✅ | sync-summary-ignores-settings |
 | [BUG-4492](bugs/BUG-4492-manga-ctc-ocr-model-revision-404.md) | ✅ | ✅ | manga-ctc-ocr-model-revision-404 |
 | [BUG-4491](bugs/BUG-4491-android-permission-kill-no-killuid-prefix-misreport.md) | ✅ | ✅ | 华为改所有文件访问权限后被系统结束报成意外退出 |
 | [BUG-4490](bugs/BUG-4490-android-exit-schedulecrash-failed-misreport.md) | ✅ | ✅ | Android 系统 scheduleCrash 失败结束冻结进程被报成崩溃 |
