@@ -66,6 +66,8 @@ libc = "0.2"
 # 测试构建里盯住漏编码的 ID 绑定（store/ids.rs `audit`）。
 rusqlite = { version = "0.37", features = ["trace"] }
 proptest = { version = "1.12", default-features = false, features = ["std"] }
+# 读 gzip 压缩的固定向量（projection.rs 的记忆状态输入向量，由删除前的 Dart 实现生成）。
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 
 [profile.release]
 opt-level = "z"

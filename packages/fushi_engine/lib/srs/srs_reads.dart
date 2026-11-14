@@ -70,7 +70,7 @@ Future<SrsReadResult> _run(SrsCore core, Map<String, Object?> request) async {
       Map<String, TransferableTypedData> files,
     ) = await SrsCoreWorkers.of(
       core.libraryPath,
-    ).run(core.address, _readJob(request), lane: SrsCoreLane.query);
+    ).run(core.address, _readJob(request), lane: srsCoreLaneOf(request['op']));
     final Map<String, SrsColumns> tables = <String, SrsColumns>{};
     for (final MapEntry<String, TransferableTypedData> f in files.entries) {
       final Uint8List b = f.value.materialize().asUint8List();

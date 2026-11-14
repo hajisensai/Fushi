@@ -1,4 +1,4 @@
-//! 本机写命令（store/ffi.rs `LOCAL_WRITE_OPS`，收掉 Dart 写路径第 2 步）：命令本体、缓存行与随命令交来的本机状态行
+//! 本机写命令（store/ops.rs `local_write`，收掉 Dart 写路径第 2 步）：命令本体、缓存行与随命令交来的本机状态行
 //! 在同一次持写锁、同一个 SAVEPOINT 里落下；中途出错三者一起回滚。
 
 use serde_json::{Value, json};

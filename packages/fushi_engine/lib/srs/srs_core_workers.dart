@@ -29,7 +29,7 @@ import 'dart:async';
 import 'dart:collection';
 import 'dart:isolate';
 
-import 'package:fushi_srs/fushi_srs.dart' show SrsCore;
+import 'package:fushi_srs/fushi_srs.dart' show SrsCore, SrsOp, SrsOpLane;
 import 'package:meta/meta.dart' show visibleForTesting;
 
 /// 在 worker 里对内核句柄执行的一条命令。
@@ -50,6 +50,15 @@ enum SrsCoreLane {
   /// 不与上面几条道的长命令互相排队。
   query,
 }
+
+/// 内核命令 [op] 走哪条道：由内核的命令表声明（native/fushi_fsrs/src/store/ops.rs，生成的 [SrsOp.lane]），这里只做
+/// 一一对应。不认识的命令走默认道（内核随后报不认识）。
+SrsCoreLane srsCoreLaneOf(Object? op) => switch (SrsOp.byWire(op)?.lane) {
+  SrsOpLane.interactive => SrsCoreLane.interactive,
+  SrsOpLane.file => SrsCoreLane.file,
+  SrsOpLane.query => SrsCoreLane.query,
+  SrsOpLane.bulk || null => SrsCoreLane.bulk,
+};
 
 final class SrsCoreWorkers {
   SrsCoreWorkers._(

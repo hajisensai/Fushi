@@ -997,7 +997,7 @@ pub(crate) fn sync2_dispatch(
     let projecting = req
         .get("op")
         .and_then(serde_json::Value::as_str)
-        .is_some_and(|op| PROJECTING_OPS.contains(&op));
+        .is_some_and(crate::store::ops::projecting);
     c.refresh_after(req, out.as_ref().map_err(|_| ()), projecting);
     out
 }
@@ -1073,7 +1073,7 @@ fn sync2_dispatch_op(
     let op = s("op")?;
     // 新设备收段通道（store/sync2/channel.rs）没做完时，投影里还缺已收下的操作：要改投影 / 读完整投影的命令先把它
     // 按片做完。收段命令自己推进通道；其余只读或不碰投影的命令照常。没有通道时只读内存标记，不拿写锁。
-    if !CHANNEL_TRANSPARENT.contains(&op) {
+    if !crate::store::ops::channel_transparent(op) {
         c.sync2_channel_settle(profile)?;
     }
     // 改投影的命令：同一次调用里接着刷新本机缓存行（store/caches.rs），Dart 只收写过哪些笔记 / 卡。缓存配置
@@ -1119,7 +1119,7 @@ fn sync2_dispatch_op(
     // 媒体回收（store/media_gc.rs）：待回收集合是内核持有的本机状态键。并候选、「核对存活引用 → 删文件 → 移出集合」
     // 各自一次持写锁、一个 SAVEPOINT（后者对写入原子：期间没有写入能重新引用刚判为无引用的文件）；存活引用另有
     // 只读命令给 Dart 的位置清理用。都不改投影、不推进修订号。回收要完整的存活引用，所以只有它在通道没做完时
-    // 先做完通道（[CHANNEL_SETTLES]）；另外两条对通道透明。
+    // 先做完通道（store/ops.rs 登记为 `Settles`）；另外两条对通道透明。
     if op == "media_gc_queue" {
         let w = c.writer()?;
         return crate::store::sync2::in_savepoint(&w, |conn| {
@@ -1141,11 +1141,11 @@ fn sync2_dispatch_op(
         });
     }
     // 本机写命令：命令本体、缓存刷新、排队与本机状态行在同一次持写锁、同一个 SAVEPOINT 里（[local_write]）。
-    if LOCAL_WRITE_OPS.contains(&op) {
+    if crate::store::ops::local_write(op) {
         let cfg = cache_config_of(c, profile, req)?;
         return local_write(c, op, profile, req, blobs, &cfg);
     }
-    if PROJECTING_OPS.contains(&op)
+    if crate::store::ops::projecting(op)
         || op == "refresh_caches"
         || op == "rebuild_caches"
         || op == "backfill_dupe_norms"
@@ -1288,30 +1288,7 @@ fn cache_config_of(
     }
 }
 
-/// 本机写命令（收掉 Dart 写路径第 2 步）。分发器取**一次**写锁，在**一个** SAVEPOINT 里
-/// 依次做完命令本体（[local_write_body]）、缓存刷新（store/caches.rs）、请求带 `study` 时的排队（store/study.rs，看得见
-/// 这笔还没提交的写入），以及本机状态行（store/local_state.rs `persist_projected`：修订号按投影
-/// 结果从库里的值推进，回包带 `localRevision` / `localEpoch`；请求带了校时状态 `anchor` 就一并写下）。任何一步出错整个 SAVEPOINT 回滚：命令、缓存行、本机状态行一起不落。写连接上
-/// 没有别人开着的事务（Dart 没有别的入口能在写连接上开事务），这个 SAVEPOINT 就是一笔独立提交的事务。
-const LOCAL_WRITE_OPS: &[&str] = &[
-    "apply",
-    "import_drafts",
-    "change",
-    "note_fields_if",
-    "merge_notes",
-    "sched",
-    "deck_delete",
-    "import",
-    "resolve",
-    "purge",
-    "checkpoint",
-    "restore",
-    "retire",
-    "dedup",
-    "trust",
-];
-
-/// [LOCAL_WRITE_OPS] 写锁外的预处理：只读已提交数据（冲突表）、不持锁的解析与收段预处理。
+/// 本机写命令（store/ops.rs `local_write`）写锁外的预处理：只读已提交数据（冲突表）、不持锁的解析与收段预处理。
 #[derive(Default)]
 struct LocalPre {
     /// `apply` 的输入。
@@ -1322,7 +1299,11 @@ struct LocalPre {
     drain: Option<crate::store::sync2::transport::PreparedIngest<'static>>,
 }
 
-/// [LOCAL_WRITE_OPS] 的执行（见那张表）。
+/// 本机写命令（store/ops.rs `local_write`，收掉 Dart 写路径第 2 步）的执行。分发器取**一次**写锁，在**一个** SAVEPOINT 里
+/// 依次做完命令本体（[local_write_body]）、缓存刷新（store/caches.rs）、请求带 `study` 时的排队（store/study.rs，看得见
+/// 这笔还没提交的写入），以及本机状态行（store/local_state.rs `persist_projected`：修订号按投影
+/// 结果从库里的值推进，回包带 `localRevision` / `localEpoch`；请求带了校时状态 `anchor` 就一并写下）。任何一步出错整个 SAVEPOINT 回滚：命令、缓存行、本机状态行一起不落。写连接上
+/// 没有别人开着的事务（Dart 没有别的入口能在写连接上开事务），这个 SAVEPOINT 就是一笔独立提交的事务。
 fn local_write(
     c: &SrsCore,
     op: &str,
@@ -1427,7 +1408,7 @@ fn expect_last_holds(conn: &rusqlite::Connection, req: &serde_json::Value) -> Re
     Ok(last.is_some_and(|l| l.as_deref() == expect["log"].as_str()))
 }
 
-/// [LOCAL_WRITE_OPS] 的命令本体：在 [local_write] 持着的写连接、开好的 SAVEPOINT 里做（各 `*_on` 都不自己取锁）。
+/// 本机写命令的命令本体：在 [local_write] 持着的写连接、开好的 SAVEPOINT 里做（各 `*_on` 都不自己取锁）。
 fn local_write_body(
     conn: &rusqlite::Connection,
     op: &str,
@@ -1617,142 +1598,6 @@ const CACHE_PENDING_CHUNK: usize = 512;
 #[cfg(all(test, not(srs_probe)))]
 const CACHE_PENDING_CHUNK: usize = 5;
 
-/// 新设备收段通道没做完时不必先做完它的命令（[sync2_dispatch]）：收段命令本身（推进通道）、只读命令（读到的投影
-/// 与逐条投递收段途中一样不全，收尾后一致），以及不碰投影的传输记账 / 加解密。不在表里的一律先做完通道——漏列只多
-/// 花时间，不会错。`digest` / `digest_buckets` 不在表里：摘要按已应用的版本向量发布，投影不全时算出来的会被别的
-/// 设备当成分歧（没有通道时它们照样只走读连接：分发器只读内存标记，见 `SrsCore::sync2_channel_settle`）。
-///
-/// 每条命令都必须显式登记在这张表或 [CHANNEL_SETTLES] 里（`every_command_declares_its_channel_policy` 按
-/// [sync2_dispatch] / [sync2_command] 的匹配臂逐条核对）：新增命令时必须想一遍它要不要完整投影，不会悄悄落进默认。
-const CHANNEL_TRANSPARENT: &[&str] = &[
-    "identity",
-    "device_info",
-    "device_hint",
-    "location_sealed",
-    "location_seal",
-    "channel_settle",
-    "open_v1",
-    "plan",
-    "ingest_begin",
-    "ingest_batch",
-    "ingest_prepare",
-    "ingest_commit",
-    "ingest_finish",
-    "ingest_end",
-    "replay_pending",
-    "status",
-    "legacy_dots",
-    "conflicts",
-    "checkpoints",
-    "history",
-    "study",
-    "read",
-    "card_columns",
-    "stats_bundle",
-    "anki_resolve",
-    "anki_notes_info",
-    "lineages",
-    "preview",
-    "browse_query",
-    "browse_rows",
-    "browse_ids",
-    "browse_targets",
-    "browse_close",
-    "anki_find",
-    "anki_dupes",
-    "anki_tags",
-    "browse_stats",
-    "browse_counts",
-    "browse_sources",
-    "outbox",
-    "outbox_ack",
-    "head",
-    "relay_outbox",
-    "obsolete_ack",
-    "relay_ack",
-    "media_known",
-    "media_gc_queue",
-    "media_live_refs",
-    "local_state",
-    "local_state_ensure",
-    "local_anchor",
-    "profile_footprint",
-    "profile_purge",
-    "derive_key",
-    "seal",
-    "open",
-    "seal_file",
-    "open_file",
-    "refresh_caches",
-    "rebuild_caches",
-    "cache_config_set",
-];
-
-/// 改投影的 v2 命令（结果带 `marks`）：分发器在同一次调用里刷新缓存行；`ingest_commit` 在投递的事务里自己刷
-/// （只刷本机已有缓存行的，新实体记待刷新）。
-/// 通道没做完时要先做完它的命令（改投影、读完整投影、在投影上记账的）。分发器只看 [CHANNEL_TRANSPARENT]（不在那张表
-/// 里的一律先做完）；这张表只为登记完整（见上）。
-#[cfg_attr(not(test), allow(dead_code))]
-const CHANNEL_SETTLES: &[&str] = &[
-    "apply",
-    "import_drafts",
-    "change",
-    "note_fields_if",
-    "merge_notes",
-    "sched",
-    "deck_delete",
-    "retire",
-    "dedup",
-    "migrate",
-    "replay_all",
-    "ingest",
-    "rotate",
-    "export",
-    "import",
-    "digest",
-    "digest_buckets",
-    "media_record",
-    "media_hash",
-    "media_scan",
-    "media_landed",
-    "media_bind_unbound",
-    "media_doomed",
-    "resolve",
-    "trust",
-    "purge",
-    "checkpoint",
-    "plan_restore",
-    "restore",
-    "backfill_dupe_norms",
-    "backfill_tag_sources",
-    "backfill_source_keys",
-    "edits_rewrite_repr",
-    "media_gc_collect",
-];
-
-const PROJECTING_OPS: &[&str] = &[
-    "apply",
-    "import_drafts",
-    "change",
-    "note_fields_if",
-    "merge_notes",
-    "sched",
-    "deck_delete",
-    "retire",
-    "ingest",
-    "ingest_batch",
-    "ingest_commit",
-    "ingest_finish",
-    "replay_pending",
-    "import",
-    "resolve",
-    "trust",
-    "purge",
-    "checkpoint",
-    "restore",
-    "dedup",
-];
-
 fn sync2_command(
     c: &SrsCore,
     op: &str,
@@ -1787,7 +1632,7 @@ fn sync2_command(
             v
         }
         // 把没做完的收段通道按片做完（store/sync2/channel.rs `settle`，每片一个事务）。这条命令本身什么都不做：
-        // 它登记在 [CHANNEL_SETTLES] 里，分发器在进来之前已经收完。测试 / 诊断用。
+        // 它在 store/ops.rs 登记为 `Settles`，分发器在进来之前已经收完。测试 / 诊断用。
         "channel_settle" => {
             c.sync2_channel_settle(profile)?;
             json!({})
@@ -2703,44 +2548,32 @@ mod tests {
         std::fs::remove_dir_all(p.parent().unwrap()).unwrap();
     }
 
-    /// 新设备收段通道：每条 v2 命令都显式声明「通道没做完时要不要先做完」（[CHANNEL_TRANSPARENT] / [CHANNEL_SETTLES]
-    /// 恰好一张）。按源码里 [sync2_dispatch] 与 [sync2_command] 顶层匹配臂的命令名逐条核对：新增命令没登记就红。
+    /// 每条命令都登记在 store/ops.rs 的命令表里（收段通道策略、是否改投影、宿主独占区与 worker 道……），表里的每一条
+    /// 也都还是命令。按源码里 [sync2_dispatch] 与 [sync2_command] 顶层匹配臂的命令名逐条核对：新增命令没登记就红。
     #[test]
-    fn every_command_declares_its_channel_policy() {
+    fn every_command_has_a_spec() {
+        use crate::store::ops::{OPS, spec};
         let mut ops = dispatched_ops();
         // 不针对单个 profile 的命令在分发器开头就返回，不碰通道。
-        for global in [
-            "profile_uids",
-            "read_lib",
-            "orphan_sweep_done",
-            "profile_merge_mark",
-            "profile_merge_commit",
-            "meta_set_edit",
-            "wal_checkpoint",
-            "bulk_cache",
-            "ingest_yield",
-            "refresh_keys",
-        ] {
+        for o in OPS.iter().filter(|o| o.global) {
             assert!(
-                ops.remove(global),
-                "{global} is no longer a profile-less command"
+                ops.remove(o.name),
+                "{} is no longer a profile-less command",
+                o.name
             );
         }
         assert!(ops.len() > 50, "parsed too few commands: {ops:?}");
         for op in &ops {
-            let (t, s) = (
-                CHANNEL_TRANSPARENT.contains(&op.as_str()),
-                CHANNEL_SETTLES.contains(&op.as_str()),
-            );
             assert!(
-                t ^ s,
-                "sync2 command `{op}` must be listed in exactly one of CHANNEL_TRANSPARENT / CHANNEL_SETTLES (transparent {t}, settles {s})"
+                spec(op).is_some_and(|s| !s.global),
+                "sync2 command `{op}` must be listed in store/ops.rs OPS"
             );
         }
-        for listed in CHANNEL_TRANSPARENT.iter().chain(CHANNEL_SETTLES.iter()) {
+        for o in OPS.iter().filter(|o| !o.global) {
             assert!(
-                ops.contains(*listed),
-                "`{listed}` is listed but no longer a command"
+                ops.contains(o.name),
+                "`{}` is listed but no longer a command",
+                o.name
             );
         }
     }

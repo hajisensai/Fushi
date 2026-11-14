@@ -1,6 +1,6 @@
 //! 卡片历史的投影（P6，docs/specs/2026-10-23-srs-rust-store.md §7）：记忆状态输入（铁律 A）、优化器训练集、
-//! RWKV 回放行。规则只在这里写一份；store/mod.rs 的直读命令在 srs.db 上取日志后调用它们，排程预览 / 恢复计划（Dart
-//! 侧）经列模式入口 [memory_input_columns] 调用同一份记忆状态规则。
+//! RWKV 回放行。规则只在这里写一份；store/mod.rs 的直读命令在 srs.db 上取日志后调用它们，排程 / 复习重放
+//! （sync2/replay.rs）用同一份记忆状态规则。
 //!
 //! 与删除前的 Dart 实现逐条对应（固定向量 packages/fushi_srs/test/memory/fixtures/ 与
 //! packages/fushi_engine/test/srs/fixtures/p6_vectors.json.gz 由删除前的 Dart 实现生成）：
@@ -544,77 +544,7 @@ pub fn push_rwkv_now_row(
     push_rwkv_row(out, ids, 0, now_ms, previous, card_type, None, day)
 }
 
-// ---------------------------------------------------------------- 列模式入口（排程用）
-
-/// 列模式每条有效日志占几个 i64：`[kind, rtype, rating, at, flags, queue, ivl, reps, lastReviewedAt,
-/// ease, s, d, sf, memAlg]`，可空列用 [NONE_I64]；flags：1 有结果、2 有记忆状态、4 恢复标记；s/d/sf 是 f64 位。
-pub const MEMORY_COLUMN_WORDS: usize = 14;
-
-/// 列模式：一份历史的有效日志（Dart `SrsCardHistory.effective`，已排序）→ 记忆状态输入。
-pub fn memory_input_columns(ints: &[i64], alg: Alg, day: &Day) -> Result<MemoryInput, String> {
-    if ints.len() % MEMORY_COLUMN_WORDS != 0 {
-        return Err("bad memory input layout".into());
-    }
-    let opt = |v: i64| (v != NONE_I64).then_some(v);
-    let eff: Vec<EffLog> = ints
-        .chunks_exact(MEMORY_COLUMN_WORDS)
-        .map(|c| {
-            let flags = c[4];
-            EffLog {
-                id: String::new(),
-                kind: Kind::from_code(c[0]),
-                rtype: RType::from_code(c[1]),
-                rating: opt(c[2]),
-                at: c[3],
-                dur: 0,
-                res: (flags & 1 != 0).then(|| Outcome {
-                    queue: c[5],
-                    due_day: None,
-                    scheduled_days: c[6],
-                    reps: c[7],
-                    last_reviewed_at: opt(c[8]),
-                    ease: opt(c[9]),
-                    memory: (flags & 2 != 0).then(|| {
-                        (
-                            f64::from_bits(c[10] as u64),
-                            f64::from_bits(c[11] as u64),
-                            f64::from_bits(c[12] as u64),
-                        )
-                    }),
-                }),
-                mem_alg: MemAlg::from_code(c[13]),
-                restore: flags & 4 != 0,
-                time_uncertain: false,
-                utc_off: 0,
-                alg_rwkv: false,
-            }
-        })
-        .collect();
-    memory_input(&eff, alg, day)
-}
-
-/// [MemoryInput] 的输出布局（小端）：`[i64 flags][i64 n][f64 × 5: s, d, sf, ease, ivl][i64 rating × n][f64 delta × n]`，
-/// flags：1 complete、2 有 starting、4 有 sm2。
-pub fn encode_memory_input(m: &MemoryInput) -> Vec<u8> {
-    let mut out = Vec::with_capacity(56 + m.reviews.len() * 16);
-    let flags = i64::from(m.complete)
-        | if m.starting.is_some() { 2 } else { 0 }
-        | if m.sm2.is_some() { 4 } else { 0 };
-    out.extend_from_slice(&flags.to_le_bytes());
-    out.extend_from_slice(&(m.reviews.len() as i64).to_le_bytes());
-    let (s, d, sf) = m.starting.unwrap_or((0.0, 0.0, 0.0));
-    let (ease, ivl) = m.sm2.unwrap_or((0.0, 0.0));
-    for v in [s, d, sf, ease, ivl] {
-        out.extend_from_slice(&v.to_le_bytes());
-    }
-    for (r, _) in &m.reviews {
-        out.extend_from_slice(&r.to_le_bytes());
-    }
-    for (_, delta) in &m.reviews {
-        out.extend_from_slice(&delta.to_le_bytes());
-    }
-    out
-}
+// ---------------------------------------------------------------- 列模式入口（RWKV 此刻行）
 
 /// 「此刻」行的列模式：每行 `[card, note, deck, preset, lastAt, lastRating, lastRType, queue, now]`
 /// （lastAt = [NONE_I64] 表示没有保留评分）。
@@ -790,5 +720,107 @@ mod tests {
     fn rating_outside_0_to_4_is_an_error_for_rwkv() {
         let h = eff(&[wire("a", "review", 1, 0, r#","rtype":"learn","rating":7"#)]);
         assert!(rwkv_card_rows(&h, &[1, 1, 1, 1], &D).is_err());
+    }
+
+    /// 记忆状态输入的固定向量（packages/fushi_srs/test/memory/fixtures/memory_input_vectors.json.gz，由**删除前的 Dart
+    /// 实现**生成，脚本留档 packages/fushi_engine/test/srs/fixtures/gen_p6_vectors.dart.txt）：1200 份随机历史 × 四种
+    /// 日界 × 三种算法（FSRS-6 整天、FSRS-7 / RWKV 小数天），覆盖重置、恢复照抄（含同 / 异算法的记忆状态、带 restoreOf
+    /// 的重置）、导入锚点（SM-2 换算 / 直接用）、学习起点、撤销、钳位。走落库原文 → [parse_full] → [effective_logs] →
+    /// [memory_input]，即排程与复习重放（sync2/replay.rs）用的同一份规则。以前由 Dart 经列模式 FFI 入口
+    /// （`ffsrs_memory_input`，ABI 7 删除）跑这批向量。
+    #[test]
+    fn memory_input_matches_frozen_vectors() {
+        use serde_json::Value;
+        use std::io::Read;
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../packages/fushi_srs/test/memory/fixtures/memory_input_vectors.json.gz"
+        );
+        let mut text = String::new();
+        flate2::read::GzDecoder::new(std::fs::File::open(path).unwrap())
+            .read_to_string(&mut text)
+            .unwrap();
+        let root: Value = serde_json::from_str(&text).unwrap();
+        let vectors = root["vectors"].as_array().unwrap();
+        assert_eq!(vectors.len(), 1200);
+        let f64s = |v: &Value| -> Option<Vec<f64>> {
+            v.as_array()
+                .map(|a| a.iter().map(|x| x.as_f64().unwrap()).collect())
+        };
+        let (mut checked, mut sm2, mut starting, mut complete) = (0, 0, 0, 0);
+        for (i, v) in vectors.iter().enumerate() {
+            let parsed: Vec<_> = v["logs"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|j| {
+                    let j = j.as_str().unwrap();
+                    let id = serde_json::from_str::<Value>(j).unwrap()["id"]
+                        .as_str()
+                        .unwrap()
+                        .to_owned();
+                    parse_full(j, v["server"][&id].as_i64()).unwrap()
+                })
+                .collect();
+            let eff = effective_logs(&parsed);
+            let day = Day {
+                utc_offset_min: v["day"][0].as_i64().unwrap(),
+                rollover_hour: v["day"][1].as_i64().unwrap(),
+            };
+            for (alg, wire) in [
+                (Alg::Fsrs6, "fsrs6"),
+                (Alg::Fsrs7, "fsrs7"),
+                (Alg::Rwkv, "rwkv"),
+            ] {
+                let e = &v["expect"][wire];
+                let m = memory_input(&eff, alg, &day).unwrap();
+                let reviews: Vec<(i64, f64)> = e["reviews"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|r| (r[0].as_i64().unwrap(), r[1].as_f64().unwrap()))
+                    .collect();
+                assert_eq!(m.reviews, reviews, "vector {i} {wire} reviews");
+                assert_eq!(
+                    m.starting.map(|(s, d, sf)| vec![s, d, sf]),
+                    f64s(&e["starting"]),
+                    "vector {i} {wire} starting"
+                );
+                assert_eq!(
+                    m.sm2.map(|(ease, ivl)| vec![ease, ivl]),
+                    f64s(&e["sm2"]),
+                    "vector {i} {wire} sm2"
+                );
+                assert_eq!(
+                    Some(m.complete),
+                    e["complete"].as_bool(),
+                    "vector {i} {wire} complete"
+                );
+                if alg == Alg::Fsrs7 {
+                    sm2 += usize::from(m.sm2.is_some());
+                    starting += usize::from(m.starting.is_some());
+                    complete += usize::from(m.complete && !m.reviews.is_empty());
+                }
+                checked += 1;
+            }
+        }
+        assert_eq!(checked, 3600);
+        // 规模哨兵：向量覆盖了各条分支。
+        assert!(sm2 > 200, "sm2 {sm2}");
+        assert!(starting > 20, "starting {starting}");
+        assert!(complete > 150, "complete {complete}");
+    }
+
+    /// 锚点的 memAlg 不是字符串：用到时判坏数据（与旧 Dart 的类型转换一致）。
+    #[test]
+    fn anchor_with_non_string_mem_alg_is_bad_data() {
+        let h = eff(&[wire(
+            "a",
+            "importAnchor",
+            0,
+            0,
+            r#","memAlg":7,"res":{"queue":"review"}"#,
+        )]);
+        assert!(memory_input(&h, Alg::Fsrs7, &D).is_err());
     }
 }

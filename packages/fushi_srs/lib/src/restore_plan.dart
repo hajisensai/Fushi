@@ -94,7 +94,7 @@ List<SrsReviewLog> srsPlanStateRestore({
       ctx: ctx,
       backupId: backupId,
       result: want,
-      // 结果里的记忆状态是哪种算法算的：下次评分以它为起点时要同算法才直接用（srsCollectMemoryInput）。
+      // 结果里的记忆状态是哪种算法算的：下次评分以它为起点时要同算法才直接用（内核 projection.rs `memory_input`）。
       memAlg: atBackup.lastEffective?.algorithmEnum?.wire,
     ),
   ];

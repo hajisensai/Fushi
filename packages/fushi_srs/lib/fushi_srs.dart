@@ -12,6 +12,7 @@ export 'src/event_store.dart';
 export 'src/field_edit.dart';
 export 'src/ffi/ffi_fsrs_engine.dart';
 export 'src/ffi/fushi_fsrs_library.dart';
+export 'src/ffi/srs_ops.g.dart';
 export 'src/fsrs_engine.dart';
 export 'src/register_kernel.dart';
 export 'src/history_kernel.dart'

@@ -73,6 +73,9 @@ void main() {
       'digest_buckets',
       'seal_file',
       'open_file',
+      // 内核读命令（store/reads.rs）：查询道的只读连接池，一条命令一个读事务、只见已提交的行。
+      'read',
+      'read_lib',
     });
     for (final String op in <String>[
       'identity',

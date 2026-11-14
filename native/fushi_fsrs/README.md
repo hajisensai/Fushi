@@ -15,7 +15,7 @@ Fushi SRS（间隔重复）的排程内核：[fsrs-rs](https://github.com/open-s
 | `ffsrs_free_string(char*)` | 释放上面三个返回的串 |
 | `ffsrs_zstd_decompress(const u8*, usize, usize* out_len) -> u8*` | zstd 解码（.apkg 新格式），失败返回 NULL |
 | `ffsrs_free_bytes(u8*, usize)` | 释放解码缓冲区 |
-| `ffsrs_abi_version() -> i32` | ABI 版本（当前 5，见 `src/lib.rs` `ABI_VERSION`）；Dart 侧不一致即判不可用 |
+| `ffsrs_abi_version() -> i32` | ABI 版本（当前 7，见 `src/lib.rs` `ABI_VERSION`）；Dart 侧不一致即判不可用 |
 | `ffsrs_boot_time_ms() -> i64` | 自本次开机以来的毫秒，含睡眠、不受改系统时间影响（Linux / Android `CLOCK_BOOTTIME`、Apple `CLOCK_MONOTONIC`、Windows `GetTickCount64`；见 `src/boot_clock.rs`）；取不到返回 -1。SRS 可信时间按它推算 |
 | `ffsrs_search_corpus_new(const u8* text, usize, const u32* layout, usize, char** err) -> Corpus*` | Anki 搜索语料的结构：笔记类型 / 字段名 / 标签 / 牌组 / 模板名（UTF-8 拼接）与字段排布（u32 布局，见 `src/search.rs` `Corpus::new`），**不含字段值**；失败返回 NULL 并在 `err`（可空）写错误串。句柄内部带锁，可跨线程调用 |
 | `ffsrs_search_corpus_free(Corpus*)` | 释放语料（Dart 侧挂在 `NativeFinalizer` 上） |
@@ -29,7 +29,6 @@ Fushi SRS（间隔重复）的排程内核：[fsrs-rs](https://github.com/open-s
 | `ffsrs_history_select(const i64* ints, usize n_logs, const u8* text, usize, const u32* offs, const u32* groups, usize n_groups, usize* out_len, char** err) -> u8*` | 卡片历史内核（列模式）：排序与每条日志的选取标记（有效 / 撤销 / 等价导入 / 撤销者 / 排序键被钳位 / 同一事件的副本），批量；`text` / `offs` 每条日志 4 个串（id / writerId / revokes / cardId，`offs` 长 `4n+1`，ABI 5 起） |
 | `ffsrs_import_equivalent(const u8* text, usize, const u32* offs, usize n_logs, const u32* groups, usize n_groups, usize* out_len, char** err) -> u8*` | Anki 导入器入库前判重：每组（导入日志, 原生日志…）的落库 JSON → 每组一个字节；判据与卡片历史的等价导入是同一个函数 |
 | `ffsrs_materialize(const u8* header, usize, const u8* text, usize, const u32* offs, const i64* servers, usize n_items, usize* out_len, char** err) -> u8*` | 字段寄存器内核（`src/registers.rs`）：组描述 JSON + 修改记录落库原文 / 服务器时刻 → 寄存器（支配、排序键、冲突候选、删除优先）与笔记 / 卡片标志（按前身血统继承）/ 笔记类型 / 牌组的物化视图，以及落库支配裁剪、no-op 的「值相同」；结果是 JSON，批量。排序键（`src/ordering.rs`）与释义样式去重规范形（`src/style_dedup.rs`）与卡片历史 / 查重共用一份 |
-| `ffsrs_memory_input(const i64* ints, usize n_logs, i32 alg, i32 utc_offset_min, i32 rollover_hour, usize* out_len, char** err) -> u8*` | 记忆状态输入（铁律 A，`src/projection.rs` `memory_input`，排程用）：一份历史的有效日志（列模式，每条 14 个 i64，已排序）→ 评审序列（rating, 小数 / 整数天）与起点（同算法记忆状态 / SM-2 换算）、是否完整；`alg` 0 fsrs6 / 1 fsrs7 / 2 rwkv。与优化器直读命令同一个函数 |
 | `ffsrs_rwkv_now_rows(const i64* ints, usize n_rows, i32 utc_offset_min, i32 rollover_hour, usize* out_len, char** err) -> u8*` | RWKV「此刻」行（ease 0，RWKV-Instant 排队 / 作答）：每行 9 个 i64（四个数字 id、最后保留评分、队列、此刻）→ 80 字节 `FrwkvReview`（packages/fushi_rwkv `RwkvRows` 布局；本库不链接 RWKV）|
 | `ffsrs_store_open(const u8* path, usize, SrsCore** out, char** err) -> i32` / `ffsrs_store_close(SrsCore*)` | 打开 / 关闭 Rust 独占的 `srs.db`（`src/store/`，rusqlite bundled；设计 `docs/specs/2026-10-23-srs-rust-store.md`）。一条写连接 + 一条读连接，WAL；只开 srs.db，绝不开主库 |
 | `ffsrs_store_exec` / `ffsrs_store_exec_batch` / `ffsrs_store_in_transaction` | Drift 执行器后端：写连接上执行语句（行页编码见 `src/store/rows.rs`）|

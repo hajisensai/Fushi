@@ -4,7 +4,6 @@ import 'dart:async';
 import 'dart:io' show sleep;
 
 import 'package:fushi_engine/srs/srs_core_workers.dart';
-import 'package:fushi_engine/srs/srs_db_store.dart' show SrsDbStore;
 import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:fushi_srs/fushi_srs.dart' show SrsCore;
 import 'package:test/test.dart';
@@ -75,12 +74,12 @@ void main() {
     expect(await Future.wait(slow), everyElement(1));
     // 分类：复习页的作答 / 排队 / 预览与本机手动排程（复习页撤销也走它）走交互道，媒体文件命令走文件道。
     for (final String op in <String>['apply', 'sched', 'study', 'preview']) {
-      expect(SrsDbStore.srsCoreLaneOf(op), SrsCoreLane.interactive);
+      expect(srsCoreLaneOf(op), SrsCoreLane.interactive);
     }
     for (final String op in <String>['seal_file', 'open_file', 'media_hash']) {
-      expect(SrsDbStore.srsCoreLaneOf(op), SrsCoreLane.file);
+      expect(srsCoreLaneOf(op), SrsCoreLane.file);
     }
-    expect(SrsDbStore.srsCoreLaneOf('ingest_commit'), SrsCoreLane.bulk);
+    expect(srsCoreLaneOf('ingest_commit'), SrsCoreLane.bulk);
   });
 
   // 集成审查【低】：起 worker 失败时以前只 `_live--`，排着的命令再也没人发，全部失败时永远挂着。

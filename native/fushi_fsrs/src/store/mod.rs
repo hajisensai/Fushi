@@ -31,6 +31,7 @@ pub(crate) mod legacy_clock;
 pub(crate) mod local_state;
 pub(crate) mod media_gc;
 mod mem_budget;
+pub(crate) mod ops;
 #[cfg(test)]
 mod panic_recovery_tests;
 mod profile_data;
@@ -39,8 +40,8 @@ mod projections;
 mod projections_scan_tests;
 pub(crate) mod queue;
 mod read_pool;
-mod refresh;
 pub(crate) mod reads;
+mod refresh;
 pub(crate) mod repr_rewrite;
 pub mod rows;
 pub mod schema;
@@ -331,7 +332,7 @@ impl Drop for SrsCore {
 /// 取一把锁；锁被 panic 毒化过（持锁的命令跑到一半 panic，FFI 接成 -100）就先用 [recover] 把锁里的状态恢复到命令
 /// 之间应有的样子，再清掉毒化标记，之后照常可用（BUG-4297）。恢复失败就保持毒化、报错：不在状态不明的连接上跑任何
 /// 命令，下一个取锁的调用再恢复。库里所有连接 / 会话状态的锁都经这里，策略一致：写连接回滚（[SrsCore::recover_writer]），
-/// 读连接结束停在半路的读事务（[end_read_tx_of]），只读会话与纯簿记照常用，收段会话作废。
+/// 读连接结束停在半路的读事务（[end_read_tx]），只读会话与纯簿记照常用，收段会话作废。
 pub(crate) fn lock_recovering<T>(
     m: &Mutex<T>,
     recover: impl FnOnce(&mut T) -> Result<(), String>,
@@ -355,11 +356,6 @@ pub(crate) fn end_read_tx(c: &Connection) -> Result<(), String> {
     }
     c.execute_batch("ROLLBACK")
         .map_err(|e| format!("srs: end a read transaction left open by a panic: {e}"))
-}
-
-/// [end_read_tx]，锁里是 `Option<Connection>`（`None` = 已关闭）。
-fn end_read_tx_of(c: &mut Option<Connection>) -> Result<(), String> {
-    c.as_ref().map_or(Ok(()), end_read_tx)
 }
 
 impl SrsCore {

@@ -12,7 +12,7 @@
 //!   （一元加号）：只当过滤条件，不让规划器因为它改挑 profile 前缀的索引去扫整个 profile。
 //! - **ID 列表**：请求里是 JSON 数组，SQL 里 `IN (SELECT srs_id(value) FROM json_each(?))`，不分块、不受变量数上限
 //!   限制。
-//! - **不收通道**：`read` 登记在 `CHANNEL_TRANSPARENT`（store/ffi.rs）。新设备收段途中读到的投影不全，与以前 Drift
+//! - **不收通道**：`read` 在 store/ops.rs 登记为 `Transparent`。新设备收段途中读到的投影不全，与以前 Drift
 //!   读到的一样，收尾后一致。
 //! - 结果表的列名就是下面各函数里写的名字；Dart 侧的读法在 packages/fushi_engine/lib/srs/srs_reads.dart。
 use rusqlite::Connection;

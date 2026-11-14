@@ -33,6 +33,7 @@ echo "ffsrs_* symbols looked up by the Dart bindings: $expected_count"
 # 扫描规模哨兵：正则被绑定文件的格式改写打断时，期望集会塌成 0 条，「全都导出了」
 # 恒真。下界取当前全部 37 个：ABI 4（2026-10-30）把 Anki 搜索语料搬进 srs.db 的常驻浏览会话（store/browse.rs，
 # 走 ffsrs_store_* 命令），删掉了 9 个 ffsrs_search_corpus_* / ffsrs_search_chunk_* 语料与分块符号（原 46 个）。
+# ABI 7（2026-11-13）删掉没有调用方的 ffsrs_memory_input（44 → 43 个，下界不变）。
 # 真删符号是破坏性 ABI 变更（ffsrs_abi_version 同时要升），应当同时改这里。
 if [[ "$expected_count" -lt 37 ]]; then
   echo "::error title=ABI symbol extraction collapsed::只从绑定里解析出 $expected_count 个 ffsrs_* 名（<37），正则失效或绑定被大改，不能当通过。" >&2

@@ -1626,12 +1626,13 @@ class SrsDbStore implements SrsSync2Host {
 
   /// 同步 v2 的命令（看 head / 发件 / 写 head / 身份 / 摘要……）与写事务互斥：内核与本机写入共用一条连接，
   /// 不排队的话 `outbox` / `head` / `plan` 会读到另一笔还没提交的 `apply` 事务里的操作——那笔回滚后同一个 seq
-  /// 被重用、head 的代号回退，已经发出去的段与 head 让对端判本机分叉（P1-4）。不排队的只有 [kSrsSync2LockFreeOps]：
-  /// 不碰库的纯计算，以及只读已提交快照的命令——排队等于让复习作答等它们跑完（状态摘要是全库扫描，手机上
-  /// 一两秒，每轮同步都可能轮到）。
+  /// 被重用、head 的代号回退，已经发出去的段与 head 让对端判本机分叉（P1-4）。进不进独占区由内核的命令表声明
+  /// （[SrsOp.lock]，native/fushi_fsrs/src/store/ops.rs）：不排队的只有 [SrsOpLock.free]（[kSrsSync2LockFreeOps]）——
+  /// 不碰库的纯计算，以及只读已提交快照的命令；排队等于让复习作答等它们跑完（状态摘要是全库扫描，手机上一两秒，每轮
+  /// 同步都可能轮到）。
   ///
-  /// `plan` 先不进写锁、只在读连接上算（审查 S-8：空轮 head 都没变，什么都不用记）；内核说要记东西（新设备 / 更新的
-  /// head）才进写锁再算一次。
+  /// [SrsOpLock.readFirst]（`plan`）先不进写锁、只在读连接上算（审查 S-8：空轮 head 都没变，什么都不用记）；内核说要
+  /// 记东西（新设备 / 更新的 head）才进写锁再算一次。
   @override
   Future<SrsSync2Result> sync2Command(
     Map<String, Object?> request, {
@@ -1645,14 +1646,16 @@ class SrsDbStore implements SrsSync2Host {
         const <(String, Uint8List)>[],
       );
     }
-    if (request['op'] == 'plan') {
-      final SrsSync2Result r = await _sync2Raw(<String, Object?>{
-        ...request,
-        'readOnly': true,
-      }, blobs: blobs);
-      if (r.map['needsWrite'] != true) return r;
-    } else if (kSrsSync2LockFreeOps.contains(request['op'])) {
-      return _sync2Raw(request, blobs: blobs);
+    switch (SrsOp.byWire(request['op'])?.lock) {
+      case SrsOpLock.readFirst:
+        final SrsSync2Result r = await _sync2Raw(<String, Object?>{
+          ...request,
+          'readOnly': true,
+        }, blobs: blobs);
+        if (r.map['needsWrite'] != true) return r;
+      case SrsOpLock.free:
+        return _sync2Raw(request, blobs: blobs);
+      case SrsOpLock.exclusive || null:
     }
     return runExclusive(() => _sync2Raw(request, blobs: blobs));
   }
@@ -1660,56 +1663,31 @@ class SrsDbStore implements SrsSync2Host {
   /// 卡片浏览的常驻会话命令（native/fushi_fsrs/src/store/browse.rs；srs_browse.dart 的 `SrsBrowseSession` 发）。
   /// 只读（读快照；写连接上有事务时在它的 SAVEPOINT 里读，看得见未提交的行），不进写锁，在后台 isolate 跑。
   ///
-  /// 只接受 [kSrsBrowseOps] 里的命令：这个入口不进写锁、不走 [sync2Command] 的分流，且会被远程复习原样转给
-  /// 已配对设备调用；放任意 op 进来等于把 `seal_file` / `open_file`（按请求给的路径读写文件）与改库命令都开放了。
+  /// 只接受浏览会话命令（[SrsOp.browse]，[kSrsBrowseOps]）：这个入口不进写锁、不走 [sync2Command] 的分流，且会被
+  /// 远程复习原样转给已配对设备调用；放任意 op 进来等于把 `seal_file` / `open_file`（按请求给的路径读写文件）与改库
+  /// 命令都开放了。
   Future<SrsSync2Result> browseCommand(Map<String, Object?> request) {
     final Object? op = request['op'];
-    if (!kSrsBrowseOps.contains(op)) {
+    if (SrsOp.byWire(op)?.browse != true) {
       throw ArgumentError.value(op, 'op', 'not a browse command');
     }
     return _sync2Raw(request);
   }
 
-  /// [browseCommand] 接受的命令：与原生 `store/ffi.rs` 里分派到 `browse` 会话的那一组相同。
-  static const Set<String> kSrsBrowseOps = <String>{
-    'browse_query',
-    'browse_rows',
-    'browse_ids',
-    'browse_targets',
-    'browse_close',
-    'browse_stats',
-    'browse_counts',
-    'browse_sources',
-    'anki_find',
-    'anki_tags',
-    'anki_dupes',
-  };
+  /// [browseCommand] 接受的命令（内核命令表里的浏览会话命令，[SrsOp.browse]）。
+  static final Set<String> kSrsBrowseOps = _wiresWhere((SrsOp o) => o.browse);
 
-  /// 不进写锁的 v2 命令（见 [sync2Command]）。判据：结果不依赖写连接上还没提交的行，也不在别的写入的
-  /// 中途改本机状态。
-  /// - 纯计算（`derive_key` / `seal` / `open`）：不碰库；Argon2 派生要上百毫秒。`seal_file` / `open_file` 同理
-  ///   （媒体文件到文件的流式封 / 解，只读写调用方给的路径）。
-  /// - 只走读连接（WAL 快照，只见已提交的行）：`status` / `media_known` / `conflicts` / `checkpoints` / `history`；
-  ///   `media_hash`（本机媒体文件的 sha256，首次对账要把几万个文件各读一遍；结论交给进写锁的 `media_scan`）。
-  /// - `digest`：读连接上读触发器增量维护的 4096 个摘要桶求根（已提交快照，不再全库扫描），只在末尾往写连接
-  ///   记一行摘要缓存（`srs_meta`）；恰好落进另一笔写事务而那笔回滚，丢的只是这行缓存，下一轮按间隔重算。
-  /// - `digest_buckets`：同上读连接，列各摘要桶（摘要不一致时定位不一致的 ID 范围）。
+  static Set<String> _wiresWhere(bool Function(SrsOp) test) =>
+      Set<String>.unmodifiable(<String>{
+        for (final SrsOp o in SrsOp.values)
+          if (test(o)) o.wire,
+      });
+
+  /// 不进写锁的 v2 命令（[SrsOpLock.free]，见 [sync2Command]；判据见 native/fushi_fsrs/src/store/ops.rs）。
   @visibleForTesting
-  static const Set<String> kSrsSync2LockFreeOps = <String>{
-    'derive_key',
-    'seal',
-    'open',
-    'status',
-    'media_known',
-    'media_hash',
-    'conflicts',
-    'checkpoints',
-    'history',
-    'digest',
-    'digest_buckets',
-    'seal_file',
-    'open_file',
-  };
+  static final Set<String> kSrsSync2LockFreeOps = _wiresWhere(
+    (SrsOp o) => o.lock == SrsOpLock.free,
+  );
 
   /// 开一场收段会话。先登记会话（之后来的 [rwkvReplay] 排到会话结束），再等在途的回放跑完，然后才让内核开始：
   /// 收段的投递 / 收尾与整 profile 的 RWKV 回放不会同时在内存里。开不成（抛错）时会话随即结束——调用方只在
@@ -2150,7 +2128,7 @@ class SrsDbStore implements SrsSync2Host {
     List<Uint8List> blobs = const <Uint8List>[],
   }) async {
     assert(
-      !kSrsSync2ProjectingOps.contains(request['op']) || holdsExclusive,
+      !(SrsOp.byWire(request['op'])?.projecting ?? false) || holdsExclusive,
       'sync2 `${request['op']}` changes the projection outside runExclusive',
     );
     debugCoreCommands++;
@@ -2162,7 +2140,10 @@ class SrsDbStore implements SrsSync2Host {
         <String, Object?>{
           ...request,
           'profile': profileUid,
-          if (_kSync2CacheOps.contains(request['op'])) 'caches': _cacheConfig,
+          // 改投影 / 刷新缓存的命令：内核在同一次调用里刷新本机缓存行（store/caches.rs），要带上只有 Dart 知道的
+          // 缓存配置（内核命令表的 [SrsOp.caches]）。
+          if (SrsOp.byWire(request['op'])?.caches ?? false)
+            'caches': _cacheConfig,
         },
         blobs,
         lane: srsCoreLaneOf(request['op']),
@@ -2175,81 +2156,19 @@ class SrsDbStore implements SrsSync2Host {
     return r;
   }
 
-  /// 内核命令走哪条 worker 道（srs_core_workers.dart [SrsCoreLane]，集成审查【中】）：复习页的作答 / 排队 / 预览
-  /// 走交互道，不排在同步的成批命令与媒体文件加解密后面；本机手动排程（`sched`：复习页撤销、浏览页重置 / 改期、
-  /// 立即重排）是从 `apply` 拆出来的同一类本机写入，同走交互道；媒体文件的流式加解密 / 哈希走专用的文件道（同步时按
-  /// `kSrsSync2Concurrency` 并发，以前一来就占满整个池）；其余走默认道。
-  @visibleForTesting
-  static SrsCoreLane srsCoreLaneOf(Object? op) => switch (op) {
-    'apply' || 'sched' || 'study' || 'preview' => SrsCoreLane.interactive,
-    'seal_file' || 'open_file' || 'media_hash' => SrsCoreLane.file,
-    _ => SrsCoreLane.bulk,
-  };
-
-  /// 改投影的 v2 命令（与内核 native/fushi_fsrs/src/store/ffi.rs `PROJECTING_OPS` 同一组）：只能在本副本的独占区里发
-  /// （[_sync2Raw] 断言）：回包要按顺序接进本对象的内存（缓存变更日志、修订号）。
+  /// 改投影的 v2 命令（内核命令表的 [SrsOp.projecting]）：只能在本副本的独占区里发（[_sync2Raw] 断言）：回包要按
+  /// 顺序接进本对象的内存（缓存变更日志、修订号）。
   ///
   /// 不在这里、也不排写锁却可能顺带写库的：`digest`（记一行摘要缓存）、`media_hash`、`plan_restore`（只读，但通道没做完时
   /// 内核先收通道，收下的片在内核里推进刷新键）——见 [kSrsSync2LockFreeOps] 与 [sync2PlanRestore]。
   @visibleForTesting
-  static const Set<String> kSrsSync2ProjectingOps = <String>{
-    'apply',
-    'import_drafts',
-    'change',
-    'note_fields_if',
-    'merge_notes',
-    'sched',
-    'deck_delete',
-    'retire',
-    'ingest',
-    'ingest_batch',
-    'ingest_commit',
-    'ingest_finish',
-    'replay_pending',
-    'import',
-    'resolve',
-    'trust',
-    'purge',
-    'checkpoint',
-    'restore',
-    'dedup',
-  };
+  static final Set<String> kSrsSync2ProjectingOps = _wiresWhere(
+    (SrsOp o) => o.projecting,
+  );
 
   /// 发出过的内核命令数（`ffsrs_store_sync2` 一次算一条）：复习路径的 FFI 次数守卫 / 基准用。
   @visibleForTesting
   int debugCoreCommands = 0;
-
-  /// 改投影 / 刷新缓存的 v2 命令：内核在同一次调用里刷新本机缓存行（native/fushi_fsrs/src/store/caches.rs），
-  /// 要带上只有 Dart 知道的缓存配置（[_cacheConfig]）。
-  static const Set<String> _kSync2CacheOps = <String>{
-    'apply',
-    'import_drafts',
-    'change',
-    'note_fields_if',
-    'merge_notes',
-    'sched',
-    'deck_delete',
-    'ingest',
-    'ingest_batch',
-    'ingest_commit',
-    'ingest_finish',
-    'replay_pending',
-    'import',
-    'retire',
-    'resolve',
-    'trust',
-    'purge',
-    'checkpoint',
-    'restore',
-    'dedup',
-    'refresh_caches',
-    'rebuild_caches',
-    'cache_config_set',
-    'edits_rewrite_repr',
-    'backfill_dupe_norms',
-    'media_gc_collect',
-    'media_live_refs',
-  };
 
   /// 缓存刷新的配置（[srsCacheConfigFor]）。
   late final Map<String, Object?> _cacheConfig = srsCacheConfigFor(profileUid);

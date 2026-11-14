@@ -323,110 +323,6 @@ void main() {
     });
   });
 
-  group('S/D 输入（铁律 A）', () {
-    test('历史完整：从新卡算起，忽略锚点；FSRS-7 用小数天', () {
-      final SrsReviewLog a = _log(
-        card: 'c',
-        kind: SrsLogKind.review,
-        at: kT0,
-        rating: 3,
-        reviewType: SrsReviewType.learn,
-      );
-      final SrsReviewLog anchor = _log(
-        card: 'c',
-        kind: SrsLogKind.importAnchor,
-        at: kT0 + kDayMs,
-        reviewType: SrsReviewType.manual,
-      );
-      final SrsReviewLog b = _log(
-        card: 'c',
-        kind: SrsLogKind.review,
-        at: kT0 + kDayMs * 3 ~/ 2,
-        rating: 3,
-      );
-      final SrsMemoryInput input = srsCollectMemoryInput(
-        SrsCardHistory(<SrsReviewLog>[a, anchor, b]),
-        algorithm: SrsAlgorithm.fsrs7,
-        day: kDayCtx,
-      );
-      expect(input.complete, isTrue);
-      expect(input.reviews.map((SrsFsrsReview r) => r.deltaDays), <double>[
-        0,
-        1.5,
-      ]);
-      final SrsMemoryInput six = srsCollectMemoryInput(
-        SrsCardHistory(<SrsReviewLog>[a, anchor, b]),
-        algorithm: SrsAlgorithm.fsrs6,
-        day: kDayCtx,
-      );
-      expect(
-        six.reviews.last.deltaDays,
-        (kDayCtx.dayIndexOf(kT0 + kDayMs * 3 ~/ 2) - kDayCtx.dayIndexOf(kT0))
-            .toDouble(),
-        reason: 'FSRS-6 按翻日后的日序号取整',
-      );
-    });
-
-    test('历史不完整：从锚点 SM-2 换算，接上锚点之后的评分', () {
-      final SrsReviewLog anchor = _log(
-        card: 'c',
-        kind: SrsLogKind.importAnchor,
-        at: kT0,
-        reviewType: SrsReviewType.manual,
-        result: SrsScheduleResult(
-          queue: SrsQueue.review,
-          scheduledDays: 20,
-          lastReviewedAt: kT0 - 20 * kDayMs,
-        ),
-      );
-      final SrsReviewLog r = _log(
-        card: 'c',
-        kind: SrsLogKind.review,
-        at: kT0 + 5 * kDayMs,
-        rating: 3,
-      );
-      final SrsMemoryInput input = srsCollectMemoryInput(
-        SrsCardHistory(<SrsReviewLog>[anchor, r]),
-        algorithm: SrsAlgorithm.fsrs7,
-        day: kDayCtx,
-      );
-      expect(input.complete, isFalse);
-      expect(input.sm2Start, isNotNull);
-      expect(input.reviews.single.deltaDays, 25.0);
-    });
-
-    test('重置之后从新起点算', () {
-      final SrsReviewLog a = _log(
-        card: 'c',
-        kind: SrsLogKind.review,
-        at: kT0,
-        rating: 1,
-        reviewType: SrsReviewType.learn,
-      );
-      final SrsReviewLog reset = _log(
-        card: 'c',
-        kind: SrsLogKind.manual,
-        at: kT0 + 1000,
-        reviewType: SrsReviewType.manual,
-        result: const SrsScheduleResult(queue: SrsQueue.newCard),
-      );
-      final SrsReviewLog b = _log(
-        card: 'c',
-        kind: SrsLogKind.review,
-        at: kT0 + 2000,
-        rating: 4,
-        reviewType: SrsReviewType.learn,
-      );
-      final SrsMemoryInput input = srsCollectMemoryInput(
-        SrsCardHistory(<SrsReviewLog>[a, reset, b]),
-        algorithm: SrsAlgorithm.fsrs7,
-        day: kDayCtx,
-      );
-      expect(input.reviews.map((SrsFsrsReview r) => r.rating), <int>[4]);
-    });
-  });
-
-  // 评分 / 撤销 / 手动改期的排程只在 Rust 里（native/fushi_fsrs/src/sync2/sched.rs 与 store/sync2/sched_local.rs 的测试）。
   group('步长', () {
     test('步长只允许当天以内', () {
       expect(srsValidateSteps(<double>[1, 10]), isTrue);
@@ -673,11 +569,6 @@ void main() {
       now: () => (kT0 + 30 * kDayMs, SrsTimeSource.anchored),
       day: kDayCtx,
     );
-    List<(int, double)> shape(SrsMemoryInput m) => <(int, double)>[
-      for (final SrsFsrsReview r in m.reviews) (r.rating, r.deltaDays),
-    ];
-    SrsMemoryInput memory(SrsCardHistory h) =>
-        srsCollectMemoryInput(h, algorithm: SrsAlgorithm.fsrs7, day: kDayCtx);
 
     test('被撤销的是备份时有效历史的尾巴：重放副本，有效历史与备份逐条同构、不需要 ③′', () {
       final SrsReviewLog r1 = _log(
@@ -728,10 +619,9 @@ void main() {
       ]);
       expect(after.state, backup.state);
       expect(srsSameEffectiveShape(after.effective, backup.effective), isTrue);
-      // 不靠 ③′：没有任何一条是「照抄状态」日志，旧版本按原规则算出的记忆输入与备份时相同。
+      // 不靠 ③′：没有任何一条是「照抄状态」日志。记忆状态输入只由有效历史决定（内核 projection.rs `memory_input`），
+      // 有效历史与备份逐条同构（上面那条），旧版本按原规则算出的记忆输入就与备份时相同。
       expect(after.all.any(_isRestoreState), isFalse);
-      expect(shape(memory(after)), shape(memory(backup)));
-      expect(memory(after).complete, memory(backup).complete);
     });
 
     test('不是尾巴（备份时有效的导入日志后来被判等价）：兜底写照抄状态的 manual 日志', () {

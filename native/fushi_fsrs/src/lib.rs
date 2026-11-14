@@ -19,8 +19,8 @@
 //!   ffsrs_materialize
 //!   （字段寄存器内核：修改记录 → 寄存器 → 物化视图，见 registers.rs；排序键 ordering.rs、
 //!   释义样式去重规范形 style_dedup.rs 两边共用） /
-//!   ffsrs_memory_input / ffsrs_rwkv_now_rows
-//!   （投影：记忆状态输入、RWKV 此刻行，见 projection.rs；srs.db 直读命令在 store/ffi.rs）/
+//!   ffsrs_rwkv_now_rows
+//!   （投影：RWKV 此刻行，见 projection.rs；srs.db 直读命令在 store/ffi.rs）/
 //!   ffsrs_boot_time_ms
 //!   （开机时钟：含睡眠、不受改系统时间影响，可信时间按它推算，见 boot_clock.rs）/
 //!   ffsrs_predict_tss / ffsrs_calibration_report
@@ -59,7 +59,8 @@ use serde_json::{Value, json};
 /// C ABI 版本。Dart 侧加载时比对，不一致视为库不可用（不崩）。4：删掉整批搜索语料的 `ffsrs_search_corpus_*` / `ffsrs_search_chunk_*`（L-5）。
 /// 5：`ffsrs_history_select` 列模式每条日志从 3 个串改为 4 个串（多 cardId，`offs` 长 `4n+1`；BUG-4218）。
 /// 6：复习统计页的校准图 / UM+（`ffsrs_predict_tss` / `ffsrs_calibration_report` / `ffsrs_store_calibration_items`）。
-pub const ABI_VERSION: i32 = 6;
+/// 7：删掉没有调用方的列模式记忆状态输入 `ffsrs_memory_input`（排程 / 恢复计划都在内核里，记忆状态输入只在内核内部用）。
+pub const ABI_VERSION: i32 = 7;
 
 /// 钉定的 fsrs-rs 源码版本，写进参数组的 algorithmRev。
 pub const FSRS_RS_REV: &str = "0a5737406a0c5c7a5259b144738cbe4a0b649d76";
@@ -1121,35 +1122,6 @@ pub extern "C" fn ffsrs_history_select(
             )
         };
         history::select_columns(ints, text, offs, groups)
-    }));
-    bytes_out(outcome, out_len, error_out)
-}
-
-/// 记忆状态输入（列模式，排程用），布局见 [projection::memory_input_columns] / [projection::encode_memory_input]。
-/// `ints` 长 `n_logs × MEMORY_COLUMN_WORDS`（一份历史的有效日志，已排序）；`alg` 0 fsrs6 / 1 fsrs7 / 2 rwkv。
-/// 成功返回缓冲区并写 `out_len`（[ffsrs_free_bytes] 释放）；失败返回空指针并写 `error_out`。
-#[no_mangle]
-pub extern "C" fn ffsrs_memory_input(
-    ints: *const i64,
-    n_logs: usize,
-    alg: i32,
-    utc_offset_min: i32,
-    rollover_hour: i32,
-    out_len: *mut usize,
-    error_out: *mut *mut c_char,
-) -> *mut u8 {
-    let outcome = catch_unwind(AssertUnwindSafe(|| -> Result<Vec<u8>, String> {
-        if out_len.is_null() || (ints.is_null() && n_logs > 0) {
-            return Err("null argument".to_owned());
-        }
-        let ints = unsafe { raw_slice(ints, n_logs * projection::MEMORY_COLUMN_WORDS) };
-        let day = projection::Day {
-            utc_offset_min: utc_offset_min.into(),
-            rollover_hour: rollover_hour.into(),
-        };
-        let m =
-            projection::memory_input_columns(ints, projection::Alg::from_code(alg.into())?, &day)?;
-        Ok(projection::encode_memory_input(&m))
     }));
     bytes_out(outcome, out_len, error_out)
 }
