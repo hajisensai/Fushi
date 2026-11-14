@@ -191,24 +191,26 @@ extension SrsTemplateDuplicates on SrsDbStore {
       dropTemplateIds: dropTemplateIds,
     );
     final SrsNoteTypeView type = (await noteType(noteTypeId))!;
-    await sync2Checkpoint(type.name, 'note_type');
-    await writeEdits(<SrsEditSpec>[
-      for (final MapEntry<String, List<String>> l in p.links.entries)
-        for (final String from in l.value)
+    await writeChange(
+      <SrsEditSpec>[
+        for (final MapEntry<String, List<String>> l in p.links.entries)
+          for (final String from in l.value)
+            SrsEditSpec(
+              SrsEntityKind.card,
+              l.key,
+              SrsFieldKeys.cardHistoryFrom(from),
+              true,
+            ),
+        for (final SrsTemplateDef d in p.drop)
           SrsEditSpec(
-            SrsEntityKind.card,
-            l.key,
-            SrsFieldKeys.cardHistoryFrom(from),
-            true,
+            SrsEntityKind.noteType,
+            noteTypeId,
+            SrsFieldKeys.templateDef(d.id),
+            d.copyWith(deleted: true).toValue(),
           ),
-      for (final SrsTemplateDef d in p.drop)
-        SrsEditSpec(
-          SrsEntityKind.noteType,
-          noteTypeId,
-          SrsFieldKeys.templateDef(d.id),
-          d.copyWith(deleted: true).toValue(),
-        ),
-    ]);
+      ],
+      checkpoint: (name: type.name, reason: 'note_type'),
+    );
     return p;
   });
 }

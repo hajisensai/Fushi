@@ -164,7 +164,7 @@ SrsReviewLog _replayOf(SrsReviewLog l, SrsLogContext ctx, String backupId) {
     cardId: l.cardId,
     kind: l.kind,
     rating: l.rating,
-    hlc: ctx.clock.tick(nowMs),
+    hlc: ctx.nextHlc(nowMs),
     occurredAt: l.occurredAt,
     timeSource: l.timeSource,
     origin: l.origin,
@@ -195,7 +195,7 @@ SrsReviewLog _restoreEvent({
   String? memAlg,
 }) {
   final (int nowMs, SrsTimeSource source) = ctx.now();
-  final Hlc hlc = ctx.clock.tick(nowMs);
+  final Hlc hlc = ctx.nextHlc(nowMs);
   return SrsReviewLog(
     id: ctx.newId(nowMs),
     profileUid: ctx.profileUid,
