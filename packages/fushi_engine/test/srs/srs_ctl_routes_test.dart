@@ -504,7 +504,7 @@ void main() {
       );
     });
 
-    // BUG-4480 / BUG-4623：点名 A 却给 B 的 id——复习库自己按 profile 核对，别的 profile 的 id 与库里
+    // BUG-4480 / BUG-4626：点名 A 却给 B 的 id——复习库自己按 profile 核对，别的 profile 的 id 与库里
     // 根本没有的 id 同一个回答：读 / 合并 / 标记不是重复 404，批量改笔记把它记进 missing、不写。
     test('点名的 profile 里没有这些笔记（id 是另一份的）：当不存在，两份都没被写错', () async {
       final String ja = await _addNote(env.ja, '魚', sentence: 'old');

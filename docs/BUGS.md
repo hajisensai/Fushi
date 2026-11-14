@@ -33,15 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3978 条。点号进各自文件。
+> 共 4002 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4623](bugs/BUG-4623-srs-by-id-cross-profile.md) | ✅ | ✅ | 复习库按实体 ID 的读写不看 profile：点名 A 的命令能读 / 改 / 删 B 的笔记、卡片、牌组、笔记类型 |
-> 共 4001 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-4626](bugs/BUG-4626-srs-by-id-cross-profile.md) | ✅ | ✅ | 复习库按实体 ID 的读写不看 profile：点名 A 的命令能读 / 改 / 删 B 的笔记、卡片、牌组、笔记类型 |
 | [BUG-4625](bugs/BUG-4625-linux-wpe-click-pointerup-button-mask.md) | ✅ | ✅ | Linux 漫画阅读器 OCR 文字无法点击查词 |
 | [BUG-4624](bugs/BUG-4624-linux-wpe-resize-stride-crash.md) | ✅ | ✅ | Linux 漫画页面出现条纹，调整窗口大小时阅读器崩溃 |
 | [BUG-4623](bugs/BUG-4623-linux-wpe-borrowed-pixels-refcount.md) | ✅ | ✅ | Linux 漫画阅读器释放 WPE 借用像素缓冲区后崩溃 |
@@ -50,8 +46,6 @@
 | [BUG-4620](bugs/BUG-4620-cuda-budget-read-from-igpu-adapter.md) | ✅ | ✅ | CUDA 转录的显存预算读的是 DXGI 适配器 0，混合显卡笔记本上是核显 |
 | [BUG-4533](bugs/BUG-4533-flatpak-x11-mesa-crash.md) | ✅ | ✅ | flatpak-x11-mesa-crash |
 | [BUG-4521](bugs/BUG-4521-mokuro-import-volumes-not-grouped.md) | ✅ | ✅ | mokuro catalog import does not group volumes into a series |
-| [BUG-4481](bugs/BUG-4481-srs-edit-undo-blind-overwrite.md) | ✅ | ✅ | srs-edit-undo-blind-overwrite |
-| [BUG-4480](bugs/BUG-4480-srs-by-id-access-not-profile-scoped.md) | ✅ | ✅ | 复习库按 id 的读写不按 profile 过滤：点名的 profile 与 id 不属于同一份时写错库 |
 | [BUG-4510](bugs/BUG-4510-dict-materialize-reprobe-loop.md) | ✅ | ✅ | 词典物化探测自我喂养：预算后回报触发重装，重装又对全部目录起新 worker，启动卡在 rebuild-dict-paths、窗口无响应 |
 | [BUG-4509](bugs/BUG-4509-fushi-db-corrupt-retry-loop.md) | ✅ | ✅ | 主库页损坏（SQLITE_CORRUPT）不进终态，启动错误屏「重试」无限循环 |
 | [BUG-4508](bugs/BUG-4508-screen-ocr-mlkit-unavailable-despite-ready.md) | 🚧 | 🚧 | 悬浮球截屏 OCR 一直报「系统 OCR 模型未就绪」，配置弹窗却说已就绪 |
@@ -73,7 +67,7 @@
 | [BUG-4491](bugs/BUG-4491-android-permission-kill-no-killuid-prefix-misreport.md) | ✅ | ✅ | 华为改所有文件访问权限后被系统结束报成意外退出 |
 | [BUG-4490](bugs/BUG-4490-android-exit-schedulecrash-failed-misreport.md) | ✅ | ✅ | Android 系统 scheduleCrash 失败结束冻结进程被报成崩溃 |
 | [BUG-4481](bugs/BUG-4481-srs-edit-undo-blind-overwrite.md) | ✅ | ✅ | srs-edit-undo-blind-overwrite |
-| [BUG-4480](bugs/BUG-4480-srs-by-id-access-not-profile-scoped.md) | 🚧 | 🚧 | 复习库按 id 的读写不按 profile 过滤：点名的 profile 与 id 不属于同一份时写错库 |
+| [BUG-4480](bugs/BUG-4480-srs-by-id-access-not-profile-scoped.md) | ✅ | ✅ | 复习库按 id 的读写不按 profile 过滤：点名的 profile 与 id 不属于同一份时写错库 |
 | [BUG-4479](bugs/BUG-4479-mine-shortcut-focused-entry.md) | ✅ | ✅ | mine-shortcut-focused-entry |
 | [BUG-4478](bugs/BUG-4478-srs-sync2-bootstrap-channel-never-selected.md) | ✅ | ✅ | 复习同步 v2 的新设备收段通道在生产里一次都不会被选中 |
 | [BUG-4477](bugs/BUG-4477-srs-adopt-deletes-decks-without-notes.md) | ✅ | ✅ | 复习同步关联只看笔记，只建了牌组 / 改了预设的设备被自动采用对方 uid，自建牌组与预设被删 |
