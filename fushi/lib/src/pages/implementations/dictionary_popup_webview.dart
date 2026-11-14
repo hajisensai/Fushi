@@ -37,6 +37,7 @@ import 'package:fushi/src/reader/reader_selection_scripts.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart' show activeModifierKeys;
 import 'package:fushi/src/srs/srs_app_host.dart';
+import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/reader_space_override.dart'
     show desktopShouldHandleCopyGesture;
 import 'package:fushi/src/utils/misc/dictionary_external_link.dart';
@@ -430,6 +431,7 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
     this.hasChildPopup = false,
     this.visibleViewportHeight,
     this.transparentDocumentBackground = false,
+    this.mineShortcutAction,
     this.onTextSelected,
     this.onLinkClick,
     this.onTapOutside,
@@ -513,6 +515,12 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
   /// 消除泛白。默认 false = 原 in-app 行为，桌面 global-lookup 走独立 `.global-lookup` 路径，
   /// 二者均不受影响（零回归）。
   final bool transparentDocumentBackground;
+
+  /// 宿主页面上「点＋制卡」真正响应的键盘动作（阅读器
+  /// [ShortcutAction.readerCreateCardFromPopup]、视频 / texthooker
+  /// [ShortcutAction.popupMineEntry]）。只用来给「＋」按钮写快捷键提示；null = 宿主没有
+  /// 键盘制卡派发，不提示。见 [PopupSettingsOptions.mineShortcutAction]。
+  final ShortcutAction? mineShortcutAction;
 
   /// [DictionaryTextSelected]：在释义正文里点词 / 右键「查词」。
   final DictionaryTextSelected? onTextSelected;
@@ -2208,6 +2216,7 @@ JSON.stringify((function(){
       options: PopupSettingsOptions(
         // TODO-1065：app 外 / 悬浮字幕独立查词窗令 <html> 透明消除泛白（见字段 doc）。
         mobileExternal: widget.transparentDocumentBackground,
+        mineShortcutAction: widget.mineShortcutAction,
         sentenceDraftEnabled:
             kSentenceContextPickerEnabled &&
             widget.onSetSentenceContext != null,

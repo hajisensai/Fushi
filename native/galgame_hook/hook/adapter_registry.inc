@@ -647,6 +647,7 @@ class AdapterRegistry {
     luca_.ProcessPendingEvents();
     softpal_.ProcessPendingEvents();
     system4_.ProcessPendingEvents();
+    nitroplus_.ProcessPendingEvents();
     // These retry budgets and ordering intentionally match the old HookWorker. onModuleLoaded is
     // the stable seam; P3 can replace this bounded poll with real module events without changing
     // individual adapter contracts.

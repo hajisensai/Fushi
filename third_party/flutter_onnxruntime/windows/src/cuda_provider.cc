@@ -27,6 +27,7 @@ using PFN_cuDeviceGetName = CUresult(__stdcall *)(char *, int, CUdevice);
 using PFN_cuDeviceGetAttribute = CUresult(__stdcall *)(int *, int, CUdevice);
 using PFN_cuDeviceTotalMem = CUresult(__stdcall *)(size_t *, CUdevice);
 using PFN_cuGetErrorName = CUresult(__stdcall *)(CUresult, const char **);
+using PFN_cuDeviceGetLuid = CUresult(__stdcall *)(char *, unsigned int *, CUdevice);
 
 std::string CuError(PFN_cuGetErrorName get_name, const char *what, CUresult code) {
   std::string message = std::string(what) + " failed: " + std::to_string(code);
@@ -150,6 +151,35 @@ CudaProbeResult ProbeCudaDriver() {
   return result;
 }
 
+bool CudaDeviceLuid(int ordinal, uint8_t luid[8]) {
+  // Same module ProbeCudaDriver keeps loaded; System32 only.
+  static HMODULE nvcuda = LoadLibraryExW(L"nvcuda.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
+  if (nvcuda == nullptr || luid == nullptr) {
+    return false;
+  }
+  auto init = reinterpret_cast<PFN_cuInit>(GetProcAddress(nvcuda, "cuInit"));
+  auto device_get = reinterpret_cast<PFN_cuDeviceGet>(GetProcAddress(nvcuda, "cuDeviceGet"));
+  auto device_get_luid = reinterpret_cast<PFN_cuDeviceGetLuid>(GetProcAddress(nvcuda, "cuDeviceGetLuid"));
+  if (init == nullptr || device_get == nullptr || device_get_luid == nullptr) {
+    return false;
+  }
+  // cuInit is idempotent; the CUDA EP has normally initialised the driver.
+  if (init(0) != 0) {
+    return false;
+  }
+  CUdevice device = 0;
+  if (device_get(&device, ordinal) != 0) {
+    return false;
+  }
+  char raw[8] = {0};
+  unsigned int node_mask = 0;
+  if (device_get_luid(raw, &node_mask, device) != 0) {
+    return false;
+  }
+  std::memcpy(luid, raw, sizeof(raw));
+  return true;
+}
+
 CudaRegistrationResult CudaPluginRegistry::Register(OrtEnv *env, const std::wstring &raw_dir) {
   std::lock_guard<std::mutex> lock(mutex_);
   CudaRegistrationResult result;
@@ -258,10 +288,7 @@ CudaRegistrationResult CudaPluginRegistry::Register(OrtEnv *env, const std::wstr
   return result;
 }
 
-bool CudaPluginRegistry::IsRegistered() {
-  std::lock_guard<std::mutex> lock(mutex_);
-  return registered_;
-}
+bool CudaPluginRegistry::IsRegistered() { return registered_.load(); }
 
 std::vector<std::string> CudaPluginRegistry::RegisteredEpNames() {
   std::lock_guard<std::mutex> lock(mutex_);

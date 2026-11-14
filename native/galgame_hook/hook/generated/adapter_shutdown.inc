@@ -21,3 +21,4 @@
     knife_.shutdown();
     softpal_.shutdown();
     system4_.shutdown();
+    nitroplus_.shutdown();

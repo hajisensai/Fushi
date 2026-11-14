@@ -4,6 +4,7 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/utils/components/accent_logo_image.dart';
+import 'package:fushi/src/utils/components/mascot_glow.dart';
 import 'package:fushi/src/utils/misc/app_icon_preferences.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:material_color_utilities/material_color_utilities.dart';
@@ -218,6 +219,32 @@ void main() {
       appLogoFollowsAccent.value = false;
       notifier = build(persisted);
       expect(appLogoFollowsAccent.value, isTrue);
+    });
+  });
+
+  group('吉祥物光晕开关', () {
+    tearDown(() => mascotGlowEnabled.value = false);
+
+    test('默认关，加载偏好时发布到全局开关', () {
+      mascotGlowEnabled.value = true; // 上一会话残留值必须被偏好覆盖
+      notifier = build(const <String, String>{});
+      expect(notifier.mascotGlow, isFalse);
+      expect(mascotGlowEnabled.value, isFalse);
+    });
+
+    test('打开后持久化并即时发布；偏好里是开的则加载即开', () async {
+      notifier = build(const <String, String>{});
+      await notifier.setMascotGlow(true);
+      expect(mascotGlowEnabled.value, isTrue);
+      final Map<String, String> persisted = await database.getAllPrefs();
+      expect(
+        persisted[ThemeNotifier.mascotGlowPrefKey],
+        PrefCodec.encode(true),
+      );
+      notifier.dispose();
+      mascotGlowEnabled.value = false;
+      notifier = build(persisted);
+      expect(mascotGlowEnabled.value, isTrue);
     });
   });
 }
