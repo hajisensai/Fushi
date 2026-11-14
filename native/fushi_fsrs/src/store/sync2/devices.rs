@@ -156,6 +156,15 @@ pub(crate) fn record_ext(c: &Connection, profile: &str, h: &Head) -> Result<(), 
     Ok(())
 }
 
+/// 别的设备最近一份 head 自报的 App 版本（没报 = 空串）：自动重建上报用（heal.rs）。
+pub(crate) fn peer_app(c: &Connection, profile: &str, device: &Id) -> Result<String, String> {
+    let ext = parse_obj(meta_get(
+        c,
+        &format!("{}{}", ext_prefix(profile), device.text()),
+    )?);
+    Ok(str_of(&ext, "app").to_owned())
+}
+
 /// 停用了的设备。
 pub(crate) fn retired_set(c: &Connection, profile: &str) -> Result<BTreeSet<Id>, String> {
     let prefix = retired_prefix(profile);
@@ -238,6 +247,7 @@ pub(crate) fn status_extras(
     };
     let retired: BTreeSet<Id> = retired_rows.keys().filter_map(|k| Id::parse(k)).collect();
     let (gap, blocking) = stuck(c, profile, &vv, &retired)?;
+    let declared = super::min_reader::declared(c, profile)?;
     let exts: BTreeMap<String, Map<String, Value>> = {
         let prefix = ext_prefix(profile);
         meta_prefixed(c, &prefix)?
@@ -306,8 +316,8 @@ pub(crate) fn status_extras(
             "ok"
         } else if retired_at.is_some() {
             "retired"
-        } else if protocol.is_some_and(|p| p < segment::MIN_READER as i64) {
-            // 它的协议比本机写出的数据要求的最低读者还旧：它读不了本机（以及同代设备）的数据，要升级。
+        } else if protocol.is_some_and(|p| p < declared as i64) {
+            // 它的协议比本机 head 声明的最低读者（按本机写过 / 收下的内容，min_reader.rs）还旧：它读不了本机的数据，要升级。
             "upgrade"
         } else if g > 0 || b > 0 {
             "missing"
@@ -410,34 +420,7 @@ impl SrsCore {
     ) -> Result<Value, String> {
         let id = Id::parse(device).ok_or("retire: bad device")?;
         let w = self.writer()?;
-        in_savepoint(&w, |c| {
-            let local = Local::load(c, profile)?.ok_or("sync2 not initialised for this profile")?;
-            if id == local.device {
-                return Err("retire: cannot retire this device".into());
-            }
-            let row: Option<(i64, i64)> = c
-                .query_row(
-                    "SELECT applied, head_seq FROM sync2_devices WHERE profile_uid = srs_id(?1) AND device = ?2",
-                    params![profile, id.0.to_vec()],
-                    |r| Ok((r.get(0)?, r.get(1)?)),
-                )
-                .optional()
-                .map_err(sql)?;
-            let Some((applied, head_seq)) = row else {
-                return Err("retire: unknown device".into());
-            };
-            let key = format!("{}{}", retired_prefix(profile), id.text());
-            if retire {
-                meta_set(
-                    c,
-                    &key,
-                    &json!({"at": now, "applied": applied, "headSeq": head_seq}).to_string(),
-                )?;
-            } else {
-                meta_del(c, &key)?;
-            }
-            Ok(json!({"retired": retire}))
-        })
+        in_savepoint(&w, |c| retire_on(c, profile, &id, retire, now))
     }
 
     /// 给没有自报名字的设备记一个补充名（互联 host：已配对对端直接写了这台设备的段）。同名不写。
@@ -455,4 +438,43 @@ impl SrsCore {
         in_savepoint(&w, |c| meta_set(c, &key, &hint))?;
         Ok(json!({"changed": true}))
     }
+}
+
+/// [SrsCore::sync2_retire] 的本体：在调用方的写连接、调用方开的 SAVEPOINT 里改停用标记（不自己取锁；分发器接着在同一个
+/// SAVEPOINT 里投一遍缓冲，store/ffi.rs `local_write`）。
+pub(crate) fn retire_on(
+    c: &Connection,
+    profile: &str,
+    id: &Id,
+    retire: bool,
+    now: i64,
+) -> Result<Value, String> {
+    let local = Local::load(c, profile)?.ok_or("sync2 not initialised for this profile")?;
+    if *id == local.device {
+        return Err("retire: cannot retire this device".into());
+    }
+    let row: Option<(i64, i64)> = c
+                .query_row(
+                    "SELECT applied, head_seq FROM sync2_devices WHERE profile_uid = srs_id(?1) AND device = ?2",
+                    params![profile, id.0.to_vec()],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )
+                .optional()
+                .map_err(sql)?;
+    let Some((applied, head_seq)) = row else {
+        return Err("retire: unknown device".into());
+    };
+    let key = format!("{}{}", retired_prefix(profile), id.text());
+    if retire {
+        meta_set(
+            c,
+            &key,
+            &json!({"at": now, "applied": applied, "headSeq": head_seq}).to_string(),
+        )?;
+        // 停用的设备不再参与摘要比对（heal.rs）：它的组指纹与去重记录一并删掉。
+        super::heal::forget_peer(c, profile, id)?;
+    } else {
+        meta_del(c, &key)?;
+    }
+    Ok(json!({"retired": retire}))
 }

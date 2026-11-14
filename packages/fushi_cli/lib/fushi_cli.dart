@@ -24,3 +24,4 @@ export 'src/mcp/mcp_stdio_bridge.dart';
 export 'src/ops/fushi_op.dart';
 export 'src/ops/op_catalog.dart';
 export 'src/ops/op_routes.dart';
+export 'src/ops/op_undo_kit.dart';

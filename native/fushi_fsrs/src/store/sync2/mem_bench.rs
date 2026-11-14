@@ -6,7 +6,7 @@
 //! （`SRS_MEM_MB=32,128` 改数据量，单位是笔记正文 MiB）
 
 use std::alloc::{GlobalAlloc, Layout, System};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicIsize, AtomicUsize, Ordering};
 
 use serde_json::{Value, json};
 
@@ -14,41 +14,61 @@ use super::tests::{Bucket, Device, P, deck_entity, edit};
 
 struct Counting;
 
-static CUR: AtomicUsize = AtomicUsize::new(0);
-static PEAK: AtomicUsize = AtomicUsize::new(0);
+/// 正在进行的 [measure] 个数。为 0 时分配器**不记账**，只转发给系统分配器。
+///
+/// 这个分配器是整个测试可执行文件的全局分配器，不只管这里的基准：一直记账的话，每个测试线程的每次分配 / 释放都
+/// 要写 [CUR] / [PEAK] 这同一条缓存行，16 个测试线程互相把它抢来抢去——同一批 16 个测试单线程跑 7 秒、CPU 6 秒，
+/// 16 线程跑反而要 16 秒、CPU 170 秒（2026-11-11 实测），全量套件的时间大半耗在这上面。不量的时候只读这一个
+/// 几乎不被写的量，各核各自缓存，不争抢。
+static MEASURING: AtomicUsize = AtomicUsize::new(0);
+/// 记账期间 Rust 堆的净增减（字节）。只在 [measure] 里取差值用，所以是相对量、可以为负：量的这一步释放了
+/// 步前（没记账时）分配的内存，就会低于起点。
+static CUR: AtomicIsize = AtomicIsize::new(0);
+static PEAK: AtomicIsize = AtomicIsize::new(0);
+
+fn counting() -> bool {
+    MEASURING.load(Ordering::Relaxed) != 0
+}
 
 fn grew(n: usize) {
+    let n = n as isize;
     let now = CUR.fetch_add(n, Ordering::Relaxed) + n;
     PEAK.fetch_max(now, Ordering::Relaxed);
 }
 
-// SAFETY: 只转发给系统分配器，另外记账。
+fn shrank(n: usize) {
+    CUR.fetch_sub(n as isize, Ordering::Relaxed);
+}
+
+// SAFETY: 只转发给系统分配器，[measure] 进行期间另外记账。
 unsafe impl GlobalAlloc for Counting {
     unsafe fn alloc(&self, l: Layout) -> *mut u8 {
         let p = System.alloc(l);
-        if !p.is_null() {
+        if !p.is_null() && counting() {
             grew(l.size());
         }
         p
     }
     unsafe fn alloc_zeroed(&self, l: Layout) -> *mut u8 {
         let p = System.alloc_zeroed(l);
-        if !p.is_null() {
+        if !p.is_null() && counting() {
             grew(l.size());
         }
         p
     }
     unsafe fn dealloc(&self, p: *mut u8, l: Layout) {
         System.dealloc(p, l);
-        CUR.fetch_sub(l.size(), Ordering::Relaxed);
+        if counting() {
+            shrank(l.size());
+        }
     }
     unsafe fn realloc(&self, p: *mut u8, l: Layout, new: usize) -> *mut u8 {
         let q = System.realloc(p, l, new);
-        if !q.is_null() {
+        if !q.is_null() && counting() {
             if new >= l.size() {
                 grew(new - l.size());
             } else {
-                CUR.fetch_sub(l.size() - new, Ordering::Relaxed);
+                shrank(l.size() - new);
             }
         }
         q
@@ -72,6 +92,15 @@ pub(crate) struct Mem {
 }
 
 pub(crate) fn measure<T>(f: impl FnOnce() -> T) -> (T, Mem) {
+    // 记账只在这一步里开着；panic 时也要关回去，否则之后的测试全程记账。
+    struct Counted;
+    impl Drop for Counted {
+        fn drop(&mut self) {
+            MEASURING.fetch_sub(1, Ordering::Relaxed);
+        }
+    }
+    MEASURING.fetch_add(1, Ordering::Relaxed);
+    let _counted = Counted;
     let base = CUR.load(Ordering::Relaxed);
     PEAK.store(base, Ordering::Relaxed);
     // SAFETY: 读 / 复位 SQLite 全局内存统计量。
@@ -90,9 +119,9 @@ pub(crate) fn measure<T>(f: impl FnOnce() -> T) -> (T, Mem) {
     };
     let now = CUR.load(Ordering::Relaxed);
     let m = Mem {
-        rust_peak: PEAK.load(Ordering::Relaxed).saturating_sub(base) as f64 / MIB,
+        rust_peak: (PEAK.load(Ordering::Relaxed) - base).max(0) as f64 / MIB,
         sqlite_peak: (sq_peak - sq0) as f64 / MIB,
-        rust_kept: (now as f64 - base as f64) / MIB,
+        rust_kept: (now - base) as f64 / MIB,
         sqlite_kept: (sq_now - sq0) as f64 / MIB,
         ms,
     };

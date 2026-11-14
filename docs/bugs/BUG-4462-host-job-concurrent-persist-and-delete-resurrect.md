@@ -1,0 +1,8 @@
+## BUG-4462 · host 任务运行中被删除：两笔落盘并发写同一个临时文件，收尾落盘把删掉的目录建回来
+- **报告**：2026-11-11（PR #3320 的 CI：`fushi/test/sync/host_job_input_reuse_test.dart`「共享 host 通道 › 中途取消：DELETE 发出后通道与明文 client 一并关掉」偶发红，`PathNotFoundException: Cannot rename file to '…/job.json', path = '…/job.json.tmp'`，栈在 `HostJobManager._persist` ← `_runOne` ← `_drain`）
+- **真实性**：✅ 真 bug（develop 上就有，不是本分支引入）。`packages/fushi_engine/lib/sync/host_jobs/host_job_manager.dart`（修复前行号）：
+  - `_persist`（`:454-461`）每次都写同一个 `job.json.tmp` 再 rename，没有任何串行。任务运行中收到 DELETE 时，`delete` → `cancel`（`:291-301`）把状态改成 cancelled 并落盘；runner 随即因取消停下，`_runOne` 的 finally（`:444`）又落一笔。两笔并发：先 rename 的那笔把 `.tmp` 挪走，后一笔 rename 抛 PathNotFound。抛在 `cancel` 里时 DELETE 请求报 500；抛在 `_runOne` 里时异常经未等待的 `_drain`（`:288` `unawaited(_drain())`）成为未捕获异步错误，且 `while` 循环被打断——队列里排在后面的任务要等下一次 `start` 才会被拉起。
+  - `delete`（`:304-311`）只等 `_persisting[id]`，而它只在 `_runOne` 的 finally 里登记：runner 还没停下时这里是 null，`delete` 直接删目录、摘记录。runner 之后停下，收尾落盘先 `f.parent.create(recursive: true)` 再写 `job.json`——删掉的任务目录被建回来，留一个只有 `job.json` 的孤儿目录（记录已不在表里，要等下次启动读盘 + 过期清理才回收）。
+- **[x] ① 已修复** — `b390d1bc2e9` 同一条记录的落盘排成一条链逐笔执行：`_persist` 调用即把自己接到 `_persisting[id]` 的链尾（原来只登记收尾那一笔），真正写盘的 `_writeRecord` 开头核对「表里还是这条记录」，已被 `delete` 摘掉的不写。`delete` 循环等到这条记录没有在飞的落盘（等的过程中可能又排进一笔），随后**同步**摘记录再删目录。启动读盘处改成先登记再落盘。
+- **[x] ② 已加自动化测试** — `fushi/test/sync/host_job_input_reuse_test.dart` group「BUG-4462：运行中删除任务」：① runner 在删除之后才停下——用排在后面的一条任务跑完作「前一条已收尾」的判据，断言删掉的目录没有被建回来（修复前稳定红）；② 删除与 runner 收尾撞在一起 20 轮，删除不抛、目录删干净（即 CI 上那条）。对照：换回修复前的 `host_job_manager.dart` 两条都红（①「Expected: false」，② `PathNotFoundException: Cannot rename file`），修复后连同 `host_jobs_routes_test.dart` 等 5 个文件 60 条全绿。
+- **备注**：runner 不响应取消时 `delete` 不等它停下（等的是落盘，不是 runner），目录删掉后 runner 往里写产物会失败、按出错收尾，这一点没有变。

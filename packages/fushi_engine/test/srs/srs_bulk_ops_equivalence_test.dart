@@ -5,6 +5,7 @@
 // 身份记录、修改记录（ID / dot / ctx / HLC / 值）、复习日志、发件箱与服务器时刻、本机状态
 // （写入者序号、因果上下文、时钟、修订号）、笔记 / 卡片缓存。另核对缓存与「由事件整体重建」一致。
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:fushi_core/fushi_core.dart';
@@ -16,6 +17,7 @@ import 'package:fushi_srs/fushi_srs.dart';
 import 'package:test/test.dart';
 
 import 'support/srs_bulk_fixture.dart';
+import 'support/srs_legacy_fixtures.dart';
 
 const int kNotes = 24;
 
@@ -213,6 +215,10 @@ void main() {
   // 组好日志（同样的键、同样的 HLC 推进、结果只是提示）交给 `apply`，内核按结果形状反推意图、重放重算结果。
   // 两边的日志行（重放写回的结果、配置快照）、本机状态（时钟、修订号）、缓存逐字节相同 = 意图相同、重放结果相同。
   // 旧路径给的结果提示故意写成错的：落库的结果只由意图 + 重放决定。
+  //
+  // 本机的 HLC 时钟在内核里，store 不再提供「Dart 组好日志直接落库」的入口：旧路径的日志由测试自己按时钟的规则
+  // 接着库里的时钟打 HLC（[legacyTicker]），再当作带来源 HLC 的事件导入（[SrsDbStore.importEvents]：内核按「收到」
+  // 的规则推进时钟，收一个刚由同一只时钟走出来的值 = 走到那个值，所以两边的时钟也逐值相同）。
   test('重置 / 改期 / 撤销 / 立即重排：显式意图命令 = 旧路径（Dart 组日志、按结果形状反推意图）', () async {
     final (BulkFixture ref, BulkFixture bulk) = await twins();
     final SrsDbStore r = ref.store;
@@ -220,7 +226,27 @@ void main() {
     final SrsDeckTree tree = await r.deckTree();
     final SrsDayContext day = await r.dayContext();
     final int today = day.dayIndexOf(r.now().$1);
-    final SrsLogContext ctx = await r.logContext();
+    final Map<String, Object?> local =
+        (jsonDecode(
+                  (await r.db
+                          .customSelect('SELECT json FROM srs_local_state')
+                          .getSingle())
+                      .read<String>('json'),
+                )
+                as Map)
+            .cast<String, Object?>();
+    final SrsLogContext ctx = SrsLogContext(
+      profileUid: r.profileUid,
+      nextHlc: legacyTicker(
+        local['writerId']! as String,
+        last: Hlc.decode(local['hlc']! as String),
+      ),
+      now: r.now,
+      day: day,
+    );
+    Future<void> appendLocalLogs(List<SrsReviewLog> logs) => r.importEvents(
+      <SrsEvent>[for (final SrsReviewLog l in logs) SrsLogEvent(l)],
+    );
     SrsReviewLog legacy(
       String card,
       String kind,
@@ -235,7 +261,7 @@ void main() {
         cardId: card,
         kind: kind,
         revokesId: revokes,
-        hlc: ctx.clock.tick(nowMs),
+        hlc: ctx.nextHlc(nowMs),
         occurredAt: nowMs,
         timeSource: source,
         origin: SrsLogOrigin.fushi,
@@ -261,7 +287,7 @@ void main() {
               .get())
         c.id,
     ]..sort();
-    await r.appendLocalLogs(<SrsReviewLog>[
+    await appendLocalLogs(<SrsReviewLog>[
       for (final String id in review)
         legacy(
           id,
@@ -286,14 +312,14 @@ void main() {
             hint: const SrsScheduleResult(queue: SrsQueue.newCard),
           ),
     ];
-    await r.appendLocalLogs(resets);
+    await appendLocalLogs(resets);
     // 撤销其中两条，再加一条撤不了的（已不是最后一条有效日志）：旧路径根本不写它。
-    await r.appendLocalLogs(<SrsReviewLog>[
+    await appendLocalLogs(<SrsReviewLog>[
       for (final SrsReviewLog l in resets.take(2))
         legacy(l.cardId, SrsLogKind.undo, SrsReviewType.manual, revokes: l.id),
     ]);
     // 改期后 6 张。
-    await r.appendLocalLogs(<SrsReviewLog>[
+    await appendLocalLogs(<SrsReviewLog>[
       for (final String id in cards.skip(cards.length - 6))
         legacy(
           id,
@@ -433,8 +459,8 @@ void main() {
         deviceId: 'peer',
       );
       final List<SrsEvent> base = await src.store.exportAll();
-      final SrsEditWriter w = SrsEditWriter(writerId: 'peer2#1');
-      final HlcClock clock = HlcClock('peer2#1');
+      final LegacyEditWriter w = LegacyEditWriter('peer2#1');
+      final Hlc Function(int nowMs) tick = legacyTicker('peer2#1');
       final String deck = await deckId(src.store, 'Lang');
       SrsFieldEdit edit(String key, Object? value) => w.create(
         profileUid: kBulkUid,
@@ -442,7 +468,7 @@ void main() {
         entityId: deck,
         fieldKey: key,
         value: value,
-        hlc: clock.tick(kBulkNowMs),
+        hlc: tick(kBulkNowMs),
         timeSource: SrsTimeSource.wall,
       );
       final SrsFieldEdit a = edit(SrsFieldKeys.name, 'A');

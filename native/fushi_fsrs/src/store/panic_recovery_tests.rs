@@ -13,7 +13,7 @@ use super::ffi::{
 };
 use super::kernel_reads_tests::open;
 use super::sync2::{in_savepoint, test_panic};
-use super::{DRIFT_TX_ABORTED, SrsCore, rows};
+use super::{READ_ONLY, SrsCore, rows};
 
 fn insert(id: &str) -> String {
     format!(
@@ -23,10 +23,9 @@ fn insert(id: &str) -> String {
 
 fn has(core: &SrsCore, id: &str) -> bool {
     let page = core
-        .exec(
+        .select(
             "SELECT COUNT(*) FROM srs_unknown_events WHERE id = srs_id(?1)",
             &[Value::Text(id.into())],
-            true,
         )
         .unwrap();
     let (_, rows) = rows::decode(&page).unwrap();
@@ -54,7 +53,8 @@ fn ffi_err(err: *mut c_char) -> String {
     s
 }
 
-fn ffi_exec(h: *const SrsCoreHandle, sql: &str) -> (i32, String) {
+/// `mode`：0 = Drift 执行器的写入口（只读，一律拒绝），4 = 测试用的原始通道。
+fn ffi_exec(h: *const SrsCoreHandle, sql: &str, mode: i32) -> (i32, String) {
     let (mut out, mut out_len, mut err) = (null_mut(), 0usize, null_mut());
     let params = rows::encode(0, &[vec![]]);
     let rc = ffsrs_store_exec(
@@ -63,7 +63,7 @@ fn ffi_exec(h: *const SrsCoreHandle, sql: &str) -> (i32, String) {
         sql.len(),
         params.as_ptr(),
         params.len(),
-        0,
+        mode,
         &mut out,
         &mut out_len,
         &mut err,
@@ -110,13 +110,15 @@ fn after_a_panicking_command_through_the_c_abi_writes_still_work() {
     assert!(!test_panic::armed(), "the injected panic fired");
 
     for id in ["after1", "after2"] {
-        let (rc, e) = ffi_exec(h, &insert(id));
+        let (rc, e) = ffi_exec(h, &insert(id), 4);
         assert_eq!(rc, 0, "write after the panic failed: {e}");
     }
-    let (rc, e) = ffi_exec(h, "BEGIN TRANSACTION");
-    assert_eq!(rc, 0, "{e}");
-    let (rc, e) = ffi_exec(h, "COMMIT TRANSACTION");
-    assert_eq!(rc, 0, "{e}");
+    // Drift 执行器的写入口照旧只读：panic 之后也不会变成能写的状态。
+    for sql in [insert("drift").as_str(), "BEGIN TRANSACTION"] {
+        let (rc, e) = ffi_exec(h, sql, 0);
+        assert_ne!(rc, 0, "{sql} ran through the read-only entry");
+        assert!(e.starts_with(READ_ONLY), "{e}");
+    }
     ffsrs_store_close(h);
 }
 
@@ -133,7 +135,7 @@ fn a_half_written_command_is_rolled_back_not_committed_by_later_ones() {
         })
         .unwrap();
     });
-    core.exec(&insert("later"), &[], false).unwrap();
+    core.exec_raw(&insert("later"), &[], false).unwrap();
     assert!(!core.in_transaction().unwrap());
     assert!(has(&core, "later"));
     assert!(!has(&core, "half"));
@@ -146,83 +148,6 @@ fn a_half_written_command_is_rolled_back_not_committed_by_later_ones() {
         !has(&core, "half"),
         "the panicked command's write was committed"
     );
-}
-
-/// Drift 事务开着时一条嵌在里面的 Rust 写命令 panic：整笔 Drift 事务回滚，之后那笔事务的语句（含 COMMIT）一律
-/// 拒绝、Rust 写命令也拒绝，直到 Drift 发来 ROLLBACK；回滚之后一切照常。事务里的写入一条都不落库。
-#[test]
-fn a_panic_inside_a_drift_transaction_aborts_it_until_drift_rolls_back() {
-    let core = open("panic_in_drift_tx");
-    core.exec("BEGIN TRANSACTION", &[], false).unwrap();
-    core.exec(&insert("drift_a"), &[], false).unwrap();
-    panic_holding_writer(&core, |w| {
-        in_savepoint(w, |c| {
-            c.execute_batch(&insert("rust_b"))
-                .map_err(|e| e.to_string())
-        })
-        .unwrap();
-    });
-    // 那笔事务后续的语句：既不在 autocommit 下逐条提交，也不能把事务提交上去。
-    assert_eq!(
-        core.exec(&insert("drift_c"), &[], false).err().as_deref(),
-        Some(DRIFT_TX_ABORTED)
-    );
-    assert_eq!(
-        core.exec_batch(&[insert("drift_c").as_str()], &[(0, vec![])])
-            .err()
-            .as_deref(),
-        Some(DRIFT_TX_ABORTED)
-    );
-    assert_eq!(
-        core.select("SELECT 1", &[]).err().as_deref(),
-        Some(DRIFT_TX_ABORTED)
-    );
-    assert_eq!(
-        core.exec("ROLLBACK TO s1", &[], false).err().as_deref(),
-        Some(DRIFT_TX_ABORTED)
-    );
-    assert_eq!(
-        core.exec("COMMIT TRANSACTION", &[], false).err().as_deref(),
-        Some(DRIFT_TX_ABORTED)
-    );
-    assert_eq!(core.writer().err().as_deref(), Some(DRIFT_TX_ABORTED));
-    // 事务外的只读命令照常（读已提交的数据：那笔事务的行已被回滚）。
-    assert_eq!(
-        core.read_visible_tx(|c, uncommitted| {
-            let n: i64 = c
-                .query_row("SELECT COUNT(*) FROM srs_unknown_events", [], |r| r.get(0))
-                .map_err(|e| e.to_string())?;
-            Ok((n, uncommitted))
-        }),
-        Ok((0, false))
-    );
-    core.exec("ROLLBACK TRANSACTION", &[], false).unwrap();
-    assert!(!core.in_transaction().unwrap());
-    core.exec(&insert("after"), &[], false).unwrap();
-    for id in ["drift_a", "rust_b", "drift_c"] {
-        assert!(!has(&core, id), "{id} reached the database");
-    }
-    assert!(has(&core, "after"));
-    // 再开一笔事务照常提交。
-    core.exec("BEGIN TRANSACTION", &[], false).unwrap();
-    core.exec(&insert("next_tx"), &[], false).unwrap();
-    core.exec("COMMIT TRANSACTION", &[], false).unwrap();
-    assert!(has(&core, "next_tx"));
-}
-
-/// Drift 发 BEGIN 的那条语句本身 panic：Drift 收到的是「开事务失败」，不会再发 ROLLBACK——恢复只回滚、不进「待
-/// 回滚」状态，之后的语句照常。
-#[test]
-fn a_panic_on_the_statement_that_opens_a_drift_transaction_does_not_wedge_the_store() {
-    let core = open("panic_on_begin");
-    test_panic::arm(test_panic::AFTER_EXEC);
-    let r = catch_unwind(AssertUnwindSafe(|| {
-        core.exec("BEGIN TRANSACTION", &[], false)
-    }));
-    assert!(r.is_err());
-    core.exec(&insert("after"), &[], false).unwrap();
-    assert!(!core.in_transaction().unwrap());
-    assert!(has(&core, "after"));
 }
 
 /// 旧库搬迁事务开着时 panic：搬迁事务回滚并结束；之后 commit 报「未开始」，abort 照常成功，库里没有标记。
@@ -248,10 +173,10 @@ fn a_panic_during_the_legacy_import_ends_it_without_committing() {
     assert!(!has(&core, "legacy_row"));
 }
 
-/// 旧库搬迁事务开着时 panic、Dart 还没来得及 legacy_abort：Drift 的写语句不该一直被「搬迁进行中」挡住——取写锁
+/// 旧库搬迁事务开着时 panic、Dart 还没来得及 legacy_abort：之后的写入不该一直被「搬迁进行中」挡住——取写锁
 /// 的恢复已经结束了搬迁。
 #[test]
-fn after_a_panic_during_the_legacy_import_drift_writes_are_not_refused() {
+fn after_a_panic_during_the_legacy_import_writes_are_not_refused() {
     let dir = std::env::temp_dir().join(format!("ffsrs_panic_legacy_exec_{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let p = dir.join("srs.db");
@@ -262,7 +187,7 @@ fn after_a_panic_during_the_legacy_import_drift_writes_are_not_refused() {
     panic_holding_writer(&core, |w| {
         w.execute_batch(&insert("legacy_row")).unwrap();
     });
-    core.exec(&insert("after"), &[], false).unwrap();
+    core.exec_raw(&insert("after"), &[], false).unwrap();
     assert!(!core.in_transaction().unwrap());
     assert!(has(&core, "after"));
     assert!(!has(&core, "legacy_row"));
@@ -274,7 +199,7 @@ fn after_a_panic_during_the_legacy_import_drift_writes_are_not_refused() {
 #[test]
 fn a_panicking_read_does_not_leave_a_stale_snapshot_behind() {
     let core = open("panic_in_read");
-    core.exec(&insert("before"), &[], false).unwrap();
+    core.exec_raw(&insert("before"), &[], false).unwrap();
     let r = catch_unwind(AssertUnwindSafe(|| {
         core.read_visible::<()>(|c| {
             assert!(
@@ -287,7 +212,7 @@ fn a_panicking_read_does_not_leave_a_stale_snapshot_behind() {
         })
     }));
     assert!(r.is_err());
-    core.exec(&insert("after"), &[], false).unwrap();
+    core.exec_raw(&insert("after"), &[], false).unwrap();
     let n: i64 = core
         .read_visible(|c| {
             c.query_row("SELECT COUNT(*) FROM srs_unknown_events", [], |r| r.get(0))
@@ -303,7 +228,7 @@ fn a_panicking_read_does_not_leave_a_stale_snapshot_behind() {
         panic!("test: injected panic on the reader");
     }));
     assert!(r.is_err());
-    core.exec(&insert("after2"), &[], false).unwrap();
+    core.exec_raw(&insert("after2"), &[], false).unwrap();
     let r = core.reader().unwrap();
     assert!(r.is_autocommit());
     let n: i64 = r

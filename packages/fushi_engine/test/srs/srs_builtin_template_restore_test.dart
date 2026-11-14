@@ -75,6 +75,29 @@ void main() {
     expect((await render(a)).fushiCardDefinitions, isNull);
   });
 
+  test('undo keeps a CSS edited again after the restore', () async {
+    final SrsDbStore a = await device('c');
+    final String nt = a.fushiCardNoteTypeId;
+    final SrsTemplateDef tpl = (await a.noteType(nt))!.templates.single;
+    await a.saveTemplateEdits(
+      nt,
+      tpl.id,
+      back: '${tpl.back}<div>old</div>',
+      css: '.old{}',
+    );
+    final SrsBuiltinTemplateRestore restore = (await a.restoreBuiltinTemplates(
+      nt,
+    ))!;
+    await a.setCss(nt, '.later{}');
+
+    final SrsEditUndoResult r = await a.undoBuiltinTemplateRestore(restore);
+    expect(r.reverted, 1);
+    expect(r.kept.single.key, SrsFieldKeys.css);
+    final SrsNoteTypeView type = (await a.noteType(nt))!;
+    expect(type.css, '.later{}', reason: '恢复之后又改的 CSS 不被撤销盖掉');
+    expect(type.templates.single.back, '${tpl.back}<div>old</div>');
+  });
+
   test(
     'user-added templates are left alone; non-builtin types are rejected',
     () async {

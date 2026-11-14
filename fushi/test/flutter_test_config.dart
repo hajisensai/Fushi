@@ -9,6 +9,7 @@ import 'helpers/fake_audiobook_duration_probe.dart';
 import 'helpers/fake_inappwebview_platform.dart';
 import 'helpers/fake_video_specs_probe.dart';
 import 'package:fushi/src/engine_bindings.dart';
+import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:fushi_web_core/testing.dart';
 
@@ -34,6 +35,8 @@ import 'package:fushi_web_core/testing.dart';
 ///    JSON one. See [installHostIndependentImageCacheRepository].
 /// 6. Makes the audiobook duration probe return 0 instead of building a real
 ///    just_audio player. See [installFakeAudiobookDurationProbe].
+/// 7. Keeps galgame capture sessions off the host's real process table. See
+///    [installNoGalgameProcessProbe].
 Future<void> testExecutable(FutureOr<void> Function() testMain) async {
   // 引擎（fushi_engine）的日志 / 数据根 / ffmpeg 平台后端装配点：与 main() 同一份，
   // 让测试里的引擎代码拿到与从前逐字节一致的行为（AppPaths 路径、ErrorLogService）。
@@ -44,10 +47,22 @@ Future<void> testExecutable(FutureOr<void> Function() testMain) async {
   installFakeVideoSpecsProbe();
   installHostIndependentImageCacheRepository();
   installFakeAudiobookDurationProbe();
+  installNoGalgameProcessProbe();
   // 网页内容核心（fushi_web_core）是硬依赖：指向本仓刚编好的原生库（或 FUSHI_WEB_CORE_LIB）。
   // 找不到不在这里报错——用到它的测试第一次加载时抛 FushiWebCoreLibraryMissing，照常失败。
   useDevFushiWebCoreLibrary();
   await testMain();
+}
+
+/// galgame 捕获会话的游戏进程退出监视（BUG-4002）在整个 `test/` 套件里默认**不起**：
+/// 没注入 `gameProcessProbe` 的 [GalHookSessionController] 不再去读宿主真实进程表。
+///
+/// 用例里的引擎都是假的，PID 是 4242 之类的常数；Windows 开发机上真实 probe 会拿它去
+/// `OpenProcess`——不存在就判退出、碰巧是别人的进程就判活。Linux CI 上
+/// `Platform.isWindows == false` 本来就不监视，钉成「没有 probe」= 两个宿主同一个行为。
+/// 测退出监视的用例显式注入假 probe，优先于此默认。
+void installNoGalgameProcessProbe() {
+  GalHookSessionController.debugDefaultGameProcessProbe = () => null;
 }
 
 /// 磁盘缓存图片（[AppImageCacheManager]）的元数据仓库在整个 `test/` 套件里钉成

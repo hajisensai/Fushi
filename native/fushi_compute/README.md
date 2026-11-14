@@ -560,7 +560,8 @@ Android ABI）。守卫 `fushi/test/build/fushi_compute_hard_dependency_guard_te
 ## 测试
 
 ```
-cargo test --release                    # 本目录，Rust 单元测试
+cargo test --profile quick --lib <过滤>  # 本目录，开发循环（不做 fat LTO、增量编译；docs/agent/build.md「Rust 本地开发循环」）
+cargo test --release                    # 本目录，Rust 单元测试全量（CI 跑的就是这条）
 dart test                               # packages/fushi_compute 下（真 FFI，库缺失即失败）
 ```
 
