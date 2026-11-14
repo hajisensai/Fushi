@@ -1,4 +1,4 @@
-## BUG-4386 · srs-edit-undo-blind-overwrite
+## BUG-4479 · srs-edit-undo-blind-overwrite
 - **报告**：2026-11-10（用户：内部审查，SRS 撤销语义统一任务）
 - **真实性**：✅ 真 bug。SRS 的编辑类撤销是 Dart 闭包把内存里记的旧值原样写回，不看库里的修改记录：做 A → 同步拉进来别处的改动 / AI 改同一张卡 → 撤销 A，后来的改动被无提示覆盖。根因位置（修复前 `50879a4c35b`）：
   - 复习页暂停 / 搁置 / 旗标 / 移牌组 / 删笔记 / 改字段 / 编辑笔记的撤销闭包：`fushi/lib/src/pages/implementations/srs/srs_review_page.dart:1252` `:1266` `:1291` `:1314` `:1359` `:1453` `:1592`

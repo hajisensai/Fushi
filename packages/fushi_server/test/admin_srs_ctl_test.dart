@@ -281,7 +281,7 @@ void main() {
       body: <String, Object?>{'profile': kJa, 'targetField': 'Sentence'},
     );
     expect(code, 400, reason: '不给目标 = 不允许改全库');
-    // 点名中文那份、id 却是日语那份的（BUG-4387：库按 id 读写不看 profile）：404，哪份都不写。
+    // 点名中文那份、id 却是日语那份的（BUG-4480：库按 id 读写不看 profile）：404，哪份都不写。
     (code, body) = await request(
       'POST',
       'srs/notes/batch/set-field',

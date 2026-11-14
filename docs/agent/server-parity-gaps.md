@@ -101,7 +101,7 @@ The full plan needs its own design spec under `docs/specs/`. Size: L/XL.
     included; the held-deletion "keep" is irreversible and needs the user's confirmation).
     Every one takes `profile` (uid of a served profile); it may be left out only while exactly
     one profile is ready, otherwise 409 `profile_required`. A note id that belongs to another
-    profile is refused as 404 (the store's by-id access is not profile scoped, BUG-4387; the
+    profile is refused as 404 (the store's by-id access is not profile scoped, BUG-4480; the
     app's single-library host does not have this check yet). Known limits: route error messages
     are the app's Chinese ones in both server languages; writes made through `ctl` are not
     recorded for undo (admin only, use `--dry-run` first).
