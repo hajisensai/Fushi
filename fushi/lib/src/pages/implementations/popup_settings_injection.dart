@@ -47,6 +47,7 @@ class PopupSettingsOptions {
     this.globalLookup = false,
     this.mobileExternal = false,
     this.sentenceDraftEnabled = false,
+    this.mineShortcutAction,
   });
 
   /// App-outside (Windows bare-WebView2 global lookup) frame. Adds the
@@ -73,6 +74,15 @@ class PopupSettingsOptions {
   /// off in both paths (kSentenceContextPickerEnabled), but the in-app path
   /// computes it from its host callbacks, so it stays a parameter.
   final bool sentenceDraftEnabled;
+
+  /// 本表面上「点＋制卡」真正响应的键盘动作，只用来给「＋」按钮写快捷键提示
+  /// （`window.i18nMineShortcutHint`）。阅读器派发的是
+  /// [ShortcutAction.readerCreateCardFromPopup]，视频页 / texthooker 是
+  /// [ShortcutAction.popupMineEntry]。null = 本表面没有键盘制卡派发（漫画、首页查词、
+  /// 独立查词页……）→ 不写提示，绝不提示一个按了没反应的键。app 外的裸 WebView2 表面
+  /// （[globalLookup]）也不传：瞬态查词覆盖窗 `WS_EX_NOACTIVATE` 收不到键盘，而它与
+  /// 剪贴板面板共用同一份设置产物，分不开。
+  final ShortcutAction? mineShortcutAction;
 }
 
 /// app 内弹窗口径的主题注入段（设计系统 class + `data-theme` + 全部 CSS 变量）。
@@ -938,6 +948,28 @@ String popupKeyBindingsJson(
   });
 }
 
+/// 「＋」按钮的制卡快捷键提示整句（如 `Create card (Ctrl+Enter)`）。[action] 为 null
+/// 或该动作没有键盘绑定（用户清空 / 移动端）时返回空串，popup.js 据此不提示。取第一条
+/// 键盘绑定；注册表未装载时回落平台默认，与 [popupKeyBindingsJson] 同口径。
+String popupMineShortcutHint(
+  FushiShortcutRegistry registry,
+  TargetPlatform platform,
+  ShortcutAction? action,
+) {
+  if (action == null) return '';
+  final List<InputBinding> keys = registry.isLoaded
+      ? registry.bindingsFor(action).keyboardBindings
+      : (ShortcutDefaults.forPlatform(platform)[action]?.keyboardBindings ??
+            const <InputBinding>[]);
+  if (keys.isEmpty) return '';
+  return t.popup_mine_shortcut_hint(
+    shortcut: joinShortcutDisplayParts(
+      keys.first.displayPartsOn(platform),
+      platform: platform,
+    ),
+  );
+}
+
 /// BUG-717 ③：[buildPopupStaticSettingsJs] 的产物 memo（按 options 组合分槽，
 /// in-app / mobile-external / global-lookup 三类调用方互不冲刷）。命中判据是
 /// 产物的**全部输入**的廉价投影：小串直接 ==（Dart == 先走 identical 短路）、
@@ -963,6 +995,7 @@ class _PopupStaticSettingsMemo {
     required this.popupInstantScrollTouchStep,
     required this.wheelBindingsJson,
     required this.popupKeyBindings,
+    required this.mineShortcutHint,
     required this.audioSourcesJson,
     required this.lookupAudioVolume,
     required this.localeTag,
@@ -997,6 +1030,7 @@ class _PopupStaticSettingsMemo {
   final double popupInstantScrollTouchStep;
   final String wheelBindingsJson;
   final String popupKeyBindings;
+  final String mineShortcutHint;
   final String audioSourcesJson;
   final String lookupAudioVolume;
   final String localeTag;
@@ -1089,6 +1123,11 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
   final String popupKeyBindings = options.globalLookup
       ? popupKeyBindingsJson(appModel.shortcutRegistry, theme.platform)
       : 'null';
+  final String mineShortcutHint = popupMineShortcutHint(
+    appModel.shortcutRegistry,
+    theme.platform,
+    options.mineShortcutAction,
+  );
   final String audioSourcesJson = jsonEncode(appModel.enabledAudioSources);
   final String lookupAudioVolume = ReaderFushiSource
       .instance
@@ -1147,7 +1186,8 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
 
   final String slotKey =
       '${options.globalLookup}|${options.mobileExternal}'
-      '|${options.sentenceDraftEnabled}';
+      '|${options.sentenceDraftEnabled}'
+      '|${options.mineShortcutAction?.name}';
   final _PopupStaticSettingsMemo? cached = _staticSettingsMemo[slotKey];
   if (cached != null &&
       cached.themeVarsJs == themeVarsJs &&
@@ -1163,6 +1203,7 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
           appModel.popupInstantScrollTouchStep &&
       cached.wheelBindingsJson == wheelBindingsJson &&
       cached.popupKeyBindings == popupKeyBindings &&
+      cached.mineShortcutHint == mineShortcutHint &&
       cached.audioSourcesJson == audioSourcesJson &&
       cached.lookupAudioVolume == lookupAudioVolume &&
       cached.localeTag == localeTag &&
@@ -1263,6 +1304,8 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     window.i18nMineFailed = ${jsonEncode(t.card_export_failed)};
     // BUG-3492：后台制卡（在线视频）还没落地时再点 ✓ 的就地提示。
     window.i18nMineStillQueued = ${jsonEncode(t.popup_mine_still_queued)};
+    // 「＋」按钮的制卡快捷键提示；空串 = 本表面没有键盘制卡派发，不提示。
+    window.i18nMineShortcutHint = ${jsonEncode(mineShortcutHint)};
     // BUG-1064：点已制卡 ✓ 的「卡片已在 Anki 中」操作面板归属。
     // true  = 宿主自己接了 `minedCardAction` JS handler，会弹 Flutter 居中对话框
     //         （dictionary_popup_webview 的三个 in-app 表面：app 内弹窗 / Android
@@ -1351,6 +1394,7 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     popupInstantScrollTouchStep: appModel.popupInstantScrollTouchStep,
     wheelBindingsJson: wheelBindingsJson,
     popupKeyBindings: popupKeyBindings,
+    mineShortcutHint: mineShortcutHint,
     audioSourcesJson: audioSourcesJson,
     lookupAudioVolume: lookupAudioVolume,
     localeTag: localeTag,

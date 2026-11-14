@@ -591,6 +591,9 @@ class AppPaths {
     // 音频 CD 抓轨产物（BUG-3312，`<documents>/audio_cd/<卷标> (<光盘id>)/`）。导入后的
     // 视频条目 videoPath 指向这里，必须随数据根走。派生点：audio_cd_import.dart。
     'audio_cd',
+    // 在线音源插件曲目下载（`<documents>/music_downloads/<插件>/<专辑>/`）。导入后的曲目
+    // path 指向这里，必须随数据根走。派生点：music_plugin_download.dart。
+    'music_downloads',
     // 旧版复习自动备份（`<documents>/srs_backups/`）。同步 v2 已取消定时备份（时间线 + 归档 + 手动
     // 导出取代），旧文件升级后再留 30 天（srs_legacy_backup_cleanup.dart），这期间仍随数据根走。
     'srs_backups',

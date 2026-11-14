@@ -1,4 +1,4 @@
-// BUG-4179 行为守卫：英文漫画 OCR 叠加层的取词必须停在词界。
+// BUG-4179 行为守卫：英文漫画 OCR 叠加层的取词必须保留词界。
 //
 // 症状（反馈 vXYKPudf7U）：英文漫画（全大写对白）OCR 后点词，查词浮层「未找到搜索结果」；
 // 同一个词在查词页能查到。只有后面紧跟标点的词（WELL? / PHEW...）查得到。
@@ -25,6 +25,35 @@ const assert = require('node:assert');
 const NODE_TYPES = { ELEMENT_NODE: 1, TEXT_NODE: 3 };
 const NODE_FILTER = { SHOW_TEXT: 4, FILTER_ACCEPT: 1, FILTER_REJECT: 2 };
 
+// Minimal browser ranges/Highlights for exercising the complete production
+// highlightSelection path. Geometry is covered by the WebView integration test.
+class FakeRange {
+  setStart(node, offset) {
+    this.startContainer = node;
+    this.startOffset = offset;
+  }
+
+  setEnd(node, offset) {
+    this.endContainer = node;
+    this.endOffset = offset;
+  }
+
+  getClientRects() {
+    return [];
+  }
+
+  toString() {
+    assert.strictEqual(this.startContainer, this.endContainer);
+    return this.startContainer.textContent.slice(this.startOffset, this.endOffset);
+  }
+}
+
+class FakeHighlight {
+  constructor(...ranges) {
+    this.ranges = ranges;
+  }
+}
+
 class FakeText {
   constructor(value, parentElement) {
     this.nodeType = NODE_TYPES.TEXT_NODE;
@@ -44,6 +73,10 @@ class FakeElement {
 
   get textContent() {
     return this.childNodes.map((child) => child.textContent).join('');
+  }
+
+  get classList() {
+    return { contains: (name) => (this.className || '').split(/\s+/).includes(name) };
   }
 
   // 只认标签名选择器（类 / 属性选择器一律视为不匹配，与叠加层取词无关）。
@@ -76,6 +109,7 @@ function textNodesUnder(root, filter) {
 function fakeDocument(body) {
   return {
     body,
+    createRange: () => new FakeRange(),
     createTreeWalker(root, _whatToShow, filter) {
       const nodes = textNodesUnder(root, filter);
       return {
@@ -103,14 +137,16 @@ function fakeDocument(body) {
 ///
 /// BUG-4361：`{box: true}` 另起一个 <p class="ocr-box">（相邻两个 OCR 块），验证跨字格的
 /// 词首回退不越过块界。
-function mountOcrBox(items) {
+function mountOcrBox(items, plain = false) {
   const body = new FakeElement('body', null);
   let box = new FakeElement('p', body);
+  box.className = plain ? '' : 'ocr-box';
   body.childNodes.push(box);
   const glyphs = [];
   for (const item of items) {
     if (item.box) {
       box = new FakeElement('p', body);
+      box.className = plain ? '' : 'ocr-box';
       body.childNodes.push(box);
       continue;
     }
@@ -127,30 +163,124 @@ function mountOcrBox(items) {
   return { body, glyphs };
 }
 
-function tap(items, glyphIndex, offset) {
-  const { body, glyphs } = mountOcrBox(items);
+function select(items, glyphIndex, offset, plain = false, maxLength = 24) {
+  const { body, glyphs } = mountOcrBox(items, plain);
   const window = {
     getComputedStyle: () => ({ display: 'inline', content: 'none' }),
     getSelection: () => ({ removeAllRanges() {} }),
     flutter_inappwebview: { callHandler: () => {} },
     scanNonJapaneseText: true,
+    // This harness checks browser highlight ranges, not the separate SVG
+    // compositor. The real compositor/geometry is exercised in WebView tests.
+    __fushiLanes: {},
   };
-  const selection = loadReaderSelection(window, fakeDocument(body), NODE_TYPES, NODE_FILTER);
+  const css = { highlights: new Map() };
+  window.CSS = css;
+  window.Highlight = FakeHighlight;
+  const selection = loadReaderSelection(window, fakeDocument(body), NODE_TYPES, NODE_FILTER,
+    css, FakeHighlight);
+  selection.testHighlights = css.highlights;
   // 只看取词串：payload 组装（几何 / 句子）与本 bug 无关。
   selection.fireTextSelected = () => null;
   selection.selection = null;
   // offset：被点字格文本节点内的偏移（漫画宿主恒为 0；阅读器单节点用例给非 0）。
-  selection.selectFromPosition(glyphs[glyphIndex], offset || 0, 24);
+  selection.selectFromPosition(glyphs[glyphIndex], offset || 0, maxLength);
+  if (selection.selection) {
+    assert.strictEqual(selection.selection.ranges
+      .map((r) => r.node.textContent.slice(r.start, r.end)).join(''),
+      selection.selection.text, 'query and DOM ranges use identical characters');
+  }
+  return selection;
+}
+
+function tap(items, glyphIndex, offset, plain = false) {
+  const selection = select(items, glyphIndex, offset, plain);
   return selection.selection ? selection.selection.text : null;
 }
 
 let executed = 0;
 for (const block of MANGA_OCR_CASES) {
   for (const probe of block.cases) {
-    assert.strictEqual(tap(block.items, probe.char, probe.offset), probe.expect,
+    assert.strictEqual(tap(block.items, probe.char, probe.offset, block.plain), probe.expect,
       `${block.name}: tap glyph #${probe.char} offset ${probe.offset || 0}`);
     executed++;
   }
 }
 assert.ok(executed > 0, 'no cases executed');
 console.log(`all assertions passed (${executed})`);
+
+// BUG-4622: a word split into OCR glyphs must have exactly the same apostrophe
+// boundaries as the novel's single text node, including its suffix-only rewind.
+let apostropheChecks = 0;
+for (const mark of ["'", '\u2018', '\u2019', '\u02bc']) {
+  for (const word of [`don${mark}t`, `I${mark}m`, `she${mark}s`, `l${mark}homme`,
+    `${mark}hello${mark}`, `日${mark}本`, `a${mark}7`, `a${mark}${mark}b`]) {
+    const items = Array.from(word, (char) => ({ char }));
+    for (let at = 0; at < word.length; at++) {
+      assert.strictEqual(tap(items, at, 0), tap([{ char: word }], 0, at, true),
+        `OCR/novel apostrophe mismatch ${JSON.stringify(word)} at ${at}`);
+      apostropheChecks++;
+    }
+  }
+}
+for (const items of [
+  [{ char: 'don' }, { char: "'t" }],
+  [{ char: "don'" }, { char: 't' }],
+  [{ char: 'don' }, { gap: ' ' }, { char: "'" }, { char: 't' }],
+  [{ char: 'don' }, { char: "'" }, { gap: ' ' }, { char: 't' }],
+  [{ char: 'don' }, { box: true }, { char: "'" }, { char: 't' }],
+  [{ char: 'don' }, { char: "'" }, { box: true }, { char: 't' }],
+]) {
+  assert.strictEqual(tap(items, 0, 0), items.length === 2 ? "don't" : 'don');
+  apostropheChecks++;
+}
+// The new cross-node context is limited to OCR boxes. EPUB inline nodes keep
+// their existing behavior, rather than changing novel/audiobook word scanning.
+assert.strictEqual(tap([{ char: 'don' }, { char: "'t" }], 0, 0, true), 'don');
+console.log(`apostrophe assertions passed (${apostropheChecks + 1})`);
+
+// Compare OCR glyphs with the novel's single text node, then execute the real
+// highlight trimming logic for every candidate prefix, including real spaces.
+let phraseChecks = 0;
+for (const text of ['give up more', "don't give up", 'take care of', 'look after me',
+  'UP TO DATE', 'a 😀 word', '日本語の勉強です']) {
+  const items = Array.from(text, (char) => char === ' ' ? { gap: char } : { char });
+  let glyph = 0;
+  let at = 0;
+  for (const char of text) {
+    if (char !== ' ') {
+      const selection = select(items, glyph, 0);
+      assert.strictEqual(selection.selection.text,
+        tap([{ char: text }], 0, at, true), `phrase/novel mismatch at ${at}`);
+      const points = Array.from(selection.selection.text);
+      for (let count = 1; count <= points.length; count++) {
+        selection.highlightSelection(count);
+        const ranges = selection.selection.matchedRanges;
+        const expected = points.slice(0, count).join('');
+        assert.strictEqual(ranges.map(r => r.node.textContent.slice(r.start, r.end)).join(''),
+          expected, 'highlight preserves actual spaces and code points');
+        const highlight = selection.testHighlights.get('fushi-selection');
+        assert.strictEqual(highlight.ranges.map(r => r.toString()).join(''), expected,
+          'registered browser highlight uses exactly the matched characters');
+        phraseChecks++;
+      }
+      glyph++;
+      phraseChecks++;
+    }
+    at += char.length;
+  }
+}
+for (const gap of ['  ', '\t', '\n', ' \n']) {
+  assert.strictEqual(tap([{ char: 'give' }, { gap }, { char: 'up' }], 0, 0), 'give');
+  phraseChecks++;
+}
+for (const stop of ['.', ',', '!', "'"]) {
+  assert.strictEqual(tap([{ char: 'give' }, { gap: ' ' }, { char: stop }, { char: 'up' }], 0, 0),
+    tap([{ char: 'give ' + stop + 'up' }], 0, 0, true));
+  phraseChecks++;
+}
+assert.strictEqual(tap([{ char: 'give' }, { gap: ' ' }, { box: true }, { char: 'up' }], 0, 0), 'give');
+assert.strictEqual(tap([{ char: 'give' }, { gap: ' ' }, { char: 'up' }], 1, 0), 'up');
+assert.strictEqual(select([{ char: 'give' }, { gap: ' ' }, { char: 'up' }], 0, 0, false, 5).selection.text, 'give');
+assert.strictEqual(tap([{ char: 'give' }, { gap: ' ' }, { char: 'up' }], 0, 0, true), 'give');
+console.log(`phrase assertions passed (${phraseChecks + 4})`);

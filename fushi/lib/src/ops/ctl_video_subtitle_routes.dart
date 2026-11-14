@@ -24,7 +24,13 @@ List<CtlRoute> buildVideoSubtitleCtlRoutes(OpContext context) {
   final CtlVideoSubtitleHandlers handlers = CtlVideoSubtitleHandlers(
     service: () => appVideoSubtitleService(appModel()),
     consented: () => appModel().prefsRepo.videoSubtitleAiConsented,
-    acceptConsent: () => appModel().prefsRepo.setVideoSubtitleAiConsented(true),
+    acceptConsent: () async {
+      await appModel().prefsRepo.setVideoSubtitleAiConsented(true);
+      // 同意说明里写明了画面：画面的知情一并记下。
+      await appModel().prefsRepo.setVideoSubtitleAiFramesConsented(true);
+    },
+    defaultFrames: () => appModel().prefsRepo.videoSubtitleAiFrames,
+    framesConsented: () => appModel().prefsRepo.videoSubtitleAiFramesConsented,
     defaultSegmenter: () => appModel().prefsRepo.videoSubtitleSegmenter,
     defaultMossBackend: () => appModel().prefsRepo.videoSubtitleMossBackend,
     videoModuleEnabled: () =>
@@ -47,6 +53,8 @@ class CtlVideoSubtitleHandlers {
     required this.service,
     required this.consented,
     required this.acceptConsent,
+    this.defaultFrames,
+    this.framesConsented,
     required this.defaultSegmenter,
     required this.defaultMossBackend,
     required this.videoModuleEnabled,
@@ -56,6 +64,10 @@ class CtlVideoSubtitleHandlers {
   final AppVideoSubtitleService Function() service;
   final bool Function() consented;
   final Future<void> Function() acceptConsent;
+
+  /// 「参考画面」偏好（缺省开）与「看过写明会发画面的说明」；不注入 = 不带画面。
+  final bool Function()? defaultFrames;
+  final bool Function()? framesConsented;
   final VideoSubtitleSegmenterMode Function() defaultSegmenter;
   final MossBackendPreference Function() defaultMossBackend;
   final bool Function() videoModuleEnabled;
@@ -111,6 +123,14 @@ class CtlVideoSubtitleHandlers {
     final bool proofread = call.optBool('proofread') ?? true;
     final VideoSubtitleLanguage language = _language(call);
     final AppVideoSubtitleService svc = service();
+    // 画面参考：`frames` 缺省取「参考画面」偏好。只在提供商能收图时才谈得上；用户
+    // 没看过写明「会发画面」的说明时，缺省不带（不打断老脚本），明说 frames=true
+    // 则要求 consentAi。
+    final bool? framesArg = call.optBool('frames');
+    bool frames =
+        proofread &&
+        (framesArg ?? defaultFrames?.call() ?? false) &&
+        svc.proofreadAcceptsImages;
     if (proofread) {
       if (svc.proofreadProvider == null) {
         throw const CtlFailure.rejected(
@@ -121,11 +141,24 @@ class CtlVideoSubtitleHandlers {
       if (!consented()) {
         if (call.optBool('consentAi') != true) {
           throw const CtlFailure.rejected(
-            'AI 校对会把 ASR 识别出的文本与本作专名表发给所选提供商（不发音频与画面，'
-            '按提供商计费）。同意请加 --consent-ai（只需一次），或加 --no-ai',
+            'AI 校对会把 ASR 识别出的文本、视频已带字幕里的台词与本作专名表发给所选'
+            '提供商；提供商能收图时还会发视频的静态画面（--no-frames 不发）。不发音频，'
+            '按提供商计费。同意请加 --consent-ai（只需一次），或加 --no-ai',
           );
         }
         await acceptConsent();
+      }
+      if (frames && !(framesConsented?.call() ?? false)) {
+        if (call.optBool('consentAi') == true) {
+          await acceptConsent();
+        } else if (framesArg == true) {
+          throw const CtlFailure.rejected(
+            '画面参考会把视频的静态画面发给所选提供商。同意请加 --consent-ai（只需一次），'
+            '或加 --no-frames',
+          );
+        } else {
+          frames = false;
+        }
       }
     }
     final AppVideoSubtitleOptions options = AppVideoSubtitleOptions(
@@ -144,6 +177,7 @@ class CtlVideoSubtitleHandlers {
       ),
       regenerateGlossary: call.optBool('regenerateGlossary') ?? false,
       language: language,
+      frames: frames,
     );
     final AppVideoSubtitleJob job;
     try {
@@ -180,6 +214,7 @@ class CtlVideoSubtitleHandlers {
       ...ctlVideoJobJson(job.mirror),
       'title': target.title,
       'episodes': target.episodes.length,
+      if (proofread) 'frames': frames,
       if (target.missingScrapedData) 'scrapeHint': true,
     };
   }

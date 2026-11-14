@@ -4892,6 +4892,15 @@ function __fushiHideButtonTip() {
         __fushiBtnTipHideTimer = 0;
     }, 220);
 }
+// 可制卡的「＋」的提示：制卡快捷键（宿主注入整句，如「制卡（Ctrl+Enter）」）。宿主只在
+// 本表面真有键盘派发时才注入非空串；没注入（浏览器扩展）或空串 = 不提示，绝不写一个
+// 按了没反应的键。
+function fushiMineShortcutHint() {
+    return typeof window.i18nMineShortcutHint === 'string'
+        ? window.i18nMineShortcutHint
+        : '';
+}
+
 // 给内联动作按钮挂 DOM 悬停/聚焦提示（替代会在离屏 WebView2 上飞走的原生 title）。
 // 设 aria-label 保留可访问性、显式移除 title（关键：不再依赖原生工具提示）。用
 // dataset 标志保证监听器只挂一次——refresh 时可反复调用刷新文案而不叠加监听。
@@ -5685,7 +5694,9 @@ function createEntryHeader(entry, idx) {
         // 原生提示按未拉伸坐标定位，会飘到上一个词条上方。
         setInlineButtonTip(mineButton, queued
             ? (window.i18nMineQueued || '已加入制卡队列')
-            : (isMined ? (window.i18nMinedManageHint || '右键或长按：覆写 / 查看已有卡片') : ''));
+            : (isMined
+                ? (window.i18nMinedManageHint || '右键或长按：覆写 / 查看已有卡片')
+                : fushiMineShortcutHint()));
         mineButton.classList.toggle('queued', queued);
         // Single source of truth for the button's lookup-time-detected state.
         // The optional second flag is the "latest editable" sub-state; it is only
@@ -6044,6 +6055,8 @@ function createEntryHeader(entry, idx) {
     // 制卡模块关掉时上面一颗制卡按钮都没渲染，这里的查重探测也一并停掉——模块
     // 关掉 = 它的后台流量（每次查词一次 Anki 查重 + 可能的覆写目标反查）也一起停。
     if (miningEnabled) {
+        // 查重探测是懒加载（滚进视口才问），回来之前「＋」就得带上快捷键提示。
+        setInlineButtonTip(mineButton, fushiMineShortcutHint());
         // 宿主推来的刷新入口（window.fushiRefreshMineStates → 本闭包）。setMineState
         // 是 createEntryHeader 的闭包局部，外面拿不到，所以把重问+重画整条挂到按钮上。
         mineButton.__fushiMineExpression = expression || '';
@@ -6192,8 +6205,23 @@ function createEntryHeader(entry, idx) {
     return header;
 }
 
+// 快捷键 / 手柄动作落在哪个词条上：用户用 Alt+滚轮 / 手柄十字键 / 键盘绑定移到的
+// 当前词条（.entry-current，见 fushiFocusDictionaryEntryMove）优先；还没移动过时才是
+// 第一个词条。旧实现永远取全文第一颗按钮——移到第 3 个词条按 Ctrl+Enter / 手柄 X，
+// 制出来的却是第 1 个词条的卡。
+// 当前词条本身没有这颗按钮时返回 null，绝不退回去点别的词条（那会制错卡）。
+function __fushiPopupEntryActionButton(selector) {
+    const root = __fushiRootNode();
+    if (!root) return null;
+    // .entry-current 只会挂在 .entry 上（applyCurrent），单类选择器即可。
+    const current = root.querySelector('.entry-current');
+    if (current) return current.querySelector(selector);
+    return root.querySelector(selector);
+}
+
+// 名字保留 MineFirstEntry：Dart（dictionary_popup_webview / gal 浮窗宿主）按名调用。
 window.fushiPopupMineFirstEntry = async function() {
-    const mineButton = __fushiRootNode().querySelector('.mine-button');
+    const mineButton = __fushiPopupEntryActionButton('.mine-button');
     if (!mineButton || mineButton.disabled) {
         return false;
     }
@@ -6204,11 +6232,11 @@ window.fushiPopupMineFirstEntry = async function() {
     return true;
 };
 
-// 手柄（Dart 侧 dictionaryPopup scope 派发，默认 Y）：播放第一个可见词条的发音。
-// 与 fushiPopupMineFirstEntry 同模板：点既有按钮复用其全部音源解析/回退/提示逻辑，
-// 绝不另起第二条音频桥。
+// 手柄（Dart 侧 dictionaryPopup scope 派发，默认 Y）：播放当前词条（没移动过时是第一个
+// 词条）的发音。与 fushiPopupMineFirstEntry 同模板、同一套词条选择：点既有按钮复用其
+// 全部音源解析/回退/提示逻辑，绝不另起第二条音频桥。
 window.fushiPopupPlayFirstAudio = async function() {
-    const audioButton = __fushiRootNode().querySelector('.audio-button');
+    const audioButton = __fushiPopupEntryActionButton('.audio-button');
     if (!audioButton || audioButton.disabled) {
         return false;
     }

@@ -2024,6 +2024,34 @@ window.fushiSelection = {
       this.isSpaceDelimitedLetter(text[index - 1]) &&
       this.isSpaceDelimitedLetter(text[index + 1]);
   },
+  // BUG-4622：OCR 每个字格是独立文本节点，词内撇号的两侧字母可能在相邻字格。
+  // 只在同一 OCR 块内补齐上下文，再复用小说的字符判据；空白缝、块界仍然阻断。
+  // 不改变词首回退：小说点击 l'homme 的 h 也从 homme 开始，漫画保持同一语义。
+  isIntraWordApostropheAt: function(node, index) {
+    var content = node.textContent;
+    if (!this.intraWordApostrophePattern.test(content[index] || '')) return false;
+    if (this.isIntraWordApostrophe(content, index)) return true;
+    var container = this.findParagraph(node);
+    if (!container || !container.classList || !container.classList.contains('ocr-box')) return false;
+    var before = content[index - 1];
+    var after = content[index + 1];
+    var walker = this.createWalker(container);
+    if (before === undefined) {
+      walker.currentNode = node;
+      var prev = walker.previousNode();
+      if (!prev || this.findParagraph(prev) !== container ||
+          this.hasSkippedWhitespaceBetween(prev, node)) return false;
+      before = prev.textContent.slice(-1);
+    }
+    if (after === undefined) {
+      walker.currentNode = node;
+      var next = walker.nextNode();
+      if (!next || this.findParagraph(next) !== container ||
+          this.hasSkippedWhitespaceBetween(node, next)) return false;
+      after = next.textContent[0];
+    }
+    return this.isIntraWordApostrophe(before + content[index] + after, 1);
+  },
   isFurigana: function(node) {
     var el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
     return !!(el && el.closest('rt, rp'));
@@ -3428,7 +3456,7 @@ window.fushiSelection = {
       while (scanOffset < content.length && text.length < maxLength) {
         var char = content[scanOffset];
         // BUG-2056：词内撇号先于终点判定跨过去（don’t 不被截成 don）。
-        if (this.isIntraWordApostrophe(content, scanOffset)) {
+        if (this.isIntraWordApostropheAt(scanNode, scanOffset)) {
           text += char;
           scanOffset++;
           continue;
@@ -3455,9 +3483,34 @@ window.fushiSelection = {
       scanNode = walker.nextNode();
       scanOffset = 0;
       // BUG-3453：两个节点之间夹着被 createWalker 跳过的空白节点（有声书 cue wrapper 之间
-      // 的空格）= 新节点开头的空白，按 BUG-1773 同一规则终止，不把下一条 cue 的词粘上来。
+      // 的空格）按 BUG-1773 终止，避免粘连下一条 cue；漫画块内的单空格在下面单独桥接。
       if (scanNode && this.hasSkippedWhitespaceBetween(scannedNode, scanNode) &&
-          this.isWordGapBetweenChars(text)) break;
+          this.isWordGapBetweenChars(text)) {
+        // Manga glyphs have separate text nodes. Bridge only a real single space
+        // inside the same OCR block, retaining its range for phrase highlighting.
+        // Other reader nodes retain the cue/paragraph boundary rule above.
+        if (!(container.classList && container.classList.contains('ocr-box')) ||
+            this.findParagraph(scanNode) !== container) break;
+        var gapWalker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, {
+          acceptNode: function(n) { return NodeFilter.FILTER_ACCEPT; }
+        });
+        gapWalker.currentNode = scannedNode;
+        var gapNodes = [];
+        var gapText = '';
+        for (var gapNode = gapWalker.nextNode(); gapNode && gapNode !== scanNode;
+             gapNode = gapWalker.nextNode()) {
+          gapNodes.push(gapNode);
+          gapText += gapNode.textContent;
+        }
+        if (gapText !== ' ' || text.length + 1 >= maxLength ||
+            !this.isWordGapBetweenChars(text, scanNode.textContent) ||
+            this.isScanStop(scanNode.textContent[0])) break;
+        text += ' ';
+        for (var gapIndex = 0; gapIndex < gapNodes.length; gapIndex++) {
+          var gap = gapNodes[gapIndex];
+          ranges.push({ node: gap, start: 0, end: gap.textContent.length });
+        }
+      }
     }
     if (!text) return null;
     this.selection = { startNode: startNode, startOffset: startOffset, ranges: ranges, text: text };
