@@ -5,7 +5,7 @@ part of '../manga_fushi_page.dart';
 /// Manga adapter of the shared controller lookup mode (hold L1 / Select).
 ///
 /// The cursor is a logical position in the current page's OCR text: block
-/// (payload / reading order) and UTF-16 offset into `block.lines.join()`.
+/// (payload / reading order) and UTF-16 offset into the overlay's block text.
 /// D-pad up / down move between non-empty OCR blocks, left / right step by
 /// word (the subtitle sweep tokenizer) or character inside the block. The
 /// cursor is drawn in the page's own OCR layer (an outline on the `.ocr-char`
@@ -149,7 +149,8 @@ class _MangaControllerLookupTarget extends ControllerLookupTarget {
 
 /// Text of an OCR block as the overlay renders it (UTF-16 offsets of the
 /// `.ocr-char` spans index into this).
-String mangaControllerBlockText(MokuroBlock block) => block.lines.join();
+String mangaControllerBlockText(MokuroBlock block) =>
+    mangaBlockTextLayout(block).text;
 
 /// First block with text; -1 when the page has none.
 int mangaControllerFirstTextBlock(List<MokuroBlock> blocks) =>
