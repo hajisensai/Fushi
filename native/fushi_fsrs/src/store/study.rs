@@ -1347,7 +1347,7 @@ fn run(c: &Connection, src: &mut dyn Source, profile: &str, req: &Value) -> Resu
 
 impl crate::store::SrsCore {
     /// 只读排队（牌组列表 / 复习页的计数与出卡）：走读连接的快照，不排在同步投递 / 缓存刷新这类长写后面
-    /// （Drift 事务开着时照旧在写连接上，看得见未提交的行）。
+    /// （旧库搬迁的事务开着时在写连接上读，看得见未提交的行，[crate::store::SrsCore::read_visible_tx]）。
     pub fn study(&self, profile: &str, req: &Value) -> Result<Value, String> {
         self.read_visible_tx(|c, uncommitted| study(c, &self.study_hub, uncommitted, profile, req))
     }
@@ -1849,12 +1849,30 @@ mod tests {
     const DECKS: [&str; 6] = ["R", "RA", "RA1", "RB", "O", "Z"];
     const H: i64 = 3_600_000;
 
-    fn exec(core: &SrsCore, sql_text: &str, params: Vec<Sql>) {
-        core.exec(sql_text, &params, false)
+    /// 测试写入的落点：[SrsCore] = 原始通道（每条语句各自提交）；[Connection] = 测试攥着的写连接（上面开着一笔
+    /// 事务——内核写命令在它的 SAVEPOINT 里落库后接着排队的形态；原始通道不许把事务留到调用之后）。
+    trait Target {
+        fn run(&self, sql: &str, params: &[Sql]) -> Result<Vec<u8>, String>;
+    }
+
+    impl Target for SrsCore {
+        fn run(&self, sql: &str, params: &[Sql]) -> Result<Vec<u8>, String> {
+            self.exec_raw(sql, params, false)
+        }
+    }
+
+    impl Target for Connection {
+        fn run(&self, sql: &str, params: &[Sql]) -> Result<Vec<u8>, String> {
+            SrsCore::exec_on(self, sql, params, false)
+        }
+    }
+
+    fn exec<T: Target + ?Sized>(core: &T, sql_text: &str, params: Vec<Sql>) {
+        core.run(sql_text, &params)
             .unwrap_or_else(|e| panic!("{sql_text}: {e}"));
     }
 
-    fn edit(core: &SrsCore, n: &mut i64, entity: &str, key: &str, v: Value) {
+    fn edit<T: Target + ?Sized>(core: &T, n: &mut i64, entity: &str, key: &str, v: Value) {
         *n += 1;
         let json = json!({"p": P, "k": "deck", "e": entity, "f": key, "w": "w", "s": *n, "v": v, "hlc": format!("{}:0:w", 1_700_000_000_000i64 + *n)}).to_string();
         exec(
@@ -1958,7 +1976,15 @@ mod tests {
         v
     }
 
-    fn log(core: &SrsCore, n: &mut i64, card: &str, at: i64, ty: &str, reps: i64, kind: &str) {
+    fn log<T: Target + ?Sized>(
+        core: &T,
+        n: &mut i64,
+        card: &str,
+        at: i64,
+        ty: &str,
+        reps: i64,
+        kind: &str,
+    ) {
         *n += 1;
         exec(
             core,
@@ -1977,8 +2003,11 @@ mod tests {
 
     /// 比一轮：几个根（含全部牌组）、带 / 不带排除、偶尔带 RWKV 候选；会话结果与旧实现逐项相同。
     /// 返回出了几张非空的「下一张 / 再下一张」（测试自检：对拍不是一直在比空结果）。
+    /// [held]：测试攥着写连接、上面开着事务时给它——两边都在这条连接上算（看得见未提交的行），就是内核写命令在
+    /// 自己的 SAVEPOINT 里落库后接着排队的形态；否则走 [SrsCore::study]（读连接的已提交快照）。
     fn compare(
         core: &SrsCore,
+        held: Option<&Connection>,
         rng: &mut Rng,
         now: i64,
         day: Day,
@@ -2019,8 +2048,16 @@ mod tests {
                     .collect();
                 req["rwkv"] = json!({"decks": {"O": [0.7, 2, 1, 60]}, "cands": cands});
             }
-            let got = core.study(P, &req).unwrap();
-            let want = core.read_visible(|c| oracle::study(c, P, &req)).unwrap();
+            let (got, want) = match held {
+                Some(c) => (
+                    study(c, &core.study_hub, true, P, &req).unwrap(),
+                    oracle::study(c, P, &req).unwrap(),
+                ),
+                None => (
+                    core.study(P, &req).unwrap(),
+                    core.read_visible(|c| oracle::study(c, P, &req)).unwrap(),
+                ),
+            };
             assert_eq!(got, want, "step {step} root {root:?} req {req}");
             picked += usize::from(!got["next"].is_null()) + usize::from(!got["after"].is_null());
         }
@@ -2041,25 +2078,28 @@ mod tests {
                     .collect()
             };
             let ex: HashSet<&str> = ex.into_iter().collect();
-            let got = core
-                .read_visible_tx(|c, unc| {
-                    core.study_hub.with_session(c, P, day, today, unc, |s| {
-                        s.ensure_order(order);
-                        s.first_due(&DECKS, order, now, &ex)
-                    })
+            let session_first = |c: &Connection, unc: bool| {
+                core.study_hub.with_session(c, P, day, today, unc, |s| {
+                    s.ensure_order(order);
+                    s.first_due(&DECKS, order, now, &ex)
                 })
-                .unwrap();
-            let want = core
-                .read_visible(|c| {
-                    let src = oracle::SqlSource {
-                        c,
-                        profile: P,
-                        today,
-                        logs: LogState::default(),
-                    };
-                    src.first_by_key(&DECKS, order, &ex)
-                })
-                .unwrap();
+            };
+            let sql_first = |c: &Connection| {
+                let src = oracle::SqlSource {
+                    c,
+                    profile: P,
+                    today,
+                    logs: LogState::default(),
+                };
+                src.first_by_key(&DECKS, order, &ex)
+            };
+            let (got, want) = match held {
+                Some(c) => (session_first(c, true).unwrap(), sql_first(c).unwrap()),
+                None => (
+                    core.read_visible_tx(session_first).unwrap(),
+                    core.read_visible(sql_first).unwrap(),
+                ),
+            };
             assert_eq!(
                 got, want,
                 "step {step} first due by {order:?}, exclude {ex:?}"
@@ -2070,7 +2110,7 @@ mod tests {
     }
 
     /// 常驻会话与旧的逐条 SQL 排队逐步对拍：随机改卡（换队列 / 到期 / 暂停 / 埋 / 隐藏 / 挪牌组 / 稳定度）、加删卡、
-    /// 加删日志、改每日上限与新卡顺序、此刻前进（跨日、换翻日时刻 / UTC 偏移）、Drift 式事务里写（事务内排队看得见
+    /// 加删日志、改每日上限与新卡顺序、此刻前进（跨日、换翻日时刻 / UTC 偏移）、写连接上开着事务时写（事务内排队看得见
     /// 未提交的行；提交、整笔回滚、`ROLLBACK TO` 回滚一段）、一次写超过攒满阈值。每步每个根都与旧实现结果相同；
     /// 同一个日界里只建一次会话（增量），跨日 / 攒满才重建。
     #[test]
@@ -2145,7 +2185,16 @@ mod tests {
         }
         let mut builds_seen = 0;
         let mut picked = 0;
-        let mut tx_depth = 0;
+        // 攥着的写连接：上面开着一笔事务（跨若干步）。平时为空，每条写入走原始通道各自提交。
+        let mut held: Option<crate::store::Conn<'_>> = None;
+        macro_rules! on {
+            () => {
+                match held.as_deref() {
+                    Some(c) => c as &dyn Target,
+                    None => &core as &dyn Target,
+                }
+            };
+        }
         for step in 0..700 {
             let today = day.index(now);
             let mut new_day = false;
@@ -2153,7 +2202,7 @@ mod tests {
                 0..=29 => {
                     let id = rng.pick(&cards).clone();
                     exec(
-                        &core,
+                        on!(),
                         CARD_UPSERT_ORDERED,
                         card_values_ordered(&mut rng, &id, today, now),
                     );
@@ -2176,7 +2225,7 @@ mod tests {
                         _ => ("stability", Sql::Real(rng.below(30) as f64 + 0.5)),
                     };
                     exec(
-                        &core,
+                        on!(),
                         &format!("UPDATE srs_cards_cache SET {col} = ? WHERE id = srs_id(?)"),
                         vec![v, Sql::Text(id)],
                     );
@@ -2184,7 +2233,7 @@ mod tests {
                 38..=42 => {
                     let id = format!("c{:04}", cards.len());
                     exec(
-                        &core,
+                        on!(),
                         CARD_UPSERT_ORDERED,
                         card_values_ordered(&mut rng, &id, today, now),
                     );
@@ -2193,7 +2242,7 @@ mod tests {
                 43..=45 => {
                     let id = rng.pick(&cards).clone();
                     exec(
-                        &core,
+                        on!(),
                         "DELETE FROM srs_cards_cache WHERE id = srs_id(?)",
                         vec![Sql::Text(id)],
                     );
@@ -2214,7 +2263,7 @@ mod tests {
                         "review"
                     };
                     log(
-                        &core,
+                        on!(),
                         &mut logs,
                         &card,
                         at,
@@ -2226,7 +2275,7 @@ mod tests {
                 61..=63 => {
                     let id = format!("l{}", 1 + rng.below(logs as u64));
                     exec(
-                        &core,
+                        on!(),
                         "DELETE FROM srs_review_logs WHERE id = srs_id(?)",
                         vec![Sql::Text(id)],
                     );
@@ -2234,7 +2283,7 @@ mod tests {
                 64..=66 => {
                     let d = *rng.pick(&DECKS);
                     edit(
-                        &core,
+                        on!(),
                         &mut n,
                         d,
                         "limits",
@@ -2243,7 +2292,7 @@ mod tests {
                 }
                 67 => {
                     edit(
-                        &core,
+                        on!(),
                         &mut n,
                         "R",
                         "newOrder",
@@ -2255,7 +2304,7 @@ mod tests {
                     let d = *rng.pick(&["R", "O", "RA"]);
                     match rng.below(5) {
                         0 | 1 => edit(
-                            &core,
+                            on!(),
                             &mut n,
                             d,
                             "reviewOrder",
@@ -2269,14 +2318,14 @@ mod tests {
                             ])),
                         ),
                         2 | 3 => edit(
-                            &core,
+                            on!(),
                             &mut n,
                             d,
                             "newMix",
                             json!(*rng.pick(&["afterReviews", "beforeReviews", "mixed", "bogus"])),
                         ),
                         _ => edit(
-                            &core,
+                            on!(),
                             &mut n,
                             "R",
                             "algorithm",
@@ -2296,33 +2345,41 @@ mod tests {
                     };
                     new_day = true;
                 }
-                89..=94 if tx_depth == 0 => {
-                    exec(&core, "BEGIN", vec![]);
-                    tx_depth = 1;
+                89..=94 if held.is_none() => {
+                    let w = core.writer().unwrap();
+                    w.execute_batch("BEGIN").unwrap();
+                    held = Some(w);
                 }
                 89..=94 => {
-                    exec(&core, *rng.pick(&["COMMIT", "ROLLBACK"]), vec![]);
-                    tx_depth = 0;
+                    let w = held.take().unwrap();
+                    w.execute_batch(*rng.pick(&["COMMIT", "ROLLBACK"])).unwrap();
                 }
                 95..=97 => {
-                    // 一段写在 SAVEPOINT 里又回滚掉（Drift 嵌套事务失败）。
-                    exec(&core, "SAVEPOINT t", vec![]);
+                    // 一段写在 SAVEPOINT 里又回滚掉（写命令中途出错）。外面没开事务时这个 SAVEPOINT 自成一笔。
+                    let own = held.is_none();
+                    if own {
+                        held = Some(core.writer().unwrap());
+                    }
+                    exec(on!(), "SAVEPOINT t", vec![]);
                     let id = rng.pick(&cards).clone();
                     exec(
-                        &core,
+                        on!(),
                         CARD_UPSERT_ORDERED,
                         card_values_ordered(&mut rng, &id, today, now),
                     );
                     let card = rng.pick(&cards).clone();
-                    log(&core, &mut logs, &card, now, "review", 2, "review");
-                    picked += compare(&core, &mut rng, now, day, &cards, step);
-                    exec(&core, "ROLLBACK TO t", vec![]);
-                    exec(&core, "RELEASE t", vec![]);
+                    log(on!(), &mut logs, &card, now, "review", 2, "review");
+                    picked += compare(&core, held.as_deref(), &mut rng, now, day, &cards, step);
+                    exec(on!(), "ROLLBACK TO t", vec![]);
+                    exec(on!(), "RELEASE t", vec![]);
+                    if own {
+                        held = None;
+                    }
                 }
                 _ if step % 233 == 0 => {
                     // 一条语句写超过攒满阈值：下次排队整份重建。
                     exec(
-                        &core,
+                        on!(),
                         "WITH RECURSIVE k(i) AS (SELECT 0 UNION ALL SELECT i + 1 FROM k WHERE i < ?) \
                          INSERT OR REPLACE INTO srs_cards_cache (id, profile_uid, note_id, template_id, deck_id, queue, due_day, stability, last_reviewed_at) \
                          SELECT printf('bulk%05d', i), ?, 'n', 't', 'Z', 'review', ?, 1.0 + (i % 7), ? - (i % 11) * 86400000 FROM k",
@@ -2338,15 +2395,15 @@ mod tests {
                 _ => {}
             }
             let before = core.study_hub.builds.load(AtomicOrdering::SeqCst);
-            picked += compare(&core, &mut rng, now, day, &cards, step);
+            picked += compare(&core, held.as_deref(), &mut rng, now, day, &cards, step);
             let built = core.study_hub.builds.load(AtomicOrdering::SeqCst) - before;
             if !new_day && step > 0 && day.index(now) == today {
                 assert_eq!(built, 0, "step {step}: no rebuild within a day");
             }
             builds_seen += built;
         }
-        if tx_depth > 0 {
-            exec(&core, "ROLLBACK", vec![]);
+        if let Some(w) = held.take() {
+            w.execute_batch("ROLLBACK").unwrap();
         }
         assert!(builds_seen < 60, "rebuilt {builds_seen} times");
         // 700 步 × 6 个根：大多数轮次真的出了卡（不是一直在比空结果）。

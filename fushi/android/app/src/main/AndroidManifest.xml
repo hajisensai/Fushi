@@ -20,6 +20,10 @@
          只截一帧即停止投屏。 -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION"/>
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
+    <!-- Hibiki→Fushi 迁移完成后首页「卸载 Hibiki」按钮（MigrationChannelHandler
+         requestUninstall）发 ACTION_DELETE。Android 9 起调用方必须持有这条权限，
+         否则系统卸载器直接 finish，按钮点了没有任何反应（BUG-4506）。普通权限，不弹窗。 -->
+    <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES"/>
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>

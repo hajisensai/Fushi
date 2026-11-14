@@ -107,9 +107,66 @@ mod tests {
     use serde_json::Value;
 
     /// 协议 4 发布时冻结的第一版（不许改；表变了只往 [BUILTIN_NOTE_TYPES] 追加）。
+    ///
+    /// 必须是独立的字面量，不能引用生产表用的常量：引用同一个常量，改那个常量时两边一起变，守卫就成了同义反复。
     const FROZEN_V1: [(&str, &[&str], &[&str]); 2] = [
-        ("lapis", &LAPIS_FIELDS, &["Card 1"]),
-        ("fushi_card", &FUSHI_CARD_FIELDS, &["Card 1"]),
+        (
+            "lapis",
+            &[
+                "Expression",
+                "ExpressionFurigana",
+                "ExpressionReading",
+                "ExpressionAudio",
+                "SelectionText",
+                "MainDefinition",
+                "DefinitionPicture",
+                "Sentence",
+                "SentenceFurigana",
+                "SentenceAudio",
+                "Picture",
+                "Glossary",
+                "Hint",
+                "IsWordAndSentenceCard",
+                "IsClickCard",
+                "IsSentenceCard",
+                "IsAudioCard",
+                "PitchPosition",
+                "PitchCategories",
+                "Frequency",
+                "FreqSort",
+                "MiscInfo",
+            ],
+            &["Card 1"],
+        ),
+        (
+            "fushi_card",
+            &[
+                "Expression",
+                "ExpressionFurigana",
+                "ExpressionReading",
+                "ExpressionAudio",
+                "SelectionText",
+                "MainDefinition",
+                "DefinitionPicture",
+                "Sentence",
+                "SentenceFurigana",
+                "SentenceAudio",
+                "Picture",
+                "Glossary",
+                "Hint",
+                "IsWordAndSentenceCard",
+                "IsClickCard",
+                "IsSentenceCard",
+                "IsAudioCard",
+                "PitchPosition",
+                "PitchCategories",
+                "Frequency",
+                "FreqSort",
+                "MiscInfo",
+                "SentenceTranslation",
+            ],
+            &["Card 1"],
+        ),
     ];
 
     #[test]

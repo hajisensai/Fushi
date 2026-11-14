@@ -560,6 +560,9 @@ class MusicSession extends ChangeNotifier {
       return;
     }
     final String? cover = item.coverPath;
+    // 基础信息与当前歌词行一次组成最终卡片：本方法挂在每个进度 tick 上，分两次推
+    // （先无歌词卡、再有歌词卡）会让两张卡交替、去重失效，每 tick 真推两次
+    // setMediaItem（BUG-4507）。
     handler.setMediaItemInfo(
       title: item.title,
       artist: item.artist,
@@ -570,15 +573,8 @@ class MusicSession extends ChangeNotifier {
           : (cover.startsWith('http://') || cover.startsWith('https://'))
           ? Uri.parse(cover)
           : (File(cover).existsSync() ? Uri.file(cover) : null),
+      subtitle: mediaSessionLyricLine?.call(),
     );
-    final String? line = mediaSessionLyricLine?.call();
-    if (line != null) {
-      handler.updateNotificationSubtitle(
-        title: item.title,
-        subtitle: line,
-        fallbackArtist: item.artist,
-      );
-    }
     handler.updatePlaybackState(
       playing: engine.isPlaying,
       position: engine.position,

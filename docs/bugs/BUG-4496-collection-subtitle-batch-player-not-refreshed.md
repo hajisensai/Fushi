@@ -1,0 +1,6 @@
+## BUG-4496 · 整季下载字幕后当前视频的字幕列表仍为空，要重开视频才有
+- **报告**：2026-11-11（应用内反馈 rAyVIWcHWU，Windows，3.3.0+1368；日志：首次 cues=0，重开视频后 cues=360）
+- **真实性**：✅ 真 bug。播放页 `_openSubtitleWorkbench`（`fushi/lib/src/pages/implementations/video_fushi/subtitle.part.dart` 修复前约 :1587-1606）只消费工作台「本集」作用域 pop 回来的路径；「整个合集」作用域的批量下载由 `SubtitleCollectionPanel._persist`（`fushi/lib/src/pages/implementations/subtitle_collection_panel.dart` 修复前 :1079-1098）只写存储（本地 `saveSubtitleSelection` 写 DB / 远端 `onRemoteSubtitlePersist` 写 prefs），没有任何通道通知正在播放的页面；播放页的字幕轨列表与当前 cue 是开视频时读进内存的，于是当前集下好了字幕，列表仍空，重开视频重新读 DB 才出现。
+- **[x] ① 已修复** — 面板新增 `onSubtitlePersisted(bookUid, path)`，每集持久化之后回调（`subtitle_collection_panel.dart:1107`）；`SubtitleWorkbenchPage.open` / 构造器新增 `onCollectionSubtitlePersisted` 透传给合集面板。播放页打开工作台前记下当前集 `_activeBookUid`（工作台盖住期间不会换集），回调里收下落到当前集的那条；关闭后用 `workbenchPathsToApply`（「本集」下载的路径优先应用，合集那条只登记、重复不重复）合成列表，走与「本集」下载同一条 `_applyDownloadedSubtitles` 链路登记进字幕列表并应用（本地经 `_selectSubtitleSource`，远端经 `_applyRemoteSubtitle`）（`subtitle.part.dart:1593-1620`）。媒体库 / 合集页入口没有在播的视频，不订阅。
+- **[x] ② 已加自动化测试** — `fushi/test/pages/subtitle_collection_persist_notify_test.dart`：真跑一次合集批量下载（假字幕源返回 SRT），断言回调 `(bookUid, 路径)` 与 DB 写入的 `subtitleSource` 同一路径且文件已落盘；`workbenchPathsToApply` 三条合并规则；播放页 / 工作台接线守卫。
+- **备注**：未在真机复测原始路径（需配好字幕源 key 的整季视频）；合并规则与回调层由上述测试覆盖。
