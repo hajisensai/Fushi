@@ -7,9 +7,11 @@
 //! - 远端操作（transport.rs）走同一条投影与重放路径；按设备连续前缀、因果满足才应用。
 //! - 卡片调度状态由重放推出（sync2::replay），写回投影行的 `res`。
 //!
-//! 所有命令在写连接上的一个 SAVEPOINT 里做：Dart 的 Drift 事务开着时嵌在里面，没开时自成事务。
+//! 所有命令在写连接上的一个 SAVEPOINT 里做：写连接上没有别人开着的事务（Drift 执行器只读），它自成一笔事务；
+//! 只有旧库搬迁那笔跨调用的事务开着时是嵌在里面。
 
 pub(crate) mod change;
+pub(crate) mod changing;
 pub(crate) mod channel;
 pub mod config;
 pub(crate) mod deck_delete;
@@ -19,8 +21,10 @@ pub mod digest;
 pub(crate) mod former;
 pub(crate) mod heal;
 pub mod media;
+pub(crate) mod merge_notes;
 pub(crate) mod min_reader;
 pub(crate) mod mvr;
+pub(crate) mod note_fields_if;
 pub mod relay;
 pub(crate) mod sched_local;
 pub mod schema;
@@ -30,6 +34,7 @@ pub(crate) mod snapshots;
 pub mod timeline;
 pub mod transport;
 pub(crate) mod trust;
+pub(crate) mod undo_check;
 
 use std::collections::BTreeSet;
 use std::sync::Arc;
@@ -52,7 +57,7 @@ pub(crate) fn sql<E: std::fmt::Display>(e: E) -> String {
     e.to_string()
 }
 
-/// 在 SAVEPOINT 里跑（外面有 Drift 事务就嵌套，没有就自成事务）。
+/// 在 SAVEPOINT 里跑（外面有事务——旧库搬迁、调用方自己的 SAVEPOINT——就嵌套，没有就自成事务）。
 pub(crate) fn in_savepoint<T>(
     conn: &Connection,
     f: impl FnOnce(&Connection) -> Result<T, String>,
@@ -89,8 +94,6 @@ pub(crate) mod test_panic {
 
     /// [super::in_savepoint]：写完、RELEASE 之前。
     pub(crate) const BEFORE_RELEASE: &str = "in_savepoint.before_release";
-    /// `SrsCore::exec`：语句跑完、记下 Drift 事务状态之前。
-    pub(crate) const AFTER_EXEC: &str = "exec.after_statement";
 
     thread_local! {
         static ARMED: Cell<Option<&'static str>> = const { Cell::new(None) };
@@ -1690,19 +1693,24 @@ pub(crate) fn replay_cards(
     conn: &Connection,
     cards: &BTreeSet<String>,
 ) -> Result<BTreeSet<String>, String> {
+    let p_tails = crate::store::prof::span("replay.tails");
     let mut groups: BTreeSet<String> = BTreeSet::new();
     for c in cards {
         groups.extend(tails(conn, c)?);
     }
+    drop(p_tails);
     let mut changed = BTreeSet::new();
     if groups.is_empty() {
         return Ok(changed);
     }
     for tail in &groups {
+        let p_group = crate::store::prof::span("replay.group");
         let Group { rows, .. } = group_of(conn, tail, None)?;
+        drop(p_group);
         if rows.is_empty() {
             continue;
         }
+        let _p_compute = crate::store::prof::span("replay.compute_write");
         let input: Vec<Row<'_>> = rows
             .iter()
             .map(|(_, j, s, i, _)| Row {
@@ -2138,6 +2146,23 @@ pub(crate) fn append_local_cached(
     Ok(op)
 }
 
+/// 本机刚写下的一条字段修改（不含整列表 `tags`：它已展开成 OR-Set 的标签操作）记进命令结果的 `edits`：
+/// `[种类, 实体, 字段键, 设备, 序号, 落库的值]`。编辑类撤销据这个 dot 判断之后有没有被别人动过（undo_check.rs）。
+fn note_written_edit(out: &mut Vec<Value>, op: &Op, b: &Body) {
+    if let Body::Edit(e) = b {
+        if e.legacy.is_none() {
+            out.push(json!([
+                e.kind.wire(),
+                e.entity.text(),
+                e.key,
+                op.id.device.text(),
+                op.id.seq,
+                serde_json::from_str::<Value>(&e.value).unwrap_or(Value::Null),
+            ]));
+        }
+    }
+}
+
 /// [SrsCore::sync2_identity] 的结果。
 fn identity_json(l: &Local) -> Value {
     json!({
@@ -2154,7 +2179,7 @@ impl SrsCore {
     /// 本机身份（没有就建）。返回 `{device, collection, nextSeq, migrated, name}`。
     ///
     /// 身份已在（每轮同步、开库都走这里，绝大多数情况）只是一次读：走读连接的快照，不排写锁
-    /// （[SrsCore::read_visible]；Drift 事务开着时照旧在写连接上读）。只有还没有身份时才进写连接，
+    /// （[SrsCore::read_visible]）。只有还没有身份时才进写连接，
     /// 在 SAVEPOINT 里重查一遍再建（两个调用方同时看到「没有」，后进写锁的那个读到先建的那份，不会建两份）。
     pub fn sync2_identity(&self, profile: &str, now: i64) -> Result<Value, String> {
         if let Some(l) = self.read_visible(|c| Local::load(c, profile))? {
@@ -2476,6 +2501,8 @@ mod tests_causal;
 #[cfg(test)]
 mod tests_change;
 #[cfg(test)]
+mod tests_changing;
+#[cfg(test)]
 mod tests_channel;
 #[cfg(test)]
 mod tests_copy_migration_bench;
@@ -2500,7 +2527,11 @@ mod tests_heal;
 #[cfg(test)]
 mod tests_local_write;
 #[cfg(test)]
+mod tests_merge_notes;
+#[cfg(test)]
 mod tests_migrate_dedup;
+#[cfg(test)]
+mod tests_note_fields_if;
 #[cfg(test)]
 mod tests_perf;
 #[cfg(test)]
@@ -2513,6 +2544,8 @@ mod tests_sched_local;
 mod tests_synthetic_ctx;
 #[cfg(test)]
 mod tests_trust;
+#[cfg(test)]
+mod tests_undo_check;
 
 impl SrsCore {
     /// 评分预览（原 Dart `SrsCardOps.preview` 的 v2 实现）：在这张卡的归属组重放到此刻的状态上，用当前牌组配置与
@@ -2520,7 +2553,7 @@ impl SrsCore {
     /// （与写进日志的 utcOff / rollover 相同）。
     ///
     /// 只读（牌组树、血统日志、修改记录全是 SELECT，重放与 FSRS 是纯计算）：走读连接的快照，复习时每张卡的
-    /// 预览不排在同步投递 / 缓存刷新这类长写后面（[SrsCore::read_visible]；Drift 事务开着时照旧在写连接上）。
+    /// 预览不排在同步投递 / 缓存刷新这类长写后面（[SrsCore::read_visible]）。
     pub fn sync2_preview(
         &self,
         profile: &str,
@@ -2733,6 +2766,7 @@ pub(crate) fn apply_local_on(
     };
     let mut deps_row: Option<(Vec<u8>, i64)> = None;
     let mut landed = Vec::with_capacity(items.len());
+    let mut edits: Vec<Value> = Vec::new();
     // 牌组树（配置快照用）：这一批里落过非日志操作（可能改了配置 / 归属）就重读。
     let mut tree: Option<config::DeckTree> = None;
     for it in items {
@@ -2799,6 +2833,7 @@ pub(crate) fn apply_local_on(
             }
             // 载荷刚由 [b] 编码而来，直接投 [b]，不再把它解码一遍（与 [project] 解出的相同）。
             debug_assert_eq!(op.body().ok().as_ref(), Some(b));
+            note_written_edit(&mut edits, &op, b);
             project_body(c, profile, &op, b.clone(), now, true, &mut t)?;
         }
         landed.push(t.marks.landed > before);
@@ -2820,6 +2855,7 @@ pub(crate) fn apply_local_on(
         "changed": t.entities_changed.iter().map(|(k, e)| json!([k, e])).collect::<Vec<_>>(),
         "purged": t.purged.iter().map(|(k, e)| json!([k, e])).collect::<Vec<_>>(),
         "nextSeq": local.next_seq,
+        "edits": edits,
     });
     if want_stamps {
         out["stamps"] = Value::Array(stamps);
@@ -2845,6 +2881,10 @@ pub(crate) fn import_drafts_on(
     legacy: &LegacyApply<'_>,
 ) -> Result<Value, String> {
     use std::collections::{BTreeMap, HashSet};
+    // 「值没变就不写」（`chg`，changing.rs）是 `apply` / `change` 的：导入的草稿攒批时已经按现值筛过或标了 `init`。
+    if changing::any(items) {
+        return Err("import_drafts: chg items are not accepted".into());
+    }
     let entity_ids: Vec<&str> = items
         .iter()
         .filter(|it| it["e"]["t"].as_str() == Some("entity"))
@@ -2934,8 +2974,10 @@ pub(crate) fn append_on(
     };
     let mut applied = applied_vv(c, profile)?;
     let mut t = Touched::default();
+    let mut edits: Vec<Value> = Vec::new();
     for b in bodies {
         let op = append_local(c, &mut local, &mut applied, b, now)?;
+        note_written_edit(&mut edits, &op, b);
         project(c, profile, &op, now, true, &mut t)?;
     }
     local.save(c)?;
@@ -2943,6 +2985,7 @@ pub(crate) fn append_on(
     Ok(json!({
         "marks": t.marks.to_json(),
         "replayed": replayed,
+        "edits": edits,
         "changed": t.entities_changed.iter().map(|(k, e)| json!([k, e])).collect::<Vec<_>>(),
         "purged": t.purged.iter().map(|(k, e)| json!([k, e])).collect::<Vec<_>>(),
     }))

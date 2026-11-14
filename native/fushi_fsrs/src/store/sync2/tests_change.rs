@@ -8,32 +8,32 @@ use serde_json::{Value, json};
 
 use super::tests::{Device, P, deck_entity, edit};
 
-const T0: i64 = 1_700_000_000_000;
-const NT_A: &str = "0193a1b2-0000-7000-8000-00000000c9a1";
+pub(super) const T0: i64 = 1_700_000_000_000;
+pub(super) const NT_A: &str = "0193a1b2-0000-7000-8000-00000000c9a1";
 const NT_B: &str = "0193a1b2-0000-7000-8000-00000000c9a2";
-const LANG: &str = "0193a1b2-0000-7000-8000-00000000c9c1";
+pub(super) const LANG: &str = "0193a1b2-0000-7000-8000-00000000c9c1";
 const TARGET: &str = "0193a1b2-0000-7000-8000-00000000c9c2";
-const NOTES: [&str; 2] = [
+pub(super) const NOTES: [&str; 2] = [
     "0193a1b2-0000-7000-8000-00000000c9b1",
     "0193a1b2-0000-7000-8000-00000000c9b2",
 ];
 
-fn default_deck() -> String {
+pub(super) fn default_deck() -> String {
     super::config::default_deck_id(P)
 }
 
-fn try_dispatch(d: &Device, req: Value, blob: Option<String>) -> Result<Value, String> {
+pub(super) fn try_dispatch(d: &Device, req: Value, blob: Option<String>) -> Result<Value, String> {
     let mut blobs: Vec<Vec<u8>> = blob.into_iter().map(String::into_bytes).collect();
     let mut files = Vec::new();
     crate::store::ffi::sync2_dispatch(&d.core, &req, &mut blobs, &mut files)
 }
 
-fn dispatch(d: &Device, req: Value, blob: Option<String>) -> Value {
+pub(super) fn dispatch(d: &Device, req: Value, blob: Option<String>) -> Value {
     try_dispatch(d, req, blob).unwrap()
 }
 
 /// 宿主发的一条修改记录草稿（Dart `_applyInput`）。
-fn draft(kind: &str, entity: &str, key: &str, v: Value) -> Value {
+pub(super) fn draft(kind: &str, entity: &str, key: &str, v: Value) -> Value {
     json!({
         "e": {"t": "edit", "x": {"p": P, "k": kind, "e": entity, "f": key, "v": v, "ts": "anchored"}},
         "note": null, "clk": "t",
@@ -45,7 +45,7 @@ fn apply_items(d: &Device, now: i64, items: Vec<Value>) -> Value {
         d,
         json!({
             "op": "apply", "profile": P, "now": now, "caches": {"defaultDeck": default_deck()},
-            "legacyDevice": "dev", "tickNow": now, "localState": "{}",
+            "legacyDevice": "dev", "tickNow": now,
         }),
         Some(Value::Array(items).to_string()),
     )
@@ -91,7 +91,7 @@ fn deck(id: &str, name: &str) -> Vec<Value> {
 }
 
 /// 默认牌组、`Lang`、`Target`；类型 A（字段 fa、模板 t1）与 B（字段 fb、模板 u1 / u2）；两条 A 类型的笔记在 `Lang`。
-fn library(tag: &str) -> Device {
+pub(super) fn library(tag: &str) -> Device {
     let d = Device::new(tag);
     let mut events = vec![deck_entity(&default_deck())];
     events.extend(note_type(NT_A, "fa", &["t1"]));
@@ -121,7 +121,7 @@ fn change_items() -> Vec<Value> {
 fn change_request(at: i64, with_move: bool) -> Value {
     let mut req = json!({
         "op": "change", "profile": P, "now": at, "caches": {"defaultDeck": default_deck()},
-        "legacyDevice": "dev", "tickNow": at, "ts": "anchored", "localState": "{}",
+        "legacyDevice": "dev", "tickNow": at, "ts": "anchored",
         "checkpoint": {"name": "B", "reason": "note_type"},
     });
     if with_move {
@@ -150,12 +150,12 @@ fn note_types(d: &Device) -> BTreeMap<String, String> {
         .collect()
 }
 
-fn ops(d: &Device) -> String {
+pub(super) fn ops(d: &Device) -> String {
     d.rows("SELECT COUNT(*) AS n FROM sync2_ops")[1][0].clone()
 }
 
 /// 落库的修改记录（去掉类型 / 牌组定义那些铺垫），按写入顺序：`(类别, 实体, 键, 值)`。
-fn written_edits(d: &Device) -> Vec<(String, String, String, Value)> {
+pub(super) fn written_edits(d: &Device) -> Vec<(String, String, String, Value)> {
     d.rows(
         "SELECT entity_kind, srs_idt(entity_id) AS e, json FROM srs_field_edits \
          WHERE entity_kind IN ('note', 'card') ORDER BY rowid",
@@ -174,7 +174,7 @@ fn written_edits(d: &Device) -> Vec<(String, String, String, Value)> {
     .collect()
 }
 
-fn local_state(d: &Device) -> Value {
+pub(super) fn local_state(d: &Device) -> Value {
     serde_json::from_str(
         &d.rows(&format!(
             "SELECT json FROM srs_local_state WHERE profile_uid = srs_id('{P}')"
@@ -187,6 +187,7 @@ fn local_state(d: &Device) -> Value {
 fn one_command_changes_the_type_and_moves_the_notes_with_their_new_cards() {
     let d = library("chg-one");
     let before = ops(&d).parse::<i64>().unwrap();
+    let revision = local_state(&d)["revision"].as_i64().unwrap();
     let r = dispatch(
         &d,
         change_request(T0 + 10, true),
@@ -210,7 +211,7 @@ fn one_command_changes_the_type_and_moves_the_notes_with_their_new_cards() {
     // 回包是两段合起来的：十条落进投影的修改记录都算进修订号（还原点不进投影、不计，与单发 `checkpoint` 相同），
     // 第二次刷新写过的卡也在 `cache` 里。
     assert_eq!(r["marks"]["landed"], json!(10), "{r}");
-    assert_eq!(r["localRevision"], json!(10), "{r}");
+    assert_eq!(r["localRevision"].as_i64().unwrap() - revision, 10, "{r}");
     let cached: Vec<&str> = r["cache"]["cards"]
         .as_array()
         .unwrap()
@@ -251,7 +252,7 @@ fn the_edits_match_the_three_commands_it_replaces() {
         &three,
         json!({
             "op": "checkpoint", "profile": P, "now": T0 + 10, "caches": {"defaultDeck": default_deck()},
-            "name": "B", "reason": "note_type", "localState": "{}",
+            "name": "B", "reason": "note_type",
         }),
         None,
     );
