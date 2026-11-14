@@ -404,6 +404,12 @@ constexpr uint32_t kTextSourceNitroplus = 18;
 // SGLSpriteMessage::AddMessage, ruby readings removed.  22, not 17: 17-21
 // are left to the engine adapters in flight in parallel (2026-11-11).
 constexpr uint32_t kTextSourceEntisGls = 22;
+// KiriKiri (KiriKiri2 / KiriKiri Z) KAG exact text: the characters the current message layer's
+// processCh drew, committed at KAG's own click waits (showLineBreak /
+// showPageBreak), ruby annotations dropped. 19 = first unused id after
+// System 4 (17) and Nitroplus (18) landed on upstream/develop and EntisGLS
+// took 22 (checked across all upstream branches 2026-11-15).
+constexpr uint32_t kTextSourceKirikiri = 19;
 constexpr uint32_t kTextEventLine = 0;
 constexpr uint32_t kTextEventThreadDiscovered = 1;
 // Some Luna engine hooks expose scenario text and system controls from the

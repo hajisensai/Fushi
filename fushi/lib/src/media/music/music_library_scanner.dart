@@ -20,6 +20,8 @@ import 'package:path/path.dart' as p;
 import 'package:fushi/src/media/music/disc/music_disc_import.dart';
 import 'package:fushi/src/media/music/music_local_playlists.dart';
 import 'package:fushi/src/media/source_library/source_file_system.dart';
+import 'package:fushi/src/models/preference_keys.dart'
+    show kMusicScanParserRevisionPrefKeyPrefix;
 import 'package:fushi/src/storage/app_paths.dart';
 
 /// 音乐来源扫描完一次后的装配点（AppModel 接到后台响度扫描，设计 §7.3）。
@@ -272,7 +274,9 @@ class MusicLibraryScanner {
     MusicListingScanner? listingScanner,
     Future<Directory> Function()? coverDirectory,
     MusicPlaylistParser? playlistParser,
+    int Function()? parserRevision,
   }) : _playlistParser = playlistParser ?? parseMusicPlaylistFile,
+       _parserRevision = parserRevision ?? musicScanParserRevision,
        _scanner = scanner ?? _nativeScanner,
        _discRegistrar =
            discRegistrar ?? MusicDiscImportService(_db).registerDiscsUnder,
@@ -285,6 +289,9 @@ class MusicLibraryScanner {
   final MusicListingScanner _listingScanner;
   final Future<Directory> Function() _coverDirectory;
   final MusicPlaylistParser _playlistParser;
+
+  /// Rust 扫描的解析修订号来源（真 app = [musicScanParserRevision]；测试注入替身）。
+  final int Function() _parserRevision;
 
   /// 扫一个**远程**音乐来源（SFTP / WebDAV / AList）：[entries] 是来源访问层列出的条目
   /// （SFTP 已换进 `sftp://` 命名空间，与视频行、播放期解析同一口径），[bytes] 按区间
@@ -384,12 +391,20 @@ class MusicLibraryScanner {
   }) async {
     final List<({String path, int mtimeAt, int size, String trackUid})> known =
         await _db.musicTrackFilesOfSource(sourceId);
-    final Map<String, ({int mtimeMs, int size})> knownFiles =
-        <String, ({int mtimeMs, int size})>{
-          for (final ({String path, int mtimeAt, int size, String trackUid}) k
-              in known)
-            k.path: (mtimeMs: k.mtimeAt, size: k.size),
-        };
+    // 解析修订号变了（或这个来源从没按当前修订号全量解析过）就不传已知文件：mtime / size
+    // 没变的文件也整源重新解析，解析改动（BUG-4493 合写署名拆分等）才落得到存量曲目上——
+    // writeMusicScanBatch 按曲目重写 music_track_credits。扫完才记新值，中途失败下次照样全量。
+    final String revision = '${_parserRevision()}';
+    final String revisionKey =
+        '$kMusicScanParserRevisionPrefKeyPrefix$sourceId';
+    final bool reparseAll = await _db.getPref(revisionKey) != revision;
+    final Map<String, ({int mtimeMs, int size})> knownFiles = reparseAll
+        ? <String, ({int mtimeMs, int size})>{}
+        : <String, ({int mtimeMs, int size})>{
+            for (final ({String path, int mtimeAt, int size, String trackUid}) k
+                in known)
+              k.path: (mtimeMs: k.mtimeAt, size: k.size),
+          };
     // Rust 把「没变」的文件按它的统一拼法报回来，库里存的可能是旧版本的混合分隔符
     // 写法：按路径键（[musicTrackPathKey]）对，不按原文对，否则没变的曲目全被当成消失。
     final Map<String, List<String>> uidsByPath = <String, List<String>>{};
@@ -451,6 +466,7 @@ class MusicLibraryScanner {
       seenTrackUids: seen,
       deletedAt: DateTime.now().millisecondsSinceEpoch,
     );
+    if (reparseAll) await _db.setPref(revisionKey, revision);
     final int imported = await _importPlaylists(playlists, errors);
     return MusicScanSummary(
       trackCount: seen.length,

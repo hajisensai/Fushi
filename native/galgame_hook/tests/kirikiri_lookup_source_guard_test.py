@@ -6810,5 +6810,353 @@ class BindGroupSwapFollowTest(unittest.TestCase):
         self.assertNotEqual([], find_bind_group_swap_not_followed(dirty))
 
 
+# ── 经典 KAG3 ENGINE 文本道（ENGINE:KIRIKIRI:kag_message）──────────────────────────
+#
+# 文本道的行界、准入与线程纪律都是结构性的，下面每条规则对应一个会静默出错的改法：
+#   * worker 侧的安装登记碰了引擎（BUG-1724 同族）或开始看查词开关——后者让 ものべの
+#     这类传感器没到 activeNative 的会话重新一行文本都没有；
+#   * 主线程安装没先核对线程身份；
+#   * 每帧回调里做了 IO / 解析 / 写文本道（回调只许有界拷贝 + 入队）；
+#   * 共享主线程接缝被任何一方无条件摘掉（关查词就把文本道的安装一起掐死）；
+#   * TJS 侧不再以 KAG3 的点击等待提交、不再只认 kag.current、把 processCh 溢出的字也
+#     计进去、改用 incontextof 改绑原方法（BUG-2745）、挂上 kag.addPlugin，或者按
+#     KiriKiri2 / KiriKiri Z / textrender.dll 分叉（Role player とろろ姉妹 是 KiriKiri Z，
+#     Luna 同样只出宏名，准入只能看 KAG 消息流水线在不在）；
+#   * hook code / 发布函数被别的引擎源码引用（准入只属于 KiriKiri adapter）。
+
+KAG_TEXT_CORE = ROOT / "hook" / "adapters" / "kirikiri_kag_text_core.h"
+KAG_TEXT_WORKER_ENTRY = "void PollKirikiriKagTextInstall() "
+KAG_TEXT_MAIN_THREAD_ENTRY = "void RunKirikiriKagTextInstallOnMainThread() "
+KAG_TEXT_PUMP_ENTRY = "void PumpKirikiriKagText() "
+KAG_TEXT_PUMP_FORBIDDEN = (
+    "HookLogLine(",
+    "WriteTextLaneEvent(",
+    "ApplyBatch(",
+    "CreateFileW(",
+    "EnterCriticalSection(",
+    "PublishKirikiriKagTextLine(",
+)
+KAG_TEXT_LOOKUP_GATES = ("LookupEnabledNow(", "HasLookupRegion(", "g_lookup_sensor_live")
+KAG_TEXT_SCRIPT_RE = re.compile(
+    r"constexpr wchar_t kKirikiriKagTextBootstrapScript\[\]\s*=\s*((?:\s*LR\"TJS\(.*?\)TJS\")+)\s*;",
+    re.S,
+)
+
+
+def _kag_text_script(raw: str) -> str | None:
+    match = KAG_TEXT_SCRIPT_RE.search(raw)
+    if match is None:
+        return None
+    return "".join(TJS_RAW_RE.findall(match.group(1)))
+
+
+def find_kag_text_thread_discipline_violations(source: MaskedSource) -> list[str]:
+    hits: list[str] = []
+    worker = _cpp_function_body(source, KAG_TEXT_WORKER_ENTRY)
+    if worker is None:
+        return [f"找不到 {KAG_TEXT_WORKER_ENTRY.strip()}"]
+    hits += [f"worker 安装登记里有引擎调用 {call}" for call in ENGINE_CALLS if call in worker]
+    hits += [
+        f"文本道准入依赖查词状态 {gate}（必须与查词传感器无关）"
+        for gate in KAG_TEXT_LOOKUP_GATES
+        if gate in worker
+    ]
+    if "LaneWanted(" not in worker or "g_lookup_exporter != nullptr" not in worker:
+        hits.append("文本道准入没有走 kag_text::LaneWanted(…, exporter, …)")
+    main = _cpp_function_body(source, KAG_TEXT_MAIN_THREAD_ENTRY)
+    if main is None:
+        return hits + [f"找不到 {KAG_TEXT_MAIN_THREAD_ENTRY.strip()}"]
+    guard_at = main.find(MAIN_THREAD_ID_CALL)
+    if MAIN_THREAD_RESOLVER not in main or guard_at < 0:
+        hits.append("主线程安装没有核对引擎主线程身份")
+    engine = [main.find(call) for call in ENGINE_CALLS + ("ResolveKirikiriTjsHostFunctions(",)]
+    first = min((pos for pos in engine if pos >= 0), default=-1)
+    if first < 0:
+        hits.append("主线程安装里看不到任何引擎调用（安装路径断了）")
+    elif guard_at >= 0 and first < guard_at:
+        hits.append("主线程安装里引擎调用排在线程身份核对之前")
+    pump = _cpp_function_body(source, KAG_TEXT_PUMP_ENTRY)
+    if pump is None:
+        return hits + [f"找不到 {KAG_TEXT_PUMP_ENTRY.strip()}"]
+    hits += [
+        f"每帧回调里出现 {call}：回调只许有界拷贝 + 入队，拼行/写道在 HookWorker 上"
+        for call in KAG_TEXT_PUMP_FORBIDDEN
+        if call in pump
+    ]
+    if "EnqueueKirikiriKagTextBatch(" not in pump:
+        hits.append("每帧回调不再把事件串交给有界邮箱")
+    return hits
+
+
+def find_kag_text_seam_release_violations(source: MaskedSource) -> list[str]:
+    """共享主线程接缝只能在「两方都没有待装请求」时摘。"""
+    hits: list[str] = []
+    for entry in (WORKER_INSTALL_ENTRY, KAG_TEXT_WORKER_ENTRY,
+                  "LRESULT CALLBACK LookupMainThreadSeamProc(int code, WPARAM wparam, LPARAM lparam) "):
+        body = _cpp_function_body(source, entry)
+        if body is None:
+            hits.append(f"找不到 {entry.strip()}")
+            continue
+        compact = re.sub(r"\s+", "", body)
+        releases = compact.count("ReleaseLookupMainThreadSeam();")
+        guarded = compact.count("if(!KirikiriMainThreadInstallPending())ReleaseLookupMainThreadSeam();")
+        if releases != guarded:
+            hits.append(f"{entry.strip()} 无条件摘掉共享接缝（{releases - guarded} 处）")
+    seam = _cpp_function_body(
+        source, "LRESULT CALLBACK LookupMainThreadSeamProc(int code, WPARAM wparam, LPARAM lparam) ")
+    if seam is not None and "RunKirikiriKagTextInstallOnMainThread();" not in seam:
+        hits.append("主线程接缝不再驱动文本道安装")
+    return hits
+
+
+def find_kag_text_script_violations(raw: str) -> list[str]:
+    script = _kag_text_script(raw)
+    if script is None:
+        return ["找不到 kKirikiriKagTextBootstrapScript"]
+    text = _strip_line_comments(script)
+    compact = re.sub(r"\s+", "", text)
+    hits: list[str] = []
+    required = {
+        'typeofglobal.kag.showLineBreak!="Object"': "缺 showLineBreak 就放弃的准入",
+        'typeofglobal.kag.showPageBreak!="Object"': "缺 showPageBreak 就放弃的准入",
+        'fushiKagTextWrapWait("showLineBreak"': "[l] 等待提交",
+        'fushiKagTextWrapWait("showPageBreak"': "[p] 等待提交",
+        'fushiKagTextWrapWait("showPageBreakAndClear"': "溢出自动换页等待提交",
+        'global.fushiKagTextEmit("x",this.fushiKagTextId,"");': "clear() 复位",
+        "if(!result&&": "processCh 溢出（返回真）的字不计",
+        'global.fushiKagTextCurrentId()==this.fushiKagTextId){stat.cur++;global.fushiKagTextEmitChar(this.fushiKagTextId,ch);': "字符只认 kag.current 那一层",
+        'global.fushiKagTextTake=function(){global.fushiKagTextFlushRun();': "取批前先把在攒的字符串冲进缓冲",
+        'global.fushiKagTextEmit=function(op,id,payload){global.fushiKagTextFlushRun();': "边界事件之前先冲字符串（保持事件次序）",
+        'fushiKagTextWrapWait("waitClick"': "[waitclick] 等待提交",
+        'if(global.fushiKagTextIsReaderWait(until))global.fushiKagTextOnWait("cw");': "conductor 读者点击等待提交",
+        'returnpairs.count==2&&pairs[0]=="click";': "conductor 等待只认「只有 click 一个键」的读者等待",
+        "global.fushiKagTextWrapConductor(global.kag.conductor)": "包主 conductor 的 wait",
+        "if(global.fushiKagTextSweep()>0)stat.sweep++;": "统计读数顺带补扫新建消息层",
+        'global.fushiKagTextStats=function()': "诊断计数串",
+        'global.fushiKagTextEmit("r",': "ruby 注音作为可丢弃事件上报",
+        'global.fushiKagTextEvents="o0,0:";': "TJS 缓冲溢出改写成单条溢出记录",
+    }
+    hits += [f"文本道脚本缺少：{why}" for needle, why in required.items() if needle not in compact]
+    if "TextRender" in text or "Krkr" in text:
+        hits.append("文本道按引擎版本 / textrender.dll 分叉（准入只看 KAG 消息流水线）")
+    if re.search(r"fushiKagTextOrig_\w+\s+incontextof\b", text):
+        hits.append("文本道转发原方法时用 incontextof 改绑上下文（BUG-2745）")
+    if "addPlugin" in text:
+        hits.append("文本道挂了 kag.addPlugin（插件方法集未在本引擎验证）")
+    if GLOBAL_PATCH_RE.search(text):
+        hits.append("文本道给引擎全局类打了补丁（对实例不可见）")
+    return hits
+
+
+def _core_constant(name: str) -> int:
+    core = KAG_TEXT_CORE.read_text(encoding="utf-8")
+    values: dict[str, int] = {}
+    for m in re.finditer(r"inline constexpr uint32_t (\w+) =\s*([^;]+);", core):
+        expr = re.sub(r"(\d+)u\b", lambda d: d.group(1), m.group(2))
+        for key, value in values.items():
+            expr = re.sub(rf"\b{key}\b", str(value), expr)
+        if re.fullmatch(r"[0-9+\-* /()]+", expr):
+            values[m.group(1)] = int(eval(expr))  # noqa: S307 -- digits/operators only
+    return values[name]
+
+
+def find_kag_text_capacity_violations(raw: str, source: MaskedSource) -> list[str]:
+    """TJS 侧的三个容量常数必须与核心头一致；帧回调必须走背压，不得满了就丢。"""
+    script = _kag_text_script(raw)
+    if script is None:
+        return ["找不到 kKirikiriKagTextBootstrapScript"]
+    compact = re.sub(r"\s+", "", _strip_line_comments(script))
+    hits: list[str] = []
+    expected = {
+        f"events.length+record.length>{_core_constant('kTjsEventBufferUnits')})":
+            "TJS 缓冲上限 != kTjsEventBufferUnits",
+        f"global.fushiKagTextRun.length+ch.length>{_core_constant('kMaxLineUnits')})":
+            "字符串合并上限 != kMaxLineUnits",
+        f"if(ch.length>{_core_constant('kMaxCharPayloadUnits')})":
+            "单字载荷上限 != kMaxCharPayloadUnits",
+    }
+    hits += [why for needle, why in expected.items() if needle not in compact]
+    pump = _cpp_function_body(source, KAG_TEXT_PUMP_ENTRY)
+    if pump is None:
+        return hits + [f"找不到 {KAG_TEXT_PUMP_ENTRY.strip()}"]
+    if "kag_text::NextPumpAction(" not in pump or "KirikiriKagTextMailboxHasRoom()" not in pump:
+        hits.append("帧回调不再按邮箱空位决定取不取（背压）")
+    take = pump.find("fushiKagTextTake()")
+    decide = pump.find("kag_text::NextPumpAction(")
+    if take >= 0 and decide >= 0 and take < decide:
+        hits.append("帧回调在判断邮箱空位之前就取走了 TJS 事件串")
+    return hits
+
+
+def find_kag_text_foreign_references() -> list[str]:
+    """ENGINE:KIRIKIRI 文本道只属于 KiriKiri adapter：别的引擎源码不得引用它。"""
+    allowed = {"kirikiri_adapter.inc", "kirikiri_kag_text_core.h", "dll_main.cpp"}
+    needles = ("kirikiri_kag_text", "ENGINE:KIRIKIRI", "kTextSourceKirikiri")
+    hits: list[str] = []
+    for path in sorted((ROOT / "hook").rglob("*")):
+        if not path.is_file() or path.suffix not in {".h", ".inc", ".cpp"}:
+            continue
+        if path.name in allowed:
+            continue
+        body = path.read_text(encoding="utf-8", errors="replace")
+        hits += [f"{path.relative_to(ROOT)} 引用了 {n}" for n in needles if n in body]
+    dll = (ROOT / "hook" / "dll_main.cpp").read_text(encoding="utf-8")
+    if "kirikiri_kag_text::" in dll or "kag_text::" in dll:
+        hits.append("dll_main.cpp 直接调用文本道（只许 include 核心头）")
+    return hits
+
+
+def _lookup_classic_sweep_body(raw: str) -> str | None:
+    start = raw.find("global.fushiLookupSweepClassicLayers = function()")
+    if start < 0:
+        return None
+    end = raw.find("\n\t\t\t};", start)
+    return None if end < 0 else raw[start:end]
+
+
+def find_lookup_sweep_current_violations(body: str) -> list[str]:
+    """查词 classic sweep 必须同时补 kag.current（及 comp），不能只扫两个数组。"""
+    compact = re.sub(r"\s+", "", _strip_line_comments(body))
+    hits: list[str] = []
+    if "varcurrent=global.kag.current;" not in compact:
+        hits.append("查词 classic sweep 不看 kag.current")
+    if "currentLayers.add(current.comp);" not in compact:
+        hits.append("查词 classic sweep 不看 kag.current.comp（currentWithBack 背页）")
+    if "global.fushiLookupPatchClassicLayer(currentLayers[ci])" not in compact:
+        hits.append("查词 classic sweep 没给 kag.current 挂包装")
+    return hits
+
+
+class KagTextLaneGuardTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.raw = ADAPTER.read_text(encoding="utf-8")
+        cls.source = MaskedSource(cls.raw)
+
+    def _mutate(self, old: str, new: str) -> str:
+        self.assertIn(old, self.raw, "变异锚点必须真的存在于当前实现里")
+        dirty = self.raw.replace(old, new, 1)
+        self.assertNotEqual(dirty, self.raw)
+        return dirty
+
+    def test_real_adapter_thread_discipline(self) -> None:
+        self.assertEqual([], find_kag_text_thread_discipline_violations(self.source))
+
+    def test_real_adapter_seam_release(self) -> None:
+        self.assertEqual([], find_kag_text_seam_release_violations(self.source))
+
+    def test_real_script_shape(self) -> None:
+        self.assertEqual([], find_kag_text_script_violations(self.raw))
+
+    def test_lane_is_private_to_the_kirikiri_adapter(self) -> None:
+        self.assertEqual([], find_kag_text_foreign_references())
+
+    def test_hook_code_is_engine_prefixed_and_frozen(self) -> None:
+        core = KAG_TEXT_CORE.read_text(encoding="utf-8")
+        self.assertIn('kHookCode[] = L"ENGINE:KIRIKIRI:kag_message";', core)
+        self.assertIn("kTextSourceKirikiri", core)
+
+    def test_lookup_gate_in_worker_admission_is_red(self) -> None:
+        dirty = self._mutate(
+            "  const bool wanted = kag_text::LaneWanted(g_stop, g_capture_enabled,",
+            "  if (LookupEnabledNow() == 0) return;\n"
+            "  const bool wanted = kag_text::LaneWanted(g_stop, g_capture_enabled,",
+        )
+        self.assertNotEqual([], find_kag_text_thread_discipline_violations(MaskedSource(dirty)))
+
+    def test_publishing_from_the_frame_callback_is_red(self) -> None:
+        dirty = self._mutate(
+            "  EnqueueKirikiriKagTextBatch(batch, static_cast<uint32_t>(units));\n}",
+            "  EnqueueKirikiriKagTextBatch(batch, static_cast<uint32_t>(units));\n"
+            "  ProcessKirikiriKagTextBatches(); HookLogLine(batch);\n}",
+        )
+        self.assertNotEqual([], find_kag_text_thread_discipline_violations(MaskedSource(dirty)))
+
+    def test_unconditional_seam_release_is_red(self) -> None:
+        dirty = self._mutate(
+            "    RunKirikiriKagTextInstallOnMainThread();\n"
+            "    if (!KirikiriMainThreadInstallPending()) ReleaseLookupMainThreadSeam();\n",
+            "    RunKirikiriKagTextInstallOnMainThread();\n"
+            "    ReleaseLookupMainThreadSeam();\n",
+        )
+        self.assertNotEqual([], find_kag_text_seam_release_violations(MaskedSource(dirty)))
+
+    def test_version_gate_is_red(self) -> None:
+        dirty = self._mutate(
+            '\t\t\tif(typeof global.kag.showLineBreak != "Object" ||',
+            '\t\t\tif(typeof global.TextRender == "Object") return;\n'
+            '\t\t\tif(typeof global.kag.showLineBreak != "Object" ||',
+        )
+        self.assertNotEqual([], find_kag_text_script_violations(dirty))
+
+    def test_counting_back_page_or_overflowed_characters_is_red(self) -> None:
+        for old, new in (
+            ("if(!result && ", "if("),
+            ("global.fushiKagTextCurrentId() == this.fushiKagTextId)\n",
+             "true)\n"),
+        ):
+            with self.subTest(old=old):
+                self.assertNotEqual([], find_kag_text_script_violations(self._mutate(old, new)))
+
+    def test_committing_on_effect_waits_is_red(self) -> None:
+        # [wt canskip] / [wait canskip] 这类可跳过的演出等待也带 click 键；把它们当提交点
+        # 会把句中停顿切成半句。只有「只有 click 一个键」的等待才是读者等待。
+        for old, new in (
+            ('return pairs.count == 2 && pairs[0] == "click";',
+             'return typeof until.click != "undefined";'),
+            ('if(global.fushiKagTextIsReaderWait(until)) global.fushiKagTextOnWait("cw");',
+             'global.fushiKagTextOnWait("cw");'),
+        ):
+            with self.subTest(old=old):
+                self.assertNotEqual([], find_kag_text_script_violations(self._mutate(old, new)))
+
+    def test_dropping_the_universal_click_wait_seams_is_red(self) -> None:
+        for old in (
+            'if(global.fushiKagTextWrapWait("waitClick",',
+            "try { if(global.fushiKagTextWrapConductor(global.kag.conductor)) seams = seams | 32; }",
+        ):
+            with self.subTest(old=old):
+                dirty = self._mutate(old, old.replace("fushiKagText", "fushiKagTextOff", 1))
+                self.assertNotEqual([], find_kag_text_script_violations(dirty))
+
+    def test_lookup_classic_sweep_covers_kag_current(self) -> None:
+        # とろろ姉妹 真机：对白层只经 kag.current 可达、不在 fore/back.messages[] 里，
+        # 只扫两个数组的查词 sweep 永远采不到字形（点击落空、剧情推进）。
+        body = _lookup_classic_sweep_body(self.raw)
+        self.assertIsNotNone(body, "找不到 fushiLookupSweepClassicLayers")
+        self.assertEqual([], find_lookup_sweep_current_violations(body))
+        dirty = body.replace(
+            "global.fushiLookupPatchClassicLayer(currentLayers[ci])", "false", 1)
+        self.assertNotEqual([], find_lookup_sweep_current_violations(dirty))
+
+    def test_capacity_is_bounded_by_design(self) -> None:
+        self.assertEqual([], find_kag_text_capacity_violations(self.raw, self.source))
+        for old, new in (
+            ("events.length + record.length > 4094)", "events.length + record.length > 3000)"),
+            ("global.fushiKagTextRun.length + ch.length > 480)",
+             "global.fushiKagTextRun.length + ch.length > 4000)"),
+        ):
+            with self.subTest(old=old):
+                dirty = self._mutate(old, new)
+                self.assertNotEqual(
+                    [], find_kag_text_capacity_violations(dirty, MaskedSource(dirty)))
+
+    def test_dropping_when_the_mailbox_is_full_is_red(self) -> None:
+        dirty = self._mutate(
+            "  switch (kag_text::NextPumpAction(seq, g_kag_text_last_seq,\n"
+            "                                   KirikiriKagTextMailboxHasRoom())) {",
+            "  switch (kag_text::NextPumpAction(seq, g_kag_text_last_seq, true)) {",
+        )
+        self.assertNotEqual(
+            [], find_kag_text_capacity_violations(dirty, MaskedSource(dirty)))
+
+    def test_rebinding_the_original_wait_context_is_red(self) -> None:
+        dirty = self._mutate(
+            "return this.fushiKagTextOrig_showLineBreak(...);",
+            "return (this.fushiKagTextOrig_showLineBreak incontextof this)(...);",
+        )
+        self.assertNotEqual([], find_kag_text_script_violations(dirty))
+
+
 if __name__ == "__main__":
     unittest.main()
