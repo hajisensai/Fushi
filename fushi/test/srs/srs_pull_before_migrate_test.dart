@@ -716,7 +716,7 @@ void main() {
     expect(linker.adoptedWithin, <SyncAssetStore?>[backend]);
   });
 
-  // BUG-4387：`SrsDbStore.open` 在任何同步之前就写下内置身份记录，以前的判据（操作日志与投影全空）让新设备收段通道
+  // BUG-4478：`SrsDbStore.open` 在任何同步之前就写下内置身份记录，以前的判据（操作日志与投影全空）让新设备收段通道
   // 在生产里一次都不开。app 的顺序是「只拉不发 → 迁移 → 正式一轮」：第一次收段发生在只拉不发那一步。
   test('新装的设备确认后的第一轮：只拉不发那一步走收段通道，迁移与正式一轮照常，收敛', () async {
     Future<SrsSync2Report> roundOf(SrsDbStore s) => srsSync2Round(
