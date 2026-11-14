@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-14T20:24:28Z",
+ "generatedAt": "2026-11-14T20:51:36Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "ac1c45827bbeb2017fe9f623fb6a305d8d657a18",
-  "seq": 26880
+  "sha": "e6308e4aaf587c37a49fbd79a6fb862f448122fe",
+  "seq": 26882
  },
  "builds": [
   {
@@ -13,7 +13,7 @@
    "sha": "0ec4f96a5ac63a48b6b0f0b948af8d53be36584e",
    "unknown": false,
    "publishedAt": "2026-11-14T20:22:49Z",
-   "testflight": false,
+   "testflight": true,
    "baseSeq": 26869,
    "prs": [
     3409
@@ -166,9 +166,10 @@
   }
  ],
  "pending": {
-  "headSha": "ac1c45827bbeb2017fe9f623fb6a305d8d657a18",
-  "headSeq": 26880,
+  "headSha": "e6308e4aaf587c37a49fbd79a6fb862f448122fe",
+  "headSeq": 26882,
   "prs": [
+   3411,
    3317,
    3406
   ],
@@ -181,20 +182,20 @@
   "truncated": false,
   "platforms": {
    "android": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43635507899"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43637747773"
    },
    "windows": {
-    "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43635507859"
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43637747741"
    },
    "macos": {
-    "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43635507859"
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43637747741"
    },
    "ios": {
-    "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43635507859"
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43637747741"
    }
   }
  },
@@ -320,6 +321,15 @@
    "mergedAt": "2026-11-14T18:34:58Z",
    "additions": 11,
    "deletions": 3,
+   "labels": []
+  },
+  "3411": {
+   "number": 3411,
+   "title": "fix(srs gen4): Purge(Card) 清掉挪卡后重看目标牌组的删除扣住（增量==重建）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-14T20:29:21Z",
+   "additions": 143,
+   "deletions": 7,
    "labels": []
   }
  }
