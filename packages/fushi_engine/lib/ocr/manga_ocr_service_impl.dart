@@ -80,6 +80,7 @@ class MangaOcrModelPaths {
     this.ppDetPath = '',
     this.ppRecPath = '',
     this.ppRecDictPath = '',
+    this.ppRecDictFormat = PpOcrCharacterDictFormat.paddleYaml,
     this.ctcRecPath = '',
     this.ignoreFurigana = false,
   });
@@ -89,10 +90,12 @@ class MangaOcrModelPaths {
   /// 逐列 CTC 的列识别 rec（漫画微调的 PP-OCRv6）；空 = 不是 CTC 模型。
   final String ctcRecPath;
 
-  /// 横排行路径：PP-OCRv6 small det / rec / rec 字典（`inference.yml`）。
+  /// 横排行路径：PP-OCRv6 small det / rec / rec 字典。字典格式由
+  /// [ppRecDictFormat] 显式给出（官方 rec 是 `inference.yml`，漫画 rec 是纯文本）。
   final String ppDetPath;
   final String ppRecPath;
   final String ppRecDictPath;
+  final PpOcrCharacterDictFormat ppRecDictFormat;
 
   /// 「OCR 忽略振假名」（反馈 ZBJTgLuPIb）：逐列 CTC 识别前把贴在正文旁的注音带
   /// 从列框里裁掉（[trimOcrRubyBands]）。不是模型路径，但它和路径一样决定 isolate
@@ -521,8 +524,9 @@ Future<void> _openIsolateOcrEngine(
       );
   List<String>? sharedVocab;
   Future<List<String>> ppVocab() async => sharedVocab ??= buildPpOcrCtcVocab(
-    parsePpOcrCharacterDict(
+    parseCharacterDict(
       await File(modelPaths.ppRecDictPath).readAsString(),
+      modelPaths.ppRecDictFormat,
     ),
   );
 
@@ -1477,8 +1481,9 @@ class MangaOcrServiceImpl
           ppRecPath: ctcRecPath,
           ppRecDictPath: pathOf(
             MangaOcrModelRole.recognizer,
-            kPpOcrRecDictFileName,
+            kMangaCtcRecDictFileName,
           ),
+          ppRecDictFormat: PpOcrCharacterDictFormat.plainText,
           ctcRecPath: ctcRecPath,
           ignoreFurigana: ignoreFurigana,
         );

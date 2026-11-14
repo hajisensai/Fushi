@@ -164,6 +164,59 @@ void main() {
     expect(legacy.existsSync(), isFalse);
   });
 
+  test(
+    'manga-ctc dir: v0.2 rec and its PP-OCRv6 dictionary deleted, live files kept',
+    () async {
+      final Directory root = Directory.systemTemp.createTempSync(
+        'ocr-removed-ctc-files',
+      );
+      addTearDown(() => root.deleteSync(recursive: true));
+      final Directory ctc = Directory(p.join(root.path, 'manga-ctc'))
+        ..createSync();
+      const List<String> removed = <String>[
+        'kellenok_manga_rec_v0.2.onnx',
+        'kellenok_manga_rec_v0.2.onnx.part',
+        kPpOcrRecDictFileName,
+      ];
+      final List<String> kept = <String>[
+        for (final MangaOcrModelFile file
+            in MangaOcrLocalModel.mangaCtc.manifest)
+          file.fileName,
+        '$kMangaCtcRecFileName.part',
+      ];
+      for (final String name in <String>[...removed, ...kept]) {
+        File(p.join(ctc.path, name)).writeAsBytesSync(<int>[1]);
+      }
+      // galgame 校准 OCR 在 manga/ 里复用的同名字典不归这条清理管。
+      final File legacyDict = File(
+        p.join(root.path, 'manga', kPpOcrRecDictFileName),
+      )..createSync(recursive: true);
+
+      expect(
+        await deleteRemovedMangaOcrModelDirs(ocrModelsRoot: root),
+        removed.length,
+      );
+      for (final String name in removed) {
+        expect(
+          File(p.join(ctc.path, name)).existsSync(),
+          isFalse,
+          reason: name,
+        );
+      }
+      for (final String name in kept) {
+        expect(File(p.join(ctc.path, name)).existsSync(), isTrue, reason: name);
+      }
+      expect(legacyDict.existsSync(), isTrue);
+      expect(await deleteRemovedMangaOcrModelDirs(ocrModelsRoot: root), 0);
+    },
+  );
+
+  test('manga-ctc cleanup never lists a file of the live manifest', () {
+    for (final MangaOcrModelFile file in MangaOcrLocalModel.mangaCtc.manifest) {
+      expect(kRemovedMangaCtcFileNames, isNot(contains(file.fileName)));
+    }
+  });
+
   test('legacy cleanup never lists a PP-OCRv6 file', () {
     for (final String name in <String>[
       kPpOcrDetFileName,
@@ -225,7 +278,7 @@ void main() {
     });
 
     test(
-      'manifest: detector + PP det + dictionary + manga rec, no manga-ocr',
+      'manifest: detector + PP det + manga rec v0.3 + its own dictionary',
       () {
         final List<String> files = <String>[
           for (final MangaOcrModelFile file
@@ -235,12 +288,31 @@ void main() {
         expect(files, <String>[
           'detector-v4-s_int8.onnx',
           kPpOcrDetFileName,
-          kPpOcrRecDictFileName,
           kMangaCtcRecFileName,
+          kMangaCtcRecDictFileName,
         ]);
-        final MangaOcrModelFile rec = MangaOcrLocalModel.mangaCtc.manifest.last;
-        expect(rec.url, contains('/resolve/$kMangaCtcRecRevision/'));
-        expect(rec.expectedBytes, 21167540);
+        // 落盘名带版本：v0.2 的文件不会被当成 v0.3。
+        expect(kMangaCtcRecFileName, 'kellenok_manga_rec_v0.3.onnx');
+        expect(kMangaCtcRecDictFileName, 'kellenok_manga_rec_v0.3_dict.txt');
+        final MangaOcrModelFile rec = MangaOcrLocalModel.mangaCtc.manifest[2];
+        expect(
+          rec.url,
+          endsWith('/resolve/$kMangaCtcRecRevision/rec/manga_rec.onnx'),
+        );
+        expect(rec.expectedBytes, 21334702);
+        // rec 与字典必须来自同一个 revision：字典错一版，词表长度就对不上。
+        final MangaOcrModelFile dict = MangaOcrLocalModel.mangaCtc.manifest[3];
+        expect(
+          dict.url,
+          endsWith('/resolve/$kMangaCtcRecRevision/ppocrv6_dict.txt'),
+        );
+        expect(dict.expectedBytes, 76327);
+        expect(dict.role, MangaOcrModelRole.recognizer);
+        // 换模型必须换缓存签名：v0.2 的逐页缓存不能当成 v0.3 的结果。
+        expect(
+          MangaOcrLocalModel.mangaCtc.cacheSignature,
+          startsWith('local-onnx-ctc-kellenok-v0.3-'),
+        );
         final int total = MangaOcrLocalModel.mangaCtc.manifest.fold<int>(
           0,
           (int sum, MangaOcrModelFile file) => sum + file.expectedBytes,

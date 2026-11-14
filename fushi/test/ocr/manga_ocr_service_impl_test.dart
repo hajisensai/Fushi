@@ -10,13 +10,14 @@ import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service_impl.dart';
 import 'package:fushi_engine/ocr/ocr_host_bindings.dart';
 import 'package:fushi_engine/ocr/ocr_inference.dart';
+import 'package:fushi_engine/ocr/ppocr_line_recognizer.dart';
 import 'package:path/path.dart' as p;
 
 import '../helpers/source_guard.dart';
 
-/// 与默认模型（逐列 CTC）清单同名同形（detector + 漫画 CTC rec + PP-OCRv6
-/// det/rec/yml），尺寸缩成几字节，让 modelStatus/_resolveModelPaths 的路径逻辑
-/// 全程走真实分支。
+/// 与默认模型（逐列 CTC）清单同名同形（detector + 漫画 CTC rec 与它的字典 +
+/// PP-OCRv6 det/rec），尺寸缩成几字节，让 modelStatus/_resolveModelPaths 的路径
+/// 逻辑全程走真实分支。
 const List<MangaOcrModelFile> _tinyManifest = <MangaOcrModelFile>[
   MangaOcrModelFile(
     fileName: 'detector-v4-s_int8.onnx',
@@ -43,8 +44,8 @@ const List<MangaOcrModelFile> _tinyManifest = <MangaOcrModelFile>[
     role: MangaOcrModelRole.recognizer,
   ),
   MangaOcrModelFile(
-    fileName: kPpOcrRecDictFileName,
-    url: 'http://unused.invalid/$kPpOcrRecDictFileName',
+    fileName: kMangaCtcRecDictFileName,
+    url: 'http://unused.invalid/$kMangaCtcRecDictFileName',
     expectedBytes: 10,
     role: MangaOcrModelRole.recognizer,
   ),
@@ -463,8 +464,9 @@ void main() {
       expect(paths.ppDetPath, p.join(modelsDir.path, kPpOcrDetFileName));
       expect(
         paths.ppRecDictPath,
-        p.join(modelsDir.path, kPpOcrRecDictFileName),
+        p.join(modelsDir.path, kMangaCtcRecDictFileName),
       );
+      expect(paths.ppRecDictFormat, PpOcrCharacterDictFormat.plainText);
 
       final String cache = await ctc.resolvePageCacheDirPath(
         imageDirPath: 'D:/vol',
@@ -803,7 +805,9 @@ void main() {
       expect(p.basename(paths.ctcRecPath), kMangaCtcRecFileName);
       expect(p.basename(paths.ppRecPath), kMangaCtcRecFileName);
       expect(p.basename(paths.ppDetPath), kPpOcrDetFileName);
-      expect(p.basename(paths.ppRecDictPath), kPpOcrRecDictFileName);
+      expect(p.basename(paths.ppRecDictPath), kMangaCtcRecDictFileName);
+      // 漫画 rec 的字典是纯文本；按 YAML 读会直接抛，按错格式读不出词表。
+      expect(paths.ppRecDictFormat, PpOcrCharacterDictFormat.plainText);
 
       runner.lastOnProgress!(1, 2, 1);
       runner.lastOnProgress!(2, 2, 0);
