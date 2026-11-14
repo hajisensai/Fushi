@@ -41,10 +41,12 @@ class MethodChannelFlutterOnnxruntime extends FlutterOnnxruntimePlatform {
   }
 
   @override
-  Future<Map<String, dynamic>?> getDeviceMemoryInfo({int deviceId = 0}) async {
+  Future<Map<String, dynamic>?> getDeviceMemoryInfo({int? deviceId}) async {
     try {
+      // No `deviceId` key = "the adapter GPU sessions run on"; the native side
+      // tells an absent key from an explicit 0.
       final result = await methodChannel.invokeMethod<Map<Object?, Object?>>('getDeviceMemoryInfo', {
-        'deviceId': deviceId,
+        if (deviceId != null) 'deviceId': deviceId,
       });
       return result == null ? null : _convertMapToStringDynamic(result);
     } on MissingPluginException {

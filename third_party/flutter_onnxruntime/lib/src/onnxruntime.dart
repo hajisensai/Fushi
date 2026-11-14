@@ -102,9 +102,14 @@ class OnnxRuntime {
   /// Get the available providers
   ///
   /// Returns a list of the available providers
-  /// Fushi fork: DXGI video-memory budget of the adapter (Windows only; null
-  /// elsewhere or when DXGI cannot answer).
-  Future<OrtDeviceMemoryInfo?> getDeviceMemoryInfo({int deviceId = 0}) async {
+  /// Fushi fork: DXGI video-memory budget (Windows only; null elsewhere or when
+  /// DXGI cannot answer).
+  ///
+  /// Without [deviceId] this is the adapter GPU sessions run on: the CUDA
+  /// device's adapter once the CUDA plugin EP is registered, DXGI adapter 0
+  /// otherwise. On hybrid-graphics laptops adapter 0 is usually the integrated
+  /// GPU, so a CUDA consumer must not ask for adapter 0 explicitly.
+  Future<OrtDeviceMemoryInfo?> getDeviceMemoryInfo({int? deviceId}) async {
     final map = await FlutterOnnxruntimePlatform.instance.getDeviceMemoryInfo(deviceId: deviceId);
     if (map == null) return null;
     int asInt(Object? v) => v is int ? v : (v is num ? v.toInt() : 0);
@@ -113,6 +118,8 @@ class OnnxRuntime {
       budget: asInt(map['budget']),
       currentUsage: asInt(map['currentUsage']),
       isSoftware: map['isSoftware'] == true,
+      adapterName: '${map['adapterName'] ?? ''}',
+      selection: '${map['selection'] ?? ''}',
     );
   }
 
@@ -174,6 +181,8 @@ class OrtDeviceMemoryInfo {
     required this.budget,
     required this.currentUsage,
     required this.isSoftware,
+    this.adapterName = '',
+    this.selection = '',
   });
 
   final int dedicatedVideoMemory;
@@ -182,4 +191,12 @@ class OrtDeviceMemoryInfo {
   final int budget;
   final int currentUsage;
   final bool isSoftware;
+
+  /// DXGI description of the adapter that answered (for logs).
+  final String adapterName;
+
+  /// Which rule picked the adapter: `explicit` (a `deviceId` was passed),
+  /// `cuda-luid` (matched to the CUDA device by LUID), `cuda-vendor` (first
+  /// NVIDIA adapter, when the LUID lookup failed) or `default` (adapter 0).
+  final String selection;
 }
