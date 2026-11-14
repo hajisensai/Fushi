@@ -26,6 +26,7 @@
 		8F6D7C252A3948576E0D1234 /* MusicOutputChannel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F6D7C242A3948576E0D1234 /* MusicOutputChannel.swift */; };
 		8F6D7C272A3948576E0D1234 /* FushiBackgroundDownload.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F6D7C262A3948576E0D1234 /* FushiBackgroundDownload.swift */; };
 		8F6D7C312A3948576E0D1234 /* FushiSystemTts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F6D7C302A3948576E0D1234 /* FushiSystemTts.swift */; };
+		8F6D7C412A3948576E0D1234 /* FushiNetworkChange.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F6D7C402A3948576E0D1234 /* FushiNetworkChange.swift */; };
 		8F7E64F9E9DC6CBFE6579384 /* FushiWidgetIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 480D2C385566BDE01B3FB32B /* FushiWidgetIntents.swift */; };
 		97C146FC1CF9000F007C117D /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FA1CF9000F007C117D /* Main.storyboard */; };
 		97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FD1CF9000F007C117D /* Assets.xcassets */; };
@@ -108,6 +109,7 @@
 		8F6D7C242A3948576E0D1234 /* MusicOutputChannel.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = MusicOutputChannel.swift; sourceTree = "<group>"; };
 		8F6D7C262A3948576E0D1234 /* FushiBackgroundDownload.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = FushiBackgroundDownload.swift; sourceTree = "<group>"; };
 		8F6D7C302A3948576E0D1234 /* FushiSystemTts.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = FushiSystemTts.swift; sourceTree = "<group>"; };
+		8F6D7C402A3948576E0D1234 /* FushiNetworkChange.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = FushiNetworkChange.swift; sourceTree = "<group>"; };
 		9740EEB21CF90195004384FC /* Debug.xcconfig */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.xcconfig; name = Debug.xcconfig; path = Flutter/Debug.xcconfig; sourceTree = "<group>"; };
 		9740EEB31CF90195004384FC /* Generated.xcconfig */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.xcconfig; name = Generated.xcconfig; path = Flutter/Generated.xcconfig; sourceTree = "<group>"; };
 		97C146EE1CF9000F007C117D /* Runner.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Runner.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -242,6 +244,7 @@
 				8F6D7C1A2A3948576E0D1234 /* SceneDelegate.swift */,
 				8F6D7C1C2A3948576E0D1234 /* LookupImeLanguage.swift */,
 				8F6D7C302A3948576E0D1234 /* FushiSystemTts.swift */,
+				8F6D7C402A3948576E0D1234 /* FushiNetworkChange.swift */,
 				8F6D7C202A3948576E0D1234 /* FushiFloatingBall.swift */,
 				8F6D7C242A3948576E0D1234 /* MusicOutputChannel.swift */,
 				8F6D7C262A3948576E0D1234 /* FushiBackgroundDownload.swift */,
@@ -601,6 +604,7 @@
 				8F6D7C1B2A3948576E0D1234 /* SceneDelegate.swift in Sources */,
 				8F6D7C1D2A3948576E0D1234 /* LookupImeLanguage.swift in Sources */,
 				8F6D7C312A3948576E0D1234 /* FushiSystemTts.swift in Sources */,
+				8F6D7C412A3948576E0D1234 /* FushiNetworkChange.swift in Sources */,
 				8F6D7C212A3948576E0D1234 /* FushiFloatingBall.swift in Sources */,
 				8F6D7C252A3948576E0D1234 /* MusicOutputChannel.swift in Sources */,
 				8F6D7C272A3948576E0D1234 /* FushiBackgroundDownload.swift in Sources */,
