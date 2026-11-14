@@ -33,15 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3931 条。点号进各自文件。
+> 共 3972 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4388](bugs/BUG-4388-mokuro-import-volumes-not-grouped.md) | ✅ | ✅ | mokuro catalog import does not group volumes into a series |
-> 共 3971 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-4521](bugs/BUG-4521-mokuro-import-volumes-not-grouped.md) | ✅ | ✅ | mokuro catalog import does not group volumes into a series |
 | [BUG-4479](bugs/BUG-4479-mine-shortcut-focused-entry.md) | ✅ | ✅ | mine-shortcut-focused-entry |
 | [BUG-4478](bugs/BUG-4478-srs-sync2-bootstrap-channel-never-selected.md) | ✅ | ✅ | 复习同步 v2 的新设备收段通道在生产里一次都不会被选中 |
 | [BUG-4477](bugs/BUG-4477-srs-adopt-deletes-decks-without-notes.md) | ✅ | ✅ | 复习同步关联只看笔记，只建了牌组 / 改了预设的设备被自动采用对方 uid，自建牌组与预设被删 |

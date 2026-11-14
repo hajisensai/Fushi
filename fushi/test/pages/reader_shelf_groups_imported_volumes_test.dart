@@ -17,7 +17,7 @@ import 'package:fushi_core/fushi_core.dart';
 
 import '../helpers/test_platform_services.dart';
 
-/// BUG-4388: two manga volumes imported one after the other while the shelf
+/// BUG-4521: two manga volumes imported one after the other while the shelf
 /// is open (mokuro catalog downloads, import dialog, drag and drop) became
 /// one series card only after something else reloaded the shelf maps. The
 /// shelf now regroups when the set of books changes.

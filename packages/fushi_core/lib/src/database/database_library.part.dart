@@ -689,7 +689,7 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
   /// 书架上「有哪些书」变了：书（[epubBooks]）或有声书（[srtBooks]）行被插入或删除
   /// （任何导入 / 删除路径）。行内字段更新（进度、读完、改名）不算。
   ///
-  /// 书架的分卷归组随映射重载才跑，书列表自己订阅了书集合，映射却没有：BUG-4388
+  /// 书架的分卷归组随映射重载才跑，书列表自己订阅了书集合，映射却没有：BUG-4521
   /// 两卷先后导入后一直是散卡。同 [watchCollectionTablesChanged]：手动
   /// [StreamController] + [tableUpdates]，不用 drift keyed `.watch()`（BUG-834）。
   Stream<void> watchShelfBookSetChanged() {

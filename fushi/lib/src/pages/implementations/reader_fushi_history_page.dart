@@ -740,7 +740,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     _collectionTablesSub = appModelNoUpdate.database
         .watchCollectionTablesChanged()
         .listen(_onCollectionTablesChanged);
-    // BUG-4388：分卷归组（[_loadShelfMaps] 里的 BookSeriesGrouper）同样要跟着
+    // BUG-4521：分卷归组（[_loadShelfMaps] 里的 BookSeriesGrouper）同样要跟着
     // 「书架上有哪些书」走。书列表 provider 自 BUG-793 起订阅书 / 有声书集合，
     // 任何导入路径落库都会刷新，但归组映射不会：mokuro 目录 / 导入对话框 / 拖放
     // 导入的第 2 卷只出现成散卡，直到别的事碰巧重载映射。订阅书 / 有声书行的
@@ -900,13 +900,13 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   /// 同步/导入批量落库合并成一次映射重载）。
   StreamSubscription<void>? _collectionTablesSub;
 
-  /// BUG-4388：书 / 有声书集合变化订阅（导入、删除），与合集表同一个合并窗口。
+  /// BUG-4521：书 / 有声书集合变化订阅（导入、删除），与合集表同一个合并窗口。
   StreamSubscription<void>? _shelfBooksSub;
   Timer? _collectionsReloadDebounce;
 
   /// BUG-1699：合集表写入回调——重载书架折叠映射（只动 _shelfMapsFuture，不
   /// invalidate 书列表 provider：合集归属变化不改变书行本身）。书 / 有声书集合
-  /// 变化（BUG-4388）也走这里：重载时先跑分卷归组。
+  /// 变化（BUG-4521）也走这里：重载时先跑分卷归组。
   void _onCollectionTablesChanged(void _) {
     _collectionsReloadDebounce?.cancel();
     _collectionsReloadDebounce = Timer(const Duration(milliseconds: 300), () {
