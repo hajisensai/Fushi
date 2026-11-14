@@ -1,12 +1,44 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-14T20:58:45Z",
+ "generatedAt": "2026-11-14T21:09:47Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "ca22b87417ba71ae354ba73e3c3ffd801ff00dea",
   "seq": 26884
  },
  "builds": [
+  {
+   "seq": 26879,
+   "version": "3.3.0",
+   "sha": "1d164f2e78081485c01293af0e73a0679c82a874",
+   "unknown": false,
+   "publishedAt": "2026-11-14T21:09:36Z",
+   "testflight": false,
+   "baseSeq": 26871,
+   "prs": [
+    3317,
+    3406
+   ],
+   "direct": [],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "ok"
+    },
+    "windows": {
+     "state": "superseded",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43635507859"
+    },
+    "macos": {
+     "state": "superseded",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43635507859"
+    },
+    "ios": {
+     "state": "superseded",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43635507859"
+    }
+   }
+  },
   {
    "seq": 26871,
    "version": "3.3.0",
@@ -105,43 +137,6 @@
    "unknown": false,
    "publishedAt": "2026-11-14T15:09:06Z",
    "testflight": false,
-   "baseSeq": 26792,
-   "prs": [
-    3286,
-    3340
-   ],
-   "direct": [
-    {
-     "sha": "6867ab80d73be4442de068c9c926837210850d00",
-     "subject": "chore(bugs): settle BUG number collisions on cb7c567d6"
-    }
-   ],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "ok"
-    },
-    "windows": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43603825667"
-    },
-    "macos": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43603825667"
-    },
-    "ios": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43603825667"
-    }
-   }
-  },
-  {
-   "seq": 26792,
-   "version": "3.3.0",
-   "sha": "cb7c567d60589c1db492a461cada1b2b51283a5d",
-   "unknown": false,
-   "publishedAt": "2026-11-12T22:26:13Z",
-   "testflight": false,
    "baseSeq": null,
    "prs": [],
    "direct": [],
@@ -152,15 +147,15 @@
     },
     "windows": {
      "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43289888867"
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43603825667"
     },
     "macos": {
      "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43289888867"
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43603825667"
     },
     "ios": {
      "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43289888867"
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43603825667"
     }
    }
   }
@@ -170,9 +165,7 @@
   "headSeq": 26884,
   "prs": [
    3413,
-   3411,
-   3317,
-   3406
+   3411
   ],
   "direct": [
    {
@@ -201,15 +194,6 @@
   }
  },
  "prs": {
-  "3286": {
-   "number": 3286,
-   "title": "test(srs): 冻结复习统计聚合结果的对拍向量（统计聚合搬进内核 1/2）",
-   "author": "W1ght",
-   "mergedAt": "2026-11-14T14:14:27Z",
-   "additions": 359,
-   "deletions": 0,
-   "labels": []
-  },
   "3317": {
    "number": 3317,
    "title": "fix(shelf): group volumes imported while the shelf is open (BUG-4388)",
@@ -226,15 +210,6 @@
    "mergedAt": "2026-11-14T18:06:43Z",
    "additions": 460,
    "deletions": 20,
-   "labels": []
-  },
-  "3340": {
-   "number": 3340,
-   "title": "docs(srs): 存储与同步换代（协议 4）设计稿",
-   "author": "W1ght",
-   "mergedAt": "2026-11-14T14:13:31Z",
-   "additions": 1468,
-   "deletions": 0,
    "labels": []
   },
   "3355": {
