@@ -373,15 +373,20 @@ bool RecordUnityTmpText(void* text_component, void* string_object,
 // Canvas-text lanes (TMP_Text / UI.Text setters): publish under the lane's
 // hook identity and, when a line was published, hand the component to the
 // shared Unity canvas lookup (unity_mono_lookup.inc; it ignores the call
-// unless the IL2CPP lookup resolved and this is the Unity main thread).
-void RememberUmTmpCandidateGuarded(void* component, uint8_t lane);
+// unless the IL2CPP lookup resolved and this is the Unity main thread).  The
+// raw line also feeds the shared dialogue-surface proof
+// (unity_mono_dialogue_core.h), exactly as the Mono text path does.
+void RememberUmTmpCandidateGuarded(void* component, uint8_t lane,
+                                   const wchar_t* chars, int length);
 
 void RecordUnityCanvasText(
     void* component, void* string_object,
     const fushi_voice_hook::unity_il2cpp::CanvasLaneSpec& lane) {
   if (RecordUnityTmpText(component, string_object, lane.hook_name,
                          lane.hook_code, lane.stable)) {
-    RememberUmTmpCandidateGuarded(component, lane.bit);
+    RememberUmTmpCandidateGuarded(component, lane.bit,
+                                  g_il2cpp_string_chars(string_object),
+                                  g_il2cpp_string_length(string_object));
   }
 }
 
