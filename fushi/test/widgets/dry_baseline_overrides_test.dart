@@ -81,6 +81,9 @@ void main() {
         expect(baselines(box, TextBaseline.alphabetic).$2, isNotNull);
       }
     }
+    // 滚动版 Marquee 的轮次定时器：拆树后走完，免得测试结束时仍有挂起的 Timer。
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(seconds: 5));
   });
 
   testWidgets('SrsNoBaseline：子节点有基线也对外回 null（dry 与实际一致）', (
