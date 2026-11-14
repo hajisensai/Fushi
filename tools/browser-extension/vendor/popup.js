@@ -8022,6 +8022,9 @@ window.__fushiPendingScrollTop = 0;
 // 与待恢复位，否则上一次在途的 rAF / pending 会在归零后把页面又滚回去。
 window.__fushiResetPopupScroll = function() {
     popupWheelEaseStop();
+    // 新会话也关上一会话的放大图：同词重查 / app 外根 iframe 复用时内容不变、不走
+    // renderPopup，灯箱（挂在词条容器之外）否则一直盖在新会话上（反馈 GmLVWNpQKc）。
+    closeImageLightbox();
     window.__fushiPendingScrollTop = 0;
     window.scrollTo(0, 0);
     const el = document.scrollingElement || document.documentElement;
@@ -8864,6 +8867,9 @@ window.renderPopup = function() {
     const gen = ++window._renderGeneration;
     // 换词重渲染：上一个词的音频源菜单随旧 DOM 作废。
     if (typeof closeAudioSourceMenu === 'function') closeAudioSourceMenu(false);
+    // 灯箱挂在 __fushiOverlayParent()（词条容器之外），换 innerHTML 摘不掉它：上一个词的
+    // 放大图会盖在新结果上（反馈 GmLVWNpQKc）。它属于旧 DOM，随换代一起关。
+    closeImageLightbox();
     // 上一轮的 masonry ResizeObserver 还观察着即将被 innerHTML='' 摘掉的全部卡片：
     // 观察目标被 observer 强引用，热槽 WebView 跨成百上千次查词不重载，这些
     // 已脱离文档的卡片子树就一直攒在内存里。换代时整体断开，新卡片由收尾的
