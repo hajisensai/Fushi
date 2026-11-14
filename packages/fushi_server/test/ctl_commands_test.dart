@@ -373,6 +373,32 @@ void main() {
       expect(await ctl(<String>['srs', 'ankiconnect', 'maybe']), 64);
     });
 
+    test('srs：列出 / 信任 / 拒绝待确认的复习同步设备', () async {
+      const String uid = '01928c3e-0000-7000-8000-00000000a0a0';
+      const String dev = '01928c3e-0000-7000-8000-00000000d0d0';
+      await ctl(<String>['srs', 'devices']);
+      await ctl(<String>['srs', 'devices', uid]);
+      await ctl(<String>['srs', 'trust', dev]);
+      await ctl(<String>['srs', 'reject', dev, uid]);
+      expect(
+        admin.seen.map((_Seen s) => '${s.method} ${s.path}').toList(),
+        <String>[
+          'GET /api/admin/srs/devices',
+          'GET /api/admin/srs/devices',
+          'POST /api/admin/srs/devices/trust',
+          'POST /api/admin/srs/devices/trust',
+        ],
+      );
+      expect(admin.seen[0].query, isEmpty);
+      expect(admin.seen[1].query, <String, String>{'profile': uid});
+      expect(admin.seen.skip(2).map((_Seen s) => s.body).toList(), <Object?>[
+        <String, Object?>{'device': dev, 'trust': true},
+        <String, Object?>{'device': dev, 'trust': false, 'profile': uid},
+      ]);
+      expect(await ctl(<String>['srs', 'trust']), 64);
+      expect(await ctl(<String>['srs', 'reject']), 64);
+    });
+
     test('未知动作 / 空动作 = 用法错误，不发请求', () async {
       expect(await ctl(<String>[]), 64);
       expect(await ctl(<String>['nope']), 64);

@@ -177,10 +177,13 @@ test('seekDone 回执透传给 Dart', () => {
   const sb = makeSandbox({ hostname: 'www.netflix.com' });
   deliver(sb, { __fushiNf: 'seekDone', ok: true, err: '' });
   deliver(sb, { __fushiNf: 'seekDone', ok: false, err: 'timeout', id: 3 });
+  // netflix-bridge 的页面侧诊断快照（BUG-4186）原样带给 Dart；没有时是空串。
+  deliver(sb, { __fushiNf: 'seekDone', ok: false, err: 'timeout', id: 4, diag: 'state=paused t=12.5' });
   const done = sb.posted.filter((p) => p.payload.type === 'seekDone');
   assertPlainEqual(done.map((d) => d.payload), [
-    { type: 'seekDone', ok: true, err: '', id: null },
-    { type: 'seekDone', ok: false, err: 'timeout', id: 3 },
+    { type: 'seekDone', ok: true, err: '', id: null, diag: '' },
+    { type: 'seekDone', ok: false, err: 'timeout', id: 3, diag: '' },
+    { type: 'seekDone', ok: false, err: 'timeout', id: 4, diag: 'state=paused t=12.5' },
   ]);
 });
 

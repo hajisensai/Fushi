@@ -1255,7 +1255,7 @@ class FushiSyncServer {
   }
 
   /// 写成功（2xx）才回调 [onClientWrite]；回调异常不影响响应。[published] = 这次写带来了新内容（PUT）：
-  /// 只有它推进复习同步的长轮询令牌。删旧 head（客户端每发一个新 head 就清两代前的）没有任何新数据，
+  /// 只有它推进复习同步的长轮询令牌。删旧 head（客户端每发一个新 head 就按内核给的清单清掉更早的）没有任何新数据，
   /// 以前也推进令牌，等于每轮多唤醒一次全部设备。
   shelf.Response _reportClientWrite(
     String reqPath,
@@ -1846,7 +1846,13 @@ class _VideoStreamToken {
     this.transcodeProfile,
     this.transcodeAudioStreamIndex,
     this.transcodeDurationMs,
+    this.ticket,
   });
+
+  /// 随哪张流票一起释放（BUG-4461）。null = 这张 token 本身就是流票（`/streamurl`
+  /// 回给 client 的 `ticket` 即它的值）；光盘制卡 token 填主 token 的值，client 释放
+  /// 播放票时一并作废。
+  final String? ticket;
 
   /// 绑定的视频 id（即 VideoBooks.bookUid，可含 `/`）。
   final String videoId;

@@ -331,6 +331,21 @@ SrsRwkvReplay srsDecodeRwkvReplay(Uint8List bytes) {
   );
 }
 
+/// 未解码的回放行（[srsDecodeRwkvReplay] 的布局）里「漏掉的卡」与日志指纹的最大 rowid：取回放行的一方
+/// 只凭这两样决定要不要补卡再取一次，行本身不解码、原样交给 RWKV 排程内核。
+List<String> srsRwkvReplayStrays(Uint8List bytes) {
+  final ByteData d = ByteData.sublistView(bytes);
+  final int n = d.getInt64(8 * 3, Endian.little);
+  return _strings(
+    bytes,
+    56 + n * (kFrwkvReviewSize + 16),
+    d.getInt64(8 * 4, Endian.little),
+  );
+}
+
+int srsRwkvReplayMaxRowId(Uint8List bytes) =>
+    ByteData.sublistView(bytes).getInt64(8, Endian.little);
+
 /// 一条对齐用的新日志（rowid 在指纹之后）。
 /// [kind] 是日志 kind（review / undo；其它 kind 为空串——对齐只认这两种），[revokes] 是 undo 的撤销目标。
 typedef SrsRwkvTailLog = ({

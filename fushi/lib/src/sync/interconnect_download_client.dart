@@ -2,12 +2,11 @@
 /// 由 host 下到它自己的库里；之后经既有远程库路径流播。
 library;
 
-import 'dart:convert';
-
+import 'package:fushi/src/sync/interconnect_host_channel.dart';
 import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
-import 'package:fushi/src/sync/webdav_ops.dart';
-import 'package:fushi_engine/sync/tls/fushi_pinning_http.dart';
+import 'package:fushi_engine/media/discovery/discovery_models.dart'
+    show DiscoveryMediaKind;
 import 'package:http/http.dart' as http;
 
 class HostDownloadTarget {
@@ -19,13 +18,23 @@ class HostDownloadTarget {
     this.fingerprintSha256,
     this.peerUrls = const <String>{},
     this.deleteFilesParam = false,
+    this.host,
   });
+
+  /// 这台 host 的身份（client 产出的 target 一律带上）。null = 调用方直接构造的
+  /// 老形状 target，按 [baseUrl] 认（见 [hostRef]）。
+  final InterconnectHostRef? host;
+
+  /// 请求按它选路 / 取凭据 / 钉扎，而不是按 [baseUrl] 那一条地址。
+  InterconnectHostRef get hostRef =>
+      host ?? InterconnectHostRef.legacyUrl(interconnectPersistedUrl(baseUrl));
 
   /// host 的 `DELETE /api/downloads/<id>` 认不认 `deleteFiles` 参数（能力位
   /// `downloads.deleteFilesParam`，BUG-3437）。false = 老 host：删不删文件由它的
   /// 历史缺省决定（app 当 host 保留、无头服务端连数据一起删），客户端无从选择。
   final bool deleteFilesParam;
 
+  /// 这台 host 的持久代表地址（`p2p://` 而非本次的本地转发口）。
   final String baseUrl;
 
   /// 这台 host 在候选列表里的全部地址（含 [baseUrl]）。「下载执行设备」偏好存的是
@@ -62,8 +71,10 @@ class HostDownloadJob {
     required this.stage,
     required this.stageProgress,
     required this.updatedAt,
+    int? createdAt,
+    this.discoveryKind,
     this.lastError,
-  });
+  }) : createdAt = createdAt ?? updatedAt;
 
   factory HostDownloadJob.fromJson(Map<String, dynamic> json) =>
       HostDownloadJob(
@@ -73,6 +84,12 @@ class HostDownloadJob {
         stage: (json['stage'] ?? '').toString(),
         stageProgress: (json['stageProgress'] as num?)?.toDouble() ?? 0,
         updatedAt: (json['updatedAt'] as num?)?.toInt() ?? 0,
+        createdAt: (json['createdAt'] as num?)?.toInt(),
+        // host 对非视频任务写的是 `DiscoveryMediaKind.name`，视频任务是
+        // movie / tv（不在枚举里 → null = 视频）。
+        discoveryKind: DiscoveryMediaKind.values
+            .asNameMap()[json['mediaKind']]
+            ?.name,
         lastError: json['lastError']?.toString(),
       );
 
@@ -82,6 +99,12 @@ class HostDownloadJob {
   final String stage;
   final double stageProgress;
   final int updatedAt;
+
+  /// 任务创建时间；老 host 不下发时退回 [updatedAt]。
+  final int createdAt;
+
+  /// 内容域（`DiscoveryMediaKind.name`）；null = 视频。
+  final String? discoveryKind;
   final String? lastError;
 }
 
@@ -94,6 +117,8 @@ class HostDownloadException implements Exception {
   String toString() => detail == null ? code : '$code: $detail';
 }
 
+/// 代下载 client。传输层（选路、凭据、钉扎、整段超时、client 生命周期、错误
+/// 分型）全部走 [InterconnectHostChannel]，每台 host 一条通道、复用到 [close]。
 class InterconnectDownloadClient {
   InterconnectDownloadClient({
     required SyncRepository repo,
@@ -102,25 +127,62 @@ class InterconnectDownloadClient {
     Duration probeTimeout = const Duration(seconds: 4),
     Duration requestTimeout = const Duration(seconds: 30),
   }) : _repo = repo,
-       _httpClient = httpClient ?? http.Client(),
-       _pinnedClientFactory = pinnedClientFactory ?? _defaultPinnedClient,
+       _borrowedPlain = httpClient,
+       _pinnedClientFactory = pinnedClientFactory,
        _probeTimeout = probeTimeout,
        _requestTimeout = requestTimeout;
 
   final SyncRepository _repo;
-  final http.Client _httpClient;
-  final http.Client Function(String expectedFingerprint) _pinnedClientFactory;
+
+  /// 借用的明文 client（测试缝 / 调用方共享）：本 client 不关它。
+  final http.Client? _borrowedPlain;
+
+  /// 没借到时自建、各通道共用，[close] 时关。
+  http.Client? _ownedPlain;
+  final http.Client Function(String expectedFingerprint)? _pinnedClientFactory;
   final Duration _probeTimeout;
   final Duration _requestTimeout;
+  final Map<String, InterconnectHostChannel> _channels =
+      <String, InterconnectHostChannel>{};
+  bool _closed = false;
 
-  static http.Client _defaultPinnedClient(String expectedFingerprint) =>
-      createPinnedHttpPackageClient(expectedFingerprint: expectedFingerprint);
+  InterconnectHostChannel _channel(InterconnectHostRef host) {
+    if (_closed) {
+      throw const InterconnectChannelException(
+        InterconnectChannelFailure.cancelled,
+      );
+    }
+    return _channels.putIfAbsent(
+      host.key,
+      () => InterconnectHostChannel(
+        repo: _repo,
+        host: host,
+        plainClient: _borrowedPlain ?? (_ownedPlain ??= http.Client()),
+        pinnedClientFactory: _pinnedClientFactory,
+      ),
+    );
+  }
 
-  /// 第一台宣告 `downloads.supported` 的已配对 host。
+  /// 关掉全部通道与自建的明文 client；在途与之后的请求抛
+  /// `HostDownloadException('cancelled')`。
+  void close() {
+    if (_closed) return;
+    _closed = true;
+    for (final InterconnectHostChannel c in _channels.values) {
+      c.close();
+    }
+    _channels.clear();
+    _ownedPlain?.close();
+    _ownedPlain = null;
+  }
+
+  /// 第一台宣告 `downloads.supported` 的已配对 host（按配对清单顺序，各台并发探）。
   Future<HostDownloadTarget?> probe() async {
-    for (final FushiClientUrl candidate in await _enabledCandidates()) {
-      final HostDownloadTarget? target = await _probeCandidate(candidate);
-      if (target != null) return target;
+    for (final InterconnectCapabilityOutcome<HostDownloadTarget> o
+        in await probeAllOutcomes()) {
+      if (o is InterconnectCapabilityAvailable<HostDownloadTarget>) {
+        return o.target;
+      }
     }
     return null;
   }
@@ -131,90 +193,85 @@ class InterconnectDownloadClient {
   ///
   /// [baseUrl] 认的是「那台 host」而不是那一条地址：偏好里存的是用户当初选中时的
   /// 地址（在家可能是 LAN），出门后同一台 host 仍可经 IPv6 / 组网 / P2P 到达，
-  /// 按组内可达性依次试。
+  /// 由通道在组内选路。
   Future<HostDownloadTarget?> probeUrl(String baseUrl) async {
-    final List<FushiClientUrl> host = interconnectPeerAddressesOf(
-      await _enabledCandidates(),
+    final InterconnectHostRef? host = interconnectHostRefForUrl(
+      await _repo.getFushiClientUrls(),
       baseUrl,
     );
-    for (final FushiClientUrl candidate in await rankInterconnectCandidates(
-      host,
-    )) {
-      final HostDownloadTarget? target = await _probeCandidate(candidate);
-      if (target != null) return target;
-    }
-    return null;
+    if (host == null) return null;
+    final InterconnectCapabilityOutcome<HostDownloadTarget> outcome =
+        await probeHost(host);
+    return outcome is InterconnectCapabilityAvailable<HostDownloadTarget>
+        ? outcome.target
+        : null;
   }
 
   /// 全部宣告能力的已配对 host（资源搜索页的「下载到」下拉要列出来让用户挑）。
-  ///
-  /// 按 host 去重：同一台 host 的多条地址只产出一个目标（组内已按可达性排序）。
-  Future<List<HostDownloadTarget>> probeAll() async {
-    final List<HostDownloadTarget> targets = <HostDownloadTarget>[];
-    final List<FushiClientUrl> candidates = await rankInterconnectCandidates(
-      await _enabledCandidates(),
+  /// 每台 host 只产出一个目标。
+  Future<List<HostDownloadTarget>> probeAll() async => <HostDownloadTarget>[
+    for (final InterconnectCapabilityOutcome<HostDownloadTarget> o
+        in await probeAllOutcomes())
+      if (o is InterconnectCapabilityAvailable<HostDownloadTarget>) o.target,
+  ];
+
+  /// 每台已启用 host 的探测结局（含失败原因），并发探、按配对清单的组序返回。
+  Future<List<InterconnectCapabilityOutcome<HostDownloadTarget>>>
+  probeAllOutcomes() async {
+    final List<InterconnectHostRef> hosts = interconnectPairedHostRefs(
+      await _repo.getFushiClientUrls(),
     );
-    for (final List<FushiClientUrl> host in groupInterconnectPeers(
-      candidates,
-    )) {
-      for (final FushiClientUrl candidate in host) {
-        final HostDownloadTarget? target = await _probeCandidate(candidate);
-        if (target == null) continue;
-        targets.add(target);
-        break;
-      }
-    }
-    return targets;
+    return Future.wait(
+      <Future<InterconnectCapabilityOutcome<HostDownloadTarget>>>[
+        for (final InterconnectHostRef h in hosts) probeHost(h),
+      ],
+    );
   }
 
-  Future<List<FushiClientUrl>> _enabledCandidates() async =>
-      (await _repo.getFushiClientUrls())
-          .where((FushiClientUrl u) => u.enabled)
-          .toList(growable: false);
-
-  Future<HostDownloadTarget?> _probeCandidate(FushiClientUrl candidate) async {
-    final Uri? uri = _uri(candidate.url, '/api/capabilities');
-    final String? token = interconnectTokenFor(
-      candidate,
-      await _repo.getFushiClientToken(),
-    );
-    if (uri == null || token == null) return null;
-    final (http.Client client, bool closeAfter) = _clientFor(
-      candidate.url,
-      fingerprint: candidate.fingerprintSha256,
-    );
-    try {
-      final http.Response response = await client
-          .get(uri, headers: _headers(token))
-          .timeout(_probeTimeout);
-      if (response.statusCode != 200) return null;
-      final dynamic decoded = jsonDecode(utf8.decode(response.bodyBytes));
-      if (decoded is! Map) return null;
-      final Object? downloads = decoded['downloads'];
-      if (downloads is! Map || downloads['supported'] != true) return null;
-      final Object? kinds = downloads['kinds'];
-      return HostDownloadTarget(
-        baseUrl: candidate.url,
-        deviceName: candidate.deviceName,
-        backend: (downloads['backend'] ?? '').toString(),
-        kinds: kinds is List
-            ? kinds.map((Object? k) => k.toString()).toList(growable: false)
-            : const <String>['video'],
-        fingerprintSha256: candidate.fingerprintSha256,
-        deleteFilesParam: downloads['deleteFilesParam'] == true,
-        peerUrls: <String>{
-          for (final FushiClientUrl u in interconnectPeerAddressesOf(
-            await _repo.getFushiClientUrls(),
-            candidate.url,
-          ))
-            u.url,
-        },
-      );
-    } catch (_) {
-      return null;
-    } finally {
-      if (closeAfter) client.close();
+  /// 探一台 host 的代下载能力（`downloads.supported`）。
+  Future<InterconnectCapabilityOutcome<HostDownloadTarget>> probeHost(
+    InterconnectHostRef host,
+  ) async {
+    final List<FushiClientUrl> rows = await _repo.getFushiClientUrls();
+    String? pin;
+    String? rawName;
+    for (final FushiClientUrl u in rows) {
+      if (!host.matches(u)) continue;
+      final String? fp = u.fingerprintSha256;
+      if (pin == null && fp != null && fp.isNotEmpty) pin = fp;
+      final String? name = u.deviceName;
+      if (rawName == null && name != null && name.isNotEmpty) rawName = name;
     }
+    final String? groupPin = pin;
+    final String? groupName = rawName;
+    return probeInterconnectCapability<HostDownloadTarget>(
+      _channel(host),
+      label: interconnectHostLabel(rows, host),
+      timeout: _probeTimeout,
+      parse: (Map<String, dynamic> caps, FushiClientUrl via) {
+        final Object? downloads = caps['downloads'];
+        if (downloads is! Map || downloads['supported'] != true) return null;
+        final Object? kinds = downloads['kinds'];
+        return HostDownloadTarget(
+          host: host,
+          baseUrl: host.anchorUrl,
+          deviceName: via.deviceName ?? groupName,
+          backend: (downloads['backend'] ?? '').toString(),
+          kinds: kinds is List
+              ? kinds.map((Object? k) => k.toString()).toList(growable: false)
+              : const <String>['video'],
+          fingerprintSha256: groupPin,
+          deleteFilesParam: downloads['deleteFilesParam'] == true,
+          peerUrls: <String>{
+            for (final FushiClientUrl u in interconnectPeerAddressesOf(
+              rows,
+              host.anchorUrl,
+            ))
+              u.url,
+          },
+        );
+      },
+    );
   }
 
   /// [discoveryKind] = `DiscoveryMediaKind.name`（非视频域，host 按域入库）；
@@ -294,92 +351,25 @@ class InterconnectDownloadClient {
     Map<String, Object?>? jsonBody,
     Map<String, String> query = const <String, String>{},
   }) async {
-    final String? token = await _tokenForBaseUrl(target.baseUrl);
-    if (token == null || token.isEmpty) {
-      throw const HostDownloadException('no_host');
-    }
-    final Uri? uri = _uri(target.baseUrl, path, query: query);
-    if (uri == null) throw const HostDownloadException('http', 'bad host url');
-    final (http.Client client, bool closeAfter) = _clientFor(
-      target.baseUrl,
-      fingerprint: target.fingerprintSha256,
-    );
+    final InterconnectChannelResponse r;
     try {
-      final http.Request req = http.Request(method, uri)
-        ..headers.addAll(_headers(token));
-      if (jsonBody != null) {
-        req.headers['Content-Type'] = 'application/json';
-        req.body = jsonEncode(jsonBody);
-      }
-      final http.Response response = await http.Response.fromStream(
-        await client.send(req).timeout(_requestTimeout),
+      r = await _channel(target.hostRef).send(
+        method,
+        path,
+        query: query,
+        body: jsonBody == null ? null : InterconnectRequestBody.json(jsonBody),
+        timeout: _requestTimeout,
       );
-      final String text = utf8.decode(response.bodyBytes, allowMalformed: true);
-      if (response.statusCode >= 400) {
-        String detail = text;
-        try {
-          final dynamic decoded = jsonDecode(text);
-          if (decoded is Map && decoded['message'] != null) {
-            detail = decoded['message'].toString();
-          }
-        } catch (_) {
-          // 非 JSON 错误体原样带回。
-        }
-        throw HostDownloadException('http_${response.statusCode}', detail);
-      }
-      final dynamic decoded = text.isEmpty
-          ? <String, dynamic>{}
-          : jsonDecode(text);
-      if (decoded is! Map) return <String, dynamic>{};
-      return Map<String, dynamic>.from(decoded);
-    } finally {
-      if (closeAfter) client.close();
+    } on InterconnectChannelException catch (e) {
+      throw HostDownloadException(e.code);
     }
-  }
-
-  Future<String?> _tokenForBaseUrl(String baseUrl) async {
-    final String? fallbackToken = await _repo.getFushiClientToken();
-    for (final FushiClientUrl u in await _repo.getFushiClientUrls()) {
-      // 走 P2P 时 baseUrl 是本次的本地转发口，换回持久的 p2p:// 再认。
-      if (u.url == interconnectPersistedUrl(baseUrl)) {
-        return interconnectTokenFor(u, fallbackToken);
-      }
+    if (r.statusCode >= 400) {
+      // 错误体按本路由原来的字段取（`{message}`），非 JSON 原样带回。
+      throw HostDownloadException(
+        'http_${r.statusCode}',
+        r.jsonString('message') ?? r.text,
+      );
     }
-    return (fallbackToken != null && fallbackToken.isNotEmpty)
-        ? fallbackToken
-        : null;
-  }
-
-  Map<String, String> _headers(String token) => <String, String>{
-    'Authorization': 'Basic ${base64Encode(utf8.encode('hibiki:$token'))}',
-  };
-
-  (http.Client, bool) _clientFor(String baseUrl, {String? fingerprint}) {
-    final Uri? base = _parse(baseUrl);
-    final bool usePinned =
-        base != null &&
-        base.isScheme('https') &&
-        fingerprint != null &&
-        fingerprint.isNotEmpty;
-    if (usePinned) return (_pinnedClientFactory(fingerprint), true);
-    return (_httpClient, false);
-  }
-
-  static Uri? _parse(String baseUrl) {
-    try {
-      return Uri.parse(WebDavOps.normalizeUrl(baseUrl));
-    } catch (_) {
-      return null;
-    }
-  }
-
-  Uri? _uri(
-    String baseUrl,
-    String path, {
-    Map<String, String> query = const <String, String>{},
-  }) {
-    final Uri? base = _parse(baseUrl);
-    if (base == null) return null;
-    return base.replace(path: path, queryParameters: query);
+    return r.jsonObject ?? <String, dynamic>{};
   }
 }

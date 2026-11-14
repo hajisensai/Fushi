@@ -87,6 +87,66 @@ abstract interface class SubtitleEvidenceSource {
   Future<List<SubtitleEvidenceTrack>> load(SubtitleEvidenceLoadRequest request);
 }
 
+/// 在 [inner] 自动收集的证据之外，再加宿主直接给的几条轨（[pinned]：视频路径 →
+/// 轨）——播放器里用户正对照着的其它语言字幕（spec
+/// `2026-11-11-video-subtitle-ai-reference`）。
+///
+/// - 这些轨的时间轴由宿主负责（已按播放器里的调轴偏移摆到视频时间上），不再过
+///   对齐判定：用户眼前对着看的就是它。
+/// - **只收他言語**：与目标语言相同（或判不出语言）的一律丢掉。同语言证据会被补进
+///   字幕稿、压过识别结果，而播放器里的同语言字幕很可能就是本管线上一次的产物——
+///   内存里的 cue 认不出「是不是我写的」，收进来会自我强化。同语言证据仍只走 [inner]
+///   （按路径认产物、对时间轴）。
+/// - 收进来的轨标 [SubtitleEvidenceTrack.pinned]，选轨时压过 [inner] 找到的同语言轨。
+class SubtitleEvidenceWithPinnedTracks implements SubtitleEvidenceSource {
+  const SubtitleEvidenceWithPinnedTracks({
+    required this.inner,
+    required this.pinned,
+  });
+
+  final SubtitleEvidenceSource inner;
+  final Map<String, List<SubtitleEvidenceTrack>> pinned;
+
+  List<SubtitleEvidenceTrack> _pinnedFor(String videoPath) =>
+      pinned[videoPath] ?? const <SubtitleEvidenceTrack>[];
+
+  @override
+  Future<String> sourceKey(
+    String videoPath, {
+    required bool Function(String path) isOwnOutput,
+  }) async {
+    final String base = await inner.sourceKey(
+      videoPath,
+      isOwnOutput: isOwnOutput,
+    );
+    final List<SubtitleEvidenceTrack> extra = _pinnedFor(videoPath);
+    return extra.isEmpty
+        ? base
+        : '$base\npinned|${subtitleEvidenceFingerprint(extra)}';
+  }
+
+  @override
+  Future<List<SubtitleEvidenceTrack>> load(
+    SubtitleEvidenceLoadRequest request,
+  ) async {
+    final List<SubtitleEvidenceTrack> found = await inner.load(request);
+    return <SubtitleEvidenceTrack>[
+      ...found,
+      for (final SubtitleEvidenceTrack t in _pinnedFor(request.videoPath))
+        if (t.language != null &&
+            !sameSubtitleLanguage(t.language, request.targetLanguage) &&
+            t.dialogueCount > 0)
+          SubtitleEvidenceTrack(
+            label: t.label,
+            kind: t.kind,
+            language: t.language,
+            cues: t.cues,
+            pinned: true,
+          ),
+    ];
+  }
+}
+
 /// 一个证据来源的身份（缓存键用）：路径 + 字节数 + 修改时间（内嵌轨用视频本身）。
 class SubtitleEvidenceSourceStamp {
   const SubtitleEvidenceSourceStamp(this.path, this.bytes, this.modifiedMs);
