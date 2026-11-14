@@ -33,7 +33,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3990 条。点号进各自文件。
+> 共 3993 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -44,6 +44,9 @@
 | [BUG-4521](bugs/BUG-4521-mokuro-import-volumes-not-grouped.md) | ✅ | ✅ | mokuro catalog import does not group volumes into a series |
 | [BUG-4510](bugs/BUG-4510-dict-materialize-reprobe-loop.md) | ✅ | ✅ | 词典物化探测自我喂养：预算后回报触发重装，重装又对全部目录起新 worker，启动卡在 rebuild-dict-paths、窗口无响应 |
 | [BUG-4509](bugs/BUG-4509-fushi-db-corrupt-retry-loop.md) | ✅ | ✅ | 主库页损坏（SQLITE_CORRUPT）不进终态，启动错误屏「重试」无限循环 |
+| [BUG-4508](bugs/BUG-4508-screen-ocr-mlkit-unavailable-despite-ready.md) | 🚧 | 🚧 | 悬浮球截屏 OCR 一直报「系统 OCR 模型未就绪」，配置弹窗却说已就绪 |
+| [BUG-4507](bugs/BUG-4507-audiobook-notification-metadata-flood-anr.md) | ✅ | ✅ | 有声书播放中 Android 无响应（ANR）：媒体通知元数据被重复推送几千次 |
+| [BUG-4506](bugs/BUG-4506-migration-uninstall-hibiki-button-noop.md) | ✅ | ✅ | 首页「卸载 Hibiki」按钮点了没反应，迁移完成提示关不掉 |
 | [BUG-4505](bugs/BUG-4505-i18n-zh-leak-non-zh-locales.md) | ✅ | ✅ | 非中文界面里冒出简体中文（Anime4K 首次提示等） |
 | [BUG-4504](bugs/BUG-4504-lyrics-sweep-furigana-lit-early.md) | ✅ | ✅ | 歌词模式逐字扫过时振假名起句即点亮、先于基字 |
 | [BUG-4503](bugs/BUG-4503-voicevox-streaming-talk-styles-filtered.md) | ✅ | ✅ | VOICEVOX 0.26 风格列表为空，选不了说话人 |
