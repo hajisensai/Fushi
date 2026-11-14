@@ -1,12 +1,40 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-14T19:19:20Z",
+ "generatedAt": "2026-11-14T20:23:04Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "593237ff49c7ae0bdfe9283b81827a292ea850c1",
-  "seq": 26873
+  "sha": "ac1c45827bbeb2017fe9f623fb6a305d8d657a18",
+  "seq": 26880
  },
  "builds": [
+  {
+   "seq": 26871,
+   "version": "3.3.0",
+   "sha": "0ec4f96a5ac63a48b6b0f0b948af8d53be36584e",
+   "unknown": false,
+   "publishedAt": "2026-11-14T20:22:49Z",
+   "testflight": false,
+   "baseSeq": 26869,
+   "prs": [
+    3409
+   ],
+   "direct": [],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "none"
+    },
+    "windows": {
+     "state": "ok"
+    },
+    "macos": {
+     "state": "ok"
+    },
+    "ios": {
+     "state": "ok"
+    }
+   }
+  },
   {
    "seq": 26869,
    "version": "3.3.0",
@@ -75,8 +103,8 @@
    "version": "3.3.0",
    "sha": "e88fbfc053abda2c089f928bed83cae8b3802734",
    "unknown": false,
-   "publishedAt": "2026-11-14T15:23:54Z",
-   "testflight": true,
+   "publishedAt": "2026-11-14T15:09:06Z",
+   "testflight": false,
    "baseSeq": 26792,
    "prs": [
     3286,
@@ -94,13 +122,16 @@
      "state": "ok"
     },
     "windows": {
-     "state": "ok"
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43603825667"
     },
     "macos": {
-     "state": "ok"
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43603825667"
     },
     "ios": {
-     "state": "ok"
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43603825667"
     }
    }
   },
@@ -135,29 +166,35 @@
   }
  ],
  "pending": {
-  "headSha": "593237ff49c7ae0bdfe9283b81827a292ea850c1",
-  "headSeq": 26873,
+  "headSha": "ac1c45827bbeb2017fe9f623fb6a305d8d657a18",
+  "headSeq": 26880,
   "prs": [
-   3406,
-   3409
+   3317,
+   3406
   ],
-  "direct": [],
+  "direct": [
+   {
+    "sha": "ac1c45827bbeb2017fe9f623fb6a305d8d657a18",
+    "subject": "chore(bugs): settle BUG number collisions on 1d164f2e7"
+   }
+  ],
   "truncated": false,
   "platforms": {
    "android": {
-    "state": "none"
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43635507899"
    },
    "windows": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43627404095"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43635507859"
    },
    "macos": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43627404095"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43635507859"
    },
    "ios": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43627404095"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43635507859"
    }
   }
  },
@@ -169,6 +206,15 @@
    "mergedAt": "2026-11-14T14:14:27Z",
    "additions": 359,
    "deletions": 0,
+   "labels": []
+  },
+  "3317": {
+   "number": 3317,
+   "title": "fix(shelf): group volumes imported while the shelf is open (BUG-4388)",
+   "author": "samutw",
+   "mergedAt": "2026-11-14T20:04:23Z",
+   "additions": 193,
+   "deletions": 1,
    "labels": []
   },
   "3333": {
