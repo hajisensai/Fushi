@@ -1448,9 +1448,6 @@ String _mangaGestureJs({
   }
   _applyStartPan();
   var rightDrag = null;
-  var mouseOcrSelectionEnabled = ${enableMouseTextSelection ? 'true' : 'false'} &&
-      !!(window.matchMedia && window.matchMedia('(any-pointer:fine)').matches);
-  var mouseOcrSelection = null;
   // ── 临时合成层提升（BUG-1759）──
   // will-change:transform 一旦常驻，Chromium 就把该层的栅格化尺度钉成只升不降：
   // 缩小后合成器拿旧尺度纹理做无 mipmap 缩小 → 锯齿；放大跨过旧尺度才重栅格。
@@ -2903,6 +2900,14 @@ String _mangaGestureJs({
   // 单击 / swipe 路径。
   var LONG_PRESS_MS = 500, LONG_PRESS_SLOP = 10;
   var longPress = null, longPressFired = null;
+  // 桌面鼠标在 OCR 字格上左键拖动 = 原生文字选区（enableMouseTextSelection）。
+  // 与上面的长按状态同属本节按下 / 松手 / 取消监听共用的状态机：
+  // 左键落在 .ocr-char 上先记下起点；pointermove 越过 4px 才判成拖选，此后整段
+  // 手势交给 WebView 原生维护选区，松手不走单击 / swipe。没拖动的左键点击照旧是单击，
+  // 触屏的长按 / 滑动 / 捏合不受影响（只认 pointerType === 'mouse'）。
+  var mouseOcrSelectionEnabled = ${enableMouseTextSelection ? 'true' : 'false'} &&
+      !!(window.matchMedia && window.matchMedia('(any-pointer:fine)').matches);
+  var mouseOcrSelection = null;
   function _mangaPageIndexAt(x, y){
     var stack = document.elementsFromPoint ? document.elementsFromPoint(x, y) : [];
     for (var i = 0; i < stack.length; i++) {
