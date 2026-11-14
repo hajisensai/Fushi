@@ -141,6 +141,14 @@ void main() {
         .singleWhere((RemoteVideoInfo v) => v.id == _uid);
     expect(cached.positionMs, 40000);
 
+    // 客户端开播：与播放页同一入口先按三方判定收敛——全新客户端无本机断点，取
+    // host 的 40 s 并记基线（缺这一步无基线、两端不同，实时上报按 BUG-4435 判
+    // 冲突 held，不再按墙钟 LWW 写 host）。
+    final InterconnectRemotePlaybackSession session =
+        InterconnectRemotePlaybackSession(db: db, backend: backend);
+    addTearDown(session.close);
+    expect(await session.startPositionFor(_uid, fallback: () => 0), 40000);
+
     // 客户端看到 20 s 并上报；host 接着看到 50 s；客户端跑一轮 sweep。
     final InterconnectPlaybackPositionSync sync =
         InterconnectPlaybackPositionSync(
@@ -150,7 +158,10 @@ void main() {
         );
     await prefs.setPref(videoRemotePositionEpisodePrefKey(_uid, 0), 20000);
     await prefs.setPref(videoRemotePositionEpisodeAtPrefKey(_uid, 0), _t1);
-    await sync.reportLive(_uid, (positionMs: 20000, updatedAtMs: _t1));
+    expect(
+      await sync.reportLive(_uid, (positionMs: 20000, updatedAtMs: _t1)),
+      LiveReportResult.confirmed,
+    );
     await _hostWatches(hostDb, 50000, _t2);
     final SyncOrchestrator orch = SyncOrchestrator(
       db: db,
@@ -266,6 +277,231 @@ void main() {
       ])).single.positionMs,
       33000,
     );
+  });
+
+  group('BUG-4436：互联卡片与开播同一份三方判定', () {
+    Future<void> clientWatched(FushiDatabase db, int positionMs, int at) async {
+      await db.setPrefTyped<int>(
+        videoRemotePositionEpisodePrefKey(_uid, 0),
+        positionMs,
+      );
+      await db.setPrefTyped<int>(
+        videoRemotePositionEpisodeAtPrefKey(_uid, 0),
+        at,
+      );
+    }
+
+    Future<RemoteVideoInfo> listed(InterconnectSyncBackend backend) async =>
+        (await backend.listRemoteVideos()).singleWhere(
+          (RemoteVideoInfo v) => v.id == _uid,
+        );
+
+    test('冲突待裁决（无基线、两端不同）：卡片显示本机位置 = 开播位置；取较新时间戳会显示 host 的', () async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final InterconnectSyncBackend backend = await _clientBackend(base);
+      await clientWatched(db, 20000, _t1);
+      await _hostWatches(hostDb, 50000, _t2);
+      final RemoteVideoInfo cached = await listed(backend);
+      expect(cached.positionMs, 50000);
+
+      // 对照：不给基线（媒体服务器 / 离线）时取较新时间戳 → host 的 50 s。
+      expect(
+        (await withLocalRemoteVideoPositions(db, <RemoteVideoInfo>[
+          cached,
+        ])).single.positionMs,
+        50000,
+      );
+
+      final PlaybackBaselineSnapshot? baselines =
+          await remoteVideoCardBaselines(db, backend);
+      expect(baselines, isNotNull, reason: '会话已选定 host');
+      final RemoteVideoInfo shown = (await withLocalRemoteVideoPositions(
+        db,
+        <RemoteVideoInfo>[cached],
+        threeWay: baselines,
+      )).single;
+      expect(shown.positionMs, 20000);
+      expect(shown.positionUpdatedAtMs, _t1);
+
+      final InterconnectRemotePlaybackSession session =
+          InterconnectRemotePlaybackSession(db: db, backend: backend);
+      addTearDown(session.close);
+      expect(
+        await session.startPositionFor(_uid, fallback: () => -1),
+        shown.positionMs,
+        reason: '点开就从卡片写的位置起播',
+      );
+    });
+
+    test('host 单边前进、时间戳却更旧（对端时钟偏慢）：卡片显示 host 位置 = 开播位置', () async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final InterconnectSyncBackend backend = await _clientBackend(base);
+      final InterconnectRemotePlaybackSession session =
+          InterconnectRemotePlaybackSession(db: db, backend: backend);
+      addTearDown(session.close);
+      // 首开：取 host 的 40 s 并记基线。
+      expect(await session.startPositionFor(_uid, fallback: () => -1), 40000);
+      // 本机位置没动、时间戳比 host 之后那次写入还新；host 被另一台时钟偏慢的
+      // 设备推到 50 s。
+      await clientWatched(db, 40000, 9000);
+      await _hostWatches(hostDb, 50000, _t2);
+      final RemoteVideoInfo cached = await listed(backend);
+      expect(cached.positionMs, 50000);
+      expect(cached.positionUpdatedAtMs, lessThan(9000));
+
+      // 对照：取较新时间戳 → 本机的 40 s。
+      expect(
+        (await withLocalRemoteVideoPositions(db, <RemoteVideoInfo>[
+          cached,
+        ])).single.positionMs,
+        40000,
+      );
+
+      final RemoteVideoInfo shown = (await withLocalRemoteVideoPositions(
+        db,
+        <RemoteVideoInfo>[cached],
+        threeWay: await remoteVideoCardBaselines(db, backend),
+      )).single;
+      expect(identical(shown, cached), isTrue, reason: '结论是清单那份 → 原样返回');
+      expect(
+        await session.startPositionFor(_uid, fallback: () => -1),
+        shown.positionMs,
+      );
+    });
+
+    test('host 播放列表非首集不在 sweep 的键上：给了基线也照旧取较新时间戳', () async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      const RemoteVideoInfo playlist = RemoteVideoInfo(
+        id: 'video/pl',
+        title: 'playlist',
+        positionMs: 10000,
+        positionUpdatedAtMs: _t2,
+        currentEpisode: 2,
+        episodes: <RemoteVideoEpisode>[
+          RemoteVideoEpisode(index: 0, title: 'e1'),
+          RemoteVideoEpisode(index: 1, title: 'e2'),
+          RemoteVideoEpisode(index: 2, title: 'e3'),
+        ],
+      );
+      await db.setPrefTyped<int>(
+        videoRemotePositionEpisodePrefKey('video/pl', 2),
+        33000,
+      );
+      await db.setPrefTyped<int>(
+        videoRemotePositionEpisodeAtPrefKey('video/pl', 2),
+        _t1,
+      );
+      // 无基线、两端不同：三方判定会判冲突取本机 33 s；这一集不归它管，取较新 → host。
+      const PlaybackBaselineSnapshot none = (
+        baselines: <String, int>{},
+        pending: <String, int>{},
+      );
+      expect(
+        identical(
+          (await withLocalRemoteVideoPositions(db, <RemoteVideoInfo>[
+            playlist,
+          ], threeWay: none)).single,
+          playlist,
+        ),
+        isTrue,
+      );
+    });
+
+    test('取基线不为此等选路：会话没选定 host、或来源不是互联 host → null', () async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final FushiDatabase authDb = _memDb();
+      addTearDown(authDb.close);
+      final SyncRepository repo = SyncRepository(authDb);
+      await repo.setFushiClientUrls(<FushiClientUrl>[
+        FushiClientUrl(url: base, enabled: true),
+      ]);
+      await repo.setFushiClientToken(_token);
+      int probes = 0;
+      final InterconnectSyncBackend backend = InterconnectSyncBackend.withProbe(
+        (String u, String t) async {
+          probes++;
+          return true;
+        },
+      );
+      await backend.restoreAuth(repo);
+      final int probesBefore = probes;
+      expect(backend.sessionResolved, isFalse);
+      expect(await remoteVideoCardBaselines(db, backend), isNull);
+      expect(probes, probesBefore, reason: '没有触发选路探测');
+      expect(await remoteVideoCardBaselines(db, Object()), isNull);
+      expect(await remoteVideoCardBaselines(db, null), isNull);
+
+      // 选定之后读得到，且是这台 host 作用域下记的基线。
+      await backend.ensureResolved();
+      final InterconnectPlaybackPositionSync sync =
+          InterconnectPlaybackPositionSync(
+            db: db,
+            backend: backend,
+            kind: PlaybackPositionKind.video,
+          );
+      await sync.recordBaseline(_uid, 12345);
+      expect(
+        (await remoteVideoCardBaselines(db, backend))?.baselines[_uid],
+        12345,
+      );
+    });
+
+    test('判定用的基线：待确认的推送位置正是 host 当前位置时按它判（与 sweep 同一口径）', () {
+      const PlaybackPosition host = (positionMs: 30000, updatedAtMs: _t1);
+      expect(
+        InterconnectPlaybackPositionSync.effectiveBaseline(
+          base: 10000,
+          pending: 30000,
+          remote: host,
+        ),
+        30000,
+      );
+      expect(
+        InterconnectPlaybackPositionSync.effectiveBaseline(
+          base: 10000,
+          pending: 20000,
+          remote: host,
+        ),
+        10000,
+        reason: 'host 不在待确认的位置上：那次推送没提交',
+      );
+      expect(
+        InterconnectPlaybackPositionSync.effectiveBaseline(
+          base: null,
+          pending: null,
+          remote: host,
+        ),
+        isNull,
+      );
+      // 推送已在 host 提交、基线没来得及推进，本机又往前看了：按提升后的基线是
+      // 「只有本机动了」→ 本机位置；位置相同的两份取时间戳较新的。
+      const PlaybackBaselineSnapshot snapshot = (
+        baselines: <String, int>{_uid: 10000},
+        pending: <String, int>{_uid: 30000},
+      );
+      expect(
+        InterconnectPlaybackPositionSync.displayPosition(
+          key: _uid,
+          local: (positionMs: 45000, updatedAtMs: _t0),
+          remote: host,
+          snapshot: snapshot,
+        ),
+        (positionMs: 45000, updatedAtMs: _t0),
+      );
+      expect(
+        InterconnectPlaybackPositionSync.displayPosition(
+          key: _uid,
+          local: (positionMs: 30000, updatedAtMs: _t0),
+          remote: host,
+          snapshot: snapshot,
+        ),
+        host,
+      );
+    });
   });
 
   test('本机远端断点信号：sweep 直接写库、偏好仓库写入都发；别的偏好不发', () async {

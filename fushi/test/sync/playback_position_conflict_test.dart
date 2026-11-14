@@ -16,6 +16,7 @@ import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_engine/sync/local_library_host_service.dart';
 import 'package:fushi_engine/sync/sync_asset_package_service.dart';
 import 'package:path/path.dart' as p;
+import '../helpers/interconnect_legacy_host_scope.dart';
 
 /// BUG-3367：互联视频 / 有声书播放位置此前是纯「取较新时间戳」LWW——两台设备在
 /// 两次同步之间各自看过同一条目，后同步的一端被静默盖掉，用户毫无察觉。现在按
@@ -28,7 +29,8 @@ PlaybackPosition _pos(int positionMs, int updatedAtMs) =>
 
 /// 只实现播放位置 live 端点的假互联后端；PUT 与真 host 同语义（截断未来戳后
 /// 严格较新者胜）。
-class _FakePositionBackend extends InterconnectSyncBackend {
+class _FakePositionBackend extends InterconnectSyncBackend
+    with LegacyInterconnectHostScope {
   _FakePositionBackend()
     : super.withProbe((String url, String token) async => true);
 
@@ -42,13 +44,25 @@ class _FakePositionBackend extends InterconnectSyncBackend {
     int positionMs,
     int updatedAtMs,
   ) {
+    // 与真 host 的 PUT 同一口径（BUG-3367）：上报戳截到「此刻 + 余量」，已存的超限
+    // 毒戳按 0 参与比较；已存的那份胜出时原样留着。
+    final int now = DateTime.now().millisecondsSinceEpoch;
     final PlaybackPosition current = store[key] ?? _pos(0, 0);
-    return store[key] = resolvePositionLww(
-      localPositionMs: current.positionMs,
-      localUpdatedAtMs: current.updatedAtMs,
-      remotePositionMs: positionMs,
-      remoteUpdatedAtMs: updatedAtMs,
+    final int storedAt = trustedStoredSyncStamp(
+      current.updatedAtMs,
+      nowMs: now,
     );
+    final PlaybackPosition winner = resolvePositionLww(
+      localPositionMs: current.positionMs,
+      localUpdatedAtMs: storedAt,
+      remotePositionMs: positionMs,
+      remoteUpdatedAtMs: capFutureSyncStamp(updatedAtMs, nowMs: now),
+    );
+    if (winner.positionMs == current.positionMs &&
+        winner.updatedAtMs == storedAt) {
+      return current;
+    }
+    return store[key] = winner;
   }
 
   @override
@@ -167,23 +181,34 @@ void main() {
       );
     });
 
-    test('无基线且两端位置不同 → 退回旧 LWW 一次（升级后首轮不批量弹冲突）', () {
+    // BUG-4435：无基线时不再比较两台设备各自的墙钟——时钟偏快的一端会静默盖掉
+    // 另一端；与书籍进度 resolveBookProgressThreeWay 同口径判冲突。
+    test('无基线、两端有戳且位置不同 → 冲突，不比较跨设备墙钟', () {
+      // host 戳更新（修复前 LWW 判 applyRemote）。
       expect(
         resolve(_pos(800, 10), _pos(300, 20)),
-        BookProgressSyncAction.applyRemote,
+        BookProgressSyncAction.conflict,
       );
+      // 本端戳更新（修复前 LWW 判 pushLocal）。
       expect(
         resolve(_pos(800, 30), _pos(300, 20)),
-        BookProgressSyncAction.pushLocal,
+        BookProgressSyncAction.conflict,
       );
-      // 时间戳相等：取较远位置。
+      // 戳相等（修复前取较远位置）。
       expect(
         resolve(_pos(800, 20), _pos(300, 20)),
-        BookProgressSyncAction.pushLocal,
+        BookProgressSyncAction.conflict,
       );
       expect(
         resolve(_pos(300, 20), _pos(800, 20)),
-        BookProgressSyncAction.applyRemote,
+        BookProgressSyncAction.conflict,
+      );
+    });
+
+    test('无基线但位置相同 → 已同步（不判冲突）', () {
+      expect(
+        resolve(_pos(800, 10), _pos(800, 20)),
+        BookProgressSyncAction.synced,
       );
     });
   });
@@ -358,8 +383,10 @@ void main() {
     test('视频 pushLocal：host 存的是超限毒戳时不把「毒戳+1」写进本端，下一轮不再重复 PUT', () async {
       final FushiDatabase db = _memDb();
       addTearDown(db.close);
-      const int now = 1700000000000;
-      const int poison = now + 86400000;
+      // 取真实时刻：兼容层的抬戳（_legacyLiveStamp）与 host 的截断都按墙钟判毒戳，
+      // 用写死的过去时刻会让「毒戳」在它们眼里是个可信的旧戳。
+      final int now = DateTime.now().millisecondsSinceEpoch;
+      final int poison = now + 86400000;
       await db.setPrefTyped<int>(videoRemotePositionPrefKey('vp'), 800000);
       await db.setPrefTyped<int>(videoRemotePositionAtPrefKey('vp'), now - 10);
       final _FakePositionBackend backend = _FakePositionBackend()
@@ -371,12 +398,12 @@ void main() {
             kind: PlaybackPositionKind.video,
           );
 
-      final PlaybackPosition agreed = await sync.pushLocal(
+      final PlaybackPosition agreed = (await sync.pushLocal(
         'vp',
         local: await sync.localPosition('vp'),
         remote: _pos(100000, poison),
         nowMs: now,
-      );
+      )).agreed;
       expect(
         agreed.updatedAtMs,
         lessThanOrEqualTo(now + kSyncFutureStampToleranceMs),

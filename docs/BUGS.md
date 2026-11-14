@@ -33,7 +33,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4012 条。点号进各自文件。
+> 共 4020 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -99,6 +99,14 @@
 | [BUG-4454](bugs/BUG-4454-host-jobs-ttl-only-at-startup.md) | ✅ | ✅ | 通用任务 host 只在启动时清理过期任务，被遗弃的上传永不回收 |
 | [BUG-4453](bugs/BUG-4453-manga-ocr-host-shared-volume-dir-deleted.md) | ✅ | ✅ | 漫画 OCR host 清理过期 / 取消的旧任务时删掉同卷新任务正在用的目录 |
 | [BUG-4452](bugs/BUG-4452-remote-job-poll-delay-overflow.md) | ✅ | ✅ | 远端任务轮询退避在约 2.4 小时后溢出抛错并删除 host 任务 |
+| [BUG-4436](bugs/BUG-4436-remote-video-open-bypasses-three-way.md) | ✅ | ✅ | 远端视频开播按 LWW 选位置，绕过三方判定（含合集切成员） |
+| [BUG-4435](bugs/BUG-4435-playback-position-no-baseline-lww-fallback.md) | ✅ | ✅ | 播放位置缺基线时退回跨设备墙钟 LWW |
+| [BUG-4434](bugs/BUG-4434-sync-baseline-not-scoped-by-remote.md) | ✅ | ✅ | 同步基线不带远端身份：多 host 共用互联 live 基线，换 host 后静默导入旧值 |
+| [BUG-4433](bugs/BUG-4433-compare-dialog-audiobook-follows-book-choice.md) | ✅ | ✅ | 对比弹窗把书的选择强加给有声书断点，绕过有声书的三方判定 |
+| [BUG-4432](bugs/BUG-4432-interconnect-live-put-blind-overwrite.md) | ✅ | ✅ | 互联 live 进度按旧快照盲写 host，覆盖对端更新（sweep / 实时上报 / 冲突弹窗） |
+| [BUG-4431](bugs/BUG-4431-interconnect-live-put-unconfirmed-baseline.md) | ✅ | ✅ | 互联 live 进度 PUT 不回结果，client 无条件记基线 |
+| [BUG-4430](bugs/BUG-4430-host-video-manifest-position-stamp-diverges.md) | ✅ | ✅ | host 视频清单与位置端点对同一断点给出不同的位置 / 时间戳 |
+| [BUG-4429](bugs/BUG-4429-interconnect-book-progress-future-stamp-unguarded.md) | ✅ | ✅ | 互联书籍进度没接未来时间戳防护，毒戳在 LWW 里永远胜出并扩散到各端 |
 | [BUG-4406](bugs/BUG-4406-interconnect-assistant-single-address-endless-poll.md) | ✅ | ✅ | AI 助手只认一条地址、会话期间不换路，凭据失效后仍每 3 秒无限重试 |
 | [BUG-4405](bugs/BUG-4405-remote-download-tasks-single-host-silent-failure.md) | ✅ | ✅ | 下载中心远端任务段只看一台 host、失败无提示、任务域与创建时间写错 |
 | [BUG-4404](bugs/BUG-4404-interconnect-probe-failure-reason-lost.md) | ✅ | ✅ | 互联能力探测把凭据失效、证书不符、老版本、连不上都折成『没有可用主机』 |
