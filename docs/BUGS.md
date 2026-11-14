@@ -33,16 +33,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3980 条。点号进各自文件。
+> 共 4004 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-4646](bugs/BUG-4646-tooltip-ticker-error-filter-hides-leaks.md) | ✅ | ✅ | main.dart 吞 RawTooltip ticker 错误的过滤会藏掉真实 ticker 泄漏断言 |
 | [BUG-4645](bugs/BUG-4645-dart314-aot-deferred-final-switch-capture.md) | ✅ | ✅ | Dart 3.14.0 AOT 编译推迟 final + switch 赋值 + 闭包捕获时崩溃（全平台 release 红） |
-> 共 4002 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
 | [BUG-4625](bugs/BUG-4625-linux-wpe-click-pointerup-button-mask.md) | ✅ | ✅ | Linux 漫画阅读器 OCR 文字无法点击查词 |
 | [BUG-4624](bugs/BUG-4624-linux-wpe-resize-stride-crash.md) | ✅ | ✅ | Linux 漫画页面出现条纹，调整窗口大小时阅读器崩溃 |
 | [BUG-4623](bugs/BUG-4623-linux-wpe-borrowed-pixels-refcount.md) | ✅ | ✅ | Linux 漫画阅读器释放 WPE 借用像素缓冲区后崩溃 |
