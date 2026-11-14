@@ -1,4 +1,4 @@
-// BUG-4387: the Flatpak pins GDK_BACKEND=x11, and on some machines Fushi's X11
+// BUG-4533: the Flatpak pins GDK_BACKEND=x11, and on some machines Fushi's X11
 // drawing crashes right after the first frame while Wayland works. The Flatpak
 // entry point (tool/linux/flatpak/fushi_launcher.sh) falls back to Wayland
 // then. These tests run the REAL launcher with bash against a stub app binary
