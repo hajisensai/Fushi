@@ -299,6 +299,28 @@ impl Aliases {
         v
     }
 
+    /// 表里的全部条目：(ID, 规范 ID, 怎么认的)，按 ID 升序。给存储层把表落成派生表用。
+    pub fn entries(&self) -> Vec<(Id, Id, How)> {
+        let mut v: Vec<(Id, Id, How)> = self
+            .map
+            .iter()
+            .map(|(id, e)| (*id, e.canonical, e.how))
+            .collect();
+        v.sort_by_key(|(id, _, _)| *id);
+        v
+    }
+
+    /// 判过的 `merged-…` 写入者：(名字, 哈希验上的最初写入者, 怎么判的)，按名字排序。
+    pub fn judged_writers(&self) -> Vec<(&str, &str, WriterHow)> {
+        let mut v: Vec<(&str, &str, WriterHow)> = self
+            .writers
+            .iter()
+            .map(|(a, e)| (a.as_str(), e.origin.as_str(), e.how))
+            .collect();
+        v.sort();
+        v
+    }
+
     /// 同一个 ID 被两条规则给出两个不同规范 ID 的次数（只可能是哈希碰撞；正常是 0）。
     pub fn conflicts(&self) -> usize {
         self.conflicts

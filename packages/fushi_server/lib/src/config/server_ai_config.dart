@@ -15,6 +15,7 @@
 ///   api_key: "sk-..."
 ///   reasoning_effort: "none"  # none / low / medium / high
 ///   allow_insecure_http: false
+///   images: false             # 模型能看图：字幕校对（subgen / host 任务）才会附上视频画面
 ///   web_knowledge: true       # 联网资料（内置维基站）辅助识别作品 / 列系列
 ///   web_search:               # 通用联网搜索（可选；不写 = 不联网搜索）。管理员亲手写进
 ///                             # 配置即同意抓前 3 页网页正文交给 AI（app 侧是首次确认弹框）
@@ -49,6 +50,7 @@ class ServerAiConfig {
     this.apiKey,
     this.reasoningEffort = AiReasoningEffort.none,
     this.allowInsecureHttp = false,
+    this.images = false,
     this.webKnowledge = true,
     this.libraryOrganize = false,
     this.agentForPeers = false,
@@ -65,6 +67,11 @@ class ServerAiConfig {
   final String? apiKey;
   final AiReasoningEffort reasoningEffort;
   final bool allowInsecureHttp;
+
+  /// 这家的模型能收图（[AiProviderConfig.acceptsImages]）。默认关：收不了图的端点会
+  /// 整批报错，而且打开它就是允许字幕校对把视频画面发出去（画面参考，spec
+  /// `2026-11-11-video-subtitle-ai-reference`）——管理员亲手写进配置才算。
+  final bool images;
   final bool webKnowledge;
 
   /// 扫描入库后对规则归不了组的新条目跑一次自动 AI 整理（spec
@@ -100,6 +107,7 @@ class ServerAiConfig {
       allowInsecureHttp:
           raw['allow_insecure_http'] == true ||
           '${raw['allow_insecure_http']}' == 'true',
+      images: raw['images'] == true || '${raw['images']}' == 'true',
       webKnowledge:
           raw['web_knowledge'] != false && '${raw['web_knowledge']}' != 'false',
       libraryOrganize:
@@ -181,6 +189,7 @@ class ServerAiConfig {
     reasoningEffort: reasoningEffort,
     // 本地推理服务（Ollama / LM Studio）的预设地址是 loopback HTTP。
     allowInsecureHttp: allowInsecureHttp || (_preset?.isLocal ?? false),
+    acceptsImages: images,
   );
 
   /// 能真的发请求的提供商；配错 / 没配全 → null。
@@ -201,6 +210,7 @@ class ServerAiConfig {
     String? apiKey,
     AiReasoningEffort? reasoningEffort,
     bool? allowInsecureHttp,
+    bool? images,
     bool? webKnowledge,
     bool? libraryOrganize,
     bool? agentForPeers,
@@ -214,6 +224,7 @@ class ServerAiConfig {
     apiKey: apiKey ?? this.apiKey,
     reasoningEffort: reasoningEffort ?? this.reasoningEffort,
     allowInsecureHttp: allowInsecureHttp ?? this.allowInsecureHttp,
+    images: images ?? this.images,
     webKnowledge: webKnowledge ?? this.webKnowledge,
     libraryOrganize: libraryOrganize ?? this.libraryOrganize,
     agentForPeers: agentForPeers ?? this.agentForPeers,
@@ -230,6 +241,7 @@ class ServerAiConfig {
     if ((apiKey ?? '').isNotEmpty) b.writeln('  api_key: ${q(apiKey!)}');
     b.writeln('  reasoning_effort: ${q(reasoningEffort.storageKey)}');
     b.writeln('  allow_insecure_http: $allowInsecureHttp');
+    b.writeln('  images: $images');
     b.writeln('  web_knowledge: $webKnowledge');
     b.writeln('  library_organize: $libraryOrganize');
     b.writeln('  agent_for_peers: $agentForPeers');
@@ -255,6 +267,7 @@ class ServerAiConfig {
       'apiKeySet': (apiKey ?? '').isNotEmpty,
       'reasoningEffort': reasoningEffort.storageKey,
       'allowInsecureHttp': allowInsecureHttp,
+      'images': images,
       'webKnowledge': webKnowledge,
       'libraryOrganize': libraryOrganize,
       'agentForPeers': agentForPeers,

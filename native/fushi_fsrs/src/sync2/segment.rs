@@ -35,10 +35,16 @@ pub const VERSION: u8 = 1;
 /// 分块封装；段与 head 的字节格式没变（v1 位置的段 / head 原样搬进新根，读者照读）。3 = 存量重复流收敛：新种类
 /// `Dedup`（op.rs [super::op::KIND_DEDUP]）与带副本说明的骨架（[super::op::Op::duplicate]，骨架载荷不再恒为 32 字节）。
 pub const PROTOCOL: u32 = 3;
-/// 能读本版本写出的数据所需的最低读者版本（设计 §8）。读者遇到 head 的 `minReader` 比自己的 [PROTOCOL] 新：不收这台
-/// 设备、报需要升级（store/sync2/transport.rs `plan`）。3：协议 2 的读者解不开副本骨架（整段拒收），也不认 `Dedup`
-/// （会把作者的副本当原件留着，删除扣留与修改记录行和别的设备分叉）。
-pub const MIN_READER: u32 = 3;
+/// head 的 `minReader`（设计 §8）的地板值：本版本写出的、协议 3 读者完全读得懂的内容都声明它。读者遇到 head 的
+/// `minReader` 比自己的 [PROTOCOL] 新：不收这台设备、报需要升级（store/sync2/transport.rs `plan`）。
+///
+/// head 实际写的是**按内容声明**的值（store/sync2/min_reader.rs）：本机写过的内容要求的最高版本（
+/// [super::min_reader::min_reader_of]）与本机收下的别的设备 head 的 `minReader` 取大，只增不减，不低于本地板值。
+/// 地板值是 3 而不是 2：协议 2 的读者解不开副本骨架（整段拒收）、不认 `Dedup`（会把作者的副本当原件留着），而且它的
+/// 派生规则比现行旧（摘要前缀 `2:` / `3:`），前缀不同的设备之间摘要永远不比，放它进来会静默分叉。
+///
+/// 和目录布局层（`meta.json` 的 `minReader`，Dart `kSrsSync2MinReader`）是两回事：那一层只看位置的目录与文件格式。
+pub const CONTENT_FLOOR: u32 = 3;
 
 /// 切段目标（设计 §6.2）：按**压缩后**的体积算，一段约 4 MB。哑存储上一次请求的固定开销远大于传几 MB 的
 /// 时间，段越少首次提交 / 新设备追赶越快；增量同步每轮只有几条操作，本来就只出一个小段，由小段合并（§7.1）收拢。
@@ -1233,7 +1239,7 @@ pub(crate) mod tests {
         let head = Head {
             gen: 3,
             protocol: PROTOCOL,
-            min_reader: MIN_READER,
+            min_reader: CONTENT_FLOOR,
             collection: Id([1; 16]),
             device: Id([2; 16]),
             public: signer.public(),
@@ -1263,7 +1269,7 @@ pub(crate) mod tests {
         let head = Head {
             gen: 2,
             protocol: PROTOCOL,
-            min_reader: MIN_READER,
+            min_reader: CONTENT_FLOOR,
             collection: Id([1; 16]),
             device: Id([2; 16]),
             public: signer.public(),

@@ -42,7 +42,7 @@ import 'package:fushi/src/media/music/plugin/music_plugins.dart'
         musicPluginTrackPath,
         musicPluginTrackUid,
         parseMusicPluginTrackPath;
-import 'package:fushi/src/media/music/server/music_servers.dart'
+import 'package:fushi/src/media/music/server/music_server_play_item.dart'
     show musicServerPlayItem;
 import 'package:fushi/src/models/store_compliance.dart';
 

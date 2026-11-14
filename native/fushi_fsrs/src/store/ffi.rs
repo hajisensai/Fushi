@@ -417,6 +417,7 @@ fn one_row(page: &[u8]) -> Result<Vec<rusqlite::types::Value>, String> {
 /// 测试专用的原始通道（[SrsCore::exec_raw]，写连接）：`select` 4 返回一行 `[变更行数, last_insert_rowid]`，5 返回
 /// 「列名行 + 结果行」；缓冲区用 `ffsrs_free_bytes` 释放。别的取值不认：0–3 是以前 Drift 执行器的语句入口，
 /// 已经没有了——srs.db 的写入只有内核命令，读只有内核的读命令（`ffsrs_store_sync2`；`read` 见 store/reads.rs）。
+/// 4 / 5 只有带 cargo feature `raw_sql` 的库里有，别的构建报 [crate::store::RAW_SQL_ABSENT]、不执行。
 #[no_mangle]
 pub extern "C" fn ffsrs_store_exec(
     core: *const SrsCoreHandle,
@@ -437,8 +438,12 @@ pub extern "C" fn ffsrs_store_exec(
         let s = utf8(sql, sql_len)?;
         let values = one_row(bytes(params, params_len).ok_or("null params")?)?;
         let page = match select {
+            #[cfg(any(test, feature = "raw_sql"))]
             4 => c.exec_raw(s, &values, false)?,
+            #[cfg(any(test, feature = "raw_sql"))]
             5 => c.exec_raw(s, &values, true)?,
+            #[cfg(not(any(test, feature = "raw_sql")))]
+            4 | 5 => return Err(crate::store::RAW_SQL_ABSENT.to_string()),
             m => return Err(format!("unknown exec mode {m}")),
         };
         hand_out(page, out, out_len);
@@ -448,8 +453,38 @@ pub extern "C" fn ffsrs_store_exec(
 
 /// 测试专用的原始通道的批量版（[SrsCore::exec_batch_raw]：整批在写连接的一个 SAVEPOINT 里）。`statements` 是单列文本页（每行一条 SQL）；`applications` 是两列页：
 /// `[语句下标 i64, 参数页 blob]`（参数页是一行的 rows.rs 页，可为空字节）。
+///
+/// 只有带 cargo feature `raw_sql` 的库里有；别的构建报 [crate::store::RAW_SQL_ABSENT]、什么都不解析、不取写锁。符号
+/// 照常导出：Dart 绑定构造时 lookup 全部符号，`verify_abi.sh` 按绑定核对导出面——发布构建里不在的是能写库的代码。
 #[no_mangle]
 pub extern "C" fn ffsrs_store_exec_batch(
+    core: *const SrsCoreHandle,
+    statements: *const u8,
+    statements_len: usize,
+    applications: *const u8,
+    applications_len: usize,
+    error_out: *mut *mut c_char,
+) -> i32 {
+    #[cfg(not(any(test, feature = "raw_sql")))]
+    {
+        let _ = (statements, statements_len, applications, applications_len);
+        return run_core(core, error_out, |_| {
+            Err(crate::store::RAW_SQL_ABSENT.to_string())
+        });
+    }
+    #[cfg(any(test, feature = "raw_sql"))]
+    exec_batch_raw_entry(
+        core,
+        statements,
+        statements_len,
+        applications,
+        applications_len,
+        error_out,
+    )
+}
+
+#[cfg(any(test, feature = "raw_sql"))]
+fn exec_batch_raw_entry(
     core: *const SrsCoreHandle,
     statements: *const u8,
     statements_len: usize,
@@ -950,24 +985,21 @@ fn key32(v: &serde_json::Value) -> Result<Option<[u8; 32]>, String> {
     }
 }
 
-/// 一条 JSON 命令（[sync2_dispatch_op]）。请求带 `settled: true` 的 profile 命令成功、且回包是 JSON 对象时，把收段
-/// 通道在这条命令之前（或更早）自己做完的片攒下的投影变化附在回包的 `settled` 键上交回（store/sync2/channel.rs
-/// `take_settled`）：那些片没有自己的回包，Dart 那一侧按刷新信号记的缓存要靠它失效。失败的命令不取（留给下一条）。
+/// 一条 JSON 命令（[sync2_dispatch_op]）。返回之后（命令自己的写入已提交或已回滚）按请求与结果推进这个 profile 的
+/// 进程内刷新键（store/refresh.rs [SrsCore::refresh_after]）；收段通道在命令之前自己做完的片在每片提交时已经记过。
 pub(crate) fn sync2_dispatch(
     c: &SrsCore,
     req: &serde_json::Value,
     blobs: &mut Vec<Vec<u8>>,
     files: &mut Vec<(String, Vec<u8>)>,
 ) -> Result<serde_json::Value, String> {
-    let mut v = sync2_dispatch_op(c, req, blobs, files)?;
-    if req.get("settled").and_then(serde_json::Value::as_bool) == Some(true) && v.is_object() {
-        if let Some(profile) = req.get("profile").and_then(serde_json::Value::as_str) {
-            if let Some(settled) = c.take_settled(profile) {
-                v["settled"] = settled;
-            }
-        }
-    }
-    Ok(v)
+    let out = sync2_dispatch_op(c, req, blobs, files);
+    let projecting = req
+        .get("op")
+        .and_then(serde_json::Value::as_str)
+        .is_some_and(|op| PROJECTING_OPS.contains(&op));
+    c.refresh_after(req, out.as_ref().map_err(|_| ()), projecting);
+    out
 }
 
 fn sync2_dispatch_op(
@@ -994,7 +1026,17 @@ fn sync2_dispatch_op(
         "read_lib" => {
             return c.read_query(|conn| crate::store::reads::run_lib(conn, req, files));
         }
-        "orphan_sweep_done" => return c.orphan_sweep_done(i("now")?),
+        "orphan_sweep_done" => {
+            let keep: Vec<String> = req
+                .get("keep")
+                .and_then(Value::as_array)
+                .ok_or("sync2: missing keep")?
+                .iter()
+                .filter_map(|v| v.as_str().map(str::to_owned))
+                .collect();
+            let mark = req.get("mark") == Some(&Value::Bool(true));
+            return c.orphan_sweep_done(i("now")?, &keep, mark);
+        }
         // profile 并入 / 链接在 srs.db 里的写（store/profile_data.rs）：各自一次持写锁、一个 SAVEPOINT。
         "profile_merge_mark" => {
             return c.profile_merge_mark(s("from")?, i("profileId")?, s("to")?);
@@ -1033,6 +1075,8 @@ fn sync2_dispatch_op(
             c.sync2_ingest_yield();
             return Ok(json!({}));
         }
+        // 进程内刷新键（store/refresh.rs）：只读内存，不碰通道、不拿写锁、不读库。Dart 在 UI isolate 上同步调（指纹 getter）。
+        "refresh_keys" => return Ok(c.refresh_keys(s("profile")?)),
         _ => {}
     }
     let profile = s("profile")?;
@@ -1274,6 +1318,7 @@ const LOCAL_WRITE_OPS: &[&str] = &[
     "restore",
     "retire",
     "dedup",
+    "digest_heal",
     "trust",
 ];
 
@@ -1464,6 +1509,8 @@ fn local_write_body(
         "deck_delete" => s2::deck_delete::deck_delete_on(conn, profile, now, req)?,
         // 存量重复流收敛作业推进一步（store/sync2/dedup.rs）；`done` 为假就再发。
         "dedup" => s2::dedup::dedup_on(conn, profile, now)?,
+        // 摘要不一致的自动重建（store/sync2/heal.rs）：重放改写的卡随这次命令刷新缓存。
+        "digest_heal" => s2::heal::digest_heal_on(conn, profile, now)?,
         "import" => s2::transport::import_on(
             conn,
             profile,
@@ -1614,7 +1661,10 @@ const CHANNEL_TRANSPARENT: &[&str] = &[
     "study",
     "read",
     "card_columns",
-    "stats_bundle",
+    "stats_report",
+    "stats_recall",
+    "stats_rows",
+    "stats_release",
     "anki_resolve",
     "anki_notes_info",
     "lineages",
@@ -1634,6 +1684,8 @@ const CHANNEL_TRANSPARENT: &[&str] = &[
     "outbox_ack",
     "head",
     "relay_outbox",
+    "obsolete",
+    "obsolete_former",
     "obsolete_ack",
     "relay_ack",
     "media_known",
@@ -1644,6 +1696,8 @@ const CHANNEL_TRANSPARENT: &[&str] = &[
     "local_anchor",
     "profile_footprint",
     "profile_purge",
+    "binding_get",
+    "binding_set",
     "derive_key",
     "seal",
     "open",
@@ -1667,6 +1721,7 @@ const CHANNEL_SETTLES: &[&str] = &[
     "merge_notes",
     "sched",
     "deck_delete",
+    "undo_check",
     "retire",
     "dedup",
     "migrate",
@@ -1677,6 +1732,7 @@ const CHANNEL_SETTLES: &[&str] = &[
     "import",
     "digest",
     "digest_buckets",
+    "digest_heal",
     "media_record",
     "media_hash",
     "media_scan",
@@ -1717,6 +1773,7 @@ const PROJECTING_OPS: &[&str] = &[
     "checkpoint",
     "restore",
     "dedup",
+    "digest_heal",
 ];
 
 fn sync2_command(
@@ -1774,8 +1831,13 @@ fn sync2_command(
             ));
             json!({})
         }
-        "stats_bundle" => {
-            c.read_visible(|conn| crate::store::bulk::stats_bundle(conn, profile, files))?
+        // 复习统计（store/stats.rs）：原料按 profile + 统计指纹缓存在内核，换范围 / 牌组只重算聚合。
+        "stats_report" => c.stats_report(profile, req)?,
+        "stats_recall" => c.stats_recall(profile, req)?,
+        "stats_rows" => c.stats_rows(profile, req)?,
+        "stats_release" => {
+            c.stats_release();
+            json!({})
         }
         "anki_resolve" => {
             c.read_visible(|conn| crate::store::bulk::anki_resolve(conn, profile, req))?
@@ -1877,17 +1939,12 @@ fn sync2_command(
                 i("now")?,
                 skip,
             )? {
-                crate::store::sync2::transport::HeadWrite::Written {
-                    path,
-                    bytes,
-                    gen,
-                    obsolete,
-                } => {
+                crate::store::sync2::transport::HeadWrite::Written { path, bytes, gen } => {
                     files.push((path, bytes));
-                    json!({"gen": gen, "delete": obsolete})
+                    json!({"gen": gen})
                 }
-                crate::store::sync2::transport::HeadWrite::Unchanged { path, obsolete } => {
-                    json!({"unchanged": true, "path": path, "delete": obsolete})
+                crate::store::sync2::transport::HeadWrite::Unchanged { path } => {
+                    json!({"unchanged": true, "path": path})
                 }
                 // 要引用的段还有没传到这个位置的（发件确认后被合并改切）：不写，Dart 按「改切」结束这一轮。
                 crate::store::sync2::transport::HeadWrite::Recut => json!({"recut": true}),
@@ -1921,7 +1978,46 @@ fn sync2_command(
             *files = batch.files;
             json!({"more": batch.more})
         }
-        // 两段式删除：`head` / `relay_ack` 给的待删清单里 Dart 已经删掉（归档位置：按策略不删）的那些，内核移除记录。
+        // 一轮收尾：位置上此刻该删的文件（本机的旧 head、合并换下来的旧小段、旧转发件），保留策略只在内核
+        // （transport.rs `sync2_obsolete` / `HEAD_KEEP_GENS`）。`present`：head 已经在位置上之后列 `devices/<本机>/`
+        // 得到的文件名；`archive`：归档位置（不给旧 head）。Dart 删成功的发 `obsolete_ack`。
+        "obsolete" => {
+            let present: Vec<String> = req
+                .get("present")
+                .and_then(Value::as_array)
+                .ok_or("sync2: missing present")?
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_owned)
+                .collect();
+            let archive = req.get("archive") == Some(&Value::Bool(true));
+            let out = c.sync2_obsolete(profile, s("location")?, &present, archive, i("now")?)?;
+            json!({"delete": out.delete, "again": out.again, "former": out.former})
+        }
+        // 换过身份的设备清旧身份的目录（store/sync2/former.rs）：`obsolete` 回复的 `former` 里点名的旧身份，Dart 列
+        // `devices/<device>/`（`present`）、读其中每一份 head（blobs），这里给出证明得了可以删的（只会是被盖过的旧
+        // head）。没有待删记录，删完不必回执。
+        "obsolete_former" => {
+            let present: Vec<String> = req
+                .get("present")
+                .and_then(Value::as_array)
+                .ok_or("sync2: missing present")?
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_owned)
+                .collect();
+            let archive = req.get("archive") == Some(&Value::Bool(true));
+            json!({"delete": c.sync2_obsolete_former(
+                profile,
+                s("location")?,
+                s("device")?,
+                &present,
+                blobs,
+                archive,
+                i("now")?,
+            )?})
+        }
+        // 两段式删除：`obsolete` / `relay_ack` 给的待删清单里 Dart 已经删掉（归档位置：按策略不删）的那些，内核移除记录。
         "obsolete_ack" => {
             let deleted: Vec<String> = req
                 .get("deleted")
@@ -2217,9 +2313,14 @@ fn sync2_command(
         // 删 profile 的级联清理（store/profile_data.rs）：确认框的规模、一个事务里删光本机数据。
         "profile_footprint" => c.profile_footprint(profile)?,
         "profile_purge" => c.profile_purge(profile)?,
+        // 本机 profile（集合）的绑定状态（store/binding.rs）：只读 / 只写 srs_meta 的一个键，不碰投影。
+        "binding_get" => c.binding_get(profile)?,
+        "binding_set" => c.binding_set(profile, s("state")?, s("via")?, i("now")?)?,
         "conflicts" => c.sync2_conflicts(profile)?,
         "checkpoints" => c.sync2_checkpoints(profile)?,
         "history" => c.sync2_history(profile, s("kind")?, s("entity")?)?,
+        // 编辑类撤销的校验（store/sync2/undo_check.rs）：只读，按修改记录判每个字段键能不能撤。
+        "undo_check" => c.sync2_undo_check(profile, req)?,
         // 预览恢复到还原点 / 某个时刻（只读；恢复本身是本机写命令，见 [local_write_body]）。
         "plan_restore" => c.sync2_plan_restore(
             profile,
@@ -2685,6 +2786,7 @@ mod tests {
             "wal_checkpoint",
             "bulk_cache",
             "ingest_yield",
+            "refresh_keys",
         ] {
             assert!(
                 ops.remove(global),

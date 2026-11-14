@@ -249,12 +249,15 @@ void main() {
     expect((await _byName(store, a))['Sentence'], '<b>魚</b>を飲む');
     expect((await _byName(store, b))['Sentence'], '<b>肉</b>を飲む');
 
-    // b 的例句之后被手动改过：撤销查找替换只恢复 a。
+    // b 的例句之后被手动改过：撤销查找替换只恢复 a，b 保留现值（部分撤销）。
     await store.updateNote(
       b,
       fieldsById: <String, String>{_fc('Sentence'): '手改'},
     );
-    expect(await ops.undo('srs.notes.find-replace', frUndo), OpUndoStatus.done);
+    expect(
+      await ops.undo('srs.notes.find-replace', frUndo),
+      OpUndoStatus.partial,
+    );
     expect((await _byName(store, a))['Sentence'], '魚を食べる');
     expect((await _byName(store, b))['Sentence'], '手改');
 
@@ -297,10 +300,10 @@ void main() {
     expect(applied.noteCount, 1);
     expect((await _byName(store, a))['Hint'], 'h');
     expect((await _byName(store, b))['Hint'], '别处');
-    expect(await applied.outcome.revert!(store), 0);
+    expect((await applied.outcome.revert!(store)).complete, isTrue);
     expect((await _byName(store, a))['Hint'], '');
 
-    // 经操作目录：撤销载荷 = 实际写下的改动（不在执行前另算一遍计划）。
+    // 经操作目录：撤销载荷 = 实际写下的改动与它们的 dot（不在执行前另算一遍计划）。
     final (Map<String, Object?> done, OpUndoRecord record) = await ops.run(
       'srs.notes.set-field',
       <String, Object?>{
@@ -311,9 +314,10 @@ void main() {
     );
     expect(done['notes'], 1);
     expect(done.containsKey('conflicts'), isFalse);
-    final List<Object?> changes = record.payload['changes']! as List<Object?>;
-    expect(changes, hasLength(1));
-    expect((changes.single! as Map<String, Object?>)['after'], 'z');
+    final SrsEditUndo undo = SrsEditUndo.fromJson(record.payload['undo']);
+    expect(undo.items, hasLength(1));
+    expect(undo.items.single.after, 'z');
+    expect(undo.items.single.seq, isNotNull, reason: '带内核分配的 dot');
   });
 
   test('CLI 经 /ops/call 执行：撤销记录落进操作记录，按记录能撤销', () async {

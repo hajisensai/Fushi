@@ -225,6 +225,9 @@ enum OpUndoStatus {
   /// 执行之后又被手动改过：不覆盖用户的修改，跳过（spec §5.3）。
   superseded,
 
+  /// 部分撤销：没被动过的部分回到执行前，之后又被改过的部分保留现值（[OpUndoOutcome.message] 列出是哪些）。
+  partial,
+
   /// 撤销失败（对象已不存在等）。
   failed,
 }
@@ -234,6 +237,7 @@ class OpUndoOutcome {
   const OpUndoOutcome.superseded([this.message])
     : status = OpUndoStatus.superseded;
   const OpUndoOutcome.failed([this.message]) : status = OpUndoStatus.failed;
+  const OpUndoOutcome.partial([this.message]) : status = OpUndoStatus.partial;
 
   final OpUndoStatus status;
   final String? message;

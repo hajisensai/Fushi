@@ -200,20 +200,25 @@ class _SrsHomeView extends StatelessWidget {
       (SrsDeckSummary d) => d.deck.id == deck.deck.id,
     );
     final SrsDeckSummary root = _srsRootOf(deck, byId);
-    return _SrsDeckDetail(
-      key: ValueKey<String>('srs-home-detail-${deck.deck.id}'),
-      deck: deck,
-      detail: stats?.detailFor(
+    // 详情统计由内核按这个牌组子树出一份（按牌组记住，切回来不再要）；没到之前图表处留位。
+    return FutureBuilder<SrsHomeDeckDetail>(
+      future: stats?.detailFor(
         deck.deck.id,
         srsDeckSubtreeIds(data.decks, deck.deck.id),
       ),
-      today: stats?.today,
-      shape: _srsDeckBadgeShape(_srsRootIndexOf(data.decks, root)),
-      isDefault: deck.deck.id == data.store.defaultDeckId,
-      canMoveUp: i > 0,
-      canMoveDown: i >= 0 && i < level.length - 1,
-      onReview: onReview,
-      onAction: onAction,
+      builder: (BuildContext context, AsyncSnapshot<SrsHomeDeckDetail> s) =>
+          _SrsDeckDetail(
+            key: ValueKey<String>('srs-home-detail-${deck.deck.id}'),
+            deck: deck,
+            detail: s.data,
+            today: stats?.today,
+            shape: _srsDeckBadgeShape(_srsRootIndexOf(data.decks, root)),
+            isDefault: deck.deck.id == data.store.defaultDeckId,
+            canMoveUp: i > 0,
+            canMoveDown: i >= 0 && i < level.length - 1,
+            onReview: onReview,
+            onAction: onAction,
+          ),
     );
   }
 
@@ -1351,6 +1356,7 @@ List<Widget> _srsDeckBanners(
   required SrsDeckListData data,
   required bool showImportTasks,
   required int lapisPending,
+  bool joinProvisional = false,
   required VoidCallback onMigrateLapis,
   required VoidCallback onDismissLapisReminder,
   required VoidCallback onStarterPacks,
@@ -1408,6 +1414,18 @@ List<Widget> _srsDeckBanners(
                 ),
               ],
             ),
+          ],
+        ),
+      ),
+    // 先加入、后写入没赶上（离线 / 超时）：这台设备的复习数据暂时自成一份，下次同步连上时与已有的数据合并。不挡使用。
+    if (joinProvisional)
+      FushiCard(
+        key: const ValueKey<String>('srs-join-provisional'),
+        child: Row(
+          spacing: tokens.spacing.gap * 1.5,
+          children: <Widget>[
+            const FushiIcon(FushiIcons.cloudSync),
+            Expanded(child: Text(t.srs_sync_join_provisional_hint)),
           ],
         ),
       ),

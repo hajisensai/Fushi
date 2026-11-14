@@ -250,6 +250,9 @@ pub(crate) fn apply(
                 .map_err(sql)?;
         }
         let dup = o.duplicate(*twin).map_err(|e| e.to_string())?;
+        if author == own {
+            super::min_reader::raise(c, profile, crate::sync2::min_reader::min_reader_of(&dup))?;
+        }
         c.prepare_cached("UPDATE sync2_ops SET payload = ?4, purged = 1, sc = NULL, sc_at = NULL, pz = 0 WHERE profile_uid = srs_id(?1) AND device = ?2 AND seq = ?3")
             .map_err(sql)?
             .execute(params![profile, author.0.to_vec(), *seq as i64, &dup.payload[..]])

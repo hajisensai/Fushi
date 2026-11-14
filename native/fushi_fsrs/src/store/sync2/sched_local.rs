@@ -179,7 +179,21 @@ pub(crate) fn sched_local_on(
     let mut stamp_tree: Option<config::DeckTree> = None;
     let mut written: Vec<String> = Vec::new();
     let mut blocked = 0u64;
+    let mut owners = super::ownership::Seen::new();
     for (card, action) in expand(c, profile, &tree, items)? {
+        // 别的 profile 的卡按「没有这张卡」处理（ownership.rs）：不读它的历史、不写日志；撤销算撤不了。
+        if super::ownership::foreign_seen(
+            c,
+            profile,
+            crate::sync2::op::EntKind::Card,
+            &card,
+            &mut owners,
+        )? {
+            if matches!(action, Action::Undo { .. }) {
+                blocked += 1;
+            }
+            continue;
+        }
         let note = note_of(c, &card)?;
         // 每张卡在它自己的归属组上重放到此刻（同一批里先写的日志已投影，后面的项看得见）。
         let Group { rows, .. } = group_of(c, &card, note.as_deref())?;

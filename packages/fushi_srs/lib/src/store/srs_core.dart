@@ -456,6 +456,13 @@ final class SrsCoreDiagCounts {
       'db=${dbBytes >> 20}MB wal=${walBytes >> 20}MB';
 }
 
+/// 这个原生库没编进测试专用的原始 SQL 通道（cargo feature `raw_sql`，native/fushi_fsrs/Cargo.toml）时
+/// [SrsCore.debugExecRaw] / [SrsCore.debugSelectRaw] / [SrsCore.debugExecBatchRaw] 的报错（与 Rust
+/// `store::RAW_SQL_ABSENT` 相同）。发布 / 随包构建都不带；测试用的库（CI 包测试 / 单测分片、dist worker、本机备库
+/// 脚本）带。
+const String kSrsRawSqlAbsent =
+    'srs: the raw SQL channel is not built into this library (cargo feature raw_sql)';
+
 /// 一个打开的 srs.db。
 final class SrsCore {
   SrsCore._(this._b, this._handle, {required this.owned});
@@ -666,6 +673,8 @@ final class SrsCore {
   /// **测试专用**的原始通道：在写连接上执行一条任意语句（测试里直接改库造场景——改缓存行、删本机状态行、装触发器、
   /// 读写 PRAGMA）。生产代码不得调用（守卫 `srs_read_only_executor_guard_test.dart`）：srs.db 的每一笔写入都是内核命令，
   /// 每一次读都是内核读命令（`read` / `read_lib`，native/fushi_fsrs/src/store/reads.rs）。
+  /// 只有带 cargo feature `raw_sql` 的库里有：发布构建里能写库的这段原生代码不在，调用抛 [SrsCoreException]
+  /// （消息 [kSrsRawSqlAbsent]），所以生产代码里的调用在测试里是绿的、到发布包里才失败。
   ///
   /// [select] 时返回「列名行 + 结果行」（PRAGMA、`… RETURNING` 之类有结果行的语句），否则返回一行
   /// `[变更行数, last_insert_rowid]`；都是 [srsDecodeRows] 的页。语句跑完写连接必须回到 autocommit：BEGIN / SAVEPOINT
@@ -720,7 +729,7 @@ final class SrsCore {
       });
 
   /// [debugExecRaw] 的批量版（**测试专用**）：[applications] 每项是（语句下标, 参数），整批在写连接的一个 SAVEPOINT
-  /// 里执行，一条出错整批不落。
+  /// 里执行，一条出错整批不落。同 [debugExecRaw] 只有带 `raw_sql` 的库里有。
   void debugExecBatchRaw(
     List<String> statements,
     List<(int, List<Object?>)> applications,
@@ -780,6 +789,33 @@ final class SrsCore {
     _b._freeBytes(out.value, len);
     return SrsSync2Result.decode(bytes);
   });
+
+  /// [profile] 此刻的进程内刷新键（内核 `refresh_keys`，native/fushi_fsrs/src/store/refresh.rs）：牌组树 / 修改记录 /
+  /// 角标 / 统计 / RWKV 分数表这些缓存「还能不能用」的判据，由内核在内存里按 profile 持有、在每次提交之后推进。各键
+  /// 是不透明串，只比相等：相等 = 这期间没有那一类变化（同一次打开库里只增不减；每次打开库换一个随机前缀）。
+  ///
+  /// 只读内存（不碰通道、不拿写锁、不读库），在调用方 isolate 上同步调。库已关闭（本对象已关，或 [fromAddress]
+  /// 包的句柄的拥有者已关库）→ null。
+  SrsRefreshKeys? refreshKeys(String profile) {
+    if (isClosed) return null;
+    final Map<String, Object?> k;
+    try {
+      k = sync2(<String, Object?>{
+        'op': 'refresh_keys',
+        'profile': profile,
+      }).map;
+    } on SrsCoreException catch (e) {
+      if (e.message == kSrsCoreClosed) return null;
+      rethrow;
+    }
+    return (
+      content: k['content']! as String,
+      structure: k['structure']! as String,
+      rwkv: k['rwkv']! as String,
+      stats: k['stats']! as String,
+      landed: k['landed']! as String,
+    );
+  }
 
   /// 卡片历史的当前状态，Rust 直接从写连接读日志（含事务里未提交的行）。[lineages] 每项是一份
   /// 历史的血统（自己 + 全部前身的卡 ID）。返回 `srsDecodeHistoryStates` 的布局。
@@ -1087,6 +1123,23 @@ final class SrsReadSession {
     _handle = ffi.nullptr;
   }
 }
+
+/// 已关闭的句柄上调用时内核报的错误文本（native/fushi_fsrs/src/store/mod.rs `CLOSED`）。
+const String kSrsCoreClosed = 'srs store is closed';
+
+/// [SrsCore.refreshKeys] 的结果（键的含义见 native/fushi_fsrs/src/store/refresh.rs）：
+/// - [content]：复习日志与界面状态以外的事件落库、可见性变化、重读本机状态；
+/// - [structure]：[content] 再加界面状态类修改记录（牌组收起 / 展开、排序位）——牌组树与 profile 修改记录的缓存键；
+/// - [rwkv]：RWKV 分数表整表重查（牌组 / 配置类事件、别的设备的事件落库；收段会话期间攒着、结束时并成一次）；
+/// - [stats]：会改变统计结果的事件（落库事件与可见性变化，去掉界面状态类）；
+/// - [landed]：任何落库事件与可见性变化（与落盘修订号同口径，但含收段通道自己做完的片）。
+typedef SrsRefreshKeys = ({
+  String content,
+  String structure,
+  String rwkv,
+  String stats,
+  String landed,
+});
 
 /// [SrsCore.sync2] 的结果：命令的 JSON 结果，以及发件 / 写 head 产出的文件（相对路径 → 字节）。
 final class SrsSync2Result {

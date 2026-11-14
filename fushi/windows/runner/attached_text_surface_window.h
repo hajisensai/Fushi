@@ -240,15 +240,18 @@ public:
                                   std::string *error);
   // |glyph_words| is the compact list [start, length, left, top, right,
   // bottom] * n in source-client physical pixels measured against a client of
-  // exactly |client_width| x |client_height|.  A size different from the live
-  // source client is rejected ("measured_client_size_mismatch") and the
-  // previous line's catch boxes are revoked until a fresh measurement arrives.
+  // |client_width| x |client_height|, give or take |client_size_tolerance|
+  // physical pixels of producer quantization (CSS viewport x fractional DPR).
+  // A size outside that band is rejected ("measured_client_size_mismatch")
+  // and the previous line's catch boxes are revoked until a fresh measurement
+  // arrives.
   RequestResult UpdateMeasuredText(const Epoch &epoch, uint32_t target_pid,
                                    HWND target_hwnd,
                                    const std::wstring &source_text,
                                    int64_t text_generation,
                                    const std::vector<int32_t> &glyph_words,
                                    int client_width, int client_height,
+                                   int client_size_tolerance,
                                    std::string *error);
   RequestResult UpdateText(const Epoch &epoch, uint32_t target_pid,
                            HWND target_hwnd, const std::wstring &source_text,
@@ -441,6 +444,7 @@ private:
   // surface hidden (measuredLayoutStale) until UpdateMeasuredText succeeds.
   int measured_client_width_ = 0;
   int measured_client_height_ = 0;
+  int measured_client_tolerance_ = 0;
   std::string measured_stale_reason_ = "measured_layout_refresh_required";
 
   std::wstring source_text_;

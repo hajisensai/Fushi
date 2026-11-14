@@ -22,9 +22,11 @@ import 'package:fushi/src/sync/sync_settings_schema.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
-import 'package:fushi/src/utils/components/fushi_list_tile.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart'
+    show FushiListItem;
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi/src/srs/srs_navigation.dart';
@@ -185,13 +187,16 @@ Future<SrsProfileConflictChoice?> showSrsProfileConflictDialog(
           style: Theme.of(dialogContext).textTheme.bodyMedium,
         ),
         const SizedBox(height: 8),
+        // 候选行只用普通 Text：AlertDialog 用 IntrinsicWidth 量内容，FushiListTile 的跑马灯
+        // （FushiMarquee = LayoutBuilder）答不了固有尺寸，整个对话框排版失败、没有尺寸，
+        // 桌面上鼠标命中测试随即每帧报错、app 不再响应（BUG 见 docs/bugs）。
         for (final SrsRemoteProfile c in conflict.candidates)
-          FushiListTile(
+          FushiListItem(
             key: ValueKey<String>('srs-profile-conflict-${c.uid}'),
-            title: c.displayName,
-            subtitle: srsProfileCandidateSubtitle(c),
-            icon: FushiIcons.cloudSync,
-            selected: false,
+            leading: const FushiIcon(FushiIcons.cloudSync),
+            title: Text(c.displayName, overflow: TextOverflow.ellipsis),
+            subtitle: Text(srsProfileCandidateSubtitle(c)),
+            subtitleMaxLines: 3,
             onTap: () =>
                 Navigator.of(dialogContext).pop(SrsProfileConflictAdopt(c.uid)),
           ),

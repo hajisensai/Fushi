@@ -702,7 +702,7 @@ class _HomeGamePageState extends State<HomeGamePage> {
         final lines = _controller.lines;
         final GalWorkbenchReadiness readiness = galWorkbenchReadiness(
           state: state,
-          hasEngineSource: _controller.hasEngineSource,
+          requiresTextThread: _controller.requiresTextThreadSelection,
           selectedTextThreadKey: _controller.selectedTextThreadKey,
         );
         final double page = FushiDesignTokens.of(context).spacing.page;

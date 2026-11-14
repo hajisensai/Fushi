@@ -10,7 +10,7 @@ library;
 
 import 'dart:io';
 
-import 'package:fushi/src/sync/hidden_remote_books.dart'
+import 'package:fushi/src/sync/remote_book_source_host.dart'
     show remoteBookSourceHost;
 import 'package:fushi/src/sync/remote_audiobook_revision.dart';
 import 'package:fushi/src/sync/remote_book_client.dart';

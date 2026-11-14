@@ -3,8 +3,10 @@
 // 刚失效的直连地址时，组内的 `p2p://` 仍要可拨，失败后缓存立即作废。
 //
 // host 是真实的 FushiSyncServer：隧道那一跳用它自己的 P2P 监听口（隧道流量在 host 上
-// 就落在这个口，请求按 p2p 信任区处理），假 resolver 把 `p2p://` 换成这个口——即
-// 只有「转发口」可达。直连地址是一个刚关掉的本机端口（连接被拒）。
+// 就落在这个口，请求按 p2p 信任区处理）。本机走真实的隧道装配（runtime + 端点，
+// 「转发口 → p2p://」反查映射由 engine 随口登记），只有端点是假的：它开出的转发口
+// 就是 host 的 P2P 监听口——即只有「转发口」可达。直连地址是一个刚关掉的本机端口
+// （连接被拒）。
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -12,6 +14,7 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/srs/srs_remote_store_client.dart';
 import 'package:fushi/src/sync/interconnect_host_client.dart';
+import 'package:fushi/src/sync/interconnect_p2p_app.dart';
 import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
@@ -19,6 +22,7 @@ import 'package:fushi/src/sync/video_remote_targets.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_remote_store.dart';
+import 'package:fushi_engine/sync/interconnect_p2p.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:http/http.dart' as http;
 
@@ -27,7 +31,9 @@ import 'temp_dir_cleanup.dart';
 
 const String _hostId = 'HOST-P2P';
 const String _token = 'shared-token';
-const String _p2pUrl = 'p2p://node-under-test';
+
+/// 合法 NodeId（iroh 口径 64 位十六进制）：畸形 `p2p://` 在解析阶段就被拒（BUG-4401）。
+final String _p2pUrl = interconnectP2pUrl('b' * 64, tls: false);
 
 void main() {
   late Directory dir;
@@ -37,6 +43,7 @@ void main() {
   late SyncRepository repo;
   late int tunnelPort;
   late String deadDirect;
+  late InterconnectP2pNode node;
   final List<String> hostOps = <String>[];
 
   /// 一个刚关掉的本机端口：连上去立即被拒（「直连被挡」）。
@@ -97,10 +104,16 @@ void main() {
     await server.start();
     tunnelPort = await server.startP2pListener();
     deadDirect = await closedLocalUrl();
-    setInterconnectP2pResolver((FushiClientUrl candidate) async {
-      if (candidate.url != _p2pUrl) return null;
-      return candidate.copyWith(url: 'http://127.0.0.1:$tunnelPort');
-    });
+    node = InterconnectP2pNode.forTesting(
+      _TunnelPort(() => tunnelPort),
+      'self',
+    );
+    final InterconnectP2pRuntime runtime = InterconnectP2pRuntime(
+      loadSecret: () async => null,
+      saveSecret: (String _) async {},
+      loadRelayUrls: () async => const <String>[],
+    )..debugInstall(node);
+    bindInterconnectP2pClient(runtime);
 
     clientDb = FushiDatabase(
       (await Directory(
@@ -112,7 +125,8 @@ void main() {
   });
 
   tearDown(() async {
-    setInterconnectP2pResolver(null);
+    await node.close();
+    debugResetAppInterconnectP2p();
     resetInterconnectRaceCache();
     await server.stop();
     await clientDb.close();
@@ -228,4 +242,42 @@ void main() {
     expect(wrong.statusCode, 401);
     expect(hostOps, isEmpty, reason: '凭据不对的请求一个都没进到复习库');
   });
+}
+
+/// 假端点：任何转发请求都开到 host 的 P2P 监听口（[port] 在 host 起来后才知道）。
+final class _TunnelPort implements InterconnectP2pEndpointPort {
+  _TunnelPort(this.port);
+
+  final int Function() port;
+
+  @override
+  int clientForward(
+    String nodeId, {
+    List<String> directAddrs = const <String>[],
+    String? relayUrl,
+  }) => port();
+
+  @override
+  bool stopForward(int port) => true;
+
+  @override
+  FushiP2pConnStatus status(String nodeId) => throw UnimplementedError();
+
+  @override
+  FushiP2pInfo info() => throw UnimplementedError();
+
+  @override
+  void hostListen(int port) {}
+
+  @override
+  void hostStop() {}
+
+  @override
+  String? hostPeer(int port) => null;
+
+  @override
+  bool networkChange() => false;
+
+  @override
+  Future<void> closeAsync() async {}
 }

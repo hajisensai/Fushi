@@ -18,12 +18,14 @@
 //! 只打开 `srs.db`、它的备份快照副本或自己生成的临时文件；绝不打开主库 `fushi.db`（同一进程里
 //! Drift 那份 SQLite 与这里自带的一份同开一个文件，会在 POSIX 平台上互相清掉文件锁）。
 
+pub(crate) mod binding;
 pub(crate) mod browse;
 pub mod bulk;
 pub(crate) mod cache_rev;
 pub(crate) mod caches;
 pub(crate) mod compact;
 pub mod ffi;
+pub mod gen4;
 pub(crate) mod ids;
 #[cfg(test)]
 mod kernel_reads_tests;
@@ -33,17 +35,20 @@ pub(crate) mod media_gc;
 mod mem_budget;
 #[cfg(test)]
 mod panic_recovery_tests;
+mod prof;
 mod profile_data;
 mod projections;
 #[cfg(test)]
 mod projections_scan_tests;
 pub(crate) mod queue;
 mod read_pool;
+mod refresh;
 pub(crate) mod reads;
 pub(crate) mod repr_rewrite;
 pub mod rows;
 pub mod schema;
 pub(crate) mod slim;
+pub(crate) mod stats;
 pub mod study;
 pub mod sync2;
 
@@ -60,6 +65,11 @@ const LEGACY_KEY: &str = "legacy_import";
 
 /// 已关闭的库上任何命令的错误文本（Dart 侧按它认「已关闭」）。
 pub(crate) const CLOSED: &str = "srs store is closed";
+
+/// 这个库没编进测试专用的原始 SQL 通道（cargo feature `raw_sql`，见 Cargo.toml）：`ffsrs_store_exec` mode 4 / 5 与
+/// `ffsrs_store_exec_batch` 报这个错误、不执行、不取写锁。发布 / 随包构建都是这样；Dart 同文（`kSrsRawSqlAbsent`）。
+pub const RAW_SQL_ABSENT: &str =
+    "srs: the raw SQL channel is not built into this library (cargo feature raw_sql)";
 
 /// 备份快照的目标卷空间不够（[SrsCore::snapshot_into]）：错误文本前缀，后面是 `{"need","free"}`。
 pub const SNAPSHOT_NO_SPACE: &str = "srs.db snapshot needs more free disk space: ";
@@ -111,9 +121,9 @@ pub struct SrsCore {
     /// 时置位，做完通道后写连接不在事务里时按表重置。为假时分发器不必拿写锁查通道（只读命令不排在写锁后面）。
     /// 只能多不能少：库只由这一个 [SrsCore] 打开写（别的进程 / 实例开同一个库不在这个约定里）。
     channel_live: AtomicBool,
-    /// 收段通道自己做完的片（没有回包可带）攒下的投影变化，按 profile：随那个 profile 的下一条命令的回包交回 Dart
-    /// （store/sync2/channel.rs `note_settled` / `take_settled`）。只在内存：进程没了，Dart 那一侧记的缓存也没了。
-    settled: Mutex<std::collections::HashMap<String, sync2::channel::Settled>>,
+    /// 进程内刷新键（store/refresh.rs）：Dart 按它判断牌组树 / 修改记录 / 角标 / 统计 / RWKV 分数表的缓存还能不能用。
+    /// 只在内存、按 profile；每次打开库换一个随机前缀。
+    refresh: Mutex<refresh::Refresh>,
     /// 常驻复习队列（store/queue.rs）：写连接上的触发器记下写过的卡 / 日志，`study` 按 profile 增量排队。
     study_hub: Arc<queue::StudyHub>,
     /// 浏览页与 AnkiConnect 共用的常驻会话（store/browse.rs，按 profile）：搜索语料、列数据随写入增量更新；
@@ -311,10 +321,12 @@ fn query_rows(conn: &Connection, sql: &str, params: &[Value]) -> Result<Vec<u8>,
     Ok(rows::encode(n, &out))
 }
 
-/// 测试构建：关库时查 ID 绑定审计（store/ids.rs `audit`）。
+/// 测试构建：关库时查 ID 绑定审计（store/ids.rs `audit`）；关之前把库灌进协议 4 的新存储对拍一遍（`gen4/parity.rs`，
+/// 换代设计 §8 G6 行的验收）。
 #[cfg(test)]
 impl Drop for SrsCore {
     fn drop(&mut self) {
+        gen4::parity::check_core(self);
         if let Ok(w) = self.writer() {
             ids::audit::check_stored(&w);
         }
@@ -464,7 +476,9 @@ impl SrsCore {
             )
             .map_err(|e| format!("open {}: {e}", path.display()))?;
             configure_as(&writer, MmapRole::Primary)?;
-            #[cfg(any(test, feature = "id_audit"))]
+            // 探针构建（`--cfg srs_probe`）不装审计：它让每条语句执行前都把绑定参数展开成 SQL 文本，逐行执行的语句
+            // 越多越吃亏（收段探针的 12～17%），量到的就不是 app 的耗时了。
+            #[cfg(all(any(test, feature = "id_audit"), not(srs_probe)))]
             ids::audit::install(&mut writer);
             // 新库建表前定成 INCREMENTAL：升级腾出的页以后原地收缩（store/compact.rs），不用整库重写。老库上这句只
             // 是记下「下次整库重写时改成 INCREMENTAL」，由 compact 的重写换文件那一步落实。
@@ -511,7 +525,7 @@ impl SrsCore {
             cache_configs: Mutex::new(std::collections::HashMap::new()),
             writer_cache: Mutex::new(mem_budget::WriterCache::new()),
             channel_live: AtomicBool::new(channel_live),
-            settled: Mutex::new(std::collections::HashMap::new()),
+            refresh: Mutex::new(refresh::Refresh::new()),
             study_hub,
             browse: Mutex::new(browse::Sessions::default()),
             #[cfg(test)]
@@ -742,6 +756,9 @@ impl SrsCore {
     /// srs.db）。写连接最后关：最后关的连接负责把 WAL 并回主文件并删掉 -wal。之后的命令与会话查询
     /// 一律报「已关闭」。
     pub fn close(&self) {
+        // 测试构建：关之前与协议 4 的新存储对拍（见 `Drop for SrsCore`）。
+        #[cfg(test)]
+        gen4::parity::check_core(self);
         // 先关内核读连接池（等借出的放回）：此后 read_session 报已关闭，下面拿到的会话清单就是全部。
         // 下面各把锁被 panic 毒化过也照拿：连接随即丢掉，关闭时 SQLite 回滚连接上没结束的事务。
         self.readers.close();
@@ -866,6 +883,9 @@ impl SrsCore {
             .and_then(|_| w.execute_batch("COMMIT").map_err(|e| e.to_string()));
         if result.is_err() {
             let _ = w.execute_batch("ROLLBACK");
+        } else {
+            // 搬进来的是整库的数据，分不出 profile：每个 profile 的刷新键都变。
+            self.refresh_all();
         }
         self.legacy_open.store(false, Ordering::SeqCst);
         result
@@ -952,6 +972,7 @@ impl SrsCore {
                  DELETE FROM sync2_self; DELETE FROM sync2_pending; DELETE FROM sync2_segments; \
                  DELETE FROM sync2_locations; DELETE FROM sync2_rewrites; DELETE FROM sync2_obsolete; \
                  DELETE FROM srs_meta WHERE key LIKE 'sync2_digest/%'; \
+                 DELETE FROM srs_meta WHERE key LIKE 'sync2_former/%'; \
                  COMMIT;",
             )
             .map_err(|e| e.to_string())?;
@@ -983,6 +1004,9 @@ impl SrsCore {
     /// 也不能在写连接上留下别的命令会落进去的事务。旧库搬迁进行中（`legacy_open`）同样拒绝。
     ///
     /// 返回页：[select] 为真 = 首行列名 + 结果行（PRAGMA 之类有结果行的语句）；否则一行 `[变更行数, last_insert_rowid]`。
+    ///
+    /// 只在测试构建与带 cargo feature `raw_sql` 的库里有（发布构建里能写库的这段代码不在，C 入口报 [RAW_SQL_ABSENT]）。
+    #[cfg(any(test, feature = "raw_sql"))]
     pub fn exec_raw(&self, sql: &str, params: &[Value], select: bool) -> Result<Vec<u8>, String> {
         // 先取写锁再看 `legacy_open`（同 [SrsCore::legacy_page]）：搬迁中 panic 后，恢复在取锁时才结束搬迁。
         let w = self.writer()?;
@@ -1074,7 +1098,9 @@ impl SrsCore {
     }
 
     /// [SrsCore::exec_raw] 的批量版（测试专用，`ffsrs_store_exec_batch`，Dart `SrsCore.debugExecBatchRaw`）：
-    /// `statements[i]` 配若干组参数，按给定顺序在**一个 SAVEPOINT** 里执行，任何一条出错整批回滚。
+    /// `statements[i]` 配若干组参数，按给定顺序在**一个 SAVEPOINT** 里执行，任何一条出错整批回滚。同 [SrsCore::exec_raw]
+    /// 只在测试构建与带 `raw_sql` 的库里有。
+    #[cfg(any(test, feature = "raw_sql"))]
     pub fn exec_batch_raw(
         &self,
         statements: &[&str],
