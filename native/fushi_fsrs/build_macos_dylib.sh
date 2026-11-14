@@ -6,6 +6,11 @@
 # 用法: build_macos_dylib.sh
 # 前提: rustup target add aarch64-apple-darwin
 # 产物: prebuilt/macos/libfushi_fsrs.dylib（git 忽略，不入库；install name = @rpath/libfushi_fsrs.dylib）
+# 环境变量 FUSHI_FSRS_ID_AUDIT_VARIANT=1（可选）：另编一份带 ID 审计的库（cargo feature `id_audit`，
+# src/store/ids.rs `audit`）到 prebuilt/macos/id_audit/libfushi_fsrs.dylib。只给本机的调试构建与测试宿主用
+# （Dart 侧 packages/fushi_srs 的 kFushiFsrsIdAuditDir：断言开着才去找它），不随包——
+# fushi/macos/bundle_fushi_fsrs.sh 只拷上一级目录里的普通库。tool/bootstrap.sh 设它；发布流水线不设，产物与以前
+# 相同。不设它重编时会删掉已有的 id_audit 目录：那份库对应的是上一次的源码，留着会被调试构建优先加载。
 #
 # 部署目标与 fushi/macos/Runner.xcodeproj 的 MACOSX_DEPLOYMENT_TARGET 对齐（13.4），
 # 否则链接 Runner 时 ld 会对「dylib 比 app 要求更新的系统」报警、老系统上加载失败。
@@ -32,20 +37,33 @@ echo "==> cargo rustc --release --lib --target $target --crate-type cdylib (MACO
 # 路径，免得 PATH 上的 llvm-strip 顶替）；install name 在链接时由 ld 的 -install_name 设好，不再
 # 事后 install_name_tool 改写。verify_abi.sh 按 dyld 的同一套规则静态核对对齐；下面的 dlopen
 # 冒烟只有在 macOS 27 上才测得出这一个问题。
-cargo rustc --release --lib --target "$target" --crate-type cdylib -- \
-  -C strip=none -C "link-arg=-Wl,-install_name,@rpath/libfushi_fsrs.dylib"
-built="target/$target/release/libfushi_fsrs.dylib"
-[[ -f "$built" ]] || { echo "missing $built" >&2; exit 1; }
+# build_one <产物路径> <absent|present> [额外的 cargo 参数…]：编一份并落到产物路径。两份（普通 / 带审计）共用
+# 一个 target 目录、同名产物轮流覆盖，所以每份编完立刻拷走，并核对它带不带审计（verify_id_audit.sh）。
+build_one() {
+  local out="$1" audit="$2"
+  shift 2
+  cargo rustc --release --lib --target "$target" --crate-type cdylib "$@" -- \
+    -C strip=none -C "link-arg=-Wl,-install_name,@rpath/libfushi_fsrs.dylib"
+  local built="target/$target/release/libfushi_fsrs.dylib"
+  [[ -f "$built" ]] || { echo "missing $built" >&2; exit 1; }
 
-mkdir -p "$OUT_DIR"
-out="$OUT_DIR/libfushi_fsrs.dylib"
-cp -f "$built" "$out"
-/usr/bin/strip -x "$out"
-# 真加载一次：坏掉的 LINKEDIT 只有 dlopen 才暴露（nm / otool 照样读得出符号）。
-python3 -c 'import ctypes, sys; ctypes.CDLL(sys.argv[1])' "$out" || {
-  echo "dlopen failed: $out" >&2
-  exit 1
+  mkdir -p "$(dirname "$out")"
+  cp -f "$built" "$out"
+  /usr/bin/strip -x "$out"
+  # 真加载一次：坏掉的 LINKEDIT 只有 dlopen 才暴露（nm / otool 照样读得出符号）。
+  python3 -c 'import ctypes, sys; ctypes.CDLL(sys.argv[1])' "$out" || {
+    echo "dlopen failed: $out" >&2
+    exit 1
+  }
+  bash "$SCRIPT_DIR/verify_id_audit.sh" "$out" "$audit"
+  lipo -info "$out"
+  otool -L "$out"
+  echo "==> Done: $out ($(wc -c < "$out") bytes)"
 }
-lipo -info "$out"
-otool -L "$out"
-echo "==> Done: $out ($(wc -c < "$out") bytes)"
+
+rm -rf "$OUT_DIR/id_audit"
+build_one "$OUT_DIR/libfushi_fsrs.dylib" absent
+if [[ "${FUSHI_FSRS_ID_AUDIT_VARIANT:-}" == 1 ]]; then
+  echo "==> id_audit variant (debug builds / test hosts only, never bundled)"
+  build_one "$OUT_DIR/id_audit/libfushi_fsrs.dylib" present --features id_audit
+fi

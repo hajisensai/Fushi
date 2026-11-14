@@ -34,6 +34,7 @@ const _: Option<&str> = option_env!("FUSHI_WORKTREE_ROOT");
 pub mod boot_clock;
 pub mod calibration;
 pub mod card_cache;
+pub mod gen4;
 pub mod history;
 pub mod ordering;
 pub mod projection;

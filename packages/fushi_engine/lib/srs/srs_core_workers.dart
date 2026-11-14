@@ -46,7 +46,7 @@ enum SrsCoreLane {
   /// 媒体文件的流式加解密与哈希（不进写锁，同步时成批并发）。
   file,
 
-  /// Drift 事务外的查询（srs_database_executor.dart 的读查询那一路）：内核只读连接池上并发执行，不进写锁、
+  /// Drift 的查询（srs_database_executor.dart 的查询道）：内核只读连接池上并发执行，不进写锁、
   /// 不排在 Drift 写连接的队列里，也不与上面几条道的长命令互相排队。
   query,
 }
@@ -125,7 +125,7 @@ final class SrsCoreWorkers {
   ///
   /// [onSettled]：这条命令结束（成功、报错、worker 退出、起 worker 失败，每条命令恰好一次）时、在把结果交给
   /// 调用方之前**同步**调用，跑在池子自己的根 zone 回调里，不经调用方的 zone。调用方要按「命令在途」做簿记
-  /// （如 [SrsSplitExecutor.close] 等在途查询）时用它：调用方的 zone 可能再也不跑微任务（见库注释），挂在返回的
+  /// （如 [SrsReadOnlyExecutor.close] 等在途查询）时用它：调用方的 zone 可能再也不跑微任务（见库注释），挂在返回的
   /// Future 上的回调就可能永远不来。
   Future<T> run<T>(
     int address,
