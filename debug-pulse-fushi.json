@@ -1,12 +1,49 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-14T14:16:13Z",
+ "generatedAt": "2026-11-14T15:09:19Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "e88fbfc053abda2c089f928bed83cae8b3802734",
-  "seq": 26805
+  "sha": "017cdcf5de029db052c8846344f30867e3de005f",
+  "seq": 26834
  },
  "builds": [
+  {
+   "seq": 26805,
+   "version": "3.3.0",
+   "sha": "e88fbfc053abda2c089f928bed83cae8b3802734",
+   "unknown": false,
+   "publishedAt": "2026-11-14T15:09:06Z",
+   "testflight": false,
+   "baseSeq": 26792,
+   "prs": [
+    3286,
+    3340
+   ],
+   "direct": [
+    {
+     "sha": "6867ab80d73be4442de068c9c926837210850d00",
+     "subject": "chore(bugs): settle BUG number collisions on cb7c567d6"
+    }
+   ],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "ok"
+    },
+    "windows": {
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43603825667"
+    },
+    "macos": {
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43603825667"
+    },
+    "ios": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43603825667"
+    }
+   }
+  },
   {
    "seq": 26792,
    "version": "3.3.0",
@@ -147,7 +184,8 @@
    "truncated": false,
    "platforms": {
     "android": {
-     "state": "ok"
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43025317632"
     },
     "windows": {
      "state": "ok"
@@ -162,35 +200,29 @@
   }
  ],
  "pending": {
-  "headSha": "e88fbfc053abda2c089f928bed83cae8b3802734",
-  "headSeq": 26805,
+  "headSha": "017cdcf5de029db052c8846344f30867e3de005f",
+  "headSeq": 26834,
   "prs": [
-   3286,
-   3340
+   3383
   ],
-  "direct": [
-   {
-    "sha": "6867ab80d73be4442de068c9c926837210850d00",
-    "subject": "chore(bugs): settle BUG number collisions on cb7c567d6"
-   }
-  ],
+  "direct": [],
   "truncated": false,
   "platforms": {
    "android": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43603825644"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43605197443"
    },
    "windows": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43603825667"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43605197415"
    },
    "macos": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43603825667"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43605197415"
    },
    "ios": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43603825667"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43605197415"
    }
   }
  },
@@ -717,6 +749,15 @@
    "mergedAt": "2026-11-12T19:13:39Z",
    "additions": 589,
    "deletions": 28,
+   "labels": []
+  },
+  "3383": {
+   "number": 3383,
+   "title": "feat(srs): 协议 4 新存储的语义层与全场景对拍（G6c-1，叠在 #3379 上，不接线）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-14T14:30:20Z",
+   "additions": 9251,
+   "deletions": 327,
    "labels": []
   },
   "3384": {
