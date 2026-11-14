@@ -59,10 +59,10 @@ void main() {
 
   test('缓存修订号 6 的老库：打开时补齐出处列，统计按出处分组', () async {
     final (SrsDbStore s, _, _) = await seeded();
-    await s.db.customStatement(
+    s.core.debugExecRaw(
       "UPDATE srs_notes_cache SET source_kind = '', source_title = ''",
     );
-    await s.db.customStatement(
+    s.core.debugExecRaw(
       "UPDATE srs_local_state SET json = json_set(json, '\$.cacheRev', 6)",
     );
     final SrsDbStore reopened = await SrsDbStore.open(
@@ -121,10 +121,10 @@ void main() {
     ]..sort();
     expect(shares(await (await loadSrsStats(s)).report()), expected);
 
-    await s.db.customStatement(
+    s.core.debugExecRaw(
       "UPDATE srs_notes_cache SET source_kind = '', source_title = ''",
     );
-    await s.db.customStatement(
+    s.core.debugExecRaw(
       "UPDATE srs_local_state SET json = json_set(json, '\$.cacheRev', 8)",
     );
     final SrsDbStore reopened = await SrsDbStore.open(

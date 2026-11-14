@@ -1129,7 +1129,7 @@ void main() {
       await _settled(service);
       expect(backend.resets, 1);
       // 删掉最早的一条评分日志（如恢复备份改写了历史），再答一题：新行数与行数差对不上。
-      await f.store.db.customStatement(
+      f.store.core.debugExecRaw(
         'DELETE FROM srs_review_logs WHERE rowid = '
         '(SELECT MIN(rowid) FROM srs_review_logs)',
       );

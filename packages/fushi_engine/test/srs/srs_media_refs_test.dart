@@ -133,8 +133,8 @@ void main() {
     final Set<String> want = await srsReferencedMedia(s);
     expect(want, containsAll(<String>['a.png', 'b.mp3']));
 
-    await st.db.customStatement("UPDATE srs_notes_cache SET media_refs = ''");
-    await st.db.customStatement(
+    st.core.debugExecRaw("UPDATE srs_notes_cache SET media_refs = ''");
+    st.core.debugExecRaw(
       "UPDATE srs_local_state SET json = json_set(json, '\$.cacheRev', 2)",
     );
     expect(await srsReferencedMedia(s), isNot(contains('a.png')));

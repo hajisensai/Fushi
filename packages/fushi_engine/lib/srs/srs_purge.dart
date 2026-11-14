@@ -25,6 +25,7 @@
 library;
 
 import 'dart:io';
+import 'dart:math';
 
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_media_sync.dart' show kSrsMediaRetention;
@@ -73,8 +74,13 @@ Future<SrsPurgeReport> srsPurgeExpiredTombstones(
   return report;
 }
 
+/// 一条 `purge` 命令清除的笔记数上限（[srsPurgeNotesNow] 的分块）：一条命令一笔事务，连同缓存重放与 WAL 都随
+/// 条数增长；逐条发（以前）则每条笔记各付一次事务、缓存刷新与本机状态行。
+const int kSrsPurgeChunk = 200;
+
 /// 用户确认后彻底清除 [noteIds]（例如删牌组时选了「永久删除」）：每条一个 v2 `Purge`（先删除、再清除内容，
-/// 全网一致）；它们引用过的、此刻没有存活引用的媒体随后回收。
+/// 全网一致），每 [kSrsPurgeChunk] 条一条内核命令、一笔（中途出错：已经做完的块留着，这一块整块不落）；它们
+/// 引用过的、此刻没有存活引用的媒体随后回收。
 Future<SrsPurgeReport> srsPurgeNotesNow(
   SrsDbStore store,
   List<String> noteIds, {
@@ -86,9 +92,13 @@ Future<SrsPurgeReport> srsPurgeNotesNow(
   final bool queued =
       mediaRoot != null &&
       (await store.queueMediaGcOf(notes: noteIds)).isNotEmpty;
-  for (final String id in noteIds) {
-    await store.sync2Purge(SrsEntityKind.note, id);
-    report.notes++;
+  for (int i = 0; i < noteIds.length; i += kSrsPurgeChunk) {
+    final List<String> chunk = noteIds.sublist(
+      i,
+      min(i + kSrsPurgeChunk, noteIds.length),
+    );
+    await store.sync2PurgeMany(SrsEntityKind.note, chunk);
+    report.notes += chunk.length;
   }
   if (queued) {
     report.mediaFiles = await _collectPendingMedia(

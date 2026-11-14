@@ -31,7 +31,7 @@ fn apply_items(d: &Device, now: i64, items: Vec<Value>) -> Value {
         d,
         json!({
             "op": "apply", "profile": P, "now": now, "caches": {"defaultDeck": default_deck()},
-            "legacyDevice": "dev", "tickNow": now, "localState": "{}",
+            "legacyDevice": "dev", "tickNow": now,
         }),
         Some(Value::Array(items).to_string()),
     )
@@ -110,7 +110,7 @@ fn library(tag: &str) -> Device {
 fn request(at: i64, absorb: &[&str]) -> Value {
     json!({
         "op": "merge_notes", "profile": P, "now": at, "caches": {"defaultDeck": default_deck()},
-        "legacyDevice": "dev", "tickNow": at, "ts": "anchored", "localState": "{}",
+        "legacyDevice": "dev", "tickNow": at, "ts": "anchored",
         "keep": KEEP, "absorb": absorb, "deletedAt": at,
     })
 }
@@ -238,7 +238,7 @@ fn the_edits_match_the_commands_it_replaces() {
         &old,
         json!({
             "op": "checkpoint", "profile": P, "now": T0 + 10, "caches": {"defaultDeck": default_deck()},
-            "name": "word", "reason": "merge_notes", "localState": "{}",
+            "name": "word", "reason": "merge_notes",
         }),
         None,
     )

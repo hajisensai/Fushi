@@ -90,13 +90,14 @@ pub(crate) fn merge_results(a: &mut Value, b: Value) {
 
 /// `change` 的第一段（见文件头）：还原点 + 这批修改记录。[req]：
 /// `{"checkpoint"?: {"name", "reason"}, "legacyDevice", "tickNow", "move"?: {"deck", "notes"}, "ts"?}`，输入项同 `apply`
-/// （[items]）。没有输入项就不走 `apply`（与以前「没有要写的就不发命令」相同：旧版时钟不动）。
+/// （[items]）；标了 `chg` 的项值没变的先筛掉（changing.rs，就地）。筛完没有输入项就不走 `apply`（与以前「没有要写的
+/// 就不发命令」相同：旧版时钟不动）。
 pub(crate) fn change_on(
     c: &Connection,
     profile: &str,
     now: i64,
     req: &Value,
-    items: &[Value],
+    items: &mut Vec<Value>,
 ) -> Result<Value, String> {
     let mut v = match req.get("checkpoint").filter(|cp| cp.is_object()) {
         Some(cp) => append_on(
@@ -114,6 +115,7 @@ pub(crate) fn change_on(
         )?,
         None => json!({}),
     };
+    super::changing::drop_noops(c, items)?;
     if !items.is_empty() {
         merge_results(
             &mut v,
