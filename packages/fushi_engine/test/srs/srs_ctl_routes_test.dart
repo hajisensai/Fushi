@@ -504,7 +504,7 @@ void main() {
       );
     });
 
-    // BUG-4387：SrsDbStore 按 id 的读写不看 profile。多 profile 宿主点名 A 却给 B 的 id 时路由先拦。
+    // BUG-4480：SrsDbStore 按 id 的读写不看 profile。多 profile 宿主点名 A 却给 B 的 id 时路由先拦。
     test('点名的 profile 里没有这些笔记（id 是另一份的）：一律 404，两份都没被动过', () async {
       final String ja = await _addNote(env.ja, '魚', sentence: 'old');
       final String dupA = await _addNote(env.ja, '雪');

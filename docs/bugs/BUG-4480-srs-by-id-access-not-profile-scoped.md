@@ -1,4 +1,4 @@
-## BUG-4387 · 复习库按 id 的读写不按 profile 过滤：点名的 profile 与 id 不属于同一份时写错库
+## BUG-4480 · 复习库按 id 的读写不按 profile 过滤：点名的 profile 与 id 不属于同一份时写错库
 - **报告**：2026-11-11（用户：内部审查，把复习的控制通道路由下沉到 engine、接上无头服务端时发现）
 - **真实性**：✅ 真 bug，engine 测试已复现（一份 srs.db 上开两份 profile 的 `SrsDbStore`，拿 A 的 store 操作 B 的笔记 id）。
   - 根因在 `packages/fushi_engine/lib/srs/srs_db_store.dart`：按 id 的入口不看实体属于哪份 profile。`note(id)`（`:2389`）→ `_materializeNotes` → `_entityRow`（`:2586-2592`，`WHERE id = ?`，没有 `profile_uid`）；`cardsOfNote`（`:5052`）同样只按 `note_id`。写入口（`mergeNotes`、`dismissDuplicates`、`editFieldsBatch`）沿用这些读，也不核对归属。

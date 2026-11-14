@@ -18,7 +18,7 @@
 /// 一份可用就是它，几份都可用回 409 `profile_required`——与设备信任端点「没点名」的口径一致，不猜默认那份
 /// （这些端点有写操作，写错库比多打一个参数贵）。没提供的 uid → 404 `profile_not_served`，那份还没就绪 /
 /// 加密 / 出错 → 409 `profile_unavailable`，复习库整个没起 → 409 `srs_unavailable`。按 id 点名的笔记必须
-/// 属于点名的那份，别的 profile 的 id 按不存在回 404（engine 路由的 `_requireInTarget`，BUG-4387）。
+/// 属于点名的那份，别的 profile 的 id 按不存在回 404（engine 路由的 `_requireInTarget`，BUG-4480）。
 ///
 /// 鉴权沿用 admin API（admin_server.dart：`/api/admin/*` 一律要 admin token）。
 library;

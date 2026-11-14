@@ -82,7 +82,7 @@ String? srsCtlProfileOf(CtlCall call) => _targetByCall[call]?.profile;
 /// 写错库（实测：合并会把 B 的笔记删掉，设字段会往 B 的笔记上写 A 的字段 id）。属于别的 profile 的 id
 /// 按「不存在」回 404；库里根本没有的 id 交回各路由原有的处理。
 ///
-/// 单库宿主（app）不查，行为与下沉前相同——那边同样的缺口单独记在 BUG-4387。
+/// 单库宿主（app）不查，行为与下沉前相同——那边同样的缺口单独记在 BUG-4480。
 Future<void> _requireInTarget(SrsCtlTarget target, List<String> ids) async {
   if (target.profile == null || ids.isEmpty) return;
   final SrsDbStore store = target.store;
