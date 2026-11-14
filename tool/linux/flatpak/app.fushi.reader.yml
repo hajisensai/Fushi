@@ -19,7 +19,8 @@ finish-args:
   # X11 (XWayland on a Wayland desktop): the out-of-app floating ball and its
   # overlays place their own windows, which Wayland does not allow. Steam Deck
   # Game Mode (gamescope) is X11 too. GTK prefers Wayland whenever it can reach
-  # it, so the backend is pinned as well.
+  # it, so the backend is pinned as well. Where X11 drawing crashes at start
+  # and Wayland is available, fushi_launcher.sh starts Fushi on Wayland instead.
   - --socket=x11
   - --env=GDK_BACKEND=x11
   # Wayland too, but not for drawing (GDK_BACKEND stays x11): the selection
@@ -50,7 +51,7 @@ modules:
     build-commands:
       - mkdir -p /app/fushi /app/bin
       - cp -a . /app/fushi/
-      - ln -s /app/fushi/fushi /app/bin/fushi
+      - install -Dm755 fushi_launcher.sh /app/bin/fushi
       - ln -s /app/fushi/fushi_cli /app/bin/fushi_cli
       - install -Dm644 app.fushi.reader.desktop /app/share/applications/app.fushi.reader.desktop
       - mkdir -p /app/share/icons/hicolor/512x512/apps
@@ -60,3 +61,5 @@ modules:
         path: fushi-linux-x64.tar.gz
       - type: file
         path: app.fushi.reader.desktop
+      - type: file
+        path: fushi_launcher.sh

@@ -1087,7 +1087,7 @@ void main() {
       // native voice_hook_ipc.h: kTextSourceYuris = 9, kTextSourceFvp = 10,
       // kTextSourceKogadoHy = 11, kTextSourceLuca = 12, kTextSourceKnife = 13,
       // kTextSourceMalie = 15, kTextSourceSoftpal = 16,
-      // kTextSourceSystem4 = 17.
+      // kTextSourceSystem4 = 17, kTextSourceNitroplus = 18.
       // An unmapped kind falls back to 'hook:' / 'Text hook', which hides the
       // engine lane from thread selection.
       const Map<int, (String, String)> expected = <int, (String, String)>{
@@ -1099,6 +1099,7 @@ void main() {
         15: ('malie', 'Malie exact'),
         16: ('softpal', 'SoftPal exact'),
         17: ('system4', 'System4 exact'),
+        18: ('nitroplus', 'Nitroplus exact'),
       };
       for (final MapEntry<int, (String, String)> entry in expected.entries) {
         final GalHookedLine line = GalHookedLine(

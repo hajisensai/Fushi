@@ -13,6 +13,7 @@ import 'package:fushi_engine/asr/asr_transcript_proofreader.dart';
 import 'package:fushi_engine/asr/cloud_whisper_transcription_service.dart';
 import 'package:fushi_engine/asr/fushi_asr_ffmpeg_backend.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/ai_text_completer.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_frame_reference.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_pipeline_cancel.dart';
 
 import 'package:fushi/src/models/preferences_repository.dart';
@@ -47,46 +48,63 @@ CloudWhisperTranscriptionService createAppCloudTranscriptionService(
 
 /// 转录稿 AI 校对的 app 装配：提供商取「字幕校对」指派（与视频日语字幕校对同一
 /// 指派，用户只配一处）。
-AsrProofreadHost appAsrProofreadHost(PreferencesRepository prefs) =>
-    AsrProofreadHost(
-      providerName: () => prefs
-          .resolveAiFeatureProvider(AiFeature.subtitleProofread)
-          ?.displayName,
-      run:
-          ({
-            required String srtPath,
-            required String languageTag,
-            required SubtitleCancelToken cancel,
-            void Function(int doneBatches, int totalBatches)? onProgress,
-          }) async {
-            final AiProviderConfig? provider = prefs.resolveAiFeatureProvider(
-              AiFeature.subtitleProofread,
-            );
-            if (provider == null) {
-              throw const SubtitleAiRequestFailure(kSubtitleAiNotConfigured);
-            }
-            final AiChatClient client = AiChatClient();
-            cancel.onCancel(client.close);
-            try {
-              return await proofreadAsrTranscriptFile(
-                srtPath: srtPath,
-                proofreader: AsrTranscriptProofreader(
-                  completer: AiChatTextCompleter(
-                    client: client,
-                    provider: provider,
-                  ),
-                  languageTag: languageTag,
-                  concurrency: provider.batchConcurrency,
-                  // 只有批序号与脱敏原因码（见 AsrTranscriptProofreader.log），
-                  // 不含回复原文与 key。
-                  log: (String message) =>
-                      debugPrint('[Fushi] ASR proofread: $message'),
-                ),
-                cancel: cancel,
-                onProgress: onProgress,
-              );
-            } finally {
-              client.close();
-            }
-          },
-    );
+///
+/// [framesVideoPath] 非 null = 稿子转录自这个视频（时间轴就是视频时间）：画面参考
+/// 开着、用户看过写明「会发画面」的说明、提供商能收图时，每批附上对应时刻的画面
+/// （spec `2026-11-11-video-subtitle-ai-reference`）。三样都在点「校对」那一刻现读。
+/// 有声书 / 音乐不传。
+AsrProofreadHost appAsrProofreadHost(
+  PreferencesRepository prefs, {
+  String? framesVideoPath,
+  SubtitleFrameSource frameSource = ffmpegSubtitleFrameSource,
+}) => AsrProofreadHost(
+  providerName: () =>
+      prefs.resolveAiFeatureProvider(AiFeature.subtitleProofread)?.displayName,
+  run:
+      ({
+        required String srtPath,
+        required String languageTag,
+        required SubtitleCancelToken cancel,
+        void Function(int doneBatches, int totalBatches)? onProgress,
+      }) async {
+        final AiProviderConfig? provider = prefs.resolveAiFeatureProvider(
+          AiFeature.subtitleProofread,
+        );
+        if (provider == null) {
+          throw const SubtitleAiRequestFailure(kSubtitleAiNotConfigured);
+        }
+        final AiChatClient client = AiChatClient();
+        cancel.onCancel(client.close);
+        try {
+          return await proofreadAsrTranscriptFile(
+            srtPath: srtPath,
+            proofreader: AsrTranscriptProofreader(
+              completer: AiChatTextCompleter(
+                client: client,
+                provider: provider,
+              ),
+              languageTag: languageTag,
+              concurrency: provider.batchConcurrency,
+              frames:
+                  framesVideoPath != null &&
+                      provider.acceptsImages &&
+                      prefs.videoSubtitleAiFrames &&
+                      prefs.videoSubtitleAiFramesConsented
+                  ? SubtitleProofreadFrames(
+                      videoPath: framesVideoPath,
+                      source: frameSource,
+                    )
+                  : null,
+              // 只有批序号与脱敏原因码（见 AsrTranscriptProofreader.log），
+              // 不含回复原文与 key。
+              log: (String message) =>
+                  debugPrint('[Fushi] ASR proofread: $message'),
+            ),
+            cancel: cancel,
+            onProgress: onProgress,
+          );
+        } finally {
+          client.close();
+        }
+      },
+);

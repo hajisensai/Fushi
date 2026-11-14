@@ -129,6 +129,10 @@ mixin DictionaryPageMixin {
   /// [DictionaryPopupLayer]，此处保持对称）。
   ShortcutScope? get dictionaryPopupInputScope => null;
 
+  /// 本页面在弹窗可见时真正派发「点＋制卡」的键盘动作，只用于给「＋」写快捷键提示。
+  /// null = 本页没有键盘制卡派发 → 不提示。与 `BaseSourcePage` 的同名钩子对称。
+  ShortcutAction? get dictionaryPopupMineShortcutAction => null;
+
   /// 弹窗可见时仍要生效的动作。token 表由注册表**当前**绑定实时导出，改键立即跟随。
   Set<ShortcutAction> get dictionaryPopupForwardedActions =>
       const <ShortcutAction>{};
@@ -1252,6 +1256,7 @@ mixin DictionaryPageMixin {
           // 框里什么都看不见。与 barrier（[shouldShowLookupDismissBarrier]）和浮层
           // 可见性（[parkedPopupLayer] 的 `visible`）共用同一道门：对话框期间这条
           // 通道也不许落地。
+          mineShortcutAction: dictionaryPopupMineShortcutAction,
           onHostInputToken: dictionaryPopupInputScope == null
               ? null
               : (String token) {

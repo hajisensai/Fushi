@@ -57,7 +57,8 @@ else
     Darwin)
       echo "==> native Rust libraries (macOS arm64 dylib)"
       bash native/fushi_compute/build_macos_dylib.sh
-      bash native/fushi_fsrs/build_macos_dylib.sh
+      # 另编一份带 ID 审计的库给调试构建 / 测试宿主（不随包，见脚本头）。
+      FUSHI_FSRS_ID_AUDIT_VARIANT=1 bash native/fushi_fsrs/build_macos_dylib.sh
       bash native/fushi_web_core/build_macos_dylib.sh
       bash native/fushi_rwkv/build_macos_dylib.sh
       bash native/fushi_music/build_macos_dylib.sh
@@ -66,7 +67,8 @@ else
     *)
       echo "==> native Rust libraries (Linux x64 .so)"
       bash native/fushi_compute/build_linux_so.sh
-      bash native/fushi_fsrs/build_linux_so.sh
+      # 另编一份带 ID 审计的库给调试构建 / 测试宿主（不随包，见脚本头）。
+      FUSHI_FSRS_ID_AUDIT_VARIANT=1 bash native/fushi_fsrs/build_linux_so.sh
       bash native/fushi_web_core/build_linux_so.sh
       bash native/fushi_rwkv/build_linux_so.sh
       bash native/fushi_music/build_linux_so.sh
