@@ -1,4 +1,4 @@
-// BUG-4179 行为守卫：英文漫画 OCR 叠加层的取词必须停在词界。
+// BUG-4179 行为守卫：英文漫画 OCR 叠加层的取词必须保留词界。
 //
 // 症状（反馈 vXYKPudf7U）：英文漫画（全大写对白）OCR 后点词，查词浮层「未找到搜索结果」；
 // 同一个词在查词页能查到。只有后面紧跟标点的词（WELL? / PHEW...）查得到。
@@ -133,7 +133,7 @@ function mountOcrBox(items, plain = false) {
   return { body, glyphs };
 }
 
-function tap(items, glyphIndex, offset, plain = false) {
+function select(items, glyphIndex, offset, plain = false, maxLength = 24) {
   const { body, glyphs } = mountOcrBox(items, plain);
   const window = {
     getComputedStyle: () => ({ display: 'inline', content: 'none' }),
@@ -146,19 +146,24 @@ function tap(items, glyphIndex, offset, plain = false) {
   selection.fireTextSelected = () => null;
   selection.selection = null;
   // offset：被点字格文本节点内的偏移（漫画宿主恒为 0；阅读器单节点用例给非 0）。
-  selection.selectFromPosition(glyphs[glyphIndex], offset || 0, 24);
+  selection.selectFromPosition(glyphs[glyphIndex], offset || 0, maxLength);
   if (selection.selection) {
     assert.strictEqual(selection.selection.ranges
       .map((r) => r.node.textContent.slice(r.start, r.end)).join(''),
       selection.selection.text, 'query and DOM ranges use identical characters');
   }
+  return selection;
+}
+
+function tap(items, glyphIndex, offset, plain = false) {
+  const selection = select(items, glyphIndex, offset, plain);
   return selection.selection ? selection.selection.text : null;
 }
 
 let executed = 0;
 for (const block of MANGA_OCR_CASES) {
   for (const probe of block.cases) {
-    assert.strictEqual(tap(block.items, probe.char, probe.offset), probe.expect,
+    assert.strictEqual(tap(block.items, probe.char, probe.offset, block.plain), probe.expect,
       `${block.name}: tap glyph #${probe.char} offset ${probe.offset || 0}`);
     executed++;
   }
@@ -195,3 +200,47 @@ for (const items of [
 // their existing behavior, rather than changing novel/audiobook word scanning.
 assert.strictEqual(tap([{ char: 'don' }, { char: "'t" }], 0, 0, true), 'don');
 console.log(`apostrophe assertions passed (${apostropheChecks + 1})`);
+
+// Compare OCR glyphs with the novel's single text node, then execute the real
+// highlight trimming logic for every candidate prefix, including real spaces.
+let phraseChecks = 0;
+for (const text of ['give up more', "don't give up", 'take care of', 'look after me',
+  'UP TO DATE', 'a 😀 word', '日本語の勉強です']) {
+  const items = Array.from(text, (char) => char === ' ' ? { gap: char } : { char });
+  let glyph = 0;
+  let at = 0;
+  for (const char of text) {
+    if (char !== ' ') {
+      const selection = select(items, glyph, 0);
+      assert.strictEqual(selection.selection.text,
+        tap([{ char: text }], 0, at, true), `phrase/novel mismatch at ${at}`);
+      const body = selection.highlightSelection.toString().split('{').slice(1).join('{')
+        .split('this.selection.matchedRanges = trimmedRanges;')[0];
+      const trim = new Function('charCount', body + 'return trimmedRanges;');
+      const points = Array.from(selection.selection.text);
+      for (let count = 1; count <= points.length; count++) {
+        const ranges = trim.call(selection, count);
+        assert.strictEqual(ranges.map(r => r.node.textContent.slice(r.start, r.end)).join(''),
+          points.slice(0, count).join(''), 'highlight preserves actual spaces and code points');
+        phraseChecks++;
+      }
+      glyph++;
+      phraseChecks++;
+    }
+    at += char.length;
+  }
+}
+for (const gap of ['  ', '\t', '\n', ' \n']) {
+  assert.strictEqual(tap([{ char: 'give' }, { gap }, { char: 'up' }], 0, 0), 'give');
+  phraseChecks++;
+}
+for (const stop of ['.', ',', '!', "'"]) {
+  assert.strictEqual(tap([{ char: 'give' }, { gap: ' ' }, { char: stop }, { char: 'up' }], 0, 0),
+    tap([{ char: 'give ' + stop + 'up' }], 0, 0, true));
+  phraseChecks++;
+}
+assert.strictEqual(tap([{ char: 'give' }, { gap: ' ' }, { box: true }, { char: 'up' }], 0, 0), 'give');
+assert.strictEqual(tap([{ char: 'give' }, { gap: ' ' }, { char: 'up' }], 1, 0), 'up');
+assert.strictEqual(select([{ char: 'give' }, { gap: ' ' }, { char: 'up' }], 0, 0, false, 5).selection.text, 'give');
+assert.strictEqual(tap([{ char: 'give' }, { gap: ' ' }, { char: 'up' }], 0, 0, true), 'give');
+console.log(`phrase assertions passed (${phraseChecks + 4})`);

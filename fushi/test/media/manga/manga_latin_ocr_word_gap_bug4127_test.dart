@@ -142,7 +142,7 @@ void main() {
       expect(html, contains('data-manga-sentence="IT IS BEEN SO LONG SINCE"'));
     });
 
-    test('点词只扫到被点的词（executes reader selection script via node）', () async {
+    test('点词保留词界并扫描完整词组（executes reader selection script via node）', () async {
       final String? nodeExe = _resolveNode();
       if (nodeExe == null) {
         markTestSkipped('node not found on PATH; skipping JS behavior');
@@ -168,34 +168,34 @@ void main() {
             // 点 BEEN 的 B：修复前是 BEENSOLONGSINCE。
             <String, Object>{
               'char': charIndexOf(english, visible, 4),
-              'expect': 'BEEN',
+              'expect': 'BEEN SO LONG SINCE',
             },
-            // 行尾词 SO 不与下一行的 LONG 粘连。
+            // 行尾词 SO 与下一行 LONG 之间保留空格，允许词组查询。
             <String, Object>{
               'char': charIndexOf(english, visible, 8),
-              'expect': 'SO',
+              'expect': 'SO LONG SINCE',
             },
             <String, Object>{
               'char': charIndexOf(english, visible, 10),
-              'expect': 'LONG',
+              'expect': 'LONG SINCE',
             },
             // BUG-4361：点词中 / 词尾的字母，词首回退跨字格退回 B，不再查 EEN / EN。
             <String, Object>{
               'char': charIndexOf(english, visible, 6),
-              'expect': 'BEEN',
+              'expect': 'BEEN SO LONG SINCE',
             },
             <String, Object>{
               'char': charIndexOf(english, visible, 7),
-              'expect': 'BEEN',
+              'expect': 'BEEN SO LONG SINCE',
             },
             // 行尾词 SO 的 O：回退停在补的空白缝上，不退进 BEEN。
             <String, Object>{
               'char': charIndexOf(english, visible, 9),
-              'expect': 'SO',
+              'expect': 'SO LONG SINCE',
             },
             <String, Object>{
               'char': charIndexOf(english, visible, 13),
-              'expect': 'LONG',
+              'expect': 'LONG SINCE',
             },
           ],
         },
@@ -203,14 +203,14 @@ void main() {
           'name': 'line geometry',
           'items': geometry,
           'cases': <Map<String, Object>>[
-            <String, Object>{'char': 4, 'expect': 'YOU'},
-            <String, Object>{'char': 7, 'expect': 'BEEN'},
+            <String, Object>{'char': 4, 'expect': 'YOU BEEN WELL?'},
+            <String, Object>{'char': 7, 'expect': 'BEEN WELL?'},
             // 阅读器 scanDelimiters 不含 ASCII '?'；引擎 scan_candidates 会在 L 与 ? 之间再切出 WELL。
             <String, Object>{'char': 11, 'expect': 'WELL?'},
             // BUG-4361（反馈原例）：WELL 点 E → WELL，修复前是 ELL?。
             <String, Object>{'char': 12, 'expect': 'WELL?'},
             <String, Object>{'char': 14, 'expect': 'WELL?'},
-            <String, Object>{'char': 5, 'expect': 'YOU'},
+            <String, Object>{'char': 5, 'expect': 'YOU BEEN WELL?'},
           ],
         },
         <String, Object>{
@@ -232,7 +232,7 @@ void main() {
         'cases': <Map<String, Object>>[
           <String, Object>{'char': 6, 'expect': 'LETTER'},
           <String, Object>{'char': 2, 'expect': 'LETTER'},
-          <String, Object>{'char': 0, 'expect': 'A'},
+          <String, Object>{'char': 0, 'expect': 'A LETTER'},
         ],
       });
       // BUG-4361：相邻两个 OCR 块（两个 <p class="ocr-box">）之间不回退。
@@ -252,6 +252,7 @@ void main() {
       // 阅读器回归：单文本节点内的回退结果不变；行内标签劈开但带空格的词不被粘上。
       cases.add(<String, Object>{
         'name': 'reader text nodes',
+        'plain': true,
         'items': <Map<String, Object>>[
           <String, Object>{'char': 'HAVE YOU'},
           <String, Object>{'gap': ' '},
@@ -299,6 +300,7 @@ void main() {
           result.stdout.toString(),
           contains('apostrophe assertions passed (155)'),
         );
+        expect(result.stdout.toString(), contains('phrase assertions passed'));
       } finally {
         tmp.deleteSync(recursive: true);
       }

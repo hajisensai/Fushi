@@ -209,28 +209,45 @@ void main() {
                 offset: 1,
                 rawOffset: 1,
                 char: 'n',
-                word: 'Understands',
+                word: 'Understands the tree',
               ),
               (
                 block: 0,
                 offset: 5,
                 rawOffset: 8,
                 char: 's',
-                word: 'Understands',
+                word: 'Understands the tree',
               ),
               (
                 block: 0,
                 offset: 8,
                 rawOffset: 11,
                 char: 'n',
-                word: 'Understands',
+                word: 'Understands the tree',
               ),
-              (block: 0, offset: 12, rawOffset: 14, char: 't', word: 'the'),
-              // The existing scanner stops at a standalone apostrophe cell.
-              // The unsplit control must select the same word, while both
-              // complete block strings below retain the possessive suffix.
-              (block: 1, offset: 5, rawOffset: 6, char: 'O', word: 'EVERYONE'),
-              (block: 3, offset: 5, rawOffset: 5, char: 'O', word: 'EVERYONE'),
+              (
+                block: 0,
+                offset: 12,
+                rawOffset: 14,
+                char: 't',
+                word: 'the tree',
+              ),
+              // Split and unsplit controls scan the same possessive word.
+              // The OCR apostrophe is part of the word, just as in a novel.
+              (
+                block: 1,
+                offset: 5,
+                rawOffset: 6,
+                char: 'O',
+                word: "EVERYONE'S",
+              ),
+              (
+                block: 3,
+                offset: 5,
+                rawOffset: 5,
+                char: 'O',
+                word: "EVERYONE'S",
+              ),
             ]) {
           final String source = MangaControllerCursorScripts.place(
             page: 0,

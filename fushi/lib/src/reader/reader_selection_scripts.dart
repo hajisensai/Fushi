@@ -3483,9 +3483,34 @@ window.fushiSelection = {
       scanNode = walker.nextNode();
       scanOffset = 0;
       // BUG-3453：两个节点之间夹着被 createWalker 跳过的空白节点（有声书 cue wrapper 之间
-      // 的空格）= 新节点开头的空白，按 BUG-1773 同一规则终止，不把下一条 cue 的词粘上来。
+      // 的空格）按 BUG-1773 终止，避免粘连下一条 cue；漫画块内的单空格在下面单独桥接。
       if (scanNode && this.hasSkippedWhitespaceBetween(scannedNode, scanNode) &&
-          this.isWordGapBetweenChars(text)) break;
+          this.isWordGapBetweenChars(text)) {
+        // Manga glyphs have separate text nodes. Bridge only a real single space
+        // inside the same OCR block, retaining its range for phrase highlighting.
+        // Other reader nodes retain the cue/paragraph boundary rule above.
+        if (!(container.classList && container.classList.contains('ocr-box')) ||
+            this.findParagraph(scanNode) !== container) break;
+        var gapWalker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, {
+          acceptNode: function(n) { return NodeFilter.FILTER_ACCEPT; }
+        });
+        gapWalker.currentNode = scannedNode;
+        var gapNodes = [];
+        var gapText = '';
+        for (var gapNode = gapWalker.nextNode(); gapNode && gapNode !== scanNode;
+             gapNode = gapWalker.nextNode()) {
+          gapNodes.push(gapNode);
+          gapText += gapNode.textContent;
+        }
+        if (gapText !== ' ' || text.length + 1 >= maxLength ||
+            !this.isWordGapBetweenChars(text, scanNode.textContent) ||
+            this.isScanStop(scanNode.textContent[0])) break;
+        text += ' ';
+        for (var gapIndex = 0; gapIndex < gapNodes.length; gapIndex++) {
+          var gap = gapNodes[gapIndex];
+          ranges.push({ node: gap, start: 0, end: gap.textContent.length });
+        }
+      }
     }
     if (!text) return null;
     this.selection = { startNode: startNode, startOffset: startOffset, ranges: ranges, text: text };
