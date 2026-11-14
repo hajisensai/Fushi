@@ -467,6 +467,9 @@ const Map<StorageCategoryId, List<String>> kStorageCategoryDocumentsChildren =
         // 音频 CD 抓轨产物（BUG-3312）：抓好的 FLAC，「仅此一次」导入音乐库
         // （BUG-4175 前按「无画面的视频」进视频库）；类目沿用，不挪。
         'audio_cd',
+        // 在线音源插件曲目下载（`music_downloads/<插件>/<专辑>/`）：与音频 CD 抓轨同属
+        // 「下载进来的媒体文件」，归同一类目，不为音乐另立类目。
+        'music_downloads',
       ],
       StorageCategoryId.covers: <String>[
         'video_covers',

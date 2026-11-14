@@ -2,7 +2,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/media_search_text.dart';
 
 /// Presentation metadata only. The source service remains the owner of actions.
-enum DownloadTaskKind { video, novel, audiobook, game, manga }
+enum DownloadTaskKind { video, novel, audiobook, game, manga, music }
 
 enum DownloadTaskStatus {
   attention,
