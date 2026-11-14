@@ -97,7 +97,7 @@ pub fn import_legacy(
                     Placement::Applied => {
                         out.applied += 1;
                         let put = truth.put_heritage(col, &source, &slot, T_VERSION)?;
-                        if put != Put::Fork {
+                        if !matches!(put, Put::Fork | Put::Yielded) {
                             if op.id.seq % HERITAGE_MARK_EVERY == 0 {
                                 truth.set_mark(col, &d.device, op.id.seq, chain)?;
                             }
@@ -121,7 +121,7 @@ pub fn import_legacy(
                     Put::Same => out.same += 1,
                     Put::Kept => out.kept += 1,
                     Put::Replaced => out.replaced += 1,
-                    Put::Fork => out.forks += 1,
+                    Put::Fork | Put::Yielded => out.forks += 1,
                     Put::Pending => out.parked += 1,
                 }
                 in_batch += 1;
@@ -132,7 +132,15 @@ pub fn import_legacy(
                 Ok(())
             })?;
             if let Some((seq, chain)) = tail {
-                truth.set_mark(col, &d.device, seq, &chain)?;
+                // 末尾那一条若让位给了分叉的另一支（同号、链指纹更小的待投递槽），这个链值就不是日志里那一条的：不记。
+                let id = crate::sync2::vv::OpId {
+                    device: d.device,
+                    seq,
+                };
+                let fp = truth.entry(col, &id)?.and_then(|e| e.fp);
+                if fp == Some(fingerprint(&chain)) {
+                    truth.set_mark(col, &d.device, seq, &chain)?;
+                }
             }
         }
         for (device, state, since) in legacy::untrusted(src, profile)? {

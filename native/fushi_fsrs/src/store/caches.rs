@@ -56,6 +56,19 @@ impl CacheConfig {
             builtins,
         })
     }
+
+    /// 内置默认牌组。
+    pub(crate) fn default_deck(&self) -> &str {
+        &self.default_deck
+    }
+
+    /// 笔记类型身份记录里的 `builtin` 对应的代码默认值（不是内置类型 / 配置里没有 = null）。
+    fn builtin_of(&self, payload: &Value) -> Value {
+        payload["builtin"]
+            .as_str()
+            .and_then(|k| self.builtins.get(k))
+            .map_or(Value::Null, |b| b.0.clone())
+    }
 }
 
 /// 要刷新什么。
@@ -197,6 +210,7 @@ pub(crate) fn refresh(
     // 一次刷新内同一笔记类型只物化一次。
     let mut types: HashMap<String, Option<TypeInfo>> = HashMap::new();
     let notes: Vec<String> = notes.into_iter().collect();
+    let p_notes = super::prof::span("cache.notes");
     for chunk in notes.chunks(CHUNK) {
         flush_notes(
             c,
@@ -209,6 +223,8 @@ pub(crate) fn refresh(
             &mut out,
         )?;
     }
+    drop(p_notes);
+    let p_cards = super::prof::span("cache.cards");
     // 卡片的历史 / 标志沿「前身」继承：前身变了，后继卡也要重算。链接从种子卡按需查（[Links]）：一次作答只碰
     // 这张卡的血统，不再把全库的前身链接读进内存；全量重建投影（`all_stats`）本来就要走遍全库，一次读完。
     let mut links = if dirty.all_stats {
@@ -225,6 +241,8 @@ pub(crate) fn refresh(
     for chunk in rest.chunks(CHUNK) {
         flush_cards(c, profile, cfg, chunk, &mut out)?;
     }
+    drop(p_cards);
+    let _p_stats = super::prof::span("cache.stats");
     // 投影在全部缓存行（可见性）写完之后再算：归属看的是这一轮之后的可见性。还没有缓存行的卡也算。
     stat_seeds.extend(closure);
     stat_seeds.extend(out.cards.iter().cloned());
@@ -241,7 +259,7 @@ pub(crate) fn refresh(
 // ---------------------------------------------------------------- 笔记
 
 /// 笔记类型里缓存行用得到的部分。
-struct TypeInfo {
+pub(crate) struct TypeInfo {
     cloze: bool,
     /// (字段 ID, 字段名)，按 ord。
     fields: Vec<(String, String)>,
@@ -283,25 +301,37 @@ impl TypeInfo {
     }
 }
 
+/// 一个笔记类型的身份记录与修改记录 → 缓存行用得到的部分（[load_types] 与协议 4 的 `store/gen4/cache.rs` 共用）。
+pub(crate) fn type_info_of(
+    payload: &Value,
+    edits: &[StoredEdit<'_>],
+    cfg: &CacheConfig,
+) -> Result<TypeInfo, String> {
+    Ok(TypeInfo::of(
+        &registers::note_type_view_of(payload, edits, &cfg.builtin_of(payload))?,
+        cfg,
+    ))
+}
+
 /// 物化好的笔记里缓存行用得到的部分。
 pub(crate) struct NoteInfo {
     pub(crate) id: String,
     pub(crate) note_type: String,
-    guid: String,
-    created_at: i64,
+    pub(crate) guid: String,
+    pub(crate) created_at: i64,
     /// (字段 ID, 值)，寄存器视图 `f` 的原序（同一 ID 后者为准，见 [NoteInfo::field]）。
     pub(crate) fields: Vec<(String, String)>,
     pub(crate) tags: Vec<String>,
-    deck: Option<String>,
+    pub(crate) deck: Option<String>,
     pub(crate) deleted_at: Option<i64>,
-    pending: bool,
+    pub(crate) pending: bool,
     /// 出处（`SrsSourceRef`）：kind 与原样 title（带系列的出处是系列名）；没有出处（或不是带 kind 的对象）时按 Fushi 制卡标签认
     /// （[source_from_tags]），也认不出 = 两个空串。
-    source_kind: String,
-    source_title: String,
+    pub(crate) source_kind: String,
+    pub(crate) source_title: String,
     /// 出处寄存器的分组键（store/browse.rs [super::browse::source_key]，`srs_notes_cache.source_key`，srs.db v25）：
     /// 只看寄存器、不按制卡标签推；没有出处 = 空串。
-    source_key: String,
+    pub(crate) source_key: String,
 }
 
 /// 没有 `SrsSourceRef` 的笔记按 Fushi 自己的制卡标签认出处（反馈 AhIskigAq3：改名前的 Hibiki / 早期 Fushi 制的卡、
@@ -347,7 +377,7 @@ pub(crate) fn source_from_tags(tags: &[String]) -> Option<(&'static str, String)
 }
 
 impl NoteInfo {
-    fn of(id: &str, v: &Value) -> NoteInfo {
+    pub(crate) fn of(id: &str, v: &Value) -> NoteInfo {
         let s = |v: &Value| v.as_str().unwrap_or("").to_owned();
         let mut n = NoteInfo {
             id: id.to_owned(),
@@ -509,14 +539,7 @@ fn load_types<'a>(
                             .collect()
                     })
                     .unwrap_or_default();
-                let builtin = payload["builtin"]
-                    .as_str()
-                    .and_then(|k| cfg.builtins.get(k))
-                    .map_or(Value::Null, |b| b.0.clone());
-                Some(TypeInfo::of(
-                    &registers::note_type_view_of(payload, &es, &builtin)?,
-                    cfg,
-                ))
+                Some(type_info_of(payload, &es, cfg)?)
             }
         };
         types.insert(id.clone(), info);
@@ -629,6 +652,58 @@ pub(crate) fn backfill_tag_sources(c: &Connection, profile: &str) -> Result<usiz
     Ok(filled)
 }
 
+/// 一条笔记缓存行里由笔记与它的类型算出来的列，与它应有的卡（[flush_notes] 与协议 4 的 `store/gen4/cache.rs` 共用；
+/// 笔记自己带的列直接取 [NoteInfo]）。
+pub(crate) struct NoteRow {
+    pub(crate) term: String,
+    pub(crate) reading: String,
+    pub(crate) sort: String,
+    pub(crate) tags: String,
+    pub(crate) media: String,
+    pub(crate) dupe: String,
+    pub(crate) anki_id: i64,
+    /// 词频名次：笔记上的值，写进这条笔记的每张卡。
+    pub(crate) freq: Option<i64>,
+    /// (卡 ID, 模板 ID, cloze 序号, 判空)。
+    pub(crate) expected: Vec<(String, String, i64, bool)>,
+    /// 笔记删了或笔记类型删了 / 不在：它的卡全部隐藏。
+    pub(crate) gone: bool,
+}
+
+pub(crate) fn note_row(n: &NoteInfo, t: Option<&TypeInfo>) -> Result<NoteRow, String> {
+    let term = match t.and_then(|t| t.term_field.as_deref()) {
+        Some(f) => card_cache::normalize_term(n.field(f)),
+        None => String::new(),
+    };
+    let reading = match t.and_then(|t| t.reading_field.as_deref()) {
+        Some(f) => card_cache::normalize_term(n.field(f)),
+        None => String::new(),
+    };
+    let sort = match t.and_then(|t| t.fields.first()) {
+        Some((f, _)) => card_cache::sort_field(n.field(f)),
+        None => String::new(),
+    };
+    let freq = t
+        .and_then(|t| t.freq_field.as_deref())
+        .and_then(|f| card_cache::freq_rank(n.field(f)));
+    let expected = match t {
+        Some(t) => expected_cards(n, t)?,
+        None => Vec::new(),
+    };
+    Ok(NoteRow {
+        term,
+        reading,
+        sort,
+        tags: serde_json::to_string(&n.tags).map_err(|e| e.to_string())?,
+        media: card_cache::media_refs(n.fields.iter().map(|(_, v)| v.as_str())),
+        dupe: dupe_norm_of(n, t),
+        anki_id: crate::store::schema::anki_numeric_id(&n.id),
+        freq,
+        expected,
+        gone: n.deleted_at.is_some() || t.is_none_or(|t| t.deleted),
+    })
+}
+
 #[allow(clippy::too_many_arguments)]
 fn flush_notes(
     c: &Connection,
@@ -640,9 +715,12 @@ fn flush_notes(
     now: i64,
     out: &mut Written,
 ) -> Result<(), String> {
+    let p_views = super::prof::span("cache.notes.views");
     let views = note_infos(c, chunk)?;
     let existing = cards_of_notes(c, chunk)?;
     load_types(c, cfg, views.iter().map(|v| &v.note_type), types)?;
+    drop(p_views);
+    let p_rows = super::prof::span("cache.notes.rows");
     // 笔记缓存行与应有的卡。
     // (笔记下标, 应有的卡, 笔记已不在, 词频名次)。
     let mut plans: Vec<(usize, Vec<(String, String, i64, bool)>, bool, Option<i64>)> =
@@ -651,30 +729,7 @@ fn flush_notes(
     let mut note_stmt = c.prepare_cached(NOTE_UPSERT).map_err(sql)?;
     for (k, n) in views.iter().enumerate() {
         let t = types.get(&n.note_type).and_then(Option::as_ref);
-        let term = match t.and_then(|t| t.term_field.as_deref()) {
-            Some(f) => card_cache::normalize_term(n.field(f)),
-            None => String::new(),
-        };
-        let reading = match t.and_then(|t| t.reading_field.as_deref()) {
-            Some(f) => card_cache::normalize_term(n.field(f)),
-            None => String::new(),
-        };
-        let sort = match t.and_then(|t| t.fields.first()) {
-            Some((f, _)) => card_cache::sort_field(n.field(f)),
-            None => String::new(),
-        };
-        let dupe = dupe_norm_of(n, t);
-        // 名次是笔记上的值：写进这条笔记的每张卡。
-        let freq = t
-            .and_then(|t| t.freq_field.as_deref())
-            .and_then(|f| card_cache::freq_rank(n.field(f)));
-        let expected = match t {
-            Some(t) => expected_cards(n, t)?,
-            None => Vec::new(),
-        };
-        let gone = n.deleted_at.is_some() || t.is_none_or(|t| t.deleted);
-        let tags = serde_json::to_string(&n.tags).map_err(|e| e.to_string())?;
-        let media = card_cache::media_refs(n.fields.iter().map(|(_, v)| v.as_str()));
+        let row = note_row(n, t)?;
         note_stmt
             .execute(rusqlite::params![
                 n.id,
@@ -684,25 +739,25 @@ fn flush_notes(
                 n.created_at,
                 n.deck,
                 n.deleted_at,
-                term,
-                reading,
-                sort,
-                tags,
+                row.term,
+                row.reading,
+                row.sort,
+                row.tags,
                 n.pending,
                 now,
-                media,
+                row.media,
                 n.source_kind,
                 n.source_title,
-                crate::store::schema::anki_numeric_id(&n.id),
-                dupe,
+                row.anki_id,
+                row.dupe,
                 n.source_key,
             ])
             .map_err(sql)?;
         out.notes.push(n.id.clone());
-        for e in &expected {
+        for e in &row.expected {
             want.push((e.0.clone(), n.deck.clone()));
         }
-        plans.push((k, expected, gone, freq));
+        plans.push((k, row.expected, row.gone, row.freq));
     }
     // 不再应有的旧卡删行：缓存是事件的纯函数，增量刷新与 [rebuild] 必须得到同一张表（删除前的 Dart 增量路径
     // 把它们留成 hidden=1、重建又不写，两条路径的结果取决于这台机器重建过没有，更改笔记类型的预演会因此
@@ -717,7 +772,9 @@ fn flush_notes(
     }
     delete_cards(c, &gone_cards)?;
     out.removed.extend(gone_cards);
+    drop(p_rows);
     let materials = card_materials(c, cfg, &want)?;
+    let _p_cards = super::prof::span("cache.notes.card_rows");
     let mut card_stmt = c.prepare_cached(CARD_UPSERT).map_err(sql)?;
     for (k, expected, gone, freq) in &plans {
         let n = &views[*k];
@@ -745,9 +802,44 @@ fn flush_notes(
 // ---------------------------------------------------------------- 卡
 
 /// 一张卡的缓存行原料：继承后的标志与卡片历史内核算出的当前状态。
-struct Material {
+pub(crate) struct Material {
     flags: Value,
     state: history::State,
+}
+
+impl Material {
+    /// 继承后的标志 + 血统上全部日志（落库形态）→ 原料（[card_materials] 与协议 4 的 `store/gen4/cache.rs` 共用）。
+    pub(crate) fn of(flags: Value, logs: &[history::StoredLog<'_>]) -> Result<Material, String> {
+        Ok(Material {
+            flags,
+            state: history::state_from_stored(logs)?,
+        })
+    }
+}
+
+/// 卡片缓存行里由原料算出来的列（[write_card] 与协议 4 的 `store/gen4/cache.rs` 共用；卡 / 笔记 / 模板 / 序号 /
+/// 可见性 / 笔记创建时刻 / 词频名次由调用方给）。
+pub(crate) struct CardRow<'m> {
+    pub(crate) deck: &'m str,
+    pub(crate) suspended: bool,
+    pub(crate) buried_until_day: Option<i64>,
+    pub(crate) flag: i64,
+    pub(crate) queue: &'static str,
+    pub(crate) new_position: Option<i64>,
+    pub(crate) state: &'m history::State,
+}
+
+pub(crate) fn card_row(m: &Material) -> Result<CardRow<'_>, String> {
+    let f = &m.flags;
+    Ok(CardRow {
+        deck: f["dk"].as_str().ok_or("flags: deck missing")?,
+        suspended: f["su"] == Value::Bool(true),
+        buried_until_day: f["bu"].as_i64(),
+        flag: f["fl"].as_i64().unwrap_or(0),
+        queue: QUEUES.get(m.state.queue as usize).ok_or("bad queue")?,
+        new_position: f["np"].as_i64(),
+        state: &m.state,
+    })
 }
 
 /// 一组卡（卡 ID, 笔记首选牌组）的血统、标志与当前状态：血统的修改记录按轮读（每轮把新发现的前身一起读，
@@ -757,9 +849,14 @@ fn card_materials(
     cfg: &CacheConfig,
     want: &[(String, Option<String>)],
 ) -> Result<HashMap<String, Material>, String> {
+    let p_lineages = super::prof::span("cache.material.lineages");
     let lineages = lineages(c, cfg, want)?;
+    drop(p_lineages);
     let groups: Vec<Vec<String>> = lineages.iter().map(|l| l.0.clone()).collect();
+    let p_logs = super::prof::span("cache.material.logs");
     let logs = logs_of(c, &groups)?;
+    drop(p_logs);
+    let _p_state = super::prof::span("cache.material.state");
     let empty: Vec<LogRow> = Vec::new();
     let mut out = HashMap::with_capacity(want.len());
     for ((card, _), (lineage, flags)) in want.iter().zip(lineages) {
@@ -769,8 +866,7 @@ fn card_materials(
                 stored.push((j, *s, cols.as_ref()));
             }
         }
-        let state = history::state_from_stored(&stored)?;
-        out.insert(card.clone(), Material { flags, state });
+        out.insert(card.clone(), Material::of(flags, &stored)?);
     }
     Ok(out)
 }
@@ -1001,21 +1097,20 @@ fn write_card(
     freq_rank: Option<i64>,
     m: &Material,
 ) -> Result<(), String> {
-    let f = &m.flags;
-    let s = &m.state;
-    let queue = QUEUES.get(s.queue as usize).ok_or("bad queue")?;
+    let r = card_row(m)?;
+    let s = r.state;
     stmt.execute(rusqlite::params![
         card,
         profile,
         note,
         template,
         ord,
-        f["dk"].as_str().ok_or("flags: deck missing")?,
-        f["su"] == Value::Bool(true),
-        f["bu"].as_i64(),
-        f["fl"].as_i64().unwrap_or(0),
+        r.deck,
+        r.suspended,
+        r.buried_until_day,
+        r.flag,
         hidden,
-        queue,
+        r.queue,
         s.due_day,
         s.due_at,
         s.scheduled_days,
@@ -1027,7 +1122,7 @@ fn write_card(
         s.last_log_id,
         s.scheduler,
         note_created,
-        f["np"].as_i64(),
+        r.new_position,
         freq_rank,
         crate::store::schema::anki_numeric_id(card),
     ])
@@ -1272,6 +1367,7 @@ fn refresh_stats(
     seeds: &BTreeSet<String>,
     expand: bool,
 ) -> Result<(), String> {
+    let p_family = super::prof::span("cache.stats.family");
     // 连通分量：沿链接双向扩（链接表是超集；真正的血统下面按修改记录的生效值算）。
     let mut family = link_family(c, links, seeds)?;
     if expand {
@@ -1284,8 +1380,9 @@ fn refresh_stats(
             family = link_family(c, links, &grown)?;
         }
     }
-    let mut ids: Vec<String> = family.iter().cloned().collect();
-    ids.sort_by(|a, b| cmp_utf16(a, b));
+    drop(p_family);
+    let p_owners = super::prof::span("cache.stats.owners");
+    let ids = sorted_ids(&family);
     let mut visible: HashSet<String> = HashSet::new();
     // 有缓存行的卡所属的笔记（隐藏的也有）；没有缓存行的卡（例如笔记换了类型后不再属于它的旧卡）认不出笔记。
     let mut note_of: HashMap<String, String> = HashMap::new();
@@ -1316,46 +1413,12 @@ fn refresh_stats(
         let want: Vec<(String, Option<String>)> =
             chunk.iter().map(|id| (id.clone(), None)).collect();
         for (k, (lineage, _)) in lineages(c, cfg, &want)?.into_iter().enumerate() {
-            for p in lineage.into_iter().skip(1) {
-                descendants.entry(p).or_default().insert(chunk[k].clone());
-            }
+            add_descendants(&chunk[k], lineage, &mut descendants);
         }
     }
-    let sorted = |xs: Vec<&String>| -> Option<String> {
-        xs.into_iter().min_by(|a, b| cmp_utf16(a, b)).cloned()
-    };
-    let owner_of = |id: &String| -> String {
-        if visible.contains(id) {
-            return id.clone();
-        }
-        let Some(d) = descendants.get(id).filter(|d| !d.is_empty()) else {
-            return id.clone();
-        };
-        if let Some(o) = sorted(d.iter().filter(|x| visible.contains(*x)).collect()) {
-            return o;
-        }
-        if let Some(o) = sorted(
-            d.iter()
-                .filter(|x| descendants.get(*x).is_none_or(BTreeSet::is_empty))
-                .collect(),
-        ) {
-            return o;
-        }
-        sorted(d.iter().collect()).expect("non-empty")
-    };
-    // 归属组（归属卡在前，再按 id 序列出归它的卡），组按首次出现的顺序。
-    let mut order: Vec<String> = Vec::new();
-    let mut groups: HashMap<String, Vec<String>> = HashMap::new();
-    for id in &ids {
-        let o = owner_of(id);
-        let g = groups.entry(o.clone()).or_insert_with(|| {
-            order.push(o.clone());
-            vec![o.clone()]
-        });
-        if *id != o {
-            g.push(id.clone());
-        }
-    }
+    let (order, groups) = stat_groups(&ids, &visible, &descendants);
+    drop(p_owners);
+    let p_delete = super::prof::span("cache.stats.delete");
     let family: Vec<&String> = family.iter().collect();
     for chunk in family.chunks(500) {
         let q = format!(
@@ -1367,6 +1430,7 @@ fn refresh_stats(
             .execute(params_from_iter(chunk.iter()))
             .map_err(sql)?;
     }
+    drop(p_delete);
     let mut ins = c
         .prepare_cached(
             "INSERT INTO srs_stat_reviews (log_id, profile_uid, card_id, occurred_at, utc_offset_min, rating, kind, \
@@ -1383,7 +1447,10 @@ fn refresh_stats(
     let mut anki_keys: Vec<AnkiStatKey> = Vec::new();
     for (base, owners) in order.chunks(500).enumerate().map(|(k, o)| (k * 500, o)) {
         let batch: Vec<Vec<String>> = owners.iter().map(|o| groups[o].clone()).collect();
+        let p_logs = super::prof::span("cache.stats.logs");
         let logs = logs_of(c, &batch)?;
+        drop(p_logs);
+        let _p_rows = super::prof::span("cache.stats.rows");
         for (k, (o, g)) in owners.iter().zip(&batch).enumerate() {
             let mut stored: Vec<crate::history::StoredLog<'_>> = Vec::new();
             for id in g {
@@ -1429,11 +1496,75 @@ fn refresh_stats(
     Ok(())
 }
 
+/// 一组卡按 UTF-16 序排好（[stat_groups] 的输入顺序）。
+pub(crate) fn sorted_ids<'a>(family: impl IntoIterator<Item = &'a String>) -> Vec<String> {
+    let mut ids: Vec<String> = family.into_iter().cloned().collect();
+    ids.sort_by(|a, b| cmp_utf16(a, b));
+    ids
+}
+
+/// 把 [card] 的血统（自己在前）记进「前身 → 真后代」表：p 在 X 的血统里（X ≠ p）。
+pub(crate) fn add_descendants(
+    card: &str,
+    lineage: Vec<String>,
+    descendants: &mut HashMap<String, BTreeSet<String>>,
+) {
+    for p in lineage.into_iter().skip(1) {
+        descendants.entry(p).or_default().insert(card.to_owned());
+    }
+}
+
+/// 有效复习投影的归属组（[refresh_stats] 与协议 4 的 `store/gen4/cache.rs` 共用）：[ids] 是一个「前身 ↔ 后继」连通
+/// 分量（按 [sorted_ids] 排好）。归属：卡自己可见 → 归自己；否则归继承它历史的可见卡中 id 最小的；都不可见 → 归
+/// 后代里的链尾中 id 最小的；没有后代 → 归自己。返回 (归属卡按首次出现的顺序, 归属卡 → 组：归属卡在前、再按 id 序
+/// 列出归它的卡)。
+pub(crate) fn stat_groups(
+    ids: &[String],
+    visible: &HashSet<String>,
+    descendants: &HashMap<String, BTreeSet<String>>,
+) -> (Vec<String>, HashMap<String, Vec<String>>) {
+    let sorted = |xs: Vec<&String>| -> Option<String> {
+        xs.into_iter().min_by(|a, b| cmp_utf16(a, b)).cloned()
+    };
+    let owner_of = |id: &String| -> String {
+        if visible.contains(id) {
+            return id.clone();
+        }
+        let Some(d) = descendants.get(id).filter(|d| !d.is_empty()) else {
+            return id.clone();
+        };
+        if let Some(o) = sorted(d.iter().filter(|x| visible.contains(*x)).collect()) {
+            return o;
+        }
+        if let Some(o) = sorted(
+            d.iter()
+                .filter(|x| descendants.get(*x).is_none_or(BTreeSet::is_empty))
+                .collect(),
+        ) {
+            return o;
+        }
+        sorted(d.iter().collect()).expect("non-empty")
+    };
+    let mut order: Vec<String> = Vec::new();
+    let mut groups: HashMap<String, Vec<String>> = HashMap::new();
+    for id in ids {
+        let o = owner_of(id);
+        let g = groups.entry(o.clone()).or_insert_with(|| {
+            order.push(o.clone());
+            vec![o.clone()]
+        });
+        if *id != o {
+            g.push(id.clone());
+        }
+    }
+    (order, groups)
+}
+
 /// [refresh_stats] 去重用的一条 Anki 投影行的轻量键：事件身份、归属卡（在归属组顺序里的下标）、日志 ID。
-struct AnkiStatKey {
-    event: history::AnkiEvent,
-    owner: usize,
-    log_id: String,
+pub(crate) struct AnkiStatKey {
+    pub(crate) event: history::AnkiEvent,
+    pub(crate) owner: usize,
+    pub(crate) log_id: String,
 }
 
 /// [cards] 上 Anki 导入日志的时刻（导入日志的发生时刻 = revlog id）在本 profile 里出现过的全部卡（含 [cards] 自己）。
@@ -1485,7 +1616,7 @@ fn anki_partners(
 /// 归属卡可见的优先，再取日志 ID（UTF-16 序）最小的——只由参与的日志与可见性决定，与刷新顺序无关。
 ///
 /// 返回落选副本的日志 ID（由调用方从投影里删掉）。
-fn anki_duplicate_log_ids(
+pub(crate) fn anki_duplicate_log_ids(
     keys: &[AnkiStatKey],
     owners: &[String],
     visible: &HashSet<String>,

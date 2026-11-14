@@ -1,7 +1,8 @@
 // 推迟的旧库迁移（BUG-4011）：app 打开 store 时 `deferMigration`（srs_providers.dart），首次同步确认弹框没回答前
 // 不迁移、也不拉；确认之后、第一轮上传之前，调度器 [SrsSyncScheduler.ensureMigrated] 先从同步位置只拉不发收一轮再
-// 迁移。第二台设备、位置上已有第一台迁出的同一份旧库：只包本机独有的旧行，且拉取这一步不往位置写任何东西；位置
-// 卡住时最多等预算这么久，照常迁移；一轮里（拿着通道锁）只从那条通道收、不重入通道锁；档案合并（冲突弹窗选定）在
+// 迁移。第二台设备、位置上已有第一台迁出的同一份旧库：只包本机独有的旧行，且拉取这一步不往位置写任何东西；拉取
+// 按进度判（一直有进展就等到收齐，哪怕远超旧的 2 分钟预算；连续停滞才放弃、照常迁移；位置上没有集合立即迁移，
+// 计时器用可控时钟、不做真实等待）；一轮里（拿着通道锁）只从那条通道收、不重入通道锁；档案合并（冲突弹窗选定）在
 // 候选所在那条通道的锁里做，并入前从它收。
 import 'dart:async';
 import 'dart:convert';
@@ -16,6 +17,7 @@ import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_profile_link.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_crypto.dart';
+import 'package:fushi_engine/srs/sync2/srs_sync2_pull_first.dart';
 import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart';
 import 'package:fushi_engine/sync/local_directory_asset_store.dart';
 import 'package:fushi_engine/sync/sync_asset_store.dart';
@@ -103,6 +105,163 @@ List<String> _files(Directory root) => <String>[
   for (final FileSystemEntity e in root.listSync(recursive: true))
     if (e is File) e.path,
 ]..sort();
+
+/// 可控时钟：[create] 交给调度器当只拉不发的计时器工厂；[pace] 是假的网络耗时。
+class _FakeTime {
+  Duration now = Duration.zero;
+  final List<_FakeTimer> _timers = <_FakeTimer>[];
+
+  Timer create(Duration d, void Function() callback) =>
+      _add(_FakeTimer(now + d, callback, pace: false));
+
+  _FakeTimer _add(_FakeTimer t) {
+    _timers.add(t);
+    return t;
+  }
+
+  /// 一次读取要花 [d]（假时钟）。
+  Future<void> pace(Duration d) {
+    final Completer<void> c = Completer<void>();
+    _add(_FakeTimer(now + d, c.complete, pace: true));
+    return c.future;
+  }
+
+  /// 有读取在等假时钟：拨到最早的那个读取到点，途中到点的计时器（停滞 / 上限）按先后一并触发；返回 false = 此刻
+  /// 没有读取在等（被测代码在做真实的本地 IO / 内核调用）。不在没有读取在等时拨钟：那时拨就是凭空制造停滞。
+  bool step() {
+    final List<_FakeTimer> paces = <_FakeTimer>[
+      for (final _FakeTimer t in _timers)
+        if (t.isActive && t.pace) t,
+    ];
+    if (paces.isEmpty) return false;
+    final Duration to = paces
+        .map((_FakeTimer t) => t.at)
+        .reduce((Duration a, Duration b) => a < b ? a : b);
+    final List<_FakeTimer> due =
+        _timers.where((_FakeTimer t) => t.isActive && t.at <= to).toList()
+          ..sort((_FakeTimer a, _FakeTimer b) => a.at.compareTo(b.at));
+    for (final _FakeTimer t in due) {
+      if (!t.isActive) continue;
+      now = t.at;
+      t.fire();
+    }
+    now = to;
+    return true;
+  }
+
+  /// 把时钟拨到 [to]（只用于没有读取在等、要让停滞 / 上限到点的情形）。
+  void jump(Duration to) {
+    final List<_FakeTimer> due =
+        _timers.where((_FakeTimer t) => t.isActive && t.at <= to).toList()
+          ..sort((_FakeTimer a, _FakeTimer b) => a.at.compareTo(b.at));
+    for (final _FakeTimer t in due) {
+      if (!t.isActive) continue;
+      now = t.at;
+      t.fire();
+    }
+    now = to;
+  }
+}
+
+class _FakeTimer implements Timer {
+  _FakeTimer(this.at, this._callback, {required this.pace});
+
+  final Duration at;
+  final bool pace;
+  final void Function() _callback;
+  bool _active = true;
+
+  void fire() {
+    _active = false;
+    _callback();
+  }
+
+  @override
+  void cancel() => _active = false;
+
+  @override
+  bool get isActive => _active;
+
+  @override
+  int get tick => 0;
+}
+
+/// 每次读（列目录 / 找文件 / 下载）都要花假时钟 [each] 的位置；写入原样转发（只拉不发不该有写入）。
+class _SlowStore implements SyncAssetStore {
+  _SlowStore(this._inner, this._time, this.each);
+
+  final SyncAssetStore _inner;
+  final _FakeTime _time;
+  final Duration each;
+  int reads = 0;
+
+  Future<T> _slow<T>(Future<T> Function() body) async {
+    reads++;
+    await _time.pace(each);
+    return body();
+  }
+
+  @override
+  Future<String> ensureNamespace(String name) =>
+      _slow(() => _inner.ensureNamespace(name));
+
+  @override
+  Future<String> ensureFolder(String parentId, String name) =>
+      _slow(() => _inner.ensureFolder(parentId, name));
+
+  @override
+  Future<List<AssetEntry>> listChildren(String namespaceId) =>
+      _slow(() => _inner.listChildren(namespaceId));
+
+  @override
+  Future<AssetEntry?> findAsset(String namespaceId, String name) =>
+      _slow(() => _inner.findAsset(namespaceId, name));
+
+  @override
+  Future<void> getAsset(
+    String assetId,
+    File destination, {
+    SyncTransferProgress? onProgress,
+  }) => _slow(
+    () => _inner.getAsset(assetId, destination, onProgress: onProgress),
+  );
+
+  @override
+  Future<Object?> getJsonAsset(String assetId) =>
+      _slow(() => _inner.getJsonAsset(assetId));
+
+  @override
+  Future<void> putAsset(
+    String namespaceId,
+    String name,
+    File file, {
+    SyncTransferProgress? onProgress,
+  }) => _inner.putAsset(namespaceId, name, file, onProgress: onProgress);
+
+  @override
+  Future<void> putJsonAsset(String namespaceId, String name, Object? json) =>
+      _inner.putJsonAsset(namespaceId, name, json);
+
+  @override
+  Future<void> deleteAsset(String id, {bool isFolder = false}) =>
+      _inner.deleteAsset(id, isFolder: isFolder);
+}
+
+/// 驱动 [f] 做完：有读取在等假时钟就拨钟，否则让出一下给真实的本地 IO（不是等预算：假时钟不因此前进）。
+Future<void> _drive(_FakeTime time, Future<void> f) async {
+  bool done = false;
+  unawaited(f.whenComplete(() => done = true));
+  final Stopwatch guard = Stopwatch()..start();
+  while (!done) {
+    if (guard.elapsed > const Duration(seconds: 60)) {
+      fail('did not finish (virtual time ${time.now})');
+    }
+    if (!time.step()) {
+      await Future<void>.delayed(const Duration(milliseconds: 1));
+    }
+  }
+  await f;
+}
 
 /// 只记下 [adopt] 收到的通道。
 class _RecordingLinker implements SrsProfileLinker {
@@ -201,7 +360,11 @@ void main() {
     bool Function()? confirmed,
     SrsSyncRunner? runner,
     SrsProfileLinker? linker,
-    Duration migratePullBudget = const Duration(seconds: 30),
+    SrsPullBound migratePullBound = const SrsPullBound.progress(
+      stall: kSrsPullBeforeMigrateStall,
+      cap: kSrsPullBeforeMigrateCap,
+    ),
+    SrsPullTimerFactory pullTimer = Timer.new,
   }) => SrsSyncScheduler(
     readStore: () async => store,
     channels: channels ?? channelsOf,
@@ -211,7 +374,8 @@ void main() {
     firstSyncConfirmed: confirmed ?? () => true,
     runner: runner,
     profileLinker: linker,
-    migratePullBudget: migratePullBudget,
+    migratePullBound: migratePullBound,
+    pullTimer: pullTimer,
   );
 
   /// A 迁移自己的旧库（两条日志）并上传到 [root]。
@@ -311,8 +475,11 @@ void main() {
       store: b,
       channels: lock,
       runner: recordingRunner(stB),
-      // 预算远大于测试超时：靠预算到点解开的互等在这里就是超时失败。
-      migratePullBudget: const Duration(hours: 1),
+      // 停滞判定与上限远大于测试超时：靠到点解开的互等在这里就是超时失败。
+      migratePullBound: const SrsPullBound.progress(
+        stall: Duration(hours: 1),
+        cap: Duration(hours: 1),
+      ),
     );
     final Completer<void> go = Completer<void>();
     // 自动同步的后置步骤：拿着通道锁跑这条通道的一轮。
@@ -389,26 +556,85 @@ void main() {
     ), reason: 'every legacy log wrapped once, plus the interleaved rating');
   });
 
-  test('位置卡住：最多等预算这么久，照常迁移；迟到的结果碰不到本机库', () async {
-    final Completer<void> never = Completer<void>();
+  test('一直有进展、总时长远超旧的 2 分钟预算：等到收齐再迁移，只包本机独有的', () async {
+    await seedA();
+    final _FakeTime time = _FakeTime();
+    // 每次后端调用 20 秒（假时钟）：位置上的一次读取是好几次后端调用（逐级找目录 / 找文件 / 下载），远小于停滞判定。
+    final _SlowStore slow = _SlowStore(
+      backend,
+      time,
+      const Duration(seconds: 20),
+    );
     final SrsStorage stB = await _legacyStorage(<String>[...kShared, kOnlyB]);
     final SrsDbStore b = await _open(stB, 'B', deferMigration: true);
     final SrsSyncScheduler s = scheduler(
       store: b,
       channels: (Future<void> Function(SyncAssetStore) body) async {
+        await body(slow);
+        return (ran: 1, errors: const <Object>[]);
+      },
+      pullTimer: time.create,
+    );
+    await _drive(time, s.ensureMigrated(b));
+    expect(
+      time.now,
+      greaterThan(const Duration(minutes: 2)),
+      reason:
+          'the pull took longer than the old fixed budget '
+          '(${slow.reads} reads)',
+    );
+    expect(b.sync2Migrated, isTrue);
+    expect(await _logOps(stB), (
+      ops: 3,
+      devices: 2,
+    ), reason: "A's two ops pulled before migrating; only B's own log wrapped");
+  });
+
+  test('位置卡住（停滞）：最后一次进展之后整整 stall 才放弃，照常迁移；迟到的结果碰不到本机库', () async {
+    final _FakeTime time = _FakeTime();
+    final Completer<void> never = Completer<void>();
+    final SrsStorage stB = await _legacyStorage(<String>[...kShared, kOnlyB]);
+    final SrsDbStore b = await _open(stB, 'B', deferMigration: true);
+    bool entered = false;
+    final SrsSyncScheduler s = scheduler(
+      store: b,
+      channels: (Future<void> Function(SyncAssetStore) body) async {
+        entered = true;
         await never.future;
         return (ran: 0, errors: const <Object>[]);
       },
-      migratePullBudget: const Duration(milliseconds: 300),
+      pullTimer: time.create,
     );
-    final Stopwatch watch = Stopwatch()..start();
-    await s.ensureMigrated(b);
-    expect(watch.elapsed, lessThan(const Duration(seconds: 10)));
+    bool done = false;
+    final Future<void> migrating = s.ensureMigrated(b).whenComplete(() {
+      done = true;
+    });
+    while (!entered) {
+      await Future<void>.delayed(const Duration(milliseconds: 1));
+    }
+    // 开跑那一刻算一次进展（内核 identity 之前就卡住：一次进展都没有）。
+    time.jump(kSrsPullBeforeMigrateStall - const Duration(seconds: 1));
+    await pumpEventQueue();
+    expect(done, isFalse, reason: 'one second before the stall: still waiting');
+    expect(b.sync2Migrated, isFalse);
+    time.jump(kSrsPullBeforeMigrateStall);
+    await migrating;
     expect(b.sync2Migrated, isTrue);
     expect(await _logOps(stB), (
       ops: 3,
       devices: 1,
     ), reason: 'nothing pulled: migrate everything');
+  });
+
+  test('位置上没有集合：不等任何计时器，立即迁移', () async {
+    final _FakeTime time = _FakeTime();
+    final SrsStorage stB = await _legacyStorage(<String>[...kShared, kOnlyB]);
+    final SrsDbStore b = await _open(stB, 'B', deferMigration: true);
+    final SrsSyncScheduler s = scheduler(store: b, pullTimer: time.create);
+    await s.ensureMigrated(b);
+    expect(time.now, Duration.zero, reason: 'no fake time had to pass');
+    expect(b.sync2Migrated, isTrue);
+    expect(await _logOps(stB), (ops: 3, devices: 1));
   });
 
   test('冲突弹窗选定候选：在候选所在那条通道的锁里并入，并入拿得到那条通道', () async {
@@ -436,7 +662,7 @@ void main() {
     expect(linker.adoptedWithin, <SyncAssetStore?>[backend]);
   });
 
-  // BUG-4387：`SrsDbStore.open` 在任何同步之前就写下内置身份记录，以前的判据（操作日志与投影全空）让新设备收段通道
+  // BUG-4478：`SrsDbStore.open` 在任何同步之前就写下内置身份记录，以前的判据（操作日志与投影全空）让新设备收段通道
   // 在生产里一次都不开。app 的顺序是「只拉不发 → 迁移 → 正式一轮」：第一次收段发生在只拉不发那一步。
   test('新装的设备确认后的第一轮：只拉不发那一步走收段通道，迁移与正式一轮照常，收敛', () async {
     Future<SrsSync2Report> roundOf(SrsDbStore s) => srsSync2Round(

@@ -5,9 +5,15 @@
 //!
 //! 1. `rebuild_all` 再做一遍，派生表逐行不变；
 //! 2. 换一种到达方式（一台设备一台设备地逐条落、逐条维护，信任状态最后才给），派生表与重建出来的逐行相同；
-//! 3. 与协议 3 的投影对拍（[against_protocol_3]）没有差异。协议 3 一侧比的是「它自己的规则作用在全集上」：扣住在
+//! 3. 与协议 3 的投影对拍（[against_protocol_3]）没有差异——协议 3 一侧比的是「它自己的规则作用在全集上」：扣住在
 //!    全集上重判（[rejudge_holds]），活着的修改记录按它自己的寄存器判据取（[protocol_3_live_edits]）；两份旧库撞了
-//!    同一个旧修改记录 ID 的不比（[collided_edit_ids]）。
+//!    同一个旧修改记录 ID 的不比（[collided_edit_ids]）；缓存层（笔记行 / 卡行 / 有效复习投影）按同一份缓存配置
+//!    （只有默认牌组）与协议 3 在 SAVEPOINT 里 `caches::rebuild` 出来的行逐列比，比完回滚。缓存层的有意差别与口径
+//!    （`cache.rs` 文件头「与协议 3 的差别」）：笔记行的 `updated_at` 不比；协议 3 因身份记录不成形整次重建失败时
+//!    缓存三类不比；有删除被扣住的笔记不比 `deleted_at` / `pending_decision` 与它的卡的 `hidden`、笔记类型的删除被扣住时
+//!    它的笔记的卡不比 `hidden`（同 `edits` 的口径）；
+//!    同一个旧修改记录 ID 下有两条不同修改的笔记（复制出来的两份旧库各自续写）不比它与它的卡（[collided_notes]）。
+//!    协议 3 一侧先做完它自己欠着的收尾（待重放集合、没刷新的合成标签行）再重建（[protocol_3_caches]）。
 //!
 //! 库还没做完换代前必须做完的事（旧行没包成操作、去重作业没跑完）时，在一份拷贝上把它们做完再对拍；做不完的
 //! （新设备收段通道还开着）跳过。与协议 3 有意不同的场景列在 [KNOWN]，逐条写原因。
@@ -21,6 +27,7 @@ use std::time::Instant;
 
 use rusqlite::{Connection, ToSql, params};
 
+use super::cache::CFG_KEY;
 use super::derive::tests::{canon, digest, dump};
 use super::derive::{Index, R_LIVE, Ref, body_of};
 use super::import::import_legacy;
@@ -31,6 +38,7 @@ use super::truth::Truth;
 use crate::gen4::op::Body4;
 use crate::store::SrsCore;
 use crate::store::sync2::collection_of;
+use crate::store::sync2::config::default_deck_id;
 use crate::store::sync2::semantics::current_tags;
 use crate::store::sync2::tests::{Device, P, tempdir};
 use crate::sync2::id::Id;
@@ -47,6 +55,12 @@ const KNOWN: &[(&str, &str, &str)] = &[
         "edits",
         "the test rewrites one sync2_ops row into a duplicate skeleton by hand (not through dedup::apply), so the \
          protocol 3 projection still holds the edit its own log no longer has",
+    ),
+    (
+        "tests_digest::diverged_devices_locate_the_differing_bucket",
+        "stats",
+        "the test rewrites one srs_review_logs row's rating by hand (a silent divergence that never went through \
+         sync), so the protocol 3 projection no longer matches the log op the new store reads",
     ),
     (
         "tests_footprint::upgrading_from_before_v16_adds_the_snapshot_columns_before_reading_ops",
@@ -111,6 +125,15 @@ fn texts(conn: &Connection, sql: &str, args: &[&dyn ToSql]) -> BTreeSet<String> 
 }
 
 fn ops(conn: &Connection, table: &str, profile: &str) -> BTreeSet<String> {
+    // 这张表比库新（真实样本是加这个功能之前的 schema）：那时没有这类行。
+    let exists = conn
+        .prepare("SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = ?1")
+        .unwrap()
+        .exists([table])
+        .unwrap();
+    if !exists {
+        return BTreeSet::new();
+    }
     conn.prepare(&format!(
         "SELECT device, seq FROM {table} WHERE profile_uid = srs_id(?1)"
     ))
@@ -133,9 +156,297 @@ fn hex(b: &[u8]) -> String {
     b.iter().map(|x| format!("{x:02X}")).collect()
 }
 
+/// 缓存层对拍的列：(新代列, 协议 3 列)。笔记的 `updated_at` 不比（协议 3 是写行那一刻的本机时钟，新代是内容最后
+/// 被改的 HLC 物理时刻——`cache.rs` 文件头「取舍」）。第一列是行的身份（只用来让差异好读，整行都比）。
+const NOTE_COLS: &[(&str, &str)] = &[
+    ("id", "id"),
+    ("note_type_id", "note_type_id"),
+    ("guid", "guid"),
+    ("created_at", "created_at"),
+    ("deck_id", "deck_id"),
+    ("deleted_at", "deleted_at"),
+    ("term_key", "term_key"),
+    ("reading_key", "reading_key"),
+    ("sort_field", "sort_field"),
+    ("tags_json", "tags_json"),
+    ("pending_decision", "pending_decision"),
+    ("media_refs", "media_refs"),
+    ("source_kind", "source_kind"),
+    ("source_title", "source_title"),
+    ("anki_id", "anki_id"),
+    ("dupe_norm", "dupe_norm"),
+    ("source_key", "source_key"),
+];
+const CARD_COLS: &[(&str, &str)] = &[
+    ("id", "id"),
+    ("note_id", "note_id"),
+    ("template_id", "template_id"),
+    ("cloze_ord", "cloze_ord"),
+    ("deck_id", "deck_id"),
+    ("suspended", "suspended"),
+    ("buried_until_day", "buried_until_day"),
+    ("flag", "flag"),
+    ("hidden", "hidden"),
+    ("queue", "queue"),
+    ("due_day", "due_day"),
+    ("due_at", "due_at"),
+    ("scheduled_days", "scheduled_days"),
+    ("reps", "reps"),
+    ("lapses", "lapses"),
+    ("stability", "stability"),
+    ("difficulty", "difficulty"),
+    ("last_reviewed_at", "last_reviewed_at"),
+    ("last_log_id", "last_log_id"),
+    ("scheduler", "scheduler"),
+    ("note_created_at", "note_created_at"),
+    ("new_position", "new_position"),
+    ("freq_rank", "freq_rank"),
+    ("anki_id", "anki_id"),
+];
+const STAT_COLS: &[(&str, &str)] = &[
+    ("log", "log_id"),
+    ("card", "card_id"),
+    ("at", "occurred_at"),
+    ("utc_offset_min", "utc_offset_min"),
+    ("rating", "rating"),
+    ("kind", "kind"),
+    ("duration_ms", "duration_ms"),
+    ("prev_due_day", "prev_due_day"),
+    ("maturity_delta", "maturity_delta"),
+];
+
+/// 一格的文本形：16 字节的 ID 写成 UUID 文本（新代存 [Ref]，协议 3 存 `srs_id`），其余按值。
+pub(crate) fn cell(v: rusqlite::types::ValueRef<'_>) -> String {
+    use rusqlite::types::ValueRef;
+    match v {
+        ValueRef::Null => "∅".to_owned(),
+        ValueRef::Integer(i) => i.to_string(),
+        ValueRef::Real(f) => format!("{f:?}"),
+        ValueRef::Text(t) => String::from_utf8_lossy(t).into_owned(),
+        ValueRef::Blob(b) => match <[u8; 16]>::try_from(b) {
+            Ok(u) => Ref::Uuid(u).text(),
+            Err(_) => hex(b),
+        },
+    }
+}
+
+/// 一张表的行（每行各列的文本形）。
+fn rows_of(
+    conn: &Connection,
+    table: &str,
+    cols: &[&str],
+    filter: &str,
+    arg: &dyn ToSql,
+) -> Result<Vec<Vec<String>>, String> {
+    let mut stmt = conn
+        .prepare(&format!(
+            "SELECT {} FROM {table} WHERE {filter}",
+            cols.join(", ")
+        ))
+        .map_err(|e| e.to_string())?;
+    let mut rows = stmt.query([arg]).map_err(|e| e.to_string())?;
+    let mut out = Vec::new();
+    while let Some(r) = rows.next().map_err(|e| e.to_string())? {
+        out.push(
+            (0..cols.len())
+                .map(|i| cell(r.get_ref(i).unwrap()))
+                .collect(),
+        );
+    }
+    Ok(out)
+}
+
+/// 三张缓存表的行：(笔记, 卡, 统计)。
+type CacheRows = (Vec<Vec<String>>, Vec<Vec<String>>, Vec<Vec<String>>);
+
+/// 协议 3 一侧的缓存行：在 SAVEPOINT 里先把协议 3 自己还欠着的收尾做完——待重放集合（`transport::replay_pending`：
+/// 协议 3 的日志结果是重放写回的，收段会话里推迟的重放没跑之前缓存读到的是旧结果）、合成标签行（`semantics::
+/// refresh_tags_row`：`tags` 修改行是 OR-Set 的投影，没被刷新过的旧合成行与 OR-Set 不一致）——再按同一份缓存配置
+/// `caches::rebuild` 一遍、读行、整个回滚（库原样不动）。新代没有推迟的重放、标签直接取 OR-Set，比的是两边各自收尾
+/// 做完的样子。只读打开的库（真实样本）动不了，读它现有的缓存表——那是 app 用自己的配置写的，新代那边要给同一份
+/// 配置（`gen4_sample_index` 的 `FUSHI_GEN4_CACHE_CFG_FILE`）。
+fn protocol_3_caches(src: &Connection, profile: &str, cfg: &str) -> Result<CacheRows, String> {
+    let read = || -> Result<CacheRows, String> {
+        let olds = |cols: &[(&'static str, &'static str)]| -> Vec<&'static str> {
+            cols.iter().map(|c| c.1).collect()
+        };
+        let filter = "profile_uid = srs_id(?1)";
+        Ok((
+            rows_of(src, "srs_notes_cache", &olds(NOTE_COLS), filter, &profile)?,
+            rows_of(src, "srs_cards_cache", &olds(CARD_COLS), filter, &profile)?,
+            rows_of(src, "srs_stat_reviews", &olds(STAT_COLS), filter, &profile)?,
+        ))
+    };
+    if src.is_readonly("main").map_err(|e| e.to_string())? {
+        return read();
+    }
+    let cfg = crate::store::caches::CacheConfig::parse(
+        &serde_json::from_str(cfg).map_err(|e| e.to_string())?,
+    )?;
+    src.execute_batch("SAVEPOINT g4par")
+        .map_err(|e| e.to_string())?;
+    let out = (|| -> Result<CacheRows, String> {
+        crate::store::sync2::transport::replay_pending(
+            src,
+            profile,
+            &mut crate::store::sync2::transport::CommitBudget::unlimited(),
+        )?;
+        let synthetic = texts(
+            src,
+            "SELECT DISTINCT srs_idt(entity_id) FROM srs_field_edits WHERE profile_uid = srs_id(?1) \
+             AND entity_kind = 'note' AND field_key = 'tags' AND writer_id LIKE 'sync2:%'",
+            &[&profile],
+        );
+        let mut touched = crate::store::sync2::Touched::default();
+        for note in &synthetic {
+            crate::store::sync2::semantics::refresh_tags_row(src, profile, note, &mut touched)?;
+        }
+        crate::store::caches::rebuild(src, profile, &cfg)?;
+        read()
+    })();
+    src.execute_batch("ROLLBACK TO g4par; RELEASE g4par")
+        .map_err(|e| e.to_string())?;
+    out
+}
+
+/// 协议 3 的缓存重建因身份记录不成形整次失败（`cache.rs` 文件头「与协议 3 的差别」）：缺字段 / 字段类型不对 /
+/// 笔记 ID 不是 UUID（卡 ID 由它派生）。
+fn malformed_definition(e: &str) -> bool {
+    e.ends_with(" missing") || e.contains(": expected ") || e.starts_with("not a uuid: ")
+}
+
+/// 同一个旧修改记录 ID（旧戳的写入者 + seq）下有两条以上不同修改（不同实体或字段键）的笔记（`种类:ID`）：复制出来的
+/// 两份旧库各自又以同一个写入者写了同一个 seq。新代两条都是独立的操作、都进视图；协议 3 的投影表按修改记录 ID 只存
+/// 一行，留哪条看这台设备先收到哪份，所以这些笔记的内容（与由内容决定的卡）对不上协议 3 是到达顺序造成的。
+fn collided_notes(t: &Truth<'_>, col: i64) -> BTreeSet<String> {
+    let mut stmt = t
+        .conn()
+        .prepare("SELECT k FROM reg_ix WHERE col = ?1 AND state >= ?2")
+        .unwrap();
+    let ks: Vec<i64> = stmt
+        .query_map(params![col, R_LIVE], |r| r.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    let mut by_id: std::collections::BTreeMap<(String, i64), BTreeSet<(String, String)>> =
+        std::collections::BTreeMap::new();
+    for k in ks {
+        let e = t.entry_by_key(k).unwrap().unwrap();
+        let Some(Body4::Edit(ed)) = body_of(&e) else {
+            continue;
+        };
+        if let Some(st) = &ed.stamp {
+            by_id
+                .entry((st.writer.clone(), st.seq))
+                .or_default()
+                .insert((
+                    format!("{}:{}", ed.kind.wire(), Ref::of(&ed.entity).text()),
+                    ed.key.clone(),
+                ));
+        }
+    }
+    by_id
+        .into_values()
+        .filter(|edits| edits.len() > 1)
+        .flatten()
+        .map(|(ent, _)| ent)
+        .filter(|ent| ent.starts_with("note:"))
+        .collect()
+}
+
+/// 缓存层三类（`notes` / `cards` / `stats`）的对拍对：新代没设缓存配置时没有（不物化）。两种口径：
+///
+/// - [held] 是有删除被扣住的实体（`种类:ID`，任一边）：协议 3 的 `deleted` 寄存器里留着哪几条取决于被扣住的那条删除
+///   到的时候落没落过投影（[against_protocol_3] 的 `edits` 口径），所以这些笔记行的 `deleted_at` / `pending_decision`
+///   与它们的卡的 `hidden` 不比，其余列照比。
+/// - [collided_notes]：这些笔记的行与它们的卡行两边都不比（统计行的归属随卡的可见性变，归属卡是这些卡的也不比）。
+pub(crate) fn cache_pairs(
+    src: &Connection,
+    profile: &str,
+    t: &Truth<'_>,
+    col: i64,
+    held: &BTreeSet<String>,
+) -> Vec<(&'static str, BTreeSet<String>, BTreeSet<String>)> {
+    let Some(cfg) = t.derive_cfg(col, CFG_KEY).unwrap() else {
+        return Vec::new();
+    };
+    let (old_notes, old_cards, old_stats) = match protocol_3_caches(src, profile, &cfg) {
+        Ok(v) => v,
+        // 协议 3 那边没有行可比；新代那边这些实体没有行、其余照常（单元测试钉）。别的失败照报。
+        Err(e) if malformed_definition(&e) => return Vec::new(),
+        Err(e) => return vec![("caches", BTreeSet::from([e]), BTreeSet::new())],
+    };
+    let news = |cols: &[(&'static str, &'static str)]| -> Vec<&'static str> {
+        cols.iter().map(|c| c.0).collect()
+    };
+    let new = |table: &str, cols: &[(&'static str, &'static str)]| -> Vec<Vec<String>> {
+        rows_of(t.conn(), table, &news(cols), "col = ?1", &col).unwrap()
+    };
+    let at = |cols: &[(&str, &str)], name: &str| -> usize {
+        cols.iter().position(|c| c.0 == name).unwrap()
+    };
+    let held_note = |id: &str| held.contains(&format!("note:{id}"));
+    // 笔记类型的删除被扣住时同理：卡的 `hidden` 跟着笔记类型删没删（`caches.rs` 笔记行的 `gone`），协议 3 的
+    // `deleted` 寄存器里留着哪几条同样取决于到达顺序，这些笔记的卡不比 `hidden`。
+    let type_of: std::collections::BTreeMap<String, String> = old_notes
+        .iter()
+        .chain(&new("notes", NOTE_COLS))
+        .map(|r| (r[0].clone(), r[at(NOTE_COLS, "note_type_id")].clone()))
+        .collect();
+    let held_card = |note: &str| {
+        held_note(note)
+            || type_of
+                .get(note)
+                .is_some_and(|nt| held.contains(&format!("notetype:{nt}")))
+    };
+    let collided = collided_notes(t, col);
+    let skip_note = |id: &str| collided.contains(&format!("note:{id}"));
+    let notes = |rows: Vec<Vec<String>>| -> BTreeSet<String> {
+        rows.into_iter()
+            .filter(|r| !skip_note(&r[0]))
+            .map(|mut r| {
+                if held_note(&r[0]) {
+                    r[at(NOTE_COLS, "deleted_at")] = "(held)".to_owned();
+                    r[at(NOTE_COLS, "pending_decision")] = "(held)".to_owned();
+                }
+                r.join(" | ")
+            })
+            .collect()
+    };
+    let skipped_cards: BTreeSet<String> = old_cards
+        .iter()
+        .chain(&new("cards", CARD_COLS))
+        .filter(|r| skip_note(&r[at(CARD_COLS, "note_id")]))
+        .map(|r| r[0].clone())
+        .collect();
+    let cards = |rows: Vec<Vec<String>>| -> BTreeSet<String> {
+        rows.into_iter()
+            .filter(|r| !skipped_cards.contains(&r[0]))
+            .map(|mut r| {
+                if held_card(&r[at(CARD_COLS, "note_id")]) {
+                    r[at(CARD_COLS, "hidden")] = "(held)".to_owned();
+                }
+                r.join(" | ")
+            })
+            .collect()
+    };
+    let stats = |rows: Vec<Vec<String>>| -> BTreeSet<String> {
+        rows.into_iter()
+            .filter(|r| !skipped_cards.contains(&r[at(STAT_COLS, "card")]))
+            .map(|r| r.join(" | "))
+            .collect()
+    };
+    vec![
+        ("notes", notes(old_notes), notes(new("notes", NOTE_COLS))),
+        ("cards", cards(old_cards), cards(new("cards", CARD_COLS))),
+        ("stats", stats(old_stats), stats(new("stats", STAT_COLS))),
+    ]
+}
+
 /// 协议 3 的投影，与同一份库灌进新存储、重建之后的派生层比。类别：活着的修改记录 ID（`edits`，不算合成的标签行）、
 /// 日志 ID（`logs`）、实体 ID（`entities`）、每条笔记现在的标签与顺序（`tags`）、媒体名绑定的内容（`media`）、
-/// 被并发改动扣住的删除（`held`）、因设备不可信没执行的删除与清除（`distrusted`）、清除过的实体（`purged`）。
+/// 被并发改动扣住的删除（`held`）、因设备不可信没执行的删除与清除（`distrusted`）、清除过的实体（`purged`）；新代设了
+/// 缓存配置时再加缓存层的笔记行（`notes`）、卡行（`cards`）、有效复习投影（`stats`），逐列比（[cache_pairs]）。
 ///
 /// 协议 3 一侧先在一个 SAVEPOINT 里把扣住按它自己的规则在全集上重判一遍（[rejudge_holds]）再读投影，比完整个回滚
 /// （库原样不动；只读打开的真实样本库不重判）。
@@ -388,6 +699,7 @@ fn compare_with_protocol_3(src: &Connection, profile: &str, t: &Truth<'_>, col: 
     ];
     pairs
         .into_iter()
+        .chain(cache_pairs(src, profile, t, col, &held_ents))
         .filter(|(_, a, b)| a != b)
         .map(|(what, a, b)| {
             (
@@ -411,6 +723,9 @@ fn replayed(
     let t2 = Truth::new(&conn);
     let source = collection_of(profile);
     let col2 = t2.tx(|x| x.bind(profile, &source, profile))?;
+    if let Some(cfg) = t.derive_cfg(col, CFG_KEY)? {
+        t2.tx(|x| x.set_derive_cfg(col2, CFG_KEY, Some(&cfg)))?;
+    }
     t2.tx(|t2| {
         let mut ix = Index::new(t2, col2);
         let mut n = 0u64;
@@ -448,6 +763,9 @@ pub(crate) fn imported_from(src: &Connection, profile: &str) -> Result<(Connecti
     let diff = {
         let t = Truth::new(&conn);
         let col = t.tx(|t| t.bind(profile, &collection_of(profile), profile))?;
+        // 缓存层按协议 3 同一份配置物化（只有默认牌组；内置笔记类型的代码默认值两边都缺，同样缺）。
+        let cfg = serde_json::json!({"defaultDeck": default_deck_id(profile)}).to_string();
+        t.tx(|t| t.set_derive_cfg(col, CFG_KEY, Some(&cfg)))?;
         let n = import_legacy(src, profile, &t, col, 1000)?;
         t.tx(|t| Index::new(t, col).rebuild_all())?;
         let first = dump(t.conn(), col);
@@ -834,11 +1152,25 @@ fn gen4_sample_incremental() {
             let started = Instant::now();
             let mut n = 0u64;
             inc.execute_batch("BEGIN IMMEDIATE").unwrap();
+            // 派生层的宿主输入照搬。别名表只有全量重算，灌的时候攒着、最后算一次。
+            for key in ["caches"] {
+                let value = t.derive_cfg(col, key).unwrap();
+                t2.set_derive_cfg(col2, key, value.as_deref()).unwrap();
+            }
             let mut ix = Index::new(&t2, col2);
+            ix.hold_aliases(true);
             for d in t.devices(col).unwrap() {
                 t.for_each(col, &d.id, 1, |e| {
-                    let slot = e.slot().ok_or("an imported entry is not a heritage slot")?;
-                    t2.put_heritage(col2, &source, &slot, e.tv)?;
+                    match (e.slot(), e.op()) {
+                        (Some(slot), _) => {
+                            t2.put_heritage(col2, &source, &slot, e.tv)?;
+                        }
+                        // 探针写的那条原生 Salts 操作。
+                        (None, Some(op)) => {
+                            t2.append_native(col2, op)?;
+                        }
+                        (None, None) => return Err("a native void in the sample".to_owned()),
+                    }
                     if let Some(now) = t2.entry(col2, &e.id)? {
                         ix.add(&now)?;
                     }
@@ -860,8 +1192,16 @@ fn gen4_sample_incremental() {
             }
             ix.trust_changed();
             ix.settle().unwrap();
+            let held_s = started.elapsed().as_secs_f64();
+            ix.hold_aliases(false);
+            let last = ix.settle().unwrap();
             inc.execute_batch("COMMIT").unwrap();
             let maintain_s = started.elapsed().as_secs_f64();
+            println!(
+                "SAMPLE incremental alias_rows {} alias_s {:.1}",
+                last.aliases,
+                maintain_s - held_s
+            );
             let (ws1, _) = peak_mem_mb();
             println!(
                 "SAMPLE incremental profile {} ops {n} maintain_s {maintain_s:.1} peak_working_set_mb {ws1:.0}",

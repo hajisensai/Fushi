@@ -39,6 +39,9 @@
 //!
 //! 真相层每落一条 / 推进一条之后告诉索引：新落的 [Index::add]；被换掉、被清除、认了副本的，改之前的样子
 //! [Index::remove]、改之后的样子 [Index::add]。一批做完 [Index::settle]。都在调用方的事务里。
+//!
+//! 笔记 / 卡片缓存与统计行（`cache.rs`）在索引之上：[Index::settle] 收尾时只重算这一批碰到的，[Index::rebuild_all]
+//! 最后整份物化。
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
@@ -46,6 +49,7 @@ use rusqlite::params;
 use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ToSql, ToSqlOutput, ValueRef};
 use serde_json::{Map, Value, json};
 
+use super::cache::Dirt;
 use super::schema::{DERIVED_TABLES, sql};
 use super::truth::{Entry, Head, Truth};
 use super::weigh::{E_LOG, E_MOVE, S_HELD, T_ADD, T_INERT, T_ORDER, T_REMOVE};
@@ -153,12 +157,14 @@ pub(super) fn body_of(e: &Entry) -> Option<Body4> {
     }
 }
 
-/// 盐的读入点：操作集合里所有带盐操作的盐之并就是集合的盐集合（设计 §5.1）。现在只有 Join 带盐；携带初始盐集合的
-/// 那个种类（G1b）出来之后加在这里，别处不用动。
-fn salts_of(body: &Body4) -> Option<&[String]> {
+/// 盐的读入点：带盐的种类只有两个——Salts（种类 15，集合自己的初始盐）与 Join（被并入集合带来的盐表）。别处不读盐。
+/// 读到的记进 `salt_ix`；集合的盐集合 = 其中**本机信任的作者**写的那些之并（`alias.rs` 的 `settle_salts`；设计 §5.1、
+/// `gen4::op` 文件头「盐集合」）。
+fn salts_of(body: &Body4) -> Vec<&str> {
     match body {
-        Body4::Join(j) => Some(&j.salts),
-        _ => None,
+        Body4::Salts { salts } => salts.iter().map(String::as_str).collect(),
+        Body4::Join(j) => j.salts.iter().map(String::as_str).collect(),
+        _ => Vec::new(),
     }
 }
 
@@ -205,6 +211,16 @@ impl Acc {
     }
 }
 
+/// 一条拼好的落库修改行（[Index::edit_lines]）。
+pub(super) struct Line {
+    pub(super) json: String,
+    pub(super) server_time: Option<i64>,
+    /// 代表在输入里的下标。
+    pub(super) rep: usize,
+    /// 这一行判定用的 HLC 物理时刻（带旧戳的取旧戳的）。
+    pub(super) physical: i64,
+}
+
 /// [Index::settle] / [Index::rebuild_all] 做了多少。
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Settled {
@@ -224,6 +240,15 @@ pub struct Settled {
     pub media: u64,
     /// 走过的日志条数（只有重建）。
     pub scanned: u64,
+    /// 别名表重算后写的行数（没重算 = 0）、重算了语义摘要的实体数。
+    pub aliases: u64,
+    /// 别名表这一批是增量证明出来的（1），不是整表重算（`alias.rs`「重算与增量」）。
+    pub aliases_proven: u64,
+    pub digests: u64,
+    /// 缓存层（`cache.rs`）重算了的笔记行 / 卡行 / 统计行。
+    pub cache_notes: u64,
+    pub cache_cards: u64,
+    pub cache_stats: u64,
 }
 
 /// 一个集合的派生索引。
@@ -255,6 +280,16 @@ pub struct Index<'t, 'c> {
     closures: Option<HashMap<Id, (u64, Dvv)>>,
     /// 只覆盖了一台设备旧戳的一部分时的闭包（少见），按 (设备, seq) 记。
     partial: HashMap<(Id, u64), Dvv>,
+    /// 别名证据变了，别名表要重算（`alias.rs`）。
+    pub(super) alias_dirty: bool,
+    /// 重算先攒着（[Index::hold_aliases]）。
+    pub(super) alias_held: bool,
+    /// 只添了证据、等收尾时试增量证明的那些（`alias.rs`）。
+    pub(super) alias_delta: super::alias::AliasDelta,
+    /// 带盐的操作进出过，或信任状态变了：盐集合要重算。
+    pub(super) salts_dirty: bool,
+    /// 这一批里缓存层要重看的（`cache.rs`）。
+    pub(super) dirt: Dirt,
 }
 
 impl<'t, 'c> Index<'t, 'c> {
@@ -277,6 +312,11 @@ impl<'t, 'c> Index<'t, 'c> {
             bulk: None,
             closures: None,
             partial: HashMap::new(),
+            alias_dirty: false,
+            alias_held: false,
+            alias_delta: Default::default(),
+            salts_dirty: false,
+            dirt: Dirt::default(),
         }
     }
 
@@ -289,7 +329,9 @@ impl<'t, 'c> Index<'t, 'c> {
 
     /// 丢掉内存里的状态（事务回滚之后必须调）。
     pub fn reset(&mut self) {
+        let held = self.alias_held;
         *self = Index::new(self.t, self.col);
+        self.alias_held = held;
     }
 
     // ------------------------------------------------------------ 逐条维护
@@ -319,6 +361,9 @@ impl<'t, 'c> Index<'t, 'c> {
         if let SlotBody::Alias(a) = &e.body {
             // 副本记录不应用，但它的旧戳算进闭包（协议 3 的副本骨架同理）。
             if let Some(s) = &a.stamp {
+                if self.bulk.is_none() {
+                    self.alias_stamp(s)?;
+                }
                 self.stamp_changed(&e.id, s, add);
             }
             return Ok(());
@@ -334,6 +379,9 @@ impl<'t, 'c> Index<'t, 'c> {
         })?;
         let conn = self.t.conn();
         let bulk = self.bulk.is_some();
+        if !bulk {
+            self.alias_touch(k, &body, add)?;
+        }
         match &body {
             Body4::Entity { kind, id, .. } => {
                 let id = Ref::of(id);
@@ -508,18 +556,31 @@ impl<'t, 'c> Index<'t, 'c> {
             }
             _ => {}
         }
-        if add {
-            if let Some(salts) = salts_of(&body) {
-                let salts: Vec<&str> = salts.iter().map(String::as_str).collect();
-                self.t.add_salts(self.col, &salts)?;
+        let salts = salts_of(&body);
+        if !salts.is_empty() {
+            if add {
+                let mut put = conn
+                    .prepare_cached(
+                        "INSERT OR IGNORE INTO salt_ix (col, k, salt) VALUES (?1, ?2, ?3)",
+                    )
+                    .map_err(sql)?;
+                for s in salts {
+                    put.execute(params![self.col, k, s]).map_err(sql)?;
+                }
+            } else {
+                conn.prepare_cached("DELETE FROM salt_ix WHERE col = ?1 AND k = ?2")
+                    .map_err(sql)?
+                    .execute(params![self.col, k])
+                    .map_err(sql)?;
             }
+            self.salts_dirty = true;
         }
         Ok(())
     }
 
     // ------------------------------------------------------------ 旧闭包
 
-    fn closures(&mut self) -> Result<&mut HashMap<Id, (u64, Dvv)>, String> {
+    pub(super) fn closures(&mut self) -> Result<&mut HashMap<Id, (u64, Dvv)>, String> {
         if self.closures.is_none() {
             let mut map = HashMap::new();
             let mut stmt = self
@@ -693,6 +754,7 @@ impl<'t, 'c> Index<'t, 'c> {
         let conn = self.t.conn();
         for (&(k, have), &want) in rows.iter().zip(&want) {
             if have != want {
+                self.dirt.entity(r.ekind, &r.ent);
                 conn.prepare_cached(
                     "UPDATE reg_ix SET state = ?6 WHERE col = ?1 AND ekind = ?2 AND ent = ?3 AND key = ?4 AND k = ?5",
                 )
@@ -706,6 +768,34 @@ impl<'t, 'c> Index<'t, 'c> {
 
     /// 一个寄存器里每条写入的状态（与 [rows] 对齐）。
     fn states(&mut self, rows: &[(i64, i64)]) -> Result<Vec<i64>, String> {
+        let ks: Vec<i64> = rows.iter().map(|r| r.0).collect();
+        let lines = self.edit_lines(&ks, &|_| true)?;
+        let stored: Vec<StoredEdit<'_>> = lines
+            .iter()
+            .map(|l| (l.json.as_str(), l.server_time, None))
+            .collect();
+        let (live, conflicted) = judge_register(&stored)
+            .map_err(|e| format!("gen4 index: register of op {}: {e}", rows[0].0))?;
+        let mut out = vec![R_DOMINATED; rows.len()];
+        for (n, &i) in live.iter().enumerate() {
+            out[lines[i].rep] = match (n, conflicted) {
+                (0, true) => R_CONFLICT,
+                (0, false) => R_WINNER,
+                _ => R_LIVE,
+            };
+        }
+        Ok(out)
+    }
+
+    /// [ks] 这几条修改操作拼成寄存器内核（`crate::registers`）要的落库行（冻结的旧判定，见文件头）：同一个 dot 的
+    /// 并成一行（代表取操作号最小的，`server_time` 取最小值）；[emit] 按代表在 [ks] 里的下标决定这一行要不要，
+    /// 不带旧戳的写入的上下文只回答「见没见过别的**要的**行的 dot」。寄存器判定（全要）与缓存层（只要活着的，
+    /// `cache.rs`）共用这一份。
+    pub(super) fn edit_lines(
+        &mut self,
+        ks: &[i64],
+        emit: &dyn Fn(usize) -> bool,
+    ) -> Result<Vec<Line>, String> {
         struct Write {
             id: OpId,
             ed: Edit4,
@@ -713,8 +803,8 @@ impl<'t, 'c> Index<'t, 'c> {
             logical: u32,
             full: Vv,
         }
-        let mut writes = Vec::with_capacity(rows.len());
-        for &(k, _) in rows {
+        let mut writes = Vec::with_capacity(ks.len());
+        for &k in ks {
             let e = self
                 .t
                 .entry_by_key(k)?
@@ -762,11 +852,16 @@ impl<'t, 'c> Index<'t, 'c> {
                 })
                 .or_insert((i, st));
         }
+        by_dot.retain(|_, (rep, _)| emit(*rep));
         let mut lines = Vec::with_capacity(by_dot.len());
         for ((writer, seq), &(rep, st)) in &by_dot {
             let w = &writes[rep];
-            let (ctx, hlc) = match &w.ed.stamp {
-                Some(s) => (s.ctx.to_dvv().to_json(), s.hlc.text()),
+            let (ctx, hlc, physical) = match &w.ed.stamp {
+                Some(s) => {
+                    let text = s.hlc.text();
+                    let physical = crate::history::parse_hlc(&text).map_or(0, |h| h.0);
+                    (s.ctx.to_dvv().to_json(), text, physical)
+                }
                 None => {
                     let mut cloud = Map::new();
                     for (ow, oq) in by_dot.keys() {
@@ -778,6 +873,7 @@ impl<'t, 'c> Index<'t, 'c> {
                     (
                         json!({"vv": {}, "cloud": cloud}),
                         format!("{}:{}:{}", w.wall, w.logical, w.id.device.text()),
+                        w.wall,
                     )
                 }
             };
@@ -797,23 +893,14 @@ impl<'t, 'c> Index<'t, 'c> {
             if w.ed.machine {
                 m.insert("m".into(), json!(true));
             }
-            lines.push((Value::Object(m).to_string(), st, rep));
+            lines.push(Line {
+                json: Value::Object(m).to_string(),
+                server_time: st,
+                rep,
+                physical,
+            });
         }
-        let stored: Vec<StoredEdit<'_>> = lines
-            .iter()
-            .map(|(j, st, _)| (j.as_str(), *st, None))
-            .collect();
-        let (live, conflicted) = judge_register(&stored)
-            .map_err(|e| format!("gen4 index: register of op {}: {e}", rows[0].0))?;
-        let mut out = vec![R_DOMINATED; rows.len()];
-        for (n, &i) in live.iter().enumerate() {
-            out[lines[i].2] = match (n, conflicted) {
-                (0, true) => R_CONFLICT,
-                (0, false) => R_WINNER,
-                _ => R_LIVE,
-            };
-        }
-        Ok(out)
+        Ok(lines)
     }
 
     /// 写入不止一条的寄存器。
@@ -947,7 +1034,10 @@ impl<'t, 'c> Index<'t, 'c> {
         }
         self.weigh(false, &mut out)?;
         let mut regs = std::mem::take(&mut self.regs);
+        self.dirt.registers(&regs);
+        self.dirt.ids.extend(self.ents.iter().cloned());
         if out.closures > 0 || std::mem::take(&mut self.shrunk) {
+            self.dirt.closure = true;
             self.partial.clear();
             regs.extend(self.multi_regs()?);
         }
@@ -966,17 +1056,27 @@ impl<'t, 'c> Index<'t, 'c> {
             self.pick_log(&id)?;
         }
         self.heads.clear();
+        out.digests = self.digest_flush()?;
+        if std::mem::take(&mut self.salts_dirty) {
+            self.settle_salts()?;
+        }
+        let (rows, proven) = self.settle_aliases()?;
+        out.aliases = rows;
+        out.aliases_proven = u64::from(proven);
+        self.refresh_caches(&mut out)?;
         Ok(out)
     }
 
     /// 清空这个集合的派生表，从日志与本机状态（设备信任）重建（设计 §2.5）。不改真相：该清成空洞而还没清的操作
-    /// 只是标成「已清除」、不参与任何判定，落库由 [Index::execute_purges] 做。盐集合只增不减：重建只会把带盐操作的盐
-    /// 再并一遍。
+    /// 只是标成「已清除」、不参与任何判定，落库由 [Index::execute_purges] 做。盐集合也从操作重算（`alias.rs`
+    /// [Index::settle_salts]：本机信任的作者写的带盐操作之并）。
     pub fn rebuild_all(&mut self) -> Result<Settled, String> {
         self.writing()?;
         let t = self.t;
         let conn = t.conn();
         self.reset();
+        // 语义摘要的标脏触发器逐行收一次费，重建不需要（最后整个重算）：先摘掉，收尾时装回。
+        super::digest::set_triggers(conn, false)?;
         for table in DERIVED_TABLES {
             conn.execute(&format!("DELETE FROM {table} WHERE col = ?1"), [self.col])
                 .map_err(sql)?;
@@ -1015,6 +1115,11 @@ impl<'t, 'c> Index<'t, 'c> {
             self.pick_log(&id)?;
         }
         self.heads.clear();
+        super::digest::set_triggers(conn, true)?;
+        out.digests = self.digest_rebuild()?;
+        self.settle_salts()?;
+        out.aliases = self.rebuild_aliases()?;
+        self.materialize_caches(&mut out)?;
         Ok(out)
     }
 
@@ -1258,6 +1363,53 @@ pub(crate) mod tests {
         let t = Truth::new(&conn);
         let col = bound(&t);
         f(&t, col)
+    }
+
+    /// 旧设备分叉过：两支不管谁先到，派生表逐行相同（真相层按链指纹定日志里是哪一条，`truth.rs` 文件头）。
+    #[test]
+    fn a_forked_log_gives_the_same_index_whichever_branch_arrived_first() {
+        use crate::store::gen4::truth::Put;
+        let slot = |seq: u64, fp: u8, value: &str| {
+            let s = stamp("w1", seq as i64, r#"{"vv":{}}"#, 100 + seq as i64);
+            HeritageSlot::op(
+                [fp; 8],
+                op(0xd1, seq, seq as i64, &[], &write(value, Some(s))),
+            )
+        };
+        let a = [slot(1, 9, "a1"), slot(2, 9, "a2"), slot(3, 1, "a3")];
+        let b = [slot(1, 5, "b1"), slot(2, 12, "b2"), slot(3, 7, "b3")];
+        let run = |order: &[&HeritageSlot]| -> (BTreeSet<String>, Option<String>) {
+            with(|t, col| {
+                let value = t
+                    .tx(|t| {
+                        let mut ix = Index::new(t, col);
+                        for s in order {
+                            let before = t.entry(col, &s.id)?;
+                            match t.put_heritage(col, &id(0xc0), s, T_VERSION)? {
+                                Put::Inserted | Put::Yielded => {
+                                    ix.add(&t.entry(col, &s.id)?.expect("put"))?
+                                }
+                                Put::Replaced => {
+                                    ix.remove(&before.expect("replaced"))?;
+                                    ix.add(&t.entry(col, &s.id)?.expect("put"))?;
+                                }
+                                _ => {}
+                            }
+                            ix.settle()?;
+                        }
+                        ix.value(EntKind::Note, &note(), &field())
+                    })
+                    .unwrap();
+                let got = canon(t, col);
+                assert_rebuild_is_identity(t, col);
+                (got, value)
+            })
+        };
+        let first = run(&[&a[0], &a[1], &a[2], &b[0], &b[1], &b[2]]);
+        // 日志里是 b1、a2、a3（各操作号上链指纹最小的）；最后一条旧修改见过的只有它自己，按 HLC 是 a3 胜。
+        assert_eq!(first.1.as_deref(), Some("\"a3\""));
+        assert_eq!(first, run(&[&b[0], &b[1], &b[2], &a[0], &a[1], &a[2]]));
+        assert_eq!(first, run(&[&a[0], &b[0], &b[1], &a[1], &b[2], &a[2]]));
     }
 
     #[test]
@@ -1814,15 +1966,131 @@ pub(crate) mod tests {
         let t = Truth::new(&dst);
         for profile in crate::store::gen4::legacy::profiles(&src).unwrap() {
             let col = t.binding_of(&profile).unwrap().expect("imported").col;
+            // 缓存配置：样本库里现有的缓存表是 app 按自己的配置（含内置笔记类型的代码默认值）写的，对拍要给同一份——
+            // `FUSHI_GEN4_CACHE_CFG_FILE=<放着 CacheConfig JSON 的文件>`（内置类型的默认值有一百多 KB，放不进环境变量）；
+            // 没给就只有默认牌组（内置类型的笔记行会对不上，差异数照报）。
+            let cfg = match std::env::var("FUSHI_GEN4_CACHE_CFG_FILE") {
+                Ok(path) => std::fs::read_to_string(path).unwrap(),
+                Err(_) => serde_json::json!({
+                    "defaultDeck": crate::store::sync2::config::default_deck_id(&profile)
+                })
+                .to_string(),
+            };
+            t.tx(|t| t.set_derive_cfg(col, super::super::cache::CFG_KEY, Some(&cfg)))
+                .unwrap();
             let started = Instant::now();
             dst.execute_batch("BEGIN IMMEDIATE").unwrap();
-            let did = Index::new(&t, col).rebuild_all().unwrap();
+            // 别名层的两样输入：盐（迁移时 G4 写的那条 Salts 操作——这里由一台假想的迁移设备写进它的原生日志）
+            // 与内置笔记类型表。
+            let salts = crate::store::gen4::alias::tests::sample_salts(&src, &profile);
+            let migrator = Id([0x6d; 16]);
+            if t.last_of(col, &migrator).unwrap() == 0 {
+                let body = Body4::salts(salts.iter().cloned()).unwrap();
+                let op = Op4::of(
+                    OpId {
+                        device: migrator,
+                        seq: 1,
+                    },
+                    Hlc {
+                        wall: T0,
+                        logical: 0,
+                        device: migrator,
+                    },
+                    Arc::new(t.applied(col).unwrap()),
+                    &body,
+                );
+                t.append_native(col, &op).unwrap();
+            }
+            let mut ix = Index::new(&t, col);
+            let did = ix.rebuild_all().unwrap();
             dst.execute_batch("COMMIT").unwrap();
             let rebuild_s = started.elapsed().as_secs_f64();
+            // 其中别名表与语义摘要各占多少：各自再单独算一遍（结果相同）。
+            let (ws_a, _) = peak_mem_mb();
+            dst.execute_batch("BEGIN IMMEDIATE").unwrap();
+            let started = Instant::now();
+            let alias_rows = ix.rebuild_aliases().unwrap();
+            let alias_s = started.elapsed().as_secs_f64();
+            let (ws_b, _) = peak_mem_mb();
+            let started = Instant::now();
+            let digest_units = ix.digest_rebuild().unwrap();
+            let digest_s = started.elapsed().as_secs_f64();
+            dst.execute_batch("COMMIT").unwrap();
+            let started = Instant::now();
+            let digest = ix.digest().unwrap();
+            println!(
+                "SAMPLE alias salts {} rows {alias_rows} s {alias_s:.1} peak_working_set_mb_before {ws_a:.0} after {ws_b:.0} {:?}",
+                salts.len(),
+                ix.alias_counts().unwrap()
+            );
+            println!(
+                "SAMPLE digest units {digest_units} rebuild_s {digest_s:.1} read_s {:.3} {digest}",
+                started.elapsed().as_secs_f64()
+            );
+            println!("SAMPLE hollowed {}", ix.hollowed().unwrap().len());
+            drop(ix);
             let (ws1, commit1) = peak_mem_mb();
             println!(
                 "SAMPLE index profile {profile} {did:?} rebuild_s {rebuild_s:.1} peak_working_set_mb {ws1:.0} peak_commit_mb {commit1:.0}"
             );
+            // 只重建缓存层（物化：笔记行、卡行、逐卡重放、有效复习投影）单独计时。
+            let started = Instant::now();
+            dst.execute_batch("BEGIN IMMEDIATE").unwrap();
+            let cached = Index::new(&t, col).rebuild_caches().unwrap();
+            dst.execute_batch("COMMIT").unwrap();
+            let (ws1, commit1) = peak_mem_mb();
+            println!(
+                "SAMPLE caches materialize_s {:.1} notes {} cards {} stats {} peak_working_set_mb {ws1:.0} peak_commit_mb {commit1:.0}",
+                started.elapsed().as_secs_f64(),
+                cached.cache_notes,
+                cached.cache_cards,
+                cached.cache_stats
+            );
+            // 别名增量证明在真实规模上的耗时：拿已有的笔记当「这一批的笔记」证一遍（证据没变，写回的行应与原来相同）。
+            {
+                let dump = |c: &Connection| -> Vec<(Vec<u8>, Vec<u8>, i64)> {
+                    c.prepare("SELECT id, canon, how FROM alias_ix WHERE col = ?1 ORDER BY id")
+                        .unwrap()
+                        .query_map([col], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+                        .unwrap()
+                        .map(Result::unwrap)
+                        .collect()
+                };
+                let ids: Vec<Id> = dst
+                    .prepare(
+                        "SELECT id FROM ent_ix WHERE col = ?1 AND kind = ?2 AND typeof(id) = 'blob' ORDER BY id LIMIT 50",
+                    )
+                    .unwrap()
+                    .query_map(params![col, EntKind::Note as i64], |r| {
+                        r.get::<_, [u8; 16]>(0)
+                    })
+                    .unwrap()
+                    .map(|r| Id(r.unwrap()))
+                    .collect();
+                let before = dump(&dst);
+                dst.execute_batch("BEGIN IMMEDIATE").unwrap();
+                let mut ix = Index::new(&t, col);
+                let started = Instant::now();
+                let mut proven = 0;
+                for n in &ids {
+                    if crate::store::gen4::alias::tests::probe_notes(&mut ix, &[*n])
+                        .unwrap()
+                        .is_some()
+                    {
+                        proven += 1;
+                    }
+                }
+                let probe_s = started.elapsed().as_secs_f64();
+                drop(ix);
+                let same = dump(&dst) == before;
+                dst.execute_batch("ROLLBACK").unwrap();
+                t.reset();
+                println!(
+                    "SAMPLE alias_probe notes {} proven {proven} avg_ms {:.1} table_unchanged {same}",
+                    ids.len(),
+                    probe_s * 1000.0 / ids.len().max(1) as f64
+                );
+            }
             for table in DERIVED_TABLES {
                 let n: i64 = dst
                     .query_row(

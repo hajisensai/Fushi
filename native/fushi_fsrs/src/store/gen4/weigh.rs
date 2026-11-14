@@ -28,7 +28,8 @@
 //!   （[S_HELD]），等用户裁决（裁决 = 再写一条见过它的 `deleted`）。扣住的删除自己不生效（不当胜者、不算活着），
 //!   但它见过的写入照样被它盖掉（`derive.rs` `judge`）：扣住是「这条删除等人裁决」，不是「当它没写过」。
 //! - **信任**：本机还没信任的设备（`trust` 表，本机状态）写的删除（`deleted` 上值是整数的写入，带不带旧戳都算）与
-//!   Purge 不执行（[S_DISTRUSTED]）。它别的操作照常。信任状态变了调 [Index::trust_changed]。
+//!   Purge 不执行（[S_DISTRUSTED]），它写的 Salts / Join 里的盐不算进盐集合（`alias.rs`）。它别的操作照常。
+//!   信任状态变了调 [Index::trust_changed]。
 //!
 //! # 与协议 3 的差别（都在「同一个操作集合，结果要与到达顺序无关」这一条上）
 //!
@@ -169,6 +170,7 @@ impl<'t, 'c> Index<'t, 'c> {
     /// 本机改了某台设备的信任状态（`Truth::set_trust`）：下一次 [Index::settle] 把被扣住的删除与清除全部重看。
     pub fn trust_changed(&mut self) {
         self.trust_changed = true;
+        self.salts_dirty = true;
     }
 
     // ------------------------------------------------------------ 小工具
@@ -185,7 +187,7 @@ impl<'t, 'c> Index<'t, 'c> {
         Ok(h)
     }
 
-    fn distrusts(&mut self, device: &Id) -> Result<bool, String> {
+    pub(super) fn distrusts(&mut self, device: &Id) -> Result<bool, String> {
         if self.untrusted.is_none() {
             let set = self.t.untrusted(self.col)?;
             self.untrusted = Some(set.into_iter().map(|(d, _)| d).collect());
@@ -228,7 +230,7 @@ impl<'t, 'c> Index<'t, 'c> {
         Ok(ps.iter().any(|p| !h.saw(p)))
     }
 
-    fn reg_state(&self, r: &Reg, k: i64) -> Result<Option<i64>, String> {
+    pub(super) fn reg_state(&self, r: &Reg, k: i64) -> Result<Option<i64>, String> {
         use rusqlite::OptionalExtension;
         self.t
             .conn()
@@ -315,6 +317,7 @@ impl<'t, 'c> Index<'t, 'c> {
         let purges = std::mem::take(&mut self.purge_changed);
         out.purged += self.weigh_purges(bulk || purges || trust)?;
         let mut ents = std::mem::take(&mut self.touched);
+        self.dirt.entities.extend(ents.iter().cloned());
         if bulk || trust {
             ents.extend(self.deleted_entities()?);
         }
@@ -330,6 +333,7 @@ impl<'t, 'c> Index<'t, 'c> {
         }
         for n in &notes {
             self.weigh_tags(n)?;
+            self.dirt.entity(EntKind::Note as i64, n);
             out.notes += 1;
         }
         let mut names = std::mem::take(&mut self.names);
@@ -509,6 +513,7 @@ impl<'t, 'c> Index<'t, 'c> {
             _ => return Ok(()),
         };
         self.set_reg_state(&reg, k, want)?;
+        self.alias_purge_flipped();
         self.touched.insert((reg.ekind, reg.ent.clone()));
         self.regs.insert(reg);
         Ok(())
