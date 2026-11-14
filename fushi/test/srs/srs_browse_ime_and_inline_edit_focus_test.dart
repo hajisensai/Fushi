@@ -4,7 +4,6 @@
 //
 // 内存库 + 确定性假排程内核；数据库读写一律放 tester.runAsync。
 import 'package:drift/drift.dart' show driftRuntimeOptions;
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
