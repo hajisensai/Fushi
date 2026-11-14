@@ -373,6 +373,10 @@ class SyncRunReport {
   /// 与 [serviceConfigsImported] 同理：没有媒体行变化，但 AppModel 的偏好缓存要刷新。
   int settingsImported = 0;
 
+  /// 本轮本机改过、随本机设置快照发给其它设备的设置项数（BUG-4501）。只进手动同步
+  /// 摘要，不触发本地刷新。
+  int settingsExported = 0;
+
   /// 本机（落地设备）经跨设备中转新收到、待交给 Anki 的卡数。
   int pendingMinesReceived = 0;
 
@@ -502,6 +506,7 @@ class SyncRunReport {
     videoMetadataUpdated += other.videoMetadataUpdated;
     serviceConfigsImported += other.serviceConfigsImported;
     settingsImported += other.settingsImported;
+    settingsExported += other.settingsExported;
     errors.addAll(other.errors);
     for (final SyncAuthFailure f in other.authFailures) {
       _addAuthFailure(f);

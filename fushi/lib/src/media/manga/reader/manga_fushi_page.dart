@@ -3410,6 +3410,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       pageNumbers: pageNumbers,
       currentSpread: _currentSpread,
       restoreFraction: isWebtoon ? _currentFraction : 0,
+      enableMouseTextSelection:
+          Platform.isLinux || Platform.isWindows || Platform.isMacOS,
       documentGeneration: documentGeneration,
       ocrPageIndices: keptPages,
       zoomSensitivity: _zoomSensitivity,
@@ -6147,6 +6149,11 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   @visibleForTesting
   Future<Object?> debugEvaluateJavascript(String source) async =>
       _controller?.evaluateJavascript(source: source);
+
+  /// 集成测试取证：抓取正文 WebView 的实际渲染像素。
+  @visibleForTesting
+  Future<Uint8List?> debugCaptureWebView() async =>
+      _controller?.takeScreenshot();
 
   @visibleForTesting
   Future<Object?> debugReaderDomSnapshot() async =>

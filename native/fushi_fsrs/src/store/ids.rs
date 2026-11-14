@@ -142,35 +142,126 @@ pub(crate) fn register(conn: &Connection) -> rusqlite::Result<()> {
     Ok(())
 }
 
-/// 测试构建：每条语句跑之前看扩展 SQL，绑了 UUID 形状的文本参数（`'xxxxxxxx-xxxx-…'`）就记下来——ID 列存的是
-/// BLOB，这样的绑定查不到也写错形状。只有 [allowed] 里的语句例外（比较 JSON 里的值、元数据表）。
+/// 测试构建：每条语句跑之前看扩展 SQL，有**没套 `srs_id(…)`** 的 UUID 形状文本（`'xxxxxxxx-xxxx-…'`，绑定参数
+/// 展开后的样子）就记下来——ID 列存的是 BLOB，这样的绑定查不到也写错形状。整条语句一个 `srs_id(` 都没有时，任何
+/// 这样的字面量都算；有 `srs_id(` 时（以前这种整条放行），逐个字面量看它和哪一列比较：拿去和 ID 列（[COLUMNS]
+/// 里的列名）比较（`列 = '…'` / `列 IN ('…'` 等）的仍然算漏写——同一条语句里别的参数套了 `srs_id(?)` 不替它担保；
+/// 认不出比较对象的（写进文本列、函数参数）照旧放行。只有 [allowed] 里的语句例外（比较 JSON 里的值、元数据表、
+/// 显式标了 `-- ids:text` 的）。
 #[cfg(any(test, feature = "id_audit"))]
 pub(crate) mod audit {
     use std::sync::Mutex;
 
     pub(crate) static HITS: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
-    fn quoted_uuid(sql: &str) -> bool {
-        let b = sql.as_bytes();
-        let mut i = 0;
-        while let Some(p) = sql[i..].find('\'') {
-            let s = i + p + 1;
-            if s + 37 <= b.len() && b[s + 36] == b'\'' && super::pack(&sql[s..s + 36]).is_some() {
-                return true;
+    /// 参数本来就是 ID 文本的 SQL 函数：拿列值的文本形式去和 JSON 比对、把 JSON 压成 jslim / 还原（store/slim.rs
+    /// `register`）。字面量在它们的参数里（任意深度）不算漏写。
+    const TEXT_ID_FNS: [&str; 4] = [
+        "srs_log_pack",
+        "srs_edit_pack",
+        "srs_log_json",
+        "srs_edit_json",
+    ];
+
+    /// [head]（字面量前面的 SQL）以「列 比较符」结尾时的列名（去掉 `表.` 前缀）；认不出为 None。
+    fn compared_column(head: &str) -> Option<&str> {
+        let mut h = head.trim_end();
+        let upper = h.to_ascii_uppercase();
+        let in_len = if upper.ends_with(" IN (") {
+            5
+        } else if upper.ends_with(" IN(") {
+            4
+        } else {
+            0
+        };
+        if in_len > 0 {
+            h = h[..h.len() - in_len].trim_end();
+            if h.to_ascii_uppercase().ends_with(" NOT") {
+                h = h[..h.len() - 4].trim_end();
             }
-            i = s;
-            if i >= b.len() {
-                break;
+        } else if let Some(op) = ["==", "!=", "<>", "="].iter().find(|op| h.ends_with(**op)) {
+            h = h[..h.len() - op.len()].trim_end();
+        } else if upper.ends_with(" IS") {
+            h = h[..h.len() - 3].trim_end();
+        } else {
+            return None;
+        }
+        let name = trailing_ident(h);
+        (!name.is_empty()).then_some(name)
+    }
+
+    /// [s] 末尾那段标识符（ASCII 字母数字与 `_`）。按字符边界切：前面可能是中文等多字节字符（测试数据、笔记内容）。
+    fn trailing_ident(s: &str) -> &str {
+        let start = s
+            .char_indices()
+            .rev()
+            .find(|&(_, c)| !(c.is_ascii_alphanumeric() || c == '_'))
+            .map_or(0, |(k, c)| k + c.len_utf8());
+        &s[start..]
+    }
+
+    fn is_id_column(name: &str) -> bool {
+        super::COLUMNS
+            .iter()
+            .any(|(_, cols)| cols.iter().any(|c| c.eq_ignore_ascii_case(name)))
+    }
+
+    /// [sql]（绑定参数展开后的扩展 SQL）里有没有漏套 `srs_id(` 的 UUID 文本字面量（规则见模块说明）。`srs_id(` 的
+    /// 直接参数、[TEXT_ID_FNS] 的参数（任意深度）不算。
+    fn quoted_uuid(sql: &str) -> bool {
+        let has_wrap = sql.to_ascii_lowercase().contains("srs_id(");
+        let b = sql.as_bytes();
+        // 每一层开着的括号：是不是 [TEXT_ID_FNS] 的调用。
+        let mut calls: Vec<bool> = Vec::new();
+        let mut i = 0;
+        while i < b.len() {
+            match b[i] {
+                b'\'' => {
+                    let start = i + 1;
+                    let mut j = start;
+                    loop {
+                        if j >= b.len() {
+                            return false;
+                        }
+                        if b[j] == b'\'' {
+                            if j + 1 < b.len() && b[j + 1] == b'\'' {
+                                j += 2;
+                                continue;
+                            }
+                            break;
+                        }
+                        j += 1;
+                    }
+                    let lit = &sql[start..j];
+                    if lit.len() == 36 && super::pack(lit).is_some() {
+                        let head = &sql[..i];
+                        let tail = head.trim_end().as_bytes();
+                        let wrapped = tail.len() >= 7
+                            && tail[tail.len() - 7..].eq_ignore_ascii_case(b"srs_id(");
+                        let bare = !wrapped && !calls.iter().any(|&c| c);
+                        if bare && (!has_wrap || compared_column(head).is_some_and(is_id_column)) {
+                            return true;
+                        }
+                    }
+                    i = j + 1;
+                }
+                b'(' => {
+                    let name = trailing_ident(sql[..i].trim_end());
+                    calls.push(TEXT_ID_FNS.iter().any(|f| name.eq_ignore_ascii_case(f)));
+                    i += 1;
+                }
+                b')' => {
+                    calls.pop();
+                    i += 1;
+                }
+                _ => i += 1,
             }
         }
         false
     }
 
     fn allowed(sql: &str) -> bool {
-        sql.contains("json_extract")
-            || sql.contains("srs_meta")
-            || sql.contains("srs_id(")
-            || sql.contains("-- ids:text")
+        sql.contains("json_extract") || sql.contains("srs_meta") || sql.contains("-- ids:text")
     }
 
     /// 有漏编码的绑定就失败（测试里关库时调；只取走本进程到此为止记下的那些）。
@@ -271,6 +362,38 @@ mod tests {
         )));
         assert!(!audit::quoted(&format!(
             "SELECT 1 FROM t WHERE profile_uid = srs_id('{u}')"
+        )));
+        assert!(!audit::quoted(&format!(
+            "SELECT 1 FROM t WHERE profile_uid = SRS_ID( '{u}') AND id IN (srs_id('{u}'))"
+        )));
+        // 同一条语句里别的参数套了 srs_id 不替漏写的那个担保（以前整条语句见到 `srs_id(` 就放行）。
+        assert!(audit::quoted(&format!(
+            "SELECT 1 FROM t WHERE profile_uid = srs_id('{u}') AND card_id = '{u}'"
+        )));
+        assert!(audit::quoted(&format!(
+            "SELECT 1 FROM t WHERE t.card_id IN ('{u}') AND note_id = srs_id('{u}')"
+        )));
+        assert!(audit::quoted(&format!("INSERT INTO t VALUES ('{u}', 1)")));
+        // 括号 / 比较符前紧挨多字节字符时按字符边界切（以前切进「：」中间 panic）。
+        assert!(audit::quoted(&format!(
+            "SELECT 1 /* 注：(说明) */ FROM t WHERE card_id = '{u}'"
+        )));
+        assert!(!audit::quoted(&format!(
+            "SELECT srs_id('{u}') FROM t WHERE 卡= '{u}'"
+        )));
+        // 有 srs_id 的语句里写进文本列的 UUID（如笔记的 guid）不是漏写；写进 ID 列的由存储检查（[audit::stored_text]）抓。
+        assert!(!audit::quoted(&format!(
+            "INSERT INTO t (id, guid) VALUES (srs_id('{u}'), '{u}')"
+        )));
+        assert!(!audit::quoted(&format!(
+            "UPDATE t SET guid = '{u}' WHERE id = srs_id('{u}')"
+        )));
+        // 拿列值文本和 JSON 比对的函数（store/slim.rs）的参数本来就是 ID 文本。
+        assert!(!audit::quoted(&format!(
+            "INSERT INTO t VALUES (srs_id('{u}'), srs_edit_pack('{{\"id\":\"{u}\"}}', '{u}', 'x''y', '{u}'))"
+        )));
+        assert!(audit::quoted(&format!(
+            "SELECT srs_log_pack('{{}}', '{u}') FROM t WHERE id = '{u}' AND p = srs_id('{u}')"
         )));
         assert!(!audit::quoted(
             "SELECT 1 FROM t WHERE profile_uid = x'01928c3e000070008000000000a5e01'"

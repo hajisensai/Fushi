@@ -250,6 +250,9 @@ pub(crate) fn apply(
                 .map_err(sql)?;
         }
         let dup = o.duplicate(*twin).map_err(|e| e.to_string())?;
+        if author == own {
+            super::min_reader::raise(c, profile, crate::sync2::min_reader::min_reader_of(&dup))?;
+        }
         c.prepare_cached("UPDATE sync2_ops SET payload = ?4, purged = 1, sc = NULL, sc_at = NULL, pz = 0 WHERE profile_uid = srs_id(?1) AND device = ?2 AND seq = ?3")
             .map_err(sql)?
             .execute(params![profile, author.0.to_vec(), *seq as i64, &dup.payload[..]])
@@ -511,36 +514,39 @@ impl crate::store::SrsCore {
     /// `done` = 没有作业（或刚做完）。本机还没完成 v2 迁移时不动（迁移完才知道哪些是本机的旧操作）。
     pub fn sync2_dedup(&self, profile: &str, now: i64) -> Result<Value, String> {
         let w = self.writer()?;
-        super::in_savepoint(&w, |c| {
-            let mut t = Touched::default();
-            let Some((phase, dev, seq)) = job(c, profile)? else {
-                return Ok(json!({"done": true}));
-            };
-            let Some(local) = super::Local::load(c, profile)? else {
-                return Ok(json!({"done": true}));
-            };
-            if !local.migrated {
-                return Ok(json!({"done": true, "phase": phase}));
-            }
-            let me = local.device;
-            let mut emitted = 0;
-            match phase {
-                PHASE_INDEX => step_index(c, profile, &me, &dev, seq)?,
-                PHASE_MATCH => step_match(c, profile, &me, &dev, seq)?,
-                PHASE_CHECK => step_check(c, profile, &me, &dev, seq)?,
-                _ => emitted = step_emit(c, profile, seq, now, &mut t)?,
-            }
-            let done = job(c, profile)?.is_none();
-            let replayed = super::replay_touched(c, &t)?;
-            Ok(json!({
-                "done": done,
-                "phase": phase,
-                "emitted": emitted,
-                "marks": t.marks.to_json(),
-                "replayed": replayed,
-                "changed": t.entities_changed.iter().map(|(k, e)| json!([k, e])).collect::<Vec<_>>(),
-                "purged": t.purged.iter().map(|(k, e)| json!([k, e])).collect::<Vec<_>>(),
-            }))
-        })
+        super::in_savepoint(&w, |c| dedup_on(c, profile, now))
     }
+}
+
+/// [crate::store::SrsCore::sync2_dedup] 的本体：在调用方的写连接、调用方开的 SAVEPOINT 里推进一步（不自己取锁）。
+pub(crate) fn dedup_on(c: &Connection, profile: &str, now: i64) -> Result<Value, String> {
+    let mut t = Touched::default();
+    let Some((phase, dev, seq)) = job(c, profile)? else {
+        return Ok(json!({"done": true}));
+    };
+    let Some(local) = super::Local::load(c, profile)? else {
+        return Ok(json!({"done": true}));
+    };
+    if !local.migrated {
+        return Ok(json!({"done": true, "phase": phase}));
+    }
+    let me = local.device;
+    let mut emitted = 0;
+    match phase {
+        PHASE_INDEX => step_index(c, profile, &me, &dev, seq)?,
+        PHASE_MATCH => step_match(c, profile, &me, &dev, seq)?,
+        PHASE_CHECK => step_check(c, profile, &me, &dev, seq)?,
+        _ => emitted = step_emit(c, profile, seq, now, &mut t)?,
+    }
+    let done = job(c, profile)?.is_none();
+    let replayed = super::replay_touched(c, &t)?;
+    Ok(json!({
+        "done": done,
+        "phase": phase,
+        "emitted": emitted,
+        "marks": t.marks.to_json(),
+        "replayed": replayed,
+        "changed": t.entities_changed.iter().map(|(k, e)| json!([k, e])).collect::<Vec<_>>(),
+        "purged": t.purged.iter().map(|(k, e)| json!([k, e])).collect::<Vec<_>>(),
+    }))
 }

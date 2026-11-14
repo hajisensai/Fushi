@@ -154,6 +154,7 @@ lookup_chinese_script_variants: false   # 中文查词简体 ↔ 繁體互查（
 # onnxruntime_library: "/opt/ort-gpu/lib/libonnxruntime.so"   # 换 GPU 版 ORT 时指过去
 upload_quota_bytes: 53687091200   # WebUI 上传累计配额（50 GB），防被当网盘
 public_urls: []               # 公网 / 反代 / DDNS 地址（如 - "https://nas.example.com"），经 /api/host/addresses 公布给已配对设备自动学习
+trusted_proxies: []           # 可信反代地址（IP / CIDR，如 - "127.0.0.1"）：只用于配对限速与展示真实来源 IP；带转发头或经本机回环进来的配对请求一律要 PIN，与此项无关
 p2p: false                    # 允许经 iroh P2P 隧道远程连接（无公网 IP 时用；会连 iroh 公共中继与发现服务）。需随包 libfushi_p2p（bin/../lib/ 或 FUSHI_P2P_LIB）
 p2p_relays: []                # 自建 iroh-relay 地址；空 = iroh 公共中继
 torrent:
@@ -172,6 +173,7 @@ ai:                           # 「AI 下视频」助手会话、补字幕前候
   # protocol: ""              # 空 = 跟随预设：openAiCompatible / anthropicMessages / geminiGenerateContent
   reasoning_effort: "none"    # none / low / medium / high
   allow_insecure_http: false  # 本地推理服务（Ollama / LM Studio）走 http://localhost 时才需要
+  images: false               # 模型能看图时打开：字幕校对（subgen / host 任务）会附上视频画面（subgen 可用 --no-frames 关）
   web_knowledge: true         # 联网资料（内置维基站）辅助识别作品 / 列系列
   # web_search:               # 通用联网搜索（可选；省略 = 不联网搜索）。写上即表示同意：
   #                           # 字幕歌词补齐会抓排名前 3 的结果网页正文交给上面的 AI（按 token 计费）。
@@ -377,12 +379,12 @@ client 首次连接的 TOFU，其它主机名 / 端口的坏证书照样拒绝�
 | `POST resource-indexers/bt-sites/<id>/reprobe` | 按已存地址重新检测（站点改版后用） |
 | `DELETE resource-indexers/bt-sites/<id>` | 删除 BT 站；订阅改由同类其它站点接手，没有可用站点时暂停，加了站点后自动唤醒 |
 | `GET models` / `POST models/pull {model}` | ASR 各语言 + OCR 模型状态 / 后台拉取 |
-| `GET|PUT settings` | 配置读写（下节「远程访问三项」） |
+| `GET|PUT settings` | 配置读写（下节「远程访问三项」）。GET 另带 WebUI 下拉用的只读选项：`aiPresetOptions [{id, name, model}]`、`subtitleLanguageOptions` / `metadataLocaleOptions [{code, name}]` |
 | `GET profiles` / `POST profiles/<id>/share` / `DELETE profiles/<id>` | 寄存的配置文件 + 开关状态 / 指定对端拉取时交出哪一份 / 删除（下节） |
 | `GET p2p` | P2P 隧道状态（同 `settings.p2pStatus`，WebUI 轮询用） |
 | `GET anki` / `POST anki/login|logout|sync|refresh|landing|run|retry` / `PUT anki/settings` | Anki 落地（下节） |
-| `GET|PUT srs` / `GET srs/profiles` / `POST srs/sync {profile?}` | Fushi 复习：状态与配置 / 同步目录里能选的配置文件 / 立即同步。PUT 只改带了的字段：`profiles`（整份）或 `addProfiles` / `removeProfiles`、`defaultProfile`、`rolloverHour`、`miningTarget`、`miningDecks`（整份替换）或 `miningDecksPatch`（只改给了的那几份，`""` 删掉那一项）、`ankiConnect {enabled, bind, port, apiKey, profileKeys, corsOrigins}`。key 不回显（只报 `apiKeySet` / `profileKeysSet`），`apiKey: ""` 清掉；AnkiConnect 配置起不来（非本机地址没 key、key 重复）回 409 `ankiconnect_invalid`，不落地 |
-| `GET|PUT upload?library=<id>&path=<相对路径>` | 分块上传（下节） |
+| `GET|PUT srs` / `GET srs/profiles` / `GET srs/decks?profile=<uid>` / `POST srs/sync {profile?}` | Fushi 复习：状态与配置 / 同步目录里能选的配置文件 / 那份已提供配置文件的牌组全名（`{decks}`，没提供 404 `profile_not_served`）/ 立即同步。PUT 只改带了的字段：`profiles`（整份）或 `addProfiles` / `removeProfiles`、`defaultProfile`、`rolloverHour`、`miningTarget`、`miningDecks`（整份替换）或 `miningDecksPatch`（只改给了的那几份，`""` 删掉那一项）、`ankiConnect {enabled, bind, port, apiKey, profileKeys, corsOrigins}`。key 不回显（只报 `apiKeySet` / `profileKeysSet`），`apiKey: ""` 清掉；AnkiConnect 配置起不来（非本机地址没 key、key 重复）回 409 `ankiconnect_invalid`，不落地 |
+| `GET|PUT upload?library=<id>&path=<相对路径>` / `GET upload/folders?library=<id>` | 分块上传 / 库根下已有子目录（下节） |
 | `GET|PUT dictionaries` / `PUT dictionaries/order {names}` / `PATCH dictionaries/<名> {hidden}` / `DELETE dictionaries/<名>` / `GET dictionaries/lookup?q=` | 词典（WebUI「词典」页）：引擎状态（`engine.available` / `reason` / `transformsLoaded`）+ 清单 / 正文为 Yomitan zip 的导入（同名视为更新；引擎没加载回 409，导入失败 422）/ 整份新顺序（必须恰好列全）/ 日语隐藏标记 / 删除 / 试查。改动与互联推送共用库锁，即时进引擎 |
 
 ### 远程访问三项
@@ -556,6 +558,8 @@ host 开关三道门；开关关着回 403，能力位 `liveLibrary.profileTrans
 `Content-Range: bytes <start>-<end>/<total>`。服务端追加到 `<目标>.part`，`start` 必须等于
 已收字节数（否则 409），收齐 `total` 后原子改名。`GET` 同 URL 返回 `{"received": n}` 供断点续传。
 路径不得逃出库根（400）；累计超 `upload_quota_bytes` 拒收（413）。传完记得扫描库。
+`GET /api/admin/upload/folders?library=<id>` 返回库根下两层内已有的子目录 `{"folders": ["Show", "Show/Season1"]}`
+（跳过隐藏目录、不跟符号链接），WebUI 子目录框用它做建议。
 
 ## Anki 落地
 
@@ -594,7 +598,14 @@ Anki 不可达 / 开了「批量制卡」的卡进待发队列，同步时经互
 - **AnkiConnect**：默认关。打开后 Yomitan 等可以往复习库加卡；只听本机时可以不设 key，监听局域网地址必须设 key。
   每份配置文件可以有自己的 key，带共用 key 的请求落到默认那份。没有界面类动作（`guiBrowse` 等回「不支持」）。
 - **原生库**：复习库与 FSRS 调度都在随包的 `libfushi_fsrs` 里（正式发布包已带；按 `FUSHI_FSRS_LIB` →
-  `bin/../lib/` 定位）。没找到时各份配置文件显示出错，其余功能照常。服务端不做 RWKV 调度。
+  `bin/../lib/` 定位）。没找到时各份配置文件显示出错，其余功能照常。
+- **RWKV 调度**：算法是 RWKV 的牌组在服务端与在 app 上同一个出卡口径（按 RWKV 回忆率出卡），用随包的
+  `libfushi_rwkv`（`FUSHI_RWKV_LIB` → `bin/../lib/`）。第一次用到时下载权重（436 KB，走全局代理设置）到
+  `<data>/support/srs_rwkv/models/`；不能出网的机器把 `sm72e25_weights.int8.bin` 手动放进这个目录即可（校验通过
+  就用）。状态快照在 `<data>/support/srs_rwkv/state/`。**RWKV 没准备好（权重没下到 / 正在回放历史 / 出错）时这些
+  牌组不出复习卡**，远程复习页显示「准备中」或错误与「重试」，不会退回按 FSRS 的到期日出卡；各份配置文件的状态
+  里有 `rwkv` 一项。`libfushi_rwkv` 是 AGPL-3.0-or-later：对外提供服务且改过这个库的运营者要向用户提供改动后的
+  源码（未改动的源码就在本仓库）。
 - 数据在 `<data>/support/srs.db` 与 `<data>/support/srs_media/<uid>/`，整机备份会带上 `srs.db` 的一致快照。
 - **限制（v1）：同步位置开了端到端加密的配置文件不支持。** 这份配置文件显示「同步位置已加密」，服务端不同步它、
   也不提供远程复习 / 制卡 / AnkiConnect，其它配置文件不受影响。把口令存到服务端会削弱端到端加密，所以 v1 不做。

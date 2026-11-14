@@ -235,7 +235,7 @@ class StudyClock {
   /// 活跃态判据（每个 tick 问一次，仅墙钟模式）。null = 恒活跃。
   bool Function()? isActive;
 
-  /// 空闲门：距上次 [touch] 超过它的 tick 不入账。null = 不设（视频 / 游戏）。
+  /// 空闲门：时长只计到「上次 [touch] + 它」为止，之后不入账。null = 不设。
   Duration? idleTimeout;
 
   /// 每个 tick（无论是否入账）后回调，给消费方挂周期性检查（视频完成判定）。
@@ -315,12 +315,20 @@ class StudyClock {
       );
     }
     final DateTime now = _now();
-    final bool accepted = _windowAccepted(start, now);
-    final int pending = accepted ? now.difference(start).inMilliseconds : 0;
+    // 零长度窗口（刚 tick / 刚结算）不是断档：此刻是否在计时只看活跃态与空闲门。
+    if (!now.isAfter(start)) {
+      return (
+        durationMs: _sessionDurationMs,
+        chars: _sessionChars,
+        active: (isActive?.call() ?? true) && !_isIdle(now),
+      );
+    }
+    final DateTime? end = _creditableEnd(start, now);
+    final int pending = end == null ? 0 : end.difference(start).inMilliseconds;
     return (
       durationMs: _sessionDurationMs + (pending > 0 ? pending : 0),
       chars: _sessionChars,
-      active: accepted,
+      active: end != null && !end.isBefore(now),
     );
   }
 
@@ -405,8 +413,16 @@ class StudyClock {
   }
 
   /// 用户输入（翻页 / 滚动 / 听书播放态的 cue 推进）：喂空闲门。查词不经这里。
+  ///
+  /// 已过空闲门时，先把待定窗口按**旧**空闲基准结算（入账到期点、封段），再重锚
+  /// 基准（BUG-4498）：否则重锚后 [_creditableEnd] 用新基准裁决同一个跨越空闲期的
+  /// 窗口，暂停 / 挂机超出阈值的那段在恢复的一刻整段回到时长里。
   void touch() {
-    _lastTouch = _now();
+    final DateTime now = _now();
+    if (_timer != null && accrual == StudyAccrual.wallClock && _isIdle(now)) {
+      _accrue(now);
+    }
+    _lastTouch = now;
   }
 
   /// 记字数到当前打开段（没有就开一段）。字数本身就是一次输入，顺带 [touch]。
@@ -565,8 +581,8 @@ class StudyClock {
       _creditedSinceTick = false;
       return;
     }
-    final bool accepted = _windowAccepted(start, now);
-    if (!accepted) {
+    final DateTime? end = _creditableEnd(start, now);
+    if (end == null) {
       // 整窗丢弃 + 封段：下一个被接受的窗口开新段（活动流按 30 分钟 gap 归并，
       // 封段不会把一次阅读拆成多条）。
       _trace(
@@ -576,10 +592,24 @@ class StudyClock {
       _seal();
       return;
     }
+    _credit(start, end);
+    if (end.isBefore(now)) {
+      // 空闲门在窗内到期：到期点之前照计，之后不计，封段（同整窗拒绝）。
+      _trace(
+        'idle-cut window ${now.difference(start).inMilliseconds}ms → '
+        '${end.difference(start).inMilliseconds}ms '
+        '(${_rejectReason(start, now)})',
+      );
+      _seal();
+    }
+  }
+
+  /// 把 `[start, end]` 按小时拆桶记进打开段（跨小时封旧开新）。
+  void _credit(DateTime start, DateTime end) {
     DateTime bucketStart = start;
     for (final (String dateKey, int hour, int ms) in splitReadingTime(
       start,
-      now,
+      end,
     )) {
       _OpenSegment? seg = _open;
       if (seg == null || seg.dateKey != dateKey || seg.hour != hour) {
@@ -594,18 +624,32 @@ class StudyClock {
     }
   }
 
-  /// 三道守卫（断档 / 活跃态 / 空闲）对窗口 `[start, now]` 的裁决；[_accrue] 与
-  /// [sessionTotals] 共用，保证「实时读数」与「最终入账」判据同源。
-  bool _windowAccepted(DateTime start, DateTime now) =>
-      isContinuousReadingGap(start, now) &&
-      (isActive?.call() ?? true) &&
-      !_isIdle(now);
+  /// 三道守卫（断档 / 活跃态 / 空闲）对窗口 `[start, now]` 的裁决，返回可入账段的
+  /// 终点；null = 整窗拒绝。[_accrue] 与 [sessionTotals] 共用，保证「实时读数」与
+  /// 「最终入账」判据同源。
+  ///
+  /// 断档与活跃态按整窗判；空闲门按时刻裁剪（BUG-4498）：可入账到
+  /// `上次 touch + idleTimeout` 为止——阈值以内的停顿照计（视频暂停查词、阅读停顿，
+  /// 所有者 2026-11-07 口径），超出阈值的部分一毫秒都不计，与 tick 落在哪不相干。
+  DateTime? _creditableEnd(DateTime start, DateTime now) {
+    if (!isContinuousReadingGap(start, now)) return null;
+    if (!(isActive?.call() ?? true)) return null;
+    final DateTime? deadline = _idleDeadline();
+    if (deadline == null || !deadline.isBefore(now)) return now;
+    return deadline.isAfter(start) ? deadline : null;
+  }
 
-  bool _isIdle(DateTime now) {
+  /// 空闲门到期时刻（上次 touch + idleTimeout）；没设门 / 没有基准 = null。
+  DateTime? _idleDeadline() {
     final Duration? timeout = idleTimeout;
     final DateTime? last = _lastTouch;
-    if (timeout == null || last == null) return false;
-    return now.difference(last) > timeout;
+    if (timeout == null || last == null) return null;
+    return last.add(timeout);
+  }
+
+  bool _isIdle(DateTime now) {
+    final DateTime? deadline = _idleDeadline();
+    return deadline != null && now.isAfter(deadline);
   }
 
   /// 诊断用：窗口被哪道守卫拒掉（断档 / 非活跃 / 空闲）。

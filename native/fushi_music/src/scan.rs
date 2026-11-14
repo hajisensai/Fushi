@@ -15,6 +15,17 @@ use crate::tags::{self, FileMeta};
 use crate::uid::{self, AudioFingerprint};
 use crate::wire::{self, Credit, KnownFiles, Record, TrackRecord};
 
+/// 解析修订号：同一个文件（mtime / size 没变）重新解析会得出**不同入库结果**的改动都要升它
+/// （署名拆分、标签映射、CUE 规则……）。调用方按来源记下上次全量解析时的修订号，与本值不一致
+/// 就不传已知文件清单（`set_known`），整源重新解析一遍，已入库的旧结果（如合写署名的
+/// `artist_uid` / `music_track_credits` 行）随之重写；否则增量扫描只认 mtime / size，存量
+/// 曲库永远看不到解析改动。
+///
+/// - 1：BUG-4493 合写艺人署名拆成一人一个 `artist_uid`（[credit::split_artist_credit]）。
+///
+/// [credit::split_artist_credit]: crate::credit::split_artist_credit
+pub const PARSER_REVISION: i32 = 1;
+
 /// 每批记录上限（设计 §4.1：每批 ≥256 条的粗粒度；这里取上限 256，调用方可以要更少）。
 pub const MAX_BATCH: usize = 256;
 
@@ -557,21 +568,25 @@ fn read_flac_head(path: &Path) -> Option<Vec<u8>> {
     Some(buf)
 }
 
+/// 一首曲目的署名：每个字段先按 [crate::credit::split_artist_credit] 拆成单人，一人一个
+/// `artist_uid`（同一人的不同合写拼法落到同一位艺人）。显示用的 `artist_credit` 仍是原文。
 fn credits_of(meta: &FileMeta, artists: &[String], album_artist: Option<&str>) -> Vec<Credit> {
     let mut out: Vec<Credit> = Vec::new();
-    let mut push = |role: &str, name: &str| {
-        let artist_uid = uid::artist_uid(name);
-        if out
-            .iter()
-            .any(|c| c.role == role && c.artist_uid == artist_uid)
-        {
-            return;
+    let mut push = |role: &str, field: &str| {
+        for name in crate::credit::split_artist_credit(field) {
+            let artist_uid = uid::artist_uid(&name);
+            if out
+                .iter()
+                .any(|c| c.role == role && c.artist_uid == artist_uid)
+            {
+                continue;
+            }
+            out.push(Credit {
+                role: role.into(),
+                name,
+                artist_uid,
+            });
         }
-        out.push(Credit {
-            role: role.into(),
-            name: name.into(),
-            artist_uid,
-        });
     };
     for a in artists {
         push("artist", a);
@@ -762,6 +777,38 @@ pub(crate) fn cue_track_record(
 #[cfg(test)]
 mod tests {
     use super::canonical_track_path_str;
+
+    #[test]
+    fn credits_split_combined_artist_fields_into_one_uid_per_person() {
+        // BUG-4493：同一组人的不同合写拼法落到同一组 artist_uid。
+        use crate::tags::FileMeta;
+        use crate::uid::artist_uid;
+        let meta = FileMeta {
+            composers: vec!["藤澤慶昌、加藤達也".into()],
+            ..Default::default()
+        };
+        let credits = super::credits_of(
+            &meta,
+            &["藤澤慶昌&加藤達也".into(), "藤澤慶昌".into()],
+            Some("藤澤慶昌/加藤達也"),
+        );
+        let got: Vec<(String, String, String)> = credits
+            .into_iter()
+            .map(|c| (c.role, c.name, c.artist_uid))
+            .collect();
+        let row = |role: &str, name: &str| (role.to_owned(), name.to_owned(), artist_uid(name));
+        assert_eq!(
+            got,
+            vec![
+                row("artist", "藤澤慶昌"),
+                row("artist", "加藤達也"),
+                row("album_artist", "藤澤慶昌"),
+                row("album_artist", "加藤達也"),
+                row("composer", "藤澤慶昌"),
+                row("composer", "加藤達也"),
+            ]
+        );
+    }
 
     #[cfg(windows)]
     #[test]

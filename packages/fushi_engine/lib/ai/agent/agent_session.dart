@@ -560,7 +560,7 @@ class AgentSession {
     }
     final AgentUndoResult result = await _toolbox.undo(entry.actionId!);
     switch (result.status) {
-      case AgentUndoStatus.done:
+      case AgentUndoStatus.done || AgentUndoStatus.partial:
         entry.status = AgentEntryStatus.undone;
       case AgentUndoStatus.superseded:
         entry.status = AgentEntryStatus.superseded;

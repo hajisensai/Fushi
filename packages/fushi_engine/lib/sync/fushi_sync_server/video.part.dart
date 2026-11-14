@@ -50,9 +50,13 @@ extension _FushiSyncServerVideo on FushiSyncServer {
       if (manifest == null) {
         return shelf.Response.notFound('Disc structure unreadable');
       }
+      // BUG-4393：会话记签发凭据，吊销即连带作废。签发路由要 Basic，取不到就是没鉴权。
+      final String? issuer = _requestCredentialFingerprint(request);
+      if (issuer == null) return shelf.Response(401);
       final String token = _discShares.issue(
         discRoot: root,
         manifest: manifest,
+        issuer: issuer,
       );
       return jsonResponse(
         discShareIssueBody(
@@ -75,6 +79,9 @@ extension _FushiSyncServerVideo on FushiSyncServer {
         episodeIndex: episodeIndex,
       );
       if (file == null) return shelf.Response.notFound('Video not found');
+      // BUG-4393：流 token 记签发凭据，取流时对照当前快照（吊销即连带作废）。
+      final String? issuer = _requestCredentialFingerprint(request);
+      if (issuer == null) return shelf.Response(401);
       // 弱网转码：client 报画质档（`?maxWidth=1280&maxBitrate=3000000`），host 决定
       // 认不认。四个闸门缺一不可——档位有效、用户没关开关、本机真能 exec ffmpeg
       // （移动端 host 的进程内 ffmpeg-kit 没有可接管的 stdout，见
@@ -107,6 +114,7 @@ extension _FushiSyncServerVideo on FushiSyncServer {
       final String tokenValue = _generateVideoToken();
       _videoStreamTokens[tokenValue] = _VideoStreamToken(
         videoId: streamUrlId,
+        issuer: issuer,
         createdAt: _now(),
         episodeIndex: episodeIndex,
         transcodeProfile: transcodeProfile,
@@ -150,10 +158,12 @@ extension _FushiSyncServerVideo on FushiSyncServer {
         final String miningToken = _generateVideoToken();
         _videoStreamTokens[miningToken] = _VideoStreamToken(
           videoId: streamUrlId,
+          issuer: issuer,
           createdAt: _now(),
           episodeIndex: episodeIndex,
           transcodeProfile: _kDiscMiningTranscodeProfile,
           transcodeDurationMs: disc!.playlist.duration.inMilliseconds,
+          ticket: tokenValue,
         );
         miningUri = request.requestedUri.replace(
           path: '/api/library/videos/$encodedId/hls.m3u8',
@@ -213,6 +223,10 @@ extension _FushiSyncServerVideo on FushiSyncServer {
         // `discTitle`，原样交给 libmpv 也能播明文 http host；新 client 读 `discTitle`
         // 逐段过本地 TLS 中继后自己拼。
         'url': discTitle?.edlUri() ?? streamUri.toString(),
+        // 流票（BUG-4461）：client 播放会话结束时拿它调 `/streamrelease`，host 立刻
+        // 作废这次签的全部 token（含上面的制卡 token）并停掉它们的转码。旧 client
+        // 不读，token 照旧按 TTL 过期。
+        'ticket': tokenValue,
         if (discTitle != null) 'discTitle': discTitle.toJson(),
         if (miningUri != null) ...<String, dynamic>{
           'miningVideoUrl': miningUri.toString(),
@@ -245,6 +259,19 @@ extension _FushiSyncServerVideo on FushiSyncServer {
       });
     }
 
+    // POST /api/library/videos/<id>/streamrelease?ticket=<t> — 释放流票（BUG-4461，
+    // 需 Basic 鉴权：路径不以任何豁免后缀结尾）。幂等：票已不在也 204。
+    final String? releaseId = _extractVideoId(reqPath, 'streamrelease');
+    if (releaseId != null) {
+      if (method != 'POST') return shelf.Response(405);
+      final String? ticket = request.url.queryParameters['ticket'];
+      if (ticket == null || ticket.isEmpty) {
+        return shelf.Response(400, body: 'Missing ticket');
+      }
+      _releaseVideoTicket(releaseId, ticket);
+      return shelf.Response(204);
+    }
+
     // GET /api/library/videos/<id>/stream — 流式传输（豁免 Basic，靠 token 鉴权）
     final String? streamId = _extractVideoId(reqPath, 'stream');
     if (streamId != null) {
@@ -265,6 +292,9 @@ extension _FushiSyncServerVideo on FushiSyncServer {
           body: 'Invalid or expired token',
           headers: <String, String>{'Content-Type': 'text/plain'},
         );
+      }
+      if (!await _issuerStillValid(tok.issuer)) {
+        return _revokedVideoToken(tokenValue);
       }
       // TODO-885: 用 token 绑定的集下标反查（token 是 streamurl 签发时定的，client 不能
       // 自己改集——?episode 只决定 streamurl 阶段，stream 阶段以 token 为准）。
@@ -348,7 +378,7 @@ extension _FushiSyncServerVideo on FushiSyncServer {
         return shelf.Response(501, body: 'Subtitle backfill not available');
       }
       String? language;
-      final String body = await request.readAsString();
+      final String body = await readBoundedBodyString(request);
       if (body.trim().isNotEmpty) {
         final Object? decoded;
         try {
@@ -569,7 +599,7 @@ extension _FushiSyncServerVideo on FushiSyncServer {
             'positionUpdatedAtMs': p.updatedAtMs,
           }).change(headers: _liveWriteHeaders(svc));
         case 'PUT':
-          final String body = await request.readAsString();
+          final String body = await readBoundedBodyString(request);
           Map<String, dynamic> json;
           try {
             json = jsonDecode(body) as Map<String, dynamic>;
@@ -637,7 +667,7 @@ extension _FushiSyncServerVideo on FushiSyncServer {
           );
           return jsonResponse(s.toJson());
         case 'PUT':
-          final String body = await request.readAsString();
+          final String body = await readBoundedBodyString(request);
           Map<String, dynamic> json;
           try {
             json = jsonDecode(body) as Map<String, dynamic>;
@@ -1130,6 +1160,38 @@ extension _FushiSyncServerVideo on FushiSyncServer {
     return base64UrlEncode(bytes);
   }
 
+  /// 签发凭据已被吊销的流 token：删掉并回 403（BUG-4393）。正在发送的单个直传
+  /// 响应不被切断，下一次 Range / 下一个 HLS 分段即 403。
+  shelf.Response _revokedVideoToken(String tokenValue) {
+    _videoStreamTokens.remove(tokenValue);
+    return shelf.Response(
+      403,
+      body: 'Token revoked',
+      headers: <String, String>{'Content-Type': 'text/plain'},
+    );
+  }
+
+  /// 释放流票 [ticket]（BUG-4461）：作废它本身与随它签发的 token（光盘制卡 token），
+  /// 并取消它们名下排队 / 在跑的转码分段。只认 [videoId] 下的 token——拿别的视频
+  /// 的路径释放不动这张票。全程同步：作废 token 与 [cancelTranscodeWork] 之间没有
+  /// await，与分段请求「登记 → 判存活」的同步段互斥，不存在漏网窗口。
+  ///
+  /// TTL / 数量上限淘汰 token 时**不**走这里（不 kill 在跑的分段），排队中的分段
+  /// 在拿到名额后的存活判定处放弃。
+  void _releaseVideoTicket(String videoId, String ticket) {
+    final List<String> keys = <String>[
+      for (final MapEntry<String, _VideoStreamToken> e
+          in _videoStreamTokens.entries)
+        if (e.value.videoId == videoId &&
+            (e.key == ticket || e.value.ticket == ticket))
+          e.key,
+    ];
+    for (final String key in keys) {
+      _videoStreamTokens.remove(key);
+      cancelTranscodeWork(key);
+    }
+  }
+
   void _pruneVideoTokens() {
     // 视频播放时间长，token 有效期设为 6 小时
     final DateTime cutoff = _now().subtract(const Duration(hours: 6));
@@ -1220,6 +1282,9 @@ extension _FushiSyncServerVideo on FushiSyncServer {
         headers: <String, String>{'Content-Type': 'text/plain'},
       );
     }
+    if (!await _issuerStillValid(tok.issuer)) {
+      return _revokedVideoToken(tokenValue);
+    }
     final VideoTranscodeProfile? profile = tok.transcodeProfile;
     final int durationMs = tok.transcodeDurationMs ?? 0;
     if (profile == null || durationMs <= 0) {
@@ -1257,15 +1322,29 @@ extension _FushiSyncServerVideo on FushiSyncServer {
     if (index == null || index < 0 || index >= count) {
       return shelf.Response.notFound('Segment out of range');
     }
-    final Uint8List? segment = await _runTranscode(
-      () => transcodeSegment(
-        inputPath: file.path,
-        profile: profile,
-        index: index,
-        durationMs: durationMs,
-        audioStreamIndex: tok.transcodeAudioStreamIndex,
-      ),
-    );
+    // 分段工作挂在签发它的 token 名下（BUG-4461）：流票被释放时
+    // [_releaseVideoTicket] 按 token 取消排队 / 在跑的分段；token 在本请求反查文件
+    // 期间已被释放或过期的，[isAlive] 在登记时就拦下，不起 ffmpeg。
+    final Uint8List? segment;
+    try {
+      segment = await _runTranscode(
+        () => transcodeSegment(
+          inputPath: file.path,
+          profile: profile,
+          index: index,
+          durationMs: durationMs,
+          audioStreamIndex: tok.transcodeAudioStreamIndex,
+          workKey: tokenValue,
+          isAlive: () => _videoStreamTokens.containsKey(tokenValue),
+        ),
+      );
+    } on TranscodeCancelled {
+      return shelf.Response(
+        410,
+        body: 'Stream released',
+        headers: <String, String>{'Content-Type': 'text/plain'},
+      );
+    }
     if (segment == null) {
       return shelf.Response(503, body: 'Transcoder unavailable');
     }
@@ -1295,6 +1374,9 @@ extension _FushiSyncServerVideo on FushiSyncServer {
         body: 'Invalid or expired token',
         headers: <String, String>{'Content-Type': 'text/plain'},
       );
+    }
+    if (!await _issuerStillValid(tok.issuer)) {
+      return _revokedVideoToken(tokenValue);
     }
     final File? file = await svc.resolveVideoFile(
       videoId,
@@ -1479,6 +1561,11 @@ String? _extractBareVideoId(String reqPath) {
   final String id = reqPath.substring(prefix.length);
   if (id.isEmpty) return null;
   if (id.contains('..') || id.contains('\\')) return null;
+  // 以免鉴权流子路径结尾的不是裸 id（那条路径归 token 鉴权的流 handler），显式拒，
+  // 不靠分支顺序保护。
+  for (final String suffix in _kVideoStreamSuffixes) {
+    if (reqPath.endsWith(suffix)) return null;
+  }
   return id;
 }
 

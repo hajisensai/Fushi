@@ -54,7 +54,8 @@ void main() {
         as bool;
   }
 
-  /// 经 [port] 开一个 PIN 会话并用错 PIN confirm，返回 confirm 的状态码。
+  /// 经 [port] 开一个 PIN 会话并用错 PIN confirm，返回 confirm 的状态码；来源已被锁定
+  /// 时 pair/v2 直接 429（BUG-4391），返回它的状态码。
   Future<int> wrongPinVia(int port, String nonce, {String? deviceId}) async {
     final http.Response start = await http.post(
       Uri.parse('http://127.0.0.1:$port/api/pair/v2'),
@@ -64,6 +65,7 @@ void main() {
         if (deviceId != null) 'clientDeviceId': deviceId,
       }),
     );
+    if (start.statusCode == 429) return 429;
     expect(start.statusCode, 200);
     final Map<String, dynamic> body =
         jsonDecode(start.body) as Map<String, dynamic>;
@@ -122,12 +124,19 @@ void main() {
       );
     });
 
-    test('查不到隧道对端身份时所有隧道会话共用一个桶（宁可误伤不放开）', () async {
+    test('查不到隧道对端身份时不按共用键 p2p:? 锁来源，由隧道类别预算兜底', () async {
+      // 评审 correctness-1：`p2p:?` 背后是所有查不到 NodeId 的隧道对端，按它锁会让
+      // 一个人把全体锁在外面；它只计入隧道类别的失败预算（10 次锁整个类别）。
       final int tunnelPort = await server.startP2pListener();
-      for (int i = 0; i < 5; i++) {
-        await wrongPinVia(tunnelPort, 'x$i', deviceId: 'dev-$i');
+      for (int i = 0; i < 9; i++) {
+        expect(
+          await wrongPinVia(tunnelPort, 'x$i', deviceId: 'dev-$i'),
+          401,
+          reason: '第 ${i + 1} 次',
+        );
       }
       expect(await wrongPinVia(tunnelPort, 'y', deviceId: 'fresh'), 429);
+      expect(await wrongPinVia(tunnelPort, 'z', deviceId: 'other'), 429);
     });
 
     test('主机停了就不再开隧道监听口（不留孤儿口）', () async {
@@ -162,7 +171,7 @@ void main() {
     test('没有中继也没有可路由直连地址时不公布 p2p 地址', () {
       expect(
         interconnectP2pPublishableUrl(
-          'node',
+          _nodeId,
           tls: false,
           relayUrl: null,
           directAddrs: <String>['198.18.0.1:1', '127.0.0.1:1'],
@@ -171,14 +180,14 @@ void main() {
         reason: '只能靠发现去拨——新 host 要 10–50 秒才查得到，约一半失败',
       );
       final String? relayOnly = interconnectP2pPublishableUrl(
-        'node',
+        _nodeId,
         tls: false,
         relayUrl: 'https://relay.example/',
         directAddrs: <String>['198.18.0.1:1'],
       );
       expect(parseInterconnectP2pUrl(relayOnly!)!.directAddrs, isEmpty);
       final String? directOnly = interconnectP2pPublishableUrl(
-        'node',
+        _nodeId,
         tls: true,
         relayUrl: null,
         directAddrs: <String>['198.18.0.1:1', '192.168.1.5:1'],
@@ -190,7 +199,7 @@ void main() {
 
     test('p2p 地址编解码：tls 与拨号提示往返', () {
       final String url = interconnectP2pUrl(
-        'nodeabc',
+        _nodeId,
         tls: true,
         relayUrl: 'https://relay.example/',
         directAddrs: <String>['192.168.1.5:5000', '[2408::5]:5000'],
@@ -202,7 +211,7 @@ void main() {
         List<String> directAddrs,
       })?
       parsed = parseInterconnectP2pUrl(url);
-      expect(parsed!.nodeId, 'nodeabc');
+      expect(parsed!.nodeId, _nodeId);
       expect(parsed.tls, isTrue);
       expect(parsed.relayUrl, 'https://relay.example/');
       expect(parsed.directAddrs, <String>[
@@ -313,3 +322,7 @@ void main() {
     }, skip: available ? false : 'fushi_p2p 原生库不可用');
   });
 }
+
+/// 合法 NodeId（iroh 口径：64 位小写 hex）。
+const String _nodeId =
+    '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
