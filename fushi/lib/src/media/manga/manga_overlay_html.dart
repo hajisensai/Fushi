@@ -791,6 +791,7 @@ String mangaWindowDocument(
   String? readingModeLabel,
   // 悬停查词按住的键在 MouseEvent 上的字段名（HoverLookupModifier.jsEventFlag）。
   String hoverKey = 'shiftKey',
+  bool enableMouseTextSelection = false,
   // 折叠屏书本姿态：双页之间留出的铰链缝（逻辑像素，见 fushiHingeGutterPx）。0 = 无缝。
   double spreadGutterPx = 0,
 }) {
@@ -952,6 +953,11 @@ String mangaWindowDocument(
       ? ''
       : '<style id="manga-anim-css">#manga-root{'
             '${_rootTransitionCss(pageAnimation, pageAnimationSpeed)}}</style>';
+  final String mouseTextSelectionCss = enableMouseTextSelection
+      ? '@media (any-pointer:fine){'
+            '.ocr-char{-webkit-user-select:text;user-select:text;}'
+            '.ocr-char::selection{background:rgba(80,140,220,.55);color:transparent;}}'
+      : '';
 
   // spread 时 strip 包进 overflow:hidden 视口；webtoon 时 root 直接在 body。
   final String content = isWebtoon
@@ -1030,6 +1036,7 @@ String mangaWindowDocument(
       '.ocr-char{position:absolute;display:block;overflow:hidden;'
       'color:transparent;pointer-events:auto;line-height:1;'
       'writing-mode:horizontal-tb;}'
+      '$mouseTextSelectionCss'
       // BUG-2554：被查词高亮。命中层文字本身透明（画的是底下的页图），查词后
       // Dart 经 fushiSelection.highlightSelection 把命中的字符 Range 放进 CSS
       // Highlight `fushi-selection`；没有这条规则浏览器什么都不画，用户看不出
@@ -1047,7 +1054,7 @@ String mangaWindowDocument(
       '<script>$inlineSelectionJs</script>'
       '<script>'
       'window.__mangaDocumentGeneration=$documentGeneration;'
-      '${_mangaGestureJs(isWebtoon: isWebtoon, rtl: rtl, currentSpread: currentSpread, restoreFraction: restoreFraction, zoomPercent: zoomPercent, restZoomPercent: restZoomPercent ?? zoomPercent, zoomMinPercent: zoomMinPercent, zoomMaxPercent: zoomMaxPercent, zoomSensitivity: zoomSensitivity, pageAnimation: pageAnimation, pageAnimationSpeed: pageAnimationSpeed, followDrag: followDrag, tapZonePaging: tapZonePaging, tapZoneLayout: tapZoneLayout, disableZoomOut: disableZoomOut, animateDoubleTap: animateDoubleTap, invertHorizontal: invertHorizontal, invertVertical: invertVertical, invertBoth: invertBoth, doubleTapAnimationMs: doubleTapAnimationMs, splitWidePages: splitWidePages, rotateWidePages: rotateWidePages, autoZoomWidePages: autoZoomWidePages, panWidePages: panWidePages, zoomStartPosition: zoomStartPosition, preferences: preferences, hoverKey: hoverKey, cropBorders: cropBorders, scaleType: scaleType, longStripSidePadding: longStripSidePadding, isVerticalPaged: isVerticalPaged)}'
+      '${_mangaGestureJs(isWebtoon: isWebtoon, rtl: rtl, currentSpread: currentSpread, restoreFraction: restoreFraction, zoomPercent: zoomPercent, restZoomPercent: restZoomPercent ?? zoomPercent, zoomMinPercent: zoomMinPercent, zoomMaxPercent: zoomMaxPercent, zoomSensitivity: zoomSensitivity, pageAnimation: pageAnimation, pageAnimationSpeed: pageAnimationSpeed, followDrag: followDrag, tapZonePaging: tapZonePaging, tapZoneLayout: tapZoneLayout, disableZoomOut: disableZoomOut, animateDoubleTap: animateDoubleTap, invertHorizontal: invertHorizontal, invertVertical: invertVertical, invertBoth: invertBoth, doubleTapAnimationMs: doubleTapAnimationMs, splitWidePages: splitWidePages, rotateWidePages: rotateWidePages, autoZoomWidePages: autoZoomWidePages, panWidePages: panWidePages, zoomStartPosition: zoomStartPosition, preferences: preferences, hoverKey: hoverKey, cropBorders: cropBorders, scaleType: scaleType, longStripSidePadding: longStripSidePadding, isVerticalPaged: isVerticalPaged, enableMouseTextSelection: enableMouseTextSelection)}'
       '</script>'
       '</body></html>';
 }
@@ -1145,6 +1152,7 @@ String _mangaGestureJs({
   MangaScaleType scaleType = MangaScaleType.fitScreen,
   int longStripSidePadding = 0,
   bool isVerticalPaged = false,
+  bool enableMouseTextSelection = false,
 }) {
   // 点击翻页热区表 → JS 字面量 `[l,t,w,h,forward]` 的逗号串（外层中括号在模板里
   // 补）。几何与阅读方向镜像都在 Dart 侧算完（[mangaTapZones] 有单测），注入的脚本
@@ -2137,6 +2145,20 @@ String _mangaGestureJs({
     window.__mangaApplySpeaking(true);
   };
   document.addEventListener('pointermove', function(e){
+    if (mouseOcrSelection && mouseOcrSelection.id === e.pointerId) {
+      var selectDx = e.clientX - mouseOcrSelection.x;
+      var selectDy = e.clientY - mouseOcrSelection.y;
+      if (!mouseOcrSelection.dragging &&
+          selectDx * selectDx + selectDy * selectDy >= 16) {
+        mouseOcrSelection.dragging = true;
+        if (panDrag && panDrag.id === e.pointerId) panDrag = null;
+        has = false;
+        _swipeRelease(false);
+      }
+      // Leave the unprevented mouse gesture to WebKit so it can maintain its
+      // native text range. Touch still follows the existing swipe/pinch path.
+      if (mouseOcrSelection.dragging) return;
+    }
     if (rightDrag) {
       var dx = e.clientX - rightDrag.lastX;
       var dy = e.clientY - rightDrag.lastY;
@@ -2878,6 +2900,14 @@ String _mangaGestureJs({
   // 单击 / swipe 路径。
   var LONG_PRESS_MS = 500, LONG_PRESS_SLOP = 10;
   var longPress = null, longPressFired = null;
+  // 桌面鼠标在 OCR 字格上左键拖动 = 原生文字选区（enableMouseTextSelection）。
+  // 与上面的长按状态同属本节按下 / 松手 / 取消监听共用的状态机：
+  // 左键落在 .ocr-char 上先记下起点；pointermove 越过 4px 才判成拖选，此后整段
+  // 手势交给 WebView 原生维护选区，松手不走单击 / swipe。没拖动的左键点击照旧是单击，
+  // 触屏的长按 / 滑动 / 捏合不受影响（只认 pointerType === 'mouse'）。
+  var mouseOcrSelectionEnabled = ${enableMouseTextSelection ? 'true' : 'false'} &&
+      !!(window.matchMedia && window.matchMedia('(any-pointer:fine)').matches);
+  var mouseOcrSelection = null;
   function _mangaPageIndexAt(x, y){
     var stack = document.elementsFromPoint ? document.elementsFromPoint(x, y) : [];
     for (var i = 0; i < stack.length; i++) {
@@ -2966,6 +2996,13 @@ String _mangaGestureJs({
     return false;
   }
   document.addEventListener('pointerdown', function(e){
+    if (mouseOcrSelectionEnabled && e.pointerType === 'mouse' &&
+        e.button === 0 && e.target && e.target.closest &&
+        e.target.closest('.ocr-char')) {
+      mouseOcrSelection = {id:e.pointerId, x:e.clientX, y:e.clientY, dragging:false};
+    } else if (e.button === 0) {
+      mouseOcrSelection = null;
+    }
     if (e.pointerType === 'touch') {
       // 触点表只靠「松手 / 取消」事件删条目，而这两个事件不保证到得了 document：
       // 手指按在随后被移出 DOM 的节点上（__mangaReplaceOcr 换掉 OCR 层、覆盖翻页
@@ -3038,6 +3075,17 @@ String _mangaGestureJs({
     );
   }, {passive: false});
   document.addEventListener('pointerup', function(e){
+    var textDrag = mouseOcrSelection &&
+        mouseOcrSelection.id === e.pointerId && mouseOcrSelection.dragging;
+    if (mouseOcrSelection && mouseOcrSelection.id === e.pointerId) {
+      mouseOcrSelection = null;
+    }
+    if (textDrag) {
+      if (panDrag && panDrag.id === e.pointerId) panDrag = null;
+      has = false;
+      _swipeRelease(false);
+      return;
+    }
     var drag = (panDrag && panDrag.id === e.pointerId) ? panDrag : null;
     if (drag) panDrag = null;
     if (_consumeLongPressRelease(e.pointerId)) {
@@ -3107,6 +3155,9 @@ String _mangaGestureJs({
   // manga_overlay_html_test 的 C1 不变式按该字面量计数，恰好允许一个。
   document.addEventListener('pointercancel', function(e){
     _consumeLongPressRelease(e.pointerId);
+    if (mouseOcrSelection && mouseOcrSelection.id === e.pointerId) {
+      mouseOcrSelection = null;
+    }
     if (panDrag && panDrag.id === e.pointerId) {
       panDrag = null;
       // 系统夺走指针：跟到一半的页面不能挂在半路，回弹到当前跨页。

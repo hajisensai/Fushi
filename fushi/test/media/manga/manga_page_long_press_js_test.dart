@@ -17,20 +17,22 @@ import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 /// - 长按 / 右键落在 OCR 文本块上时带上该块的句子分组号 `group`（Dart 据此
 ///   给出「复制文字」，反馈 hjUlprxxKI），别页的块不算。
 void main() {
-  String buildDocument() => mangaWindowDocument(
-    const <MokuroImage>[
-      MokuroImage(
-        url: 'page.png',
-        size: MokuroSize(1000, 1414),
-        blocks: <MokuroBlock>[],
-      ),
-    ],
-    const <String>['page.png'],
-    mode: MangaReadingMode.spread,
-    spreadDirection: 'rtl',
-    inlineSelectionJs: '',
-    zoomPercent: 100,
-  );
+  String buildDocument({bool enableMouseTextSelection = false}) =>
+      mangaWindowDocument(
+        const <MokuroImage>[
+          MokuroImage(
+            url: 'page.png',
+            size: MokuroSize(1000, 1414),
+            blocks: <MokuroBlock>[],
+          ),
+        ],
+        const <String>['page.png'],
+        mode: MangaReadingMode.spread,
+        spreadDirection: 'rtl',
+        inlineSelectionJs: '',
+        zoomPercent: 100,
+        enableMouseTextSelection: enableMouseTextSelection,
+      );
 
   String section(String document, String start, String end) {
     final int from = document.indexOf(start);
@@ -40,9 +42,9 @@ void main() {
     return document.substring(from, to);
   }
 
-  String harness(String body) {
+  String harness(String body, {bool enableMouseTextSelection = false}) {
     final String gestures = section(
-      buildDocument(),
+      buildDocument(enableMouseTextSelection: enableMouseTextSelection),
       '  var LONG_PRESS_MS',
       "  document.addEventListener('contextmenu'",
     );
@@ -51,6 +53,10 @@ const assert=require('node:assert/strict');
 var ZOOM=1, ZOOM_SENS=1, has=false, panDrag=null, touchPts={}, pinch=null;
 var pinchGuard=false, rightDrag=null, dblArmed=false;
 const listeners={};
+// 桌面精确指针（鼠标）在场：开了 enableMouseTextSelection 时字格可原生拖选。
+const window={matchMedia:(q)=>({matches:q==='(any-pointer:fine)'})};
+// 鼠标落点压在 OCR 字格（.ocr-char）上时用作 e.target。
+const ocrCharTarget={closest:(sel)=>sel==='.ocr-char'?{}:null};
 // 页面：x < 206 是 data-page=3（双页左），否则 data-page=2；
 // y > 800 落在一个摘掉 data-page 的克隆层上；failedAt 让命中页标成加载失败。
 let failed=false;
@@ -258,6 +264,66 @@ failed=true;
 ev('pointerdown');
 elapse();
 assert.deepEqual(longPresses(),[]);
+'''),
+    );
+  });
+
+  test('字格文字选区开启：鼠标左键点字格没拖动，照常走单击（查词）路径', () async {
+    await runJs(
+      harness('''
+ev('pointerdown',{pointerType:'mouse',target:ocrCharTarget});
+assert.equal(mouseOcrSelection.dragging,false);
+ev('pointerup',{pointerType:'mouse',target:ocrCharTarget});
+elapse();
+assert.equal(mouseOcrSelection,null);
+assert.deepEqual(longPresses(),[]);
+assert.equal(ends.length,1);
+''', enableMouseTextSelection: true),
+    );
+  });
+
+  test('字格文字选区开启：鼠标拖选松手不当单击 / 翻页，跟手回弹不翻页', () async {
+    await runJs(
+      harness('''
+ev('pointerdown',{pointerType:'mouse',target:ocrCharTarget});
+// pointermove 越过阈值时把这次按压判成拖选（pointermove 不在本节截取范围内）。
+mouseOcrSelection.dragging=true;
+ev('pointerup',{pointerType:'mouse',target:ocrCharTarget,clientX:160});
+elapse();
+assert.equal(mouseOcrSelection,null);
+assert.equal(ends.length,0);
+assert.deepEqual(released,[false]);
+assert.equal(has,false);
+''', enableMouseTextSelection: true),
+    );
+  });
+
+  test('字格文字选区开启：触屏长按字格仍上报长按，右键仍弹右键菜单', () async {
+    await runJs(
+      harness('''
+ocrBox={page:3,group:0};
+ev('pointerdown',{clientX:100,target:ocrCharTarget});
+assert.equal(mouseOcrSelection,null);
+elapse();
+assert.deepEqual(longPresses(),['onMangaPageLongPress:{"page":3,"group":0}']);
+ev('pointerup',{clientX:100,target:ocrCharTarget});
+assert.equal(ends.length,0);
+ev('pointerdown',{pointerType:'mouse',button:2,clientX:50,clientY:60,target:ocrCharTarget});
+ev('pointerup',{pointerType:'mouse',button:2,clientX:50,clientY:60,target:ocrCharTarget});
+assert.equal(mouseOcrSelection,null);
+assert.ok(calls.includes('onMangaContextMenu:{"page":3,"group":0,"x":50,"y":60}'));
+''', enableMouseTextSelection: true),
+    );
+  });
+
+  test('字格文字选区关闭（移动端）：鼠标落在字格上不进入拖选状态', () async {
+    await runJs(
+      harness('''
+ev('pointerdown',{pointerType:'mouse',target:ocrCharTarget});
+assert.equal(mouseOcrSelectionEnabled,false);
+assert.equal(mouseOcrSelection,null);
+ev('pointerup',{pointerType:'mouse',target:ocrCharTarget});
+assert.equal(ends.length,1);
 '''),
     );
   });

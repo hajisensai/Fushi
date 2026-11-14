@@ -12,6 +12,7 @@
 namespace flutter_inappwebview_plugin {
 
 namespace {
+#ifndef HAVE_WPE_PLATFORM
 // Check if GL textures should be used (enabled by default, can be disabled)
 // Disable with FLUTTER_INAPPWEBVIEW_LINUX_DISABLE_GL=1 to force software rendering.
 bool UseGLTextureEnvOverride() {
@@ -70,12 +71,18 @@ bool IsOpenGLAvailable() {
 
   return available;
 }
+#endif
 
 bool UseGLTexture() {
-  if (!UseGLTextureEnvOverride()) {
-    return false;
-  }
-  return IsOpenGLAvailable();
+#ifdef HAVE_WPE_PLATFORM
+  // WPEPlatform's EGLImage belongs to WPE's rendering context. Passing it
+  // straight to Flutter's Impeller context can produce a valid-sized but
+  // entirely black texture. Use the pixel-buffer path for this backend; the
+  // legacy FDO path keeps its existing EGL sharing behavior.
+  return false;
+#else
+  return UseGLTextureEnvOverride() && IsOpenGLAvailable();
+#endif
 }
 }  // namespace
 
@@ -109,6 +116,9 @@ CustomPlatformView::CustomPlatformView(FlBinaryMessenger* messenger,
     debugLog("CustomPlatformView: using GL texture (hardware accelerated)");
   } else {
     texture_ = FL_TEXTURE(inappwebview_texture_new(webview_.get()));
+#ifdef HAVE_WPE_PLATFORM
+    webview_->SetUsePixelBufferTexture(true);
+#endif
     debugLog("CustomPlatformView: using pixel buffer texture (software)");
   }
 
