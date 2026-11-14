@@ -125,7 +125,7 @@ extension _MangaCompanion on _MangaFushiPageState {
       currentChapterIndex: online ? _shelfChapterIndex : -1,
       pageTexts: <String>[
         for (final MokuroBlock block in payload.images[page].blocks)
-          block.lines.join(),
+          mangaBlockTextLayout(block).text,
       ],
       readerOcrBusy: _wholeVolumeOcrRunning || _streamOcrBusy,
     );

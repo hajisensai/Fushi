@@ -52,6 +52,14 @@ String summarizeSyncReport(SyncRunReport r) {
       t.sync_now_audio_progress_in(count: r.audiobookPositionsReceived),
     if (r.audiobookPositionsSent > 0)
       t.sync_now_audio_progress_out(count: r.audiobookPositionsSent),
+    // BUG-4501：设置同步与互联服务配置也是这一轮的变化；只同步了设置的一轮
+    // 此前同样落到「无变化」。
+    if (r.settingsImported > 0)
+      t.sync_now_settings_in(count: r.settingsImported),
+    if (r.settingsExported > 0)
+      t.sync_now_settings_out(count: r.settingsExported),
+    if (r.serviceConfigsImported > 0)
+      t.sync_now_service_configs_in(count: r.serviceConfigsImported),
   ];
   final String head = parts.isEmpty ? t.sync_now_no_changes : parts.join(' · ');
   final String done = t.sync_now_done(detail: head);
