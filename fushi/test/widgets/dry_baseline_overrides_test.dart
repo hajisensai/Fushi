@@ -25,13 +25,23 @@ void main() {
     );
   }
 
+  /// 布局完成后像框架的 `_debugVerifyDryBaselines` 那样，在
+  /// `debugCheckingIntrinsics` 下同时取实际基线与 dry 基线。
+  (double?, double?) baselines(RenderBox box, TextBaseline baseline) {
+    RenderObject.debugCheckingIntrinsics = true;
+    try {
+      return (
+        box.getDryBaseline(box.constraints, baseline),
+        box.getDistanceToBaseline(baseline, onlyReal: true),
+      );
+    } finally {
+      RenderObject.debugCheckingIntrinsics = false;
+    }
+  }
+
   void expectDryMatchesActual(RenderBox box) {
     for (final TextBaseline baseline in TextBaseline.values) {
-      final double? actual = box.getDistanceToBaseline(
-        baseline,
-        onlyReal: true,
-      );
-      final double? dry = box.getDryBaseline(box.constraints, baseline);
+      final (double? dry, double? actual) = baselines(box, baseline);
       expect(dry, actual, reason: '$baseline');
     }
   }
@@ -66,15 +76,9 @@ void main() {
       );
       expectDryMatchesActual(box);
       if (c.key == 'overflows') {
-        expect(
-          box.getDistanceToBaseline(TextBaseline.alphabetic, onlyReal: true),
-          null,
-        );
+        expect(baselines(box, TextBaseline.alphabetic).$2, null);
       } else {
-        expect(
-          box.getDistanceToBaseline(TextBaseline.alphabetic, onlyReal: true),
-          isNotNull,
-        );
+        expect(baselines(box, TextBaseline.alphabetic).$2, isNotNull);
       }
     }
   });
@@ -94,6 +98,6 @@ void main() {
       find.byType(SrsNoBaseline),
     );
     expectDryMatchesActual(box);
-    expect(box.getDryBaseline(box.constraints, TextBaseline.alphabetic), null);
+    expect(baselines(box, TextBaseline.alphabetic).$1, null);
   });
 }
