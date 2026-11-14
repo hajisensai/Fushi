@@ -3227,11 +3227,16 @@ jobs:
         run: |
           set -euo pipefail
           bash native/fushi_ios_umbrella/build_ios_staticlib.sh device
+      # BUG-4641：--split-debug-info 把 Dart AOT 的 CodeSourceMap 换成 DWARF 栈、调试信息拆到
+      # 单独目录（App.framework 约 -15 MB）。不加 --obfuscate：只多省 0.7 MB，而仓里有按
+      # runtimeType.toString() 判断的代码，混淆后会坏。Dart 栈还原用 `flutter symbolize`
+      # + 下面按序号上传的 symbols（docs/agent/build.md「iOS 包体积与崩溃符号」）。
       - name: Build iOS release app (no codesign)
         if: github.event.inputs.testflight_only != 'true'
         working-directory: fushi
         run: >-
           flutter build ios --release --no-codesign
+          --split-debug-info=build/ios/dart-symbols-unsigned
           --build-name "${{ steps.channel.outputs.apple_build_version_name }}"
           --build-number "${{ steps.channel.outputs.release_sequence }}"
           --dart-define="FUSHI_BUILD_VERSION=${{ steps.channel.outputs.build_version_name }}"
@@ -3261,6 +3266,17 @@ jobs:
           path: fushi/build/ios/Release-iphoneos/*.dSYM
           if-no-files-found: warn
           retention-days: 90
+      # BUG-4641：Dart 侧的 dSYM——--split-debug-info 拆出来的 app.ios-arm64.symbols。没有它，
+      # 诊断日志 / 反馈里的 Dart 栈只剩 `abs 0x… virt 0x…`，还原不了。与 dSYM 同保留期。
+      - name: Upload iOS release Dart symbols (no codesign)
+        if: github.event.inputs.testflight_only != 'true'
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: ios-dart-symbols-unsigned-${{ steps.channel.outputs.release_sequence }}
+          path: fushi/build/ios/dart-symbols-unsigned
+          if-no-files-found: warn
+          retention-days: 90
       # 只在上面那道 Release Runner 符号核对真跑过之后才存（testflight_only 的 run 不走它）。
       - name: Save iOS umbrella staticlib to native artifact store
         if: steps.ios_native_store.outputs.hit != 'true' && github.event.inputs.testflight_only != 'true'
@@ -3288,6 +3304,23 @@ jobs:
           rm -rf "$payload_dir"
           mkdir -p "$payload_dir/Payload" "$out_dir"
           ditto "$app_dir" "$payload_dir/Payload/Runner.app"
+          # BUG-4642：`flutter build ios` 走的是 Xcode 的 build（不是 archive），
+          # DEPLOYMENT_POSTPROCESSING=NO，Runner 的 STRIP_STYLE=non-global 根本不执行；CocoaPods
+          # 嵌入的预编译 framework（Harfbuzz / PDFium / WebRTC …）两条路径都不 strip。这里对包里
+          # 每个 Mach-O 做 `strip -x`（只去本地符号，= STRIP_STYLE non-global；导出符号原样保留，
+          # DynamicLibrary.process().lookup 与 dlsym 要的都在），约 -27 MB。侧载工具会重签，
+          # strip 让未签名包里的签名失效无所谓。
+          bash "$GITHUB_WORKSPACE/tool/ios_strip_local_symbols.sh" "$payload_dir/Payload/Runner.app"
+          # strip 之后再核一遍真正发出去的 Runner：Dart 绑定 lookup 的每个 C 接口符号都还在、
+          # LINKEDIT 对齐仍合规。
+          runner="$payload_dir/Payload/Runner.app/Runner"
+          bash "$GITHUB_WORKSPACE/native/fushi_p2p/verify_abi.sh" "$runner" nm
+          bash "$GITHUB_WORKSPACE/native/fushi_fsrs/verify_abi.sh" "$runner" nm
+          bash "$GITHUB_WORKSPACE/native/fushi_compute/verify_abi.sh" "$runner" nm
+          bash "$GITHUB_WORKSPACE/native/fushi_web_core/verify_abi.sh" "$runner" nm
+          bash "$GITHUB_WORKSPACE/native/fushi_rwkv/verify_abi.sh" "$runner" nm
+          bash "$GITHUB_WORKSPACE/native/fushi_music/verify_abi.sh" --no-plugin "$runner" nm
+          bash "$GITHUB_WORKSPACE/native/fushi_corpus/verify_abi.sh" "$runner" nm
           rm -f "$out_dir"/fushi-*-ios.ipa
           (
             cd "$payload_dir"
@@ -3616,11 +3649,14 @@ jobs:
           plutil -lint "$RUNNER_TEMP/ExportOptions.plist"
           rm -f "$PROFILE_PATH" "$PROFILE_PLIST"
           echo "profile: $PROFILE_NAME ($PROFILE_UUID) bundle=$PROFILE_BUNDLE_ID expires=$PROFILE_EXPIRY"
+      # BUG-4641：同未签名构建，拆 Dart 调试信息、不混淆；符号目录与上面分开（两次构建的
+      # App.framework 不保证同一个 build id），按序号单独上传。
       - name: Build signed iOS App Store IPA
         if: steps.signing.outputs.signed == 'true'
         working-directory: fushi
         run: >-
           flutter build ipa --release
+          --split-debug-info=build/ios/dart-symbols-testflight
           --export-options-plist "$RUNNER_TEMP/ExportOptions.plist"
           --build-name "${{ steps.channel.outputs.apple_build_version_name }}"
           --build-number "${{ steps.channel.outputs.release_sequence }}"
@@ -3638,6 +3674,31 @@ jobs:
           bash native/fushi_rwkv/verify_abi.sh "$runner" nm
           bash native/fushi_music/verify_abi.sh --no-plugin "$runner" nm
           bash native/fushi_corpus/verify_abi.sh "$runner" nm
+      # BUG-4642：archive 动作下 Xcode 按 STRIP_STYLE=non-global 处理了 Runner（Mac 实测 strip -x
+      # 对它是空操作），但 CocoaPods 嵌入的预编译 framework（Harfbuzz / PDFium / inappwebview …）
+      # 原样进包，带着约 9.8 MB 本地符号表。对归档里的 .app 同样 strip -x，再从归档重新导出：
+      # exportArchive 按 ExportOptions 用发行证书重签每个嵌套 bundle，strip 让旧签名失效无妨。
+      # 脚本会核对每个二进制导出符号不变，之后再核一遍 Runner 的 C ABI。
+      - name: Strip local symbols from signed iOS archive and re-export IPA
+        if: steps.signing.outputs.signed == 'true'
+        working-directory: fushi
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive=build/ios/archive/Runner.xcarchive
+          app="$archive/Products/Applications/Runner.app"
+          bash "$GITHUB_WORKSPACE/tool/ios_strip_local_symbols.sh" "$app"
+          runner="$app/Runner"
+          bash "$GITHUB_WORKSPACE/native/fushi_p2p/verify_abi.sh" "$runner" nm
+          bash "$GITHUB_WORKSPACE/native/fushi_fsrs/verify_abi.sh" "$runner" nm
+          bash "$GITHUB_WORKSPACE/native/fushi_compute/verify_abi.sh" "$runner" nm
+          bash "$GITHUB_WORKSPACE/native/fushi_web_core/verify_abi.sh" "$runner" nm
+          bash "$GITHUB_WORKSPACE/native/fushi_rwkv/verify_abi.sh" "$runner" nm
+          bash "$GITHUB_WORKSPACE/native/fushi_music/verify_abi.sh" --no-plugin "$runner" nm
+          bash "$GITHUB_WORKSPACE/native/fushi_corpus/verify_abi.sh" "$runner" nm
+          rm -rf build/ios/ipa
+          xcodebuild -exportArchive -archivePath "$archive" -exportPath build/ios/ipa -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist"
+          ls -l build/ios/ipa/*.ipa
       # TestFlight 用户跑的是这份归档里的 Runner（与上面未签名包不是同一个二进制、UUID 不同），
       # 它的 dSYM 单独存（BUG-4102 / BUG-4075）。
       - name: Upload signed iOS archive dSYMs
@@ -3647,6 +3708,15 @@ jobs:
         with:
           name: ios-dsyms-testflight-${{ steps.channel.outputs.release_sequence }}
           path: fushi/build/ios/archive/Runner.xcarchive/dSYMs
+          if-no-files-found: warn
+          retention-days: 90
+      - name: Upload signed iOS archive Dart symbols
+        if: steps.signing.outputs.testflight == 'true'
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: ios-dart-symbols-testflight-${{ steps.channel.outputs.release_sequence }}
+          path: fushi/build/ios/dart-symbols-testflight
           if-no-files-found: warn
           retention-days: 90
       # TestFlight 上传是不可回收的外发，搬到下面的 `testflight` job：正式 / 测试版

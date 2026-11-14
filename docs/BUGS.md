@@ -33,10 +33,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3978 条。点号进各自文件。
+> 共 3981 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-4642](bugs/BUG-4642-ios-unsigned-ipa-unstripped.md) | ✅ | ✅ | 未签名 IPA 的 Mach-O 没 strip 本地符号 |
+| [BUG-4641](bugs/BUG-4641-ios-dart-split-debug-info.md) | ✅ | ✅ | iOS 出包没拆 Dart 调试信息 |
+| [BUG-4640](bugs/BUG-4640-slang-flat-map-aot-size.md) | ✅ | ✅ | slang flat map 让 Dart AOT 胖 15 MB 并撑爆 Windows gen_snapshot 栈 |
 | [BUG-4622](bugs/BUG-4622-manga-ocr-apostrophe.md) | ✅ | ✅ | 漫画 OCR 逐字节点的词内撇号扫描与小说不一致 |
 | [BUG-4621](bugs/BUG-4621-manga-ocr-dehyphenation.md) | ✅ | ✅ | 漫画 OCR 行尾断字导致整词查词失败 |
 | [BUG-4620](bugs/BUG-4620-cuda-budget-read-from-igpu-adapter.md) | ✅ | ✅ | CUDA 转录的显存预算读的是 DXGI 适配器 0，混合显卡笔记本上是核显 |
