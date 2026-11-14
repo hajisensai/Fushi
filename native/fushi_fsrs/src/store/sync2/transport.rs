@@ -2837,7 +2837,7 @@ impl SrsCore {
         }
         in_savepoint(&w, |c| {
             Ok(plan(c, profile, heads, location, true, &mut |t| {
-                self.note_settled(profile, t)
+                self.refresh_slice(profile, t)
             })?
             .expect("writable plan always answers"))
         })
