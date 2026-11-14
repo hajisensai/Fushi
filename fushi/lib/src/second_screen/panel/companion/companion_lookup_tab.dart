@@ -11,6 +11,8 @@ import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart'
+    show HorizontalDragScrollable;
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 

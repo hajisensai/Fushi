@@ -1,5 +1,6 @@
-/// FSRS 计算接口：排程（next_states）、由历史重建记忆状态、SM-2 起点换算、
-/// 参数优化与评估。唯一的生产实现是 native/fushi_fsrs（fsrs-rs）的 FFI 绑定
+/// FSRS 计算接口：参数默认值与校验、可提取度、参数优化与评估。排程（评分后的下一状态）与
+/// 记忆状态重建不在这里：由内核的确定性 FSRS（native/fushi_fsrs `sync2/fsrs_det.rs`）在
+/// 作答 / 回放里算。唯一的生产实现是 native/fushi_fsrs（fsrs-rs）的 FFI 绑定
 /// [FfiFsrsEngine]；本包不维护第二套公式（计划「前提 4」）。
 ///
 /// elapsed 一律是**小数天**：FSRS-7 的优势来自当天内复习，传整数天会把它抹掉
@@ -56,48 +57,12 @@ class SrsMemory {
       'SrsMemory(s=$stability, d=$difficulty, sf=$stabilityFast)';
 }
 
-/// 某个评分按钮之后的记忆状态与（未取整、未 fuzz 的）间隔天数。
-class SrsItemState {
-  const SrsItemState({required this.memory, required this.interval});
-
-  final SrsMemory memory;
-  final double interval;
-}
-
-/// 四个评分按钮各自的下一状态。
-class SrsNextStates {
-  const SrsNextStates({
-    required this.again,
-    required this.hard,
-    required this.good,
-    required this.easy,
-  });
-
-  final SrsItemState again;
-  final SrsItemState hard;
-  final SrsItemState good;
-  final SrsItemState easy;
-
-  SrsItemState forRating(int rating) => switch (rating) {
-    1 => again,
-    2 => hard,
-    3 => good,
-    4 => easy,
-    _ => throw ArgumentError.value(rating, 'rating', 'must be 1..4'),
-  };
-}
-
 /// 一次评分在 FSRS 历史里的形状：评分与距上一次评分的天数（小数，第一条为 0）。
 class SrsFsrsReview {
   const SrsFsrsReview({required this.rating, required this.deltaDays});
 
   final int rating;
   final double deltaDays;
-
-  Map<String, Object?> toJson() => <String, Object?>{
-    'rating': rating,
-    'deltaT': deltaDays,
-  };
 }
 
 /// 参数优化 / 评估的训练集，打包成 TypedData（BUG-3745）。
@@ -247,32 +212,6 @@ abstract interface class FsrsEngine {
 
   /// 参数校验：个数与算法一致、取值有限且被 fsrs-rs 接受。不合法返回原因，合法返回 null。
   String? validateParams(SrsAlgorithm algorithm, List<double> params);
-
-  SrsNextStates nextStates({
-    required SrsAlgorithm algorithm,
-    required List<double> params,
-    required double desiredRetention,
-    required SrsMemory? memory,
-    required double elapsedDays,
-  });
-
-  /// 由评分历史重建记忆状态；[starting] = 锚点换算出的起点（空 = 新卡）。
-  /// [reviews] 为空时返回 [starting]。
-  SrsMemory? memoryState({
-    required SrsAlgorithm algorithm,
-    required List<double> params,
-    required List<SrsFsrsReview> reviews,
-    SrsMemory? starting,
-  });
-
-  /// 由 SM-2 的 ease / 间隔近似记忆状态（历史不完整的卡，铁律 A ③）。
-  SrsMemory memoryStateFromSm2({
-    required SrsAlgorithm algorithm,
-    required List<double> params,
-    required double easeFactor,
-    required double intervalDays,
-    required double sm2Retention,
-  });
 
   /// 当前可提取度（复习排序用）。
   double retrievability({

@@ -124,3 +124,7 @@ fi
 bash "$SCRIPT_DIR/verify_raw_sql.sh" "$BIN" absent
 
 echo "OK: all $expected_count ffsrs_* symbols exported by $BIN"
+
+# 发布产物不带 ID 审计（见 verify_id_audit.sh）。本脚本的调用方都是随包 / 发布的产物；CI 给 Dart 测试编的
+# `id_audit` 库（.github/actions/test-native-linux、main.yml）不过这里。
+bash "$SCRIPT_DIR/verify_id_audit.sh" "$BIN" absent

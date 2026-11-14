@@ -5,6 +5,27 @@ part of '../sync_settings_schema.dart';
 // 设置页与根级深链处理（main.dart 的 `fushi://pair`）共用本文件的入口。编排本身
 // 在 `interconnect_link_pairing.dart`，这里只管弹窗、扫码页与 NFC 通道。
 
+/// 地址归属闸的确认框：[address] 记在 [ownerLabel] 名下，但此刻在这个地址上应答
+/// 的是另一台设备。确认 = 这一个地址脱离旧设备、作为新设备配对；旧设备的其余地址
+/// 不动。取消 / 关闭 = 中止配对。
+Future<bool> confirmInterconnectAddressReassign(
+  BuildContext context, {
+  required String address,
+  required String ownerLabel,
+}) => showFushiConfirmDialog(
+  context: context,
+  title: t.sync_pair_address_owner_title,
+  message: t.sync_pair_address_owner_body(address: address, device: ownerLabel),
+  confirmLabel: t.sync_pair_address_owner_confirm,
+  icon: FushiIcons.devices,
+);
+
+/// 归属确认框里旧设备的称呼：本行或同组的展示名，都没有就退回那条地址。
+String interconnectAddressOwnerLabel(
+  Iterable<FushiClientUrl> rows,
+  FushiClientUrl owner,
+) => interconnectPeerRowName(rows, owner) ?? owner.url;
+
 /// 本机能否用相机扫配对二维码。桌面通常是出示二维码的一方，Mac 用「粘贴配对链接」。
 bool get interconnectPairQrScanSupported =>
     !kIsWeb && (Platform.isAndroid || Platform.isIOS);
@@ -48,7 +69,27 @@ Future<bool> runInterconnectLinkPairingFlow(
     ),
     pinProvider: () async =>
         context.mounted ? promptInterconnectPairPin(context) : null,
+    confirmAddressReassign: (FushiClientUrl owner) async {
+      final List<FushiClientUrl> rows = await repo.getFushiClientUrls();
+      if (!context.mounted) return false;
+      return confirmInterconnectAddressReassign(
+        context,
+        address: owner.url,
+        ownerLabel: interconnectAddressOwnerLabel(rows, owner),
+      );
+    },
   );
+  if (result case InterconnectLinkPaired(
+    :final String baseUrl,
+    reassignedFromHostId: final String previousHostId?,
+  )) {
+    await reconcileDownloadExecutionHostAfterReassign(
+      appModel.prefsRepo,
+      await repo.getFushiClientUrls(),
+      url: baseUrl,
+      previousHostId: previousHostId,
+    );
+  }
   if (!context.mounted) return result is InterconnectLinkPaired;
   switch (result) {
     case InterconnectLinkPaired():

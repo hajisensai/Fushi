@@ -8,6 +8,7 @@ import 'dart:async';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/sync/interconnect_host_channel.dart';
 import 'package:fushi/src/sync/interconnect_subscription_client.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -45,6 +46,8 @@ class _RemoteSubscriptionsSectionState
   @override
   void dispose() {
     _poll?.cancel();
+    // 关掉各 host 的通道与连接；在途的探测 / 拉取以 cancelled 结束。
+    _client?.close();
     super.dispose();
   }
 
@@ -52,7 +55,14 @@ class _RemoteSubscriptionsSectionState
     final AppModel appModel = ref.read(appProvider);
     final InterconnectSubscriptionClient client = _client ??=
         InterconnectSubscriptionClient(repo: SyncRepository(appModel.database));
-    final List<HostSubscriptionTarget> targets = await client.probeAll();
+    final List<HostSubscriptionTarget> targets;
+    try {
+      targets = await client.probeAll();
+    } on InterconnectChannelException catch (e) {
+      // 页面已 dispose（client 关了）：静默结束；其它失败不该走到这里。
+      if (e.kind == InterconnectChannelFailure.cancelled) return;
+      rethrow;
+    }
     if (!mounted) return;
     setState(() => _targets = targets);
     if (targets.isEmpty) return;

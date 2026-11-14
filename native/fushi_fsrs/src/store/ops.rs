@@ -31,7 +31,7 @@
 //!   本机状态——纯计算（`derive_key` / `seal` / `open`；`seal_file` / `open_file` 只读写调用方给的路径），以及只走读连接
 //!   （WAL 快照，只见已提交的行）的命令；`digest` 只在末尾往写连接记一行摘要缓存，恰好落进另一笔写事务而那笔回滚，丢的
 //!   只是这行缓存。读写连接上未提交行的命令（浏览会话、`study`、`preview`）不算。
-//! - **worker 道**（[Lane]）：复习页的作答 / 排队 / 预览与本机手动排程走交互道，不排在同步的成批命令与媒体文件加解密
+//! - **worker 道**（[Lane]）：复习页的作答 / 排队 / 预览、本机手动排程与编辑类撤销的裁决（`undo_check`，只读、紧接着写回）走交互道，不排在同步的成批命令与媒体文件加解密
 //!   后面；媒体文件的流式加解密 / 哈希走文件道；内核读命令走查询道（只读连接池上并发）；其余走默认道。
 
 /// 收段通道没做完时这条命令要不要先做完它（见模块说明）。
@@ -178,7 +178,10 @@ pub(crate) const OPS: &[OpSpec] = &[
     op("study", Transparent).lane(Lane::Interactive),
     op("read", Transparent).lock_free().lane(Lane::Query),
     op("card_columns", Transparent),
-    op("stats_bundle", Transparent),
+    op("stats_report", Transparent),
+    op("stats_recall", Transparent),
+    op("stats_rows", Transparent),
+    op("stats_release", Transparent),
     op("anki_resolve", Transparent),
     op("anki_notes_info", Transparent),
     op("lineages", Transparent),
@@ -198,6 +201,8 @@ pub(crate) const OPS: &[OpSpec] = &[
     op("outbox_ack", Transparent),
     op("head", Transparent),
     op("relay_outbox", Transparent),
+    op("obsolete", Transparent),
+    op("obsolete_former", Transparent),
     op("obsolete_ack", Transparent),
     op("relay_ack", Transparent),
     op("media_known", Transparent).lock_free(),
@@ -208,6 +213,8 @@ pub(crate) const OPS: &[OpSpec] = &[
     op("local_anchor", Transparent),
     op("profile_footprint", Transparent),
     op("profile_purge", Transparent),
+    op("binding_get", Transparent),
+    op("binding_set", Transparent),
     op("derive_key", Transparent).lock_free(),
     op("seal", Transparent).lock_free(),
     op("open", Transparent).lock_free(),
@@ -244,6 +251,7 @@ pub(crate) const OPS: &[OpSpec] = &[
         .projecting()
         .local_write()
         .caches(),
+    op("undo_check", Settles).lane(Lane::Interactive),
     op("retire", Settles).projecting().local_write().caches(),
     op("dedup", Settles).projecting().local_write().caches(),
     op("migrate", Settles),
@@ -254,6 +262,10 @@ pub(crate) const OPS: &[OpSpec] = &[
     op("import", Settles).projecting().local_write().caches(),
     op("digest", Settles).lock_free(),
     op("digest_buckets", Settles).lock_free(),
+    op("digest_heal", Settles)
+        .projecting()
+        .local_write()
+        .caches(),
     op("media_record", Settles),
     op("media_hash", Settles).lock_free().lane(Lane::File),
     op("media_scan", Settles),

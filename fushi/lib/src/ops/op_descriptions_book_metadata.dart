@@ -8,8 +8,7 @@ import 'package:fushi/src/media/sources/reader_fushi_source.dart'
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/ops/ctl_book_metadata_routes.dart';
 import 'package:fushi/src/ops/op_describe_kit.dart';
-import 'package:fushi/src/ops/op_descriptions_library.dart'
-    show opCustomUndo, opUndoDisplay, opUndoStrings;
+import 'package:fushi/src/ops/op_descriptions_library.dart' show opUndoDisplay;
 
 /// 书的元数据与封面刮削（写回从对话框抽出的门面）的操作描述（spec §4）。
 ///

@@ -20,3 +20,4 @@
   LucaAdapter luca_;
   KnifeAdapter knife_;
   SoftpalAdapter softpal_;
+  System4Adapter system4_;

@@ -532,14 +532,21 @@ class MangaOcrJobRegistry {
   }
 
   /// 退出 app / 切换 Profile 等整体拆栈：把所有任务真停掉。
+  ///
+  /// 排队者也一并放弃（与 [cancel] 同理，BUG-2513）：只停运行中的，它一结束
+  /// 同书队列链就把下一个排队者 start 起来，拆栈之后还在跑。
   Future<void> cancelAll() async {
     final List<MangaOcrRunningJob> jobs = <MangaOcrRunningJob>[
       ..._jobs.values,
       for (final List<MangaOcrRunningJob> list in _finishing.values) ...list,
     ];
+    final bool hadAny =
+        _jobs.isNotEmpty || _queued.isNotEmpty || _paused.isNotEmpty;
     _jobs.clear();
     _finishing.clear();
+    _queued.clear();
     _paused.clear();
+    if (hadAny) _notifyChanged();
     for (final MangaOcrRunningJob running in jobs) {
       await running.cancel();
     }

@@ -13,6 +13,7 @@
 //! 重算，本模块的测试也对着它重算。
 
 pub mod alias;
+pub mod builtins;
 pub mod derive;
 pub mod rules;
 

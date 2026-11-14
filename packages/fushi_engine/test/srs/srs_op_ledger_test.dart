@@ -14,12 +14,12 @@ void main() {
 
   test('按操作名归并次数 / 字节 / 行数，取走后清零', () async {
     await SrsOpLedger.track(
-      'core:stats_bundle',
+      'core:stats_report',
       () async => 1,
       measure: (int _) => (3 << 20, 1000),
     );
     await SrsOpLedger.track(
-      'core:stats_bundle',
+      'core:stats_report',
       () async => 2,
       measure: (int _) => (1 << 20, 500),
     );
@@ -30,7 +30,7 @@ void main() {
     SrsOpLedger.mark('home_stats');
 
     final String summary = SrsOpLedger.takeSummary()!;
-    expect(summary, contains('core:stats_bundle 2x'));
+    expect(summary, contains('core:stats_report 2x'));
     expect(summary, contains('4.0MB rows=1500'));
     expect(summary, contains('sql:SELECT srs_field_edits 1x'));
     expect(summary, contains('2KB rows=3'));
@@ -71,18 +71,18 @@ void main() {
   test('读回超过阈值的单次操作回调 onHeavy；回调抛异常不影响记账', () {
     final List<String> heavy = <String>[];
     SrsOpLedger.onHeavy = heavy.add;
-    final int big = SrsOpLedger.begin('core:stats_bundle');
+    final int big = SrsOpLedger.begin('core:stats_report');
     SrsOpLedger.end(big, bytes: kSrsOpHeavyBytes, rows: 7);
     final int small = SrsOpLedger.begin('core:study');
     SrsOpLedger.end(small, bytes: 10);
     expect(heavy, hasLength(1));
-    expect(heavy.single, startsWith('core:stats_bundle '));
+    expect(heavy.single, startsWith('core:stats_report '));
     expect(heavy.single, contains('32.0MB rows=7'));
 
     SrsOpLedger.onHeavy = (String _) => throw StateError('sink');
-    final int again = SrsOpLedger.begin('core:stats_bundle');
+    final int again = SrsOpLedger.begin('core:stats_report');
     SrsOpLedger.end(again, bytes: kSrsOpHeavyBytes);
-    expect(SrsOpLedger.takeSummary(), contains('core:stats_bundle 2x'));
+    expect(SrsOpLedger.takeSummary(), contains('core:stats_report 2x'));
   });
 
   test('汇总最多列 kSrsOpSummaryTop 项，按总用时排序，多的记 +N', () {

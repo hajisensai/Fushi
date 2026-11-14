@@ -8,3 +8,4 @@ export 'src/fushi_rwkv_library.dart';
 export 'src/rwkv_native.dart';
 export 'src/rwkv_rows.dart';
 export 'src/rwkv_worker.dart';
+export 'src/rwkv_sched.dart';

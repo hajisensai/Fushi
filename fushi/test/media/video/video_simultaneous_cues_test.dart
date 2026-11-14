@@ -2,7 +2,7 @@
 // 复制 / 制卡合成一句（按显示顺序拼接）。钉 [video_simultaneous_cues.dart] 的判据：
 // 同起止 + 同 Layer + 同 Style（不比边距）才算一句；组内按画面自上而下排；文本按
 // `\N` 同一口径以空格拼接；srt/vtt（无 Style）不合并；上下文按「句」切。
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart';
 import 'package:fushi/src/media/video/video_simultaneous_cues.dart';
 import 'package:fushi_audio/fushi_audio.dart';

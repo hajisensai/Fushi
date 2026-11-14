@@ -280,7 +280,9 @@ void main() {
       epubCard,
       matches(
         RegExp(
-          r'onLongPress: \(\) =>\s*_showEpubItemMenu\(item, removeFromCollection: removeFromCollection\),',
+          // 副屏「库」模式（S5）起长按先经 _companionPressed（副屏接管时转成焦点驱动），
+          // 本机仍落到 _showEpubItemMenu。
+          r'onLongPress: \(\) =>[\s\S]{0,240}?_showEpubItemMenu\(\s*item,\s*removeFromCollection: removeFromCollection\s*\),',
         ),
       ),
     );
@@ -292,8 +294,15 @@ void main() {
 
     expect(srtDialog, contains('showLaunchAction: false'));
     expect(epubDialog, contains('showLaunchAction: false'));
-    expect(src, contains('onTap: () async {'));
-    expect(src, contains('await appModel.openMedia('));
+    // 副屏「库」模式（S5）起点按书卡的打开逻辑抽成 _openEpubCard（副屏焦点驱动
+    // 与本机点按共用）：书卡 onTap 只转发到它，它负责 openMedia 开书。
+    expect(epubCard, contains('onTap: () => _openEpubCard(item),'));
+    final String openCard = _sectionSource(
+      src,
+      'Future<void> _openEpubCard(MediaItem item) async {',
+      '\n  }\n',
+    );
+    expect(openCard, contains('await appModel.openMedia('));
   });
 }
 

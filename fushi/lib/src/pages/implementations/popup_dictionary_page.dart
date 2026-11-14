@@ -1006,6 +1006,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
       transparentDocumentBackground: true,
       result: entry.result,
       restoreScrollTop: entry.restoreScrollTop,
+      lookupSession: entry.lookupSession,
       isSearching: entry.isSearching,
       // TODO-951 症状C：常驻热槽（isWarmSlot）的 WebView 全程挂载、冷加载一次后复用，
       // 消除「每次查词重建弹窗 WebView 露白屏一瞬」。与 reader/video/首页查词同口径。
