@@ -135,6 +135,87 @@ void main() {
     });
   });
 
+  group('视频 OCR 保留原始文本，不采用漫画排版规则', () {
+    for (final ({String name, List<String> lines, String expected}) sample
+        in <({String name, List<String> lines, String expected})>[
+          (
+            name: '保留行尾连字符',
+            lines: <String>['Under-', 'stands'],
+            expected: 'Under-stands',
+          ),
+          (
+            name: '拉丁行界不补空格',
+            lines: <String>['HELLO', 'WORLD'],
+            expected: 'HELLOWORLD',
+          ),
+          (
+            name: '保留尾随空白与日语长音符',
+            lines: <String>['😀 A- ', 'Bー'],
+            expected: '😀 A- Bー',
+          ),
+        ]) {
+      for (final bool supplied in <bool>[false, true]) {
+        test('${sample.name}（${supplied ? '引擎字框' : '行几何'}）', () {
+          int offset = 0;
+          final List<MangaOcrTextRegion> regions = <MangaOcrTextRegion>[];
+          for (final String grapheme in sample.expected.characters) {
+            final int end = offset + grapheme.length;
+            if (grapheme.trim().isNotEmpty) {
+              regions.add(
+                MangaOcrTextRegion(
+                  rectangle: MokuroRect.fromLTRB(offset * 10, 0, end * 10, 20),
+                  utf16Start: offset,
+                  utf16End: end,
+                ),
+              );
+            }
+            offset = end;
+          }
+          final MokuroBlock block = MokuroBlock(
+            rectangle: const MokuroRect.fromLTRB(0, 0, 200, 100),
+            isVertical: false,
+            fontSize: 20,
+            zIndex: 0,
+            lines: sample.lines,
+            regions: supplied ? regions : null,
+          );
+          final List<GraphicSubtitleOcrChar> chars = graphicSubtitleOcrCharsOf(
+            block,
+          );
+          final List<String> graphemes = sample.expected.characters.toList();
+          expect(
+            chars,
+            hasLength(
+              graphemes.where((String g) => g.trim().isNotEmpty).length,
+            ),
+          );
+          expect(
+            chars.map((GraphicSubtitleOcrChar c) => c.sentence).toSet(),
+            <String>{sample.expected},
+          );
+          expect(<String>[
+            for (final GraphicSubtitleOcrChar c in chars)
+              graphemes[c.graphemeIndex],
+          ], graphemes.where((String g) => g.trim().isNotEmpty).toList());
+          if (supplied) {
+            expect(
+              <Rect>[for (final GraphicSubtitleOcrChar c in chars) c.rect],
+              <Rect>[
+                for (final MangaOcrTextRegion r in regions)
+                  Rect.fromLTRB(
+                    r.bounds.left,
+                    r.bounds.top,
+                    r.bounds.right,
+                    r.bounds.bottom,
+                  ),
+              ],
+            );
+          }
+        });
+      }
+    }
+  });
+
   group('VideoPauseOcrScope', () {
     test('BUG-3342：默认关闭（需用户手动开启）；未知值回退默认；存过的值照旧', () {
       expect(VideoPauseOcrScope.defaultScope, VideoPauseOcrScope.off);

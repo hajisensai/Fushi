@@ -2339,3 +2339,13 @@ jobs:
             Get-Content -LiteralPath $log.FullName -Tail 200
             Write-Output '::endgroup::'
           }
+          # 非 -v 的 flutter build 只转发 MSBuild 的 `error MSBxxxx` 行，INSTALL 步里
+          # cmake_install.cmake 的 `CMake Error ...` 原文被吞掉，日志里只剩一串 MSB3073。
+          # 在同一 runner、同一构建目录上重放 Debug 安装步，把真正的报错印出来。
+          $buildDir = 'fushi\build\windows\x64'
+          if (Test-Path -LiteralPath (Join-Path $buildDir 'cmake_install.cmake')) {
+            Write-Output '::group::cmake --install replay (Debug, last 120 lines)'
+            & cmake --install $buildDir --config Debug 2>&1 | Select-Object -Last 120
+            Write-Output "cmake --install exit code: $LASTEXITCODE"
+            Write-Output '::endgroup::'
+          }

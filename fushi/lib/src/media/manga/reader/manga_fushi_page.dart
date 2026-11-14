@@ -6150,6 +6150,11 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   Future<Object?> debugEvaluateJavascript(String source) async =>
       _controller?.evaluateJavascript(source: source);
 
+  /// 集成测试取证：抓取正文 WebView 的实际渲染像素。
+  @visibleForTesting
+  Future<Uint8List?> debugCaptureWebView() async =>
+      _controller?.takeScreenshot();
+
   @visibleForTesting
   Future<Object?> debugReaderDomSnapshot() async =>
       _controller?.evaluateJavascript(

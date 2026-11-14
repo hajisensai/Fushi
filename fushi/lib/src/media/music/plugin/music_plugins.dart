@@ -129,14 +129,29 @@ Future<MusicPluginStream> resolveMusicPluginStream(String path) async {
   if (ref == null || host == null) {
     throw const MusicPluginStreamUnavailable('插件音源不可用');
   }
+  return fetchFullMusicPluginStream(
+    host.manager().source(ref.pluginId),
+    ref.trackId,
+    quality: host.quality(path),
+  );
+}
+
+/// 只给了试听片段的曲目：播放、转写、下载都拒绝（下载入口据此提示，见
+/// music_plugin_download.dart）。
+final class MusicPluginTrialOnly extends MusicPluginStreamUnavailable {
+  const MusicPluginTrialOnly() : super('该曲目只能试听片段');
+}
+
+/// 向插件取一首的完整流（播放 [resolveMusicPluginStream] 与下载共用这一条判据）：插件报错
+/// 抛 [MusicPluginStreamUnavailable]，只给试听片段抛 [MusicPluginTrialOnly]。
+Future<MusicPluginStream> fetchFullMusicPluginStream(
+  MusicPluginSource source,
+  String trackId, {
+  required MusicPluginQuality quality,
+}) async {
   try {
-    final MusicPluginStream s = await host
-        .manager()
-        .source(ref.pluginId)
-        .stream(ref.trackId, quality: host.quality(path));
-    if (s.isTrial) {
-      throw const MusicPluginStreamUnavailable('该曲目只能试听片段');
-    }
+    final MusicPluginStream s = await source.stream(trackId, quality: quality);
+    if (s.isTrial) throw const MusicPluginTrialOnly();
     return s;
   } on MusicPluginException catch (e) {
     throw MusicPluginStreamUnavailable(e.message);
