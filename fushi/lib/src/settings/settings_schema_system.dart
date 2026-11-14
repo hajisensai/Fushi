@@ -65,7 +65,7 @@ import 'package:url_launcher/url_launcher.dart';
 /// 不可达——所以首页关着时这里出现对应的行，打开的是同一个页面、同一个函数。
 /// 首页开着时整段隐藏（不在设置里多一份重复入口，也不进搜索）。
 ///
-/// 反馈不在这里：它在「通用」分区（关于区）常驻一行 `system.feedback`，首页开关
+/// 反馈不在这里：它在「关于」分区（`system.section.about`）常驻一行 `system.feedback`，首页开关
 /// 都可见（反馈 45e1P7jN98 / cqx_Fv6kUY）。这里再放一行，首页关着时同一页会出现
 /// 两个反馈入口。
 SettingsSection _homeShortcutsSection() {
