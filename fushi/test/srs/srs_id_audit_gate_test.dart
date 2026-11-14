@@ -2,13 +2,15 @@
 // FUSHI_FSRS_ID_AUDIT=1（.github/actions/test-native-linux、main.yml / release.yml 的 unit-tests）。这里走的是 Dart 侧
 // 真实的那条路——Drift 自定义语句经 `ffsrs_store_exec` 进内核——故意漏写 `srs_id(?)`，证明这道门是通电的：漏写
 // 直接报错，而不是像发布构建那样静默查不到行。只在审计构建里跑；库被换成不带审计的构建时 CI 上这里会红
-// （skip 条件看的是 CI 设的环境变量，不看库）。
+// （CI 上 skip 条件看的是它设的环境变量，不看库）。本机 / 测试 worker 上加载到的是 prebuilt/<平台>/id_audit/ 那份
+// （`FushiFsrs.isIdAuditVariant`，调试构建与测试宿主默认用它）时同样跑：那个目录里被放进一份不带审计的库就红。
 import 'dart:io';
 
 import 'package:drift/drift.dart' show QueryRow, Variable;
 import 'package:fushi_core/fushi_core.dart' show srsIdType;
 import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi_srs/fushi_srs.dart' show FushiFsrs;
 
 import 'srs_test_support.dart';
 
@@ -18,10 +20,12 @@ Matcher get _idAuditError =>
     throwsA(predicate((Object e) => '$e'.contains('id audit'), 'id audit'));
 
 void main() {
-  final Object skip = Platform.environment['FUSHI_FSRS_ID_AUDIT'] == '1'
+  final Object skip =
+      Platform.environment['FUSHI_FSRS_ID_AUDIT'] == '1' ||
+          (FushiFsrs.instance?.isIdAuditVariant ?? false)
       ? false
       : 'needs a fushi_fsrs built with --features id_audit '
-            '(FUSHI_FSRS_ID_AUDIT=1)';
+            '(FUSHI_FSRS_ID_AUDIT=1, or the prebuilt id_audit variant)';
 
   test('Drift 语句漏写 srs_id(?)：审计构建里直接报错', () async {
     final SrsStorage st = await openSrsTestStorage();

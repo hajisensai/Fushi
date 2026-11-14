@@ -144,9 +144,76 @@ void main() {
     expect(engine, contains('asrEncoderBucketsForBudget('));
   });
 
-  test('PATCHES.md 记了 delta #10', () {
+  // Issue #3380 的后续：混合显卡笔记本上 DXGI 适配器 0 通常是核显，它的「预算」
+  // 其实是一部分系统内存。CUDA 会话跑在 N 卡上，拿核显的数去算一批几行、要不要
+  // 上 fp32，N 卡照样溢出——同样是「变慢 / 卡死但不报错」，所以钉住。
+  test('不给 deviceId 时，CUDA 已注册就回答 N 卡那块适配器', () {
+    final String plugin = maskComments(
+      File(
+        '$vendored/windows/flutter_onnxruntime_plugin.cpp',
+      ).readAsStringSync(),
+    );
+    final String handler = plugin.substring(
+      plugin.indexOf('::HandleGetDeviceMemoryInfo('),
+      plugin.indexOf('::HandleGetAvailableProviders('),
+    );
+    expect(handler, contains('has_device_id'));
+    expect(handler, contains('isCudaRegistered()'));
+    expect(handler, contains('CudaDeviceLuid('));
+    expect(handler, contains('QueryDeviceMemoryInfoByLuid('));
+    expect(handler, contains('QueryDeviceMemoryInfoByVendor('));
+    expect(
+      handler.indexOf('CudaDeviceLuid('),
+      lessThan(handler.indexOf('QueryDeviceMemoryInfoByVendor(')),
+      reason: '先按 LUID 精确对上 CUDA 设备，对不上才退到「第一块 N 卡」',
+    );
+    expect(handler, contains('"selection"'));
+
+    final String dxgi = maskComments(
+      File('$vendored/windows/src/dxgi_memory.cc').readAsStringSync(),
+    );
+    expect(dxgi, contains('AdapterLuid'));
+    expect(dxgi, contains('VendorId'));
+    final String cuda = maskComments(
+      File('$vendored/windows/src/cuda_provider.cc').readAsStringSync(),
+    );
+    expect(cuda, contains('"cuDeviceGetLuid"'));
+    // 平台线程上问「注册了没」不能等注册那把锁：注册要装载约 1 GB 的 DLL。
+    expect(
+      cuda,
+      contains(
+        'bool CudaPluginRegistry::IsRegistered() { return registered_.load(); }',
+      ),
+    );
+  });
+
+  test('Dart 侧不给 deviceId 就不发这个键（原生侧靠「缺席」区分显式 0）', () {
+    final String channel = maskComments(
+      File(
+        '$vendored/lib/src/flutter_onnxruntime_method_channel.dart',
+      ).readAsStringSync(),
+    );
+    expect(channel, contains('getDeviceMemoryInfo({int? deviceId})'));
+    expect(channel, contains("if (deviceId != null) 'deviceId': deviceId"));
+    expect(
+      maskComments(
+        File('$vendored/lib/src/onnxruntime.dart').readAsStringSync(),
+      ),
+      contains('getDeviceMemoryInfo({int? deviceId})'),
+    );
+    // 应用侧的预算查询不能显式点名适配器 0。
+    final String ort = maskComments(
+      File(
+        '${root.path}/fushi/lib/src/onnx/onnx_inference_ort.dart',
+      ).readAsStringSync(),
+    );
+    expect(ort, contains('_runtime.getDeviceMemoryInfo()'));
+  });
+
+  test('PATCHES.md 记了 delta #10 与 #16', () {
     final String md = File('$vendored/PATCHES.md').readAsStringSync();
     expect(md, contains('getDeviceMemoryInfo'));
     expect(md, contains('dxgi_memory'));
+    expect(md, contains('cuDeviceGetLuid'));
   });
 }
