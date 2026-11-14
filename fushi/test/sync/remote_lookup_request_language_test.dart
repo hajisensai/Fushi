@@ -11,6 +11,7 @@ import 'package:fushi/src/mining/window_capture_channel.dart';
 import 'package:fushi/src/sync/fushi_remote_lookup_client.dart';
 import 'package:fushi/src/sync/game_stream_client.dart';
 import 'package:fushi/src/sync/game_stream_library_host.dart';
+import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
@@ -103,6 +104,17 @@ class _LanguageLookup extends _LegacyPopupLookup
 }
 
 void main() {
+  // V-B4：明文地址拿凭据前要当场 ping 核对 hostId；这些用例的对端是 MockClient，
+  // 把身份核对视为通过。
+  setUp(() {
+    resetInterconnectRaceCache();
+    debugInterconnectAddressProbeOverride =
+        (FushiClientUrl candidate, String? hostId) async => true;
+  });
+  tearDown(() {
+    debugInterconnectAddressProbeOverride = null;
+    resetInterconnectRaceCache();
+  });
   group('remoteLookupLanguageOf', () {
     test('取裁掉空白后的非空字符串', () {
       expect(

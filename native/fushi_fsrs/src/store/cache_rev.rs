@@ -1,16 +1,16 @@
 //! 本机缓存的推导口径版本（收掉 Dart 写路径第 4 步）：本机缓存（`srs_notes_cache` / `srs_cards_cache` /
-//! `srs_stat_reviews`）按哪一版推导规则建的。存在本机状态行（`srs_local_state.json` 的 `cacheRev`），是内核持有的键
-//! （store/local_state.rs `KERNEL_HELD_KEYS`）：只有这里写，Dart 整行重写抹不掉它。
+//! `srs_stat_reviews`）按哪一版推导规则建的。存在本机状态行（`srs_local_state.json` 的 `cacheRev`），这个键只有这里写
+//! （整行只有内核写，store/local_state.rs）。
 //!
 //! 以前由 Dart 持有（`SrsDbStore._cacheRevision` / `_kCacheRevision` / `_upgradeCaches`）：打开时比内存里的版本，
-//! 低了就在一笔 Drift 事务里发一串 `refresh_caches` / `backfill_*`，再整行写一次本机状态。现在打开时 Dart 只发一条
+//! 低了就在一笔事务里发一串 `refresh_caches` / `backfill_*`，再整行写一次本机状态。现在打开时 Dart 只发一条
 //! `cache_config_set`（注册本 profile 的缓存配置，见 store/mod.rs `cache_configs`），内核在**同一个 SAVEPOINT** 里
 //! 读出存着的版本、补做落后的各级、记下 [CACHE_REVISION]（[upgrade]）；重建缓存（`rebuild_caches`）同样在它的
 //! SAVEPOINT 里记下当前版本（[record]）。
 //!
 //! 兼容：存量库的这个键就是旧版 Dart 写的同一个键（旧值原样当起点）；有本机状态行却没有这个键 = 比修订号 1 还老，
 //! 按 0；还没有本机状态行（新设备 / 覆盖恢复备份后）= 缓存要么还没有、要么随即整份重建，按当前规则算——行第一次
-//! 写下时由合并协议补上当前版本（local_state.rs `held_default`）。
+//! 写下时取当前版本（local_state.rs `fresh`）。
 //!
 //! 版本历史（缓存加了新的派生列、而存量库里可能已有喂它的修改记录时 +1，并在 [upgrade] 里补一步定向重算）：
 //!
@@ -62,7 +62,7 @@ pub(crate) fn stored(c: &Connection, profile: &str) -> Result<Option<i64>, Strin
     }))
 }
 
-/// 记下当前版本（缓存刚按当前规则建好 / 补好）。还没有本机状态行就不写：行第一次写下时由合并协议补上当前版本。
+/// 记下当前版本（缓存刚按当前规则建好 / 补好）。还没有本机状态行就不写：行第一次写下时取当前版本（local_state.rs `fresh`）。
 pub(crate) fn record(c: &Connection, profile: &str) -> Result<(), String> {
     c.prepare_cached(
         "UPDATE srs_local_state SET json = json_set(json, '$.cacheRev', ?2) \
@@ -209,7 +209,7 @@ mod tests {
         .to_string();
         dispatch(
             d,
-            json!({"op": "apply", "profile": P, "now": T0, "caches": caches()}),
+            json!({"op": "apply", "profile": P, "now": T0, "caches": caches(), "legacyDevice": "dev"}),
             Some(input),
         )
         .unwrap();
@@ -297,9 +297,9 @@ mod tests {
         assert_eq!(rev(&d), Some(CACHE_REVISION));
     }
 
-    /// 还没有本机状态行：注册不补也不建行；行第一次写下时取当前版本，交来的 `cacheRev` 不认，之后也改不动。
+    /// 还没有本机状态行：注册不补也不建行；行第一次写下时取当前版本，之后的写入不动它。
     #[test]
-    fn a_new_row_starts_at_the_current_revision_and_the_key_is_kernel_held() {
+    fn a_new_row_starts_at_the_current_revision() {
         let d = Device::new("cr-new");
         let r = dispatch(
             &d,
@@ -314,11 +314,12 @@ mod tests {
             "no local state row is created by registering"
         );
         let w = d.core.writer().unwrap();
-        crate::store::local_state::upsert(&w, P, r#"{"revision":1,"cacheRev":2}"#).unwrap();
+        crate::store::local_state::ensure(&w, P).unwrap();
         drop(w);
         assert_eq!(rev(&d), Some(CACHE_REVISION));
         let w = d.core.writer().unwrap();
-        crate::store::local_state::upsert(&w, P, r#"{"revision":2,"cacheRev":4}"#).unwrap();
+        let mut r = json!({"marks": {"landed": 2}});
+        crate::store::local_state::persist_projected(&w, P, None, &mut r).unwrap();
         drop(w);
         assert_eq!(rev(&d), Some(CACHE_REVISION));
     }

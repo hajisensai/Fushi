@@ -15,14 +15,17 @@ import 'scheduler.dart';
 class SrsLogContext {
   SrsLogContext({
     required this.profileUid,
-    required this.clock,
+    required this.nextHlc,
     required this.now,
     required this.day,
     String Function(int nowMs)? newId,
   }) : _newId = newId ?? ((int ms) => uuidV7(nowMs: ms));
 
   final String profileUid;
-  final HlcClock clock;
+
+  /// 下一条日志的 HLC（参数是可信时间毫秒）。本机的 HLC 时钟在内核里（native/fushi_fsrs/src/store/
+  /// legacy_clock.rs），这里只要一个能逐条给出 HLC 的来源。
+  final Hlc Function(int nowMs) nextHlc;
 
   /// (可信时间毫秒, 时间来源)。
   final (int, SrsTimeSource) Function() now;

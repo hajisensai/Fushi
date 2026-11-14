@@ -390,13 +390,23 @@ extension _VideoQuality on _VideoFushiPageState {
       _adaptiveSeenSeekGeneration = seekGeneration;
       _adaptiveQuality.noteSeek();
     }
-    // 暂停时不评估：暂停本来就不下载，缓冲深度与卡顿都不反映网况。
-    if (!controller.isPlaying) return;
+    // 暂停时不评估：暂停时缓冲深度与卡顿都不反映「播放时跟不跟得上」；跨暂停的
+    // 两拍不构成相邻读数（BUG-4459 T4 的深度走向判据）。
+    if (!controller.isPlaying) {
+      _adaptiveQuality.notePlaybackPaused();
+      return;
+    }
 
+    final double? cacheSeconds = controller.networkCacheSeconds.value;
     final AdaptiveQualityDecision? decision = _adaptiveQuality.tick(
       currentIndex: client.adaptiveQualityIndex ?? -1,
       buffering: controller.isBuffering,
-      cacheSeconds: controller.networkCacheSeconds.value,
+      cacheSeconds: cacheSeconds,
+      cacheReachesEnd: adaptiveCacheReachesEnd(
+        positionMs: controller.positionMs,
+        durationMs: controller.durationMs,
+        cacheSeconds: cacheSeconds,
+      ),
     );
     if (decision == null) return;
     unawaited(_applyAdaptiveQuality(client, decision));
@@ -413,22 +423,46 @@ extension _VideoQuality on _VideoFushiPageState {
     _adaptiveQualitySwitching = true;
     try {
       final int posMs = _controller?.resumePositionMs ?? 0;
-      client.adaptiveQualityIndex = decision.targetIndex;
-      await _reportRemotePlaybackStopped(
-        info: _effectiveRemoteInfo,
-        client: _effectiveRemoteClient,
-        positionMs: posMs,
-        generation: _remotePlaybackGeneration,
+      // 写入 → 重载 → 失败回滚（BUG-4460）：取流 / 起播没立起来时，共享的
+      // `adaptiveQualityIndex` 回到原档，页面重试与下一次同 scope 起播不会沿用
+      // 一个没起来的档。只覆盖取流 / 起播阶段；起播之后播放器异步暴露的失败
+      // （转码分段出错）走页面既有的播放失败路径。
+      final bool ok = await runAdaptiveQualitySwitch(
+        read: () => client.adaptiveQualityIndex,
+        write: (int? index) => client.adaptiveQualityIndex = index,
+        targetIndex: decision.targetIndex,
+        reload: () async {
+          // 重载 = 丢掉旧档的流：同步释放（BUG-4461），不等它再取新档。
+          _releaseRemotePlayback(
+            info: _effectiveRemoteInfo,
+            client: _effectiveRemoteClient,
+            generation: _remotePlaybackGeneration,
+          );
+          await _reportRemotePlaybackStopped(
+            info: _effectiveRemoteInfo,
+            client: _effectiveRemoteClient,
+            positionMs: posMs,
+            generation: _remotePlaybackGeneration,
+          );
+          if (!mounted) return false;
+          await _loadRemoteEpisode(
+            _currentEpisode < 0 ? 0 : _currentEpisode,
+            // 与手动换档同理：必须是 explicitCue，否则 near-end 判据会把「快看完时
+            // 换档」直接归零回片头。
+            startIntent: EpisodeStartIntent.explicitCue,
+            initialPositionMsOverride: posMs,
+          );
+          // `_loadRemoteEpisode` 的失败只落在 `_failed`（自适应只在播放中采样，
+          // 进来时它是 false）。
+          return mounted && !_failed;
+        },
       );
       if (!mounted) return;
-      await _loadRemoteEpisode(
-        _currentEpisode < 0 ? 0 : _currentEpisode,
-        // 与手动换档同理：必须是 explicitCue，否则 near-end 判据会把「快看完时换档」
-        // 直接归零回片头。
-        startIntent: EpisodeStartIntent.explicitCue,
-        initialPositionMsOverride: posMs,
-      );
-      if (!mounted) return;
+      if (!ok) {
+        // 没换成：不报「已自动调整」，观察窗从头来，别拿失败前的拍再判一次。
+        _adaptiveQuality.reset();
+        return;
+      }
       // `qualityPresets` 在 host 不支持转码时是空表，而 `_hostTranscodeAvailable`
       // 正由上一行 `_loadRemoteEpisode` 内部的 /streamurl 响应重新赋值——换档期间
       // host 用户关掉「为对端转码视频」就足以让表变空。调用点是 unawaited，越界会
@@ -491,6 +525,11 @@ extension _VideoQuality on _VideoFushiPageState {
         server.adaptiveQualityIndex = null;
       }
     }
+    _releaseRemotePlayback(
+      info: _effectiveRemoteInfo,
+      client: _effectiveRemoteClient,
+      generation: _remotePlaybackGeneration,
+    );
     await _reportRemotePlaybackStopped(
       info: _effectiveRemoteInfo,
       client: _effectiveRemoteClient,
@@ -546,6 +585,11 @@ extension _VideoQuality on _VideoFushiPageState {
     client.streamVariantIndex = index;
     // 媒体服务器换版本 = 换一个文件：先报停旧会话（与换档同口径，服务器据此结束
     // 旧版本的转码）；扩展线路没有会话能力，这一步是空操作。
+    _releaseRemotePlayback(
+      info: _effectiveRemoteInfo,
+      client: _effectiveRemoteClient,
+      generation: _remotePlaybackGeneration,
+    );
     await _reportRemotePlaybackStopped(
       info: _effectiveRemoteInfo,
       client: _effectiveRemoteClient,

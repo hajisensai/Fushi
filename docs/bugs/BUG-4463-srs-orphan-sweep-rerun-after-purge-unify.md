@@ -21,12 +21,25 @@
     `profile_purge`）在每个库上再跑一次；之后照旧只跑一次。不升 schema、不改同步协议。
   - `srs_profile_cleanup.dart` `sweepOrphans`：`profile_merge/<旧 uid>` 标记涉及的旧 uid 与目标 uid 不算无主（标记值读不懂时
     旧 uid 照样保护）；有进行中并入时不记完成标记，下次进来再扫。主库读不出任何 uid 时照旧什么都不删。
-  - 不清的（宁可少删）：只剩 meta 键、表里已没有行的 uid（Rust 旧 `profile_purge` 留下的 `…/<uid>/…` 键）——键里的 UUID 段
-    可能是 profile 也可能是设备 ID（`sync2_device_hint/<设备>`、`sync2_device_ext/<profile>/<设备>`），扫描分不清，
-    按设备 ID 去删会误删活 profile 的设备记录；不在任何 uid 名下、也没被任何操作引用的 `sync2_deps`：只在扫到至少一个
-    无主 uid 时随 `profile_purge` 的 GC 回收。
+  - 第一版不清的两类，跟进里补上（扫描的收尾 `profile_data.rs` `SrsCore::orphan_sweep_done`，一个 savepoint；完成标记
+    再换成 `profile_orphan_sweep_v3`，v2 扫过的库再扫一次）：
+    - 只剩 meta 键、表里已没有行的 uid（Rust 旧 `profile_purge` 留下的 `…/<uid>/…` 键、并入旧实现没删的
+      `sync2_digest/<uid>` 等）。键里的 UUID 段可能是 profile 也可能是设备 ID（`sync2_device_hint/<设备>`、
+      `sync2_device_ext/<profile>/<设备>`），所以不按「键里出现的 UUID」找，只认登记过写法的前缀里 profile 所在的那一段
+      （`META_PROFILE_LAST` / `META_PROFILE_FIRST`；`sync2_device_hint/` 与并入标记不取），源码扫描测试钉住「内核里每个
+      带 `{profile}` 的键前缀都登记过」。主库现存 uid、进行中并入的 uid 不动；「表里没有行」与删除在同一个 savepoint 里判。
+      留着的害处：同一 uid 以后被重新用上（重新关联到同一个同步集合）时，残留的 `sync2_retired/<uid>/<设备>` 让投递
+      不再等那些设备（`devices.rs` `deps_ready`），残留的设备扩展显示旧名；体积可忽略。
+    - 没被任何操作引用的 `sync2_deps`（并入旧实现删 `sync2_ops` 不回收；换身份 `transport.rs` `rotate` 撤出本机操作
+      后也会留下）。只占体积、没有行为后果：一行 `sync2_deps` 只经 `sync2_ops.deps` 读到。以前只在扫到至少一个无主
+      uid 时随 `profile_purge` 的 GC 回收，现在收尾总是回收一次。
 - **[x] ② 已加自动化测试** — `fushi/test/srs/srs_profile_cleanup_test.dart`：v1 已扫过的库里造采用旧实现的残留
   （真实 `SrsDbStore.open` 后按旧表清单删）→ 扫描清干净（每张带 `profile_uid` 的表、按 profile 的 meta 键为零）、活 profile
   逐表行数与 meta 键不变、再扫无变化；进行中并入的两个 uid 一行不少、无关无主 uid 照删、不记完成标记；没有可比的活 uid
   时什么都不删。Rust `profile_data.rs` `profile_uids_lists_every_owner_and_the_sweep_marker` 补「v1 标记不算完成」。
-- **备注**：扫描对每个无主 uid 照旧先开副本导出 `.fushisrs` 备份再删，残留 uid 也会多一份备份文件（BUG-4292 已记）。
+  跟进：`profile_data.rs` 的 `sweep_rest_*`（只剩 meta 键的无主 uid 清掉、活 profile 名下带设备 ID 的键与
+  `sync2_device_hint/<设备>` 不动、`keep` 里的 uid 与表里还有行的 uid 不动、孤立 `sync2_deps` 回收而被引用的不动、
+  重复调用幂等）、`every_profile_meta_key_prefix_is_classified`（源码扫描）；`srs_profile_cleanup_test.dart` 两条
+  （v2 已扫过的库再扫一次清掉两类残留、再扫无变化；进行中并入的目标 uid 只剩 meta 键时不动、不记完成标记）。
+- **备注**：扫描对每个无主 uid 照旧先开副本导出 `.fushisrs` 备份再删，残留 uid 也会多一份备份文件（BUG-4292 已记）；
+  只剩 meta 键的 uid 没有行可导出，不备份、也不动它的媒体目录。

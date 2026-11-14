@@ -97,6 +97,7 @@ class _AiAgentHistoryPageState extends State<AiAgentHistoryPage> {
     if (controller == null || _busy) return;
     setState(() => _busy = true);
     int superseded = 0;
+    int partial = 0;
     String? failure;
     try {
       // 倒序撤销（spec §5.3）：rows 已按时间倒序。
@@ -106,6 +107,7 @@ class _AiAgentHistoryPageState extends State<AiAgentHistoryPage> {
           '${row.id}',
         );
         if (result.status == AgentUndoStatus.superseded) superseded++;
+        if (result.status == AgentUndoStatus.partial) partial++;
         if (result.status == AgentUndoStatus.failed) {
           failure ??= result.message ?? row.opId;
         }
@@ -117,6 +119,8 @@ class _AiAgentHistoryPageState extends State<AiAgentHistoryPage> {
       FushiToast.show(msg: t.ai_agent_undo_failed(reason: failure));
     } else if (superseded > 0) {
       FushiToast.show(msg: t.ai_agent_superseded);
+    } else if (partial > 0) {
+      FushiToast.show(msg: t.ai_agent_undo_partial);
     }
     await _load();
   }
@@ -212,9 +216,11 @@ class _AiAgentHistoryPageState extends State<AiAgentHistoryPage> {
   Widget _actionTile(AiAgentActionRow row) {
     final bool failed = row.resultCode != 'ok';
     final String status = row.undoneAt != null
-        ? (row.undoStatus == 'superseded'
-              ? t.ai_agent_superseded
-              : t.ai_agent_undone)
+        ? switch (row.undoStatus) {
+            'superseded' => t.ai_agent_superseded,
+            'partial' => t.ai_agent_undo_partial,
+            _ => t.ai_agent_undone,
+          }
         : failed
         ? t.ai_agent_tool_failed(code: row.resultCode)
         : row.beforeText != null || row.afterText != null
