@@ -337,7 +337,7 @@ void TestLaneWriteIsAnEngineExactLane() {
   const fushi_voice_hook::TextLaneWrite write = kt::MakeLaneWrite(*line, 4321);
   Check(write.source_kind == fushi_voice_hook::kTextSourceKirikiri,
         "source kind is KiriKiri");
-  Check(write.source_kind == 18u, "source kind wire id 18");
+  Check(write.source_kind == 19u, "source kind wire id 19");
   Check(write.is_utf8 == 0, "UTF-16 payload");
   Check(write.byte_len == text.size() * sizeof(wchar_t), "byte length");
 

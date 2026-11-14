@@ -38,6 +38,81 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-4388](bugs/BUG-4388-gal-kirikiri-bootstrap-silent-stall.md) | ✅ | ✅ | KiriKiri 查词 / KAG 文本道 bootstrap 静默停住：addHook 一个钩子名被拒即整个传感器作废，安装链各出口无诊断 |
+> 共 4001 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4625](bugs/BUG-4625-linux-wpe-click-pointerup-button-mask.md) | ✅ | ✅ | Linux 漫画阅读器 OCR 文字无法点击查词 |
+| [BUG-4624](bugs/BUG-4624-linux-wpe-resize-stride-crash.md) | ✅ | ✅ | Linux 漫画页面出现条纹，调整窗口大小时阅读器崩溃 |
+| [BUG-4623](bugs/BUG-4623-linux-wpe-borrowed-pixels-refcount.md) | ✅ | ✅ | Linux 漫画阅读器释放 WPE 借用像素缓冲区后崩溃 |
+| [BUG-4622](bugs/BUG-4622-manga-ocr-apostrophe.md) | ✅ | ✅ | 漫画 OCR 逐字节点的词内撇号扫描与小说不一致 |
+| [BUG-4621](bugs/BUG-4621-manga-ocr-dehyphenation.md) | ✅ | ✅ | 漫画 OCR 行尾断字导致整词查词失败 |
+| [BUG-4620](bugs/BUG-4620-cuda-budget-read-from-igpu-adapter.md) | ✅ | ✅ | CUDA 转录的显存预算读的是 DXGI 适配器 0，混合显卡笔记本上是核显 |
+| [BUG-4533](bugs/BUG-4533-flatpak-x11-mesa-crash.md) | ✅ | ✅ | flatpak-x11-mesa-crash |
+| [BUG-4521](bugs/BUG-4521-mokuro-import-volumes-not-grouped.md) | ✅ | ✅ | mokuro catalog import does not group volumes into a series |
+| [BUG-4510](bugs/BUG-4510-dict-materialize-reprobe-loop.md) | ✅ | ✅ | 词典物化探测自我喂养：预算后回报触发重装，重装又对全部目录起新 worker，启动卡在 rebuild-dict-paths、窗口无响应 |
+| [BUG-4509](bugs/BUG-4509-fushi-db-corrupt-retry-loop.md) | ✅ | ✅ | 主库页损坏（SQLITE_CORRUPT）不进终态，启动错误屏「重试」无限循环 |
+| [BUG-4508](bugs/BUG-4508-screen-ocr-mlkit-unavailable-despite-ready.md) | 🚧 | 🚧 | 悬浮球截屏 OCR 一直报「系统 OCR 模型未就绪」，配置弹窗却说已就绪 |
+| [BUG-4507](bugs/BUG-4507-audiobook-notification-metadata-flood-anr.md) | ✅ | ✅ | 有声书播放中 Android 无响应（ANR）：媒体通知元数据被重复推送几千次 |
+| [BUG-4506](bugs/BUG-4506-migration-uninstall-hibiki-button-noop.md) | ✅ | ✅ | 首页「卸载 Hibiki」按钮点了没反应，迁移完成提示关不掉 |
+| [BUG-4505](bugs/BUG-4505-i18n-zh-leak-non-zh-locales.md) | ✅ | ✅ | 非中文界面里冒出简体中文（Anime4K 首次提示等） |
+| [BUG-4504](bugs/BUG-4504-lyrics-sweep-furigana-lit-early.md) | ✅ | ✅ | 歌词模式逐字扫过时振假名起句即点亮、先于基字 |
+| [BUG-4503](bugs/BUG-4503-voicevox-streaming-talk-styles-filtered.md) | ✅ | ✅ | VOICEVOX 0.26 风格列表为空，选不了说话人 |
+| [BUG-4502](bugs/BUG-4502-feedback-account-seen-lost-on-relaunch.md) | ✅ | ✅ | feedback-account-seen-lost-on-relaunch |
+| [BUG-4501](bugs/BUG-4501-sync-summary-ignores-settings.md) | ✅ | ✅ | sync-summary-ignores-settings |
+| [BUG-4500](bugs/BUG-4500-srs-native-card-summary-tap-triggers-lookup.md) | 🚧 | 🚧 | 复习原生卡面点「语法详情」折叠标题会同时弹出查词 |
+| [BUG-4499](bugs/BUG-4499-popup-image-lightbox-persists-across-lookups.md) | ✅ | ✅ | 查词弹窗里点开的放大图跨查词残留，下次查别的词仍盖在结果上 |
+| [BUG-4498](bugs/BUG-4498-study-clock-idle-resume-recredits.md) | ✅ | ✅ | 空闲门过期后恢复输入，超出阈值的暂停被整段算回学习时长 |
+| [BUG-4496](bugs/BUG-4496-collection-subtitle-batch-player-not-refreshed.md) | ✅ | ✅ | 整季下载字幕后当前视频的字幕列表仍为空，要重开视频才有 |
+| [BUG-4495](bugs/BUG-4495-music-lyrics-latin-lookup-mid-word.md) | ✅ | ✅ | 音乐歌词点英文单词中间的字母只查到后半截 |
+| [BUG-4494](bugs/BUG-4494-music-song-list-local-rows-no-cover.md) | ✅ | ✅ | 音乐「歌曲」分区本地曲目行全是音符图标，不显示封面 |
+| [BUG-4493](bugs/BUG-4493-music-artist-combined-credit-not-split.md) | ✅ | ✅ | 音乐艺人列表同一组人散成多条：扫描入库不拆合写的艺人署名 |
+| [BUG-4492](bugs/BUG-4492-manga-ctc-ocr-model-revision-404.md) | ✅ | ✅ | manga-ctc-ocr-model-revision-404 |
+| [BUG-4491](bugs/BUG-4491-android-permission-kill-no-killuid-prefix-misreport.md) | ✅ | ✅ | 华为改所有文件访问权限后被系统结束报成意外退出 |
+| [BUG-4490](bugs/BUG-4490-android-exit-schedulecrash-failed-misreport.md) | ✅ | ✅ | Android 系统 scheduleCrash 失败结束冻结进程被报成崩溃 |
+| [BUG-4481](bugs/BUG-4481-srs-edit-undo-blind-overwrite.md) | ✅ | ✅ | srs-edit-undo-blind-overwrite |
+| [BUG-4480](bugs/BUG-4480-srs-by-id-access-not-profile-scoped.md) | 🚧 | 🚧 | 复习库按 id 的读写不按 profile 过滤：点名的 profile 与 id 不属于同一份时写错库 |
+| [BUG-4479](bugs/BUG-4479-mine-shortcut-focused-entry.md) | ✅ | ✅ | mine-shortcut-focused-entry |
+| [BUG-4478](bugs/BUG-4478-srs-sync2-bootstrap-channel-never-selected.md) | ✅ | ✅ | 复习同步 v2 的新设备收段通道在生产里一次都不会被选中 |
+| [BUG-4477](bugs/BUG-4477-srs-adopt-deletes-decks-without-notes.md) | ✅ | ✅ | 复习同步关联只看笔记，只建了牌组 / 改了预设的设备被自动采用对方 uid，自建牌组与预设被删 |
+| [BUG-4476](bugs/BUG-4476-gal-dom-no-voice-mining-spins.md) | ✅ | ✅ | TyranoScript 无语音行制卡时浮窗制卡按钮长时间转圈 |
+| [BUG-4475](bugs/BUG-4475-lookup-caption-tap-no-dismiss.md) | ✅ | ✅ | 查词弹窗打开时点窗口最顶部关不掉弹窗 |
+| [BUG-4474](bugs/BUG-4474-cold-start-dict-history-decode-on-ui-isolate.md) | ✅ | ✅ | 冷启动白屏：十条查词历史（几 MB JSON）每次都在 UI 线程同步解析，挡住首帧 |
+| [BUG-4473](bugs/BUG-4473-gal-measured-lookup-lost-after-screen-switch.md) | ✅ | ✅ | 切屏后游戏内查词（实测排版路线）失效，要到下一句才恢复 |
+| [BUG-4472](bugs/BUG-4472-gal-printwindow-dpi-virtualized-partial.md) | ✅ | ✅ | DPI-unaware 游戏在缩放屏上 WGC 失败后 PrintWindow 兜底把逻辑尺寸整帧误判为 partial，制卡无图失败 |
+| [BUG-4471](bugs/BUG-4471-catsystem2-2-6-1-90-sites-unresolved.md) | ✅ | ✅ | CatSystem2 cs2 2.6.1.90 查词与语音站点全部 unresolved |
+| [BUG-4470](bugs/BUG-4470-galhook-leaf-wa2-second-build-unrecognized.md) | ✅ | ✅ | Leaf/AQUAPLUS：WHITE ALBUM2 另一构建不被认领（准入钉在单个 exe 摘要 + glyph 返回点判据无选择性） |
+| [BUG-4469](bugs/BUG-4469-tyrano-measured-client-size-dpr-rounding.md) | ✅ | ✅ | TyranoScript 内嵌查词在 Electron 全屏 + 小数缩放下永远不出卡：DOM 推算的客户区与真实客户区差 1px 被逐像素拒收 |
+| [BUG-4468](bugs/BUG-4468-gal-dom-text-waiting-thread.md) | ✅ | ✅ | TyranoScript DOM 正文在线时工作台仍显示等待选择台词线程 |
+| [BUG-4467](bugs/BUG-4467-popup-scroll-leaks-across-lookups.md) | ✅ | ✅ | 查词弹窗滚动位跨查词残留（app 外 / galgame 根 iframe；同词缓存命中） |
+| [BUG-4466](bugs/BUG-4466-galhook-test-exe-av-false-positive.md) | ✅ | ✅ | Kaspersky 把 galgame hook 测试 exe 报为 Trojan.Win32.Sdum.gen 并删除 |
+| [BUG-4465](bugs/BUG-4465-srs-sync2-rotated-identity-segments-deleted.md) | ✅ | ✅ | SRS 同步 v2：换身份后仍删旧身份目录里的旧小段，旧身份留着的 head 引用落空 |
+| [BUG-4464](bugs/BUG-4464-srs-sync2-segment-deleted-before-referencing-head.md) | ✅ | ✅ | SRS 同步 v2：旧小段可能先于引用它的旧 head 被删（保留代数写在 Dart，内核看不到） |
+| [BUG-4463](bugs/BUG-4463-srs-orphan-sweep-rerun-after-purge-unify.md) | ✅ | ✅ | 无主复习数据扫描在 BUG-4292 之前已扫过的库里不再跑，采用 / 并入旧实现的残留永远留下 |
+| [BUG-4462](bugs/BUG-4462-host-job-concurrent-persist-and-delete-resurrect.md) | ✅ | ✅ | host 任务运行中被删除：两笔落盘并发写同一个临时文件，收尾落盘把删掉的目录建回来 |
+| [BUG-4461](bugs/BUG-4461-transcode-superseded-token-keeps-running.md) | ✅ | ✅ | 播放会话结束 / 换档换集后旧 token 的转码分段照样转完，占满转码名额拖慢新流起播 |
+| [BUG-4460](bugs/BUG-4460-adaptive-quality-switch-no-rollback.md) | ✅ | ✅ | 自适应换档失败后共享档位不回滚，重试仍用没起来的档 |
+| [BUG-4459](bugs/BUG-4459-adaptive-quality-seek-grace-unbounded.md) | ✅ | ✅ | 频繁 seek 时自适应画质的 seek 宽限不断续命，差网永不降档 |
+| [BUG-4458](bugs/BUG-4458-remote-agent-answer-not-bound-to-card.md) | ✅ | ✅ | 远端 AI 助手的确认 / 候选作答不绑定卡片，晚到的作答会落到下一张卡上 |
+| [BUG-4457](bugs/BUG-4457-host-update-tracking-null-loops.md) | ✅ | ✅ | 主机更新跟踪中 host 回 404 时无限每 2 秒轮询、界面卡在进行中 |
+| [BUG-4456](bugs/BUG-4456-manga-ocr-client-error-orphan.md) | 🚧 | 🚧 | 漫画 OCR client 出错时只报错不清理、host 任务成孤儿（未复现） |
+| [BUG-4455](bugs/BUG-4455-remote-job-client-lifecycle.md) | ✅ | ✅ | 远端任务客户端不区分观测失败与任务失败：瞬时断网即删除 host 任务、清理失败当任务失败、观测可被卡住的响应体永久挂起 |
+| [BUG-4454](bugs/BUG-4454-host-jobs-ttl-only-at-startup.md) | ✅ | ✅ | 通用任务 host 只在启动时清理过期任务，被遗弃的上传永不回收 |
+| [BUG-4453](bugs/BUG-4453-manga-ocr-host-shared-volume-dir-deleted.md) | ✅ | ✅ | 漫画 OCR host 清理过期 / 取消的旧任务时删掉同卷新任务正在用的目录 |
+| [BUG-4452](bugs/BUG-4452-remote-job-poll-delay-overflow.md) | ✅ | ✅ | 远端任务轮询退避在约 2.4 小时后溢出抛错并删除 host 任务 |
+| [BUG-4406](bugs/BUG-4406-interconnect-assistant-single-address-endless-poll.md) | ✅ | ✅ | AI 助手只认一条地址、会话期间不换路，凭据失效后仍每 3 秒无限重试 |
+| [BUG-4405](bugs/BUG-4405-remote-download-tasks-single-host-silent-failure.md) | ✅ | ✅ | 下载中心远端任务段只看一台 host、失败无提示、任务域与创建时间写错 |
+| [BUG-4404](bugs/BUG-4404-interconnect-probe-failure-reason-lost.md) | ✅ | ✅ | 互联能力探测把凭据失效、证书不符、老版本、连不上都折成『没有可用主机』 |
+| [BUG-4403](bugs/BUG-4403-interconnect-client-no-shared-host-channel.md) | ✅ | ✅ | 互联功能 client 各自复制传输层：响应体不受超时约束、client 不回收、凭据与选路各处漂移 |
+| [BUG-4402](bugs/BUG-4402-interconnect-p2p-network-change-not-notified.md) | ✅ | ✅ | P2P 隧道不知道系统网络变化，Android 切网、iOS 唤醒后隧道长时间不通 |
+| [BUG-4401](bugs/BUG-4401-interconnect-p2p-badge-invalid-node-crash.md) | ✅ | ✅ | p2p 地址不校验 NodeId，路径徽章在定时器里抛未捕获异常 |
+| [BUG-4400](bugs/BUG-4400-interconnect-p2p-forward-origin-lifecycle.md) | ✅ | ✅ | P2P 转发口撤销后反查映射残留，学习器拿临时转发口当锚点学不到地址 |
+| [BUG-4399](bugs/BUG-4399-interconnect-plaintext-address-unverified-host.md) | ✅ | ✅ | 明文互联地址未核对 hostId 就带 token 发出（单地址组与竞速失败时） |
+| [BUG-4398](bugs/BUG-4398-interconnect-address-owner-unchecked.md) | ✅ | ✅ | 互联地址写凭据不核对归属：同 URL 配对把 token 写进另一台 host 的整组，明文手输行按 URL 被收编 |
+| [BUG-4397](bugs/BUG-4397-lan-discovery-self-reported-id-key.md) | ✅ | ✅ | 局域网发现以对端自报 id 为键被冒名覆盖，mDNS 回退缓存收录无关记录且不回收 |
+| [BUG-4389](bugs/BUG-4389-srs-profile-conflict-dialog-freeze.md) | ✅ | ✅ | SRS profile conflict dialog never lays out; desktop app stops reacting to the mouse |
+| [BUG-4388](bugs/BUG-4388-heavy-ticket-open-race.md) | ✅ | ✅ | heavy 租约的等待者探测排队票据时撞上别的进程删票据，排队中途崩溃退出 255 |
+| [BUG-4387](bugs/BUG-4387-windows-input-starved-by-engine-wakeups.md) | ✅ | ✅ | 启动时 WebView 预热的 idle 任务被常驻背景动画永久挡住，调度器空转饿死 Windows 输入 |
 | [BUG-4386](bugs/BUG-4386-anime-source-magnet-opened-as-file.md) | ✅ | ✅ | 视频源扩展（Torrentio）给的磁链被当本地文件打开，无限加载 |
 | [BUG-4385](bugs/BUG-4385-music-exclusive-pause-holds-device.md) | ✅ | ✅ | 音乐 WASAPI 独占输出暂停时不交还设备 |
 | [BUG-4384](bugs/BUG-4384-apple-music-preview-full-duration.md) | ✅ | ✅ | Apple Music 试听片段放约 30 秒就「回到开头」，进度条按整首时长画、无试听提示 |

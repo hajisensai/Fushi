@@ -48,9 +48,12 @@ class _Recognizer implements VideoSubtitleRecognizer {
 }
 
 class _Settings implements AiSettingsSource {
-  _Settings({this.assigned = true});
+  _Settings({this.assigned = true, this.images = false});
 
   final bool assigned;
+
+  /// 提供商开没开图片输入。
+  final bool images;
 
   @override
   List<AiProviderConfig> get aiProviders => <AiProviderConfig>[
@@ -62,6 +65,7 @@ class _Settings implements AiSettingsSource {
       apiKey: 'k',
       model: 'm',
       protocol: AiWireProtocol.anthropicMessages,
+      acceptsImages: images,
     ),
   ];
 
@@ -116,6 +120,8 @@ void main() {
     chatClientFactory: client,
     resolveVideoPath: resolveVideo,
     probeDurationMs: (String _) async => 1440000,
+    // 测试里不起真 ffmpeg。
+    frameSource: (String videoPath, int atMs) async => null,
   );
 
   (HostJobContext, List<(double, String?)>) context(
@@ -380,6 +386,76 @@ void main() {
       runner().run(ctx),
       throwsA(isA<HostJobCancelledException>()),
     );
+  });
+
+  test('frames：参数与能力位；只在 host 的提供商能收图时带画面（任务目录记下），否则纯文字', () async {
+    expect(
+      VideoSubtitleJobParams.parse(const <String, Object?>{
+        'frames': true,
+      }).frames,
+      isTrue,
+    );
+    expect(
+      VideoSubtitleJobParams.parse(const <String, Object?>{}).frames,
+      isFalse,
+      reason: '老客户端不带这个参数 = 不发画面',
+    );
+    expect(
+      () => VideoSubtitleJobParams.parse(const <String, Object?>{
+        'frames': 'maybe',
+      }),
+      throwsFormatException,
+    );
+    expect((await runner().capability())['framesAvailable'], isFalse);
+    expect(
+      (await runner(settings: _Settings()).capability())['framesAvailable'],
+      isFalse,
+    );
+    expect(
+      (await runner(
+        settings: _Settings(images: true),
+      ).capability())['framesAvailable'],
+      isTrue,
+    );
+
+    AiChatClient failing() => AiChatClient(
+      client: MockClient(
+        (http.Request request) async => http.Response('{}', 401),
+      ),
+    );
+    // 管线在第一次 AI 请求（401）之前就把「这次校对带不带画面」记进任务目录。
+    Future<bool> recordedFrames(
+      String jobId, {
+      required bool images,
+      required bool frames,
+    }) async {
+      final Directory pipeline = Directory(p.join(tmp.path, 'pipeline'));
+      if (pipeline.existsSync()) pipeline.deleteSync(recursive: true);
+      final (HostJobContext ctx, _) = context(<String, Object?>{
+        'frames': frames,
+      }, jobId: jobId);
+      File(
+        p.join(ctx.inputsDir.path, 'ep01.mkv'),
+      ).writeAsBytesSync(<int>[1, 2]);
+      await expectLater(
+        runner(
+          settings: _Settings(images: images),
+          client: failing,
+        ).run(ctx),
+        throwsA(isA<VideoSubtitleJobPaused>()),
+      );
+      final File state = pipeline
+          .listSync(recursive: true)
+          .whereType<File>()
+          .singleWhere((File f) => p.basename(f.path) == 'state.json');
+      return (jsonDecode(state.readAsStringSync())
+              as Map<String, Object?>)['frames'] ==
+          true;
+    }
+
+    expect(await recordedFrames('f1', images: true, frames: true), isTrue);
+    expect(await recordedFrames('f2', images: false, frames: true), isFalse);
+    expect(await recordedFrames('f3', images: true, frames: false), isFalse);
   });
 
   test('capability 报能力位；没装 AI 时 proofreadAvailable = false', () async {

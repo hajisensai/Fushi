@@ -76,6 +76,11 @@ List<String> srsDeviceRowDetails(
     if (!d.self && d.trust != SrsDeviceTrust.trusted)
       t.srs_device_trust_held_detail(n: d.heldDeletes + d.heldPurges),
     if (d.digestMismatch) t.srs_timeline_digest_mismatch,
+    if (!d.self && d.rulesTheirs != null && d.rulesMine != null)
+      t.srs_device_rules_differ(
+        theirs: d.rulesTheirs.toString(),
+        mine: d.rulesMine.toString(),
+      ),
     if (d.warning != null) t.srs_timeline_device_warning,
   ].nonNulls.toList();
 }

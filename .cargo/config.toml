@@ -1,0 +1,33 @@
+# 仓库级 cargo 配置：在仓库任意子目录跑 cargo 都会读到（cargo 从工作目录逐级向上找 .cargo/config.toml，
+# native/<crate>/.cargo/config.toml 里的同名键优先）。
+#
+# `quick`：本地开发循环用的 profile——`cargo test --profile quick --lib <过滤>`。
+#
+# 各 crate 的 `[profile.release]` 是给出包用的：`lto = true` + `codegen-units = 1`，改一行就把整个 crate 连同
+# 全部依赖重新做一遍 fat LTO，而且单线程。`cargo test --release` 还会把库（cdylib + staticlib）和测试可执行文件
+# 各做一遍。fushi_fsrs（6.8 万行）在 i5-12600KF 上一次要 7～15 分钟，一轮「test + id_audit + build」约 40 分钟。
+#
+# `quick` 继承 release（优化级别、各包的 opt-level 覆盖、`panic`、`debug-assertions = false`、
+# `overflow-checks = false` 都不变，所以测试的运行语义与 CI 的 `cargo test --release` 相同），只改编译方式：
+#   - 不做 LTO、多 codegen unit：并行编，不再整体重优化依赖；
+#   - 增量编译：只重编改到的部分（cargo 只对工作区内的 crate 开增量，crates.io 依赖不受影响、仍可被 sccache 缓存）；
+#   - 不 strip：测试 panic 的回溯带函数名。
+#
+# 出包与 CI 不用它：build_* 脚本、CI 的 `cargo test --release --locked` 照旧走 release。推送前要不要再跑一遍
+# `--release` 见 docs/agent/build.md「Rust 本地开发循环」。
+[profile.quick]
+inherits = "release"
+lto = "off"
+codegen-units = 256
+incremental = true
+strip = false
+
+# 本 worktree 的根目录（`relative = true`：值按本文件所在目录的上一级解析成绝对路径）。只有一个用途：各 crate 的
+# lib.rs 用 `option_env!("FUSHI_WORKTREE_ROOT")` 读它一次，让 cargo 把它记进新鲜度指纹（dep-info 的 env-dep）。
+#
+# 不这样做，多个 worktree 共用一个 `CARGO_TARGET_DIR` 时会静默拿错产物：cargo 给工作区内 crate 算单元哈希用的是
+# 相对路径，各 worktree 的 `fushi_fsrs-<哈希>` 相同，新鲜度只比源文件 mtime——别的 worktree 刚编出的产物会被当成
+# 本 worktree 的新鲜产物直接拿来跑（2026-11-11 实测：B 侧加了必挂的测试，0.3 秒报全绿）。有了这个值，换 worktree
+# 就判 dirty 重编本仓 crate（依赖不受影响，仍可共用）。值不进产物：读它的是一个不被引用的 `const _`。
+[env]
+FUSHI_WORKTREE_ROOT = { value = "", relative = true }
