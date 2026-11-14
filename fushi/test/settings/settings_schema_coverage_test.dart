@@ -200,6 +200,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // theme_app_icon_link_test（发布到全局开关）与 accent_logo_image_test 咬住。
   'appearance/Logo follows theme color':
       'test/models/theme_app_icon_link_test.dart + test/widgets/accent_logo_image_test.dart',
+  // 吉祥物光晕开关：生效点是全局 mascotGlowEnabled 与悬浮球吉祥物上的
+  // MascotGlow 光晕层——harness 设置页里没有展开的悬浮球，渲染输入无变化。行为由
+  // theme_app_icon_link_test（发布到全局开关）与 mascot_glow_test（光晕层）咬住。
+  'appearance/Mascot glow':
+      'test/models/theme_app_icon_link_test.dart + test/utils/components/mascot_glow_test.dart',
   // 词典统一 M3E 配色：生效点在查词弹窗 WebView 里的 popup.js / popup.css，
   // harness 没有 WebView。注入接线、默认值与 CSS 层由
   // popup_dict_unified_style_test 咬住。

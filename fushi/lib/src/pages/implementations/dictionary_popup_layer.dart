@@ -22,6 +22,7 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_mining_target.d
 import 'package:fushi/src/pages/implementations/dictionary_popup_resource_source.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
+import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/mouse_binding_dispatch.dart'
     show dispatchClaimedMouseAction;
 import 'package:fushi/src/utils/components/fushi_deferred_loading.dart';
@@ -1379,6 +1380,7 @@ class DictionaryPopupLayer extends StatelessWidget {
     this.restoreScrollTop,
     this.lookupSession = 0,
     this.transparentDocumentBackground = false,
+    this.mineShortcutAction,
     this.showResizeGrip = false,
     this.onResizeStart,
     this.onResizeUpdate,
@@ -1569,6 +1571,10 @@ class DictionaryPopupLayer extends StatelessWidget {
   /// 查词窗（popup_main 宿主）时 true，令弹窗 `<html>` 透明消除整窗泛白（默认 false =
   /// in-app 行为，见 DictionaryPopupWebView.transparentDocumentBackground）。
   final bool transparentDocumentBackground;
+
+  /// 宿主页面上「点＋制卡」真正响应的键盘动作，只用于「＋」按钮的快捷键提示。
+  /// 见 [DictionaryPopupWebView.mineShortcutAction]。
+  final ShortcutAction? mineShortcutAction;
 
   /// 弹窗尺寸拖拽（2026-07-13 设计 Phase B）：为真时在弹窗右下角叠一个可拖拽把手，
   /// 拖动 = 可视化地改「最大宽/高」偏好（`popupMaxWidth/Height`，与设置页两滑杆同一
@@ -2205,6 +2211,7 @@ class DictionaryPopupLayer extends StatelessWidget {
               resourceSource: resourceSource,
               visibleViewportHeight: visibleHeight,
               transparentDocumentBackground: transparentDocumentBackground,
+              mineShortcutAction: mineShortcutAction,
               result: result ?? kPopupSearchingPlaceholderResult,
               lookupPending: lookupPending,
               restoreScrollTop: restoreScrollTop,

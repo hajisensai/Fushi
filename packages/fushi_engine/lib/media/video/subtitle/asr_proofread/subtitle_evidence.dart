@@ -90,6 +90,7 @@ class SubtitleEvidenceTrack {
     required this.kind,
     required this.cues,
     this.language,
+    this.pinned = false,
   });
 
   factory SubtitleEvidenceTrack.fromJson(Map<String, Object?> json) =>
@@ -99,6 +100,7 @@ class SubtitleEvidenceTrack {
             SubtitleEvidenceKind.fromName(json['kind']) ??
             SubtitleEvidenceKind.text,
         language: json['language'] as String?,
+        pinned: json['pinned'] as bool? ?? false,
         cues: <SubtitleEvidenceCue>[
           for (final Object? c
               in (json['cues'] as List<Object?>? ?? const <Object?>[]))
@@ -117,6 +119,10 @@ class SubtitleEvidenceTrack {
   /// 按开始时间升序。
   final List<SubtitleEvidenceCue> cues;
 
+  /// 用户亲手指定的参考（播放器里正对照着的那条字幕，时间轴已按用户的调轴摆好）：
+  /// 选轨时压过自动找到的同语言轨，他言語名额也排最前（[SubtitleEvidenceIndex]）。
+  final bool pinned;
+
   int get dialogueCount => cues
       .where((SubtitleEvidenceCue c) => c.role == SubtitleEvidenceRole.dialogue)
       .length;
@@ -125,6 +131,7 @@ class SubtitleEvidenceTrack {
     'label': label,
     'kind': kind.name,
     if (language != null) 'language': language,
+    if (pinned) 'pinned': true,
     'cues': <Map<String, Object?>>[
       for (final SubtitleEvidenceCue c in cues) c.toJson(),
     ],
@@ -324,7 +331,8 @@ class SubtitleEvidenceIndex {
   /// OCR 时两条都给：两种错误互相校正）。
   final List<SubtitleEvidenceTrack> same;
 
-  /// 他言語证据轨（每种语言一条，英 / 中优先，最多 [maxOtherLanguages] 条）。
+  /// 他言語证据轨（每种语言一条；用户指定的 [SubtitleEvidenceTrack.pinned] 排最前，
+  /// 其后英 / 中优先，最多 [maxOtherLanguages] 条）。
   final List<SubtitleEvidenceTrack> others;
 
   bool get isEmpty => same.isEmpty && others.isEmpty;
@@ -397,19 +405,24 @@ class SubtitleEvidenceIndex {
       if (t.dialogueCount == 0) continue;
       final String key = lang.toLowerCase().split(RegExp('[-_]')).first;
       final SubtitleEvidenceTrack? old = byLanguage[key];
-      // 同语言里人工字幕优先，再比台词行数。
+      // 同语言里用户指定的轨最优先，其次人工字幕优先于 OCR，再比台词行数。
       if (old == null ||
-          (old.kind == SubtitleEvidenceKind.ocr &&
-              t.kind == SubtitleEvidenceKind.text) ||
-          (old.kind == t.kind && t.dialogueCount > old.dialogueCount)) {
+          (t.pinned && !old.pinned) ||
+          (t.pinned == old.pinned &&
+              ((old.kind == SubtitleEvidenceKind.ocr &&
+                      t.kind == SubtitleEvidenceKind.text) ||
+                  (old.kind == t.kind &&
+                      t.dialogueCount > old.dialogueCount)))) {
         byLanguage[key] = t;
       }
     }
-    int rank(String lang) => switch (lang) {
-      'en' => 0,
-      'zh' => 1,
-      _ => 2,
-    };
+    int rank(String lang) => byLanguage[lang]!.pinned
+        ? -1
+        : switch (lang) {
+            'en' => 0,
+            'zh' => 1,
+            _ => 2,
+          };
     final List<String> keys = byLanguage.keys.toList()
       ..sort((String a, String b) {
         final int c = rank(a).compareTo(rank(b));

@@ -94,9 +94,14 @@ void _configureGen(ArgParser parser) {
       help: '资料没变也重新生成专名表（编辑过的条目保留）',
     )
     ..addFlag(
+      'frames',
+      defaultsTo: null,
+      help: 'AI 校对附上视频画面（缺省取设置里的「参考画面」，只在提供商能收图时生效；--no-frames 不发）',
+    )
+    ..addFlag(
       'consent-ai',
       negatable: false,
-      help: '同意把 ASR 文本与专名表发给所选 AI 提供商（首次使用 AI 校对时需要一次）',
+      help: '同意把 ASR 文本、已有字幕的台词、专名表与视频画面发给所选 AI 提供商（首次使用 AI 校对时需要一次）',
     )
     ..addFlag('wait', negatable: false, help: '等任务结束再返回（缺省提交即返回任务号）');
 }
@@ -114,6 +119,8 @@ CtlRequestSpec _buildGen(CtlCommandContext context) {
       if (backend != null) 'mossBackend': backend,
       if (language != null) 'language': language,
       if (context.flag('regen-glossary')) 'regenerateGlossary': true,
+      if (context.explicitFlag('frames') != null)
+        'frames': context.explicitFlag('frames'),
       if (context.flag('consent-ai')) 'consentAi': true,
       if (context.flag('wait')) 'wait': true,
     },

@@ -909,6 +909,13 @@ pub(crate) fn canonical(v: &Value) -> String {
 
 /// 日志投影行（Dart `SrsReviewLog.toJson` 的线格式）。结果先放作者原值，重放再改写。
 pub(crate) fn log_row(profile: &str, op: &Op, l: &LogBody) -> Value {
+    log_json(profile, l, || {
+        format!("{}:{}:{}", op.hlc.wall, op.hlc.logical, op.id.device.text())
+    })
+}
+
+/// 日志投影行的 JSON（[log_row] 与协议 4 的 `store/gen4/cache.rs` 共用）：日志自己没带 HLC 时用 [op_hlc]（操作的 HLC 文本）。
+pub(crate) fn log_json(profile: &str, l: &LogBody, op_hlc: impl FnOnce() -> String) -> Value {
     let mut m: Map<String, Value> = match serde_json::from_str::<Value>(&l.extra) {
         Ok(Value::Object(m)) => m,
         _ => Map::new(),
@@ -923,10 +930,7 @@ pub(crate) fn log_row(profile: &str, op: &Op, l: &LogBody) -> Value {
     if let Some(r) = &l.revokes {
         m.insert("revokes".into(), json!(r.text()));
     }
-    let hlc = l
-        .legacy_hlc
-        .clone()
-        .unwrap_or_else(|| format!("{}:{}:{}", op.hlc.wall, op.hlc.logical, op.id.device.text()));
+    let hlc = l.legacy_hlc.clone().unwrap_or_else(op_hlc);
     m.insert("hlc".into(), json!(hlc));
     m.insert("at".into(), json!(l.at));
     m.insert("ts".into(), json!(op::ts_wire(l.ts)));
@@ -1607,6 +1611,15 @@ pub(crate) fn replay_touched(conn: &Connection, t: &Touched) -> Result<BTreeSet<
 
 /// [cards] 的链尾。
 fn tails(conn: &Connection, card: &str) -> Result<Vec<String>, String> {
+    tails_with(card, &mut |c| config::successors(conn, c))
+}
+
+/// [card] 的链尾（沿「继承了它历史的卡」走到没有后继的卡，防环、最多看 256 张）。[successors] 给一张卡的后继
+/// （`historyFrom/<它>` 生效为 true 的卡）。协议 3 的重放驱动与协议 4 的 `store/gen4/cache.rs` 共用这条选取规则。
+pub(crate) fn tails_with(
+    card: &str,
+    successors: &mut dyn FnMut(&str) -> Result<Vec<String>, String>,
+) -> Result<Vec<String>, String> {
     let mut out = Vec::new();
     let mut seen = BTreeSet::new();
     let mut stack = vec![card.to_owned()];
@@ -1614,7 +1627,7 @@ fn tails(conn: &Connection, card: &str) -> Result<Vec<String>, String> {
         if !seen.insert(c.clone()) || seen.len() > 256 {
             continue;
         }
-        let s = config::successors(conn, &c)?;
+        let s = successors(&c)?;
         if s.is_empty() {
             out.push(c);
         } else {
@@ -1626,6 +1639,26 @@ fn tails(conn: &Connection, card: &str) -> Result<Vec<String>, String> {
     Ok(out)
 }
 
+/// 一个归属组的卡：链尾 + 广度优先的全部前身（最多 256 张）。[predecessors] 给一张卡生效的前身（按 UTF-16 序）。
+/// 与 [tails_with] 同为协议 3 / 协议 4 共用的选取规则。
+pub(crate) fn group_lineage(
+    tail: &str,
+    predecessors: &mut dyn FnMut(&str) -> Result<Vec<String>, String>,
+) -> Result<Vec<String>, String> {
+    let mut lineage = vec![tail.to_owned()];
+    let mut i = 0;
+    while i < lineage.len() && lineage.len() < 256 {
+        let c = lineage[i].clone();
+        for p in predecessors(&c)? {
+            if !lineage.contains(&p) {
+                lineage.push(p);
+            }
+        }
+        i += 1;
+    }
+    Ok(lineage)
+}
+
 /// 一个归属组（链尾 + 广度优先的全部前身）的日志行与链尾所属的笔记（日志上记的，没有则取调用方给的）。
 struct Group {
     rows: Vec<(String, String, Option<i64>, Intent, String)>,
@@ -1635,20 +1668,12 @@ struct Group {
 fn group_of(conn: &Connection, tail: &str, note_hint: Option<&str>) -> Result<Group, String> {
     let tail = &tail.to_owned();
     // 归属组：链尾 + 广度优先的全部前身。
-    let mut lineage = vec![tail.clone()];
-    let mut i = 0;
-    while i < lineage.len() && lineage.len() < 256 {
-        let c = lineage[i].clone();
-        let es = config::edits_of(conn, "card", std::slice::from_ref(&c))?
-            .remove(&c)
+    let lineage = group_lineage(tail, &mut |c| {
+        let es = config::edits_of(conn, "card", &[c.to_owned()])?
+            .remove(c)
             .unwrap_or_default();
-        for p in config::predecessors(&es) {
-            if !lineage.contains(&p) {
-                lineage.push(p);
-            }
-        }
-        i += 1;
-    }
+        Ok(config::predecessors(&es))
+    })?;
     let mut rows: Vec<(String, String, Option<i64>, Intent, String)> = Vec::new();
     let mut note: Option<String> = None;
     for c in &lineage {
