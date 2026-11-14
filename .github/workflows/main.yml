@@ -259,10 +259,15 @@ jobs:
     # 包测试的库带 ID 审计（src/store/ids.rs `audit`）：schema v17 起 ID 列存 16 字节 BLOB，Dart 原生 SQL
     # 漏了 srs_id() 会查不到 / 写错形状，审计让这类语句直接报错；fushi_srs 的金丝雀测试凭
     # FUSHI_FSRS_ID_AUDIT=1 断言审计真的开着（库换成不带审计的构建就红）。
-    - name: Build fushi_fsrs (Linux x64, id_audit) for package tests
+    # 还带测试专用的原始 SQL 通道（cargo feature raw_sql，Cargo.toml）：fushi_engine 的 test/srs 里几十个文件靠它
+    # 直接改库造场景；发布 / 随包构建不带（verify_abi.sh 核对）。
+    - name: Build fushi_fsrs (Linux x64, id_audit + raw_sql) for package tests
       env:
-        FUSHI_FSRS_FEATURES: id_audit
-      run: bash native/fushi_fsrs/build_linux_so.sh
+        FUSHI_FSRS_FEATURES: id_audit,raw_sql
+      run: |
+        set -euo pipefail
+        bash native/fushi_fsrs/build_linux_so.sh
+        bash native/fushi_fsrs/verify_raw_sql.sh native/fushi_fsrs/prebuilt/linux-x64/libfushi_fsrs.so present
     # 计算内核 fushi_compute 是硬依赖：包测试（fushi_compute / fushi_engine）要 Linux .so
     # （导出 FUSHI_COMPUTE_LIB），下面的 Android release 验证构建（android-arm64）要 arm64-v8a .so，
     # 否则 build.gradle 的 checkFushiComputeNative 让构建失败。

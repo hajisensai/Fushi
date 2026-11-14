@@ -42,6 +42,7 @@ mod projections;
 mod projections_scan_tests;
 pub(crate) mod queue;
 mod read_pool;
+mod refresh;
 pub(crate) mod reads;
 pub(crate) mod repr_rewrite;
 pub mod rows;
@@ -64,6 +65,11 @@ const LEGACY_KEY: &str = "legacy_import";
 
 /// 已关闭的库上任何命令的错误文本（Dart 侧按它认「已关闭」）。
 pub(crate) const CLOSED: &str = "srs store is closed";
+
+/// 这个库没编进测试专用的原始 SQL 通道（cargo feature `raw_sql`，见 Cargo.toml）：`ffsrs_store_exec` mode 4 / 5 与
+/// `ffsrs_store_exec_batch` 报这个错误、不执行、不取写锁。发布 / 随包构建都是这样；Dart 同文（`kSrsRawSqlAbsent`）。
+pub const RAW_SQL_ABSENT: &str =
+    "srs: the raw SQL channel is not built into this library (cargo feature raw_sql)";
 
 /// 备份快照的目标卷空间不够（[SrsCore::snapshot_into]）：错误文本前缀，后面是 `{"need","free"}`。
 pub const SNAPSHOT_NO_SPACE: &str = "srs.db snapshot needs more free disk space: ";
@@ -115,9 +121,9 @@ pub struct SrsCore {
     /// 时置位，做完通道后写连接不在事务里时按表重置。为假时分发器不必拿写锁查通道（只读命令不排在写锁后面）。
     /// 只能多不能少：库只由这一个 [SrsCore] 打开写（别的进程 / 实例开同一个库不在这个约定里）。
     channel_live: AtomicBool,
-    /// 收段通道自己做完的片（没有回包可带）攒下的投影变化，按 profile：随那个 profile 的下一条命令的回包交回 Dart
-    /// （store/sync2/channel.rs `note_settled` / `take_settled`）。只在内存：进程没了，Dart 那一侧记的缓存也没了。
-    settled: Mutex<std::collections::HashMap<String, sync2::channel::Settled>>,
+    /// 进程内刷新键（store/refresh.rs）：Dart 按它判断牌组树 / 修改记录 / 角标 / 统计 / RWKV 分数表的缓存还能不能用。
+    /// 只在内存、按 profile；每次打开库换一个随机前缀。
+    refresh: Mutex<refresh::Refresh>,
     /// 常驻复习队列（store/queue.rs）：写连接上的触发器记下写过的卡 / 日志，`study` 按 profile 增量排队。
     study_hub: Arc<queue::StudyHub>,
     /// 浏览页与 AnkiConnect 共用的常驻会话（store/browse.rs，按 profile）：搜索语料、列数据随写入增量更新；
@@ -519,7 +525,7 @@ impl SrsCore {
             cache_configs: Mutex::new(std::collections::HashMap::new()),
             writer_cache: Mutex::new(mem_budget::WriterCache::new()),
             channel_live: AtomicBool::new(channel_live),
-            settled: Mutex::new(std::collections::HashMap::new()),
+            refresh: Mutex::new(refresh::Refresh::new()),
             study_hub,
             browse: Mutex::new(browse::Sessions::default()),
             #[cfg(test)]
@@ -877,6 +883,9 @@ impl SrsCore {
             .and_then(|_| w.execute_batch("COMMIT").map_err(|e| e.to_string()));
         if result.is_err() {
             let _ = w.execute_batch("ROLLBACK");
+        } else {
+            // 搬进来的是整库的数据，分不出 profile：每个 profile 的刷新键都变。
+            self.refresh_all();
         }
         self.legacy_open.store(false, Ordering::SeqCst);
         result
@@ -995,6 +1004,9 @@ impl SrsCore {
     /// 也不能在写连接上留下别的命令会落进去的事务。旧库搬迁进行中（`legacy_open`）同样拒绝。
     ///
     /// 返回页：[select] 为真 = 首行列名 + 结果行（PRAGMA 之类有结果行的语句）；否则一行 `[变更行数, last_insert_rowid]`。
+    ///
+    /// 只在测试构建与带 cargo feature `raw_sql` 的库里有（发布构建里能写库的这段代码不在，C 入口报 [RAW_SQL_ABSENT]）。
+    #[cfg(any(test, feature = "raw_sql"))]
     pub fn exec_raw(&self, sql: &str, params: &[Value], select: bool) -> Result<Vec<u8>, String> {
         // 先取写锁再看 `legacy_open`（同 [SrsCore::legacy_page]）：搬迁中 panic 后，恢复在取锁时才结束搬迁。
         let w = self.writer()?;
@@ -1086,7 +1098,9 @@ impl SrsCore {
     }
 
     /// [SrsCore::exec_raw] 的批量版（测试专用，`ffsrs_store_exec_batch`，Dart `SrsCore.debugExecBatchRaw`）：
-    /// `statements[i]` 配若干组参数，按给定顺序在**一个 SAVEPOINT** 里执行，任何一条出错整批回滚。
+    /// `statements[i]` 配若干组参数，按给定顺序在**一个 SAVEPOINT** 里执行，任何一条出错整批回滚。同 [SrsCore::exec_raw]
+    /// 只在测试构建与带 `raw_sql` 的库里有。
+    #[cfg(any(test, feature = "raw_sql"))]
     pub fn exec_batch_raw(
         &self,
         statements: &[&str],

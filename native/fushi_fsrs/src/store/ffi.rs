@@ -417,6 +417,7 @@ fn one_row(page: &[u8]) -> Result<Vec<rusqlite::types::Value>, String> {
 /// 测试专用的原始通道（[SrsCore::exec_raw]，写连接）：`select` 4 返回一行 `[变更行数, last_insert_rowid]`，5 返回
 /// 「列名行 + 结果行」；缓冲区用 `ffsrs_free_bytes` 释放。别的取值不认：0–3 是以前 Drift 执行器的语句入口，
 /// 已经没有了——srs.db 的写入只有内核命令，读只有内核的读命令（`ffsrs_store_sync2`；`read` 见 store/reads.rs）。
+/// 4 / 5 只有带 cargo feature `raw_sql` 的库里有，别的构建报 [crate::store::RAW_SQL_ABSENT]、不执行。
 #[no_mangle]
 pub extern "C" fn ffsrs_store_exec(
     core: *const SrsCoreHandle,
@@ -437,8 +438,12 @@ pub extern "C" fn ffsrs_store_exec(
         let s = utf8(sql, sql_len)?;
         let values = one_row(bytes(params, params_len).ok_or("null params")?)?;
         let page = match select {
+            #[cfg(any(test, feature = "raw_sql"))]
             4 => c.exec_raw(s, &values, false)?,
+            #[cfg(any(test, feature = "raw_sql"))]
             5 => c.exec_raw(s, &values, true)?,
+            #[cfg(not(any(test, feature = "raw_sql")))]
+            4 | 5 => return Err(crate::store::RAW_SQL_ABSENT.to_string()),
             m => return Err(format!("unknown exec mode {m}")),
         };
         hand_out(page, out, out_len);
@@ -448,8 +453,38 @@ pub extern "C" fn ffsrs_store_exec(
 
 /// 测试专用的原始通道的批量版（[SrsCore::exec_batch_raw]：整批在写连接的一个 SAVEPOINT 里）。`statements` 是单列文本页（每行一条 SQL）；`applications` 是两列页：
 /// `[语句下标 i64, 参数页 blob]`（参数页是一行的 rows.rs 页，可为空字节）。
+///
+/// 只有带 cargo feature `raw_sql` 的库里有；别的构建报 [crate::store::RAW_SQL_ABSENT]、什么都不解析、不取写锁。符号
+/// 照常导出：Dart 绑定构造时 lookup 全部符号，`verify_abi.sh` 按绑定核对导出面——发布构建里不在的是能写库的代码。
 #[no_mangle]
 pub extern "C" fn ffsrs_store_exec_batch(
+    core: *const SrsCoreHandle,
+    statements: *const u8,
+    statements_len: usize,
+    applications: *const u8,
+    applications_len: usize,
+    error_out: *mut *mut c_char,
+) -> i32 {
+    #[cfg(not(any(test, feature = "raw_sql")))]
+    {
+        let _ = (statements, statements_len, applications, applications_len);
+        return run_core(core, error_out, |_| {
+            Err(crate::store::RAW_SQL_ABSENT.to_string())
+        });
+    }
+    #[cfg(any(test, feature = "raw_sql"))]
+    exec_batch_raw_entry(
+        core,
+        statements,
+        statements_len,
+        applications,
+        applications_len,
+        error_out,
+    )
+}
+
+#[cfg(any(test, feature = "raw_sql"))]
+fn exec_batch_raw_entry(
     core: *const SrsCoreHandle,
     statements: *const u8,
     statements_len: usize,
@@ -950,24 +985,21 @@ fn key32(v: &serde_json::Value) -> Result<Option<[u8; 32]>, String> {
     }
 }
 
-/// 一条 JSON 命令（[sync2_dispatch_op]）。请求带 `settled: true` 的 profile 命令成功、且回包是 JSON 对象时，把收段
-/// 通道在这条命令之前（或更早）自己做完的片攒下的投影变化附在回包的 `settled` 键上交回（store/sync2/channel.rs
-/// `take_settled`）：那些片没有自己的回包，Dart 那一侧按刷新信号记的缓存要靠它失效。失败的命令不取（留给下一条）。
+/// 一条 JSON 命令（[sync2_dispatch_op]）。返回之后（命令自己的写入已提交或已回滚）按请求与结果推进这个 profile 的
+/// 进程内刷新键（store/refresh.rs [SrsCore::refresh_after]）；收段通道在命令之前自己做完的片在每片提交时已经记过。
 pub(crate) fn sync2_dispatch(
     c: &SrsCore,
     req: &serde_json::Value,
     blobs: &mut Vec<Vec<u8>>,
     files: &mut Vec<(String, Vec<u8>)>,
 ) -> Result<serde_json::Value, String> {
-    let mut v = sync2_dispatch_op(c, req, blobs, files)?;
-    if req.get("settled").and_then(serde_json::Value::as_bool) == Some(true) && v.is_object() {
-        if let Some(profile) = req.get("profile").and_then(serde_json::Value::as_str) {
-            if let Some(settled) = c.take_settled(profile) {
-                v["settled"] = settled;
-            }
-        }
-    }
-    Ok(v)
+    let out = sync2_dispatch_op(c, req, blobs, files);
+    let projecting = req
+        .get("op")
+        .and_then(serde_json::Value::as_str)
+        .is_some_and(|op| PROJECTING_OPS.contains(&op));
+    c.refresh_after(req, out.as_ref().map_err(|_| ()), projecting);
+    out
 }
 
 fn sync2_dispatch_op(
@@ -1043,6 +1075,8 @@ fn sync2_dispatch_op(
             c.sync2_ingest_yield();
             return Ok(json!({}));
         }
+        // 进程内刷新键（store/refresh.rs）：只读内存，不碰通道、不拿写锁、不读库。Dart 在 UI isolate 上同步调（指纹 getter）。
+        "refresh_keys" => return Ok(c.refresh_keys(s("profile")?)),
         _ => {}
     }
     let profile = s("profile")?;
@@ -2752,6 +2786,7 @@ mod tests {
             "wal_checkpoint",
             "bulk_cache",
             "ingest_yield",
+            "refresh_keys",
         ] {
             assert!(
                 ops.remove(global),

@@ -496,7 +496,8 @@ class SrsRwkvService implements SrsRwkvScheduling, SrsRwkvStatusSource {
   ) async {
     switch (kind) {
       case RwkvSchedWire.fxRevision:
-        w.str(await store.changeFingerprint());
+        // 内核的落库计数（只读内存）：含收段通道自己做完的片——落盘修订号要等下一条改投影命令的回包才到 Dart。
+        w.str(store.landedFingerprint);
       case RwkvSchedWire.fxTail:
         await _tail(r, w);
       case RwkvSchedWire.fxReplay:
