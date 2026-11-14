@@ -209,7 +209,7 @@ for (const block of MANGA_OCR_CASES) {
 assert.ok(executed > 0, 'no cases executed');
 console.log(`all assertions passed (${executed})`);
 
-// BUG-4480: a word split into OCR glyphs must have exactly the same apostrophe
+// BUG-4622: a word split into OCR glyphs must have exactly the same apostrophe
 // boundaries as the novel's single text node, including its suffix-only rewind.
 let apostropheChecks = 0;
 for (const mark of ["'", '\u2018', '\u2019', '\u02bc']) {

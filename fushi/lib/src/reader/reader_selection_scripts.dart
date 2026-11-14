@@ -2024,7 +2024,7 @@ window.fushiSelection = {
       this.isSpaceDelimitedLetter(text[index - 1]) &&
       this.isSpaceDelimitedLetter(text[index + 1]);
   },
-  // BUG-4480：OCR 每个字格是独立文本节点，词内撇号的两侧字母可能在相邻字格。
+  // BUG-4622：OCR 每个字格是独立文本节点，词内撇号的两侧字母可能在相邻字格。
   // 只在同一 OCR 块内补齐上下文，再复用小说的字符判据；空白缝、块界仍然阻断。
   // 不改变词首回退：小说点击 l'homme 的 h 也从 homme 开始，漫画保持同一语义。
   isIntraWordApostropheAt: function(node, index) {

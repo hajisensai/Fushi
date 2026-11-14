@@ -1,4 +1,4 @@
-/// BUG-4479: the desktop reader selects a complete word across OCR line breaks.
+/// BUG-4621: the desktop reader selects a complete word across OCR line breaks.
 /// Uses the production controller cursor path in a real WebView, without
 /// coordinate clicks. The fixture image retains the original printed hyphens.
 library;
