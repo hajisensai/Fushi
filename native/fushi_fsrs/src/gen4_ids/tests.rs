@@ -646,6 +646,133 @@ fn merge_fallback_chains_and_observed_originals() {
     }
 }
 
+/// 兜底 ID 的实体自己带身份记录（旧并入把验不上的笔记 / 笔记类型换成兜底 ID，记录和派生行一起带过去）：
+/// 它本身验不上、会先各自成类，但它是另一个类的兜底别名，派生出的卡 / 字段要跟着归一，不能算成冲突。
+#[test]
+fn a_fallback_root_with_its_own_record_takes_its_children_along() {
+    for virtual_aliases in [true, false] {
+        let limits = Limits {
+            virtual_aliases,
+            ..Limits::default()
+        };
+        let (mut ev, pairs) = small_collection(Some(U1));
+        ev.salts.push(U2.to_owned());
+        let (nt, _) = pairs[0];
+        let (_, field_canonical) = pairs[1];
+        let (tpl, _) = pairs[2];
+        let (note, note_canonical) = pairs[4];
+        let (_, card_canonical) = pairs[5];
+
+        // 笔记：兜底 ID 带 guid 记录，它的卡由它派生。
+        let f = rules::merge_fallback(U2, &note.text());
+        let card_of_f = rules::card(&f, &tpl, 0);
+        ev.notes.push(NoteEv {
+            id: f,
+            guid: Some("guid-1".to_owned()),
+            note_types: vec![nt],
+            cloze_ords: Vec::new(),
+        });
+        ev.cards.push(card_of_f);
+
+        // 笔记类型：兜底 ID 带 ankiNum 与自己的字段定义。
+        let f_nt = rules::merge_fallback(U2, &nt.text());
+        let field_of_f_nt = rules::field(&f_nt, 5);
+        ev.note_types.push(NoteTypeEv {
+            id: f_nt,
+            anki_num: Some(1_600_000_000_001),
+            cloze: false,
+            fields: vec![def_num(field_of_f_nt, 5)],
+            templates: Vec::new(),
+        });
+
+        let a = resolve(&ev, &limits);
+        assert_eq!(a.how(&f), How::Fallback { salt: 1 }, "{virtual_aliases}");
+        assert_eq!(a.canonical(&f), note_canonical, "{virtual_aliases}");
+        assert_eq!(a.how(&card_of_f), How::Derived, "{virtual_aliases}");
+        assert_eq!(a.canonical(&card_of_f), card_canonical, "{virtual_aliases}");
+        assert_eq!(a.how(&f_nt), How::Fallback { salt: 1 }, "{virtual_aliases}");
+        assert_eq!(a.canonical(&f_nt), pairs[0].1, "{virtual_aliases}");
+        assert_eq!(a.how(&field_of_f_nt), How::Derived, "{virtual_aliases}");
+        assert_eq!(
+            a.canonical(&field_of_f_nt),
+            field_canonical,
+            "{virtual_aliases}"
+        );
+        for (id, want) in &pairs {
+            assert_eq!(a.canonical(id), *want, "{virtual_aliases} {id}");
+        }
+        assert_eq!(a.conflicts(), 0, "{virtual_aliases}");
+    }
+}
+
+/// 原 ID 自己也验不上、也带记录（旧 uid 的设备后加入）：兜底 ID 归到它，两边的字段归成一个。
+#[test]
+fn a_fallback_of_an_unverified_root_joins_it() {
+    for virtual_aliases in [true, false] {
+        let limits = Limits {
+            virtual_aliases,
+            ..Limits::default()
+        };
+        let mut ev = evidence(&[U1, U2]);
+        let x = stray("nt");
+        let f = rules::merge_fallback(U2, &x.text());
+        for t in [x, f] {
+            ev.note_types.push(NoteTypeEv {
+                id: t,
+                anki_num: Some(42),
+                cloze: false,
+                fields: vec![def_num(rules::field(&t, 5), 5)],
+                templates: Vec::new(),
+            });
+        }
+        let a = resolve(&ev, &limits);
+        assert_eq!(
+            a.how(&x),
+            How::Unverified(Why::NoMatch),
+            "{virtual_aliases}"
+        );
+        assert_eq!(a.how(&f), How::Fallback { salt: 1 }, "{virtual_aliases}");
+        assert_eq!(a.canonical(&f), x, "{virtual_aliases}");
+        let fx = rules::field(&x, 5);
+        assert_eq!(a.canonical(&fx), fx, "{virtual_aliases}");
+        assert_eq!(a.canonical(&rules::field(&f, 5)), fx, "{virtual_aliases}");
+        assert_eq!(a.conflicts(), 0, "{virtual_aliases}");
+    }
+}
+
+/// 定义的兜底链（兜底的兜底）末端是个观察到的模板：它不能先各自成类派生卡，再在下一轮被认成兜底。
+#[test]
+fn a_chained_fallback_definition_takes_its_cards_along() {
+    for virtual_aliases in [true, false] {
+        let limits = Limits {
+            virtual_aliases,
+            ..Limits::default()
+        };
+        let (mut ev, pairs) = small_collection(Some(U1));
+        ev.salts.push(U2.to_owned());
+        let (tpl, _) = pairs[2];
+        let (note, _) = pairs[4];
+        let (_, card_canonical) = pairs[5];
+        let t1 = rules::merge_fallback(U2, &tpl.text());
+        let t2 = rules::merge_fallback(U1, &t1.text());
+        let card_of_t2 = rules::card(&note, &t2, 0);
+        ev.note_types[0]
+            .templates
+            .extend([def_num(t1, 7), def_num(t2, 7)]);
+        ev.cards.push(card_of_t2);
+        let a = resolve(&ev, &limits);
+        assert_eq!(a.how(&t1), How::Fallback { salt: 1 }, "{virtual_aliases}");
+        assert_eq!(a.how(&t2), How::Fallback { salt: 0 }, "{virtual_aliases}");
+        assert_eq!(a.canonical(&t2), pairs[2].1, "{virtual_aliases}");
+        assert_eq!(
+            a.canonical(&card_of_t2),
+            card_canonical,
+            "{virtual_aliases}"
+        );
+        assert_eq!(a.conflicts(), 0, "{virtual_aliases}");
+    }
+}
+
 /// 牌组：改过名、挪过父牌组、建的时候是顶层、备选序号、内置默认牌组。
 #[test]
 fn decks_verify_against_their_name_and_parent_history() {

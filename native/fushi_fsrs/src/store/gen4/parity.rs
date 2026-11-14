@@ -15,8 +15,9 @@
 //!    不同修改的笔记（复制出来的两份旧库各自续写）不比它与它的卡。
 //!    协议 3 一侧先做完它自己欠着的收尾（待重放集合、没刷新的合成标签行）再重建（[protocol_3_caches]）。
 //!
-//! 库还没做完换代前必须做完的事（旧行没包成操作、去重作业没跑完）时，在一份拷贝上把它们做完再对拍；做不完的
-//! （新设备收段通道还开着）跳过。与协议 3 有意不同的场景列在 [KNOWN]，逐条写原因。
+//! 库还没做完换代前必须做完的事（旧行没包成操作、去重作业没跑完）时，在一份拷贝上把它们做完再对拍（拷贝、收尾
+//! 出错都算失败）；做不完的（新设备收段通道还开着）跳过，跳过的场景逐个列在 [SKIPS]，没列的跳过让测试失败。与协议 3
+//! 有意不同的场景列在 [KNOWN]，逐条写原因。
 //! 设了环境变量 `FUSHI_GEN4_PARITY_REPORT=<文件>` 时不让测试失败，改成把每个场景的结果追加进那个文件（盘点用）。
 
 use std::cell::Cell;
@@ -44,6 +45,39 @@ use crate::store::sync2::config::default_deck_id;
 use crate::store::sync2::tests::{Device, P, tempdir};
 use crate::sync2::id::Id;
 use crate::sync2::vv::OpId;
+
+/// 接不进对拍的场景（设计 §8 G6c「接不进的逐个列原因」）：(测试名的结尾, 拦下它的那条 [legacy::preflight] 拦截项,
+/// 原因)。一个场景里关掉的库不止一个，表里的场景只是其中某一次被拦下，其余照常对拍。被拦下、拦截项却不在这张表里
+/// 的，让那个测试失败（[unlisted_blockers]）；表里的场景已经不再被拦下的，让 [skips_are_exactly_the_listed_ones]
+/// 失败——跳过的集合恰好是这张表。这几处都是库关在新设备收段会话中途（`sync2_boot` 还有行）：会话要靠对端剩下的段
+/// 收完，在拷贝上做不完；真实升级遇到同样的库也被 preflight 拦下、先等会话收完。
+const SKIPS: &[(&str, &str, &str)] = &[
+    (
+        "store::sync2::tests::ingest_session_requires_begin_and_a_stable_identity",
+        "a new-device ingest channel is still open",
+        "the session is voided by an identity change after ingest_begin and the test ends there",
+    ),
+    (
+        "store::sync2::tests_cache_pending::a_session_voided_by_an_error_releases_the_held_cache",
+        "a new-device ingest channel is still open",
+        "ingest_commit fails on the rotated identity and the test ends with the session's channel row left behind",
+    ),
+    (
+        "store::sync2::tests_channel::nothing_is_distrusted_when_the_channel_opens",
+        "a new-device ingest channel is still open",
+        "the test only checks the trust state right after the channel opens and never finishes the session",
+    ),
+    (
+        "store::sync2::transport::budget_tests::ingest_session_is_a_bootstrap_until_this_device_reviews",
+        "a new-device ingest channel is still open",
+        "the test only reads the slice policy of sessions it begins and never finishes them",
+    ),
+    (
+        "store::sync2::tests_replay_pending::interrupted_session_resumes_the_pending_replay",
+        "a new-device ingest channel is still open",
+        "the channel half closes the database mid-append on purpose (\"killed\") before reopening it to resume",
+    ),
+];
 
 /// 对不上、而且不该对上的场景：(测试名的结尾, 类别——[against_protocol_3] 的类别或 `error`, 原因)。都是测试
 /// 手改了协议 3 的日志表或投影表、库自己已经不自洽。
@@ -507,17 +541,18 @@ pub(crate) fn check_core(core: &SrsCore) {
     // 也是先在旧代码上收尾。原库不动（这个测试后面可能还要重新打开它）。
     let dir = tempdir::new("g4par");
     let path = dir.0.join("srs.db");
+    // 拷贝、收尾出错都是失败，不是跳过：吞掉的话这个场景会无声地从对拍里掉出去。
     if let Err(e) = core.snapshot_into(&path, false) {
-        report(&name, "-", "skip", &format!("cannot snapshot: {e}"));
+        fail(&name, "-", "error", &format!("cannot snapshot: {e}"));
         return;
     }
     let copy = match SrsCore::open(&path) {
         Ok(c) => c,
         Err(e) => {
-            report(
+            fail(
                 &name,
                 "-",
-                "skip",
+                "error",
                 &format!("cannot reopen the snapshot: {e}"),
             );
             return;
@@ -526,32 +561,70 @@ pub(crate) fn check_core(core: &SrsCore) {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_millis() as i64);
+    let mut finished = Vec::new();
     for profile in &profiles {
-        let _ = copy.sync2_identity(profile, now);
-        for _ in 0..100_000 {
-            match copy.sync2_migrate(profile, now, None) {
-                Ok(v) if v["done"] != serde_json::json!(true) => {}
-                _ => break,
-            }
-        }
-        for _ in 0..100_000 {
-            match copy.sync2_dedup(profile, now) {
-                Ok(v) if v["done"] != serde_json::json!(true) => {}
-                _ => break,
-            }
+        match finish_on_old_code(&copy, profile, now) {
+            Ok(()) => finished.push(profile),
+            Err(e) => fail(
+                &name,
+                profile,
+                "error",
+                &format!("cannot finish the pre-upgrade work: {e}"),
+            ),
         }
     }
-    if let Ok(w) = copy.writer() {
-        for profile in &profiles {
-            check_profile(&name, &w, profile);
+    // 写连接在收尾之后才拿：收尾的每一步自己要拿它。
+    match copy.writer() {
+        Ok(w) => {
+            for profile in finished {
+                check_profile(&name, &w, profile);
+            }
         }
+        Err(e) => fail(
+            &name,
+            "-",
+            "error",
+            &format!("cannot read the snapshot: {e}"),
+        ),
     };
 }
 
+/// 换代前在旧代码上必须做完的事，在拷贝上做完：建协议 3 身份、把旧行包成操作、跑完去重作业。任何一步出错（或
+/// 十万步还没做完）照实返回。
+fn finish_on_old_code(copy: &SrsCore, profile: &str, now: i64) -> Result<(), String> {
+    copy.sync2_identity(profile, now)?;
+    let to_done = |what: &str, step: &dyn Fn() -> Result<serde_json::Value, String>| {
+        for _ in 0..100_000 {
+            if step()?["done"] == serde_json::json!(true) {
+                return Ok(());
+            }
+        }
+        Err(format!("{what} did not finish in 100000 steps"))
+    };
+    to_done("sync2_migrate", &|| copy.sync2_migrate(profile, now, None))?;
+    to_done("sync2_dedup", &|| copy.sync2_dedup(profile, now))
+}
+
 fn check_profile(name: &str, w: &Connection, profile: &str) {
-    let blockers = legacy::preflight(w, profile).unwrap_or_else(|e| vec![e]);
+    let blockers = match legacy::preflight(w, profile) {
+        Ok(b) => b,
+        Err(e) => {
+            fail(name, profile, "error", &format!("preflight: {e}"));
+            return;
+        }
+    };
     if !blockers.is_empty() {
-        report(name, profile, "skip", &blockers.join("; "));
+        let unlisted = unlisted_blockers(name, &blockers);
+        if unlisted.is_empty() {
+            report(name, profile, "skip", &blockers.join("; "));
+        } else {
+            fail(
+                name,
+                profile,
+                "unlisted skip",
+                &format!("blocked by {unlisted:?}, which SKIPS does not list for this test"),
+            );
+        }
         return;
     }
     let outcome = imported_from(w, profile);
@@ -585,12 +658,84 @@ fn check_profile(name: &str, w: &Connection, profile: &str) {
         None => {
             report(name, profile, "ok", "");
         }
-        Some((status, detail)) => {
-            if !report(name, profile, status, &detail) {
-                panic!("gen4 parity ({name}, profile {profile}): {status}: {detail}");
-            }
-        }
+        Some((status, detail)) => fail(name, profile, status, &detail),
     }
+}
+
+/// 让这个场景失败（设了 `FUSHI_GEN4_PARITY_REPORT` 时只记进报告）。
+fn fail(name: &str, profile: &str, status: &str, detail: &str) {
+    if !report(name, profile, status, detail) {
+        panic!("gen4 parity ({name}, profile {profile}): {status}: {detail}");
+    }
+}
+
+/// [blockers] 里 [SKIPS] 没为这个场景列的拦截项（空 = 这次跳过是表里列过的）。
+fn unlisted_blockers<'a>(name: &str, blockers: &'a [String]) -> Vec<&'a str> {
+    blockers
+        .iter()
+        .map(String::as_str)
+        .filter(|b| {
+            !SKIPS
+                .iter()
+                .any(|(test, blocker, _)| name.ends_with(test) && b == blocker)
+        })
+        .collect()
+}
+
+/// 跳过只认表里列过的：没列的场景、列了别的拦截项的场景都不放过。
+#[test]
+fn a_skip_must_be_listed_for_its_test_and_blocker() {
+    let ch = vec!["a new-device ingest channel is still open".to_owned()];
+    let listed = "store::sync2::tests_channel::nothing_is_distrusted_when_the_channel_opens";
+    assert!(unlisted_blockers(listed, &ch).is_empty());
+    assert_eq!(
+        unlisted_blockers("store::sync2::tests::some_other_test", &ch),
+        vec![ch[0].as_str()]
+    );
+    let more = vec![
+        ch[0].clone(),
+        "legacy rows are not migrated into the op log yet".to_owned(),
+    ];
+    assert_eq!(unlisted_blockers(listed, &more), vec![more[1].as_str()]);
+}
+
+/// [SKIPS] 里的场景现在仍然被拦下、而且只被表里那条拦截项拦下：在一个子进程里只跑这几个测试（报告模式，见文件头），
+/// 读报告。表里的条目过时（场景已经能对拍了）就在这里失败，提醒把它删掉、让它回到对拍里。
+#[test]
+fn skips_are_exactly_the_listed_ones() {
+    let dir = tempdir::new("g4skip");
+    let out = dir.0.join("report.tsv");
+    let mut cmd = std::process::Command::new(std::env::current_exe().unwrap());
+    cmd.args(SKIPS.iter().map(|(test, ..)| *test))
+        .args(["--exact", "--test-threads=1", "-q"])
+        .env("FUSHI_GEN4_PARITY_REPORT", &out);
+    let run = cmd.output().unwrap();
+    assert!(
+        run.status.success(),
+        "the listed tests themselves failed: {}{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    let ran = String::from_utf8_lossy(&run.stdout);
+    assert!(
+        ran.contains(&format!("ok. {} passed;", SKIPS.len())),
+        "every listed test must exist and run: {ran}"
+    );
+    let report = std::fs::read_to_string(&out).unwrap_or_default();
+    let lines: Vec<Vec<&str>> = report.lines().map(|l| l.split('\t').collect()).collect();
+    for (test, blocker, _) in SKIPS {
+        assert!(
+            lines
+                .iter()
+                .any(|l| l[0].ends_with(test) && l[2] == "skip" && l[3] == *blocker),
+            "{test} is listed in SKIPS but is no longer blocked by {blocker:?}: remove the entry\n{report}"
+        );
+    }
+    let bad: Vec<&Vec<&str>> = lines
+        .iter()
+        .filter(|l| !matches!(l[2], "ok" | "skip" | "known"))
+        .collect();
+    assert!(bad.is_empty(), "{bad:?}");
 }
 
 /// 真实样本库：`gen4_sample_index` 重建好的新代文件（`FUSHI_GEN4_OUT`），对「从空库逐条维护」出来的另一份
