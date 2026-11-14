@@ -13,7 +13,8 @@ import 'package:fushi_core/fushi_core.dart'
         MusicAlbumRow,
         MusicPlaylistRow,
         MusicRemoteTrackRow,
-        MusicTrackRow;
+        MusicTrackRow,
+        SourceLibraryKind;
 import 'package:fushi_music/fushi_music.dart';
 import 'package:intl/intl.dart' show Intl, NumberFormat;
 import 'package:material_ui/material_ui.dart';
@@ -25,9 +26,15 @@ import 'package:fushi/src/media/music/music_player_engine.dart';
 import 'package:fushi/src/media/music/music_queue_feed.dart';
 import 'package:fushi/src/media/music/music_session.dart';
 import 'package:fushi/src/media/music/plugin/music_plugin_favorites.dart';
+import 'package:fushi/src/media/music/plugin/music_plugin_download.dart';
 import 'package:fushi/src/media/music/plugin/music_plugin_intro_text.dart';
 import 'package:fushi/src/media/music/plugin/music_plugins.dart';
+import 'package:fushi/src/media/source_library/add_local_folder_source.dart';
+import 'package:fushi/src/media/source_library/source_library_scanner.dart'
+    show SourceScanSummary;
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/sync/interconnect_download_manager.dart'
+    show interconnectDownloadManagerProvider;
 import 'package:fushi/src/pages/implementations/music/music_album_page.dart';
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
 import 'package:fushi/src/pages/implementations/music/music_mv_page.dart';

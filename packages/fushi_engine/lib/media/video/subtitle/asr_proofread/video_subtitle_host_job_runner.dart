@@ -15,6 +15,10 @@
 ///   `cuda` / `vulkan` / `cpu`（默认 auto）；`regenerateGlossary`（bool）；
 ///   `language`：`ja` / `zh`（默认 `ja`，[VideoSubtitleLanguage.tag]）；
 ///   `suffix`（默认取 `language`）。
+/// - `frames`（bool，默认 false）：画面参考——AI 校对每批附上 host 上这个视频对应
+///   时刻的画面（spec `2026-11-11-video-subtitle-ai-reference`）。只在 host 的校对
+///   提供商开了图片输入时生效（capabilities 的 `framesAvailable`），否则照常纯文字
+///   校对；发不发由提交方决定（它那边的用户知情）。
 ///
 /// 进度：`ctx.onProgress(总进度, '<阶段>: <消息>')`，阶段名即 [VideoSubtitleStage]。
 /// 取消：[HostJobSubtitleCancelToken]。AI 请求失败（额度 / 网络 / 回复反复不合格）
@@ -44,6 +48,7 @@ import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_song_ly
 import 'package:fushi_engine/media/media_extensions.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/ai_text_completer.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/moss_provisioning.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_frame_reference.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_glossary.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_glossary_builder.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_glossary_drift_store.dart';
@@ -105,6 +110,7 @@ class VideoSubtitleJobParams {
     this.mossBackend = MossBackendPreference.auto,
     this.regenerateGlossary = false,
     this.language = VideoSubtitleLanguage.japanese,
+    this.frames = false,
     String? suffix,
   }) : _suffix = suffix;
 
@@ -182,6 +188,7 @@ class VideoSubtitleJobParams {
       ),
       regenerateGlossary: flag('regenerateGlossary', false),
       language: language,
+      frames: flag('frames', false),
       suffix: suffix,
     );
   }
@@ -195,6 +202,9 @@ class VideoSubtitleJobParams {
   final MossBackendPreference mossBackend;
   final bool regenerateGlossary;
   final VideoSubtitleLanguage language;
+
+  /// 画面参考（见文件头的 `frames`）。
+  final bool frames;
   final String? _suffix;
 
   /// 输出后缀；没给时取 [language] 的标签。
@@ -231,13 +241,18 @@ class VideoSubtitleHostJobRunner implements HostJobRunner {
     AiChatClient Function()? chatClientFactory,
     this.mossStatus,
     this.probeDurationMs,
+    SubtitleFrameSource? frameSource,
     Duration mossStatusCacheTtl = const Duration(minutes: 1),
     DateTime Function()? clock,
   }) : _chatClientFactory = chatClientFactory ?? AiChatClient.new,
+       _frameSource = frameSource ?? ffmpegSubtitleFrameSource,
        _mossStatusTtl = mossStatusCacheTtl,
        _clock = clock ?? DateTime.now;
 
   final VideoSubtitleRecognizerResolver resolveRecognizer;
+
+  /// 画面参考的取帧（生产 [ffmpegSubtitleFrameSource]；测试注入假件）。
+  final SubtitleFrameSource _frameSource;
 
   /// 管线缓存的根（[videoSubtitleJobsRootUnder]）：跨 host 任务存活，重提交即续。
   final Directory pipelineJobsRoot;
@@ -314,6 +329,8 @@ class VideoSubtitleHostJobRunner implements HostJobRunner {
       'acceptsVideoId': resolveVideoPath != null,
       'acceptsCollectionId': database != null,
       'proofreadAvailable': proofreadProvider() != null,
+      // 校对提供商开了图片输入：`frames=true` 才真的会带画面。
+      'framesAvailable': proofreadProvider()?.acceptsImages ?? false,
       'segmenters': <String>[
         for (final VideoSubtitleSegmenterMode m
             in VideoSubtitleSegmenterMode.values)
@@ -407,6 +424,8 @@ class VideoSubtitleHostJobRunner implements HostJobRunner {
         webKnowledge: web,
         proofreadConcurrency: provider.batchConcurrency,
         regenerateGlossary: params.regenerateGlossary,
+        // 收不了图的端点会整批报错：只在提供商开了图片输入时带画面。
+        frames: params.frames && provider.acceptsImages ? _frameSource : null,
       );
     }
 

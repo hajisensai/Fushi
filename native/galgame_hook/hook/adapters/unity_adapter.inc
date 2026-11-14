@@ -153,6 +153,11 @@ bool CopyUnityClipName(void* clip, wchar_t* out, size_t out_chars) {
   return true;
 }
 
+// Unity Mono canvas texts: the lane proven to be the dialogue surface
+// (unity_mono_dialogue_core.h; set on the Unity main thread, 0 = none).  Every
+// event of that lane carries kTextEventFlagDialogueSurface.
+std::atomic<uint64_t> g_unity_dialogue_surface_thread{0u};
+
 void WriteUnityTextEvent(uint64_t thread_id, void* text_component,
                          const wchar_t* clean, int length,
                          const char* hook_name, const wchar_t* hook_code,
@@ -173,6 +178,11 @@ void WriteUnityTextEvent(uint64_t thread_id, void* text_component,
   write.process_id = GetCurrentProcessId();
   write.source_kind = fushi_voice_hook::kTextSourceUnityTmp;
   write.event_kind = event_kind;
+  write.event_flags =
+      g_unity_dialogue_surface_thread.load(std::memory_order_acquire) ==
+              thread_id
+          ? fushi_voice_hook::kTextEventFlagDialogueSurface
+          : 0u;
   write.is_utf8 = 0;
   write.text = (clean == nullptr || length <= 0) ? nullptr : clean;
   write.byte_len = (clean == nullptr || length <= 0)
@@ -363,15 +373,20 @@ bool RecordUnityTmpText(void* text_component, void* string_object,
 // Canvas-text lanes (TMP_Text / UI.Text setters): publish under the lane's
 // hook identity and, when a line was published, hand the component to the
 // shared Unity canvas lookup (unity_mono_lookup.inc; it ignores the call
-// unless the IL2CPP lookup resolved and this is the Unity main thread).
-void RememberUmTmpCandidateGuarded(void* component, uint8_t lane);
+// unless the IL2CPP lookup resolved and this is the Unity main thread).  The
+// raw line also feeds the shared dialogue-surface proof
+// (unity_mono_dialogue_core.h), exactly as the Mono text path does.
+void RememberUmTmpCandidateGuarded(void* component, uint8_t lane,
+                                   const wchar_t* chars, int length);
 
 void RecordUnityCanvasText(
     void* component, void* string_object,
     const fushi_voice_hook::unity_il2cpp::CanvasLaneSpec& lane) {
   if (RecordUnityTmpText(component, string_object, lane.hook_name,
                          lane.hook_code, lane.stable)) {
-    RememberUmTmpCandidateGuarded(component, lane.bit);
+    RememberUmTmpCandidateGuarded(component, lane.bit,
+                                  g_il2cpp_string_chars(string_object),
+                                  g_il2cpp_string_length(string_object));
   }
 }
 

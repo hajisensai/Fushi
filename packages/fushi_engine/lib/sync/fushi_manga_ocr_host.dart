@@ -340,6 +340,9 @@ class MangaOcrHostJobManager {
   /// 取消/清理：订阅取消（[MangaOcrService.ocrFolder] 契约 = 页边界中止）、删除
   /// 已上传页图，但**保留** `manga_ocr_out/`（逐页断点缓存）使同卷重传后续传。
   /// 任务从表中移除（幂等，重复 DELETE 也成功）。
+  ///
+  /// 卷目录 `vol_<slug>` 可被同卷的新任务共用（旧任务终态后 [createJob] 落回
+  /// 同一目录）：表里还有**非终态**任务用着这个目录时页图归它，一个文件也不删。
   Future<void> cancelAndCleanup(MangaOcrHostJob job) async {
     await job.subscription?.cancel();
     job.subscription = null;
@@ -354,6 +357,7 @@ class MangaOcrHostJobManager {
     }
     job.runCompleted = null;
     _jobs.remove(job.id);
+    if (_dirSharedWithOtherJob(job, liveOnly: true)) return;
     try {
       if (job.dir.existsSync()) {
         for (final FileSystemEntity entity in job.dir.listSync(
@@ -381,6 +385,10 @@ class MangaOcrHostJobManager {
 
   /// 每次 API 触达时执行：过期任务（含终态与从未 start 的半截上传）出表删目录；
   /// 首次触达顺带清 host 重启遗留的孤儿目录。在跑中的任务不清。
+  ///
+  /// 目录按引用回收：过期任务出表后，表里仍有任何任务落在同一目录（同卷新任务
+  /// 共用 `vol_<slug>`）就不碰它，目录归仍在表里的任务；同一轮里共享目录的任务
+  /// 都过期时，最后一个出表的才删。
   void _housekeep() {
     final DateTime cutoff = _now().subtract(_jobTtl);
     final List<MangaOcrHostJob> expired = _jobs.values
@@ -392,6 +400,7 @@ class MangaOcrHostJobManager {
         .toList(growable: false);
     for (final MangaOcrHostJob job in expired) {
       _jobs.remove(job.id);
+      if (_dirSharedWithOtherJob(job, liveOnly: false)) continue;
       try {
         if (job.dir.existsSync()) job.dir.deleteSync(recursive: true);
       } catch (_) {
@@ -422,6 +431,17 @@ class MangaOcrHostJobManager {
     } catch (_) {
       // 孤儿扫描整体尽力而为：IO 异常不得影响正常请求处理。
     }
+  }
+
+  /// 表里（[job] 之外）还有任务落在同一目录。[liveOnly] = 只算非终态任务。
+  bool _dirSharedWithOtherJob(MangaOcrHostJob job, {required bool liveOnly}) {
+    final String dir = p.canonicalize(job.dir.path);
+    return _jobs.values.any(
+      (MangaOcrHostJob other) =>
+          !identical(other, job) &&
+          (!liveOnly || !other.state.isTerminal) &&
+          p.canonicalize(other.dir.path) == dir,
+    );
   }
 
   // ── 工具 ───────────────────────────────────────────────────────

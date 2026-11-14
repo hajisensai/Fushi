@@ -344,7 +344,7 @@ void main() {
       final List<String> asked = <String>[];
       final InterconnectJobClient client = InterconnectJobClient(
         repo: repo,
-        httpClient: MockClient((http.Request r) async {
+        plainClientFactory: () => MockClient((http.Request r) async {
           asked.add(r.url.host);
           if (r.url.host == 'host-b.invalid') {
             return http.Response(

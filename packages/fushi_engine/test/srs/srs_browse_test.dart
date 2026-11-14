@@ -27,53 +27,6 @@ class _FakeEngine implements FsrsEngine {
       List<double>.filled(a.paramCount, 1);
   @override
   String? validateParams(SrsAlgorithm a, List<double> p) => null;
-  SrsMemory _step(SrsMemory? m, int r) => SrsMemory(
-    stability: switch (r) {
-      1 => 0.3,
-      2 => 1.5 + (m?.stability ?? 0),
-      3 => 3 + (m?.stability ?? 0) * 2,
-      _ => 6 + (m?.stability ?? 0) * 3,
-    },
-    difficulty: r == 1 ? 9 : 5,
-  );
-  @override
-  SrsNextStates nextStates({
-    required SrsAlgorithm algorithm,
-    required List<double> params,
-    required double desiredRetention,
-    required SrsMemory? memory,
-    required double elapsedDays,
-  }) {
-    SrsItemState st(int r) {
-      final SrsMemory m = _step(memory, r);
-      return SrsItemState(memory: m, interval: m.stability);
-    }
-
-    return SrsNextStates(again: st(1), hard: st(2), good: st(3), easy: st(4));
-  }
-
-  @override
-  SrsMemory? memoryState({
-    required SrsAlgorithm algorithm,
-    required List<double> params,
-    required List<SrsFsrsReview> reviews,
-    SrsMemory? starting,
-  }) {
-    SrsMemory? m = starting;
-    for (final SrsFsrsReview r in reviews) {
-      m = _step(m, r.rating);
-    }
-    return m;
-  }
-
-  @override
-  SrsMemory memoryStateFromSm2({
-    required SrsAlgorithm algorithm,
-    required List<double> params,
-    required double easeFactor,
-    required double intervalDays,
-    required double sm2Retention,
-  }) => SrsMemory(stability: intervalDays, difficulty: 5);
   @override
   double retrievability({
     required SrsAlgorithm algorithm,
@@ -803,7 +756,7 @@ void main() {
       }
 
       t += 1000;
-      expect(await out.revert!(a), 0);
+      expect((await out.revert!(a)).complete, isTrue);
       final Map<String, bool> after = <String, bool>{
         for (final SrsCardCacheRow r in await a.cardRows(cards))
           r.id: r.suspended,
@@ -912,7 +865,7 @@ void main() {
       // c2 重置后又复习了一次：那条重置日志已不是最后一条有效日志，撤不掉。
       t += 1000;
       await s.answer(c2, 4);
-      expect(await reset.revert!(s), 1);
+      expect((await reset.revert!(s)).blockedLogs, 1);
       expect((await s.cardRow(c1))!.queue, SrsQueue.review.wire);
 
       expect(srsParseDueDays('3'), (3, 3));
@@ -932,7 +885,7 @@ void main() {
         expect(r.queue, SrsQueue.review.wire);
         expect(r.dueDay, inInclusiveRange(today + 5, today + 10));
       }
-      expect(await due.revert!(s), 0);
+      expect((await due.revert!(s)).blockedLogs, 0);
       expect((await s.cardRow(c3))!.queue, SrsQueue.newCard.wire);
     });
   });

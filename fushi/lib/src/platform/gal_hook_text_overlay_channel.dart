@@ -82,7 +82,8 @@ bool isGalLookupProductionProviderPair(int kind, int id) {
           id == 24 ||
           id == 25 ||
           id == 28 ||
-          id == 29;
+          id == 29 ||
+          id == 30;
     case 3: // positioned_text_api
       return id == 9 || id == 10;
     default:
@@ -1871,8 +1872,10 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
   /// Publishes the current line and its measured glyph boxes.
   ///
   /// [clientWidth] x [clientHeight] is the source client size (physical px)
-  /// the glyphs were measured against. When it differs from the live client the
-  /// runner rejects with `measured_client_size_mismatch`, revokes the previous
+  /// the glyphs were measured against, give or take [clientSizeTolerance]
+  /// physical px of producer quantization (integer CSS viewport x fractional
+  /// devicePixelRatio; the runner clamps it). When the live client falls
+  /// outside that band the runner rejects with `measured_client_size_mismatch`, revokes the previous
   /// line's catch boxes and reports `measuredLayoutStale` until a fresh
   /// measurement for the same (or a newer) [textGeneration] arrives. An empty
   /// [sourceText] with no glyphs clears the line.
@@ -1883,6 +1886,7 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
     required List<GalAttachedMeasuredGlyph> glyphs,
     required int clientWidth,
     required int clientHeight,
+    required int clientSizeTolerance,
   }) {
     final Int32List? words = encodeGalAttachedMeasuredGlyphs(glyphs);
     if (words == null) {
@@ -1899,6 +1903,7 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
         'glyphs': words,
         'clientWidth': clientWidth,
         'clientHeight': clientHeight,
+        'clientSizeTolerance': clientSizeTolerance,
       },
     );
   }

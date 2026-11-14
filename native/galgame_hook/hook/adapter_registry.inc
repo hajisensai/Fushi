@@ -676,6 +676,9 @@ class AdapterRegistry {
     kogado_hy_.ProcessPendingEvents();
     luca_.ProcessPendingEvents();
     softpal_.ProcessPendingEvents();
+    system4_.ProcessPendingEvents();
+    nitroplus_.ProcessPendingEvents();
+    entisgls_.ProcessPendingEvents();
     // These retry budgets and ordering intentionally match the old HookWorker. onModuleLoaded is
     // the stable seam; P3 can replace this bounded poll with real module events without changing
     // individual adapter contracts.
@@ -857,6 +860,11 @@ class AdapterRegistry {
       return 16;
     }
     if (softpal_.lookup_sensor_available() && g_header != nullptr &&
+        fushi_voice_hook::HasLookupRegion(g_header) &&
+        g_header->lookup_enabled != 0) {
+      return 16;
+    }
+    if (system4_.lookup_sensor_available() && g_header != nullptr &&
         fushi_voice_hook::HasLookupRegion(g_header) &&
         g_header->lookup_enabled != 0) {
       return 16;

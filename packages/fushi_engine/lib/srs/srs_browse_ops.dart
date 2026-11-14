@@ -1,6 +1,7 @@
-/// 浏览页的批量操作：每个操作一个批次落库（[SrsDbStore.editFieldsBatch] / 批量日志），
-/// 并给出撤销——标志 / 牌组 / 标签 / 删除 = 再写一批改回原值的修改记录（铁律 H，新记录支配原记录）；
-/// 重置 / 设置到期 = 撤那批日志（铁律 B：只有仍是该卡最后一条有效日志的才撤得掉）。
+/// 浏览页的批量操作：每个操作一个批次落库（[SrsDbStore.editFieldsUndoable] / 批量日志），并给出撤销——
+/// 标志 / 牌组 / 标签 / 删除 = 按撤销凭据还原（[SrsDbStore.revertEdits]：只还原之后没被别人动过的字段键，
+/// 被动过的保留现值，见 srs_edit_undo.dart）；重置 / 设置到期 = 撤那批日志（铁律 B：只有仍是该卡最后一条有效日志
+/// 的才撤得掉）。
 library;
 
 import 'dart:math';
@@ -10,12 +11,38 @@ import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi_engine/srs/srs_db_store.dart';
 
-/// 撤销一个批量操作；返回撤不掉的条数（别的设备已在其上复习过）。
-typedef SrsBatchRevert = Future<int> Function(SrsDbStore store);
+/// 撤销一个批量操作的结果。
+class SrsBatchRevertResult {
+  /// 字段类撤销（[SrsDbStore.revertEdits] 的结果）。
+  const SrsBatchRevertResult.edits(this.edits) : blockedLogs = 0;
+
+  /// 日志类撤销：[blockedLogs] 条撤不掉（别的设备已在其上复习过）。
+  const SrsBatchRevertResult.logs(this.blockedLogs)
+    : edits = SrsEditUndoResult.none;
+
+  final SrsEditUndoResult edits;
+  final int blockedLogs;
+
+  bool get complete => blockedLogs == 0 && edits.complete;
+}
+
+/// 撤销一个批量操作。
+typedef SrsBatchRevert =
+    Future<SrsBatchRevertResult> Function(SrsDbStore store);
+
+/// 字段类撤销：按凭据还原（凭据为空 = 没有改动，没有撤销）。
+SrsBatchRevert? srsEditRevert(SrsEditUndo undo) => undo.isEmpty
+    ? null
+    : (SrsDbStore s) async =>
+          SrsBatchRevertResult.edits(await s.revertEdits(undo));
 
 /// 批量操作的结果。
 class SrsBatchOutcome {
   const SrsBatchOutcome({required this.changed, this.revert});
+
+  /// 由一次可撤销写入的凭据构造：改动数 = 涉及的实体数。
+  factory SrsBatchOutcome.ofUndo(SrsEditUndo undo) =>
+      SrsBatchOutcome(changed: undo.entityCount, revert: srsEditRevert(undo));
 
   /// 实际改动的卡片 / 笔记数（no-op 不算）。
   final int changed;
@@ -24,41 +51,24 @@ class SrsBatchOutcome {
   final SrsBatchRevert? revert;
 }
 
-/// 按卡片缓存行逐张取旧值、写新值、撤销时写回旧值（只撤真正改过的卡）。
+/// 一批卡片同一个标志键写成 [after]（当前值已经是它的卡不写，没有修改记录的卡写一条同值记录只是噪音）。
 Future<SrsBatchOutcome> _cardFieldBatch(
   SrsDbStore store,
   Iterable<String> cardIds,
   String key,
-  Object? Function(SrsCardCacheRow row) before,
+  Object? Function(SrsCardCacheRow row) current,
   Object? after,
 ) async {
-  // 当前值已经是目标值的卡不写（没有修改记录的卡读出默认值，写一条同值记录只是噪音）。
   final List<SrsCardCacheRow> rows = <SrsCardCacheRow>[
     for (final SrsCardCacheRow r in await store.cardRows(cardIds))
-      if (before(r) != after) r,
+      if (current(r) != after) r,
   ];
-  final List<SrsFieldEdit> written = await store
-      .editFieldsBatch(<SrsFieldChange>[
-        for (final SrsCardCacheRow r in rows)
-          SrsFieldChange(SrsEntityKind.card, r.id, key, after),
-      ]);
-  final Set<String> touched = <String>{
-    for (final SrsFieldEdit e in written) e.entityId,
-  };
-  if (touched.isEmpty) return const SrsBatchOutcome(changed: 0);
-  final Map<String, Object?> old = <String, Object?>{
-    for (final SrsCardCacheRow r in rows)
-      if (touched.contains(r.id)) r.id: before(r),
-  };
-  return SrsBatchOutcome(
-    changed: touched.length,
-    revert: (SrsDbStore s) async {
-      await s.editFieldsBatch(<SrsFieldChange>[
-        for (final MapEntry<String, Object?> e in old.entries)
-          SrsFieldChange(SrsEntityKind.card, e.key, key, e.value),
-      ]);
-      return 0;
-    },
+  if (rows.isEmpty) return const SrsBatchOutcome(changed: 0);
+  return SrsBatchOutcome.ofUndo(
+    await store.editFieldsUndoable(<SrsFieldChange>[
+      for (final SrsCardCacheRow r in rows)
+        SrsFieldChange(SrsEntityKind.card, r.id, key, after),
+    ]),
   );
 }
 
@@ -137,7 +147,6 @@ Future<SrsBatchOutcome> srsBatchEditTags(
   final Set<String> removeLower = <String>{
     for (final String t in remove) t.toLowerCase(),
   };
-  final Map<String, List<String>> old = <String, List<String>>{};
   final List<SrsFieldChange> changes = <SrsFieldChange>[];
   // 笔记按块一次预读（以前每条笔记各查三次，BUG-3543）。
   for (final MapEntry<String, SrsNoteView?> e in (await store.notes(
@@ -156,29 +165,21 @@ Future<SrsBatchOutcome> srsBatchEditTags(
     for (final String t in add) {
       if (have.add(t.toLowerCase())) next.add(t);
     }
-    if (next.join('\u0001') == n.tags.join('\u0001')) continue;
-    old[id] = n.tags;
+    if (_sameTags(next, n.tags)) continue;
     changes.add(
       SrsFieldChange(SrsEntityKind.note, id, SrsFieldKeys.noteTags, next),
     );
   }
   if (changes.isEmpty) return const SrsBatchOutcome(changed: 0);
-  await store.editFieldsBatch(changes);
-  return SrsBatchOutcome(
-    changed: changes.length,
-    revert: (SrsDbStore s) async {
-      await s.editFieldsBatch(<SrsFieldChange>[
-        for (final MapEntry<String, List<String>> e in old.entries)
-          SrsFieldChange(
-            SrsEntityKind.note,
-            e.key,
-            SrsFieldKeys.noteTags,
-            e.value,
-          ),
-      ]);
-      return 0;
-    },
-  );
+  return SrsBatchOutcome.ofUndo(await store.editFieldsUndoable(changes));
+}
+
+bool _sameTags(List<String> a, List<String> b) {
+  if (a.length != b.length) return false;
+  for (int i = 0; i < a.length; i++) {
+    if (a[i] != b[i]) return false;
+  }
+  return true;
 }
 
 /// 删除笔记（连同全部卡片）；撤销 = 恢复。
@@ -188,24 +189,12 @@ Future<SrsBatchOutcome> srsBatchDeleteNotes(
 ) async {
   final int nowMs = store.now().$1;
   final List<String> ids = noteIds.toSet().toList();
-  final List<SrsFieldEdit> written = await store
-      .editFieldsBatch(<SrsFieldChange>[
-        for (final String id in ids)
-          SrsFieldChange(SrsEntityKind.note, id, SrsFieldKeys.deleted, nowMs),
-      ]);
-  final Set<String> touched = <String>{
-    for (final SrsFieldEdit e in written) e.entityId,
-  };
-  if (touched.isEmpty) return const SrsBatchOutcome(changed: 0);
-  return SrsBatchOutcome(
-    changed: touched.length,
-    revert: (SrsDbStore s) async {
-      await s.editFieldsBatch(<SrsFieldChange>[
-        for (final String id in touched)
-          SrsFieldChange(SrsEntityKind.note, id, SrsFieldKeys.deleted, null),
-      ]);
-      return 0;
-    },
+  if (ids.isEmpty) return const SrsBatchOutcome(changed: 0);
+  return SrsBatchOutcome.ofUndo(
+    await store.editFieldsUndoable(<SrsFieldChange>[
+      for (final String id in ids)
+        SrsFieldChange(SrsEntityKind.note, id, SrsFieldKeys.deleted, nowMs),
+    ]),
   );
 }
 
@@ -213,9 +202,11 @@ SrsBatchOutcome _logOutcome(List<SrsReviewLog> logs) => logs.isEmpty
     ? const SrsBatchOutcome(changed: 0)
     : SrsBatchOutcome(
         changed: logs.length,
-        revert: (SrsDbStore s) => s.undoLogs(<(String, String)>[
-          for (final SrsReviewLog l in logs) (l.cardId, l.id),
-        ]),
+        revert: (SrsDbStore s) async => SrsBatchRevertResult.logs(
+          await s.undoLogs(<(String, String)>[
+            for (final SrsReviewLog l in logs) (l.cardId, l.id),
+          ]),
+        ),
       );
 
 /// 重置为新卡（忘记）。需要排程内核。

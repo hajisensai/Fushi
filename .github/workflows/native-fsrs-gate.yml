@@ -8,7 +8,7 @@
 #   build_android_so.sh
 #       -> 没有任何 `pull_request` 触发的 workflow 编它。本 workflow 的 android job 补这一条：
 #          cargo-ndk 三个 ABI + ELF 架构 + ffsrs_* 符号核对。
-#   lib.rs 自己的单元测试（defaults 个数、next_states 单调、参数个数校验、zstd 往返……）与同步 v2 的
+#   lib.rs 自己的单元测试（defaults 个数、参数个数校验、可提取度批量、zstd 往返……）与同步 v2 的
 #   收敛 / 确定性测试
 #       -> 本 workflow 的 rust-tests job（linux x86_64 / aarch64、macOS arm64、Windows 四格 `cargo test --release`）。
 #

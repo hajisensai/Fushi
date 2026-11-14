@@ -16,9 +16,11 @@ inline constexpr std::array<const wchar_t*, 2>
         L"IC\\VOICE.PAK",
 };
 
-// "Leaf" is only a LunaHook family label.  Runtime admission stays pinned to
-// one measured executable; neither WA2.exe nor the surrounding *.pak files are
-// sufficient to enable binary offsets in an unknown build.
+// "Leaf" is only a LunaHook family label.  Runtime admission is the structural
+// proof in leaf_aquaplus_autoprofile.h; neither WA2.exe, the surrounding *.pak
+// files nor the executable digest enable binary offsets.  The constant below is
+// the measured build: its digest drives a self-check, and its stack-frame
+// offsets / vertex formats are the values the resolved frame shapes justify.
 struct LeafAquaplusProfile {
   std::array<uint8_t, 32> executable_sha256 = {};
   uint16_t pe_machine = 0;
@@ -182,6 +184,12 @@ inline constexpr uint8_t kEmbedLoopAnchorBytes[] = {
 inline constexpr exact_lookup::MaskedPattern kEmbedLoopAnchorPattern = {
     kEmbedLoopAnchorBytes, nullptr, sizeof(kEmbedLoopAnchorBytes)};
 inline constexpr size_t kEmbedHookOffsetFromAnchor = 23u;
+// 锚点去掉 hook 点那两字节后的前缀：对象字段 + NUL 扫描循环，单独即唯一。运行时映像上
+// hook 点可能已被注入的文本 hook 改写，前缀不受影响；hook 点由推导单独判形。
+inline constexpr exact_lookup::MaskedPattern kEmbedLoopPrefixPattern = {
+    kEmbedLoopAnchorBytes, nullptr, kEmbedHookOffsetFromAnchor};
+static_assert(kEmbedHookOffsetFromAnchor + 2u == sizeof(kEmbedLoopAnchorBytes),
+              "embed anchor ends with the two-byte hook site");
 
 // This is the only admitted access path that loads the IDirect3DDevice9
 // global immediately before the vtable dispatch. Loader-relocated absolute

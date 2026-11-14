@@ -575,10 +575,22 @@ const Set<String> kSevereAndroidExitReasons = <String>{
 /// AOSP 框架在 appop 变更时按 uid 杀进程写下的 `ApplicationExitInfo` 描述：
 /// `StorageManagerService.killAppForOpChange` 等调 `ActivityManager.killUid(appId, userId,
 /// opToName(op) + " changed.")`，`AppExitInfoTracker` 再加上子原因前缀
-/// `[KILL UID]`（`SUBREASON_KILL_UID`），原因码是 `REASON_OTHER`。整串锚定，只认这一
+/// `[KILL UID]`（`SUBREASON_KILL_UID`），原因码是 `REASON_OTHER`。子原因前缀可缺：华为
+/// EMUI / HarmonyOS 的 `AppExitInfoTracker` 不加前缀，只记 `MANAGE_EXTERNAL_STORAGE
+/// changed.`（反馈 w_dTs9eQ45，BUG-4491）。整串锚定，只认「全大写 appop 名 + changed」这一
 /// 形态：厂商 `OTHER`（`OneKeyClean`、`o-stop(40)` 等）不在此列。
 final RegExp _aospKillUidOpChanged = RegExp(
-  r'^\[KILL UID\] [A-Z][A-Z0-9_]* changed\.?$',
+  r'^(?:\[KILL UID\] )?[A-Z][A-Z0-9_]* changed\.?$',
+);
+
+/// AOSP `ProcessErrorStateRecord.scheduleCrashLocked` 想让进程自己崩（例如广播投递失败时
+/// 的 `can't deliver broadcast`）、但连 `IApplicationThread.scheduleCrash` 这次 binder 调用
+/// 都失败了——进程已死或被冻结（缓存进程冻结器，importance=400）——于是系统直接
+/// `killLocked("scheduleCrash for '<msg>' failed", REASON_CRASH)`。原因码虽是 `CRASH`，
+/// 应用里并没有发生崩溃（没有 Java / Dart / 原生栈），是系统结束了够不着的进程（反馈
+/// rInNABPqPl，BUG-4490）。整串锚定；子原因前缀可有可无。
+final RegExp _aospScheduleCrashFailed = RegExp(
+  r"^(?:\[[A-Z0-9_ ]+\] )?scheduleCrash for '.+' failed$",
 );
 
 /// OPlus（ColorOS / OxygenOS / realme UI）框架停应用时写下的 `ApplicationExitInfo` 描述：
@@ -592,12 +604,18 @@ final RegExp _oplusAppStop = RegExp(
 /// Android 退出原因 → [PreviousExitKind]；包更新 / 权限变更映射成
 /// [PreviousExitKind.appUpdated] / [PreviousExitKind.permissionChanged]（明确的良性原因，
 /// 要压过会话标记的「疑似闪退」）；不说明问题的原因（自行退出、`SIGNALED`——lmkd 与
-/// `Process.killProcess` 重启都报它，分不清）返回 null，交给会话标记。`OTHER` 只在
+/// `Process.killProcess` 重启都报它，分不清；`CRASH` 但描述是系统
+/// 「scheduleCrash for '…' failed」——系统结束了够不着的进程，应用里没崩）返回 null，
+/// 交给会话标记。`OTHER` 只在
 /// [description] 是 AOSP 自己写的 appop 变更杀进程描述时才算权限变更、是 OPlus 的
 /// `o-stop` 停应用描述时算厂商停止（[PreviousExitKind.vendorStopped]），其它照旧 null。
 PreviousExitKind? androidExitKind(String reason, {String? description}) =>
     switch (reason) {
       'CRASH_NATIVE' => PreviousExitKind.nativeCrash,
+      'CRASH'
+          when description != null &&
+              _aospScheduleCrashFailed.hasMatch(description.trim()) =>
+        null,
       'CRASH' || 'INITIALIZATION_FAILURE' => PreviousExitKind.crash,
       'ANR' => PreviousExitKind.anr,
       'LOW_MEMORY' || 'EXCESSIVE_RESOURCE_USAGE' => PreviousExitKind.memoryKill,
@@ -1644,13 +1662,32 @@ abstract final class PreviousExitLog {
   /// 开始周期内存采样（[foldIntoErrorLog] 之后、生产启动时调一次；重复调用只换探针）：每
   /// [kMemorySampleInterval] 把进程 RSS 与 [probes] 的读数写进会话标记，下次启动若上次没正常
   /// 退出，「上次未正常退出」那条带上崩前最近几次采样。
+  ///
+  /// 开始时那一次采样默认立即采。它要同步读一遍各探针（Android 上含 /proc 的各线程
+  /// CPU、匿名映射分组，小米平板 5 实测 60–70 ms），所以生产启动传 [firstSampleAfter]
+  /// （首帧上屏且入场动效跑完）把它挪出首帧关键路径；周期定时器照旧立即开始，
+  /// [firstSampleAfter] 一直不完成也只是少了开头这一次。
   static void startMemorySampling({
     List<MemoryProbe> probes = const <MemoryProbe>[],
+    Future<void>? firstSampleAfter,
   }) {
     _memoryProbes = probes;
     if (_marker == null || _memoryTimer != null) return;
-    sampleMemory(trigger: 'start');
-    _memoryTimer = Timer.periodic(kMemorySampleInterval, (_) => sampleMemory());
+    final Timer timer = Timer.periodic(
+      kMemorySampleInterval,
+      (_) => sampleMemory(),
+    );
+    _memoryTimer = timer;
+    if (firstSampleAfter == null) {
+      sampleMemory(trigger: 'start');
+      return;
+    }
+    unawaited(
+      firstSampleAfter.then((_) {
+        // 等待期间采样被停掉（测试收尾）就不再补这一次。
+        if (identical(_memoryTimer, timer)) sampleMemory(trigger: 'start');
+      }),
+    );
   }
 
   /// 停止周期采样（测试收尾用）。

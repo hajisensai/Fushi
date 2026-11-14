@@ -5499,6 +5499,11 @@ $liveConfigJs
   @override
   ShortcutScope? get dictionaryPopupInputScope => ShortcutScope.reader;
 
+  // 阅读器的弹窗制卡键走 reader scope 自己的动作（caret.part.dart）。
+  @override
+  ShortcutAction? get dictionaryPopupMineShortcutAction =>
+      ShortcutAction.readerCreateCardFromPopup;
+
   @override
   Set<ShortcutAction> get dictionaryPopupForwardedActions =>
       const <ShortcutAction>{

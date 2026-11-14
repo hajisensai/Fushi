@@ -174,7 +174,9 @@ if (Test-Path -LiteralPath $leDir) {
   }
   Remove-Item -LiteralPath $leFull -Recurse -Force
 }
-Expand-Archive -LiteralPath $leZip -DestinationPath $leDir -Force
+# ZipFile, not Expand-Archive: see install_into_bundle.ps1 (runner image 20261112+).
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+[System.IO.Compression.ZipFile]::ExtractToDirectory($leZip, $leDir)
 Copy-Item -LiteralPath (Join-Path $leDir 'LoaderDll.dll') -Destination $stageX86 -Force
 Copy-Item -LiteralPath (Join-Path $leDir 'LocaleEmulator.dll') -Destination $stageX86 -Force
 Invoke-WebRequest `

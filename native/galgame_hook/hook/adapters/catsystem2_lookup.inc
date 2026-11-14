@@ -149,8 +149,12 @@ struct Cs2LookupRuntime {
   std::atomic<int32_t> last_press_x{-1};
   std::atomic<int32_t> last_press_y{-1};
   std::atomic<uint32_t> last_press_candidates{0u};
-  std::atomic<uint32_t> render_hits{0u};
-  std::atomic<uint32_t> update_hits{0u};
+  // Per text-window class (Sites::classes): RenderChar calls into a page
+  // of that class's renderer / Update calls.
+  std::array<std::atomic<uint32_t>, cs2_lookup::kMaxTextClasses>
+      render_hits = {};
+  std::array<std::atomic<uint32_t>, cs2_lookup::kMaxTextClasses>
+      update_hits = {};
   std::atomic<uint32_t> placement_failures{0u};
 };
 
@@ -162,10 +166,11 @@ using Cs2UpdateFn = int(__thiscall*)(uintptr_t, uintptr_t, uintptr_t);
 using Cs2InputFn = LRESULT(__stdcall*)(uintptr_t, HWND, UINT, WPARAM, LPARAM);
 using Cs2InputExtraFn = LRESULT(__stdcall*)(uintptr_t, HWND, UINT, WPARAM,
                                             LPARAM, uintptr_t);
-Cs2ClearFn g_cs2_clear_original = nullptr;
-Cs2RenderFn g_cs2_render_original = nullptr;
-Cs2RenderTargetFn g_cs2_render_target_original = nullptr;
-Cs2UpdateFn g_cs2_update_original = nullptr;
+constexpr size_t kCs2Classes = cs2_lookup::kMaxTextClasses;
+Cs2ClearFn g_cs2_clear_original[kCs2Classes] = {};
+Cs2RenderFn g_cs2_render_original[kCs2Classes] = {};
+Cs2RenderTargetFn g_cs2_render_target_original[kCs2Classes] = {};
+Cs2UpdateFn g_cs2_update_original[kCs2Classes] = {};
 Cs2InputFn g_cs2_input_original = nullptr;
 Cs2InputExtraFn g_cs2_input_extra_original = nullptr;
 
@@ -263,23 +268,25 @@ bool Cs2OnGameThread() {
          GetCurrentThreadId() == rt.game_thread;
 }
 
+// Detours are instantiated once per proven text-window class K; K selects
+// the class's original and its proven object layout.
+template <size_t K>
 int __fastcall Cs2ClearDetour(uintptr_t renderer, uintptr_t) {
-  const int result = g_cs2_clear_original(renderer);
+  const int result = g_cs2_clear_original[K](renderer);
   if (Cs2OnGameThread()) g_cs2_lookup.tracker.ClearPage(renderer);
   return result;
 }
 
 // One rendered record of `renderer`'s page (bounded copy, game thread).
-void RecordCs2Render(uintptr_t renderer, uintptr_t record) {
+void RecordCs2Render(uintptr_t renderer, uintptr_t record,
+                     const cs2_lookup::ObjectLayout& layout) {
   auto& rt = g_cs2_lookup;
-  rt.render_hits.fetch_add(1u, std::memory_order_relaxed);
   if (!Cs2OnGameThread()) return;
   uint8_t bytes[cs2_lookup::kRecordBytes] = {};
   int32_t page_w = 0, page_h = 0;
   if (!ReadCs2Value(record, &bytes) ||
-      !ReadCs2Value(renderer + cs2_lookup::kRendererPageWidthOffset, &page_w) ||
-      !ReadCs2Value(renderer + cs2_lookup::kRendererPageHeightOffset,
-                    &page_h)) {
+      !ReadCs2Value(renderer + layout.page_width, &page_w) ||
+      !ReadCs2Value(renderer + layout.page_height, &page_h)) {
     return;
   }
   uint16_t code = 0u;
@@ -293,25 +300,31 @@ void RecordCs2Render(uintptr_t renderer, uintptr_t record) {
   rt.tracker.RecordGlyph(renderer, page_w, page_h, code, x, y, advance, size);
 }
 
+template <size_t K>
 int __fastcall Cs2RenderDetour(uintptr_t renderer, uintptr_t,
                                uintptr_t record) {
-  const int result = g_cs2_render_original(renderer, record);
-  RecordCs2Render(renderer, record);
+  const int result = g_cs2_render_original[K](renderer, record);
+  g_cs2_lookup.render_hits[K].fetch_add(1u, std::memory_order_relaxed);
+  RecordCs2Render(renderer, record, g_cs2_lookup.sites.classes[K].layout);
   return result;
 }
 
 // Targeted-render layout: the target is one of the renderer's two page
 // images (text fade draws into the second one and swaps them afterwards);
 // both carry the same on-screen page, anything else is not text.
+template <size_t K>
 int __fastcall Cs2RenderTargetDetour(uintptr_t renderer, uintptr_t,
                                      uintptr_t record, uintptr_t target) {
-  const int result = g_cs2_render_target_original(renderer, record, target);
+  const int result =
+      g_cs2_render_target_original[K](renderer, record, target);
+  const cs2_lookup::ObjectLayout& layout =
+      g_cs2_lookup.sites.classes[K].layout;
   uintptr_t page = 0u, work_page = 0u;
   if (ReadCs2Value(renderer + cs2_lookup::kRendererImageOffset, &page) &&
-      ReadCs2Value(renderer + cs2_lookup::kRendererWorkImageOffset,
-                   &work_page) &&
+      ReadCs2Value(renderer + layout.work_image, &work_page) &&
       cs2_lookup::IsRendererPage(target, page, work_page)) {
-    RecordCs2Render(renderer, record);
+    g_cs2_lookup.render_hits[K].fetch_add(1u, std::memory_order_relaxed);
+    RecordCs2Render(renderer, record, layout);
   }
   return result;
 }
@@ -401,13 +414,13 @@ void PublishCs2Snapshot(uintptr_t window, int32_t design_w,
   rt.latest_version.store(version, std::memory_order_release);
 }
 
-void ObserveCs2Window(uintptr_t window_object) {
+void ObserveCs2Window(uintptr_t window_object,
+                      const cs2_lookup::ObjectLayout& layout) {
   auto& rt = g_cs2_lookup;
   uintptr_t renderer = 0u, screen = 0u;
   int32_t layer_id = 0;
-  if (!ReadCs2Value(window_object + cs2_lookup::kWindowRendererOffset,
-                    &renderer) ||
-      !ReadCs2Value(window_object + cs2_lookup::kWindowScreenOffset, &screen) ||
+  if (!ReadCs2Value(window_object + layout.window_renderer, &renderer) ||
+      !ReadCs2Value(window_object + layout.window_screen, &screen) ||
       !ReadCs2Value(window_object + cs2_lookup::kWindowLayerIdOffset,
                     &layer_id) ||
       renderer == 0u || screen == 0u) {
@@ -466,16 +479,17 @@ void ObserveCs2Window(uintptr_t window_object) {
   PublishCs2Snapshot(window, design_w, design_h);
 }
 
+template <size_t K>
 int __fastcall Cs2UpdateDetour(uintptr_t window_object, uintptr_t,
                                uintptr_t a1, uintptr_t a2) {
-  const int result = g_cs2_update_original(window_object, a1, a2);
+  const int result = g_cs2_update_original[K](window_object, a1, a2);
   auto& rt = g_cs2_lookup;
-  rt.update_hits.fetch_add(1u, std::memory_order_relaxed);
+  rt.update_hits[K].fetch_add(1u, std::memory_order_relaxed);
   if (!rt.live.load(std::memory_order_acquire)) return result;
   if (rt.game_thread == 0u) rt.game_thread = GetCurrentThreadId();
   if (GetCurrentThreadId() != rt.game_thread) return result;
   rt.last_frame_tick.store(GetTickCount64(), std::memory_order_release);
-  ObserveCs2Window(window_object);
+  ObserveCs2Window(window_object, rt.sites.classes[K].layout);
   return result;
 }
 
@@ -685,46 +699,66 @@ void Cs2LookupLog(const wchar_t* format, ...) {
 // Creates the four detours first and enables them in one MinHook
 // transaction.  All or nothing: a target someone else already hooked, or any
 // MinHook failure, installs none.
-bool InstallCs2HooksBatched(const cs2_lookup::Sites& sites) {
-  struct Site {
-    void* target;
-    void* detour;
-    void** original;
-  };
-  const Site plan[] = {
-      {reinterpret_cast<void*>(sites.clear_page),
-       reinterpret_cast<void*>(&Cs2ClearDetour),
-       reinterpret_cast<void**>(&g_cs2_clear_original)},
+struct Cs2HookSite {
+  void* target;
+  void* detour;
+  void** original;
+};
+
+template <size_t K>
+void AppendCs2ClassSites(const cs2_lookup::Sites& sites, Cs2HookSite* plan,
+                         int* count) {
+  const cs2_lookup::TextClass& text = sites.classes[K];
+  plan[(*count)++] = {reinterpret_cast<void*>(text.clear_page),
+                      reinterpret_cast<void*>(&Cs2ClearDetour<K>),
+                      reinterpret_cast<void**>(&g_cs2_clear_original[K])};
+  plan[(*count)++] =
       sites.render_stack_args == cs2_lookup::kRenderTStackArgs
-          ? Site{reinterpret_cast<void*>(sites.render_char),
-                 reinterpret_cast<void*>(&Cs2RenderTargetDetour),
-                 reinterpret_cast<void**>(&g_cs2_render_target_original)}
-          : Site{reinterpret_cast<void*>(sites.render_char),
-                 reinterpret_cast<void*>(&Cs2RenderDetour),
-                 reinterpret_cast<void**>(&g_cs2_render_original)},
-      {reinterpret_cast<void*>(sites.window_update),
-       reinterpret_cast<void*>(&Cs2UpdateDetour),
-       reinterpret_cast<void**>(&g_cs2_update_original)},
-      sites.input_stack_args == cs2_lookup::kInputTStackArgs
-          ? Site{reinterpret_cast<void*>(sites.input_handler),
-                 reinterpret_cast<void*>(&Cs2InputExtraDetour),
-                 reinterpret_cast<void**>(&g_cs2_input_extra_original)}
-          : Site{reinterpret_cast<void*>(sites.input_handler),
-                 reinterpret_cast<void*>(&Cs2InputDetour),
-                 reinterpret_cast<void**>(&g_cs2_input_original)},
-  };
-  constexpr int kSites = static_cast<int>(sizeof(plan) / sizeof(plan[0]));
-  if (!g_cs_ready ||
+          ? Cs2HookSite{reinterpret_cast<void*>(text.render_char),
+                        reinterpret_cast<void*>(&Cs2RenderTargetDetour<K>),
+                        reinterpret_cast<void**>(
+                            &g_cs2_render_target_original[K])}
+          : Cs2HookSite{reinterpret_cast<void*>(text.render_char),
+                        reinterpret_cast<void*>(&Cs2RenderDetour<K>),
+                        reinterpret_cast<void**>(&g_cs2_render_original[K])};
+  plan[(*count)++] = {reinterpret_cast<void*>(text.window_update),
+                      reinterpret_cast<void*>(&Cs2UpdateDetour<K>),
+                      reinterpret_cast<void**>(&g_cs2_update_original[K])};
+}
+
+// Creates every detour first (three per proven text-window class plus the
+// input handler) and enables them in one MinHook transaction.  All or
+// nothing: a target someone else already hooked, or any MinHook failure,
+// installs none.
+bool InstallCs2HooksBatched(const cs2_lookup::Sites& sites) {
+  static_assert(kCs2Classes == 2u, "one AppendCs2ClassSites per class");
+  using Site = Cs2HookSite;
+  if (!g_cs_ready || sites.class_count == 0u ||
+      sites.class_count > kCs2Classes ||
       (sites.render_stack_args != 1u &&
        sites.render_stack_args != cs2_lookup::kRenderTStackArgs) ||
       (sites.input_stack_args != cs2_lookup::kInputStackArgs &&
        sites.input_stack_args != cs2_lookup::kInputTStackArgs)) {
     return false;
   }
+  Site plan[3u * kCs2Classes + 1u] = {};
+  int kSites = 0;
+  AppendCs2ClassSites<0u>(sites, plan, &kSites);
+  if (sites.class_count > 1u) AppendCs2ClassSites<1u>(sites, plan, &kSites);
+  plan[kSites++] =
+      sites.input_stack_args == cs2_lookup::kInputTStackArgs
+          ? Site{reinterpret_cast<void*>(sites.input_handler),
+                 reinterpret_cast<void*>(&Cs2InputExtraDetour),
+                 reinterpret_cast<void**>(&g_cs2_input_extra_original)}
+          : Site{reinterpret_cast<void*>(sites.input_handler),
+                 reinterpret_cast<void*>(&Cs2InputDetour),
+                 reinterpret_cast<void**>(&g_cs2_input_original)};
   EnterCriticalSection(&g_cs);
   bool ok = g_hooked_count + kSites <= 64;
   for (int i = 0; ok && i < g_hooked_count; ++i) {
-    for (const Site& site : plan) ok = ok && g_hooked_fns[i] != site.target;
+    for (int j = 0; j < kSites; ++j) {
+      ok = ok && g_hooked_fns[i] != plan[j].target;
+    }
   }
   int created = 0;
   for (; ok && created < kSites; ++created) {
@@ -740,10 +774,12 @@ bool InstallCs2HooksBatched(const cs2_lookup::Sites& sites) {
   }
   ok = ok && MH_ApplyQueued() == MH_OK;
   if (ok) {
-    for (const Site& site : plan) g_hooked_fns[g_hooked_count++] = site.target;
+    for (int i = 0; i < kSites; ++i) {
+      g_hooked_fns[g_hooked_count++] = plan[i].target;
+    }
   } else {
     for (int i = 0; i < created; ++i) MH_RemoveHook(plan[i].target);
-    for (const Site& site : plan) *site.original = nullptr;
+    for (int i = 0; i < kSites; ++i) *plan[i].original = nullptr;
   }
   LeaveCriticalSection(&g_cs);
   return ok;
@@ -806,10 +842,10 @@ bool InstallCatSystem2Lookup() {
   rt.installed = hooked;
   if (!rt.installed) rt.live.store(false, std::memory_order_release);
   Cs2LookupLog(
-      L"catsystem2-lookup: sites variant=%u clear=+0x%lx render=+0x%lx "
-      L"update=+0x%lx input=+0x%lx charimage=+0x%lx raster=+0x%lx hooks=%d "
-      L"scan=%.1fms",
-      static_cast<unsigned>(rt.sites.variant),
+      L"catsystem2-lookup: sites variant=%u classes=%u clear=+0x%lx "
+      L"render=+0x%lx update=+0x%lx input=+0x%lx charimage=+0x%lx "
+      L"raster=+0x%lx hooks=%d scan=%.1fms",
+      static_cast<unsigned>(rt.sites.variant), rt.sites.class_count,
       static_cast<unsigned long>(rt.sites.clear_page - base),
       static_cast<unsigned long>(rt.sites.render_char - base),
       static_cast<unsigned long>(rt.sites.window_update - base),
@@ -817,6 +853,21 @@ bool InstallCatSystem2Lookup() {
       static_cast<unsigned long>(rt.sites.char_image - base),
       static_cast<unsigned long>(rt.sites.rasteriser - base), hooked ? 1 : 0,
       scan_ms);
+  for (uint32_t index = 0u; index < rt.sites.class_count; ++index) {
+    const cs2_lookup::TextClass& text = rt.sites.classes[index];
+    Cs2LookupLog(
+        L"catsystem2-lookup: class %u clear=+0x%lx render=+0x%lx "
+        L"update=+0x%lx layout window.screen=+0x%lx window.renderer=+0x%lx "
+        L"page=+0x%lx/+0x%lx work=+0x%lx",
+        index, static_cast<unsigned long>(text.clear_page - base),
+        static_cast<unsigned long>(text.render_char - base),
+        static_cast<unsigned long>(text.window_update - base),
+        static_cast<unsigned long>(text.layout.window_screen),
+        static_cast<unsigned long>(text.layout.window_renderer),
+        static_cast<unsigned long>(text.layout.page_width),
+        static_cast<unsigned long>(text.layout.page_height),
+        static_cast<unsigned long>(text.layout.work_image));
+  }
   if (rt.installed && g_header != nullptr) {
     fushi_voice_hook::AtomicOrShared32(
         &g_header->lookup_diag, fushi_voice_hook::kLookupDiagSensorInstalled);
@@ -1121,11 +1172,12 @@ void NoteCs2Retire(uint32_t reason) {
     const auto& f = g_cs2_model_failure;
     const auto& t = rt.tracker.stats();
     Cs2LookupLog(
-        L"catsystem2-lookup: gate=%s step=%u %d,%d,%d,%d render=%u update=%u "
-        L"rec=%u args=%u bounds=%u clear=%u reset=%u placefail=%u last=%d,%d "
-        L"page=%dx%d size=%d",
+        L"catsystem2-lookup: gate=%s step=%u %d,%d,%d,%d render=%u/%u "
+        L"update=%u/%u rec=%u args=%u bounds=%u clear=%u reset=%u "
+        L"placefail=%u last=%d,%d page=%dx%d size=%d",
         kNames[reason], reason == 4u ? f.step : 0u, f.a, f.b, f.c, f.d,
-        rt.render_hits.load(), rt.update_hits.load(), t.recorded,
+        rt.render_hits[0].load(), rt.render_hits[1].load(),
+        rt.update_hits[0].load(), rt.update_hits[1].load(), t.recorded,
         t.rejected_args, t.rejected_bounds, t.page_clears, t.page_resets,
         rt.placement_failures.load(), t.last_x, t.last_y, t.last_w, t.last_h,
         t.last_size);
@@ -1135,10 +1187,43 @@ void NoteCs2Retire(uint32_t reason) {
                reason < 6u ? kNames[reason] : L"?");
 }
 
+// Worker: the detour counters, logged whenever one moved since the last line
+// (at most one line per kCs2CounterLogMs, bounded budget), whatever gate the
+// provider is waiting on, so a session shows whether the hooked text-window
+// classes are the ones the game draws its dialogue with.
+constexpr uint64_t kCs2CounterLogMs = 2000u;
+void NoteCs2Counters(uint64_t now) {
+  static uint64_t last_tick = 0u;
+  static uint32_t budget = 64u;
+  static std::array<uint32_t, 8u> last = {};
+  auto& rt = g_cs2_lookup;
+  if (budget == 0u || (last_tick != 0u && now - last_tick < kCs2CounterLogMs)) {
+    return;
+  }
+  const auto& t = rt.tracker.stats();
+  const std::array<uint32_t, 8u> current = {
+      rt.render_hits[0].load(std::memory_order_relaxed),
+      rt.render_hits[1].load(std::memory_order_relaxed),
+      rt.update_hits[0].load(std::memory_order_relaxed),
+      rt.update_hits[1].load(std::memory_order_relaxed),
+      t.recorded, t.page_clears, t.rejected_args + t.rejected_bounds,
+      rt.placement_failures.load(std::memory_order_relaxed)};
+  if (current == last) return;
+  last = current;
+  last_tick = now;
+  --budget;
+  Cs2LookupLog(
+      L"catsystem2-lookup: counters render=%u/%u update=%u/%u rec=%u "
+      L"clear=%u rejected=%u placefail=%u",
+      current[0], current[1], current[2], current[3], current[4], current[5],
+      current[6], current[7]);
+}
+
 void ProcessCatSystem2LookupTick() {
   auto& rt = g_cs2_lookup;
   if (!rt.installed) return;
   NoteCs2Presses();
+  NoteCs2Counters(GetTickCount64());
   if (g_stop || g_header == nullptr ||
       !fushi_voice_hook::HasLookupRegion(g_header) ||
       fushi_voice_hook::AtomicLoadShared32(&g_header->lookup_enabled) == 0u) {
