@@ -63,7 +63,7 @@ abstract interface class ProfileDeletionCascade {
   Future<ProfileDeletionCleanup> prepare(ProfileRow profile);
 
   /// 一次性存量扫描：清掉 srs.db 里不属于 [live] 中任何 Profile 的数据（同样先备份）。已扫过就什么都不做。
-  /// 返回清掉的无主 uid 数。
+  /// 返回清掉的无主 uid 数（含表里已经没有行、只清掉残留元数据键的 uid）。
   Future<int> sweepOrphans(List<ProfileRow> live);
 }
 

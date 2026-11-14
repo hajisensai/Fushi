@@ -1584,6 +1584,24 @@ extension _VideoSubtitle on _VideoFushiPageState {
     final SubtitleSearchSeed seed = await _buildJimakuSeed(query);
     final SubtitleCollectionSpec? collection = await _subtitleCollectionSpec();
     if (!context.mounted) return;
+    // BUG-4496：「整个合集」批量下载只把字幕写进存储（本地 DB / 远端 prefs），本页
+    // 的字幕列表与 cue 是开视频时读进内存的，不会自己变——当前集下好了字幕，列表
+    // 仍是空的，要重开视频才有。工作台盖着本页期间不会换集，按打开时的当前集收下
+    // 落到它的那条，关闭后与「本集」下载同一条链路登记并应用。批量途中关掉工作台
+    // 时批量不取消、之后才落盘，那条按事件到达时直接应用（仍在同一集才应用）。
+    final String workbenchBookUid = _activeBookUid;
+    final WorkbenchCollectionPersistRouter collectionRouter =
+        WorkbenchCollectionPersistRouter(
+          workbenchBookUid: workbenchBookUid,
+          applyLate: (String path) {
+            if (!mounted ||
+                _activeBookUid != workbenchBookUid ||
+                !identical(_controller, controller)) {
+              return;
+            }
+            unawaited(_applyDownloadedSubtitles(controller, <String>[path]));
+          },
+        );
     final List<String>? downloadedPaths = await SubtitleWorkbenchPage.open(
       context,
       host: AppSubtitleWorkbenchHost(appModel),
@@ -1600,15 +1618,17 @@ extension _VideoSubtitle on _VideoFushiPageState {
         videoPath: _isRemote ? null : _currentVideoPath,
       ),
       collection: collection,
+      onCollectionSubtitlePersisted: collectionRouter.onPersisted,
     );
+    final String? collectionPathForCurrent = collectionRouter.close();
     // 工作台内含联网搜索/下载，会夺焦；关闭后把焦点还给 Video。
     _focusOwnership.reclaim(FocusReclaimCause.overlayClosed);
-    if (downloadedPaths == null ||
-        downloadedPaths.isEmpty ||
-        !context.mounted) {
-      return;
-    }
-    await _applyDownloadedSubtitles(controller, downloadedPaths);
+    final List<String> toApply = workbenchPathsToApply(
+      episodePaths: downloadedPaths,
+      collectionPathForCurrent: collectionPathForCurrent,
+    );
+    if (toApply.isEmpty || !context.mounted) return;
+    await _applyDownloadedSubtitles(controller, toApply);
   }
 
   /// 在线下载的字幕落盘后：登记进字幕轨列表并把第一条应用为主字幕。字幕工作台
@@ -3142,6 +3162,60 @@ extension _VideoSubtitle on _VideoFushiPageState {
       _currentVideoPath != null ||
       controller.cues.isNotEmpty;
 
+  /// 「交给 AI 的参考」区（[VideoSubtitleStudioAiReference]）：只有本机能跑带 AI 校对的
+  /// 生成管线时才有（互联远端的管线在 host 上跑，用 host 自己的文件与指派）。「参考
+  /// 画面」是与生成面板共用的偏好；发不出去的原因现读（提供商指派 / 图片输入可能在
+  /// 面板开着时被改掉）。
+  Future<VideoSubtitleStudioAiReference?> _subtitleStudioAiReference() async {
+    final String? videoPath = _currentVideoPath;
+    if (videoPath == null || _isRemote || !_canRunSubtitlePipeline) return null;
+    final PrefsRepoVideoSubtitleGeneratePrefs prefs =
+        PrefsRepoVideoSubtitleGeneratePrefs(appModel.prefsRepo);
+    final AppVideoSubtitleService service = appVideoSubtitleService(appModel);
+    // 异步 stat：视频在网络盘上时同步 stat 会冻结 UI isolate（BUG-3756）。
+    final bool localFile =
+        !isNetworkMediaPath(videoPath) && await hasLocalMediaFile(videoPath);
+    return VideoSubtitleStudioAiReference(
+      framesEnabled: () => prefs.frames,
+      setFramesEnabled: (BuildContext context, bool value) async {
+        if (value && !await confirmVideoSubtitleAiFrames(context, prefs)) {
+          return;
+        }
+        await prefs.setFrames(value);
+      },
+      framesProblem: () => !localFile
+          ? VideoSubtitleStudioFramesProblem.notLocalFile
+          : service.proofreadProvider == null
+          ? VideoSubtitleStudioFramesProblem.noProvider
+          : !service.proofreadAcceptsImages
+          ? VideoSubtitleStudioFramesProblem.providerRejectsImages
+          : null,
+    );
+  }
+
+  /// 播放器里正显示的主 / 副字幕 → 交给 AI 校对的参考轨（视频路径 → 轨），各自按
+  /// 当前的调轴偏移摆到视频时间上。与目标语言相同的轨由管线丢掉（只收其它语言）。
+  Map<String, List<SubtitleEvidenceTrack>> _playerSubtitleEvidence(
+    VideoPlayerController controller,
+    String videoPath,
+  ) {
+    final List<SubtitleEvidenceTrack> tracks = <SubtitleEvidenceTrack>[
+      ?videoSubtitleStudioEvidenceTrack(
+        cues: controller.secondaryCues,
+        delayMs: controller.effectiveSecondaryDelayMs,
+        label: 'player-secondary',
+      ),
+      ?videoSubtitleStudioEvidenceTrack(
+        cues: controller.cues,
+        delayMs: controller.delayMs,
+        label: 'player-primary',
+      ),
+    ];
+    return tracks.isEmpty
+        ? const <String, List<SubtitleEvidenceTrack>>{}
+        : <String, List<SubtitleEvidenceTrack>>{videoPath: tracks};
+  }
+
   /// 打开字幕工作台（[showVideoSubtitleStudioSheet]）。参考区读的都是播放器的现值
   /// （主 / 副字幕 cue、各自扣过调轴的等效位置、裸画面截图），面板开着时随播放实时
   /// 刷新；工具全部复用本页既有路径，面板只负责分派。
@@ -3155,6 +3229,9 @@ extension _VideoSubtitle on _VideoFushiPageState {
     );
     final bool canGenerate =
         _canTranscribeVideoSpeech || _canRunSubtitlePipeline;
+    final VideoSubtitleStudioAiReference? aiReference =
+        await _subtitleStudioAiReference();
+    if (!context.mounted || !identical(_controller, controller)) return;
     await showVideoSubtitleStudioSheet(
       context: context,
       reference: VideoSubtitleStudioReference(
@@ -3173,6 +3250,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
         captureFrame: controller.screenshot,
         jumpToCue: (AudioCue cue) => unawaited(controller.skipToCue(cue)),
       ),
+      aiReference: aiReference,
       actions: VideoSubtitleStudioActions(
         generate: canGenerate
             ? () => _openSubtitleGeneration(controller)
@@ -3404,6 +3482,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
       onJobStarted: (AppVideoSubtitleJob job) =>
           unawaited(_applyPipelineSubtitleWhenDone(controller, job, videoPath)),
       onTranscribeInApp: onTranscribeInApp,
+      // 播放器里正对照着的其它语言字幕交给 AI 校对当参考（工作台的「参考」不只给人看）。
+      pinnedEvidence: _playerSubtitleEvidence(controller, videoPath),
     );
   }
 
@@ -3594,6 +3674,12 @@ extension _VideoSubtitle on _VideoFushiPageState {
         audioProfile: AsrAudioProfile.mixedAudio,
       ),
       autoProofread: autoProofread,
+      // 转录稿的时间轴就是视频时间（音轨从 0 抽到片尾）：校对时可以附上这个视频的
+      // 画面。取不到本机字节的路径（远端 / 流）取帧那边自己跳过。
+      proofreadHost: appAsrProofreadHost(
+        appModel.prefsRepo,
+        framesVideoPath: _currentVideoPath,
+      ),
     );
   }
 

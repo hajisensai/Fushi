@@ -3209,8 +3209,8 @@ mod tests {
             |d: &Device| call(d, "anki_tags", json!({"owner": "ankiconnect"}))["tags"].clone();
         assert_eq!(tags(&d), json!(["B", "b", "t1"]));
         {
-            // 写连接上自动提交一条改动：COMMIT 已对读连接可见，守卫还没释放（没 settle）。浏览命令不在写连接上读
-            // （没有挂着的 Drift 事务），所以持着守卫也照样走读连接。
+            // 写连接上自动提交一条改动：COMMIT 已对读连接可见，守卫还没释放（没 settle）。浏览命令不在写连接上读，
+            // 所以持着守卫也照样走读连接。
             let w = d.core.writer().unwrap();
             w.execute(
                 "UPDATE srs_notes_cache SET tags_json = '[\"zz\"]' WHERE id = srs_id(?1)",

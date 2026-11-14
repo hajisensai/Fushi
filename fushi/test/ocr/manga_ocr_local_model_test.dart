@@ -239,7 +239,17 @@ void main() {
           kMangaCtcRecFileName,
         ]);
         final MangaOcrModelFile rec = MangaOcrLocalModel.mangaCtc.manifest.last;
-        expect(rec.url, contains('/resolve/$kMangaCtcRecRevision/'));
+        // BUG-4492：上游改写历史后旧 revision ba1d479e 整个 404，main 又已换成
+        // 词表不兼容的 v0.3。这里钉死「main 历史里 Release v0.2 提交 + v0.2 文件
+        // 名」这对组合（2026-11-15 实测下载 21167540 字节、LFS sha256
+        // de12c84c…1888），必须是完整 commit SHA，不能是可变的分支名。
+        expect(kMangaCtcRecRevision, matches(RegExp(r'^[0-9a-f]{40}$')));
+        expect(kMangaCtcRecRevision, isNot(startsWith('ba1d479e')));
+        expect(
+          rec.url,
+          'https://huggingface.co/Kellenok/PP-OCRv6_manga/resolve/'
+          'd090c421598eadd2e179ad62c29ff0767492072c/rec/manga_rec_v0.2.onnx',
+        );
         expect(rec.expectedBytes, 21167540);
         final int total = MangaOcrLocalModel.mangaCtc.manifest.fold<int>(
           0,
