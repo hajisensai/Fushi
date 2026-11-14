@@ -33,15 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3994 条。点号进各自文件。
+> 共 4002 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4623](bugs/BUG-4623-srs-admin-decks-route-shadows-ctl.md) | ✅ | ✅ | srs-admin-decks-route-shadows-ctl |
-> 共 4001 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-4626](bugs/BUG-4626-srs-admin-decks-route-shadows-ctl.md) | ✅ | ✅ | srs-admin-decks-route-shadows-ctl |
 | [BUG-4625](bugs/BUG-4625-linux-wpe-click-pointerup-button-mask.md) | ✅ | ✅ | Linux 漫画阅读器 OCR 文字无法点击查词 |
 | [BUG-4624](bugs/BUG-4624-linux-wpe-resize-stride-crash.md) | ✅ | ✅ | Linux 漫画页面出现条纹，调整窗口大小时阅读器崩溃 |
 | [BUG-4623](bugs/BUG-4623-linux-wpe-borrowed-pixels-refcount.md) | ✅ | ✅ | Linux 漫画阅读器释放 WPE 借用像素缓冲区后崩溃 |
