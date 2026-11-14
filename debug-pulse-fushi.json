@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-14T15:19:00Z",
+ "generatedAt": "2026-11-14T15:24:07Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "017cdcf5de029db052c8846344f30867e3de005f",
@@ -12,8 +12,8 @@
    "version": "3.3.0",
    "sha": "e88fbfc053abda2c089f928bed83cae8b3802734",
    "unknown": false,
-   "publishedAt": "2026-11-14T15:09:06Z",
-   "testflight": false,
+   "publishedAt": "2026-11-14T15:23:54Z",
+   "testflight": true,
    "baseSeq": 26792,
    "prs": [
     3286,
@@ -31,16 +31,13 @@
      "state": "ok"
     },
     "windows": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43603825667"
+     "state": "ok"
     },
     "macos": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43603825667"
+     "state": "ok"
     },
     "ios": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43603825667"
+     "state": "ok"
     }
    }
   },
@@ -144,48 +141,13 @@
    "unknown": false,
    "publishedAt": "2026-11-12T20:39:23Z",
    "testflight": true,
-   "baseSeq": 26447,
-   "prs": [
-    3295,
-    3274,
-    3347,
-    3336,
-    3278,
-    3358,
-    3349
-   ],
-   "direct": [],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "ok"
-    },
-    "windows": {
-     "state": "ok"
-    },
-    "macos": {
-     "state": "ok"
-    },
-    "ios": {
-     "state": "ok"
-    }
-   }
-  },
-  {
-   "seq": 26447,
-   "version": "3.3.0",
-   "sha": "75bd2199c533eef92dbaa126f439f9c7617ac271",
-   "unknown": false,
-   "publishedAt": "2026-11-11T14:05:47Z",
-   "testflight": true,
    "baseSeq": null,
    "prs": [],
    "direct": [],
    "truncated": false,
    "platforms": {
     "android": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43025317632"
+     "state": "ok"
     },
     "windows": {
      "state": "ok"
@@ -290,24 +252,6 @@
    "deletions": 3,
    "labels": []
   },
-  "3274": {
-   "number": 3274,
-   "title": "fix(srs): 远程复习的「今天」按客户端设备的时区算",
-   "author": "W1ght",
-   "mergedAt": "2026-11-12T18:20:54Z",
-   "additions": 327,
-   "deletions": 22,
-   "labels": []
-  },
-  "3278": {
-   "number": 3278,
-   "title": "fix(srs): 复习完页在库变化后出现「有新的到期卡」入口",
-   "author": "W1ght",
-   "mergedAt": "2026-11-12T18:19:48Z",
-   "additions": 175,
-   "deletions": 28,
-   "labels": []
-  },
   "3279": {
    "number": 3279,
    "title": "feat(tool): 远程适配机群——Claude 操作社区志愿者电脑做 galgame 内嵌查词适配",
@@ -342,15 +286,6 @@
    "mergedAt": "2026-11-12T19:20:16Z",
    "additions": 1057,
    "deletions": 187,
-   "labels": []
-  },
-  "3295": {
-   "number": 3295,
-   "title": "fix(srs): 无主复习数据扫描在已扫过的库里再跑一次，进行中并入的 uid 不算无主（BUG-4387）",
-   "author": "W1ght",
-   "mergedAt": "2026-11-12T18:26:22Z",
-   "additions": 269,
-   "deletions": 17,
    "labels": []
   },
   "3296": {
@@ -542,15 +477,6 @@
    "deletions": 9,
    "labels": []
   },
-  "3336": {
-   "number": 3336,
-   "title": "refactor(srs): 删掉已无调用方的四个排程 FFI op（next_states / memory_state / memory_state_from_sm2 / next_interval）与 Dart 绑定",
-   "author": "W1ght",
-   "mergedAt": "2026-11-12T18:20:09Z",
-   "additions": 12,
-   "deletions": 754,
-   "labels": []
-  },
   "3337": {
    "number": 3337,
    "title": "fix(galgame): 同目录启动器 stub 首次采样前退出时会话仍交接给本体",
@@ -596,15 +522,6 @@
    "deletions": 14,
    "labels": []
   },
-  "3347": {
-   "number": 3347,
-   "title": "refactor(srs): 三套卡面各抄一份的共用逻辑收成一份（不动分派，渲染结果不变）",
-   "author": "W1ght",
-   "mergedAt": "2026-11-12T18:20:29Z",
-   "additions": 1286,
-   "deletions": 292,
-   "labels": []
-  },
   "3348": {
    "number": 3348,
    "title": "test(galdriver): accept4 句子比对忽略空白",
@@ -612,15 +529,6 @@
    "mergedAt": "2026-11-12T18:37:08Z",
    "additions": 7,
    "deletions": 2,
-   "labels": []
-  },
-  "3349": {
-   "number": 3349,
-   "title": "test: 修 develop CI 上三处测试自身的红（portal dbus / 字幕内置 key / glue seek 回执）",
-   "author": "W1ght",
-   "mergedAt": "2026-11-12T18:18:11Z",
-   "additions": 34,
-   "deletions": 6,
    "labels": []
   },
   "3350": {
@@ -650,15 +558,6 @@
    "mergedAt": "2026-11-12T18:48:00Z",
    "additions": 1375,
    "deletions": 38,
-   "labels": []
-  },
-  "3358": {
-   "number": 3358,
-   "title": "fix(tool): heavy 等待者探测正在被删的排队票据时不再崩溃（BUG-4388）",
-   "author": "W1ght",
-   "mergedAt": "2026-11-12T18:19:26Z",
-   "additions": 78,
-   "deletions": 2,
    "labels": []
   },
   "3359": {
