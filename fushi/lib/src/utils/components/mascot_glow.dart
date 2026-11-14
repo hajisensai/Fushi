@@ -13,7 +13,7 @@ import 'dart:ui' as ui;
 
 import 'package:material_ui/material_ui.dart';
 
-import 'package:fushi/src/sync/background_tasks_indicator.dart';
+import 'package:fushi/src/sync/sync_background_activity.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 
