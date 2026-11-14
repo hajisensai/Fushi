@@ -571,12 +571,23 @@ class _RenderMarqueeIntrinsics extends RenderProxyBox {
         ),
       );
 
+  /// 与子树实际布局给出的基线一致（debug 下 `debugCheckIntrinsicSizes` 会逐条比对）：
+  /// - 放不下走滚动版 [Marquee]（滚动视图），没有基线 → null；Flutter 3.50 起
+  ///   proxy box 对「子节点无基线」也是如实回 null（flutter#189723），不再断言。
+  /// - 放得下走 `Align(centerLeft, heightFactor: 1)` 里的 [Text]：父约束给的高比一行
+  ///   高时文字竖直居中，基线要加上这段偏移。
   @override
   double? computeDryBaseline(
     covariant BoxConstraints constraints,
     TextBaseline baseline,
-  ) => switch (baseline) {
-    TextBaseline.alphabetic => _alphabeticBaseline,
-    TextBaseline.ideographic => _ideographicBaseline,
-  };
+  ) {
+    if (_natural.width > constraints.maxWidth) return null;
+    final double top =
+        (computeDryLayout(constraints).height - _natural.height) / 2;
+    return top +
+        switch (baseline) {
+          TextBaseline.alphabetic => _alphabeticBaseline,
+          TextBaseline.ideographic => _ideographicBaseline,
+        };
+  }
 }
