@@ -38,6 +38,13 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-4623](bugs/BUG-4623-srs-admin-decks-route-shadows-ctl.md) | ✅ | ✅ | srs-admin-decks-route-shadows-ctl |
+> 共 4001 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4625](bugs/BUG-4625-linux-wpe-click-pointerup-button-mask.md) | ✅ | ✅ | Linux 漫画阅读器 OCR 文字无法点击查词 |
+| [BUG-4624](bugs/BUG-4624-linux-wpe-resize-stride-crash.md) | ✅ | ✅ | Linux 漫画页面出现条纹，调整窗口大小时阅读器崩溃 |
+| [BUG-4623](bugs/BUG-4623-linux-wpe-borrowed-pixels-refcount.md) | ✅ | ✅ | Linux 漫画阅读器释放 WPE 借用像素缓冲区后崩溃 |
 | [BUG-4622](bugs/BUG-4622-manga-ocr-apostrophe.md) | ✅ | ✅ | 漫画 OCR 逐字节点的词内撇号扫描与小说不一致 |
 | [BUG-4621](bugs/BUG-4621-manga-ocr-dehyphenation.md) | ✅ | ✅ | 漫画 OCR 行尾断字导致整词查词失败 |
 | [BUG-4620](bugs/BUG-4620-cuda-budget-read-from-igpu-adapter.md) | ✅ | ✅ | CUDA 转录的显存预算读的是 DXGI 适配器 0，混合显卡笔记本上是核显 |
@@ -55,6 +62,11 @@
 | [BUG-4501](bugs/BUG-4501-sync-summary-ignores-settings.md) | ✅ | ✅ | sync-summary-ignores-settings |
 | [BUG-4500](bugs/BUG-4500-srs-native-card-summary-tap-triggers-lookup.md) | 🚧 | 🚧 | 复习原生卡面点「语法详情」折叠标题会同时弹出查词 |
 | [BUG-4499](bugs/BUG-4499-popup-image-lightbox-persists-across-lookups.md) | ✅ | ✅ | 查词弹窗里点开的放大图跨查词残留，下次查别的词仍盖在结果上 |
+| [BUG-4498](bugs/BUG-4498-study-clock-idle-resume-recredits.md) | ✅ | ✅ | 空闲门过期后恢复输入，超出阈值的暂停被整段算回学习时长 |
+| [BUG-4496](bugs/BUG-4496-collection-subtitle-batch-player-not-refreshed.md) | ✅ | ✅ | 整季下载字幕后当前视频的字幕列表仍为空，要重开视频才有 |
+| [BUG-4495](bugs/BUG-4495-music-lyrics-latin-lookup-mid-word.md) | ✅ | ✅ | 音乐歌词点英文单词中间的字母只查到后半截 |
+| [BUG-4494](bugs/BUG-4494-music-song-list-local-rows-no-cover.md) | ✅ | ✅ | 音乐「歌曲」分区本地曲目行全是音符图标，不显示封面 |
+| [BUG-4493](bugs/BUG-4493-music-artist-combined-credit-not-split.md) | ✅ | ✅ | 音乐艺人列表同一组人散成多条：扫描入库不拆合写的艺人署名 |
 | [BUG-4492](bugs/BUG-4492-manga-ctc-ocr-model-revision-404.md) | ✅ | ✅ | manga-ctc-ocr-model-revision-404 |
 | [BUG-4491](bugs/BUG-4491-android-permission-kill-no-killuid-prefix-misreport.md) | ✅ | ✅ | 华为改所有文件访问权限后被系统结束报成意外退出 |
 | [BUG-4490](bugs/BUG-4490-android-exit-schedulecrash-failed-misreport.md) | ✅ | ✅ | Android 系统 scheduleCrash 失败结束冻结进程被报成崩溃 |
