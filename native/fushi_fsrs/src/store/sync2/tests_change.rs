@@ -8,32 +8,32 @@ use serde_json::{Value, json};
 
 use super::tests::{Device, P, deck_entity, edit};
 
-const T0: i64 = 1_700_000_000_000;
-const NT_A: &str = "0193a1b2-0000-7000-8000-00000000c9a1";
+pub(super) const T0: i64 = 1_700_000_000_000;
+pub(super) const NT_A: &str = "0193a1b2-0000-7000-8000-00000000c9a1";
 const NT_B: &str = "0193a1b2-0000-7000-8000-00000000c9a2";
-const LANG: &str = "0193a1b2-0000-7000-8000-00000000c9c1";
+pub(super) const LANG: &str = "0193a1b2-0000-7000-8000-00000000c9c1";
 const TARGET: &str = "0193a1b2-0000-7000-8000-00000000c9c2";
-const NOTES: [&str; 2] = [
+pub(super) const NOTES: [&str; 2] = [
     "0193a1b2-0000-7000-8000-00000000c9b1",
     "0193a1b2-0000-7000-8000-00000000c9b2",
 ];
 
-fn default_deck() -> String {
+pub(super) fn default_deck() -> String {
     super::config::default_deck_id(P)
 }
 
-fn try_dispatch(d: &Device, req: Value, blob: Option<String>) -> Result<Value, String> {
+pub(super) fn try_dispatch(d: &Device, req: Value, blob: Option<String>) -> Result<Value, String> {
     let mut blobs: Vec<Vec<u8>> = blob.into_iter().map(String::into_bytes).collect();
     let mut files = Vec::new();
     crate::store::ffi::sync2_dispatch(&d.core, &req, &mut blobs, &mut files)
 }
 
-fn dispatch(d: &Device, req: Value, blob: Option<String>) -> Value {
+pub(super) fn dispatch(d: &Device, req: Value, blob: Option<String>) -> Value {
     try_dispatch(d, req, blob).unwrap()
 }
 
 /// 宿主发的一条修改记录草稿（Dart `_applyInput`）。
-fn draft(kind: &str, entity: &str, key: &str, v: Value) -> Value {
+pub(super) fn draft(kind: &str, entity: &str, key: &str, v: Value) -> Value {
     json!({
         "e": {"t": "edit", "x": {"p": P, "k": kind, "e": entity, "f": key, "v": v, "ts": "anchored"}},
         "note": null, "clk": "t",
@@ -91,7 +91,7 @@ fn deck(id: &str, name: &str) -> Vec<Value> {
 }
 
 /// 默认牌组、`Lang`、`Target`；类型 A（字段 fa、模板 t1）与 B（字段 fb、模板 u1 / u2）；两条 A 类型的笔记在 `Lang`。
-fn library(tag: &str) -> Device {
+pub(super) fn library(tag: &str) -> Device {
     let d = Device::new(tag);
     let mut events = vec![deck_entity(&default_deck())];
     events.extend(note_type(NT_A, "fa", &["t1"]));
@@ -150,12 +150,12 @@ fn note_types(d: &Device) -> BTreeMap<String, String> {
         .collect()
 }
 
-fn ops(d: &Device) -> String {
+pub(super) fn ops(d: &Device) -> String {
     d.rows("SELECT COUNT(*) AS n FROM sync2_ops")[1][0].clone()
 }
 
 /// 落库的修改记录（去掉类型 / 牌组定义那些铺垫），按写入顺序：`(类别, 实体, 键, 值)`。
-fn written_edits(d: &Device) -> Vec<(String, String, String, Value)> {
+pub(super) fn written_edits(d: &Device) -> Vec<(String, String, String, Value)> {
     d.rows(
         "SELECT entity_kind, srs_idt(entity_id) AS e, json FROM srs_field_edits \
          WHERE entity_kind IN ('note', 'card') ORDER BY rowid",
@@ -174,7 +174,7 @@ fn written_edits(d: &Device) -> Vec<(String, String, String, Value)> {
     .collect()
 }
 
-fn local_state(d: &Device) -> Value {
+pub(super) fn local_state(d: &Device) -> Value {
     serde_json::from_str(
         &d.rows(&format!(
             "SELECT json FROM srs_local_state WHERE profile_uid = srs_id('{P}')"

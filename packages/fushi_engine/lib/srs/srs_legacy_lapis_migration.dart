@@ -654,11 +654,14 @@ extension SrsLegacyLapisMigrationOps on SrsDbStore {
       source.type,
       to,
     );
+    // 这批笔记只物化一次：换类型的计划与下面逐条的统计用同一份视图。
+    final Map<String, SrsNoteView?> views = await notes(source.noteIds);
     final SrsNoteTypeChangePreview change = await previewNoteTypeChange(
       noteIds: source.noteIds,
       targetTypeId: to.id,
       fieldMap: plan.fieldMap,
       templateMap: srsLapisTemplateMap(source.type, to),
+      views: views,
     );
     final Map<String, SrsLapisFieldCandidate> owners =
         <String, SrsLapisFieldCandidate>{
@@ -678,7 +681,6 @@ extension SrsLegacyLapisMigrationOps on SrsDbStore {
     };
     final Map<SrsFieldDef, int> lost = <SrsFieldDef, int>{};
     int fallback = 0;
-    final Map<String, SrsNoteView?> views = await notes(source.noteIds);
     for (final String id in source.noteIds) {
       final SrsNoteView n = views[id]!;
       final Map<String, String> mapped = <String, String>{
@@ -766,13 +768,15 @@ extension SrsLegacyLapisMigrationOps on SrsDbStore {
     }
     final SrsNoteTypeView to = await _fushiCardType();
     final SrsLapisFieldPlan plan = srsLapisFieldPlan(profileUid, from, to);
-    // 预演与写入在同一个独占区里：算计划时读到的现值就是落库时的现值。换类型与补迁的修改记录都基于迁移前的
-    // 状态一次算好；只有移牌组要看换完类型后生成的卡，交给内核在同一笔里做。
+    // 换类型与补迁的修改记录都基于迁移前的状态一次算好——这批笔记只物化一次，两段用同一份视图；只有移牌组要看
+    // 换完类型后生成的卡，交给内核在同一笔里做。「值没变就不写」由内核在落库的那一笔里判（[SrsDbStore.writeChange]）。
+    final Map<String, SrsNoteView?> views = await notes(ids);
     final SrsNoteTypeChangePreview change = await previewNoteTypeChange(
       noteIds: ids,
       targetTypeId: to.id,
       fieldMap: plan.fieldMap,
       templateMap: srsLapisTemplateMap(from, to),
+      views: views,
     );
     final bool retype = change.from.id != change.to.id;
     await writeChange(
@@ -782,6 +786,7 @@ extension SrsLegacyLapisMigrationOps on SrsDbStore {
           ids,
           to,
           retype ? change.plans : const <SrsNoteTypeChangePlan>[],
+          views,
         ),
       ],
       checkpoint: retype ? (name: change.to.name, reason: 'note_type') : null,
@@ -796,11 +801,12 @@ extension SrsLegacyLapisMigrationOps on SrsDbStore {
   /// [ids] 按 [plans] 换成 Fushi 卡片 [to] **之后**的「遗漏字段补迁」要写的修改记录，基于换类型之前的状态算：
   /// 换类型只给每条笔记写 `plan.fieldValues` 这些字段，所以换完之后的字段值 = 现值叠上它们，「写过的字段」=
   /// 已有修改记录的 ∪ 它们的键。判定与 [previewLapisBackfill] 逐条相同（那边的 SQL 预筛只是必要条件，这里的笔记
-  /// 反正都要读，不筛）。
+  /// 反正都要读，不筛）。[views]：[ids] 换类型之前的视图——算 [plans] 时读的那一份。
   Future<List<SrsEditSpec>> _lapisFillAfterChange(
     List<String> ids,
     SrsNoteTypeView to,
     List<SrsNoteTypeChangePlan> plans,
+    Map<String, SrsNoteView?> views,
   ) async {
     final Map<String, SrsLapisFieldCandidate> owners = await _lapisFieldOwners(
       exceptTypeId: to.id,
@@ -810,7 +816,6 @@ extension SrsLegacyLapisMigrationOps on SrsDbStore {
         <String, Map<String, String>>{
           for (final SrsNoteTypeChangePlan p in plans) p.noteId: p.fieldValues,
         };
-    final Map<String, SrsNoteView?> views = await notes(ids);
     final Map<String, Map<String, String>> fills =
         <String, Map<String, String>>{};
     for (final String id in ids) {
