@@ -101,8 +101,6 @@ void main() {
           card = (await b.cardsOfNote(own)).single.id;
           await b.answer(card, 3);
         }
-        bool channel = false;
-        b.debugOnIngestSlice = () => channel = channel || b.debugChannelLive;
         final int priv0 = _peakPrivateBytes();
         final int rss0 = ProcessInfo.maxRss;
         final Stopwatch sw = Stopwatch()..start();
@@ -141,7 +139,7 @@ void main() {
         expect(r.applied, greaterThan(0));
         // ignore: avoid_print
         print(
-          'INGEST_BENCH notes=$notes fresh=$fresh channel=$channel '
+          'INGEST_BENCH notes=$notes fresh=$fresh channel=${traced.channel} '
           'applied=${r.applied} '
           'ms=${sw.elapsedMilliseconds} '
           'maxRssBeforeMiB=${rss0 >> 20} maxRssAfterMiB=${rss1 >> 20} '
@@ -294,8 +292,18 @@ final class _TracedHost implements SrsSync2Host {
   );
 
   @override
-  Future<void> sync2IngestBegin() =>
-      _timed('ingestBegin', _inner.sync2IngestBegin);
+  Future<void> sync2IngestBegin() async {
+    await _timed('ingestBegin', _inner.sync2IngestBegin);
+    // 内核有没有把这一轮放上收段通道：开始收段之后问一次内核（Dart 不存这个状态的镜像）。
+    final SrsSync2Result id = await _inner.sync2Command(<String, Object?>{
+      'op': 'identity',
+      'now': DateTime.now().millisecondsSinceEpoch,
+    });
+    channel = channel || id.map['channel'] == true;
+  }
+
+  /// 这一轮有没有走收段通道（[sync2IngestBegin] 之后内核报的）。
+  bool channel = false;
 
   @override
   Future<Map<String, Object?>> sync2IngestBatch(

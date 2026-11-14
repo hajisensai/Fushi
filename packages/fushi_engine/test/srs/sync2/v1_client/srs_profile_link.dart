@@ -577,7 +577,7 @@ class SrsDbProfileLinker implements SrsProfileLinker {
   Future<void> _addToMetaSet(SrsDbStore store, String key, String value) async {
     final Set<String> values = await _readMetaSet(store, key);
     if (!values.add(value)) return;
-    await store.db.customStatement(
+    store.core.debugExecRaw(
       'INSERT OR REPLACE INTO srs_meta (key, value) VALUES (?, ?)',
       <Object>[key, jsonEncode(values.toList())],
     );
@@ -591,7 +591,7 @@ class SrsDbProfileLinker implements SrsProfileLinker {
   ) async {
     final Set<String> values = await _readMetaSet(store, key);
     if (!values.remove(value)) return;
-    await store.db.customStatement(
+    store.core.debugExecRaw(
       'INSERT OR REPLACE INTO srs_meta (key, value) VALUES (?, ?)',
       <Object>[key, jsonEncode(values.toList())],
     );
