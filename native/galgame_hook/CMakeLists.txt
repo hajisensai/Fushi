@@ -124,6 +124,14 @@ add_library(fushi_voice_hook SHARED
   "hook/adapters/softpal_lookup.inc"
   "hook/adapters/softpal_profile.h"
   "hook/adapters/softpal_text.inc"
+  "hook/adapters/entisgls_adapter.inc"
+  "hook/adapters/entisgls_core.h"
+  "hook/adapters/entisgls_profile.h"
+  "hook/adapters/entisgls_text.inc"
+  "hook/adapters/nitroplus_adapter.inc"
+  "hook/adapters/nitroplus_core.h"
+  "hook/adapters/nitroplus_profile.h"
+  "hook/adapters/nitroplus_text.inc"
   "hook/adapters/system4_adapter.inc"
   "hook/adapters/system4_core.h"
   "hook/adapters/system4_lookup.inc"
@@ -1341,6 +1349,14 @@ add_executable(fushi_lookup_hover_highlight_state_test "tests/lookup_hover_highl
 target_include_directories(fushi_lookup_hover_highlight_state_test PRIVATE "hook")
 target_compile_definitions(fushi_lookup_hover_highlight_state_test PRIVATE UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 add_test(NAME fushi_lookup_hover_highlight_state_test COMMAND fushi_lookup_hover_highlight_state_test)
+add_executable(fushi_entisgls_adapter_test "tests/entisgls_adapter_test.cpp")
+target_include_directories(fushi_entisgls_adapter_test PRIVATE "hook" "hook/adapters")
+target_compile_definitions(fushi_entisgls_adapter_test PRIVATE UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_entisgls_adapter_test COMMAND fushi_entisgls_adapter_test)
+add_executable(fushi_nitroplus_adapter_test "tests/nitroplus_adapter_test.cpp")
+target_include_directories(fushi_nitroplus_adapter_test PRIVATE "hook" "hook/adapters")
+target_compile_definitions(fushi_nitroplus_adapter_test PRIVATE UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_nitroplus_adapter_test COMMAND fushi_nitroplus_adapter_test)
 
 add_executable(fushi_test_version_resource_test "tests/test_version_resource_test.cpp")
 target_compile_definitions(fushi_test_version_resource_test PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)

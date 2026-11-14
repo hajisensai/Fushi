@@ -42,7 +42,7 @@ void main() {
   /// 把这些笔记的缓存行做个记号：之后还在 = 缓存没被重算。
   Future<void> tamper(SrsDbStore s, Iterable<String> noteIds) async {
     for (final String id in noteIds) {
-      await s.db.customStatement(
+      s.core.debugExecRaw(
         "UPDATE srs_notes_cache SET sort_field = 'TAMPERED' WHERE id = srs_id(?)",
         <Object>[id],
       );

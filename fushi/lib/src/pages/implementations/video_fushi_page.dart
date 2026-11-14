@@ -134,6 +134,7 @@ import 'package:fushi_engine/media/audiobook/audiobook_transcribe_import_queue.d
         AudiobookTranscribeCancelled,
         AudiobookTranscribeJob,
         AudiobookTranscribeJobPhase;
+import 'package:fushi/src/asr_host/asr_ai_hosts.dart' show appAsrProofreadHost;
 import 'package:fushi/src/asr_host/asr_host.dart'
     show createAsrTranscriptionService, isAsrSupported;
 import 'package:fushi/src/media/audiobook/asr_transcribe_sheet.dart'
@@ -149,8 +150,13 @@ import 'package:fushi/src/media/video/subtitle/app_video_subtitle_service.dart'
 import 'package:fushi/src/media/video/subtitle/video_subtitle_studio_sheet.dart'
     show
         VideoSubtitleStudioActions,
+        VideoSubtitleStudioAiReference,
+        VideoSubtitleStudioFramesProblem,
         VideoSubtitleStudioReference,
-        showVideoSubtitleStudioSheet;
+        showVideoSubtitleStudioSheet,
+        videoSubtitleStudioEvidenceTrack;
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_evidence.dart'
+    show SubtitleEvidenceTrack;
 import 'package:fushi_engine/media/video/subtitle/bilingual_subtitle_split.dart'
     show
         BilingualSplitResult,
@@ -165,6 +171,7 @@ import 'package:fushi/src/media/video/subtitle/video_subtitle_generate_sheet.dar
     show
         PrefsRepoVideoSubtitleGeneratePrefs,
         VideoSubtitleInAppTranscribe,
+        confirmVideoSubtitleAiFrames,
         showVideoSubtitleGenerateSheet,
         videoSubtitleEpisodeStatusLabel;
 import 'package:fushi/src/pages/implementations/ai_settings_route.dart'
@@ -8731,6 +8738,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 只修好了 Flutter 持焦的那一半）。让浮层自己把这些输入交回来。
   @override
   ShortcutScope? get dictionaryPopupInputScope => ShortcutScope.video;
+
+  // 视频页读 popupMineEntry 的键盘绑定派发制卡（video_player_shortcuts.dart）。
+  @override
+  ShortcutAction? get dictionaryPopupMineShortcutAction =>
+      ShortcutAction.popupMineEntry;
 
   /// 与 [guardVideoShortcutsWithPopupDismiss] 同语义：浮层可见时**任一**已映射的视频
   /// 快捷键都先关顶层浮层。故整份 video scope 都要转发——弹窗内动作
