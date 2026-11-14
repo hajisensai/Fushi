@@ -124,7 +124,9 @@ class HeadlessHost {
     })?
     selfUpdaterFactory,
     VideoSubtitleRegistry Function()? subtitleRegistryFactory,
+    HttpClient Function()? srsRwkvHttpClient,
   }) : _config = config,
+       _srsRwkvHttpClient = srsRwkvHttpClient,
        _injectedDictionaryHost = dictionaryHost,
        _selfUpdaterFactory =
            selfUpdaterFactory ?? ServerSelfUpdater.forRunningBundle,
@@ -159,6 +161,9 @@ class HeadlessHost {
   /// 在线字幕来源（下载管线字幕阶段 + 单视频补字幕）。生产 =
   /// [buildServerSubtitleRegistry]：只装偏好开着且有 key 的来源；测试注入假来源。
   final VideoSubtitleRegistry Function() _subtitleRegistryFactory;
+
+  /// 复习库下载 RWKV 权重用的 HTTP 客户端（测试注入不碰网络的；null = 全局代理设置下的缺省客户端）。
+  final HttpClient Function()? _srsRwkvHttpClient;
   final ServerPaths paths;
   final FushiDatabase db;
   final ServerPrefs prefs;
@@ -402,6 +407,7 @@ class HeadlessHost {
       config: () => config.srs,
       // 发出了新段：叫醒客户端 `/api/srs/changes` 长轮询（与 app 当 host 同）。
       onPublished: () => _server?.notifySrsChanged(),
+      rwkvHttpClient: _srsRwkvHttpClient,
     );
     _srs = srs;
     final ServerAnkiConnect ankiConnect = ServerAnkiConnect(
@@ -450,6 +456,7 @@ class HeadlessHost {
                   config: () => config,
                   db: db,
                   dispatch: () => adminDispatch,
+                  srs: () => _srs,
                 ),
               },
             ),

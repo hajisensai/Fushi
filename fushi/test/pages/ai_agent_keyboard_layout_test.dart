@@ -57,9 +57,9 @@ class _FakeController extends ChangeNotifier
   @override
   bool get awaitingChoice => false;
   @override
-  void answerConfirm(bool approved) {}
+  void answerConfirm(bool approved, {String? entryId}) {}
   @override
-  void answerChoice(String? id) {}
+  void answerChoice(String? id, {String? entryId}) {}
   @override
   bool get acceptsImages => false;
   @override

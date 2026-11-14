@@ -10,12 +10,15 @@ import 'dart:io';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/sync/interconnect_job_client.dart';
+import 'package:fushi/src/sync/interconnect_peer_addresses.dart'
+    show debugInterconnectAddressProbeOverride, resetInterconnectRaceCache;
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_compute/fushi_compute.dart' show ffcSha256File;
 import 'package:fushi_engine/sync/host_jobs/file_content_hash_cache.dart';
 import 'package:fushi_engine/sync/host_jobs/host_input_matcher.dart';
-import 'package:fushi_engine/sync/host_jobs/host_job.dart' show HostJobRecord;
+import 'package:fushi_engine/sync/host_jobs/host_job.dart'
+    show HostJobRecord, HostJobState;
 import 'package:fushi_engine/sync/host_jobs/host_job_manager.dart';
 import 'package:fushi_engine/sync/host_jobs/host_job_routes.dart';
 import 'package:fushi_engine/sync/host_jobs/host_job_runner.dart';
@@ -25,6 +28,24 @@ import 'package:path/path.dart' as p;
 import 'package:shelf/shelf.dart' as shelf;
 
 const String _host = 'http://host-a.invalid:8080';
+
+/// 工厂建出的明文 client：转发给 [_inner]，记下是否被关。
+class _OwnedClient extends http.BaseClient {
+  _OwnedClient(this._inner);
+
+  final http.Client _inner;
+  bool closed = false;
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) =>
+      _inner.send(request);
+
+  @override
+  void close() {
+    closed = true;
+    _inner.close();
+  }
+}
 
 /// 按输入名顺序把全部输入拼起来；记下每次看到的输入（路径 / 是否 host 本地）。
 class _ConcatRunner implements HostJobRunner {
@@ -90,6 +111,20 @@ class _HostWire {
   /// 每次匹配应答里的 `pending`。
   final List<bool> matchPending = <bool>[];
 
+  /// 故障注入：每条请求先交给它（[nth] = 同一 method + path 的第几次，从 1 起）。
+  /// 返回非 null 即作为应答、抛异常即模拟传输失败；返回 null 照常进真路由。
+  Future<http.StreamedResponse?> Function(String method, String path, int nth)?
+  fault;
+  final Map<String, int> _nth = <String, int>{};
+  final StreamController<void> _changed = StreamController<void>.broadcast();
+
+  /// 等到 wire 上出现过满足条件的请求（客户端的尽力清理在流结束之后才发）。
+  Future<void> seen(String method, bool Function(String path) where) async {
+    while (count(method, where) == 0) {
+      await _changed.stream.first.timeout(const Duration(seconds: 10));
+    }
+  }
+
   int count(String method, bool Function(String path) where) => requests
       .where(
         (String r) =>
@@ -108,12 +143,38 @@ class _HostWire {
       if (r.startsWith('POST ') && r.endsWith('/inputs/match')) r.split('/')[3],
   };
 
+  /// 这些主机名的请求一律建连失败（模拟关掉的端口 / 不通的旧地址）。
+  final Set<String> deadHosts = <String>{};
+
+  /// 每条请求实际发往的主机名（含被 [deadHosts] 拒掉的）。
+  final List<String> requestHosts = <String>[];
+
   http.Client client() => MockClient.streaming((
     http.BaseRequest request,
     http.ByteStream body,
   ) async {
+    requestHosts.add(request.url.host);
+    if (deadHosts.contains(request.url.host)) {
+      throw const SocketException('connection refused');
+    }
     final String path = request.url.path;
     requests.add('${request.method} $path');
+    _changed.add(null);
+    final String key = '${request.method} $path';
+    final int nth = _nth[key] = (_nth[key] ?? 0) + 1;
+    final Future<http.StreamedResponse?> Function(String, String, int)?
+    injected = fault;
+    if (injected != null) {
+      final http.StreamedResponse? replaced = await injected(
+        request.method,
+        path,
+        nth,
+      );
+      if (replaced != null) {
+        await body.drain<void>();
+        return replaced;
+      }
+    }
     final Future<http.StreamedResponse> Function()? override = matchOverride;
     if (override != null && path.endsWith('/inputs/match')) {
       await body.drain<void>();
@@ -230,7 +291,7 @@ void main() {
   }) async {
     final InterconnectJobClient client = InterconnectJobClient(
       repo: repo,
-      httpClient: wire.client(),
+      plainClientFactory: wire.client,
       requestTimeout: requestTimeout,
       pollDelay: (int _) => const Duration(milliseconds: 5),
       hashCache: FileContentHashCache(),
@@ -350,8 +411,12 @@ void main() {
     expect(out['out.txt']!.readAsStringSync(), '$cd1Content$cd2Content');
     expect(runner.seenHostInputs.first.length, 2);
     expect(runner.seenHostInputs.last, isEmpty);
-    // 失败的那个任务已在 host 上清理。
-    expect(jobs.list(), isEmpty);
+    // 失败的那个任务在重跑之前已在 host 上清理（成功那个的清理在交付结果之后才尽力发，
+    // 不在这里断言）。
+    expect(
+      jobs.list().map((HostJobRecord r) => r.id),
+      isNot(contains(wire.matchedJobIds.single)),
+    );
   });
 
   test('命中后、开跑前 host 文件被删：开跑前核对发现，回退为上传', () async {
@@ -532,6 +597,404 @@ void main() {
       expect(wire.matches, 1);
       expect(wire.puts, 2);
       expect(out['out.txt']!.readAsStringSync(), '$cd1Content$cd2Content');
+    });
+  });
+
+  group('transient link loss（remote-job-client-lifecycle）', () {
+    /// 状态轮询 `GET /api/jobs/<id>`（不含 result / input 等子路径）。
+    final RegExp statusPath = RegExp(r'^/api/jobs/[^/]+$');
+    bool isResult(String path) => path.contains('/result/');
+
+    /// 跑一次任务，收齐事件与收尾错误；整条流 10 秒内必须结束。
+    Future<(List<HostJobEvent>, Object?)> runEvents({
+      Duration requestTimeout = const Duration(seconds: 30),
+    }) async {
+      final InterconnectJobClient client = InterconnectJobClient(
+        repo: repo,
+        plainClientFactory: wire.client,
+        requestTimeout: requestTimeout,
+        pollDelay: (int _) => const Duration(milliseconds: 5),
+        hashCache: FileContentHashCache(),
+      );
+      final HostJobTarget target = HostJobTarget(
+        baseUrl: _host,
+        deviceName: 'Desk PC',
+        kinds: const <String>['asr'],
+        capability: await jobs.capability(),
+      );
+      final List<HostJobEvent> events = <HostJobEvent>[];
+      Object? error;
+      final Completer<void> finished = Completer<void>();
+      client
+          .run(
+            target: target,
+            kind: 'asr',
+            params: const <String, Object?>{'language': 'ja'},
+            inputs: <File>[cd1, cd2],
+            outputDir: Directory(p.join(root.path, 'out')),
+          )
+          .listen(
+            events.add,
+            onError: (Object e) => error = e,
+            onDone: finished.complete,
+          );
+      await finished.future.timeout(const Duration(seconds: 10));
+      return (events, error);
+    }
+
+    test('观测途中几次传输失败不删任务：恢复后照常取回，DELETE 恰好一次且在取回之后', () async {
+      final Completer<void> release = Completer<void>();
+      runner.duringFirstRun = () => release.future;
+      wire.fault = (String method, String path, int nth) async {
+        if (method == 'GET' && statusPath.hasMatch(path) && nth <= 3) {
+          if (nth == 3) release.complete();
+          throw const SocketException('link flapped');
+        }
+        return null;
+      };
+
+      final (List<HostJobEvent> events, Object? error) = await runEvents();
+
+      expect(error, isNull);
+      expect(events.last, isA<HostJobDone>());
+      final HostJobDone done = events.last as HostJobDone;
+      expect(
+        done.outputs['out.txt']!.readAsStringSync(),
+        '$cd1Content$cd2Content',
+      );
+      await wire.seen('DELETE', (String _) => true);
+      expect(wire.count('DELETE', (String _) => true), 1);
+      final int lastResult = wire.requests.lastIndexWhere(
+        (String r) => r.startsWith('GET ') && isResult(r),
+      );
+      final int del = wire.requests.indexWhere(
+        (String r) => r.startsWith('DELETE '),
+      );
+      expect(lastResult, greaterThanOrEqualTo(0));
+      expect(del, greaterThan(lastResult));
+    });
+
+    test('任务已不在 host（404）：报错收尾，不再发 DELETE', () async {
+      wire.fault = (String method, String path, int nth) async {
+        if (method == 'GET' && statusPath.hasMatch(path) && nth == 1) {
+          await jobs.delete(path.split('/').last);
+        }
+        return null;
+      };
+
+      final (List<HostJobEvent> events, Object? error) = await runEvents();
+
+      expect(events.whereType<HostJobDone>(), isEmpty);
+      expect(error, isA<HostJobRemoteException>());
+      // 尽力清理在流结束之后才发：给它足够的时间暴露出来再断言「没有」。
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      expect(wire.count('DELETE', (String _) => true), 0);
+    });
+
+    test('取回成功后清理失败（DELETE 回 503）不改结果', () async {
+      wire.fault = (String method, String path, int nth) async {
+        if (method == 'DELETE') {
+          return http.StreamedResponse(
+            Stream<List<int>>.value(utf8.encode('busy')),
+            503,
+          );
+        }
+        return null;
+      };
+
+      final (List<HostJobEvent> events, Object? error) = await runEvents();
+
+      expect(error, isNull);
+      expect(events.last, isA<HostJobDone>());
+      await wire.seen('DELETE', (String _) => true);
+    });
+
+    test('响应体卡住的状态 GET 有上界：超时后继续观测并取回', () async {
+      final StreamController<List<int>> stuck = StreamController<List<int>>();
+      addTearDown(stuck.close);
+      wire.fault = (String method, String path, int nth) async {
+        if (method == 'GET' && statusPath.hasMatch(path) && nth == 1) {
+          // 只发响应头，响应体永远不结束。
+          return http.StreamedResponse(stuck.stream, 200);
+        }
+        return null;
+      };
+
+      final (List<HostJobEvent> events, Object? error) = await runEvents(
+        requestTimeout: const Duration(milliseconds: 500),
+      );
+
+      expect(error, isNull);
+      expect(events.last, isA<HostJobDone>());
+    });
+  });
+
+  // BUG-4403（remote-tasks 步骤 13）：job client 的传输走共享 host 通道——每次 run
+  // 一条通道，工厂建出的明文 client 归这次 run、用完必关；按 host 选路，不钉死
+  // target.baseUrl 那一条地址。
+  group('共享 host 通道（interconnect-client-no-shared-host-channel）', () {
+    setUp(resetInterconnectRaceCache);
+    tearDown(() {
+      debugInterconnectAddressProbeOverride = null;
+      resetInterconnectRaceCache();
+    });
+
+    Future<void> eventually(bool Function() condition, String reason) async {
+      for (int i = 0; i < 500 && !condition(); i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      expect(condition(), isTrue, reason: reason);
+    }
+
+    InterconnectJobClient ownedClient(List<_OwnedClient> made) =>
+        InterconnectJobClient(
+          repo: repo,
+          plainClientFactory: () {
+            final _OwnedClient c = _OwnedClient(wire.client());
+            made.add(c);
+            return c;
+          },
+          pollDelay: (int _) => const Duration(milliseconds: 5),
+          hashCache: FileContentHashCache(),
+        );
+
+    Future<HostJobTarget> target({String baseUrl = _host}) async =>
+        HostJobTarget(
+          baseUrl: baseUrl,
+          deviceName: 'Desk PC',
+          kinds: const <String>['asr'],
+          capability: await jobs.capability(),
+        );
+
+    test('完整跑完：工厂建出的每个明文 client 都在清理之后被关掉', () async {
+      final List<_OwnedClient> made = <_OwnedClient>[];
+      final InterconnectJobClient client = ownedClient(made);
+
+      final List<HostJobEvent> events = await client
+          .run(
+            target: await target(),
+            kind: 'asr',
+            params: const <String, Object?>{'language': 'ja'},
+            inputs: <File>[cd1, cd2],
+            outputDir: Directory(p.join(root.path, 'out')),
+          )
+          .toList()
+          .timeout(const Duration(seconds: 10));
+
+      expect(events.last, isA<HostJobDone>());
+      expect(made, isNotEmpty);
+      await eventually(
+        () => made.every((_OwnedClient c) => c.closed),
+        '一次 run 建出的明文 client 必须在 run 收尾时关掉',
+      );
+      // 关 client 不能掐掉在途的尽力清理：DELETE 照样到了 host。
+      expect(wire.count('DELETE', (String _) => true), 1);
+    });
+
+    test('中途取消：DELETE 发出后通道与明文 client 一并关掉', () async {
+      final Completer<void> release = Completer<void>();
+      addTearDown(() {
+        if (!release.isCompleted) release.complete();
+      });
+      runner.duringFirstRun = () => release.future;
+      final List<_OwnedClient> made = <_OwnedClient>[];
+      final InterconnectJobClient client = ownedClient(made);
+
+      final Completer<void> running = Completer<void>();
+      final StreamSubscription<HostJobEvent> sub = client
+          .run(
+            target: await target(),
+            kind: 'asr',
+            params: const <String, Object?>{'language': 'ja'},
+            inputs: <File>[cd1, cd2],
+            outputDir: Directory(p.join(root.path, 'out')),
+          )
+          .listen((HostJobEvent e) {
+            if (e is HostJobRunning && !running.isCompleted) running.complete();
+          }, onError: (Object _) {});
+      await running.future.timeout(const Duration(seconds: 10));
+      await sub.cancel();
+      release.complete();
+
+      await wire.seen('DELETE', (String _) => true);
+      await eventually(
+        () => made.isNotEmpty && made.every((_OwnedClient c) => c.closed),
+        '取消后的 run 也必须关掉它建出的明文 client',
+      );
+      expect(wire.count('DELETE', (String _) => true), 1);
+    });
+
+    test('target 记的是同一台 host 已不通的旧地址：经通道换到可达地址跑完', () async {
+      const String dead = 'http://host-a-old-lan.invalid:8080';
+      await repo.setFushiClientUrls(const <FushiClientUrl>[
+        // 关掉的旧地址排在前面；两条同属一台 host。
+        FushiClientUrl(url: dead, hostId: 'host-job-route', deviceName: 'PC'),
+        FushiClientUrl(url: _host, hostId: 'host-job-route'),
+      ]);
+      wire.deadHosts.add(Uri.parse(dead).host);
+      debugInterconnectAddressProbeOverride =
+          (FushiClientUrl c, String? hostId) async => c.url == _host;
+
+      final InterconnectJobClient client = InterconnectJobClient(
+        repo: repo,
+        plainClientFactory: wire.client,
+        pollDelay: (int _) => const Duration(milliseconds: 5),
+        hashCache: FileContentHashCache(),
+      );
+      final List<HostJobEvent> events = await client
+          .run(
+            target: await target(baseUrl: dead),
+            kind: 'asr',
+            params: const <String, Object?>{'language': 'ja'},
+            inputs: <File>[cd1, cd2],
+            outputDir: Directory(p.join(root.path, 'out')),
+          )
+          .toList()
+          .timeout(const Duration(seconds: 10));
+
+      expect(events.last, isA<HostJobDone>());
+      final HostJobDone done = events.last as HostJobDone;
+      expect(
+        done.outputs['out.txt']!.readAsStringSync(),
+        '$cd1Content$cd2Content',
+      );
+      expect(wire.requestHosts, isNot(contains(Uri.parse(dead).host)));
+    });
+
+    test('任务进行中在用的地址断了：观测按 host 重新选路，换到同一台 host 的另一条地址取回', () async {
+      const String lan = 'http://host-a-lan.invalid:8080';
+      final String lanHost = Uri.parse(lan).host;
+      final String otherHost = Uri.parse(_host).host;
+      await repo.setFushiClientUrls(const <FushiClientUrl>[
+        FushiClientUrl(url: lan, hostId: 'host-job-route', deviceName: 'PC'),
+        FushiClientUrl(url: _host, hostId: 'host-job-route'),
+      ]);
+      // 开跑时只有 LAN 地址核对得通：提交与前几次观测都走它。
+      String reachable = lan;
+      debugInterconnectAddressProbeOverride =
+          (FushiClientUrl c, String? hostId) async => c.url == reachable;
+
+      final Completer<void> release = Completer<void>();
+      addTearDown(() {
+        if (!release.isCompleted) release.complete();
+      });
+      runner.duringFirstRun = () => release.future;
+      final RegExp statusPath = RegExp(r'^/api/jobs/[^/]+$');
+      wire.fault = (String method, String path, int nth) async {
+        if (method != 'GET' || !statusPath.hasMatch(path)) return null;
+        if (nth == 2) {
+          // 这次照常应答；此后 LAN 地址断开，只有另一条地址核对得通。
+          wire.deadHosts.add(lanHost);
+          reachable = _host;
+        } else if (nth == 3) {
+          // 第 3 次状态 GET 已经走另一条地址到了 host：放任务跑完。
+          release.complete();
+        }
+        return null;
+      };
+
+      final InterconnectJobClient client = InterconnectJobClient(
+        repo: repo,
+        plainClientFactory: wire.client,
+        pollDelay: (int _) => const Duration(milliseconds: 5),
+        hashCache: FileContentHashCache(),
+      );
+      final List<HostJobEvent> events = await client
+          .run(
+            target: await target(baseUrl: lan),
+            kind: 'asr',
+            params: const <String, Object?>{'language': 'ja'},
+            inputs: <File>[cd1, cd2],
+            outputDir: Directory(p.join(root.path, 'out')),
+          )
+          .toList()
+          .timeout(const Duration(seconds: 10));
+
+      expect(events.last, isA<HostJobDone>());
+      final HostJobDone done = events.last as HostJobDone;
+      expect(
+        done.outputs['out.txt']!.readAsStringSync(),
+        '$cd1Content$cd2Content',
+      );
+      // 换路前确实拨过 LAN 地址（含断开后撞上的那一次），之后改走另一条且不再回头。
+      final int firstOther = wire.requestHosts.indexOf(otherHost);
+      expect(firstOther, greaterThan(0));
+      expect(wire.requestHosts.sublist(0, firstOther), everyElement(lanHost));
+      expect(wire.requestHosts.sublist(firstOther), isNot(contains(lanHost)));
+      // 断开那一下是传输失败：进断连子状态，不删任务、不报错。
+      expect(
+        events.whereType<HostJobRunning>().where(
+          (HostJobRunning e) => e.reconnecting,
+        ),
+        hasLength(1),
+      );
+      await wire.seen('DELETE', (String _) => true);
+      expect(wire.count('DELETE', (String _) => true), 1);
+    });
+  });
+
+  group('BUG-4462：运行中删除任务', () {
+    /// 开一条 runner 卡在半路的任务；返回它的 id 与放行 runner 的开关。
+    Future<(String, Completer<void>)> startHeldJob() async {
+      final Completer<void> entered = Completer<void>();
+      final Completer<void> release = Completer<void>();
+      addTearDown(() {
+        if (!release.isCompleted) release.complete();
+      });
+      runner.duringFirstRun = () {
+        entered.complete();
+        return release.future;
+      };
+      final HostJobRecord rec = await jobs.create(
+        'asr',
+        const <String, Object?>{'language': 'ja'},
+      );
+      await jobs.start(rec.id);
+      await entered.future.timeout(const Duration(seconds: 10));
+      return (rec.id, release);
+    }
+
+    test('runner 在删除之后才停下：它收尾的落盘不把删掉的目录建回来', () async {
+      final (String id, Completer<void> release) = await startHeldJob();
+      final Directory dir = jobs.dirFor(id);
+      expect(dir.existsSync(), isTrue);
+
+      await jobs.delete(id);
+      expect(dir.existsSync(), isFalse);
+
+      // 再开一条排在后面的任务：前一条 runner 收尾完（含它的落盘）才轮到这条，
+      // 这条跑完即可断定前一条的收尾已经过去。
+      final HostJobRecord next = await jobs.create(
+        'asr',
+        const <String, Object?>{'language': 'ja'},
+      );
+      await jobs.start(next.id);
+      release.complete();
+      for (
+        int i = 0;
+        i < 500 && jobs.get(next.id).state == HostJobState.running;
+        i++
+      ) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      expect(jobs.get(next.id).state, HostJobState.done);
+      await jobs.whenIdle();
+
+      expect(dir.existsSync(), isFalse, reason: '删掉的任务目录被收尾落盘建了回来');
+      expect(() => jobs.get(id), throwsA(isA<HostJobNotFound>()));
+    });
+
+    test('删除与 runner 收尾撞在一起：两笔落盘串行，删除不抛、目录删干净', () async {
+      // 取消的落盘与跑完收尾的落盘共用同一个 job.json.tmp：并发时后 rename 的
+      // 那次抛 PathNotFound（CI 上 host_job_input_reuse「中途取消」偶发红）。
+      for (int round = 0; round < 20; round++) {
+        final (String id, Completer<void> release) = await startHeldJob();
+        final Future<void> deleting = jobs.delete(id);
+        release.complete();
+        await deleting;
+        await jobs.whenIdle();
+        expect(jobs.dirFor(id).existsSync(), isFalse, reason: 'round $round');
+      }
     });
   });
 
