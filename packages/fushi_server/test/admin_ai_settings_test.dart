@@ -80,6 +80,37 @@ void main() {
   Map<String, dynamic>? aiOf(String text) =>
       (jsonDecode(text) as Map<String, dynamic>)['ai'] as Map<String, dynamic>?;
 
+  test('images（模型能看图）：缺省关；打开后写进 yaml、提供商带图片输入', () async {
+    final (:AdminApi api, :AdminContext ctx) = await build();
+    final ({int status, String text}) set = await call(
+      api,
+      'PUT',
+      <String, Object?>{
+        'ai': <String, Object?>{'preset': 'openai', 'apiKey': 'sk-secret'},
+      },
+    );
+    expect(set.status, 200, reason: set.text);
+    expect(aiOf(set.text)!['images'], isFalse);
+    expect(ctx.config.ai!.provider()!.acceptsImages, isFalse);
+
+    final ({int status, String text}) on = await call(
+      api,
+      'PUT',
+      <String, Object?>{
+        'ai': <String, Object?>{
+          'preset': 'openai',
+          'apiKey': null,
+          'images': true,
+        },
+      },
+    );
+    expect(on.status, 200, reason: on.text);
+    expect(aiOf(on.text)!['images'], isTrue);
+    expect(ctx.config.ai!.provider()!.acceptsImages, isTrue);
+    expect(await configFile.readAsString(), contains('images: true'));
+    expect((await ServerConfig.load(configFile)).ai!.images, isTrue);
+  });
+
   test('默认没有 AI；设上 → key 只报 apiKeySet、写进 yaml；留空不改；预设置空即关', () async {
     final (:AdminApi api, :AdminContext ctx) = await build();
     final ({int status, String text}) initial = await call(api, 'GET');

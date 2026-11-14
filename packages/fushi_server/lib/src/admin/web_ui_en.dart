@@ -357,6 +357,22 @@ const Map<String, String> kWebUiEnglish = <String, String>{
   '{0} 条笔记': '{0} notes',
   '同步目录里还没有任何配置文件：先让一台设备经互联同步一次复习数据。':
       'The sync folder has no profiles yet: sync review data from a device over interconnect once first.',
+  '待确认的设备': 'Devices waiting for confirmation',
+  '本机开始提供某份配置文件之后才第一次同步过来的设备，它的普通修改照常生效，删除与彻底清除先扣在本机，确认是你自己的设备后再生效。拒绝 = 继续扣着，之后仍可改为信任。':
+      'A device that first syncs after this server started serving a profile has its ordinary changes applied as usual, but its deletes and purges are held here until you confirm it is your own device. Reject = keep holding them; you can still trust it later.',
+  '{0}（Fushi {1}）': '{0} (Fushi {1})',
+  '未命名设备': 'Unnamed device',
+  '扣着 {0} 条删除、{1} 条彻底清除': 'Holding {0} deletes, {1} purges',
+  '首次出现 {0}': 'First seen {0}',
+  '待确认': 'Waiting',
+  '已拒绝': 'Rejected',
+  '信任': 'Trust',
+  '拒绝': 'Reject',
+  '没有待确认的设备': 'No devices waiting for confirmation',
+  '信任「{0}」？它扣着的 {1} 条删除与彻底清除会立即生效。':
+      'Trust "{0}"? Its {1} held deletes and purges take effect immediately.',
+  '已信任': 'Trusted',
+  '已拒绝，删除继续扣着': 'Rejected; its deletes stay held',
   '已开始提供': 'Now serving',
   '已停止提供': 'Stopped serving',
   '已设为默认': 'Set as default',
@@ -413,6 +429,8 @@ const Map<String, String> kWebUiEnglish = <String, String>{
   'AI 推理档位': 'AI reasoning effort',
   'AI 允许明文 HTTP（本地推理服务）': 'AI: allow plain HTTP (local inference servers)',
   'AI 联网资料（维基辅助识别作品）': 'AI web knowledge (Wikipedia helps identify titles)',
+  'AI 模型能看图（字幕校对会附上视频画面）':
+      'AI model accepts images (subtitle proofreading sends video frames)',
   '扫描入库后自动 AI 整理库（把该在一起的归进合集，按量计费）':
       'Organize the library with AI after scans (groups related items into collections; billed per use)',
 

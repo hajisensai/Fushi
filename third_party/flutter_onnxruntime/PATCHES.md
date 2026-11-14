@@ -150,12 +150,12 @@ and macOS 13.4–14.0 for free, with no change to the ORT binary or the Dart API
     encoder GPU idle ~85% of the time for lack of queued work, which is what
     the Dart-side pipeline rewrite (`AsrBatchPipeline`) addresses.
 
-**The Dart API under `lib/` carries four deltas (#8, the
+**The Dart API under `lib/` carries five deltas (#8, the
 `freeDimensionOverrides` option, #10, `getDeviceMemoryInfo`, and #13,
-`probeCuda` / `registerCudaRuntime`, and #15, native provider-name
-normalisation); everything
+`probeCuda` / `registerCudaRuntime`, #15, native provider-name
+normalisation, and #16, the nullable `deviceId`); everything
 else there is byte-for-byte upstream.** The Apple, Android and Linux native
-trees are untouched; the Windows tree carries deltas 6–11 and 13 — provider
+trees are untouched; the Windows tree carries deltas 6–11, 13 and 16 — provider
 wiring, error-string encoding, free-dimension overrides, worker-thread
 dispatch, the DXGI budget query and per-session CPU workers. No ORT wrapper
 or inference logic changed anywhere.
@@ -187,7 +187,7 @@ path or drift the floors apart.
 
 ## Re-vendoring on upgrade
 
-Copy the new upstream version over this folder, then re-apply deltas #1–#15.
+Copy the new upstream version over this folder, then re-apply deltas #1–#16.
 Before bumping the `onnxruntime-objc` pin, check the new version's podspec
 platforms (`pod spec cat onnxruntime-objc --version=X.Y.Z`) — if the floor moved,
 the four project deployment targets and the guard test move with it.
@@ -323,6 +323,34 @@ the four project deployment targets and the guard test move with it.
       "providers you can request" result rather than an error of the probe.
     - Test: `fushi/test/onnx/onnxruntime_provider_names_test.dart` (through the
       real method channel).
+
+16. `windows/src/dxgi_memory.{h,cc}`, `windows/src/cuda_provider.{h,cc}`,
+    `windows/flutter_onnxruntime_plugin.cpp` + `lib/src/onnxruntime.dart` /
+    platform interface / method channel: `getDeviceMemoryInfo` without a
+    `deviceId` answers for **the adapter GPU sessions run on** instead of
+    always DXGI adapter 0 (issue #3380 follow-up).
+
+    - Delta #10 always read adapter 0. That is right for DirectML (device 0 is
+      adapter 0) and wrong for CUDA on a hybrid-graphics laptop, where adapter
+      0 is usually the integrated GPU and its local-segment budget is a slice
+      of system RAM. The app sizes CUDA batches and gates fp32 models on that
+      number, so the NVIDIA card overflowed while the budget looked ample.
+    - Once the CUDA plugin EP is registered (delta #13: a process runs CUDA on
+      the bundled core or DirectML on the downloaded one, never both) the
+      query matches CUDA device 0 to its DXGI adapter by LUID
+      (`cuDeviceGetLuid` from `nvcuda.dll` against
+      `DXGI_ADAPTER_DESC1::AdapterLuid`), falls back to the first hardware
+      adapter with PCI vendor 0x10DE, and only then to adapter 0. An explicit
+      `deviceId` still means that DXGI adapter.
+    - Dart: `deviceId` became nullable and the key is omitted when null; the
+      native side tells an absent key from an explicit 0. The reply gained
+      `adapterName` and `selection` (`explicit` / `cuda-luid` / `cuda-vendor` /
+      `default`) for logs and probes.
+    - `CudaPluginRegistry::IsRegistered` is lock-free (`std::atomic<bool>`):
+      it is now asked on the platform thread, and `Register` holds the
+      registry mutex for as long as the ~1 GB of provider DLLs take to load.
+    - The method still never binds ORT. Guard:
+      `fushi/test/onnx/onnxruntime_device_memory_guard_test.dart`.
 
 Before bumping the bundled Windows core, bump the CUDA plugin EP to the release
 built against the same ORT revision (and its manifest in

@@ -149,6 +149,8 @@ function Invoke-NativeCrateBuild {
     # （cdylib 产物不带哈希，别的 worktree 编的库会被当成新鲜产物链进来；并发构建还会互相等锁）。
     # sccache 按内容哈希缓存 rustc 输出，crates.io 依赖在所有 worktree 里路径相同（~/.cargo/registry），
     # 能跨 worktree、跨 crate 命中；cdylib 的最终链接不缓存，正好每次用本 worktree 的源码。
+    # 命中率有限（2026-11-11 实测 fushi_fsrs 换 target 目录后约两成：带 build script 的依赖把 target 下的
+    # OUT_DIR 编进产物，下游跟着失配），冷编约省四成；见 docs/agent/build.md「Rust 本地开发循环」。
     # 装了就用（调用方已设 RUSTC_WRAPPER 时尊重调用方），没装照常编。
     $previousWrapper = $env:RUSTC_WRAPPER
     if (-not $previousWrapper) {

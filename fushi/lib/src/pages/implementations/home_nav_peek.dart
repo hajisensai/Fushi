@@ -829,6 +829,8 @@ Future<AdaptiveNavPeekData> _loadDictionary({
   required AppModel appModel,
   required VoidCallback openDictionary,
 }) async {
+  // 冷启动后历史在后台装载，落定前读到的空表不代表「没查过词」。
+  await appModel.dictionaryHistoryLoaded;
   final List<DictionarySearchResult> history = appModel.dictionaryHistory;
   if (history.isNotEmpty) {
     final Set<String> seen = <String>{};

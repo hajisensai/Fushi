@@ -26,9 +26,15 @@
 //!   ffsrs_predict_tss / ffsrs_calibration_report
 //!   （复习统计页的校准图与 UM+：FSRS 时间序列切分的留出预测、分箱与自助法区间，见 calibration.rs）
 
+// 让 cargo 的新鲜度指纹带上「这是哪个 worktree」：多个 worktree 共用一个 CARGO_TARGET_DIR 时，没有它会把别的
+// worktree 编出的产物当成本 worktree 的直接用（假绿 / 假红）。值来自仓库根 .cargo/config.toml 的 [env]，不进产物。
+// 每个 native crate 的入口文件都要有这一行（守卫 fushi/test/build/native_crate_worktree_fingerprint_guard_test.dart）。
+const _: Option<&str> = option_env!("FUSHI_WORKTREE_ROOT");
+
 pub mod boot_clock;
 pub mod calibration;
 pub mod card_cache;
+pub mod gen4;
 pub mod history;
 pub mod ordering;
 pub mod projection;
@@ -37,6 +43,9 @@ pub mod search;
 pub mod store;
 pub mod style_dedup;
 pub mod sync2;
+
+/// 协议 4 的规范 ID 与别名规则（还没有接线，见模块说明）。
+pub mod gen4_ids;
 
 use std::ffi::{CStr, CString, c_char};
 use std::io::Read;
@@ -117,22 +126,6 @@ impl Memory {
             stability_fast: self.sf.unwrap_or(self.s),
         }
     }
-
-    fn from_fsrs(state: MemoryState) -> Self {
-        Self {
-            s: state.stability,
-            d: state.difficulty,
-            sf: Some(state.stability_fast),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, Deserialize)]
-pub struct Review {
-    pub rating: u32,
-    /// 距上一次评分的天数（小数）；第一条必须为 0。
-    #[serde(rename = "deltaT")]
-    pub delta_t: f32,
 }
 
 /// 优化 / 评估的训练集，打包形态（`ffsrs_fit` 的输入，BUG-3745）。
@@ -273,62 +266,6 @@ fn dispatch(req: &Value) -> Result<Value, String> {
             build_model(algorithm, req.get("params"))?;
             Ok(json!(true))
         }
-        "next_states" => {
-            let algorithm = Algorithm::parse(str_field(req, "algorithm")?)?;
-            let model = build_model(algorithm, req.get("params"))?;
-            let retention = f32_field(req, "desiredRetention")?;
-            let elapsed = f32_field(req, "elapsedDays").unwrap_or(0.0).max(0.0);
-            let memory = memory_field(req, "memory")?.map(Memory::to_fsrs);
-            let next = model
-                .next_states_with_elapsed_days(memory, retention, elapsed)
-                .map_err(|e| format!("next_states: {e:?}"))?;
-            let item = |s: &fsrs::ItemState| json!({ "memory": Memory::from_fsrs(s.memory), "interval": s.interval });
-            Ok(json!({
-                "again": item(&next.again),
-                "hard": item(&next.hard),
-                "good": item(&next.good),
-                "easy": item(&next.easy),
-            }))
-        }
-        "memory_state" => {
-            // 由历史重建记忆状态（铁律 A ②③）。starting = 锚点换算出的起点（可空 = 新卡）。
-            let algorithm = Algorithm::parse(str_field(req, "algorithm")?)?;
-            let model = build_model(algorithm, req.get("params"))?;
-            let reviews: Vec<Review> =
-                serde_json::from_value(req.get("reviews").cloned().unwrap_or(Value::Array(vec![])))
-                    .map_err(|e| format!("bad reviews: {e}"))?;
-            let starting = memory_field(req, "starting")?.map(Memory::to_fsrs);
-            if reviews.is_empty() {
-                return Ok(match starting {
-                    Some(s) => json!(Memory::from_fsrs(s)),
-                    None => Value::Null,
-                });
-            }
-            let item = FSRSItem {
-                reviews: reviews
-                    .into_iter()
-                    .map(|r| FSRSReview {
-                        rating: r.rating,
-                        delta_t: r.delta_t,
-                    })
-                    .collect(),
-            };
-            let state = model
-                .memory_state(item, starting)
-                .map_err(|e| format!("memory_state: {e:?}"))?;
-            Ok(json!(Memory::from_fsrs(state)))
-        }
-        "memory_state_from_sm2" => {
-            let algorithm = Algorithm::parse(str_field(req, "algorithm")?)?;
-            let model = build_model(algorithm, req.get("params"))?;
-            let ease = f32_field(req, "easeFactor")?;
-            let interval = f32_field(req, "interval")?;
-            let retention = f32_field(req, "sm2Retention")?;
-            let state = model
-                .memory_state_from_sm2(ease, interval, retention)
-                .map_err(|e| format!("memory_state_from_sm2: {e:?}"))?;
-            Ok(json!(Memory::from_fsrs(state)))
-        }
         "retrievability" => {
             let algorithm = Algorithm::parse(str_field(req, "algorithm")?)?;
             let model = build_model(algorithm, req.get("params"))?;
@@ -338,14 +275,6 @@ fn dispatch(req: &Value) -> Result<Value, String> {
             Ok(json!(
                 model.current_retrievability(memory.to_fsrs(), elapsed)
             ))
-        }
-        "next_interval" => {
-            let algorithm = Algorithm::parse(str_field(req, "algorithm")?)?;
-            let model = build_model(algorithm, req.get("params"))?;
-            let retention = f32_field(req, "desiredRetention")?;
-            let memory =
-                memory_field(req, "memory")?.ok_or_else(|| "missing `memory`".to_string())?;
-            Ok(json!(model.next_interval(Some(memory.s), retention, 3)))
         }
         other => Err(format!("unknown op: {other}")),
     }
@@ -1278,20 +1207,6 @@ mod tests {
     }
 
     #[test]
-    fn next_states_new_card_orders_intervals() {
-        for alg in ["fsrs6", "fsrs7"] {
-            let r = call(
-                json!({"op":"next_states","algorithm":alg,"desiredRetention":0.9,"elapsedDays":0}),
-            );
-            let ok = &r["ok"];
-            let again = ok["again"]["interval"].as_f64().unwrap();
-            let good = ok["good"]["interval"].as_f64().unwrap();
-            let easy = ok["easy"]["interval"].as_f64().unwrap();
-            assert!(again < good && good < easy, "{alg}: {r}");
-        }
-    }
-
-    #[test]
     fn rejects_wrong_param_count() {
         let r = call(json!({"op":"validate","algorithm":"fsrs7","params":[1.0,2.0]}));
         assert!(r.get("error").is_some());
@@ -1300,28 +1215,6 @@ mod tests {
         assert!(
             r.get("error").is_some(),
             "fsrs6 params must not validate as fsrs7"
-        );
-    }
-
-    #[test]
-    fn memory_state_from_history_matches_stepwise() {
-        let r = call(json!({"op":"memory_state","algorithm":"fsrs6","reviews":[
-            {"rating":3,"deltaT":0},{"rating":3,"deltaT":3},{"rating":1,"deltaT":10}]}));
-        assert!(r["ok"]["s"].as_f64().unwrap() > 0.0, "{r}");
-    }
-
-    #[test]
-    fn fractional_elapsed_changes_fsrs7_result() {
-        let mem = json!({"s":1.0,"d":5.0,"sf":1.0});
-        let a = call(
-            json!({"op":"next_states","algorithm":"fsrs7","desiredRetention":0.9,"elapsedDays":0.1,"memory":mem}),
-        );
-        let b = call(
-            json!({"op":"next_states","algorithm":"fsrs7","desiredRetention":0.9,"elapsedDays":0.9,"memory":mem}),
-        );
-        assert_ne!(
-            a["ok"]["good"]["memory"]["s"],
-            b["ok"]["good"]["memory"]["s"]
         );
     }
 

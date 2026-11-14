@@ -209,10 +209,28 @@ class AiAgentController extends ChangeNotifier
   bool get awaitingChoice => host.awaitingChoice;
 
   @override
-  void answerConfirm(bool approved) => host.answerConfirm(approved);
+  void answerConfirm(bool approved, {String? entryId}) {
+    if (!_answers(AgentEntryKind.confirm, entryId)) return;
+    host.answerConfirm(approved);
+  }
 
   @override
-  void answerChoice(String? id) => host.answerChoice(id);
+  void answerChoice(String? id, {String? entryId}) {
+    if (!_answers(AgentEntryKind.choice, entryId)) return;
+    host.answerChoice(id);
+  }
+
+  /// [entryId] 为空（不指定卡片）或正是此刻最后一张 [kind] 卡片且仍待答时才作答。
+  bool _answers(AgentEntryKind kind, String? entryId) {
+    if (entryId == null) return true;
+    final List<AgentEntry> all = entries;
+    for (int i = all.length - 1; i >= 0; i--) {
+      final AgentEntry entry = all[i];
+      if (entry.kind != kind) continue;
+      return entry.id == entryId && entry.status == AgentEntryStatus.pending;
+    }
+    return false;
+  }
 
   /// 本机执行。
   @override

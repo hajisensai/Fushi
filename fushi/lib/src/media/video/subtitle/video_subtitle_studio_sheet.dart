@@ -3,7 +3,9 @@
 ///
 /// 上半是**参考**：当前画面截图、当前字幕的语言、播放头前后几句主字幕与同一时刻的
 /// 其它语言字幕（副字幕轨）逐句对照——两个开关分别管画面与其它语言字幕显示与否；
-/// 表格随播放实时滚动，点某句跳过去。下半是**工具**：生成字幕（原入口，管线 / 本机
+/// 表格随播放实时滚动，点某句跳过去。中间是**交给 AI 的参考**（spec
+/// `2026-11-11-video-subtitle-ai-reference`）：上面这两样不只给人看——「生成字幕」开着
+/// AI 校对时，画面（开关，首次说明会发送什么）与其它语言字幕会真的交给 AI。下半是**工具**：生成字幕（原入口，管线 / 本机
 /// 转录分流不变）、拆出双语字幕中的日语、按每句语音逐句对轴（模型重定时）、按内嵌
 /// 字幕对齐。
 ///
@@ -17,6 +19,7 @@ import 'dart:typed_data';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi_audio/fushi_audio.dart' show AudioCue;
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_evidence.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_content_language.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
@@ -72,6 +75,37 @@ class VideoSubtitleStudioReference {
 
   /// 点对照表某句跳过去；null = 只读。
   final void Function(AudioCue cue)? jumpToCue;
+}
+
+/// 画面现在发不到 AI 手里的原因（面板写在「参考画面」那一行下面）。
+enum VideoSubtitleStudioFramesProblem {
+  /// 「字幕校对」没指派提供商。
+  noProvider,
+
+  /// 指派的提供商没开图片输入。
+  providerRejectsImages,
+
+  /// 不是本机视频文件，管线取不到画面。
+  notLocalFile,
+}
+
+/// 「交给 AI 的参考」区的数据源（视频页注入）。全部是读取函数：开关改完面板现读。
+class VideoSubtitleStudioAiReference {
+  const VideoSubtitleStudioAiReference({
+    required this.framesEnabled,
+    required this.setFramesEnabled,
+    required this.framesProblem,
+  });
+
+  /// 「参考画面」开关的现值（设备本地偏好，与生成面板里的是同一个）。
+  final bool Function() framesEnabled;
+
+  /// 改「参考画面」。打开时由实现负责首次的「会发送什么」说明；用户没同意就不改。
+  final Future<void> Function(BuildContext context, bool value)
+  setFramesEnabled;
+
+  /// 画面现在发不出去的原因；null = 发得出去。
+  final VideoSubtitleStudioFramesProblem? Function() framesProblem;
 }
 
 /// 工具区的动作。null = 当前视频用不了这一项（面板显示原因、按钮置灰）。
@@ -169,6 +203,46 @@ String? _overlappingText(List<AudioCue> cues, int startMs, int endMs) {
   return texts.isEmpty ? null : texts.join('\n');
 }
 
+/// **纯函数**：播放器里一条字幕轨 → 交给 AI 校对的参考轨（`SubtitleEvidenceTrack`）。
+///
+/// [delayMs] 是这条轨在播放器里的调轴偏移：cue 的时刻加上它才是视频时间（播放器查
+/// cue 用 `位置 − 偏移`），所以用户眼前对齐成什么样，AI 拿到的就是什么样。渲染专用
+/// cue 与空文本不收；语言按文字判（判不出 → null：不知道是什么语言的轨不能当参考）。
+/// 与目标语言相同的轨由管线那头丢掉（`SubtitleEvidenceWithPinnedTracks`）。
+SubtitleEvidenceTrack? videoSubtitleStudioEvidenceTrack({
+  required List<AudioCue> cues,
+  required int delayMs,
+  required String label,
+}) {
+  final List<SubtitleEvidenceCue> lines =
+      <SubtitleEvidenceCue>[
+        for (final AudioCue c in cues)
+          if (!c.isRenderOnly &&
+              c.text.trim().isNotEmpty &&
+              c.endMs > c.startMs)
+            SubtitleEvidenceCue(
+              startMs: c.startMs + delayMs,
+              endMs: c.endMs + delayMs,
+              text: c.text.trim(),
+              role: classifyPlainEvidenceText(c.text),
+            ),
+      ]..sort(
+        (SubtitleEvidenceCue a, SubtitleEvidenceCue b) =>
+            a.startMs.compareTo(b.startMs),
+      );
+  if (lines.isEmpty) return null;
+  final String? language = detectSubtitleTextLanguage(<String>[
+    for (final SubtitleEvidenceCue c in lines) c.text,
+  ]);
+  if (language == null) return null;
+  return SubtitleEvidenceTrack(
+    label: label,
+    kind: SubtitleEvidenceKind.text,
+    language: language,
+    cues: lines,
+  );
+}
+
 /// `m:ss`（≥1 小时 `h:mm:ss`）。
 String videoSubtitleStudioClock(int ms) {
   final int v = ms < 0 ? 0 : ms;
@@ -188,9 +262,13 @@ Future<void> showVideoSubtitleStudioSheet({
   required BuildContext context,
   required VideoSubtitleStudioReference reference,
   required VideoSubtitleStudioActions actions,
+  VideoSubtitleStudioAiReference? aiReference,
 }) {
-  Widget build(BuildContext ctx) =>
-      VideoSubtitleStudioSheet(reference: reference, actions: actions);
+  Widget build(BuildContext ctx) => VideoSubtitleStudioSheet(
+    reference: reference,
+    actions: actions,
+    aiReference: aiReference,
+  );
   if (isDesktopPlatform) {
     return showAppDialog<void>(
       context: context,
@@ -214,10 +292,14 @@ class VideoSubtitleStudioSheet extends StatefulWidget {
     super.key,
     required this.reference,
     required this.actions,
+    this.aiReference,
   });
 
   final VideoSubtitleStudioReference reference;
   final VideoSubtitleStudioActions actions;
+
+  /// 「交给 AI 的参考」区；null = 这个视频走不了带 AI 校对的生成管线，不显示这一区。
+  final VideoSubtitleStudioAiReference? aiReference;
 
   @override
   State<VideoSubtitleStudioSheet> createState() =>
@@ -275,11 +357,17 @@ class _VideoSubtitleStudioSheetState extends State<VideoSubtitleStudioSheet> {
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final VideoSubtitleStudioAiReference? ai = widget.aiReference;
+    final int toolsAt = ai == null ? 2 : 5;
     final List<Widget> sections = <Widget>[
       _sectionTitle(0, t.video_subtitle_studio_reference_label),
       _referenceCard(context, 1),
-      _sectionTitle(2, t.video_subtitle_studio_tools_label),
-      ..._toolRows(context, 3),
+      if (ai != null) ...<Widget>[
+        _sectionTitle(2, t.video_subtitle_studio_ai_label),
+        ..._aiRows(context, ai, 3),
+      ],
+      _sectionTitle(toolsAt, t.video_subtitle_studio_tools_label),
+      ..._toolRows(context, toolsAt + 1),
     ];
     return FushiModalSheetFrame(
       title: t.video_subtitle_studio_title,
@@ -522,6 +610,109 @@ class _VideoSubtitleStudioSheetState extends State<VideoSubtitleStudioSheet> {
             message: t.video_subtitle_studio_jump_tooltip,
             child: tile,
           );
+  }
+
+  // ── 交给 AI 的参考 ────────────────────────────────────────────────────────
+
+  Future<void> _setAiFrames(VideoSubtitleStudioAiReference ai, bool on) async {
+    await ai.setFramesEnabled(context, on);
+    if (mounted) setState(() {});
+  }
+
+  /// 副字幕的语言名（给「其它语言字幕」那行）；没选副字幕 → null。
+  String? _secondaryLanguageLabel() {
+    final List<AudioCue> secondary = _ref.secondaryCues();
+    final String text = <String>[
+      for (final AudioCue c in secondary)
+        if (!c.isRenderOnly && c.text.trim().isNotEmpty) c.text,
+    ].join('\n');
+    if (text.isEmpty) return null;
+    return videoSubtitleStudioLanguageLabel(
+      detectSubtitleContentLanguage(text),
+    );
+  }
+
+  List<Widget> _aiRows(
+    BuildContext context,
+    VideoSubtitleStudioAiReference ai,
+    int firstIndex,
+  ) {
+    final VideoSubtitleStudioFramesProblem? problem = ai.framesProblem();
+    final bool framesOn = ai.framesEnabled();
+    final String framesHint = switch (problem) {
+      null => t.video_subtitle_ai_frames_hint,
+      VideoSubtitleStudioFramesProblem.noProvider =>
+        t.video_subtitle_ai_no_provider,
+      VideoSubtitleStudioFramesProblem.providerRejectsImages =>
+        t.video_subtitle_ai_frames_unsupported,
+      VideoSubtitleStudioFramesProblem.notLocalFile =>
+        t.video_subtitle_studio_ai_frames_not_local,
+    };
+    final bool framesLocked =
+        problem == VideoSubtitleStudioFramesProblem.notLocalFile;
+    final String? secondaryLanguage = _secondaryLanguageLabel();
+    return <Widget>[
+      FushiStaggeredEntrance(
+        index: firstIndex,
+        child: FushiGroupedListItem(
+          index: 0,
+          count: 2,
+          child: FushiListTileControl(
+            key: const ValueKey<String>('video-subtitle-studio-ai-frames'),
+            leading: const FushiIcon(FushiIcons.image),
+            title: Text(t.video_subtitle_ai_frames_label),
+            subtitle: Text(
+              framesHint,
+              key: const ValueKey<String>(
+                'video-subtitle-studio-ai-frames-hint',
+              ),
+            ),
+            enabled: !framesLocked,
+            trailing: KeyedSubtree(
+              key: const ValueKey<String>(
+                'video-subtitle-studio-ai-frames-switch',
+              ),
+              child: adaptiveSwitch(
+                context: context,
+                value: framesOn && !framesLocked,
+                onChanged: framesLocked
+                    ? null
+                    : (bool v) => unawaited(_setAiFrames(ai, v)),
+              ),
+            ),
+          ),
+        ),
+      ),
+      FushiStaggeredEntrance(
+        index: firstIndex + 1,
+        child: FushiGroupedListItem(
+          index: 1,
+          count: 2,
+          child: FushiListTileControl(
+            key: const ValueKey<String>('video-subtitle-studio-ai-subtitles'),
+            leading: const FushiIcon(FushiIcons.language),
+            title: Text(t.video_subtitle_studio_show_secondary),
+            subtitle: Text(
+              secondaryLanguage == null
+                  ? t.video_subtitle_studio_ai_subtitles_auto
+                  : t.video_subtitle_studio_ai_subtitles_secondary(
+                      language: secondaryLanguage,
+                    ),
+              key: const ValueKey<String>(
+                'video-subtitle-studio-ai-subtitles-hint',
+              ),
+            ),
+          ),
+        ),
+      ),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(4, 8, 4, 0),
+        child: _hint(
+          t.video_subtitle_studio_ai_scope_hint,
+          key: const ValueKey<String>('video-subtitle-studio-ai-scope'),
+        ),
+      ),
+    ];
   }
 
   // ── 工具 ────────────────────────────────────────────────────────────────

@@ -44,7 +44,8 @@ final class JavaCrashCapture {
                 dir, currentProcessName(app), Process.myPid(), previous));
     }
 
-    private static String currentProcessName(@NonNull Context context) {
+    /** 当前进程名（主进程 = 包名，其余带 {@code :popup} 之类的后缀）。 */
+    static String currentProcessName(@NonNull Context context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             final String name = Application.getProcessName();
             if (name != null && !name.isEmpty()) return name;

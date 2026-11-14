@@ -17,7 +17,9 @@
 ///   端口、共用 key 与每份 key、CORS——凭据 + 监听设置；状态回包里也收窄到开没开 /
 ///   在不在监听 / 最近错误，见 [srsAgentView]）；选提供哪几份 profile、默认那份
 ///   （spec `2026-11-05-server-srs-design.md` §9：选哪几份复习库给互联设备用是所有者
-///   的决定，不经已配对设备的 AI 会话改）。
+///   的决定，不经已配对设备的 AI 会话改）；信任 / 拒绝复习同步设备
+///   （`/api/admin/srs/devices/trust`，BUG-4306：放行一台没确认过的设备扣着的删除与彻底清除，
+///   是安全边界，同配对 / 吊销一样只给管理员，AI 只能读待确认列表）。
 library;
 
 import 'dart:convert';
@@ -444,6 +446,11 @@ Future<Object?> _srsSetDeck(AdminDispatch dispatch, String uid, String deck) =>
     'server.srs.profiles',
     '$_kSrsPath/profiles',
     'List the Fushi review (SRS) profiles found in the sync folder (uid, name, devices, note count, last update) and whether the server serves each one. Served profiles that vanished from the sync folder are listed with missing: true.',
+  );
+  read(
+    'server.srs.devices',
+    '$_kSrsPath/devices',
+    'List the review (SRS) sync devices the server has not trusted yet, per served profile: device id, name, when it first appeared, whether it is pending or rejected, and how many of its deletes / purges are held on the server until the owner trusts it in the server admin page.',
   );
 
   // ── 可撤销的写 ─────────────────────────────────────────────────────

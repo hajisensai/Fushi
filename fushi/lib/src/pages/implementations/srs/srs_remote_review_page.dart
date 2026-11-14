@@ -174,7 +174,8 @@ final Provider<SrsRemoteHostConnector> srsRemoteHostConnectorProvider =
 /// Riverpod 的子作用域只替换被覆盖的 provider：读了 `srsStoreProvider` 的派生 provider 若不在这里重建，
 /// 读到的仍是根容器（本机）的库，所以凡是可达页面用到的派生 provider 都在这里一并覆盖：
 /// - 媒体库与音频出口（卡面 / 原生 Fushi 卡片 / `[sound:]` 播放都经它们读媒体）；
-/// - RWKV 服务与 app 运行时置空：RWKV 与参数优化在主机上跑，本机的那份不碰主机的库；
+/// - RWKV 服务与 app 运行时置空：RWKV 与参数优化在主机上跑，本机的那份不碰主机的库；「等 RWKV」的状态换成
+///   主机的（进度 / 错误 / 就绪后重排 / 重试都经主机）；
 /// - 修订号是作用域自己的：远程写入只叫醒作用域里的页面，不触发本机复习库的互联推送。
 class SrsRemoteCollectionScope extends StatelessWidget {
   const SrsRemoteCollectionScope({
@@ -195,6 +196,7 @@ class SrsRemoteCollectionScope extends StatelessWidget {
       srsMediaStoreProvider.overrideWith((Ref ref) => media),
       srsCardAudioOutputProvider.overrideWith(srsDefaultCardAudioOutput),
       srsRwkvServiceProvider.overrideWith((Ref ref) => null),
+      srsRwkvStatusProvider.overrideWith((Ref ref) => store.hostRwkv),
       srsAppRuntimeProvider.overrideWith((Ref ref) => null),
       srsRevisionProvider.overrideWith((Ref ref) => 0),
       srsLocalWriteProvider.overrideWith((Ref ref) => 0),
