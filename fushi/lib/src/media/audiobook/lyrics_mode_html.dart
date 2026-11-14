@@ -636,11 +636,10 @@ body.ly-ctxblur .cue:not(.current) { filter: blur(var(--ly-ctx-blur, 0px)); }
 body.ly-sweep:not(.ly-paused) .cue.current.ly-sw-on:not(.ly-nosweep) > .ly-sw {
   display: block;
 }
+/* 振假名（来源自带的 rt）随底层一起画成未读色，由上层窗口与基字同步扫亮
+   （BUG-4504：以前 rt 在底层单独钉成当前色，起句即整排点亮、先于基字）。 */
 body.ly-sweep:not(.ly-paused) .cue.current.ly-sw-on:not(.ly-nosweep) .tx {
   color: var(--ly-upcoming);
-}
-body.ly-sweep:not(.ly-paused) .cue.current.ly-sw-on:not(.ly-nosweep) .tx rt {
-  color: var(--ly-current);
 }
 /* 上下边缘渐隐（Niratan listEdgeFadeFraction）。body 是真正的滚动元素（BUG-784），
    遮罩挂在它的盒上、不随内容滚动。 */
@@ -1493,12 +1492,16 @@ function _lySweepWanted(el) {
 // 纯函数：当前句局部坐标下的字形矩形 {l,r,t,b} → 按阅读顺序排好的视觉行。
 // u = 行内方向（横排 x / 竖排 y），v = 交叉方向；b0/b1 = 该行窗口在交叉方向的条带
 // （相邻两行取中线分界，首尾各外扩半行，盖住字形墨迹）。
-function __lyricsSweepLines(rects, vertical) {
+// rubyRects 是注音（rt）的字形矩形：不参与分行，并进它所注的那一行（行内方向重叠、
+// 交叉方向最近），让该行窗口的条带与行内范围盖住注音——注音随基字一起扫亮（BUG-4504）。
+function __lyricsSweepLines(rects, vertical, rubyRects) {
+  function axes(r) {
+    return vertical ? {u0: r.t, u1: r.b, v0: r.l, v1: r.r}
+                    : {u0: r.l, u1: r.r, v0: r.t, v1: r.b};
+  }
   var lines = [];
   for (var i = 0; i < rects.length; i++) {
-    var r = rects[i];
-    var c = vertical ? {u0: r.t, u1: r.b, v0: r.l, v1: r.r}
-                     : {u0: r.l, u1: r.r, v0: r.t, v1: r.b};
+    var c = axes(rects[i]);
     if (!(c.u1 > c.u0 && c.v1 > c.v0)) continue;
     var hit = null;
     for (var j = 0; j < lines.length; j++) {
@@ -1511,6 +1514,22 @@ function __lyricsSweepLines(rects, vertical) {
     } else {
       lines.push(c);
     }
+  }
+  var ruby = rubyRects || [];
+  for (var q = 0; q < ruby.length; q++) {
+    var rc = axes(ruby[q]);
+    if (!(rc.u1 > rc.u0 && rc.v1 > rc.v0)) continue;
+    var best = null, bestU = 0, bestV = 0;
+    for (var k = 0; k < lines.length; k++) {
+      var gu = Math.max(0, Math.max(lines[k].u0, rc.u0) - Math.min(lines[k].u1, rc.u1));
+      var gv = Math.max(0, Math.max(lines[k].v0, rc.v0) - Math.min(lines[k].v1, rc.v1));
+      if (!best || gu < bestU || (gu === bestU && gv < bestV)) {
+        best = lines[k]; bestU = gu; bestV = gv;
+      }
+    }
+    if (!best) continue;
+    best.u0 = Math.min(best.u0, rc.u0); best.u1 = Math.max(best.u1, rc.u1);
+    best.v0 = Math.min(best.v0, rc.v0); best.v1 = Math.max(best.v1, rc.v1);
   }
   // 横排自上而下；竖排 vertical-rl 右边的列先读。
   lines.sort(function(a, b) { return vertical ? b.v1 - a.v1 : a.v0 - b.v0; });
@@ -1568,21 +1587,24 @@ function _lySweepBuild(el, p, rate) {
   var k = _lyCueScale(el);
   if (!(box.width > 0 && box.height > 0)) return;
   var vertical = __lyricsVertical;
-  var rects = [];
+  var rects = [], rubyRects = [];
   var walker = document.createTreeWalker(tx, NodeFilter.SHOW_TEXT, null);
   var range = document.createRange();
   var node;
   while ((node = walker.nextNode())) {
-    // 注音（rt / rp）贴在基字侧边，两层都是当前色，不参与行划分。
-    if (node.parentElement && node.parentElement.closest('rt, rp')) continue;
+    // 注音（rt）贴在基字侧边：不参与分行，但并进所注那一行的窗口，底层是未读色、
+    // 随基字一起扫亮。rp（括号回退）不显示，跳过。
+    var anno = node.parentElement ? node.parentElement.closest('rt, rp') : null;
+    if (anno && String(anno.tagName).toUpperCase() !== 'RT') continue;
+    var into = anno ? rubyRects : rects;
     range.selectNodeContents(node);
     var rs = range.getClientRects();
     for (var i = 0; i < rs.length; i++) {
-      rects.push({l: (rs[i].left - box.left) / k, r: (rs[i].right - box.left) / k,
-                  t: (rs[i].top - box.top) / k, b: (rs[i].bottom - box.top) / k});
+      into.push({l: (rs[i].left - box.left) / k, r: (rs[i].right - box.left) / k,
+                 t: (rs[i].top - box.top) / k, b: (rs[i].bottom - box.top) / k});
     }
   }
-  var lines = __lyricsSweepLines(rects, vertical);
+  var lines = __lyricsSweepLines(rects, vertical, rubyRects);
   var total = 0;
   for (var n = 0; n < lines.length; n++) total += lines[n].u1 - lines[n].u0;
   if (!(total > 0)) return;

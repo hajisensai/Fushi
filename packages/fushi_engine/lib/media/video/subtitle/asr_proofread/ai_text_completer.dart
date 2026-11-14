@@ -56,8 +56,16 @@ const String kSubtitleAiNotConfigured = 'provider_not_configured';
 /// [prompt] 是本批内容。两段拼起来（[joinAiTextPrompt]）就是完整提示词——拆开只为
 /// 提示缓存：生产实现把前缀放 system（Anthropic 挂 `cache_control`），本批放 user。
 /// 空前缀 = 整段都是本批内容。
+///
+/// [images]：随本批内容一起给模型看的图（S3 校对的画面参考，见
+/// `subtitle_frame_reference.dart`）。只有调用方确认过提供商能收图
+/// （[AiProviderConfig.acceptsImages]）才会非空；实现原样挂在 user 消息上。
 abstract interface class AiTextCompleter {
-  Future<AiChatCompletion> complete(String prompt, {String stablePrefix = ''});
+  Future<AiChatCompletion> complete(
+    String prompt, {
+    String stablePrefix = '',
+    List<AiChatImage> images = const <AiChatImage>[],
+  });
 }
 
 /// 前缀与本批内容之间的分隔：拼回去与拆之前的整段提示词逐字相同（各阶段的拆法都
@@ -83,10 +91,12 @@ class SubtitleAiSpendingCompleter implements AiTextCompleter {
   Future<AiChatCompletion> complete(
     String prompt, {
     String stablePrefix = '',
+    List<AiChatImage> images = const <AiChatImage>[],
   }) async {
     final AiChatCompletion reply = await inner.complete(
       prompt,
       stablePrefix: stablePrefix,
+      images: images,
     );
     spent.addCall(reply.usage);
     return reply;
@@ -115,6 +125,7 @@ class AiChatTextCompleter implements AiTextCompleter {
   Future<AiChatCompletion> complete(
     String prompt, {
     String stablePrefix = '',
+    List<AiChatImage> images = const <AiChatImage>[],
   }) async {
     try {
       return await client.completeWithUsage(
@@ -122,7 +133,7 @@ class AiChatTextCompleter implements AiTextCompleter {
         messages: <AiChatMessage>[
           if (stablePrefix.isNotEmpty)
             AiChatMessage.system(stablePrefix, cacheable: true),
-          AiChatMessage.user(prompt),
+          AiChatMessage.user(prompt, images: images),
         ],
         maxTokens: maxTokens,
       );
@@ -314,6 +325,9 @@ final RegExp _kAiLineRecord = RegExp(
 /// [kSubtitleAiReplyIncomplete]（[failureDetail] 进 `detail`）。请求本身失败（额度 /
 /// 鉴权 / 网络）由 [AiTextCompleter] 原样抛出，不在这里重试。
 ///
+/// [images]：每一轮都随 [body] 一起发的图（S3 的画面参考；补问剩下的 id 时照样带上，
+/// 那几行仍然要看画面）。
+///
 /// 记录集合有限的阶段（S3 / S4 / 短片分类按 id 问）每轮有进展就必然收敛；记录集合
 /// 开放的阶段（专名表，模型可以一直编新条目）必须给 [maxRounds]：总轮数到了还没写完
 /// 同样抛 [kSubtitleAiReplyIncomplete]。
@@ -328,6 +342,7 @@ Future<void> runAiLineExchange({
   required SubtitleCancelToken cancel,
   int maxAttempts = 3,
   int? maxRounds,
+  List<AiChatImage> images = const <AiChatImage>[],
 }) async {
   int fruitless = 0;
   int rounds = 0;
@@ -343,6 +358,7 @@ Future<void> runAiLineExchange({
     final AiChatCompletion reply = await completer.complete(
       body(),
       stablePrefix: stablePrefix,
+      images: images,
     );
     usage.addCall(reply.usage);
     final AiLineReply parsed = parseAiLineReply(reply);

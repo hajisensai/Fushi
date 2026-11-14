@@ -4,6 +4,7 @@
 /// `Content-Range: bytes <start>-<end>/<total>`（不带就当整文件一次传）。服务端把
 /// 分段追加到 `<file>.part`，收齐 `total` 字节后原子 rename 成目标文件。
 /// `GET /api/admin/upload?library=<id>&path=<相对路径>` 返回 `{received}` 供断点续传。
+/// `GET /api/admin/upload/folders?library=<id>` 返回库根下已有的子目录（WebUI 子目录框的建议）。
 ///
 /// 配额：`<support>/upload_ledger.json` 记累计上传字节；超过 `upload_quota_bytes`
 /// 拒收 413。不是磁盘配额（那由 OS 管），只是防 WebUI 被当网盘用。
@@ -68,6 +69,39 @@ class UploadStore {
       throw const UploadRejected(400, 'path escapes library root');
     }
     return target;
+  }
+
+  /// [library] 根下已有的子目录（相对路径、`/` 分隔、排序），最多 [maxDepth] 层、[limit] 条。
+  ///
+  /// 只给 WebUI 子目录框做建议：不跟符号链接（免得列到库外），跳过 `.` 开头的隐藏目录；
+  /// 库根不存在 / 读不了的目录静默略过（建议缺几条不影响上传本身）。
+  static Future<List<String>> subfolders(
+    LibraryRootConfig library, {
+    int maxDepth = 2,
+    int limit = 500,
+  }) async {
+    final String root = p.normalize(p.absolute(library.path));
+    final List<String> out = <String>[];
+    List<Directory> level = <Directory>[Directory(root)];
+    for (int depth = 0; depth < maxDepth && level.isNotEmpty; depth++) {
+      final List<Directory> next = <Directory>[];
+      for (final Directory dir in level) {
+        List<FileSystemEntity> children;
+        try {
+          children = await dir.list(followLinks: false).toList();
+        } on FileSystemException {
+          continue;
+        }
+        for (final FileSystemEntity e in children) {
+          if (e is! Directory || p.basename(e.path).startsWith('.')) continue;
+          out.add(p.relative(e.path, from: root).replaceAll(r'\', '/'));
+          if (out.length >= limit) return out..sort();
+          next.add(e);
+        }
+      }
+      level = next;
+    }
+    return out..sort();
   }
 
   Future<int> received(String target) async {
