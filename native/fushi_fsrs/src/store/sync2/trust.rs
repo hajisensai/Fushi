@@ -61,12 +61,20 @@ pub(crate) fn state(c: &Connection, profile: &str, device: &Id) -> Result<Option
 
 /// 第一次见到 [device]（transport.rs `trust_head` 刚插入它的设备行）：本机库非空就记成待确认。[seen_at] = 它那份 head
 /// 的写出时刻（界面显示「首次出现」）。
+///
+/// 「库非空」读的是投影。新设备收段通道（channel.rs）没做完时投影里还缺已收下的操作（追加阶段一条都没投）：同一批
+/// 操作逐条投递到这一刻库已非空，通道路径却读到空库、把这台设备当成可信，它的删除与清除就不扣了（BUG-4387）。所以
+/// 先把通道做完再判。[c] 在调用方的事务里，这里只能在那笔事务里一次做完：`sync2_plan_at` 进事务之前已按片做过
+/// （[sees_new_device]），正常走不到，这是兜底。做完的片落进投影的变化交给 [settled]（同
+/// [super::channel::settle]：调用方攒着、随下一条命令的回包带回 Dart）。
 pub(crate) fn note_new_device(
     c: &Connection,
     profile: &str,
     device: &Id,
     seen_at: i64,
+    settled: &mut dyn FnMut(&Touched),
 ) -> Result<(), String> {
+    super::channel::settle(c, profile, settled)?;
     if library_fresh(c, profile)? {
         return Ok(());
     }
@@ -77,6 +85,35 @@ pub(crate) fn note_new_device(
     .execute(params![profile, device.0.to_vec(), PENDING, seen_at])
     .map_err(sql)?;
     Ok(())
+}
+
+/// [heads] 里有没有本机还不认识的设备（`plan` 会为它调 [note_new_device] 的那种；只多不少：别的集合的、要更新
+/// 版本才读得了的 head 也算）。`sync2_plan_at` 据此在进写事务之前先把没做完的收段通道按片做完。
+pub(crate) fn sees_new_device(
+    c: &Connection,
+    profile: &str,
+    heads: &[Vec<u8>],
+) -> Result<bool, String> {
+    let mut known = c
+        .prepare_cached(
+            "SELECT EXISTS (SELECT 1 FROM sync2_devices WHERE profile_uid = srs_id(?1) AND device = ?2) \
+                 OR EXISTS (SELECT 1 FROM sync2_self WHERE profile_uid = srs_id(?1) AND device = ?2)",
+        )
+        .map_err(sql)?;
+    for bytes in heads {
+        let Ok(h) = crate::sync2::segment::Head::decode(bytes) else {
+            continue;
+        };
+        if !known
+            .query_row(params![profile, h.device.0.to_vec()], |r| {
+                r.get::<_, bool>(0)
+            })
+            .map_err(sql)?
+        {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 /// 一条修改是不是删除（`deleted` 写成时刻；写成 null 是恢复，不算）。迁移进来的旧删除同样算。
@@ -272,30 +309,39 @@ impl crate::store::SrsCore {
     ) -> Result<Value, String> {
         let id = Id::parse(device).ok_or("trust: bad device")?;
         let w = self.writer()?;
-        super::in_savepoint(&w, |c| {
-            let local =
-                super::Local::load(c, profile)?.ok_or("sync2 not initialised for this profile")?;
-            if id == local.device {
-                return Err("trust: this device is always trusted".into());
-            }
-            let mut t = Touched::default();
-            let released = if trust {
-                release(c, profile, &id, now, &mut t)?
-            } else {
-                reject(c, profile, &id)?;
-                0
-            };
-            let replayed = super::replay_touched(c, &t)?;
-            Ok(serde_json::json!({
-                "trusted": trust,
-                "released": released,
-                "marks": t.marks.to_json(),
-                "replayed": replayed,
-                "changed": t.entities_changed.iter().map(|(k, e)| serde_json::json!([k, e])).collect::<Vec<_>>(),
-                "purged": t.purged.iter().map(|(k, e)| serde_json::json!([k, e])).collect::<Vec<_>>(),
-            }))
-        })
+        super::in_savepoint(&w, |c| trust_on(c, profile, &id, trust, now))
     }
+}
+
+/// [crate::store::SrsCore::sync2_trust] 的本体：在调用方持着的写连接、开好的 SAVEPOINT 里做（不自己取锁）。本机写命令
+/// 分发（store/ffi.rs `local_write_body`）把它与缓存刷新、本机状态行放进同一个 SAVEPOINT。
+pub(crate) fn trust_on(
+    c: &Connection,
+    profile: &str,
+    id: &Id,
+    trust: bool,
+    now: i64,
+) -> Result<Value, String> {
+    let local = super::Local::load(c, profile)?.ok_or("sync2 not initialised for this profile")?;
+    if *id == local.device {
+        return Err("trust: this device is always trusted".into());
+    }
+    let mut t = Touched::default();
+    let released = if trust {
+        release(c, profile, id, now, &mut t)?
+    } else {
+        reject(c, profile, id)?;
+        0
+    };
+    let replayed = super::replay_touched(c, &t)?;
+    Ok(serde_json::json!({
+        "trusted": trust,
+        "released": released,
+        "marks": t.marks.to_json(),
+        "replayed": replayed,
+        "changed": t.entities_changed.iter().map(|(k, e)| serde_json::json!([k, e])).collect::<Vec<_>>(),
+        "purged": t.purged.iter().map(|(k, e)| serde_json::json!([k, e])).collect::<Vec<_>>(),
+    }))
 }
 
 /// 测试：信任此刻全部待确认的设备（端到端助手模拟「用户每次都点了信任」，见 tests.rs `AUTO_TRUST`）。

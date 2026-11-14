@@ -422,7 +422,12 @@ fn hex(b: &[u8]) -> String {
 /// 校验一份 head 的设备公钥：认识的设备必须是同一把钥匙（防注入，设计 §9）；第一次见到的设备记下公钥。
 /// 本机库非空时第一次见到的设备记成待确认（trust.rs）：它的普通操作照收，删除与彻底清除扣到本机确认之后。
 /// 返回 false = 拒绝这份 head。
-fn trust_head(conn: &Connection, profile: &str, h: &Head) -> Result<bool, String> {
+fn trust_head(
+    conn: &Connection,
+    profile: &str,
+    h: &Head,
+    settled: &mut dyn FnMut(&Touched),
+) -> Result<bool, String> {
     let known: Option<(Option<Vec<u8>>, i64)> = conn
         .prepare_cached("SELECT public, frozen FROM sync2_devices WHERE profile_uid = srs_id(?1) AND device = ?2")
         .map_err(sql)?
@@ -446,7 +451,7 @@ fn trust_head(conn: &Connection, profile: &str, h: &Head) -> Result<bool, String
                 params![profile, h.device.0.to_vec(), h.public.to_vec()],
             )
             .map_err(sql)?;
-            super::trust::note_new_device(conn, profile, &h.device, h.at_ms)?;
+            super::trust::note_new_device(conn, profile, &h.device, h.at_ms, settled)?;
             Ok(true)
         }
     }
@@ -575,12 +580,14 @@ fn own_fork_files(
 }
 
 /// 看 head（[SrsCore::sync2_plan_at]）。[write] 为假时 [c] 是读连接：要记东西就返回 None（调用方进写锁重来）。
+/// [settled]：第一次见到某台设备时兜底做完的收段通道（trust.rs `note_new_device`）落进投影的变化；只读时用不到。
 fn plan(
     c: &Connection,
     profile: &str,
     heads: &[Vec<u8>],
     location: Option<&str>,
     write: bool,
+    settled: &mut dyn FnMut(&Touched),
 ) -> Result<Option<Value>, String> {
     let local = Local::load(c, profile)?.ok_or("sync2 not initialised for this profile")?;
     let mut fetch = Vec::new();
@@ -624,7 +631,7 @@ fn plan(
             continue;
         }
         if write {
-            if !trust_head(c, profile, h)? {
+            if !trust_head(c, profile, h, settled)? {
                 rejected.push(h.device.text());
                 continue;
             }
@@ -1222,13 +1229,65 @@ fn store_pending(
 pub struct CommitBudget<'a> {
     left: usize,
     deadline: Option<std::time::Instant>,
-    /// 置位 = 有别的写入在等写锁，这一片尽快收。
-    yield_to: Option<&'a std::sync::atomic::AtomicBool>,
+    /// 有别的写入在等写锁（[YieldSignal::wanted]），这一片尽快收。
+    yield_to: Option<&'a YieldSignal>,
     floor: usize,
     /// 这一片被预算截停过（还有没处理完的）。
     stopped: bool,
     /// 默认片长（[CommitBudget::slice]）：新设备的收段会话可以拉长它（[CommitBudget::stretch]）。
     stretchable: bool,
+}
+
+/// 「有别的写入在等写锁」的信号，切片的命令（收段的一片、收尾的重放 / 通道推进）据它提前收片。两个来源：
+///
+/// - **等待者计数**：有线程正阻塞在内核写锁上（[crate::store::SrsCore::writer] 取锁时 `try_lock` 失败就记一个，
+///   拿到锁或放弃时减掉）。别的副本对象、别的 isolate 的写命令直接到内核来等锁，这里看得见。是「此刻有没有人在等」
+///   的精确值：等的人走了它就回零，不会留下一个没人认领的请求让之后的片白白早收。
+/// - **请求标志**：Dart 那一侧的排队（同一个副本对象的写入在 `runExclusive` 里排在收段那一步后面，还没到内核）
+///   经 `ingest_yield` 命令置上，这一片收了就清。
+#[derive(Default)]
+pub struct YieldSignal {
+    requested: std::sync::atomic::AtomicBool,
+    waiters: std::sync::atomic::AtomicUsize,
+}
+
+impl YieldSignal {
+    pub(crate) fn request(&self) {
+        self.requested
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// 这一片收了：请求是冲着它来的（之后才到的最多让下一片早收）。
+    pub(crate) fn clear(&self) {
+        self.requested
+            .store(false, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    pub(crate) fn requested(&self) -> bool {
+        self.requested.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    pub(crate) fn wanted(&self) -> bool {
+        self.requested() || self.waiters.load(std::sync::atomic::Ordering::Relaxed) > 0
+    }
+
+    /// 记一个正在等写锁的线程；返回的守卫析构时减掉（拿到锁、取锁失败、panic 都走析构）。
+    pub(crate) fn waiting(&self) -> YieldWaiter<'_> {
+        self.waiters
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        YieldWaiter(self)
+    }
+}
+
+/// [YieldSignal::waiting] 的守卫。
+pub(crate) struct YieldWaiter<'a>(&'a YieldSignal);
+
+impl Drop for YieldWaiter<'_> {
+    fn drop(&mut self) {
+        self.0
+            .waiters
+            .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+    }
 }
 
 /// 一片投递的时间上限（写锁里投递 + 投影部分；同一片的缓存刷新与事务提交大约再占它的一半）。只在没人等锁时
@@ -1255,8 +1314,8 @@ impl<'a> CommitBudget<'a> {
         }
     }
 
-    /// 一片：最长 [COMMIT_SLICE]，[yield_to] 置位就提前收。
-    pub fn slice(yield_to: &'a std::sync::atomic::AtomicBool) -> CommitBudget<'a> {
+    /// 一片：最长 [COMMIT_SLICE]，[yield_to] 有人等（[YieldSignal::wanted]）就提前收。
+    pub fn slice(yield_to: &'a YieldSignal) -> CommitBudget<'a> {
         CommitBudget {
             stretchable: true,
             ..CommitBudget::slice_within(yield_to, COMMIT_SLICE)
@@ -1271,10 +1330,7 @@ impl<'a> CommitBudget<'a> {
     }
 
     /// 一片，时间上限另给（测试用：给得很长，切点就只来自让出请求）。
-    pub fn slice_within(
-        yield_to: &'a std::sync::atomic::AtomicBool,
-        max: std::time::Duration,
-    ) -> CommitBudget<'a> {
+    pub fn slice_within(yield_to: &'a YieldSignal, max: std::time::Duration) -> CommitBudget<'a> {
         CommitBudget {
             left: usize::MAX,
             deadline: Some(std::time::Instant::now() + max),
@@ -1328,9 +1384,7 @@ impl<'a> CommitBudget<'a> {
             && (self
                 .deadline
                 .is_some_and(|d| std::time::Instant::now() >= d)
-                || self
-                    .yield_to
-                    .is_some_and(|y| y.load(std::sync::atomic::Ordering::Relaxed)));
+                || self.yield_to.is_some_and(YieldSignal::wanted));
         if self.left == 0 || over {
             self.stopped = true;
             return false;
@@ -1848,33 +1902,17 @@ fn ingest_result(
     .to_string())
 }
 
-/// 收段的一步在同一笔事务里写下 Dart 的本机状态行（`srs_local_state`，集成审查【中高】）。[local_state] 是 Dart 调用
-/// 那一刻内存里的本机状态（`_saveLocal` 写的同一份 JSON）；这一步只会改变其中的修订号 `revision`（Dart
-/// `_absorbProjection`：每条落库的事件、每个变化的实体各 +1），这里按 [result] 的 `marks.landed` 与 `changed` 条数
-/// 同样推进后写下，并把写下的值放进结果的 `localRevision`（Dart 以它为准，内存与库里的一致）。[local_state] 为 None
-/// （测试、旧调用方）就不写，结果原样返回。
+/// 收段的一步在同一笔事务里推进并写下本机状态行（`srs_local_state`，集成审查【中高】）：修订号按 [result] 从库里的值
+/// 推进、结果带 `localRevision` / `localEpoch`，与本机写命令同一个函数（store/local_state.rs
+/// [crate::store::local_state::persist_projected]）。[anchor]：Dart 此刻的校时状态，给了就一并写下。
 fn persist_local_state(
     c: &Connection,
     profile: &str,
-    local_state: Option<&str>,
+    anchor: Option<&serde_json::Value>,
     result: String,
 ) -> Result<String, String> {
-    let Some(local) = local_state else {
-        return Ok(result);
-    };
     let mut r: Value = serde_json::from_str(&result).map_err(|e| e.to_string())?;
-    let mut state: Value =
-        serde_json::from_str(local).map_err(|e| format!("sync2 ingest: bad localState: {e}"))?;
-    let landed = r["marks"]["landed"].as_i64().unwrap_or(0);
-    let changed = r["changed"].as_array().map_or(0, |a| a.len() as i64);
-    let revision = state.get("revision").and_then(Value::as_i64).unwrap_or(0) + landed + changed;
-    state
-        .as_object_mut()
-        .ok_or("sync2 ingest: localState must be a JSON object")?
-        .insert("revision".to_owned(), json!(revision));
-    // 与 Dart `_saveLocal` 同一个合并（store/local_state.rs）：内核持有的键保留库里的值。
-    crate::store::local_state::upsert(c, profile, &state.to_string())?;
-    r["localRevision"] = json!(revision);
+    crate::store::local_state::persist_projected(c, profile, anchor, &mut r)?;
     Ok(r.to_string())
 }
 
@@ -1930,7 +1968,10 @@ pub(crate) fn replay_pending(
         if take.is_empty() {
             return Ok((changed, true));
         }
-        changed.extend(replay_cards(c, &take)?);
+        {
+            let _p = crate::store::prof::span("replay");
+            changed.extend(replay_cards(c, &take)?);
+        }
         let mut del = c.prepare_cached("DELETE FROM sync2_replay_pending WHERE profile_uid = srs_id(?1) AND card_id = srs_id(?2)").map_err(sql)?;
         for id in &take {
             del.execute(params![profile, id]).map_err(sql)?;
@@ -2787,8 +2828,18 @@ impl SrsCore {
             return Ok(v);
         }
         let w = self.writer()?;
+        // 收段通道没做完（上一轮被打断）时第一次见到某台设备：它的信任判定要读完整的投影（trust.rs
+        // `note_new_device`）。先按片把通道做完，不让它在下面这笔事务里一次做完。
+        if self.channel_live.load(std::sync::atomic::Ordering::SeqCst)
+            && super::trust::sees_new_device(&w, profile, heads)?
+        {
+            self.settle_channel_on(&w, profile)?;
+        }
         in_savepoint(&w, |c| {
-            Ok(plan(c, profile, heads, location, true)?.expect("writable plan always answers"))
+            Ok(plan(c, profile, heads, location, true, &mut |t| {
+                self.note_settled(profile, t)
+            })?
+            .expect("writable plan always answers"))
         })
     }
 
@@ -2801,7 +2852,7 @@ impl SrsCore {
         location: Option<&str>,
     ) -> Result<Option<Value>, String> {
         let r = self.reader()?;
-        plan(&r, profile, heads, location, false)
+        plan(&r, profile, heads, location, false, &mut |_| {})
     }
 
     /// 收段：每项是一个段文件的字节（任意顺序、可重复）。校验（签名 / 链 / 解密）、按设备连续前缀 + 因果
@@ -2823,45 +2874,11 @@ impl SrsCore {
         let w = self.writer()?;
         // 会话外投递：新设备收段通道没做完就先按片做完（各片自己提交），之后逐条投递（channel.rs `settle`）。
         self.settle_channel_on(&w, profile)?;
-        in_savepoint(&w, |c| {
-            let local = Local::load(c, profile)?.ok_or("sync2 not initialised for this profile")?;
-            let mut t = Touched::default();
-            let mut errors = Vec::new();
-            let mut fork_at: Option<u64> = None;
-            let (applied_n, _, _) = deliver_prepared(
-                c,
-                profile,
-                &local,
-                &mut prepared,
-                &mut CommitBudget::unlimited(),
-                now,
-                &mut t,
-                &mut errors,
-                &mut fork_at,
-                &mut None,
-                false,
-            )?;
-            bump_delivery_epoch();
-            if let Some(k) = fork_at {
-                rotate(c, profile, k, now, &mut t)?;
-            }
-            let replayed = replay_touched(c, &t)?;
-            ingest_result(
-                c,
-                profile,
-                t,
-                replayed,
-                applied_n,
-                errors,
-                fork_at.is_some(),
-                false,
-                None,
-            )
-        })
+        in_savepoint(&w, |c| ingest_on(c, profile, &mut prepared, now))
     }
 
     /// 收段的锁外一半：读连接上取本机身份与各设备公钥（查完就放），再不持任何锁地验签、解密、解压、重算链。
-    fn prepare_unlocked<'a>(
+    pub(crate) fn prepare_unlocked<'a>(
         &self,
         profile: &str,
         segments: std::borrow::Cow<'a, [Vec<u8>]>,
@@ -2899,7 +2916,7 @@ impl SrsCore {
         let fork_at = recorded_fork(&w, profile, &local.device)?;
         let bootstrap = !studied_here(&w, profile, &local.device)?;
         // 新设备第一次同步走收段通道（先追加后折叠，channel.rs）；上一次的收尾做到一半就先按片做完（各片自己提交）。
-        let channel = super::channel::begin(&w, profile)?;
+        let channel = super::channel::begin(&w, profile, &mut |t| self.note_settled(profile, t))?;
         if channel {
             self.note_channel_live();
         } else {
@@ -2916,7 +2933,6 @@ impl SrsCore {
         };
         let mut phase = self.ingest_phase()?;
         self.set_ingest_phase(&mut phase, IngestPhase::Open(session));
-        // Dart 据 `channel` 记下「开 Drift 事务前先 `channel_settle`」（srs_db_store.dart `_transactionOrReload`）。
         Ok(json!({"channel": channel}))
     }
 
@@ -3009,8 +3025,8 @@ impl SrsCore {
         self.sync2_ingest_commit_persisting(profile, now, budget, None)
     }
 
-    /// 同 [Self::sync2_ingest_commit]；给了 [local_state]（Dart 本机状态行 `srs_local_state.json` 的此刻内容）就在投递
-    /// 的**同一笔事务**里把它写下（修订号按这一片落库的变化推进，见 [persist_local_state]）。收段不再套 Drift 事务
+    /// 同 [Self::sync2_ingest_commit]；[anchor] 是 Dart 此刻的校时状态（没有就 None）。本机状态行在投递的**同一笔
+    /// 事务**里写下（修订号按这一片落库的变化推进，见 [persist_local_state]；带不带 [anchor] 都写）。收段不再套 Drift 事务
     /// （集成审查【中高】）：这一片由内核自己提交，提交成功才推进会话内存（`prepared` / `delivery`），所以不会有
     /// 「内层 SAVEPOINT 释放、会话已推进，外层事务却回滚」的不一致；本机状态行也随同一次提交落盘或一起不落。
     pub fn sync2_ingest_commit_persisting(
@@ -3018,9 +3034,9 @@ impl SrsCore {
         profile: &str,
         now: i64,
         budget: CommitBudget<'_>,
-        local_state: Option<&str>,
+        anchor: Option<&serde_json::Value>,
     ) -> Result<String, String> {
-        self.sync2_ingest_commit_cached(profile, now, budget, local_state, None)
+        self.sync2_ingest_commit_cached(profile, now, budget, anchor, None)
             .map(|(r, _)| r)
     }
 
@@ -3031,25 +3047,24 @@ impl SrsCore {
         profile: &str,
         now: i64,
         budget: CommitBudget<'_>,
-        local_state: Option<&str>,
+        anchor: Option<&serde_json::Value>,
         cache: Option<&crate::store::caches::CacheConfig>,
     ) -> Result<(String, crate::store::caches::Written), String> {
-        let out = self.ingest_commit_slice(profile, now, budget, local_state, cache);
+        let out = self.ingest_commit_slice(profile, now, budget, anchor, cache);
         // 这一片收了：让出请求是冲着它来的（之后才到的最多让下一片早收）。
-        self.ingest_yield
-            .store(false, std::sync::atomic::Ordering::Relaxed);
+        self.ingest_yield.clear();
         out
     }
 
     /// 有别的写入在等写锁：正在投的那一片（[SrsCore::sync2_ingest_commit]）尽快收。不拿任何连接锁，从等锁的
-    /// 那一侧（Dart 的写入排队）直接调。
+    /// 那一侧（Dart 的写入排队：同一个副本对象的写入排在收段那一步后面，还没到内核）直接调。已经到内核来等写锁的
+    /// 不用它：取写锁时自己记进等待者计数（[YieldSignal]）。
     pub fn sync2_ingest_yield(&self) {
-        self.ingest_yield
-            .store(true, std::sync::atomic::Ordering::Relaxed);
+        self.ingest_yield.request();
     }
 
-    /// 让出请求的标志（[CommitBudget::slice] 读它）。
-    pub(crate) fn ingest_yield_flag(&self) -> &std::sync::atomic::AtomicBool {
+    /// 让出信号（[CommitBudget::slice] 读它）。
+    pub(crate) fn ingest_yield_flag(&self) -> &YieldSignal {
         &self.ingest_yield
     }
 
@@ -3058,7 +3073,7 @@ impl SrsCore {
         profile: &str,
         now: i64,
         mut budget: CommitBudget<'_>,
-        local_state: Option<&str>,
+        anchor: Option<&serde_json::Value>,
         cache: Option<&crate::store::caches::CacheConfig>,
     ) -> Result<(String, crate::store::caches::Written), String> {
         let w = self.writer()?;
@@ -3131,7 +3146,7 @@ impl SrsCore {
                 Some(cfg) => crate::store::caches::refresh(c, profile, cfg, now_dirty)?,
                 None => crate::store::caches::Written::default(),
             };
-            let r = persist_local_state(c, profile, local_state, r)?;
+            let r = persist_local_state(c, profile, anchor, r)?;
             Ok((r, written, fork_at, done))
         });
         match out {
@@ -3170,13 +3185,13 @@ impl SrsCore {
         self.sync2_ingest_finish_persisting(profile, now, budget, None)
     }
 
-    /// 同 [Self::sync2_ingest_finish_within]，[local_state] 同 [Self::sync2_ingest_commit_persisting]。
+    /// 同 [Self::sync2_ingest_finish_within]，[anchor] 同 [Self::sync2_ingest_commit_persisting]。
     pub fn sync2_ingest_finish_persisting(
         &self,
         profile: &str,
         now: i64,
         mut budget: CommitBudget<'_>,
-        local_state: Option<&str>,
+        anchor: Option<&serde_json::Value>,
     ) -> Result<String, String> {
         let w = self.writer()?;
         let mut guard = self.ingest_phase()?;
@@ -3194,8 +3209,7 @@ impl SrsCore {
         if session.fork_at.is_some() {
             let settled = self.settle_channel_on(&w, profile);
             if let Err(e) = settled {
-                self.ingest_yield
-                    .store(false, std::sync::atomic::Ordering::Relaxed);
+                self.ingest_yield.clear();
                 self.set_ingest_phase(&mut guard, IngestPhase::Idle);
                 return Err(e);
             }
@@ -3234,10 +3248,9 @@ impl SrsCore {
                 None,
             )?;
             let drained = !more && !cache_is_pending(c, profile)?;
-            Ok((persist_local_state(c, profile, local_state, r)?, drained))
+            Ok((persist_local_state(c, profile, anchor, r)?, drained))
         });
-        self.ingest_yield
-            .store(false, std::sync::atomic::Ordering::Relaxed);
+        self.ingest_yield.clear();
         match out {
             Ok((r, drained)) => {
                 if drained {
@@ -3262,12 +3275,12 @@ impl SrsCore {
         self.sync2_replay_pending_persisting(profile, budget, None)
     }
 
-    /// 同 [Self::sync2_replay_pending]，[local_state] 同 [Self::sync2_ingest_commit_persisting]。
+    /// 同 [Self::sync2_replay_pending]，[anchor] 同 [Self::sync2_ingest_commit_persisting]。
     pub fn sync2_replay_pending_persisting(
         &self,
         profile: &str,
         mut budget: CommitBudget<'_>,
-        local_state: Option<&str>,
+        anchor: Option<&serde_json::Value>,
     ) -> Result<String, String> {
         let w = self.writer()?;
         let out = in_savepoint(&w, |c| {
@@ -3279,10 +3292,9 @@ impl SrsCore {
                 (BTreeSet::new(), true)
             };
             let r = ingest_result(c, profile, t, replayed, 0, Vec::new(), false, more, None)?;
-            persist_local_state(c, profile, local_state, r)
+            persist_local_state(c, profile, anchor, r)
         });
-        self.ingest_yield
-            .store(false, std::sync::atomic::Ordering::Relaxed);
+        self.ingest_yield.clear();
         out
     }
 
@@ -3714,115 +3726,117 @@ impl SrsCore {
     /// 明文、全部操作、再拷一份待投递三份同时在内存。
     pub fn sync2_import(&self, profile: &str, bytes: &[u8], now: i64) -> Result<String, String> {
         let w = self.writer()?;
-        // 会话外投递：新设备收段通道没做完就先按片做完（channel.rs `settle`；Dart 的导入在 Drift 事务里，已在开事务
-        // 前发过 `channel_settle`，这里通常没有通道）。
+        // 会话外投递：新设备收段通道没做完就先按片做完（channel.rs `settle`；分发器已在取写锁前收过通道，这里通常
+        // 没有通道）。
         self.settle_channel_on(&w, profile)?;
-        in_savepoint(&w, |c| {
-            let local = match Local::load(c, profile)? {
-                Some(l) => l,
-                None => Local::create(c, profile, now)?,
-            };
-            let mut reader = ExportReader::open(bytes)?;
-            if reader.collection != local.collection {
-                return Err("this .fushisrs belongs to another profile".into());
+        in_savepoint(&w, |c| import_on(c, profile, bytes, now)).map(|v| v.to_string())
+    }
+}
+
+/// [SrsCore::sync2_import] 的本体：在调用方的写连接、调用方开的 SAVEPOINT 里并入（不自己取锁、不收通道——调用方在开
+/// SAVEPOINT 之前收，见 [SrsCore::settle_channel_on]）。
+pub(crate) fn import_on(
+    c: &Connection,
+    profile: &str,
+    bytes: &[u8],
+    now: i64,
+) -> Result<Value, String> {
+    let local = match Local::load(c, profile)? {
+        Some(l) => l,
+        None => Local::create(c, profile, now)?,
+    };
+    let mut reader = ExportReader::open(bytes)?;
+    if reader.collection != local.collection {
+        return Err("this .fushisrs belongs to another profile".into());
+    }
+    // 第一遍：校验、收集设备抬头、算本机身份与包的共同前缀 k。
+    let mut runs: Vec<(Id, Vec<u8>)> = Vec::new();
+    let mut own: Option<(u64, u64, bool, Chain)> = None; // (包里条数, k, 仍然对得上, 链)
+    while let Some(item) = reader.next_item()? {
+        match item {
+            ExportItem::Device {
+                device,
+                public,
+                count,
+            } => {
+                if device == local.device {
+                    own = Some((count, 0, true, CHAIN_ZERO));
+                }
+                runs.push((device, public));
             }
-            // 第一遍：校验、收集设备抬头、算本机身份与包的共同前缀 k。
-            let mut runs: Vec<(Id, Vec<u8>)> = Vec::new();
-            let mut own: Option<(u64, u64, bool, Chain)> = None; // (包里条数, k, 仍然对得上, 链)
-            while let Some(item) = reader.next_item()? {
-                match item {
-                    ExportItem::Device {
-                        device,
-                        public,
-                        count,
-                    } => {
-                        if device == local.device {
-                            own = Some((count, 0, true, CHAIN_ZERO));
-                        }
-                        runs.push((device, public));
-                    }
-                    ExportItem::Op(op) => {
-                        if let Some((_, k, matching, chain)) =
-                            own.as_mut().filter(|_| op.id.device == local.device)
-                        {
-                            if *matching {
-                                *chain = chain_next(chain, &op);
-                                if chain_at(c, profile, &local.device, op.id.seq)? == Some(*chain) {
-                                    *k = op.id.seq;
-                                } else {
-                                    *matching = false;
-                                }
-                            }
+            ExportItem::Op(op) => {
+                if let Some((_, k, matching, chain)) =
+                    own.as_mut().filter(|_| op.id.device == local.device)
+                {
+                    if *matching {
+                        *chain = chain_next(chain, &op);
+                        if chain_at(c, profile, &local.device, op.id.seq)? == Some(*chain) {
+                            *k = op.id.seq;
+                        } else {
+                            *matching = false;
                         }
                     }
                 }
             }
-            let mut t = Touched::default();
-            // 包是本机更早的前缀（全部对得上）不用换；有分歧或包里更长（另一个安装接着写过）才换。
-            if let Some((count, k, _, _)) = own {
-                if k < count {
-                    rotate(c, profile, k, now, &mut t)?;
-                }
-            }
-            for (device, public) in &runs {
-                c.execute(
+        }
+    }
+    let mut t = Touched::default();
+    // 包是本机更早的前缀（全部对得上）不用换；有分歧或包里更长（另一个安装接着写过）才换。
+    if let Some((count, k, _, _)) = own {
+        if k < count {
+            rotate(c, profile, k, now, &mut t)?;
+        }
+    }
+    for (device, public) in &runs {
+        c.execute(
                     "INSERT INTO sync2_devices (profile_uid, device, public, applied) VALUES (srs_id(?1), ?2, ?3, 0) \
                      ON CONFLICT(profile_uid, device) DO UPDATE SET public = COALESCE(sync2_devices.public, excluded.public)",
                     params![profile, device.0.to_vec(), if public.is_empty() { None } else { Some(public.clone()) }],
                 )
                 .map_err(sql)?;
-            }
-            // 第二遍：按块投递。
-            let mut delivery = Delivery::load(c, profile)?;
-            let mut reader = ExportReader::open(bytes)?;
-            let mut chain = CHAIN_ZERO;
-            let mut chunk: Vec<(Op, Chain)> = Vec::new();
-            let mut chunk_raw = 0usize;
-            while let Some(item) = reader.next_item()? {
-                match item {
-                    ExportItem::Device { .. } => chain = CHAIN_ZERO,
-                    ExportItem::Op(op) => {
-                        chain = chain_next(&chain, &op);
-                        chunk_raw += held_bytes(&op);
-                        chunk.push((op, chain));
-                        if chunk.len() >= DELIVERY_CHUNK_OPS || chunk_raw >= DELIVERY_CHUNK_RAW {
-                            delivery.push(std::mem::take(&mut chunk));
-                            chunk_raw = 0;
-                            delivery.drain(
-                                c,
-                                profile,
-                                now,
-                                &mut t,
-                                &mut CommitBudget::unlimited(),
-                            )?;
-                        }
-                    }
+    }
+    // 第二遍：按块投递。
+    let mut delivery = Delivery::load(c, profile)?;
+    let mut reader = ExportReader::open(bytes)?;
+    let mut chain = CHAIN_ZERO;
+    let mut chunk: Vec<(Op, Chain)> = Vec::new();
+    let mut chunk_raw = 0usize;
+    while let Some(item) = reader.next_item()? {
+        match item {
+            ExportItem::Device { .. } => chain = CHAIN_ZERO,
+            ExportItem::Op(op) => {
+                chain = chain_next(&chain, &op);
+                chunk_raw += held_bytes(&op);
+                chunk.push((op, chain));
+                if chunk.len() >= DELIVERY_CHUNK_OPS || chunk_raw >= DELIVERY_CHUNK_RAW {
+                    delivery.push(std::mem::take(&mut chunk));
+                    chunk_raw = 0;
+                    delivery.drain(c, profile, now, &mut t, &mut CommitBudget::unlimited())?;
                 }
             }
-            delivery.push(chunk);
-            delivery.drain(c, profile, now, &mut t, &mut CommitBudget::unlimited())?;
-            let applied = delivery.finish(c, profile, now)?;
-            let replayed = replay_touched(c, &t)?;
-            let pending: i64 = c
-                .query_row(
-                    "SELECT COUNT(*) FROM sync2_pending WHERE profile_uid = srs_id(?1)",
-                    [profile],
-                    |r| r.get(0),
-                )
-                .map_err(sql)?;
-            Ok(json!({
-                "marks": t.marks.to_json(),
-                "replayed": replayed,
-                "applied": applied,
-                "pending": pending,
-                "errors": [],
-                "fork": false,
-                "changed": t.entities_changed.iter().map(|(k, e)| json!([k, e])).collect::<Vec<_>>(),
-                "purged": t.purged.iter().map(|(k, e)| json!([k, e])).collect::<Vec<_>>(),
-            })
-            .to_string())
-        })
+        }
     }
+    delivery.push(chunk);
+    delivery.drain(c, profile, now, &mut t, &mut CommitBudget::unlimited())?;
+    let applied = delivery.finish(c, profile, now)?;
+    let replayed = replay_touched(c, &t)?;
+    let pending: i64 = c
+        .query_row(
+            "SELECT COUNT(*) FROM sync2_pending WHERE profile_uid = srs_id(?1)",
+            [profile],
+            |r| r.get(0),
+        )
+        .map_err(sql)?;
+    Ok(json!({
+        "marks": t.marks.to_json(),
+        "replayed": replayed,
+        "applied": applied,
+        "pending": pending,
+        "errors": [],
+        "fork": false,
+        "changed": t.entities_changed.iter().map(|(k, e)| json!([k, e])).collect::<Vec<_>>(),
+        "purged": t.purged.iter().map(|(k, e)| json!([k, e])).collect::<Vec<_>>(),
+    }))
 }
 
 #[cfg(test)]
@@ -3891,7 +3905,6 @@ mod compaction_tests {
 #[cfg(test)]
 mod budget_tests {
     use super::*;
-    use std::sync::atomic::AtomicBool;
     use std::time::Duration;
 
     /// 能做多少条（最多 [cap]）。
@@ -3902,7 +3915,7 @@ mod budget_tests {
     /// 只有默认片能被新设备会话拉长；另给了时间（测试的 `sliceMs`）或条数（`sliceOps`）的片不动。
     #[test]
     fn only_the_default_slice_stretches() {
-        let flag = AtomicBool::new(false);
+        let flag = YieldSignal::default();
         let mut b = CommitBudget::slice(&flag);
         b.stretch(Duration::from_secs(3600));
         assert_eq!(takes(&mut b, 10_000), 10_000, "stretched default slice");
@@ -3919,7 +3932,7 @@ mod budget_tests {
         // 拉长的片照样响应让出请求（做满下限之后）。
         let mut b = CommitBudget::slice(&flag);
         b.stretch(Duration::from_secs(3600));
-        flag.store(true, std::sync::atomic::Ordering::Relaxed);
+        flag.request();
         assert_eq!(
             takes(&mut b, 10_000),
             COMMIT_SLICE_MIN_OPS,
@@ -3976,4 +3989,47 @@ mod budget_tests {
             "a device that reviewed uses the default slice"
         );
     }
+}
+
+/// [SrsCore::sync2_ingest] 的写锁内一半：在调用方的写连接、调用方开的 SAVEPOINT 里投递预处理好的段（不自己取锁、不收
+/// 通道）。`retire` 用它在同一个 SAVEPOINT 里紧接着投一遍缓冲（store/ffi.rs `local_write`）。
+pub(crate) fn ingest_on(
+    c: &Connection,
+    profile: &str,
+    prepared: &mut PreparedIngest<'_>,
+    now: i64,
+) -> Result<String, String> {
+    let local = Local::load(c, profile)?.ok_or("sync2 not initialised for this profile")?;
+    let mut t = Touched::default();
+    let mut errors = Vec::new();
+    let mut fork_at: Option<u64> = None;
+    let (applied_n, _, _) = deliver_prepared(
+        c,
+        profile,
+        &local,
+        prepared,
+        &mut CommitBudget::unlimited(),
+        now,
+        &mut t,
+        &mut errors,
+        &mut fork_at,
+        &mut None,
+        false,
+    )?;
+    bump_delivery_epoch();
+    if let Some(k) = fork_at {
+        rotate(c, profile, k, now, &mut t)?;
+    }
+    let replayed = replay_touched(c, &t)?;
+    ingest_result(
+        c,
+        profile,
+        t,
+        replayed,
+        applied_n,
+        errors,
+        fork_at.is_some(),
+        false,
+        None,
+    )
 }

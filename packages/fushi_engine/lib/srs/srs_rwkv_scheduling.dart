@@ -52,3 +52,47 @@ abstract interface class SrsRwkvScheduling {
   /// 这些卡已被永久清除（srs_purge.dart）：丢掉为它们缓存的分数。
   Future<void> onCardsPurged(List<String> cardIds);
 }
+
+/// 服务阶段（界面显示用）。
+enum SrsRwkvPhase {
+  /// 还没启动（没有 RWKV 牌组时不启动）。
+  idle,
+
+  /// 正在下载所选模型的权重（[SrsRwkvStatus.done] / [SrsRwkvStatus.total] 是字节）。
+  downloading,
+
+  /// 正在加载 / 恢复快照或检查点 / 全量回放。
+  preparing,
+
+  /// 可以排程。
+  ready,
+
+  /// 出错（[SrsRwkvStatus.error]）；下次需要时重试。
+  failed,
+}
+
+class SrsRwkvStatus {
+  const SrsRwkvStatus(this.phase, {this.done = 0, this.total = 0, this.error});
+
+  final SrsRwkvPhase phase;
+
+  /// 进度：下载时是字节，全量回放时是条数。
+  final int done;
+  final int total;
+  final Object? error;
+}
+
+/// RWKV 准备状态的来源：复习页 / 牌组列表在「等 RWKV」时显示它、听它的「就绪」重新排队、出错时经它重试。
+/// 本机复习是 `SrsRwkvService` 自己；远程复习时 RWKV 在主机上跑，由远程库把主机的状态转过来
+/// （`SrsRemoteStore`，见 srs_remote_store.dart 信封里的 `rk`）。
+abstract interface class SrsRwkvStatusSource {
+  SrsRwkvStatus get status;
+
+  /// 每次状态变化（含同一阶段的进度、以及已就绪后再报的「就绪」）发一条。
+  Stream<SrsRwkvStatus> get statusChanges;
+
+  bool get ready;
+
+  /// 开始准备；[force] 不受失败后的重试间隔限制（界面上的「重试」）。
+  Future<void> start({bool force = false});
+}

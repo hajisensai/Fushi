@@ -15,6 +15,10 @@ import 'package:fushi/src/ops/op_context.dart';
 /// 浮层互不干扰；不可逆 / 装扩展的确认由终端 y/N 经 `answer` 作答——与 app 内一样，
 /// 模型填不出表态参数。这些路由本身**不进操作目录**（AI 不能调 AI，见棘轮守卫的
 /// 豁免表）。
+///
+/// `answer` 带可选 `entryId`（取自 `GET sessions/:id` 的 `pending.entryId`）：只答
+/// 那一张卡片，卡片已不在待答时回 409，不落到下一张卡片上（BUG-4458）。不带时
+/// 照旧答当前那张。
 List<CtlRoute> buildAiAgentCtlRoutes(OpContext context) {
   final Map<String, AiAgentController> sessions = <String, AiAgentController>{};
 
@@ -59,22 +63,11 @@ List<CtlRoute> buildAiAgentCtlRoutes(OpContext context) {
       final AiAgentController controller = session(call);
       final AgentSession? agent = controller.session;
       final List<AgentEntry> entries = agent?.entries ?? const <AgentEntry>[];
-      String? pendingId(AgentEntryKind kind) {
-        for (int i = entries.length - 1; i >= 0; i--) {
-          if (entries[i].kind == kind) {
-            return entries[i].status == AgentEntryStatus.pending
-                ? entries[i].id
-                : null;
-          }
-        }
-        return null;
-      }
-
       final String? confirm = controller.host.awaitingConfirm
-          ? pendingId(AgentEntryKind.confirm)
+          ? _pendingCardId(controller, AgentEntryKind.confirm)
           : null;
       final String? choice = controller.host.awaitingChoice
-          ? pendingId(AgentEntryKind.choice)
+          ? _pendingCardId(controller, AgentEntryKind.choice)
           : null;
       return <String, Object?>{
         'sessionId': agent?.id,
@@ -91,18 +84,13 @@ List<CtlRoute> buildAiAgentCtlRoutes(OpContext context) {
     CtlRoute.post('/api/admin/ai/agent/sessions/:id/answer', (
       CtlCall call,
     ) async {
-      final AiAgentController controller = session(call);
-      if (controller.host.awaitingConfirm) {
-        final bool? approve = call.optBool('approve');
-        if (approve == null) throw const CtlFailure.badRequest('approve 缺失');
-        controller.host.answerConfirm(approve);
-        return null;
-      }
-      if (controller.host.awaitingChoice) {
-        controller.host.answerChoice(call.optString('choice'));
-        return null;
-      }
-      throw const CtlFailure.conflict('没有待回答的卡片');
+      answerAiAgentCtlCard(
+        session(call),
+        approve: call.optBool('approve'),
+        choice: call.optString('choice'),
+        entryId: call.optString('entryId'),
+      );
+      return null;
     }),
     CtlRoute.post('/api/admin/ai/agent/sessions/:id/cancel', (
       CtlCall call,
@@ -164,5 +152,47 @@ Object? _decode(String json) {
     return jsonDecode(json);
   } on FormatException {
     return json;
+  }
+}
+
+/// 此刻待答的 [kind] 卡片 id：最后一张该类卡片仍是 pending 才算。
+String? _pendingCardId(AiAgentController controller, AgentEntryKind kind) {
+  final List<AgentEntry> entries = controller.entries;
+  for (int i = entries.length - 1; i >= 0; i--) {
+    if (entries[i].kind == kind) {
+      return entries[i].status == AgentEntryStatus.pending
+          ? entries[i].id
+          : null;
+    }
+  }
+  return null;
+}
+
+/// `POST sessions/:id/answer` 的作答：确认卡片用 [approve]，候选卡片用 [choice]
+/// （null = 都不是）。
+///
+/// [entryId] 非 null = 调用方看到的那张卡片：它已不是此刻待答的那张（答过了、会话
+/// 走到了下一张）时抛 409，不替调用方回答别的卡片——终端上的 y/N、脚本里晚到的重试
+/// 都可能在卡片换了之后才到（BUG-4458）。null = 答当前那张（旧调用方）。
+void answerAiAgentCtlCard(
+  AiAgentController controller, {
+  required bool? approve,
+  required String? choice,
+  required String? entryId,
+}) {
+  final AgentEntryKind? kind = controller.host.awaitingConfirm
+      ? AgentEntryKind.confirm
+      : controller.host.awaitingChoice
+      ? AgentEntryKind.choice
+      : null;
+  if (kind == null) throw const CtlFailure.conflict('没有待回答的卡片');
+  if (entryId != null && entryId != _pendingCardId(controller, kind)) {
+    throw const CtlFailure.conflict('这张卡片已经不在等待回答');
+  }
+  if (kind == AgentEntryKind.confirm) {
+    if (approve == null) throw const CtlFailure.badRequest('approve 缺失');
+    controller.answerConfirm(approve, entryId: entryId);
+  } else {
+    controller.answerChoice(choice, entryId: entryId);
   }
 }

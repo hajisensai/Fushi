@@ -1846,7 +1846,13 @@ class _VideoStreamToken {
     this.transcodeProfile,
     this.transcodeAudioStreamIndex,
     this.transcodeDurationMs,
+    this.ticket,
   });
+
+  /// 随哪张流票一起释放（BUG-4461）。null = 这张 token 本身就是流票（`/streamurl`
+  /// 回给 client 的 `ticket` 即它的值）；光盘制卡 token 填主 token 的值，client 释放
+  /// 播放票时一并作废。
+  final String? ticket;
 
   /// 绑定的视频 id（即 VideoBooks.bookUid，可含 `/`）。
   final String videoId;
