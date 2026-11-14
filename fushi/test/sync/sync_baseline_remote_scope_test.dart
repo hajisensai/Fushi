@@ -11,6 +11,7 @@ import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/sync/dropbox_sync_backend.dart';
+import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_baseline_scope.dart';
@@ -271,6 +272,18 @@ void main() {
   });
 
   group('interconnect file box', () {
+    // 候选上写的 hostId 没有真 host 可 ping：明文地址身份核对不过会被选路扣下
+    // （地址归属闸）。这里只测基线分槽，身份核对一律认。
+    setUp(() {
+      resetInterconnectRaceCache();
+      debugInterconnectAddressProbeOverride =
+          (FushiClientUrl c, String? hostId) async => true;
+    });
+    tearDown(() {
+      debugInterconnectAddressProbeOverride = null;
+      resetInterconnectRaceCache();
+    });
+
     test('a single host with hostId → scoped dimension + host pin', () async {
       final FushiDatabase db = _memDb();
       final InterconnectSyncBackend backend = await _interconnect(

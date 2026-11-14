@@ -13,6 +13,7 @@ import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/sync/interconnect_book_progress_sync.dart';
+import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
 import 'package:fushi/src/sync/interconnect_playback_position_sync.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/sync_orchestrator.dart';
@@ -191,12 +192,20 @@ void main() {
 
   setUp(() async {
     _down.clear();
+    // 替身 host 的真 ping 回报的是它自己的随机 hostId，不是候选上写的 'a' / 'b'；
+    // 明文地址身份核对不过会被选路扣下（地址归属闸）。这里只测基线分槽，身份核对
+    // 按候选自报的 hostId 认，可达性仍由 [_down] 决定。
+    resetInterconnectRaceCache();
+    debugInterconnectAddressProbeOverride =
+        (FushiClientUrl c, String? hostId) async => !_down.contains(c.url);
     work = await Directory.systemTemp.createTemp('live_host_scope_');
     hostA = await _Host.start(work, 'a');
     hostB = await _Host.start(work, 'b');
   });
 
   tearDown(() async {
+    debugInterconnectAddressProbeOverride = null;
+    resetInterconnectRaceCache();
     await hostA.stop();
     await hostB.stop();
     if (work.existsSync()) await work.delete(recursive: true);
