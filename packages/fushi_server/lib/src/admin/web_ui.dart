@@ -1130,10 +1130,10 @@ async function loadSrs(){
     <label class="f">${esc(T('换日时刻'))}<select id="srs-rollover">${Array.from({length:24},(_,h)=>`<option value="${h}" ${h===Number(cfg.rolloverHour)?'selected':''}>${String(h).padStart(2,'0')}:00</option>`).join('')}</select></label>
     ${servedList.map(p=>`<label class="f">${esc(T('{0} 的制卡牌组（空 = 默认牌组）', p.name||p.uid))}<input data-srs-deck="${esc(p.uid)}" list="srs-decks-${esc(p.uid)}" autocomplete="off" value="${esc((cfg.miningDecks||{})[p.uid]||'')}"><datalist id="srs-decks-${esc(p.uid)}"></datalist></label>`).join('')}</div>
     <div class="actions"><button class="b" id="btn-srs-save">${esc(T('保存'))}</button></div>`;
-  // 牌组框的建议：各份 profile 已有的牌组（取不到就不给建议，照样可手填新牌组名）。
+  // 牌组框的建议：各份 profile 已有的牌组，取自 ctl 的 `GET srs/decks?profile=`（AdminSrsCtl，name 是 `父::子` 全名；取不到就不给建议，照样可手填新牌组名）。
   servedList.forEach(p=>api('srs/decks?profile='+encodeURIComponent(p.uid)).then(r=>{
     const dl = document.getElementById('srs-decks-'+p.uid);
-    if (dl) dl.innerHTML = (r.decks||[]).map(d=>`<option value="${esc(d)}">`).join('');
+    if (dl) dl.innerHTML = (r.decks||[]).map(d=>d.name).sort().map(n=>`<option value="${esc(n)}">`).join('');
   }, e=>console.warn('srs decks', e)));
   $('#btn-srs-save').onclick = guard(async()=>{
     const miningDecks = {}; document.querySelectorAll('[data-srs-deck]').forEach(el=>{ if(el.value.trim()) miningDecks[el.dataset.srsDeck]=el.value.trim(); });
