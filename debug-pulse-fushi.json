@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-14T16:23:01Z",
+ "generatedAt": "2026-11-14T16:34:44Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "017cdcf5de029db052c8846344f30867e3de005f",
@@ -12,7 +12,7 @@
    "version": "3.3.0",
    "sha": "017cdcf5de029db052c8846344f30867e3de005f",
    "unknown": false,
-   "publishedAt": "2026-11-14T16:22:51Z",
+   "publishedAt": "2026-11-14T16:34:32Z",
    "testflight": false,
    "baseSeq": 26805,
    "prs": [
@@ -25,16 +25,13 @@
      "state": "ok"
     },
     "windows": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43605197415"
+     "state": "ok"
     },
     "macos": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43605197415"
+     "state": "ok"
     },
     "ios": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43605197415"
+     "state": "ok"
     }
    }
   },
@@ -79,107 +76,13 @@
    "unknown": false,
    "publishedAt": "2026-11-12T23:11:46Z",
    "testflight": true,
-   "baseSeq": 26471,
-   "prs": [
-    3325,
-    3324,
-    3322,
-    3306,
-    3296,
-    3294,
-    3371,
-    3314,
-    3305,
-    3379,
-    3382,
-    3377,
-    3376,
-    3320,
-    3307,
-    3388,
-    3273,
-    3272,
-    3271,
-    3312,
-    3198,
-    3279,
-    3389,
-    3394,
-    3375,
-    3356,
-    3345,
-    3335,
-    3374,
-    3313,
-    3350,
-    3326,
-    3308,
-    3331,
-    3248,
-    3323,
-    3247,
-    3330,
-    3310,
-    3359,
-    3311,
-    3351,
-    3285,
-    3316,
-    3364,
-    3362,
-    3384,
-    3346,
-    3348,
-    3339,
-    3337,
-    3315,
-    3246
-   ],
-   "direct": [
-    {
-     "sha": "b1e71912df4c80f3b18b25f829b1259d817846d8",
-     "subject": "chore(bugs): settle BUG number collisions on 3c4a26be4"
-    },
-    {
-     "sha": "f8c1c1b4e677f8ee7f86da2b385b8e74b1fcdfef",
-     "subject": "chore(bugs): settle BUG number collisions on cb2319262"
-    },
-    {
-     "sha": "1456a386936508e92966d7cde6c6b9bd75bd0674",
-     "subject": "chore(bugs): settle BUG number collisions on 935a18f78"
-    }
-   ],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "ok"
-    },
-    "windows": {
-     "state": "ok"
-    },
-    "macos": {
-     "state": "ok"
-    },
-    "ios": {
-     "state": "ok"
-    }
-   }
-  },
-  {
-   "seq": 26471,
-   "version": "3.3.0",
-   "sha": "935a18f783c0544a6127f17f695e8945ff86334b",
-   "unknown": false,
-   "publishedAt": "2026-11-12T20:39:23Z",
-   "testflight": true,
    "baseSeq": null,
    "prs": [],
    "direct": [],
    "truncated": false,
    "platforms": {
     "android": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43279840519"
+     "state": "ok"
     },
     "windows": {
      "state": "ok"
@@ -195,309 +98,12 @@
  ],
  "pending": null,
  "prs": {
-  "3198": {
-   "number": 3198,
-   "title": "feat(leaderboard): 拍板台做进开发者处理台 /dev/decisions",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-12T18:55:52Z",
-   "additions": 862,
-   "deletions": 12,
-   "labels": []
-  },
-  "3246": {
-   "number": 3246,
-   "title": "SRS 同步 v2：head 的 minReader 按内容声明（兼容项 ①，不断代）",
-   "author": "W1ght",
-   "mergedAt": "2026-11-12T18:32:33Z",
-   "additions": 1486,
-   "deletions": 20,
-   "labels": []
-  },
-  "3247": {
-   "number": 3247,
-   "title": "SRS 同步 v2：派生规则版本可辨，对端规则不同时设备行提示（兼容项 ②）",
-   "author": "W1ght",
-   "mergedAt": "2026-11-12T18:44:24Z",
-   "additions": 190,
-   "deletions": 3,
-   "labels": []
-  },
-  "3248": {
-   "number": 3248,
-   "title": "SRS 同步 v2：摘要不一致按组指纹自动重建（兼容项 ③）",
-   "author": "W1ght",
-   "mergedAt": "2026-11-12T18:44:55Z",
-   "additions": 1305,
-   "deletions": 45,
-   "labels": []
-  },
-  "3271": {
-   "number": 3271,
-   "title": "fix(srs): 采用对端 uid 改看全部用户数据，只建牌组 / 改预设的设备不再被自动采用删数据（BUG-4386）[1/3]",
-   "author": "W1ght",
-   "mergedAt": "2026-11-12T18:57:54Z",
-   "additions": 346,
-   "deletions": 24,
-   "labels": []
-  },
-  "3272": {
-   "number": 3272,
-   "title": "feat(srs): 集合绑定状态 provisional / settled，别的位置定下后不再自动采用 [2/3]",
-   "author": "W1ght",
-   "mergedAt": "2026-11-12T18:58:17Z",
-   "additions": 597,
-   "deletions": 17,
-   "labels": []
-  },
-  "3273": {
-   "number": 3273,
-   "title": "feat(srs): 先加入、后写入——确认同步后先有时限地关联已有集合 [3/3]",
-   "author": "W1ght",
-   "mergedAt": "2026-11-12T18:58:36Z",
-   "additions": 426,
-   "deletions": 3,
-   "labels": []
-  },
-  "3279": {
-   "number": 3279,
-   "title": "feat(tool): 远程适配机群——Claude 操作社区志愿者电脑做 galgame 内嵌查词适配",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-12T18:55:03Z",
-   "additions": 2828,
-   "deletions": 0,
-   "labels": []
-  },
-  "3285": {
-   "number": 3285,
-   "title": "heavy: small runs go ahead of a head that does not fit the budget; a re-submitted command takes the queued one's place",
-   "author": "W1ght",
-   "mergedAt": "2026-11-12T18:41:19Z",
-   "additions": 756,
-   "deletions": 38,
-   "labels": []
-  },
   "3286": {
    "number": 3286,
    "title": "test(srs): 冻结复习统计聚合结果的对拍向量（统计聚合搬进内核 1/2）",
    "author": "W1ght",
    "mergedAt": "2026-11-14T14:14:27Z",
    "additions": 359,
-   "deletions": 0,
-   "labels": []
-  },
-  "3294": {
-   "number": 3294,
-   "title": "fushi_server：复习同步设备信任的确认入口（admin API / WebUI / ctl），信任逻辑下沉 engine",
-   "author": "W1ght",
-   "mergedAt": "2026-11-12T19:20:16Z",
-   "additions": 1057,
-   "deletions": 187,
-   "labels": []
-  },
-  "3296": {
-   "number": 3296,
-   "title": "SRS: 旧库迁移前的拉取按进度判，不靠固定 2 分钟预算",
-   "author": "W1ght",
-   "mergedAt": "2026-11-12T19:20:43Z",
-   "additions": 811,
-   "deletions": 59,
-   "labels": []
-  },
-  "3305": {
-   "number": 3305,
-   "title": "SRS: 主应用单测也跑 ID 审计，漏写 srs_id(?) 在 CI 变红",
-   "author": "W1ght",
-   "mergedAt": "2026-11-12T19:17:40Z",
-   "additions": 303,
-   "deletions": 16,
-   "labels": []
-  },
-  "3306": {
-   "number": 3306,
-   "title": "test(srs): 冻结 RWKV 排程编排的对拍夹具（内核搬迁 1/4）",
-   "author": "W1ght",
-   "mergedAt": "2026-11-12T19:23:28Z",
-   "additions": 3316,
-   "deletions": 29,
-   "labels": []
-  },
-  "3307": {
-   "number": 3307,
-   "title": "fix(leaderboard): 处理台安装统计改读定时快照，防 D1 日读额度超额",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-12T19:02:15Z",
-   "additions": 142,
-   "deletions": 13,
-   "labels": []
-  },
-  "3308": {
-   "number": 3308,
-   "title": "refactor(srs-sync2): 旧 head 保留策略收进内核（BUG-4323 / BUG-4324）",
-   "author": "W1ght",
-   "mergedAt": "2026-11-12T18:45:22Z",
-   "additions": 2683,
-   "deletions": 175,
-   "labels": []
-  },
-  "3310": {
-   "number": 3310,
-   "title": "fix(gal): DOM 正文在线不再要求选线程；切屏后实测查词按客户区尺寸重发",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-12T18:43:23Z",
-   "additions": 265,
-   "deletions": 22,
-   "labels": []
-  },
-  "3311": {
-   "number": 3311,
-   "title": "fix(popup): 新查词会话一律从顶部开始（app 外 / galgame 根 iframe + 同词缓存命中）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-12T18:41:52Z",
-   "additions": 399,
-   "deletions": 20,
-   "labels": []
-  },
-  "3312": {
-   "number": 3312,
-   "title": "fix(tool): 志愿者驱动改打 Profile 构建 + 随包正式版 VC++ 运行库",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-12T18:57:00Z",
-   "additions": 152,
-   "deletions": 21,
-   "labels": []
-  },
-  "3313": {
-   "number": 3313,
-   "title": "docs(galgame): 路线图补 Siglus LOOPERS PLUS 远程原始路径 accept4 full + 触摸",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-12T18:46:09Z",
-   "additions": 5,
-   "deletions": 0,
-   "labels": []
-  },
-  "3314": {
-   "number": 3314,
-   "title": "fix(srs): 新设备收段通道在带内置实体的真实新设备上被选中（BUG-4387）",
-   "author": "W1ght",
-   "mergedAt": "2026-11-12T19:19:05Z",
-   "additions": 1637,
-   "deletions": 81,
-   "labels": []
-  },
-  "3315": {
-   "number": 3315,
-   "title": "fix(galgame/malie): 身份不再只押 CFI scheme；段解析器取唯一带 reveal 的调用点",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-12T18:36:49Z",
-   "additions": 184,
-   "deletions": 35,
-   "labels": []
-  },
-  "3316": {
-   "number": 3316,
-   "title": "fix(galgame-hook): 测试 exe 统一挂 VERSIONINFO，避开 Kaspersky 误报",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-12T18:40:37Z",
-   "additions": 123,
-   "deletions": 0,
-   "labels": []
-  },
-  "3320": {
-   "number": 3320,
-   "title": "fix(interconnect): 远程长任务接回与清理、AI 作答绑定卡片、自适应画质回滚、转码随流票取消（BUG-4452..4461，叠在 #3319 之上）",
-   "author": "W1ght",
-   "mergedAt": "2026-11-12T19:08:14Z",
-   "additions": 14727,
-   "deletions": 2179,
-   "labels": []
-  },
-  "3322": {
-   "number": 3322,
-   "title": "feat(srs): 无头服务端接上 RWKV 排程，远程复习带回主机的准备状态",
-   "author": "W1ght",
-   "mergedAt": "2026-11-12T19:23:54Z",
-   "additions": 1085,
-   "deletions": 58,
-   "labels": []
-  },
-  "3323": {
-   "number": 3323,
-   "title": "fix(galgame-hook/bgi): 加壳 exe 解开后续扫查词站点，并接受 1.566.3 的结构变体",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-12T18:44:28Z",
-   "additions": 553,
-   "deletions": 27,
-   "labels": []
-  },
-  "3324": {
-   "number": 3324,
-   "title": "feat(rwkv): RWKV 排程编排状态机搬进原生库（sched 内核，C ABI 6）与 Dart 绑定",
-   "author": "W1ght",
-   "mergedAt": "2026-11-12T19:24:20Z",
-   "additions": 5598,
-   "deletions": 4,
-   "labels": []
-  },
-  "3325": {
-   "number": 3325,
-   "title": "feat(srs): SrsRwkvService 改成排程内核的宿主，删掉 Dart 编排",
-   "author": "W1ght",
-   "mergedAt": "2026-11-12T19:24:41Z",
-   "additions": 789,
-   "deletions": 1232,
-   "labels": []
-  },
-  "3326": {
-   "number": 3326,
-   "title": "fix(galgame_hook): CatSystem2 cs2 2.6.1.90 查词 / 语音站点按结构证明字段偏移",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-12T18:45:39Z",
-   "additions": 1816,
-   "deletions": 335,
-   "labels": []
-  },
-  "3330": {
-   "number": 3330,
-   "title": "fix(gal-lookup): TyranoScript 内嵌查词在 Electron 全屏 + 小数缩放下每句被拒收（BUG-4387）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-12T18:43:54Z",
-   "additions": 160,
-   "deletions": 27,
-   "labels": []
-  },
-  "3331": {
-   "number": 3331,
-   "title": "fix(galgame/leaf): structural admission for WHITE ALBUM2 builds (drop exe-digest gate) + runtime-image proof for packed builds (BUG-4387)",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-12T18:45:02Z",
-   "additions": 1167,
-   "deletions": 434,
-   "labels": []
-  },
-  "3335": {
-   "number": 3335,
-   "title": "feat(galhook): AliceSoft System 4 engine adapter (text, in-game lookup)",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-12T18:46:43Z",
-   "additions": 3243,
-   "deletions": 9,
-   "labels": []
-  },
-  "3337": {
-   "number": 3337,
-   "title": "fix(galgame): 同目录启动器 stub 首次采样前退出时会话仍交接给本体",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-12T18:36:55Z",
-   "additions": 137,
-   "deletions": 2,
-   "labels": []
-  },
-  "3339": {
-   "number": 3339,
-   "title": "fix(galgame_hook): Steam 客户端路径等 SteamStub 壳解密代码段后再注入",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-12T18:37:02Z",
-   "additions": 373,
    "deletions": 0,
    "labels": []
   },
@@ -510,152 +116,6 @@
    "deletions": 0,
    "labels": []
   },
-  "3345": {
-   "number": 3345,
-   "title": "galhook/unity_mono：游戏内查词框架 3——裸 TextMeshProUGUI 对白（离线）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-12T18:47:16Z",
-   "additions": 2138,
-   "deletions": 85,
-   "labels": []
-  },
-  "3346": {
-   "number": 3346,
-   "title": "Rust 本地开发循环提速：quick profile、分进程跑测试、共用 target 不再拿错产物",
-   "author": "W1ght",
-   "mergedAt": "2026-11-12T18:37:14Z",
-   "additions": 488,
-   "deletions": 14,
-   "labels": []
-  },
-  "3348": {
-   "number": 3348,
-   "title": "test(galdriver): accept4 句子比对忽略空白",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-12T18:37:08Z",
-   "additions": 7,
-   "deletions": 2,
-   "labels": []
-  },
-  "3350": {
-   "number": 3350,
-   "title": "feat(srs-sync2): 换身份后清旧身份目录里被盖过的 head（段不删）",
-   "author": "W1ght",
-   "mergedAt": "2026-11-12T18:46:00Z",
-   "additions": 4593,
-   "deletions": 176,
-   "labels": []
-  },
-  "3351": {
-   "number": 3351,
-   "title": "fix(srs): profile conflict dialog fails to lay out and freezes the desktop debug app (BUG-4389)",
-   "author": "samutw",
-   "mergedAt": "2026-11-12T18:41:27Z",
-   "additions": 96,
-   "deletions": 6,
-   "labels": [
-    "merge-approved"
-   ]
-  },
-  "3356": {
-   "number": 3356,
-   "title": "feat(galhook/unity_mono): 结构证明的对白面道自动选中（kTextEventFlagDialogueSurface，叠在 #3345 上）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-12T18:48:00Z",
-   "additions": 1375,
-   "deletions": 38,
-   "labels": []
-  },
-  "3359": {
-   "number": 3359,
-   "title": "fix(gal-mining): PrintWindow 兜底按目标窗口自身 DPI 坐标系判完整帧（BUG-4388）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-12T18:42:27Z",
-   "additions": 421,
-   "deletions": 28,
-   "labels": []
-  },
-  "3362": {
-   "number": 3362,
-   "title": "fix(galhook/artemis): ruby base no longer cuts the engine text lane",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-12T18:37:38Z",
-   "additions": 460,
-   "deletions": 48,
-   "labels": []
-  },
-  "3364": {
-   "number": 3364,
-   "title": "fix(galgame_hook): RealLive 查词站点认 gdi32 ANSI 别名导入与高位归一化键盘轮询",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-12T18:37:46Z",
-   "additions": 661,
-   "deletions": 24,
-   "labels": []
-  },
-  "3371": {
-   "number": 3371,
-   "title": "perf(srs): 首次同步的时间分布复测；重放续算记忆状态、归并不物化暂存行",
-   "author": "W1ght",
-   "mergedAt": "2026-11-12T19:19:35Z",
-   "additions": 1195,
-   "deletions": 98,
-   "labels": []
-  },
-  "3374": {
-   "number": 3374,
-   "title": "feat(srs): 协议 4 的规范 ID 规则表与别名判定（G3，不接线）",
-   "author": "W1ght",
-   "mergedAt": "2026-11-12T18:46:38Z",
-   "additions": 6332,
-   "deletions": 0,
-   "labels": []
-  },
-  "3375": {
-   "number": 3375,
-   "title": "perf(startup): 查词历史移出首帧关键路径 + 三端启动分段计时（BUG-4388）",
-   "author": "W1ght",
-   "mergedAt": "2026-11-12T18:48:48Z",
-   "additions": 1584,
-   "deletions": 104,
-   "labels": []
-  },
-  "3376": {
-   "number": 3376,
-   "title": "feat(srs): 协议 4 编解码（换代 G1，新模块不接线）",
-   "author": "W1ght",
-   "mergedAt": "2026-11-12T19:12:49Z",
-   "additions": 6564,
-   "deletions": 0,
-   "labels": []
-  },
-  "3377": {
-   "number": 3377,
-   "title": "feat(srs): 转译 T 与旧代读入器（换代 G2，叠在 #3376 上，不接线）",
-   "author": "W1ght",
-   "mergedAt": "2026-11-12T19:13:09Z",
-   "additions": 2625,
-   "deletions": 0,
-   "labels": []
-  },
-  "3379": {
-   "number": 3379,
-   "title": "feat(srs): 协议 4 新存储层的真相层与索引层（换代 G6，不接线）",
-   "author": "W1ght",
-   "mergedAt": "2026-11-12T19:14:34Z",
-   "additions": 6034,
-   "deletions": 12,
-   "labels": []
-  },
-  "3382": {
-   "number": 3382,
-   "title": "feat(srs): 携带盐集合的操作 Salts（换代 G1b，叠在 #3377 上，不接线）",
-   "author": "W1ght",
-   "mergedAt": "2026-11-12T19:13:39Z",
-   "additions": 589,
-   "deletions": 28,
-   "labels": []
-  },
   "3383": {
    "number": 3383,
    "title": "feat(srs): 协议 4 新存储的语义层与全场景对拍（G6c-1，叠在 #3379 上，不接线）",
@@ -663,42 +123,6 @@
    "mergedAt": "2026-11-14T14:30:20Z",
    "additions": 9251,
    "deletions": 327,
-   "labels": []
-  },
-  "3384": {
-   "number": 3384,
-   "title": "升级 material_ui 1.11 并接上官方 M3E 新件",
-   "author": "W1ght",
-   "mergedAt": "2026-11-12T18:37:22Z",
-   "additions": 140,
-   "deletions": 53,
-   "labels": []
-  },
-  "3388": {
-   "number": 3388,
-   "title": "EPUB 导入：文件不完整/损坏时提示重新下载",
-   "author": "W1ght",
-   "mergedAt": "2026-11-12T18:58:44Z",
-   "additions": 160,
-   "deletions": 10,
-   "labels": []
-  },
-  "3389": {
-   "number": 3389,
-   "title": "perf(windows-engine): 着色器程序磁盘缓存 + 首帧前 resize 不阻塞，引擎包升到 hdr-output-4",
-   "author": "W1ght",
-   "mergedAt": "2026-11-12T18:54:26Z",
-   "additions": 2173,
-   "deletions": 18,
-   "labels": []
-  },
-  "3394": {
-   "number": 3394,
-   "title": "fix(lookup): 点窗口顶部拖动条也能关查词弹窗（BUG-4388）",
-   "author": "W1ght",
-   "mergedAt": "2026-11-12T18:49:18Z",
-   "additions": 239,
-   "deletions": 24,
    "labels": []
   }
  }
