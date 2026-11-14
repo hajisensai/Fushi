@@ -57,7 +57,7 @@ List<Object?> _legacyLog(String id, int at) => <Object?>[
 
 Future<SrsStorage> _legacyStorage(List<String> logIds) async {
   final SrsStorage st = await openTestSrsStorage();
-  st.core.execBatch(
+  st.core.debugExecBatchRaw(
     <String>[
       'INSERT INTO srs_review_logs (id, profile_uid, card_id, kind, rating, occurred_at, '
           'review_type, origin, duration_ms, jslim) VALUES (srs_id(?), srs_id(?), srs_id(?), ?, ?, ?, ?, ?, ?, ?)',

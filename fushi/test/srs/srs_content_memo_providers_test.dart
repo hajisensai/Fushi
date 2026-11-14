@@ -47,7 +47,7 @@ void main() {
     // 绕过事件直接在缓存里造一条「待裁决」：不推进内容指纹。信号递增后仍是上次的结果，
     // 说明这次没有重扫库。
     final String fp = store.contentFingerprint;
-    await srs.db.customStatement(
+    srs.core.debugExecRaw(
       'UPDATE srs_notes_cache SET pending_decision = 1 WHERE id = srs_id(?)',
       <Object>[note],
     );

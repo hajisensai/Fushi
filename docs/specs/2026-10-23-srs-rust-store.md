@@ -228,3 +228,34 @@
   不轮询。之后再没有任何借还时，最近一次并发高峰开出的连接会留着（至多上限 − 1 条，每条页缓存放回时已收到 8 MB 以内），下一条查询就
   收掉它们——这几 MB 的上界可接受。60 s 的依据：重开一条连接实测约 2 ms（冷文件缓存时连首条点查约 26 ms），一分钟盖住一阵并发查询之内的复用。
   Dart 查询道的空闲 worker 同样 60 s 回收（一次性定时器，非轮询），至少留一个 worker（下一条查询不付起 isolate 的开销）。
+
+### 7.5 Drift 执行器只读（写路径第 13 步，2026-11-12）
+
+写路径全部收进内核之后（每条写命令一次持写锁、一个 SAVEPOINT），Drift 那条写路没有调用方了，连同它带来的状态一起删：
+
+- `srsDatabaseConnection` 是 `SrsReadOnlyExecutor`：只有查询道（7.4 节不变）；写语句、`runCustom`、批量、事务、独占块一律抛
+  `SrsReadOnlyDatabaseError`，不到内核。内联执行器（`srsInlineExecutor`，测试与没有 worker 池的宿主）同样只读。以前那个
+  后台 isolate 上的顺序执行器（7.4 节的「写那一路」）没有了。
+- 内核的执行器入口（`ffsrs_store_exec`）：mode 0 / 1（以前的写语句）一律报 `READ_ONLY`；mode 2（内联执行器的查询）只在
+  专用的只读连接上跑，不是只读查询报 `READ_ONLY`（以前回落到写连接，Drift 靠它开关事务）；mode 3（查询道）不变。
+  `drift_tx` / `drift_aborted`、「Drift 事务开着时命令嵌进去 / 只读命令改在写连接上读」的选路、Drift 事务守卫
+  （`drift_guard.rs`）都删了：写连接上唯一能跨调用留着的事务只剩旧库搬迁那一笔。
+- 测试要直接改库造场景（删缓存行、装触发器、读写 PRAGMA）：`SrsCore.debugExecRaw` / `debugSelectRaw` /
+  `debugExecBatchRaw`（mode 4 / 5，写连接上执行任意语句，跑完必须回到 autocommit）。生产代码不许调（守卫
+  `srs_read_only_executor_guard_test.dart`）。
+- Dart 套在全部副本外面的写锁（`SrsExclusiveOuter`，App 的当前副本独占区 / 服务端的共享锁）删了：它存在的理由是 Drift 事务
+  跨多个 await 占着写连接。`SrsDbStore.runExclusive` 还在，只排**本副本对象**自己的「读现值 → 组草稿 → 发命令」，
+  副本之间由内核写锁排队。采用 uid 时删旧 uid 改在被删 uid 那份副本的 `retire` 里跑（它最后一段独占区，之后作废）。
+- 收段切片的让出信号（`YieldSignal`）多了一个来源：阻塞在内核写锁上的线程数。以前别的副本的写入靠 Dart 的外层锁排进同一个
+  队列、由 Dart 发 `ingest_yield`；现在它们直接到内核来等锁，内核自己看得见。
+
+### 7.6 写入前的预读收进内核（写路径第 14 步，2026-11-12）
+
+- 「值没变就不写」：改字段的入口（`editFields` / `writeEdits` / `writeChange` / `editFieldsBatch` / `createNote`）不再在发命令
+  前把实体的全部修改记录原文读回 Dart 算现值。草稿全发、标 `chg`（Dart `SrsEditDraft.ifChanged`），内核在 `apply` / `change`
+  的那一笔里读现值并筛（`store/sync2/changing.rs`，判据 `registers::write_is_noop`）。判定与落库之间插不进别的写入；
+  同一批里同一个键出现多次按顺序判。筛到一项不剩时命令什么都不落（不占序号、旧版时钟不走、修订号不动），回包的
+  `landed` / `stamps` 仍按原输入的长度给。`import_drafts` 不认 `chg`（导入的草稿攒批时已按现值筛过或标了 `init`）。
+- 旧 Lapis 迁移 / 预演：同一批笔记只物化一次，换类型的计划与补迁用同一份视图（`previewNoteTypeChange(views:)`）。
+- 彻底清除：`purge` 收 `entities`（一批同类实体），一条命令、一笔；Dart 按每 200 条一块发（`kSrsPurgeChunk`）。每个实体
+  仍是「删除 + 清除」两条操作，线格式不变。

@@ -33,10 +33,10 @@ typedef _Cost = ({int statements, int core});
 
 Future<_Cost> _cost(SrsDbStore store, Future<void> Function() op) async {
   final int core = store.debugCoreCommands;
-  SrsRustDelegate.debugStatements = 0;
+  SrsInlineExecutor.debugStatements = 0;
   await op();
   return (
-    statements: SrsRustDelegate.debugStatements,
+    statements: SrsInlineExecutor.debugStatements,
     core: store.debugCoreCommands - core,
   );
 }

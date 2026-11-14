@@ -809,7 +809,7 @@ mod tests {
     }
 
     fn insert(c: &SrsCore, id: &str, card: &str, kind: &str, at: i64, json: &str) {
-        c.exec(
+        c.exec_raw(
             "INSERT INTO srs_review_logs (id, profile_uid, card_id, kind, rating, occurred_at, review_type, origin, duration_ms, jslim) \
              VALUES (srs_id(?1), 'p', srs_id(?2), ?3, NULL, ?4, 'r', 'fushi', 0, ?5)",
             &[

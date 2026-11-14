@@ -706,11 +706,16 @@ extension SrsNoteTypeStoreOps on SrsDbStore {
   }
 
   /// 预演一次更改笔记类型（不写库）。映射见 [srsPlanNoteTypeChange]。
+  ///
+  /// [views]：调用方刚读过这批笔记（[SrsDbStore.notes] 对 [noteIds] 的结果）、接着还要用同一份视图算别的东西时
+  /// 给它，这里就不再读一遍（旧 Lapis 迁移：换类型的计划与补迁要基于同一份现值，各读各的既多物化一遍，两次读
+  /// 之间落了别的写入时还会一半按旧值、一半按新值算）。远程复习库不看它（预演在主机上做）。
   Future<SrsNoteTypeChangePreview> previewNoteTypeChange({
     required List<String> noteIds,
     required String targetTypeId,
     required Map<String, String?> fieldMap,
     required Map<String, String?> templateMap,
+    Map<String, SrsNoteView?>? views,
   }) async {
     final SrsDbStore self = this;
     if (self is SrsRemoteForwarding) {
@@ -722,15 +727,15 @@ extension SrsNoteTypeStoreOps on SrsDbStore {
       );
     }
     // 笔记与它们的卡各按块一次读（以前每条笔记各读两遍笔记、一遍卡，BUG-3543）。
-    final Map<String, SrsNoteView?> views = await notes(noteIds);
-    final SrsNoteTypeView from = await _sourceTypeIn(noteIds, views);
+    final Map<String, SrsNoteView?> byId = views ?? await notes(noteIds);
+    final SrsNoteTypeView from = await _sourceTypeIn(noteIds, byId);
     final SrsNoteTypeView to = await _requireType(targetTypeId);
     final Map<String, List<SrsCardCacheRow>> cards = await cardsOfNotes(
       noteIds,
     );
     final List<SrsNoteTypeChangePlan> plans = <SrsNoteTypeChangePlan>[];
     for (final String id in noteIds) {
-      final SrsNoteView n = views[id]!;
+      final SrsNoteView n = byId[id]!;
       plans.add(
         srsPlanNoteTypeChange(
           note: n,

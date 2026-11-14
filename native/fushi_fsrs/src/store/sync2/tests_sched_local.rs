@@ -69,7 +69,7 @@ fn sched(d: &Device, deck: &str, at: i64, hlc: &str, items: Value) -> Value {
             .into_iter()
             .map(|a| rusqlite::types::Value::Text(a.into()))
             .collect();
-        d.core.exec(sql, &args, false).unwrap();
+        d.core.exec_raw(sql, &args, false).unwrap();
     }
     let mut r = dispatch(
         d,

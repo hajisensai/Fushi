@@ -72,7 +72,7 @@ SrsScheduleResult res(SrsQueue q, {int ivl = 0, int? dueDay}) =>
       // 句柄晚释放。
     }
   });
-  core.execBatch(
+  core.debugExecBatchRaw(
     <String>[
       'INSERT INTO srs_review_logs (id, profile_uid, card_id, kind, rating, occurred_at, '
           'review_type, origin, duration_ms, jslim) VALUES (srs_id(?), srs_id(?), srs_id(?), ?, ?, ?, ?, ?, ?, ?)',

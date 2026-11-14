@@ -123,8 +123,8 @@ void main() {
       print('BENCH other: ${other.join(' ')}');
 
       // 存量库升级（缓存修订号 1 → 当前）时一次性补算投影的耗时。
-      await db.customStatement('DELETE FROM srs_stat_reviews');
-      await db.customStatement(
+      srs.core.debugExecRaw('DELETE FROM srs_stat_reviews');
+      srs.core.debugExecRaw(
         "UPDATE srs_local_state SET json = json_set(json, '\$.cacheRev', 1)",
       );
       sw.reset();
