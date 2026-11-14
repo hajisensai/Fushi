@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-14T20:51:36Z",
+ "generatedAt": "2026-11-14T20:58:45Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "e6308e4aaf587c37a49fbd79a6fb862f448122fe",
-  "seq": 26882
+  "sha": "ca22b87417ba71ae354ba73e3c3ffd801ff00dea",
+  "seq": 26884
  },
  "builds": [
   {
@@ -166,9 +166,10 @@
   }
  ],
  "pending": {
-  "headSha": "e6308e4aaf587c37a49fbd79a6fb862f448122fe",
-  "headSeq": 26882,
+  "headSha": "ca22b87417ba71ae354ba73e3c3ffd801ff00dea",
+  "headSeq": 26884,
   "prs": [
+   3413,
    3411,
    3317,
    3406
@@ -183,19 +184,19 @@
   "platforms": {
    "android": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43637747773"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43639943017"
    },
    "windows": {
     "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43637747741"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43639943062"
    },
    "macos": {
     "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43637747741"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43639943062"
    },
    "ios": {
     "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43637747741"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43639943062"
    }
   }
  },
@@ -330,6 +331,15 @@
    "mergedAt": "2026-11-14T20:29:21Z",
    "additions": 143,
    "deletions": 7,
+   "labels": []
+  },
+  "3413": {
+   "number": 3413,
+   "title": "fix(srs gen4): 别名判定兜底根实体冲突 / 内置表守卫 / 分叉清单（G4 审查 ids）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-14T20:54:17Z",
+   "additions": 521,
+   "deletions": 120,
    "labels": []
   }
  }
