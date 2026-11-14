@@ -46,6 +46,7 @@ String downloadTaskKindLabel(DownloadTaskKind kind) => switch (kind) {
   DownloadTaskKind.audiobook => t.discovery_kind_audiobook,
   DownloadTaskKind.game => t.nav_game,
   DownloadTaskKind.manga => t.manga_library,
+  DownloadTaskKind.music => t.nav_music,
 };
 
 String downloadTaskStatusLabel(DownloadTaskStatus status) => switch (status) {

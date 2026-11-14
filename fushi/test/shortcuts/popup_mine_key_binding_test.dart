@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 // shortcuts/input_binding.dart 那个撞名，故只取需要的符号。
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/pages/implementations/popup_settings_injection.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
@@ -300,6 +301,104 @@ void main() {
         reason: '页面必须把制卡判决接到真正的执行体上',
       );
       expect(page, contains('mineFirstVisibleEntry()'));
+    });
+  });
+
+  // 「＋」按钮的快捷键提示：跟随宿主真正派发的动作与用户当前绑定；没有派发 / 绑定
+  // 被清空就不提示（不提示一个按了没反应的键）。
+  group('popupMineShortcutHint', () {
+    setUp(() {
+      TestWidgetsFlutterBinding.ensureInitialized();
+      LocaleSettings.setLocale(AppLocale.en);
+    });
+
+    test('宿主没有键盘制卡派发 → 空串', () {
+      expect(
+        popupMineShortcutHint(
+          registryFor(TargetPlatform.windows),
+          TargetPlatform.windows,
+          null,
+        ),
+        isEmpty,
+      );
+    });
+
+    test('Windows 默认：Create card (Ctrl+Enter)', () {
+      for (final ShortcutAction action in const <ShortcutAction>[
+        ShortcutAction.popupMineEntry,
+        ShortcutAction.readerCreateCardFromPopup,
+      ]) {
+        expect(
+          popupMineShortcutHint(
+            registryFor(TargetPlatform.windows),
+            TargetPlatform.windows,
+            action,
+          ),
+          'Create card (Ctrl+Enter)',
+        );
+      }
+    });
+
+    test('macOS 用键帽符号直接相连', () {
+      expect(
+        popupMineShortcutHint(
+          registryFor(TargetPlatform.macOS),
+          TargetPlatform.macOS,
+          ShortcutAction.popupMineEntry,
+        ),
+        'Create card (⌘Enter)',
+      );
+    });
+
+    test('提示跟随用户改的键；只改阅读器那条时只影响阅读器', () {
+      final FushiShortcutRegistry registry = registryFor(
+        TargetPlatform.windows,
+      );
+      registry.updateBinding(
+        ShortcutAction.readerCreateCardFromPopup,
+        const ShortcutBindingSet(
+          keyboardBindings: <InputBinding>[
+            InputBinding(
+              key: LogicalKeyboardKey.keyE,
+              modifiers: <ModifierKey>{ModifierKey.alt},
+            ),
+          ],
+        ),
+      );
+      expect(
+        popupMineShortcutHint(
+          registry,
+          TargetPlatform.windows,
+          ShortcutAction.readerCreateCardFromPopup,
+        ),
+        'Create card (Alt+E)',
+      );
+      expect(
+        popupMineShortcutHint(
+          registry,
+          TargetPlatform.windows,
+          ShortcutAction.popupMineEntry,
+        ),
+        'Create card (Ctrl+Enter)',
+      );
+    });
+
+    test('键盘绑定被清空 → 空串', () {
+      final FushiShortcutRegistry registry = registryFor(
+        TargetPlatform.windows,
+      );
+      registry.updateBinding(
+        ShortcutAction.popupMineEntry,
+        const ShortcutBindingSet(),
+      );
+      expect(
+        popupMineShortcutHint(
+          registry,
+          TargetPlatform.windows,
+          ShortcutAction.popupMineEntry,
+        ),
+        isEmpty,
+      );
     });
   });
 }

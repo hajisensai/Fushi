@@ -1,7 +1,7 @@
 /// SRS 事件库的 Drift 视图（docs/specs/2026-10-23-srs-rust-store.md §5）。
 ///
 /// 表结构由 Rust（native/fushi_fsrs/src/store/schema.rs）建立与升级，这里只声明表让查询构造器
-/// 生成 SQL；连接是 fushi_engine `srsDatabaseConnection`（语句在 Rust 的写连接上执行）。
+/// 生成 SQL；连接是 fushi_engine `srsDatabaseConnection`（只读：查询在 Rust 的只读连接池上执行，写入一律是内核命令）。
 library;
 
 import 'package:drift/drift.dart';

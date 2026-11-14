@@ -1,0 +1,7 @@
+## BUG-4490 · Android 系统 scheduleCrash 失败结束冻结进程被报成崩溃
+- **报告**：2026-11-15（应用内崩溃报告：反馈 rInNABPqPl）
+- **真实性**：✅ 真 bug，在 upstream/develop 017cdcf 沿代码路径确认。小米 Android 13 上报「崩溃 x3」，三条 `ApplicationExitInfo` 都是 `reason=CRASH importance=400 description: scheduleCrash for 'can't deliver broadcast' failed`，没有任何 Java / Dart / 原生栈。AOSP 链路：广播投递到缓存（importance=400、被冻结）进程失败 → `scheduleCrashLocked("can't deliver broadcast")` 想让进程自己崩 → `IApplicationThread.scheduleCrash` 这次 binder 调用也失败（进程已死或被冻结）→ 系统 `killLocked("scheduleCrash for '<msg>' failed", REASON_CRASH)`。原因码是 CRASH，但应用里没崩，是系统结束了够不着的后台进程。
+  - 根因：`fushi/lib/src/diagnostics/previous_exit_log.dart:619`（修复前 :601）`androidExitKind` 把 `CRASH` 一律映射成 `PreviousExitKind.crash`，不看 description；`crash.worthReporting` 恒 true（:138）→ 不论前后台都弹崩溃报告，还压过同一启动的 `USER_REQUESTED`（installPackageLI）。
+- **[x] ① 已修复** — 新增锚定正则 `_aospScheduleCrashFailed`（`^(?:\[[A-Z0-9_ ]+\] )?scheduleCrash for '.+' failed$`，`previous_exit_log.dart:592`）；`CRASH` 且描述整串匹配时 `androidExitKind` 返回 null（不说明退出方式，交给会话标记：标记停在后台 → backgroundReclaim 不报，停在前台 → unexpected 照报）。其它 `CRASH`（含应用自己抛出的 `CannotDeliverBroadcastException`）照旧算崩溃。条目仍按 severe 进日志，证据不丢。
+- **[x] ② 已加自动化测试** — `fushi/test/diagnostics/previous_exit_log_test.dart`：经真 `PreviousExitLog.collect` + `classifyPreviousExit` 复现反馈形态（installPackageLI 的 USER_REQUESTED + 三条 scheduleCrash 失败 CRASH）判 userStopped 不上报、摘要保留证据；单条 scheduleCrash 失败 + 标记 paused 判 backgroundReclaim；`androidExitKind` 单测钉住锚定（普通 CRASH、`can't deliver broadcast` 本身、前缀夹杂的异常文本、CRASH_NATIVE 均不改判）。
+- **备注**：纯分类逻辑，无需真机。
