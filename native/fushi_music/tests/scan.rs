@@ -11,7 +11,7 @@ use std::path::Path;
 use fushi_music::wire::{self, Record, TrackRecord, Writer};
 use fushi_music::{
     ffm_abi_version, ffm_free_bytes, ffm_scan_close, ffm_scan_next, ffm_scan_open,
-    ffm_scan_set_known, ffm_tags_embedded_cover, status,
+    ffm_scan_parser_revision, ffm_scan_set_known, ffm_tags_embedded_cover, status,
 };
 
 const ROOT: &str = "tests/fixtures/library";
@@ -123,6 +123,17 @@ fn tracks(batches: &[(bool, Vec<Record>)]) -> Vec<TrackRecord> {
 fn abi_version_is_three() {
     // 3：批次格式加了播放列表记录（kind 4）与 ffm_playlist_parse（2：远程封面记录与远程扫描游标）。
     assert_eq!(ffm_abi_version(), 3);
+}
+
+#[test]
+fn parser_revision_is_exported_and_covers_credit_split() {
+    // 1：BUG-4493 合写署名拆分。改解析结果（同一文件重新解析入库不同）时必须升它，
+    // Dart 侧据此对存量来源整源重新解析。
+    assert_eq!(
+        ffm_scan_parser_revision(),
+        fushi_music::scan::PARSER_REVISION
+    );
+    assert!(ffm_scan_parser_revision() >= 1);
 }
 
 #[test]

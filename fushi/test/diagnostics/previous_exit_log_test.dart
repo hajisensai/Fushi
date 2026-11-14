@@ -682,6 +682,118 @@ void main() {
       expect(v.worthReporting, isTrue);
     });
 
+    // BUG-4491（反馈 w_dTs9eQ45）：华为 EMUI / HarmonyOS 改「所有文件访问权限」后被 killUid，
+    // ApplicationExitInfo 记成 OTHER +「MANAGE_EXTERNAL_STORAGE changed.」，没有 AOSP 的
+    // `[KILL UID]` 子原因前缀。旧正则要求前缀 → null → 回落标记推断「停在前台时没了」。
+    test(
+      'OTHER +「MANAGE_EXTERNAL_STORAGE changed.」（无 [KILL UID] 前缀）→ 权限变更，不弹闪退报告',
+      () async {
+        final PreviousExitVerdict? v = await verdictFor(
+          lifecycle: 'resumed',
+          reasons: <Map<String, Object?>>[
+            record(
+              pid: 19104,
+              importance: 100,
+              description: 'MANAGE_EXTERNAL_STORAGE changed.',
+            ),
+          ],
+        );
+        expect(v, isNotNull);
+        expect(v!.kind, PreviousExitKind.permissionChanged);
+        expect(v.worthReporting, isFalse);
+      },
+    );
+
+    // BUG-4490（反馈 rInNABPqPl）：小米 Android 13 缓存进程（importance=400）被冻结时广播
+    // 投递失败，系统想让进程自己崩、scheduleCrash 也投不进去，只好以 REASON_CRASH +
+    // 「scheduleCrash for 'can't deliver broadcast' failed」结束进程——应用里没崩。旧实现
+    // CRASH 一律算崩溃 → 下次启动报「崩溃 x3」。同一启动另有 installPackageLI 的用户强停。
+    test(
+      "CRASH +「scheduleCrash for 'can't deliver broadcast' failed」→ 不算崩溃，不弹闪退报告",
+      () async {
+        final PreviousExitVerdict? v = await verdictFor(
+          lifecycle: 'resumed',
+          reasons: <Map<String, Object?>>[
+            record(
+              pid: 19104,
+              importance: 100,
+              reason: 'USER_REQUESTED',
+              description: 'stop app.fushi.reader due to installPackageLI',
+            ),
+            for (final int pid in <int>[18800, 18700, 18600])
+              record(
+                pid: pid,
+                importance: 400,
+                reason: 'CRASH',
+                timestamp: 4000 - pid ~/ 100,
+                description:
+                    "scheduleCrash for 'can't deliver broadcast' failed",
+              ),
+          ],
+        );
+        expect(v, isNotNull);
+        expect(v!.kind, PreviousExitKind.userStopped);
+        expect(v.worthReporting, isFalse);
+        // 证据照样留在摘要里。
+        expect(v.summary, contains("can't deliver broadcast"));
+      },
+    );
+
+    test('CRASH + scheduleCrash 失败 + 标记停在 paused → 交给标记，按后台回收', () async {
+      final PreviousExitVerdict? v = await verdictFor(
+        lifecycle: 'paused',
+        reasons: <Map<String, Object?>>[
+          record(
+            pid: 19104,
+            importance: 400,
+            reason: 'CRASH',
+            description: "scheduleCrash for 'can't deliver broadcast' failed",
+          ),
+        ],
+      );
+      expect(v!.kind, PreviousExitKind.backgroundReclaim);
+      expect(v.worthReporting, isFalse);
+    });
+
+    test('androidExitKind：CRASH 只在描述是锚定的「scheduleCrash for … failed」时不算崩溃', () {
+      expect(
+        androidExitKind(
+          'CRASH',
+          description: "scheduleCrash for 'can't deliver broadcast' failed",
+        ),
+        isNull,
+      );
+      expect(
+        androidExitKind(
+          'CRASH',
+          description: "[UNKNOWN] scheduleCrash for 'bad notification' failed",
+        ),
+        isNull,
+      );
+      // 应用自己抛出的 Java 异常（包括系统让它崩的 CannotDeliverBroadcastException）照旧算崩溃。
+      expect(androidExitKind('CRASH'), PreviousExitKind.crash);
+      expect(
+        androidExitKind('CRASH', description: "can't deliver broadcast"),
+        PreviousExitKind.crash,
+      );
+      expect(
+        androidExitKind(
+          'CRASH',
+          description:
+              "java.lang.IllegalStateException: scheduleCrash for 'x' failed",
+        ),
+        PreviousExitKind.crash,
+      );
+      // 只有 CRASH 看这段描述：原生崩溃不改判。
+      expect(
+        androidExitKind(
+          'CRASH_NATIVE',
+          description: "scheduleCrash for 'can't deliver broadcast' failed",
+        ),
+        PreviousExitKind.nativeCrash,
+      );
+    });
+
     test(
       'androidExitKind：OTHER 只认锚定的 OPlus「stop <包名> due to o-stop(<码>)」形态',
       () {
@@ -754,6 +866,18 @@ void main() {
           description: '[KILL UID] SYSTEM_ALERT_WINDOW changed',
         ),
         PreviousExitKind.permissionChanged,
+      );
+      // 华为 EMUI / HarmonyOS 不加 `[KILL UID]` 子原因前缀（BUG-4491）。
+      expect(
+        androidExitKind(
+          'OTHER',
+          description: 'MANAGE_EXTERNAL_STORAGE changed.',
+        ),
+        PreviousExitKind.permissionChanged,
+      );
+      expect(
+        androidExitKind('OTHER', description: 'settings changed.'),
+        isNull,
       );
       expect(androidExitKind('OTHER'), isNull);
       expect(androidExitKind('OTHER', description: 'OneKeyClean'), isNull);
