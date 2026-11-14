@@ -157,7 +157,7 @@ fn library(tag: &str) -> (Device, BTreeMap<(usize, String), String>) {
 fn request(deck: &str, delete_cards: bool, at: i64) -> Value {
     json!({
         "op": "deck_delete", "profile": P, "now": at, "caches": {"defaultDeck": default_deck()},
-        "deck": deck, "deleteCards": delete_cards, "localState": "{}",
+        "deck": deck, "deleteCards": delete_cards,
     })
 }
 

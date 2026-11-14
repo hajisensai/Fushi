@@ -102,7 +102,7 @@ fn full_name(tree: &config::DeckTree, id: &str) -> String {
 /// 给 [ids] 每个实体的 [key] 写 [value] 的 `apply` 输入项，值没变的跳过（[registers::write_is_noop]）。项的形状就是
 /// Dart `_applyInput` 为一条修改记录草稿发的那一项。
 #[allow(clippy::too_many_arguments)]
-fn push_edits(
+pub(crate) fn push_edits(
     c: &Connection,
     profile: &str,
     ts: &str,

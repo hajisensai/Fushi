@@ -32,9 +32,23 @@
 //! 跳过已清除的载荷）——要同时有迁移进来的旧记录被清除、且 v2 写入只见过那台设备迁移操作的一部分，逐条投递在这种
 //! 情形下本身也随到达顺序而变。
 //!
-//! 走不走通道：会话开始时（[begin]）这个 profile 的操作日志与投影都是空的才走（新设备第一次同步）。折叠完之前本机
+//! 走不走通道：会话开始时（[begin]）这个 profile 是新设备第一次同步才走（[fresh]：本机只有开库时自己写下的内置
+//! 身份记录，或什么都没有）。折叠完之前本机
 //! 要写 / 会话外要投递，先把通道做完（[settle]，ffi.rs 分发器与 `channel_settle`、一次收完、导入），之后按逐条投递收。
 //! 做完通道与收尾一样按片、每片一个事务（[settle]），不把整份投影塞进调用方的一笔事务。
+//!
+//! 开通道时投影里已有的行（BUG-4387）：真实的新设备不是空的——Dart 开库就写下内置身份记录（默认牌组、内置笔记
+//! 类型，`SrsDbStore.ensureBuiltins`），每台设备各写一份、ID 相同，所以远端一定带着同 ID 的身份记录。[fresh] 保证
+//! 这时本机除了这几行身份记录什么都没有：没有修改记录、日志、实体 → 操作索引、清除、挂起、标签（身份记录不进
+//! 索引，`project_entity` 只写 `srs_entities`）。逐条投影里读「现存行」的地方因此只剩一处：`project_entity` 按 ID
+//! 比内容（同内容不写、不同内容取规范文本小者）。折叠遇到投影里已有同 ID 行的身份记录就不折，挪到逐条区交给生产
+//! 的 `project_entity`（[fold_part]）；同 ID 的身份记录总在同一区、逐条区按投递顺序，结果与逐条投递相同。内置实体
+//! 上的修改（改名、改模板）照常折：它们的寄存器在本机是空的。折叠期间 `srs_entities` 不变（归并在全部分区折完
+//! 之后，本机写入先 [settle]）。
+//!
+//! 信任（trust.rs）：第一次见到某台设备时按投影判「本机库里有没有用户的东西」，而 `plan` 不先做完通道。通道没做完
+//! 时投影不全，所以这种时候先把通道做完再判（transport.rs `sync2_plan_at` 按片做，`note_new_device` 兜底）——之后
+//! 这个 profile 按逐条投递收。
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
@@ -47,6 +61,7 @@ use super::digest::Deltas;
 use super::transport::{CommitBudget, defer_cache_refresh, defer_replay};
 use super::{Touched, canonical, snapshots, sql};
 use crate::store::caches::Dirty;
+use crate::store::prof;
 use crate::sync2::dvv::Dvv;
 use crate::sync2::hlc::Hlc;
 use crate::sync2::id::Id;
@@ -120,25 +135,98 @@ pub(crate) fn active(c: &Connection, profile: &str) -> Result<bool, String> {
     Ok(boot(c, profile)?.is_some())
 }
 
-/// 操作日志与投影都是空的（新设备第一次同步）。
+/// 新设备第一次同步：这个 profile 在本机只有开库时自己写下的内置身份记录（或什么都没有）——没有用户数据，也没收过
+/// 别的设备的操作。以前要求操作日志与投影全空，而 Dart `SrsDbStore.open` 在任何同步之前就写下内置身份记录
+/// （`ensureBuiltins`），生产里这条判据恒为假、通道从不打开（BUG-4387）。
+///
+/// 三条全成立才算：
+/// 1. 投影里没有用户的东西（[super::trust::library_fresh]：没有复习日志、没有修改记录，身份记录的载荷全带 `builtin`
+///    键——只有 `srs_builtin.dart` `srsBuiltinEntities` 写这个键），也没有不认识的事件，本机没换过身份；
+/// 2. 操作日志里每一条都是**本机当前身份**写的**身份记录**；
+/// 3. 这些操作与投影里的身份记录行一一对应：同一个 ID、同样的种类与内容。
+///
+/// 凭什么区分内置实体与用户数据——三样一起：来源设备（没有别的设备的操作 = 没收过）、操作种类（改名、改模板、删除、
+/// 复习、标签、媒体、清除、还原点都是别的种类的操作：身份记录不可变，用户对内置实体的任何改动都另是一条操作，所以
+/// 改过内置牌组名 / 内置笔记类型模板的不算新设备）、内容标记（`builtin`：用户自建的牌组 / 笔记类型没有）。不靠 ID
+/// 清单：内核只知道默认牌组的 ID，内置笔记类型的 ID 只有 Dart 知道，以后加内置类型也不用改这里。第 3 条挡掉不经
+/// 操作日志的投影行（v2 之前的旧库还没迁移）。拿不准的一律不算（只是照旧逐条投递）。
 fn fresh(c: &Connection, profile: &str) -> Result<bool, String> {
-    c.query_row(
-        "SELECT NOT EXISTS (SELECT 1 FROM sync2_ops WHERE profile_uid = srs_id(?1)) \
-           AND NOT EXISTS (SELECT 1 FROM srs_entities WHERE profile_uid = srs_id(?1)) \
-           AND NOT EXISTS (SELECT 1 FROM srs_field_edits WHERE profile_uid = srs_id(?1)) \
-           AND NOT EXISTS (SELECT 1 FROM srs_review_logs WHERE profile_uid = srs_id(?1))",
-        [profile],
-        |r| r.get(0),
-    )
-    .map_err(sql)
+    if !super::trust::library_fresh(c, profile)? {
+        return Ok(false);
+    }
+    let untouched: bool = c
+        .query_row(
+            "SELECT NOT EXISTS (SELECT 1 FROM srs_unknown_events WHERE profile_uid = srs_id(?1)) \
+               AND NOT EXISTS (SELECT 1 FROM sync2_devices WHERE profile_uid = srs_id(?1) AND frozen != 0)",
+            [profile],
+            |r| r.get(0),
+        )
+        .map_err(sql)?;
+    if !untouched {
+        return Ok(false);
+    }
+    // 身份记录行：ID → (种类, 载荷)。上面已判过全是内置的，只有几行。
+    let mut rows: BTreeMap<String, (String, String)> = c
+        .prepare_cached("SELECT srs_idt(id) AS id, kind, payload_json FROM srs_entities WHERE profile_uid = srs_id(?1)")
+        .map_err(sql)?
+        .query_map([profile], |r| Ok((r.get(0)?, (r.get(1)?, r.get(2)?))))
+        .map_err(sql)?
+        .collect::<Result<_, _>>()
+        .map_err(sql)?;
+    // 操作日志至多读「行数 + 1」条：多出一条就不是一一对应（老设备的日志有几十万条，不整表数）。
+    let ops: Vec<(Vec<u8>, i64)> = c
+        .prepare_cached("SELECT device, seq FROM sync2_ops WHERE profile_uid = srs_id(?1) LIMIT ?2")
+        .map_err(sql)?
+        .query_map(params![profile, rows.len() as i64 + 1], |r| {
+            Ok((r.get(0)?, r.get(1)?))
+        })
+        .map_err(sql)?
+        .collect::<Result<_, _>>()
+        .map_err(sql)?;
+    if ops.len() != rows.len() {
+        return Ok(false);
+    }
+    if ops.is_empty() {
+        return Ok(true);
+    }
+    let own: Option<Vec<u8>> = c
+        .prepare_cached("SELECT device FROM sync2_self WHERE profile_uid = srs_id(?1)")
+        .map_err(sql)?
+        .query_row([profile], |r| r.get(0))
+        .optional()
+        .map_err(sql)?;
+    for (device, seq) in ops {
+        if own.as_ref() != Some(&device) {
+            return Ok(false);
+        }
+        let id = OpId {
+            device: Id(device.try_into().map_err(|_| "bad device".to_string())?),
+            seq: seq as u64,
+        };
+        let Some(Ok(Body::Entity { kind, id, data })) =
+            super::load_op(c, profile, &id)?.map(|op| op.body())
+        else {
+            return Ok(false);
+        };
+        let d: Value = serde_json::from_str(&data).unwrap_or(Value::Null);
+        match rows.remove(&id.text()) {
+            Some((k, payload)) if k == kind.wire() && payload == canonical(&d) => {}
+            _ => return Ok(false),
+        }
+    }
+    Ok(rows.is_empty())
 }
 
 /// 收段会话开始（transport.rs `sync2_ingest_begin`；[w] 是写连接，不在调用方的事务里）：通道还在追加阶段（上一个
 /// 会话被打断）就接着追加；没有通道而这个 profile 是新的就开一个；折叠 / 归并 / 逐条做到一半（收尾被打断）先按片
 /// 做完（[settle]，每片一个事务），这次按逐条投递收。返回这个会话走不走通道。
-pub(crate) fn begin(w: &Connection, profile: &str) -> Result<bool, String> {
+pub(crate) fn begin(
+    w: &Connection,
+    profile: &str,
+    settled: &mut dyn FnMut(&Touched),
+) -> Result<bool, String> {
     if boot(w, profile)?.is_some_and(|b| b.phase != PHASE_APPEND) {
-        settle(w, profile)?;
+        settle(w, profile, settled)?;
     }
     super::in_savepoint(w, |c| match boot(c, profile)? {
         Some(b) if b.phase == PHASE_APPEND => Ok(true),
@@ -207,7 +295,11 @@ impl Append {
                 d
             }
         };
-        super::insert_op_at(c, profile, op, chain, now, deps)?;
+        {
+            let _p = prof::span("append.op_log");
+            super::insert_op_at(c, profile, op, chain, now, deps)?;
+        }
+        let _p = prof::span("append.order");
         let part = match op.body().map_err(|e| e.to_string())? {
             Body::Edit(e) => {
                 if let Some(l) = &e.legacy {
@@ -407,6 +499,7 @@ fn advance_into(
             return Ok(false);
         }
     }
+    let _p = prof::span("one_by_one");
     loop {
         let batch = read_ops(
             c,
@@ -595,7 +688,9 @@ struct LogRow {
 
 /// 一个分区折完写进投影（一个事务里：调用方的 savepoint）。返回处理的操作条数。
 fn fold_part(c: &Connection, profile: &str, part: i64, t: &mut Touched) -> Result<usize, String> {
+    let p_read = prof::span("fold.read");
     let ops = read_ops(c, "b.part = ?2 ORDER BY b.rank", params![profile, part])?;
+    drop(p_read);
     let n = ops.len();
     let complex: HashSet<(String, String)> = c
         .prepare_cached("SELECT kind, srs_idt(entity) AS entity FROM sync2_boot_complex WHERE profile_uid = srs_id(?1)")
@@ -622,6 +717,7 @@ fn fold_part(c: &Connection, profile: &str, part: i64, t: &mut Touched) -> Resul
     };
     let mut deferred: Vec<(i64, Vec<u8>, i64)> = Vec::new();
 
+    let p_rows = prof::span("fold.rows");
     for (rank, op, now) in &ops {
         let dev = op.id.device.0.to_vec();
         let seq = op.id.seq as i64;
@@ -701,7 +797,16 @@ fn fold_part(c: &Connection, profile: &str, part: i64, t: &mut Touched) -> Resul
             }
             Body::Entity { kind, id, data } => {
                 let idt = id.text();
-                if is_complex(kind.wire(), &idt) {
+                // 投影里已有这个 ID 的行（开通道前本机写下的内置身份记录，见文件头）：不折，交给生产的
+                // `project_entity` 比内容。查法与它相同（只按 ID，不分 profile、不分种类）。
+                let taken = c
+                    .prepare_cached("SELECT 1 FROM srs_entities WHERE id = srs_id(?1)")
+                    .map_err(sql)?
+                    .exists([&idt])
+                    .map_err(sql)?;
+                #[cfg(test)]
+                cover(4, usize::from(taken));
+                if taken || is_complex(kind.wire(), &idt) {
                     deferred.push((*rank, dev, seq));
                     continue;
                 }
@@ -741,6 +846,8 @@ fn fold_part(c: &Connection, profile: &str, part: i64, t: &mut Touched) -> Resul
         cover(1, deferred.len());
     }
 
+    drop(p_rows);
+    let p_land = prof::span("fold.land");
     // 寄存器：同一实体的到达按投递顺序一次落（`land_edit` 逐条落的同一判据）。
     let mut deltas = Deltas::default();
     let mut edits: Vec<(String, EntKind, String, String, String, i64, String)> = Vec::new();
@@ -776,7 +883,9 @@ fn fold_part(c: &Connection, profile: &str, part: i64, t: &mut Touched) -> Resul
         }
     }
     edits.sort_by(|a, b| a.0.cmp(&b.0));
+    drop(p_land);
 
+    let p_stage = prof::span("fold.stage_rows");
     // 投影行按存储形态追加进暂存表（列序见 [TARGETS]），归并时按表成块写进投影（[merge]）。
     let mut s = stage(c, T_ENTITY, 4, "srs_id(?1), ?2, ?3, ?4")?;
     for (id, (kind, _, payload, created)) in &entities {
@@ -807,8 +916,12 @@ fn fold_part(c: &Connection, profile: &str, part: i64, t: &mut Touched) -> Resul
         .map_err(sql)?;
         deltas.add(profile, b'l', lid, &r.text);
     }
+    drop(p_stage);
+    let p_digest = prof::span("fold.digest");
     deltas.write(c)?;
+    drop(p_digest);
 
+    let _p_index = prof::span("fold.stage_index");
     let mut s = stage(c, T_STAMP, 3, "srs_id(?1), ?2, ?3")?;
     for (id, (server, now)) in &stamps {
         s.execute(rusqlite::named_params! {"?1": id, "?2": server, "?3": now, "?20": profile})
@@ -887,6 +1000,16 @@ const TARGETS: [(&str, &str, bool); 7] = [
         false,
     ),
 ];
+/// 各表归并的计时名（[prof]）。
+const MERGE_SPANS: [&str; 7] = [
+    "merge.entities",
+    "merge.field_edits",
+    "merge.review_logs",
+    "merge.event_local",
+    "merge.edit_ops",
+    "merge.ent_ops",
+    "merge.log_meta",
+];
 const T_ENTITY: usize = 0;
 const T_EDIT: usize = 1;
 const T_LOG: usize = 2;
@@ -923,6 +1046,7 @@ const MERGE_CHUNK: i64 = 4;
 /// （实体、日志、修改按分区归属），直接插入。返回（写的行数, 这张表归并完了没有）。
 fn merge(c: &Connection, profile: &str, tbl: usize) -> Result<(usize, bool), String> {
     let (target, cols, digest) = TARGETS[tbl];
+    let _p = prof::span(MERGE_SPANS[tbl]);
     let last: Option<i64> = c
         .prepare_cached("SELECT rowid FROM sync2_boot_rows WHERE profile_uid = srs_id(?1) AND tbl = ?2 ORDER BY rowid LIMIT 1 OFFSET ?3")
         .map_err(sql)?
@@ -930,9 +1054,8 @@ fn merge(c: &Connection, profile: &str, tbl: usize) -> Result<(usize, bool), Str
         .optional()
         .map_err(sql)?;
     let upto = last.unwrap_or(i64::MAX);
-    let q = format!(
-        "INSERT INTO {target} SELECT {cols} FROM sync2_boot_rows WHERE profile_uid = srs_id(?1) AND tbl = ?2 AND rowid <= ?3"
-    );
+    let q = merge_sql(target, cols);
+    let touched = RowTriggerOff::new(c, tbl)?;
     let n = if digest {
         let triggers = DigestTriggersOff::new(c)?;
         let n = c
@@ -944,6 +1067,7 @@ fn merge(c: &Connection, profile: &str, tbl: usize) -> Result<(usize, bool), Str
         c.execute(&q, params![profile, tbl as i64, upto])
             .map_err(sql)?
     };
+    touched.restore(profile, tbl, upto)?;
     c.prepare_cached(
         "DELETE FROM sync2_boot_rows WHERE profile_uid = srs_id(?1) AND tbl = ?2 AND rowid <= ?3",
     )
@@ -951,6 +1075,154 @@ fn merge(c: &Connection, profile: &str, tbl: usize) -> Result<(usize, bool), Str
     .execute(params![profile, tbl as i64, upto])
     .map_err(sql)?;
     Ok((n, last.is_none()))
+}
+
+/// [merge] 的写入语句。
+fn merge_sql(target: &str, cols: &str) -> String {
+    format!("INSERT INTO {target} SELECT {cols} {STAGED}")
+}
+
+/// 测试：[merge] 写的表有几张。
+#[cfg(test)]
+pub(crate) const MERGED_TABLES: usize = TARGETS.len();
+
+/// 测试：[merge] 写第 [tbl] 张表的语句的 `EXPLAIN` 操作码。[as_merged] 时在归并的条件下看（行触发器拿掉、摘要
+/// 触发器关着，看完照 [merge] 的做法恢复），否则原样（触发器都在）。
+#[cfg(test)]
+pub(crate) fn merge_plan(
+    c: &Connection,
+    profile: &str,
+    tbl: usize,
+    as_merged: bool,
+) -> Result<Vec<String>, String> {
+    let (target, cols, digest) = TARGETS[tbl];
+    let explain = || -> Result<Vec<String>, String> {
+        let mut s = c
+            .prepare(&format!("EXPLAIN {}", merge_sql(target, cols)))
+            .map_err(sql)?;
+        let unbound = std::iter::repeat_n(rusqlite::types::Null, s.parameter_count());
+        let ops: Result<Vec<String>, rusqlite::Error> = s
+            .query_map(rusqlite::params_from_iter(unbound), |r| {
+                r.get::<_, String>(1)
+            })
+            .map_err(sql)?
+            .collect();
+        ops.map_err(sql)
+    };
+    if !as_merged {
+        return explain();
+    }
+    let touched = RowTriggerOff::new(c, tbl)?;
+    let ops = if digest {
+        let triggers = DigestTriggersOff::new(c)?;
+        let ops = explain()?;
+        triggers.restore()?;
+        ops
+    } else {
+        explain()?
+    };
+    // 没有暂存行：只把触发器装回去。
+    touched.restore(profile, tbl, -1)?;
+    Ok(ops)
+}
+
+/// 暂存表里一张表到某个 rowid 为止的行（?1 = profile, ?2 = 表的下标, ?3 = rowid 上界）。
+const STAGED: &str =
+    "FROM sync2_boot_rows WHERE profile_uid = srs_id(?1) AND tbl = ?2 AND rowid <= ?3";
+
+/// 归并的目标表里，写连接上装着「插入一行登记一个待重读」的 TEMP 触发器的那几张（queue.rs [TRIGGERS]：复习队列 /
+/// 浏览会话）：（[TARGETS] 下标, 触发器名, 对暂存的这一块行做同样登记的一条查询）。
+///
+/// 目标表上只要有行触发器，SQLite 的 `INSERT … SELECT` 就先把 SELECT 的结果整份物化进一张临时表、再从临时表逐行
+/// 插（insert.c：触发器可能读到正在写的表）；临时表超过页缓存就落临时文件。归并一块几万行、每行带着整份载荷
+/// （笔记字段的修改记录一行可以几 KB），等于把这一块多写、多读一遍。归并这几张表时先把触发器拿掉、写完按同一批行
+/// 成块登记、再装回去（[RowTriggerOff]）：登记的是同一批 (种类, profile, id)，登记本身是往一个集合里加，与顺序无关。
+/// 都在调用方的 savepoint 里，中途失败连同触发器一起回滚。
+///
+/// `merge_statements_never_materialize_their_rows` 按 `EXPLAIN` 核对每张表的写入语句都不开临时表（以后给哪张表加了
+/// 行触发器而这里没跟上会红），`merging_registers_the_same_rows_as_the_row_triggers` 核对登记的集合与触发器逐行
+/// 登记的相同。
+const ROW_TRIGGERS: [(usize, &str, &str); 3] = [
+    (
+        T_EDIT,
+        "srs_browse_edit_ins",
+        "SELECT srs_study_touch(2, profile_uid, c3) FROM sync2_boot_rows \
+         WHERE profile_uid = srs_id(?1) AND tbl = ?2 AND rowid <= ?3 AND c2 = 'note'",
+    ),
+    (
+        T_LOG,
+        "srs_study_log_ins",
+        "SELECT srs_study_touch(1, profile_uid, c1) FROM sync2_boot_rows \
+         WHERE profile_uid = srs_id(?1) AND tbl = ?2 AND rowid <= ?3",
+    ),
+    (
+        T_STAMP,
+        "srs_browse_stamp_ins",
+        "SELECT srs_study_touch(2, f.profile_uid, f.entity_id) FROM sync2_boot_rows b \
+         JOIN main.srs_field_edits f ON f.id = b.c1 \
+         WHERE b.profile_uid = srs_id(?1) AND b.tbl = ?2 AND b.rowid <= ?3 AND b.c2 IS NOT NULL \
+           AND f.entity_kind = 'note'",
+    ),
+];
+
+/// 归并一张表期间拿掉它的插入行触发器（[ROW_TRIGGERS]）；[RowTriggerOff::restore] 按写进去的那批行成块登记并把
+/// 触发器装回去。这条连接上没装触发器（没有复习队列的连接）或这张表没有行触发器时什么也不做。
+///
+/// 中途出错时调用方的 savepoint 回滚会连触发器一起恢复（TEMP 库的结构改动也在事务里）；丢弃守卫时仍再装一次
+/// （`IF NOT EXISTS`），不把「触发器还在不在」押在调用方一定回滚上——少了它复习队列 / 浏览就再也看不到新写的行。
+struct RowTriggerOff<'a> {
+    c: &'a Connection,
+    /// 拿掉了触发器、还没装回去时：对写进去的那批行做同样登记的查询。
+    touch: Option<&'static str>,
+}
+
+impl<'a> RowTriggerOff<'a> {
+    fn new(c: &'a Connection, tbl: usize) -> Result<Self, String> {
+        let Some(&(_, name, touch)) = ROW_TRIGGERS.iter().find(|t| t.0 == tbl) else {
+            return Ok(RowTriggerOff { c, touch: None });
+        };
+        let installed: bool = c
+            .prepare_cached(
+                "SELECT EXISTS (SELECT 1 FROM sqlite_temp_master WHERE type = 'trigger' AND name = ?1)",
+            )
+            .map_err(sql)?
+            .query_row([name], |r| r.get(0))
+            .map_err(sql)?;
+        if !installed {
+            return Ok(RowTriggerOff { c, touch: None });
+        }
+        c.execute_batch(&format!("DROP TRIGGER temp.{name}"))
+            .map_err(sql)?;
+        Ok(RowTriggerOff {
+            c,
+            touch: Some(touch),
+        })
+    }
+
+    fn restore(mut self, profile: &str, tbl: usize, upto: i64) -> Result<(), String> {
+        let Some(touch) = self.touch else {
+            return Ok(());
+        };
+        {
+            let mut s = self.c.prepare(touch).map_err(sql)?;
+            let mut rows = s.query(params![profile, tbl as i64, upto]).map_err(sql)?;
+            while rows.next().map_err(sql)?.is_some() {}
+        }
+        self.c
+            .execute_batch(crate::store::queue::TRIGGERS)
+            .map_err(sql)?;
+        // 装回去成功才算恢复：失败时丢弃守卫还会再试一次。
+        self.touch = None;
+        Ok(())
+    }
+}
+
+impl Drop for RowTriggerOff<'_> {
+    fn drop(&mut self) {
+        if self.touch.is_some() {
+            let _ = self.c.execute_batch(crate::store::queue::TRIGGERS);
+        }
+    }
 }
 
 /// 关掉这条连接上主库的触发器（摘要桶，digest.rs）；[DigestTriggersOff::restore] 或出错丢弃时打开。TEMP 触发器
@@ -1002,40 +1274,121 @@ fn settle_budget() -> CommitBudget<'static> {
     CommitBudget::ops(3)
 }
 
-/// 把通道做完：本机要写、会话外要投递之前（ffi.rs 分发器与 `channel_settle`、一次收完、导入、带分叉的收尾），以及
-/// 新会话开始时上一次的收尾没做完（[begin]）。[w] 是写连接，**不在调用方的事务里**。
+/// 把通道做完：本机要写、会话外要投递之前（ffi.rs 分发器与 `channel_settle`、一次收完、导入、带分叉的收尾、并入
+/// 提交），以及新会话开始时上一次的收尾没做完（[begin]）。[w] 是写连接，**不在调用方的事务里**。
 ///
 /// 与收尾（`ingest_finish` / `replay_pending`）同样按片：每片一个 SAVEPOINT，没有外层事务时就是一次提交——WAL 只装
 /// 一片（一个分区 / 至多 [MERGE_CHUNK] 行的一块归并）写的页，失败只回滚这一片，已做的留着、下次接着做。以前整段
 /// 在调用方的一个事务里做完：整份投影（真实全量数据约 1.1 GB）落进同一笔事务，WAL 要装下全部页，失败整段回滚、
 /// 下一条写命令又从头重做。
 ///
-/// 写连接上开着 Drift 事务（`is_autocommit` 为假）时中途提交不了，只能在那笔事务里一次做完：这是兜底。Dart 在开
-/// Drift 事务之前先发 `channel_settle`（srs_db_store.dart `_transactionOrReload`），正常路径走不到这里。
+/// 每片提交后把这一片落进投影的变化交给 [settled]：这些片没有自己的回包，Dart 那一侧按内容 / 视图 / RWKV 刷新信号
+/// 记的缓存（牌组树、profile 修改记录、分数表）不知道投影变了。调用方把它们攒在内核里，随这个 profile 的下一条命令
+/// 的回包交回（[crate::store::SrsCore::note_settled] / `take_settled`）。中途出错时已提交的片已经交过了。
+///
+/// 写连接上开着事务（`is_autocommit` 为假）时中途提交不了，只能在那笔事务里一次做完：这是兜底。写连接上唯一能
+/// 跨调用留着的事务是旧库搬迁（`legacy_open`），搬迁期间不该有这个 profile 的命令进来，正常路径走不到这里。
 ///
 /// 之后这个 profile 按逐条投递收；会话里缓存的投递队列（带着追加状态）作废重载（一开始就作废：做了一片之后出错，
 /// 通道也已不在追加阶段）。要刷新的缓存与要重放的卡留在待刷新 / 待重放集合里，与逐条投递收段途中一样等收尾。
-pub(crate) fn settle(w: &Connection, profile: &str) -> Result<(), String> {
+pub(crate) fn settle(
+    w: &Connection,
+    profile: &str,
+    settled: &mut dyn FnMut(&Touched),
+) -> Result<(), String> {
     if !active(w, profile)? {
         return Ok(());
     }
     super::transport::bump_delivery_epoch();
     if !w.is_autocommit() {
-        return super::in_savepoint(w, |c| {
-            advance(c, profile, &mut CommitBudget::unlimited()).map(|_| ())
-        });
+        let (_, t) = super::in_savepoint(w, |c| {
+            settle_slice(c, profile, &mut CommitBudget::unlimited())
+        })?;
+        settled(&t);
+        return Ok(());
     }
     loop {
         #[cfg(test)]
         if FAIL_SETTLE_AT.with(|f| f.get()) == Some(SETTLE_SLICES.with(|s| s.get())) {
             return Err("sync2 channel: injected settle failure".to_owned());
         }
-        let done = super::in_savepoint(w, |c| Ok(advance(c, profile, &mut settle_budget())?.0))?;
+        let (done, t) = super::in_savepoint(w, |c| settle_slice(c, profile, &mut settle_budget()))?;
+        settled(&t);
         #[cfg(test)]
         SETTLE_SLICES.with(|s| s.set(s.get() + 1));
         if done {
             return Ok(());
         }
+    }
+}
+
+/// [settle] 的一片：[advance]，这一片落进投影的变化在同一个 SAVEPOINT 里记进本机状态行的修订号——这里没有回包
+/// 可带（收段命令自己推进通道时并进它的结果，[absorb]），不记的话这些事件就从不推进修订号（自动备份据它判断
+/// 「有没有变动」）。返回通道做完了没有，以及这一片落进投影的变化。
+fn settle_slice(
+    c: &Connection,
+    profile: &str,
+    budget: &mut CommitBudget<'_>,
+) -> Result<(bool, Touched), String> {
+    let (done, t) = advance(c, profile, budget)?;
+    crate::store::local_state::advance_revision(c, profile, &t)?;
+    Ok((done, t))
+}
+
+/// 通道自己做完的片（[settle]）攒下的投影变化，等这个 profile 的下一条命令带回 Dart。只留 Dart 要的那几样：推进
+/// 内容 / 视图 / RWKV 刷新信号的计数、可见性变了的实体、被彻底清除的实体。要刷新的缓存行不在这里（留在待刷新集合里
+/// 等收尾）。
+#[derive(Default, Debug)]
+pub(crate) struct Settled {
+    landed: u64,
+    content: u64,
+    view: u64,
+    rwkv: u64,
+    changed: std::collections::BTreeSet<(String, String)>,
+    purged: std::collections::BTreeSet<(String, String)>,
+}
+
+impl Settled {
+    pub(crate) fn absorb(&mut self, t: &Touched) {
+        self.landed += t.marks.landed;
+        self.content += t.marks.content;
+        self.view += t.marks.view;
+        self.rwkv += t.marks.rwkv;
+        self.changed.extend(t.entities_changed.iter().cloned());
+        self.purged.extend(t.purged.iter().cloned());
+    }
+
+    pub(crate) fn merge(&mut self, o: Settled) {
+        self.landed += o.landed;
+        self.content += o.content;
+        self.view += o.view;
+        self.rwkv += o.rwkv;
+        self.changed.extend(o.changed);
+        self.purged.extend(o.purged);
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.landed == 0 && self.changed.is_empty() && self.purged.is_empty()
+    }
+
+    /// 与改投影命令的回包同形的那几个键（Dart `_absorbProjection` 直接读）：
+    /// `{"marks": {"landed", "content", "view", "rwkv"}, "changed": [[kind, id]], "purged": [[kind, id]]}`。
+    pub(crate) fn to_json(&self) -> serde_json::Value {
+        let pairs = |s: &std::collections::BTreeSet<(String, String)>| {
+            s.iter()
+                .map(|(k, e)| serde_json::json!([k, e]))
+                .collect::<Vec<_>>()
+        };
+        serde_json::json!({
+            "marks": {
+                "landed": self.landed,
+                "content": self.content,
+                "view": self.view,
+                "rwkv": self.rwkv,
+            },
+            "changed": pairs(&self.changed),
+            "purged": pairs(&self.purged),
+        })
     }
 }
 
@@ -1056,8 +1409,7 @@ pub(crate) fn absorb(t: &mut Touched, o: Touched) {
 }
 
 impl crate::store::SrsCore {
-    /// 分发器（ffi.rs）在会改投影 / 依赖完整投影的命令之前调，Dart 在开 Drift 事务之前调（`channel_settle`）：这个
-    /// profile 有没做完的收段通道就按片做完（[settle]）。没有任何通道时只读内存里的标记（[SrsCore::channel_live]），
+    /// 分发器（ffi.rs）在会改投影 / 依赖完整投影的命令之前调：这个 profile 有没做完的收段通道就按片做完（[settle]）。没有任何通道时只读内存里的标记（[SrsCore::channel_live]），
     /// 不拿写锁、不查表——只读命令（`digest` 等）不因此排在写锁后面。
     pub(crate) fn sync2_channel_settle(&self, profile: &str) -> Result<(), String> {
         if !self.channel_live.load(std::sync::atomic::Ordering::SeqCst) {
@@ -1072,8 +1424,64 @@ impl crate::store::SrsCore {
         if !self.channel_live.load(std::sync::atomic::Ordering::SeqCst) {
             return Ok(());
         }
-        settle(w, profile)?;
+        settle(w, profile, &mut |t| self.note_settled(profile, t))?;
         self.recheck_channel_live(w)
+    }
+
+    /// 通道自己做完的一片落进投影的变化：攒着，等 [profile] 的下一条命令带回 Dart（[Self::take_settled]）。什么都没
+    /// 落的片不记。
+    pub(crate) fn note_settled(&self, profile: &str, t: &Touched) {
+        let mut one = Settled::default();
+        one.absorb(t);
+        if one.is_empty() {
+            return;
+        }
+        // 只是几个计数与 ID：panic 毒化过照常用。
+        self.settled
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .entry(profile.to_owned())
+            .or_default()
+            .merge(one);
+    }
+
+    /// 取走 [profile] 攒下的通道变化（[Self::note_settled]），连同**此刻**库里的修订号与纪元（已提交快照；通道的片在
+    /// 自己的 SAVEPOINT 里推进过修订号，Dart 手里的还是推进之前的）：
+    /// `{"marks", "changed", "purged", "localRevision", "localEpoch"}`。没有攒下的 → None。
+    ///
+    /// 分发器在命令**成功**、回包是对象、且请求带了 `settled: true` 时调（ffi.rs `sync2_dispatch`）：不吸收回包的
+    /// 调用方不会把它取走丢掉。读修订号失败（库正被关）就放回去不带，留给下一条命令。
+    pub(crate) fn take_settled(&self, profile: &str) -> Option<serde_json::Value> {
+        let pending = self
+            .settled
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(profile)?;
+        let state = self.read_visible(|c| crate::store::local_state::read(c, profile));
+        let state = match state {
+            Ok(s) if s["exists"] == serde_json::json!(true) => s,
+            _ => {
+                self.settled
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .entry(profile.to_owned())
+                    .or_default()
+                    .merge(pending);
+                return None;
+            }
+        };
+        let mut v = pending.to_json();
+        v["localRevision"] = state["revision"].clone();
+        v["localEpoch"] = state["epoch"].clone();
+        Some(v)
+    }
+
+    /// [profile] 的数据整份删了（`profile_purge` / 并入提交）：攒下的通道变化没有人要了。
+    pub(crate) fn forget_settled(&self, profile: &str) {
+        self.settled
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(profile);
     }
 
     /// 收段会话开了通道（[begin] 返回真）：之后的命令要先看通道。
@@ -1095,7 +1503,7 @@ impl crate::store::SrsCore {
         Ok(())
     }
 
-    /// 这个 profile 有没有进行中的通道（`identity` 回报给 Dart，Dart 据此决定开 Drift 事务前要不要先 `channel_settle`）。
+    /// 这个 profile 有没有进行中的通道（`identity` 回报给 Dart；诊断 / 测试用）。
     pub(crate) fn sync2_channel_active(&self, profile: &str) -> Result<bool, String> {
         if !self.channel_live.load(std::sync::atomic::Ordering::SeqCst) {
             return Ok(false);
@@ -1109,7 +1517,7 @@ impl crate::store::SrsCore {
 #[cfg(test)]
 thread_local! {
     static OFF: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-    static COVER: std::cell::Cell<[usize; 4]> = const { std::cell::Cell::new([0; 4]) };
+    static COVER: std::cell::Cell<[usize; 5]> = const { std::cell::Cell::new([0; 5]) };
     /// [settle] 提交过的片数（[SETTLE_SLICES]，[take_settle_slices] 清零后从 0 数）到这个值时报错（测试：中途失败只丢那一片）。
     static FAIL_SETTLE_AT: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
     /// [settle] 按片提交的累计片数。
@@ -1156,8 +1564,9 @@ fn cover(k: usize, n: usize) {
     });
 }
 
-/// 测试：各分支走过几次——（折叠的操作, 复杂实体逐条的操作, 折叠里落了又被支配的, 移进复杂牌组的卡），取走清零。
+/// 测试：各分支走过几次——（折叠的操作, 挪去逐条的操作, 折叠里落了又被支配的, 移进复杂牌组的卡, 投影里已有同 ID 行
+/// 的身份记录），取走清零。
 #[cfg(test)]
-pub(crate) fn take_coverage() -> [usize; 4] {
-    COVER.with(|c| c.replace([0; 4]))
+pub(crate) fn take_coverage() -> [usize; 5] {
+    COVER.with(|c| c.replace([0; 5]))
 }

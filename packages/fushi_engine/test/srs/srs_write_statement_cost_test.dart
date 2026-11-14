@@ -1,5 +1,5 @@
 // 本机写路径的往返验收（SRS 收掉 Dart 写路径第 2 步，M3）：每种写操作经 Drift 执行器送进内核的语句数
-// （`SrsRustDelegate.debugStatements`，含 BEGIN / COMMIT / 本机状态行 upsert）与内核命令数（`debugCoreCommands`）。
+// （`SrsInlineExecutor.debugStatements`，含 BEGIN / COMMIT / 本机状态行 upsert）与内核命令数（`debugCoreCommands`）。
 //
 // 写命令（apply / sched / import / resolve / purge / checkpoint / restore / retire / dedup / trust）由内核在同一个
 // savepoint 里完成命令本体、缓存刷新、排队与本机状态行（native/fushi_fsrs/src/store/ffi.rs `local_write`）：Dart 不再
@@ -26,10 +26,10 @@ typedef _Cost = ({int statements, int core});
 /// 跑一次 [op]，返回它送进内核的语句数与内核命令数。
 Future<_Cost> _cost(SrsDbStore store, Future<void> Function() op) async {
   final int core = store.debugCoreCommands;
-  SrsRustDelegate.debugStatements = 0;
+  SrsInlineExecutor.debugStatements = 0;
   await op();
   return (
-    statements: SrsRustDelegate.debugStatements,
+    statements: SrsInlineExecutor.debugStatements,
     core: store.debugCoreCommands - core,
   );
 }
@@ -72,7 +72,7 @@ void main() {
     int purged = 0;
     await measure(
       'purge',
-      () => s.sync2Purge(SrsEntityKind.note, notes[purged++]),
+      () => s.sync2PurgeMany(SrsEntityKind.note, <String>[notes[purged++]]),
     );
     final Uint8List exported = await s.sync2ExportOps();
     await measure('import', () => s.sync2ImportOps(exported));
@@ -90,10 +90,11 @@ void main() {
         'core=${e.value.core}',
       );
     }
-    // 改动前（见文件头）各多 BEGIN / COMMIT / 本机状态 upsert 3 条；createNote / applyRemote 剩下的 1 条是发命令前的
-    // Drift 预读，不属于这一步。
+    // 改动前（见文件头）各多 BEGIN / COMMIT / 本机状态 upsert 3 条；applyRemote 剩下的 1 条是发命令前的 Drift 预读。
+    // createNote 的那 1 条预读（这条笔记已有的修改记录）在第 14 步收掉：值没变的键由内核落库时筛
+    // （srs_write_preread_cost_test.dart）。
     expect(costs, <String, _Cost>{
-      'createNote': (statements: 1, core: 1),
+      'createNote': (statements: 0, core: 1),
       'answer': (statements: 0, core: 2),
       'checkpoint': (statements: 0, core: 1),
       'purge': (statements: 0, core: 1),
@@ -189,13 +190,15 @@ void main() {
     expect(costs['deleteDeck(deleteCards)'], (statements: 0, core: 2));
     // 第 8 步：导入的一批草稿一条命令（内核 `import_drafts`），Dart 不再预读已有实体与已有记录的键。
     expect(costs['importDrafts'], (statements: 0, core: 1));
+    // 第 9 步：更改笔记类型的还原点与修改记录是一条命令（内核 `change`）；语句数是预演与预读现值的读。
+    expect(costs['changeNoteType']!.core, 1);
   });
 
   test('打开副本与缓存维护的语句数与内核命令数（第 4 步）', () async {
     final BulkFixture f = await BulkFixture.open(notes: 6);
     final SrsDbStore s = f.store;
     Future<_Cost> openCost() async {
-      SrsRustDelegate.debugStatements = 0;
+      SrsInlineExecutor.debugStatements = 0;
       final SrsDbStore r = await SrsDbStore.open(
         db: f.db,
         core: s.core,
@@ -206,7 +209,7 @@ void main() {
         fallbackRolloverHour: () => 4,
       );
       return (
-        statements: SrsRustDelegate.debugStatements,
+        statements: SrsInlineExecutor.debugStatements,
         core: r.debugCoreCommands,
       );
     }
@@ -216,7 +219,7 @@ void main() {
       'rebuildCaches': await _cost(s, s.rebuildCaches),
       'open(current)': await openCost(),
     };
-    await f.db.customStatement(
+    f.store.core.debugExecRaw(
       r"UPDATE srs_local_state SET json = json_set(json, '$.cacheRev', 1)",
     );
     costs['open(cacheRev 1)'] = await openCost();
@@ -236,10 +239,13 @@ void main() {
         'core=${e.value.core}',
       );
     }
+    // 第 12 步：开库读本机状态从一条 Drift 读变成一条内核命令（`local_state`），所以语句 4 → 3、命令 2 → 3
+    // （`local_state` + `cache_config_set` + `identity`）。新 profile / 覆盖恢复之后 / 老行没纪元时再多一条
+    // `local_state_ensure`（srs_local_state_kernel_test.dart）。
     expect(costs, <String, _Cost>{
       'rebuildCaches': (statements: 0, core: 1),
-      'open(current)': (statements: 4, core: 2),
-      'open(cacheRev 1)': (statements: 4, core: 2),
+      'open(current)': (statements: 3, core: 3),
+      'open(cacheRev 1)': (statements: 3, core: 3),
     });
   });
 
@@ -247,12 +253,13 @@ void main() {
     final BulkFixture f = await BulkFixture.open(notes: 1);
     final SrsDbStore s = f.store;
     Future<int> threshold() async =>
-        (await s.db.customSelect('PRAGMA wal_autocheckpoint').getSingle())
-                .data
-                .values
-                .first!
+        s.core.debugSelectRaw('PRAGMA wal_autocheckpoint').single.values.first!
             as int;
-    await s.db.customStatement('PRAGMA wal_autocheckpoint = 777');
+    s.core.debugExecRaw(
+      'PRAGMA wal_autocheckpoint = 777',
+      const <Object?>[],
+      true,
+    );
     await s.bulkWrites(() async {
       expect(await threshold(), 16384);
       await s.bulkWrites(() async {

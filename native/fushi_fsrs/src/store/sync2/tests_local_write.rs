@@ -1,5 +1,5 @@
 //! 本机写命令（store/ffi.rs `LOCAL_WRITE_OPS`，收掉 Dart 写路径第 2 步）：命令本体、缓存行与随命令交来的本机状态行
-//! （`localState`）在同一次持写锁、同一个 SAVEPOINT 里落下；中途出错三者一起回滚；外层开着 Drift 事务时嵌进那笔事务。
+//! 在同一次持写锁、同一个 SAVEPOINT 里落下；中途出错三者一起回滚。
 
 use serde_json::{Value, json};
 
@@ -52,6 +52,20 @@ fn count(d: &Device, sql: &str) -> i64 {
     d.rows(sql)[1][0].parse().unwrap()
 }
 
+/// 直接写下本机状态行（模拟库里已有的行）。
+fn seed_local_state(d: &Device, row: Value) {
+    d.core
+        .exec_raw(
+            "INSERT OR REPLACE INTO srs_local_state (profile_uid, json) VALUES (srs_id(?1), ?2)",
+            &[
+                rusqlite::types::Value::Text(P.into()),
+                rusqlite::types::Value::Text(row.to_string()),
+            ],
+            false,
+        )
+        .unwrap();
+}
+
 fn local_state(d: &Device) -> Option<Value> {
     d.rows(&format!(
         "SELECT json FROM srs_local_state WHERE profile_uid = srs_id('{P}')"
@@ -74,10 +88,12 @@ fn footprint(d: &Device) -> (i64, i64, i64, Option<Value>) {
 fn apply_with_local_state_lands_command_caches_and_local_state_together() {
     let d = Device::new("lw-apply");
     let deck = super::config::default_deck_id(P);
-    let state = json!({"revision": 5, "epoch": "e1", "hlc": "1:0:w"});
+    // 库里已有的行：修订号从它起算，纪元原样。
+    seed_local_state(&d, json!({"revision": 5, "epoch": "e1"}));
     let r = dispatch(
         &d,
-        json!({"op": "apply", "profile": P, "now": T0, "caches": caches(&deck), "legacyDevice": "dev", "localState": state.to_string()}),
+        json!({"op": "apply", "profile": P, "now": T0, "caches": caches(&deck), "legacyDevice": "dev",
+               "anchor": {"o": 3, "b": "boot", "s": 10, "t": 20}}),
         Some(note_events(&deck)),
     )
     .unwrap();
@@ -92,7 +108,12 @@ fn apply_with_local_state_lands_command_caches_and_local_state_together() {
     let row = row.expect("local state row written");
     assert_eq!(row["revision"], json!(expected));
     assert_eq!(row["epoch"], json!("e1"));
-    // 旧版时钟 / 写入者是内核持有的键：交来的 `hlc` 不认，行里是内核自己那只时钟（没推进过 = 零点）。
+    assert_eq!(r["localEpoch"], json!("e1"), "{r}");
+    assert_eq!(
+        row["anchor"],
+        json!({"o": 3, "b": "boot", "s": 10, "t": 20})
+    );
+    // 旧版时钟 / 写入者由命令本体写进同一行（没推进过 = 零点）。
     assert_eq!(row["hlc"], json!("0:0:dev#1"));
     assert_eq!(row["writerId"], json!("dev#1"));
     // 回包照旧带缓存写入清单。
@@ -104,19 +125,30 @@ fn a_failing_step_rolls_back_command_caches_and_local_state_together() {
     let d = Device::new("lw-fail");
     let deck = super::config::default_deck_id(P);
     let before = footprint(&d);
-    // 本机状态行不是 JSON 对象：命令本体与缓存刷新都做完之后、写本机状态行时出错。
+    // 命令本体与缓存刷新都做完之后、写本机状态行时出错。
+    super::tests::break_local_state(&d.core);
     let err = dispatch(
         &d,
-        json!({"op": "apply", "profile": P, "now": T0, "caches": caches(&deck), "legacyDevice": "dev", "localState": "[1]"}),
+        json!({"op": "apply", "profile": P, "now": T0, "caches": caches(&deck), "legacyDevice": "dev"}),
         Some(note_events(&deck)),
     )
     .unwrap_err();
-    assert!(err.contains("JSON object"), "{err}");
+    super::tests::mend_local_state(&d.core);
+    assert!(err.contains("local state row refused"), "{err}");
     assert_eq!(footprint(&d), before, "nothing of the failed command lands");
+    // 校时状态形态不对：在动库之前就拒绝。
+    let err = dispatch(
+        &d,
+        json!({"op": "apply", "profile": P, "now": T0, "caches": caches(&deck), "legacyDevice": "dev", "anchor": {"o": "x"}}),
+        Some(note_events(&deck)),
+    )
+    .unwrap_err();
+    assert!(err.contains("bad anchor"), "{err}");
+    assert_eq!(footprint(&d), before);
     // 写连接没有挂着半截事务：同一条命令照常能做。
     dispatch(
         &d,
-        json!({"op": "apply", "profile": P, "now": T0, "caches": caches(&deck), "legacyDevice": "dev", "localState": json!({"revision": 0}).to_string()}),
+        json!({"op": "apply", "profile": P, "now": T0, "caches": caches(&deck), "legacyDevice": "dev"}),
         Some(note_events(&deck)),
     )
     .unwrap();
@@ -133,35 +165,40 @@ fn checkpoint_and_purge_persist_local_state_by_the_projection() {
         Some(note_events(&deck)),
     )
     .unwrap();
+    // 第一条命令建行：缓存版本、纪元、旧版时钟 / 写入者、按这次投影推进的修订号。
+    let row = local_state(&d).unwrap();
     assert_eq!(
-        local_state(&d),
-        Some(json!({
-            "cacheRev": crate::store::cache_rev::CACHE_REVISION,
-            "hlc": "0:0:dev#1",
-            "writerId": "dev#1",
-        })),
-        "no localState → only the kernel-held keys (the legacy clock is written by every apply)"
+        row["cacheRev"],
+        json!(crate::store::cache_rev::CACHE_REVISION)
     );
+    assert_eq!(row["hlc"], json!("0:0:dev#1"));
+    assert_eq!(row["writerId"], json!("dev#1"));
+    assert!(row["epoch"].is_string(), "{row}");
+    let rev0 = row["revision"].as_i64().unwrap();
+    assert!(rev0 > 0, "{row}");
     let r = dispatch(
         &d,
         json!({"op": "checkpoint", "profile": P, "now": T0 + 1, "caches": caches(&deck),
-               "name": "m", "reason": "manual", "localState": json!({"revision": 10}).to_string()}),
+               "name": "m", "reason": "manual"}),
         None,
     )
     .unwrap();
-    let rev =
-        10 + r["marks"]["landed"].as_i64().unwrap() + r["changed"].as_array().unwrap().len() as i64;
+    let rev = rev0
+        + r["marks"]["landed"].as_i64().unwrap()
+        + r["changed"].as_array().unwrap().len() as i64;
     assert_eq!(r["localRevision"], json!(rev));
     assert_eq!(local_state(&d).unwrap()["revision"], json!(rev));
 
     // 清除：投影变化（删除 + 清除）与本机状态行同一笔；失败时笔记仍在、本机状态行不动。
+    super::tests::break_local_state(&d.core);
     let bad = dispatch(
         &d,
         json!({"op": "purge", "profile": P, "now": T0 + 2, "caches": caches(&deck),
-               "kind": "note", "entity": NOTE, "localState": "not json"}),
+               "kind": "note", "entities": [NOTE]}),
         None,
     );
-    assert!(bad.is_err());
+    super::tests::mend_local_state(&d.core);
+    assert!(bad.unwrap_err().contains("local state row refused"));
     assert_eq!(
         count(
             &d,
@@ -173,7 +210,7 @@ fn checkpoint_and_purge_persist_local_state_by_the_projection() {
     let r = dispatch(
         &d,
         json!({"op": "purge", "profile": P, "now": T0 + 2, "caches": caches(&deck),
-               "kind": "note", "entity": NOTE, "localState": json!({"revision": rev}).to_string()}),
+               "kind": "note", "entities": [NOTE]}),
         None,
     )
     .unwrap();
@@ -183,17 +220,17 @@ fn checkpoint_and_purge_persist_local_state_by_the_projection() {
     assert_eq!(local_state(&d).unwrap()["revision"], json!(rev2));
 }
 
-/// 把旧版时钟拨到 [hlc]（本机状态行里内核持有的键，store/legacy_clock.rs）。
+/// 把旧版时钟拨到 [hlc]（本机状态行里的键，store/legacy_clock.rs）。
 fn set_clock(d: &Device, hlc: &str) {
     d.core
-        .exec(
+        .exec_raw(
             "INSERT OR IGNORE INTO srs_local_state (profile_uid, json) VALUES (srs_id(?1), '{}')",
             &[rusqlite::types::Value::Text(P.into())],
             false,
         )
         .unwrap();
     d.core
-        .exec(
+        .exec_raw(
             "UPDATE srs_local_state SET json = json_set(json, '$.hlc', ?2) WHERE profile_uid = srs_id(?1)",
             &[
                 rusqlite::types::Value::Text(P.into()),
@@ -224,8 +261,6 @@ fn sched_advances_the_legacy_clock_in_local_state() {
             "op": "sched", "profile": P, "now": T0 + 5, "caches": caches(&deck),
             "at": T0 + 5, "ts": "anchored", "utcOff": 0, "rollover": 4,
             "items": [{"a": "setDue", "card": card, "due": 20_000}],
-            // 交来的本机状态行里带着 `hlc` 也不认（内核持有的键）。
-            "localState": json!({"revision": 1, "hlc": "9:9:stale"}).to_string(),
         });
         for (k, v) in extra.as_object().unwrap() {
             req[k] = v.clone();
@@ -382,14 +417,14 @@ fn the_legacy_writer_comes_from_the_row_or_the_host_device() {
     let deck = super::config::default_deck_id(P);
     let put = |json: &str| {
         d.core
-            .exec(
+            .exec_raw(
                 "DELETE FROM srs_local_state WHERE profile_uid = srs_id(?1)",
                 &[rusqlite::types::Value::Text(P.into())],
                 false,
             )
             .unwrap();
         d.core
-            .exec(
+            .exec_raw(
                 "INSERT INTO srs_local_state (profile_uid, json) VALUES (srs_id(?1), ?2)",
                 &[
                     rusqlite::types::Value::Text(P.into()),
@@ -411,8 +446,7 @@ fn the_legacy_writer_comes_from_the_row_or_the_host_device() {
     let touch = |device: &str| {
         dispatch(
             &d,
-            json!({"op": "apply", "profile": P, "now": T0, "caches": caches(&deck), "legacyDevice": device,
-                   "localState": json!({"revision": 0, "incarnation": 99, "lastSeq": 99, "writerId": "dart", "hlc": "5:5:dart"}).to_string()}),
+            json!({"op": "apply", "profile": P, "now": T0, "caches": caches(&deck), "legacyDevice": device}),
             Some("[]".into()),
         )
         .unwrap();
@@ -450,7 +484,7 @@ fn the_legacy_writer_comes_from_the_row_or_the_host_device() {
     assert_eq!(row["lastSeq"], json!(41));
     assert_eq!(row["applied"], json!({"vv": {"devA#3": 41}}));
     assert_eq!(row["outboxSeq"], json!(7));
-    assert_eq!(row["revision"], json!(0), "Dart-held keys are still Dart's");
+    assert_eq!(row["revision"], json!(8), "an empty apply does not move it");
     // 损坏的时钟：写入明确失败、什么都不落；认写入者不受影响。
     put(r#"{"writerId":"devA#1","hlc":"garbage"}"#);
     assert_eq!(writer("devA"), json!("devA#1"));
@@ -466,26 +500,6 @@ fn the_legacy_writer_comes_from_the_row_or_the_host_device() {
 }
 
 #[test]
-fn local_write_joins_an_open_drift_transaction() {
-    let d = Device::new("lw-drift");
-    let deck = super::config::default_deck_id(P);
-    let before = footprint(&d);
-    d.core.exec("BEGIN", &[], true).unwrap();
-    dispatch(
-        &d,
-        json!({"op": "apply", "profile": P, "now": T0, "caches": caches(&deck), "legacyDevice": "dev", "localState": json!({"revision": 0}).to_string()}),
-        Some(note_events(&deck)),
-    )
-    .unwrap();
-    d.core.exec("ROLLBACK", &[], true).unwrap();
-    assert_eq!(
-        footprint(&d),
-        before,
-        "the outer Drift transaction's rollback takes the command, caches and local state with it"
-    );
-}
-
-#[test]
 fn trust_persists_local_state_in_its_savepoint_and_rolls_back_with_it() {
     let d = Device::new("lw-trust");
     let deck = super::config::default_deck_id(P);
@@ -495,18 +509,19 @@ fn trust_persists_local_state_in_its_savepoint_and_rolls_back_with_it() {
         Some(note_events(&deck)),
     )
     .unwrap();
-    // 从没见过的设备本来就可信：信任一次什么也不放行，但本机状态行照样随命令写下。
+    // 从没见过的设备本来就可信：信任一次什么也不放行，修订号不动（回包照样带当前值）。
+    let rev = local_state(&d).unwrap()["revision"].clone();
     let other = "0193a1b2-0000-7000-8000-00000000dee1";
     let r = dispatch(
         &d,
         json!({"op": "trust", "profile": P, "now": T0 + 1, "caches": caches(&deck),
-               "device": other, "trust": true, "localState": json!({"revision": 7}).to_string()}),
+               "device": other, "trust": true}),
         None,
     )
     .unwrap();
     assert_eq!(r["released"], json!(0), "{r}");
-    assert_eq!(r["localRevision"], json!(7), "{r}");
-    assert_eq!(local_state(&d).unwrap()["revision"], json!(7));
+    assert_eq!(r["localRevision"], rev, "{r}");
+    assert_eq!(local_state(&d).unwrap()["revision"], rev);
     // 命令本体出错（信任本机自己）：本机状态行不动。
     let me = d.core.sync2_identity(P, T0).unwrap()["device"]
         .as_str()
@@ -515,12 +530,12 @@ fn trust_persists_local_state_in_its_savepoint_and_rolls_back_with_it() {
     let err = dispatch(
         &d,
         json!({"op": "trust", "profile": P, "now": T0 + 2, "caches": caches(&deck),
-               "device": me, "trust": true, "localState": json!({"revision": 99}).to_string()}),
+               "device": me, "trust": true}),
         None,
     )
     .unwrap_err();
     assert!(err.contains("always trusted"), "{err}");
-    assert_eq!(local_state(&d).unwrap()["revision"], json!(7));
+    assert_eq!(local_state(&d).unwrap()["revision"], rev);
 }
 
 /// `import_drafts`（收掉 Dart 写路径第 8 步）：「初值」项在它的（类别, 实体, 字段键）已有修改记录时不落、旧版时钟不走；
@@ -534,7 +549,7 @@ fn import_drafts_drops_authored_initials_and_reports_existing_entities() {
         &d,
         json!({
             "op": "apply", "profile": P, "now": T0, "caches": caches(&deck),
-            "legacyDevice": "dev", "localState": "{}",
+            "legacyDevice": "dev",
         }),
         Some(note_events(&deck)),
     )
@@ -581,7 +596,7 @@ fn import_drafts_drops_authored_initials_and_reports_existing_entities() {
         &d,
         json!({
             "op": "import_drafts", "profile": P, "now": T0 + 10, "caches": caches(&deck),
-            "legacyDevice": "dev", "recvNow": T0 + 10, "tickNow": T0 + 10, "localState": "{}",
+            "legacyDevice": "dev", "recvNow": T0 + 10, "tickNow": T0 + 10,
         }),
         Some(input.to_string()),
     )
@@ -610,11 +625,77 @@ fn import_drafts_drops_authored_initials_and_reports_existing_entities() {
         &d,
         json!({
             "op": "apply", "profile": P, "now": T0 + 20, "caches": caches(&deck),
-            "legacyDevice": "dev", "tickNow": T0 + 20, "localState": "{}",
+            "legacyDevice": "dev", "tickNow": T0 + 20,
         }),
         Some(Value::Array(vec![draft(NOTE, "f/fa", json!("again"), true)]).to_string()),
     )
     .unwrap();
     assert_eq!(r.get("existed"), None);
     assert_eq!(value(NOTE, "f/fa"), json!("again"));
+}
+
+/// `apply` 的前置条件 `expectLast`（远程作答核对基准）：核对与落库在同一笔里；不成立时什么都不做——不落、旧版时钟
+/// 不走、不排队、不写本机状态行，回包只有 `stale`。
+#[test]
+fn apply_checks_expect_last_before_anything_lands() {
+    let d = Device::new("lw-expect");
+    let deck = super::config::default_deck_id(P);
+    dispatch(
+        &d,
+        json!({"op": "apply", "profile": P, "now": T0, "caches": caches(&deck), "legacyDevice": "dev"}),
+        Some(note_events(&deck)),
+    )
+    .unwrap();
+    let card = d.rows(&format!(
+        "SELECT srs_idt(id) AS id FROM srs_cards_cache WHERE note_id = srs_id('{NOTE}')"
+    ))[1][0]
+        .clone();
+    let answer = |log: &str, at: i64, expect: Value| {
+        let x = json!({
+            "id": log, "p": P, "card": card, "kind": "review", "rating": 3, "at": at,
+            "ts": "anchored", "origin": "fushi", "rtype": "learn", "utcOff": 0, "rollover": 4, "fv": 1,
+            "res": {"queue": "new", "ivl": 0, "step": 0, "reps": 0, "lapses": 0, "scheduler": "fushi"}
+        });
+        dispatch(
+            &d,
+            json!({
+                "op": "apply", "profile": P, "now": at, "caches": caches(&deck), "legacyDevice": "dev",
+                "tickNow": at, "stamps": true, "expectLast": expect,
+            }),
+            Some(
+                json!([{"e": {"t": "log", "x": x}, "note": NOTE, "intent": "answer", "clk": "t"}])
+                    .to_string(),
+            ),
+        )
+        .unwrap()
+    };
+    const L1: &str = "0193a1b2-0000-7000-8000-00000000d0e1";
+    const L2: &str = "0193a1b2-0000-7000-8000-00000000d0e2";
+    const GONE: &str = "0193a1b2-0000-7000-8000-00000000d0ef";
+    // 还没有日志：基准 null 成立。
+    let r = answer(L1, T0 + 10, json!({"card": card, "log": null}));
+    assert!(r.get("stale").is_none(), "{r}");
+    assert_eq!(r["stamps"].as_array().unwrap().len(), 1, "{r}");
+    let before = (
+        count(&d, "SELECT COUNT(*) AS n FROM sync2_ops"),
+        local_state(&d),
+    );
+    // 出题之后这张卡又被作答过（基准还是 null）、基准是别的日志、卡不存在：都不成立。
+    for expect in [
+        json!({"card": card, "log": null}),
+        json!({"card": card, "log": L2}),
+        json!({"card": GONE, "log": null}),
+    ] {
+        let r = answer(L2, T0 + 20, expect);
+        assert_eq!(r, json!({"stale": true}));
+        assert_eq!(count(&d, "SELECT COUNT(*) AS n FROM sync2_ops"), before.0);
+        assert_eq!(local_state(&d), before.1);
+    }
+    // 基准是它最后一条日志：成立。
+    let r = answer(L2, T0 + 20, json!({"card": card, "log": L1}));
+    assert!(r.get("stale").is_none(), "{r}");
+    assert_eq!(
+        count(&d, "SELECT COUNT(*) AS n FROM sync2_ops"),
+        before.0 + 1
+    );
 }
