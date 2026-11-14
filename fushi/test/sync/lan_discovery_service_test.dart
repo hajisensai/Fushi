@@ -309,7 +309,9 @@ void main() {
       );
     });
 
-    test('lost event with TXT id attribute keeps working', () {
+    // C10：TXT id 是对端自报、未经认证的；一个从未 resolve 过的服务名带着别人的
+    // id 发 lost，不得删掉那台设备（旧实现按 id 回落删除）。
+    test('lost event of an unknown name carrying a known id is a no-op', () {
       final LanDiscoveryService service = LanDiscoveryService(deviceId: 'self');
       service.debugHandleEvent(
         BonsoirDiscoveryServiceResolvedEvent(
@@ -321,7 +323,6 @@ void main() {
       );
       expect(service.currentDevices, hasLength(1));
 
-      // 平台带上了 TXT（且 name 从未 resolve 登记过 → 走 id 回落）：同样删得掉。
       service.debugHandleEvent(
         BonsoirDiscoveryServiceLostEvent(
           service: BonsoirService.ignoreNorms(
@@ -332,7 +333,7 @@ void main() {
           ),
         ),
       );
-      expect(service.currentDevices, isEmpty);
+      expect(service.currentDevices, hasLength(1));
     });
 
     test('losing an unknown service is a no-op', () {
@@ -349,6 +350,77 @@ void main() {
         BonsoirDiscoveryServiceLostEvent(service: lostService(name: 'Other')),
       );
       expect(service.currentDevices, hasLength(1));
+    });
+  });
+
+  // C10：发现表曾以对端自报的 TXT id 为主键，后到的同 id 条目覆盖先到的——
+  // 局域网里任何人广播别人的 id 就能把那台设备从列表里顶掉（冒名）。
+  group('C10 TXT id impersonation', () {
+    void resolve(
+      LanDiscoveryService service, {
+      required String name,
+      required String host,
+      int port = 38765,
+      String id = 'X',
+    }) => service.debugHandleEvent(
+      BonsoirDiscoveryServiceResolvedEvent(
+        service: _resolved(
+          name: name,
+          port: port,
+          hostAddresses: <String>[host],
+          attributes: <String, String>{'id': id},
+        ),
+      ),
+    );
+
+    void lose(LanDiscoveryService service, String name) =>
+        service.debugHandleEvent(
+          BonsoirDiscoveryServiceLostEvent(
+            service: BonsoirService.ignoreNorms(
+              name: name,
+              type: LanDiscoveryService.serviceType,
+              port: 0,
+              attributes: const <String, String>{},
+            ),
+          ),
+        );
+
+    List<String> hosts(LanDiscoveryService service) =>
+        service.currentDevices.map((FushiDevice d) => d.host).toList();
+
+    test('a second service claiming the same id does not replace the first; '
+        'losing it leaves the first', () {
+      final LanDiscoveryService service = LanDiscoveryService(deviceId: 'self');
+      resolve(service, name: 'A', host: '192.168.1.5');
+      resolve(service, name: 'B', host: '192.168.1.9');
+      expect(hosts(service), <String>['192.168.1.5', '192.168.1.9']);
+
+      lose(service, 'B');
+      expect(hosts(service), <String>['192.168.1.5']);
+    });
+
+    test('a service that moves to a new endpoint drops its old entry', () {
+      final LanDiscoveryService service = LanDiscoveryService(deviceId: 'self');
+      resolve(service, name: 'A', host: '192.168.1.5');
+      resolve(service, name: 'A', host: '192.168.1.6');
+      expect(hosts(service), <String>['192.168.1.6']);
+
+      lose(service, 'A');
+      expect(service.currentDevices, isEmpty);
+    });
+
+    test('a late lost for the old name of a renamed instance keeps the live '
+        'entry', () {
+      final LanDiscoveryService service = LanDiscoveryService(deviceId: 'self');
+      resolve(service, name: 'Old', host: '192.168.1.5');
+      resolve(service, name: 'New', host: '192.168.1.5');
+      expect(hosts(service), <String>['192.168.1.5']);
+
+      lose(service, 'Old');
+      expect(hosts(service), <String>['192.168.1.5']);
+
+      lose(service, 'New');
+      expect(service.currentDevices, isEmpty);
     });
   });
 

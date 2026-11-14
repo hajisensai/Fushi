@@ -32,6 +32,7 @@ typedef _MeasuredCall = ({
   List<GalAttachedMeasuredGlyph> glyphs,
   int width,
   int height,
+  int tolerance,
 });
 
 class _MeasuredPort implements GalAttachedTextSurfacePort {
@@ -84,6 +85,7 @@ class _MeasuredPort implements GalAttachedTextSurfacePort {
     required List<GalAttachedMeasuredGlyph> glyphs,
     required int clientWidth,
     required int clientHeight,
+    required int clientSizeTolerance,
   }) async {
     calls.add('updateMeasuredText');
     final _MeasuredCall call = (
@@ -92,6 +94,7 @@ class _MeasuredPort implements GalAttachedTextSurfacePort {
       glyphs: glyphs,
       width: clientWidth,
       height: clientHeight,
+      tolerance: clientSizeTolerance,
     );
     measured.add(call);
     return updateMeasuredResult(call);
@@ -203,6 +206,7 @@ TyranoDomFrame _frame(
   List<TyranoDomGlyph>? glyphs,
   int width = 1280,
   int height = 720,
+  double dpr = 1,
 }) => TyranoDomFrame(
   text: text,
   generation: generation,
@@ -213,7 +217,7 @@ TyranoDomFrame _frame(
       <TyranoDomGlyph>[
         for (int i = 0; i < text.length; i++) _glyph(i, 100.6 + 32 * i),
       ],
-  devicePixelRatio: 1,
+  devicePixelRatio: dpr,
   clientWidth: width,
   clientHeight: height,
   vertical: false,
@@ -284,6 +288,36 @@ void main() {
             ),
           );
       expect(payload.glyphs.single.right, 120);
+    });
+
+    test('量化容差：整数 dpr 只容 dpr-1，小数 dpr 容 ceil(dpr)', () {
+      expect(galAttachedMeasuredClientSizeTolerance(1), 0);
+      expect(galAttachedMeasuredClientSizeTolerance(2), 1);
+      expect(galAttachedMeasuredClientSizeTolerance(1.25), 2);
+      expect(galAttachedMeasuredClientSizeTolerance(1.5), 2);
+      expect(galAttachedMeasuredClientSizeTolerance(1.75), 2);
+      expect(galAttachedMeasuredClientSizeTolerance(2.5), 3);
+      expect(galAttachedMeasuredClientSizeTolerance(0), 0);
+      expect(galAttachedMeasuredClientSizeTolerance(double.nan), 0);
+    });
+
+    test('Electron 全屏 150%：载荷带上 dpr 的取整容差', () {
+      // 实测：客户区 3840x2159，视口 2560x1440 CSS × 1.5 = 3840x2160。
+      final GalAttachedMeasuredPayload payload =
+          galAttachedMeasuredPayloadForFrame(
+            _frame('abc', width: 3840, height: 2160, dpr: 1.5),
+          );
+      expect(payload.clientWidth, 3840);
+      expect(payload.clientHeight, 2160);
+      expect(payload.clientSizeTolerance, 2);
+      expect(
+        payload,
+        isNot(
+          galAttachedMeasuredPayloadForFrame(
+            _frame('abc', width: 3840, height: 2160),
+          ),
+        ),
+      );
     });
   });
 
@@ -381,6 +415,7 @@ void main() {
       expect(call.generation, 1);
       expect(call.width, 1280);
       expect(call.height, 720);
+      expect(call.tolerance, 0);
       expect(call.glyphs.first.left, 100);
       expect(call.glyphs.first.right, 132);
       expect(controller.status, GalAttachedTextStatus.activeAttached);
@@ -489,6 +524,68 @@ void main() {
       await emit(_frame('abc', width: 1264, height: 681));
       expect(port.measured, hasLength(2));
       expect(port.measured.last.generation, 1, reason: '同句重测沿用 generation');
+      expect(controller.status, GalAttachedTextStatus.activeAttached);
+    });
+
+    test('切屏：客户区短暂变样时被拒的测量，尺寸变回后重发（不等下一句）', () async {
+      // 真机日志：全屏 3840x2160 的 Electron 游戏切到后台时客户区变 3840x2127，
+      // runner 报 measuredLayoutStale，Dart 强制重发的 2160 测量被拒；切回前台尺寸
+      // 变回 2160，DOM 快照没变所以不会推新帧——此时必须凭客户区变化重发同一份测量。
+      GalLookupReferenceClientV1 live = _client;
+      port.updateMeasuredResult = (_MeasuredCall call) =>
+          call.width == live.widthPx && call.height == live.heightPx
+          ? const GalAttachedCallResult(
+              status: 'visible',
+              surfaceVisible: true,
+              providerKind: 4,
+              providerId: 11,
+              providerStatus: 2,
+            )
+          : const GalAttachedCallResult(error: 'measured_client_size_mismatch');
+      await activate();
+      await emit(_frame('abc'));
+      expect(controller.status, GalAttachedTextStatus.activeAttached);
+      final GalAttachedSurfaceTarget target = controller.target!;
+
+      Future<void> stale(GalLookupReferenceClientV1 client) async {
+        live = client;
+        controller.handleSurfaceStateChanged(
+          GalAttachedSurfaceStateEvent(
+            target: target,
+            state: 'suspended',
+            status: 'measuredLayoutStale',
+            reason: 'measured_client_size_mismatch',
+            providerKind: 4,
+            providerId: 11,
+            providerStatus: 2,
+            referenceClient: client,
+            layoutSource: galAttachedLayoutSourceMeasured,
+            measuredSource: galAttachedMeasuredSourceTyranoDom,
+          ),
+        );
+        await pumpEventQueue();
+        await controller.measuredPushIdle;
+      }
+
+      const GalLookupReferenceClientV1 shrunk = GalLookupReferenceClientV1(
+        widthPx: 1280,
+        heightPx: 700,
+        dpi: 96,
+      );
+      await stale(shrunk);
+      expect(port.measured, hasLength(2));
+      expect(controller.status, GalAttachedTextStatus.suspended);
+      expect(controller.statusReason, 'measured_client_size_mismatch');
+
+      // 同一尺寸下的重复状态事件不重发同一份已被拒的测量。
+      await stale(shrunk);
+      expect(port.measured, hasLength(2));
+
+      // 切回前台：尺寸变回测量时的 1280x720，同一份测量重新有效。
+      await stale(_client);
+      expect(port.measured, hasLength(3));
+      expect(port.measured.last.text, 'abc');
+      expect(port.measured.last.generation, 1);
       expect(controller.status, GalAttachedTextStatus.activeAttached);
     });
 

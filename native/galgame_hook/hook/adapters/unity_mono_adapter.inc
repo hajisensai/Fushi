@@ -152,7 +152,10 @@ void RememberUnityMonoFungusStoryText(void* dialog) {
 // TextMeshProUGUI 对象，供每帧 Canvas.SendWillRenderCanvases 之后采样。主线程上调用。
 // lane 位：1 TMP SetText、2 TMP SetText(string,bool)、4 UI.Text.set_text（框架 4）、
 // 8 TMP SetText(string)（与 unity_mono_lookup.inc 的 kUm*Lane* 常量一致）。
-void RememberUmTmpCandidateGuarded(void* component, uint8_t lane);
+// 同时把这行（原始字符串，内部按文本道口径剥富文本）喂给对白面判定
+// （unity_mono_dialogue_core.h）；判定每帧在画布更新之后做一次（unity_mono_lookup.inc）。
+void RememberUmTmpCandidateGuarded(void* component, uint8_t lane,
+                                   const wchar_t* chars, int length);
 // 有界诊断日志（unity_mono_lookup.inc；只在 HookWorker 上调用，从不写台词）。
 void UmLookupLog(const wchar_t* format, ...);
 
@@ -177,6 +180,43 @@ using UnityMonoFungusDoSay = void*(FUSHI_MONO_MANAGED_CALL*)(
     void*, void*, uintptr_t, uintptr_t, uintptr_t, uintptr_t, uintptr_t, void*,
     void*);
 UnityMonoFungusDoSay g_orig_UnityMonoFungusDoSay = nullptr;
+
+// 对白面标记变化（unity_mono_dialogue_core.h）：失去标记的道与得到标记的道各发一条
+// 线程发现事件（WriteUnityTextEvent 按 g_unity_dialogue_surface_thread 当前值决定
+// 带不带 kTextEventFlagDialogueSurface），宿主据此更新这两条道的当前判定。标记本身已在
+// UpdateUmDialogueSurface（unity_mono_lookup.inc，每帧画布更新之后）里写好；这里只发布，
+// 在任何 SEH 保护区之外（进 g_cs）。主线程、有界、无 IO。
+// 画布文本组件某条 setter 道的线程 id：与 RecordUnityTextChars 同一推导（组件指针 +
+// 该 setter 的 hook code，非场景稳定身份）。lane 非法时返回 0。
+uint64_t UnityMonoLaneThreadId(uintptr_t object, uint8_t lane,
+                               const fushi_voice_hook::MonoTextHookSpec** out) {
+  fushi_voice_hook::MonoTextHookId id;
+  if (object == 0u ||
+      !fushi_voice_hook::unity_mono_dialogue::MonoTextHookIdForLane(lane,
+                                                                     &id)) {
+    return 0u;
+  }
+  const fushi_voice_hook::MonoTextHookSpec& spec =
+      fushi_voice_hook::MonoTextHookSpecFor(id);
+  if (out != nullptr) *out = &spec;
+  return fushi_voice_hook::NativeTextThreadIdFrom(
+      static_cast<uint64_t>(object), spec.hook_code, spec.hook_name);
+}
+
+void PublishUnityMonoDialogueLane(uintptr_t object, uint8_t lane) {
+  const fushi_voice_hook::MonoTextHookSpec* spec = nullptr;
+  const uint64_t thread_id = UnityMonoLaneThreadId(object, lane, &spec);
+  if (thread_id == 0u || spec == nullptr) return;
+  WriteUnityTextEvent(thread_id, reinterpret_cast<void*>(object), nullptr, 0,
+                      spec->hook_name, spec->hook_code,
+                      fushi_voice_hook::kTextEventThreadDiscovered);
+}
+
+void PublishUnityMonoDialogueSurfaceChange(
+    const fushi_voice_hook::unity_mono_dialogue::SurfaceChange& change) {
+  PublishUnityMonoDialogueLane(change.cleared_object, change.cleared_lane);
+  PublishUnityMonoDialogueLane(change.promoted_object, change.promoted_lane);
+}
 
 // 游戏线程上的唯一工作：经导出 accessor 取 UTF-16 视图（纯指针运算，不分配、不进 GC），
 // 交给与 IL2CPP 共用的有界发布（RecordUnityTextChars 内部拷进定长 clean[501] 再写共享
@@ -215,13 +255,13 @@ void RecordUnityMonoText(fushi_voice_hook::MonoTextHookId id, void* component,
                            spec.hook_code, spec.stable_identity, role)) {
     MarkUnityMonoFlag(kUnityMonoFlagTextPublished);
     if (id == fushi_voice_hook::MonoTextHookId::kTmpSetText) {
-      RememberUmTmpCandidateGuarded(component, 1u);
+      RememberUmTmpCandidateGuarded(component, 1u, chars, length);
     } else if (id == fushi_voice_hook::MonoTextHookId::kTmpSetTextBool) {
-      RememberUmTmpCandidateGuarded(component, 2u);
+      RememberUmTmpCandidateGuarded(component, 2u, chars, length);
     } else if (id == fushi_voice_hook::MonoTextHookId::kUiTextSetText) {
-      RememberUmTmpCandidateGuarded(component, 4u);
+      RememberUmTmpCandidateGuarded(component, 4u, chars, length);
     } else if (id == fushi_voice_hook::MonoTextHookId::kTmpSetTextSingle) {
-      RememberUmTmpCandidateGuarded(component, 8u);
+      RememberUmTmpCandidateGuarded(component, 8u, chars, length);
     }
   }
 }

@@ -153,6 +153,11 @@ bool CopyUnityClipName(void* clip, wchar_t* out, size_t out_chars) {
   return true;
 }
 
+// Unity Mono canvas texts: the lane proven to be the dialogue surface
+// (unity_mono_dialogue_core.h; set on the Unity main thread, 0 = none).  Every
+// event of that lane carries kTextEventFlagDialogueSurface.
+std::atomic<uint64_t> g_unity_dialogue_surface_thread{0u};
+
 void WriteUnityTextEvent(uint64_t thread_id, void* text_component,
                          const wchar_t* clean, int length,
                          const char* hook_name, const wchar_t* hook_code,
@@ -173,6 +178,11 @@ void WriteUnityTextEvent(uint64_t thread_id, void* text_component,
   write.process_id = GetCurrentProcessId();
   write.source_kind = fushi_voice_hook::kTextSourceUnityTmp;
   write.event_kind = event_kind;
+  write.event_flags =
+      g_unity_dialogue_surface_thread.load(std::memory_order_acquire) ==
+              thread_id
+          ? fushi_voice_hook::kTextEventFlagDialogueSurface
+          : 0u;
   write.is_utf8 = 0;
   write.text = (clean == nullptr || length <= 0) ? nullptr : clean;
   write.byte_len = (clean == nullptr || length <= 0)

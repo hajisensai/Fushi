@@ -112,7 +112,9 @@ struct BgiOwnerAbiEntry {
 
 struct BgiLookupRuntime {
   // ── HookWorker-owned ──
-  bool resolved = false;
+  // Site scans of the loaded image (bgi_lookup_core.h): a protected build is
+  // re-scanned until its code has hydrated; a final verdict never changes.
+  bgi_lookup::SiteScanSchedule scan;
   bool hooks_installed = false;
   bool installed = false;
   bgi_lookup::SiteResult site_result = bgi_lookup::SiteResult::kNotX86;
@@ -516,26 +518,29 @@ bool InstallBgiHook(void* target, void* detour, void** original) {
   return ok;
 }
 
+// Called from install() and then from every HookWorker poll until it returns
+// true or the scan schedule has settled; between due scans it returns at once.
 bool InstallBgiLookup() {
   auto& rt = g_bgi_lookup;
   if (rt.installed) return true;
-  if (rt.resolved) {
+  if (rt.hooks_installed) {
     // Re-install after a shutdown: the detours are still chained and only
-    // need to start recording again.  A rejected image stays rejected.
-    if (!rt.hooks_installed) return false;
+    // need to start recording again.
     rt.claim = bgi_lookup::ClaimState();
     rt.live.store(true, std::memory_order_release);
     rt.installed = true;
     return true;
   }
-  rt.resolved = true;
+  const uint64_t now = GetTickCount64();
+  // A final verdict stays final; a pending one waits for the next interval.
+  if (!rt.scan.Due(now)) return false;
   LARGE_INTEGER frequency = {}, started = {}, finished = {};
   QueryPerformanceFrequency(&frequency);
   QueryPerformanceCounter(&started);
   fushi_voice_hook::exact_lookup::LoadedPeImage image;
   if (!fushi_voice_hook::exact_lookup::OpenLoadedPeImage(
           GetModuleHandleW(nullptr), &image)) {
-    rt.site_result = bgi_lookup::SiteResult::kNotX86;
+    rt.site_result = bgi_lookup::SiteResult::kImageUnavailable;
   } else {
     rt.site_result = bgi_lookup::ResolveSites(image, &rt.sites);
   }
@@ -545,9 +550,27 @@ bool InstallBgiLookup() {
           ? 1000.0 * static_cast<double>(finished.QuadPart - started.QuadPart) /
                 static_cast<double>(frequency.QuadPart)
           : 0.0;
-  if (rt.site_result != bgi_lookup::SiteResult::kResolved) {
-    BgiLookupLog(L"bgi-lookup: sites unresolved result=%u scan=%.1fms",
-                 static_cast<unsigned>(rt.site_result), scan_ms);
+  const bool first_scan = !rt.scan.scanned();
+  const bgi_lookup::SiteScanVerdict verdict =
+      rt.scan.Record(rt.site_result, now);
+  if (verdict == bgi_lookup::SiteScanVerdict::kRetry) {
+    // Logged once: the code of a protected build is not hydrated yet.
+    if (first_scan) {
+      BgiLookupLog(
+          L"bgi-lookup: sites pending result=%u scan=%.1fms "
+          L"(rescanning every %llums for up to %llums)",
+          static_cast<unsigned>(rt.site_result), scan_ms,
+          static_cast<unsigned long long>(bgi_lookup::kSiteRetryIntervalMs),
+          static_cast<unsigned long long>(bgi_lookup::kSiteRetryWindowMs));
+    }
+    return false;
+  }
+  if (verdict == bgi_lookup::SiteScanVerdict::kRejected) {
+    BgiLookupLog(
+        L"bgi-lookup: sites unresolved result=%u scan=%.1fms scans=%u "
+        L"after=%llums",
+        static_cast<unsigned>(rt.site_result), scan_ms, rt.scan.scans(),
+        static_cast<unsigned long long>(rt.scan.elapsed_ms()));
     return false;
   }
   rt.image_base = reinterpret_cast<uintptr_t>(image.base);
@@ -566,14 +589,16 @@ bool InstallBgiLookup() {
   if (!hooked) rt.live.store(false, std::memory_order_release);
   BgiLookupLog(
       L"bgi-lookup: sites gen=%u impl=+0x%lx exvt=+0x%lx layout=+0x%lx "
-      L"slot=0x%x owner=0x%x list=0x%x screen=+0x%lx hooks=%d scan=%.1fms",
+      L"slot=0x%x owner=0x%x list=0x%x screen=+0x%lx hooks=%d scan=%.1fms "
+      L"scans=%u after=%llums",
       static_cast<unsigned>(rt.sites.generation),
       static_cast<unsigned long>(rt.sites.set_text_impl),
       static_cast<unsigned long>(rt.sites.ex_vtable),
       static_cast<unsigned long>(rt.sites.layout), rt.sites.layout_slot_disp,
       rt.sites.owner_offset, rt.sites.list_offset,
       static_cast<unsigned long>(rt.sites.screen_widths), hooked ? 1 : 0,
-      scan_ms);
+      scan_ms, rt.scan.scans(),
+      static_cast<unsigned long long>(rt.scan.elapsed_ms()));
   if (rt.installed && g_header != nullptr) {
     fushi_voice_hook::AtomicOrShared32(
         &g_header->lookup_diag, fushi_voice_hook::kLookupDiagSensorInstalled);
@@ -1248,8 +1273,14 @@ void ShutdownBgiLookup() {
 }
 
 bool BgiLookupSensorInstalled() { return g_bgi_lookup.installed; }
+// Final: the scan schedule settled (rejected, or resolved but the detour could
+// not be installed).  A pending scan is not a rejection.
 bool BgiLookupSitesRejected() {
-  return g_bgi_lookup.resolved && !g_bgi_lookup.hooks_installed;
+  return g_bgi_lookup.scan.settled() && !g_bgi_lookup.hooks_installed;
+}
+// The schedule still owes a scan: the image may hydrate later.
+bool BgiLookupSitesPending() {
+  return !g_bgi_lookup.hooks_installed && !g_bgi_lookup.scan.settled();
 }
 
 #else  // !_M_IX86
@@ -1259,5 +1290,6 @@ void ProcessBgiLookupTick() {}
 void ShutdownBgiLookup() {}
 bool BgiLookupSensorInstalled() { return false; }
 bool BgiLookupSitesRejected() { return false; }
+bool BgiLookupSitesPending() { return false; }
 
 #endif  // _M_IX86

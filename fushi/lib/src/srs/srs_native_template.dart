@@ -18,6 +18,7 @@ import 'package:html/dom.dart' as dom;
 import 'package:html/parser.dart' as html_parser;
 
 import 'package:fushi/src/srs/srs_html_card.dart';
+import 'package:fushi/src/srs/srs_sound_tag.dart';
 
 /// 模板级原生渲染标记。
 const String kSrsNativeTemplateMarker = '<!--fushi-native-->';
@@ -80,18 +81,12 @@ String? _probe(String body, String css, String? languageCode) {
   }
 }
 
-String _escape(String s) => s
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;');
-
 /// 卡面上的提示块：只用原生子集里的写法（与可视化「加底框」块同一套内联样式）。
 String srsNativeNoticeHtml(String text) =>
     '<div class="fushi-native-unsupported" style="margin:0.45em 0;'
     'padding:0.6em 0.9em;border-radius:12px;'
     'background:rgba(127,127,127,0.12);opacity:0.75;font-size:0.85em">'
-    '${_escape(text)}</div>';
+    '${srsEscapeHtml(text)}</div>';
 
 /// 把一面 HTML [body] 改写成原生一定画得了的样子：画得全就原样；否则按顶层块（可视化模板
 /// 的 `.fushi-visual` 容器会往里展开一层，背面的 `{{FrontSide}}` 带进来的正面同理）逐块判，

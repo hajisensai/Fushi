@@ -1,8 +1,18 @@
+import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
+
+import 'package:drift/native.dart';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/sync/interconnect_download_client.dart';
 import 'package:fushi/src/sync/interconnect_download_manager.dart';
+import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
+import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi_core/fushi_core.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 
 import '../helpers/source_guard.dart';
 
@@ -317,6 +327,106 @@ void main() {
         isFalse,
         reason: '卡片直接读 isRunning 就等于把 failed 分支永久排除在渲染之外',
       );
+    });
+  });
+
+  // 共享 host 通道（interconnect-client-no-shared-host-channel，步骤 7）：代下载
+  // client 的请求整段受超时约束，探测按 host 选路而不是按存储顺序挨个试。
+  group('代下载 client 走共享 host 通道', () {
+    late FushiDatabase db;
+    late SyncRepository repo;
+
+    setUp(() async {
+      resetInterconnectRaceCache();
+      db = FushiDatabase.forTesting(NativeDatabase.memory());
+      repo = SyncRepository(db);
+      await repo.setFushiClientToken('tok');
+    });
+
+    tearDown(() async {
+      debugInterconnectAddressProbeOverride = null;
+      resetInterconnectRaceCache();
+      await db.close();
+    });
+
+    test('listJobs 遇到卡住的响应体：在请求超时内抛 unreachable', () async {
+      await repo.setFushiClientUrls(const <FushiClientUrl>[
+        FushiClientUrl(url: 'http://10.0.0.1:8080', deviceName: 'PC'),
+      ]);
+      final StreamController<List<int>> stuck = StreamController<List<int>>();
+      // 没人听的 controller 的 close() 永不完成：不等它。
+      addTearDown(() => unawaited(stuck.close()));
+      final InterconnectDownloadClient client = InterconnectDownloadClient(
+        repo: repo,
+        httpClient: MockClient.streaming(
+          (http.BaseRequest req, http.ByteStream body) async =>
+              http.StreamedResponse(stuck.stream, 200),
+        ),
+        requestTimeout: const Duration(milliseconds: 200),
+      );
+      addTearDown(client.close);
+      const HostDownloadTarget target = HostDownloadTarget(
+        baseUrl: 'http://10.0.0.1:8080',
+        deviceName: 'PC',
+        backend: 'embedded',
+      );
+      await expectLater(
+        client.listJobs(target),
+        throwsA(
+          isA<HostDownloadException>().having(
+            (HostDownloadException e) => e.code,
+            'code',
+            'unreachable',
+          ),
+        ),
+      ).timeout(const Duration(seconds: 3));
+    });
+
+    test('同一 hostId 的死 LAN + 活 https：probe() 直接选中活地址', () async {
+      const String fp =
+          'aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99:'
+          'aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99';
+      await repo.setFushiClientUrls(const <FushiClientUrl>[
+        FushiClientUrl(url: 'http://192.168.1.5:8080', hostId: 'h1'),
+        FushiClientUrl(
+          url: 'https://pc.example.net:8443',
+          hostId: 'h1',
+          fingerprintSha256: fp,
+          deviceName: 'PC',
+        ),
+      ]);
+      debugInterconnectAddressProbeOverride =
+          (FushiClientUrl c, String? hostId) async => c.url.startsWith('https');
+      int lanRequests = 0;
+      final InterconnectDownloadClient client = InterconnectDownloadClient(
+        repo: repo,
+        // 死 LAN：请求石沉大海。
+        httpClient: MockClient((http.Request req) {
+          lanRequests++;
+          return Completer<http.Response>().future;
+        }),
+        pinnedClientFactory: (String pin) => MockClient(
+          (http.Request req) async => http.Response(
+            jsonEncode(<String, Object?>{
+              'downloads': <String, Object?>{
+                'supported': true,
+                'backend': 'embedded',
+              },
+            }),
+            200,
+          ),
+        ),
+        probeTimeout: const Duration(seconds: 30),
+      );
+      addTearDown(client.close);
+      final HostDownloadTarget? target = await client.probe().timeout(
+        const Duration(seconds: 3),
+      );
+      expect(target, isNotNull);
+      expect(target!.backend, 'embedded');
+      expect(target.isPeer('https://pc.example.net:8443'), isTrue);
+      expect(target.isPeer('http://192.168.1.5:8080'), isTrue);
+      expect(lanRequests, 0, reason: '没核对过身份的死 LAN 不该先吃掉整段探测超时');
     });
   });
 }

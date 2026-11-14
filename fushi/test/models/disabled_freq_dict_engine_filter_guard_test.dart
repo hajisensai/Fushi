@@ -76,14 +76,14 @@ void main() {
     },
   );
 
-  test('_rebuildDictPathsCacheAsync skips hidden dictionaries when collecting '
-      'freq/pitch paths', () {
-    final String body = bodyOf('Future<void> _rebuildDictPathsCacheAsync(');
+  test('_scheduleDictPathsAsync (async rebuild) skips hidden dictionaries when '
+      'collecting freq/pitch paths', () {
+    final String body = bodyOf('Future<void> _scheduleDictPathsAsync(');
     expect(
       body.contains('isHidden'),
       isTrue,
       reason:
-          'the async path-cache rebuild must also consult isHidden(...) '
+          'the async path-cache schedule must also consult isHidden(...) '
           'for the same reason (BUG-178).',
     );
   });

@@ -6,7 +6,6 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter/physics.dart';
 import 'package:flutter/rendering.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
-import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_segment_widths.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
 
@@ -20,20 +19,20 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
 //   2px 缝、外端全圆角、内侧小圆角，选中段弹成全胶囊，按下的段变宽、邻段让出。
 // - [FushiButtonGroup]：标准按钮组。一排按钮，按下的变宽、邻居只让出富余（不折行）。
 //
-// 弹簧取 M3 Expressive 的 motion scheme（[FushiSprings]，唯一真相源在
-// fushi_motion_tokens.dart）：按压用 spatial fast（刚度 800、阻尼比 0.6），选中
+// 弹簧取 M3 Expressive 的 motion scheme（官方 [Springs] 的 expressive 一族，
+// material_ui 1.11 起）：按压用 spatial fast（刚度 800、阻尼比 0.6），选中
 // 形变用 spatial default（刚度 380、阻尼比 0.8）。2026-10-05 前这里写的是
 // 0.9 / 1400 与 0.9 / 700——那是 M3 **standard** motion scheme 的数值，不是
 // Expressive。墨水屏与系统「减少动画」下不做任何形变（保持原有胶囊），见
 // [fushiExpressiveMotionEnabled]。
 
-/// M3 Expressive「fast spatial」弹簧：按压形变 / 宽度挤压。
-final SpringDescription fushiExpressiveFastSpatial =
-    FushiSprings.spatialFast.description;
+/// M3 Expressive「fast spatial」弹簧：按压形变 / 宽度挤压（官方 token）。
+const SpringDescription fushiExpressiveFastSpatial =
+    Springs.expressiveFastSpatial;
 
-/// M3 Expressive「default spatial」弹簧：选中态形变（比按压慢半拍）。
-final SpringDescription fushiExpressiveDefaultSpatial =
-    FushiSprings.spatialDefault.description;
+/// M3 Expressive「default spatial」弹簧：选中态形变（比按压慢半拍，官方 token）。
+const SpringDescription fushiExpressiveDefaultSpatial =
+    Springs.expressiveDefaultSpatial;
 
 /// 是否做 Expressive 形变动效：墨水屏（残影 + 刷新慢）与系统「减少动画」下
 /// 一律不做——两者都要求界面静止，形变只是装饰，不承载信息。
@@ -74,7 +73,7 @@ class FushiSpring {
     // snapToEnd：模拟按容差（1e-3）判定结束时把值吸到目标上。不吸附的话控制器
     // 停在离目标约千分之一处，位移 / 尺寸永久带亚像素残差（浮动工具条收起后
     // 底边仍探进叠放区、展开后不贴顶，BUG-3056）。与
-    // [FushiSpringSpec.simulation] 同口径。
+    // `FushiSpringSpec.simulation` 同口径。
     _controller.animateWith(
       SpringSimulation(
         _spring,

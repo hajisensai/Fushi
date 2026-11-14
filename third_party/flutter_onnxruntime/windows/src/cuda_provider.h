@@ -24,6 +24,7 @@
 #ifndef FLUTTER_ONNXRUNTIME_CUDA_PROVIDER_H_
 #define FLUTTER_ONNXRUNTIME_CUDA_PROVIDER_H_
 
+#include <atomic>
 #include <cstdint>
 #include <mutex>
 #include <string>
@@ -55,6 +56,13 @@ struct CudaProbeResult {
 // after cuInit is not supported) and enumerates devices. Never throws.
 CudaProbeResult ProbeCudaDriver();
 
+// LUID (8 bytes, Win32 LUID layout) of the display adapter behind CUDA device
+// [ordinal], as the driver reports it (cuDeviceGetLuid). This is what ties a
+// CUDA device to its DXGI adapter: on hybrid-graphics machines DXGI adapter 0
+// is usually the integrated GPU, not the NVIDIA card. false when the driver
+// cannot answer. Never throws.
+bool CudaDeviceLuid(int ordinal, uint8_t luid[8]);
+
 struct CudaRegistrationResult {
   bool ok = false;
   std::string error;
@@ -74,6 +82,8 @@ public:
   // running on the registered library.
   CudaRegistrationResult Register(OrtEnv *env, const std::wstring &dir);
 
+  // Lock-free: safe to call from the platform thread while Register() (which
+  // holds the mutex for as long as the provider DLLs take to load) is running.
   bool IsRegistered();
 
   // EP names reported by GetEpDevices at registration time (empty when not
@@ -91,7 +101,7 @@ public:
 
 private:
   std::mutex mutex_;
-  bool registered_ = false;
+  std::atomic<bool> registered_{false};
   std::wstring dir_;
   int device_count_ = 0;
   std::vector<const OrtEpDevice *> cuda_devices_;

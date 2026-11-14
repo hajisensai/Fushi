@@ -24,8 +24,7 @@ import 'package:flutter/painting.dart'
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/video/graphic_subtitle_ocr_types.dart';
-import 'package:fushi/src/media/manga/manga_overlay_html.dart'
-    show mangaEffectiveTextRegions;
+import 'package:fushi/src/ocr/ocr_text_regions.dart' show ocrTextRegions;
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_stream_ocr.dart';
 import 'package:fushi_engine/media/video/bitmap_subtitle/bitmap_subtitle_cue.dart';
@@ -518,16 +517,16 @@ GraphicSubtitleOcrFrame graphicSubtitleOcrFrameOf(MokuroImage image) {
   );
 }
 
-/// 一个块里每个字的位置。整句是块内各行直接拼接（与漫画查词同一口径）。
+/// 一个块里每个字的位置。整句保留 OCR 原文，块内各行直接拼接。
 ///
-/// 字级几何与漫画覆盖层同一份（[mangaEffectiveTextRegions]）：引擎给了字级区域
+/// 字级几何使用不改写文本的基础字框（[ocrTextRegions]）：引擎给了字级区域
 /// （Lens）就用它；否则按识别器交回的每行框（`linesCoords`）切行、行内按字素分格。
 /// 不能按行数均分整个块：字幕带振假名时检测框把注音也框进来，注音行又比正文矮得多，
 /// 均分后每个可点框都偏离真实的字（BUG-3314）。
 ///
 /// 引擎给的字级区域只要有一个对不上文字（例如大模型改写过文字、区域还是旧文字的
-/// 偏移），整块改走行几何——判据在 [mangaEffectiveTextRegions] 里与漫画覆盖层共用
-/// 同一份；逐个丢掉对不上的区域会留下残缺的可点框，有的字点不到。
+/// 偏移），整块改走行几何——判据在 [ocrTextRegions] 里与原始文本匹配；
+/// 逐个丢掉对不上的区域会留下残缺的可点框，有的字点不到。
 List<GraphicSubtitleOcrChar> graphicSubtitleOcrCharsOf(MokuroBlock block) {
   final String sentence = block.lines.join();
   if (sentence.trim().isEmpty) return const <GraphicSubtitleOcrChar>[];
@@ -540,7 +539,7 @@ List<GraphicSubtitleOcrChar> graphicSubtitleOcrCharsOf(MokuroBlock block) {
     offset += g.length;
   }
   return <GraphicSubtitleOcrChar>[
-    for (final MangaOcrTextRegion region in mangaEffectiveTextRegions(block))
+    for (final MangaOcrTextRegion region in ocrTextRegions(block))
       (
         sentence: sentence,
         graphemeIndex: graphemeAtUtf16[region.utf16Start]!,

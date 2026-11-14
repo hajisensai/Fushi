@@ -64,13 +64,21 @@ import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/srs/srs_navigation.dart';
 
 class SrsNoteEditorPage extends ConsumerStatefulWidget {
-  const SrsNoteEditorPage({super.key, this.noteId, this.initialDeckId});
+  const SrsNoteEditorPage({
+    super.key,
+    this.noteId,
+    this.initialDeckId,
+    this.onSaved,
+  });
 
   /// 非 null = 编辑已有笔记；null = 新建。
   final String? noteId;
 
   /// 新建时的初始牌组（null = 默认牌组）。
   final String? initialDeckId;
+
+  /// 编辑已有笔记、保存成功后交回这次保存的撤销凭据（复习页压进撤销栈；没改动时凭据为空）。
+  final void Function(SrsEditUndo undo)? onSaved;
 
   @override
   ConsumerState<SrsNoteEditorPage> createState() => _SrsNoteEditorPageState();
@@ -304,25 +312,46 @@ class _SrsNoteEditorPageState extends ConsumerState<SrsNoteEditorPage> {
           e.key: e.value.value,
       };
       if (_editing) {
-        await store.updateNote(
-          widget.noteId!,
-          fieldsById: values,
-          tags: _parseTags(),
+        final String noteId = widget.noteId!;
+        final String? deck = _deckId != null && _deckId != _note?.deckId
+            ? _deckId
+            : null;
+        // 一次可撤销写入：字段、标签；笔记的首选牌组改了时只改「之后生成的卡」的初始牌组，已有卡片按卡移动。
+        final SrsEditUndo undo = await store.editFieldsUndoable(
+          <SrsFieldChange>[
+            for (final MapEntry<String, String> e in values.entries)
+              SrsFieldChange(
+                SrsEntityKind.note,
+                noteId,
+                SrsFieldKeys.noteField(e.key),
+                e.value,
+              ),
+            SrsFieldChange(
+              SrsEntityKind.note,
+              noteId,
+              SrsFieldKeys.noteTags,
+              _parseTags(),
+            ),
+            if (deck != null) ...<SrsFieldChange>[
+              SrsFieldChange(
+                SrsEntityKind.note,
+                noteId,
+                SrsFieldKeys.noteDeck,
+                deck,
+              ),
+              for (final SrsCardCacheRow card in await store.cardsOfNote(
+                noteId,
+              ))
+                SrsFieldChange(
+                  SrsEntityKind.card,
+                  card.id,
+                  SrsFieldKeys.cardDeck,
+                  deck,
+                ),
+            ],
+          ],
         );
-        // 笔记的首选牌组改了：只改「之后生成的卡」的初始牌组；已有卡片按卡移动。
-        if (_deckId != null && _deckId != _note?.deckId) {
-          await store.editField(
-            SrsEntityKind.note,
-            widget.noteId!,
-            SrsFieldKeys.noteDeck,
-            _deckId,
-          );
-          for (final SrsCardCacheRow card in await store.cardsOfNote(
-            widget.noteId!,
-          )) {
-            await store.moveCard(card.id, _deckId!);
-          }
-        }
+        widget.onSaved?.call(undo);
         if (!mounted) return;
         bumpSrsRevision(ref);
         await Navigator.of(context).maybePop();

@@ -48,6 +48,7 @@
 #include "immediate_text_repeat_filter.h"
 #include "adapters/unity_mono_text.h"
 #include "adapters/unity_mono_lookup_core.h"
+#include "adapters/unity_mono_dialogue_core.h"
 #include "adapters/unity_mono_audio.h"
 #include "adapters/unity_il2cpp_api.h"
 #include "adapter.h"
@@ -63,6 +64,8 @@
 // KiriKiri 第三条 exporter 路径的判据（BUG-2145）。必须在**顶层**引入：adapters/*.inc 是被
 // 包进本文件匿名命名空间里的，从那里 include 会把 std:: 解析成匿名命名空间下的名字。
 #include "adapters/kirikiri_exporter_scan.h"
+#include "adapters/kirikiri_kag_text_core.h"
+#include "adapters/kirikiri_bootstrap_diag.h"
 #include "hunex_gge_trace.h"
 #include "leaf_d3d_trace.h"
 #include "artemis_pfs.h"
@@ -130,6 +133,7 @@
 #include "adapters/hunex_gge_lookup_core.h"
 #include "adapters/hunex_gge_selected_text.h"
 #include "adapters/leaf_aquaplus_voice_archive.h"
+#include "adapters/leaf_aquaplus_autoprofile.h"
 #include "adapters/smash_fzmedia_shared.h"
 #include "adapters/smash_fzmedia_lookup_core.h"
 #include "adapters/smash_fzmedia_lookup.h"
