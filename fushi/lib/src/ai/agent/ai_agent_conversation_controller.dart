@@ -33,9 +33,10 @@ abstract interface class AiAgentConversationController implements Listenable {
   bool get awaitingConfirm;
   bool get awaitingChoice;
 
-  /// 作答确认卡片 / 候选卡片（null = 都不是）。
-  void answerConfirm(bool approved);
-  void answerChoice(String? id);
+  /// 作答确认卡片 / 候选卡片（null = 都不是）。[entryId] 是被点的那张卡片的
+  /// 条目 id：给了就只答那一张，与此刻待答的不符（晚到 / 旧卡）即忽略。
+  void answerConfirm(bool approved, {String? entryId});
+  void answerChoice(String? id, {String? entryId});
 
   /// 执行这场对话的模型能不能收图（提供商勾了「支持图片输入」）。远端会话按
   /// 不能处理：截图只在本机发给本机配的模型。

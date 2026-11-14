@@ -1,10 +1,14 @@
-// Drift 执行器的读写分离（native/fushi_fsrs/src/store/mod.rs `SrsCore::select`）：事务外的查询走内核的读连接快照，
-// Drift 事务内的查询留在写连接上、读得到同事务刚写的未提交行；事务外的读（读连接上的命令）不读脏数据。
-// 不阻塞写锁的那一半（Rust 写命令攥着写锁时查询照样返回）在 Rust 侧
-// `read_routing_tests::select_outside_a_drift_transaction_reads_the_committed_snapshot_without_the_write_lock`。
+// Drift 执行器只读（native/fushi_fsrs/src/store/mod.rs `SrsCore::select` / `snapshot_select`，
+// srs_database_executor.dart）：查询一律在内核的只读连接上跑、只看已提交的数据；写语句、批量、事务、PRAGMA 抛
+// [SrsReadOnlyDatabaseError]，到不了写连接。srs.db 的每一笔写入都是内核命令——这里的造数走测试专用的原始通道
+// （`SrsCore.debugExecRaw`）。
+// 「写命令攥着写锁时查询照样返回、看不到没提交的行」在 Rust 侧
+// `read_pool::tests::queries_see_committed_data_while_a_write_transaction_is_open`。
 import 'dart:io';
 
 import 'package:drift/drift.dart' show QueryRow;
+import 'package:fushi_core/fushi_core.dart' show SrsUnknownEventsCompanion;
+import 'package:fushi_engine/srs/srs_database_executor.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
@@ -13,7 +17,7 @@ import 'support/srs_test_storage.dart';
 
 void main() {
   for (final bool inline in <bool>[true, false]) {
-    group(inline ? 'inline executor' : 'background isolate executor', () {
+    group(inline ? 'inline executor' : 'query lane executor', () {
       late TestSrs s;
 
       setUp(() async {
@@ -48,53 +52,94 @@ void main() {
         return r.read<int>('r') != 0;
       }
 
-      int committedCount() =>
-          s.core
-                  .debugQuery('SELECT COUNT(*) AS n FROM srs_unknown_events')
-                  .single['n']!
-              as int;
-
-      Future<void> insert(String id) => s.db.customStatement(
+      void insert(String id) => s.core.debugExecRaw(
         'INSERT INTO srs_unknown_events (id, profile_uid, json) '
         "VALUES (?, 'p', '{}')",
         <Object?>[id],
       );
 
-      test('事务外：写后立即读得到，查询落在读连接上', () async {
-        await insert('a');
+      test('写后立即读得到，查询落在读连接上', () async {
+        insert('a');
+        // 探针本身分得出两种连接：原始通道在写连接上，刚插过行。
+        expect(
+          s.core.debugSelectRaw('SELECT last_insert_rowid() AS r').single['r'],
+          isNot(0),
+        );
         expect(await count(), 1);
         expect(await onWriter(), isFalse);
       });
 
-      test('Drift 事务内：同事务读得到未提交行；事务外的读看不到；回滚后消失', () async {
-        await insert('a');
-        await s.db.transaction(() async {
-          await insert('b');
-          expect(await count(), 2, reason: '事务里读不到自己刚写的行');
-          expect(await onWriter(), isTrue, reason: '事务内的查询离开了写连接');
-          // 同一时刻读连接上的读：只见已提交的那一行。
-          expect(committedCount(), 1, reason: '事务外的读读到了未提交行');
-          // 嵌套事务（SAVEPOINT）同样留在写连接上。
-          await s.db.transaction(() async {
-            await insert('c');
-            expect(await count(), 3);
-          });
-          expect(committedCount(), 1);
-        });
-        expect(await count(), 3);
-        expect(committedCount(), 3);
-        expect(await onWriter(), isFalse, reason: '提交后的查询没有回到读连接');
-
+      test('写语句、批量、事务、PRAGMA 一律被拒，库没动、写连接没留下事务', () async {
+        insert('a');
+        // 事务 / 批量在开事务那一步就被拒（两种执行器都不让 Drift 的事务机器起步），抛的同样是只读错误。
+        final Matcher readOnly = throwsA(isA<SrsReadOnlyDatabaseError>());
         await expectLater(
-          s.db.transaction(() async {
-            await insert('d');
-            expect(await count(), 4);
-            throw StateError('roll back');
-          }),
-          throwsStateError,
+          s.db.customStatement(
+            'INSERT INTO srs_unknown_events (id, profile_uid, json) '
+            "VALUES ('b', 'p', '{}')",
+          ),
+          readOnly,
         );
-        expect(await count(), 3);
-        expect(await onWriter(), isFalse);
+        await expectLater(
+          s.db
+              .into(s.db.srsUnknownEvents)
+              .insert(
+                SrsUnknownEventsCompanion.insert(
+                  id: 'c',
+                  profileUid: 'p',
+                  json: '{}',
+                ),
+              ),
+          readOnly,
+        );
+        await expectLater((s.db.delete(s.db.srsUnknownEvents)).go(), readOnly);
+        await expectLater(
+          s.db.customUpdate("UPDATE srs_unknown_events SET json = '[]'"),
+          readOnly,
+        );
+        await expectLater(
+          s.db.batch(
+            (b) => b.insert(
+              s.db.srsUnknownEvents,
+              SrsUnknownEventsCompanion.insert(
+                id: 'd',
+                profileUid: 'p',
+                json: '{}',
+              ),
+            ),
+          ),
+          readOnly,
+        );
+        await expectLater(s.db.transaction(() => count()), readOnly);
+        // PRAGMA 与 `… RETURNING` 不是只读查询：以前回落到写连接上执行（Drift 靠它开关事务），现在不执行。
+        await expectLater(
+          s.db.customSelect('PRAGMA wal_autocheckpoint').get(),
+          readOnly,
+        );
+        await expectLater(
+          s.db.customStatement('PRAGMA wal_autocheckpoint = 0'),
+          readOnly,
+        );
+        await expectLater(
+          s.db
+              .customSelect(
+                "DELETE FROM srs_unknown_events WHERE id = 'a' RETURNING id",
+              )
+              .get(),
+          readOnly,
+        );
+
+        expect(await count(), 1);
+        expect(
+          s.core
+              .debugSelectRaw('SELECT json FROM srs_unknown_events')
+              .single['json'],
+          '{}',
+        );
+        expect(s.core.inTransaction, isFalse);
+        // 内核的写入照常。
+        insert('e');
+        expect(await count(), 2);
       });
     });
   }

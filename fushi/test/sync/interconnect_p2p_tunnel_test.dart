@@ -162,7 +162,7 @@ void main() {
     test('没有中继也没有可路由直连地址时不公布 p2p 地址', () {
       expect(
         interconnectP2pPublishableUrl(
-          'node',
+          _nodeId,
           tls: false,
           relayUrl: null,
           directAddrs: <String>['198.18.0.1:1', '127.0.0.1:1'],
@@ -171,14 +171,14 @@ void main() {
         reason: '只能靠发现去拨——新 host 要 10–50 秒才查得到，约一半失败',
       );
       final String? relayOnly = interconnectP2pPublishableUrl(
-        'node',
+        _nodeId,
         tls: false,
         relayUrl: 'https://relay.example/',
         directAddrs: <String>['198.18.0.1:1'],
       );
       expect(parseInterconnectP2pUrl(relayOnly!)!.directAddrs, isEmpty);
       final String? directOnly = interconnectP2pPublishableUrl(
-        'node',
+        _nodeId,
         tls: true,
         relayUrl: null,
         directAddrs: <String>['198.18.0.1:1', '192.168.1.5:1'],
@@ -190,7 +190,7 @@ void main() {
 
     test('p2p 地址编解码：tls 与拨号提示往返', () {
       final String url = interconnectP2pUrl(
-        'nodeabc',
+        _nodeId,
         tls: true,
         relayUrl: 'https://relay.example/',
         directAddrs: <String>['192.168.1.5:5000', '[2408::5]:5000'],
@@ -202,7 +202,7 @@ void main() {
         List<String> directAddrs,
       })?
       parsed = parseInterconnectP2pUrl(url);
-      expect(parsed!.nodeId, 'nodeabc');
+      expect(parsed!.nodeId, _nodeId);
       expect(parsed.tls, isTrue);
       expect(parsed.relayUrl, 'https://relay.example/');
       expect(parsed.directAddrs, <String>[
@@ -313,3 +313,7 @@ void main() {
     }, skip: available ? false : 'fushi_p2p 原生库不可用');
   });
 }
+
+/// 合法 NodeId（iroh 口径：64 位小写 hex）。
+const String _nodeId =
+    '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';

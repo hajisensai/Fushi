@@ -62,10 +62,8 @@ void main() {
     final String id = await taggedNote(s);
     await s.deleteNote(id);
     // 还原修复前的缓存状态：这条已删笔记被错标成待裁决、本机缓存是修订号 4 推导的。
-    await st.db.customStatement(
-      'UPDATE srs_notes_cache SET pending_decision = 1',
-    );
-    await st.db.customStatement(
+    st.core.debugExecRaw('UPDATE srs_notes_cache SET pending_decision = 1');
+    st.core.debugExecRaw(
       "UPDATE srs_local_state SET json = json_set(json, '\$.cacheRev', 4)",
     );
     expect(
