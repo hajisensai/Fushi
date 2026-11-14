@@ -25,6 +25,21 @@ import 'package:fushi_core/fushi_core.dart';
 
 enum SubtitleWorkbenchScope { episode, collection }
 
+/// 工作台关闭后播放页要登记并应用的字幕（按应用优先级排序，首条应用、其余只登记）。
+///
+/// 「本集」作用域下载的 [episodePaths] 是用户关页前最后的显式选择，排在前面；
+/// 「整个合集」批量落到当前集的 [collectionPathForCurrent] 排在其后（已在列表里就
+/// 不重复）。两样都没有返回空列表（BUG-4496）。
+List<String> workbenchPathsToApply({
+  required List<String>? episodePaths,
+  required String? collectionPathForCurrent,
+}) => <String>[
+  ...?episodePaths,
+  if (collectionPathForCurrent != null &&
+      !(episodePaths?.contains(collectionPathForCurrent) ?? false))
+    collectionPathForCurrent,
+];
+
 /// 「本集」作用域的输入：搜索种子 + 记忆键。
 class SubtitleEpisodeSearchSpec {
   const SubtitleEpisodeSearchSpec({
@@ -147,6 +162,7 @@ class SubtitleWorkbenchPage extends StatefulWidget {
     this.episode,
     this.collection,
     this.initialScope = SubtitleWorkbenchScope.episode,
+    this.onCollectionSubtitlePersisted,
     super.key,
   }) : assert(episode != null || collection != null);
 
@@ -163,6 +179,12 @@ class SubtitleWorkbenchPage extends StatefulWidget {
 
   final SubtitleWorkbenchScope initialScope;
 
+  /// 「整个合集」批量下载每落好一集就回调 `(bookUid, 路径)`（见
+  /// [SubtitleCollectionPanel.onSubtitlePersisted]）。播放页据此在关闭工作台后把
+  /// 当前集的新字幕登记进字幕列表并应用（BUG-4496）。
+  final void Function(String bookUid, String path)?
+  onCollectionSubtitlePersisted;
+
   /// 推整页路由。返回「本集」作用域下载落盘的**全部**字幕绝对路径，按用户勾选
   /// 顺序（用户直接返回为 null）。
   ///
@@ -178,6 +200,7 @@ class SubtitleWorkbenchPage extends StatefulWidget {
     SubtitleEpisodeSearchSpec? episode,
     SubtitleCollectionSpec? collection,
     SubtitleWorkbenchScope initialScope = SubtitleWorkbenchScope.episode,
+    void Function(String bookUid, String path)? onCollectionSubtitlePersisted,
   }) {
     return Navigator.of(context, rootNavigator: true).push<List<String>>(
       MaterialPageRoute<List<String>>(
@@ -188,6 +211,7 @@ class SubtitleWorkbenchPage extends StatefulWidget {
           episode: episode,
           collection: collection,
           initialScope: initialScope,
+          onCollectionSubtitlePersisted: onCollectionSubtitlePersisted,
         ),
       ),
     );
@@ -252,6 +276,7 @@ class _SubtitleWorkbenchPageState extends State<SubtitleWorkbenchPage> {
           host.setPreferredLanguage(spec.seriesKey, lang),
       globalDefaultContentLanguage: host.defaultContentLanguage,
       onRemoteSubtitlePersist: host.persistRemoteSubtitle,
+      onSubtitlePersisted: widget.onCollectionSubtitlePersisted,
       subtitleAligner: host.subtitleAligner,
     );
   }
