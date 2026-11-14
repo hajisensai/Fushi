@@ -33,17 +33,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3973 条。点号进各自文件。
+> 共 3977 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-4481](bugs/BUG-4481-linux-wpe-click-pointerup-button-mask.md) | ✅ | ✅ | Linux 漫画阅读器 OCR 文字无法点击查词 |
-| [BUG-4480](bugs/BUG-4480-linux-wpe-resize-stride-crash.md) | ✅ | ✅ | Linux 漫画页面出现条纹，调整窗口大小时阅读器崩溃 |
-| [BUG-4479](bugs/BUG-4479-linux-wpe-borrowed-pixels-refcount.md) | ✅ | ✅ | Linux 漫画阅读器释放 WPE 借用像素缓冲区后崩溃 |
-> 共 3974 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-4625](bugs/BUG-4625-linux-wpe-click-pointerup-button-mask.md) | ✅ | ✅ | Linux 漫画阅读器 OCR 文字无法点击查词 |
+| [BUG-4624](bugs/BUG-4624-linux-wpe-resize-stride-crash.md) | ✅ | ✅ | Linux 漫画页面出现条纹，调整窗口大小时阅读器崩溃 |
+| [BUG-4623](bugs/BUG-4623-linux-wpe-borrowed-pixels-refcount.md) | ✅ | ✅ | Linux 漫画阅读器释放 WPE 借用像素缓冲区后崩溃 |
 | [BUG-4622](bugs/BUG-4622-manga-ocr-apostrophe.md) | ✅ | ✅ | 漫画 OCR 逐字节点的词内撇号扫描与小说不一致 |
 | [BUG-4621](bugs/BUG-4621-manga-ocr-dehyphenation.md) | ✅ | ✅ | 漫画 OCR 行尾断字导致整词查词失败 |
 | [BUG-4620](bugs/BUG-4620-cuda-budget-read-from-igpu-adapter.md) | ✅ | ✅ | CUDA 转录的显存预算读的是 DXGI 适配器 0，混合显卡笔记本上是核显 |
