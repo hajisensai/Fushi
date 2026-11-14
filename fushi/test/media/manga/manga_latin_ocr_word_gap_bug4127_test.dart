@@ -278,7 +278,7 @@ void main() {
         ..writeAsStringSync(
           'const MANGA_OCR_CASES = ${jsonEncode(cases)};\n'
           'function loadReaderSelection(window, document, Node, NodeFilter, '
-          'CSS) {\n${ReaderSelectionScripts.source()}\n'
+          'CSS, Highlight) {\n${ReaderSelectionScripts.source()}\n'
           ';return window.fushiSelection;\n}\n$harness',
         );
       try {

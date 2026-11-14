@@ -25,6 +25,35 @@ const assert = require('node:assert');
 const NODE_TYPES = { ELEMENT_NODE: 1, TEXT_NODE: 3 };
 const NODE_FILTER = { SHOW_TEXT: 4, FILTER_ACCEPT: 1, FILTER_REJECT: 2 };
 
+// Minimal browser ranges/Highlights for exercising the complete production
+// highlightSelection path. Geometry is covered by the WebView integration test.
+class FakeRange {
+  setStart(node, offset) {
+    this.startContainer = node;
+    this.startOffset = offset;
+  }
+
+  setEnd(node, offset) {
+    this.endContainer = node;
+    this.endOffset = offset;
+  }
+
+  getClientRects() {
+    return [];
+  }
+
+  toString() {
+    assert.strictEqual(this.startContainer, this.endContainer);
+    return this.startContainer.textContent.slice(this.startOffset, this.endOffset);
+  }
+}
+
+class FakeHighlight {
+  constructor(...ranges) {
+    this.ranges = ranges;
+  }
+}
+
 class FakeText {
   constructor(value, parentElement) {
     this.nodeType = NODE_TYPES.TEXT_NODE;
@@ -80,6 +109,7 @@ function textNodesUnder(root, filter) {
 function fakeDocument(body) {
   return {
     body,
+    createRange: () => new FakeRange(),
     createTreeWalker(root, _whatToShow, filter) {
       const nodes = textNodesUnder(root, filter);
       return {
@@ -140,8 +170,16 @@ function select(items, glyphIndex, offset, plain = false, maxLength = 24) {
     getSelection: () => ({ removeAllRanges() {} }),
     flutter_inappwebview: { callHandler: () => {} },
     scanNonJapaneseText: true,
+    // This harness checks browser highlight ranges, not the separate SVG
+    // compositor. The real compositor/geometry is exercised in WebView tests.
+    __fushiLanes: {},
   };
-  const selection = loadReaderSelection(window, fakeDocument(body), NODE_TYPES, NODE_FILTER);
+  const css = { highlights: new Map() };
+  window.CSS = css;
+  window.Highlight = FakeHighlight;
+  const selection = loadReaderSelection(window, fakeDocument(body), NODE_TYPES, NODE_FILTER,
+    css, FakeHighlight);
+  selection.testHighlights = css.highlights;
   // 只看取词串：payload 组装（几何 / 句子）与本 bug 无关。
   selection.fireTextSelected = () => null;
   selection.selection = null;
@@ -214,14 +252,16 @@ for (const text of ['give up more', "don't give up", 'take care of', 'look after
       const selection = select(items, glyph, 0);
       assert.strictEqual(selection.selection.text,
         tap([{ char: text }], 0, at, true), `phrase/novel mismatch at ${at}`);
-      const body = selection.highlightSelection.toString().split('{').slice(1).join('{')
-        .split('this.selection.matchedRanges = trimmedRanges;')[0];
-      const trim = new Function('charCount', body + 'return trimmedRanges;');
       const points = Array.from(selection.selection.text);
       for (let count = 1; count <= points.length; count++) {
-        const ranges = trim.call(selection, count);
+        selection.highlightSelection(count);
+        const ranges = selection.selection.matchedRanges;
+        const expected = points.slice(0, count).join('');
         assert.strictEqual(ranges.map(r => r.node.textContent.slice(r.start, r.end)).join(''),
-          points.slice(0, count).join(''), 'highlight preserves actual spaces and code points');
+          expected, 'highlight preserves actual spaces and code points');
+        const highlight = selection.testHighlights.get('fushi-selection');
+        assert.strictEqual(highlight.ranges.map(r => r.toString()).join(''), expected,
+          'registered browser highlight uses exactly the matched characters');
         phraseChecks++;
       }
       glyph++;
