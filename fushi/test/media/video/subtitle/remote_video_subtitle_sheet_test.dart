@@ -258,6 +258,9 @@ void main() {
       await start(tester);
       expect(host.runs.single['frames'], isTrue);
 
+      // 面板每次打开都是新 State（initState 读 prefs）；同结构再 pumpWidget 会复用
+      // 上一份 State、沿用上一份 prefs 的 proofread，所以先卸载再开第二个场景。
+      await tester.pumpWidget(const SizedBox.shrink());
       final _Host plain = hostWith(framesAvailable: true);
       await pump(
         tester,
