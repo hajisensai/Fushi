@@ -33,7 +33,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3986 条。点号进各自文件。
+> 共 3988 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -47,6 +47,8 @@
 | [BUG-4503](bugs/BUG-4503-voicevox-streaming-talk-styles-filtered.md) | ✅ | ✅ | VOICEVOX 0.26 风格列表为空，选不了说话人 |
 | [BUG-4502](bugs/BUG-4502-feedback-account-seen-lost-on-relaunch.md) | ✅ | ✅ | feedback-account-seen-lost-on-relaunch |
 | [BUG-4501](bugs/BUG-4501-sync-summary-ignores-settings.md) | ✅ | ✅ | sync-summary-ignores-settings |
+| [BUG-4500](bugs/BUG-4500-srs-native-card-summary-tap-triggers-lookup.md) | 🚧 | 🚧 | 复习原生卡面点「语法详情」折叠标题会同时弹出查词 |
+| [BUG-4499](bugs/BUG-4499-popup-image-lightbox-persists-across-lookups.md) | ✅ | ✅ | 查词弹窗里点开的放大图跨查词残留，下次查别的词仍盖在结果上 |
 | [BUG-4492](bugs/BUG-4492-manga-ctc-ocr-model-revision-404.md) | ✅ | ✅ | manga-ctc-ocr-model-revision-404 |
 | [BUG-4491](bugs/BUG-4491-android-permission-kill-no-killuid-prefix-misreport.md) | ✅ | ✅ | 华为改所有文件访问权限后被系统结束报成意外退出 |
 | [BUG-4490](bugs/BUG-4490-android-exit-schedulecrash-failed-misreport.md) | ✅ | ✅ | Android 系统 scheduleCrash 失败结束冻结进程被报成崩溃 |
