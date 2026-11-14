@@ -1871,6 +1871,15 @@ class _GameStreamPageState extends State<GameStreamPage>
           FushiSnackBar(content: Text(t.game_stream_settings_capped)),
         );
       }
+      // The host keeps streaming when it cannot silence its speakers; say so
+      // instead of leaving the switch claiming it worked.
+      if (next.muteHost && !applied.muteHost) {
+        setState(() => _settings = _settings.copyWith(muteHost: false));
+        widget.onSettingsChanged?.call(_settings);
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+          FushiSnackBar(content: Text(t.game_stream_settings_mute_host_failed)),
+        );
+      }
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.maybeOf(context)?.showSnackBar(

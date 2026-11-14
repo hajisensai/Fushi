@@ -27,7 +27,6 @@ import 'package:fushi/src/pages/implementations/tag_filter_sheet.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi/src/epub/book_file_location.dart';
 import 'package:fushi_engine/epub/epub_book.dart' show EpubImageRef;
-import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi_engine/media/collections/book_series_grouper.dart';
 import 'package:fushi_engine/media/collections/book_series_key.dart'
     show collectionMemberVolumeNumber;
@@ -62,6 +61,7 @@ import 'package:fushi/src/media/manga/interconnect/interconnect_manga_source.dar
 import 'package:fushi/src/media/manga/library/manga_book_ocr.dart';
 import 'package:fushi/src/media/manga/library/manga_series_page.dart';
 import 'package:fushi/src/media/manga/manga_ocr_provider.dart';
+import 'package:fushi/src/media/manga/ocr/manga_ocr_manager_page.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_service.dart';
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart'
@@ -148,6 +148,7 @@ import 'package:fushi/src/sync/deletion_propagation_availability.dart';
 import 'package:fushi/src/sync/deletion_prompt_preferences.dart';
 import 'package:fushi/src/sync/interconnect_download_manager.dart';
 import 'package:fushi/src/sync/hidden_remote_books.dart';
+import 'package:fushi/src/sync/remote_book_source_host.dart';
 import 'package:fushi/src/sync/hidden_remote_book.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
@@ -164,7 +165,11 @@ import 'package:fushi/src/sync/sync_settings_schema.dart' show syncBackendLabel;
 import 'package:fushi/src/sync/remote_library_cache.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi_engine/sync/sync_asset_package_service.dart';
-import 'package:fushi_engine/sync/manga_sync_package.dart';
+import 'package:fushi_engine/sync/manga_sync_package.dart'
+    show hasExportableMangaContent;
+import 'package:fushi_engine/sync/pdf_sync_package.dart'
+    show hasExportablePdfContent;
+import 'package:fushi/src/sync/synced_book_import.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_engine/sync/ttu_filename.dart';
 import 'package:fushi/src/utils/components/section_visibility.dart';
@@ -269,7 +274,7 @@ class ReaderFushiHistoryPage extends HistoryReaderPage {
   final Future<RemoteBookClient?> Function()? remoteBookClientLoader;
   final Future<File> Function(RemoteBookInfo book)?
   remoteBookDownloadDestination;
-  // 返回本地入库的 bookKey（生产路径来自 EpubImporter.importFromPath）。
+  // 返回本地入库的 bookKey（生产路径来自 importSyncedBookFile）。
   final Future<String?> Function(File file)? remoteBookImporter;
 
   /// 测试注入：按远端 bookKey 下载有声书包，返回包文件（绕过真实互联后端）。
@@ -735,6 +740,14 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     _collectionTablesSub = appModelNoUpdate.database
         .watchCollectionTablesChanged()
         .listen(_onCollectionTablesChanged);
+    // BUG-4521：分卷归组（[_loadShelfMaps] 里的 BookSeriesGrouper）同样要跟着
+    // 「书架上有哪些书」走。书列表 provider 自 BUG-793 起订阅书 / 有声书集合，
+    // 任何导入路径落库都会刷新，但归组映射不会：mokuro 目录 / 导入对话框 / 拖放
+    // 导入的第 2 卷只出现成散卡，直到别的事碰巧重载映射。订阅书 / 有声书行的
+    // 插入与删除，与合集表同一个合并窗口。
+    _shelfBooksSub = appModelNoUpdate.database
+        .watchShelfBookSetChanged()
+        .listen(_onCollectionTablesChanged);
     // 阅读进度同理：本机作为互联 host 时，对端推来的进度经 putBookProgress 直接
     // 落 reader_positions，不经本机同步收尾的 refreshTab，书架进度条与「继续阅读」
     // 会一直停在旧值（手机读到 2%，电脑书架仍显示 17%）。订阅表信号，任何写入者
@@ -886,10 +899,14 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   /// BUG-1699：合集表变更订阅 + 合并窗口（同视频页 _onCollectionTablesChanged，
   /// 同步/导入批量落库合并成一次映射重载）。
   StreamSubscription<void>? _collectionTablesSub;
+
+  /// BUG-4521：书 / 有声书集合变化订阅（导入、删除），与合集表同一个合并窗口。
+  StreamSubscription<void>? _shelfBooksSub;
   Timer? _collectionsReloadDebounce;
 
   /// BUG-1699：合集表写入回调——重载书架折叠映射（只动 _shelfMapsFuture，不
-  /// invalidate 书列表 provider：合集归属变化不改变书行本身）。
+  /// invalidate 书列表 provider：合集归属变化不改变书行本身）。书 / 有声书集合
+  /// 变化（BUG-4521）也走这里：重载时先跑分卷归组。
   void _onCollectionTablesChanged(void _) {
     _collectionsReloadDebounce?.cancel();
     _collectionsReloadDebounce = Timer(const Duration(milliseconds: 300), () {
@@ -933,6 +950,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     _shelfScrollController.dispose();
     mediaType.tabRefreshNotifier.removeListener(_reloadShelfMapsOnTabRefresh);
     _collectionTablesSub?.cancel();
+    _shelfBooksSub?.cancel();
     _collectionsReloadDebounce?.cancel();
     _readerPositionsSub?.cancel();
     _progressReloadDebounce?.cancel();
@@ -1066,6 +1084,11 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
                       onDragUpdate: (SelectionSlot slot) =>
                           setState(() => _selection.updateRangeDrag(slot)),
                       onDragEnd: () => setState(_selection.endRangeDrag),
+                      // 鼠标按下即拖 = 拉框框选（反馈 bFtYB0_Arl）；触屏仍是长按扫选。
+                      onBoxSelectBegin: () =>
+                          setState(_selection.beginBoxSelect),
+                      onBoxSelectUpdate: (Set<SelectionSlot> slots) =>
+                          setState(() => _selection.updateBoxSelect(slots)),
                       child: books.when(
                         // BUG-3337：书集合一变（下载 / 导入落库）fushiBooksProvider
                         // 就因依赖变化重算，AsyncValue 进 reload 态。默认
@@ -1431,6 +1454,15 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       // 漫画「在线目录」入口已从书架移除（属漫画域，入口收敛到下载页）；
       // mokuro.moe 下载队列监听仍保留在 initState——下载页触发的后台落库
       // 依赖它刷新书架。
+      // 漫画 OCR 任务管理（反馈 iuv4-jWC8S）：全部整卷识别任务的进度与逐项 / 批量
+      // 暂停、继续。任务在书架外起（卡菜单、作品页、下载钩子、阅读器），书架是
+      // 它们共同的上级入口。
+      if (_mangaOnly)
+        _headerAction(
+          tooltip: t.manga_ocr_manager_title,
+          icon: FushiIcons.ocr,
+          onTap: () => unawaited(MangaOcrManagerPage.push(context)),
+        ),
       // 视频导入入口**只属于视频 tab**（HomeVideoPage），书架不放视频导入——
       // 书架是书的地方。这里保留编译期常量门控（默认关）只为旧调试路径，运行时
       // 实验开关不再在书架放出视频导入（用户反馈：书架不该有视频导入入口）。
@@ -3646,11 +3678,14 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     // 逐条按模块过滤：被关掉的模块不留可点位置。
     final ModuleVisibility modules = _moduleVisibility;
     final bool isManga = _isMangaItem(item);
-    // 反馈 Ndnxy3mNdG：「导入有声书 / 有声书工作室」只给能挂有声书的书（EPUB）。
-    // 以前按 `!isManga` 判，PDF 卡也露出入口，挂上后被写死的 EPUB 阅读器打开成白屏；
-    // ctl 挂音频的拒绝分支与这里共用 [BookFormat.supportsAudiobook]。
+    // 「导入有声书」只给能挂有声书的书（EPUB / PDF，PDF 阅读器播放 + 按文本层高亮）；
+    // ctl 挂音频的拒绝分支与这里共用 [BookFormat.supportsAudiobook]。「有声书工作室」
+    // （TTS 合成整本）只认 EPUB 正文，另走 [BookFormat.supportsAudiobookStudio]。
     final bool canAttachAudiobook =
         ReaderFushiSource.mediaItemSupportsAudiobook(item) &&
+        modules.isEnabled(ModuleId.listening);
+    final bool canOpenAudiobookStudio =
+        ReaderFushiSource.mediaItemSupportsAudiobookStudio(item) &&
         modules.isEnabled(ModuleId.listening);
     return <DialogAction>[
       DialogDangerAction(
@@ -3677,7 +3712,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
           icon: Icons.headphones_outlined,
           onPressed: () => _openAudiobookImport(item, bookKey),
         ),
-      if (canAttachAudiobook)
+      if (canOpenAudiobookStudio)
         DialogQuickAction(
           label: t.audiobook_studio_title,
           icon: FushiIcons.voice,

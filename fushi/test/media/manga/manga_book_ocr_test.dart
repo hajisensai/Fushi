@@ -128,7 +128,7 @@ void main() {
       isTrue,
       reason:
           '漫画阅读器不播有声书，「导入有声书」只按共享判据 '
-          'mediaItemSupportsAudiobook 出现（漫画 / PDF 卡都不出现）',
+          'mediaItemSupportsAudiobook 出现（漫画卡不出现）',
     );
     expect(
       books.contains("ValueKey<String>('reader_shelf_batch_ocr')"),

@@ -718,6 +718,9 @@ class AnkiConnectRepository extends BaseAnkiRepository {
   /// `SentenceFurigana` 这类别的工具填过、模板又优先读的字段会让卡面停在旧句子。
   /// 同时把新制会打的那组标签（`fushi` / 分类 / 书名…）经 `addTags` 并进去——覆盖
   /// 后的卡与新制的卡在字段与标签上都一样，用户原有的其它标签保留。
+  ///
+  /// 反馈 nWWjBp3Clo：用户给这种笔记类型选了「只覆写这些字段」
+  /// （[AnkiSettings.overwriteFieldsFor]）时，只点名选中的字段，其余字段原样保留。
   @override
   Future<MineOutcome> updateMinedNote({
     required int noteId,
@@ -782,17 +785,22 @@ class AnkiConnectRepository extends BaseAnkiRepository {
         keepEmpty: true,
       );
       final RenderedMinedFields rendered = prepared.rendered;
-      final Map<String, String> fields = rendered.fields;
+      final Set<String>? onlyFields = settings.overwriteFieldsFor(
+        existing.modelName ?? targetModel,
+      );
+      final Map<String, String> toWrite = BaseAnkiRepository.fieldsForOverwrite(
+        existingFieldNames: existingFields.keys,
+        rendered: rendered.fields,
+        onlyFields: onlyFields,
+      );
 
-      // 所有映射字段渲染皆空白（含无字段映射）说明会把整卡清空——拒绝。部分字段
-      // 有内容时按覆盖语义整体替换（空字段随之清空，Never break userspace 见 BUG-858）。
-      if (fields.values.every((String v) => v.trim().isEmpty)) {
-        return MineOutcome.failure(
-          'All fields are empty — refusing to clear an existing card. '
-          'Check your note type field mappings.',
-          errorCode: AnkiErrorCode.allFieldsEmpty,
-        );
-      }
+      // 要写的字段渲染皆空白说明会把它们（整卡覆写时 = 整卡）清空——拒绝。部分字段
+      // 有内容时按覆盖语义替换（空字段随之清空，Never break userspace 见 BUG-858）。
+      final MineOutcome? empty = BaseAnkiRepository.rejectEmptyOverwrite(
+        toWrite,
+        onlyFields: onlyFields,
+      );
+      if (empty != null) return empty;
 
       // BUG-2606：与 [mineEntry] 同一组标签、同一个 helper——覆盖后的卡不该比新制
       // 的少 `fushi` / 分类 / 书名标签。
@@ -807,13 +815,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
       );
 
       try {
-        await service.updateNoteFields(
-          noteId,
-          BaseAnkiRepository.fieldsForOverwrite(
-            existingFieldNames: existingFields.keys,
-            rendered: fields,
-          ),
-        );
+        await service.updateNoteFields(noteId, toWrite);
         await service.addTags(noteId, tags);
         // TODO-779: 覆盖路径同样把音频下载失败原因带给成功 toast。
         // BUG-1549：覆写成功 toast 的牌组名与新制同源（按设置解析的目标牌组）。
@@ -879,8 +881,15 @@ class AnkiConnectRepository extends BaseAnkiRepository {
   }
 
   @override
-  Future<bool> isDuplicate(String expression, String reading) async {
-    // 不可达冷却窗内直接判「非重复」（BUG-1302）。查重是渲染路径上**逐词条**发起的
+  Future<bool> isDuplicate(String expression, String reading) async =>
+      (await probeDuplicate(expression, reading)) ?? false;
+
+  /// 反馈 JAEwvc6Lmr：冷却窗内与 AnkiConnect 应答失败一律回 `null`「没问到」，
+  /// [isDuplicate] 再把它折成 `false`（渲染路径的 fail-soft 口径不变）；离线已制卡
+  /// 缓存据 `null` 退回本地词表。
+  @override
+  Future<bool?> probeDuplicate(String expression, String reading) async {
+    // 不可达冷却窗内直接判「没问到」（BUG-1302）。查重是渲染路径上**逐词条**发起的
     // 装饰性探测：popup.js 的 createEntryHeader 对结果里每个词条都发一次 duplicateCheck
     // 桥调用，AnkiConnect 主机被防火墙静默丢包 / VPN 断开 / 配成了远程不在线的主机时，
     // 每次都要挂满连接超时（5s，BUG-665 已把连接阶段单独绑定），N 个词条就是 N 条
@@ -891,24 +900,16 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     // 让弹窗迟出来，它拖住的是每个词条「已制卡 ✓ / 可制卡 +」徽章的刷新，外加
     // N 条白挂的 socket。修它是为了消除这个延迟和浪费，不要拿它解释「查词慢 4-5 秒」。
     //
-    // 返回值语义与下面 catch 的 fail-soft 完全一致（false = 不标「已制卡」），
-    // 只是不再为已证实不可达的主机把超时重复付 N 遍。Anki 一旦重新可达，
+    // 返回值语义与下面 catch 完全一致（null = 没问到，[isDuplicate] 折成「不标
+    // 已制卡」），只是不再为已证实不可达的主机把超时重复付 N 遍。Anki 一旦重新可达，
     // 冷却窗到期后的第一次探测就会成功并立刻清零（见下方成功分支）。
     final DateTime? until = _duplicateCheckUnreachableUntil;
     if (until != null) {
-      if (DateTime.now().isBefore(until)) return false;
+      if (DateTime.now().isBefore(until)) return null;
       _duplicateCheckUnreachableUntil = null;
     }
     final settings = await loadSettings();
-    final deck =
-        settings.availableDecks.firstWhereOrNull(
-          (d) => d.id == settings.selectedDeckId,
-        ) ??
-        (settings.selectedDeckName != null
-            ? settings.availableDecks.firstWhereOrNull(
-                (d) => d.name == settings.selectedDeckName,
-              )
-            : null);
+    final deck = _duplicateCheckDeck(settings);
     final noteType = settings.selectedNoteType;
     if (deck == null || noteType == null || noteType.fields.isEmpty) {
       return false;
@@ -957,10 +958,77 @@ class AnkiConnectRepository extends BaseAnkiRepository {
           kDuplicateCheckUnreachableCooldown,
         );
       }
-      debugPrint('AnkiConnectRepository.isDuplicate: $e\n$stack');
-      return false;
+      debugPrint('AnkiConnectRepository.probeDuplicate: $e\n$stack');
+      return null;
     }
   }
+
+  /// 查重口径的全部输入：连接目标（不同主机 / 端口是不同的 collection）、笔记类型、
+  /// 查重范围与它用到的卡组（与 [probeDuplicate] 的 `isDuplicateForAdd` 同一组参数）。
+  @override
+  Future<String?> minedCacheScope() async {
+    final AnkiSettings settings = await loadSettings();
+    final AnkiNoteType? noteType = settings.selectedNoteType;
+    final AnkiDeck? deck = _duplicateCheckDeck(settings);
+    if (deck == null || noteType == null || noteType.fields.isEmpty) {
+      return null;
+    }
+    final String deckFilter = ankiDuplicateDeckFilter(
+      deck.name,
+      settings.duplicateScope,
+    );
+    return 'ankiconnect|${settings.ankiConnectUseHttps ? 'https' : 'http'}://'
+        '${settings.ankiConnectHost}:${settings.ankiConnectPort}'
+        '|model:${noteType.name}|$deckFilter';
+  }
+
+  /// 作用域内全部笔记的第一字段：一次 `findNotes`（笔记类型 + 查重范围的卡组过滤）
+  /// 拿 id，再分批 `notesInfo` 取第一字段。失败照抛（见基类契约）。
+  @override
+  Future<List<String>?> listMinedFirstFields() async {
+    final AnkiSettings settings = await loadSettings();
+    final AnkiNoteType? noteType = settings.selectedNoteType;
+    final AnkiDeck? deck = _duplicateCheckDeck(settings);
+    if (deck == null || noteType == null || noteType.fields.isEmpty) {
+      return null;
+    }
+    final AnkiConnectService service = await _getLongTaskService();
+    final List<int> ids = await service.findNotesByQuery(
+      ankiMinedFirstFieldsQuery(
+        modelName: noteType.name,
+        deckName: deck.name,
+        scope: settings.duplicateScope,
+      ),
+    );
+    final String firstField = noteType.fields.first;
+    final List<String> out = <String>[];
+    for (
+      int start = 0;
+      start < ids.length;
+      start += kAnkiMinedFirstFieldsBatchSize
+    ) {
+      final int end = min(start + kAnkiMinedFirstFieldsBatchSize, ids.length);
+      final Map<int, Map<String, String>> infos = await service.notesInfoMany(
+        ids.sublist(start, end),
+      );
+      for (final Map<String, String> fields in infos.values) {
+        final String? value = fields[firstField];
+        if (value != null) out.add(value);
+      }
+    }
+    return out;
+  }
+
+  /// 查重用的卡组：按 id 找，找不到再按名字找（与 [probeDuplicate] 同一判据）。
+  static AnkiDeck? _duplicateCheckDeck(AnkiSettings settings) =>
+      settings.availableDecks.firstWhereOrNull(
+        (d) => d.id == settings.selectedDeckId,
+      ) ??
+      (settings.selectedDeckName != null
+          ? settings.availableDecks.firstWhereOrNull(
+              (d) => d.name == settings.selectedDeckName,
+            )
+          : null);
 
   // TODO-614：scope=all 时复用「与查重同一条件」（deck + 第一字段=expression）经
   // findNotes 反查已存在卡的 note id，多张命中取**最近一张**（note id 最大 = Anki
@@ -1069,6 +1137,24 @@ class AnkiConnectRepository extends BaseAnkiRepository {
       debugPrint('$stack');
       return null;
     }
+  }
+
+  /// 反馈 nWWjBp3Clo：选择器与 [updateMinedNote] 必须按**同一个**笔记类型名存取
+  /// 「只覆写这些字段」。[updateMinedNote] 按这张卡自己的 `modelName` 取选择，所以
+  /// 这里也回读卡的 `modelName`——否则命中卡是别的笔记类型（首字段同名也会命中）时，
+  /// 选择器列的是那张卡的字段、却存进当前笔记类型的条目里。读不到时退回基类口径。
+  @override
+  Future<String?> overwriteNoteTypeName(int noteId) async {
+    try {
+      final AnkiConnectService service = await _getService();
+      final AnkiConnectNoteInfo? info = await service.noteInfo(noteId);
+      final String? modelName = info?.modelName;
+      if (modelName != null && modelName.isNotEmpty) return modelName;
+    } catch (e, stack) {
+      debugPrint('AnkiConnectRepository.overwriteNoteTypeName: $e');
+      debugPrint('$stack');
+    }
+    return super.overwriteNoteTypeName(noteId);
   }
 
   // BUG-1799：复核哪些 note 已被用户在 Anki 里删掉。一次 `notesInfo` 批量往返

@@ -3,6 +3,7 @@ import 'dart:ui' show Rect, Size;
 
 import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart';
 import 'package:fushi/src/media/range_playback.dart';
+import 'package:fushi/src/mining/advanced_mining/advanced_mining_layout.dart';
 import 'package:fushi_anki/fushi_anki_core.dart';
 import 'package:fushi_engine/mining/immersion_mining_request.dart'
     show VideoMiningImageMode;
@@ -425,7 +426,15 @@ class AdvancedMiningCapabilities {
     required this.onConfirm,
     this.expression,
     this.fields,
+    this.layout,
+    this.setLayout,
   });
+
+  /// 用户记住的分区布局（反馈 aZ99bm9R6K：栏位 / 顺序 / 显隐）；null = 默认布局。
+  final AdvancedMiningLayout? layout;
+
+  /// 记住布局；null = 该表面不持久化（布局只对这次对话框生效）。
+  final Future<void> Function(AdvancedMiningLayout layout)? setLayout;
 
   /// 卡片字段分区；null = 这个表面不能改字段（例如远端制卡：映射在另一台机器上）。
   final AdvancedMiningFieldsSection? fields;

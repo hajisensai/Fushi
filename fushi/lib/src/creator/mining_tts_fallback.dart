@@ -270,6 +270,32 @@ class _ServicesVoiceSource implements MiningTtsVoiceSource {
 MiningTtsVoiceSource miningTtsVoiceSourceOf(TtsServices services) =>
     _ServicesVoiceSource(services);
 
+/// 单词音频 TTS 兜底**念什么字**：查词播放与制卡兜底共用这一处取词口径。
+///
+/// 默认念读音（空则词头）。词头 / 读音里带替换写法（斜杠：英语习惯表达词典的
+/// `quite a/the something`、`instead of somebody/something`）时，TTS 会把斜杠连同
+/// 两侧的备选一起念出来（「quite a slash the something」，反馈 WJFhjUGaTn）——这时
+/// 改念查词命中的**原文**（[matched]，即句子里实际出现的那个写法，如 `quite some`）。
+///
+/// 命中原文本身也带斜杠（词头就是 `AC/DC`、`24/7` 这类字面斜杠）、或没有命中原文
+/// （手动建卡、别的设备给的结果）时照旧念读音 / 词头。
+String wordAudioTtsText({
+  required String expression,
+  required String reading,
+  String matched = '',
+}) {
+  final String headword = reading.isNotEmpty ? reading : expression;
+  final String source = matched.trim();
+  if (source.isEmpty) return headword;
+  if (!_hasAlternateSlash(headword) || _hasAlternateSlash(source)) {
+    return headword;
+  }
+  return source;
+}
+
+bool _hasAlternateSlash(String text) =>
+    text.contains('/') || text.contains('／');
+
 /// 系统语音的固定输出文件名（沿用既有行为）。
 const String kSystemTtsTermAudioFileName = 'tts_term_audio.wav';
 

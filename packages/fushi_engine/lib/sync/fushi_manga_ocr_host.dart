@@ -31,7 +31,10 @@ import 'package:shelf/shelf.dart' as shelf;
 import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart'
     show kMangaOcrOutDirName;
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
+import 'package:fushi_engine/sync/remote_lookup_routes.dart'
+    show readBoundedBodyString;
 import 'package:fushi_engine/utils/misc/safe_file_name.dart';
+import 'package:fushi_engine/utils/net/bounded_read.dart';
 import 'package:fushi_core/fushi_core.dart' show fnv1a64Hex;
 
 /// 任务状态机（wire 值即枚举名）。pending → uploading → running →
@@ -340,6 +343,9 @@ class MangaOcrHostJobManager {
   /// 取消/清理：订阅取消（[MangaOcrService.ocrFolder] 契约 = 页边界中止）、删除
   /// 已上传页图，但**保留** `manga_ocr_out/`（逐页断点缓存）使同卷重传后续传。
   /// 任务从表中移除（幂等，重复 DELETE 也成功）。
+  ///
+  /// 卷目录 `vol_<slug>` 可被同卷的新任务共用（旧任务终态后 [createJob] 落回
+  /// 同一目录）：表里还有**非终态**任务用着这个目录时页图归它，一个文件也不删。
   Future<void> cancelAndCleanup(MangaOcrHostJob job) async {
     await job.subscription?.cancel();
     job.subscription = null;
@@ -354,6 +360,7 @@ class MangaOcrHostJobManager {
     }
     job.runCompleted = null;
     _jobs.remove(job.id);
+    if (_dirSharedWithOtherJob(job, liveOnly: true)) return;
     try {
       if (job.dir.existsSync()) {
         for (final FileSystemEntity entity in job.dir.listSync(
@@ -381,6 +388,10 @@ class MangaOcrHostJobManager {
 
   /// 每次 API 触达时执行：过期任务（含终态与从未 start 的半截上传）出表删目录；
   /// 首次触达顺带清 host 重启遗留的孤儿目录。在跑中的任务不清。
+  ///
+  /// 目录按引用回收：过期任务出表后，表里仍有任何任务落在同一目录（同卷新任务
+  /// 共用 `vol_<slug>`）就不碰它，目录归仍在表里的任务；同一轮里共享目录的任务
+  /// 都过期时，最后一个出表的才删。
   void _housekeep() {
     final DateTime cutoff = _now().subtract(_jobTtl);
     final List<MangaOcrHostJob> expired = _jobs.values
@@ -392,6 +403,7 @@ class MangaOcrHostJobManager {
         .toList(growable: false);
     for (final MangaOcrHostJob job in expired) {
       _jobs.remove(job.id);
+      if (_dirSharedWithOtherJob(job, liveOnly: false)) continue;
       try {
         if (job.dir.existsSync()) job.dir.deleteSync(recursive: true);
       } catch (_) {
@@ -422,6 +434,17 @@ class MangaOcrHostJobManager {
     } catch (_) {
       // 孤儿扫描整体尽力而为：IO 异常不得影响正常请求处理。
     }
+  }
+
+  /// 表里（[job] 之外）还有任务落在同一目录。[liveOnly] = 只算非终态任务。
+  bool _dirSharedWithOtherJob(MangaOcrHostJob job, {required bool liveOnly}) {
+    final String dir = p.canonicalize(job.dir.path);
+    return _jobs.values.any(
+      (MangaOcrHostJob other) =>
+          !identical(other, job) &&
+          (!liveOnly || !other.state.isTerminal) &&
+          p.canonicalize(other.dir.path) == dir,
+    );
   }
 
   // ── 工具 ───────────────────────────────────────────────────────
@@ -457,6 +480,12 @@ class MangaOcrHostJobManager {
   }
 }
 
+/// `POST /api/ocr/job` 建任务的请求体上限：只有 volumeTitle / pageCount / model。
+const int kMangaOcrJobBodyMaxBytes = 64 * 1024;
+
+/// `PUT /api/ocr/job/<id>/page/<index>` 单页图片的上限（扫描页通常几 MB）。
+const int kMangaOcrPageBodyMaxBytes = 64 * 1024 * 1024;
+
 /// `/api/ocr/*` 的 shelf 路由处理（由 [FushiSyncServer._handleRequest] 分发进来，
 /// 鉴权已在其 middleware 完成）。[reqPath] 是已解码、带前导 `/` 的路径。
 Future<shelf.Response> handleMangaOcrRequest(
@@ -469,8 +498,15 @@ Future<shelf.Response> handleMangaOcrRequest(
     if (method != 'POST') return shelf.Response(405);
     Map<String, dynamic> body = const <String, dynamic>{};
     try {
-      final dynamic decoded = jsonDecode(await request.readAsString());
+      final dynamic decoded = jsonDecode(
+        await readBoundedBodyString(
+          request,
+          maxBytes: kMangaOcrJobBodyMaxBytes,
+        ),
+      );
       if (decoded is Map<String, dynamic>) body = decoded;
+    } on BodyTooLargeException {
+      rethrow;
     } catch (_) {
       // 空 body 也允许（volumeTitle/pageCount 均可选）。
     }
@@ -545,10 +581,13 @@ Future<shelf.Response> handleMangaOcrRequest(
     final int? index = int.tryParse(parts[2]);
     if (index == null || index < 0) return _ocrError(400, 'bad_index');
     final String name = request.url.queryParameters['name'] ?? '';
-    // 整页图片（MB 级）按块攒进 BytesBuilder，不展开成逐字节装箱的 List<int>。
-    final BytesBuilder body = BytesBuilder(copy: false);
-    await request.read().forEach(body.add);
-    final Uint8List bytes = body.takeBytes();
+    // 整页图片（MB 级）按块累计、超 [kMangaOcrPageBodyMaxBytes] 立即抛（host
+    // pipeline 回 413），不展开成逐字节装箱的 List<int>。
+    final Uint8List bytes = await readBoundedRequestBody(
+      request.read(),
+      declaredLength: request.contentLength,
+      maxBytes: kMangaOcrPageBodyMaxBytes,
+    );
     if (bytes.isEmpty) return _ocrError(400, 'empty_body');
     final String? refusal = await manager.uploadPage(
       job,

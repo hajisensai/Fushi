@@ -92,6 +92,16 @@ extension _VideoLookupFavorite on _VideoFushiPageState {
       // 生效轴，副轨独立调轴后才不会锚错句）。
       delayMs: controller.miningDelayMs,
     );
+    // 反馈 rLCxUJ-2i4：被点的行和别的行同时显示、属于同一句（ASS 把一句拆成几条
+    // Dialogue）时，制卡 / 收藏 / 「+句」用整句。高亮仍按被点的行（[sentence]）。
+    final AudioCue? anchorCue = _lastLookupCue;
+    if (anchorCue != null) {
+      _lastLookupSentence = videoLookupMiningSentence(
+        cues: controller.cueStreamOwning(anchorCue),
+        anchor: anchorCue,
+        tappedSentence: sentence,
+      );
+    }
     final int matchedRunes = await pushNestedPopup(
       query: term,
       selectionRect: charRect,
@@ -301,8 +311,14 @@ extension _VideoLookupFavorite on _VideoFushiPageState {
   /// 返回是否真的写了剪贴板，供顶栏按钮决定要不要切成 ✓（[CopyFeedback]）。
   bool _copyLookupSentence() {
     final AudioCue? cue = _lastLookupCue;
-    final String text = (cue?.text.trim().isNotEmpty ?? false)
-        ? cue!.text.trim()
+    final VideoPlayerController? controller = _controller;
+    // 反馈 rLCxUJ-2i4：ASS 把一句拆成几条同时显示的行时，复制整句
+    // （[simultaneousCueText]，与制卡取句同一判据）。
+    final String text = (cue != null && cue.text.trim().isNotEmpty)
+        ? simultaneousCueText(
+            controller?.cueStreamOwning(cue) ?? <AudioCue>[cue],
+            cue,
+          )
         : _lastLookupSentence.trim();
     if (text.isEmpty) {
       _showOsd(t.no_sentence_selected);
@@ -321,7 +337,10 @@ extension _VideoLookupFavorite on _VideoFushiPageState {
   /// 返回是否真的写了剪贴板（[VideoSubtitleJumpPanel.onCopyCue] 的契约）：空句不算
   /// 成功，面板据此决定要不要把行内按钮切成 ✓。判据只此一处，面板不重算。
   bool _copyCueText(AudioCue cue) {
-    final String text = cue.text.trim();
+    // 反馈 rLCxUJ-2i4：与这行同时显示的同一句其它行一起复制（[simultaneousCueText]）。
+    final List<AudioCue> stream =
+        _controller?.cueStreamOwning(cue) ?? <AudioCue>[cue];
+    final String text = simultaneousCueText(stream, cue);
     if (text.isEmpty) return false;
     Clipboard.setData(ClipboardData(text: text));
     _showOsd(
@@ -340,6 +359,7 @@ extension _VideoLookupFavorite on _VideoFushiPageState {
     _copyCurrentLineText(
       videoCurrentLineCopyText(
         activeCues: controller.activeCues,
+        cues: controller.cues,
         fallback: _currentCueForAction(),
       ),
       emptyHint: t.no_sentence_selected,
@@ -354,6 +374,7 @@ extension _VideoLookupFavorite on _VideoFushiPageState {
     _copyCurrentLineText(
       videoCurrentLineCopyText(
         activeCues: controller.secondaryActiveCues,
+        cues: controller.secondaryCues,
         fallback: resolveMiningCueForPosition(
           cues: controller.secondaryCues,
           positionMs: controller.subtitleClockMs ?? 0,

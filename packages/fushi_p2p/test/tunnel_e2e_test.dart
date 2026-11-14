@@ -306,6 +306,34 @@ void main() {
         );
       });
 
+      test('网络变化通知：立即返回、隧道之后仍通', () async {
+        final Uri base = Uri.parse('http://127.0.0.1:$forwardPort');
+        final (int c0, Uint8List before) = await _request(
+          httpClient,
+          'POST',
+          base.replace(path: '/echo'),
+          body: utf8.encode('before'),
+        );
+        expect(c0, 200);
+        expect(utf8.decode(before), endsWith('before'));
+
+        final Stopwatch sw = Stopwatch()..start();
+        expect(client.networkChange(), isTrue);
+        sw.stop();
+        // 原生侧只把通知投到端点 runtime，不在调用线程上等 iroh 处理完。
+        expect(sw.elapsedMilliseconds, lessThan(50));
+        expect(host.networkChange(), isTrue);
+
+        final (int c1, Uint8List after) = await _request(
+          httpClient,
+          'POST',
+          base.replace(path: '/echo'),
+          body: utf8.encode('after'),
+        );
+        expect(c1, 200);
+        expect(utf8.decode(after), endsWith('after'));
+      });
+
       test('停止转发口后本地端口不再接受连接', () async {
         final int port = client.clientForward(
           host.info().nodeId,

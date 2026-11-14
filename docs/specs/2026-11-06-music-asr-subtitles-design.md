@@ -9,6 +9,7 @@
 - 登记方式：给每首曲目写一条 `music_lyrics` 行，`source='asr'`。主键是 `trackUid + source`，所以 schema 不用变，曲目重扫后这一行还在。CUE 虚拟曲目调用 Rust `ffm_lyrics_slice` 按 `[cueStartMs, cueEndMs)` 截取并平移时间，原文存成 TTML；普通曲目整份存 SRT。
 - 优先级：用户指定 > sidecar > 内嵌 > asr > 插件 > LRCLIB > 歌词插件。语料对账和歌词解析共用 `preferredMusicLyricRow`。在歌词页的「来源」里可以和在线歌词互相切换。
 - 入口有四处：歌词页（没歌词时给一个按钮，「来源」菜单里也有）、曲目详情页、专辑页（整张批量）、本地音乐来源行菜单（整个来源批量）。批量时跳过已经有 `asr` 行的曲目。插件曲目和远端曲目算作不可用。所有入口都受 `isAsrSupported` 门控，不支持的平台不显示入口。
+- 在线音源插件曲目（2026-11-11，反馈 NXOjldMQZd）：只有歌词页对**当前曲目**的入口支持（插件曲目不进曲库表，详情页 / 批量入口仍算不可用），并且要求插件取流已装配。流程是先在可取消的进度对话框里向插件取流（`resolveMusicPluginStream`，与播放、制卡同源），用 ffmpeg 带插件给的请求头解码成 16 kHz 单声道 WAV，放到 `<数据根>/asr_jobs/music_subtitles/plugin_audio/<trackUid>.wav`，再按这份副本打开同一个生成面板（`MusicSubtitleTargets.forPluginTrack`）。产物登记成插件曲目 uid 的 `asr` 行，所以优先于插件自带歌词；登记完删掉副本，任务失败或取消时保留副本供下次复用。只给试听片段的曲目会被拒绝。代码在 `music_plugin_asr_audio.dart`。
 - 迁移补漏：`migrateAudioOnlyVideoBooksToMusic` 按路径识别旧视频管线的产物（`isDefaultVideoSubtitlePipelineOutput`：文件名为 `.ja.asr.*`，或者 `state.json` 记录写过），转成 `asr` 行。用户在视频行上选过、但不在音频旁边的字幕，转成 `user` 行。带走失败的那一行这次不删，下次再试。
 
 ## 搜索

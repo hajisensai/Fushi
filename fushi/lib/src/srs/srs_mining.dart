@@ -240,6 +240,18 @@ class SrsMiningAnkiRepository extends DelegatingAnkiRepository {
     return miner != null && await miner.isDuplicate(expression, reading);
   }
 
+  /// 本层的查重答案来自本机复习库，不经网络，每次都算「问到了」；不能沿用委派默认
+  /// 转给里层的 Anki——那是另一个后端的答案。离线缓存作用域同理不属于本层。
+  @override
+  Future<bool?> probeDuplicate(String expression, String reading) =>
+      isDuplicate(expression, reading);
+
+  @override
+  Future<String?> minedCacheScope() async => null;
+
+  @override
+  Future<List<String>?> listMinedFirstFields() async => null;
+
   // ------------------------------------------------------------ 覆写 / 反查
 
   @override
@@ -321,6 +333,15 @@ class SrsMiningAnkiRepository extends DelegatingAnkiRepository {
     if (miner == null) return null;
     final String? id = await _noteIdOf(miner, noteId);
     return id == null ? null : miner.fieldsByName(id);
+  }
+
+  /// 复习卡按**它自己的**笔记类型覆写（[SrsMiner.overwrite]），覆写字段选择也按它记。
+  @override
+  Future<String?> overwriteNoteTypeName(int noteId) async {
+    final SrsMiner? miner = await _miner();
+    if (miner == null) return null;
+    final String? id = await _noteIdOf(miner, noteId);
+    return id == null ? null : miner.noteTypeNameOf(id);
   }
 
   /// 复习是本机库，能回读：用户在复习里删掉的卡下次查词就变回「可制卡」。

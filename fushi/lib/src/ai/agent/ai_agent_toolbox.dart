@@ -273,11 +273,11 @@ class AiAgentToolbox implements AgentToolbox, AgentSkillProvider {
       return const AgentUndoResult(AgentUndoStatus.notUndoable);
     }
     if (row.undoneAt != null) {
-      return AgentUndoResult(
-        row.undoStatus == 'superseded'
-            ? AgentUndoStatus.superseded
-            : AgentUndoStatus.done,
-      );
+      return AgentUndoResult(switch (row.undoStatus) {
+        'superseded' => AgentUndoStatus.superseded,
+        'partial' => AgentUndoStatus.partial,
+        _ => AgentUndoStatus.done,
+      });
     }
     final OpUndo? undo = catalog[row.opId]?.undo;
     if (undo == null) return const AgentUndoResult(AgentUndoStatus.notUndoable);
@@ -294,6 +294,7 @@ class AiAgentToolbox implements AgentToolbox, AgentSkillProvider {
     final AgentUndoStatus status = switch (outcome.status) {
       OpUndoStatus.done => AgentUndoStatus.done,
       OpUndoStatus.superseded => AgentUndoStatus.superseded,
+      OpUndoStatus.partial => AgentUndoStatus.partial,
       OpUndoStatus.failed => AgentUndoStatus.failed,
     };
     if (status != AgentUndoStatus.failed) {

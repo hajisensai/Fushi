@@ -190,6 +190,8 @@ void main() {
         'gal_mining_clip_format',
         'gal_mining_animated_format',
         'gal_mining_still_format',
+        'gal_mining_audio_mode',
+        'gal_mining_audio_seconds',
         'field_mappings',
         'video_template_apply',
       ];

@@ -68,11 +68,14 @@ class OverlayAutoRead {
     if (expression.isEmpty) {
       return;
     }
+    // 查词命中原文（反馈 WJFhjUGaTn）：词头带替换写法时 TTS 兜底念它。
+    final String matched = lookupEntryMatchedText(entry);
     unawaited(
       LookupAutoReadCoordinator.instance.runAutomatic(
         expression: expression,
         reading: reading,
-        play: () => _playWordAudio(model, expression, reading),
+        play: () =>
+            _playWordAudio(model, expression, reading, matched: matched),
       ),
     );
   }
@@ -83,12 +86,14 @@ class OverlayAutoRead {
   Future<bool> _playWordAudio(
     AppModel model,
     String expression,
-    String reading,
-  ) => autoReadWordUnified(
+    String reading, {
+    String matched = '',
+  }) => autoReadWordUnified(
     model,
     expression,
     reading,
     playInWebView: playWordAudioUrl,
+    matched: matched,
   );
 
   /// BUG-1127 — 在表面常驻 ROOT iframe 的 popup.js realm 里播放已解析的 URL，

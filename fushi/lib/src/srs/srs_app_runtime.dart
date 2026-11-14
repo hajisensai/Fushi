@@ -24,8 +24,6 @@ import 'package:fushi_engine/srs/sync2/srs_host_directory.dart';
 import 'package:fushi_engine/srs/ankiconnect/srs_ankiconnect_endpoint.dart';
 import 'package:fushi_engine/srs/ankiconnect/srs_ankiconnect_handler.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
-import 'package:fushi_engine/srs/sync2/srs_sync2_pull_first.dart'
-    show kSrsPullBeforeMergeBudget;
 import 'package:fushi_engine/srs/srs_profile_link.dart';
 import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart'
     show SrsSync2Report;
@@ -115,21 +113,14 @@ srsAppRuntimeProvider = Provider<SrsAppRuntime?>((Ref ref) {
         ref.invalidate(srsStoreProvider);
         return ref.read(srsStoreProvider.future);
       },
-      writeLock: ref.read(srsProfileStoresProvider).writeLock,
       mediaRoot: () async =>
           SrsMediaStore.mediaRootFor(await ref.read(srsSupportRootProvider)()),
       onError: ErrorLogService.instance.log,
       // 并入之前先把目标 uid 已有的数据收进来（BUG-4011：合并沿用目标里已有的写入者，不再改名造出第二份）。
-      // 并入总在一轮同步 / [SrsSyncScheduler.adoptProfile] 的 [_serially] 里：只从正在跑的那条通道和本机目录 /
-      // 文件夹位置收，不再去取通道锁。
+      // 等多久、从哪收都在调度器里定（[SrsSyncScheduler.pullBeforeMerge]：按进度判，只从正在跑的那条通道和本机
+      // 目录 / 文件夹位置收）。
       pullBeforeMerge: (SrsDbStore target, SyncAssetStore? within) =>
-          runtime.sync.pullInto(
-            target,
-            budget: kSrsPullBeforeMergeBudget,
-            purpose: 'merge',
-            within: within,
-            channels: false,
-          ),
+          runtime.sync.pullBeforeMerge(target, within),
     ),
   );
   // 旧库迁移推迟到首次同步确认之后（BUG-4011）：store 打开时不迁移（srs_providers.dart `deferMigration`），
@@ -547,11 +538,15 @@ class SrsAppRuntime {
 
   /// 牌组列表「立即同步」：对所有已认证通道跑一轮（结果区分没配置 / 失败 / 成功）。
   /// 用户手动同步也清掉推送的失败退避（用户明说「现在就同步」）。
-  Future<SrsSyncNowResult> syncNow() {
-    localPush.resetBackoff();
-    cloudPush.resetBackoff();
-    return sync.syncNow();
-  }
+  ///
+  /// 这一轮跑遍全部通道与本机目录，是两条推送的超集：此刻排着的推送由它带上、撤掉（[SrsLocalPush.takePending]，
+  /// BUG-4382）。以前排着的推送在「已同步」提示之后去抖到期又各跑一轮空同步，同步状态行在提示后继续走。这一轮
+  /// 没同步成功（有错 / 抛错）就把撤掉的推送排回去，本机改动照常等推送补上。
+  Future<SrsSyncNowResult> syncNow() => srsSyncSupersedingPushes(
+    <SrsLocalPush>[localPush, cloudPush],
+    sync.syncNow,
+    synced: (SrsSyncNowResult r) => r.errors.isEmpty,
+  );
 
   void _onHomeTabChanged() {
     if (homeShellTabNotifier.value != HomeTab.srs) return;

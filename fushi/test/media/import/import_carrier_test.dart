@@ -116,7 +116,9 @@ void main() {
       );
     });
 
-    test('页图与整卷文件同时在场 → mangaFolder（页图这条解释优先）', () {
+    // 「散图只是整卷文件的封面」由 directoryHasPageImages 自己判（iycDWb7ys6，真文件系统
+    // 判据见 manga_folder_batch_test）；这里只钉：它说有成卷页图，就是页图目录。
+    test('成卷页图与整卷文件同时在场 → mangaFolder', () {
       expect(
         classify(
           '/m/mixed',

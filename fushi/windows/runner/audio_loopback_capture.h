@@ -7,6 +7,8 @@
 #include <string>
 #include <vector>
 
+#include "audio_duck_gain.h"
+
 // galgame 一键制卡（docs/specs/galgame-mining）A 阶段（仅 Windows）：WASAPI loopback
 // 抓默认渲染端点的系统混音（含 BGM/SE/语音，混音后），写入 native 侧固定容量环形缓冲。
 // 热键那一刻 Dart 按「最近 N 毫秒」拉一段裸 PCM 出来做波形选区 + 制卡。
@@ -47,10 +49,6 @@ struct LoopbackOptions {
     return target_pid != 0 || !user_data_folder.empty();
   }
 };
-
-// silent 模式的会话音量（-100 dB）：满幅内容也低于 16-bit 一个 LSB，实测引擎把该端点的
-// loopback 包整段标 AUDCLNT_BUFFERFLAGS_SILENT；process loopback 侧浮点无损。
-constexpr float kSilentDuckLevel = 1e-5f;
 
 // Start 的失败原因（Dart 侧据此决定是降级到系统混音还是放弃自动制卡）。
 enum class LoopbackError {

@@ -134,6 +134,7 @@ import 'package:fushi_engine/media/audiobook/audiobook_transcribe_import_queue.d
         AudiobookTranscribeCancelled,
         AudiobookTranscribeJob,
         AudiobookTranscribeJobPhase;
+import 'package:fushi/src/asr_host/asr_ai_hosts.dart' show appAsrProofreadHost;
 import 'package:fushi/src/asr_host/asr_host.dart'
     show createAsrTranscriptionService, isAsrSupported;
 import 'package:fushi/src/media/audiobook/asr_transcribe_sheet.dart'
@@ -146,10 +147,31 @@ import 'package:fushi/src/media/video/subtitle/app_video_subtitle_service.dart'
         AppVideoSubtitleTarget,
         AppVideoSubtitleTargetNotFound,
         appVideoSubtitleService;
+import 'package:fushi/src/media/video/subtitle/video_subtitle_studio_sheet.dart'
+    show
+        VideoSubtitleStudioActions,
+        VideoSubtitleStudioAiReference,
+        VideoSubtitleStudioFramesProblem,
+        VideoSubtitleStudioReference,
+        showVideoSubtitleStudioSheet,
+        videoSubtitleStudioEvidenceTrack;
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_evidence.dart'
+    show SubtitleEvidenceTrack;
+import 'package:fushi_engine/media/video/subtitle/bilingual_subtitle_split.dart'
+    show
+        BilingualSplitResult,
+        SubtitleTextCue,
+        extractJapaneseFromBilingual,
+        subtitleTextCuesToSrt;
+import 'package:fushi_engine/media/video/subtitle/subtitle_content_language.dart'
+    show SubtitleContentLanguage, detectSubtitleContentLanguage;
+import 'package:fushi_engine/utils/misc/safe_file_name.dart'
+    show safeWindowsFileName;
 import 'package:fushi/src/media/video/subtitle/video_subtitle_generate_sheet.dart'
     show
         PrefsRepoVideoSubtitleGeneratePrefs,
         VideoSubtitleInAppTranscribe,
+        confirmVideoSubtitleAiFrames,
         showVideoSubtitleGenerateSheet,
         videoSubtitleEpisodeStatusLabel;
 import 'package:fushi/src/pages/implementations/ai_settings_route.dart'
@@ -255,6 +277,7 @@ import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_chrome_colors.dart';
 import 'package:fushi/src/media/video/video_chrome_hit_test.dart';
 import 'package:fushi/src/media/video/video_current_line_copy.dart';
+import 'package:fushi/src/media/video/video_simultaneous_cues.dart';
 import 'package:fushi/src/media/video/video_loop_cue_badge.dart';
 import 'package:fushi/src/media/video/video_apple_chrome.dart';
 import 'package:fushi/src/media/video/video_m3e_chrome.dart';
@@ -358,6 +381,7 @@ import 'package:fushi/src/media/video/remote_video_resume.dart';
 import 'package:fushi/src/media/video/subtitle/remote_online_subtitle_search.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_search_seed.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_series_season.dart';
+import 'package:fushi/src/media/video/subtitle/video_subtitle_folder_memory.dart';
 import 'package:fushi/src/pages/implementations/subtitle_workbench_page.dart';
 import 'package:fushi/src/media/video/video_quick_settings_host.dart';
 import 'package:fushi/src/media/video/video_quick_settings_sheet.dart';
@@ -383,6 +407,7 @@ import 'package:fushi_engine/media/video/video_subtitle_source.dart';
 import 'package:crypto/crypto.dart' show sha256;
 import 'package:fushi_engine/media/video/subtitle/embedded_reference_subtitle_sync.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_alignment_backup.dart';
+import 'package:fushi_engine/media/video/subtitle/subtitle_directory_match.dart';
 import 'package:fushi_asr_subtitles/asr_subtitles.dart'
     show SubtitleSyncDecision, SubtitleSyncDecisionKind;
 import 'package:fushi_engine/media/video/video_duration_probe.dart'
@@ -392,6 +417,9 @@ import 'package:fushi/src/media/video/video_volume_pref.dart';
 import 'package:fushi/src/diagnostics/video_diag_log.dart';
 import 'package:fushi/src/diagnostics/video_frame_timing_probe.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/store_compliance.dart';
+import 'package:fushi/src/pages/implementations/manual_download_task_dialog.dart'
+    show showManualDownloadTaskDialog;
 import 'package:fushi/src/models/content_font_chain.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
@@ -1232,6 +1260,11 @@ abstract class VideoFushiTestHooks {
   /// 当前 controller 读到的媒体时长（毫秒）；未就绪为 null/0。
   int? get debugDurationMs;
 
+  /// 播放器此刻是否在缓冲 / 网络流的缓冲深度（秒；非网络流或尚无读数为 null）——
+  /// 自适应画质判据的两个输入（BUG-4459），真机取证时逐秒留痕用。
+  bool get debugIsBuffering;
+  double? get debugNetworkCacheSeconds;
+
   /// 制卡 GIF/帧的抽取源（YouTube=低分辨率 miningVideoUrl；本地=videoPath）。
   String? get debugMiningSource;
 
@@ -1821,6 +1854,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   int? get debugPositionMs => _controller?.positionMs;
 
   @override
+  bool get debugIsBuffering => _controller?.isBuffering ?? false;
+
+  @override
+  double? get debugNetworkCacheSeconds =>
+      _controller?.networkCacheSeconds.value;
+
+  @override
   bool get debugIsWebBackend => _controller?.isWebBackend ?? false;
 
   @override
@@ -2117,6 +2157,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// controller.load 抛异常）在置 [_failed] 时经 [_describeLoadFailure] 从异常派生一句
   /// 友好文案，替代旧的「只有一个红叹号、没有任何说明」。
   String? _failReason;
+
+  /// 加载失败的原因是「视频源给的是种子（磁链）」时的那条磁链（反馈 xAeextyOV1）：
+  /// 失败页据此多给一个「用种子下载」入口，把它交给下载管线。其余失败一律 null；
+  /// 每个清 [_failReason] 的起点（重试 / 起播成功）同步清掉，不让旧按钮挂到新失败上。
+  AnimeSourceTorrentVideoException? _failTorrentVideo;
 
   /// TODO-1213：当前加载阶段（网络流 / 本地共用）。非就绪态时 [_buildScaffold] 的
   /// spinner 分支据此显示带上下文的加载态（标题 + 返回 + 阶段文案）。默认 preparing，
@@ -2893,6 +2938,27 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 进度」由这道闸门保证，不再要求先下载。
   late final SourceReviewRemoteReportGate _remoteReportGate =
       SourceReviewRemoteReportGate(isReview: () => _sourceReviewActive);
+
+  /// 互联远端视频播放会话：每一集载入时的开播三方判定（BUG-4436，与 sweep 同一份）
+  /// + 实时上报（BUG-4432：同一条目最多一个在途 + 一个待发，慢网下每秒的上报不排
+  /// 长队）。首次用到时按当前互联客户端建，客户端换了就换一个（[_remoteSessionFor]）。
+  ///
+  /// `dispose` 不关它：退出路径的最后一次落库（[exitAfterPersist] 发起、pop 后才
+  /// 走到上报）可能晚于 `dispose`，关掉就丢了退出瞬间的断点接力（BUG-3367）。它不持
+  /// 有任何资源，在途 / 待发发完即闲置。
+  InterconnectRemotePlaybackSession? _remoteSession;
+
+  InterconnectRemotePlaybackSession _remoteSessionFor(
+    InterconnectSyncBackend client,
+  ) {
+    final InterconnectRemotePlaybackSession? current = _remoteSession;
+    if (current != null && identical(current.backend, client)) return current;
+    current?.close();
+    return _remoteSession = InterconnectRemotePlaybackSession(
+      db: appModel.database,
+      backend: client,
+    );
+  }
 
   @override
   void recordLookup() {
@@ -3723,6 +3789,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   int _remotePlaybackGeneration = 0;
   final Set<int> _remotePlaybackStopGenerations = <int>{};
 
+  /// 已释放服务端资源的远端播放 generation（[_releaseRemotePlayback]，BUG-4461）。
+  final Set<int> _remotePlaybackReleaseGenerations = <int>{};
+
   /// 有效远端 info/client：合集连播优先返回当前成员 [_activeRemoteMember]（换成员即跟随）；
   /// 否则 LAN 远端书用构造器传入的 widget.remote*，书架流媒体书用 [_init] 重建的
   /// _resolvedStream*。二者互斥、至多一个非空。
@@ -4181,6 +4250,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       setState(() {
         _failed = false;
         _failReason = null;
+        _failTorrentVideo = null;
       });
     }
     if (_videoReadyToShow) return;
@@ -4701,12 +4771,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         startIntent: widget.sourceReview == null
             ? EpisodeStartIntent.initialOpen
             : EpisodeStartIntent.explicitCue,
-        initialPositionMsOverride:
-            widget.sourceReview?.startMs ??
-            await _resolveRemoteInitialPositionMs(
-              _remoteMembers[startIndex],
-              startIndex,
-            ),
+        // 开播位置交给 [_loadRemoteEpisode] 定（互联走三方判定，否则 LWW）；只有卡片
+        // 回看带显式起点。这里预先算会在三方判定之外多读一次 host（离线时多等一轮超时）。
+        initialPositionMsOverride: widget.sourceReview?.startMs,
       );
       return;
     }
@@ -4731,10 +4798,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       startIntent: widget.sourceReview == null
           ? EpisodeStartIntent.initialOpen
           : EpisodeStartIntent.explicitCue,
-      // 起播集恢复其按集断点（host 真相 vs 本地 prefs 取较新者）。
-      initialPositionMsOverride:
-          widget.sourceReview?.startMs ??
-          await _resolveRemoteInitialPositionMs(info, startIndex),
+      // 起播集恢复其按集断点：由 [_loadRemoteEpisode] 定（同上，只有卡片回看带显式起点）。
+      initialPositionMsOverride: widget.sourceReview?.startMs,
     );
   }
 
@@ -4809,12 +4874,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 后一集回来——直接 `= await` 会让作废的那一程把它那集的档覆盖到当前集列表上。
     final List<SubtitleSource> restoredLocalSubtitles =
         await _restoreRemoteLocalSubtitleFiles(index);
-    // 换集 / 连播（无 override）与首开同一条判定：本机库断点、清单条目、互联 host
-    // 此刻的断点取较新（BUG-4304）。只读本机断点会让合集下一成员 / 播放列表下一集
-    // 从本机旧断点起播，随后的实时上报（戳 = now）把旧位置写回 host。
-    final int initialPositionMs =
-        initialPositionMsOverride ??
-        await _resolveRemoteInitialPositionMs(info, index);
     if (seq != _episodeLoadSeq || !mounted) return;
     _importedSubtitleSources = restoredLocalSubtitles;
     // YouTube 画质档是 per-video 懒解析：新一集起播先复位（下次点开画质菜单再懒解析）。
@@ -4826,6 +4885,37 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _youtubeVariantsResolved = false;
     // TODO-1213：先置「正在连接视频流…」（远端流须先向 host / 源建流，有网络往返）。
     _setLoadingPhase(_VideoLoadPhase.connecting);
+    // BUG-4436：互联 host 的当前集 / 单视频 / 合集成员（sweep 同步的那个键）每一集载入
+    // 时都与 sweep 走同一份三方判定定开播位置（冲突时从本机位置起播、上报 held 到裁决）。
+    // 判定读 host 失败（离线 / 换了 host）才算回退值：本机库断点与清单取较新，不再问
+    // host——判定刚读过一次失败，回退再问只会多等一轮超时。显式起点（换画质 / 换线路
+    // 回到当前位置、卡片回看）照用调用方给的位置；回看中不碰服务器进度（BUG-3490）。
+    //
+    // 其余（非互联 / host-playlist 非首集）：首开与换集 / 连播（无 override）同一条
+    // 判定，本机库断点、清单条目、互联 host 此刻的断点取较新（BUG-4304）。只读本机
+    // 断点会让合集下一成员 / 播放列表下一集从本机旧断点起播，随后的实时上报（戳 =
+    // now）把旧位置写回 host。
+    final (String startUid, int startEp) = _remotePositionKeyForIndex(index);
+    final int initialPositionMs =
+        client is InterconnectSyncBackend &&
+            remoteEpisodeStartUsesThreeWay(
+              episodeIndex: startEp,
+              intent: startIntent,
+              sourceReviewActive: _sourceReviewActive,
+            )
+        ? await _remoteSessionFor(client).startPositionFor(
+            startUid,
+            fallback: () async =>
+                initialPositionMsOverride ??
+                await _resolveRemoteInitialPositionMs(
+                  info,
+                  index,
+                  askHost: false,
+                ),
+          )
+        : initialPositionMsOverride ??
+              await _resolveRemoteInitialPositionMs(info, index);
+    if (seq != _episodeLoadSeq || !mounted) return;
     try {
       final RemoteVideoStreamUrls urls = await client.remoteVideoStreamUrls(
         info.id,
@@ -4851,6 +4941,26 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         subUid,
         episodeIndex: subEp,
       );
+      // 反馈 wCQIR4Pvz9：这一集没有持久化选择时，按「app 主字幕语言偏好 > 服务器默认
+      // 标记（Jellyfin / Emby `IsDefault`）」挑一条轨起播；都不命中才落回下方后端默认
+      // 外挂字幕。挑中的轨编码成 `embedded:<n>`，走下面与手选 / 重放同一条路径（服务器
+      // 抽取、失败回落 libmpv 自绘）。只是本次默认、**不持久化**——改了偏好下次打开就按
+      // 新偏好挑，用户在菜单里显式选择才记住。此前远端完全不看服务器默认标记，内嵌轨
+      // 又只能手选，服务器标了默认的内嵌字幕起播从不显示。
+      final RemoteVideoEmbeddedSubtitleTrack? startupTrack =
+          persistedSub == null
+          ? pickRemoteStartupSubtitleTrack(
+              _remoteEmbeddedSubtitleTracks,
+              preferences: parseSubtitleLanguagePreferences(
+                appModel.videoSubtitlePreferredLanguages,
+              ),
+            )
+          : null;
+      final String? startupSub =
+          persistedSub ??
+          (startupTrack == null
+              ? null
+              : '${SubtitleSource.embeddedPrefix}${startupTrack.streamIndex}');
       bool subtitleResolved = false;
       // 内嵌轨重放成功时的持久化编码（`embedded:<n>`）——_applyLoad 会把
       // _currentSubtitleSource 设成外挂文件路径（下载的临时抽取产物），须在其后
@@ -4859,16 +4969,16 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       // BUG-2590：上次是服务器抽不出、走了 libmpv 回落的内嵌轨——起播后仍按同一
       // 序号交给 libmpv（mpv 轨表要等 load 后才有，故记下来在 _applyLoad 之后做）。
       RemoteVideoEmbeddedSubtitleTrack? playerRenderedTrack;
-      if (persistedSub != null) {
-        if (SubtitleSource.isOff(persistedSub)) {
+      if (startupSub != null) {
+        if (SubtitleSource.isOff(startupSub)) {
           // 上次显式关闭 → 保持关闭，不加载 host 默认字幕（尊重用户选择）。
           _currentSubtitleSource = null;
           subtitleResolved = true;
-        } else if (SubtitleSource.isHostSidecarPersisted(persistedSub)) {
+        } else if (SubtitleSource.isHostSidecarPersisted(startupSub)) {
           // 上次选的是互联 host 上的某一条外挂字幕（反馈 -CaVsioFhG）：按文件名
           // 重新下载。host 这一集已没有它 / 下载或解析失败 → 落回下方后端默认分支。
           final RemoteVideoSidecarSubtitle? sidecar =
-              remoteHostSidecarForSource(persistedSub, _remoteSidecarSubtitles);
+              remoteHostSidecarForSource(startupSub, _remoteSidecarSubtitles);
           if (sidecar != null) {
             _setLoadingPhase(_VideoLoadPhase.downloadingSubtitle);
             try {
@@ -4882,7 +4992,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
               cues = await _loadExternalSubtitleCues(subtitle.path, info.id);
               if (cues.isNotEmpty) {
                 externalSub = subtitle.path;
-                restoredPrimarySource = persistedSub;
+                restoredPrimarySource = startupSub;
                 subtitleResolved = true;
               }
             } catch (e) {
@@ -4892,38 +5002,38 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
             }
             if (seq != _episodeLoadSeq || !mounted) return;
           }
-        } else if (isExternalSubtitleFilePathForMenu(persistedSub) &&
-            await _isRemoteLocalSubtitleFile(persistedSub)) {
+        } else if (isExternalSubtitleFilePathForMenu(startupSub) &&
+            await _isRemoteLocalSubtitleFile(startupSub)) {
           // 本机已下载 / 导入的字幕档（Jimaku / 手动导入落 video_subtitles/）→ 重放成
           // 「本机字幕」行的选中态（Xt3RCTPKhX：不再挂到后端默认字幕槽上）。旧版本只记了
           // 选择、没记档案列表：在这里补登记，让它有自己可删的行。上次选的若是后端默认
           // 字幕的临时档（不在本机字幕目录、也不在本集列表里），不走这里——落回下方
           // 后端默认分支重新下发，它仍是那条「服务端字幕」行。
           final bool exists =
-              subtitleFormatForPath(persistedSub) != null &&
-              await File(persistedSub).exists();
+              subtitleFormatForPath(startupSub) != null &&
+              await File(startupSub).exists();
           if (exists) {
             _setLoadingPhase(_VideoLoadPhase.downloadingSubtitle);
-            cues = await _loadExternalSubtitleCues(persistedSub, info.id);
+            cues = await _loadExternalSubtitleCues(startupSub, info.id);
           }
           if (seq != _episodeLoadSeq || !mounted) return;
           if (cues.isNotEmpty) {
-            externalSub = persistedSub;
+            externalSub = startupSub;
             subtitleResolved = true;
             if (!_importedSubtitleSources.any(
               (SubtitleSource s) =>
-                  sameExternalSubtitlePathForMenu(s, persistedSub),
+                  sameExternalSubtitlePathForMenu(s, startupSub),
             )) {
               _importedSubtitleSources = <SubtitleSource>[
                 SubtitleSource.external(
-                  externalPath: persistedSub,
-                  label: p.basename(persistedSub),
+                  externalPath: startupSub,
+                  label: p.basename(startupSub),
                 ),
                 ..._importedSubtitleSources,
               ];
               unawaited(
                 _persistRemoteLocalSubtitleFile(
-                  persistedSub,
+                  startupSub,
                   add: true,
                   episode: index,
                 ),
@@ -4934,20 +5044,20 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
             // 并提示一次，然后照常落回后端默认字幕分支。
             debugPrint(
               '[VideoFushiPage] remote subtitle replay failed '
-              'path=$persistedSub exists=$exists cues=${cues.length}',
+              'path=$startupSub exists=$exists cues=${cues.length}',
             );
             _showOsd(
-              t.video_subtitle_restore_failed(label: p.basename(persistedSub)),
+              t.video_subtitle_restore_failed(label: p.basename(startupSub)),
               severity: ToastSeverity.warning,
             );
           }
-        } else if (persistedSub.startsWith(SubtitleSource.embeddedPrefix)) {
+        } else if (startupSub.startsWith(SubtitleSource.embeddedPrefix)) {
           // 远端内嵌轨选择重放（互联完整支持批次）：此前 `embedded:<n>` 不重放、
           // 重进落回 host 默认字幕（选内嵌轨的用户每次进影片都要重选一遍）。向
           // host 重新抽取该轨（与 [_applyRemoteEmbeddedSubtitle] 同端点）；抽取
           // 失败（轨已变 / 旧 host）静默落回 host 默认分支，不阻断起播。
           final int? streamIndex = int.tryParse(
-            persistedSub.substring(SubtitleSource.embeddedPrefix.length),
+            startupSub.substring(SubtitleSource.embeddedPrefix.length),
           );
           final RemoteVideoEmbeddedSubtitleTrack? track = streamIndex == null
               ? null
@@ -4985,7 +5095,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
                 // 内嵌轨的临时抽取档由它自己的 `embedded:<n>` 行承载，不占后端默认
                 // 字幕槽（此前写进 [_remoteSubtitlePath]，多出一条同内容的「服务端字幕」行）。
                 externalSub = subtitle.path;
-                restoredPrimarySource = persistedSub;
+                restoredPrimarySource = startupSub;
                 subtitleResolved = true;
               } else if (track != null &&
                   track.isText &&
@@ -5133,6 +5243,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
                   playerRenderedTrack,
                   source: _remoteEmbeddedSubtitleSource(playerRenderedTrack),
                   label: _remoteEmbeddedSubtitleLabel(playerRenderedTrack),
+                  // 起播自动挑中的轨（wCQIR4Pvz9）走 libmpv 回落时同样不持久化。
+                  remember: persistedSub != null,
                 )
               : _showRemoteGraphicTrackViaPlayer(
                   loadedController,
@@ -5176,6 +5288,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         setState(() {
           _failed = true;
           _failReason = _describeLoadFailure(e);
+          _failTorrentVideo = e is AnimeSourceTorrentVideoException ? e : null;
         });
       }
       // 合集换集取流失败：当前成员指针已在上面切到目标集，而 [_currentEpisode] 没推进、
@@ -5419,11 +5532,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 不被旧 host 回退。非起播集清单不带进度，只比本地按集断点与互联 host 按集断点。
   /// BUG-4304：本机断点读库（不读 prefsRepo 内存缓存——互联 sweep / 冲突弹窗只写库）、
   /// 互联 host 再读一次此刻断点，见 [resolveRemoteVideoResumeMs]。首开与换集 / 连播
-  /// （[_loadRemoteEpisode] 无 override）都走这里。
+  /// （[_loadRemoteEpisode] 无 override）都走这里。[askHost] 为 false 时不再问互联
+  /// host（三方判定读 host 已失败、只要离线回退值时）。
   Future<int> _resolveRemoteInitialPositionMs(
     RemoteVideoInfo info,
-    int episodeIndex,
-  ) {
+    int episodeIndex, {
+    bool askHost = true,
+  }) {
     // host 的 info.positionMs 是整书/当前集进度，只对 host 的 currentEpisode 那集叠加；
     // 其它集 host 没带进度 → 退本地按集 prefs。
     final bool hostProgressApplies =
@@ -5434,6 +5549,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       client: _effectiveRemoteClient!,
       uid: uid,
       episodeIndex: ep,
+      askHost: askHost,
       listed: hostProgressApplies
           ? (positionMs: info.positionMs, updatedAtMs: info.positionUpdatedAtMs)
           : (positionMs: 0, updatedAtMs: 0),
@@ -5502,11 +5618,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       // 基线——否则顺序接力（本机看完、另一台接着看）会被下轮 sweep 误判成冲突。
       // host-playlist 的非首集（`#ep<n>` 键）sweep 不同步，也就不记基线。
       if (client is InterconnectSyncBackend && episodeIndex <= 0) {
-        await InterconnectPlaybackPositionSync(
-          db: appModel.database,
-          backend: client,
-          kind: PlaybackPositionKind.video,
-        ).reportLive(keyUid, (positionMs: clamped, updatedAtMs: nowMs));
+        await _remoteSessionFor(
+          client,
+        ).report(keyUid, (positionMs: clamped, updatedAtMs: nowMs));
       } else {
         await _remoteReportGate.position(
           client,
@@ -5594,6 +5708,26 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     } catch (e) {
       debugPrint('[VideoFushiPage] remote playback stop upload failed: $e');
     }
+  }
+
+  /// 本页丢掉第 [generation] 次远端播放的流（退出 / 换集 / 换档、换线路重载之前）：
+  /// 让来源释放这次播放在服务端占着的资源（BUG-4461，互联 host 的流票与转码）。
+  ///
+  /// 与 [_reportRemotePlaybackStopped] 分开：停止上报在自然播完时也发，那时页面
+  /// 还开着、可回拖重看，流不能作废。这里**同步**调用、不等结果——来源在第一个
+  /// await 之前就摘下这次会话的登记，紧接着起的新播放（同一视频 id）不受影响；
+  /// 按 generation 去重，晚到的重复调用不会摘掉新会话。回看模式与停止上报同口径
+  /// 不发（票按 TTL 过期）。
+  void _releaseRemotePlayback({
+    required RemoteVideoInfo? info,
+    required RemoteVideoClient? client,
+    required int generation,
+  }) {
+    if (_sourceReviewActive) return;
+    final Object? releaseClient = client;
+    if (info == null || releaseClient is! RemoteVideoPlaybackRelease) return;
+    if (!_remotePlaybackReleaseGenerations.add(generation)) return;
+    unawaited(releaseClient.releaseRemoteVideoPlayback(info.id));
   }
 
   /// Flush the local position and then report the remote session stop.
@@ -5756,6 +5890,16 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         if (sidecar != null) {
           cues = sidecar.cues;
           externalSub = sidecar.path;
+        }
+      }
+      // ②b 同目录没有同名字幕：本系列记住了字幕文件夹（反馈 0PZAhFd1RO）就去里面按
+      // 集号认领本集字幕。排在内封轨自动加载（③）前面——文件夹是用户亲手指定的。
+      if (cues.isEmpty) {
+        final ({String path, List<AudioCue> cues})? fromFolder =
+            await _detectSubtitleFolderMatch(paths.videoPath, _activeBookUid);
+        if (fromFolder != null) {
+          cues = fromFolder.cues;
+          externalSub = fromFolder.path;
         }
       }
       // ③ 还是空：别拿一个恢复不出任何内容的外挂源去挡住播放器的内封轨自动加载
@@ -5999,6 +6143,29 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     }
   }
 
+  /// 反馈 0PZAhFd1RO：本系列（[videoSubtitleFolderSeriesKey]）记住了字幕文件夹时，在
+  /// 里面按集号认领 [videoPath] 这一集的字幕并解析为 cue。没记文件夹、认不出 / 找不到 /
+  /// 分不出唯一一份、或解析为空时返回 null（调用方继续往下兜底，用户可手选）。
+  Future<({String path, List<AudioCue> cues})?> _detectSubtitleFolderMatch(
+    String videoPath,
+    String bookUid,
+  ) async {
+    final VideoSubtitleFolder? folder = appModel.prefsRepo.videoSubtitleFolder(
+      _subtitleFolderSeriesKey(videoPath),
+    );
+    if (folder == null) return null;
+    final SubtitleDirectoryMatch? match = await _matchSubtitleFolder(
+      folder,
+      videoPath,
+    );
+    final String? name = match?.fileName;
+    if (name == null) return null;
+    final String path = p.join(folder.directory, name);
+    final List<AudioCue> cues = await _loadExternalSubtitleCues(path, bookUid);
+    if (cues.isEmpty) return null;
+    return (path: path, cues: cues);
+  }
+
   Future<List<AudioCue>> _loadExternalSubtitleCues(
     String path,
     String bookUid,
@@ -6100,6 +6267,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       setState(() {
         _failed = false;
         _failReason = null;
+        _failTorrentVideo = null;
         _missingResource = true;
         _missingRow = _bookRow;
         _title = title;
@@ -6273,6 +6441,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       _title = title;
       _failed = false;
       _failReason = null;
+      _failTorrentVideo = null;
       _missingResource = false;
       _missingRow = null;
       _currentVideoPath = videoPath;
@@ -6684,6 +6853,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       _missingRow = null;
       _failed = false;
       _failReason = null;
+      _failTorrentVideo = null;
     });
     _showOsd(t.video_resource_relink_success, severity: ToastSeverity.success);
     await _loadSingle(updated);
@@ -8445,6 +8615,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     final RemoteVideoInfo? remoteInfo = _effectiveRemoteInfo;
     final RemoteVideoClient? remoteClient = _effectiveRemoteClient;
     final int remoteGeneration = _remotePlaybackGeneration;
+    _releaseRemotePlayback(
+      info: remoteInfo,
+      client: remoteClient,
+      generation: remoteGeneration,
+    );
     exitAfterPersist(
       persist: () => _flushPositionAndReportRemotePlaybackStopped(
         controller: controller,
@@ -8521,6 +8696,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       if (_webWindowFullscreen) await _toggleWebWindowFullscreen();
       if (!mounted) return true;
       if (!route.isCurrent) return false;
+      // 导航到此才确定要关本页：上面任一处取消导航，本页留下且流仍可用（BUG-4461）。
+      _releaseRemotePlayback(
+        info: _effectiveRemoteInfo,
+        client: _effectiveRemoteClient,
+        generation: _remotePlaybackGeneration,
+      );
       await _watchTracker?.stop();
       navigator.pop();
       await route.completed;
@@ -8599,6 +8780,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 只修好了 Flutter 持焦的那一半）。让浮层自己把这些输入交回来。
   @override
   ShortcutScope? get dictionaryPopupInputScope => ShortcutScope.video;
+
+  // 视频页读 popupMineEntry 的键盘绑定派发制卡（video_player_shortcuts.dart）。
+  @override
+  ShortcutAction? get dictionaryPopupMineShortcutAction =>
+      ShortcutAction.popupMineEntry;
 
   /// 与 [guardVideoShortcutsWithPopupDismiss] 同语义：浮层可见时**任一**已映射的视频
   /// 快捷键都先关顶层浮层。故整份 video scope 都要转发——弹窗内动作
@@ -12769,6 +12955,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     if (error is MihonRuntimeException && error.code == 'NO_VIDEOS') {
       return t.video_online_stream_none;
     }
+    // 视频源给的是种子（磁链）：不是网络故障也不是流失效，本宿主不做种子流播——
+    // 原因说清，失败页另给「用种子下载」入口（反馈 xAeextyOV1）。
+    if (error is AnimeSourceTorrentVideoException) {
+      return t.video_online_stream_torrent;
+    }
     // 桥超时有自己的类型化证据，不该掉进下面的裸子串阶梯——它的消息里带「timed out」，
     // 会被网络判据先吃掉报成「网络错误，请检查网络连接」，把用户指向自己的网线。
     if (error is MihonRuntimeException && error.code == 'BRIDGE_TIMEOUT') {
@@ -12832,9 +13023,24 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     setState(() {
       _failed = false;
       _failReason = null;
+      _failTorrentVideo = null;
     });
     _setLoadingPhase(_VideoLoadPhase.connecting);
     unawaited(_init());
+  }
+
+  /// 把视频源给的种子交给下载管线：打开下载中心的「添加任务」框并预填磁链与标题
+  /// （P2P 说明、本机 / 互联 host 落点、目标来源照常由用户确认，与手动粘贴同一路）。
+  Future<void> _downloadTorrentVideo(
+    AnimeSourceTorrentVideoException torrent,
+  ) async {
+    if (!StoreRestrictedCapability.downloads.isAvailable) return;
+    await showManualDownloadTaskDialog(
+      context: context,
+      appModel: appModel,
+      initialMagnet: torrent.magnetUri,
+      initialTitle: torrent.title,
+    );
   }
 
   /// 加载失败态正文（替代旧的「一个居中红叹号、无任何说明」）。图标 + 标题 + 具体
@@ -12848,6 +13054,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         _bookRow?.title ??
         '';
     final String reason = _failReason ?? t.video_load_failed_generic;
+    final AnimeSourceTorrentVideoException? torrent = _failTorrentVideo;
+    // 下载中心在 iOS 上整体缺席（判据只问 store_compliance.dart）：那边只说原因、不给入口。
+    final bool offerTorrentDownload =
+        torrent != null && StoreRestrictedCapability.downloads.isAvailable;
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
@@ -12885,6 +13095,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
               runSpacing: 8,
               alignment: WrapAlignment.center,
               children: <Widget>[
+                if (torrent != null && offerTorrentDownload)
+                  FushiFilledButton.icon(
+                    onPressed: () => unawaited(_downloadTorrentVideo(torrent)),
+                    icon: const FushiIcon(FushiIcons.download),
+                    label: Text(t.video_online_stream_torrent_download),
+                  ),
                 FushiFilledButton.tonalIcon(
                   onPressed: _retryLoad,
                   icon: const FushiIcon(Icons.refresh),

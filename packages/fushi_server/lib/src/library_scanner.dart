@@ -41,6 +41,8 @@ import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi_engine/epub/epub_storage.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/media/audiobook/audiobook_alignment_service.dart';
+import 'package:fushi_engine/media/audiobook/book_audiobook_pairing.dart'
+    show isAudiobookDiscFolderName;
 import 'package:fushi_engine/media/audiobook/srt_book_reimport.dart';
 import 'package:fushi_engine/media/audiobook/standalone_subtitle_book.dart';
 import 'package:fushi_engine/media/collections/book_series_grouper.dart';
@@ -1424,12 +1426,6 @@ class AudiobookFolder {
   final List<String> files;
 }
 
-/// 分碟子目录（`CD1` / `Disc 2` / `Disk_03` / `Part 1`）：并进上一层算同一本。
-final RegExp _kDiscFolderPattern = RegExp(
-  r'^(cd|disc|disk|part)[\s_\-]*\d+$',
-  caseSensitive: false,
-);
-
 /// 有声书文件名 / 目录名末尾的 `[ASIN]` 不是书名（与引擎 `audiobookTitleForAudioPaths` 同口径）。
 String _stripAsin(String raw) {
   final String title = raw
@@ -1439,7 +1435,8 @@ String _stripAsin(String raw) {
 }
 
 /// 把有声书根 [root] 划成一本本书（同步枚举、不跟链接、按路径排序）：
-/// - 直接含音频文件的目录算一本；目录名形如分碟（[_kDiscFolderPattern]）且不在库根
+/// - 直接含音频文件的目录算一本；目录名形如分碟（引擎 [isAudiobookDiscFolderName]，书架
+///   文件夹导入的有声书配对同一条判据）且不在库根
 ///   正下方时并进上一层（`书名/CD1/01.mp3` + `书名/CD2/…` 是一本「书名」）；
 /// - 库根正下方散放的音频文件各算一本，同主名的 EPUB / 字幕跟它走；
 /// - 只收音频、EPUB 与字幕（[kDiscoverySubtitleExtensions]）——库根里的 `.txt`
@@ -1469,7 +1466,7 @@ List<AudiobookFolder> planAudiobookFolders(Directory root) {
   String? discParentOf(String dir) {
     final String parent = p.dirname(dir);
     if (p.equals(parent, rootPath) ||
-        !_kDiscFolderPattern.hasMatch(p.basename(dir))) {
+        !isAudiobookDiscFolderName(p.basename(dir))) {
       return null;
     }
     return parent;

@@ -27,6 +27,7 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/stats/stat_facts.dart';
 import 'package:fushi/src/stats/stat_range.dart';
 import 'package:fushi/src/stats/stat_window.dart';
+import 'package:fushi/src/stats/study_goal_period.dart';
 import 'package:fushi_engine/stats/study_sessions.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
@@ -144,6 +145,9 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
   // （[studyGoalCharsForDay]，BUG-1993）。本页其余 KPI / 趋势 / CPH 仍是
   // 阅读域（[_todayChars] 等），两组数并存不混用。
   int _todayStudyChars = 0;
+  // 本自然周学习域字数（[studyGoalCharsForWeek]，同一份完整日面）：目标周期为
+  // 「按周」（反馈 CjIr9RGSCe）时「今天」卡的目标环用它，与首页同函数同口径。
+  int _weekStudyChars = 0;
   // 完整日面（全部来源），学习域目标分子的数据源。
   List<StatFact> _dailyFacts = <StatFact>[];
   // 上周同期字数（[StatWindow.inPrevWeek]）：仅用于 KPI 条的本周字数环比。
@@ -338,6 +342,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     _todayMs = 0;
     _weekChars = 0;
     _todayStudyChars = 0;
+    _weekStudyChars = 0;
     _prevWeekChars = 0;
 
     final dailyMap = <String, StatDayData>{};
@@ -371,6 +376,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     // （完整日面，与首页「今日目标」同源同函数，BUG-1993）。
     _todayChars = studyGoalCharsForDay(_bookFacts, w.todayKey);
     _todayStudyChars = studyGoalCharsForDay(_dailyFacts, w.todayKey);
+    _weekStudyChars = studyGoalCharsForWeek(_dailyFacts, w);
 
     _byDay = dailyMap;
 
@@ -842,11 +848,19 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme scheme = Theme.of(context).colorScheme;
 
-    final int dailyGoal = appModelNoUpdate.readingGoalDailyChars;
-    final int charGoal = dailyGoal > 0 ? dailyGoal : _kDailyCharGoalFallback;
+    // 目标周期（反馈 CjIr9RGSCe）：按日 → 今日字数 / 日目标；按周 → 本自然周
+    // 字数 / 周目标，环下标签换成「每周目标」。未设目标时回退默认仅作可视化
+    // （周 = 日默认 × 7）。
+    final bool weeklyGoal =
+        appModelNoUpdate.readingGoalPeriod == StudyGoalPeriod.weekly;
+    final int activeGoal = appModelNoUpdate.readingGoalActiveChars;
+    final int charGoal = activeGoal > 0
+        ? activeGoal
+        : (weeklyGoal ? _kDailyCharGoalFallback * 7 : _kDailyCharGoalFallback);
+    final int goalChars = weeklyGoal ? _weekStudyChars : _todayStudyChars;
     // 目标环用学习域分子（BUG-1993，与目标卡 / 首页同口径）；下方 CPH 仍是
     // 阅读域字数 ÷ 阅读时长，量纲不混。
-    final double charFrac = goalFraction(_todayStudyChars, charGoal);
+    final double charFrac = goalFraction(goalChars, charGoal);
     final int todayMinutes = _todayMs ~/ 60000;
     final double timeFrac = goalFraction(todayMinutes, _kDailyTimeGoalMinutes);
     // BUG-1107：今日速度同样过最小样本门槛（[computeCph] 内建，不足 1 分钟返回
@@ -877,8 +891,8 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
                 color: chartColors.series,
                 trackColor: ringTrack,
                 value: '${(charFrac * 100).round()}%',
-                detail: '$_todayStudyChars/$charGoal',
-                caption: t.stat_goal,
+                detail: '$goalChars/$charGoal',
+                caption: weeklyGoal ? t.stat_goal_weekly : t.stat_goal,
               ),
               StatRing(
                 fraction: timeFrac,

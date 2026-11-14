@@ -107,8 +107,13 @@ void main() {
         // 书自带的段落底色与行内底色（出版社 CSS，不带 !important）。
         '${backdrop ? '<style>p.bd { background-color: rgb(60, 200, 120); } '
                   'span.mk { background-color: rgb(240, 130, 60); }</style>' : ''}'
-        '<script>window.flutter_inappwebview = { callHandler: function() '
-        '{ return Promise.resolve(null); } };'
+        // The bridge stub records onRestoreComplete -- the engine's content-ready signal that
+        // lifts the app's loading mask -- so the harness waits on it, not on a fixed sleep.
+        '<script>window.__fushiRestored = new Promise(function(r) '
+        '{ window.__fushiMarkRestored = r; });'
+        'window.flutter_inappwebview = { callHandler: function(name) '
+        '{ if (name === "onRestoreComplete") window.__fushiMarkRestored(); '
+        'return Promise.resolve(null); } };'
         'window.__fushiApplyReaderMargins = function() {};'
         // 非 Range 页专测包裹路径：VN 在支持 CSS Highlight 的引擎上默认走 Range（BUG-3741），
         // 包裹只剩旧 WebView 兜底，这里显式关掉 Range 才覆盖得到。

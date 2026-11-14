@@ -424,6 +424,8 @@
     --fushi-sub-radius: 8px;
     --fushi-sub-padding: 6px 12px 7px;
     --fushi-sub-shadow: 0 1px 3px #000, 1px 0 2px #000, -1px 0 2px #000;
+    /* 真描边（粗细×2 + 颜色，subtitle-style.js toCssVars）；默认不描边。 */
+    --fushi-sub-stroke: 0 transparent;
     position: fixed;
     z-index: 2147483637;
     /* top 给的是底边锚点（JS 默认写 88% 处，用户拖过则是记住的分数）：-100% 让文字向上长，
@@ -471,6 +473,9 @@
     letter-spacing: var(--fushi-sub-spacing);
     text-align: var(--fushi-sub-align);
     text-shadow: var(--fushi-sub-shadow);
+    -webkit-text-stroke: var(--fushi-sub-stroke);
+    /* 描边画在填充之下：只露出字形外侧那一圈，笔画不被吃细（与 app 底层 stroke + 上层 fill 同构）。 */
+    paint-order: stroke fill;
     white-space: pre-wrap;
     user-select: text;
     cursor: text;

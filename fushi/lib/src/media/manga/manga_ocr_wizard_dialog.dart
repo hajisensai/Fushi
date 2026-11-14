@@ -14,7 +14,6 @@ import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/media/manga/external_mokuro_runner.dart';
 import 'package:fushi_engine/media/manga/manga_importer.dart';
 import 'package:fushi/src/media/manga/manga_json_writeback.dart';
-import 'package:fushi/src/media/manga/manga_ocr_background_job.dart';
 import 'package:fushi/src/media/manga/manga_ocr_provider.dart';
 import 'package:fushi/src/media/manga/manga_ocr_engine_probe.dart';
 import 'package:fushi/src/media/manga/manga_ocr_job_stream.dart';
@@ -388,14 +387,7 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
       final MangaOcrJobSpec spec = _jobSpec(dir, focus: focus);
       Navigator.pop(
         context,
-        MangaOcrBackgroundJob(
-          bookKey: bookKey,
-          managedDirectory: dir,
-          engine: _engine,
-          events: mangaOcrBackgroundEvents(spec),
-          focus: focus,
-          follower: mangaOcrJobFollower(spec),
-        ),
+        mangaOcrBackgroundJob(bookKey: bookKey, spec: spec),
       );
       return;
     }

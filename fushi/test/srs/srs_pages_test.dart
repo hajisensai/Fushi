@@ -38,8 +38,7 @@ import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/srs/srs_review_layout.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
-import 'package:fushi/src/utils/components/settings_shared.dart'
-    show AdaptiveSettingsSwitchRow;
+import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart'
@@ -68,53 +67,6 @@ class _FakeEngine implements FsrsEngine {
       List<double>.filled(a.paramCount, 1);
   @override
   String? validateParams(SrsAlgorithm a, List<double> p) => null;
-  SrsMemory _step(SrsMemory? m, int r) => SrsMemory(
-    stability: switch (r) {
-      1 => 0.3,
-      2 => 1.5 + (m?.stability ?? 0),
-      3 => 3 + (m?.stability ?? 0) * 2,
-      _ => 6 + (m?.stability ?? 0) * 3,
-    },
-    difficulty: 5,
-  );
-  @override
-  SrsNextStates nextStates({
-    required SrsAlgorithm algorithm,
-    required List<double> params,
-    required double desiredRetention,
-    required SrsMemory? memory,
-    required double elapsedDays,
-  }) {
-    SrsItemState st(int r) {
-      final SrsMemory m = _step(memory, r);
-      return SrsItemState(memory: m, interval: m.stability);
-    }
-
-    return SrsNextStates(again: st(1), hard: st(2), good: st(3), easy: st(4));
-  }
-
-  @override
-  SrsMemory? memoryState({
-    required SrsAlgorithm algorithm,
-    required List<double> params,
-    required List<SrsFsrsReview> reviews,
-    SrsMemory? starting,
-  }) {
-    SrsMemory? m = starting;
-    for (final SrsFsrsReview r in reviews) {
-      m = _step(m, r.rating);
-    }
-    return m;
-  }
-
-  @override
-  SrsMemory memoryStateFromSm2({
-    required SrsAlgorithm algorithm,
-    required List<double> params,
-    required double easeFactor,
-    required double intervalDays,
-    required double sm2Retention,
-  }) => SrsMemory(stability: intervalDays, difficulty: 5);
   @override
   double retrievability({
     required SrsAlgorithm algorithm,
@@ -2270,6 +2222,149 @@ void main() {
       );
       expect(order, findsNothing);
       await _unmount(tester);
+    });
+
+    testWidgets('牌组设置页：出卡顺序（新卡与复习 / 复习顺序）写进牌组，子牌组随继承；RWKV 下复习顺序只读', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      final String kid = (await tester.runAsync(() async {
+        await store.editFields(
+          SrsEntityKind.deck,
+          store.defaultDeckId,
+          <String, Object?>{
+            SrsFieldKeys.deckAlgorithm: <String, Object?>{
+              'alg': SrsAlgorithm.fsrs6.wire,
+              'auto': true,
+            },
+          },
+        );
+        return store.createDeck('Kid', parentId: store.defaultDeckId);
+      }))!;
+      final SrsDeckTree before = (await tester.runAsync(store.deckTree))!;
+      expect(
+        before[store.defaultDeckId]!.newCardMix,
+        SrsNewCardMix.afterReviews,
+      );
+      expect(
+        before[store.defaultDeckId]!.reviewCardOrder,
+        SrsReviewCardOrder.retrievability,
+      );
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: false,
+        page: SrsDeckSettingsPage(deckId: store.defaultDeckId),
+      );
+      final Finder mix = find.byKey(
+        const ValueKey<String>('srs-settings-new-mix'),
+      );
+      final Finder reviewOrder = find.byKey(
+        const ValueKey<String>('srs-settings-review-order'),
+      );
+      await tester.scrollUntilVisible(
+        mix,
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await Scrollable.ensureVisible(tester.element(mix), alignment: 0.5);
+      await tester.pumpAndSettle();
+      final Finder mixed = find.descendant(
+        of: mix,
+        matching: find.text(t.srs_settings_new_mix_mixed),
+      );
+      if (mixed.evaluate().isEmpty) {
+        // 行宽放不下分段时设置行降级成菜单（设计系统行为）：先点开再选。
+        await tester.tap(
+          find.descendant(of: mix, matching: find.text(t.srs_settings_new_mix)),
+        );
+        await _settle(tester);
+      }
+      await tester.tap(find.text(t.srs_settings_new_mix_mixed).last);
+      await _settle(tester);
+      expect(reviewOrder, findsOneWidget);
+      expect(
+        find.byKey(const ValueKey<String>('srs-settings-review-order-rwkv')),
+        findsNothing,
+      );
+      // 选项控件随平台 / 宽度变（下拉 / 菜单 / 整页），这里直接走行的回调，钉的是保存时写进寄存器的值。
+      tester
+          .widget<AdaptiveSettingsPickerRow<SrsReviewCardOrder>>(reviewOrder)
+          .onChanged(SrsReviewCardOrder.difficulty);
+      await tester.pump();
+      await tester.tap(
+        find.byKey(const ValueKey<String>('srs_settings_save')).first,
+      );
+      await _settle(tester);
+      final SrsDeckTree tree = (await tester.runAsync(store.deckTree))!;
+      expect(tree[store.defaultDeckId]!.newCardMix, SrsNewCardMix.mixed);
+      expect(
+        tree[store.defaultDeckId]!.reviewCardOrder,
+        SrsReviewCardOrder.difficulty,
+      );
+      expect(
+        tree.paramsOwner(kid).reviewCardOrder,
+        SrsReviewCardOrder.difficulty,
+        reason: '子牌组随继承',
+      );
+      expect(tree.paramsOwner(kid).newCardMix, SrsNewCardMix.mixed);
+      await _unmount(tester);
+
+      // 继承参数的子牌组：不显示这两项，只显示「跟随…」。
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: false,
+        page: SrsDeckSettingsPage(deckId: kid),
+      );
+      expect(mix, findsNothing);
+      expect(reviewOrder, findsNothing);
+      await _unmount(tester);
+
+      // 参数归属牌组按 RWKV 排程：复习顺序行只读（固定按可提取度），存着的值不改。
+      await tester.runAsync(
+        () => store.editFields(
+          SrsEntityKind.deck,
+          store.defaultDeckId,
+          <String, Object?>{
+            SrsFieldKeys.deckAlgorithm: <String, Object?>{
+              'alg': SrsAlgorithm.rwkv.wire,
+              'auto': true,
+            },
+          },
+        ),
+      );
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: false,
+        page: SrsDeckSettingsPage(deckId: store.defaultDeckId),
+      );
+      final Finder locked = find.byKey(
+        const ValueKey<String>('srs-settings-review-order-rwkv'),
+      );
+      await tester.scrollUntilVisible(
+        locked,
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
+      expect(locked, findsOneWidget);
+      expect(reviewOrder, findsNothing);
+      expect(
+        find.descendant(
+          of: locked,
+          matching: find.text(t.srs_settings_review_order_rwkv_hint),
+        ),
+        findsOneWidget,
+      );
+      await _unmount(tester);
+      expect(
+        (await tester.runAsync(
+          store.deckTree,
+        ))![store.defaultDeckId]!.reviewCardOrder,
+        SrsReviewCardOrder.difficulty,
+        reason: '寄存器照存',
+      );
     });
 
     testWidgets('牌组设置页：「让子牌组都继承这里」把整棵子树里单独设置的后代改成继承', (

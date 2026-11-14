@@ -633,6 +633,149 @@ void main() {
     });
   });
 
+  /// 反馈 xAeextyOV1：Torrentio 一类扩展给的候选是 `magnet:` 链接。此前它被原样当
+  /// `streamUrl` 交给播放页，`mediaUriForVideoPath` 把非 http(s) 当本地路径包成
+  /// file URI（`Temp\magnet:?xt=…`），libmpv 报 Invalid argument、45 秒后判超时。
+  group('种子（磁链）候选走下载管线，不当 URL 用（BUG-4386）', () {
+    const String magnet =
+        'magnet:?xt=urn:btih:72723c6e45267b82cdd8241825425c4f7310cf32'
+        '&dn=72723c6e45267b82cdd8241825425c4f7310cf32'
+        '&tr=udp://tracker.opentrackr.org:1337/announce&index=0';
+
+    test('only magnet candidates → typed torrent exception with magnet + '
+        'work/episode title', () async {
+      runtime.videos = <Object?>[
+        <Object?, Object?>{'url': magnet, 'quality': 'Torrentio 1080p'},
+      ];
+      final AnimeSourceVideoClient c = client();
+      final String id = c.remoteVideos.first.id;
+      await expectLater(
+        () => c.remoteVideoStreamUrls(id),
+        throwsA(
+          isA<AnimeSourceTorrentVideoException>()
+              .having(
+                (AnimeSourceTorrentVideoException e) => e.magnetUri,
+                'magnetUri',
+                magnet,
+              )
+              .having(
+                (AnimeSourceTorrentVideoException e) => e.title,
+                'title',
+                'Fixture Show - Episode 1',
+              ),
+        ),
+      );
+    });
+
+    test('mixed candidates: default picks the streamable one even when the '
+        'magnet comes first or is preferred', () async {
+      runtime.videos = <Object?>[
+        <Object?, Object?>{
+          'url': magnet,
+          'quality': 'Torrentio 1080p',
+          'preferred': true,
+        },
+        <Object?, Object?>{
+          'url': 'https://cdn.example/720.mp4',
+          'quality': '720p',
+        },
+      ];
+      final AnimeSourceVideoClient c = client();
+      final RemoteVideoStreamUrls urls = await c.remoteVideoStreamUrls(
+        c.remoteVideos.first.id,
+      );
+      expect(urls.streamUrl, 'https://cdn.example/720.mp4');
+      expect(c.streamVariantIndex, 1);
+    });
+
+    test('a pinned magnet line is honoured as a torrent, not played', () async {
+      runtime.videos = <Object?>[
+        <Object?, Object?>{
+          'url': 'https://cdn.example/720.mp4',
+          'quality': '720p',
+        },
+        <Object?, Object?>{'url': magnet, 'quality': 'Torrentio 1080p'},
+      ];
+      final AnimeSourceVideoClient c = client();
+      final String id = c.remoteVideos.first.id;
+      await c.remoteVideoStreamUrls(id);
+      c.streamVariantIndex = 1;
+      await expectLater(
+        () => c.remoteVideoStreamUrls(id),
+        throwsA(isA<AnimeSourceTorrentVideoException>()),
+      );
+    });
+
+    test('whole-episode download never hands a magnet to the HTTP '
+        'downloader', () async {
+      runtime.videos = <Object?>[
+        <Object?, Object?>{'url': magnet, 'quality': 'Torrentio'},
+      ];
+      final _RecordingDownloader d = _RecordingDownloader();
+      final AnimeSourceVideoClient c = AnimeSourceVideoClient(
+        manager: manager,
+        context: _context,
+        anime: anime,
+        episodes: sortEpisodesForPlayback(episodes),
+        httpClient: MockClient((_) async => http.Response('', 404)),
+        subtitleLanguageResolver: () => null,
+        downloader: d,
+      );
+      await expectLater(
+        () => c.downloadRemoteVideo(
+          c.remoteVideos.first.id,
+          File('${root.path}/ep1.mp4'),
+        ),
+        throwsA(isA<AnimeSourceTorrentVideoException>()),
+      );
+      expect(d.calls, isEmpty);
+    });
+
+    test('torrent task title: work + episode, without duplicates', () {
+      const MihonEpisode ep = MihonEpisode(
+        url: '/e',
+        name: 'Episode 3',
+        uploadedAt: 0,
+        number: 3,
+      );
+      expect(
+        AnimeSourceVideoClient.torrentTaskTitle(anime, ep),
+        'Fixture Show - Episode 3',
+      );
+      expect(
+        AnimeSourceVideoClient.torrentTaskTitle(
+          anime,
+          const MihonEpisode(url: '/e', name: '', uploadedAt: 0, number: 1),
+        ),
+        'Fixture Show',
+      );
+      expect(
+        AnimeSourceVideoClient.torrentTaskTitle(
+          const MihonAnime(url: '/a', title: '', coverUrl: ''),
+          ep,
+        ),
+        'Episode 3',
+      );
+    });
+
+    test('isTorrentAnimeVideo looks at the playable url', () {
+      expect(
+        isTorrentAnimeVideo(const MihonVideo(url: magnet, quality: 'x')),
+        isTrue,
+      );
+      expect(
+        isTorrentAnimeVideo(
+          const MihonVideo(
+            url: 'https://site.example/embed',
+            quality: 'x',
+            videoUrl: 'https://cdn.example/a.mp4',
+          ),
+        ),
+        isFalse,
+      );
+    });
+  });
+
   group('Video.audioTracks / mpvArgs 有消费方（EXlaIL2eKQ）', () {
     List<Object?> dashVideos() => <Object?>[
       <Object?, Object?>{

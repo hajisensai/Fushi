@@ -14,10 +14,12 @@ import '../helpers/source_guard.dart';
 /// BUG-4345 / 反馈 Ndnxy3mNdG：PDF 书挂上有声书后，书架只剩一张写死 EPUB 阅读器的
 /// SRT 卡，打开是有声书工具栏 + 白屏正文。
 ///
-/// 三处一起钉：
-/// 1. SRT 卡的阅读器由配对书的 format 经唯一派生点现算（不写死 EPUB 源）；
-/// 2. 「导入有声书」入口与 ctl 挂音频拒绝分支共用 [BookFormat.supportsAudiobook]；
-/// 3. 「有声书配对行顶替原书卡」只对能挂有声书的格式成立，存量 PDF 卡不再被藏。
+/// 拍板项 pdf-audiobook-support（PR #3162 取舍 a）之后 PDF 阅读器正式接有声书
+/// （播放 + 文本层字幕高亮），PDF 重新能挂有声书。一起钉：
+/// 1. SRT 卡的阅读器由配对书的 format 经唯一派生点现算（PDF 配对行开 PDF 阅读器）；
+/// 2. 「导入有声书」入口与 ctl 挂音频拒绝分支共用 [BookFormat.supportsAudiobook]
+///    （EPUB / PDF）；「有声书工作室」只认 EPUB（[BookFormat.supportsAudiobookStudio]）；
+/// 3. 「有声书配对行顶替原书卡」只对能挂有声书的格式成立（漫画原卡不被藏）。
 void main() {
   MediaItem bookCard(BookFormat format) => MediaItem(
     mediaIdentifier: ReaderFushiSource.mediaIdentifierFor('k_${format.name}'),
@@ -39,10 +41,13 @@ void main() {
     ..bookKey = bookKey;
 
   group('能否挂有声书：唯一判据 BookFormat.supportsAudiobook', () {
-    test('只有 EPUB 能挂有声书，PDF / 漫画不能', () {
+    test('EPUB / PDF 能挂有声书，漫画不能；工作室只认 EPUB', () {
       expect(BookFormat.epub.supportsAudiobook, isTrue);
-      expect(BookFormat.pdf.supportsAudiobook, isFalse);
+      expect(BookFormat.pdf.supportsAudiobook, isTrue);
       expect(BookFormat.manga.supportsAudiobook, isFalse);
+      expect(BookFormat.epub.supportsAudiobookStudio, isTrue);
+      expect(BookFormat.pdf.supportsAudiobookStudio, isFalse);
+      expect(BookFormat.manga.supportsAudiobookStudio, isFalse);
     });
 
     test('formatForMediaSourceKey 是 mediaSourceKeyFor 的逆，非书类源为 null', () {
@@ -57,21 +62,34 @@ void main() {
       expect(ReaderFushiSource.formatForMediaSourceKey('video_source'), isNull);
     });
 
-    test('书卡菜单判据：EPUB 卡出「导入有声书」，PDF / 漫画卡不出', () {
+    test('书卡菜单判据：EPUB / PDF 卡出「导入有声书」，漫画卡不出；工作室只给 EPUB', () {
       expect(
         ReaderFushiSource.mediaItemSupportsAudiobook(bookCard(BookFormat.epub)),
         isTrue,
       );
       expect(
         ReaderFushiSource.mediaItemSupportsAudiobook(bookCard(BookFormat.pdf)),
-        isFalse,
-        reason: 'PDF 阅读器不播有声书，PDF 卡不得露出「导入有声书」',
+        isTrue,
+        reason: 'PDF 阅读器播有声书、按文本层高亮，PDF 卡露出「导入有声书」',
       );
       expect(
         ReaderFushiSource.mediaItemSupportsAudiobook(
           bookCard(BookFormat.manga),
         ),
         isFalse,
+      );
+      expect(
+        ReaderFushiSource.mediaItemSupportsAudiobookStudio(
+          bookCard(BookFormat.epub),
+        ),
+        isTrue,
+      );
+      expect(
+        ReaderFushiSource.mediaItemSupportsAudiobookStudio(
+          bookCard(BookFormat.pdf),
+        ),
+        isFalse,
+        reason: '工作室按 EPUB 章 / 句合成，PDF 卡不露出「有声书工作室」',
       );
     });
   });
@@ -119,7 +137,7 @@ void main() {
     });
   });
 
-  test('BUG-728 顶替规则只对能挂有声书的格式成立：存量 PDF / 漫画原卡不再被藏', () {
+  test('BUG-728 顶替规则只对能挂有声书的格式成立：PDF 原卡被 SRT 卡顶替，漫画原卡不藏', () {
     final Map<String, BookFormat> formats = <String, BookFormat>{
       'k_pdf': BookFormat.pdf,
       'k_epub': BookFormat.epub,
@@ -135,7 +153,7 @@ void main() {
       ],
       formatOf: (String key) => formats[key],
     );
-    expect(shadowed, <String>{'k_epub', 'k_missing'});
+    expect(shadowed, <String>{'k_pdf', 'k_epub', 'k_missing'});
   });
 
   test('源码守卫：入口与派生都走共享函数，不再写死 EPUB 源 / 各写一份判据', () {
@@ -175,6 +193,13 @@ void main() {
     );
     expect(
       shelf.contains(
+        compactCode('ReaderFushiSource.mediaItemSupportsAudiobookStudio(item)'),
+      ),
+      isTrue,
+      reason: '书卡「有声书工作室」入口按工作室判据门控（PDF 不出）',
+    );
+    expect(
+      shelf.contains(
         compactCode('ReaderFushiSource.audiobookShadowedBookKeys('),
       ),
       isTrue,
@@ -196,6 +221,63 @@ void main() {
       ),
       isFalse,
       reason: '副屏打开有声书同样按书卡派生的源，不写死 EPUB 源',
+    );
+  });
+
+  test('源码守卫：PDF 阅读器接有声书会话、跨页跟随并在页上画字幕句高亮', () {
+    final String pdf = compactCode(
+      maskComments(
+        File(
+          'lib/src/pages/implementations/reader_pdf_page.dart',
+        ).readAsStringSync(),
+      ),
+    );
+    for (final String needle in <String>[
+      'implements ReaderAudiobookView',
+      'newAudiobookSessionLauncher()',
+      'session.attachReader(this)',
+      'appModel.audiobookSession.detachReader(this)',
+      'notifySectionRestoreCompleted(',
+      'abortChapterTransition()',
+      'pagePaintCallbacks: _pagePaintCallbacks',
+      'pdfRawRangeForNormRange(',
+      'pdfSplitCueRangeAcrossPages(',
+      'AudiobookPlayBar(',
+      'FushiChromeReveal(',
+    ]) {
+      expect(
+        pdf.contains(compactCode(needle)),
+        isTrue,
+        reason: 'PDF 阅读器有声书接线缺 `$needle`',
+      );
+    }
+    expect(
+      pdf.contains(compactCode('ModuleId.listening')),
+      isTrue,
+      reason: '听书模块关闭时不起有声书会话',
+    );
+  });
+
+  test('源码守卫：对齐正文按 format 分派，app 侧不再把 extractDir 当 EPUB 解析', () {
+    for (final String path in <String>[
+      'lib/src/media/audiobook/audiobook_import_dialog.dart',
+      'lib/src/media/audiobook/subtitle_rematch.dart',
+    ]) {
+      final String src = maskComments(File(path).readAsStringSync());
+      expect(
+        src.contains('loadEpubSectionsInBackground('),
+        isFalse,
+        reason: '$path：PDF 书目录按 EPUB 解析恒为 0 章，必须走 loadBookTextSections',
+      );
+      expect(src.contains('loadBookTextSections('), isTrue, reason: path);
+    }
+    final String bindings = maskComments(
+      File('lib/src/engine_bindings.dart').readAsStringSync(),
+    );
+    expect(
+      bindings.contains('pdfTextSectionsLoader = loadPdfTextSections;'),
+      isTrue,
+      reason: 'app 宿主必须注入 PDF 文本层读取器，否则 PDF 有声书全部未匹配',
     );
   });
 }

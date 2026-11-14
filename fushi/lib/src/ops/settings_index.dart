@@ -477,10 +477,11 @@ Map<String, Object?> settingsIndexEntryJson(
           ];
         case SettingsSliderItem():
           final double v = item.value(context);
+          final SettingsSliderBounds bounds = item.resolveBounds(context);
           value = v;
           display = item.label?.call(v) ?? '$v';
-          min = item.min;
-          max = item.max;
+          min = bounds.min;
+          max = bounds.max;
         case SettingsStepperItem():
           final double v = item.value(context);
           value = v;
@@ -672,11 +673,12 @@ Future<void> applySettingsIndexValue(
       );
       await item.dispatchChange(context, choices[index].value);
     case SettingsSliderItem():
+      final SettingsSliderBounds bounds = item.resolveBounds(context);
       final double value = parseCtlSettingNumber(
         raw,
         integer: false,
-        min: item.min,
-        max: item.max,
+        min: bounds.min,
+        max: bounds.max,
       ).toDouble();
       // 等价于一次「拖到该值并松手」：onChanged 提交，声明了 onChangeEnd 的再补一次松手回调。
       await item.onChanged(context, value);

@@ -23,6 +23,14 @@ String? debugRealDirectoryPathOverride;
 bool get isRealDirectoryPathOverridden =>
     kDebugMode && debugRealDirectoryPathOverride != null;
 
+/// [pickRealDirectoryPath] 交回的目录能不能被 `dart:io` **原地、反复**列出：桌面 /
+/// 安卓（全文件访问 + 真实路径）能；iOS 交回的是没激活的安全作用域路径，列目录直接
+/// 被拒（BUG-2786），只能走 [pickImportDirectory] 当场整卷拷贝。给「记住一个外部目录、
+/// 之后反复去里面找文件」的入口判断该不该露出来（视频字幕文件夹，反馈 0PZAhFd1RO）。
+bool get canRelistPickedDirectoryInPlace =>
+    defaultTargetPlatform != TargetPlatform.iOS ||
+    isRealDirectoryPathOverridden;
+
 /// 「选一个文件夹并返回它的**真实文件系统绝对路径**」的统一入口。
 ///
 /// 为什么不直接到处调 `FilePicker.getDirectoryPath()`：在安卓上 file_picker 的
@@ -398,6 +406,30 @@ Future<String?> pickSystemFilePath({
   required BuildContext context,
   Set<String>? allowedExtensions,
 }) => _fallbackPickFile(context: context, allowedExtensions: allowedExtensions);
+
+/// [pickSystemFilePath] 的带出处版本：选择器与交互完全相同（board 1360 的系统选择器），
+/// 只是把「这条路径是不是用户原始位置」随路径一起交回（判据同
+/// [pickRealFilePathDetailed] 的 file_picker 分支：桌面交回原路径；安卓 file_picker 交回
+/// app cache 副本，iOS 交回 import 模式的临时副本，同级兄弟都不在）。
+///
+/// 给「当场消费，但还想顺带记住它所在目录」的调用方用（视频字幕文件夹记忆，反馈
+/// 0PZAhFd1RO）：副本所在的缓存目录不是用户的文件夹，不能记。
+Future<PickedFilePath?> pickSystemFilePathDetailed({
+  required BuildContext context,
+  Set<String>? allowedExtensions,
+}) async {
+  final String? path = await _fallbackPickFile(
+    context: context,
+    allowedExtensions: allowedExtensions,
+  );
+  if (path == null) return null;
+  return PickedFilePath(
+    path: path,
+    isRealPath:
+        defaultTargetPlatform != TargetPlatform.android &&
+        defaultTargetPlatform != TargetPlatform.iOS,
+  );
+}
 
 /// [pickSystemFilePath] 的多选版：同为「当场消费」语义（选中即读进 app 存储 / 经
 /// FFI 导入，与原路径脱钩），因此不申请全文件访问、不走 SAF 真实路径解析——与

@@ -92,7 +92,8 @@ void main() {
       );
     });
 
-    test('七条正文 tap 桥都必须先过 _closeSideSheetForWebViewPointer', () {
+    // 反馈 C9wcnKaPq_ 删掉了合成书左键跳句桥 onCueTap（左键只查词），故不再列它。
+    test('正文 tap 桥都必须先过 _closeSideSheetForWebViewPointer', () {
       final String src = File(
         'lib/src/pages/implementations/reader_fushi/webview.part.dart',
       ).readAsStringSync();
@@ -105,7 +106,6 @@ void main() {
         'onVnBlankTap', // VN 模式空白
         'onSpreadTapEmpty', // 双页 spread 空白
         'onImageTap', // 插图（spread / 图片章几乎整屏都是它）
-        'onCueTap', // 有声书逐句跳播
       ];
       for (final String bridge in bridges) {
         final int at = src.indexOf("handlerName: '$bridge',");

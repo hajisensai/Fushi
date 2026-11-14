@@ -22,6 +22,8 @@ import 'package:fushi/src/updates/local_update_notifier.dart'
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 import 'package:fushi_engine/feedback/feedback_models.dart';
 
+import '../helpers/source_guard.dart' show maskComments;
+
 const String _kotlinDir =
     'android/app/src/main/kotlin/app/fushi/reader/feedback';
 
@@ -167,12 +169,15 @@ void main() {
       _read('android/app/src/main/java/app/fushi/reader/MainActivity.java'),
       contains('FeedbackReplyWorkChannel.registerWith('),
     );
-    // 原生 Worker 本身不碰 Flutter 引擎（这正是本次修复的全部意义）。
-    final String worker = _read('$_kotlinDir/FeedbackReplyWorker.kt');
+    // 原生 Worker 本身不碰 Flutter 引擎（这正是本次修复的全部意义）。判代码不判注释：
+    // 类注释里正是在解释「旧实现用 FlutterEngine(applicationContext) 起后台引擎」。
+    final String worker = maskComments(
+      _read('$_kotlinDir/FeedbackReplyWorker.kt'),
+    );
     expect(worker, isNot(contains('FlutterEngine')));
     expect(worker, isNot(contains('io.flutter')));
     expect(
-      _read('$_kotlinDir/FeedbackReplyCheck.kt'),
+      maskComments(_read('$_kotlinDir/FeedbackReplyCheck.kt')),
       isNot(contains('io.flutter')),
     );
   });

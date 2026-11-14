@@ -92,25 +92,45 @@ The full plan needs its own design spec under `docs/specs/`. Size: L/XL.
 ## Other known gaps
 
 - **SRS follow-ups**:
+  - Review content (decks, note search, one note, stats, the Conflict Center, duplicate
+    merge, batch note edits) is reachable on the server through the same engine routes the
+    app's `fushi_cli srs …` uses (`packages/fushi_engine/lib/srs/srs_ctl_routes.dart` /
+    `srs_ctl_ops.dart`): admin endpoints under `/api/admin/srs/…` (`admin_srs_ctl.dart`),
+    `fushi_server ctl srs decks|notes|note|stats|conflicts|…` (`ctl_srs_commands.dart`) and
+    the op catalog as `server.srs.decks.list` etc. (app id with a `server.` prefix, undo
+    included; the held-deletion "keep" is irreversible and needs the user's confirmation).
+    Every one takes `profile` (uid of a served profile); it may be left out only while exactly
+    one profile is ready, otherwise 409 `profile_required`. A note id that belongs to another
+    profile is refused as 404 (the store's by-id access is not profile scoped, BUG-4480; the
+    app's single-library host does not have this check yet). Known limits: route error messages
+    are the app's Chinese ones in both server languages; writes made through `ctl` are not
+    recorded for undo (admin only, use `--dry-run` first).
   - Profiles whose sync location is end-to-end encrypted are not served in v1. Serving them
     would need the passphrase on the server.
   - AnkiConnect `getProfiles` reports one profile per key.
-  - No device-trust entry (srs.db v29, BUG-4306, `native/fushi_fsrs/src/store/sync2/trust.rs`).
-    The server is a full sync v2 replica. A device that first syncs after the server's copy of
-    the profile already has data stays "pending" on the server for good: its deletions and
-    permanent removals are held there and never reach the server's projection, so remote
-    review and AnkiConnect clients of the server keep seeing those notes. The app can only
-    trust the device in its own Conflict Center, which does not reach the server's srs.db.
-    Closing this needs a server op / admin page that calls the `trust` sync2 command.
+  - Device trust (srs.db v29, BUG-4306, `native/fushi_fsrs/src/store/sync2/trust.rs`) is
+    confirmed on the server itself: a device that first syncs after the server's copy of a
+    profile already has data stays "pending" there, its deletions and permanent removals held
+    until the admin trusts it. Entries: `GET /api/admin/srs/devices`,
+    `POST /api/admin/srs/devices/trust`, the WebUI Review page ("Devices waiting for
+    confirmation"), `fushi_server ctl srs devices|trust|reject`. The logic is the engine's
+    `srs_devices.dart` (`srsUntrustedDevices` / `srsSetDeviceTrust`), shared with the app's
+    Conflict Center. Trusting a device in the app still does not reach the server's srs.db
+    (trust is local per replica, by design).
+  - RWKV scheduling runs on the server since 2026-11-11 (spec addendum), through the same
+    `srsAttachRwkv` as the app. Still open: the WebUI does not show the per-profile `rwkv` /
+    `rwkvError` status that `ServerSrsProfile.toJson` now reports, and there is no setting for
+    the native thread count (it uses all cores, like the app).
   - The FSRS optimizer is not run on the server yet (spec §4.6). `SrsOptimizationScheduler`
     already lives in the engine; the server's collections pick up parameters optimized on
     other devices through the normal sync.
   - The server op catalog (`admin_ops.dart`) describes `server.srs.status`, `.profiles`,
-    `.sync` (irreversible, user confirms), `.mining-target.set`, `.mining-deck.set` and
+    `.devices` (read only), `.sync` (irreversible, user confirms), `.mining-target.set`, `.mining-deck.set` and
     `.rollover-hour.set` (undoable). Left out on purpose: the AnkiConnect settings (keys are
     credentials, bind / port are listen settings; the status the AI sees is cut down to
     enabled / listening / last error), and choosing which profiles are served or the default
-    one (spec §9: an owner decision, not something a paired device's AI session changes).
+    one (spec §9: an owner decision, not something a paired device's AI session changes), and
+    trusting / rejecting a sync device (a security boundary, like pairing).
 - **Jellyfin / Emby / Plex as library sources**: the `MediaServerBrowser` implementations
   live in `fushi/lib/src/sync/`, not in the engine. The server only has read-only Plex
   browsing (`media-server plex`). It cannot register a media server as a library source.
@@ -118,6 +138,11 @@ The full plan needs its own design spec under `docs/specs/`. Size: L/XL.
   (`video_scrape_host.dart`).
 - **Manga PDF**: not imported. Rasterizing needs the app's pdfium/pdfrx. Downloads with a
   PDF are blocked with `unsupportedOnThisHost`, and manga roots skip `.pdf`.
+- **PDF books over interconnect (receiving)**: the server does not wire
+  `importPdfBookFromFile` (PDF import needs pdfrx for the page count and cover), so it
+  advertises `liveLibrary.pdfBooks=false` and clients keep their PDF books local instead of
+  pushing them. The server still lists and serves any PDF already in its library
+  (`hasPdfContent`, BUG-4381).
 - **Subtitles (what is still app-only)**: downloads source subtitles and
   `POST /api/library/videos/<id>/subtitle/backfill` works on the server (one provider
   assembly in `packages/fushi_server/lib/src/server_subtitle_providers.dart`; the backfill
@@ -153,6 +178,14 @@ The full plan needs its own design spec under `docs/specs/`. Size: L/XL.
 
   Until that exists, run `fushi_server transcribe`, then either use
   `audiobook align --srt …` or drop the `.srt` next to the audio and rescan.
+- **Book roots don't pair audiobooks beyond same-name sidecars**: the app's shelf folder
+  import (feedback z398R0ndAw) pairs a book with audio in a same-name subfolder (disc
+  folders `CD1` / `Disc 2` merged in), by volume number, with the only book in a folder,
+  or by EPUB `dc:title` (`book_audiobook_pairing.dart` in the engine, R2–R5). The server's
+  `kind=book` roots don't call it yet. Only the disc-folder rule
+  (`isAudiobookDiscFolderName`) is shared, by the server's `planAudiobookFolders`. The
+  server also never queues transcription for a book whose audio has no subtitle (same
+  reason as the next item).
 - **Audiobook roots (limits of the first version)**: audio is imported by reference
   (`copyAudio: false`). It stays in the root and is never copied into the data dir. A book
   is tracked by its folder (or by a loose audio file in the root). When a book title

@@ -141,6 +141,13 @@ abstract final class SrsFieldKeys {
   /// 新卡出卡顺序（[SrsNewCardOrder.wire]；缺省 = 按词频）。随参数继承走 own 祖先。
   static const String deckNewOrder = 'newOrder';
 
+  /// 复习顺序（[SrsReviewCardOrder.wire]；缺省 = 可提取度从低到高）。随参数继承走 own 祖先；
+  /// own 祖先按 RWKV 排程时整棵子树按可提取度。
+  static const String deckReviewOrder = 'reviewOrder';
+
+  /// 新卡与复习怎么排（[SrsNewCardMix.wire]；缺省 = 复习之后）。随参数继承走 own 祖先。
+  static const String deckNewMix = 'newMix';
+
   /// 新卡计划（Map，见 [SrsNewCardPlan]）：`auto` 按复习量自动调整、
   /// `budget` 复习预算百分比、`boost` 复习少时多出新卡的百分比。一起写、一起合并；
   /// 与 [deckLimits] 一样是牌组自己的值，不随参数继承。
@@ -443,62 +450,4 @@ class SrsRegister {
   List<SrsFieldEdit> get visibleLosers => <SrsFieldEdit>[
     for (final int i in _losers) _items[i].edit,
   ];
-}
-
-/// 本机写入者：分配 dot、维护已应用的因果上下文（闭包）。
-class SrsEditWriter {
-  SrsEditWriter({
-    required this.writerId,
-    int lastSeq = 0,
-    SrsCausalContext? applied,
-  }) : _lastSeq = lastSeq,
-       _applied = applied ?? SrsCausalContext.empty();
-
-  final String writerId;
-  int _lastSeq;
-  SrsCausalContext _applied;
-
-  int get lastSeq => _lastSeq;
-
-  /// 本机已应用（含闭包）的上下文。持久化它与 [lastSeq]。
-  SrsCausalContext get applied => _applied;
-
-  /// 应用一条记录（本机或对端；备份 / 快照带来的也一样）：dot 与它的 ctx 一起并入。
-  void apply(SrsFieldEdit edit) {
-    _applied = _applied.merge(edit.ctx).add(edit.dot);
-  }
-
-  /// 并入整个上下文（与事件存储的 seenContext 对齐）。
-  void adopt(SrsCausalContext context) {
-    _applied = _applied.merge(context);
-  }
-
-  /// 新建一条本机修改记录并立即应用。ctx 覆盖本机已应用的全部记录，
-  /// 所以「改回 / 确认」天然支配全部候选，冲突在所有设备上随之消失。
-  SrsFieldEdit create({
-    required String profileUid,
-    required SrsEntityKind entityKind,
-    required String entityId,
-    required String fieldKey,
-    required Object? value,
-    required Hlc hlc,
-    required SrsTimeSource timeSource,
-    bool machine = false,
-  }) {
-    _lastSeq += 1;
-    final SrsFieldEdit edit = SrsFieldEdit(
-      profileUid: profileUid,
-      entityKind: entityKind,
-      entityId: entityId,
-      fieldKey: fieldKey,
-      dot: SrsDot(writerId, _lastSeq),
-      ctx: _applied,
-      value: value,
-      hlc: hlc,
-      timeSource: timeSource,
-      machine: machine,
-    );
-    apply(edit);
-    return edit;
-  }
 }

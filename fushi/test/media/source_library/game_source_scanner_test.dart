@@ -301,6 +301,7 @@ void main() {
 
       final SourceScanSummary summary = await SourceLibraryScanner(
         db,
+        transcribeAudiobook: null,
       ).scan((await db.getMediaSourceById(sourceId))!);
 
       expect(summary.error, isNull);
@@ -315,6 +316,7 @@ void main() {
       // 重扫：没有新增，钩子仍被调（游戏库缓存要重载），计数为本轮新增 0。
       final SourceScanSummary again = await SourceLibraryScanner(
         db,
+        transcribeAudiobook: null,
       ).scan((await db.getMediaSourceById(sourceId))!);
       expect(again.importedMediaCount, 0);
       expect(hooked, isEmpty);
@@ -327,6 +329,7 @@ void main() {
 
       final SourceScanSummary summary = await SourceLibraryScanner(
         db,
+        transcribeAudiobook: null,
       ).scan((await db.getMediaSourceById(sourceId))!);
 
       expect(summary.error, contains('local folders only'));
@@ -343,6 +346,7 @@ void main() {
 
       final SourceScanSummary summary = await SourceLibraryScanner(
         db,
+        transcribeAudiobook: null,
       ).scan((await db.getMediaSourceById(sourceId))!);
 
       expect(summary.error, isNotNull);

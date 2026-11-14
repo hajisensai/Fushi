@@ -22,6 +22,8 @@ import 'package:fushi/src/media/music/music_session.dart';
 import 'package:fushi/src/media/music/music_signal_path.dart';
 import 'package:fushi/src/media/music/music_study_tracker.dart';
 import 'package:fushi/src/media/playback_route_marks.dart';
+import 'package:fushi/src/media/range_playback.dart';
+import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/music/music_lyrics_page.dart';
@@ -593,6 +595,126 @@ void main() {
     expect(mined.single.sentence, '沈むように');
     expect(mined.single.noteId, 77);
 
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  // 反馈 l8XrV_IfXH：音乐高级制卡能选前后文行，句子与音频片段跟着合并；起止微调与
+  // 试听经同一个区间，关窗把播放头放回查词位置。
+  testWidgets('高级制卡：前后文行合成句子与合并区间，微调进片段，试听后放回播放头', (WidgetTester tester) async {
+    File('${dir.path}${Platform.pathSeparator}song.lrc').writeAsStringSync(
+      '[00:01.00]夜に駆ける\n[00:04.00]沈むように\n[00:08.00]溶けていく\n[00:12.00]月の光\n',
+    );
+    final List<({int startMs, int endMs})> clips =
+        <({int startMs, int endMs})>[];
+    musicLyricsClipExtractor =
+        ({
+          required String inputPath,
+          required Map<String, String> httpHeaders,
+          required int startMs,
+          required int endMs,
+          required String outputPath,
+          required int audioChannels,
+          required String audioBitrate,
+          required void Function(String summary) onFailure,
+        }) async {
+          clips.add((startMs: startMs, endMs: endMs));
+          File(outputPath).writeAsBytesSync(<int>[1, 2, 3]);
+          return outputPath;
+        };
+    await pumpPage(tester);
+    backend.controller.add(
+      const MusicBackendPosition(Duration(milliseconds: 4200), null),
+    );
+    await tester.pump();
+    final Rect row = tester.getRect(find.bySemanticsLabel('沈むように'));
+    await tester.longPressAt(row.centerLeft + const Offset(14, 0));
+    await tester.pump();
+
+    final dynamic state = tester.state(find.byType(MusicLyricsPage));
+    final AdvancedMiningSections sections =
+        await tester.runAsync(
+              () =>
+                  state.buildAdvancedMiningSections(matched: '沈む')
+                      as Future<AdvancedMiningSections>,
+            )
+            as AdvancedMiningSections;
+    final AdvancedMiningSentenceSection sentence = sections.sentence!;
+    final AdvancedMiningAudioSection audio = sections.audio!;
+
+    // 单行：区间就是这一行（前后各扩 0.5 s）。
+    AdvancedMiningAudioWindow? window = await tester
+        .runAsync<AdvancedMiningAudioWindow?>(() => audio.describe(0, 0));
+    expect((window!.startMs, window.endMs), (3500, 8500));
+
+    // 上 1 行 + 下 1 行。
+    expect(await tester.runAsync(() => sentence.setContext(1, 1)), 2);
+    final Map<String, Object?> preview = (await tester.runAsync(
+      sentence.fetchPreview,
+    ))!;
+    expect(preview['prev'], <String>['夜に駆ける']);
+    expect(preview['current'], '沈むように');
+    expect(preview['next'], <String>['溶けていく']);
+    // 合并 [1 s, 12 s) → 留白 [0.5 s, 12.5 s) → 微调 [0.3 s, 12.8 s)。
+    window = await tester.runAsync(() => audio.describe(-200, 300));
+    expect((window!.startMs, window.endMs), (300, 12800));
+
+    // 试听与写卡同一段；关窗停试听、播放头回到查词时的位置（打开时没在播：保持暂停）。
+    backend.log.clear();
+    final RangePlayback? playback = await tester.runAsync<RangePlayback?>(
+      () => audio.preview(-200, 300),
+    );
+    expect(playback, isNotNull);
+    expect(backend.log, <String>['seek:300', 'play']);
+    await tester.runAsync(() => sections.onClosed!());
+    // ended 的 Completer 是在 runAsync（真实 zone）里建的，在 fake-async 测试体里
+    // 直接 await 它，回调永远排不上队（实测卡满 10 分钟超时）；同样包进 runAsync。
+    expect(
+      await tester.runAsync(() => playback!.ended),
+      RangePlaybackEnd.interrupted,
+    );
+    expect(backend.log, <String>['seek:300', 'play', 'pause', 'seek:4200']);
+
+    // 确认制卡：覆盖项里的起止微调进片段，句子按「上 → 本行 → 下」合成。
+    await tester.runAsync(
+      () =>
+          state.onMineFromPopup(
+                MiningRequestOverrides.attach(
+                  <String, String>{
+                    'expression': '沈む',
+                    'reading': 'しずむ',
+                    'glossary': 'sink',
+                  },
+                  const MiningRequestOverrides(
+                    audioStartDeltaMs: -200,
+                    audioEndDeltaMs: 300,
+                  ),
+                ),
+              )
+              as Future<Object?>,
+    );
+    expect(clips.single, (startMs: 300, endMs: 12800));
+    final AnkiMiningContext ctx = anki.mined.single;
+    expect(ctx.sentence, '夜に駆ける\n沈むように\n溶けていく');
+    expect(ctx.sentenceAudioPath, isNotNull);
+    expect((ctx.clipStartMs, ctx.clipEndMs), (1000, 12000));
+
+    // 制卡成功后前后文清空：下一次「+」回到单行；「不要音频」不截片段。
+    await tester.runAsync(
+      () =>
+          state.onMineFromPopup(
+                MiningRequestOverrides.attach(<String, String>{
+                  'expression': '沈む',
+                }, const MiningRequestOverrides(omitAudio: true)),
+              )
+              as Future<Object?>,
+    );
+    expect(clips, hasLength(1), reason: '不要音频：不截片段');
+    expect(anki.mined.last.sentence, '沈むように');
+    expect(anki.mined.last.sentenceAudioPath, isNull);
+
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 50)),
+    );
     await tester.pumpWidget(const SizedBox.shrink());
   });
 

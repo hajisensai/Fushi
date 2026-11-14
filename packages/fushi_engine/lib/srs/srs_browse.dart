@@ -282,6 +282,9 @@ SrsSourceRef? _decodeSource(String? raw) {
 }
 
 /// 出处视图的一组（[SrsBrowseResult.sources]）：结果里出处键相同的行。
+///
+/// 出处带系列（`SrsSourceRef.seriesTitle`，反馈 MCJLSBR5Wg）时这一组是整个系列（[key] 是系列键 `<kind>::<系列名>`，
+/// [seriesTitle] 是系列名），[children] 是系列下按集（作品键）分的第二级，口径与组相同（集的 [children] 为空）。
 class SrsBrowseSourceGroup {
   const SrsBrowseSourceGroup({
     required this.key,
@@ -292,6 +295,8 @@ class SrsBrowseSourceGroup {
     required this.preview,
     required this.latestAddedAt,
     required this.deckIds,
+    this.seriesTitle,
+    this.children = const <SrsBrowseSourceGroup>[],
   });
 
   /// 出处键（[SrsBrowseRow.sourceKey]）；null = 没有出处的那一组（总在最后）。
@@ -320,6 +325,15 @@ class SrsBrowseSourceGroup {
 
   /// [data] 解析成的出处（解析不了 / 没有 null）。
   SrsSourceRef? get source => _decodeSource(data);
+
+  /// 系列名：这一组是一个系列时非 null（[children] 是它的各集）。
+  final String? seriesTitle;
+
+  /// 系列下的各集（按 [latestAddedAt] 降序，同值按键）；不是系列的组为空。「只看这一集」用集的 [key]
+  /// （[srsSourceQuery]，内核 `src:` 同时认系列键与作品键）。
+  final List<SrsBrowseSourceGroup> children;
+
+  bool get isSeries => seriesTitle != null;
 }
 
 /// 浏览结果一次取的行数。
@@ -724,26 +738,33 @@ class SrsBrowseSession {
       'gen': gen,
     })).map;
     return <SrsBrowseSourceGroup>[
-      for (final Object? g in r['groups']! as List<Object?>)
-        () {
-          final Map<String, Object?> m = (g! as Map).cast<String, Object?>();
-          return SrsBrowseSourceGroup(
-            key: m['key'] as String?,
-            kind: m['kind'] as String?,
-            data: m['data'] as String?,
-            count: m['count']! as int,
-            due: m['due']! as int,
-            preview: <int>[
-              for (final Object? i in m['preview']! as List<Object?>) i! as int,
-            ],
-            latestAddedAt: m['latestAddedAt']! as int,
-            deckIds: <String>[
-              for (final Object? d in m['decks']! as List<Object?>)
-                d! as String,
-            ],
-          );
-        }(),
+      for (final Object? g in r['groups']! as List<Object?>) _sourceGroupOf(g),
     ];
+  }
+
+  /// 内核 `browse_sources` 的一组 / 一集（store/browse.rs `Session::sources`）。
+  static SrsBrowseSourceGroup _sourceGroupOf(Object? g) {
+    final Map<String, Object?> m = (g! as Map).cast<String, Object?>();
+    return SrsBrowseSourceGroup(
+      key: m['key'] as String?,
+      kind: m['kind'] as String?,
+      data: m['data'] as String?,
+      count: m['count']! as int,
+      due: m['due']! as int,
+      preview: <int>[
+        for (final Object? i in m['preview']! as List<Object?>) i! as int,
+      ],
+      latestAddedAt: m['latestAddedAt']! as int,
+      deckIds: <String>[
+        for (final Object? d in m['decks']! as List<Object?>) d! as String,
+      ],
+      seriesTitle: m['series'] as String?,
+      children: <SrsBrowseSourceGroup>[
+        for (final Object? c
+            in (m['children'] as List<Object?>?) ?? const <Object?>[])
+          _sourceGroupOf(c),
+      ],
+    );
   }
 
   Future<List<String>> _ids(int gen, int from, int to) async {

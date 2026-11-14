@@ -849,7 +849,7 @@ class _StillMainCard extends StatelessWidget {
         : FushiM3eShape.containerLargeRadius;
     return FushiHoverLift(
       enabled: entry.onOpen != null,
-      scale: _kStillMainHoverLiftScale,
+      scale: kFushiWideCardHoverLiftScale,
       builder: (BuildContext _, bool lifted) => _StillMaterial(
         lifted: lifted,
         radius: radius ?? _kStillFallbackRadius,
@@ -1089,11 +1089,6 @@ class FushiContinueSideTile extends StatelessWidget {
     );
   }
 }
-
-/// 剧照主卡悬停放大：主卡比封面大得多，按 [kFushiHoverLiftScale] 放大会顶出
-/// 版面，但 1.01 几乎看不出「抬起」（用户 2026-10-31：视频继续观看缺抬起的
-/// 金属效果），取 1.025 配合投影 / 扫光读出抬升。
-const double _kStillMainHoverLiftScale = 1.025;
 
 /// 封面行剧照小卡的片名行数：副标题 / 进度在剧照上，卡下只留一行片名
 /// （长片名省略，完整名在读屏标签与长按菜单里）。

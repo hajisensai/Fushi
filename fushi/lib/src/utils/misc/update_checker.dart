@@ -60,5 +60,6 @@ part 'update_checker_net.dart';
 part 'update_checker_download.dart';
 part 'update_checker_race.dart';
 part 'update_checker_release.dart';
+part 'update_checker_version.dart';
 part 'update_checker_ui.dart';
 part 'update_checker_headless.dart';

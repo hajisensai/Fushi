@@ -173,16 +173,25 @@ class _AudiobookRepeatIconButtonState extends State<AudiobookRepeatIconButton> {
       // widget.onPressed()（数值狂涨 / 狂降）直到 dispose。与 video_fushi_page.dart
       // 的 _VideoRepeatGestureButton 对齐。
       onLongPressCancel: _stop,
-      child: FushiIconButton(
-        icon: widget.icon,
-        size: 18,
-        tooltip: widget.tooltip,
-        constraints: const BoxConstraints.tightFor(
-          width: kMinInteractiveDimension,
-          height: kMinInteractiveDimension,
+      // 触屏长按归连发：官方按钮内的 Tooltip 默认 `longPress` 触发，它的
+      // LongPressGestureRecognizer 比外层这个先进竞技场、同一时刻到期先接受，
+      // 外层 onLongPressStart 永远等不到（按住只弹气泡、不连发）。这里改成
+      // `manual`：触屏不再用长按抢手势，鼠标悬停气泡与无障碍名称照旧。
+      child: TooltipTheme(
+        data: TooltipTheme.of(
+          context,
+        ).copyWith(triggerMode: TooltipTriggerMode.manual),
+        child: FushiIconButton(
+          icon: widget.icon,
+          size: 18,
+          tooltip: widget.tooltip,
+          constraints: const BoxConstraints.tightFor(
+            width: kMinInteractiveDimension,
+            height: kMinInteractiveDimension,
+          ),
+          padding: EdgeInsets.zero,
+          onTap: widget.onPressed,
         ),
-        padding: EdgeInsets.zero,
-        onTap: widget.onPressed,
       ),
     );
   }

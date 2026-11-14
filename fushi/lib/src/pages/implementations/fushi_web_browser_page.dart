@@ -20,8 +20,9 @@ import 'package:fushi/src/pages/implementations/web_browser/web_browser_tab_list
 import 'package:fushi/src/pages/implementations/web_browser/web_browser_settings_page.dart';
 import 'package:fushi/src/settings/settings_schema_web_browser.dart';
 import 'package:fushi/src/stats/study_cover_tracker.dart';
+import 'package:fushi/src/shortcuts/gamepad_forwarding_action.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart'
-    show focusedEditableText;
+    show GamepadButtonIntent, focusedEditableText;
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
@@ -1300,6 +1301,22 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
     return runShortcut(action)
         ? KeyEventResult.handled
         : KeyEventResult.ignored;
+  }
+
+  /// 手柄按钮（桌面轮询的 [GamepadButtonIntent]，Android 的 gameButton* 键事件经全局
+  /// wrapper 汇合到同一 Intent）→ 注册表 `webBrowser` scope（反馈 wegu0vewts）。
+  /// 返回 false 交回祖先 / GamepadService 的兜底（焦点导航、A 确认、B 返回上一级）。
+  /// 查词弹窗开着时一律让给弹窗的手柄兜底（词条导航 / 制卡 / 发音），与 SRS 复习页
+  /// 同义：浏览器动作（换标签、后退…）不该在弹窗盖着网页时从底下触发。
+  @visibleForTesting
+  bool handleGamepadButton(GamepadButton button) {
+    if (_lookup.isOpen) return false;
+    final ShortcutAction? action = _appModel.shortcutRegistry.resolveGamepad(
+      button,
+      scope: ShortcutScope.webBrowser,
+    );
+    if (action == null) return false;
+    return runShortcut(action);
   }
 
   /// WebView 持焦时键盘桥回传的 token → 注册表解析（与 Flutter 持焦同一条路）。
@@ -2645,63 +2662,77 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
         // `unfocus()` 把焦点交给路由 scope（在本节点之外），此后 Ctrl+F / Ctrl+T 等一律
         // 收不到。FocusScope 自己 autofocus，页内任何 unfocus 都落回它身上。
         // WebView 持 OS 焦点期间的按键仍走 DOM 键盘桥（[_ShortcutKeyBridge]）。
-        child: FocusScope(
-          debugLabel: 'web-browser-shortcuts',
-          autofocus: true,
-          skipTraversal: true,
-          onKeyEvent: _onKeyEvent,
-          child: SrsCardLookupHost(
-            controller: _lookup,
-            // 制卡来源：调用时现读前台标签页（无痕页返回 null，卡片不带来源）。
-            cardSource: () {
-              final WebBrowserTab? active = _tabs.activeTab;
-              final WebBrowserCardSource? source = active == null
-                  ? null
-                  : webBrowserCardSourceOf(active);
-              return source == null
-                  ? null
-                  : (title: source.title, url: source.url);
-            },
-            child: Material(
-              color: bg,
-              child: Semantics(
-                label: tab == null || tab.displayTitle.isEmpty
-                    ? t.web_browser_title
-                    : tab.displayTitle,
-                container: true,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: <Widget>[
-                    body,
-                    IgnorePointer(
-                      ignoring: !_gridOpen,
-                      child: AnimatedSwitcher(
-                        duration: duration,
-                        switchInCurve: FushiMotion.enter,
-                        switchOutCurve: FushiMotion.exit,
-                        transitionBuilder:
-                            (Widget child, Animation<double> animation) =>
-                                FadeTransition(
-                                  opacity: fushiUnitClamped(animation),
-                                  child: ScaleTransition(
-                                    scale: Tween<double>(
-                                      begin: 0.96,
-                                      end: 1,
-                                    ).animate(animation),
-                                    child: child,
+        //
+        // 手柄：GamepadService 从 primaryFocus 往上派发 GamepadButtonIntent，这层
+        // 只认绑到 webBrowser scope 的按钮，其余显式转发给祖先（裸 CallbackAction
+        // 会让上溯停在本层，焦点导航 / B 返回上一级全失灵，见
+        // [GamepadButtonForwardingAction]）。
+        child: Actions(
+          actions: <Type, Action<Intent>>{
+            GamepadButtonIntent: GamepadButtonForwardingAction(
+              ancestorContext: context,
+              handle: handleGamepadButton,
+            ),
+          },
+          child: FocusScope(
+            debugLabel: 'web-browser-shortcuts',
+            autofocus: true,
+            skipTraversal: true,
+            onKeyEvent: _onKeyEvent,
+            child: SrsCardLookupHost(
+              controller: _lookup,
+              // 制卡来源：调用时现读前台标签页（无痕页返回 null，卡片不带来源）。
+              cardSource: () {
+                final WebBrowserTab? active = _tabs.activeTab;
+                final WebBrowserCardSource? source = active == null
+                    ? null
+                    : webBrowserCardSourceOf(active);
+                return source == null
+                    ? null
+                    : (title: source.title, url: source.url);
+              },
+              child: Material(
+                color: bg,
+                child: Semantics(
+                  label: tab == null || tab.displayTitle.isEmpty
+                      ? t.web_browser_title
+                      : tab.displayTitle,
+                  container: true,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: <Widget>[
+                      body,
+                      IgnorePointer(
+                        ignoring: !_gridOpen,
+                        child: AnimatedSwitcher(
+                          duration: duration,
+                          switchInCurve: FushiMotion.enter,
+                          switchOutCurve: FushiMotion.exit,
+                          transitionBuilder:
+                              (Widget child, Animation<double> animation) =>
+                                  FadeTransition(
+                                    opacity: fushiUnitClamped(animation),
+                                    child: ScaleTransition(
+                                      scale: Tween<double>(
+                                        begin: 0.96,
+                                        end: 1,
+                                      ).animate(animation),
+                                      child: child,
+                                    ),
                                   ),
-                                ),
-                        child: _gridOpen
-                            ? WebBrowserTabGrid(
-                                tabs: _tabs.tabs,
-                                callbacks: _tabCallbacks,
-                                thumbnails: _thumbnails,
-                                onDone: () => setState(() => _gridOpen = false),
-                              )
-                            : const SizedBox.shrink(),
+                          child: _gridOpen
+                              ? WebBrowserTabGrid(
+                                  tabs: _tabs.tabs,
+                                  callbacks: _tabCallbacks,
+                                  thumbnails: _thumbnails,
+                                  onDone: () =>
+                                      setState(() => _gridOpen = false),
+                                )
+                              : const SizedBox.shrink(),
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),

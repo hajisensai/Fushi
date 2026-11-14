@@ -281,7 +281,16 @@ void main() {
       expect(paragraph.softWrap, isTrue, reason: '标题应 softWrap 才能换行');
       expect(paragraph.didExceedMaxLines, isFalse, reason: '文件名不应有任何一行被截掉');
       expect(
-        paragraph.computeLineMetrics().length,
+        paragraph
+            .getBoxesForSelection(
+              TextSelection(
+                baseOffset: 0,
+                extentOffset: paragraph.text.toPlainText().length,
+              ),
+            )
+            .map((TextBox box) => box.top)
+            .toSet()
+            .length,
         greaterThan(1),
         reason: '360 宽下长文件名应换成多行而不是单行截断',
       );

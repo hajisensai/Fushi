@@ -162,6 +162,65 @@ void main() {
     expect(tiltOf(tester, card).isIdentity(), isTrue);
   });
 
+  // PR #3151 取舍拍板：视频集卡悬停整卡放大，与合集成员卡 / 库页卡同一个
+  // [FushiHoverLift]；宽卡取 [kFushiWideCardHoverLiftScale]（库页 1.05 会压邻卡）。
+  // 卡整张 IgnorePointer，放大要靠 [FushiHoverLiftRelay] 代收的悬停驱动。
+  testWidgets('视频合集集卡：悬停整卡按宽卡档放大，移出复位', (WidgetTester tester) async {
+    sizeView(tester);
+    await tester.pumpWidget(
+      TranslationProvider(
+        child: MaterialApp(
+          home: Scaffold(
+            body: Align(
+              alignment: Alignment.topLeft,
+              child: SizedBox(
+                width: 600,
+                height: kCollectionEpisodeCardHeight,
+                child: Builder(
+                  builder: (BuildContext context) => CollectionEpisodeCard(
+                    thumb: collectionEpisodeThumb(context, null),
+                    number: '1',
+                    title: 'Episode 1',
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final Finder card = find.byType(CollectionEpisodeCard);
+    final Finder lift = find.descendant(
+      of: card,
+      matching: find.byType(FushiHoverLift),
+    );
+    expect(lift, findsOneWidget, reason: '整卡只有一层抬升壳');
+    expect(
+      tester.widget<FushiHoverLift>(lift).scale,
+      kFushiWideCardHoverLiftScale,
+    );
+    // 抬升壳最外层的 Transform 就是悬停放大那层。
+    double liftScale() => tester
+        .widget<Transform>(
+          find.descendant(of: lift, matching: find.byType(Transform)).first,
+        )
+        .transform
+        .entry(0, 0);
+
+    expect(liftScale(), closeTo(1.0, 1e-9));
+    final Rect r = tester.getRect(card);
+    final TestGesture mouse = await mouseAt(tester, r.center);
+    expect(
+      liftScale(),
+      closeTo(kFushiWideCardHoverLiftScale, 1e-6),
+      reason: '悬停集卡应整卡放大（被 IgnorePointer 挡住时由 Relay 代收悬停）',
+    );
+    await mouse.moveTo(const Offset(1199, 899));
+    await tester.pumpAndSettle();
+    expect(liftScale(), closeTo(1.0, 1e-9));
+  });
+
   group('库页卡：每张恰好一层 FushiTilt', () {
     Future<void> pumpCard(WidgetTester tester, Widget frame) async {
       sizeView(tester);

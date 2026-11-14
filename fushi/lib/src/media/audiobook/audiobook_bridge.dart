@@ -229,24 +229,12 @@ window.__fushiResetPrevHighlight = function() {
 };
 ''';
 
-  /// SRT cue 点击事件：委托事件监听 [data-cue-id]，通过 callHandler 通知 Dart。
-  static const String _cueClickFn = '''
-(function() {
-  if (window.__fushiCueClickBound) return;
-  window.__fushiCueClickBound = true;
-  document.addEventListener('click', function(e) {
-    var sel = window.getSelection();
-    if (sel && !sel.isCollapsed) return;
-    var el = e.target.closest('[data-cue-id]');
-    if (!el) return;
-    var id = parseInt(el.dataset.cueId, 10);
-    if (isNaN(id) || id < 0) return;
-    if (window.flutter_inappwebview) {
-      window.flutter_inappwebview.callHandler('onCueTap', id);
-    }
-  });
-})();
-''';
+  // 反馈 C9wcnKaPq_：这里原有一个 `_cueClickFn`，给合成书（纯转录）的 `[data-cue-id]`
+  // 挂 document 级**左键 click** → `onCueTap` → 从本句播放。而同一次左键点击还会走
+  // 查词桥（onTextSelected），于是「点一下句子」既弹词典又跳播。拍板：合成书与 EPUB
+  // 书交互一致——左键 / 单击只查词；跳到点击句只走「位置型」入口：鼠标中键
+  // （`onPointerSeek` → `fushiReader.cueIdAtPoint`，其首支就认 `[data-cue-id]`），
+  // 触屏长按句子 → 选区操作条「从此句播放」。故删掉整条左键跳句桥，不留开关。
 
   /// Sasayaki 句子高亮 + 点击事件。
   ///
@@ -438,7 +426,6 @@ window.__fushiAnnotate = function(chapterHref) {
     );
 
     await controller.evaluateJavascript(source: _highlightFn);
-    await controller.evaluateJavascript(source: _cueClickFn);
     await controller.evaluateJavascript(source: _sentenceAudioFn);
     await controller.evaluateJavascript(source: _chapterNavFn);
     await controller.evaluateJavascript(source: _annotateFn);

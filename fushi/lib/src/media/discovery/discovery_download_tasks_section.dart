@@ -22,6 +22,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/misc/engine_listenable.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// 「下载」页任务 tab 的发现页直链下载区：渲染 [DiscoveryDownloadQueue] 的任务
 /// 列表（游戏 / 小说 / 有声书等 HTTP 直链，与 torrent 任务、漫画目录队列并列，
@@ -303,7 +304,7 @@ class DiscoveryDownloadTasksSection extends ConsumerWidget {
             FushiIconButton(
               key: ValueKey<String>('$rowKey-challenge-browser'),
               tooltip: t.discovery_download_challenge_open_browser,
-              icon: Icons.open_in_browser,
+              icon: FushiIcons.openInNew,
               size: 20,
               onTap: () => _openChallenge(context, challengeUrl),
             ),

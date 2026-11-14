@@ -50,7 +50,9 @@ import 'package:fushi/src/updates/host_self_update_service.dart'
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/remote_book_client.dart' show RemoteBookClient;
 import 'package:fushi/src/sync/hidden_remote_books.dart'
-    show remoteBookSourceHost, resolveShelfRemoteBookClient;
+    show resolveShelfRemoteBookClient;
+import 'package:fushi/src/sync/remote_book_source_host.dart'
+    show remoteBookSourceHost;
 import 'package:fushi/src/pages/implementations/hidden_remote_books_page.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -58,6 +60,7 @@ import 'package:fushi/src/sync/mine_to_server_target_picker.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/sync/interconnect_device_name.dart';
 import 'package:fushi/src/sync/interconnect_link_pairing.dart';
+import 'package:fushi/src/media/downloads/download_execution_target.dart';
 import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
 import 'package:fushi_engine/sync/interconnect_host_addresses.dart';
 import 'package:fushi_engine/sync/interconnect_p2p.dart'
@@ -82,6 +85,8 @@ import 'package:fushi_engine/sync/tls/fushi_tofu_probe.dart';
 import 'package:fushi/src/sync/sync_activity.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart';
+import 'package:fushi/src/sync/sync_baseline_scope.dart'
+    show signOutSyncBackend;
 import 'package:fushi/src/sync/sync_compare_cli.dart'
     show listSyncCompareForCli;
 import 'package:fushi/src/sync/sync_compare_dialog.dart';

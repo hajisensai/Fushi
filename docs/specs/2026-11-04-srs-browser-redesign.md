@@ -56,6 +56,8 @@
 
 章节、页码、时间区间、字符偏移一律不进键。没有出处（`source` 寄存器空 / 不是带字符串 `kind` 的对象）= null。
 
+**系列（「系列 → 集」两级，反馈 MCJLSBR5Wg，2026-11-11）**：出处带 `seriesTitle`（`SrsSourceRef.seriesTitle`，去两侧空白后非空的字符串；视频制卡从播放列表合集名 / 远端作品名取）时，`sourceKey` 是**系列键** `<kind>::<系列名>`，上表的 `<kind>:<身份>` 降为第二级的**作品键**（内核 `source_item_key`）。`src:"<键>"` 同时认系列键（整个系列）与作品键（一集）；`browse_sources` 的系列组带 `series`（系列名）与 `children`（按作品键分的各集，口径同组）；按出处排序时系列键后接作品键，同一系列里同一集挨着；笔记缓存行 `source_key` = 系列键、`source_title` = 系列名（统计页「制卡来源」按系列计，「只复习这一作」按系列出卡）。定位字段不变，「回到出处」仍到具体的集与时间。没有 `seriesTitle` 的旧出处照旧只有作品这一级。
+
 编码（粗粒度，一页一条命令）：字符串类进现有 JSON 行（下标 8..14：`fieldPreview, imageRef, audioRef, sourceKey, sourceKind, sourceData, fieldPreviewNames`）；`rows.i64` 每行由 7 个扩到 11 个 i64（追加 `intervalDays, addedAt, modifiedAt, lastReviewAt`，null = `i64::MIN`）；新增 `rows.f64` 每行 2 个 f64（`difficulty, retention`，null = NaN）。字段原文、修改时刻、出处只对**这一页**的笔记从修改记录读一次（会话里按笔记缓存，写入后按笔记失效），不为取行装全库字段。
 
 ### 2.2 排序列

@@ -345,6 +345,62 @@ void main() {
       expect(h.sink.last.durationMs.value, 30000, reason: '重新有输入 → 新段');
     });
 
+    test('BUG-4498：暂停超过空闲门后恢复，超出阈值的那段不回到时长里', () async {
+      final _Harness h = _Harness(idleTimeout: const Duration(minutes: 1));
+      h.clock.start();
+      // 播放 10s（采集器每秒 touch）后暂停。
+      h.advance(const Duration(seconds: 10));
+      h.clock.touch();
+      // tick 在 60s：暂停 50s 仍在阈值内，整窗照计。
+      h.advance(const Duration(seconds: 50));
+      await h.clock.flushNow();
+      expect(h.sink.last.durationMs.value, 60000);
+      // 75s：空闲门已在 70s 到期，读数停在 70s、暂停态。
+      h.advance(const Duration(seconds: 15));
+      expect(h.clock.sessionTotals().durationMs, 70000);
+      expect(h.clock.sessionTotals().active, isFalse);
+      // 100s 恢复播放（下一个 tick 还没到）：读数不得跳回 100s。
+      h.advance(const Duration(seconds: 25));
+      expect(h.clock.sessionTotals().durationMs, 70000);
+      h.clock.touch();
+      expect(
+        h.clock.sessionTotals().durationMs,
+        70000,
+        reason: '恢复那一刻不得把 70s→100s 的空闲期算回来',
+      );
+      expect(h.clock.sessionTotals().active, isTrue);
+      // 120s 的 tick：只入账恢复后的 20s。
+      h.advance(const Duration(seconds: 20));
+      await h.clock.flushNow();
+      await h.clock.stop();
+      expect(h.clock.sessionTotals().durationMs, 90000);
+      final Map<String, int> lastByUid = <String, int>{
+        for (final StudySegmentsCompanion w in h.sink.writes)
+          w.uid.value: w.durationMs.value,
+      };
+      final int persisted = lastByUid.values.fold<int>(
+        0,
+        (int a, int b) => a + b,
+      );
+      expect(persisted, 90000, reason: '落库口径与实时读数一致');
+    });
+
+    test('BUG-4498：空闲门在窗口中途到期 → 到期点之前照计、之后不计并封段', () async {
+      final _Harness h = _Harness(idleTimeout: const Duration(minutes: 10));
+      h.clock.start();
+      for (int i = 0; i < 9; i++) {
+        h.advance(const Duration(minutes: 1));
+        await h.clock.flushNow();
+      }
+      expect(h.sink.last.durationMs.value, 540000);
+      // 下一窗 [9:00, 10:30]：门在 10:00 到期。
+      h.advance(const Duration(seconds: 90));
+      await h.clock.flushNow();
+      expect(h.sink.last.uid.value, 'u1');
+      expect(h.sink.last.durationMs.value, 600000, reason: '只计到 10:00');
+      expect(h.clock.debugOpenUid, isNull, reason: '截窗后封段');
+    });
+
     test('BUG-2211：挂机超时 → stop → start 后首个 tick 入账（start 重锚空闲基准）', () async {
       final _Harness h = _Harness(idleTimeout: const Duration(minutes: 10));
       h.clock.start();

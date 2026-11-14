@@ -181,6 +181,30 @@ void main() {
       );
     });
 
+    test('mute host is a host parameter carried on the wire', () {
+      const GameStreamVideoSettings base = GameStreamVideoSettings();
+      expect(base.muteHost, isFalse);
+      final GameStreamVideoSettings muted = base.copyWith(muteHost: true);
+      // The host applies it, so toggling it mid-stream must reach the host.
+      expect(muted.sameHostParameters(base), isFalse);
+      expect(muted.toJson()['muteHost'], isTrue);
+      expect(GameStreamVideoSettings.fromJson(muted.toJson()), muted);
+      expect(muted.toOverridesJson(), <String, Object?>{'muteHost': true});
+      // A body from a client that predates the field keeps the host audible.
+      expect(
+        GameStreamVideoSettings.fromJson(
+          base.toJson()..remove('muteHost'),
+        ).muteHost,
+        isFalse,
+      );
+      expect(
+        GameStreamVideoSettings.fromJson(<String, Object?>{
+          'muteHost': 'yes',
+        }).muteHost,
+        isFalse,
+      );
+    });
+
     test('unknown values fall back to defaults instead of failing', () {
       final GameStreamVideoSettings settings =
           GameStreamVideoSettings.fromJson(<String, Object?>{

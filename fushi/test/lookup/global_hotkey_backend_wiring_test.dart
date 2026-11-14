@@ -6,6 +6,7 @@ import 'package:drift/native.dart';
 import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
+import 'package:fushi/src/media/audiobook/floating_lyric_channel.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
@@ -50,6 +51,10 @@ void main() {
       'remap re-applies; release disposes the backend', () async {
     // No lookup card overlay, as on a Wayland session.
     GlobalLookupController.platformOverride = false;
+    // Nor a native floating-lyric window (Linux has none): showing / hiding the
+    // audiobook floating subtitles is left out like screen OCR, while the
+    // audiobook playback controls (they only drive the player) stay.
+    FloatingLyricChannel.platformOverride = false;
     final _RecordingBackend backend = _RecordingBackend();
     GlobalLookupController.hotKeyBackendOverride = () => backend;
     final List<String> overlayCalls = <String>[];
@@ -69,6 +74,7 @@ void main() {
     );
     addTearDown(() async {
       GlobalLookupController.platformOverride = null;
+      FloatingLyricChannel.platformOverride = null;
       GlobalLookupController.hotKeyBackendOverride = null;
       messenger.setMockMethodCallHandler(FushiChannels.globalLookup, null);
       await db.close();
@@ -92,7 +98,16 @@ void main() {
     expect(requests.map((GlobalHotKeyRequest r) => r.id), <String>[
       ShortcutAction.globalExternalLookup.key,
       ShortcutAction.globalExternalOpenLookupPage.key,
+      ShortcutAction.globalExternalAudiobookPlayPause.key,
+      ShortcutAction.globalExternalAudiobookPrevSentence.key,
+      ShortcutAction.globalExternalAudiobookNextSentence.key,
+      ShortcutAction.globalExternalAudiobookReplaySentence.key,
     ]);
+    // The audiobook hotkeys ship unbound (an OS hotkey swallows the chord
+    // system-wide): the native backend leaves them off until a key is recorded.
+    for (final GlobalHotKeyRequest r in requests.skip(2)) {
+      expect(r.chord, isNull, reason: r.id);
+    }
     for (final GlobalHotKeyRequest r in requests) {
       expect(r.description, isNotEmpty, reason: 'the desktop shows it');
     }
@@ -125,6 +140,11 @@ void main() {
     );
     expect(appModel.homeDictionaryTabRequest.value.seq, seq + 1);
     expect(appModel.homeDictionaryTabRequest.value.focusSearch, isTrue);
+
+    // Audiobook playback hotkey with no audiobook session: nothing to act on,
+    // completes without throwing.
+    expect(appModel.audiobookSession.isActive, isFalse);
+    await requests[2].onActivated(const GlobalHotKeyActivation());
 
     // A remap re-applies the whole set.
     final FushiShortcutRegistry registry = appModel.shortcutRegistry;

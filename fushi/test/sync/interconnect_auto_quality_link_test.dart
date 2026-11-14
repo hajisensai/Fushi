@@ -236,4 +236,132 @@ void main() {
     expect(backend.qualityPresets, isEmpty);
     expect(backend.adaptiveQualityIndex, isNull);
   });
+
+  group('播放会话停止即释放流票（BUG-4461）', () {
+    Future<int> streamStatus(String url) async {
+      final HttpClient http = HttpClient();
+      addTearDown(() => http.close(force: true));
+      final HttpClientRequest req = await http.getUrl(Uri.parse(url));
+      req.headers.set(HttpHeaders.rangeHeader, 'bytes=0-0');
+      final HttpClientResponse res = await req.close();
+      await res.drain<void>();
+      return res.statusCode;
+    }
+
+    // 经接口调用（页面 `_releaseRemotePlayback` 也是 `client is
+    // RemoteVideoPlaybackRelease` 才调），修复前是运行期断言失败而不是编译错。
+    Future<void> stop(InterconnectSyncBackend backend) {
+      final Object client = backend;
+      expect(client, isA<RemoteVideoPlaybackRelease>());
+      return (client as RemoteVideoPlaybackRelease).releaseRemoteVideoPlayback(
+        _videoId,
+      );
+    }
+
+    test('不实现播放停止上报：自然播完（页面只报停止）不作废仍在用的流', () async {
+      // 播完时播放器 keep-open、页面停在本集，用户可回拖 / 重看；页面在 completed
+      // 上只调 `client is RemoteVideoPlaybackStop` 的停止上报（评审 correctness-1）。
+      await startServer(durationSeconds: '600');
+      final InterconnectSyncBackend backend = await buildBackend(
+        literalLan: true,
+      );
+      final Object client = backend;
+      expect(client, isNot(isA<RemoteVideoPlaybackStop>()));
+      final RemoteVideoStreamUrls urls = await backend.remoteVideoStreamUrls(
+        _videoId,
+      );
+      expect(await streamStatus(urls.streamUrl), 206);
+    });
+
+    test('releaseRemoteVideoPlayback 后本次播放的流 URL 失效', () async {
+      await startServer(durationSeconds: '600');
+      final InterconnectSyncBackend backend = await buildBackend(
+        literalLan: true,
+      );
+      final RemoteVideoStreamUrls urls = await backend.remoteVideoStreamUrls(
+        _videoId,
+      );
+      expect(await streamStatus(urls.streamUrl), 206);
+      await stop(backend);
+      expect(await streamStatus(urls.streamUrl), 403);
+    });
+
+    test('自动档测链路签的原画票与转码票一并释放', () async {
+      await startServer(durationSeconds: '0.001');
+      final InterconnectSyncBackend backend = await buildBackend();
+      final RemoteVideoStreamUrls urls = await backend.remoteVideoStreamUrls(
+        _videoId,
+      );
+      expect(urls.streamUrl, contains('hls.m3u8'));
+      expect(await streamStatus(urls.streamUrl), 200);
+      // 测链路签了原画票、起播签了转码票（各带随票的制卡 token）。
+      expect(server.videoStreamTokenCount, greaterThanOrEqualTo(2));
+      await stop(backend);
+      expect(await streamStatus(urls.streamUrl), 403);
+      // 原画票（不在返回的 URL 里）也必须释放：host 上一张都不剩。
+      expect(server.videoStreamTokenCount, 0);
+    });
+
+    test('下载不记票：播放中下载完成不影响播放流，停止只释放播放票', () async {
+      await startServer(durationSeconds: '600');
+      final InterconnectSyncBackend backend = await buildBackend(
+        literalLan: true,
+      );
+      final RemoteVideoStreamUrls urls = await backend.remoteVideoStreamUrls(
+        _videoId,
+      );
+      final Directory dir = Directory.systemTemp.createTempSync('hbk_aql_dl');
+      addTearDown(() => dir.delete(recursive: true));
+      await backend.downloadRemoteVideo(_videoId, File('${dir.path}/out.mp4'));
+      expect(await streamStatus(urls.streamUrl), 206);
+      await stop(backend);
+      expect(await streamStatus(urls.streamUrl), 403);
+    });
+
+    test('停止发生在取流途中：随后签回来的票收到即释放', () async {
+      await startServer(durationSeconds: '600');
+      final InterconnectSyncBackend backend = await buildBackend(
+        literalLan: true,
+      );
+      final Future<RemoteVideoStreamUrls> pending = backend
+          .remoteVideoStreamUrls(_videoId);
+      await stop(backend);
+      final RemoteVideoStreamUrls urls = await pending;
+      expect(await streamStatus(urls.streamUrl), 403);
+    });
+
+    test('释放同步摘下会话：不等释放完成就起的新会话不受影响', () async {
+      await startServer(durationSeconds: '600');
+      final InterconnectSyncBackend backend = await buildBackend(
+        literalLan: true,
+      );
+      final RemoteVideoStreamUrls first = await backend.remoteVideoStreamUrls(
+        _videoId,
+      );
+      final Future<void> released = stop(backend);
+      final RemoteVideoStreamUrls second = await backend.remoteVideoStreamUrls(
+        _videoId,
+      );
+      await released;
+      expect(await streamStatus(first.streamUrl), 403);
+      expect(await streamStatus(second.streamUrl), 206);
+    });
+
+    test('停止后同一视频新起的播放会话不受影响', () async {
+      await startServer(durationSeconds: '600');
+      final InterconnectSyncBackend backend = await buildBackend(
+        literalLan: true,
+      );
+      final RemoteVideoStreamUrls first = await backend.remoteVideoStreamUrls(
+        _videoId,
+      );
+      await stop(backend);
+      final RemoteVideoStreamUrls second = await backend.remoteVideoStreamUrls(
+        _videoId,
+        episodeIndex: 0,
+      );
+      expect(await streamStatus(first.streamUrl), 403);
+      expect(await streamStatus(second.streamUrl), 206);
+    });
+  });
 }

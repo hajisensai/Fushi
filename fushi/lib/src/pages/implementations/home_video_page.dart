@@ -1050,6 +1050,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       videos: await withLocalRemoteVideoPositions(
         appModelNoUpdate.database,
         state.videos,
+        threeWay: await remoteVideoCardBaselines(
+          appModelNoUpdate.database,
+          state.source,
+        ),
       ),
       localCopies: state.localCopies,
       source: state.source,
@@ -2117,10 +2121,15 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       // BUG-2714：清单到手才知道哪些中断的下载还能接（不挡列表渲染）。
       unawaited(_resumeInterruptedRemoteDownloads(source, remoteOnly));
       return _RemoteVideoState(
-        // BUG-4303：卡片的断点 = 清单快照与本机库断点取较新（与开播判定同一份）。
+        // BUG-4303 / BUG-4436：卡片的断点与开播判定同一份——互联 host 走三方判定，
+        // 其余取清单快照与本机库断点的较新者。
         videos: await withLocalRemoteVideoPositions(
           appModelNoUpdate.database,
           remoteOnly,
+          threeWay: await remoteVideoCardBaselines(
+            appModelNoUpdate.database,
+            source,
+          ),
         ),
         localCopies: <String, RemoteVideoInfo>{
           for (final RemoteVideoInfo video in videos)
@@ -3096,6 +3105,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       folders++;
       final AddLocalFolderResult result = await addLocalFolderAsSource(
         db: appModel.database,
+        // 视频来源不扫书，没有有声书要转录。
+        transcribeAudiobook: null,
         mediaKind: SourceLibraryKind.video.dbValue,
         path: dir,
       );
@@ -5492,6 +5503,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
                 onDragUpdate: (SelectionSlot slot) =>
                     setState(() => _selection.updateRangeDrag(slot)),
                 onDragEnd: () => setState(_selection.endRangeDrag),
+                // 鼠标按下即拖 = 拉框框选（反馈 bFtYB0_Arl）；触屏仍是长按扫选。
+                onBoxSelectBegin: () => setState(_selection.beginBoxSelect),
+                onBoxSelectUpdate: (Set<SelectionSlot> slots) =>
+                    setState(() => _selection.updateBoxSelect(slots)),
                 child: _buildVideoLibraryBody(),
               ),
             ),
@@ -10414,7 +10429,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       // loadPendingRemoteDeletionKeys），详情页不出已「从所有设备删除」的集。
       loadRemoteVideos: () async {
         final Set<String> deleted = await _pendingRemoteVideoDeletions(source);
-        // BUG-4303：与库页同一口径——断点取清单快照与本机库断点的较新者。
+        // BUG-4303 / BUG-4436：与库页同一口径（[withLocalRemoteVideoPositions]）。
         return withLocalRemoteVideoPositions(
           appModelNoUpdate.database,
           filterOutLocallyDeletedRemoteVideos(
@@ -10423,6 +10438,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
                   const <RemoteVideoInfo>[],
             ),
             deletedKeys: deleted,
+          ),
+          threeWay: await remoteVideoCardBaselines(
+            appModelNoUpdate.database,
+            source,
           ),
         );
       },

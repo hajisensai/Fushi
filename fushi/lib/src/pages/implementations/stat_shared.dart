@@ -882,33 +882,41 @@ String formatStatTime(int ms) {
   return t.stat_format_hours_minutes(h: h, m: m);
 }
 
-/// 每日 / 每周字数目标编辑对话框。写 0 = 清除（隐藏）该目标。返回 true 表示用户
-/// 点了保存并已写穿偏好，调用方据此重建。
+/// 字数目标编辑对话框：日目标 / 周目标二选一（反馈 CjIr9RGSCe）。写 0 = 清除（隐藏）
+/// 当前周期的目标。返回 true 表示用户点了保存并已写穿偏好，调用方据此重建。
 ///
 /// 阅读统计 tab、统计中心总览 tab 与首页仪表盘编辑的是**同一个**持久化目标
-/// （`readingGoal*Chars`），所以只有一份表单；多处各写一份的话，单位、清零语义和
-/// 校验规则一改就只改到一处。
+/// （`readingGoal*Chars` + `readingGoalPeriod`），所以只有一份表单；多处各写一份的话，
+/// 单位、清零语义和校验规则一改就只改到一处。
 ///
 /// 2026-10 体验优化：首页原有一套只编每日目标的 `_DailyGoalDialog`（带预设 chip
 /// 与近 7 日参考），统计页这套只有两个裸输入框——两套对话框合并为本函数 +
-/// [StatGoalEditDialog]：每日目标 + 预设 + 近 7 日参考，多处入口共用（每周目标
-/// 2026-10-10 用户拍板删除：统计中心目标卡删掉后它只能设、不显示进度）。
-/// [recentDailyAverage] 为近 7 日日均字数（与目标同口径，见
-/// [statRecentDailyAverageChars]）；<=0 不显示参考行。
+/// [StatGoalEditDialog]，多处入口共用。每周目标 2026-10-10 曾删除（当时只能设、
+/// 不显示进度）；2026-11 按反馈 CjIr9RGSCe 复活为「周期」二选一：选「按周」后首页
+/// 目标行、统计页「今天」环、桌面小组件都按本自然周显示进度。
+/// [recentDailyAverage] 为近 7 日日均字数、[recentWeeklyTotal] 为近 7 日合计（均与
+/// 目标同口径，见 [statRecentDailyAverageChars] / [statRecentTotalChars]）；<=0 不显示
+/// 对应的参考 chip。
 Future<bool> showStatGoalEditDialog(
   BuildContext context,
   AppModel appModel, {
   int recentDailyAverage = 0,
+  int recentWeeklyTotal = 0,
 }) async {
   final StatGoalEditResult? result = await showAppDialog<StatGoalEditResult>(
     context: context,
     builder: (BuildContext _) => StatGoalEditDialog(
+      initialPeriod: appModel.readingGoalPeriod,
       initialDailyChars: appModel.readingGoalDailyChars,
+      initialWeeklyChars: appModel.readingGoalWeeklyChars,
       recentDailyAverage: recentDailyAverage,
+      recentWeeklyTotal: recentWeeklyTotal,
     ),
   );
   if (result == null) return false;
   await appModel.setReadingGoalDailyChars(result.daily);
+  await appModel.setReadingGoalWeeklyChars(result.weekly);
+  await appModel.setReadingGoalPeriod(result.period);
   return true;
 }
 
@@ -920,46 +928,77 @@ int statRecentDailyAverageChars(
   List<String> dayKeys,
 ) {
   if (dayKeys.isEmpty) return 0;
+  return statRecentTotalChars(daily, dayKeys) ~/ dayKeys.length;
+}
+
+/// [dayKeys] 的学习字数合计（与目标同口径）：周目标对话框的「近 7 日合计」参考值。
+int statRecentTotalChars(Iterable<StatFact> daily, List<String> dayKeys) {
   int total = 0;
   for (final String key in dayKeys) {
     total += studyGoalCharsForDay(daily, key);
   }
-  return total ~/ dayKeys.length;
+  return total;
 }
 
-/// [StatGoalEditDialog] 保存时的结果（已规整为 >= 0；0 = 关闭该目标）。
-typedef StatGoalEditResult = ({int daily});
+/// [StatGoalEditDialog] 保存时的结果（数值已规整为 >= 0；0 = 关闭该周期的目标）。
+/// 两个周期的数值都回传：切换周期不清另一份，切回来原值还在。
+typedef StatGoalEditResult = ({StudyGoalPeriod period, int daily, int weekly});
 
 /// 目标编辑表单。独立 StatefulWidget **自持** controller 生命周期：dispose 跟随
 /// 路由销毁（弹出动画结束后）。曾经「await showDialog 返回即 dispose」会在退场
 /// 动画帧触碰已销毁 controller——保存后宿主 setState 让仍在退场的 TextField
 /// 重建 addListener 直接断言崩（widget 测试实测复现）。
 ///
-/// BUG-1075：输入框带单位后缀、近 7 日日均参考值、一排快捷预设 chip。保存 pop
+/// BUG-1075：输入框带单位后缀、近 7 日参考值、一排快捷预设 chip。保存 pop
 /// [StatGoalEditResult]，取消 pop null。
 class StatGoalEditDialog extends StatefulWidget {
   const StatGoalEditDialog({
     required this.initialDailyChars,
+    this.initialPeriod = StudyGoalPeriod.daily,
+    this.initialWeeklyChars = 0,
     this.recentDailyAverage = 0,
+    this.recentWeeklyTotal = 0,
     super.key,
   });
+
+  /// 打开时选中的周期。
+  final StudyGoalPeriod initialPeriod;
 
   /// 当前每日目标（0 = 未设，输入框留空）。
   final int initialDailyChars;
 
-  /// 近 7 日日均字数（全来源合计，与目标同口径）；<=0 不显示参考行。
+  /// 当前每周目标（0 = 未设，输入框留空）。
+  final int initialWeeklyChars;
+
+  /// 近 7 日日均字数（全来源合计，与目标同口径）；<=0 不显示日目标参考 chip。
   final int recentDailyAverage;
+
+  /// 近 7 日字数合计（与目标同口径）；<=0 不显示周目标参考 chip。
+  final int recentWeeklyTotal;
 
   /// 每日目标快捷预设（字/天）：点一下直接填进输入框，省得用户凭空想数字。
   static const List<int> presets = <int>[3000, 5000, 10000, 20000];
+
+  /// 每周目标快捷预设（字/周）。
+  static const List<int> weeklyPresets = <int>[20000, 35000, 70000, 140000];
+
+  /// [period] 下的快捷预设。
+  static List<int> presetsFor(StudyGoalPeriod period) => switch (period) {
+    StudyGoalPeriod.daily => presets,
+    StudyGoalPeriod.weekly => weeklyPresets,
+  };
 
   @override
   State<StatGoalEditDialog> createState() => _StatGoalEditDialogState();
 }
 
 class _StatGoalEditDialogState extends State<StatGoalEditDialog> {
+  late StudyGoalPeriod _period = widget.initialPeriod;
   late final TextEditingController _daily = TextEditingController(
     text: _initialText(widget.initialDailyChars),
+  );
+  late final TextEditingController _weekly = TextEditingController(
+    text: _initialText(widget.initialWeeklyChars),
   );
 
   static String _initialText(int chars) => chars <= 0 ? '' : chars.toString();
@@ -969,47 +1008,61 @@ class _StatGoalEditDialogState extends State<StatGoalEditDialog> {
     return value < 0 ? 0 : value;
   }
 
+  /// 当前周期对应的输入框。
+  TextEditingController get _active => switch (_period) {
+    StudyGoalPeriod.daily => _daily,
+    StudyGoalPeriod.weekly => _weekly,
+  };
+
   @override
   void initState() {
     super.initState();
     // 预设按钮组的选中态跟随输入框（手输 5000 也点亮「5000」那一格）。
-    _daily.addListener(_onDailyChanged);
+    _daily.addListener(_onFieldChanged);
+    _weekly.addListener(_onFieldChanged);
   }
 
-  void _onDailyChanged() {
+  void _onFieldChanged() {
     if (mounted) setState(() {});
   }
 
   @override
   void dispose() {
-    _daily.removeListener(_onDailyChanged);
+    _daily.removeListener(_onFieldChanged);
+    _weekly.removeListener(_onFieldChanged);
     _daily.dispose();
+    _weekly.dispose();
     super.dispose();
   }
 
-  /// 预设 / 近 7 日日均 → 填入每日输入框（光标置尾，用户可继续改）。
+  /// 预设 / 近 7 日参考 → 填入当前周期的输入框（光标置尾，用户可继续改）。
   void _applyPreset(int chars) {
     final String text = chars.toString();
-    _daily.value = TextEditingValue(
+    _active.value = TextEditingValue(
       text: text,
       selection: TextSelection.collapsed(offset: text.length),
     );
   }
 
   /// 2026-10 M3E 重做（用户反馈「这个设定目标的界面没有经历过 ai 的洗礼」）：
-  /// 旧版是两个裸下划线输入框 + 一排散落的纯文字预设，层级全靠缩进。现在：
   /// - 顶部 M3E 饼干形 hero 图标（旗子）+ 标题；
-  /// - 每日目标是大号填充输入框（数字用 headline 字号，单位后缀），是这张卡的主角；
-  /// - 近 7 日日均变成一颗可点的建议 chip（点一下直接填进去），不再是一行灰字；
+  /// - 周期分段（按日 / 按周，反馈 CjIr9RGSCe）：MD3 连接分段 / Apple 系统分段；
+  /// - 当前周期的目标是大号填充输入框（数字用 headline 字号，单位后缀），切换周期
+  ///   时淡入淡出换框；
+  /// - 近 7 日参考变成一颗可点的建议 chip（日目标 = 日均，周目标 = 合计）；
   /// - 快捷预设是 M3E 连接按钮组（单选，选中态随输入框联动，弹簧切换）；
-  /// - 每周目标是次要的填充输入框；
   /// - 动作区「取消」文字按钮 +「保存」实心主按钮。
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ThemeData theme = Theme.of(context);
-    final int daily = _parse(_daily);
-    final int average = widget.recentDailyAverage;
+    final bool weekly = _period == StudyGoalPeriod.weekly;
+    final int current = _parse(_active);
+    final List<int> presets = StatGoalEditDialog.presetsFor(_period);
+    final int suggestion = weekly
+        ? widget.recentWeeklyTotal
+        : widget.recentDailyAverage;
+    final Duration swap = fushiMotionDuration(context, FushiMotion.short);
     // 填充色要和对话框底色拉开（主题默认填充色与 M3 对话框容器几乎同色）。
     final Color fill = Color.alphaBlend(
       theme.colorScheme.primary.withValues(alpha: 0.08),
@@ -1041,23 +1094,62 @@ class _StatGoalEditDialogState extends State<StatGoalEditDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            FushiTextFieldControl(
-              key: const ValueKey<String>('stat-goal-daily-field'),
-              controller: _daily,
-              keyboardType: TextInputType.number,
-              style: (theme.textTheme.headlineSmall ?? tokens.type.listTitle)
-                  .copyWith(fontWeight: FontWeight.w700),
-              decoration: filled(label: t.stat_goal_daily),
+            KeyedSubtree(
+              key: const ValueKey<String>('stat-goal-period'),
+              child: adaptiveSegmentedButton<StudyGoalPeriod>(
+                context: context,
+                segments: <ButtonSegment<StudyGoalPeriod>>[
+                  ButtonSegment<StudyGoalPeriod>(
+                    value: StudyGoalPeriod.daily,
+                    label: Text(
+                      t.stat_goal_period_daily,
+                      key: const ValueKey<String>('stat-goal-period-daily'),
+                    ),
+                  ),
+                  ButtonSegment<StudyGoalPeriod>(
+                    value: StudyGoalPeriod.weekly,
+                    label: Text(
+                      t.stat_goal_period_weekly,
+                      key: const ValueKey<String>('stat-goal-period-weekly'),
+                    ),
+                  ),
+                ],
+                selected: <StudyGoalPeriod>{_period},
+                onSelectionChanged: (Set<StudyGoalPeriod> picked) {
+                  if (picked.isEmpty) return;
+                  setState(() => _period = picked.first);
+                },
+              ),
             ),
-            if (average > 0) ...<Widget>[
+            SizedBox(height: tokens.spacing.card),
+            AnimatedSwitcher(
+              duration: swap,
+              child: FushiTextFieldControl(
+                key: ValueKey<String>(
+                  weekly ? 'stat-goal-weekly-field' : 'stat-goal-daily-field',
+                ),
+                controller: _active,
+                keyboardType: TextInputType.number,
+                style: (theme.textTheme.headlineSmall ?? tokens.type.listTitle)
+                    .copyWith(fontWeight: FontWeight.w700),
+                decoration: filled(
+                  label: weekly ? t.stat_goal_weekly : t.stat_goal_daily,
+                ),
+              ),
+            ),
+            if (suggestion > 0) ...<Widget>[
               SizedBox(height: tokens.spacing.gap),
               Align(
                 alignment: AlignmentDirectional.centerStart,
                 child: FushiActionChipControl(
                   key: const ValueKey<String>('stat-goal-average-chip'),
                   avatar: const FushiIcon(FushiIcons.trendingUp, size: 18),
-                  label: Text(t.stat_goal_recent_average(n: average)),
-                  onPressed: () => _applyPreset(average),
+                  label: Text(
+                    weekly
+                        ? t.stat_goal_recent_weekly(n: suggestion)
+                        : t.stat_goal_recent_average(n: suggestion),
+                  ),
+                  onPressed: () => _applyPreset(suggestion),
                 ),
               ),
             ],
@@ -1073,14 +1165,14 @@ class _StatGoalEditDialogState extends State<StatGoalEditDialog> {
               emptySelectionAllowed: true,
               expandedInsets: EdgeInsets.zero,
               segments: <ButtonSegment<int>>[
-                for (final int preset in StatGoalEditDialog.presets)
+                for (final int preset in presets)
                   ButtonSegment<int>(
                     value: preset,
                     label: Text(formatStatCharsAxis(preset)),
                   ),
               ],
-              selected: StatGoalEditDialog.presets.contains(daily)
-                  ? <int>{daily}
+              selected: presets.contains(current)
+                  ? <int>{current}
                   : const <int>{},
               onSelectionChanged: (Set<int> picked) {
                 if (picked.isNotEmpty) _applyPreset(picked.first);
@@ -1096,9 +1188,11 @@ class _StatGoalEditDialogState extends State<StatGoalEditDialog> {
         ),
         FushiFilledButton(
           key: const ValueKey<String>('stat-goal-save'),
-          onPressed: () => Navigator.of(
-            context,
-          ).pop<StatGoalEditResult>((daily: _parse(_daily))),
+          onPressed: () => Navigator.of(context).pop<StatGoalEditResult>((
+            period: _period,
+            daily: _parse(_daily),
+            weekly: _parse(_weekly),
+          )),
           child: Text(t.dialog_save),
         ),
       ],

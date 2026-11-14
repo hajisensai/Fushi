@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/second_screen/companion/companion_snapshot.dart';
@@ -14,6 +16,7 @@ import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/focus/fushi_focus_scroll.dart';
 
 /// Now tab panel while an audiobook plays in the reader's audiobook view:
 /// book info, whole-book position, the chapter's transcript (tap = play from
@@ -48,10 +51,12 @@ class _AudiobookCompanionPanelState
     WidgetsBinding.instance.addPostFrameCallback((Duration _) {
       final BuildContext? line = _currentLine.currentContext;
       if (line == null || !line.mounted) return;
-      Scrollable.ensureVisible(
-        line,
-        alignment: 0.3,
-        duration: fushiMotionDuration(context, FushiMotion.medium),
+      unawaited(
+        FushiFocusScroll.ensureVisible(
+          line,
+          alignment: 0.3,
+          duration: fushiMotionDuration(context, FushiMotion.medium),
+        ),
       );
     });
   }

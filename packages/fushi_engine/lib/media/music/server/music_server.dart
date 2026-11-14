@@ -229,6 +229,7 @@ class MusicServerStream {
     required this.transcoded,
     this.codec,
     this.bitrateKbps,
+    this.isPreview = false,
   });
 
   /// 交给 mpv 的地址（凭据在 query 里：mpv 没有头通道；日志一律经凭据脱敏）。
@@ -238,6 +239,10 @@ class MusicServerStream {
   final bool transcoded;
   final String? codec;
   final int? bitrateKbps;
+
+  /// 只是曲目的试听片段（Apple Music 未登录 / 无订阅时的约 30 秒预览），不是整首：
+  /// 曲目元数据里的时长是整首的，不能当这条流的长度（反馈 okvRZINcQU）。
+  final bool isPreview;
 }
 
 /// 能改歌单的服务器（Jellyfin / Emby）。浏览器实现了它，歌单页与曲目菜单才出现新建 /

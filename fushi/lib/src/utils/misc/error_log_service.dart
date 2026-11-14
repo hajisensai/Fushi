@@ -656,6 +656,8 @@ String? localizeAnkiMineError(String? code) {
       return t.anki_error_first_field_empty;
     case AnkiErrorCode.allFieldsEmpty:
       return t.anki_error_all_fields_empty;
+    case AnkiErrorCode.overwriteFieldsEmpty:
+      return t.anki_error_overwrite_fields_empty;
     case AnkiErrorCode.syncClientSignedOut:
       return t.anki_error_sync_signed_out;
     case AnkiErrorCode.syncClientUnavailable:

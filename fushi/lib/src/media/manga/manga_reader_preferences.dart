@@ -59,6 +59,26 @@ extension MangaTapZonePresetKey on MangaTapZonePreset {
   };
 }
 
+/// 右上角 OCR 进度浮标的显示方式（反馈 IpdWk54b_G）：`full` = 顶栏下沿的完整
+/// 胶囊（读数 + 后端 + 进度条），`edge` = 贴屏幕右缘的小标签（只剩转圈 / 页数），
+/// `hidden` = 不显示进度。只管**进度读数**：OCR 报错（没有可用引擎等）走独立的
+/// 报错提示，不受这项影响——隐藏进度不能连报错一起吞掉。
+enum MangaOcrProgressBadgeStyle { full, edge, hidden }
+
+extension MangaOcrProgressBadgeStyleKey on MangaOcrProgressBadgeStyle {
+  String get key => switch (this) {
+    MangaOcrProgressBadgeStyle.full => 'full',
+    MangaOcrProgressBadgeStyle.edge => 'edge',
+    MangaOcrProgressBadgeStyle.hidden => 'hidden',
+  };
+
+  static MangaOcrProgressBadgeStyle fromKey(String value) => switch (value) {
+    'edge' => MangaOcrProgressBadgeStyle.edge,
+    'hidden' => MangaOcrProgressBadgeStyle.hidden,
+    _ => MangaOcrProgressBadgeStyle.full,
+  };
+}
+
 /// Immutable, validated reader defaults. Per-book overrides are sparse JSON:
 /// absent/null fields inherit the current global value, including future changes.
 class MangaReaderPreferences {
@@ -120,6 +140,7 @@ class MangaReaderPreferences {
     this.colorFilterColor = '#F4ECD8',
     this.colorFilterOpacity = 20,
     this.ocrTrigger = 'automatic',
+    this.ocrProgressBadge = MangaOcrProgressBadgeStyle.full,
     this.spreadOffset = kMangaSpreadOffsetDefault,
   });
 
@@ -202,6 +223,9 @@ class MangaReaderPreferences {
   final int colorFilterOpacity;
   final String ocrTrigger;
 
+  /// OCR 进度浮标完整 / 贴边 / 隐藏（见 [MangaOcrProgressBadgeStyle]）。
+  final MangaOcrProgressBadgeStyle ocrProgressBadge;
+
   /// 双页模式的跨页偏移：1 = 封面独占后再两两配对，0 = 从第一页起配对。
   final int spreadOffset;
 
@@ -263,6 +287,7 @@ class MangaReaderPreferences {
     'colorFilterColor': colorFilterColor,
     'colorFilterOpacity': colorFilterOpacity,
     'ocrTrigger': ocrTrigger,
+    'ocrProgressBadge': ocrProgressBadge.key,
     'spreadOffset': spreadOffset,
   };
 
@@ -380,6 +405,9 @@ class MangaReaderPreferences {
         'automatic',
         'manual',
       }),
+      ocrProgressBadge: MangaOcrProgressBadgeStyleKey.fromKey(
+        text('ocrProgressBadge', 'full', <String>{'full', 'edge', 'hidden'}),
+      ),
       spreadOffset: number('spreadOffset', kMangaSpreadOffsetDefault, 0, 1),
     );
   }

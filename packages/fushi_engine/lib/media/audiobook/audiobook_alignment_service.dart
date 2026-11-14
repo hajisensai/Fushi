@@ -10,6 +10,8 @@ import 'package:fushi_engine/epub/epub_parser.dart';
 import 'package:fushi_engine/media/audiobook/asr_cue_post_host.dart';
 import 'package:fushi_engine/media/audiobook/audiobook_cue_file_split.dart';
 import 'package:fushi_engine/media/audiobook/audiobook_text_coverage.dart';
+import 'package:fushi_engine/media/audiobook/book_text_sections.dart'
+    show loadBookTextSections;
 import 'package:fushi_engine/media/audiobook/subtitle_rematch_policy.dart';
 import 'package:fushi_engine/media/import/epub_backed_srt_book.dart';
 import 'package:fushi_engine/media/video/video_clip_subtitle.dart'
@@ -530,9 +532,8 @@ Future<AudiobookAlignmentResult> alignAndPersistAudiobook({
   report(0.35, messages.readingIdb);
   List<EpubSection> sections = const <EpubSection>[];
   try {
-    final EpubBookRow? bookRow = await db.getEpubBook(bookKey);
-    final String extractDir = bookRow?.extractDir ?? '';
-    sections = await loadEpubSectionsInBackground(extractDir);
+    // 按书的 format 取正文（EPUB 章 / PDF 页），见 [loadBookTextSections]。
+    sections = await loadBookTextSections(db, bookKey);
   } catch (e, stack) {
     engineLog.log('AudiobookAlignmentService.parseEpub', e, stack);
     fushiDebugPrint('[fushi-import] parseFromExtracted failed: $e');

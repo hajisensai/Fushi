@@ -126,6 +126,8 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
   bool _autoplayAudio = true;
   bool _replayQuestionAudio = true;
   SrsNewCardOrder _newCardOrder = SrsNewCardOrder.frequency;
+  SrsNewCardMix _newCardMix = SrsNewCardMix.afterReviews;
+  SrsReviewCardOrder _reviewCardOrder = SrsReviewCardOrder.retrievability;
 
   /// 父牌组那条继承链上的参数归属牌组的算法（切到「随上级」后本牌组按它排程）；顶层为 null。
   SrsAlgorithm? _parentOwnerAlgorithm;
@@ -223,6 +225,8 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
         _autoplayAudio = deck.autoplayAudio;
         _replayQuestionAudio = deck.replayQuestionAudio;
         _newCardOrder = deck.newCardOrder;
+        _newCardMix = deck.newCardMix;
+        _reviewCardOrder = deck.reviewCardOrder;
         _rwkvMinReviews.text = '${deck.rwkvQueue.minReviewsPerDay}';
         _rwkvRepeatReviews.text = '${deck.rwkvQueue.repeatMinReviews}';
         _rwkvRepeatSeconds.text = '${deck.rwkvQueue.repeatMinSeconds}';
@@ -407,6 +411,12 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
       }
       if (_newCardOrder != deck.newCardOrder) {
         out[SrsFieldKeys.deckNewOrder] = _newCardOrder.wire;
+      }
+      if (_newCardMix != deck.newCardMix) {
+        out[SrsFieldKeys.deckNewMix] = _newCardMix.wire;
+      }
+      if (_reviewCardOrder != deck.reviewCardOrder) {
+        out[SrsFieldKeys.deckReviewOrder] = _reviewCardOrder.wire;
       }
       final SrsRwkvQueueSettings queue = _rwkvQueue(deck.rwkvQueue);
       if (queue != deck.rwkvQueue) {
@@ -683,6 +693,17 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
       ),
     );
   }
+
+  /// 复习顺序选项的显示名。
+  String _reviewOrderLabel(SrsReviewCardOrder o) => switch (o) {
+    SrsReviewCardOrder.retrievability =>
+      t.srs_settings_review_order_retrievability,
+    SrsReviewCardOrder.dueDate => t.srs_settings_review_order_due_date,
+    SrsReviewCardOrder.difficulty => t.srs_settings_review_order_difficulty,
+    SrsReviewCardOrder.intervalAscending =>
+      t.srs_settings_review_order_interval,
+    SrsReviewCardOrder.random => t.srs_settings_review_order_random,
+  };
 
   /// 这项设置被另一台设备的修改替换了：项旁一行提示。
   Widget? _conflictNote(BuildContext context, String key) {
@@ -1057,8 +1078,13 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
           ),
       ]),
       if (!_stepsUnderRwkv) _group(context, _stepsFields(context)),
-      // 新卡顺序与记忆率同一条继承（只看 own 祖先，见 [SrsDeckView.newCardOrder]）。
+      // 出卡顺序（新卡顺序 / 新卡与复习 / 复习顺序）与记忆率同一条继承（只看 own 祖先，见
+      // [SrsDeckView.newCardOrder]）。规则全在 Rust 排队（store/study.rs），这里只读写寄存器。
       _group(context, <Widget?>[
+        Text(
+          t.srs_settings_display_order,
+          style: context.fushiType.titleSmallEmphasized,
+        ),
         if (ownsParams) ...<Widget?>[
           AdaptiveSettingsSegmentedRow<SrsNewCardOrder>(
             key: const ValueKey<String>('srs-settings-new-order'),
@@ -1083,6 +1109,67 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
             onChanged: (SrsNewCardOrder v) => setState(() => _newCardOrder = v),
           ),
           _conflictNote(context, SrsFieldKeys.deckNewOrder),
+          AdaptiveSettingsSegmentedRow<SrsNewCardMix>(
+            key: const ValueKey<String>('srs-settings-new-mix'),
+            title: t.srs_settings_new_mix,
+            subtitle: switch (_newCardMix) {
+              SrsNewCardMix.afterReviews => t.srs_settings_new_mix_after_hint,
+              SrsNewCardMix.beforeReviews => t.srs_settings_new_mix_before_hint,
+              SrsNewCardMix.mixed => t.srs_settings_new_mix_mixed_hint,
+            },
+            segments: <ButtonSegment<SrsNewCardMix>>[
+              ButtonSegment<SrsNewCardMix>(
+                value: SrsNewCardMix.afterReviews,
+                label: Text(t.srs_settings_new_mix_after),
+              ),
+              ButtonSegment<SrsNewCardMix>(
+                value: SrsNewCardMix.beforeReviews,
+                label: Text(t.srs_settings_new_mix_before),
+              ),
+              ButtonSegment<SrsNewCardMix>(
+                value: SrsNewCardMix.mixed,
+                label: Text(t.srs_settings_new_mix_mixed),
+              ),
+            ],
+            selected: _newCardMix,
+            onChanged: (SrsNewCardMix v) => setState(() => _newCardMix = v),
+          ),
+          _conflictNote(context, SrsFieldKeys.deckNewMix),
+          // RWKV 一路的分数只有 R：按 RWKV 排程时整棵子树固定按可提取度（内核 `DeckTree::review_order`），这一行
+          // 只读、不让选；寄存器里存的值照存不改，切回 FSRS 后照旧生效。
+          if (_algorithm.usesRwkv)
+            AdaptiveSettingsRow(
+              key: const ValueKey<String>('srs-settings-review-order-rwkv'),
+              title: t.srs_settings_review_order,
+              subtitle: t.srs_settings_review_order_rwkv_hint,
+              // 只读值是一段文字（「Lowest retrievability first」），不是自定宽的控件：
+              // 非 flex 的 trailing 会按固有宽度量，窄屏上把标题挤成一字一行、整行横向溢出。
+              // 给有界宽度让它自己换行。
+              trailingFlexible: true,
+              trailing: Text(
+                t.srs_settings_review_order_retrievability,
+                textAlign: TextAlign.end,
+                style: context.fushiType.bodyMedium.copyWith(
+                  color: Theme.of(context).disabledColor,
+                ),
+              ),
+            )
+          else
+            AdaptiveSettingsPickerRow<SrsReviewCardOrder>(
+              key: const ValueKey<String>('srs-settings-review-order'),
+              title: t.srs_settings_review_order,
+              options: <AdaptiveSettingsPickerOption<SrsReviewCardOrder>>[
+                for (final SrsReviewCardOrder o in SrsReviewCardOrder.values)
+                  AdaptiveSettingsPickerOption<SrsReviewCardOrder>(
+                    value: o,
+                    label: _reviewOrderLabel(o),
+                  ),
+              ],
+              selected: _reviewCardOrder,
+              onChanged: (SrsReviewCardOrder v) =>
+                  setState(() => _reviewCardOrder = v),
+            ),
+          _conflictNote(context, SrsFieldKeys.deckReviewOrder),
         ] else
           Text(
             t.srs_settings_inherited_from(name: _owner?.name ?? ''),

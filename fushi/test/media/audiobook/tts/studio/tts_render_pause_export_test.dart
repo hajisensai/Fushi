@@ -450,25 +450,106 @@ void main() {
         ' --\n'
         '  E  mov              QuickTime / MOV\n'
         '  E  mp4              MP4 (MPEG-4 Part 14)\n';
+    const String encoders =
+        'Encoders:\n'
+        ' V..... = Video\n'
+        ' A..... = Audio\n'
+        ' S..... = Subtitle\n'
+        ' ------\n'
+        ' V....D mjpeg                MJPEG (Motion JPEG)\n'
+        ' A....D aac                  AAC (Advanced Audio Coding)\n'
+        ' S..... subrip               SubRip subtitle\n';
 
-    test('能力解析：精简版缺 ffmetadata 与 ipod', () {
+    test('能力解析：精简版缺 ffmetadata / srt / mov_text 与 ipod', () {
       final AudiobookExportCapabilities caps =
-          AudiobookExportCapabilities.parse(demuxers: demuxers, muxers: muxers);
+          AudiobookExportCapabilities.parse(
+            demuxers: demuxers,
+            muxers: muxers,
+            encoders: encoders,
+          );
       expect(caps.concat, isTrue);
       expect(caps.image2, isTrue);
       expect(caps.mp4, isTrue);
       expect(caps.ipod, isFalse);
       expect(caps.ffmetadata, isFalse);
-      expect(caps.missing, <String>['ffmetadata demuxer']);
+      expect(caps.srt, isFalse);
+      expect(caps.movText, isFalse);
+      expect(caps.missing, <String>[
+        'ffmetadata demuxer',
+        'srt demuxer',
+        'mov_text encoder',
+      ]);
       expect(ffmpegFormatsListHas(demuxers, 'm4a', demux: true), isTrue);
       expect(ffmpegFormatsListHas(demuxers, 'mp4', demux: false), isFalse);
       final AudiobookExportCapabilities full =
           AudiobookExportCapabilities.parse(
-            demuxers: '$demuxers D  ffmetadata      FFmpeg metadata in text\n',
+            demuxers:
+                '$demuxers D  ffmetadata      FFmpeg metadata in text\n'
+                ' D  srt             SubRip subtitle\n',
             muxers: '$muxers  E  ipod             iPod H.264 MP4\n',
+            encoders: '$encoders S..... mov_text             3GPP Timed Text\n',
           );
       expect(full.missing, isEmpty);
       expect(full.ipod, isTrue);
+      expect(full.srt, isTrue);
+      expect(full.movText, isTrue);
+    });
+
+    test('-encoders 列表解析：表头的类型说明行不算编码器', () {
+      expect(ffmpegEncodersListHas(encoders, 'aac'), isTrue);
+      expect(ffmpegEncodersListHas(encoders, 'subrip'), isTrue);
+      expect(ffmpegEncodersListHas(encoders, 'mov_text'), isFalse);
+      expect(ffmpegEncodersListHas(encoders, 'Video'), isFalse);
+      expect(ffmpegEncodersListHas(encoders, '='), isFalse);
+    });
+
+    test('ffmpeg -i 输出：源音频自带的封面流（只认 MJPEG / PNG 的 attached pic）', () {
+      const String withCover =
+          "Input #0, mov,mp4,m4a,3gp,3g2,mj2, from 'book.m4b':\n"
+          '  Duration: 01:02:03.45, start: 0.000000, bitrate: 64 kb/s\n'
+          '  Stream #0:0[0x1](jpn): Audio: aac (LC) (mp4a / 0x6134706D), '
+          '44100 Hz, stereo, fltp, 62 kb/s (default)\n'
+          '  Stream #0:1[0x2](und): Data: bin_data (text / 0x74786574)\n'
+          '  Stream #0:2[0x0]: Video: mjpeg (Baseline), yuvj420p(pc, '
+          'bt470bg/unknown/unknown), 600x600 [SAR 1:1 DAR 1:1], 90k tbr, '
+          '90k tbn (attached pic)\n';
+      expect(parseFfmpegAttachedPicStream(withCover), 2);
+      const String pngCover =
+          '  Stream #0:0: Audio: mp3, 44100 Hz, stereo, fltp, 128 kb/s\n'
+          '  Stream #0:1: Video: png, rgb24(pc), 500x500, 90k tbr, 90k tbn '
+          '(attached pic)\n';
+      expect(parseFfmpegAttachedPicStream(pngCover), 1);
+      // 真视频轨（不是封面）与 MP4 不认的封面编码都不算。
+      const String noCover =
+          '  Stream #0:0: Audio: aac (LC), 44100 Hz, stereo, fltp\n'
+          '  Stream #0:1: Video: h264 (High), yuv420p, 1280x720, 25 fps\n'
+          '  Stream #0:2: Video: bmp, bgr24, 300x300, 90k tbn (attached pic)\n';
+      expect(parseFfmpegAttachedPicStream(noCover), isNull);
+    });
+
+    test('封面来源：书库封面图优先，没有才取首个音频文件自带的封面', () {
+      final AudiobookExportCover? library = pickAudiobookExportCover(
+        libraryCover: 'cover.jpg',
+        firstAudioPath: 'a.m4b',
+        firstAudioCoverStream: 2,
+      );
+      expect(library?.path, 'cover.jpg');
+      expect(library?.mapSpec(3), '3:v:0');
+      final AudiobookExportCover? embedded = pickAudiobookExportCover(
+        libraryCover: null,
+        firstAudioPath: 'a.m4b',
+        firstAudioCoverStream: 2,
+      );
+      expect(embedded?.path, 'a.m4b');
+      expect(embedded?.mapSpec(3), '3:2');
+      expect(
+        pickAudiobookExportCover(
+          libraryCover: null,
+          firstAudioPath: 'a.m4b',
+          firstAudioCoverStream: null,
+        ),
+        isNull,
+      );
     });
 
     test('ffmpeg -i 输出：时长与音频流参数', () {
@@ -544,7 +625,8 @@ void main() {
       final List<String> args = buildAudiobookExportArgs(
         listPath: 'l',
         metadataPath: 'm',
-        coverPath: 'c.jpg',
+        cover: const AudiobookExportCover.image('c.jpg'),
+        subtitlePath: null,
         muxer: 'ipod',
         outputPath: 'o.m4b',
       );
@@ -552,20 +634,147 @@ void main() {
         args,
         containsAllInOrder(<String>[
           '-i', 'l', '-f', 'ffmetadata', '-i', 'm', '-i', 'c.jpg', //
-          '-map', '0:a', '-map', '2:v', '-map_metadata', '1',
+          '-map', '0:a', '-map', '2:v:0', '-map_metadata', '1',
           '-map_chapters', '1', '-c', 'copy',
           '-disposition:v:0', 'attached_pic', '-f', 'ipod', 'o.m4b',
         ]),
       );
+      final List<String> bare = buildAudiobookExportArgs(
+        listPath: 'l',
+        metadataPath: 'm',
+        cover: null,
+        subtitlePath: null,
+        muxer: 'mp4',
+        outputPath: 'o.m4b',
+      );
+      expect(bare, isNot(contains('attached_pic')));
+      expect(bare, isNot(contains('mov_text')));
+    });
+
+    test('导出参数：字幕作为 mov_text 轨封进去，源音频自带的封面按流下标映射', () {
+      final List<String> args = buildAudiobookExportArgs(
+        listPath: 'l',
+        metadataPath: 'm',
+        cover: const AudiobookExportCover.embedded('a.m4b', 2),
+        subtitlePath: 's.srt',
+        muxer: 'ipod',
+        outputPath: 'o.m4b',
+      );
       expect(
-        buildAudiobookExportArgs(
-          listPath: 'l',
-          metadataPath: 'm',
-          coverPath: null,
-          muxer: 'mp4',
-          outputPath: 'o.m4b',
+        args,
+        containsAllInOrder(<String>[
+          '-i', 'l', '-f', 'ffmetadata', '-i', 'm', //
+          '-f', 'srt', '-i', 's.srt', '-i', 'a.m4b',
+          '-map', '0:a', '-map', '2:s:0', '-map', '3:2',
+          '-map_metadata', '1', '-map_chapters', '1',
+          '-c', 'copy', '-c:s', 'mov_text',
+          '-disposition:v:0', 'attached_pic', '-f', 'ipod', 'o.m4b',
+        ]),
+      );
+      // 只有字幕、没有封面：字幕是第 2 路输入，不标 attached_pic。
+      final List<String> subtitleOnly = buildAudiobookExportArgs(
+        listPath: 'l',
+        metadataPath: 'm',
+        cover: null,
+        subtitlePath: 's.srt',
+        muxer: 'mp4',
+        outputPath: 'o.m4b',
+      );
+      expect(
+        subtitleOnly,
+        containsAllInOrder(<String>['-map', '2:s:0', '-c:s', 'mov_text']),
+      );
+      expect(subtitleOnly, isNot(contains('attached_pic')));
+    });
+
+    test('导出不再旁写 .srt：字幕只封在 M4B 里，移动端只分享一个文件', () {
+      final String export = File(
+        'lib/src/media/audiobook/tts/studio/tts_audiobook_export.dart',
+      ).readAsStringSync();
+      expect(export, isNot(contains("p.setExtension(outputPath, '.srt')")));
+      final String flow = File(
+        'lib/src/media/audiobook/tts/studio/audiobook_m4b_export_flow.dart',
+      ).readAsStringSync();
+      expect(flow, isNot(contains('application/x-subrip')));
+    });
+  });
+
+  group('导出当前字幕（单时间轴 SRT）', () {
+    AudioCue cue(int file, int start, int end, String text) =>
+        _cue(file, start, end, 'c.xhtml')..text = text;
+
+    test('单文件：不探测时长，按时间排序直接序列化', () async {
+      bool probed = false;
+      final String srt = await buildAudiobookSubtitleSrt(
+        cues: <AudioCue>[cue(0, 2000, 3000, '二'), cue(0, 0, 1500, '一')],
+        audioPaths: const <String>[],
+        probeDurations: (List<String> files) async {
+          probed = true;
+          return const <int>[];
+        },
+      );
+      expect(probed, isFalse);
+      expect(
+        srt,
+        '1\n00:00:00,000 --> 00:00:01,500\n一\n\n'
+        '2\n00:00:02,000 --> 00:00:03,000\n二\n\n',
+      );
+    });
+
+    test('多文件：按真实文件时长累加偏移（不用 cue 推出的时长）', () async {
+      final Directory tmp = await Directory.systemTemp.createTemp('srt_export');
+      addTearDown(() => tmp.delete(recursive: true));
+      final List<String> files = <String>[
+        for (final String n in <String>['1.mp3', '2.mp3'])
+          (File(p.join(tmp.path, n))..writeAsBytesSync(<int>[0])).path,
+      ];
+      List<String>? probedFiles;
+      final String srt = await buildAudiobookSubtitleSrt(
+        cues: <AudioCue>[cue(1, 500, 1000, '二'), cue(0, 0, 1000, '一')],
+        audioPaths: files,
+        probeDurations: (List<String> paths) async {
+          probedFiles = paths;
+          // 第一个文件末句止于 1000，但真实时长 5000（片尾静音）。
+          return const <int>[5000, 3000];
+        },
+      );
+      expect(probedFiles, files);
+      expect(
+        srt,
+        '1\n00:00:00,000 --> 00:00:01,000\n一\n\n'
+        '2\n00:00:05,500 --> 00:00:06,000\n二\n\n',
+      );
+    });
+
+    test('没有字幕 / 多文件书的音频不在本地：抛 export_failed', () async {
+      await expectLater(
+        buildAudiobookSubtitleSrt(
+          cues: const <AudioCue>[],
+          audioPaths: const <String>[],
         ),
-        isNot(contains('attached_pic')),
+        throwsA(
+          isA<AudiobookExportFailure>().having(
+            (AudiobookExportFailure f) => f.code,
+            'code',
+            'export_failed',
+          ),
+        ),
+      );
+      await expectLater(
+        buildAudiobookSubtitleSrt(
+          cues: <AudioCue>[cue(0, 0, 1000, '一'), cue(1, 0, 1000, '二')],
+          audioPaths: const <String>[],
+          probeDurations: (List<String> files) async => const <int>[1, 1],
+        ),
+        throwsA(isA<AudiobookExportFailure>()),
+      );
+      await expectLater(
+        buildAudiobookSubtitleSrt(
+          cues: <AudioCue>[cue(0, 0, 1000, '一'), cue(1, 0, 1000, '二')],
+          audioPaths: const <String>['/no/such/1.mp3', '/no/such/2.mp3'],
+          probeDurations: (List<String> files) async => const <int>[1, 1],
+        ),
+        throwsA(isA<AudiobookExportFailure>()),
       );
     });
   });
@@ -612,6 +821,10 @@ void main() {
             muxers: (await backend.runQuery(const <String>[
               '-hide_banner',
               '-muxers',
+            ], const Duration(seconds: 20))).output,
+            encoders: (await backend.runQuery(const <String>[
+              '-hide_banner',
+              '-encoders',
             ], const Duration(seconds: 20))).output,
           );
       expect(caps.missing, isEmpty);
@@ -666,12 +879,18 @@ void main() {
             ],
           ),
         );
+      final File subtitles = File(p.join(tmp.path, 's.srt'))
+        ..writeAsStringSync(
+          '1\n00:00:00,000 --> 00:00:01,000\n一\n\n'
+          '2\n00:00:01,600 --> 00:00:02,100\n二\n\n',
+        );
       final String m4b = p.join(tmp.path, 'book.m4b');
       final FfmpegRunResult result = await backend.run(
         buildAudiobookExportArgs(
           listPath: list.path,
           metadataPath: meta.path,
-          coverPath: cover.path,
+          cover: AudiobookExportCover.image(cover.path),
+          subtitlePath: subtitles.path,
           muxer: 'ipod',
           outputPath: m4b,
         ),
@@ -687,6 +906,7 @@ void main() {
       expect(info, contains('Chapter #0:1: start 1.500000, end 2.200000'));
       expect(info, contains('第二章'));
       expect(info, contains('(attached pic)'));
+      expect(info, contains('Subtitle: mov_text'));
       expect(info, contains('著者'));
       expect(
         ((await readMp4PresentationDurationMs(m4b))! - 2200).abs(),

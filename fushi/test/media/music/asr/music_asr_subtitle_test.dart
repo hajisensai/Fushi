@@ -9,6 +9,8 @@ import 'package:fushi/src/media/music/asr/music_subtitle_target.dart';
 import 'package:fushi/src/media/music/lyrics/lrclib_client.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_service.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_sources.dart';
+import 'package:fushi/src/media/music/music_output_backend.dart';
+import 'package:fushi/src/media/music/plugin/music_plugins.dart';
 import 'package:fushi/src/media/video/subtitle/app_video_subtitle_service.dart';
 import 'package:fushi/src/media/video/video_playback_remote.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -311,6 +313,63 @@ void main() {
     expect(job.registeredBookUids, <String>['a', 'b']);
     expect((await asrRow('a'))!.format, 'srt');
     expect((await asrRow('b'))!.format, 'srt');
+  });
+
+  test('插件曲目（反馈 NXOjldMQZd）：按取到本机的副本转写，登记成插件曲目 uid 的 asr 行；'
+      '解析时生成字幕优先于插件自带歌词；登记后删副本', () async {
+    final String pluginPath = musicPluginTrackPath('asmr', 'RJ01');
+    final String uid = musicPluginTrackUid('asmr', 'RJ01');
+    final String albumUid = musicPluginAlbumUid('asmr', 'RJ01-album');
+    final MusicPlayItem item = MusicPlayItem(
+      trackUid: uid,
+      path: pluginPath,
+      title: 'トラック1',
+      album: '同人音声',
+      albumUid: albumUid,
+      durationMs: 12 * 60 * 1000,
+    );
+    final File staged = File(audio('plugin_audio/$uid.wav', bytes: 64));
+    final AppVideoSubtitleTarget target = await targets().forPluginTrack(
+      item,
+      staged,
+    );
+    expect(target.isMusic, isTrue);
+    expect(target.wholeSeason, isFalse);
+    expect(target.key, 'music:track:$uid');
+    expect(target.work.workKey, 'album:$albumUid');
+    expect(target.videoPaths, <String>[staged.path]);
+    expect(target.unavailable, isEmpty);
+    expect(target.trackCounts, (pending: 1, skipped: 0));
+
+    final AppVideoSubtitleService svc = service();
+    final AppVideoSubtitleJob job = svc.start(
+      target,
+      const AppVideoSubtitleOptions(),
+    );
+    await job.done;
+    expect(
+      job.status,
+      AppVideoSubtitleJobStatus.succeeded,
+      reason: '${job.errorMessage}',
+    );
+    expect(recognizer.calls, <String>['$uid.wav']);
+    expect(job.registeredBookUids, <String>[uid]);
+    expect(staged.existsSync(), isFalse, reason: '副本只是转写输入，登记完删掉');
+    expect(
+      p.isWithin(out.path, svc.subtitlePathFor(target, staged.path)),
+      isTrue,
+    );
+
+    final MusicLyricsResolution? r = await lyrics.resolve(
+      MusicLyricsTrackRef(trackUid: uid, path: pluginPath, title: 'トラック1'),
+    );
+    expect(r?.source, MusicLyricsSource.asr);
+    expect(r!.timeline.lines.map((LyricLine l) => l.text), <String>[
+      '結衣が来た',
+      'こんにちは',
+      'ありがとう',
+      'またね',
+    ]);
   });
 
   test('与视频生成共用单活跃任务：音乐任务在跑时视频目标被拒（busy）', () async {

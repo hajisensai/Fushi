@@ -9,6 +9,7 @@ import 'package:fushi/src/pages/implementations/stat_summary.dart'
     show computeWeekOverWeekPercent;
 import 'package:fushi/src/platform/widget_links.dart';
 import 'package:fushi/src/platform/widget_progress.dart';
+import 'package:fushi/src/stats/stat_window.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 
 /// 快照契约版本（见 docs/agent/android-widgets.md）。
@@ -360,6 +361,7 @@ class WidgetGoalsInput {
     this.reviews = 0,
     this.minedCards = 0,
     this.chars = 0,
+    this.charsWeekly = false,
     this.minedToday = 0,
   });
 
@@ -369,7 +371,13 @@ class WidgetGoalsInput {
   final int videoMinutes;
   final int reviews;
   final int minedCards;
+
+  /// 字数目标（当前周期下生效的那一份，`AppModel.readingGoalActiveChars`）。
   final int chars;
+
+  /// 字数目标按周（反馈 CjIr9RGSCe）：true 时 [chars] 是每周目标，分子取本自然周
+  /// （周一起，[StatWindow.mondayOf]）的字数合计，标签换「本周字数」。
+  final bool charsWeekly;
 
   /// 今天制了多少张卡（统计口径，见 `StatFacts.minedEvents`）。
   final int minedToday;
@@ -877,6 +885,17 @@ Map<String, Object?> _dayBlocks({
     0,
     (int a, String k) => a + _nonNegative(immersion.charsByDay[k] ?? 0),
   );
+  // 字数目标分子：按日 = 今日；按周 = 本自然周（周一至 [day]，全在 weekKeys 内）。
+  final String weekMonday = StatWindow.mondayOf(day);
+  final int goalChars = goals.charsWeekly
+      ? weekKeys
+            .where((String k) => k.compareTo(weekMonday) >= 0)
+            .fold<int>(
+              0,
+              (int a, String k) =>
+                  a + _nonNegative(immersion.charsByDay[k] ?? 0),
+            )
+      : todayChars;
   final int currentStreak = computeCurrentStreak(immersion.activeDays, day);
   bool activeOn(String key) =>
       immersion.activeDays.contains(key) || immersion.msOf(key) > 0;
@@ -891,7 +910,7 @@ Map<String, Object?> _dayBlocks({
       'time': formatTime(todayMs),
       'chars': formatChars(todayChars),
       'goal': goals.chars > 0
-          ? clampWidgetFraction(todayChars / goals.chars)
+          ? clampWidgetFraction(goalChars / goals.chars)
           : 0,
       'streak': currentStreak,
       'totalMs': todayMs,
@@ -914,7 +933,7 @@ Map<String, Object?> _dayBlocks({
       immersion: immersion,
       day: day,
       reviewedToday: fushi ? reviewedToday : null,
-      todayChars: todayChars,
+      goalChars: goalChars,
       labels: goalLabels,
       formatTime: formatTime,
       formatChars: formatChars,
@@ -971,7 +990,7 @@ List<Map<String, Object?>> _goalsJson({
   required WidgetImmersionInput immersion,
   required String day,
   required int? reviewedToday,
-  required int todayChars,
+  required int goalChars,
   required Map<String, String> labels,
   required String Function(int ms) formatTime,
   required String Function(int chars) formatChars,
@@ -984,12 +1003,13 @@ List<Map<String, Object?>> _goalsJson({
     int target,
     String Function(int) format, {
     int unit = 1,
+    String? labelKey,
   }) {
     if (target <= 0) return;
     final int scaled = target * unit;
     out.add(<String, Object?>{
       'id': id,
-      'label': labels[id] ?? '',
+      'label': labels[labelKey ?? id] ?? '',
       'value': format(value),
       'target': format(scaled),
       'frac': clampWidgetFraction(value / scaled),
@@ -1030,7 +1050,13 @@ List<Map<String, Object?>> _goalsJson({
     add('reviews', reviewedToday, goals.reviews, formatCount);
   }
   add('mined', _nonNegative(goals.minedToday), goals.minedCards, formatCount);
-  add('chars', todayChars, goals.chars, formatChars);
+  add(
+    'chars',
+    goalChars,
+    goals.chars,
+    formatChars,
+    labelKey: goals.charsWeekly ? 'chars_weekly' : 'chars',
+  );
   return out;
 }
 

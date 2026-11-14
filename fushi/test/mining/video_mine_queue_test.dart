@@ -97,6 +97,7 @@ void main() {
       meta: const VideoMineStagedMeta(
         documentTitle: '作品 - 第1話',
         bookTitleTag: '第1話',
+        seriesTitle: '作品',
         statBookKey: 'remote/emby/1',
         statTitle: '第1話',
         historyDateKey: '2026-09-26',
@@ -145,6 +146,8 @@ void main() {
     expect(first.sentence, '走るの文。');
     expect(first.documentTitle, '作品 - 第1話');
     expect(first.bookTitleTag, '第1話');
+    // 出处「系列 → 集」（反馈 MCJLSBR5Wg）：暂存的系列名随卡落地（meta.json 往返）。
+    expect(first.seriesTitle, '作品');
     expect(first.source, AnkiMiningSource.video);
     expect(first.clipStartMs, 1000);
     expect(first.clipEndMs, 2500);

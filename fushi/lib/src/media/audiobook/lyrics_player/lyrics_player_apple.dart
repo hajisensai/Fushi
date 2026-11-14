@@ -1279,6 +1279,18 @@ List<Widget> _appleControlButtons(
           tooltip: t.av_sync,
           onPressedWithRect: onAvSync,
         );
+      case LyricsControlItem.exportSubtitle:
+        final VoidCallback? onExport = callbacks.onExportSubtitle;
+        if (onExport == null) return null;
+        return _LyricsIconButton(
+          key: const ValueKey<String>('lyrics_export_subtitle_button'),
+          icon: CupertinoIcons.captions_bubble,
+          diameter: diameter,
+          iconSize: iconSize,
+          color: color,
+          tooltip: t.lyrics_control_item_export_subtitle,
+          onPressed: onExport,
+        );
     }
   }
 

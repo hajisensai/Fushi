@@ -46,7 +46,8 @@ import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart'
 import 'package:fushi/src/utils/components/glass/fushi_expressive.dart'
     show FushiConnectedButtonGroup;
 import 'package:fushi/src/pages/implementations/stat_shared.dart'
-    show formatStatChars, formatStatTime;
+    show StatGoalEditDialog, formatStatChars, formatStatTime;
+import 'package:fushi/src/stats/stat_window.dart';
 import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -2356,7 +2357,7 @@ void main() {
     await tester.tap(find.text(t.stat_goal_set));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
-    // 2026-10-10：每周目标已删（只能设、不显示进度），对话框只剩每日一个框。
+    // 缺省周期 = 按日：只显示每日输入框（周目标框在切到「按周」后才换上来）。
     expect(
       find.byKey(const ValueKey<String>('stat-goal-weekly-field')),
       findsNothing,
@@ -2399,7 +2400,7 @@ void main() {
       find.descendant(of: dialog, matching: find.byType(FushiDialogHeroIcon)),
       findsOneWidget,
     );
-    // 只剩每日一个输入框（每周目标 2026-10-10 删除），单位后缀一个。
+    // 缺省「按日」：只显示每日一个输入框，单位后缀一个。
     expect(
       find.descendant(of: dialog, matching: find.text(t.stat_goal_unit_chars)),
       findsOneWidget,
@@ -2454,6 +2455,71 @@ void main() {
     expect(
       find.text(t.stat_goal_progress(read: 800, goal: 5000)),
       findsOneWidget,
+    );
+  });
+
+  testWidgets('周目标（CjIr9RGSCe）：切「按周」设 2000 → 进度行按本自然周字数显示「本周 X / 2000」', (
+    WidgetTester tester,
+  ) async {
+    useSize(tester, const Size(1280, 900));
+    await seedSampleData();
+    // 本周一（若今天不是周一）再读 500 字：周目标分子要把它算进去，日目标不算。
+    final StatWindow w = StatWindow(DateTime.now());
+    final int weekChars = w.weekFromKey == w.todayKey ? 800 : 800 + 500;
+    if (w.weekFromKey != w.todayKey) {
+      await seedLegacyReading(
+        title: '吾輩は猫である',
+        dateKey: w.weekFromKey,
+        charsRead: 500,
+        timeMs: 300000,
+      );
+    }
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
+
+    await tester.tap(find.text(t.stat_goal_set));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.tap(
+      find.byKey(const ValueKey<String>('stat-goal-period-weekly')),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(
+      find.byKey(const ValueKey<String>('stat-goal-weekly-field')),
+      findsOneWidget,
+    );
+    // 周目标预设换成周量级。
+    final Finder presets = find.byKey(
+      const ValueKey<String>('stat-goal-presets'),
+    );
+    expect(
+      tester
+          .widget<FushiConnectedButtonGroup<int>>(presets)
+          .segments
+          .map((ButtonSegment<int> s) => s.value),
+      StatGoalEditDialog.weeklyPresets,
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('stat-goal-weekly-field')),
+      '2000',
+    );
+    await tester.tap(find.byKey(const ValueKey<String>('stat-goal-save')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(tester.takeException(), isNull);
+    expect(appModel.readingGoalPeriod, StudyGoalPeriod.weekly);
+    expect(appModel.readingGoalWeeklyChars, 2000);
+    expect(appModel.readingGoalDailyChars, 0);
+    expect(
+      find.text(t.stat_goal_progress_weekly(read: weekChars, goal: 2000)),
+      findsOneWidget,
+    );
+    expect(
+      tester.widget<HomeGoalRing>(find.byType(HomeGoalRing)).fraction,
+      weekChars / 2000,
     );
   });
 

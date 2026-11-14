@@ -1,0 +1,9 @@
+## BUG-4368 · 关闭单击查词后单击正文被吞（悬浮栏唤不出、VN 不前进、弹窗外点词照查）
+- **报告**：2026-11-10（用户：GitHub #3088 Miatames，反馈 6UvuZxRQkW——「希望有开关禁用点击查词，只保留长按选词查词」）
+- **真实性**：✅ 真 bug（开关其实早就有，但名不副实且关掉后行为是坏的）。阅读器设置里 `highlight_on_tap` 开关实际门控的就是单击查词（JS 点词门控镜像 `window.__fushiTapGate.lookup` 与 Dart `onTap`），可标题是「点击时高亮文本」（`fushi/lib/src/settings/settings_schema_reading.dart:683`），用户找不到。关掉以后：
+  - 根因 1：`fushi/lib/src/pages/implementations/reader_fushi/webview.part.dart:2510-2514`（develop）——JS 在门控不过时把**所有**单击（正文和空白）都交给 Dart `onTap`，而 `onTap` 在「单击查词关」分支只 `reclaim` 焦点就 return，没有走 `onTapEmpty` 的空白单击语义。底栏悬浮模式下 `_tapGateChrome` 恒 true，于是点正文（甚至点空白）既不唤出 / 收起菜单，翻页区域模板以外的地方点了也毫无反应。
+  - 根因 2：`webview.part.dart:1412`（develop）——VN「点击前进」只认 `_fushiVnTapIsBlank` 的字面外点，「单击查词」关了以后点到字上仍然什么都不做（既不查词也不前进）。
+  - 根因 3：`fushi/lib/src/pages/implementations/reader_fushi_page.dart:5803`（develop）——查词弹窗在场时点弹窗外正文，`onDismissBarrierTap` 无条件转 `_selectTextAt`，开关关了照样换词查词。
+- **[x] ① 已修复** — `onTapEmpty` 的空白单击语义抽成 `_handleReaderBlankTap(args, sizeIndex:)`（`reader_fushi/chrome.part.dart`），`onTapEmpty` 与「单击查词关闭」的 `onTap` 共用（关弹窗 → 清拖选 → 翻页区域模板 → 悬浮栏唤出 / 挤压栏切换 → 夺回焦点）；JS 在镜像 `lookup === false` 且非 Shift 时 VN 点字也前进；barrier 单击在开关关闭（非歌词覆盖层）时只关弹窗。设置项标题改「单击查词」并加说明副标题（i18n `highlight_on_tap` → `reader_tap_lookup_enabled` 经 `--rename` + 17 语 `--set`，新增 `reader_tap_lookup_description`）；持久化 key 不变。
+- **[x] ② 已加自动化测试** — `fushi/test/reader/reader_paged_touch_swipe_behavior_test.js`（Node 真执行阅读器手势切片：开关开 / 关 × 分页 / VN 点字四例）、`fushi/test/reader/reader_tap_zones_test.dart`（onTap 关闭分支委托空白单击）、`fushi/test/pages/reader_dismiss_barrier_tap_test.dart`（barrier 关闭时只关弹窗）、`fushi/test/reader/reader_tap_lookup_toggle_guard_test.dart`（设置项标题 / 副标题）；随重构更新 `reader_focus_nav_switch_static_test.dart`、`reader_mobile_selection_export_menu_guard_test.dart`。
+- **备注**：测试未在本分支运行，统一在合并后验证；未做真机验证（悬浮底栏 / 挤压栏 / VN 三种情形点正文的实际表现待真机复测）。歌词覆盖层（纯转录有声书）的单击仍是查词 + 跳句，不受本开关管辖（另有待决策项 C9wcnKaPq_）。

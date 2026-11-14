@@ -496,6 +496,7 @@ class _FakePortal implements GlobalShortcutsPortal {
     openCount++;
     openedWith = appId;
     final Object? error = openError;
+    // ignore: only_throw_errors
     if (error != null) throw error;
     return version;
   }

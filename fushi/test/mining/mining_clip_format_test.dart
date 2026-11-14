@@ -7,7 +7,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/mining/galgame_window_video.dart';
 import 'package:fushi/src/models/preference_keys.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
-import 'package:fushi/src/pages/implementations/anki_settings_page.dart'
+import 'package:fushi/src/anki/mining_media_quality_labels.dart'
     show miningClipFormatLabel;
 import 'package:fushi/src/profile/profile_keys.dart';
 import 'package:fushi_core/fushi_core.dart';

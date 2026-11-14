@@ -21,6 +21,7 @@ import 'package:fushi/src/mining/galgame_line_voice_window.dart';
 import 'package:fushi/src/mining/galgame_play_tracker.dart';
 import 'package:fushi/src/mining/galgame_repository.dart';
 import 'package:fushi/src/mining/gal_hook_tick_clock.dart';
+import 'package:fushi/src/mining/gal_mining_settings.dart';
 import 'package:fushi/src/mining/knife_text_websocket.dart';
 import 'package:fushi/src/mining/gal_voice_resource_name.dart';
 import 'package:fushi/src/mining/tyrano_dom/tyrano_dom_attach_probe.dart';
@@ -189,6 +190,7 @@ class GalCaptureMemory {
     this.textThreadTypicalLength,
     this.audioFallbackPolicy = GalAudioFallbackPolicy.full,
     this.textProcess = kGalDefaultTextProcessPipeline,
+    this.engineExactDeclined = false,
   });
 
   factory GalCaptureMemory.fromJson(Map<Object?, Object?> json) {
@@ -210,6 +212,7 @@ class GalCaptureMemory {
       textProcess: json['textProcess'] is List
           ? GalTextProcessPipeline.fromJson(json['textProcess'])
           : kGalDefaultTextProcessPipeline,
+      engineExactDeclined: json['engineExactDeclined'] == true,
     );
   }
 
@@ -240,12 +243,22 @@ class GalCaptureMemory {
   /// 禁用一次 = 下次启动又被默认管线顶回来」。
   final GalTextProcessPipeline textProcess;
 
+  /// 用户在**引擎精确线程已登记**的会话里亲手选了别的线程（或清空选择）。
+  ///
+  /// 引擎精确线程（[isEngineExactTextThread]）默认压过记忆里的 Luna 线程：记忆多半
+  /// 是在这条精确线程出现之前手挑的（真机 Role player とろろ姉妹：旧会话记下的
+  /// KiriKiriZX 线程把后来才有的 ENGINE:KIRIKIRI 整页线程挡在自动选择之外）。但用户
+  /// 在两者并存时明确选了别的，就是在否决它——这一位把那次否决记下来，之后的会话
+  /// 不再自动换掉用户的选择。用户再选回引擎精确线程时清零。
+  final bool engineExactDeclined;
+
   bool get isEmpty =>
       excludedTrackFingerprints.isEmpty &&
       voiceTrackFingerprint == null &&
       textThreadFingerprint == null &&
       audioFallbackPolicy == GalAudioFallbackPolicy.full &&
-      textProcess == kGalDefaultTextProcessPipeline;
+      textProcess == kGalDefaultTextProcessPipeline &&
+      !engineExactDeclined;
 
   GalCaptureMemory copyWith({
     List<String>? excludedTrackFingerprints,
@@ -254,6 +267,7 @@ class GalCaptureMemory {
     int? textThreadTypicalLength,
     GalAudioFallbackPolicy? audioFallbackPolicy,
     GalTextProcessPipeline? textProcess,
+    bool? engineExactDeclined,
     bool clearVoiceTrack = false,
     bool clearTextThread = false,
   }) => GalCaptureMemory(
@@ -270,6 +284,7 @@ class GalCaptureMemory {
         : textThreadTypicalLength ?? this.textThreadTypicalLength,
     audioFallbackPolicy: audioFallbackPolicy ?? this.audioFallbackPolicy,
     textProcess: textProcess ?? this.textProcess,
+    engineExactDeclined: engineExactDeclined ?? this.engineExactDeclined,
   );
 
   Map<String, Object?> toJson() => <String, Object?>{
@@ -282,6 +297,7 @@ class GalCaptureMemory {
       'audioFallback': audioFallbackPolicy.storageKey,
     if (textProcess != kGalDefaultTextProcessPipeline)
       'textProcess': textProcess.toJson(),
+    if (engineExactDeclined) 'engineExactDeclined': true,
   };
 }
 
@@ -1255,6 +1271,14 @@ class GalHookSessionController extends ChangeNotifier {
   /// 文本线程记忆已在本会话应用过（或用户已手动选过线程）——两者都终止自动恢复。
   bool _textThreadMemoryApplied = false;
 
+  /// 用户本会话亲手选过线程（工作台下拉 / 设置对话框 / ctl，`remember: true`）。
+  /// 之后任何自动选择——记忆恢复与引擎精确线程接管——都不再碰选择。
+  bool _textThreadUserSelected = false;
+
+  /// 一次自动选择（记忆恢复或引擎精确接管）正在等 native 确认。两条自动路径共用：
+  /// 恢复的 select 还没回来时引擎接管又发一次，晚回来的那次会把选择改回去。
+  bool _textThreadAutoSelectInFlight = false;
+
   /// 记忆恢复文本线程所需的最小行数：native 线程 id 混了 processId，跨会话不稳定，
   /// 同一 hook 往往有多条并行线程共用同一指纹，只能靠「真的在出台词」来消歧。
   /// 门限设 3 行而不是 1 行，避免开局个别 UI 线程抢先蹦一行就把选择钉死。
@@ -1566,6 +1590,15 @@ class GalHookSessionController extends ChangeNotifier {
   /// 这时把引擎文本也掐掉就成了「什么都没有」。代价是连上后的第一句可能两路各进一份。
   bool get tyranoDomTextOnline =>
       _tyranoDomFeed != null && _tyranoDomDeliveredLine;
+
+  /// 本会话的正文是否要靠用户选定一条 LunaHook 文本线程才能进工作台。
+  ///
+  /// 只有引擎文本道才需要选线程；TyranoScript DOM 源在线（[tyranoDomTextOnline]）时
+  /// 正文与语音都由 DOM 源按句给出、根本不读引擎文本道，此时再报「等待选择台词线程」
+  /// 就与屏幕上正在流入的台词和音频自相矛盾（真机：yurialice 工作台满屏 tyrano_dom
+  /// 行，状态卡却停在「等待选择台词线程」）。
+  bool get requiresTextThreadSelection =>
+      hasEngineSource && !tyranoDomTextOnline;
 
   static Future<TyranoDomLaunchPlan?> _defaultTyranoDomLaunchPlanner(
     String exePath, {
@@ -1919,7 +1952,11 @@ class GalHookSessionController extends ChangeNotifier {
       audioStatus: initialStatus,
     );
     if (entry == null) return;
+    final bool firstDomLine = !_tyranoDomDeliveredLine;
     _tyranoDomDeliveredLine = true;
+    // 第一句 DOM 正文翻转了 [requiresTextThreadSelection]：工作台的「等待选择台词线程」
+    // 由会话通知驱动，必须在这里通知一次，不能等别的事件顺带刷新。
+    if (firstDomLine) notifyListeners();
     _redirectFoldedLines(_textService.lastFoldedLineIds, entry.id);
     _pendingResourceMatches.remove(entry.id);
     _recordEngineDelta(
@@ -2742,6 +2779,7 @@ class GalHookSessionController extends ChangeNotifier {
           generation: generation,
           pid: runningPid,
           identity: identity,
+          launchedByFushi: true,
         );
         if (tyranoDomPlan != null) {
           _startTyranoDom(
@@ -2854,6 +2892,7 @@ class GalHookSessionController extends ChangeNotifier {
       generation: generation,
       pid: gamePid,
       identity: identity,
+      launchedByFushi: true,
     );
     if (tyranoDomPlan != null) {
       _startTyranoDom(generation, port: tyranoDomPlan.port, pid: gamePid);
@@ -2875,10 +2914,16 @@ class GalHookSessionController extends ChangeNotifier {
   /// 不受 `canTrackPlaytime` 限制：库外附着的游戏同样要在退出时结束会话。
   /// 会话被换代（stop、重启、attach、接手）即自停；源停止时（[_stopSourcesInternal]）
   /// 一并取消。
+  ///
+  /// [launchedByFushi]：[pid] 是注入器 `LAUNCH pid=` 回报的、Fushi 自己拉起的进程，
+  /// 它存在过是事实（见 [GalGameExitWatch] 的 `existenceConfirmed`）——转手即退的同目录
+  /// 启动器 stub 在第一次采样前就死了，也必须能交接给它拉起的本体。附着路径不传：那里
+  /// 的 PID 可能属于判活恒失败的受保护进程。
   void _startGameExitWatch({
     required int generation,
     required int? pid,
     required GalHookSessionIdentity identity,
+    bool launchedByFushi = false,
   }) {
     _gameExitTimer?.cancel();
     _gameExitTimer = null;
@@ -2892,6 +2937,7 @@ class GalHookSessionController extends ChangeNotifier {
         probe: probe,
       ),
       confirmSamples: _gameExitConfirmSamples,
+      existenceConfirmed: launchedByFushi,
     );
     // PID 未知又没有游戏目录可认领：没有任何判据，不起空转的定时器。
     if (watch.pid <= 0 && watch.group.gameDirectory == null) return;
@@ -3007,9 +3053,23 @@ class GalHookSessionController extends ChangeNotifier {
     _gameExitedCount.value++;
   }
 
+  /// 测试套件级默认：构造时没注入 `gameProcessProbe` 的控制器用它代替真实 Windows probe。
+  ///
+  /// `test/flutter_test_config.dart` 把它钉成「没有 probe」——与 Linux CI 上
+  /// `Platform.isWindows == false` 的行为一致。否则 Windows 开发机上每个只造了假引擎
+  /// （假 PID）的用例都会去读**真实进程表**：假 PID 在真机上不存在（或碰巧属于别的
+  /// 进程），launch 路径又把注入器回报的 PID 视为确实存在过（`existenceConfirmed`），
+  /// 跑得久一点的用例就会被判「游戏已退出」而中途停会话。要测退出监视的用例显式注入
+  /// probe，优先于这里。生产代码从不设置它。
+  @visibleForTesting
+  static GalgameProcessProbe? Function()? debugDefaultGameProcessProbe;
+
   GalgameProcessProbe? _resolveGameProcessProbe() {
     final GalgameProcessProbe? injected = _gameProcessProbeOverride;
     if (injected != null) return injected;
+    final GalgameProcessProbe? Function()? debugDefault =
+        debugDefaultGameProcessProbe;
+    if (debugDefault != null) return debugDefault();
     if (!_isWindows || !Platform.isWindows) return null;
     try {
       return _sharedProcessProbe ??= GalgameWindowsProcessProbe();
@@ -3889,6 +3949,7 @@ class GalHookSessionController extends ChangeNotifier {
       if (remember) {
         // 用户已亲自表态：本会话不再自动恢复，并把这次选择记成新的真值。
         _textThreadMemoryApplied = true;
+        _textThreadUserSelected = true;
         TexthookerTextThread? chosen;
         for (final TexthookerTextThread thread in textThreads) {
           if (thread.key == _selectedTextThreadKey) {
@@ -4301,16 +4362,17 @@ class GalHookSessionController extends ChangeNotifier {
   /// （ctx 未透出），靠「谁真的在出台词」消歧。选中后本会话不再自动改，避免
   /// 行数此消彼长导致选择反复跳动。
   void _maybeRestoreTextThread() {
+    if (_textThreadUserSelected || _textThreadAutoSelectInFlight) return;
+    // 引擎精确线程先于记忆：它一旦真出过行，就接管「没有用户本会话亲选」的任何选择
+    // ——包括记忆恢复出来的 Luna 线程（见 [GalCaptureMemory.engineExactDeclined]）。
+    if (_maybeAutoSelectEngineExactThread()) return;
     if (_textThreadMemoryApplied || _selectedTextThreadKey != null) return;
     // 记忆未接入 / 本局拿不到游戏 key / 记忆里没有线程指纹，三种情况都落到
     // 引擎精确线程的自动选择；只有真有记忆时才按指纹恢复（用户显式选择优先）。
     final String? wanted = _ensureCaptureMemoryLoaded()
         ? _captureMemory.textThreadFingerprint
         : null;
-    if (wanted == null) {
-      _maybeAutoSelectEngineExactThread();
-      return;
-    }
+    if (wanted == null) return;
     // BUG-2706：必须是**本会话**的线程目录（全量目录里还留着上一次启动的死线程）。
     final TexthookerTextThread? best = pickRememberedTextThread(
       textThreads,
@@ -4320,10 +4382,12 @@ class GalHookSessionController extends ChangeNotifier {
     );
     if (best == null) return;
     _textThreadMemoryApplied = true;
+    _textThreadAutoSelectInFlight = true;
     unawaited(
       selectTextThread(best.nativeThreadId, threadKey: best.key).then((
         bool selected,
       ) {
+        _textThreadAutoSelectInFlight = false;
         if (!selected) return;
         _record(
           GalHookEventSeverity.info,
@@ -4332,6 +4396,9 @@ class GalHookSessionController extends ChangeNotifier {
           'Restored the text thread remembered for this game',
           details: <String, Object?>{'threadKey': best.key},
         );
+        // 恢复在飞期间引擎精确线程可能已出满行数，而那一轮的判定被在飞标记挡掉了；
+        // 选择落定后按当前目录重评一次（引擎线程已选中时立即返回，不会往复）。
+        _maybeRestoreTextThread();
       }),
     );
   }
@@ -4346,7 +4413,18 @@ class GalHookSessionController extends ChangeNotifier {
   /// 在十几条 MultiByteToWideChar 噪声线程里手挑它，只是把确定的事推给人。
   /// 判据与记忆恢复同款：必须真出过 [_textThreadRestoreMinLines] 行，避免只登记
   /// 未出行的线程被选中后一行不来。选中后本会话不再自动改。
-  void _maybeAutoSelectEngineExactThread() {
+  ///
+  /// 接管对象：没有选择，或选择来自自动路径（记忆恢复）且不是引擎精确线程。用户本会话
+  /// 亲选过（[_textThreadUserSelected]）或记忆里记着用户否决过
+  /// （[GalCaptureMemory.engineExactDeclined]）时不接管。
+  ///
+  /// 返回 true = 引擎精确线程已是当前选择或刚发起选择，调用方不再做记忆恢复。
+  bool _maybeAutoSelectEngineExactThread() {
+    final TexthookerTextThread? current = selectedTextThread;
+    if (current != null && isEngineExactTextThread(current)) return true;
+    if (_ensureCaptureMemoryLoaded() && _captureMemory.engineExactDeclined) {
+      return false;
+    }
     TexthookerTextThread? best;
     for (final TexthookerTextThread thread in textThreads) {
       if (!isEngineExactTextThread(thread)) continue;
@@ -4357,38 +4435,65 @@ class GalHookSessionController extends ChangeNotifier {
         best = thread;
       }
     }
-    if (best == null) return;
+    if (best == null) return false;
+    final TexthookerTextThread chosen = best;
+    final String? replaced = current?.key ?? _selectedTextThreadKey;
     _textThreadMemoryApplied = true;
+    _textThreadAutoSelectInFlight = true;
     unawaited(
-      selectTextThread(best.nativeThreadId, threadKey: best.key).then((
+      selectTextThread(chosen.nativeThreadId, threadKey: chosen.key).then((
         bool selected,
       ) {
+        _textThreadAutoSelectInFlight = false;
         if (!selected) return;
         _record(
           GalHookEventSeverity.info,
           'text',
           'text.thread_engine_exact_selected',
           'Selected the engine exact text thread automatically',
-          details: <String, Object?>{'threadKey': best!.key},
+          details: <String, Object?>{
+            'threadKey': chosen.key,
+            if (replaced != null) 'replacedThreadKey': replaced,
+          },
         );
       }),
     );
+    return true;
   }
 
   /// 用户显式选定/取消文本线程后同步持久化（null = 未选择，清掉记忆）。
   void _persistTextThread(TexthookerTextThread? thread) {
     if (!_ensureCaptureMemoryLoaded()) return;
+    // 引擎精确线程已登记时选了别的（或清空）= 否决它；选回它 = 撤销否决。
+    final bool engineExactPresent = textThreads.any(
+      (TexthookerTextThread t) =>
+          isEngineExactTextThread(t) &&
+          t.nativeThreadId != null &&
+          t.nativeThreadId != 0,
+    );
+    final bool declined =
+        engineExactPresent &&
+        (thread == null || !isEngineExactTextThread(thread));
     final String? fingerprint = thread == null
         ? null
         : textThreadFingerprint(thread);
     if (fingerprint == null) {
-      if (_captureMemory.textThreadFingerprint == null) return;
-      _saveCaptureMemory(_captureMemory.copyWith(clearTextThread: true));
+      if (_captureMemory.textThreadFingerprint == null &&
+          _captureMemory.engineExactDeclined == declined) {
+        return;
+      }
+      _saveCaptureMemory(
+        _captureMemory.copyWith(
+          clearTextThread: true,
+          engineExactDeclined: declined,
+        ),
+      );
       return;
     }
     final int? typicalLength = textThreadTypicalLength(thread!);
     if (_captureMemory.textThreadFingerprint == fingerprint &&
-        _captureMemory.textThreadTypicalLength == typicalLength) {
+        _captureMemory.textThreadTypicalLength == typicalLength &&
+        _captureMemory.engineExactDeclined == declined) {
       return;
     }
     _saveCaptureMemory(
@@ -4399,6 +4504,7 @@ class GalHookSessionController extends ChangeNotifier {
         textThreadTypicalLength: typicalLength,
         audioFallbackPolicy: _captureMemory.audioFallbackPolicy,
         textProcess: _captureMemory.textProcess,
+        engineExactDeclined: declined,
       ),
     );
   }
@@ -4472,6 +4578,8 @@ class GalHookSessionController extends ChangeNotifier {
   void _resetCaptureMemorySession() {
     _trackMemoryApplied = false;
     _textThreadMemoryApplied = false;
+    _textThreadUserSelected = false;
+    _textThreadAutoSelectInFlight = false;
     _captureMemoryLoaded = false;
     _captureMemoryGameKey = null;
     _captureMemory = const GalCaptureMemory();
@@ -4491,6 +4599,7 @@ class GalHookSessionController extends ChangeNotifier {
   Future<Uint8List?> captureAudioForOccurrence({
     required GalIngameMiningBinding occurrence,
     required String outputExtension,
+    GalMiningAudioLimit limit = GalMiningAudioLimit.unlimited,
   }) async {
     bool current() =>
         occurrence.resolve(
@@ -4516,6 +4625,7 @@ class GalHookSessionController extends ChangeNotifier {
         lineId: original.id,
         sentence: row!.text,
         outputExtension: outputExtension,
+        limit: limit,
       );
       if (!current()) return null;
       if (_textService.entryById(original.id)?.sourceSequence == seq) {
@@ -4556,10 +4666,14 @@ class GalHookSessionController extends ChangeNotifier {
     return null;
   }
 
+  /// [limit] 是本次制卡生效的句子音频长度策略（全局 + 本游戏覆盖，反馈
+  /// II3jOBIhT5）：只裁截取出来的 PCM，资源原件与用户裁决不受影响，见
+  /// [GalMiningAudioMode]。不带音频（off）由协调器在调用前短路，不会走到这里。
   Future<Uint8List?> captureAudioBytes({
     required String lineId,
     required String sentence,
     required String outputExtension,
+    GalMiningAudioLimit limit = GalMiningAudioLimit.unlimited,
   }) async {
     final TexthookerLineEntry? entry = _textService.entryById(lineId);
     if (entry == null ||
@@ -4579,6 +4693,7 @@ class GalHookSessionController extends ChangeNotifier {
         lineId: lineId,
         sentence: sentence,
         outputExtension: outputExtension,
+        limit: limit,
       ),
       buildFailure: (Object error, StackTrace stack) => null,
       onError: (Object error, StackTrace stack) => _record(
@@ -4663,6 +4778,7 @@ class GalHookSessionController extends ChangeNotifier {
     required String lineId,
     required String sentence,
     required String outputExtension,
+    required GalMiningAudioLimit limit,
   }) async {
     final GalAudioSource? source = _audioSource;
     final EngineHookGalAudioSource? engine = _engineSource;
@@ -4687,6 +4803,21 @@ class GalHookSessionController extends ChangeNotifier {
             ? 'manual_track_override'
             : 'manual_recapture',
       );
+    }
+    // TyranoScript DOM 语音仲裁已经定论「这句没有语音」（声明了语音缓冲区、这句一条
+    // 语音事件都没有、也没有在取的原件）：入库时就把它标成 unavailable、不借时间邻近的
+    // native 资源、不录 Loopback（见 [_onTyranoDomFrame]）。制卡取音必须服从同一结论：
+    // 以前这里照样空等资源等待窗（默认 1.2s）再走 PCM / Loopback 兜底链，而制卡动图
+    // 的采样又要等本句音频有结论才收口——用户看到的就是浮窗「制卡」按钮一直转。
+    if (_tyranoDomLineHasNoVoice(lineId)) {
+      _record(
+        GalHookEventSeverity.info,
+        'match',
+        'audio.dom_no_voice',
+        'TyranoScript DOM voice arbitration reports no voice for this line',
+        details: <String, Object?>{'lineId': lineId},
+      );
+      return null;
     }
     final int timestamp = _lineTimestampCache[lineId] ?? 0;
     if (engine != null && _isWindows) {
@@ -4814,14 +4945,33 @@ class GalHookSessionController extends ChangeNotifier {
       _markLineAudioMissing(lineId, reason);
       return null;
     }
+    // 长度策略只裁这里——自动截取的 PCM。上面的用户裁决分支与资源原件分支不经过它。
+    // 缓存里留的仍是完整切片：工作台试听 / 换策略再制卡都要拿到原始捕获。
+    final GalAudioSlice limited = applyGalMiningAudioLimit(slice, limit);
+    if (!identical(limited, slice)) {
+      _record(
+        GalHookEventSeverity.info,
+        'encode',
+        'audio.mining_length_limited',
+        'Captured slice length adjusted by the mining audio length setting',
+        details: <String, Object?>{
+          'lineId': lineId,
+          'mode': limit.mode.wireName,
+          'limitMs': limit.limitMs,
+          'capturedMs': (slice.pcm.length * 1000) ~/ slice.format.byteRate,
+        },
+      );
+    }
     return _encodeLineSlice(
       lineId: lineId,
-      slice: slice,
+      slice: limited,
       backend: identical(source, engine) ? 'engine_pcm' : 'system_loopback',
       outputExtension: outputExtension,
       fallbackReason: timestamp > 0
           ? 'paired_voice_not_found'
           : 'no_engine_timestamp',
+      // 用户定了时长（最长 / 固定），这段长度就是他要的，不再按「单句超长」亮黄。
+      lengthChosenByUser: limit.limitMs != null,
     );
   }
 
@@ -4852,12 +5002,15 @@ class GalHookSessionController extends ChangeNotifier {
     required String backend,
     required String outputExtension,
     required String? fallbackReason,
+    bool lengthChosenByUser = false,
   }) async {
     final int durationMs = (slice.pcm.length * 1000) ~/ slice.format.byteRate;
-    final String? effectiveReason = sliceFallbackReasonFor(
-      durationMs: durationMs,
-      fallbackReason: fallbackReason,
-    );
+    final String? effectiveReason = lengthChosenByUser
+        ? fallbackReason
+        : sliceFallbackReasonFor(
+            durationMs: durationMs,
+            fallbackReason: fallbackReason,
+          );
     if (effectiveReason != fallbackReason) {
       _record(
         GalHookEventSeverity.warning,
@@ -4901,6 +5054,20 @@ class GalHookSessionController extends ChangeNotifier {
         await jobDirectory.delete(recursive: true);
       } catch (_) {}
     }
+  }
+
+  /// [lineId] 是 DOM 语音仲裁管辖的行，且它的语音组已经定论无语音：一条语音事件
+  /// 都没收到、没有在取的原件、也没有已落盘的资源。语音组已被淘汰 / 文档已重载
+  /// （找不到组）时不下结论，返回 false，交给原有等待与兜底链。
+  bool _tyranoDomLineHasNoVoice(String lineId) {
+    if (!_tyranoDomVoiceOwnedLines.contains(lineId)) return false;
+    for (final _TyranoDomVoiceGroup group in _tyranoDomVoiceGroups.values) {
+      if (group.lineId != lineId) continue;
+      return group.events == 0 &&
+          group.inFlight == 0 &&
+          group.resourceIds.isEmpty;
+    }
+    return false;
   }
 
   /// 资源 hook 已就绪时，资源文件仍可能比文本环晚几十到几百毫秒落盘。制卡不能在第一次
@@ -6430,6 +6597,7 @@ class GalHookSessionController extends ChangeNotifier {
               text: line.text,
               hookCode: line.hookCode.isEmpty ? null : line.hookCode,
               hookCodeLaneUnique: line.hookCodeIsLaneUnique,
+              dialogueSurface: line.isDialogueSurface,
               nativeThreadId: line.threadId == 0 ? null : line.threadId,
               notify: false,
             );
@@ -6455,6 +6623,7 @@ class GalHookSessionController extends ChangeNotifier {
               label: threadLabel,
               hookCode: line.hookCode.isEmpty ? null : line.hookCode,
               hookCodeLaneUnique: line.hookCodeIsLaneUnique,
+              dialogueSurface: line.isDialogueSurface,
               nativeThreadId: line.threadId,
             );
           }

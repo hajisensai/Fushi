@@ -69,7 +69,8 @@ class SystemOcrTextLine {
   final int? tile;
 
   /// 平台给的词框（按行内顺序、互不重叠地覆盖 [text] 的一部分）。空 = 平台只给
-  /// 行框（点字时按字数等分行框估计）。Windows OCR 给（BUG-4367）。
+  /// 行框（点字时按字数等分行框估计）。Windows OCR 给（BUG-4367）；Apple 截屏识字、
+  /// 本机模型与 Google Lens 的截屏识字给逐字框（BUG-4069）。
   final List<SystemOcrTextSegment> segments;
 
   @override
@@ -334,10 +335,17 @@ abstract interface class SystemOcrModelSetup {
 
 /// 生产实现：走平台通道。
 class MethodChannelSystemOcr implements SystemOcrPlatform, SystemOcrModelSetup {
-  const MethodChannelSystemOcr({MethodChannel? channel})
-    : _channel = channel ?? kSystemOcrChannel;
+  const MethodChannelSystemOcr({
+    MethodChannel? channel,
+    this.screenText = false,
+  }) : _channel = channel ?? kSystemOcrChannel;
 
   final MethodChannel _channel;
+
+  /// 送检图是一整块屏幕截图（桌面应用外截屏识字）：下发 `purpose: screen`。Apple 据此
+  /// 走行识别 + 逐字框，不对整屏做文档版面分析（反馈 Eemf0HOZhj / BUG-4069，4K 屏一分钟
+  /// 以上才出行框）；其它平台忽略这个字段。
+  final bool screenText;
 
   @override
   Future<bool> isAvailable() async {
@@ -365,6 +373,7 @@ class MethodChannelSystemOcr implements SystemOcrPlatform, SystemOcrModelSetup {
         <String, Object?>{
           'bytes': imageBytes,
           'language': language,
+          if (screenText) 'purpose': kSystemOcrScreenPurpose,
           if (tiles.isNotEmpty)
             'tiles': <List<double>>[
               for (final Rect tile in tiles)
@@ -450,6 +459,9 @@ class MethodChannelSystemOcr implements SystemOcrPlatform, SystemOcrModelSetup {
     }
   }
 }
+
+/// `recognize` 的 `purpose` 取值：送检图是屏幕截图（见 [MethodChannelSystemOcr.screenText]）。
+const String kSystemOcrScreenPurpose = 'screen';
 
 /// 平台通道。原生侧实现同名方法。
 const MethodChannel kSystemOcrChannel = MethodChannel(

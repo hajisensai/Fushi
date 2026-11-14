@@ -11,7 +11,7 @@ import 'package:fushi/src/utils/misc/channel_constants.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  final MethodChannel channel = FushiChannels.iconSwitch;
+  const MethodChannel channel = FushiChannels.iconSwitch;
   final List<MethodCall> calls = <MethodCall>[];
 
   setUp(calls.clear);

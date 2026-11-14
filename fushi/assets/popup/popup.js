@@ -189,17 +189,19 @@ const NUMERIC_TAG = /^\d+$/;
 const POS_TAGS = new Set(['n', 'adj-i', 'adj-na', 'adj-no', 'v1', 'vk', 'vs', 'vs-i', 'vs-s', 'vz', 'vi', 'vt']);
 const audioUrls = {};
 
-function audioCacheKey(expression, reading) {
-    return `${expression || ''}\u0000${reading || ''}`;
+// matched（查词命中原文）也进键：同一下标上同一词头换了命中原文时，TTS 兜底念的字
+// 不同（见 fetchAudioUrl），不能复用上一条。
+function audioCacheKey(expression, reading, matched) {
+    return `${expression || ''}\u0000${reading || ''}\u0000${matched || ''}`;
 }
 
-async function resolveCachedAudioUrl(expression, reading, entryIndex) {
-    const key = audioCacheKey(expression, reading);
+async function resolveCachedAudioUrl(expression, reading, entryIndex, matched) {
+    const key = audioCacheKey(expression, reading, matched);
     const cached = audioUrls[entryIndex];
     if (cached?.key === key) {
         return cached.url;
     }
-    const url = await fetchAudioUrl(expression, reading);
+    const url = await fetchAudioUrl(expression, reading, matched);
     if (url) {
         audioUrls[entryIndex] = { key, url };
     } else {
@@ -2861,19 +2863,19 @@ async function buildMinePayload(expression, reading, frequencies, pitches, rules
         // resolve here (re-signing a new token) and decouple it from the playback
         // cache. If the fresh resolve fails (host has no audio for this word),
         // fall back to whatever the cache holds rather than regressing to empty.
-        const fresh = await fetchAudioUrl(expression, audioReading);
+        const fresh = await fetchAudioUrl(expression, audioReading, matched);
         if (fresh) {
             audio = fresh;
-            audioUrls[idx] = { key: audioCacheKey(expression, audioReading), url: fresh };
+            audioUrls[idx] = { key: audioCacheKey(expression, audioReading, matched), url: fresh };
         } else {
             const cached = audioUrls[idx];
-            if (cached?.key === audioCacheKey(expression, audioReading)) {
+            if (cached?.key === audioCacheKey(expression, audioReading, matched)) {
                 audio = cached.url;
             }
         }
     } else {
         const cached = audioUrls[idx];
-        if (cached?.key === audioCacheKey(expression, audioReading)) {
+        if (cached?.key === audioCacheKey(expression, audioReading, matched)) {
             audio = cached.url;
         }
     }
@@ -4738,10 +4740,13 @@ function createGlossarySectionWrapper(entry) {
     return { details: section, body, grouped, dictNames };
 }
 
-async function fetchAudioUrl(expression, reading) {
+// matched：查词命中的原文（句子里实际出现的写法）。宿主只拿它决定 TTS 兜底念什么——
+// 词头带替换写法（`quite a/the something`）时念原文，不连斜杠念词头（反馈
+// WJFhjUGaTn）；音频源照旧按 expression / reading 查。不认这个键的旧宿主原样忽略。
+async function fetchAudioUrl(expression, reading, matched) {
     try {
         return await window.flutter_inappwebview.callHandler(
-            'resolveWordAudio', { expression, reading });
+            'resolveWordAudio', { expression, reading, matched: matched || '' });
     } catch {
         return null;
     }
@@ -4887,6 +4892,15 @@ function __fushiHideButtonTip() {
         __fushiBtnTipHideTimer = 0;
     }, 220);
 }
+// 可制卡的「＋」的提示：制卡快捷键（宿主注入整句，如「制卡（Ctrl+Enter）」）。宿主只在
+// 本表面真有键盘派发时才注入非空串；没注入（浏览器扩展）或空串 = 不提示，绝不写一个
+// 按了没反应的键。
+function fushiMineShortcutHint() {
+    return typeof window.i18nMineShortcutHint === 'string'
+        ? window.i18nMineShortcutHint
+        : '';
+}
+
 // 给内联动作按钮挂 DOM 悬停/聚焦提示（替代会在离屏 WebView2 上飞走的原生 title）。
 // 设 aria-label 保留可访问性、显式移除 title（关键：不再依赖原生工具提示）。用
 // dataset 标志保证监听器只挂一次——refresh 时可反复调用刷新文案而不叠加监听。
@@ -4945,7 +4959,7 @@ function showNoAudioHint(button) {
     }, 1800);
 }
 
-function createAudioButton(expression, reading, entryIndex) {
+function createAudioButton(expression, reading, entryIndex, matched) {
     const button = el('button', {
         className: 'inline-action-button audio-button',
         onclick: async () => {
@@ -4954,7 +4968,7 @@ function createAudioButton(expression, reading, entryIndex) {
                 delete button.dataset.fushiSuppressClick;
                 return;
             }
-            const audioUrl = await resolveCachedAudioUrl(expression, reading || expression, entryIndex);
+            const audioUrl = await resolveCachedAudioUrl(expression, reading || expression, entryIndex, matched);
             if (!audioUrl) {
                 // TODO-1251: 无音频源 → 明确「暂无发音」提示，区别于播放失败。
                 showNoAudioHint(button);
@@ -4966,7 +4980,7 @@ function createAudioButton(expression, reading, entryIndex) {
         }
     });
     setButtonIcon(button, 'audio');
-    bindAudioSourceMenuTriggers(button, expression, reading || expression);
+    bindAudioSourceMenuTriggers(button, expression, reading || expression, matched);
     return button;
 }
 
@@ -4984,22 +4998,22 @@ function createAudioButton(expression, reading, entryIndex) {
 let __fushiAudioMenu = null; // { menu, button, modal, onDocPointerDown, generation }
 let __fushiAudioMenuGeneration = 0;
 
-function bindAudioSourceMenuTriggers(button, expression, reading) {
+function bindAudioSourceMenuTriggers(button, expression, reading, matched) {
     button.setAttribute('aria-haspopup', 'menu');
     button.setAttribute('aria-expanded', 'false');
     bindPopupSecondaryActionTriggers(button, {
         isOpen: () => !!(__fushiAudioMenu && __fushiAudioMenu.button === button),
         open: ({ focusFirst }) => {
-            openAudioSourceMenu(button, expression, reading, { focusFirst });
+            openAudioSourceMenu(button, expression, reading, { focusFirst, matched });
         },
     });
 }
 
-async function fetchAudioSourceChoices(expression, reading) {
+async function fetchAudioSourceChoices(expression, reading, matched) {
     let list = null;
     try {
         list = await window.flutter_inappwebview.callHandler(
-            'listWordAudioSources', { expression, reading });
+            'listWordAudioSources', { expression, reading, matched: matched || '' });
     } catch (_) {
         list = null;
     }
@@ -5007,7 +5021,7 @@ async function fetchAudioSourceChoices(expression, reading) {
         return list.filter((item) => item && typeof item.url === 'string' && item.url);
     }
     // 旧宿主没有列表桥：退化成只列默认源。
-    const url = await fetchAudioUrl(expression, reading);
+    const url = await fetchAudioUrl(expression, reading, matched);
     return url ? [{ name: '', variant: '', url }] : [];
 }
 
@@ -5374,7 +5388,7 @@ async function openAudioSourceMenu(button, expression, reading, options) {
     requestAnimationFrame(() => menu.classList.add('visible'));
     try { menu.focus({ preventScroll: true }); } catch (_) { /* no-op */ }
 
-    const choices = await fetchAudioSourceChoices(expression, reading);
+    const choices = await fetchAudioSourceChoices(expression, reading, options?.matched);
     if (!__fushiAudioMenu || __fushiAudioMenu.generation !== generation) return;
     renderAudioSourceMenuItems(menu, button, choices, reading);
     positionAudioSourceMenu(menu, button);
@@ -5621,7 +5635,7 @@ function createEntryHeader(entry, idx) {
     const miningEnabled = window.__fushiMiningEnabled !== false;
     
     if (window.audioSources?.length) {
-        buttonsContainer.appendChild(createAudioButton(expression, reading, idx));
+        buttonsContainer.appendChild(createAudioButton(expression, reading, idx, matched));
     }
 
     buttonsContainer.appendChild(createFavoriteButton(expression, reading, idx));
@@ -5680,7 +5694,9 @@ function createEntryHeader(entry, idx) {
         // 原生提示按未拉伸坐标定位，会飘到上一个词条上方。
         setInlineButtonTip(mineButton, queued
             ? (window.i18nMineQueued || '已加入制卡队列')
-            : (isMined ? (window.i18nMinedManageHint || '右键或长按：覆写 / 查看已有卡片') : ''));
+            : (isMined
+                ? (window.i18nMinedManageHint || '右键或长按：覆写 / 查看已有卡片')
+                : fushiMineShortcutHint()));
         mineButton.classList.toggle('queued', queued);
         // Single source of truth for the button's lookup-time-detected state.
         // The optional second flag is the "latest editable" sub-state; it is only
@@ -6039,6 +6055,8 @@ function createEntryHeader(entry, idx) {
     // 制卡模块关掉时上面一颗制卡按钮都没渲染，这里的查重探测也一并停掉——模块
     // 关掉 = 它的后台流量（每次查词一次 Anki 查重 + 可能的覆写目标反查）也一起停。
     if (miningEnabled) {
+        // 查重探测是懒加载（滚进视口才问），回来之前「＋」就得带上快捷键提示。
+        setInlineButtonTip(mineButton, fushiMineShortcutHint());
         // 宿主推来的刷新入口（window.fushiRefreshMineStates → 本闭包）。setMineState
         // 是 createEntryHeader 的闭包局部，外面拿不到，所以把重问+重画整条挂到按钮上。
         mineButton.__fushiMineExpression = expression || '';
@@ -6187,8 +6205,23 @@ function createEntryHeader(entry, idx) {
     return header;
 }
 
+// 快捷键 / 手柄动作落在哪个词条上：用户用 Alt+滚轮 / 手柄十字键 / 键盘绑定移到的
+// 当前词条（.entry-current，见 fushiFocusDictionaryEntryMove）优先；还没移动过时才是
+// 第一个词条。旧实现永远取全文第一颗按钮——移到第 3 个词条按 Ctrl+Enter / 手柄 X，
+// 制出来的却是第 1 个词条的卡。
+// 当前词条本身没有这颗按钮时返回 null，绝不退回去点别的词条（那会制错卡）。
+function __fushiPopupEntryActionButton(selector) {
+    const root = __fushiRootNode();
+    if (!root) return null;
+    // .entry-current 只会挂在 .entry 上（applyCurrent），单类选择器即可。
+    const current = root.querySelector('.entry-current');
+    if (current) return current.querySelector(selector);
+    return root.querySelector(selector);
+}
+
+// 名字保留 MineFirstEntry：Dart（dictionary_popup_webview / gal 浮窗宿主）按名调用。
 window.fushiPopupMineFirstEntry = async function() {
-    const mineButton = __fushiRootNode().querySelector('.mine-button');
+    const mineButton = __fushiPopupEntryActionButton('.mine-button');
     if (!mineButton || mineButton.disabled) {
         return false;
     }
@@ -6199,11 +6232,11 @@ window.fushiPopupMineFirstEntry = async function() {
     return true;
 };
 
-// 手柄（Dart 侧 dictionaryPopup scope 派发，默认 Y）：播放第一个可见词条的发音。
-// 与 fushiPopupMineFirstEntry 同模板：点既有按钮复用其全部音源解析/回退/提示逻辑，
-// 绝不另起第二条音频桥。
+// 手柄（Dart 侧 dictionaryPopup scope 派发，默认 Y）：播放当前词条（没移动过时是第一个
+// 词条）的发音。与 fushiPopupMineFirstEntry 同模板、同一套词条选择：点既有按钮复用其
+// 全部音源解析/回退/提示逻辑，绝不另起第二条音频桥。
 window.fushiPopupPlayFirstAudio = async function() {
-    const audioButton = __fushiRootNode().querySelector('.audio-button');
+    const audioButton = __fushiPopupEntryActionButton('.audio-button');
     if (!audioButton || audioButton.disabled) {
         return false;
     }
@@ -8009,6 +8042,24 @@ function __fushiReportedContentHeight(){
 // 每个尾批切片后都试一次「够高就恢复」，尾批全部完成（final）时不管够不够高都
 // 应用一次兜底（浏览器自行夹紧）。应用后清零，同一份 pending 绝不影响下一次渲染。
 window.__fushiPendingScrollTop = 0;
+
+// 「新查词会话从顶部开始」的唯一实现：in-app 热槽（dictionary_popup_webview.dart 全量
+// 推送前调用）与 app 外查词窗 / galgame 内嵌查词的常驻根 iframe（global_lookup_host.js
+// beginLookup / 停驻 realm 复位）共用这一份。BUG-141 只在 in-app 注入块里归零，TODO-1095
+// 让 global 根 iframe 跨查词复用后没跟过去，上一次滚到哪下一次就停在哪。顺带停掉滚轮缓动
+// 与待恢复位，否则上一次在途的 rAF / pending 会在归零后把页面又滚回去。
+window.__fushiResetPopupScroll = function() {
+    popupWheelEaseStop();
+    // 新会话也关上一会话的放大图：同词重查 / app 外根 iframe 复用时内容不变、不走
+    // renderPopup，灯箱（挂在词条容器之外）否则一直盖在新会话上（反馈 GmLVWNpQKc）。
+    closeImageLightbox();
+    window.__fushiPendingScrollTop = 0;
+    window.scrollTo(0, 0);
+    const el = document.scrollingElement || document.documentElement;
+    if (el) el.scrollTop = 0;
+    if (document.body) document.body.scrollTop = 0;
+};
+
 function __fushiApplyPendingScrollTop(isFinal) {
     const y = window.__fushiPendingScrollTop || 0;
     if (!(y > 0)) return;
@@ -8844,6 +8895,9 @@ window.renderPopup = function() {
     const gen = ++window._renderGeneration;
     // 换词重渲染：上一个词的音频源菜单随旧 DOM 作废。
     if (typeof closeAudioSourceMenu === 'function') closeAudioSourceMenu(false);
+    // 灯箱挂在 __fushiOverlayParent()（词条容器之外），换 innerHTML 摘不掉它：上一个词的
+    // 放大图会盖在新结果上（反馈 GmLVWNpQKc）。它属于旧 DOM，随换代一起关。
+    closeImageLightbox();
     // 上一轮的 masonry ResizeObserver 还观察着即将被 innerHTML='' 摘掉的全部卡片：
     // 观察目标被 observer 强引用，热槽 WebView 跨成百上千次查词不重载，这些
     // 已脱离文档的卡片子树就一直攒在内存里。换代时整体断开，新卡片由收尾的

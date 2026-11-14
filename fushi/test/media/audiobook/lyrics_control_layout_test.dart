@@ -56,6 +56,16 @@ void main() {
           LyricsControlItem.statistics,
         ],
       );
+      // 导出当前字幕（反馈 iUtGmIlZiD）：窄屏补在播放卡工具条末尾。
+      expect(
+        LyricsControlLayout.compactDefaults.itemsIn(LyricsControlSlot.toolbar),
+        <LyricsControlItem>[
+          LyricsControlItem.speed,
+          LyricsControlItem.studyTimer,
+          LyricsControlItem.replayCue,
+          LyricsControlItem.exportSubtitle,
+        ],
+      );
       expect(
         LyricsControlLayout.compactDefaults.core.removedItems,
         <LyricsControlItem>[
@@ -137,11 +147,17 @@ void main() {
         compactPartial.itemsIn(LyricsControlSlot.overflow),
         contains(LyricsControlItem.avSync),
       );
-      // 进度跳转 / 跳转记录是后加的两颗：存量布局按出厂位置回填进「更多」。
+      // 进度跳转 / 跳转记录 / 导出当前字幕是后加的：存量布局按出厂位置回填进「更多」。
       expect(partial.itemsIn(LyricsControlSlot.overflow), <LyricsControlItem>[
         LyricsControlItem.positionJump,
         LyricsControlItem.jumpHistory,
+        LyricsControlItem.exportSubtitle,
       ]);
+      // 窄屏存量布局：导出当前字幕回填进播放卡工具条。
+      expect(
+        compactPartial.itemsIn(LyricsControlSlot.toolbar),
+        contains(LyricsControlItem.exportSubtitle),
+      );
     });
 
     test('进度跳转 / 跳转记录出厂在「更多」（宽 / 窄都是）', () {
@@ -150,6 +166,7 @@ void main() {
         <LyricsControlItem>[
           LyricsControlItem.positionJump,
           LyricsControlItem.jumpHistory,
+          LyricsControlItem.exportSubtitle,
         ],
       );
       // 窄屏两处都没有空位：同步键出厂排在「更多」末尾。
@@ -541,5 +558,132 @@ void main() {
         await tester.pumpWidget(const SizedBox());
       });
     }
+  }
+
+  // 导出当前字幕（反馈 iUtGmIlZiD）：四种外观在宽 / 窄屏都能摆出、点得动；宿主没接
+  // 回调时不画。经典两套的窄屏出厂就摆在播放卡工具条（手机右下角那一格）。
+  LyricsControlLayout exportOnTop(LyricsControlLayout base) {
+    LyricsControlLayout out = base;
+    for (final LyricsControlItem item in <LyricsControlItem>[
+      LyricsControlItem.mask,
+      LyricsControlItem.typography,
+      LyricsControlItem.statistics,
+      LyricsControlItem.replayCue,
+      LyricsControlItem.studyTimer,
+    ]) {
+      out = _moved(out, item, LyricsControlSlot.hidden);
+    }
+    return _moved(out, LyricsControlItem.exportSubtitle, LyricsControlSlot.top);
+  }
+
+  const ValueKey<String> exportKey = ValueKey<String>(
+    'lyrics_export_subtitle_button',
+  );
+
+  Future<void> pumpExport(
+    WidgetTester tester, {
+    required LyricsPlayerDesign design,
+    required Size size,
+    required LyricsControlLayout wide,
+    required LyricsControlLayout compact,
+    required VoidCallback? onExportSubtitle,
+  }) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = size;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (BuildContext context) => design.buildChrome(
+              context,
+              LyricsPlayerData(
+                title: '四つ子ぐらし',
+                cover: null,
+                isPlaying: false,
+                speed: 1,
+                lyricsMasked: false,
+                clock: _FakeClock(),
+                wideControls: wide,
+                compactControls: compact,
+              ),
+              LyricsPlayerCallbacks(
+                onClose: () {},
+                onPlayPause: () {},
+                onPreviousCue: () {},
+                onNextCue: () {},
+                onSeek: (_) {},
+                onToggleMask: () {},
+                onOpenStatistics: () {},
+                onSpeedChanged: (_) {},
+                onMore: (_) {},
+                onTapBackground: () {},
+                onExportSubtitle: onExportSubtitle,
+              ),
+              size: size,
+              padding: EdgeInsets.zero,
+              lyricsRect: design.lyricsRect(context, size, EdgeInsets.zero),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump(const Duration(seconds: 1));
+  }
+
+  for (final MapEntry<String, LyricsPlayerDesign> d in allDesigns.entries) {
+    for (final MapEntry<String, Size> s in sizes.entries) {
+      testWidgets('${d.key} ${s.key}：导出当前字幕键可摆出、可点；无回调不画', (
+        WidgetTester tester,
+      ) async {
+        int exports = 0;
+        await pumpExport(
+          tester,
+          design: d.value,
+          size: s.value,
+          wide: exportOnTop(LyricsControlLayout.defaults),
+          compact: exportOnTop(LyricsControlLayout.compactDefaults),
+          onExportSubtitle: () => exports++,
+        );
+        expect(find.byKey(exportKey), findsOneWidget);
+        await tester.tap(find.byKey(exportKey));
+        await tester.pump();
+        expect(exports, 1);
+
+        await pumpExport(
+          tester,
+          design: d.value,
+          size: s.value,
+          wide: exportOnTop(LyricsControlLayout.defaults),
+          compact: exportOnTop(LyricsControlLayout.compactDefaults),
+          onExportSubtitle: null,
+        );
+        expect(find.byKey(exportKey), findsNothing);
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox());
+      });
+    }
+  }
+
+  for (final MapEntry<String, LyricsPlayerDesign> d in designs.entries) {
+    testWidgets('${d.key} narrow：出厂窄屏布局把导出当前字幕摆在播放卡工具条', (
+      WidgetTester tester,
+    ) async {
+      int exports = 0;
+      await pumpExport(
+        tester,
+        design: d.value,
+        size: sizes['narrow']!,
+        wide: LyricsControlLayout.defaults,
+        compact: LyricsControlLayout.compactDefaults,
+        onExportSubtitle: () => exports++,
+      );
+      expect(find.byKey(exportKey), findsOneWidget);
+      await tester.tap(find.byKey(exportKey));
+      await tester.pump();
+      expect(exports, 1);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    });
   }
 }

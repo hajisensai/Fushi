@@ -24,6 +24,10 @@ import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 import 'package:fushi_engine/epub/book_title_conflict.dart'
     show DuplicatePolicy;
 import 'package:fushi_engine/epub/epub_storage.dart';
+import 'package:fushi_engine/media/audiobook/book_audiobook_pairing.dart'
+    show BookAudiobookTranscribeResult;
+import 'package:fushi/src/media/source_library/source_folder_access.dart'
+    show sourceConfigValueForBookmark;
 import 'package:fushi_engine/media/source_library/book_library_prune.dart'
     show BookSourceIndex;
 import 'package:fushi_engine/media/manga/manga_archive_importer.dart';
@@ -628,6 +632,7 @@ void main() {
 
           final SourceScanSummary summary = await SourceLibraryScanner(
             db,
+            transcribeAudiobook: null,
           ).scan(source);
 
           expect(summary.succeeded, isFalse);
@@ -672,6 +677,7 @@ void main() {
 
         final SourceScanSummary summary = await SourceLibraryScanner(
           db,
+          transcribeAudiobook: null,
           musicAudioIntake: MusicAudioIntake(
             db,
             retireSources: (Set<int> ids) async => retired.add(ids),
@@ -712,6 +718,7 @@ void main() {
 
       final SourceScanSummary summary = await SourceLibraryScanner(
         db,
+        transcribeAudiobook: null,
         musicAudioIntake: MusicAudioIntake(
           db,
           registerSource:
@@ -760,6 +767,7 @@ void main() {
 
         final SourceScanSummary summary = await SourceLibraryScanner(
           db,
+          transcribeAudiobook: null,
         ).scan(source);
 
         final List<VideoBookRow> videos = await repo.listAll();
@@ -824,6 +832,7 @@ void main() {
 
       final SourceScanSummary summary = await SourceLibraryScanner(
         db,
+        transcribeAudiobook: null,
         musicAudioIntake: MusicAudioIntake(
           db,
           registerSource:
@@ -871,6 +880,7 @@ void main() {
 
         final SourceScanSummary summary = await SourceLibraryScanner(
           db,
+          transcribeAudiobook: null,
         ).scan(source);
 
         expect(summary.succeeded, isFalse);
@@ -903,6 +913,7 @@ void main() {
 
       final SourceScanSummary firstSummary = await SourceLibraryScanner(
         db,
+        transcribeAudiobook: null,
       ).scan(source);
       expect(await repo.listAll(), hasLength(2));
       final List<MediaCollectionRow> firstCollections = await db
@@ -923,7 +934,7 @@ void main() {
       // 加 E03 只扩展既有合集；随后磁盘暂缺 E01 也不删除旧行或解绑旧成员。
       File(p.join(season.path, 'Show S01E03.mkv')).writeAsBytesSync(<int>[0]);
       source = (await db.getMediaSourceById(sid))!;
-      await SourceLibraryScanner(db).scan(source);
+      await SourceLibraryScanner(db, transcribeAudiobook: null).scan(source);
       expect(await repo.listAll(), hasLength(3));
       expect(await db.getAllMediaCollections(), hasLength(1));
       expect(await db.getCollectionItems(collectionId), hasLength(3));
@@ -931,7 +942,7 @@ void main() {
 
       episode1.deleteSync();
       source = (await db.getMediaSourceById(sid))!;
-      await SourceLibraryScanner(db).scan(source);
+      await SourceLibraryScanner(db, transcribeAudiobook: null).scan(source);
       expect(await repo.listAll(), hasLength(3), reason: '暂缺磁盘文件不得破坏观看进度与用户资料');
       final List<MediaCollectionItemRow> members = await db.getCollectionItems(
         collectionId,
@@ -986,7 +997,7 @@ void main() {
       // EpubImporter.importFromPath runs on a real isolate (compute); drive it
       // inside runAsync so the real event loop progresses.
       await tester.runAsync(() async {
-        await SourceLibraryScanner(db).scan(source);
+        await SourceLibraryScanner(db, transcribeAudiobook: null).scan(source);
       });
 
       final List<EpubBookRow> books = await db.getAllEpubBooks();
@@ -1058,13 +1069,13 @@ void main() {
 
       // First scan imports the book.
       await tester.runAsync(() async {
-        await SourceLibraryScanner(db).scan(source);
+        await SourceLibraryScanner(db, transcribeAudiobook: null).scan(source);
       });
       expect(await db.getAllEpubBooks(), hasLength(1));
 
       // Second scan of the SAME folder must NOT import a second copy / "X (2)".
       await tester.runAsync(() async {
-        await SourceLibraryScanner(db).scan(source);
+        await SourceLibraryScanner(db, transcribeAudiobook: null).scan(source);
       });
 
       final List<EpubBookRow> books = await db.getAllEpubBooks();
@@ -1107,7 +1118,7 @@ void main() {
       );
       SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
       await tester.runAsync(() async {
-        await SourceLibraryScanner(db).scan(source);
+        await SourceLibraryScanner(db, transcribeAudiobook: null).scan(source);
       });
       expect(await db.getAllEpubBooks(), hasLength(1));
 
@@ -1115,7 +1126,7 @@ void main() {
       _writeEpub(p.join(tmp.path, 'fresh.epub'), 'FreshNovel');
       source = (await db.getMediaSourceById(sid))!;
       await tester.runAsync(() async {
-        await SourceLibraryScanner(db).scan(source);
+        await SourceLibraryScanner(db, transcribeAudiobook: null).scan(source);
       });
 
       final List<EpubBookRow> books = await db.getAllEpubBooks();
@@ -1157,7 +1168,7 @@ void main() {
       final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
 
       await tester.runAsync(() async {
-        await SourceLibraryScanner(db).scan(source);
+        await SourceLibraryScanner(db, transcribeAudiobook: null).scan(source);
       });
 
       final List<EpubBookRow> books = await db.getAllEpubBooks();
@@ -1214,7 +1225,7 @@ ep2.mp4
       );
       final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
 
-      await SourceLibraryScanner(db).scan(source);
+      await SourceLibraryScanner(db, transcribeAudiobook: null).scan(source);
 
       // 拆集：2 条独立 per-episode VideoBooks 行（uid=video/<集文件名>），各自 videoPath，
       // 都不再写 playlistJson，都回填 sourceId。
@@ -1283,14 +1294,14 @@ ep2.mp4
         ),
       );
       final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
-      await SourceLibraryScanner(db).scan(source);
+      await SourceLibraryScanner(db, transcribeAudiobook: null).scan(source);
       final MediaCollectionRow playlist =
           (await db.getAllMediaCollections()).single;
 
       // 用户删除合集后清单文件仍留在扫描根：重扫必须尊重删除墓碑，不得由
       // importSplitPlaylist 的 createMediaCollection 把删除静默撤销。
       await db.deleteMediaCollection(playlist.id);
-      await SourceLibraryScanner(db).scan(source);
+      await SourceLibraryScanner(db, transcribeAudiobook: null).scan(source);
       expect(
         await db.getAllMediaCollections(),
         isEmpty,
@@ -1322,7 +1333,7 @@ Show S01E02.mkv
       );
       final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
 
-      await SourceLibraryScanner(db).scan(source);
+      await SourceLibraryScanner(db, transcribeAudiobook: null).scan(source);
 
       expect(
         await repo.listAll(),
@@ -1358,7 +1369,7 @@ Show S01E02.mkv
         );
         final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
 
-        await SourceLibraryScanner(db).scan(source);
+        await SourceLibraryScanner(db, transcribeAudiobook: null).scan(source);
 
         expect(
           await repo.listAll(),
@@ -1396,11 +1407,11 @@ Show S01E02.mkv
         );
         final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
 
-        await SourceLibraryScanner(db).scan(source);
+        await SourceLibraryScanner(db, transcribeAudiobook: null).scan(source);
         expect(await repo.listAll(), hasLength(2));
 
         // Second scan of the unchanged folder: every file already imported.
-        await SourceLibraryScanner(db).scan(source);
+        await SourceLibraryScanner(db, transcribeAudiobook: null).scan(source);
         final List<VideoBookRow> after = await repo.listAll();
         expect(
           after,
@@ -1456,10 +1467,10 @@ ep2.mp4
         );
         final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
 
-        await SourceLibraryScanner(db).scan(source);
+        await SourceLibraryScanner(db, transcribeAudiobook: null).scan(source);
         expect(await repo.listAll(), hasLength(2)); // 2 集拆成 2 行
 
-        await SourceLibraryScanner(db).scan(source);
+        await SourceLibraryScanner(db, transcribeAudiobook: null).scan(source);
         expect(
           await repo.listAll(),
           hasLength(2),
@@ -1518,7 +1529,7 @@ sub_a/ep2.mp4
         );
         final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
 
-        await SourceLibraryScanner(db).scan(source);
+        await SourceLibraryScanner(db, transcribeAudiobook: null).scan(source);
         final List<VideoBookRow> first = await repo.listAll();
         expect(first, hasLength(2)); // 2 集拆成 2 行
         final Map<String, String> firstPathByUid = <String, String>{
@@ -1536,7 +1547,7 @@ sub_b/ep1.mp4
 sub_b/ep2.mp4
 ''');
 
-        await SourceLibraryScanner(db).scan(source);
+        await SourceLibraryScanner(db, transcribeAudiobook: null).scan(source);
         final List<VideoBookRow> after = await repo.listAll();
         expect(
           after,
@@ -1640,8 +1651,9 @@ sub_b/ep2.mp4
       final String src = File(
         'lib/src/media/source_library/source_library_scanner.dart',
       ).readAsStringSync();
+      // 新导入与重复跳过两条分支共用同一个挂载 helper（z398R0ndAw 起不再各写一份）。
       expect(
-        src.contains('_attachSidecarAudiobookToExisting'),
+        src.contains('_attachAudiobook('),
         isTrue,
         reason: 'the duplicate-skip branch must call the sidecar-attach helper',
       );
@@ -1717,7 +1729,7 @@ sub_b/ep2.mp4
       );
       final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
 
-      await SourceLibraryScanner(db).scan(source);
+      await SourceLibraryScanner(db, transcribeAudiobook: null).scan(source);
 
       // Scan succeeded (no error) and the SJIS cue decoded to Japanese.
       final SourceLibraryRow after = (await db.getMediaSourceById(sid))!;
@@ -1800,7 +1812,7 @@ sub_b/ep2.mp4
       final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
 
       await tester.runAsync(() async {
-        await SourceLibraryScanner(db).scan(source);
+        await SourceLibraryScanner(db, transcribeAudiobook: null).scan(source);
       });
 
       final List<EpubBookRow> books = await db.getAllEpubBooks();
@@ -1863,7 +1875,7 @@ sub_b/ep2.mp4
       final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
 
       await tester.runAsync(() async {
-        await SourceLibraryScanner(db).scan(source);
+        await SourceLibraryScanner(db, transcribeAudiobook: null).scan(source);
       });
 
       final List<EpubBookRow> books = await db.getAllEpubBooks();
@@ -1933,7 +1945,10 @@ sub_b/ep2.mp4
         SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
 
         await tester.runAsync(() async {
-          await SourceLibraryScanner(db).scan(source);
+          await SourceLibraryScanner(
+            db,
+            transcribeAudiobook: null,
+          ).scan(source);
         });
 
         final List<EpubBookRow> books = await db.getAllEpubBooks();
@@ -1952,7 +1967,10 @@ sub_b/ep2.mp4
 
         source = (await db.getMediaSourceById(sid))!;
         await tester.runAsync(() async {
-          await SourceLibraryScanner(db).scan(source);
+          await SourceLibraryScanner(
+            db,
+            transcribeAudiobook: null,
+          ).scan(source);
         });
 
         // Same book row (no X (2) duplicate), now promoted to an audiobook.
@@ -2026,7 +2044,10 @@ sub_b/ep2.mp4
       for (int i = 0; i < 2; i++) {
         final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
         await tester.runAsync(() async {
-          await SourceLibraryScanner(db).scan(source);
+          await SourceLibraryScanner(
+            db,
+            transcribeAudiobook: null,
+          ).scan(source);
         });
       }
 
@@ -2046,6 +2067,333 @@ sub_b/ep2.mp4
   });
 
   // ── 漫画扫描根（mediaKind='manga'）：mokuro / 纯页图目录经 MangaImporter 落库 ──
+  // ── 反馈 z398R0ndAw：书架文件夹导入时一并导入有声书音频和字幕 ─────────────
+  // R1（同名 sidecar）原样保留；R2 同名子目录（含分碟）、R3 卷号、R4 独卷目录在
+  // 规划期配，R5 按 EPUB 元数据标题在导入后统一配；同一份音频被两本书认领时都不配。
+  group('planScanFromFileList book ↔ audiobook pairing (z398R0ndAw)', () {
+    ScanBookItem bookAt(ScanPlan plan, String path) =>
+        plan.books.singleWhere((ScanBookItem b) => b.bookPath == path);
+
+    test('★ 布局 C：X.epub + X/CD1 + X/CD2（分碟同名音轨按碟序）', () {
+      final ScanPlan plan = planScanFromFileList(<SourceFileEntry>[
+        _file('/lib/X.epub'),
+        _file('/lib/X/CD2/01.mp3'),
+        _file('/lib/X/CD1/02.mp3'),
+        _file('/lib/X/CD1/01.mp3'),
+        _file('/lib/X/X.srt'),
+      ]);
+      final ScanBookItem b = bookAt(plan, '/lib/X.epub');
+      expect(b.audioPaths, <String>[
+        '/lib/X/CD1/01.mp3',
+        '/lib/X/CD1/02.mp3',
+        '/lib/X/CD2/01.mp3',
+      ]);
+      expect(b.subtitlePath, '/lib/X/X.srt');
+      expect(b.isAudiobook, isTrue);
+    });
+
+    test('★ 布局 D：独卷目录，音频名对不上书名也全归这本书', () {
+      final ScanPlan plan = planScanFromFileList(<SourceFileEntry>[
+        _file('/lib/Book/Book.epub'),
+        _file('/lib/Book/track02.mp3'),
+        _file('/lib/Book/track01.mp3'),
+        _file('/lib/Book/Book.ja.srt'),
+      ]);
+      final ScanBookItem b = bookAt(plan, '/lib/Book/Book.epub');
+      expect(b.audioPaths, <String>[
+        '/lib/Book/track01.mp3',
+        '/lib/Book/track02.mp3',
+      ]);
+      expect(b.subtitlePath, '/lib/Book/Book.ja.srt');
+      expect(b.isAudiobook, isTrue);
+    });
+
+    test('★ 布局 E：多卷书 + 按卷号命名的目录，一卷一份', () {
+      final ScanPlan plan = planScanFromFileList(<SourceFileEntry>[
+        _file('/s/Series 1.epub'),
+        _file('/s/Series 2.epub'),
+        _file('/s/Vol.1/01.mp3'),
+        _file('/s/Vol.2/01.mp3'),
+        _file('/s/Vol.2/02.mp3'),
+      ]);
+      expect(bookAt(plan, '/s/Series 1.epub').audioPaths, <String>[
+        '/s/Vol.1/01.mp3',
+      ]);
+      expect(bookAt(plan, '/s/Series 2.epub').audioPaths, <String>[
+        '/s/Vol.2/01.mp3',
+        '/s/Vol.2/02.mp3',
+      ]);
+      expect(bookAt(plan, '/s/Series 1.epub').hasAudioWithoutSubtitle, isTrue);
+    });
+
+    test('★ 歧义：两本书认领同一份音频 → 都不配，进 ambiguous', () {
+      final ScanPlan plan = planScanFromFileList(<SourceFileEntry>[
+        _file('/lib/X.epub'),
+        _file('/lib/X/Extra.epub'),
+        _file('/lib/X/01.mp3'),
+      ]);
+      expect(bookAt(plan, '/lib/X.epub').audioPaths, isEmpty);
+      expect(bookAt(plan, '/lib/X/Extra.epub').audioPaths, isEmpty);
+      expect(plan.ambiguousAudiobookBookPaths, <String>[
+        '/lib/X.epub',
+        '/lib/X/Extra.epub',
+      ]);
+    });
+
+    test('回归：布局 A / B（R1）的结果与只跑 R1 时逐字相同', () {
+      final List<SourceFileEntry> r1Only = <SourceFileEntry>[
+        _file('/lib/a.epub'),
+        _file('/lib/a.srt'),
+        _file('/lib/a.mp3'),
+        _file('/lib/b.epub'),
+        _file('/lib/b.srt'),
+        _file('/lib/b 01.mp3'),
+        _file('/lib/b-02.mp3'),
+      ];
+      final ScanPlan plan = planScanFromFileList(<SourceFileEntry>[
+        ...r1Only,
+        // 多出的无关音频（不属于任何规则）不改变 R1 的结果。
+        _file('/lib/bgm/theme.mp3'),
+      ]);
+      expect(plan.books, <ScanBookItem>[
+        const ScanBookItem(
+          bookPath: '/lib/a.epub',
+          subtitlePath: '/lib/a.srt',
+          audioPaths: <String>['/lib/a.mp3'],
+        ),
+        const ScanBookItem(
+          bookPath: '/lib/b.epub',
+          subtitlePath: '/lib/b.srt',
+          audioPaths: <String>['/lib/b 01.mp3', '/lib/b-02.mp3'],
+        ),
+      ]);
+      expect(plan.ambiguousAudiobookBookPaths, isEmpty);
+    });
+
+    test('回归：PDF 不配；.mp4 不当音频；Book.en.srt 不挂', () {
+      final ScanPlan plan = planScanFromFileList(<SourceFileEntry>[
+        _file('/p/doc.pdf'),
+        _file('/p/narration.mp3'),
+        _file('/v/Book/Book.epub'),
+        _file('/v/Book/movie.mp4'),
+        _file('/e/Book.epub'),
+        _file('/e/Book/01.mp3'),
+        _file('/e/Book.en.srt'),
+      ]);
+      expect(bookAt(plan, '/p/doc.pdf').audioPaths, isEmpty);
+      expect(bookAt(plan, '/v/Book/Book.epub').audioPaths, isEmpty);
+      final ScanBookItem en = bookAt(plan, '/e/Book.epub');
+      expect(en.audioPaths, <String>['/e/Book/01.mp3']);
+      expect(en.subtitlePath, isNull, reason: '别的语言的字幕不自动挂');
+      expect(en.hasAudioWithoutSubtitle, isTrue);
+    });
+
+    test('视频来源不配书的有声书（音频归音乐库）', () {
+      final ScanPlan plan = planScanFromFileList(<SourceFileEntry>[
+        _file('/lib/Book/Book.epub'),
+        _file('/lib/Book/01.mp3'),
+      ], collectPureAudio: true);
+      expect(plan.books.single.audioPaths, isEmpty);
+    });
+  });
+
+  group('SourceLibraryScanner.scan folder-import audiobooks (z398R0ndAw)', () {
+    late Directory tmp;
+    late Directory pp;
+
+    setUp(() {
+      tmp = Directory.systemTemp.createTempSync('z398_scan_');
+      pp = Directory.systemTemp.createTempSync('z398_pp_');
+      binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        const MethodChannel('plugins.flutter.io/path_provider'),
+        (MethodCall call) async => pp.path,
+      );
+      EpubStorage.debugBaseDirectoryOverride = pp.path;
+    });
+    tearDown(() {
+      EpubStorage.debugBaseDirectoryOverride = null;
+      binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        const MethodChannel('plugins.flutter.io/path_provider'),
+        null,
+      );
+      for (final Directory d in <Directory>[tmp, pp]) {
+        try {
+          if (d.existsSync()) d.deleteSync(recursive: true);
+        } catch (_) {}
+      }
+    });
+
+    Future<SourceLibraryRow> bookSource(
+      FushiDatabase db, {
+      String? bookmark,
+    }) async {
+      final int sid = await db.insertMediaSource(
+        MediaSourcesCompanion.insert(
+          label: 'Books',
+          mediaKind: 'book',
+          rootPath: tmp.path,
+          createdAt: 1000,
+          configJson: sourceConfigValueForBookmark(bookmark),
+        ),
+      );
+      return (await db.getMediaSourceById(sid))!;
+    }
+
+    /// `Book.epub` + 同名子目录 `Book/01.mp3`、`Book/02.mp3`，没有字幕。
+    void writeAudioOnlyBook() {
+      _writeEpub(p.join(tmp.path, 'Book.epub'), 'AudioOnly');
+      final Directory folder = Directory(p.join(tmp.path, 'Book'))
+        ..createSync();
+      File(p.join(folder.path, '01.mp3')).writeAsStringSync('a');
+      File(p.join(folder.path, '02.mp3')).writeAsStringSync('b');
+    }
+
+    testWidgets('★ 有音频没字幕、本地来源：端口收到 bookKey，queued == 1', (
+      WidgetTester tester,
+    ) async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      writeAudioOnlyBook();
+      final _FakeTranscribePort port = _FakeTranscribePort();
+      late SourceScanSummary summary;
+      await tester.runAsync(() async {
+        summary = await SourceLibraryScanner(
+          db,
+          transcribeAudiobook: port.call,
+        ).scan(await bookSource(db));
+      });
+      final String bookKey = (await db.getAllEpubBooks()).single.bookKey;
+      expect(port.calls, hasLength(1));
+      expect(port.calls.single.bookKey, bookKey);
+      expect(port.calls.single.audioPaths, <String>[
+        p.join(tmp.path, 'Book', '01.mp3'),
+        p.join(tmp.path, 'Book', '02.mp3'),
+      ]);
+      expect(summary.audiobookTranscribeQueuedCount, 1);
+      expect(summary.audiobookMissingSubtitleCount, 0);
+      expect(summary.error, isNull);
+    });
+
+    testWidgets('★ 端口为 null：计入缺字幕 missing == 1', (WidgetTester tester) async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      writeAudioOnlyBook();
+      late SourceScanSummary summary;
+      await tester.runAsync(() async {
+        summary = await SourceLibraryScanner(
+          db,
+          transcribeAudiobook: null,
+        ).scan(await bookSource(db));
+      });
+      expect(summary.audiobookMissingSubtitleCount, 1);
+      expect(summary.audiobookTranscribeQueuedCount, 0);
+    });
+
+    testWidgets('iOS 书签来源：端口永不调用，计入缺字幕', (WidgetTester tester) async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      writeAudioOnlyBook();
+      final _FakeTranscribePort port = _FakeTranscribePort();
+      late SourceScanSummary summary;
+      await tester.runAsync(() async {
+        summary = await SourceLibraryScanner(
+          db,
+          transcribeAudiobook: port.call,
+        ).scan(await bookSource(db, bookmark: 'ios-bookmark'));
+      });
+      expect(port.calls, isEmpty);
+      expect(summary.audiobookMissingSubtitleCount, 1);
+    });
+
+    testWidgets('已挂过有声书的书重扫：端口不调用', (WidgetTester tester) async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      writeAudioOnlyBook();
+      final File srt = File(p.join(tmp.path, 'Book', 'Book.srt'))
+        ..writeAsStringSync(_srt);
+      final SourceLibraryRow source = await bookSource(db);
+      final _FakeTranscribePort port = _FakeTranscribePort();
+      late SourceScanSummary first;
+      await tester.runAsync(() async {
+        first = await SourceLibraryScanner(
+          db,
+          transcribeAudiobook: port.call,
+        ).scan(source);
+      });
+      expect(first.attachedAudiobookCount, 1);
+      // 字幕挪走后重扫：书已挂有声书，不再排转录、也不算缺字幕。
+      srt.deleteSync();
+      late SourceScanSummary again;
+      await tester.runAsync(() async {
+        again = await SourceLibraryScanner(
+          db,
+          transcribeAudiobook: port.call,
+        ).scan((await db.getMediaSourceById(source.id))!);
+      });
+      expect(port.calls, isEmpty);
+      expect(again.audiobookMissingSubtitleCount, 0);
+      expect(again.attachedAudiobookCount, 0);
+    });
+
+    testWidgets('★ R5 新导入：文件名对不上、EPUB 标题对得上同目录的有声书目录', (
+      WidgetTester tester,
+    ) async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      _writeEpub(p.join(tmp.path, 'vol01.epub'), '春の物語');
+      final Directory folder = Directory(p.join(tmp.path, '春の物語'))
+        ..createSync();
+      File(p.join(folder.path, '01.mp3')).writeAsStringSync('a');
+      File(p.join(folder.path, 'story.srt')).writeAsStringSync(_srt);
+      // 另一本书让 R4（独卷目录）不成立，只能靠 R5。
+      _writeEpub(p.join(tmp.path, 'other.epub'), 'Other');
+      late SourceScanSummary summary;
+      await tester.runAsync(() async {
+        summary = await SourceLibraryScanner(
+          db,
+          transcribeAudiobook: null,
+        ).scan(await bookSource(db));
+      });
+      final EpubBookRow book = (await db.getAllEpubBooks()).singleWhere(
+        (EpubBookRow b) => b.title == '春の物語',
+      );
+      expect(await db.getAudiobookByBookKey(book.bookKey), isNotNull);
+      expect(summary.attachedAudiobookCount, 1);
+    });
+
+    testWidgets('★ R5 重复跳过分支：书先按纯 EPUB 导入，后放进有声书目录再重扫', (
+      WidgetTester tester,
+    ) async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      _writeEpub(p.join(tmp.path, 'vol01.epub'), '春の物語');
+      _writeEpub(p.join(tmp.path, 'other.epub'), 'Other');
+      final SourceLibraryRow source = await bookSource(db);
+      await tester.runAsync(() async {
+        await SourceLibraryScanner(db, transcribeAudiobook: null).scan(source);
+      });
+      final EpubBookRow book = (await db.getAllEpubBooks()).singleWhere(
+        (EpubBookRow b) => b.title == '春の物語',
+      );
+      expect(await db.getAudiobookByBookKey(book.bookKey), isNull);
+
+      final Directory folder = Directory(p.join(tmp.path, '春の物語'))
+        ..createSync();
+      File(p.join(folder.path, '01.mp3')).writeAsStringSync('a');
+      File(p.join(folder.path, 'story.srt')).writeAsStringSync(_srt);
+      late SourceScanSummary again;
+      await tester.runAsync(() async {
+        again = await SourceLibraryScanner(
+          db,
+          transcribeAudiobook: null,
+        ).scan((await db.getMediaSourceById(source.id))!);
+      });
+      expect(await db.getAllEpubBooks(), hasLength(2));
+      expect(await db.getAudiobookByBookKey(book.bookKey), isNotNull);
+      expect(again.attachedAudiobookCount, 1);
+    });
+  });
+
   group('SourceLibraryScanner.scan manga source', () {
     late Directory tmp;
     late Directory pp;
@@ -2084,7 +2432,7 @@ sub_b/ep2.mp4
         );
         final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
 
-        await SourceLibraryScanner(db).scan(source);
+        await SourceLibraryScanner(db, transcribeAudiobook: null).scan(source);
 
         final List<EpubBookRow> books = await db.getAllEpubBooks();
         expect(books, hasLength(1));
@@ -2129,6 +2477,7 @@ sub_b/ep2.mp4
 
       final SourceScanSummary summary = await SourceLibraryScanner(
         db,
+        transcribeAudiobook: null,
       ).scan(source);
 
       expect(summary.error, isNull);
@@ -2182,6 +2531,7 @@ Attributes = A
 
       final SourceScanSummary summary = await SourceLibraryScanner(
         db,
+        transcribeAudiobook: null,
         mangaSevenZipExtractor: extractor,
       ).scan(source);
 
@@ -2241,6 +2591,7 @@ Attributes = A
 
         final SourceScanSummary summary = await SourceLibraryScanner(
           db,
+          transcribeAudiobook: null,
         ).scan(source);
 
         expect(summary.error, isNull);
@@ -2269,6 +2620,7 @@ Attributes = A
         // 重扫幂等：不新增书、不重复建合集。
         final SourceScanSummary again = await SourceLibraryScanner(
           db,
+          transcribeAudiobook: null,
         ).scan(source);
         expect(again.importedMediaCount, 0);
         expect(await db.getAllEpubBooks(), hasLength(3));
@@ -2297,6 +2649,7 @@ Attributes = A
 
         final SourceScanSummary summary = await SourceLibraryScanner(
           db,
+          transcribeAudiobook: null,
         ).scan(source);
 
         expect(summary.error, isNull);
@@ -2337,7 +2690,7 @@ Attributes = A
           policy: const DuplicatePolicy.skip(),
         );
 
-        await SourceLibraryScanner(db).scan(source);
+        await SourceLibraryScanner(db, transcribeAudiobook: null).scan(source);
 
         expect(await db.getEpubBook(oldKey), isNull);
         expect(await db.getAllEpubBooks(), hasLength(3));
@@ -2355,7 +2708,7 @@ Attributes = A
           policy: const DuplicatePolicy.skip(),
         );
 
-        await SourceLibraryScanner(db).scan(source);
+        await SourceLibraryScanner(db, transcribeAudiobook: null).scan(source);
 
         expect(await db.getEpubBook(manualKey), isNotNull);
         expect(await db.getAllEpubBooks(), hasLength(4));
@@ -2401,6 +2754,7 @@ Attributes = A
 
       final SourceScanSummary summary = await SourceLibraryScanner(
         db,
+        transcribeAudiobook: null,
       ).scan(source);
 
       expect(summary.error, isNull);
@@ -2420,6 +2774,7 @@ Attributes = A
       // 重扫静默去重。
       final SourceScanSummary again = await SourceLibraryScanner(
         db,
+        transcribeAudiobook: null,
       ).scan((await db.getMediaSourceById(source.id))!);
       expect(again.error, isNull);
       expect(again.importedMediaCount, 0);
@@ -2433,7 +2788,10 @@ Attributes = A
         ..writeAsBytesSync(pagesZip(<String>['001.png', '002.png']));
       final SourceLibraryRow source = await mangaSource(db);
       expect(
-        (await SourceLibraryScanner(db).scan(source)).importedMediaCount,
+        (await SourceLibraryScanner(
+          db,
+          transcribeAudiobook: null,
+        ).scan(source)).importedMediaCount,
         1,
       );
 
@@ -2442,6 +2800,7 @@ Attributes = A
       cbz.writeAsBytesSync(<int>[1, 2, 3, 4, 5]);
       final SourceScanSummary again = await SourceLibraryScanner(
         db,
+        transcribeAudiobook: null,
       ).scan((await db.getMediaSourceById(source.id))!);
 
       expect(again.error, isNull);
@@ -2461,6 +2820,7 @@ Attributes = A
 
       final SourceScanSummary first = await SourceLibraryScanner(
         db,
+        transcribeAudiobook: null,
       ).scan(source);
 
       expect(first.error, isNull);
@@ -2476,6 +2836,7 @@ Attributes = A
 
       final SourceScanSummary again = await SourceLibraryScanner(
         db,
+        transcribeAudiobook: null,
       ).scan((await db.getMediaSourceById(source.id))!);
       expect(again.error, isNull);
       expect(again.importedMediaCount, 0);
@@ -2504,6 +2865,7 @@ Attributes = A
 
       final SourceScanSummary summary = await SourceLibraryScanner(
         db,
+        transcribeAudiobook: null,
       ).scan(source);
 
       expect(summary.error, isNull);
@@ -2534,6 +2896,7 @@ Attributes = A
       final SourceLibraryRow source = await mangaSource(db);
       Future<SourceScanSummary> rescan() async => SourceLibraryScanner(
         db,
+        transcribeAudiobook: null,
       ).scan((await db.getMediaSourceById(source.id))!);
 
       final SourceScanSummary first = await rescan();
@@ -2590,6 +2953,7 @@ Attributes = A
 
       final SourceScanSummary summary = await SourceLibraryScanner(
         db,
+        transcribeAudiobook: null,
       ).scan(source);
 
       expect(summary.error, isNull);
@@ -2610,6 +2974,7 @@ Attributes = A
 
       final SourceScanSummary summary = await SourceLibraryScanner(
         db,
+        transcribeAudiobook: null,
       ).scan(source);
 
       expect(summary.importedMediaCount, 1, reason: '排在坏包后面的卷此前会整批丢掉');
@@ -2645,6 +3010,7 @@ Attributes = A
 
       final SourceScanSummary summary = await SourceLibraryScanner(
         db,
+        transcribeAudiobook: null,
       ).scan(source);
 
       expect(summary.error, isNull);
@@ -2678,6 +3044,7 @@ Attributes = A
 
       final SourceScanSummary first = await SourceLibraryScanner(
         db,
+        transcribeAudiobook: null,
       ).scan(source);
       expect(first.error, isNull);
       expect(first.importedMediaCount, 2);
@@ -2691,6 +3058,7 @@ Attributes = A
       source = (await db.getMediaSourceById(sid))!;
       final SourceScanSummary second = await SourceLibraryScanner(
         db,
+        transcribeAudiobook: null,
       ).scan(source);
       expect(second.error, isNull);
       expect(second.importedMediaCount, 0);
@@ -2716,12 +3084,12 @@ Attributes = A
 
         // 第一遍导入。
         SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
-        await SourceLibraryScanner(db).scan(source);
+        await SourceLibraryScanner(db, transcribeAudiobook: null).scan(source);
         expect(await db.getAllEpubBooks(), hasLength(1));
 
         // 第二遍重扫：同标题身份 key 命中 -> 静默跳过，不产生 X (2)、不算错误。
         source = (await db.getMediaSourceById(sid))!;
-        await SourceLibraryScanner(db).scan(source);
+        await SourceLibraryScanner(db, transcribeAudiobook: null).scan(source);
 
         final List<EpubBookRow> books = await db.getAllEpubBooks();
         expect(
@@ -2754,7 +3122,7 @@ Attributes = A
       );
       final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
 
-      await SourceLibraryScanner(db).scan(source);
+      await SourceLibraryScanner(db, transcribeAudiobook: null).scan(source);
 
       expect(await db.getAllEpubBooks(), isEmpty);
       final SourceLibraryRow after = (await db.getMediaSourceById(sid))!;
@@ -2778,7 +3146,10 @@ Attributes = A
       );
       final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
 
-      await SourceLibraryScanner(db).scan(source, fs: _FakeRemoteFs());
+      await SourceLibraryScanner(
+        db,
+        transcribeAudiobook: null,
+      ).scan(source, fs: _FakeRemoteFs());
 
       expect(await db.getAllEpubBooks(), isEmpty);
       final SourceLibraryRow after = (await db.getMediaSourceById(sid))!;
@@ -2869,6 +3240,21 @@ class _FakeSjisCharsetDetector extends CharsetDetectorPlatform
 }
 
 /// 非 local 传输的空假文件系统：远端目录列出来是空的，读/下载不应被走到。
+/// 书架文件夹导入的转录端口替身：记录每次调用，恒回 queued。
+class _FakeTranscribePort {
+  final List<({String bookKey, List<String> audioPaths, String title})> calls =
+      <({String bookKey, List<String> audioPaths, String title})>[];
+
+  Future<BookAudiobookTranscribeResult> call({
+    required String bookKey,
+    required List<String> audioPaths,
+    required String title,
+  }) async {
+    calls.add((bookKey: bookKey, audioPaths: audioPaths, title: title));
+    return BookAudiobookTranscribeResult.queued;
+  }
+}
+
 class _FakeRemoteFs implements SourceFileSystem {
   @override
   bool get isLocal => false;

@@ -335,23 +335,11 @@ Future<List<_LocalProfile>> _localProfiles(
     ),
 ];
 
-/// 本机 profile（当前 uid [uid]）能否改用备份的 uid：没有用户笔记，且从未发布过批次。
+/// 本机 profile（当前 uid [uid]）能否改用备份的 uid：没有用户数据（[srsProfileHasUserData]：不只是笔记，自建牌组、
+/// 改过的预设也算），且从未发布过批次。
 Future<bool> _canAdoptUid(SrsStorage srs, String? uid) async {
-  final SrsDatabase db = srs.db;
   if (uid == null || uid.isEmpty) return true;
-  final bool hasNotes =
-      await db
-          .customSelect(
-            'SELECT 1 FROM srs_entities WHERE profile_uid = ? AND kind = ? '
-            'LIMIT 1',
-            variables: <Variable<Object>>[
-              Variable<String>(uid, srsIdType),
-              Variable<String>(SrsEntityKind.note.wire),
-            ],
-          )
-          .getSingleOrNull() !=
-      null;
-  if (hasNotes) return false;
+  if (await srsProfileHasUserData(srs.db, uid)) return false;
   // 同步 v2：传到过任何位置就算发布过（别的设备可能已经拿到这个身份下的操作）。只读判断，不打开副本。
   final Object? locations = srs.core.sync2(<String, Object?>{
     'op': 'status',
@@ -365,7 +353,7 @@ Future<bool> _canAdoptUid(SrsStorage srs, String? uid) async {
   return !published;
 }
 
-/// 本机 profile（当前 uid [currentUid]）能否改用另一个 uid：没有用户笔记、也从未发布过批次（铁律 E）。
+/// 本机 profile（当前 uid [currentUid]）能否改用另一个 uid：没有用户数据、也从未发布过批次（铁律 E）。
 /// 复习备份页「从文件恢复」另一台设备的备份时用：新装的设备可以直接接上那个 profile。
 Future<bool> srsCanAdoptProfileUid(SrsStorage db, String currentUid) =>
     _canAdoptUid(db, currentUid);

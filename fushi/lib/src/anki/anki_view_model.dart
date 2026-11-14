@@ -11,6 +11,7 @@ import 'package:fushi/src/anki/anki_deck_reposition_runner.dart';
 import 'package:fushi/src/anki/delegating_anki_repository.dart';
 import 'package:fushi/src/anki/auto_reposition_anki_repository.dart';
 import 'package:fushi/src/anki/anki_media_dedup_runner.dart';
+import 'package:fushi/src/anki/mined_expression_cache.dart';
 import 'package:fushi/src/anki/lapis_template_service.dart';
 import 'package:fushi/src/anki/anki_video_template_service.dart';
 import 'package:fushi/src/anki/pending_mining/pending_mine_store.dart';
@@ -752,9 +753,14 @@ final ankiRepositoryProvider = Provider<BaseAnkiRepository>((ref) {
     appProvider.select((AppModel m) => m.mineToServerEnabled),
   );
   if (!mineToServer) {
+    // 反馈 JAEwvc6Lmr：离线已制卡缓存包在本机后端最里层——待发队列补发、自动重排
+    // 都经过它，补发进 Anki 的卡同样落进缓存；Anki 连不上时查词照样画 ✓。
+    final BaseAnkiRepository cached = MinedExpressionCacheAnkiRepository(
+      inner: local,
+    );
     return _withSrsMining(
       ref,
-      _withPendingQueue(ref, _withAutoReposition(ref, local)),
+      _withPendingQueue(ref, _withAutoReposition(ref, cached)),
       followWorkSession: true,
       background: true,
     );

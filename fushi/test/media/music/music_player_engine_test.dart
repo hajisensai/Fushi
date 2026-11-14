@@ -310,6 +310,26 @@ void main() {
     expect(engine.current?.trackUid, 'a');
   });
 
+  test('试听片段：时长等媒体实际长度，不用整首的元数据时长（反馈 okvRZINcQU）', () async {
+    await engine.playQueue(<MusicPlayItem>[
+      const MusicPlayItem(
+        trackUid: 'p',
+        path: 'https://audio.example/p.m4a',
+        title: 'p',
+        durationMs: 200000,
+        isPreview: true,
+      ),
+    ]);
+    expect(engine.duration, isNull, reason: '整首 200 秒不是这条约 30 秒的流的长度');
+    backend.controller.add(
+      const MusicBackendPosition(Duration(seconds: 1), Duration(seconds: 30)),
+    );
+    await Future<void>.delayed(Duration.zero);
+    expect(engine.duration, const Duration(seconds: 30));
+    await engine.seek(const Duration(seconds: 90));
+    expect(backend.log.last, 'seek:30000', reason: '拖不出片段末尾');
+  });
+
   test('seek 夹在 [0, 时长]；stop 释放后端', () async {
     await engine.playQueue(<MusicPlayItem>[_item('a', durationMs: 1000)]);
     await engine.seekRelative(const Duration(seconds: -5));

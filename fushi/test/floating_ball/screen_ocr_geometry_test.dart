@@ -112,6 +112,81 @@ void main() {
     });
   });
 
+  // 反馈 Eemf0HOZhj（BUG-4069）：macOS 点字查词总是「ー」。识别器把文字行下面的下划线 /
+  // 分隔线读成一条扁长的「ー」行，压在文字行的下半截上；以前多行重叠时取面积最小的
+  // 那一行，点这一行的任何字都命中「ー」。
+  group('screenOcrHitTest 多行框重叠', () {
+    const SystemOcrTextLine title = SystemOcrTextLine(
+      text: '鉄廻城砦の灰花',
+      rect: Rect.fromLTRB(100, 200, 380, 240),
+      isVertical: false,
+    );
+    const SystemOcrTextLine underline = SystemOcrTextLine(
+      text: 'ー',
+      rect: Rect.fromLTRB(100, 222, 380, 246),
+      isVertical: false,
+    );
+
+    test('点在字身上命中文字行，不命中压在它下半截的「ー」', () {
+      for (final double x in <double>[110, 200, 370]) {
+        final ScreenOcrHit hit = screenOcrHitTest(
+          lines: const <SystemOcrTextLine>[underline, title],
+          point: Offset(x, 225),
+          scale: 1,
+        )!;
+        expect(hit.line, same(title), reason: 'x=$x');
+      }
+      final ScreenOcrHit first = screenOcrHitTest(
+        lines: const <SystemOcrTextLine>[title, underline],
+        point: const Offset(110, 225),
+        scale: 1,
+      )!;
+      expect(title.text.substring(first.charIndex), '鉄廻城砦の灰花');
+    });
+
+    test('点在只有「ー」盖住的地方（文字行下沿以下）才命中「ー」', () {
+      final ScreenOcrHit hit = screenOcrHitTest(
+        lines: const <SystemOcrTextLine>[title, underline],
+        point: const Offset(200, 244),
+        scale: 1,
+      )!;
+      expect(hit.line, same(underline));
+    });
+
+    test('落点真在框里的行优先于只靠容差够到的行', () {
+      const SystemOcrTextLine above = SystemOcrTextLine(
+        text: '上の行',
+        rect: Rect.fromLTRB(100, 160, 380, 198),
+        isVertical: false,
+      );
+      final ScreenOcrHit hit = screenOcrHitTest(
+        lines: const <SystemOcrTextLine>[above, title],
+        point: const Offset(200, 201),
+        scale: 1,
+      )!;
+      expect(hit.line, same(title));
+    });
+
+    test('竖排比左右离中线的距离', () {
+      const SystemOcrTextLine column = SystemOcrTextLine(
+        text: '吾輩は猫',
+        rect: Rect.fromLTRB(100, 100, 140, 300),
+        isVertical: true,
+      );
+      const SystemOcrTextLine rule = SystemOcrTextLine(
+        text: '｜',
+        rect: Rect.fromLTRB(126, 100, 146, 300),
+        isVertical: true,
+      );
+      final ScreenOcrHit hit = screenOcrHitTest(
+        lines: const <SystemOcrTextLine>[rule, column],
+        point: const Offset(127, 160),
+        scale: 1,
+      )!;
+      expect(hit.line, same(column));
+    });
+  });
+
   group('screenOcrHitTest 按词框定位（多 DPI）', () {
     final SystemOcrTextLine line = parseSystemOcrPayload(
       _mixedLinePayload(),

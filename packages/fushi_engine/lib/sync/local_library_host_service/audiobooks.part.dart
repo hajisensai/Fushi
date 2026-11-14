@@ -369,61 +369,81 @@ mixin _LocalLibraryHostAudiobooks
     return (positionMs: pos, updatedAtMs: at);
   }
 
-  /// 把 client 上报的有声书 [bookKey] 断点写入 host（BUG-471）。
-  ///
-  /// 存在性闸门：host 无该 bookKey 的 Audiobooks 行 → no-op，不写孤儿
-  /// `audiobook_pos_` pref（与视频 [putVideoPosition]「视频不存在不写脏」、书
-  /// [putBookProgress]「书不存在不写孤儿行」同语义）。
-  ///
-  /// 冲突解决「取较新时间戳」（[resolvePositionLww]）：仅当 [updatedAtMs]
-  /// 严格新于 host 已存时间戳才覆盖。负位置 clamp 0。
+  /// 把 client 上报的有声书 [bookKey] 断点写入 host（BUG-471）。旧口径（无前置
+  /// 条件、丢弃回执），等价于 [putAudiobookPositionChecked]`(expectedPositionsMs: null)`。
   @override
   Future<void> putAudiobookPosition(
     String bookKey,
     int positionMs,
     int updatedAtMs,
   ) async {
-    // host 库不存在该有声书 → no-op（防任意 client 上报任意 key 写脏 prefs）。
+    await putAudiobookPositionChecked(bookKey, positionMs, updatedAtMs);
+  }
+
+  /// 带回执与可选前置条件的有声书断点写入（BUG-4431，[LivePositionWriteHost]）。
+  ///
+  /// 存在性闸门：host 无该 bookKey 的 Audiobooks 行 → [LiveWriteResult.missing]，
+  /// 不写孤儿 `audiobook_pos_` pref（与视频「视频不存在不写脏」、书「书不存在不写
+  /// 孤儿行」同语义）。判定口径只在 [resolveLivePositionWrite] 一处。
+  @override
+  Future<LivePositionWriteOutcome> putAudiobookPositionChecked(
+    String identity,
+    int positionMs,
+    int updatedAtMs, {
+    List<int>? expectedPositionsMs,
+  }) async {
+    final String bookKey = identity;
+    // host 库不存在该有声书 → missing（防任意 client 上报任意 key 写脏 prefs）。
     // srt-backed 按 bookKey 查 Audiobooks；纯 SRT standalone 按 uid 查 SrtBooks。
     // 进度 pref key = audiobook_pos_<identity>：standalone 的 identity=uid 恰为
     // SrtBook 进度键，故写穿即写到正确命名空间。
     if (await _db.getAudiobookByBookKey(bookKey) == null &&
         await _db.getSrtBookByUid(bookKey) == null) {
-      return;
+      return const LivePositionWriteOutcome(
+        result: LiveWriteResult.missing,
+        positionMs: 0,
+        updatedAtMs: 0,
+      );
     }
     // 读-比较-写在同步状态窄锁内（与 [putBookProgress] 同纪律）：两个对端并发上报
     // 不会互相用旧值盖掉对方；不用 _runExclusive，免得排在本机整轮同步后面超时。
     // 同时放进一个 DB 事务（BUG-3537）：本机出站同步落地在事务里比较后写入，这里
     // 的读-比较-写也须原子，否则出站落地插在「读 current」与「写 winner」之间会被
-    // 按旧 current 算出的 winner 盖掉。
+    // 按旧 current 算出的 winner 盖掉。前置条件也在同一事务里比较。
+    late LivePositionWriteOutcome outcome;
     await _runSyncStateExclusive(
       () => _db.transaction(() async {
         final ({int positionMs, int updatedAtMs}) current =
             await getAudiobookPosition(bookKey);
         // BUG-3367：上报戳截到 host 当前时刻 + 余量；已存的超限毒戳按 0 比较以便自愈。
-        final int nowMs = DateTime.now().millisecondsSinceEpoch;
-        final ({int positionMs, int updatedAtMs}) winner = resolvePositionLww(
-          localPositionMs: current.positionMs,
-          localUpdatedAtMs: trustedStoredSyncStamp(
-            current.updatedAtMs,
-            nowMs: nowMs,
-          ),
-          remotePositionMs: positionMs < 0 ? 0 : positionMs,
-          remoteUpdatedAtMs: capFutureSyncStamp(updatedAtMs, nowMs: nowMs),
+        final ({
+          LiveWriteResult result,
+          ({int positionMs, int updatedAtMs}) next,
+        })
+        decision = resolveLivePositionWrite(
+          current: current,
+          positionMs: positionMs,
+          updatedAtMs: updatedAtMs,
+          expectedPositionsMs: expectedPositionsMs,
+          nowMs: DateTime.now().millisecondsSinceEpoch,
         );
-        if (winner.updatedAtMs == current.updatedAtMs &&
-            winner.positionMs == current.positionMs) {
-          return; // host 已存更新或相等，no-op。
+        if (decision.result == LiveWriteResult.applied) {
+          await _db.setPrefTyped<int>(
+            audiobookPositionPrefKey(bookKey),
+            decision.next.positionMs,
+          );
+          await _db.setPrefTyped<int>(
+            audiobookPositionAtPrefKey(bookKey),
+            decision.next.updatedAtMs,
+          );
         }
-        await _db.setPrefTyped<int>(
-          audiobookPositionPrefKey(bookKey),
-          winner.positionMs,
-        );
-        await _db.setPrefTyped<int>(
-          audiobookPositionAtPrefKey(bookKey),
-          winner.updatedAtMs,
+        outcome = LivePositionWriteOutcome(
+          result: decision.result,
+          positionMs: decision.next.positionMs,
+          updatedAtMs: decision.next.updatedAtMs,
         );
       }),
     );
+    return outcome;
   }
 }

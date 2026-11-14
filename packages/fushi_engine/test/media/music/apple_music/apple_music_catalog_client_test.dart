@@ -262,6 +262,7 @@ void main() {
         'full tracks keep only streamable songs and stream them via MusicKit',
         () async {
           final _Rig rig = _Rig(songs, fullTracks: true);
+          expect(rig.client.previewOnly, isFalse);
           final MusicServerSearchResult r = await rig.client.search('x');
           expect(r.tracks.map((MusicServerTrack t) => t.id), <String>[
             '1',
@@ -274,15 +275,14 @@ void main() {
             expect(appleMusicSongIdFromPath(s.uri.toString()), t.id);
             expect(s.bitrateKbps, kAppleMusicFullTrackBitrateKbps);
             expect(s.transcoded, isFalse);
+            expect(s.isPreview, isFalse);
           }
           // 不可串流的曲目不交给 MusicKit（列表已滤掉；万一被点到只给试听）。
-          expect(
-            rig.client
-                .streamFor(const MusicServerTrack(id: '2', title: 'x'))
-                .uri
-                .toString(),
-            'https://audio.example/2.m4a',
+          final MusicServerStream fallback = rig.client.streamFor(
+            const MusicServerTrack(id: '2', title: 'x'),
           );
+          expect(fallback.uri.toString(), 'https://audio.example/2.m4a');
+          expect(fallback.isPreview, isTrue, reason: '给的是试听就如实标试听');
           // 本实例没见过的曲目不给地址。
           expect(
             () => rig.client.streamFor(
@@ -297,15 +297,16 @@ void main() {
         'previews keep only songs with a preview and stream the preview',
         () async {
           final _Rig rig = _Rig(songs);
+          expect(rig.client.previewOnly, isTrue);
           final MusicServerSearchResult r = await rig.client.search('x');
           expect(r.tracks.map((MusicServerTrack t) => t.id), <String>[
             '1',
             '2',
           ]);
-          expect(
-            rig.client.streamFor(r.tracks.first).uri.toString(),
-            'https://audio.example/1.m4a',
-          );
+          final MusicServerStream s = rig.client.streamFor(r.tracks.first);
+          expect(s.uri.toString(), 'https://audio.example/1.m4a');
+          // 试听片段（反馈 okvRZINcQU）：整首时长不是这条流的长度。
+          expect(s.isPreview, isTrue);
         },
       );
     });

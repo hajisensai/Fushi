@@ -167,6 +167,7 @@ import 'package:fushi/src/storage/export_directory.dart';
 import 'package:fushi/src/storage/installer_data_root_bootstrap.dart';
 import 'package:fushi/src/storage/sandbox_relocation.dart';
 import 'package:fushi/src/startup/exit_flush_registry.dart';
+import 'package:fushi/src/startup/startup_timeline.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 import 'package:fushi/src/utils/misc/error_details_dialog.dart';
 import 'package:fushi/src/utils/misc/lookup_input_limits.dart';
@@ -195,6 +196,7 @@ import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:fushi_engine/srs/sync2/srs_folder_location.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_crypto.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
+import 'package:fushi/src/pdf/pdf_importer.dart';
 import 'package:fushi/src/diagnostics/video_diag_log.dart';
 import 'package:fushi/src/dictionary/dict_resource_materializer.dart';
 import 'package:fushi/src/dictionary/dict_style_rules.dart';
@@ -372,6 +374,8 @@ import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_p
     show isDefaultVideoSubtitlePipelineOutput, videoSubtitleJobsRootUnder;
 import 'package:fushi/src/media/audiobook/audiobook_auto_transcribe.dart';
 import 'package:fushi_engine/media/audiobook/audiobook_transcribe_import_queue.dart';
+import 'package:fushi_engine/media/audiobook/book_audiobook_pairing.dart'
+    show BookAudiobookTranscribePort, folderImportTranscribeEnabled;
 import 'package:fushi_engine/media/discovery/import/discovery_engine_importers.dart'
     show
         importDiscoveryAudiobook,
@@ -505,7 +509,10 @@ import 'package:fushi_engine/sync/immersion_mine_payload.dart';
 import 'package:fushi/src/mining/bilibili_clip_miner.dart';
 import 'package:fushi/src/mining/galgame_add_flow.dart'
     show adoptSourceScannedGames;
+import 'package:fushi/src/mining/gal_hook_session_controller.dart';
+import 'package:fushi/src/mining/gal_mining_settings.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
+import 'package:fushi/src/mining/advanced_mining/advanced_mining_layout.dart';
 import 'package:fushi/src/mining/galgame_repository.dart';
 import 'package:fushi/src/mining/immersion_mining_engine.dart';
 import 'package:fushi/src/mining/mining_image_mode_target.dart';
@@ -545,6 +552,8 @@ import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/stats/reader_study_clock_start_mode.dart';
+import 'package:fushi/src/stats/study_goal_period.dart';
+export 'package:fushi/src/stats/study_goal_period.dart' show StudyGoalPeriod;
 
 export 'package:fushi/src/models/local_audio_manager.dart'
     show LocalAudioDbEntry, InvalidLocalAudioDbException;
@@ -1168,6 +1177,15 @@ class AppModel
           fileName: path.basename(bookFile.path),
         );
       },
+      // 反馈 Jq1_ujHa4t：对端推来的 PDF 原件（引擎 importBook 已按内容嗅探分好流）。
+      // 接了它本 host 才在 capabilities 宣称 `liveLibrary.pdfBooks`，client 据此推 PDF。
+      importPdfBookFromFile: (File pdfFile, String title) =>
+          PdfImporter.importFromPath(
+            db: database,
+            filePath: pdfFile.path,
+            fileName: '$title.pdf',
+            title: title,
+          ),
       // BUG-2815：现读而非快照——host 服务只在互联启动时构造一次，快照会让之后
       // 新增 / 删除的本地音频库在对端清单与导出里都看不见。
       // BUG-3702：path 归一到本机落点，别的设备带来的库引用才能按本机文件导出。
@@ -3297,7 +3315,11 @@ class AppModel
       .map((Dictionary d) => d.name)
       .toSet();
 
-  bool _dictTypesMigrated = false;
+  bool _dictSourceBackfillStarted = false;
+
+  /// 本进程已经探过类型的词典目录（探测结果的落库是 unawaited，写回之前
+  /// [Dictionary.isTypeProbed] 还是 false，靠它防同一本被两条重建路径各探一遍）。
+  final Set<String> _dictTypeProbeAttempted = <String>{};
 
   /// 启动期的词典类型自愈：把历史误分类的词典改回正确的桶。
   ///
@@ -3311,14 +3333,27 @@ class AppModel
   ///
   /// 探测结果无论是否导致改判都会落库，所以第二次启动开始，这个循环对存量词典是
   /// 纯内存遍历、零 IO。
+  ///
+  /// BUG-4510：探测是主 isolate 上的同步读（`probeDictContent` / `blobs.bin`
+  /// openSync+readSync），只对 [_dictResources] **已证明物化**的目录做——OneDrive
+  /// 「按需文件」/ iCloud 驱逐成 dataless 的文件同步读会在内核里等云端回填，Timer
+  /// 看门狗全失效。没证明物化的本次不探、不落标记，等物化探测证明之后的下一次重建
+  /// 再探（两条重建路径都会调到这里）。
   void _migrateDictionaryTypes() {
-    if (_dictTypesMigrated) return;
-    _dictTypesMigrated = true;
-    unawaited(_backfillDictionarySourceMetadata());
+    if (!_dictSourceBackfillStarted) {
+      _dictSourceBackfillStarted = true;
+      unawaited(_backfillDictionarySourceMetadata());
+    }
     final dicts = dictRepo.dictionaries;
     for (final d in dicts) {
       // 探过就跳过——包括「探过、结论是什么都不用改」。
       if (d.isTypeProbed) continue;
+      final String probeDir = path.join(
+        dictionaryResourceDirectory.path,
+        d.name,
+      );
+      if (_dictTypeProbeAttempted.contains(probeDir)) continue;
+      if (!_dictResources.isReady(probeDir)) continue;
 
       // TODO-622 self-heal: a mixed JA-JA dictionary (term + embedded kanji
       // appendix) was misclassified as 'kanji' by the old detect_type, so its
@@ -3329,8 +3364,9 @@ class AppModel
       // router also registers it as a kanji dict. A genuine KANJIDIC (kanji
       // records only, no term) keeps type 'kanji' and is left untouched.
       if (d.type == DictionaryType.kanji) {
+        _dictTypeProbeAttempted.add(probeDir);
         try {
-          final dir = path.join(dictionaryResourceDirectory.path, d.name);
+          final dir = probeDir;
           // 目录不在（词典文件已被删/未落盘）时不落标记：这本压根没被探过，
           // 等文件回来再探。
           if (!Directory(dir).existsSync()) continue;
@@ -3389,10 +3425,9 @@ class AppModel
       // freq/pitch 不需要探测（它们的类型来自导入时的 mode 串，没有历史误判形态），
       // 也就不落标记：这条分支不做任何 IO，重跑的代价是零。
       if (d.type != DictionaryType.term) continue;
+      _dictTypeProbeAttempted.add(probeDir);
 
-      final blobsFile = File(
-        path.join(dictionaryResourceDirectory.path, d.name, 'blobs.bin'),
-      );
+      final blobsFile = File(path.join(probeDir, 'blobs.bin'));
       if (!blobsFile.existsSync()) continue;
 
       final raf = blobsFile.openSync();
@@ -3501,7 +3536,7 @@ class AppModel
         dictPathEntryOf(
           type: d.type,
           path: p,
-          exists: Directory(p).existsSync() && _dictDirMaterialized(p),
+          exists: Directory(p).existsSync() && _dictResources.isLoadable(p),
           hidden: d.isHidden(JapaneseLanguage.instance),
           metadata: d.metadata,
           order: d.order,
@@ -3521,45 +3556,35 @@ class AppModel
   }
 
   /// BUG-2504 不变式「同步 FFI 装载只碰已物化的字节」对**两条**装载路径都成立。
-  /// [_rebuildDictPathsCacheAsync] 自己探；同步的 [_rebuildDictPathsCache] 挂在
-  /// 每一次词典元数据写入上（隐藏 / 折叠 / 语言开关 / 导入每本），它没有预算再探
-  /// 一遍，就复用上一次探测的结论：探测明确判成 dataless / 读失败的目录不进引擎，
-  /// 否则「启动期跳过 → 用户改任一词典开关 → 同步路径全量排期 → 首次查词在主
-  /// isolate 同步读 dataless 文件」会把原症状从冷启动挪到改设置后。
+  /// [_rebuildDictPathsCacheAsync] 经 [_dictResources] 探；同步的
+  /// [_rebuildDictPathsCache] 挂在每一次词典元数据写入上（隐藏 / 折叠 / 语言开关 /
+  /// 导入每本），它没有预算再探一遍，就复用 [_dictResources] 的结论
+  /// （[DictResourceAvailability.isLoadable]）：探过且没证明可读的目录不进引擎；
+  /// **没探过的目录放行**（刚导入 / 互联传输落盘的词典是本进程自己写的字节）。
   ///
-  /// **没探过的目录放行**：刚导入 / 互联传输落盘的词典是本进程自己写的字节，本就
-  /// 在本地；把它们挡在引擎外等于导入完不装载。晚到的物化成功回报把目录补回
-  /// [_materializedDictDirs]（[_onDictDirMaterializedLate]）。
-  Set<String> _probedDictDirs = const <String>{};
-  Set<String> _materializedDictDirs = const <String>{};
-  bool _lateDictReloadScheduled = false;
-
-  bool _dictDirMaterialized(String dir) =>
-      !_probedDictDirs.contains(dir) || _materializedDictDirs.contains(dir);
-
-  /// 预算后 worker 把 pending 目录拉回本地的回报：成功即登记可读，并排一次异步
-  /// 重装——这是「字节已到本地」的确定信号，不该等下次冷启动才装上（被跳过的
-  /// 词典对用户完全不可见：列表还在、开关还开、查词没结果）。多本陆续回报只排
-  /// 一次；重装本身会重新探一遍。
-  void _onDictDirMaterializedLate(String dir, String? error) {
-    debugPrint(
+  /// BUG-4510：物化状态只在这一个对象里，单调累积、同一目录至多一个在途探测；
+  /// 在途探测全部回报完且有新目录变可读时只重装一次引擎（[_reloadDictsAfterLateMaterialize]），
+  /// 不再「每条回报 → 重装 → 对全部目录再起 worker」地自我喂养。
+  late final DictResourceAvailability _dictResources = DictResourceAvailability(
+    onLateReport: (String dir, String? error) => debugPrint(
       '[Fushi] dict resource materialized after budget: '
       '${path.basename(dir)}${error == null ? '' : ' (error: $error)'}',
-    );
-    if (error != null) return;
-    _materializedDictDirs = <String>{..._materializedDictDirs, dir};
-    if (_lateDictReloadScheduled) return;
-    _lateDictReloadScheduled = true;
-    Future<void>.delayed(const Duration(seconds: 2), () async {
-      _lateDictReloadScheduled = false;
-      try {
-        await _rebuildDictPathsCacheAsync();
-        dictRepo.clearDictionaryResultsCache();
-        dictionarySearchAgainNotifier.notifyListeners();
-      } catch (e, st) {
-        ErrorLogService.instance.log('AppModel.lateDictReload', e, st);
-      }
-    });
+    ),
+    onLateReady: () => unawaited(_reloadDictsAfterLateMaterialize()),
+  );
+
+  /// 预算后 worker 把剩余目录全部拉回本地后的一次重装：字节已到本地是确定信号，
+  /// 不该等下次冷启动才装上（被跳过的词典对用户完全不可见：列表还在、开关还开、
+  /// 查词没结果）。重装里的 [DictResourceAvailability.resolve] 不会再探已物化 /
+  /// 在途的目录。
+  Future<void> _reloadDictsAfterLateMaterialize() async {
+    try {
+      await _rebuildDictPathsCacheAsync();
+      dictRepo.clearDictionaryResultsCache();
+      dictionarySearchAgainNotifier.notifyListeners();
+    } catch (e, st) {
+      ErrorLogService.instance.log('AppModel.lateDictReload', e, st);
+    }
   }
 
   /// 查词管线预热：跑几次真实查询，把 native 侧的去屈折表、mmap 页、Dart 侧的
@@ -3696,10 +3721,18 @@ class AppModel
   /// 看门狗在同步阻塞期间根本不会触发。所以装载前先在后台 isolate 做触读物化探测
   /// （[materializeDictResources]），本次只装预算内证明了「字节在本地」的词典。
   Future<void> _rebuildDictPathsCacheAsync() async {
-    // 注意：类型自愈对**尚未探测过**的 term/kanji 词典会同步 openSync/readSync
-    // blobs.bin（一次性迁移，探过的词典零 IO），它跑在下面的物化探测之前，仍是
-    // 同步 IO 的残留——只影响首次启动 / 新导入那一次，本任务不动它。
-    _migrateDictionaryTypes();
+    await _scheduleDictPathsAsync();
+    // 在这里就把它装完（而不是留给第一次查词）：启动期是有预算做这件事的地方，
+    // 而且分批让出后它不再阻塞首帧。
+    await FushiDicts.loadPendingAsync();
+  }
+
+  /// [_rebuildDictPathsCacheAsync] 的前半段：目录 exists + 物化探测 + 类型自愈 +
+  /// 排期，**不装载**。启动期只有这一段是「数据根 IO、可能因盘掉线永不返回」，
+  /// 套 12s 看门狗；装载本身（[FushiDicts.loadPendingAsync]）每本之间让出、耗时随
+  /// 词典数线性增长，不是挂死，套看门狗只会把「词典多、盘慢」误判成启动失败
+  /// （BUG-4510：121 本词典、8s 物化预算之后只剩 4s 给装载，启动直接进错误屏）。
+  Future<void> _scheduleDictPathsAsync() async {
     final dictList = dictRepo.dictionaries;
     final List<String> paths = <String>[
       for (final d in dictList)
@@ -3716,15 +3749,12 @@ class AppModel
       for (var i = 0; i < paths.length; i++)
         if (existsResults[i]) paths[i],
     ];
-    final DictResourceMaterializeResult materialized =
-        await materializeDictResources(
-          existingDirs,
-          onLateReport: _onDictDirMaterializedLate,
-        );
+    final DictResourceResolution materialized = await _dictResources.resolve(
+      existingDirs,
+    );
     final Set<String> readyDirs = materialized.ready.toSet();
-    // 同步路径（[_rebuildDictPathsCache]）复用这轮结论，见 [_dictDirMaterialized]。
-    _probedDictDirs = existingDirs.toSet();
-    _materializedDictDirs = readyDirs;
+    // 类型自愈只探已证明物化的目录（同步读，见 [_migrateDictionaryTypes]）。
+    _migrateDictionaryTypes();
     if (materialized.pending.isNotEmpty || materialized.failed.isNotEmpty) {
       final String summary = <String>[
         if (materialized.pending.isNotEmpty)
@@ -3763,13 +3793,19 @@ class AppModel
       pitchPaths: b.pitch,
       kanjiPaths: b.kanji,
     );
-    // 在这里就把它装完（而不是留给第一次查词）：启动期是有预算做这件事的地方，
-    // 而且分批让出后它不再阻塞首帧。
-    await FushiDicts.loadPendingAsync();
   }
 
   List<DictionarySearchResult> get dictionaryHistory =>
       dictRepo.dictionaryHistory;
+
+  /// 冷启动后查词历史还在后台装载：[dictionaryHistory] 暂时为空，不等于「没查过词」。
+  bool get dictionaryHistoryLoading =>
+      _dictionaryRepoReady && dictRepo.dictionaryHistoryLoading;
+
+  /// 查词历史装载落定（没有在途装载时立即完成）。
+  Future<void> get dictionaryHistoryLoaded => _dictionaryRepoReady
+      ? dictRepo.dictionaryHistoryLoaded
+      : Future<void>.value();
 
   // ── audio & media streams (delegated to AudioController) ────────────
 
@@ -4433,6 +4469,7 @@ class AppModel
       debugPrint('[Fushi] init: PackageInfo + DeviceInfo');
 
       /// Prepare entities that may be repeatedly used at runtime.
+      StartupTimeline.mark('init-enter');
       _packageInfo = await PackageInfo.fromPlatform();
       _mediaTrackingAppVersion = _packageInfo.version;
       // 媒体服务器认证头的客户端身份（产品名 / 本机设备名 / 应用版本，
@@ -4442,6 +4479,7 @@ class AppModel
         version: _packageInfo.version,
       );
 
+      StartupTimeline.mark('package+device-info');
       debugPrint('[Fushi] init: directories (early, needed for DB)');
       // TODO-1260：这一步内部解析数据根（含对自定义数据根盘的 stat）。盘掉线时最易 hang，
       // 故写启动面包屑 + 叠超时（超时→错误屏 Retry，不再无限加载）。
@@ -4461,6 +4499,7 @@ class AppModel
             .log('AppModel.migrateLegacyBooksDirectory', e, stack),
       );
 
+      StartupTimeline.mark('data-roots');
       debugPrint('[Fushi] init: Drift database');
       ErrorLogService.instance.markInitStep('open-database（Drift 打开 fushi.db）');
       _database = FushiDatabase(_databaseDirectory.path);
@@ -4479,6 +4518,7 @@ class AppModel
       // 3) migrate the mutually-exclusive `backendType==fushiServer` interconnect
       //    selection to the independent interconnect toggle (interconnect and a
       //    cloud backup backend can now coexist).
+      StartupTimeline.mark('db-open+srs-host');
       await BackupRestoreService.recoverPendingRestore(_databaseDirectory.path);
 
       // 沙箱重定位自愈：数据根被**平台**挪走后，把库里的绝对路径重基过去。
@@ -4492,6 +4532,7 @@ class AppModel
       //
       // 自愈失败只上报、不阻塞启动：用户至多回到修复前的状态，绝不能因为对账
       // 出错而进不去 app（台账故意不写，下次启动会重试）。
+      StartupTimeline.mark('pending-restore');
       await SandboxRelocation.reconcile(
         db: _database,
         documentsRoot: _appDirectory.path,
@@ -4509,6 +4550,7 @@ class AppModel
       //    folderId is an ABSOLUTE URL, which the other channel would then hit
       //    (Basic credentials attached). It is a pure cache: every backend
       //    re-resolves its root/book folders by name on the next sweep.
+      StartupTimeline.mark('sandbox-relocation');
       await SyncRepository(_database).migrateSmbToWebDav();
       await SyncRepository(_database).migrateInterconnectBackendToToggle();
       await SyncRepository(_database).migrateFolderCacheToPerChannel();
@@ -4517,6 +4559,7 @@ class AppModel
       // （BUG-3697）。视频来源是原地播放，播放器 / 字幕 / 制卡都要读原文件。不阻塞
       // 启动：扫描与播放前会各自等它跑完（`ensureSourceAccess` / `ensureForPath`）。
       // 其它平台 no-op；弹窗词典 / 悬浮词典进程不经 initialise()，那边不读来源。
+      StartupTimeline.mark('sync-pref-migrations');
       SourceFolderAccess.instance.activateAllOnStartup(_database);
 
       /// Prepare all repositories (objects created first, then loaded in
@@ -4542,6 +4585,7 @@ class AppModel
       // 客户端）。两步都必须早于下面任何 loadSettings（ensureDefaultProfile 会快照
       // Anki 设置），否则读到的是 SP 那份进程内旧缓存（反馈 fiwDIpFep7）。
       await installDriftAnkiSettingsStore(() => _database);
+      StartupTimeline.mark('anki-settings-store');
       await platformServices.init();
       final BaseAnkiRepository ankiRepo = platformServices
           .createAnkiRepository();
@@ -4555,6 +4599,8 @@ class AppModel
       dictRepo = DictionaryRepository(
         _database,
         onCacheRebuild: _rebuildDictPathsCache,
+        // 查词历史在首帧之后才落进内存（见下方 deferHistory），到了让首页词典页重画。
+        onHistoryLoaded: notifyListeners,
         isLowMemory: () => prefsRepo.lowMemoryMode,
       );
       _dictionaryRepoReady = true;
@@ -4563,13 +4609,17 @@ class AppModel
       systemTtsDictionaryLanguages = () => installedDictionarySourceLanguages;
       mediaHistoryRepo = MediaHistoryRepository(_database);
 
+      StartupTimeline.mark('platform-services');
       debugPrint('[Fushi] init: repositories (parallel)');
       await Future.wait(<Future<void>>[
         prefsRepo.loadFromDb().then((_) => _applyStatDayResetHour()),
         profileRepo.ensureDefaultProfile(),
-        dictRepo.loadFromDb(),
+        // 查词历史不挡首帧：十条历史是几 MB 的 JSON，同步解析要几百毫秒
+        // （实测 Windows 370-566 ms，手机更久），在后台 isolate 里解完再通知重画。
+        dictRepo.loadFromDb(deferHistory: true),
         mediaHistoryRepo.loadFromDb(),
       ]);
+      StartupTimeline.mark('repositories-load');
       prefsRepo.addListener(notifyListeners);
       navRailExpandedNotifier.value = prefsRepo.navRailExpanded;
       // 封面模式默认是音画同步片段：2026-09-28 被钉成 GIF 的存量安装在这里迁一次。
@@ -4605,7 +4655,9 @@ class AppModel
       // 拿不到用户选的模式/凭据。这里只留更新专用的那个。
       appUpdateDownloadSourceReader = () => prefsRepo.updateDownloadSource;
       // 主入口与精简词典入口共用装配，并等系统代理就绪后再启动网络服务。
+      StartupTimeline.mark('pref-settles');
       await installAppNetworkBindings();
+      StartupTimeline.mark('network-bindings');
       _applyEmbeddedTorrentProxy();
       _applyMemoryPolicy();
       // BUG-1647：lazy getter 可能已提前建过实例；替换前先取消其重试定时器，
@@ -4627,6 +4679,7 @@ class AppModel
       themeNotifier.addListener(notifyListeners);
       _themeListenerAdded = true;
 
+      StartupTimeline.mark('tracking+theme');
       debugPrint('[Fushi] init: directories + system palette (parallel)');
       _browserDirectory = Directory(path.join(appDirectory.path, 'browser'));
       _thumbnailsDirectory = Directory(
@@ -4671,6 +4724,7 @@ class AppModel
       // （文件名是 identifier 的 hashCode，v73 改写库内 identifier 后旧文件
       // 不再命中）。pref 门控幂等；清扫不干净（rename 失败）不落标记，下次
       // 启动重试。放在 thumbnails 目录建好、DB 迁移已跑完之后。
+      StartupTimeline.mark('runtime-dirs+palette');
       if (!prefsRepo.containsKey(kOverrideThumbnailPrefixMigratedPrefKey)) {
         final bool clean = await migrateOverrideThumbnailPrefixes(
           db: _database,
@@ -4688,8 +4742,12 @@ class AppModel
       ErrorLogService.instance.markInitStep(
         'rebuild-dict-paths（词典资源目录 exists + 物化探测）',
       );
-      await _guardInitIo('rebuild-dict-paths', _rebuildDictPathsCacheAsync());
+      await _guardInitIo('rebuild-dict-paths', _scheduleDictPathsAsync());
+      // 装载不套看门狗：逐本让出、只是慢不是挂（见 [_scheduleDictPathsAsync]）。
+      ErrorLogService.instance.markInitStep('load-dicts（词典引擎装载）');
+      await FushiDicts.loadPendingAsync();
 
+      StartupTimeline.mark('dict-paths');
       _localAudioManager = LocalAudioManager(
         prefsRepo: prefsRepo,
         databaseDirectory: _databaseDirectory,
@@ -4712,6 +4770,7 @@ class AppModel
       populateEnhancements();
       populateQuickActions();
 
+      StartupTimeline.mark('populate-maps');
       _dictImportManager = DictionaryImportManager(
         dictRepo: dictRepo,
         resourceDirectory: _dictionaryResourceDirectory,
@@ -4727,6 +4786,7 @@ class AppModel
       debugPrint(
         '[Fushi] init: reader settings + enhancements + quick actions + media sources (parallel)',
       );
+      StartupTimeline.mark('language+licenses+local-audio');
       MediaSource.setDatabase(_database);
       final readerSettings = ReaderSettings(_database);
       await readerSettings.loadFromPrefsSnapshot(prefsSnapshot);
@@ -4755,6 +4815,7 @@ class AppModel
       // settings just loaded above to avoid a second prefs read.
       // 三个字体目标互不依赖，并发解析（同名家族由 AppFontLoader 的在途表去重，
       // 只装一次）；串行三条链 = 首帧前三段可见等待。
+      StartupTimeline.mark('reader-settings');
       final Future<List<String>> appFontsF = AppFontLoader.resolveAndLoadAll(
         readerSettings.appUiFonts,
       );
@@ -4789,6 +4850,7 @@ class AppModel
       _gameLookupFontFamilies = await gameFontsF;
       _srsCardFonts = srsCardFonts;
       _srsCardFontFamilies = await srsCardFontsF;
+      StartupTimeline.mark('fonts');
       ReaderFushiSource.readerSettings = readerSettings;
       WorkProfileScope.instance.addListener(_onWorkProfileScopeChanged);
       // 反馈 kEFPY4cuKZ：作品会话只活在主进程内存里——上次进程被杀时发布的会话已经不存在，
@@ -4801,6 +4863,7 @@ class AppModel
 
       // Start polling physical controllers on platforms that need it (desktop);
       // start() is a no-op where the engine already delivers gameButton* keys.
+      StartupTimeline.mark('work-profile');
       gamepadService.start();
 
       await Future.wait(<Future<void>>[
@@ -4827,6 +4890,7 @@ class AppModel
       // permanently dropping the user's custom keys on every launch. Mirrors the
       // profile-switch path (refreshPrefCache: refresh source caches first, then
       // loadShortcutRegistry).
+      StartupTimeline.mark('enhancements+actions+sources');
       await loadShortcutRegistry(
         shortcutRegistry,
         ReaderFushiSource.instance,
@@ -4836,6 +4900,7 @@ class AppModel
       debugPrint(
         '[Fushi] init: search preload (deferred to after first frame)',
       );
+      StartupTimeline.mark('shortcuts');
       unawaited(_warmUpSearchAfterFirstFrame());
       unawaited(_migrateDictionaryRedirectFlags());
       // 曲库歌词搜索的本机语料库：延后打开、清掉已下架「我库里的例句」留下的书 / 视频 /
@@ -4850,7 +4915,11 @@ class AppModel
       // 旧版按「无画面视频」收进视频库的纯音频搬到音乐库（反馈 QAondMh4M5）。按数据
       // 幂等：没有这类行就什么都不做；搬不动的行原样留在视频库，下次启动再试。
       unawaited(_migrateAudioOnlyVideosToMusic());
+      // 启动关键路径上的查询都发完了：这时才读查词历史整表（见
+      // DictionaryRepository.loadFromDb 的 deferHistory）。
+      dictRepo.startDeferredHistoryLoad();
 
+      StartupTimeline.mark('post-init-kicks');
       debugPrint('[Fushi] init: DONE');
       // TODO-1260：启动正常跑完，清掉启动步进面包屑（否则下次启动会误报上次 hang）。
       ErrorLogService.instance.clearInitStep();
@@ -10242,6 +10311,36 @@ class AppModel
   Future<void> setAudiobookAutoTranscribeWithoutText({required bool value}) =>
       prefsRepo.setAudiobookAutoTranscribeWithoutText(value: value);
 
+  bool get audiobookFolderImportTranscribe =>
+      prefsRepo.audiobookFolderImportTranscribe;
+  Future<void> setAudiobookFolderImportTranscribe({required bool value}) =>
+      prefsRepo.setAudiobookFolderImportTranscribe(value: value);
+
+  /// 书架文件夹导入 / 本地书籍来源扫描的转录端口：书配上了有声书音频但没有字幕时，
+  /// 把音频排进转录队列、转完对齐到这本书。本机没有 ASR、总开关或子开关任一关着时
+  /// 为 null（[folderImportTranscribeEnabled]；扫描器把这类书计入「缺字幕」）。
+  /// 来源级条件（本地、非 iOS 书签）由扫描器按来源判断
+  /// （[folderImportSourceCanTranscribe]）。
+  BookAudiobookTranscribePort? get folderImportTranscribePort {
+    if (!folderImportTranscribeEnabled(
+      asrSupported: isAsrSupported,
+      autoTranscribe: prefsRepo.audiobookAutoTranscribe,
+      folderImportTranscribe: prefsRepo.audiobookFolderImportTranscribe,
+    )) {
+      return null;
+    }
+    return ({
+      required String bookKey,
+      required List<String> audioPaths,
+      required String title,
+    }) => enqueueFolderImportTranscription(
+      queue: audiobookTranscribeImportQueue,
+      bookKey: bookKey,
+      audioPaths: audioPaths,
+      title: title,
+    );
+  }
+
   // ── player streams & audio handler (delegated to AudioController) ───
 
   Stream<MediaPlayIntent> get playIntentStream => audioCtrl.playIntentStream;
@@ -11307,6 +11406,12 @@ class AppModel
   Future<void> setAdvancedMiningVisibleFields(List<String> names) =>
       prefsRepo.setAdvancedMiningVisibleFields(names);
 
+  /// 「高级制卡」对话框的分区布局（反馈 aZ99bm9R6K）。
+  AdvancedMiningLayout get advancedMiningLayout =>
+      prefsRepo.advancedMiningLayout;
+  Future<void> setAdvancedMiningLayout(AdvancedMiningLayout layout) =>
+      prefsRepo.setAdvancedMiningLayout(layout);
+
   /// 制卡动图只播放一次（反馈 ZxyIMK-C5V）。
   bool get miningAnimatedPlayOnce => prefsRepo.miningAnimatedPlayOnce;
   Future<void> setMiningAnimatedPlayOnce(bool value) =>
@@ -11334,6 +11439,49 @@ class AppModel
   MiningClipFormat get galMiningClipFormat => prefsRepo.galMiningClipFormat;
   void setGalMiningClipFormat(MiningClipFormat format) =>
       prefsRepo.setGalMiningClipFormat(format);
+
+  // galgame 制卡句子音频长度策略（反馈 II3jOBIhT5，透传 prefsRepo）。
+  GalMiningAudioMode get galMiningAudioMode => prefsRepo.galMiningAudioMode;
+  Future<void> setGalMiningAudioMode(GalMiningAudioMode mode) =>
+      prefsRepo.setGalMiningAudioMode(mode);
+  int get galMiningAudioSeconds => prefsRepo.galMiningAudioSeconds;
+  Future<void> setGalMiningAudioSeconds(int seconds) =>
+      prefsRepo.setGalMiningAudioSeconds(seconds);
+
+  /// 单游戏 gal 制卡设置覆盖层（反馈 3dRZdakRdJ，透传 prefsRepo）。
+  GalGameMiningOverrides galMiningOverrides(String gameId) =>
+      prefsRepo.galMiningOverrides(gameId);
+  Future<void> setGalMiningOverrides(
+    String gameId,
+    GalGameMiningOverrides overrides,
+  ) => prefsRepo.setGalMiningOverrides(gameId, overrides);
+
+  /// 全局 gal 制卡设置（设置页那一组）。
+  GalMiningSettings get galMiningGlobalSettings => GalMiningSettings(
+    imageMode: galMiningImageMode,
+    animatedFormat: galMiningAnimatedFormat,
+    stillFormat: galMiningStillFormat,
+    clipFormat: galMiningClipFormat,
+    audioLimit: GalMiningAudioLimit(
+      mode: galMiningAudioMode,
+      seconds: galMiningAudioSeconds,
+    ),
+  );
+
+  /// 一次 gal 制卡实际生效的设置：全局 + [gameId]（`galgames.id`）的覆盖层。
+  /// gameId 为空（不在库里的游戏 / 纯 WebSocket 文本源）时就是全局设置。
+  ///
+  /// 所有 gal 制卡入口都必须从这里取，传当前会话的
+  /// `GalHookSessionController.activityGameKey`——各自读全局偏好会让「本游戏设置」
+  /// 在漏改的入口上静默失效。
+  GalMiningSettings galMiningSettingsForGame(String? gameId) {
+    final GalMiningSettings global = galMiningGlobalSettings;
+    if (gameId == null || gameId.isEmpty) return global;
+    return GalMiningSettings.resolve(
+      global: global,
+      overrides: galMiningOverrides(gameId),
+    );
+  }
 
   /// 高级制卡句子音频起止微调步长（毫秒，反馈 3_VB7kAeHj），各宿主共用。
   int get advancedMiningAudioNudgeStepMs =>
@@ -11440,6 +11588,19 @@ class AppModel
   int get readingGoalDailyChars => prefsRepo.readingGoalDailyChars;
   Future<void> setReadingGoalDailyChars(int value) =>
       prefsRepo.setReadingGoalDailyChars(value);
+  int get readingGoalWeeklyChars => prefsRepo.readingGoalWeeklyChars;
+  Future<void> setReadingGoalWeeklyChars(int value) =>
+      prefsRepo.setReadingGoalWeeklyChars(value);
+
+  /// 字数目标周期（日 / 周二选一，反馈 CjIr9RGSCe）。
+  StudyGoalPeriod get readingGoalPeriod => prefsRepo.readingGoalPeriod;
+  Future<void> setReadingGoalPeriod(StudyGoalPeriod value) =>
+      prefsRepo.setReadingGoalPeriod(value);
+
+  /// 当前周期下生效的字数目标（0 = 未设）。
+  int get readingGoalActiveChars => prefsRepo.readingGoalActiveChars;
+  Future<void> setReadingGoalActiveChars(int value) =>
+      prefsRepo.setReadingGoalActiveChars(value);
 
   // 桌面小组件「目标」卡的其余每日目标（0 = 关，随 Profile）。
   int get studyGoalDailyMinutes => prefsRepo.studyGoalDailyMinutes;
@@ -12136,6 +12297,10 @@ class AppModel
       imageMode: galMiningImageMode,
       animatedFormat: galMiningAnimatedFormat,
       stillFormat: galMiningStillFormat,
+      // 每张卡现读：全局改了 / 换了游戏，下一张串流卡就跟着走（含本游戏覆盖）。
+      miningSettings: () => galMiningSettingsForGame(
+        GalHookSessionController.instance.activityGameKey,
+      ),
       addTitleTag: () => autoAddBookNameToTags,
     );
   }

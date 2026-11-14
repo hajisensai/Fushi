@@ -23,6 +23,8 @@ import 'package:fushi_engine/sync/manga_sync_package.dart'
         importMangaPackageFile,
         isMangaPackage,
         repackageMangaBook;
+import 'package:fushi_engine/sync/pdf_sync_package.dart'
+    show hasExportablePdfContent, pdfBookFilePath;
 import 'package:fushi_engine/sync/collection_sync_engine.dart';
 import 'package:fushi_engine/sync/tag_sync.dart';
 import 'package:fushi_engine/sync/media_link_sync.dart';
@@ -371,6 +373,10 @@ class SyncRunReport {
   /// 与 [serviceConfigsImported] 同理：没有媒体行变化，但 AppModel 的偏好缓存要刷新。
   int settingsImported = 0;
 
+  /// 本轮本机改过、随本机设置快照发给其它设备的设置项数（BUG-4501）。只进手动同步
+  /// 摘要，不触发本地刷新。
+  int settingsExported = 0;
+
   /// 本机（落地设备）经跨设备中转新收到、待交给 Anki 的卡数。
   int pendingMinesReceived = 0;
 
@@ -500,6 +506,7 @@ class SyncRunReport {
     videoMetadataUpdated += other.videoMetadataUpdated;
     serviceConfigsImported += other.serviceConfigsImported;
     settingsImported += other.settingsImported;
+    settingsExported += other.settingsExported;
     errors.addAll(other.errors);
     for (final SyncAuthFailure f in other.authFailures) {
       _addAuthFailure(f);
@@ -1059,6 +1066,10 @@ class SyncOrchestrator {
         rethrow;
       } on SyncCancelledException {
         rethrow;
+      } on SyncBooksIncompleteError catch (e) {
+        // 云后端这一轮认不出账号：书阶段已照常跑完能判的书，结果照收，只记一条错。
+        bookResults = e.results;
+        report.errors.add('books: ${e.cause}');
       } catch (e) {
         report.errors.add('books: $e');
       }

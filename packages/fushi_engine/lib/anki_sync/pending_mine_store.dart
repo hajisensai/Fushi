@@ -193,6 +193,38 @@ class PendingMineStore {
   /// 直接删行——下一轮中转要靠这一行去清掉远端，否则落地设备照样会把它落进 Anki。
   Future<void> discard(PendingMineRow row) => markDelivered(row);
 
+  /// 用户批量删除待发卡（「全部删除」/「删除失败的卡」，反馈 ML86fiSYBk：几百张
+  /// 失败卡只能逐张删）。逐张的判据与 [discard] 完全相同（远端还有副本的标 `landed`
+  /// 等中转清理，其余出队），只是整批放进**一个**事务：
+  ///
+  /// - 表变更只在提交时发一次，列表页只重读一次，而不是每删一张重读一遍整表；
+  /// - 中途被杀要么全删、要么全没删，不会停在删了一半的状态。
+  ///
+  /// [ids] 是用户确认时看到的那批卡；期间已经不在的跳过。载荷文件在提交后再删
+  /// （「先删行再删文件」，与 [remove] 同序）。返回实际删除的张数。
+  Future<int> discardAll(Iterable<String> ids) async {
+    final List<String> requested = ids.toSet().toList(growable: false);
+    if (requested.isEmpty) return 0;
+    final List<String> dequeued = <String>[];
+    final int discarded = await _db.transaction(() async {
+      int n = 0;
+      for (final String id in requested) {
+        final bool? remote = await _settleDelivered(id);
+        if (remote == null) continue;
+        n++;
+        if (!remote) {
+          await _deleteRow(id);
+          dequeued.add(id);
+        }
+      }
+      return n;
+    });
+    for (final String id in dequeued) {
+      await _deletePayloadFile(id);
+    }
+    return discarded;
+  }
+
   /// 「写载荷文件 → 插行」与 [sweepOrphanPayloads] 共用的进程内锁：清理绝不能看到
   /// 「文件已写、行还没插」的中间态，把刚入队的卡当孤儿删掉。跨实例，所以是静态的。
   static Future<void> _io = Future<void>.value();
@@ -336,32 +368,44 @@ class PendingMineStore {
   /// 来自其他设备的卡另外留一块本地墓碑（[hasLanded]），行删掉之后其它同步通道
   /// 再送来同 id 的副本也不会再落（BUG-2778）。
   Future<void> markDelivered(PendingMineRow row) async {
-    final bool remoteCopy = await _db.transaction(() async {
-      final PendingMineRow? now = await byId(row.id);
-      if (now == null) return false;
-      // 墓碑先于行状态落盘：两步之间被杀，最坏多一块墓碑，不会漏。
-      if (now.originDeviceId != null) await _markLanded(now.id);
-      final bool remote = now.originDeviceId != null || now.uploaded;
-      if (remote) {
-        await (_db.update(
-          _db.pendingMineQueue,
-        )..where(($PendingMineQueueTable t) => t.id.equals(row.id))).write(
-          const PendingMineQueueCompanion(
-            status: Value<String>(PendingMineStatus.landed),
-            lastError: Value<String?>(null),
-          ),
-        );
-      }
-      return remote;
-    });
-    if (!remoteCopy) await remove(row.id);
+    final bool? remoteCopy = await _db.transaction(
+      () => _settleDelivered(row.id),
+    );
+    if (remoteCopy != true) await remove(row.id);
+  }
+
+  /// [markDelivered] / [discardAll] 共用的事务内一步：按库里此刻的行决定这张卡
+  /// 是标 `landed`（远端还有副本，返回 true）还是该出队（返回 false，由调用方删行）。
+  /// 行已不在返回 null。必须在事务里调用。
+  Future<bool?> _settleDelivered(String id) async {
+    final PendingMineRow? now = await byId(id);
+    if (now == null) return null;
+    // 墓碑先于行状态落盘：两步之间被杀，最坏多一块墓碑，不会漏。
+    if (now.originDeviceId != null) await _markLanded(now.id);
+    final bool remote = now.originDeviceId != null || now.uploaded;
+    if (remote) {
+      await _update(
+        id,
+        const PendingMineQueueCompanion(
+          status: Value<String>(PendingMineStatus.landed),
+          lastError: Value<String?>(null),
+        ),
+      );
+    }
+    return remote;
   }
 
   /// 送达（或确认重复）/ 用户删除：先删行，再删载荷。
   Future<void> remove(String id) async {
-    await (_db.delete(
-      _db.pendingMineQueue,
-    )..where(($PendingMineQueueTable t) => t.id.equals(id))).go();
+    await _deleteRow(id);
+    await _deletePayloadFile(id);
+  }
+
+  Future<void> _deleteRow(String id) => (_db.delete(
+    _db.pendingMineQueue,
+  )..where(($PendingMineQueueTable t) => t.id.equals(id))).go();
+
+  Future<void> _deletePayloadFile(String id) async {
     final File file = await _payloadFile(id);
     try {
       if (file.existsSync()) await file.delete();

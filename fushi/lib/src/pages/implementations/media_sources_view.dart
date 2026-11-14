@@ -44,6 +44,8 @@ import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:fushi/src/media/source_library/source_library_removal.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi_engine/media/audiobook/book_audiobook_pairing.dart'
+    show BookAudiobookTranscribePort;
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
@@ -1179,6 +1181,7 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
           path: norm,
           videoGroupingMode: groupingMode,
           bookmark: pick.bookmark,
+          transcribeAudiobook: _bookTranscribePort,
           onScanning: onScanning,
         ),
       );
@@ -1209,11 +1212,48 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
               },
               severity: ToastSeverity.success,
             );
+            _showBookAudiobookSummary(summary);
           }
         }
       }
       onLibraryChanged?.call();
     }
+  }
+
+  /// 书籍来源扫描的转录端口（反馈 z398R0ndAw）：书配上了有声书音频却没有字幕时排
+  /// 转录。只有书籍来源要，其余种类显式 null。
+  BookAudiobookTranscribePort? get _bookTranscribePort =>
+      widget.mediaKind == 'book' ? _appModel.folderImportTranscribePort : null;
+
+  /// 书籍来源扫描的有声书摘要：新挂上几本、排了几本转录、几本有音频没字幕、几本
+  /// 因音频归属不清被跳过。「导入文件夹（仅此一次）」、常驻来源重扫与「添加本地
+  /// 文件夹」（经 [_rescan]）三处共用；全为零时不打扰。
+  void _showBookAudiobookSummary(SourceScanSummary summary) {
+    if (widget.mediaKind != 'book' || !mounted) return;
+    final List<String> lines = <String>[
+      if (summary.attachedAudiobookCount > 0)
+        t.media_source_audiobook_attached(n: summary.attachedAudiobookCount),
+      if (summary.audiobookTranscribeQueuedCount > 0)
+        t.media_source_audiobook_transcribe_queued(
+          n: summary.audiobookTranscribeQueuedCount,
+        ),
+      if (summary.audiobookMissingSubtitleCount > 0)
+        t.media_source_audiobook_missing_subtitle(
+          n: summary.audiobookMissingSubtitleCount,
+        ),
+      if (summary.ambiguousAudiobookBookPaths.isNotEmpty)
+        t.media_source_audiobook_ambiguous(
+          n: summary.ambiguousAudiobookBookPaths.length,
+        ),
+    ];
+    if (lines.isEmpty) return;
+    final bool needsAttention =
+        summary.audiobookMissingSubtitleCount > 0 ||
+        summary.ambiguousAudiobookBookPaths.isNotEmpty;
+    FushiToast.show(
+      msg: lines.join('\n'),
+      severity: needsAttention ? ToastSeverity.warning : ToastSeverity.info,
+    );
   }
 
   /// 选一个要登记成来源（常驻或仅此一次）的本地文件夹。
@@ -1366,6 +1406,7 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     try {
       Future<SourceScanSummary> scan() => SourceLibraryScanner(
         _db,
+        transcribeAudiobook: _bookTranscribePort,
       ).scan(row, restoreDissolvedGroups: restoreDissolvedGroups);
       final VideoSourceScrapeTaskController? controller =
           widget.mediaKind == 'video' ? widget.scrapeTaskController : null;
@@ -1395,6 +1436,8 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
           });
           // 扫描可能新增条目，刷新累计计数（TODO-1036）。
           await _refreshCount(row.id);
+          final SourceScanSummary? done = summary;
+          if (done != null && done.succeeded) _showBookAudiobookSummary(done);
         }
       } finally {
         onLibraryChanged?.call();

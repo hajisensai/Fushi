@@ -310,7 +310,12 @@ class LyricsPlayerCallbacks {
     this.onPositionJump,
     this.onOpenJumpHistory,
     this.onAvSyncPanel,
+    this.onExportSubtitle,
   });
+
+  /// 导出当前字幕（整本单时间轴 SRT；桌面存盘、移动端分享）。null = 不显示该键
+  /// （宿主没有可导出的字幕，例如 TTS 朗读的会话内 cue）。
+  final VoidCallback? onExportSubtitle;
 
   /// 打开音画同步面板（锚定在按钮上；整本偏移，与设置 › 有声书「音画同步」同一个
   /// 偏好）。由页面弹，面板开着期间页面停表。null = 不显示该键。

@@ -46,6 +46,9 @@ class GameStreamSettingsSheet extends StatefulWidget {
 
   static const Key saveKey = ValueKey<String>('game-stream-settings-save');
   static const Key volumeKey = ValueKey<String>('game-stream-settings-volume');
+  static const Key muteHostKey = ValueKey<String>(
+    'game-stream-settings-mute-host',
+  );
 
   @override
   State<GameStreamSettingsSheet> createState() =>
@@ -227,6 +230,14 @@ class _GameStreamSettingsSheetState extends State<GameStreamSettingsSheet> {
         value: _settings.audio,
         onChanged: (bool value) =>
             setState(() => _settings = _settings.copyWith(audio: value)),
+      ),
+      AdaptiveSettingsSwitchRow(
+        key: GameStreamSettingsSheet.muteHostKey,
+        title: t.game_stream_settings_mute_host,
+        subtitle: t.game_stream_settings_mute_host_hint,
+        value: _settings.muteHost,
+        onChanged: (bool value) =>
+            setState(() => _settings = _settings.copyWith(muteHost: value)),
       ),
       if (widget.volumeAvailable?.value ?? false)
         AdaptiveSettingsSliderRow(

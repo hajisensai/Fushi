@@ -27,6 +27,8 @@ import 'package:fushi/src/media/manga/manga_reader_preferences.dart';
 import 'package:fushi/src/media/manga/manga_view_prefs.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_chrome.dart'
     show kMangaChromeBarHeight, MangaChromeAction, MangaReaderTopBar;
+import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
+    show FushiToolbarItem;
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
@@ -606,7 +608,7 @@ void main() {
       findsNothing,
     );
     expect(
-      find.byKey(const ValueKey<String>('manga_ocr_no_engine_badge')),
+      find.byKey(const ValueKey<String>('manga_ocr_no_engine_notice')),
       findsNothing,
     );
     expect(
@@ -619,12 +621,12 @@ void main() {
     );
     await tester.tap(overflow);
     await tester.pumpAndSettle();
-    final Iterable<PopupMenuItem<MangaChromeAction>> menuItems = tester
-        .widgetList<PopupMenuItem<MangaChromeAction>>(
-          find.byType(PopupMenuItem<MangaChromeAction>),
+    final Iterable<PopupMenuItem<FushiToolbarItem>> menuItems = tester
+        .widgetList<PopupMenuItem<FushiToolbarItem>>(
+          find.byType(PopupMenuItem<FushiToolbarItem>),
         );
-    final PopupMenuItem<MangaChromeAction> volumeOcr = menuItems.singleWhere(
-      (PopupMenuItem<MangaChromeAction> item) =>
+    final PopupMenuItem<FushiToolbarItem> volumeOcr = menuItems.singleWhere(
+      (PopupMenuItem<FushiToolbarItem> item) =>
           item.value?.key ==
           const ValueKey<String>('manga_reader_ocr_volume_button'),
     );
@@ -636,7 +638,7 @@ void main() {
     );
     expect(
       menuItems.any(
-        (PopupMenuItem<MangaChromeAction> item) =>
+        (PopupMenuItem<FushiToolbarItem> item) =>
             item.value?.key ==
             const ValueKey<String>('manga_reader_ocr_current_button'),
       ),
@@ -645,7 +647,7 @@ void main() {
     );
     expect(
       menuItems.any(
-        (PopupMenuItem<MangaChromeAction> item) =>
+        (PopupMenuItem<FushiToolbarItem> item) =>
             item.value?.key == const ValueKey<String>('manga_full_ocr_button'),
       ),
       isFalse,
@@ -653,10 +655,10 @@ void main() {
     // Dismiss the overflow through its route, as Escape/back would do. Reader
     // keyboard handling must remain attached after closing this temporary menu.
     Navigator.of(
-      tester.element(find.byType(PopupMenuItem<MangaChromeAction>).first),
+      tester.element(find.byType(PopupMenuItem<FushiToolbarItem>).first),
     ).pop();
     await tester.pumpAndSettle();
-    expect(find.byType(PopupMenuItem<MangaChromeAction>), findsNothing);
+    expect(find.byType(PopupMenuItem<FushiToolbarItem>), findsNothing);
     final Iterable<Focus> keyboardAncestors = tester.widgetList<Focus>(
       find.ancestor(
         of: find.byKey(const ValueKey<String>('manga_dictionary_host')),

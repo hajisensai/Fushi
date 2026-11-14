@@ -42,7 +42,27 @@ class TextToEpub {
   }) async {
     final String content = await readTextWithEncoding(file);
     final String ext = file.path.split('.').last.toLowerCase();
-    final List<String> chapters = _splitIntoChapters(content, ext);
+    return convertText(
+      content: content,
+      title: title,
+      author: author,
+      extension: ext,
+    );
+  }
+
+  /// Converts in-memory [content] (already decoded, e.g. pasted from the
+  /// clipboard) to EPUB bytes. [extension] picks the parser exactly like the
+  /// file path's extension does in [convert] (`txt` = plain text paragraphs).
+  static Uint8List convertText({
+    required String content,
+    required String title,
+    String? author,
+    String extension = 'txt',
+  }) {
+    final List<String> chapters = _splitIntoChapters(
+      content,
+      extension.toLowerCase(),
+    );
 
     final List<String> chapterXhtmls = <String>[
       for (int i = 0; i < chapters.length; i++)

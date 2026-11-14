@@ -254,6 +254,7 @@ void main() {
       expect(apk?.kind, HeavyOffloadKind.build);
       expect(apk!.distArgs, <String>[
         '--build',
+        '--busy-retries=$kHeavyOffloadBusyRetries',
         '--',
         'flutter',
         'build',
@@ -266,7 +267,13 @@ void main() {
           r'.\gradlew.bat',
           ':app:assembleRelease',
         ], checkOnly: true)!.distArgs,
-        <String>['--build', '--', 'gradlew', ':app:assembleRelease'],
+        <String>[
+          '--build',
+          '--busy-retries=$kHeavyOffloadBusyRetries',
+          '--',
+          'gradlew',
+          ':app:assembleRelease',
+        ],
       );
     });
 
@@ -317,6 +324,7 @@ void main() {
     test('the app or paths, fatal-* switches kept, paths before them', () {
       expect(plan(<String>['analyze', '--no-pub'])!.distArgs, <String>[
         '--analyze',
+        '--busy-retries=$kHeavyOffloadBusyRetries',
       ]);
       final HeavyOffload o = plan(<String>[
         'analyze',
@@ -327,6 +335,7 @@ void main() {
       expect(o.kind, HeavyOffloadKind.analyze);
       expect(o.distArgs, <String>[
         '--analyze',
+        '--busy-retries=$kHeavyOffloadBusyRetries',
         'lib/src/x.dart',
         'tool',
         '--no-fatal-infos',

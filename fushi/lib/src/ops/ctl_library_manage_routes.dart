@@ -727,6 +727,7 @@ class _LibraryManageHandlers {
     }
     final AddLocalFolderResult result = await addLocalFolderAsSource(
       db: _db,
+      transcribeAudiobook: _app.folderImportTranscribePort,
       mediaKind: kind.dbValue,
       path: path,
     );

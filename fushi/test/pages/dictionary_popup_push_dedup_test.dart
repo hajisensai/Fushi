@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/base_source_page.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi/src/utils/components/fushi_deferred_loading.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
@@ -179,6 +180,112 @@ void main() {
     });
   });
 
+  group('lookup session (same cached result object re-looked-up)', () {
+    // 本地查词缓存命中时同一个词再查拿回同一个结果实例；宿主在同一帧里走完
+    // 复位 → beginTop → fillResult，WebView 只看到 A→A。新会话必须全量重推（归零滚动），
+    // 不能按「结果身份没变」跳过——否则弹窗带着上一次的滚动位翻出。
+    Widget popupAt(
+      AppModel appModel,
+      GlobalKey<DictionaryPopupWebViewState> key,
+      DictionarySearchResult result,
+      int session,
+    ) => wrapPopup(
+      appModel: appModel,
+      popup: DictionaryPopupWebView(
+        key: key,
+        result: result,
+        lookupSession: session,
+      ),
+    );
+
+    testWidgets(
+      'new session with the identical result re-pushes a full render',
+      (WidgetTester tester) async {
+        final appModel = PushDedupAppModel();
+        final GlobalKey<DictionaryPopupWebViewState> key =
+            GlobalKey<DictionaryPopupWebViewState>();
+        final DictionarySearchResult cached = makeResult('語');
+        await tester.pumpWidget(popupAt(appModel, key, cached, 1));
+        await tester.pump();
+        await tester.pump();
+        expect(harness.pushCount, 1);
+        await harness.firePopupRendered();
+
+        // 同会话重建：不重推（BUG-712 去重保留）。
+        await tester.pumpWidget(popupAt(appModel, key, cached, 1));
+        await tester.pump();
+        expect(harness.pushCount, 1);
+        expect(key.currentState!.refreshCurrentResult(), isFalse);
+
+        // 新会话、同一个结果对象：全量重推，脚本里带归零。
+        await tester.pumpWidget(popupAt(appModel, key, cached, 2));
+        await tester.pump();
+        expect(harness.pushCount, 2);
+        expect(harness.renderPopupCount, 2, reason: '新会话不得被当成 load-more');
+        final String push = harness.scripts.lastWhere(
+          (String s) => s.contains('window.__fushiRenderToken ='),
+        );
+        expect(push, contains('window.__fushiResetPopupScroll();'));
+        // 渲染在途：宿主翻出前的兜底探询返回 true（等新 popupRendered，不按旧渲染翻出）。
+        expect(key.currentState!.refreshCurrentResult(), isTrue);
+        await tester.pump();
+        expect(harness.pushCount, 2, reason: '在途时探询不重推');
+        await harness.firePopupRendered();
+        expect(key.currentState!.refreshCurrentResult(), isFalse);
+      },
+    );
+
+    testWidgets('placeholder in a new session is not pushed; load-more in the '
+        'same session stays incremental', (WidgetTester tester) async {
+      final appModel = PushDedupAppModel();
+      final GlobalKey<DictionaryPopupWebViewState> key =
+          GlobalKey<DictionaryPopupWebViewState>();
+      await tester.pumpWidget(
+        popupAt(appModel, key, kPopupSearchingPlaceholderResult, 1),
+      );
+      await tester.pump();
+      await tester.pump();
+      final int afterInitial = harness.pushCount;
+
+      // 搜索期：占位单例 + 新会话 → 不推送（mixin「搜索期不推」约定）。
+      await tester.pumpWidget(
+        popupAt(appModel, key, kPopupSearchingPlaceholderResult, 2),
+      );
+      await tester.pump();
+      expect(harness.pushCount, afterInitial);
+
+      final DictionarySearchResult first = makeResult('語');
+      await tester.pumpWidget(popupAt(appModel, key, first, 2));
+      await tester.pump();
+      expect(harness.pushCount, afterInitial + 1);
+      final int renders = harness.renderPopupCount;
+
+      // 同会话 load-more（同词、词条变多）：增量，不全量、不归零。
+      final DictionarySearchResult more = DictionarySearchResult(
+        searchTerm: '語',
+        entries: <DictionaryEntry>[
+          ...first.entries,
+          DictionaryEntry(
+            dictionaryName: 'd',
+            word: '語',
+            reading: 'ご',
+            meaning: '"more"',
+          ),
+        ],
+      );
+      await tester.pumpWidget(popupAt(appModel, key, more, 2));
+      await tester.pump();
+      expect(harness.pushCount, afterInitial + 2);
+      expect(harness.renderPopupCount, renders);
+      expect(
+        harness.scripts.lastWhere(
+          (String s) => s.contains('window.__fushiRenderToken ='),
+        ),
+        contains('window.updatePopupIncremental();'),
+      );
+    });
+  });
+
   group('popup WebView lifecycle', () {
     testWidgets('live viewport injection failure still pushes first results', (
       WidgetTester tester,
@@ -327,7 +434,7 @@ void main() {
           '語',
           'window.dictionaryStyles',
           'window.i18nCtx',
-          'window.__fushiResetPopupScroll =',
+          'window.__fushiResetPopupScroll();',
           'window.renderPopup();',
         ]) {
           expect(script, contains(marker));
@@ -514,13 +621,13 @@ void main() {
         String lastPushScript() => harness.scripts.lastWhere(
           (String s) => s.contains('window.lookupEntries'),
         );
-        // 首推：静态段 + in-app 固定块（__fushiResetPopupScroll / i18nCtx）都下发。
+        // 首推：静态段 + in-app 固定块（i18nCtx）都下发。
         expect(
           lastPushScript(),
           contains('window.i18nCtx'),
           reason: '首推必须带 in-app 固定块（新页面无 window.* 状态）',
         );
-        expect(lastPushScript(), contains('window.__fushiResetPopupScroll ='));
+        expect(lastPushScript(), contains('window.__fushiResetPopupScroll();'));
         await harness.firePopupRendered();
 
         final DictionaryPopupWebViewState state = tester
@@ -539,7 +646,8 @@ void main() {
           isNot(contains('window.i18nCtx')),
           reason: '设置未变时固定 i18n 块不得重复注入（并入静态段失效节奏）',
         );
-        expect(secondPush, isNot(contains('window.__fushiResetPopupScroll =')));
+        // 换词的全量推送每次都归零滚动（调用随推送走，定义在 popup.js）。
+        expect(secondPush, contains('window.__fushiResetPopupScroll();'));
         expect(secondPush, contains('window.renderPopup()'));
         await harness.firePopupRendered();
 

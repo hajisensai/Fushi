@@ -21,7 +21,50 @@ const List<String> srsFushiExtDeckKeys = <String>[
   SrsFieldKeys.deckReplayQuestion,
   SrsFieldKeys.deckRwkvQueue,
   SrsFieldKeys.deckNewPlan,
+  SrsFieldKeys.deckReviewOrder,
+  SrsFieldKeys.deckNewMix,
 ];
+
+// Anki 预设的出卡顺序（ankitects/anki proto/anki/deck_config.proto：`new_mix` = 30 是 ReviewMix
+// MIX_WITH_REVIEWS 0 / AFTER_REVIEWS 1 / BEFORE_REVIEWS 2；`review_order` = 33 是 ReviewCardOrder
+// DAY 0 / DAY_THEN_DECK 1 / DECK_THEN_DAY 2 / INTERVALS_ASCENDING 3 / INTERVALS_DESCENDING 4 /
+// EASE_ASCENDING 5 / EASE_DESCENDING 6 / RETRIEVABILITY_ASCENDING 7 / RANDOM 8 / ADDED 9 /
+// REVERSE_ADDED 10 / RETRIEVABILITY_DESCENDING 11 / RELATIVE_OVERDUENESS 12）。开着 FSRS 时 Anki 把
+// EASE_ASCENDING 当「难度从高到低」（rslib storage/card/mod.rs），所以 Fushi 的难度顺序对 5。
+
+/// 导出：Fushi 新卡与复习 → Anki `newMix`。
+int srsAnkiNewMixOf(SrsNewCardMix mix) => switch (mix) {
+  SrsNewCardMix.mixed => 0,
+  SrsNewCardMix.afterReviews => 1,
+  SrsNewCardMix.beforeReviews => 2,
+};
+
+/// 导入：Anki `newMix` → Fushi；不认识的值 = null（不写，走缺省）。
+SrsNewCardMix? srsNewCardMixOfAnki(int? v) => switch (v) {
+  0 => SrsNewCardMix.mixed,
+  1 => SrsNewCardMix.afterReviews,
+  2 => SrsNewCardMix.beforeReviews,
+  _ => null,
+};
+
+/// 导出：Fushi 复习顺序 → Anki `reviewOrder`。
+int srsAnkiReviewOrderOf(SrsReviewCardOrder order) => switch (order) {
+  SrsReviewCardOrder.retrievability => 7,
+  SrsReviewCardOrder.dueDate => 0,
+  SrsReviewCardOrder.difficulty => 5,
+  SrsReviewCardOrder.intervalAscending => 3,
+  SrsReviewCardOrder.random => 8,
+};
+
+/// 导入：Anki `reviewOrder` → Fushi。按牌组 / 添加先后 / 间隔倒序 / 难度从低到高 / R 倒序 / 相对逾期这些 Fushi
+/// 没有的顺序（4、6、9、10、11、12）与 7 一样落缺省（可提取度从低到高）= null（不写）。
+SrsReviewCardOrder? srsReviewCardOrderOfAnki(int? v) => switch (v) {
+  0 || 1 || 2 => SrsReviewCardOrder.dueDate,
+  3 => SrsReviewCardOrder.intervalAscending,
+  5 => SrsReviewCardOrder.difficulty,
+  8 => SrsReviewCardOrder.random,
+  _ => null,
+};
 
 /// 从 Anki 导入时按全名新建的牌组 ID：与 Fushi 里新建牌组同一条规则（[SrsIds.deck]），
 /// 多台设备各自导入同一个包、或一端导入一端手建同名牌组，合并后都是同一个牌组。

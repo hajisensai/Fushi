@@ -211,6 +211,7 @@ class VideoMineQueue {
       source: AnkiMiningSource.video,
       bookTitleTag: meta.bookTitleTag,
       collectionTag: meta.collectionTag,
+      seriesTitle: meta.seriesTitle,
       clipStartMs: row.cueStartMs,
       clipEndMs: row.cueEndMs,
     );
@@ -337,6 +338,7 @@ class VideoMineStagedMeta {
     this.documentTitle,
     this.bookTitleTag,
     this.collectionTag,
+    this.seriesTitle,
     this.coverFile,
     this.audioFile,
     this.synchronizedVideo = false,
@@ -366,6 +368,7 @@ class VideoMineStagedMeta {
       documentTitle: str('documentTitle'),
       bookTitleTag: str('bookTitleTag'),
       collectionTag: str('collectionTag'),
+      seriesTitle: str('seriesTitle'),
       coverFile: str('coverFile'),
       audioFile: str('audioFile'),
       synchronizedVideo: json['synchronizedVideo'] == true,
@@ -387,6 +390,9 @@ class VideoMineStagedMeta {
   /// 「自动添加书名到标签」开时的番名 / 系列名标签（点击时已清洗）。
   final String? bookTitleTag;
   final String? collectionTag;
+
+  /// 出处的上一级（系列原名，[AnkiMiningContext.seriesTitle]）；旧暂存卡没有这个键 = null。
+  final String? seriesTitle;
 
   /// 暂存目录里的媒体文件名（null = 这张卡本来就没有这项媒体）。
   final String? coverFile;
@@ -414,6 +420,7 @@ class VideoMineStagedMeta {
     documentTitle: documentTitle,
     bookTitleTag: bookTitleTag,
     collectionTag: collectionTag,
+    seriesTitle: seriesTitle,
     coverFile: coverFile ?? this.coverFile,
     audioFile: audioFile ?? this.audioFile,
     synchronizedVideo: synchronizedVideo ?? this.synchronizedVideo,
@@ -432,6 +439,7 @@ class VideoMineStagedMeta {
     'documentTitle': documentTitle,
     'bookTitleTag': bookTitleTag,
     'collectionTag': collectionTag,
+    'seriesTitle': seriesTitle,
     'coverFile': coverFile,
     'audioFile': audioFile,
     'synchronizedVideo': synchronizedVideo,

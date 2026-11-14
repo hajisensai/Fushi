@@ -147,7 +147,7 @@ class _InlineStatus extends StatelessWidget {
                   key: const ValueKey<String>(
                     'discovery-inline-status-challenge-browser',
                   ),
-                  icon: Icons.open_in_browser,
+                  icon: FushiIcons.openInNew,
                   tooltip: t.discovery_download_challenge_open_browser,
                   onTap: () => unawaited(
                     openDownloadGatewayChallengeInBrowser(task.challengeUrl!),

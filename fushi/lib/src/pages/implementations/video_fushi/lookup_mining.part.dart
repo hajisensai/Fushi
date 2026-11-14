@@ -73,27 +73,35 @@ extension _VideoLookupMining on _VideoFushiPageState {
       return _miningDraft.length;
     }
     final List<AudioCue> cues = controller.cueStreamOwning(anchor);
-    final int idx = cues.indexOf(anchor);
+    // 反馈 rLCxUJ-2i4：「句」按同时显示的多行合一切（[groupSimultaneousCues]）——ASS 把
+    // 一句拆成几条起止相同的 Dialogue 时，「上 1 句」不能取到同一句的另一行。
+    final List<List<AudioCue>> sentences = groupSimultaneousCues(cues);
+    final int idx = sentences.indexWhere(
+      (List<AudioCue> group) => group.any((AudioCue c) => identical(c, anchor)),
+    );
     if (idx < 0) {
       _miningDraft.setContext();
       return _miningDraft.length;
     }
-    // 与有声书歌词模式同一个切法（cueContextNeighbors）：一条 cue 就是一句。
-    final ({List<AudioCue> prev, List<AudioCue> next}) around =
-        cueContextNeighbors(
-          cues: cues,
+    // 与有声书歌词模式同一个切法（cueContextNeighbors），只是元素是「一句」而非一条 cue。
+    final ({List<List<AudioCue>> prev, List<List<AudioCue>> next}) around =
+        cueContextNeighbors<List<AudioCue>>(
+          cues: sentences,
           anchorIndex: idx,
           prevCount: prevCount,
           nextCount: nextCount,
         );
-    MiningDraftSentence toEntry(AudioCue cue) =>
-        MiningDraftSentence(sentence: cue.text, audioRange: _cueRange(cue));
+    // 同组 cue 起止相同，取组首的时间窗即整句时间窗。
+    MiningDraftSentence toEntry(List<AudioCue> group) => MiningDraftSentence(
+      sentence: joinSimultaneousCueText(group),
+      audioRange: _cueRange(group.first),
+    );
     _miningDraft.setContext(
       prev: <MiningDraftSentence>[
-        for (final AudioCue cue in around.prev) toEntry(cue),
+        for (final List<AudioCue> group in around.prev) toEntry(group),
       ],
       next: <MiningDraftSentence>[
-        for (final AudioCue cue in around.next) toEntry(cue),
+        for (final List<AudioCue> group in around.next) toEntry(group),
       ],
     );
     return _miningDraft.length;
@@ -284,7 +292,12 @@ extension _VideoLookupMining on _VideoFushiPageState {
           ? (controller.positionMs ?? 0)
           : miningClipTimeMs(mergedRange.startMs, clipDelayMs),
       // 多句时 cueSentence 用合并文本与 sentence 一致；草稿空时退回单 cue 文本作 fallback。
-      cueSentence: _miningDraft.isEmpty ? cue?.text : mergedSentence,
+      // 反馈 rLCxUJ-2i4：单句时也取锚点 cue 所在整句（同时显示的多行合一）。
+      cueSentence: _miningDraft.isEmpty
+          ? (cue == null
+                ? null
+                : simultaneousCueText(controller.cueStreamOwning(cue), cue))
+          : mergedSentence,
       sentence: mergedSentence,
     );
   }
@@ -903,6 +916,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
         collectionTag: appModel.autoAddBookNameToTags
             ? BaseAnkiRepository.sanitizeTitleTag(_playlistTitle)
             : null,
+        seriesTitle: _playlistTitle,
         statBookKey: statIdentity.bookKey,
         statTitle: statIdentity.title,
         recordHistory: historySnapshot != null,
@@ -1045,6 +1059,9 @@ extension _VideoLookupMining on _VideoFushiPageState {
         // 合集/系列名标签（同上开关）：播放列表下用系列名 _playlistTitle（col.name，已在内存）
         // 作独立 tag，与剧集名并列；单视频/远端无系列名时为 null 不追加。
         collectionTag: collectionTag,
+        // 出处的上一级（反馈 MCJLSBR5Wg）：SRS 出处按「系列 → 集」两级分组。与 collectionTag 同一个来源
+        // （本地播放列表的合集名 / 远端作品名），但不看标签开关、不清洗。单视频为 null，出处只有集这一级。
+        seriesTitle: _playlistTitle,
         updateNoteId: updateNoteId,
         stillFallback: () => currentFrameSnapshot,
         // 高级制卡「不要音频 / 不要图片」（只对这一张卡）：引擎跳过对应抽取，两者都

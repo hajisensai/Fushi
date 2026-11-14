@@ -299,9 +299,9 @@ void main() {
       );
       await _pumpUntil(tester, cards);
       expect(cards, findsNWidgets(2));
-      // 有字段冲突时才画「全部确认」（#IBjxAjty39：没有可确认的就不画）。
+      // 有字段冲突时顶栏有「批量处理」（#IBjxAjty39）。
       expect(
-        find.byKey(const ValueKey<String>('srs_conflicts_confirm_all')),
+        find.byKey(const ValueKey<String>('srs_conflicts_bulk')),
         findsOneWidget,
       );
       final Finder first = cards.first;

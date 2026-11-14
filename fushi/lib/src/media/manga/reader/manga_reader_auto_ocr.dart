@@ -8,9 +8,6 @@
 /// 闸门（文案同意的正是「识别本漫画会上传尚无 OCR 文本的页面」）。
 library;
 
-import 'package:fushi/src/media/manga/download/manga_download_auto_ocr.dart'
-    show MangaOcrEventsBuilder;
-import 'package:fushi/src/media/manga/manga_ocr_background_job.dart';
 import 'package:fushi/src/media/manga/manga_ocr_engine_probe.dart';
 import 'package:fushi/src/media/manga/manga_ocr_job_stream.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart' show MangaOcrPageFocus;
@@ -134,13 +131,10 @@ Future<MangaReaderVolumeOcrOutcome> startMangaReaderVolumeOcr({
   );
   return MangaReaderVolumeOcrQueued(
     registry.enqueue(
-      job: MangaOcrBackgroundJob(
+      job: mangaOcrBackgroundJob(
         bookKey: bookKey,
-        managedDirectory: imageDirPath,
-        engine: engine,
-        events: buildEvents(spec),
-        focus: focus,
-        follower: mangaOcrJobFollower(spec),
+        spec: spec,
+        buildEvents: buildEvents,
       ),
       mangaJsonPath: mangaJsonPath,
     ),
