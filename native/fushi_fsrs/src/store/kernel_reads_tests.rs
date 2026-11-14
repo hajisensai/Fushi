@@ -1,4 +1,4 @@
-//! 内核只读命令（[SrsCore::read_visible] 一族：`study`、`stats_bundle`、浏览、AnkiConnect……）之间的并发。
+//! 内核只读命令（[SrsCore::read_visible] 一族：`study`、统计原料、浏览、AnkiConnect……）之间的并发。
 
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
@@ -19,7 +19,7 @@ pub(super) fn open(name: &str) -> SrsCore {
     core
 }
 
-/// 真实库上量「一条全库 `stats_bundle` 在跑时，交互道的 `study` 要等多久」（手动跑，只在库副本上）：
+/// 真实库上量「一次全库统计原料读取（`stats_report` 缓存未命中时那一段）在跑时，交互道的 `study` 要等多久」（手动跑，只在库副本上）：
 /// `FUSHI_SRS_REAL_DB=<srs.db 副本> cargo test --release --lib kernel_reads_tests::real_db_study_during_stats_bundle -- --ignored --nocapture`
 #[test]
 #[ignore]
@@ -46,8 +46,7 @@ fn real_db_study_during_stats_bundle() {
     let req = json!({"now": now, "utcOff": 0, "rollover": 4, "pick": true});
     let bundle = |core: &SrsCore| -> Duration {
         let t = Instant::now();
-        let mut files = Vec::new();
-        core.read_visible(|c| super::bulk::stats_bundle(c, &profile, &mut files))
+        core.read_visible(|c| super::stats::Snapshot::load(c, &profile))
             .unwrap();
         t.elapsed()
     };
@@ -81,10 +80,9 @@ fn real_db_study_during_stats_bundle() {
         let p2 = profile.clone();
         let h = std::thread::spawn(move || {
             let t = Instant::now();
-            let mut files = Vec::new();
             c2.read_visible(|c| {
                 tx.send(()).unwrap();
-                super::bulk::stats_bundle(c, &p2, &mut files)
+                super::stats::Snapshot::load(c, &p2)
             })
             .unwrap();
             t.elapsed()

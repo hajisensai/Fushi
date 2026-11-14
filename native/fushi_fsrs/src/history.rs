@@ -762,10 +762,10 @@ pub fn state_from_stored(stored: &[StoredLog<'_>]) -> Result<State, String> {
     state_of(sel, logs, results)
 }
 
-/// 「成熟」的间隔下限（Dart `kSrsMatureIntervalDays`）。
+/// 「成熟」的间隔下限（统计页的「成熟」口径，stats.rs 同用）。
 pub const MATURE_INTERVAL_DAYS: i64 = 21;
 
-/// 有效复习投影的一行（`srs_stat_reviews`；Dart `SrsStatProjection`）。与日界无关：日序号、小时、
+/// 有效复习投影的一行（`srs_stat_reviews`；统计聚合在 store/stats.rs）。与日界无关：日序号、小时、
 /// 提前复习由读方按自己的日界从 [occurred_at] / [utc_off] / [prev_due_day] 算。
 #[derive(Debug, Clone, PartialEq)]
 pub struct StatRow {

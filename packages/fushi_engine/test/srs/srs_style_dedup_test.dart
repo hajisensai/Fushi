@@ -9,6 +9,7 @@ import 'package:fushi_engine/srs/apkg/srs_anki_package.dart';
 import 'package:fushi_engine/srs/apkg/srs_apkg_export.dart';
 import 'package:fushi_engine/srs/apkg/srs_apkg_import.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
+import 'package:fushi_engine/srs/srs_database_executor.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_media_sync.dart';
 import 'package:fushi_engine/srs/srs_style_store.dart';
@@ -346,11 +347,22 @@ void main() {
 
     final SrsDbStore s = await open(db, 'dev', styleDir: 'media');
     int batches = 0;
+    SrsInlineExecutor.debugStatements = 0;
+    final int core0 = s.debugCoreCommands;
     final int first = await s.compactStoredStyles(
       batchSize: 4,
       shouldStop: () => batches++ >= 1,
     );
     expect(first, 4);
+    // 一批的往返（收掉 Dart 写路径第 5 步）：改动前 BEGIN + 选行 + 每行一条 UPDATE + 本机状态 upsert + COMMIT（4 行
+    // 共 8 条语句）+ 内核 `refresh_caches` 1 条；改动后只剩选行 1 条语句 + 内核 `edits_rewrite_repr` 1 条。
+    expect(
+      (
+        statements: SrsInlineExecutor.debugStatements,
+        core: s.debugCoreCommands - core0,
+      ),
+      (statements: 1, core: 1),
+    );
     expect(await rawStyleRows(db), 10);
     // 断点记在本机状态里：换一个实例（相当于重启）接着跑。
     final SrsDbStore resumed = await open(db, 'dev', styleDir: 'media');
