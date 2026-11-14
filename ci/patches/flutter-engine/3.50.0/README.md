@@ -1,4 +1,4 @@
-# Flutter 3.47.6 Windows 引擎补丁：合成器内 HDR 输出、无障碍树加固
+# Flutter 3.50.0 Windows 引擎补丁：合成器内 HDR 输出、无障碍树加固
 
 让 HDR 视频画在 Flutter **自己的**交换链里（R16G16B16A16_FLOAT + scRGB），
 不再需要把 libmpv 的 gpu-next 画进主窗后面的独立宿主窗（该宿主窗已于 2026-10-18 删除）。只改 Windows 嵌入层
@@ -8,11 +8,11 @@
 
 | 仓库 | 提交 |
 |---|---|
-| flutter/flutter（tag 3.47.6） | `5fc346839b5d0eef006ed8404392afb4dfae428d` |
-| 引擎版本（`bin/internal/engine.version`） | `692136cb6582dbfc5af3fb33c2515a069f2f66d0` |
-| ANGLE（`engine/src/flutter/third_party/angle`，DEPS 拉取） | `84027aca9b71c9ba335bd000dad1107b8810a511` |
+| flutter/flutter（tag 3.50.0） | `ab2912035e160d9cad6306df307576da6128ebdb` |
+| 引擎版本（`bin/internal/engine.version`） | `371f77202a73e8dff57a8b3bff75bca55c090aee` |
+| ANGLE（`engine/src/flutter/third_party/angle`，DEPS 拉取） | `a8d74ca3e5e9e4ffa241330ceedcbe302443e472` |
 
-升级 Flutter 时全部补丁都要重新对齐基线（3.44.0 → 3.47.6 的移植记录见文末）；`tool/engine_overlay.ps1` 会拒绝把
+升级 Flutter 时全部补丁都要重新对齐基线（3.44.0 → 3.47.6、3.47.6 → 3.50.0 的移植记录见文末）；`tool/engine_overlay.ps1` 会拒绝把
 引擎版本不符的产物装进 SDK。
 
 ## 补丁（按顺序 `git apply`）
@@ -140,7 +140,8 @@ DXBC——每次启动全量重编，Release 实测主线程阻塞约 1 秒（58
 - 新导出 `FlutterDesktopSetProgramBinaryCacheDirectory(const wchar_t*)`：进程级，必须在建第一个引擎
   之前调。runner 用 `GetProcAddress` 解析，原版引擎没有它就照常每次编译。
 
-缓存 key 与失效（ANGLE `84027ac` 源码）：
+缓存 key 与失效（ANGLE `84027ac` 源码，行号按该版本；3.50.0 的 `a8d74ca` 上复核过：`ComputeHash` 仍含
+`GetANGLESHVersion()` 与 `GL_RENDERER` 字符串，`Display` terminate 仍清掉 blob cache 回调）：
 
 - key 是 `MemoryProgramCache::ComputeHash`（`src/libANGLE/MemoryProgramCache.cpp:69-113`）：各 shader 的
   `writeShaderKey`（源码 + 编译选项）、`ANGLE_PROGRAM_VERSION`、`GetANGLESHVersion()`、上下文 ES 版本、
@@ -225,7 +226,7 @@ sRGB 合成，>1.0 全被钳掉（实测：backing store 里 2.57，桌面上 1.
 `<工作目录>\depot_tools`）：
 
 ```powershell
-tool/flutter_engine/build_patched_engine.ps1 -Root D:\fe -PatchVersion hdr-output-4   # 自动取 fushi/.fvmrc 的 Flutter 版本
+tool/flutter_engine/build_patched_engine.ps1 -Root D:\fe350 -PatchVersion hdr-output-1   # 自动取 fushi/.fvmrc 的 Flutter 版本
 # 只重编 / 只打包：-Steps build,stage,pack -Modes release
 # 本机 VS 缺 ATL 时：-AtlDir '<另一套 VS>\VC\Tools\MSVC\<ver>\atlmfc'
 # 机器忙时限并发：-Jobs 8（每个 clang-cl 最多吃约 1 GB）
@@ -240,27 +241,29 @@ pack（连同 pdb 打 zip——`flutter build windows` 要求缓存里有 `flutt
 缺了 assemble 直接失败；打印 `artifacts.json` 片段：填上发布地址后放进本目录）。
 
 安装：`tool/engine_overlay.ps1 -ArtifactDir <stage 目录>` 或
-`-Manifest ci/patches/flutter-engine/3.47.6/artifacts.json`（下载 + SHA-256 校验），
+`-Manifest ci/patches/flutter-engine/3.50.0/artifacts.json`（下载 + SHA-256 校验），
 原文件备份到 `.stock-backup`，`-Restore` 还原。CI 走
 `.github/actions/flutter-engine-overlay`，`artifacts.json` 不存在时用原版引擎构建（app
 运行期只能 SDR 输出，并打 warning）。
 
 ## 当前产物
 
-`artifacts.json` → release `flutter-engine-3.47.6-hdr-output-4`（prerelease、非 Latest；
-2026-11-12 编，含上面全部七份引擎补丁与 ANGLE 补丁；三种模式 + 匹配的 pdb——`flutter build windows`
-缺 pdb 会在 assemble 失败；tag 不以数字 / `v`+数字开头，app 更新检查与发布 workflow 都不会把它当
-app 版本）。相对 `hdr-output-3` 新带上 `engine-a11y-tree-hardening`（2026-11-10 加入）、
-`engine-program-binary-cache`、`engine-resize-before-first-frame`（2026-11-12 加入）三份。
+3.50.0 的第一份补丁引擎是 `hdr-output-1`（2026-11-13 本机编，含上面全部七份引擎补丁与 ANGLE 补丁；
+三种模式 + 匹配的 pdb，`flutter-engine-windows-3.50.0-hdr-output-1.zip`，SHA-256
+`079bb3a75fc07217b52a6b3f3842dd69cce021c27aea6e6387334430ae750a0b`）。**尚未发 release**：本目录的
+`artifacts.json` 仍是从 3.47.6 搬过来的 `flutter-engine-3.47.6-hdr-output-4`（引擎版本
+`692136cb…`），`tool/engine_overlay.ps1` 会因引擎版本不符拒装到 3.50.0 SDK；发布 release
+`flutter-engine-3.50.0-hdr-output-1`（prerelease、非 Latest；tag 不以数字 / `v`+数字开头）后把 url 与 sha256
+写进 `artifacts.json`，CI 才会用上补丁引擎。
 
 改补丁后重编要换一个新的 `patchVersion` 发新 release，再改本目录的 `artifacts.json`；在那之前出的包
-仍是旧引擎。旧 release 留着给旧提交复现用（`hdr-output-3` 是前四份补丁；`hdr-output-2` 是前三份、
-无 keyed mutex；`hdr-output-1` 只有 Skia 路径的 HDR、不含 underlay；3.44.0 时代的是
+仍是旧引擎。旧 release 留着给旧提交复现用（3.47.6 时代：`flutter-engine-3.47.6-hdr-output-4` 是全部七份，
+`-3` 是前四份补丁，`-2` 是前三份、无 keyed mutex，`-1` 只有 Skia 路径的 HDR、不含 underlay；3.44.0 时代的是
 `flutter-engine-3.44.0-hdr-output-2`）。
 
 注意：在**已经打过补丁**的源码树上重跑 `patch` 步骤会失败——`Invoke-Patch` 用「能否反向应用」判断
 已打过，但前几份补丁的改动被后几份覆盖后不能单独反向应用。增量重编时只打新补丁
-（`git -C <Root>lutter apply <新补丁>`），再跑 `-Steps build,stage,pack`。
+（`git -C <Root>\flutter apply <新补丁>`），再跑 `-Steps build,stage,pack`。
 
 ## 3.44.0 → 3.47.6 移植记录
 
@@ -275,6 +278,40 @@ app 版本）。相对 `hdr-output-3` 新带上 `engine-a11y-tree-hardening`（2
 - **Windows 默认渲染器变成 Impeller**（3.44 要显式 `--enable-impeller=true` 才开）：当时补丁只有
   Skia 路径，runner 曾显式钉 Skia；2026-10-24 起 `engine-impeller-hdr.patch` 把 HDR 接到
   Impeller，runner 改钉 Impeller（见上文「补丁」）。
+
+## 3.47.6 → 3.50.0 移植记录
+
+做法：两版各取补丁涉及的文件，在 3.50.0 上按序重放七份引擎补丁，逐份解冲突；没有哪份补丁的功能被上游原生
+实现，八份补丁都保留、无删减（上游相关改动都是相邻代码，不覆盖补丁行为）。
+
+- **上游开始翻转默认帧缓冲（flutter/flutter#193133）**：Impeller 下 `egl::Manager` 不再请求
+  `EGL_EXPERIMENTAL_PRESENT_PATH_FAST_ANGLE`，改用 `EGL_SURFACE_ORIENTATION_INVERT_Y_ANGLE` 建窗口 surface，
+  并对引擎传 `--impeller-top-left-default-framebuffer-origin`，backing store 改按自上而下存放。这个开关是
+  **整个引擎一次性**的，所以补丁里的 HDR（scRGB 半浮点）与 underlay（DirectComposition）窗口 surface 也必须
+  带同样的朝向属性，否则这两种 surface 是左下原点、内容却是自上而下，画面上下颠倒。`CreateWindowSurfaceWithConfig`
+  改成一份属性表：先放尺寸与朝向，再按需追加 scRGB 色彩空间或 `EGL_DIRECT_COMPOSITION_ANGLE`。
+  - HDR Present 的 scRGB shader pass 仍是 1:1 映射（backing store 与窗口 surface 朝向一致，与 blit 同理），不用改。
+  - ANGLE 侧（`SwapChain11` 的 `NeedsOffscreenTexture`）：INVERT_Y 与 present path fast 一样直接画进交换链
+    back buffer、不走离屏纹理，`angle-scrgb-swapchain.patch` 的 flip 模型交换链与 DComp 交换链创建路径不受影响；
+    `validationEGL` 允许朝向属性与 `EGL_GL_COLORSPACE` / `EGL_DIRECT_COMPOSITION_ANGLE` 并用。
+  - Skia 路径不翻转（上游只对 Impeller 开），行为与 3.47.6 相同。
+- **上游先建 OpenGL ES 3 上下文（#191516）**：`InitializeContexts` 合并成「每种上下文配置都先试 ES 3 再退 ES 2」，
+  HDR 的 no-config 上下文建不出来时仍整体退回绑定配置的上下文（HDR 报不可用）。ES 3 上下文下
+  `half_float_sized_format_` 为真，半浮点 backing store 走 `GL_RGBA16F`；ES 2 的 `GL_HALF_FLOAT_OES` 分支保留给回退。
+- **GLES2 下 backing store 用 unsized 格式（#192917）**：8-bit 分支改用上游新增的 `format_.internal_format`；
+  半浮点分支不变（本来就按 ES 版本区分）。上游 `Initialize()` 新声明了 `description`，补丁里的同名局部变量删掉、复用之。
+- `egl::Manager`：上游新增整词匹配的 `HasExtension`，HDR 配置探测与 `EGL_ANDROID_blob_cache` 探测都改用它
+  （原来是子串 `find`），`<string>` 换成 `<string_view>`。
+- 新增上游单测（#194114 的 `egl/manager_unittests.cc`、`compositor_opengl_angle_unittests.cc`）与补丁的
+  `egl/program_binary_cache_unittests.cc` 并列进 `flutter_windows_unittests`。
+- `FlutterWindowsEngine::CreateView` 多了 `allow_implicit_view` 参数：`engine-resize-before-first-frame` 新增的
+  两个单测按上游其它测试补 `/*allow_implicit_view=*/true`。
+- `impeller/renderer/render_target.h`：上游给 `RenderTargetAllocator` 加了 `Clear()`，与补丁的默认颜色格式覆盖并存。
+- `#190256`（无隐式 MSAA 时离屏 MSAA）3.47.6 已含，补丁的三分支分配沿用。
+- ANGLE `84027ac` → `a8d74ca`：上游把 `NativeWindow11Win32` 改成 `angle::ComPtr`（`createSwapChain` 出参变成
+  `ComPtr<IDXGISwapChain>*`），`createScrgbSwapChain` 随之改写；上游删掉了 `supportsDXGI1_2`（默认 DXGI 1.2），
+  Win32 构建无条件声明 `EGL_EXT_gl_colorspace_scrgb_linear`——缺 DXGI 1.4 / 色彩空间不可呈现时照旧让
+  surface 创建失败，不静默降级。上游 D3D11 后端仍不声明 scRGB 扩展，补丁仍需要。
 
 ## 运行时契约
 

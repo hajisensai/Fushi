@@ -72,7 +72,7 @@
 
 | 要做的事 | 看这里 |
 |---|---|
-| 子系统文件位置、当前技术事实（Flutter 3.47.6、schema、五平台、依赖） | [repo-map.md](docs/agent/repo-map.md) |
+| 子系统文件位置、当前技术事实（Flutter 3.50.0、schema、五平台、依赖） | [repo-map.md](docs/agent/repo-map.md) |
 | 命名术语表 | [naming.md](docs/agent/naming.md) |
 | 难度分级、子代理分工、并行时间线、并发伪红判别、合并后必跑守卫 | [fast-workflow.md](docs/agent/fast-workflow.md) |
 | 构建 / Melos / bootstrap / 发布通道与版本号 / galgame helper 随包 | [build.md](docs/agent/build.md) |

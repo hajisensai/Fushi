@@ -6,7 +6,7 @@
 
 ![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Windows%20%7C%20macOS%20%7C%20iOS%20%7C%20Linux-lightgrey)
 ![License](https://img.shields.io/badge/license-GPLv3-blue)
-![Flutter](https://img.shields.io/badge/Flutter-3.47.6-02569B?logo=flutter&logoColor=white)
+![Flutter](https://img.shields.io/badge/Flutter-3.50.0-02569B?logo=flutter&logoColor=white)
 
 [简体中文](../../README.zh-CN.md) | [English](../../README.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Español](README.es.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md) | [Tiếng Việt](README.vi.md) | [ภาษาไทย](README.th.md) | [Bahasa Indonesia](README.id.md) | [Italiano](README.it.md) | **Nederlands** | [Türkçe](README.tr.md) | [العربية](README.ar.md)
 
@@ -67,14 +67,14 @@ flutter build ipa --release
 dart build cli
 ```
 
-`tool/bootstrap.sh` / `tool/bootstrap.ps1` bundelen `flutter pub get` en `ci/apply-patches.sh` tot één enkel commando. Dit project is vastgezet op Flutter 3.47.6 (Dart SDK `>=3.8.0 <4.0.0`); eerdere Flutter-versies kunnen het niet bouwen, omdat Material en Cupertino worden gebruikt als de pakketten `material_ui` / `cupertino_ui`. Sommige upstream-afhankelijkheden zijn meegeleverd onder `third_party/` of gepatcht door `ci/apply-patches.sh` — zie [docs/agent/build.md](../agent/build.md) voor details, inclusief de bouwafhankelijkheden voor de Linux-desktop.
+`tool/bootstrap.sh` / `tool/bootstrap.ps1` bundelen `flutter pub get` en `ci/apply-patches.sh` tot één enkel commando. Dit project is vastgezet op Flutter 3.50.0 (Dart SDK `>=3.8.0 <4.0.0`); eerdere Flutter-versies kunnen het niet bouwen, omdat Material en Cupertino worden gebruikt als de pakketten `material_ui` / `cupertino_ui`. Sommige upstream-afhankelijkheden zijn meegeleverd onder `third_party/` of gepatcht door `ci/apply-patches.sh` — zie [docs/agent/build.md](../agent/build.md) voor details, inclusief de bouwafhankelijkheden voor de Linux-desktop.
 
 <details>
 <summary><b>Technologiestack</b></summary>
 
 | Laag | Technologie |
 |---|---|
-| Framework | Flutter 3.47.6 (Dart SDK `>=3.8.0 <4.0.0`), Riverpod |
+| Framework | Flutter 3.50.0 (Dart SDK `>=3.8.0 <4.0.0`), Riverpod |
 | Platforms | Android / Windows / macOS / iOS / Linux, plus een headless server |
 | UI | `material_ui` (Material 3 Expressive) / `cupertino_ui` (Cupertino) |
 | Reader | WebView-paginamotor (afgeleid van de Hoshi Reader-familie) |

@@ -6,7 +6,7 @@
 
 ![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Windows%20%7C%20macOS%20%7C%20iOS%20%7C%20Linux-lightgrey)
 ![License](https://img.shields.io/badge/license-GPLv3-blue)
-![Flutter](https://img.shields.io/badge/Flutter-3.47.6-02569B?logo=flutter&logoColor=white)
+![Flutter](https://img.shields.io/badge/Flutter-3.50.0-02569B?logo=flutter&logoColor=white)
 
 [简体中文](../../README.zh-CN.md) | [English](../../README.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Español](README.es.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md) | [Tiếng Việt](README.vi.md) | **ภาษาไทย** | [Bahasa Indonesia](README.id.md) | [Italiano](README.it.md) | [Nederlands](README.nl.md) | [Türkçe](README.tr.md) | [العربية](README.ar.md)
 
@@ -67,14 +67,14 @@ flutter build ipa --release
 dart build cli
 ```
 
-`tool/bootstrap.sh` / `tool/bootstrap.ps1` รวม `flutter pub get` และ `ci/apply-patches.sh` ไว้ในคำสั่งเดียว โปรเจกต์นี้ล็อกไว้ที่ Flutter 3.47.6 (Dart SDK `>=3.8.0 <4.0.0`) Flutter รุ่นก่อนหน้าจะสร้างไม่ได้ เพราะใช้ Material และ Cupertino ในรูปแพ็กเกจ `material_ui` / `cupertino_ui` ส่วนที่พึ่งพาจาก upstream บางรายการถูก vendored ไว้ใน `third_party/` หรือถูกแพตช์โดย `ci/apply-patches.sh` — ดูรายละเอียดรวมถึงส่วนที่ต้องใช้สร้างเดสก์ท็อป Linux ได้ที่ [docs/agent/build.md](../agent/build.md)
+`tool/bootstrap.sh` / `tool/bootstrap.ps1` รวม `flutter pub get` และ `ci/apply-patches.sh` ไว้ในคำสั่งเดียว โปรเจกต์นี้ล็อกไว้ที่ Flutter 3.50.0 (Dart SDK `>=3.8.0 <4.0.0`) Flutter รุ่นก่อนหน้าจะสร้างไม่ได้ เพราะใช้ Material และ Cupertino ในรูปแพ็กเกจ `material_ui` / `cupertino_ui` ส่วนที่พึ่งพาจาก upstream บางรายการถูก vendored ไว้ใน `third_party/` หรือถูกแพตช์โดย `ci/apply-patches.sh` — ดูรายละเอียดรวมถึงส่วนที่ต้องใช้สร้างเดสก์ท็อป Linux ได้ที่ [docs/agent/build.md](../agent/build.md)
 
 <details>
 <summary><b>เทคโนโลยีที่ใช้</b></summary>
 
 | เลเยอร์ | เทคโนโลยี |
 |---|---|
-| เฟรมเวิร์ก | Flutter 3.47.6 (Dart SDK `>=3.8.0 <4.0.0`), Riverpod |
+| เฟรมเวิร์ก | Flutter 3.50.0 (Dart SDK `>=3.8.0 <4.0.0`), Riverpod |
 | แพลตฟอร์ม | Android / Windows / macOS / iOS / Linux รวมถึงเซิร์ฟเวอร์ headless |
 | UI | `material_ui` (Material 3 Expressive) / `cupertino_ui` (Cupertino) |
 | ตัวอ่าน | เอนจินแบ่งหน้าด้วย WebView (พัฒนาต่อจากตระกูล Hoshi Reader) |

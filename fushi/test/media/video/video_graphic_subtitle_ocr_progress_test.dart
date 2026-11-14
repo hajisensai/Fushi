@@ -462,7 +462,7 @@ void main() {
       final FontLoader icons = FontLoader('MaterialIcons');
       final String root =
           Platform.environment['FLUTTER_ROOT'] ??
-          'D:/flutter_sdk/flutter_3.47.6';
+          'D:/flutter_sdk/flutter_3.50.0';
       latin.addFont(
         Future<ByteData>.value(
           ByteData.sublistView(

@@ -6,7 +6,7 @@
 # on the target machine (Debian 13, Ubuntu 25.04+, Fedora 42+, Arch / SteamOS).
 FROM debian:trixie
 
-ARG FLUTTER_VERSION=3.47.6
+ARG FLUTTER_VERSION=3.50.0
 ARG RUST_P2P=1.95.0
 ARG RUST_ANKI=1.97.1
 ARG RUSTUP_VERSION=1.28.2

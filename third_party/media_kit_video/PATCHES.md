@@ -988,7 +988,7 @@ A keyed mutex needs an engine patch that acquires it on the raster side first
 ### Keyed mutex (2026-11-05)
 
 That engine patch now exists:
-`ci/patches/flutter-engine/3.47.6/engine-d3d-keyed-mutex.patch`. A patched
+`ci/patches/flutter-engine/3.50.0/engine-d3d-keyed-mutex.patch`. A patched
 `flutter_windows.dll` exports `FlutterDesktopGpuSurfaceSupportsKeyedMutex`;
 `ANGLESurfaceManager::EngineSyncsKeyedMutexTextures()` resolves it once with
 `GetProcAddress`. Only when it returns true does `CreateD3DTexture` create the
