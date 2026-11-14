@@ -20,4 +20,5 @@
         luca_.onModuleLoaded(entry.szModule);
         knife_.onModuleLoaded(entry.szModule);
         softpal_.onModuleLoaded(entry.szModule);
+        system4_.onModuleLoaded(entry.szModule);
         nitroplus_.onModuleLoaded(entry.szModule);

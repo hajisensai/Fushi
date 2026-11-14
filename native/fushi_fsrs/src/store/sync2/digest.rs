@@ -10,8 +10,10 @@
 //! - 根 = `blake3(域分隔 || 全部桶值按桶号顺序)`，读 4096 行算完；两台设备根不同时比桶表（`sync2_digest_buckets`
 //!   命令）就知道是哪个桶、哪些 ID 范围不一致。
 //!
-//! 与旧格式不能比：摘要串里版本向量的部分带 `2:` 前缀（`<根>@2:<vv>`）。老版本设备只在 `vv` 部分逐字相同时才比根，
-//! 所以它们不会把新格式误报成「确定性 bug」；新设备也只比两边都是新格式的摘要。
+//! 摘要串是 `<根>@<VV_PREFIX><vv>`：版本向量部分带派生规则版本前缀（[VV_PREFIX]，现为 `5:`；最早的格式不带前缀，
+//! 记作规则 1）。所有版本的设备都只在 `@` 之后逐字相同时才比根，所以派生规则不同（前缀不同）的设备之间永远不比，
+//! 不会把规则差异误报成「确定性 bug」。前缀就是派生规则版本的唯一真相（[DERIVE_RULES]、[derive_rules_of]）：对端的
+//! 规则版本从它 head 里的摘要串解析，不另设字段。
 
 use rusqlite::functions::FunctionFlags;
 use rusqlite::{Connection, params};
@@ -28,7 +30,27 @@ pub const BUCKETS: usize = 4096;
 /// 与旧版本不同（升级时 v26 迁移已按新规则重放，见 store/sync2/mod.rs `replay_event_copies`）；同理换前缀。
 /// `5:`（srs.db v28，BUG-4254）：同一条 Anki revlog 导入到血统里不同卡上的两份算同一事件，重放写回的 `res` 在带这种
 /// 副本的卡上与旧版本不同（v28 迁移按新规则重放，store/sync2/mod.rs `replay_anki_copies`）；同理换前缀。
+///
+/// **改了派生规则（重放写回的 `res`、三张投影表的任何一行会变）就必须换前缀并带迁移**，同时改 [DERIVE_RULES]
+/// （测试 `derive_rules_and_prefix_move_together` 钉住两者同值）。
 pub const VV_PREFIX: &str = "5:";
+
+/// 派生规则版本：[VV_PREFIX] 的数字部分。同步状态页拿它和对端摘要串里的前缀比（[derive_rules_of]），规则不同的对端
+/// 显示「对方规则 vN」，代替不比对时的沉默。
+pub const DERIVE_RULES: u32 = 5;
+
+/// 摘要串（`<根>@<前缀><vv>`）里的派生规则版本：前缀 `N:` → N；`@` 之后没有前缀（最早的格式）→ 1；没有摘要 /
+/// 没有 `@` / 前缀不是数字 → None（不知道，不提示）。
+pub fn derive_rules_of(digest: &str) -> Option<u32> {
+    let (_, vv) = digest.split_once('@')?;
+    if vv.is_empty() {
+        return None;
+    }
+    match vv.split_once(':') {
+        Some((n, _)) => n.parse().ok(),
+        None => Some(1),
+    }
+}
 
 /// 一个桶的值：4 个 u64 分量的回绕加法和（小端存成 32 字节）。
 type Sum = [u64; 4];
@@ -258,6 +280,11 @@ pub fn buckets(c: &Connection, profile: &str) -> Result<Vec<(i64, String, i64)>,
 
 /// 根：全部桶值按桶号顺序（空桶 = 0）接起来 BLAKE3。
 pub fn root(c: &Connection, profile: &str) -> Result<String, String> {
+    Ok(root_of(&sums(c, profile)?))
+}
+
+/// 全部桶值（按桶号，空桶 = 0）。
+fn sums(c: &Connection, profile: &str) -> Result<Vec<Sum>, String> {
     let mut all = vec![[0u64; 4]; BUCKETS];
     let mut stmt = c
         .prepare_cached(
@@ -272,12 +299,60 @@ pub fn root(c: &Connection, profile: &str) -> Result<String, String> {
             *slot = sum_of(&s);
         }
     }
+    Ok(all)
+}
+
+fn root_of(all: &[Sum]) -> String {
     let mut h = blake3::Hasher::new();
     h.update(b"fushi-srs-digest-v2");
-    for s in &all {
+    for s in all {
         h.update(&bytes_of(s));
     }
-    Ok(h.finalize().to_hex().to_string())
+    h.finalize().to_hex().to_string()
+}
+
+/// 分组指纹的格式版本（head `ext.dg.dgv`）。分组方式（[GROUP_BUCKETS]、组指纹的算法）一改就升它：版本不同的两台
+/// 设备不比组指纹（store/sync2/heal.rs），免得在同一前缀下比出假的「不同组」。
+pub const DG_VERSION: u32 = 1;
+/// 每组多少个相邻桶。
+pub const GROUP_BUCKETS: usize = 16;
+/// 组数（[BUCKETS] / [GROUP_BUCKETS] = 256）。
+pub const GROUPS: usize = BUCKETS / GROUP_BUCKETS;
+/// 一组指纹的十六进制长度（blake3 前 8 字节）。
+pub const GROUP_HEX: usize = 16;
+
+/// 各组指纹，按组号接成一串十六进制（[GROUPS] × [GROUP_HEX] 个字符）。
+fn groups_of(all: &[Sum]) -> String {
+    let mut out = String::with_capacity(GROUPS * GROUP_HEX);
+    for g in all.chunks(GROUP_BUCKETS) {
+        let mut h = blake3::Hasher::new();
+        h.update(b"fushi-srs-digest-group-v1");
+        for s in g {
+            h.update(&bytes_of(s));
+        }
+        out.push_str(&h.finalize().to_hex()[..GROUP_HEX]);
+    }
+    out
+}
+
+/// 根与各组指纹（出自同一份桶表读取）。
+pub fn root_and_groups(c: &Connection, profile: &str) -> Result<(String, String), String> {
+    let all = sums(c, profile)?;
+    Ok((root_of(&all), groups_of(&all)))
+}
+
+/// 两串组指纹（[root_and_groups]）里不同的组号。长度不对返回 None。
+pub fn differing_groups(a: &str, b: &str) -> Option<Vec<usize>> {
+    if a.len() != GROUPS * GROUP_HEX || b.len() != a.len() {
+        return None;
+    }
+    Some(
+        (0..GROUPS)
+            .filter(|i| {
+                a[i * GROUP_HEX..(i + 1) * GROUP_HEX] != b[i * GROUP_HEX..(i + 1) * GROUP_HEX]
+            })
+            .collect(),
+    )
 }
 
 /// 全量扫描算同一个根（不读桶表）：测试对拍「增量维护 = 从头算」。

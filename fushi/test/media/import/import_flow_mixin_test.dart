@@ -7,6 +7,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi_engine/epub/epub_parser.dart';
 
 import '../../helpers/source_guard.dart';
 
@@ -220,11 +221,31 @@ void main() {
       );
       expect(
         compactCode(source).contains(
-          compactCode(r"FushiToast.show(msg: '${t.srt_import_error}: $e',"),
+          compactCode(r'FushiToast.show(msg: importFailureMessage(e),'),
         ),
         isTrue,
         reason: 'runImport 的 catch 必须给用户失败提示（toast）',
       );
+    });
+  });
+
+  group('importFailureMessage', () {
+    test('corrupt EPUB archive maps to the re-download hint', () {
+      // 用户下到一半的 EPUB（缺 zip 中央目录）此前 toast 的是 archive 包的英文
+      // 原文「Could not find End of Central Directory Record」。
+      expect(
+        importFailureMessage(
+          const EpubArchiveCorruptException(
+            'Could not find End of Central Directory Record',
+          ),
+        ),
+        t.book_import_epub_corrupt,
+      );
+    });
+
+    test('other failures keep the generic prefix plus the raw cause', () {
+      final StateError error = StateError('boom');
+      expect(importFailureMessage(error), '${t.srt_import_error}: $error');
     });
   });
 }

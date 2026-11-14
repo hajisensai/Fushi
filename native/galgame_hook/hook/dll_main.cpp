@@ -48,6 +48,7 @@
 #include "immediate_text_repeat_filter.h"
 #include "adapters/unity_mono_text.h"
 #include "adapters/unity_mono_lookup_core.h"
+#include "adapters/unity_mono_dialogue_core.h"
 #include "adapters/unity_mono_audio.h"
 #include "adapter.h"
 #include "module_settle.h"
@@ -129,6 +130,7 @@
 #include "adapters/hunex_gge_lookup_core.h"
 #include "adapters/hunex_gge_selected_text.h"
 #include "adapters/leaf_aquaplus_voice_archive.h"
+#include "adapters/leaf_aquaplus_autoprofile.h"
 #include "adapters/smash_fzmedia_shared.h"
 #include "adapters/smash_fzmedia_lookup_core.h"
 #include "adapters/smash_fzmedia_lookup.h"
@@ -416,7 +418,27 @@ void* VtableSlot(void* com_obj, size_t idx) {
 
 // 对函数地址 target 装 MinHook inline hook（去重 + 立即 enable）。多实例共享同一函数地址时只
 // hook 一次。原函数指针写进 *original（trampoline）。返回是否已就绪（含去重命中）。
+// HookFn 的失败原因（诊断用，有界）：create / enable 为 MinHook 的 MH_STATUS；
+// 未调用到该步时为 kHookStepNotRun。
+constexpr int kHookStepNotRun = 1000;
+struct HookFnStatus {
+  int create = kHookStepNotRun;
+  int enable = kHookStepNotRun;
+  bool deduped = false;
+};
+
+bool HookFnEx(void* target, void* detour, void** original,
+              HookFnStatus* status);
+
 bool HookFn(void* target, void* detour, void** original) {
+  return HookFnEx(target, detour, original, nullptr);
+}
+
+bool HookFnEx(void* target, void* detour, void** original,
+              HookFnStatus* status) {
+  HookFnStatus local;
+  HookFnStatus& st = status == nullptr ? local : *status;
+  st = HookFnStatus();
   if (target == nullptr || !g_cs_ready) {
     return false;
   }
@@ -430,11 +452,14 @@ bool HookFn(void* target, void* detour, void** original) {
     }
   }
   if (already) {
+    st.deduped = true;
     ok = true;
   } else {
     const MH_STATUS created = MH_CreateHook(target, detour, original);
+    st.create = static_cast<int>(created);
     if (created == MH_OK || created == MH_ERROR_ALREADY_CREATED) {
       const MH_STATUS enabled = MH_EnableHook(target);
+      st.enable = static_cast<int>(enabled);
       if (enabled == MH_OK || enabled == MH_ERROR_ENABLED) {
         if (g_hooked_count < 64) {
           g_hooked_fns[g_hooked_count++] = target;

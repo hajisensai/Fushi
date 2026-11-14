@@ -28,6 +28,7 @@ import 'package:fushi_engine/sync/deletion_propagation.dart'
     show DeleteDecision, DeleteScope;
 import 'package:fushi/src/media/downloads/download_source_method.dart';
 import 'package:fushi/src/media/downloads/download_task_card.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/media/downloads/download_task_entry.dart';
 import 'package:fushi/src/sync/interconnect_download_manager.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -207,8 +208,9 @@ DownloadTaskEntry interconnectDownloadTaskEntry(
   InterconnectDownloadTask task, {
   Future<void> Function({required bool deleteFiles})? deleteCompletedFiles,
 }) {
+  // 在线视频扩展源与在线音源插件都是第三方来源：同标「扩展源 · 外部来源」。
   final bool fromExtension =
-      task.origin == InterconnectDownloadOrigin.extension;
+      task.origin != InterconnectDownloadOrigin.ownDevice;
   final String sectionTitle = fromExtension
       ? t.download_method_extension
       : t.download_interconnect_section_title;
@@ -224,6 +226,7 @@ DownloadTaskEntry interconnectDownloadTaskEntry(
       InterconnectDownloadKind.video => DownloadTaskKind.video,
       InterconnectDownloadKind.book => DownloadTaskKind.novel,
       InterconnectDownloadKind.audiobook => DownloadTaskKind.audiobook,
+      InterconnectDownloadKind.music => DownloadTaskKind.music,
     },
     status: switch (task.status) {
       InterconnectDownloadStatus.running => DownloadTaskStatus.active,
@@ -280,9 +283,10 @@ DownloadTaskEntry interconnectDownloadTaskEntry(
       leading: FushiIcon(switch (task.kind) {
         InterconnectDownloadKind.video when fromExtension =>
           DownloadTransferMethod.extension.icon,
-        InterconnectDownloadKind.video => Icons.devices_outlined,
-        InterconnectDownloadKind.book => Icons.menu_book_outlined,
-        InterconnectDownloadKind.audiobook => Icons.headphones_outlined,
+        InterconnectDownloadKind.video => FushiIcons.devices,
+        InterconnectDownloadKind.book => FushiIcons.books,
+        InterconnectDownloadKind.audiobook => FushiIcons.audiobook,
+        InterconnectDownloadKind.music => FushiIcons.music,
       }),
       details: _InterconnectTaskDetails(task: task),
     ),

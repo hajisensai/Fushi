@@ -28,9 +28,20 @@ class _FakeLibraryService implements FushiLibraryHostService {
     RemoteVideoInfo(id: 'v1', title: 'Sample', sizeBytes: 8),
   ];
 
+  /// 非 null 时 [resolveVideoFile] 先报到 [resolveEntered] 再等它放行：用来把
+  /// 「释放」卡进 hlsseg 请求反查文件的那段 await 里。
+  Completer<void>? resolveGate;
+  Completer<void>? resolveEntered;
+
   @override
-  Future<File?> resolveVideoFile(String id, {int episodeIndex = 0}) async =>
-      id == 'v1' ? videoFile : null;
+  Future<File?> resolveVideoFile(String id, {int episodeIndex = 0}) async {
+    final Completer<void>? gate = resolveGate;
+    if (gate != null) {
+      resolveEntered?.complete();
+      await gate.future;
+    }
+    return id == 'v1' ? videoFile : null;
+  }
 
   @override
   Future<File?> resolveVideoSubtitle(
@@ -447,6 +458,111 @@ void main() {
         )).statusCode,
         404,
       );
+    });
+  });
+
+  group('stream release（BUG-4461：播放会话结束即释放流票）', () {
+    Future<int> post(String path, {bool withAuth = true}) async {
+      final HttpClientRequest req = await client.postUrl(
+        Uri.parse('$base$path'),
+      );
+      if (withAuth) req.headers.set('authorization', authHeader());
+      final HttpClientResponse res = await req.close();
+      await res.drain<void>();
+      return res.statusCode;
+    }
+
+    Future<int> status(String path) async {
+      final HttpClientResponse res = await get(path, withAuth: false);
+      await res.drain<void>();
+      return res.statusCode;
+    }
+
+    test('释放后在跑的分段回 410，playlist 回 403', () async {
+      await startServer();
+      final Completer<void> entered = Completer<void>();
+      final Completer<Uint8List> hold = Completer<Uint8List>();
+      addTearDown(() {
+        if (!hold.isCompleted) hold.complete(_syntheticSegment());
+      });
+      setTranscodeSegmentRunnerForTesting((List<String> args) {
+        if (!entered.isCompleted) entered.complete();
+        return hold.future;
+      });
+      final Map<String, dynamic> json = await getJson(
+        '/api/library/videos/v1/streamurl?maxWidth=854&maxBitrate=800000',
+      );
+      final Object? ticket = json['ticket'];
+      expect(ticket, isA<String>());
+      expect(ticket as String, isNotEmpty);
+      final String q = Uri.parse(json['url'] as String).query;
+      expect(q, contains('token=${Uri.encodeQueryComponent(ticket)}'));
+
+      final Future<int> segment = status(
+        '/api/library/videos/v1/hlsseg.ts?$q&n=0',
+      );
+      await entered.future;
+      expect(
+        await post(
+          '/api/library/videos/v1/streamrelease'
+          '?ticket=${Uri.encodeQueryComponent(ticket)}',
+        ),
+        204,
+      );
+      expect(await segment, 410);
+      expect(await status('/api/library/videos/v1/hls.m3u8?$q'), 403);
+      expect(pendingTranscodeWorkKeys, 0);
+      expect(liveTranscodeCount, 0);
+    });
+
+    test('释放落在分段反查文件期间：回 410、一次 ffmpeg 都不起', () async {
+      await startServer();
+      final Map<String, dynamic> json = await getJson(
+        '/api/library/videos/v1/streamurl?maxWidth=854&maxBitrate=800000',
+      );
+      final String ticket = json['ticket'] as String;
+      final String q = Uri.parse(json['url'] as String).query;
+      lib
+        ..resolveGate = Completer<void>()
+        ..resolveEntered = Completer<void>();
+      final Future<int> segment = status(
+        '/api/library/videos/v1/hlsseg.ts?$q&n=0',
+      );
+      await lib.resolveEntered!.future;
+      expect(
+        await post(
+          '/api/library/videos/v1/streamrelease'
+          '?ticket=${Uri.encodeQueryComponent(ticket)}',
+        ),
+        204,
+      );
+      lib.resolveGate!.complete();
+      expect(await segment, 410);
+      expect(runnerCalls, isEmpty);
+    });
+
+    test('要 Basic；别的视频 id 下的同名票释放不动原票', () async {
+      await startServer();
+      final Map<String, dynamic> json = await getJson(
+        '/api/library/videos/v1/streamurl?maxWidth=854&maxBitrate=800000',
+      );
+      final String ticket = json['ticket'] as String;
+      final String q = Uri.parse(json['url'] as String).query;
+      final String release =
+          '/streamrelease?ticket=${Uri.encodeQueryComponent(ticket)}';
+      expect(
+        await post('/api/library/videos/v1$release', withAuth: false),
+        401,
+      );
+      expect(await post('/api/library/videos/other$release'), 204);
+      expect(await status('/api/library/videos/v1/hls.m3u8?$q'), 200);
+      // 缺 ticket 是调用方错误；GET 不是释放。
+      expect(await post('/api/library/videos/v1/streamrelease'), 400);
+      expect((await get('/api/library/videos/v1$release')).statusCode, 405);
+      // 幂等：已不存在的票也 204。
+      expect(await post('/api/library/videos/v1$release'), 204);
+      expect(await post('/api/library/videos/v1$release'), 204);
+      expect(await status('/api/library/videos/v1/hls.m3u8?$q'), 403);
     });
   });
 

@@ -1,0 +1,24 @@
+## BUG-4398 · 互联地址写凭据不核对归属：同 URL 配对把 token 写进另一台 host 的整组，明文手输行按 URL 被收编
+- **报告**：2026-11-10（用户：互联审查 V-A2 / C6 / C14）
+- **真实性**：✅ 真 bug。
+  - `fushi/lib/src/sync/interconnect_peer_addresses.dart:473-498`（基准 94317ab6295）`applyIssuedInterconnectToken`：按 URL 找到一行后，这一行已带 hostId=A 而签发方是 B（或 v1 没报 hostId）时，不改标签却把 B 签发的 token 写进 A 的整组（V-A2），A 从此一直 401。调用方 `SyncRepository.setFushiClientTokenForUrl`（`sync_repository.dart:1722`）、设置页 v2 / v1 配对（`interconnect.part.dart:1267`、`:2100`）、链接配对（`interconnect_link_pairing.dart:157`）都不核对归属。
+  - 同文件 `:547-550` `mergeLearnedHostAddresses`：手输行只要 URL 出现在公布集里就被收编进组、换成锚点的 token，不走 `_anchorMayClaimHostId`（`:388-406`）的指纹判据（C6）；明文地址换网后可能是另一台机器，A 的 token 就发给了它。
+  - C14：URL 同时充当行主键、host 身份和凭据查找键，「这一行属于谁」只是可选标签，没有任何写路径检查它。
+- **[x] ① 已修复** — `870cc9c9e0f`：
+  - URL 唯一 / hostId 是归属标签写成文件头不变式；新增纯函数 `interconnectAddressOwnerConflict` 与异常 `InterconnectAddressOwnerConflict`。`applyIssuedInterconnectToken(..., reassignOwner)`：行已归另一台 host 时不带确认就抛、列表不动；用户确认「作为新设备配对」后这一行脱离旧组（清 hostId / token / 展示名 / learned，保留指纹与 enabled），再按「行没有 hostId」的原分支处理，旧组其余行不动。
+  - `mergeLearnedHostAddresses` 收编手输行改为要求 https 且与锚点证书指纹相等；明文手输行永不被收编。
+  - `setFushiClientTokenForUrl` 透传 `reassignOwner`，冲突时异常从写链变换里抛出，全局 token 键也不写。
+  - 设置页 v2（`_runPairingV2`，在 TOFU 闸之后、身份确认之前）与 v1（`_pairLegacyV1`，POST 之前，hostId 取探测到的 ping hostId）都先过 `_ensureAddressOwnerConfirmed`，冲突弹 `confirmInterconnectAddressReassign`，取消即中止；`_onPairSuccess` / v1 兜底捕获并发冲突提示 `sync_pair_address_owner_conflict`。
+  - `pairWithInterconnectLink` 新增 `confirmAddressReassign` 回调：冲突且未确认 → `address_owner_conflict`，不发配对请求；结果带 `reassignedFromHostId`。ctl `/api/admin/peers/pair` 不传回调（终端无法确认）。
+  - 新增 `reconcileDownloadExecutionHostAfterReassign`：「下载执行设备」偏好正指向被改归的 URL 时改写为旧 host 剩余代表地址，旧 host 无剩余则清空（回本机）；三条配对路径改归属后都调用。
+- **[x] ② 已加自动化测试** —
+  - `fushi/test/sync/interconnect_host_token_propagation_test.dart` 组「V-A2 地址归属闸」4 条（冲突抛异常且不改、v1 无 hostId 冲突、确认后只改这一行、冲突判定纯函数）。
+  - `fushi/test/sync/interconnect_peer_addresses_test.dart`：「C6：明文手输行被公布 → 不收编」「C6：https 手输行指纹与锚点不同 / 未钉扎 → 不收编」；原「手输的同一地址被 host 公布 → 归入该组」改为两边带同一指纹（回归保护：同证书的 https 手输行仍收编）。修复前两条 C6 红（Expected: null）；修复后定向 14 个文件 178 条全绿。旧用例「新 token 落到同一台 host 的全部地址」原本不传 hostId，按新契约补上签发方 hostId。
+  - `fushi/test/sync/sync_repository_test.dart` 组「C14 地址归属闸」（真 repository：冲突时行与全局 token 都不动、确认后改归；TOFU 守卫不看 hostId）。
+  - `fushi/test/sync/interconnect_link_pairing_test.dart` 组「地址归属闸」3 条（无回调 / 回调拒绝 → `address_owner_conflict` 且假 client 的 pair 零调用；确认后改归 B、`reassignedFromHostId == 'A'`、A 其余行不变）。
+  - `fushi/test/media/downloads/download_execution_target_test.dart`（新建）3 条。
+- **备注**：
+  - 存量数据不迁移：被 C6 误收编的明文手输行（hostId 标成 A、token 换成 A 的）在持久数据里分不清「真同机归组」与「误收编」，由后续步骤 3（明文地址拿凭据前当场核对 hostId）中和；B 需要用户在 B 上重新配对一次，会弹归属确认框，确认后这一行脱离 A。
+  - 已知遗留：用户若在设置页直接删除这条误收编的行，按「忘记这台 host」的现有语义会删掉 A 的全部地址（确认框会显示要删的条数）。
+  - 被 V-A2 写坏的组：在 A 上重新配对时签发方 hostId 等于行的 hostId，不触发归属闸，按原逻辑全组换新 token 自愈。
+- **提交信息里的旧号**：本条撞号改过两次（4277 → 4387 → 4398，改号提交 `3ab9e64b3cd`、`99ab766caca`），历史不重写，所以改号前写下的提交信息仍是当时的号：上面记的修复提交标题写的是 4277。按号查提交历史用 `git log --grep` 搜 `BUG-` 接 4277（第一次改号之后、第二次之前的提交接 4387）；这两个旧号现在或以后属于别的 bug，与本条无关。此处旧号不带前缀，免得 `bug.dart renumber` / `settle` 替别的 bug 改号时把这里一起改掉。

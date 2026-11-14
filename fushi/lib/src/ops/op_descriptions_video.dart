@@ -7,7 +7,7 @@ import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/ops/op_describe_kit.dart';
 import 'package:fushi/src/ops/op_task_status.dart';
 import 'package:fushi/src/ops/op_descriptions_library.dart'
-    show OpUndoScope, opCustomUndo, opScopedSnapshotUndo, opUndoDisplay;
+    show OpUndoScope, opScopedSnapshotUndo, opUndoDisplay;
 
 /// 视频库、播放器遥控、字幕的操作描述（spec `docs/specs/2026-10-26-ai-operations-agent-design.md` §4）。
 ///
@@ -864,8 +864,10 @@ List<OpDescription> _describeSubtitleOps(
     summary:
         'Generate Japanese or Mandarin subtitles for a video or a whole '
         'collection with on-device ASR, optionally proofread by the LLM '
-        'assigned to subtitle proofreading (sends ASR text, billed by the '
-        'provider). Writes .ja.srt or .zh.srt files. Returns a job id '
+        'assigned to subtitle proofreading (sends ASR text, lines of '
+        'subtitles that come with the video and, when the provider accepts '
+        'images, still frames of the video; billed by the provider). Writes '
+        '.ja.srt or .zh.srt files. Returns a job id '
         '(video.job.get).',
     risk: OpRisk.irreversible,
     longRunning: true,
@@ -894,10 +896,19 @@ List<OpDescription> _describeSubtitleOps(
         'regenerateGlossary',
         description: 'Rebuild the work\'s name glossary first.',
       ),
+      OpParam.boolean(
+        'frames',
+        description:
+            'Send still frames of the video with each proofreading batch '
+            '(default: the "Reference video frames" setting; only when the '
+            'provider accepts images).',
+      ),
       _waitParam,
       OpParam.userGate(
         'consentAi',
-        description: 'User agreed to send ASR text to the AI provider.',
+        description:
+            'User agreed to send ASR text, existing subtitle lines and '
+            'video frames to the AI provider.',
       ),
     ],
   ),

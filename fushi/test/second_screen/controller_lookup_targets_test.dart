@@ -127,6 +127,23 @@ void main() {
   });
 
   group('manga', () {
+    test('cursor offsets follow dehyphenated text and inserted word gaps', () {
+      final String text = mangaControllerBlockText(
+        _block(const <String>['Under-', 'stands', 'the tree']),
+      );
+      expect(text, 'Understands the tree');
+      expect(text[controllerLookupCharStep(text, 7, 1)], 'n');
+      expect(
+        controllerLookupWordStep(
+          text,
+          0,
+          1,
+          tokenize: (String _) => <String>['Understands ', 'the ', 'tree'],
+        ),
+        12,
+      );
+    });
+
     test('blocks with text in reading order; empty blocks are skipped', () {
       final List<MokuroBlock> blocks = <MokuroBlock>[
         _block(const <String>[' ']),

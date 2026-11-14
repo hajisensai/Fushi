@@ -1343,7 +1343,7 @@ AttachedTextSurfaceWindow::UpdateMeasuredText(
     const Epoch &epoch, uint32_t target_pid, HWND target_hwnd,
     const std::wstring &source_text, int64_t text_generation,
     const std::vector<int32_t> &glyph_words, int client_width,
-    int client_height, std::string *error) {
+    int client_height, int client_size_tolerance, std::string *error) {
   const RequestResult accepted =
       AcceptRequest(epoch, target_pid, target_hwnd, true, error);
   if (accepted != RequestResult::kApplied)
@@ -1405,7 +1405,7 @@ AttachedTextSurfaceWindow::UpdateMeasuredText(
   }
   if (!source_text.empty() &&
       !fushi::attached_measured_layout::ClientSizeMatches(
-          client_width, client_height,
+          client_width, client_height, client_size_tolerance,
           surface_geometry_.source_client_screen)) {
     // Never stretch: the DOM snapshot belongs to another client size (window
     // mid-resize or snapshot older than the last resize).
@@ -1414,6 +1414,7 @@ AttachedTextSurfaceWindow::UpdateMeasuredText(
   measured_glyphs_ = std::move(glyphs);
   measured_client_width_ = client_width;
   measured_client_height_ = client_height;
+  measured_client_tolerance_ = client_size_tolerance;
   measured_stale_reason_ = "measured_layout_refresh_required";
   SyncToTarget();
   return RequestResult::kApplied;
@@ -1423,6 +1424,7 @@ void AttachedTextSurfaceWindow::InvalidateMeasuredGlyphs(const char *reason) {
   measured_glyphs_.clear();
   measured_client_width_ = 0;
   measured_client_height_ = 0;
+  measured_client_tolerance_ = 0;
   measured_stale_reason_ =
       reason != nullptr && reason[0] != '\0'
           ? reason
@@ -1435,6 +1437,7 @@ void AttachedTextSurfaceWindow::ResetMeasuredLayout() {
   measured_glyphs_.clear();
   measured_client_width_ = 0;
   measured_client_height_ = 0;
+  measured_client_tolerance_ = 0;
   measured_stale_reason_ = "measured_layout_refresh_required";
 }
 
@@ -2005,6 +2008,7 @@ void AttachedTextSurfaceWindow::SyncToTarget() {
     // and must be refreshed by the caller, never stretched.
     if (!fushi::attached_measured_layout::ClientSizeMatches(
             measured_client_width_, measured_client_height_,
+            measured_client_tolerance_,
             surface_geometry_.source_client_screen)) {
       // A resize invalidates the measurement for good: even if the window
       // returns to the old size, only a fresh DOM measurement is trusted.
@@ -2343,6 +2347,7 @@ bool AttachedTextSurfaceWindow::RebuildMeasuredClusters() {
   // every consumer (hit test, hover fill, lookup rect) reads ClusterBox only.
   if (!fushi::attached_measured_layout::ClientSizeMatches(
           measured_client_width_, measured_client_height_,
+          measured_client_tolerance_,
           surface_geometry_.source_client_screen)) {
     return ClusterFailure("measured_client_size_mismatch");
   }
