@@ -276,6 +276,37 @@ void main() {
     );
     expect(visibleIds(), contains(SettingsDestinationId.reading));
   });
+
+  testWidgets('Media tracking module off: its settings category and the '
+      'Navigation › Home tracking row are gone', (WidgetTester tester) async {
+    await pumpContext(tester);
+    bool homeTrackingRowVisible() {
+      final SettingsDestination navigation = buildSettingsSchema(sctx)
+          .singleWhere(
+            (SettingsDestination d) => d.id == SettingsDestinationId.navigation,
+          );
+      final List<SettingsItem> rows = <SettingsItem>[
+        for (final SettingsSection section in navigation.sections)
+          for (final SettingsItem item in section.items)
+            if (item.id == 'appearance.home_panel.tracking') item,
+      ];
+      expect(rows, hasLength(1), reason: 'the tracking row is missing');
+      return rows.single.isVisible(sctx);
+    }
+
+    appModel.enabled = ModuleId.values.toSet();
+    expect(visibleIds(), contains(SettingsDestinationId.mediaTracking));
+    expect(homeTrackingRowVisible(), isTrue);
+
+    appModel.enabled = ModuleId.values.toSet()..remove(ModuleId.tracking);
+    expect(visibleIds(), isNot(contains(SettingsDestinationId.mediaTracking)));
+    expect(homeTrackingRowVisible(), isFalse);
+
+    // Services no longer gates tracking.
+    appModel.enabled = ModuleId.values.toSet()..remove(ModuleId.services);
+    expect(visibleIds(), contains(SettingsDestinationId.mediaTracking));
+    expect(homeTrackingRowVisible(), isTrue);
+  });
 }
 
 class _ModuleGatingAppModel extends AppModel {

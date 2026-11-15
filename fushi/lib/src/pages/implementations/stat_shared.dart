@@ -4,7 +4,6 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
-import 'package:fushi/src/pages/implementations/activity_feed.dart';
 import 'package:fushi/src/pages/implementations/stat_charts.dart';
 import 'package:fushi/src/pages/implementations/stat_day_reset_hour_dialog.dart';
 import 'package:fushi/src/pages/implementations/stat_hourly_breakdown.dart';
@@ -35,6 +34,9 @@ import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
+
+export 'package:fushi/src/pages/implementations/activity_feed.dart'
+    show formatActivityRelativeTime;
 
 /// 三个域统计页「按媒体」列表共用的一行（用户 2026-09-08「统计全改成游戏那种」：
 /// 原游戏页 `_buildGameRow` 的形态提成共享件）：左域图标 · 标题（+ 合集标签）·
@@ -1237,26 +1239,6 @@ String? statBookCphOf(
     ms += f.ms;
   }
   return formatStatCphOf(chars, ms);
-}
-
-/// 相对时间外显：把 [activityRelativeTime] 的结构化结果套上 i18n 文案
-/// （刚刚 / N 分钟前 / N 小时前 / N 天前）。
-///
-/// [activityRelativeTime] 刻意留在纯数据层不碰 i18n，这里是它唯一的 widget 层
-/// 映射：首页活动时间轴与 Bangumi 同步卡的「上次同步」共用同一口径，不各写一份
-/// switch（否则单位阈值一改就只改到一处）。
-String formatActivityRelativeTime(int timestampMs, DateTime now) {
-  final ActivityRelativeTime rel = activityRelativeTime(timestampMs, now);
-  switch (rel.unit) {
-    case ActivityRelativeUnit.justNow:
-      return t.activity_just_now;
-    case ActivityRelativeUnit.minutesAgo:
-      return t.activity_minutes_ago(n: rel.value);
-    case ActivityRelativeUnit.hoursAgo:
-      return t.activity_hours_ago(n: rel.value);
-    case ActivityRelativeUnit.daysAgo:
-      return t.activity_days_ago(n: rel.value);
-  }
 }
 
 /// 热力图气泡日期标签：`M-dd`；跨年补年份成 `Y-M-dd`。[dateKey] 形如 `2026-07-18`

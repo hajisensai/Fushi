@@ -45,6 +45,12 @@
 - 包着别的可聚焦控件的原生节点（整页 / 整区 key sink）不会成为落点；受管复合控件内部的原生节点由外层登记节点代表。
 - 控制器是唯一引擎：它说「该方向没有目标」就只剩边缘滚动接管，不再跑第二遍框架 `focusInDirection`。
 
+## 整页 key sink 别抢持焦控件的确认键（BUG-4628）
+
+页面外层 `Focus(onKeyEvent: …)` 处在 `WidgetsApp` 应用级 `Shortcuts`（Enter / 手柄 A → `ActivateIntent`）**之下**：按键先到主焦点，再沿祖先链冒泡，整页 handler 比应用级激活先看到键。页面若把 Enter 当自己的快捷键（翻面 / 打开详情）并返回 handled，焦点所在的按钮 / 分段按钮就收不到激活——键盘和手柄用户「按 Enter 没反应」。
+
+规矩：整页 handler 处理确认键前先问 `lib/src/focus/focus_activation.dart` 的 `focusedDescendantClaimsActivation(node, key)`，true 就返回 ignored。判据是「确认键 + 主焦点是本 sink 子树里另一个挂着启用 `ActivateIntent` 的控件」，不按控件类型 / key 写特例。确认键集合 `kFushiActivationKeys` 不含空格：本应用全局中和了裸空格（`global_navigation.dart` 的 `_neutralizeBareSpace`），空格从来不激活控件，页面照常把它当快捷键。已接：SRS 浏览页与其窄屏详情页。
+
 ## WebView 宿主还要一层：键盘桥
 
 焦点抢回来只解决「OS 焦点归 Flutter」的情况。焦点归 WebView2 期间按下的键**只存在于 DOM 里**，必须在内容层截获后交回 Dart——桌面 Windows 上 fork 的 `flutter_inappwebview_windows` 只转鼠标不转键盘。

@@ -65,6 +65,7 @@ import 'package:fushi/src/srs/srs_remote_store_client.dart'
     show
         SrsRemoteBadResponse,
         SrsRemoteDeckSnapshot,
+        SrsRemoteHostCompat,
         SrsRemoteProfileChoiceCancelled;
 import 'package:fushi/src/sync/interconnect_host_client.dart'
     show InterconnectHostError;

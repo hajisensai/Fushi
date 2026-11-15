@@ -50,7 +50,8 @@ build_one() {
   local out="$1" audit="$2"
   shift 2
   echo "==> cargo rustc --release --lib --target $target --crate-type cdylib $* -> $out"
-  cargo rustc --release --lib --target "$target" --crate-type cdylib "$@" -- \n    -C strip=none -C "link-arg=-Wl,-install_name,@rpath/libfushi_fsrs.dylib"
+  cargo rustc --release --lib --target "$target" --crate-type cdylib "$@" -- \
+    -C strip=none -C "link-arg=-Wl,-install_name,@rpath/libfushi_fsrs.dylib"
   local built="target/$target/release/libfushi_fsrs.dylib"
   [[ -f "$built" ]] || { echo "missing $built" >&2; exit 1; }
 

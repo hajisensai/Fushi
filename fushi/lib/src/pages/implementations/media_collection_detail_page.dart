@@ -57,6 +57,7 @@ import 'package:fushi/src/media/video/scraper/episode_rename.dart';
 import 'package:fushi_engine/media/video/scraper/scraper_types.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/video_filename_parser.dart';
+import 'package:fushi/src/media/library_finish_marks.dart';
 import 'package:fushi/src/media/library_progress_reset.dart';
 import 'package:fushi/src/pages/implementations/library_progress_reset_dialog.dart';
 import 'package:fushi/src/pages/implementations/anime_download_dialog.dart';
@@ -3098,10 +3099,16 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         else if (marker != null && e.remoteMirror != null)
           e.remoteMirror!.id,
     ];
+    // No container only in widget tests (see [_downloadsAvailable]): nobody
+    // listens to the marks there.
+    final LibraryFinishTracking tracking =
+        _maybeProviderContainer()?.read(appProvider).libraryFinishTracking ??
+        LibraryFinishTracking.none;
     final WatchedMarkResult result;
     try {
       result = await setVideosWatched(
         db: widget.database,
+        tracking: tracking,
         watched: watched,
         localUids: localUids,
         remoteIds: remoteIds,
@@ -3284,6 +3291,11 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       context,
       title: t.video_watch_progress_clear,
       message: t.library_progress_reset_video_message,
+      // 容器缺席（不挂 ProviderScope 的 widget 测试）按「追踪关」处理：只是少一行
+      // 「追踪站点进度不回退」的说明，与 [_downloadsAvailable] 同一容忍约定。
+      trackingOn:
+          _maybeProviderContainer()?.read(appProvider).isMediaTrackingOn ??
+          false,
       itemTitle: local.title,
     );
     if (records == null || !mounted) return;

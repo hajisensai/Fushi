@@ -100,6 +100,11 @@ fn rule_table_matches_the_frozen_dart_vectors() {
                 id(&c["id"]),
                 "{c}"
             ),
+            "deleted_anki_card" => assert_eq!(
+                rules::deleted_anki_card(&id(&a["defaultDeck"]), int(a, "ankiCardId")),
+                id(&c["id"]),
+                "{c}"
+            ),
             "imported_revlog" => assert_eq!(
                 rules::imported_revlog(&id(&a["card"]), int(a, "ankiRevlogId")),
                 id(&c["id"]),
@@ -156,6 +161,7 @@ fn rule_table_matches_the_frozen_dart_vectors() {
         "deck",
         "deck_alternate",
         "builtin_default_deck",
+        "deleted_anki_card",
         "field",
         "template",
         "field_by_name",
