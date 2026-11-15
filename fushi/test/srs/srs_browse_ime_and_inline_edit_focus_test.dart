@@ -4,6 +4,7 @@
 //
 // 内存库 + 确定性假排程内核；数据库读写一律放 tester.runAsync。
 import 'package:drift/drift.dart' show driftRuntimeOptions;
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -136,6 +137,24 @@ Future<void> _ime(
   await _settle(tester, rounds: 4);
 }
 
+/// 把键盘焦点放到检查器分段按钮的某一段上（焦点驱动，不点按）。
+Future<void> _focusTab(WidgetTester tester, String key) async {
+  final FocusNode tab = Focus.of(
+    tester.element(find.byKey(ValueKey<String>(key))),
+  );
+  tab.requestFocus();
+  await tester.pump();
+  expect(tab.hasPrimaryFocus, isTrue);
+}
+
+final Finder _answer = find.byKey(const ValueKey<String>('srs-face-answer'));
+final Finder _question = find.byKey(
+  const ValueKey<String>('srs-face-question'),
+);
+final Finder _editField = find.byKey(
+  const ValueKey<String>('srs-browse-field-MainDefinition'),
+);
+
 void _expectNativeSearch() => expect(
   FushiFsrs.isAvailable,
   isTrue,
@@ -199,15 +218,10 @@ void main() {
     final String noteId = await _add(tester, store, '食べる', 'to eat');
     await _pump(tester, store: store, size: const Size(1300, 900));
 
-    // 焦点驱动切到「编辑」页签：焦点放到分段按钮的这一段上，对持焦控件发激活意图（浏览页自己的按键处理
-    // 把 Enter / 空格当「翻面」，到不了应用级的激活快捷键）。
-    final FocusNode tab = Focus.of(
-      tester.element(find.byKey(const ValueKey<String>('srs-browse-tab-edit'))),
-    );
-    tab.requestFocus();
-    await tester.pump();
-    expect(tab.hasPrimaryFocus, isTrue);
-    Actions.invoke(tab.context!, const ActivateIntent());
+    // 焦点驱动切到「编辑」页签：焦点放到分段按钮的这一段上，按真 Enter（BUG-4628：以前浏览页的按键处理
+    // 把 Enter 当「翻面」吞掉，到不了应用级的激活快捷键）。
+    await _focusTab(tester, 'srs-browse-tab-edit');
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     await _settle(tester, rounds: 6);
 
     final Finder field = find.descendant(
@@ -250,6 +264,66 @@ void main() {
     expect(identical(tester.state<EditableTextState>(field), before), isTrue);
     expect(before.widget.controller.text, 'to consume food');
     expect(before.widget.focusNode.hasFocus, isTrue);
+    await _unmount(tester);
+  });
+  testWidgets('BUG-4628：宽屏卡面区持焦时 Enter 翻面；焦点在检查器页签上时 Enter 切页签、不翻面', (
+    WidgetTester tester,
+  ) async {
+    final SrsDbStore store = await _openStore(tester);
+    await _add(tester, store, '食べる', 'to eat');
+    await _pump(tester, store: store, size: const Size(1300, 900));
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await _settle(tester, rounds: 4);
+    expect(_question, findsOneWidget);
+
+    // 卡面区（整页 key sink）持焦：Enter 仍是翻面。
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await _settle(tester, rounds: 4);
+    expect(_answer, findsOneWidget);
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await _settle(tester, rounds: 4);
+    expect(_answer, findsNothing);
+
+    // 焦点在「编辑」页签上：Enter 归分段按钮，切到编辑页签。
+    await _focusTab(tester, 'srs-browse-tab-edit');
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await _settle(tester, rounds: 6);
+    expect(_editField, findsOneWidget);
+
+    // 切回「预览」页签同样走 Enter；切回来卡面仍是正面（Enter 没被当成翻面）。
+    await _focusTab(tester, 'srs-browse-tab-preview');
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await _settle(tester, rounds: 6);
+    expect(_editField, findsNothing);
+    expect(_question, findsOneWidget);
+    expect(_answer, findsNothing);
+    await _unmount(tester);
+  });
+
+  testWidgets('BUG-4628：窄屏详情页卡面区持焦时空格 / Enter 翻面；焦点在页签上时 Enter 切页签', (
+    WidgetTester tester,
+  ) async {
+    final SrsDbStore store = await _openStore(tester);
+    await _add(tester, store, '食べる', 'to eat');
+    await _pump(tester, store: store, size: const Size(500, 900));
+    // 列表页：↓ 选中第一行，Enter 打开全屏详情页。
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await _settle(tester, rounds: 4);
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await _settle(tester);
+    expect(_question, findsOneWidget);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.space);
+    await _settle(tester, rounds: 4);
+    expect(_answer, findsOneWidget);
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await _settle(tester, rounds: 4);
+    expect(_answer, findsNothing);
+
+    await _focusTab(tester, 'srs-browse-tab-edit');
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await _settle(tester, rounds: 6);
+    expect(_editField, findsOneWidget);
     await _unmount(tester);
   });
 }

@@ -234,6 +234,8 @@ class SrsRwkvRecordingStore implements SrsDbStore {
   @override
   String get contentFingerprint => _inner.contentFingerprint;
   @override
+  String get landedFingerprint => _inner.landedFingerprint;
+  @override
   Future<String> changeFingerprint() async {
     await _delay();
     return _inner.changeFingerprint();

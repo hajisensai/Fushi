@@ -151,7 +151,7 @@ SettingsDestination _buildLookupPopupDestination() {
   return SettingsDestination(
     id: SettingsDestinationId.lookup,
     title: t.settings_lookup_popup_title,
-    icon: Icons.picture_in_picture_alt_outlined,
+    icon: FushiIcons.pictureInPicture,
     sections: <SettingsSection>[
       SettingsSection(
         id: 'lookup.section.popup_size',
@@ -1140,7 +1140,7 @@ SettingsDestination buildLookupDestination() {
             id: 'lookup.popup.open',
             title: t.settings_lookup_popup_title,
             subtitle: t.settings_lookup_popup_summary,
-            icon: Icons.picture_in_picture_alt_outlined,
+            icon: FushiIcons.pictureInPicture,
             child: _buildLookupPopupDestination,
           ),
         ],
