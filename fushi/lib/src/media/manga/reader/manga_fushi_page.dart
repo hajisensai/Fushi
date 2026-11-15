@@ -118,6 +118,7 @@ import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart'
         fushiTitleBarColorsOn;
 import 'package:fushi/src/media/manga/reader/manga_reader_settings_sheet.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_page_grid.dart';
+import 'package:fushi/src/media/manga/reader/manga_page_fit.dart';
 import 'package:fushi/src/media/manga/reader/manga_page_thumbnail_prefetcher.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_quick_settings_sheet.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_study_stats.dart';
@@ -1533,6 +1534,10 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// 不能解开新窗口的锁（BUG-1170），页面销毁时在飞加载被显式放弃（BUG-1171）。
   final MangaWindowLoadGate _windowGate = MangaWindowLoadGate();
 
+  /// 本地页图按显示尺寸降采样（BUG-4658，见 [MangaPageFitter]）：页面 JS 在页图 URL
+  /// 上挂 `fit=<像素宽>`，拦截器经它交出同宽高比的显示尺寸 JPEG。
+  final MangaPageFitter _pageFitter = MangaPageFitter();
+
   /// renderer 死亡处置（救命动作 = 下面 [InAppWebView.onRenderProcessGone] 传了
   /// 非 null 回调，否则 Android 会连坐杀掉整个 app）。
   ///
@@ -1984,6 +1989,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
 
   @override
   void dispose() {
+    _pageFitter.dispose();
     _menuDismiss.detach();
     _readAloud.dispose();
     // 反馈 kEFPY4cuKZ：离开这部作品 = 撤掉它的作品级配置覆盖层。
@@ -3244,16 +3250,26 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     final int? pageIndex = _localPageIndices[_localPageKey(decodedRelative)];
     if (pageSession != null && pageIndex != null) {
       try {
-        final MangaPageBytes page = await pageSession.page(pageIndex);
+        final int? fitWidth = mangaFitWidthOf(url);
+        MangaPageBytes? page;
+        Future<Uint8List> loadSource() async =>
+            (page ??= await pageSession.page(pageIndex)).bytes;
+        final Uint8List? fitted = await _fitPageBytes(
+          '$_pageSessionGeneration|$pageIndex',
+          fitWidth,
+          loadSource,
+        );
         return WebResourceResponse(
-          contentType: page.contentType,
+          contentType: fitted != null
+              ? 'image/jpeg'
+              : (page ??= await pageSession.page(pageIndex)).contentType,
           statusCode: 200,
           reasonPhrase: 'OK',
           headers: <String, String>{
             'Access-Control-Allow-Origin': '*',
             'Cache-Control': 'private, max-age=3600',
           },
-          data: page.bytes,
+          data: fitted ?? await loadSource(),
         );
       } on Object catch (error, stackTrace) {
         ErrorLogService.instance.log('MangaFushiPage.page', error, stackTrace);
@@ -3284,16 +3300,38 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       }
       return _notFound('resource not found: $decodedRelative');
     }
+    final Uint8List? fitted = await _fitPageBytes(
+      p.join(imagesDir, decodedRelative),
+      mangaFitWidthOf(url),
+      () => File(filePath).readAsBytes(),
+    );
     return WebResourceResponse(
-      contentType: _mangaMimeForPath(filePath),
+      contentType: fitted != null ? 'image/jpeg' : _mangaMimeForPath(filePath),
       statusCode: 200,
       reasonPhrase: 'OK',
       headers: <String, String>{
         'Access-Control-Allow-Origin': '*',
         'Cache-Control': 'max-age=3600',
       },
-      data: await File(filePath).readAsBytes(),
+      data: fitted ?? await File(filePath).readAsBytes(),
     );
+  }
+
+  /// 页图在 [fitWidth] 档的降采样 JPEG（BUG-4658）；URL 没要、不值得缩、或转码
+  /// 失败都返回 null，由调用方交出原图——降采样只是省内存，任何失败都不能让页白掉。
+  /// [key] 是页在本页面内的稳定身份（LRU 键），[loadSource] 只在未命中时读原图。
+  Future<Uint8List?> _fitPageBytes(
+    String key,
+    int? fitWidth,
+    Future<Uint8List> Function() loadSource,
+  ) async {
+    if (fitWidth == null) return null;
+    try {
+      return await _pageFitter.fit(key, fitWidth, loadSource);
+    } on Object catch (error, stackTrace) {
+      ErrorLogService.instance.log('MangaFushiPage.fitPage', error, stackTrace);
+      return null;
+    }
   }
 
   Future<CustomSchemeResponse?> _loadMangaCustomScheme(
@@ -3440,6 +3478,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       // 注释也是这么写的。
       doubleTapAnimationMs: 300,
       zoomStartPosition: _zoomStartPosition,
+      // 在线直读章的 payload 尺寸是占位值（真尺寸要等页图到了才知道），只有本地卷 /
+      // 已下载章的 manga.json 尺寸可信，降采样只对它们开（BUG-4658）。
+      fitImagesToDisplay: _pageSession is! OnlineMangaReaderSession,
     );
   }
 
