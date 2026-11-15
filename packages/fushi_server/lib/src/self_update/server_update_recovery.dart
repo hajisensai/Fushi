@@ -37,11 +37,17 @@ enum ServerUpdateRecovery {
 /// [engineLog] 仍是只写 stderr 的默认 sink——「上次更新被还原」这类诊断就进不了
 /// 日志文件和 WebUI 日志页。
 /// [runningExecutable] 是测试缝（缺省当前进程的可执行文件）。
+/// 容器镜像（[serverRunsInContainerImage]）里程序文件归镜像管、从不就地换包，不做
+/// 收尾；[containerImage] 是测试缝（缺省读环境变量）。
 Future<ServerUpdateRecovery> recoverServerSelfUpdate({
   Directory? installRoot,
   String? runningExecutable,
   EngineLogSink? log,
+  bool? containerImage,
 }) async {
+  if (containerImage ?? serverRunsInContainerImage()) {
+    return ServerUpdateRecovery.proceed;
+  }
   final EngineLogSink sink = log ?? engineLog;
   final Directory? root =
       installRoot ??

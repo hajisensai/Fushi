@@ -434,6 +434,21 @@ void main() {
       expect(await recoverServerSelfUpdate(), ServerUpdateRecovery.proceed);
     });
 
+    test('容器镜像里即使留着换包日志也不收尾：程序文件归镜像管，不动、不重启', () async {
+      writeNewBundle();
+      await swapKilledAfter(1);
+      final String exe = p.join(root.path, 'bin', 'fushi_server');
+      expect(
+        await recoverServerSelfUpdate(
+          installRoot: root,
+          runningExecutable: exe,
+          containerImage: true,
+        ),
+        ServerUpdateRecovery.proceed,
+      );
+      expect(_read(exe), 'new exe', reason: '容器里不还原文件');
+    });
+
     test('上次没删掉的陈旧 *.fushi-old 换前先删：还原不会放回更早的版本', () async {
       writeNewBundle();
       _write(p.join(root.path, 'lib', 'a.so.fushi-old'), 'ancient a');
