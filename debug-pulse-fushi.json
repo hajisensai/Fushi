@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-15T03:33:39Z",
+ "generatedAt": "2026-11-15T04:07:10Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "27b0ddf6d4983fced0c7dd32bafc58e4f4c2c6b9",
-  "seq": 27285
+  "sha": "3601e3c104a544db256fa8b7dccf3cc9abd99398",
+  "seq": 27292
  },
  "builds": [
   {
@@ -189,9 +189,11 @@
   }
  ],
  "pending": {
-  "headSha": "27b0ddf6d4983fced0c7dd32bafc58e4f4c2c6b9",
-  "headSeq": 27285,
+  "headSha": "3601e3c104a544db256fa8b7dccf3cc9abd99398",
+  "headSeq": 27292,
   "prs": [
+   3432,
+   3438,
    3435,
    3433,
    3429,
@@ -207,19 +209,19 @@
   "platforms": {
    "android": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43672887221"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43674159488"
    },
    "windows": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43672887240"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43674159465"
    },
    "macos": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43672887240"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43674159465"
    },
    "ios": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43672887240"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43674159465"
    }
   }
  },
@@ -523,6 +525,15 @@
    "deletions": 118,
    "labels": []
   },
+  "3432": {
+   "number": 3432,
+   "title": "fix(dist_test): per-batch TMPDIR on workers, removed on exit",
+   "author": "W1ght",
+   "mergedAt": "2026-11-15T03:50:44Z",
+   "additions": 73,
+   "deletions": 1,
+   "labels": []
+  },
   "3433": {
    "number": 3433,
    "title": "feat(srs): 远程复习代际协商骨架与升级提示（G10-1）",
@@ -539,6 +550,15 @@
    "mergedAt": "2026-11-15T03:33:16Z",
    "additions": 1208,
    "deletions": 0,
+   "labels": []
+  },
+  "3438": {
+   "number": 3438,
+   "title": "test: 修 develop 尖端 6 条单测 / 守卫红（BUG-4504 断言、纯 Dart import、注释掩码、pt-BR 实验性误报、host 任务换路用例间泄漏）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-15T03:48:25Z",
+   "additions": 54,
+   "deletions": 52,
    "labels": []
   }
  }
