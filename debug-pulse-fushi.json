@@ -1,12 +1,48 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-15T04:07:10Z",
+ "generatedAt": "2026-11-15T04:47:13Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "3601e3c104a544db256fa8b7dccf3cc9abd99398",
-  "seq": 27292
+  "sha": "b81d46ca32857dce9083ea9e4f65d125d28981df",
+  "seq": 27301
  },
  "builds": [
+  {
+   "seq": 27276,
+   "version": "3.3.0",
+   "sha": "ac27de2a4334b9f1bea14f1039af08328649852c",
+   "unknown": false,
+   "publishedAt": "2026-11-15T04:46:56Z",
+   "testflight": true,
+   "baseSeq": 27265,
+   "prs": [
+    3429,
+    3428
+   ],
+   "direct": [
+    {
+     "sha": "a31ddeb6ddfd9e1d897b782c0d5ef4e57315c3cf",
+     "subject": "chore(bugs): settle BUG number collisions on cc2408d35"
+    }
+   ],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "superseded",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43665108112"
+    },
+    "windows": {
+     "state": "ok"
+    },
+    "macos": {
+     "state": "failed",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43665108077"
+    },
+    "ios": {
+     "state": "ok"
+    }
+   }
+  },
   {
    "seq": 27265,
    "version": "3.3.0",
@@ -155,8 +191,8 @@
    "version": "3.3.0",
    "sha": "e2066cb5e14b68e8602cb1036c4dc89a6cbe0aa1",
    "unknown": false,
-   "publishedAt": "2026-11-15T00:03:34Z",
-   "testflight": true,
+   "publishedAt": "2026-11-14T23:04:48Z",
+   "testflight": false,
    "baseSeq": 26884,
    "prs": [
     3299,
@@ -177,51 +213,49 @@
      "state": "ok"
     },
     "windows": {
-     "state": "ok"
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43646046566"
     },
     "macos": {
-     "state": "ok"
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43646046566"
     },
     "ios": {
-     "state": "ok"
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43646046566"
     }
    }
   }
  ],
  "pending": {
-  "headSha": "3601e3c104a544db256fa8b7dccf3cc9abd99398",
-  "headSeq": 27292,
+  "headSha": "b81d46ca32857dce9083ea9e4f65d125d28981df",
+  "headSeq": 27301,
   "prs": [
+   3431,
+   3439,
    3432,
    3438,
    3435,
-   3433,
-   3429,
-   3428
+   3433
   ],
-  "direct": [
-   {
-    "sha": "a31ddeb6ddfd9e1d897b782c0d5ef4e57315c3cf",
-    "subject": "chore(bugs): settle BUG number collisions on cc2408d35"
-   }
-  ],
+  "direct": [],
   "truncated": false,
   "platforms": {
    "android": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43674159488"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43677182685"
    },
    "windows": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43674159465"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43677182684"
    },
    "macos": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43674159465"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43677182684"
    },
    "ios": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43674159465"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43677182684"
    }
   }
  },
@@ -525,6 +559,15 @@
    "deletions": 118,
    "labels": []
   },
+  "3431": {
+   "number": 3431,
+   "title": "feat(srs-gen4): G11-1 FSRS4EXP 内核导出流编解码 + 冻结 v1 读入器",
+   "author": "W1ght",
+   "mergedAt": "2026-11-15T04:32:02Z",
+   "additions": 1603,
+   "deletions": 1,
+   "labels": []
+  },
   "3432": {
    "number": 3432,
    "title": "fix(dist_test): per-batch TMPDIR on workers, removed on exit",
@@ -559,6 +602,15 @@
    "mergedAt": "2026-11-15T03:48:25Z",
    "additions": 54,
    "deletions": 52,
+   "labels": []
+  },
+  "3439": {
+   "number": 3439,
+   "title": "test/style: 修 develop 尖端剩余守卫红（voice_hook v13 锚点、设置分类图标改 FushiIcons、对话框不手包滚动、#3372/#3416 未格式化文件）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-15T04:14:18Z",
+   "additions": 166,
+   "deletions": 142,
    "labels": []
   }
  }
