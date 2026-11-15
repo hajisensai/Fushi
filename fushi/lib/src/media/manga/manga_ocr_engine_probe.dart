@@ -129,7 +129,7 @@ Future<MangaOcrEngineAvailability> probeMangaOcrEngines(
   if (engines.service.isSupportedPlatform) {
     try {
       final MangaOcrModelStatus status = await engines.service.modelStatus();
-      builtin = status.allReady;
+      builtin = status.canRun;
     } on Object {
       builtin = false;
     }

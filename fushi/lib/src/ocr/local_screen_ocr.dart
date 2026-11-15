@@ -52,7 +52,8 @@ class LocalScreenOcr implements SystemOcrPlatform {
     if (service is! MangaOcrPageService || !service.isSupportedPlatform) {
       return false;
     }
-    return (await service.modelStatus()).recognizerReady;
+    final MangaOcrModelStatus status = await service.modelStatus();
+    return status.recognizerReady || status.supersededReady;
   }
 
   /// [language] 不用：本机模型按日文训练，没有按语言挑识别器这一步。

@@ -386,7 +386,7 @@ const List<MangaOcrModelFile> _tinyCtcManifest = <MangaOcrModelFile>[
     role: MangaOcrModelRole.recognizer,
   ),
   MangaOcrModelFile(
-    fileName: kPpOcrRecDictFileName,
+    fileName: kMangaCtcRecDictFileName,
     url: 'http://unused.invalid/dict',
     expectedBytes: 1,
     role: MangaOcrModelRole.recognizer,

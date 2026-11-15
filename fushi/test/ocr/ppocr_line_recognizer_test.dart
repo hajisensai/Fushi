@@ -82,6 +82,84 @@ void main() {
     });
   });
 
+  group('parsePlainTextCharacterDict', () {
+    test('一行一个字符；只剥行结束符，空白字符本身是字典项', () {
+      expect(parsePlainTextCharacterDict('!\nあ\n\u3000\n漫\n'), <String>[
+        '!',
+        'あ',
+        '\u3000',
+        '漫',
+      ]);
+    });
+
+    test('CRLF 与缺结尾换行都解析成同一份', () {
+      expect(parsePlainTextCharacterDict('!\r\nあ\r\n\u3000\r\n漫'), <String>[
+        '!',
+        'あ',
+        '\u3000',
+        '漫',
+      ]);
+    });
+
+    test('中间的空行抛异常（否则其后全部错位一格）', () {
+      expect(
+        () => parsePlainTextCharacterDict('!\n\nあ\n'),
+        throwsFormatException,
+      );
+      expect(
+        () => parsePlainTextCharacterDict('!\r\n\r\nあ\r\n'),
+        throwsFormatException,
+      );
+    });
+
+    test('空文件抛异常而不是空词表', () {
+      expect(() => parsePlainTextCharacterDict(''), throwsFormatException);
+      expect(() => parsePlainTextCharacterDict('\n'), throwsFormatException);
+    });
+  });
+
+  test('parseCharacterDict 按显式格式分派，不看内容猜', () {
+    expect(
+      parseCharacterDict(_yml, PpOcrCharacterDictFormat.paddleYaml),
+      <String>['!', "'", 'あ', '漫', '\u3000'],
+    );
+    expect(
+      parseCharacterDict('a\nb\n', PpOcrCharacterDictFormat.plainText),
+      <String>['a', 'b'],
+    );
+    // YAML 文件按纯文本读：每行都成了一个「字符」，不会悄悄退回 YAML 解析。
+    expect(
+      parseCharacterDict(_yml, PpOcrCharacterDictFormat.plainText).first,
+      'Global:',
+    );
+    expect(
+      () => parseCharacterDict('a\nb\n', PpOcrCharacterDictFormat.paddleYaml),
+      throwsFormatException,
+    );
+  });
+
+  test('模型输出类数与词表长度不等时识别抛错，不产出错位文字', () async {
+    // 换了模型却配着旧字典的情形：v0.3 输出 19055 类，旧字典给出 18710 项词表。
+    final List<String> vocab = buildPpOcrCtcVocab(<String>['a', 'b']);
+    final _FakeSession session = _FakeSession(<String, OcrTensor>{
+      'fetch_name_0': OcrTensor.float32(
+        _logits(<int>[1, 2], vocab.length + 1),
+        <int>[1, 2, vocab.length + 1],
+      ),
+    });
+    final PpOcrLineRecognizer rec = PpOcrLineRecognizer(session, vocab: vocab);
+    await expectLater(
+      rec.recognizeLine(img.Image(width: 200, height: 30)),
+      throwsA(
+        isA<StateError>().having(
+          (StateError e) => e.message,
+          'message',
+          contains('vocab mismatch'),
+        ),
+      ),
+    );
+  });
+
   test('buildPpOcrCtcVocab：blank + 字典 + 空格', () {
     final List<String> vocab = buildPpOcrCtcVocab(<String>['a', 'b']);
     expect(vocab, <String>['', 'a', 'b', ' ']);
