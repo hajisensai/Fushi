@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-15T03:22:42Z",
+ "generatedAt": "2026-11-15T03:32:44Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "ac27de2a4334b9f1bea14f1039af08328649852c",
-  "seq": 27276
+  "sha": "0b93dd1344e5c42df7ff11dcd6907f3fcc48fa4e",
+  "seq": 27280
  },
  "builds": [
   {
@@ -196,9 +196,10 @@
   }
  ],
  "pending": {
-  "headSha": "ac27de2a4334b9f1bea14f1039af08328649852c",
-  "headSeq": 27276,
+  "headSha": "0b93dd1344e5c42df7ff11dcd6907f3fcc48fa4e",
+  "headSeq": 27280,
   "prs": [
+   3433,
    3429,
    3428
   ],
@@ -212,19 +213,19 @@
   "platforms": {
    "android": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43665108112"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43672655873"
    },
    "windows": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43665108077"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43672655950"
    },
    "macos": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43665108077"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43672655950"
    },
    "ios": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43665108077"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43672655950"
    }
   }
  },
@@ -544,6 +545,15 @@
    "mergedAt": "2026-11-15T00:36:30Z",
    "additions": 337,
    "deletions": 118,
+   "labels": []
+  },
+  "3433": {
+   "number": 3433,
+   "title": "feat(srs): 远程复习代际协商骨架与升级提示（G10-1）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-15T03:30:17Z",
+   "additions": 775,
+   "deletions": 39,
    "labels": []
   }
  }
