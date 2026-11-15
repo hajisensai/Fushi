@@ -102,6 +102,21 @@ void main() {
       expect(runner.runs, 1);
     });
 
+    test(
+      'an incomplete comparison is a settled verdict and not re-run',
+      () async {
+        final _FakeRunner runner = _FakeRunner(verdict: 'incomplete');
+        final SrsGen4RehearsalScheduler s = _scheduler(runner);
+        expect(
+          (await s.maybeRun())?.verdict,
+          SrsGen4RehearsalVerdict.incomplete,
+        );
+        expect(await s.maybeRun(), isNull);
+        expect(await _scheduler(runner).maybeRun(), isNull);
+        expect(runner.runs, 1);
+      },
+    );
+
     test('an unfinished run (cancelled / no space) is retried later', () async {
       final _FakeRunner runner = _FakeRunner(verdict: 'skipped');
       final SrsGen4RehearsalScheduler s = _scheduler(runner);

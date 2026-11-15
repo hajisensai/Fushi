@@ -219,10 +219,43 @@ pub(crate) fn rows_of(
 /// 三张缓存表的行：(笔记, 卡, 统计)。
 pub(crate) type CacheRows = (Vec<Vec<String>>, Vec<Vec<String>>, Vec<Vec<String>>);
 
-/// 协议 3 的缓存重建因身份记录不成形整次失败（`cache.rs` 文件头「与协议 3 的差别」）：缺字段 / 字段类型不对 /
-/// 笔记 ID 不是 UUID（卡 ID 由它派生）。
-pub(crate) fn malformed_definition(e: &str) -> bool {
-    e.ends_with(" missing") || e.contains(": expected ") || e.starts_with("not a uuid: ")
+/// 协议 3 一侧的缓存行为什么拿不到（[OldCaches] 的错误）。按失败发生在哪段代码里分，不按错误文本猜。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum OldCachesError {
+    /// 协议 3 自己的代码（冻结的缓存重建 `store::caches::rebuild`，测试口径下还有它之前的收尾）失败了。已知的一类是身份
+    /// 记录不成形时整次失败（`cache.rs` 文件头「与协议 3 的差别」：缺字段 / 字段类型不对 / 笔记 ID 不是 UUID）。协议 3
+    /// 一侧没有基准，缓存层这三类对拍做不成（[CacheBaseline::Unavailable]）。
+    Protocol3(String),
+    /// 给协议 3 搭重建环境、读回它写的行时失败（调用方这边的问题）：照报成差异。
+    Setup(String),
+}
+
+impl OldCachesError {
+    pub(crate) fn text(&self) -> &str {
+        match self {
+            Self::Protocol3(e) | Self::Setup(e) => e,
+        }
+    }
+}
+
+/// 缓存层对拍的协议 3 基准（[cache_pairs] 的结果）。
+#[derive(Debug)]
+pub(crate) enum CacheBaseline {
+    /// 新代没设缓存配置：不物化，缓存层本来就不比。
+    NotConfigured,
+    /// 设了缓存配置，但协议 3 一侧的缓存行拿不到（[OldCachesError]）：缓存层没比成。调用方不能把这当成「比过了没差异」。
+    Unavailable(String),
+    /// 协议 3 重建出来的缓存行，已逐列比过。
+    Rows(CacheRows),
+}
+
+impl CacheBaseline {
+    pub(crate) fn rows(&self) -> Option<&CacheRows> {
+        match self {
+            Self::Rows(r) => Some(r),
+            Self::NotConfigured | Self::Unavailable(_) => None,
+        }
+    }
 }
 
 /// 同一个旧修改记录 ID（旧戳的写入者 + seq）下有两条以上不同修改（不同实体或字段键）：复制出来的两份旧库各自又以
@@ -292,7 +325,8 @@ pub(crate) fn collisions(t: &Truth<'_>, col: i64) -> Result<Collisions, String> 
     Ok(out)
 }
 
-/// 缓存层三类（`notes` / `cards` / `stats`）的对拍对：新代没设缓存配置时没有（不物化）。两种口径：
+/// 缓存层三类（`notes` / `cards` / `stats`）的对拍对：新代没设缓存配置时没有（不物化），协议 3 一侧拿不到缓存行时也
+/// 没有（结果分别是 [CacheBaseline::NotConfigured] / [CacheBaseline::Unavailable]）。两种口径：
 ///
 /// - [held] 是有删除被扣住的实体（`种类:ID`，任一边）：协议 3 的 `deleted` 寄存器里留着哪几条取决于被扣住的那条删除
 ///   到的时候落没落过投影（[against_protocol_3] 的 `edits` 口径），所以这些笔记行的 `deleted_at` / `pending_decision`
@@ -310,17 +344,23 @@ pub(crate) fn cache_pairs(
     old_caches: &mut OldCaches<'_>,
     skip: &Skip,
     diff: &mut Diff,
-) -> Result<Option<CacheRows>, String> {
+) -> Result<CacheBaseline, String> {
     let Some(cfg) = t.derive_cfg(col, CFG_KEY)? else {
-        return Ok(None);
+        return Ok(CacheBaseline::NotConfigured);
     };
     let old = match old_caches(src, profile, &cfg) {
         Ok(v) => v,
-        // 协议 3 那边没有行可比；新代那边这些实体没有行、其余照常（单元测试钉）。别的失败照报。
-        Err(e) if malformed_definition(&e) => return Ok(None),
-        Err(e) => {
-            push_pair(diff, ("caches", BTreeSet::from([e]), BTreeSet::new()));
-            return Ok(None);
+        // 协议 3 那边没有行可比（新代那边身份记录不成形的实体没有行、其余照常，单元测试钉）：缓存层没比成，交给调用方
+        // 记成基准缺失。
+        Err(OldCachesError::Protocol3(e)) => return Ok(CacheBaseline::Unavailable(e)),
+        // 搭环境 / 读行失败：照报成差异。
+        Err(e @ OldCachesError::Setup(_)) => {
+            let text = e.text().to_owned();
+            push_pair(
+                diff,
+                ("caches", BTreeSet::from([text.clone()]), BTreeSet::new()),
+            );
+            return Ok(CacheBaseline::Unavailable(text));
         }
     };
     let (old_notes, old_cards, old_stats) = (&old.0, &old.1, &old.2);
@@ -406,7 +446,7 @@ pub(crate) fn cache_pairs(
     };
     let new_stats = new("stats", STAT_COLS)?;
     push_pair(diff, ("stats", stats(old_stats), stats(&new_stats)));
-    Ok(Some(old))
+    Ok(CacheBaseline::Rows(old))
 }
 
 /// 一类对拍：(类别, 旧库一侧, 新库一侧)。
@@ -414,7 +454,7 @@ pub(crate) type Pair = (&'static str, BTreeSet<String>, BTreeSet<String>);
 
 /// 协议 3 一侧的缓存行从哪来：(旧库连接, profile, 新代的缓存配置 JSON) → (笔记, 卡, 统计)。
 pub(crate) type OldCaches<'a> =
-    dyn FnMut(&Connection, &str, &str) -> Result<CacheRows, String> + 'a;
+    dyn FnMut(&Connection, &str, &str) -> Result<CacheRows, OldCachesError> + 'a;
 
 /// 调用方另外不比的笔记与卡（ID 文本）。
 #[derive(Clone, Debug, Default)]
@@ -434,7 +474,7 @@ pub(crate) fn against_protocol_3(
     col: i64,
     old_caches: &mut OldCaches<'_>,
     skip: &Skip,
-) -> Result<(Diff, Option<CacheRows>, Collisions), String> {
+) -> Result<(Diff, CacheBaseline, Collisions), String> {
     // 每一类算出来马上化成差异、放掉两侧的集合：同时在内存里的只有一类（大库的修改记录 ID 一类就有上百万条）。
     let mut diff = Diff::new();
     let ix = Index::new(t, col);

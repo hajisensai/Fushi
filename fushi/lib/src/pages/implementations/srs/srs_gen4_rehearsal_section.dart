@@ -30,6 +30,7 @@ String srsGen4RehearsalTitle(SrsGen4RehearsalVerdict v) => switch (v) {
   SrsGen4RehearsalVerdict.empty => t.srs_gen4_rehearsal_pass,
   SrsGen4RehearsalVerdict.fail => t.srs_gen4_rehearsal_fail,
   SrsGen4RehearsalVerdict.blocked => t.srs_gen4_rehearsal_blocked,
+  SrsGen4RehearsalVerdict.incomplete => t.srs_gen4_rehearsal_incomplete,
   SrsGen4RehearsalVerdict.skipped ||
   SrsGen4RehearsalVerdict.cancelled ||
   SrsGen4RehearsalVerdict.error => t.srs_gen4_rehearsal_unfinished,

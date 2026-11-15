@@ -29,7 +29,9 @@ use std::time::Instant;
 use rusqlite::{Connection, params};
 
 use super::cache::CFG_KEY;
-use super::compare::{self, CARD_COLS, CacheRows, NOTE_COLS, STAT_COLS, op_text, rows_of, texts};
+use super::compare::{
+    self, CARD_COLS, CacheRows, NOTE_COLS, OldCachesError, STAT_COLS, op_text, rows_of, texts,
+};
 pub(crate) use super::compare::{Diff, cell};
 use super::derive::tests::{canon, digest, dump};
 use super::derive::{Index, R_LIVE, Ref, body_of};
@@ -132,7 +134,12 @@ const KNOWN: &[(&str, &str, &str)] = &[
 /// `caches::rebuild` 一遍、读行、整个回滚（库原样不动）。新代没有推迟的重放、标签直接取 OR-Set，比的是两边各自收尾
 /// 做完的样子。只读打开的库（真实样本）动不了，读它现有的缓存表——那是 app 用自己的配置写的，新代那边要给同一份
 /// 配置（`gen4_sample_index` 的 `FUSHI_GEN4_CACHE_CFG_FILE`）。
-fn protocol_3_caches(src: &Connection, profile: &str, cfg: &str) -> Result<CacheRows, String> {
+fn protocol_3_caches(
+    src: &Connection,
+    profile: &str,
+    cfg: &str,
+) -> Result<CacheRows, OldCachesError> {
+    use OldCachesError::{Protocol3, Setup};
     let read = || -> Result<CacheRows, String> {
         let olds = |cols: &[(&'static str, &'static str)]| -> Vec<&'static str> {
             cols.iter().map(|c| c.1).collect()
@@ -144,35 +151,40 @@ fn protocol_3_caches(src: &Connection, profile: &str, cfg: &str) -> Result<Cache
             rows_of(src, "srs_stat_reviews", &olds(STAT_COLS), filter, &profile)?,
         ))
     };
-    if src.is_readonly("main").map_err(|e| e.to_string())? {
-        return read();
+    if src.is_readonly("main").map_err(|e| Setup(e.to_string()))? {
+        return read().map_err(Setup);
     }
     let cfg = crate::store::caches::CacheConfig::parse(
-        &serde_json::from_str(cfg).map_err(|e| e.to_string())?,
-    )?;
+        &serde_json::from_str(cfg).map_err(|e| Setup(e.to_string()))?,
+    )
+    .map_err(Setup)?;
     src.execute_batch("SAVEPOINT g4par")
-        .map_err(|e| e.to_string())?;
-    let out = (|| -> Result<CacheRows, String> {
+        .map_err(|e| Setup(e.to_string()))?;
+    let out = (|| -> Result<CacheRows, OldCachesError> {
+        // 收尾与重建都是协议 3 自己的代码。
         crate::store::sync2::transport::replay_pending(
             src,
             profile,
             &mut crate::store::sync2::transport::CommitBudget::unlimited(),
-        )?;
+        )
+        .map_err(Protocol3)?;
         let synthetic = texts(
             src,
             "SELECT DISTINCT srs_idt(entity_id) FROM srs_field_edits WHERE profile_uid = srs_id(?1) \
              AND entity_kind = 'note' AND field_key = 'tags' AND writer_id LIKE 'sync2:%'",
             &[&profile],
-        )?;
+        )
+        .map_err(Setup)?;
         let mut touched = crate::store::sync2::Touched::default();
         for note in &synthetic {
-            crate::store::sync2::semantics::refresh_tags_row(src, profile, note, &mut touched)?;
+            crate::store::sync2::semantics::refresh_tags_row(src, profile, note, &mut touched)
+                .map_err(Protocol3)?;
         }
-        crate::store::caches::rebuild(src, profile, &cfg)?;
-        read()
+        crate::store::caches::rebuild(src, profile, &cfg).map_err(Protocol3)?;
+        read().map_err(Setup)
     })();
     src.execute_batch("ROLLBACK TO g4par; RELEASE g4par")
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| Setup(e.to_string()))?;
     out
 }
 

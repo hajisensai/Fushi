@@ -33,7 +33,8 @@ use serde_json::{Map, Value, json};
 use super::alias::{A_UNVERIFIED, AliasCounts};
 use super::cache::CFG_KEY;
 use super::compare::{
-    self, CARD_COLS, CacheRows, Diff, NOTE_COLS, Pair, STAT_COLS, Skip, rows_of, texts,
+    self, CARD_COLS, CacheBaseline, CacheRows, Diff, NOTE_COLS, OldCachesError, Pair, STAT_COLS,
+    Skip, rows_of, texts,
 };
 use super::derive::{Index, R_CONFLICT, R_WINNER, Ref, Settled, body_of};
 use super::import::{Imported, import_legacy_checked};
@@ -51,7 +52,9 @@ use crate::sync2::id::{Id, Key};
 use crate::sync2::vv::OpId;
 
 /// 报告格式的版本（[run] 的返回值里的 `version`）。
-pub const REPORT_VERSION: i64 = 1;
+///
+/// - 2：profile 报告加 `cacheBaseline`（`"rebuilt"` / `"notConfigured"` / `{"unavailable": 错误}`），新结论 `incomplete`。
+pub const REPORT_VERSION: i64 = 2;
 
 /// 被中断时的错误文本（[run] 返回 `Ok`、`verdict = "cancelled"`；只有内部各步之间用它传）。
 pub const CANCELLED: &str = "gen4 dry run: cancelled";
@@ -349,8 +352,8 @@ pub fn run(old: &Path, work: &Path, mut opts: Options<'_>) -> Result<Value, Stri
     Ok(Value::Object(report))
 }
 
-/// 整个库的结论：有出错的报 `error`，否则有不过的报 `fail`，否则有没做完前提的报 `blocked`，都过了才 `pass`；
-/// 一个 profile 都没有是 `empty`。
+/// 整个库的结论：有出错的报 `error`，否则有不过的报 `fail`，否则有没做完前提的报 `blocked`，否则有对拍没做全的
+/// （协议 3 一侧的缓存基准拿不到，profile 报 `incomplete`）报 `incomplete`，都过了才 `pass`；一个 profile 都没有是 `empty`。
 fn overall(verdicts: &[&str]) -> &'static str {
     if verdicts.is_empty() {
         "empty"
@@ -360,6 +363,8 @@ fn overall(verdicts: &[&str]) -> &'static str {
         "fail"
     } else if verdicts.contains(&"blocked") {
         "blocked"
+    } else if verdicts.contains(&"incomplete") {
+        "incomplete"
     } else {
         "pass"
     }
@@ -463,7 +468,17 @@ fn profile_run(
     mark("parity");
     let failing = !diff.is_empty();
     out.insert("parity".into(), diff_json(&diff, opts));
-    if let Some(rebuilt) = &baseline {
+    // 协议 3 一侧的缓存基准拿不到：缓存层三类没比成，这个 profile 最多是 `incomplete`，不能报 `pass`。
+    let incomplete = matches!(baseline, CacheBaseline::Unavailable(_));
+    out.insert(
+        "cacheBaseline".into(),
+        match &baseline {
+            CacheBaseline::NotConfigured => json!("notConfigured"),
+            CacheBaseline::Rows(_) => json!("rebuilt"),
+            CacheBaseline::Unavailable(e) => json!({ "unavailable": e }),
+        },
+    );
+    if let Some(rebuilt) = baseline.rows() {
         let stale = existing_vs_rebuilt(src, profile, rebuilt, &skip)?;
         out.insert("existingCachesVsRebuilt".into(), diff_json(&stale, opts));
     }
@@ -492,7 +507,8 @@ fn profile_run(
         let news: Vec<&str> = CARD_COLS.iter().map(|c| c.0).collect();
         let new_cards = rows_of(t.conn(), "cards", &news, "col = ?1", &col)?;
         let cards: Vec<String> = baseline
-            .iter()
+            .rows()
+            .into_iter()
             .flat_map(|old| old.1.iter())
             .chain(&new_cards)
             .filter(|r| skip.notes.contains(&r[note_at]))
@@ -505,7 +521,7 @@ fn profile_run(
     let regs = registers(src, profile, t, col, &collided)?;
     mark("registerWinners");
     let mut canonical_diff = differences_of(regs);
-    match &baseline {
+    match baseline.rows() {
         Some(old) => canonical_pairs(
             src,
             profile,
@@ -516,7 +532,7 @@ fn profile_run(
             old,
             &mut canonical_diff,
         )?,
-        // 没设缓存配置 / 协议 3 的缓存重建因身份记录不成形失败：没有旧侧的卡行与统计行，只比日志。
+        // 没设缓存配置 / 协议 3 的缓存重建失败（`cacheBaseline` 记着）：没有旧侧的卡行与统计行，只比日志。
         None => canonical_pairs(
             src,
             profile,
@@ -555,7 +571,13 @@ fn profile_run(
     out.insert("peakMbAfterChecks".into(), json!(mb(peak_mem_mb().0)));
     out.insert(
         "verdict".into(),
-        json!(if failing { "fail" } else { "pass" }),
+        json!(if failing {
+            "fail"
+        } else if incomplete {
+            "incomplete"
+        } else {
+            "pass"
+        }),
     );
     Ok(Value::Object(out))
 }
@@ -677,11 +699,35 @@ const CACHE_TABLES: [&str; 4] = [
 
 /// 冻结的旧代码（`store::caches::rebuild`）对旧库全量重建出来的缓存行，旧库一个字节不写：在连接的 `temp` 库里按
 /// `main` 的定义建同名的空表与索引——不带库名的表名先找 `temp`，旧代码的读写都落在这几张临时表上——重建、读行、删表。
-fn old_caches(src: &Connection, profile: &str, cfg: &str) -> Result<CacheRows, String> {
+fn old_caches(src: &Connection, profile: &str, cfg: &str) -> Result<CacheRows, OldCachesError> {
+    old_caches_with(
+        src,
+        profile,
+        cfg,
+        &mut |src: &Connection, profile: &str, cfg| {
+            crate::store::caches::rebuild(src, profile, cfg).map(|_| ())
+        },
+    )
+}
+
+/// 协议 3 的缓存重建这一步（生产是冻结的 `store::caches::rebuild`；测试注入失败）。
+type Rebuild<'a> =
+    dyn FnMut(&Connection, &str, &crate::store::caches::CacheConfig) -> Result<(), String> + 'a;
+
+/// [old_caches]，协议 3 的重建这一步由调用方给。它的失败是 [OldCachesError::Protocol3]，其余（解析配置、建临时表、读行）
+/// 是 [OldCachesError::Setup]。
+fn old_caches_with(
+    src: &Connection,
+    profile: &str,
+    cfg: &str,
+    rebuild: &mut Rebuild<'_>,
+) -> Result<CacheRows, OldCachesError> {
+    use OldCachesError::{Protocol3, Setup};
     let parsed = crate::store::caches::CacheConfig::parse(
-        &serde_json::from_str(cfg).map_err(|e| e.to_string())?,
-    )?;
-    let defs: Vec<(String, String, String)> = {
+        &serde_json::from_str(cfg).map_err(|e| Setup(e.to_string()))?,
+    )
+    .map_err(Setup)?;
+    let defs: Vec<(String, String, String)> = (|| -> Result<_, String> {
         let marks = CACHE_TABLES.map(|t| format!("'{t}'")).join(", ");
         src.prepare(&format!(
             "SELECT type, tbl_name, sql FROM main.sqlite_schema WHERE tbl_name IN ({marks}) \
@@ -691,28 +737,29 @@ fn old_caches(src: &Connection, profile: &str, cfg: &str) -> Result<CacheRows, S
         .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
         .map_err(sql)?
         .collect::<Result<_, _>>()
-        .map_err(sql)?
-    };
+        .map_err(sql)
+    })()
+    .map_err(Setup)?;
     let made: BTreeSet<&str> = defs
         .iter()
         .filter(|d| d.0 == "table")
         .map(|d| d.1.as_str())
         .collect();
     if made.len() != CACHE_TABLES.len() {
-        return Err(format!(
+        return Err(Setup(format!(
             "gen4 dry run: the legacy library lacks cache tables (has {made:?})"
-        ));
+        )));
     }
-    let shadow = (|| -> Result<CacheRows, String> {
+    let shadow = (|| -> Result<CacheRows, OldCachesError> {
         for (kind, _, ddl) in &defs {
             let ddl = match kind.as_str() {
                 "table" => ddl.replacen("CREATE TABLE ", "CREATE TEMP TABLE ", 1),
                 // 不带库名的索引建在它的表所在的库（这里是 temp）。
                 _ => ddl.clone(),
             };
-            src.execute_batch(&ddl).map_err(sql)?;
+            src.execute_batch(&ddl).map_err(|e| Setup(sql(e)))?;
         }
-        crate::store::caches::rebuild(src, profile, &parsed)?;
+        rebuild(src, profile, &parsed).map_err(Protocol3)?;
         let olds = |cols: &[(&'static str, &'static str)]| -> Vec<&'static str> {
             cols.iter().map(|c| c.1).collect()
         };
@@ -724,21 +771,24 @@ fn old_caches(src: &Connection, profile: &str, cfg: &str) -> Result<CacheRows, S
                 &olds(NOTE_COLS),
                 filter,
                 &profile,
-            )?,
+            )
+            .map_err(Setup)?,
             rows_of(
                 src,
                 "temp.srs_cards_cache",
                 &olds(CARD_COLS),
                 filter,
                 &profile,
-            )?,
+            )
+            .map_err(Setup)?,
             rows_of(
                 src,
                 "temp.srs_stat_reviews",
                 &olds(STAT_COLS),
                 filter,
                 &profile,
-            )?,
+            )
+            .map_err(Setup)?,
         ))
     })();
     for t in CACHE_TABLES {
@@ -1707,6 +1757,7 @@ mod tests {
         assert_eq!(r["verdict"], "pass", "{r:#}");
         let p = &r["profiles"][0];
         assert_eq!(p["verdict"], "pass");
+        assert_eq!(p["cacheBaseline"], "rebuilt");
         assert_eq!(p["parity"], json!([]));
         assert_eq!(p["canonical"], json!([]));
         assert_eq!(p["existingCachesVsRebuilt"], json!([]));
@@ -1765,6 +1816,56 @@ mod tests {
         );
         let text = r.to_string();
         assert!(!text.contains("犬"), "examples must not carry note content");
+    }
+
+    /// 协议 3 的缓存重建整次失败（这里：一条笔记身份记录缺 `noteTypeId`，`cache.rs` 文件头「与协议 3 的差别」）：缓存层
+    /// 三类没比成。profile 报告记下 `cacheBaseline.unavailable`，结论是 `incomplete`、不是 `pass`。
+    #[test]
+    fn a_failed_protocol_3_cache_rebuild_is_incomplete_not_pass() {
+        const N3: &str = "0193a1b2-0000-7000-8000-0000000000b3";
+        let d = library("g4dryincomplete");
+        d.apply(
+            T0 + 2 * DAY,
+            vec![
+                json!({"t": "entity", "x": {"id": N3, "p": P, "k": "note", "d": {"createdAt": 1, "guid": N3}}}),
+            ],
+        );
+        let r = dry(&d, &Stop::new(), &mut |_, _| {});
+        assert_eq!(r["verdict"], "incomplete", "{r:#}");
+        let p = &r["profiles"][0];
+        assert_eq!(p["verdict"], "incomplete", "{p:#}");
+        let why = p["cacheBaseline"]["unavailable"]
+            .as_str()
+            .unwrap_or_default();
+        assert!(why.contains("noteTypeId missing"), "{p:#}");
+    }
+
+    /// 协议 3 一侧的缓存行拿不到时按失败发生在哪一段分类型：重建这一步（协议 3 自己的代码）失败是 `Protocol3`，不论
+    /// 错误文本是什么；解析配置等搭环境的失败是 `Setup`。失败之后临时表照样删掉。
+    #[test]
+    fn old_cache_errors_are_typed_by_where_they_fail() {
+        let d = library("g4dryoldtyped");
+        let c = open_legacy(&d._dir.0.join("srs.db")).unwrap();
+        let e = old_caches_with(&c, P, &cfg(), &mut |_, _, _| {
+            Err("any text at all".to_owned())
+        })
+        .unwrap_err();
+        assert_eq!(e, OldCachesError::Protocol3("any text at all".to_owned()));
+        let temps: i64 = c
+            .query_row("SELECT COUNT(*) FROM temp.sqlite_schema", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(temps, 0);
+        let e = old_caches_with(&c, P, "not json", &mut |_, _, _| Ok(())).unwrap_err();
+        assert!(matches!(e, OldCachesError::Setup(_)), "{e:?}");
+    }
+
+    /// 整个库的结论：对拍没做全的 profile 不让整库 `pass`，但更重的结论压过它。
+    #[test]
+    fn an_incomplete_profile_keeps_the_library_from_passing() {
+        assert_eq!(overall(&["pass", "incomplete"]), "incomplete");
+        assert_eq!(overall(&["incomplete", "blocked"]), "blocked");
+        assert_eq!(overall(&["incomplete", "fail"]), "fail");
+        assert_eq!(overall(&["pass", "pass"]), "pass");
     }
 
     /// 没做完换代前提（协议 3 身份有了、旧行还没迁成操作）：判 `blocked`，给出原因，不灌入。

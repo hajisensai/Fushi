@@ -28,6 +28,10 @@ enum SrsGen4RehearsalVerdict {
   /// 换代的前提（协议 3 的迁移、待重放的收尾）还没在旧代码上做完。
   blocked,
 
+  /// 对拍没做全：协议 3 一侧的缓存基准重建失败（报告里 profile 的 `cacheBaseline.unavailable`），缓存层没比成，不能
+  /// 当作「过了」。结论已经交给诊断导出，同一版本不再重跑。
+  incomplete,
+
   /// 库里没有可换代的数据。
   empty,
 
@@ -47,7 +51,7 @@ enum SrsGen4RehearsalVerdict {
 
   /// 这个结论算不算「这个版本跑完了」：没跑完的（停下、没空间、出错）下次空闲再试。
   bool get settled => switch (this) {
-    pass || fail || blocked || empty => true,
+    pass || fail || blocked || incomplete || empty => true,
     skipped || cancelled || error => false,
   };
 }
