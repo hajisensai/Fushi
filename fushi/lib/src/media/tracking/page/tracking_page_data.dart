@@ -435,8 +435,7 @@ final class TrackingPageData {
         for (final TrackingAttentionEntry entry in attention) ?entry.rowKind,
       if (tab == TrackingPageTab.linked)
         for (final TrackingLinkGroup group in linkGroups)
-          for (final TrackingLinkedEntry entry in group.members)
-            ?entry.rowKind,
+          for (final TrackingLinkedEntry entry in group.members) ?entry.rowKind,
       if (tab == TrackingPageTab.ignored)
         for (final MediaTrackingIgnoredRow row in ignored)
           ?ignoredNames(row).rowKind,
