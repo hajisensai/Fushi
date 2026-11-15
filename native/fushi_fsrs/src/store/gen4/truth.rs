@@ -46,6 +46,12 @@
 //! [Truth] 在内存里缓存设备下标、名字表、每条日志的末尾。所有写入必须在事务里（[Truth::tx]，或调用方自己开的事务）；
 //! 事务回滚后缓存可能领先于库，必须 [Truth::reset]（[Truth::tx] 出错时自动做）。一次写入报错后，这个会话在 reset 之前
 //! 拒绝再写。
+//!
+//! **每个最外层事务开头都 reset**（规划缺口 G-1）：同一个库文件可能有别的连接（另一个进程、查词弹窗的只读连接、
+//! 同进程的另一个会话）在两个事务之间写过，上一个事务留下的缓存（日志末尾、链值、设备下标）就不再可信。[Truth::tx]
+//! 在最外层（连接处于自动提交）时先 reset 再开事务，所以「读到的缓存」总是这个事务的快照里的。调用方自己开最外层
+//! 事务（`BEGIN …`）时，开完必须先调 [Truth::reset] 再用这个会话。新代下只有主进程写（D10），辅助进程的只读会话
+//! 同样经 [Truth::tx] 读（它在只读连接上也是一个读事务）。
 
 use std::cell::RefCell;
 use std::collections::{BTreeSet, HashMap};
@@ -189,6 +195,32 @@ pub struct DevInfo {
     pub src: Option<Id>,
     /// 日志末尾的 seq（0 = 一条都没有）。
     pub last: u64,
+}
+
+/// 一台设备的公钥与本机记下的信息（`peers` 表）。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Peer {
+    pub device: Id,
+    /// Ed25519 公钥。
+    pub public: [u8; 32],
+    /// 设备名（None = 不知道 / 不改）。
+    pub name: Option<String>,
+    /// 扩展信息（JSON 文本；None = 不知道 / 不改）。
+    pub ext: Option<String>,
+    /// 见过的最新 head 代号。
+    pub head_gen: Option<i64>,
+    /// 第一次见到它的时刻（毫秒）。
+    pub first_seen: Option<i64>,
+}
+
+/// [Truth::set_peer] 的结果。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PeerPut {
+    Inserted,
+    Updated,
+    Same,
+    /// 已经记过另一个公钥：没写。
+    KeyMismatch,
 }
 
 /// profile ↔ 集合的绑定（设计 §5.1）。
@@ -405,8 +437,12 @@ impl<'c> Truth<'c> {
         *self.st.borrow_mut() = State::default();
     }
 
-    /// 在一个事务里跑 [f]；出错整笔回滚并 [Truth::reset]。可以嵌套。
+    /// 在一个事务里跑 [f]；出错整笔回滚并 [Truth::reset]。可以嵌套。最外层的那一次开头先 [Truth::reset]（文件头
+    /// 「会话与事务」：别的连接可能在上一个事务之后写过）。
     pub fn tx<T>(&self, f: impl FnOnce(&Truth<'c>) -> Result<T, String>) -> Result<T, String> {
+        if self.conn.is_autocommit() {
+            self.reset();
+        }
         let r = in_tx(self.conn, |_| f(self));
         if r.is_err() {
             self.reset();
@@ -1219,6 +1255,119 @@ impl<'c> Truth<'c> {
                     .map_err(sql)?,
             };
             Ok(true)
+        })
+    }
+
+    // ------------------------------------------------------------ 本机状态：设备公钥
+
+    /// 一台设备的公钥（Ed25519，32 字节）。没见过 = None。验签、导出、迁移灌入共用（规划缺口 G-11）。
+    pub fn device_key(&self, col: i64, device: &Id) -> Result<Option<[u8; 32]>, String> {
+        let row: Option<Vec<u8>> = self
+            .conn
+            .prepare_cached("SELECT public FROM peers WHERE col = ?1 AND device = ?2")
+            .map_err(sql)?
+            .query_row(params![col, &device.0[..]], |r| r.get(0))
+            .optional()
+            .map_err(sql)?;
+        match row {
+            None => Ok(None),
+            Some(b) => b
+                .try_into()
+                .map(Some)
+                .map_err(|_| format!("gen4 store: bad public key for device {device}")),
+        }
+    }
+
+    /// 一台设备的整行。
+    pub fn peer(&self, col: i64, device: &Id) -> Result<Option<Peer>, String> {
+        self.conn
+            .prepare_cached(
+                "SELECT public, name, ext, head_gen, first_seen FROM peers WHERE col = ?1 AND device = ?2",
+            )
+            .map_err(sql)?
+            .query_row(params![col, &device.0[..]], |r| {
+                Ok((
+                    r.get::<_, Vec<u8>>(0)?,
+                    r.get::<_, Option<String>>(1)?,
+                    r.get::<_, Option<String>>(2)?,
+                    r.get::<_, Option<i64>>(3)?,
+                    r.get::<_, Option<i64>>(4)?,
+                ))
+            })
+            .optional()
+            .map_err(sql)?
+            .map(|(public, name, ext, head_gen, first_seen)| {
+                Ok(Peer {
+                    device: *device,
+                    public: public
+                        .try_into()
+                        .map_err(|_| format!("gen4 store: bad public key for device {device}"))?,
+                    name,
+                    ext,
+                    head_gen,
+                    first_seen,
+                })
+            })
+            .transpose()
+    }
+
+    /// 记下一台设备（迁移灌入 `sync2_devices`、收到它的 head）。公钥先到先得（协议 3 `trust_head` 的口径）：已经记过
+    /// 另一个公钥 = [PeerPut::KeyMismatch]，什么都不写，由调用方当作冒名处理。同一个公钥：`name` / `ext` 给了就换，
+    /// `head_gen` 只升不降，`first_seen` 留第一次的。
+    pub fn set_peer(&self, col: i64, peer: &Peer) -> Result<PeerPut, String> {
+        self.write(|| {
+            let Some(cur) = self.peer(col, &peer.device)? else {
+                self.conn
+                    .prepare_cached(
+                        "INSERT INTO peers (col, device, public, name, ext, head_gen, first_seen) \
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                    )
+                    .map_err(sql)?
+                    .execute(params![
+                        col,
+                        &peer.device.0[..],
+                        &peer.public[..],
+                        peer.name,
+                        peer.ext,
+                        peer.head_gen,
+                        peer.first_seen
+                    ])
+                    .map_err(sql)?;
+                return Ok(PeerPut::Inserted);
+            };
+            if cur.public != peer.public {
+                return Ok(PeerPut::KeyMismatch);
+            }
+            let next = Peer {
+                device: peer.device,
+                public: peer.public,
+                name: peer.name.clone().or(cur.name.clone()),
+                ext: peer.ext.clone().or(cur.ext.clone()),
+                head_gen: match (cur.head_gen, peer.head_gen) {
+                    (Some(a), Some(b)) => Some(a.max(b)),
+                    (a, b) => a.or(b),
+                },
+                first_seen: cur.first_seen.or(peer.first_seen),
+            };
+            if next == cur {
+                return Ok(PeerPut::Same);
+            }
+            self.conn
+                .prepare_cached(
+                    "UPDATE peers SET name = ?3, ext = ?4, head_gen = ?5, first_seen = ?6 \
+                     WHERE col = ?1 AND device = ?2",
+                )
+                .map_err(sql)?
+                .execute(params![
+                    col,
+                    &peer.device.0[..],
+                    next.name,
+                    next.ext,
+                    next.head_gen,
+                    next.first_seen
+                ])
+                .map_err(sql)?;
+            Ok(PeerPut::Updated)
         })
     }
 
@@ -3128,5 +3277,108 @@ pub(crate) mod tests {
             }
             prop_assert_eq!(t.audit(col).unwrap(), want.len() as u64);
         }
+    }
+
+    #[test]
+    fn a_peer_key_is_first_come_and_the_rest_merges() {
+        let conn = open_in_memory().unwrap();
+        let t = Truth::new(&conn);
+        let col = bound(&t);
+        let dev = id(0x71);
+        assert_eq!(t.device_key(col, &dev), Ok(None));
+        let first = Peer {
+            device: dev,
+            public: [7; 32],
+            name: Some("phone".to_owned()),
+            ext: None,
+            head_gen: Some(3),
+            first_seen: Some(100),
+        };
+        assert_eq!(t.tx(|t| t.set_peer(col, &first)), Ok(PeerPut::Inserted));
+        assert_eq!(t.device_key(col, &dev), Ok(Some([7; 32])));
+        assert_eq!(t.tx(|t| t.set_peer(col, &first)), Ok(PeerPut::Same));
+        // 换公钥：拒绝、什么都不写。
+        let impostor = Peer {
+            public: [8; 32],
+            name: Some("evil".to_owned()),
+            ..first.clone()
+        };
+        assert_eq!(
+            t.tx(|t| t.set_peer(col, &impostor)),
+            Ok(PeerPut::KeyMismatch)
+        );
+        assert_eq!(t.peer(col, &dev).unwrap(), Some(first.clone()));
+        // 同一个公钥：名字换、扩展补上、代号只升不降、第一次见到的时刻不变。
+        let later = Peer {
+            name: None,
+            ext: Some("{\"os\":\"ios\"}".to_owned()),
+            head_gen: Some(2),
+            first_seen: Some(900),
+            ..first.clone()
+        };
+        assert_eq!(t.tx(|t| t.set_peer(col, &later)), Ok(PeerPut::Updated));
+        let got = t.peer(col, &dev).unwrap().unwrap();
+        assert_eq!(
+            (
+                got.name.as_deref(),
+                got.ext.as_deref(),
+                got.head_gen,
+                got.first_seen
+            ),
+            (Some("phone"), Some("{\"os\":\"ios\"}"), Some(3), Some(100))
+        );
+        // 别的集合里看不到；事务外写报错。
+        assert_eq!(t.device_key(col + 1, &dev), Ok(None));
+        assert!(
+            t.set_peer(col, &first)
+                .unwrap_err()
+                .contains("outside a transaction")
+        );
+    }
+
+    /// 缺口 G-1：同一个库文件上两个连接各有一个会话。B 在读过之后、A 又接着写了几条——B 的下一个事务必须看到 A
+    /// 写的末尾与链值，而不是自己缓存里的旧值。
+    #[test]
+    fn every_outer_transaction_starts_from_what_other_connections_wrote() {
+        let dir = crate::store::sync2::tests::tempdir::new("gen4-two-conns");
+        let path = dir.0.join("srs4.db");
+        let ca = crate::store::gen4::schema::open(&path).unwrap();
+        let cb = crate::store::gen4::schema::open(&path).unwrap();
+        let a = Truth::new(&ca);
+        let b = Truth::new(&cb);
+        let col = bound(&a);
+        let dev = native(1, "\"x\"").id.device;
+        a.tx(|t| {
+            for seq in 1..=3 {
+                t.append_native(col, &native(seq, "\"a\""))?;
+            }
+            Ok(())
+        })
+        .unwrap();
+        // B 读过：缓存里是末尾 3。
+        assert_eq!(b.tx(|t| t.last_of(col, &dev)), Ok(3));
+        a.tx(|t| {
+            for seq in 4..=5 {
+                t.append_native(col, &native(seq, "\"a\""))?;
+            }
+            Ok(())
+        })
+        .unwrap();
+        // B 的下一个事务第一次就接在 5 后面，链值接在 A 写的链上。
+        let six = native(6, "\"b\"");
+        let want = chain_next4(&a.tx(|t| t.chain_at(col, &dev, 5)).unwrap(), &six);
+        assert_eq!(b.tx(|t| t.append_native(col, &six)), Ok(want));
+        // A 那边同理：看到 B 写的第 6 条。
+        assert_eq!(a.tx(|t| t.last_of(col, &dev)), Ok(6));
+        assert_eq!(a.tx(|t| t.audit(col)), Ok(6));
+        // 嵌套的事务不 reset：同一个外层事务里的缓存照用。
+        b.tx(|t| {
+            let seven = native(7, "\"b\"");
+            t.append_native(col, &seven)?;
+            t.tx(|t| t.append_native(col, &native(8, "\"b\"")))?;
+            assert_eq!(t.last_of(col, &dev)?, 8);
+            Ok(())
+        })
+        .unwrap();
     }
 }

@@ -7,6 +7,9 @@
 /// 本库自己的版本号（`srs_meta.schema`）。迁移阶梯见 [migrate]。
 pub const SCHEMA_VERSION: i64 = 29;
 
+// 封存与墓碑库（冻结侧，设计 §6.1 第 7 步）：实现在 `store/seal.rs`，从这里给出。
+pub use super::seal::{SEALED_SCHEMA, seal_legacy, write_tombstone};
+
 /// 前身链接的部分索引条件；与 `kSrsHistoryFromCondition`（database_srs.part.dart）逐字一致，
 /// 查询里的 WHERE 必须写成同一个表达式才用得上这个索引。
 pub const HISTORY_FROM_CONDITION: &str = "substr(field_key, 1, 12) = 'historyFrom/'";
