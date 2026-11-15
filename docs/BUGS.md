@@ -34,6 +34,18 @@
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
 > 共 4027 条。点号进各自文件。
+> 共 4034 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-4647](bugs/BUG-4647-manual-finish-mark-not-tracked.md) | ✅ | ✅ | Marked Finished / watched by hand is not sent to the tracking site |
+| [BUG-4646](bugs/BUG-4646-tracking-reconcile-misses-watched-episodes.md) | ✅ | ✅ | 媒体追踪对账与待关联列表漏掉播放看完的集（BUG-3491 后不再写 completedAt） |
+| [BUG-4645](bugs/BUG-4645-tracking-same-link-resent.md) | ✅ | ✅ | Linking again to the same entry and number sent the progress again |
+| [BUG-4644](bugs/BUG-4644-tracking-relink-book-number-reverts.md) | ✅ | ✅ | Reopening a book link showed the planned volume, and Link silently put it back |
+| [BUG-4643](bugs/BUG-4643-tracking-search-focus-lost.md) | ✅ | ✅ | Tracking page search box lost focus when the list turned empty or back |
+| [BUG-4642](bugs/BUG-4642-apple-dialog-segmented-intrinsic.md) | ✅ | ✅ | Apple segmented control in a dialog broke layout: no intrinsic size inside IntrinsicWidth |
+| [BUG-4641](bugs/BUG-4641-tracking-replay-resent.md) | ✅ | ✅ | Watching a linked movie or episode again after a restart sent it to the site again |
+> 共 4025 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -47,6 +59,12 @@
 | [BUG-4622](bugs/BUG-4622-manga-ocr-apostrophe.md) | ✅ | ✅ | 漫画 OCR 逐字节点的词内撇号扫描与小说不一致 |
 | [BUG-4621](bugs/BUG-4621-manga-ocr-dehyphenation.md) | ✅ | ✅ | 漫画 OCR 行尾断字导致整词查词失败 |
 | [BUG-4620](bugs/BUG-4620-cuda-budget-read-from-igpu-adapter.md) | ✅ | ✅ | CUDA 转录的显存预算读的是 DXGI 适配器 0，混合显卡笔记本上是核显 |
+| [BUG-4610](bugs/BUG-4610-tracking-sign-in-state-cleared.md) | ✅ | ✅ | A rejected sign-in looked fixed after any sync, and signing in again did not send what waited |
+| [BUG-4609](bugs/BUG-4609-tracking-hand-link-before-progress.md) | ✅ | ✅ | A video can be hand-linked only after progress, and starts at episode 1 |
+| [BUG-4608](bugs/BUG-4608-tracking-sync-status-bangumi-only.md) | ✅ | ✅ | Settings Sync section and control status report Bangumi only |
+| [BUG-4607](bugs/BUG-4607-tracking-book-series-ignore.md) | ✅ | ✅ | "Don't track the series" is never offered for a book series made by rule |
+| [BUG-4606](bugs/BUG-4606-tracking-multi-season-collection-link.md) | ✅ | ✅ | A hand link of a multi-season video collection is saved and never sends |
+| [BUG-4605](bugs/BUG-4605-tracking-search-video-file-names.md) | ✅ | ✅ | Tracking link search pre-fill keeps episode / group noise of video file names |
 | [BUG-4577](bugs/BUG-4577-interconnect-auth-exemption-path-method.md) | ✅ | ✅ | 互联鉴权豁免按编码路径且不看方法，与路由分发的路径形态不一致 |
 | [BUG-4576](bugs/BUG-4576-interconnect-unbounded-request-body.md) | ✅ | ✅ | 互联 host 与扩展 API 读请求体没有上限，免鉴权配对端点可被巨体耗尽内存 |
 | [BUG-4575](bugs/BUG-4575-interconnect-peer-token-cache-revoke-race.md) | ✅ | ✅ | 吊销已配对设备时若恰逢 token 集合加载，旧 token 被写回缓存继续有效 |

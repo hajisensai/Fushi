@@ -334,6 +334,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'navigation/Online services':
       'test/settings/settings_module_gating_test.dart',
   'navigation/Sync & backup': 'test/settings/settings_module_gating_test.dart',
+  // Media tracking（ModuleId.tracking，默认关）：同上，没有底栏 tab；生效点是
+  // 「设置 › 媒体追踪」分类与「首页追踪」面板行消失，运行时（不同步、不上报）由
+  // preferences_repository_test / module_registry_test 咬住。
+  'navigation/Media tracking':
+      'test/settings/settings_module_gating_test.dart（Media tracking module off）',
   // AI（2026-10-13 起独立模块）：同上，生效点是「设置 › AI」整条分类消失，另有
   // 运行时投影（每个 AiFeature 解析不到提供商）由 preferences_repository_test 咬住，
   // 各页入口由 test/models/ai_module_gate_guard_test.dart 守。

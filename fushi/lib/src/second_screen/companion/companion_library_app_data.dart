@@ -14,6 +14,8 @@ import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/media/media_source.dart' show MediaItemAppLookup;
 import 'package:fushi/src/media/music/music_library_data.dart';
 import 'package:fushi/src/media/kavita/kavita_server_config.dart';
+import 'package:fushi/src/media/library_finish_marks.dart'
+    show setBooksFinished;
 import 'package:fushi/src/media/music/music_output_backend.dart'
     show MusicPlayItem;
 import 'package:fushi/src/media/music/music_player_engine.dart'
@@ -1621,15 +1623,19 @@ class AppCompanionLibraryData implements CompanionLibraryData {
         // The shelf's "mark finished": EpubBooks.completedAt by bookKey.
         final String bookKey = ReaderFushiSource.parseBookKey(key) ?? '';
         if (bookKey.isEmpty) return false;
-        await _db.setEpubBookCompleted(
-          bookKey,
-          finished ? DateTime.now() : null,
+        // Same entry as the shelf menu: a mark set by hand reaches tracking.
+        await setBooksFinished(
+          db: _db,
+          tracking: _app.libraryFinishTracking,
+          bookKeys: <String>[bookKey],
+          finished: finished,
         );
         _ref.invalidate(completedEpubBookKeysProvider);
         return true;
       case CompanionLibraryItemKind.video:
         await setVideosWatched(
           db: _db,
+          tracking: _app.libraryFinishTracking,
           watched: finished,
           localUids: <String>[key],
         );
@@ -1642,6 +1648,7 @@ class AppCompanionLibraryData implements CompanionLibraryData {
         if (id == null) return false;
         await setVideosWatched(
           db: _db,
+          tracking: _app.libraryFinishTracking,
           watched: finished,
           localUids: <String>[
             for (final CompanionLibraryRecord r in await videos())
