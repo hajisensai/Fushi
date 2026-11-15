@@ -25,8 +25,11 @@ import 'package:test/test.dart';
 ///
 /// ## 规则
 ///
-/// `fushi/lib` 与 `packages/*/lib` 里，没有初始值的 `final` 局部变量若在随后的
-/// `switch` 语句里被赋值，就不能再被闭包（`() {}` / `() =>` / 局部函数）引用。
+/// 扫描范围是所有会进 AOT 的 Dart 源：`fushi/lib`、`packages/*/lib`、
+/// `third_party/*/lib`（vendored 插件同样编进 release 快照），以及
+/// `fushi/integration_test`（profile 模式的性能测试走 AOT）。这些目录里，没有
+/// 初始值的 `final` 局部变量若在随后的 `switch` 语句里被赋值，就不能再被闭包
+/// （`() {}` / `() =>` / 局部函数）引用。
 /// 改写成不推迟赋值的形状：把每个 case 的后续工作挪进 case 里（或抽成方法），
 /// 或者用 `switch` 表达式在声明处直接取值。
 ///
@@ -120,16 +123,30 @@ class Picker {
     });
   });
 
-  test('lib 代码里没有「推迟赋值 final + switch 赋值 + 闭包捕获」（#64917）', () {
-    final List<Directory> roots = <Directory>[Directory('lib')];
-    final Directory packages = Directory('../packages');
-    expect(packages.existsSync(), isTrue, reason: packages.absolute.path);
-    for (final FileSystemEntity entity in packages.listSync()) {
-      if (entity is Directory) {
-        final Directory lib = Directory('${entity.path}/lib');
-        if (lib.existsSync()) roots.add(lib);
+  test('进 AOT 的代码里没有「推迟赋值 final + switch 赋值 + 闭包捕获」（#64917）', () {
+    final List<Directory> roots = <Directory>[
+      Directory('lib'),
+      Directory('integration_test'),
+    ];
+    for (final String parent in <String>['../packages', '../third_party']) {
+      final Directory dir = Directory(parent);
+      expect(dir.existsSync(), isTrue, reason: dir.absolute.path);
+      for (final FileSystemEntity entity in dir.listSync()) {
+        if (entity is Directory) {
+          final Directory lib = Directory('${entity.path}/lib');
+          if (lib.existsSync()) roots.add(lib);
+        }
       }
     }
+    expect(roots.first.existsSync() && roots[1].existsSync(), isTrue);
+    expect(
+      roots.where(
+        (Directory d) =>
+            d.path.replaceAll(r'\', '/').startsWith('../third_party/'),
+      ),
+      isNotEmpty,
+      reason: 'vendored 插件同样编进 release AOT，必须在扫描范围内',
+    );
     int scanned = 0;
     final List<String> offenders = <String>[];
     for (final Directory root in roots) {
@@ -145,7 +162,7 @@ class Picker {
         }
       }
     }
-    expect(scanned, greaterThan(1000), reason: '扫描根目录找错了');
+    expect(scanned, greaterThan(3000), reason: '扫描根目录找错了');
     expect(
       offenders,
       isEmpty,
