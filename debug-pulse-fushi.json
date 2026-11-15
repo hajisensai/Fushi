@@ -1,12 +1,47 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-15T01:52:25Z",
+ "generatedAt": "2026-11-15T03:22:42Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "34be7b56ae0b39bfcd9b55e7873e9eb18d211b2d",
-  "seq": 27272
+  "sha": "ac27de2a4334b9f1bea14f1039af08328649852c",
+  "seq": 27276
  },
  "builds": [
+  {
+   "seq": 27265,
+   "version": "3.3.0",
+   "sha": "cc2408d35a7c51e40a79bf70313074e07460eac4",
+   "unknown": false,
+   "publishedAt": "2026-11-15T03:22:29Z",
+   "testflight": true,
+   "baseSeq": 27210,
+   "prs": [
+    3372,
+    3430,
+    3424,
+    3427,
+    3381,
+    3277
+   ],
+   "direct": [],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "superseded",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43663499517"
+    },
+    "windows": {
+     "state": "ok"
+    },
+    "macos": {
+     "state": "failed",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43663499501"
+    },
+    "ios": {
+     "state": "ok"
+    }
+   }
+  },
   {
    "seq": 27210,
    "version": "3.3.0",
@@ -127,8 +162,8 @@
    "version": "3.3.0",
    "sha": "ca22b87417ba71ae354ba73e3c3ffd801ff00dea",
    "unknown": false,
-   "publishedAt": "2026-11-14T22:13:29Z",
-   "testflight": true,
+   "publishedAt": "2026-11-14T21:58:02Z",
+   "testflight": false,
    "baseSeq": 26879,
    "prs": [
     3413,
@@ -146,28 +181,26 @@
      "state": "ok"
     },
     "windows": {
-     "state": "ok"
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43639943062"
     },
     "macos": {
-     "state": "ok"
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43639943062"
     },
     "ios": {
-     "state": "ok"
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43639943062"
     }
    }
   }
  ],
  "pending": {
-  "headSha": "34be7b56ae0b39bfcd9b55e7873e9eb18d211b2d",
-  "headSeq": 27272,
+  "headSha": "ac27de2a4334b9f1bea14f1039af08328649852c",
+  "headSeq": 27276,
   "prs": [
-   3428,
-   3372,
-   3430,
-   3424,
-   3427,
-   3381,
-   3277
+   3429,
+   3428
   ],
   "direct": [
    {
@@ -179,19 +212,19 @@
   "platforms": {
    "android": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43664899065"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43665108112"
    },
    "windows": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43664899114"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43665108077"
    },
    "macos": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43664899114"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43665108077"
    },
    "ios": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43664899114"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43665108077"
    }
   }
  },
@@ -493,6 +526,15 @@
    "mergedAt": "2026-11-15T01:49:41Z",
    "additions": 461,
    "deletions": 26,
+   "labels": []
+  },
+  "3429": {
+   "number": 3429,
+   "title": "feat(srs-gen4): G8-2 FRL4 中继件 + D16-A FSG4 签名覆盖明文压缩体",
+   "author": "W1ght",
+   "mergedAt": "2026-11-15T01:52:24Z",
+   "additions": 780,
+   "deletions": 19,
    "labels": []
   },
   "3430": {
