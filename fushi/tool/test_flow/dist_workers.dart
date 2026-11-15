@@ -109,14 +109,33 @@ const int kDistLockStaleMinutes = 15;
 /// that keeps asking stays "asking right now" there and keeps its place.
 const int kDistQueueWaitSeconds = 25;
 
-/// The pause between two asks of a worker that queues runs itself: the wait
-/// happened there ([kDistQueueWaitSeconds]).
+/// A worker that turned a run down ([DistWorkerBusy]) is asked again this
+/// long after the ask that it turned down began.
+const Duration kDistBusyAskAgain = Duration(seconds: 30);
+
+/// The least pause between two asks: what is left of [kDistBusyAskAgain]
+/// after an ask that waited in the worker's queue
+/// ([kDistQueueWaitSeconds]).
 const Duration kDistQueueAskAgain = Duration(seconds: 3);
 
+/// The pause before a worker that turned an ask down is asked again, by how
+/// long that ask [waited] there. An ask that waited in the worker's queue
+/// has spent the time already and comes back within worker_slot.sh's
+/// PRESENT window, so its place is kept; one turned down at once (paused,
+/// short of disk, a shim without the queue) gets the whole
+/// [kDistBusyAskAgain] -- what a worker was configured to do says nothing
+/// about what this ask did (2026-11-15: every such answer was asked again
+/// after 3 s, an ssh connection each).
+Duration distBusyPause(Duration waited) {
+  final Duration left = kDistBusyAskAgain - waited;
+  return left > kDistQueueAskAgain ? left : kDistQueueAskAgain;
+}
+
 /// How often a worker that gave its checkout up between two batches asks for
-/// it back ([kDistQueueWaitSeconds] each) before it is dropped: the runs
+/// it back before it is dropped, one ask per [kDistBusyAskAgain] whether it
+/// waited in the queue or was turned down at once (30 minutes): the runs
 /// ahead of it are in the same queue, so only a hung one gets this far.
-const int kDistResumeAsks = 72;
+const int kDistResumeAsks = 60;
 
 /// ssh's own exit code for connection-level failures.
 const int kSshConnectionFailure = 255;
@@ -509,8 +528,12 @@ bool distJobBlockerIsTransient(String blocker) =>
     blocker == kDistPausedByOwner || blocker.startsWith(kDistUnreachable);
 
 class DistWorkerError implements Exception {
-  DistWorkerError(this.message);
+  DistWorkerError(this.message, {this.waited = Duration.zero});
   final String message;
+
+  /// How long the step that failed took, the worker's own wait included
+  /// (its queue): the ask began this long before the error.
+  final Duration waited;
   @override
   String toString() => message;
 }
@@ -519,13 +542,13 @@ class DistWorkerError implements Exception {
 /// [kDistShimBusy]: its checkout locked by another run, paused, short of
 /// disk). Nothing was taken there; asking again later may succeed.
 class DistWorkerBusy extends DistWorkerError {
-  DistWorkerBusy(super.message);
+  DistWorkerBusy(super.message, {super.waited});
 }
 
 /// The machine did not answer at all (ssh exit [kSshConnectionFailure] at
 /// the first step of a prepare): nothing of the run is the cause.
 class DistWorkerUnreachable extends DistWorkerError {
-  DistWorkerUnreachable(super.message);
+  DistWorkerUnreachable(super.message, {super.waited});
 }
 
 /// What the worker's queue said to a `yield` (worker_slot.sh): true when the
@@ -539,29 +562,33 @@ bool distYielded(String stdout) {
   return last == 'yielded' || last == 'lost';
 }
 
-/// [attempt], asked again after [wait] each time it throws [DistWorkerBusy],
-/// at most [retries] times in a row (then that busy error propagates; any
-/// other error at once). [stillWanted] is asked after each wait: false ends
-/// it with null (someone else did the work meanwhile). [said] gets one line
-/// per retry. Used for a worker that turns a run down at its `lock` /
+/// [attempt], asked again each time it throws [DistWorkerBusy], after
+/// [distBusyPause] of how long that ask waited on the worker, at most
+/// [retries] times in a row (then that busy error propagates; any other
+/// error at once). [stillWanted] is asked after each wait: false ends it
+/// with null (someone else did the work meanwhile). [said] gets one line
+/// per retry, [answered] every busy answer; [pause] is the sleep (tests). Used for a worker that turns a run down at its `lock` /
 /// `init` (prepare) the way `--busy-retries` already covered a batch turned
 /// down at its start (2026-11-10: three locked Mac slots made every run
 /// decline at once whatever `--busy-retries` said).
 Future<T?> distRetryWhileBusy<T>(
   Future<T> Function() attempt, {
   required int retries,
-  required Duration wait,
   bool Function()? stillWanted,
   void Function(String line)? said,
+  void Function(DistWorkerBusy busy)? answered,
+  Future<void> Function(Duration length)? pause,
 }) async {
   int busy = 0;
   while (true) {
     try {
       return await attempt();
     } on DistWorkerBusy catch (e) {
+      answered?.call(e);
       if (++busy > retries) rethrow;
+      final Duration wait = distBusyPause(e.waited);
       said?.call('${e.message}; asking again in ${wait.inSeconds}s');
-      await Future<void>.delayed(wait);
+      await (pause ?? Future<void>.delayed)(wait);
       if (stillWanted != null && !stillWanted()) return null;
     }
   }
@@ -1359,12 +1386,12 @@ class SshDistWorker extends DistWorker {
           stderr: '${r.stderr}',
         ) ==
         kDistShimBusy) {
-      throw DistWorkerBusy(message);
+      throw DistWorkerBusy(message, waited: watch.elapsed);
     }
     if (reach && r.exitCode == kSshConnectionFailure) {
-      throw DistWorkerUnreachable(message);
+      throw DistWorkerUnreachable(message, waited: watch.elapsed);
     }
-    throw DistWorkerError(message);
+    throw DistWorkerError(message, waited: watch.elapsed);
   }
 
   Future<void> _sshChecked(String step, String command, IOSink log) async {
@@ -1566,16 +1593,17 @@ class SshDistWorker extends DistWorker {
     final int configured = queueWaitSeconds;
     queueWaitSeconds = kDistQueueWaitSeconds;
     try {
-      for (int ask = 1; ; ask++) {
-        try {
+      // The same pauses as a first prepare: a worker that answers at once
+      // (paused meanwhile, short of disk) is not asked every 3 s.
+      final bool? back = await distRetryWhileBusy<bool>(
+        () async {
           await _take(runId, log, step: 'take again');
-          break;
-        } on DistWorkerBusy {
-          if (ask >= kDistResumeAsks) rethrow;
-        }
-        if (!stillWanted()) return false;
-        await Future<void>.delayed(kDistQueueAskAgain);
-      }
+          return true;
+        },
+        retries: kDistResumeAsks - 1,
+        stillWanted: stillWanted,
+      );
+      if (back == null) return false;
     } finally {
       queueWaitSeconds = configured;
     }

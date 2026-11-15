@@ -568,7 +568,7 @@ class _Scheduler {
 
   /// A worker that is busy (owner's memory limit) is asked again after this
   /// long, at most [kBusyRetries] times in a row.
-  static const Duration kBusyWait = Duration(seconds: 30);
+  static const Duration kBusyWait = kDistBusyAskAgain;
   static const int kBusyRetries = 20;
 
   int _inFlight = 0;
@@ -793,8 +793,9 @@ class _Scheduler {
 
   /// [_prepareWhileNeeded], asking a worker that turned the run down before
   /// taking anything ([DistWorkerBusy]: its checkout locked by another run,
-  /// paused) again after [kBusyWait], at most [busyRetries] times in a row --
-  /// the same patience as for a batch it turns down. False when the others
+  /// paused) again [kBusyWait] after that ask began ([distBusyPause]: the
+  /// time it waited in the worker's queue counts), at most [busyRetries]
+  /// times in a row -- the same patience as for a batch it turns down. False when the others
   /// meanwhile ran everything it could have.
   Future<bool> _prepareAskingAgain(DistWorker worker, IOSink log) async =>
       await distRetryWhileBusy<bool>(
@@ -803,8 +804,6 @@ class _Scheduler {
           return _prepareWhileNeeded(worker, log);
         },
         retries: busyRetries,
-        // A worker that queued the run itself already waited there.
-        wait: worker.queueWaitSeconds > 0 ? kDistQueueAskAgain : kBusyWait,
         stillWanted: () =>
             !_tally.lost &&
             (_inFlight > 0 || queue.remaining.any(worker.eligible)),
