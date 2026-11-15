@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-15T03:32:44Z",
+ "generatedAt": "2026-11-15T03:33:39Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "0b93dd1344e5c42df7ff11dcd6907f3fcc48fa4e",
-  "seq": 27280
+  "sha": "27b0ddf6d4983fced0c7dd32bafc58e4f4c2c6b9",
+  "seq": 27285
  },
  "builds": [
   {
@@ -14,14 +14,10 @@
    "unknown": false,
    "publishedAt": "2026-11-15T03:22:29Z",
    "testflight": true,
-   "baseSeq": 27210,
+   "baseSeq": 27253,
    "prs": [
     3372,
-    3430,
-    3424,
-    3427,
-    3381,
-    3277
+    3430
    ],
    "direct": [],
    "truncated": false,
@@ -39,6 +35,40 @@
     },
     "ios": {
      "state": "ok"
+    }
+   }
+  },
+  {
+   "seq": 27253,
+   "version": "3.3.0",
+   "sha": "6e9b32821675d90c74959c44b535055fb552e88e",
+   "unknown": false,
+   "publishedAt": "2026-11-15T03:33:29Z",
+   "testflight": false,
+   "baseSeq": 27210,
+   "prs": [
+    3424,
+    3427,
+    3381,
+    3277
+   ],
+   "direct": [],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "ok"
+    },
+    "windows": {
+     "state": "superseded",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43658688931"
+    },
+    "macos": {
+     "state": "superseded",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43658688931"
+    },
+    "ios": {
+     "state": "superseded",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/43658688931"
     }
    }
   },
@@ -156,49 +186,13 @@
      "state": "ok"
     }
    }
-  },
-  {
-   "seq": 26884,
-   "version": "3.3.0",
-   "sha": "ca22b87417ba71ae354ba73e3c3ffd801ff00dea",
-   "unknown": false,
-   "publishedAt": "2026-11-14T21:58:02Z",
-   "testflight": false,
-   "baseSeq": 26879,
-   "prs": [
-    3413,
-    3411
-   ],
-   "direct": [
-    {
-     "sha": "ac1c45827bbeb2017fe9f623fb6a305d8d657a18",
-     "subject": "chore(bugs): settle BUG number collisions on 1d164f2e7"
-    }
-   ],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "ok"
-    },
-    "windows": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43639943062"
-    },
-    "macos": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43639943062"
-    },
-    "ios": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/43639943062"
-    }
-   }
   }
  ],
  "pending": {
-  "headSha": "0b93dd1344e5c42df7ff11dcd6907f3fcc48fa4e",
-  "headSeq": 27280,
+  "headSha": "27b0ddf6d4983fced0c7dd32bafc58e4f4c2c6b9",
+  "headSeq": 27285,
   "prs": [
+   3435,
    3433,
    3429,
    3428
@@ -213,19 +207,19 @@
   "platforms": {
    "android": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43672655873"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43672887221"
    },
    "windows": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43672655950"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43672887240"
    },
    "macos": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43672655950"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43672887240"
    },
    "ios": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43672655950"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43672887240"
    }
   }
  },
@@ -376,15 +370,6 @@
    "deletions": 1,
    "labels": []
   },
-  "3411": {
-   "number": 3411,
-   "title": "fix(srs gen4): Purge(Card) 清掉挪卡后重看目标牌组的删除扣住（增量==重建）",
-   "author": "W1ght",
-   "mergedAt": "2026-11-14T20:29:21Z",
-   "additions": 143,
-   "deletions": 7,
-   "labels": []
-  },
   "3412": {
    "number": 3412,
    "title": "fix(diagnostics): Android scheduleCrash 失败与无前缀权限 killUid 不再误报闪退",
@@ -392,15 +377,6 @@
    "mergedAt": "2026-11-14T22:23:09Z",
    "additions": 162,
    "deletions": 4,
-   "labels": []
-  },
-  "3413": {
-   "number": 3413,
-   "title": "fix(srs gen4): 别名判定兜底根实体冲突 / 内置表守卫 / 分叉清单（G4 审查 ids）",
-   "author": "W1ght",
-   "mergedAt": "2026-11-14T20:54:17Z",
-   "additions": 521,
-   "deletions": 120,
    "labels": []
   },
   "3414": {
@@ -554,6 +530,15 @@
    "mergedAt": "2026-11-15T03:30:17Z",
    "additions": 775,
    "deletions": 39,
+   "labels": []
+  },
+  "3435": {
+   "number": 3435,
+   "title": "SRS G8-1：协议 4 位置布局纯函数（没有调用方）",
+   "author": "W1ght",
+   "mergedAt": "2026-11-15T03:33:16Z",
+   "additions": 1208,
+   "deletions": 0,
    "labels": []
   }
  }
