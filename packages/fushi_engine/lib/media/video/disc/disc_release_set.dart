@@ -87,14 +87,23 @@ String blurayReleaseStem(BlurayDisc disc) {
   return stripDiscVolumeMarker(directory);
 }
 
-int _volumeOf(BlurayDisc disc) =>
-    discVolumeNumber(disc.name) ??
-    discVolumeNumber(p.basename(p.normalize(disc.rootPath))) ??
-    1 << 20;
+/// 没有卷标的盘排在有卷标的之后。
+const int kDiscVolumeUnknown = 1 << 20;
+
+/// [disc] 的卷号（先看盘名再看目录名）；都没有卷标返回 [kDiscVolumeUnknown]。
+int blurayDiscVolumeOrder(BlurayDisc disc) =>
+    discVolumeNumber(disc.name) ?? discDirectoryVolumeOrder(disc.rootPath);
+
+/// 只凭盘根目录名看卷号（盘本轮没读到、拿不到盘内标题时用）。
+int discDirectoryVolumeOrder(String discRootPath) =>
+    discVolumeNumber(p.basename(p.normalize(discRootPath))) ??
+    kDiscVolumeUnknown;
 
 /// 同一组内的盘序：卷号（先看盘名再看目录名），再按路径自然序。
 int compareBlurayDiscOrder(BlurayDisc a, BlurayDisc b) {
-  final int byVolume = _volumeOf(a).compareTo(_volumeOf(b));
+  final int byVolume = blurayDiscVolumeOrder(
+    a,
+  ).compareTo(blurayDiscVolumeOrder(b));
   if (byVolume != 0) return byVolume;
   return naturalCompare(a.rootPath, b.rootPath);
 }

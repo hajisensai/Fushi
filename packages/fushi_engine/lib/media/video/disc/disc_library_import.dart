@@ -18,6 +18,8 @@ import 'package:drift/drift.dart' show Value;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
+import 'package:fushi_engine/media/collections/shelf_sort.dart'
+    show naturalCompare;
 import 'package:fushi_engine/media/video/bluray/bluray_disc.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_episode.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_library_title.dart';
@@ -526,22 +528,65 @@ class DiscLibraryImporter {
         title: collectionName,
       );
     }
-    final Map<String, String> uidByPath = <String, String>{
-      for (final VideoBookRow row in await _videoRepo.listAll())
-        normalizeVideoPath(row.videoPath): row.bookUid,
-    };
-    await _db.reorderCollectionItemsAutomatically(
-      collectionId,
-      <CollectionMemberKey>[
-        for (final PlaylistEntry entry in entries)
-          if (uidByPath[normalizeVideoPath(entry.path)] case final String uid)
-            (mediaType: MediaKind.video.dbValue, entryKey: uid),
-      ],
-    );
+    await _orderReleaseSetCollection(collectionId, set);
     return _DiscCollection(
       id: collectionId,
       name: collectionName,
       created: created,
+    );
+  }
+
+  /// 发布组合集的成员按「盘序 × 盘内集序」重排。合集里可能还有本轮没读到的盘
+  /// （移动硬盘没插）的各集，所以不能只排本轮的成员：每个成员按它所在盘的卷号
+  /// （本轮读到的盘看盘内标题，没读到的只看目录名）、盘根路径、成员文件名排——
+  /// 文件名 `00001.p01` < `00001.p02` < `00002` 的自然序就是盘内的标题顺序。
+  Future<void> _orderReleaseSetCollection(
+    int collectionId,
+    BlurayReleaseSet set,
+  ) async {
+    final Map<String, int> volumeByRoot = <String, int>{
+      for (final BlurayDisc disc in set.discs)
+        normalizeVideoPath(disc.rootPath): blurayDiscVolumeOrder(disc),
+    };
+    final Map<String, VideoBookRow> byUid = <String, VideoBookRow>{
+      for (final VideoBookRow row in await _videoRepo.listAll())
+        row.bookUid: row,
+    };
+    final List<({String uid, int volume, String root, String path})> members =
+        <({String uid, int volume, String root, String path})>[];
+    for (final MediaCollectionItemRow item in await _db.getCollectionItems(
+      collectionId,
+    )) {
+      final VideoBookRow? row = item.mediaType == MediaKind.video.dbValue
+          ? byUid[item.entryKey]
+          : null;
+      final String? owner = row == null
+          ? null
+          : discRootForMemberPath(row.videoPath);
+      if (row == null || owner == null) continue;
+      members.add((
+        uid: row.bookUid,
+        volume:
+            volumeByRoot[normalizeVideoPath(owner)] ??
+            discDirectoryVolumeOrder(owner),
+        root: owner,
+        path: row.videoPath,
+      ));
+    }
+    members.sort((a, b) {
+      final int byVolume = a.volume.compareTo(b.volume);
+      if (byVolume != 0) return byVolume;
+      final int byRoot = naturalCompare(a.root, b.root);
+      if (byRoot != 0) return byRoot;
+      return naturalCompare(a.path, b.path);
+    });
+    await _db.reorderCollectionItemsAutomatically(
+      collectionId,
+      <CollectionMemberKey>[
+        for (final ({String uid, int volume, String root, String path}) member
+            in members)
+          (mediaType: MediaKind.video.dbValue, entryKey: member.uid),
+      ],
     );
   }
 

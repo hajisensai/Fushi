@@ -2,6 +2,8 @@ import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:test/test.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
+import 'package:fushi_engine/media/video/metadata/video_source_scrape_coordinator.dart'
+    show discOrdinalEpisodeOverrides;
 import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -253,5 +255,61 @@ void main() {
       works.map((VideoSourceScrapeWork work) => work.members.single.bookUid),
       <String>['anime-01'],
     );
+  });
+
+  test('按集展开、跨两张盘的原盘合集是一部剧集作品，集号按合集顺序连续', () async {
+    // 只有「全部播放」的剧集盘入库后：同一发布的两张盘并在一个合集里，成员是虚拟的
+    // 分集路径，按盘序 × 盘内集序排（docs/specs/2026-11-15-bluray-playitem-episodes.md）。
+    final int sourceId = await addSource('D:/bd');
+    final int collectionId = await db.createMediaCollection(
+      '魔女の旅々',
+      collectionType: 'playlist',
+    );
+    final List<String> paths = <String>[
+      for (final String disc in <String>['Disc 1', 'Disc 2'])
+        for (int item = 1; item <= 6; item++)
+          'D:/bd/Majo [BDMV]/$disc/BDMV/PLAYLIST/00001.p0$item.mpls',
+    ];
+    // 入库顺序故意与路径字典序、uid 字典序都不同：集号只认合集内顺序。
+    for (final (int index, String path) in paths.indexed) {
+      final String uid =
+          'ep-${(97 + (index * 7) % 12).toRadixString(36)}$index';
+      await addVideo(uid, path, sourceId);
+      await db.addToCollection(collectionId, MediaKind.video, uid);
+    }
+
+    final SourceLibraryRow source = (await db.getMediaSourceById(sourceId))!;
+    final VideoSourceScrapeWork work = (await VideoSourceWorkPlanner(
+      db,
+    ).plan(source)).single;
+    expect(work.isEpisodic, isTrue);
+    expect(work.title, '魔女の旅々');
+    expect(work.members.map((VideoBookRow row) => row.videoPath), paths);
+    final Map<String, (int, int)> overrides = discOrdinalEpisodeOverrides(work);
+    expect(
+      <(int, int)>[
+        for (final VideoBookRow member in work.members)
+          overrides[member.bookUid]!,
+      ],
+      <(int, int)>[for (int i = 1; i <= 12; i++) (1, i)],
+    );
+  });
+
+  test('单张逐集播放列表的盘不套顺序集号（维持按文件名的旧行为）', () async {
+    final int sourceId = await addSource('D:/bd');
+    final int collectionId = await db.createMediaCollection(
+      'Show',
+      collectionType: 'playlist',
+    );
+    for (final String id in <String>['00003', '00004']) {
+      await addVideo(id, 'D:/bd/Show/BDMV/PLAYLIST/$id.mpls', sourceId);
+      await db.addToCollection(collectionId, MediaKind.video, id);
+    }
+    final SourceLibraryRow source = (await db.getMediaSourceById(sourceId))!;
+    final VideoSourceScrapeWork work = (await VideoSourceWorkPlanner(
+      db,
+    ).plan(source)).single;
+    expect(work.isEpisodic, isTrue);
+    expect(discOrdinalEpisodeOverrides(work), isEmpty);
   });
 }

@@ -1,0 +1,231 @@
+// 只有「全部播放」的蓝光剧集盘入库：按集建行、同一发布的几张盘并成一个合集、
+// 存量「一卷一个条目」的迁移与清理、以及刮削计划拿到的连续集号。
+// 设计见 docs/specs/2026-11-15-bluray-playitem-episodes.md。
+import 'dart:io';
+
+import 'package:drift/drift.dart' show Value;
+import 'package:drift/native.dart';
+import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/media/video/bluray/bluray_disc.dart';
+import 'package:fushi_engine/media/video/disc/disc_library_import.dart';
+import 'package:fushi_engine/media/video/disc/disc_release_set.dart';
+import 'package:path/path.dart' as p;
+import 'package:test/test.dart';
+
+import '../bluray/bluray_episode_fixture.dart';
+
+void main() {
+  late FushiDatabase db;
+  late Directory temp;
+  late String disc1;
+  late String disc2;
+  late DiscLibraryImporter importer;
+
+  setUp(() async {
+    db = FushiDatabase.forTesting(NativeDatabase.memory());
+    temp = await Directory.systemTemp.createTemp('fushi-disc-set-');
+    disc1 = p.join(temp.path, 'Majo no Tabitabi [BDMV]', 'Disc 1');
+    disc2 = p.join(temp.path, 'Majo no Tabitabi [BDMV]', 'Disc 2');
+    writeEpisodicDisc(disc1, episodes: 6, discName: '魔女の旅々　上巻');
+    writeEpisodicDisc(disc2, episodes: 6, discName: '魔女の旅々　下巻');
+    importer = DiscLibraryImporter(db);
+  });
+
+  tearDown(() async {
+    await db.close();
+    try {
+      await temp.delete(recursive: true);
+    } on FileSystemException {
+      // Windows 上偶发句柄占用；临时目录留给系统清。
+    }
+  });
+
+  Future<DiscLibraryImportReport> import(List<String> roots, {int? sourceId}) =>
+      importer.importBlurayDiscs(
+        roots,
+        sourceId: sourceId,
+        restoreDissolvedGroups: false,
+      );
+
+  /// 合集 [id] 的成员路径，按合集内顺序。
+  Future<List<String>> memberPaths(int id) async => <String>[
+    for (final MediaCollectionItemRow item in await db.getCollectionItems(id))
+      (await db.getVideoBookByBookUid(item.entryKey))!.videoPath,
+  ];
+
+  List<String> allEpisodePaths() => <String>[
+    for (int i = 1; i <= 6; i++) episodePath(disc1, i),
+    for (int i = 1; i <= 6; i++) episodePath(disc2, i),
+  ];
+
+  test('分组：上巻 / 下巻并成一组，名字去卷标，按卷号排', () async {
+    final List<BlurayDisc> discs = <BlurayDisc>[
+      (await readBlurayDisc(disc2))!,
+      (await readBlurayDisc(disc1))!,
+    ];
+    final BlurayReleaseSet set = planBlurayReleaseSets(discs).single;
+    expect(set.episodic, isTrue);
+    expect(set.name, '魔女の旅々');
+    expect(set.discs.map((BlurayDisc d) => d.rootPath), <String>[disc1, disc2]);
+  });
+
+  test('卷标：上中下与数字卷号；没有盘内标题时取发布目录名', () async {
+    expect(discVolumeNumber('魔女の旅々　下巻'), 3);
+    expect(discVolumeNumber('Show Vol.2'), 2);
+    expect(discVolumeNumber('Disc 10'), 10);
+    expect(discVolumeNumber('最終楽章 前編'), isNull);
+
+    final String plain1 = p.join(temp.path, 'Plain Show', 'Disc 1');
+    final String plain2 = p.join(temp.path, 'Plain Show', 'Disc 2');
+    writeEpisodicDisc(plain1, episodes: 3);
+    writeEpisodicDisc(plain2, episodes: 3);
+    final BlurayReleaseSet set = planBlurayReleaseSets(<BlurayDisc>[
+      (await readBlurayDisc(plain1))!,
+      (await readBlurayDisc(plain2))!,
+    ]).single;
+    expect(set.name, 'Plain Show');
+    expect(set.discs, hasLength(2));
+  });
+
+  test('两张盘 → 一个合集、12 集、按盘序 × 集序；重跑幂等', () async {
+    final List<(int, String)> ready = <(int, String)>[];
+    final DiscLibraryImportReport first = await importer.importBlurayDiscs(
+      <String>[disc1, disc2],
+      sourceId: null,
+      restoreDissolvedGroups: false,
+      onCollectionReady: (int id, String root) async => ready.add((id, root)),
+    );
+    expect(first.imported, 1);
+    expect(first.discs.map((DiscLibraryImportedDisc d) => d.name), <String>[
+      '魔女の旅々',
+      '魔女の旅々',
+    ]);
+    final int collectionId = first.discs.first.collectionId;
+    expect(first.discs.last.collectionId, collectionId);
+    expect(ready, <(int, String)>[(collectionId, disc1)]);
+    expect(await memberPaths(collectionId), allEpisodePaths());
+    final MediaCollectionRow collection =
+        (await db.getAllMediaCollections()).single;
+    expect(collection.name, '魔女の旅々');
+    expect(collection.collectionType, 'playlist');
+    // 12 集 + 每张盘一条特典；菜单循环与整条播放列表都不进库。
+    expect(await db.allVideoBooks(), hasLength(14));
+
+    final DiscLibraryImportReport again = await import(<String>[disc1, disc2]);
+    expect(again.imported, 0);
+    expect(again.discs.first.collectionId, collectionId);
+    expect(await memberPaths(collectionId), allEpisodePaths());
+    expect(await db.getAllMediaCollections(), hasLength(1));
+    expect(await db.allVideoBooks(), hasLength(14));
+  });
+
+  test('下巻先入库、上巻后到：并进同一个合集并排到前面', () async {
+    final DiscLibraryImportReport first = await import(<String>[disc2]);
+    final int collectionId = first.discs.single.collectionId;
+    expect(first.discs.single.name, '魔女の旅々', reason: '只有一张盘也用作品名');
+
+    final DiscLibraryImportReport second = await import(<String>[disc1]);
+    expect(second.imported, 0);
+    expect(second.discs.single.collectionId, collectionId);
+    expect(await memberPaths(collectionId), allEpisodePaths());
+    expect(await db.getAllMediaCollections(), hasLength(1));
+  });
+
+  test('本轮没读到的那张盘的各集不动', () async {
+    final int collectionId = (await import(<String>[
+      disc1,
+      disc2,
+    ])).discs.first.collectionId;
+    await import(<String>[disc1]);
+    expect(await memberPaths(collectionId), allEpisodePaths());
+  });
+
+  test('存量迁移：整卷行就地变第 1 集、断点折到对应那一集，旧合集与菜单循环行回收', () async {
+    // 修前的库：每卷一个合集，成员是整条 00001.mpls 与被误选成标题的菜单循环。
+    final String whole = p.join(disc1, 'BDMV', 'PLAYLIST', '00001.mpls');
+    final String loop = p.join(disc1, 'BDMV', 'PLAYLIST', '00008.mpls');
+    // 第 1、2 集共 1442 + 1422 = 2864 秒；断点在第 3 集的第 100 秒。
+    const int positionMs = (2864 + 100) * 1000;
+    await db.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: const Value<String>('video/00001 (13)'),
+        title: const Value<String>('魔女の旅々　上巻 - 01'),
+        videoPath: Value<String>(whole),
+        lastPositionMs: const Value<int>(positionMs),
+        lastPlayedAt: const Value<int?>(1794318869583),
+      ),
+    );
+    await db.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: const Value<String>('video/00008 (5)'),
+        title: const Value<String>('魔女の旅々　上巻 - 02'),
+        videoPath: Value<String>(loop),
+      ),
+    );
+    final int oldCollection = await db.createMediaCollection(
+      '魔女の旅々　上巻',
+      collectionType: 'playlist',
+    );
+    for (final String uid in <String>['video/00001 (13)', 'video/00008 (5)']) {
+      await db.addToCollection(
+        oldCollection,
+        MediaKind.video,
+        uid,
+        userIntent: false,
+      );
+    }
+
+    final DiscLibraryImportReport report = await import(<String>[disc1, disc2]);
+    final int collectionId = report.discs.first.collectionId;
+    expect(collectionId, isNot(oldCollection));
+    expect(await db.getMediaCollectionById(oldCollection), isNull);
+    expect(await memberPaths(collectionId), allEpisodePaths());
+
+    final VideoBookRow first = (await db.getVideoBookByBookUid(
+      'video/00001 (13)',
+    ))!;
+    expect(first.videoPath, episodePath(disc1, 1), reason: '同一行，身份不变');
+    expect(first.title, '魔女の旅々　上巻 - 01');
+    expect(first.lastPositionMs, 0);
+    expect(first.completedAt, isNotNull);
+    expect(await db.getVideoBookByBookUid('video/00008 (5)'), isNull);
+
+    final Map<String, VideoBookRow> byPath = <String, VideoBookRow>{
+      for (final VideoBookRow row in await db.allVideoBooks())
+        row.videoPath: row,
+    };
+    expect(byPath[episodePath(disc1, 2)]!.completedAt, isNotNull);
+    final VideoBookRow third = byPath[episodePath(disc1, 3)]!;
+    expect(third.lastPositionMs, 100 * 1000);
+    expect(third.lastPlayedAt, 1794318869583);
+    expect(third.completedAt, isNull);
+    expect(byPath[episodePath(disc1, 4)]!.lastPositionMs, 0);
+    expect(byPath.containsKey(whole), isFalse);
+    expect(byPath.containsKey(loop), isFalse);
+  });
+
+  test('菜单重新建出来的整卷行：下次入库把断点补给对应那一集后回收', () async {
+    final int collectionId = (await import(<String>[
+      disc1,
+    ])).discs.single.collectionId;
+    final String whole = p.join(disc1, 'BDMV', 'PLAYLIST', '00001.mpls');
+    await db.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: const Value<String>('video/00001'),
+        title: const Value<String>('魔女の旅々　上巻 - 00001'),
+        videoPath: Value<String>(whole),
+        lastPositionMs: const Value<int>(600 * 1000),
+      ),
+    );
+    await import(<String>[disc1]);
+    expect(await db.getVideoBookByBookUid('video/00001'), isNull);
+    final List<String> members = await memberPaths(collectionId);
+    expect(members, <String>[
+      for (int i = 1; i <= 6; i++) episodePath(disc1, i),
+    ]);
+    final VideoBookRow first = (await db.allVideoBooks()).singleWhere(
+      (VideoBookRow row) => row.videoPath == episodePath(disc1, 1),
+    );
+    expect(first.lastPositionMs, 600 * 1000);
+  });
+}
