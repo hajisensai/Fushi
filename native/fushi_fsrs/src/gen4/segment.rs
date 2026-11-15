@@ -18,6 +18,10 @@
 //! 位置（[super::relay] 的 `FRL4` 中继件），含空洞的段也一样——空洞处的链值始终由作者的签名担保，转发者改不了。
 //! 代价：没有密钥的读者验不了加密段的签名（反正也解不开）；签名对明文的「猜测确认」不比段头里明文的 `last_chain`
 //! 多泄露什么（链值本来就是明文操作的哈希）。承袭段 `FSH4` 不跨钥匙转发，签名构造不变（[super::heritage]）。
+//! 另一个代价：持有原位置密钥的**任何**设备都能把加密段解开、用另一个加密位置的密钥按 AAD = 原头重新封装，拼出一个
+//! 验得过的 `FSG4` 原生段（签名照抄）。内容仍是作者签的那份、伪造不了操作，但「钥匙不同的位置上出现验得过的作者
+//! `seg-`」不再证明作者来过这个位置；`rly-` 是非作者转发的形态只是命名约定，格式不保证。作者到过某位置的证据只认
+//! `loc` 相符的 `head-`（§4.4），同步层不要拿 `seg-` 放宽它。
 //!
 //! 槽按 seq 升序首尾相接，覆盖的 seq 数之和必须等于 `last - first + 1`。段体只有一种字节形：varint 取最短形；
 //! 相邻两个空洞槽拒绝（写者合并）；依赖向量与上一条**操作槽**（跨过中间的空洞）相同时必须写标志 0，wall 增量同样相对它。
@@ -327,12 +331,14 @@ pub(crate) fn open_signed<'a>(
     compressed: Cow<'a, [u8]>,
     sig: &[u8; 64],
     public: &[u8; 32],
+    stored_sealed: bool,
 ) -> Result<OpenNative<'a>, SegmentError> {
     if !verify(public, &native_digest(head_bytes, &compressed), sig) {
         return Err(SegmentError::BadSignature);
     }
     Ok(OpenNative {
         header,
+        stored_sealed,
         compressed,
         sig: *sig,
     })
@@ -509,7 +515,12 @@ impl Iterator for ItemStream<'_> {
 
 /// 验过签、解过密的段：段体仍是压缩的，按需流式解开。
 pub struct OpenNative<'a> {
+    /// 作者签过的段头。其中 `encrypted` 说的是作者写这段时**原位置**的加密状态，转发后不一定等于所在位置的。
     pub header: NativeHeader,
+    /// 这份字节**本身**落盘时是否用所在位置的密钥加密：原生段 = `header.encrypted`，中继件 = 外层的
+    /// [super::relay::RelayPrefix::sealed]。同步层核对「件与所在位置的加密状态是否一致」只认这一位
+    /// （加密位置上出现 `false` = 明文落到了加密位置），不要读 `header.encrypted`。
+    pub stored_sealed: bool,
     /// 明文压缩体（签名覆盖的就是它）。
     compressed: Cow<'a, [u8]>,
     sig: [u8; 64],
@@ -609,7 +620,8 @@ pub fn open_native_verified<'a>(
     } else {
         Cow::Borrowed(body)
     };
-    open_signed(head_bytes, header, compressed, &sig, public)
+    let stored_sealed = header.encrypted;
+    open_signed(head_bytes, header, compressed, &sig, public, stored_sealed)
 }
 
 /// 校验并整段解开（签名 → 解密 → 解压 → 解码 → 重算链），全部放进内存。给测试这类已知小段的场合。

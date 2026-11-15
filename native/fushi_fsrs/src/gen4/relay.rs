@@ -18,7 +18,8 @@
 //!   真实链值）签名就不符。协议 3 的 `FSRL` 是「签名覆盖密文 + 明文靠链校验」，遇到空洞这一步可以伪造，所以不沿用。
 //! - 原段的密文不随件搬：目标位置钥匙不同，旧密文对它没有用；转发者需要原位置的密钥才解得出明文压缩体。
 //! - 目标位置加密时整个内层用目标位置的密钥封装，明文不落到加密位置上。目标位置是否加密由调用方决定（这里只照
-//!   `dst_key` 封或不封；读者从 [RelayPrefix::sealed] 看得到件是否封装，由同步层核对它与位置的加密状态）。
+//!   `dst_key` 封或不封；读者从 [OpenNative::stored_sealed]（等于 [RelayPrefix::sealed]）看得到件是否封装，由同步层
+//!   核对它与位置的加密状态；段头里的 `encrypted` 说的是原段所在位置，不能拿来核对）。
 //!
 //! 与协议 3 互不误读：魔数不同。协议 3 的读者（`crate::sync2::segment` 的 `peek_header` / `open` / `relay_unwrap`）
 //! 在魔数处拒绝本格式；本模块同样拒绝 `FSRL`、`FSG2`，也不把一个原生段 `FSG4` 当中继件读（[open_relay4] 只认 `FRL4`；
@@ -121,10 +122,11 @@ pub fn open_relay4<'a>(
             Cow::Owned(v)
         }
     };
-    open_signed(head, prefix.header, compressed, &sig, public)
+    open_signed(head, prefix.header, compressed, &sig, public, prefix.sealed)
 }
 
-/// 解开、验签一个原生段或中继件（按魔数分派；别的魔数一律拒）。[key] 是它所在位置的密钥。
+/// 解开、验签一个原生段或中继件（按魔数分派；别的魔数一律拒）。[key] 是它所在位置的密钥。交回的
+/// [OpenNative::stored_sealed] 是这份字节落盘时是否加密，两种格式口径相同，同步层据它核对位置的加密状态。
 pub fn open_any4<'a>(
     bytes: &'a [u8],
     public: &[u8; 32],
@@ -544,6 +546,58 @@ mod tests {
         assert_eq!(
             open_relay4_items(&relay, &signer().public(), Some(&k_dst())).unwrap(),
             open_native(&seg, &signer().public(), None).unwrap()
+        );
+    }
+
+    /// 「这份字节落盘时是否加密」两种格式同一口径：原生段跟段头，中继件跟外层封装位、不跟原段头。
+    #[test]
+    fn stored_sealed_reports_the_bytes_as_stored_not_the_original_location() {
+        let (src, dst) = (k_src(), k_dst());
+        let pk = signer().public();
+        for sk in [None, Some(&src)] {
+            let (_, seg) = pack(&voided_items(), sk);
+            let native = open_any4(&seg, &pk, sk).unwrap();
+            assert_eq!(native.stored_sealed, sk.is_some());
+            assert_eq!(native.header.encrypted, sk.is_some());
+            for dk in [None, Some(&dst)] {
+                let relay = wrap_relay4(&seg, &pk, sk, dk).unwrap();
+                // 给了所在位置的密钥照读，但读者看得到件其实没封装（明文落在加密位置时 = false）。
+                let got = open_any4(&relay, &pk, Some(&dst)).unwrap();
+                assert_eq!(got.stored_sealed, dk.is_some());
+                assert_eq!(got.stored_sealed, peek_relay4(&relay).unwrap().sealed);
+                assert_eq!(got.header.encrypted, sk.is_some());
+            }
+        }
+    }
+
+    /// D16-A 的已知性质（不是漏洞，钉住免得被当成证据）：持有原位置密钥的非作者能把加密原段换钥匙重新封装成验得过的
+    /// `FSG4`，内容仍是作者签的那份。所以位置上有作者的原生段不证明作者到过这个位置。
+    #[test]
+    fn a_key_holder_can_reseal_a_native_segment_under_another_key() {
+        let (src, dst) = (k_src(), k_dst());
+        let pk = signer().public();
+        let (_, seg) = pack(&voided_items(), Some(&src));
+        let open = open_native_verified(&seg, &pk, Some(&src)).unwrap();
+        let (head, compressed, sig) = open.signed_parts();
+        let mut w = Writer::new();
+        w.raw(&head);
+        w.bytes(&dst.seal(compressed, &head));
+        w.raw(sig);
+        let moved = w.into_vec();
+        assert_eq!(
+            open_native(&moved, &pk, Some(&dst)).unwrap(),
+            open_native(&seg, &pk, Some(&src)).unwrap()
+        );
+        // 作者签名仍担保内容：改明文压缩体的任何一位都验不过。
+        let mut tampered = compressed.to_vec();
+        tampered[0] ^= 1;
+        let mut w = Writer::new();
+        w.raw(&head);
+        w.bytes(&dst.seal(&tampered, &head));
+        w.raw(sig);
+        assert_eq!(
+            open_native_verified(&w.into_vec(), &pk, Some(&dst)).err(),
+            Some(SegmentError::BadSignature)
         );
     }
 
