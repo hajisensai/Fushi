@@ -98,6 +98,10 @@ bool hasAnyNavigationModule(ModuleVisibility visibility) =>
 ///   `videoQuickSettings` / `shortcuts`）不是设置主页上的一级分类，藏它们只会
 ///   让对应的合成面板整个消失。
 ModuleId? moduleOfSettingsDestination(SettingsDestinationId id) => switch (id) {
+  // 通用 / 导航与首页 / 浏览器：设备级，不跟任何模块开关。
+  SettingsDestinationId.general => null,
+  SettingsDestinationId.navigation => null,
+  SettingsDestinationId.webBrowser => null,
   SettingsDestinationId.appearance => null,
   SettingsDestinationId.floatingBall => null,
   SettingsDestinationId.profiles => null,
@@ -114,9 +118,9 @@ ModuleId? moduleOfSettingsDestination(SettingsDestinationId id) => switch (id) {
   SettingsDestinationId.appIcon => null,
   SettingsDestinationId.videoQuickSettings => null,
   SettingsDestinationId.shortcuts => null,
-  // 模型是设备级资源（本机 OCR / ASR 模型、系统 TTS）：不属任何模块。其中的
-  // 「LLM」子页仍按 `ai` → services 门控，见下。
+  // 本机模型是设备级资源（本机 OCR / ASR 模型、系统 TTS）：不属任何模块。
   SettingsDestinationId.models => null,
+  SettingsDestinationId.listening => ModuleId.listening,
   SettingsDestinationId.manga => ModuleId.manga,
   SettingsDestinationId.video => ModuleId.video,
   SettingsDestinationId.music => ModuleId.music,

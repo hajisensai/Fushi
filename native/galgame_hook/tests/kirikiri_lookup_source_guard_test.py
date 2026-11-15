@@ -1280,7 +1280,18 @@ def find_invalid_lookup_entry_visibility_lifecycle(
         'typeofglobal.TextRender.done!="Object"||'
         'typeofglobal.TextRender.drawCh!="Object"))return;'
     )
-    if not bootstrap.startswith(readiness_gate):
+    # 两道门各自先写阶段码再 return（kirikiri_bootstrap_diag.h）。这条断言守的是门的分离
+    # 与次序，阶段码是否写齐由 find_lookup_bootstrap_stage_violations 单独守，所以这里先
+    # 把「{写阶段码;return;}」归一成「return;」再比较。
+    gate_view = re.sub(
+        r"\{global\.fushiLookupBootstrapStage=\d+;return;\}", "return;", bootstrap
+    )
+    gate_view = re.sub(
+        r"varinstallStage=0;global\.fushiLookupBootstrapStage=\d+;",
+        "varinstallStage=0;",
+        gate_view,
+    )
+    if not gate_view.startswith(readiness_gate):
         violations.append(
             f"{ADAPTER.name}: bootstrap 必须先无条件等 kag，再单独等 TextRender "
             "render/done/drawCh 半就绪（TextRender 完全缺席时不得 return）"
@@ -1295,6 +1306,9 @@ def find_invalid_lookup_entry_visibility_lifecycle(
         "21",
         "30",
         "31",
+        # 34：没有 TextRender 类时的经典 KAG3 图层扫描（else 分支）。原来它不带阶段号，
+        # 在这里抛的异常只会报成 stage=0，与「刚进安装体就抛」同形。
+        "34",
         # 35/36/37：私有 msgwin 插件出现后才封未来入口（getRender 桥）并扫既有
         # MsgwinRender。它不是通用 KiriKiri readiness，所以有自己的三段阶段号——真机上
         # 「卡在装桥还是卡在扫实例」必须分得开，合成一段就退回到只能靠改一版试一版。
@@ -1321,7 +1335,7 @@ def find_invalid_lookup_entry_visibility_lifecycle(
     if install_stages != expected_install_stages:
         violations.append(
             f"{ADAPTER.name}: bootstrap installStage 必须固定为 "
-            "0→10/11→20/21→30/31→35/36/37 | 32/33→38/39→40/43→50；"
+            "0→10/11→20/21→30/31 | 34→35/36/37 | 32/33→38/39→40/43→50；"
             f"实际 {install_stages}"
         )
 
@@ -4588,6 +4602,10 @@ global.fushiLookupInstalledDrawChWrapper = global.TextRender.drawCh;
 global.fushiLookupDrawChInstallFailed =
   global.fushiLookupInstalledDrawChWrapper === global.fushiLookupOriginalDrawCh;
 installStage = 31;
+if(typeof global.TextRender != "Object")
+{
+  installStage = 34;
+}
 if(global.fushiLookupResolveMsgwinPlugin() !== void)
 {
   installStage = 35;
@@ -7156,6 +7174,287 @@ class KagTextLaneGuardTest(unittest.TestCase):
             "return (this.fushiKagTextOrig_showLineBreak incontextof this)(...);",
         )
         self.assertNotEqual([], find_kag_text_script_violations(dirty))
+
+
+
+# ── 两条主线程 bootstrap 的分阶段诊断（kirikiri_bootstrap_diag.h）──────────────────────────
+#
+# 起因（真机 2026-11-12）：KiriKiri Z 1.3.3.7 全屏样本上 KAG 文本道与查词传感器都没装上，
+# KiriKiri2 样本上文本道正常而查词传感器从不建立——两者日志里都「什么都没有」。安装链上
+# 每一处静默出口（接缝没触发 / 主线程 id / host 函数 / 脚本没执行 / TJS 在等 kag / 安装体
+# 抛异常）现在各自有一个整数阶段码，HookWorker 变化才落一行。守卫拦的是把它们重新变成
+# 同形失败的改动：
+#   * TJS bootstrap 的任何提前 return 之前没写阶段码；
+#   * 查词安装体的 catch 不再把 installStage 带出去（catch 撤了 notify，DLL 只剩阶段码可读）；
+#   * kag.addHook 的四个钩子名重新连成一串、不各自 try（一个名字被拒就整个传感器作废）；
+#   * addHook 已挂上的那一路又被实例包装重复挂一次（一次点击判两次）；
+#   * 文本道装完一个接缝都没挂上时又写回 0（与「还没装」同形）；
+#   * 文本道 bootstrap 回调丢掉 TVPExecuteScript 的结果；
+#   * 主线程上写日志（落行只属于 HookWorker）。
+
+BOOT_DIAG_HEADER = ROOT / "hook" / "adapters" / "kirikiri_bootstrap_diag.h"
+LOOKUP_SCRIPT_RE = re.compile(
+    r"constexpr wchar_t kKirikiriLookupBootstrapScript\[\]\s*=\s*((?:\s*LR\"TJS\(.*?\)TJS\")+)\s*;",
+    re.S,
+)
+
+
+def _boot_diag_constants() -> dict[str, int]:
+    header = BOOT_DIAG_HEADER.read_text(encoding="utf-8")
+    return {
+        m.group(1): int(m.group(2))
+        for m in re.finditer(r"inline constexpr int32_t (\w+) = (-?\d+);", header)
+    }
+
+
+def _compact_script(raw: str, pattern: re.Pattern[str]) -> str | None:
+    match = pattern.search(raw)
+    if match is None:
+        return None
+    script = "".join(TJS_RAW_RE.findall(match.group(1)))
+    return re.sub(r"\s+", "", _strip_line_comments(script))
+
+
+def _tjs_function(compact: str, header: str) -> str | None:
+    """compact 里从 header 开始、按花括号配平截出的函数体（含首尾花括号）。"""
+    start = compact.find(header)
+    if start < 0:
+        return None
+    open_at = compact.find("{", start + len(header) - 1)
+    if open_at < 0:
+        return None
+    depth = 0
+    for index in range(open_at, len(compact)):
+        if compact[index] == "{":
+            depth += 1
+        elif compact[index] == "}":
+            depth -= 1
+            if depth == 0:
+                return compact[open_at:index + 1]
+    return None
+
+
+def _bare_condition_returns(body: str) -> list[str]:
+    """`if(...)return;` / `catch(e){return;}` 这类不写阶段码就返回的出口。"""
+    hits = re.findall(r"\)return;", body)
+    hits += re.findall(r"catch\(\w+\)\{return;\}", body)
+    return hits
+
+
+def find_lookup_bootstrap_stage_violations(raw: str) -> list[str]:
+    compact = _compact_script(raw, LOOKUP_SCRIPT_RE)
+    if compact is None:
+        return ["找不到 kKirikiriLookupBootstrapScript"]
+    c = _boot_diag_constants()
+    hits: list[str] = []
+    body = _tjs_function(compact, "global.fushiLookupBootstrap=function(tick){")
+    if body is None:
+        return ["找不到 global.fushiLookupBootstrap 函数体"]
+    prologue_end = body.find("varinstallStage=0;")
+    if prologue_end < 0:
+        return ["查词 bootstrap 找不到 installStage 起点"]
+    prologue = body[:prologue_end]
+    if _bare_condition_returns(prologue):
+        hits.append("查词 bootstrap 前置条件有不写阶段码的提前 return")
+    required = {
+        f"global.fushiLookupBootstrapStage={c['kLookupTjsArmed']};global.fushiLookupBootstrap=function":
+            "脚本执行时没写 armed 阶段码",
+        f"{{global.fushiLookupBootstrapStage={c['kLookupTjsNoKag']};return;}}":
+            "等 kag 时没写 no-kag 阶段码",
+        f"{{global.fushiLookupBootstrapStage={c['kLookupTjsTextRenderPartial']};return;}}":
+            "等 TextRender 时没写 textrender-partial 阶段码",
+        f"varinstallStage=0;global.fushiLookupBootstrapStage={c['kLookupTjsInstalling']};":
+            "进入安装体时没写 installing 阶段码",
+        f"global.fushiLookupBootstrapStage={c['kLookupTjsInstalledBase']}+global.fushiLookupKagSeams+"
+        f"global.fushiLookupKagSeamsRejected*{c['kLookupRejectedShift']};":
+            "装好时没写 installed(seams, rejected) 阶段码",
+        f"catch(e){{global.fushiLookupBootstrapStage={c['kLookupTjsFailedBase']}+installStage;":
+            "安装体 catch 没把 installStage 带出去",
+    }
+    hits += [why for needle, why in required.items() if needle not in compact]
+
+    seams = _tjs_function(compact, "global.fushiLookupInstallKagSeams=function(){")
+    if seams is None:
+        return hits + ["找不到 fushiLookupInstallKagSeams"]
+    calls = seams.count("global.kag.addHook(")
+    guarded = len(re.findall(r"try\{global\.kag\.addHook\(\"\w+\",[\w.]+\);viaHook=viaHook\|0x[0-9A-Fa-f]+;\}"
+                             r"catch\(\w+\)\{rejected=rejected\|0x[0-9A-Fa-f]+;\}", seams))
+    if calls != 4 or guarded != calls:
+        hits.append(f"kag.addHook 没有逐个 try（调用 {calls} 处，各自保护 {guarded} 处）")
+    for name, bit in (("onPrimaryClick", "0x2"), ("onMouseMove", "0x4"),
+                      ("onMouseWheel", "0x8"), ("onKeyDown", "0x10")):
+        if f'if(!(viaHook&{bit})&&global.fushiLookupWrapKagSeam("{name}",' not in seams:
+            hits.append(f"{name} 实例包装没有避开已由 addHook 挂上的那一路")
+    if "global.fushiLookupKagSeamsRejected=rejected;" not in seams:
+        hits.append("被 addHook 拒绝的输入没有记进 fushiLookupKagSeamsRejected")
+    return hits
+
+
+def find_kag_text_stage_violations(raw: str) -> list[str]:
+    compact = _compact_script(raw, KAG_TEXT_SCRIPT_RE)
+    if compact is None:
+        return ["找不到 kKirikiriKagTextBootstrapScript"]
+    c = _boot_diag_constants()
+    body = _tjs_function(compact, "global.fushiKagTextBootstrap=function(){")
+    if body is None:
+        return ["找不到 global.fushiKagTextBootstrap 函数体"]
+    hits: list[str] = []
+    if _bare_condition_returns(body):
+        hits.append("文本道 bootstrap 有不写阶段码的提前 return")
+    required = {
+        f"global.fushiKagTextStage={c['kKagTjsArmed']};": "脚本执行时没写 armed 阶段码",
+        f"{{global.fushiKagTextStage={c['kKagTjsNoKag']};return;}}": "等 kag 时没写 no-kag",
+        f"{{global.fushiKagTextStage={c['kKagTjsNoFore']};return;}}": "等 kag.fore 时没写 no-fore",
+        f"{{global.fushiKagTextStage={c['kKagTjsNoMessages']};return;}}":
+            "等 kag.fore.messages 时没写 no-messages",
+        f"catch(e){{global.fushiKagTextStage={c['kKagTjsForeThrew']};return;}}":
+            "读 kag.fore 抛异常时没写 fore-threw",
+        f"global.fushiKagTextStage={c['kKagTjsDone']};System.removeContinuousHandler(global.fushiKagTextBootstrap);":
+            "摘掉等待回调之前没写 done",
+        f"global.fushiKagTextInstalled={c['kKagInstalledNoWaitMethods']};":
+            "缺 showLineBreak / showPageBreak 没写 -1",
+        f"catch(e){{global.fushiKagTextInstalled={c['kKagInstalledThrew']};}}":
+            "安装体抛异常没写 -2",
+        f"global.fushiKagTextInstalled=seams==0?{c['kKagInstalledNoSeam']}:seams;":
+            "一个接缝都没挂上时写回 0（与「还没装」同形）",
+    }
+    hits += [why for needle, why in required.items() if needle not in compact]
+    return hits
+
+
+BOOT_LOG_WORKER_ENTRY = "void LogKirikiriBootstrapPhases() "
+BOOT_MAIN_THREAD_FUNCTIONS = (
+    "void RunKirikiriLookupInstallOnMainThread() ",
+    "void RunKirikiriKagTextInstallOnMainThread() ",
+    "void ReadKirikiriLookupBootstrapStage() ",
+    "void NoteKirikiriInstallCaller(DWORD main_tid) ",
+    "void PumpKirikiriKagText() ",
+    "LRESULT CALLBACK LookupMainThreadSeamProc(",
+)
+
+
+def find_bootstrap_native_diag_violations(source: MaskedSource) -> list[str]:
+    hits: list[str] = []
+    for entry in ("void RunKirikiriLookupInstallOnMainThread() ",
+                  "void RunKirikiriKagTextInstallOnMainThread() "):
+        body = _cpp_function_body(source, entry)
+        if body is None:
+            hits.append(f"找不到 {entry.strip()}")
+            continue
+        if "NoteKirikiriInstallCaller(main_tid);" not in body:
+            hits.append(f"{entry.strip()} 的线程身份核对不再记录调用方（主线程 id 错与没来同形）")
+        if "kNativeRegistered" not in body or "kNativeAllocFailed" not in body:
+            hits.append(f"{entry.strip()} 不再记 registered / alloc-failed 阶段")
+    callback = source.text.find("class KiriKiriKagTextBootstrapCallback")
+    end = source.text.find("\n};", callback)
+    kag_callback = source.text[callback:end] if callback >= 0 and end > callback else ""
+    if not kag_callback:
+        hits.append("找不到 KiriKiriKagTextBootstrapCallback")
+    else:
+        if re.search(r"^\s*CallTjsExecuteScriptSeh\(content\);", kag_callback, re.M):
+            hits.append("文本道 bootstrap 回调丢掉了 TVPExecuteScript 的结果")
+        if "kNativeExecuteFaulted" not in kag_callback:
+            hits.append("文本道 bootstrap 回调不再记 execute-faulted")
+    worker = _cpp_function_body(source, "void ProcessKirikiriVoiceTasks() ")
+    if worker is None or "LogKirikiriBootstrapPhases();" not in worker:
+        hits.append("HookWorker 不再落阶段诊断行")
+    logger = _cpp_function_body(source, BOOT_LOG_WORKER_ENTRY)
+    if logger is None:
+        hits.append(f"找不到 {BOOT_LOG_WORKER_ENTRY.strip()}")
+    elif "tracker.Observe(" not in logger:
+        hits.append("阶段诊断落行不再经 Tracker（变化才写、每阶段有界）")
+    for entry in BOOT_MAIN_THREAD_FUNCTIONS:
+        body = _cpp_function_body(source, entry)
+        if body is not None and ("HookLogLine(" in body or "LogKirikiriBootstrapPhases(" in body):
+            hits.append(f"{entry.strip()} 在主线程上写日志（落行只属于 HookWorker）")
+    return hits
+
+
+class BootstrapStageDiagGuardTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.raw = ADAPTER.read_text(encoding="utf-8")
+        cls.source = MaskedSource(cls.raw)
+
+    def _mutate(self, old: str, new: str) -> str:
+        self.assertIn(old, self.raw, "变异锚点必须真的存在于当前实现里")
+        dirty = self.raw.replace(old, new, 1)
+        self.assertNotEqual(dirty, self.raw)
+        return dirty
+
+    def test_real_lookup_script(self) -> None:
+        self.assertEqual([], find_lookup_bootstrap_stage_violations(self.raw))
+
+    def test_real_kag_text_script(self) -> None:
+        self.assertEqual([], find_kag_text_stage_violations(self.raw))
+
+    def test_real_native(self) -> None:
+        self.assertEqual([], find_bootstrap_native_diag_violations(self.source))
+
+    def test_lookup_mutations(self) -> None:
+        cases = {
+            "前置条件退回静默 return": (
+                "\t\tif(typeof global.kag != \"Object\" || global.kag === null)\n"
+                "\t\t{\n\t\t\tglobal.fushiLookupBootstrapStage = 2;\n\t\t\treturn;\n\t\t}\n",
+                "\t\tif(typeof global.kag != \"Object\" || global.kag === null) return;\n",
+            ),
+            "catch 不带 installStage": (
+                "\t\t\tglobal.fushiLookupBootstrapStage = 100 + installStage;\n", "",
+            ),
+            "addHook 重新连成一串": (
+                "\t\t\t\t\ttry { global.kag.addHook(\"onMouseWheelHook\", global.fushiLookupMouseWheelHook); "
+                "viaHook = viaHook | 0x8; }\n\t\t\t\t\tcatch(e) { rejected = rejected | 0x8; }\n",
+                "\t\t\t\t\tglobal.kag.addHook(\"onMouseWheelHook\", global.fushiLookupMouseWheelHook);\n",
+            ),
+            "实例包装不避开 addHook 已挂的路": (
+                "if(!(viaHook & 0x2) && global.fushiLookupWrapKagSeam(\"onPrimaryClick\",",
+                "if(global.fushiLookupWrapKagSeam(\"onPrimaryClick\",",
+            ),
+        }
+        for label, (old, new) in cases.items():
+            with self.subTest(label):
+                self.assertNotEqual([], find_lookup_bootstrap_stage_violations(self._mutate(old, new)))
+
+    def test_kag_text_mutations(self) -> None:
+        cases = {
+            "等 messages 退回静默 return": (
+                "\t\t\tif(typeof global.kag.fore.messages != \"Object\")\n"
+                "\t\t\t{\n\t\t\t\tglobal.fushiKagTextStage = 4;\n\t\t\t\treturn;\n\t\t\t}\n",
+                "\t\t\tif(typeof global.kag.fore.messages != \"Object\") return;\n",
+            ),
+            "零接缝写回 0": (
+                "global.fushiKagTextInstalled = seams == 0 ? -3 : seams;",
+                "global.fushiKagTextInstalled = seams;",
+            ),
+            "catch 静默": (
+                "\t\tcatch(e)\n\t\t{\n\t\t\tglobal.fushiKagTextStage = 5;\n\t\t\treturn;\n\t\t}\n",
+                "\t\tcatch(e) { return; }\n",
+            ),
+        }
+        for label, (old, new) in cases.items():
+            with self.subTest(label):
+                self.assertNotEqual([], find_kag_text_stage_violations(self._mutate(old, new)))
+
+    def test_native_mutations(self) -> None:
+        cases = {
+            "回调丢掉执行结果": (
+                "      InterlockedExchange(&g_boot_kag_text_native,\n"
+                "                          CallTjsExecuteScriptSeh(content)\n"
+                "                              ? boot_diag::kNativeExecuted\n"
+                "                              : boot_diag::kNativeExecuteFaulted);\n",
+                "      CallTjsExecuteScriptSeh(content);\n",
+            ),
+            "worker 不再落行": ("  LogKirikiriBootstrapPhases();\n  for (int i = 0;", "  for (int i = 0;"),
+            "主线程写日志": (
+                "  InterlockedExchange(&g_boot_lookup_tjs, static_cast<LONG>(stage));\n",
+                "  InterlockedExchange(&g_boot_lookup_tjs, static_cast<LONG>(stage));\n"
+                "  HookLogLine(L\"stage\");\n",
+            ),
+        }
+        for label, (old, new) in cases.items():
+            with self.subTest(label):
+                dirty = MaskedSource(self._mutate(old, new))
+                self.assertNotEqual([], find_bootstrap_native_diag_violations(dirty))
 
 
 if __name__ == "__main__":

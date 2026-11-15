@@ -12,7 +12,8 @@ import 'package:fushi/i18n/strings.g.dart';
 /// `fushi_cli update download | cancel | install --yes`。
 List<CtlBodyPage> buildCtlUpdateBodyPages() => <CtlBodyPage>[
   CtlBodyPage(
-    breadcrumb: '${t.settings_destination_system_about} › ${t.section_update}',
+    breadcrumb:
+        '${t.settings_destination_system_about} › ${t.settings_system_section_app_update}',
     visible: (SettingsContext _) =>
         updaterForCurrentPlatform().supportsInAppInstall,
     items: <SettingsItem>[

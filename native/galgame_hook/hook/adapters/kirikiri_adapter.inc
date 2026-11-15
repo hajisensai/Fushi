@@ -109,6 +109,9 @@ void PollKirikiriKagTextInstall();
 void ProcessKirikiriKagTextBatches();
 // 查词就绪位的 worker 侧日志（x86 才有实现）：只在位变化时落一行。
 void LogKirikiriLookupReadiness();
+// 两条主线程安装（查词传感器 / KAG 文本道）的分阶段诊断（x86 才有实现）：只在某一阶段
+// 的值变化时落一行，每阶段有上限。见 kirikiri_bootstrap_diag.h。
+void LogKirikiriBootstrapPhases();
 
 uint64_t ReadKirikiriSharedU64(volatile uint64_t* value) {
   return value == nullptr
@@ -215,6 +218,7 @@ void ProcessKirikiriVoiceTasks() {
   PollKirikiriKagTextInstall();
   ProcessKirikiriKagTextBatches();
   LogKirikiriLookupReadiness();
+  LogKirikiriBootstrapPhases();
   for (int i = 0; i < kKirikiriVoiceTaskSlots; ++i) {
     KiriKiriVoiceTask* task = &g_kirikiri_voice_tasks[i];
     if (InterlockedCompareExchange(&task->state, 3, 2) != 2) continue;
@@ -789,6 +793,36 @@ volatile LONG g_kag_text_bootstrap_state = 0;  // 0=off, 1=registered, 2=running
 TjsVariantString* g_kag_text_bootstrap_script = nullptr;
 void PumpKirikiriKagText();
 
+// 安装链各阶段的整数快照（kirikiri_bootstrap_diag.h）。写方只做 InterlockedExchange / Or——
+// 主线程上一个字节日志都不写；HookWorker 的 LogKirikiriBootstrapPhases 判变化落行。
+// 没有它们时「接缝没触发 / 主线程 id 错 / host 函数没解析 / 脚本没执行 / TJS 还在等 kag」
+// 在日志里全部同形：一行都没有（KiriKiri Z 1.3.3.7 全屏真机样本）。
+namespace boot_diag = fushi_voice_hook::kirikiri_bootstrap_diag;
+volatile LONG g_boot_seam = 0;
+volatile LONG g_boot_install_callers = 0;
+volatile LONG g_boot_host_functions = 0;
+volatile LONG g_boot_lookup_native = 0;
+volatile LONG g_boot_lookup_tjs = 0;
+volatile LONG g_boot_kag_text_native = 0;
+volatile LONG g_boot_kag_text_tjs = 0;
+bool g_boot_lookup_tjs_terminal = false;  // 主线程私有：TJS 阶段已定格，不再求值
+
+// 两处主线程安装入口在线程身份核对之前调：只记下「谁来过」，不做判定（判定仍由调用方
+// 紧随其后的 GetCurrentThreadId() 核对完成）。位只增不减：只有 main 是正常；只有
+// other / unresolved 而从无 main，说明主线程 id 解析到了一个从不经过安装入口的线程，
+// 或主线程根本没走到任何接缝。
+void NoteKirikiriInstallCaller(DWORD main_tid) {
+  LONG caller = boot_diag::kCallerMainThread;
+  if (main_tid == 0) {
+    caller = boot_diag::kCallerUnresolved;
+  } else if (GetCurrentThreadId() != main_tid) {
+    caller = boot_diag::kCallerOtherThread;
+  }
+  if ((InterlockedCompareExchange(&g_boot_install_callers, 0, 0) & caller) == 0) {
+    InterlockedOr(&g_boot_install_callers, caller);
+  }
+}
+
 // TextRender 之外的捕获路径（Layer.drawText / MessageLayer.processCh）只在换游戏、
 // TextRender 一条都不命中时才有诊断价值。运行日志已证伪它们在本样本上的作用，故默认
 // **编译期关闭**：游戏内渲染意味着主线程上的每一毫秒都直接变掉帧，不能为了"万一有用"
@@ -845,6 +879,11 @@ class FushiLookupCardLayer extends Layer
 
 if(typeof global.fushiLookupBootstrap == "undefined")
 {
+	// 安装进度的整数阶段码（kirikiri_bootstrap_diag.h 的 kLookupTjs*）。DLL 在传感器建立前
+	// 每 30 帧读一次、定格后不再读；每个提前 return 之前都先写它，否则「还在等 kag」
+	// 「TextRender 半就绪」「安装体抛了」三者同形（真机 KiriKiri2 样本：kag 与 addHook
+	// 都在，传感器却始终没建立，日志里什么都没有）。只写整数，不碰任何游戏文本。
+	global.fushiLookupBootstrapStage = 1;
 	global.fushiLookupBootstrap = function(tick)
 	{
 		// kag 会早于 textrender.dll 的 TextRender 类就绪。这里必须把三条实际要覆写的
@@ -857,7 +896,11 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 		// TYPE-MOON customized 真机实测）根本没有，写在这里就是把下面整条经典分支变成死
 		// 代码，且症状与「这个引擎不支持」同形（BUG-2121 第四段）。输入接缝的两条路由
 		// fushiLookupInstallKagSeams 在 installStage 40 分叉。
-		if(typeof global.kag != "Object" || global.kag === null) return;
+		if(typeof global.kag != "Object" || global.kag === null)
+		{
+			global.fushiLookupBootstrapStage = 2;
+			return;
+		}
 		// TextRender **半就绪**（类已在、三个方法还没挂全）必须继续等——那正是上面说的
 		// 早注入窗口。但"完全没有 TextRender"是**另一回事**：经典 KAG3 游戏（没装
 		// textrender.dll）永远等不到它，在这里一并 return 就等于把下面的 KAGEX 缺席门
@@ -866,8 +909,13 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 		if(typeof global.TextRender == "Object" && global.TextRender !== null &&
 			(typeof global.TextRender.render != "Object" ||
 			typeof global.TextRender.done != "Object" ||
-			typeof global.TextRender.drawCh != "Object")) return;
+			typeof global.TextRender.drawCh != "Object"))
+		{
+			global.fushiLookupBootstrapStage = 3;
+			return;
+		}
 		var installStage = 0;
+		global.fushiLookupBootstrapStage = 4;
 		try
 		{
 			// 这一批必须最先建立：DLL 每帧都会求值 fushiLookupNotify，晚一步就是每帧一次
@@ -4165,6 +4213,7 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 			// 每个包装器都 fail-open：我们的 hook 抛异常或返回假一律转发原方法，绝不吞掉玩家的
 			// 输入——查词坏掉是小事，把点击吃掉、剧情推不动是大事。
 			global.fushiLookupKagSeams = 0;
+			global.fushiLookupKagSeamsRejected = 0;
 			global.fushiLookupWrapKagSeam = function(name, wrapper)
 			{
 				try
@@ -4179,19 +4228,39 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 			global.fushiLookupInstallKagSeams = function()
 			{
 				// 有 addHook 就用它：那是框架给的正式扩展点，比包装实例方法更稳。
+				//
+				// 但「有 addHook」不等于「四个钩子名它都认」：addHook 是各 KAG 衍生框架各自加的
+				// 扩展点，钩子表各不相同（onMouseWheelHook 就只在 KAGEX 系里有）。原来四个调用连成
+				// 一串、没有各自的 try：任何一个名字不被接受，异常直穿到 bootstrap 的 catch，整个
+				// 传感器连同已经装好的 TextRender / 消息层包装一起作废，而且 catch 撤掉了 notify，
+				// DLL 一个字都读不到（真机 KiriKiri2 样本：kag 与 addHook 都在、传感器永不建立）。
+				// 现在逐个挂：哪一路 addHook 抛了，就只对那一路退回下面的实例方法包装；同一路
+				// 绝不两边都挂（否则一次点击会被判两次）。被拒的路记进 fushiLookupKagSeamsRejected。
+				var seams = 0;
+				var viaHook = 0;
+				var rejected = 0;
 				if(typeof global.kag.addHook == "Object")
 				{
-					global.kag.addHook("leftClick", global.fushiLookupLeftClickHook);
-					global.kag.addHook("mouseMove", global.fushiLookupMouseMoveHook);
-					global.kag.addHook("onMouseWheelHook", global.fushiLookupMouseWheelHook);
-					global.kag.addHook("keyDown", global.fushiLookupKeyDownHook);
-					global.fushiLookupKagSeams = 0x1F;  // 位 0 = 走的 addHook 路
-					return;
+					try { global.kag.addHook("leftClick", global.fushiLookupLeftClickHook); viaHook = viaHook | 0x2; }
+					catch(e) { rejected = rejected | 0x2; }
+					try { global.kag.addHook("mouseMove", global.fushiLookupMouseMoveHook); viaHook = viaHook | 0x4; }
+					catch(e) { rejected = rejected | 0x4; }
+					try { global.kag.addHook("onMouseWheelHook", global.fushiLookupMouseWheelHook); viaHook = viaHook | 0x8; }
+					catch(e) { rejected = rejected | 0x8; }
+					try { global.kag.addHook("keyDown", global.fushiLookupKeyDownHook); viaHook = viaHook | 0x10; }
+					catch(e) { rejected = rejected | 0x10; }
+					global.fushiLookupKagSeamsRejected = rejected;
+					// 位 0 = 至少一路走的 addHook。
+					if(viaHook != 0) seams = 0x1 | viaHook;
+					if(viaHook == 0x1E)
+					{
+						global.fushiLookupKagSeams = seams;
+						return;
+					}
 				}
-				var seams = 0;
 				// 左键：KAG3 由 primary 层把左击交给窗口的 onPrimaryClick。消费 = 不转发原方法，
 				// 剧情就不推进（验收第 4 条「点卡片外关闭卡片时台词不推进」正是靠这一步）。
-				if(global.fushiLookupWrapKagSeam("onPrimaryClick",
+				if(!(viaHook & 0x2) && global.fushiLookupWrapKagSeam("onPrimaryClick",
 					function()
 					{
 						var consumed = false;
@@ -4200,14 +4269,14 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 						if(consumed) return true;
 						return this.fushiLookupOrig_onPrimaryClick(...);
 					} incontextof global.kag)) seams = seams | 0x2;
-				if(global.fushiLookupWrapKagSeam("onMouseMove",
+				if(!(viaHook & 0x4) && global.fushiLookupWrapKagSeam("onMouseMove",
 					function(x, y)
 					{
 						try { global.fushiLookupMouseMoveHook(x, y); }
 						catch(e) { global.fushiLookupFault(); }
 						return this.fushiLookupOrig_onMouseMove(...);
 					} incontextof global.kag)) seams = seams | 0x4;
-				if(global.fushiLookupWrapKagSeam("onMouseWheel",
+				if(!(viaHook & 0x8) && global.fushiLookupWrapKagSeam("onMouseWheel",
 					function(shift, delta, x, y)
 					{
 						var consumed = false;
@@ -4216,7 +4285,7 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 						if(consumed) return true;
 						return this.fushiLookupOrig_onMouseWheel(...);
 					} incontextof global.kag)) seams = seams | 0x8;
-				if(global.fushiLookupWrapKagSeam("onKeyDown",
+				if(!(viaHook & 0x10) && global.fushiLookupWrapKagSeam("onKeyDown",
 					function(key, shift)
 					{
 						var consumed = false;
@@ -5318,6 +5387,7 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 				//
 				// 位 0 = classic 采集面已启用（这一行跑到就说明 else 分支没有中途抛异常）；
 				// 必须先置位，sweep 以它为门。
+				installStage = 34;
 				global.fushiLookupClassicSource = global.fushiLookupClassicSource | 1;
 				global.fushiLookupSweepClassicLayers();
 			}
@@ -5475,6 +5545,8 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 			if(global.fushiLookupKagSeams == 0)
 				throw new Exception("fushiLookup: no kag input seam available");
 			installStage = 50;
+			global.fushiLookupBootstrapStage = 1000 + global.fushiLookupKagSeams +
+				global.fushiLookupKagSeamsRejected * 32;
 
 			Debug.notice("[FushiLookup] sensor installed");
 			System.removeContinuousHandler(global.fushiLookupBootstrap);
@@ -5482,6 +5554,9 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 		}
 		catch(e)
 		{
+			// 撤掉 notify 之后 DLL 再也不会搭 notify 的车读 fushiLookupLastError，这一次失败
+			// 只剩阶段码能带出去：100 + 抛异常时所在的 installStage。
+			global.fushiLookupBootstrapStage = 100 + installStage;
 			try
 			{
 				if(typeof global.fushiLookupNoteError == "Object")
@@ -5576,6 +5651,9 @@ if(typeof global.fushiKagTextSeq == "undefined")
 	global.fushiKagTextEvents = "";
 	global.fushiKagTextNextId = 0;
 	global.fushiKagTextInstalled = 0;
+	// 等在哪一步的整数阶段码（kirikiri_bootstrap_diag.h 的 kKagTjs*）。installed 还是 0 时
+	// DLL 每 60 帧连同它一起读回；每个提前 return 之前都先写它。
+	global.fushiKagTextStage = 1;
 	global.fushiKagTextFaults = 0;
 	global.fushiKagTextRunId = 0;
 	global.fushiKagTextRun = "";
@@ -5830,13 +5908,30 @@ if(typeof global.fushiKagTextSeq == "undefined")
 
 	global.fushiKagTextBootstrap = function()
 	{
-		if(typeof global.kag != "Object" || global.kag === null) return;
+		if(typeof global.kag != "Object" || global.kag === null)
+		{
+			global.fushiKagTextStage = 2;
+			return;
+		}
 		try
 		{
-			if(typeof global.kag.fore != "Object" || global.kag.fore === null) return;
-			if(typeof global.kag.fore.messages != "Object") return;
+			if(typeof global.kag.fore != "Object" || global.kag.fore === null)
+			{
+				global.fushiKagTextStage = 3;
+				return;
+			}
+			if(typeof global.kag.fore.messages != "Object")
+			{
+				global.fushiKagTextStage = 4;
+				return;
+			}
 		}
-		catch(e) { return; }
+		catch(e)
+		{
+			global.fushiKagTextStage = 5;
+			return;
+		}
+		global.fushiKagTextStage = 6;
 		System.removeContinuousHandler(global.fushiKagTextBootstrap);
 		try
 		{
@@ -5873,7 +5968,8 @@ if(typeof global.fushiKagTextSeq == "undefined")
 				} incontextof global.kag)) seams = seams | 8;
 			if(global.fushiKagTextSweep() > 0) seams = seams | 16;
 			seams = seams | global.fushiKagTextWrapConductors();
-			global.fushiKagTextInstalled = seams;
+			// 一个接缝都没挂上时原来写 0——与「还没装」同形，DLL 永远等不到非零、一行不落。
+			global.fushiKagTextInstalled = seams == 0 ? -3 : seams;
 		}
 		catch(e) { global.fushiKagTextInstalled = -2; }
 	};
@@ -7040,6 +7136,24 @@ void DrainKirikiriLookupInput() {
   }
 }
 
+// 查词 bootstrap 的 TJS 阶段码（kirikiri_bootstrap_diag.h）。只在 bootstrap 脚本执行过之后
+// 读（之前读到的 undefined 没有信息量），定格（installed / failed-at-stage）后不再求值。
+// 调用频率随传感器未建立时的 30 帧退避，所以一局最多是「等 kag 的帧数 / 30」次整数求值。
+void ReadKirikiriLookupBootstrapStage() {
+  if (g_boot_lookup_tjs_terminal) return;
+  if (InterlockedCompareExchange(&g_lookup_bootstrap_state, 0, 0) != 3) return;
+  int64_t stage = 0;
+  if (!EvaluateTjsInteger(
+          L"(typeof global.fushiLookupBootstrapStage == \"Integer\") ? "
+          L"global.fushiLookupBootstrapStage : -1",
+          &stage)) {
+    return;
+  }
+  InterlockedExchange(&g_boot_lookup_tjs, static_cast<LONG>(stage));
+  g_boot_lookup_tjs_terminal =
+      boot_diag::IsLookupTjsTerminal(static_cast<int32_t>(stage));
+}
+
 // 游戏主线程的每帧入口。开关关着、查词区不存在、传感器还没建立时，这里一个字节都不写。
 void PumpKirikiriLookup() {
   if (g_stop || !fushi_voice_hook::HasLookupRegion(g_header)) return;
@@ -7074,6 +7188,7 @@ void PumpKirikiriLookup() {
       return;
     }
     g_lookup_sensor_idle_ticks = 0;
+    ReadKirikiriLookupBootstrapStage();
     int64_t defined = 0;
     if (!EvaluateTjsInteger(
             L"(typeof global.fushiLookupNotify == \"Integer\") ? 1 : 0", &defined) ||
@@ -7130,6 +7245,8 @@ void PumpKirikiriLookup() {
   if (!g_lookup_sensor_live) {
     g_lookup_sensor_live = true;
     SetLookupDiag(fushi_voice_hook::kLookupDiagSensorInstalled);
+    // 传感器契约先于安装体完成就已建立；装好那一刻再读一次，拿到 installed(seams…)。
+    ReadKirikiriLookupBootstrapStage();
   }
   // A successful main-thread sensor read proves the current runtime layout is
   // usable before any click can publish. Re-offering is idempotent and lets a
@@ -7298,6 +7415,7 @@ class KiriKiriLookupBootstrapCallback final : public TvpContinuousEventCallback 
   void __cdecl OnContinuousCallback(uint64_t) override {
     SetXAudioDiagnostic2(fushi_voice_hook::kXAudioDiag2KirikiriLookupBootstrapFired);
     if (InterlockedCompareExchange(&g_lookup_bootstrap_state, 2, 1) != 1) return;
+    InterlockedExchange(&g_boot_lookup_native, boot_diag::kNativeCallbackFired);
 
     // 官方实现允许 continuous callback 在遍历时移除自身；先移除再执行，确保任何异常也不会
     // 形成每帧重试。TJS 内部另用 System.addContinuousHandler 等待 global.kag 这个真实生命
@@ -7313,6 +7431,9 @@ class KiriKiriLookupBootstrapCallback final : public TvpContinuousEventCallback 
       if (!CallTjsExecuteScriptSeh(content)) {
         SetXAudioDiagnostic2(
             fushi_voice_hook::kXAudioDiag2KirikiriLookupBootstrapFaulted);
+        InterlockedExchange(&g_boot_lookup_native, boot_diag::kNativeExecuteFaulted);
+      } else {
+        InterlockedExchange(&g_boot_lookup_native, boot_diag::kNativeExecuted);
       }
     }
     if (script != nullptr && g_lookup_release_string != nullptr) {
@@ -7348,6 +7469,7 @@ bool ResolveKirikiriTjsHostFunctions() {
   void* functions[5] = {};
   if (!QueryKirikiriNativeLookupFunctions(g_lookup_exporter, names, functions, 5)) {
     SetXAudioDiagnostic2(fushi_voice_hook::kXAudioDiag2KirikiriLookupExportQueryFailed);
+    InterlockedExchange(&g_boot_host_functions, boot_diag::kHostExportQueryFailed);
     return false;
   }
   // 单独查：缺 TVPExecuteExpression 就读不回任何传感器读数（hit 与 input 都靠它，文本道的
@@ -7360,6 +7482,7 @@ bool ResolveKirikiriTjsHostFunctions() {
       expression == nullptr) {
     SetXAudioDiagnostic2(
         fushi_voice_hook::kXAudioDiag2KirikiriLookupExpressionQueryFailed);
+    InterlockedExchange(&g_boot_host_functions, boot_diag::kHostExpressionQueryFailed);
     return false;
   }
 
@@ -7374,9 +7497,13 @@ bool ResolveKirikiriTjsHostFunctions() {
       reinterpret_cast<TVPRemoveContinuousEventHookStub_t>(functions[4]);
   g_lookup_execute_expression =
       reinterpret_cast<TVPExecuteExpressionStub_t>(expression);
-  return g_lookup_alloc_string != nullptr && g_lookup_release_string != nullptr &&
-         g_lookup_execute_script != nullptr && g_lookup_add_continuous != nullptr &&
-         g_lookup_remove_continuous != nullptr;
+  const bool complete =
+      g_lookup_alloc_string != nullptr && g_lookup_release_string != nullptr &&
+      g_lookup_execute_script != nullptr && g_lookup_add_continuous != nullptr &&
+      g_lookup_remove_continuous != nullptr;
+  InterlockedExchange(&g_boot_host_functions,
+                      complete ? boot_diag::kHostOk : boot_diag::kHostNullFunction);
+  return complete;
 }
 
 // 引擎主线程 = 拥有**游戏主窗口**的线程。只解析一次并缓存。
@@ -7461,11 +7588,15 @@ void ReleaseLookupMainThreadSeam() {
   if (seam == nullptr) return;
   UnhookWindowsHookEx(static_cast<HHOOK>(seam));
   InterlockedExchange(&g_lookup_main_thread_seam_tid, 0);
+  InterlockedExchange(&g_boot_seam, boot_diag::kSeamReleased);
 }
 
 LRESULT CALLBACK LookupMainThreadSeamProc(int code, WPARAM wparam, LPARAM lparam) {
   if (code >= 0) {
     SetXAudioDiagnostic2(fushi_voice_hook::kXAudioDiag2KirikiriLookupSeamFired);
+    if (InterlockedCompareExchange(&g_boot_seam, 0, 0) != boot_diag::kSeamFired) {
+      InterlockedExchange(&g_boot_seam, boot_diag::kSeamFired);
+    }
     RunKirikiriLookupInstallOnMainThread();
     RunKirikiriKagTextInstallOnMainThread();
     if (!KirikiriMainThreadInstallPending()) ReleaseLookupMainThreadSeam();
@@ -7483,6 +7614,7 @@ void EnsureLookupMainThreadSeam() {
     // 主窗解析不到 = 整条安装路径的第一道门没开（BUG-2121：BCB VCL 主窗被隐藏 owner
     // own 时就死在这里，且下面每一步都不会再有任何位）。
     SetXAudioDiagnostic2(fushi_voice_hook::kXAudioDiag2KirikiriLookupMainWindowMissing);
+    InterlockedExchange(&g_boot_seam, boot_diag::kSeamNoMainWindow);
     return;
   }
   if (InterlockedCompareExchange(&g_lookup_main_thread_seam_tid,
@@ -7492,10 +7624,12 @@ void EnsureLookupMainThreadSeam() {
   HHOOK seam = SetWindowsHookExW(WH_GETMESSAGE, &LookupMainThreadSeamProc, nullptr, main_tid);
   if (seam == nullptr) {
     SetXAudioDiagnostic2(fushi_voice_hook::kXAudioDiag2KirikiriLookupSeamHookFailed);
+    InterlockedExchange(&g_boot_seam, boot_diag::kSeamHookFailed);
     InterlockedExchange(&g_lookup_main_thread_seam_tid, 0);
     return;
   }
   InterlockedExchangePointer(&g_lookup_main_thread_seam, seam);
+  InterlockedExchange(&g_boot_seam, boot_diag::kSeamArmed);
   SetXAudioDiagnostic2(fushi_voice_hook::kXAudioDiag2KirikiriLookupSeamArmed);
 }
 
@@ -7511,6 +7645,9 @@ void PollKirikiriLookupInstall() {
                       LookupEnabledNow() != 0;
   if (!wanted) {
     InterlockedExchange(&g_lookup_install_requested, 0);
+    if (InterlockedCompareExchange(&g_lookup_bootstrap_state, 0, 0) == 0) {
+      InterlockedExchange(&g_boot_lookup_native, 0);
+    }
     if (!KirikiriMainThreadInstallPending()) ReleaseLookupMainThreadSeam();
     return;
   }
@@ -7520,6 +7657,7 @@ void PollKirikiriLookupInstall() {
     return;
   }
   InterlockedExchange(&g_lookup_install_requested, 1);
+  InterlockedCompareExchange(&g_boot_lookup_native, boot_diag::kNativeRequested, 0);
   EnsureLookupMainThreadSeam();
 }
 
@@ -7534,6 +7672,7 @@ void RunKirikiriLookupInstallOnMainThread() {
   if (InterlockedCompareExchange(&g_lookup_bootstrap_state, 0, 0) != 0) return;
 
   const DWORD main_tid = ResolveKirikiriEngineMainThreadId();
+  NoteKirikiriInstallCaller(main_tid);
   if (main_tid == 0 || GetCurrentThreadId() != main_tid) return;
 
   if (!ResolveKirikiriTjsHostFunctions()) return;
@@ -7542,12 +7681,17 @@ void RunKirikiriLookupInstallOnMainThread() {
     PrepareKirikiriLookupCardPath();  // 备路缺失不阻断主路
     const std::wstring bootstrap = BuildKirikiriLookupBootstrapScript();
     g_lookup_bootstrap_script = CallTjsAllocStringSeh(bootstrap.c_str());
-    if (g_lookup_bootstrap_script == nullptr) return;
+    if (g_lookup_bootstrap_script == nullptr) {
+      InterlockedExchange(&g_boot_lookup_native, boot_diag::kNativeAllocFailed);
+      return;
+    }
     InterlockedExchange(&g_lookup_bootstrap_state, 1);
     g_lookup_add_continuous(&g_lookup_pump_callback);
     g_lookup_add_continuous(&g_lookup_bootstrap_callback);
+    InterlockedExchange(&g_boot_lookup_native, boot_diag::kNativeRegistered);
     SetXAudioDiagnostic2(fushi_voice_hook::kXAudioDiag2KirikiriLookupBootstrapStarted);
   } catch (...) {
+    InterlockedExchange(&g_boot_lookup_native, boot_diag::kNativeInstallThrew);
     TjsVariantString* script = g_lookup_bootstrap_script;
     g_lookup_bootstrap_script = nullptr;
     InterlockedExchange(&g_lookup_bootstrap_state, 0);
@@ -7580,13 +7724,18 @@ class KiriKiriKagTextBootstrapCallback final : public TvpContinuousEventCallback
  public:
   void __cdecl OnContinuousCallback(uint64_t) override {
     if (InterlockedCompareExchange(&g_kag_text_bootstrap_state, 2, 1) != 1) return;
+    InterlockedExchange(&g_boot_kag_text_native, boot_diag::kNativeCallbackFired);
     // 先移除再执行：任何异常都不会形成每帧重试（与查词 bootstrap 同一条官方语义）。
     if (g_lookup_remove_continuous != nullptr) g_lookup_remove_continuous(this);
     TjsVariantString* script = g_kag_text_bootstrap_script;
     g_kag_text_bootstrap_script = nullptr;
     if (script != nullptr && g_lookup_execute_script != nullptr) {
       const TjsString content = {script};
-      CallTjsExecuteScriptSeh(content);
+      // 抛了必须留下：否则「脚本没跑完」与「TJS 还在等 kag」同形。
+      InterlockedExchange(&g_boot_kag_text_native,
+                          CallTjsExecuteScriptSeh(content)
+                              ? boot_diag::kNativeExecuted
+                              : boot_diag::kNativeExecuteFaulted);
     }
     if (script != nullptr && g_lookup_release_string != nullptr) {
       CallTjsReleaseStringSeh(script);
@@ -7676,6 +7825,15 @@ void PumpKirikiriKagText() {
   if (++g_kag_text_report_ticks >= 60) {
     g_kag_text_report_ticks = 0;
     if (InterlockedCompareExchange(&g_kag_text_install_report, 0, 0) == 0) {
+      // installed 还是 0 = TJS 还在等（或装完却一个接缝都没挂上，见 kKagInstalledNoSeam）。
+      // 把等在哪一步一起读回来；installed 非零后这条求值随之停止。
+      int64_t stage = 0;
+      if (EvaluateTjsInteger(
+              L"(typeof global.fushiKagTextStage == \"Integer\") ? "
+              L"global.fushiKagTextStage : -1",
+              &stage)) {
+        InterlockedExchange(&g_boot_kag_text_tjs, static_cast<LONG>(stage));
+      }
       int64_t installed = 0;
       if (EvaluateTjsInteger(L"global.fushiKagTextInstalled", &installed) &&
           installed != 0) {
@@ -7875,6 +8033,36 @@ void LogKirikiriLookupReadiness() {
   HookLogLine(text);
 }
 
+// 安装链分阶段诊断的 worker 侧落行。每一阶段只在值变化时写一行、整局至多
+// boot_diag::kMaxLinesPerPhase 行；内容只有阶段码与线程 id，不含任何游戏文本。
+void LogKirikiriBootstrapPhases() {
+  static boot_diag::Tracker tracker;
+  struct Source {
+    boot_diag::Phase phase;
+    volatile LONG* value;
+  };
+  const Source sources[] = {
+      {boot_diag::Phase::kSeam, &g_boot_seam},
+      {boot_diag::Phase::kMainThread, &g_lookup_engine_main_tid},
+      {boot_diag::Phase::kInstallCallers, &g_boot_install_callers},
+      {boot_diag::Phase::kHostFunctions, &g_boot_host_functions},
+      {boot_diag::Phase::kLookupNative, &g_boot_lookup_native},
+      {boot_diag::Phase::kLookupTjs, &g_boot_lookup_tjs},
+      {boot_diag::Phase::kKagTextNative, &g_boot_kag_text_native},
+      {boot_diag::Phase::kKagTextTjs, &g_boot_kag_text_tjs},
+  };
+  for (const Source& source : sources) {
+    const int32_t value =
+        static_cast<int32_t>(InterlockedCompareExchange(source.value, 0, 0));
+    if (!tracker.Observe(source.phase, value)) continue;
+    wchar_t phase[96] = {};
+    boot_diag::FormatPhase(source.phase, value, phase, 96);
+    wchar_t text[128] = {};
+    _snwprintf_s(text, _TRUNCATE, L"[FushiKiriBoot] %ls", phase);
+    HookLogLine(text);
+  }
+}
+
 // HookWorker 侧只登记意图，一个引擎 API 都不调（BUG-1724）。准入只看 exporter，不看
 // lookup_enabled：文本道必须与查词传感器是否装上无关。
 void PollKirikiriKagTextInstall() {
@@ -7883,6 +8071,9 @@ void PollKirikiriKagTextInstall() {
                                            g_header != nullptr);
   if (!wanted) {
     InterlockedExchange(&g_kag_text_install_requested, 0);
+    if (InterlockedCompareExchange(&g_kag_text_bootstrap_state, 0, 0) == 0) {
+      InterlockedExchange(&g_boot_kag_text_native, 0);
+    }
     if (!KirikiriMainThreadInstallPending()) ReleaseLookupMainThreadSeam();
     return;
   }
@@ -7891,6 +8082,7 @@ void PollKirikiriKagTextInstall() {
     return;
   }
   InterlockedExchange(&g_kag_text_install_requested, 1);
+  InterlockedCompareExchange(&g_boot_kag_text_native, boot_diag::kNativeRequested, 0);
   EnsureLookupMainThreadSeam();
 }
 
@@ -7900,17 +8092,23 @@ void RunKirikiriKagTextInstallOnMainThread() {
   if (InterlockedCompareExchange(&g_kag_text_bootstrap_state, 0, 0) != 0) return;
 
   const DWORD main_tid = ResolveKirikiriEngineMainThreadId();
+  NoteKirikiriInstallCaller(main_tid);
   if (main_tid == 0 || GetCurrentThreadId() != main_tid) return;
 
   if (!ResolveKirikiriTjsHostFunctions()) return;
   try {
     g_kag_text_bootstrap_script =
         CallTjsAllocStringSeh(kKirikiriKagTextBootstrapScript);
-    if (g_kag_text_bootstrap_script == nullptr) return;
+    if (g_kag_text_bootstrap_script == nullptr) {
+      InterlockedExchange(&g_boot_kag_text_native, boot_diag::kNativeAllocFailed);
+      return;
+    }
     InterlockedExchange(&g_kag_text_bootstrap_state, 1);
     g_lookup_add_continuous(&g_kag_text_pump_callback);
     g_lookup_add_continuous(&g_kag_text_bootstrap_callback);
+    InterlockedExchange(&g_boot_kag_text_native, boot_diag::kNativeRegistered);
   } catch (...) {
+    InterlockedExchange(&g_boot_kag_text_native, boot_diag::kNativeInstallThrew);
     TjsVariantString* script = g_kag_text_bootstrap_script;
     g_kag_text_bootstrap_script = nullptr;
     InterlockedExchange(&g_kag_text_bootstrap_state, 0);
@@ -8682,6 +8880,7 @@ void PollKirikiriLookupInstall() {}
 void PollKirikiriKagTextInstall() {}
 void ProcessKirikiriKagTextBatches() {}
 void LogKirikiriLookupReadiness() {}
+void LogKirikiriBootstrapPhases() {}
 bool KirikiriLookupSensorLive() { return false; }
 bool KirikiriLookupExporterAvailable() { return false; }
 
