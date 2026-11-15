@@ -2703,25 +2703,23 @@ void main() {
           inside('srs-settings-review', t.srs_settings_limit_suffix_reviews),
           findsOneWidget,
         );
-        expect(
-          inside(
-            'srs-settings-limit-unit',
-            t.srs_settings_limit_unit_reviews_hint,
-          ),
-          findsOneWidget,
-        );
+        // 选项控件随平台 / 宽度变（分段 / 菜单），说明文字在菜单形态下与当前值拼在一起：这里直接看行的参数、
+        // 走行的回调。
+        AdaptiveSettingsSegmentedRow<SrsLimitUnit> unitRow() =>
+            tester.widget<AdaptiveSettingsSegmentedRow<SrsLimitUnit>>(
+              byKey('srs-settings-limit-unit'),
+            );
+        expect(unitRow().selected, SrsLimitUnit.reviews);
+        expect(unitRow().subtitle, t.srs_settings_limit_unit_reviews_hint);
         // 次数下：新卡 30、复习 10 → 提示「至少 300」。
         await enter('srs-settings-new', '30');
         await enter('srs-settings-review', '10');
         expect(byKey('srs-settings-review-limit-low'), findsOneWidget);
 
-        final Finder minutes = inside(
-          'srs-settings-limit-unit',
-          t.srs_settings_limit_unit_minutes,
-        );
-        await reveal(minutes);
-        await tester.tap(minutes);
+        unitRow().onChanged(SrsLimitUnit.minutes);
         await _settle(tester);
+        expect(unitRow().selected, SrsLimitUnit.minutes);
+        expect(unitRow().subtitle, t.srs_settings_limit_unit_minutes_hint);
         expect(byKey('srs-settings-review-limit-low'), findsNothing);
         for (final String key in <String>[
           'srs-settings-review',
