@@ -543,7 +543,7 @@ void main() {
       // 视口再右键。
       final Finder oldLabel = find.descendant(
         of: row,
-        matching: find.text('Old'),
+        matching: find.text('Old', skipOffstage: false),
       );
       await tester.ensureVisible(oldLabel);
       await tester.pumpAndSettle();

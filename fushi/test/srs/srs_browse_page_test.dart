@@ -340,9 +340,10 @@ void main() {
       );
       // 复习主页的色块头部（PR #3397）比旧头部高：牌组行可能排在首屏底边外，
       // 像用户一样先滚进视口再右键。
+      // 排在视口外的行算 offstage，滚之前按 skipOffstage: false 找。
       final Finder jpRow = find.descendant(
-        of: find.byKey(ValueKey<String>('srs-deck-$jp')),
-        matching: find.text('JP'),
+        of: find.byKey(ValueKey<String>('srs-deck-$jp'), skipOffstage: false),
+        matching: find.text('JP', skipOffstage: false),
       );
       await tester.ensureVisible(jpRow);
       await _settle(tester);
@@ -371,7 +372,7 @@ void main() {
         size: const Size(412, 915),
         page: const SrsDeckListPage(),
       );
-      await tester.ensureVisible(find.text('Default'));
+      await tester.ensureVisible(find.text('Default', skipOffstage: false));
       await _settle(tester);
       await tester.longPress(find.text('Default'));
       await _settle(tester, rounds: 4);

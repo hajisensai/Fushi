@@ -2588,11 +2588,6 @@ void main() {
 
   HomeResumeFab resumeFab(WidgetTester tester) =>
       tester.widget<HomeResumeFab>(find.byType(HomeResumeFab));
-  bool excludedFromFocus(WidgetTester tester, Finder target) => tester
-      .widgetList<ExcludeFocus>(
-        find.ancestor(of: target, matching: find.byType(ExcludeFocus)),
-      )
-      .any((ExcludeFocus w) => w.excluding);
 
   /// 滚动后跑完弹簧（default spatial 约 0.5 s 收敛）。
   Future<void> settleSpring(WidgetTester tester) async {
@@ -2770,9 +2765,10 @@ void main() {
   });
 
   // 页头大字外壳（PR #3397，非墨水屏默认）：首页动作在页头大字一行
-  // （[FushiFloatingChromeOverlay] masthead 层），下滚时页头收短、不退场——
-  // 动作一直在屏、一直可 Tab 到（旧浮动工具栏「下滚退场」只剩墨水屏）。
-  testWidgets('页头大字随滚动收短但不退场：动作仍在屏、仍可聚焦', (WidgetTester tester) async {
+  // （[FushiFloatingChromeOverlay] masthead 层），随正文下滚移出视口；焦点
+  // 落到移出的动作上（Tab / 手柄）时页头弹回（外壳顶栏同一条 Focus → show
+  // 规则），不会出现焦点停在看不见的按钮上；回滚到顶同样弹回。
+  testWidgets('页头随滚动：下滚移出视口，焦点进来或回滚都弹回', (WidgetTester tester) async {
     // 首页精简后内容只剩一张卡，矮视口才滚得动。
     useSize(tester, const Size(420, 260));
     await seedSampleData();
@@ -2783,8 +2779,7 @@ void main() {
       const ValueKey<String>('home-toolbar-stats'),
       skipOffstage: false,
     );
-    expect(stats, findsOneWidget);
-    expect(excludedFromFocus(tester, stats), isFalse);
+    expect(stats.hitTestable(), findsOneWidget);
     // 重设计首页的主列表是 CustomScrollView（色块 sliver），不是 ListView。
     final Finder mainScroll = find
         .byWidgetPredicate(
@@ -2794,13 +2789,24 @@ void main() {
 
     await tester.drag(mainScroll, const Offset(0, -150));
     await settleSpring(tester);
-    expect(stats.hitTestable(), findsOneWidget, reason: '下滚后页头动作仍在屏');
-    expect(excludedFromFocus(tester, stats), isFalse);
+    expect(stats.hitTestable(), findsNothing, reason: '下滚后页头移出视口');
 
-    await tester.drag(mainScroll, const Offset(0, 60));
+    // 焦点进到移出的页头动作：页头弹回，按钮看得见、点得到。
+    Focus.of(
+      tester.element(
+        find.descendant(of: stats, matching: find.byType(Icon)).first,
+      ),
+    ).requestFocus();
+    await settleSpring(tester);
+    expect(stats.hitTestable(), findsOneWidget, reason: '焦点进来页头必须弹回');
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pump();
+
+    await tester.drag(mainScroll, const Offset(0, -150));
+    await settleSpring(tester);
+    await tester.drag(mainScroll, const Offset(0, 300));
     await settleSpring(tester);
     expect(stats.hitTestable(), findsOneWidget);
-    expect(excludedFromFocus(tester, stats), isFalse);
     expect(tester.takeException(), isNull);
   });
 

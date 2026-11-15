@@ -54,6 +54,17 @@ const String _kFloatingBallSceneButtons =
     '各场景的勾选互不影响 / 勾选了但页面此刻没提供的专属按钮跳过';
 
 const Map<String, String> kCoveredElsewhere = <String, String>{
+  // 外壳样式（PR #3397）：生效点是外壳侧栏 / 库页 / 色块墙 / 主题层表面形状，
+  // harness 设置页里没有外壳与库页。偏好 → 应用主题 [FushiShellTheme] 扩展由
+  // 专项单测咬住，各消费方只读这一份扩展。
+  'appearance/Sidebar style':
+      'test/settings/shell_style_settings_effect_test.dart（切色脊 → 主题扩展跟着变）',
+  'appearance/Library layout':
+      'test/settings/shell_style_settings_effect_test.dart（切封面网格 → 主题扩展跟着变）',
+  'appearance/Block arrangement':
+      'test/settings/shell_style_settings_effect_test.dart（选交错 → 主题扩展带上所选值）',
+  'appearance/Smooth corners':
+      'test/settings/shell_style_settings_effect_test.dart（关平滑圆角 → 主题扩展跟着变）',
   // 桌面小组件隐私（仅 Android）：生效点是推给原生侧的快照 `privacy` 字段与 Glance
   // 小组件渲染，harness 设置页里没有小组件。偏好 → 快照字段由快照单测咬住，原生侧
   // 隐藏标题 / 释义 / Profile 名见 docs/agent/android-widgets.md（设备验证）。
