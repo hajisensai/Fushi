@@ -2,11 +2,13 @@ import 'dart:io';
 
 /// macOS 自带系统命令的绝对路径（macOS 27 上实测存在）。
 ///
-/// Dart 3.14 起 macOS 的 `Process.run` / `Process.start` 改走 `posix_spawn`，
-/// 按**父进程**的 `PATH` 解析裸命令名。从 Finder / launchd 拉起的 GUI 进程
-/// `PATH` 只有 `/usr/bin:/bin:/usr/sbin:/sbin`，被别的启动器 / 精简环境拉起时
-/// 可能更短，`/usr/sbin` 下的 `lsof` / `scutil` 尤其容易解析不到。系统自带命令
-/// 一律按绝对路径调，不依赖 `PATH`。
+/// **防御性改动，不修任何已知 bug。** Dart 3.14 起 macOS 的 `Process.run` /
+/// `Process.start` 从 fork + exec 改走 `posix_spawn`，裸命令名改按**父进程**的
+/// `PATH` 解析（以前按传给子进程的 `environment` 里的 `PATH`）。只有「传了与父进程
+/// 不同的 `PATH`」的调用行为才会变；本仓调这些命令都继承父进程环境，两者相同，
+/// Finder / launchd 拉起的 GUI 进程 `PATH` 也含 `/usr/bin:/bin:/usr/sbin:/sbin`。
+/// 这里按 Dart CHANGELOG 的建议给绝对路径，只是去掉对启动环境 `PATH` 的依赖；
+/// 表外的 `chmod` 等裸名调用同理不受 3.14 影响，不强制迁移。
 const Map<String, String> kMacosSystemCommandPaths = <String, String>{
   'defaults': '/usr/bin/defaults',
   'lsof': '/usr/sbin/lsof',

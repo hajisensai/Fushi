@@ -3,8 +3,9 @@ import 'dart:io';
 import 'package:fushi_engine/utils/process/system_command.dart';
 import 'package:test/test.dart';
 
-/// Dart 3.14 起 macOS 的 `Process` 走 `posix_spawn`、按父进程 PATH 解析裸名：
-/// macOS 自带命令一律经 [systemCommand] 给绝对路径。
+/// 表内 macOS 自带命令经 [systemCommand] 给绝对路径（防御性，见
+/// `kMacosSystemCommandPaths` 的注释：Dart 3.14 的 posix_spawn 改动只影响传了
+/// 与父进程不同 PATH 的调用）。
 void main() {
   test('macOS 上表内命令给绝对路径，其余平台原样', () {
     expect(systemCommand('lsof', macos: true), '/usr/sbin/lsof');
