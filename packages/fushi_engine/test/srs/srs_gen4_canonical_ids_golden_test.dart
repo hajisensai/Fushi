@@ -231,7 +231,7 @@ Map<String, Object?> _build() {
   );
   // 已删 Anki 卡由内置默认牌组派生：父取一个带盐的、一个规范的默认牌组。
   for (final String deck in <String>[
-    SrsIds.builtinDefaultDeck(_uids.first),
+    SrsKernelIds(_uids.first).defaultDeck,
     uuidV5(srsNamespace, 'builtin-deck/default'),
   ]) {
     for (final int cid in _deletedCardIds) {

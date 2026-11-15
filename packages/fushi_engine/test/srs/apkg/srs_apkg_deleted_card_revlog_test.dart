@@ -166,11 +166,11 @@ void main() {
       ];
 
   final String deletedCard = SrsIds.deletedAnkiCard(
-    SrsIds.builtinDefaultDeck(kProfile),
+    SrsKernelIds(kProfile).defaultDeck,
     kDeletedCid,
   );
   final String noteLessCard = SrsIds.deletedAnkiCard(
-    SrsIds.builtinDefaultDeck(kProfile),
+    SrsKernelIds(kProfile).defaultDeck,
     kNoteLessCid,
   );
 
