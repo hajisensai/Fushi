@@ -245,7 +245,7 @@ impl Host {
 
     // ------------------------------------------------------------------ 取数
 
-    /// `SrsDbStore.changeFingerprint`。
+    /// `SrsDbStore.landedFingerprint`（任何事件落库都变，含收段通道自己做完的片）。
     pub async fn revision(&self) -> R<String> {
         let reply = self.call(FX_REVISION, |_| {}).await?;
         Reader::new(reply.body()).str().map_err(wire)

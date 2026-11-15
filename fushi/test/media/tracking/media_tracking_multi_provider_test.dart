@@ -1036,9 +1036,7 @@ void main() {
         completed: false,
       );
       await service.recordGameStatus(gameId: 'g', status: 2);
-      final MediaTrackingSyncResult result = await service.syncNow(
-        force: true,
-      );
+      final MediaTrackingSyncResult result = await service.syncNow(force: true);
 
       expect(service.isOn, isFalse);
       expect(result.succeeded + result.failed, 0);
