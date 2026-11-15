@@ -136,6 +136,9 @@ void main() {
         // 作品图谱 L5 人物同名建议：归一化后的名字短于 2 个码点不出建议键（单字名
         // 撞名太多），是匹配判据不是学习计数。
         'packages/fushi_engine/lib/media/people/person_identity.dart': 1,
+        // 媒体追踪书目关联：书名方括号里的人名长度上限（≤24 码点才当作者名），
+        // 与繁简折叠时「折叠结果恰好是单个码点」的判断，是匹配判据不是学习计数。
+        'packages/fushi_engine/lib/media/tracking/book_tracking_link.dart': 2,
         // 视频字幕 AI 校对（spec 2026-10-19）：S4 片假名名字编辑距离 1 的长度比较
         // （与基准 consistency.py 的 len() 同口径），是匹配判据不是学习计数。
         'packages/fushi_engine/lib/media/video/subtitle/asr_proofread/subtitle_consistency_pass.dart':

@@ -68,6 +68,35 @@ Future<void> _settle(WidgetTester tester, {int rounds = 14}) async {
   }
 }
 
+/// 页面所在的 Riverpod 容器（读写完信号 [srsRevisionProvider] 用）。
+ProviderContainer _container(WidgetTester tester) =>
+    ProviderScope.containerOf(tester.element(find.byType(MaterialApp)));
+
+/// 等页面上一个操作发起的写入落库（之后再从库里读断言）。
+///
+/// 页面的写入（拖放挪牌组、保存模板……）是内核命令，在 worker isolate 上真实往返；页面在写命令返回（已提交）
+/// 之后才 [bumpSrsRevision]，所以修订号越过 [before] 就是「写完了」的真实信号。固定几轮 [_settle] 只给了一段
+/// 固定的真实时间：全量并发跑、机器满载时 worker 排不上 CPU，写入还没回来就去读库，间歇读到旧值。
+/// 模板编辑器保存后自己当场把草稿记成已存（不经列表重读），落库即可读。
+Future<void> _settleUntilWritten(WidgetTester tester, int before) async {
+  final ProviderContainer container = _container(tester);
+  final Stopwatch waited = Stopwatch()..start();
+  Future<void> step(String what) async {
+    if (waited.elapsed > const Duration(minutes: 2)) {
+      fail('页面的写入两分钟内没有$what（srsRevisionProvider 停在 $before）');
+    }
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 5)),
+    );
+    await tester.pump(const Duration(milliseconds: 60));
+  }
+
+  while (container.read(srsRevisionProvider) <= before) {
+    await step('落库');
+  }
+  await _settle(tester);
+}
+
 Future<void> _pumpPage(
   WidgetTester tester, {
   required SrsDbStore store,
@@ -891,10 +920,11 @@ void main() {
       await _settle(tester);
       expect(_inHtmlPreview('cat'), findsNothing);
 
+      final int revision = _container(tester).read(srsRevisionProvider);
       await tester.tap(
         find.byKey(const ValueKey<String>('srs_template_save')).first,
       );
-      await _settle(tester);
+      await _settleUntilWritten(tester, revision);
       final SrsTemplateDef saved = (await _db(
         tester,
         () => store.noteType(nt),
@@ -1085,10 +1115,11 @@ void main() {
         await _settle(tester);
         expect(native, findsOneWidget);
 
+        final int revision = _container(tester).read(srsRevisionProvider);
         await tester.tap(
           find.byKey(const ValueKey<String>('srs_template_save')).first,
         );
-        await _settle(tester);
+        await _settleUntilWritten(tester, revision);
         final SrsNoteTypeView saved = (await _db(
           tester,
           () => store.noteType(store.fushiCardNoteTypeId),

@@ -257,6 +257,38 @@ Future<void> _settle(WidgetTester tester, {int rounds = 12}) async {
   }
 }
 
+/// 页面所在的 Riverpod 容器（读写完信号 [srsRevisionProvider] 用）。
+ProviderContainer _container(WidgetTester tester) =>
+    ProviderScope.containerOf(tester.element(find.byType(MaterialApp)));
+
+/// 等页面上一个操作发起的写入落库（之后再从库里读断言）。
+///
+/// 页面的写入（拖放挪牌组、保存模板……）是内核命令，在 worker isolate 上真实往返；页面在写命令返回（已提交）
+/// 之后才 [bumpSrsRevision]，所以修订号越过 [before] 就是「写完了」的真实信号。固定几轮 [_settle] 只给了一段
+/// 固定的真实时间：全量并发跑、机器满载时 worker 排不上 CPU，写入还没回来就去读库，间歇读到旧值。
+/// 写完后牌组列表按新修订号重读（[srsDeckListProvider]），也等它读完：后面的拖放要按新树找行。
+Future<void> _settleUntilWritten(WidgetTester tester, int before) async {
+  final ProviderContainer container = _container(tester);
+  final Stopwatch waited = Stopwatch()..start();
+  Future<void> step(String what) async {
+    if (waited.elapsed > const Duration(minutes: 2)) {
+      fail('页面的写入两分钟内没有$what（srsRevisionProvider 停在 $before）');
+    }
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 5)),
+    );
+    await tester.pump(const Duration(milliseconds: 60));
+  }
+
+  while (container.read(srsRevisionProvider) <= before) {
+    await step('落库');
+  }
+  while (container.read(srsDeckListProvider).isLoading) {
+    await step('重读完牌组列表');
+  }
+  await _settle(tester);
+}
+
 Future<void> _pumpPage(
   WidgetTester tester, {
   required SrsDbStore store,
@@ -491,6 +523,7 @@ void main() {
       );
 
       // 拖着顶层牌组：没有「移到顶层」落点。
+      int revision = _container(tester).read(srsRevisionProvider);
       TestGesture g = await tester.startGesture(
         tester.getCenter(find.text('Beta')),
         kind: PointerDeviceKind.mouse,
@@ -501,10 +534,11 @@ void main() {
       await g.moveTo(tester.getCenter(find.text('Alpha')));
       await tester.pump();
       await g.up();
-      await _settle(tester);
+      await _settleUntilWritten(tester, revision);
       expect(await names(), contains('Alpha::Beta'));
 
       // 拖着子牌组：顶上出现落点，放下 = 回到顶层。
+      revision = _container(tester).read(srsRevisionProvider);
       g = await tester.startGesture(
         tester.getCenter(find.text('Beta')),
         kind: PointerDeviceKind.mouse,
@@ -516,7 +550,7 @@ void main() {
       await g.moveTo(tester.getCenter(zone));
       await tester.pump();
       await g.up();
-      await _settle(tester);
+      await _settleUntilWritten(tester, revision);
       final List<String> after = await names();
       expect(after, contains('Beta'));
       expect(after, isNot(contains('Alpha::Beta')));
@@ -530,6 +564,7 @@ void main() {
       final Rect alphaRow = tester.getRect(
         find.byKey(ValueKey<String>('srs-drag-$alphaId')),
       );
+      revision = _container(tester).read(srsRevisionProvider);
       g = await tester.startGesture(
         tester.getCenter(find.text('Beta')),
         kind: PointerDeviceKind.mouse,
@@ -539,7 +574,7 @@ void main() {
       await g.moveTo(Offset(alphaRow.center.dx, alphaRow.top + 3));
       await tester.pump();
       await g.up();
-      await _settle(tester);
+      await _settleUntilWritten(tester, revision);
       final List<String> reordered = await names();
       expect(reordered, isNot(contains('Alpha::Beta')));
       expect(reordered.indexOf('Beta'), lessThan(reordered.indexOf('Alpha')));
