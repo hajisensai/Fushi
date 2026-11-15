@@ -48,8 +48,42 @@ fn key_id(key: &str) -> String {
     HEXLOWER.encode(&Sha256::digest(key.as_bytes()))
 }
 
-fn aad(plugin: &str, key: &str) -> Vec<u8> {
-    format!("{AAD_DOMAIN}\0{plugin}\0{key}").into_bytes()
+/// 追踪插件凭据的附加认证数据前缀（docs/specs/2026-11-10-tracking-plugins.md §4）。
+const AAD_DOMAIN_TRACKING: &str = "fushi-tracking-plugin-credential-v1";
+
+/// 凭据所属的插件体系。两种插件共用同一个保险库实现，但附加认证数据的前缀不同：把一个体系
+/// 目录下的凭据文件拷进另一个体系的目录，同样的插件 id / 键名也解不开。数据密钥、文件布局与
+/// DPAPI 熵不分体系（各体系本来就在各自的根目录下）。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Domain {
+    /// 音乐插件：缺省，与引入体系之前的格式逐字节相同。
+    Music,
+    /// 追踪插件。
+    Tracking,
+}
+
+impl Domain {
+    /// 保险库操作 JSON 的 `domain` 字段：缺省 / `null` / `"music"` = 音乐，`"tracking"` = 追踪，
+    /// 其余报错。
+    pub fn from_wire(v: Option<&serde_json::Value>) -> Result<Domain, String> {
+        match v {
+            None | Some(serde_json::Value::Null) => Ok(Domain::Music),
+            Some(serde_json::Value::String(s)) if s == "music" => Ok(Domain::Music),
+            Some(serde_json::Value::String(s)) if s == "tracking" => Ok(Domain::Tracking),
+            Some(other) => Err(format!("未知保险库体系 {other}")),
+        }
+    }
+
+    fn aad_prefix(self) -> &'static str {
+        match self {
+            Domain::Music => AAD_DOMAIN,
+            Domain::Tracking => AAD_DOMAIN_TRACKING,
+        }
+    }
+}
+
+fn aad(domain: Domain, plugin: &str, key: &str) -> Vec<u8> {
+    format!("{}\0{plugin}\0{key}", domain.aad_prefix()).into_bytes()
 }
 
 /// 进程内保险库锁：宿主在后台 isolate（各自的 OS 线程）里并发调用 get / set / remove，
@@ -273,7 +307,18 @@ fn check_args(plugin: &str, key: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// 音乐体系的 [get_in]。
 pub fn get(root: &Path, src: KeySource, plugin: &str, key: &str) -> Result<Option<String>, String> {
+    get_in(Domain::Music, root, src, plugin, key)
+}
+
+pub fn get_in(
+    domain: Domain,
+    root: &Path,
+    src: KeySource,
+    plugin: &str,
+    key: &str,
+) -> Result<Option<String>, String> {
     check_args(plugin, key)?;
     let _guard = lock();
     let Some(dk) = resolve_key(root, src, false)? else {
@@ -289,7 +334,7 @@ pub fn get(root: &Path, src: KeySource, plugin: &str, key: &str) -> Result<Optio
         return Ok(None);
     }
     let cipher = Aes256Gcm::new_from_slice(&dk).unwrap();
-    let aad = aad(plugin, key);
+    let aad = aad(domain, plugin, key);
     // 认证失败（被篡改 / 拷错命名空间）按「没有」处理：插件表现为未登录。
     Ok(cipher
         .decrypt(
@@ -303,7 +348,19 @@ pub fn get(root: &Path, src: KeySource, plugin: &str, key: &str) -> Result<Optio
         .and_then(|p| String::from_utf8(p).ok()))
 }
 
+/// 音乐体系的 [set_in]。
 pub fn set(
+    root: &Path,
+    src: KeySource,
+    plugin: &str,
+    key: &str,
+    value: &str,
+) -> Result<(), String> {
+    set_in(Domain::Music, root, src, plugin, key, value)
+}
+
+pub fn set_in(
+    domain: Domain,
     root: &Path,
     src: KeySource,
     plugin: &str,
@@ -325,7 +382,7 @@ pub fn set(
     let mut nonce = [0u8; 12];
     getrandom::getrandom(&mut nonce).map_err(|_| "系统随机数不可用".to_string())?;
     let cipher = Aes256Gcm::new_from_slice(&dk).unwrap();
-    let aad = aad(plugin, key);
+    let aad = aad(domain, plugin, key);
     let ct = cipher
         .encrypt(
             Nonce::from_slice(&nonce),
@@ -479,6 +536,122 @@ mod tests {
                 .unwrap()
                 .as_deref(),
             Some("MUSIC_U=1")
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// 体系隔离：同一根目录 / 插件 id / 键名 / 数据密钥下，追踪体系写的读不出音乐体系，反之亦然。
+    #[test]
+    fn domains_do_not_cross_decrypt() {
+        let root = std::env::temp_dir().join(format!("fmp-vault-domain-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        set_in(Domain::Tracking, &root, K, "moe.a", "token", "T").unwrap();
+        assert_eq!(
+            get_in(Domain::Tracking, &root, K, "moe.a", "token")
+                .unwrap()
+                .as_deref(),
+            Some("T")
+        );
+        assert_eq!(
+            get_in(Domain::Music, &root, K, "moe.a", "token").unwrap(),
+            None
+        );
+        assert_eq!(get(&root, K, "moe.a", "token").unwrap(), None);
+
+        set(&root, K, "moe.b", "cookie", "M").unwrap();
+        assert_eq!(
+            get_in(Domain::Music, &root, K, "moe.b", "cookie")
+                .unwrap()
+                .as_deref(),
+            Some("M")
+        );
+        assert_eq!(
+            get_in(Domain::Tracking, &root, K, "moe.b", "cookie").unwrap(),
+            None
+        );
+
+        // 把音乐体系的凭据文件整份拷到另一个根目录（追踪体系的目录）下：同名同键也解不开。
+        let other = root.join("other-root");
+        fs::create_dir_all(dir(&other)).unwrap();
+        fs::copy(plugin_file(&root, "moe.b"), plugin_file(&other, "moe.b")).unwrap();
+        assert_eq!(
+            get_in(Domain::Tracking, &other, K, "moe.b", "cookie").unwrap(),
+            None
+        );
+        assert_eq!(
+            get_in(Domain::Music, &other, K, "moe.b", "cookie")
+                .unwrap()
+                .as_deref(),
+            Some("M")
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn domain_wire_values() {
+        use serde_json::json;
+        assert_eq!(Domain::from_wire(None).unwrap(), Domain::Music);
+        assert_eq!(
+            Domain::from_wire(Some(&json!(null))).unwrap(),
+            Domain::Music
+        );
+        assert_eq!(
+            Domain::from_wire(Some(&json!("music"))).unwrap(),
+            Domain::Music
+        );
+        assert_eq!(
+            Domain::from_wire(Some(&json!("tracking"))).unwrap(),
+            Domain::Tracking
+        );
+        for bad in [json!("Tracking"), json!(""), json!("video"), json!(1)] {
+            assert!(Domain::from_wire(Some(&bad)).is_err(), "{bad}");
+        }
+    }
+
+    /// 格式不变：引入体系之前写下的音乐凭据（附加认证数据前缀写死成旧字面量、手工加密）照常读得出。
+    #[test]
+    fn pre_domain_music_format_still_reads() {
+        let root = std::env::temp_dir().join(format!("fmp-vault-fmt-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let dk = [7u8; 32];
+        let nonce = [5u8; 12];
+        let cipher = Aes256Gcm::new_from_slice(&dk).unwrap();
+        let ct = cipher
+            .encrypt(
+                Nonce::from_slice(&nonce),
+                Payload {
+                    msg: b"MUSIC_U=old",
+                    aad: b"fushi-music-plugin-credential-v1\0moe.a\0cookie",
+                },
+            )
+            .unwrap();
+        let mut blob = nonce.to_vec();
+        blob.extend_from_slice(&ct);
+        let mut entries = BTreeMap::new();
+        entries.insert(
+            HEXLOWER.encode(&Sha256::digest(b"cookie")),
+            BASE64.encode(&blob),
+        );
+        fs::create_dir_all(dir(&root)).unwrap();
+        fs::write(
+            root.join(".credentials").join("moe.a.json"),
+            serde_json::to_string(&entries).unwrap(),
+        )
+        .unwrap();
+        let src = KeySource::Provided(dk);
+        assert_eq!(
+            get(&root, src, "moe.a", "cookie").unwrap().as_deref(),
+            Some("MUSIC_U=old")
+        );
+        assert_eq!(
+            get_in(Domain::Music, &root, src, "moe.a", "cookie")
+                .unwrap()
+                .as_deref(),
+            Some("MUSIC_U=old")
+        );
+        assert_eq!(
+            get_in(Domain::Tracking, &root, src, "moe.a", "cookie").unwrap(),
+            None
         );
         let _ = fs::remove_dir_all(&root);
     }

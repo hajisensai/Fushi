@@ -173,6 +173,18 @@ class InterconnectHostClient {
     String capability, {
     Duration timeout = const Duration(seconds: 5),
   }) async {
+    final Map<Object?, Object?>? declared = await capabilities(
+      timeout: timeout,
+    );
+    return declared == null ? null : declared[capability] == true;
+  }
+
+  /// The whole `GET /api/capabilities` object of the selected host. Null when
+  /// no address answered or the body is not valid JSON (unknown); a JSON body
+  /// that is not an object counts as declaring nothing.
+  Future<Map<Object?, Object?>?> capabilities({
+    Duration timeout = const Duration(seconds: 5),
+  }) async {
     final http.Response? response = await getFromHost(
       '/api/capabilities',
       timeout: timeout,
@@ -180,7 +192,7 @@ class InterconnectHostClient {
     if (response == null) return null;
     try {
       final Object? decoded = jsonDecode(utf8.decode(response.bodyBytes));
-      return decoded is Map && decoded[capability] == true;
+      return decoded is Map ? decoded : const <Object?, Object?>{};
     } catch (_) {
       return null;
     }

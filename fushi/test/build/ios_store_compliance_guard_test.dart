@@ -75,6 +75,7 @@ void main() {
             StoreRestrictedCapability.onlineVideoSource,
             StoreRestrictedCapability.onlineNovelSource,
             StoreRestrictedCapability.onlineMusicSource,
+            StoreRestrictedCapability.trackingPlugins,
             StoreRestrictedCapability.downloads,
           ]) {
         expect(
@@ -1171,6 +1172,74 @@ void main() {
         ),
         reason: 'JS 引擎只能经 plugin 特性带入。',
       );
+    });
+  });
+
+  group('Tracking plugins (trackingPlugins)', () {
+    test('the gate is only in tracking_plugin_gate.dart and the app model '
+        'creates the manager behind it', () {
+      final String gate = compactCode(
+        read('lib/src/media/tracking/plugin/tracking_plugin_gate.dart'),
+      );
+      expect(
+        gate,
+        contains(
+          'boolgetisTrackingPluginsAvailable=>'
+          'StoreRestrictedCapability.trackingPlugins.isAvailable&&'
+          'SharedTrackingPluginEngine.supported;',
+        ),
+      );
+      expect(gate, isNot(contains('Platform.isIOS')));
+      expect(
+        compactCode(read('lib/src/models/app_model.dart')),
+        contains('if(!isTrackingPluginsAvailable)returnnull;'),
+      );
+    });
+
+    test('which implementation serves Bangumi is decided once, next to the '
+        'gate (bundled plugin where plugins run, built-in Dart elsewhere)', () {
+      final String gate = compactCode(
+        read('lib/src/media/tracking/plugin/tracking_plugin_gate.dart'),
+      );
+      expect(
+        gate,
+        contains('boolgetisBangumiServedByPlugin=>isTrackingPluginsAvailable;'),
+      );
+      // The app asks it once, where the tracking service is assembled: the
+      // service then serves `bangumi` with the built-in Dart provider or
+      // only with the bundled plugin, and every consumer follows the service.
+      final String appModel = compactCode(
+        read('lib/src/models/app_model.dart'),
+      );
+      expect(appModel, contains('builtInBangumi:!isBangumiServedByPlugin,'));
+      final List<String> askers = <String>[
+        for (final FileSystemEntity entity in Directory(
+          'lib',
+        ).listSync(recursive: true))
+          if (entity is File &&
+              entity.path.endsWith('.dart') &&
+              !entity.path
+                  .replaceAll(r'\', '/')
+                  .endsWith(
+                    'media/tracking/plugin/tracking_plugin_gate.dart',
+                  ) &&
+              RegExp(
+                r'^(?!\s*///).*\bisBangumiServedByPlugin\b',
+                multiLine: true,
+              ).hasMatch(entity.readAsStringSync()))
+            entity.path.replaceAll(r'\', '/'),
+      ];
+      expect(askers, <String>['lib/src/models/app_model.dart']);
+      final List<String> offenders = <String>[
+        for (final FileSystemEntity entity in Directory(
+          'lib/src/media/tracking',
+        ).listSync(recursive: true))
+          if (entity is File &&
+              entity.path.endsWith('.dart') &&
+              entity.readAsStringSync().contains('Platform.isIOS'))
+            entity.path,
+      ];
+      expect(offenders, isEmpty);
     });
   });
 

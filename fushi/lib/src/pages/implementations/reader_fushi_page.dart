@@ -133,8 +133,6 @@ import 'package:fushi/src/media/audiobook/reader_quick_settings_sheet.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi_engine/media/kavita/kavita_models.dart'
     show KavitaProgress;
-import 'package:fushi_engine/media/tracking/media_tracking_service.dart'
-    show kMediaTrackingEnabled;
 import 'package:fushi_engine/mining/immersion_mining_request.dart'
     show immersionMiningAudioExtension;
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
