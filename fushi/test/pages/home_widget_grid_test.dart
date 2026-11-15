@@ -414,6 +414,54 @@ void main() {
     expect(log.where((String l) => l.startsWith('size')), isEmpty);
   });
 
+  testWidgets('半栏：Shift+← 与拖角都能把近 7 天缩到 1 列，旁边空出的半格可回填', (
+    WidgetTester tester,
+  ) async {
+    final List<String> log = <String>[];
+    final _HostState host = await _pump(tester, log: log);
+    // 焦点走到近 7 天（第 4 块）。
+    for (int i = 0; i < 4; i++) {
+      await _key(tester, LogicalKeyboardKey.tab);
+    }
+    expect(_focusedLabel(), 'home-widget/week');
+    await _shift(tester, LogicalKeyboardKey.arrowLeft);
+    expect(_sizeOf(host, HomeWidgetKind.week), const HomeWidgetSize(1, 1));
+    expect(
+      tester.getSize(_tile(HomeWidgetKind.week)).width,
+      closeTo((_kWidth - kFushiCoverBlockSpacing) / 2, 0.01),
+    );
+    // 1×1 是下限。
+    await _shift(tester, LogicalKeyboardKey.arrowLeft);
+    expect(_sizeOf(host, HomeWidgetKind.week), const HomeWidgetSize(1, 1));
+    // 放回 2×1，再用拖角缩回半栏。
+    await _shift(tester, LogicalKeyboardKey.arrowRight);
+    expect(_sizeOf(host, HomeWidgetKind.week), const HomeWidgetSize(2, 1));
+    final Finder handle = find.byKey(
+      const ValueKey<String>('home-widget-resize/week'),
+    );
+    final TestGesture g = await tester.startGesture(tester.getCenter(handle));
+    await g.moveBy(const Offset(-30, 0));
+    await g.moveBy(
+      const Offset(
+        -(_kWidth - kFushiCoverBlockSpacing) / 2 - kFushiCoverBlockSpacing + 30,
+        0,
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<Text>(
+            find.byKey(const ValueKey<String>('home-widget-resize-label')),
+          )
+          .data,
+      '1×1',
+    );
+    await g.up();
+    await tester.pumpAndSettle();
+    expect(_sizeOf(host, HomeWidgetKind.week), const HomeWidgetSize(1, 1));
+    expect(log.last, 'size 3 1×1');
+  });
+
   testWidgets('编辑态：Delete 移除后焦点交给下一块，Esc 退出编辑', (WidgetTester tester) async {
     final List<String> log = <String>[];
     final _HostState host = await _pump(tester, log: log);

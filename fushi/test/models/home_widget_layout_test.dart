@@ -47,17 +47,23 @@ void main() {
     test('尺寸范围与 spec 一致（宽网格口径 min…max）', () {
       const Map<HomeWidgetKind, (HomeWidgetSize, HomeWidgetSize)> spec =
           <HomeWidgetKind, (HomeWidgetSize, HomeWidgetSize)>{
-            HomeWidgetKind.continueHero: (s22, HomeWidgetSize(6, 4)),
-            HomeWidgetKind.continueReading: (s21, HomeWidgetSize(6, 3)),
-            HomeWidgetKind.continueWatching: (s21, HomeWidgetSize(6, 3)),
-            HomeWidgetKind.continuePlaying: (s21, HomeWidgetSize(6, 3)),
+            HomeWidgetKind.continueHero: (
+              HomeWidgetSize(1, 2),
+              HomeWidgetSize(6, 4),
+            ),
+            HomeWidgetKind.continueReading: (s11, HomeWidgetSize(6, 3)),
+            HomeWidgetKind.continueWatching: (s11, HomeWidgetSize(6, 3)),
+            HomeWidgetKind.continuePlaying: (s11, HomeWidgetSize(6, 3)),
             HomeWidgetKind.today: (s11, HomeWidgetSize(3, 2)),
-            HomeWidgetKind.week: (s21, HomeWidgetSize(6, 3)),
+            HomeWidgetKind.week: (s11, HomeWidgetSize(6, 3)),
             HomeWidgetKind.srsReview: (s11, HomeWidgetSize(3, 2)),
-            HomeWidgetKind.recentlyAdded: (s22, HomeWidgetSize(6, 4)),
-            HomeWidgetKind.tracking: (s21, HomeWidgetSize(6, 2)),
+            HomeWidgetKind.recentlyAdded: (
+              HomeWidgetSize(1, 2),
+              HomeWidgetSize(6, 4),
+            ),
+            HomeWidgetKind.tracking: (s11, HomeWidgetSize(6, 2)),
             HomeWidgetKind.aiAgent: (s11, HomeWidgetSize(3, 2)),
-            HomeWidgetKind.panorama: (s22, HomeWidgetSize(6, 4)),
+            HomeWidgetKind.panorama: (s11, HomeWidgetSize(6, 4)),
           };
       expect(spec.keys.toSet(), HomeWidgetKind.values.toSet());
       for (final HomeWidgetKind k in HomeWidgetKind.values) {
@@ -104,6 +110,35 @@ void main() {
       expect(HomeWidgetKind.continueHero.defaultFor(HomeGridKind.wide), s42);
       expect(HomeWidgetKind.continueHero.defaultFor(HomeGridKind.compact), s22);
       expect(HomeWidgetKind.today.defaultFor(HomeGridKind.compact), s11);
+      // 窄网格默认半栏（所有者 2026-11-15）；宽网格默认不变。
+      expect(HomeWidgetKind.week.defaultFor(HomeGridKind.compact), s11);
+      expect(HomeWidgetKind.tracking.defaultFor(HomeGridKind.compact), s11);
+      expect(HomeWidgetKind.week.defaultFor(HomeGridKind.wide), s22);
+      expect(HomeWidgetKind.tracking.defaultFor(HomeGridKind.wide), s21);
+    });
+
+    test('1 列下限：半栏组件在两种网格里都能缩到 1 列', () {
+      for (final HomeWidgetKind k in HomeWidgetKind.values) {
+        for (final HomeGridKind g in HomeGridKind.values) {
+          expect(k.minFor(g).cols, 1, reason: '${k.id} ${g.wire}');
+        }
+      }
+      expect(
+        HomeWidgetKind.recentlyAdded.minFor(HomeGridKind.compact),
+        const HomeWidgetSize(1, 2),
+      );
+      expect(
+        HomeWidgetKind.continueHero.minFor(HomeGridKind.wide),
+        const HomeWidgetSize(1, 2),
+      );
+      expect(
+        clampHomeWidgetSize(
+          HomeWidgetKind.recentlyAdded,
+          HomeGridKind.compact,
+          s11,
+        ),
+        const HomeWidgetSize(1, 2),
+      );
     });
 
     test('clampHomeWidgetSize：各轴独立钳进范围（含窄网格列数封顶）', () {
@@ -190,7 +225,11 @@ void main() {
     });
 
     test('拖过头钳进范围：不小于下限、不大于上限 / 网格列数', () {
-      expect(drag(HomeWidgetKind.week, s22, -2000, -2000), s21);
+      expect(drag(HomeWidgetKind.week, s22, -2000, -2000), s11);
+      expect(
+        drag(HomeWidgetKind.continueHero, s22, -2000, -2000),
+        const HomeWidgetSize(1, 2),
+      );
       expect(
         drag(HomeWidgetKind.week, s22, 5000, 5000),
         const HomeWidgetSize(6, 3),
@@ -374,10 +413,40 @@ void main() {
         resizeHomeWidgetBy(base, 0, HomeGridKind.wide, dRows: 1)[0].size,
         s23,
       );
-      // 继续 2×2 已是下限：再缩原样返回。
+      // 继续能缩到 1 列（半栏），1×2 是下限：再缩原样返回。
+      final List<HomeWidgetItem> half = resizeHomeWidgetBy(
+        base,
+        0,
+        HomeGridKind.compact,
+        dCols: -1,
+      );
+      expect(half[0].size, const HomeWidgetSize(1, 2));
       expect(
-        resizeHomeWidgetBy(base, 0, HomeGridKind.wide, dCols: -1),
-        same(base),
+        resizeHomeWidgetBy(half, 0, HomeGridKind.compact, dCols: -1),
+        same(half),
+      );
+      expect(
+        resizeHomeWidgetBy(
+          <HomeWidgetItem>[
+            item(HomeWidgetKind.continueHero, const HomeWidgetSize(1, 2)),
+          ],
+          0,
+          HomeGridKind.wide,
+          dRows: -1,
+        )[0].size,
+        const HomeWidgetSize(1, 2),
+      );
+      // 近 7 天 2×1 → 1×1 半栏；再缩不变。
+      final List<HomeWidgetItem> week = resizeHomeWidgetBy(
+        base,
+        3,
+        HomeGridKind.compact,
+        dCols: -1,
+      );
+      expect(week[3].size, s11);
+      expect(
+        resizeHomeWidgetBy(week, 3, HomeGridKind.compact, dCols: -1),
+        same(week),
       );
       // 窄网格里 2 列已是上限。
       expect(
@@ -490,10 +559,11 @@ void main() {
     }) => migrateHomeWidgetLayout(grid: grid, modes: modes, auto: auto);
 
     test('窄 / 宽默认模板（可选面板全部自动且判据全否）', () {
+      // 窄：今日 / 近 7 天半栏并排（所有者 2026-11-15「占半栏就够了」）。
       expect(migrate(HomeGridKind.compact), <HomeWidgetItem>[
         item(HomeWidgetKind.continueHero, s22),
         item(HomeWidgetKind.today, s11),
-        item(HomeWidgetKind.week, s21),
+        item(HomeWidgetKind.week, s11),
       ]);
       expect(migrate(HomeGridKind.wide), <HomeWidgetItem>[
         item(HomeWidgetKind.continueHero, s42),
@@ -512,13 +582,14 @@ void main() {
           aiAgent: true,
         ),
       );
-      expect(kinds(all), <HomeWidgetKind>[
-        HomeWidgetKind.continueHero,
-        HomeWidgetKind.today,
-        HomeWidgetKind.srsReview,
-        HomeWidgetKind.week,
-        HomeWidgetKind.tracking,
-        HomeWidgetKind.aiAgent,
+      expect(all, <HomeWidgetItem>[
+        item(HomeWidgetKind.continueHero, s22),
+        item(HomeWidgetKind.today, s11),
+        item(HomeWidgetKind.week, s11),
+        item(HomeWidgetKind.srsReview, s11),
+        item(HomeWidgetKind.tracking, s11),
+        // 半栏组件个数为奇数：最后一个放宽占满一行。
+        item(HomeWidgetKind.aiAgent, s21),
       ]);
       final List<HomeWidgetItem> pinned = migrate(
         HomeGridKind.wide,
@@ -536,6 +607,36 @@ void main() {
         HomeWidgetKind.panorama,
       ]);
       expect(pinned.last.size, s22);
+    });
+
+    test('窄默认模板任意组合装箱后都没有空洞（每一行两列都占满）', () {
+      for (int mask = 0; mask < 16; mask++) {
+        HomeDashboardPanelMode mode(int bit) => mask & (1 << bit) != 0
+            ? HomeDashboardPanelMode.shown
+            : HomeDashboardPanelMode.hidden;
+        final List<HomeWidgetItem> items = migrate(
+          HomeGridKind.compact,
+          modes: <HomeDashboardPanel, HomeDashboardPanelMode>{
+            HomeDashboardPanel.srsReview: mode(0),
+            HomeDashboardPanel.tracking: mode(1),
+            HomeDashboardPanel.aiAgent: mode(2),
+            HomeDashboardPanel.panorama: mode(3),
+          },
+        );
+        final HomeWidgetPacking p = packHomeWidgets(items, 2);
+        final int area = items.fold<int>(
+          0,
+          (int sum, HomeWidgetItem e) => sum + e.size.cols * e.size.rows,
+        );
+        expect(area, p.rowCount * 2, reason: 'mask=$mask: $items');
+        for (final HomeWidgetItem e in items) {
+          expect(
+            clampHomeWidgetSize(e.kind, HomeGridKind.compact, e.size),
+            e.size,
+            reason: '模板尺寸在范围内：${e.kind.id}',
+          );
+        }
+      }
     });
   });
 

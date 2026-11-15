@@ -107,15 +107,29 @@ void main() {
       });
     }
 
-    test('默认模板里复习是 1×1（窄、宽同档）', () {
+    test('默认模板里复习是 1×1（窄、宽同档）；窄网格半栏个数为奇数时末位放宽成 2×1', () {
+      HomeWidgetSize srsIn(HomeGridKind grid, {required bool tracking}) =>
+          migrateHomeWidgetLayout(
+                grid: grid,
+                modes: const <HomeDashboardPanel, HomeDashboardPanelMode>{},
+                auto: HomeWidgetAutoFacts(srsReview: true, tracking: tracking),
+              )
+              .singleWhere(
+                (HomeWidgetItem e) => e.kind == HomeWidgetKind.srsReview,
+              )
+              .size;
       for (final HomeGridKind grid in HomeGridKind.values) {
-        final HomeWidgetItem srs = migrateHomeWidgetLayout(
-          grid: grid,
-          modes: const <HomeDashboardPanel, HomeDashboardPanelMode>{},
-          auto: const HomeWidgetAutoFacts(srsReview: true),
-        ).singleWhere((HomeWidgetItem e) => e.kind == HomeWidgetKind.srsReview);
-        expect(srs.size, const HomeWidgetSize(1, 1));
+        expect(srsIn(grid, tracking: true), const HomeWidgetSize(1, 1));
       }
+      expect(
+        srsIn(HomeGridKind.wide, tracking: false),
+        const HomeWidgetSize(1, 1),
+      );
+      // 窄：今日 / 近 7 天 / 复习三块半栏，复习落单就占满一行，不留半格空洞。
+      expect(
+        srsIn(HomeGridKind.compact, tracking: false),
+        const HomeWidgetSize(2, 1),
+      );
     });
 
     test('复习模块关着：组件不可用（布局里保留，不渲染）', () {

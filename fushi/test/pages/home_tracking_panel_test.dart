@@ -233,6 +233,38 @@ void main() {
     });
   });
 
+  group('homeTrackingPanelShortText', () {
+    test('a count for the problems, else pending, else all sent', () {
+      expect(
+        homeTrackingPanelShortText(HomeTrackingSummary.none),
+        t.home_tracking_panel_not_connected,
+      );
+      expect(
+        homeTrackingPanelShortText(
+          HomeTrackingSummary.of(
+            snapshot(
+              sites: <MediaTrackingProviderStatus>[
+                site('anilist', unauthorized: true),
+              ],
+              notLinked: <MediaTrackingUnlinkedItem>[
+                unlinked(TrackingMediaType.video, 'v1'),
+              ],
+            ),
+          ),
+        ),
+        t.home_tracking_panel_attention(n: 2),
+      );
+      expect(
+        homeTrackingPanelShortText(
+          HomeTrackingSummary.of(
+            snapshot(sites: <MediaTrackingProviderStatus>[site('anilist')]),
+          ),
+        ),
+        t.media_tracking_all_synced,
+      );
+    });
+  });
+
   group('homeTrackingPanelText', () {
     final DateTime now = DateTime(2026, 11, 10, 12);
 
@@ -470,6 +502,55 @@ void main() {
         findsNothing,
       );
     });
+
+    for (final bool glass in <bool>[false, true]) {
+      testWidgets('half-width (1×1) strip: a count and an icon button, no '
+          'sentence (${glass ? 'Apple' : 'Material'})', (
+        WidgetTester tester,
+      ) async {
+        int opened = 0;
+        final HomeTrackingSummary summary = HomeTrackingSummary.of(
+          snapshot(
+            sites: <MediaTrackingProviderStatus>[
+              site('anilist', unauthorized: true),
+            ],
+            notLinked: <MediaTrackingUnlinkedItem>[
+              unlinked(TrackingMediaType.video, 'v1'),
+              unlinked(TrackingMediaType.video, 'v2'),
+            ],
+          ),
+        );
+        await tester.pumpWidget(
+          app(
+            Align(
+              alignment: AlignmentDirectional.topStart,
+              child: SizedBox(
+                width: 170,
+                height: 78,
+                child: HomeTrackingPanel(
+                  summary: summary,
+                  onOpen: () => opened++,
+                ),
+              ),
+            ),
+            glass: glass,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+        expect(
+          find.text(t.home_tracking_panel_attention(n: 3)),
+          findsOneWidget,
+        );
+        expect(find.text(t.home_tracking_panel_sign_in), findsNothing);
+        expect(find.text(t.home_tracking_panel_review), findsNothing);
+        await tester.tap(
+          find.byKey(const ValueKey<String>('home-tracking-panel-action')),
+        );
+        expect(opened, 1);
+      });
+    }
 
     testWidgets('cover row draws the mark and the cover keeps its tap', (
       WidgetTester tester,

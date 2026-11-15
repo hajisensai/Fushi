@@ -104,7 +104,7 @@ void main() {
       findsNothing,
     );
     expect(
-      find.text(t.home_widget_size_range(min: '2×2', max: '2×4')),
+      find.text(t.home_widget_size_range(min: '1×2', max: '2×4')),
       findsWidgets,
     );
     expect(
@@ -127,7 +127,7 @@ void main() {
             ),
           )
           .data,
-      t.home_widget_size_range(min: '2×2', max: '6×4'),
+      t.home_widget_size_range(min: '1×2', max: '6×4'),
     );
     expect(
       find.byKey(

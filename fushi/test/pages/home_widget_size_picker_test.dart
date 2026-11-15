@@ -79,7 +79,7 @@ void main() {
     expect(_focused(tester, const HomeWidgetSize(2, 2)), isTrue);
     expect(_label(tester), '2×2');
     expect(
-      find.text(t.home_widget_size_range(min: '2×1', max: '6×3')),
+      find.text(t.home_widget_size_range(min: '1×1', max: '6×3')),
       findsOneWidget,
     );
 
@@ -98,15 +98,28 @@ void main() {
   testWidgets('低于下限的格子：标签显示钳后的尺寸，选定钳到下限', (WidgetTester tester) async {
     final List<HomeWidgetSize> picked = await _pump(
       tester,
-      kind: HomeWidgetKind.week,
+      kind: HomeWidgetKind.recentlyAdded,
       grid: HomeGridKind.wide,
+      current: const HomeWidgetSize(1, 2),
+    );
+    await _key(tester, LogicalKeyboardKey.arrowUp);
+    expect(_focused(tester, const HomeWidgetSize(1, 1)), isTrue);
+    expect(_label(tester), '1×2');
+    await _key(tester, LogicalKeyboardKey.enter);
+    expect(picked, <HomeWidgetSize>[const HomeWidgetSize(1, 2)]);
+  });
+
+  testWidgets('半栏：近 7 天能在网格里选到 1×1', (WidgetTester tester) async {
+    final List<HomeWidgetSize> picked = await _pump(
+      tester,
+      kind: HomeWidgetKind.week,
+      grid: HomeGridKind.compact,
       current: const HomeWidgetSize(2, 1),
     );
     await _key(tester, LogicalKeyboardKey.arrowLeft);
-    expect(_focused(tester, const HomeWidgetSize(1, 1)), isTrue);
-    expect(_label(tester), '2×1');
+    expect(_label(tester), '1×1');
     await _key(tester, LogicalKeyboardKey.enter);
-    expect(picked, <HomeWidgetSize>[const HomeWidgetSize(2, 1)]);
+    expect(picked, <HomeWidgetSize>[const HomeWidgetSize(1, 1)]);
   });
 
   testWidgets('窄网格只画到 2 列；当前尺寸超出范围时焦点落在钳后的格子', (WidgetTester tester) async {

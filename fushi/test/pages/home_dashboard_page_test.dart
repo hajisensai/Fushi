@@ -26,6 +26,7 @@ import 'package:fushi/src/pages/implementations/collections_page.dart';
 import 'package:fushi/src/pages/implementations/home_dashboard_page.dart';
 import 'package:fushi/src/pages/implementations/home_dashboard_widgets.dart';
 import 'package:fushi/src/models/home_widget_layout.dart';
+import 'package:fushi/src/pages/implementations/home_widget_frame.dart';
 import 'package:fushi/src/pages/implementations/home_widget_grid.dart';
 import 'package:fushi/src/utils/components/fushi_continue_hero.dart';
 import 'package:fushi/src/pages/implementations/home_floating_toolbar.dart';
@@ -3092,6 +3093,22 @@ void main() {
               find.byKey(homeWidgetTileKey(e.kind)),
               findsOneWidget,
               reason: '${e.kind.id} 没有排版（视口不够高？）',
+            );
+          }
+          if (step == 0) {
+            // 下限 = 半栏：每块都只占 1 列（1×1，继续 / 最近添加 1×2）。
+            for (final HomeWidgetItem e in shown) {
+              expect(e.size.cols, 1, reason: e.kind.id);
+              expect(
+                tester.getSize(find.byKey(homeWidgetTileKey(e.kind))).width,
+                lessThan(kHomeWidgetWideWidth),
+                reason: e.kind.id,
+              );
+            }
+            // 半栏的「继续」主角改排条目小行一列，不画放不下的主卡。
+            expect(
+              find.byKey(const ValueKey<String>('home-continue-list')),
+              findsOneWidget,
             );
           }
         });
