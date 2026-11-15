@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-15T01:19:22Z",
+ "generatedAt": "2026-11-15T01:44:00Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "e5e1f73a42dc3dfde2bc96c1f10775e8b8ecabd6",
-  "seq": 27255
+  "sha": "a31ddeb6ddfd9e1d897b782c0d5ef4e57315c3cf",
+  "seq": 27266
  },
  "builds": [
   {
@@ -158,33 +158,39 @@
   }
  ],
  "pending": {
-  "headSha": "e5e1f73a42dc3dfde2bc96c1f10775e8b8ecabd6",
-  "headSeq": 27255,
+  "headSha": "a31ddeb6ddfd9e1d897b782c0d5ef4e57315c3cf",
+  "headSeq": 27266,
   "prs": [
+   3372,
    3430,
    3424,
    3427,
    3381,
    3277
   ],
-  "direct": [],
+  "direct": [
+   {
+    "sha": "a31ddeb6ddfd9e1d897b782c0d5ef4e57315c3cf",
+    "subject": "chore(bugs): settle BUG number collisions on cc2408d35"
+   }
+  ],
   "truncated": false,
   "platforms": {
    "android": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43658688934"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43663499517"
    },
    "windows": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43658688931"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43663499501"
    },
    "macos": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43658688931"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43663499501"
    },
    "ios": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/43658688931"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/43663499501"
    }
   }
  },
@@ -295,6 +301,15 @@
    "mergedAt": "2026-11-14T22:58:15Z",
    "additions": 1010,
    "deletions": 27,
+   "labels": []
+  },
+  "3372": {
+   "number": 3372,
+   "title": "feat(tracking): media tracking module, Tracking page and tracking site plugins / 媒体追踪模块、追踪页与追踪站点插件",
+   "author": "samutw",
+   "mergedAt": "2026-11-15T01:31:34Z",
+   "additions": 80489,
+   "deletions": 31211,
    "labels": []
   },
   "3381": {
